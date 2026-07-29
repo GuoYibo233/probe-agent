@@ -53,62 +53,6 @@
       ]
     },
     {
-      "name": "hotpot_t11_var",
-      "workdir": null,
-      "note": null,
-      "started_at": "2026-07-30 04:14",
-      "pieces": [
-        {
-          "host": "tokyo105",
-          "gpus": "0",
-          "session": "hotpot_t11_var_t105g0",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g0.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "1",
-          "session": "hotpot_t11_var_t105g1",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g1.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "2",
-          "session": "hotpot_t11_var_t105g2",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g2.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "3",
-          "session": "hotpot_t11_var_t105g3",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g3.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "4",
-          "session": "hotpot_t11_var_t105g4",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g4.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "5",
-          "session": "hotpot_t11_var_t105g5",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g5.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "6",
-          "session": "hotpot_t11_var_t105g6",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g6.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "7",
-          "session": "hotpot_t11_var_t105g7",
-          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g7.log"
-        }
-      ]
-    },
-    {
       "name": "t9_srv_vllm_q35",
       "workdir": null,
       "note": null,
@@ -419,6 +363,63 @@
         }
       ],
       "finished_at": "2026-07-30 04:34"
+    },
+    {
+      "name": "hotpot_t11_var",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 04:14",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "hotpot_t11_var_t105g0",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g0.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "hotpot_t11_var_t105g1",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g1.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "2",
+          "session": "hotpot_t11_var_t105g2",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g2.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "3",
+          "session": "hotpot_t11_var_t105g3",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g3.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "4",
+          "session": "hotpot_t11_var_t105g4",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g4.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "5",
+          "session": "hotpot_t11_var_t105g5",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g5.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "hotpot_t11_var_t105g6",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g6.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "7",
+          "session": "hotpot_t11_var_t105g7",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g7.log"
+        }
+      ],
+      "finished_at": "2026-07-30 04:43"
     }
   ]
 }

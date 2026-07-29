@@ -85,3 +85,17 @@ baseline 正常率:Qwen3-4B hotpot **92%** vs Qwen3.5-4B hotpot 40%(2wiki:56%);Q
 ## 七、tray 实验:文档型证据可以超量预取(2026-07-27 追加)
 
 8B hotpot,开场注入"两份 gold + 一份干扰段落"(tray_start)vs 纯两份 gold(both_start),ok-only 配对:bridge 省 454 vs 457、soft 0.69 vs 0.67;comparison 省 326 vs 327、soft 0.75 vs 0.72。**掺入无关文档零代价**——模型自己过滤。与旗舰流 B(签名级记忆错开火 acc −30pp)合看,预取的内容精度要求分两档:文档型证据可超量递(霰弹枪式预取在文档侧可行),单值型注入必须实体级校验。这直接决定 C2 调度器对不同工具返回类型的开火策略。
+
+## 八、T11 收尾:采样方差检查——三条主线结论全部稳健(2026-07-30)
+
+此前全部实验为贪心单采样,审稿必问方差。补跑:8B hotpot,temperature 0.6,
+种子 {1,2,3}(每种子独立生成基线,注入与同种子同题基线配对),两类型各 40 题,
+1338 条记录(run_id `20260730_0413_hotpot_t11_var`,全表见 `analysis_t11_var.md`)。
+
+- **comparison 早注毒性复现**:hop1@start soft 0.74→0.56(−18pp,与贪心掉幅一致),三种子 std 仅 0.02。
+- **决策死区复现**:hop1@25 省 token 为负(bridge −153±69/comparison −57±36),符号跨种子不翻。
+- **both_start 仍全场最优**:bridge soft +11pp 且省 434 token;comparison −4pp(噪声带内)省 369 token。
+- 小样本警示:bridge 第二跳子集每种子仅 8–9 题,hop2_start soft ±0.33,只作方向性证据。
+
+两类多跳(comparison=独立两跳/bridge=有依赖两跳,数据集原生 type 字段)全程分列报数,
+含本表与既往全部表格,无混杂。C1 的动机块自此数字带种子数与方差,收官。

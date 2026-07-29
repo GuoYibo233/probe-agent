@@ -6,7 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `20260730_0413_hotpot_t11_var` | 2026-07-30 04:14 | C1 | `40df390+dirty` | Qwen/Qwen3-8B | running | - | - |
+| `20260730_0413_hotpot_t11_var` | 2026-07-30 04:14 | C1 | `40df390+dirty` | Qwen/Qwen3-8B | ok | n_records=1338 seeds=3 comp_early_soft_drop=0.18 bridge_deadzone_dtok=-153 | 采样方差检查:comparison早注毒性/死区/both_start最优三结论跨种子稳健;bridge hop2子集小样本已标注 |
 | `20260730_0350_bfcl_gptoss_topup` | 2026-07-30 03:50 | collect | `96d9605+dirty` | gpt-oss-120b | ok | n_traj=200 think_nonempty=200 bfcl_events_v3_1=3325 | gpt-oss 补采 200/200 全量落盘,思考/解析双判据全过;并入 v3_1 后 bfcl 事件 2265->3325,双重建逐字节一致 |
 | `20260730_0204_bert_replay_bfclv3` | 2026-07-30 02:04 | C2-2t | `381b834+dirty` | modernbert-base | ok | trig_acc_risk05=0.9925 coverage_risk05=0.5929 theta_risk05=0.95 trig_acc_risk10=0.8955 coverage_risk10=0.8894 earliness_risk05=0.6152 wrong_spec_risk05=0.0044 prior_baseline=0.049 train_best_calA=0.7518 | bfcl 结论对重切分稳健:精度99.3%/coverage59.3%,与 v2fix(96.6%/62.0%)CI 互覆;切分方差~±3pt 即误差棒 |
 | `20260730_0109_bert_replay_awfix` | 2026-07-30 01:09 | C2-2t | `35529fb+dirty` | modernbert-base | ok | trig_acc_risk05=0.931 coverage_risk05=0.1902 theta_risk05=0.925 trig_acc_risk10=0.8842 coverage_risk10=0.3115 earliness_risk05=0.5631 prior_baseline=0.226 n_fired_risk05=58 train_best_calA=0.6206 | appworld 中间档：先验碾过、coverage19%不趴地、精度93.1%差口气(n=58,CI过线)；v3 数据翻倍后重判 |
@@ -21,11 +21,13 @@
 ### `20260730_0413_hotpot_t11_var`
 
 - **想验证什么**：T11 C1 收尾：HotpotQA 采样方差批次，temperature=0.6 三种子 × 8 分片 = 24 任务，测跨种子 mean±std
-- **方向**：C1 ｜ **状态**：running ｜ **起止**：2026-07-30 04:14 → 未收尾
+- **结论**：采样方差检查:comparison早注毒性/死区/both_start最优三结论跨种子稳健;bridge hop2子集小样本已标注
+- **方向**：C1 ｜ **状态**：ok ｜ **起止**：2026-07-30 04:14 → 2026-07-30 04:43
 - **代码**：`40df390`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 0,1,2,3,4,5,6,7
 - **模型 / 种子**：Qwen/Qwen3-8B / 1
 - **参数**：temperature=0.6 gen_seeds=1,2,3 n_per_type=40 shards=8 budget=2500 hop1_offsets=-1,25,0 hop2_offsets=0
+- **数字**：n_records=1338 seeds=3 comp_early_soft_drop=0.18 bridge_deadzone_dtok=-153
 - **原始数据**：`/home/y-guo/reproduce/new1/hotpot_inject/results_t11`（不在 git 里）
 - **命令**：`jlens-env/bin/python hotpot_inject/hotpot_v1.py --model Qwen/Qwen3-8B --n 40 --types comparison,bridge --hop1-offsets=-1,25,0 --hop2-offsets=0 --both-start --budget 2500 --temperature 0.6 --gen-seed {1,2,3} --shard {0..7}/8 --out hotpot_inject/results_t11/hp8b_T06_s{SEED}_shard{I}of8.jsonl`
 
