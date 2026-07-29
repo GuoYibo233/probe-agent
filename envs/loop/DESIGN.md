@@ -76,6 +76,10 @@ deploy-scout 调研结论(microsoft/tale-suite + 各引擎源码,2026-07-30):
 - **appworld/tales**:自家 run_*.py 改造(Chat→StreamingChat+monitor),
   hist/task 构造与 build_dataset.jsonl_events 对齐
   (appworld:result 截 4000;tales:动作原文)。
+  已落地:`run_appworld_loop.py`(fork=新实例重放动作史,experiment_name
+  加 _forkN 防目录互踩)/`run_tales_loop.py`(fork=壳内原生 TWX 的官方
+  clone(),ForkedTWX shim 补齐 step 字段语义)。各自 venv 导入检查过;
+  端到端联调等 bfcl demo 通过后排。
 
 ## 计时基建
 
