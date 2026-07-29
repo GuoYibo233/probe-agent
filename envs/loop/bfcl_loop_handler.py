@@ -279,6 +279,7 @@ class QwenLoopHandler(QwenHandler):
                     decoded, self._entry["initial_config"],
                     self._entry["involved_classes"], mkey, fork_id,
                     long_context=False, is_evaL_run=False)
+                pending["model_responses_decoded"] = decoded
                 bdata = self._add_execution_results_prompting(
                     bdata, exec_results, pending)
                 led.env_step(steps_in_turn, decoded,
