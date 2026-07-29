@@ -40,8 +40,10 @@ python /home/y-guo/reproduce/new1/ops/gpu_jobs.py free   # ≈6 秒
 日志里见到真实进度（模型加载完、第一个 batch、tqdm 行）才准发全量。
 smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 
-## Phase 4 — tmux 发射 + 登记 + 交监控入口
+## Phase 4 — 发射前 commit + tmux 发射 + 双登记 + 交监控入口
 
+0. **发射前先 commit 代码**。实验记录里存的 git HEAD，只有工作树干净时才追得回
+   真实跑的那版代码。脏工作树 `record.py` 会打 ⚠️ 但不拦你——追溯断链是你自己的损失。
 1. 一切进 tmux（禁 bare ssh / nohup）。session 名 `new1_<task>_<host>g<gpu>`，
    日志 `<workdir>/logs/<session>.log`。命令用 python subprocess 拼，防引号地狱。
 2. 发射后立即登记台账（一个任务一次 register，多分片多个 --piece）：
@@ -50,8 +52,17 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
      --piece tokyo106:0:new1_task_t106g0:/path/to/log \
      --piece tokyo106:1:new1_task_t106g1:/path/to/log2
    ```
-3. 验证存活：tail 每个日志确认真实进度出现，才算发射成功。
-4. **必须把这两条命令原样交给用户**（这是用户亲自监控的入口）：
+3. **同时记一条实验记录**（run_id 用台账同名，两边能对上）：
+   ```bash
+   python ops/record.py start --name <task> --track <所属方向> \
+     --model <模型> --seed <种子> --host <host> --gpu <idx> \
+     --param <k=v> --data <原始数据落盘路径> --cmd "<实际执行的命令>" \
+     --note "这次想验证什么"
+   ```
+   `--track` 要和 `TIMELINE.md` 里的方向对得上；`--data` 写 NFS 上的真实路径，
+   原始数据不进 git，全靠这个字段和 run_id 目录名追溯。
+4. 验证存活：tail 每个日志确认真实进度出现，才算发射成功。
+5. **必须把这两条命令原样交给用户**（这是用户亲自监控的入口）：
    ```bash
    python /home/y-guo/reproduce/new1/ops/gpu_jobs.py           # 看一眼
    python /home/y-guo/reproduce/new1/ops/gpu_jobs.py watch     # 30s 自动刷新
@@ -65,13 +76,23 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 交叉核对 tqdm 自报值（方法论见 `~/.claude/skills/monitor-job/SKILL.md`）。
 发现 EXIT 且进度不满 → 读日志定位，能修则修后重发该分片。
 
-## Phase 6a — 正常收尾（强制三连）
+## Phase 6a — 正常收尾（强制五连）
 
 1. **汇报**：结果文件在哪、条数对不对（分片合并后 count == total）、
    关键数字一句话。
-2. **释放**：杀掉所有残留 tmux session / vLLM 服务，
+2. **记数字**：
+   ```bash
+   python ops/record.py finish <run_id> --metric <k=v> [--metric ...] \
+     --data <最终数据路径> --conclusion "一句话结论"
+   ```
+   数字自动进 `RESULTS.md`。**如果这个结论动了 `WORKPLAN.md` 里任何一条判断，
+   同时往 `TIMELINE.md` 最上面追加一条方向决策**（写清决定了什么、被哪个 run_id
+   触发、作废了什么）。纯进度推进不用记 TIMELINE，那是 `plans/` worklog 的活。
+3. **释放**：杀掉所有残留 tmux session / vLLM 服务，
    `nvidia-smi` 确认显存归零。批量任务结束不许占卡过夜。
-3. **销号**：`python ops/gpu_jobs.py finish <task>`。
+4. **销号**：`python ops/gpu_jobs.py finish <task>`。
+5. **提交**：`git add` 本次改的代码 + `ops/runs.jsonl` + `RESULTS.md`
+   (+ `TIMELINE.md` 如有)，commit message 里带上 run_id。
 
 ## Phase 6b — 中途中断（用户喊停或巡检判死）
 
@@ -85,3 +106,7 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 - 台账只通过 `gpu_jobs.py register/finish` 读写，不手改 jobs.json。
 - 占用状态永远 Phase 1 现场实探，档案文件只记慢变量。
 - 一个任务一个 name，重名先 finish 旧的。
+- 统计数字只通过 `record.py start/finish` 写；`RESULTS.md` 是渲染产物，
+  手改会在下次 render 时被覆盖。`runs.jsonl` 只增不改。
+- run_id 是贯穿主键：原始数据目录名 / tmux session / 台账 name / commit
+  message 四处一致，缺一处就断一条追溯路径。
