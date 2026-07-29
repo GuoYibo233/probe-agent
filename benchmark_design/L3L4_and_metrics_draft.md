@@ -181,3 +181,23 @@ $$\mathrm{NTI}_{acc} \;=\; \bar u^{\mathrm{nomem}}_Q - \bar u^{\mathrm{mem}}_Q, 
 ## 附:sim(·,·) 嵌入模型默认决定(2026-07-27,主对话按推荐钉死,待用户确认)
 
 L4 准入阈值 τ 依赖的相似度仪器定为 **BAAI/bge-large-en-v1.5(本地)**:evo_mem 冒烟已用 bge 系检索器,零新依赖、无 API、可复现;论文中声明仪器并附"换 gte-Qwen2 复算 τ 的稳健性检查"一行。此决定不改变任何已有数字,只解锁 L4 数据集构造。
+
+## 5. 落地状态批注(2026-07-30 凌晨,D 线;只增不改上文)
+
+1. **§0 改名待办已执行**:8B 全矩阵聚合(`fig1_pilot/ANALYSIS_8bfull.md`)与指标
+   脚本均已按正典编号出数;旧编号只残留在 results 文件名里,`metrics.py
+   --legacy-levels` 载入时映射。
+2. **§3 指标已断言化**:`benchmark_design/metrics.py`,五条聚合规则(§3.5)全部
+   是代码断言,`--selftest` 含幸存者偏差场景;8bfull 冒烟对账见
+   `METRICS_SMOKE_8bfull.md`。
+3. **§1/§2 生成脚本已交付**(`gen_l4_alfworld.py` / `gen_l4_2wiki.py` /
+   `gen_l3_2wiki.py`,冒烟与坑见 `GEN_REPORT.md`)。**实测修正一条口径**:
+   ALFWorld 位置改换族(§2.2 第 1 类)**产不出 T3**——失败点必是
+   `take X from <老位置>` 不在可执行动作里,警报响亮(800 候选 259 有效对,
+   T3 = 0)。**§2.4 的 T1:T2:T3 配平在 ALFWorld 侧只能靠动词翻转与数量翻转
+   (§2.2 第 2/3 类)补 T3**;当前 T3 的现成来源是 2wiki 极性翻转(1690 条全 T3)。
+4. **天花板基线(第 3.6 表 Fig.2/3 的 oracle 线)已可算**:
+   `oracle_ceiling.py`——零成本回放上界,只在 L2 非零(8bfull 上 +21.0%),
+   判读见 `ORACLE_CEILING_8bfull.md`。
+5. τ 过滤(§2.1 第 1 条)未做:三个生成脚本留 `--sim-filter` 接口,
+   待 bge-large 就位后补,不阻塞第一批探针数据。
