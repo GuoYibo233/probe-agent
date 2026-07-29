@@ -10,6 +10,7 @@
 envs/cuda-compat-13.0/
 
 # ── 第三方仓库与 benchmark 套件（各自带 .git，用 clone 复原）
+paper/acl-style-files/
 related_work/
 jacobian-lens/
 envs/tau2-bench/
@@ -49,6 +50,15 @@ logs/
 *.feather
 *.npy
 *.npz
+
+# ── LaTeX 编译中间产物（论文成品 PDF 也不入库，tex 源是唯一权威）
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
 
 # ── Python 杂物
 __pycache__/
