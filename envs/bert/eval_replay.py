@@ -93,6 +93,20 @@ def agg(recs):
                 earliness=round(early, 4), wrong_spec=round(wrong, 4))
 
 
+def economics(recs):
+    """投机经济换算(T4,离线估算;字段口径与 T10 fork 对照的在线实测对齐,日后并排对账):
+    - exp_token_saving_ratio: 截断口径,每事件期望省下的思考 token 比例
+      = Σ触发事件(1-depth) / 全事件数 ≡ 触发率×提前量(对错都省,错的代价记在错误投机率)
+    - exp_overlap_ratio: 预取口径,期望重叠延迟比例;只有触发且预测正确的事件
+      贡献重叠窗口(错误预取不省延迟但也无害)
+    """
+    n = max(len(recs), 1)
+    save = sum(1 - r["depth"] for r in recs if r["fired"]) / n
+    overlap = sum(1 - r["depth"] for r in recs if r["fired"] and r["ok"]) / n
+    return dict(exp_token_saving_ratio=round(save, 4),
+                exp_overlap_ratio=round(overlap, 4))
+
+
 def bootstrap(recs, rng):
     by_unit = defaultdict(list)
     for r in recs:
@@ -119,6 +133,8 @@ def main():
                     choices=["tales", "appworld", "bfcl"])
     ap.add_argument("--run", default=None)
     ap.add_argument("--data", default=str(BASE / "bert_data" / "v2"))
+    ap.add_argument("--cached-logits", action="store_true",
+                    help="读 run 目录已存的 logits_*.pt,跳过模型推理(纯 CPU 后处理)")
     args = ap.parse_args()
     run = Path(args.run or BASE / "bert_runs" / f"{args.env}_v2")
     data = Path(args.data) / args.env
@@ -126,11 +142,12 @@ def main():
     rng = random.Random(SEED)
 
     label2id = json.loads((run / "best" / "label_map.json").read_text())
-    tok = AutoTokenizer.from_pretrained(run / "best")
-    tok.truncation_side = "left"
-    model = AutoModelForSequenceClassification.from_pretrained(
-        run / "best", torch_dtype=torch.bfloat16,
-        attn_implementation="sdpa").to(dev)
+    if not args.cached_logits:
+        tok = AutoTokenizer.from_pretrained(run / "best")
+        tok.truncation_side = "left"
+        model = AutoModelForSequenceClassification.from_pretrained(
+            run / "best", torch_dtype=torch.bfloat16,
+            attn_implementation="sdpa").to(dev)
 
     splits = {}
     for sp in ("calA", "calB", "test"):
@@ -138,9 +155,14 @@ def main():
                 if r["label"] in label2id]
         for r in rows:
             r["y"] = label2id[r["label"]]
-        logits = score(model, tok, rows, dev)
+        if args.cached_logits:
+            logits = torch.load(run / f"logits_{sp}.pt")
+            assert len(logits) == len(rows), \
+                f"{sp}: 缓存 logits {len(logits)} 行 != 数据 {len(rows)} 行,--data 与当次评测不同源"
+        else:
+            logits = score(model, tok, rows, dev)
+            torch.save(logits, run / f"logits_{sp}.pt")
         splits[sp] = (rows, logits)
-        torch.save(logits, run / f"logits_{sp}.pt")
 
     # 1) calA 拟温度
     rows_a, lg_a = splits["calA"]
@@ -150,9 +172,11 @@ def main():
     rows_b, lg_b = splits["calB"]
     probs_b = torch.softmax(lg_b / T, -1)
     sweep = []
+    econ_sweep = []
     for th in THETAS:
         recs = list(replay(rows_b, probs_b, th).values())
         sweep.append((th, agg(recs)))
+        econ_sweep.append((th, economics(recs)))
     chosen = {}
     for risk in RISK_TARGETS:
         ok = [(th, a) for th, a in sweep
@@ -164,12 +188,15 @@ def main():
     rows_t, lg_t = splits["test"]
     probs_t = torch.softmax(lg_t / T, -1)
     final = {}
+    econ_test = {}
     for risk, th in chosen.items():
         if th is None:
             final[risk] = None
+            econ_test[str(risk)] = None
             continue
         recs = list(replay(rows_t, probs_t, th).values())
         final[risk] = dict(theta=th, **agg(recs), ci=bootstrap(recs, rng))
+        econ_test[str(risk)] = dict(theta=th, **economics(recs))
 
     # stop-time 校准(test,取风险 0.05 的 θ;无则 0.8)
     th0 = chosen.get(0.05) or 0.8
@@ -207,6 +234,12 @@ def main():
         "depth_bucket_acc_test": depth_acc,
         "prior_baseline_event_acc": round(prior_acc, 4),
         "n_events_test": len(ev_labels),
+        "speculation_economics": {
+            "note": ("T4 离线估算;与 T10 fork 对照(在线实测)同量对账。"
+                     "save=截断口径 触发率×提前量;overlap=预取口径 仅触发且对"),
+            "calB_sweep": econ_sweep,
+            "test_frozen": econ_test,
+        },
     }
     (run / "REPLAY_REPORT.json").write_text(
         json.dumps(rep, ensure_ascii=False, indent=1))
@@ -226,6 +259,18 @@ def main():
     md += ["", "## 深度桶 acc(样本级,诊断)",
            json.dumps(depth_acc), "", "## stop-time 校准(首次触发点)",
            json.dumps(stoptime, ensure_ascii=False)]
+    md += ["", "## 投机经济换算(T4 离线估算,口径对齐 T10 fork 对照)",
+           "| 口径 | θ | 期望省 token 比例(截断) | 期望重叠延迟比例(预取) |",
+           "|---|---|---|---|"]
+    for risk, e in econ_test.items():
+        if e:
+            md.append(f"| test 风险≤{risk} | {e['theta']} | "
+                      f"{e['exp_token_saving_ratio']} | {e['exp_overlap_ratio']} |")
+        else:
+            md.append(f"| test 风险≤{risk} | - | - | - |")
+    md += ["", "calB 全 θ 档:", "| θ | 省 token | 重叠延迟 |", "|---|---|---|"]
+    md += [f"| {th} | {e['exp_token_saving_ratio']} | {e['exp_overlap_ratio']} |"
+           for th, e in econ_sweep]
     (run / "REPLAY_REPORT.md").write_text("\n".join(md) + "\n")
     print(json.dumps(rep["test_frozen"], indent=1))
 
