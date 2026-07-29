@@ -1,0 +1,51 @@
+---
+name: handoff
+description: 给当前工作线写交接书，让任何接手 session 五分钟内无缝接管。全流程：实探现状（台账/日志/git/runs.jsonl）→ 按六节定式整文件重写 memory 里的 handoff → 同步索引 → 本 session 进入收尾模式。Invoke whenever Dungeon♂Master says "写交接书"、"handoff"、"交接一下"、"换个 session"、"收尾交接"、or a session winds down with work still in flight.
+version: 1.0.0
+---
+
+# handoff — 工作线交接书
+
+交接书的读者是一个什么都不知道的新 session。验收标准只有一条：
+新 session 只读这一份文件 + 它指向的路径，能在 5 分钟内接管所有在跑任务、
+不踩已知坑、不擅自开未拍板的工作。
+
+## 铁律
+
+- **现状必须实探，不抄记忆不抄旧交接书**。在跑任务逐个 tail 日志拿当下进度，
+  写进交接书的每个状态都带绝对时刻（JST）；ETA 写绝对时刻，不写"还有 2 小时"。
+- **一条工作线只留一份交接书**，文件名 `handoff-<线名>.md`，放本项目 memory 目录
+  （系统提示里给出的那个）。新交接 = 整文件重写，不追记不打补丁——历史在
+  git/TIMELINE 里，交接书只描述现在。工作线终结时删文件 + 摘除 MEMORY.md 索引行。
+- **未拍板事项单独一节**，逐条注明"问过没答 / 没问过"，接手 session 禁止擅自开工。
+- 写完交接书的 session 进入**收尾模式**：只看护在跑任务到毕业 + 履行已拍板的
+  收尾义务（gpu-run Phase 6a 五连），不接任何新工作；新想法一律写进交接书的队列。
+
+## Phase 1 — 实探（四路取证）
+
+1. `python3 ops/gpu_jobs.py json`：active 台账；逐 piece tail 日志取真实进度。
+2. `git log --oneline -5` + `git status --short`：HEAD 在哪、有哪些未提交的账。
+3. `tail ops/runs.jsonl`：哪些 run_id 有 start 没 finish。
+4. 读 `WORKPLAN.md` 当前节 + `TIMELINE.md` 最新条，确认方向没变；变了先补 TIMELINE。
+
+## Phase 2 — 写交接书（六节定式）
+
+```markdown
+# <线名> 交接书（<YYYY-MM-DD HH:MM JST>，交接自 session <短id>）
+## 在跑的任务        台账名 / host / tmux / 当下进度@时刻 / 完成判据 / ETA 绝对时刻 / 收尾义务
+## 下一步队列（已拍板） 按序；每条给可直接复制执行的命令 + 成功判据
+## 未拍板事项        禁止擅自开工；注明问过没答 / 没问过
+## 资产地图          数据 / 脚本 / 环境 / 权重的真实路径；逐条标注是否已 commit
+## 已知坑            接手别再踩
+## 未结的账          未提交文件 / 没 finish 的 run_id / 没销号的台账 / 没杀的服务
+```
+
+frontmatter 按 memory 规范（`type: project`），description 里写明
+"接手 session 先读这条"。
+
+## Phase 3 — 落地
+
+1. Write 整文件覆盖到 `<memory目录>/handoff-<线名>.md`。
+2. 同步 `MEMORY.md` 索引行（没有就加，有就更新措辞）。
+3. 向用户复述三件事：交接书位置、在跑任务一句话清单、
+   本 session 收尾模式下还会做哪些动作（此后不接新工作）。
