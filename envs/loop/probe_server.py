@@ -29,9 +29,13 @@ class Probe:
         self.id2label = {v: k for k, v in label2id.items()}
         self.tok = AutoTokenizer.from_pretrained(run / "best")
         self.tok.truncation_side = "left"
+        # reference_compile 必须关:ModernBERT 默认按序列长度重编译,线上
+        # 变长请求每个新长度付 ~400-560ms;关掉后任意长度稳定 8-10ms。
+        # 数值一致性由 smoke_dry 全量对账兜底。
         self.model = AutoModelForSequenceClassification.from_pretrained(
             run / "best", torch_dtype=torch.bfloat16,
-            attn_implementation="sdpa").to(device).eval()
+            attn_implementation="sdpa",
+            reference_compile=False).to(device).eval()
         if temperature is None:
             temperature = json.loads(
                 (run / "REPLAY_REPORT.json").read_text())["temperature"]
