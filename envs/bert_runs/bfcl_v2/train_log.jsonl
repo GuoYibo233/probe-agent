@@ -1,8 +1,0 @@
-{"event": "start", "env": "bfcl", "n_train": 26309, "n_eval": 3174, "n_labels": 101, "steps": 2469, "smoke": false, "t": 1785322274.4}
-{"event": "step", "ep": 0, "gstep": 50, "loss": 4.7085, "ips": 21.8, "t": 1785322347.7}
-{"event": "step", "ep": 0, "gstep": 100, "loss": 4.6518, "ips": 21.3, "t": 1785322424.5}
-{"event": "step", "ep": 0, "gstep": 150, "loss": 4.511, "ips": 21.4, "t": 1785322498.9}
-{"event": "step", "ep": 0, "gstep": 200, "loss": 4.3932, "ips": 20.8, "t": 1785322582.1}
-{"event": "step", "ep": 0, "gstep": 250, "loss": 4.2471, "ips": 20.6, "t": 1785322662.0}
-{"event": "step", "ep": 0, "gstep": 300, "loss": 4.0931, "ips": 20.5, "t": 1785322742.7}
-{"event": "step", "ep": 0, "gstep": 350, "loss": 3.9244, "ips": 20.6, "t": 1785322816.9}

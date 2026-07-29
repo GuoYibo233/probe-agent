@@ -33,7 +33,6 @@ envs/bert_data/**
 envs/bert_runs/**
 !envs/bert_runs/**/
 !envs/bert_runs/**/*.md
-!envs/bert_runs/**/train_log.jsonl
 
 */results/**
 !*/results/**/
