@@ -25,20 +25,6 @@
           "log": "/home/y-guo/reproduce/new1/envs/bert_runs/logs/new1_bertv3_bfcl_t106g5.log"
         }
       ]
-    },
-    {
-      "name": "bert_replay_appworld_v3",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-07-30 08:14",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "2",
-          "session": "new1_bert_replay_appworld_v3_t106g2",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_bert_replay_appworld_v3_t106g2.log"
-        }
-      ]
     }
   ],
   "history": [
@@ -452,6 +438,21 @@
         }
       ],
       "finished_at": "2026-07-30 08:15"
+    },
+    {
+      "name": "bert_replay_appworld_v3",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-07-30 08:14",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_bert_replay_appworld_v3_t106g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_bert_replay_appworld_v3_t106g2.log"
+        }
+      ],
+      "finished_at": "2026-07-30 08:25"
     }
   ]
 }
