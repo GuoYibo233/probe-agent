@@ -116,13 +116,16 @@ def pick_doc(query, docs, served):
     return order[0]
 
 
+GEN_KW = {"do_sample": False}  # T11: main() may switch to sampling via --temperature
+
+
 def gen_until(model, tok, ids, stop_pred, budget, chunk=64):
     start = ids.shape[1]
     while ids.shape[1] - start < budget:
         with torch.no_grad():
             out = model.generate(
                 ids, max_new_tokens=min(chunk, budget - (ids.shape[1] - start)),
-                do_sample=False, pad_token_id=tok.eos_token_id)
+                pad_token_id=tok.eos_token_id, **GEN_KW)
         ids = out
         new_text = tok.decode(ids[0, start:], skip_special_tokens=False)
         if stop_pred(new_text) or ids[0, -1].item() == tok.eos_token_id:
@@ -164,8 +167,8 @@ def force_answer(model, tok, ids):
     """Budget exhausted without ANSWER: append 'ANSWER:' and let it finish."""
     ids, _ = append_text(tok, ids, "\nANSWER:")
     with torch.no_grad():
-        out = model.generate(ids, max_new_tokens=24, do_sample=False,
-                             pad_token_id=tok.eos_token_id)
+        out = model.generate(ids, max_new_tokens=24,
+                             pad_token_id=tok.eos_token_id, **GEN_KW)
     text = tok.decode(out[0, ids.shape[1]:], skip_special_tokens=True)
     return out, text.strip().split("\n")[0].strip() or None
 
@@ -242,11 +245,19 @@ def main():
     ap.add_argument("--wrong", action="store_true",
                     help="add wrong-doc injection conds (distractor at start/50)")
     ap.add_argument("--dataset", default="hotpot", choices=["hotpot", "2wiki"])
+    ap.add_argument("--temperature", type=float, default=0.0,
+                    help="T11: >0 switches all generation to sampling (variance check)")
+    ap.add_argument("--gen-seed", type=int, default=-1,
+                    help="T11: torch.manual_seed for sampling runs; -1 = off")
     ap.add_argument("--tray", action="store_true",
                     help="add condition: both golds + 1 distractor at start")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     shard_i, shard_n = (int(x) for x in args.shard.split("/"))
+    if args.temperature > 0:
+        GEN_KW.update(do_sample=True, temperature=args.temperature)
+    if args.gen_seed >= 0:
+        torch.manual_seed(args.gen_seed)
 
     tok = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForCausalLM.from_pretrained(
@@ -280,6 +291,7 @@ def main():
             em, soft = grade(ans, q["answer"])
             base = {"qid": q["qid"], "type": typ, "cond": "baseline",
                     "dataset": args.dataset,
+                    "temperature": args.temperature, "gen_seed": args.gen_seed,
                     "model": args.model, "n_calls": len(hops),
                     "call_toks": [h["call_tok"] for h in hops],
                     "gen_tokens": gen_b, "answer": ans, "em": em, "soft": soft,
@@ -313,6 +325,7 @@ def main():
                 em1, soft1 = grade(ans1, q["answer"])
                 emit({"qid": q["qid"], "type": typ, "cond": cond, "offset": d,
                       "model": args.model, "dataset": args.dataset,
+                      "temperature": args.temperature, "gen_seed": args.gen_seed,
                       "kept_gen_tokens": kept_gen, "cont_gen_tokens": gen1,
                       "gen_tokens": kept_gen + gen1,
                       "baseline_gen_tokens": gen_b,
