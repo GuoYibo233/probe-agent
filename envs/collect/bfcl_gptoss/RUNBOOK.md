@@ -39,9 +39,10 @@ python3 - <<'EOF'
 import json, glob
 f = glob.glob("/home/y-guo/reproduce/new1/envs/runs/full_v2_topup/bfcl_gptoss/**/*multi_turn*result.json", recursive=True)[0]
 e = json.loads(open(f).readline())
-logs = e["inference_log"]
-rc = [m.get("reasoning_content","") for turn in logs for m in (turn if isinstance(turn,list) else [turn]) if isinstance(m,dict) and m.get("role")=="assistant"]
-print("思考字符数(每轮):", [len(x) for x in rc][:10])
+# 思考在结果条目顶层 reasoning_content 字段,形状 list[list[str]](按轮按步);
+# 旧版脚本去 inference_log 里找 role=assistant 会得到空列表假阴性(2026-07-30 实测修正)
+rc = e.get("reasoning_content") or []
+print("思考字符数(逐轮逐步):", [[len(s) for s in turn] for turn in rc][:10])
 print("首轮动作:", str(e["result"][0])[:200])
 EOF
 ```
