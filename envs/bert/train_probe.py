@@ -65,7 +65,8 @@ def evaluate(model, loader, dev):
     wc = ws = lc = ln = 0.0
     for enc, y, w, last in loader:
         enc = {k: v.to(dev) for k, v in enc.items()}
-        pred = model(**enc).logits.argmax(-1).cpu()
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            pred = model(**enc).logits.argmax(-1).cpu()
         ok = (pred == y).float()
         wc += (ok * w).sum().item()
         ws += w.sum().item()
@@ -102,7 +103,7 @@ def main():
     tok = AutoTokenizer.from_pretrained(MODEL)
     tok.truncation_side = "left"          # 保思考尾巴
     model = AutoModelForSequenceClassification.from_pretrained(
-        MODEL, num_labels=len(label2id), torch_dtype=torch.bfloat16,
+        MODEL, num_labels=len(label2id),
         attn_implementation="sdpa")
     model.config.reference_compile = False
     model.to(dev).train()
@@ -138,7 +139,9 @@ def main():
         t0, run = time.time(), 0.0
         for i, (enc, y, w, _last) in enumerate(tr_dl):
             enc = {k: v.to(dev) for k, v in enc.items()}
-            loss = (lossf(model(**enc).logits, y.to(dev))
+            with torch.autocast("cuda", dtype=torch.bfloat16):
+                logits = model(**enc).logits
+            loss = (lossf(logits.float(), y.to(dev))
                     * w.to(dev)).sum() / w.sum().to(dev)
             (loss / args.accum).backward()
             run += loss.item()
