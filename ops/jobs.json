@@ -153,20 +153,6 @@
           "log": "/home/y-guo/reproduce/new1/envs/bert_runs/logs/new1_bertfix_bfcl_t106g2.log"
         }
       ]
-    },
-    {
-      "name": "bert_replay_bfcl_v2fix",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-07-29 22:35",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "2",
-          "session": "new1_bert_replay_bfcl_v2fix_t106g2",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_bert_replay_bfcl_v2fix_t106g2.log"
-        }
-      ]
     }
   ],
   "history": [
@@ -256,6 +242,21 @@
         }
       ],
       "finished_at": "2026-07-29 22:38"
+    },
+    {
+      "name": "bert_replay_bfcl_v2fix",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-07-29 22:35",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_bert_replay_bfcl_v2fix_t106g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_bert_replay_bfcl_v2fix_t106g2.log"
+        }
+      ],
+      "finished_at": "2026-07-29 22:40"
     }
   ]
 }
