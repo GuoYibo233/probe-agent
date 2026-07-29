@@ -1,0 +1,3 @@
+{"event": "start", "env": "tales", "n_train": 70252, "n_eval": 9407, "n_labels": 13, "steps": 6588, "smoke": false, "t": 1785322275.2}
+{"event": "step", "ep": 0, "gstep": 50, "loss": 2.8339, "ips": 8.1, "t": 1785322473.1}
+{"event": "step", "ep": 0, "gstep": 100, "loss": 2.6072, "ips": 7.7, "t": 1785322690.4}

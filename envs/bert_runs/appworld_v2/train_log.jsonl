@@ -1,0 +1,4 @@
+{"event": "start", "env": "appworld", "n_train": 35302, "n_eval": 5793, "n_labels": 79, "steps": 3312, "smoke": false, "t": 1785322274.9}
+{"event": "step", "ep": 0, "gstep": 50, "loss": 4.4317, "ips": 9.5, "t": 1785322443.1}
+{"event": "step", "ep": 0, "gstep": 100, "loss": 4.2215, "ips": 9.5, "t": 1785322611.3}
+{"event": "step", "ep": 0, "gstep": 150, "loss": 3.5884, "ips": 9.6, "t": 1785322773.0}

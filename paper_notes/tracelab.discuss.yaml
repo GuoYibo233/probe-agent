@@ -1,0 +1,128 @@
+paper: "TraceLab: Characterizing Coding Agent Workloads for LLM Serving"
+arxiv: "2606.30560"
+artifact_url: https://claude.ai/code/artifact/07174a4f-75e7-48a1-ac5e-7b6d498e4c72
+repo: related_work/TraceLab
+codemap: paper_notes/tracelab.codemap.md   # 概念→代码位置+工程要点
+build_script: /tmp/claude-12114/-home-y-guo-reproduce-new1/00ec83a8-c1c9-454c-bda3-493f38aac3df/scratchpad/tracelab/build.py   # artifact 重建脚本（scratchpad，会话过期后需重抓）
+concepts:
+  - id: c1
+    name: 缺少真实 coding-agent 工作负载数据的问题
+    deps: []
+    core: true
+    status: unlit
+    section: "§1, §2.2"
+  - id: c2
+    name: session / request / step 三层结构与 agentic loop
+    deps: []
+    core: true
+    status: unlit
+    section: "§2.1"
+  - id: c3
+    name: prefix caching
+    deps: []
+    core: true
+    status: unlit
+    section: "§1, §7"
+  - id: c4
+    name: token accounting（P / A / O 三分）
+    deps: [c2, c3]
+    core: true
+    status: unlit
+    section: "§3.2"
+  - id: c5
+    name: trace 采集流水线（extract–normalize–anonymize）
+    deps: [c1, c2]
+    core: false
+    status: unlit
+    section: "§3"
+  - id: c6
+    name: TraceLab 数据集概况
+    deps: [c5]
+    core: true
+    status: unlit
+    section: "§1, Table 1"
+  - id: c7
+    name: 自主循环统计
+    deps: [c2, c6]
+    core: false
+    status: unlit
+    section: "§4.1, Table 2"
+  - id: c8
+    name: context 增长与 compaction
+    deps: [c2, c6]
+    core: false
+    status: unlit
+    section: "§4.2, Tables 3-4"
+  - id: c9
+    name: 成本分布：prefix tokens 主导
+    deps: [c4, c6]
+    core: true
+    status: unlit
+    section: "§4.3, Table 5"
+  - id: c10
+    name: 时间分布：human-bound sessions
+    deps: [c2, c6]
+    core: false
+    status: unlit
+    section: "§4.4, Table 7"
+  - id: c11
+    name: 长 context、短 output
+    deps: [c4, c6]
+    core: false
+    status: unlit
+    section: "§5.1-5.2, Table 8"
+  - id: c12
+    name: bimodal input structure
+    deps: [c11]
+    core: false
+    status: unlit
+    section: "§5.1, Fig 1-2, Table 9"
+  - id: c13
+    name: output-cached vs output-resend
+    deps: [c4, c3]
+    core: false
+    status: unlit
+    section: "§5.3"
+  - id: c14
+    name: normalized decode speed 与 TTFT 估计
+    deps: [c4, c6]
+    core: false
+    status: unlit
+    section: "§5.4"
+  - id: c15
+    name: tool call 的重尾分布
+    deps: [c2, c6]
+    core: true
+    status: unlit
+    section: "§6.1-6.2"
+  - id: c16
+    name: tool call overhead（残差）
+    deps: [c15]
+    core: false
+    status: unlit
+    section: "§6.3, Table 10"
+  - id: c17
+    name: prefix cache 命中率与 idle 驱动的 miss
+    deps: [c3, c4, c10]
+    core: true
+    status: unlit
+    section: "§7.1-7.2, Table 11, Fig 11"
+  - id: c18
+    name: fresh tokens 与 prefill amplification
+    deps: [c4, c17]
+    core: true
+    status: unlit
+    section: "§7.3, Table 12"
+  - id: c19
+    name: 驱逐时间–存储量权衡
+    deps: [c17, c18]
+    core: false
+    status: unlit
+    section: "§7.4, Fig 12"
+  - id: c20
+    name: human thinking time 的消费者成本上界
+    deps: [c17, c18, c9]
+    core: false
+    status: unlit
+    section: "§7.5, Table 13"
+session_log: []

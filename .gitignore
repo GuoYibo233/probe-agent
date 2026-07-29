@@ -1,0 +1,61 @@
+# new1 版本控制边界
+#
+# 原则：代码 / 笔记 / 统计数字 进库；虚拟环境 / 第三方仓库 / 实验原始数据 不进库。
+# 原始数据靠 NFS 路径 + 各批次的 .md 出厂报告追溯，不靠 git。
+
+# ── 虚拟环境（uv 管理，用 uv.lock 复原）
+*-env/
+.venv/
+**/.venv/
+envs/cuda-compat-13.0/
+
+# ── 第三方仓库与 benchmark 套件（各自带 .git，用 clone 复原）
+related_work/
+jacobian-lens/
+envs/tau2-bench/
+envs/appworld/
+envs/tales/
+envs/bfcl/
+
+# ── 大体积原始数据
+fig1_pilot/alfworld_data/
+traj_pipeline/data/
+
+# ── 实验产物目录：只保留 .md 报告，其余（轨迹 / 权重 / 中间文件）不入库
+envs/runs/**
+!envs/runs/**/
+!envs/runs/**/*.md
+
+envs/bert_data/**
+!envs/bert_data/**/
+!envs/bert_data/**/*.md
+
+envs/bert_runs/**
+!envs/bert_runs/**/
+!envs/bert_runs/**/*.md
+!envs/bert_runs/**/train_log.jsonl
+
+*/results/**
+!*/results/**/
+!*/results/**/*.md
+
+# ── 日志与权重
+logs/
+*.log
+*.out
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.feather
+*.npy
+*.npz
+
+# ── Python 杂物
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# ── 本地设置（.claude/skills 与 agents 是工程资产，要入库）
+.claude/settings.local.json
