@@ -23,7 +23,9 @@ from datetime import datetime
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 REG_PATH = os.path.join(ROOT, "jobs.json")
-GPU_STATUS_SH = os.path.expanduser("~/.claude/skills/launch-gpu-job/scripts/gpu_status.sh")
+GPU_STATUS_SH = os.path.join(
+    os.path.dirname(ROOT), ".claude", "skills", "gpu-run", "scripts", "gpu_status.sh"
+)
 
 # tqdm 行（\r 已换成 \n 后）: " 42%|####  | 42/100 [00:31<00:43,  1.35it/s]"
 TQDM_RE = re.compile(

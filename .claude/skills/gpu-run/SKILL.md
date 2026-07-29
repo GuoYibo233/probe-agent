@@ -11,7 +11,9 @@ version: 1.0.0
 固定路径（NFS，处处一致）：
 - 慢变量档案：`/home/y-guo/reproduce/new1/ops/gpu_state.md`
 - 台账 CLI：`python /home/y-guo/reproduce/new1/ops/gpu_jobs.py`
-- 发射方法论（挑卡规则/分片/tmux 模板）：`~/.claude/skills/launch-gpu-job/SKILL.md`
+- 发射方法论（挑卡规则/分片/tmux 模板）：`.claude/skills/gpu-run/references/launch-methodology.md`
+- 测速与 ETA 方法论：`.claude/skills/gpu-run/references/monitor-methodology.md`
+- 探卡脚本：`.claude/skills/gpu-run/scripts/gpu_status.sh`
 
 ## Phase 0 — 读档案
 
@@ -29,7 +31,7 @@ python /home/y-guo/reproduce/new1/ops/gpu_jobs.py free   # ≈6 秒
 
 ## Phase 2 — 挑卡 + 分片
 
-按 launch-gpu-job SKILL 的规则：bf16 ≈ 2×params GB 估显存；
+按 `references/launch-methodology.md` 的规则：bf16 ≈ 2×params GB 估显存；
 48G 装得下 → 105/106/107 优先，大模型 → 108；分片当且仅当
 独立条目多且单卡 >1h；分片输出必须写不同文件。
 **追加本工程约束**：要装新 CUDA 轮子的任务避开 106/107（12.2 坑）；
@@ -78,7 +80,7 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 用户能自助看，但 Claude 不当甩手掌柜：长任务定时巡检**派只读的
 `job-monitor` agent**（`gpu_jobs.py json` 给它读；起服务期 10 分钟粒度，
 跑批期 15-30 分钟），ETA 要靠两个时间点的 Δitems/Δt
-交叉核对 tqdm 自报值（方法论见 `~/.claude/skills/monitor-job/SKILL.md`）。
+交叉核对 tqdm 自报值（方法论见 `references/monitor-methodology.md`）。
 发现 EXIT 且进度不满 → 读日志定位，能修则修后重发该分片。
 
 ## Phase 6a — 正常收尾（强制五连）
