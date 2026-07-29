@@ -58,3 +58,4 @@ __pycache__/
 
 # ── 本地设置（.claude/skills 与 agents 是工程资产，要入库）
 .claude/settings.local.json
+envs/bert_runs/
