@@ -32,7 +32,8 @@ python /home/y-guo/reproduce/new1/ops/gpu_jobs.py free   # ≈6 秒
 按 launch-gpu-job SKILL 的规则：bf16 ≈ 2×params GB 估显存；
 48G 装得下 → 105/106/107 优先，大模型 → 108；分片当且仅当
 独立条目多且单卡 >1h；分片输出必须写不同文件。
-**追加本工程约束**：要装新 CUDA 轮子的任务避开 106/107（12.2 坑）。
+**追加本工程约束**：要装新 CUDA 轮子的任务避开 106/107（12.2 坑）；
+已有的 cu128 轮子（如 mbert-env 的 torch）上 106/107 前必须先花 10 秒实测能跑。
 
 ## Phase 3 — smoke 再放量
 
@@ -41,6 +42,9 @@ python /home/y-guo/reproduce/new1/ops/gpu_jobs.py free   # ≈6 秒
 smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 
 ## Phase 4 — 发射前 commit + tmux 发射 + 双登记 + 交监控入口
+
+**执行方式**：发射环节整段派 `gpu-runner` agent 干（探卡/smoke/tmux/登记/验活
+打包给它，opus 够用），不在主对话手搓——主对话负责规划与写脚本。
 
 0. **发射前先 commit 代码**。实验记录里存的 git HEAD，只有工作树干净时才追得回
    真实跑的那版代码。脏工作树 `record.py` 会打 ⚠️ 但不拦你——追溯断链是你自己的损失。
@@ -71,8 +75,9 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 
 ## Phase 5 — 巡检（Claude 侧）
 
-用户能自助看，但 Claude 不当甩手掌柜：长任务定时巡检
-（`gpu_jobs.py json` 给 agent 读），ETA 要靠两个时间点的 Δitems/Δt
+用户能自助看，但 Claude 不当甩手掌柜：长任务定时巡检**派只读的
+`job-monitor` agent**（`gpu_jobs.py json` 给它读；起服务期 10 分钟粒度，
+跑批期 15-30 分钟），ETA 要靠两个时间点的 Δitems/Δt
 交叉核对 tqdm 自报值（方法论见 `~/.claude/skills/monitor-job/SKILL.md`）。
 发现 EXIT 且进度不满 → 读日志定位，能修则修后重发该分片。
 
