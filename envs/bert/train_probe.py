@@ -24,18 +24,18 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
+from input_modes import apply_mode
+
 BASE = Path("/home/y-guo/reproduce/new1/envs")
 MODEL = "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base"
 SEED = 20260729
 
 
 class JsonlDS(Dataset):
-    def __init__(self, path, label2id, limit=0):
-        self.rows = []
-        for line in open(path):
-            r = json.loads(line)
-            if r["label"] in label2id:
-                self.rows.append(r)
+    def __init__(self, path, label2id, limit=0, mode="full"):
+        rows = [r for r in map(json.loads, open(path))
+                if r["label"] in label2id]
+        self.rows = apply_mode(rows, mode)
         if limit:
             rng = random.Random(SEED)
             rng.shuffle(self.rows)
@@ -89,7 +89,12 @@ def main():
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
                     help="500 训练样本/200 评估样本/1 epoch,验证管线")
+    ap.add_argument("--input-mode", default="full",
+                    choices=["full", "no-think", "no-hist"],
+                    help="T5 消融:切 [THINKING] 或 [HISTORY] 段")
     args = ap.parse_args()
+    if args.input_mode != "full" and not args.out:
+        ap.error("消融训练必须显式 --out(默认目录会覆盖主线产物)")
 
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -110,8 +115,8 @@ def main():
 
     lim_tr, lim_ev = (500, 200) if args.smoke else (0, 0)
     epochs = 1 if args.smoke else args.epochs
-    tr = JsonlDS(data / "train.jsonl", label2id, lim_tr)
-    ev = JsonlDS(data / "calA.jsonl", label2id, lim_ev)
+    tr = JsonlDS(data / "train.jsonl", label2id, lim_tr, args.input_mode)
+    ev = JsonlDS(data / "calA.jsonl", label2id, lim_ev, args.input_mode)
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -131,7 +136,8 @@ def main():
         print(kw, flush=True)
 
     log(event="start", env=args.env, n_train=len(tr), n_eval=len(ev),
-        n_labels=len(label2id), steps=steps, smoke=args.smoke)
+        n_labels=len(label2id), steps=steps, smoke=args.smoke,
+        input_mode=args.input_mode)
 
     best = -1.0
     gstep = 0
