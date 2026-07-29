@@ -15,7 +15,7 @@ REPLAY_REPORT.json。每次请求逐条记 jsonl —— serving 对照里
 import argparse
 import json
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import torch
@@ -106,7 +106,9 @@ def main():
             except Exception as e:
                 self._send(500, {"error": str(e)})
 
-    srv = ThreadingHTTPServer(("0.0.0.0", args.port), H)
+    # 必须单线程:PyTorch cuBLAS 句柄按线程缓存,thread-per-request 会让
+    # 每个请求付一次句柄重建(实测 ~760ms vs 同线程 14ms)。客户端本就串行。
+    srv = HTTPServer(("0.0.0.0", args.port), H)
     print(f"probe server ready :{args.port} run={args.run} "
           f"T={probe.T} labels={len(probe.id2label)}", flush=True)
     srv.serve_forever()
