@@ -53,30 +53,16 @@
       ]
     },
     {
-      "name": "t9_srv_vllm_q35",
-      "workdir": null,
+      "name": "bert_replay_appworld_v3",
+      "workdir": "/home/y-guo/reproduce/new1",
       "note": null,
-      "started_at": "2026-07-30 04:19",
+      "started_at": "2026-07-30 08:14",
       "pieces": [
         {
-          "host": "tokyo108",
-          "gpus": "1",
-          "session": "new1_vllm_q35_t108g1",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_vllm_q35_t108g1.log"
-        }
-      ]
-    },
-    {
-      "name": "t9_srv_probe_bfclv3",
-      "workdir": null,
-      "note": null,
-      "started_at": "2026-07-30 04:19",
-      "pieces": [
-        {
-          "host": "tokyo108",
+          "host": "tokyo106",
           "gpus": "2",
-          "session": "new1_probe_t108g2",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_probe_t108g2.log"
+          "session": "new1_bert_replay_appworld_v3_t106g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_bert_replay_appworld_v3_t106g2.log"
         }
       ]
     }
@@ -420,6 +406,51 @@
         }
       ],
       "finished_at": "2026-07-30 04:43"
+    },
+    {
+      "name": "t9_srv_vllm_q35",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 04:19",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_vllm_q35_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_vllm_q35_t108g1.log"
+        }
+      ],
+      "finished_at": "2026-07-30 05:35"
+    },
+    {
+      "name": "t9_srv_probe_bfclv3",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 04:19",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_probe_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_probe_t108g2.log"
+        }
+      ],
+      "finished_at": "2026-07-30 05:35"
+    },
+    {
+      "name": "bert_replay_tales_v2fix",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-07-30 04:45",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_bert_replay_tales_v2fix_t106g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_bert_replay_tales_v2fix_t106g2.log"
+        }
+      ],
+      "finished_at": "2026-07-30 08:09"
     }
   ]
 }
