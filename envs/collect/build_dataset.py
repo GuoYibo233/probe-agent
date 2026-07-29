@@ -167,8 +167,8 @@ def bfcl_events(runs):
         if model is None:                     # 评分/日志等非模型目录
             continue
         seen = set()
-        for f in glob.glob(str(d / "**" / "*multi_turn*result.json"),
-                           recursive=True):
+        for f in sorted(glob.glob(str(d / "**" / "*multi_turn*result.json"),
+                                  recursive=True)):
             for line in open(f):
                 entry = json.loads(line)
                 if entry["id"] in seen:
