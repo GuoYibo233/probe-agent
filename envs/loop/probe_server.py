@@ -19,6 +19,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import torch
+
+# sdpa 禁 cuDNN 后端:cuDNN attention 对每个新序列长度在 CPU 上重建执行
+# 计划(profiler 实测 22 层 ×35ms ≈ 770ms/新长度,GPU 实际算力仅 2.4ms),
+# 线上变长请求等于每次都付。禁掉后走 flash,任意新长度 11-15ms。
+torch.backends.cuda.enable_cudnn_sdp(False)
+
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 
@@ -29,9 +35,9 @@ class Probe:
         self.id2label = {v: k for k, v in label2id.items()}
         self.tok = AutoTokenizer.from_pretrained(run / "best")
         self.tok.truncation_side = "left"
-        # reference_compile 必须关:ModernBERT 默认按序列长度重编译,线上
-        # 变长请求每个新长度付 ~400-560ms;关掉后任意长度稳定 8-10ms。
-        # 数值一致性由 smoke_dry 全量对账兜底。
+        # reference_compile 关掉,免得 serving 进程里 dynamo 编译添乱
+        # (按长度慢的真凶是 cuDNN sdp,见文件头);数值一致性由
+        # smoke_dry 全量对账兜底。
         self.model = AutoModelForSequenceClassification.from_pretrained(
             run / "best", torch_dtype=torch.bfloat16,
             attn_implementation="sdpa",
