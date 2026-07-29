@@ -51,6 +51,90 @@
           "log": "/home/y-guo/reproduce/new1/envs/bert_runs/logs/new1_bertv3_bfcl_t106g5.log"
         }
       ]
+    },
+    {
+      "name": "hotpot_t11_var",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 04:14",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "hotpot_t11_var_t105g0",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g0.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "hotpot_t11_var_t105g1",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g1.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "2",
+          "session": "hotpot_t11_var_t105g2",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g2.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "3",
+          "session": "hotpot_t11_var_t105g3",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g3.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "4",
+          "session": "hotpot_t11_var_t105g4",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g4.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "5",
+          "session": "hotpot_t11_var_t105g5",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g5.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "hotpot_t11_var_t105g6",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g6.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "7",
+          "session": "hotpot_t11_var_t105g7",
+          "log": "/home/y-guo/reproduce/new1/logs/hotpot_t11_var_t105g7.log"
+        }
+      ]
+    },
+    {
+      "name": "t9_srv_vllm_q35",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 04:19",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_vllm_q35_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_vllm_q35_t108g1.log"
+        }
+      ]
+    },
+    {
+      "name": "t9_srv_probe_bfclv3",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 04:19",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_probe_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_probe_t108g2.log"
+        }
+      ]
     }
   ],
   "history": [
@@ -314,6 +398,27 @@
         }
       ],
       "finished_at": "2026-07-30 02:05"
+    },
+    {
+      "name": "bfcl_gptoss_topup",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-07-30 03:50",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_srv_gptoss_bfcl_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_srv_gptoss_bfcl_t108g0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_topup_bfcl_gptoss",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/full_v2_topup/logs/bfcl_gptoss.log"
+        }
+      ],
+      "finished_at": "2026-07-30 04:34"
     }
   ]
 }

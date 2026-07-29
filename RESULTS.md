@@ -6,6 +6,8 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260730_0413_hotpot_t11_var` | 2026-07-30 04:14 | C1 | `40df390+dirty` | Qwen/Qwen3-8B | running | - | - |
+| `20260730_0350_bfcl_gptoss_topup` | 2026-07-30 03:50 | collect | `96d9605+dirty` | gpt-oss-120b | ok | n_traj=200 think_nonempty=200 bfcl_events_v3_1=3325 | gpt-oss 补采 200/200 全量落盘,思考/解析双判据全过;并入 v3_1 后 bfcl 事件 2265->3325,双重建逐字节一致 |
 | `20260730_0204_bert_replay_bfclv3` | 2026-07-30 02:04 | C2-2t | `381b834+dirty` | modernbert-base | ok | trig_acc_risk05=0.9925 coverage_risk05=0.5929 theta_risk05=0.95 trig_acc_risk10=0.8955 coverage_risk10=0.8894 earliness_risk05=0.6152 wrong_spec_risk05=0.0044 prior_baseline=0.049 train_best_calA=0.7518 | bfcl 结论对重切分稳健:精度99.3%/coverage59.3%,与 v2fix(96.6%/62.0%)CI 互覆;切分方差~±3pt 即误差棒 |
 | `20260730_0109_bert_replay_awfix` | 2026-07-30 01:09 | C2-2t | `35529fb+dirty` | modernbert-base | ok | trig_acc_risk05=0.931 coverage_risk05=0.1902 theta_risk05=0.925 trig_acc_risk10=0.8842 coverage_risk10=0.3115 earliness_risk05=0.5631 prior_baseline=0.226 n_fired_risk05=58 train_best_calA=0.6206 | appworld 中间档：先验碾过、coverage19%不趴地、精度93.1%差口气(n=58,CI过线)；v3 数据翻倍后重判 |
 | `20260730_0056_bert_probe_v3` | 2026-07-30 00:56 | C2-2t | `35529fb+dirty` | modernbert-base | running | - | - |
@@ -15,6 +17,29 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `20260730_0413_hotpot_t11_var`
+
+- **想验证什么**：T11 C1 收尾：HotpotQA 采样方差批次，temperature=0.6 三种子 × 8 分片 = 24 任务，测跨种子 mean±std
+- **方向**：C1 ｜ **状态**：running ｜ **起止**：2026-07-30 04:14 → 未收尾
+- **代码**：`40df390`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 0,1,2,3,4,5,6,7
+- **模型 / 种子**：Qwen/Qwen3-8B / 1
+- **参数**：temperature=0.6 gen_seeds=1,2,3 n_per_type=40 shards=8 budget=2500 hop1_offsets=-1,25,0 hop2_offsets=0
+- **原始数据**：`/home/y-guo/reproduce/new1/hotpot_inject/results_t11`（不在 git 里）
+- **命令**：`jlens-env/bin/python hotpot_inject/hotpot_v1.py --model Qwen/Qwen3-8B --n 40 --types comparison,bridge --hop1-offsets=-1,25,0 --hop2-offsets=0 --both-start --budget 2500 --temperature 0.6 --gen-seed {1,2,3} --shard {0..7}/8 --out hotpot_inject/results_t11/hp8b_T06_s{SEED}_shard{I}of8.jsonl`
+
+### `20260730_0350_bfcl_gptoss_topup`
+
+- **想验证什么**：补 v1 缺口:bfcl 无 gpt-oss 轨迹,跨模型双向矩阵需要它
+- **结论**：gpt-oss 补采 200/200 全量落盘,思考/解析双判据全过;并入 v3_1 后 bfcl 事件 2265->3325,双重建逐字节一致
+- **方向**：collect ｜ **状态**：ok ｜ **起止**：2026-07-30 03:50 → 2026-07-30 04:34
+- **代码**：`96d9605`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU 0
+- **模型 / 种子**：gpt-oss-120b / -
+- **数字**：n_traj=200 think_nonempty=200 bfcl_events_v3_1=3325
+- **原始数据**：`envs/runs/full_v2_topup/bfcl_gptoss`（不在 git 里）
+- **命令**：`bfcl generate --model openai/gpt-oss-120b --test-category multi_turn_base(经 chat 端点,reasoning high)`
 
 ### `20260730_0204_bert_replay_bfclv3`
 
