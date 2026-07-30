@@ -1,64 +1,5 @@
 {
-  "active": [
-    {
-      "name": "bert_t5_ablation",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "T5 消融: no-think 串行队列(g0) + no-hist x3(g1-3), v3 数据",
-      "started_at": "2026-07-30 17:12",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "0",
-          "session": "new1_t5_ablation_t106g0",
-          "log": "logs/new1_t5_ablation_t106g0.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "1",
-          "session": "new1_t5_ablation_t106g1",
-          "log": "logs/new1_t5_ablation_t106g1.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "2",
-          "session": "new1_t5_ablation_t106g2",
-          "log": "logs/new1_t5_ablation_t106g2.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "3",
-          "session": "new1_t5_ablation_t106g3",
-          "log": "logs/new1_t5_ablation_t106g3.log"
-        }
-      ]
-    },
-    {
-      "name": "bert_t7_extractor",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "T7 抽取头: bfcl/appworld/tales 各一卡 (g4-g6)",
-      "started_at": "2026-07-30 17:12",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "4",
-          "session": "new1_t7_extractor_t106g4",
-          "log": "logs/new1_t7_extractor_t106g4.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "5",
-          "session": "new1_t7_extractor_t106g5",
-          "log": "logs/new1_t7_extractor_t106g5.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "6",
-          "session": "new1_t7_extractor_t106g6",
-          "log": "logs/new1_t7_extractor_t106g6.log"
-        }
-      ]
-    }
-  ],
+  "active": [],
   "history": [
     {
       "name": "faketest",
@@ -683,6 +624,66 @@
         }
       ],
       "finished_at": "2026-07-31 04:07"
+    },
+    {
+      "name": "bert_t5_ablation",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "T5 消融: no-think 串行队列(g0) + no-hist x3(g1-3), v3 数据",
+      "started_at": "2026-07-30 17:12",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "0",
+          "session": "new1_t5_ablation_t106g0",
+          "log": "logs/new1_t5_ablation_t106g0.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "1",
+          "session": "new1_t5_ablation_t106g1",
+          "log": "logs/new1_t5_ablation_t106g1.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_t5_ablation_t106g2",
+          "log": "logs/new1_t5_ablation_t106g2.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "3",
+          "session": "new1_t5_ablation_t106g3",
+          "log": "logs/new1_t5_ablation_t106g3.log"
+        }
+      ],
+      "finished_at": "2026-07-31 04:34"
+    },
+    {
+      "name": "bert_t7_extractor",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "T7 抽取头: bfcl/appworld/tales 各一卡 (g4-g6)",
+      "started_at": "2026-07-30 17:12",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "4",
+          "session": "new1_t7_extractor_t106g4",
+          "log": "logs/new1_t7_extractor_t106g4.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "5",
+          "session": "new1_t7_extractor_t106g5",
+          "log": "logs/new1_t7_extractor_t106g5.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "6",
+          "session": "new1_t7_extractor_t106g6",
+          "log": "logs/new1_t7_extractor_t106g6.log"
+        }
+      ],
+      "finished_at": "2026-07-31 04:34"
     }
   ]
 }

@@ -15,8 +15,8 @@
 | `20260730_1716_bert_t6_xgptoss` | 2026-07-30 17:16 | T6 | `62a18c3+dirty` | ModernBERT-base | ok | bfcl_home_acc005=0.9623 appworld_home_acc01=0.9298 tales_home_acc01=0.7551 tales_coldxfer_cov=0.0 | gptoss训练侧矩阵收官:主场强度 bfcl>appworld>tales;冷迁移全线塌陷(tales cov=0,探针置信度整体压在θ下);T6双向21格全齐,部署光谱=bfcl换校准可救/appworld勉强/tales死路 |
 | `20260730_1716_bert_t8_causal` | 2026-07-30 17:16 | T8 | `62a18c3+dirty` | Qwen3-0.6B-Base / LFM2.5-350M-Base | ok | appworld_causal_qwen_acc005=0.9621 appworld_causal_qwen_cov005=0.3338 bfcl_causal_qwen_acc005=0.9779 tales_causal_qwen_acc005=0.9077 cost_ratio_bfcl=19.8 cost_ratio_appworld=26.4 cost_ratio_tales=34.1 | 因果探针裁决:appworld 95%门被打开(ModernBERT无解->0.9621/0.3338),coverage全面2.5-4.3x,earliness降0.05-0.13,成本1/20-1/34;8192窗口对照=噪声级收益,窗口非瓶颈;tales risk0.1档θ迁移失守为其特有 |
 | `20260730_1713_bert_t6_xqwen` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | ok | bfcl_home_acc005=0.9748 bfcl_coldxfer_acc005=0.897 bfcl_recal_acc005=0.971 appworld_home_acc005=0.949 tales_home_acc01=0.7619 | qwen训练侧矩阵:bfcl 主场0.975/冷迁移0.897/换校准救回0.971(cov减半);appworld换校准救不满;tales全弱.部署结论:换agent模型时bfcl重做校准即可,appworld/tales需重训 |
-| `20260730_1713_bert_t7_extractor` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
-| `20260730_1713_bert_t5_ablation` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
+| `20260730_1713_bert_t7_extractor` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | ok | bfcl_full_call=0.9179 bfcl_choice_call=0.8932 appworld_full_call_r01=0.76 bfcl_params_present=0.7612 | 抽取头收官(2/3,tales因弃用中断于ep2):bfcl触发时刻完整调用0.918(对标SPORK 0.076),选择档0.893;appworld仅risk0.1可挂载0.76;真瓶颈是触发时值未出现(自由档present仅0.235)非抽取本身 |
+| `20260730_1713_bert_t5_ablation` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | ok | nothink_bfcl=0.4381 nothink_appworld=0.421 nothink_tales=0.6054 nohist_bfcl_acc005=0.982 nohist_appworld_acc=0.954 nohist_appworld_cov=0.22 | 信号分解收官(5/6,tales no-hist因弃用中断于ep2,ep1权重保留):思考信号强度bfcl>>appworld>tales与门开关同构;no-hist在bfcl 0.982近平合流、在appworld 0.954破95线——历史是有害噪声,appworld门第二条打开路径 |
 | `20260730_1645_bert_replay_tales_v3` | 2026-07-30 16:45 | C2-2t | `b55d520+dirty` | ModernBERT-base | ok | prior_baseline=0.556 risk10_coverage=0.336 risk10_trig_acc=0.839 risk05_coverage=0.147 risk05_trig_acc=0.85 depth09_acc=0.78 temperature=3.092 n_events_test=408 | 终审负结果:数据翻倍把高θ coverage从0拉到14.7%,但精度天花板84-85%离95%差10pt,tales投机门不开;开放动作空间是根因 |
 | `20260730_0814_bert_replay_appworld_v3` | 2026-07-30 08:14 | C2-2t | `9f91011+dirty` | ModernBERT-base | ok | prior_baseline=0.298 risk10_coverage=0.19 risk10_trig_acc=0.933 risk05_feasible=0 depth09_acc=0.579 temperature=2.149 n_events_test=791 | 终审负结果:数据翻倍精度仍钉在93.3%(v2fix 93.1%),风险0.05档无可行θ,appworld投机门95%标准下不开;v2fix边缘悬案了结 |
 | `20260730_0446_bert_replay_tales_v2fix` | 2026-07-30 04:46 | C2-2t | `715e4bc+dirty` | ModernBERT-base | ok | prior_baseline=0.672 risk10_coverage=0.0 risk05_coverage=0.0 calB_theta090_trig_acc=0.87 calB_theta095_trig_acc=0.875 depth09_acc=0.802 temperature=3.189 n_events_test=201 | 负结果:精度天花板0.87够不到95%约束,无可行工作点,tales投机门v2fix开不了;深度曲线0.644-0.802非冻结,待v3(数据翻倍)终审 |
@@ -140,22 +140,26 @@
 ### `20260730_1713_bert_t7_extractor`
 
 - **想验证什么**：T7 抽取头: 在 v3 事件上联训 答/span/param 三头,看参数级抽取准确率能否支撑投机执行
-- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 17:13 → 未收尾
+- **结论**：抽取头收官(2/3,tales因弃用中断于ep2):bfcl触发时刻完整调用0.918(对标SPORK 0.076),选择档0.893;appworld仅risk0.1可挂载0.76;真瓶颈是触发时值未出现(自由档present仅0.235)非抽取本身
+- **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 17:13 → 2026-07-31 04:34
 - **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 4,5,6
 - **模型 / 种子**：- / 42
 - **参数**：data=v3 params=v3_params
+- **数字**：bfcl_full_call=0.9179 bfcl_choice_call=0.8932 appworld_full_call_r01=0.76 bfcl_params_present=0.7612
 - **原始数据**：`envs/bert_runs/{bfcl,appworld,tales}_ext_v3`（不在 git 里）
 - **命令**：`envs/bert/train_extractor.py --env {bfcl,appworld,tales} (data v3 + params v3_params)`
 
 ### `20260730_1713_bert_t5_ablation`
 
 - **想验证什么**：T5 输入消融: 砍掉 THINKING / HISTORY 段后 calA 加权 acc 掉多少
-- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 17:13 → 未收尾
+- **结论**：信号分解收官(5/6,tales no-hist因弃用中断于ep2,ep1权重保留):思考信号强度bfcl>>appworld>tales与门开关同构;no-hist在bfcl 0.982近平合流、在appworld 0.954破95线——历史是有害噪声,appworld门第二条打开路径
+- **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 17:13 → 2026-07-31 04:34
 - **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 0,1,2,3
 - **模型 / 种子**：- / 42
 - **参数**：input_mode=no-think+no-hist data=v3
+- **数字**：nothink_bfcl=0.4381 nothink_appworld=0.421 nothink_tales=0.6054 nohist_bfcl_acc005=0.982 nohist_appworld_acc=0.954 nohist_appworld_cov=0.22
 - **原始数据**：`envs/bert_runs/{env}_v3_{nothink,nohist}`（不在 git 里）
 - **命令**：`envs/bert/train_probe.py --data envs/bert_data/v3 --input-mode no-think/no-hist, 6 条 = 3 env x 2 mode`
 
