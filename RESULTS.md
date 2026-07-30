@@ -6,6 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260731_0607_w0_aw_official` | 2026-07-31 06:07 | pipeline | `e9f42fe+dirty` | qwen3.5-27b,qwen3.6-27b,gpt-oss-120b | running | - | - |
 | `20260730_t12c_smoke_7b` | 2026-07-30 18:46 | c3 | `871f502+dirty` | Qwen2.5-7B-Instruct | ok | smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30 | T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账 |
 | `20260730_1835_bert_t6_bfcl_mixed` | 2026-07-30 18:38 | c2 | `871f502+dirty` | ModernBERT-base | ok | best_calA=0.7847 ceiling_qwen_acc005=0.9645 ceiling_qwen_cov005=0.7478 ceiling_gptoss_acc005=0.9157 | bfcl v3_1 混训天花板:qwen侧0.9645/0.7478,gptoss侧0.9157/0.7615;coverage较纯qwen v3天花板(0.509/0.349)大幅抬升,混训增益在覆盖不在精度 |
 | `20260730_fig1_fullhist_8b` | 2026-07-30 18:20 | c3 | `bac6964+dirty` | Qwen3-8B | ok | acc_L0=0.62to0.94 acc_L1=0.98to1.00 acc_L2=0.84to0.86 tok_ratio_L0=0.84 tok_ratio_L1=1.17 tok_ratio_L2=2.5 wall_ratio_L0=0.73 wall_ratio_L1=0.66 wall_ratio_L2=1.21 truncated=0/150 avg_eps_included=4.5 | T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对)。档位用代码标签(L0/L1/L2),对应正式编号 L2/L2-/L1,见 DATA.md 6.1:L0=完全一样的题 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1=几乎一样的题 天花板已满 +2pp 略贵(x1.17);L2=同类但换了东西的题 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在完全一样那一档非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史。更正:前一条 finish 把 L0 写成'近重复档',按两套编号都不成立(L0=完全重复),数字不变。 |
@@ -31,6 +32,17 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `20260731_0607_w0_aw_official`
+
+- **想验证什么**：第0波:appworld官方分区采集,q3.5补train 90+三模型各采test_normal 168
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-07-31 06:07 → 未收尾
+- **代码**：`e9f42fe`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU 0,1,2,3,4,5
+- **模型 / 种子**：qwen3.5-27b,qwen3.6-27b,gpt-oss-120b / 20260729
+- **参数**：split=train+test_normal tasks=594 max_steps=30
+- **原始数据**：`/home/y-guo/reproduce/new1/envs/runs/w0_aw_official`（不在 git 里）
+- **命令**：`launch_vllm_w0.py + launch_clients.sh (14 shards)`
 
 ### `20260730_t12c_smoke_7b`
 
