@@ -57,26 +57,6 @@
           "log": "logs/new1_t7_extractor_t106g6.log"
         }
       ]
-    },
-    {
-      "name": "bert_t6_xgptoss",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "T6 gptoss 侧 ModernBERT 探针(train-gptoss 训练集);bfcl 一条挂在 bert_t8_causal_t105g0 队列末尾,共用该 session/日志",
-      "started_at": "2026-07-30 17:16",
-      "pieces": [
-        {
-          "host": "tokyo105",
-          "gpus": "7",
-          "session": "bert_t6_xgptoss_t105g7",
-          "log": "/home/y-guo/reproduce/new1/logs/bert_t6_xgptoss_tales.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "6",
-          "session": "bert_t6_xgptoss_t105g6",
-          "log": "/home/y-guo/reproduce/new1/logs/bert_t6_xgptoss_appworld.log"
-        }
-      ]
     }
   ],
   "history": [
@@ -682,6 +662,27 @@
         }
       ],
       "finished_at": "2026-07-30 23:57"
+    },
+    {
+      "name": "bert_t6_xgptoss",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "T6 gptoss 侧 ModernBERT 探针(train-gptoss 训练集);bfcl 一条挂在 bert_t8_causal_t105g0 队列末尾,共用该 session/日志",
+      "started_at": "2026-07-30 17:16",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "7",
+          "session": "bert_t6_xgptoss_t105g7",
+          "log": "/home/y-guo/reproduce/new1/logs/bert_t6_xgptoss_tales.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "bert_t6_xgptoss_t105g6",
+          "log": "/home/y-guo/reproduce/new1/logs/bert_t6_xgptoss_appworld.log"
+        }
+      ],
+      "finished_at": "2026-07-31 04:07"
     }
   ]
 }

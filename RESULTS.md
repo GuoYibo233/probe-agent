@@ -12,7 +12,7 @@
 | `20260730_oracle_ceiling_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0% | 逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机 |
 | `20260727_tracelab_simv0` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8% | 重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明 |
 | `20260728_fig1_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | Qwen3-8B | ok | total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp | 8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md |
-| `20260730_1716_bert_t6_xgptoss` | 2026-07-30 17:16 | T6 | `62a18c3+dirty` | ModernBERT-base | running | - | - |
+| `20260730_1716_bert_t6_xgptoss` | 2026-07-30 17:16 | T6 | `62a18c3+dirty` | ModernBERT-base | ok | bfcl_home_acc005=0.9623 appworld_home_acc01=0.9298 tales_home_acc01=0.7551 tales_coldxfer_cov=0.0 | gptoss训练侧矩阵收官:主场强度 bfcl>appworld>tales;冷迁移全线塌陷(tales cov=0,探针置信度整体压在θ下);T6双向21格全齐,部署光谱=bfcl换校准可救/appworld勉强/tales死路 |
 | `20260730_1716_bert_t8_causal` | 2026-07-30 17:16 | T8 | `62a18c3+dirty` | Qwen3-0.6B-Base / LFM2.5-350M-Base | ok | appworld_causal_qwen_acc005=0.9621 appworld_causal_qwen_cov005=0.3338 bfcl_causal_qwen_acc005=0.9779 tales_causal_qwen_acc005=0.9077 cost_ratio_bfcl=19.8 cost_ratio_appworld=26.4 cost_ratio_tales=34.1 | 因果探针裁决:appworld 95%门被打开(ModernBERT无解->0.9621/0.3338),coverage全面2.5-4.3x,earliness降0.05-0.13,成本1/20-1/34;8192窗口对照=噪声级收益,窗口非瓶颈;tales risk0.1档θ迁移失守为其特有 |
 | `20260730_1713_bert_t6_xqwen` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | ok | bfcl_home_acc005=0.9748 bfcl_coldxfer_acc005=0.897 bfcl_recal_acc005=0.971 appworld_home_acc005=0.949 tales_home_acc01=0.7619 | qwen训练侧矩阵:bfcl 主场0.975/冷迁移0.897/换校准救回0.971(cov减半);appworld换校准救不满;tales全弱.部署结论:换agent模型时bfcl重做校准即可,appworld/tales需重训 |
 | `20260730_1713_bert_t7_extractor` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
@@ -101,11 +101,13 @@
 ### `20260730_1716_bert_t6_xgptoss`
 
 - **想验证什么**：跨模型换底座:用 gpt-oss 侧轨迹训 ModernBERT 探针,与 qwen 侧对照(T6);bfcl 一条排在 t8 g0 队列末尾
-- **方向**：T6 ｜ **状态**：running ｜ **起止**：2026-07-30 17:16 → 未收尾
+- **结论**：gptoss训练侧矩阵收官:主场强度 bfcl>appworld>tales;冷迁移全线塌陷(tales cov=0,探针置信度整体压在θ下);T6双向21格全齐,部署光谱=bfcl换校准可救/appworld勉强/tales死路
+- **方向**：T6 ｜ **状态**：ok ｜ **起止**：2026-07-30 17:16 → 2026-07-31 04:07
 - **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 6,7
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：data=envs/bert_data/v3_1_xmodel/train-gptoss max_len=4096 bs=8 accum=4 epochs=3
+- **数字**：bfcl_home_acc005=0.9623 appworld_home_acc01=0.9298 tales_home_acc01=0.7551 tales_coldxfer_cov=0.0
 - **原始数据**：`/home/y-guo/reproduce/new1/envs/bert_runs`（不在 git 里）
 - **命令**：`envs/bert/train_probe.py --env {tales,appworld,bfcl} --data envs/bert_data/v3_1_xmodel/train-gptoss --out envs/bert_runs/<env>_v3_xgptoss`
 
