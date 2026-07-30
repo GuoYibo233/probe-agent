@@ -1,10 +1,17 @@
 """Fig 1 pilot: joint speed+accuracy learning curves on repeated similar tasks.
 
 Runs a controlled stream of k ALFWorld episodes at a chosen similarity level,
-in one of two settings:
-  nomem — every episode starts fresh (floor)
-  mem   — naive memory: successful trajectories from earlier episodes are
-          appended to the prompt as experience
+in one of three settings:
+  nomem    — every episode starts fresh (floor)
+  mem      — naive memory: successful trajectories from earlier episodes are
+             appended to the prompt as experience
+  fullhist — full-history baseline: the COMPLETE transcript (actions AND
+             observations, successes AND failures) of every earlier episode is
+             prepended to the prompt. When the block exceeds
+             --fullhist-budget-tokens, whole episodes are dropped oldest-first
+             (most recent episodes are kept); if the single most recent episode
+             still does not fit, its oldest turns are dropped. Every truncation
+             event is printed to the run log and stored in the output JSONL.
 
 Per-episode metrics: success, env steps, wall seconds, tokens in/out.
 Output: one JSON line per episode.
@@ -45,10 +52,17 @@ SYSTEM = (
     "Never repeat an action that did not change the state."
 )
 
+# Header printed above the prepended context block. MEM_HEADER is the string the
+# mem arm has always used — do not touch it, the mem prompt must stay
+# byte-identical to the 8bfull runs.
+MEM_HEADER = "=== experience from earlier similar tasks ==="
+FULLHIST_HEADER = "=== full transcripts of all earlier episodes ==="
+FULLHIST_SEP = "\n\n"
+
 
 def parse_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--setting", choices=["nomem", "mem"], required=True)
+    ap.add_argument("--setting", choices=["nomem", "mem", "fullhist"], required=True)
     ap.add_argument("--level", choices=["L0", "L1", "L2"], default="L0")
     ap.add_argument("--k", type=int, default=10)
     ap.add_argument("--task-type", default="pick_and_place_simple")
@@ -59,6 +73,14 @@ def parse_args():
     ap.add_argument("--out", required=True)
     ap.add_argument("--think", action="store_true", help="enable model thinking mode")
     ap.add_argument("--max-tokens", type=int, default=256)
+    ap.add_argument("--fullhist-budget-tokens", type=int, default=24576,
+                    help="token budget for the fullhist context block "
+                         "(Qwen3-8B window is 40960; the rest of the prompt plus "
+                         "--max-tokens of output has to fit in the remainder)")
+    ap.add_argument("--fullhist-tokenizer", default="",
+                    help="tokenizer used to measure the fullhist block "
+                         "(default: same as --model; falls back to a len//4 "
+                         "character estimate if it cannot be loaded offline)")
     return ap.parse_args()
 
 
@@ -91,7 +113,107 @@ def build_stream(all_games, level, task_type, k, rng):
     return stream
 
 
-def episode(env, client, model, max_steps, memory_block, max_tokens, think, rng):
+def build_user_prompt(task_obs, history, admissible, memory_block,
+                      memory_header=MEM_HEADER):
+    """Build the per-step user message.
+
+    Lifted verbatim out of episode()'s inner loop so it can be unit-tested
+    without a model server. With memory_header at its default this is
+    byte-identical to the pre-fullhist implementation for every input, so the
+    nomem (memory_block == "") and mem arms are unchanged.
+    """
+    hist_txt = "\n".join(f"> {a}\n{o}" for a, o in history[-8:])
+    user = ""
+    if memory_block:
+        user += f"{memory_header}\n{memory_block}\n\n"
+    user += (
+        f"{task_obs}\n\n=== recent history ===\n{hist_txt}\n\n"
+        f"=== admissible commands ===\n" + "\n".join(admissible)
+        + "\n\nDo not repeat an action whose last result showed no change. Next command:"
+    )
+    return user
+
+
+def render_episode_transcript(t):
+    """One earlier episode, rendered as full transcript text (actions + obs)."""
+    head = (f"--- episode {t['episode_idx']} "
+            f"({'success' if t['success'] else 'failure'}) ---\n"
+            f"Task: {t['task']}")
+    body = "\n".join(f"> {a}\n{o}" for a, o in t["turns"])
+    return head + "\n" + body if body else head
+
+
+def build_fullhist_block(transcripts, budget_tokens, count_tokens):
+    """Full history of all earlier episodes, trimmed to a token budget.
+
+    Truncation policy (fixed, deterministic, no randomness):
+      1. keep every earlier episode if the block fits;
+      2. otherwise drop WHOLE episodes starting from the oldest, i.e. the most
+         recent episodes are the ones retained;
+      3. if the single most recent episode alone still overflows, drop its
+         oldest turns one at a time (the episode header/task line is kept).
+    Returns (block_text, stats). stats is merged into the per-episode JSONL row
+    and printed to the run log, so every truncation event is auditable.
+    """
+    stats = {
+        "fullhist_eps_available": len(transcripts),
+        "fullhist_eps_included": 0,
+        "fullhist_eps_dropped_oldest": 0,
+        "fullhist_turns_head_cut": 0,
+        "fullhist_block_tokens": 0,
+        "fullhist_block_chars": 0,
+        "fullhist_truncated": False,
+        "fullhist_over_budget": False,
+    }
+    if not transcripts:
+        return "", stats
+
+    kept = list(transcripts)
+    rendered = [render_episode_transcript(t) for t in kept]
+    while len(kept) > 1 and count_tokens(FULLHIST_SEP.join(rendered)) > budget_tokens:
+        kept.pop(0)
+        rendered.pop(0)
+        stats["fullhist_eps_dropped_oldest"] += 1
+        stats["fullhist_truncated"] = True
+
+    if count_tokens(FULLHIST_SEP.join(rendered)) > budget_tokens:
+        newest = dict(kept[-1])
+        turns = list(newest["turns"])
+        while turns:
+            turns.pop(0)
+            stats["fullhist_turns_head_cut"] += 1
+            stats["fullhist_truncated"] = True
+            newest["turns"] = turns
+            if count_tokens(render_episode_transcript(newest)) <= budget_tokens:
+                break
+        newest["turns"] = turns
+        kept[-1] = newest
+        rendered[-1] = render_episode_transcript(newest)
+        if count_tokens(FULLHIST_SEP.join(rendered)) > budget_tokens:
+            stats["fullhist_over_budget"] = True
+
+    block = FULLHIST_SEP.join(rendered)
+    stats["fullhist_eps_included"] = len(kept)
+    stats["fullhist_block_tokens"] = count_tokens(block)
+    stats["fullhist_block_chars"] = len(block)
+    return block, stats
+
+
+def make_token_counter(name):
+    """Token counter for the fullhist budget. Offline-only, no downloads."""
+    try:
+        from transformers import AutoTokenizer
+        tk = AutoTokenizer.from_pretrained(name, local_files_only=True)
+        return (lambda s: len(tk(s, add_special_tokens=False)["input_ids"]),
+                f"tokenizer:{name}")
+    except Exception as e:  # no local tokenizer -> deterministic char estimate
+        print(f"[fullhist] tokenizer {name!r} unavailable "
+              f"({type(e).__name__}: {e}); using len//4 char estimate")
+        return (lambda s: (len(s) + 3) // 4), "charest:len//4"
+
+
+def episode(env, client, model, max_steps, memory_block, max_tokens, think, rng,
+            memory_header=MEM_HEADER, keep_transcript=False):
     obs, info = env.reset()
     task_obs = obs[0]
     history = []
@@ -100,15 +222,8 @@ def episode(env, client, model, max_steps, memory_block, max_tokens, think, rng)
     success = False
     for _ in range(max_steps):
         admissible = info["admissible_commands"][0]
-        hist_txt = "\n".join(f"> {a}\n{o}" for a, o in history[-8:])
-        user = ""
-        if memory_block:
-            user += f"=== experience from earlier similar tasks ===\n{memory_block}\n\n"
-        user += (
-            f"{task_obs}\n\n=== recent history ===\n{hist_txt}\n\n"
-            f"=== admissible commands ===\n" + "\n".join(admissible)
-            + "\n\nDo not repeat an action whose last result showed no change. Next command:"
-        )
+        user = build_user_prompt(task_obs, history, admissible, memory_block,
+                                 memory_header)
         resp = client.chat.completions.create(
             model=model,
             messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
@@ -136,7 +251,7 @@ def episode(env, client, model, max_steps, memory_block, max_tokens, think, rng)
         if dones[0]:
             success = bool(info.get("won", [False])[0]) or scores[0] > 0
             break
-    return {
+    r = {
         "success": success,
         "steps": len(history),
         "wall_s": round(time.time() - t0, 2),
@@ -145,6 +260,11 @@ def episode(env, client, model, max_steps, memory_block, max_tokens, think, rng)
         "task": task_obs.split("Your task is to:")[-1].strip()[:150],
         "actions": [a for a, _ in history],
     }
+    if keep_transcript:
+        # popped by main() before the row is written, so the JSONL schema of the
+        # mem/nomem arms is untouched
+        r["transcript"] = [[a, o] for a, o in history]
+    return r
 
 
 def main():
@@ -163,23 +283,50 @@ def main():
     for p in stream:
         print("  ", Path(p).parent.parent.name, Path(p).parent.name)
 
+    count_tokens = counter_name = None
+    if args.setting == "fullhist":
+        count_tokens, counter_name = make_token_counter(
+            args.fullhist_tokenizer or args.model)
+        print(f"[fullhist] budget={args.fullhist_budget_tokens} tok "
+              f"counter={counter_name} policy=drop_whole_episodes_oldest_first")
+
     experiences = []  # (task, actions, success)
+    transcripts = []  # fullhist only: full (action, obs) transcript per episode
     out = open(args.out, "w")
     for i, game in enumerate(stream):
         base.game_files = [game]
         env = base.init_env(batch_size=1)
         mem_block = ""
+        mem_header = MEM_HEADER
+        fh_stats = None
         if args.setting == "mem" and experiences:
             blocks = []
             for task, actions, succ in experiences[-5:]:
                 if succ:
                     blocks.append(f"Task: {task}\nSuccessful actions: {' -> '.join(actions)}")
             mem_block = "\n\n".join(blocks)
+        elif args.setting == "fullhist":
+            mem_block, fh_stats = build_fullhist_block(
+                transcripts, args.fullhist_budget_tokens, count_tokens)
+            mem_header = FULLHIST_HEADER
+            print(f"[ep {i:02d}] fullhist " +
+                  " ".join(f"{k.replace('fullhist_', '')}={v}"
+                           for k, v in fh_stats.items()))
         r = episode(env, client, args.model, args.max_steps, mem_block,
-                    args.max_tokens, args.think, rng)
+                    args.max_tokens, args.think, rng,
+                    memory_header=mem_header,
+                    keep_transcript=(args.setting == "fullhist"))
+        turns = r.pop("transcript", None)
         r.update(episode_idx=i, level=args.level, setting=args.setting,
                  game=str(Path(game).parent.parent.name) + "/" + str(Path(game).parent.name))
+        if fh_stats is not None:
+            r.update(fh_stats)
+            r["fullhist_budget_tokens"] = args.fullhist_budget_tokens
+            r["fullhist_token_counter"] = counter_name
         experiences.append((r["task"], r["actions"], r["success"]))
+        if args.setting == "fullhist":
+            transcripts.append({"episode_idx": i, "task": r["task"],
+                                "success": r["success"], "turns": turns or []})
         out.write(json.dumps(r) + "\n")
         out.flush()
         env.close()
