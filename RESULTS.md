@@ -7,14 +7,14 @@
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
 | `20260730_t12c_smoke_7b` | 2026-07-30 18:46 | c3 | `871f502+dirty` | Qwen2.5-7B-Instruct | ok | smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30 | T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账 |
-| `20260730_1835_bert_t6_bfcl_mixed` | 2026-07-30 18:38 | c2 | `871f502+dirty` | ModernBERT-base | running | - | - |
+| `20260730_1835_bert_t6_bfcl_mixed` | 2026-07-30 18:38 | c2 | `871f502+dirty` | ModernBERT-base | ok | best_calA=0.7847 ceiling_qwen_acc005=0.9645 ceiling_qwen_cov005=0.7478 ceiling_gptoss_acc005=0.9157 | bfcl v3_1 混训天花板:qwen侧0.9645/0.7478,gptoss侧0.9157/0.7615;coverage较纯qwen v3天花板(0.509/0.349)大幅抬升,混训增益在覆盖不在精度 |
 | `20260730_fig1_fullhist_8b` | 2026-07-30 18:20 | c3 | `bac6964+dirty` | Qwen3-8B | ok | acc_L0=0.62to0.94 acc_L1=0.98to1.00 acc_L2=0.84to0.86 tok_ratio_L0=0.84 tok_ratio_L1=1.17 tok_ratio_L2=2.5 wall_ratio_L0=0.73 wall_ratio_L1=0.66 wall_ratio_L2=1.21 truncated=0/150 avg_eps_included=4.5 | T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对):L0 近重复档 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1 天花板已满 +2pp 略贵;L2 远迁移 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在 L2 非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史 |
 | `20260730_oracle_ceiling_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0% | 逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机 |
 | `20260727_tracelab_simv0` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8% | 重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明 |
 | `20260728_fig1_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | Qwen3-8B | ok | total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp | 8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md |
 | `20260730_1716_bert_t6_xgptoss` | 2026-07-30 17:16 | T6 | `62a18c3+dirty` | ModernBERT-base | running | - | - |
 | `20260730_1716_bert_t8_causal` | 2026-07-30 17:16 | T8 | `62a18c3+dirty` | Qwen3-0.6B-Base / LFM2.5-350M-Base | ok | appworld_causal_qwen_acc005=0.9621 appworld_causal_qwen_cov005=0.3338 bfcl_causal_qwen_acc005=0.9779 tales_causal_qwen_acc005=0.9077 cost_ratio_bfcl=19.8 cost_ratio_appworld=26.4 cost_ratio_tales=34.1 | 因果探针裁决:appworld 95%门被打开(ModernBERT无解->0.9621/0.3338),coverage全面2.5-4.3x,earliness降0.05-0.13,成本1/20-1/34;8192窗口对照=噪声级收益,窗口非瓶颈;tales risk0.1档θ迁移失守为其特有 |
-| `20260730_1713_bert_t6_xqwen` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
+| `20260730_1713_bert_t6_xqwen` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | ok | bfcl_home_acc005=0.9748 bfcl_coldxfer_acc005=0.897 bfcl_recal_acc005=0.971 appworld_home_acc005=0.949 tales_home_acc01=0.7619 | qwen训练侧矩阵:bfcl 主场0.975/冷迁移0.897/换校准救回0.971(cov减半);appworld换校准救不满;tales全弱.部署结论:换agent模型时bfcl重做校准即可,appworld/tales需重训 |
 | `20260730_1713_bert_t7_extractor` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
 | `20260730_1713_bert_t5_ablation` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
 | `20260730_1645_bert_replay_tales_v3` | 2026-07-30 16:45 | C2-2t | `b55d520+dirty` | ModernBERT-base | ok | prior_baseline=0.556 risk10_coverage=0.336 risk10_trig_acc=0.839 risk05_coverage=0.147 risk05_trig_acc=0.85 depth09_acc=0.78 temperature=3.092 n_events_test=408 | 终审负结果:数据翻倍把高θ coverage从0拉到14.7%,但精度天花板84-85%离95%差10pt,tales投机门不开;开放动作空间是根因 |
@@ -46,11 +46,13 @@
 ### `20260730_1835_bert_t6_bfcl_mixed`
 
 - **想验证什么**：bfcl 的 v3 主线是纯 qwen 数据,混训天花板行必须用 v3_1(qwen+gptoss 合流)重训一条;tales/appworld 的 v3 本就含双侧无此问题
-- **方向**：c2 ｜ **状态**：running ｜ **起止**：2026-07-30 18:38 → 未收尾
+- **结论**：bfcl v3_1 混训天花板:qwen侧0.9645/0.7478,gptoss侧0.9157/0.7615;coverage较纯qwen v3天花板(0.509/0.349)大幅抬升,混训增益在覆盖不在精度
+- **方向**：c2 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:38 → 2026-07-30 23:57
 - **代码**：`871f502`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：data=v3_1 n_train=47799 n_labels=106 steps=4482 epochs=3 bs=8 accum=4
+- **数字**：best_calA=0.7847 ceiling_qwen_acc005=0.9645 ceiling_qwen_cov005=0.7478 ceiling_gptoss_acc005=0.9157
 - **原始数据**：`envs/bert_runs/bfcl_v3_1_mixed`（不在 git 里）
 - **命令**：`envs/bert/train_probe.py --env bfcl --data envs/bert_data/v3_1 --out envs/bert_runs/bfcl_v3_1_mixed (tmux bert_t6_bfcl_mixed_t106g3, 先 --smoke 通过再全量)`
 
@@ -123,11 +125,13 @@
 ### `20260730_1713_bert_t6_xqwen`
 
 - **想验证什么**：T6 跨模型: qwen 侧轨迹训 router,与 gptoss 侧对照迁移性
-- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 17:13 → 未收尾
+- **结论**：qwen训练侧矩阵:bfcl 主场0.975/冷迁移0.897/换校准救回0.971(cov减半);appworld换校准救不满;tales全弱.部署结论:换agent模型时bfcl重做校准即可,appworld/tales需重训
+- **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 17:13 → 2026-07-30 23:57
 - **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 7,8,9
 - **模型 / 种子**：- / 42
 - **参数**：data=v3_1_xmodel/train-qwen
+- **数字**：bfcl_home_acc005=0.9748 bfcl_coldxfer_acc005=0.897 bfcl_recal_acc005=0.971 appworld_home_acc005=0.949 tales_home_acc01=0.7619
 - **原始数据**：`envs/bert_runs/{tales,appworld,bfcl}_v3_xqwen`（不在 git 里）
 - **命令**：`envs/bert/train_probe.py --data envs/bert_data/v3_1_xmodel/train-qwen`
 

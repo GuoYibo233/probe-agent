@@ -59,32 +59,6 @@
       ]
     },
     {
-      "name": "bert_t6_xqwen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "T6 跨模型 qwen 侧训练: v3_1_xmodel/train-qwen, tales/appworld/bfcl (g7-g9)",
-      "started_at": "2026-07-30 17:12",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "7",
-          "session": "new1_t6_xqwen_t106g7",
-          "log": "logs/new1_t6_xqwen_t106g7.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "8",
-          "session": "new1_t6_xqwen_t106g8",
-          "log": "logs/new1_t6_xqwen_t106g8.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "9",
-          "session": "new1_t6_xqwen_t106g9",
-          "log": "logs/new1_t6_xqwen_t106g9.log"
-        }
-      ]
-    },
-    {
       "name": "bert_t6_xgptoss",
       "workdir": "/home/y-guo/reproduce/new1",
       "note": "T6 gptoss 侧 ModernBERT 探针(train-gptoss 训练集);bfcl 一条挂在 bert_t8_causal_t105g0 队列末尾,共用该 session/日志",
@@ -101,46 +75,6 @@
           "gpus": "6",
           "session": "bert_t6_xgptoss_t105g6",
           "log": "/home/y-guo/reproduce/new1/logs/bert_t6_xgptoss_appworld.log"
-        }
-      ]
-    },
-    {
-      "name": "fig1_fullhist",
-      "workdir": "/home/y-guo/reproduce/new1/fig1_pilot",
-      "note": null,
-      "started_at": "2026-07-30 18:34",
-      "pieces": [
-        {
-          "host": "tokyo107",
-          "gpus": "1",
-          "session": "new1_fh_run_L0",
-          "log": "/home/y-guo/reproduce/new1/logs/20260730_fig1_fullhist_L0.log"
-        },
-        {
-          "host": "tokyo107",
-          "gpus": "2",
-          "session": "new1_fh_run_L1",
-          "log": "/home/y-guo/reproduce/new1/logs/20260730_fig1_fullhist_L1.log"
-        },
-        {
-          "host": "tokyo107",
-          "gpus": "3",
-          "session": "new1_fh_run_L2",
-          "log": "/home/y-guo/reproduce/new1/logs/20260730_fig1_fullhist_L2.log"
-        }
-      ]
-    },
-    {
-      "name": "bert_t6_bfcl_mixed",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "T6 补充训练:bfcl 混训天花板行需 v3_1(qwen+gptoss 合流)重训一条,v3 主线是纯 qwen;smoke 已过接全量",
-      "started_at": "2026-07-30 18:38",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "3",
-          "session": "bert_t6_bfcl_mixed_t106g3",
-          "log": "/home/y-guo/reproduce/new1/logs/bert_t6_bfcl_mixed_t106g3.log"
         }
       ]
     }
@@ -679,6 +613,75 @@
         }
       ],
       "finished_at": "2026-07-30 20:23"
+    },
+    {
+      "name": "fig1_fullhist",
+      "workdir": "/home/y-guo/reproduce/new1/fig1_pilot",
+      "note": null,
+      "started_at": "2026-07-30 18:34",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_fh_run_L0",
+          "log": "/home/y-guo/reproduce/new1/logs/20260730_fig1_fullhist_L0.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_fh_run_L1",
+          "log": "/home/y-guo/reproduce/new1/logs/20260730_fig1_fullhist_L1.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_fh_run_L2",
+          "log": "/home/y-guo/reproduce/new1/logs/20260730_fig1_fullhist_L2.log"
+        }
+      ],
+      "finished_at": "2026-07-30 23:31"
+    },
+    {
+      "name": "bert_t6_bfcl_mixed",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "T6 补充训练:bfcl 混训天花板行需 v3_1(qwen+gptoss 合流)重训一条,v3 主线是纯 qwen;smoke 已过接全量",
+      "started_at": "2026-07-30 18:38",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "3",
+          "session": "bert_t6_bfcl_mixed_t106g3",
+          "log": "/home/y-guo/reproduce/new1/logs/bert_t6_bfcl_mixed_t106g3.log"
+        }
+      ],
+      "finished_at": "2026-07-30 23:57"
+    },
+    {
+      "name": "bert_t6_xqwen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "T6 跨模型 qwen 侧训练: v3_1_xmodel/train-qwen, tales/appworld/bfcl (g7-g9)",
+      "started_at": "2026-07-30 17:12",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "7",
+          "session": "new1_t6_xqwen_t106g7",
+          "log": "logs/new1_t6_xqwen_t106g7.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "8",
+          "session": "new1_t6_xqwen_t106g8",
+          "log": "logs/new1_t6_xqwen_t106g8.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "9",
+          "session": "new1_t6_xqwen_t106g9",
+          "log": "logs/new1_t6_xqwen_t106g9.log"
+        }
+      ],
+      "finished_at": "2026-07-30 23:57"
     }
   ]
 }
