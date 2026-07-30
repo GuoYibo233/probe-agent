@@ -366,3 +366,25 @@ L4 位置改换对的收录判据很硬：在种子 trial 上跟着自带的专�
 - **参数三档的档位表还是 v2 事件算的**，没跟着 v3/v3_1 更新；
   且命中率只是代理指标，会高估自由档（§5.1）。
 - **全历史臂的预算 24576 token 是怎么定的，账上没记**（§6.2）。
+
+### 8.1 采集矩阵不齐（2026-07-31 清点，用户已知，回头可能补）
+
+三个 agent 模型 × 三个环境这九格都有数据，但每格的量差很远：qwen3.5 缺第二批
+（AppWorld 少 train 那 90 题、TALES 少 seed 51–80 那 30 局），gpt-oss 的 BFCL 晚到、只在 v3_1。
+
+**九格轨迹数、两个缺口的成因、补齐的命令与代价、以及"补齐不改四路切分"这条判断，
+全部在 `plans/2026-07-31-direction-notes.md` §1**，本文不重复。
+
+### 8.2 本文两处描述与实际采集对不上（2026-07-31 发现，待修）
+
+- **§1.1 的 TALES 那一段写的是探索批，不是训练数据那批。** §1.1 说 seed 101–120、L1/L2 两档、
+  60/80 步上限——那是 `envs/runs/full_tales_L1|L2/` 的设定，**这批一条也没进数据集**
+  （`build_dataset.py` 只扫 `full_v1` 和 `full_v2_topup`）。真正生成训练数据的是
+  `full_v1/tales_*/`：seed 31–50、**40 步上限**、参数
+  `numLocations=5, numIngredients=3, numDistractorItems=8, includeDoors=1, limitInventorySize=0`
+  （出处 `envs/runs/full_v1/launch_all.sh` 的 `HARD` 变量）。
+  连带的：§1.1 成绩表里 TALES 那六行也是探索批的，训练数据那批的成绩是
+  "三模型胜率全 0（40 步上限内无人通关）"（`full_v1/MANIFEST.md`）。
+- **§1.2 说 `full_v2_topup`"只补一件事：给 BFCL 补 gpt-oss"，漏了那批的主体。**
+  该批实际采的是 AppWorld train 全 90 题 + TALES seed 51–80，由 q3.6 和 gpt-oss 两个模型跑；
+  BFCL 的 gpt-oss 是后来加进同一个目录的（出处 `full_v2_topup/launch_clients.sh`）。

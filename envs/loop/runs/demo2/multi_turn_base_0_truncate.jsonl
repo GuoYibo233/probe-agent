@@ -1,0 +1,66 @@
+{"type": "meta", "entry": "multi_turn_base_0", "mode": "truncate", "theta": 0.95, "model": "Qwen/Qwen3-32B"}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 0, "at_char": 141, "label": "cd", "conf": 0.983488, "ms": 37.6, "client_ms": 39.5}
+{"type": "trigger", "step": "t0s0", "label": "cd", "conf": 0.983488, "at_char": 141, "boundary_idx": 0, "probe_ms": 37.6, "action": "truncate", "truncated": true, "agent_actual": null, "match": null}
+{"type": "gen", "step": "t0s0", "wall_s": 1.72, "tokens_in": 8774, "tokens_out": 33, "aborted": true, "n_chars_think": 141}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 0, "at_char": 89, "label": "cd", "conf": 0.731533, "ms": 37.5, "client_ms": 39.6}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 1, "at_char": 119, "label": "pwd", "conf": 0.60211, "ms": 37.6, "client_ms": 39.6}
+{"type": "gen", "step": "t0s1", "wall_s": 1.69, "tokens_in": 8847, "tokens_out": 31, "aborted": false, "n_chars_think": 119}
+{"type": "probe", "event": "multi_turn_base_0|t0s2", "boundary_idx": 0, "at_char": 30, "label": "cd", "conf": 0.932226, "ms": 37.8, "client_ms": 40.2}
+{"type": "probe", "event": "multi_turn_base_0|t0s2", "boundary_idx": 1, "at_char": 33, "label": "cd", "conf": 0.900522, "ms": 34.8, "client_ms": 36.5}
+{"type": "probe", "event": "multi_turn_base_0|t0s2", "boundary_idx": 2, "at_char": 68, "label": "cd", "conf": 0.994181, "ms": 26.7, "client_ms": 28.3}
+{"type": "trigger", "step": "t0s2", "label": "cd", "conf": 0.994181, "at_char": 68, "boundary_idx": 2, "probe_ms": 26.7, "action": "truncate", "truncated": true, "agent_actual": null, "match": null}
+{"type": "gen", "step": "t0s2", "wall_s": 1.48, "tokens_in": 8901, "tokens_out": 20, "aborted": true, "n_chars_think": 68}
+{"type": "probe", "event": "multi_turn_base_0|t0s3", "boundary_idx": 0, "at_char": 46, "label": "cd", "conf": 0.963805, "ms": 37.6, "client_ms": 40.0}
+{"type": "trigger", "step": "t0s3", "label": "cd", "conf": 0.963805, "at_char": 46, "boundary_idx": 0, "probe_ms": 37.6, "action": "truncate", "truncated": true, "agent_actual": null, "match": null}
+{"type": "gen", "step": "t0s3", "wall_s": 1.37, "tokens_in": 8960, "tokens_out": 11, "aborted": true, "n_chars_think": 46}
+{"type": "probe", "event": "multi_turn_base_0|t0s4", "boundary_idx": 0, "at_char": 40, "label": "cd", "conf": 0.944171, "ms": 37.7, "client_ms": 39.9}
+{"type": "probe", "event": "multi_turn_base_0|t0s4", "boundary_idx": 1, "at_char": 88, "label": "cd", "conf": 0.992156, "ms": 37.1, "client_ms": 38.9}
+{"type": "trigger", "step": "t0s4", "label": "cd", "conf": 0.992156, "at_char": 88, "boundary_idx": 1, "probe_ms": 37.1, "truncated": false, "agent_actual": "cd", "match": true}
+{"type": "gen", "step": "t0s4", "wall_s": 1.61, "tokens_in": 9011, "tokens_out": 26, "aborted": false, "n_chars_think": 88}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 0, "at_char": 41, "label": "cd", "conf": 0.380931, "ms": 37.7, "client_ms": 39.7}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 1, "at_char": 56, "label": "cd", "conf": 0.718458, "ms": 37.9, "client_ms": 39.9}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 2, "at_char": 59, "label": "cd", "conf": 0.630578, "ms": 32.4, "client_ms": 34.0}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 3, "at_char": 87, "label": "cd", "conf": 0.537406, "ms": 26.8, "client_ms": 28.3}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 4, "at_char": 90, "label": "cd", "conf": 0.659435, "ms": 26.7, "client_ms": 28.0}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 5, "at_char": 138, "label": "cd", "conf": 0.652425, "ms": 27.1, "client_ms": 28.6}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 6, "at_char": 139, "label": "cd", "conf": 0.679479, "ms": 27.6, "client_ms": 29.1}
+{"type": "probe", "event": "multi_turn_base_0|t0s5", "boundary_idx": 7, "at_char": 178, "label": "cd", "conf": 0.503027, "ms": 28.0, "client_ms": 29.8}
+{"type": "gen", "step": "t0s5", "wall_s": 2.18, "tokens_in": 9060, "tokens_out": 58, "aborted": false, "n_chars_think": 178}
+{"type": "probe", "event": "multi_turn_base_0|t0s6", "boundary_idx": 0, "at_char": 43, "label": "ls", "conf": 0.753702, "ms": 37.2, "client_ms": 39.2}
+{"type": "probe", "event": "multi_turn_base_0|t0s6", "boundary_idx": 1, "at_char": 105, "label": "cd", "conf": 0.402437, "ms": 37.6, "client_ms": 39.7}
+{"type": "gen", "step": "t0s6", "wall_s": 1.87, "tokens_in": 9134, "tokens_out": 41, "aborted": false, "n_chars_think": 105}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 0, "at_char": 95, "label": "ls", "conf": 0.329237, "ms": 37.3, "client_ms": 39.6}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 1, "at_char": 144, "label": "ls", "conf": 0.709174, "ms": 35.7, "client_ms": 37.6}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 2, "at_char": 183, "label": "ls", "conf": 0.632015, "ms": 36.8, "client_ms": 38.5}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 3, "at_char": 275, "label": "ls", "conf": 0.807219, "ms": 38.0, "client_ms": 39.8}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 4, "at_char": 420, "label": "ls", "conf": 0.993532, "ms": 38.4, "client_ms": 40.2}
+{"type": "trigger", "step": "t1s0", "label": "ls", "conf": 0.993532, "at_char": 420, "boundary_idx": 4, "probe_ms": 38.4, "truncated": false, "agent_actual": "ls", "match": true}
+{"type": "gen", "step": "t1s0", "wall_s": 2.89, "tokens_in": 8994, "tokens_out": 97, "aborted": false, "n_chars_think": 420}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 0, "at_char": 106, "label": "diff", "conf": 0.499381, "ms": 37.5, "client_ms": 39.4}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 1, "at_char": 163, "label": "diff", "conf": 0.495673, "ms": 37.5, "client_ms": 39.4}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 2, "at_char": 222, "label": "diff", "conf": 0.369778, "ms": 38.1, "client_ms": 40.0}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 3, "at_char": 383, "label": "diff", "conf": 0.192968, "ms": 38.8, "client_ms": 40.9}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 4, "at_char": 479, "label": "diff", "conf": 0.224934, "ms": 38.7, "client_ms": 40.6}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 5, "at_char": 563, "label": "ls", "conf": 0.315947, "ms": 37.6, "client_ms": 39.4}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 6, "at_char": 662, "label": "ls", "conf": 0.304088, "ms": 39.4, "client_ms": 41.4}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 7, "at_char": 722, "label": "ls", "conf": 0.2907, "ms": 39.8, "client_ms": 41.9}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 8, "at_char": 757, "label": "ls", "conf": 0.31131, "ms": 39.2, "client_ms": 41.0}
+{"type": "gen", "step": "t1s1", "wall_s": 4.58, "tokens_in": 9124, "tokens_out": 186, "aborted": false, "n_chars_think": 757}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 0, "at_char": 63, "label": "sort", "conf": 0.350297, "ms": 36.4, "client_ms": 38.5}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 1, "at_char": 150, "label": "sort", "conf": 0.788433, "ms": 38.4, "client_ms": 40.4}
+{"type": "gen", "step": "t2s0", "wall_s": 2.0, "tokens_in": 9078, "tokens_out": 48, "aborted": false, "n_chars_think": 150}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 0, "at_char": 22, "label": "cd", "conf": 0.70992, "ms": 36.3, "client_ms": 38.4}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 1, "at_char": 25, "label": "cd", "conf": 0.633993, "ms": 35.4, "client_ms": 36.7}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 2, "at_char": 102, "label": "cd", "conf": 0.888144, "ms": 30.5, "client_ms": 32.2}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 3, "at_char": 105, "label": "cd", "conf": 0.893746, "ms": 29.9, "client_ms": 31.8}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 4, "at_char": 181, "label": "cd", "conf": 0.887121, "ms": 28.3, "client_ms": 30.2}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 5, "at_char": 182, "label": "cd", "conf": 0.900036, "ms": 27.7, "client_ms": 29.5}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 6, "at_char": 238, "label": "cd", "conf": 0.932385, "ms": 24.9, "client_ms": 26.7}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 7, "at_char": 241, "label": "cd", "conf": 0.914979, "ms": 25.6, "client_ms": 27.2}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 8, "at_char": 284, "label": "cd", "conf": 0.907909, "ms": 27.2, "client_ms": 28.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 9, "at_char": 287, "label": "cd", "conf": 0.933229, "ms": 27.8, "client_ms": 29.6}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 10, "at_char": 321, "label": "cd", "conf": 0.910023, "ms": 27.3, "client_ms": 28.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 11, "at_char": 322, "label": "cd", "conf": 0.909451, "ms": 27.7, "client_ms": 29.3}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 12, "at_char": 355, "label": "cd", "conf": 0.898598, "ms": 26.0, "client_ms": 28.0}
+{"type": "gen", "step": "t3s0", "wall_s": 2.94, "tokens_in": 9134, "tokens_out": 98, "aborted": false, "n_chars_think": 355}
+{"type": "final", "success": null, "wall_s_total": 24.96, "gen_tokens_out": 649, "gen_tokens_in": 99017, "gen_wall_s": 24.33, "probe_calls": 48, "probe_ms": 1625.6, "n_triggers": 5, "n_aborted": 3, "n_forks": 0}

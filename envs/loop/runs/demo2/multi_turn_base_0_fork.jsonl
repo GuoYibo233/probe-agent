@@ -1,0 +1,113 @@
+{"type": "meta", "entry": "multi_turn_base_0", "mode": "fork", "theta": 0.95, "model": "Qwen/Qwen3-32B"}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 0, "at_char": 141, "label": "cd", "conf": 0.983488, "ms": 37.3, "client_ms": 39.8}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 1, "at_char": 206, "label": "cd", "conf": 0.977081, "ms": 35.4, "client_ms": 37.3}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 2, "at_char": 230, "label": "cd", "conf": 0.977253, "ms": 35.0, "client_ms": 36.7}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 3, "at_char": 233, "label": "cd", "conf": 0.971649, "ms": 34.5, "client_ms": 36.1}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 4, "at_char": 287, "label": "cd", "conf": 0.99315, "ms": 26.7, "client_ms": 28.2}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 5, "at_char": 290, "label": "cd", "conf": 0.993034, "ms": 27.2, "client_ms": 28.6}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 6, "at_char": 338, "label": "cd", "conf": 0.994452, "ms": 29.3, "client_ms": 30.6}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 7, "at_char": 341, "label": "cd", "conf": 0.994508, "ms": 28.3, "client_ms": 29.8}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 8, "at_char": 389, "label": "cd", "conf": 0.993676, "ms": 30.5, "client_ms": 32.6}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 9, "at_char": 390, "label": "cd", "conf": 0.994585, "ms": 29.9, "client_ms": 31.9}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 10, "at_char": 428, "label": "cd", "conf": 0.994584, "ms": 28.3, "client_ms": 30.2}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 11, "at_char": 454, "label": "cd", "conf": 0.998503, "ms": 30.7, "client_ms": 32.4}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 12, "at_char": 483, "label": "cd", "conf": 0.99839, "ms": 31.3, "client_ms": 33.0}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 13, "at_char": 512, "label": "cd", "conf": 0.998093, "ms": 34.3, "client_ms": 36.4}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 14, "at_char": 513, "label": "cd", "conf": 0.99801, "ms": 33.1, "client_ms": 35.1}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 15, "at_char": 527, "label": "cd", "conf": 0.998451, "ms": 26.5, "client_ms": 28.4}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 16, "at_char": 530, "label": "cd", "conf": 0.998464, "ms": 27.4, "client_ms": 29.1}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 17, "at_char": 587, "label": "cd", "conf": 0.9988, "ms": 27.5, "client_ms": 29.3}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 18, "at_char": 590, "label": "cd", "conf": 0.998607, "ms": 27.4, "client_ms": 28.8}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 19, "at_char": 639, "label": "cd", "conf": 0.998079, "ms": 28.9, "client_ms": 30.4}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 20, "at_char": 642, "label": "cd", "conf": 0.997916, "ms": 27.6, "client_ms": 29.4}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 21, "at_char": 728, "label": "cd", "conf": 0.997467, "ms": 28.8, "client_ms": 30.7}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 22, "at_char": 729, "label": "cd", "conf": 0.997456, "ms": 28.2, "client_ms": 29.8}
+{"type": "probe", "event": "multi_turn_base_0|t0s0", "boundary_idx": 23, "at_char": 762, "label": "cd", "conf": 0.997018, "ms": 34.7, "client_ms": 36.7}
+{"type": "trigger", "step": "t0s0", "label": "cd", "conf": 0.983488, "at_char": 141, "boundary_idx": 0, "probe_ms": 37.3, "truncated": false, "agent_actual": "cd", "match": true}
+{"type": "gen", "step": "t0s0", "wall_s": 5.28, "tokens_in": 8774, "tokens_out": 226, "aborted": false, "n_chars_think": 762}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 0, "at_char": 39, "label": "cd", "conf": 0.839904, "ms": 37.9, "client_ms": 40.1}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 1, "at_char": 42, "label": "cd", "conf": 0.832812, "ms": 34.9, "client_ms": 36.9}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 2, "at_char": 74, "label": "cd", "conf": 0.965515, "ms": 30.1, "client_ms": 31.9}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 3, "at_char": 77, "label": "cd", "conf": 0.975922, "ms": 29.9, "client_ms": 31.6}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 4, "at_char": 106, "label": "cd", "conf": 0.976073, "ms": 27.5, "client_ms": 29.3}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 5, "at_char": 109, "label": "cd", "conf": 0.97812, "ms": 27.0, "client_ms": 28.7}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 6, "at_char": 158, "label": "cd", "conf": 0.976371, "ms": 27.1, "client_ms": 29.0}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 7, "at_char": 159, "label": "cd", "conf": 0.980007, "ms": 26.7, "client_ms": 28.3}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 8, "at_char": 181, "label": "cd", "conf": 0.979361, "ms": 28.3, "client_ms": 30.1}
+{"type": "probe", "event": "multi_turn_base_0|t0s1", "boundary_idx": 9, "at_char": 242, "label": "cd", "conf": 0.967895, "ms": 38.1, "client_ms": 40.3}
+{"type": "trigger", "step": "t0s1", "label": "cd", "conf": 0.965515, "at_char": 74, "boundary_idx": 2, "probe_ms": 30.1, "truncated": false, "agent_actual": null, "match": false}
+{"type": "gen", "step": "t0s1", "wall_s": 2.9, "tokens_in": 9052, "tokens_out": 96, "aborted": false, "n_chars_think": 242}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 0, "at_char": 92, "label": "ls", "conf": 0.887929, "ms": 38.6, "client_ms": 40.6}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 1, "at_char": 149, "label": "ls", "conf": 0.896253, "ms": 39.2, "client_ms": 41.3}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 2, "at_char": 283, "label": "ls", "conf": 0.974805, "ms": 39.2, "client_ms": 41.3}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 3, "at_char": 430, "label": "ls", "conf": 0.99214, "ms": 37.7, "client_ms": 39.6}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 4, "at_char": 541, "label": "ls", "conf": 0.987825, "ms": 39.6, "client_ms": 41.9}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 5, "at_char": 629, "label": "ls", "conf": 0.983943, "ms": 39.9, "client_ms": 41.9}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 6, "at_char": 727, "label": "ls", "conf": 0.987531, "ms": 39.5, "client_ms": 41.5}
+{"type": "probe", "event": "multi_turn_base_0|t1s0", "boundary_idx": 7, "at_char": 814, "label": "ls", "conf": 0.983749, "ms": 42.3, "client_ms": 44.1}
+{"type": "trigger", "step": "t1s0", "label": "ls", "conf": 0.974805, "at_char": 283, "boundary_idx": 2, "probe_ms": 39.2, "truncated": false, "agent_actual": "ls", "match": true}
+{"type": "gen", "step": "t1s0", "wall_s": 4.48, "tokens_in": 8913, "tokens_out": 182, "aborted": false, "n_chars_think": 814}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 0, "at_char": 80, "label": "grep", "conf": 0.974186, "ms": 39.0, "client_ms": 40.9}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 1, "at_char": 137, "label": "grep", "conf": 0.966774, "ms": 40.5, "client_ms": 42.7}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 2, "at_char": 195, "label": "grep", "conf": 0.96132, "ms": 41.4, "client_ms": 43.3}
+{"type": "probe", "event": "multi_turn_base_0|t1s1", "boundary_idx": 3, "at_char": 306, "label": "grep", "conf": 0.947637, "ms": 40.7, "client_ms": 42.9}
+{"type": "trigger", "step": "t1s1", "label": "grep", "conf": 0.974186, "at_char": 80, "boundary_idx": 0, "probe_ms": 39.0, "truncated": false, "agent_actual": "grep", "match": true}
+{"type": "gen", "step": "t1s1", "wall_s": 2.7, "tokens_in": 9123, "tokens_out": 85, "aborted": false, "n_chars_think": 306}
+{"type": "probe", "event": "multi_turn_base_0|t1s2", "boundary_idx": 0, "at_char": 107, "label": "grep", "conf": 0.471555, "ms": 38.1, "client_ms": 40.1}
+{"type": "probe", "event": "multi_turn_base_0|t1s2", "boundary_idx": 1, "at_char": 228, "label": "cd", "conf": 0.585083, "ms": 40.4, "client_ms": 42.5}
+{"type": "probe", "event": "multi_turn_base_0|t1s2", "boundary_idx": 2, "at_char": 229, "label": "cd", "conf": 0.647339, "ms": 37.2, "client_ms": 38.9}
+{"type": "probe", "event": "multi_turn_base_0|t1s2", "boundary_idx": 3, "at_char": 270, "label": "cd", "conf": 0.689555, "ms": 42.4, "client_ms": 44.9}
+{"type": "gen", "step": "t1s2", "wall_s": 3.24, "tokens_in": 9244, "tokens_out": 113, "aborted": false, "n_chars_think": 270}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 0, "at_char": 63, "label": "cd", "conf": 0.957482, "ms": 38.8, "client_ms": 40.7}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 1, "at_char": 134, "label": "cd", "conf": 0.994941, "ms": 42.1, "client_ms": 44.2}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 2, "at_char": 210, "label": "cd", "conf": 0.996708, "ms": 42.5, "client_ms": 44.9}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 3, "at_char": 232, "label": "cd", "conf": 0.996418, "ms": 41.7, "client_ms": 43.5}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 4, "at_char": 251, "label": "cd", "conf": 0.993839, "ms": 35.8, "client_ms": 37.8}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 5, "at_char": 252, "label": "cd", "conf": 0.994512, "ms": 33.5, "client_ms": 35.4}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 6, "at_char": 336, "label": "cd", "conf": 0.995107, "ms": 28.0, "client_ms": 29.6}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 7, "at_char": 410, "label": "cd", "conf": 0.997871, "ms": 30.7, "client_ms": 32.5}
+{"type": "probe", "event": "multi_turn_base_0|t2s0", "boundary_idx": 8, "at_char": 487, "label": "cd", "conf": 0.997061, "ms": 42.8, "client_ms": 45.0}
+{"type": "trigger", "step": "t2s0", "label": "cd", "conf": 0.957482, "at_char": 63, "boundary_idx": 0, "probe_ms": 38.8, "truncated": false, "agent_actual": "cd", "match": true}
+{"type": "gen", "step": "t2s0", "wall_s": 3.61, "tokens_in": 9081, "tokens_out": 134, "aborted": false, "n_chars_think": 487}
+{"type": "probe", "event": "multi_turn_base_0|t2s1", "boundary_idx": 0, "at_char": 35, "label": "cd", "conf": 0.432303, "ms": 42.2, "client_ms": 44.3}
+{"type": "probe", "event": "multi_turn_base_0|t2s1", "boundary_idx": 1, "at_char": 88, "label": "cd", "conf": 0.624186, "ms": 42.2, "client_ms": 44.3}
+{"type": "probe", "event": "multi_turn_base_0|t2s1", "boundary_idx": 2, "at_char": 114, "label": "cd", "conf": 0.682702, "ms": 41.9, "client_ms": 43.7}
+{"type": "probe", "event": "multi_turn_base_0|t2s1", "boundary_idx": 3, "at_char": 204, "label": "cd", "conf": 0.487669, "ms": 37.9, "client_ms": 40.0}
+{"type": "probe", "event": "multi_turn_base_0|t2s1", "boundary_idx": 4, "at_char": 205, "label": "cd", "conf": 0.561336, "ms": 35.5, "client_ms": 36.9}
+{"type": "probe", "event": "multi_turn_base_0|t2s1", "boundary_idx": 5, "at_char": 320, "label": "echo", "conf": 0.239581, "ms": 42.4, "client_ms": 44.6}
+{"type": "gen", "step": "t2s1", "wall_s": 3.88, "tokens_in": 9267, "tokens_out": 147, "aborted": false, "n_chars_think": 320}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 0, "at_char": 22, "label": "cd", "conf": 0.986825, "ms": 42.0, "client_ms": 44.1}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 1, "at_char": 25, "label": "cd", "conf": 0.983981, "ms": 38.6, "client_ms": 40.5}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 2, "at_char": 102, "label": "cd", "conf": 0.990591, "ms": 31.2, "client_ms": 33.3}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 3, "at_char": 105, "label": "cd", "conf": 0.99285, "ms": 30.5, "client_ms": 32.1}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 4, "at_char": 192, "label": "cd", "conf": 0.98846, "ms": 28.8, "client_ms": 30.6}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 5, "at_char": 193, "label": "cd", "conf": 0.988771, "ms": 28.3, "client_ms": 29.8}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 6, "at_char": 232, "label": "cd", "conf": 0.988297, "ms": 26.5, "client_ms": 28.2}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 7, "at_char": 243, "label": "cd", "conf": 0.990579, "ms": 28.2, "client_ms": 30.1}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 8, "at_char": 246, "label": "cd", "conf": 0.990229, "ms": 27.9, "client_ms": 29.3}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 9, "at_char": 282, "label": "cd", "conf": 0.995146, "ms": 28.2, "client_ms": 29.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 10, "at_char": 285, "label": "cd", "conf": 0.994692, "ms": 28.0, "client_ms": 29.4}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 11, "at_char": 322, "label": "cd", "conf": 0.994716, "ms": 28.2, "client_ms": 29.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 12, "at_char": 325, "label": "cd", "conf": 0.993752, "ms": 28.0, "client_ms": 29.8}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 13, "at_char": 374, "label": "cd", "conf": 0.992577, "ms": 28.8, "client_ms": 30.4}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 14, "at_char": 375, "label": "cd", "conf": 0.993507, "ms": 28.3, "client_ms": 29.7}
+{"type": "probe", "event": "multi_turn_base_0|t3s0", "boundary_idx": 15, "at_char": 406, "label": "cd", "conf": 0.990944, "ms": 34.6, "client_ms": 36.9}
+{"type": "trigger", "step": "t3s0", "label": "cd", "conf": 0.986825, "at_char": 22, "boundary_idx": 0, "probe_ms": 42.0, "truncated": false, "agent_actual": "cd", "match": true}
+{"type": "gen", "step": "t3s0", "wall_s": 3.86, "tokens_in": 9268, "tokens_out": 146, "aborted": false, "n_chars_think": 406}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 0, "at_char": 39, "label": "cd", "conf": 0.752657, "ms": 42.9, "client_ms": 44.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 1, "at_char": 57, "label": "cd", "conf": 0.797713, "ms": 41.9, "client_ms": 44.1}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 2, "at_char": 106, "label": "cd", "conf": 0.75997, "ms": 34.5, "client_ms": 36.4}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 3, "at_char": 158, "label": "cd", "conf": 0.747116, "ms": 38.4, "client_ms": 40.2}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 4, "at_char": 159, "label": "cd", "conf": 0.757493, "ms": 35.8, "client_ms": 37.6}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 5, "at_char": 209, "label": "cd", "conf": 0.728459, "ms": 28.5, "client_ms": 30.2}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 6, "at_char": 234, "label": "cd", "conf": 0.713659, "ms": 31.6, "client_ms": 33.7}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 7, "at_char": 237, "label": "cd", "conf": 0.7398, "ms": 30.6, "client_ms": 32.1}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 8, "at_char": 275, "label": "cd", "conf": 0.787315, "ms": 26.8, "client_ms": 28.7}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 9, "at_char": 278, "label": "cd", "conf": 0.705926, "ms": 26.3, "client_ms": 27.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 10, "at_char": 330, "label": "cd", "conf": 0.67531, "ms": 28.4, "client_ms": 30.0}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 11, "at_char": 333, "label": "cd", "conf": 0.61873, "ms": 28.1, "client_ms": 29.7}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 12, "at_char": 397, "label": "cd", "conf": 0.815097, "ms": 28.4, "client_ms": 29.9}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 13, "at_char": 398, "label": "cd", "conf": 0.825145, "ms": 28.4, "client_ms": 29.8}
+{"type": "probe", "event": "multi_turn_base_0|t3s1", "boundary_idx": 14, "at_char": 452, "label": "cd", "conf": 0.703478, "ms": 43.2, "client_ms": 45.3}
+{"type": "gen", "step": "t3s1", "wall_s": 6.13, "tokens_in": 9512, "tokens_out": 266, "aborted": false, "n_chars_think": 452}
+{"type": "final", "success": null, "wall_s_total": 56.13, "gen_tokens_out": 1395, "gen_tokens_in": 82234, "gen_wall_s": 36.08, "probe_calls": 96, "probe_ms": 3229.9, "n_triggers": 6, "n_aborted": 0, "n_forks": 1}
