@@ -6,6 +6,14 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260730_oracle_ceiling_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0% | 逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机 |
+| `20260727_tracelab_simv0` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8% | 重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明 |
+| `20260728_fig1_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | Qwen3-8B | ok | total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp | 8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md |
+| `20260730_1716_bert_t6_xgptoss` | 2026-07-30 17:16 | T6 | `62a18c3+dirty` | ModernBERT-base | running | - | - |
+| `20260730_1716_bert_t8_causal` | 2026-07-30 17:16 | T8 | `62a18c3+dirty` | Qwen3-0.6B-Base / LFM2.5-350M-Base | running | - | - |
+| `20260730_1713_bert_t6_xqwen` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
+| `20260730_1713_bert_t7_extractor` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
+| `20260730_1713_bert_t5_ablation` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
 | `20260730_1645_bert_replay_tales_v3` | 2026-07-30 16:45 | C2-2t | `b55d520+dirty` | ModernBERT-base | ok | prior_baseline=0.556 risk10_coverage=0.336 risk10_trig_acc=0.839 risk05_coverage=0.147 risk05_trig_acc=0.85 depth09_acc=0.78 temperature=3.092 n_events_test=408 | 终审负结果:数据翻倍把高θ coverage从0拉到14.7%,但精度天花板84-85%离95%差10pt,tales投机门不开;开放动作空间是根因 |
 | `20260730_0814_bert_replay_appworld_v3` | 2026-07-30 08:14 | C2-2t | `9f91011+dirty` | ModernBERT-base | ok | prior_baseline=0.298 risk10_coverage=0.19 risk10_trig_acc=0.933 risk05_feasible=0 depth09_acc=0.579 temperature=2.149 n_events_test=791 | 终审负结果:数据翻倍精度仍钉在93.3%(v2fix 93.1%),风险0.05档无可行θ,appworld投机门95%标准下不开;v2fix边缘悬案了结 |
 | `20260730_0446_bert_replay_tales_v2fix` | 2026-07-30 04:46 | C2-2t | `715e4bc+dirty` | ModernBERT-base | ok | prior_baseline=0.672 risk10_coverage=0.0 risk05_coverage=0.0 calB_theta090_trig_acc=0.87 calB_theta095_trig_acc=0.875 depth09_acc=0.802 temperature=3.189 n_events_test=201 | 负结果:精度天花板0.87够不到95%约束,无可行工作点,tales投机门v2fix开不了;深度曲线0.644-0.802非冻结,待v3(数据翻倍)终审 |
@@ -20,6 +28,92 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `20260730_oracle_ceiling_8bfull`
+
+- **想验证什么**：oracle 零成本回放上界,在 8bfull nomem 流上算
+- **结论**：逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机
+- **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:02 → 2026-07-30 18:02
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **数字**：ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0%
+- **原始数据**：`benchmark_design/ORACLE_CEILING_8bfull.md`（不在 git 里）
+- **命令**：`benchmark_design/oracle_ceiling.py --legacy-levels`
+
+### `20260727_tracelab_simv0`
+
+- **想验证什么**：生态效度:真实负载里相似重复任务占多大比例
+- **结论**：重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明
+- **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:02 → 2026-07-30 18:02
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **数字**：adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8%
+- **原始数据**：`tracelab_analysis`（不在 git 里）
+- **命令**：`tracelab_analysis/similarity_v0.py`
+
+### `20260728_fig1_8bfull`
+
+- **想验证什么**：C3 全矩阵复跑:8B 上记忆红利与档位关系
+- **结论**：8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md
+- **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:02 → 2026-07-30 18:02
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **模型 / 种子**：Qwen3-8B / 20260729
+- **数字**：total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp
+- **原始数据**：`fig1_pilot/results`（不在 git 里）
+- **命令**：`fig1_pilot/launch_fleet.sh (8bfull_*,3档×mem/nomem×5seed×10ep)`
+
+### `20260730_1716_bert_t6_xgptoss`
+
+- **想验证什么**：跨模型换底座:用 gpt-oss 侧轨迹训 ModernBERT 探针,与 qwen 侧对照(T6);bfcl 一条排在 t8 g0 队列末尾
+- **方向**：T6 ｜ **状态**：running ｜ **起止**：2026-07-30 17:16 → 未收尾
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 6,7
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：data=envs/bert_data/v3_1_xmodel/train-gptoss max_len=4096 bs=8 accum=4 epochs=3
+- **原始数据**：`/home/y-guo/reproduce/new1/envs/bert_runs`（不在 git 里）
+- **命令**：`envs/bert/train_probe.py --env {tales,appworld,bfcl} --data envs/bert_data/v3_1_xmodel/train-gptoss --out envs/bert_runs/<env>_v3_xgptoss`
+
+### `20260730_1716_bert_t8_causal`
+
+- **想验证什么**：因果底座(Qwen3-0.6B/LFM2.5-350M)+线性头替代 ModernBERT 探针:整段一次前向、按事件监督;含 tales 8192 窗口对照;开训前逐 token 对齐检查全过
+- **方向**：T8 ｜ **状态**：running ｜ **起止**：2026-07-30 17:16 → 未收尾
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 0,1,2,3,4,5
+- **模型 / 种子**：Qwen3-0.6B-Base / LFM2.5-350M-Base / 20260729
+- **参数**：max_len=4096 bs=4 accum=8 lr=1e-05 epochs=3 variant_8k=max_len=8192,bs=2,grad_ckpt,align_tol=3e-4
+- **原始数据**：`/home/y-guo/reproduce/new1/envs/bert_runs`（不在 git 里）
+- **命令**：`envs/bert/train_causal_probe.py --base {qwen,lfm} --env {bfcl,appworld,tales} --out envs/bert_runs/<env>_v3_causal_<base>`
+
+### `20260730_1713_bert_t6_xqwen`
+
+- **想验证什么**：T6 跨模型: qwen 侧轨迹训 router,与 gptoss 侧对照迁移性
+- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 17:13 → 未收尾
+- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 7,8,9
+- **模型 / 种子**：- / 42
+- **参数**：data=v3_1_xmodel/train-qwen
+- **原始数据**：`envs/bert_runs/{tales,appworld,bfcl}_v3_xqwen`（不在 git 里）
+- **命令**：`envs/bert/train_probe.py --data envs/bert_data/v3_1_xmodel/train-qwen`
+
+### `20260730_1713_bert_t7_extractor`
+
+- **想验证什么**：T7 抽取头: 在 v3 事件上联训 答/span/param 三头,看参数级抽取准确率能否支撑投机执行
+- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 17:13 → 未收尾
+- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 4,5,6
+- **模型 / 种子**：- / 42
+- **参数**：data=v3 params=v3_params
+- **原始数据**：`envs/bert_runs/{bfcl,appworld,tales}_ext_v3`（不在 git 里）
+- **命令**：`envs/bert/train_extractor.py --env {bfcl,appworld,tales} (data v3 + params v3_params)`
+
+### `20260730_1713_bert_t5_ablation`
+
+- **想验证什么**：T5 输入消融: 砍掉 THINKING / HISTORY 段后 calA 加权 acc 掉多少
+- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 17:13 → 未收尾
+- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 0,1,2,3
+- **模型 / 种子**：- / 42
+- **参数**：input_mode=no-think+no-hist data=v3
+- **原始数据**：`envs/bert_runs/{env}_v3_{nothink,nohist}`（不在 git 里）
+- **命令**：`envs/bert/train_probe.py --data envs/bert_data/v3 --input-mode no-think/no-hist, 6 条 = 3 env x 2 mode`
 
 ### `20260730_1645_bert_replay_tales_v3`
 
