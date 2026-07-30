@@ -6,11 +6,14 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260730_t12c_smoke_7b` | 2026-07-30 18:46 | c3 | `871f502+dirty` | Qwen2.5-7B-Instruct | ok | smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30 | T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账 |
+| `20260730_1835_bert_t6_bfcl_mixed` | 2026-07-30 18:38 | c2 | `871f502+dirty` | ModernBERT-base | running | - | - |
+| `20260730_fig1_fullhist_8b` | 2026-07-30 18:20 | c3 | `bac6964+dirty` | Qwen3-8B | running | - | - |
 | `20260730_oracle_ceiling_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0% | 逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机 |
 | `20260727_tracelab_simv0` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8% | 重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明 |
 | `20260728_fig1_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | Qwen3-8B | ok | total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp | 8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md |
 | `20260730_1716_bert_t6_xgptoss` | 2026-07-30 17:16 | T6 | `62a18c3+dirty` | ModernBERT-base | running | - | - |
-| `20260730_1716_bert_t8_causal` | 2026-07-30 17:16 | T8 | `62a18c3+dirty` | Qwen3-0.6B-Base / LFM2.5-350M-Base | running | - | - |
+| `20260730_1716_bert_t8_causal` | 2026-07-30 17:16 | T8 | `62a18c3+dirty` | Qwen3-0.6B-Base / LFM2.5-350M-Base | ok | appworld_causal_qwen_acc005=0.9621 appworld_causal_qwen_cov005=0.3338 bfcl_causal_qwen_acc005=0.9779 tales_causal_qwen_acc005=0.9077 cost_ratio_bfcl=19.8 cost_ratio_appworld=26.4 cost_ratio_tales=34.1 | 因果探针裁决:appworld 95%门被打开(ModernBERT无解->0.9621/0.3338),coverage全面2.5-4.3x,earliness降0.05-0.13,成本1/20-1/34;8192窗口对照=噪声级收益,窗口非瓶颈;tales risk0.1档θ迁移失守为其特有 |
 | `20260730_1713_bert_t6_xqwen` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
 | `20260730_1713_bert_t7_extractor` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
 | `20260730_1713_bert_t5_ablation` | 2026-07-30 17:13 | C2-2t | `5e87638+dirty` | - | running | - | - |
@@ -28,6 +31,37 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `20260730_t12c_smoke_7b`
+
+- **想验证什么**：T12c 验收件:六被试换正式模型重冒烟,每被试一次冒烟通过记录
+- **结论**：T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账
+- **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:46 → 2026-07-30 18:57
+- **代码**：`871f502`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **模型 / 种子**：Qwen2.5-7B-Instruct / 20260729
+- **数字**：smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30
+- **原始数据**：`logs/20260730_t12c_smoke`（不在 git 里）
+- **命令**：`benchmark_design/evomem_driver.py --agent {exprag,exprecent,remem,dc_cu,dc_rs,awm} --tasks l3_2wiki_items.jsonl --limit 15 (vLLM tokyo108)`
+
+### `20260730_1835_bert_t6_bfcl_mixed`
+
+- **想验证什么**：bfcl 的 v3 主线是纯 qwen 数据,混训天花板行必须用 v3_1(qwen+gptoss 合流)重训一条;tales/appworld 的 v3 本就含双侧无此问题
+- **方向**：c2 ｜ **状态**：running ｜ **起止**：2026-07-30 18:38 → 未收尾
+- **代码**：`871f502`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 3
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：data=v3_1 n_train=47799 n_labels=106 steps=4482 epochs=3 bs=8 accum=4
+- **原始数据**：`envs/bert_runs/bfcl_v3_1_mixed`（不在 git 里）
+- **命令**：`envs/bert/train_probe.py --env bfcl --data envs/bert_data/v3_1 --out envs/bert_runs/bfcl_v3_1_mixed (tmux bert_t6_bfcl_mixed_t106g3, 先 --smoke 通过再全量)`
+
+### `20260730_fig1_fullhist_8b`
+
+- **想验证什么**：T12d 全历史基线:第三臂 fullhist,每集塞入全部前集轨迹,超预算最旧先截;配对 nomem 重跑供同硬件墙钟对照
+- **方向**：c3 ｜ **状态**：running ｜ **起止**：2026-07-30 18:20 → 未收尾
+- **代码**：`bac6964`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **模型 / 种子**：Qwen3-8B / 20260729
+- **原始数据**：`fig1_pilot/results`（不在 git 里）
+- **命令**：`fig1_pilot/run_fullhist_worker.sh 方案A(3档×5种子,同卡先nomem后fullhist配对,--seed 0-4 沿8bfull保逐集配对,budget 24576 tok)`
 
 ### `20260730_oracle_ceiling_8bfull`
 
@@ -74,11 +108,13 @@
 ### `20260730_1716_bert_t8_causal`
 
 - **想验证什么**：因果底座(Qwen3-0.6B/LFM2.5-350M)+线性头替代 ModernBERT 探针:整段一次前向、按事件监督;含 tales 8192 窗口对照;开训前逐 token 对齐检查全过
-- **方向**：T8 ｜ **状态**：running ｜ **起止**：2026-07-30 17:16 → 未收尾
+- **结论**：因果探针裁决:appworld 95%门被打开(ModernBERT无解->0.9621/0.3338),coverage全面2.5-4.3x,earliness降0.05-0.13,成本1/20-1/34;8192窗口对照=噪声级收益,窗口非瓶颈;tales risk0.1档θ迁移失守为其特有
+- **方向**：T8 ｜ **状态**：ok ｜ **起止**：2026-07-30 17:16 → 2026-07-30 20:23
 - **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 0,1,2,3,4,5
 - **模型 / 种子**：Qwen3-0.6B-Base / LFM2.5-350M-Base / 20260729
 - **参数**：max_len=4096 bs=4 accum=8 lr=1e-05 epochs=3 variant_8k=max_len=8192,bs=2,grad_ckpt,align_tol=3e-4
+- **数字**：appworld_causal_qwen_acc005=0.9621 appworld_causal_qwen_cov005=0.3338 bfcl_causal_qwen_acc005=0.9779 tales_causal_qwen_acc005=0.9077 cost_ratio_bfcl=19.8 cost_ratio_appworld=26.4 cost_ratio_tales=34.1
 - **原始数据**：`/home/y-guo/reproduce/new1/envs/bert_runs`（不在 git 里）
 - **命令**：`envs/bert/train_causal_probe.py --base {qwen,lfm} --env {bfcl,appworld,tales} --out envs/bert_runs/<env>_v3_causal_<base>`
 
