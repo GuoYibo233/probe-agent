@@ -160,7 +160,7 @@ def build(base, n_labels, dev):
 # ---------------------------------------------------------------- 对齐检查
 
 @torch.no_grad()
-def align_check(model, tok, text, max_len, dev, base, path):
+def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL):
     """整段一次前向 vs 逐 token 增量前向(fp32),末位置隐状态/logits 必须一致。
 
     只用逐 token 模式:分块增量(缓存非空+一次喂多 token)在 LFM2 上有静默算错前科。
@@ -187,10 +187,10 @@ def align_check(model, tok, text, max_len, dev, base, path):
 
     d_h = (h_full - h_inc).abs().max().item()
     d_l = (lg_full - lg_inc).abs().max().item()
-    ok = max(d_h, d_l) < ALIGN_TOL
+    ok = max(d_h, d_l) < tol
     a_h, a_l = h_full.abs().max().item(), lg_full.abs().max().item()
     rep = dict(base=base, base_path=path, mode="token-by-token", n_tokens=n,
-               maxdiff_hidden=d_h, maxdiff_logits=d_l, tol=ALIGN_TOL,
+               maxdiff_hidden=d_h, maxdiff_logits=d_l, tol=tol,
                PASS=bool(ok), device=str(dev), dtype="float32",
                transformers=transformers.__version__, torch=torch.__version__,
                # 诊断用(不参与判定):绝对差受隐状态量级影响,相对差看是否只是 fp32 噪声
@@ -244,6 +244,11 @@ def main():
                     help="调试用:再限事件数(0=不限)")
     ap.add_argument("--align-only", action="store_true",
                     help="只跑开训前对齐检查即退")
+    ap.add_argument("--align-tol", type=float, default=ALIGN_TOL,
+                    help="对齐检查绝对差阈值(默认 1e-4)。长窗口下 fp32 舍入噪声"
+                         "随 token 数与隐状态量级一起涨,绝对差会顶到 1e-4 而"
+                         "相对差仍是 1e-6(纯噪声);此时可放宽,判定依据看"
+                         "reldiff(1e-3 以上=真算错,放宽也没用)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
@@ -270,13 +275,14 @@ def main():
         ev_events = ev_events[:lim_ev]
 
     # ---- 开训必过的门:对齐检查(calA 最长事件全文,截到 --max-len) ----------
-    rep = align_check(model, tok, longest, args.max_len, dev, args.base, path)
+    rep = align_check(model, tok, longest, args.max_len, dev, args.base, path,
+                      tol=args.align_tol)
     (out / "ALIGN_CHECK.json").write_text(json.dumps(rep, indent=1))
     print(json.dumps(rep, indent=1), flush=True)
     if not rep["PASS"]:
         print("对齐检查 FAIL:整段前向与逐 token 增量前向不一致,拒绝开训。\n"
               f"  hidden max|diff| = {rep['maxdiff_hidden']:.3e}\n"
-              f"  logits max|diff| = {rep['maxdiff_logits']:.3e}  (tol {ALIGN_TOL})\n"
+              f"  logits max|diff| = {rep['maxdiff_logits']:.3e}  (tol {rep['tol']:.1e})\n"
               f"  相对差 hidden {rep['reldiff_hidden']:.2e} / logits "
               f"{rep['reldiff_logits']:.2e}(1e-6 量级=纯 fp32 噪声、绝对差只是"
               "隐状态量级大;1e-3 以上=真算错)\n"
