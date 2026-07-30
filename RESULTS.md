@@ -6,7 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `20260730_1645_bert_replay_tales_v3` | 2026-07-30 16:45 | C2-2t | `b55d520+dirty` | ModernBERT-base | running | - | - |
+| `20260730_1645_bert_replay_tales_v3` | 2026-07-30 16:45 | C2-2t | `b55d520+dirty` | ModernBERT-base | ok | prior_baseline=0.556 risk10_coverage=0.336 risk10_trig_acc=0.839 risk05_coverage=0.147 risk05_trig_acc=0.85 depth09_acc=0.78 temperature=3.092 n_events_test=408 | 终审负结果:数据翻倍把高θ coverage从0拉到14.7%,但精度天花板84-85%离95%差10pt,tales投机门不开;开放动作空间是根因 |
 | `20260730_0814_bert_replay_appworld_v3` | 2026-07-30 08:14 | C2-2t | `9f91011+dirty` | ModernBERT-base | ok | prior_baseline=0.298 risk10_coverage=0.19 risk10_trig_acc=0.933 risk05_feasible=0 depth09_acc=0.579 temperature=2.149 n_events_test=791 | 终审负结果:数据翻倍精度仍钉在93.3%(v2fix 93.1%),风险0.05档无可行θ,appworld投机门95%标准下不开;v2fix边缘悬案了结 |
 | `20260730_0446_bert_replay_tales_v2fix` | 2026-07-30 04:46 | C2-2t | `715e4bc+dirty` | ModernBERT-base | ok | prior_baseline=0.672 risk10_coverage=0.0 risk05_coverage=0.0 calB_theta090_trig_acc=0.87 calB_theta095_trig_acc=0.875 depth09_acc=0.802 temperature=3.189 n_events_test=201 | 负结果:精度天花板0.87够不到95%约束,无可行工作点,tales投机门v2fix开不了;深度曲线0.644-0.802非冻结,待v3(数据翻倍)终审 |
 | `20260730_0413_hotpot_t11_var` | 2026-07-30 04:14 | C1 | `40df390+dirty` | Qwen/Qwen3-8B | ok | n_records=1338 seeds=3 comp_early_soft_drop=0.18 bridge_deadzone_dtok=-153 | 采样方差检查:comparison早注毒性/死区/both_start最优三结论跨种子稳健;bridge hop2子集小样本已标注 |
@@ -24,11 +24,13 @@
 ### `20260730_1645_bert_replay_tales_v3`
 
 - **想验证什么**：tales v3 终审:v2fix天花板0.87判负,v3训练侧+7pt(0.6947 vs 0.6204),看精度天花板是否过95%
-- **方向**：C2-2t ｜ **状态**：running ｜ **起止**：2026-07-30 16:45 → 未收尾
+- **结论**：终审负结果:数据翻倍把高θ coverage从0拉到14.7%,但精度天花板84-85%离95%差10pt,tales投机门不开;开放动作空间是根因
+- **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 16:45 → 2026-07-30 17:03
 - **代码**：`b55d520`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：ModernBERT-base / 42
 - **参数**：theta_sweep=calB risk=0.10/0.05 data=v3
+- **数字**：prior_baseline=0.556 risk10_coverage=0.336 risk10_trig_acc=0.839 risk05_coverage=0.147 risk05_trig_acc=0.85 depth09_acc=0.78 temperature=3.092 n_events_test=408
 - **原始数据**：`/home/y-guo/reproduce/new1/envs/bert_data/v3`（不在 git 里）
 - **命令**：`CUDA_VISIBLE_DEVICES=2 mbert-env/bin/python envs/bert/eval_replay.py --env tales --run envs/bert_runs/tales_v3 --data envs/bert_data/v3`
 
