@@ -1,127 +1,420 @@
-# 新流水线施工图 — 2026-07-31
+# 新流水线施工规格书 — 2026-07-31（详版）
 
-> 配套 `2026-07-31-pipeline-plan.md` 第 1 波的**工程细节**：五段每段写清
-> 干什么 / 输入输出 / 复用哪个旧件 / 新写什么 / 怎么验收；凡是碰 GPU 的段落，
-> 都配一个**请示计划**——什么时候向用户请示、请示时给看什么、批准词是什么、
-> 批准后怎么监控收尾。
->
-> **请示铁律（2026-07-31 定，写进记忆）**：GPU 发射必须拿到明确指向发射的话
-> （"发射"/"跑吧"）；回答子话题的"就这样吧/可以"一律不算发射许可。
+> 写给执行模型的规格书：每段给到文件级、字段级、命令级，执行方**不需要做任何设计决策**。
+> 配套文档：总计划 `2026-07-31-pipeline-plan.md`（为什么这么做）、
+> 执行手册 `2026-07-31-execution-playbook.md`（GPU 发射与用户规矩）。
+> 本文管"代码怎么写"。
 
 ---
 
-## 0. 总体骨架
+## 0. 执行守则（先读，违反即返工）
 
-- 顶层目录 `pipeline/`，五个子目录一段一个：`collect/ annotate/ train/ eval/ inject/`，
-  外加 `configs/`（实验配置，进 git）、`data/` 与 `runs/`（产物，不进 git，仿照
-  `envs/bert_data` 的 gitignore 模式：排除一切、只留 `.md`）。
-- **配置驱动**：一个实验一个 json（env / model / backbone / head / split 方案 /
-  seed / 数据路径），run_id 由配置推导，四处一致（数据目录 / tmux / 台账 / commit）。
-- **双环境铁律照旧**：ModernBERT 段一律 `mbert-env` 的 python（transformers 4.57.6 钉死），
-  因果段一律 `cprobe-env`（≥5.14），采集段用各环境自己的 venv。pipeline 代码不跨环境
-  import，段与段之间只通过落盘文件交接。
-- seed 20260729 写死进配置模板，跟着每份报告走。
+1. **按 §4 → §5 → §6 → §7 → §8 的顺序做**，每段末尾的验收不过，不许进下一段。
+2. **抄写优先**：标了【照抄】的函数/常量/正则，从源文件原样复制，一个字符不改；
+   标了【改动】的只改列出的那几处；标了【新写】的按本文的规格写。
+   不确定某处该抄还是该写 → 默认抄。
+3. 字段名、超参、目录名、文件名**全部以本文表格为准**，不许自己发明。
+4. 遇到本文没覆盖的决策点 → **停下来问用户**，不要猜。
+5. **禁改清单（永远）**：`envs/` 下一切旧文件、`envs/bert_data/v3*`、
+   `envs/bert_runs/*`、`RESULTS.md`（渲染产物）、`ops/runs.jsonl`（只增不改）。
+   新代码只在 `pipeline/` 下写。
+6. 每个脚本头部写 docstring：干什么、输入输出、用法示例（照旧脚本的风格）。
 
-## 1. collect 段（采集）
+## 1. 目录树（第一步一次建齐）
 
-**干什么**：收编三个旧采集器，新写一个"发射清单生成器"。
+```
+pipeline/
+  configs/                      # 实验配置 json，进 git
+    aw_q35.json  aw_q36.json  aw_gptoss.json
+  collect/
+    gen_launch.py               # 【新写】发射清单生成器（§7）
+  annotate/
+    rules.py                    # 【照抄】切分规则常量与函数（§4.1）
+    build.py                    # 【改动】主构建器，源 = build_dataset.py（§4.2）
+    param_label.py              # 【改动】参数区间标签，源 = envs/bert/param_label.py（§4.3）
+    accept_v3diff.py            # 【新写】验收脚本（§4.5）
+  train/
+    input_modes.py              # 【照抄】envs/bert/input_modes.py 整文件
+    train_mbert_tool.py         # 【改动】源 = envs/bert/train_probe.py（§5.1）
+    train_mbert_extract.py      # 【改动】源 = envs/bert/train_extractor.py（§5.2）
+    train_causal_tool.py        # 【改动】源 = envs/bert/train_causal_probe.py（§5.3）
+    train_causal_callgen.py     # 【新写】因果+参数生成（§5.4）
+  eval/
+    eval_tool.py                # 【改动】源 = envs/bert/eval_replay.py（§6.1）
+    eval_mbert_call.py          # 【改动】源 = envs/bert/eval_extract.py + param_tiers.py（§6.2）
+    eval_causal_call.py         # 【新写】因果生成判分器（§6.3）
+    summarize_matrix.py         # 【新写】12 格汇总表（§6.4）
+  inject/
+    check_bundle.py             # 【新写】产物加载校验器（§8）
+  data/                         # 产物，不进 git
+  runs/                         # 产物，不进 git
+```
 
-- **复用（一字不改）**：`envs/collect/run_appworld.py` / `run_tales.py` /
-  `bfcl_gptoss/` 三个采集器本体，`common.py` 的 Chat/TrajLog，SYSTEM 提示词，
-  gpt-oss 的 `--api chat --reasoning-effort high` 档位。幂等续采
-  （`--resume`、分片 `--num-shards/--shard-id`）都是现成的。
-- **新写**：`collect/gen_launch.py`——输入一份采集清单 json
-  （模型 → 实例数 → 端口 → 卡位 → split/题单 → 分片数），输出三样：
-  服务端发射脚本（照 `envs/serve_logs/launch_vllm_topup.py` 的 ssh+tmux 模板，
-  含 H100 上 Qwen 要 `--max-num-seqs 512` 这类已知坑）、客户端发射脚本
-  （照 `full_v2_topup/launch_clients.sh` 模板）、`MANIFEST.md` 落到 run 目录。
-- **验收**：生成的脚本与旧模板逐参数 diff 核对；先发 1 题 smoke，轨迹 jsonl
-  里见到思考文本和工具调用才算通。
+`.gitignore` 末尾追加（原文照抄）：
 
-**GPU 请示计划**：
+```
+pipeline/data/**
+!pipeline/data/**/
+!pipeline/data/**/*.md
+pipeline/runs/**
+!pipeline/runs/**/
+!pipeline/runs/**/*.md
+```
 
-| 项 | 内容 |
+## 2. 全局约定
+
+### 2.1 解释器（用错环境 = 事故）
+
+| 脚本 | 解释器 |
 |---|---|
-| 请示时机 | 发射脚本生成完 + smoke 通过后 |
-| 请示给看 | 卡位表（哪台哪卡起哪个实例）、分片清单、预计墙钟 |
-| 批准词 | 明确的"发射"；批准前 GPU 零动作 |
-| 批准后 | gpu-run 全生命周期：探卡→发射→双登记（台账 + record.py start）→验活 |
-| 用户监控 | `python ops/gpu_jobs.py watch`（发射后原样奉上） |
-| Claude 巡检 | job-monitor 只读 agent，30 分钟一巡 |
-| 收尾 | 汇报条数与落盘路径 → **请示是否释放 vLLM 服务**（可能还要热用）→ 销号 → commit |
+| annotate/*、collect/*、eval/summarize_matrix.py | 任意 python3（纯标准库） |
+| train_mbert_*.py、eval_tool.py（评 mbert run）、eval_mbert_call.py | `/home/y-guo/reproduce/new1/mbert-env/bin/python` |
+| train_causal_*.py、eval_tool.py（评 causal run）、eval_causal_call.py | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` |
 
-## 2. annotate 段（切样本 + 标签）——纯 CPU，无请示
+### 2.2 常量（全部【照抄】，出处在括号里）
 
-- **规则常量表** `annotate/rules.py`：MIN_THINK=40、MAX_BOUNDS=64、HIST_ROUNDS=3、
-  RESULT_CAP=400、`Task/[HISTORY]/[THINKING]` 拼版式，从 `build_dataset.py` 原样搬，
-  一个数不改。
-- **两档标签同一份文件**：每条样本同时带 `label_tool`（工具名）和 `label_call`
-  （完整调用；参数归一化按 `param_label.py`：strip + 去引号，kwarg 保名、
-  位置参数记 pos0/pos1…）。不出两份数据。
-- **切分**：appworld 按官方分区文件（train 训 / dev 当 val / test_normal 考）；
-  bfcl 轮到时定种子单切三堆。切分粒度 = 任务实例。
-- **产物**：`data/<版本>/<env>_<model>/{train,val,test}.jsonl` +
-  `ANNOTATE_REPORT.md`（每堆的事件数 / 样本数 / 类目分布 / 先验基线——
-  对应 `DATA.md` §7 检查清单）。新版本条目同步补进 `DATA.md` §3/§4。
-- **验收（验收线的前半）**：拿 v3 bfcl 原始轨迹重跑本段，与
-  `envs/bert_data/v3/bfcl` 逐字节 diff（新增的 label_call 字段除外，只比旧字段）。
-
-## 3. train 段（四格训练）
-
-四格各一个入口脚本，共用配置：
-
-| 格 | 做法 | 环境 |
+| 常量 | 值 | 出处 |
 |---|---|---|
-| ModernBERT + 工具名 | 复刻 `train_probe.py` 全套超参：fp32 权重 + bf16 autocast、lr 2e-5、bs 8×累积4、3 epoch、maxlen 4096、左截断、损失权重 w=1/m、val 加权准确率选 best | mbert-env |
-| ModernBERT + 参数 | 复刻 `train_extractor.py` 抽取头 | mbert-env |
-| 因果 + 工具名 | 复刻 `train_causal_probe.py`（Qwen3-0.6B-Base + 线性头）；开训前必过混合架构对齐检查（老坑：旧版分块增量喂会静默算错） | cprobe-env |
-| 因果 + 参数 | **唯一全新的训练代码**：生成式目标，输入 = 样本题干、目标 = 归一化后的完整调用串，teacher forcing，loss 只压调用串的 token | cprobe-env |
+| SEED | 20260729 | 各旧脚本 |
+| MIN_THINK / MAX_BOUNDS / HIST_ROUNDS / RESULT_CAP | 40 / 64 / 3 / 400 | build_dataset.py |
+| SENT_RE | `(?<=[.!?])\s+|\n` | build_dataset.py |
+| MODEL_OF | {"q35":"qwen3.5-27b","q36":"qwen3.6-27b","gptoss":"gpt-oss-120b"} | build_dataset.py |
+| THETAS | 0.5 到 0.975 步长 0.025 共 20 档 | eval_replay.py |
+| RISK_TARGETS | [0.10, 0.05] | eval_replay.py |
+| BOOT | 1000 | eval_replay.py |
+| ALIGN_TOL | 1e-4 | train_causal_probe.py |
+| ModernBERT 权重 | `/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base` | train_probe.py |
+| Qwen3-0.6B-Base 权重 | `/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base` | train_causal_probe.py |
+| CALL_SEP | `"\n[CALL] "` | 本文新定（§5.4） |
+| FIND | `"\n[FIND] "` | train_extractor.py |
 
-- **验收**：每格 50 步微训 smoke——loss 在降、检查点能存能读、显存不超卡。
-- 精度铁律继承：权重 fp32，只在前向 autocast bf16（v2 全作废的教训）。
+### 2.3 实验配置 schema（configs/aw_q35.json 完整示例）
 
-**GPU 请示计划**：12 次训练 + 回放评测**打成一个包一次请示**。
-请示给看：12 行卡位分配表（A6000 池 19 张里挑 12）、单次时长、总墙钟、
-四格 smoke 结果。批准词"发射"。发射时逐 run `record.py start`；
-job-monitor 30 分钟一巡；全部收敛后统一汇报 → 释放 → 销号 → `record.py finish` → commit。
+```json
+{
+  "run_family": "aw_official_v1",
+  "env": "appworld",
+  "model_short": "q35",
+  "model_full": "qwen3.5-27b",
+  "traj_runs": ["/home/y-guo/reproduce/new1/envs/runs/full_v1",
+                 "/home/y-guo/reproduce/new1/envs/runs/full_v2_topup",
+                 "/home/y-guo/reproduce/new1/envs/runs/w0_aw_official"],
+  "split_mode": "official",
+  "official_split_files": {
+    "train": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/train.txt",
+    "val":   "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/dev.txt",
+    "test":  "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/test_normal.txt"
+  },
+  "data_out": "/home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35",
+  "seed": 20260729
+}
+```
 
-## 4. eval 段（回放评测）
+q36 / gptoss 两份只改 `model_short` / `model_full` / `data_out` 最后一段。
 
-- 复刻 `eval_replay.py` 的三步，校准堆合并成单 val：val 拟温度 → val 扫门槛
-  （THETAS、风险档 0.05/0.1 全继承）→ test 冻结只跑一次。
-- **参数档判分**：ModernBERT 侧用 `eval_extract.py` 的宽松/严格/整调用三档；
-  因果侧**新写判分器**——生成 → 解析出工具名和参数 → 按 `param_label.py`
-  同一套归一化 → 同三档口径。这是本段唯一的新零件。
-- **产物**：每 run 一份 `REPLAY_REPORT.json`（字段兼容 `probe_server.py`，
-  温度它直接能读）+ 全矩阵汇总 md（12 行 × trig_acc / coverage / earliness /
-  wrong_spec / 参数三档）。
-- **验收（验收线的后半，零 GPU）**：复用 `envs/bert_runs/bfcl_v3/logits_*.pt`
-  现成 logits 跑本段，数字对上 `RESULTS.md` 的 v3 bfcl 行才放行。
-- GPU 口径：回放要的前向已归入训练包的请示；纯复用 logits 的分析零卡、不请示。
+### 2.4 run_id 规则（四处一致：数据目录 / tmux / 台账 / commit）
 
-## 5. inject 段（只定格式，无实验）
+训练 run_id = `c1_<model_short>_<cell>`，cell ∈ {mtool, mext, ctool, cgen}。
+共 3 × 4 = 12 个。产物目录 = `pipeline/runs/<run_id>/`。
 
-- 实测过 `probe_server.py` 的加载路径：`<run>/best/`（HF 检查点 + tokenizer +
-  `label_map.json`）+ `REPLAY_REPORT.json`（读 temperature）。
-  train/eval 两段的产物**天然就是这个布局**，所以本段不需要格式转换器。
-- 只写一个 `inject/check_bundle.py` 校验器：加载一个训练产物、喂一条样本、
-  吐出预测和触发判定——CPU 可跑，作为"接口留好了"的凭证。
-- 无实验、无请示；注入实验将来另立项（请示点③）。
+### 2.5 堆名映射（新旧对照，改代码时用）
 
-## 6. GPU 请示点总表
+新流水线只有三堆：**train / val / test**。改旧脚本时的机械替换规则：
+- 旧代码读 `calA.jsonl` 的地方 → 读 `val.jsonl`
+- 旧代码读 `calB.jsonl` 的地方 → 读 `val.jsonl`（温度和门槛都在同一个 val 上定）
+- 日志/报告里的字段名 `calA_weighted_acc` 等**保持原名不改**（下游脚本按名读）
 
-| 请示点 | 是什么 | 规模 | 请示前必须完成 |
-|---|---|---|---|
-| ① 第 0 波采集 | tokyo108 六卡 6 个 vLLM 实例 + appworld 594 题-模型 | 6 卡约一晚 | 发射脚本生成、1 题 smoke |
-| ② 训练 + 回放包 | 12 次训练 + 回放评测 | A6000 池 12 卡约 2 小时 | 数据集造好、四格 smoke、验收线双通过 |
-| ③ 注入实验 | 将来另立项 | 待定 | 探针矩阵结果出炉 |
+## 3. 数据契约（字段级）
 
-每个请示点的流程固定：我出清单 → 你说"发射" → gpu-run 全生命周期 →
-监控命令交你 → job-monitor 巡检 → 完成汇报 → 释放（服务类先问）→ 销号 → commit。
+### 3.1 轨迹 jsonl（采集器产物，只读不改）
 
-## 7. 写码顺序与工作量（全程不占 GPU，直到请示点②）
+一个任务一个文件 `appworld_<task_id>.jsonl`，每行一条：
 
-annotate（0.5 天，含逐字节 diff 验收）→ eval（0.5 天，含零 GPU 验收线）→
-train 四格（1 天，新代码只有因果+参数一格）→ collect 生成器（0.25 天）→
-inject 校验器（0.25 天）。合计约 2.5 天。顺序这么排的理由：annotate 和 eval
-先立起验收线，train 的每一格写完立刻有东西可对，不攒债。
+| type | 字段 | 说明 |
+|---|---|---|
+| `meta` | 首行；`task_id`, `instruction`, … | 事件抽取取 `instruction` 当题干、`task_id` 当 unit |
+| `gen` | `step`, `reasoning`, … | `reasoning` = 思考原文（一字未删） |
+| `env` | `step`, `action`, `result` | action = 模型写的代码块 |
+| `final` | `steps`, `completed`, `eval` | 存在 `"type": "final"` 即该任务已完成（--resume 的判据） |
+
+### 3.2 样本 jsonl（annotate 产物）
+
+旧 11 字段【照抄 build_dataset.py 的 dict】+ 新 2 字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| text | str | `Task: …\n[HISTORY]\n…\n[THINKING]\n<前缀>`（assemble() 产出） |
+| label | str | 工具名（appworld 形如 `apis.spotify.login`） |
+| w | float | 1/m，m = 该事件切点数，round 6 位 |
+| depth | float | 切点字符位 / 思考全长，round 4 位 |
+| sent_idx / n_sents | int | 第几个切点 / 共几个 |
+| event | str | `f"{traj}|s{step}"`，事件主键 |
+| traj / unit / model / step | str/str/str/int | 轨迹名 / 任务实例 / 生成模型全名 / 步号 |
+| **label_call**（新） | str | 规范化完整调用，见 §3.3 |
+| **args_named**（新） | list | `[{"key":k,"value":v}, …]`，见 §3.3 |
+
+### 3.3 label_call 规范（新，annotate 构造）
+
+- 参数解析用【照抄】`envs/bert/param_label.py` 的 `split_args_named()`（保参数名版；
+  kwarg 取名字，位置参数取 `pos0/pos1/…`）。
+- 值归一化与旧口径完全一致：`strip()` 后 `strip("\"'")`。空值跳过。
+- `args_named` = 按调用里出现顺序的 `[{"key","value"}]`。
+- `label_call` = `f"{label}({', '.join(f'{k}={v}' for k,v in args_named)})"`；
+  无参数时 = `f"{label}()"`。
+
+### 3.4 参数区间标签 jsonl（annotate 产物，给 mext 用）
+
+与 `envs/bert_data/v3_params` 同构【照抄 param_label.py 的输出逻辑】：
+每行 `{event, sent_idx, w, params:[{key, value, start, end, found}]}`，
+start/end 是参数值在**该样本自己 text** 里最靠末尾一次出现的字符区间
+（`str.rfind`），找不到 `found=false`。
+
+### 3.5 训练产物布局
+
+| 格 | `pipeline/runs/<run_id>/` 下 |
+|---|---|
+| mtool | `best/`（HF 权重+tokenizer+`label_map.json`）、`train_log.jsonl`；eval 后追加 `logits_val.pt`、`logits_test.pt`、`REPLAY_REPORT.{json,md}` |
+| mext | `best/`（`model.pt`+tokenizer+`meta.json`）、`train_log.jsonl` |
+| ctool | `best/`（backbone HF 权重+tokenizer+`head.pt`+`label_map.json`+`meta.json`）、`ALIGN_CHECK.json`、`train_log.jsonl`；eval 后同 mtool |
+| cgen | `best/`（HF 权重+tokenizer+`meta.json`）、`train_log.jsonl` |
+
+### 3.6 REPLAY_REPORT.json 关键字段（eval_tool 产物，【照抄】旧结构）
+
+`temperature`、`theta_sweep_calB`（内容是 val 扫出来的，字段名不改）、
+`chosen_theta`（{"0.1": θ, "0.05": θ}）、`test_frozen`（每档 theta/coverage/
+trig_acc/earliness/wrong_spec/ci）、`stoptime_calibration_test`、
+`depth_bucket_acc_test`、`prior_baseline_event_acc`、`n_events_test`、
+`speculation_economics`。`probe_server.py` 读其中的 `temperature`，格式不许动。
+
+## 4. annotate 段
+
+### 4.1 rules.py【照抄】
+
+从 `envs/collect/build_dataset.py` 原样复制：SEED、MAX_BOUNDS、MIN_THINK、
+HIST_ROUNDS、RESULT_CAP、MODEL_OF、SENT_RE、`boundaries()`、`clip()`、
+`assemble()`、`split_args()`、`first_call_args()`、AW_CALL、BFCL_CALL。
+再从 `envs/bert/param_label.py` 复制 `split_args_named()`。
+
+### 4.2 build.py【改动】（源 = build_dataset.py）
+
+CLI：`python build.py --config pipeline/configs/aw_q35.json`
+
+流程（源脚本已有的步骤全保留，改动只有五处）：
+
+1. 事件抽取：【照抄】`jsonl_events()`（appworld 分支）。pattern 仍是
+   `appworld_*/appworld_*.jsonl`——**采集目录必须叫 `appworld_q35` 这类标准名**
+   （尾巴对上 MODEL_OF 的键，否则该目录被静默跳过——这是实测过的坑）。
+2. 【改动①】按 `config.model_full` 过滤事件：`ev["model"] == model_full` 才留。
+3. 【改动②】切分：不再 shuffle。读三个官方题单文件（每行一个 task_id），
+   `part[unit] = "train"/"val"/"test"` 按 unit 属于哪个文件定；
+   unit 不在任何题单里 → **报错退出**（不许静默丢）。
+4. 造样本：【照抄】全边界循环，dict 里追加 §3.3 的 `label_call`、`args_named`
+  （用事件的 tool + 保名参数重解析 action 得到）。
+5. 【改动③】输出堆名 `train/val/test`；【改动④】输出目录 = `config.data_out`；
+   【改动⑤】报告文件名 `ANNOTATE_REPORT.md`。
+6. 自检【照抄】：前缀断言 200 条、unit 不跨堆断言。追加一条【新写】：
+   从每堆抽 20 个 unit，断言其确实出现在对应官方题单文件里。
+7. `tool_vocab.json`（该模型自己的事件工具集）、`router_stats.md`、
+   `qa_sample.txt`、报告【照抄】（含频率先验基线，报告里写 test 堆的）。
+
+随后跑 4.3：`python param_label.py --config <同一份>`——产
+`<data_out>/params/{train,val,test}.jsonl`（§3.4 格式，逻辑【照抄】旧 param_label.py，
+只改输入输出路径与堆名）。
+
+### 4.4 产物清单（每模型一套）
+
+`pipeline/data/aw_official_v1/<model_short>/`：
+`train.jsonl val.jsonl test.jsonl tool_vocab.json router_stats.md
+qa_sample.txt ANNOTATE_REPORT.md params/{train,val,test}.jsonl`
+
+### 4.5 验收（accept_v3diff.py【新写】，不过不许进 §5）
+
+目的：证明事件抽取 + 切样本核心与 v3 逐字节一致（切分法不同，所以不比堆归属）。
+
+1. 用 rules.py + build.py 的抽取与造样本代码，跑 v3 的输入
+   （`--runs envs/runs/full_v1 envs/runs/full_v2_topup`，env=bfcl，**不过滤模型**）。
+2. 读 `envs/bert_data/v3/bfcl/{train,calA,calB,test}.jsonl` 四堆合并，
+   按主键 `(event, sent_idx)` 建索引。
+3. 断言：两边样本数相等；每条的 `text/label/w/depth/n_sents/traj/unit/model/step`
+   全等（新字段不比）。
+4. 输出 `ACCEPT_V3DIFF.md`：两边条数、逐字段不一致计数（必须全 0）。
+5. appworld 侧再跑一遍同样对比（v3 appworld），同样必须全 0。
+
+### 4.6 自检清单
+
+- [ ] rules.py 里每个常量与 build_dataset.py 逐一 diff 过
+- [ ] 官方题单三个文件行数 = 90 / 57 / 168（注意文件无末尾换行，别用 wc -l 直接当真）
+- [ ] 三个模型的 train 堆 unit 集合完全相同（都是那 90 题）
+- [ ] label_call 抽查 20 条：工具名 == label，参数与 action 原文对得上
+- [ ] ACCEPT_V3DIFF.md 全 0
+
+## 5. train 段（四格）
+
+### 5.1 train_mbert_tool.py【改动】（源 = train_probe.py，mbert-env）
+
+改动清单（其余一字不改，含超参 lr 2e-5 / bs 8 / accum 4 / epochs 3 /
+maxlen 4096 / 左截断 / fp32 权重 + bf16 autocast / w 加权损失 / warmup 5% / clip 1.0）：
+1. `--data` 语义改为直接指向 `<data_out>`（含 tool_vocab.json 的目录）；
+2. 评估文件 `calA.jsonl` → `val.jsonl`（§2.5）；
+3. 默认 `--out` 去掉，`--out` 必填（防覆盖）。
+smoke 语义【照抄】：500 训练样本 / 200 评估样本 / 1 epoch。
+
+CLI 示例：
+```
+mbert-env/bin/python pipeline/train/train_mbert_tool.py \
+  --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_mtool
+```
+
+### 5.2 train_mbert_extract.py【改动】（源 = train_extractor.py，mbert-env）
+
+改动清单：数据路径（文本 = `<data_out>`，参数 = `<data_out>/params`）、
+`calA`→`val`、`--out` 必填。其余（FIND 后缀拼接、最小覆盖 token 跨度、
+宽松/严格双口径、可答头 BCE + span CE、MAX_SPAN_TOK=64）一字不改。
+
+### 5.3 train_causal_tool.py【改动】（源 = train_causal_probe.py，cprobe-env）
+
+改动清单：数据路径、`calA`→`val`、只留 `--base qwen`。
+**对齐检查那一段一字不改**（开训必过，FAIL 即 exit 2；--align-only 先单独跑一遍）。
+超参照抄：lr 1e-5 / bs 4 事件 / accum 8 / epochs 3。
+
+### 5.4 train_causal_callgen.py【新写】（cprobe-env）
+
+**做什么**：把 Qwen3-0.6B-Base 微调成"看题干，生成完整调用串"。
+
+- 模型：`AutoModelForCausalLM.from_pretrained(QWEN_PATH, dtype=torch.float32)`；
+  tokenizer 照 build()【照抄 train_causal_probe.py】：pad=eos、
+  `truncation_side="left"`、`padding_side="right"`。
+- 一条训练实例 = 一条样本：输入串 = `text + CALL_SEP`，目标串 = `label_call + eos`。
+- 构造（防左截吃掉目标）：先 tokenize 目标（不截断）得 `tgt_ids`（长度 L_t，
+  超 160 token 的实例直接丢弃并计数）；再 tokenize 输入串，
+  `max_length = 4096 - L_t`，左截；拼接 `input_ids = prompt_ids + tgt_ids`，
+  `labels = [-100]*len(prompt_ids) + tgt_ids`。批内右 padding，pad 位 labels=-100。
+- 损失：逐实例算目标段 mean CE，记 `ce_i`；批损失 = `Σ(w_i·ce_i)/Σw_i`
+  （w 沿用样本的 1/m 事件等权）。
+- 超参对齐 ctool：lr 1e-5、bs 4、accum 8、epochs 3、warmup 5%、clip 1.0、
+  fp32 权重 + bf16 autocast、SEED 固定。
+- 每 epoch 评估：val 全量 masked-CE（选 best 的唯一依据，越低越好）+
+  从 val 定种子抽 200 条 greedy 生成（max_new_tokens=96，遇 `\n` 或 eos 停），
+  报 `val_exact_call`（生成串 == label_call 的比例，只进日志不选 best）。
+- smoke：500 / 200 / 1 epoch。日志事件名与旧脚本同构
+  （start/step/eval/save_best/done；eval 行字段 `val_ce`、`val_exact_call`）。
+- 产物：`best/`（save_pretrained + tokenizer + meta.json 记 base_path/data/
+  max_len/seed/epoch/transformers 版本）。
+
+### 5.5 12 run 矩阵（发射清单，执行手册 Phase C 引用）
+
+| run_id | 脚本 | 解释器 | 数据 | 依赖 |
+|---|---|---|---|---|
+| c1_{q35,q36,gptoss}_mtool | train_mbert_tool.py | mbert-env | 各自 data_out | 无 |
+| c1_{q35,q36,gptoss}_mext | train_mbert_extract.py | mbert-env | 各自 data_out + params | 无 |
+| c1_{q35,q36,gptoss}_ctool | train_causal_tool.py | cprobe-env | 各自 data_out | 对齐检查过 |
+| c1_{q35,q36,gptoss}_cgen | train_causal_callgen.py | cprobe-env | 各自 data_out | 无 |
+
+12 个全独立可并行；单个约 1–2.5 小时（A6000）。**评测有依赖**：见 §6 开头。
+
+## 6. eval 段
+
+**依赖顺序**：先评 6 个 tool run（各自出 REPLAY_REPORT + logits），
+再评 6 个参数 run（mext 用 mtool 的触发点，cgen 用 ctool 的触发点）。
+
+### 6.1 eval_tool.py【改动】（源 = eval_replay.py）
+
+改动清单（其余全部【照抄】：首次越阈回放、agg、经济换算、bootstrap、
+stop-time 校准、深度十桶、先验基线、报告双格式）：
+1. splits 循环 `("calA","calB","test")` → `("val","test")`；
+   温度在 val 拟，θ 也在 val 扫（§2.5），test 冻结不变。
+2. `--data` 指 `<data_out>`；`--run` 必填。
+3. 评 causal run 时（`--head causal` 开关【新写】）：加载方式改为
+   【照抄 train_causal_probe.py 的 CausalProbe + build()】，backbone 从
+   `best/` 读、head 从 `best/head.pt` 读；打分时按事件整段一次前向、
+   在每个边界位取 logits（复用其 collate 的定位逻辑）。cached-logits 路径不变。
+4. `--legacy-splits` 开关【新写】：读旧的 calA/calB/test 并完全按旧逻辑跑
+   （只为 §6.5 验收用）。
+
+### 6.2 eval_mbert_call.py【改动】（源 = eval_extract.py + param_tiers.py 一起搬）
+
+改动清单：`--data`/`--params` 指新目录、`calA`→`val`。
+其余【照抄】：触发点取自 `--run`（mtool）的 REPLAY_REPORT 温度 + chosen_theta、
+在触发前缀上跑抽取头、宽松/严格/整调用三档、三档分层（param_tiers 读
+router_stats.md）。产 `EXTRACT_REPORT.{json,md}` 于 mext run 目录。
+
+### 6.3 eval_causal_call.py【新写】（cprobe-env）
+
+1. 输入：`--ctool-run`（读 REPLAY_REPORT.json 的 temperature 与
+   chosen_theta["0.05"]，及 `logits_test.pt`）、`--cgen-run`、`--data`。
+2. 触发点：【照抄 eval_extract.py 的 replay_fire()】在 test 堆上求每事件
+   首次过 θ 的样本行。
+3. 对每个触发事件：prompt = 触发样本 `text + CALL_SEP`，greedy 生成
+   max_new_tokens=96，遇 `\n` 或 eos 停，得 `gen_call`。
+4. 解析 gen_call：工具名用【照抄】AW_CALL（appworld）/BFCL_CALL（bfcl），
+   参数用【照抄】split_args_named + 同一套归一化。解析失败记 `parse_fail`。
+5. 判分（对照真值 = 触发样本的 label 与 args_named）：
+   - `tool_ok` = 解析出的工具名 == label；
+   - 参数逐个：**宽松** = 归一化后值相等；**严格** = 未归一化原串相等；
+     键不匹配（多参/少参/名错）= 该参数错；
+   - `params_all_ok` = 全部参数宽松对（无参事件恒真，单独成列）；
+   - `full_call_ok` = tool_ok 且 params_all_ok。
+6. 产 `CALLGEN_REPORT.{json,md}` 于 cgen run 目录：n_fired、tool_ok、
+   parse_fail、params_all_ok（宽松/严格）、full_call_ok、无参事件占比，
+   以及分工具 top10 明细表。
+
+### 6.4 summarize_matrix.py【新写】（纯标准库）
+
+读 12 个 run 目录的报告，输出 `pipeline/runs/MATRIX_REPORT.md`：
+一张 12 行表（模型 × 格），列 = 风险 0.05 档的 coverage / trig_acc /
+earliness / wrong_spec（tool 格），或 full_call_ok / params_all_ok（参数格），
+外加每模型的 test 事件数与先验基线。缺报告的格标 `PENDING`。
+
+### 6.5 验收（不过不许进 Phase C 发射）
+
+零 GPU，复用旧缓存：
+
+```
+mbert-env/bin/python pipeline/eval/eval_tool.py --env bfcl \
+  --run /home/y-guo/reproduce/new1/envs/bert_runs/bfcl_v3 \
+  --data /home/y-guo/reproduce/new1/envs/bert_data/v3 \
+  --legacy-splits --cached-logits
+```
+
+判定：新产出的报告与 `envs/bert_runs/bfcl_v3/REPLAY_REPORT.json` 既有文件
+逐字段比对，`temperature / chosen_theta / test_frozen` 三块**完全一致**
+（把新报告写到临时目录，绝不覆盖旧文件）。输出 `ACCEPT_EVAL.md` 记录比对结果。
+
+## 7. collect 段：gen_launch.py【新写】
+
+输入：manifest json（执行手册 §3.2/§3.4 的两张表就是第一份 manifest 的内容）：
+
+```json
+{"run_id": "w0_aw_official",
+ "servers": [{"host":"tokyo108","gpu":3,"model_key":"q35","port":8101,
+               "session":"new1_w0_srv_q35a_t108g3","extra_flags":""}, ...],
+ "clients": [{"tag":"q35tr","model_key":"q35","split":"train","num_shards":2,
+               "shard_ports":[8101,8102],"outdir":"appworld_q35","exp":"w0q35tr"}, ...]}
+```
+
+输出三个文件到 `envs/runs/<run_id>/`：`launch_servers.py`（照
+launch_vllm_topup.py 模板，环境变量三件套与 ssh+tmux 结构一字不差）、
+`launch_clients.sh`（照 full_v2_topup/launch_clients.sh 的 tm()/aw() 结构）、
+`MANIFEST.md`（人读的两张表）。模型权重路径与旗标查表写死在脚本里
+（表在执行手册 §3.2）。**outdir 必须是 `appworld_<model_key>` 标准名**（§4.2 的坑）。
+gen_launch 只生成不执行；执行由 gpu-run 流程按手册走。
+
+## 8. inject 段：check_bundle.py【新写】
+
+- `--run <dir> --data <data_out> --head {mbert,causal}`：
+  按 `probe_server.py` 的 Probe 类同款方式加载（mbert：
+  AutoModelForSequenceClassification of `best/` + label_map.json +
+  REPLAY_REPORT.json 的 temperature；causal：CausalProbe 方式 backbone+head.pt）。
+- 从 test.jsonl 读第一条样本，前向出 softmax，打印：预测工具、置信度、
+  是否过 chosen_theta["0.05"]、真值。能跑通即凭证，写 `BUNDLE_CHECK.txt` 于 run 目录。
+- CPU 可跑（`--device cpu`）。
+
+## 9. 总验收清单（Phase C 发射前逐项打勾）
+
+- [ ] §4.5 ACCEPT_V3DIFF.md：bfcl + appworld 两侧全 0
+- [ ] §6.5 ACCEPT_EVAL.md：三块字段完全一致
+- [ ] 三份配置的 data_out 都产齐 §4.4 清单里的 10 个文件
+- [ ] 三个模型 train 堆 unit 集合相同、val=57 题、test=168 题
+- [ ] 四格 smoke 各跑通（mtool/mext/ctool/cgen，ctool 含 ALIGN_CHECK PASS）
+- [ ] check_bundle.py 对 smoke 产物跑通
+- [ ] 全部新代码 commit，工作树干净

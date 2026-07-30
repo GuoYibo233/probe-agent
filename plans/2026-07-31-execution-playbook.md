@@ -108,14 +108,19 @@ JOBS 表如下（Qwen 通用旗标 = `--reasoning-parser deepseek_r1 --max-model
 $E/appworld/venv/bin/python $E/collect/run_appworld.py \
   --base-url http://tokyo108:8101/v1 --model qwen3.5-27b \
   --split test_normal --n 1 --max-steps 30 \
-  --outdir $F/appworld_q35_tn --exp w0q35tn_smoke
-# qwen3.6 同上：端口 8104，outdir $F/appworld_q36_tn，exp w0q36tn_smoke
-# gpt-oss 同上：端口 8103，outdir $F/appworld_gptoss_tn，exp w0gptn_smoke，
+  --outdir $F/appworld_q35 --exp w0q35tn_smoke
+# qwen3.6 同上：端口 8104，outdir $F/appworld_q36，exp w0q36tn_smoke
+# gpt-oss 同上：端口 8103，outdir $F/appworld_gptoss，exp w0gptn_smoke，
 #   末尾加 --api chat --reasoning-effort high
 ```
 
-通过判据：outdir 里出现 `appworld_<tid>.jsonl`，文件里 `type:"llm"` 条目带非空
-`think` 字段、`type:"env"` 条目带代码动作。smoke 采过的题，全量时 `--resume` 自动跳过。
+**outdir 必须叫 `appworld_q35` 这类标准名**（下游事件抽取按目录名尾巴认模型，
+`appworld_q35_tn` 这种名字会被静默跳过——实测过的坑）。同一模型的 train 与
+test_normal 轨迹落同一个 outdir，文件名按 task_id 天然不冲突。
+
+通过判据：outdir 里出现 `appworld_<tid>.jsonl`，文件里 `type:"gen"` 条目带非空
+`reasoning` 字段、`type:"env"` 条目带代码动作、末行 `type:"final"`。
+smoke 采过的题，全量时 `--resume` 自动跳过。
 失败就修（先查服务日志），修不好按 §6 判断是否死局。
 
 ### 3.4 客户端：14 分片全上
@@ -127,10 +132,10 @@ $E/appworld/venv/bin/python $E/collect/run_appworld.py \
 
 | tag | split | num-shards | shard-id → 端口 | outdir | exp |
 |---|---|---|---|---|---|
-| q35tr | train | 2 | s0→8101，s1→8102 | `$F/appworld_q35_train` | `w0q35tr` |
-| q35tn | test_normal | 4 | s0,s1→8101，s2,s3→8102 | `$F/appworld_q35_tn` | `w0q35tn` |
-| q36tn | test_normal | 4 | s0,s1→8104，s2,s3→8105 | `$F/appworld_q36_tn` | `w0q36tn` |
-| gptn | test_normal | 4 | s0,s1→8103，s2,s3→8106 | `$F/appworld_gptoss_tn` | `w0gptn` |
+| q35tr | train | 2 | s0→8101，s1→8102 | `$F/appworld_q35` | `w0q35tr` |
+| q35tn | test_normal | 4 | s0,s1→8101，s2,s3→8102 | `$F/appworld_q35` | `w0q35tn` |
+| q36tn | test_normal | 4 | s0,s1→8104，s2,s3→8105 | `$F/appworld_q36` | `w0q36tn` |
+| gptn | test_normal | 4 | s0,s1→8103，s2,s3→8106 | `$F/appworld_gptoss` | `w0gptn` |
 
 （qwen3.5 每实例 3 条并发流、其他模型 2 条，这是故意的——q3.5 题多，拉平墙钟。）
 
@@ -170,8 +175,8 @@ python ops/record.py start --name w0_aw_official --track pipeline \
 
 ### 3.8 Phase A 收尾（做完立刻，不等 Phase B/C）
 
-1. 核对条数：`appworld_q35_train` 90 个 jsonl、`appworld_q35_tn`/`appworld_q36_tn`/
-   `appworld_gptoss_tn` 各 168 个，且每个文件末行是 `type:"final"`。
+1. 核对条数：`appworld_q35` 258 个 jsonl（train 90 + test_normal 168）、
+   `appworld_q36` 168 个、`appworld_gptoss` 168 个，且每个文件末行是 `type:"final"`。
 2. 缺的题重发对应分片补齐（`--resume`）。
 3. 杀六个服务：`ssh tokyo108 tmux kill-session -t <session>` × 6；
    `ssh tokyo108 nvidia-smi` 确认显存归零（授权已含，不必再问用户）。
