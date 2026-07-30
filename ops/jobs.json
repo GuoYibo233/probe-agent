@@ -1,50 +1,5 @@
 {
-  "active": [
-    {
-      "name": "w0_aw_official",
-      "workdir": "/home/y-guo/reproduce/new1/envs/runs/w0_aw_official",
-      "note": null,
-      "started_at": "2026-07-31 06:06",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "3",
-          "session": "new1_w0_srv_q35a_t108g3",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q35a_t108g3.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "2",
-          "session": "new1_w0_srv_q35b_t108g2",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q35b_t108g2.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "0",
-          "session": "new1_w0_srv_q36a_t108g0",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q36a_t108g0.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "1",
-          "session": "new1_w0_srv_q36b_t108g1",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q36b_t108g1.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "4",
-          "session": "new1_w0_srv_gptossa_t108g4",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_gptossa_t108g4.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "5",
-          "session": "new1_w0_srv_gptossb_t108g5",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_gptossb_t108g5.log"
-        }
-      ]
-    }
-  ],
+  "active": [],
   "history": [
     {
       "name": "faketest",
@@ -729,6 +684,51 @@
         }
       ],
       "finished_at": "2026-07-31 04:34"
+    },
+    {
+      "name": "w0_aw_official",
+      "workdir": "/home/y-guo/reproduce/new1/envs/runs/w0_aw_official",
+      "note": null,
+      "started_at": "2026-07-31 06:06",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_w0_srv_q35a_t108g3",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q35a_t108g3.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_w0_srv_q35b_t108g2",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q35b_t108g2.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_w0_srv_q36a_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q36a_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_w0_srv_q36b_t108g1",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_q36b_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_w0_srv_gptossa_t108g4",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_gptossa_t108g4.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_w0_srv_gptossb_t108g5",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_w0_srv_gptossb_t108g5.log"
+        }
+      ],
+      "finished_at": "2026-07-31 08:41"
     }
   ]
 }
