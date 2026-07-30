@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|---|
 | `20260730_t12c_smoke_7b` | 2026-07-30 18:46 | c3 | `871f502+dirty` | Qwen2.5-7B-Instruct | ok | smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30 | T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账 |
 | `20260730_1835_bert_t6_bfcl_mixed` | 2026-07-30 18:38 | c2 | `871f502+dirty` | ModernBERT-base | ok | best_calA=0.7847 ceiling_qwen_acc005=0.9645 ceiling_qwen_cov005=0.7478 ceiling_gptoss_acc005=0.9157 | bfcl v3_1 混训天花板:qwen侧0.9645/0.7478,gptoss侧0.9157/0.7615;coverage较纯qwen v3天花板(0.509/0.349)大幅抬升,混训增益在覆盖不在精度 |
-| `20260730_fig1_fullhist_8b` | 2026-07-30 18:20 | c3 | `bac6964+dirty` | Qwen3-8B | ok | acc_L0=0.62to0.94 acc_L1=0.98to1.00 acc_L2=0.84to0.86 tok_ratio_L0=0.84 tok_ratio_L1=1.17 tok_ratio_L2=2.5 wall_ratio_L0=0.73 wall_ratio_L1=0.66 wall_ratio_L2=1.21 truncated=0/150 avg_eps_included=4.5 | T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对):L0 近重复档 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1 天花板已满 +2pp 略贵;L2 远迁移 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在 L2 非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史 |
+| `20260730_fig1_fullhist_8b` | 2026-07-30 18:20 | c3 | `bac6964+dirty` | Qwen3-8B | ok | acc_L0=0.62to0.94 acc_L1=0.98to1.00 acc_L2=0.84to0.86 tok_ratio_L0=0.84 tok_ratio_L1=1.17 tok_ratio_L2=2.5 wall_ratio_L0=0.73 wall_ratio_L1=0.66 wall_ratio_L2=1.21 truncated=0/150 avg_eps_included=4.5 | T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对)。档位用代码标签(L0/L1/L2),对应正式编号 L2/L2-/L1,见 DATA.md 6.1:L0=完全一样的题 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1=几乎一样的题 天花板已满 +2pp 略贵(x1.17);L2=同类但换了东西的题 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在完全一样那一档非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史。更正:前一条 finish 把 L0 写成'近重复档',按两套编号都不成立(L0=完全重复),数字不变。 |
 | `20260730_oracle_ceiling_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0% | 逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机 |
 | `20260727_tracelab_simv0` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | - | ok | adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8% | 重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明 |
 | `20260728_fig1_8bfull` | 2026-07-30 18:02 | c3 | `62a18c3+dirty` | Qwen3-8B | ok | total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp | 8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md |
@@ -59,8 +59,8 @@
 ### `20260730_fig1_fullhist_8b`
 
 - **想验证什么**：T12d 全历史基线:第三臂 fullhist,每集塞入全部前集轨迹,超预算最旧先截;配对 nomem 重跑供同硬件墙钟对照
-- **结论**：T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对):L0 近重复档 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1 天花板已满 +2pp 略贵;L2 远迁移 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在 L2 非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史
-- **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:20 → 2026-07-30 23:31
+- **结论**：T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对)。档位用代码标签(L0/L1/L2),对应正式编号 L2/L2-/L1,见 DATA.md 6.1:L0=完全一样的题 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1=几乎一样的题 天花板已满 +2pp 略贵(x1.17);L2=同类但换了东西的题 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在完全一样那一档非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史。更正:前一条 finish 把 L0 写成'近重复档',按两套编号都不成立(L0=完全重复),数字不变。
+- **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:20 → 2026-07-31 03:10
 - **代码**：`bac6964`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **模型 / 种子**：Qwen3-8B / 20260729
 - **数字**：acc_L0=0.62to0.94 acc_L1=0.98to1.00 acc_L2=0.84to0.86 tok_ratio_L0=0.84 tok_ratio_L1=1.17 tok_ratio_L2=2.5 wall_ratio_L0=0.73 wall_ratio_L1=0.66 wall_ratio_L2=1.21 truncated=0/150 avg_eps_included=4.5
