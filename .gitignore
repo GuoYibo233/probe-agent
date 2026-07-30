@@ -72,3 +72,10 @@ envs/bert_runs/
 
 # ── C3 任务对数据本体（种子 20260729 可逐字节重生成，stats.json 统计进库）
 benchmark_design/*.jsonl
+
+pipeline/data/**
+!pipeline/data/**/
+!pipeline/data/**/*.md
+pipeline/runs/**
+!pipeline/runs/**/
+!pipeline/runs/**/*.md
