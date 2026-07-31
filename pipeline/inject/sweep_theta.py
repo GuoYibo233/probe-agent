@@ -366,13 +366,21 @@ def load_point(d, tag=""):
 
 def cmd_curve(a):
     dirs = [x.strip() for x in a.runs.split(",") if x.strip()]
+    ctrl_dirs = [x.strip() for x in (a.control or "").split(",") if x.strip()]
     pts, skipped = [], []
     for d in dirs:
         p = load_point(d, a.tag)
         (pts if p else skipped).append(p or d)
+    ctrls = [q for q in (load_point(d, a.tag) for d in ctrl_dirs) if q]
     if not pts:
         raise SystemExit("一个点都没装上(都还没 score?)")
+    dup = {p["theta"] for p in pts}
+    if len(dup) != len(pts):
+        raise SystemExit(
+            f"主曲线里有重复的 θ({sorted(dup)}) —— 同一个 θ 两行会让报告自相矛盾。"
+            "架构对照/口径对照那类副本请用 --control 传,别混进 --runs。")
     pts.sort(key=lambda p: p["theta"])
+    ctrls.sort(key=lambda p: p["theta"])
 
     pol = sorted({p["miss_policy"] for p in pts})
     L = ["# θ 扫描曲线:省 token vs 正确率", "",
@@ -454,6 +462,44 @@ def cmd_curve(a):
             f"{p['saved_ratio_oracle_timing']} | {p['headroom_captured']} | "
             f"{p['n_losing_inject']}/{p['n_inject']} | "
             f"{p['tok_gained_by_winning']} | {p['tok_lost_by_losing']} |")
+    if ctrls:
+        # 对照点:同一个 θ、同一份 plan,只换服务侧条件(卡型/负载/并发)重跑一遍。
+        # 曲线本身的六个点必须同架构;这张表回答的是"换条件到底差多少",
+        # 也就是曲线上的差值有多少可能只是 serving 噪声。
+        base = {p["theta"]: p for p in pts}
+        L += ["", "## 服务侧对照(同 θ 同 plan,只换服务条件重跑)", "",
+              "> greedy 续写在服务端批组成变化下会有数值抖动"
+              "(replay_inject.py 文件头已列这条已知偏差)。",
+              "> 这张表量的就是那点抖动:同一个 θ、同一份 plan,换一批服务重跑,",
+              "> 省 token 比例差多少。**这个差值是曲线的噪声地板**——曲线上小于",
+              "> 它的起伏不能当成真实趋势来读。", "",
+              "| θ | 主曲线 省token比例 | 对照 省token比例 | 差 | "
+              "主曲线 调用一致率 | 对照 调用一致率 | 对照来源 |",
+              "|---|---|---|---|---|---|---|"]
+        gaps = []
+        for q in ctrls:
+            b = base.get(q["theta"])
+            if b is None:
+                L.append(f"| {q['theta']} | (主曲线无此点) | "
+                         f"{q['saved_ratio_deployed']} | — | — | "
+                         f"{q['full_call_ok']} | {Path(q['run_dir']).name} |")
+                continue
+            g = (q["saved_ratio_deployed"] - b["saved_ratio_deployed"]
+                 if None not in (q["saved_ratio_deployed"],
+                                 b["saved_ratio_deployed"]) else None)
+            if g is not None:
+                gaps.append(abs(g))
+            L.append(
+                f"| {q['theta']} | {b['saved_ratio_deployed']} | "
+                f"{q['saved_ratio_deployed']} | "
+                f"{('%+.5f' % g) if g is not None else '—'} | "
+                f"{b['full_call_ok']} | {q['full_call_ok']} | "
+                f"{Path(q['run_dir']).name} |")
+        if gaps:
+            L += ["", f"**噪声地板 = {max(gaps):.5f}**"
+                  f"(对照点里最大的绝对差,共 {len(gaps)} 对)。"
+                  "主曲线上任何小于这个数的起伏都不可解读。"]
+
     if skipped:
         L += ["", "## 还没装上的点(没有 INJECT_REPORT.json)", ""]
         L += [f"- {s}" for s in skipped]
@@ -462,7 +508,8 @@ def cmd_curve(a):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.with_suffix(".md").write_text("\n".join(L) + "\n")
     out.with_suffix(".json").write_text(
-        json.dumps(dict(points=pts, skipped=skipped), ensure_ascii=False,
+        json.dumps(dict(points=pts, controls=ctrls, skipped=skipped),
+                   ensure_ascii=False,
                    indent=1))
     print("\n".join(L))
     print(f"\n落盘 -> {out.with_suffix('.md')} / {out.with_suffix('.json')}")
@@ -492,6 +539,9 @@ def main():
     p = sub.add_parser("curve", help="装配曲线")
     p.add_argument("--runs", required=True)
     p.add_argument("--out", default="pipeline/inject/THETA_CURVE")
+    p.add_argument("--control", default="",
+                   help="服务侧对照点(同 θ 同 plan、只换服务条件重跑的副本),"
+                        "单列一张表算噪声地板,不混进主曲线")
     p.add_argument("--tag", default="")
     p.set_defaults(fn=cmd_curve)
 
