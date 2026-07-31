@@ -203,7 +203,7 @@ arrives prefixed with `Tool result:`; it is never something the customer said.""
 
 TOOL_RE = re.compile(r"TOOL:\s*([A-Za-z_]\w*)")
 FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.S)
-SAY_RE = re.compile(r"SAY:\s*(.+)", re.S)
+SAY_MARK = "SAY:"          # 按位置从右边切,不用正则:见 parse_reply 里的说明
 
 # task id 的字符集闸门:必须能直接当文件名的一段(实测 airline/retail 全是 0..113
 # 的纯数字,全部合法)。不合法当场掐掉,不静默造出怪文件名。
@@ -285,9 +285,18 @@ def parse_reply(content):
         if not isinstance(args, dict):
             return "parse_fail", name, None, None, "json_not_object"
         return "tool", name, args, None, None
-    sm = SAY_RE.search(content)
-    if sm:
-        say = sm.group(1).strip()
+    # SAY 与 TOOL 同口径:取**最后一个** `SAY:` 之后的内容。system 提示里逐字
+    # 写着 `SAY: <what you say to the customer>`,模型复述它是已经防过的行为
+    # (见上面 TOOL 那行注释);SAY 若取第一个,整段格式说明就会被当成对客户说的
+    # 话,一路传给用户模拟器、写进 env 行的 said、再进评测器 —— 三处全错而没有
+    # 任何计数器会响。
+    # 注意这里**不能**照搬 TOOL 的 finditer[-1]:TOOL_RE 只捕一个词所以有多个
+    # 命中,而 SAY_RE 在 re.S 下 `(.+)` 是贪婪的,第一个 SAY: 就把后面整段(含
+    # 后续 SAY:)一口吃掉,finditer 只有一个命中,取末位等于没取。实测验过。
+    # 所以按标记位置从右边切。
+    i = content.rfind(SAY_MARK)
+    if i >= 0:
+        say = content[i + len(SAY_MARK):].strip()
         if say:
             return "say", None, None, say, None
     return "none", None, None, None, "no_block"
@@ -431,6 +440,17 @@ def run_task(T, env, domain, task, chat, user_chat, args, out_path):
     umsgs.append({"role": "user", "content": FIRST_AGENT_MESSAGE})
     ug = user_chat(umsgs)
     opening = (ug["content"] or "").strip()
+    if not opening:
+        # 空开场不是臆想的边界:common.py:62-63 明写"思考超长被截断:全部算思考,
+        # 内容为空",全仓采集器共用那个 Chat。放任下去 meta.instruction 就是空串,
+        # build.py:53 拼出来的每条样本第一行都是空的 `Task: `,题干信息整条丢光,
+        # 而轨迹照样跑完、退出码 0、任何数字都看不出来。所以重试一次,仍空就掐掉。
+        ug = user_chat(umsgs)
+        opening = (ug["content"] or "").strip()
+    if not opening:
+        print(f"  SKIP {domain}/{task.id}: 用户模拟器两次都给出空开场,不落盘",
+              flush=True)
+        return None
     umsgs.append({"role": "assistant", "content": opening})
     tmsgs.append(T.UserMessage(role="user", content=opening))
     # 这条 user 记录要在 meta 之后写(build.py:50 直接 recs[0] 当 meta),
@@ -735,8 +755,9 @@ def selftest():
         model="scripted-agent", user_model="scripted-user", split="base",
         exp="selftest", seed=SEED, max_steps=8,
         max_errors=DEFAULT_MAX_ERRORS)
-    with tempfile.TemporaryDirectory(
-            dir="/home/y-guo/.claude/jobs/f993e412/tmp") as td:
+    # 用系统临时目录,别钉任何会话私有路径 —— 钉了就换个会话 100% FileNotFoundError,
+    # 而挂掉的原因跟采集逻辑毫无关系,读日志的人会以为代码坏了
+    with tempfile.TemporaryDirectory() as td:
         out_path = Path(td) / f"tau2_{escape_unit(f'{domain}/{task.id}')}.jsonl"
         line = run_task(T, env, domain, task, _ScriptedChat(agent_script),
                         _ScriptedChat(user_script), args, out_path)
@@ -920,8 +941,12 @@ def main():
             raise SystemExit(
                 f"{args.domain} 有用户侧工具 —— 本采集器只记 agent 侧调用,"
                 f"会静默漏掉用户侧调用,拒绝跑")
-        print(run_task(T, env, args.domain, task, chat, user_chat, args,
-                       out_path), flush=True)
+        # None = 该题被掐掉了(空开场,已在 run_task 里打过 SKIP 行)。不落盘,
+        # 所以 --resume 下次还会重试它 —— 是"没采到"而不是"静默当采过了"。
+        line = run_task(T, env, args.domain, task, chat, user_chat, args,
+                        out_path)
+        if line is not None:
+            print(line, flush=True)
 
 
 if __name__ == "__main__":
