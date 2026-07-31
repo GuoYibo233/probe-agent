@@ -263,8 +263,29 @@ def load_steps(traj_path):
             for st in sorted(envs)]
 
 
-def cache_key(unit, step, gen_call):
-    raw = f"{REQUOTE_VERSION}|{unit}|{step}|{gen_call}"
+def prefix_sigs(steps):
+    """每个 step 之前**真正执行过的代码**的累积指纹,给缓存键当轨迹身份用。
+
+    为什么非有不可:appworld 的 unit 名在三个模型(gptoss/q35/q36)之间完全相同
+    (`envs/runs/w0_aw_official/` 下三份、同名 unit 文件),但各自轨迹在同一个 unit
+    上执行的代码不同,世界状态就不同。缓存键若只有 unit+step,换一批轨迹跑
+    execute 会**静默**复用别人世界的执行结果;更糟的是命中缓存时前缀重放整段
+    不跑,`prefix_verbatim` 直接抄缓存里的 True —— 既污染注入内容,又同时关掉
+    唯一能发现污染的那个哨兵,报告里的 n_drift 会是个假 0。
+    (实测复现过:把 plan 的 traj_path 从 appworld_gptoss 换成 appworld_q35,
+    再用 gptoss 建的缓存跑,8/8 全部命中、一个世界都没建、exec_out 逐字相同。)
+
+    世界状态由"这一步之前执行了什么"决定,所以指纹取前缀而非整条轨迹。
+    """
+    out, h = {}, hashlib.sha1()
+    for st, action, _ in steps:
+        out[st] = h.hexdigest()[:16]         # 该 step **之前**的前缀
+        h.update(f"{st}\x00{action}\x00".encode())
+    return out
+
+
+def cache_key(unit, step, gen_call, psig):
+    raw = f"{REQUOTE_VERSION}|{unit}|{step}|{psig}|{gen_call}"
     return hashlib.sha1(raw.encode()).hexdigest()
 
 
@@ -313,6 +334,7 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
     # 这两张表让"比对录下的 result"这件事不依赖是否真去执行了(整 unit 命中
     # 缓存那条路径也要能算),所以在建世界之前先备好
     rec_of = {st: r for st, _, r in steps}
+    psig = prefix_sigs(steps)                # 缓存键里的轨迹身份,见 prefix_sigs
     bare_of = {st: is_bare_print(c) for st, c, _ in steps}
     by_step = {}
     for r in rows:
@@ -348,7 +370,8 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
         return out
 
     # 全部命中缓存 -> 连世界都不用建(θ 之间补跑主要靠这条)
-    hits = {r["event"]: cache.get(cache_key(unit, r["step"], r["gen_call"]))
+    hits = {r["event"]: cache.get(cache_key(unit, r["step"], r["gen_call"],
+                                            psig[r["step"]]))
             for r in todo}
     if probe and all(hits.values()):
         for r in todo:
@@ -388,7 +411,7 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                 break
             for i, r in enumerate(by_step.get(st, []) if probe else []):
                 t0 = time.time()
-                key = cache_key(unit, st, r["gen_call"])
+                key = cache_key(unit, st, r["gen_call"], psig[st])
                 hit = cache.get(key)
                 if hit:
                     rec = dict(hit)
@@ -476,11 +499,15 @@ def main():
     # 路径一律先 resolve 再 chdir:先 chdir 后解析相对路径 = 静默找不到文件
     plan_p = Path(a.plan).resolve()
     out_p = Path(a.out).resolve()
-    cache_p = Path(a.cache).resolve()
+    # 缓存的读写路径必须分开:**写**只写自己那一片(>4KB 的行并发 O_APPEND 会
+    # 交错),**读**要读主名下所有兄弟分片。原来两者共用一个变量,加完 .s<id>
+    # 后缀再拿去 glob,只能匹配到自己那片 —— 跨分片、跨 θ 的缓存复用从来没生效过
+    # (而"θ 之间补跑靠缓存"正是 execute 档铺六个点的唯一省时机制)。
+    cache_main = Path(a.cache).resolve()
     if a.num_shards > 1:                     # 一片一个文件,免得并发写交错
         out_p = out_p.with_name(f"{out_p.stem}.s{a.shard_id}{out_p.suffix}")
-    cache_p = cache_p.with_name(
-        f"{cache_p.stem}.s{a.shard_id}{cache_p.suffix}")
+    cache_p = cache_main.with_name(
+        f"{cache_main.stem}.s{a.shard_id}{cache_main.suffix}")
     out_p.parent.mkdir(parents=True, exist_ok=True)
     cache_p.parent.mkdir(parents=True, exist_ok=True)
 
@@ -509,7 +536,7 @@ def main():
                 done.add(json.loads(l)["event"])
             except Exception:
                 pass
-    cache = load_cache(cache_p)
+    cache = load_cache(cache_main)           # 读主名 -> 兄弟分片全进来
     print(f"shard {a.shard_id}/{a.num_shards}: {len(units)} units "
           f"{sum(len(by_unit[u]) for u in units)} events exp={exp} "
           f"已有 {len(done)} 条 缓存 {len(cache)} 条 seed={APPWORLD_SEED}",
