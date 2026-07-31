@@ -17,7 +17,8 @@ manifest schema(见 pipeline/collect/manifest_w0.json):
   servers[]   {host, gpu, model_key, port, session, extra_flags, card?}
   clients[]   {tag, model_key, split, num_shards, shard_ports[], outdir, exp}
               shard_ports[k] = 第 k 个分片打哪个端口(长度必须 == num_shards)
-  可选:envs_root(默认 /home/y-guo/reproduce/new1/envs)、
+  可选:env(采集环境,appworld|alfworld,默认 appworld;决定采集器/venv/步数上限
+        与 outdir 前缀)、envs_root(默认 /home/y-guo/reproduce/new1/envs)、
         client_session_prefix(默认由 run_id 前两段拼出,w0_aw_official -> new1_w0aw)
 
 用法:
@@ -65,6 +66,16 @@ GPTOSS_CLIENT_EXTRA = "--api chat --reasoning-effort high"
 # 采集器统一参数(执行手册 §3.4)
 CLIENT_COMMON = "--n 0 --max-steps 30"
 
+# 环境表:manifest 顶层可选字段 "env" 选一行,缺省 appworld(老 manifest 行为不变)。
+# 每行说明该环境用哪个 venv、哪个采集器、生成的 shell 函数叫什么、统一参数是什么。
+ENV_TABLE = {
+    "appworld": dict(venv="appworld", runner="run_appworld.py", fn="aw",
+                     common=CLIENT_COMMON),
+    "alfworld": dict(venv="alfworld", runner="run_alfworld.py", fn="alf",
+                     common="--n 0 --max-steps 50"),
+}
+DEFAULT_ENV = "appworld"
+
 REPLICA_LETTERS = "ABCDEFGH"
 
 
@@ -82,6 +93,11 @@ def load_manifest(path):
             die(f"manifest 缺字段 {key}")
     run_id = cfg["run_id"]
     warns = []
+
+    env = cfg.get("env", DEFAULT_ENV)
+    if env not in ENV_TABLE:
+        die(f"未知 env {env}(表里只有 {sorted(ENV_TABLE)})")
+    cfg["env"] = env
 
     hosts = {s["host"] for s in cfg["servers"]}
     if len(hosts) != 1:
@@ -115,7 +131,7 @@ def load_manifest(path):
                 die(f"分片 {c['tag']}(model={c['model_key']})指向端口 {p},"
                     f"那是 {seen_port[p]['model_key']} 的实例")
         # outdir 强制标准名:下游事件抽取按目录名尾巴认模型,别的名字会被静默跳过
-        std = f"appworld_{c['model_key']}"
+        std = f"{env}_{c['model_key']}"
         if c.get("outdir") and c["outdir"] != std:
             warns.append(f"分片 {c['tag']} 的 outdir {c['outdir']!r} 不是标准名,"
                          f"已强制改为 {std!r}")
@@ -232,6 +248,7 @@ CLIENT_TM = '''tm() { # session cmd
 
 
 def gen_clients(cfg):
+    e = ENV_TABLE[cfg["env"]]
     prefix = cfg["client_session_prefix"]
     port2host = {s["port"]: s["host"] for s in cfg["servers"]}
     by_model = {}
@@ -253,11 +270,13 @@ def gen_clients(cfg):
             f'GPTOSS_EXTRA="{GPTOSS_CLIENT_EXTRA}"',
             "",
             CLIENT_TM,
-            "aw() { # tag model url extra split num_shards shard_id exp outdir_tag",
+            f"{e['fn']}() {{ # tag model url extra split num_shards shard_id "
+            "exp outdir_tag",
             f'  tm "{prefix}_$1_s$7" \\',
-            '    "$E/appworld/venv/bin/python $E/collect/run_appworld.py \\',
-            f'      --base-url $3 --model $2 --split $5 {CLIENT_COMMON} $4 \\',
-            '      --outdir $F/appworld_$9 --exp $8 --num-shards $6 --shard-id $7 \\',
+            f'    "$E/{e["venv"]}/venv/bin/python $E/collect/{e["runner"]} \\',
+            f'      --base-url $3 --model $2 --split $5 {e["common"]} $4 \\',
+            f'      --outdir $F/{cfg["env"]}_$9 --exp $8 --num-shards $6 '
+            '--shard-id $7 \\',
             '      --resume"',
             "}",
             ""]
@@ -267,7 +286,8 @@ def gen_clients(cfg):
         out.append(f"# ---- {m['served']}: {c['split']} {c['num_shards']} 分片 ----")
         for sid, port in enumerate(c["shard_ports"]):
             url = f"http://{port2host[port]}:{port}/v1"
-            out.append(f"aw {c['tag']} {m['served']} {url} {extra} {c['split']} "
+            out.append(f"{e['fn']} {c['tag']} {m['served']} {url} {extra} "
+                       f"{c['split']} "
                        f"{c['num_shards']} {sid} {c['exp']} {c['model_key']}")
         out.append("")
     out += ['echo "---- sessions ----"',
@@ -278,6 +298,7 @@ def gen_clients(cfg):
 # ----------------------------------------------------------------- MANIFEST.md
 
 def gen_manifest_md(cfg):
+    e = ENV_TABLE[cfg["env"]]
     rep = replica_map(cfg["servers"])
     port2host = {s["port"]: s["host"] for s in cfg["servers"]}
     prefix = cfg["client_session_prefix"]
@@ -311,9 +332,10 @@ def gen_manifest_md(cfg):
                  f"`{prefix}_{c['tag']}_s<k>` |")
     L += ["",
           f"`$F` = `{cfg['envs_root']}/runs/{cfg['run_id']}`,日志 `$F/logs/<session>.log`。",
-          f"客户端统一参数 `{CLIENT_COMMON} --resume`;"
+          f"客户端统一参数 `{e['common']} --resume`;"
           f"gpt-oss 分片额外 `{GPTOSS_CLIENT_EXTRA}`。",
-          "outdir 一律 `appworld_<model_key>` 标准名(下游事件抽取按目录名尾巴认模型)。",
+          f"outdir 一律 `{cfg['env']}_<model_key>` 标准名"
+          "(下游事件抽取按目录名尾巴认模型)。",
           "", "## 发射顺序", "",
           "1. `python3 launch_servers.py`(六实例起齐,日志出现 "
           "\"Application startup complete\" 且 `curl -s http://<host>:<port>/v1/models` 有返回)",
