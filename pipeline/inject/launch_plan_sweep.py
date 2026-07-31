@@ -30,13 +30,16 @@ COMMON = (
     "--miss-policy skip"
 )
 
-# (gpu, theta, run_id)
+# (gpu, theta, run_id)。th0925 是第六点:与历史 run aw_gptoss_r10 同 θ,重新生成
+# 一份 plan(不复用旧产物),run 段跑专用服务 + concurrency 16,用来量 serving
+# 条件对 token 计数的扰动。
 POINTS = [
     (0, "0.50", "aw_gptoss_th050"),
     (1, "0.70", "aw_gptoss_th070"),
     (2, "0.80", "aw_gptoss_th080"),
     (3, "0.875", "aw_gptoss_th0875"),
     (4, "0.95", "aw_gptoss_th095"),
+    (5, "0.925", "aw_gptoss_th0925"),
 ]
 
 SMOKE = (0, "0.80", "_smoke_th080", "--limit 4")
@@ -63,6 +66,9 @@ def launch(gpu, session, cmd, log):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--only", default="",
+                    help="只发这些点(逗号分隔的 tag,如 th0925)。留空=全发。"
+                         "已跑完的点会话已经消失,SKIP 保护挡不住,补发单点必须用它")
     a = ap.parse_args()
 
     if a.smoke:
@@ -72,8 +78,11 @@ def main():
                f"{LOGDIR}/{session}.log")
         return
 
+    only = [t for t in a.only.split(",") if t]
     for gpu, theta, run_id in POINTS:
         tag = run_id.replace("aw_gptoss_", "")
+        if only and tag not in only:
+            continue
         session = f"new1_thsw_plan_{tag}_t106g{gpu}"
         launch(gpu, session, plan_cmd(theta, run_id),
                f"{LOGDIR}/{session}.log")
