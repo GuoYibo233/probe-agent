@@ -1,6 +1,6 @@
 ---
 name: probe-pipeline
-description: new1 探针流水线的执行入口——从轨迹采集到矩阵报告的全链一条龙：定批次 → 采集(GPU) → 写码/改码(CPU，与采集并行) → 双验收线 → 造数据集 → 四格 smoke → 批量训练 → 依赖顺序评测 → 矩阵汇总 → 记账收官。Invoke whenever Dungeon♂Master says "跑流水线"、"跑一批探针"、"新数据集跑一遍"、"出矩阵"、"换个环境跑"、"run the pipeline"、或任何要把 collect/annotate/train/eval 串起来跑的活。单个 GPU 任务只用 gpu-run，这个 skill 管的是整条链。
+description: new1 探针流水线的执行入口——从轨迹采集到矩阵报告的全链一条龙：定批次 → 采集(GPU) → 写码/改码(CPU，与采集并行) → 双验收线 → 造数据集 → 四格 smoke → 批量训练 → 依赖顺序评测 → 矩阵汇总 → 记账收官 → 回写本 skill。也是**扩展这条流水线的唯一入口**：加新模型 / 加新环境 / 加新训练方法(新格) / 换新 split 方法，都从这里进，并在收尾时按 Phase E 把新方法写回 skill。Invoke whenever Dungeon♂Master says "跑流水线"、"跑一批探针"、"新数据集跑一遍"、"出矩阵"、"换个环境跑"、"加个新模型/新格"、"换个切分方式"、"加一种训练方法"、"run the pipeline"、或任何要把 collect/annotate/train/eval 串起来跑或扩展的活。单个 GPU 任务只用 gpu-run，这个 skill 管的是整条链。
 version: 1.0.0
 ---
 
@@ -14,7 +14,8 @@ version: 1.0.0
 - 命令表：`references/stage-commands.md`
 - 口径清单：`references/invariants.md`（改这里任何一条 → 新老数字不可比）
 - 门禁与应急：`references/gates.md`（门禁编号 G1–G18，下文按编号引用）
-- 扩展清单：`references/extending.md`（**加新模型 / 加新环境从这份进**，含静默失败点总表）
+- 扩展清单：`references/extending.md`（**加新模型 / 新环境 / 新训练方法 / 新 split 方法
+  从这份进**；§5 静默失败点总表；**§6 回写本 skill 的对照表**）
 
 工程规则的上位法仍是 `CLAUDE.md`；GPU 发射的上位法仍是 `.claude/skills/gpu-run/SKILL.md`。
 **本 skill 不自己发射 GPU 任务**——凡是要占卡的步骤一律转 gpu-run。
@@ -30,6 +31,10 @@ version: 1.0.0
 | `<MODELS>` | `q35 q36 gptoss` | 被探测的 agent 模型，**永不合并同族**（q35≠q36） |
 | `<CELLS>` | `mtool mext ctool cgen` | 骨架(mbert/causal) × 头(工具/参数) 四格 |
 | `<DATA_ROOT>` | `pipeline/data/aw_official_v1/` | 数据集版本目录，**换口径就换版本号** |
+
+这五个变量里有四个可以扩展，各自的改动清单在 `references/extending.md`：
+新模型 §1 · 新环境 §2 · **新格（新训练方法）§3** · **新 split 方法 §4**。
+扩展了任何一项，收尾必须走 **Phase E 回写本 skill**。
 
 钉完立刻做三件事：
 1. 过一遍 `DATA.md §7` 检查清单（八条，每条都对应一个踩过的坑）。
@@ -139,6 +144,39 @@ version: 1.0.0
 5. **销号**：每个任务 `gpu_jobs.py finish`，台账清空。
 6. **提交**：代码 + `ops/runs.jsonl` + `RESULTS.md` + 报告 `.md`，
    commit message 里带 `<BATCH>` 与关键数字。
+
+---
+
+## Phase E — 回写本 skill（**扩展了流水线就必须做，不做等于没做**）
+
+Phase D 结算的是这一批的数字；Phase E 让**下一批**不必重新踩一遍。
+skill 是活文档，用一次不回写就腐烂一次——下次调用它的人（很可能还是你）
+会拿着一份缺了新格、缺了新环境、缺了新坑的旧地图上路。
+
+### 触发条件（命中任意一条就必须回写）
+
+1. 加了新模型 / 新环境 / 新格 / 新 split 方法
+2. 改了任何写死的口径（哪怕只是放宽一个阈值）
+3. 新增或改动了脚本接口（加 flag、改默认值、改产物路径）
+4. **踩了一个本 skill 没记过的坑**——尤其是"不报错只是数字不对"那种
+5. 新立了一道门禁
+
+### 怎么回写
+
+对照 `references/extending.md §6` 的表逐行打勾，它写明了
+「做了什么 → 更新哪份文档的哪一节 → 更新什么内容」。三条硬规矩：
+
+- **新门禁编号从 G19 起顺延**，G1–G18 已占用，不许复用旧号（SKILL.md 按号引用）。
+- **区分"该进 skill"与"这一批一次性的事"**：判据是**下一个人会不会再遇到**。
+  「gptoss 在 A6000 上装不下」进 skill（硬件约束长期成立）；
+  「c1 批次里 q35 的 θ 是 0.85」不进（那是这批的结果，归 RESULTS.md）。
+- **回写与 Phase D 的提交一起做，不留到"以后"**——留到以后就是永远。
+  commit message 写 `skill: <改了什么> —— 由 <batch> 触发`。
+
+### 回写完自查两句
+
+- 新加的章节，SKILL.md 里有没有指向它的路？（孤岛文档等于不存在）
+- 引用的章节号/门禁号还对得上吗？（`grep -n '^#' references/*.md` 一眼扫完）
 
 ---
 

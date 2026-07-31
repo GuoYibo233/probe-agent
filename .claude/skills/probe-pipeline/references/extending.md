@@ -1,6 +1,6 @@
-# extending — 接入新模型 / 新环境的改动清单
+# extending — 接入新模型 / 新环境 / 新训练方法 / 新 split 的改动清单
 
-本文件回答一件事:要在这条五段流水线上加一个**新的被探测模型**或一个**全新环境**,到底要动哪些文件的哪几行,漏改会报错还是会静默出错。
+本文件回答一件事:要在这条五段流水线上加**新的被探测模型**(§1)、**全新环境**(§2)、**新训练方法即新格**(§3)、**新 split 方法**(§4),到底要动哪些文件的哪几行,漏改会报错还是会静默出错;§5 是静默失败点总表,§6 是"改完之后怎么把新方法写回 skill"。
 逐条结论都标了 `文件:行号`(2026-07-31 c1 批次的代码状态);流程说明在上一层 `SKILL.md`,照抄命令去同目录 `stage-commands.md`,判分口径去 `invariants.md`。
 
 ---
@@ -74,18 +74,127 @@
 3. 改 `gen_launch.py` 客户端段 → **stage-commands §1** `--dry-run` 看生成的 sh 对不对 → 正式采集(gpu-run)。
 4. 改 annotate 五处分支(collect_events ×2、jsonl_events ×2、unit 派生)+ 正则 → **stage-commands §2** 建库;`ANNOTATE_REPORT.md` 的工具词表与频率先验基线是第一道人眼验收。
 5. 改七处 `choices` + `eval_causal_call.py:117-124` → **stage-commands §3 / §4** 照常跑,训练与 eval 主体不动。
-6. `accept_v3diff.py` 对新环境**没有对照旧数据**,G8 那道门在新环境上无效——要另想验收办法(见 §4)。
+6. `accept_v3diff.py` 对新环境**没有对照旧数据**,G8 那道门在新环境上无效——要另想验收办法(见 §7)。
 
 ### 2.4 先验成本估计(只数代码,不估工时)
 
 - **要新写的文件:2 类** —— 1 个采集器(`envs/collect/run_<env>.py`,模板 102–124 行)、每模型 1 份 config(19 行)+ 1 份 manifest。
 - **要加的分支:11 处** —— `build.collect_events` 1、`build.jsonl_events` 1、`build` 的 unit 派生 1、`param_label.collect_events` 1、`param_label.jsonl_events` 1、`rules` 正则 1、`eval_causal_call.parse_call` 1、`gen_launch` 客户端段 1、`gen_launch.MODEL_TABLE`(若同时换模型)1,外加 `--env choices` 7 处(算 1 处批量改)、`summarize_matrix --prefix/--models` 1。
 - **一行不动的:5 个文件** —— 四个训练脚本 + `inject/check_bundle.py`。`eval_tool.py` 与 `eval_mbert_call.py` 也只动 choices 一行。
-- **风险集中度**:11 处分支里有 4 处漏改**不报错**(见 §3 的 #5 #6 #7 #10),其余漏改都会当场退非 0。
+- **风险集中度**:11 处分支里有 4 处漏改**不报错**(见 §5 的 #5 #6 #7 #10),其余漏改都会当场退非 0。
 
 ---
 
-## 3. 静默失败点总表
+## 3. 情形 C:加一种新训练方法(新格)
+
+"格" = 骨架 × 头。现状四格:
+
+| 格 | 脚本 | 骨架 | 头 | 选 best 的指标 | `best/` 存盘格式 |
+|---|---|---|---|---|---|
+| mtool | `train_mbert_tool.py` | ModernBERT(`:32`) | 序列分类 | val 加权 acc(`:167-171`) | HF 目录 + tokenizer + `label_map.json`(`:172-175`) |
+| mext | `train_mbert_extract.py` | ModernBERT(`:37`) | span 抽取(start/end/可答) | val 参数 acc(`:315-316`) | **裸 state_dict** `best/model.pt` + tokenizer + `meta.json`(`:318-323`) |
+| ctool | `train_causal_tool.py` | Qwen3-0.6B(`:49-50`) | 线性头挂末位隐状态 | val 加权 acc(`:355-356`) | backbone HF + `head.pt` + `label_map.json` + `meta.json`(`:358-366`) |
+| cgen | `train_causal_callgen.py` | Qwen3-0.6B(`:40`) | 语言建模(直接写整条调用) | val_ce,越低越好(`:275-276`) | HF 目录 + tokenizer + `meta.json`(`:278-283`) |
+
+### 3.1 必改清单
+
+| 文件:行 | 改什么 | 漏改的后果 | 改动量 |
+|---|---|---|---|
+| 新建 `pipeline/train/train_<新格>.py` | 模板选法见 §3.2 | —— | 新写 180–372 行(四个现成脚本的行数区间) |
+| `ops/launch_c1.py:14-19` | `CELLS` 加一行 `"<格名>": (解释器, 脚本绝对路径, base_args)` | `build()` 在 `:52` `CELLS[cell]` KeyError 退 1,响 | 加一行 |
+| `pipeline/eval/summarize_matrix.py:21` | `CELLS` 元组加格名 | ⚠️**静默**:新格四行**根本不进矩阵表**,脚本退 0、stdout 不提 | 加一项 |
+| `pipeline/eval/summarize_matrix.py:22-23` | `REPORT_OF` 加 `"<格名>": "<报告文件名>.json"` | `read_cell` 在 `:33` `REPORT_OF[cell]` KeyError,响 | 加一项 |
+| `pipeline/eval/summarize_matrix.py:37-58` | 取数的三分支 | ⚠️**静默**:新格落到 `:55-58` 的 else,按 `params_all_ok`/`full_call_ok` 取字段,名字对不上就 `rep.get()` 全 None → 表里一整行 `-`,状态列却写着 `OK` | 加一个分支 |
+| `pipeline/inject/check_bundle.py:82-160` + `:165` | 加一个 Bundle 类 + `--head` 加一个 choice | 两个现成类都要求 `best/label_map.json` 并让 `probs()` 吐类别分布(`:104-110`、`:145-160`);非分类头拿现成类装会当场崩(响)。不加 = **这个格没有 inject 凭证**(mext/cgen 现在就是这个状态) | 加一个类(约 40 行) |
+
+### 3.2 能照抄什么、不能照抄什么
+
+**四个训练脚本之间几乎不共享代码**,全流水线只有一处真 import:`train_mbert_tool.py:30` 的 `from input_modes import apply_mode`(`pipeline/train/input_modes.py`),**只有 mtool 一个格用**——所以 `--input-mode`(`train_mbert_tool.py:96-98`)也只有 mtool 有。其余全是各自复制粘贴:
+
+| 部件 | 四份各在哪 | 抄的时候注意 |
+|---|---|---|
+| `SEED = 20260729` + `torch.manual_seed`/`random.seed` | 常量 mtool`:33` / mext`:38` / ctool`:52` / cgen`:41`(另有 `rules.py:13` 第五份);设种子 mtool`:101-102` / mext`:232-233` / ctool`:257-258` / cgen`:200-201` | 五处独立常量,**没有单一真源**;新格必须自己写死同一个数,设种子位置照抄 |
+| `collate()` 与 Dataset 类 | `collate` mtool`:56` / mext`:124` / ctool`:98` / cgen`:76`;数据集 `JsonlDS`(mtool`:36`)/ `InstDS`+`join_rows`(mext`:63`)/ `load_events`+`EventDS`(ctool)/ `CallDS`(cgen`:58-63`) | 八份签名各不相同,一律不能复用;按"新格吃什么标签"挑最近的抄 |
+| `train_log.jsonl` 的 `log()` 闭包 | mtool`:132-138` / mext`:265-267` / ctool`:313-315` / cgen`:234-236` | 一律 `open(..., "a")` **追加模式**;事件名约定 `start`/`step`/`eval`/`save_best`/`done`,新格不照这套写,读日志的人和 job-monitor 都认不出 |
+| smoke 限额 | mtool`:118`、mext`:247`、cgen`:210` 都是 500/200 **实例**;ctool`:269` 是 200/80 **事件** | 新格自己定,定完写进 stage-commands §3 的表 |
+| 日志字段旧名 | `calA_weighted_acc`(mtool`:168`)、`calA_param_acc`(mext`:323`)、`best_calA_weighted_acc`(ctool`:368`) | 堆名早已是 val,字段名故意保留旧的 `calA_*`(规格 `plans/2026-07-31-pipeline-engineering.md:330` 明令"保持原名不改,下游按名读") |
+
+**模板怎么选**:换头不换骨架 → 抄同骨架那两个里更近的一个(ModernBERT 线抄 mtool/mext,Qwen 线抄 ctool/cgen);换骨架不换头 → 抄同头那一个,只改权重常量与加载方式;**新目标函数** → 抄 cgen,它是四个里损失最独立的(masked-CE,`:13-14`)。
+
+### 3.3 评测侧:三个评测脚本的适用边界
+
+| 脚本 | 只吃什么 | 新格能不能复用 |
+|---|---|---|
+| `eval_tool.py` | 任何**分类头**:要 `best/label_map.json`(`:253`);mbert 分支走 `AutoModelForSequenceClassification`(`:270-272`),causal 分支 `from train_causal_tool import CausalProbe`(`:69-70`) | 分类头 + 现有两种骨架之一 → **一行不用改直接复用**;新骨架 → 在 `:255-272` 加第三个 `--head` 选项 |
+| `eval_mbert_call.py` | **只吃 mext**:`:28-29` 直接 `from train_mbert_extract import FIND, collate, decode, load_extractor, span_ok` | 换头就得换 import,等于新写 |
+| `eval_causal_call.py` | **只吃 cgen**:`:238-249` 按 HF CausalLM 装 `best/`,`:239` 从 meta 读 `call_sep` | 同上;它也是三个里最独立的,新写评测脚本抄它 |
+
+两个 call 脚本的共同结构:从工具格 `REPLAY_REPORT.json` 取温度与 θ(`eval_mbert_call.py:125-130`、`eval_causal_call.py:214-219`),再靠 `logits_test.pt` 的行数 assert 对齐(`:139` / `:228`)。新的"依赖格"照这个结构写。
+
+### 3.4 依赖关系与门禁
+
+- **独立格 vs 依赖格**:mtool/ctool 只吃数据集,互不依赖;mext/cgen 要吃**同模型工具格**的触发点(`eval_mbert_call.py:140`、`eval_causal_call.py:229` 的 `replay_fire`)。新格只要是"在触发点上评",就必须排在工具格之后,顺序照 stage-commands §4.1。
+- **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 loss 在降 + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。
+- **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_c1.py:53` 的 `rid = f"c1_{model}_{cell}"`、`summarize_matrix.py:75`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_c1.py:52`、`summarize_matrix.py:22`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_c1.py:84` 拼的 session 名人读歧义。建议单段小写。
+
+### 3.5 最短路径
+
+1. 先答"改的是骨架还是头" → 按 §3.2 末段选模板 → 写训练脚本 → 双环境 `py_compile` → `--smoke` 跑一遍(**stage-commands §3**),看 loss 与 `best/` 落盘。
+2. 加 `check_bundle.py` 的 Bundle 类 → `--device cpu` 验产物(**stage-commands §5**)。
+3. 按 §3.3 判能不能复用 `eval_tool.py`;不能就照 `eval_causal_call.py` 新写(**stage-commands §4**)。
+4. 三处登记:`summarize_matrix.py:21-23`、`ops/launch_c1.py:14-19`、`ops/<batch>_placement.json`。
+5. **回写 skill(§6)**。
+
+---
+
+## 4. 情形 D:加一种新 split 方法
+
+现状:切法的唯一实现是 `build.py:190-205`(`read_unit_list` + `official_split`),`main()` 在 `:231` 调它一次;**此后全流水线再没有第二处做过切分**。
+
+### 4.1 `split_mode` 的真实结论:声明了但没接线的字段,不是能用的开关
+
+- 三份 config 都写了 `"split_mode": "official"`(`pipeline/configs/aw_q35.json:11`、`aw_q36.json:11`、`aw_gptoss.json:11`),规格的 schema 示例里也有(`plans/2026-07-31-pipeline-engineering.md:102`)。
+- **但全仓库没有任何代码读它**(grep `split_mode` 只命中上面四处)。`build.py:214-219` 从 cfg 只取 `env`/`model_full`/`traj_runs`/`data_out`/`seed`;`official_split()`(`:196-205`)直接拿 `cfg["official_split_files"]`,不看 mode。
+- 结论:它是**规格里给这件事留的名字,实现时没接线**。接线很便宜——在 `build.py:231` 前加一个按 `cfg.get("split_mode", "official")` 的分发,官方切法原样保留,新切法各写一个返回同样 `(part, lists)` 的函数。
+
+### 4.2 必改清单
+
+| 文件:行 | 改什么 | 漏改的后果 | 改动量 |
+|---|---|---|---|
+| `pipeline/annotate/build.py:196-205` | 新写 `<mode>_split(cfg, events)`,返回契约必须与 `official_split()` 完全一致:`(part: unit→堆名, lists: 堆名→unit 集合)` | 契约不一致时,`:231-237` 的 missing 判定、`:249-250` 的不跨 split 自检、`:254` 的分桶、`:266` 的题单归属抽查会各自崩在不同地方(响,但报错信息会指向错的地方) | 加一个函数 |
+| `pipeline/annotate/build.py:231` | 按 `cfg["split_mode"]` 分发 | ⚠️**静默**:不分发就永远走官方切法,config 里写了新 mode 也没人理,数据照造 | 加三行 |
+| `pipeline/annotate/build.py:32` `SPLITS` | 堆名或堆数要变时 | `:256` 按它写文件、`:262` 按它抽查;**`param_label.py:31` 另有一份独立的同名常量**,两处不同步 → `param_label.py:191-193` 去读不存在的 `<堆>.jsonl`,FileNotFoundError(响) | 两处各改一行 |
+| `pipeline/annotate/build.py:202-204` | 新切法若可能产生堆间重叠,要加一条重叠 assert | ⚠️**静默**:现状是 `part[u] = name` 后写覆盖、**零重叠检查**(详见 §5 #4) | 加一个 assert |
+| `pipeline/annotate/build.py:260-267` | 官方切法专用的自检 3 | ⚠️**静默**:随机/分层切法下 `lists` 是自己造的,`assert u in lists[name]`(`:266`)**恒真**,自检形同虚设却照样在报告里打 ✓(`:341-342`) | 换一条自检 |
+| `pipeline/annotate/build.py:329-333` | 报告里"切分(官方题单,任务实例级)"那行文案 | ⚠️**静默**:换了切法不改文案,`ANNOTATE_REPORT.md` 会自己撒谎 | 改一个字符串 |
+
+### 4.3 下游对堆名的硬依赖(全部按文件名假设 split 的地方)
+
+| 位置 | 读哪堆 |
+|---|---|
+| 四个训练脚本 | 写死 `train.jsonl` + `val.jsonl`:mtool`:120-121`、mext`:252-253`(经 `join_rows`,`:66`+`:68` 同时开 `<data>/<split>.jsonl` 与 `<params>/<split>.jsonl`)、ctool`:274`+`:298`、cgen`:215-216` |
+| `eval_tool.py:245-251` | 新口径 `("val","test")`,legacy `("calA","calB","test")`;`fit_sp` 与 `sweep_sp` 都是 val |
+| `eval_tool.py:274-291` | 按 `split_names` 循环,顺带把 logits 存成 `logits_<sp>.pt` |
+| `eval_tool.py:314` | **`splits["test"]` 写死**——不管 `split_names` 怎么变,必须有一堆叫 test |
+| 三个下游脚本 | 写死 `test.jsonl`:`eval_mbert_call.py:134`(另加 `:144` 的 `params/test.jsonl`)、`eval_causal_call.py:223`、`check_bundle.py:197` |
+
+**堆数不是 3 会在哪崩**:K 折切法把 K 个堆写进同一个目录后,四个训练脚本只认 `train.jsonl`/`val.jsonl`(FileNotFoundError,响),`eval_tool.py:314` 只认 `test`(KeyError,响)。→ 可行做法是**每折造一个独立的 `data_out` 目录**(折内仍叫 train/val/test),这样下游一行都不用改,run_id 里带折号即可。
+
+### 4.4 评测三步对 val/test 的硬依赖,以及旧字段名
+
+`eval_tool.py:293-325` 三步全写死:温度在 `fit_sp`(=val)拟(`:294-295`)、θ 在 `sweep_sp`(=val)扫(`:298-311`)、冻结在 `"test"`(`:314`)。少 val → `:276` 读文件即崩(响);少 test → `:314` KeyError(响)。**没有"只有 train/test 两堆"的降级路径**,新切法必须保证至少两堆、且其中一堆叫 test。
+另外 `eval_tool.py:356` 的 `theta_sweep_calB` 与 `:366` 的 `calB_sweep` 沿用旧堆名、实际扫的是 val,训练日志的 `calA_*` 同理(见 §3.2 末行);规格 `plans/2026-07-31-pipeline-engineering.md:330` 明令保留旧名给下游按名读。换 split 方法后这些名字会**更**误导(随机切之后还叫 calB),要改就得同步改读的一侧并写进 `invariants.md`。
+
+### 4.5 最短路径
+
+1. 先答两个问题:堆数是不是 3、其中一堆是不是叫 test。都是 → 只动 `build.py`;否 → 按 §4.3 末段改造成"一折一目录"。
+2. `build.py`:加切法函数 → `:231` 加分发 → 换掉 `:260-267` 的自检 → 改 `:329-333` 的文案;`param_label.py:31` 的 `SPLITS` 跟着改(它**不重做切分**,只按堆名读 build 的产物,`:191-193`)。
+3. 重建库,用 `ANNOTATE_REPORT.md` 的三堆实例数核对(**stage-commands §2**)。
+4. 新 split = **新数据集版本号**(SKILL.md Phase 0 的 `<DATA_ROOT>`),旧数字一律不可比 → 回写 `invariants.md §2` + `TIMELINE.md`。
+
+---
+
+## 5. 静默失败点总表
 
 报错的坑会自己暴露,静默的不会。下面每一条都是"改错/漏改之后脚本照常退 0,只是数字变了或样本少了"。
 
@@ -104,10 +213,41 @@
 | 11 | 四个训练脚本的 `--env` | 传错 | 只污染 `train_log.jsonl` 与 `best/meta.json` 的标签,数字不受影响(反向的静默:看日志的人会被误导) |
 | 12 | `pipeline/configs/*.json` 的 `split_mode` 字段 | 改它 | **全流水线没有任何代码读这个字段**(grep 无命中),纯装饰 |
 | 13 | `eval_causal_call.py:228` / `eval_mbert_call.py:139` | 跨模型串 run 与 data | 唯一的防线是 `len(rows) == logits.shape[0]` 的形状 assert;两个模型的 test 行数**恰好相等**时就静默串味 |
+| 14 | `summarize_matrix.py:21` | 加了新格没往 `CELLS` 登记 | 新格**整体不进矩阵表**,退 0 且 stdout 不提(与 #8 同源:这个脚本的两张表全靠常量枚举) |
+| 15 | `summarize_matrix.py:55-58` | 新格的报告字段名不叫 `params_all_ok` / `full_call_ok` | 落进 else 分支,`rep.get()` 全取到 `None` → 表里一整行 `-`,**状态列却写着 OK**,比 PENDING 更容易被当成"跑出来就是这么差" |
+| 16 | `build.py:231` | config 里写了新 `split_mode` 但没在这里加分发 | **永远走官方切法**,配置形同虚设,数据照造照出报告 |
+| 17 | `build.py:260-267` | 新切法沿用官方切法的自检 3 | `lists` 是新切法自己造的,`assert u in lists[name]` 恒真,自检失效却照样在 `:341-342` 打 ✓ |
+| 18 | `build.py:329-333` / `eval_tool.py:356` `:366` | 换了切法没改文案与字段名 | 报告里写着"官方题单"、字段叫 `theta_sweep_calB`,数字却来自别的切法/别的堆 |
+| 19 | `train_mbert_tool.py:30` `:96-98` | 拿 `--input-mode` 做 T5 消融 | `apply_mode` **只有 mtool 一个格 import**;另外三格连这个参数都没有(传了会被 argparse 拒,响),但"四格一起做消融"这件事会**静默只做成一格** |
 
 ---
 
-## 4. 未解之处
+## 6. 回写本 skill
+
+这条 skill 是活的:**任何一次用它加了新东西,收尾时必须把新东西写回文档**,否则下一次调用还是按旧方法走,而且下一个人读到的清单是错的。照下表打勾。
+
+| 你这次做了什么 | 更新哪份文档的哪一节 | 更新什么内容 |
+|---|---|---|
+| 加了新模型 | `extending §1` / `stage-commands §0` | §1 的三处枚举表补上新短名;§0 若引入了新权重目录,补一行路径 |
+| 加了新环境 | `extending §2` / `SKILL.md` Phase 0 的 `<ENV>` 行 / `stage-commands §1 §2` | §2 的分支清单标注"这个环境已接";Phase 0 的候选环境列表加名;§1 的 outdir 命名规则、§2 的 config `env` 字段取值同步 |
+| 加了新格 | `extending §3` / `SKILL.md` Phase 0 的 `<CELLS>` 行与 Phase C4 的依赖图 / `stage-commands §3 §4` | §3 的四格表变五格(骨架/头/best 格式/选 best 指标四列都要填);§3 的命令表加一条真实跑过的命令;§4 的依赖顺序图标出新格排在哪一层 |
+| 加了新 split 方法 | `extending §4` / `invariants.md §2` | §4.1 的 `split_mode` 结论从"没接线"改成"已接线,取值有 X/Y";invariants §2 记录新切法的口径与"与旧数字不可比"这句 |
+| 改了任何写死的口径 | `invariants.md` 对应节 + `TIMELINE.md` | invariants 改数;TIMELINE 追加一条说明"为什么改、改之前的数字作废到什么程度" |
+| 踩了一个新坑 | `gates.md §3` 加一个案例 / 本文件 §5 加一行 | 坑会报错 → 进 gates §3;坑**不报错** → 必须进 §5 静默总表,并写清"症状长什么样" |
+| 新加了门禁 | `gates.md §1` 总表加一行 | 编号顺延,同时在 SKILL.md 对应 Phase 里引用 |
+| 改了脚本接口(加/删/改 flag、改产物路径) | `stage-commands` 对应节 + `stage-commands §7 接口陷阱` | 参数表改字段;新增的不对称行为(产物写向、覆盖语义)进 §7 |
+
+**原则一:什么该进 skill,什么是这批次一次性的事。** 判据是"下一批次还会不会碰上"。**进 skill**:改了代码接口、加了新分支、发现了一个静默失败点、定下了一条新口径、新增了一道门禁——这些下一批次一定会再遇上。**不进 skill**:某次排卡表怎么分的(`ops/<batch>_placement.json` 自己留档就够)、某个 run 跑了多久、某次某张卡坏了、某个模型这一批的具体数字——这些属于 `RESULTS.md` / `TIMELINE.md` / `ops/jobs.json`。一句话:**skill 只收"方法",不收"这批的结果"**。边界情形——同一个坑第二次踩到,不管当时觉得多偶然,一律进 skill。
+
+**原则二:回写时机是"当场记、收尾写"。** 发现的当下先在批次计划 `plans/<日期>-<batch>-plan.md` 里记一行原始现象(哪个文件哪一行、什么症状),因为细节两小时后就丢了;正式改 skill 放在 Phase D 收官时一并做,和 `record.py finish` / TIMELINE 补条同一轮。理由:实验跑到一半改 skill,会让"这批用的到底是哪版方法"说不清——skill 的改动必须和批次收官在同一个 commit 边界上。
+
+**原则三:回写必须 commit,且和数字分开。** skill 的改动跟着 Phase D 第 6 步的收官 commit 一起进库即可,但 commit message 里要**单独点名**改了哪几节,让人从日志能查到方法是哪一版——`skill: probe-pipeline 补 <批次> 的方法改动——extending §3 加 <格名> 格 / §5 新增静默点 #20 / gates 新增 G19`。如果这一批只改了 skill 没出数字(例如只是清点),那就单独一个 `skill:` 前缀的 commit,不要混进 `exp:` 或 `data:`。
+
+⚠️ **门禁编号 G1–G18 已占用,新门禁从 G19 起顺延,不许复用旧号**——SKILL.md 与本文件都按号引用,复用旧号会让两处指向不同的东西。
+
+---
+
+## 7. 未解之处
 
 - **非 qwen / 非 gpt-oss 的第三种服务旗标**没有现成模板。`gen_launch.py` 只有 `QWEN_FLAGS_SRC`(`:57-59`)与 `GPTOSS_SERVE_FLAGS`(`:61`)两套,新族(如 Llama 的 tool-call parser)该配什么旗标,本仓库未读到。
 - **ALFWorld 在本仓库不存在**。`envs/` 下只有 `appworld` / `tales`(TextWorld-Express)/ `tau2-bench` / `bfcl_*` 相关目录,ALFWorld 的官方 split 文件格式、task_id 形态、动作语法都未读到,§2 的清单对它只能给出"要改哪些位置",给不出"每处该填什么"。
@@ -115,3 +255,5 @@
 - **tales 链路未验证**。`eval_causal_call.py:119` 对 tales 走 `BFCL_CALL`,而 tales 的标签是动词、`label_call` 由 `build.py:158-162` 拼成 `verb(arg=...)`,形式上能对上,但 c1 批次没跑过 tales 的 cgen 格,未实测。
 - **`ops/launch_c1.py` 与 `ops/c1_placement.json` 未入库**(git status 显示 `??`),不确定它们算不算流水线的正式组件;`ops/launch_c1.py:72` 的 smoke 写死 `"q35"`,若它是正式组件则情形 A 还要多改一处。
 - **新环境下 G8(ACCEPT_V3DIFF)失效**。`accept_v3diff.py:24-25`/`:108` 把输入路径与环境列表写死成 `("bfcl","appworld")` 的旧数据,新环境没有旧数据可复现,这道门该换成什么验收,规格里未读到。
+- **非分类头的 inject 凭证没有定义**。`check_bundle.py:165` 只有 `mbert`/`causal` 两个选项,两个 Bundle 类都以"吐类别分布 + 查 `label_map.json`"为接口(`:104-110`、`:145-160`),所以 **mext 与 cgen 两个格至今没有 BUNDLE_CHECK**。抽取头/生成头的"能装起来"该怎么验(生成一条?抽一个区间?),规格里未读到。
+- **K 折 / 留一法的 run_id 与记账约定未读到**。§4.3 建议的"一折一目录"会让 run 数翻 K 倍,折号写进 run_id 的哪一段、`ops/jobs.json` 与 `record.py` 怎么归并同一折的多个 run,现有文档里没有相关约定。

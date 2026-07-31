@@ -13,6 +13,17 @@
 - 用户自助监控：`python ops/gpu_jobs.py watch`
 - 实时空卡：`python ops/gpu_jobs.py free`（永不信缓存的占用状态）
 
+## 探针流水线：整条链走 probe-pipeline skill
+
+要把 collect/annotate/train/eval 串起来跑一批（换数据集 / 换模型 / 出矩阵），
+走 `.claude/skills/probe-pipeline/SKILL.md`：定批次 → 采集 → 写码 → 双验收线 →
+造数据 → smoke → 训练 → 依赖顺序评测 → 矩阵 → 收官 → **回写 skill**。
+单个 GPU 任务仍只用 gpu-run；这个 skill 管的是整条链，GPU 环节转交 gpu-run。
+
+**扩展流水线也从这里进**：加新模型 / 新环境 / 新训练方法(新格) / 新 split 方法，
+改动清单在 `references/extending.md`（§5 静默失败点总表必看）。
+**扩展完必须按 Phase E 回写 skill**——不回写，下一个人拿的就是旧地图。
+
 ## 记录：三层结构，主键 run_id
 
 每次实验都要留下痕迹，分四层，别混用：
