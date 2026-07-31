@@ -224,6 +224,30 @@ def load_point(d, tag=""):
     ia = rep["by_arm"].get("inject", {})
     # 死区诊断:后 40% 才出手的占多少(这些平均是亏 token 的)
     late = sum(1 for r in inj if r["depth"] >= 0.6)
+
+    # —— 时机头的上限空间 ——
+    # 同一批出手事件、同一个分母,只换"哪些事件真的注入"这一个决定:
+    #   现行  = 预测对就注入(上面的 saved_ratio_deployed)
+    #   深度阈值 = 只在思考段前若干比例处注入(现成信号能吃到多少)
+    #   上帝时机 = 只在事后看真能省的那些事件注入(完美时机的上限)
+    # 三者之差就是"时机值不值得学"的直接量。
+    injd = {r["event"]: r for r in inj}
+    nofd = {r["event"]: r for r in nof}
+
+    def spend(fire):
+        return sum((injd[e]["out_tok"] if (e in injd and fire(e))
+                    else nofd[e]["out_tok"]) for e in nofd)
+
+    def ratio(fire):
+        return (denom - spend(fire)) / denom if denom else None
+
+    oracle = ratio(lambda e: (injd[e]["saved_tok"] or 0) > 0)
+    best_cut, best_r = None, -1e9
+    for c in [i / 20 for i in range(1, 21)]:
+        r = ratio(lambda e, c=c: injd[e]["depth"] < c)
+        if r is not None and r > best_r:
+            best_cut, best_r = c, r
+    losing = [r for r in inj if (r["saved_tok"] or 0) <= 0]
     return dict(
         theta=cfg["theta"], miss_policy=cfg["miss_policy"],
         theta_source=cfg.get("theta_source", "risk-derived"),
@@ -243,6 +267,16 @@ def load_point(d, tag=""):
         adopted=ia.get("advanced"), repeated=ia.get("repeated_injected"),
         truncated=ia.get("truncated"),
         late_trigger_share=round(late / len(inj), 4) if inj else None,
+        # —— 时机头的上限空间 ——
+        saved_ratio_oracle_timing=round(oracle, 5) if oracle is not None else None,
+        saved_ratio_best_depth=round(best_r, 5) if best_r > -1e8 else None,
+        best_depth_cut=best_cut,
+        headroom_captured=(round((saved / denom) / oracle, 4)
+                           if oracle and denom and oracle > 0 else None),
+        n_losing_inject=len(losing),
+        tok_lost_by_losing=-sum(r["saved_tok"] or 0 for r in losing),
+        tok_gained_by_winning=sum(r["saved_tok"] for r in inj
+                                  if (r["saved_tok"] or 0) > 0),
         run_dir=str(d))
 
 
@@ -290,6 +324,24 @@ def cmd_curve(a):
     for p in pts:
         L.append(f"| {p['coverage']} | {p['theta']} | "
                  f"{p['saved_ratio_deployed']} | {p['full_call_ok']} |")
+
+    # 时机头的上限空间:同一批出手事件、同一个分母,只换"哪些真注入"这一个决定
+    L += ["", "## 时机值不值得学(同一批出手事件,只换出手时刻的决定)", "",
+          "> 三列都是部署总账口径、同一个分母。**现行** = 预测对就注入;",
+          "> **深度阈值** = 只在思考段前若干比例处注入(现成信号,不用学);",
+          "> **上帝时机** = 事后只在真能省的事件上注入(完美时机的上限)。",
+          "> 吃到上限的比例 = 现行 / 上帝时机。这一栏越低,时机头的空间越大。",
+          "",
+          "| θ | 现行 | 深度阈值(最优切点) | 上帝时机 | 吃到上限 | "
+          "亏token的注入 | 省下 | 倒亏 |",
+          "|---|---|---|---|---|---|---|---|"]
+    for p in pts:
+        L.append(
+            f"| {p['theta']} | {p['saved_ratio_deployed']} | "
+            f"{p['saved_ratio_best_depth']} (depth<{p['best_depth_cut']}) | "
+            f"{p['saved_ratio_oracle_timing']} | {p['headroom_captured']} | "
+            f"{p['n_losing_inject']}/{p['n_inject']} | "
+            f"{p['tok_gained_by_winning']} | {p['tok_lost_by_losing']} |")
     if skipped:
         L += ["", "## 还没装上的点(没有 INJECT_REPORT.json)", ""]
         L += [f"- {s}" for s in skipped]
