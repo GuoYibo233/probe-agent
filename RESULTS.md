@@ -6,6 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `c2_alfworld` | 2026-07-31 23:01 | pipeline | `7805bdb+dirty` | - | running | - | - |
 | `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4566 best_epoch=0 val_exact_call_ep0=0.425 val_exact_call_ep1=0.49 val_exact_call_ep2=0.485 risk=0.05 theta=0.975 n_events_fired=633 n_events_test=2138 tool_ok=0.9368 full_call_ok=0.7852 exact_call_ok=0.7852 params_all_ok=0.8262 parse_fail=1 parse_fail_rate=0.0016 noparam_rate=0.3223 wall_hours=5.21 | 迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044 |
 | `c1_q36_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.3423 risk=0.1 theta=0.925 exact_call_ok=0.8103 full_call_ok=0.8135 tool_ok=0.904 params_all_ok=0.8582 parse_fail_rate=0.0 n_events_fired=917 noparam_rate=0.5278 grad_ckpt=1 | 风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
 | `c1_q35_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4096 risk=0.05 theta=0.975 exact_call_ok=0.8858 full_call_ok=0.8904 tool_ok=0.968 params_all_ok=0.9041 parse_fail_rate=0.0 n_events_fired=219 noparam_rate=0.7032 | risk0.05 档（θ=0.975）：exact_call_ok 0.8858 / full_call_ok 0.8904，parse_fail 0；219 个触发事件里 154 个无参（70%）。带参工具是短板——spotify.login 0.1111、venmo.show_transactions 0.2857 |
@@ -44,6 +45,15 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `c2_alfworld`
+
+- **想验证什么**：c2 批次采集: ALFWorld 官方分区 q36+gptoss 各 474 题(train 200/val 140/test 134), 三张 H100, 22 分片, max-steps 50
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-07-31 23:01 → 未收尾
+- **代码**：`7805bdb`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU 0,1,2
+- **模型 / 种子**：- / 20260729
+- **原始数据**：`/home/y-guo/reproduce/new1/envs/runs/c2_alfworld`（不在 git 里）
 
 ### `c1_gptoss_cgen`
 

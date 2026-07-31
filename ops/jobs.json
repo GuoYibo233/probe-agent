@@ -1,5 +1,172 @@
 {
-  "active": [],
+  "active": [
+    {
+      "name": "c2_alfworld_serve",
+      "workdir": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld",
+      "note": null,
+      "started_at": "2026-07-31 22:35",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_c2_srv_q36_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_c2_srv_q36_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_c2_srv_gptossa_t108g1",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_c2_srv_gptossa_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_c2_srv_gptossb_t108g2",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_c2_srv_gptossb_t108g2.log"
+        }
+      ]
+    },
+    {
+      "name": "c2_alfworld_clients",
+      "workdir": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld",
+      "note": "ALFWorld 采集 22 分片: q36 8(train4/val2/test2) + gptoss 14(train6/val4/test4), 各 474 题, max-steps 50",
+      "started_at": "2026-07-31 23:54",
+      "pieces": [
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpte_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpte_s0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpte_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpte_s1.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpte_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpte_s2.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpte_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpte_s3.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gptr_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gptr_s0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gptr_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gptr_s1.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gptr_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gptr_s2.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gptr_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gptr_s3.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gptr_s4",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gptr_s4.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gptr_s5",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gptr_s5.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpva_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpva_s0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpva_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpva_s1.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpva_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpva_s2.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_gpva_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_gpva_s3.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36te_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36te_s0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36te_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36te_s1.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36tr_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36tr_s0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36tr_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36tr_s1.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36tr_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36tr_s2.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36tr_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36tr_s3.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36va_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36va_s0.log"
+        },
+        {
+          "host": "shiga",
+          "gpus": "-",
+          "session": "new1_c2alf_q36va_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36va_s1.log"
+        }
+      ]
+    }
+  ],
   "history": [
     {
       "name": "faketest",
