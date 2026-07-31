@@ -6,6 +6,14 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `c2_gptoss_cgen` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
+| `c2_gptoss_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
+| `c2_gptoss_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
+| `c2_gptoss_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
+| `c2_q36_cgen` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
+| `c2_q36_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
+| `c2_q36_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
+| `c2_q36_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
 | `20260801_0413_aw_gptoss_th0925` | 2026-08-01 04:13 | C2-3 | `e945a97+dirty` | gpt-oss-120b | running | - | - |
 | `20260801_0407_aw_gptoss_th095` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
 | `20260801_0407_aw_gptoss_th0875` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
@@ -52,6 +60,86 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `c2_gptoss_cgen`
+
+- **想验证什么**：c2/cgen on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 7
+- **模型 / 种子**：gptoss / 20260729
+- **参数**：cell=cgen env=alfworld extra=--grad-ckpt
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_cgen`（不在 git 里）
+
+### `c2_gptoss_ctool`
+
+- **想验证什么**：c2/ctool on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 6
+- **模型 / 种子**：gptoss / 20260729
+- **参数**：cell=ctool env=alfworld extra=--align-tol 3e-4
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_ctool`（不在 git 里）
+
+### `c2_gptoss_mext`
+
+- **想验证什么**：c2/mext on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 5
+- **模型 / 种子**：gptoss / 20260729
+- **参数**：cell=mext env=alfworld extra=none
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_mext`（不在 git 里）
+
+### `c2_gptoss_mtool`
+
+- **想验证什么**：c2/mtool on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 4
+- **模型 / 种子**：gptoss / 20260729
+- **参数**：cell=mtool env=alfworld extra=none
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_mtool`（不在 git 里）
+
+### `c2_q36_cgen`
+
+- **想验证什么**：c2/cgen on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo107 GPU 3
+- **模型 / 种子**：q36 / 20260729
+- **参数**：cell=cgen env=alfworld extra=--grad-ckpt
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_cgen`（不在 git 里）
+
+### `c2_q36_ctool`
+
+- **想验证什么**：c2/ctool on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo107 GPU 2
+- **模型 / 种子**：q36 / 20260729
+- **参数**：cell=ctool env=alfworld extra=none
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_ctool`（不在 git 里）
+
+### `c2_q36_mext`
+
+- **想验证什么**：c2/mext on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo107 GPU 1
+- **模型 / 种子**：q36 / 20260729
+- **参数**：cell=mext env=alfworld extra=none
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_mext`（不在 git 里）
+
+### `c2_q36_mtool`
+
+- **想验证什么**：c2/mtool on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo107 GPU 0
+- **模型 / 种子**：q36 / 20260729
+- **参数**：cell=mtool env=alfworld extra=none
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_mtool`（不在 git 里）
 
 ### `20260801_0413_aw_gptoss_th0925`
 

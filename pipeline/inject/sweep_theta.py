@@ -23,9 +23,19 @@
       省 token 比例 = Σ(inject 段省下的 token) / Σ(nofill 段在全部出手事件上的 token)
   分母是**全部出手事件**。出手了但预测不对因而没注入的(skip 口径),省 0 但照样
   占分母——否则会把"探针猜错"的代价从省 token 轴上抹掉,报出偏乐观的数。
-- 正确率轴在 skip 口径下量的是**调用一致率**(预测的整条调用与真实是否一致),
-  不是任务级成绩。任务级要等 miss_policy=execute 落地。这条差别必须写进报告,
-  不许静默当成"正确率"。
+- 正确率轴量的是**调用一致率**(预测的整条调用与真实是否一致),**不是任务级成绩**。
+  两个口径的差别:
+    skip 档    猜错就不注入,于是猜错的代价没进注入内容这条账(偏乐观)
+    execute 档 猜错也注入(注入真实报错),代价进账了 —— 但它量到的仍是**单步**
+               调用一致率。execute **给不出 appworld 的 Test 分数**:一个事件只
+               续写一步、不跑到底、不调 world.evaluate()。真正的任务级那条轴要
+               另建 in-loop rollout(采集循环里挂探针、触发就注入、走完整题再
+               评测),是一批新采集,不在本壳范围内。
+  报告里把 execute 档写成"任务级正确率"就是虚报。
+- execute 档多两段前置(都是纯 CPU、不占卡,**可以与别的 θ 点的 run 段并行**):
+  exec_calls.py 真执行 -> merge-exec 合成 plan_exec.jsonl。依赖顺序是
+  plan -> exec -> merge-exec -> run -> score;本壳的 run 段用 --plan-file
+  指到 plan_exec.jsonl,并在发射前检查有没有漏跑 exec 段。
 - **各点的 plan 段必须同参数同机器**,尤其 `--bs` 要一致。实测(2026-08-01,
   θ=0.925 跑两次:r10 用 `--bs 32` 在 tokyo105,th0925 用默认 `--bs 8` 在 tokyo106):
   探针出手这一层完全可复现——出手事件集合、触发句位置、深度、工具级预测
@@ -94,7 +104,14 @@ def service_alive(url, timeout=10):
         return False
 
 
-def stage_done(d, stage, tag=""):
+def config_of(d, plan_file="plan.jsonl"):
+    """plan 文件对应的 config。execute 档换成 plan_exec.jsonl 后,期望行数与
+    permit 口径都要从 plan_exec_config.json 读 —— 硬读 plan_config.json 会拿到
+    exec 段之前的旧统计(n_inject 那时是 0),幂等判据就永远说"没跑完"。"""
+    return json.loads((d / (Path(plan_file).stem + "_config.json")).read_text())
+
+
+def stage_done(d, stage, tag="", plan_file="plan.jsonl"):
     """幂等判据。run 看 raw.jsonl 行数够不够,score 看 INJECT_REPORT.json 在不在。"""
     if stage == "score":
         return (d / f"INJECT_REPORT{tag}.json").exists()
@@ -102,7 +119,7 @@ def stage_done(d, stage, tag=""):
     if not raw.exists():
         return False
     # 期望行数 = nofill(每个出手事件一条) + inject(实际注入的一条)
-    cfg = json.loads((d / "plan_config.json").read_text())
+    cfg = config_of(d, plan_file)
     want = cfg["n_planned"] + cfg["n_inject"]
     got = sum(1 for _ in open(raw))
     # 允许个别请求失败(r10 就有 1 条失败),差 1% 以内算跑完
@@ -136,16 +153,16 @@ def one_theta(d, svc, a):
 
 
 def _one_theta(d, svc, a):
-    cfg = json.loads((d / "plan_config.json").read_text())
+    cfg = config_of(d, a.plan_file)
     theta = cfg["theta"]
     log = HERE / "logs" / f"new1_thsw_run_{d.name}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
 
-    if stage_done(d, "run", a.tag):
+    if stage_done(d, "run", a.tag, a.plan_file):
         say(f"θ={theta} run 段已完成,跳过")
     else:
         cmd = [PY, REPLAY, "run",
-               "--plan", str(d / "plan.jsonl"),
+               "--plan", str(d / a.plan_file),
                "--base-url", svc,
                "--model", a.model,
                "--arms", a.arms,
@@ -164,14 +181,15 @@ def _one_theta(d, svc, a):
                                 stderr=subprocess.STDOUT).returncode
         if rc != 0:
             return (str(d), False, f"run 段退出码 {rc},看 {log}")
-        if not stage_done(d, "run", a.tag):
+        if not stage_done(d, "run", a.tag, a.plan_file):
             return (str(d), False, f"run 段跑完但产物不足,看 {log}")
         say(f"θ={theta} run 段完成")
 
-    if stage_done(d, "score", a.tag):
+    if stage_done(d, "score", a.tag, a.plan_file):
         say(f"θ={theta} score 已完成,跳过")
         return (str(d), True, "已完成(跳过)")
-    cmd = [PY, REPLAY, "score", "--run-dir", str(d)]
+    cmd = [PY, REPLAY, "score", "--run-dir", str(d),
+           "--plan-file", a.plan_file]
     if a.tag:
         cmd += ["--tag", a.tag]
     r = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True)
@@ -184,17 +202,29 @@ def _one_theta(d, svc, a):
 def cmd_run(a):
     dirs = [Path(x.strip()) for x in a.runs.split(",") if x.strip()]
     svcs = [x.strip() for x in a.services.split(",") if x.strip()]
-    missing = [d for d in dirs if not (d / "plan.jsonl").exists()]
+    missing = [d for d in dirs if not (d / a.plan_file).exists()]
     if missing and not a.skip_missing:
-        raise SystemExit("这些 θ 还没有 plan.jsonl(plan 段没跑完?):\n  "
+        raise SystemExit(f"这些 θ 还没有 {a.plan_file}(plan 段没跑完?"
+                         "execute 档还要跑完 exec_calls.py + merge-exec):\n  "
                          + "\n  ".join(str(d) for d in missing))
     if missing:
         # 分波发射用:plan 段先完成的先跑,别让服务空等
-        say("跳过还没就绪的 θ(plan 段未完成):"
+        say(f"跳过还没就绪的 θ(没有 {a.plan_file}):"
             + ", ".join(d.name for d in missing))
         dirs = [d for d in dirs if d not in missing]
         if not dirs:
             raise SystemExit("没有一个 θ 就绪,不发")
+    # execute 档的依赖顺序检查:plan -> exec -> merge-exec -> run。
+    # 漏跑 exec 段就等于拿一堆空注入内容去占着服务跑一整轮,发之前挡住
+    pend = []
+    for d in dirs:
+        n = sum(1 for l in open(d / a.plan_file)
+                if json.loads(l)["inject_source"] == "exec_pending")
+        if n:
+            pend.append(f"{d.name}: {n} 个事件还是 exec_pending")
+    if pend:
+        raise SystemExit("这些 θ 的 exec 段没跑完(纯 CPU、不占卡,先补上):\n  "
+                         + "\n  ".join(pend))
     dead = [s for s in svcs if not service_alive(s)]
     if dead:
         raise SystemExit("这些服务探活失败,先把服务起好:\n  " + "\n  ".join(dead))
@@ -215,8 +245,7 @@ def cmd_run(a):
 
     results = []
     # 大的 θ 点先起(触发多的先跑),尾巴上不容易剩个大活拖时间
-    order = sorted(dirs, key=lambda d: -json.loads(
-        (d / "plan_config.json").read_text())["n_planned"])
+    order = sorted(dirs, key=lambda d: -config_of(d, a.plan_file)["n_planned"])
     with ThreadPoolExecutor(max_workers=len(svcs)) as ex:
         futs = {ex.submit(work, d): d for d in order}
         for fu in as_completed(futs):
@@ -255,9 +284,19 @@ def load_point(d, tag=""):
     n_events = cfg["n_events_test"]
     n_inject = cfg["n_inject"]
 
-    # 正确率轴(skip 口径 = 调用一致率,不是任务级成绩)
+    # 正确率轴 = 调用一致率(整条调用与真实是否一致),**不是任务级成绩**
     tool_ok = sum(1 for r in nof if r["tool_ok"]) / len(nof) if nof else None
-    full_ok = n_inject / n_fired if n_fired else None
+    is_exec = cfg.get("miss_policy") == "execute"
+    if is_exec:
+        # execute 档不能拿 n_inject/n_fired 当调用一致率:exec_scope=all 下
+        # 出手事件全都注入了,这个比值恒等于 1,会把正确率轴报成满分。
+        # 直接数 per_event 里的 full_call_ok(skip 档两种算法数值相同,
+        # 所以只在 execute 分支换算法,skip 的历史曲线一个数都不动)
+        full_ok = (sum(1 for r in nof if r["full_call_ok"]) / len(nof)
+                   if nof else None)
+    else:
+        full_ok = n_inject / n_fired if n_fired else None
+    ex = rep.get("exec") or {}
 
     ia = rep["by_arm"].get("inject", {})
     # 死区诊断:后 40% 才出手的占多少(这些平均是亏 token 的)
@@ -298,9 +337,16 @@ def load_point(d, tag=""):
         saved_tok_mean_injected=ia.get("saved_tok_mean"),
         saved_tok_median_injected=ia.get("saved_tok_median"),
         saved_positive=ia.get("saved_positive"),
-        # —— 纵轴二:正确率(skip 口径 = 调用一致率) ——
+        # —— 纵轴二:调用一致率(**不是任务级成绩**) ——
         tool_ok=round(tool_ok, 4) if tool_ok is not None else None,
         full_call_ok=round(full_ok, 4) if full_ok is not None else None,
+        # —— execute 档专属:猜错的代价 ——
+        exec_error_rate=ex.get("exec_error_rate"),
+        n_exec_error=ex.get("n_exec_error"),
+        n_exec_missing=ex.get("n_exec_missing"),
+        n_exec_drift=ex.get("n_drift"),
+        exec_acceptance=(f"{ex['acceptance_matched']}/{ex['acceptance_n']}"
+                         if ex.get("acceptance_n") else None),
         # —— 机制诊断 ——
         adopted=ia.get("advanced"), repeated=ia.get("repeated_injected"),
         truncated=ia.get("truncated"),
@@ -340,10 +386,19 @@ def cmd_curve(a):
         "> **省 token 比例 = 部署总账**:分子是 inject 段实际省下的 token 总和,",
         "> 分母是 nofill 段在**全部出手事件**上的 token 总和。出手但预测不对、",
         "> 因而没注入的事件省 0 却照样占分母——探针猜错的代价不许从这一轴上抹掉。",
-        "> **正确率这一轴在 skip 口径下量的是调用一致率**(预测的整条调用与真实是否",
-        "> 一致),**不是任务级成绩**。任务级要等 miss_policy=execute 落地。",
-        "> 采纳率 = 续写去干了别的事(说明吃下了注入);重调率 = 又调了一遍被注入的工具。",
-        "", "## 主表", "",
+        "> **正确率这一轴量的是调用一致率**(预测的整条调用与真实是否一致),",
+        "> **不是任务级成绩**。",
+        "> 采纳率 = 续写去干了别的事(说明吃下了注入);重调率 = 又调了一遍被注入的工具。"]
+    if "skip" in pol:
+        L += ["> **skip 口径**:预测不对就不注入,所以猜错的代价没进"
+              "**注入内容**这条账(只进了省 token 的分母)。"]
+    if "execute" in pol:
+        L += ["> **execute 口径**:预测不对也注入 —— 把预测调用放回 appworld 真"
+              "环境执行,拿回什么就注入什么(包括报错),猜错的代价这才全进账。",
+              "> 但它量到的仍是**单步调用一致率**:一个事件只续写一步、不跑到底、",
+              "> 不调 world.evaluate()。**execute 给不出 appworld 的 Test "
+              "分数**,写成「任务级正确率」就是虚报。"]
+    L += ["", "## 主表", "",
          "| θ | 覆盖率 | 出手 | 注入 | 省token比例(部署) | 省token总量 | "
          "注入均省 | 注入中位 | 省为正 | 工具对 | 整条调用对 | 采纳 | 重调 | 晚出手占比 |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -362,6 +417,25 @@ def cmd_curve(a):
     for p in pts:
         L.append(f"| {p['coverage']} | {p['theta']} | "
                  f"{p['saved_ratio_deployed']} | {p['full_call_ok']} |")
+
+    if "execute" in pol:
+        L += ["", "## execute 档:猜错的代价长什么样", "",
+              "> 真执行的返回原样注入,报错也注入。**报错率** = 探针猜出来的"
+              "那条调用在真环境里根本跑不通的比例;",
+              "> **验收线**是 hit 且代码块只含一个调用的事件里,执行输出与轨迹里"
+              "录下的 result 逐字相同的个数(补引号那步有没有补错,看这一栏)。",
+              "> **前缀漂移**是重放到该步时输出与录下的不一致 —— 这些事件是拿错"
+              "状态执行的,不能当真账。",
+              "",
+              "| θ | 注入 | 执行报错 | 报错率 | 没拿到执行记录 | 前缀漂移 | 验收线 |",
+              "|---|---|---|---|---|---|---|"]
+        for p in pts:
+            if p["miss_policy"] != "execute":
+                continue
+            L.append(f"| {p['theta']} | {p['n_inject']} | "
+                     f"{p['n_exec_error']} | {p['exec_error_rate']} | "
+                     f"{p['n_exec_missing']} | {p['n_exec_drift']} | "
+                     f"{p['exec_acceptance']} |")
 
     # 时机头的上限空间:同一批出手事件、同一个分母,只换"哪些真注入"这一个决定
     L += ["", "## 时机值不值得学(同一批出手事件,只换出手时刻的决定)", "",
@@ -409,6 +483,8 @@ def main():
     p.add_argument("--max-tokens", type=int, default=8192)
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--tag", default="")
+    p.add_argument("--plan-file", default="plan.jsonl",
+                   help="execute 档用 plan_exec.jsonl(config/幂等判据都跟着它)")
     p.add_argument("--skip-missing", action="store_true",
                    help="plan 段还没跑完的 θ 跳过而不报错(分波发射用)")
     p.set_defaults(fn=cmd_run)

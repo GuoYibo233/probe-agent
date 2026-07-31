@@ -79,16 +79,84 @@
       ]
     },
     {
-      "name": "thsweep_run",
-      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
-      "note": null,
-      "started_at": "2026-08-01 04:16",
+      "name": "c2_train",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "c2 八格探针训练(alfworld, q36+gptoss × mtool/mext/ctool/cgen)",
+      "started_at": "2026-08-01 04:44",
       "pieces": [
         {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_c2_q36_mtool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mtool_t107g0.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_c2_q36_mext_t107g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mext_t107g1.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_c2_q36_ctool_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_ctool_t107g2.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_c2_q36_cgen_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_cgen_t107g3.log"
+        },
+        {
           "host": "tokyo105",
-          "gpus": "-",
-          "session": "new1_thsw_run_pool_t105",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_run_pool_t105.log"
+          "gpus": "4",
+          "session": "new1_c2_gptoss_mtool_t105g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mtool_t105g4.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "5",
+          "session": "new1_c2_gptoss_mext_t105g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mext_t105g5.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "new1_c2_gptoss_ctool_t105g6",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_ctool_t105g6.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "7",
+          "session": "new1_c2_gptoss_cgen_t105g7",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_cgen_t105g7.log"
+        }
+      ]
+    },
+    {
+      "name": "thsweep_serve2",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "θ 扫描 run 段第二批 gpt-oss-120b 服务: 三张 H100 (采集腾出的 idx 0/1/2), 端口 8114/8115/8116, 参数与第一批 H200 逐字一致",
+      "started_at": "2026-08-01 05:01",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_thsw_srv_d_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_d_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_thsw_srv_e_t108g1",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_e_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_thsw_srv_f_t108g2",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_f_t108g2.log"
         }
       ]
     }
@@ -1380,6 +1448,54 @@
         }
       ],
       "finished_at": "2026-08-01 04:24"
+    },
+    {
+      "name": "c2_smoke",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "c2 四格 smoke(q36, alfworld): G14 判据=loss 在降 + ckpt 能存能读",
+      "started_at": "2026-08-01 04:34",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_c2_q36_mtool_smoke_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mtool_smoke_t107g0.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_c2_q36_mext_smoke_t107g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mext_smoke_t107g1.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_c2_q36_ctool_smoke_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_ctool_smoke_t107g2.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_c2_q36_cgen_smoke_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_cgen_smoke_t107g3.log"
+        }
+      ],
+      "finished_at": "2026-08-01 04:39"
+    },
+    {
+      "name": "thsweep_run",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": null,
+      "started_at": "2026-08-01 04:16",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "-",
+          "session": "new1_thsw_run_pool_t105",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_run_pool_t105.log"
+        }
+      ],
+      "finished_at": "2026-08-01 06:53"
     }
   ]
 }

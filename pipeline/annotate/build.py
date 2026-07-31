@@ -332,20 +332,26 @@ def main():
     prior_acc = (sum(1 for v in test_events.values() if v == prior_tool)
                  / max(1, len(test_events)))
     trajs = {e["traj"] for e in events}
+    # 切分口径的文案。只影响报告里两行**文字**,不进任何样本字段,所以
+    # 数据字节与改动前逐字节相同(已实测:aw_official_v1/q35 三堆 cmp 零差异)。
+    # 默认值保持改动前的说法,appworld/alfworld 的 config 不必写。
+    # bfcl 必须写:BFCL 没有官方分区,照打"官方题单"就是数字对、文案撒谎
+    # (extending.md §5 静默点 #18),check_callstr.py 会硬拦这种撒谎。
+    split_desc = cfg.get("split_desc", "官方题单,任务实例级")
     report = [
         f"# {cfg['run_family']} / {cfg['model_short']} annotate 出厂报告\n",
         f"- SEED={seed} MAX_BOUNDS={MAX_BOUNDS} env={env}"
         f" model={model_full}",
         f"- runs={[str(r) for r in runs_dirs]}",
         f"- config={args.config} out={out}",
-        "- 规则:全句边界前缀 / w=1/m_i 事件等权 / 官方题单三路切分"
-        " / 一模型一数据集\n",
+        "- 规则:全句边界前缀 / w=1/m_i 事件等权 / 三路切分"
+        f"({split_desc}) / 一模型一数据集\n",
         f"## {env} — {cfg['model_short']}",
         f"- 轨迹 {len(trajs)} / 任务实例 {len(units)} / 事件 {len(events)}"
         f" / 样本 {len(samples)}(全模型事件 {n_all},过滤后留 {len(events)})",
         f"- 边界数每事件: min {min(bl)} med {sorted(bl)[len(bl)//2]}"
         f" max {max(bl)}(上限 {MAX_BOUNDS})",
-        "- 切分(官方题单,任务实例级): " + " / ".join(
+        f"- 切分({split_desc}): " + " / ".join(
             f"{sp} {len({s['unit'] for s in splits[sp]})}实例·"
             f"{len({s['event'] for s in splits[sp]})}事件·"
             f"{len(splits[sp])}样本"

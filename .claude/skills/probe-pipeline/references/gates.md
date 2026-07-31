@@ -16,7 +16,7 @@
 | G7 | 显存归零 | Phase A 收尾 | 服务 session 全杀，`nvidia-smi` 显存归零 | 批量任务结束不许占卡过夜，必须杀干净（PLAY §0.12、§3.8.3） |
 | G8 | **ACCEPT_V3DIFF** | annotate 段末，不过不许进 train | 新旧样本数相等、主键单边为 0、九字段（text/label/w/depth/n_sents/traj/unit/model/step）不一致计数**全 0**，每个有旧基准的环境各跑一遍 | 修 annotate 代码重跑；反复过不了属"推翻前提"，按 §4 停下问用户（ENG §4.5、§9） |
 | G9 | 题单行数 | annotate 自检 | 三个题单文件行数对上官方分区（本轮 90 / 57 / 168） | 注意题单文件**无末尾换行**，`wc -l` 会各少 1，别直接当真（ENG §4.6） |
-| G10 | 三模型同题 | annotate 自检 | 三个模型的 train 堆 unit 集合完全相同（val/test 同理） | 不同则"同题对比"前提垮掉，回查 `model_full` 过滤与题单归属逻辑（ENG §4.6、DATA.md §3.1） |
+| G10 | 三模型同题 | annotate 自检 | 三个模型**共用同一份题单**，且 train 堆 unit 集合相同（val/test 同理）。⚠️**允许有缺口**，见 G19：某个 unit 的轨迹一个可用事件都没出时该 unit 不进数据集，这不是 bug | 集合不同又解释不出缺口的原因 → 回查 `model_full` 过滤与题单归属逻辑（ENG §4.6、DATA.md §3.1）；缺口有原因 → 按 G19 逐条列进报告 |
 | G11 | label_call 抽查 | annotate 自检 | 抽 20 条：工具名 == label，参数与 action 原文对得上 | 回查 `split_args_named` 与归一化（ENG §4.6） |
 | G12 | **ACCEPT_EVAL** | eval 段末，不过不许进 Phase C 发射 | 重跑旧数据，`temperature / chosen_theta / test_frozen` 三块完全一致；新报告写临时目录，旧文件 md5 跑前跑后不变 | 修 eval 代码重跑；本轮就因"cached 时误跳 tokenizer 导致报告少两个字段"改回并重跑（ENG §6.5、ACCEPT_EVAL §4.4） |
 | G13 | 对齐检查 | 因果格开训前 | `ALIGN_CHECK` PASS，FAIL 即 `exit 2`；先用 `--align-only` 单独跑一遍 | 看 §3.1：先判是数值噪声还是实现错误，放宽阈值必须记 TIMELINE（ENG §5.3、§9） |
@@ -25,6 +25,12 @@
 | G16 | 双登记 | 发射后立刻 | `gpu_jobs.py register` 与 `record.py start` 同时做完 | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
 | G17 | 收尾销号 | 每个 run 结束 | `record.py finish --metric …` + `gpu_jobs.py finish` + 释放显存 + commit | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5） |
 | G18 | 总验收清单 | 批量训练发射前逐项打勾 | ENG §9 的七条：G8 / G12 / 产物清单齐 / 题单一致 / 四格 smoke / G15 / 全部新代码已 commit | 缺哪条补哪条，一条不缺才发射（ENG §9） |
+| G19 | 题单缺口逐条列出 | annotate 段末 | 三模型共用一份题单，但**实现出的 unit 集合允许有缺口**；缺口必须逐条列进 `CALLSTR_CHECK.md` 并说明原因（轨迹一个可用事件都没出：思考 <40 字符 或 调用正则解析不出）。bfcl 实测缺口：q35 0 题、q36 4 题（`multi_turn_base_{63,84,176,187}`，其中 176 在 test 堆 → q36 test 只有 19 实例）、gptoss 1 题（`multi_turn_base_30`，val 堆） | 缺口列不出来 = G10 的字面版本失守，"三模型同题对比"这句话有水分，报告里必须改口成"近似同题"（`check_callstr.py` 偏差 2） |
+| G20 | 真值调用串可回读 | annotate 段末，进 train 前 | 把每个事件的 `label_call` 喂给 `eval_causal_call.parse_call`，切回来的 `(key, norm(value))` 必须与该事件的 `args_named` 全等。回读率 = `params_all_ok` / `full_call_ok` 的**天花板**，必须写进报告。实测（事件级回读率，q35/q36/gptoss）：bfcl 0.9735 / 0.9763 / 0.9755，appworld 0.9932 / 0.9953 / 0.9985 | 回读率异常低（<0.95）先查 `make_call` 与 `split_named_raw` 的切法是不是漂了；正常低（参数值含逗号）**只记录不修口径**——给单个环境补逗号闸门会让它与已上账的 appworld 不是一把尺子（EXT §5 #21） |
+| G21 | traj_runs 不许写父目录 | annotate 段末 | `traj_runs[]` 的每一项都是 run 目录**本身**（其下直接有 `<env>_<模型>` 子目录，且再往下没有嵌套的 run 目录）；且 `(event, sent_idx)` 全局唯一、一个 unit 只对一条 traj | 写成父目录 = 把 smoke 批次静默并进来，退 0 无告警、只是样本数悄悄涨（EXT §5 #20）。`check_callstr.py` 门禁 C + 门禁 B 硬拦 |
+| G22 | 报告文案不撒谎 | annotate 段末 | 题单目录的 `SPLIT_REPORT.json` 写着 `official_split_exists: false` 时，`ANNOTATE_REPORT.md` 里不许出现"官方题单" | 在 config 里写 `split_desc` 说明真实切法（`build.py` 从该字段取文案，默认值保持旧说法）。`check_callstr.py` 门禁 E 硬拦（EXT §5 #18） |
+
+**G19–G22 的实现都在一个脚本里**：`pipeline/annotate/check_callstr.py --config <同一份 config>`，纯 CPU、跑在 `build.py` + `param_label.py` 之后，产物 `<DATA_ROOT>/CALLSTR_CHECK.md`。它内部编号 A–E（A 一模型一数据集 / B 样本键唯一 / C traj_runs 层级 / D 题单归属**全量**核对（比 G11 的抽 20 条更严）/ E 文案一致）全部 `sys.exit(1)` 硬拦，另有四类"只报不拦"的已知偏差（回读损失 / 题单缺口 / test 有 train 无的工具 / test 堆厚度告警）。
 
 ## 2. 两条复现验收线
 
@@ -122,7 +128,8 @@
 
 **欠账（该做没做，下一轮补）**：
 
-- **`aw_official_v1` 自己的"重建两次逐字节比"没做**（上一版 v3_1 当年做过）。目前"重跑必得同一份数据"是靠固定种子 + 采集脚本幂等 + ACCEPT_V3DIFF 三条推出来的，**不是直接实测过的**（DATA.md §3.1）。换数据集时建议补上这一项。
+- **`aw_official_v1` 自己的"重建两次逐字节比"没做**（上一版 v3_1 当年做过）。目前"重跑必得同一份数据"是靠固定种子 + 采集脚本幂等 + ACCEPT_V3DIFF 三条推出来的，**不是直接实测过的**（DATA.md §3.1）。→ `bfcl_mtb_v1` 这批**已补**：三个模型各重建一次、`train/val/test.jsonl` + `tool_vocab.json` + `router_stats.md` + `qa_sample.txt` 全部 `cmp` 零差异，q35 的 `params/*.jsonl` + `CHECK_50.md` 同样零差异；题单 `gen_bfcl_splits.py` 跑两遍也逐字节一致。appworld 那批仍是欠账，但顺手实测过：改 `build.py` 报告文案后重建 `aw_official_v1/q35`，三个 jsonl 与 `tool_vocab.json` 与线上产物 `cmp` 零差异。
 - ACCEPT_EVAL 的验收产物（`pipeline/eval/accept_bfcl_v3{,_causal}/`）入不入 git 未定——它们不在 `.gitignore` 的 `pipeline/data`、`pipeline/runs` 覆盖范围内，留作验收凭证，归属待定（ACCEPT_EVAL §4.8）。
-- DATA.md §8 的既有缺口本轮未动：BFCL 聊天模板未查、BFCL 参数重抽多出 217 个事件原因未查、表面相似度过滤 τ 未接、参数三档的档位表还是 v2 事件算的、全历史臂 24576 token 预算的来历没记账。
+- ~~BFCL 参数重抽多出 217 个事件原因未查~~ → **已排除是新线的问题**。`param_label.collect_events` 与 `build.bfcl_events` 在新流水线里是两份**逐字相同**的实现，`bfcl_mtb_v1` 三个模型的 `PARAM_LABEL_REPORT.md` 里"数据集有而重抽缺"全是 **0**；"重抽有而数据集无"分别是 2116 / 2269 / 2265，正好等于 `3325 − 该模型事件数`（重抽不按模型过滤，扫的是全部三个 bfcl 目录），完全可预测。老那 217 的差是旧代码两份实现漂移造成的，与新线无关。
+- DATA.md §8 的既有缺口本轮未动：BFCL 聊天模板未查、表面相似度过滤 τ 未接、参数三档的档位表还是 v2 事件算的、全历史臂 24576 token 预算的来历没记账。
 - 采集矩阵不齐：三模型 × 三环境九格都有数据但量差很远（DATA.md §8.1）。

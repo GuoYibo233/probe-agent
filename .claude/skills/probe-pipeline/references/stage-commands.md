@@ -63,10 +63,33 @@ python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_<BATCH
 
 ```bash
 cd /home/y-guo/reproduce/new1
-python3 pipeline/annotate/build.py       --config pipeline/configs/<BATCH>_<MODEL>.json
-python3 pipeline/annotate/param_label.py --config pipeline/configs/<BATCH>_<MODEL>.json
+python3 pipeline/annotate/build.py         --config pipeline/configs/<BATCH>_<MODEL>.json
+python3 pipeline/annotate/param_label.py   --config pipeline/configs/<BATCH>_<MODEL>.json
+python3 pipeline/annotate/check_callstr.py --config pipeline/configs/<BATCH>_<MODEL>.json
 # 可选:改过 rules.py/build.py 后的一致性验收(路径全写死,无参数)
 python3 pipeline/annotate/accept_v3diff.py
+```
+
+第三步 `check_callstr.py` 是 **G19–G22 的实现**(纯 CPU,必须在前两步之后跑),产物
+`<DATA_ROOT>/CALLSTR_CHECK.md`;它同时做五道硬门禁与四类"只报不拦"的已知偏差,
+细节见 `gates.md §1` 的 G19–G22。
+
+**bfcl 那批(`bfcl_mtb_v1`)的完整命令,可直接照抄换环境**——注意 bfcl 没有官方分区,
+题单要先自己生成一次(做法与门禁见 `extending.md §4.6`):
+
+```bash
+cd /home/y-guo/reproduce/new1
+P=cprobe-env/bin/python
+# ① 题单:先 --dry-run 看统计,再落盘(第二次跑会被"不静默覆盖"门禁挡住,除非 --force)
+$P pipeline/collect/gen_bfcl_splits.py --dry-run
+$P pipeline/collect/gen_bfcl_splits.py --out-dir pipeline/splits/bfcl_mtb_v1
+wc -l pipeline/splits/bfcl_mtb_v1/{train,val,test}.txt      # 必须 140 / 40 / 20
+# ② 三个模型各三步
+for M in q35 q36 gptoss; do
+  $P pipeline/annotate/build.py         --config pipeline/configs/bfcl_$M.json || break
+  $P pipeline/annotate/param_label.py   --config pipeline/configs/bfcl_$M.json || break
+  $P pipeline/annotate/check_callstr.py --config pipeline/configs/bfcl_$M.json || break
+done
 ```
 
 两脚本共用同一份 config,**一模型一份**。config 字段(照抄 `pipeline/configs/aw_q35.json`):
@@ -77,11 +100,14 @@ python3 pipeline/annotate/accept_v3diff.py
 | `env` | appworld / tales / bfcl,决定事件抽取器 |
 | `model_full` | 按它过滤事件(如 `qwen3.5-27b`),一模型一套数据 |
 | `traj_runs[]` | 轨迹目录列表,绝对路径 |
-| `official_split_files.{train,val,test}` | 官方题单 txt,每行一个 task_id |
+| `traj_runs[]` 的层级 | ⚠️ 必须写到 **run 目录本身**(`envs/runs/full_v1`),不是它的父目录(`envs/runs`)。写父目录会把 smoke 批次静默并进来,退 0 无告警(`extending.md §5 #20`,门禁 G21) |
+| `official_split_files.{train,val,test}` | 题单 txt,每行一个 task_id。**环境没有官方分区时也用这个字段**,指向 `pipeline/splits/<批次>/` 下自己生成的题单(见 `extending.md §4.6`) |
+| `split_mode` | 纯装饰,**没有任何代码读它**(`extending.md §5 #12`) |
+| `split_desc` | 可选,**报告文案从它取**。默认 `"官方题单,任务实例级"`;没有官方分区的环境必须写(bfcl 写的是 `"冻结 v3_1 老三堆,任务实例级;BFCL 无官方分区"`),不写会被门禁 G22 拦住 |
 | `data_out` | 数据集输出目录 = 后续所有 `--data` |
 | `seed` | 默认 20260729 |
 
-**输出**:`<DATA_ROOT>/{train,val,test}.jsonl`、`tool_vocab.json`、`router_stats.md`、`qa_sample.txt`、`ANNOTATE_REPORT.md`;param_label 再写 `<DATA_ROOT>/params/{train,val,test}.jsonl` + `PARAM_LABEL_REPORT.md` + `CHECK_50.md`。
+**输出**:`<DATA_ROOT>/{train,val,test}.jsonl`、`tool_vocab.json`、`router_stats.md`、`qa_sample.txt`、`ANNOTATE_REPORT.md`;param_label 再写 `<DATA_ROOT>/params/{train,val,test}.jsonl` + `PARAM_LABEL_REPORT.md` + `CHECK_50.md`;check_callstr 再写 `<DATA_ROOT>/CALLSTR_CHECK.md`(它**只读不写**数据本体)。
 **退出码**:0;`raise SystemExit`(=1)三种——过滤后没有 `model_full` 的事件、**有 unit 不在任何官方题单里**(拒绝静默丢弃,换环境时最常炸的一条:题单文件路径写错或换了 split 命名就会全量报错)、未知 env。自检 assert 失败也是 1(前缀=原文切片 200 抽检、unit 不跨 split、每堆 20 unit 题单归属)。accept_v3diff 特殊:**全一致=0,有任何不一致=1**,报告写 `pipeline/annotate/ACCEPT_V3DIFF.md`。
 
 ---

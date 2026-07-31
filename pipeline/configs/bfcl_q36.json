@@ -1,0 +1,19 @@
+{
+  "run_family": "bfcl_mtb_v1",
+  "env": "bfcl",
+  "model_short": "q36",
+  "model_full": "qwen3.6-27b",
+  "traj_runs": [
+    "/home/y-guo/reproduce/new1/envs/runs/full_v1",
+    "/home/y-guo/reproduce/new1/envs/runs/full_v2_topup"
+  ],
+  "split_mode": "frozen_v3_1",
+  "split_desc": "冻结 v3_1 老三堆,任务实例级;BFCL 无官方分区",
+  "official_split_files": {
+    "train": "/home/y-guo/reproduce/new1/pipeline/splits/bfcl_mtb_v1/train.txt",
+    "val": "/home/y-guo/reproduce/new1/pipeline/splits/bfcl_mtb_v1/val.txt",
+    "test": "/home/y-guo/reproduce/new1/pipeline/splits/bfcl_mtb_v1/test.txt"
+  },
+  "data_out": "/home/y-guo/reproduce/new1/pipeline/data/bfcl_mtb_v1/q36",
+  "seed": 20260729
+}

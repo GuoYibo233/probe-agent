@@ -166,7 +166,7 @@
 | `pipeline/annotate/build.py:32` `SPLITS` | 堆名或堆数要变时 | `:256` 按它写文件、`:262` 按它抽查;**`param_label.py:31` 另有一份独立的同名常量**,两处不同步 → `param_label.py:191-193` 去读不存在的 `<堆>.jsonl`,FileNotFoundError(响) | 两处各改一行 |
 | `pipeline/annotate/build.py:202-204` | 新切法若可能产生堆间重叠,要加一条重叠 assert | ⚠️**静默**:现状是 `part[u] = name` 后写覆盖、**零重叠检查**(详见 §5 #4) | 加一个 assert |
 | `pipeline/annotate/build.py:260-267` | 官方切法专用的自检 3 | ⚠️**静默**:随机/分层切法下 `lists` 是自己造的,`assert u in lists[name]`(`:266`)**恒真**,自检形同虚设却照样在报告里打 ✓(`:341-342`) | 换一条自检 |
-| `pipeline/annotate/build.py:329-333` | 报告里"切分(官方题单,任务实例级)"那行文案 | ⚠️**静默**:换了切法不改文案,`ANNOTATE_REPORT.md` 会自己撒谎 | 改一个字符串 |
+| `pipeline/configs/*.json` 的 `split_desc` | 报告里"规则"行与"切分"行的文案从这个字段取(`bfcl_mtb_v1` 批次接的线),默认值 = 旧说法"官方题单,任务实例级" | ⚠️**静默**:不写这个字段就照打"官方题单",`ANNOTATE_REPORT.md` 自己撒谎。`check_callstr.py` 门禁 E 已把这条静默变成硬拦(条件:题单目录的 `SPLIT_REPORT.json` 里 `official_split_exists: false`) | 写一个 json 字段 |
 
 ### 4.3 下游对堆名的硬依赖(全部按文件名假设 split 的地方)
 
@@ -192,6 +192,24 @@
 3. 重建库,用 `ANNOTATE_REPORT.md` 的三堆实例数核对(**stage-commands §2**)。
 4. 新 split = **新数据集版本号**(SKILL.md Phase 0 的 `<DATA_ROOT>`),旧数字一律不可比 → 回写 `invariants.md §2` + `TIMELINE.md`。
 
+### 4.6 环境根本没有官方 train/val/test 分区时怎么办(ALFWorld + bfcl 两个先例)
+
+**先别急着写新切法函数**。§4.1–§4.5 那整张必改清单(新写切法函数、`:231` 加分发、换掉自检 3)只在"切的规则要变"时才触发。环境没有官方分区≠要换切法——**把题单一次性定下来写成 txt,仍走 `official_split()`,清单整张都不触发**。两个先例都是这么做的:
+
+| | ALFWorld(`alf_official_v1`) | BFCL(`bfcl_mtb_v1`) |
+|---|---|---|
+| 官方给什么 | 三个分区目录(train / valid_seen / valid_unseen),但**不给 id 清单文件**,官方枚举方式是 `os.walk`,遍历序跨机不保证一致 | **什么都不给**。本机 `bfcl_eval==2026.3.23` 的 `BFCL_v4_multi_turn_base.json` 实测 200 条,字段只有 `['excluded_function','id','initial_config','involved_classes','path','question']`,**无 split 字段**;`TEST_COLLECTION_MAPPING` 全是 test 集合。它是纯评测榜 |
+| 题单怎么来 | `pipeline/collect/gen_alfworld_splits.py`:val/test 取官方两个分区全量,train 在官方 train 里六类等比例分层抽样 | `pipeline/collect/gen_bfcl_splits.py`:**冻结老线 v3_1 已经用过的那三堆**(`envs/bert_data/v3_1/bfcl/` 的 train / calA∪calB / test → 140/40/20),不重新 shuffle |
+| 为什么这么选 | 官方分区本身就是 train/val/test,只有 train 需要抽样(原始分布倾斜) | 为了**保住与老数字的同场地**:test 那 20 题原封不动,新因果头数字与 `RESULTS.md` 里老分类头的 bfcl 数字落在同一块地上 |
+
+**bfcl 这条路上踩到的三件事,下次照抄**:
+
+1. **"重新执行老规则"不等于"复现老切分"**。老脚本 `envs/collect/build_dataset.py:224` 的 rng 是三个环境**共用**、bfcl 排在 appworld/tales 之后,随机数状态已被前两个环境消耗掉。实测 `random.Random(20260729).shuffle(sorted(units))` 复现出的 test 与老 test 只重合 1/20。要保可比性只能**读老产物的 unit 字段反推**,不能重跑规则。
+2. **题单的推导源可能不在 git 里**。bfcl 的推导源是 `envs/bert_data/v3_1/bfcl/*.jsonl`,而 `.gitignore` 只放 `envs/bert_data/**/*.md` 进库——那四个 jsonl 删了就再也推不出来。所以**入库的 txt 是唯一真源**,`SPLIT_REPORT.json` 里记的 md5 只是审计线索、不是"能一键重生成"的承诺。`gen_bfcl_splits.py` 为此加了一道门禁:已入库的 txt 与本次算出的不同时**拒绝覆盖**,要覆盖得显式 `--force`。
+3. **题单落哪**:`pipeline/splits/<批次>/`。别放 `envs/<env>/splits/`——`.gitignore` 把 `envs/bfcl/`、`envs/appworld/`、`envs/tales/` 整目录当第三方 clone 忽略,题单放进去不入库(alfworld 是自建目录、`.gitignore` 专门为 `envs/alfworld/splits/` 开了口子,所以它在那儿是对的)。工程里因此有两个题单落点,新环境一律用 `pipeline/splits/`。
+
+**必写的四道门禁**(`gen_bfcl_splits.py` 里全是 `sys.exit` 硬拦,照抄):① 三堆两两无交集(对应 §5 #4:`official_split` 是后写覆盖、零重叠检查);② 三堆并集 == 官方全集文件的 id 全集且无多余(**没有官方分区也几乎总有一个"官方全集"文件可以当锚**,这是唯一能拿到的外部校验);③ 每堆行数硬核对(G9);④ 不静默覆盖已入库的题单。
+
 ---
 
 ## 5. 静默失败点总表
@@ -211,14 +229,16 @@
 | 9 | `summarize_matrix.py:49-58` + `104-105` | 某个参数格是在 `--risk 0.1` 下跑出来的 | `--risk` 只作用于 tool 格的 `test_frozen[risk]`(`:38`);参数格两列**无条件读该 run 的报告**,而 `EXTRACT_REPORT.json` / `CALLGEN_REPORT.json` 是单文件覆盖写 → 0.05 档的表里会混进 0.10 档的数 |
 | 10 | `gen_launch.py:172-177` + `:266` | 新模型 `family` 既不是 qwen 也不是 gptoss | 走 else,**按 gptoss 发服务旗标与客户端旗标**,发射脚本照常生成 |
 | 11 | 四个训练脚本的 `--env` | 传错 | 只污染 `train_log.jsonl` 与 `best/meta.json` 的标签,数字不受影响(反向的静默:看日志的人会被误导) |
-| 12 | `pipeline/configs/*.json` 的 `split_mode` 字段 | 改它 | **全流水线没有任何代码读这个字段**(grep 无命中),纯装饰 |
+| 12 | `pipeline/configs/*.json` 的 `split_mode` 字段 | 改它 | **全流水线没有任何代码读这个字段**(grep 无命中),纯装饰。`bfcl_mtb_v1` 那三份 config 写的是 `"frozen_v3_1"`,同样没人读——它只是给人看的标记。**真正被读的是同批新加的 `split_desc`**(`build.py` 报告文案从它取,见 #18) |
 | 13 | `eval_causal_call.py:228` / `eval_mbert_call.py:139` | 跨模型串 run 与 data | 唯一的防线是 `len(rows) == logits.shape[0]` 的形状 assert;两个模型的 test 行数**恰好相等**时就静默串味 |
 | 14 | `summarize_matrix.py:21` | 加了新格没往 `CELLS` 登记 | 新格**整体不进矩阵表**,退 0 且 stdout 不提(与 #8 同源:这个脚本的两张表全靠常量枚举) |
 | 15 | `summarize_matrix.py:55-58` | 新格的报告字段名不叫 `params_all_ok` / `full_call_ok` | 落进 else 分支,`rep.get()` 全取到 `None` → 表里一整行 `-`,**状态列却写着 OK**,比 PENDING 更容易被当成"跑出来就是这么差" |
 | 16 | `build.py:231` | config 里写了新 `split_mode` 但没在这里加分发 | **永远走官方切法**,配置形同虚设,数据照造照出报告 |
 | 17 | `build.py:260-267` | 新切法沿用官方切法的自检 3 | `lists` 是新切法自己造的,`assert u in lists[name]` 恒真,自检失效却照样在 `:341-342` 打 ✓ |
-| 18 | `build.py:329-333` / `eval_tool.py:356` `:366` | 换了切法没改文案与字段名 | 报告里写着"官方题单"、字段叫 `theta_sweep_calB`,数字却来自别的切法/别的堆 |
+| 18 | `build.py` 的两行报告文案 / `eval_tool.py:356` `:366` | 换了切法没改文案与字段名 | 报告里写着"官方题单"、字段叫 `theta_sweep_calB`,数字却来自别的切法/别的堆。**已部分接线**(`bfcl_mtb_v1` 批次):`build.py` 的"规则"行与"切分"行都改成从 `cfg.get("split_desc", "官方题单,任务实例级")` 取,不写该字段的 config 保持旧说法;`check_callstr.py` 门禁 E 会**硬拦**"SPLIT_REPORT.json 说没有官方分区、报告里却印着『官方题单』"这种撒谎。`eval_tool.py` 那两个 `calB` 旧字段名**仍未动**(规格明令保留给下游按名读) |
 | 19 | `train_mbert_tool.py:30` `:96-98` | 拿 `--input-mode` 做 T5 消融 | `apply_mode` **只有 mtool 一个格 import**;另外三格连这个参数都没有(传了会被 argparse 拒,响),但"四格一起做消融"这件事会**静默只做成一格** |
+| 20 | `build.py:101`(`runs.glob("bfcl_*")`)+ config 的 `traj_runs[]` | `traj_runs` 写成 run 目录的**父目录**(如 `/envs/runs` 而不是 `/envs/runs/full_v1`) | glob 只在该目录**平级**找 `bfcl_*`,于是命中的是 21 题的 smoke 批次 `envs/runs/bfcl_q35/`;若父目录与正确的 run 目录**同时**列进 `traj_runs`,smoke 批次的 traj 名(`bfcl_q35/<id>`)与全量批次逐字相同,同一批 event key **重复进库**、退 0、无告警,只是样本数悄悄涨。实测 bfcl q35 从 11094 涨到 12395 样本(+1301),报告里三堆实例数全都还是 140/40/20,肉眼看不出来。防线:`check_callstr.py` 门禁 C(traj_runs 项下不许再有嵌套 run 目录)+ 门禁 B(`(event, sent_idx)` 全局唯一、一个 unit 只对一条 traj) |
+| 21 | `build.py:154-156`(`make_call`)对 `eval_causal_call.py:83-116`(`split_named_raw`) | 真值参数值里含**逗号** | `make_call` 是 `", ".join(f"{k}={v}")` 手拼、**不加引号**,eval 侧按顶层逗号切 → 一条真值被切成 `k=前半` + `pos0=后半`,`params_all_ok` / `full_call_ok` 被**静默压低**,生成侧写得再对也拿不到分。实测(`check_callstr.py` 全量算的,不是抽样;两批都是三模型加总):bfcl 3325 事件里 **83 条回读失败(2.50%)**、5027 个参数实例里 229 个含逗号(4.56%);appworld 16030 事件里 **76 条(0.47%)**、24674 个参数实例里 104 个含逗号(0.42%)。所以 bfcl 的参数侧数字天生比 appworld 难看 **约 5.3 倍**,原因是 bfcl 的工具里有 `send_message` / `resolve_ticket` / `post_tweet` 这类自由文本参数,而 appworld 的参数多是 id 与短字段。`rules.py` 的 ALFWorld 有 `ALF_BAD_CHARS` 逗号闸门专门拦这件事,appworld / bfcl 都没有;**不要单给一个环境补闸门**(appworld 的 c1_* 十二格已按无闸门口径上账,补了就不是一把尺子)。防线:`check_callstr.py` 偏差 1 逐批量出天花板,写进 `CALLSTR_CHECK.md` |
 
 ---
 
@@ -251,7 +271,7 @@
 
 - **非 qwen / 非 gpt-oss 的第三种服务旗标**没有现成模板。`gen_launch.py` 只有 `QWEN_FLAGS_SRC`(`:57-59`)与 `GPTOSS_SERVE_FLAGS`(`:61`)两套,新族(如 Llama 的 tool-call parser)该配什么旗标,本仓库未读到。
 - **ALFWorld 在本仓库不存在**。`envs/` 下只有 `appworld` / `tales`(TextWorld-Express)/ `tau2-bench` / `bfcl_*` 相关目录,ALFWorld 的官方 split 文件格式、task_id 形态、动作语法都未读到,§2 的清单对它只能给出"要改哪些位置",给不出"每处该填什么"。
-- **一个环境是否必须配一个采集器,存疑**。`envs/collect/` 下只有 `run_appworld.py` 与 `run_tales.py` 两个采集器,bfcl 只有 `envs/collect/bfcl_gptoss/`(`gpt_oss_chat.py` / `install_patch.py` / `RUNBOOK.md` 三个文件,是给外部 BFCL 仓库打的补丁)。bfcl 轨迹的产出路径我未读到,所以"新环境必配采集器"这条可能有反例——也可能 bfcl 是外部工具产出后被 `build.py:83-132` 的 `bfcl_events` 直接读原生结果文件。
+- ~~一个环境是否必须配一个采集器,存疑~~ → **bfcl 就是反例,已确认**。bfcl 没有自己的采集器,`build.bfcl_events` 直接读外部 BFCL 工具产出的原生结果文件:`<traj_run>/bfcl_<模型>/**/*multi_turn*result.json`,逐行 json、按 `entry["id"]` 去重,事件从 `entry["inference_log"]` 里扁平化出的 `(role, content, reasoning_content)` 三元组抽。本轮实测的两个 run 目录是 `envs/runs/full_v1`(q35 + q36)与 `envs/runs/full_v2_topup`(gptoss),合计 200 题 × 3 模型 = 595 条有事件的轨迹 / 3325 事件。同目录下的 `bfcl_<模型>_score/` 是评分目录,靠 `MODEL_OF.get(rsplit("_",1)[1])` 取不到模型而被跳过(不是靠白名单)。
 - **tales 链路未验证**。`eval_causal_call.py:119` 对 tales 走 `BFCL_CALL`,而 tales 的标签是动词、`label_call` 由 `build.py:158-162` 拼成 `verb(arg=...)`,形式上能对上,但 c1 批次没跑过 tales 的 cgen 格,未实测。
 - **`ops/launch_c1.py` 与 `ops/c1_placement.json` 未入库**(git status 显示 `??`),不确定它们算不算流水线的正式组件;`ops/launch_c1.py:72` 的 smoke 写死 `"q35"`,若它是正式组件则情形 A 还要多改一处。
 - **新环境下 G8(ACCEPT_V3DIFF)失效**。`accept_v3diff.py:24-25`/`:108` 把输入路径与环境列表写死成 `("bfcl","appworld")` 的旧数据,新环境没有旧数据可复现,这道门该换成什么验收,规格里未读到。
