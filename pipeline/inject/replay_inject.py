@@ -387,6 +387,8 @@ def cmd_score(a):
         p = plan.get(ev)
         if p is None:
             continue
+        nof = arms.get("nofill")
+        nof_out = (nof["head_tok"] + nof["gen_tok"]) if nof else None
         for arm, o in arms.items():
             _, final = split_channels(o["text"])
             m = CODE_RE.search(final)
@@ -394,17 +396,29 @@ def cmd_score(a):
             tool = first_api_call(code)
             out_tok = o["head_tok"] + o["gen_tok"]
             base = p.get("baseline_out_tok")
+            # 主对照是 nofill:它与 inject 的 prompt 构造方式完全相同(同样的
+            # 重建串、同样在 cut 处截断、同样重新 tokenize),唯一差别就是注入行。
+            # baseline(原轨迹)只作参考——从 cut 处重新 tokenize 再 greedy 续写
+            # 无法逐字重现原始 token 流,偏差实测可达数千 token,不能当基准。
             rec = dict(
                 event=ev, arm=arm, depth=p["depth"], conf=p["conf"],
                 inject_source=p["inject_source"],
                 full_call_ok=p["full_call_ok"], tool_ok=p["tool_ok"],
-                out_tok=out_tok, baseline_out_tok=base,
-                saved_tok=(base - out_tok) if base else None,
-                saved_ratio=(round((base - out_tok) / base, 4)
-                             if base else None),
+                out_tok=out_tok, nofill_out_tok=nof_out,
+                baseline_out_tok=base,
+                saved_tok=(nof_out - out_tok) if nof_out is not None else None,
+                saved_ratio=(round((nof_out - out_tok) / nof_out, 4)
+                             if nof_out else None),
+                baseline_drift=(out_tok - base) if base else None,
                 gen_tok=o["gen_tok"], head_tok=o["head_tok"],
                 has_code=bool(m), tool_out=tool,
-                tool_match=(tool == p["baseline_tool"]),
+                # 注入成功的样子是"跳过被注入的那个调用、直接干下一件事",
+                # 所以 repeated 高才是坏事(模型无视了注入)。
+                # 注意 appworld 把调用嵌在 python 里、结果常要赋值给变量再用,
+                # 所以重调一次未必等于无视注入,两个指标要一起看。
+                repeated_injected=(tool == p["label"]),
+                advanced=(tool is not None and tool != p["label"]),
+                same_as_baseline_step=(tool == p["baseline_tool"]),
                 finish_reason=o["finish_reason"])
             per.append(rec)
             by_arm[arm].append(rec)
@@ -413,16 +427,23 @@ def cmd_score(a):
         n = len(rs)
         if not n:
             return {}
-        sv = [r["saved_tok"] for r in rs if r["saved_tok"] is not None]
+        sv = sorted(r["saved_tok"] for r in rs if r["saved_tok"] is not None)
         sr = [r["saved_ratio"] for r in rs if r["saved_ratio"] is not None]
-        sv.sort()
+        dr = sorted(abs(r["baseline_drift"]) for r in rs
+                    if r["baseline_drift"] is not None)
         return dict(
             n=n,
             saved_tok_mean=round(sum(sv) / len(sv), 1) if sv else None,
             saved_tok_median=sv[len(sv) // 2] if sv else None,
             saved_ratio_mean=round(sum(sr) / len(sr), 4) if sr else None,
+            saved_positive=(round(sum(1 for x in sv if x > 0) / len(sv), 4)
+                            if sv else None),
+            out_tok_mean=round(sum(r["out_tok"] for r in rs) / n, 1),
             has_code=round(sum(r["has_code"] for r in rs) / n, 4),
-            tool_match=round(sum(r["tool_match"] for r in rs) / n, 4),
+            repeated_injected=round(sum(r["repeated_injected"]
+                                        for r in rs) / n, 4),
+            advanced=round(sum(r["advanced"] for r in rs) / n, 4),
+            baseline_drift_median=dr[len(dr) // 2] if dr else None,
             truncated=round(sum(r["finish_reason"] == "length"
                                 for r in rs) / n, 4))
 
@@ -452,19 +473,29 @@ def cmd_score(a):
          f"miss_policy={cfg['miss_policy']} permit={cfg.get('permit')}",
          f"- 事件 {cfg['n_events_test']} 触发 {cfg['n_fired']} "
          f"入计划 {cfg['n_planned']} 可注入 {cfg['n_inject']}", "",
-         "## 按 arm", "",
-         "| arm | n | 省token均值 | 省token中位 | 省比例 | 出代码块 | 工具一致 | 撞长度上限 |",
-         "|---|---|---|---|---|---|---|---|"]
+         "> 省 token 一律相对 **nofill**(同样构造、同样截断、只差注入行)。",
+         "> baseline_drift = 与原轨迹该步 out token 的差,只作参考:从 cut 处",
+         "> 重新 tokenize 再 greedy 续写无法逐字重现原始 token 流。",
+         "> repeated_injected = 续写又调了一遍被注入的工具(越低越说明采纳了注入),",
+         "> 但 appworld 把调用嵌在 python 里、结果常要赋值给变量,重调未必等于无视。",
+         "", "## 按 arm", "",
+         "| arm | n | 省token均值 | 省token中位 | 省比例 | 省为正 | 出token均值 "
+         "| 出代码块 | 重调被注入的 | 推进 | |base偏差|中位 | 撞长度上限 |",
+         "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for k, v in out["by_arm"].items():
         L.append(f"| {k} | {v['n']} | {v['saved_tok_mean']} | "
                  f"{v['saved_tok_median']} | {v['saved_ratio_mean']} | "
-                 f"{v['has_code']} | {v['tool_match']} | {v['truncated']} |")
+                 f"{v['saved_positive']} | {v['out_tok_mean']} | "
+                 f"{v['has_code']} | {v['repeated_injected']} | "
+                 f"{v['advanced']} | {v['baseline_drift_median']} | "
+                 f"{v['truncated']} |")
     L += ["", "## 按触发深度分桶(死区诊断)", "",
-          "| depth | arm | n | 省token均值 | 工具一致 |", "|---|---|---|---|---|"]
+          "| depth | arm | n | 省token均值 | 重调被注入的 | 推进 |",
+          "|---|---|---|---|---|---|"]
     for b, arms in out["by_depth"].items():
         for k, v in arms.items():
             L.append(f"| {b} | {k} | {v['n']} | {v['saved_tok_mean']} | "
-                     f"{v['tool_match']} |")
+                     f"{v['repeated_injected']} | {v['advanced']} |")
     (d / f"INJECT_REPORT{a.tag}.md").write_text("\n".join(L) + "\n")
     print("\n".join(L))
 
