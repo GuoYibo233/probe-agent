@@ -18,6 +18,13 @@ envs/appworld/
 envs/tales/
 envs/bfcl/
 
+# ── envs/alfworld/ 是我们自建的（不是第三方 clone），只忽略三样：
+#    venv（332M，uv.lock 复原）/ data（软链到 fig1_pilot 的 2.1G 数据）/ logs。
+#    splits/ 是自己生成的题单，ALFWorld 官方不提供清单文件，必须入库才可复现。
+envs/alfworld/venv/
+envs/alfworld/data
+envs/alfworld/logs/
+
 # ── 大体积原始数据
 fig1_pilot/alfworld_data/
 traj_pipeline/data/
