@@ -120,10 +120,34 @@ ALFWorld 的动作不是函数调用,是自然语言。**取模板细分口径**
 | D | 收官六连 | — |
 | E | **回写 skill**(见 §7) | — |
 
+## 5.1 放量前 smoke 的实测结论(2026-07-31 22:4x–23:0x,12 题 220 步)
+
+两轮:第一轮每模型 1 题(val 最易的 `look_at_obj_in_light`),
+第二轮每模型 4 题(`pick_and_place` / `clean` / `heat` / `pick_two`,从 val 各取第一条)。
+产物在临时目录,**未污染正式采集目录**。
+
+| | 题 | 步 | 通关 | 非法动作率 | 最短思考(字符) | **短于 40 字符的步** |
+|---|---|---|---|---|---|---|
+| q36 | 5 | 88 | 4/5 | 4.5% | 78 | **0** |
+| gptoss | 5 | 132 | 3/5 | 1.5% | 516 | **0** |
+
+- **思考长度**:合计 220 步**一步都没有短于 40 字符**,最短 78。
+  `build.py` 的整步丢弃(§6.4 的头号风险)在这批不成立。
+  q36 中位 241 / gptoss 中位 2523;单步最长 q36 22854、gptoss 33118。
+- **每题平均步数**:q36 **21.2**、gptoss **31.8**。未通关的都是撞 50 步上限,不是崩。
+- **每步中位耗时**(单分片,无并发):q36 2.05s / gptoss 2.24s。
+- **动作含逗号 0 条**,gen/env 全程配对(含 NO_ACTION 兜底触发的那几步)。
+- **服务**:gptoss 在 H100(95G)上起得来且**未降参数**,KV cache 20.45 GiB,
+  `--gpu-memory-utilization 0.92` 原样保留,跨批次可比性未破坏。
+
 ## 6. 已知风险(开工前就知道的,收官时逐条对账)
 
-1. **语法断代**(§4)——提示词写错则全批白采,且不报错。**一题 smoke 时必须打印
-   `admissible_commands` 逐字确认是 `move ... to ...`。**
+1. ~~**语法断代**(§4)~~ —— ✅ **2026-07-31 已实测排除,而且是结构性排除**。
+   提示词里**一个动作模板都没写死**,只要求模型"从当轮 `admissible_commands` 逐字抄",
+   候选由环境每轮给出,所以永远跟着 alfworld 版本走。实测三重证据:
+   ① 候选里出现 `move alarmclock 2 to desk 1`,老语法 `put X in/on Y` 命中 0 条;
+   ② gptoss 真发了 `move ...`,环境回 `You move the alarmclock 2 to the desk 1.`;
+   ③ 主动发一条老语法 `put cup 1 in countertop 1` 做对照 → `Nothing happens.`。
 2. **cgen 格零里程**。tales 已替 annotate/mtool/ctool 趟过自然语言动作的口径
    (11 个训练 run、2 次回放评测),但**自然语言动作上从来没跑过一次 cgen**。
    要盯 `eval_causal_call.py:138` 的切法一致性 assert:
@@ -131,9 +155,10 @@ ALFWorld 的动作不是函数调用,是自然语言。**取模板细分口径**
    ALFWorld 的实体名(`mug 1`)天然无逗号,但**收完数据要 grep 一遍确认**。
 3. **unit 含斜杠**(`<task_config>/<trial>`,~90 字符)。采集器落盘文件名必须转义,
    否则会当成子目录。
-4. **`reasoning` 短于 40 字符的步会被 `build.py` 整步丢弃**。
-   `fig1_pilot/fig1_run.py` 的提示词明令"只回一条命令、不许有别的字",**根本不产思考**
-   —— 它不能直接当采集器,提示词要重写成 appworld/tales 那种「思考 + 一条动作」。
+4. ~~**`reasoning` 短于 40 字符的步会被 `build.py` 整步丢弃**~~ —— ✅ **已实测排除**:
+   220 个 smoke 步一步都没低于门槛,最短 78 字符(见 §5.1)。
+   `fig1_pilot/fig1_run.py` 的提示词明令"只回一条命令、不许有别的字"、**根本不产思考**,
+   所以它不能直接当采集器;`run_alfworld.py` 重写成了 appworld/tales 那种「思考 + 一条动作」。
 5. **不要用 ReAct 的 `think:` 单独成步**。那会在轨迹里造出
    `action=think:..., result=OK.` 的假步,污染事件与 `build.py` 的 gen/env 配对契约。
 6. **三个静默口**:`summarize_matrix.py:67` 的 `--models` 默认表不含新模型组合;
@@ -157,4 +182,24 @@ ALFWorld 的动作不是函数调用,是自然语言。**取模板细分口径**
   本批至少要新立一道:**采集前的语法版本自证**(§6.1)。
 - `SKILL.md` Phase 0 的 `<ENV>` 候选加 `alfworld`;C1 节的 G9 判据补上
   「题单末尾换行与否因环境而异」这条(§2.2)。
-- `invariants.md` —— 记 c2 的口径:模板细分切法、三堆映射、train 分层抽样两条口径。
+- `invariants.md` —— 记 c2 的口径:模板细分切法、三堆映射、train 分层抽样两条口径,
+  以及"切不动即整步丢弃并分原因计数"这条兜底策略。
+
+### 施工中新发现、必须回写的(逐条记,发现的当下就写)
+
+- **`extras=["gamefile"]` 只挂 `AlfredDemangler` 拿不到,永远是 `None`**。
+  填这个字段的是另一个 wrapper `AlfredInfos`(`alfworld/agents/environment/alfred_tw_env.py:37`)。
+  已实测对照。→ `extending.md §5` 新静默点。
+- **`ops/launch_c1.py` 的批次前缀写死**:`:53` 的 `rid = f"c1_{model}_{cell}"`、
+  `:54` 的 `aw_official_v1`、`:72` smoke 写死 `"q35"`。c2 要用它就得泛化成
+  带 `--batch` / `--data-root` 的版本,否则会长出 `launch_c3.py`、`launch_c4.py`。
+  → extending.md §7 存疑的那条("若它是正式组件,情形 A 还要多改一处")**成立**。
+- **题单末尾换行与否因环境而异**:appworld 三份无末尾换行(`wc -l` 各少 1),
+  ALFWorld 这三份有(`wc -l` = 条数)。skill 的 G9 判据写的是前者。
+- **服务日志文件是 0 字节**:vLLM 走 `tee` 时 stdout 全缓冲,进度只能从
+  `tmux capture-pane` 读,`tail log` 看不到东西。→ `gates.md §3` 加案例。
+- **台账 name 必须与批次对得上**:施工中出现过一条 smoke 服务记成 `inject_smoke`、
+  workdir 指 `pipeline/inject` 的情况,违反"run_id 四处一致"。
+  → 派活的任务书里要显式给定台账 name。
+- **提示词的抗版本漂移写法**:不写死动作模板、只要求"从当轮候选逐字抄"。
+  这条比"这次写对了"强一个量级,值得写进 `extending.md §2.2` 作为新环境的通用做法。
