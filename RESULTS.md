@@ -6,6 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260801_0113_inject_aw_gptoss_r10` | 2026-08-01 01:13 | C2-3 | `442bdbd+dirty` | gpt-oss-120b | running | - | - |
 | `c2_alfworld` | 2026-07-31 23:01 | pipeline | `7805bdb+dirty` | - | running | - | - |
 | `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4566 best_epoch=0 val_exact_call_ep0=0.425 val_exact_call_ep1=0.49 val_exact_call_ep2=0.485 risk=0.05 theta=0.975 n_events_fired=633 n_events_test=2138 tool_ok=0.9368 full_call_ok=0.7852 exact_call_ok=0.7852 params_all_ok=0.8262 parse_fail=1 parse_fail_rate=0.0016 noparam_rate=0.3223 wall_hours=5.21 | 迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044 |
 | `c1_q36_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.3423 risk=0.1 theta=0.925 exact_call_ok=0.8103 full_call_ok=0.8135 tool_ok=0.904 params_all_ok=0.8582 parse_fail_rate=0.0 n_events_fired=917 noparam_rate=0.5278 grad_ckpt=1 | 风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
@@ -45,6 +46,17 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `20260801_0113_inject_aw_gptoss_r10`
+
+- **想验证什么**：探针触发点文本层注入全量:量注入相对 nofill 省多少输出 token、模型是否跳过被注入的调用;复用 c2_alfworld 的闲置 gptoss 服务
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 01:13 → 未收尾
+- **代码**：`442bdbd`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU 2
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：risk=0.1 theta=0.925 miss_policy=skip arms=nofill,inject concurrency=4 n_fired=1061 n_inject=689 service=reused_c2alf_8103
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_r10`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py run --plan pipeline/inject/runs/aw_gptoss_r10/plan.jsonl --base-url http://tokyo108:8103/v1 --model gpt-oss-120b --arms nofill,inject --concurrency 4`
 
 ### `c2_alfworld`
 

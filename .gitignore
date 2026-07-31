@@ -86,3 +86,9 @@ pipeline/data/**
 pipeline/runs/**
 !pipeline/runs/**/
 !pipeline/runs/**/*.md
+# 注入回放的落盘(plan.jsonl/raw.jsonl 是原始轨迹级数据,单个 run 十几 MB);
+# 只放 md 报告与 plan_config.json 进库,后者是口径记录、几百字节
+pipeline/inject/runs/**
+!pipeline/inject/runs/**/
+!pipeline/inject/runs/**/*.md
+!pipeline/inject/runs/**/plan_config.json

@@ -44,6 +44,10 @@
       --out       pipeline/inject/runs/aw_gptoss_r10 \\
       --risk 0.1 --miss-policy skip
 
+  θ 扫描曲线(2026-08-01 用户已批的六点格)用 --theta 直接钉阈值,盖过 --risk 反查:
+      ... plan --theta 0.80 --out pipeline/inject/runs/aw_gptoss_th080 ...
+  一个 θ 一个 run 目录,plan/run/score 各自独立落盘;驱动壳见 sweep_theta.py
+
   cprobe-env/bin/python pipeline/inject/replay_inject.py run \\
       --plan pipeline/inject/runs/aw_gptoss_r10/plan.jsonl \\
       --base-url http://tokyo108:8103/v1 --model gpt-oss-120b \\
@@ -165,9 +169,16 @@ def cmd_plan(a):
 
     rep = json.loads((ctool / "REPLAY_REPORT.json").read_text())
     T = rep["temperature"]
-    theta = rep["chosen_theta"].get(str(a.risk))
-    if theta is None:
-        raise SystemExit(f"θ 里没有 risk={a.risk}:{rep['chosen_theta']}")
+    # θ 两种来源:风险档反查(原口径,与 eval 的 chosen_theta 一致)或 --theta 直接给
+    # (θ 扫描曲线用)。温度标定 T 与风险档无关,两种来源都用同一个 T,所以曲线上
+    # 各点只差判定阈值,可直接横向比。
+    if a.theta is not None:
+        theta, theta_source = a.theta, "explicit"
+    else:
+        theta = rep["chosen_theta"].get(str(a.risk))
+        if theta is None:
+            raise SystemExit(f"θ 里没有 risk={a.risk}:{rep['chosen_theta']}")
+        theta_source = f"risk={a.risk}"
 
     # 行过滤必须与 eval 侧逐行一致,否则与 logits_test.pt 不同序
     label2id = json.loads((ctool / "best" / "label_map.json").read_text())
@@ -255,7 +266,8 @@ def cmd_plan(a):
         for p in plan:
             f.write(json.dumps(p, ensure_ascii=False) + "\n")
     cfg = dict(ctool_run=str(ctool), cgen_run=str(cgen), data=str(data),
-               traj_root=str(root), risk=a.risk, theta=theta, temperature=T,
+               traj_root=str(root), risk=a.risk, theta=theta,
+               theta_source=theta_source, temperature=T,
                miss_policy=a.miss_policy, permit=a.permit,
                n_events_test=n_events, n_fired=len(keys), n_planned=len(plan),
                drop=dict(drop),
@@ -541,6 +553,8 @@ def main():
     p.add_argument("--traj-root", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--risk", type=float, default=0.1)
+    p.add_argument("--theta", type=float, default=None,
+                   help="直接钉 θ,盖过 --risk 的反查(θ 扫描曲线用)")
     p.add_argument("--miss-policy", default="skip",
                    choices=["skip", "oracle", "execute"])
     p.add_argument("--permit", action="store_true", help="system 里加授权句")

@@ -1,0 +1,14 @@
+[
+  {"model": "q35",    "cell": "mtool", "host": "tokyo105", "gpu": 0},
+  {"model": "q36",    "cell": "mtool", "host": "tokyo105", "gpu": 1},
+  {"model": "gptoss", "cell": "mtool", "host": "tokyo105", "gpu": 2},
+  {"model": "q35",    "cell": "mext",  "host": "tokyo105", "gpu": 3},
+  {"model": "q36",    "cell": "mext",  "host": "tokyo105", "gpu": 4},
+  {"model": "gptoss", "cell": "mext",  "host": "tokyo105", "gpu": 5},
+  {"model": "q35",    "cell": "ctool", "host": "tokyo105", "gpu": 6, "extra": ["--align-tol", "3e-4"]},
+  {"model": "q36",    "cell": "ctool", "host": "tokyo105", "gpu": 7, "extra": ["--align-tol", "3e-4"]},
+  {"model": "gptoss", "cell": "ctool", "host": "tokyo106", "gpu": 0, "extra": ["--align-tol", "3e-4"]},
+  {"model": "q35",    "cell": "cgen",  "host": "tokyo106", "gpu": 1},
+  {"model": "q36",    "cell": "cgen",  "host": "tokyo106", "gpu": 2},
+  {"model": "gptoss", "cell": "cgen",  "host": "tokyo106", "gpu": 3}
+]

@@ -165,6 +165,20 @@
           "log": "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld/logs/new1_c2alf_q36va_s1.log"
         }
       ]
+    },
+    {
+      "name": "inject_aw_gptoss_r10",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_r10",
+      "note": null,
+      "started_at": "2026-08-01 01:13",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "-",
+          "session": "new1_inject_run",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_inject_run.log"
+        }
+      ]
     }
   ],
   "history": [
