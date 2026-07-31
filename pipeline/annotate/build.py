@@ -25,11 +25,16 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from rules import (AW_CALL, BFCL_CALL, HIST_ROUNDS, MAX_BOUNDS,  # noqa: E402
-                   MIN_THINK, MODEL_OF, SEED, assemble, boundaries,
-                   first_call_args, first_call_named)
+from rules import (ALF_TEMPLATES, AW_CALL, BFCL_CALL,  # noqa: E402
+                   HIST_ROUNDS, MAX_BOUNDS, MIN_THINK, MODEL_OF, SEED,
+                   alf_split, assemble, boundaries, first_call_args,
+                   first_call_named)
 
 SPLITS = ("train", "val", "test")
+
+# alfworld:模板切不动的动作计数(不静默丢,报告里逐项印出来)。
+# 键 = rules.alf_split 的落空原因;param_label.py 有一份同口径的副本。
+ALF_DROP = Counter()
 
 
 # ---------- 轨迹 -> 事件(【照抄】build_dataset.py,只多带一个保名参数表) ----------
@@ -67,6 +72,18 @@ def jsonl_events(runs, pattern, env):
                                tool=f"apis.{m.group(1)}.{m.group(2)}",
                                args=first_call_args(action, AW_CALL) or [],
                                named=first_call_named(action, AW_CALL) or [])
+            elif env == "alfworld":
+                # 模板细分口径:官方 13 条动作模板最长前缀匹配,介词位切具名参数。
+                # 切不动 -> 整步丢弃 + 计数(绝不退回下面 else 的动词切法)。
+                tool, named, why = alf_split(action)
+                if why:
+                    ALF_DROP[why] += 1
+                elif len(think) >= MIN_THINK:
+                    yield dict(env=env, model=model, unit=unit, traj=traj,
+                               step=st, task=task, hist=list(hist),
+                               think=think, tool=tool,
+                               args=[v for _k, v in named],
+                               named=list(named))
             else:  # tales:标签 = 命令首词(动词)
                 verb = action.split()[0].lower() if action.split() else ""
                 if verb and len(think) >= MIN_THINK:
@@ -140,6 +157,8 @@ def collect_events(runs_dirs, env):
             it = jsonl_events(runs, "appworld_*/appworld_*.jsonl", "appworld")
         elif env == "tales":
             it = jsonl_events(runs, "tales_*/tales_*.jsonl", "tales")
+        elif env == "alfworld":
+            it = jsonl_events(runs, "alfworld_*/alfworld_*.jsonl", "alfworld")
         elif env == "bfcl":
             it = bfcl_events(runs)
         else:
@@ -341,7 +360,18 @@ def main():
         "- 自检: 前缀断言 200/200 ✓;实例不跨 split ✓;"
         "题单归属抽查 " + " ".join(check3) + " ✓",
     ]
+    if env == "alfworld":
+        # 模板切不动的动作:整步丢弃,但必须可观测。
+        # no_template 占比高 = 提示词发的是老语法(put X in Y)或多余的自然语言,
+        # 不是模型菜——这一行同时是语法断代的报警器。
+        report.append(
+            f"- 模板切不动而丢弃的步: {sum(ALF_DROP.values())} "
+            f"({dict(sorted(ALF_DROP.items()))});"
+            f"官方模板 {len(ALF_TEMPLATES)} 条,工具词表应 ≤{len(ALF_TEMPLATES)} 类")
     (out / "ANNOTATE_REPORT.md").write_text("\n".join(report) + "\n")
+    if env == "alfworld":
+        print(f"alfworld 切不动丢弃: {sum(ALF_DROP.values())} "
+              f"{dict(sorted(ALF_DROP.items()))}")
     print(f"{env}/{cfg['model_short']}: events={len(events)} "
           f"samples={len(samples)} vocab={len(vocab)}")
     print("done ->", out)

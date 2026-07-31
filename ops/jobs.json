@@ -1089,6 +1089,21 @@
         }
       ],
       "finished_at": "2026-07-31 17:29"
+    },
+    {
+      "name": "inject_smoke",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": null,
+      "started_at": "2026-07-31 22:14",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_srv_gptoss_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_srv_gptoss_t108g0.log"
+        }
+      ],
+      "finished_at": "2026-07-31 22:23"
     }
   ]
 }

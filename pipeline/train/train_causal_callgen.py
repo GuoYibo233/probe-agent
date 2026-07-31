@@ -178,7 +178,7 @@ def eval_gen(model, tok, rows, dev, amp, max_len, bs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", default="appworld",
-                    choices=["tales", "appworld", "bfcl"],
+                    choices=["tales", "appworld", "bfcl", "alfworld"],
                     help="仅作日志标签(数据路径已由 --data 直接给定)")
     ap.add_argument("--data", required=True,
                     help="数据目录 <data_out>(含 train/val.jsonl)")

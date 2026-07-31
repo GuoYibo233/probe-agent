@@ -55,7 +55,10 @@ def apply_mode(rows, mode):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="envs/bert_data/v3")
-    ap.add_argument("--env", default="bfcl")
+    # 这一处原本没有 choices(全流水线八个 --env 里唯一的静默口):
+    # 传错环境名不会被 argparse 拦,只会在 :62 拼出一条不存在的路径。
+    ap.add_argument("--env", default="bfcl",
+                    choices=["tales", "appworld", "bfcl", "alfworld"])
     ap.add_argument("--split", default="test")
     args = ap.parse_args()
     rows = [json.loads(l)

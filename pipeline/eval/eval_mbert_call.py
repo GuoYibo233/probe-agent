@@ -106,7 +106,7 @@ def rate(num, den):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True,
-                    choices=["tales", "appworld", "bfcl"])
+                    choices=["tales", "appworld", "bfcl", "alfworld"])
     ap.add_argument("--run", required=True, help="分类头 run 目录(mtool)")
     ap.add_argument("--data", required=True,
                     help="数据目录 <data_out>(直接含 test.jsonl / router_stats.md)")

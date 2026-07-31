@@ -26,9 +26,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rules import (AW_CALL, BFCL_CALL, MIN_THINK, MODEL_OF,  # noqa: E402
-                   SEED, first_call_named, mkparams)
+                   SEED, alf_split, first_call_named, mkparams)
 
 SPLITS = ("train", "val", "test")
+
+# alfworld:模板切不动的动作计数。切分本身与 build.py 共用 rules.alf_split
+# 这一份实现,所以两侧口径不可能漂移(:202 的 assert tool == r["label"] 才有意义)。
+ALF_DROP = Counter()
 CTX = 80          # CHECK_50 上下文字符数
 KEEP_OK = 60      # 蓄水池:已定位样例
 KEEP_NG = 20      # 蓄水池:抽不到样例
@@ -60,6 +64,13 @@ def jsonl_events(runs, pattern, env):
                     yield (f"{traj}|s{st}", tool,
                            mkparams(tool,
                                     first_call_named(action, AW_CALL) or []))
+            elif env == "alfworld":
+                # 与 build.jsonl_events 的 alfworld 分支同一个 alf_split 调用
+                tool, named, why = alf_split(action)
+                if why:
+                    ALF_DROP[why] += 1
+                elif len(think) >= MIN_THINK:
+                    yield (f"{traj}|s{st}", tool, mkparams(tool, named))
             else:
                 parts = action.split()
                 verb = parts[0].lower() if parts else ""
@@ -118,6 +129,8 @@ def collect_events(runs_dirs, env):
             it = jsonl_events(runs, "appworld_*/appworld_*.jsonl", "appworld")
         elif env == "tales":
             it = jsonl_events(runs, "tales_*/tales_*.jsonl", "tales")
+        elif env == "alfworld":
+            it = jsonl_events(runs, "alfworld_*/alfworld_*.jsonl", "alfworld")
         elif env == "bfcl":
             it = bfcl_events(runs)
         else:
@@ -274,6 +287,13 @@ def main():
         f"- 已定位里值 ≤3 字符的占 {n_short/max(tot_found,1):.3f}"
         "(短值 rfind 可能撞上巧合子串,标签噪声上界)",
     ]
+    if env == "alfworld":
+        # 与 ANNOTATE_REPORT 的同名行必须逐字相等——不等就说明两侧切分漂了
+        report.append(
+            f"- 模板切不动而丢弃的步: {sum(ALF_DROP.values())} "
+            f"({dict(sorted(ALF_DROP.items()))})")
+        print(f"alfworld 切不动丢弃: {sum(ALF_DROP.values())} "
+              f"{dict(sorted(ALF_DROP.items()))}", flush=True)
     print(f"{env}: params={tot_par} found_rate="
           f"{tot_found/max(tot_par,1):.3f}", flush=True)
 

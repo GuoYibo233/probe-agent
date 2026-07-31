@@ -1,0 +1,17 @@
+{
+  "run_family": "alf_official_v1",
+  "env": "alfworld",
+  "model_short": "q36",
+  "model_full": "qwen3.6-27b",
+  "traj_runs": [
+    "/home/y-guo/reproduce/new1/envs/runs/c2_alfworld"
+  ],
+  "split_mode": "official",
+  "official_split_files": {
+    "train": "/home/y-guo/reproduce/new1/envs/alfworld/splits/train.txt",
+    "val": "/home/y-guo/reproduce/new1/envs/alfworld/splits/val.txt",
+    "test": "/home/y-guo/reproduce/new1/envs/alfworld/splits/test.txt"
+  },
+  "data_out": "/home/y-guo/reproduce/new1/pipeline/data/alf_official_v1/q36",
+  "seed": 20260729
+}

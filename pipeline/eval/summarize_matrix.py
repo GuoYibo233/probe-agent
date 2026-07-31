@@ -79,7 +79,8 @@ def main():
                 per_model[m] = (d.get("n_events_test"), d.get("prior"))
 
     md = ["# 四格矩阵汇总",
-          f"- run 目录 {root};风险档 {args.risk};缺报告的格标 PENDING",
+          f"- run 目录 {root};run_id 前缀 {args.prefix};风险档 {args.risk};"
+          "缺报告的格标 PENDING",
           f"- 模型 {' / '.join(args.models)};格 {' / '.join(CELLS)}",
           "",
           "| 模型 | 格 | run_id | 状态 | θ | coverage | trig_acc | earliness |"

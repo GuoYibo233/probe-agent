@@ -11,7 +11,7 @@ greedy 写出整条调用,判工具名 / 参数 / 整调用三层正确率。
   的 `call_sep` 字段读(与训练侧拼串口径同源,不硬编码);greedy、
   max_new_tokens=96、eos 停,再截到首个 \\n,最后 .strip()
   (与训练侧 val_exact_call 口径一致)。生成时 padding_side 临时切 left
-- 解析: 工具名【照抄】AW_CALL(appworld)/BFCL_CALL(bfcl 与 tales),
+- 解析: 工具名【照抄】AW_CALL(appworld)/ALF_CALL(alfworld)/BFCL_CALL(bfcl 与 tales),
   参数【照抄】split_args_named 的切法 + 同一套归一化(strip 后 strip 引号)。
   正则不匹配 = parse_fail
 - 判分(真值 = 触发样本的 label 与 args_named):
@@ -39,7 +39,8 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "annotate"))
-from rules import AW_CALL, BFCL_CALL, split_args_named   # noqa: E402
+from rules import (ALF_CALL, AW_CALL, BFCL_CALL,        # noqa: E402
+                   split_args_named)
 
 MAX_GEN_TOK = 96            # 【照抄 train_causal_callgen.py 的 MAX_GEN_TOK】
 FALLBACK_SEP = "\n[CALL] "  # meta.json 没写 call_sep 时的兜底(应当写了)
@@ -116,7 +117,11 @@ def split_named_raw(argstr):
 
 def parse_call(code, env):
     """-> (tool_name, [(key, raw_value)]) 或 (None, []) 表示 parse_fail。"""
-    name_re = AW_CALL if env == "appworld" else BFCL_CALL
+    # alfworld 必须显式分支:落回 BFCL_CALL 的 `(\w+)\(` 会把生成串里第一个
+    # "词(" 认成工具名(例如把思考残句里的 `note(` 当工具),静默把 tool_ok 打塌。
+    # ALF_CALL 只认 rules.ALF_TEMPLATES 那 13 个官方动作名,与 annotate 侧同源。
+    name_re = (AW_CALL if env == "appworld"
+               else ALF_CALL if env == "alfworld" else BFCL_CALL)
     m = name_re.search(code)
     if not m:
         return None, []
@@ -194,7 +199,7 @@ def rate(num, den):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True,
-                    choices=["tales", "appworld", "bfcl"])
+                    choices=["tales", "appworld", "bfcl", "alfworld"])
     ap.add_argument("--ctool-run", required=True,
                     help="因果分类头 run 目录(给触发点:温度/θ/logits_test.pt)")
     ap.add_argument("--cgen-run", required=True, help="调用生成 run 目录")

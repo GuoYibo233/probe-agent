@@ -221,7 +221,7 @@ def bootstrap(recs, rng):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True,
-                    choices=["tales", "appworld", "bfcl"])
+                    choices=["tales", "appworld", "bfcl", "alfworld"])
     ap.add_argument("--run", required=True, help="训练产物目录(必填)")
     ap.add_argument("--data", required=True,
                     help="数据目录 <data_out>;--legacy-splits 下语义退回 <data>/<env>")
