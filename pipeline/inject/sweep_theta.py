@@ -26,6 +26,18 @@
 - 正确率轴在 skip 口径下量的是**调用一致率**(预测的整条调用与真实是否一致),
   不是任务级成绩。任务级要等 miss_policy=execute 落地。这条差别必须写进报告,
   不许静默当成"正确率"。
+- **各点的 plan 段必须同参数同机器**,尤其 `--bs` 要一致。实测(2026-08-01,
+  θ=0.925 跑两次:r10 用 `--bs 32` 在 tokyo105,th0925 用默认 `--bs 8` 在 tokyo106):
+  探针出手这一层完全可复现——出手事件集合、触发句位置、深度、工具级预测
+  四项零差异;分叉出在参数产线的 greedy 生成上,14/1061 条(1.3%)写出了不同的
+  调用(例:同一事件 r10 写 show_api_doc(...show_album),th0925 写 ...show_liked_songs),
+  连带 full_call_ok 差 7 个、可注入数 689 vs 686。
+  已定位的原因是 **batch size 变了**:left padding 长度随之变,批内前向的浮点
+  舍入不同,近似平局处 argmax 被翻转。(另有 446/1061 个 conf 在第 7 位小数上
+  不同,那是 CPU softmax 归约顺序随线程数变,不改变任何出手决定——sent_idx
+  零差异可证。)
+  影响只有 0.4%,远小于各 θ 点之间的差,但混参会在曲线里掺进一个异构点。
+  所以铁律:一条曲线的六个点用同一个 --bs、同一台机器,并在报告里写明。
 
 用法:
   # run 段:六个 θ 铺到三个专用服务上
@@ -41,6 +53,7 @@
 
 import argparse
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -97,8 +110,32 @@ def stage_done(d, stage, tag=""):
 
 
 def one_theta(d, svc, a):
-    """一个 θ 的 run + score。返回 (dir, ok, note)。"""
+    """一个 θ 的 run + score,带目录锁。返回 (dir, ok, note)。
+
+    同一个 θ 不许被两个池子同时跑。run 段自带断点续跑(读 raw.jsonl 建已完成
+    集合只补缺的),所以**单进程杀掉重启是安全的、零损失**;但两个进程并行会
+    各自读一次已完成集合再同时往同一个 raw.jsonl 追加,既重复干活又写重复行。
+    锁文件记 pid 与起始时间,便于判断是残留锁还是真有进程在跑。
+    """
     d = Path(d)
+    lk = d / ".run_lock"
+    if lk.exists():
+        try:
+            info = json.loads(lk.read_text())
+        except Exception:
+            info = {}
+        return (str(d), False,
+                f"被别的进程占着(锁 {lk.name} pid={info.get('pid')} "
+                f"起于 {info.get('t')});确认没进程在跑再删这个锁文件")
+    lk.write_text(json.dumps(dict(pid=os.getpid(),
+                                  t=time.strftime("%F %T"), svc=svc)))
+    try:
+        return _one_theta(d, svc, a)
+    finally:
+        lk.unlink(missing_ok=True)
+
+
+def _one_theta(d, svc, a):
     cfg = json.loads((d / "plan_config.json").read_text())
     theta = cfg["theta"]
     log = HERE / "logs" / f"new1_thsw_run_{d.name}.log"
@@ -119,8 +156,9 @@ def one_theta(d, svc, a):
             cmd += ["--tag", a.tag]
         say(f"θ={theta} run 段起飞 -> {svc} (期望 "
             f"{cfg['n_planned'] + cfg['n_inject']} 条,日志 {log.name})")
-        with open(log, "w") as f:
-            f.write(f"# {' '.join(cmd)}\n")
+        # 追加而非截断:run 段能断点续跑,重启后上一轮的日志要留着好查
+        with open(log, "a") as f:
+            f.write(f"\n# [{time.strftime('%F %T')}] {' '.join(cmd)}\n")
             f.flush()
             rc = subprocess.run(cmd, cwd=str(ROOT), stdout=f,
                                 stderr=subprocess.STDOUT).returncode
