@@ -70,6 +70,16 @@ COLLECT_DATE = "2026-07-31"
 _SRC = Path(__file__).resolve().parents[2] / "envs/collect/run_appworld.py"
 _SYS_RE = re.compile(r'^SYSTEM = """(.*?)"""$', re.S | re.M)
 _LITERAL_HARMONY = re.compile(r"<\|[a-z_]+\|>")
+# 只有这两个完整串会让 chat_template.jinja:263-265 抛异常;单个 <|...|> 不会。
+# has_literal_harmony() 比这宽得多(它标的是"token 数可能对不上"的步)。
+_GUARD_STRS = ("<|channel|>analysis<|message|>", "<|channel|>final<|message|>")
+
+
+def needs_guard_bypass(msgs):
+    """这组 messages 是否会撞上模板的 <|channel|> 检查。"""
+    return any(m.get("role") == "assistant"
+               and any(g in (m.get("content") or "") for g in _GUARD_STRS)
+               for m in msgs)
 
 
 def check_system_verbatim(src=_SRC):
@@ -127,10 +137,29 @@ def build_prefix(tok, msgs, effort=REASONING_EFFORT, pin_date=COLLECT_DATE):
     pin_date:模板第 202 行调 strftime_now 把**运行当天**的日期写进 prompt,
     所以跨日重建会静默产生与采集时不同的串。把它钉回采集日,重建才是逐字的。
     传 None 关掉(那就得靠 assert_date 拦)。
+
+    占位符那一段:模板 263-265 行发现 assistant 的 content 里含完整的
+    `<|channel|>analysis<|message|>` / `<|channel|>final<|message|>` 就 raise。
+    但采集时 vLLM 服务端是原样渲染的——模型当时确实看到了那些字面标记
+    (模型自己把控制标记当文本吐了出来)。所以这里拿占位符绕过检查、渲染完再
+    换回原文,保证重建串与采集时逐字一致,而不是去改内容。
     """
-    s = tok.apply_chat_template(msgs, tokenize=False,
+    subs, safe = {}, []
+    for i, m in enumerate(msgs):
+        c = m.get("content") or ""
+        if m.get("role") == "assistant" and any(g in c for g in _GUARD_STRS):
+            key = f"\x00HARMONY{i}\x00"
+            subs[key] = c
+            safe.append({**m, "content": key})
+        else:
+            safe.append(m)
+    s = tok.apply_chat_template(safe, tokenize=False,
                                 add_generation_prompt=True,
                                 reasoning_effort=effort)
+    for k, v in subs.items():
+        if k not in s:
+            raise RuntimeError(f"占位符 {k!r} 渲染后不见了,换回原文会失败")
+        s = s.replace(k, v)
     if pin_date:
         s, n = re.subn(r"(Current date: )\d{4}-\d{2}-\d{2}",
                        lambda m: m.group(1) + pin_date, s, count=1)
