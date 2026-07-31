@@ -15,6 +15,42 @@
 
 ---
 
+## 2026-07-31 — c1 十二格全收：因果头取代分类头当主线，appworld 官方分区成为标准场地
+
+- **决定**：探针主线定为因果头（`ctool`/`cgen` 两格），ModernBERT 分类头
+  （`mtool`/`mext`）退为对照，不再单独为它排新实验；appworld 的成绩一律在官方分区
+  （`aw_official_v1`，train 90 / val 57 / test_normal 168 题）上报，
+  旧的自切分数字不再作为主线引用。参数侧的主报数口径改用生成路线的严格判定。
+- **触发**：新流水线 `pipeline/` 五段（collect / annotate / train / eval / inject）落成并双验收——
+  annotate 段用新代码重跑 v3 当年输入，与旧数据九字段逐条比对**全零差异**
+  （`pipeline/annotate/ACCEPT_V3DIFF.md`）；eval 段在 `--legacy-splits --cached-logits` 下
+  重跑 v3 的 bfcl 分类头与因果头，`REPLAY_REPORT.json` 与旧产物**逐字节相同**
+  （`pipeline/eval/ACCEPT_EVAL.md`）。据此采集 appworld 官方分区 594/594 全清
+  （run `20260731_0607_w0_aw_official`，客户端墙钟 2h19m），
+  再跑四格 × 三模型 12 个训练全部收官、11/12 格评测出数
+  （`c1_q35_mext` 评测 N/A：上游 `c1_q35_mtool` 两档 θ 皆 null，没有触发点可评）。
+  三条结论：
+  ①**因果头全面胜出**——`c1_gptoss_ctool` 两档皆有解（风险 0.05 档 coverage 0.2961 /
+  trig_acc 0.951，0.10 档 0.4963 / 0.9057），而同源 `c1_gptoss_mtool` 0.05 档无解、
+  0.10 档未兑现；触发比例上 `c1_q35_ctool` 把 mtool 的"两档无解"变成双档有解，
+  `c1_q36_ctool` 在 0.10 档 0.2911 是 mtool 0.1724 的 1.7 倍，
+  `c1_gptoss_ctool` 0.4963 是 mtool 0.1239 的 4.0 倍。
+  ②**难度迁移风险兑现了一例**——`c1_gptoss_mtool` 0.10 档在 val 上选中的 θ=0.975
+  到 test 上 trig_acc 只有 0.8642，低于 0.90 契约线，说明 val 选点不保证 test 兑现。
+  ③**宽松与严格判定的差距只出现在抽取路线**——三个 `cgen` 的
+  `params_all_ok` 与 `params_all_ok_strict` 完全相等（0.9041 / 0.8582 / 0.8262，无归一化损耗），
+  而 `c1_q36_mext` 是 0.9595 对 0.8874、`c1_gptoss_mext` 是 0.7887 对 0.4377，差距悬殊。
+- **作废**：把 ModernBERT 分类头当主线报数的做法；appworld 上一代自切分的探针成绩
+  作为主线引用（仍可作历史对照，但与官方分区的数不可直接比）；
+  "宽松判定与严格判定的差距是各路线通病"这个默认假设（只在抽取路线成立）。
+- **取舍**：两条工程决策记在案。其一，因果头训练前的对齐检查按 T8 先例把门槛放宽到
+  `3e-4`——三个 `ctool` 的 hidden maxdiff 在 8.39e-5 ~ 1.68e-4、logits maxdiff 在
+  1.69e-5 ~ 2.00e-5、相对差 2.3e-6 ~ 3.3e-6，判为数值噪声而非实现错误，全部 PASS 放行。
+  其二，`c1_gptoss_cgen` 迁卡重发——首轮在 A6000 上 OOM，加 `--grad-ckpt` 后
+  22.15s/step、ETA 26.7h，裁决改到 tokyo108 的 H200 上不带 grad-ckpt 重跑，
+  实际墙钟 5h13m，残局留在 `pipeline/runs/_aborted_c1_gptoss_cgen_t106g3`。
+- **commit**：本次记账提交（前一个 HEAD `9750953`）
+
 ## 2026-07-31 — 记录体系加第四层：数据设定归口 DATA.md
 
 - **决定**：三层记录之外单开 `DATA.md` 回答"这批数据是怎么造出来的"，

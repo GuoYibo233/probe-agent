@@ -1,20 +1,5 @@
 {
-  "active": [
-    {
-      "name": "c1_gptoss_cgen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "迁卡重发: tokyo106 g3(A6000+grad-ckpt) 实测 22.15 s/step ETA 26.7h, 主对话裁决改 tokyo108 g3(H200 141G) 不带 grad-ckpt; 旧残局留档 pipeline/runs/_aborted_c1_gptoss_cgen_t106g3; record.py run_id 不变",
-      "started_at": "2026-07-31 11:55",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "3",
-          "session": "new1_c1_gptoss_cgen_t108g3",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c1_gptoss_cgen_t108g3.log"
-        }
-      ]
-    }
-  ],
+  "active": [],
   "history": [
     {
       "name": "faketest",
@@ -1074,6 +1059,36 @@
         }
       ],
       "finished_at": "2026-07-31 17:01"
+    },
+    {
+      "name": "c1eval_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-07-31 17:27",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "new1_c1eval_gptoss_cgen_t105g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c1eval_gptoss_cgen_t105g1.log"
+        }
+      ],
+      "finished_at": "2026-07-31 17:29"
+    },
+    {
+      "name": "c1_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "迁卡重发: tokyo106 g3(A6000+grad-ckpt) 实测 22.15 s/step ETA 26.7h, 主对话裁决改 tokyo108 g3(H200 141G) 不带 grad-ckpt; 旧残局留档 pipeline/runs/_aborted_c1_gptoss_cgen_t106g3; record.py run_id 不变",
+      "started_at": "2026-07-31 11:55",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_c1_gptoss_cgen_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c1_gptoss_cgen_t108g3.log"
+        }
+      ],
+      "finished_at": "2026-07-31 17:29"
     }
   ]
 }

@@ -6,7 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | running | - | - |
+| `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4566 best_epoch=0 val_exact_call_ep0=0.425 val_exact_call_ep1=0.49 val_exact_call_ep2=0.485 risk=0.05 theta=0.975 n_events_fired=633 n_events_test=2138 tool_ok=0.9368 full_call_ok=0.7852 exact_call_ok=0.7852 params_all_ok=0.8262 parse_fail=1 parse_fail_rate=0.0016 noparam_rate=0.3223 wall_hours=5.21 | 迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044 |
 | `c1_q36_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.3423 risk=0.1 theta=0.925 exact_call_ok=0.8103 full_call_ok=0.8135 tool_ok=0.904 params_all_ok=0.8582 parse_fail_rate=0.0 n_events_fired=917 noparam_rate=0.5278 grad_ckpt=1 | 风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
 | `c1_q35_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4096 risk=0.05 theta=0.975 exact_call_ok=0.8858 full_call_ok=0.8904 tool_ok=0.968 params_all_ok=0.9041 parse_fail_rate=0.0 n_events_fired=219 noparam_rate=0.7032 | risk0.05 档（θ=0.975）：exact_call_ok 0.8858 / full_call_ok 0.8904，parse_fail 0；219 个触发事件里 154 个无参（70%）。带参工具是短板——spotify.login 0.1111、venmo.show_transactions 0.2857 |
 | `c1_gptoss_ctool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_acc=0.6763 temperature=1.1923 theta_risk10=0.925 coverage_risk10=0.4963 trig_acc_risk10=0.9057 theta_risk05=0.975 coverage_risk05=0.2961 trig_acc_risk05=0.951 align_maxdiff_hidden=0.0001144 align_maxdiff_logits=2.003e-05 align_tol=0.0003 grad_ckpt=1 prior_baseline=0.4041 n_events_test=2138 | 双档皆有解且覆盖率最高：risk0.1 coverage 0.4963/trig_acc 0.9057，risk0.05 coverage 0.2961/trig_acc 0.951——同源 gptoss_mtool 两档一个 null、一个未兑现，因果探针在难迁移格上翻盘。align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.14e-4、logits maxdiff 2.00e-5、相对差 2.7e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
@@ -48,11 +48,13 @@
 ### `c1_gptoss_cgen`
 
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / cgen 格
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-07-31 09:12 → 未收尾
+- **结论**：迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:34
 - **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
+- **数字**：best_val_ce=0.4566 best_epoch=0 val_exact_call_ep0=0.425 val_exact_call_ep1=0.49 val_exact_call_ep2=0.485 risk=0.05 theta=0.975 n_events_fired=633 n_events_test=2138 tool_ok=0.9368 full_call_ok=0.7852 exact_call_ok=0.7852 params_all_ok=0.8262 parse_fail=1 parse_fail_rate=0.0016 noparam_rate=0.3223 wall_hours=5.21
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_cgen`（不在 git 里）
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_cgen`
 
