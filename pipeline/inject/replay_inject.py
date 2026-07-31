@@ -287,6 +287,8 @@ def post_completions(base_url, payload, timeout, retries=4):
 
 
 def cmd_run(a):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     from transformers import AutoTokenizer
     plan_path = Path(a.plan)
     out_dir = plan_path.parent
@@ -296,70 +298,96 @@ def cmd_run(a):
         plan = plan[:a.limit]
     arms = [x.strip() for x in a.arms.split(",") if x.strip()]
     tok = AutoTokenizer.from_pretrained(a.tokenizer)
+    add_permit = bool(a.permit or cfg.get("permit"))
 
-    sink = open(out_dir / f"raw{a.tag}.jsonl", "a")
-    done = set()
     rp = out_dir / f"raw{a.tag}.jsonl"
-    if rp.exists():
+    done = set()
+    if rp.exists():                              # 断点续跑
         for l in open(rp):
             try:
                 o = json.loads(l)
                 done.add((o["event"], o["arm"]))
             except Exception:
                 pass
-    n_skip = 0
-    for i, p in enumerate(plan):
-        meta, gens, envs, _ = R.load_traj(Path(p["traj_path"]))
+    todo = [(p, arm) for p in plan for arm in arms
+            if (p["event"], arm) not in done
+            and not (arm == "inject" and p["inject_source"] == "none")]
+    print(f"计划 {len(plan)} 条 x {arms};已有 {len(done)} 条,待跑 "
+          f"{len(todo)} 条,并发 {a.concurrency}", flush=True)
+
+    sink = open(rp, "a")
+    lock, cache, clock = threading.Lock(), {}, threading.Lock()
+    stat = dict(n=0, t0=time.time(), fail=0)
+
+    def traj_of(path):
+        with clock:
+            if path not in cache:
+                cache[path] = R.load_traj(Path(path))
+            return cache[path]
+
+    def one(p, arm):
+        meta, gens, envs, _ = traj_of(p["traj_path"])
         msgs = R.build_messages(meta, gens, envs, p["step"])
-        if a.permit or cfg.get("permit"):
+        if add_permit:
+            msgs = [dict(m) for m in msgs]
             msgs[0]["content"] = msgs[0]["content"] + PERMIT
-        prefix = R.build_prefix(tok, msgs)
+        prefix = R.build_prefix(tok, msgs,
+                                pin_date=None if a.no_pin_date
+                                else R.COLLECT_DATE)
         if not a.assume_date:
             R.assert_date(prefix)
         think = (gens[p["step"]].get("reasoning") or "").strip()
         head = think[:p["cut"]]
         head_tok = len(tok.encode(head, add_special_tokens=False))
+        note = (NOTE_TMPL.format(call=p["inject_call"],
+                                 result=p["inject_result"])
+                if arm == "inject" else "")
+        prompt = prefix + R.ANALYSIS_OPEN + head + note
+        if a.dry_run:
+            return dict(event=p["event"], arm=arm, dry=True,
+                        prompt_chars=len(prompt), head_tok=head_tok,
+                        note_chars=len(note),
+                        prompt_tok=len(tok.encode(
+                            prompt, add_special_tokens=False)),
+                        baseline_out_tok=p["baseline_out_tok"],
+                        tail=prompt[-160:])
+        t0 = time.time()
+        r = post_completions(a.base_url, dict(
+            model=a.model, prompt=prompt, max_tokens=a.max_tokens,
+            temperature=0.0, stop=DEFAULT_STOP,
+            skip_special_tokens=False), a.timeout)
+        ch = r["choices"][0]
+        return dict(event=p["event"], arm=arm, text=ch["text"],
+                    finish_reason=ch.get("finish_reason"),
+                    prompt_tok=r["usage"]["prompt_tokens"],
+                    gen_tok=r["usage"]["completion_tokens"],
+                    head_tok=head_tok, note_chars=len(note),
+                    wall_s=round(time.time() - t0, 2))
 
-        for arm in arms:
-            if (p["event"], arm) in done:
-                n_skip += 1
+    with ThreadPoolExecutor(max_workers=a.concurrency) as ex:
+        futs = {ex.submit(one, p, arm): (p["event"], arm) for p, arm in todo}
+        for fu in as_completed(futs):
+            ev, arm = futs[fu]
+            try:
+                rec = fu.result()
+            except Exception as e:
+                stat["fail"] += 1
+                print(f"  FAIL {ev} {arm}: {type(e).__name__}: {e}",
+                      flush=True)
                 continue
-            if arm == "inject" and p["inject_source"] == "none":
-                continue
-            note = ""
-            if arm == "inject":
-                note = NOTE_TMPL.format(call=p["inject_call"],
-                                        result=p["inject_result"])
-            prompt = prefix + R.ANALYSIS_OPEN + head + note
-            if a.dry_run:
-                sink.write(json.dumps(dict(
-                    event=p["event"], arm=arm, dry=True,
-                    prompt_chars=len(prompt), head_tok=head_tok,
-                    note_chars=len(note),
-                    prompt_tok=len(tok.encode(prompt,
-                                              add_special_tokens=False)),
-                    baseline_out_tok=p["baseline_out_tok"],
-                    tail=prompt[-160:]), ensure_ascii=False) + "\n")
-                continue
-            t0 = time.time()
-            r = post_completions(a.base_url, dict(
-                model=a.model, prompt=prompt, max_tokens=a.max_tokens,
-                temperature=0.0, stop=DEFAULT_STOP,
-                skip_special_tokens=False), a.timeout)
-            ch = r["choices"][0]
-            sink.write(json.dumps(dict(
-                event=p["event"], arm=arm, text=ch["text"],
-                finish_reason=ch.get("finish_reason"),
-                prompt_tok=r["usage"]["prompt_tokens"],
-                gen_tok=r["usage"]["completion_tokens"],
-                head_tok=head_tok,
-                note_chars=len(note), wall_s=round(time.time() - t0, 2),
-            ), ensure_ascii=False) + "\n")
-            sink.flush()
-        if (i + 1) % 20 == 0:
-            print(f"  {i + 1}/{len(plan)} done", flush=True)
+            with lock:
+                sink.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                sink.flush()
+                stat["n"] += 1
+                if stat["n"] % 50 == 0:
+                    el = time.time() - stat["t0"]
+                    rate = stat["n"] / el
+                    left = (len(todo) - stat["n"]) / rate if rate else 0
+                    print(f"  {stat['n']}/{len(todo)} "
+                          f"{rate:.2f} req/s ETA {left/60:.1f} min",
+                          flush=True)
     sink.close()
-    print(f"完成 {len(plan)} 条 x {arms};跳过已有 {n_skip} 条 -> {rp}")
+    print(f"完成 {stat['n']}/{len(todo)};失败 {stat['fail']} -> {rp}")
 
 
 # ---------------------------------------------------------------- score
@@ -538,6 +566,9 @@ def main():
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--tag", default="")
     p.add_argument("--permit", action="store_true")
+    p.add_argument("--concurrency", type=int, default=16)
+    p.add_argument("--no-pin-date", action="store_true",
+                   help="不把 Current date 钉回采集日(默认钉,保证逐字重建)")
     p.add_argument("--assume-date", action="store_true",
                    help="承认重建日期与采集日期不同,继续跑")
     p.set_defaults(fn=cmd_run)

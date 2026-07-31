@@ -121,11 +121,22 @@ def build_messages(meta, gens, envs, step):
     return msgs
 
 
-def build_prefix(tok, msgs, effort=REASONING_EFFORT):
-    """套 harmony 模板,返回到 `<|start|>assistant` 为止的 prompt 串。"""
-    return tok.apply_chat_template(msgs, tokenize=False,
-                                   add_generation_prompt=True,
-                                   reasoning_effort=effort)
+def build_prefix(tok, msgs, effort=REASONING_EFFORT, pin_date=COLLECT_DATE):
+    """套 harmony 模板,返回到 `<|start|>assistant` 为止的 prompt 串。
+
+    pin_date:模板第 202 行调 strftime_now 把**运行当天**的日期写进 prompt,
+    所以跨日重建会静默产生与采集时不同的串。把它钉回采集日,重建才是逐字的。
+    传 None 关掉(那就得靠 assert_date 拦)。
+    """
+    s = tok.apply_chat_template(msgs, tokenize=False,
+                                add_generation_prompt=True,
+                                reasoning_effort=effort)
+    if pin_date:
+        s, n = re.subn(r"(Current date: )\d{4}-\d{2}-\d{2}",
+                       lambda m: m.group(1) + pin_date, s, count=1)
+        if not n:
+            raise RuntimeError("模板里没有 Current date 行,钉日期失败")
+    return s
 
 
 def assert_date(prefix, expect=COLLECT_DATE):
