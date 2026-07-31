@@ -6,6 +6,18 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | running | - | - |
+| `c1_q36_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.3423 risk=0.1 theta=0.925 exact_call_ok=0.8103 full_call_ok=0.8135 tool_ok=0.904 params_all_ok=0.8582 parse_fail_rate=0.0 n_events_fired=917 noparam_rate=0.5278 grad_ckpt=1 | 风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
+| `c1_q35_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4096 risk=0.05 theta=0.975 exact_call_ok=0.8858 full_call_ok=0.8904 tool_ok=0.968 params_all_ok=0.9041 parse_fail_rate=0.0 n_events_fired=219 noparam_rate=0.7032 | risk0.05 档（θ=0.975）：exact_call_ok 0.8858 / full_call_ok 0.8904，parse_fail 0；219 个触发事件里 154 个无参（70%）。带参工具是短板——spotify.login 0.1111、venmo.show_transactions 0.2857 |
+| `c1_gptoss_ctool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_acc=0.6763 temperature=1.1923 theta_risk10=0.925 coverage_risk10=0.4963 trig_acc_risk10=0.9057 theta_risk05=0.975 coverage_risk05=0.2961 trig_acc_risk05=0.951 align_maxdiff_hidden=0.0001144 align_maxdiff_logits=2.003e-05 align_tol=0.0003 grad_ckpt=1 prior_baseline=0.4041 n_events_test=2138 | 双档皆有解且覆盖率最高：risk0.1 coverage 0.4963/trig_acc 0.9057，risk0.05 coverage 0.2961/trig_acc 0.951——同源 gptoss_mtool 两档一个 null、一个未兑现，因果探针在难迁移格上翻盘。align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.14e-4、logits maxdiff 2.00e-5、相对差 2.7e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
+| `c1_q36_ctool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_acc=0.5584 temperature=1.4151 theta_risk10=0.925 coverage_risk10=0.2911 trig_acc_risk10=0.9368 theta_risk05=null align_maxdiff_hidden=8.392e-05 align_maxdiff_logits=1.764e-05 align_tol=0.0003 grad_ckpt=1 prior_baseline=0.1587 n_events_test=3150 | 0.05 档 null；0.10 档 coverage 0.2911/trig_acc 0.9368 兑现。align-tol 3e-4 放行（T8 先例，hidden maxdiff 8.39e-5、logits maxdiff 1.76e-5、相对差 3.3e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
+| `c1_q35_ctool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_acc=0.5674 temperature=1.2445 theta_risk10=0.925 coverage_risk10=0.1642 trig_acc_risk10=0.9292 theta_risk05=0.975 coverage_risk05=0.0653 trig_acc_risk05=0.968 align_maxdiff_hidden=0.0001678 align_maxdiff_logits=1.693e-05 align_tol=0.0003 prior_baseline=0.174 n_events_test=3356 | 双档皆有解：risk0.1 coverage 0.1642/trig_acc 0.9292，risk0.05 coverage 0.0653/trig_acc 0.968；align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.68e-4、logits maxdiff 1.69e-5、相对差 2.3e-6，属噪声区） |
+| `c1_gptoss_mext` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | ModernBERT-base | ok | best_calA_param_acc=0.7283 truncated_spans=534 risk=0.1 theta=0.975 full_call_ok=0.6755 params_all_present=0.7585 params_all_ok=0.7887 param_present_rate=0.8354 n_events_fired=265 | risk0.1 档 full_call_ok 0.6755。口径注意：265 个触发事件里 226 个带参（85%），比 q36_mext 的 29% 高得多；且上游路由弱（gptoss_mtool test trig_acc 0.8642<0.90，风险契约未兑现）。两条叠加压低端到端数字，不能与 q36_mext 的 0.9324 直接比 |
+| `c1_q36_mext` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | ModernBERT-base | ok | best_calA_param_acc=0.7462 truncated_spans=96 risk=0.05 theta=0.975 full_call_ok=0.9324 params_all_present=0.8964 params_all_ok=0.9595 param_present_rate=0.7356 n_events_fired=222 | risk0.05 档 full_call_ok 0.9324（222 触发事件：无参 157 / 选择 64 / 自由 1）；无参档 0.9618、选择档 0.8594 是短板 |
+| `c1_q35_mext` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | ModernBERT-base | ok | best_calA_param_acc=0.6616 calA_ans_acc=0.8661 calA_span_loose=0.6699 calA_span_strict=0.5207 truncated_spans=0 | 评测 N/A：上游 q35_mtool 无触发点（两档 θ 皆 null），本格只有训练侧数字，无 EXTRACT_REPORT |
+| `c1_gptoss_mtool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | ModernBERT-base | ok | best_val_acc=0.666 temperature=2.5398 theta_risk10=0.975 coverage_risk10=0.1239 trig_acc_risk10=0.8642 theta_risk05=null prior_baseline=0.4041 n_events_test=2138 | 0.05 档 null；0.10 档 test trig_acc 0.8642<0.90，风险契约 test 未兑现（难度迁移） |
+| `c1_q36_mtool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | ModernBERT-base | ok | best_val_acc=0.5329 temperature=1.4864 theta_risk10=0.925 coverage_risk10=0.1724 trig_acc_risk10=0.9208 theta_risk05=0.975 coverage_risk05=0.0705 trig_acc_risk05=0.973 prior_baseline=0.1587 n_events_test=3150 | 两档 θ 皆有解：risk0.1 档 test coverage 0.1724 / trig_acc 0.9208（CI 下界 0.8978），risk0.05 档 coverage 0.0705 / trig_acc 0.973，风险契约 test 兑现 |
+| `c1_q35_mtool` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | ModernBERT-base | ok | best_val_acc=0.5041 temperature=1.7686 theta_risk10=null theta_risk05=null val_max_trig_acc=0.871 val_max_trig_acc_theta=0.975 prior_baseline=0.174 n_events_test=3356 | 两档 θ 皆 null（val 最高 trig_acc 0.871<0.90，出现在 θ=0.975/coverage 0.027），无可用工作点，连带 q35_mext 评测 N/A |
 | `20260731_0607_w0_aw_official` | 2026-07-31 06:07 | pipeline | `e9f42fe+dirty` | qwen3.5-27b,qwen3.6-27b,gpt-oss-120b | ok | files=594 | appworld 官方分区采集 594/594 全清:q35 258(train 90+test_normal 168)/q36 168/gptoss 168,全部文件以 final 收尾,6 实例已释放显存归零 |
 | `20260730_t12c_smoke_7b` | 2026-07-30 18:46 | c3 | `871f502+dirty` | Qwen2.5-7B-Instruct | ok | smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30 | T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账 |
 | `20260730_1835_bert_t6_bfcl_mixed` | 2026-07-30 18:38 | c2 | `871f502+dirty` | ModernBERT-base | ok | best_calA=0.7847 ceiling_qwen_acc005=0.9645 ceiling_qwen_cov005=0.7478 ceiling_gptoss_acc005=0.9157 | bfcl v3_1 混训天花板:qwen侧0.9645/0.7478,gptoss侧0.9157/0.7615;coverage较纯qwen v3天花板(0.509/0.349)大幅抬升,混训增益在覆盖不在精度 |
@@ -32,6 +44,160 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `c1_gptoss_cgen`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / cgen 格
+- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-07-31 09:12 → 未收尾
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 3
+- **模型 / 种子**：Qwen3-0.6B-Base / 20260729
+- **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_cgen`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_cgen`
+
+### `c1_q36_cgen`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / cgen 格
+- **结论**：风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 2
+- **模型 / 种子**：Qwen3-0.6B-Base / 20260729
+- **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
+- **数字**：best_val_ce=0.3423 risk=0.1 theta=0.925 exact_call_ok=0.8103 full_call_ok=0.8135 tool_ok=0.904 params_all_ok=0.8582 parse_fail_rate=0.0 n_events_fired=917 noparam_rate=0.5278 grad_ckpt=1
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q36_cgen`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q36 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q36_cgen`
+
+### `c1_q35_cgen`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / cgen 格
+- **结论**：risk0.05 档（θ=0.975）：exact_call_ok 0.8858 / full_call_ok 0.8904，parse_fail 0；219 个触发事件里 154 个无参（70%）。带参工具是短板——spotify.login 0.1111、venmo.show_transactions 0.2857
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 1
+- **模型 / 种子**：Qwen3-0.6B-Base / 20260729
+- **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
+- **数字**：best_val_ce=0.4096 risk=0.05 theta=0.975 exact_call_ok=0.8858 full_call_ok=0.8904 tool_ok=0.968 params_all_ok=0.9041 parse_fail_rate=0.0 n_events_fired=219 noparam_rate=0.7032
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q35_cgen`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_cgen`
+
+### `c1_gptoss_ctool`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / ctool 格
+- **结论**：双档皆有解且覆盖率最高：risk0.1 coverage 0.4963/trig_acc 0.9057，risk0.05 coverage 0.2961/trig_acc 0.951——同源 gptoss_mtool 两档一个 null、一个未兑现，因果探针在难迁移格上翻盘。align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.14e-4、logits maxdiff 2.00e-5、相对差 2.7e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 0
+- **模型 / 种子**：Qwen3-0.6B-Base / 20260729
+- **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 align_tol=0.0003
+- **数字**：best_val_acc=0.6763 temperature=1.1923 theta_risk10=0.925 coverage_risk10=0.4963 trig_acc_risk10=0.9057 theta_risk05=0.975 coverage_risk05=0.2961 trig_acc_risk05=0.951 align_maxdiff_hidden=0.0001144 align_maxdiff_logits=2.003e-05 align_tol=0.0003 grad_ckpt=1 prior_baseline=0.4041 n_events_test=2138
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_ctool`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_ctool --align-tol 3e-4`
+
+### `c1_q36_ctool`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / ctool 格
+- **结论**：0.05 档 null；0.10 档 coverage 0.2911/trig_acc 0.9368 兑现。align-tol 3e-4 放行（T8 先例，hidden maxdiff 8.39e-5、logits maxdiff 1.76e-5、相对差 3.3e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 7
+- **模型 / 种子**：Qwen3-0.6B-Base / 20260729
+- **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 align_tol=0.0003
+- **数字**：best_val_acc=0.5584 temperature=1.4151 theta_risk10=0.925 coverage_risk10=0.2911 trig_acc_risk10=0.9368 theta_risk05=null align_maxdiff_hidden=8.392e-05 align_maxdiff_logits=1.764e-05 align_tol=0.0003 grad_ckpt=1 prior_baseline=0.1587 n_events_test=3150
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q36_ctool`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q36 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q36_ctool --align-tol 3e-4`
+
+### `c1_q35_ctool`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / ctool 格
+- **结论**：双档皆有解：risk0.1 coverage 0.1642/trig_acc 0.9292，risk0.05 coverage 0.0653/trig_acc 0.968；align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.68e-4、logits maxdiff 1.69e-5、相对差 2.3e-6，属噪声区）
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 6
+- **模型 / 种子**：Qwen3-0.6B-Base / 20260729
+- **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 align_tol=0.0003
+- **数字**：best_val_acc=0.5674 temperature=1.2445 theta_risk10=0.925 coverage_risk10=0.1642 trig_acc_risk10=0.9292 theta_risk05=0.975 coverage_risk05=0.0653 trig_acc_risk05=0.968 align_maxdiff_hidden=0.0001678 align_maxdiff_logits=1.693e-05 align_tol=0.0003 prior_baseline=0.174 n_events_test=3356
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q35_ctool`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_ctool --align-tol 3e-4`
+
+### `c1_gptoss_mext`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / mext 格
+- **结论**：risk0.1 档 full_call_ok 0.6755。口径注意：265 个触发事件里 226 个带参（85%），比 q36_mext 的 29% 高得多；且上游路由弱（gptoss_mtool test trig_acc 0.8642<0.90，风险契约未兑现）。两条叠加压低端到端数字，不能与 q36_mext 的 0.9324 直接比
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 5
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 max_span_tok=64
+- **数字**：best_calA_param_acc=0.7283 truncated_spans=534 risk=0.1 theta=0.975 full_call_ok=0.6755 params_all_present=0.7585 params_all_ok=0.7887 param_present_rate=0.8354 n_events_fired=265
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_mext`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_extract.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_mext`
+
+### `c1_q36_mext`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / mext 格
+- **结论**：risk0.05 档 full_call_ok 0.9324（222 触发事件：无参 157 / 选择 64 / 自由 1）；无参档 0.9618、选择档 0.8594 是短板
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 4
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 max_span_tok=64
+- **数字**：best_calA_param_acc=0.7462 truncated_spans=96 risk=0.05 theta=0.975 full_call_ok=0.9324 params_all_present=0.8964 params_all_ok=0.9595 param_present_rate=0.7356 n_events_fired=222
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q36_mext`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_extract.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q36 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q36_mext`
+
+### `c1_q35_mext`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / mext 格
+- **结论**：评测 N/A：上游 q35_mtool 无触发点（两档 θ 皆 null），本格只有训练侧数字，无 EXTRACT_REPORT
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 3
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 max_span_tok=64
+- **数字**：best_calA_param_acc=0.6616 calA_ans_acc=0.8661 calA_span_loose=0.6699 calA_span_strict=0.5207 truncated_spans=0
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q35_mext`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_extract.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_mext`
+
+### `c1_gptoss_mtool`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / mtool 格
+- **结论**：0.05 档 null；0.10 档 test trig_acc 0.8642<0.90，风险契约 test 未兑现（难度迁移）
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 2
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 input_mode=full
+- **数字**：best_val_acc=0.666 temperature=2.5398 theta_risk10=0.975 coverage_risk10=0.1239 trig_acc_risk10=0.8642 theta_risk05=null prior_baseline=0.4041 n_events_test=2138
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_mtool`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_tool.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/c1_gptoss_mtool`
+
+### `c1_q36_mtool`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / mtool 格
+- **结论**：两档 θ 皆有解：risk0.1 档 test coverage 0.1724 / trig_acc 0.9208（CI 下界 0.8978），risk0.05 档 coverage 0.0705 / trig_acc 0.973，风险契约 test 兑现
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 1
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 input_mode=full
+- **数字**：best_val_acc=0.5329 temperature=1.4864 theta_risk10=0.925 coverage_risk10=0.1724 trig_acc_risk10=0.9208 theta_risk05=0.975 coverage_risk05=0.0705 trig_acc_risk05=0.973 prior_baseline=0.1587 n_events_test=3150
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q36_mtool`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_tool.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q36 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q36_mtool`
+
+### `c1_q35_mtool`
+
+- **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / mtool 格
+- **结论**：两档 θ 皆 null（val 最高 trig_acc 0.871<0.90，出现在 θ=0.975/coverage 0.027），无可用工作点，连带 q35_mext 评测 N/A
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo105 GPU 0
+- **模型 / 种子**：ModernBERT-base / 20260729
+- **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 input_mode=full
+- **数字**：best_val_acc=0.5041 temperature=1.7686 theta_risk10=null theta_risk05=null val_max_trig_acc=0.871 val_max_trig_acc_theta=0.975 prior_baseline=0.174 n_events_test=3356
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c1_q35_mtool`（不在 git 里）
+- **命令**：`/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_tool.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_mtool`
 
 ### `20260731_0607_w0_aw_official`
 
