@@ -6,8 +6,14 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260801_0413_aw_gptoss_th0925` | 2026-08-01 04:13 | C2-3 | `e945a97+dirty` | gpt-oss-120b | running | - | - |
+| `20260801_0407_aw_gptoss_th095` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
+| `20260801_0407_aw_gptoss_th0875` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
+| `20260801_0407_aw_gptoss_th080` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
+| `20260801_0407_aw_gptoss_th070` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
+| `20260801_0407_aw_gptoss_th050` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
 | `20260801_0113_inject_aw_gptoss_r10` | 2026-08-01 01:13 | C2-3 | `442bdbd+dirty` | gpt-oss-120b | ok | n_fired=1061 n_injected=689 adopt_rate_inject=0.6168 adopt_rate_nofill=0.0971 repeat_rate_inject=0.3396 repeat_rate_nofill=0.8812 saved_tok_mean=33.5 saved_tok_median=-27 saved_positive_frac=0.4514 saved_early_d0_02=377.7 saved_late_d08_10=-696.8 late_trigger_frac=0.2177 | 注入被模型采纳(推进率 0.62 vs 不注入 0.10),但省token强依赖时机:思考前20%注入省377.7 tok,后40%注入亏636-697 tok;探针置信度触发有21.8%落在最差区间,总体因此拉平(中位-27)——死区在真实agent环境+真实探针驱动下首次复现,构成时机头的直接证据 |
-| `c2_alfworld` | 2026-07-31 23:01 | pipeline | `7805bdb+dirty` | - | running | - | - |
+| `c2_alfworld` | 2026-07-31 23:01 | pipeline | `7805bdb+dirty` | - | ok | q36_tasks=474 gptoss_tasks=474 q36_events=9151 gptoss_events=13007 q36_win_rate=0.909 gptoss_win_rate=0.762 q36_illegal_rate=0.0174 gptoss_illegal_rate=0.0118 action_parse_rate=0.9995 tool_vocab=12 prior_go=0.505 | ALFWorld 官方分区 948/948 全清(q36 474/gptoss 474, train200+val140+test134 逐份全覆盖); 21842 条动作按 13 条 twl2 模板切得动 99.95%, 切不动的 12 条全是模型输出被截断的残句; 工具词表仅 12 类且 go 占 50.5% —— 与 appworld 的 143 类/先验 0.174 恰好相反, 工具格要证明有用必须显著超过 0.505 的先验 |
 | `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4566 best_epoch=0 val_exact_call_ep0=0.425 val_exact_call_ep1=0.49 val_exact_call_ep2=0.485 risk=0.05 theta=0.975 n_events_fired=633 n_events_test=2138 tool_ok=0.9368 full_call_ok=0.7852 exact_call_ok=0.7852 params_all_ok=0.8262 parse_fail=1 parse_fail_rate=0.0016 noparam_rate=0.3223 wall_hours=5.21 | 迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044 |
 | `c1_q36_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.3423 risk=0.1 theta=0.925 exact_call_ok=0.8103 full_call_ok=0.8135 tool_ok=0.904 params_all_ok=0.8582 parse_fail_rate=0.0 n_events_fired=917 noparam_rate=0.5278 grad_ckpt=1 | 风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动 |
 | `c1_q35_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4096 risk=0.05 theta=0.975 exact_call_ok=0.8858 full_call_ok=0.8904 tool_ok=0.968 params_all_ok=0.9041 parse_fail_rate=0.0 n_events_fired=219 noparam_rate=0.7032 | risk0.05 档（θ=0.975）：exact_call_ok 0.8858 / full_call_ok 0.8904，parse_fail 0；219 个触发事件里 154 个无参（70%）。带参工具是短板——spotify.login 0.1111、venmo.show_transactions 0.2857 |
@@ -47,6 +53,72 @@
 
 ## 逐条详情
 
+### `20260801_0413_aw_gptoss_th0925`
+
+- **想验证什么**：θ 扫描曲线第六点的 plan 段(θ=0.925,触发 1061/2138 事件),与历史 run aw_gptoss_r10 同 θ 作 serving 侧对照:r10 是共享服务+concurrency 4,本点将跑专用服务+concurrency 16;plan 重新生成,不复用 r10 的 plan.jsonl
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:13 → 未收尾
+- **代码**：`e945a97`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 5
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.925 miss_policy=skip stage=plan n_fired=1061
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th0925`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.925 --out pipeline/inject/runs/aw_gptoss_th0925`
+
+### `20260801_0407_aw_gptoss_th095`
+
+- **想验证什么**：θ 扫描曲线第 5 点的 plan 段(θ=0.95,触发 907/2138 事件);五点只差 --theta,其余参数逐字相同
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 4
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.95 miss_policy=skip stage=plan n_fired=907
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th095`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.95 --out pipeline/inject/runs/aw_gptoss_th095`
+
+### `20260801_0407_aw_gptoss_th0875`
+
+- **想验证什么**：θ 扫描曲线第 4 点的 plan 段(θ=0.875,触发 1276/2138 事件);五点只差 --theta,其余参数逐字相同
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 3
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.875 miss_policy=skip stage=plan n_fired=1276
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th0875`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.875 --out pipeline/inject/runs/aw_gptoss_th0875`
+
+### `20260801_0407_aw_gptoss_th080`
+
+- **想验证什么**：θ 扫描曲线第 3 点的 plan 段(θ=0.80,触发 1534/2138 事件);五点只差 --theta,其余参数逐字相同
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 2
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.8 miss_policy=skip stage=plan n_fired=1534
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th080`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.80 --out pipeline/inject/runs/aw_gptoss_th080`
+
+### `20260801_0407_aw_gptoss_th070`
+
+- **想验证什么**：θ 扫描曲线第 2 点的 plan 段(θ=0.70,触发 1718/2138 事件);五点只差 --theta,其余参数逐字相同
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 1
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.7 miss_policy=skip stage=plan n_fired=1718
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th070`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.70 --out pipeline/inject/runs/aw_gptoss_th070`
+
+### `20260801_0407_aw_gptoss_th050`
+
+- **想验证什么**：θ 扫描曲线第 1 点的 plan 段(θ=0.50,触发 1945/2138 事件);五点只差 --theta,其余参数逐字相同
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo106 GPU 0
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.5 miss_policy=skip stage=plan n_fired=1945
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th050`（不在 git 里）
+- **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.50 --out pipeline/inject/runs/aw_gptoss_th050`
+
 ### `20260801_0113_inject_aw_gptoss_r10`
 
 - **想验证什么**：探针触发点文本层注入全量:量注入相对 nofill 省多少输出 token、模型是否跳过被注入的调用;复用 c2_alfworld 的闲置 gptoss 服务
@@ -63,10 +135,12 @@
 ### `c2_alfworld`
 
 - **想验证什么**：c2 批次采集: ALFWorld 官方分区 q36+gptoss 各 474 题(train 200/val 140/test 134), 三张 H100, 22 分片, max-steps 50
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-07-31 23:01 → 未收尾
+- **结论**：ALFWorld 官方分区 948/948 全清(q36 474/gptoss 474, train200+val140+test134 逐份全覆盖); 21842 条动作按 13 条 twl2 模板切得动 99.95%, 切不动的 12 条全是模型输出被截断的残句; 工具词表仅 12 类且 go 占 50.5% —— 与 appworld 的 143 类/先验 0.174 恰好相反, 工具格要证明有用必须显著超过 0.505 的先验
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 23:01 → 2026-08-01 04:25
 - **代码**：`7805bdb`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU 0,1,2
 - **模型 / 种子**：- / 20260729
+- **数字**：q36_tasks=474 gptoss_tasks=474 q36_events=9151 gptoss_events=13007 q36_win_rate=0.909 gptoss_win_rate=0.762 q36_illegal_rate=0.0174 gptoss_illegal_rate=0.0118 action_parse_rate=0.9995 tool_vocab=12 prior_go=0.505
 - **原始数据**：`/home/y-guo/reproduce/new1/envs/runs/c2_alfworld`（不在 git 里）
 
 ### `c1_gptoss_cgen`
