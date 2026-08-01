@@ -6,6 +6,9 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `20260802_0306_live_aw_probe_effort` | 2026-08-02 03:06 | C2-3 | `003be1c+dirty` | gpt-oss-120b | ok | plow_success=0.0893 plow_success_n=15 pmed_success=0.0476 pmed_success_n=8 plow_billed_tok_sum=494590 pmed_billed_tok_sum=1360901 plow_inject_per_task=0.0595 pmed_inject_per_task=0.7202 plow_spec_tool_agree=0.0 pmed_spec_tool_agree=0.2893 n_tasks=168 | 探针出分布(high 档思考)即失灵:low 档几乎不触发(0.06 次/题,tool_agree=0)成绩无损微升 8.9%>6.5%;med 档频繁触发(0.72 次/题)但预测只对 29%,成绩反被拖低 4.8%<7.1%——θ/探针都须按档标定,跨档直接搬会伤成绩 |
+| `20260802_0240_live_aw_effort` | 2026-08-02 02:40 | C2-3 | `5297779+dirty` | gpt-oss-120b | ok | low_success=0.0655 low_success_n=11 med_success=0.0714 med_success_n=12 low_billed_tok_sum=519734 med_billed_tok_sum=1369178 n_tasks=168 | effort 降档=成绩塌方:low 6.5%/med 7.1% vs high 档基线 28.6%;med 比 low 多花 2.6 倍 token 几乎不涨——省 token 不能靠拧小 effort,这正是探针法的对照价值 |
+| `20260802_0136_live_aw_gptoss` | 2026-08-02 01:36 | C2-3 | `a5318bc+dirty` | gpt-oss-120b | ok | probe_success=0.119 probe_success_n=20 noprobe_success=0.0714 noprobe_success_n=12 w0_success=0.2857 probe_billed_tok=5322678 noprobe_billed_tok=5719476 probe_overflow400=27 noprobe_overflow400=39 probe_inject_per_task=1.3452 probe_spec_tool_agree=0.1947 nonov_live=0.093 nonov_w0=0.318 n_tasks=168 | 同一活跑框架内探针全面占优:成功率 11.9%>7.1%,token 省 7%,撞 64k 上限少 12 题;但框架本身未对齐 w0(剔撞线后 9.3% vs 31.8%),绝对值口径待修——归因候选:日期行/分段边界漂移 |
 | `20260801_2257_inject_aw_gptoss_splice` | 2026-08-01 22:57 | C2-3 | `19e0308+dirty` | gpt-oss-120b | ok | saved_med_skel_switch=239 saved_med_switch_only=143 saved_med_inject_stop=181 saved_med_skel_bare=69 saved_med_skel_a=42 saved_med_skel_b=27 nofill_health_med=3 skel_switch_rewritten=0.0 skel_switch_post_think=0 exec_match_skel_switch=0.728 exec_match_skel_switch_hit=0.803 exec_match_switch_only=0.538 jia_accept=0.668 bing_accept_len_med=8 bing_exact=0.128 echo_disagree=0.126 | 八臂拼回收官:skel_switch(转场+骨架)逐事件省 token 中位 +239 且零改写零接茬又想,执行一致率 72.8%(猜对桶 80.3%)反超大模型自写的 switch_only(53.8%,合理偏离致系统性低估);思考段骨架三臂只省 27-69 且 11-13% 被改写;nofill 体检 +3≈0 放行;甲接受率 66.8%,丙 token 接受 8/17,两路对账不一致率 12.6% |
 | `20260801_2257_aw_gptoss_splice_th0925_plan` | 2026-08-01 22:57 | C2-3 | `19e0308+dirty` | gpt-oss-120b | ok | n_planned=1061 n_gen_min_p=1061 gen_call_reproduced=1.0 name_hit=0.906 gen_min_p_median=0.9817 | plan 重跑全绿:1061 条全带 pred_id/pred_label/gen_min_p,gen_call 与旧 th0925 逐字复现 1061/1061,pred_label/tool_ok 互推自检过,name_hit 0.906 与 ctool 松档 precision 一致 |
 | `20260801_2100_ro1bf_gptoss_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_val_ce=0.1725 risk=0.05 theta=0.825 n_events_scored=34 parse_fail_rate=0.0 tool_ok=0.9412 params_all_ok=0.9412 full_call_ok=0.9412 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.825 full_call_ok 0.9412(触发事件 34,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
@@ -86,6 +89,45 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `20260802_0306_live_aw_probe_effort`
+
+- **想验证什么**：探针×effort:low/medium 档也挂探针活跑整 split,看探针在短思考分布上还保不保准确率;θ=0.925/T 沿用 high 档标定
+- **结论**：探针出分布(high 档思考)即失灵:low 档几乎不触发(0.06 次/题,tool_agree=0)成绩无损微升 8.9%>6.5%;med 档频繁触发(0.72 次/题)但预测只对 29%,成绩反被拖低 4.8%<7.1%——θ/探针都须按档标定,跨档直接搬会伤成绩
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 03:06 → 2026-08-02 03:43
+- **代码**：`003be1c`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108,tokyo105 GPU 108:4 105:2
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.925 split=test_normal n_tasks=168 arms=probe_low+probe_med
+- **数字**：plow_success=0.0893 plow_success_n=15 pmed_success=0.0476 pmed_success_n=8 plow_billed_tok_sum=494590 pmed_billed_tok_sum=1360901 plow_inject_per_task=0.0595 pmed_inject_per_task=0.7202 plow_spec_tool_agree=0.0 pmed_spec_tool_agree=0.2893 n_tasks=168
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss`（不在 git 里）
+- **命令**：`bash envs/serve_logs/live_arm_job.sh probe_low|probe_med`
+
+### `20260802_0240_live_aw_effort`
+
+- **想验证什么**：effort 两档对照臂:同活跑路径只换 Reasoning 行,量任务成功率+token 账;用户点名补齐,与 high 档双臂并行不抢卡
+- **结论**：effort 降档=成绩塌方:low 6.5%/med 7.1% vs high 档基线 28.6%;med 比 low 多花 2.6 倍 token 几乎不涨——省 token 不能靠拧小 effort,这正是探针法的对照价值
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 02:40 → 2026-08-02 03:22
+- **代码**：`5297779`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108,tokyo105 GPU 108:3,5 105:1
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：split=test_normal n_tasks=168 arms=noprobe_low+noprobe_med
+- **数字**：low_success=0.0655 low_success_n=11 med_success=0.0714 med_success_n=12 low_billed_tok_sum=519734 med_billed_tok_sum=1369178 n_tasks=168
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss`（不在 git 里）
+- **命令**：`live_arm_job.sh noprobe_low|noprobe_med (12 shards each, H200 8117/8118, probe2 8791)`
+
+### `20260802_0136_live_aw_gptoss`
+
+- **想验证什么**：任务级成功率活跑:探针实时出手实时注入整题跑完看成败,对照=w0 轨迹28.6%+同路径 no-probe 臂;用户 2026-08-02 点名赶快跑
+- **结论**：同一活跑框架内探针全面占优:成功率 11.9%>7.1%,token 省 7%,撞 64k 上限少 12 题;但框架本身未对齐 w0(剔撞线后 9.3% vs 31.8%),绝对值口径待修——归因候选:日期行/分段边界漂移
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 01:36 → 2026-08-02 04:22
+- **代码**：`a5318bc`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108,tokyo105 GPU 108:0,1,2 105:0
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：theta=0.925 split=test_normal n_tasks=168 arms=probe+noprobe
+- **数字**：probe_success=0.119 probe_success_n=20 noprobe_success=0.0714 noprobe_success_n=12 w0_success=0.2857 probe_billed_tok=5322678 noprobe_billed_tok=5719476 probe_overflow400=27 noprobe_overflow400=39 probe_inject_per_task=1.3452 probe_spec_tool_agree=0.1947 nonov_live=0.093 nonov_w0=0.318 n_tasks=168
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss`（不在 git 里）
+- **命令**：`launch_vllm_splice.py + probe_server.py serve (驱动器另发)`
 
 ### `20260801_2257_inject_aw_gptoss_splice`
 
