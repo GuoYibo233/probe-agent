@@ -152,8 +152,9 @@ def summarize_c(rows):
 
 def post_completions(base_url, payload, timeout):
     import urllib.request
+    # 与 replay_inject.post_completions 同约定:--base-url 以 /v1 结尾
     req = urllib.request.Request(
-        base_url.rstrip("/") + "/v1/completions",
+        base_url.rstrip("/") + "/completions",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
