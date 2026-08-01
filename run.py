@@ -335,7 +335,9 @@ TASKS = {
         cwd=str(ROOT / "envs/stabletoolbench/server"),
         handoff=True,
         desc="StableToolBench 虚拟 API 服务(CPU,读 cwd 的 config_mirrorapi_cache.yml)",
-        notes=["先起 serve-mirrorapi,再把配置里 api_base 指到它;FastAPI 听 8126",
+        notes=["冒烟已过(2026-08-02,H200 单卡起模拟器):Finance/Currency/Convert 假调用"
+               "返回结构化汇率 JSON,error 空,整条离线链路通",
+               "先起 serve-mirrorapi,再把配置里 api_base 指到它;FastAPI 听 8126",
                "冒烟判据: POST /virtual(category/tool_name/api_name/tool_input/"
                "strip/toolbench_key 六字段)返回 200 且 response 非空;key 不校验",
                "长活服务,进 tmux 跑;工具文档树在 NFS 克隆的 toolenv2404_filtered/"]),
