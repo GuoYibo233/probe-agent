@@ -53,6 +53,7 @@ PY = {
     "tales":    str(ROOT / "envs/tales/venv/bin/python"),
     "tau2":     str(ROOT / "envs/tau2-bench/.venv/bin/python"),
     "toolhop":  str(ROOT / "envs/toolhop-env/bin/python"),
+    "stbserver": str(ROOT / "envs/stb-server-env/bin/python"),
     "bash":     "bash",
 }
 
@@ -317,6 +318,27 @@ TASKS = {
         handoff=True, gpu=True,
         desc="gpt-oss 三副本 vLLM 发射器(tokyo108:8114-8116;自己 ssh+tmux,幂等)",
         notes=["环境变量(cuda-compat/FLASHINFER/缓存进 /net)已内嵌在脚本里"]),
+    "serve-mirrorapi": dict(
+        stage="live", prog=str(ROOT / "envs/vllm-env/bin/vllm"),
+        handoff=True, gpu=True,
+        args=["serve",
+              "/net/tokyo100-10g/data/str01_01/y-guo/models/MirrorAPI-Cache",
+              "--served-model-name", "mirrorapi-cache"],
+        desc="StableToolBench 模拟器 MirrorAPI-Cache(Qwen2.5-7B 微调,bf16 ~15G)",
+        notes=["典型追加: --port 8125 --gpu-memory-utilization 0.5",
+               "tokyo108 要 LD_LIBRARY_PATH=envs/cuda-compat-13.0(照"
+               " envs/serve_logs/run_gptoss.sh 那套);106/107 CUDA 12.2 先 10 秒实测",
+               "served-model-name 必须=mirrorapi-cache,server 配置里写死同名"]),
+    "stb-virtual-server": dict(
+        stage="live", py="stbserver",
+        script="envs/stabletoolbench/server/main_mirrorapi_cache.py",
+        cwd=str(ROOT / "envs/stabletoolbench/server"),
+        handoff=True,
+        desc="StableToolBench 虚拟 API 服务(CPU,读 cwd 的 config_mirrorapi_cache.yml)",
+        notes=["先起 serve-mirrorapi,再把配置里 api_base 指到它;FastAPI 听 8126",
+               "冒烟判据: POST /virtual(category/tool_name/api_name/tool_input/"
+               "strip/toolbench_key 六字段)返回 200 且 response 非空;key 不校验",
+               "长活服务,进 tmux 跑;工具文档树在 NFS 克隆的 toolenv2404_filtered/"]),
     "splice-plan-job": dict(
         stage="live", py="bash", script="envs/serve_logs/splice_plan_job.sh",
         handoff=True, gpu=True,
