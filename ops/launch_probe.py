@@ -35,18 +35,11 @@ LOCAL = subprocess.run(["hostname"], capture_output=True, text=True).stdout.stri
 ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}
 LOCAL = ALIAS.get(LOCAL, LOCAL)
 
-MBERT = str(WD / "mbert-env/bin/python")
-CPROBE = str(WD / "cprobe-env/bin/python")
-
-# 格 -> (解释器, 训练脚本, 该格固定要带的参数)
-# 双环境铁律: ModernBERT 线钉 transformers 4.57.6, 因果线 >=5.14, 互不升级。
-CELLS = {
-    "mtool": (MBERT, WD / "pipeline/train/train_mbert_tool.py", []),
-    "mext":  (MBERT, WD / "pipeline/train/train_mbert_extract.py", []),
-    "ctool": (CPROBE, WD / "pipeline/train/train_causal_tool.py", ["--base", "qwen"]),
-    "cgen":  (CPROBE, WD / "pipeline/train/train_causal_callgen.py", []),
-}
-CELL_ORDER = ("mtool", "mext", "ctool", "cgen")
+# 格 -> (解释器, 训练脚本, 该格固定要带的参数)。
+# 唯一真源在仓库根 run.py 的 CELLS(2026-08-02 起),这里只 import 不再另抄一份
+# ——两张同构表必漂移,而那种漂移是静默的。双环境铁律也记在 run.py 里。
+sys.path.insert(0, str(WD))
+from run import CELLS, CELL_ORDER  # noqa: E402
 
 
 def has_session(host, s):

@@ -14,8 +14,13 @@
   gpt-oss tokenizer 现算注入前被丢弃文本不可行(原文没存),所以 kept 只报
   字符口径,billed 是 token 口径的唯一真账。对照的每步 out token 取
   usage.out(服务端记的 completion_tokens)。
-- 出手事后账(评测时不可知、打分时才算):预测调用与该步真发出代码块首个
-  调用的一致性(工具级/整条级)、注入后该步是否又调了同一工具(重调)。
+- 出手事后账(评测时不可知、打分时才算):预测调用与该步真发出代码块首条
+  完整调用的一致性(工具级/整条级;整条级用 parse_call 括号配平提取,别拿
+  "apis. 到块尾"整段比——print 壳和多语句会让全对的预测也判不一致)、
+  注入后该步是否又调了同一工具(重调)。
+- task_error 单列:live_appworld 对单题临时故障(服务重启/网络抖动)补的
+  final(abort=task_error:*, steps=-1)不是真实成败,只计 n_task_error,
+  不进 live_success 的分母。
 
 用法:
   cprobe-env/bin/python pipeline/inject/score_live.py \\
@@ -28,8 +33,14 @@ import ast
 import glob
 import json
 import re
+import sys
 from collections import Counter
 from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+from parse_call import complete_call                         # noqa: E402
 
 AW_CALL = re.compile(r"apis\.(\w+)\.(\w+)\(")
 
@@ -57,16 +68,23 @@ def success_of(ev):
                 return bool(d["success"])
         except Exception:
             pass
+        # 对照轨迹的 eval 是被截断过的 str(实测 w0 168 条里 135 条
+        # literal_eval 失败);success 键在串首,正则兜底(summarize_full 同口径)。
+        m = re.search(r"'success': (True|False)", ev)
+        if m:
+            return m.group(1) == "True"
     return None
 
 
 def read_live(path):
     recs = [json.loads(l) for l in open(path)]
-    meta = recs[0]
-    gens = [r for r in recs if r["type"] == "gen"]
-    envs = {r["step"]: r for r in recs if r["type"] == "env"}
-    specs = [r for r in recs if r["type"] == "spec"]
-    final = next((r for r in recs if r["type"] == "final"), None)
+    # 单题在建世界阶段就炸时,文件里只有兜底的 task_error final,没有 meta 行
+    # ——meta 用 None 顶住,调用方从文件名兜出 task_id。
+    meta = recs[0] if recs and recs[0].get("type") == "meta" else None
+    gens = [r for r in recs if r.get("type") == "gen"]
+    envs = {r["step"]: r for r in recs if r.get("type") == "env"}
+    specs = [r for r in recs if r.get("type") == "spec"]
+    final = next((r for r in recs if r.get("type") == "final"), None)
     return meta, gens, envs, specs, final
 
 
@@ -88,11 +106,12 @@ def main():
     rows, spec_rows = [], []
     for f in sorted(glob.glob(str(live_dir / "live_*.jsonl"))):
         meta, gens, envs, specs, final = read_live(f)
+        tid = ((meta or {}).get("task_id")
+               or Path(f).stem[len("live_"):])       # 文件名 live_<task_id>.jsonl
         if final is None:
-            rows.append(dict(task=meta["task_id"], arm=meta.get("arm"),
+            rows.append(dict(task=tid, arm=(meta or {}).get("arm"),
                              unfinished=True))
             continue
-        tid = meta["task_id"]
         billed = sum(g["usage"]["gen_tok"] for g in gens)
         reqs = sum(g["usage"]["req"] for g in gens)
         disc_c = sum(g["discard"]["chars"] for g in gens)
@@ -111,27 +130,30 @@ def main():
             act = (envs.get(s["step"]) or {}).get("action") or ""
             tool_pred = first_call(s["gen_call"])
             tool_real = first_call(act)
+            real_call, _ = complete_call(act)
             spec_rows.append(dict(
                 task=tid, step=s["step"], conf=s["conf"],
                 exec_ok=s["exec_ok"], error_kind=s["error_kind"],
                 arg_modes=s["arg_modes"],
                 tool_agree=(tool_pred == tool_real and tool_pred is not None),
-                call_agree=(norm_call(s["gen_call"]) == norm_call(
-                    act[act.find("apis."):] if "apis." in act else "")
-                    and "apis." in act),
+                call_agree=(real_call is not None and
+                            norm_call(s["gen_call"]) == norm_call(real_call)),
                 recalled=(tool_pred is not None and tool_pred in act),
                 discarded_chars=s["discarded_chars"]))
 
         rows.append(dict(
-            task=tid, arm=meta.get("arm"),
+            task=tid, arm=(meta or {}).get("arm"),
             success=success_of(final.get("eval")),
             steps=final["steps"], completed=final["completed"],
+            task_error=str(final.get("abort") or "").startswith("task_error"),
             n_inject=sum(g.get("n_inject", 0) for g in gens),
             billed_tok=billed, n_req=reqs, discarded_chars=disc_c,
             base_success=base["success"], base_out_tok=base["out_tok"],
             base_steps=base["steps"]))
 
-    done = [r for r in rows if not r.get("unfinished")]
+    errs = [r for r in rows if r.get("task_error")]
+    done = [r for r in rows
+            if not r.get("unfinished") and not r.get("task_error")]
     paired = [r for r in done if r["base_success"] is not None]
 
     def rate(xs):
@@ -140,6 +162,7 @@ def main():
 
     summary = dict(
         n_tasks=len(rows), n_done=len(done), n_paired=len(paired),
+        n_task_error=len(errs),
         live_success=rate([r["success"] for r in done]),
         base_success=rate([r["base_success"] for r in paired]),
         live_success_paired=rate([r["success"] for r in paired]),
@@ -160,8 +183,12 @@ def main():
 
     md = ["# 活跑注入线报告", "",
           "对照批次的服务条件与 harmony 日期行都与活跑不同(设计书 §1),",
-          "token 总量对比要带这条保留;billed 含触发后丢弃的溢出。", "",
+          "token 总量对比要带这条保留;billed 含触发后丢弃的溢出。",
+          "n_task_error 是临时故障(abort=task_error)的题数,这些题没进",
+          "live_success 的分母;重跑前删掉对应 live_*.jsonl 才会重试。", "",
           "| 指标 | 值 |", "|---|---|"]
+    if errs:
+        md.insert(6, "task_error 题: " + ", ".join(r["task"] for r in errs))
     for k, v in summary.items():
         md.append(f"| {k} | {v} |")
     md += ["", "| task | arm | 成败 | 对照成败 | 步数 | 出手 | billed tok |"
