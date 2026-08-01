@@ -1,0 +1,22 @@
+{
+ "ctool_run": "pipeline/runs/c1_gptoss_ctool",
+ "cgen_run": "pipeline/runs/c1_gptoss_cgen",
+ "data": "pipeline/data/aw_official_v1/gptoss",
+ "traj_root": "envs/runs/w0_aw_official/appworld_gptoss",
+ "risk": 0.1,
+ "theta": 0.925,
+ "theta_source": "explicit",
+ "temperature": 1.1923,
+ "decision_file": null,
+ "miss_policy": "skip",
+ "permit": false,
+ "n_events_test": 2138,
+ "n_fired": 1061,
+ "n_planned": 1061,
+ "drop": {},
+ "n_gen_min_p": 1061,
+ "n_inject": 686,
+ "n_hit": 686,
+ "n_multicall": 99,
+ "n_literal": 83
+}
