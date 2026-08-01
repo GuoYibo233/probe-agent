@@ -29,6 +29,18 @@ params_all_ok / full_call_ok 分母,单独计进新增键 readonly_excluded。
 已有字段名与判分三档一个不动。双向保险丝查两处:ctool run 的 label_map.json
 有没有弃权哨兵、cgen run 的 meta.json 有没有 readonly_env 键(缺失=旧模式)。
 
+自主开火评测 `--self-fire`(默认关;打开不动任何旧字段,只加一个 self_fire 块):
+给带开火头训练的 cgen run 用——触发点不再从 ctool 的报告拿 θ,而是让 cgen 自己的
+开火头决定什么时候发射。
+- 开火分数:每个边界上 prompt=text+call_sep 前向一次,取 prompt 末位隐状态过
+  best/fire_head.pt,sigmoid 成开火概率(与训练侧取位一致,不看目标串)
+- θ_fire 在 **val** 上扫(沿用 eval_tool 的 THETAS 网格与 RISK_TARGETS 机制),
+  风险用标签算:错误开火 = 开火了但真值 not-ready
+  (ready = 真值工具只读 且 该边界上所有参数 found)
+- test 冻结一次:按选定的 θ_fire 回放开火点,在开火点上照原有三档判分生成并算
+  参数 / 整调用指标。真值用**未折叠**的原标签,所以错误开火天然判错,不做剔除
+- 需要 --readonly-env(ready 的定义依赖只读真值表)与一个 fire_head=true 的 cgen run
+
 用法:
   cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env appworld \\
     --ctool-run pipeline/runs/c1_q35_ctool --cgen-run pipeline/runs/c1_q35_cgen \\
@@ -51,6 +63,9 @@ from rules import (ALF_CALL, AW_CALL, BFCL_CALL,        # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
 import readonly_map                                     # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eval_tool import RISK_TARGETS, THETAS              # noqa: E402
 
 MAX_GEN_TOK = 96            # 【照抄 train_causal_callgen.py 的 MAX_GEN_TOK】
 FALLBACK_SEP = "\n[CALL] "  # meta.json 没写 call_sep 时的兜底(应当写了)
@@ -210,6 +225,229 @@ def rate(num, den):
     return round(num / den, 4) if den else None
 
 
+# ------------------------------------------------------------ 自主开火
+
+def load_ready(data, params, split, ro_set):
+    """读一堆样本并算开火真值 ready。返回 (rows, stats)。
+
+    ready = 真值工具在只读集合里 且 该样本所有参数 found=true(零参数空真);
+    params 里 join 不到的按 not-ready 处理并计数。标签**不折叠**——
+    self-fire 这条路不经过 ctool 的标签空间。
+    """
+    pmap = {}
+    for p in load_rows(params / f"{split}.jsonl"):
+        pmap[(p["event"], p["sent_idx"])] = p["params"]
+    rows = load_rows(data / f"{split}.jsonl")
+    st = dict(n=len(rows), n_ready=0, n_readonly=0,
+              n_join_miss=0, n_join_miss_with_args=0)
+    for r in rows:
+        is_ro = r["label"] in ro_set
+        st["n_readonly"] += is_ro
+        ps = pmap.get((r["event"], r["sent_idx"]))
+        if ps is None:
+            st["n_join_miss"] += 1
+            if r.get("args_named"):
+                st["n_join_miss_with_args"] += 1
+            r["ready"] = False
+        else:
+            r["ready"] = bool(is_ro and all(q["found"] for q in ps))
+        st["n_ready"] += r["ready"]
+    n = max(st["n"], 1)
+    st["frac_ready"] = round(st["n_ready"] / n, 6)
+    st["frac_readonly"] = round(st["n_readonly"] / n, 6)
+    st["frac_join_miss"] = round(st["n_join_miss"] / n, 6)
+    if st["frac_join_miss"] > 0.01:
+        print(f"[self-fire] 警告:{split} 有 {st['n_join_miss']}/{st['n']} "
+              f"({st['frac_join_miss']:.1%}) 个样本在 params 里 join 不到,"
+              f"已按 not-ready 处理", flush=True)
+    return rows, st
+
+
+@torch.no_grad()
+def score_fire(model, fire, tok, rows, sep, dev, bs, max_len, max_new):
+    """每个边界的开火概率。prompt=text+sep,右 padding,取 prompt 末位隐状态。
+
+    截断口径与 generate() 那条路一模一样(max_length = max_len - max_new),
+    所以"在哪段前缀上决定开火"与"从哪段前缀开始生成"是同一件东西。
+    """
+    prev_side, prev_cache = tok.padding_side, model.config.use_cache
+    tok.padding_side = "right"                      # 末位靠 attention_mask 定位
+    model.config.use_cache = False
+    out = torch.zeros(len(rows))
+    for i in range(0, len(rows), bs):
+        chunk = [r["text"] + sep for r in rows[i:i + bs]]
+        enc = tok(chunk, truncation=True,
+                  max_length=max(max_len - max_new, 1), padding=True,
+                  add_special_tokens=False, return_tensors="pt").to(dev)
+        h = model(input_ids=enc["input_ids"],
+                  attention_mask=enc["attention_mask"], use_cache=False,
+                  output_hidden_states=True).hidden_states[-1]
+        last = enc["attention_mask"].sum(1) - 1
+        lg = fire(h[torch.arange(h.size(0), device=h.device), last].float())
+        out[i:i + len(chunk)] = torch.sigmoid(lg.squeeze(-1).float()).cpu()
+        if (i // bs) % 50 == 0:
+            print(f"fire-scored {i}/{len(rows)}", flush=True)
+    tok.padding_side, model.config.use_cache = prev_side, prev_cache
+    return out
+
+
+def replay_fire_head(rows, probs, theta, gate=None):
+    """开火头版回放:每事件取首个 fire_prob>=θ(且 gate 为真)的边界。
+
+    与 replay_fire 同构,只是判据换成开火概率;gate[i] 用于 mext 那边的
+    "argmax 不是弃权类",这里恒 None。
+    """
+    ev = defaultdict(list)
+    for i, (r, p) in enumerate(zip(rows, probs)):
+        ev[r["event"]].append((r["sent_idx"], i, r, float(p)))
+    out = {}
+    for k, items in ev.items():
+        items.sort(key=lambda x: x[0])
+        rec = dict(fired=False, ready=False, sent_idx=None, row=None, conf=None)
+        for _, i, r, p in items:
+            if p >= theta and (gate is None or gate[i]):
+                rec.update(fired=True, ready=bool(r["ready"]),
+                           sent_idx=r["sent_idx"], row=r, conf=round(p, 4))
+                break
+        out[k] = rec
+    return out
+
+
+def agg_fire(recs):
+    """开火头的覆盖率 / 正确率 / 错误开火率,公式与 eval_tool.agg 同构。"""
+    n = len(recs)
+    fired = [r for r in recs if r["fired"]]
+    return dict(n=n, n_fired=len(fired),
+                coverage=round(len(fired) / max(n, 1), 4),
+                fire_acc=round(sum(r["ready"] for r in fired)
+                               / max(len(fired), 1), 4),
+                wrong_fire_rate=round(sum(1 for r in fired if not r["ready"])
+                                      / max(n, 1), 4))
+
+
+def pick_theta(sweep):
+    """【与 eval_tool 选 θ 同机制】风险约束下取覆盖率最大的那档。"""
+    chosen = {}
+    for risk in RISK_TARGETS:
+        ok = [(th, a) for th, a in sweep
+              if a["fire_acc"] >= 1 - risk and a["coverage"] > 0]
+        chosen[risk] = (max(ok, key=lambda x: x[1]["coverage"])[0]
+                        if ok else None)
+    return chosen
+
+
+# ------------------------------------------------------------ 判分
+
+def score_points(keys, rowof, gens, env, n_samples=20):
+    """在给定的触发/开火点上判分。keys 与 gens 同序,rowof[k] 给该点的真值行。
+
+    【判分口径逐字保留】工具名 / 宽松·严格参数 / 整调用三档一个不动。
+    """
+    per_ev, samples = {}, []
+    n_par = n_lo = n_st = 0
+    for k, g in zip(keys, gens):
+        row = rowof[k]
+        truth = row.get("args_named") or []
+        tool, raw = parse_call(g, env)
+        n, lo, st = match_params(truth, raw)
+        n_par += n
+        n_lo += lo
+        n_st += st
+        noparam = not truth
+        rec = dict(
+            event=k, label=row["label"], label_call=row.get("label_call"),
+            gen_call=g, parse_fail=tool is None,
+            tool_ok=(tool == row["label"]),
+            params_all_ok=(True if noparam else (n > 0 and lo == n)),
+            params_all_ok_strict=(True if noparam else (n > 0 and st == n)),
+            noparam=noparam,
+            exact_call_ok=(g == row.get("label_call")))
+        rec["full_call_ok"] = rec["tool_ok"] and rec["params_all_ok"]
+        per_ev[k] = rec
+        if len(samples) < n_samples:
+            samples.append(dict(event=k, truth=row.get("label_call"),
+                                gen=g, full_call_ok=rec["full_call_ok"]))
+    return per_ev, samples, n_par, n_lo, n_st
+
+
+def self_fire_block(args, cgen, data, params, meta, model, tok, sep,
+                    max_len, dev, ro_set):
+    """自主开火:θ_fire 在 val 上扫 → test 冻结一次 → 开火点上生成并判分。"""
+    if not meta.get("fire_head"):
+        raise SystemExit(
+            f"--self-fire 要求 cgen run 是带开火头训的:{cgen/'best'/'meta.json'} "
+            "里没有 \"fire_head\": true。请用 train_causal_callgen.py --fire-head 训。")
+    fp = cgen / "best" / "fire_head.pt"
+    if not fp.exists():
+        raise SystemExit(f"--self-fire 找不到开火头权重 {fp}")
+    sd = torch.load(fp, map_location="cpu")
+    fire = torch.nn.Linear(sd["weight"].shape[1], 1)
+    fire.load_state_dict(sd)
+    fire = fire.float().to(dev).eval()
+    bs = args.fire_bs or args.bs
+
+    val_rows, val_st = load_ready(data, params, "val", ro_set)
+    test_rows, test_st = load_ready(data, params, "test", ro_set)
+
+    # θ_fire 在 val 上扫(网格与风险目标沿用 eval_tool 的 THETAS/RISK_TARGETS)
+    pv = score_fire(model, fire, tok, val_rows, sep, dev, bs, max_len,
+                    args.max_new_tokens)
+    sweep = [(th, agg_fire(list(replay_fire_head(val_rows, pv, th).values())))
+             for th in THETAS]
+    chosen = pick_theta(sweep)
+    th_fire = chosen.get(args.risk)
+    if th_fire is None:
+        print(f"[self-fire] val 上 20 档 θ 都压不到风险≤{args.risk};"
+              f"chosen={chosen},本块只出扫描表。", flush=True)
+        return dict(theta_fire=None, risk=args.risk,
+                    chosen_theta_fire={str(k): v for k, v in chosen.items()},
+                    theta_sweep_val=[dict(theta=th, **a) for th, a in sweep],
+                    ready_stats=dict(val=val_st, test=test_st),
+                    val=None, test=None, scored=None, on_ready=None)
+
+    # test 冻结一次
+    pt = score_fire(model, fire, tok, test_rows, sep, dev, bs, max_len,
+                    args.max_new_tokens)
+    rec = replay_fire_head(test_rows, pt, th_fire)
+    keys = [k for k in dict.fromkeys(r["event"] for r in test_rows)
+            if rec[k]["fired"]]
+    if args.limit:
+        keys = keys[:args.limit]
+    # 判分用**未折叠**的原标签(load_ready 这条路根本不折叠):
+    # 错误开火天然判错,不做剔除
+    rowof = {k: rec[k]["row"] for k in keys}
+    gens = generate(model, tok, [rowof[k]["text"] + sep for k in keys], dev,
+                    args.bs, max_len, args.max_new_tokens) if keys else []
+    per_ev, samples, n_par, n_lo, n_st = score_points(keys, rowof, gens,
+                                                      args.env)
+
+    def block(ks):
+        n = len(ks)
+        c = lambda f: sum(1 for k in ks if per_ev[k][f])   # noqa: E731
+        return dict(n=n, parse_fail_rate=rate(c("parse_fail"), n),
+                    tool_ok=rate(c("tool_ok"), n),
+                    params_all_ok=rate(c("params_all_ok"), n),
+                    params_all_ok_strict=rate(c("params_all_ok_strict"), n),
+                    full_call_ok=rate(c("full_call_ok"), n),
+                    exact_call_ok=rate(c("exact_call_ok"), n),
+                    noparam_events=c("noparam"))
+    ready_keys = [k for k in keys if rec[k]["ready"]]
+    return dict(
+        theta_fire=th_fire, risk=args.risk,
+        chosen_theta_fire={str(k): v for k, v in chosen.items()},
+        theta_sweep_val=[dict(theta=th, **a) for th, a in sweep],
+        ready_stats=dict(val=val_st, test=test_st),
+        val=dict(theta=th_fire,
+                 **agg_fire(list(replay_fire_head(val_rows, pv,
+                                                  th_fire).values()))),
+        test=agg_fire(list(rec.values())),
+        scored=dict(n_param_instances=n_par,
+                    param_acc_loose=rate(n_lo, n_par),
+                    param_acc_strict=rate(n_st, n_par), **block(keys)),
+        on_ready=block(ready_keys),
+        samples=samples)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True,
@@ -229,18 +467,37 @@ def main():
                     help="只读工具+弃权类模式(默认关);打开后真值折叠、"
                          "触发条件加\"argmax 不是弃权类\",且只给真值为只读"
                          "工具的触发事件判分")
+    ap.add_argument("--params", default=None,
+                    help="参数区间标签目录(默认 <data>/params);--self-fire 用它算 ready")
+    ap.add_argument("--self-fire", action="store_true",
+                    help="自主开火评测:θ_fire 在 val 上扫、test 冻结一次,"
+                         "触发点由 cgen 自己的开火头定,不用 ctool 的 θ。"
+                         "只加 self_fire 块,旧字段一个不动")
+    ap.add_argument("--fire-bs", type=int, default=0,
+                    help="开火打分的批大小(0=沿用 --bs)")
     args = ap.parse_args()
 
     ctool, cgen = Path(args.ctool_run), Path(args.cgen_run)
     data = Path(args.data)
+    params = Path(args.params) if args.params else data / "params"
     dev = args.device
+
+    if args.self_fire and not args.readonly_env:
+        raise SystemExit(
+            "--self-fire 必须与 --readonly-env 同时传:开火真值 ready 的定义"
+            "依赖该环境的只读真值表。")
 
     rep_cls = json.loads((ctool / "REPLAY_REPORT.json").read_text())
     T = rep_cls["temperature"]
     theta = rep_cls["chosen_theta"].get(str(args.risk))
     if theta is None:
-        raise SystemExit(f"分类头报告里没有 risk={args.risk} 的 θ:"
-                         f"{rep_cls['chosen_theta']}")
+        if not args.self_fire:
+            raise SystemExit(f"分类头报告里没有 risk={args.risk} 的 θ:"
+                             f"{rep_cls['chosen_theta']}")
+        print(f"[self-fire] 分类头报告里没有 risk={args.risk} 的 θ"
+              f"({rep_cls['chosen_theta']}),旧模式整块跳过,只出 self_fire。",
+              flush=True)
+    old_mode = theta is not None
 
     # 1) 触发点:过滤逻辑与 eval_tool 逐行一致,保证与 logits_test.pt 同序
     label2id = json.loads((ctool / "best" / "label_map.json").read_text())
@@ -282,22 +539,23 @@ def main():
     rows = [r for r in raw_rows if r["label"] in label2id]
     for r in rows:
         r["y"] = label2id[r["label"]]
-    logits = torch.load(ctool / "logits_test.pt", map_location="cpu")
-    assert len(rows) == logits.shape[0], (len(rows), logits.shape)
-    fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
+    fired, keys, n_fired, n_ro_excluded = {}, [], 0, 0
+    if old_mode:
+        logits = torch.load(ctool / "logits_test.pt", map_location="cpu")
+        assert len(rows) == logits.shape[0], (len(rows), logits.shape)
+        fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
 
-    keys = [k for k in dict.fromkeys(r["event"] for r in rows)
-            if fired[k]["fired"]]
-    n_fired = len(keys)
-    # readonly 模式:触发了但真值非只读的事件不判分(不进任何分母),单独计数
-    n_ro_excluded = 0
-    if ro_set is not None:
-        keep = [k for k in keys
-                if fired[k]["label"] != readonly_map.NON_READONLY]
-        n_ro_excluded = len(keys) - len(keep)
-        keys = keep
-    if args.limit:
-        keys = keys[:args.limit]
+        keys = [k for k in dict.fromkeys(r["event"] for r in rows)
+                if fired[k]["fired"]]
+        n_fired = len(keys)
+        # readonly 模式:触发了但真值非只读的事件不判分(不进任何分母),单独计数
+        if ro_set is not None:
+            keep = [k for k in keys
+                    if fired[k]["label"] != readonly_map.NON_READONLY]
+            n_ro_excluded = len(keys) - len(keep)
+            keys = keep
+        if args.limit:
+            keys = keys[:args.limit]
 
     # 2) 生成:CALL_SEP 从训练侧 meta.json 读(不硬编码)
     sep = meta.get("call_sep", FALLBACK_SEP)
@@ -317,30 +575,8 @@ def main():
                     args.max_new_tokens) if prompts else []
 
     # 3) 判分
-    per_ev, samples = {}, []
-    n_par = n_lo = n_st = 0
-    for k, g in zip(keys, gens):
-        row = fired[k]["row"]
-        truth = row.get("args_named") or []
-        tool, raw = parse_call(g, args.env)
-        n, lo, st = match_params(truth, raw)
-        n_par += n
-        n_lo += lo
-        n_st += st
-        noparam = not truth
-        rec = dict(
-            event=k, label=row["label"], label_call=row.get("label_call"),
-            gen_call=g, parse_fail=tool is None,
-            tool_ok=(tool == row["label"]),
-            params_all_ok=(True if noparam else (n > 0 and lo == n)),
-            params_all_ok_strict=(True if noparam else (n > 0 and st == n)),
-            noparam=noparam,
-            exact_call_ok=(g == row.get("label_call")))
-        rec["full_call_ok"] = rec["tool_ok"] and rec["params_all_ok"]
-        per_ev[k] = rec
-        if len(samples) < 20:
-            samples.append(dict(event=k, truth=row.get("label_call"),
-                                gen=g, full_call_ok=rec["full_call_ok"]))
+    per_ev, samples, n_par, n_lo, n_st = score_points(
+        keys, {k: fired[k]["row"] for k in keys}, gens, args.env)
 
     n = len(per_ev)
     cnt = lambda f: sum(1 for r in per_ev.values() if r[f])   # noqa: E731
@@ -360,28 +596,44 @@ def main():
         env=args.env, ctool_run=str(ctool), cgen_run=str(cgen),
         risk=args.risk, theta=theta, temperature=T, call_sep=sep,
         max_new_tokens=args.max_new_tokens, limit=args.limit,
-        n_events_test=n_ev, n_events_fired=n_fired, n_events_scored=n,
-        parse_fail=cnt("parse_fail"), parse_fail_rate=rate(cnt("parse_fail"), n),
-        tool_ok=rate(cnt("tool_ok"), n),
-        params_all_ok=rate(cnt("params_all_ok"), n),
-        params_all_ok_strict=rate(cnt("params_all_ok_strict"), n),
-        full_call_ok=rate(cnt("full_call_ok"), n),
-        exact_call_ok=rate(cnt("exact_call_ok"), n),
-        noparam_events=cnt("noparam"), noparam_rate=rate(cnt("noparam"), n),
-        n_param_instances=n_par,
-        param_acc_loose=rate(n_lo, n_par), param_acc_strict=rate(n_st, n_par),
-        by_tool={k: dict(n=v["n"], tool_ok=rate(v["tool_ok"], v["n"]),
-                         params_all_ok=rate(v["params_all_ok"], v["n"]),
-                         full_call_ok=rate(v["full_call_ok"], v["n"]))
-                 for k, v in top},
-        samples=samples)
+        n_events_test=n_ev)
+    if old_mode:
+        out.update(
+            n_events_fired=n_fired, n_events_scored=n,
+            parse_fail=cnt("parse_fail"),
+            parse_fail_rate=rate(cnt("parse_fail"), n),
+            tool_ok=rate(cnt("tool_ok"), n),
+            params_all_ok=rate(cnt("params_all_ok"), n),
+            params_all_ok_strict=rate(cnt("params_all_ok_strict"), n),
+            full_call_ok=rate(cnt("full_call_ok"), n),
+            exact_call_ok=rate(cnt("exact_call_ok"), n),
+            noparam_events=cnt("noparam"), noparam_rate=rate(cnt("noparam"), n),
+            n_param_instances=n_par,
+            param_acc_loose=rate(n_lo, n_par),
+            param_acc_strict=rate(n_st, n_par),
+            by_tool={k: dict(n=v["n"], tool_ok=rate(v["tool_ok"], v["n"]),
+                             params_all_ok=rate(v["params_all_ok"], v["n"]),
+                             full_call_ok=rate(v["full_call_ok"], v["n"]))
+                     for k, v in top},
+            samples=samples)
     if ro_set is not None:
         out["readonly_env"] = args.readonly_env
         out["readonly_excluded"] = n_ro_excluded
+
+    # ---------------- 自主开火(--self-fire):θ_fire 在 val 上扫,test 冻结一次
+    sf = None
+    if args.self_fire:
+        sf = self_fire_block(args, cgen, data, params, meta, model, tok, sep,
+                             max_len, dev, ro_set)
+        out["self_fire"] = sf
     (cgen / "CALLGEN_REPORT.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1))
 
-    md = [f"# 触发时刻调用生成评测 — {args.env}",
+    md = [f"# 触发时刻调用生成评测 — {args.env}"]
+    if not old_mode:
+        md += [f"- 分类头 {ctool.name} 在 risk={args.risk} 上无解 θ,"
+               "旧模式整块跳过;本文件只有自主开火那一节。"]
+    md += ([
           f"- 分类头 {ctool.name} / 生成头 {cgen.name};风险≤{args.risk} → "
           f"θ={theta}(温度 T={T})",
           f"- test 事件 {n_ev},触发 {n_fired},本次计入 {n}"
@@ -403,11 +655,12 @@ def main():
           "",
           f"## 分工具明细(按事件数前 {TOPK_TOOLS})",
           "| 工具 | 事件数 | 工具名正确 | 参数全对 | 完整调用正确 |",
-          "|---|---|---|---|---|"]
-    for k, v in top:
-        md.append(f"| {k} | {v['n']} | {rate(v['tool_ok'], v['n'])} | "
-                  f"{rate(v['params_all_ok'], v['n'])} | "
-                  f"{rate(v['full_call_ok'], v['n'])} |")
+          "|---|---|---|---|---|"] if old_mode else [])
+    if old_mode:
+        for k, v in top:
+            md.append(f"| {k} | {v['n']} | {rate(v['tool_ok'], v['n'])} | "
+                      f"{rate(v['params_all_ok'], v['n'])} | "
+                      f"{rate(v['full_call_ok'], v['n'])} |")
     md += ["", "## 判分口径",
            "- 参数逐个比:宽松=归一化(strip 后去引号)后值相等;严格=原串逐字相等;"
            "键按 union 比,多参/少参/名错各记一个错实例。",
@@ -415,18 +668,55 @@ def main():
            "完整调用正确 = 工具名对 且 参数全对(宽松)。",
            "- 触发点与 ctool 的回放完全同源,所以本表可与同模型 mext 格的"
            "EXTRACT_REPORT 并排读:两边都是触发那一刻能不能组出整条调用。"]
-    if ro_set is not None:
+    if ro_set is not None and old_mode:
         md += ["", f"## 只读模式(--readonly-env {args.readonly_env})",
                f"- 弃权类 {readonly_map.NON_READONLY}(标签 id {nro_id});"
                "触发条件加\"argmax 不是弃权类\",真值标签已折叠",
                f"- 触发但真值非只读、因而不判分的事件:{n_ro_excluded}"
                f"(readonly_excluded);本表各列的分母是余下的 {n} 个"
                "真值只读触发事件"]
+    if sf is not None and sf["test"] is None:
+        md += ["", f"## 自主开火(--self-fire,风险≤{args.risk})",
+               f"- val 上 20 档 θ 都压不到风险≤{args.risk}"
+               f"(chosen={sf['chosen_theta_fire']}),test 没考,"
+               "只留 self_fire.theta_sweep_val 那张扫描表。"]
+    elif sf is not None:
+        a = sf["test"]
+        md += ["", f"## 自主开火(--self-fire,风险≤{args.risk})",
+               f"- θ_fire 在 val 上扫出 {sf['theta_fire']}"
+               f"(val 覆盖率 {sf['val']['coverage']} / "
+               f"开火正确率 {sf['val']['fire_acc']});test 冻结一次",
+               "- 开火真值 ready = 工具只读 且 该边界上参数全部 found;"
+               "错误开火 = 开火了但真值 not-ready",
+               f"- test 事件 {a['n']},开火 {a['n_fired']},"
+               f"覆盖率 {a['coverage']},开火正确率 {a['fire_acc']},"
+               f"错误开火率 {a['wrong_fire_rate']}",
+               "",
+               "| 指标(分母=开火点) | 全部开火点 | 其中真值 ready 的 |",
+               "|---|---|---|",
+               f"| 事件数 | {sf['scored']['n']} | {sf['on_ready']['n']} |",
+               f"| 解析失败率 | {sf['scored']['parse_fail_rate']} | "
+               f"{sf['on_ready']['parse_fail_rate']} |",
+               f"| 工具名正确率 | {sf['scored']['tool_ok']} | "
+               f"{sf['on_ready']['tool_ok']} |",
+               f"| 参数全对率(宽松) | {sf['scored']['params_all_ok']} | "
+               f"{sf['on_ready']['params_all_ok']} |",
+               f"| 完整调用正确率 | {sf['scored']['full_call_ok']} | "
+               f"{sf['on_ready']['full_call_ok']} |",
+               "",
+               "- 左列不剔除任何开火点:错误开火拿真实(未折叠)标签判分,"
+               "所以它天然算错——这一列才是\"让探针自己决定何时发射\"的真成绩。",
+               "- 右列只看真值 ready 的开火点,用来和旧模式那张表对照读。"]
     (cgen / "CALLGEN_REPORT.md").write_text("\n".join(md) + "\n")
-    print(json.dumps({k: out[k] for k in
-                      ("n_events_scored", "parse_fail_rate", "tool_ok",
-                       "params_all_ok", "full_call_ok")},
-                     ensure_ascii=False, indent=1))
+    if old_mode:
+        print(json.dumps({k: out[k] for k in
+                          ("n_events_scored", "parse_fail_rate", "tool_ok",
+                           "params_all_ok", "full_call_ok")},
+                         ensure_ascii=False, indent=1))
+    if sf is not None and sf["test"] is not None:
+        print(json.dumps(dict(theta_fire=sf["theta_fire"], **sf["test"],
+                              full_call_ok=sf["scored"]["full_call_ok"]),
+                         ensure_ascii=False, indent=1))
 
 
 if __name__ == "__main__":

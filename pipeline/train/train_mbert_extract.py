@@ -14,6 +14,20 @@
   日志与 meta 字段名沿用 calA_* 旧名(下游脚本按名读)
 - 产物: <out>/best/(model.pt + tokenizer + meta.json)+ train_log.jsonl
 
+开火头(`--fire-head`,必须与 --readonly-env 同传;默认不传 = 行为与旧版一致):
+- 同一个 encoder 上再挂一个样本级二分类头([CLS] 位隐状态 -> Linear -> 1),
+  学"此刻该不该发射投机"。开火标签
+  ready = 标签在该环境只读集合里 且 该样本所有参数 found=true
+  (零参数事件 found 条件空真;params 文件里 join 不到的样本记 not-ready 并计数)
+- 开火头走**独立的样本级数据流**:输入是纯 text(不带 [FIND] 后缀,与线上开火时
+  能拿到的输入一致),一条样本一条实例,所以不存在"同一样本按参数数重复计权";
+  非只读样本不再整条丢弃,而是回到这条流里当负例(它们不产 span 实例,
+  因而对原任务零梯度)
+- 损失 = 原 span/可答损失 + λ·开火 BCE(λ=1),两条流各自成批、各自按 w 加权
+- best 的选择指标不变(val 参数正确率,只读样本上算);开火头权重随 model.pt
+  一起存(裸 state_dict 加两个键),meta.json 加 "fire_head": true;
+  val 的开火 acc@0.5 与正负例数进 train_log 的 eval 事件
+
 用法(smoke):
   mbert-env/bin/python pipeline/train/train_mbert_extract.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_mext --smoke
@@ -43,7 +57,7 @@ MAX_SPAN_TOK = 64          # 解码时起止最大跨度
 
 
 class Extractor(nn.Module):
-    def __init__(self, base_path=MODEL):
+    def __init__(self, base_path=MODEL, fire=False):
         super().__init__()
         self.base = ModernBertModel.from_pretrained(
             base_path, attn_implementation="sdpa")
@@ -51,6 +65,9 @@ class Extractor(nn.Module):
         h = self.base.config.hidden_size
         self.span = nn.Linear(h, 2)
         self.ans = nn.Linear(h, 1)
+        # 开火头只在 --fire-head 下建,且**建在 span/ans 之后**:
+        # 这样默认关时随机数流与旧版逐位一致(span/ans 的初始化不受影响)。
+        self.fire = nn.Linear(h, 1) if fire else None
 
     def forward(self, enc, last_idx):
         hs = self.base(**enc).last_hidden_state
@@ -58,6 +75,11 @@ class Extractor(nn.Module):
         a = self.ans(hs[torch.arange(hs.size(0), device=hs.device),
                         last_idx]).squeeze(-1)
         return s, e, a
+
+    def fire_logit(self, enc):
+        """开火头:纯样本文本的 [CLS] 位(左截后 CLS 仍在 0 号位)-> 标量 logit。"""
+        hs = self.base(**enc).last_hidden_state
+        return self.fire(hs[:, 0]).squeeze(-1)
 
 
 # ---------- 数据:样本文本 × params 区间 ----------
@@ -98,6 +120,74 @@ def join_rows(data, params, split, limit=0, ro=None):
         rng.shuffle(inst)
         inst = inst[:limit]
     return texts, inst
+
+
+def fire_rows(data, params, split, ro_set, limit=0):
+    """开火头的样本级数据流(--fire-head 专用):主数据每行一条,不做只读过滤。
+
+    ready = 标签在只读集合里 且 该样本所有参数 found=true;
+    零参数事件 found 条件空真;params 里 join 不到的样本按 not-ready 处理并计数
+    (其中 args_named 非空的另计——那才是真正可疑的那一类)。
+    返回 (rows=[(text, ready, w)], stats)。
+    """
+    pmap = {}
+    for line in open(params / f"{split}.jsonl"):
+        p = json.loads(line)
+        pmap[(p["event"], p["sent_idx"])] = p["params"]
+    rows = []
+    st = dict(n=0, n_ready=0, n_readonly=0, n_noparam=0,
+              n_join_miss=0, n_join_miss_with_args=0)
+    for line in open(data / f"{split}.jsonl"):
+        r = json.loads(line)
+        st["n"] += 1
+        is_ro = r["label"] in ro_set
+        st["n_readonly"] += is_ro
+        ps = pmap.get((r["event"], r["sent_idx"]))
+        if ps is None:
+            st["n_join_miss"] += 1
+            if r.get("args_named"):
+                st["n_join_miss_with_args"] += 1
+            ready = False
+        else:
+            st["n_noparam"] += not ps
+            ready = is_ro and all(q["found"] for q in ps)
+        st["n_ready"] += ready
+        rows.append((r["text"], float(ready), float(r["w"])))
+    n = max(st["n"], 1)
+    st["frac_ready"] = round(st["n_ready"] / n, 6)
+    st["frac_readonly"] = round(st["n_readonly"] / n, 6)
+    st["frac_join_miss"] = round(st["n_join_miss"] / n, 6)
+    if st["frac_join_miss"] > 0.01:
+        print(f"[fire-head] 警告:{split} 有 {st['n_join_miss']}/{st['n']} "
+              f"({st['frac_join_miss']:.1%}) 个样本在 params 文件里 join 不到,"
+              f"已全部按 not-ready 处理(其中 args_named 非空 "
+              f"{st['n_join_miss_with_args']} 条)", flush=True)
+    if limit:
+        rng = random.Random(SEED)          # 独立 RNG,不动全局随机流
+        rng.shuffle(rows)
+        rows = rows[:limit]
+    return rows, st
+
+
+class FireDS(Dataset):
+    """开火头数据集:一条样本一条实例(不按参数展开,天然不重复计权)。"""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def __len__(self):
+        return len(self.rows)
+
+    def __getitem__(self, i):
+        return self.rows[i]
+
+
+def fire_collate(batch, tok, max_len):
+    texts, ready, ws = zip(*batch)
+    enc = tok(list(texts), truncation=True, max_length=max_len, padding=True,
+              return_tensors="pt")
+    return dict(enc=enc, ready=torch.tensor(ready, dtype=torch.float),
+                w=torch.tensor(ws, dtype=torch.float))
 
 
 class InstDS(Dataset):
@@ -207,13 +297,37 @@ def evaluate(model, loader, dev, amp):
             sp_s / max(w_ft, 1e-9), tot_ok / max(w_tot, 1e-9))
 
 
+@torch.no_grad()
+def evaluate_fire(model, loader, dev, amp):
+    """val 开火头:acc@0.5(按 w 加权,阈值 0.5 <=> logit>0)与正负例数(未加权)。"""
+    model.eval()
+    hit = w_tot = 0.0
+    n_pos = n_neg = 0
+    for b in loader:
+        enc = {k: v.to(dev) for k, v in b["enc"].items()}
+        with amp():
+            lg = model.fire_logit(enc)
+        pred = lg.float().cpu() > 0
+        y = b["ready"] > 0.5
+        hit += float(((pred == y).float() * b["w"]).sum())
+        w_tot += float(b["w"].sum())
+        n_pos += int(y.sum())
+        n_neg += int((~y).sum())
+    model.train()
+    return hit / max(w_tot, 1e-9), n_pos, n_neg
+
+
 def load_extractor(run, device="cuda"):
-    """eval_mbert_call 复用:返回 (model, tok, meta)。"""
+    """eval_mbert_call 复用:返回 (model, tok, meta)。
+
+    meta 里有 "fire_head": true 的 run 才建开火头——裸 state_dict 是严格加载,
+    建多了或建少了都会在这里报 missing/unexpected key,正好当保险丝。
+    """
     run = Path(run)
     meta = json.loads((run / "best" / "meta.json").read_text())
     tok = AutoTokenizer.from_pretrained(run / "best")
     tok.truncation_side = "left"
-    model = Extractor(meta["base"])
+    model = Extractor(meta["base"], fire=bool(meta.get("fire_head")))
     model.load_state_dict(torch.load(run / "best" / "model.pt",
                                      map_location="cpu"))
     return model.to(device).eval(), tok, meta
@@ -242,7 +356,16 @@ def main():
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
+    ap.add_argument("--fire-head", action="store_true",
+                    help="再学一个样本级开火头(此刻该不该发射投机);"
+                         "必须与 --readonly-env 同传,默认关=行为不变")
     args = ap.parse_args()
+
+    if args.fire_head and not args.readonly_env:
+        raise SystemExit(
+            "--fire-head 必须与 --readonly-env 同时传:开火标签 ready 的定义"
+            "依赖该环境的只读真值表(ready = 只读 且 参数全 found),"
+            "没有环境就算不出标签。")
 
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -256,7 +379,7 @@ def main():
 
     tok = AutoTokenizer.from_pretrained(MODEL)
     tok.truncation_side = "left"
-    model = Extractor().to(dev)
+    model = Extractor(fire=args.fire_head).to(dev)
     model.train()
 
     lim_tr, lim_ev = (500, 200) if args.smoke else (0, 0)
@@ -272,20 +395,42 @@ def main():
         ro_ev = dict(set=ro_set, labels=[], kept=0, dropped=0)
     tr = InstDS(*join_rows(data, params, "train", lim_tr, ro_tr))
     ev = InstDS(*join_rows(data, params, "val", lim_ev, ro_ev))
+    fire_st = {}
+    fire_tr = fire_ev = None
+    if args.fire_head:
+        # 开火头的样本级流:非只读样本在这里当负例回到数据流,不进 span 实例
+        ftr, fire_st["train"] = fire_rows(data, params, "train", ro_set, lim_tr)
+        fev, fire_st["val"] = fire_rows(data, params, "val", ro_set, lim_ev)
+        fire_tr, fire_ev = FireDS(ftr), FireDS(fev)
     if args.readonly_env:
         au_tr = readonly_map.audit(ro_tr["labels"], ro_table, where="mext/train")
         au_ev = readonly_map.audit(ro_ev["labels"], ro_table, where="mext/val")
-        (out / "READONLY.json").write_text(json.dumps(dict(
+        ro_out = dict(
             readonly_env=args.readonly_env,
             table=str(readonly_map.table_path(args.readonly_env)),
             train=au_tr, val=au_ev,
             kept=dict(train=ro_tr["kept"], val=ro_ev["kept"]),
-            dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"])),
-            ensure_ascii=False, indent=1))
+            dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"]))
+        if args.fire_head:
+            ro_out["fire_head"] = fire_st
+        (out / "READONLY.json").write_text(json.dumps(
+            ro_out, ensure_ascii=False, indent=1))
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
     tr_dl, ev_dl = mk(tr, True), mk(ev, False)
+    fire_tr_dl = fire_ev_dl = fire_it = None
+    if args.fire_head:
+        mkf = lambda ds, sh: DataLoader(
+            ds, batch_size=args.bs, shuffle=sh, num_workers=2,
+            collate_fn=lambda b: fire_collate(b, tok, args.max_len))
+        fire_tr_dl, fire_ev_dl = mkf(fire_tr, True), mkf(fire_ev, False)
+
+        def cycle(dl):                     # 开火流与 span 流长度不同,循环取
+            while True:
+                for x in dl:
+                    yield x
+        fire_it = cycle(fire_tr_dl)
 
     steps = math.ceil(len(tr_dl) / args.accum) * epochs
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
@@ -303,7 +448,12 @@ def main():
 
     log(event="start", env=args.env, n_train=len(tr), n_eval=len(ev),
         steps=steps, smoke=args.smoke, max_len=args.max_len, device=dev,
-        readonly_env=args.readonly_env)
+        readonly_env=args.readonly_env,
+        **(dict(fire_head=True, n_fire_train=len(fire_tr),
+                n_fire_eval=len(fire_ev),
+                fire_ready_train=fire_st["train"]["frac_ready"],
+                fire_ready_val=fire_st["val"]["frac_ready"])
+           if args.fire_head else {}))
 
     best, gstep, cutsum = -1.0, 0, 0
     neg = torch.finfo(torch.float32).min
@@ -327,6 +477,16 @@ def main():
             else:
                 ls = torch.zeros((), device=dev)
             loss = la + ls
+            if args.fire_head:
+                # 开火头独立成批:输入是纯 text,标签 ready,按 w 加权,λ=1
+                fb = next(fire_it)
+                fenc = {k: v.to(dev) for k, v in fb["enc"].items()}
+                with amp():
+                    flg = model.fire_logit(fenc)
+                fwd = fb["w"].to(dev)
+                lf = ((bce(flg.float(), fb["ready"].to(dev)) * fwd).sum()
+                      / fwd.sum())
+                loss = loss + lf
             (loss / args.accum).backward()
             run += loss.item()
             if (i + 1) % args.accum == 0:
@@ -341,9 +501,14 @@ def main():
                         ips=round((i + 1) * args.bs / (time.time() - t0), 1))
                     run = 0.0
         aacc, sl, ss, tacc = evaluate(model, ev_dl, dev, amp)
+        fkw = {}
+        if args.fire_head:
+            facc, fpos, fneg = evaluate_fire(model, fire_ev_dl, dev, amp)
+            fkw = dict(fire_acc=round(facc, 4), fire_n_pos=fpos,
+                       fire_n_neg=fneg)
         log(event="eval", ep=ep, calA_ans_acc=round(aacc, 4),
             calA_span_loose=round(sl, 4), calA_span_strict=round(ss, 4),
-            calA_param_acc=round(tacc, 4), truncated_spans=cutsum)
+            calA_param_acc=round(tacc, 4), truncated_spans=cutsum, **fkw)
         if tacc > best:
             best = tacc
             (out / "best").mkdir(exist_ok=True)
@@ -354,6 +519,8 @@ def main():
                         calA_param_acc=round(best, 4))
             if args.readonly_env:
                 meta["readonly_env"] = args.readonly_env
+            if args.fire_head:
+                meta["fire_head"] = True
             (out / "best" / "meta.json").write_text(json.dumps(
                 meta, ensure_ascii=False))
             log(event="save_best", ep=ep, acc=round(best, 4))
