@@ -1,58 +1,40 @@
 {
   "active": [
     {
-      "name": "c2_train",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "c2 八格探针训练(alfworld, q36+gptoss × mtool/mext/ctool/cgen)",
-      "started_at": "2026-08-01 04:44",
+      "name": "c2_train_rerun",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-02 05:13",
       "pieces": [
         {
-          "host": "tokyo107",
+          "host": "tokyo106",
           "gpus": "0",
-          "session": "new1_c2_q36_mtool_t107g0",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mtool_t107g0.log"
+          "session": "new1_c2_q36_mext_t106g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mext_t106g0.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "1",
+          "session": "new1_c2_q36_ctool_t106g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_ctool_t106g1.log"
         },
         {
           "host": "tokyo107",
-          "gpus": "1",
-          "session": "new1_c2_q36_mext_t107g1",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mext_t107g1.log"
+          "gpus": "0",
+          "session": "new1_c2_gptoss_mtool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mtool_t107g0.log"
         },
         {
           "host": "tokyo107",
           "gpus": "2",
-          "session": "new1_c2_q36_ctool_t107g2",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_ctool_t107g2.log"
+          "session": "new1_c2_gptoss_mext_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mext_t107g2.log"
         },
         {
           "host": "tokyo107",
           "gpus": "3",
-          "session": "new1_c2_q36_cgen_t107g3",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_cgen_t107g3.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "4",
-          "session": "new1_c2_gptoss_mtool_t105g4",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mtool_t105g4.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "5",
-          "session": "new1_c2_gptoss_mext_t105g5",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mext_t105g5.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "6",
-          "session": "new1_c2_gptoss_ctool_t105g6",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_ctool_t105g6.log"
-        },
-        {
-          "host": "tokyo105",
-          "gpus": "7",
-          "session": "new1_c2_gptoss_cgen_t105g7",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_cgen_t105g7.log"
+          "session": "new1_c2_gptoss_ctool_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_ctool_t107g3.log"
         }
       ]
     }
@@ -1551,6 +1533,873 @@
         }
       ],
       "finished_at": "2026-08-01 09:36"
+    },
+    {
+      "name": "ro1bf_q35_mtool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "ro1bf_q35_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_mtool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 20:45"
+    },
+    {
+      "name": "ro1bf_q35_ctool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "ro1bf_q35_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 20:45"
+    },
+    {
+      "name": "ro1aw_q35_mtool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "ro1aw_q35_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_mtool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_q36_mtool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "2",
+          "session": "ro1aw_q36_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_mtool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1bf_q36_mtool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "ro1bf_q36_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_mtool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1bf_gptoss_mtool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "7",
+          "session": "ro1bf_gptoss_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_mtool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_q35_ctool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "ro1aw_q35_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_q36_ctool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "3",
+          "session": "ro1aw_q36_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_gptoss_ctool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "5",
+          "session": "ro1aw_gptoss_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1bf_q36_ctool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "ro1bf_q36_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1bf_gptoss_ctool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "ro1bf_gptoss_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_q36_mext",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "ro1aw_q36_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1bf_q35_mext",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "ro1bf_q35_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_q35_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "ro1aw_q35_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1aw_q36_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "ro1aw_q36_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1bf_q35_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "ro1bf_q35_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:40"
+    },
+    {
+      "name": "ro1_eval_tool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-01 22:50",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "eval_ro1aw_q35_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q35_mtool.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "2",
+          "session": "eval_ro1aw_q36_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q36_mtool.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "3",
+          "session": "eval_ro1bf_q35_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q35_mtool.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "5",
+          "session": "eval_ro1bf_q36_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q36_mtool.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "eval_ro1bf_gptoss_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_gptoss_mtool.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "eval_ro1aw_q35_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q35_ctool.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "eval_ro1aw_q36_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q36_ctool.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "eval_ro1aw_gptoss_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_gptoss_ctool.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "eval_ro1bf_q35_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q35_ctool.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "eval_ro1bf_q36_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q36_ctool.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "eval_ro1bf_gptoss_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_gptoss_ctool.log"
+        }
+      ],
+      "finished_at": "2026-08-01 22:59"
+    },
+    {
+      "name": "ro1aw_q35_mext",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "ro1aw_q35_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:00"
+    },
+    {
+      "name": "ro1bf_q36_mext",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "8",
+          "session": "ro1bf_q36_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:00"
+    },
+    {
+      "name": "ro1bf_q36_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "ro1bf_q36_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:00"
+    },
+    {
+      "name": "ro1bf_gptoss_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "ro1bf_gptoss_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:00"
+    },
+    {
+      "name": "aw_gptoss_splice_th0925_plan",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-01 22:57",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "new1_splice_plan_t105g1",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_plan_t105g1.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:01"
+    },
+    {
+      "name": "ro1_eval_call_w1",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-01 22:58",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "eval_ro1bf_q35_mext_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q35_mext.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "2",
+          "session": "eval_ro1aw_q36_mext_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q36_mext.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "eval_ro1bf_q35_cgen_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q35_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:07"
+    },
+    {
+      "name": "ro1bf_gptoss_mext",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "9",
+          "session": "ro1bf_gptoss_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:07"
+    },
+    {
+      "name": "ro1_eval_call_w2",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-01 23:04",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "eval_ro1aw_q35_mext_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q35_mext.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "eval_ro1bf_q36_mext_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q36_mext.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "3",
+          "session": "eval_ro1bf_gptoss_cgen_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_gptoss_cgen.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "eval_ro1aw_q35_cgen_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q35_cgen.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "eval_ro1aw_q36_cgen_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_q36_cgen.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "eval_ro1bf_q36_cgen_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_q36_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:12"
+    },
+    {
+      "name": "ro1_eval_call_w3",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-01 23:09",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "9",
+          "session": "eval_ro1bf_gptoss_mext_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1bf_gptoss_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-01 23:12"
+    },
+    {
+      "name": "inject_aw_gptoss_splice",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-01 22:57",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_splice_srv_a_t108g0",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_a_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_splice_srv_b_t108g1",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_b_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_splice_srv_c_t108g2",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_c_t108g2.log"
+        }
+      ],
+      "finished_at": "2026-08-02 00:31"
+    },
+    {
+      "name": "ro1aw_gptoss_mtool",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 20:33",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "4",
+          "session": "ro1aw_gptoss_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_mtool.log"
+        }
+      ],
+      "finished_at": "2026-08-02 03:42"
+    },
+    {
+      "name": "ro1aw_gptoss_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "ro1aw_gptoss_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-02 03:42"
+    },
+    {
+      "name": "live_aw_effort",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 02:40",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_effort_srv_d_t108g3",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_effort_srv_d_t108g3.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_effort_srv_e_t108g5",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_effort_srv_e_t108g5.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "1",
+          "session": "new1_live_probe2_t105g1",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_probe2_t105g1.log"
+        }
+      ],
+      "finished_at": "2026-08-02 03:43"
+    },
+    {
+      "name": "live_aw_probe_effort",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 03:05",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_effort_srv_f_t108g4",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_effort_srv_f_t108g4.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "2",
+          "session": "new1_live_probe3_t105g2",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_probe3_t105g2.log"
+        }
+      ],
+      "finished_at": "2026-08-02 03:43"
+    },
+    {
+      "name": "live_aw_gptoss",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 01:36",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_splice_srv_a_t108g0",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_a_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_splice_srv_b_t108g1",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_b_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_splice_srv_c_t108g2",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_c_t108g2.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "new1_live_probe_t105g0",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_probe_t105g0.log"
+        }
+      ],
+      "finished_at": "2026-08-02 04:22"
+    },
+    {
+      "name": "c2_train",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "c2 八格探针训练(alfworld, q36+gptoss × mtool/mext/ctool/cgen)",
+      "started_at": "2026-08-01 04:44",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_c2_q36_mtool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mtool_t107g0.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_c2_q36_mext_t107g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mext_t107g1.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_c2_q36_ctool_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_ctool_t107g2.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_c2_q36_cgen_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_cgen_t107g3.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "4",
+          "session": "new1_c2_gptoss_mtool_t105g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mtool_t105g4.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "5",
+          "session": "new1_c2_gptoss_mext_t105g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_mext_t105g5.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "6",
+          "session": "new1_c2_gptoss_ctool_t105g6",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_ctool_t105g6.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "7",
+          "session": "new1_c2_gptoss_cgen_t105g7",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_cgen_t105g7.log"
+        }
+      ],
+      "finished_at": "2026-08-02 05:13"
+    },
+    {
+      "name": "live_smoke_stopfix",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "停止符修复 14 题确诊冒烟(noprobe, 动态领题 pool);6 个 CPU 工人不占卡,吃 live_splice_srv 的服务;输出 pipeline/inject/runs/live_smoke_stopfix",
+      "started_at": "2026-08-02 05:09",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_smoke_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_smoke_stopfix_s0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_smoke_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_smoke_stopfix_s1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_smoke_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_smoke_stopfix_s2.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_smoke_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_smoke_stopfix_s3.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_smoke_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_smoke_stopfix_s4.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_smoke_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_smoke_stopfix_s5.log"
+        }
+      ],
+      "finished_at": "2026-08-02 05:49"
+    },
+    {
+      "name": "smoke3env_gptoss",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 05:56",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_smoke3env_t108g3",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_smoke3env_t108g3.log"
+        }
+      ],
+      "finished_at": "2026-08-02 06:04"
+    },
+    {
+      "name": "smokestb_mirrorapi",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 06:49",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_smokestb_t108g3",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_smokestb_t108g3.log"
+        }
+      ],
+      "finished_at": "2026-08-02 06:51"
+    },
+    {
+      "name": "ro1aw_gptoss_mext",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-01 21:00",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "ro1aw_gptoss_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-02 07:12"
+    },
+    {
+      "name": "live_aw_gptoss_v2",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "停止符修复后 live 全量双臂重跑(v2);每臂 12 个 CPU 工人动态领题,pool=168 题/臂,不占卡,吃 live_splice_srv 的 8114/8115/8116 + 探针 8790;分片日志模式 /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v2_{probe,noprobe}_s{0..11}.log;输出 pipeline/inject/runs/live_aw_gptoss_v2/{probe,noprobe}",
+      "started_at": "2026-08-02 05:51",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_run_probe_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v2_probe_s0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_run_np_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v2_noprobe_s0.log"
+        }
+      ],
+      "finished_at": "2026-08-02 07:18"
+    },
+    {
+      "name": "live_splice_srv",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "停止符修复冒烟的推理服务组: gpt-oss-120b x3 (8114/8115/8116) + 探针服务 (8790)",
+      "started_at": "2026-08-02 05:09",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_splice_srv_a_t108g0",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_a_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_splice_srv_b_t108g1",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_b_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_splice_srv_c_t108g2",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_splice_srv_c_t108g2.log"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "new1_live_probe_t105g0",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_probe_t105g0.log"
+        }
+      ],
+      "finished_at": "2026-08-02 07:18"
+    },
+    {
+      "name": "ro1_eval_w4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 03:46",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "eval_ro1aw_gptoss_mtool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_gptoss_mtool.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "eval_ro1aw_gptoss_cgen_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_gptoss_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-02 07:37"
+    },
+    {
+      "name": "ro1_eval_w5",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-02 07:15",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "eval_ro1aw_gptoss_mext_call",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_ro1aw_gptoss_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-02 07:37"
     }
   ]
 }

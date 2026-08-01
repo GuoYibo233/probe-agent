@@ -328,6 +328,29 @@ tales 和 appworld 的 qwen 侧事件数比规划书按 v2 口径估的多（142
 
 **出处**：`envs/bert/make_xmodel_splits.py`、`envs/bert_data/v3_1_xmodel/XMODEL_REPORT.md`
 
+### 5.3 只读真值表与弃权折叠（ro1 批口径，2026-08-01；不新建数据版本）
+
+投机执行只对**只读工具**出手。这套口径**不产生新数据版本**——数据文件一个字节
+不动，折叠发生在训练/评测加载时，由 `pipeline/train/readonly_map.py` 统一做：
+
+- **真值表**：`pipeline/annotate/readonly/{appworld,bfcl}.json`，逐工具标
+  readonly 与理由，出表脚本 `gen_tables.py`、人工复核记录 `REVIEW.md`。
+  规模：AppWorld 183 工具 / 100 只读（只读事件占比 80.0%），BFCL 106 / 57
+  （51.3%）。**登录/认证类一律判非只读**（2026-08-01 用户拍板，从严），
+  表外未知工具默认非只读。ALFWorld 只读事件仅 4.6%，不进本方案。
+- **折叠**：mtool/ctool 词表 = 只读工具（原顺序）+ 末位哨兵 `<NON_READONLY>`，
+  所有非只读真值折叠到哨兵；mext/cgen 只在只读事件上训参数任务，非只读样本
+  仅当开火头负例。开关是训练/评测脚本的 `--readonly-env {appworld,bfcl}`，
+  不传则字节级等价旧行为。双向保险丝：带哨兵的 label_map 与 flag 必须同现，
+  表外标签超 5% 硬停（`readonly_map.audit`）。
+- **开火真值**：ready = 只读工具 ∧ 当前前缀内该事件全部参数 found=true
+  （无参事件空真），found 按 (event, sent_idx) 联表 `params/<split>.jsonl`，
+  ro1 批全零 join miss。
+- **评测触发条件**加一条"argmax ≠ 哨兵"；参数指标只在真值为只读的触发事件上算。
+
+出处与验收：方案 `plans/2026-08-01-ro1-plan.md`；G12 字节级复现旧报告
+（c1_q35_mtool / c1_q35_ctool，`cmp` 通过）。
+
 ---
 
 ## 6. C3 那条线的数据
@@ -442,3 +465,9 @@ L4 位置改换对的收录判据很硬：在种子 trial 上跟着自带的专�
 - **§1.2 说 `full_v2_topup`"只补一件事：给 BFCL 补 gpt-oss"，漏了那批的主体。**
   该批实际采的是 AppWorld train 全 90 题 + TALES seed 51–80，由 q3.6 和 gpt-oss 两个模型跑；
   BFCL 的 gpt-oss 是后来加进同一个目录的（出处 `full_v2_topup/launch_clients.sh`）。
+
+### 8.3 `bfcl_mtb_v1` 没有自己的章节（2026-08-02 发现，待补）
+
+`pipeline/data/bfcl_mtb_v1/{q35,q36,gptoss}/` 已被 ro1 批全程使用，但本文只写了
+`aw_official_v1`（§3.1），bfcl 这份新流水线数据集的造法没有对应小节。补写时
+对照 §3.1 的结构（来源批次 / 切分 / 规模 / 先验基线）。

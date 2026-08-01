@@ -1,0 +1,271 @@
+{
+ "batch": "ro1",
+ "head": "cd37da7",
+ "note": "发射时工作树在 pipeline/train/{train_mbert_extract,train_causal_callgen}.py 与 pipeline/eval/{eval_mbert_call,eval_causal_call}.py 上有开火头在制品改动(另一 agent 施工中,未提交);这 4 个文件不在本批 12 个 run 的执行路径上,mtool/ctool/readonly_map/真值表均与 HEAD cd37da7 逐字节一致。 追记:ro1aw_q36_ctool/ro1aw_gptoss_ctool/ro1bf_gptoss_ctool/ro1bf_q36_ctool 首发在 48G 卡上 OOM(q36/gptoss 序列长),按 invariants §6 加 --grad-ckpt 于原卡重发,数学中性不动数字;失败首发的 train_log/ALIGN_CHECK 已清,重发日志单段。 参数格 12 run(mext/cgen,--fire-head)于 HEAD 提交后发射,cgen 六个放 tokyo108 大卡防 gptoss/q36 长序列 OOM。 追记2:四个 mext(q36/gptoss×两环境)因 fire 双前向 OOM,mext 补 --grad-ckpt 旋钮(fbe4d15)后原卡重发,失败残留已清。",
+ "runs": [
+  {
+   "run_id": "ro1aw_q35_mtool",
+   "host": "tokyo105",
+   "gpu": 0,
+   "cell": "mtool",
+   "model": "q35",
+   "env": "appworld",
+   "session": "ro1aw_q35_mtool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_mtool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q35_mtool.sh"
+  },
+  {
+   "run_id": "ro1aw_q35_ctool",
+   "host": "tokyo105",
+   "gpu": 1,
+   "cell": "ctool",
+   "model": "q35",
+   "env": "appworld",
+   "session": "ro1aw_q35_ctool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_ctool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q35_ctool.sh"
+  },
+  {
+   "run_id": "ro1aw_q36_mtool",
+   "host": "tokyo105",
+   "gpu": 2,
+   "cell": "mtool",
+   "model": "q36",
+   "env": "appworld",
+   "session": "ro1aw_q36_mtool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_mtool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q36_mtool.sh"
+  },
+  {
+   "run_id": "ro1aw_q36_ctool",
+   "host": "tokyo105",
+   "gpu": 3,
+   "cell": "ctool",
+   "model": "q36",
+   "env": "appworld",
+   "session": "ro1aw_q36_ctool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_ctool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q36_ctool.sh"
+  },
+  {
+   "run_id": "ro1aw_gptoss_mtool",
+   "host": "tokyo105",
+   "gpu": 4,
+   "cell": "mtool",
+   "model": "gptoss",
+   "env": "appworld",
+   "session": "ro1aw_gptoss_mtool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_mtool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_gptoss_mtool.sh"
+  },
+  {
+   "run_id": "ro1aw_gptoss_ctool",
+   "host": "tokyo105",
+   "gpu": 5,
+   "cell": "ctool",
+   "model": "gptoss",
+   "env": "appworld",
+   "session": "ro1aw_gptoss_ctool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_ctool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_gptoss_ctool.sh"
+  },
+  {
+   "run_id": "ro1bf_gptoss_ctool",
+   "host": "tokyo105",
+   "gpu": 6,
+   "cell": "ctool",
+   "model": "gptoss",
+   "env": "bfcl",
+   "session": "ro1bf_gptoss_ctool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_ctool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_gptoss_ctool.sh"
+  },
+  {
+   "run_id": "ro1bf_q35_mtool",
+   "host": "tokyo107",
+   "gpu": 0,
+   "cell": "mtool",
+   "model": "q35",
+   "env": "bfcl",
+   "session": "ro1bf_q35_mtool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_mtool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q35_mtool.sh"
+  },
+  {
+   "run_id": "ro1bf_q35_ctool",
+   "host": "tokyo107",
+   "gpu": 1,
+   "cell": "ctool",
+   "model": "q35",
+   "env": "bfcl",
+   "session": "ro1bf_q35_ctool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_ctool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q35_ctool.sh"
+  },
+  {
+   "run_id": "ro1bf_q36_mtool",
+   "host": "tokyo107",
+   "gpu": 2,
+   "cell": "mtool",
+   "model": "q36",
+   "env": "bfcl",
+   "session": "ro1bf_q36_mtool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_mtool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q36_mtool.sh"
+  },
+  {
+   "run_id": "ro1bf_q36_ctool",
+   "host": "tokyo107",
+   "gpu": 3,
+   "cell": "ctool",
+   "model": "q36",
+   "env": "bfcl",
+   "session": "ro1bf_q36_ctool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_ctool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q36_ctool.sh"
+  },
+  {
+   "run_id": "ro1bf_gptoss_mtool",
+   "host": "tokyo106",
+   "gpu": 7,
+   "cell": "mtool",
+   "model": "gptoss",
+   "env": "bfcl",
+   "session": "ro1bf_gptoss_mtool",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_mtool.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_gptoss_mtool.sh"
+  },
+  {
+   "run_id": "ro1aw_q35_mext",
+   "host": "tokyo105",
+   "gpu": 1,
+   "cell": "mext",
+   "model": "q35",
+   "env": "appworld",
+   "session": "ro1aw_q35_mext",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_mext.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q35_mext.sh"
+  },
+  {
+   "run_id": "ro1aw_q36_mext",
+   "host": "tokyo107",
+   "gpu": 0,
+   "cell": "mext",
+   "model": "q36",
+   "env": "appworld",
+   "session": "ro1aw_q36_mext",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_mext.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q36_mext.sh"
+  },
+  {
+   "run_id": "ro1aw_gptoss_mext",
+   "host": "tokyo107",
+   "gpu": 1,
+   "cell": "mext",
+   "model": "gptoss",
+   "env": "appworld",
+   "session": "ro1aw_gptoss_mext",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_mext.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_gptoss_mext.sh"
+  },
+  {
+   "run_id": "ro1bf_q35_mext",
+   "host": "tokyo107",
+   "gpu": 3,
+   "cell": "mext",
+   "model": "q35",
+   "env": "bfcl",
+   "session": "ro1bf_q35_mext",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_mext.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q35_mext.sh"
+  },
+  {
+   "run_id": "ro1bf_q36_mext",
+   "host": "tokyo106",
+   "gpu": 8,
+   "cell": "mext",
+   "model": "q36",
+   "env": "bfcl",
+   "session": "ro1bf_q36_mext",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_mext.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q36_mext.sh"
+  },
+  {
+   "run_id": "ro1bf_gptoss_mext",
+   "host": "tokyo106",
+   "gpu": 9,
+   "cell": "mext",
+   "model": "gptoss",
+   "env": "bfcl",
+   "session": "ro1bf_gptoss_mext",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_mext.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_gptoss_mext.sh"
+  },
+  {
+   "run_id": "ro1aw_q35_cgen",
+   "host": "tokyo108",
+   "gpu": 0,
+   "cell": "cgen",
+   "model": "q35",
+   "env": "appworld",
+   "session": "ro1aw_q35_cgen",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q35_cgen.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q35_cgen.sh"
+  },
+  {
+   "run_id": "ro1aw_q36_cgen",
+   "host": "tokyo108",
+   "gpu": 1,
+   "cell": "cgen",
+   "model": "q36",
+   "env": "appworld",
+   "session": "ro1aw_q36_cgen",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_q36_cgen.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_q36_cgen.sh"
+  },
+  {
+   "run_id": "ro1bf_q35_cgen",
+   "host": "tokyo108",
+   "gpu": 2,
+   "cell": "cgen",
+   "model": "q35",
+   "env": "bfcl",
+   "session": "ro1bf_q35_cgen",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q35_cgen.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q35_cgen.sh"
+  },
+  {
+   "run_id": "ro1bf_q36_cgen",
+   "host": "tokyo108",
+   "gpu": 3,
+   "cell": "cgen",
+   "model": "q36",
+   "env": "bfcl",
+   "session": "ro1bf_q36_cgen",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_q36_cgen.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_q36_cgen.sh"
+  },
+  {
+   "run_id": "ro1aw_gptoss_cgen",
+   "host": "tokyo108",
+   "gpu": 4,
+   "cell": "cgen",
+   "model": "gptoss",
+   "env": "appworld",
+   "session": "ro1aw_gptoss_cgen",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1aw_gptoss_cgen.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1aw_gptoss_cgen.sh"
+  },
+  {
+   "run_id": "ro1bf_gptoss_cgen",
+   "host": "tokyo108",
+   "gpu": 5,
+   "cell": "cgen",
+   "model": "gptoss",
+   "env": "bfcl",
+   "session": "ro1bf_gptoss_cgen",
+   "log": "/home/y-guo/reproduce/new1/logs/ro1bf_gptoss_cgen.log",
+   "script": "/home/y-guo/reproduce/new1/ops/ro1_launch/run_ro1bf_gptoss_cgen.sh"
+  }
+ ]
+}

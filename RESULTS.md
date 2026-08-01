@@ -21,7 +21,7 @@
 | `20260801_2100_ro1bf_gptoss_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_calA_param_acc=0.8509 truncated_spans=45 risk=0.05 theta=0.725 n_events_scored=34 params_all_ok=0.9118 full_call_ok=0.8529 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.725 full_call_ok 0.8529(触发事件 34);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2100_ro1bf_q36_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_calA_param_acc=0.8372 truncated_spans=0 risk=0.05 theta=0.95 n_events_scored=32 params_all_ok=0.9375 full_call_ok=0.9375 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.95 full_call_ok 0.9375(触发事件 32);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2100_ro1bf_q35_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_calA_param_acc=0.682 truncated_spans=0 risk=0.05 theta=0.875 n_events_scored=29 params_all_ok=0.8621 full_call_ok=0.8276 theta_fire_risk10=0.925 theta_fire_risk05=null | risk0.05 档 θ=0.875 full_call_ok 0.8276(触发事件 29);自主开火 risk0.1/0.05 档 θ_fire=0.925/null |
-| `20260801_2100_ro1aw_gptoss_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | running | - | - |
+| `20260801_2100_ro1aw_gptoss_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_calA_param_acc=0.728 truncated_spans=477 risk=0.1 theta=0.975 n_events_scored=320 params_all_ok=0.7312 full_call_ok=0.625 theta_fire_risk10=null theta_fire_risk05=null | risk0.1 档 θ=0.975 full_call_ok 0.625(触发事件 320);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2100_ro1aw_q36_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_calA_param_acc=0.7426 truncated_spans=0 risk=0.1 theta=0.925 n_events_scored=434 params_all_ok=0.924 full_call_ok=0.8687 theta_fire_risk10=null theta_fire_risk05=null | risk0.1 档 θ=0.925 full_call_ok 0.8687(触发事件 434);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2100_ro1aw_q35_mext` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_calA_param_acc=0.6556 truncated_spans=0 risk=0.05 theta=0.975 n_events_scored=17 params_all_ok=0.7647 full_call_ok=0.7647 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.975 full_call_ok 0.7647(触发事件 17);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2033_ro1bf_gptoss_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.7987 temperature=2.2326 theta_risk10=0.525 theta_risk05=0.725 ro_coverage_test=0.5862 nro_trigger_rate_test=0.0392 prior_baseline_collapsed=0.4679 coverage_risk1=0.4679 trig_acc_risk1=0.7647 coverage_risk05=0.3303 trig_acc_risk05=0.8889 | risk0.1 档 θ=0.525 coverage 0.4679 / trig_acc 0.7647;risk0.05 档 θ=0.725 coverage 0.3303 / trig_acc 0.8889;弃权类误触发率 0.0392,折叠先验基线 0.4679 |
@@ -234,8 +234,10 @@
 
 ### `20260801_2100_ro1aw_gptoss_mext`
 
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 21:00 → 未收尾
+- **结论**：risk0.1 档 θ=0.975 full_call_ok 0.625(触发事件 320);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 07:37
 - **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **数字**：best_calA_param_acc=0.728 truncated_spans=477 risk=0.1 theta=0.975 n_events_scored=320 params_all_ok=0.7312 full_call_ok=0.625 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_q36_mext`
 
