@@ -134,8 +134,10 @@ class Probe:
                                        skip_special_tokens=True)[0]
         return dict(call=txt.split("\n")[0].strip())
 
-    def render(self, messages):
+    def render(self, messages, effort=None):
+        # effort 不传 = 采集口径(high);effort 对照臂传 low/medium
         return dict(prefix=R.build_prefix(self.oss_tok, messages,
+                                          effort=effort or R.REASONING_EFFORT,
                                           pin_date=None))
 
     def config(self):
@@ -177,7 +179,7 @@ def serve(a):
                 elif self.path == "/gen":
                     out = probe.gen(req["text"])
                 elif self.path == "/render":
-                    out = probe.render(req["messages"])
+                    out = probe.render(req["messages"], req.get("effort"))
                 else:
                     self._reply(dict(error="unknown path"), 404)
                     return

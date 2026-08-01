@@ -219,6 +219,10 @@ def main():
     ap.add_argument("--tail-tokens", type=int, default=1024,
                     help="<|end|> 之后(或不挂探针时)的段长")
     ap.add_argument("--max-inject-per-step", type=int, default=1)
+    ap.add_argument("--effort", default="high",
+                    choices=["high", "medium", "low"],
+                    help="harmony 模板的 Reasoning 档;采集口径=high,"
+                         "effort 对照臂传 low/medium")
     ap.add_argument("--no-probe", action="store_true",
                     help="对照臂:同一条分段生成路径,不挂探针不注入")
     ap.add_argument("--timeout", type=int, default=600)
@@ -289,7 +293,8 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
         instr = world.task.instruction
         log = W(out_path, dict(
             env="appworld", task_id=tid, model=a.model, instruction=instr,
-            arm=("no_probe" if a.no_probe else "probe"), probe=probe_cfg,
+            arm=("no_probe" if a.no_probe else "probe"), effort=a.effort,
+            probe=probe_cfg,
             chunk_tokens=a.chunk_tokens, tail_tokens=a.tail_tokens,
             max_inject_per_step=a.max_inject_per_step,
             appworld_seed=APPWORLD_SEED, date=time.strftime("%Y-%m-%d")))
@@ -305,7 +310,8 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
         try:
             for step in range(a.max_steps):
                 prefix = http_json(a.probe_url + "/render",
-                                   dict(messages=msgs))["prefix"]
+                                   dict(messages=msgs,
+                                        effort=a.effort))["prefix"]
                 t0 = time.time()
                 think, content, usage, discard, n_inj = gen_step(
                     a, prefix + R.ANALYSIS_OPEN, instr, hist, world,

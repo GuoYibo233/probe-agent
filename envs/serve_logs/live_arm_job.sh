@@ -8,8 +8,13 @@ ARM="$1"
 ROOT=/home/y-guo/reproduce/new1
 LOG=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs
 cd "$ROOT"
-EXTRA=""
-[ "$ARM" = noprobe ] && EXTRA="--no-probe"
+case "$ARM" in
+  probe)       EXTRA="" ;;
+  noprobe)     EXTRA="--no-probe" ;;
+  noprobe_low) EXTRA="--no-probe --effort low" ;;
+  noprobe_med) EXTRA="--no-probe --effort medium" ;;
+  *) echo "unknown arm: $ARM"; exit 1 ;;
+esac
 for s in $(seq 0 11); do
   port=$((8114 + s % 3))
   envs/appworld/venv/bin/python pipeline/inject/live_appworld.py \
