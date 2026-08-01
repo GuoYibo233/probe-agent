@@ -28,6 +28,7 @@ REPLAY_REPORT.json 不存在时(比如刚 smoke 完还没评测)按 temperature=
 import argparse
 import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -70,6 +71,11 @@ def _inline_causal_probe():
 
 def _causal_probe_cls():
     if TRAIN_CAUSAL_TOOL.exists():
+        # 训练脚本按"脚本目录在 sys.path"的前提写同目录 import(readonly_map 等),
+        # importlib 按文件路径加载时没有这个前提,这里补上
+        train_dir = str(TRAIN_CAUSAL_TOOL.parent)
+        if train_dir not in sys.path:
+            sys.path.insert(0, train_dir)
         spec = importlib.util.spec_from_file_location(
             "pipeline_train_causal_tool", TRAIN_CAUSAL_TOOL)
         mod = importlib.util.module_from_spec(spec)
