@@ -287,8 +287,11 @@ TASKS = {
         notes=["必须等 live_appworld 跑完;task_error 单列不进成败分母"]),
     "live-arm-job": dict(
         stage="live", py="bash", script="envs/serve_logs/live_arm_job.sh",
-        handoff=True, desc="活跑一臂 12 分片(位置参数 probe|noprobe;tmux 里整段跑)",
-        notes=["端口 8114-8116 与探针 tokyo105:8790 写死,换机器改文件"]),
+        handoff=True,
+        desc="活跑一臂 12 分片(位置参数 probe|noprobe run_name;tmux 里整段跑)",
+        notes=["端口 8114-8116 与探针 tokyo105:8790 写死,换机器改文件",
+               "run_name 必填(如 live_aw_gptoss_v2)=runs/ 下输出目录,"
+               "防呆:漏传曾经会静默空跑 v1 目录再假报 DONE"]),
     "serve-splice": dict(
         stage="live", py="sys", script="envs/serve_logs/launch_vllm_splice.py",
         handoff=True, gpu=True,

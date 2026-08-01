@@ -65,6 +65,50 @@ END_MARK = "<|end|>"
 MAX_BOUNDS = 64            # rules.MAX_BOUNDS 同值:活跑最多查这么多切口(§4.2)
 MAX_STEP_TOKENS = 8192     # 采集时 max_tokens=8192(common.py:20),整步上限对齐
 
+# 停止符漏洞修复(2026-08-02,交接书 plans/2026-08-02-live-stopfix-rerun-handoff.md):
+# stop 全程只有 <|return|> 时,模型时常用 <|end|> 结束 final 后继续伪造
+# <|start|>assistant 新回合+假 "Execution output:",整段进 msgs 污染后续。
+# final 通道开启后:(1) 后续请求 stop 换 FINAL_STOP 服务端掐断;(2) 客户端再扫
+# 一遍 content,截到第一个越界符之前(同一请求内越过转场时 stop 换不及,必须兜底)。
+# 不能全程用 FINAL_STOP——第一个 <|end|> 是 analysis→final 的合法转场。
+FINAL_STOP = DEFAULT_STOP + ["<|end|>", "<|start|>"]
+OVERRUN_MARKS = ("<|end|>", "<|start|>", "<|return|>")
+
+
+def final_content_at(full):
+    """final 通道已开启时 content 在 full 里的起始偏移;未开启返回 None。
+    第一个 <|end|> 后的 <|start|>assistant<|channel|>final<|message|> 是合法
+    final 头,不算越界;越界只看 FINAL_OPEN 之后。"""
+    if END_MARK not in full:
+        return None
+    head, _, rest = full.partition(END_MARK)
+    if FINAL_OPEN not in rest:
+        return None
+    pre = rest.split(FINAL_OPEN, 1)[0]
+    return len(head) + len(END_MARK) + len(pre) + len(FINAL_OPEN)
+
+
+def overrun_cut(full):
+    """content 里第一个越界停止符的绝对偏移;通道未开或没越界返回 None。"""
+    start = final_content_at(full)
+    if start is None:
+        return None
+    hits = [h for h in (full.find(m, start) for m in OVERRUN_MARKS) if h >= 0]
+    return min(hits) if hits else None
+
+
+def parse_step(full):
+    """整步生成文本 -> (thinking, content)。先截越界,再按老口径切通道。"""
+    cut = overrun_cut(full)
+    if cut is not None:
+        full = full[:cut]
+    if END_MARK in full:
+        t_final, _, rest = full.partition(END_MARK)
+        content = rest.split(FINAL_OPEN, 1)[1] if FINAL_OPEN in rest else ""
+    else:                       # 整步没走到 final(超长截断):全算思考
+        t_final, content = full, ""
+    return t_final, content.strip()
+
 
 def sent_cuts(text):
     """真实句子级切口(不含全文末尾伪切口)。
@@ -135,7 +179,7 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
     think = ""                 # 已接受的思考(触发时截到切口、拼上 NOTE)
     raw_tail = ""              # think 之后累积的生成文本(可能含 <|end|> 与 final)
     usage = dict(prompt_tok=0, gen_tok=0, req=0)
-    discard = dict(chars=0, events=0)
+    discard = dict(chars=0, events=0, overrun_chars=0, overrun_events=0)
     checked = set()            # 已探测过的切口(在 think+raw_tail 里的字符偏移)
     n_checked = 0
     n_inject = 0
@@ -147,7 +191,10 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
             model=a.model, prompt=prompt,
             max_tokens=(a.chunk_tokens if probing and END_MARK not in raw_tail
                         else a.tail_tokens),
-            temperature=0.0, stop=DEFAULT_STOP,
+            temperature=0.0,
+            # final 已开启的后续请求服务端就掐越界;开启前不能换(见 FINAL_STOP)
+            stop=(FINAL_STOP if final_content_at(think + raw_tail) is not None
+                  else DEFAULT_STOP),
             skip_special_tokens=False), a.timeout)
         ch = r["choices"][0]
         raw_tail += ch["text"]
@@ -157,6 +204,18 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
 
         done = (ch.get("finish_reason") == "stop"
                 or usage["gen_tok"] >= MAX_STEP_TOKENS)
+
+        # 客户端截断兜底:本段请求发出时 final 可能尚未开启(stop 还是老的),
+        # 越界续写已混进本段——截到第一个越界符之前,本步判 done。
+        # END_MARK 只会出现在 raw_tail(注入只在 END_MARK 出现前发生),
+        # 所以截断只动 raw_tail,think 不受影响。
+        full_now = think + raw_tail
+        cut_at = overrun_cut(full_now)
+        if cut_at is not None:
+            discard["overrun_chars"] += len(full_now) - cut_at
+            discard["overrun_events"] += 1
+            raw_tail = full_now[len(think):cut_at]
+            done = True
 
         if probing and n_inject < a.max_inject_per_step \
                 and END_MARK not in raw_tail:
@@ -196,13 +255,8 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
         if done:
             break
 
-    full = think + raw_tail
-    if END_MARK in full:
-        t_final, _, rest = full.partition(END_MARK)
-        content = rest.split(FINAL_OPEN, 1)[1] if FINAL_OPEN in rest else ""
-    else:                       # 整步没走到 final(超长截断):全算思考
-        t_final, content = full, ""
-    return (t_final, content.strip(), usage, discard, n_inject)
+    t_final, content = parse_step(think + raw_tail)
+    return (t_final, content, usage, discard, n_inject)
 
 
 def claim(outdir, tid):
@@ -227,6 +281,9 @@ def main():
     ap.add_argument("--model", default="gpt-oss-120b")
     ap.add_argument("--split", default="test_normal")
     ap.add_argument("--n", type=int, default=0, help="0 = 整个 split")
+    ap.add_argument("--task-ids", default="",
+                    help="逗号分隔,点名只跑这些题(冒烟验证用);"
+                         "先于 --n 与分片/领题生效")
     ap.add_argument("--max-steps", type=int, default=20)
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--exp", required=True, help="appworld experiment_name 前缀")
@@ -273,6 +330,13 @@ def main():
     print(f"probe: {probe_cfg}", flush=True)
 
     ids = load_task_ids(a.split)
+    if a.task_ids:
+        want = [t.strip() for t in a.task_ids.split(",") if t.strip()]
+        missing = sorted(set(want) - set(ids))
+        if missing:
+            sys.exit(f"--task-ids 有 {len(missing)} 个不在 split "
+                     f"{a.split}: {missing}")
+        ids = want
     if a.n:
         ids = ids[: a.n]
     if a.pool:
