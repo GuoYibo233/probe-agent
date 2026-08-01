@@ -97,13 +97,20 @@ TASKS = {
     "collect-tau2": dict(
         stage="collect", py="tau2", script="envs/collect/run_tau2.py",
         desc="tau2-bench 采集器(要两个 /v1:agent+用户模拟器)",
-        notes=["代码就绪但一条正式轨迹未采过;--user-base-url/--user-model 另给",
-               "服务要 --max-model-len 65536 量级(系统提示 ~6k token)"]),
+        notes=["端点冒烟已过(2026-08-02,airline 2 题,gptoss 双端点同服;解析失败/"
+               "参数丢失全 0);正式放量未跑,放量时 agent 与用户模拟器要分服分模型",
+               "--user-base-url/--user-model 另给,缺省=agent 同端点",
+               "服务要 --max-model-len 65536 量级(系统提示 ~6k token)",
+               "--domain 只接了 airline/retail;telecom(2285 题,solo 采集要用"
+               " llm_agent_solo)还没进 DOMAINS,扩它是集成期的活"]),
     "toolhop-official": dict(
         stage="collect", py="toolhop", script="envs/toolhop/code/evaluation_closed.py",
         cwd=str(ROOT / "envs/toolhop/code"),
         desc="ToolHop 官方闭源路评测器(要 vLLM /v1 在线;本体在 NFS,软链穿透)",
-        notes=["必给 --base_url(以 /v1 结尾) --output_file;参数全是下划线风格",
+        notes=["服务端必须带 --enable-auto-tool-choice --tool-call-parser openai"
+               "(vLLM 0.26 注册表里 openai=GptOssToolParser);裸旗标下模型想调工具"
+               "但 tool_calls 恒空(2026-08-02 实测)",
+               "必给 --base_url(以 /v1 结尾) --output_file;参数全是下划线风格",
                "冒烟: --input_file ../data/smoke_2.json(相对 code/);输出 append 且跳已存"
                " id,重跑先删输出文件",
                "打印的 Result 百分比写死除以 995,跑子集时无意义;看 Valid Items 与逐条"
