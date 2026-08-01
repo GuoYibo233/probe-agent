@@ -356,6 +356,8 @@ def main():
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
+    ap.add_argument("--grad-ckpt", action="store_true",
+                    help="梯度检查点:数学中性,只换显存(fire 双前向在长序列档会顶爆 48G 卡)")
     ap.add_argument("--fire-head", action="store_true",
                     help="再学一个样本级开火头(此刻该不该发射投机);"
                          "必须与 --readonly-env 同传,默认关=行为不变")
@@ -380,6 +382,8 @@ def main():
     tok = AutoTokenizer.from_pretrained(MODEL)
     tok.truncation_side = "left"
     model = Extractor(fire=args.fire_head).to(dev)
+    if args.grad_ckpt:
+        model.base.gradient_checkpointing_enable()
     model.train()
 
     lim_tr, lim_ev = (500, 200) if args.smoke else (0, 0)
