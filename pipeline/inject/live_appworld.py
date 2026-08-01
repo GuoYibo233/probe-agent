@@ -264,7 +264,20 @@ def main():
                 '"type": "final"' in out_path.read_text():
             print(f"task={tid} SKIP (done)", flush=True)
             continue
-        run_task(AppWorld, tid, exp, out_path, a, probe_cfg)
+        try:
+            run_task(AppWorld, tid, exp, out_path, a, probe_cfg)
+        except Exception as e:
+            # 单题炸了不许陪葬整个分片:补一条失败 final(resume 不会再撞),
+            # 打印后继续下一题。教训:首跑 400 没人接,5/24 分片整队阵亡
+            with open(out_path, "a") as f:
+                f.write(json.dumps(dict(
+                    type="final", steps=-1, completed=False,
+                    abort=f"task_error:{type(e).__name__}",
+                    eval=dict(success=False,
+                              task_error=str(e)[:300])), ensure_ascii=False)
+                    + "\n")
+            print(f"task={tid} TASK_ERROR {type(e).__name__}: {str(e)[:200]}",
+                  flush=True)
         if not a.keep_outputs:             # appworld 每题 ~90KB,配额教训
             shutil.rmtree(Path("experiments/outputs") / exp / "tasks" / tid,
                           ignore_errors=True)
@@ -288,34 +301,42 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
                 {"role": "user",
                  "content": f"Task from supervisor: {instr}"}]
         hist = []                          # 探针输入的 (action, result) 历史
-        completed, step = False, -1
-        for step in range(a.max_steps):
-            prefix = http_json(a.probe_url + "/render",
-                               dict(messages=msgs))["prefix"]
-            t0 = time.time()
-            think, content, usage, discard, n_inj = gen_step(
-                a, prefix + R.ANALYSIS_OPEN, instr, hist, world,
-                t_frozen, dt_guard, log, step)
-            log.w(dict(type="gen", step=step, reasoning=think,
-                       content=content, usage=usage, discard=discard,
-                       n_inject=n_inj, wall_s=round(time.time() - t0, 2)))
-            msgs.append({"role": "assistant", "content": content})
-            m = re.search(r"```python\s*(.*?)```", content, re.S)
-            if not m:
-                log.w(dict(type="env", step=step, action=None,
-                           result="NO_CODE_BLOCK"))
-                msgs.append({"role": "user", "content": R.NO_CODE_MSG})
-                continue
-            code = m.group(1)
-            out = str(world.execute(code))
-            log.w(dict(type="env", step=step, action=code,
-                       result=out[:TRUNC]))
-            msgs.append({"role": "user",
-                         "content": f"Execution output:\n{out[:TRUNC]}"})
-            hist.append((code.strip(), out[:TRUNC]))
-            if world.task_completed():
-                completed = True
-                break
+        completed, step, abort = False, -1, None
+        try:
+            for step in range(a.max_steps):
+                prefix = http_json(a.probe_url + "/render",
+                                   dict(messages=msgs))["prefix"]
+                t0 = time.time()
+                think, content, usage, discard, n_inj = gen_step(
+                    a, prefix + R.ANALYSIS_OPEN, instr, hist, world,
+                    t_frozen, dt_guard, log, step)
+                log.w(dict(type="gen", step=step, reasoning=think,
+                           content=content, usage=usage, discard=discard,
+                           n_inject=n_inj, wall_s=round(time.time() - t0, 2)))
+                msgs.append({"role": "assistant", "content": content})
+                m = re.search(r"```python\s*(.*?)```", content, re.S)
+                if not m:
+                    log.w(dict(type="env", step=step, action=None,
+                               result="NO_CODE_BLOCK"))
+                    msgs.append({"role": "user", "content": R.NO_CODE_MSG})
+                    continue
+                code = m.group(1)
+                out = str(world.execute(code))
+                log.w(dict(type="env", step=step, action=code,
+                           result=out[:TRUNC]))
+                msgs.append({"role": "user",
+                             "content": f"Execution output:\n{out[:TRUNC]}"})
+                hist.append((code.strip(), out[:TRUNC]))
+                if world.task_completed():
+                    completed = True
+                    break
+        except urllib.error.HTTPError as e:
+            # vLLM 400 = prompt 顶到 65536 上下文,连一个 chunk 都放不下,
+            # 这一题走不下去了。世界还开着:照常 evaluate,把失败记诚实。
+            # 双臂同规则中止,口径对称;非 400 照旧往上抛
+            if e.code != 400:
+                raise
+            abort = "context_overflow_400"
         try:
             ev = world.evaluate()
             ev = ev.to_dict() if hasattr(ev, "to_dict") else ev
@@ -324,7 +345,7 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
         except Exception as e:
             ev = dict(eval_error=str(e)[:600])
         log.w(dict(type="final", steps=step + 1, completed=completed,
-                   eval=ev))
+                   abort=abort, eval=ev))
         log.close()
         print(f"task={tid} steps={step + 1} completed={completed} "
               f"eval={json.dumps(ev, ensure_ascii=False)[:120]}", flush=True)
