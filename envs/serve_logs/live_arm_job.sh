@@ -15,6 +15,8 @@ case "$ARM" in
   noprobe)     EXTRA="--no-probe";              PORTS=(8114 8115 8116); PROBE=8790 ;;
   noprobe_low) EXTRA="--no-probe --effort low"; PORTS=(8117);           PROBE=8791 ;;
   noprobe_med) EXTRA="--no-probe --effort medium"; PORTS=(8118);        PROBE=8791 ;;
+  probe_low)   EXTRA="--effort low";            PORTS=(8119);           PROBE=8792 ;;
+  probe_med)   EXTRA="--effort medium";         PORTS=(8119);           PROBE=8792 ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
 for s in $(seq 0 11); do
