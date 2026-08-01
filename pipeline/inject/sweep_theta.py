@@ -276,10 +276,23 @@ def load_point(d, tag=""):
     nof = [r for r in per if r["arm"] == "nofill"]
     inj = [r for r in per if r["arm"] == "inject"]
 
+    # 口径认戳:新版 score 把 saved_tok 换成了原轨迹主对照(saved_baseline
+    # ="traj"),老口径的数搬进了 nofill_delta 列。曲线的每个数字都必须和
+    # 历史点同一把尺(nofill 分母),所以 traj 报告一律改读 nofill_delta。
+    sb = rep.get("saved_baseline", "nofill")
+    if sb == "nofill":
+        sv_of = lambda r: r["saved_tok"]
+    elif sb == "traj":
+        sv_of = lambda r: r.get("nofill_delta")
+    else:
+        raise SystemExit(f"{rep_p}: 不认识的 saved_baseline={sb!r}")
+    if sb == "traj" and inj and all(sv_of(r) is None for r in inj):
+        raise SystemExit(f"{per_p}: traj 口径但 nofill_delta 全空,没法换算")
+
     # 部署总账:分母是**全部出手事件**的 nofill token(含出手但没注入的),
     # 分子是实际省下的 token。skip 口径下没注入的那些省 0,但照样占分母。
     denom = sum(r["out_tok"] for r in nof)
-    saved = sum(r["saved_tok"] for r in inj if r["saved_tok"] is not None)
+    saved = sum(sv_of(r) for r in inj if sv_of(r) is not None)
     n_fired = cfg["n_fired"]
     n_events = cfg["n_events_test"]
     n_inject = cfg["n_inject"]
@@ -318,13 +331,26 @@ def load_point(d, tag=""):
     def ratio(fire):
         return (denom - spend(fire)) / denom if denom else None
 
-    oracle = ratio(lambda e: (injd[e]["saved_tok"] or 0) > 0)
+    oracle = ratio(lambda e: (sv_of(injd[e]) or 0) > 0)
     best_cut, best_r = None, -1e9
     for c in [i / 20 for i in range(1, 21)]:
         r = ratio(lambda e, c=c: injd[e]["depth"] < c)
         if r is not None and r > best_r:
             best_cut, best_r = c, r
-    losing = [r for r in inj if (r["saved_tok"] or 0) <= 0]
+    losing = [r for r in inj if (sv_of(r) or 0) <= 0]
+
+    # by_arm 的 saved_* 聚合在 traj 报告里是原轨迹口径,曲线要 nofill 口径,
+    # 只能从 per_event 现算(算法与 replay_inject 的 agg 逐字同)
+    if sb == "traj":
+        sv = sorted(x for x in (sv_of(r) for r in inj) if x is not None)
+        sv_mean = round(sum(sv) / len(sv), 1) if sv else None
+        sv_median = sv[len(sv) // 2] if sv else None
+        sv_pos = (round(sum(1 for x in sv if x > 0) / len(sv), 4)
+                  if sv else None)
+    else:
+        sv_mean = ia.get("saved_tok_mean")
+        sv_median = ia.get("saved_tok_median")
+        sv_pos = ia.get("saved_positive")
     return dict(
         theta=cfg["theta"], miss_policy=cfg["miss_policy"],
         theta_source=cfg.get("theta_source", "risk-derived"),
@@ -334,9 +360,10 @@ def load_point(d, tag=""):
         saved_tok_total=saved,
         nofill_tok_total=denom,
         saved_ratio_deployed=round(saved / denom, 5) if denom else None,
-        saved_tok_mean_injected=ia.get("saved_tok_mean"),
-        saved_tok_median_injected=ia.get("saved_tok_median"),
-        saved_positive=ia.get("saved_positive"),
+        saved_tok_mean_injected=sv_mean,
+        saved_tok_median_injected=sv_median,
+        saved_positive=sv_pos,
+        per_event_baseline=sb,
         # —— 纵轴二:调用一致率(**不是任务级成绩**) ——
         tool_ok=round(tool_ok, 4) if tool_ok is not None else None,
         full_call_ok=round(full_ok, 4) if full_ok is not None else None,
@@ -366,9 +393,9 @@ def load_point(d, tag=""):
         headroom_captured=(round((saved / denom) / oracle, 4)
                            if oracle and denom and oracle > 0 else None),
         n_losing_inject=len(losing),
-        tok_lost_by_losing=-sum(r["saved_tok"] or 0 for r in losing),
-        tok_gained_by_winning=sum(r["saved_tok"] for r in inj
-                                  if (r["saved_tok"] or 0) > 0),
+        tok_lost_by_losing=-sum(sv_of(r) or 0 for r in losing),
+        tok_gained_by_winning=sum(sv_of(r) for r in inj
+                                  if (sv_of(r) or 0) > 0),
         run_dir=str(d))
 
 
