@@ -350,6 +350,14 @@ def load_point(d, tag=""):
         # —— 机制诊断 ——
         adopted=ia.get("advanced"), repeated=ia.get("repeated_injected"),
         truncated=ia.get("truncated"),
+        # 失控率:续写一路写到 max_tokens 上限才停。这本身是个结果——注入会
+        # 把它压下去(实测 θ=0.95:不注入 8.0%、注入 4.8%);同时它也是求和型
+        # 指标不稳的根源:一条失控生成 ~8192 token,普通的才几百,翻转一条就
+        # 摆动八千,而翻不翻只取决于浮点噪声。
+        trunc_nofill=(round(sum(r["finish_reason"] == "length" for r in nof)
+                            / len(nof), 4) if nof else None),
+        trunc_inject=(round(sum(r["finish_reason"] == "length" for r in inj)
+                            / len(inj), 4) if inj else None),
         late_trigger_share=round(late / len(inj), 4) if inj else None,
         # —— 时机头的上限空间 ——
         saved_ratio_oracle_timing=round(oracle, 5) if oracle is not None else None,
@@ -496,9 +504,38 @@ def cmd_curve(a):
                 f"{b['full_call_ok']} | {q['full_call_ok']} | "
                 f"{Path(q['run_dir']).name} |")
         if gaps:
-            L += ["", f"**噪声地板 = {max(gaps):.5f}**"
-                  f"(对照点里最大的绝对差,共 {len(gaps)} 对)。"
-                  "主曲线上任何小于这个数的起伏都不可解读。"]
+            L += ["", f"**求和型指标的噪声地板 = {max(gaps):.5f}**"
+                  f"(对照点里最大的绝对差,共 {len(gaps)} 对)。"]
+
+        # 逐指标算噪声地板,并跟该指标在主曲线上的跨度比 —— 噪声大过跨度的
+        # 那条轴根本不能画。求和型的"省 token 比例"实测就栽在这里:一条失控
+        # 生成 ~8192 token,翻不翻只取决于浮点噪声,总量就被这枚硬币主导。
+        METRICS = [("省token比例(求和)", "saved_ratio_deployed"),
+                   ("省token中位", "saved_tok_median_injected"),
+                   ("省为正", "saved_positive"),
+                   ("调用一致率", "full_call_ok"),
+                   ("采纳率", "adopted"),
+                   ("失控率(不注入)", "trunc_nofill"),
+                   ("失控率(注入)", "trunc_inject")]
+        L += ["", "### 逐指标:噪声地板 vs 主曲线跨度", "",
+              "> 噪声地板 = 三对对照里同 θ 两次跑的最大绝对差(只换服务条件)。",
+              "> 跨度 = 该指标在主曲线六个点上的最大值减最小值。",
+              "> **噪声地板 ≥ 跨度的指标不能画进主图**——它测到的全是抖动。", "",
+              "| 指标 | 噪声地板 | 主曲线跨度 | 跨度/噪声 | 能不能画 |",
+              "|---|---|---|---|---|"]
+        for name, key in METRICS:
+            ns = [abs(q[key] - base[q["theta"]][key])
+                  for q in ctrls
+                  if q["theta"] in base and q.get(key) is not None
+                  and base[q["theta"]].get(key) is not None]
+            vs = [p[key] for p in pts if p.get(key) is not None]
+            if not ns or len(vs) < 2:
+                continue
+            nf, span = max(ns), max(vs) - min(vs)
+            r = span / nf if nf else float("inf")
+            L.append(f"| {name} | {nf:.4f} | {span:.4f} | {r:.1f}x | "
+                     f"{'可' if r >= 3 else ('勉强' if r >= 2 else '**不可**')} |")
+        L += ["", "> 判据:跨度至少要有噪声的 3 倍才算能读,2-3 倍勉强,不足 2 倍不可。"]
 
     if skipped:
         L += ["", "## 还没装上的点(没有 INJECT_REPORT.json)", ""]
