@@ -49,6 +49,8 @@
 | 解释器 | mbert 格 `mbert-env`（transformers 4.57.6 钉死）、causal 格 `cprobe-env`（≥5.14），谁也不许升级谁 | PLAY §0.13、ENG §2.1 | 混架构在旧版上会**静默算错**（分块增量喂），这是对齐检查存在的理由 |
 | 对齐检查 | 因果格开训前必过，FAIL 即 `exit 2` | `train_causal_tool.py`（ENG §5.3） | 跳过它 = 允许一个数值上错误的骨架进入训练，产出的一切数字都不作数 |
 | `--out` | 必填，无默认值 | ENG §5.1.3 | 默认值会让两次训练悄悄覆盖同一目录 |
+| 只读折叠（ro1 起，`--readonly-env` 开启时） | 真值表 `pipeline/annotate/readonly/{appworld,bfcl}.json`；mtool/ctool 词表 = 只读工具原顺序 + 末位哨兵 `<NON_READONLY>`；mext/cgen 只训真值只读的事件；**不传 flag 与旧行为字节级等价**（G12 用 c1 报告 cmp 验证过） | `pipeline/train/readonly_map.py`（唯一实现，四格共用） | 折叠规则或哨兵位置一变，ro1 起所有带此旗的数字与旧批不可比；登录/认证类判非只读是 2026-08-01 用户拍板，改判要过 TIMELINE |
+| 开火真值 ready | ready = 真值工具只读 ∧ 该边界上事件全部参数 found=true（无参事件空真）；found 按 `(event, sent_idx)` 联表 `params/<split>.jsonl` | `train_mbert_extract.py` / `train_causal_callgen.py` 的 `--fire-head` 路径与两个 call 脚本的 `load_ready` | ready 定义一变，θ_fire 与开火精度全线重算，且与 ro1 批不可比 |
 
 ## 4. 评测侧口径
 
@@ -61,7 +63,9 @@
 | 触发点来源 | mext 用 mtool 的 REPLAY_REPORT（温度 + `chosen_theta`），cgen 用 ctool 的 | ENG §6.2、§6.3.1 | 借用别格的触发点 = 参数格评的不再是自己那条路线（gates.md §3.4 裁决拒绝过这个做法） |
 | 参数三档 | 宽松（归一化后相等）/ 严格（原串相等）/ 整调用；键不匹配即该参数错；无参事件单独成列 | ENG §6.3.5、PLAN §1.4 | 判分松紧一变，跨路线比较作废 |
 | 报告字段名 | 一律沿用旧名：`theta_sweep_calB`、`stoptime_calibration_test`、`depth_bucket_acc_test`、`prior_baseline_event_acc`、`speculation_economics`、`temperature` | ENG §3.6、§2.5、`ACCEPT_EVAL.md` §4.7 | 下游脚本按名读；`probe_server.py` 靠 `temperature` 这个键装载探针，改名即断链 |
-| 先验基线 | 每个数据集报 test 堆的频率先验，随版本和模型变 | `ANNOTATE_REPORT.md` / `router_stats.md`（ENG §4.2.7、DATA.md §3.1） | 拿错基线会把 gptoss（先验 0.404）的探针成绩高估——它的门槛比 q35 的 0.174 高一倍多 |
+| 先验基线 | 每个数据集报 test 堆的频率先验，随版本和模型变；`--readonly-env` 下**在折叠后词表上取最高频**（de1c781） | `ANNOTATE_REPORT.md` / `router_stats.md`（ENG §4.2.7、DATA.md §3.1）；折叠版在 `eval_tool.py` 的 `readonly_stats` | 拿错基线会把 gptoss（先验 0.404）的探针成绩高估——它的门槛比 q35 的 0.174 高一倍多；折叠前取会把"最高频是非只读工具"的环境（bfcl）先验错印成 0.0，探针被制造假优势 |
+| readonly 触发条件（`--readonly-env` 开启时） | 触发 = conf ≥ θ **且 argmax ≠ 弃权哨兵**；参数指标只算真值为只读的触发事件 | 三个 eval 的 `replay`/`replay_fire`（ro1 批起） | 少了哨兵闸门，弃权类形同虚设，非只读事件会被投机执行——这正是本方案要挡的事故 |
+| self-fire 选点 | θ_fire 在 val 扫、test 冻结一次（与 θ 同纪律）；约束是 **`fire_acc ≥ 1-risk`（开火精度）**，不是扫描表里按全事件归一的 `wrong_fire_rate` | 两个 call 脚本的 `pick_theta`（与 eval_tool 选 θ 同机制） | 换成 wrong_fire_rate 约束等于换契约，ro1 的"14 格仅 2 格有工作点"判定作废 |
 
 ## 5. 命名与记账口径
 
@@ -81,7 +85,7 @@
 
 | 旋钮 | 可调范围 | 为什么不影响数字 |
 |---|---|---|
-| `--grad-ckpt`（梯度检查点） | 随时开关 | 数学中性：只是把中间激活丢掉、反向时重算，梯度与参数更新逐位相同，换的是显存与速度。本轮 `c1_gptoss_cgen` 的 OOM 就是用它解的，而不是降 bs（gates.md §3.2） |
+| `--grad-ckpt`（梯度检查点） | 随时开关 | 数学中性：只是把中间激活丢掉、反向时重算，梯度与参数更新逐位相同，换的是显存与速度。本轮 `c1_gptoss_cgen` 的 OOM 就是用它解的，而不是降 bs（gates.md §3.2）；ro1 批开火头双前向在 q36/gptoss 长序列档上引发的 8 个 OOM（ctool 4 + mext 4）同样只用它解（gates.md §3.8），mext 的这个旗就是那次补的（fbe4d15） |
 | 排卡与机位（哪台机、哪张卡、A6000/H200） | 自由 | 不进梯度。**唯一约束**：要比耗时就必须两条臂同型号卡，否则耗时那一列作废（`DATA.md` §7.4）。`c1_gptoss_cgen` 迁到 H200 重跑，准确率口径不受影响，只有墙钟从 ETA 26.7h 变成 5h13m（TIMELINE 2026-07-31 c1 条·取舍其二） |
 | 采集并发数、分片数、每实例流数 | 自由 | 每题独立求解、`--resume` 幂等，分片只决定谁跑哪几题，轨迹内容与题目归属都不变。本轮故意给题多的模型开高一档并发来拉平墙钟（PLAY §3.4） |
 | 服务端口、session 名后缀、实例数 | 自由 | 服务只是把同一份权重摆出来；一个实例挂了把分片改指同模型另一实例，结果相同（PLAY §3.7） |

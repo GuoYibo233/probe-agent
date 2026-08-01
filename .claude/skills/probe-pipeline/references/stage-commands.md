@@ -143,6 +143,9 @@ done
 | `--smoke` | 四格 | mtool/mext/cgen = 500 训练 / 200 评估实例,ctool = 200 / 80 事件,均 1 epoch |
 | `--env` | 四格 | 默认 appworld,**仅作日志标签**,不影响数据路径 |
 | `--device` | 除 mtool | 默认 cuda |
+| `--readonly-env` | 四格 | choices `appworld/bfcl`,默认不传(**不传 = 字节级旧行为**)。传了即"只读+弃权"口径(ro1 批起):mtool/ctool 真值折叠、词表 = 只读工具(原顺序)+ 末位哨兵 `<NON_READONLY>`;mext/cgen 只在只读事件上训任务,非只读样本仅当开火头负例。真值表在 `pipeline/annotate/readonly/<env>.json`,表外标签超 5% 硬停(`readonly_map.audit`)。产物多一份 `<out>/READONLY.json` |
+| `--fire-head` | mext/cgen | 随训开火头(二值:该边界参数是否全就绪)。ready 真值按 `(event, sent_idx)` 联表 `params/<split>.jsonl`;mext 走独立样本流第二次前向,cgen 取 prompt 末位置(labels 最后一个 -100)的 logit 以免看见目标串。产物 `best/fire_head.pt`,`meta.json` 记 `fire_head: true` |
+| `--grad-ckpt` | ctool/mext | OOM 唯一合规处置(invariants §6)。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解 |
 
 其余全用默认(`--max-len 4096`;mbert 两格 `--bs 8 --accum 4 --lr 2e-5`,因果两格 `--bs 4 --accum 8 --lr 1e-5`;一律 `--epochs 3`)。**本轮 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参。**
 
@@ -187,6 +190,14 @@ cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env <ENV> --ctool-run 
 # 汇总(纯 CPU,缺报告的格自动标 PENDING,可边跑边看)
 python3 pipeline/eval/summarize_matrix.py --runs-dir $R --out $R/MATRIX_REPORT.md --prefix <BATCH>
 python3 pipeline/eval/summarize_matrix.py --runs-dir $R --out $R/MATRIX_REPORT_risk10.md --prefix <BATCH> --risk 0.1
+
+# "只读+弃权"批(ro1 起):三个 eval 都加 --readonly-env <ENV>(须与训练侧一致,双向保险丝见 §4.4);
+# 参数格另可加 --self-fire 出自主开火块。ro1 实跑形态:
+mbert-env/bin/python  pipeline/eval/eval_tool.py --env bfcl --run $R/ro1bf_q35_mtool --data <D>/q35 --readonly-env bfcl
+mbert-env/bin/python  pipeline/eval/eval_mbert_call.py --env bfcl --run $R/ro1bf_q35_mtool \
+  --extractor $R/ro1bf_q35_mext --data <D>/q35 --readonly-env bfcl --self-fire
+cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env bfcl --ctool-run $R/ro1bf_q35_ctool \
+  --cgen-run $R/ro1bf_q35_cgen --data <D>/q35 --readonly-env bfcl --self-fire
 ```
 
 ### 4.3 `--risk` 双档策略
@@ -209,6 +220,10 @@ python3 pipeline/eval/summarize_matrix.py --runs-dir $R --out $R/MATRIX_REPORT_r
 | `--risk` | 两个 call | 默认 0.05,见 §4.3 |
 | `--limit` | 两个 call | 截前 N 触发事件,冒烟用 |
 | `--device` / `--bs` | 全部 | 默认 cuda / 8(eval_tool 的因果打分批大小写死 4) |
+| `--readonly-env` | 三个 eval | choices `appworld/bfcl`,默认不传。传了:真值折叠,触发条件加"argmax ≠ 弃权哨兵",参数指标只算真值为只读的触发事件;eval_tool 报告多 `readonly_stats` 块,`prior_baseline_event_acc` 改在**折叠后**词表上取最高频(de1c781 修的坑:折叠前取会把 bfcl 先验错印成 0.0)。**双向保险丝**:run 的 `best/label_map.json` 含哨兵 ⇔ 必须传本旗,单边即 SystemExit |
+| `--self-fire` | 两个 call | 自主开火评测:θ_fire 在 val 扫、test 冻结一次,触发点由参数格自己的开火头定。**必须与 `--readonly-env` 同传**(ready 定义依赖只读真值表),否则 SystemExit。要求参数格是 `--fire-head` 训的。只加 `self_fire` 报告块,旧字段一个不动 |
+| `--fire-bs` | 两个 call | 开火打分批大小,0 = 沿用 `--bs` |
+| `--params` | 两个 call | 参数标签目录,默认 `<data>/params`;self-fire 用它算 ready 真值 |
 
 **输入 / 输出**:
 
@@ -286,7 +301,8 @@ S11(CPU)  summarize_matrix.py 出 0.05 与 0.1 两档表                        
 - **cgen 没有 `--base`**,底座硬编码;ctool 的 `--base qwen` 却是必填。→ 换底座要改源码,不是加 flag。
 - **mext 的权重是 `best/model.pt` 裸 state_dict**,不是 HF 目录,不能用 `from_pretrained` 直接读。→ 复用它必须走 `train_mbert_extract.load_extractor()`。
 - **`--head causal` 的 eval_tool 会 import `pipeline/train/train_causal_tool.py`**,所以必须用 cprobe-env 跑;拿 mbert-env 跑 causal 头会在 import 或加载处炸。
-- **两个 call 脚本对 θ 为 null 是硬失败**(退 1),不是跳过。→ 批量评测脚本要接住这个退出码并降档到 `--risk 0.1`,否则整批中断。
+- **两个 call 脚本对 θ 为 null 是硬失败**(退 1),不是跳过。→ 批量评测脚本要接住这个退出码并降档到 `--risk 0.1`,否则整批中断。**例外**:带 `--self-fire` 时 θ null 不退 1——旧模式块整块跳过、只出 `self_fire` 块并打一行提示;别把"跑完了"当成"旧口径也有数"。
+- **`--self-fire` 与 `--readonly-env` 是绑定的**(缺一即 SystemExit);`--readonly-env` 自己又与 label_map 里的哨兵双向绑定(带哨兵的 run 不传旗、或不带哨兵的 run 传旗,都硬停)。→ 排查这类 SystemExit 先看 `best/label_map.json` 末位是不是 `<NON_READONLY>`,再看命令行,别去翻数据。
 - **`build.py` 对"unit 不在官方题单"零容忍**(退 1)。→ 换环境(appworld→bfcl→alfworld)时,题单文件的命名与 task_id 格式必须先对齐,否则第一步就全量报错。
 - **`gen_launch.py` 强制 `outdir = appworld_<model_key>`**,自定义名只会被 WARN 并改掉;下游事件抽取按目录名尾巴认模型,`MODEL_OF` 只认 q35/q36/gptoss(`annotate/rules.py:18`)。→ 新模型必须先往这张表里加一行,否则采到的轨迹会被静默跳过。
 - **`--smoke` 不改 `--out`**:冒烟和全量传同一个 `--out` 会让冒烟权重占住 `best/`。→ 照 `ops/launch_c1.py` 的做法,冒烟一律写 `pipeline/runs/smoke/<rid>_smoke`。
