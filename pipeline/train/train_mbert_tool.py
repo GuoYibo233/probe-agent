@@ -27,6 +27,7 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
+import readonly_map
 from input_modes import apply_mode
 
 MODEL = "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base"
@@ -34,9 +35,22 @@ SEED = 20260729
 
 
 class JsonlDS(Dataset):
-    def __init__(self, path, label2id, limit=0, mode="full"):
-        rows = [r for r in map(json.loads, open(path))
-                if r["label"] in label2id]
+    def __init__(self, path, label2id, limit=0, mode="full", ro=None):
+        if ro is None:
+            rows = [r for r in map(json.loads, open(path))
+                    if r["label"] in label2id]
+        else:                                  # --readonly-env:先清点后折叠
+            rows = list(map(json.loads, open(path)))
+            ro["info"] = readonly_map.audit(
+                [r["label"] for r in rows], ro["table"], where=ro["where"])
+            for r in rows:
+                r["label"] = readonly_map.collapse(r["label"], ro["set"])
+            bad = sorted({r["label"] for r in rows} - set(label2id))
+            if bad:
+                raise SystemExit(
+                    f"readonly: {ro['where']} 折叠后仍有 {len(bad)} 个标签不在"
+                    f"折叠词表里(如 {bad[:5]})——tool_vocab.json 与数据对不上,硬停。")
+            rows = [r for r in rows if r["label"] in label2id]
         self.rows = apply_mode(rows, mode)
         if limit:
             rng = random.Random(SEED)
@@ -96,6 +110,10 @@ def main():
     ap.add_argument("--input-mode", default="full",
                     choices=["full", "no-think", "no-hist"],
                     help="T5 消融:切 [THINKING] 或 [HISTORY] 段")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具模式:标签折叠成 该环境的只读工具 + "
+                         f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
@@ -106,6 +124,13 @@ def main():
     dev = "cuda"
 
     vocab = json.loads((data / "tool_vocab.json").read_text())
+    ro_tr = ro_ev = None
+    if args.readonly_env:                      # 词表 = 原序只读工具 + 末尾哨兵
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        ro_table = readonly_map.load_table(args.readonly_env)
+        vocab = [t for t in vocab if t in ro_set] + [readonly_map.NON_READONLY]
+        ro_tr = dict(set=ro_set, table=ro_table, where="mtool/train")
+        ro_ev = dict(set=ro_set, table=ro_table, where="mtool/val")
     label2id = {k: i for i, k in enumerate(vocab)}
     tok = AutoTokenizer.from_pretrained(MODEL)
     tok.truncation_side = "left"          # 保思考尾巴
@@ -117,8 +142,14 @@ def main():
 
     lim_tr, lim_ev = (500, 200) if args.smoke else (0, 0)
     epochs = 1 if args.smoke else args.epochs
-    tr = JsonlDS(data / "train.jsonl", label2id, lim_tr, args.input_mode)
-    ev = JsonlDS(data / "val.jsonl", label2id, lim_ev, args.input_mode)
+    tr = JsonlDS(data / "train.jsonl", label2id, lim_tr, args.input_mode, ro_tr)
+    ev = JsonlDS(data / "val.jsonl", label2id, lim_ev, args.input_mode, ro_ev)
+    if args.readonly_env:
+        (out / "READONLY.json").write_text(json.dumps(dict(
+            readonly_env=args.readonly_env,
+            table=str(readonly_map.table_path(args.readonly_env)),
+            train=ro_tr["info"], val=ro_ev["info"],
+            vocab_size_collapsed=len(label2id)), ensure_ascii=False, indent=1))
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -139,7 +170,7 @@ def main():
 
     log(event="start", env=args.env, n_train=len(tr), n_eval=len(ev),
         n_labels=len(label2id), steps=steps, smoke=args.smoke,
-        input_mode=args.input_mode)
+        input_mode=args.input_mode, readonly_env=args.readonly_env)
 
     best = -1.0
     gstep = 0

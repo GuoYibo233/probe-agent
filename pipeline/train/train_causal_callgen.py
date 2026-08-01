@@ -37,6 +37,8 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
+import readonly_map
+
 QWEN = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
 SEED = 20260729
 CALL_SEP = "\n[CALL] "
@@ -50,11 +52,17 @@ GEN_N = 200                # 每轮抽多少条做 greedy 生成
 class CallDS(Dataset):
     """一条样本一条实例;构造时先 tokenize 目标串,过长的整条丢弃并计数。"""
 
-    def __init__(self, path, tok, limit=0, max_tgt=MAX_TGT_TOK):
+    def __init__(self, path, tok, limit=0, max_tgt=MAX_TGT_TOK, ro=None):
         self.rows, self.dropped = [], 0
         eos = tok.eos_token_id
         for line in open(path):
             r = json.loads(line)
+            if ro is not None:                 # 非只读样本整条丢掉(计数在 ro 里)
+                ro["labels"].append(r["label"])
+                if r["label"] not in ro["set"]:
+                    ro["dropped"] += 1
+                    continue
+                ro["kept"] += 1
             tgt = tok(r["label_call"], add_special_tokens=False)["input_ids"]
             tgt = tgt + [eos]
             if len(tgt) > max_tgt:
@@ -195,6 +203,9 @@ def main():
     ap.add_argument("--gen-bs", type=int, default=8, help="生成评估的批大小")
     ap.add_argument("--max-inst", type=int, default=0,
                     help="调试用:再限实例数(0=不限)")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
@@ -212,8 +223,24 @@ def main():
         lim_tr = min(lim_tr or args.max_inst, args.max_inst)
         lim_ev = min(lim_ev or args.max_inst, args.max_inst)
     epochs = 1 if args.smoke else args.epochs
-    tr = CallDS(data / "train.jsonl", tok, lim_tr)
-    ev = CallDS(data / "val.jsonl", tok, lim_ev)
+    ro_tr = ro_ev = None
+    if args.readonly_env:
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        ro_table = readonly_map.load_table(args.readonly_env)
+        ro_tr = dict(set=ro_set, labels=[], kept=0, dropped=0)
+        ro_ev = dict(set=ro_set, labels=[], kept=0, dropped=0)
+    tr = CallDS(data / "train.jsonl", tok, lim_tr, ro=ro_tr)
+    ev = CallDS(data / "val.jsonl", tok, lim_ev, ro=ro_ev)
+    if args.readonly_env:
+        au_tr = readonly_map.audit(ro_tr["labels"], ro_table, where="cgen/train")
+        au_ev = readonly_map.audit(ro_ev["labels"], ro_table, where="cgen/val")
+        (out / "READONLY.json").write_text(json.dumps(dict(
+            readonly_env=args.readonly_env,
+            table=str(readonly_map.table_path(args.readonly_env)),
+            train=au_tr, val=au_ev,
+            kept=dict(train=ro_tr["kept"], val=ro_ev["kept"]),
+            dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"])),
+            ensure_ascii=False, indent=1))
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -242,7 +269,8 @@ def main():
     log(event="start", base_path=path, env=args.env, n_train=len(tr),
         n_eval=len(ev), n_gen=len(gen_rows), steps=steps, smoke=args.smoke,
         max_len=args.max_len, max_tgt_tok=MAX_TGT_TOK, seed=SEED,
-        dropped_train=tr.dropped, dropped_eval=ev.dropped, device=dev)
+        dropped_train=tr.dropped, dropped_eval=ev.dropped, device=dev,
+        readonly_env=args.readonly_env)
 
     best = float("inf")
     gstep = 0
@@ -277,10 +305,13 @@ def main():
             (out / "best").mkdir(parents=True, exist_ok=True)
             model.save_pretrained(out / "best")
             tok.save_pretrained(out / "best")
-            (out / "best" / "meta.json").write_text(json.dumps(dict(
+            meta = dict(
                 base_path=path, data=str(data), max_len=args.max_len,
                 seed=SEED, epoch=ep, call_sep=CALL_SEP,
-                transformers=transformers.__version__), indent=1))
+                transformers=transformers.__version__)
+            if args.readonly_env:
+                meta["readonly_env"] = args.readonly_env
+            (out / "best" / "meta.json").write_text(json.dumps(meta, indent=1))
             log(event="save_best", ep=ep, val_ce=round(best, 4))
     log(event="done", best_val_ce=round(best, 4))
 

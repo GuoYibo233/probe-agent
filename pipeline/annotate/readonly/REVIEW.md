@@ -1,0 +1,321 @@
+# 只读/非只读工具判定表（2026-08-01 定稿）
+
+判定标准：**投机执行零风险才算只读**——把这个调用提前发出去，除了浪费一次执行，
+不改任何账户/环境状态，不对外发出任何东西。拿不准的一律判非只读。
+登录类（login/authenticate_*）已拍板：按严格只读口径判**非只读**。
+范围：AppWorld 与 BFCL 三个模型版本（q35/q36/gptoss）词表的并集。ALFWorld 跳过（只读事件仅 4.6%）。
+真值表：`appworld.json` / `bfcl.json`，生成器：`gen_tables.py`。
+
+## 总账
+
+| 环境 | 工具数 | 只读工具 | 只读事件占比 |
+|---|---|---|---|
+| AppWorld | 183 | 100 | 12821/16030 = 80.0% |
+| BFCL | 106 | 57 | 1707/3325 = 51.3% |
+
+格式：`工具名 (出现次数) — 判定理由`。只读清单是安全关键面——这里错一个，投机就会真把邮件发出去。
+
+## AppWorld
+
+### AppWorld 只读（可投机）
+
+- `apis.api_docs.show_api_doc` (3736) — 纯展示，不改任何状态
+- `apis.api_docs.show_api_descriptions` (2274) — 纯展示，不改任何状态
+- `apis.supervisor.show_profile` (1242) — 纯展示，不改任何状态
+- `apis.api_docs.show_app_descriptions` (1067) — 纯展示，不改任何状态
+- `apis.supervisor.show_account_passwords` (563) — 纯展示，不改任何状态
+- `apis.venmo.show_transactions` (451) — 纯展示，不改任何状态
+- `apis.file_system.show_directory` (281) — 纯展示，不改任何状态
+- `apis.venmo.search_users` (234) — 纯查询，不改任何状态
+- `apis.phone.search_contacts` (231) — 纯查询，不改任何状态
+- `apis.simple_note.show_note` (217) — 纯展示，不改任何状态
+- `apis.simple_note.search_notes` (212) — 纯查询，不改任何状态
+- `apis.spotify.show_song` (191) — 纯展示，不改任何状态
+- `apis.spotify.search_songs` (182) — 纯查询，不改任何状态
+- `apis.file_system.show_file` (119) — 纯展示，不改任何状态
+- `apis.venmo.show_received_payment_requests` (115) — 纯展示，不改任何状态
+- `apis.spotify.show_song_library` (110) — 纯展示，不改任何状态
+- `apis.phone.search_text_messages` (106) — 纯查询，不改任何状态
+- `apis.spotify.show_playlist_library` (104) — 纯展示，不改任何状态
+- `apis.phone.show_contact_relationships` (97) — 纯展示，不改任何状态
+- `apis.venmo.search_friends` (90) — 纯查询，不改任何状态
+- `apis.spotify.search_playlists` (83) — 纯查询，不改任何状态
+- `apis.spotify.show_liked_songs` (70) — 纯展示，不改任何状态
+- `apis.spotify.show_playlist` (68) — 纯展示，不改任何状态
+- `apis.spotify.show_profile` (65) — 纯展示，不改任何状态
+- `apis.spotify.show_album_library` (65) — 纯展示，不改任何状态
+- `apis.phone.get_current_date_and_time` (58) — 纯读取，不改任何状态
+- `apis.spotify.search_artists` (53) — 纯查询，不改任何状态
+- `apis.venmo.show_venmo_balance` (44) — 纯展示，不改任何状态
+- `apis.spotify.show_account` (43) — 纯展示，不改任何状态
+- `apis.todoist.show_tasks` (43) — 纯展示，不改任何状态
+- `apis.spotify.show_song_privates` (35) — 纯展示，不改任何状态
+- `apis.phone.show_alarms` (32) — 纯展示，不改任何状态
+- `apis.venmo.show_payment_cards` (31) — 纯展示，不改任何状态
+- `apis.spotify.show_artist` (26) — 纯展示，不改任何状态
+- `apis.todoist.show_task_comments` (23) — 纯展示，不改任何状态
+- `apis.venmo.show_transaction` (22) — 纯展示，不改任何状态
+- `apis.file_system.directory_exists` (22) — directory_exists：只查存在性
+- `apis.phone.show_contacts` (20) — 纯展示，不改任何状态
+- `apis.spotify.show_artist_following` (19) — 纯展示，不改任何状态
+- `apis.supervisor.show_payment_cards` (19) — 纯展示，不改任何状态
+- `apis.phone.search_voice_messages` (18) — 纯查询，不改任何状态
+- `apis.todoist.show_projects` (18) — 纯展示，不改任何状态
+- `apis.spotify.show_liked_albums` (16) — 纯展示，不改任何状态
+- `apis.gmail.show_inbox_threads` (16) — 纯展示，不改任何状态
+- `apis.venmo.show_profile` (15) — 纯展示，不改任何状态
+- `apis.file_system.list_files` (14) — 纯列举，不改任何状态
+- `apis.spotify.show_song_queue` (14) — 纯展示，不改任何状态
+- `apis.spotify.show_recommendations` (13) — 纯展示，不改任何状态
+- `apis.splitwise.show_activity` (12) — 纯展示，不改任何状态
+- `apis.spotify.show_current_song` (12) — 纯展示，不改任何状态
+- `apis.splitwise.show_group_expenses` (11) — 纯展示，不改任何状态
+- `apis.todoist.show_task` (11) — 纯展示，不改任何状态
+- `apis.phone.show_account` (11) — 纯展示，不改任何状态
+- `apis.spotify.show_genres` (11) — 纯展示，不改任何状态
+- `apis.splitwise.show_groups` (11) — 纯展示，不改任何状态
+- `apis.venmo.show_sent_payment_requests` (11) — 纯展示，不改任何状态
+- `apis.spotify.show_liked_playlists` (10) — 纯展示，不改任何状态
+- `apis.spotify.show_album_privates` (10) — 纯展示，不改任何状态
+- `apis.venmo.show_social_feed` (9) — 纯展示，不改任何状态
+- `apis.spotify.search_albums` (8) — 纯查询，不改任何状态
+- `apis.venmo.show_account` (7) — 纯展示，不改任何状态
+- `apis.spotify.show_album` (7) — 纯展示，不改任何状态
+- `apis.splitwise.search_users` (7) — 纯查询，不改任何状态
+- `apis.splitwise.show_group` (6) — 纯展示，不改任何状态
+- `apis.file_system.file_exists` (5) — file_exists：只查存在性
+- `apis.splitwise.show_expense` (5) — 纯展示，不改任何状态
+- `apis.spotify.show_song_reviews` (5) — 纯展示，不改任何状态
+- `apis.spotify.show_following_artists` (5) — 纯展示，不改任何状态
+- `apis.spotify.show_downloaded_songs` (4) — 纯展示，不改任何状态
+- `apis.file_system.show_api_descriptions` (4) — 纯展示，不改任何状态
+- `apis.spotify.show_playlist_privates` (4) — 纯展示，不改任何状态
+- `apis.file_system.show_account` (4) — 纯展示，不改任何状态
+- `apis.filesystem.list_files` (3) — 纯列举，不改任何状态
+- `apis.todoist.show_project` (3) — 纯展示，不改任何状态
+- `apis.file_system.read_file` (3) — 纯读取文件内容
+- `apis.gmail.show_archived_threads` (3) — 纯展示，不改任何状态
+- `apis.supervisor.show_active_task` (3) — 纯展示，不改任何状态
+- `apis.simple_note.show_api_doc` (2) — 纯展示，不改任何状态
+- `apis.phone.show_text_message_window` (2) — 纯展示，不改任何状态
+- `apis.todoist.show_account` (2) — 纯展示，不改任何状态
+- `apis.simple_note.show_notes` (2) — 纯展示，不改任何状态
+- `apis.gmail.show_thread` (2) — 纯展示，不改任何状态
+- `apis.phone.list_contacts` (2) — 纯列举，不改任何状态
+- `apis.spotify.show_premium_subscriptions` (1) — 纯展示，不改任何状态
+- `apis.file_system.show_files` (1) — 纯展示，不改任何状态
+- `apis.spotify.show_queue` (1) — 纯展示，不改任何状态
+- `apis.venmo.show_feed` (1) — 纯展示，不改任何状态
+- `apis.phone.get_contacts` (1) — 纯读取，不改任何状态
+- `apis.spotify.show_song_review` (1) — 纯展示，不改任何状态
+- `apis.phone.show_alarm` (1) — 纯展示，不改任何状态
+- `apis.gmail.show_outbox_threads` (1) — 纯展示，不改任何状态
+- `apis.gmail.show_account` (1) — 纯展示，不改任何状态
+- `apis.gmail.search_emails` (1) — 纯查询，不改任何状态
+- `apis.phone.show_messages` (1) — 纯展示，不改任何状态
+- `apis.spotify.show_followed_artists` (1) — 纯展示，不改任何状态
+- `apis.spotify.show_artist_library` (1) — 纯展示，不改任何状态
+- `apis.spotify.show_user_recently_played` (1) — 纯展示，不改任何状态
+- `apis.gmail.show_spam_threads` (1) — 纯展示，不改任何状态
+- `apis.supervisor.show_account` (1) — 纯展示，不改任何状态
+- `apis.spotify.get_queue` (1) — 纯读取，不改任何状态
+
+### AppWorld 非只读（禁投机）
+
+- `apis.supervisor.complete_task` (550) — 提交任务终答，发出去任务就结束了
+- `apis.phone.login` (367) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.spotify.login` (354) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.venmo.login` (285) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.simple_note.login` (192) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.venmo.create_transaction` (182) — 新建对象（转账/文件/歌单/任务…）
+- `apis.file_system.login` (155) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.phone.send_text_message` (67) — 对外发送（短信/语音/验证码）
+- `apis.venmo.add_friend` (61) — 追加对象或款项
+- `apis.file_system.create_directory` (43) — 新建对象（转账/文件/歌单/任务…）
+- `apis.venmo.add_to_venmo_balance` (42) — 追加对象或款项
+- `apis.venmo.create_payment_request` (42) — 新建对象（转账/文件/歌单/任务…）
+- `apis.venmo.remove_friend` (41) — 移除对象
+- `apis.spotify.add_song_to_playlist` (40) — 追加对象或款项
+- `apis.phone.delete_text_message` (39) — 删除对象
+- `apis.venmo.approve_payment_request` (38) — 批准付款请求，动钱
+- `apis.phone.delete_voice_message` (37) — 删除对象
+- `apis.todoist.login` (35) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.spotify.create_playlist` (31) — 新建对象（转账/文件/歌单/任务…）
+- `apis.splitwise.record_expense` (31) — 记账写入
+- `apis.spotify.remove_song_from_playlist` (31) — 移除对象
+- `apis.venmo.add_payment_card` (30) — 追加对象或款项
+- `apis.phone.update_alarm` (29) — 改写已有对象
+- `apis.file_system.move_file` (28) — 移动文件，写文件系统
+- `apis.splitwise.login` (28) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.venmo.like_transaction` (23) — 写入点赞状态
+- `apis.spotify.remove_song_from_library` (22) — 移除对象
+- `apis.spotify.follow_artist` (22) — 写入关注状态
+- `apis.file_system.compress_directory` (21) — 生成压缩包，写文件系统
+- `apis.file_system.create_file` (20) — 新建对象（转账/文件/歌单/任务…）
+- `apis.splitwise.accept_group_invitation` (20) — 接受邀请，写入成员状态
+- `apis.simple_note.update_note` (19) — 改写已有对象
+- `apis.spotify.like_song` (16) — 写入点赞状态
+- `apis.venmo.deny_payment_request` (12) — 拒绝付款请求
+- `apis.venmo.create_transaction_comment` (11) — 新建对象（转账/文件/歌单/任务…）
+- `apis.todoist.assign_or_unassign_task` (11) — 改任务分配
+- `apis.spotify.previous_song` (11) — 改播放器状态
+- `apis.venmo.download_transaction_receipt` (11) — 写入下载库/落盘文件
+- `apis.spotify.play_music` (11) — 改播放器状态
+- `apis.venmo.signup` (10) — 注册新账号
+- `apis.splitwise.record_payment` (10) — 记账写入
+- `apis.todoist.delete_task` (10) — 删除对象
+- `apis.file_system.delete_directory` (9) — 删除对象
+- `apis.phone.send_voice_message` (9) — 对外发送（短信/语音/验证码）
+- `apis.file_system.update_file` (9) — 改写已有对象
+- `apis.simple_note.create_note` (8) — 新建对象（转账/文件/歌单/任务…）
+- `apis.gmail.login` (8) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `apis.spotify.remove_song_from_queue` (8) — 移除对象
+- `apis.venmo.update_transaction` (7) — 改写已有对象
+- `apis.spotify.remove_album_from_library` (7) — 移除对象
+- `apis.spotify.download_song` (7) — 写入下载库/落盘文件
+- `apis.spotify.update_playlist` (7) — 改写已有对象
+- `apis.todoist.post_task_comment` (6) — 发表评论
+- `apis.file_system.delete_file` (6) — 删除对象
+- `apis.spotify.delete_account` (6) — 删除对象
+- `apis.spotify.add_to_queue` (6) — 追加对象或款项
+- `apis.spotify.unlike_song` (5) — 写入取消点赞
+- `apis.spotify.play_song` (5) — 改播放器状态
+- `apis.simple_note.add_content_to_note` (5) — 追加对象或款项
+- `apis.spotify.review_song` (5) — 写入评价
+- `apis.todoist.create_task` (5) — 新建对象（转账/文件/歌单/任务…）
+- `apis.spotify.like_album` (5) — 写入点赞状态
+- `apis.venmo.delete_payment_request` (5) — 删除对象
+- `apis.venmo.withdraw_from_venmo_balance` (4) — 取钱，动余额
+- `apis.splitwise.create_group` (3) — 新建对象（转账/文件/歌单/任务…）
+- `apis.spotify.clear_song_queue` (3) — 清空播放队列
+- `apis.spotify.send_verification_code` (3) — 对外发送（短信/语音/验证码）
+- `apis.spotify.play_playlist` (2) — 改播放器状态
+- `apis.venmo.remind_payment_request` (2) — 对外发提醒
+- `apis.spotify.update_song_review` (2) — 改写已有对象
+- `apis.spotify.shuffle_song_queue` (2) — 改播放队列
+- `apis.spotify.add_song_to_library` (1) — 追加对象或款项
+- `apis.spotify.next_song` (1) — 改播放器状态
+- `apis.spotify.unfollow_artist` (1) — 写入取关状态
+- `apis.venmo.send_password_reset_code` (1) — 对外发送（短信/语音/验证码）
+- `apis.spotify.play_track` (1) — 改播放器状态
+- `apis.spotify.send_password_reset_code` (1) — 对外发送（短信/语音/验证码）
+- `apis.spotify.signup` (1) — 注册新账号
+- `apis.gmail.signup` (1) — 注册新账号
+- `apis.phone.send_password_reset_code` (1) — 对外发送（短信/语音/验证码）
+- `apis.phone.reset_password` (1) — 重置密码
+- `apis.simple_note.send_verification_code` (1) — 对外发送（短信/语音/验证码）
+- `apis.simple_note.signup` (1) — 注册新账号
+
+## BFCL
+
+### BFCL 只读（可投机）
+
+- `get_stock_info` (139) — 查股价
+- `get_nearest_airport_by_city` (99) — 查机场
+- `get_flight_cost` (94) — 查票价
+- `get_order_details` (85) — 查订单详情
+- `retrieve_invoice` (82) — 查发票
+- `ls` (80) — 列目录
+- `displayCarStatus` (78) — 显示车况
+- `get_symbol_by_name` (74) — 查代码
+- `get_zipcode_based_on_city` (67) — 查邮编
+- `find` (62) — 查找文件
+- `check_tire_pressure` (60) — 查胎压
+- `get_watchlist` (58) — 查自选列表
+- `estimate_distance` (57) — 纯计算距离
+- `cat` (52) — 读文件
+- `view_messages_sent` (41) — 查已发消息
+- `get_account_info` (40) — 查账户
+- `get_order_history` (38) — 查订单历史
+- `find_nearest_tire_shop` (35) — 查轮胎店
+- `estimate_drive_feasibility_by_mileage` (34) — 纯计算可达性
+- `get_user_id` (34) — 查用户 id
+- `compute_exchange_rate` (32) — 纯计算汇率
+- `wc` (30) — 统计行数
+- `get_available_stocks` (24) — 查可交易股票
+- `diff` (23) — 比较文件，只读两侧
+- `mean` (22) — 纯计算
+- `liter_to_gallon` (22) — 纯换算
+- `verify_traveler_information` (22) — 核对信息，只比对不写入
+- `tail` (20) — 读文件尾部
+- `pwd` (19) — 显示当前目录
+- `get_ticket` (19) — 查工单
+- `get_booking_history` (19) — 查订票历史
+- `sort` (18) — 返回排序结果，不写回文件
+- `list_all_airports` (18) — 列机场
+- `grep` (16) — 文本搜索
+- `gallon_to_liter` (12) — 纯换算
+- `logarithm` (11) — 纯计算
+- `posting_get_login_status` (9) — 查登录态
+- `get_user_tickets` (8) — 查工单
+- `get_current_time` (7) — 查时间
+- `round_number` (7) — 纯计算
+- `MA` (7) — 纯计算移动平均
+- `du` (6) — 查磁盘占用
+- `standard_deviation` (3) — 纯计算
+- `get_outside_temperature_from_google` (3) — 查气温
+- `get_credit_card_balance` (3) — 查卡余额
+- `ticket_get_login_status` (2) — 查登录态
+- `imperial_si_conversion` (2) — 纯换算
+- `get_user_tweets` (2) — 查推文
+- `display_log` (2) — 显示日志
+- `search_messages` (2) — 搜消息
+- `get_all_credit_cards` (2) — 列信用卡
+- `trading_get_login_status` (1) — 查登录态
+- `sum_values` (1) — 纯计算
+- `divide` (1) — 纯计算
+- `multiply` (1) — 纯计算
+- `message_get_login_status` (1) — 查登录态
+- `list_users` (1) — 列用户
+
+### BFCL 非只读（禁投机）
+
+- `startEngine` (161) — 点火
+- `cd` (140) — 改当前目录，猜错会让后续真实命令跑错地方
+- `pressBrakePedal` (123) — 踩刹车
+- `lockDoors` (100) — 锁门
+- `fillFuelTank` (86) — 加油
+- `place_order` (79) — 下单，动钱
+- `book_flight` (77) — 订票，动钱
+- `echo` (74) — 带 file_name 参数时会写文件
+- `send_message` (64) — 发消息，收不回
+- `cancel_order` (52) — 撤单
+- `touch` (48) — 建文件
+- `cancel_booking` (46) — 退票
+- `post_tweet` (43) — 发推文，收不回
+- `add_to_watchlist` (42) — 写自选列表
+- `set_budget_limit` (38) — 设预算上限
+- `contact_customer_support` (37) — 给客服发消息
+- `authenticate_twitter` (35) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `create_ticket` (33) — 开工单
+- `set_navigation` (29) — 设定导航
+- `purchase_insurance` (26) — 买保险，动钱
+- `ticket_login` (23) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `retweet` (23) — 转推
+- `message_login` (23) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `mv` (22) — 移动文件
+- `resolve_ticket` (22) — 改工单状态
+- `cp` (20) — 复制文件
+- `mkdir` (17) — 建目录
+- `remove_stock_from_watchlist` (15) — 写自选列表
+- `comment` (14) — 发评论
+- `close_ticket` (13) — 关工单
+- `rm` (11) — 删文件
+- `fund_account` (11) — 入金
+- `delete_message` (11) — 删消息
+- `authenticate_travel` (8) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `register_credit_card` (8) — 绑卡
+- `edit_ticket` (7) — 改工单内容
+- `trading_logout` (6) — 登出会话，后续真实调用会失效
+- `mention` (5) — 发@提及
+- `func_startEngine` (4) — 点火（日志里的变体名）
+- `releaseBrakePedal` (3) — 松刹车
+- `setCruiseControl` (3) — 设定巡航
+- `trading_login` (3) — 登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）
+- `withdraw_funds` (3) — 出金
+- `line` (3) — 身份不明，保守判非只读
+- `deploy` (2) — 身份不明，保守判非只读
+- `rmdir` (2) — 删目录
+- `add_contact` (1) — 写通讯录
+- `func_call` (1) — 幻觉产物，保守判非只读
+- `func_name1` (1) — 幻觉产物，保守判非只读

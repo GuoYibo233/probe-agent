@@ -46,6 +46,8 @@ import transformers
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup
 
+import readonly_map
+
 MODELS = {
     "qwen": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
 }
@@ -56,12 +58,26 @@ SPOT = 50          # 前缀性质抽查的事件数
 
 # ---------------------------------------------------------------- 数据
 
-def load_events(path, label2id, limit=0, spot=SPOT):
+def load_events(path, label2id, limit=0, spot=SPOT, ro=None):
     """按 event 分组:全文 = 最大 sent_idx 样本的 text,边界 = 各样本 len(text)。"""
     ev = defaultdict(list)
-    for line in open(path):
-        r = json.loads(line)
-        if r["label"] in label2id:
+    if ro is None:
+        for line in open(path):
+            r = json.loads(line)
+            if r["label"] in label2id:
+                ev[r["event"]].append(r)
+    else:                                      # --readonly-env:先清点后折叠
+        rows = [json.loads(line) for line in open(path)]
+        ro["info"] = readonly_map.audit(
+            [r["label"] for r in rows], ro["table"], where=ro["where"])
+        for r in rows:
+            r["label"] = readonly_map.collapse(r["label"], ro["set"])
+        bad = sorted({r["label"] for r in rows} - set(label2id))
+        if bad:
+            raise SystemExit(
+                f"readonly: {ro['where']} 折叠后仍有 {len(bad)} 个标签不在"
+                f"折叠词表里(如 {bad[:5]})——tool_vocab.json 与数据对不上,硬停。")
+        for r in rows:
             ev[r["event"]].append(r)
     events = []
     for k, rs in ev.items():
@@ -252,6 +268,10 @@ def main():
                          "随 token 数与隐状态量级一起涨,绝对差会顶到 1e-4 而"
                          "相对差仍是 1e-6(纯噪声);此时可放宽,判定依据看"
                          "reldiff(1e-3 以上=真算错,放宽也没用)")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具模式:标签折叠成 该环境的只读工具 + "
+                         f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
@@ -263,6 +283,13 @@ def main():
     amp = dev.startswith("cuda")
 
     vocab = json.loads((data / "tool_vocab.json").read_text())
+    ro_tr = ro_ev = None
+    if args.readonly_env:                      # 词表 = 原序只读工具 + 末尾哨兵
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        ro_table = readonly_map.load_table(args.readonly_env)
+        vocab = [t for t in vocab if t in ro_set] + [readonly_map.NON_READONLY]
+        ro_tr = dict(set=ro_set, table=ro_table, where="ctool/train")
+        ro_ev = dict(set=ro_set, table=ro_table, where="ctool/val")
     label2id = {k: i for i, k in enumerate(vocab)}
     tok, model, path = build(args.base, len(label2id), dev)
 
@@ -271,7 +298,7 @@ def main():
         lim_tr = min(lim_tr, args.max_events) if lim_tr else args.max_events
         lim_ev = min(lim_ev, args.max_events) if lim_ev else args.max_events
     epochs = 1 if args.smoke else args.epochs
-    ev_events = load_events(data / "val.jsonl", label2id)
+    ev_events = load_events(data / "val.jsonl", label2id, ro=ro_ev)
     longest = max(ev_events, key=lambda e: len(e["full"]))["full"]
     if lim_ev:
         random.Random(SEED).shuffle(ev_events)
@@ -295,7 +322,13 @@ def main():
     if args.align_only:
         return
 
-    tr_events = load_events(data / "train.jsonl", label2id, lim_tr)
+    tr_events = load_events(data / "train.jsonl", label2id, lim_tr, ro=ro_tr)
+    if args.readonly_env:
+        (out / "READONLY.json").write_text(json.dumps(dict(
+            readonly_env=args.readonly_env,
+            table=str(readonly_map.table_path(args.readonly_env)),
+            train=ro_tr["info"], val=ro_ev["info"],
+            vocab_size_collapsed=len(label2id)), ensure_ascii=False, indent=1))
     mk = lambda ds, sh: DataLoader(
         EventDS(ds), batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -322,7 +355,8 @@ def main():
         n_train=len(tr_events), n_eval=len(ev_events), n_labels=len(label2id),
         steps=steps, smoke=args.smoke, max_len=args.max_len, seed=SEED,
         align_pass=rep["PASS"], align_maxdiff_hidden=rep["maxdiff_hidden"],
-        align_maxdiff_logits=rep["maxdiff_logits"])
+        align_maxdiff_logits=rep["maxdiff_logits"],
+        readonly_env=args.readonly_env)
 
     best = -1.0
     gstep = 0
@@ -360,10 +394,13 @@ def main():
             torch.save(model.head.state_dict(), out / "best" / "head.pt")
             (out / "best" / "label_map.json").write_text(
                 json.dumps(label2id, ensure_ascii=False))
-            (out / "best" / "meta.json").write_text(json.dumps(dict(
+            meta = dict(
                 base=args.base, base_path=path, env=args.env, data=str(data),
                 max_len=args.max_len, n_labels=len(label2id), seed=SEED,
-                epoch=ep, transformers=transformers.__version__), indent=1))
+                epoch=ep, transformers=transformers.__version__)
+            if args.readonly_env:
+                meta["readonly_env"] = args.readonly_env
+            (out / "best" / "meta.json").write_text(json.dumps(meta, indent=1))
             log(event="save_best", ep=ep, acc=round(best, 4))
     log(event="done", best_calA_weighted_acc=round(best, 4))
 

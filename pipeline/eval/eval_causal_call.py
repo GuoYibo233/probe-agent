@@ -22,6 +22,13 @@ greedy 写出整条调用,判工具名 / 参数 / 整调用三层正确率。
     full_call_ok      tool_ok 且 params_all_ok
 - 产物: <cgen-run>/CALLGEN_REPORT.{json,md}
 
+ro1 批次加 `--readonly-env {appworld,bfcl}`(默认关,关=行为逐字节不变):打开后
+真值标签在装载处过 readonly_map.collapse()、触发条件加"argmax 不是弃权类";
+只给"触发了且真值为只读工具"的事件判分,触发但真值非只读的事件不进
+params_all_ok / full_call_ok 分母,单独计进新增键 readonly_excluded。
+已有字段名与判分三档一个不动。双向保险丝查两处:ctool run 的 label_map.json
+有没有弃权哨兵、cgen run 的 meta.json 有没有 readonly_env 键(缺失=旧模式)。
+
 用法:
   cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env appworld \\
     --ctool-run pipeline/runs/c1_q35_ctool --cgen-run pipeline/runs/c1_q35_cgen \\
@@ -42,6 +49,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "annotate"))
 from rules import (ALF_CALL, AW_CALL, BFCL_CALL,        # noqa: E402
                    split_args_named)
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
+import readonly_map                                     # noqa: E402
+
 MAX_GEN_TOK = 96            # 【照抄 train_causal_callgen.py 的 MAX_GEN_TOK】
 FALLBACK_SEP = "\n[CALL] "  # meta.json 没写 call_sep 时的兜底(应当写了)
 TOPK_TOOLS = 10             # 分工具明细表行数
@@ -51,8 +61,12 @@ def load_rows(path):
     return [json.loads(l) for l in open(path)]
 
 
-def replay_fire(rows, probs, theta):
-    """【照抄 eval_extract.py 的 replay_fire()】首次过 θ 的样本行。"""
+def replay_fire(rows, probs, theta, nro_id=None):
+    """【照抄 eval_extract.py 的 replay_fire()】首次过 θ 的样本行。
+
+    nro_id=None 是旧口径;给了弃权类 id(readonly 模式)时触发条件收窄成
+    "conf>=θ 且 argmax != nro_id",与 eval_tool.replay 完全同源。
+    """
     ev = defaultdict(list)
     for r, p in zip(rows, probs):
         ev[r["event"]].append((r["sent_idx"], r, p))
@@ -63,7 +77,7 @@ def replay_fire(rows, probs, theta):
                    label=items[0][1]["label"])
         for _, r, p in items:
             conf, pred = float(p.max()), int(p.argmax())
-            if conf >= theta:
+            if conf >= theta and (nro_id is None or pred != nro_id):
                 rec.update(fired=True, ok=(pred == r["y"]),
                            sent_idx=r["sent_idx"], row=r)
                 break
@@ -210,6 +224,11 @@ def main():
     ap.add_argument("--bs", type=int, default=8, help="生成批大小")
     ap.add_argument("--max-new-tokens", type=int, default=MAX_GEN_TOK)
     ap.add_argument("--limit", type=int, default=0, help="截前 N 触发事件(冒烟)")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具+弃权类模式(默认关);打开后真值折叠、"
+                         "触发条件加\"argmax 不是弃权类\",且只给真值为只读"
+                         "工具的触发事件判分")
     args = ap.parse_args()
 
     ctool, cgen = Path(args.ctool_run), Path(args.cgen_run)
@@ -225,22 +244,62 @@ def main():
 
     # 1) 触发点:过滤逻辑与 eval_tool 逐行一致,保证与 logits_test.pt 同序
     label2id = json.loads((ctool / "best" / "label_map.json").read_text())
-    rows = [r for r in load_rows(data / "test.jsonl")
-            if r["label"] in label2id]
+    meta = json.loads((cgen / "best" / "meta.json").read_text())
+
+    # 防串味双向保险丝:ctool 的 label_map 有弃权哨兵、cgen 的 meta 有
+    # readonly_env 键(缺失=旧模式),两处都必须与 --readonly-env 同时成立
+    has_sentinel = readonly_map.NON_READONLY in label2id
+    meta_ro = meta.get("readonly_env")
+    if has_sentinel != bool(args.readonly_env) or \
+            (meta_ro is not None) != bool(args.readonly_env):
+        raise SystemExit(
+            f"readonly 保险丝不匹配:{ctool / 'best' / 'label_map.json'} "
+            f"{'含' if has_sentinel else '不含'}弃权哨兵 "
+            f"{readonly_map.NON_READONLY!r};"
+            f"{cgen / 'best' / 'meta.json'} 的 readonly_env 键 "
+            f"{'= ' + repr(meta_ro) if meta_ro is not None else '缺失(=旧模式)'};"
+            f"而 --readonly-env "
+            f"{'传了 ' + str(args.readonly_env) if args.readonly_env else '没传'}。"
+            "三者必须同时成立或同时不成立——readonly 模式训的 run 只能带 "
+            "--readonly-env 评,旧口径 run 只能不带。")
+    if args.readonly_env and isinstance(meta_ro, str) \
+            and meta_ro != args.readonly_env:
+        raise SystemExit(
+            f"readonly 保险丝:cgen run 是按 {meta_ro!r} 训的,"
+            f"却要用 {args.readonly_env!r} 的真值表评——环境串味,硬停。")
+    ro_set = nro_id = None
+    if args.readonly_env:
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        nro_id = label2id[readonly_map.NON_READONLY]
+
+    raw_rows = load_rows(data / "test.jsonl")
+    if ro_set is not None:
+        readonly_map.audit([r["label"] for r in raw_rows],
+                           readonly_map.load_table(args.readonly_env),
+                           "eval_causal_call test")
+        for r in raw_rows:
+            r["label"] = readonly_map.collapse(r["label"], ro_set)
+    rows = [r for r in raw_rows if r["label"] in label2id]
     for r in rows:
         r["y"] = label2id[r["label"]]
     logits = torch.load(ctool / "logits_test.pt", map_location="cpu")
     assert len(rows) == logits.shape[0], (len(rows), logits.shape)
-    fired = replay_fire(rows, torch.softmax(logits / T, -1), theta)
+    fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
 
     keys = [k for k in dict.fromkeys(r["event"] for r in rows)
             if fired[k]["fired"]]
     n_fired = len(keys)
+    # readonly 模式:触发了但真值非只读的事件不判分(不进任何分母),单独计数
+    n_ro_excluded = 0
+    if ro_set is not None:
+        keep = [k for k in keys
+                if fired[k]["label"] != readonly_map.NON_READONLY]
+        n_ro_excluded = len(keys) - len(keep)
+        keys = keep
     if args.limit:
         keys = keys[:args.limit]
 
     # 2) 生成:CALL_SEP 从训练侧 meta.json 读(不硬编码)
-    meta = json.loads((cgen / "best" / "meta.json").read_text())
     sep = meta.get("call_sep", FALLBACK_SEP)
     max_len = meta.get("max_len", 4096)
     tok = AutoTokenizer.from_pretrained(cgen / "best")
@@ -316,6 +375,9 @@ def main():
                          full_call_ok=rate(v["full_call_ok"], v["n"]))
                  for k, v in top},
         samples=samples)
+    if ro_set is not None:
+        out["readonly_env"] = args.readonly_env
+        out["readonly_excluded"] = n_ro_excluded
     (cgen / "CALLGEN_REPORT.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1))
 
@@ -353,6 +415,13 @@ def main():
            "完整调用正确 = 工具名对 且 参数全对(宽松)。",
            "- 触发点与 ctool 的回放完全同源,所以本表可与同模型 mext 格的"
            "EXTRACT_REPORT 并排读:两边都是触发那一刻能不能组出整条调用。"]
+    if ro_set is not None:
+        md += ["", f"## 只读模式(--readonly-env {args.readonly_env})",
+               f"- 弃权类 {readonly_map.NON_READONLY}(标签 id {nro_id});"
+               "触发条件加\"argmax 不是弃权类\",真值标签已折叠",
+               f"- 触发但真值非只读、因而不判分的事件:{n_ro_excluded}"
+               f"(readonly_excluded);本表各列的分母是余下的 {n} 个"
+               "真值只读触发事件"]
     (cgen / "CALLGEN_REPORT.md").write_text("\n".join(md) + "\n")
     print(json.dumps({k: out[k] for k in
                       ("n_events_scored", "parse_fail_rate", "tool_ok",

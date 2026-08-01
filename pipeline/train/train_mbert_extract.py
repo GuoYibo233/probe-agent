@@ -34,6 +34,8 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoTokenizer, ModernBertModel,
                           get_linear_schedule_with_warmup)
 
+import readonly_map
+
 MODEL = "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base"
 SEED = 20260729
 FIND = "\n[FIND] "
@@ -60,8 +62,12 @@ class Extractor(nn.Module):
 
 # ---------- 数据:样本文本 × params 区间 ----------
 
-def join_rows(data, params, split, limit=0):
-    """流式并归(两文件同序,params 是样本堆的子序列)-> (texts, instances)。"""
+def join_rows(data, params, split, limit=0, ro=None):
+    """流式并归(两文件同序,params 是样本堆的子序列)-> (texts, instances)。
+
+    ro 非 None 时(--readonly-env):只留真值为只读工具的样本,其余(含表外)丢弃并计数;
+    清点用的标签在丢弃前收齐,audit 由调用方在返回后跑。
+    """
     texts, inst = [], []
     fp = open(params / f"{split}.jsonl")
     pr = fp.readline()
@@ -75,6 +81,12 @@ def join_rows(data, params, split, limit=0):
         pr = fp.readline()
         if not p["params"]:
             continue
+        if ro is not None:                     # 非只读样本整条丢掉(计数在 ro 里)
+            ro["labels"].append(r["label"])
+            if r["label"] not in ro["set"]:
+                ro["dropped"] += 1
+                continue
+            ro["kept"] += 1
         ti = len(texts)
         texts.append(r["text"])
         for q in p["params"]:
@@ -227,6 +239,9 @@ def main():
     ap.add_argument("--max-inst", type=int, default=0,
                     help="再压实例数(CPU 调试用,0=不限)")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
@@ -249,8 +264,24 @@ def main():
         lim_tr = min(lim_tr or args.max_inst, args.max_inst)
         lim_ev = min(lim_ev or args.max_inst, args.max_inst)
     epochs = 1 if args.smoke else args.epochs
-    tr = InstDS(*join_rows(data, params, "train", lim_tr))
-    ev = InstDS(*join_rows(data, params, "val", lim_ev))
+    ro_tr = ro_ev = None
+    if args.readonly_env:
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        ro_table = readonly_map.load_table(args.readonly_env)
+        ro_tr = dict(set=ro_set, labels=[], kept=0, dropped=0)
+        ro_ev = dict(set=ro_set, labels=[], kept=0, dropped=0)
+    tr = InstDS(*join_rows(data, params, "train", lim_tr, ro_tr))
+    ev = InstDS(*join_rows(data, params, "val", lim_ev, ro_ev))
+    if args.readonly_env:
+        au_tr = readonly_map.audit(ro_tr["labels"], ro_table, where="mext/train")
+        au_ev = readonly_map.audit(ro_ev["labels"], ro_table, where="mext/val")
+        (out / "READONLY.json").write_text(json.dumps(dict(
+            readonly_env=args.readonly_env,
+            table=str(readonly_map.table_path(args.readonly_env)),
+            train=au_tr, val=au_ev,
+            kept=dict(train=ro_tr["kept"], val=ro_ev["kept"]),
+            dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"])),
+            ensure_ascii=False, indent=1))
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -271,7 +302,8 @@ def main():
         print(kw, flush=True)
 
     log(event="start", env=args.env, n_train=len(tr), n_eval=len(ev),
-        steps=steps, smoke=args.smoke, max_len=args.max_len, device=dev)
+        steps=steps, smoke=args.smoke, max_len=args.max_len, device=dev,
+        readonly_env=args.readonly_env)
 
     best, gstep, cutsum = -1.0, 0, 0
     neg = torch.finfo(torch.float32).min
@@ -317,10 +349,13 @@ def main():
             (out / "best").mkdir(exist_ok=True)
             torch.save(model.state_dict(), out / "best" / "model.pt")
             tok.save_pretrained(out / "best")
+            meta = dict(env=args.env, base=MODEL, max_len=args.max_len,
+                        find=FIND, max_span_tok=MAX_SPAN_TOK, seed=SEED,
+                        calA_param_acc=round(best, 4))
+            if args.readonly_env:
+                meta["readonly_env"] = args.readonly_env
             (out / "best" / "meta.json").write_text(json.dumps(
-                dict(env=args.env, base=MODEL, max_len=args.max_len,
-                     find=FIND, max_span_tok=MAX_SPAN_TOK, seed=SEED,
-                     calA_param_acc=round(best, 4)), ensure_ascii=False))
+                meta, ensure_ascii=False))
             log(event="save_best", ep=ep, acc=round(best, 4))
     log(event="done", best_calA_param_acc=round(best, 4),
         truncated_spans=cutsum)

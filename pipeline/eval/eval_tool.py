@@ -15,6 +15,12 @@
 另加两个不改口径的开关(见 ACCEPT_EVAL.md 的偏离记录):
 `--report-dir`(报告写别处,验收时不碰旧文件)、`--device`。
 
+ro1 批次加的第三个开关 `--readonly-env {appworld,bfcl}`(默认关,关=行为逐字节不变):
+打开后真值标签在装载处统一过 readonly_map.collapse()(非只读工具折叠成弃权类
+<NON_READONLY>),触发条件收窄成"conf>=θ 且 argmax 不是弃权类",并新增顶层
+readonly_stats。旧字段名与公式一个不改。label_map.json 里有没有弃权哨兵
+与本开关必须同时成立,单向缺失硬停(防串味双向保险丝)。
+
 用法:
   # 新流水线(mbert 分类头)
   mbert-env/bin/python pipeline/eval/eval_tool.py --env appworld \\
@@ -33,6 +39,9 @@ from pathlib import Path
 
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
+import readonly_map                                    # noqa: E402
 
 SEED = 20260729
 THETAS = [round(0.5 + 0.025 * i, 3) for i in range(20)]  # 0.5 .. 0.975
@@ -153,8 +162,13 @@ def fit_temperature(logits, labels):
     return float(logT.exp())
 
 
-def replay(rows, probs, theta):
-    """rows+probs 同序。返回每事件 dict(fired, ok, depth, conf)。"""
+def replay(rows, probs, theta, nro_id=None):
+    """rows+probs 同序。返回每事件 dict(fired, ok, depth, conf)。
+
+    nro_id=None 是旧口径(legacy):首个 conf>=θ 的边界即触发。
+    nro_id 给了弃权类 id(readonly 模式)时触发条件收窄成
+    "conf>=θ 且 argmax != nro_id"——预测弃权类永不触发。
+    """
     ev = defaultdict(list)
     for r, p in zip(rows, probs):
         ev[r["event"]].append((r["sent_idx"], r, p))
@@ -165,7 +179,7 @@ def replay(rows, probs, theta):
                    unit=items[0][1]["unit"], label=items[0][1]["label"])
         for _, r, p in items:
             conf, pred = float(p.max()), int(p.argmax())
-            if conf >= theta:
+            if conf >= theta and (nro_id is None or pred != nro_id):
                 rec.update(fired=True, ok=(pred == r["y"]),
                            depth=r["depth"], conf=conf)
                 break
@@ -234,6 +248,10 @@ def main():
     ap.add_argument("--cached-logits", action="store_true",
                     help="读 run 目录已存的 logits_*.pt,跳过模型推理(纯 CPU 后处理)")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具+弃权类模式(默认关);打开后真值折叠、"
+                         "触发条件加\"argmax 不是弃权类\",并出 readonly_stats")
     args = ap.parse_args()
     run = Path(args.run)
     data = Path(args.data) / args.env if args.legacy_splits else Path(args.data)
@@ -251,6 +269,23 @@ def main():
         fit_sp, sweep_sp = "val", "val"
 
     label2id = json.loads((run / "best" / "label_map.json").read_text())
+
+    # 防串味双向保险丝:label_map 里有弃权哨兵 ⇔ 必须传 --readonly-env
+    has_sentinel = readonly_map.NON_READONLY in label2id
+    if has_sentinel != bool(args.readonly_env):
+        raise SystemExit(
+            f"readonly 保险丝不匹配:{run / 'best' / 'label_map.json'} "
+            f"{'含' if has_sentinel else '不含'}弃权哨兵 "
+            f"{readonly_map.NON_READONLY!r};而 --readonly-env "
+            f"{'传了 ' + str(args.readonly_env) if args.readonly_env else '没传'}。"
+            "两者必须同时成立或同时不成立——readonly 模式训的 run 只能带 "
+            "--readonly-env 评,旧口径 run 只能不带。")
+    ro_table = ro_set = nro_id = None
+    if args.readonly_env:
+        ro_table = readonly_map.load_table(args.readonly_env)
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        nro_id = label2id[readonly_map.NON_READONLY]
+
     meta = {}
     if args.head == "causal":
         # 【照抄 eval_replay_causal.py】tokenizer 无条件加载(探测成本要用它计数),
@@ -273,8 +308,14 @@ def main():
 
     splits = {}
     for sp in split_names:
-        rows = [r for r in load_rows(data / f"{sp}.jsonl")
-                if r["label"] in label2id]
+        raw_rows = load_rows(data / f"{sp}.jsonl")
+        if ro_set is not None:
+            # 真值折叠放在装载处:之后温度拟合/θ 扫描/回放/先验基线全用折叠后标签
+            readonly_map.audit([r["label"] for r in raw_rows], ro_table,
+                               f"eval_tool {sp}")
+            for r in raw_rows:
+                r["label"] = readonly_map.collapse(r["label"], ro_set)
+        rows = [r for r in raw_rows if r["label"] in label2id]
         for r in rows:
             r["y"] = label2id[r["label"]]
         if args.cached_logits:
@@ -300,7 +341,7 @@ def main():
     sweep = []
     econ_sweep = []
     for th in THETAS:
-        recs = list(replay(rows_b, probs_b, th).values())
+        recs = list(replay(rows_b, probs_b, th, nro_id).values())
         sweep.append((th, agg(recs)))
         econ_sweep.append((th, economics(recs)))
     chosen = {}
@@ -320,13 +361,14 @@ def main():
             final[risk] = None
             econ_test[str(risk)] = None
             continue
-        recs = list(replay(rows_t, probs_t, th).values())
+        recs = list(replay(rows_t, probs_t, th, nro_id).values())
         final[risk] = dict(theta=th, **agg(recs), ci=bootstrap(recs, rng))
         econ_test[str(risk)] = dict(theta=th, **economics(recs))
 
     # stop-time 校准(test,取风险 0.05 的 θ;无则 0.8)
     th0 = chosen.get(0.05) or 0.8
-    fired = [r for r in replay(rows_t, probs_t, th0).values() if r["fired"]]
+    fired = [r for r in replay(rows_t, probs_t, th0, nro_id).values()
+             if r["fired"]]
     bins = defaultdict(list)
     for r in fired:
         bins[min(int(r["conf"] * 10), 9)].append(r)
@@ -351,6 +393,34 @@ def main():
     prior_acc = (sum(1 for v in ev_labels.values() if v == prior_tool)
                  / max(len(ev_labels), 1))
 
+    # readonly 模式专有统计(旧字段一个不动;先验基线按折叠后标签空间重算,
+    # 不许沿用旧数——DATA.md §7.2)
+    ro_stats = None
+    if args.readonly_env:
+        ro_stats = {"readonly_env": args.readonly_env,
+                    "table": str(readonly_map.table_path(args.readonly_env)),
+                    "theta_used": th0}
+        for name, rws, prs in ((sweep_sp, rows_b, probs_b),
+                               ("test", rows_t, probs_t)):
+            recs = list(replay(rws, prs, th0, nro_id).values())
+            ro = [r for r in recs
+                  if r["label"] != readonly_map.NON_READONLY]
+            nro = [r for r in recs
+                   if r["label"] == readonly_map.NON_READONLY]
+            cnt = defaultdict(int)
+            for r in recs:
+                cnt[r["label"]] += 1
+            ro_stats[name] = dict(
+                n_events=len(recs),
+                n_readonly_truth=len(ro),
+                ro_coverage=round(sum(r["fired"] for r in ro)
+                                  / max(len(ro), 1), 4),
+                nro_trigger_rate=round(sum(r["fired"] for r in nro)
+                                       / max(len(nro), 1), 4),
+                prior_baseline_collapsed=round(
+                    max(cnt.values(), default=0) / max(len(recs), 1), 4),
+            )
+
     rep = {
         "env": args.env, "temperature": round(T, 4),
         "theta_sweep_calB": [(th, a) for th, a in sweep],
@@ -367,6 +437,8 @@ def main():
             "test_frozen": econ_test,
         },
     }
+    if ro_stats is not None:
+        rep["readonly_stats"] = ro_stats
     # 因果探针专有的两个诊断字段(【照抄 eval_replay_causal.py】,旧字段一个不动)
     if args.head == "causal":
         bert_tok, causal_tok = token_cost(tok, rows_t)
@@ -406,6 +478,20 @@ def main():
     md += ["", "calB 全 θ 档:", "| θ | 省 token | 重叠延迟 |", "|---|---|---|"]
     md += [f"| {th} | {e['exp_token_saving_ratio']} | {e['exp_overlap_ratio']} |"
            for th, e in econ_sweep]
+    if ro_stats is not None:
+        md += ["", f"## 只读模式(--readonly-env {args.readonly_env})",
+               f"- 真值表 {ro_stats['table']};弃权类 "
+               f"{readonly_map.NON_READONLY}(标签 id {nro_id});"
+               f"触发条件加\"argmax 不是弃权类\"",
+               f"- 下表 θ={th0}(风险≤0.05 的 θ,无解时 0.8)",
+               "| 堆 | 事件数 | 其中真值只读 | 只读事件覆盖率 |"
+               " 非只读事件误触发率 | 折叠后先验基线 |",
+               "|---|---|---|---|---|---|"]
+        for name in (sweep_sp, "test"):
+            s = ro_stats[name]
+            md.append(f"| {name} | {s['n_events']} | {s['n_readonly_truth']} |"
+                      f" {s['ro_coverage']} | {s['nro_trigger_rate']} |"
+                      f" {s['prior_baseline_collapsed']} |")
     if "probe_cost_test" in rep:
         pc = rep["probe_cost_test"]
         md += ["", "## 探测成本(test,探完全部轨迹的 token 计算量)",

@@ -9,6 +9,12 @@ parse/tier_of/THRESH(一起搬进本文件,不再单开模块)。改动只有规
 触发点取自 --run(mtool)的 REPLAY_REPORT 温度 + chosen_theta、在触发前缀上跑
 抽取头、宽松/严格/整调用三档、三档分层(读 <data_out>/router_stats.md)。
 
+ro1 批次加 `--readonly-env {appworld,bfcl}`(默认关,关=行为逐字节不变):打开后
+真值标签在装载处过 readonly_map.collapse()、触发条件加"argmax 不是弃权类";
+参数指标只在"触发了且真值为只读工具"的事件上算,触发但真值非只读的事件不进
+params_all_ok / full_call_ok 分母,单独计进新增键 readonly_excluded。
+已有字段名与三档判分一个不动。label_map.json 的弃权哨兵与本开关双向互为条件。
+
 用法:
   mbert-env/bin/python pipeline/eval/eval_mbert_call.py --env appworld \\
     --run pipeline/runs/c1_q35_mtool --extractor pipeline/runs/c1_q35_mext \\
@@ -25,6 +31,7 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
+import readonly_map                                      # noqa: E402
 from train_mbert_extract import (FIND, collate, decode,  # noqa: E402
                                  load_extractor, span_ok)
 
@@ -56,8 +63,12 @@ def load_rows(path):
     return [json.loads(l) for l in open(path)]
 
 
-def replay_fire(rows, probs, theta):
-    """与 eval_tool.replay 同逻辑,额外返回触发的 sent_idx 与行。"""
+def replay_fire(rows, probs, theta, nro_id=None):
+    """与 eval_tool.replay 同逻辑,额外返回触发的 sent_idx 与行。
+
+    nro_id=None 是旧口径;给了弃权类 id(readonly 模式)时触发条件收窄成
+    "conf>=θ 且 argmax != nro_id",与 eval_tool.replay 完全同源。
+    """
     ev = defaultdict(list)
     for r, p in zip(rows, probs):
         ev[r["event"]].append((r["sent_idx"], r, p))
@@ -68,7 +79,7 @@ def replay_fire(rows, probs, theta):
                    label=items[0][1]["label"])
         for _, r, p in items:
             conf, pred = float(p.max()), int(p.argmax())
-            if conf >= theta:
+            if conf >= theta and (nro_id is None or pred != nro_id):
                 rec.update(fired=True, ok=(pred == r["y"]),
                            sent_idx=r["sent_idx"], row=r)
                 break
@@ -117,6 +128,11 @@ def main():
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--bs", type=int, default=8)
     ap.add_argument("--limit", type=int, default=0, help="截前 N 事件(冒烟)")
+    ap.add_argument("--readonly-env", default=None,
+                    choices=list(readonly_map.READONLY_ENVS),
+                    help="只读工具+弃权类模式(默认关);打开后真值折叠、"
+                         "触发条件加\"argmax 不是弃权类\",且只给真值为只读"
+                         "工具的触发事件算参数指标")
     args = ap.parse_args()
 
     run, ext = Path(args.run), Path(args.extractor)
@@ -131,13 +147,35 @@ def main():
 
     # 1) 触发点:过滤逻辑与 eval_tool 逐行一致,保证与 logits_test.pt 同序
     label2id = json.loads((run / "best" / "label_map.json").read_text())
-    rows = [r for r in load_rows(data / "test.jsonl")
-            if r["label"] in label2id]
+
+    # 防串味双向保险丝:label_map 里有弃权哨兵 ⇔ 必须传 --readonly-env
+    has_sentinel = readonly_map.NON_READONLY in label2id
+    if has_sentinel != bool(args.readonly_env):
+        raise SystemExit(
+            f"readonly 保险丝不匹配:{run / 'best' / 'label_map.json'} "
+            f"{'含' if has_sentinel else '不含'}弃权哨兵 "
+            f"{readonly_map.NON_READONLY!r};而 --readonly-env "
+            f"{'传了 ' + str(args.readonly_env) if args.readonly_env else '没传'}。"
+            "两者必须同时成立或同时不成立——readonly 模式训的 run 只能带 "
+            "--readonly-env 评,旧口径 run 只能不带。")
+    ro_set = nro_id = None
+    if args.readonly_env:
+        ro_set = readonly_map.load_readonly_set(args.readonly_env)
+        nro_id = label2id[readonly_map.NON_READONLY]
+
+    raw_rows = load_rows(data / "test.jsonl")
+    if ro_set is not None:
+        readonly_map.audit([r["label"] for r in raw_rows],
+                           readonly_map.load_table(args.readonly_env),
+                           "eval_mbert_call test")
+        for r in raw_rows:
+            r["label"] = readonly_map.collapse(r["label"], ro_set)
+    rows = [r for r in raw_rows if r["label"] in label2id]
     for r in rows:
         r["y"] = label2id[r["label"]]
     logits = torch.load(run / "logits_test.pt", map_location="cpu")
     assert len(rows) == logits.shape[0], (len(rows), logits.shape)
-    fired = replay_fire(rows, torch.softmax(logits / T, -1), theta)
+    fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
 
     # 2) 参数真值:params 里同一 (event, sent_idx) 那一行
     pmap = {}
@@ -146,6 +184,13 @@ def main():
 
     keys = [k for k in dict.fromkeys(r["event"] for r in rows)
             if fired[k]["fired"]]
+    # readonly 模式:触发了但真值非只读的事件不算参数指标(不进任何分母),单独计数
+    n_ro_excluded = 0
+    if ro_set is not None:
+        keep = [k for k in keys
+                if fired[k]["label"] != readonly_map.NON_READONLY]
+        n_ro_excluded = len(keys) - len(keep)
+        keys = keep
     if args.limit:
         keys = keys[:args.limit]
 
@@ -219,6 +264,9 @@ def main():
         overall=fmt(buck["整体"]),
         anchors=dict(spork_param_acc=SPORK_ANCHOR,
                      pilot_value_present_at_25tok=PILOT_ANCHOR))
+    if ro_set is not None:
+        out["readonly_env"] = args.readonly_env
+        out["readonly_excluded"] = n_ro_excluded
     (ext / "EXTRACT_REPORT.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1))
 
@@ -256,6 +304,13 @@ def main():
            "金标 token 跨度自身的严格通过率只有 "
            "tales 0.066 / bfcl 0.642 / appworld 0.659,"
            "宽松口径下则是 0.997/0.997/0.991。严格列仅供对照。"]
+    if ro_set is not None:
+        md += ["", f"## 只读模式(--readonly-env {args.readonly_env})",
+               f"- 弃权类 {readonly_map.NON_READONLY}(标签 id {nro_id});"
+               "触发条件加\"argmax 不是弃权类\",真值标签已折叠",
+               f"- 触发但真值非只读、因而不进任何参数分母的事件:"
+               f"{n_ro_excluded}(readonly_excluded);"
+               f"本表各列的分母是余下的 {len(keys)} 个真值只读触发事件"]
     (ext / "EXTRACT_REPORT.md").write_text("\n".join(md) + "\n")
     print(json.dumps(out["overall"], ensure_ascii=False, indent=1))
 
