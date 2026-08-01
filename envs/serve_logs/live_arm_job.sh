@@ -18,7 +18,8 @@ case "$ARM" in
   probe_low)   EXTRA="--effort low";            PORTS=(8117);           PROBE=8792 ;;
   # ^ noprobe_low 168/168 收官后其专属副本 8117 空出,probe_low 切过去,
   #   与 probe_med(8119)各占一张 H200(2026-08-02 03:3x 切换,--resume 续跑)
-  probe_med)   EXTRA="--effort medium";         PORTS=(8119);           PROBE=8792 ;;
+  probe_med)   EXTRA="--effort medium";         PORTS=(8118 8119);      PROBE=8792 ;;
+  # ^ noprobe_med 收官后 8118 空出,拨给落后的 probe_med 双副本分流(03:5x)
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
 for s in $(seq 0 11); do
