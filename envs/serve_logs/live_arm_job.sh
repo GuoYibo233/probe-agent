@@ -15,7 +15,9 @@ case "$ARM" in
   noprobe)     EXTRA="--no-probe";              PORTS=(8114 8115 8116); PROBE=8790 ;;
   noprobe_low) EXTRA="--no-probe --effort low"; PORTS=(8117);           PROBE=8791 ;;
   noprobe_med) EXTRA="--no-probe --effort medium"; PORTS=(8118);        PROBE=8791 ;;
-  probe_low)   EXTRA="--effort low";            PORTS=(8119);           PROBE=8792 ;;
+  probe_low)   EXTRA="--effort low";            PORTS=(8117);           PROBE=8792 ;;
+  # ^ noprobe_low 168/168 收官后其专属副本 8117 空出,probe_low 切过去,
+  #   与 probe_med(8119)各占一张 H200(2026-08-02 03:3x 切换,--resume 续跑)
   probe_med)   EXTRA="--effort medium";         PORTS=(8119);           PROBE=8792 ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
