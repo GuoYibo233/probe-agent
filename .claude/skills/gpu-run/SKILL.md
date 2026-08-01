@@ -50,8 +50,13 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 
 0. **发射前先 commit 代码**。实验记录里存的 git HEAD，只有工作树干净时才追得回
    真实跑的那版代码。脏工作树 `record.py` 会打 ⚠️ 但不拦你——追溯断链是你自己的损失。
+   仓库根 `run.py` 从这里往前顶了一步：注册表里的 GPU/发射类任务出命令前查
+   `git status`，脏树直接拒绝（`--allow-dirty` 逃生）——2026-08-02 起的硬门禁。
 1. 一切进 tmux（禁 bare ssh / nohup）。session 名 `new1_<task>_<host>g<gpu>`，
    日志 `<workdir>/logs/<session>.log`。命令用 python subprocess 拼，防引号地狱。
+   "要跑的命令"那一段（`<venv解释器绝对路径> <脚本绝对路径> <参数>`）可以让
+   `python3 run.py <task> <参数>` 拼——它只打印这一段，不带 cd/CUDA_VISIBLE_DEVICES/tee，
+   恰好塞进本模板；解释器选哪个 venv 以它的注册表为准（`run.py show <task>` 可查）。
 2. 发射后立即登记台账（一个任务一次 register，多分片多个 --piece）：
    ```bash
    python ops/gpu_jobs.py register --name <task> --workdir <dir> \

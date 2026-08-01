@@ -20,6 +20,14 @@ version: 1.0.0
 工程规则的上位法仍是 `CLAUDE.md`；GPU 发射的上位法仍是 `.claude/skills/gpu-run/SKILL.md`。
 **本 skill 不自己发射 GPU 任务**——凡是要占卡的步骤一律转 gpu-run。
 
+**统一入口（2026-08-02 起）**：仓库根 `run.py` 是全链 52 个脚本的运行注册表
+（解释器分派 / 参数透传 / GPU 任务只拼命令交 gpu-run / 多步配方），
+`python3 run.py list` / `show <task>` / `selfcheck` 可查。本 skill 的命令表仍是
+参数细节的权威；解释器用哪个以 run.py 注册表为准。**任何扩展在改代码的同一个
+commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯一真源是它的 CELLS，
+`ops/launch_probe.py` 从它 import），`selfcheck` 过了才算齐——这条与 Phase E
+回写并列，谁都不能替谁：skill 记流程与坑，run.py 记怎么跑。
+
 ---
 
 ## Phase 0 — 定批次（先把这五个变量钉死，再动手）

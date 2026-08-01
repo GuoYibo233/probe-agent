@@ -11,7 +11,7 @@
 | mbert-env | `/home/y-guo/reproduce/new1/mbert-env/bin/python` | 4.57.6 | ModernBERT:mtool / mext,以及评它们的 eval |
 | cprobe-env | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` | 5.14.1 | 因果模型:ctool / cgen,以及评它们的 eval |
 
-两个环境互不升级(混合架构在旧版分块增量喂会静默算错,这是钉版本的原因)。**纯 CPU 脚本**(只用标准库,任意 `python3`,不占卡):`collect/gen_launch.py`、`annotate/build.py`、`annotate/param_label.py`、`annotate/accept_v3diff.py`、`eval/summarize_matrix.py`。其余全部要显卡。
+两个环境互不升级(混合架构在旧版分块增量喂会静默算错,这是钉版本的原因)。**纯 CPU 脚本**(只用标准库,任意 `python3`,不占卡):`collect/gen_launch.py`、`annotate/build.py`、`annotate/param_label.py`、`annotate/accept_v3diff.py`、`eval/summarize_matrix.py`。其余全部要显卡。注意 `annotate/check_callstr.py` **不在**这份名单里:它不占卡但 import 链上有 torch,必须用 cprobe-env(52 个脚本各用哪个解释器的完整地图在仓库根 `run.py` 的注册表,`python3 run.py show <task>` 可查)。
 
 | 名目 | 路径 |
 |---|---|
@@ -65,12 +65,14 @@ python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_<BATCH
 cd /home/y-guo/reproduce/new1
 python3 pipeline/annotate/build.py         --config pipeline/configs/<BATCH>_<MODEL>.json
 python3 pipeline/annotate/param_label.py   --config pipeline/configs/<BATCH>_<MODEL>.json
-python3 pipeline/annotate/check_callstr.py --config pipeline/configs/<BATCH>_<MODEL>.json
+cprobe-env/bin/python pipeline/annotate/check_callstr.py --config pipeline/configs/<BATCH>_<MODEL>.json
 # 可选:改过 rules.py/build.py 后的一致性验收(路径全写死,无参数)
 python3 pipeline/annotate/accept_v3diff.py
 ```
 
-第三步 `check_callstr.py` 是 **G19–G22 的实现**(纯 CPU,必须在前两步之后跑),产物
+第三步 `check_callstr.py` 是 **G19–G22 的实现**(不占卡,但**必须用 cprobe-env**
+——它 import eval_causal_call → torch,系统 python3 没有,写 python3 必死在
+ModuleNotFoundError;必须在前两步之后跑),产物
 `<DATA_ROOT>/CALLSTR_CHECK.md`;它同时做五道硬门禁与四类"只报不拦"的已知偏差,
 细节见 `gates.md §1` 的 G19–G22。
 

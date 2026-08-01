@@ -388,6 +388,14 @@ def main():
     depth_acc = {f"{b/10:.1f}": round(c / n, 3)
                  for b, (c, n) in sorted(dep.items())}
     vocab = json.loads((data / "tool_vocab.json").read_text())
+    if ro_set is not None:
+        # 词表也按同一张真值表折叠再取最高频:标签在装载处折叠过(见上),
+        # 先验必须在同一标签空间里比——不折叠时最高频工具是非只读的话
+        # (bfcl 的 startEngine),先验恒 0,基线被压出假优势
+        cnt = defaultdict(int)
+        for k, v in vocab.items():
+            cnt[readonly_map.collapse(k, ro_set)] += v
+        vocab = dict(cnt)
     prior_tool = max(vocab, key=vocab.get)
     ev_labels = {r["event"]: r["label"] for r in rows_t}
     prior_acc = (sum(1 for v in ev_labels.values() if v == prior_tool)
