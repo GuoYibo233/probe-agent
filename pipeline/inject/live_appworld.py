@@ -205,6 +205,21 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
     return (t_final, content.strip(), usage, discard, n_inject)
 
 
+def claim(outdir, tid):
+    """mkdir 抢票(NFS 上原子)。谁建成谁跑,输家静默跳过。
+
+    票根只在工人硬死(连 task_error final 都没写)时残留,所以发射脚本
+    每次起跑前整个清掉 .claims/——凡是没有 final 的题都重新开抢。
+    """
+    d = outdir / ".claims"
+    d.mkdir(exist_ok=True)
+    try:
+        (d / tid).mkdir()
+        return True
+    except FileExistsError:
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--base-url", required=True, help="vLLM /v1 端点")
@@ -229,6 +244,9 @@ def main():
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--pool", action="store_true",
+                    help="动态领题:工人跑完一题就去全量单抢下一题(mkdir 原子票),"
+                         "慢题不再堵死静态分片;--shard-id 退化为工人号")
     ap.add_argument("--keep-outputs", action="store_true",
                     help="保留 appworld 每题的输出目录(默认跑完即删,配额教训)")
     ap.add_argument("--selftest-shadow", metavar="TRAJ",
@@ -257,16 +275,25 @@ def main():
     ids = load_task_ids(a.split)
     if a.n:
         ids = ids[: a.n]
-    ids = ids[a.shard_id:: a.num_shards]
+    if a.pool:
+        # 动态领题:不切片,所有工人抢同一张全量单;按工人号错位起跑,
+        # 抢锁碰撞只发生在追尾时。静态分片的教训:一道慢题堵死整条分片,
+        # 别的分片跑完了也帮不上,尾巴全是它拖的。
+        ids = ids[a.shard_id:] + ids[: a.shard_id]
+    else:
+        ids = ids[a.shard_id:: a.num_shards]
     exp = a.exp if a.num_shards == 1 else f"{a.exp}_s{a.shard_id}"
-    print(f"shard {a.shard_id}/{a.num_shards}: {len(ids)} tasks exp={exp}",
-          flush=True)
+    print(f"shard {a.shard_id}/{a.num_shards}: {len(ids)} tasks exp={exp} "
+          f"pool={a.pool}", flush=True)
 
     for tid in ids:
         out_path = outdir / f"live_{tid}.jsonl"
         if a.resume and out_path.exists() and \
                 '"type": "final"' in out_path.read_text():
-            print(f"task={tid} SKIP (done)", flush=True)
+            if not a.pool:              # pool 模式 12 工人各刷一遍,太吵
+                print(f"task={tid} SKIP (done)", flush=True)
+            continue
+        if a.pool and not claim(outdir, tid):
             continue
         try:
             run_task(AppWorld, tid, exp, out_path, a, probe_cfg)

@@ -22,11 +22,13 @@ case "$ARM" in
   # ^ noprobe_med 收官后 8118 空出,拨给落后的 probe_med 双副本分流(03:5x)
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
+# 动态领题:清票根,没写 final 的题全部重新开抢(claim() 的约定)
+rm -rf "pipeline/inject/runs/live_aw_gptoss/$ARM/.claims"
 for s in $(seq 0 11); do
   port=${PORTS[$((s % ${#PORTS[@]}))]}
   envs/appworld/venv/bin/python pipeline/inject/live_appworld.py \
     --base-url http://tokyo108:$port/v1 --probe-url http://tokyo105:$PROBE \
-    --split test_normal --max-steps 30 $EXTRA \
+    --split test_normal --max-steps 30 $EXTRA --pool \
     --outdir pipeline/inject/runs/live_aw_gptoss/$ARM \
     --exp live_aw_$ARM --num-shards 12 --shard-id $s --resume \
     > "$LOG/new1_live_${ARM}_s${s}.log" 2>&1 &
