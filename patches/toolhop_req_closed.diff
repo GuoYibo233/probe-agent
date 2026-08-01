@@ -1,0 +1,47 @@
+--- /tmp/toolhop_orig/code/evaluation_closed.py	2026-08-02 05:20:16.239598320 +0900
++++ envs/toolhop/code/evaluation_closed.py	2026-08-02 05:43:35.747827337 +0900
+@@ -27,14 +27,13 @@
+ import requests
+ 
+ 
+-def req_closed(messages, model='gpt-4o-2024-08-06', temperature=0., base_url=None, api_key=None, max_tokens=256, **kwargs):
++def req_closed(messages, model='gpt-4o-2024-08-06', temperature=0., base_url=None, api_key=None, max_tokens=4096, **kwargs):
+     t = 0
+     while t < 3:
+         try:
+-            logid = sha256(messages[0]['content'].encode()).hexdigest()
+             headers = {
+                 'Content-Type': 'application/json',
+-                'X-TT-LOGID': logid,
++                'Authorization': f'Bearer {api_key}',
+             }
+             data = {
+                 "messages": messages,
+@@ -44,12 +43,12 @@
+                 **kwargs
+             }
+             response = requests.post(
+-                f'{base_url}?ak={api_key}', headers=headers, json=data, timeout=30)
++                f'{base_url}/chat/completions', headers=headers, json=data, timeout=180)
+ 
+             return response.json()
+         except Exception as e:
+             t += 1
+-            print(messages, response, e, flush=True)
++            print(messages, e, flush=True)
+             sleep(5)
+     return None
+ 
+@@ -57,10 +56,10 @@
+ def test_closed(messages, args, tools=None):
+     try:
+         response = req_closed(messages=messages, model=args.model, temperature=0., tools=tools,
+-                              base_url=args.base_url, api_key=args.api_key, max_tokens=256)
++                              base_url=args.base_url, api_key=args.api_key, max_tokens=4096)
+         return response['choices'][0]['message']
+     except Exception as e:
+-        print(messages, response, e, flush=True)
++        print(messages, e, flush=True)
+ 
+     return None
+ 

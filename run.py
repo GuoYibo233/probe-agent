@@ -52,6 +52,7 @@ PY = {
     "alfworld": str(ROOT / "envs/alfworld/venv/bin/python"),
     "tales":    str(ROOT / "envs/tales/venv/bin/python"),
     "tau2":     str(ROOT / "envs/tau2-bench/.venv/bin/python"),
+    "toolhop":  str(ROOT / "envs/toolhop-env/bin/python"),
     "bash":     "bash",
 }
 
@@ -98,6 +99,18 @@ TASKS = {
         desc="tau2-bench 采集器(要两个 /v1:agent+用户模拟器)",
         notes=["代码就绪但一条正式轨迹未采过;--user-base-url/--user-model 另给",
                "服务要 --max-model-len 65536 量级(系统提示 ~6k token)"]),
+    "toolhop-official": dict(
+        stage="collect", py="toolhop", script="envs/toolhop/code/evaluation_closed.py",
+        cwd=str(ROOT / "envs/toolhop/code"),
+        desc="ToolHop 官方闭源路评测器(要 vLLM /v1 在线;本体在 NFS,软链穿透)",
+        notes=["必给 --base_url(以 /v1 结尾) --output_file;参数全是下划线风格",
+               "冒烟: --input_file ../data/smoke_2.json(相对 code/);输出 append 且跳已存"
+               " id,重跑先删输出文件",
+               "打印的 Result 百分比写死除以 995,跑子集时无意义;看 Valid Items 与逐条"
+               " answer_correct",
+               "--scenario Direct 会发 tools:null,vLLM 可能 400;用 Mandatory/Free",
+               "toolhop-env 钉 python 3.12;升 3.13 后每次工具调用静默变错误(PEP 667,"
+               "已实测);对上游的全部改动见 patches/toolhop_req_closed.diff"]),
     "collect-bfcl": dict(
         stage="collect", prog=str(ROOT / "envs/bfcl/venv/bin/bfcl"),
         cwd=str(ROOT / "envs/bfcl"),
