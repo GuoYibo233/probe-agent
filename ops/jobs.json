@@ -1,84 +1,6 @@
 {
   "active": [
     {
-      "name": "thsweep_serve",
-      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
-      "note": "theta sweep run 段专用 gpt-oss-120b x3 (ports 8111/8112/8113, max-model-len 65536)",
-      "started_at": "2026-08-01 03:57",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "3",
-          "session": "new1_thsw_srv_a_t108g3",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_a_t108g3.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "4",
-          "session": "new1_thsw_srv_b_t108g4",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_b_t108g4.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "5",
-          "session": "new1_thsw_srv_c_t108g5",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_c_t108g5.log"
-        }
-      ]
-    },
-    {
-      "name": "thsweep_plan",
-      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
-      "note": "θ 扫描曲线 plan 段五点(0.50/0.70/0.80/0.875/0.95),tokyo106 g0-g4,触发数 1945/1718/1534/1276/907",
-      "started_at": "2026-08-01 04:07",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "0",
-          "session": "new1_thsw_plan_th050_t106g0",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th050_t106g0.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "1",
-          "session": "new1_thsw_plan_th070_t106g1",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th070_t106g1.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "2",
-          "session": "new1_thsw_plan_th080_t106g2",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th080_t106g2.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "3",
-          "session": "new1_thsw_plan_th0875_t106g3",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th0875_t106g3.log"
-        },
-        {
-          "host": "tokyo106",
-          "gpus": "4",
-          "session": "new1_thsw_plan_th095_t106g4",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th095_t106g4.log"
-        }
-      ]
-    },
-    {
-      "name": "thsweep_plan_th0925",
-      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
-      "note": "θ 扫描第六点 plan 段(θ=0.925,触发 1061),补发;register 不支持往 thsweep_plan 追加 piece,故单列一条",
-      "started_at": "2026-08-01 04:12",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "5",
-          "session": "new1_thsw_plan_th0925_t106g5",
-          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th0925_t106g5.log"
-        }
-      ]
-    },
-    {
       "name": "c2_train",
       "workdir": "/home/y-guo/reproduce/new1",
       "note": "c2 八格探针训练(alfworld, q36+gptoss × mtool/mext/ctool/cgen)",
@@ -131,32 +53,6 @@
           "gpus": "7",
           "session": "new1_c2_gptoss_cgen_t105g7",
           "log": "/home/y-guo/reproduce/new1/logs/new1_c2_gptoss_cgen_t105g7.log"
-        }
-      ]
-    },
-    {
-      "name": "thsweep_serve2",
-      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "θ 扫描 run 段第二批 gpt-oss-120b 服务: 三张 H100 (采集腾出的 idx 0/1/2), 端口 8114/8115/8116, 参数与第一批 H200 逐字一致",
-      "started_at": "2026-08-01 05:01",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "0",
-          "session": "new1_thsw_srv_d_t108g0",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_d_t108g0.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "1",
-          "session": "new1_thsw_srv_e_t108g1",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_e_t108g1.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "2",
-          "session": "new1_thsw_srv_f_t108g2",
-          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_f_t108g2.log"
         }
       ]
     }
@@ -1496,6 +1392,165 @@
         }
       ],
       "finished_at": "2026-08-01 06:53"
+    },
+    {
+      "name": "thsweep_plan",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": "θ 扫描曲线 plan 段五点(0.50/0.70/0.80/0.875/0.95),tokyo106 g0-g4,触发数 1945/1718/1534/1276/907",
+      "started_at": "2026-08-01 04:07",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "0",
+          "session": "new1_thsw_plan_th050_t106g0",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th050_t106g0.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "1",
+          "session": "new1_thsw_plan_th070_t106g1",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th070_t106g1.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_thsw_plan_th080_t106g2",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th080_t106g2.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "3",
+          "session": "new1_thsw_plan_th0875_t106g3",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th0875_t106g3.log"
+        },
+        {
+          "host": "tokyo106",
+          "gpus": "4",
+          "session": "new1_thsw_plan_th095_t106g4",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th095_t106g4.log"
+        }
+      ],
+      "finished_at": "2026-08-01 08:10"
+    },
+    {
+      "name": "thsweep_plan_th0925",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": "θ 扫描第六点 plan 段(θ=0.925,触发 1061),补发;register 不支持往 thsweep_plan 追加 piece,故单列一条",
+      "started_at": "2026-08-01 04:12",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "5",
+          "session": "new1_thsw_plan_th0925_t106g5",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_plan_th0925_t106g5.log"
+        }
+      ],
+      "finished_at": "2026-08-01 08:10"
+    },
+    {
+      "name": "thsweep_serve",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": "theta sweep run 段专用 gpt-oss-120b x3 (ports 8111/8112/8113, max-model-len 65536)",
+      "started_at": "2026-08-01 03:57",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_thsw_srv_a_t108g3",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_a_t108g3.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_thsw_srv_b_t108g4",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_b_t108g4.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_thsw_srv_c_t108g5",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_c_t108g5.log"
+        }
+      ],
+      "finished_at": "2026-08-01 09:36"
+    },
+    {
+      "name": "thsweep_serve2",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "θ 扫描 run 段第二批 gpt-oss-120b 服务: 三张 H100 (采集腾出的 idx 0/1/2), 端口 8114/8115/8116, 参数与第一批 H200 逐字一致",
+      "started_at": "2026-08-01 05:01",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_thsw_srv_d_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_d_t108g0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_thsw_srv_e_t108g1",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_e_t108g1.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_thsw_srv_f_t108g2",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_thsw_srv_f_t108g2.log"
+        }
+      ],
+      "finished_at": "2026-08-01 09:36"
+    },
+    {
+      "name": "thsweep_serve4",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "8112/8113 补位 gpt-oss-120b (H200 g4/g5, max-model-len 65536); 缓存与日志全在 /net, 不吃 /home 配额",
+      "started_at": "2026-08-01 08:10",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_thsw_srv_b2_t108g4",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_thsw_srv_b2_t108g4.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_thsw_srv_c2_t108g5",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_thsw_srv_c2_t108g5.log"
+        }
+      ],
+      "finished_at": "2026-08-01 09:36"
+    },
+    {
+      "name": "thsweep_curve",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": "主曲线池 6 个 θ(050/070/080/0875/0925/095) 全在 H200 服务 8111/8112/8113; 驱动壳跑 tokyo105, 不占本地卡; concurrency 16 默认",
+      "started_at": "2026-08-01 08:10",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "-(H200 8111/8112/8113)",
+          "session": "new1_thsw_curve_t105",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_curve_t105.log"
+        }
+      ],
+      "finished_at": "2026-08-01 09:36"
+    },
+    {
+      "name": "thsweep_ctrl",
+      "workdir": "/home/y-guo/reproduce/new1/pipeline/inject",
+      "note": "架构对照池 3 个 θ(0875/0925/095 的 _h100 副本) 在 H100 服务 8114/8115/8116; 驱动壳跑 tokyo105, 不占本地卡",
+      "started_at": "2026-08-01 08:10",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "-(H100 8114/8115/8116)",
+          "session": "new1_thsw_ctrl_t105",
+          "log": "/home/y-guo/reproduce/new1/pipeline/inject/logs/new1_thsw_ctrl_t105.log"
+        }
+      ],
+      "finished_at": "2026-08-01 09:36"
     }
   ]
 }

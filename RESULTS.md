@@ -14,12 +14,12 @@
 | `c2_q36_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
 | `c2_q36_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
 | `c2_q36_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
-| `20260801_0413_aw_gptoss_th0925` | 2026-08-01 04:13 | C2-3 | `e945a97+dirty` | gpt-oss-120b | running | - | - |
-| `20260801_0407_aw_gptoss_th095` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
-| `20260801_0407_aw_gptoss_th0875` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
-| `20260801_0407_aw_gptoss_th080` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
-| `20260801_0407_aw_gptoss_th070` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
-| `20260801_0407_aw_gptoss_th050` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | running | - | - |
+| `20260801_0413_aw_gptoss_th0925` | 2026-08-01 04:13 | C2-3 | `e945a97+dirty` | gpt-oss-120b | ok | theta=0.925 coverage=0.4963 n_fired=1061 n_inject=686 full_call_ok=0.6466 tool_ok=0.9057 saved_tok_median=-40 saved_positive=0.4344 saved_ratio_deployed_UNRELIABLE=-0.10299 oracle_timing_ceiling=0.2945 headroom_captured=-0.3497 trunc_nofill=0.0613 trunc_inject=0.0437 adopted=0.6297 | θ=0.925 覆盖率 0.4963 调用一致率 0.6466;省token中位 -40 tok、省为正 0.4344。求和口径的省token比例 -0.10299 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.2945,现行只吃到 -0.3497 |
+| `20260801_0407_aw_gptoss_th095` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.95 coverage=0.4242 n_fired=907 n_inject=626 full_call_ok=0.6902 tool_ok=0.925 saved_tok_median=-37 saved_positive=0.4233 saved_ratio_deployed_UNRELIABLE=0.00446 oracle_timing_ceiling=0.34318 headroom_captured=0.013 trunc_nofill=0.0805 trunc_inject=0.0479 adopted=0.6326 | θ=0.95 覆盖率 0.4242 调用一致率 0.6902;省token中位 -37 tok、省为正 0.4233。求和口径的省token比例 0.00446 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.34318,现行只吃到 0.013 |
+| `20260801_0407_aw_gptoss_th0875` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.875 coverage=0.5968 n_fired=1276 n_inject=736 full_call_ok=0.5768 tool_ok=0.8621 saved_tok_median=-27 saved_positive=0.4592 saved_ratio_deployed_UNRELIABLE=-0.01397 oracle_timing_ceiling=0.25448 headroom_captured=-0.0549 trunc_nofill=0.0854 trunc_inject=0.0353 adopted=0.6318 | θ=0.875 覆盖率 0.5968 调用一致率 0.5768;省token中位 -27 tok、省为正 0.4592。求和口径的省token比例 -0.01397 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.25448,现行只吃到 -0.0549 |
+| `20260801_0407_aw_gptoss_th080` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.8 coverage=0.7175 n_fired=1534 n_inject=724 full_call_ok=0.472 tool_ok=0.8044 saved_tok_median=-29 saved_positive=0.4544 saved_ratio_deployed_UNRELIABLE=-0.03605 oracle_timing_ceiling=0.17766 headroom_captured=-0.2029 trunc_nofill=0.0698 trunc_inject=0.0483 adopted=0.6257 | θ=0.8 覆盖率 0.7175 调用一致率 0.472;省token中位 -29 tok、省为正 0.4544。求和口径的省token比例 -0.03605 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.17766,现行只吃到 -0.2029 |
+| `20260801_0407_aw_gptoss_th070` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.7 coverage=0.8036 n_fired=1718 n_inject=717 full_call_ok=0.4173 tool_ok=0.7509 saved_tok_median=-15 saved_positive=0.4742 saved_ratio_deployed_UNRELIABLE=-0.00796 oracle_timing_ceiling=0.15969 headroom_captured=-0.0498 trunc_nofill=0.0838 trunc_inject=0.0502 adopted=0.6067 | θ=0.7 覆盖率 0.8036 调用一致率 0.4173;省token中位 -15 tok、省为正 0.4742。求和口径的省token比例 -0.00796 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.15969,现行只吃到 -0.0498 |
+| `20260801_0407_aw_gptoss_th050` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.5 coverage=0.9097 n_fired=1945 n_inject=670 full_call_ok=0.3445 tool_ok=0.6607 saved_tok_median=0 saved_positive=0.497 saved_ratio_deployed_UNRELIABLE=-0.01041 oracle_timing_ceiling=0.11168 headroom_captured=-0.0932 trunc_nofill=0.0915 trunc_inject=0.0612 adopted=0.6239 | θ=0.5 覆盖率 0.9097 调用一致率 0.3445;省token中位 0 tok、省为正 0.497。求和口径的省token比例 -0.01041 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.11168,现行只吃到 -0.0932 |
 | `20260801_0113_inject_aw_gptoss_r10` | 2026-08-01 01:13 | C2-3 | `442bdbd+dirty` | gpt-oss-120b | ok | n_fired=1061 n_injected=689 adopt_rate_inject=0.6168 adopt_rate_nofill=0.0971 repeat_rate_inject=0.3396 repeat_rate_nofill=0.8812 saved_tok_mean=33.5 saved_tok_median=-27 saved_positive_frac=0.4514 saved_early_d0_02=377.7 saved_late_d08_10=-696.8 late_trigger_frac=0.2177 | 注入被模型采纳(推进率 0.62 vs 不注入 0.10),但省token强依赖时机:思考前20%注入省377.7 tok,后40%注入亏636-697 tok;探针置信度触发有21.8%落在最差区间,总体因此拉平(中位-27)——死区在真实agent环境+真实探针驱动下首次复现,构成时机头的直接证据 |
 | `c2_alfworld` | 2026-07-31 23:01 | pipeline | `7805bdb+dirty` | - | ok | q36_tasks=474 gptoss_tasks=474 q36_events=9151 gptoss_events=13007 q36_win_rate=0.909 gptoss_win_rate=0.762 q36_illegal_rate=0.0174 gptoss_illegal_rate=0.0118 action_parse_rate=0.9995 tool_vocab=12 prior_go=0.505 | ALFWorld 官方分区 948/948 全清(q36 474/gptoss 474, train200+val140+test134 逐份全覆盖); 21842 条动作按 13 条 twl2 模板切得动 99.95%, 切不动的 12 条全是模型输出被截断的残句; 工具词表仅 12 类且 go 占 50.5% —— 与 appworld 的 143 类/先验 0.174 恰好相反, 工具格要证明有用必须显著超过 0.505 的先验 |
 | `c1_gptoss_cgen` | 2026-07-31 09:12 | pipeline | `15cfdc8+dirty` | Qwen3-0.6B-Base | ok | best_val_ce=0.4566 best_epoch=0 val_exact_call_ep0=0.425 val_exact_call_ep1=0.49 val_exact_call_ep2=0.485 risk=0.05 theta=0.975 n_events_fired=633 n_events_test=2138 tool_ok=0.9368 full_call_ok=0.7852 exact_call_ok=0.7852 params_all_ok=0.8262 parse_fail=1 parse_fail_rate=0.0016 noparam_rate=0.3223 wall_hours=5.21 | 迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044 |
@@ -144,66 +144,78 @@
 ### `20260801_0413_aw_gptoss_th0925`
 
 - **想验证什么**：θ 扫描曲线第六点的 plan 段(θ=0.925,触发 1061/2138 事件),与历史 run aw_gptoss_r10 同 θ 作 serving 侧对照:r10 是共享服务+concurrency 4,本点将跑专用服务+concurrency 16;plan 重新生成,不复用 r10 的 plan.jsonl
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:13 → 未收尾
+- **结论**：θ=0.925 覆盖率 0.4963 调用一致率 0.6466;省token中位 -40 tok、省为正 0.4344。求和口径的省token比例 -0.10299 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.2945,现行只吃到 -0.3497
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:13 → 2026-08-01 09:35
 - **代码**：`e945a97`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 5
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.925 miss_policy=skip stage=plan n_fired=1061
+- **数字**：theta=0.925 coverage=0.4963 n_fired=1061 n_inject=686 full_call_ok=0.6466 tool_ok=0.9057 saved_tok_median=-40 saved_positive=0.4344 saved_ratio_deployed_UNRELIABLE=-0.10299 oracle_timing_ceiling=0.2945 headroom_captured=-0.3497 trunc_nofill=0.0613 trunc_inject=0.0437 adopted=0.6297
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th0925`（不在 git 里）
 - **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.925 --out pipeline/inject/runs/aw_gptoss_th0925`
 
 ### `20260801_0407_aw_gptoss_th095`
 
 - **想验证什么**：θ 扫描曲线第 5 点的 plan 段(θ=0.95,触发 907/2138 事件);五点只差 --theta,其余参数逐字相同
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **结论**：θ=0.95 覆盖率 0.4242 调用一致率 0.6902;省token中位 -37 tok、省为正 0.4233。求和口径的省token比例 0.00446 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.34318,现行只吃到 0.013
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
 - **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 4
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.95 miss_policy=skip stage=plan n_fired=907
+- **数字**：theta=0.95 coverage=0.4242 n_fired=907 n_inject=626 full_call_ok=0.6902 tool_ok=0.925 saved_tok_median=-37 saved_positive=0.4233 saved_ratio_deployed_UNRELIABLE=0.00446 oracle_timing_ceiling=0.34318 headroom_captured=0.013 trunc_nofill=0.0805 trunc_inject=0.0479 adopted=0.6326
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th095`（不在 git 里）
 - **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.95 --out pipeline/inject/runs/aw_gptoss_th095`
 
 ### `20260801_0407_aw_gptoss_th0875`
 
 - **想验证什么**：θ 扫描曲线第 4 点的 plan 段(θ=0.875,触发 1276/2138 事件);五点只差 --theta,其余参数逐字相同
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **结论**：θ=0.875 覆盖率 0.5968 调用一致率 0.5768;省token中位 -27 tok、省为正 0.4592。求和口径的省token比例 -0.01397 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.25448,现行只吃到 -0.0549
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
 - **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.875 miss_policy=skip stage=plan n_fired=1276
+- **数字**：theta=0.875 coverage=0.5968 n_fired=1276 n_inject=736 full_call_ok=0.5768 tool_ok=0.8621 saved_tok_median=-27 saved_positive=0.4592 saved_ratio_deployed_UNRELIABLE=-0.01397 oracle_timing_ceiling=0.25448 headroom_captured=-0.0549 trunc_nofill=0.0854 trunc_inject=0.0353 adopted=0.6318
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th0875`（不在 git 里）
 - **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.875 --out pipeline/inject/runs/aw_gptoss_th0875`
 
 ### `20260801_0407_aw_gptoss_th080`
 
 - **想验证什么**：θ 扫描曲线第 3 点的 plan 段(θ=0.80,触发 1534/2138 事件);五点只差 --theta,其余参数逐字相同
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **结论**：θ=0.8 覆盖率 0.7175 调用一致率 0.472;省token中位 -29 tok、省为正 0.4544。求和口径的省token比例 -0.03605 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.17766,现行只吃到 -0.2029
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
 - **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.8 miss_policy=skip stage=plan n_fired=1534
+- **数字**：theta=0.8 coverage=0.7175 n_fired=1534 n_inject=724 full_call_ok=0.472 tool_ok=0.8044 saved_tok_median=-29 saved_positive=0.4544 saved_ratio_deployed_UNRELIABLE=-0.03605 oracle_timing_ceiling=0.17766 headroom_captured=-0.2029 trunc_nofill=0.0698 trunc_inject=0.0483 adopted=0.6257
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th080`（不在 git 里）
 - **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.80 --out pipeline/inject/runs/aw_gptoss_th080`
 
 ### `20260801_0407_aw_gptoss_th070`
 
 - **想验证什么**：θ 扫描曲线第 2 点的 plan 段(θ=0.70,触发 1718/2138 事件);五点只差 --theta,其余参数逐字相同
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **结论**：θ=0.7 覆盖率 0.8036 调用一致率 0.4173;省token中位 -15 tok、省为正 0.4742。求和口径的省token比例 -0.00796 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.15969,现行只吃到 -0.0498
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
 - **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 1
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.7 miss_policy=skip stage=plan n_fired=1718
+- **数字**：theta=0.7 coverage=0.8036 n_fired=1718 n_inject=717 full_call_ok=0.4173 tool_ok=0.7509 saved_tok_median=-15 saved_positive=0.4742 saved_ratio_deployed_UNRELIABLE=-0.00796 oracle_timing_ceiling=0.15969 headroom_captured=-0.0498 trunc_nofill=0.0838 trunc_inject=0.0502 adopted=0.6067
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th070`（不在 git 里）
 - **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.70 --out pipeline/inject/runs/aw_gptoss_th070`
 
 ### `20260801_0407_aw_gptoss_th050`
 
 - **想验证什么**：θ 扫描曲线第 1 点的 plan 段(θ=0.50,触发 1945/2138 事件);五点只差 --theta,其余参数逐字相同
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-01 04:07 → 未收尾
+- **结论**：θ=0.5 覆盖率 0.9097 调用一致率 0.3445;省token中位 0 tok、省为正 0.497。求和口径的省token比例 -0.01041 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.11168,现行只吃到 -0.0932
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
 - **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 0
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.5 miss_policy=skip stage=plan n_fired=1945
+- **数字**：theta=0.5 coverage=0.9097 n_fired=1945 n_inject=670 full_call_ok=0.3445 tool_ok=0.6607 saved_tok_median=0 saved_positive=0.497 saved_ratio_deployed_UNRELIABLE=-0.01041 oracle_timing_ceiling=0.11168 headroom_captured=-0.0932 trunc_nofill=0.0915 trunc_inject=0.0612 adopted=0.6239
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/inject/runs/aw_gptoss_th050`（不在 git 里）
 - **命令**：`./cprobe-env/bin/python pipeline/inject/replay_inject.py plan --ctool-run pipeline/runs/c1_gptoss_ctool --cgen-run pipeline/runs/c1_gptoss_cgen --data pipeline/data/aw_official_v1/gptoss --traj-root envs/runs/w0_aw_official/appworld_gptoss --miss-policy skip --theta 0.50 --out pipeline/inject/runs/aw_gptoss_th050`
 
