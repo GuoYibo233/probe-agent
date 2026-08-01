@@ -8,17 +8,19 @@ ARM="$1"
 ROOT=/home/y-guo/reproduce/new1
 LOG=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs
 cd "$ROOT"
+# effort 臂打专属 H200 副本与探针二号(8791,新 /render 才认 effort 字段;
+# 老 8790 会静默丢掉 effort 按 high 渲——绝不能把 effort 臂指过去)
 case "$ARM" in
-  probe)       EXTRA="" ;;
-  noprobe)     EXTRA="--no-probe" ;;
-  noprobe_low) EXTRA="--no-probe --effort low" ;;
-  noprobe_med) EXTRA="--no-probe --effort medium" ;;
+  probe)       EXTRA="";                        PORTS=(8114 8115 8116); PROBE=8790 ;;
+  noprobe)     EXTRA="--no-probe";              PORTS=(8114 8115 8116); PROBE=8790 ;;
+  noprobe_low) EXTRA="--no-probe --effort low"; PORTS=(8117);           PROBE=8791 ;;
+  noprobe_med) EXTRA="--no-probe --effort medium"; PORTS=(8118);        PROBE=8791 ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
 for s in $(seq 0 11); do
-  port=$((8114 + s % 3))
+  port=${PORTS[$((s % ${#PORTS[@]}))]}
   envs/appworld/venv/bin/python pipeline/inject/live_appworld.py \
-    --base-url http://tokyo108:$port/v1 --probe-url http://tokyo105:8790 \
+    --base-url http://tokyo108:$port/v1 --probe-url http://tokyo105:$PROBE \
     --split test_normal --max-steps 30 $EXTRA \
     --outdir pipeline/inject/runs/live_aw_gptoss/$ARM \
     --exp live_aw_$ARM --num-shards 12 --shard-id $s --resume \
