@@ -6,13 +6,14 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `live_aw_gptoss_v2` | 2026-08-02 05:47 | C2-3 | `f037661+dirty` | gpt-oss-120b | ok | probe_success=0.1905 noprobe_success=0.1726 w0_base_success=0.2857 probe_succ_n=32 noprobe_succ_n=29 w0_succ_n=48 n_tasks=168 probe_billed_tok=3347688 noprobe_billed_tok=3924543 w0_out_tok=4789358 n_spec=279 inject_per_task=1.66 spec_exec_ok=0.9892 contam_steps=0 ctx_overflow_tasks=0 overrun_events_probe=490 overrun_events_noprobe=1074 | 停止符修复后 v2:探针臂 32/168 vs 无探针 29/168,计费 token 还省 14.7%——同框架下探针不伤准确率纯赚 token;两臂较 v1(20/12)大幅回血但仍低于 w0 28.6%(贪心混沌+answer 冗余,已归因非 bug);污染 0/4692 步,64k 溢出 0(v1 为 27/39);LIVE_REPORT 在 NFS run 目录 |
 | `20260802_0306_live_aw_probe_effort` | 2026-08-02 03:06 | C2-3 | `003be1c+dirty` | gpt-oss-120b | ok | plow_success=0.0893 plow_success_n=15 pmed_success=0.0476 pmed_success_n=8 plow_billed_tok_sum=494590 pmed_billed_tok_sum=1360901 plow_inject_per_task=0.0595 pmed_inject_per_task=0.7202 plow_spec_tool_agree=0.0 pmed_spec_tool_agree=0.2893 n_tasks=168 | 探针出分布(high 档思考)即失灵:low 档几乎不触发(0.06 次/题,tool_agree=0)成绩无损微升 8.9%>6.5%;med 档频繁触发(0.72 次/题)但预测只对 29%,成绩反被拖低 4.8%<7.1%——θ/探针都须按档标定,跨档直接搬会伤成绩 |
 | `20260802_0240_live_aw_effort` | 2026-08-02 02:40 | C2-3 | `5297779+dirty` | gpt-oss-120b | ok | low_success=0.0655 low_success_n=11 med_success=0.0714 med_success_n=12 low_billed_tok_sum=519734 med_billed_tok_sum=1369178 n_tasks=168 | effort 降档=成绩塌方:low 6.5%/med 7.1% vs high 档基线 28.6%;med 比 low 多花 2.6 倍 token 几乎不涨——省 token 不能靠拧小 effort,这正是探针法的对照价值 |
 | `20260802_0136_live_aw_gptoss` | 2026-08-02 01:36 | C2-3 | `a5318bc+dirty` | gpt-oss-120b | ok | probe_success=0.119 probe_success_n=20 noprobe_success=0.0714 noprobe_success_n=12 w0_success=0.2857 probe_billed_tok=5322678 noprobe_billed_tok=5719476 probe_overflow400=27 noprobe_overflow400=39 probe_inject_per_task=1.3452 probe_spec_tool_agree=0.1947 nonov_live=0.093 nonov_w0=0.318 n_tasks=168 | 同一活跑框架内探针全面占优:成功率 11.9%>7.1%,token 省 7%,撞 64k 上限少 12 题;但框架本身未对齐 w0(剔撞线后 9.3% vs 31.8%),绝对值口径待修——归因候选:日期行/分段边界漂移 |
 | `20260801_2257_inject_aw_gptoss_splice` | 2026-08-01 22:57 | C2-3 | `19e0308+dirty` | gpt-oss-120b | ok | saved_med_skel_switch=239 saved_med_switch_only=143 saved_med_inject_stop=181 saved_med_skel_bare=69 saved_med_skel_a=42 saved_med_skel_b=27 nofill_health_med=3 skel_switch_rewritten=0.0 skel_switch_post_think=0 exec_match_skel_switch=0.728 exec_match_skel_switch_hit=0.803 exec_match_switch_only=0.538 jia_accept=0.668 bing_accept_len_med=8 bing_exact=0.128 echo_disagree=0.126 | 八臂拼回收官:skel_switch(转场+骨架)逐事件省 token 中位 +239 且零改写零接茬又想,执行一致率 72.8%(猜对桶 80.3%)反超大模型自写的 switch_only(53.8%,合理偏离致系统性低估);思考段骨架三臂只省 27-69 且 11-13% 被改写;nofill 体检 +3≈0 放行;甲接受率 66.8%,丙 token 接受 8/17,两路对账不一致率 12.6% |
 | `20260801_2257_aw_gptoss_splice_th0925_plan` | 2026-08-01 22:57 | C2-3 | `19e0308+dirty` | gpt-oss-120b | ok | n_planned=1061 n_gen_min_p=1061 gen_call_reproduced=1.0 name_hit=0.906 gen_min_p_median=0.9817 | plan 重跑全绿:1061 条全带 pred_id/pred_label/gen_min_p,gen_call 与旧 th0925 逐字复现 1061/1061,pred_label/tool_ok 互推自检过,name_hit 0.906 与 ctool 松档 precision 一致 |
 | `20260801_2100_ro1bf_gptoss_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_val_ce=0.1725 risk=0.05 theta=0.825 n_events_scored=34 parse_fail_rate=0.0 tool_ok=0.9412 params_all_ok=0.9412 full_call_ok=0.9412 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.825 full_call_ok 0.9412(触发事件 34,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
-| `20260801_2100_ro1aw_gptoss_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | running | - | - |
+| `20260801_2100_ro1aw_gptoss_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_val_ce=0.2444 risk=0.05 theta=0.95 n_events_scored=767 parse_fail_rate=0.0 tool_ok=0.9374 params_all_ok=0.7927 full_call_ok=0.7562 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.95 full_call_ok 0.7562(触发事件 767,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2100_ro1bf_q36_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_val_ce=0.092 risk=0.05 theta=0.8 n_events_scored=42 parse_fail_rate=0.0 tool_ok=0.9286 params_all_ok=0.881 full_call_ok=0.8571 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.8 full_call_ok 0.8571(触发事件 42,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
 | `20260801_2100_ro1bf_q35_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_val_ce=0.2587 risk=0.05 theta=0.875 n_events_scored=36 parse_fail_rate=0.0 tool_ok=0.8611 params_all_ok=0.7778 full_call_ok=0.75 theta_fire_risk10=0.975 theta_fire_risk05=null | risk0.05 档 θ=0.875 full_call_ok 0.75(触发事件 36,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=0.975/null |
 | `20260801_2100_ro1aw_q36_cgen` | 2026-08-01 21:00 | pipeline | `e7de0c8+dirty` | - | ok | best_val_ce=0.2454 risk=0.05 theta=0.975 n_events_scored=282 parse_fail_rate=0.0 tool_ok=0.9681 params_all_ok=0.961 full_call_ok=0.9433 theta_fire_risk10=null theta_fire_risk05=null | risk0.05 档 θ=0.975 full_call_ok 0.9433(触发事件 282,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点 |
@@ -30,7 +31,7 @@
 | `20260801_2033_ro1bf_q35_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.7323 temperature=1.6843 theta_risk10=0.8 theta_risk05=0.875 ro_coverage_test=0.5 nro_trigger_rate_test=0.0161 prior_baseline_collapsed=0.5167 coverage_risk1=0.2833 trig_acc_risk1=0.8824 coverage_risk05=0.25 trig_acc_risk05=0.9333 | risk0.1 档 θ=0.8 coverage 0.2833 / trig_acc 0.8824;risk0.05 档 θ=0.875 coverage 0.25 / trig_acc 0.9333;弃权类误触发率 0.0161,折叠先验基线 0.5167 |
 | `20260801_2033_ro1bf_gptoss_ctool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.8093 temperature=1.3038 theta_risk10=0.7 theta_risk05=0.825 ro_coverage_test=0.5862 nro_trigger_rate_test=0.0588 prior_baseline_collapsed=0.4679 coverage_risk1=0.3853 trig_acc_risk1=0.9048 coverage_risk05=0.3394 trig_acc_risk05=0.8919 | risk0.1 档 θ=0.7 coverage 0.3853 / trig_acc 0.9048;risk0.05 档 θ=0.825 coverage 0.3394 / trig_acc 0.8919;弃权类误触发率 0.0588,折叠先验基线 0.4679 |
 | `20260801_2033_ro1aw_gptoss_ctool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.7096 temperature=1.1144 theta_risk10=0.875 theta_risk05=0.95 ro_coverage_test=0.405 nro_trigger_rate_test=0.0164 prior_baseline_collapsed=0.4041 coverage_risk1=0.5767 trig_acc_risk1=0.8978 coverage_risk05=0.3606 trig_acc_risk05=0.9481 | risk0.1 档 θ=0.875 coverage 0.5767 / trig_acc 0.8978;risk0.05 档 θ=0.95 coverage 0.3606 / trig_acc 0.9481;弃权类误触发率 0.0164,折叠先验基线 0.4041 |
-| `20260801_2033_ro1aw_gptoss_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | running | - | - |
+| `20260801_2033_ro1aw_gptoss_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.6834 temperature=2.7261 theta_risk10=0.975 theta_risk05=null ro_coverage_test=0.698 nro_trigger_rate_test=0.2295 prior_baseline_collapsed=0.4041 coverage_risk1=0.1511 trig_acc_risk1=0.87 | risk0.1 档 θ=0.975 coverage 0.1511 / trig_acc 0.87;risk0.05 档 θ 无解;弃权类误触发率 0.2295,折叠先验基线 0.4041 |
 | `20260801_2033_ro1aw_q36_ctool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.641 temperature=1.4976 theta_risk10=0.925 theta_risk05=0.975 ro_coverage_test=0.1207 nro_trigger_rate_test=0.0037 prior_baseline_collapsed=0.2584 coverage_risk1=0.201 trig_acc_risk1=0.9352 coverage_risk05=0.0905 trig_acc_risk05=0.986 | risk0.1 档 θ=0.925 coverage 0.201 / trig_acc 0.9352;risk0.05 档 θ=0.975 coverage 0.0905 / trig_acc 0.986;弃权类误触发率 0.0037,折叠先验基线 0.2584 |
 | `20260801_2033_ro1aw_q36_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.5942 temperature=1.8111 theta_risk10=0.925 theta_risk05=null ro_coverage_test=0.3292 nro_trigger_rate_test=0.0172 prior_baseline_collapsed=0.2584 coverage_risk1=0.1387 trig_acc_risk1=0.9382 | risk0.1 档 θ=0.925 coverage 0.1387 / trig_acc 0.9382;risk0.05 档 θ 无解;弃权类误触发率 0.0172,折叠先验基线 0.2584 |
 | `20260801_2033_ro1aw_q35_ctool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.5872 temperature=1.4595 theta_risk10=0.875 theta_risk05=0.95 ro_coverage_test=0.1147 nro_trigger_rate_test=0.0013 prior_baseline_collapsed=0.2333 coverage_risk1=0.1985 trig_acc_risk1=0.9129 coverage_risk05=0.0882 trig_acc_risk05=0.9831 | risk0.1 档 θ=0.875 coverage 0.1985 / trig_acc 0.9129;risk0.05 档 θ=0.95 coverage 0.0882 / trig_acc 0.9831;弃权类误触发率 0.0013,折叠先验基线 0.2333 |
@@ -89,6 +90,19 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `live_aw_gptoss_v2`
+
+- **想验证什么**：停止符修复后 v2 重跑 high 双臂:替代 v1 口径;冒烟污染 0/169 步,截断兜底 70 次生效
+- **结论**：停止符修复后 v2:探针臂 32/168 vs 无探针 29/168,计费 token 还省 14.7%——同框架下探针不伤准确率纯赚 token;两臂较 v1(20/12)大幅回血但仍低于 w0 28.6%(贪心混沌+answer 冗余,已归因非 bug);污染 0/4692 步,64k 溢出 0(v1 为 27/39);LIVE_REPORT 在 NFS run 目录
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 05:47 → 2026-08-02 07:16
+- **代码**：`f037661`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU -
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：effort=high stopfix=4d20786 date_pin=2026-07-31
+- **数字**：probe_success=0.1905 noprobe_success=0.1726 w0_base_success=0.2857 probe_succ_n=32 noprobe_succ_n=29 w0_succ_n=48 n_tasks=168 probe_billed_tok=3347688 noprobe_billed_tok=3924543 w0_out_tok=4789358 n_spec=279 inject_per_task=1.66 spec_exec_ok=0.9892 contam_steps=0 ctx_overflow_tasks=0 overrun_events_probe=490 overrun_events_noprobe=1074
+- **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss_v2`（不在 git 里）
+- **命令**：`envs/serve_logs/live_arm_job.sh {probe,noprobe} live_aw_gptoss_v2 (12 shards/arm, --pool --resume, vLLM 8114-8116 tokyo108, probe tokyo105:8790 theta=0.925)`
 
 ### `20260802_0306_live_aw_probe_effort`
 
@@ -164,8 +178,10 @@
 
 ### `20260801_2100_ro1aw_gptoss_cgen`
 
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 21:00 → 未收尾
+- **结论**：risk0.05 档 θ=0.95 full_call_ok 0.7562(触发事件 767,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 07:13
 - **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **数字**：best_val_ce=0.2444 risk=0.05 theta=0.95 n_events_scored=767 parse_fail_rate=0.0 tool_ok=0.9374 params_all_ok=0.7927 full_call_ok=0.7562 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1bf_q36_cgen`
 
@@ -286,8 +302,10 @@
 
 ### `20260801_2033_ro1aw_gptoss_mtool`
 
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 20:33 → 未收尾
+- **结论**：risk0.1 档 θ=0.975 coverage 0.1511 / trig_acc 0.87;risk0.05 档 θ 无解;弃权类误触发率 0.2295,折叠先验基线 0.4041
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 07:13
 - **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **数字**：best_val_acc=0.6834 temperature=2.7261 theta_risk10=0.975 theta_risk05=null ro_coverage_test=0.698 nro_trigger_rate_test=0.2295 prior_baseline_collapsed=0.4041 coverage_risk1=0.1511 trig_acc_risk1=0.87
 
 ### `20260801_2033_ro1aw_q36_ctool`
 
