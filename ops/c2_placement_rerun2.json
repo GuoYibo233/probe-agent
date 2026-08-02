@@ -1,5 +1,0 @@
-[
-  {"model": "q36", "cell": "mtool", "host": "tokyo107", "gpu": 0},
-  {"model": "q36", "cell": "cgen",  "host": "tokyo107", "gpu": 1,
-   "extra": ["--grad-ckpt"]}
-]

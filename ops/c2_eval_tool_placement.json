@@ -1,6 +1,0 @@
-[
-  {"model": "q36",    "cell": "mtool", "host": "tokyo106", "gpu": 0},
-  {"model": "gptoss", "cell": "mtool", "host": "tokyo106", "gpu": 1},
-  {"model": "q36",    "cell": "ctool", "host": "tokyo106", "gpu": 2},
-  {"model": "gptoss", "cell": "ctool", "host": "tokyo106", "gpu": 3}
-]

@@ -1,1 +1,0 @@
-L2_mem_s1  # orphaned when GPU5 freed for another user, 2026-07-25 ~21:35; rerun on a surviving card after matrix done

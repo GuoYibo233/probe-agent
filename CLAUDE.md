@@ -50,11 +50,10 @@
 | 数据设定 | `DATA.md` | 人写，随数据版本更新 | 这批数据是怎么造出来的 |
 | 原始数据 | NFS，不进 git | 实验脚本 | 数据本体在哪 |
 
-- **开新实验之前先过 `DATA.md` §7 的检查清单**（版本 / 先验基线 / 档位编号 /
+- **开新实验之前先过 `DATA.md` 的检查清单**（版本 / 先验基线 / 档位编号 /
   耗时可比性 / 种子）。里面每一条都对应一个已经踩过的坑。
 - `DATA.md` 只写设定与口径，**不写结论**——结论归 `RESULTS.md`，否则会长成第二本账。
-- 词表只有一份：`plans/PLAINWORDS.md`。别在任务卡或状态书里另起一份。
-- 状态书同一时刻只留一份现役，旧的进 `plans/archive/`（索引见 `plans/README.md`）。
+- 代码地图在 `MAP.md`：每个程序是干什么的、怎么用。加新程序要更新对应行。
 - 发射时 `run.py record start`（自动抓 git HEAD），收尾时 `run.py record finish` 补数字，
   两步都写在 gpu-run skill 的 Phase 4 / 6a 里，跟着流水线走就不会漏。
 - `RESULTS.md` 是渲染产物，**不要手改**；`runs.jsonl` append-only，只增不改。
@@ -89,7 +88,7 @@
 - **大产物一律直接写 net 盘**（2026-08-01 起，home quota 打满后的铁律）：训练产物 /
   原始轨迹 / 数据集 / checkpoint 都放
   `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/`（镜像本目录结构），
-  home 里只留代码、笔记和软链接。已搬目录与多会话协调见 `ops/DISK_MIGRATION.md`。
+  home 里只留代码、笔记和软链接。
 - 环境一律 uv 管理。
 - 模型权重下载到 `/net/tokyo100-10g/data/str01_01/y-guo/models`，不放 /home。
 - 动手前先取得同意；一个请求只做那一件事。
