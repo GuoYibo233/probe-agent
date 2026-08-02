@@ -375,6 +375,12 @@ TASKS = {
         stage="ops", py="sys", script="ops/launch_probe.py",
         gate=True, desc="训练四格排卡发射器(smoke/full;格表从本文件 CELLS 读)",
         notes=["它自己 ssh+tmux 发射,所以出手前过脏树门禁;--dry-run 不拦"]),
+    "launch-eval": dict(
+        stage="ops", py="sys", script="ops/launch_eval.py",
+        gate=True, desc="评测排卡发射器(tool 档先跑,call 档吃它的触发点)",
+        notes=["它自己 ssh+tmux 发射,所以出手前过脏树门禁;--dry-run 不拦",
+               "call 档发射前硬检查依赖的工具格有没有 REPLAY_REPORT.json,"
+               "没有就退——SKILL.md Phase C4 的依赖顺序不许颠倒"]),
 }
 
 # ---------------------------------------------------------------- 配方注册表
