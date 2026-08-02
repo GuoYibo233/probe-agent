@@ -29,6 +29,16 @@ envs/alfworld/logs/
 fig1_pilot/alfworld_data/
 traj_pipeline/data/
 
+# ── 已搬 NFS 的目录软链（git 不穿软链，带尾斜杠或 /** 的规则匹配不到链本体，
+#    必须裸名；目录将来变回实体也照样命中）
+envs/bert_runs
+fig1_pilot/alfworld_data
+envs/toolhop
+envs/stabletoolbench
+
+# ── 回放执行缓存（exec_calls 的结果缓存，纯产物）
+pipeline/inject/exec_cache/
+
 # ── 实验产物目录：只保留 .md 报告，其余（轨迹 / 权重 / 中间文件）不入库
 envs/runs/**
 !envs/runs/**/
@@ -75,7 +85,6 @@ __pycache__/
 
 # ── 本地设置（.claude/skills 与 agents 是工程资产，要入库）
 .claude/settings.local.json
-envs/bert_runs/
 
 # ── C3 任务对数据本体（种子 20260729 可逐字节重生成，stats.json 统计进库）
 benchmark_design/*.jsonl

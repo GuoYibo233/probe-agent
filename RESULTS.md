@@ -6,6 +6,8 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `live_aw_gptoss_v3` | 2026-08-02 17:45 | C2-3 | `9f2e870+dirty` | gpt-oss-120b | running | - | - |
+| `aw_pathdiag` | 2026-08-02 17:04 | C2-3 | `d3989ec+dirty` | gpt-oss-120b | running | - | - |
 | `live_aw_gptoss_v2` | 2026-08-02 05:47 | C2-3 | `f037661+dirty` | gpt-oss-120b | ok | probe_success=0.1905 noprobe_success=0.1726 w0_base_success=0.2857 probe_succ_n=32 noprobe_succ_n=29 w0_succ_n=48 n_tasks=168 probe_billed_tok=3347688 noprobe_billed_tok=3924543 w0_out_tok=4789358 n_spec=279 inject_per_task=1.66 spec_exec_ok=0.9892 contam_steps=0 ctx_overflow_tasks=0 overrun_events_probe=490 overrun_events_noprobe=1074 | 停止符修复后 v2:探针臂 32/168 vs 无探针 29/168,计费 token 还省 14.7%——同框架下探针不伤准确率纯赚 token;两臂较 v1(20/12)大幅回血但仍低于 w0 28.6%(贪心混沌+answer 冗余,已归因非 bug);污染 0/4692 步,64k 溢出 0(v1 为 27/39);LIVE_REPORT 在 NFS run 目录 |
 | `20260802_0306_live_aw_probe_effort` | 2026-08-02 03:06 | C2-3 | `003be1c+dirty` | gpt-oss-120b | ok | plow_success=0.0893 plow_success_n=15 pmed_success=0.0476 pmed_success_n=8 plow_billed_tok_sum=494590 pmed_billed_tok_sum=1360901 plow_inject_per_task=0.0595 pmed_inject_per_task=0.7202 plow_spec_tool_agree=0.0 pmed_spec_tool_agree=0.2893 n_tasks=168 | 探针出分布(high 档思考)即失灵:low 档几乎不触发(0.06 次/题,tool_agree=0)成绩无损微升 8.9%>6.5%;med 档频繁触发(0.72 次/题)但预测只对 29%,成绩反被拖低 4.8%<7.1%——θ/探针都须按档标定,跨档直接搬会伤成绩 |
 | `20260802_0240_live_aw_effort` | 2026-08-02 02:40 | C2-3 | `5297779+dirty` | gpt-oss-120b | ok | low_success=0.0655 low_success_n=11 med_success=0.0714 med_success_n=12 low_billed_tok_sum=519734 med_billed_tok_sum=1369178 n_tasks=168 | effort 降档=成绩塌方:low 6.5%/med 7.1% vs high 档基线 28.6%;med 比 low 多花 2.6 倍 token 几乎不涨——省 token 不能靠拧小 effort,这正是探针法的对照价值 |
@@ -90,6 +92,28 @@
 | `20260729_2106_bert_replay_bfcl_v2` | 2026-07-29 21:06 | C2-2t | `8cce422+dirty` | modernbert-base | ok | best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038 | bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门 |
 
 ## 逐条详情
+
+### `live_aw_gptoss_v3`
+
+- **想验证什么**：commentary 修复后正式双臂:v2 口径+parse_step 对齐 HarmonyParser+131k 服务;替代 v2 绝对值
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-02 17:45 → 未收尾
+- **代码**：`9f2e870`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU -
+- **模型 / 种子**：gpt-oss-120b / 100
+- **参数**：commentary_fix=937b3a2 stopfix=4d20786 max_model_len=131072
+- **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss_v3`（不在 git 里）
+- **命令**：`envs/serve_logs/live_v3_job.sh {probe,noprobe} live_aw_gptoss_v3 (12 shards/arm, vLLM 131k x3 tokyo108:8103/8106/8107, probe tokyo105:8790 theta=0.925)`
+
+### `aw_pathdiag`
+
+- **想验证什么**：排查活跑 noprobe 17.3% vs w0 28.6%:w0 脚本今日重跑测可复现性,活跑单发版测分段缝/上下文因素
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-02 17:04 → 未收尾
+- **代码**：`d3989ec`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU -
+- **模型 / 种子**：gpt-oss-120b / 100
+- **参数**：arm_chat=run_appworld_chat_high arm_np1shot=live_tail8192
+- **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/aw_pathdiag`（不在 git 里）
+- **命令**：`envs/serve_logs/awdiag_job.sh {chat,np1shot}; vLLM x3 native-131k (w0 同款无 --max-model-len)`
 
 ### `live_aw_gptoss_v2`
 
