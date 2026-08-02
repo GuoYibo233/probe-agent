@@ -42,6 +42,21 @@ case "$ARM" in
         --num-shards 6 --shard-id $s --resume \
         > "$LOG/new1_awdiag_np1shot_s${s}.log" 2>&1 &
     done ;;
+  np1shot_fp)
+    # 修复后解析 + 每步一枪(无分段缝):与 v3 noprobe 只差 tail 8192,
+    # 隔离"1024 分段缝"对残余 answer 乱塞(v3np 22 题纯冤死)的贡献。
+    OUT=$NFS/pipeline/inject/runs/aw_pathdiag/np1shot_fixedparser
+    mkdir -p "$OUT"
+    rm -rf "$OUT/.claims"
+    for s in $(seq 0 5); do
+      port=${PORTS[$((s % 3))]}
+      envs/appworld/venv/bin/python pipeline/inject/live_appworld.py \
+        --base-url http://tokyo108:$port/v1 --probe-url http://tokyo105:8790 \
+        --split test_normal --max-steps 30 --no-probe --tail-tokens 8192 \
+        --pool --outdir "$OUT" --exp awdiag_np1shot_fp \
+        --num-shards 6 --shard-id $s --resume \
+        > "$LOG/new1_awdiag_np1shot_fp_s${s}.log" 2>&1 &
+    done ;;
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
 wait
