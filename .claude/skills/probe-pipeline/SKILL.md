@@ -20,7 +20,7 @@ version: 1.0.0
 工程规则的上位法仍是 `CLAUDE.md`；GPU 发射的上位法仍是 `.claude/skills/gpu-run/SKILL.md`。
 **本 skill 不自己发射 GPU 任务**——凡是要占卡的步骤一律转 gpu-run。
 
-**统一入口（2026-08-02 起）**：仓库根 `run.py` 是全链 52 个脚本的运行注册表
+**统一入口（2026-08-02 起）**：仓库根 `run.py` 是全链 59 个任务的运行注册表
 （解释器分派 / 参数透传 / GPU 任务只拼命令交 gpu-run / 多步配方），
 `python3 run.py list` / `show <task>` / `selfcheck` 可查。本 skill 的命令表仍是
 参数细节的权威；解释器用哪个以 run.py 注册表为准。**任何扩展在改代码的同一个
@@ -61,7 +61,7 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 
 **这一段全部转 gpu-run skill**，本 skill 只负责给它正确的输入和验收标准。
 
-1. 生成发射脚本：`python3 pipeline/collect/gen_launch.py --config <manifest.json>`
+1. 生成发射脚本：`python3 run.py gen-launch --config <manifest.json>`
    （纯 CPU，只生成不执行；产出 `launch_servers.py` / `launch_clients.sh` / `MANIFEST.md`）
 2. **派 gpu-runner** 起服务 + 发客户端。服务侧天花板是 tokyo108 六张大卡——
    27B 权重 54G、gpt-oss 63G，A6000 的 48G 装不下，一律单卡一实例。
@@ -135,7 +135,7 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 不必等训练全批收官，**逐格收官逐格派评测**（同一个 subagent 用 SendMessage 续派）。
 
 ### C5 矩阵汇总
-`python3 pipeline/eval/summarize_matrix.py --runs-dir ... --out ... --risk 0.05`
+`python3 run.py matrix --runs-dir ... --out ... --risk 0.05`
 两档各出一份表。⚠️ 这个脚本有三个显示局限（N/A 显示成 PENDING、
 表固定读单一风险档、参数格两列无条件读可能混档），
 **引用矩阵表时必须配文字说明**，别让读者误读。

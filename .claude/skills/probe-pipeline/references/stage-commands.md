@@ -1,6 +1,7 @@
 # stage-commands — 五段流水线的照抄命令表
 
-本文件是 collect / annotate / train / eval / inject 五段的命令模板,接口逐字抄自 `pipeline/` 源码(2026-07-31 c1 批次的代码状态),照抄替换占位符即可跑。
+本文件是 collect / annotate / train / eval / inject 五段的命令模板,参数接口逐字抄自 `pipeline/` 源码(2026-07-31 c1 批次的代码状态),照抄替换占位符即可跑。
+**所有命令一律从仓库根 `run.py` 进(2026-08-02 起的 CLAUDE.md 铁律),不许直接调底层脚本**:解释器由注册表选、固定参数由注册表带、GPU 任务只拼命令交 gpu-run。本文件给的是每个任务要传哪些参数;任务名与解释器的真源是 `run.py`(`python3 run.py list` / `show <task>` 可查)。
 配套的流程说明在同目录上一层的 `SKILL.md`;判分口径与数据设定不在本文件,在 `references/invariants.md`。
 占位符约定:`<MODEL>` = q35/q36/gptoss 之类的模型短名,`<BATCH>` = 批次前缀(如 c1),`<ENV>` = appworld/bfcl/tales,`<DATA_ROOT>` = 数据集目录(如 `pipeline/data/aw_official_v1/<MODEL>`)。
 
@@ -11,7 +12,7 @@
 | mbert-env | `/home/y-guo/reproduce/new1/mbert-env/bin/python` | 4.57.6 | ModernBERT:mtool / mext,以及评它们的 eval |
 | cprobe-env | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` | 5.14.1 | 因果模型:ctool / cgen,以及评它们的 eval |
 
-两个环境互不升级(混合架构在旧版分块增量喂会静默算错,这是钉版本的原因)。**纯 CPU 脚本**(只用标准库,任意 `python3`,不占卡):`collect/gen_launch.py`、`annotate/build.py`、`annotate/param_label.py`、`annotate/accept_v3diff.py`、`eval/summarize_matrix.py`。其余全部要显卡。注意 `annotate/check_callstr.py` **不在**这份名单里:它不占卡但 import 链上有 torch,必须用 cprobe-env(52 个脚本各用哪个解释器的完整地图在仓库根 `run.py` 的注册表,`python3 run.py show <task>` 可查)。
+两个环境互不升级(混合架构在旧版分块增量喂会静默算错,这是钉版本的原因)。**走 run.py 就不用自己选解释器**——上表只是让你看懂报错来自哪条线。**纯 CPU 任务**(不占卡,run.py 直接跑):`gen-launch`、`ann-build`、`ann-params`、`ann-accept-v3diff`、`matrix`、`check-bundle-mbert`。其余要显卡的任务 run.py 只打印命令,发射交 gpu-run。注意 `ann-check-callstr` 是第三类:不占卡,但 import 链上有 torch,注册表给它钉的是 cprobe-env 并清空 `CUDA_VISIBLE_DEVICES`——绕过 run.py 手写 `python3 pipeline/annotate/check_callstr.py` 必死在 ModuleNotFoundError。59 个任务各用哪个解释器的完整地图在 `run.py` 的注册表,`python3 run.py show <task>` 可查。
 
 | 名目 | 路径 |
 |---|---|
@@ -36,10 +37,10 @@
 ```bash
 cd /home/y-guo/reproduce/new1
 # 试生成(先看一眼,绝不碰 envs/)
-python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_<BATCH>.json \
+python3 run.py gen-launch --config pipeline/collect/manifest_<BATCH>.json \
   --dry-run --out-override /tmp/genlaunch_<BATCH>/
 # 正式生成 -> envs/runs/<run_id>/
-python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_<BATCH>.json
+python3 run.py gen-launch --config pipeline/collect/manifest_<BATCH>.json
 ```
 
 | flag | 必填 | 说明 |
@@ -63,16 +64,22 @@ python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_<BATCH
 
 ```bash
 cd /home/y-guo/reproduce/new1
-python3 pipeline/annotate/build.py         --config pipeline/configs/<BATCH>_<MODEL>.json
-python3 pipeline/annotate/param_label.py   --config pipeline/configs/<BATCH>_<MODEL>.json
-cprobe-env/bin/python pipeline/annotate/check_callstr.py --config pipeline/configs/<BATCH>_<MODEL>.json
+# 三步一条链(推荐):build -> param_label -> check_callstr,同一份 config
+python3 run.py recipe annotate-chain --set config=pipeline/configs/<BATCH>_<MODEL>.json
+# 或者逐步跑
+python3 run.py ann-build         --config pipeline/configs/<BATCH>_<MODEL>.json
+python3 run.py ann-params        --config pipeline/configs/<BATCH>_<MODEL>.json
+python3 run.py ann-check-callstr --config pipeline/configs/<BATCH>_<MODEL>.json
 # 可选:改过 rules.py/build.py 后的一致性验收(路径全写死,无参数)
-python3 pipeline/annotate/accept_v3diff.py
+python3 run.py ann-accept-v3diff
 ```
 
-第三步 `check_callstr.py` 是 **G19–G22 的实现**(不占卡,但**必须用 cprobe-env**
-——它 import eval_causal_call → torch,系统 python3 没有,写 python3 必死在
-ModuleNotFoundError;必须在前两步之后跑),产物
+配方跑完看 `python3 run.py status`;中途炸了修完接着走
+`python3 run.py recipe annotate-chain --id <id> --resume`。
+
+第三步 `ann-check-callstr` 是 **G19–G22 的实现**(不占卡,但注册表给它钉了
+cprobe-env——脚本 import eval_causal_call → torch,系统 python3 没有;
+必须在前两步之后跑),产物
 `<DATA_ROOT>/CALLSTR_CHECK.md`;它同时做五道硬门禁与四类"只报不拦"的已知偏差,
 细节见 `gates.md §1` 的 G19–G22。
 
@@ -81,18 +88,21 @@ ModuleNotFoundError;必须在前两步之后跑),产物
 
 ```bash
 cd /home/y-guo/reproduce/new1
-P=cprobe-env/bin/python
 # ① 题单:先 --dry-run 看统计,再落盘(第二次跑会被"不静默覆盖"门禁挡住,除非 --force)
-$P pipeline/collect/gen_bfcl_splits.py --dry-run
-$P pipeline/collect/gen_bfcl_splits.py --out-dir pipeline/splits/bfcl_mtb_v1
+python3 run.py gen-bfcl-splits --dry-run
+python3 run.py gen-bfcl-splits --out-dir pipeline/splits/bfcl_mtb_v1
 wc -l pipeline/splits/bfcl_mtb_v1/{train,val,test}.txt      # 必须 140 / 40 / 20
-# ② 三个模型各三步
+# ② 三个模型各三步(等价写法:三次 recipe annotate-chain,每次换 config)
 for M in q35 q36 gptoss; do
-  $P pipeline/annotate/build.py         --config pipeline/configs/bfcl_$M.json || break
-  $P pipeline/annotate/param_label.py   --config pipeline/configs/bfcl_$M.json || break
-  $P pipeline/annotate/check_callstr.py --config pipeline/configs/bfcl_$M.json || break
+  python3 run.py ann-build         --config pipeline/configs/bfcl_$M.json || break
+  python3 run.py ann-params        --config pipeline/configs/bfcl_$M.json || break
+  python3 run.py ann-check-callstr --config pipeline/configs/bfcl_$M.json || break
 done
 ```
+
+其他环境的题单生成器同样在注册表里,换任务名即可:
+`gen-alf-splits`(ALFWorld,⚠️ 无防覆盖门禁)、`gen-tau2-splits`(tau2 三域)、
+`gen-toolhop-splits`(ToolHop 695/200/100)。
 
 两脚本共用同一份 config,**一模型一份**。config 字段(照抄 `pipeline/configs/aw_q35.json`):
 
@@ -120,16 +130,24 @@ done
 
 先冒烟(每格加 `--smoke`,产物写 `pipeline/runs/smoke/`,不污染正式目录),再全量。以下是 c1 批次**真实跑过的 12 条命令**的形态(每格一条,只有模型段不同):
 
+四格都是发射类任务:`run.py` 只把完整命令**拼出来打印**(解释器与脚本路径由
+注册表填,不带 cd/CUDA_VISIBLE_DEVICES/tee——那是 gpu-run 发射模板的活),
+发射本身走 gpu-run。⚠️ 出命令前过脏树门禁:`git status --porcelain` 非空就拒绝,
+先 commit;非要跑加 `--allow-dirty`。
+
 ```bash
-# mtool  [mbert-env]
-/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_tool.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_mtool
-# mext   [mbert-env]
-/home/y-guo/reproduce/new1/mbert-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_mbert_extract.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_mext
-# ctool  [cprobe-env]  注意 --base qwen 必填、--align-tol 是唯一动过的超参
-/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_ctool --align-tol 3e-4
-# cgen   [cprobe-env]  没有 --base,底座硬编码 Qwen3-0.6B-Base
-/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /home/y-guo/reproduce/new1/pipeline/data/aw_official_v1/q35 --out /home/y-guo/reproduce/new1/pipeline/runs/c1_q35_cgen
+cd /home/y-guo/reproduce/new1
+R=pipeline/runs; D=pipeline/data/aw_official_v1
+python3 run.py train-mtool --data $D/q35 --out $R/c1_q35_mtool
+python3 run.py train-mext  --data $D/q35 --out $R/c1_q35_mext
+# ctool 的 --base qwen 已固定在注册表里,不用再传;--align-tol 是唯一动过的超参
+python3 run.py train-ctool --data $D/q35 --out $R/c1_q35_ctool --align-tol 3e-4
+# cgen 没有 --base,底座硬编码 Qwen3-0.6B-Base
+python3 run.py train-cgen  --data $D/q35 --out $R/c1_q35_cgen
 ```
+
+一把发全批走排卡发射器 `python3 run.py launch-probe`(格表的唯一真源是 `run.py`
+的 `CELLS`,`ops/launch_probe.py` 从它 import);先 `--dry-run` 看机位。
 
 换批次时把 `q35` 换成 `<MODEL>`、`c1` 换成 `<BATCH>`、数据集名换掉即可。run_id 一律 `<BATCH>_<MODEL>_<格名>`,四处一致(数据目录名 / tmux session / 台账 name / commit message)。
 
@@ -175,30 +193,36 @@ done
 
 ```bash
 cd /home/y-guo/reproduce/new1
-R=/home/y-guo/reproduce/new1/pipeline/runs; D=/home/y-guo/reproduce/new1/pipeline/data/aw_official_v1
+R=pipeline/runs; D=pipeline/data/aw_official_v1
 
-# 工具格:mbert 头用 mbert-env,causal 头用 cprobe-env(它要 import pipeline/train/train_causal_tool.py)
-mbert-env/bin/python  pipeline/eval/eval_tool.py --env <ENV> --run $R/<BATCH>_<MODEL>_mtool --data $D/<MODEL>
-cprobe-env/bin/python pipeline/eval/eval_tool.py --env <ENV> --head causal --run $R/<BATCH>_<MODEL>_ctool --data $D/<MODEL>
+# 工具格:同一个 eval_tool.py 按 --head 分岔成两条任务,解释器由注册表选
+# (mbert 头 → mbert-env;causal 头 → cprobe-env,它要 import train_causal_tool.py)
+python3 run.py eval-tool-mbert  --env <ENV> --run $R/<BATCH>_<MODEL>_mtool --data $D/<MODEL>
+python3 run.py eval-tool-causal --env <ENV> --run $R/<BATCH>_<MODEL>_ctool --data $D/<MODEL>
 
 # 参数格
-mbert-env/bin/python  pipeline/eval/eval_mbert_call.py  --env <ENV> --run $R/<BATCH>_<MODEL>_mtool \
+python3 run.py eval-mcall --env <ENV> --run $R/<BATCH>_<MODEL>_mtool \
   --extractor $R/<BATCH>_<MODEL>_mext --data $D/<MODEL>
-cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
+python3 run.py eval-ccall --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
   --cgen-run $R/<BATCH>_<MODEL>_cgen --data $D/<MODEL>
 
-# 汇总(纯 CPU,缺报告的格自动标 PENDING,可边跑边看)
-python3 pipeline/eval/summarize_matrix.py --runs-dir $R --out $R/MATRIX_REPORT.md --prefix <BATCH>
-python3 pipeline/eval/summarize_matrix.py --runs-dir $R --out $R/MATRIX_REPORT_risk10.md --prefix <BATCH> --risk 0.1
+# 汇总(纯 CPU,run.py 直接跑;缺报告的格自动标 PENDING,可边跑边看)
+python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT.md --prefix <BATCH>
+python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT_risk10.md --prefix <BATCH> --risk 0.1
 
 # "只读+弃权"批(ro1 起):三个 eval 都加 --readonly-env <ENV>(须与训练侧一致,双向保险丝见 §4.4);
 # 参数格另可加 --self-fire 出自主开火块。ro1 实跑形态:
-mbert-env/bin/python  pipeline/eval/eval_tool.py --env bfcl --run $R/ro1bf_q35_mtool --data <D>/q35 --readonly-env bfcl
-mbert-env/bin/python  pipeline/eval/eval_mbert_call.py --env bfcl --run $R/ro1bf_q35_mtool \
-  --extractor $R/ro1bf_q35_mext --data <D>/q35 --readonly-env bfcl --self-fire
-cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env bfcl --ctool-run $R/ro1bf_q35_ctool \
-  --cgen-run $R/ro1bf_q35_cgen --data <D>/q35 --readonly-env bfcl --self-fire
+python3 run.py eval-tool-mbert --env bfcl --run $R/ro1bf_q35_mtool --data $D/q35 --readonly-env bfcl
+python3 run.py eval-mcall --env bfcl --run $R/ro1bf_q35_mtool \
+  --extractor $R/ro1bf_q35_mext --data $D/q35 --readonly-env bfcl --self-fire
+python3 run.py eval-ccall --env bfcl --ctool-run $R/ro1bf_q35_ctool \
+  --cgen-run $R/ro1bf_q35_cgen --data $D/q35 --readonly-env bfcl --self-fire
 ```
+
+四个 eval 任务全是发射类:`run.py` 只打印命令,发射交 gpu-run,出命令前过脏树门禁。
+`--head mbert` / `--head causal` 已固定在注册表里,**不要再手传**。
+排卡一把发走 `python3 run.py launch-eval`——它在发 call 档前硬检查依赖的工具格
+有没有 `REPLAY_REPORT.json`,没有就退,替 §4.1 的依赖顺序上锁。
 
 ### 4.3 `--risk` 双档策略
 
@@ -244,13 +268,15 @@ cprobe-env/bin/python pipeline/eval/eval_causal_call.py --env bfcl --ctool-run $
 
 ```bash
 cd /home/y-guo/reproduce/new1
-# mbert 头(mtool/mext 产物);CPU 就能跑,不必占卡
-mbert-env/bin/python pipeline/inject/check_bundle.py --head mbert --device cpu \
-  --run pipeline/runs/<BATCH>_<MODEL>_mtool --data <DATA_ROOT>
-# causal 头(ctool 产物)
-cprobe-env/bin/python pipeline/inject/check_bundle.py --head causal \
-  --run pipeline/runs/<BATCH>_<MODEL>_ctool --data <DATA_ROOT>
+# mbert 头(mtool/mext 产物);注册表已带 --head mbert --device cpu,run.py 直接跑,不占卡
+python3 run.py check-bundle-mbert --run pipeline/runs/<BATCH>_<MODEL>_mtool --data <DATA_ROOT>
+# causal 头(ctool 产物);注册表已带 --head causal,默认 cuda
+python3 run.py check-bundle-causal --run pipeline/runs/<BATCH>_<MODEL>_ctool --data <DATA_ROOT>
 ```
+
+⚠️ 两条的执行方式不一样:`check-bundle-mbert` 是 CPU 任务,run.py 当场跑完出结果;
+`check-bundle-causal` 在注册表里标了 `gpu=True`,run.py **只打印命令**交 gpu-run
+——handoff 是按任务定的,加 `--device cpu` 也照样只打印,不会当场执行。
 
 | flag | 必填 | 说明 |
 |---|---|---|
@@ -271,17 +297,20 @@ cprobe-env/bin/python pipeline/inject/check_bundle.py --head causal \
 从零到矩阵表。`(CPU)` = 不占卡直接跑,`(GPU)` = **走 gpu-run skill 发射,不要手搓 ssh/nohup**。
 
 ```
-S1 (CPU)  gen_launch.py --config manifest_<BATCH>.json --dry-run --out-override /tmp/... → 看清单
-S2 (CPU)  gen_launch.py --config manifest_<BATCH>.json                    → envs/runs/<BATCH>/
+S1 (CPU)  run.py gen-launch --config manifest_<BATCH>.json --dry-run --out-override /tmp/... → 看清单
+S2 (CPU)  run.py gen-launch --config manifest_<BATCH>.json                → envs/runs/<BATCH>/
 S3 (GPU)  launch_servers.py → smoke 每模型 1 题 → launch_clients.sh       ★ 采集,耗时最长
-S4 (CPU)  build.py --config configs/<BATCH>_<MODEL>.json                  ← 等 S3 轨迹落齐
-S5 (CPU)  param_label.py --config 同一份 config                            ← 等 S4 的 jsonl
-S6 (GPU)  四格 --smoke,产物进 pipeline/runs/smoke/                        ← 等 S5
-S7 (CPU)  check_bundle.py --device cpu 对 smoke 产物跑一遍                 ← 等 S6
-S8 (GPU)  四格全量训练                                                     ← 等 S7 放行
-S9 (GPU)  eval_tool.py × 6(每模型 mtool + ctool)                         ← 等 S8 对应格训完
-S10(GPU)  eval_mbert_call.py(吃同模型 mtool)/ eval_causal_call.py(吃同模型 ctool) ← 等 S9
-S11(CPU)  summarize_matrix.py 出 0.05 与 0.1 两档表                        ← 随时可跑,缺的标 PENDING
+          (这两个是 gen-launch 的生成物,一次性发射器不进注册表)
+S4 (CPU)  run.py ann-build  --config configs/<BATCH>_<MODEL>.json         ← 等 S3 轨迹落齐
+S5 (CPU)  run.py ann-params --config 同一份 config                        ← 等 S4 的 jsonl
+          (S4+S5+check 也可一条 run.py recipe annotate-chain --set config=...)
+S6 (GPU)  run.py train-<格> ... --smoke,产物进 pipeline/runs/smoke/       ← 等 S5
+S7 (CPU)  run.py check-bundle-mbert 对 smoke 产物跑一遍                    ← 等 S6
+S8 (GPU)  run.py train-<格> 四格全量(或 run.py launch-probe 一把排卡)     ← 等 S7 放行
+S9 (GPU)  run.py eval-tool-mbert / eval-tool-causal × 6                   ← 等 S8 对应格训完
+S10(GPU)  run.py eval-mcall(吃同模型 mtool)/ eval-ccall(吃同模型 ctool) ← 等 S9
+          (S9+S10 排卡一把发走 run.py launch-eval,它替依赖顺序上锁)
+S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             ← 随时可跑,缺的标 PENDING
 ```
 
 并行/串行:
@@ -289,7 +318,7 @@ S11(CPU)  summarize_matrix.py 出 0.05 与 0.1 两档表                        
 - **S8 四格 × 三模型 = 12 个 run 全并行**,只受卡数限制(c1 批次:tokyo105 八卡 + tokyo106 四卡)。
 - **S9 六个并行**;S10 必须等对应的 S9,因为它要读 `REPLAY_REPORT.json` 的温度/θ 与 `logits_test.pt`。
 - S11 任何时候都能跑,不完整就是一张带 PENDING 的表。
-- 每次 GPU 发射前先 commit(记录里的 HEAD 只有工作树干净时才追得回真实代码),发射后双登记 `ops/gpu_jobs.py register` + `ops/record.py start`,收尾 `finish`。
+- 每次 GPU 发射前先 commit(记录里的 HEAD 只有工作树干净时才追得回真实代码;run.py 对发射类任务是**硬门禁**,脏树直接拒绝出命令),发射后双登记 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...`,收尾各跑一次 `finish`。
 
 ---
 
