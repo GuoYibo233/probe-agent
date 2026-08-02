@@ -39,14 +39,14 @@
 | `20260801_2033_ro1aw_q36_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.5942 temperature=1.8111 theta_risk10=0.925 theta_risk05=null ro_coverage_test=0.3292 nro_trigger_rate_test=0.0172 prior_baseline_collapsed=0.2584 coverage_risk1=0.1387 trig_acc_risk1=0.9382 | risk0.1 档 θ=0.925 coverage 0.1387 / trig_acc 0.9382;risk0.05 档 θ 无解;弃权类误触发率 0.0172,折叠先验基线 0.2584 |
 | `20260801_2033_ro1aw_q35_ctool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.5872 temperature=1.4595 theta_risk10=0.875 theta_risk05=0.95 ro_coverage_test=0.1147 nro_trigger_rate_test=0.0013 prior_baseline_collapsed=0.2333 coverage_risk1=0.1985 trig_acc_risk1=0.9129 coverage_risk05=0.0882 trig_acc_risk05=0.9831 | risk0.1 档 θ=0.875 coverage 0.1985 / trig_acc 0.9129;risk0.05 档 θ=0.95 coverage 0.0882 / trig_acc 0.9831;弃权类误触发率 0.0013,折叠先验基线 0.2333 |
 | `20260801_2033_ro1aw_q35_mtool` | 2026-08-01 20:33 | pipeline | `cd37da7+dirty` | - | ok | best_val_acc=0.544 temperature=1.9931 theta_risk10=0.975 theta_risk05=0.975 ro_coverage_test=0.0066 nro_trigger_rate_test=0.0013 prior_baseline_collapsed=0.2333 coverage_risk1=0.0054 trig_acc_risk1=0.8889 coverage_risk05=0.0054 trig_acc_risk05=0.8889 | risk0.1 档 θ=0.975 coverage 0.0054 / trig_acc 0.8889;risk0.05 档 θ=0.975 coverage 0.0054 / trig_acc 0.8889;弃权类误触发率 0.0013,折叠先验基线 0.2333 |
-| `c2_gptoss_cgen` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
-| `c2_gptoss_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
-| `c2_gptoss_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
-| `c2_gptoss_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | running | - | - |
-| `c2_q36_cgen` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
-| `c2_q36_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
-| `c2_q36_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
-| `c2_q36_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | running | - | - |
+| `c2_gptoss_cgen` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | skipped | est_train_hours=85.1 n_train=269259 total_steps=25245 | 按用户设定的 12 小时墙钟上限主动跳过,不是失败。85.1h 仅为训练步(不含 eval,n_eval=190180)。根因:gptoss 每步 reasoning 中位 2991 字符(q36 是 292,十倍),cgen 按句边界切样本且每条独立跑完整前向,长思考同时放大样本数(4.24x)与序列长度(2.44x),再乘换卡 1.70x = 17.6x。同批 ctool 每事件只跑一次前向故不受影响(n_train 5510)。可降但需 H200:换卡约 5x + 关 grad-ckpt 约 1.4x |
+| `c2_gptoss_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | ok | best_acc=0.8768 theta=0.95 coverage=0.9397 trig_acc=0.9467 earliness=0.5767 prior=0.4704 | 因果格在 gptoss 上覆盖 94%、精度 94.7%,但 earliness 只有 0.577(q36 是 0.836)——gptoss 思考文本长十倍,探针要看更久才敢开火。G13 对齐检查默认容差 FAIL(maxdiff 1.373e-4),放宽到 3e-4 后 PASS(相对误差 2.63e-6) |
+| `c2_gptoss_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | ok | best_param_acc=0.891 params_all_ok=0.8792 full_call_ok=0.8324 theta=0.95 | 吃 gptoss_mtool 触发点,整条调用 83.2% 正确,比 q36 低 9.4 个点 |
+| `c2_gptoss_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | gptoss | ok | best_acc=0.8393 theta=0.95 coverage=0.5988 trig_acc=0.9355 earliness=0.5769 prior=0.4704 | ModernBERT 工具格在 gptoss 上覆盖率只有 59.9%,同风险档下远逊于因果格(93.97%);触发精度相当(0.9355 vs 0.9467),差距在置信度分布而非判别力 |
+| `c2_q36_cgen` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | ok | best_val_ce=0.0377 val_exact_call=0.905 tool_ok=0.9268 full_call_ok=0.7768 parse_fail_rate=0.0 theta=0.5 | 吃 q36_ctool 触发点,生成整条调用 77.7% 完全正确、解析零失败;工具名对 92.7% 但 go 的参数只对 66.7%,失分集中在 go 的目标物定位。首次存盘遇磁盘配额产生空洞 checkpoint(实占25%),重训后有效 |
+| `c2_q36_ctool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | ok | best_acc=0.9822 theta=0.5 coverage=1.0 trig_acc=0.9441 earliness=0.8359 prior=0.548 | 全矩阵最亮格:最低门槛0.5即拿满覆盖率,触发精度94.4%,earliness 0.836。48G卡OOM(n_train 4048 是c1的2.5倍),加 --grad-ckpt 后显存 47.4G->13.7G |
+| `c2_q36_mext` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | ok | best_param_acc=0.9835 params_all_ok=0.9641 full_call_ok=0.9259 theta=0.575 | 吃 q36_mtool 触发点,整条调用 92.6% 正确;无参档 full_call_ok 0.9195、选择档 0.9264 |
+| `c2_q36_mtool` | 2026-08-01 04:44 | pipeline | `93de307+dirty` | q36 | ok | best_acc=0.9718 theta=0.575 coverage=0.9995 trig_acc=0.9473 earliness=0.8287 prior=0.548 | ALFWorld 12类工具/先验0.548下,ModernBERT 工具格 test 覆盖99.95%、触发精度94.7%,大幅超先验。首次训练存盘遇磁盘配额产生空洞 checkpoint(实占0%),重训后有效 |
 | `20260801_0413_aw_gptoss_th0925` | 2026-08-01 04:13 | C2-3 | `e945a97+dirty` | gpt-oss-120b | ok | theta=0.925 coverage=0.4963 n_fired=1061 n_inject=686 full_call_ok=0.6466 tool_ok=0.9057 saved_tok_median=-40 saved_positive=0.4344 saved_ratio_deployed_UNRELIABLE=-0.10299 oracle_timing_ceiling=0.2945 headroom_captured=-0.3497 trunc_nofill=0.0613 trunc_inject=0.0437 adopted=0.6297 | θ=0.925 覆盖率 0.4963 调用一致率 0.6466;省token中位 -40 tok、省为正 0.4344。求和口径的省token比例 -0.10299 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.2945,现行只吃到 -0.3497 |
 | `20260801_0407_aw_gptoss_th095` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.95 coverage=0.4242 n_fired=907 n_inject=626 full_call_ok=0.6902 tool_ok=0.925 saved_tok_median=-37 saved_positive=0.4233 saved_ratio_deployed_UNRELIABLE=0.00446 oracle_timing_ceiling=0.34318 headroom_captured=0.013 trunc_nofill=0.0805 trunc_inject=0.0479 adopted=0.6326 | θ=0.95 覆盖率 0.4242 调用一致率 0.6902;省token中位 -37 tok、省为正 0.4233。求和口径的省token比例 0.00446 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.34318,现行只吃到 0.013 |
 | `20260801_0407_aw_gptoss_th0875` | 2026-08-01 04:07 | C2-3 | `46a7c69+dirty` | gpt-oss-120b | ok | theta=0.875 coverage=0.5968 n_fired=1276 n_inject=736 full_call_ok=0.5768 tool_ok=0.8621 saved_tok_median=-27 saved_positive=0.4592 saved_ratio_deployed_UNRELIABLE=-0.01397 oracle_timing_ceiling=0.25448 headroom_captured=-0.0549 trunc_nofill=0.0854 trunc_inject=0.0353 adopted=0.6318 | θ=0.875 覆盖率 0.5968 调用一致率 0.5768;省token中位 -27 tok、省为正 0.4592。求和口径的省token比例 -0.01397 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.25448,现行只吃到 -0.0549 |
@@ -378,81 +378,97 @@
 ### `c2_gptoss_cgen`
 
 - **想验证什么**：c2/cgen on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：按用户设定的 12 小时墙钟上限主动跳过,不是失败。85.1h 仅为训练步(不含 eval,n_eval=190180)。根因:gptoss 每步 reasoning 中位 2991 字符(q36 是 292,十倍),cgen 按句边界切样本且每条独立跑完整前向,长思考同时放大样本数(4.24x)与序列长度(2.44x),再乘换卡 1.70x = 17.6x。同批 ctool 每事件只跑一次前向故不受影响(n_train 5510)。可降但需 H200:换卡约 5x + 关 grad-ckpt 约 1.4x
+- **方向**：pipeline ｜ **状态**：skipped ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 7
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=cgen env=alfworld extra=--grad-ckpt
+- **数字**：est_train_hours=85.1 n_train=269259 total_steps=25245
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_cgen`（不在 git 里）
 
 ### `c2_gptoss_ctool`
 
 - **想验证什么**：c2/ctool on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：因果格在 gptoss 上覆盖 94%、精度 94.7%,但 earliness 只有 0.577(q36 是 0.836)——gptoss 思考文本长十倍,探针要看更久才敢开火。G13 对齐检查默认容差 FAIL(maxdiff 1.373e-4),放宽到 3e-4 后 PASS(相对误差 2.63e-6)
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 6
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=ctool env=alfworld extra=--align-tol 3e-4
+- **数字**：best_acc=0.8768 theta=0.95 coverage=0.9397 trig_acc=0.9467 earliness=0.5767 prior=0.4704
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_ctool`（不在 git 里）
 
 ### `c2_gptoss_mext`
 
 - **想验证什么**：c2/mext on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：吃 gptoss_mtool 触发点,整条调用 83.2% 正确,比 q36 低 9.4 个点
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 5
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=mext env=alfworld extra=none
+- **数字**：best_param_acc=0.891 params_all_ok=0.8792 full_call_ok=0.8324 theta=0.95
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_mext`（不在 git 里）
 
 ### `c2_gptoss_mtool`
 
 - **想验证什么**：c2/mtool on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：ModernBERT 工具格在 gptoss 上覆盖率只有 59.9%,同风险档下远逊于因果格(93.97%);触发精度相当(0.9355 vs 0.9467),差距在置信度分布而非判别力
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 4
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=mtool env=alfworld extra=none
+- **数字**：best_acc=0.8393 theta=0.95 coverage=0.5988 trig_acc=0.9355 earliness=0.5769 prior=0.4704
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_gptoss_mtool`（不在 git 里）
 
 ### `c2_q36_cgen`
 
 - **想验证什么**：c2/cgen on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：吃 q36_ctool 触发点,生成整条调用 77.7% 完全正确、解析零失败;工具名对 92.7% 但 go 的参数只对 66.7%,失分集中在 go 的目标物定位。首次存盘遇磁盘配额产生空洞 checkpoint(实占25%),重训后有效
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 3
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=cgen env=alfworld extra=--grad-ckpt
+- **数字**：best_val_ce=0.0377 val_exact_call=0.905 tool_ok=0.9268 full_call_ok=0.7768 parse_fail_rate=0.0 theta=0.5
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_cgen`（不在 git 里）
 
 ### `c2_q36_ctool`
 
 - **想验证什么**：c2/ctool on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：全矩阵最亮格:最低门槛0.5即拿满覆盖率,触发精度94.4%,earliness 0.836。48G卡OOM(n_train 4048 是c1的2.5倍),加 --grad-ckpt 后显存 47.4G->13.7G
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 2
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=ctool env=alfworld extra=none
+- **数字**：best_acc=0.9822 theta=0.5 coverage=1.0 trig_acc=0.9441 earliness=0.8359 prior=0.548
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_ctool`（不在 git 里）
 
 ### `c2_q36_mext`
 
 - **想验证什么**：c2/mext on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：吃 q36_mtool 触发点,整条调用 92.6% 正确;无参档 full_call_ok 0.9195、选择档 0.9264
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 1
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=mext env=alfworld extra=none
+- **数字**：best_param_acc=0.9835 params_all_ok=0.9641 full_call_ok=0.9259 theta=0.575
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_mext`（不在 git 里）
 
 ### `c2_q36_mtool`
 
 - **想验证什么**：c2/mtool on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
-- **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
+- **结论**：ALFWorld 12类工具/先验0.548下,ModernBERT 工具格 test 覆盖99.95%、触发精度94.7%,大幅超先验。首次训练存盘遇磁盘配额产生空洞 checkpoint(实占0%),重训后有效
+- **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 04:44 → 2026-08-02 22:16
 - **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 0
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=mtool env=alfworld extra=none
+- **数字**：best_acc=0.9718 theta=0.575 coverage=0.9995 trig_acc=0.9473 earliness=0.8287 prior=0.548
 - **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/c2_q36_mtool`（不在 git 里）
 
 ### `20260801_0413_aw_gptoss_th0925`

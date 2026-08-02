@@ -1,40 +1,6 @@
 {
   "active": [
     {
-      "name": "c2_train_rerun2",
-      "workdir": null,
-      "note": null,
-      "started_at": "2026-08-02 16:52",
-      "pieces": [
-        {
-          "host": "tokyo107",
-          "gpus": "0",
-          "session": "new1_c2_q36_mtool_t107g0",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mtool_t107g0.log"
-        },
-        {
-          "host": "tokyo107",
-          "gpus": "1",
-          "session": "new1_c2_q36_cgen_t107g1",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_cgen_t107g1.log"
-        }
-      ]
-    },
-    {
-      "name": "c2_eval_call",
-      "workdir": null,
-      "note": null,
-      "started_at": "2026-08-02 16:52",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "0",
-          "session": "eval_c2_gptoss_mext",
-          "log": "/home/y-guo/reproduce/new1/logs/eval_c2_gptoss_mext.log"
-        }
-      ]
-    },
-    {
       "name": "aw_pathdiag",
       "workdir": null,
       "note": null,
@@ -103,26 +69,6 @@
           "gpus": "cpu",
           "session": "new1_live_v3_np_t108",
           "log": "/home/y-guo/reproduce/new1/logs/new1_live_v3_np_t108.log"
-        }
-      ]
-    },
-    {
-      "name": "live_aw_gptoss_v4",
-      "workdir": null,
-      "note": null,
-      "started_at": "2026-08-02 20:23",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "cpu",
-          "session": "new1_live_v4_probe_t108",
-          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v4_probe_s0.log"
-        },
-        {
-          "host": "tokyo108",
-          "gpus": "cpu",
-          "session": "new1_live_v4_np_t108",
-          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v4_noprobe_s0.log"
         }
       ]
     }
@@ -2560,6 +2506,78 @@
         }
       ],
       "finished_at": "2026-08-02 16:52"
+    },
+    {
+      "name": "live_aw_gptoss_v4",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-02 20:23",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_v4_probe_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v4_probe_s0.log"
+        },
+        {
+          "host": "tokyo108",
+          "gpus": "cpu",
+          "session": "new1_live_v4_np_t108",
+          "log": "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_live_aw_gptoss_v4_noprobe_s0.log"
+        }
+      ],
+      "finished_at": "2026-08-02 22:02"
+    },
+    {
+      "name": "c2_train_rerun2",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-02 16:52",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_c2_q36_mtool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_mtool_t107g0.log"
+        },
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_c2_q36_cgen_t107g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_c2_q36_cgen_t107g1.log"
+        }
+      ],
+      "finished_at": "2026-08-02 22:11"
+    },
+    {
+      "name": "c2_eval_call",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-02 16:52",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "0",
+          "session": "eval_c2_gptoss_mext",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_c2_gptoss_mext.log"
+        }
+      ],
+      "finished_at": "2026-08-02 22:11"
+    },
+    {
+      "name": "c2_eval_cgen",
+      "workdir": null,
+      "note": null,
+      "started_at": "2026-08-02 22:11",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "0",
+          "session": "eval_c2_q36_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_c2_q36_cgen.log"
+        }
+      ],
+      "finished_at": "2026-08-02 22:15"
     }
   ]
 }
