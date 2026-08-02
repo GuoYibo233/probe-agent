@@ -1,0 +1,65 @@
+{
+  "batch": "toolhop_v1",
+  "env": "toolhop",
+  "seed": 20260729,
+  "seed_used_for": "纯自切;每个 answer_type 层独立 random.Random(f'{seed}:{answer_type}') 洗牌,不共用随机数流",
+  "split_origin": "纯自切 695/200/100(≈70/20/10,对齐 bfcl_mtb_v1 比例),按 answer_type 六类分层,每层配额最大余数法",
+  "official_split_exists": false,
+  "official_split_note": "ToolHop.json 是 995 条平铺列表,无 split 字段,上游只当整卷评测集用",
+  "unit_form": "官方整数 id 的十进制字符串('0'..'994');将来采集器 meta.task_id 必须用同一形态",
+  "universe_file": "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/toolhop/data/ToolHop.json",
+  "universe_n": 995,
+  "md5": {
+    "ToolHop.json": "4f93636c37f40bd7eb2cd0454630b03e"
+  },
+  "truth_source": "入库的 {train,val,test}.txt 是唯一真源;推导源在 NFS 上、不进 git,md5 只是审计线索",
+  "strata": {
+    "character": {
+      "层大小": 3,
+      "train": 2,
+      "val": 1,
+      "test": 0
+    },
+    "date": {
+      "层大小": 165,
+      "train": 115,
+      "val": 33,
+      "test": 17
+    },
+    "datetime": {
+      "层大小": 20,
+      "train": 14,
+      "val": 4,
+      "test": 2
+    },
+    "letter": {
+      "层大小": 41,
+      "train": 29,
+      "val": 8,
+      "test": 4
+    },
+    "number": {
+      "层大小": 602,
+      "train": 420,
+      "val": 121,
+      "test": 61
+    },
+    "string": {
+      "层大小": 164,
+      "train": 115,
+      "val": 33,
+      "test": 16
+    }
+  },
+  "splits": {
+    "train": {
+      "本堆题数": 695
+    },
+    "val": {
+      "本堆题数": 200
+    },
+    "test": {
+      "本堆题数": 100
+    }
+  }
+}

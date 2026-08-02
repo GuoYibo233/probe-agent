@@ -216,6 +216,21 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 
 **必写的四道门禁**(`gen_bfcl_splits.py` 里全是 `sys.exit` 硬拦,照抄):① 三堆两两无交集(对应 §5 #4:`official_split` 是后写覆盖、零重叠检查);② 三堆并集 == 官方全集文件的 id 全集且无多余(**没有官方分区也几乎总有一个"官方全集"文件可以当锚**,这是唯一能拿到的外部校验);③ 每堆行数硬核对(G9);④ 不静默覆盖已入库的题单。
 
+**又添两个先例(2026-08-02,tau2_official_v1 / toolhop_v1,四道门禁照抄)**:
+
+- **tau2 = 第三种情形:官方有 train/test 但没有 val**(三域 `split_tasks.json`
+  实测 train∩test=0、train∪test==base)。处理:官方 test 原封冻结,val 从官方
+  train 抽官方 test 的**半数**,抽剩当 train;门禁 ② 之外加一条"各域本堆 test
+  逐字 == 官方 test"的冻结承诺。SPLIT_REPORT 的 `official_split_exists` 记
+  **false**(val 不是官方堆),借门禁 E 逼 config 写诚实的 `split_desc`。
+- **toolhop = 纯自切**(995 条平铺列表、无 split 字段):比例对齐 bfcl 的
+  70/20/10,按 `answer_type` 六类分层、每层配额最大余数法。分层键只挑**干净的
+  枚举字段**——它的 `domain` 字段是大小写混乱的自由文本('Film'/'film' 并存),
+  当分层键就是自欺。
+- **抽样种子一律按子集独立派生** `random.Random(f"{SEED}:{domain或层名}")`,
+  不共用一个 rng 流——共用流的死法 bfcl 那条(上文第 1 件)已实测:任何一个
+  子集的规模变了,后面全部对不上。
+
 ---
 
 ## 5. 静默失败点总表

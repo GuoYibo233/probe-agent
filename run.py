@@ -140,6 +140,16 @@ TASKS = {
         stage="collect", py="sys", script="pipeline/collect/gen_bfcl_splits.py",
         desc="BFCL multi_turn_base 200 题切三堆(四道门禁)",
         notes=["已入库题单不同时拒绝覆盖,要 --force"]),
+    "gen-tau2-splits": dict(
+        stage="collect", py="sys", script="pipeline/collect/gen_tau2_splits.py",
+        desc="tau2 三域题单三堆:官方 test 冻结+val 从官方 train 自切(四道门禁)",
+        notes=["官方只有 train/test 没有 val;val=各域 test 半数,种子随域独立",
+               "已入库题单不同时拒绝覆盖,要 --force"]),
+    "gen-toolhop-splits": dict(
+        stage="collect", py="sys", script="pipeline/collect/gen_toolhop_splits.py",
+        desc="ToolHop 995 题纯自切三堆 695/200/100,按 answer_type 分层(四道门禁)",
+        notes=["无官方切分,入库 txt 是唯一真源;unit=官方整数 id 字符串",
+               "已入库题单不同时拒绝覆盖,要 --force"]),
     "build-dataset-legacy": dict(
         stage="collect", py="cprobe", script="envs/collect/build_dataset.py",
         desc="旧线数据集构建(已被 ann-build 取代,留档)",

@@ -471,3 +471,37 @@ L4 位置改换对的收录判据很硬：在种子 trial 上跟着自带的专�
 `pipeline/data/bfcl_mtb_v1/{q35,q36,gptoss}/` 已被 ro1 批全程使用，但本文只写了
 `aw_official_v1`（§3.1），bfcl 这份新流水线数据集的造法没有对应小节。补写时
 对照 §3.1 的结构（来源批次 / 切分 / 规模 / 先验基线）。
+
+## 9. 题单冻结：`tau2_official_v1` 与 `toolhop_v1`（2026-08-02）
+
+两份题单只是**切分清单**，数据集还没造（采集尚未放量）；这里只记切分设定，
+生成细节与四道门禁在两个脚本的文件头（`pipeline/collect/gen_tau2_splits.py`、
+`gen_toolhop_splits.py`），入库的 txt 是唯一真源（推导源都在 NFS、不进 git）。
+
+### 9.1 `pipeline/splits/tau2_official_v1/`（278 题 = train 128 / val 50 / test 100）
+
+- **官方只有 train/test 两堆**（三个 domain 的 `split_tasks.json` 实测
+  train∩test=0、train∪test==base），而流水线要三堆。处理：**官方 test 原封冻结**；
+  val 从官方 train 里抽官方 test 的半数（airline 10 / retail 20 / telecom 20），
+  抽剩的当 train。
+- 种子 20260729，**每域独立** `random.Random(f"{seed}:{domain}")`，不共用随机数流。
+- 三域全收，telecom 取官方切分覆盖的 base 粒度（114 题）；full 2285 要用另开版本目录。
+- unit 形态 `<domain>/<task_id>`，与 `run_tau2.py` 写的 meta.task_id 逐字一致。
+- SPLIT_REPORT 里 `official_split_exists` 记 **false**（val 不是官方堆），
+  所以将来 config 必写 `split_desc`，否则 `check_callstr.py` 门禁 E 硬拦。
+- 已知偏差：telecom 官方 test 与 train 的任务底座同源（同 issue 组合配不同
+  PERSONA），"无泄漏"只在任务实例级成立。
+
+### 9.2 `pipeline/splits/toolhop_v1/`（995 题 = train 695 / val 200 / test 100）
+
+- **纯自切**：ToolHop.json 是 995 条平铺列表、无 split 字段，上游只当整卷评测集用。
+- 比例 ≈70/20/10，对齐 `bfcl_mtb_v1` 的 140/40/20。
+- **按 answer_type 六类分层**（number 602 / date 165 / string 164 / letter 41 /
+  datetime 20 / character 3），每层配额最大余数法，层内独立
+  `random.Random(f"{seed}:{answer_type}")`。不用 domain 字段分层——它是大小写
+  混乱的自由文本（'Film'/'film' 并存，80+ 取值）。
+- unit = 官方整数 id 的十进制字符串（"0".."994"）；ToolHop 的 annotate 分支
+  还没写，将来采集器的 meta.task_id 必须用同一形态。
+- 已知偏差：分层只保 answer_type 分布，不保 domain / 跳数分布。
+
+两份都实测过重跑逐字节一致（md5 两轮相同）；改切分必须 `--force` + 新版本目录。

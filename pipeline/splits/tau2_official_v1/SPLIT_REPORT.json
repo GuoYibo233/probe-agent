@@ -1,0 +1,62 @@
+{
+  "batch": "tau2_official_v1",
+  "env": "tau2",
+  "seed": 20260729,
+  "seed_used_for": "从各域官方 train 抽 val;每域独立 random.Random(f'{seed}:{domain}'),不共用随机数流",
+  "split_origin": "test=官方 test 原封;val=官方 train 抽 test 半数;train=官方 train 抽剩",
+  "official_split_exists": false,
+  "official_split_note": "官方 split_tasks.json 只有 train/test/base 两堆一底,没有 val;val 是从官方 train 自切的,所以此字段记 false,config 必须写 split_desc(check_callstr 门禁 E)",
+  "unit_form": "<domain>/<task_id>,与 run_tau2.py meta.task_id 逐字一致",
+  "domains": {
+    "airline": {
+      "官方 train": 30,
+      "官方 test": 20,
+      "本堆 train": 20,
+      "本堆 val": 10,
+      "本堆 test": 20
+    },
+    "retail": {
+      "官方 train": 74,
+      "官方 test": 40,
+      "本堆 train": 54,
+      "本堆 val": 20,
+      "本堆 test": 40
+    },
+    "telecom": {
+      "官方 train": 74,
+      "官方 test": 40,
+      "本堆 train": 54,
+      "本堆 val": 20,
+      "本堆 test": 40
+    }
+  },
+  "telecom_scope": "base 114(官方切分覆盖的粒度);full 2285 要用另开版本目录",
+  "source_files": {
+    "airline:split_tasks": "/home/y-guo/reproduce/new1/envs/tau2-bench/data/tau2/domains/airline/split_tasks.json",
+    "airline:tasks": "/home/y-guo/reproduce/new1/envs/tau2-bench/data/tau2/domains/airline/tasks.json",
+    "retail:split_tasks": "/home/y-guo/reproduce/new1/envs/tau2-bench/data/tau2/domains/retail/split_tasks.json",
+    "retail:tasks": "/home/y-guo/reproduce/new1/envs/tau2-bench/data/tau2/domains/retail/tasks.json",
+    "telecom:split_tasks": "/home/y-guo/reproduce/new1/envs/tau2-bench/data/tau2/domains/telecom/split_tasks.json",
+    "telecom:tasks": "/home/y-guo/reproduce/new1/envs/tau2-bench/data/tau2/domains/telecom/tasks.json"
+  },
+  "md5": {
+    "airline:split_tasks": "251197b7f25416e4981b7975448ea3c0",
+    "airline:tasks": "4588a63c1fa9844914c058b1d3dc107e",
+    "retail:split_tasks": "0e42ed2ce03b444e252b999f755f1556",
+    "retail:tasks": "c07e89e811d345bc062461aeff7de7d7",
+    "telecom:split_tasks": "4a547c49d64d98ae3fe165acbfca1162",
+    "telecom:tasks": "a610efdf3385d253f0601f2a4e3fc0ab"
+  },
+  "truth_source": "入库的 {train,val,test}.txt 是唯一真源;推导源在 NFS 克隆里、不进 git,md5 只是审计线索",
+  "splits": {
+    "train": {
+      "本堆题数": 128
+    },
+    "val": {
+      "本堆题数": 50
+    },
+    "test": {
+      "本堆题数": 100
+    }
+  }
+}
