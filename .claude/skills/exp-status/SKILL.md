@@ -18,7 +18,7 @@ version: 1.1.0
 
 ## 为什么要有这个 skill（不是套话）
 
-项目里已经有过一份 `plans/STATUS_20260730_1833_all_lines.md`。它信息全、数字准，用户看不懂。原因不在用户：正文里塞满了 `best_calA_weighted_acc`、`θ=0.8 v2fix`、`Sp@k`、`L2minus` 和二十几个 commit hash，每一个都是压缩过的索引，读的人得先解压才能读到内容。
+项目里已经有过一份 `plans/archive/STATUS_20260730_1833_all_lines.md`（已退役归档）。它信息全、数字准，用户看不懂。原因不在用户：正文里塞满了 `best_calA_weighted_acc`、`θ=0.8 v2fix`、`Sp@k`、`L2minus` 和二十几个 commit hash，每一个都是压缩过的索引，读的人得先解压才能读到内容。
 
 所以本 skill 的主体功能不是"整理信息"，是**说人话**。整理信息只是它的副产品。
 

@@ -80,27 +80,41 @@
 - **新目录，别覆盖 v1**：`pipeline/inject/runs/live_aw_gptoss_v2/{probe,noprobe}`。
   `live_arm_job.sh` 的 outdir 是写死的——加个版本变量或第二参数再用。
 - 服务（都要现起，上一轮已全部释放、显存归零）：
-  - vLLM ×3：`python3 envs/serve_logs/launch_vllm_splice.py`
+  - vLLM ×3：`python3 run.py serve-splice`——发射类任务，run.py 只出命令，
+    发射走 gpu-run skill
     （tokyo108 g0/1/2 → 8114/8115/8116，会跳过已存在 session；
-    发射前 `ops/gpu_jobs.py free` 实探，g5 可能被隔壁会话 ro1aw 评测占着，别碰）。
+    发射前 `python3 run.py gpu-jobs free` 实探，g5 可能被隔壁会话 ro1aw 评测占着，别碰）。
   - 探针服务：tokyo105 g0，port 8790，tmux `new1_live_probe_t105g0`：
-    `cd /home/y-guo/reproduce/new1 && CUDA_VISIBLE_DEVICES=0 ./cprobe-env/bin/python
-    pipeline/inject/probe_server.py serve --port 8790 --device cuda:0`
+    `python3 run.py probe-serve --port 8790 --device cuda:0` 出命令（probe-serve
+    也是发射类任务，直跑只会打印命令不发射），把打印出来的那条命令按 gpu-run skill
+    发射，进程环境里带上 `CUDA_VISIBLE_DEVICES=0`
     （日志进 NFS logs 目录。high 档用老 /render 即可，effort 字段无关）。
 - 臂参数照 v1：`--split test_normal --max-steps 30`，probe 臂无额外 flag、
   noprobe 臂 `--no-probe`；θ=0.925 在探针服务里，别动。
 - 双臂各 12 工人，PORTS 轮转 8114/8115/8116，tmux session
   `new1_live_run_probe_t108` / `new1_live_run_np_t108`（在 tokyo108 上起）。
-- 走 **gpu-run skill 全生命周期**：发射前 commit → tmux → 台账
-  `gpu_jobs.py register`（run_id 建议 `live_aw_gptoss_v2`）→
-  `record.py start --track C2-3 --seed 20260729` → 监控 → 收尾五连。
+- 走 **gpu-run skill 全生命周期**：发射前 commit → tmux → 双登记 → 监控 → 收尾五连。
+  两条登记命令的必填参数别漏（`register` 缺 `--name` 或 `--piece` 直接退出；
+  `record start` 缺 `--track` 退出，而用 `--name` 代替 `--run-id` 会被加时间戳前缀、
+  run_id 四处一致当场断掉）。**完整模板见 `.claude/agents/gpu-runner.md` 第 4 条
+  「发射成功后立刻双登记」段**，本轮照它填成：
+  ```bash
+  python3 run.py gpu-jobs register --name live_aw_gptoss_v2 \
+    --workdir /home/y-guo/reproduce/new1 \
+    --piece tokyo108:0-2:new1_live_run_probe_t108:<probe 臂日志绝对路径> \
+    --piece tokyo108:0-2:new1_live_run_np_t108:<noprobe 臂日志绝对路径>
+  python3 run.py record start --run-id live_aw_gptoss_v2 --track C2-3 \
+    --seed 20260729 --host tokyo108 --gpu 0,1,2 \
+    --cmd '<实际执行的完整命令>' --log <日志绝对路径>
+  ```
 - 预计时长：v1 双臂约 3.5h；修复砍掉越界烧的 token + `--pool` 去尾，应明显更快。
 
 ## 6. 打分与判读
 
-- 逐臂：`cprobe-env/bin/python pipeline/inject/score_live.py
+- 逐臂：`python3 run.py score-live
   --live-dir pipeline/inject/runs/live_aw_gptoss_v2/<arm>
   --base-root envs/runs/w0_aw_official/appworld_gptoss`
+  （纯 CPU，run.py 直跑，参数原样透传）
   （score_live 已修三处 bug——commit b31f57d，直接用，别回滚）。
 - 判读顺序：
   1. noprobe_v2 vs w0 28.6%：框架对齐度。若仍差一大截，剩余嫌疑=64-token
@@ -123,7 +137,7 @@
   NFS 属性缓存延迟，从 tokyo108 读。
 - HTTP 400=上下文超 65536，驱动已接住记 `abort=context_overflow_400`
   照常 evaluate（commit 2c8efaa），别改语义。
-- 发射前 `gpu_jobs.py free` 实探空卡，别人的进程=禁区；发射前必 commit；
+- 发射前 `python3 run.py gpu-jobs free` 实探空卡，别人的进程=禁区；发射前必 commit；
   大产物进 net 盘；收尾必须杀服务+显存归零+销号，别占卡过夜。
 - 进程计数用 `--exp` 精确匹配（`noprobe` 包含 `probe`，ps 会自匹配多数）。
 

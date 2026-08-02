@@ -4,10 +4,13 @@
 逐条结论都标了 `文件:行号`(2026-07-31 c1 批次的代码状态);流程说明在上一层 `SKILL.md`,照抄命令去同目录 `stage-commands.md`,判分口径去 `invariants.md`。
 
 **横切一条(2026-08-02 起,四种情形通用)**:下面每一份必改清单都隐含最后一步——
-把新脚本/新格/新配方挂进仓库根 `run.py` 的注册表(TASKS/RECIPES/CELLS),同一个
-commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果是静默的:
-入口地图缺这一格,下一个人回到手翻文档考古的老路;训练格漏挂更直接——
-`ops/launch_probe.py` 的格表就是从 run.py import 的,没挂 = 发射器不认识这个格。
+把新脚本/新格/新配方挂进仓库根 `run.py` 的注册表(TASKS / RECIPES / CELLS /
+EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算改完。
+漏挂的后果是静默的:入口地图缺这一格,下一个人回到手翻文档考古的老路;
+训练格漏挂更直接——`ops/launch_probe.py` 的格表就是从 run.py 的 `CELLS` import 的,
+没挂 = 发射器不认识这个格。**评测格表的真源同样在 run.py,是它的 `EVAL_CELLS`**
+(格 → `(run.py 任务名, 依赖的工具格|None)`),`ops/launch_eval.py` 只 import、
+并从对应 TASKS 条目取解释器/脚本/固定参数,别处不许再抄一份同构表。
 
 ---
 
@@ -29,12 +32,12 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 
 ### 1.2 不用改的(省得白费功夫)
 
-- **四个训练脚本一个字都不用改**。`--env`(`train_mbert_tool.py:83-84`、`train_mbert_extract.py:212-213`、`train_causal_tool.py:231-232`、`train_causal_callgen.py:180-181`)在训练侧**纯粹是日志标签**——全部用处只有 `train_mbert_tool.py:140`、`train_mbert_extract.py:273` 与 `321`(写 meta.json)、`train_causal_tool.py:321`/`364`、`train_causal_callgen.py:242`,没有任何一处进入数据路径或损失。
-- **底座权重常量不用改**:`train_mbert_tool.py:32`、`train_mbert_extract.py:37`(ModernBERT-base)、`train_causal_tool.py:49-50`(`MODELS` 表)、`train_causal_callgen.py:40`(`QWEN`)。这四个是**探针自己的骨架**,与被探测的 agent 模型无关。
+- **四个训练脚本一个字都不用改**。`--env` 在训练侧**纯粹是日志标签**:四个脚本各有一条 `ap.add_argument("--env", default="appworld", …)`,`args.env` 的全部用处就是 `log(event="start", env=args.env, …)` 那一行,外加 mext 与 ctool 写 `best/meta.json` 时带上它——没有任何一处进入数据路径或损失。(**按 `--env` / `args.env` grep,不引行号:这批行号漂过。**)
+- **底座权重常量不用改**:`train_mbert_tool.py` 与 `train_mbert_extract.py` 的模块级常量 `MODEL`(ModernBERT-base)、`train_causal_tool.py` 的 `MODELS` 表、`train_causal_callgen.py` 的 `QWEN`(**按常量名 grep,不引行号——这批行号漂过一次**)。这四个是**探针自己的骨架**,与被探测的 agent 模型无关。
 - **三个 eval 脚本不用改**:模型全靠 `--run` / `--data` 指路径。
-- **`pipeline/inject/check_bundle.py` 不用改**:全文无环境常量也无模型表,参数只有 `--run/--data/--head/--device/--dtype/--index/--temperature/--max-len`(`check_bundle.py:162-174`)。
-- **`pipeline/annotate/accept_v3diff.py` 不用改**:输入路径写死旧数据(`accept_v3diff.py:24-25`),它只负责证明新代码复现旧口径,不该跟着新模型走。
-- `rules.py:55-56` 的 `AW_CALL`/`BFCL_CALL` 不用改——同环境同解析。
+- **`pipeline/inject/check_bundle.py` 不用改**:全文无环境常量也无模型表,参数只有 `--run/--data/--head/--device/--dtype/--index/--temperature/--max-len`(全在它的 `main()` 里,grep `add_argument`)。
+- **`pipeline/annotate/accept_v3diff.py` 不用改**:输入路径写死旧数据(模块级常量 `BASE` / `RUNS` / `V3`),它只负责证明新代码复现旧口径,不该跟着新模型走。
+- `rules.py` 的 `AW_CALL`/`BFCL_CALL` 两个正则常量不用改——同环境同解析。
 
 ### 1.3 最短路径
 
@@ -61,7 +64,7 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 | `pipeline/annotate/rules.py:55-56` | 调用正则。新环境的调用语法若既不是 `apis.x.y(` 也不是 `名字(`,要新增一条 | 正则不匹配 = 该步不产事件,**静默少样本** | 加一个常量 |
 | `pipeline/eval/eval_causal_call.py:117-124` | `parse_call` 的 `name_re` 与工具名拼法,现在是"appworld 用 AW_CALL,**其余一律 BFCL_CALL**" | ⚠️**静默**:新环境走 BFCL_CALL 兜底,解析出来的工具名与真值对不上,`tool_ok` 全 false,数字整体塌陷,退出码 0 | 加一个分支 |
 | 七处 `--env` 的 `choices` | `eval_tool.py:223-224`、`eval_mbert_call.py:108-109`、`eval_causal_call.py:196-197`、`train_mbert_tool.py:83-84`、`train_mbert_extract.py:212-213`、`train_causal_tool.py:231-232`、`train_causal_callgen.py:180-181` | argparse 直接拒绝,响 | 七处各加一个字符串 |
-| `pipeline/collect/gen_launch.py:226-275` | 整个客户端生成段写死 appworld:`aw()` 函数体调 `envs/collect/run_appworld.py`(`:258`)、统一参数 `CLIENT_COMMON`(`:66`)、`outdir` 强制 `appworld_<model_key>`(`:117-122`) | 生成的 `launch_clients.sh` 会去跑 appworld 采集器,响(采集器自己会崩) | 改一段(约 40 行) |
+| `pipeline/collect/gen_launch.py` 的 `ENV_TABLE` | 加一条 `"<新env>": dict(venv=, runner=, fn=, common=)`——`venv` = `envs/<venv>/venv` 下的解释器、`runner` = `envs/collect/` 下的采集器文件名、`fn` = 生成的 sh 里那个函数叫什么、`common` = 该环境的统一客户端参数(如 `--n 0 --max-steps 50`) | `load_manifest` 校验 `cfg["env"]` 必须在 `ENV_TABLE` 里,不在就 `die` 退 2,**响**。客户端生成段 `gen_clients` 与清单生成段 `gen_manifest_md` 都只查这张表,表里有了就自动出对的 sh,不用改代码 | 加一条 |
 | config 的 `official_split_files`(`aw_q35.json:12-16`) | 三份 txt,每行一个 unit id | `build.py:190-205` 读它切分;有 unit 不在任何题单 → `build.py:235-237` 退 1(响),**换环境时最先炸的就是这条** | 三个路径 |
 
 ### 2.2 要新写的东西
@@ -70,14 +73,14 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 |---|---|---|
 | 采集器 `envs/collect/run_<env>.py` | `envs/collect/run_appworld.py`(124 行)或 `run_tales.py`(102 行) | 必须用 `envs/collect/common.py:94-104` 的 `TrajLog`:首行 `type:"meta"`(带 `task_id`)、逐步一条 `type:"gen"`(字段 `step`/`reasoning`)+ 一条 `type:"env"`(字段 `step`/`action`/`result`)、末行 `type:"final"`。`build.py:46-47` 按 `type` 分桶,`:55-56` 只认 `reasoning` 与 `action` |
 | 落盘命名 | `run_appworld.py:75`/`:82` | 目录 `<env>_<model_key>`(尾巴要能被 `MODEL_OF` 认出)、文件 `<env>_<id>.jsonl`;`build.py:140` 的 glob 是 `appworld_*/appworld_*.jsonl`,新环境要给出对应的一对 |
-| gen_launch 的客户端函数 | `gen_launch.py:256-262` 的 `aw()` | 复制成 `<env>()` 或参数化;`MANIFEST.md` 里 outdir 那句说明在 `:316` |
+| gen_launch 的客户端函数 | **不用写**——`gen_clients` 已经参数化,函数名取 `ENV_TABLE[env]["fn"]`、解释器取 `["venv"]`、采集器取 `["runner"]`、统一参数取 `["common"]`,`outdir` 统一拼 `<env>_<model_key>`(`load_manifest` 里的 `std = f"{env}_{c['model_key']}"` 强制,非标准名只 WARN 并改掉) | 所以这一格的活是 **§2.1 里给 `ENV_TABLE` 加一条 + 本节上一行写 `envs/collect/run_<env>.py`**,**不是**再复制一个 `aw()` 出来。`MANIFEST.md` 里 outdir 那句说明也是从 `cfg["env"]` 拼的,跟着自动对 |
 | 若"工具"不是函数调用形(如 ALFWorld 的自然语言动作) | 无现成模板 | `label_call` 的拼法(`build.py:158-162` 的 `make_call`)与参数切分(`rules.py:106-152` 的 `split_args_named`/`first_call_named`/`mkparams`)整套要重定义,`eval_causal_call.py:138` 那条"切法必须与 rules 一致"的 assert 也要跟着改。**这是情形 B 里唯一一块真正的设计工作,其余都是加分支** |
 
 ### 2.3 最短路径
 
 1. 先解决题单:拿到新环境的官方 train/val/test 三份 id 清单(`build.py:190-193` 只要求"每行一个 id、去空行")。**这一步不落地就别往下走**,`build.py:235-237` 会全量报错。
 2. 写采集器 → 手跑 1 题验轨迹格式(首行 meta 有 task_id、末行 final)。
-3. 改 `gen_launch.py` 客户端段 → **stage-commands §1** `--dry-run` 看生成的 sh 对不对 → 正式采集(gpu-run)。
+3. 给 `gen_launch.py` 的 `ENV_TABLE` 加一条(不用改客户端生成代码) → **stage-commands §1** `--dry-run` 看生成的 sh 对不对 → 正式采集(gpu-run)。
 4. 改 annotate 五处分支(collect_events ×2、jsonl_events ×2、unit 派生)+ 正则 → **stage-commands §2** 建库;`ANNOTATE_REPORT.md` 的工具词表与频率先验基线是第一道人眼验收。
 5. 改七处 `choices` + `eval_causal_call.py:117-124` → **stage-commands §3 / §4** 照常跑,训练与 eval 主体不动。
 6. `accept_v3diff.py` 对新环境**没有对照旧数据**,G8 那道门在新环境上无效——要另想验收办法(见 §7)。
@@ -85,7 +88,7 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 ### 2.4 先验成本估计(只数代码,不估工时)
 
 - **要新写的文件:2 类** —— 1 个采集器(`envs/collect/run_<env>.py`,模板 102–124 行)、每模型 1 份 config(19 行)+ 1 份 manifest。
-- **要加的分支:11 处** —— `build.collect_events` 1、`build.jsonl_events` 1、`build` 的 unit 派生 1、`param_label.collect_events` 1、`param_label.jsonl_events` 1、`rules` 正则 1、`eval_causal_call.parse_call` 1、`gen_launch` 客户端段 1、`gen_launch.MODEL_TABLE`(若同时换模型)1,外加 `--env choices` 7 处(算 1 处批量改)、`summarize_matrix --prefix/--models` 1。
+- **要加的分支:11 处** —— `build.collect_events` 1、`build.jsonl_events` 1、`build` 的 unit 派生 1、`param_label.collect_events` 1、`param_label.jsonl_events` 1、`rules` 正则 1、`eval_causal_call.parse_call` 1、`gen_launch.ENV_TABLE` 加一条(**是查表不是写分支**)1、`gen_launch.MODEL_TABLE`(若同时换模型)1,外加 `--env choices` 7 处(算 1 处批量改)、`summarize_matrix --prefix/--models` 1。
 - **一行不动的:5 个文件** —— 四个训练脚本 + `inject/check_bundle.py`。`eval_tool.py` 与 `eval_mbert_call.py` 也只动 choices 一行。
 - **风险集中度**:11 处分支里有 4 处漏改**不报错**(见 §5 的 #5 #6 #7 #10),其余漏改都会当场退非 0。
 
@@ -95,19 +98,22 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 
 "格" = 骨架 × 头。现状四格:
 
+**行号一律不引**(这批漂过一次):下表的定位靠常量名与日志事件名 grep——选 best 的判断都在 `log(event="eval", …)` 之后那个 `if`,存盘都在紧跟着的 `log(event="save_best", …)` 之前。
+
 | 格 | 脚本 | 骨架 | 头 | 选 best 的指标 | `best/` 存盘格式 |
 |---|---|---|---|---|---|
-| mtool | `train_mbert_tool.py` | ModernBERT(`:32`) | 序列分类 | val 加权 acc(`:167-171`) | HF 目录 + tokenizer + `label_map.json`(`:172-175`) |
-| mext | `train_mbert_extract.py` | ModernBERT(`:37`) | span 抽取(start/end/可答) | val 参数 acc(`:315-316`) | **裸 state_dict** `best/model.pt` + tokenizer + `meta.json`(`:318-323`) |
-| ctool | `train_causal_tool.py` | Qwen3-0.6B(`:49-50`) | 线性头挂末位隐状态 | val 加权 acc(`:355-356`) | backbone HF + `head.pt` + `label_map.json` + `meta.json`(`:358-366`) |
-| cgen | `train_causal_callgen.py` | Qwen3-0.6B(`:40`) | 语言建模(直接写整条调用) | val_ce,越低越好(`:275-276`) | HF 目录 + tokenizer + `meta.json`(`:278-283`) |
+| mtool | `train_mbert_tool.py` | ModernBERT(常量 `MODEL`) | 序列分类 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | HF 目录(`save_pretrained`)+ tokenizer + `label_map.json` |
+| mext | `train_mbert_extract.py` | ModernBERT(常量 `MODEL`) | span 抽取(start/end/可答) | val 参数 acc(日志字段 `calA_param_acc`,越大越好) | **裸 state_dict** `best/model.pt`(`torch.save(model.state_dict(), …)`)+ tokenizer + `meta.json` |
+| ctool | `train_causal_tool.py` | Qwen3-0.6B(常量 `MODELS`) | 线性头挂末位隐状态 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | backbone HF + `head.pt` + `label_map.json` + `meta.json` |
+| cgen | `train_causal_callgen.py` | Qwen3-0.6B(常量 `QWEN`) | 语言建模(直接写整条调用) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**) | HF 目录 + tokenizer + `meta.json` |
 
 ### 3.1 必改清单
 
 | 文件:行 | 改什么 | 漏改的后果 | 改动量 |
 |---|---|---|---|
 | 新建 `pipeline/train/train_<新格>.py` | 模板选法见 §3.2 | —— | 新写 180–372 行(四个现成脚本的行数区间) |
-| `ops/launch_c1.py:14-19` | `CELLS` 加一行 `"<格名>": (解释器, 脚本绝对路径, base_args)` | `build()` 在 `:52` `CELLS[cell]` KeyError 退 1,响 | 加一行 |
+| 仓库根 `run.py` 的 `CELLS`(训练格表唯一真源) | 加一行 `"<格名>": (解释器, 脚本绝对路径, base_args)`,并把格名加进 `CELL_ORDER` | `ops/launch_probe.py` 从 run.py import 这张表,`build()` 里 `CELLS[cell]` KeyError,响;顺带 `TASKS` 也要加一条 `train-<格名>`,否则 `run.py` 里没有这个任务 | 加一行 |
+| 仓库根 `run.py` 的 `EVAL_CELLS`(评测格表唯一真源) | 加一行 `"<格名>": ("<eval 任务名>", "<依赖的工具格>" 或 None)` | `ops/launch_eval.py` 从这里 import 并据此排依赖顺序,漏挂 = 排卡发射器发不出这个格的评测 | 加一行 |
 | `pipeline/eval/summarize_matrix.py:21` | `CELLS` 元组加格名 | ⚠️**静默**:新格四行**根本不进矩阵表**,脚本退 0、stdout 不提 | 加一项 |
 | `pipeline/eval/summarize_matrix.py:22-23` | `REPORT_OF` 加 `"<格名>": "<报告文件名>.json"` | `read_cell` 在 `:33` `REPORT_OF[cell]` KeyError,响 | 加一项 |
 | `pipeline/eval/summarize_matrix.py:37-58` | 取数的三分支 | ⚠️**静默**:新格落到 `:55-58` 的 else,按 `params_all_ok`/`full_call_ok` 取字段,名字对不上就 `rep.get()` 全 None → 表里一整行 `-`,状态列却写着 `OK` | 加一个分支 |
@@ -141,14 +147,14 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 
 - **独立格 vs 依赖格**:mtool/ctool 只吃数据集,互不依赖;mext/cgen 要吃**同模型工具格**的触发点(`eval_mbert_call.py:140`、`eval_causal_call.py:229` 的 `replay_fire`)。新格只要是"在触发点上评",就必须排在工具格之后,顺序照 stage-commands §4.1。
 - **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 loss 在降 + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。
-- **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_c1.py:53` 的 `rid = f"c1_{model}_{cell}"`、`summarize_matrix.py:75`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_c1.py:52`、`summarize_matrix.py:22`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_c1.py:84` 拼的 session 名人读歧义。建议单段小写。
+- **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_probe.py:67` 的 `rid = f"{batch}_{model}_{cell}"`、`summarize_matrix.py:75` 的 `rid = f"{args.prefix}_{m}_{c}"`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_probe.py:66` 的 `CELLS[cell]`、`summarize_matrix.py:22` 的 `REPORT_OF`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_probe.py:112`(smoke 档)/`:123`(full 档)拼的 session 名人读歧义。建议单段小写。
 
 ### 3.5 最短路径
 
 1. 先答"改的是骨架还是头" → 按 §3.2 末段选模板 → 写训练脚本 → 双环境 `py_compile` → `--smoke` 跑一遍(**stage-commands §3**),看 loss 与 `best/` 落盘。
 2. 加 `check_bundle.py` 的 Bundle 类 → `--device cpu` 验产物(**stage-commands §5**)。
 3. 按 §3.3 判能不能复用 `eval_tool.py`;不能就照 `eval_causal_call.py` 新写(**stage-commands §4**)。
-4. 三处登记:`summarize_matrix.py:21-23`、`ops/launch_c1.py:14-19`、`ops/<batch>_placement.json`。
+4. 四处登记:`summarize_matrix.py:21-23`、仓库根 `run.py` 的 `CELLS`+`CELL_ORDER`(训练格表真源)、同文件的 `EVAL_CELLS`(评测格表真源)、`ops/<batch>_placement.json`。
 5. **回写 skill(§6)**。
 
 ---
@@ -283,19 +289,18 @@ commit 里完成,`python3 run.py selfcheck` 通过才算改完。漏挂的后果
 
 **原则二:回写时机是"当场记、收尾写"。** 发现的当下先在批次计划 `plans/<日期>-<batch>-plan.md` 里记一行原始现象(哪个文件哪一行、什么症状),因为细节两小时后就丢了;正式改 skill 放在 Phase D 收官时一并做,和 `record.py finish` / TIMELINE 补条同一轮。理由:实验跑到一半改 skill,会让"这批用的到底是哪版方法"说不清——skill 的改动必须和批次收官在同一个 commit 边界上。
 
-**原则三:回写必须 commit,且和数字分开。** skill 的改动跟着 Phase D 第 6 步的收官 commit 一起进库即可,但 commit message 里要**单独点名**改了哪几节,让人从日志能查到方法是哪一版——`skill: probe-pipeline 补 <批次> 的方法改动——extending §3 加 <格名> 格 / §5 新增静默点 #20 / gates 新增 G19`。如果这一批只改了 skill 没出数字(例如只是清点),那就单独一个 `skill:` 前缀的 commit,不要混进 `exp:` 或 `data:`。
+**原则三:回写必须 commit,且和数字分开。** skill 的改动跟着 Phase D 第 6 步的收官 commit 一起进库即可,但 commit message 里要**单独点名**改了哪几节,让人从日志能查到方法是哪一版——`skill: probe-pipeline 补 <批次> 的方法改动——extending §3 加 <格名> 格 / §5 新增静默点 #23 / gates 新增 G23`。如果这一批只改了 skill 没出数字(例如只是清点),那就单独一个 `skill:` 前缀的 commit,不要混进 `exp:` 或 `data:`。
 
-⚠️ **门禁编号 G1–G18 已占用,新门禁从 G19 起顺延,不许复用旧号**——SKILL.md 与本文件都按号引用,复用旧号会让两处指向不同的东西。
+⚠️ **门禁编号 G1–G22 已占用,新门禁从 G23 起顺延,不许复用旧号**——SKILL.md 与本文件都按号引用,复用旧号会让两处指向不同的东西。(G19–G22 是 `check_callstr.py` 那批,见 `gates.md §1`。)
 
 ---
 
 ## 7. 未解之处
 
 - **非 qwen / 非 gpt-oss 的第三种服务旗标**没有现成模板。`gen_launch.py` 只有 `QWEN_FLAGS_SRC`(`:57-59`)与 `GPTOSS_SERVE_FLAGS`(`:61`)两套,新族(如 Llama 的 tool-call parser)该配什么旗标,本仓库未读到。
-- **ALFWorld 在本仓库不存在**。`envs/` 下只有 `appworld` / `tales`(TextWorld-Express)/ `tau2-bench` / `bfcl_*` 相关目录,ALFWorld 的官方 split 文件格式、task_id 形态、动作语法都未读到,§2 的清单对它只能给出"要改哪些位置",给不出"每处该填什么"。
+- ~~ALFWorld 在本仓库不存在~~ → **已接入,这条作废**。`envs/alfworld/`(自建目录,含 `data`/`splits`/`venv`/`logs`)已在位;`run.py` 里有 `collect-alf`(解释器 `envs/alfworld/venv/bin/python`,脚本 `envs/collect/run_alfworld.py`)与 `gen-alf-splits`(`pipeline/collect/gen_alfworld_splits.py`,官方三个分区目录抽题单,做法见 §4.6 左栏);`rules.py` 也已有 ALFWorld 的 `ALF_BAD_CHARS` 逗号闸门(§5 #21)。⚠️ 遗留一点:`gen-alf-splits` **没有防覆盖门禁**(run.py 该任务的 notes 原话是"重跑直接改写已入库 txt",别的三个 `gen-*-splits` 都有 `--force` 门禁)。另注:`gen_launch.py` 的客户端生成段是**查 `ENV_TABLE`** 的(常量 `ENV_TABLE`,现有 `appworld` / `alfworld` 两条,各带 venv/runner/fn/统一参数;`gen_clients` 与 `gen_manifest_md` 都按 `cfg["env"]` 取),加新环境 = 往这张表加一条 + 写对应 `run_<env>.py`,§2.1/§2.2 已按此写。
 - ~~一个环境是否必须配一个采集器,存疑~~ → **bfcl 就是反例,已确认**。bfcl 没有自己的采集器,`build.bfcl_events` 直接读外部 BFCL 工具产出的原生结果文件:`<traj_run>/bfcl_<模型>/**/*multi_turn*result.json`,逐行 json、按 `entry["id"]` 去重,事件从 `entry["inference_log"]` 里扁平化出的 `(role, content, reasoning_content)` 三元组抽。本轮实测的两个 run 目录是 `envs/runs/full_v1`(q35 + q36)与 `envs/runs/full_v2_topup`(gptoss),合计 200 题 × 3 模型 = 595 条有事件的轨迹 / 3325 事件。同目录下的 `bfcl_<模型>_score/` 是评分目录,靠 `MODEL_OF.get(rsplit("_",1)[1])` 取不到模型而被跳过(不是靠白名单)。
 - **tales 链路未验证**。`eval_causal_call.py:119` 对 tales 走 `BFCL_CALL`,而 tales 的标签是动词、`label_call` 由 `build.py:158-162` 拼成 `verb(arg=...)`,形式上能对上,但 c1 批次没跑过 tales 的 cgen 格,未实测。
-- **`ops/launch_c1.py` 与 `ops/c1_placement.json` 未入库**(git status 显示 `??`),不确定它们算不算流水线的正式组件;`ops/launch_c1.py:72` 的 smoke 写死 `"q35"`,若它是正式组件则情形 A 还要多改一处。
 - **新环境下 G8(ACCEPT_V3DIFF)失效**。`accept_v3diff.py:24-25`/`:108` 把输入路径与环境列表写死成 `("bfcl","appworld")` 的旧数据,新环境没有旧数据可复现,这道门该换成什么验收,规格里未读到。
 - **非分类头的 inject 凭证没有定义**。`check_bundle.py:165` 只有 `mbert`/`causal` 两个选项,两个 Bundle 类都以"吐类别分布 + 查 `label_map.json`"为接口(`:104-110`、`:145-160`),所以 **mext 与 cgen 两个格至今没有 BUNDLE_CHECK**。抽取头/生成头的"能装起来"该怎么验(生成一条?抽一个区间?),规格里未读到。
 - **K 折 / 留一法的 run_id 与记账约定未读到**。§4.3 建议的"一折一目录"会让 run 数翻 K 倍,折号写进 run_id 的哪一段、`ops/jobs.json` 与 `record.py` 怎么归并同一折的多个 run,现有文档里没有相关约定。

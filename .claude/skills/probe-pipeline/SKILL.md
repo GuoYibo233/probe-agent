@@ -13,20 +13,24 @@ version: 1.0.0
 配套文档（照抄命令去第一份，判断该不该改去第二份，卡住了去第三份）：
 - 命令表：`references/stage-commands.md`
 - 口径清单：`references/invariants.md`（改这里任何一条 → 新老数字不可比）
-- 门禁与应急：`references/gates.md`（门禁编号 G1–G18，下文按编号引用）
+- 门禁与应急：`references/gates.md`（门禁编号 G1–G22，下文按编号引用）
 - 扩展清单：`references/extending.md`（**加新模型 / 新环境 / 新训练方法 / 新 split 方法
   从这份进**；§5 静默失败点总表；**§6 回写本 skill 的对照表**）
 
 工程规则的上位法仍是 `CLAUDE.md`；GPU 发射的上位法仍是 `.claude/skills/gpu-run/SKILL.md`。
 **本 skill 不自己发射 GPU 任务**——凡是要占卡的步骤一律转 gpu-run。
 
-**统一入口（2026-08-02 起）**：仓库根 `run.py` 是全链 59 个任务的运行注册表
+**统一入口（2026-08-02 起）**：仓库根 `run.py` 是全链任务的运行注册表
 （解释器分派 / 参数透传 / GPU 任务只拼命令交 gpu-run / 多步配方），
-`python3 run.py list` / `show <task>` / `selfcheck` 可查。本 skill 的命令表仍是
+任务清单现查 `python3 run.py list`（别在文档里另抄一份会过期的名单），
+`show <task>` / `selfcheck` 同样从它进。本 skill 的命令表仍是
 参数细节的权威；解释器用哪个以 run.py 注册表为准。**任何扩展在改代码的同一个
-commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯一真源是它的 CELLS，
-`ops/launch_probe.py` 从它 import），`selfcheck` 过了才算齐——这条与 Phase E
+commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯一真源是它的 `CELLS`，
+`ops/launch_probe.py` 从它 import；**评测四格唯一真源是它的 `EVAL_CELLS`**，
+`ops/launch_eval.py` 只 import 不另抄），`selfcheck` 过了才算齐——这条与 Phase E
 回写并列，谁都不能替谁：skill 记流程与坑，run.py 记怎么跑。
+⚠️ `run.py show <task>` 对**发射类任务**也过脏树门禁（`git status --porcelain`
+非空就拒绝出命令，`--allow-dirty` 放行）——出命令这条路不是绕门的后门。
 
 ---
 
@@ -68,9 +72,9 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 3. 门禁 **G3 服务健康**（六个全绿才放量）→ **G4 每模型 1 题 smoke** → 放量。
 4. 长杆模型（题最多那个）客户端并发开高一档，拉平三路墙钟。
 5. 收尾门禁 **G6 完整性**（文件数对上题数、每文件末行 `type:"final"`）
-   → **G7 显存归零** → `gpu_jobs.py finish` → `record.py finish` → commit。
+   → **G7 显存归零** → `python3 run.py gpu-jobs finish` → `python3 run.py record finish` → commit。
 
-⚠️ **G5 outdir 命名**：必须是标准名 `appworld_<model_key>`，
+⚠️ **G5 outdir 命名**：必须是标准名 `<env>_<model_key>`（如 `appworld_gptoss`），
 名字不标准会被下游事件抽取**静默跳过**——这个坑不报错，只让样本数变少。
 
 ---
@@ -109,14 +113,31 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 换环境时先跑一句 `comm` 对拍三份题单。
 
 ### C2 四格 smoke（占卡，转 gpu-run）
-门禁 **G14**：四格各跑 500 训练/200 评估/1 epoch，判据是 loss 在降、ckpt 能存能读。
+门禁 **G14**：四格各跑一次 `--smoke`（mtool/mext/cgen 按固定种子 `SEED=20260729`
+随机抽 500 训练 / 200 评估**实例**——mext 的这两个数是**参数实例级**不是样本级；
+ctool 按同一种子随机抽 200 / 80 **事件**；四格都是 1 epoch，没有步数上限），
+判据是 loss 在降、ckpt 能存能读。
 因果两格另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`。
 **smoke 不过不许放量**，一次都不许。
 
+⚠️ **smoke 阶段树常是脏的**（代码刚改完还没定稿）：出命令用
+`python3 run.py show <task> --allow-dirty` 或 `python3 run.py launch-probe smoke … --allow-dirty`。
+smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这条追溯约束。
+重跑同一个 smoke 还要带 `--force`（smoke 目录名是从批次/模型/格确定性推出来的，
+第二次会被"同 out 已有 `train_log.jsonl`"守卫拦住）。
+**正式发射（C3）之前必须 commit**，那道门不许用 `--allow-dirty` 糊过去。
+
 ### C3 批量训练（占卡，转 gpu-run）
 `<MODELS>` × `<CELLS>` 全独立，**一把全上并行**，墙钟 ≈ 单次时长。
-发射前 **G1 工作树干净**（先 commit）→ **G2 实探空卡** → 发射 → **G16 双登记**
-（`gpu_jobs.py register` + `record.py start`，一个都不能漏）。
+发射前 **G1 工作树干净**（先 commit；run.py 对发射类任务是**硬门禁**，
+连 `show` 出命令都拒绝，`--allow-dirty` 才放行）→ **G2 实探空卡** → 发射 →
+**G16 双登记**（`python3 run.py gpu-jobs register` + `python3 run.py record start`，一个都不能漏）。
+
+两条与"同一个 `--out` 二次训练"有关的新行为（2026-08-02 起）：四格都有 `--force`，
+**不带它时 `--out` 下已有 `train_log.jsonl` 就直接拒绝开训**（防两次产物混进同一个
+`best/`）；`run.py launch-probe` / `launch-eval` 发射成功后自动往产物目录写
+`RUNMETA.json`（append 一条 commit + 实际命令），手搓发射要自己补
+`python3 run.py runmeta <outdir> --cmd '<命令>'`。
 
 排卡表落一份 `ops/<batch>_placement.json`，逐格写死 host/gpu/额外参数——
 这样重发某一格时不用重新推理机位。
@@ -144,12 +165,13 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 
 ## Phase D — 收官（强制六连，缺一不可）
 
-1. **记数字**：每个 run 一条 `record.py finish --metric ... --conclusion ...`。
+1. **记数字**：每个 run 一条 `python3 run.py record finish --metric ... --conclusion ...`。
    （⚠️ record.py 三个语法坑见 gates §3.7）
 2. **补方向**：结论动了 `WORKPLAN.md` 任何一条判断 → 往 `TIMELINE.md` 追加一条。
 3. **补口径**：数据集的造法与设定写进 `DATA.md`（**只写设定不写结论**）。
 4. **释放**：杀光 tmux session，`nvidia-smi` 三机确认本项目零占用。
-5. **销号**：每个任务 `gpu_jobs.py finish`，台账清空。
+5. **销号**：每个任务 `python3 run.py gpu-jobs finish`，台账清空。（session 还活着、
+   或 ssh 探测失败分不清死活，它都会 fail-closed 拒绝；确认要销带 `--force`。）
 6. **提交**：代码 + `ops/runs.jsonl` + `RESULTS.md` + 报告 `.md`，
    commit message 里带 `<BATCH>` 与关键数字。
 
@@ -174,7 +196,7 @@ skill 是活文档，用一次不回写就腐烂一次——下次调用它的�
 对照 `references/extending.md §6` 的表逐行打勾，它写明了
 「做了什么 → 更新哪份文档的哪一节 → 更新什么内容」。三条硬规矩：
 
-- **新门禁编号从 G19 起顺延**，G1–G18 已占用，不许复用旧号（SKILL.md 按号引用）。
+- **新门禁编号从 G23 起顺延**，G1–G22 已占用，不许复用旧号（SKILL.md 按号引用）。
 - **区分"该进 skill"与"这一批一次性的事"**：判据是**下一个人会不会再遇到**。
   「gptoss 在 A6000 上装不下」进 skill（硬件约束长期成立）；
   「c1 批次里 q35 的 θ 是 0.85」不进（那是这批的结果，归 RESULTS.md）。
@@ -222,7 +244,7 @@ skill 是活文档，用一次不回写就腐烂一次——下次调用它的�
 - **test 冻结一次**。θ 在 val 上选定后，test 上的数字无论多难看都原样报告——
   难看的那一格恰恰是矩阵要量的东西。
 - **run_id 四处一致**：数据目录名 / tmux session / 台账 name / commit message。
-- `RESULTS.md` 是渲染产物不手改；`runs.jsonl` append-only；台账只经 `gpu_jobs.py`。
+- `RESULTS.md` 是渲染产物不手改；`runs.jsonl` append-only；台账只经 `python3 run.py gpu-jobs register/finish`。
 - **发射前先 commit**，脏工作树下记录里的 HEAD 追不回真实代码。
 - **唯一允许停下问用户的情形是"推翻前提"**——目标 split 根本跑不了、
   权重路径失效、验收线反复过不了。其余一律自动处置（详见 gates §4）。

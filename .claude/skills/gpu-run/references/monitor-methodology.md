@@ -2,9 +2,9 @@
 
 Read tqdm rate, compute real ETA, decide next step. Never guess from memory.
 
-由 `.claude/agents/job-monitor.md` 和 gpu-run Phase 5 引用。原为全局
-`monitor-job` skill，2026-07-30 迁入项目内；下面的示例路径来自旧项目，
-**new1 里一律以 `python ops/gpu_jobs.py json` 的台账输出和
+由 `.claude/agents/job-monitor.md` 和 gpu-run Phase 5 引用。原为一个全局
+skill，2026-07-30 迁入项目内、全局那份已作废；下面的示例路径来自旧项目，
+**new1 里一律以 `python3 run.py gpu-jobs json` 的台账输出和
 `<workdir>/logs/` 为准**。
 
 ## When to invoke
@@ -25,7 +25,7 @@ Before stating any ETA:
 
 ## Standard procedure
 
-new1 首选：`python /home/y-guo/reproduce/new1/ops/gpu_jobs.py json`
+new1 首选：仓库根 `/home/y-guo/reproduce/new1` 下跑 `python3 run.py gpu-jobs json`，
 已经把每个分片的进度、实测速率、tqdm ETA、tmux 存活状态算好了。
 台账查不到时才手动走下面这套：
 

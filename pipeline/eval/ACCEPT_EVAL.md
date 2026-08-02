@@ -11,29 +11,68 @@ mbert 侧 12 秒跑完。
 
 ## 1. 验收命令
 
+入口是仓库根 `run.py`：`eval-tool-mbert` / `eval-tool-causal` 两条任务对应同一个
+`eval_tool.py` 的两个 `--head`（`--head` 与解释器都由注册表钉死，命令里不再写）。
+两条任务都登记为发射类，`python3 run.py <task> …` 只把命令打印出来不执行——本文这两条
+是纯 CPU 验收（`--cached-logits`），把打印出来的命令原样手跑即可
+（出命令带脏树门禁：工作树脏时加 `--allow-dirty` 才打印，这不是跳过 run.py，
+是 run.py 自己的逃生口）。
+
 规格给的命令（本次实跑时多加了 `--report-dir`，理由见 §4 偏离①）：
 
 ```bash
-mbert-env/bin/python pipeline/eval/eval_tool.py --env bfcl \
+python3 run.py eval-tool-mbert --env bfcl \
   --run  /home/y-guo/reproduce/new1/envs/bert_runs/bfcl_v3 \
   --data /home/y-guo/reproduce/new1/envs/bert_data/v3 \
   --legacy-splits --cached-logits \
   --report-dir /home/y-guo/reproduce/new1/pipeline/eval/accept_bfcl_v3
 ```
 
+⚠️ `bfcl_v3` 是**冻结的旧 run，它的 `logits_*.pt` 没有指纹档**——直接照上面跑会被
+§1.1 那道校验挡住。先补档再跑（做法与理由见 §1.1）。
+
 自加的第二条（因果头路径的同款验收）：
 
 ```bash
-cprobe-env/bin/python pipeline/eval/eval_tool.py --env bfcl --head causal \
+python3 run.py eval-tool-causal --env bfcl \
   --run  /home/y-guo/reproduce/new1/envs/bert_runs/bfcl_v3_causal_qwen \
   --data /home/y-guo/reproduce/new1/envs/bert_data/v3 \
   --legacy-splits --cached-logits \
   --report-dir /home/y-guo/reproduce/new1/pipeline/eval/accept_bfcl_v3_causal
 ```
 
+⚠️ 同上：这条也要先按 §1.1 补一次指纹档，再带 `--cached-logits` 跑。
+
 产物落在 `pipeline/eval/accept_bfcl_v3{,_causal}/`，旧目录一个字节没动
 （旧 `REPLAY_REPORT.json` 的 md5 跑前跑后都是 `18f948fe…`，
 causal 那份是 `1893a059…`）。
+
+### 1.1 旧冻结 run 的 logits 没有指纹档，要先补一次
+
+2026-08-02（审计 B9）起 `eval_tool.py` 给每份 `logits_<sp>.pt` 配一个
+`logits_<sp>.meta.json`，里面记着产它那份 `best/` 权重的指纹（**每个权重文件的
+大小 + 首尾各 64KB 的 sha1，不含 mtime**）与行数。带 `--cached-logits` 时缺这个
+文件就 `SystemExit`——旧缓存无从判断出自哪份权重，不许拿它冒充。
+
+本文两条验收命令读的都是**这套机制之前**产的 logits，所以没有 `.meta.json`。
+处置：把命令里的 `--cached-logits` 换成 `--adopt-logits-fingerprint` 先跑一遍，
+**其余参数一个字不改**（`--env` / `--run` / `--data` / `--legacy-splits` 都仍要给，
+`--report-dir` 给不给都行，这一趟不写报告）：
+
+```bash
+python3 run.py eval-tool-mbert --env bfcl \
+  --run  /home/y-guo/reproduce/new1/envs/bert_runs/bfcl_v3 \
+  --data /home/y-guo/reproduce/new1/envs/bert_data/v3 \
+  --legacy-splits --adopt-logits-fingerprint
+```
+
+它做的事：给 `--run` 下每份已存在的 `logits_<sp>.pt` 写出 `.meta.json`，然后
+**直接退出，不评测**。放行条件是 `best/` 下**所有**权重文件的 mtime 都不比该
+logits 新——只有这样才能证明"当前权重就是产这些 logits 的权重"；权重更新就报
+"权重比 logits 新"并拒绝认领。补完再按上面的原命令带 `--cached-logits` 跑验收。
+
+不想认领也行：**去掉 `--cached-logits` 重算一次**，重算会自动写指纹。代价是这两条
+就不再是零 GPU 的 12 秒验收了，而且重算出的报告要能与旧产物逐字节相同才算数。
 
 ## 2. 对比字段清单与逐字段结论
 
@@ -60,12 +99,13 @@ bootstrap 置信区间能逐位对上，说明 `random.Random(SEED=20260729)` �
 `--legacy-splits` 关掉后的 val/test 新口径路径，用 4 个事件的小数据在 CPU 上跑通：
 
 ```bash
-cprobe-env/bin/python pipeline/eval/eval_tool.py --env bfcl --head causal \
+python3 run.py eval-tool-causal --env bfcl \
   --device cpu --run /tmp/eval_smoke/run --data /tmp/eval_smoke/data \
   --report-dir /tmp/eval_smoke/rep
 ```
 
-（run/best 是指向 `envs/bert_runs/bfcl_v3_causal_qwen/best` 的软链，只读；
+（同上：run.py 出命令，这条 `--device cpu` 的冒烟把打印出来的命令原样手跑；
+run/best 是指向 `envs/bert_runs/bfcl_v3_causal_qwen/best` 的软链，只读；
 logits 写进 /tmp，旧目录未被写入。）这条路径验的是：`CausalProbe` 从
 `pipeline/train/train_causal_tool.py` 导入并加载 backbone + head.pt、
 按事件整段一次前向取边界位 logits、温度与 θ 都在 val 上定、test 冻结、

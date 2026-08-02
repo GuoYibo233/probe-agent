@@ -25,8 +25,8 @@ shard, launch in tmux, verify, report.
 ## Step 1 — Probe
 
 ```bash
-# new1 首选（带台账信息，约 6 秒）：
-python3 /home/y-guo/reproduce/new1/ops/gpu_jobs.py free
+# new1 首选（带台账信息，约 6 秒；注册任务一律从仓库根 run.py 进）：
+cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs free
 
 # 底层脚本（等价探测，本机只有 python3，没有 python）：
 bash /home/y-guo/reproduce/new1/.claude/skills/gpu-run/scripts/gpu_status.sh          # 四台全探
@@ -117,7 +117,7 @@ No `sleep N; check` loops in the foreground. For "tell me when done":
 until ! ssh <host> "pgrep -u y-guo -f '<distinctive_cmd_fragment>'" >/dev/null; do sleep 60; done; echo DONE
 ```
 
-Or check back on wakeup by reading log tails / output file counts. ETA claims need ≥60s of tqdm observation (see monitor-job skill).
+Or check back on wakeup by reading log tails / output file counts. ETA claims need ≥60s of tqdm observation (see `monitor-methodology.md` in this same directory).
 
 ## Step 7 — Report
 

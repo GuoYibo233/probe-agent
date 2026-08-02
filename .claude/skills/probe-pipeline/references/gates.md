@@ -1,17 +1,17 @@
 # gates — 门禁与应急处置
 
 跑到某一步卡住了，先在 §1 找对应的门禁编号，再看 §3 有没有同款案例；判断"该停还是该修"看 §4。
-命令行怎么敲见 `references/stage-commands.md`；哪些常量不许动见 `references/invariants.md`。
+命令行怎么敲见 `stage-commands.md`；哪些常量不许动见 `invariants.md`（都在本目录）。
 
 ## 1. 门禁总表
 
 | 编号 | 检查点 | 在哪一步 | 判据 | 不过时的标准动作 |
 |---|---|---|---|---|
 | G1 | 工作树干净 | 任何 GPU 发射前 | `git status --short` 为空 | 先 commit 再发射；不干净就发射，记录里的 HEAD 追不回真实代码（PLAY §0.11、§3.1） |
-| G2 | 实探空卡 | 发射前 | `gpu_jobs.py free`，只用 `OWNERS=FREE` 的卡，永不信缓存 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
+| G2 | 实探空卡 | 发射前 | `python3 run.py gpu-jobs free`，只用 `OWNERS=FREE` 的卡，永不信缓存 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
 | G3 | 服务健康 | 采集放量前 | 日志出现 `Application startup complete`，且 `curl /v1/models` 返回模型名；**全部实例健康才放量** | 读服务日志定位；单实例救不活就把它的分片改指同模型另一实例的端口，不停摆（PLAY §3.2、§3.7） |
 | G4 | 采集 smoke | 每模型各 1 题 | outdir 出现 `<env>_<tid>.jsonl`；`type:"gen"` 带非空 `reasoning`、`type:"env"` 带代码动作、末行 `type:"final"` | 先查服务日志再修；反复修不好按 §4 判断是否死局（PLAY §3.3） |
-| G5 | outdir 命名 | 采集发射时 | 目录名必须是 `appworld_<model_key>` 这类标准名，尾巴对上 `MODEL_OF` 的键 | 改名重跑；名字不标准会被下游事件抽取**静默跳过**，见 §3.6（PLAY §3.3、ENG §4.2.1、§7） |
+| G5 | outdir 命名 | 采集发射时 | 目录名必须是 `<env>_<model_key>` 标准名（如 `appworld_gptoss`），尾巴对上 `MODEL_OF` 的键 | 改名重跑；名字不标准会被下游事件抽取**静默跳过**，见 §3.6（PLAY §3.3、ENG §4.2.1、§7） |
 | G6 | 采集完整性 | Phase A 收尾 | 各 outdir 的 jsonl 文件数对上题数，且每个文件末行是 `type:"final"` | 用 `--resume` 重发缺题分片补齐；补齐后才算 A 段结束（PLAY §3.8.1-2） |
 | G7 | 显存归零 | Phase A 收尾 | 服务 session 全杀，`nvidia-smi` 显存归零 | 批量任务结束不许占卡过夜，必须杀干净（PLAY §0.12、§3.8.3） |
 | G8 | **ACCEPT_V3DIFF** | annotate 段末，不过不许进 train | 新旧样本数相等、主键单边为 0、九字段（text/label/w/depth/n_sents/traj/unit/model/step）不一致计数**全 0**，每个有旧基准的环境各跑一遍 | 修 annotate 代码重跑；反复过不了属"推翻前提"，按 §4 停下问用户（ENG §4.5、§9） |
@@ -20,10 +20,10 @@
 | G11 | label_call 抽查 | annotate 自检 | 抽 20 条：工具名 == label，参数与 action 原文对得上 | 回查 `split_args_named` 与归一化（ENG §4.6） |
 | G12 | **ACCEPT_EVAL** | eval 段末，不过不许进 Phase C 发射 | 重跑旧数据，`temperature / chosen_theta / test_frozen` 三块完全一致；新报告写临时目录，旧文件 md5 跑前跑后不变 | 修 eval 代码重跑；本轮就因"cached 时误跳 tokenizer 导致报告少两个字段"改回并重跑（ENG §6.5、ACCEPT_EVAL §4.4） |
 | G13 | 对齐检查 | 因果格开训前 | `ALIGN_CHECK` PASS，FAIL 即 `exit 2`；先用 `--align-only` 单独跑一遍 | 看 §3.1：先判是数值噪声还是实现错误，放宽阈值必须记 TIMELINE（ENG §5.3、§9） |
-| G14 | 四格 smoke | 批量训练发射前 | 各跑一次 50 步微训：loss 在降、ckpt 能存能读；ctool 含 ALIGN_CHECK PASS | 修脚本重 smoke，不许直接放量（PLAY §5.2、ENG §9） |
+| G14 | 四格 smoke | 批量训练发射前 | 各跑一次 `--smoke`：mtool/mext/cgen **按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（四个脚本都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，不是原序截断；mext 的 500/200 落在 `join_rows` 展开出来的**参数实例**上，不是样本），ctool 同法随机抽 200 / 80 **事件**，四格都是 1 epoch、**没有步数上限**（口径同 `stage-commands.md §3` 的 `--smoke` 行）；判据是 loss 在降、ckpt 能存能读；ctool 含 ALIGN_CHECK PASS | 修脚本重 smoke，不许直接放量（PLAY §5.2、ENG §9）。⚠️ 重跑同一个 smoke 目录要带 `--force`（同 out 已有 `train_log.jsonl` 即拒绝开训），出命令阶段树脏就 `--allow-dirty` |
 | G15 | bundle 校验 | 批量训练发射前 | `check_bundle.py` 对 smoke 产物跑通：能加载、出 softmax、打印预测/置信度/是否过 θ/真值 | 产物格式不合 `probe_server.py` 就改存盘格式（ENG §8、§9） |
-| G16 | 双登记 | 发射后立刻 | `gpu_jobs.py register` 与 `record.py start` 同时做完 | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
-| G17 | 收尾销号 | 每个 run 结束 | `record.py finish --metric …` + `gpu_jobs.py finish` + 释放显存 + commit | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5） |
+| G16 | 双登记 | 发射后立刻 | `python3 run.py gpu-jobs register` 与 `python3 run.py record start` 同时做完 | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
+| G17 | 收尾销号 | 每个 run 结束 | `python3 run.py record finish --metric …` + `python3 run.py gpu-jobs finish` + 释放显存 + commit | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5）。`gpu-jobs finish` 是 fail-closed 的：session 还活着、或 ssh 探测失败（分不清死活）都会拒绝销号，确认要销带 `--force` |
 | G18 | 总验收清单 | 批量训练发射前逐项打勾 | ENG §9 的七条：G8 / G12 / 产物清单齐 / 题单一致 / 四格 smoke / G15 / 全部新代码已 commit | 缺哪条补哪条，一条不缺才发射（ENG §9） |
 | G19 | 题单缺口逐条列出 | annotate 段末 | 三模型共用一份题单，但**实现出的 unit 集合允许有缺口**；缺口必须逐条列进 `CALLSTR_CHECK.md` 并说明原因（轨迹一个可用事件都没出：思考 <40 字符 或 调用正则解析不出）。bfcl 实测缺口：q35 0 题、q36 4 题（`multi_turn_base_{63,84,176,187}`，其中 176 在 test 堆 → q36 test 只有 19 实例）、gptoss 1 题（`multi_turn_base_30`，val 堆） | 缺口列不出来 = G10 的字面版本失守，"三模型同题对比"这句话有水分，报告里必须改口成"近似同题"（`check_callstr.py` 偏差 2） |
 | G20 | 真值调用串可回读 | annotate 段末，进 train 前 | 把每个事件的 `label_call` 喂给 `eval_causal_call.parse_call`，切回来的 `(key, norm(value))` 必须与该事件的 `args_named` 全等。回读率 = `params_all_ok` / `full_call_ok` 的**天花板**，必须写进报告。实测（事件级回读率，q35/q36/gptoss）：bfcl 0.9735 / 0.9763 / 0.9755，appworld 0.9932 / 0.9953 / 0.9985 | 回读率异常低（<0.95）先查 `make_call` 与 `split_named_raw` 的切法是不是漂了；正常低（参数值含逗号）**只记录不修口径**——给单个环境补逗号闸门会让它与已上账的 appworld 不是一把尺子（EXT §5 #21） |
@@ -48,6 +48,7 @@
 
 - **验什么**：评测后处理（首次越阈回放、温度拟合、θ 扫描、bootstrap、stop-time 校准、深度十桶、先验基线、经济换算）与旧脚本一致。
 - **怎么跑**：`--legacy-splits --cached-logits`，复用旧 `logits_*.pt` 只做 CPU 后处理，报告写 `--report-dir` 指的临时目录（ENG §6.5、ACCEPT_EVAL §1）。
+- ⚠️ **指纹机制（2026-08-02，审计 B9）之前产的 logits 没有配套 `logits_<sp>.meta.json`，直接 `--cached-logits` 会 SystemExit**。两条路：① 权重确认没动过 → 先把同一条命令的 `--cached-logits` 换成 `--adopt-logits-fingerprint` 跑一遍补档（它只认领指纹然后退出，不评测；放行条件是 `best/` 下**所有**权重文件的 mtime 都不比 logits 新——这是"当前权重就是产这些 logits 的权重"唯一能自动证明的方式），补完再按原命令带 `--cached-logits`；② 不想认领就去掉 `--cached-logits` 重算一次，重算会自动写指纹。指纹本身是**权重文件大小 + 首尾各 64KB 的 sha1**，不含 mtime——正常拷贝/恢复不作废缓存。
 - **判据**：`temperature / chosen_theta / test_frozen` 三块完全一致，且**绝不覆盖旧文件**。
 - **本轮结果**：PASS，且强于要求——整份 `REPLAY_REPORT.json` 与 `.md` 都与旧产物**逐字节相同**；mbert 头 12 秒跑完；自加的因果头那一份同样逐字节相同；旧文件 md5 跑前跑后未变（`ACCEPT_EVAL.md` §1、§2）。
 - **最容易被打乱的一处**：bootstrap 置信区间能逐位对上，说明 `random.Random(SEED)` 的**取用次序**也与旧脚本一致——改动评测代码时最先破的就是这个，专门确认它（`ACCEPT_EVAL.md` §2）。
@@ -93,15 +94,15 @@
 
 - **现象**：事件抽取按目录名尾巴认模型（glob `appworld_*/appworld_*.jsonl` + `MODEL_OF` 键匹配），`appworld_q35_tn` 这类名字对不上键，**整个目录被跳过且不报错**——数据集少一大块，没有任何一处告警。
 - **判断依据**：这是实测过的坑，两份规格都专门标注（PLAY §3.3、ENG §4.2.1、§7）。
-- **处置**：outdir 一律用 `appworld_<model_key>` 标准名；同一模型的不同 split 轨迹落**同一个** outdir（文件名按 task_id 天然不冲突）。
+- **处置**：outdir 一律用 `<env>_<model_key>` 标准名；同一模型的不同 split 轨迹落**同一个** outdir（文件名按 task_id 天然不冲突）。
 - **事后评价**：这类"静默跳过"是最危险的一类失败——它不触发任何门禁，只能靠 G6 的条数核对和 G10 的题单一致性抓住。所以 G6 要数文件数，不能只看"跑完了没报错"。
 
 ### 3.7 `record.py` 的三个语法坑（G16 / G17）
 
 - **现象与成因**：
-  1. **`--metric` 的值含 `.` 或 `e` 会被强转数值**——`ops/record.py:106` 是 `v = float(v) if ("." in v or "e" in v.lower()) else int(v)`，转不动才 `except` 退回字符串。所以像 `1e-4`、`0.05` 会变成 float，而含 `e` 的英文单词侥幸没转成也是走的异常路径。
+  1. **`--metric` 的值含 `.` 或 `e` 会被强转数值**——`ops/record.py` 的 `kv()` 里是 `v = float(v) if ("." in v or "e" in v.lower()) else int(v)`，转不动才 `except` 退回字符串（**按函数名 grep，别记行号——这批行号漂过**）。所以像 `1e-4`、`0.05` 会变成 float，而含 `e` 的英文单词侥幸没转成也是走的异常路径。
   2. **`null` 会以字符串 `"null"` 落账**（同上，`float("null")` 抛异常→退回字符串），账面上看起来像有值。
-  3. **同一个 run_id 不许二次 `start`**；`finish` 找不到 run_id 会直接退出并提示先 `start`（`ops/record.py:234`）。
+  3. **同一个 run_id 不许二次 `start`**（`cmd_start()` 里的 `if ev["run_id"] in load(): sys.exit(...)`）；`finish` 找不到 run_id 会直接退出并提示先 `start`（`cmd_finish()` 里的同款检查）。同样按函数名 grep。
 - **处置**：记 N/A 的格（如 §3.4 的 `c1_q35_mext`）用 `--conclusion` 写清原因，不要靠 `--metric x=null` 表达；发射前确认这个 run_id 没 start 过。
 - **事后评价**：记账 CLI 的语法坑不会让实验失败，但会让 `RESULTS.md` 里出现类型不一致的列，事后统计时要多一道清洗。约定：**能进 metric 的只有真数字，解释性内容一律进 conclusion**。
 
@@ -116,7 +117,7 @@
 
 **唯一允许停下来问用户的情形：推翻前提的事。** 原文列举的三类是——目标 split 的任务在环境里根本跑不了、权重路径失效、双验收线反复过不了（PLAY §0 前言、§6）。
 
-**停之前必须把已完成的部分收尾干净**（PLAY §0 前言）：核对并落盘已完成的产物、杀掉还在占卡的服务、`nvidia-smi` 确认归零、`gpu_jobs.py finish` 销号、`record.py finish` 记上已有的数字与中断原因、commit。
+**停之前必须把已完成的部分收尾干净**（PLAY §0 前言）：核对并落盘已完成的产物、杀掉还在占卡的服务、`nvidia-smi` 确认归零、`python3 run.py gpu-jobs finish` 销号、`python3 run.py record finish` 记上已有的数字与中断原因、commit。
 
 **其余一律自动处置，不找用户**（PLAY §6）：分片挂 → 修 + 重发；实例挂 → 分片改指同模型另一端口；OOM → 砍并发或换更大的卡重发（**不是降 bs**，见 §3.2）；单题超时卡死 → 跳过该题并记入报告缺口。
 

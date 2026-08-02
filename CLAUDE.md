@@ -9,9 +9,11 @@
 禁止绕过它手搓 ssh/nohup 启动。
 
 - 集群慢变量（驱动/CUDA/坑）：`ops/gpu_state.md`
-- 任务台账：`ops/jobs.json`，只通过 `python ops/gpu_jobs.py register/finish` 读写
-- 用户自助监控：`python ops/gpu_jobs.py watch`
-- 实时空卡：`python ops/gpu_jobs.py free`（永不信缓存的占用状态）
+- 任务台账：`ops/jobs.json`，只通过 `python3 run.py gpu-jobs register/finish` 读写
+- 用户自助监控：`python3 run.py gpu-jobs watch`
+- 实时空卡：`python3 run.py gpu-jobs free`（永不信缓存的占用状态）
+- 产物钉代码：发射器自动往产物目录写 `RUNMETA.json`（commit+argv+脏清单）；
+  手搓发射必须补 `python3 run.py runmeta <产物目录> --cmd '<完整命令>'`
 
 ## 探针流水线：整条链走 probe-pipeline skill
 
@@ -30,6 +32,8 @@
 一律从仓库根 `run.py` 进，禁止直接调底层脚本：
 - CPU 任务：`python3 run.py <task> [参数...]` 直跑，解释器由注册表定。
 - GPU/发射类任务：`python3 run.py show <task>` 出命令，发射本身仍走 gpu-run skill。
+  show 对发射类同样过脏树门禁（`--allow-dirty` 放行）；三个台账文件与锁
+  （jobs.json/runs.jsonl/RESULTS.md/*.lock）不算脏。
 - 多步流程用 `python3 run.py recipe <name>`，进度看 `run.py status`。
 - 注册表里没有的任务：先挂进 TASKS/RECIPES 再跑
   （一次性发射器按 2026-08-02 裁决不进注册表，属唯一例外）。
@@ -51,7 +55,7 @@
 - `DATA.md` 只写设定与口径，**不写结论**——结论归 `RESULTS.md`，否则会长成第二本账。
 - 词表只有一份：`plans/PLAINWORDS.md`。别在任务卡或状态书里另起一份。
 - 状态书同一时刻只留一份现役，旧的进 `plans/archive/`（索引见 `plans/README.md`）。
-- 发射时 `record.py start`（自动抓 git HEAD），收尾时 `record.py finish` 补数字，
+- 发射时 `run.py record start`（自动抓 git HEAD），收尾时 `run.py record finish` 补数字，
   两步都写在 gpu-run skill 的 Phase 4 / 6a 里，跟着流水线走就不会漏。
 - `RESULTS.md` 是渲染产物，**不要手改**；`runs.jsonl` append-only，只增不改。
 - `WORKPLAN.md` 是会被覆盖的当前计划，`TIMELINE.md` 是永不覆盖的决策历史，

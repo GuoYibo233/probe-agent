@@ -3,7 +3,7 @@
 本文件列出探针流水线里**换数据集、换 agent 模型、换环境都不许动**的常量与规则。
 **改动这里任何一条 = 新老数字不可比**，必须新起数据集版本号 / run_id 批次号，并在 `TIMELINE.md` 补一条说明改了什么、为什么改、作废了哪些旧数字。
 
-命令行怎么敲见 `references/stage-commands.md`；门禁与应急见 `references/gates.md`。
+命令行怎么敲见 `stage-commands.md`；门禁与应急见 `gates.md`（都在本目录）。
 
 ## 1. 为什么有这份清单
 
@@ -45,7 +45,7 @@
 | cgen 目标构造 | 先 tokenize 目标不截断（>160 token 的实例丢弃并计数），再按 `max_length = 4096 - L_t` 左截输入，`labels` 前缀段填 `-100` | `train_causal_callgen.py`（ENG §5.4） | 顺序反了就会被左截吃掉目标，损失算在错的位置上 |
 | cgen 损失 | 逐实例目标段 mean CE，批损失 `Σ(w_i·ce_i)/Σw_i` | `train_causal_callgen.py`（ENG §5.4） | 丢掉 w 加权 = 丢掉事件等权，与其余三格口径分家 |
 | cgen 选 best | 唯一依据是 val 全量 masked-CE（越低越好）；`val_exact_call`（200 条 greedy）只进日志不选 best | ENG §5.4 | 用 exact_call 选 best 会让 val 被用两次（选点 + 报数），破坏 val/test 分工 |
-| smoke 规模 | 500 训练 / 200 评估 / 1 epoch，四格统一 | ENG §5.1、§5.4 | 只影响冒烟，但改了就失去"和历史 smoke 同口径"的对照价值 |
+| smoke 规模 | mtool / mext / cgen：**按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（mext 的这两个数落在展开后的**参数实例**上，不是样本）；**ctool：同法随机抽 200 / 80 事件**（它按事件计数，不是实例）；四格都是 1 epoch | ENG §5.1、§5.4；实现在四个训练脚本各自的 `--smoke` 分支——四处都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，**不是原序截断** | 只影响冒烟，但改了就失去"和历史 smoke 同口径"的对照价值；改种子或改成原序截断都会换掉抽中的那批样本 |
 | 解释器 | mbert 格 `mbert-env`（transformers 4.57.6 钉死）、causal 格 `cprobe-env`（≥5.14），谁也不许升级谁 | PLAY §0.13、ENG §2.1 | 混架构在旧版上会**静默算错**（分块增量喂），这是对齐检查存在的理由 |
 | 对齐检查 | 因果格开训前必过，FAIL 即 `exit 2` | `train_causal_tool.py`（ENG §5.3） | 跳过它 = 允许一个数值上错误的骨架进入训练，产出的一切数字都不作数 |
 | `--out` | 必填，无默认值 | ENG §5.1.3 | 默认值会让两次训练悄悄覆盖同一目录 |
@@ -74,7 +74,7 @@
 | run_id 四处一致 | 原始数据目录名 = tmux session 前缀 = 台账 name = commit message | `CLAUDE.md`、PLAY §0.10 | 出了问题追不回是哪次跑、用的哪版代码 |
 | 训练 run_id 模板 | `<批次>_<model_short>_<cell>`，cell ∈ `{mtool, mext, ctool, cgen}` | ENG §2.4 | 汇总脚本按目录名认格，命名一乱矩阵表就拼不出来 |
 | 模型称呼 | qwen3.5 与 qwen3.6 **永远是两个模型**，任何场合不写成"qwen 侧" | PLAY §0.6 | 合并会掩盖两代模型的差异，这是用户明确的红线 |
-| 记账双写 | 发射时 `record.py start` + `gpu_jobs.py register`；收尾 `record.py finish` + `gpu_jobs.py finish` | `CLAUDE.md`、PLAY §0.10 | 漏登记就是占卡不销号；数字进不了 `runs.jsonl` 就不进 `RESULTS.md` |
+| 记账双写 | 发射时 `python3 run.py record start` + `python3 run.py gpu-jobs register`；收尾 `python3 run.py record finish` + `python3 run.py gpu-jobs finish` | `CLAUDE.md`、PLAY §0.10 | 漏登记就是占卡不销号；数字进不了 `runs.jsonl` 就不进 `RESULTS.md` |
 | 只增不改 | `ops/runs.jsonl` append-only；`RESULTS.md` 是渲染产物不许手改 | `CLAUDE.md`、ENG §0.5 | 手改渲染产物下次渲染即被覆盖，且账实不符 |
 | 发射前 commit | 工作树必须干净 | PLAY §0.11 | 记录里存的 HEAD 追不回真实代码，实验等于没留痕 |
 | 新产物新目录 | 旧数据与旧数字一个字节不动，新东西一律新目录 + 新版本号 | PLAY §0.7 | 覆盖旧产物 = 永久失去复现基准 |
@@ -90,7 +90,7 @@
 | 采集并发数、分片数、每实例流数 | 自由 | 每题独立求解、`--resume` 幂等，分片只决定谁跑哪几题，轨迹内容与题目归属都不变。本轮故意给题多的模型开高一档并发来拉平墙钟（PLAY §3.4） |
 | 服务端口、session 名后缀、实例数 | 自由 | 服务只是把同一份权重摆出来；一个实例挂了把分片改指同模型另一实例，结果相同（PLAY §3.7） |
 | `--align-tol` | **可放宽，但必须记 TIMELINE 并写明理由与实测差值** | 它是门禁阈值不是训练超参，不进梯度。但放宽 = 降低"实现正确性"的判定标准，所以要留证据链。本轮按 T8 先例放宽到 `3e-4`，依据是三个 ctool 的 hidden maxdiff 8.39e-5 ~ 1.68e-4、相对差 2.3e-6 ~ 3.3e-6，判为 fp32 数值噪声（TIMELINE 2026-07-31 c1 条·取舍其一） |
-| eval 的 `--report-dir` / `--device` / `--cached-logits` | 自由 | 只改"报告写哪、算在哪、要不要复用已存 logits"，后处理数学不变。本轮 ACCEPT_EVAL 在 `--device cpu` + `--cached-logits` 下产出与旧报告**逐字节相同**，即证（`ACCEPT_EVAL.md` §1、§4.1、§4.2）。注意 `--cached-logits` 只跳模型不跳 tokenizer——`probe_cost_test` 要用它数 token（`ACCEPT_EVAL.md` §4.4） |
+| eval 的 `--report-dir` / `--device` / `--cached-logits` | 自由 | 只改"报告写哪、算在哪、要不要复用已存 logits"，后处理数学不变。本轮 ACCEPT_EVAL 在 `--device cpu` + `--cached-logits` 下产出与旧报告**逐字节相同**，即证（`ACCEPT_EVAL.md` §1、§4.1、§4.2）。注意 `--cached-logits` 只跳模型不跳 tokenizer——`probe_cost_test` 要用它数 token（`ACCEPT_EVAL.md` §4.4）。2026-08-02 起它多了一道**权重指纹校验**：缓存 `logits_<sp>.pt` 旁的 `logits_<sp>.meta.json` 记着产它那份 `best/` 权重的指纹（**文件大小 + 首尾各 64KB 的 sha1，不含 mtime**——正常拷贝/恢复不作废缓存）与行数，缺指纹或指纹不符即 SystemExit（细节见 `stage-commands.md §4.4`）。**指纹机制之前产的旧 logits 一律没有 `.meta.json`**：要么先用同一条命令加 `--adopt-logits-fingerprint` 补档（只在 `best/` 下所有权重文件的 mtime 都不比 logits 新时才放行，认领完即退出、不评测），要么去掉 `--cached-logits` 重算一次（重算自动写指纹）。这不改口径，只是拦住"拿旧 logits 冒充重训后权重的结果" |
 | run_id 的批次前缀（`c1_` → `c2_` …） | 自由，且换数据就**应该**换 | 纯命名。但必须四处一起换（第 5 节） |
 | 日志/报告的标题文字 | 自由，**除非在做逐字节验收** | 验收要求 md 也逐字节相同，所以验收路径下标题得沿用旧文案（`ACCEPT_EVAL.md` §4.6） |
 

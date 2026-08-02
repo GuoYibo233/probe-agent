@@ -21,7 +21,9 @@ sharded-job 的 ETA 修正、decision tree。那份文件里的示例路径来�
 **路径一律以调用方给的清单和 new1 的 `<workdir>/logs/` 为准**，不去碰
 /home/y-guo/ACL2026 下的任何东西。
 
-本项目首选的取数方式是 `python /home/y-guo/reproduce/new1/ops/gpu_jobs.py json`
+本项目首选的取数方式是在 /home/y-guo/reproduce/new1 里跑
+`python3 run.py gpu-jobs json`（仓库根 `run.py` 是所有注册任务的唯一入口，
+不许绕过它直接调 `ops/` 下的脚本；本机只有 `python3`，没有 `python`）
 ——台账里已经有每个分片的进度、实测速率、tqdm ETA 和 tmux 存活状态，
 比自己 tail 日志更快也更不易出错；台账查不到的才回落到手动读日志。
 

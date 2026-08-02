@@ -1,8 +1,8 @@
 # GPU 集群慢变量档案（new1）
 
 > 只记不会分钟级变化的东西。**卡的实时占用永远现场探测**：
-> `python ops/gpu_jobs.py free`（≈6 秒扫全集群）。
-> 任务台账在 `ops/jobs.json`，只通过 `ops/gpu_jobs.py register/finish` 读写。
+> `python3 run.py gpu-jobs free`（≈6 秒扫全集群，仓库根执行）。
+> 任务台账在 `ops/jobs.json`，只通过 `run.py gpu-jobs register/finish` 读写。
 > 本文件更新时机：驱动升级、硬件变动、发现新坑。
 
 勘察日期：2026-07-29（实测，非道听途说）

@@ -32,15 +32,15 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
 | `envs/collect/common.py` | 采集器共用库：Chat 客户端（raw=completions 自拼模板切思考；chat=chat 端点读 `message.reasoning`，给 gpt-oss）+ TrajLog 落盘（每步一行 JSON，type 分 meta/gen/env/final）。服务端 5xx 按 1/2/4/8 秒退避重试 4 次 | 不能单独跑，被四个 run_*.py import |
-| `envs/collect/run_appworld.py` | AppWorld 采集：模型每轮写 python 代码块调 apis.*，在持久 IPython shell 里执行 | `python run_appworld.py --base-url http://HOST:PORT/v1 --model <m> --split dev --n 0 --outdir ../runs/<批次>/appworld_<模型> --exp <名> [--shard-id i --num-shards n --resume]`，`--n 0`=整个 split |
+| `envs/collect/run_appworld.py` | AppWorld 采集：模型每轮写 python 代码块调 apis.*，在持久 IPython shell 里执行 | `python3 run.py collect-aw --base-url http://HOST:PORT/v1 --model <m> --split dev --n 0 --outdir envs/runs/<批次>/appworld_<模型> --exp <名> [--shard-id i --num-shards n --resume]`，`--n 0`=整个 split；相对 `--outdir` 按仓库根解析 |
 | `envs/collect/run_tales.py` | TALES 采集：ReAct 单命令文本循环 | 同上风格，`--game cookingworld --seeds 31,32,…`，`--game-params` 覆盖难度串 |
 | `envs/collect/run_alfworld.py` | ALFWorld 采集：一段思考 + 一条从候选列表逐字抄的动作；按单 game 文件 register_game 绕开 NFS 全量扫描；题单读 `envs/alfworld/splits/*.txt` | 同上风格，`--split train/val/test`（映射官方 train/valid_seen/valid_unseen），`--max-steps 50` |
-| `envs/collect/run_tau2.py` | tau2-bench 采集：agent 扮客服 + LLM 用户模拟器扮客户，airline/retail 两域。**2026-08-01 新写，代码就绪、一条未采**。文件头列了 7 条与官方排行榜不可比的偏差（文本协议非原生 function call、一轮限一次调用、args_lossy 静默丢参标记等） | `envs/tau2-bench/.venv/bin/python envs/collect/run_tau2.py --base-url … --model … --domain airline --split test --n 2 --outdir … --exp …`；纯 CPU 自测 `--selftest` |
-| `pipeline/collect/gen_launch.py` | 采集批次发射清单生成器：吃 manifest json，吐 `launch_servers.py`/`launch_clients.sh`/`MANIFEST.md`。只生成不执行，真发射走 gpu-run | `python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_w0.json`；试生成 `--dry-run --out-override /tmp/x/` |
+| `envs/collect/run_tau2.py` | tau2-bench 采集：agent 扮客服 + LLM 用户模拟器扮客户，airline/retail 两域。**2026-08-01 新写，代码就绪、一条未采**。文件头列了 7 条与官方排行榜不可比的偏差（文本协议非原生 function call、一轮限一次调用、args_lossy 静默丢参标记等） | `python3 run.py collect-tau2 --base-url … --model … --domain airline --split test --n 2 --outdir … --exp …`（解释器 `envs/tau2-bench/.venv` 由注册表带上）；纯 CPU 自测 `python3 run.py collect-tau2 --selftest` |
+| `pipeline/collect/gen_launch.py` | 采集批次发射清单生成器：吃 manifest json，吐 `launch_servers.py`/`launch_clients.sh`/`MANIFEST.md`。只生成不执行，真发射走 gpu-run | `python3 run.py gen-launch --config pipeline/collect/manifest_w0.json`；试生成 `python3 run.py gen-launch --config … --dry-run --out-override /tmp/x/` |
 | `pipeline/collect/manifest_w0.json` | w0_aw_official 批（appworld 官方分区）的清单：tokyo108 六个 vLLM 实例 + 14 客户端分片 | 被 gen_launch.py 读 |
 | `pipeline/collect/manifest_c2.json` | c2_alfworld 批的清单：三实例（q36 一 + gptoss 二）+ 6 分片，每模型 474 题 | 同上 |
-| `pipeline/collect/gen_alfworld_splits.py` | 生成 ALFWorld 官方分区题单（train 200 六类等比抽样 / val 140 / test 134），入库为唯一真源 | `python3 … --data-root envs/alfworld/data/json_2.1.1 --out-dir envs/alfworld/splits --n-train 200`；产 SPLIT_REPORT.json |
-| `pipeline/collect/gen_bfcl_splits.py` | 生成 BFCL 题单：BFCL 无官方分区，把冻结的 v3_1 老三堆原样转成题单（140/40/20），四道门禁（无交集/并集=200/行数/不静默覆盖） | `python3 … --out-dir pipeline/splits/bfcl_mtb_v1`；⚠️ 重跑老随机规则复现不出老三堆（老脚本 rng 三环境共用），入库 txt 是唯一真源 |
+| `pipeline/collect/gen_alfworld_splits.py` | 生成 ALFWorld 官方分区题单（train 200 六类等比抽样 / val 140 / test 134），入库为唯一真源 | `python3 run.py gen-alf-splits --data-root envs/alfworld/data/json_2.1.1 --out-dir envs/alfworld/splits --n-train 200`；产 SPLIT_REPORT.json；⚠️ 无防覆盖门禁,重跑直接改写已入库题单 |
+| `pipeline/collect/gen_bfcl_splits.py` | 生成 BFCL 题单：BFCL 无官方分区，把冻结的 v3_1 老三堆原样转成题单（140/40/20），四道门禁（无交集/并集=200/行数/不静默覆盖） | `python3 run.py gen-bfcl-splits --out-dir pipeline/splits/bfcl_mtb_v1`；⚠️ 重跑老随机规则复现不出老三堆（老脚本 rng 三环境共用），入库 txt 是唯一真源 |
 
 ⚠️ 题单落点不统一：bfcl 题单在 `pipeline/splits/bfcl_mtb_v1/`，alfworld 题单在 `envs/alfworld/splits/`，appworld 直接用官方 `envs/appworld/data/datasets/{train,dev,test_normal}.txt`（val 对应官方 dev.txt）。
 
@@ -49,10 +49,10 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
 | `pipeline/annotate/rules.py` | 切分规则唯一真源（常量+纯函数，逐字抄自旧线）：SEED=20260729、MAX_BOUNDS=64、MIN_THINK=40 字符、历史留 3 轮、环境返回截 400 字符、句边界=换行或 `.!?`+空白 | 只被 import，不能单独跑 |
-| `pipeline/annotate/build.py` | 主构建器：轨迹切成"思考前缀→工具名"样本，一模型一环境一套；样本带 `label_call`（规范化完整调用串）与 `args_named`。unit 不在任何题单 → 退 1 | `python3 pipeline/annotate/build.py --config pipeline/configs/<env>_<model>.json` |
-| `pipeline/annotate/param_label.py` | 抽取头标签：每个参数值在样本 text 里 `rfind` 定位字符区间，找不到记 found=false | `python3 … --config 同上`；产 `params/` 三堆 + PARAM_LABEL_REPORT.md + CHECK_50.md |
-| `pipeline/annotate/check_callstr.py` | 后置门禁：真值调用串能否被评测侧 parse_call 原样切回 + 五道结构硬核对（模型过滤/主键唯一/题单归属等） | ⚠️ 必须 `cprobe-env/bin/python`（模块层 import torch），stage-commands 第 68 行写 python3 是错的；目前只在 bfcl 三套数据上跑过 |
-| `pipeline/annotate/accept_v3diff.py` → `ACCEPT_V3DIFF.md` | G8 复现验收：新代码喂 v3 当年输入，九字段逐条与旧数据比。结论 PASS（bfcl 36343 样本、appworld 111767 样本全零差异） | `python3 pipeline/annotate/accept_v3diff.py`（无参数，路径写死） |
+| `pipeline/annotate/build.py` | 主构建器：轨迹切成"思考前缀→工具名"样本，一模型一环境一套；样本带 `label_call`（规范化完整调用串）与 `args_named`。unit 不在任何题单 → 退 1 | `python3 run.py ann-build --config pipeline/configs/<env>_<model>.json` |
+| `pipeline/annotate/param_label.py` | 抽取头标签：每个参数值在样本 text 里 `rfind` 定位字符区间，找不到记 found=false | `python3 run.py ann-params --config 同上`；产 `params/` 三堆 + PARAM_LABEL_REPORT.md + CHECK_50.md |
+| `pipeline/annotate/check_callstr.py` | 后置门禁：真值调用串能否被评测侧 parse_call 原样切回 + 五道结构硬核对（模型过滤/主键唯一/题单归属等） | `python3 run.py ann-check-callstr --config 同上`；⚠️ 它模块层 import torch，必须 `cprobe-env` 解释器，且要清空 `CUDA_VISIBLE_DEVICES`（脚本自己的 setdefault 挡不住外部 export）——两件事注册表都替你办了；目前只在 bfcl 三套数据上跑过 |
+| `pipeline/annotate/accept_v3diff.py` → `ACCEPT_V3DIFF.md` | G8 复现验收：新代码喂 v3 当年输入，九字段逐条与旧数据比。结论 PASS（bfcl 36343 样本、appworld 111767 样本全零差异） | `python3 run.py ann-accept-v3diff`（无参数，路径写死） |
 | `pipeline/configs/aw_{q35,q36,gptoss}.json` | appworld 标注配置：轨迹源 full_v1+full_v2_topup+w0_aw_official，split_mode=official（官方题单），产 `pipeline/data/aw_official_v1/<模型>/` | `--config` 传入 |
 | `pipeline/configs/alf_{q36,gptoss}.json` | alfworld 标注配置（无 q35）：轨迹源 c2_alfworld，官方题单，产 `alf_official_v1/` | 同上 |
 | `pipeline/configs/bfcl_{q35,q36,gptoss}.json` | bfcl 标注配置：轨迹源 full_v1+full_v2_topup，split_mode=frozen_v3_1，产 `bfcl_mtb_v1/` | 同上 |
@@ -63,7 +63,7 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 
 | 格 | 程序 | 学什么 | 关键设定与坑 |
 |---|---|---|---|
-| mtool | `pipeline/train/train_mbert_tool.py` | ModernBERT-base + 分类头：前缀→工具名 | `--data <数据集> --out pipeline/runs/<批>_<模型>_mtool [--smoke] [--input-mode full/no-think/no-hist]`；加权 CE（w=1/m_i），左截 4096 保思考尾巴；产 `best/`(HF 目录)+train_log.jsonl（⚠️ append，同 --out 重跑会续写） |
+| mtool | `pipeline/train/train_mbert_tool.py` | ModernBERT-base + 分类头：前缀→工具名 | `--data <数据集> --out pipeline/runs/<批>_<模型>_mtool [--smoke] [--input-mode full/no-think/no-hist]`；加权 CE（w=1/m_i），左截 4096 保思考尾巴；产 `best/`(HF 目录)+train_log.jsonl（⚠️ append，同 --out 重跑会续写）；⚠️ **同 out 二次训练默认拒绝**——`--out` 下已有 `train_log.jsonl` 就 SystemExit 不开训（挡"两次产物混进同一个 best/"），`--force` 是唯一逃生口，四格同此语义 |
 | mext | `pipeline/train/train_mbert_extract.py` | ModernBERT + 起止指针头 + 可答头：参数值在哪段字符 | 实例=(样本×参数)，查询串 `\n[FIND] 工具.参数` 拼在末尾；⚠️ 权重是裸 `best/model.pt`（state_dict），不是 HF 目录 |
 | ctool | `pipeline/train/train_causal_tool.py` | Qwen3-0.6B-Base + 线性分类头：整段一次前向、每个句边界放监督 | `--base qwen` 必填；**开训前对齐检查是铁律**（整段 vs 逐 token 增量，maxdiff<tol，FAIL 退 2；c1/c2 统一 `--align-tol 3e-4`）；48G 卡常 OOM → `--grad-ckpt` |
 | cgen | `pipeline/train/train_causal_callgen.py` | Qwen3-0.6B-Base 微调：直接续写整条调用（`\n[CALL] ` 分隔） | 底座硬编码不接受 --base；选 best 只看 val 加权 CE；48G 卡需 `--grad-ckpt`（gptoss 侧数据在 A6000 上仍可能 OOM，c1 那格迁 H200 才跑完） |
@@ -73,10 +73,10 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
-| `pipeline/eval/eval_tool.py` | 工具格回放：val 拟温度 + 20 档 θ（0.5–0.975 步长 0.025）里按风险档（0.10/0.05）选"满足精度约束下触发比例最大"的 θ，test 冻结出数 | mbert：`mbert-env/bin/python … --env <e> --run <run> --data <d>`；因果头：`cprobe-env/bin/python … --head causal`；`--cached-logits` 纯 CPU 重算（换 θ 不碰 GPU）。⚠️ logits 永远写进 `--run`，`--report-dir` 只改报告 |
-| `pipeline/eval/eval_mbert_call.py` | mext 触发时刻评测：吃 mtool 的温度与 θ，触发前缀上抽参数，按无参/选择/自由三档报 | `--run <mtool run> --extractor <mext run> --risk 0.05`；⚠️ 报告写进 `--extractor`；θ 为 null 硬退 1（q35 因此无 EXTRACT_REPORT） |
-| `pipeline/eval/eval_causal_call.py` | cgen 触发时刻评测：ctool 触发点上 greedy 写整条调用，判 tool_ok/参数/full_call_ok | `--ctool-run … --cgen-run … --data …`；⚠️ 报告写进 `--cgen-run` |
-| `pipeline/eval/summarize_matrix.py` | 矩阵汇总：12 run 收一张表，缺报告标 PENDING | `python3 … --runs-dir pipeline/runs --out …/MATRIX_REPORT.md [--prefix c1] [--models q35 q36 gptoss] [--risk 0.05]`；⚠️ N/A 显示成 PENDING、固定读单风险档，引用必须配文字 |
+| `pipeline/eval/eval_tool.py` | 工具格回放：val 拟温度 + 20 档 θ（0.5–0.975 步长 0.025）里按风险档（0.10/0.05）选"满足精度约束下触发比例最大"的 θ，test 冻结出数 | mbert 头：`python3 run.py eval-tool-mbert --env <e> --run <run> --data <d>`；因果头：`python3 run.py eval-tool-causal --env <e> --run <run> --data <d>`（`--head` 与解释器都由注册表钉死，命令里不写）。两条都是发射类，run.py 只出命令、发射走 gpu-run；`--cached-logits` 纯 CPU 重算（换 θ 不碰 GPU），那种用法把出的命令手跑即可。⚠️ logits 永远写进 `--run`，`--report-dir` 只改报告 |
+| `pipeline/eval/eval_mbert_call.py` | mext 触发时刻评测：吃 mtool 的温度与 θ，触发前缀上抽参数，按无参/选择/自由三档报 | `python3 run.py eval-mcall --env <e> --run <mtool run> --extractor <mext run> --data <d> --risk 0.05`（发射类，run.py 只出命令、发射走 gpu-run）；⚠️ 报告写进 `--extractor`；θ 为 null 硬退 1（q35 因此无 EXTRACT_REPORT） |
+| `pipeline/eval/eval_causal_call.py` | cgen 触发时刻评测：ctool 触发点上 greedy 写整条调用，判 tool_ok/参数/full_call_ok | `python3 run.py eval-ccall --env <e> --ctool-run … --cgen-run … --data …`（发射类，只出命令）；⚠️ 报告写进 `--cgen-run` |
+| `pipeline/eval/summarize_matrix.py` | 矩阵汇总：12 run 收一张表，缺报告标 PENDING | `python3 run.py matrix --runs-dir pipeline/runs --out …/MATRIX_REPORT.md [--prefix c1] [--models q35 q36 gptoss] [--risk 0.05]`；⚠️ N/A 显示成 PENDING、固定读单风险档，引用必须配文字 |
 | `pipeline/eval/ACCEPT_EVAL.md` + `accept_bfcl_v3{,_causal}/` | G12 复现验收：新 eval 喂旧产物，与旧报告逐字节相同。PASS | 凭证，只读 |
 
 评测依赖顺序：先 6 个工具格（出温度与 θ）→ 后 6 个参数格。两档皆无解记 N/A，不放宽、不借用别格触发点。
@@ -85,13 +85,13 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
-| `pipeline/inject/replay_inject.py` | 主程序，四个子命令。plan：按 θ（`--theta` 直接钉，或 `--risk` 反查）从已落盘 logits 重排触发点、cgen 产预测调用（占卡，0.6B 级）。run：对每个触发点做 nofill/inject 两条臂真实续写（要 gpt-oss 服务）。score：token 账与调用一致率（纯 CPU）。merge-exec：把执行档结果合进 plan（纯 CPU） | plan：`cprobe-env/bin/python … plan --ctool-run … --cgen-run … --data … --traj-root … --theta 0.925 --miss-policy skip --out pipeline/inject/runs/<名>`；run：`… run --plan <dir>/plan.jsonl --base-url http://tokyo108:8103/v1 --model gpt-oss-120b --arms nofill,inject --concurrency 16`；score：`… score --run-dir <dir>` |
+| `pipeline/inject/replay_inject.py` | 主程序，四个子命令。plan：按 θ（`--theta` 直接钉，或 `--risk` 反查）从已落盘 logits 重排触发点、cgen 产预测调用（占卡，0.6B 级）。run：对每个触发点做 nofill/inject 两条臂真实续写（要 gpt-oss 服务）。score：token 账与调用一致率（纯 CPU）。merge-exec：把执行档结果合进 plan（纯 CPU） | 四个子命令名由注册表带上，一条子命令一个任务名。plan：`python3 run.py inject-plan --ctool-run … --cgen-run … --data … --traj-root … --theta 0.925 --miss-policy skip --out pipeline/inject/runs/<名>`（发射类，只出命令、发射走 gpu-run）；run：`python3 run.py inject-run --plan <dir>/plan.jsonl --base-url http://tokyo108:8103/v1 --model gpt-oss-120b --arms nofill,inject --concurrency 16`（发射类，长活进 tmux）；score：`python3 run.py inject-score --run-dir <dir>`（纯 CPU 直跑）；merge-exec：`python3 run.py inject-merge-exec --plan … --exec …`（纯 CPU 直跑） |
 | ↳ miss_policy 三档 | skip=猜错不注入只记账（现有全部曲线用它，偏乐观）；oracle=一律注入正确结果（机制上限）；execute=真环境执行预测调用、真实返回（含报错）注入 | ⚠️ 文件头写死：execute 量到的仍是单步调用一致率，**不是任务级成绩**，报成任务级即虚报 |
 | `pipeline/inject/rebuild.py` | 从原始轨迹逐字重建 gpt-oss 的 harmony prompt（chat 端点做不到思考中途截断续写，必须 completions 自拼）。两道自检：SYSTEM 常量回源比对、逐步 token 数对账 | 纯库，被 replay_inject import。⚠️ Current date 只有与采集同日重建才对得上，assert_date 拦跨日 |
-| `pipeline/inject/exec_calls.py` | execute 档执行段：每 unit 起 AppWorld 实例重放前缀→save_state→执行补引号的预测调用→load_state 回档→真代码对账。缓存键含 REQUOTE_VERSION\|unit\|step\|前缀指纹\|调用串，与 θ 无关、跨 θ 复用 | ⚠️ 只能 `envs/appworld/venv/bin/python` 跑（唯一 import appworld 的文件）；纯 CPU；`--num-shards 4 --shard-id i` 四进程并行；默认跑完即删 appworld 输出目录（`--keep-outputs` 关闭），因为 /home 配额 2026-08-01 炸过一次 |
-| `pipeline/inject/launch_plan_sweep.py` | θ 扫描 plan 段发射壳：六点铺 tokyo106 六卡 | `python3 …`（全发）；`--smoke`；`--only th0925`（补发单点必须用它）；`--miss-policy execute` 时 run 目录自动加 `_exec` 后缀 |
-| `pipeline/inject/sweep_theta.py` | θ 扫描驱动：run 段把一列 θ 自动排队跑 run+score（幂等，有 INJECT_REPORT 就跳过）；curve 段装配六点曲线 + 服务侧对照 + 逐指标噪声地板 | run：`cprobe-env/bin/python … run --runs <逗号列表> --services <逗号列表> --concurrency 16`；curve：`… curve --runs <同列表> --out pipeline/inject/THETA_CURVE [--control <对照目录>]`。⚠️ 口径铁律：六点只许差 θ 一个变量，同 --bs 同机器（实测 batch size 变了 greedy 生成翻 14/1061 条） |
-| `pipeline/inject/check_bundle.py` | 产物加载校验：训好的权重换个进程装得起来、打得出分（非精度评测） | `--run <run> --data <d> --head mbert/causal --device cpu`；产 BUNDLE_CHECK.txt |
+| `pipeline/inject/exec_calls.py` | execute 档执行段：每 unit 起 AppWorld 实例重放前缀→save_state→执行补引号的预测调用→load_state 回档→真代码对账。缓存键含 REQUOTE_VERSION\|unit\|step\|前缀指纹\|调用串，与 θ 无关、跨 θ 复用 | `python3 run.py exec-calls --plan … --out … --cache … --exp …`（appworld venv 由注册表带上，纯 CPU 直跑）；⚠️ 只能 `envs/appworld/venv/bin/python` 跑（唯一 import appworld 的文件之一）；`--num-shards 4 --shard-id i` 四进程并行；默认跑完即删 appworld 输出目录（`--keep-outputs` 关闭），因为 /home 配额 2026-08-01 炸过一次 |
+| `pipeline/inject/launch_plan_sweep.py` | θ 扫描 plan 段发射壳：六点铺 tokyo106 六卡 | `python3 run.py launch-plan-sweep`（发射类,只出命令,发射走 gpu-run；全发）；`--smoke`；`--only th0925`（补发单点必须用它）；`--miss-policy execute` 时 run 目录自动加 `_exec` 后缀 |
+| `pipeline/inject/sweep_theta.py` | θ 扫描驱动：run 段把一列 θ 自动排队跑 run+score（幂等，有 INJECT_REPORT 就跳过）；curve 段装配六点曲线 + 服务侧对照 + 逐指标噪声地板 | run：`python3 run.py sweep-run --runs <逗号列表> --services <逗号列表> --concurrency 16`（发射类，只出命令、长活进 tmux）；curve：`python3 run.py sweep-curve --runs <同列表> --out pipeline/inject/THETA_CURVE [--control <对照目录>]`（纯 CPU 直跑）。⚠️ 口径铁律：六点只许差 θ 一个变量，同 --bs 同机器（实测 batch size 变了 greedy 生成翻 14/1061 条） |
+| `pipeline/inject/check_bundle.py` | 产物加载校验：训好的权重换个进程装得起来、打得出分（非精度评测） | `python3 run.py check-bundle-mbert --run <run> --data <d>`（注册表已带 `--head mbert --device cpu`，纯 CPU 直跑）／`python3 run.py check-bundle-causal --run <run> --data <d>`（已带 `--head causal`，标了 `gpu=True` 所以只出命令、发射走 gpu-run）；产 BUNDLE_CHECK.txt |
 
 ### 1.6 活跑注入线（2026-08-01 立项，任务级评测；设计书 `plans/2026-08-01-live-inject-design.md`）
 
@@ -102,9 +102,9 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
-| `pipeline/inject/live_appworld.py` | 驱动器：整题活跑。分段生成（每段 `--chunk-tokens` 默认 64，贪心），每个新句子级切口问探针，首过 θ 触发注入（默认每步至多 1 次），`<|end|>` 后放大段长收尾；每题落一个 `live_<task_id>.jsonl`（meta/gen/spec/env/final，final.eval 存结构化 dict）。自带 `--selftest-shadow <轨迹>`（无服务验证三连不污染正身，2026-08-01 PASS） | ⚠️ 只能 `envs/appworld/venv/bin/python` 跑（与 exec_calls.py 并列的两个 import appworld 处）；`--base-url <vLLM /v1> --probe-url <probe_server> --split test_normal --outdir … --exp …`；对照臂加 `--no-probe`；分片 `--num-shards/--shard-id`；默认跑完即删 appworld 输出目录（配额教训） |
-| `pipeline/inject/probe_server.py` | 探针服务（GPU，两个 0.6B 约 3GB）：/score 前缀→置信度（softmax(logits/T) 最大值）、/gen 触发点→整条预测调用、/render messages→harmony 前缀（appworld venv 没有 transformers，渲染只能放这侧）、/health 配置回显。`selftest` 子命令拿存好的 logits_test.pt 对账活跑口径（逐前缀前向 vs 整段前向） | serve：`cprobe-env/bin/python … serve --port 8790 --device cuda:0`；selftest：`… selftest --events 2 --device cpu`（纯 CPU 可跑） |
-| `pipeline/inject/score_live.py` | 打分器（纯 CPU）：活跑轨迹 + 已采对照轨迹按题配对 → `LIVE_REPORT.{json,md}`。任务成败、billed token（含丢弃溢出）、出手事后账（工具/整条一致率、重调率、执行错误种类） | `cprobe-env/bin/python … --live-dir <outdir> --base-root envs/runs/w0_aw_official/appworld_gptoss` |
+| `pipeline/inject/live_appworld.py` | 驱动器：整题活跑。分段生成（每段 `--chunk-tokens` 默认 64，贪心），每个新句子级切口问探针，首过 θ 触发注入（默认每步至多 1 次），`<\|end\|>` 后放大段长收尾；每题落一个 `live_<task_id>.jsonl`（meta/gen/spec/env/final，final.eval 存结构化 dict）。自带 `--selftest-shadow <轨迹>`（无服务验证三连不污染正身，2026-08-01 PASS） | `python3 run.py live-appworld --base-url <vLLM /v1> --probe-url <probe_server> --split test_normal --outdir … --exp …`（发射类，run.py 只出命令、发射走 gpu-run）；⚠️ 只能 `envs/appworld/venv/bin/python` 跑（与 exec_calls.py 并列的两个 import appworld 处）；对照臂加 `--no-probe`；分片 `--num-shards/--shard-id`；默认跑完即删 appworld 输出目录（配额教训） |
+| `pipeline/inject/probe_server.py` | 探针服务（GPU，两个 0.6B 约 3GB）：/score 前缀→置信度（softmax(logits/T) 最大值）、/gen 触发点→整条预测调用、/render messages→harmony 前缀（appworld venv 没有 transformers，渲染只能放这侧）、/health 配置回显。`selftest` 子命令拿存好的 logits_test.pt 对账活跑口径（逐前缀前向 vs 整段前向） | serve：`python3 run.py probe-serve --port 8790 --device cuda:0`（发射类，只出命令、发射走 gpu-run）；selftest：`python3 run.py probe-selftest --events 2`（纯 CPU 直跑，`--device cpu` 由注册表带上） |
+| `pipeline/inject/score_live.py` | 打分器（纯 CPU）：活跑轨迹 + 已采对照轨迹按题配对 → `LIVE_REPORT.{json,md}`。任务成败、billed token（含丢弃溢出）、出手事后账（工具/整条一致率、重调率、执行错误种类） | `python3 run.py score-live --live-dir <outdir> --base-root envs/runs/w0_aw_official/appworld_gptoss`（纯 CPU 直跑） |
 
 已知口径差（设计书 §4，报告必带）：探针逐前缀前向 vs 训练側整段前向（分词边界效应）；
 切口只查前 64 个真实切口（回放是等距抽样）；注入内容"单条调用返回" vs 六点曲线"整块
@@ -126,15 +126,15 @@ stdout"；harmony 日期行是活跑当天，与 2026-07-31 采的对照批不�
 
 | 程序/文件 | 干什么 | 怎么用 |
 |---|---|---|
-| `ops/record.py` | 数字账 CLI：start（发射时记，自动抓 git HEAD 与脏否）/ finish（补数字与结论）/ render（重渲染 RESULTS.md）/ list / show | `record.py start --name X --track <方向> …`；`record.py finish RUN_ID --metric k=v --conclusion …`；`record.py render` |
-| `ops/gpu_jobs.py` | GPU 台账 CLI：register / finish / watch / free / status / json。卡的实时占用永远现场探测 | `gpu_jobs.py register --name N --workdir W --piece host:gpus:session:logpath …`；`gpu_jobs.py free`；⚠️ watch 对 shiga 误报 EXIT（ssh host key） |
-| `ops/jobs.json` | 台账本体。现役 1 条：`c2_train`（8 piece）。⚠️ 其中 5 格实际已死（见 §5.2），台账未销号 | 只经 gpu_jobs.py 读写 |
-| `ops/launch_probe.py` | 四格训练的通用 tmux 发射壳（批次/数据/环境参数化），当前入口 | `launch_probe.py smoke --batch c2 --data-root pipeline/data/alf_official_v1 --env alfworld --model q36 --host tokyo107 --gpus 0,1,2,3`；`launch_probe.py full --batch c2 … --placement ops/c2_placement.json` |
-| `ops/launch_c1.py` | 上者的前身（c1 专用写死版），已被泛化版取代 | 留档 |
+| `ops/record.py` | 数字账 CLI：start（发射时记，自动抓 git HEAD 与脏否）/ finish（补数字与结论）/ render（重渲染 RESULTS.md）/ list / show | `python3 run.py record start --run-id X --track <方向> …`；`python3 run.py record finish RUN_ID --metric k=v --conclusion …`；`python3 run.py record render`。⚠️ 要 run_id 四处一致只能用 `--run-id`：`--name` 会自动加 `%Y%m%d_%H%M_` 时间戳前缀 |
+| `ops/gpu_jobs.py` | GPU 台账 CLI：register / finish / watch / free / status / json。卡的实时占用永远现场探测 | `python3 run.py gpu-jobs register --name N --workdir W --piece host:gpus:session:logpath …`；`python3 run.py gpu-jobs free`；`python3 run.py gpu-jobs finish NAME [--force]`；⚠️ watch 对 shiga 误报 EXIT（ssh host key） |
+| `ops/jobs.json` | 台账本体。**现役几条现查 `python3 run.py gpu-jobs`**（这里写死数字必过期）；⚠️ 历史上出现过"格已死、台账未销号"（见 §5.2） | 只经 `python3 run.py gpu-jobs register` / `python3 run.py gpu-jobs finish` 读写 |
+| `ops/launch_probe.py` | 四格训练的通用 tmux 发射壳（批次/数据/环境参数化），当前入口。**gate 型任务：run.py 真执行它，它自己 ssh+tmux 发射**（不是只打印命令），所以出手前过脏树门禁 | `python3 run.py launch-probe smoke --batch c2 --data-root pipeline/data/alf_official_v1 --env alfworld --model q36 --host tokyo107 --gpus 0,1,2,3`；`python3 run.py launch-probe full --batch c2 … --placement ops/c2_placement.json`；`--dry-run` 只打印不发射且不过门禁；`--force` 透传给训练脚本（smoke 重跑必用） |
+| ~~`ops/launch_c1.py`~~ | 上者的前身（c1 专用写死版），**已删除**（git 历史可查：删于 commit a93460c，最后一次改动在 e3de4a3） | 格表真源在 `run.py`：训练四格 `CELLS`、评测格 `EVAL_CELLS`（`ops/launch_probe.py`/`launch_eval.py` 都从那里 import，别处不许再抄一份） |
 | `ops/c1_placement.json` / `c2_placement.json` | 排卡表：一格一行 host/gpu/extra。c1=12 格（tokyo105+106）；c2=8 格（q36→tokyo107 g0-3，gptoss→tokyo105 g4-7；cgen 带 --grad-ckpt，ctool 带 --align-tol 3e-4） | 喂 launch_probe full |
 | `ops/_w2_*.sh` / `_w3_*.sh` | 07-30 夜里那两波评测的一次性串行队列脚本，已跑完成为历史 | 留档 |
 | `ops/gpu_state.md` | 集群慢变量：tokyo105(=shiga) 8×A6000、106 10×A6000、107 4×RTX6000Ada、108(=saitama) 3×H100+3×H200；驱动/CUDA/六条坑（cu128 轮子在 12.2 驱动机可跑、HF 缓存在 NFS 等） | 挑卡前读 |
-| `model_registry.py` | 模型地址映射，脚本一律经 resolve() 取路径 | `python model_registry.py <别名>`；⚠️ 落后于磁盘：LFM2.5-350M-Base 与 Qwen3-0.6B-Base（cgen 硬编码在用）都没注册 |
+| `model_registry.py` | 模型地址映射，脚本一律经 resolve() 取路径 | `python3 model_registry.py <别名>`（注册表无对应任务,直调即可）；⚠️ 落后于磁盘：LFM2.5-350M-Base 与 Qwen3-0.6B-Base（cgen 硬编码在用）都没注册 |
 | `mbert_smoke.py` | ModernBERT 部署冒烟（fill-mask + hidden_states 23 层无 NaN） | `mbert-env/bin/python mbert_smoke.py`；⚠️ 内写路径用了下划线 `y_guo`，与全仓库连字符 `y-guo` 不一致，复用前先核 |
 | `tool_probe_v{1,2,3}.py` | jlens 试点三件（2026-07-17）：工具调用信号在中间层可读表征里出现得比口头早多少；v3 对照"直接读输出 logits" | 历史试验件；产物 tool_probe_v1_out.pt / v2.log / v3.log / tool_probe_slice.html（723KB 交互页）。⚠️ 无正式结论文档 |
 | `logs/` | 276 个日志。现役命名 `new1_<批>_<模型>_<格>_t<机>g<卡>.log`；07-29 之前是旧代号体系（hp8b/fig1m/w2_8b 等） | 训练进度直接 tail 本地文件（NFS 共享，不用 ssh） |
