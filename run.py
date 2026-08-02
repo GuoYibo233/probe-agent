@@ -328,6 +328,13 @@ TASKS = {
         handoff=True, gpu=True,
         desc="gpt-oss 三副本 vLLM 发射器(tokyo108:8114-8116;自己 ssh+tmux,幂等)",
         notes=["环境变量(cuda-compat/FLASHINFER/缓存进 /net)已内嵌在脚本里"]),
+    "serve-awdiag": dict(
+        stage="live", py="sys", script="envs/serve_logs/launch_vllm_awdiag.py",
+        handoff=True, gpu=True,
+        desc="w0 复现诊断的 gpt-oss 三副本(tokyo108:8103/8106/8107;自己 ssh+tmux,幂等)",
+        notes=["**不给 --max-model-len**:native 131072,复刻 w0 采集时配置;"
+               "65536 就是发错了,诊断的嫌疑链之一正是 65k 上下文",
+               "配套客户端 awdiag_job.sh(PORTS 写死 8103/8106/8107)"]),
     "serve-mirrorapi": dict(
         stage="live", prog=str(ROOT / "envs/vllm-env/bin/vllm"),
         handoff=True, gpu=True,

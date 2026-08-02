@@ -70,6 +70,54 @@ def test_final_content_at():
     assert at is not None and full[at:] == "c", (at, full[at:])
 
 
+COMMENT_HEAD = "<|start|>assistant<|channel|>commentary<|message|>"
+
+
+def test_parse_commentary():
+    """2026-08-02 诊断的正身结构:analysis -> commentary(行动叙述) -> final。
+    vLLM chat 把无收件人 commentary 并进 content(\n 连接),这里必须同款。"""
+    full = ("We think.<|end|>" + COMMENT_HEAD
+            + "We will start by exploring the available apps.<|end|>"
+            + FINAL_HEAD + "```python\nprint(x)\n```")
+    t, c = L.parse_step(full)
+    assert t == "We think.", repr(t)
+    assert c == ("We will start by exploring the available apps.\n"
+                 "```python\nprint(x)\n```"), repr(c)
+
+
+def test_parse_commentary_recipient():
+    """带 to= 收件人的 commentary(工具调用式)按 vLLM 口径丢弃,不进 content。"""
+    full = ("t<|end|>"
+            + "<|start|>assistant<|channel|>commentary to=functions.f"
+            + "<|message|>{\"a\":1}<|end|>"
+            + FINAL_HEAD + "code")
+    _, c = L.parse_step(full)
+    assert c == "code", repr(c)
+
+
+def test_parse_multi_analysis():
+    """连发两条 analysis:全部归思考,\n 连接(vLLM reasoning_parts 同款)。"""
+    full = ("first.<|end|>"
+            + "<|start|>assistant<|channel|>analysis<|message|>second.<|end|>"
+            + FINAL_HEAD + "code")
+    t, c = L.parse_step(full)
+    assert t == "first.\nsecond.", repr(t)
+    assert c == "code", repr(c)
+
+
+def test_loop_commentary_dynamic_stop():
+    """commentary 阶段 final 未开,stop 必须仍是 DEFAULT_STOP(换早了掐死
+    commentary);final 出现且模型发 <|return|> 由 stop 吃掉,正常收步。"""
+    (think, content, usage, discard, _), stops = _run_gen_step([
+        ("think.<|end|>" + COMMENT_HEAD + "Narrate.<|end|>", "length"),
+        (FINAL_HEAD + "```python\ny()\n```", "stop"),
+    ])
+    assert think == "think.", repr(think)
+    assert content == "Narrate.\n```python\ny()\n```", repr(content)
+    assert stops == [DEFAULT_STOP, DEFAULT_STOP], stops
+    assert discard["overrun_events"] == 0, discard
+
+
 class _FakeLog:
     def w(self, rec):
         raise AssertionError("no_probe 路径不该写 spec 记录")

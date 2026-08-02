@@ -98,16 +98,38 @@ def overrun_cut(full):
 
 
 def parse_step(full):
-    """整步生成文本 -> (thinking, content)。先截越界,再按老口径切通道。"""
+    """整步生成文本 -> (thinking, content)。先截越界,再按 vLLM HarmonyParser
+    同款口径切通道(vllm/parser/harmony.py::_SegmentType + parse):
+    analysis->thinking,final 与无收件人的 commentary->content,各自多段 \n 连接。
+
+    2026-08-02 诊断教训:v2 及之前只取 final,把模型写在 commentary 通道的行动
+    叙述整段静默丢掉(step-0 实测 w0 content 带散文 152/168,活跑只有 4/168)。
+    喂回历史的"自己"长期没有散文,模型把叙述欲塞进 complete_task(answer=...),
+    而不问问题的题 answer 标准答案是 null,一塞就死——w0 过活跑挂的题里 23 题
+    死于此。chat API 的 vLLM 端 content=commentary+final,这里必须逐字对齐。"""
     cut = overrun_cut(full)
     if cut is not None:
         full = full[:cut]
-    if END_MARK in full:
-        t_final, _, rest = full.partition(END_MARK)
-        content = rest.split(FINAL_OPEN, 1)[1] if FINAL_OPEN in rest else ""
-    else:                       # 整步没走到 final(超长截断):全算思考
-        t_final, content = full, ""
-    return t_final, content.strip()
+    reasoning, content = [], []
+    for i, seg in enumerate(full.split(END_MARK)):
+        if i == 0:
+            ch, has_rcpt, body = "analysis", False, seg  # 头预填在 prompt 里
+        else:
+            hdr, sep, body = seg.partition("<|message|>")
+            hdr = hdr.strip()
+            # 合法头 = <|start|>assistant[ to=x]<|channel|>CH[垃圾];宽容裸
+            # <|channel|> 开头(老测试/理论残段)。非助手消息或残段一律丢。
+            if not sep or not (hdr.startswith("<|start|>assistant")
+                               or hdr.startswith("<|channel|>")):
+                continue
+            m = re.match(r"\s*([a-z]+)", hdr.partition("<|channel|>")[2])
+            ch = m.group(1) if m else ""
+            has_rcpt = " to=" in hdr
+        if ch == "analysis" and body:
+            reasoning.append(body)
+        elif (ch == "final" or (ch == "commentary" and not has_rcpt)) and body:
+            content.append(body)
+    return "\n".join(reasoning), "\n".join(content)
 
 
 def sent_cuts(text):
