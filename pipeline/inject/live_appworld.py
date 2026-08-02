@@ -57,68 +57,47 @@ import rebuild as R                                            # noqa: E402
 from rules import MIN_THINK, SENT_RE, assemble                 # noqa: E402
 from exec_calls import (APPWORLD_SEED, TRUNC, CKPT, error_kind,  # noqa: E402
                         requote)
-from replay_inject import (DEFAULT_STOP, FINAL_OPEN, NOTE_TMPL,  # noqa: E402
-                           post_completions)
+from replay_inject import DEFAULT_STOP, NOTE_TMPL              # noqa: E402
 
 APPWORLD_HOME = "/home/y-guo/reproduce/new1/envs/appworld"
 END_MARK = "<|end|>"
 MAX_BOUNDS = 64            # rules.MAX_BOUNDS 同值:活跑最多查这么多切口(§4.2)
 MAX_STEP_TOKENS = 8192     # 采集时 max_tokens=8192(common.py:20),整步上限对齐
 
-# 停止符漏洞修复(2026-08-02,交接书 plans/2026-08-02-live-stopfix-rerun-handoff.md):
-# stop 全程只有 <|return|> 时,模型时常用 <|end|> 结束 final 后继续伪造
-# <|start|>assistant 新回合+假 "Execution output:",整段进 msgs 污染后续。
-# final 通道开启后:(1) 后续请求 stop 换 FINAL_STOP 服务端掐断;(2) 客户端再扫
-# 一遍 content,截到第一个越界符之前(同一请求内越过转场时 stop 换不及,必须兜底)。
-# 不能全程用 FINAL_STOP——第一个 <|end|> 是 analysis→final 的合法转场。
-FINAL_STOP = DEFAULT_STOP + ["<|end|>", "<|start|>"]
-OVERRUN_MARKS = ("<|end|>", "<|start|>", "<|return|>")
-
-
-def final_content_at(full):
-    """final 通道已开启时 content 在 full 里的起始偏移;未开启返回 None。
-    第一个 <|end|> 后的 <|start|>assistant<|channel|>final<|message|> 是合法
-    final 头,不算越界;越界只看 FINAL_OPEN 之后。"""
-    if END_MARK not in full:
-        return None
-    head, _, rest = full.partition(END_MARK)
-    if FINAL_OPEN not in rest:
-        return None
-    pre = rest.split(FINAL_OPEN, 1)[0]
-    return len(head) + len(END_MARK) + len(pre) + len(FINAL_OPEN)
-
-
-def overrun_cut(full):
-    """content 里第一个越界停止符的绝对偏移;通道未开或没越界返回 None。"""
-    start = final_content_at(full)
-    if start is None:
-        return None
-    hits = [h for h in (full.find(m, start) for m in OVERRUN_MARKS) if h >= 0]
-    return min(hits) if hits else None
+# v4(2026-08-02):与 w0 的 chat 路径逻辑同构。三条对齐:
+# (1) 不预填通道头——prompt 止于 <|start|>assistant,模型自己写
+#     <|channel|>analysis<|message|>,与 chat 渲染逐字节相同;
+# (2) 流式一枪解码——一步一个 stream=true 请求,服务器不间断解码,
+#     只在探针真开火时 close() 中止重发(注入本身要改 prompt,缝不可约);
+# (3) 停止只认 <|return|>,final 后模型续写的消息照 vLLM HarmonyParser
+#     并进 content(chat 同款,含 1.3% 的伪造尾巴——消息级解析下是干净散文,
+#     v1 的毒是裸标记漏进文本,这里不存在)。
 
 
 def parse_step(full):
-    """整步生成文本 -> (thinking, content)。先截越界,再按 vLLM HarmonyParser
-    同款口径切通道(vllm/parser/harmony.py::_SegmentType + parse):
-    analysis->thinking,final 与无收件人的 commentary->content,各自多段 \n 连接。
+    """整步生成文本 -> (thinking, content)。按 vLLM HarmonyParser 同款口径
+    切通道(vllm/parser/harmony.py::_SegmentType + parse):analysis->thinking,
+    final 与无收件人的 commentary->content,各自多段 \n 连接。
 
     2026-08-02 诊断教训:v2 及之前只取 final,把模型写在 commentary 通道的行动
     叙述整段静默丢掉(step-0 实测 w0 content 带散文 152/168,活跑只有 4/168)。
     喂回历史的"自己"长期没有散文,模型把叙述欲塞进 complete_task(answer=...),
-    而不问问题的题 answer 标准答案是 null,一塞就死——w0 过活跑挂的题里 23 题
-    死于此。chat API 的 vLLM 端 content=commentary+final,这里必须逐字对齐。"""
-    cut = overrun_cut(full)
-    if cut is not None:
-        full = full[:cut]
+    而不问问题的题 answer 标准答案是 null,一塞就死。content 必须与 chat 逐字对齐。
+
+    full 是 <|start|>assistant 之后的全部生成文本:首条消息自带
+    <|channel|>analysis<|message|> 头(v4 不预填);兼容老口径(头在 prompt 里,
+    full 直接以正文开头)。<|return|> 是引擎停止符,文本里若出现(理论分支)
+    从它起全部截掉——引擎在那本来就停了。"""
+    full = full.split("<|return|>", 1)[0]
     reasoning, content = [], []
     for i, seg in enumerate(full.split(END_MARK)):
-        if i == 0:
-            ch, has_rcpt, body = "analysis", False, seg  # 头预填在 prompt 里
+        if i == 0 and not seg.lstrip().startswith("<|channel|>"):
+            ch, has_rcpt, body = "analysis", False, seg   # 老口径:头在 prompt
         else:
             hdr, sep, body = seg.partition("<|message|>")
             hdr = hdr.strip()
-            # 合法头 = <|start|>assistant[ to=x]<|channel|>CH[垃圾];宽容裸
-            # <|channel|> 开头(老测试/理论残段)。非助手消息或残段一律丢。
+            # 合法头 = [<|start|>assistant[ to=x]]<|channel|>CH[垃圾];
+            # 非助手消息(伪造 user/system 回合)或残段一律丢——vLLM 同款。
             if not sep or not (hdr.startswith("<|start|>assistant")
                                or hdr.startswith("<|channel|>")):
                 continue
@@ -132,6 +111,20 @@ def parse_step(full):
     return "\n".join(reasoning), "\n".join(content)
 
 
+def think_span(raw):
+    """raw(<|start|>assistant 之后的生成文本)里 analysis 正文的 (start, end)。
+    头没写全或首条消息不是 analysis 返回 None;end 在消息未闭合时 = len(raw)。"""
+    m = raw.find("<|message|>")
+    if m < 0:
+        return None
+    hdr = raw[:m]
+    if END_MARK in hdr or "analysis" not in hdr:
+        return None
+    end = raw.find(END_MARK, m)
+    start = m + len("<|message|>")
+    return (start, end if end >= 0 else len(raw))
+
+
 def sent_cuts(text):
     """真实句子级切口(不含全文末尾伪切口)。
 
@@ -141,6 +134,58 @@ def sent_cuts(text):
     """
     pts = sorted({m.end() for m in SENT_RE.finditer(text)})
     return [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
+
+
+class Stream:
+    """流式 /v1/completions。iter 出文本增量;中途 close() 即中止服务端解码。
+    收尾后 finish/usage 可读(带 include_usage;被中止时 usage 为 None,
+    调用方用增量块数近似 gen token——vLLM 补全流通常一块一 token)。"""
+
+    def __init__(self, base_url, payload, timeout):
+        url = base_url.rstrip("/") + "/completions"
+        body = json.dumps(dict(payload, stream=True,
+                               stream_options={"include_usage": True})).encode()
+        req = urllib.request.Request(
+            url, data=body, headers={"Content-Type": "application/json"})
+        self.resp = urllib.request.urlopen(req, timeout=timeout)
+        self.finish = None
+        self.usage = None
+        self.n_chunks = 0
+
+    def __iter__(self):
+        for line in self.resp:
+            if not line.startswith(b"data: "):
+                continue
+            data = line[6:].strip()
+            if data == b"[DONE]":
+                break
+            ck = json.loads(data)
+            if ck.get("usage"):
+                self.usage = ck["usage"]
+            for c in ck.get("choices") or []:
+                if c.get("finish_reason"):
+                    self.finish = c["finish_reason"]
+                if c.get("text"):
+                    self.n_chunks += 1
+                    yield c["text"]
+        self.close()
+
+    def close(self):
+        try:
+            self.resp.close()
+        except Exception:
+            pass
+
+
+def open_stream(base_url, payload, timeout, retries=3):
+    for att in range(retries):
+        try:
+            return Stream(base_url, payload, timeout)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            if att == retries - 1:
+                raise
+            print(f"    stream retry {att + 1}: {e}", flush=True)
+            time.sleep(2 ** att)
 
 
 def http_json(url, payload, timeout=600, retries=3):
@@ -196,55 +241,45 @@ def speculate(world, gen_call, t_frozen, dt_guard):
 
 
 def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
-    """分段生成一整步。prompt_head = harmony 前缀 + ANALYSIS_OPEN。
+    """v4:一步一枪流式生成,与 w0 的 chat 解码同构。
+    prompt_head = harmony 前缀,止于 <|start|>assistant(无预填);
+    raw = 之后的全部生成文本(模型自己写通道头;注入时截到切口拼 NOTE)。
+    探测骑在流上:新句子切口出现就打分,开火才 close() 中断、注入、重发续写
+    ——不开火的步是单请求不间断解码,与 chat 完全同款。
     返回 (thinking, content, usage聚合, 溢出账, 出手数)。"""
-    think = ""                 # 已接受的思考(触发时截到切口、拼上 NOTE)
-    raw_tail = ""              # think 之后累积的生成文本(可能含 <|end|> 与 final)
+    raw = ""
     usage = dict(prompt_tok=0, gen_tok=0, req=0)
-    discard = dict(chars=0, events=0, overrun_chars=0, overrun_events=0)
-    checked = set()            # 已探测过的切口(在 think+raw_tail 里的字符偏移)
+    discard = dict(chars=0, events=0)
+    checked = set()            # 已探测切口(thinking 坐标)
     n_checked = 0
     n_inject = 0
     probing = not a.no_probe
+    accepted = 0               # 注入点之前的 thinking 长度(重启后不回探)
 
     while True:
-        prompt = prompt_head + think + raw_tail
-        r = post_completions(a.base_url, dict(
-            model=a.model, prompt=prompt,
-            max_tokens=(a.chunk_tokens if probing and END_MARK not in raw_tail
-                        else a.tail_tokens),
-            temperature=0.0,
-            # final 已开启的后续请求服务端就掐越界;开启前不能换(见 FINAL_STOP)
-            stop=(FINAL_STOP if final_content_at(think + raw_tail) is not None
-                  else DEFAULT_STOP),
+        st = open_stream(a.base_url, dict(
+            model=a.model, prompt=prompt_head + raw,
+            max_tokens=max(1, MAX_STEP_TOKENS - usage["gen_tok"]),
+            temperature=0.0, stop=DEFAULT_STOP,
             skip_special_tokens=False), a.timeout)
-        ch = r["choices"][0]
-        raw_tail += ch["text"]
-        usage["prompt_tok"] += r["usage"]["prompt_tokens"]
-        usage["gen_tok"] += r["usage"]["completion_tokens"]
         usage["req"] += 1
-
-        done = (ch.get("finish_reason") == "stop"
-                or usage["gen_tok"] >= MAX_STEP_TOKENS)
-
-        # 客户端截断兜底:本段请求发出时 final 可能尚未开启(stop 还是老的),
-        # 越界续写已混进本段——截到第一个越界符之前,本步判 done。
-        # END_MARK 只会出现在 raw_tail(注入只在 END_MARK 出现前发生),
-        # 所以截断只动 raw_tail,think 不受影响。
-        full_now = think + raw_tail
-        cut_at = overrun_cut(full_now)
-        if cut_at is not None:
-            discard["overrun_chars"] += len(full_now) - cut_at
-            discard["overrun_events"] += 1
-            raw_tail = full_now[len(think):cut_at]
-            done = True
-
-        if probing and n_inject < a.max_inject_per_step \
-                and END_MARK not in raw_tail:
-            # 思考还在写:探测新切口。思考全文 = think + raw_tail
-            t_all = think + raw_tail
+        fired = False
+        for delta in st:
+            raw += delta
+            if not probing or n_inject >= a.max_inject_per_step:
+                continue
+            if not any(c in delta for c in ".!?\n"):
+                continue           # 没有新句尾就不必重扫(流式逐 token 到达)
+            span = think_span(raw)
+            if span is None:
+                continue           # 通道头还没写全
+            ts, te = span
+            if te < len(raw):
+                probing = False    # analysis 已闭合,进入 commentary/final
+                continue
+            t_all = raw[ts:]
             for cut in sent_cuts(t_all):
-                if cut in checked or cut <= len(think):
+                if cut in checked or cut <= accepted:
                     continue
                 if n_checked >= MAX_BOUNDS:
                     probing = False
@@ -266,18 +301,26 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
                                pred_label=s["label"], gen_call=g["call"],
                                note=note, discarded_chars=len(t_all) - cut,
                                **spec))
-                    think = t_all[:cut] + note
-                    raw_tail = ""
-                    checked = set()     # 偏移随截断+注入整体位移,旧集合作废;
-                    n_inject += 1       # cut <= len(think) 的过滤挡住重查旧文本
-                    if n_inject >= a.max_inject_per_step:
-                        probing = False  # 注满配额:后面换大段生成,少打请求
-                    done = False        # 注入后必须继续生成
+                    raw = raw[: ts + cut] + note   # 切口后溢出丢弃
+                    accepted = cut + len(note)
+                    checked = set()                # 偏移整体位移,旧集合作废
+                    n_inject += 1
+                    fired = True
                     break
-        if done:
-            break
+            if fired:
+                break
+        # 账:完整收尾有 usage;被中止时用增量块数近似 gen(一块≈一 token)
+        if st.usage:
+            usage["prompt_tok"] += st.usage.get("prompt_tokens", 0)
+            usage["gen_tok"] += st.usage.get("completion_tokens", 0)
+        else:
+            usage["gen_tok"] += st.n_chunks
+        if fired:
+            st.close()
+            continue               # 注入后续写(此处的重分词缝是干预本身,不可约)
+        break                      # stop=<|return|> 或预算打满,整步收官
 
-    t_final, content = parse_step(think + raw_tail)
+    t_final, content = parse_step(raw)
     return (t_final, content, usage, discard, n_inject)
 
 
@@ -426,8 +469,9 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
                                    dict(messages=msgs,
                                         effort=a.effort))["prefix"]
                 t0 = time.time()
+                # v4:不预填通道头,prompt 止于 <|start|>assistant(chat 同款)
                 think, content, usage, discard, n_inj = gen_step(
-                    a, prefix + R.ANALYSIS_OPEN, instr, hist, world,
+                    a, prefix, instr, hist, world,
                     t_frozen, dt_guard, log, step)
                 log.w(dict(type="gen", step=step, reasoning=think,
                            content=content, usage=usage, discard=discard,
