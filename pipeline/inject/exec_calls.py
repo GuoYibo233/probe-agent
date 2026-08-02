@@ -80,7 +80,6 @@ plan.jsonl(cprobe-env 产)→ 本文件 → exec_calls.jsonl →
 
 import argparse
 import ast
-import glob
 import hashlib
 import json
 import os
@@ -295,9 +294,60 @@ def cache_files(cache_path):
     每个分片进程写自己的 `<stem>.s<id>.jsonl`(>4KB 的行用 O_APPEND 并发写会
     交错,所以不共享同一个文件),读的时候把兄弟文件全读进来 —— 六个 θ 点之间
     绝大部分预测调用因此能直接命中缓存(状态与 θ 无关)。
+
+    匹配必须精确到 `<stem>.jsonl` 与 `<stem>.s<N>.jsonl` 两种形状——原来的
+    前缀 glob(`<stem>*`)会把 `<stem>_v2.s0.jsonl`、`<stem>2.jsonl` 这类
+    别的批次的缓存静默吞进来(审计 B8)。
     """
     p = Path(cache_path)
-    return sorted(glob.glob(str(p.parent / (p.stem + "*" + p.suffix))))
+    if not p.parent.is_dir():
+        return []
+    pat = re.compile(re.escape(p.stem) + r"(\.s\d+)?" + re.escape(p.suffix) + r"$")
+    return sorted(str(f) for f in p.parent.iterdir() if pat.fullmatch(f.name))
+
+
+def _reqver_write(p, h):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(p.name + ".tmp")          # 四分片并发跑,写档要原子
+    tmp.write_text(json.dumps({"requote_version": REQUOTE_VERSION,
+                               "src_sha1": h}))
+    os.replace(tmp, p)
+
+
+def check_requote_version(cache_main):
+    """机械守卫(审计 B8):requote()/cache_key() 的**可执行结构**变了但
+    REQUOTE_VERSION 没 +1 就拒绝跑——键不变会静默复用旧口径的结果。
+    注释/docstring 改动不算(先过 ast 归一化再取哈希)。
+    档案存 <主名>.reqver.json,首跑自动建档;+1 后自动换档(旧键自然失效)。"""
+    import ast
+    import inspect
+    src = inspect.getsource(requote) + inspect.getsource(cache_key)
+    tree = ast.parse(src)
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            node.body = body[1:] or [ast.Pass()]
+    h = hashlib.sha1(ast.unparse(tree).encode()).hexdigest()
+    p = cache_main.with_name(cache_main.stem + ".reqver.json")
+    if p.exists():
+        try:
+            old = json.loads(p.read_text())
+        except Exception:
+            sys.exit(f"缓存版本档案损坏: {p}——人工确认后删掉重跑"
+                     "(会按当前源码重建档案),别当成没档案静默放行。")
+        if old.get("src_sha1") == h:
+            if old.get("requote_version") != REQUOTE_VERSION:
+                _reqver_write(p, h)     # 只 +1 没改源码:档案跟上常量
+            return
+        if old.get("requote_version") == REQUOTE_VERSION:
+            sys.exit(
+                f"requote()/cache_key() 的源码变了,但 REQUOTE_VERSION 还是 "
+                f"{REQUOTE_VERSION}——缓存键不变,旧结果会被静默复用。"
+                f"确认是逻辑变更就把 REQUOTE_VERSION +1 再跑;"
+                f"档案: {p}")
+    _reqver_write(p, h)
 
 
 def load_cache(cache_path):
@@ -536,6 +586,7 @@ def main():
                 done.add(json.loads(l)["event"])
             except Exception:
                 pass
+    check_requote_version(cache_main)        # 逻辑变了没 +1 版本号 -> 拒绝跑
     cache = load_cache(cache_main)           # 读主名 -> 兄弟分片全进来
     print(f"shard {a.shard_id}/{a.num_shards}: {len(units)} units "
           f"{sum(len(by_unit[u]) for u in units)} events exp={exp} "

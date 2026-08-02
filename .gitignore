@@ -39,6 +39,9 @@ envs/stabletoolbench
 # ── 回放执行缓存（exec_calls 的结果缓存，纯产物）
 pipeline/inject/exec_cache/
 
+# ── 台账锁文件（gpu_jobs.py mutate_reg 的 flock 载体）
+ops/*.lock
+
 # ── 实验产物目录：只保留 .md 报告，其余（轨迹 / 权重 / 中间文件）不入库
 envs/runs/**
 !envs/runs/**/

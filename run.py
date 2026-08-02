@@ -14,7 +14,8 @@
 - CPU 任务直跑:subprocess, cwd=ROOT, 解释器按注册表(venv 绝对路径)。
 - GPU/发射类任务(handoff=True)只拼命令不发射:打印 `<解释器> <脚本> <参数>`
   一段(cd/CUDA_VISIBLE_DEVICES/tee 不打——那是 gpu-run 发射模板的活,打了会被
-  二次引用),发射走 gpu-run skill 全生命周期。
+  二次引用),发射走 gpu-run skill 全生命周期。`show` 出的也是发射命令,
+  所以 show 对 handoff/gate 任务同样过脏树门禁(--allow-dirty 放行)。
 - handoff 任务出命令前查工作树:脏(git status --porcelain 非空)就拒绝,
   显式 --allow-dirty 才放行——发射实验前先 commit 是铁律,79/79 次脏发射的
   历史证明软提醒没用。--dry-run 在场时不拦。
@@ -23,7 +24,8 @@
   以后任何扩展——新模型/新环境/新格/新脚本/新参数——代码落地的同时必须挂进
   本文件:新脚本加 TASKS 条目,新多步流程加 RECIPES 条目,底层脚本加参数不用
   改这里(透传)。训练四格的唯一真源是本文件的 CELLS,ops/launch_probe.py 从
-  这里 import——别再另写一张格表。
+  这里 import——别再另写一张格表。评测四格同理:唯一真源是本文件的
+  EVAL_CELLS,ops/launch_eval.py 从这里 import。
 
 配方状态与日志:logs/recipe/<name>__<id>/ 下 NN_<step>.log 一步一个文件 +
 state.json(tmp+replace 原子写)。续跑键 = (步骤名, 命令指纹),改了参数自动
@@ -68,6 +70,17 @@ CELLS = {
 }
 CELL_ORDER = ("mtool", "mext", "ctool", "cgen")
 
+# 评测四格唯一真源:格 -> (run.py 任务名, 依赖的工具格|None)。
+# ops/launch_eval.py 从这里 import 并取任务的解释器/脚本/固定参数,
+# 别处不许再抄一份(同构表必漂移,而那种漂移是静默的)。
+# 依赖语义:mext 吃同模型 mtool 的 REPLAY_REPORT,cgen 吃 ctool 的。
+EVAL_CELLS = {
+    "mtool": ("eval-tool-mbert", None),
+    "ctool": ("eval-tool-causal", None),
+    "mext":  ("eval-mcall", "mtool"),
+    "cgen":  ("eval-ccall", "ctool"),
+}
+
 # ---------------------------------------------------------------- 任务注册表
 # 字段:stage 段名 / desc 一句话 / py 解释器键 / script 相对 ROOT 的脚本
 #      args 固定前置参数 / gpu 要不要卡 / handoff 只拼命令不执行(默认=gpu)
@@ -83,18 +96,21 @@ TASKS = {
         notes=["必给 --base-url --model --outdir;outdir 名必须 appworld_<q35|q36|gptoss>,"
                "别的尾巴下游静默跳过整目录",
                "重跑必带 --resume,否则同名轨迹被截断重写",
-               "脚本自己 chdir envs/appworld;相对 --outdir 按 ROOT 解析"]),
+               "脚本自己 chdir envs/appworld;相对 --outdir 按 ROOT 解析",
+               "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
     "collect-alf": dict(
         stage="collect", py="alfworld", script="envs/collect/run_alfworld.py",
         desc="ALFWorld 采集器(要 vLLM /v1 在线)",
         notes=["必给 --base-url --model --outdir;--split val=官方 valid_seen",
                "外部 export 过 ALFWORLD_DATA 会盖过 --data-root(脚本 setdefault)",
-               "重跑必带 --resume"]),
+               "重跑必带 --resume",
+               "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
     "collect-tales": dict(
         stage="collect", py="tales", script="envs/collect/run_tales.py",
         desc="TALES/TWX 采集器(要 vLLM /v1 在线)",
         notes=["无 --split/--exp/分片,分片靠拆 --seeds;--game 写错直接 KeyError",
-               "重跑必带 --resume"]),
+               "重跑必带 --resume",
+               "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
     "collect-tau2": dict(
         stage="collect", py="tau2", script="envs/collect/run_tau2.py",
         desc="tau2-bench 采集器(要两个 /v1:agent+用户模拟器)",
@@ -188,20 +204,24 @@ TASKS = {
         stage="train", py="mbert", script="pipeline/train/train_mbert_tool.py",
         gpu=True, desc="ModernBERT 工具名探针(必给 --data --out)",
         notes=["--smoke 必须同时换 --out,否则冒烟权重占住 best/",
-               "train_log.jsonl 追加不清空"]),
+               "train_log.jsonl 追加不清空",
+               "同 out 二次训练默认拒绝(已有 train_log.jsonl 即拦),--force 逃生"]),
     "train-mext": dict(
         stage="train", py="mbert", script="pipeline/train/train_mbert_extract.py",
         gpu=True, desc="ModernBERT 参数抽取头(必给 --data --out)",
-        notes=["产物是裸 state_dict best/model.pt,复用走 load_extractor()"]),
+        notes=["产物是裸 state_dict best/model.pt,复用走 load_extractor()",
+               "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-ctool": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_tool.py",
         gpu=True, args=["--base", "qwen"],
         desc="因果工具名探针(必给 --data --out;固定 --base qwen)",
-        notes=["开训对齐门禁 FAIL 退 2(reldiff 1e-6 量级=噪声,1e-3 以上=真错)"]),
+        notes=["开训对齐门禁 FAIL 退 2(reldiff 1e-6 量级=噪声,1e-3 以上=真错)",
+               "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-cgen": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_callgen.py",
         gpu=True, desc="因果整条调用生成头(必给 --data --out)",
-        notes=["没有 --base,换底座要改源码"]),
+        notes=["没有 --base,换底座要改源码",
+               "同 out 二次训练默认拒绝,--force 逃生"]),
 
     # ---- eval 评测 ----
     "eval-tool-mbert": dict(
@@ -293,7 +313,9 @@ TASKS = {
         stage="inject", py="sys", script="pipeline/inject/launch_plan_sweep.py",
         handoff=True, gpu=True,
         desc="θ 扫描 plan 段发射器(自己 ssh+tmux 到 tokyo106)",
-        notes=["补发单点必须 --only(SKIP 只挡还活着的会话)"]),
+        notes=["补发单点必须 --only(SKIP 只挡还活着的会话)",
+               "壳中壳:它自己 ssh+tmux 发 6 个 session——与 launch-probe/"
+               "launch-eval(gate 型真执行)分类不同,历史如此,照 handoff 用"]),
 
     # ---- live 活跑 + serve 服务 ----
     "live-appworld": dict(
@@ -388,6 +410,12 @@ TASKS = {
         desc="实验记录(start/finish/render/list/show 原样透传)",
         notes=["要 run_id 四处一致只能用 --run-id,--name 会加时间戳前缀",
                "同 run_id 二次 start 直接退出;finish 幂等可重复"]),
+    "runmeta": dict(
+        stage="ops", py="sys", script="ops/runmeta.py",
+        desc="RUNMETA.json 落盘器(产物目录钉回 commit+argv;发射器自动写)",
+        notes=["用法: run.py runmeta <outdir> --cmd '<实际命令>' [--kind K --note N]",
+               "append 进 launches 列表不覆盖——同目录二次发射留双记录",
+               "launch_probe/launch_eval 已自动调;gpu-run 手搓发射时要手动补一条"]),
     "launch-probe": dict(
         stage="ops", py="sys", script="ops/launch_probe.py",
         gate=True, desc="训练四格排卡发射器(smoke/full;格表从本文件 CELLS 读)",
@@ -447,6 +475,13 @@ RECIPES = {
             dict(name="check", task="ann-check-callstr",
                  args=["--config", "{config}"]),
         ]),
+    "engine-smoke": dict(
+        desc="配方引擎冒烟:两步纯 CPU 自测,验 state.json/日志/续跑路径本身",
+        params=dict(),
+        steps=[
+            dict(name="selftest_a", task="parse-call-selftest", args=[]),
+            dict(name="selftest_b", task="parse-call-selftest", args=[]),
+        ]),
 }
 
 # ---------------------------------------------------------------- 引擎
@@ -465,17 +500,34 @@ def task_env(t):
     return env
 
 
+def gate_of(t):
+    """一个任务过不过脏树门禁,唯一判定链:gate > handoff > gpu。"""
+    return t.get("gate", t.get("handoff", t.get("gpu", False)))
+
+
+# 台账与锁不算脏:它们是发射的副产品(append-only 记录),不影响任何产物,
+# 不豁免的话一次会话里第二枪永远被自己上一枪的登记拦住。
+# record.py / ops/runmeta.py 各有一份同名单,改这里要三处同步。
+LEDGER_PATHS = ("ops/jobs.json", "ops/runs.jsonl", "RESULTS.md",
+                "ops/jobs.json.lock")
+
+
 def git_dirty():
     r = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"],
                        capture_output=True, text=True)
-    return r.stdout.strip().splitlines() if r.returncode == 0 else None
+    if r.returncode != 0:
+        return None
+    return [l for l in r.stdout.splitlines()
+            if l.strip() and l[3:] not in LEDGER_PATHS]
 
 
-def gate_dirty(extra):
-    """脏树门禁。返回过滤掉 --allow-dirty 之后的参数;拦下时直接 SystemExit。"""
+def gate_dirty(extra, honor_dry=True):
+    """脏树门禁。返回过滤掉 --allow-dirty 之后的参数;拦下时直接 SystemExit。
+    honor_dry=False 给只出命令的路径(show/print_handoff)用:它们不执行任何
+    东西,--dry-run 对它们没有意义,不能成为绕门的后门。"""
     allow = "--allow-dirty" in extra
     extra = [a for a in extra if a != "--allow-dirty"]
-    if "--dry-run" in extra or allow:
+    if (honor_dry and "--dry-run" in extra) or allow:
         return extra
     lines = git_dirty()
     if lines is None:                       # git 都跑不动 -> 按脏处理,不放行
@@ -505,19 +557,24 @@ def tail_of(path, n=40):
 
 def run_direct(name, t, extra):
     cmd = build_cmd(t, extra)
-    print(f"[{name}] cwd={t.get('cwd', ROOT)}")
-    print("  " + shlex.join(cmd), flush=True)
+    # 横幅进 stderr:stdout 留给底层脚本——gpu-jobs json 这类机读输出
+    # 被横幅污染就不再是合法 JSON(审计复核实测)
+    print(f"[{name}] cwd={t.get('cwd', ROOT)}", file=sys.stderr)
+    print("  " + shlex.join(cmd), file=sys.stderr, flush=True)
     r = subprocess.run(cmd, cwd=t.get("cwd", str(ROOT)), env=task_env(t))
     return r.returncode
 
 
 def print_handoff(name, t, extra):
-    extra = gate_dirty(extra)
+    extra = gate_dirty(extra, honor_dry=False)
     cmd = build_cmd(t, extra)
     head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
                           capture_output=True, text=True).stdout.strip()
     print(f"# {name}: 只拼命令不发射。发射走 gpu-run skill 全生命周期")
     print(f"# (探卡->挑卡->smoke->commit->tmux->双登记->监控->收尾)。HEAD={head}")
+    if t.get("cwd"):
+        print(f"# 需要 cd: {t['cwd']}(gpu-run 模板默认 cd 仓库根,"
+              f"这条任务必须改用这里的 cwd)")
     for k, v in t.get("env", {}).items():
         print(f"# 需要环境变量: {k}={v}")
     for n in t.get("notes", []):
@@ -555,10 +612,16 @@ def plan_steps(rc, params):
             done = None
             if st.get("done"):
                 done = {k: expand(v, p) for k, v in st["done"].items()}
+            if st.get("done"):
+                unknown = set(st["done"]) - {"exists"}
+                if unknown:
+                    raise SystemExit(f"配方步骤 {st['name']} 的 done 键不认识: "
+                                     f"{sorted(unknown)}(白名单: exists)")
             out.append(dict(name=expand(st["name"], p), task=st["task"],
                             cmds=cmds, done=done,
                             env=t.get("env", {}), cwd=t.get("cwd", str(ROOT)),
-                            handoff=t.get("handoff", t.get("gpu", False))))
+                            handoff=t.get("handoff", t.get("gpu", False)),
+                            gate=gate_of(t)))
     return out
 
 
@@ -575,9 +638,11 @@ def save_state(d, state):
 def check_done(done):
     if not done:
         return True
-    if "exists" in done:
-        return (ROOT / done["exists"]).exists()
-    return True
+    unknown = set(done) - {"exists"}
+    if unknown:
+        # 键名打错不许静默降级成"只看 rc"——那会把没产物的步骤判成完成
+        raise SystemExit(f"done 判据不认识的键: {sorted(unknown)}(白名单: exists)")
+    return (ROOT / done["exists"]).exists()
 
 
 def run_recipe(name, argv):
@@ -585,7 +650,7 @@ def run_recipe(name, argv):
     if rc is None:
         raise SystemExit(f"没有这个配方: {name}(run.py recipes 看清单)")
     params = dict(rc["params"])
-    rid, resume, dry = None, False, False
+    rid, resume, dry, allow_dirty = None, False, False, False
     it = iter(argv)
     for a in it:
         if a == "--set":
@@ -603,7 +668,7 @@ def run_recipe(name, argv):
         elif a == "--dry-run":
             dry = True
         elif a == "--allow-dirty":
-            pass                       # 配方目前全 CPU;留给将来 handoff 步
+            allow_dirty = True         # handoff 步脏树门禁的逃生口
         else:
             raise SystemExit(f"配方不认识的参数: {a}(底层参数写进配方定义,不透传)")
     missing = [k for k, v in params.items() if v is None]
@@ -666,6 +731,16 @@ def run_recipe(name, argv):
             print(f"[{i + 1}/{len(steps)}] {s['name']} SKIP(已完成,指纹一致)")
             save_state(d, state)
             continue
+        if s.get("gate") and not allow_dirty:
+            # handoff 步与 gate 步(launch-probe/launch-eval 这类自发射任务)
+            # 同一道门:配方里也不许脏树出手
+            lines = git_dirty()        # None(git 失败)按脏处理,不放行
+            if lines is None or lines:
+                why = "git status 失败" if lines is None else f"{len(lines)} 行脏"
+                raise SystemExit(
+                    f"步骤 {s['name']} 是发射类任务而工作树不干净({why}),"
+                    "拒绝出发射命令(发射前先 commit,CLAUDE.md 铁律);"
+                    "强行要出: recipe 后面加 --allow-dirty。")
         if s["handoff"]:
             rec["state"] = "handoff"
             save_state(d, state)
@@ -773,13 +848,21 @@ def cmd_show(argv):
     if not argv or argv[0] not in TASKS:
         raise SystemExit(f"要一个任务名,有的是: {', '.join(TASKS)}")
     n, t = argv[0], TASKS[argv[0]]
+    if gate_of(t):
+        # show 出的就是可复制的发射命令——同样过脏树门禁,别让文档指定的
+        # 出命令路径成为绕门的后门(审计 A3);show <task> --allow-dirty 放行。
+        # honor_dry=False:show 不执行任何东西,--dry-run 不是它的逃生口
+        gate_dirty(argv[1:], honor_dry=False)
     print(f"{n}: {t['desc']}  (stage={t['stage']})")
     print(f"  命令: {shlex.join(build_cmd(t, ['<参数...>']))}")
     print(f"  cwd: {t.get('cwd', ROOT)}")
+    if t.get("cwd"):
+        print(f"  # 需要 cd: {t['cwd']}(gpu-run 模板默认 cd 仓库根,"
+              f"这条任务必须改用这里的 cwd)")
     if t.get("env"):
         print(f"  env: {t['env']}")
     print(f"  gpu={t.get('gpu', False)} handoff={t.get('handoff', t.get('gpu', False))}"
-          f" 脏树门禁={t.get('gate', t.get('handoff', t.get('gpu', False)))}")
+          f" 脏树门禁={gate_of(t)}")
     for note in t.get("notes", []):
         print(f"  - {note}")
     return 0
@@ -802,6 +885,14 @@ def cmd_selfcheck():
     bad = 0
     seen_prog = set()
     for n, t in TASKS.items():
+        if "py" not in t and "prog" not in t:
+            print(f"条目缺 py/prog: {n}(会在运行时裸 KeyError)")
+            bad += 1
+            continue
+        if "prog" not in t and t["py"] not in PY:
+            print(f"条目 py 键不在解释器地图里: {t['py']}  (任务 {n})")
+            bad += 1
+            continue
         prog = t.get("prog") or PY[t["py"]]
         if prog not in seen_prog and prog not in ("python3", "bash"):
             if not Path(prog).exists():
@@ -811,7 +902,14 @@ def cmd_selfcheck():
         if "script" in t and not (ROOT / t["script"]).exists():
             print(f"缺脚本: {t['script']}  (任务 {n})")
             bad += 1
+        if "cwd" in t and not Path(t["cwd"]).is_dir():
+            print(f"缺 cwd 目录: {t['cwd']}  (任务 {n})")
+            bad += 1
     for rn, rc in RECIPES.items():
+        # 占位符必须能用 params(该步有 foreach 才额外有 item)全部展开——
+        # 运行时才炸等于炸在实验中间;item 不能无条件塞,否则查不出
+        # "用了 {item} 却忘写 foreach"这类最常见的复制错
+        base_probe = {k: "X" for k in rc["params"]}
         for st in rc["steps"]:
             if st["task"] not in TASKS:
                 print(f"配方 {rn} 引用不存在的任务 {st['task']}")
@@ -819,6 +917,34 @@ def cmd_selfcheck():
             if "foreach" in st and st["foreach"] not in rc["params"]:
                 print(f"配方 {rn} 的 foreach={st['foreach']} 不在 params 里")
                 bad += 1
+            if "name" not in st:
+                print(f"配方 {rn} 有步骤缺 name 字段")
+                bad += 1
+                continue
+            probe = dict(base_probe)
+            if "foreach" in st:
+                probe["item"] = "X"
+            fields = [st["name"], *st.get("args", [])]
+            fields += list((st.get("done") or {}).values())
+            for s in fields:
+                try:
+                    s.format(**probe)
+                except (KeyError, IndexError, ValueError, TypeError,
+                        AttributeError) as e:
+                    print(f"配方 {rn} 步骤 {st['name']} 占位符坏了: {s!r} ({e})")
+                    bad += 1
+            unknown = set(st.get("done") or {}) - {"exists"}
+            if unknown:
+                print(f"配方 {rn} 步骤 {st['name']} done 键不在白名单: "
+                      f"{sorted(unknown)}(只认 exists)")
+                bad += 1
+    for cell, (task, dep) in EVAL_CELLS.items():
+        if task not in TASKS:
+            print(f"EVAL_CELLS[{cell}] 引用不存在的任务 {task}")
+            bad += 1
+        if dep is not None and dep not in EVAL_CELLS:
+            print(f"EVAL_CELLS[{cell}] 依赖不存在的格 {dep}")
+            bad += 1
     print(f"selfcheck: {len(TASKS)} 任务 / {len(RECIPES)} 配方, "
           f"{'全部就位' if not bad else f'{bad} 处缺失'}")
     return 1 if bad else 0
@@ -848,7 +974,11 @@ def main(argv):
         raise SystemExit(f"不认识: {cmd}(run.py list 看任务,run.py recipes 看配方)")
     if t.get("handoff", t.get("gpu", False)):
         return print_handoff(cmd, t, rest)
-    if t.get("gate") and "--dry-run" not in rest:
+    if gate_of(t):
+        # --dry-run 放行、--allow-dirty 剥离都在 gate_dirty 里做;在这层
+        # 短路会让 --allow-dirty 原样漏给底层脚本(它们不认识这个 flag)。
+        # 这条路真执行(launch-probe/launch-eval 自己 ssh+tmux),所以
+        # honor_dry 保持 True:它们的 --dry-run 真的不发射
         rest = gate_dirty(rest)
     return run_direct(cmd, t, rest)
 

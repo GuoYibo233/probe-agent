@@ -24,11 +24,19 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Dataset
+import transformers
+# 双环境铁律(run.py PY 表):mbert 线钉 transformers==4.57.6,跑错解释器
+# 的行为漂移是静默的,这里直接拒绝
+if transformers.__version__ != "4.57.6":
+    raise SystemExit(f"mbert 线钉 transformers==4.57.6,当前 "
+                     f"{transformers.__version__}——解释器用错了?"
+                     "一律从 run.py 的任务进(train-mtool/train-mext)。")
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
 import readonly_map
 from input_modes import apply_mode
+
 
 MODEL = "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base"
 SEED = 20260729
@@ -114,12 +122,18 @@ def main():
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具模式:标签折叠成 该环境的只读工具 + "
                          f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
+    ap.add_argument("--force", action="store_true",
+                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
     random.seed(SEED)
     data = Path(args.data)
     out = Path(args.out)
+    if (out / "train_log.jsonl").exists() and not args.force:
+        raise SystemExit(
+            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
+            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
     out.mkdir(parents=True, exist_ok=True)
     dev = "cuda"
 

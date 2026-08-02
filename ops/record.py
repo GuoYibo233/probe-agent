@@ -14,6 +14,7 @@
       --model M --seed N   模型与随机种子
       --param k=v          可重复，实验参数
       --data PATH          原始数据落盘位置
+      --log PATH           日志路径（账 ↔ 日志互相能跳）
       --note TEXT          一句话说明这次想验证什么
   record.py finish RUN_ID [选项]                     # 收尾时补数字
       --status ok|fail|killed
@@ -45,18 +46,33 @@ def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
+# 台账与锁不算脏(与 run.py 的 LEDGER_PATHS、ops/runmeta.py 三处同步维护):
+# 它们是记录本身的副产品,不影响任何产物
+LEDGER_PATHS = ("ops/jobs.json", "ops/runs.jsonl", "RESULTS.md",
+                "ops/jobs.json.lock")
+
+
 def git_state():
-    """当前代码版本。dirty=True 意味着这条记录的 commit 追不回真实代码。"""
-    def g(*a):
-        try:
-            r = subprocess.run(["git", "-C", ROOT] + list(a),
-                               capture_output=True, text=True, timeout=10)
-            return r.stdout.strip() if r.returncode == 0 else ""
-        except Exception:
-            return ""
-    return {"commit": g("rev-parse", "--short", "HEAD"),
-            "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
-            "dirty": bool(g("status", "--porcelain"))}
+    """当前代码版本。dirty=True 意味着这条记录的 commit 追不回真实代码。
+    fail-closed:git 探不到就明标 git_probe_failed 并按脏处理——静默记成
+    干净树会让坏记录比脏树还漂亮(审计 A4)。
+    porcelain 不整体 strip:首行前导空格是状态码的一部分。"""
+    def g(*a, raw=False):
+        r = subprocess.run(["git", "-C", ROOT] + list(a),
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or "").strip() or f"git rc={r.returncode}")
+        return r.stdout if raw else r.stdout.strip()
+    try:
+        dirty = [l for l in g("status", "--porcelain", raw=True).splitlines()
+                 if l.strip() and l[3:] not in LEDGER_PATHS]
+        return {"commit": g("rev-parse", "--short", "HEAD"),
+                "branch": g("rev-parse", "--abbrev-ref", "HEAD"),
+                "dirty": bool(dirty), "dirty_count": len(dirty),
+                "dirty_files": dirty[:50]}
+    except Exception as e:
+        return {"commit": "", "branch": "", "dirty": True, "dirty_files": [],
+                "git_probe_failed": True, "git_probe_error": str(e)[:200]}
 
 
 def append(ev):
@@ -81,8 +97,10 @@ def load():
             kind = ev.pop("ev")
             if kind == "start":
                 r["started_at"] = ev.get("t")
-                for k in ("track", "commit", "branch", "dirty", "cmd", "host",
-                          "gpu", "model", "seed", "data", "note"):
+                for k in ("track", "commit", "branch", "dirty", "dirty_files",
+                          "dirty_count", "git_probe_failed", "git_probe_error",
+                          "cmd", "host",
+                          "gpu", "model", "seed", "data", "note", "log"):
                     if ev.get(k) not in (None, ""):
                         r[k] = ev[k]
                 r["params"].update(ev.get("params") or {})
@@ -121,7 +139,7 @@ def render():
     lines = [
         "# RESULTS — 实验统计数字总表",
         "",
-        "> 本文件由 `python ops/record.py render` 自动生成，**不要手改**。",
+        "> 本文件由 `python3 run.py record render` 自动生成，**不要手改**。",
         "> 数据源是 append-only 的 `ops/runs.jsonl`；改数字请补一条 finish 事件。",
         "> 方向决策的来龙去脉看 [TIMELINE.md](TIMELINE.md)，原始数据不在 git 里。",
         "",
@@ -134,9 +152,12 @@ def render():
             "|---|---|---|---|---|---|---|---|",
         ]
         for r in reversed(list(runs.values())):
-            c = r.get("commit", "-")
-            if r.get("dirty"):
-                c += "+dirty"
+            if r.get("git_probe_failed"):
+                c = "?"                # 探测失败 ≠ 已知脏树,别渲染成 -+dirty
+            else:
+                c = r.get("commit", "-")
+                if r.get("dirty"):
+                    c += "+dirty"
             lines.append("| `{}` | {} | {} | `{}` | {} | {} | {} | {} |".format(
                 r["run_id"], r.get("started_at", "-"), r.get("track", "-"), c,
                 r.get("model", "-"), r.get("status", "-"),
@@ -154,11 +175,18 @@ def render():
             lines.append("- **方向**：{} ｜ **状态**：{} ｜ **起止**：{} → {}".format(
                 r.get("track", "-"), r.get("status", "-"),
                 r.get("started_at", "-"), r.get("finished_at", "未收尾")))
-            lines.append("- **代码**：`{}`{} (分支 {})".format(
-                r.get("commit", "-"),
-                "  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码"
-                if r.get("dirty") else "",
-                r.get("branch", "-")))
+            if r.get("git_probe_failed"):
+                lines.append("- **代码**：⚠️ 记录时 git 探测失败，代码版本未知"
+                             + ("（{}）".format(r["git_probe_error"])
+                                if r.get("git_probe_error") else ""))
+            else:
+                nd = r.get("dirty_count") or len(r.get("dirty_files") or [])
+                lines.append("- **代码**：`{}`{} (分支 {})".format(
+                    r.get("commit", "-"),
+                    ("  ⚠️ 发射时工作树是脏的（{} 文件），这个 commit "
+                     "追不回真实代码".format(nd or "?"))
+                    if r.get("dirty") else "",
+                    r.get("branch", "-")))
             if r.get("host"):
                 lines.append("- **机器**：{} GPU {}".format(
                     r["host"], r.get("gpu", "-")))
@@ -171,6 +199,8 @@ def render():
                 lines.append("- **数字**：{}".format(fmt_metrics(r["metrics"])))
             if r.get("data"):
                 lines.append(f"- **原始数据**：`{r['data']}`（不在 git 里）")
+            if r.get("log"):
+                lines.append(f"- **日志**：`{r['log']}`")
             if r.get("cmd"):
                 lines.append(f"- **命令**：`{r['cmd']}`")
             lines.append("")
@@ -190,7 +220,7 @@ def cmd_start(argv):
         elif a == "--name":
             name = next(it)
         elif a in ("--track", "--cmd", "--host", "--gpu", "--model",
-                   "--data", "--note"):
+                   "--data", "--note", "--log"):
             ev[a[2:]] = next(it)
         elif a == "--seed":
             ev["seed"] = int(next(it))
@@ -208,11 +238,34 @@ def cmd_start(argv):
         sys.exit(f"run_id {ev['run_id']} 已存在，换一个")
     ev["params"] = kv(params)
     ev.update(git_state())
+    # 脏树补丁在 append/render **之前**取:否则 diff 里混进本条记录自己刚写的
+    # 台账改动,与事件里的 dirty_files 快照不是同一时刻(审计复核)
+    if ev.get("dirty") and not ev.get("git_probe_failed"):
+        d = ev.get("data")
+        if not d:
+            print("⚠️ 脏树且没给 --data,补丁没处存——这条记录只有脏文件清单")
+        elif not os.path.isdir(d):
+            print(f"⚠️ 脏树补丁没存: --data 目录还不存在({d})")
+        else:
+            try:
+                r = subprocess.run(["git", "-C", ROOT, "diff", "HEAD"],
+                                   capture_output=True, text=True, timeout=20)
+                if r.returncode == 0 and r.stdout:
+                    pf = os.path.join(d, f"dirty_{ev['run_id']}.patch")
+                    with open(pf, "w") as f:
+                        f.write(r.stdout)
+                    print(f"已存脏树补丁: {pf}（未跟踪的新文件不在补丁里,"
+                          "清单看本条记录的 dirty_files）")
+            except Exception as e:
+                print(f"⚠️ 脏树补丁没存上: {e}")
     append(ev)
     render()
-    print(f"已记录 start: {ev['run_id']}  (commit {ev['commit']}"
-          f"{'，⚠️ 工作树是脏的：先 commit 再发射，否则追溯断链' if ev['dirty'] else ''})")
-    print(f"收尾时: python ops/record.py finish {ev['run_id']} "
+    if ev.get("git_probe_failed"):
+        print(f"已记录 start: {ev['run_id']}  ⚠️ git 探测失败,代码版本未知")
+    else:
+        print(f"已记录 start: {ev['run_id']}  (commit {ev['commit']}"
+              f"{'，⚠️ 工作树是脏的：先 commit 再发射，否则追溯断链' if ev['dirty'] else ''})")
+    print(f"收尾时: python3 run.py record finish {ev['run_id']} "
           f"--metric k=v --conclusion \"...\"")
 
 

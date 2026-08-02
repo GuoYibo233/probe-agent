@@ -43,10 +43,16 @@ from pathlib import Path
 
 import torch
 import transformers
+_TV = tuple(int(x) for x in transformers.__version__.split(".")[:2])
+if _TV < (5, 14):
+    raise SystemExit(f"cprobe 线要 transformers>=5.14,当前 "
+                     f"{transformers.__version__}——解释器用错了?"
+                     "一律从 run.py 的任务进(train-ctool/train-cgen)。")
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup
 
 import readonly_map
+
 
 MODELS = {
     "qwen": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
@@ -272,12 +278,18 @@ def main():
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具模式:标签折叠成 该环境的只读工具 + "
                          f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
+    ap.add_argument("--force", action="store_true",
+                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
     random.seed(SEED)
     data = Path(args.data)
     out = Path(args.out)
+    if (out / "train_log.jsonl").exists() and not args.force:
+        raise SystemExit(
+            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
+            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
     out.mkdir(parents=True, exist_ok=True)
     dev = args.device
     amp = dev.startswith("cuda")

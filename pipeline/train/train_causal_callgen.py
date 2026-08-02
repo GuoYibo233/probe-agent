@@ -47,11 +47,17 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 import transformers
+_TV = tuple(int(x) for x in transformers.__version__.split(".")[:2])
+if _TV < (5, 14):
+    raise SystemExit(f"cprobe 线要 transformers>=5.14,当前 "
+                     f"{transformers.__version__}——解释器用错了?"
+                     "一律从 run.py 的任务进(train-ctool/train-cgen)。")
 from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
 import readonly_map
+
 
 QWEN = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
 SEED = 20260729
@@ -324,6 +330,8 @@ def main():
     ap.add_argument("--fire-head", action="store_true",
                     help="再学一个样本级开火头(此刻该不该发射投机);"
                          "必须与 --readonly-env 同传,默认关=行为不变")
+    ap.add_argument("--force", action="store_true",
+                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
     args = ap.parse_args()
 
     if args.fire_head and not args.readonly_env:
@@ -337,6 +345,10 @@ def main():
     data = Path(args.data)
     params = Path(args.params) if args.params else data / "params"
     out = Path(args.out)
+    if (out / "train_log.jsonl").exists() and not args.force:
+        raise SystemExit(
+            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
+            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
     out.mkdir(parents=True, exist_ok=True)
     dev = args.device
     amp = dev.startswith("cuda")

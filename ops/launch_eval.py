@@ -39,22 +39,24 @@ LOCAL = subprocess.run(["hostname"], capture_output=True, text=True).stdout.stri
 ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}
 LOCAL = ALIAS.get(LOCAL, LOCAL)
 
-MBERT = str(WD / "mbert-env/bin/python")
-CPROBE = str(WD / "cprobe-env/bin/python")
-EV = WD / "pipeline/eval"
+# 评测格唯一真源在仓库根 run.py 的 EVAL_CELLS(2026-08-02 审计 C14 起),
+# 这里只 import——解释器/脚本/固定参数全从对应 TASKS 条目取,不再另抄一份。
+# 双环境铁律(mbert 头走 mbert-env,causal 头走 cprobe-env)也记在 run.py 里。
+sys.path.insert(0, str(WD))
+from run import EVAL_CELLS, PY, TASKS  # noqa: E402
+sys.path.insert(0, str(WD / "ops"))
+from runmeta import append_runmeta  # noqa: E402
 
-# 工具格: 头 -> (解释器, 该头固定要带的参数)
-# 双环境铁律: mbert 头走 mbert-env, causal 头走 cprobe-env(它要 import
-# pipeline/train/train_causal_tool.py), 互不升级。
-TOOL_CELLS = {
-    "mtool": (MBERT, []),
-    "ctool": (CPROBE, ["--head", "causal"]),
-}
-# 参数格: 头 -> (解释器, 脚本, 它依赖的工具格)
-CALL_CELLS = {
-    "mext": (MBERT, EV / "eval_mbert_call.py", "mtool"),
-    "cgen": (CPROBE, EV / "eval_causal_call.py", "ctool"),
-}
+TOOL_KEYS = [c for c, (_, dep) in EVAL_CELLS.items() if dep is None]
+CALL_KEYS = [c for c, (_, dep) in EVAL_CELLS.items() if dep is not None]
+
+
+def cell_cmd_parts(cell):
+    """格 -> (解释器, 脚本绝对路径, 固定参数, 依赖格|None),全部取自 run.py。"""
+    task_name, dep = EVAL_CELLS[cell]
+    t = TASKS[task_name]
+    return (t.get("prog") or PY[t["py"]], str(WD / t["script"]),
+            list(t.get("args", [])), dep)
 
 
 def has_session(host, s):
@@ -82,37 +84,42 @@ def build(stage, batch, data_root, env, model, cell, extra=None):
         sys.exit(f"数据目录不存在: {data}")
 
     if stage == "tool":
-        if cell not in TOOL_CELLS:
-            sys.exit(f"tool 档的 cell 只能是 {list(TOOL_CELLS)},给了 {cell}")
-        py, head_args = TOOL_CELLS[cell]
+        if cell not in TOOL_KEYS:
+            sys.exit(f"tool 档的 cell 只能是 {TOOL_KEYS},给了 {cell}")
+        py, script, fixed, _ = cell_cmd_parts(cell)
         run = runs / f"{batch}_{model}_{cell}"
-        if not run.is_dir():
-            sys.exit(f"训练产物不存在: {run}")
-        args = [py, str(EV / "eval_tool.py"), "--env", env,
-                "--run", str(run), "--data", str(data)] + head_args
+        # 看 best/ 不看目录本身:RUNMETA 落盘会把空目录建出来,目录存在
+        # 早已不等于训练出过东西(审计复核)
+        if not (run / "best").is_dir():
+            sys.exit(f"训练产物不存在: {run}/best")
+        args = [py, script, "--env", env,
+                "--run", str(run), "--data", str(data)] + fixed
+        meta_dir = run
     else:
-        if cell not in CALL_CELLS:
-            sys.exit(f"call 档的 cell 只能是 {list(CALL_CELLS)},给了 {cell}")
-        py, script, dep = CALL_CELLS[cell]
+        if cell not in CALL_KEYS:
+            sys.exit(f"call 档的 cell 只能是 {CALL_KEYS},给了 {cell}")
+        py, script, fixed, dep = cell_cmd_parts(cell)
         head_run = runs / f"{batch}_{model}_{cell}"
         dep_run = runs / f"{batch}_{model}_{dep}"
         # 依赖顺序硬检查:工具格没出报告就拒绝发射(SKILL.md Phase C4 铁律)
         rep = dep_run / "REPLAY_REPORT.json"
         if not rep.is_file():
             sys.exit(f"依赖未就绪: {rep} 不存在——先把 {batch}_{model}_{dep} 评完")
-        if not head_run.is_dir():
-            sys.exit(f"训练产物不存在: {head_run}")
+        if not (head_run / "best").is_dir():
+            sys.exit(f"训练产物不存在: {head_run}/best")
+        # 两个 call 脚本的参数形状不同,这是发射器自己的知识(脚本 argparse 定的)
         if cell == "mext":
-            args = [py, str(script), "--env", env, "--run", str(dep_run),
-                    "--extractor", str(head_run), "--data", str(data)]
+            args = [py, script, "--env", env, "--run", str(dep_run),
+                    "--extractor", str(head_run), "--data", str(data)] + fixed
         else:
-            args = [py, str(script), "--env", env, "--ctool-run", str(dep_run),
-                    "--cgen-run", str(head_run), "--data", str(data)]
+            args = [py, script, "--env", env, "--ctool-run", str(dep_run),
+                    "--cgen-run", str(head_run), "--data", str(data)] + fixed
+        meta_dir = head_run
 
     if extra:
         args += list(extra)
     sess = f"eval_{batch}_{model}_{cell}"
-    return sess, " ".join(shlex.quote(str(a)) for a in args)
+    return sess, " ".join(shlex.quote(str(a)) for a in args), meta_dir
 
 
 def main():
@@ -130,21 +137,32 @@ def main():
     LOGD.mkdir(exist_ok=True)
     plan = []
     for p in json.load(open(args.placement)):
-        sess, cmd = build(args.stage, args.batch, args.data_root, args.env,
-                          p["model"], p["cell"], p.get("extra"))
-        plan.append((p["host"], p["gpu"], sess, cmd, f"{LOGD}/{sess}.log"))
+        sess, cmd, meta_dir = build(args.stage, args.batch, args.data_root,
+                                    args.env, p["model"], p["cell"],
+                                    p.get("extra"))
+        plan.append((p["host"], p["gpu"], sess, cmd,
+                     f"{LOGD}/{sess}.log", meta_dir))
 
     if args.dry_run:
-        for host, gpu, sess, cmd, log in plan:
+        for host, gpu, sess, cmd, log, meta_dir in plan:
             print(f"[dry-run] {host} gpu{gpu} {sess}\n    {cmd}")
         print(f"\n共 {len(plan)} 格(dry-run,未发射)")
         return
 
-    for host, gpu, sess, cmd, log in plan:
-        launch(host, gpu, sess, cmd, log)
+    for host, gpu, sess, cmd, log, meta_dir in plan:
+        if launch(host, gpu, sess, cmd, log):
+            # 产物钉代码:发射成功立刻把 commit+argv 落进产物目录(审计 B6)。
+            # 记账失败只告警不中断——不能让 RUNMETA 把剩下的发射打死
+            try:
+                append_runmeta(meta_dir, cmd, kind=f"eval_{args.stage}",
+                               extra={"session": sess, "launch_host": host,
+                                      "gpu": gpu, "log": log,
+                                      "placement": args.placement})
+            except Exception as e:
+                print(f"WARN RUNMETA 没写上({meta_dir}): {e}", file=sys.stderr)
     time.sleep(6)
     print("\n--- alive check ---")
-    for host, gpu, sess, cmd, log in plan:
+    for host, gpu, sess, cmd, log, meta_dir in plan:
         print(f"{sess}: {'ALIVE' if has_session(host, sess) else 'DEAD'}")
 
 

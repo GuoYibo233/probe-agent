@@ -1,12 +1,13 @@
 # RESULTS — 实验统计数字总表
 
-> 本文件由 `python ops/record.py render` 自动生成，**不要手改**。
+> 本文件由 `python3 run.py record render` 自动生成，**不要手改**。
 > 数据源是 append-only 的 `ops/runs.jsonl`；改数字请补一条 finish 事件。
 > 方向决策的来龙去脉看 [TIMELINE.md](TIMELINE.md)，原始数据不在 git 里。
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `live_aw_gptoss_v3` | 2026-08-02 17:45 | C2-3 | `9f2e870+dirty` | gpt-oss-120b | running | - | - |
+| `live_aw_gptoss_v4` | 2026-08-02 20:22 | C2-3 | `0edf8f1+dirty` | gpt-oss-120b | running | - | - |
+| `live_aw_gptoss_v3` | 2026-08-02 17:45 | C2-3 | `9f2e870+dirty` | gpt-oss-120b | ok | probe_success=0.2381 noprobe_success=0.2679 w0_base=0.2857 probe_succ_n=40 noprobe_succ_n=45 n_tasks=168 probe_billed_tok=3473103 noprobe_billed_tok=3557817 n_spec=245 inject_per_task=1.46 spec_tool_agree=0.1878 contam_marker=0 answer_add_np=55 answer_null_kill_np=22 | commentary 修复后:noprobe 45/168 进 w0 噪声带(chat 重跑今日 47+/166 复现 28.6%);探针臂 40,省 token 缩到 2.4%,v2 双赢含坏框架加成;残余单边差=answer 乱塞(ADD 55 vs 底噪 9,22 题纯冤死),嫌疑=分段缝或预填,np1shot_fp 与 v4 在验 |
 | `aw_pathdiag` | 2026-08-02 17:04 | C2-3 | `d3989ec+dirty` | gpt-oss-120b | running | - | - |
 | `live_aw_gptoss_v2` | 2026-08-02 05:47 | C2-3 | `f037661+dirty` | gpt-oss-120b | ok | probe_success=0.1905 noprobe_success=0.1726 w0_base_success=0.2857 probe_succ_n=32 noprobe_succ_n=29 w0_succ_n=48 n_tasks=168 probe_billed_tok=3347688 noprobe_billed_tok=3924543 w0_out_tok=4789358 n_spec=279 inject_per_task=1.66 spec_exec_ok=0.9892 contam_steps=0 ctx_overflow_tasks=0 overrun_events_probe=490 overrun_events_noprobe=1074 | 停止符修复后 v2:探针臂 32/168 vs 无探针 29/168,计费 token 还省 14.7%——同框架下探针不伤准确率纯赚 token;两臂较 v1(20/12)大幅回血但仍低于 w0 28.6%(贪心混沌+answer 冗余,已归因非 bug);污染 0/4692 步,64k 溢出 0(v1 为 27/39);LIVE_REPORT 在 NFS run 目录 |
 | `20260802_0306_live_aw_probe_effort` | 2026-08-02 03:06 | C2-3 | `003be1c+dirty` | gpt-oss-120b | ok | plow_success=0.0893 plow_success_n=15 pmed_success=0.0476 pmed_success_n=8 plow_billed_tok_sum=494590 pmed_billed_tok_sum=1360901 plow_inject_per_task=0.0595 pmed_inject_per_task=0.7202 plow_spec_tool_agree=0.0 pmed_spec_tool_agree=0.2893 n_tasks=168 | 探针出分布(high 档思考)即失灵:low 档几乎不触发(0.06 次/题,tool_agree=0)成绩无损微升 8.9%>6.5%;med 档频繁触发(0.72 次/题)但预测只对 29%,成绩反被拖低 4.8%<7.1%——θ/探针都须按档标定,跨档直接搬会伤成绩 |
@@ -93,14 +94,27 @@
 
 ## 逐条详情
 
+### `live_aw_gptoss_v4`
+
+- **想验证什么**：与 w0 chat 逻辑同构后的正式双臂:同题 step-0 prompt token 实测相等;替代 v3 口径
+- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-02 20:22 → 未收尾
+- **代码**：`0edf8f1`  ⚠️ 发射时工作树是脏的（33 文件），这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU -
+- **模型 / 种子**：gpt-oss-120b / 100
+- **参数**：v4_parity=0edf8f1 max_model_len=131072
+- **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss_v4`（不在 git 里）
+- **命令**：`envs/serve_logs/live_v3_job.sh {probe,noprobe} live_aw_gptoss_v4 (v4 驱动:无预填+流式一枪+chat 停止解析;vLLM 131k x3 tokyo108, probe tokyo105:8790)`
+
 ### `live_aw_gptoss_v3`
 
 - **想验证什么**：commentary 修复后正式双臂:v2 口径+parse_step 对齐 HarmonyParser+131k 服务;替代 v2 绝对值
-- **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-02 17:45 → 未收尾
-- **代码**：`9f2e870`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **结论**：commentary 修复后:noprobe 45/168 进 w0 噪声带(chat 重跑今日 47+/166 复现 28.6%);探针臂 40,省 token 缩到 2.4%,v2 双赢含坏框架加成;残余单边差=answer 乱塞(ADD 55 vs 底噪 9,22 题纯冤死),嫌疑=分段缝或预填,np1shot_fp 与 v4 在验
+- **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 17:45 → 2026-08-02 20:16
+- **代码**：`9f2e870`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU -
 - **模型 / 种子**：gpt-oss-120b / 100
 - **参数**：commentary_fix=937b3a2 stopfix=4d20786 max_model_len=131072
+- **数字**：probe_success=0.2381 noprobe_success=0.2679 w0_base=0.2857 probe_succ_n=40 noprobe_succ_n=45 n_tasks=168 probe_billed_tok=3473103 noprobe_billed_tok=3557817 n_spec=245 inject_per_task=1.46 spec_tool_agree=0.1878 contam_marker=0 answer_add_np=55 answer_null_kill_np=22
 - **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/inject/runs/live_aw_gptoss_v3`（不在 git 里）
 - **命令**：`envs/serve_logs/live_v3_job.sh {probe,noprobe} live_aw_gptoss_v3 (12 shards/arm, vLLM 131k x3 tokyo108:8103/8106/8107, probe tokyo105:8790 theta=0.925)`
 
@@ -108,7 +122,7 @@
 
 - **想验证什么**：排查活跑 noprobe 17.3% vs w0 28.6%:w0 脚本今日重跑测可复现性,活跑单发版测分段缝/上下文因素
 - **方向**：C2-3 ｜ **状态**：running ｜ **起止**：2026-08-02 17:04 → 未收尾
-- **代码**：`d3989ec`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`d3989ec`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU -
 - **模型 / 种子**：gpt-oss-120b / 100
 - **参数**：arm_chat=run_appworld_chat_high arm_np1shot=live_tail8192
@@ -120,7 +134,7 @@
 - **想验证什么**：停止符修复后 v2 重跑 high 双臂:替代 v1 口径;冒烟污染 0/169 步,截断兜底 70 次生效
 - **结论**：停止符修复后 v2:探针臂 32/168 vs 无探针 29/168,计费 token 还省 14.7%——同框架下探针不伤准确率纯赚 token;两臂较 v1(20/12)大幅回血但仍低于 w0 28.6%(贪心混沌+answer 冗余,已归因非 bug);污染 0/4692 步,64k 溢出 0(v1 为 27/39);LIVE_REPORT 在 NFS run 目录
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 05:47 → 2026-08-02 07:16
-- **代码**：`f037661`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`f037661`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU -
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：effort=high stopfix=4d20786 date_pin=2026-07-31
@@ -133,7 +147,7 @@
 - **想验证什么**：探针×effort:low/medium 档也挂探针活跑整 split,看探针在短思考分布上还保不保准确率;θ=0.925/T 沿用 high 档标定
 - **结论**：探针出分布(high 档思考)即失灵:low 档几乎不触发(0.06 次/题,tool_agree=0)成绩无损微升 8.9%>6.5%;med 档频繁触发(0.72 次/题)但预测只对 29%,成绩反被拖低 4.8%<7.1%——θ/探针都须按档标定,跨档直接搬会伤成绩
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 03:06 → 2026-08-02 03:43
-- **代码**：`003be1c`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`003be1c`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108,tokyo105 GPU 108:4 105:2
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.925 split=test_normal n_tasks=168 arms=probe_low+probe_med
@@ -146,7 +160,7 @@
 - **想验证什么**：effort 两档对照臂:同活跑路径只换 Reasoning 行,量任务成功率+token 账;用户点名补齐,与 high 档双臂并行不抢卡
 - **结论**：effort 降档=成绩塌方:low 6.5%/med 7.1% vs high 档基线 28.6%;med 比 low 多花 2.6 倍 token 几乎不涨——省 token 不能靠拧小 effort,这正是探针法的对照价值
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 02:40 → 2026-08-02 03:22
-- **代码**：`5297779`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`5297779`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108,tokyo105 GPU 108:3,5 105:1
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：split=test_normal n_tasks=168 arms=noprobe_low+noprobe_med
@@ -159,7 +173,7 @@
 - **想验证什么**：任务级成功率活跑:探针实时出手实时注入整题跑完看成败,对照=w0 轨迹28.6%+同路径 no-probe 臂;用户 2026-08-02 点名赶快跑
 - **结论**：同一活跑框架内探针全面占优:成功率 11.9%>7.1%,token 省 7%,撞 64k 上限少 12 题;但框架本身未对齐 w0(剔撞线后 9.3% vs 31.8%),绝对值口径待修——归因候选:日期行/分段边界漂移
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-02 01:36 → 2026-08-02 04:22
-- **代码**：`a5318bc`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`a5318bc`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108,tokyo105 GPU 108:0,1,2 105:0
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.925 split=test_normal n_tasks=168 arms=probe+noprobe
@@ -172,7 +186,7 @@
 - **想验证什么**：八臂拼回正式跑:乙=skel_bare/a/b/switch 四臂,甲丙正确率锚=switch_only,inject/inject_stop 对照,nofill 体检线
 - **结论**：八臂拼回收官:skel_switch(转场+骨架)逐事件省 token 中位 +239 且零改写零接茬又想,执行一致率 72.8%(猜对桶 80.3%)反超大模型自写的 switch_only(53.8%,合理偏离致系统性低估);思考段骨架三臂只省 27-69 且 11-13% 被改写;nofill 体检 +3≈0 放行;甲接受率 66.8%,丙 token 接受 8/17,两路对账不一致率 12.6%
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 22:57 → 2026-08-02 00:56
-- **代码**：`19e0308`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`19e0308`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU 0,1,2
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.925 arms=8 concurrency=16x3
@@ -185,7 +199,7 @@
 - **想验证什么**：拼回八臂的 plan 重跑:补存 pred_id/pred_label/gen_min_p;θ=0.925 与旧 th0925 同点,cgen greedy,gen_call 应逐字复现
 - **结论**：plan 重跑全绿:1061 条全带 pred_id/pred_label/gen_min_p,gen_call 与旧 th0925 逐字复现 1061/1061,pred_label/tool_ok 互推自检过,name_hit 0.906 与 ctool 松档 precision 一致
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 22:57 → 2026-08-01 23:01
-- **代码**：`19e0308`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`19e0308`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 1
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.925 miss_policy=skip stage=plan
@@ -197,175 +211,175 @@
 
 - **结论**：risk0.05 档 θ=0.825 full_call_ok 0.9412(触发事件 34,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_ce=0.1725 risk=0.05 theta=0.825 n_events_scored=34 parse_fail_rate=0.0 tool_ok=0.9412 params_all_ok=0.9412 full_call_ok=0.9412 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_gptoss_cgen`
 
 - **结论**：risk0.05 档 θ=0.95 full_call_ok 0.7562(触发事件 767,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 07:13
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_ce=0.2444 risk=0.05 theta=0.95 n_events_scored=767 parse_fail_rate=0.0 tool_ok=0.9374 params_all_ok=0.7927 full_call_ok=0.7562 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1bf_q36_cgen`
 
 - **结论**：risk0.05 档 θ=0.8 full_call_ok 0.8571(触发事件 42,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_ce=0.092 risk=0.05 theta=0.8 n_events_scored=42 parse_fail_rate=0.0 tool_ok=0.9286 params_all_ok=0.881 full_call_ok=0.8571 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1bf_q35_cgen`
 
 - **结论**：risk0.05 档 θ=0.875 full_call_ok 0.75(触发事件 36,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=0.975/null
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_ce=0.2587 risk=0.05 theta=0.875 n_events_scored=36 parse_fail_rate=0.0 tool_ok=0.8611 params_all_ok=0.7778 full_call_ok=0.75 theta_fire_risk10=0.975 theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_q36_cgen`
 
 - **结论**：risk0.05 档 θ=0.975 full_call_ok 0.9433(触发事件 282,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_ce=0.2454 risk=0.05 theta=0.975 n_events_scored=282 parse_fail_rate=0.0 tool_ok=0.9681 params_all_ok=0.961 full_call_ok=0.9433 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_q35_cgen`
 
 - **结论**：risk0.05 档 θ=0.95 full_call_ok 0.8741(触发事件 294,parse_fail 0.0);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_ce=0.2987 risk=0.05 theta=0.95 n_events_scored=294 parse_fail_rate=0.0 tool_ok=0.9422 params_all_ok=0.8912 full_call_ok=0.8741 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1bf_gptoss_mext`
 
 - **结论**：risk0.05 档 θ=0.725 full_call_ok 0.8529(触发事件 34);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_calA_param_acc=0.8509 truncated_spans=45 risk=0.05 theta=0.725 n_events_scored=34 params_all_ok=0.9118 full_call_ok=0.8529 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1bf_q36_mext`
 
 - **结论**：risk0.05 档 θ=0.95 full_call_ok 0.9375(触发事件 32);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_calA_param_acc=0.8372 truncated_spans=0 risk=0.05 theta=0.95 n_events_scored=32 params_all_ok=0.9375 full_call_ok=0.9375 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1bf_q35_mext`
 
 - **结论**：risk0.05 档 θ=0.875 full_call_ok 0.8276(触发事件 29);自主开火 risk0.1/0.05 档 θ_fire=0.925/null
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_calA_param_acc=0.682 truncated_spans=0 risk=0.05 theta=0.875 n_events_scored=29 params_all_ok=0.8621 full_call_ok=0.8276 theta_fire_risk10=0.925 theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_gptoss_mext`
 
 - **结论**：risk0.1 档 θ=0.975 full_call_ok 0.625(触发事件 320);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 07:37
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_calA_param_acc=0.728 truncated_spans=477 risk=0.1 theta=0.975 n_events_scored=320 params_all_ok=0.7312 full_call_ok=0.625 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_q36_mext`
 
 - **结论**：risk0.1 档 θ=0.925 full_call_ok 0.8687(触发事件 434);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_calA_param_acc=0.7426 truncated_spans=0 risk=0.1 theta=0.925 n_events_scored=434 params_all_ok=0.924 full_call_ok=0.8687 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2100_ro1aw_q35_mext`
 
 - **结论**：risk0.05 档 θ=0.975 full_call_ok 0.7647(触发事件 17);自主开火 risk0.1/0.05 档 θ_fire=null/null,开火精度不达杠,无工作点
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 21:00 → 2026-08-02 00:43
-- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e7de0c8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_calA_param_acc=0.6556 truncated_spans=0 risk=0.05 theta=0.975 n_events_scored=17 params_all_ok=0.7647 full_call_ok=0.7647 theta_fire_risk10=null theta_fire_risk05=null
 
 ### `20260801_2033_ro1bf_gptoss_mtool`
 
 - **结论**：risk0.1 档 θ=0.525 coverage 0.4679 / trig_acc 0.7647;risk0.05 档 θ=0.725 coverage 0.3303 / trig_acc 0.8889;弃权类误触发率 0.0392,折叠先验基线 0.4679
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.7987 temperature=2.2326 theta_risk10=0.525 theta_risk05=0.725 ro_coverage_test=0.5862 nro_trigger_rate_test=0.0392 prior_baseline_collapsed=0.4679 coverage_risk1=0.4679 trig_acc_risk1=0.7647 coverage_risk05=0.3303 trig_acc_risk05=0.8889
 
 ### `20260801_2033_ro1bf_q36_ctool`
 
 - **结论**：risk0.1 档 θ=0.575 coverage 0.4717 / trig_acc 0.86;risk0.05 档 θ=0.8 coverage 0.4245 / trig_acc 0.8889;弃权类误触发率 0.0556,折叠先验基线 0.5094
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.8651 temperature=1.2007 theta_risk10=0.575 theta_risk05=0.8 ro_coverage_test=0.8077 nro_trigger_rate_test=0.0556 prior_baseline_collapsed=0.5094 coverage_risk1=0.4717 trig_acc_risk1=0.86 coverage_risk05=0.4245 trig_acc_risk05=0.8889
 
 ### `20260801_2033_ro1bf_q36_mtool`
 
 - **结论**：risk0.1 档 θ=0.75 coverage 0.4151 / trig_acc 0.9318;risk0.05 档 θ=0.95 coverage 0.3113 / trig_acc 0.9697;弃权类误触发率 0.0185,折叠先验基线 0.5094
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.8585 temperature=1.6596 theta_risk10=0.75 theta_risk05=0.95 ro_coverage_test=0.6154 nro_trigger_rate_test=0.0185 prior_baseline_collapsed=0.5094 coverage_risk1=0.4151 trig_acc_risk1=0.9318 coverage_risk05=0.3113 trig_acc_risk05=0.9697
 
 ### `20260801_2033_ro1bf_q35_ctool`
 
 - **结论**：risk0.1 档 θ=0.8 coverage 0.3833 / trig_acc 0.8913;risk0.05 档 θ=0.875 coverage 0.3167 / trig_acc 0.9211;弃权类误触发率 0.0323,折叠先验基线 0.5167
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.7922 temperature=1.2919 theta_risk10=0.8 theta_risk05=0.875 ro_coverage_test=0.6207 nro_trigger_rate_test=0.0323 prior_baseline_collapsed=0.5167 coverage_risk1=0.3833 trig_acc_risk1=0.8913 coverage_risk05=0.3167 trig_acc_risk05=0.9211
 
 ### `20260801_2033_ro1bf_q35_mtool`
 
 - **结论**：risk0.1 档 θ=0.8 coverage 0.2833 / trig_acc 0.8824;risk0.05 档 θ=0.875 coverage 0.25 / trig_acc 0.9333;弃权类误触发率 0.0161,折叠先验基线 0.5167
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.7323 temperature=1.6843 theta_risk10=0.8 theta_risk05=0.875 ro_coverage_test=0.5 nro_trigger_rate_test=0.0161 prior_baseline_collapsed=0.5167 coverage_risk1=0.2833 trig_acc_risk1=0.8824 coverage_risk05=0.25 trig_acc_risk05=0.9333
 
 ### `20260801_2033_ro1bf_gptoss_ctool`
 
 - **结论**：risk0.1 档 θ=0.7 coverage 0.3853 / trig_acc 0.9048;risk0.05 档 θ=0.825 coverage 0.3394 / trig_acc 0.8919;弃权类误触发率 0.0588,折叠先验基线 0.4679
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.8093 temperature=1.3038 theta_risk10=0.7 theta_risk05=0.825 ro_coverage_test=0.5862 nro_trigger_rate_test=0.0588 prior_baseline_collapsed=0.4679 coverage_risk1=0.3853 trig_acc_risk1=0.9048 coverage_risk05=0.3394 trig_acc_risk05=0.8919
 
 ### `20260801_2033_ro1aw_gptoss_ctool`
 
 - **结论**：risk0.1 档 θ=0.875 coverage 0.5767 / trig_acc 0.8978;risk0.05 档 θ=0.95 coverage 0.3606 / trig_acc 0.9481;弃权类误触发率 0.0164,折叠先验基线 0.4041
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.7096 temperature=1.1144 theta_risk10=0.875 theta_risk05=0.95 ro_coverage_test=0.405 nro_trigger_rate_test=0.0164 prior_baseline_collapsed=0.4041 coverage_risk1=0.5767 trig_acc_risk1=0.8978 coverage_risk05=0.3606 trig_acc_risk05=0.9481
 
 ### `20260801_2033_ro1aw_gptoss_mtool`
 
 - **结论**：risk0.1 档 θ=0.975 coverage 0.1511 / trig_acc 0.87;risk0.05 档 θ 无解;弃权类误触发率 0.2295,折叠先验基线 0.4041
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 07:13
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.6834 temperature=2.7261 theta_risk10=0.975 theta_risk05=null ro_coverage_test=0.698 nro_trigger_rate_test=0.2295 prior_baseline_collapsed=0.4041 coverage_risk1=0.1511 trig_acc_risk1=0.87
 
 ### `20260801_2033_ro1aw_q36_ctool`
 
 - **结论**：risk0.1 档 θ=0.925 coverage 0.201 / trig_acc 0.9352;risk0.05 档 θ=0.975 coverage 0.0905 / trig_acc 0.986;弃权类误触发率 0.0037,折叠先验基线 0.2584
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.641 temperature=1.4976 theta_risk10=0.925 theta_risk05=0.975 ro_coverage_test=0.1207 nro_trigger_rate_test=0.0037 prior_baseline_collapsed=0.2584 coverage_risk1=0.201 trig_acc_risk1=0.9352 coverage_risk05=0.0905 trig_acc_risk05=0.986
 
 ### `20260801_2033_ro1aw_q36_mtool`
 
 - **结论**：risk0.1 档 θ=0.925 coverage 0.1387 / trig_acc 0.9382;risk0.05 档 θ 无解;弃权类误触发率 0.0172,折叠先验基线 0.2584
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.5942 temperature=1.8111 theta_risk10=0.925 theta_risk05=null ro_coverage_test=0.3292 nro_trigger_rate_test=0.0172 prior_baseline_collapsed=0.2584 coverage_risk1=0.1387 trig_acc_risk1=0.9382
 
 ### `20260801_2033_ro1aw_q35_ctool`
 
 - **结论**：risk0.1 档 θ=0.875 coverage 0.1985 / trig_acc 0.9129;risk0.05 档 θ=0.95 coverage 0.0882 / trig_acc 0.9831;弃权类误触发率 0.0013,折叠先验基线 0.2333
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.5872 temperature=1.4595 theta_risk10=0.875 theta_risk05=0.95 ro_coverage_test=0.1147 nro_trigger_rate_test=0.0013 prior_baseline_collapsed=0.2333 coverage_risk1=0.1985 trig_acc_risk1=0.9129 coverage_risk05=0.0882 trig_acc_risk05=0.9831
 
 ### `20260801_2033_ro1aw_q35_mtool`
 
 - **结论**：risk0.1 档 θ=0.975 coverage 0.0054 / trig_acc 0.8889;risk0.05 档 θ=0.975 coverage 0.0054 / trig_acc 0.8889;弃权类误触发率 0.0013,折叠先验基线 0.2333
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-08-01 20:33 → 2026-08-02 00:43
-- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`cd37da7`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：best_val_acc=0.544 temperature=1.9931 theta_risk10=0.975 theta_risk05=0.975 ro_coverage_test=0.0066 nro_trigger_rate_test=0.0013 prior_baseline_collapsed=0.2333 coverage_risk1=0.0054 trig_acc_risk1=0.8889 coverage_risk05=0.0054 trig_acc_risk05=0.8889
 
 ### `c2_gptoss_cgen`
 
 - **想验证什么**：c2/cgen on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 7
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=cgen env=alfworld extra=--grad-ckpt
@@ -375,7 +389,7 @@
 
 - **想验证什么**：c2/ctool on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 6
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=ctool env=alfworld extra=--align-tol 3e-4
@@ -385,7 +399,7 @@
 
 - **想验证什么**：c2/mext on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 5
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=mext env=alfworld extra=none
@@ -395,7 +409,7 @@
 
 - **想验证什么**：c2/mtool on alfworld gptoss; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 4
 - **模型 / 种子**：gptoss / 20260729
 - **参数**：cell=mtool env=alfworld extra=none
@@ -405,7 +419,7 @@
 
 - **想验证什么**：c2/cgen on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 3
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=cgen env=alfworld extra=--grad-ckpt
@@ -415,7 +429,7 @@
 
 - **想验证什么**：c2/ctool on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 2
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=ctool env=alfworld extra=none
@@ -425,7 +439,7 @@
 
 - **想验证什么**：c2/mext on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 1
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=mext env=alfworld extra=none
@@ -435,7 +449,7 @@
 
 - **想验证什么**：c2/mtool on alfworld q36; 先验基线 q36 0.548 / gptoss 0.470(猜 go), 工具词表 12 类
 - **方向**：pipeline ｜ **状态**：running ｜ **起止**：2026-08-01 04:44 → 未收尾
-- **代码**：`93de307`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`93de307`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo107 GPU 0
 - **模型 / 种子**：q36 / 20260729
 - **参数**：cell=mtool env=alfworld extra=none
@@ -446,7 +460,7 @@
 - **想验证什么**：θ 扫描曲线第六点的 plan 段(θ=0.925,触发 1061/2138 事件),与历史 run aw_gptoss_r10 同 θ 作 serving 侧对照:r10 是共享服务+concurrency 4,本点将跑专用服务+concurrency 16;plan 重新生成,不复用 r10 的 plan.jsonl
 - **结论**：θ=0.925 覆盖率 0.4963 调用一致率 0.6466;省token中位 -40 tok、省为正 0.4344。求和口径的省token比例 -0.10299 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.2945,现行只吃到 -0.3497
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:13 → 2026-08-01 09:35
-- **代码**：`e945a97`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e945a97`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 5
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.925 miss_policy=skip stage=plan n_fired=1061
@@ -459,7 +473,7 @@
 - **想验证什么**：θ 扫描曲线第 5 点的 plan 段(θ=0.95,触发 907/2138 事件);五点只差 --theta,其余参数逐字相同
 - **结论**：θ=0.95 覆盖率 0.4242 调用一致率 0.6902;省token中位 -37 tok、省为正 0.4233。求和口径的省token比例 0.00446 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.34318,现行只吃到 0.013
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
-- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 4
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.95 miss_policy=skip stage=plan n_fired=907
@@ -472,7 +486,7 @@
 - **想验证什么**：θ 扫描曲线第 4 点的 plan 段(θ=0.875,触发 1276/2138 事件);五点只差 --theta,其余参数逐字相同
 - **结论**：θ=0.875 覆盖率 0.5968 调用一致率 0.5768;省token中位 -27 tok、省为正 0.4592。求和口径的省token比例 -0.01397 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.25448,现行只吃到 -0.0549
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
-- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.875 miss_policy=skip stage=plan n_fired=1276
@@ -485,7 +499,7 @@
 - **想验证什么**：θ 扫描曲线第 3 点的 plan 段(θ=0.80,触发 1534/2138 事件);五点只差 --theta,其余参数逐字相同
 - **结论**：θ=0.8 覆盖率 0.7175 调用一致率 0.472;省token中位 -29 tok、省为正 0.4544。求和口径的省token比例 -0.03605 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.17766,现行只吃到 -0.2029
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
-- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.8 miss_policy=skip stage=plan n_fired=1534
@@ -498,7 +512,7 @@
 - **想验证什么**：θ 扫描曲线第 2 点的 plan 段(θ=0.70,触发 1718/2138 事件);五点只差 --theta,其余参数逐字相同
 - **结论**：θ=0.7 覆盖率 0.8036 调用一致率 0.4173;省token中位 -15 tok、省为正 0.4742。求和口径的省token比例 -0.00796 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.15969,现行只吃到 -0.0498
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
-- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 1
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.7 miss_policy=skip stage=plan n_fired=1718
@@ -511,7 +525,7 @@
 - **想验证什么**：θ 扫描曲线第 1 点的 plan 段(θ=0.50,触发 1945/2138 事件);五点只差 --theta,其余参数逐字相同
 - **结论**：θ=0.5 覆盖率 0.9097 调用一致率 0.3445;省token中位 0 tok、省为正 0.497。求和口径的省token比例 -0.01041 **不可解读**(服务侧对照给出噪声地板 0.1528 > 六点全跨度 0.1075,根因是撞 8192 上限的失控生成:同一事件两次跑可差 8161 token)。上帝时机上限 0.11168,现行只吃到 -0.0932
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 04:07 → 2026-08-01 09:35
-- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`46a7c69`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 0
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：theta=0.5 miss_policy=skip stage=plan n_fired=1945
@@ -524,7 +538,7 @@
 - **想验证什么**：探针触发点文本层注入全量:量注入相对 nofill 省多少输出 token、模型是否跳过被注入的调用;复用 c2_alfworld 的闲置 gptoss 服务
 - **结论**：注入被模型采纳(推进率 0.62 vs 不注入 0.10),但省token强依赖时机:思考前20%注入省377.7 tok,后40%注入亏636-697 tok;探针置信度触发有21.8%落在最差区间,总体因此拉平(中位-27)——死区在真实agent环境+真实探针驱动下首次复现,构成时机头的直接证据
 - **方向**：C2-3 ｜ **状态**：ok ｜ **起止**：2026-08-01 01:13 → 2026-08-01 03:54
-- **代码**：`442bdbd`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`442bdbd`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU 2
 - **模型 / 种子**：gpt-oss-120b / 20260729
 - **参数**：risk=0.1 theta=0.925 miss_policy=skip arms=nofill,inject concurrency=4 n_fired=1061 n_inject=689 service=reused_c2alf_8103
@@ -537,7 +551,7 @@
 - **想验证什么**：c2 批次采集: ALFWorld 官方分区 q36+gptoss 各 474 题(train 200/val 140/test 134), 三张 H100, 22 分片, max-steps 50
 - **结论**：ALFWorld 官方分区 948/948 全清(q36 474/gptoss 474, train200+val140+test134 逐份全覆盖); 21842 条动作按 13 条 twl2 模板切得动 99.95%, 切不动的 12 条全是模型输出被截断的残句; 工具词表仅 12 类且 go 占 50.5% —— 与 appworld 的 143 类/先验 0.174 恰好相反, 工具格要证明有用必须显著超过 0.505 的先验
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 23:01 → 2026-08-01 04:25
-- **代码**：`7805bdb`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`7805bdb`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU 0,1,2
 - **模型 / 种子**：- / 20260729
 - **数字**：q36_tasks=474 gptoss_tasks=474 q36_events=9151 gptoss_events=13007 q36_win_rate=0.909 gptoss_win_rate=0.762 q36_illegal_rate=0.0174 gptoss_illegal_rate=0.0118 action_parse_rate=0.9995 tool_vocab=12 prior_go=0.505
@@ -548,7 +562,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / cgen 格
 - **结论**：迁卡注记：start 记录的 tokyo106g3 作废，实际跑在 tokyo108 g3 H200，无 grad-ckpt（首轮 A6000 OOM，加 grad-ckpt 后 22.15s/step、ETA 26.7h，裁决迁 H200 重发，残局在 _aborted_c1_gptoss_cgen_t106g3）。risk0.05 档（θ=0.975）633 触发事件：exact_call_ok 0.7852 / full_call_ok 0.7852 / tool_ok 0.9368，parse_fail 1 条（0.0016）。异常待查：apis.supervisor.show_profile 工具名正确率 0.04（n=25，参数侧 1.0），是唯一一个参数全对但工具名几乎全错的工具。墙钟 5h13m（11:55:37→17:08:16）；best 落在 ep0，val_ce 逐轮上行 0.4566→0.5182→0.6044
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:34
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
@@ -561,7 +575,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / cgen 格
 - **结论**：风险档 0.10（θ=0.925，0.05 档在上游 q36_ctool 无解）：exact_call_ok 0.8103 / full_call_ok 0.8135，917 个触发事件、parse_fail 0；短板是 simple_note.search_notes（tool_ok 0.1351）与各类 login 的口令参数。首轮 OOM 后加 --grad-ckpt 重发，超参未动
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
@@ -574,7 +588,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / cgen 格
 - **结论**：risk0.05 档（θ=0.975）：exact_call_ok 0.8858 / full_call_ok 0.8904，parse_fail 0；219 个触发事件里 154 个无参（70%）。带参工具是短板——spotify.login 0.1111、venmo.show_transactions 0.2857
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 1
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 max_tgt_tok=160
@@ -587,7 +601,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / ctool 格
 - **结论**：双档皆有解且覆盖率最高：risk0.1 coverage 0.4963/trig_acc 0.9057，risk0.05 coverage 0.2961/trig_acc 0.951——同源 gptoss_mtool 两档一个 null、一个未兑现，因果探针在难迁移格上翻盘。align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.14e-4、logits maxdiff 2.00e-5、相对差 2.7e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 0
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 align_tol=0.0003
@@ -600,7 +614,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / ctool 格
 - **结论**：0.05 档 null；0.10 档 coverage 0.2911/trig_acc 0.9368 兑现。align-tol 3e-4 放行（T8 先例，hidden maxdiff 8.39e-5、logits maxdiff 1.76e-5、相对差 3.3e-6，属噪声区）；首轮 OOM 后加 --grad-ckpt 重发，超参未动
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 7
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 align_tol=0.0003
@@ -613,7 +627,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / ctool 格
 - **结论**：双档皆有解：risk0.1 coverage 0.1642/trig_acc 0.9292，risk0.05 coverage 0.0653/trig_acc 0.968；align-tol 3e-4 放行（T8 先例，hidden maxdiff 1.68e-4、logits maxdiff 1.69e-5、相对差 2.3e-6，属噪声区）
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 6
 - **模型 / 种子**：Qwen3-0.6B-Base / 20260729
 - **参数**：lr=1e-05 bs=4 accum=8 epochs=3 max_len=4096 align_tol=0.0003
@@ -626,7 +640,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / mext 格
 - **结论**：risk0.1 档 full_call_ok 0.6755。口径注意：265 个触发事件里 226 个带参（85%），比 q36_mext 的 29% 高得多；且上游路由弱（gptoss_mtool test trig_acc 0.8642<0.90，风险契约未兑现）。两条叠加压低端到端数字，不能与 q36_mext 的 0.9324 直接比
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 5
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 max_span_tok=64
@@ -639,7 +653,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / mext 格
 - **结论**：risk0.05 档 full_call_ok 0.9324（222 触发事件：无参 157 / 选择 64 / 自由 1）；无参档 0.9618、选择档 0.8594 是短板
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 4
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 max_span_tok=64
@@ -652,7 +666,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / mext 格
 - **结论**：评测 N/A：上游 q35_mtool 无触发点（两档 θ 皆 null），本格只有训练侧数字，无 EXTRACT_REPORT
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:03
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 3
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 max_span_tok=64
@@ -665,7 +679,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, gptoss 模型轨迹 / mtool 格
 - **结论**：0.05 档 null；0.10 档 test trig_acc 0.8642<0.90，风险契约 test 未兑现（难度迁移）
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 2
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 input_mode=full
@@ -678,7 +692,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q36 模型轨迹 / mtool 格
 - **结论**：两档 θ 皆有解：risk0.1 档 test coverage 0.1724 / trig_acc 0.9208（CI 下界 0.8978），risk0.05 档 coverage 0.0705 / trig_acc 0.973，风险契约 test 兑现
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 1
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 input_mode=full
@@ -691,7 +705,7 @@
 - **想验证什么**：Phase C c1: appworld 官方分区四格探针矩阵, q35 模型轨迹 / mtool 格
 - **结论**：两档 θ 皆 null（val 最高 trig_acc 0.871<0.90，出现在 θ=0.975/coverage 0.027），无可用工作点，连带 q35_mext 评测 N/A
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 09:12 → 2026-07-31 17:02
-- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`15cfdc8`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 0
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：lr=2e-05 bs=8 accum=4 epochs=3 max_len=4096 input_mode=full
@@ -704,7 +718,7 @@
 - **想验证什么**：第0波:appworld官方分区采集,q3.5补train 90+三模型各采test_normal 168
 - **结论**：appworld 官方分区采集 594/594 全清:q35 258(train 90+test_normal 168)/q36 168/gptoss 168,全部文件以 final 收尾,6 实例已释放显存归零
 - **方向**：pipeline ｜ **状态**：ok ｜ **起止**：2026-07-31 06:07 → 2026-07-31 08:41
-- **代码**：`e9f42fe`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`e9f42fe`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU 0,1,2,3,4,5
 - **模型 / 种子**：qwen3.5-27b,qwen3.6-27b,gpt-oss-120b / 20260729
 - **参数**：split=train+test_normal tasks=594 max_steps=30
@@ -717,7 +731,7 @@
 - **想验证什么**：T12c 验收件:六被试换正式模型重冒烟,每被试一次冒烟通过记录
 - **结论**：T12c 验收达成:六被试正式模型(Qwen2.5-7B-Instruct)全链路冒烟无错,每被试 15 题 summary 齐;低分为闭卷 L3 预期,另暴露 dc_*/awm 答案抽取不压长句+EM-only 判定两个可分离问题,T13 放量前处理;每题 LLM 调用次数不等(remem 1-4/dc 2/其余 1)计入 token 账
 - **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:46 → 2026-07-30 18:57
-- **代码**：`871f502`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`871f502`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **模型 / 种子**：Qwen2.5-7B-Instruct / 20260729
 - **数字**：smoke_pass=6/6 n_errors_total=0 acc_exprag=0.2 acc_exprecent=0.2 acc_remem=0.0 acc_dc_cu=0.0 acc_dc_rs=0.0 acc_awm=0.0 llm_calls_remem=58 llm_calls_dc=30
 - **原始数据**：`logs/20260730_t12c_smoke`（不在 git 里）
@@ -728,7 +742,7 @@
 - **想验证什么**：bfcl 的 v3 主线是纯 qwen 数据,混训天花板行必须用 v3_1(qwen+gptoss 合流)重训一条;tales/appworld 的 v3 本就含双侧无此问题
 - **结论**：bfcl v3_1 混训天花板:qwen侧0.9645/0.7478,gptoss侧0.9157/0.7615;coverage较纯qwen v3天花板(0.509/0.349)大幅抬升,混训增益在覆盖不在精度
 - **方向**：c2 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:38 → 2026-07-30 23:57
-- **代码**：`871f502`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`871f502`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：data=v3_1 n_train=47799 n_labels=106 steps=4482 epochs=3 bs=8 accum=4
@@ -741,7 +755,7 @@
 - **想验证什么**：T12d 全历史基线:第三臂 fullhist,每集塞入全部前集轨迹,超预算最旧先截;配对 nomem 重跑供同硬件墙钟对照
 - **结论**：T12d 全历史基线收官(30 run 300 集,同卡 nomem/fullhist 配对)。档位用代码标签(L0/L1/L2),对应正式编号 L2/L2-/L1,见 DATA.md 6.1:L0=完全一样的题 +32pp 且总 token x0.84(省在输出侧,输出 token -28%,模仿前集少走弯路);L1=几乎一样的题 天花板已满 +2pp 略贵(x1.17);L2=同类但换了东西的题 +2pp 却 x2.50——档位越远全历史越不划算,与 oracle 天花板(只在完全一样那一档非零)构成上下界,支撑选择性记忆动机;预算截断全程未触发,此为无删减全历史。更正:前一条 finish 把 L0 写成'近重复档',按两套编号都不成立(L0=完全重复),数字不变。
 - **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:20 → 2026-07-31 03:10
-- **代码**：`bac6964`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`bac6964`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **模型 / 种子**：Qwen3-8B / 20260729
 - **数字**：acc_L0=0.62to0.94 acc_L1=0.98to1.00 acc_L2=0.84to0.86 tok_ratio_L0=0.84 tok_ratio_L1=1.17 tok_ratio_L2=2.5 wall_ratio_L0=0.73 wall_ratio_L1=0.66 wall_ratio_L2=1.21 truncated=0/150 avg_eps_included=4.5
 - **原始数据**：`fig1_pilot/results`（不在 git 里）
@@ -752,7 +766,7 @@
 - **想验证什么**：oracle 零成本回放上界,在 8bfull nomem 流上算
 - **结论**：逐字回放上界只在 L2 非零且被失败任务封死(能回放的集本来便宜);L2 以上的省必须来自泛化——天花板基线并列汇报的动机
 - **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:02 → 2026-07-30 18:02
-- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：ceiling_L2_total=+21.0% ceiling_L2_per_ep=+23.4% ceiling_L1=0% ceiling_L2minus=0%
 - **原始数据**：`benchmark_design/ORACLE_CEILING_8bfull.md`（不在 git 里）
 - **命令**：`benchmark_design/oracle_ceiling.py --legacy-levels`
@@ -762,7 +776,7 @@
 - **想验证什么**：生态效度:真实负载里相似重复任务占多大比例
 - **结论**：重复相似任务是真实负载主体;跨 project 假相似 10.8% 为 L4 现实原型;仪器只见工具构成,边界已在论文声明
 - **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:02 → 2026-07-30 18:02
-- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **数字**：adj_sim_gt0.8=68.4% adj_sim_0.3-0.8=17.2% adj_sim_lt0.3=14.5% near_dup_within50=96.1% high_sim_cross_project=10.8%
 - **原始数据**：`tracelab_analysis`（不在 git 里）
 - **命令**：`tracelab_analysis/similarity_v0.py`
@@ -772,7 +786,7 @@
 - **想验证什么**：C3 全矩阵复跑:8B 上记忆红利与档位关系
 - **结论**：8B 红利小于 4B;按正典货币(总token)近重复档也为负(输入税),Sp@k 到 k=8 才转正;详见 fig1_pilot/ANALYSIS_8bfull.md + benchmark_design/METRICS_SMOKE_8bfull.md
 - **方向**：c3 ｜ **状态**：ok ｜ **起止**：2026-07-30 18:02 → 2026-07-30 18:02
-- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **模型 / 种子**：Qwen3-8B / 20260729
 - **数字**：total_tok_saving_L2=+9.6% total_tok_saving_L2minus=-16.8% total_tok_saving_L1=-19.6% acc_delta_all=0pp
 - **原始数据**：`fig1_pilot/results`（不在 git 里）
@@ -783,7 +797,7 @@
 - **想验证什么**：跨模型换底座:用 gpt-oss 侧轨迹训 ModernBERT 探针,与 qwen 侧对照(T6);bfcl 一条排在 t8 g0 队列末尾
 - **结论**：gptoss训练侧矩阵收官:主场强度 bfcl>appworld>tales;冷迁移全线塌陷(tales cov=0,探针置信度整体压在θ下);T6双向21格全齐,部署光谱=bfcl换校准可救/appworld勉强/tales死路
 - **方向**：T6 ｜ **状态**：ok ｜ **起止**：2026-07-30 17:16 → 2026-07-31 04:07
-- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 6,7
 - **模型 / 种子**：ModernBERT-base / 20260729
 - **参数**：data=envs/bert_data/v3_1_xmodel/train-gptoss max_len=4096 bs=8 accum=4 epochs=3
@@ -796,7 +810,7 @@
 - **想验证什么**：因果底座(Qwen3-0.6B/LFM2.5-350M)+线性头替代 ModernBERT 探针:整段一次前向、按事件监督;含 tales 8192 窗口对照;开训前逐 token 对齐检查全过
 - **结论**：因果探针裁决:appworld 95%门被打开(ModernBERT无解->0.9621/0.3338),coverage全面2.5-4.3x,earliness降0.05-0.13,成本1/20-1/34;8192窗口对照=噪声级收益,窗口非瓶颈;tales risk0.1档θ迁移失守为其特有
 - **方向**：T8 ｜ **状态**：ok ｜ **起止**：2026-07-30 17:16 → 2026-07-30 20:23
-- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`62a18c3`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 0,1,2,3,4,5
 - **模型 / 种子**：Qwen3-0.6B-Base / LFM2.5-350M-Base / 20260729
 - **参数**：max_len=4096 bs=4 accum=8 lr=1e-05 epochs=3 variant_8k=max_len=8192,bs=2,grad_ckpt,align_tol=3e-4
@@ -809,7 +823,7 @@
 - **想验证什么**：T6 跨模型: qwen 侧轨迹训 router,与 gptoss 侧对照迁移性
 - **结论**：qwen训练侧矩阵:bfcl 主场0.975/冷迁移0.897/换校准救回0.971(cov减半);appworld换校准救不满;tales全弱.部署结论:换agent模型时bfcl重做校准即可,appworld/tales需重训
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 17:13 → 2026-07-30 23:57
-- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 7,8,9
 - **模型 / 种子**：- / 42
 - **参数**：data=v3_1_xmodel/train-qwen
@@ -822,7 +836,7 @@
 - **想验证什么**：T7 抽取头: 在 v3 事件上联训 答/span/param 三头,看参数级抽取准确率能否支撑投机执行
 - **结论**：抽取头收官(2/3,tales因弃用中断于ep2):bfcl触发时刻完整调用0.918(对标SPORK 0.076),选择档0.893;appworld仅risk0.1可挂载0.76;真瓶颈是触发时值未出现(自由档present仅0.235)非抽取本身
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 17:13 → 2026-07-31 04:34
-- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 4,5,6
 - **模型 / 种子**：- / 42
 - **参数**：data=v3 params=v3_params
@@ -835,7 +849,7 @@
 - **想验证什么**：T5 输入消融: 砍掉 THINKING / HISTORY 段后 calA 加权 acc 掉多少
 - **结论**：信号分解收官(5/6,tales no-hist因弃用中断于ep2,ep1权重保留):思考信号强度bfcl>>appworld>tales与门开关同构;no-hist在bfcl 0.982近平合流、在appworld 0.954破95线——历史是有害噪声,appworld门第二条打开路径
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 17:13 → 2026-07-31 04:34
-- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`5e87638`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 0,1,2,3
 - **模型 / 种子**：- / 42
 - **参数**：input_mode=no-think+no-hist data=v3
@@ -848,7 +862,7 @@
 - **想验证什么**：tales v3 终审:v2fix天花板0.87判负,v3训练侧+7pt(0.6947 vs 0.6204),看精度天花板是否过95%
 - **结论**：终审负结果:数据翻倍把高θ coverage从0拉到14.7%,但精度天花板84-85%离95%差10pt,tales投机门不开;开放动作空间是根因
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 16:45 → 2026-07-30 17:03
-- **代码**：`b55d520`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`b55d520`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：ModernBERT-base / 42
 - **参数**：theta_sweep=calB risk=0.10/0.05 data=v3
@@ -861,7 +875,7 @@
 - **想验证什么**：appworld v3 终审:v2fix边缘(93.1%/19.0%),v3数据翻倍重判,先验0.226
 - **结论**：终审负结果:数据翻倍精度仍钉在93.3%(v2fix 93.1%),风险0.05档无可行θ,appworld投机门95%标准下不开;v2fix边缘悬案了结
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 08:14 → 2026-07-30 08:25
-- **代码**：`9f91011`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`9f91011`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：ModernBERT-base / 42
 - **参数**：theta_sweep=calB risk=0.10/0.05 data=v3
@@ -874,7 +888,7 @@
 - **想验证什么**：tales v2fix 回放:硬门槛频率先验0.672,判精度95%/coverage/先验三判据
 - **结论**：负结果:精度天花板0.87够不到95%约束,无可行工作点,tales投机门v2fix开不了;深度曲线0.644-0.802非冻结,待v3(数据翻倍)终审
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 04:46 → 2026-07-30 08:09
-- **代码**：`715e4bc`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`715e4bc`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：ModernBERT-base / 42
 - **参数**：theta_sweep=calB risk=0.10/0.05
@@ -887,7 +901,7 @@
 - **想验证什么**：T11 C1 收尾：HotpotQA 采样方差批次，temperature=0.6 三种子 × 8 分片 = 24 任务，测跨种子 mean±std
 - **结论**：采样方差检查:comparison早注毒性/死区/both_start最优三结论跨种子稳健;bridge hop2子集小样本已标注
 - **方向**：C1 ｜ **状态**：ok ｜ **起止**：2026-07-30 04:14 → 2026-07-30 04:43
-- **代码**：`40df390`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`40df390`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 0,1,2,3,4,5,6,7
 - **模型 / 种子**：Qwen/Qwen3-8B / 1
 - **参数**：temperature=0.6 gen_seeds=1,2,3 n_per_type=40 shards=8 budget=2500 hop1_offsets=-1,25,0 hop2_offsets=0
@@ -900,7 +914,7 @@
 - **想验证什么**：补 v1 缺口:bfcl 无 gpt-oss 轨迹,跨模型双向矩阵需要它
 - **结论**：gpt-oss 补采 200/200 全量落盘,思考/解析双判据全过;并入 v3_1 后 bfcl 事件 2265->3325,双重建逐字节一致
 - **方向**：collect ｜ **状态**：ok ｜ **起止**：2026-07-30 03:50 → 2026-07-30 04:34
-- **代码**：`96d9605`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`96d9605`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo108 GPU 0
 - **模型 / 种子**：gpt-oss-120b / -
 - **数字**：n_traj=200 think_nonempty=200 bfcl_events_v3_1=3325
@@ -912,7 +926,7 @@
 - **想验证什么**：bfcl v3(重建重切分,无新数据)对照 v2fix 的 96.6%/62%,量化切分方差;train best_calA 0.7518 vs 0.8057
 - **结论**：bfcl 结论对重切分稳健:精度99.3%/coverage59.3%,与 v2fix(96.6%/62.0%)CI 互覆;切分方差~±3pt 即误差棒
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 02:04 → 2026-07-30 02:05
-- **代码**：`381b834`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`381b834`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：modernbert-base / 20260729
 - **参数**：run_dir=bfcl_v3 data=v3
@@ -925,7 +939,7 @@
 - **想验证什么**：appworld 修复版回放：三判据=精度≥95%/coverage 不趴地/打赢先验 0.226；train best_calA 0.6206
 - **结论**：appworld 中间档：先验碾过、coverage19%不趴地、精度93.1%差口气(n=58,CI过线)；v3 数据翻倍后重判
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 01:09 → 2026-07-30 01:13
-- **代码**：`35529fb`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`35529fb`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：modernbert-base / 20260729
 - **参数**：run_dir=appworld_v2fix
@@ -938,7 +952,7 @@
 - **想验证什么**：v3 数据(补采并入,tales/appworld 样本翻倍)三环境重训,对照 v2fix 看数据量对触发精度/coverage 的边际收益
 - **结论**：v3三训全毕业:数据翻倍训练侧tales+7pt(0.6947),appworld持平(0.6133),bfcl略降(0.7518,切分不同不可比)
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-30 00:56 → 2026-07-30 16:45
-- **代码**：`35529fb`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`35529fb`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 3
 - **模型 / 种子**：modernbert-base / 20260729
 - **参数**：data=v3 n_train=tales142621/appworld71002/bfcl25061
@@ -951,7 +965,7 @@
 - **想验证什么**：修复版 checkpoint(best_calA 0.8057)上重测回放：三判据=触发精度≥95%/coverage 不趴地/打赢先验 0.038；对照废版结论是否翻盘
 - **结论**：bfcl 投机门开了：θ=0.925 下精度96.6%/coverage62%/earliness0.62，校准近完美；废版负结论翻盘
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-29 22:38 → 2026-07-29 22:38
-- **代码**：`3e36694`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`3e36694`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：modernbert-base / 20260729
 - **参数**：run_dir=bfcl_v2fix
@@ -964,7 +978,7 @@
 - **想验证什么**：v2fix 修复版 checkpoint 的 bfcl 回放评测，验证是否推翻废版负结果（废版无可行θ）
 - **结论**：v2fix 翻案:bfcl 有可行θ,θ=0.8 时 cov0.76/acc0.94,θ=0.925 时 acc0.97;深度曲线 0.69→0.86 上行,先验 0.038 被碾过
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-29 22:35 → 2026-07-29 22:40
-- **代码**：`3e36694`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`3e36694`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 2
 - **模型 / 种子**：modernbert-base / -
 - **数字**：trig_acc@theta0.8=0.9441 coverage@theta0.8=0.7553 earliness@theta0.8=0.664 wrong_spec@theta0.8=0.0422 trig_acc@theta0.925=0.966 coverage@theta0.925=0.6203 prior_baseline=0.038 train_best_calA_weighted_acc=0.8057
@@ -976,7 +990,7 @@
 - **想验证什么**：混合精度修复后三环境重训(v2 作废);补记:实际 21:17 由 1cc975d5 发射,记录时代码已合回并 commit
 - **结论**：v2fix三训全毕业:混合精度修复有效(bfcl为废版2.5倍);回放裁决bfcl胜/appworld边缘/tales负
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-29 22:02 → 2026-07-30 08:15
-- **代码**：`54a4a4b`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`54a4a4b`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo106 GPU 0
 - **模型 / 种子**：modernbert-base / 20260729
 - **参数**：fix=fp32_weights_autocast_bf16
@@ -989,7 +1003,7 @@
 - **想验证什么**：bfcl 探针回放评测：calA 拟温度→calB 扫θ→test 冻结；判据=触发精度≥95% 且 coverage 不趴地，必须打赢频率先验 0.038
 - **结论**：bfcl 负结果：置信度天花板~0.7，无 θ 满足精度≥90%约束；样本acc~27%(先验7倍)但开不了投机门
 - **方向**：C2-2t ｜ **状态**：ok ｜ **起止**：2026-07-29 21:06 → 2026-07-29 21:08
-- **代码**：`8cce422`  ⚠️ 发射时工作树是脏的，这个 commit 追不回真实代码 (分支 main)
+- **代码**：`8cce422`  ⚠️ 发射时工作树是脏的（? 文件），这个 commit 追不回真实代码 (分支 main)
 - **机器**：tokyo105 GPU 2
 - **模型 / 种子**：modernbert-base / 20260729
 - **数字**：best_val_weighted_acc=0.3262 replay_feasible_theta_risk10=none replay_feasible_theta_risk05=none max_coverage_at_theta0.5=0.0642 trig_acc_at_theta0.5=0.5714 conf_ceiling=0.7 prior_baseline=0.038

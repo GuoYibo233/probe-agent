@@ -85,6 +85,27 @@ def load_causal(run, n_labels, dev):
     return model.to(dev).eval()
 
 
+def weights_fingerprint(run):
+    """best/ 下权重文件指纹:大小 + 首尾各 64KB 的 sha1。logits 缓存必须钉在
+    产它的权重上——行数相同不代表权重相同,同目录二次训练会让旧 logits 冒充
+    新权重的结果(审计 B9)。不用 mtime:正常拷贝/恢复不该作废缓存。
+    没有权重文件时返回 {}(权重被清理的旧 run,交调用方定夺)。"""
+    import hashlib
+    fps = {}
+    for name in ("model.safetensors", "pytorch_model.bin", "model.pt", "head.pt"):
+        p = Path(run) / "best" / name
+        if p.exists():
+            size = p.stat().st_size
+            h = hashlib.sha1()
+            with open(p, "rb") as f:
+                h.update(f.read(65536))
+                if size > 131072:
+                    f.seek(-65536, 2)
+                    h.update(f.read(65536))
+            fps[name] = [size, h.hexdigest()[:16]]
+    return fps
+
+
 @torch.no_grad()
 def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
     """按事件一次前向、gather 各边界位置 logits,还原成与 rows 同序的张量。"""
@@ -247,6 +268,9 @@ def main():
                     help="报告输出目录(默认 = --run;验收时指向别处以免覆盖旧件)")
     ap.add_argument("--cached-logits", action="store_true",
                     help="读 run 目录已存的 logits_*.pt,跳过模型推理(纯 CPU 后处理)")
+    ap.add_argument("--adopt-logits-fingerprint", action="store_true",
+                    help="给指纹机制之前产的 logits 补档后退出:仅当权重 mtime"
+                         " 不比 logits 新时把当前权重认领为其来源(审计 B9)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
@@ -267,6 +291,30 @@ def main():
     else:
         split_names = ("val", "test")
         fit_sp, sweep_sp = "val", "val"
+
+    if args.adopt_logits_fingerprint:
+        # 指纹机制之前产的 logits 补档:只有全部权重文件都不比 logits 新,
+        # 才能证明"当前权重就是产这些 logits 的权重"(审计 B9 补档路径)
+        fp = weights_fingerprint(run)
+        if not fp:
+            raise SystemExit(f"{run}/best 无权重文件,没东西可认领")
+        wt_mtime = max((Path(run) / "best" / n).stat().st_mtime for n in fp)
+        n_done = 0
+        for sp in split_names:
+            lp = run / f"logits_{sp}.pt"
+            if not lp.exists():
+                continue
+            if wt_mtime > lp.stat().st_mtime:
+                raise SystemExit(
+                    f"权重比 {lp.name} 新——无法证明 logits 出自当前权重,"
+                    "拒绝认领;去掉 --cached-logits 重算。")
+            logits = torch.load(lp)
+            (run / f"logits_{sp}.meta.json").write_text(json.dumps(
+                {"weights": fp, "rows": len(logits), "adopted": True}))
+            n_done += 1
+        print(f"已认领 {n_done} 份 logits 指纹({run});"
+              "现在可以用 --cached-logits 了")
+        return
 
     label2id = json.loads((run / "best" / "label_map.json").read_text())
 
@@ -318,17 +366,40 @@ def main():
         rows = [r for r in raw_rows if r["label"] in label2id]
         for r in rows:
             r["y"] = label2id[r["label"]]
+        lp = run / f"logits_{sp}.pt"
+        lmeta = run / f"logits_{sp}.meta.json"
         if args.cached_logits:
-            logits = torch.load(run / f"logits_{sp}.pt")
+            if not lmeta.exists():
+                raise SystemExit(
+                    f"{lp} 没有配套指纹 {lmeta.name}——旧缓存无从判断出自哪份"
+                    "权重(审计 B9)。两条路:去掉 --cached-logits 重算一次"
+                    "(自动补指纹);或权重确认没动过时用 "
+                    "--adopt-logits-fingerprint 认领补档(要求权重 mtime "
+                    "不比 logits 新)。")
+            m = json.loads(lmeta.read_text())
+            now_fp = weights_fingerprint(run)
+            if not now_fp:
+                print(f"⚠️ {run}/best 已无权重文件,logits 指纹无从核验——"
+                      f"按 {lmeta.name} 记载的来源采信", flush=True)
+            elif m.get("weights") != now_fp:
+                raise SystemExit(
+                    f"{lp} 的权重指纹对不上:缓存出自 {m.get('weights')},"
+                    f"现在是 {now_fp}——权重被重训/覆盖过,拒绝拿旧 logits "
+                    "冒充新权重的结果;去掉 --cached-logits 重算。")
+            logits = torch.load(lp)
             assert len(logits) == len(rows), \
                 f"{sp}: 缓存 logits {len(logits)} 行 != 数据 {len(rows)} 行,--data 与当次评测不同源"
         elif args.head == "causal":
             logits = score_causal(model.backbone, model.head, tok, rows,
                                   dev, max_len)
-            torch.save(logits, run / f"logits_{sp}.pt")
+            torch.save(logits, lp)
+            lmeta.write_text(json.dumps(
+                {"weights": weights_fingerprint(run), "rows": len(rows)}))
         else:
             logits = score(model, tok, rows, dev)
-            torch.save(logits, run / f"logits_{sp}.pt")
+            torch.save(logits, lp)
+            lmeta.write_text(json.dumps(
+                {"weights": weights_fingerprint(run), "rows": len(rows)}))
         splits[sp] = (rows, logits)
 
     # 1) val(旧口径 calA)拟温度

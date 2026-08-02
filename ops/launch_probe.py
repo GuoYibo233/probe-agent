@@ -40,6 +40,8 @@ LOCAL = ALIAS.get(LOCAL, LOCAL)
 # ——两张同构表必漂移,而那种漂移是静默的。双环境铁律也记在 run.py 里。
 sys.path.insert(0, str(WD))
 from run import CELLS, CELL_ORDER  # noqa: E402
+sys.path.insert(0, str(WD / "ops"))
+from runmeta import append_runmeta  # noqa: E402
 
 
 def has_session(host, s):
@@ -73,7 +75,7 @@ def build(batch, data_root, env, model, cell, smoke, extra=None):
         args.append("--smoke")
     if extra:
         args += list(extra)
-    return rid, " ".join(shlex.quote(a) for a in args)
+    return rid, " ".join(shlex.quote(a) for a in args), out
 
 
 def main():
@@ -87,8 +89,12 @@ def main():
     ap.add_argument("--host", default="tokyo107", help="smoke 模式:跑在哪台")
     ap.add_argument("--gpus", default="0,1,2,3", help="smoke 模式:四张卡")
     ap.add_argument("--placement", help="full 模式:排卡表 json")
+    ap.add_argument("--force", action="store_true",
+                    help="透传训练脚本的 --force:同 out 目录重训(B7 守卫逃生,"
+                         "smoke 重跑必用——smoke 目录名是确定性推出的)")
     ap.add_argument("--dry-run", action="store_true", help="只打印不发射")
     args = ap.parse_args()
+    force = ["--force"] if args.force else []
 
     LOGD.mkdir(exist_ok=True)
     plan = []
@@ -100,33 +106,44 @@ def main():
         if len(gpus) != len(CELL_ORDER):
             sys.exit(f"--gpus 要给 {len(CELL_ORDER)} 张卡,给了 {len(gpus)}")
         for cell, gpu in zip(CELL_ORDER, gpus):
-            rid, cmd = build(args.batch, args.data_root, args.env,
-                             args.model, cell, True)
+            rid, cmd, out = build(args.batch, args.data_root, args.env,
+                                  args.model, cell, True, force or None)
             hs = args.host.replace("tokyo", "")
             sess = f"new1_{rid}_smoke_t{hs}g{gpu}"
-            plan.append((args.host, gpu, sess, cmd, f"{LOGD}/{sess}.log"))
+            plan.append((args.host, gpu, sess, cmd, f"{LOGD}/{sess}.log", out, rid))
     else:
         if not args.placement:
             sys.exit("full 模式要 --placement")
         for p in json.load(open(args.placement)):
-            rid, cmd = build(args.batch, args.data_root, args.env,
-                             p["model"], p["cell"], False, p.get("extra"))
+            rid, cmd, out = build(args.batch, args.data_root, args.env,
+                                  p["model"], p["cell"], False,
+                                  list(p.get("extra") or []) + force)
             host, gpu = p["host"], p["gpu"]
             hs = host.replace("tokyo", "")
             sess = f"new1_{rid}_t{hs}g{gpu}"
-            plan.append((host, gpu, sess, cmd, f"{LOGD}/{sess}.log"))
+            plan.append((host, gpu, sess, cmd, f"{LOGD}/{sess}.log", out, rid))
 
     if args.dry_run:
-        for host, gpu, sess, cmd, log in plan:
+        for host, gpu, sess, cmd, log, out, rid in plan:
             print(f"[dry-run] {host} gpu{gpu} {sess}\n    {cmd}")
         print(f"\n共 {len(plan)} 格(dry-run,未发射)")
         return
 
-    for host, gpu, sess, cmd, log in plan:
-        launch(host, gpu, sess, cmd, log)
+    for host, gpu, sess, cmd, log, out, rid in plan:
+        if launch(host, gpu, sess, cmd, log):
+            # 产物钉代码:发射成功立刻把 commit+argv 落进产物目录(审计 B6)。
+            # 记账失败只告警不中断——不能让 RUNMETA 把剩下的发射打死
+            try:
+                append_runmeta(out, cmd, kind="train",
+                               extra={"run_id": rid, "session": sess,
+                                      "launch_host": host, "gpu": gpu,
+                                      "log": log,
+                                      "placement": args.placement or ""})
+            except Exception as e:
+                print(f"WARN RUNMETA 没写上({out}): {e}", file=sys.stderr)
     time.sleep(6)
     print("\n--- alive check ---")
-    for host, gpu, sess, cmd, log in plan:
+    for host, gpu, sess, cmd, log, out, rid in plan:
         print(f"{sess}: {'ALIVE' if has_session(host, sess) else 'DEAD'}")
 
 
