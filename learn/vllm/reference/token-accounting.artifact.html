@@ -1,0 +1,522 @@
+<title>速查卡 · vLLM token 账</title>
+
+<!-- 内联自 lesson.css(唯一真源,勿在此处改) -->
+<style>
+/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
+   build_artifact.py 发布时把它内联进去——两处永远同一套。
+
+   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
+   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
+   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+
+/* ---------- 令牌：浅色 ---------- */
+
+:root {
+  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
+  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+
+  --measure: 36rem;
+  --rail: 3.4rem;
+
+  --f-head: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Microsoft YaHei",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-body: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+            "SimSun", Charter, Georgia, serif;
+  --f-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+}
+
+/* ---------- 令牌：深色 ---------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:      #14171c;
+    --ground-sunk: #1b1f26;
+    --ink:         #e6e9ee;
+    --ink-soft:    #aeb6c2;
+    --ink-faint:   #7d8794;
+    --rule:        #2d333d;
+    --rule-soft:   #232830;
+    --accent:      #5fc9d4;
+    --accent-wash: #173034;
+    --flag:        #e0a94a;
+    --flag-wash:   #33291a;
+    --ok:          #6fca97;
+    --ok-wash:     #16291f;
+    --bad:         #f08a86;
+    --bad-wash:    #2e1b1b;
+  }
+}
+
+/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+:root[data-theme="dark"] {
+  --ground:      #14171c;
+  --ground-sunk: #1b1f26;
+  --ink:         #e6e9ee;
+  --ink-soft:    #aeb6c2;
+  --ink-faint:   #7d8794;
+  --rule:        #2d333d;
+  --rule-soft:   #232830;
+  --accent:      #5fc9d4;
+  --accent-wash: #173034;
+  --flag:        #e0a94a;
+  --flag-wash:   #33291a;
+  --ok:          #6fca97;
+  --ok-wash:     #16291f;
+  --bad:         #f08a86;
+  --bad-wash:    #2e1b1b;
+}
+
+:root[data-theme="light"] {
+  --ground:      #f6f7f9;
+  --ground-sunk: #eceff3;
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+}
+
+/* ---------- 骨架 ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--ground); }
+
+body {
+  margin: 0;
+  padding: 3.2rem 1.4rem 6rem;
+  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+/* ---------- 标题 ---------- */
+
+.kicker {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--f-head);
+  font-size: 2rem;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.standfirst {
+  color: var(--ink-soft);
+  margin: 0 0 .8rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+h2 {
+  font-family: var(--f-head);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-wrap: balance;
+  margin: 2.2rem 0 0;
+  padding-left: .65rem;
+  border-left: 3px solid var(--accent);
+}
+
+h3 {
+  font-family: var(--f-head);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 1.5rem 0 0;
+}
+
+h3 .where {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+p { margin: 0; }
+
+/* ---------- 代码与日志 ---------- */
+
+code {
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--ground-sunk);
+  padding: .08em .34em;
+  border-radius: 3px;
+}
+
+pre {
+  margin: 0;
+  background: var(--ground-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .77rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+pre code { background: none; padding: 0; font-size: inherit; }
+
+pre mark {
+  background: var(--flag-wash);
+  color: var(--flag);
+  font-weight: 700;
+  padding: .04em .22em;
+  border-radius: 2px;
+}
+
+/* 日志摘录：左边挂它在文件里的真实行号 */
+.logline {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: .7rem;
+  align-items: start;
+  margin: 0;
+}
+
+.logline .addr {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  padding-top: .95rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .logline { grid-template-columns: 1fr; gap: .25rem; }
+  .logline .addr { text-align: left; padding-top: 0; }
+}
+
+/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+
+.eq {
+  background: var(--accent-wash);
+  border-radius: 5px;
+  padding: 1.3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.eq .formula {
+  font-family: var(--f-head);
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eq .worked {
+  font-family: var(--f-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+.eq .gloss {
+  font-size: .84rem;
+  color: var(--ink-soft);
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+/* ---------- 表格 ---------- */
+
+.tbl-scroll { overflow-x: auto; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th, td {
+  text-align: left;
+  padding: .42rem .8rem .42rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+
+th {
+  font-family: var(--f-head);
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+
+td.key { color: var(--flag); font-weight: 700; }
+
+tbody tr:hover td { background: var(--accent-wash); }
+
+/* ---------- 提示 ---------- */
+
+.note {
+  border-left: 3px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 0 4px 4px 0;
+  padding: .8rem .95rem;
+  font-size: .88rem;
+}
+
+.note strong { color: var(--flag); }
+
+.src {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  margin: -.5rem 0 0;
+}
+
+/* ---------- 测验 ---------- */
+
+.quiz {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: 0 5px 5px 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.quiz[data-done="right"] { border-left-color: var(--ok); }
+.quiz[data-done="wrong"] { border-left-color: var(--bad); }
+
+.quiz .q { font-family: var(--f-head); font-weight: 600; font-size: .95rem; }
+
+.quiz .opts { display: flex; flex-direction: column; gap: .4rem; }
+
+.quiz button {
+  font-family: var(--f-mono);
+  font-size: .82rem;
+  text-align: left;
+  padding: .5rem .75rem;
+  background: var(--ground);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.quiz button:hover:not([disabled]) { border-color: var(--accent); background: var(--accent-wash); }
+.quiz button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz button[disabled] { cursor: default; opacity: .5; }
+
+.quiz button.right {
+  border-color: var(--ok); background: var(--ok-wash);
+  color: var(--ok); opacity: 1; font-weight: 700;
+}
+.quiz button.wrong {
+  border-color: var(--bad); background: var(--bad-wash);
+  color: var(--bad); opacity: 1;
+}
+
+.quiz .fb {
+  font-size: .86rem;
+  line-height: 1.6;
+  display: none;
+  padding-top: .7rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.quiz .fb.show { display: block; }
+
+.score {
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  color: var(--ink-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 清单与页脚 ---------- */
+
+ol.tasklist { margin: 0; padding-left: 1.2rem; }
+ol.tasklist > li { margin-bottom: .7rem; }
+ol.tasklist > li::marker { font-family: var(--f-mono); color: var(--accent); font-size: .85rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.foot {
+  margin-top: 2.6rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--rule);
+  font-size: .85rem;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.foot strong { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- 打印 ---------- */
+
+@media print {
+  :root {
+    --ground: #fff; --ground-sunk: #f2f3f5; --ink: #000;
+    --accent-wash: #eef4f5; --flag-wash: #f8f1e2;
+  }
+  body { padding: 0; font-size: 11pt; }
+  .quiz .fb { display: block !important; }
+  h2, h3 { page-break-after: avoid; }
+  pre, table, .quiz, .eq, .logline { page-break-inside: avoid; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Reference · vLLM 0.26.0</p>
+<h1>token 账速查卡</h1>
+<p class="standfirst">前缀缓存开着的时候，"prompt 有多长"有三个不同的答案。这张卡说清哪个数从哪来、我们存了哪个、想要另一个要动什么。</p>
+
+<h2>三个数，别混用</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>叫法</th><th>是什么</th><th>哪里拿得到</th><th>我们存了吗</th></tr></thead>
+<tbody>
+<tr><td class="key">发过去的</td><td>整段提示词的完整长度</td><td>响应里的 <code>usage.prompt_tokens</code></td><td>存了（<code>usage.in</code>）</td></tr>
+<tr><td class="key">重算的</td><td>真正过了一遍模型的部分</td><td>要开 <code>--enable-prompt-tokens-details</code></td><td>没存</td></tr>
+<tr><td class="key">命中的</td><td>直接拿现成 KV 的部分</td><td>同上，<code>prompt_tokens_details.cached_tokens</code></td><td>没存</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>三者的关系在引擎里写死了，<code>v1/metrics/stats.py:288</code>：</p>
+
+<div class="eq">
+<p class="formula">重算的 ＝ 发过去的 － 命中的</p>
+<p class="gloss"><code>num_computed_tokens = num_prompt_tokens - num_cached_tokens</code></p>
+</div>
+
+<h2>服务端日志里的两个字段</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>字段</th><th>数的是</th><th>口径在哪写死的</th></tr></thead>
+<tbody>
+<tr><td><code>Avg prompt throughput</code></td><td>只数<strong>重算的</strong>，命中的不算</td><td><code>v1/metrics/loggers.py:146-147</code></td></tr>
+<tr><td><code>Prefix cache hit rate</code></td><td><strong>token</strong> 命中率，不是请求命中率</td><td><code>v1/metrics/stats.py:119, 141</code></td></tr>
+<tr><td>↑ 它的窗口</td><td>最近 <strong>1000 条</strong>请求，滑动</td><td><code>v1/metrics/stats.py:38, 42</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<strong>命中率是滑窗值，不是累计值。</strong>同一台服务不同时刻印的两个百分比，不能当成"整轮实验的平均命中率"来比。要整轮的口径，得自己按请求聚合。
+</div>
+
+<h2>一条命令看当下命中率</h2>
+
+<pre><code>grep -o "Prefix cache hit rate: [0-9.]*%" &lt;日志&gt; | tail -1</code></pre>
+
+<p>看一整段时间的走势：</p>
+
+<pre><code>grep -o "Prefix cache hit rate: [0-9.]*%" &lt;日志&gt; | uniq -c | tail -20</code></pre>
+
+<h2>默认值与旗标</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>旗标</th><th>0.26.0 默认</th><th>源码位置</th></tr></thead>
+<tbody>
+<tr><td><code>enable_prefix_caching</code></td><td><strong>True</strong>（关掉要写 <code>--no-enable-prefix-caching</code>）</td><td><code>config/cache.py:93</code></td></tr>
+<tr><td><code>prefix_caching_hash_algo</code></td><td><code>sha256</code></td><td><code>config/cache.py:95</code></td></tr>
+<tr><td><code>--enable-prompt-tokens-details</code></td><td><strong>False</strong></td><td><code>entrypoints/openai/cli_args.py:132</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>要把"重算了多少"存下来，得动两处</h2>
+
+<div class="note">
+<strong>只加一半等于没加。</strong>服务侧给 <code>--enable-prompt-tokens-details</code>，客户端才读得到 <code>prompt_tokens_details.cached_tokens</code>；只改客户端会永远读到 <code>None</code>，只改服务端则没人存。要加就按三件套走：改代码 + 挂 <code>run.py</code> 注册表 + 回写 skill，同一个 commit。
+</div>
+
+<p>本仓库现在存 token 用量的两处：<code>envs/collect/common.py:68</code> 与 <code>:89</code>（采集线的 raw / chat 两条路），<code>pipeline/inject/replay_inject.py:818</code>（注入线）。三处存的都是完整长度。</p>
+
+<h2>我们自己服务器上的实测命中率</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>日志</th><th>首条</th><th>观测到的最高值</th><th>负载</th></tr></thead>
+<tbody>
+<tr><td>new1_diag_srv_a.log</td><td>0.0%</td><td>98.3%</td><td>awdiag 双臂：chat 采集与活跑驱动</td></tr>
+<tr><td>new1_diag_srv_b.log</td><td>43.4%</td><td>98.9%</td><td>同上</td></tr>
+<tr><td>new1_diag_srv_c.log</td><td>46.9%</td><td>98.7%</td><td>同上</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src">2026-08-02 那一轮，gpt-oss-120b 单卡单实例，tokyo108 GPU 0/1/2，端口 8103/8106/8107。日志在 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>。</p>
+
+<div class="foot">
+<p><span class="local">← 第 2 课：同一段 prompt，服务报两个数</span></p>
+</div>
+
+</div>
+

@@ -28,9 +28,20 @@ python3 run.py build-lesson-artifact --lesson <同上> --check   # 确认同步
 - `*.artifact.html` 是渲染产物，**手改一律作废**——改课页或 `assets/`，重跑转换器。
 - 同一课重新发布必须复用同一个文件路径，才会更新到同一个 URL。
 - favicon 固定 🔎，除非整门课换主题，否则不要改（用户靠图标认标签页）。
+- **速查卡也要单独发 artifact**：课页里的 `class="local"` 链接在发布版上被降级成纯文本，
+  卡没有自己的 URL 就等于在 artifact 上不存在。卡的 favicon 用 📇 与课的 🔎 区分。
 - 已发布：
-  - 第 1 课 → https://claude.ai/code/artifact/893a47d1-3eba-460f-97f9-6f5aeabee6b3
-  - 第 2 课 → https://claude.ai/code/artifact/0928d158-fb92-4c16-9ff6-b1902bf37af1
+
+  | 页 | URL |
+  |---|---|
+  | 第 1 课 启动日志 | https://claude.ai/code/artifact/893a47d1-3eba-460f-97f9-6f5aeabee6b3 |
+  | 第 2 课 前缀缓存与 token 账 | https://claude.ai/code/artifact/0928d158-fb92-4c16-9ff6-b1902bf37af1 |
+  | 第 3 课 停止条件 | https://claude.ai/code/artifact/a8c5d973-bd30-4054-88ae-1ea44aae3801 |
+  | 第 4 课 greedy 与可复现性 | https://claude.ai/code/artifact/a82f9232-f848-4a19-beac-ff66b1cdcefc |
+  | 第 5 课 流式与中止 | https://claude.ai/code/artifact/970aa33c-31c7-4439-9167-4aa5e1f4d3bb |
+  | 卡 启动日志解码 | https://claude.ai/code/artifact/76705f6f-f7e5-4bf4-b794-02fb1c03d13f |
+  | 卡 token 账 | https://claude.ai/code/artifact/8898e677-f0ac-461e-a47b-2379f1ccc71d |
+  | 卡 请求参数 | https://claude.ai/code/artifact/1f84040b-dd7c-4df4-bda6-bcbb406dd627 |
 
 ## 视觉规则（2026-08-04 定）
 
@@ -66,12 +77,24 @@ body 背景必须显式写——artifact 外壳会注入浅色 body 样式。
   `Avg prompt throughput` 只数重算部分、命中率是 token 级 + 1000 条滑窗、
   `--enable-prompt-tokens-details` 默认关且我们从没给过。
   配套速查卡 `reference/token-accounting.html`。
+- 第 3 课 停止条件（2026-08-04）：两套停止机制；停止串在解码后的文本上匹配，
+  而那段文本受 `skip_special_tokens` 控制（默认 True）→ 特殊标记做的停止串静默失效。
+  采集线 raw 模式的 `stop=["<|im_end|>"]` 就是空转的，靠 EOS token 兜底。
+- 第 4 课 可复现性（2026-08-04）：temperature<1e-5 走 argmax，seed 无用；
+  但 `VLLM_BATCH_INVARIANT` 默认关 → 结果随批组成变，所以并发是隐藏变量。
+- 第 5 课 流式与中止（2026-08-04）：断连真的触发服务端 abort（async_llm.py:587-594），
+  但 `enable_log_requests` 默认关，日志里 grep 不到；中止段的 usage 缺失只能用块数近似。
+  配套速查卡 `reference/request-params.html`（服务于 3–5 三课）。
 
-## 下一课的候选（按与 MISSION 的贴合度排）
+**这五课是一轮完整的：**启动日志 → token 账 → 停止条件 → 可复现性 → 流式中止，
+串起来是一条请求从发出到收回的全程。要加课就是开新一轮，不是补这一轮的洞。
 
-1. 停止条件与特殊标记：`stop`、`skip_special_tokens=False`、`finish_reason`，
-   对应 `replay_inject.py` 和 `live_appworld.py` 里最容易出静默错的地方。
-2. 采样参数与可复现性：`temperature=0.0` 到底保不保证逐条一致，跨 batch size 为什么会飘
-   （`sweep_theta.py` 的口径铁律就是被这件事逼出来的）。
-3. 流式与中途 `close()`：`live_appworld.py` 的 `Stream` 靠断连让服务端停止解码，
-   服务端到底什么时候真的释放槽位（这条要先去 0.26.0 源码里核实，别凭印象讲）。
+## 下一轮的候选（还没写，按与 MISSION 的贴合度排）
+
+1. 工具调用与 harmony 通道：`--tool-call-parser`、gpt-oss 的 analysis/commentary/final
+   三个通道在服务端怎么被切开，`think_span()` 依赖的到底是什么。
+2. 调度与排队：`--max-num-seqs`、Running/Waiting 两个计数、抢占（preemption）
+   什么时候发生，跟第 1 课那个并发上限是什么关系。（顺带能查掉 NOTES 里
+   `--max-num-seqs` 1024 对不上 128 那个悬案。）
+3. 量化与数值：`gpt_oss_mxfp4` 到底量化了哪些张量，KV cache dtype 是什么，
+   跟第 4 课的数值抖动有没有叠加。

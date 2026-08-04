@@ -1,0 +1,680 @@
+<title>第 5 课 · 挂断连接就是叫服务端别算了</title>
+
+<!-- 内联自 lesson.css(唯一真源,勿在此处改) -->
+<style>
+/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
+   build_artifact.py 发布时把它内联进去——两处永远同一套。
+
+   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
+   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
+   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+
+/* ---------- 令牌：浅色 ---------- */
+
+:root {
+  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
+  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+
+  --measure: 36rem;
+  --rail: 3.4rem;
+
+  --f-head: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Microsoft YaHei",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-body: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+            "SimSun", Charter, Georgia, serif;
+  --f-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+}
+
+/* ---------- 令牌：深色 ---------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:      #14171c;
+    --ground-sunk: #1b1f26;
+    --ink:         #e6e9ee;
+    --ink-soft:    #aeb6c2;
+    --ink-faint:   #7d8794;
+    --rule:        #2d333d;
+    --rule-soft:   #232830;
+    --accent:      #5fc9d4;
+    --accent-wash: #173034;
+    --flag:        #e0a94a;
+    --flag-wash:   #33291a;
+    --ok:          #6fca97;
+    --ok-wash:     #16291f;
+    --bad:         #f08a86;
+    --bad-wash:    #2e1b1b;
+  }
+}
+
+/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+:root[data-theme="dark"] {
+  --ground:      #14171c;
+  --ground-sunk: #1b1f26;
+  --ink:         #e6e9ee;
+  --ink-soft:    #aeb6c2;
+  --ink-faint:   #7d8794;
+  --rule:        #2d333d;
+  --rule-soft:   #232830;
+  --accent:      #5fc9d4;
+  --accent-wash: #173034;
+  --flag:        #e0a94a;
+  --flag-wash:   #33291a;
+  --ok:          #6fca97;
+  --ok-wash:     #16291f;
+  --bad:         #f08a86;
+  --bad-wash:    #2e1b1b;
+}
+
+:root[data-theme="light"] {
+  --ground:      #f6f7f9;
+  --ground-sunk: #eceff3;
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+}
+
+/* ---------- 骨架 ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--ground); }
+
+body {
+  margin: 0;
+  padding: 3.2rem 1.4rem 6rem;
+  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+/* ---------- 标题 ---------- */
+
+.kicker {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--f-head);
+  font-size: 2rem;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.standfirst {
+  color: var(--ink-soft);
+  margin: 0 0 .8rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+h2 {
+  font-family: var(--f-head);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-wrap: balance;
+  margin: 2.2rem 0 0;
+  padding-left: .65rem;
+  border-left: 3px solid var(--accent);
+}
+
+h3 {
+  font-family: var(--f-head);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 1.5rem 0 0;
+}
+
+h3 .where {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+p { margin: 0; }
+
+/* ---------- 代码与日志 ---------- */
+
+code {
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--ground-sunk);
+  padding: .08em .34em;
+  border-radius: 3px;
+}
+
+pre {
+  margin: 0;
+  background: var(--ground-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .77rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+pre code { background: none; padding: 0; font-size: inherit; }
+
+pre mark {
+  background: var(--flag-wash);
+  color: var(--flag);
+  font-weight: 700;
+  padding: .04em .22em;
+  border-radius: 2px;
+}
+
+/* 日志摘录：左边挂它在文件里的真实行号 */
+.logline {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: .7rem;
+  align-items: start;
+  margin: 0;
+}
+
+.logline .addr {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  padding-top: .95rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .logline { grid-template-columns: 1fr; gap: .25rem; }
+  .logline .addr { text-align: left; padding-top: 0; }
+}
+
+/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+
+.eq {
+  background: var(--accent-wash);
+  border-radius: 5px;
+  padding: 1.3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.eq .formula {
+  font-family: var(--f-head);
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eq .worked {
+  font-family: var(--f-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+.eq .gloss {
+  font-size: .84rem;
+  color: var(--ink-soft);
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+/* ---------- 表格 ---------- */
+
+.tbl-scroll { overflow-x: auto; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th, td {
+  text-align: left;
+  padding: .42rem .8rem .42rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+
+th {
+  font-family: var(--f-head);
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+
+td.key { color: var(--flag); font-weight: 700; }
+
+tbody tr:hover td { background: var(--accent-wash); }
+
+/* ---------- 提示 ---------- */
+
+.note {
+  border-left: 3px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 0 4px 4px 0;
+  padding: .8rem .95rem;
+  font-size: .88rem;
+}
+
+.note strong { color: var(--flag); }
+
+.src {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  margin: -.5rem 0 0;
+}
+
+/* ---------- 测验 ---------- */
+
+.quiz {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: 0 5px 5px 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.quiz[data-done="right"] { border-left-color: var(--ok); }
+.quiz[data-done="wrong"] { border-left-color: var(--bad); }
+
+.quiz .q { font-family: var(--f-head); font-weight: 600; font-size: .95rem; }
+
+.quiz .opts { display: flex; flex-direction: column; gap: .4rem; }
+
+.quiz button {
+  font-family: var(--f-mono);
+  font-size: .82rem;
+  text-align: left;
+  padding: .5rem .75rem;
+  background: var(--ground);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.quiz button:hover:not([disabled]) { border-color: var(--accent); background: var(--accent-wash); }
+.quiz button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz button[disabled] { cursor: default; opacity: .5; }
+
+.quiz button.right {
+  border-color: var(--ok); background: var(--ok-wash);
+  color: var(--ok); opacity: 1; font-weight: 700;
+}
+.quiz button.wrong {
+  border-color: var(--bad); background: var(--bad-wash);
+  color: var(--bad); opacity: 1;
+}
+
+.quiz .fb {
+  font-size: .86rem;
+  line-height: 1.6;
+  display: none;
+  padding-top: .7rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.quiz .fb.show { display: block; }
+
+.score {
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  color: var(--ink-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 清单与页脚 ---------- */
+
+ol.tasklist { margin: 0; padding-left: 1.2rem; }
+ol.tasklist > li { margin-bottom: .7rem; }
+ol.tasklist > li::marker { font-family: var(--f-mono); color: var(--accent); font-size: .85rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.foot {
+  margin-top: 2.6rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--rule);
+  font-size: .85rem;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.foot strong { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- 打印 ---------- */
+
+@media print {
+  :root {
+    --ground: #fff; --ground-sunk: #f2f3f5; --ink: #000;
+    --accent-wash: #eef4f5; --flag-wash: #f8f1e2;
+  }
+  body { padding: 0; font-size: 11pt; }
+  .quiz .fb { display: block !important; }
+  h2, h3 { page-break-after: avoid; }
+  pre, table, .quiz, .eq, .logline { page-break-inside: avoid; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Lesson 0005 · vLLM 0.26.0</p>
+<h1>挂断连接就是叫服务端别算了</h1>
+<p class="standfirst">活跑驱动靠这一招实现干预：一边流式收字，探针一开火就把连接关掉，改完 prompt 再发一次。这一课讲清楚服务端那边真的会停，以及为这一招付出的两笔账。</p>
+
+<h2>我们那段代码长什么样</h2>
+
+<figure class="logline">
+<span class="addr">live_appworld.py<br>L146–150</span>
+<pre><code>body = json.dumps(dict(payload, <mark>stream=True</mark>,
+                       stream_options={"include_usage": True})).encode()
+req = urllib.request.Request(
+    url, data=body, headers={"Content-Type": "application/json"})
+self.resp = urllib.request.urlopen(req, timeout=timeout)</code></pre>
+</figure>
+
+<p>纯 urllib，没用 SDK。<code>close()</code> 就一句 <code>self.resp.close()</code>（<code>L173–177</code>）。外层循环这么用它：</p>
+
+<figure class="logline">
+<span class="addr">live_appworld.py<br>L259–320</span>
+<pre><code>while True:
+    st = open_stream(a.base_url, dict(
+        model=a.model, <mark>prompt=prompt_head + raw</mark>,
+        max_tokens=<mark>max(1, MAX_STEP_TOKENS - usage["gen_tok"])</mark>, …))
+    for delta in st:
+        raw += delta
+        …                      # 探针骑在流上打分
+        if s["fired"]:
+            …
+            raw = raw[: ts + cut] + note    # 切口后的溢出丢弃
+            fired = True
+            break
+    if fired:
+        <mark>st.close()</mark>
+        continue               # 注入后续写
+    break</code></pre>
+</figure>
+
+<p>一步之内可能开好几个流。每次重开，prompt 都是"原前缀 + 到目前为止已经写出来的（改过的）内容"。</p>
+
+<h2>服务端真的会停吗：会</h2>
+
+<figure class="logline">
+<span class="addr">v1/engine/async_llm.py<br>L587–594</span>
+<pre><code># If the request is disconnected by the client, generate()
+# is cancelled or the generator is garbage collected. So,
+# we abort the request if we end up here.
+except (asyncio.CancelledError, GeneratorExit):
+    if q is not None:
+        <mark>await self.abort(q.request_id, internal=True)</mark>
+    if self.log_requests:
+        logger.info("Request %s aborted.", request_id)
+    raise</code></pre>
+</figure>
+
+<p>客户端断开 → 生成协程被取消 → 走到这个 <code>except</code> → 调 <code>abort</code>。这条路是源码里明写的，注释也说清了触发条件。所以 <code>close()</code> 不只是我们这边不听了，是服务端那条请求被真的撤掉，KV 槽位释放。</p>
+
+<div class="note">
+<strong>但我们的日志证明不了这一点。</strong>上面那行 <code>logger.info("Request %s aborted.")</code> 卡在 <code>if self.log_requests:</code> 后面，而这个开关默认是关的——<code>engine/arg_utils.py:2724</code>，<code>enable_log_requests: bool = False</code>。我在三台服务的日志里 grep 过 <code>aborted</code>，<strong>零条</strong>。这是"没开日志"，不是"没发生 abort"。想亲眼看见，起服务时加 <code>--enable-log-requests</code>。
+</div>
+
+<h2>第一笔账：被中止的那一段，token 数是估的</h2>
+
+<p>我们给流加了 <code>stream_options={"include_usage": True}</code>，正常收尾时最后会来一块带 <code>usage</code> 的数据。<strong>中途挂断，这一块永远不会到。</strong>代码里就是这么兜的：</p>
+
+<figure class="logline">
+<span class="addr">live_appworld.py<br>L312–317</span>
+<pre><code># 账:完整收尾有 usage;被中止时用增量块数近似 gen(一块≈一 token)
+if st.usage:
+    usage["prompt_tok"] += st.usage.get("prompt_tokens", 0)
+    usage["gen_tok"] += st.usage.get("completion_tokens", 0)
+else:
+    usage["gen_tok"] += <mark>st.n_chunks</mark>          # 近似</code></pre>
+</figure>
+
+<p>"一块 ≈ 一 token"是个经验假设，注释里自己标了"近似"。<strong>凡是发生过注入的步，它的 <code>gen_tok</code> 里就掺了估计值。</strong>这条要写进口径——省 token 那条轴上，分子里有一部分不是数出来的。</p>
+
+<h2>第二笔账：重发的那一段，其实很便宜</h2>
+
+<p>回到第 2 课。重开流时 <code>prompt = prompt_head + raw</code>——前面那一大段刚刚才算过，KV 池里还热着。前缀缓存直接接上，重发的代价只有真正新增的那一小段。</p>
+
+<div class="note">
+<strong>两笔账方向相反，别互相抵消着算。</strong>算力上重发很便宜（前缀命中）；账面上被中止的段落 token 数是估的（没有 usage）。前者是性能，后者是口径。报告里该分开写。
+</div>
+
+<h2>还有一个不对称</h2>
+
+<p>注入发生时，切口之后已经写出来的内容被整段丢弃：</p>
+
+<figure class="logline">
+<span class="addr">live_appworld.py<br>L297–304</span>
+<pre><code>discard["chars"] += len(t_all) - cut
+discard["events"] += 1
+…
+raw = raw[: ts + cut] + note   # 切口后溢出丢弃</code></pre>
+</figure>
+
+<p>这些字<strong>算力上已经花掉了</strong>，只是没进最终文本。代码把它单独记在 <code>discard</code> 里，是对的——如果把它算进"省下的 token"，那就是拿丢掉的东西充业绩。</p>
+
+<h2>练一练</h2>
+
+<p>不许翻上面。答错立刻有反馈，答完就锁。</p>
+
+<div class="quiz" data-answer="a">
+  <p class="q">1. 流式读到一半把连接关掉，服务端会怎样？</p>
+  <div class="opts">
+    <button data-k="a">撤掉这条，槽位放出来</button>
+    <button data-k="b">继续算，结果丢进空里</button>
+    <button data-k="c">报个错，整台服务受累</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>async_llm.py:587-594</code>：断开会让生成协程被取消，走到 <code>except</code> 里调 <code>abort</code>。</p>
+  <p class="fb" data-k="b">不会白算。源码里专门为这种情况留了 abort 路径（<code>async_llm.py:587-594</code>）。</p>
+  <p class="fb" data-k="c">不报错。这是正常路径，被当成客户端主动中止处理。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">2. 我们日志里一条 <code>aborted</code> 都没有，说明了什么？</p>
+  <div class="opts">
+    <button data-k="a">请求日志没开，看不见</button>
+    <button data-k="b">中止没发生，全跑完</button>
+    <button data-k="c">版本不支持，无此项</button>
+  </div>
+  <p class="fb" data-k="a">对。那行 log 卡在 <code>if self.log_requests:</code> 后面，而 <code>enable_log_requests</code> 默认 False（<code>arg_utils.py:2724</code>）。</p>
+  <p class="fb" data-k="b">推不出来。日志开关是关的，abort 发没发生这份日志根本不记。</p>
+  <p class="fb" data-k="c">支持。0.26.0 的 abort 路径就在 <code>async_llm.py:587-594</code>。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">3. 被中止的那一段，生成了多少 token 是怎么来的？</p>
+  <div class="opts">
+    <button data-k="a">拿收到的块数近似出来</button>
+    <button data-k="b">拿末尾那块用量读出来</button>
+    <button data-k="c">拿本地分词器重算出来</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>live_appworld.py:317</code> 用 <code>st.n_chunks</code>，注释自标"近似"，因为 usage 那块永远不会到。</p>
+  <p class="fb" data-k="b">中途挂断的话，带 usage 的那一块根本不会送到。所以才要退回块数近似。</p>
+  <p class="fb" data-k="c">代码里没有这么做。它用的是收到的增量块数。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">4. 注入后重发整段前缀，主要成本落在哪？</p>
+  <div class="opts">
+    <button data-k="a">很低，前缀多半是命中的</button>
+    <button data-k="b">很高，整段都要重新算</button>
+    <button data-k="c">不定，取决于温度设置</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>prompt = prompt_head + raw</code>，那段刚算过还在 KV 池里，前缀缓存直接接上（第 2 课）。</p>
+  <p class="fb" data-k="b">不会整段重算。前缀缓存默认开着，刚算过的那段直接复用。</p>
+  <p class="fb" data-k="c">跟温度无关。决定它的是前缀在不在 KV 池里。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">5. 切口之后被丢弃的那些字，该怎么记账？</p>
+  <div class="opts">
+    <button data-k="a">单独记，算力已经花了</button>
+    <button data-k="b">算省下，反正没进文本</button>
+    <button data-k="c">不用记，重发时会补上</button>
+  </div>
+  <p class="fb" data-k="a">对。代码把它记在 <code>discard</code> 里（<code>live_appworld.py:297-298</code>）。生成过就是花过，只是没进最终文本。</p>
+  <p class="fb" data-k="b">那是拿丢掉的东西充业绩。这些 token 真的被生成过。</p>
+  <p class="fb" data-k="c">重发补的是新内容，不是这些被丢的字。它们的算力回不来。</p>
+</div>
+
+<p class="score"></p>
+
+<h2>下次动流式代码之前做这三件事</h2>
+
+<ol class="tasklist">
+<li>确认你的 usage 是完整的还是估的。凡是可能中途挂断的路径，末尾那块 usage 就不会来，账上必须标出哪些是近似值。</li>
+<li>想亲眼看 abort 有没有发生，起服务时加 <code>--enable-log-requests</code>，然后：
+<pre><code>grep -c "aborted" &lt;日志&gt;</code></pre>
+不开这个旗标，grep 出零条不代表任何事。</li>
+<li>被丢弃的生成内容单独一列记，别并进"省下的 token"。这两个数在报告里代表相反的东西。</li>
+</ol>
+
+<div class="foot">
+<p><strong>先读这一份：</strong><a href="https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html">vLLM OpenAI-Compatible Server</a>——看 streaming 与 <code>stream_options</code> 那一节。⚠️ abort 的具体行为以本机 <code>envs/vllm-env/…/vllm/v1/engine/async_llm.py</code> 为准。</p>
+<p><strong>随手查：</strong><span class="local">请求参数速查卡</span> · <span class="local">token 账速查卡</span> · <span class="local">术语表</span></p>
+<p><strong>上一课：</strong><span class="local">← 第 4 课 greedy 不等于可复现</span></p>
+<p><strong>五课到这里是一轮。</strong>启动日志 → token 账 → 停止条件 → 可复现性 → 流式中止，串起来就是一条请求从发出去到收回来的全程。哪一段想再挖深，或者哪个词还是虚的，直接跟我说。</p>
+</div>
+
+</div>
+
+<!-- 内联自 quiz.js -->
+<script>
+/* 共用测验组件。用法（HTML 里不写任何 JS）：
+ *
+ *   <div class="quiz" data-answer="b">
+ *     <p class="q">题干</p>
+ *     <div class="opts">
+ *       <button data-k="a">选项一</button>
+ *       <button data-k="b">选项二</button>
+ *     </div>
+ *     <p class="fb" data-k="a">选 a 时给的反馈</p>
+ *     <p class="fb" data-k="b">选 b 时给的反馈</p>
+ *   </div>
+ *
+ * 反馈立刻出，答完锁定。页面底部若有 <p class="score"> 会自动计分。
+ */
+(function () {
+  function init() {
+    var quizzes = Array.prototype.slice.call(document.querySelectorAll('.quiz'));
+    var done = 0, right = 0;
+    var board = document.querySelector('.score');
+
+    function paint() {
+      if (!board) return;
+      board.textContent = '已答 ' + done + '/' + quizzes.length + '，答对 ' + right;
+    }
+    paint();
+
+    quizzes.forEach(function (quiz) {
+      var key = quiz.getAttribute('data-answer');
+      var btns = Array.prototype.slice.call(quiz.querySelectorAll('.opts button'));
+
+      btns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (quiz.getAttribute('data-done')) return;
+
+          var picked = btn.getAttribute('data-k');
+          var ok = picked === key;
+          quiz.setAttribute('data-done', ok ? 'right' : 'wrong');
+          done += 1;
+          if (ok) right += 1;
+          paint();
+
+          btns.forEach(function (b) {
+            b.disabled = true;
+            var k = b.getAttribute('data-k');
+            if (k === key) b.classList.add('right');
+            else if (k === picked) b.classList.add('wrong');
+          });
+
+          var fb = quiz.querySelector('.fb[data-k="' + picked + '"]')
+                || quiz.querySelector('.fb:not([data-k])');
+          if (fb) fb.classList.add('show');
+        });
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>

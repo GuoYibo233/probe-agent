@@ -1,0 +1,517 @@
+<title>速查卡 · vLLM 启动日志解码</title>
+
+<!-- 内联自 lesson.css(唯一真源,勿在此处改) -->
+<style>
+/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
+   build_artifact.py 发布时把它内联进去——两处永远同一套。
+
+   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
+   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
+   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+
+/* ---------- 令牌：浅色 ---------- */
+
+:root {
+  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
+  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+
+  --measure: 36rem;
+  --rail: 3.4rem;
+
+  --f-head: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Microsoft YaHei",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-body: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+            "SimSun", Charter, Georgia, serif;
+  --f-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+}
+
+/* ---------- 令牌：深色 ---------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:      #14171c;
+    --ground-sunk: #1b1f26;
+    --ink:         #e6e9ee;
+    --ink-soft:    #aeb6c2;
+    --ink-faint:   #7d8794;
+    --rule:        #2d333d;
+    --rule-soft:   #232830;
+    --accent:      #5fc9d4;
+    --accent-wash: #173034;
+    --flag:        #e0a94a;
+    --flag-wash:   #33291a;
+    --ok:          #6fca97;
+    --ok-wash:     #16291f;
+    --bad:         #f08a86;
+    --bad-wash:    #2e1b1b;
+  }
+}
+
+/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+:root[data-theme="dark"] {
+  --ground:      #14171c;
+  --ground-sunk: #1b1f26;
+  --ink:         #e6e9ee;
+  --ink-soft:    #aeb6c2;
+  --ink-faint:   #7d8794;
+  --rule:        #2d333d;
+  --rule-soft:   #232830;
+  --accent:      #5fc9d4;
+  --accent-wash: #173034;
+  --flag:        #e0a94a;
+  --flag-wash:   #33291a;
+  --ok:          #6fca97;
+  --ok-wash:     #16291f;
+  --bad:         #f08a86;
+  --bad-wash:    #2e1b1b;
+}
+
+:root[data-theme="light"] {
+  --ground:      #f6f7f9;
+  --ground-sunk: #eceff3;
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+}
+
+/* ---------- 骨架 ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--ground); }
+
+body {
+  margin: 0;
+  padding: 3.2rem 1.4rem 6rem;
+  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+/* ---------- 标题 ---------- */
+
+.kicker {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--f-head);
+  font-size: 2rem;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.standfirst {
+  color: var(--ink-soft);
+  margin: 0 0 .8rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+h2 {
+  font-family: var(--f-head);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-wrap: balance;
+  margin: 2.2rem 0 0;
+  padding-left: .65rem;
+  border-left: 3px solid var(--accent);
+}
+
+h3 {
+  font-family: var(--f-head);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 1.5rem 0 0;
+}
+
+h3 .where {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+p { margin: 0; }
+
+/* ---------- 代码与日志 ---------- */
+
+code {
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--ground-sunk);
+  padding: .08em .34em;
+  border-radius: 3px;
+}
+
+pre {
+  margin: 0;
+  background: var(--ground-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .77rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+pre code { background: none; padding: 0; font-size: inherit; }
+
+pre mark {
+  background: var(--flag-wash);
+  color: var(--flag);
+  font-weight: 700;
+  padding: .04em .22em;
+  border-radius: 2px;
+}
+
+/* 日志摘录：左边挂它在文件里的真实行号 */
+.logline {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: .7rem;
+  align-items: start;
+  margin: 0;
+}
+
+.logline .addr {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  padding-top: .95rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .logline { grid-template-columns: 1fr; gap: .25rem; }
+  .logline .addr { text-align: left; padding-top: 0; }
+}
+
+/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+
+.eq {
+  background: var(--accent-wash);
+  border-radius: 5px;
+  padding: 1.3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.eq .formula {
+  font-family: var(--f-head);
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eq .worked {
+  font-family: var(--f-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+.eq .gloss {
+  font-size: .84rem;
+  color: var(--ink-soft);
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+/* ---------- 表格 ---------- */
+
+.tbl-scroll { overflow-x: auto; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th, td {
+  text-align: left;
+  padding: .42rem .8rem .42rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+
+th {
+  font-family: var(--f-head);
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+
+td.key { color: var(--flag); font-weight: 700; }
+
+tbody tr:hover td { background: var(--accent-wash); }
+
+/* ---------- 提示 ---------- */
+
+.note {
+  border-left: 3px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 0 4px 4px 0;
+  padding: .8rem .95rem;
+  font-size: .88rem;
+}
+
+.note strong { color: var(--flag); }
+
+.src {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  margin: -.5rem 0 0;
+}
+
+/* ---------- 测验 ---------- */
+
+.quiz {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: 0 5px 5px 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.quiz[data-done="right"] { border-left-color: var(--ok); }
+.quiz[data-done="wrong"] { border-left-color: var(--bad); }
+
+.quiz .q { font-family: var(--f-head); font-weight: 600; font-size: .95rem; }
+
+.quiz .opts { display: flex; flex-direction: column; gap: .4rem; }
+
+.quiz button {
+  font-family: var(--f-mono);
+  font-size: .82rem;
+  text-align: left;
+  padding: .5rem .75rem;
+  background: var(--ground);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.quiz button:hover:not([disabled]) { border-color: var(--accent); background: var(--accent-wash); }
+.quiz button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz button[disabled] { cursor: default; opacity: .5; }
+
+.quiz button.right {
+  border-color: var(--ok); background: var(--ok-wash);
+  color: var(--ok); opacity: 1; font-weight: 700;
+}
+.quiz button.wrong {
+  border-color: var(--bad); background: var(--bad-wash);
+  color: var(--bad); opacity: 1;
+}
+
+.quiz .fb {
+  font-size: .86rem;
+  line-height: 1.6;
+  display: none;
+  padding-top: .7rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.quiz .fb.show { display: block; }
+
+.score {
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  color: var(--ink-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 清单与页脚 ---------- */
+
+ol.tasklist { margin: 0; padding-left: 1.2rem; }
+ol.tasklist > li { margin-bottom: .7rem; }
+ol.tasklist > li::marker { font-family: var(--f-mono); color: var(--accent); font-size: .85rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.foot {
+  margin-top: 2.6rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--rule);
+  font-size: .85rem;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.foot strong { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- 打印 ---------- */
+
+@media print {
+  :root {
+    --ground: #fff; --ground-sunk: #f2f3f5; --ink: #000;
+    --accent-wash: #eef4f5; --flag-wash: #f8f1e2;
+  }
+  body { padding: 0; font-size: 11pt; }
+  .quiz .fb { display: block !important; }
+  h2, h3 { page-break-after: avoid; }
+  pre, table, .quiz, .eq, .logline { page-break-inside: avoid; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Reference · vLLM 0.26.0</p>
+<h1>启动日志解码卡</h1>
+<p class="standfirst">想知道一台 vLLM 服务的真实口径，去日志里找哪一行。行号是 <code>new1_diag_srv_a.log</code> 那次启动的位置，别的日志行号会挪，认关键词。</p>
+
+<h2>问题 → 日志行</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>我想知道</th><th>抓这个关键词</th><th>它长这样</th></tr></thead>
+<tbody>
+<tr><td>我实际改了哪些参数</td><td><code>non-default args</code></td><td>一个 dict，只列与默认值不同的</td></tr>
+<tr><td>单条上下文上限</td><td><code>Using max model len</code></td><td><code>Using max model len 131072</code></td></tr>
+<tr><td>KV 池能装多少 token</td><td><code>GPU KV cache size</code></td><td><code>GPU KV cache size: 528,934 tokens</code></td></tr>
+<tr><td>能同时扛几条请求</td><td><code>Maximum concurrency</code></td><td><code>... per request: 4.04x</code></td></tr>
+<tr><td>显存怎么切的</td><td><code>Free memory on device</code></td><td>权重 / 激活 / non-torch / CUDAGraph 逐项</td></tr>
+<tr><td>KV 拿到多少字节</td><td><code>Available KV cache memory</code></td><td><code>Available KV cache memory: 20.45 GiB</code></td></tr>
+<tr><td>挂了哪个思考解析器</td><td><code>reasoning_parser=</code></td><td>在那条超长的 engine config 里</td></tr>
+<tr><td>用了什么量化格式</td><td><code>quantization=</code></td><td>同上，如 <code>quantization=gpt_oss_mxfp4</code></td></tr>
+<tr><td>前缀缓存开没开</td><td><code>enable_prefix_caching</code></td><td>同上，0.26.0 默认 True</td></tr>
+<tr><td>我的旗标被无视了吗</td><td><code>WARNING</code></td><td>如 gpt-oss 那条 ignore 工具旗标</td></tr>
+<tr><td>服务起来了没有</td><td><code>Application startup complete</code></td><td>出现即可收客户端请求</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>一条命令抓关键三行</h2>
+
+<pre><code>grep -E "Using max model len|GPU KV cache size|Maximum concurrency" &lt;日志&gt;</code></pre>
+
+<p>要连显存分配一起看：</p>
+
+<pre><code>grep -E "Using max model len|Available KV cache memory|GPU KV cache size|\
+Maximum concurrency|Free memory on device" &lt;日志&gt;</code></pre>
+
+<p>本仓库的服务日志在 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/*srv*.log</code>（2026-08-01 之后的批次）。更早的批次落在 <code>envs/serve_logs/</code>，已随清场删除。</p>
+
+<h2>一道必须会的除法</h2>
+
+<div class="note">
+<strong>并发上限 = KV 池容量 ÷ 单条上下文上限。</strong>
+日志里那个 <code>N.NNx</code> 就是这么来的，不是估的。读完日志手算一遍，对得上说明行没认错。
+</div>
+
+<h2>默认值去哪儿查</h2>
+
+<p>官方文档写的是最新版，我们跑的是 0.26.0，撞过一次不一致。查默认值以本机源码为准，根目录 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/</code>：</p>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>要查什么</th><th>文件</th><th>0.26.0 的值</th></tr></thead>
+<tbody>
+<tr><td>显存比例默认值</td><td><code>config/cache.py:68</code></td><td>0.92</td></tr>
+<tr><td>KV 数据类型</td><td><code>config/cache.py:76</code></td><td><code>auto</code>（=模型 dtype）</td></tr>
+<tr><td>上下文上限默认</td><td><code>config/model.py:190</code></td><td>从模型 config 自动取</td></tr>
+<tr><td>并发序列数默认</td><td><code>config/scheduler.py:44</code></td><td>128</td></tr>
+<tr><td>环境变量清单</td><td><code>envs.py</code></td><td>含每个变量的作用注释</td></tr>
+<tr><td>工具解析器名字表</td><td><code>tool_parsers/__init__.py</code></td><td><code>openai</code> → GptOssToolParser</td></tr>
+<tr><td>思考解析器名字表</td><td><code>reasoning/__init__.py</code></td><td><code>deepseek_r1</code>、<code>openai_gptoss</code></td></tr>
+<tr><td>哪些模型自动挂解析器</td><td><code>model_executor/models/config.py</code></td><td>gpt-oss → <code>openai_gptoss</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>本仓库四台服务的实测值</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>日志</th><th>卡</th><th>上下文上限</th><th>显存比例</th><th>KV 池</th><th>并发</th></tr></thead>
+<tbody>
+<tr><td>splice_srv_{a,b,c}</td><td>93.1 GiB</td><td>65,536</td><td>0.92</td><td>475,669</td><td>7.26x</td></tr>
+<tr><td>diag_srv_{a,b,c}</td><td>93.1 GiB</td><td>131,072</td><td>0.92</td><td>528,934</td><td>4.04x</td></tr>
+<tr><td>effort_srv_{d,e,f}</td><td>139.81 GiB</td><td>65,536</td><td>0.92</td><td>1,475,384</td><td>22.51x</td></tr>
+<tr><td>thsw_srv_{b2,c2}</td><td>139.81 GiB</td><td>65,536</td><td>0.92</td><td>1,475,384</td><td>22.51x</td></tr>
+<tr><td>splice_srv_echo</td><td>93.1 GiB</td><td>65,536</td><td>0.80</td><td>254,720</td><td>3.89x</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src">全部 gpt-oss-120b，单卡单实例。93.1 GiB = tokyo108 的 H100（GPU 0-2），139.81 GiB = H200（GPU 3-5）。权重一律占 61.43 GiB。</p>
+
+<div class="foot">
+<p><span class="local">← 第 1 课：一台服务的真实口径只在启动日志里</span></p>
+</div>
+
+</div>
+

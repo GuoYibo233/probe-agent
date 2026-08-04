@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第 3 课 · 它停在哪个字上，由两套机制决定</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<p class="kicker">Lesson 0003 · vLLM 0.26.0</p>
+<h1>它停在哪个字上，由两套机制决定</h1>
+<p class="standfirst">一套在 token 层，一套在文本层。两套的触发条件不一样，而文本层那套会被另一个旗标悄悄关掉。我们采集线上就有一个这样的停止串，它从来没生效过。</p>
+
+<h2>两套机制，分开记</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th></th><th>停止 token</th><th>停止字符串</th></tr></thead>
+<tbody>
+<tr><td>参数</td><td class="key">stop_token_ids</td><td class="key">stop</td></tr>
+<tr><td>比什么</td><td>刚采样出的 token id</td><td>已经解码出的那段文本</td></tr>
+<tr><td>谁自动加</td><td>模型的 EOS，引擎自动塞进去</td><td>没有，只有你给的</td></tr>
+<tr><td>受 <code>skip_special_tokens</code> 影响</td><td>不受</td><td class="key">受</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>右边那一栏最后一行是这一课的全部。下面拆开看。</p>
+
+<h2>停止字符串比的是「解码后的文本」</h2>
+
+<figure class="logline">
+<span class="addr">detokenizer.py<br>L131–137</span>
+<pre><code>stop = check_stop_strings(
+    output_text=<mark>self.output_text</mark>,
+    new_char_count=len(self.output_text) - stop_check_offset,
+    stop=self.stop,
+    include_in_output=self.include_stop_str_in_output,
+)</code></pre>
+</figure>
+
+<p>比的是 <code>self.output_text</code>——一个逐 token 累积起来的<strong>字符串</strong>。那么这个字符串是怎么攒出来的：</p>
+
+<figure class="logline">
+<span class="addr">detokenizer.py<br>L184–187</span>
+<pre><code>self.stream = tokenizers.decoders.DecodeStream(
+    ids=request.prompt_token_ids,
+    <mark>skip_special_tokens=self.skip_special_tokens,</mark>
+)</code></pre>
+</figure>
+
+<p>解码流是带着 <code>skip_special_tokens</code> 建的。这个值默认是 <strong>True</strong>——两处都写着，引擎侧 <code>sampling_params.py:295</code>，HTTP 接口侧 <code>entrypoints/openai/completion/protocol.py:82</code>。</p>
+
+<div class="note">
+<strong>推论：</strong>默认设置下，特殊标记根本不会进入 <code>output_text</code>。所以一个由特殊标记组成的停止字符串——<code>&lt;|im_end|&gt;</code>、<code>&lt;|return|&gt;</code> 这种——<strong>永远匹配不上</strong>。它不会报错，只是一句空话。要让它有效，得同时给 <code>skip_special_tokens=False</code>。
+</div>
+
+<h2>我们两条线，一条给了一条没给</h2>
+
+<h3>注入线：给了 <span class="where">pipeline/inject/replay_inject.py</span></h3>
+<figure class="logline">
+<span class="addr">L156<br>L812–814</span>
+<pre><code>DEFAULT_STOP = ["&lt;|return|&gt;"]
+…
+model=a.model, prompt=prompt, max_tokens=a.max_tokens,
+temperature=0.0, stop=DEFAULT_STOP,
+<mark>skip_special_tokens=False</mark></code></pre>
+</figure>
+
+<p>这条给全了，停止串能匹配上。顺带一提，<code>&lt;|return|&gt;</code> 正好也是 gpt-oss 的 EOS（<code>tokenizer_config.json</code> 里 <code>eos_token</code> 就是它，id 200002），所以这里两套机制同时在管。</p>
+
+<h3>采集线 raw 模式：没给 <span class="where">envs/collect/common.py</span></h3>
+<figure class="logline">
+<span class="addr">L56–59</span>
+<pre><code>r = self.client.completions.create(
+    model=self.model, prompt=self.build_prompt(messages),
+    temperature=self.temperature, max_tokens=self.max_tokens,
+    <mark>stop=["&lt;|im_end|&gt;"]</mark>)</code></pre>
+</figure>
+
+<p>没有 <code>skip_special_tokens=False</code>，所以按上面那条推论，这个停止串在服务端是空转的。</p>
+
+<p><strong>那为什么采集没出事？</strong>因为还有另一套机制在兜底：引擎会把模型的 EOS token id 自动加进停止 token 集合。</p>
+
+<figure class="logline">
+<span class="addr">sampling_params.py<br>L635–641</span>
+<pre><code>if not self.ignore_eos:
+    …
+    self._all_stop_token_ids.add(eos_token_id)</code></pre>
+</figure>
+
+<div class="note">
+<strong>一处我核不了的地方。</strong>上面这条兜底成立的前提是 <code>&lt;|im_end|&gt;</code> 就是那批 Qwen 模型的 EOS。那批权重已经不在 <code>/net/…/models/</code> 了（现在只剩 gpt-oss-120b 和 Qwen3-0.6B-Base，后者的 <code>eos_token</code> 是 <code>&lt;|endoftext|&gt;</code>）。所以我只能说"停止串是空转的"，不能替你断定"生成一定停在了正确的地方"。下次起 Qwen 服务时自己验一句，方法写在最后一节。
+</div>
+
+<h2>停止串到底进不进输出</h2>
+
+<figure class="logline">
+<span class="addr">sampling_params.py<br>L299</span>
+<pre><code>include_stop_str_in_output: bool = <mark>False</mark></code></pre>
+</figure>
+
+<p>默认不进。命中停止串时，<code>output_text</code> 会被截到停止串之前（<code>detokenizer.py:138–140</code>）。所以你拿到的文本里看不到那个串——不是模型没写，是服务端剪掉了。</p>
+
+<h2>finish_reason 只有五个值</h2>
+
+<figure class="logline">
+<span class="addr">v1/engine/__init__.py<br>L30</span>
+<pre><code>FINISH_REASON_STRINGS = (<mark>"stop", "length", "abort", "error", "repetition"</mark>)</code></pre>
+</figure>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>值</th><th>含义</th><th>我们在哪儿用它</th></tr></thead>
+<tbody>
+<tr><td class="key">stop</td><td>撞上停止 token 或停止串</td><td>正常收尾</td></tr>
+<tr><td class="key">length</td><td><code>max_tokens</code> 用完，或撞上下文上限</td><td><code>replay_inject.py:1050</code> 数截断条数</td></tr>
+<tr><td class="key">abort</td><td>客户端中止（第 5 课讲）</td><td>活跑驱动打断重发时</td></tr>
+<tr><td>error / repetition</td><td>引擎报错 / 触发复读检测</td><td>目前没处理</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>stop</code> 这个值本身不告诉你是撞了哪一个。要知道是哪个，看响应里的 <code>stop_reason</code>——命中停止串时它是那个串，命中停止 token 时它是那个 id（<code>outputs.py:46–47</code>）。</p>
+
+<h2>练一练</h2>
+
+<p>不许翻上面。答错立刻有反馈，答完就锁。</p>
+
+<div class="quiz" data-answer="a">
+  <p class="q">1. <code>stop</code> 里的字符串，是拿去跟什么比对的？</p>
+  <div class="opts">
+    <button data-k="a">已经解码出的那段文本</button>
+    <button data-k="b">刚刚采样出的那个编号</button>
+    <button data-k="c">原始请求里带的提示词</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>detokenizer.py:131-137</code> 传进去的是 <code>self.output_text</code>，一个字符串。</p>
+  <p class="fb" data-k="b">那是 <code>stop_token_ids</code> 的活。<code>stop</code> 比的是解码后的文本（<code>detokenizer.py:131-137</code>）。</p>
+  <p class="fb" data-k="c">不是。只比生成出来的部分，提示词不参与（<code>detokenizer.py:131-137</code>）。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">2. 默认设置下，把 <code>&lt;|im_end|&gt;</code> 当停止串会怎样？</p>
+  <div class="opts">
+    <button data-k="a">静默失效，永远匹配不上</button>
+    <button data-k="b">正常生效，命中就会截断</button>
+    <button data-k="c">直接报错，请求被拒绝掉</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>skip_special_tokens</code> 默认 True，特殊标记不会进 <code>output_text</code>，所以匹配不到。不报错，就是空转。</p>
+  <p class="fb" data-k="b">不会。解码流是带 <code>skip_special_tokens=True</code> 建的（<code>detokenizer.py:184-187</code>），那个串压根不出现在被比对的文本里。</p>
+  <p class="fb" data-k="c">不报错。这正是它麻烦的地方——它安安静静地什么都不做。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">3. 想让特殊标记当停止串真的生效，要额外给什么？</p>
+  <div class="opts">
+    <button data-k="a">skip_special_tokens 设成假</button>
+    <button data-k="b">include_stop_str 设成真值</button>
+    <button data-k="c">stop_token_ids 补上那个号</button>
+  </div>
+  <p class="fb" data-k="a">对。注入线就是这么写的（<code>replay_inject.py:814</code>）。给了它，特殊标记才进被比对的文本。</p>
+  <p class="fb" data-k="b">那个只管"命中后要不要把串留在输出里"，不管匹不匹配得上。</p>
+  <p class="fb" data-k="c">这是绕开文本层、改走 token 层——也能停住，但不是让 <code>stop</code> 生效的办法。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">4. 命中停止串后，返回的文本里含不含那个串？</p>
+  <div class="opts">
+    <button data-k="a">不含，服务端会剪掉它</button>
+    <button data-k="b">含着，原样跟在末尾处</button>
+    <button data-k="c">看长度，超过上限才剪</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>include_stop_str_in_output</code> 默认 False（<code>sampling_params.py:299</code>），文本被截到串之前。</p>
+  <p class="fb" data-k="b">默认不含。要含得显式给 <code>include_stop_str_in_output=true</code>。</p>
+  <p class="fb" data-k="c">跟长度无关。是 <code>include_stop_str_in_output</code> 这一个开关说了算，默认 False。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">5. <code>finish_reason == "length"</code> 意味着什么？</p>
+  <div class="opts">
+    <button data-k="a">额度用完，被迫停下来</button>
+    <button data-k="b">写完一句，自然停下来</button>
+    <button data-k="c">连接断开，中途停下来</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>max_tokens</code> 用完或撞上下文上限。<code>replay_inject.py:1050</code> 就是靠它数截断条数的。</p>
+  <p class="fb" data-k="b">那是 <code>"stop"</code>。<code>"length"</code> 是额度打满，内容多半是被切断的。</p>
+  <p class="fb" data-k="c">那是 <code>"abort"</code>。<code>"length"</code> 跟连接无关，是额度用完了。</p>
+</div>
+
+<p class="score"></p>
+
+<h2>下次改停止条件之前做这三件事</h2>
+
+<ol class="tasklist">
+<li>问一句：我的停止串里有没有尖括号包起来的特殊标记？有，就必须一起给 <code>skip_special_tokens=false</code>，否则它是空转的。</li>
+<li>验一句模型的 EOS 到底是哪个，别靠印象：
+<pre><code>python3 -c "import json;print(json.load(open('&lt;权重目录&gt;/tokenizer_config.json'))['eos_token'])"</code></pre>
+兜底靠的就是它。EOS 对不上，停止串又是空转，那才真的会写到 <code>max_tokens</code> 为止。</li>
+<li>产出里把 <code>finish_reason</code> 存下来。它是事后判断"这条是正常收尾还是被截断"的唯一依据，事后补不回来。</li>
+</ol>
+
+<div class="foot">
+<p><strong>先读这一份：</strong><a href="https://docs.vllm.ai/en/latest/api/vllm/sampling_params.html">vLLM SamplingParams</a>——只看 <code>stop</code>、<code>stop_token_ids</code>、<code>skip_special_tokens</code>、<code>include_stop_str_in_output</code> 四条。⚠️ 默认值以本机 <code>envs/vllm-env/…/vllm/sampling_params.py</code> 为准。</p>
+<p><strong>随手查：</strong><a class="local" href="../reference/request-params.html">请求参数速查卡</a> · <a class="local" href="../reference/token-accounting.html">token 账速查卡</a> · <a class="local" href="../GLOSSARY.md">术语表</a></p>
+<p><strong>前后课：</strong><a class="local" href="./0002-two-numbers-for-one-prompt.html">← 第 2 课 前缀缓存</a> · <a class="local" href="./0004-greedy-is-not-reproducible.html">第 4 课 greedy 不等于可复现 →</a></p>
+<p><strong>有一个词没看懂就问我。</strong>本课引的每一行都在机器上，随时可以打开给你看。</p>
+</div>
+
+</div>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

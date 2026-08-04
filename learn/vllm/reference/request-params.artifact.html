@@ -1,0 +1,525 @@
+<title>速查卡 · vLLM 请求参数</title>
+
+<!-- 内联自 lesson.css(唯一真源,勿在此处改) -->
+<style>
+/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
+   build_artifact.py 发布时把它内联进去——两处永远同一套。
+
+   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
+   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
+   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+
+/* ---------- 令牌：浅色 ---------- */
+
+:root {
+  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
+  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+
+  --measure: 36rem;
+  --rail: 3.4rem;
+
+  --f-head: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Microsoft YaHei",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-body: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+            "SimSun", Charter, Georgia, serif;
+  --f-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+}
+
+/* ---------- 令牌：深色 ---------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:      #14171c;
+    --ground-sunk: #1b1f26;
+    --ink:         #e6e9ee;
+    --ink-soft:    #aeb6c2;
+    --ink-faint:   #7d8794;
+    --rule:        #2d333d;
+    --rule-soft:   #232830;
+    --accent:      #5fc9d4;
+    --accent-wash: #173034;
+    --flag:        #e0a94a;
+    --flag-wash:   #33291a;
+    --ok:          #6fca97;
+    --ok-wash:     #16291f;
+    --bad:         #f08a86;
+    --bad-wash:    #2e1b1b;
+  }
+}
+
+/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+:root[data-theme="dark"] {
+  --ground:      #14171c;
+  --ground-sunk: #1b1f26;
+  --ink:         #e6e9ee;
+  --ink-soft:    #aeb6c2;
+  --ink-faint:   #7d8794;
+  --rule:        #2d333d;
+  --rule-soft:   #232830;
+  --accent:      #5fc9d4;
+  --accent-wash: #173034;
+  --flag:        #e0a94a;
+  --flag-wash:   #33291a;
+  --ok:          #6fca97;
+  --ok-wash:     #16291f;
+  --bad:         #f08a86;
+  --bad-wash:    #2e1b1b;
+}
+
+:root[data-theme="light"] {
+  --ground:      #f6f7f9;
+  --ground-sunk: #eceff3;
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+}
+
+/* ---------- 骨架 ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--ground); }
+
+body {
+  margin: 0;
+  padding: 3.2rem 1.4rem 6rem;
+  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+/* ---------- 标题 ---------- */
+
+.kicker {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--f-head);
+  font-size: 2rem;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.standfirst {
+  color: var(--ink-soft);
+  margin: 0 0 .8rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+h2 {
+  font-family: var(--f-head);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-wrap: balance;
+  margin: 2.2rem 0 0;
+  padding-left: .65rem;
+  border-left: 3px solid var(--accent);
+}
+
+h3 {
+  font-family: var(--f-head);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 1.5rem 0 0;
+}
+
+h3 .where {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+p { margin: 0; }
+
+/* ---------- 代码与日志 ---------- */
+
+code {
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--ground-sunk);
+  padding: .08em .34em;
+  border-radius: 3px;
+}
+
+pre {
+  margin: 0;
+  background: var(--ground-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .77rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+pre code { background: none; padding: 0; font-size: inherit; }
+
+pre mark {
+  background: var(--flag-wash);
+  color: var(--flag);
+  font-weight: 700;
+  padding: .04em .22em;
+  border-radius: 2px;
+}
+
+/* 日志摘录：左边挂它在文件里的真实行号 */
+.logline {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: .7rem;
+  align-items: start;
+  margin: 0;
+}
+
+.logline .addr {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  padding-top: .95rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .logline { grid-template-columns: 1fr; gap: .25rem; }
+  .logline .addr { text-align: left; padding-top: 0; }
+}
+
+/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+
+.eq {
+  background: var(--accent-wash);
+  border-radius: 5px;
+  padding: 1.3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.eq .formula {
+  font-family: var(--f-head);
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eq .worked {
+  font-family: var(--f-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+.eq .gloss {
+  font-size: .84rem;
+  color: var(--ink-soft);
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+/* ---------- 表格 ---------- */
+
+.tbl-scroll { overflow-x: auto; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th, td {
+  text-align: left;
+  padding: .42rem .8rem .42rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+
+th {
+  font-family: var(--f-head);
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+
+td.key { color: var(--flag); font-weight: 700; }
+
+tbody tr:hover td { background: var(--accent-wash); }
+
+/* ---------- 提示 ---------- */
+
+.note {
+  border-left: 3px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 0 4px 4px 0;
+  padding: .8rem .95rem;
+  font-size: .88rem;
+}
+
+.note strong { color: var(--flag); }
+
+.src {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  margin: -.5rem 0 0;
+}
+
+/* ---------- 测验 ---------- */
+
+.quiz {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: 0 5px 5px 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.quiz[data-done="right"] { border-left-color: var(--ok); }
+.quiz[data-done="wrong"] { border-left-color: var(--bad); }
+
+.quiz .q { font-family: var(--f-head); font-weight: 600; font-size: .95rem; }
+
+.quiz .opts { display: flex; flex-direction: column; gap: .4rem; }
+
+.quiz button {
+  font-family: var(--f-mono);
+  font-size: .82rem;
+  text-align: left;
+  padding: .5rem .75rem;
+  background: var(--ground);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.quiz button:hover:not([disabled]) { border-color: var(--accent); background: var(--accent-wash); }
+.quiz button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz button[disabled] { cursor: default; opacity: .5; }
+
+.quiz button.right {
+  border-color: var(--ok); background: var(--ok-wash);
+  color: var(--ok); opacity: 1; font-weight: 700;
+}
+.quiz button.wrong {
+  border-color: var(--bad); background: var(--bad-wash);
+  color: var(--bad); opacity: 1;
+}
+
+.quiz .fb {
+  font-size: .86rem;
+  line-height: 1.6;
+  display: none;
+  padding-top: .7rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.quiz .fb.show { display: block; }
+
+.score {
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  color: var(--ink-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 清单与页脚 ---------- */
+
+ol.tasklist { margin: 0; padding-left: 1.2rem; }
+ol.tasklist > li { margin-bottom: .7rem; }
+ol.tasklist > li::marker { font-family: var(--f-mono); color: var(--accent); font-size: .85rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.foot {
+  margin-top: 2.6rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--rule);
+  font-size: .85rem;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.foot strong { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- 打印 ---------- */
+
+@media print {
+  :root {
+    --ground: #fff; --ground-sunk: #f2f3f5; --ink: #000;
+    --accent-wash: #eef4f5; --flag-wash: #f8f1e2;
+  }
+  body { padding: 0; font-size: 11pt; }
+  .quiz .fb { display: block !important; }
+  h2, h3 { page-break-after: avoid; }
+  pre, table, .quiz, .eq, .logline { page-break-inside: avoid; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Reference · vLLM 0.26.0</p>
+<h1>请求参数速查卡</h1>
+<p class="standfirst">发一条请求时能给的旗标、0.26.0 的默认值、本仓库两条线实际给的值。默认值一律以本机 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/</code> 为准，不以官方文档为准。</p>
+
+<h2>默认值与我们的取值</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>参数</th><th>0.26.0 默认</th><th>采集线 raw</th><th>采集线 chat</th><th>注入线</th></tr></thead>
+<tbody>
+<tr><td class="key">temperature</td><td>1.0</td><td>0.0</td><td>0.0</td><td>0.0</td></tr>
+<tr><td class="key">max_tokens</td><td>16</td><td>8192</td><td>8192</td><td>由参数给</td></tr>
+<tr><td class="key">stop</td><td>无</td><td><code>&lt;|im_end|&gt;</code></td><td>无</td><td><code>&lt;|return|&gt;</code></td></tr>
+<tr><td class="key">skip_special_tokens</td><td>True</td><td>没给</td><td>没给</td><td><strong>False</strong></td></tr>
+<tr><td class="key">include_stop_str_in_output</td><td>False</td><td>没给</td><td>没给</td><td>没给</td></tr>
+<tr><td class="key">seed</td><td>无</td><td>没给</td><td>没给</td><td>没给</td></tr>
+<tr><td class="key">stream</td><td>False</td><td>否</td><td>否</td><td>回放否 / 活跑是</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src">采集线 <code>envs/collect/common.py:20, 56-59, 77-81</code>；注入线 <code>pipeline/inject/replay_inject.py:156, 812-814</code>；活跑 <code>pipeline/inject/live_appworld.py:146-150, 260-264</code>。默认值 <code>sampling_params.py:236, 262, 295, 299</code> 与 <code>entrypoints/openai/completion/protocol.py:60, 65, 82</code>。</p>
+
+<h2>四个最容易踩空的默认值</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>旗标</th><th>默认</th><th>不给会怎样</th></tr></thead>
+<tbody>
+<tr><td><code>skip_special_tokens</code></td><td>True</td><td>特殊标记做的停止串<strong>静默失效</strong></td></tr>
+<tr><td><code>enable_prompt_tokens_details</code></td><td>False</td><td>响应里没有 <code>cached_tokens</code>，token 账拆不开</td></tr>
+<tr><td><code>enable_log_requests</code></td><td>False</td><td>日志里没有 abort / 请求明细，grep 出零条不说明任何事</td></tr>
+<tr><td><code>VLLM_BATCH_INVARIANT</code></td><td>"0"</td><td>结果随批组成变，改并发就可能改字</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src">依次出自 <code>sampling_params.py:295</code>、<code>entrypoints/openai/cli_args.py:132</code>、<code>engine/arg_utils.py:2724</code>、<code>envs.py:602</code>。</p>
+
+<h2>两套停止机制</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th></th><th>停止 token</th><th>停止字符串</th></tr></thead>
+<tbody>
+<tr><td>参数</td><td><code>stop_token_ids</code></td><td><code>stop</code></td></tr>
+<tr><td>比什么</td><td>刚采样出的 token id</td><td>已解码出的文本</td></tr>
+<tr><td>EOS</td><td>引擎自动加入（<code>sampling_params.py:635-641</code>）</td><td>不自动加</td></tr>
+<tr><td>受 <code>skip_special_tokens</code> 影响</td><td>不受</td><td><strong>受</strong>（<code>detokenizer.py:184-187</code>）</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<strong>一句话规则：</strong>停止串里出现尖括号包起来的特殊标记，就必须同时给 <code>skip_special_tokens=false</code>，否则那个串是空转的。它不报错。
+</div>
+
+<h2>finish_reason 五个值</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>值</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td class="key">stop</td><td>撞上停止 token 或停止串（具体是哪个看 <code>stop_reason</code>）</td></tr>
+<tr><td class="key">length</td><td><code>max_tokens</code> 用完，或撞上下文上限</td></tr>
+<tr><td class="key">abort</td><td>客户端中止（连接断开也算）</td></tr>
+<tr><td>error</td><td>引擎侧报错</td></tr>
+<tr><td>repetition</td><td>触发复读检测</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src"><code>v1/engine/__init__.py:30</code>；<code>stop_reason</code> 见 <code>outputs.py:46-47</code>。</p>
+
+<h2>temperature 的分界线</h2>
+
+<div class="eq">
+<p class="formula">temperature &lt; 1e-5 → 贪心档</p>
+<p class="gloss"><code>sampling_params.py:27, 492-497</code>：低于这个界，<code>top_p</code>／<code>top_k</code>／<code>min_p</code> 一并被覆盖成不筛选，走 <code>logits.argmax</code>（<code>v1/sample/sampler.py:240-241</code>）。<code>seed</code> 在这条路上不起作用。</p>
+</div>
+
+<h2>报数字时该带上的口径</h2>
+
+<ol class="tasklist">
+<li><strong>token 数</strong>是"发过去的"还是"重算的"——默认只拿得到前者。</li>
+<li><strong>并发</strong>是多少——它会改批组成，进而改 greedy 生成的结果。</li>
+<li><strong>有没有中途中止</strong>——中止的段落 usage 缺失，token 数是估的。</li>
+<li><strong>被丢弃的生成</strong>单独一列——算力花过，不该并进"省下的"。</li>
+</ol>
+
+<div class="foot">
+<p>相关课：<span class="local">第 3 课 停止条件</span> · <span class="local">第 4 课 可复现性</span> · <span class="local">第 5 课 流式与中止</span></p>
+</div>
+
+</div>
+
