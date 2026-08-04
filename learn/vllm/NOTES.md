@@ -12,10 +12,31 @@
 ## 工作区约定
 
 - 落点 `new1/learn/vllm/`，进 git（2026-08-04 用户拍板）。
-- 没有往 `MAP.md` 加行：MAP 自己写明"只回答仓库里每个程序是干什么的"，教材不是程序。
-  以后这里出了能跑的脚本再挂。
 - 课与速查卡都链 `assets/lesson.css`，测验用 `assets/quiz.js`。新课先读 `assets/` 再动手，
   别把同样的东西再写一遍。
+- `build_artifact.py` 已挂进 `run.py`（`build-lesson-artifact`）并写进 `MAP.md` §3。
+  当初说"教材不是程序、不挂 MAP"，出了这个转换器之后作废。
+
+## 发布流程（用户要 artifact 时）
+
+```
+python3 run.py build-lesson-artifact --lesson learn/vllm/lessons/<课页>.html
+python3 run.py build-lesson-artifact --lesson <同上> --check   # 确认同步
+# 再用 Artifact 工具发 <名>.artifact.html
+```
+
+- `*.artifact.html` 是渲染产物，**手改一律作废**——改课页或 `assets/`，重跑转换器。
+- 同一课重新发布必须复用同一个文件路径，才会更新到同一个 URL。
+- favicon 固定 🔎，除非整门课换主题，否则不要改（用户靠图标认标签页）。
+- 已发布：第 1 课 → https://claude.ai/code/artifact/893a47d1-3eba-460f-97f9-6f5aeabee6b3
+
+## 视觉规则（2026-08-04 定）
+
+第一版样式是暖米色 + 衬线 + 陶土红，正是 AI 生成设计最扎堆的一套，已换掉。现在这套：
+底色冷灰蓝、主色用终端 INFO 的青、日志里被点名的数字用琥珀、对错另走绿红。
+标题无衬线 / 正文衬线 / 数据等宽三个角色分开。中文不内嵌字体（CJK 字库太大且 CSP 挡 CDN），
+全部走系统字族。深浅两套主题都要照顾，`:root[data-theme=…]` 必须压得过 `prefers-color-scheme`。
+body 背景必须显式写——artifact 外壳会注入浅色 body 样式。
 
 ## 数据源（写课时优先级从高到低）
 

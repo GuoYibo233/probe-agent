@@ -133,6 +133,7 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 | `ops/runmeta.py` | 产物钉代码：往产物目录写 RUNMETA.json（commit+argv+脏清单）；发射器自动调，手搓发射必须补 | `python3 run.py runmeta <产物目录> --cmd '<完整命令>'` |
 | `ops/gpu_state.md` | 集群慢变量：tokyo105(=shiga) 8×A6000、106 10×A6000、107 4×RTX6000Ada、108(=saitama) 3×H100+3×H200；驱动/CUDA/坑（cu128 轮子在 12.2 驱动机可跑、HF 缓存在 NFS 等） | 挑卡前读 |
 | `ops/env_locks/` | 环境锁文件 | 环境变更时核对 |
+| `learn/vllm/build_artifact.py` | 课页 → artifact 单文件的确定性转换器：内联 `assets/` 的样式与脚本、去掉文档外壳、本地链接降级成纯文本；出口自检拦 doctype/body/相对路径/外链资源 | `python3 run.py build-lesson-artifact --lesson learn/vllm/lessons/<课页>.html`；`--check` 只校验同步（发布前先跑）；⚠️ `*.artifact.html` 是渲染产物，手改会被下次重跑覆盖——要改改课页或 `learn/vllm/assets/` |
 | `model_registry.py` | 模型地址映射，脚本一律经 resolve() 取路径 | `python3 model_registry.py <别名>`；⚠️ 落后于磁盘：LFM2.5-350M-Base 与 Qwen3-0.6B-Base（cgen 硬编码在用）都没注册 |
 
 ---

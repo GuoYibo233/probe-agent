@@ -426,6 +426,13 @@ TASKS = {
         notes=["它自己 ssh+tmux 发射,所以出手前过脏树门禁;--dry-run 不拦",
                "call 档发射前硬检查依赖的工具格有没有 REPLAY_REPORT.json,"
                "没有就退——SKILL.md Phase C4 的依赖顺序不许颠倒"]),
+    "build-lesson-artifact": dict(
+        stage="ops", py="sys", script="learn/vllm/build_artifact.py",
+        desc="课页 -> artifact 单文件的确定性转换器(纯 CPU;内联样式与脚本、去文档外壳)",
+        notes=["必给 --lesson;产物默认 <名>.artifact.html,与课页同目录",
+               "产物是渲染出来的,**不要手改**——下次重跑直接覆盖;要改改课页或 assets/",
+               "--check 只校验产物与源同步(不同步退 3),发布前先跑它",
+               "出口自检拦 doctype/body/相对路径/外链资源,有一样就退 2"]),
 }
 
 # ---------------------------------------------------------------- 配方注册表

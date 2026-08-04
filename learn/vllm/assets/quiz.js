@@ -31,10 +31,10 @@
       btns.forEach(function (btn) {
         btn.addEventListener('click', function () {
           if (quiz.getAttribute('data-done')) return;
-          quiz.setAttribute('data-done', '1');
 
           var picked = btn.getAttribute('data-k');
           var ok = picked === key;
+          quiz.setAttribute('data-done', ok ? 'right' : 'wrong');
           done += 1;
           if (ok) right += 1;
           paint();

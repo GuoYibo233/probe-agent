@@ -9,7 +9,7 @@
 <body>
 <div class="wrap">
 
-<p class="kicker">Lesson 0001 · vLLM</p>
+<p class="kicker">Lesson 0001 · vLLM 0.26.0</p>
 <h1>一台服务的真实口径，只在启动日志里</h1>
 <p class="standfirst">命令行写的是你的意图，日志写的是实际发生的事。两者经常不一样，而且不一样的时候没人报错。这一课教你从启动日志里读出五件事，然后拿我们自己四台服务的真实数字做练习。</p>
 
@@ -21,43 +21,60 @@
 
 <h2>五行日志，五件事</h2>
 
-<p>下面全部来自同一个文件：<code>new1_diag_srv_a.log</code>，2026-08-02 17:08 那次启动，gpt-oss-120b 跑在 tokyo108 GPU 0。</p>
+<p>下面全部来自同一个文件：<code>new1_diag_srv_a.log</code>，2026-08-02 17:08 那次启动，gpt-oss-120b 跑在 tokyo108 GPU 0。左边挂的是它在那个文件里的行号。</p>
 
-<h3>① 我实际传了什么 <span style="font-weight:400;color:var(--ink-faint)">（第 7 行）</span></h3>
+<h3>① 我实际传了什么</h3>
+<figure class="logline">
+<span class="addr">L7</span>
 <pre><code>non-default args: {'model_tag': '.../gpt-oss-120b', 'host': '0.0.0.0',
  'port': 8103, 'model': '.../gpt-oss-120b', 'served_model_name': ['gpt-oss-120b']}</code></pre>
+</figure>
 <p>vLLM 只打印<strong>与默认值不同</strong>的参数。这台服务命令行上明明写了 <code>--gpu-memory-utilization 0.92</code>，这一行里却没有它——因为 0.26.0 的默认值就是 0.92，写了等于没写。这一行是查"我以为我改了、其实没改"的最快入口。</p>
 
-<h3>② 上下文上限最终定成多少 <span style="font-weight:400;color:var(--ink-faint)">（第 9 行）</span></h3>
+<h3>② 上下文上限最终定成多少</h3>
+<figure class="logline">
+<span class="addr">L9</span>
 <pre><code>[model.py:1788] Using max model len <mark>131072</mark></code></pre>
+</figure>
 <p>这台没给 <code>--max-model-len</code>，vLLM 从模型 config 自动取了 131072。这是<strong>刻意的</strong>：那批实验要复刻 w0 采集时的原样配置，理由写在 <code>envs/serve_logs/launch_vllm_awdiag.py</code> 文件头。同期另一批服务给了 65536——同一个模型，两个口径，产出的数据不能混着比。</p>
 
-<h3>③ 显存被切成了几块 <span style="font-weight:400;color:var(--ink-faint)">（第 66 行）</span></h3>
+<h3>③ 显存被切成了几块</h3>
+<figure class="logline">
+<span class="addr">L66</span>
 <pre><code>Free memory on device (92.58/93.1 GiB) on startup. Desired GPU memory
 utilization is (0.92, 85.65 GiB). Actual usage is <mark>61.43 GiB for weight</mark>,
 2.87 GiB for peak activation, 0.24 GiB for non-torch memory, and
 1.22 GiB for CUDAGraph memory. ... Current kv cache memory in use is <mark>20.45 GiB</mark>.</code></pre>
+</figure>
 <p>整张卡 93.1 GiB，按 0.92 圈走 85.65 GiB，其中权重吃掉 61.43 GiB，剩下 20.45 GiB 才是 KV 缓存池。<strong>"KV 缓存池"就是服务用来存已经算过的上下文的那块显存</strong>——它决定这台服务能同时扛几条请求。</p>
 
-<h3>④ 池子能装多少、能同时扛几条 <span style="font-weight:400;color:var(--ink-faint)">（第 57–58 行）</span></h3>
+<h3>④ 池子能装多少、能同时扛几条</h3>
+<figure class="logline">
+<span class="addr">L57–58</span>
 <pre><code>GPU KV cache size: <mark>528,934 tokens</mark>
 Maximum concurrency for 131,072 tokens per request: <mark>4.04x</mark></code></pre>
+</figure>
 <p>这两行是整份日志里最该记住的。第一行是池子的总容量，按 token 数算。第二行是它的直接推论：</p>
-<div class="note">
-<strong>并发上限 = KV 池容量 ÷ 单条上下文上限。</strong>
-528,934 ÷ 131,072 = 4.03…，日志印的就是 4.04x。这是一道除法，你可以自己验算。
-意思是：<strong>如果</strong>每条请求都用满 131072 的上下文，这台服务只能同时伺候四条。
+
+<div class="eq">
+<p class="formula">并发上限 ＝ KV 池容量 ÷ 单条上下文上限</p>
+<p class="worked">528,934 ÷ 131,072 = 4.04</p>
+<p class="gloss">日志印的就是 4.04x。这是一道除法，你可以自己验算。意思是：<strong>如果</strong>每条请求都用满 131072 的上下文，这台服务只能同时伺候四条。</p>
 </div>
+
 <p>所以第 ② 行那个数不是随便填的。上下文上限翻一倍，并发就砍一半。</p>
 
-<h3>⑤ 有些旗标给了也白给 <span style="font-weight:400;color:var(--ink-faint)">（第 72 行）</span></h3>
+<h3>⑤ 有些旗标给了也白给</h3>
+<figure class="logline">
+<span class="addr">L72</span>
 <pre><code>WARNING [serving.py:218] For gpt-oss, we ignore --enable-auto-tool-choice
 and always enable tool use.</code></pre>
+</figure>
 <p>vLLM 明说了它无视这个旗标。同一份日志的第 14 行还能看到它自动挂上了 <code>reasoning_parser='openai_gptoss'</code>——这两件事命令行上一个字都没有。</p>
 
 <h2>四台服务，四组真实数字</h2>
 
-<p>全部取自 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>，同一个模型 gpt-oss-120b。看最后两列怎么随前面几列变。</p>
+<p>全部取自 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>，同一个模型 gpt-oss-120b。看最后一列怎么随前面几列变。</p>
 
 <div class="tbl-scroll">
 <table>
@@ -65,10 +82,10 @@ and always enable tool use.</code></pre>
 <tr><th>日志</th><th>卡</th><th>上下文上限</th><th>显存比例</th><th>KV 池</th><th>并发</th></tr>
 </thead>
 <tbody>
-<tr><td>splice_srv_a</td><td>93.1 GiB</td><td>65,536</td><td>0.92</td><td>475,669</td><td>7.26x</td></tr>
-<tr><td>diag_srv_a</td><td>93.1 GiB</td><td>131,072</td><td>0.92</td><td>528,934</td><td>4.04x</td></tr>
-<tr><td>effort_srv_d</td><td>139.81 GiB</td><td>65,536</td><td>0.92</td><td>1,475,384</td><td>22.51x</td></tr>
-<tr><td>splice_srv_echo</td><td>93.1 GiB</td><td>65,536</td><td>0.80</td><td>254,720</td><td>3.89x</td></tr>
+<tr><td>splice_srv_a</td><td>93.1 GiB</td><td>65,536</td><td>0.92</td><td>475,669</td><td class="key">7.26x</td></tr>
+<tr><td>diag_srv_a</td><td>93.1 GiB</td><td>131,072</td><td>0.92</td><td>528,934</td><td class="key">4.04x</td></tr>
+<tr><td>effort_srv_d</td><td>139.81 GiB</td><td>65,536</td><td>0.92</td><td>1,475,384</td><td class="key">22.51x</td></tr>
+<tr><td>splice_srv_echo</td><td>93.1 GiB</td><td>65,536</td><td>0.80</td><td>254,720</td><td class="key">3.89x</td></tr>
 </tbody>
 </table>
 </div>
@@ -155,7 +172,7 @@ and always enable tool use.</code></pre>
 
 <div class="foot">
 <p><strong>先读这一份：</strong><a href="https://docs.vllm.ai/en/latest/configuration/engine_args.html">vLLM Engine Arguments</a>——只看 <code>--gpu-memory-utilization</code>、<code>--max-model-len</code>、<code>--max-num-seqs</code> 三条。⚠️ 它写的是最新版，默认值可能跟我们装的 0.26.0 不同；拿不准就去翻 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/config/</code>。</p>
-<p><strong>随手查：</strong><a href="../reference/startup-log-decoder.html">启动日志速查卡</a> · <a href="../GLOSSARY.md">术语表</a> · <a href="../MISSION.md">这门课要干什么</a></p>
+<p><strong>随手查：</strong><a class="local" href="../reference/startup-log-decoder.html">启动日志速查卡</a> · <a class="local" href="../GLOSSARY.md">术语表</a> · <a class="local" href="../MISSION.md">这门课要干什么</a>（都在 <code>learn/vllm/</code> 下）</p>
 <p><strong>有一个词没看懂就问我。</strong>我是这门课的老师，日志里任何一行、任何一个数字，随时可以让我拆开讲。这一课哪里太浅或太深，也直接说，下一课我会调。</p>
 </div>
 

@@ -1,0 +1,666 @@
+<title>第 1 课 · 一台服务的真实口径只在启动日志里</title>
+
+<!-- 内联自 lesson.css(唯一真源,勿在此处改) -->
+<style>
+/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
+   build_artifact.py 发布时把它内联进去——两处永远同一套。
+
+   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
+   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
+   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+
+/* ---------- 令牌：浅色 ---------- */
+
+:root {
+  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
+  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+
+  --measure: 36rem;
+  --rail: 3.4rem;
+
+  --f-head: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Microsoft YaHei",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-body: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+            "SimSun", Charter, Georgia, serif;
+  --f-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+}
+
+/* ---------- 令牌：深色 ---------- */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground:      #14171c;
+    --ground-sunk: #1b1f26;
+    --ink:         #e6e9ee;
+    --ink-soft:    #aeb6c2;
+    --ink-faint:   #7d8794;
+    --rule:        #2d333d;
+    --rule-soft:   #232830;
+    --accent:      #5fc9d4;
+    --accent-wash: #173034;
+    --flag:        #e0a94a;
+    --flag-wash:   #33291a;
+    --ok:          #6fca97;
+    --ok-wash:     #16291f;
+    --bad:         #f08a86;
+    --bad-wash:    #2e1b1b;
+  }
+}
+
+/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+:root[data-theme="dark"] {
+  --ground:      #14171c;
+  --ground-sunk: #1b1f26;
+  --ink:         #e6e9ee;
+  --ink-soft:    #aeb6c2;
+  --ink-faint:   #7d8794;
+  --rule:        #2d333d;
+  --rule-soft:   #232830;
+  --accent:      #5fc9d4;
+  --accent-wash: #173034;
+  --flag:        #e0a94a;
+  --flag-wash:   #33291a;
+  --ok:          #6fca97;
+  --ok-wash:     #16291f;
+  --bad:         #f08a86;
+  --bad-wash:    #2e1b1b;
+}
+
+:root[data-theme="light"] {
+  --ground:      #f6f7f9;
+  --ground-sunk: #eceff3;
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+}
+
+/* ---------- 骨架 ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--ground); }
+
+body {
+  margin: 0;
+  padding: 3.2rem 1.4rem 6rem;
+  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 17px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+/* ---------- 标题 ---------- */
+
+.kicker {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+h1 {
+  font-family: var(--f-head);
+  font-size: 2rem;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.standfirst {
+  color: var(--ink-soft);
+  margin: 0 0 .8rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+h2 {
+  font-family: var(--f-head);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-wrap: balance;
+  margin: 2.2rem 0 0;
+  padding-left: .65rem;
+  border-left: 3px solid var(--accent);
+}
+
+h3 {
+  font-family: var(--f-head);
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  margin: 1.5rem 0 0;
+}
+
+h3 .where {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+p { margin: 0; }
+
+/* ---------- 代码与日志 ---------- */
+
+code {
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--ground-sunk);
+  padding: .08em .34em;
+  border-radius: 3px;
+}
+
+pre {
+  margin: 0;
+  background: var(--ground-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .8rem .9rem;
+  overflow-x: auto;
+  font-size: .77rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+
+pre code { background: none; padding: 0; font-size: inherit; }
+
+pre mark {
+  background: var(--flag-wash);
+  color: var(--flag);
+  font-weight: 700;
+  padding: .04em .22em;
+  border-radius: 2px;
+}
+
+/* 日志摘录：左边挂它在文件里的真实行号 */
+.logline {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: .7rem;
+  align-items: start;
+  margin: 0;
+}
+
+.logline .addr {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  padding-top: .95rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .logline { grid-template-columns: 1fr; gap: .25rem; }
+  .logline .addr { text-align: left; padding-top: 0; }
+}
+
+/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+
+.eq {
+  background: var(--accent-wash);
+  border-radius: 5px;
+  padding: 1.3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.eq .formula {
+  font-family: var(--f-head);
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eq .worked {
+  font-family: var(--f-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+.eq .gloss {
+  font-size: .84rem;
+  color: var(--ink-soft);
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+/* ---------- 表格 ---------- */
+
+.tbl-scroll { overflow-x: auto; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th, td {
+  text-align: left;
+  padding: .42rem .8rem .42rem 0;
+  border-bottom: 1px solid var(--rule-soft);
+  white-space: nowrap;
+}
+
+th {
+  font-family: var(--f-head);
+  font-weight: 600;
+  color: var(--ink-faint);
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--rule);
+}
+
+td.key { color: var(--flag); font-weight: 700; }
+
+tbody tr:hover td { background: var(--accent-wash); }
+
+/* ---------- 提示 ---------- */
+
+.note {
+  border-left: 3px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 0 4px 4px 0;
+  padding: .8rem .95rem;
+  font-size: .88rem;
+}
+
+.note strong { color: var(--flag); }
+
+.src {
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  margin: -.5rem 0 0;
+}
+
+/* ---------- 测验 ---------- */
+
+.quiz {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule);
+  border-radius: 0 5px 5px 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.quiz[data-done="right"] { border-left-color: var(--ok); }
+.quiz[data-done="wrong"] { border-left-color: var(--bad); }
+
+.quiz .q { font-family: var(--f-head); font-weight: 600; font-size: .95rem; }
+
+.quiz .opts { display: flex; flex-direction: column; gap: .4rem; }
+
+.quiz button {
+  font-family: var(--f-mono);
+  font-size: .82rem;
+  text-align: left;
+  padding: .5rem .75rem;
+  background: var(--ground);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.quiz button:hover:not([disabled]) { border-color: var(--accent); background: var(--accent-wash); }
+.quiz button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz button[disabled] { cursor: default; opacity: .5; }
+
+.quiz button.right {
+  border-color: var(--ok); background: var(--ok-wash);
+  color: var(--ok); opacity: 1; font-weight: 700;
+}
+.quiz button.wrong {
+  border-color: var(--bad); background: var(--bad-wash);
+  color: var(--bad); opacity: 1;
+}
+
+.quiz .fb {
+  font-size: .86rem;
+  line-height: 1.6;
+  display: none;
+  padding-top: .7rem;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.quiz .fb.show { display: block; }
+
+.score {
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  color: var(--ink-faint);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 清单与页脚 ---------- */
+
+ol.tasklist { margin: 0; padding-left: 1.2rem; }
+ol.tasklist > li { margin-bottom: .7rem; }
+ol.tasklist > li::marker { font-family: var(--f-mono); color: var(--accent); font-size: .85rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.foot {
+  margin-top: 2.6rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--rule);
+  font-size: .85rem;
+  color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
+}
+
+.foot strong { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* ---------- 打印 ---------- */
+
+@media print {
+  :root {
+    --ground: #fff; --ground-sunk: #f2f3f5; --ink: #000;
+    --accent-wash: #eef4f5; --flag-wash: #f8f1e2;
+  }
+  body { padding: 0; font-size: 11pt; }
+  .quiz .fb { display: block !important; }
+  h2, h3 { page-break-after: avoid; }
+  pre, table, .quiz, .eq, .logline { page-break-inside: avoid; }
+}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Lesson 0001 · vLLM 0.26.0</p>
+<h1>一台服务的真实口径，只在启动日志里</h1>
+<p class="standfirst">命令行写的是你的意图，日志写的是实际发生的事。两者经常不一样，而且不一样的时候没人报错。这一课教你从启动日志里读出五件事，然后拿我们自己四台服务的真实数字做练习。</p>
+
+<h2>为什么先学这个</h2>
+
+<p>你的四个目标——判断配置对不对、下一批选对功能、论文里说清口径、看懂现有代码——第一步是同一件事：<strong>能说出一台服务此刻的真实口径</strong>。这件事不看命令行，看启动日志。</p>
+
+<p>命令行不够用，有三个具体原因。第一，你没写的旗标有默认值，默认值随版本变。第二，vLLM 会替你自动决定一些事（挂哪个解析器、上下文取多长），命令行上看不见。第三，有些旗标你写了会被无视——下面第五行日志就是一例。</p>
+
+<h2>五行日志，五件事</h2>
+
+<p>下面全部来自同一个文件：<code>new1_diag_srv_a.log</code>，2026-08-02 17:08 那次启动，gpt-oss-120b 跑在 tokyo108 GPU 0。左边挂的是它在那个文件里的行号。</p>
+
+<h3>① 我实际传了什么</h3>
+<figure class="logline">
+<span class="addr">L7</span>
+<pre><code>non-default args: {'model_tag': '.../gpt-oss-120b', 'host': '0.0.0.0',
+ 'port': 8103, 'model': '.../gpt-oss-120b', 'served_model_name': ['gpt-oss-120b']}</code></pre>
+</figure>
+<p>vLLM 只打印<strong>与默认值不同</strong>的参数。这台服务命令行上明明写了 <code>--gpu-memory-utilization 0.92</code>，这一行里却没有它——因为 0.26.0 的默认值就是 0.92，写了等于没写。这一行是查"我以为我改了、其实没改"的最快入口。</p>
+
+<h3>② 上下文上限最终定成多少</h3>
+<figure class="logline">
+<span class="addr">L9</span>
+<pre><code>[model.py:1788] Using max model len <mark>131072</mark></code></pre>
+</figure>
+<p>这台没给 <code>--max-model-len</code>，vLLM 从模型 config 自动取了 131072。这是<strong>刻意的</strong>：那批实验要复刻 w0 采集时的原样配置，理由写在 <code>envs/serve_logs/launch_vllm_awdiag.py</code> 文件头。同期另一批服务给了 65536——同一个模型，两个口径，产出的数据不能混着比。</p>
+
+<h3>③ 显存被切成了几块</h3>
+<figure class="logline">
+<span class="addr">L66</span>
+<pre><code>Free memory on device (92.58/93.1 GiB) on startup. Desired GPU memory
+utilization is (0.92, 85.65 GiB). Actual usage is <mark>61.43 GiB for weight</mark>,
+2.87 GiB for peak activation, 0.24 GiB for non-torch memory, and
+1.22 GiB for CUDAGraph memory. ... Current kv cache memory in use is <mark>20.45 GiB</mark>.</code></pre>
+</figure>
+<p>整张卡 93.1 GiB，按 0.92 圈走 85.65 GiB，其中权重吃掉 61.43 GiB，剩下 20.45 GiB 才是 KV 缓存池。<strong>"KV 缓存池"就是服务用来存已经算过的上下文的那块显存</strong>——它决定这台服务能同时扛几条请求。</p>
+
+<h3>④ 池子能装多少、能同时扛几条</h3>
+<figure class="logline">
+<span class="addr">L57–58</span>
+<pre><code>GPU KV cache size: <mark>528,934 tokens</mark>
+Maximum concurrency for 131,072 tokens per request: <mark>4.04x</mark></code></pre>
+</figure>
+<p>这两行是整份日志里最该记住的。第一行是池子的总容量，按 token 数算。第二行是它的直接推论：</p>
+
+<div class="eq">
+<p class="formula">并发上限 ＝ KV 池容量 ÷ 单条上下文上限</p>
+<p class="worked">528,934 ÷ 131,072 = 4.04</p>
+<p class="gloss">日志印的就是 4.04x。这是一道除法，你可以自己验算。意思是：<strong>如果</strong>每条请求都用满 131072 的上下文，这台服务只能同时伺候四条。</p>
+</div>
+
+<p>所以第 ② 行那个数不是随便填的。上下文上限翻一倍，并发就砍一半。</p>
+
+<h3>⑤ 有些旗标给了也白给</h3>
+<figure class="logline">
+<span class="addr">L72</span>
+<pre><code>WARNING [serving.py:218] For gpt-oss, we ignore --enable-auto-tool-choice
+and always enable tool use.</code></pre>
+</figure>
+<p>vLLM 明说了它无视这个旗标。同一份日志的第 14 行还能看到它自动挂上了 <code>reasoning_parser='openai_gptoss'</code>——这两件事命令行上一个字都没有。</p>
+
+<h2>四台服务，四组真实数字</h2>
+
+<p>全部取自 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>，同一个模型 gpt-oss-120b。看最后一列怎么随前面几列变。</p>
+
+<div class="tbl-scroll">
+<table>
+<thead>
+<tr><th>日志</th><th>卡</th><th>上下文上限</th><th>显存比例</th><th>KV 池</th><th>并发</th></tr>
+</thead>
+<tbody>
+<tr><td>splice_srv_a</td><td>93.1 GiB</td><td>65,536</td><td>0.92</td><td>475,669</td><td class="key">7.26x</td></tr>
+<tr><td>diag_srv_a</td><td>93.1 GiB</td><td>131,072</td><td>0.92</td><td>528,934</td><td class="key">4.04x</td></tr>
+<tr><td>effort_srv_d</td><td>139.81 GiB</td><td>65,536</td><td>0.92</td><td>1,475,384</td><td class="key">22.51x</td></tr>
+<tr><td>splice_srv_echo</td><td>93.1 GiB</td><td>65,536</td><td>0.80</td><td>254,720</td><td class="key">3.89x</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src">四行分别出自 new1_splice_srv_a_t108g0.log、new1_diag_srv_a.log、new1_effort_srv_d_t108g3.log、new1_splice_srv_echo_t108g0.log。93.1 GiB 是 H100，139.81 GiB 是 H200。</p>
+
+<div class="note">
+<strong>一处诚实的空白。</strong>前两行的 KV 内存都是 20.45 GiB，一模一样，但装得下的 token 数不一样（475,669 对 528,934）。同样的字节、不同的容量，原因我还没查清，先记在这里不编解释。这不影响你用这张表——你要的数字日志直接给了。
+</div>
+
+<h2>练一练</h2>
+
+<p>不许翻上面。答错立刻有反馈，答完就锁。</p>
+
+<div class="quiz" data-answer="a">
+  <p class="q">1. H100 那张卡上、上下文上限 65,536 的那台服务，KV 池是多大？</p>
+  <div class="opts">
+    <button data-k="a">475,669</button>
+    <button data-k="b">528,934</button>
+    <button data-k="c">254,720</button>
+  </div>
+  <p class="fb" data-k="a">对。splice_srv_a，H100 + 65,536 + 0.92 → 475,669 tokens，并发 7.26x。</p>
+  <p class="fb" data-k="b">这是 diag_srv_a 的数——同一张 H100，但上下文上限是 131,072。答案是 475,669。</p>
+  <p class="fb" data-k="c">这是 splice_srv_echo 的数——它的显存比例是 0.80，不是 0.92。答案是 475,669。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">2. 日志里那个 <code>22.51x</code> 是怎么算出来的？</p>
+  <div class="opts">
+    <button data-k="a">用KV池容量除以单条上限</button>
+    <button data-k="b">用整卡显存除以权重体积</button>
+    <button data-k="c">用批大小乘以并行分片数</button>
+  </div>
+  <p class="fb" data-k="a">对。1,475,384 ÷ 65,536 = 22.51。一道除法，随时可以自己验。</p>
+  <p class="fb" data-k="b">不是。显存那笔账在另一行（"Free memory on device …"），并发这一行只跟 KV 池和上下文上限有关：1,475,384 ÷ 65,536 = 22.51。</p>
+  <p class="fb" data-k="c">不是。这台服务的并行分片数是 1（单卡单实例）。正解是 1,475,384 ÷ 65,536 = 22.51。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">3. 两台 H100 的 KV 内存都是 20.45 GiB，为什么并发一个 7.26x 一个 4.04x？</p>
+  <div class="opts">
+    <button data-k="a">单条上限不同，池子一样大</button>
+    <button data-k="b">显卡型号不同，池子大三倍</button>
+    <button data-k="c">显存比例不同，池子小一半</button>
+  </div>
+  <p class="fb" data-k="a">对。65,536 对 131,072，分母翻倍，并发几乎砍半。这就是为什么给不给 <code>--max-model-len</code> 是个真决策。</p>
+  <p class="fb" data-k="b">不是。两台都是 93.1 GiB 的 H100。差在上下文上限：65,536 对 131,072。</p>
+  <p class="fb" data-k="c">不是。两台的显存比例都是 0.92，KV 内存都是 20.45 GiB。差在上下文上限：65,536 对 131,072。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">4. 我们脚本里写的 <code>--gpu-memory-utilization 0.92</code>，在装着的 0.26.0 上是什么处境？</p>
+  <div class="opts">
+    <button data-k="a">等于默认值</button>
+    <button data-k="b">高于默认值</button>
+    <button data-k="c">低于默认值</button>
+  </div>
+  <p class="fb" data-k="a">对。<code>vllm/config/cache.py:68</code> 写着 <code>Field(default=0.92)</code>。所以它压根不出现在 "non-default args" 那一行里。</p>
+  <p class="fb" data-k="b">不是。0.26.0 的默认值正是 0.92（<code>vllm/config/cache.py:68</code>）——这个旗标在这个版本上等于没写。</p>
+  <p class="fb" data-k="c">不是。0.26.0 的默认值正是 0.92（<code>vllm/config/cache.py:68</code>）——这个旗标在这个版本上等于没写。</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">5. 给 gpt-oss 的服务加上 <code>--enable-auto-tool-choice</code>，会发生什么？</p>
+  <div class="opts">
+    <button data-k="a">被忽略，工具始终开启</button>
+    <button data-k="b">被采纳，工具按需开启</button>
+    <button data-k="c">被拒绝，服务启动失败</button>
+  </div>
+  <p class="fb" data-k="a">对。日志第 72 行原话："For gpt-oss, we ignore --enable-auto-tool-choice and always enable tool use."</p>
+  <p class="fb" data-k="b">不是。日志第 72 行原话："we ignore --enable-auto-tool-choice and always enable tool use." 对 gpt-oss 它是空转的。</p>
+  <p class="fb" data-k="c">不是，服务照常起来。日志第 72 行只是一条 WARNING："we ignore --enable-auto-tool-choice and always enable tool use."</p>
+</div>
+
+<p class="score"></p>
+
+<h2>下次起服务时做这一件事</h2>
+
+<ol class="tasklist">
+<li>服务起来后，从日志里抓这三行，贴进你的实验记录：
+<pre><code>grep -E "Using max model len|GPU KV cache size|Maximum concurrency" &lt;日志&gt;</code></pre></li>
+<li>手算一遍：KV 池 ÷ 上下文上限，看等不等于日志印的并发倍数。等，说明你读对了行。</li>
+<li>把这个并发倍数跟你实际起的客户端分片数比一比。分片数超过它，多出来的请求会排队而不是并行。</li>
+</ol>
+
+<div class="foot">
+<p><strong>先读这一份：</strong><a href="https://docs.vllm.ai/en/latest/configuration/engine_args.html">vLLM Engine Arguments</a>——只看 <code>--gpu-memory-utilization</code>、<code>--max-model-len</code>、<code>--max-num-seqs</code> 三条。⚠️ 它写的是最新版，默认值可能跟我们装的 0.26.0 不同；拿不准就去翻 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/config/</code>。</p>
+<p><strong>随手查：</strong><span class="local">启动日志速查卡</span> · <span class="local">术语表</span> · <span class="local">这门课要干什么</span>（都在 <code>learn/vllm/</code> 下）</p>
+<p><strong>有一个词没看懂就问我。</strong>我是这门课的老师，日志里任何一行、任何一个数字，随时可以让我拆开讲。这一课哪里太浅或太深，也直接说，下一课我会调。</p>
+</div>
+
+</div>
+
+<!-- 内联自 quiz.js -->
+<script>
+/* 共用测验组件。用法（HTML 里不写任何 JS）：
+ *
+ *   <div class="quiz" data-answer="b">
+ *     <p class="q">题干</p>
+ *     <div class="opts">
+ *       <button data-k="a">选项一</button>
+ *       <button data-k="b">选项二</button>
+ *     </div>
+ *     <p class="fb" data-k="a">选 a 时给的反馈</p>
+ *     <p class="fb" data-k="b">选 b 时给的反馈</p>
+ *   </div>
+ *
+ * 反馈立刻出，答完锁定。页面底部若有 <p class="score"> 会自动计分。
+ */
+(function () {
+  function init() {
+    var quizzes = Array.prototype.slice.call(document.querySelectorAll('.quiz'));
+    var done = 0, right = 0;
+    var board = document.querySelector('.score');
+
+    function paint() {
+      if (!board) return;
+      board.textContent = '已答 ' + done + '/' + quizzes.length + '，答对 ' + right;
+    }
+    paint();
+
+    quizzes.forEach(function (quiz) {
+      var key = quiz.getAttribute('data-answer');
+      var btns = Array.prototype.slice.call(quiz.querySelectorAll('.opts button'));
+
+      btns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          if (quiz.getAttribute('data-done')) return;
+
+          var picked = btn.getAttribute('data-k');
+          var ok = picked === key;
+          quiz.setAttribute('data-done', ok ? 'right' : 'wrong');
+          done += 1;
+          if (ok) right += 1;
+          paint();
+
+          btns.forEach(function (b) {
+            b.disabled = true;
+            var k = b.getAttribute('data-k');
+            if (k === key) b.classList.add('right');
+            else if (k === picked) b.classList.add('wrong');
+          });
+
+          var fb = quiz.querySelector('.fb[data-k="' + picked + '"]')
+                || quiz.querySelector('.fb:not([data-k])');
+          if (fb) fb.classList.add('show');
+        });
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>

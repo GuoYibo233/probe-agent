@@ -1,244 +1,424 @@
-/* new1 vLLM 课程共用样式。所有 lessons/ 与 reference/ 下的页面都链这一份。
-   设计取向：Tufte 式，正文窄、留白宽、边注在右；打印友好；跟随系统深浅色。 */
+/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
+   build_artifact.py 发布时把它内联进去——两处永远同一套。
+
+   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
+   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
+   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+
+/* ---------- 令牌：浅色 ---------- */
 
 :root {
-  --ink: #1a1a1a;
-  --ink-soft: #4a4a4a;
-  --ink-faint: #7a7a7a;
-  --paper: #fffef9;
-  --rule: #d8d4c8;
-  --accent: #7a2e1e;
-  --accent-soft: #f3e9e4;
-  --code-bg: #f4f1e8;
-  --ok: #2c5f3f;
-  --bad: #8a2020;
-  --measure: 34rem;
+  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
+  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+
+  --measure: 36rem;
+  --rail: 3.4rem;
+
+  --f-head: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Microsoft YaHei",
+            -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --f-body: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+            "SimSun", Charter, Georgia, serif;
+  --f-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
 }
+
+/* ---------- 令牌：深色 ---------- */
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ink: #e8e4da;
-    --ink-soft: #b4afa3;
-    --ink-faint: #8a8578;
-    --paper: #16151a;
-    --rule: #3a3830;
-    --accent: #e0a08a;
-    --accent-soft: #2a211d;
-    --code-bg: #1f1e24;
-    --ok: #7fc79b;
-    --bad: #e08a8a;
+    --ground:      #14171c;
+    --ground-sunk: #1b1f26;
+    --ink:         #e6e9ee;
+    --ink-soft:    #aeb6c2;
+    --ink-faint:   #7d8794;
+    --rule:        #2d333d;
+    --rule-soft:   #232830;
+    --accent:      #5fc9d4;
+    --accent-wash: #173034;
+    --flag:        #e0a94a;
+    --flag-wash:   #33291a;
+    --ok:          #6fca97;
+    --ok-wash:     #16291f;
+    --bad:         #f08a86;
+    --bad-wash:    #2e1b1b;
   }
 }
 
-* { box-sizing: border-box; }
+/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+:root[data-theme="dark"] {
+  --ground:      #14171c;
+  --ground-sunk: #1b1f26;
+  --ink:         #e6e9ee;
+  --ink-soft:    #aeb6c2;
+  --ink-faint:   #7d8794;
+  --rule:        #2d333d;
+  --rule-soft:   #232830;
+  --accent:      #5fc9d4;
+  --accent-wash: #173034;
+  --flag:        #e0a94a;
+  --flag-wash:   #33291a;
+  --ok:          #6fca97;
+  --ok-wash:     #16291f;
+  --bad:         #f08a86;
+  --bad-wash:    #2e1b1b;
+}
+
+:root[data-theme="light"] {
+  --ground:      #f6f7f9;
+  --ground-sunk: #eceff3;
+  --ink:         #151922;
+  --ink-soft:    #4c5563;
+  --ink-faint:   #7b8595;
+  --rule:        #d7dce3;
+  --rule-soft:   #e6eaef;
+  --accent:      #0f6b74;
+  --accent-wash: #e2eef0;
+  --flag:        #8a5a00;
+  --flag-wash:   #f7ecd6;
+  --ok:          #1f6b45;
+  --ok-wash:     #e3f0e8;
+  --bad:         #9b2226;
+  --bad-wash:    #f6e4e4;
+}
+
+/* ---------- 骨架 ---------- */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: var(--ground); }
 
 body {
   margin: 0;
-  padding: 3rem 1.5rem 6rem;
-  background: var(--paper);
+  padding: 3.2rem 1.4rem 6rem;
+  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
   color: var(--ink);
-  font-family: Palatino, "Palatino Linotype", "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  font-family: var(--f-body);
   font-size: 17px;
-  line-height: 1.62;
+  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.wrap { max-width: var(--measure); margin: 0 auto; }
+.wrap {
+  max-width: var(--measure);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
 
 /* ---------- 标题 ---------- */
 
 .kicker {
-  font-size: .74rem;
+  font-family: var(--f-mono);
+  font-size: .7rem;
   letter-spacing: .16em;
   text-transform: uppercase;
-  color: var(--ink-faint);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  margin: 0 0 .6rem;
+  color: var(--accent);
+  margin: 0;
 }
 
 h1 {
-  font-size: 1.85rem;
-  line-height: 1.25;
-  font-weight: 600;
-  margin: 0 0 .4rem;
+  font-family: var(--f-head);
+  font-size: 2rem;
+  line-height: 1.22;
+  font-weight: 700;
   letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
 }
 
 .standfirst {
   color: var(--ink-soft);
-  font-style: italic;
-  margin: 0 0 2.4rem;
-  padding-bottom: 1.6rem;
+  margin: 0 0 .8rem;
+  padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--rule);
 }
 
 h2 {
-  font-size: 1.16rem;
-  font-weight: 600;
-  margin: 3rem 0 .9rem;
-  padding-bottom: .3rem;
-  border-bottom: 1px solid var(--rule);
+  font-family: var(--f-head);
+  font-size: 1.18rem;
+  font-weight: 700;
+  text-wrap: balance;
+  margin: 2.2rem 0 0;
+  padding-left: .65rem;
+  border-left: 3px solid var(--accent);
 }
 
 h3 {
-  font-size: .96rem;
+  font-family: var(--f-head);
+  font-size: .95rem;
   font-weight: 600;
-  margin: 2rem 0 .6rem;
   color: var(--ink-soft);
+  margin: 1.5rem 0 0;
 }
 
-p { margin: 0 0 1.1rem; }
+h3 .where {
+  font-family: var(--f-mono);
+  font-size: .74rem;
+  font-weight: 400;
+  color: var(--ink-faint);
+  letter-spacing: .02em;
+}
+
+p { margin: 0; }
 
 /* ---------- 代码与日志 ---------- */
 
 code {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: .86em;
-  background: var(--code-bg);
-  padding: .1em .35em;
+  font-family: var(--f-mono);
+  font-size: .84em;
+  background: var(--ground-sunk);
+  padding: .08em .34em;
   border-radius: 3px;
 }
 
 pre {
-  background: var(--code-bg);
-  border-left: 3px solid var(--rule);
-  padding: .9rem 1rem;
+  margin: 0;
+  background: var(--ground-sunk);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  padding: .8rem .9rem;
   overflow-x: auto;
-  font-size: .78rem;
-  line-height: 1.55;
-  margin: 0 0 1.2rem;
+  font-size: .77rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
 }
 
 pre code { background: none; padding: 0; font-size: inherit; }
 
 pre mark {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-  padding: .05em .2em;
+  background: var(--flag-wash);
+  color: var(--flag);
+  font-weight: 700;
+  padding: .04em .22em;
   border-radius: 2px;
+}
+
+/* 日志摘录：左边挂它在文件里的真实行号 */
+.logline {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: .7rem;
+  align-items: start;
+  margin: 0;
+}
+
+.logline .addr {
+  font-family: var(--f-mono);
+  font-size: .7rem;
+  color: var(--ink-faint);
+  text-align: right;
+  padding-top: .95rem;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .logline { grid-template-columns: 1fr; gap: .25rem; }
+  .logline .addr { text-align: left; padding-top: 0; }
+}
+
+/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+
+.eq {
+  background: var(--accent-wash);
+  border-radius: 5px;
+  padding: 1.3rem 1rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
+}
+
+.eq .formula {
+  font-family: var(--f-head);
+  font-size: 1.06rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.eq .worked {
+  font-family: var(--f-mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.01em;
+}
+
+.eq .gloss {
+  font-size: .84rem;
+  color: var(--ink-soft);
+  max-width: 26rem;
+  margin: 0 auto;
 }
 
 /* ---------- 表格 ---------- */
 
-.tbl-scroll { overflow-x: auto; margin: 0 0 1.4rem; }
+.tbl-scroll { overflow-x: auto; }
 
 table {
   border-collapse: collapse;
   width: 100%;
-  font-size: .82rem;
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-family: var(--f-mono);
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
 }
 
 th, td {
   text-align: left;
-  padding: .42rem .7rem .42rem 0;
-  border-bottom: 1px solid var(--rule);
+  padding: .42rem .8rem .42rem 0;
+  border-bottom: 1px solid var(--rule-soft);
   white-space: nowrap;
 }
 
 th {
+  font-family: var(--f-head);
   font-weight: 600;
   color: var(--ink-faint);
-  font-size: .72rem;
-  letter-spacing: .06em;
+  font-size: .68rem;
+  letter-spacing: .1em;
   text-transform: uppercase;
-  border-bottom: 1.5px solid var(--ink-faint);
+  border-bottom: 1px solid var(--rule);
 }
 
-tbody tr:hover { background: var(--accent-soft); }
+td.key { color: var(--flag); font-weight: 700; }
 
-/* ---------- 边注与提示 ---------- */
+tbody tr:hover td { background: var(--accent-wash); }
+
+/* ---------- 提示 ---------- */
 
 .note {
-  border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
-  padding: .85rem 1rem;
-  margin: 0 0 1.4rem;
+  border-left: 3px solid var(--flag);
+  background: var(--flag-wash);
+  border-radius: 0 4px 4px 0;
+  padding: .8rem .95rem;
   font-size: .88rem;
 }
 
-.note strong { color: var(--accent); }
+.note strong { color: var(--flag); }
 
 .src {
-  font-size: .74rem;
+  font-family: var(--f-mono);
+  font-size: .72rem;
+  line-height: 1.55;
   color: var(--ink-faint);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  margin: -.7rem 0 1.4rem;
+  margin: -.5rem 0 0;
 }
 
 /* ---------- 测验 ---------- */
 
 .quiz {
   border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 1.1rem 1.2rem;
-  margin: 0 0 1.1rem;
+  border-left: 3px solid var(--rule);
+  border-radius: 0 5px 5px 0;
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
 }
 
-.quiz .q { font-weight: 600; margin: 0 0 .85rem; }
+.quiz[data-done="right"] { border-left-color: var(--ok); }
+.quiz[data-done="wrong"] { border-left-color: var(--bad); }
 
-.quiz .opts { display: flex; flex-direction: column; gap: .45rem; }
+.quiz .q { font-family: var(--f-head); font-weight: 600; font-size: .95rem; }
+
+.quiz .opts { display: flex; flex-direction: column; gap: .4rem; }
 
 .quiz button {
-  font: inherit;
-  font-size: .88rem;
+  font-family: var(--f-mono);
+  font-size: .82rem;
   text-align: left;
-  padding: .5rem .8rem;
-  background: var(--paper);
+  padding: .5rem .75rem;
+  background: var(--ground);
   color: var(--ink);
   border: 1px solid var(--rule);
   border-radius: 3px;
   cursor: pointer;
-  transition: background .12s, border-color .12s;
+  transition: border-color .12s ease, background .12s ease;
 }
 
-.quiz button:hover:not([disabled]) { border-color: var(--accent); }
-.quiz button[disabled] { cursor: default; opacity: .55; }
-.quiz button.right { border-color: var(--ok); color: var(--ok); opacity: 1; font-weight: 600; }
-.quiz button.wrong { border-color: var(--bad); color: var(--bad); opacity: 1; }
+.quiz button:hover:not([disabled]) { border-color: var(--accent); background: var(--accent-wash); }
+.quiz button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.quiz button[disabled] { cursor: default; opacity: .5; }
+
+.quiz button.right {
+  border-color: var(--ok); background: var(--ok-wash);
+  color: var(--ok); opacity: 1; font-weight: 700;
+}
+.quiz button.wrong {
+  border-color: var(--bad); background: var(--bad-wash);
+  color: var(--bad); opacity: 1;
+}
 
 .quiz .fb {
-  margin: .85rem 0 0;
   font-size: .86rem;
-  line-height: 1.55;
+  line-height: 1.6;
   display: none;
   padding-top: .7rem;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--rule-soft);
 }
 
 .quiz .fb.show { display: block; }
 
 .score {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: .82rem;
+  font-family: var(--f-mono);
+  font-size: .78rem;
   color: var(--ink-faint);
   text-align: right;
-  margin: 1.4rem 0 0;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 页脚 ---------- */
+/* ---------- 清单与页脚 ---------- */
+
+ol.tasklist { margin: 0; padding-left: 1.2rem; }
+ol.tasklist > li { margin-bottom: .7rem; }
+ol.tasklist > li::marker { font-family: var(--f-mono); color: var(--accent); font-size: .85rem; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .foot {
-  margin-top: 4rem;
-  padding-top: 1.4rem;
+  margin-top: 2.6rem;
+  padding-top: 1.3rem;
   border-top: 1px solid var(--rule);
-  font-size: .84rem;
+  font-size: .85rem;
   color: var(--ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: .8rem;
 }
 
-.foot a, a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.foot strong { color: var(--ink); }
 
-.tasklist { padding-left: 1.1rem; }
-.tasklist li { margin-bottom: .5rem; }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
 
 /* ---------- 打印 ---------- */
 
 @media print {
-  :root { --paper: #fff; --ink: #000; --code-bg: #f2f2f2; }
+  :root {
+    --ground: #fff; --ground-sunk: #f2f3f5; --ink: #000;
+    --accent-wash: #eef4f5; --flag-wash: #f8f1e2;
+  }
   body { padding: 0; font-size: 11pt; }
-  .quiz button { display: block; }
   .quiz .fb { display: block !important; }
-  h2 { page-break-after: avoid; }
-  pre, table, .quiz { page-break-inside: avoid; }
+  h2, h3 { page-break-after: avoid; }
+  pre, table, .quiz, .eq, .logline { page-break-inside: avoid; }
 }
