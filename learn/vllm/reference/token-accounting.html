@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查卡 · vLLM token 账</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<p class="kicker">Reference · vLLM 0.26.0</p>
+<h1>token 账速查卡</h1>
+<p class="standfirst">前缀缓存开着的时候，"prompt 有多长"有三个不同的答案。这张卡说清哪个数从哪来、我们存了哪个、想要另一个要动什么。</p>
+
+<h2>三个数，别混用</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>叫法</th><th>是什么</th><th>哪里拿得到</th><th>我们存了吗</th></tr></thead>
+<tbody>
+<tr><td class="key">发过去的</td><td>整段提示词的完整长度</td><td>响应里的 <code>usage.prompt_tokens</code></td><td>存了（<code>usage.in</code>）</td></tr>
+<tr><td class="key">重算的</td><td>真正过了一遍模型的部分</td><td>要开 <code>--enable-prompt-tokens-details</code></td><td>没存</td></tr>
+<tr><td class="key">命中的</td><td>直接拿现成 KV 的部分</td><td>同上，<code>prompt_tokens_details.cached_tokens</code></td><td>没存</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>三者的关系在引擎里写死了，<code>v1/metrics/stats.py:288</code>：</p>
+
+<div class="eq">
+<p class="formula">重算的 ＝ 发过去的 － 命中的</p>
+<p class="gloss"><code>num_computed_tokens = num_prompt_tokens - num_cached_tokens</code></p>
+</div>
+
+<h2>服务端日志里的两个字段</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>字段</th><th>数的是</th><th>口径在哪写死的</th></tr></thead>
+<tbody>
+<tr><td><code>Avg prompt throughput</code></td><td>只数<strong>重算的</strong>，命中的不算</td><td><code>v1/metrics/loggers.py:146-147</code></td></tr>
+<tr><td><code>Prefix cache hit rate</code></td><td><strong>token</strong> 命中率，不是请求命中率</td><td><code>v1/metrics/stats.py:119, 141</code></td></tr>
+<tr><td>↑ 它的窗口</td><td>最近 <strong>1000 条</strong>请求，滑动</td><td><code>v1/metrics/stats.py:38, 42</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<strong>命中率是滑窗值，不是累计值。</strong>同一台服务不同时刻印的两个百分比，不能当成"整轮实验的平均命中率"来比。要整轮的口径，得自己按请求聚合。
+</div>
+
+<h2>一条命令看当下命中率</h2>
+
+<pre><code>grep -o "Prefix cache hit rate: [0-9.]*%" &lt;日志&gt; | tail -1</code></pre>
+
+<p>看一整段时间的走势：</p>
+
+<pre><code>grep -o "Prefix cache hit rate: [0-9.]*%" &lt;日志&gt; | uniq -c | tail -20</code></pre>
+
+<h2>默认值与旗标</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>旗标</th><th>0.26.0 默认</th><th>源码位置</th></tr></thead>
+<tbody>
+<tr><td><code>enable_prefix_caching</code></td><td><strong>True</strong>（关掉要写 <code>--no-enable-prefix-caching</code>）</td><td><code>config/cache.py:93</code></td></tr>
+<tr><td><code>prefix_caching_hash_algo</code></td><td><code>sha256</code></td><td><code>config/cache.py:95</code></td></tr>
+<tr><td><code>--enable-prompt-tokens-details</code></td><td><strong>False</strong></td><td><code>entrypoints/openai/cli_args.py:132</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>要把"重算了多少"存下来，得动两处</h2>
+
+<div class="note">
+<strong>只加一半等于没加。</strong>服务侧给 <code>--enable-prompt-tokens-details</code>，客户端才读得到 <code>prompt_tokens_details.cached_tokens</code>；只改客户端会永远读到 <code>None</code>，只改服务端则没人存。要加就按三件套走：改代码 + 挂 <code>run.py</code> 注册表 + 回写 skill，同一个 commit。
+</div>
+
+<p>本仓库现在存 token 用量的两处：<code>envs/collect/common.py:68</code> 与 <code>:89</code>（采集线的 raw / chat 两条路），<code>pipeline/inject/replay_inject.py:818</code>（注入线）。三处存的都是完整长度。</p>
+
+<h2>我们自己服务器上的实测命中率</h2>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>日志</th><th>首条</th><th>观测到的最高值</th><th>负载</th></tr></thead>
+<tbody>
+<tr><td>new1_diag_srv_a.log</td><td>0.0%</td><td>98.3%</td><td>awdiag 双臂：chat 采集与活跑驱动</td></tr>
+<tr><td>new1_diag_srv_b.log</td><td>43.4%</td><td>98.9%</td><td>同上</td></tr>
+<tr><td>new1_diag_srv_c.log</td><td>46.9%</td><td>98.7%</td><td>同上</td></tr>
+</tbody>
+</table>
+</div>
+<p class="src">2026-08-02 那一轮，gpt-oss-120b 单卡单实例，tokyo108 GPU 0/1/2，端口 8103/8106/8107。日志在 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>。</p>
+
+<div class="foot">
+<p><a href="../lessons/0002-two-numbers-for-one-prompt.html">← 第 2 课：同一段 prompt，服务报两个数</a></p>
+</div>
+
+</div>
+</body>
+</html>

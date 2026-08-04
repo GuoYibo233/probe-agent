@@ -28,7 +28,9 @@ python3 run.py build-lesson-artifact --lesson <同上> --check   # 确认同步
 - `*.artifact.html` 是渲染产物，**手改一律作废**——改课页或 `assets/`，重跑转换器。
 - 同一课重新发布必须复用同一个文件路径，才会更新到同一个 URL。
 - favicon 固定 🔎，除非整门课换主题，否则不要改（用户靠图标认标签页）。
-- 已发布：第 1 课 → https://claude.ai/code/artifact/893a47d1-3eba-460f-97f9-6f5aeabee6b3
+- 已发布：
+  - 第 1 课 → https://claude.ai/code/artifact/893a47d1-3eba-460f-97f9-6f5aeabee6b3
+  - 第 2 课 → https://claude.ai/code/artifact/0928d158-fb92-4c16-9ff6-b1902bf37af1
 
 ## 视觉规则（2026-08-04 定）
 
@@ -53,12 +55,23 @@ body 背景必须显式写——artifact 外壳会注入浅色 body 样式。
   0.26.0 源码里是 128。1024 的来源找不到（当时的 Qwen 服务日志已删）。
 - `VLLM_USE_FLASHINFER_SAMPLER=0` 的作用查清了（envs.py:838-840），
   但我们为什么关它，仓库里没有任何记录。
+- **原始产物已被清场删除**：`$NFS/envs/runs/aw_pathdiag/` 整个不在了，
+  所以 08-02 那批 chat 采集的逐条 `prompt_tokens` 拿不到了，
+  第 2 课只能用服务端日志的聚合数。以后要讲逐条数字，先确认产物还在。
+
+## 已讲完
+
+- 第 1 课 启动日志（2026-08-04）：五题全对，见 `learning-records/0002-*`。
+- 第 2 课 前缀缓存与 token 账（2026-08-04）：讲了三个 prompt 长度、
+  `Avg prompt throughput` 只数重算部分、命中率是 token 级 + 1000 条滑窗、
+  `--enable-prompt-tokens-details` 默认关且我们从没给过。
+  配套速查卡 `reference/token-accounting.html`。
 
 ## 下一课的候选（按与 MISSION 的贴合度排）
 
-1. 前缀缓存：`enable_prefix_caching` 在 0.26.0 默认开着，而我们的注入线每步都重发
-   "前缀 + 已生成"。这两件事撞在一起会发生什么，直接关系到 token 账怎么报。
-2. 停止条件与特殊标记：`stop`、`skip_special_tokens=False`、`finish_reason`，
+1. 停止条件与特殊标记：`stop`、`skip_special_tokens=False`、`finish_reason`，
    对应 `replay_inject.py` 和 `live_appworld.py` 里最容易出静默错的地方。
-3. 采样参数与可复现性：`temperature=0.0` 到底保不保证逐条一致，跨 batch size 为什么会飘
+2. 采样参数与可复现性：`temperature=0.0` 到底保不保证逐条一致，跨 batch size 为什么会飘
    （`sweep_theta.py` 的口径铁律就是被这件事逼出来的）。
+3. 流式与中途 `close()`：`live_appworld.py` 的 `Stream` 靠断连让服务端停止解码，
+   服务端到底什么时候真的释放槽位（这条要先去 0.26.0 源码里核实，别凭印象讲）。
