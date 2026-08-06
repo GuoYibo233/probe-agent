@@ -47,8 +47,11 @@ def main():
     ap.add_argument("--max-steps", type=int, default=20)
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--exp", default="smoke")
-    ap.add_argument("--api", default="raw", choices=["raw", "chat"])
+    ap.add_argument("--api", default="raw",
+                    choices=["raw", "chat", "harmony"])
     ap.add_argument("--reasoning-effort", default=None)
+    ap.add_argument("--start-date", default="2026-08-06",
+                    help="harmony 模式下钉死 prompt 里的 Current date")
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     ap.add_argument("--resume", action="store_true",
@@ -60,7 +63,8 @@ def main():
     os.chdir("/home/y-guo/reproduce/new1/envs/appworld")
     from appworld import AppWorld, load_task_ids
     chat = Chat(args.base_url, args.model, api=args.api,
-                reasoning_effort=args.reasoning_effort)
+                reasoning_effort=args.reasoning_effort,
+                start_date=args.start_date)
 
     ids = load_task_ids(args.split)
     if args.n:

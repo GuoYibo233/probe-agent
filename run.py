@@ -97,6 +97,11 @@ TASKS = {
                "别的尾巴下游静默跳过整目录",
                "重跑必带 --resume,否则同名轨迹被截断重写",
                "脚本自己 chdir envs/appworld;相对 --outdir 按 ROOT 解析",
+               "--api harmony:自拼 harmony 走 /v1/completions,原始输出与生成的 "
+               "token id 全录(服务端 HarmonyParser 不参与);仅 gpt-oss 可用,"
+               "--start-date 钉死 prompt 里的 Current date",
+               "envs/appworld/venv 不许装 openai-harmony:它拉 pydantic 2,"
+               "会顶掉 appworld 要的 1.10.26(2026-08-06 实测 import 就断)",
                "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
     "collect-alf": dict(
         stage="collect", py="alfworld", script="envs/collect/run_alfworld.py",

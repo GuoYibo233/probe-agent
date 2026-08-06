@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>速查卡 · prompt 是怎么拼出来的</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="wrap">
+
+<p class="kicker">Reference · vLLM 0.26.0</p>
+<h1>prompt 是怎么拼出来的</h1>
+<p class="standfirst">从 <code>run_appworld.py</code> 里那个 <code>msgs</code> 列表，到引擎真正收到的一串 token id，中间一共经过几只手。图里凡是我们自己的代码都用青色标出来，剩下的灰色全是 vLLM 的。</p>
+
+<p>先把三个都叫"system"的东西分开，全篇按这三个名字用：</p>
+
+<div class="tbl-scroll">
+<table>
+<thead><tr><th>名字</th><th>是什么</th><th>谁写的</th></tr></thead>
+<tbody>
+<tr><td class="key">请求里的 system 消息</td><td><code>msgs[0]</code>，内容是 <code>SYSTEM</code> 常量</td><td>我们</td></tr>
+<tr><td class="key">harmony 的 system 消息</td><td>模型身份、知识截止、日期、思考档位、频道说明</td><td>vLLM</td></tr>
+<tr><td class="key">harmony 的 developer 消息</td><td><code># Instructions</code> 加上我们那段话的全文</td><td>vLLM 造壳，我们填瓤</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>chat 模式：我们只交消息，拼是服务端拼的</h2>
+
+<p class="src">
+<span style="background:var(--accent-wash);color:var(--accent);font-weight:700;padding:.05em .35em;border-radius:2px">青</span> = 我们仓库里的代码
+<span style="color:var(--ink-faint)">灰</span> = vLLM 的代码
+虚线 = 有这条路但这次没走
+</p>
+
+<figure style="margin:0">
+<svg viewBox="0 0 680 1232" role="img" aria-label="chat 模式下从我们攒 messages 列表到引擎收到 token id 的完整流程" style="width:100%;height:auto;display:block">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="currentColor">
+
+  <!-- ============ 我们的三步 ============ -->
+  <g>
+    <rect x="18" y="16" width="440" height="81" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="16" width="3.5" height="81" fill="var(--accent)"/>
+    <text x="34" y="37" font-size="13" font-weight="700">我们攒 messages 列表</text>
+    <text x="34" y="55" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">run_appworld.py:85-87 / :94 / :106</text>
+    <text x="34" y="72" font-size="12">开局两条：system(SYSTEM 常量) + user(任务原文)</text>
+    <text x="34" y="89" font-size="12">每轮追加 assistant(content) 和 user(执行输出)</text>
+  </g>
+  <line x1="238" y1="99" x2="238" y2="123" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="127" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="127" width="3.5" height="64" fill="var(--accent)"/>
+    <text x="34" y="148" font-size="13" font-weight="700">交给 openai 客户端</text>
+    <text x="34" y="166" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">common.py:77-80</text>
+    <text x="34" y="183" font-size="12">reasoning_effort 走 extra_body 混进去</text>
+  </g>
+  <line x1="238" y1="193" x2="238" y2="217" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="221" width="440" height="81" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="221" width="3.5" height="81" fill="var(--accent)"/>
+    <text x="34" y="242" font-size="13" font-weight="700">发出去的 HTTP 请求</text>
+    <text x="34" y="260" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">POST /v1/chat/completions</text>
+    <text x="34" y="277" font-size="12">顶层就 5 个字段：messages、model、max_tokens、</text>
+    <text x="34" y="294" font-size="12">temperature、reasoning_effort（被摊平到顶层）</text>
+  </g>
+  <line x1="238" y1="304" x2="238" y2="342" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <line x1="18" y1="326" x2="662" y2="326" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="5 4"/>
+  <text x="662" y="320" font-size="11" text-anchor="end" fill-opacity=".55">网络边界 · 往下全在 vLLM 进程里</text>
+
+  <!-- ============ vLLM 的七步 ============ -->
+  <g>
+    <rect x="18" y="346" width="440" height="47" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="346" width="3.5" height="47" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="367" font-size="13" font-weight="700">路由收下，交给 chat 处理器</text>
+    <text x="34" y="385" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">chat_completion/api_router.py:40-62</text>
+  </g>
+  <line x1="238" y1="395" x2="238" y2="419" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="423" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="423" width="3.5" height="64" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="444" font-size="13" font-weight="700">岔路一：走不走 harmony</text>
+    <text x="34" y="462" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">renderers/online_renderer.py:73 · :154</text>
+    <text x="34" y="479" font-size="12">config.json 里 model_type 是 gpt_oss，判 True</text>
+  </g>
+  <line x1="458" y1="455" x2="474" y2="455" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+  <g opacity=".5">
+    <rect x="478" y="423" width="184" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="4 3"/>
+    <text x="490" y="443" font-size="11.5" font-weight="700">这次没走</text>
+    <text x="490" y="459" font-size="11">另一支才读 jinja 模板</text>
+    <text x="490" y="475" font-size="11">模型目录那份没用上</text>
+  </g>
+  <line x1="238" y1="489" x2="238" y2="513" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="517" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="517" width="3.5" height="64" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="538" font-size="13" font-weight="700">把打头那条 system 消息摘出来</text>
+    <text x="34" y="556" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">harmony_utils.py:281-309</text>
+    <text x="34" y="573" font-size="12">变成一个叫 instructions 的字符串，队列里少一条</text>
+  </g>
+  <line x1="238" y1="583" x2="238" y2="607" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="611" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="611" width="3.5" height="64" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="632" font-size="13" font-weight="700">岔路二：这段话落到哪条消息里</text>
+    <text x="34" y="650" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">harmony_utils.py:325-330</text>
+    <text x="34" y="667" font-size="12">环境变量默认 0，发射脚本没设 → 落进 developer</text>
+  </g>
+  <line x1="458" y1="643" x2="474" y2="643" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="4 3" marker-end="url(#ar)"/>
+  <g opacity=".5">
+    <rect x="478" y="611" width="184" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="4 3"/>
+    <text x="490" y="631" font-size="11.5" font-weight="700">这次没走</text>
+    <text x="490" y="647" font-size="11">环境变量设成 1，才会</text>
+    <text x="490" y="663" font-size="11">接在模型身份后面</text>
+  </g>
+  <line x1="238" y1="677" x2="238" y2="701" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="705" width="440" height="115" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="705" width="3.5" height="115" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="726" font-size="13" font-weight="700">造开场的两条消息</text>
+    <text x="34" y="744" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">harmony_utils.py:312-348</text>
+    <text x="34" y="761" font-size="12">① harmony 的 system 消息：模型身份、知识截止、</text>
+    <text x="34" y="778" font-size="12">　 当天日期（取自 datetime.now()）、Reasoning: high</text>
+    <text x="34" y="795" font-size="12">② harmony 的 developer 消息：# Instructions +</text>
+    <text x="34" y="812" font-size="12">　 我们 SYSTEM 常量的全文，一字不改</text>
+  </g>
+  <line x1="238" y1="822" x2="238" y2="846" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="850" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="850" width="3.5" height="64" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="871" font-size="13" font-weight="700">剩下的 user / assistant 逐条搬过来</text>
+    <text x="34" y="889" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">harmony_utils.py:351-446</text>
+    <text x="34" y="906" font-size="12">user 原样；assistant 被塞进 final 频道（:433-434）</text>
+  </g>
+  <line x1="238" y1="916" x2="238" y2="940" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="944" width="440" height="98" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="944" width="3.5" height="98" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="965" font-size="13" font-weight="700">渲染成 token id</text>
+    <text x="34" y="983" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">harmony_utils.py:449-457</text>
+    <text x="34" y="1000" font-size="12">harmony 编码器出串，尾巴留一个空的 assistant 开头</text>
+    <text x="34" y="1017" font-size="12">今天重渲第 0 步是 345 个 token，头三个 id：</text>
+    <text x="34" y="1034" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">200006  17360  200008</text>
+  </g>
+  <line x1="238" y1="1044" x2="238" y2="1068" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="1072" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="1072" width="3.5" height="64" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="1093" font-size="13" font-weight="700">打包送进引擎</text>
+    <text x="34" y="1111" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">online_renderer.py:220 → chat_completion/serving.py:363</text>
+    <text x="34" y="1128" font-size="12">tokens_input(...) 包一层，再 engine_client.generate</text>
+  </g>
+  <line x1="238" y1="1138" x2="238" y2="1162" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar)"/>
+
+  <g>
+    <rect x="18" y="1166" width="440" height="47" rx="4" fill="none" stroke="var(--flag)" stroke-opacity=".7"/>
+    <rect x="18" y="1166" width="3.5" height="47" fill="var(--flag)"/>
+    <text x="34" y="1187" font-size="13" font-weight="700" fill="var(--flag)">模型本体收到的是一串 token id</text>
+    <text x="34" y="1205" font-size="12">从头到尾没有"字符串 prompt"这个东西存在过</text>
+  </g>
+
+  </g>
+</svg>
+<figcaption class="src">chat 模式：我们的代码在第 3 步就结束了，之后每一步都是 vLLM 在替我们拼。</figcaption>
+</figure>
+
+<h2>拼完长什么样</h2>
+
+<p>把上图第 8～10 步的产物解回文字，第 0 步整段是这样（<span style="background:var(--accent-wash);color:var(--accent);font-weight:700;padding:.05em .35em;border-radius:2px">青底</span>是我们送过去的字，<span style="background:var(--flag-wash);color:var(--flag);padding:.05em .35em;border-radius:2px">琥珀底</span>是 vLLM 自己加的）：</p>
+
+<pre><code><span style="background:var(--flag-wash);color:var(--flag)">&lt;|start|&gt;system&lt;|message|&gt;You are ChatGPT, a large language model trained by OpenAI.
+Knowledge cutoff: 2024-06
+Current date: 2026-08-06
+
+Reasoning: high
+
+# Valid channels: analysis, commentary, final. Channel must be
+included for every message.&lt;|end|&gt;&lt;|start|&gt;developer&lt;|message|&gt;# Instructions
+
+</span><span style="background:var(--accent-wash);color:var(--accent);font-weight:700">You are an autonomous agent operating a phone-like environment on
+behalf of your supervisor.
+
+Rules:
+- Each turn, write exactly ONE ```python ... ``` code block. …
+  （SYSTEM 常量全文，此处略）
+- When the task is fully done, call apis.supervisor.complete_task()
+  (pass answer=... if the task asks a question).</span><span style="background:var(--flag-wash);color:var(--flag)">&lt;|end|&gt;&lt;|start|&gt;user&lt;|message|&gt;</span><span style="background:var(--accent-wash);color:var(--accent);font-weight:700">Task from supervisor: Give me a comma-separated list of top 4 most
+played r&amp;b song titles from across my Spotify song, album and
+playlist libraries.</span><span style="background:var(--flag-wash);color:var(--flag)">&lt;|end|&gt;&lt;|start|&gt;assistant</span></code></pre>
+<p class="src">2026-08-06 用 <code>envs/vllm-env</code> 里的 harmony 编码器按 <code>online_renderer.py:183-221</code> 同样的顺序重渲得到，345 个 token。任务原文取自 AppWorld <code>test_normal</code> 的一条。</p>
+
+<p>第 1 步开始，历史的 assistant 轮会带上频道标记，其余原样接在尾巴上：</p>
+
+<pre><code>…&lt;|end|&gt;<span style="background:var(--flag-wash);color:var(--flag)">&lt;|start|&gt;assistant&lt;|channel|&gt;final&lt;|message|&gt;</span><span style="background:var(--accent-wash);color:var(--accent);font-weight:700">I'll start by exploring the available apps.
+
+```python
+print(apis.api_docs.show_app_descriptions())
+```</span><span style="background:var(--flag-wash);color:var(--flag)">&lt;|end|&gt;&lt;|start|&gt;user&lt;|message|&gt;</span><span style="background:var(--accent-wash);color:var(--accent);font-weight:700">Execution output:
+[{'name': 'api_docs', 'description': 'An app to search and explore
+API documentation.'}]</span><span style="background:var(--flag-wash);color:var(--flag)">&lt;|end|&gt;&lt;|start|&gt;assistant</span></code></pre>
+<p class="src">同一次重渲的第 1 步，402 个 token。第 0 步那 345 个 token 是它的前缀，一个不差。</p>
+
+<h2>raw 模式：反过来，拼在我们这边</h2>
+
+<figure style="margin:0">
+<svg viewBox="0 0 680 286" role="img" aria-label="raw 模式下客户端自己拼好模板、服务端不再拼的三步流程" style="width:100%;height:auto;display:block">
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="currentColor">
+  <g>
+    <rect x="18" y="16" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="16" width="3.5" height="64" fill="var(--accent)"/>
+    <text x="34" y="37" font-size="13" font-weight="700">我们自己套 Qwen 模板</text>
+    <text x="34" y="55" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">common.py:29-35 build_prompt</text>
+    <text x="34" y="72" font-size="12">逐条包 &lt;|im_start|&gt;…&lt;|im_end|&gt;，末尾自己写 &lt;think&gt;</text>
+  </g>
+  <line x1="238" y1="82" x2="238" y2="106" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar2)"/>
+  <defs>
+    <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+    </marker>
+  </defs>
+
+  <g>
+    <rect x="18" y="110" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="110" width="3.5" height="64" fill="var(--accent)"/>
+    <text x="34" y="131" font-size="13" font-weight="700">送出去的是一整根字符串</text>
+    <text x="34" y="149" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">POST /v1/completions · common.py:56-59</text>
+    <text x="34" y="166" font-size="12">字段是 prompt，不是 messages；另带 stop</text>
+  </g>
+  <line x1="238" y1="176" x2="238" y2="200" stroke="currentColor" stroke-opacity=".5" marker-end="url(#ar2)"/>
+
+  <g>
+    <rect x="18" y="204" width="440" height="64" rx="4" fill="none" stroke="currentColor" stroke-opacity=".28"/>
+    <rect x="18" y="204" width="3.5" height="64" fill="currentColor" fill-opacity=".3"/>
+    <text x="34" y="225" font-size="13" font-weight="700">服务端不拼，直接切词</text>
+    <text x="34" y="243" font-size="11.5" font-family="ui-monospace, Menlo, monospace" fill-opacity=".62">render_completion 一路</text>
+    <text x="34" y="260" font-size="12">没有模板，没有 harmony，没有 developer 消息</text>
+  </g>
+  </g>
+</svg>
+<figcaption class="src">raw 模式：拼的活全在我们这边，服务端只负责把字符串切成 token。</figcaption>
+</figure>
+
+<div class="note">
+<p><strong>两条链的边界正好是反的。</strong>chat 模式我们交出去的是四条消息，最终 prompt 里有一整段（模型身份、当天日期、频道说明）我们从没写过；raw 模式最终 prompt 里每个字符都是我们敲的。<code>--api</code> 这一个开关，换的不是格式，是"谁来决定模型看到什么"。</p>
+</div>
+
+<h2>哪一格是不确定的</h2>
+
+<p>上图第 8 步里 <code>Current date</code> 那一行取自 <code>datetime.datetime.now()</code>。vLLM 自己在 <code>harmony_utils.py:134</code> 那儿留了一句注释：</p>
+
+<pre><code># NOTE(woosuk): This brings non-determinism in vLLM.
+# Set VLLM_SYSTEM_START_DATE to pin it.</code></pre>
+
+<p>发射脚本 <code>launch_vllm_awdiag.py</code> 没设 <code>VLLM_SYSTEM_START_DATE</code>。所以跨天重跑同一个任务，prompt 的第 3 行会变一个字，前面的 token 全都对不上——这是整条链里唯一一格我们的代码管不着的内容。</p>
+
+<div class="foot">
+<p><a class="local" href="../lessons/0002-two-numbers-for-one-prompt.html">← 第 2 课：同一段 prompt，服务报两个数</a></p>
+<p><a class="local" href="token-accounting.html">→ 速查卡：token 账</a></p>
+</div>
+
+</div>
+</body>
+</html>
