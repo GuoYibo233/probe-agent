@@ -56,6 +56,7 @@ PY = {
     "tau2":     str(ROOT / "envs/tau2-bench/.venv/bin/python"),
     "toolhop":  str(ROOT / "envs/toolhop-env/bin/python"),
     "stbserver": str(ROOT / "envs/stb-server-env/bin/python"),
+    "vllm":     str(ROOT / "envs/vllm-env/bin/python"),
     "bash":     "bash",
 }
 
@@ -438,6 +439,15 @@ TASKS = {
                "产物是渲染出来的,**不要手改**——下次重跑直接覆盖;要改改课页或 assets/",
                "--check 只校验产物与源同步(不同步退 3),发布前先跑它",
                "出口自检拦 doctype/body/相对路径/外链资源,有一样就退 2"]),
+    "build-token-walk": dict(
+        stage="ops", py="vllm", script="learn/vllm/build_token_walk.py",
+        desc="原始 token 流 -> 逐 token 步进课页的确定性转换器(纯 CPU;要 openai_harmony 解码)",
+        notes=["必给 --traj --toolcall --out;--traj 必须是 --api harmony 录的"
+               "(没有 out_token_ids 直接退 2)",
+               "跑在 vllm-env:只有它装了 openai_harmony",
+               "频道->去向的规则在这里重写了一遍,改 vllm 版本后要回头核"
+               "它和 vllm/parser/harmony.py:46-56 还对不对",
+               "产物是渲染出来的,**不要手改**;发布前再过 build-lesson-artifact"]),
 }
 
 # ---------------------------------------------------------------- 配方注册表
