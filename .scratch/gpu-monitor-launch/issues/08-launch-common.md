@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 探卡测试通过：空卡、占用中、探测超时三种输入对应三种返回
 - [ ] 登记测试通过：台账里出现 rich 分片全字段，重复 run_id 第二次调用被拒绝

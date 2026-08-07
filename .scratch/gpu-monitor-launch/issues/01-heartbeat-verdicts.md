@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 心跳测试通过：必填字段齐、选填不给不出现、parse 往返一致、垃圾行返回 None
 - [ ] 判定测试通过：六格每格至少一个用例，判定线下限、warm-up 上限、探测失败不判已挂、服务类四格都有边界用例
