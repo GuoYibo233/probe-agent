@@ -79,18 +79,21 @@ const REREVIEW_SCHEMA = {
   },
 }
 
-const P = args.promptDir
+// 有的运行时把 args 以 JSON 字符串送达（对象属性静默变 undefined），这里先归一化
+const A = typeof args === 'string' ? JSON.parse(args) : args
+
+const P = A.promptDir
 
 const implPrompt = (t, report) =>
   `先读实现者规程 ${P}/implementer.md 并严格照做。\n` +
-  `仓库根：${args.repo}。本单任务：工单文件 ${t.path}，它是唯一需求源，先读它；` +
-  `它引用 spec 的段落再去读 .scratch/${args.feature}/spec.md 对应节。\n` +
+  `仓库根：${A.repo}。本单任务：工单文件 ${t.path}，它是唯一需求源，先读它；` +
+  `它引用 spec 的段落再去读 .scratch/${A.feature}/spec.md 对应节。\n` +
   `动工前先 git rev-parse HEAD 记为 base。完整报告写到 ${report}。\n` +
   `commit 消息前缀 T${t.id}:。返回结构化字段（status/base/head/testSummary/concerns/reason）。`
 
 const reviewPrompt = (t, report, base, head) =>
   `先读评审规程 ${P}/reviewer.md 并严格照做。\n` +
-  `仓库根：${args.repo}。被审工单：${t.path}；实现者报告：${report}。\n` +
+  `仓库根：${A.repo}。被审工单：${t.path}；实现者报告：${report}。\n` +
   `diff 范围：${base}..${head}（git log --oneline / git diff --stat / git diff -U10 自己取）。\n` +
   `双裁决：spec 合规逐条对照工单要求，缺口记 critical finding；代码质量另查。\n` +
   `finding 的 id 用 F1、F2 顺序编号。返回 findings 与 cannotVerify 两个清单。`
@@ -98,14 +101,14 @@ const reviewPrompt = (t, report, base, head) =>
 const fixPrompt = (t, report, open, round) =>
   `先读实现者规程 ${P}/implementer.md。这是工单 T${t.id} 的修复第 ${round} 轮：` +
   `此前的实现者已做过这张工单，你现在接手。\n` +
-  `仓库根：${args.repo}。工单：${t.path}。先读 ${report} 了解已经做了什么、试过什么。\n` +
+  `仓库根：${A.repo}。工单：${t.path}。先读 ${report} 了解已经做了什么、试过什么。\n` +
   `未决 findings（逐条修掉，不许扩大范围重构）：\n${JSON.stringify(open, null, 2)}\n` +
   `修完重跑覆盖被改代码的测试，把修复报告（含每条 finding 怎么修的、测试命令与输出）` +
   `追加到 ${report}，逐单元 commit（前缀 T${t.id}:）。返回 head 与 testEvidence。`
 
 const reReviewPrompt = (t, report, open, fixBase, head) =>
   `先读复审规程 ${P}/re-reviewer.md 并严格照做。\n` +
-  `仓库根：${args.repo}。工单：${t.path}；报告（含修复记录）：${report}。\n` +
+  `仓库根：${A.repo}。工单：${t.path}；报告（含修复记录）：${report}。\n` +
   `修复 diff 范围：${fixBase}..${head}。只做两件事：` +
   `对下列 findings 逐条判 ADDRESSED/NOT_ADDRESSED，另把修复 diff 本身引入的新问题记 newFindings。\n` +
   `待判 findings：\n${JSON.stringify(open, null, 2)}\n` +
@@ -113,9 +116,9 @@ const reReviewPrompt = (t, report, open, fixBase, head) =>
 
 const results = []
 
-for (const t of args.tickets) {
+for (const t of A.tickets) {
   const ph = `T${t.id}`
-  const report = `${args.reportDir}/T${t.id}-report.md`
+  const report = `${A.reportDir}/T${t.id}-report.md`
 
   log(`T${t.id} 实现开始`)
   const impl = await agent(implPrompt(t, report), {
@@ -174,4 +177,4 @@ for (const t of args.tickets) {
   log(`T${t.id} 结束：${open.length ? 'CAP_TRIPPED' : 'DONE'}，修复 ${round} 轮`)
 }
 
-return { feature: args.feature, tickets: results }
+return { feature: A.feature, tickets: results }
