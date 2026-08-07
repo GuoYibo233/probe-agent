@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 采样器单轮走通
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 吞吐行解析测试通过：真实样本行抽出生成速率、prompt 速率和并发数，无匹配返回 None
 - [ ] 服务分片不走心跳解析，判定只由端口探测决定

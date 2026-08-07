@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 采样器单轮走通
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 没有采样器在跑的时候：警告行加老表照出，json 出口输出合法 JSON
 - [ ] 指一份假的最新采样文件：新表出得来，判定、进度、速率、ETA 各列都渲染

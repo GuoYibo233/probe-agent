@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 采样器单轮走通
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 网页测试通过：/json 与落盘文件一致，根路径 200 且正文含任务名、判定和最后采样时刻
 - [ ] 过期亮红的阈值从判定引擎的 DEFAULTS 生成进页面，不另抄一个数
