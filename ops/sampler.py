@@ -120,6 +120,53 @@ def read_incidents_tail(n=20):
     return out
 
 
+INCIDENT_PROMPT = """你是 new1 工程的事故 agent,只干"把实验办好"一件事,不写给人看的报告。
+事故: 任务 {job} 分片 {idx}(session {session},host {host},GPU {gpus})判定 {verdict}。
+日志: {log}
+先看现场: tail -c 8192 '{log}' | tr '\\r' '\\n' | tail -40
+台账 json: cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs json
+规则(不许越线):
+- {refire_clause}
+- 判定是 疑似卡死: 只读日志定位原因,禁止 kill 任何 session、禁止改任何文件。
+- 只碰这一个分片,别的任务一概不动。
+- 结束时输出一行: DONE <你做了什么,15 字内>。
+"""
+
+_REFIRE_ALLOWED_CLAUSE = (
+    "判定是 已挂: 读日志定位死因后补射一次: "
+    "`python3 run.py launch --refire {job} --idx {idx}`;"
+    "原卡被占(命令会报错)时 `python3 run.py gpu-jobs free` 挑空卡后加 "
+    "`--piece <host>:<gpus>` 重试一次")
+_REFIRE_DENIED_CLAUSE = "这个分片补射额度已用完: 只验尸,不许再发射任何东西"
+
+
+def should_trigger(row, ps):
+    """事故触发的纯函数规则(设计 §5,工单 12):`row["escalated"]` 为真,
+    且 `ps["incident_open"]` 为空才触发——同一次事故只拉一次 agent。
+    `allow_refire` = 判定是 已挂 且这个分片位还没补射过
+    (`ps["refires"] == 0`)。返回 (是否触发, 是否许补射)。"""
+    if not row.get("escalated"):
+        return False, False
+    if ps.get("incident_open"):
+        return False, False
+    allow_refire = (row["verdict"] == verdicts.V_DEAD
+                     and ps.get("refires", 0) == 0)
+    return True, allow_refire
+
+
+def build_incident_prompt(row, allow_refire):
+    """row + 补射许可 -> 事故 agent 的提示词(纯函数,工单 12)。"""
+    if allow_refire:
+        refire_clause = _REFIRE_ALLOWED_CLAUSE.format(
+            job=row["job"], idx=row["idx"])
+    else:
+        refire_clause = _REFIRE_DENIED_CLAUSE
+    return INCIDENT_PROMPT.format(
+        job=row["job"], idx=row["idx"], session=row.get("session"),
+        host=row.get("host"), gpus=row.get("gpus"), verdict=row["verdict"],
+        log=row.get("log"), refire_clause=refire_clause)
+
+
 def maybe_trigger_incidents(rows, st):
     """事故触发在 Task 14(工单 12)实装,这里先占位。"""
     pass
