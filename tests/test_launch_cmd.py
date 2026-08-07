@@ -1,5 +1,8 @@
 import io
+import os
+import shutil
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -8,6 +11,7 @@ from unittest.mock import MagicMock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "ops"))
 import launch_cmd as LCC  # noqa: E402
+import gpu_jobs  # noqa: E402
 
 
 def fake_task(**kw):
@@ -260,6 +264,93 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
             self.assertIn(key, pieces[0])
         self.assertEqual(pieces[0]["kind"], "batch")
         self.assertEqual(kwargs.get("note"), "测试")
+
+
+class TestCmdRefire(unittest.TestCase):
+    """补射(工单 10 验收项):活 session 拒绝,非 FREE 拒绝,成功路径台账分片
+    的 log/launched_at 更新且 cmd/session 不变、没有第二个任务出现。"""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp(prefix="launch_cmd_refire_")
+        self._orig_reg_path = gpu_jobs.REG_PATH
+        gpu_jobs.REG_PATH = os.path.join(self.tmpdir, "jobs.json")
+        gpu_jobs.mutate_reg(lambda reg: reg["active"].append({
+            "name": "rrun", "workdir": "/tmp/wd", "note": None,
+            "started_at": "2026-08-08 00:00",
+            "pieces": [{
+                "host": "tokyo106", "gpus": "0", "session": "new1_rrun_t106g0",
+                "log": "/tmp/wd/logs/new1_rrun_t106g0.log",
+                "cmd": "python3 foo.py --x 1", "launched_at": 1000.0,
+                "kind": "batch", "stall_line": None, "escalate_line": None,
+            }],
+        }))
+
+    def tearDown(self):
+        gpu_jobs.REG_PATH = self._orig_reg_path
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.has_session", return_value=True)
+    def test_alive_session_rejected(self, _hs, _gd):
+        with self.assertRaises(SystemExit):
+            LCC.cmd_launch(["--refire", "rrun", "--idx", "0"])
+        reg = gpu_jobs.load_reg()
+        self.assertEqual(reg["active"][0]["pieces"][0]["launched_at"], 1000.0)
+
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.probe_free", return_value=(False, "占用中: 1, 1 MiB"))
+    @patch("launch_cmd.LC.has_session", return_value=False)
+    def test_non_free_rejected(self, _hs, _pf, _gd):
+        with self.assertRaises(SystemExit):
+            LCC.cmd_launch(["--refire", "rrun", "--idx", "0"])
+        reg = gpu_jobs.load_reg()
+        self.assertEqual(reg["active"][0]["pieces"][0]["launched_at"], 1000.0)
+
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=False)
+    def test_success_updates_piece_no_new_job(self, _hs, _pf, _gd, mtmux):
+        rc = LCC.cmd_launch(["--refire", "rrun", "--idx", "0"])
+        self.assertEqual(rc, 0)
+        mtmux.assert_called_once()
+        host, sess, inner = mtmux.call_args[0]
+        self.assertEqual(host, "tokyo106")
+        self.assertEqual(sess, "new1_rrun_t106g0")
+        self.assertIn("python3 foo.py --x 1", inner)
+
+        reg = gpu_jobs.load_reg()
+        self.assertEqual(len(reg["active"]), 1)  # 补射不是新任务,没有第二个 job
+        job = reg["active"][0]
+        self.assertEqual(job["name"], "rrun")
+        piece = job["pieces"][0]
+        self.assertEqual(piece["cmd"], "python3 foo.py --x 1")  # 命令不变
+        self.assertEqual(piece["session"], "new1_rrun_t106g0")  # session 名不变
+        self.assertNotEqual(piece["log"], "/tmp/wd/logs/new1_rrun_t106g0.log")
+        self.assertGreater(piece["launched_at"], 1000.0)
+
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=False)
+    def test_piece_override_changes_target_gpu(self, _hs, mprobe, _gd, mtmux):
+        rc = LCC.cmd_launch(
+            ["--refire", "rrun", "--idx", "0", "--piece", "tokyo107:2"])
+        self.assertEqual(rc, 0)
+        mprobe.assert_called_once_with("tokyo107", "2")
+        piece = gpu_jobs.load_reg()["active"][0]["pieces"][0]
+        self.assertEqual(piece["host"], "tokyo107")
+        self.assertEqual(piece["gpus"], "2")
+
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    def test_unknown_run_id_rejected(self, _gd):
+        with self.assertRaises(SystemExit):
+            LCC.cmd_launch(["--refire", "no-such-run", "--idx", "0"])
+
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    def test_idx_out_of_range_rejected(self, _gd):
+        with self.assertRaises(SystemExit):
+            LCC.cmd_launch(["--refire", "rrun", "--idx", "5"])
 
 
 if __name__ == "__main__":

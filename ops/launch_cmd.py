@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """`run.py launch` 子命令(工单 09,实施计划 Task 11):一条命令把发射走完。
+补射模式(工单 10,实施计划 Task 12)见文末 `cmd_refire`。
 
 流程钉死成十步(计划文档的顺序,一步不许换序):
   1. 手写参数解析(gpu_jobs.py 的 iter 风格;未知参数留给任务透传,
@@ -38,6 +39,8 @@ from run import TASKS, build_cmd, gate_dirty, tail_of  # noqa: E402
 
 sys.path.insert(0, str(OPS_DIR))
 import launch_common as LC  # noqa: E402
+import gpu_jobs  # noqa: E402
+import sampler as SAMP  # noqa: E402
 
 ALIVE_WINDOW_S = 30
 ALIVE_POLL_S = 5
@@ -220,6 +223,8 @@ def verify_alive(pieces, window_s=ALIVE_WINDOW_S, poll_s=ALIVE_POLL_S):
 
 
 def cmd_launch(argv):
+    if "--refire" in argv:
+        return cmd_refire(argv)
     p = parse_launch_argv(argv)
 
     t = None
@@ -299,4 +304,97 @@ def cmd_launch(argv):
     print(receipt)
     print("\n监控: python3 run.py gpu-jobs  /  python3 run.py gpu-jobs watch  /"
           "  网页 http://localhost:8377(ssh 端口转发)")
+    return 0
+
+
+def parse_refire_argv(argv):
+    """补射模式的参数解析(工单 10)。返回 dict:
+    run_id / idx(int) / piece(str|None,'host:gpus') / allow_dirty(bool)。
+    只认这四个旗标——补射不是新任务,不接受 launch 正常模式的其余参数。"""
+    p = dict(run_id=None, idx=None, piece=None, allow_dirty=False)
+    it = iter(argv)
+    for a in it:
+        if a == "--refire":
+            p["run_id"] = _need(it, a)
+        elif a == "--idx":
+            p["idx"] = int(_need(it, a))
+        elif a == "--piece":
+            p["piece"] = _need(it, a)
+        elif a == "--allow-dirty":
+            p["allow_dirty"] = True
+        else:
+            raise SystemExit(f"--refire 模式不认识的参数: {a!r}"
+                              "(只认 --refire/--idx/--piece/--allow-dirty)")
+    return p
+
+
+def cmd_refire(argv):
+    """`run.py launch --refire <run_id> --idx <分片号> [--piece host:gpus]
+    [--allow-dirty]`(工单 10,实施计划 Task 12)。
+
+    活 session 拒绝 → 目标卡(--piece 给的或原卡)实探非 FREE 拒绝 → 台账里
+    piece 存的 cmd 原样重发(session 名不变,log 换新文件) → 台账该 piece 的
+    host/gpus/log/launched_at 就地更新。不新开 record、不重复 register——
+    补射不是新任务,登记只有台账这一处要动。采样器看到 launched_at 变了
+    自动重开该分片的心跳时间轴并 refires+=1(工单 02/Task 6 已实现)。
+    """
+    p = parse_refire_argv(argv)
+    if not p["run_id"]:
+        raise SystemExit("--refire 后面要跟 run_id(要补射的台账任务名)")
+    if p["idx"] is None:
+        raise SystemExit("补射要 --idx <分片号>(台账里 pieces 的下标)")
+
+    dirty_probe = ["--allow-dirty"] if p["allow_dirty"] else []
+    gate_dirty(dirty_probe, honor_dry=True)
+
+    reg = gpu_jobs.load_reg()
+    job = next((j for j in reg["active"] if j["name"] == p["run_id"]), None)
+    if job is None:
+        raise SystemExit(f"台账里没有 active 任务 {p['run_id']!r}")
+    pieces = job["pieces"]
+    if not (0 <= p["idx"] < len(pieces)):
+        raise SystemExit(
+            f"{p['run_id']} 只有 {len(pieces)} 个分片,--idx {p['idx']} 越界")
+    piece = pieces[p["idx"]]
+
+    if LC.has_session(piece["host"], piece["session"]):
+        raise SystemExit(
+            f"{piece['session']}({piece['host']}) 还活着,补射只对死分片"
+            "(活 session 不许补射)")
+
+    if p["piece"]:
+        if ":" not in p["piece"]:
+            raise SystemExit(f"--piece 要 host:gpus 形式,给的是 {p['piece']!r}")
+        host, gpus = p["piece"].split(":", 1)
+    else:
+        host, gpus = piece["host"], piece["gpus"]
+
+    ok, why = LC.probe_free(host, gpus)
+    if not ok:
+        raise SystemExit(
+            f"目标卡 {host}:{gpus} 非 FREE,补射拒绝({why});"
+            "拿这个报错换卡,加 --piece host:gpus 重试")
+
+    st = SAMP.load_state()
+    refires = st.get(SAMP.piece_key(p["run_id"], p["idx"]), {}).get("refires", 0)
+    sess = piece["session"]
+    new_log = str(Path(piece["log"]).parent / f"{sess}.r{refires + 1}.log")
+    Path(new_log).parent.mkdir(parents=True, exist_ok=True)
+    inner = build_inner(piece["cmd"], job["workdir"], gpus, new_log)
+    LC.tmux_launch(host, sess, inner)
+
+    now = time.time()
+
+    def _mutate(reg2):
+        job2 = next(j for j in reg2["active"] if j["name"] == p["run_id"])
+        piece2 = job2["pieces"][p["idx"]]
+        piece2["host"] = host
+        piece2["gpus"] = gpus
+        piece2["log"] = new_log
+        piece2["launched_at"] = now
+
+    gpu_jobs.mutate_reg(_mutate)
+
+    print(f"补射: {p['run_id']}#{p['idx']} ({sess}) {host}:{gpus} "
+          f"log={new_log}")
     return 0
