@@ -53,6 +53,9 @@ from train_mbert_extract import (FIND, collate, decode,  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_tool import RISK_TARGETS, THETAS               # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat                                          # noqa: E402
+
 TIERS = ("无参", "选择", "自由")
 SPORK_ANCHOR = 0.076        # 竞品 SPORK 参数起步正确率
 PILOT_ANCHOR = 0.338        # 先行试点:提前 25 token 时字面串已出现比例
@@ -109,6 +112,7 @@ def replay_fire(rows, probs, theta, nro_id=None):
 def run_extractor(model, tok, meta, items, dev, bs):
     """items=[(str,value,gs,ge,found)] -> [(loose_ok, strict_ok, pred_ans)]。"""
     out = []
+    heartbeat.emit(0, len(items), "item")
     for i in range(0, len(items), bs):
         chunk = [(s, v, gs, ge, f, 1.0) for s, v, gs, ge, f in items[i:i + bs]]
         b = collate(chunk, tok, meta["max_len"])
@@ -125,6 +129,7 @@ def run_extractor(model, tok, meta, items, dev, bs):
                         pa and b["strs"][j][c0:c1] == b["vals"][j], pa))
         if (i // bs) % 20 == 0:
             print(f"extracted {i}/{len(items)}", flush=True)
+            heartbeat.emit(i, len(items), "item")
     return out
 
 
@@ -601,6 +606,7 @@ def main():
                "这一列才是\"让探针自己决定何时发射\"的真成绩。",
                "- 右列只看真值 ready 的开火点,用来和上面那张旧模式的表对照读。"]
     (ext / "EXTRACT_REPORT.md").write_text("\n".join(md) + "\n")
+    heartbeat.emit(cnts["n_par"], cnts["n_par"], "item", status="done")
     if old_mode:
         print(json.dumps(out["overall"], ensure_ascii=False, indent=1))
     if sf is not None and sf["test"] is not None:

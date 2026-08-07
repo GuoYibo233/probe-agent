@@ -43,6 +43,9 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
 import readonly_map                                    # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat                                       # noqa: E402
+
 SEED = 20260729
 THETAS = [round(0.5 + 0.025 * i, 3) for i in range(20)]  # 0.5 .. 0.975
 RISK_TARGETS = [0.10, 0.05]        # 触发错误率约束(=精度 0.90/0.95)
@@ -59,6 +62,7 @@ def score(model, tok, rows, dev, bs=16, max_len=4096):
     """返回每行的 logits(np 数组顺序与 rows 一致)。"""
     out = []
     model.eval()
+    heartbeat.emit(0, len(rows), "item")
     for i in range(0, len(rows), bs):
         texts = [r["text"] for r in rows[i:i + bs]]
         enc = tok(texts, truncation=True, max_length=max_len,
@@ -67,6 +71,7 @@ def score(model, tok, rows, dev, bs=16, max_len=4096):
         out.append(model(**enc).logits.float().cpu())
         if (i // bs) % 50 == 0:
             print(f"scored {i}/{len(rows)}", flush=True)
+            heartbeat.emit(i, len(rows), "item")
     return torch.cat(out)
 
 
@@ -121,6 +126,7 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
     n_lab = head.out_features
     out = torch.zeros(len(rows), n_lab)
     n_oow = 0                                    # 左截窗口外的边界数
+    heartbeat.emit(0, len(events), "item")
     for s in range(0, len(events), bs):
         chunk = events[s:s + bs]
         enc = tok([e[0] for e in chunk], truncation=True, max_length=max_len,
@@ -151,6 +157,7 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
                 out[torch.tensor(idxs)] = lg.cpu()
         if (s // bs) % 25 == 0:
             print(f"scored {s}/{len(events)} events", flush=True)
+            heartbeat.emit(s, len(events), "item")
     print(f"边界总数 {len(rows)},左截窗口外(全零 logits,永不触发) {n_oow}",
           flush=True)
     return out
@@ -582,6 +589,7 @@ def main():
                f"- 口径:两边都用 {rep.get('probe_backbone')} 底座的 tokenizer 计数,"
                "不计 max_len 截断;只算探针读进去的 token,不含 agent 自身生成。"]
     (rep_dir / "REPLAY_REPORT.md").write_text("\n".join(md) + "\n")
+    heartbeat.emit(len(rows_t), len(rows_t), "item", status="done")
     print(json.dumps(rep["test_frozen"], indent=1))
 
 
