@@ -10,7 +10,7 @@ description: new1 论文写作与 LaTeX 工程的唯一入口。覆盖起草/改
 # paper-write：new1 论文写作流程
 
 分工先说死：本 skill 只管**机械层**（模板/编译/检查/溯源）；**文风层**归
-humanizer-zh + humanizer-gyb（写正文时叠加使用），**格式规则本体**在
+humanizer-gyb（写正文之前把 skill 全文读一遍），**格式规则本体**在
 `paper/FORMATTING.md`（ACLPUB 对照表，写前先读一遍相关小节），
 **章节结构**按 `references/writing-structure.md`（intro 七问、两条审稿红线、
 related work 段落定式——写 intro/related work 前必过一遍）。
