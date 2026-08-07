@@ -57,6 +57,11 @@ from transformers import (AutoTokenizer, ModernBertModel,
 
 import readonly_map
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat
+
 
 MODEL = "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base"
 SEED = 20260729
@@ -472,6 +477,7 @@ def main():
                 fire_ready_train=fire_st["train"]["frac_ready"],
                 fire_ready_val=fire_st["val"]["frac_ready"])
            if args.fire_head else {}))
+    heartbeat.emit(0, steps, "step")
 
     best, gstep, cutsum = -1.0, 0, 0
     neg = torch.finfo(torch.float32).min
@@ -517,6 +523,8 @@ def main():
                     log(event="step", ep=ep, gstep=gstep,
                         loss=round(run / (50 * args.accum), 4),
                         ips=round((i + 1) * args.bs / (time.time() - t0), 1))
+                    heartbeat.emit(gstep, steps, "step",
+                                   loss=round(run / (50 * args.accum), 4))
                     run = 0.0
         aacc, sl, ss, tacc = evaluate(model, ev_dl, dev, amp)
         fkw = {}
@@ -544,6 +552,7 @@ def main():
             log(event="save_best", ep=ep, acc=round(best, 4))
     log(event="done", best_calA_param_acc=round(best, 4),
         truncated_spans=cutsum)
+    heartbeat.emit(gstep, steps, "step", status="done")
 
 
 if __name__ == "__main__":
