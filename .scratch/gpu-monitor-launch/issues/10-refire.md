@@ -4,7 +4,7 @@
 
 **Blocked by:** 09 launch 子命令
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 测试通过：活 session 拒绝，非 FREE 拒绝，成功路径台账分片的日志和 launched_at 更新且命令不变、没有第二个任务出现
 - [ ] commit

@@ -165,3 +165,105 @@ $ python3 run.py launch collect-aw --run-id smoke_x --track smoke \
 - 没有发射任何真实 GPU 进程或 tmux session,`probe_free`/`tmux_launch`/
   `register_all`/网络调用在测试里全部 mock,没有触碰真实台账
   (`ops/jobs.json`)、`ops/runs.jsonl`、任何 GPU 机器。
+
+## 修复轮 1(2026-08-08)
+
+评审揪出一条 important finding:
+
+### F1 — 同机同卡去重只查字符串完全相同,重叠的 GPU 段不拦
+
+**问题**:`build_pieces()` 原来的判重逻辑是 `key = (host, gpus)` 存进
+`seen` 这个 set,`gpus` 用的是 `--piece` 里冒号后半段的原始字符串。两个
+`--piece` 只有字符串**完全相同**才会被拦(`tokyo106:0` 和 `tokyo106:0`)。
+但一个 piece 可以是多卡串(如 `tokyo108:0,1`,`test_session_name_format`
+测试里已经在用这种形式),`--piece tokyo106:0,1 --piece tokyo106:1,2`
+两个字符串不相等,不会被拒绝,而它们在 gpu1 上是真实重叠的——会把两个进程
+同时发到同一张卡上,这是发射前验卡(`probe_free`)之外的一处静默漏判。
+
+**怎么修的**:`ops/launch_cmd.py` 的 `build_pieces()` 里,把 `seen = set()`
++ 字符串 key 精确匹配,换成按 host 累积一个"已占用 gpu id 集合"
+(`claimed_by_host: dict[host] -> set[gpu_id]`)。每个新 `--piece` 先把
+`gpus` 按逗号拆成 gpu id 的 set,与该 host 已经累积的集合求交集;交集非空
+就 `SystemExit`(报出具体冲突的 gpu id),交集为空就把这些 id 并入累积
+集合继续。这个改法同时覆盖了原来的精确重复场景(完全重复必然交集非空)
+和新发现的部分重叠场景,也不会误伤同机不重叠的卡(如 `0,1` 与 `2,3`
+应当放行)。报错文案沿用原来的措辞("同机同卡两个分片会互相踩,拆成不同
+卡或分开发射"),只是判定条件从字符串相等换成了集合求交。
+
+改动范围只有 `build_pieces()` 内部这一段判重逻辑,函数签名、返回结构、
+调用方 `cmd_launch()` 都没动,没有扩大范围重构。
+
+**测试**:在 `tests/test_launch_cmd.py` 的 `TestBuildPieces` 里补两条:
+
+- `test_overlapping_multi_gpu_pieces_rejected`:`tokyo106:0,1` +
+  `tokyo106:1,2`(重叠 gpu1)应当 `SystemExit`。
+- `test_disjoint_multi_gpu_pieces_same_host_allowed`:`tokyo106:0,1` +
+  `tokyo106:2,3`(不重叠)应当放行,产出 2 个 piece。
+
+原有的 `test_duplicate_host_gpu_piece_rejected`(完全重复的
+`tokyo106:0` + `tokyo106:0`)不改,验证新逻辑没有回退旧场景。
+
+```
+$ python3 -m unittest tests.test_launch_cmd -v
+```
+```
+test_cmd_mode_command_verbatim_no_registry (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_disjoint_multi_gpu_pieces_same_host_allowed (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_duplicate_host_gpu_piece_rejected (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_no_piece_rejected (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_non_shardable_rejects_multi_piece (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_overlapping_multi_gpu_pieces_rejected (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_session_name_format (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_shardable_two_pieces_get_shard_flags (tests.test_launch_cmd.TestBuildPieces) ... ok
+test_dry_run_does_not_probe_or_launch (tests.test_launch_cmd.TestCmdLaunchDryRun) ... ok
+test_dry_run_prints_shard_commands_and_skips_register (tests.test_launch_cmd.TestCmdLaunchDryRun) ... ok
+test_non_free_piece_rejects_all_and_no_register (tests.test_launch_cmd.TestCmdLaunchFullFlow) ... ok
+test_success_registers_rich_pieces (tests.test_launch_cmd.TestCmdLaunchFullFlow) ... ok
+test_verify_alive_failure_skips_register (tests.test_launch_cmd.TestCmdLaunchFullFlow) ... ok
+test_missing_run_id_rejected (tests.test_launch_cmd.TestCmdLaunchValidation) ... ok
+test_missing_track_rejected (tests.test_launch_cmd.TestCmdLaunchValidation) ... ok
+test_unknown_task_rejected (tests.test_launch_cmd.TestCmdLaunchValidation) ... ok
+test_cmd_mode_flags (tests.test_launch_cmd.TestParseLaunchArgv) ... ok
+test_task_positional_and_flags (tests.test_launch_cmd.TestParseLaunchArgv) ... ok
+test_fails_on_traceback_in_tail (tests.test_launch_cmd.TestVerifyAlive) ... ok
+test_fails_when_session_gone (tests.test_launch_cmd.TestVerifyAlive) ... ok
+test_ok_when_alive_and_no_traceback (tests.test_launch_cmd.TestVerifyAlive) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.314s
+
+OK
+```
+
+```
+$ python3 -m unittest discover -s tests -v   # 全仓测试
+```
+```
+Ran 56 tests in 0.551s
+
+OK
+```
+(比修复前多 2 条,即新补的两条重叠/不重叠测试;其余用例的输出行原样不变。)
+
+```
+$ python3 run.py selfcheck
+```
+在这个修复轮的工作树(`/home/y-guo/reproduce/new1-wt/20260808-par-T09-fix1`)
+里跑,输出 `16 处缺失`,与 T09 首轮报告记录的一致——16 条全部是
+`envs/*/venv`、`cprobe-env`、`mbert-env` 等第三方 venv 目录在这个新建的
+`git worktree` 里天然不存在(不进 git),不是这次改动引入的问题。在主仓
+工作树(`/home/y-guo/reproduce/new1`)跑同一条命令确认为 `全部就位`。
+
+### commit 清单(修复轮 1)
+
+- `0160809` — `T09: 修复 F1——同机同卡去重改按 GPU 集合重叠判定,不再只查字符串相等`
+  改动:`ops/launch_cmd.py`(`build_pieces()` 判重逻辑)、
+  `tests/test_launch_cmd.py`(补两条重叠/不重叠测试)。
+
+### 自查发现与存疑(修复轮 1)
+
+- 只改了 `build_pieces()` 里判重这一段,没有动分片注入、session 命名、
+  `--cmd` 模式等其它逻辑,没有借机重构或顺手改工单没点名的地方。
+- gpu id 按逗号拆分后没有做数字合法性校验(比如 `"0,1,"` 会拆出一个空
+  字符串),但原来的代码在这块也没做校验,不在这条 finding 的修复范围内,
+  没有顺手加。
