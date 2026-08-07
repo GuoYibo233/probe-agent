@@ -4,8 +4,12 @@
 
 **Blocked by:** 08 发射公共件
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 分片注入测试通过：两个分片注入编号 0 和 1，非 shardable 多分片拒绝，同机同卡两个分片拒绝
 - [ ] dry-run 冒烟：采集任务两分片打出两条带分片编号的完整命令，登记函数没被调
 - [ ] `python3 run.py selfcheck` 通过（launch 挂进 run.py），commit
+
+## Comments
+
+- 2026-08-08 主会话转记（来自 T08 收账，实现时要对上的两条接口约定）：其一，launch_common.register_all 在 monitor=None 时不写 job 的 monitor key（消费端 job.get("monitor",{}) 才不炸），T09 传 monitor 参数要符合这个约定；其二，多分片时 register_all 调 record.py start 的 --host/--gpu/--log 是逗号拼接的展示串，T09 产出第一个真实多分片调用后，主会话要肉眼核对一次 RESULTS.md 的渲染效果。

@@ -4,7 +4,7 @@
 
 **Blocked by:** 08 发射公共件
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 两个发射器 dry-run 照常打印
 - [ ] 全量单测绿（公共件的测试覆盖登记路径）
