@@ -80,8 +80,11 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
     中止(不吞异常)。
 
     ①台账:直接把 pieces(每个已经是 rich piece——host/gpus/session/log/cmd/
-    launched_at/kind/stall_line/escalate_line)append 成一个 job；job 级字段
-    `monitor`(给了才写,采样器缺省会退到 verdicts.DEFAULTS)与 `note`。
+    launched_at/kind/stall_line/escalate_line/task)append 成一个 job；job 级字段
+    `monitor`(给了才写,采样器缺省会退到 verdicts.DEFAULTS)与 `note`。piece 只存
+    `task`(任务名,补射时反查 `TASKS[task]["env"]` 用),不存 env 实际键值——
+    env 可能带密钥,原值只活在发射当次的进程局部变量里,不落进这份 git 追踪
+    的台账文件(finding N1,2026-08-08)。
     重复 run_id(台账里已有同名 job)拒绝——护栏,不是障碍。
 
     ②实验记录:`ops/record.py start` 起子进程(隔离它自己的 sys.exit);多分片

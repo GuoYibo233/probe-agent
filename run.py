@@ -11,6 +11,9 @@
   python3 run.py selfcheck             # 注册表体检:解释器/脚本/配方引用齐不齐
   python3 run.py launch <task>|--cmd '<cmd>' --run-id ID --track T --piece host:gpus [...]
                                         # 一条命令发射:验卡→tmux→验活→三处登记(工单 09)
+  python3 run.py launch --refire RUN_ID --idx N [--piece host:gpus] [--allow-dirty]
+                                        # 补射:台账死分片按原命令重发,只改台账
+                                        # 该 piece 的四元组,不新开 record(工单 10)
 
 三条分派规矩:
 - CPU 任务直跑:subprocess, cwd=ROOT, 解释器按注册表(venv 绝对路径)。
