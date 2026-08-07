@@ -6,9 +6,12 @@
 用法: sampler.py [--once] [--interval 60] [--port 8377](网页 Task 7 加)
 """
 import argparse
+import html
+import http.server
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -358,13 +361,212 @@ def sample_once():
     return latest
 
 
+def _load_latest_from(monitor_dir):
+    """网页出口读落盘文件,不碰采样线程的内存(设计 §3)——latest.json
+    不在/坏了返回 None,调用方渲染"无采样"占位,不许报错。"""
+    p = Path(monitor_dir) / "latest.json"
+    try:
+        return json.loads(p.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def render_html(latest):
+    """采样结果(latest.json 的内容,或 None) -> 任务表网页,纯函数不做
+    IO。表列:JOB/分片/HOST/GPU/判定/进度/速率/token/ETA/SESSION。
+    30 秒 <meta refresh>;过期亮红的阈值 = sample_interval_s * 3,从
+    verdicts.DEFAULTS 生成进页面,不另抄一个数(工单 06 验收要求)。"""
+    stale_after_s = verdicts.DEFAULTS["sample_interval_s"] * 3
+
+    def esc(x):
+        return html.escape("" if x is None else str(x))
+
+    def fmt_rate(r):
+        return "-" if r is None else f"{r:.4g}/s"
+
+    def fmt_tok(v):
+        return "-" if v is None else str(v)
+
+    def fmt_eta(v):
+        if v is None:
+            return "-"
+        m, s = divmod(max(0, int(v)), 60)
+        h, m = divmod(m, 60)
+        return f"{h:02d}:{m:02d}"
+
+    if latest is None:
+        body = "<p>无采样:latest.json 不在或读不了,采样器可能没起。</p>"
+        sampled_at_js = "null"
+        stamp = "-"
+    else:
+        sampled_at = latest.get("sampled_at")
+        stamp = (time.strftime("%H:%M:%S", time.localtime(sampled_at))
+                 if sampled_at else "-")
+        sampled_at_js = "null" if sampled_at is None else repr(sampled_at)
+
+        row_lines = []
+        for r in latest.get("rows", []):
+            pct = ("-" if r.get("progress_pct") is None
+                   else f"{r['progress_pct']}%")
+            tok = f"{fmt_tok(r.get('tok_in'))}/{fmt_tok(r.get('tok_out'))}"
+            row_lines.append(
+                "<tr><td>{job}</td><td>{idx}</td><td>{host}</td>"
+                "<td>{gpus}</td><td>{verdict}</td><td>{pct}</td>"
+                "<td>{rate}</td><td>{tok}</td><td>{eta}</td>"
+                "<td>{sess}</td></tr>".format(
+                    job=esc(r.get("job")), idx=esc(r.get("idx")),
+                    host=esc(r.get("host")), gpus=esc(r.get("gpus")),
+                    verdict=esc(r.get("verdict")), pct=esc(pct),
+                    rate=fmt_rate(r.get("recent_rate")), tok=esc(tok),
+                    eta=fmt_eta(r.get("eta_s")),
+                    sess=esc(r.get("session"))))
+        rows_body = ("\n".join(row_lines) if row_lines else
+                     "<tr><td colspan=10>当前没有登记在跑的任务</td></tr>")
+
+        incident_lines = []
+        for inc in latest.get("incidents_tail", []):
+            t = inc.get("t")
+            t_str = (time.strftime("%H:%M:%S", time.localtime(t))
+                     if t else "-")
+            incident_lines.append(
+                "<li>[{t}] {job}#{idx} {verdict}: {note}</li>".format(
+                    t=esc(t_str), job=esc(inc.get("job")),
+                    idx=esc(inc.get("idx")), verdict=esc(inc.get("verdict")),
+                    note=esc(inc.get("note"))))
+        incidents_body = ("\n".join(incident_lines) if incident_lines else
+                          "<li>没有事故记录</li>")
+
+        extras_lines = []
+        for h_name, sessions in latest.get("extras", {}).items():
+            extras_lines.append(
+                "<li>{h}: {s}</li>".format(
+                    h=esc(h_name), s=esc(", ".join(sessions))))
+        extras_body = ("\n".join(extras_lines) if extras_lines else
+                        "<li>没有台账外 session</li>")
+
+        body = f"""
+<h2>任务表</h2>
+<table border="1" cellspacing="0" cellpadding="4">
+<tr><th>JOB</th><th>分片</th><th>HOST</th><th>GPU</th><th>判定</th>
+<th>进度</th><th>速率</th><th>token</th><th>ETA</th><th>SESSION</th></tr>
+{rows_body}
+</table>
+<h2>事故记录</h2>
+<ul>{incidents_body}</ul>
+<h2>台账外 session</h2>
+<ul>{extras_body}</ul>
+"""
+
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="30">
+<title>new1 长程任务监控</title>
+<style>
+  body {{ font-family: sans-serif; }}
+  #banner {{ padding: 6px 10px; margin-bottom: 10px; background: #eee; }}
+  #banner.stale {{ background: #f88; color: #300; font-weight: bold; }}
+  table {{ border-collapse: collapse; }}
+  th, td {{ padding: 4px 8px; }}
+</style>
+</head>
+<body>
+<div id="banner">最后采样 {esc(stamp)}</div>
+{body}
+<script>
+(function () {{
+  var sampledAt = {sampled_at_js};
+  var staleAfterS = {stale_after_s};
+  function tick() {{
+    var banner = document.getElementById("banner");
+    if (sampledAt === null) {{
+      banner.classList.add("stale");
+      return;
+    }}
+    var ageS = (Date.now() / 1000) - sampledAt;
+    if (ageS > staleAfterS) {{
+      banner.classList.add("stale");
+    }} else {{
+      banner.classList.remove("stale");
+    }}
+  }}
+  tick();
+  setInterval(tick, 5000);
+}})();
+</script>
+</body></html>
+"""
+
+
+class _WebHandler(http.server.BaseHTTPRequestHandler):
+    """monitor_dir 由 WebServer 用子类动态挂上去(类属性,handler 每次
+    请求都是新实例,没法走 __init__ 传参)。"""
+    monitor_dir = None
+
+    def log_message(self, fmt, *args):
+        pass  # 访问日志没必要污染采样器的 stderr
+
+    def do_GET(self):
+        latest = _load_latest_from(self.monitor_dir)
+        if self.path == "/json":
+            if latest is None:
+                self._send(503, b'{"error": "not sampled yet"}',
+                            "application/json")
+            else:
+                body = json.dumps(latest, ensure_ascii=False).encode("utf-8")
+                self._send(200, body, "application/json")
+            return
+        body = render_html(latest).encode("utf-8")
+        self._send(200, body, "text/html; charset=utf-8")
+
+    def _send(self, status, body, content_type):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class WebServer:
+    """采样器网页出口(工单 06):独立线程,do_GET 每次现读 monitor_dir/
+    latest.json,不碰采样线程的内存——采样那边 ssh 卡住不影响出页
+    (设计 §3)。/ 出任务表网页,/json 出 latest.json 原文。"""
+
+    def __init__(self, port, monitor_dir):
+        handler = type("_BoundHandler", (_WebHandler,),
+                        {"monitor_dir": Path(monitor_dir)})
+        self.httpd = http.server.ThreadingHTTPServer(("", port), handler)
+        self._thread = None
+
+    @property
+    def server_address(self):
+        return self.httpd.server_address
+
+    def start(self):
+        self._thread = threading.Thread(
+            target=self.httpd.serve_forever, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true",
                     help="采一轮就退(冒烟用)")
     ap.add_argument("--interval", type=float,
                     default=verdicts.DEFAULTS["sample_interval_s"])
+    ap.add_argument("--port", type=int, default=8377,
+                    help="网页/json 出口端口(工单 06)")
     a = ap.parse_args()
+    web = None
+    if not a.once:
+        web = WebServer(port=a.port, monitor_dir=MONITOR_DIR)
+        web.start()
+        print(f"[sampler] web on :{a.port}", file=sys.stderr, flush=True)
     while True:
         t0 = time.monotonic()
         try:
@@ -374,6 +576,8 @@ def main():
         if a.once:
             break
         time.sleep(max(1.0, a.interval - (time.monotonic() - t0)))
+    if web is not None:
+        web.stop()
     return 0
 
 
