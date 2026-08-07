@@ -1,6 +1,6 @@
 ---
 name: gpu-run
-description: new1 工程内运行任何 GPU 程序的唯一入口——全生命周期一条龙：读慢变量档案 → 实探空卡 → 挑卡分片 → smoke → tmux 发射 → 登记台账 → 告诉用户自助监控命令 → 定时巡检 → 结束收尾（汇报+释放显存+销号）或中途中断。Invoke whenever Dungeon♂Master says "跑程序"、"run"、"跑实验"、"跑一下"、"发射"、"用显卡跑"、"起个任务"、"train"、"inference"、or any GPU work needs starting in new1.
+description: new1 工程内运行任何 GPU 程序的唯一入口——全生命周期一条龙：读慢变量档案 → 实探空卡 → 挑卡分片 → smoke → `launch` 一条命令发射（自动三处登记）→ 告诉用户自助监控命令 → 采样器接管判定与升级 → 结束收尾（汇报+释放显存+销号）或中途中断。Invoke whenever Dungeon♂Master says "跑程序"、"run"、"跑实验"、"跑一下"、"发射"、"用显卡跑"、"起个任务"、"train"、"inference"、or any GPU work needs starting in new1.
 version: 1.0.0
 ---
 
@@ -12,8 +12,8 @@ version: 1.0.0
 - 慢变量档案：`/home/y-guo/reproduce/new1/ops/gpu_state.md`
 - 台账 CLI：`python3 run.py gpu-jobs`（注册任务，底层是 `ops/gpu_jobs.py`；
   记数字同理走 `python3 run.py record`。本机没有 `python`，只有 `python3`）
-- 发射方法论（挑卡规则/分片/tmux 模板）：`.claude/skills/gpu-run/references/launch-methodology.md`
-- 测速与 ETA 方法论：`.claude/skills/gpu-run/references/monitor-methodology.md`
+- 发射方法论（挑卡规则/分片/launch 替你做了什么）：`.claude/skills/gpu-run/references/launch-methodology.md`
+- 测速与 ETA 方法论（`ops/verdicts.py` 判定口径/decision tree）：`.claude/skills/gpu-run/references/monitor-methodology.md`
 - 探卡脚本：`.claude/skills/gpu-run/scripts/gpu_status.sh`
 
 ## Phase 0 — 读档案
@@ -49,72 +49,86 @@ smoke 失败就修；修不好带 traceback 汇报，不许硬发。
 出命令：smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这条追溯约束。
 `launch-probe smoke` 重跑同一个 smoke 目录还要带 `--force`（smoke 目录名是从
 批次/模型/格确定性推出来的，第二次会被"同 out 已有 train_log.jsonl"守卫拦住）。
+smoke 也可以先用 `python3 run.py launch <task> ... --dry-run` 看每个分片实际
+会跑的命令——只打印，不发射、不登记。
 **正式发射（Phase 4）之前必须 commit**，那一步的脏树门禁不许用 `--allow-dirty` 糊过去。
 
-## Phase 4 — 发射前 commit + tmux 发射 + 双登记 + 交监控入口
+## Phase 4 — 发射前 commit + launch + 交监控入口
 
-**执行方式**：发射环节整段派 `gpu-runner` agent 干（探卡/smoke/tmux/登记/验活
+**执行方式**：发射环节整段派 `gpu-runner` agent 干（探卡/smoke/launch/验活
 打包给它，opus 够用），不在主对话手搓——主对话负责规划与写脚本。
 
-0. **发射前先 commit 代码**。实验记录里存的 git HEAD，只有工作树干净时才追得回
+1. **commit 代码**。实验记录里存的 git HEAD，只有工作树干净时才追得回
    真实跑的那版代码。脏工作树 `record.py` 会打 ⚠️ 但不拦你——追溯断链是你自己的损失。
    仓库根 `run.py` 从这里往前顶了一步：注册表里的 GPU/发射类任务出命令前查
    `git status`，脏树直接拒绝（`--allow-dirty` 逃生）——2026-08-02 起的硬门禁。
-1. 一切进 tmux（禁 bare ssh / nohup）。session 名 `new1_<task>_<host>g<gpu>`，
-   日志 `<workdir>/logs/<session>.log`。命令用 python subprocess 拼，防引号地狱。
-   "要跑的命令"那一段（`<venv解释器绝对路径> <脚本绝对路径> <参数>`）可以让
-   `python3 run.py <task> <参数>` 拼——它只打印这一段，不带 cd/CUDA_VISIBLE_DEVICES/tee，
-   恰好塞进本模板；解释器选哪个 venv 以它的注册表为准（`run.py show <task>` 可查）。
-2. 发射后立即登记台账（一个任务一次 register，多分片多个 --piece）：
+2. **`python3 run.py launch`**：
    ```bash
-   python3 run.py gpu-jobs register --name <task> --workdir <dir> \
-     --piece tokyo106:0:new1_task_t106g0:/path/to/log \
-     --piece tokyo106:1:new1_task_t106g1:/path/to/log2
+   python3 run.py launch <task> [任务参数...] --run-id <run_id> --track <方向> \
+     --piece <host>:<gpus> [--piece <host2>:<gpus2> ...] [--note "..."] \
+     [--outdir <产物目录>] [--stall-line 秒] [--escalate-line 秒] \
+     [--warmup-line 秒] [--service]
    ```
-3. **把产物目录钉回代码版本**（RUNMETA.json = commit + 完整 argv）：
-   走 `ops/launch_probe.py` / `ops/launch_eval.py` 发射的任务，发射成功后
-   发射器自己已经写好了，不用管。**手搓 tmux 发射的任务必须自己补一条**：
-   ```bash
-   python3 run.py runmeta <产物目录> --cmd '<实际执行的完整命令>' \
-     --kind <train|eval_tool|eval_call>
-   ```
-   `--kind` 的实际取值就是这三个（`launch_probe.py` 写 `train`，`launch_eval.py`
-   按档写 `eval_tool` / `eval_call`）；手搓补记时照这套写，别另发明一套词，
-   否则产物目录里两批记录的 kind 对不上。
-   缺这个文件，半年后拿到产物目录就没法确认它是哪版代码跑出来的。
-   发射器侧这一步是**只告警不中断**的：RUNMETA 写失败只打一行 `WARN`，
-   剩下的格照发——所以看到 WARN 要自己回头补一条，别以为发射器会重试。
-4. **同时记一条实验记录**（run_id 用台账同名，两边能对上）：
-   ```bash
-   python3 run.py record start --run-id <task> --track <所属方向> \
-     --model <模型> --seed <种子> --host <host> --gpu <idx> \
-     --param <k=v> --data <原始数据落盘路径> --log <日志路径> \
-     --cmd "<实际执行的命令>" --note "这次想验证什么"
-   ```
-   **用 `--run-id` 不用 `--name`**：`--name` 会自动加时间戳前缀，
-   跟台账 name / tmux session / 数据目录名就对不上了，"四处一致"当场断掉。
-   `--track` 要和 `TIMELINE.md` 里的方向对得上；`--data` 写 NFS 上的真实路径，
-   原始数据不进 git，全靠这个字段和 run_id 目录名追溯；
-   `--log` 写 tmux 那份日志的绝对路径，收尾时不用再翻聊天记录找。
-5. 验证存活：tail 每个日志确认真实进度出现，才算发射成功。
-6. **必须把这两条命令原样交给用户**（这是用户亲自监控的入口）：
+   一条命令做完发射流水线钉死的十步（顺序见 `ops/launch_cmd.py` 头注释）：
+   解析参数 → 脏树门禁 → pieces 解析（多分片要任务在注册表里标了
+   `shardable: True` 才许多个 `--piece`，会自动往每个分片注入
+   `--shard-id i --num-shards N`）+ session/log 命名（session 名
+   `new1_<run_id>_t<host去掉tokyo前缀>g<gpu>`，日志
+   `<workdir>/logs/<session>.log`）→ 逐 piece 实探非 FREE 就整次拒绝（一张
+   占用都不发射）→ tmux 发射 → 30 秒验活窗口（全部 piece 见到日志字节数增长
+   即提前通过；窗口到时 session 没了或 tail 出现 Traceback 才算失败——已发射
+   的不回滚也不登记，失败会把每个失败分片的日志末 40 行打出来）→ 台账
+   `ops/jobs.json`、实验记录 `ops/runs.jsonl`（经 `record.py start` 子进程）、
+   产物目录 `RUNMETA.json` 三处登记一次做完（`ops/launch_common.py`
+   `register_all`，顺序固定台账→记录→RUNMETA，任何一步失败原样往外抛，
+   不吞）。手打三条登记命令的流程不存在了。
+   `--run-id`/`--track` 必填（`record start` 硬要求，`--track` 要和
+   `TIMELINE.md` 里的方向对得上）；给了 `--outdir` 才写 RUNMETA，没给只打一行
+   `WARN`（产物目录事后才能确定的任务，回头自己补
+   `python3 run.py runmeta <产物目录> --cmd '<完整命令>' --kind <kind>`）。
+   注册表外的一次性命令走 `--cmd '<完整命令>' --workdir <dir>` 逃生口，不查
+   TASKS，命令原样进 tmux，登记照做。
+   分片死了要重发同一 session（补射）：
+   `python3 run.py launch --refire <run_id> --idx <N> [--piece host:gpus]`——
+   不新开 record、不重复 register，只改台账该 piece 的 host/gpus/log/
+   launched_at 四元组。
+3. **交监控入口**：`launch` 发射成功会自己打印这两条，确认它们出现在给
+   用户的回复里（这是用户亲自监控的入口）：
    ```bash
    cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs           # 看一眼
    cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs watch     # 30s 自动刷新
    ```
-   表里直接有每个分片的进度、实测速率、tqdm ETA、tmux 存活状态。
+   表里有每个分片的进度、实测速率、ETA、tmux 存活状态。
    **两条命令末尾都会列"台账外 tmux session"**（裸 `gpu-jobs` 与 `watch` 走的是
    同一个 `collect(with_extras=True)`），扫的是固定四台机器
    `tokyo105/106/107/108`——不是只扫台账里已有的 host，所以台账为空时也照样能
    看见漏 register 的 session 或别的对话在跑的东西。
+   外加浏览器 `http://localhost:8377`（ssh 端口转发）：后台采样器（下一节）
+   自己起的网页，展示的是 `ops/verdicts.py` 算出来的六格判定
+   （健康/变慢/warm-up 中/疑似卡死/已挂/已完成），`/json` 路径出机器可读的
+   同一份数据——终端 `gpu-jobs`/`watch`/`json` 三个出口接读这份采样历史还在
+   推进（口径见 `references/monitor-methodology.md`），接上之前判定只有网页
+   能看到。
 
-## Phase 5 — 巡检（Claude 侧）
+## Phase 5 — 采样器接管（Claude 不再常设巡检）
 
-用户能自助看，但 Claude 不当甩手掌柜：长任务定时巡检**派只读的
-`job-monitor` agent**（`python3 run.py gpu-jobs json` 给它读；起服务期 10 分钟粒度，
-跑批期 15-30 分钟），ETA 要靠两个时间点的 Δitems/Δt
-交叉核对 tqdm 自报值（方法论见 `references/monitor-methodology.md`）。
-发现 EXIT 且进度不满 → 读日志定位，能修则修后重发该分片。
+判定、升级由后台采样器负责（`ops/sampler.py` 每 `sample_interval_s`
+（默认 60 秒）读一轮全部心跳，按 `ops/verdicts.py` 算出每个分片的判定/速率/
+ETA，写进它自己的状态文件（`latest.json`，网页出口直接读这份；口径见
+`references/monitor-methodology.md`）——不用再靠 Claude 定时排程巡检。
+
+Claude 只在两种时机派只读的 `job-monitor` agent 读采样结果
+（`python3 run.py gpu-jobs json`，终端出口接好之后就是这份判定；接好之前
+先读网页 `http://localhost:8377/json`）：
+1. 用户问起进度/ETA/是不是卡住了；
+2. 事故记录（`incidents.jsonl`）里有新内容（说明采样器至少判过一次升级）。
+
+**事故 agent 自动验尸补射：未上线（暂缓）。** 触发规则的纯函数
+（`ops/sampler.py` `should_trigger`）已经合并，但真正拉起事故 agent 的
+`maybe_trigger_incidents` 目前只是占位函数（2026-08-08 用户裁决暂缓）。
+也就是说升级发生时采样器只把判定写进它自己的状态文件，不会自动派任何
+agent 去处理——发现升级仍要靠人或 Claude 主动巡检去看，读日志定位死因，
+能修则用 `python3 run.py launch --refire <run_id> --idx <N>` 补射。
 
 ## Phase 6a — 正常收尾（强制五连）
 

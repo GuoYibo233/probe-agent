@@ -47,22 +47,43 @@ Rules, in order:
 3. **Latency-critical single job** (interactive pilot, quick turnaround) → tokyo107 or tokyo108, they're the fastest cards.
 4. **Fill, don't hoard**: take exactly as many cards as shards/jobs; prefer packing one host before spilling to the next (fewer ssh targets, simpler logs).
 
-## Step 3 — Shard if it pays
+## Step 3 — Shard via `--piece`, not by hand
+
+Sharding is a `run.py launch` flag now, not something you hand-assemble per
+shard: pass multiple `--piece host:gpus` and it auto-injects
+`--shard-id i --num-shards N` into each piece's command, names each
+session/log, and refuses outright ("没标 shardable,不许给 N 个 --piece")
+if the task in `TASKS` isn't marked `shardable: True`.
 
 Shard when the work is many independent items (dataset rows, prompts, seeds, configs) AND single-GPU wall time would exceed ~1h.
 
-- `S = min(free suitable GPUs, ceil(total_items / reasonable_chunk))` — don't create 30s shards.
-- The script must accept a shard spec — `--shard-id i --num-shards S` or an index range — and write to **distinct output files** (`out.shard3of8.jsonl`). Add the flag to the script first if it doesn't have one; never let two shards write the same path.
-- Prefer resumable scripts (skip already-done items) so a dead shard can be relaunched without redoing work.
+- `S = min(free suitable GPUs, ceil(total_items / reasonable_chunk))` — don't create 30s shards; pass `S` pieces as `--piece host:gpus --piece host2:gpus2 ...`.
+- The task's script must already accept `--shard-id i --num-shards S` (or an index range) and write to **distinct output files** (`out.shard3of8.jsonl`) — `launch` only injects the flags, it doesn't teach an unsharded script how to shard. Add the flag to the script first if it doesn't have one; never let two shards write the same path.
+- Prefer resumable scripts (skip already-done items) so a dead shard can be relaunched without redoing work — recovery is `python3 run.py launch --refire <run_id> --idx <N>`, not a hand-typed tmux command.
 - Merge shard outputs after all sessions finish, then sanity-check merged count == total_items.
 
-## Step 4 — Launch in tmux
+## Step 4 — What `launch` does for you
 
-Session name: `<proj>_<task>_<host>g<gpu>` (e.g. `new1_probe_t105g0`), log to a per-project log dir on NFS (e.g. `<workdir>/logs/<session>.log`).
+`python3 run.py launch <task> ... --run-id ID --track T --piece host:gpus [--piece ...]`
+replaces this whole step for anything in the `TASKS` registry — the ten-step
+order is pinned in `ops/launch_cmd.py`'s head comment: probe every `--piece`
+fail-closed (any non-FREE card refuses the *entire* launch, nothing goes
+out), name each session `<proj>_<run_id>_t<host-without-"tokyo">g<gpu>`
+(e.g. `new1_probe_t105g0`) and log to `<workdir>/logs/<session>.log`, fire
+every piece in tmux, then hold a 30s alive window (byte growth in the log
+passes a piece early; a dead session or a `Traceback` in the tail at
+window-close fails it — already-launched pieces are **not** rolled back or
+registered on failure, and a failure prints the last 40 log lines per failed
+piece so you don't have to go tail them yourself).
 
-Assemble commands with python `subprocess.run` — bash-in-bash quoting is the #1 typo source here:
+Escape hatch: `--cmd '<full command>' --workdir <dir>` skips the `TASKS`
+lookup and fires the command as-is through the same tmux/register pipeline.
+The template below is what `--cmd` still needs assembled by hand — keep it
+for that case only; for anything in the registry, `launch` builds the inner
+command from the task's `env` + args for you.
 
 ```python
+# reference template — only still needed for the --cmd escape hatch
 import subprocess, shlex
 local = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
 
@@ -82,7 +103,7 @@ def launch(host, gpu, session, workdir, cmd, log):
 - Use the project venv's **absolute** python (uv envs on NFS work on every host, all x86_64): e.g. `/home/y-guo/reproduce/new1/<env>/bin/python`.
 - `CUDA_VISIBLE_DEVICES` pins each shard to its card; inside the process the card is always `cuda:0`.
 - Multi-card single job: `CUDA_VISIBLE_DEVICES=2,3` and let the framework (vLLM `-tp 2`, torchrun) spread.
-- Check for session-name collisions first: `tmux has-session -t <name>` (via ssh for remote).
+- `launch` doesn't pre-check session-name collisions; picking a `--run-id` you haven't used (or `finish`ing the old one first) is what keeps sessions apart.
 
 ### When jobs > free cards: chain, don't schedule
 
