@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat  # noqa: E402
 from common import Chat, TrajLog  # noqa: E402
 
 SYSTEM = """You are an autonomous agent operating a phone-like environment \
@@ -75,11 +77,18 @@ def main():
     print(f"shard {args.shard_id}/{args.num_shards}: {len(ids)} tasks "
           f"exp={exp}", flush=True)
 
+    tok_in = tok_out = 0
+    n_done = 0
+    heartbeat.emit(0, len(ids), "task", tok_in=0, tok_out=0)
+
     for tid in ids:
         out_path = outdir / f"appworld_{tid}.jsonl"
         if args.resume and out_path.exists() and \
                 '"type": "final"' in out_path.read_text():
             print(f"task={tid} SKIP (done)", flush=True)
+            n_done += 1
+            heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in,
+                           tok_out=tok_out)
             continue
         with AppWorld(task_id=tid, experiment_name=exp) as world:
             instr = world.task.instruction
@@ -93,6 +102,8 @@ def main():
             step = -1
             for step in range(args.max_steps):
                 g = chat(msgs)
+                tok_in += g["usage"]["in"]
+                tok_out += g["usage"]["out"]
                 log.w({"type": "gen", "step": step, **g})
                 m = CODE_RE.search(g["content"])
                 msgs.append({"role": "assistant", "content": g["content"]})
@@ -122,6 +133,12 @@ def main():
             log.close()
             print(f"task={tid} steps={step + 1} completed={completed} "
                   f"eval={ev_s[:120]}", flush=True)
+            n_done += 1
+            heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in,
+                           tok_out=tok_out)
+
+    heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in, tok_out=tok_out,
+                   status="done")
 
 
 if __name__ == "__main__":
