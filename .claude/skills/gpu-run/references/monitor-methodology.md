@@ -73,7 +73,7 @@ skill，2026-07-30 迁入项目内、全局那份已作废；下面的示例路�
 | `V_SLOW` 变慢 | 检查是不是尾部数据本身更慢（如冗长输出的样本），报告 + 按平均值外推 |
 | `V_WARMUP` warm-up 中 | 还没心跳，正常；超过 warm-up 上限会自动变成 `V_STALL`，不用手动催 |
 | `V_STALL` 疑似卡死，`escalated=false` | 记一笔，按常规节奏下次再看 |
-| `V_STALL` 疑似卡死，`escalated=true` | 读日志定位死因——采样器已经把这一条记进事故记录；自动拉事故 agent 补射目前**未上线（暂缓）**，发现这条要靠人或 Claude 主动巡检介入 |
+| `V_STALL` 疑似卡死，`escalated=true` | 读日志定位死因——采样器已经把这一条记进事故记录，并自动拉起一个无头事故 agent 去处理（**已接线、未经真实演练**）；发现这条也可以靠人或 Claude 主动巡检介入 |
 | `V_DEAD` 已挂 | 读日志定位死因，能修则补射：`python3 run.py launch --refire <run_id> --idx <N>` |
 | `V_DONE` 已完成 | 走 Phase 6a 收尾五连，不用再监控 |
 

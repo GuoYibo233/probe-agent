@@ -123,12 +123,15 @@ Claude 只在两种时机派只读的 `job-monitor` agent 读采样结果
 1. 用户问起进度/ETA/是不是卡住了；
 2. 事故记录（`incidents.jsonl`）里有新内容（说明采样器至少判过一次升级）。
 
-**事故 agent 自动验尸补射：未上线（暂缓）。** 触发规则的纯函数
-（`ops/sampler.py` `should_trigger`）已经合并，但真正拉起事故 agent 的
-`maybe_trigger_incidents` 目前只是占位函数（2026-08-08 用户裁决暂缓）。
-也就是说升级发生时采样器只把判定写进它自己的状态文件，不会自动派任何
-agent 去处理——发现升级仍要靠人或 Claude 主动巡检去看，读日志定位死因，
-能修则用 `python3 run.py launch --refire <run_id> --idx <N>` 补射。
+**事故 agent 自动验尸补射：已接线、未经真实演练。** `ops/sampler.py` 的
+`should_trigger`（触发规则纯函数）与 `maybe_trigger_incidents`（命中后拉
+agent）在 2026-08-08 经用户授权由主会话实装：升级发生时先把事故记录写进
+`incidents.jsonl`，再拉起一个无头 `claude` 子进程（模型钉 opus，detach 不
+等待，输出写进 `monitor/incidents/<事故编号>.out`），同时标记
+`incident_open` 防止同一事故每轮重复拉起。手动演练经用户裁决取消——全链
+只有单测背书，没有真实拉过一次 agent，第一次真实事故发生时这条链是首跑。
+发现升级仍可以靠人或 Claude 主动巡检去看，读日志定位死因，能修则用
+`python3 run.py launch --refire <run_id> --idx <N>` 补射。
 
 ## Phase 6a — 正常收尾（强制五连）
 
