@@ -1,6 +1,6 @@
 ---
 name: ticket-run
-description: 成批执行 .scratch/<功能名>/issues/ 里工单的唯一入口——主会话按 Blocked by 把工单分成波，每波发射一个 workflow（波内串行防冲突），workflow 内部按"实现 → 评审 → 修复循环（上限 5 轮）"跑每张工单，收账、裁决、终审回主会话。Invoke whenever Dungeon♂Master says "执行工单"、"清 ticket"、"把这批 issue 做了"、"按 spec 实施"、"execute tickets"、or a batch of .scratch issues needs implementing.
+description: 成批执行 .scratch/<功能名>/issues/ 里工单的唯一入口——主会话按 Blocked by 把工单分成波，每波发射一个 workflow，波内工单并行（每张一棵独立 git 工作树、一条独立分支），workflow 内部按"实现 → 评审 → 修复循环（上限 5 轮）"跑每张工单，分支合并、收账、裁决、终审回主会话。Invoke whenever Dungeon♂Master says "执行工单"、"清 ticket"、"把这批 issue 做了"、"按 spec 实施"、"execute tickets"、or a batch of .scratch issues needs implementing.
 version: 1.0.0
 ---
 
@@ -47,6 +47,7 @@ Workflow({
   args: {
     repo: "/home/y-guo/reproduce/new1",
     feature: "<功能名>",
+    wave: "<日期>-wave<N>",
     promptDir: "/home/y-guo/reproduce/new1/.claude/skills/ticket-run/prompts",
     reportDir: "/home/y-guo/reproduce/new1/.scratch/<功能名>/sdd/<日期>-wave<N>",
     tickets: [{ id: "01", path: ".scratch/<功能名>/issues/01-xxx.md" }, ...]
@@ -55,7 +56,10 @@ Workflow({
 ```
 
 三条定死在脚本里、不许在发射时改掉的规则：
-- 波内工单严格串行（同一棵工作树，实现者并行必然互相踩文件）。
+- 波内工单并行，一张工单内部严格串行。每张工单的改动全部落在自己的分支
+  `ticket/<波名>/T<NN>` 上，agent 在仓库旁边的 `<repo>-wt/` 下自建工作树、
+  用完即删（git 的各工作树共享对象库，所以评审在主仓用 sha 就取得到 diff）。
+  发射后主仓工作树谁都不动，代码合并等收账时做。
 - 每个 agent 的模型显式写死：实现和评审用 sonnet，修复第 4、5 轮升级 opus。
   不传模型就会继承主会话的 Fable，这条撞 subagent 禁 Fable 的硬规则。
 - 修复循环上限 5 轮，到顶就带着未决 findings 返回，脚本不做裁决。
@@ -66,7 +70,14 @@ transcript 目录的 `journal.jsonl` 再下判断。
 
 ## Phase 3 — 收账（每波返回后）
 
-workflow 返回逐工单的结构化结果，按状态处理：
+workflow 返回逐工单的结构化结果（含各自的分支名）。先合并代码，再做状态账：
+
+1. `DONE` 的工单按工单号顺序逐个 `git merge --no-ff ticket/<波名>/T<NN>`。
+   合并起冲突就停下报告用户——冲突本身说明这两张工单并不独立，分波分错了。
+2. `CAP_TRIPPED` 的分支先不合，等下面的裁决做完再决定合并还是弃掉。
+3. 清理：合并完删掉已合分支，`git worktree prune`，`<repo>-wt/` 下的残留目录删掉。
+
+然后按状态处理每张工单：
 
 - `DONE`：工单 `Status:` 改 `resolved`，在工单 `## Comments` 下追加一条：
   commit 范围、修复轮数、遗留 minors、实现者 concerns。

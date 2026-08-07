@@ -109,8 +109,9 @@ ready-for-human / wontfix），写在工单文件的 Status 行。对照表见 `
 
 成批执行 `.scratch/<功能名>/issues/` 里的工单，唯一入口是
 `.claude/skills/ticket-run/SKILL.md`：主会话按 Blocked by 分波 → 预检+发射前 commit →
-每波发射一个 workflow（`wave.js`，波内串行，实现-评审-修复循环上限 5 轮定死在脚本里）→
-收账裁决 → 整分支终审。subagent 模型写死 sonnet/opus，实现者禁发 GPU 进程（回 BLOCKED 走 gpu-run）。
+每波发射一个 workflow（`wave.js`，波内工单并行、每张一棵独立工作树一条独立分支，
+实现-评审-修复循环上限 5 轮定死在脚本里）→ 分支合并与收账裁决 → 整分支终审。
+subagent 模型写死 sonnet/opus，实现者禁发 GPU 进程（回 BLOCKED 走 gpu-run）。
 
 ### Domain docs
 
