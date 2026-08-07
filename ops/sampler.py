@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+"""采样器:长程任务的常驻监控进程(设计文档 §3-§5)。
+每轮:读台账 → tail 日志抓心跳(NFS 本地读) → ssh 探存活 → verdicts.judge
+→ append 采样历史 + 原子写 latest.json/state.json。
+本文件只做 IO 和攒状态,判定口径全在 ops/verdicts.py。stdlib only。
+用法: sampler.py [--once] [--interval 60] [--port 8377](网页 Task 7 加)
+"""
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import datetime
+from pathlib import Path
+
+OPS = Path(__file__).resolve().parent
+sys.path.insert(0, str(OPS))
+import heartbeat  # noqa: E402
+import verdicts  # noqa: E402
+from gpu_jobs import live_sessions, DEFAULT_HOSTS  # noqa: E402
+import gpu_jobs  # noqa: E402
+
+# 本地副本,不直接复用 gpu_jobs.load_reg——那个函数体里读的是
+# gpu_jobs 模块自己的全局 REG_PATH,单测靠 monkeypatch
+# `sampler.REG_PATH` 把台账指到 tmp 目录,只有这里自己读这个名字才生效。
+REG_PATH = gpu_jobs.REG_PATH
+
+
+def load_reg():
+    """台账读入口——读的是本模块的 REG_PATH(默认与 gpu_jobs.REG_PATH
+    同一个文件),单测把它指到 tmp 目录。"""
+    if not os.path.exists(REG_PATH):
+        return {"active": [], "history": []}
+    with open(REG_PATH) as f:
+        return json.load(f)
+
+
+MONITOR_DIR = Path(os.environ.get(
+    "NEW1_MONITOR_DIR",
+    "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor"))
+
+# state.json 里 recent_beats 的截断长度——和判定引擎"典型心跳间隔"用的
+# 窗口(typical_beats)对齐,超出这个窗口的心跳对判定已经没有意义
+_BEATS_CAP = verdicts.DEFAULTS["typical_beats"]
+
+# 连续这么多轮探测失败(设计文档 §4)只在 row 上亮红,不触发事故——
+# 分不清死活就不动手,fail-closed 一以贯之
+_PROBE_FAIL_ROUNDS_RED = 10
+
+
+def read_beats(log_path, max_bytes=262144):
+    """日志尾 max_bytes 字节里的所有心跳行(升序)。tqdm 的 \\r 先换 \\n。
+    文件不存在/读不了返回空列表——采样是常驻循环,单个分片的日志问题
+    不许把整轮采样弄炸。"""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            tail = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return []
+    lines = tail.replace("\r", "\n").splitlines()
+    beats = []
+    for line in lines:
+        rec = heartbeat.parse(line)
+        if rec is not None:
+            beats.append(rec)
+    return beats
+
+
+def atomic_write(path, obj):
+    """tmp + os.replace,与 run.py save_state 同款——半写文件永远不会被
+    出口读到。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1))
+    os.replace(tmp, path)
+
+
+def append_jsonl(path, lines):
+    """采样历史一个任务一个文件,逐轮追加(每行一个采样点)。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a") as f:
+        for line in lines:
+            f.write(json.dumps(line, ensure_ascii=False) + "\n")
+
+
+def load_state():
+    """state.json 不在/坏了 -> {}(采样器无状态重启后从这里恢复,
+    读不到就当从零开始,不许把常驻进程弄死)。"""
+    p = MONITOR_DIR / "state.json"
+    try:
+        return json.loads(p.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def read_incidents_tail(n=20):
+    """incidents.jsonl 的最后 n 行(Task 14 才会真的写这个文件;
+    文件还不存在时返回空列表——不是错误)。"""
+    p = MONITOR_DIR / "incidents.jsonl"
+    try:
+        lines = p.read_text().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines[-n:]:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def maybe_trigger_incidents(rows, st):
+    """事故触发在 Task 14(工单 12)实装,这里先占位。"""
+    pass
+
+
+def piece_key(job_name, idx):
+    return f"{job_name}#{idx}"
+
+
+def _piece_launched_at(piece, job):
+    """分片没有 launched_at(手工 register 的旧格式)就退回 job 的
+    started_at,再没有就当 now——宽松处理,登录机和发射机都是 NTP 机器,
+    分钟级误差可接受。"""
+    la = piece.get("launched_at")
+    if la is not None:
+        return float(la)
+    started = job.get("started_at")
+    if started:
+        try:
+            return datetime.strptime(started, "%Y-%m-%d %H:%M").timestamp()
+        except ValueError:
+            pass
+    return time.time()
+
+
+def probe_port(host, port, timeout=3):
+    """服务类分片的端口探测:HTTP GET http://host:port/health,
+    连接被拒/超时/任何异常 -> False。vLLM 的 /health 返回 200
+    (工单 13 核对后如有出入改这里)。"""
+    try:
+        with urllib.request.urlopen(
+                f"http://{host}:{port}/health", timeout=timeout) as r:
+            return 200 <= r.status < 300
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
+
+
+def _new_piece_state(launched_at, refires=0):
+    return {
+        "first_beat": None,
+        "recent_beats": [],
+        "last_new_beat_mono": None,
+        "last_done": None,
+        "last_total": None,
+        "last_unit": None,
+        "last_status": None,
+        "launched_at": launched_at,
+        "alive_last": None,
+        "probe_fail_rounds": 0,
+        "port_ok": None,
+        "port_ever_ok": False,
+        "port_fail_rounds": 0,
+        "verdict": None,
+        "escalated_since_mono": None,
+        "incident_open": False,
+        "refires": refires,
+    }
+
+
+def update_piece_state(st, job, idx, piece, beats, alive, now_mono):
+    """攒一个分片的累计状态(设计 §3):
+    - launched_at 变了(补射) -> 整段状态重开,refires += 1
+    - beats 里比 last_done/last_ts 新的条目 append 进 recent_beats(截
+      ≤ typical_beats 条),并刷新 last_new_beat_mono = now_mono
+    - first_beat 只在第一次见到心跳时记
+    - alive: None(探测失败) -> alive_last 沿用,probe_fail_rounds += 1;
+      True/False -> 直取,probe_fail_rounds = 0
+    - 服务类:port_ok 由 probe_port() 出,port_ever_ok/port_fail_rounds
+      同理攒
+    返回值是这个分片的状态字典(已经就地挂在 st 里,st 由调用方落盘)。
+    """
+    key = piece_key(job["name"], idx)
+    launched_at = _piece_launched_at(piece, job)
+    prev = st.get(key)
+    if prev is None:
+        ps = _new_piece_state(launched_at, refires=0)
+        st[key] = ps
+    elif prev.get("launched_at") != launched_at:
+        ps = _new_piece_state(launched_at, refires=prev.get("refires", 0) + 1)
+        st[key] = ps
+    else:
+        ps = prev
+
+    # 存活
+    if alive is None:
+        ps["probe_fail_rounds"] = ps.get("probe_fail_rounds", 0) + 1
+    else:
+        ps["alive_last"] = alive
+        ps["probe_fail_rounds"] = 0
+
+    # 心跳去重与累计
+    last_key = None
+    if ps["recent_beats"]:
+        lb = ps["recent_beats"][-1]
+        last_key = (lb["ts"], lb["done"])
+    added_new = False
+    for b in beats:
+        cur = (b["ts"], b["done"])
+        if last_key is None or cur > last_key:
+            if ps["first_beat"] is None:
+                ps["first_beat"] = {"ts": b["ts"], "done": b["done"]}
+            ps["recent_beats"].append({
+                "ts": b["ts"], "done": b["done"],
+                "tok_in": b.get("tok_in"), "tok_out": b.get("tok_out"),
+                "loss": b.get("loss"), "status": b.get("status"),
+            })
+            last_key = cur
+            added_new = True
+        ps["last_total"] = b.get("total")
+        ps["last_unit"] = b.get("unit")
+        ps["last_status"] = b.get("status")
+    if added_new:
+        ps["last_new_beat_mono"] = now_mono
+        ps["last_done"] = last_key[1]
+    if len(ps["recent_beats"]) > _BEATS_CAP:
+        ps["recent_beats"] = ps["recent_beats"][-_BEATS_CAP:]
+
+    # 服务类:端口探测
+    if piece.get("kind") == "service":
+        port = piece.get("port")
+        port_ok = probe_port(piece["host"], port) if port else False
+        ps["port_ok"] = port_ok
+        if port_ok:
+            ps["port_ever_ok"] = True
+            ps["port_fail_rounds"] = 0
+        else:
+            ps["port_fail_rounds"] = ps.get("port_fail_rounds", 0) + 1
+
+    return ps
+
+
+def build_row(job, idx, piece, ps, now_mono, now_wall):
+    """状态 -> 出口 row:调 verdicts.stall_line_s(override=piece 里的
+    stall_line) / rates / judge,算 progress_pct 和 eta_s(近期速率没值
+    退回平均;都没值 None)。"""
+    kind = piece.get("kind", "batch")
+    beat_ts = [b["ts"] for b in ps.get("recent_beats", [])]
+    stall_s = verdicts.stall_line_s(beat_ts, override=piece.get("stall_line"))
+    escalate_s = piece.get("escalate_line")
+    warmup_s = job.get("monitor", {}).get(
+        "warmup_s", verdicts.DEFAULTS["warmup_line_s"])
+    avg_rate, recent_rate = verdicts.rates(
+        ps.get("first_beat"), ps.get("recent_beats", []))
+
+    beat_age_s = None
+    if ps.get("last_new_beat_mono") is not None:
+        beat_age_s = now_mono - ps["last_new_beat_mono"]
+    since_launch_s = now_wall - ps.get("launched_at", now_wall)
+
+    p = {
+        "kind": kind,
+        "alive": ps.get("alive_last"),
+        "done": ps.get("last_done"),
+        "total": ps.get("last_total"),
+        "status": ps.get("last_status"),
+        "has_beat": ps.get("first_beat") is not None,
+        "since_launch_s": since_launch_s,
+        "beat_age_s": beat_age_s,
+        "warmup_s": warmup_s,
+        "stall_s": stall_s,
+        "escalate_s": escalate_s,
+        "avg_rate": avg_rate,
+        "recent_rate": recent_rate,
+        "port_ok": ps.get("port_ok"),
+        "port_ever_ok": ps.get("port_ever_ok", False),
+        "port_fail_rounds": ps.get("port_fail_rounds", 0),
+    }
+    verdict, escalated = verdicts.judge(p)
+    ps["verdict"] = verdict
+
+    done, total = ps.get("last_done"), ps.get("last_total")
+    progress_pct = None
+    if done is not None and total:
+        progress_pct = round(100 * done / total, 1)
+    eta_s = None
+    if done is not None and total is not None:
+        remaining = total - done
+        # 近期速率没值(None)才退回平均;近期速率恰好是 0(真的停了)不能
+        # 被 truthy 判断当成"没值"悄悄换成平均速率
+        rate_for_eta = recent_rate if recent_rate is not None else avg_rate
+        if remaining >= 0 and rate_for_eta:
+            eta_s = remaining / rate_for_eta
+
+    last_beat = ps["recent_beats"][-1] if ps.get("recent_beats") else {}
+    probe_fail_rounds = ps.get("probe_fail_rounds", 0)
+
+    return {
+        "job": job["name"], "idx": idx, "host": piece["host"],
+        "gpus": piece.get("gpus"), "session": piece.get("session"),
+        "kind": kind, "verdict": verdict, "escalated": escalated,
+        "done": done, "total": total, "unit": ps.get("last_unit"),
+        "progress_pct": progress_pct,
+        "avg_rate": avg_rate, "recent_rate": recent_rate,
+        "tok_in": last_beat.get("tok_in"), "tok_out": last_beat.get("tok_out"),
+        "loss": last_beat.get("loss"), "eta_s": eta_s,
+        "log": piece.get("log"),
+        "probe_failed": probe_fail_rounds >= _PROBE_FAIL_ROUNDS_RED,
+        "probe_fail_rounds": probe_fail_rounds,
+        "refires": ps.get("refires", 0),
+    }
+
+
+def sample_once():
+    reg = load_reg()
+    hosts = {p["host"] for j in reg["active"] for p in j["pieces"]} | set(DEFAULT_HOSTS)
+    live = live_sessions(hosts)
+    st = load_state()
+    rows, per_job_lines = [], {}
+    now_mono, now_wall = time.monotonic(), time.time()
+    for job in reg["active"]:
+        for idx, piece in enumerate(job["pieces"]):
+            sess_set = live.get(piece["host"])
+            alive = None if sess_set is None else (piece["session"] in sess_set)
+            beats = read_beats(piece["log"])
+            ps = update_piece_state(st, job, idx, piece, beats, alive, now_mono)
+            row = build_row(job, idx, piece, ps, now_mono, now_wall)
+            rows.append(row)
+            per_job_lines.setdefault(job["name"], []).append(dict(row, t=now_wall))
+
+    registered = {}
+    for j in reg["active"]:
+        for p in j["pieces"]:
+            registered.setdefault(p["host"], set()).add(p["session"])
+    extras = {}
+    for h, sess_set in live.items():
+        if sess_set is None:
+            continue
+        unreg = sorted(sess_set - registered.get(h, set()))
+        if unreg:
+            extras[h] = unreg
+
+    latest = {"sampled_at": now_wall, "rows": rows, "extras": extras,
+              "incidents_tail": read_incidents_tail()}
+    for jname, lines in per_job_lines.items():
+        append_jsonl(MONITOR_DIR / "history" / f"{jname}.jsonl", lines)
+    atomic_write(MONITOR_DIR / "state.json", st)
+    atomic_write(MONITOR_DIR / "latest.json", latest)
+    maybe_trigger_incidents(rows, st)  # Task 14(工单 12)前先放空函数 pass
+    return latest
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--once", action="store_true",
+                    help="采一轮就退(冒烟用)")
+    ap.add_argument("--interval", type=float,
+                    default=verdicts.DEFAULTS["sample_interval_s"])
+    a = ap.parse_args()
+    while True:
+        t0 = time.monotonic()
+        try:
+            sample_once()
+        except Exception as e:  # 单轮失败不许弄死常驻进程
+            print(f"[sampler] round failed: {e}", file=sys.stderr, flush=True)
+        if a.once:
+            break
+        time.sleep(max(1.0, a.interval - (time.monotonic() - t0)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
