@@ -4,7 +4,7 @@
 
 **Blocked by:** 09 launch 子命令、12 事故触发、14 采样器上线
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Phase 4 只剩 commit、launch、交监控入口三步
 - [ ] Phase 5 不再含定时巡检的排程条款
