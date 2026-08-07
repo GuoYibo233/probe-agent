@@ -4,8 +4,12 @@
 
 **Blocked by:** 02 采样器单轮走通
 
-**Status:** claimed
+**Status:** resolved
 
 - [ ] 网页测试通过：/json 与落盘文件一致，根路径 200 且正文含任务名、判定和最后采样时刻
 - [ ] 过期亮红的阈值从判定引擎的 DEFAULTS 生成进页面，不另抄一个数
 - [ ] commit
+
+## Comments
+
+- 2026-08-08 ticket-run：DONE。分支 ticket/20260808-par/T06（base 1d421be，head 5897417，ops/sampler.py +204 行网页段、tests/test_sampler_web.py 新增），合并进 main 后 41 测试全绿、selfcheck 63 就位。修复 0 轮。遗留 minor 一条：/json 是 latest.json 解析后重序列化（语义一致、字节不同，缩进丢失），验收条目"与落盘文件一致"按语义过；若未来有消费方按字节哈希比新鲜度会踩，先记录不改。concern 一条照录：latest.json 缺失时 /json 返回 503 + error json，是实现者自裁的接口，后续消费方如有别的期望要回来对齐。报告：sdd/2026-08-08-wave1/T06-report.md。
