@@ -9,6 +9,8 @@
   python3 run.py recipe <name> [--set k=v ...] [--id X] [--resume] [--dry-run]
   python3 run.py status [dir]          # 配方进度(读状态文件+日志尾巴)
   python3 run.py selfcheck             # 注册表体检:解释器/脚本/配方引用齐不齐
+  python3 run.py launch <task>|--cmd '<cmd>' --run-id ID --track T --piece host:gpus [...]
+                                        # 一条命令发射:验卡→tmux→验活→三处登记(工单 09)
 
 三条分派规矩:
 - CPU 任务直跑:subprocess, cwd=ROOT, 解释器按注册表(venv 绝对路径)。
@@ -93,7 +95,7 @@ TASKS = {
     # ---- collect 采集 ----
     "collect-aw": dict(
         stage="collect", py="appworld", script="envs/collect/run_appworld.py",
-        desc="AppWorld 采集器(要 vLLM /v1 在线)",
+        desc="AppWorld 采集器(要 vLLM /v1 在线)", shardable=True,
         notes=["必给 --base-url --model --outdir;outdir 名必须 appworld_<q35|q36|gptoss>,"
                "别的尾巴下游静默跳过整目录",
                "重跑必带 --resume,否则同名轨迹被截断重写",
@@ -998,6 +1000,10 @@ def main(argv):
         return cmd_status(rest)
     if cmd == "selfcheck":
         return cmd_selfcheck()
+    if cmd == "launch":
+        sys.path.insert(0, str(ROOT / "ops"))
+        from launch_cmd import cmd_launch
+        return cmd_launch(rest)
     t = TASKS.get(cmd)
     if t is None:
         raise SystemExit(f"不认识: {cmd}(run.py list 看任务,run.py recipes 看配方)")
