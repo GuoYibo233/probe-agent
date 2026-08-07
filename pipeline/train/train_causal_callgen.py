@@ -58,6 +58,11 @@ from transformers import (AutoModelForCausalLM, AutoTokenizer,
 
 import readonly_map
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat
+
 
 QWEN = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
 SEED = 20260729
@@ -432,6 +437,7 @@ def main():
                 fire_ready_train=fire_st["train"]["frac_ready"],
                 fire_ready_val=fire_st["val"]["frac_ready"])
            if args.fire_head else {}))
+    heartbeat.emit(0, steps, "step")
 
     best = float("inf")
     gstep = 0
@@ -467,6 +473,8 @@ def main():
                     log(event="step", ep=ep, gstep=gstep,
                         loss=round(run / (50 * args.accum), 4),
                         ips=round((i + 1) * args.bs / (time.time() - t0), 2))
+                    heartbeat.emit(gstep, steps, "step",
+                                   loss=round(run / (50 * args.accum), 4))
                     run = 0.0
         fkw = {}
         if fire is None:
@@ -494,6 +502,7 @@ def main():
             (out / "best" / "meta.json").write_text(json.dumps(meta, indent=1))
             log(event="save_best", ep=ep, val_ce=round(best, 4))
     log(event="done", best_val_ce=round(best, 4))
+    heartbeat.emit(gstep, steps, "step", status="done")
 
 
 if __name__ == "__main__":

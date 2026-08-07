@@ -53,6 +53,11 @@ from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warm
 
 import readonly_map
 
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat
+
 
 MODELS = {
     "qwen": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
@@ -369,6 +374,7 @@ def main():
         align_pass=rep["PASS"], align_maxdiff_hidden=rep["maxdiff_hidden"],
         align_maxdiff_logits=rep["maxdiff_logits"],
         readonly_env=args.readonly_env)
+    heartbeat.emit(0, steps, "step")
 
     best = -1.0
     gstep = 0
@@ -394,6 +400,8 @@ def main():
                         loss=round(run / (50 * args.accum), 4),
                         ips=round((i + 1) * args.bs / (time.time() - t0), 2),
                         n_bound_dropped=ndrop)
+                    heartbeat.emit(gstep, steps, "step",
+                                   loss=round(run / (50 * args.accum), 4))
                     run = 0.0
         wacc, lacc = evaluate(model, ev_dl, dev, amp)
         log(event="eval", ep=ep, calA_weighted_acc=round(wacc, 4),
@@ -415,6 +423,7 @@ def main():
             (out / "best" / "meta.json").write_text(json.dumps(meta, indent=1))
             log(event="save_best", ep=ep, acc=round(best, 4))
     log(event="done", best_calA_weighted_acc=round(best, 4))
+    heartbeat.emit(gstep, steps, "step", status="done")
 
 
 if __name__ == "__main__":
