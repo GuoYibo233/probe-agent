@@ -126,16 +126,19 @@ def build_pieces(p, t):
     if not p["pieces"]:
         raise SystemExit("launch 至少要一个 --piece host:gpus")
 
-    specs, seen = [], set()
+    specs, claimed_by_host = [], {}
     for raw in p["pieces"]:
         if ":" not in raw:
             raise SystemExit(f"--piece 要 host:gpus 形式,给的是 {raw!r}")
         host, gpus = raw.split(":", 1)
-        key = (host, gpus)
-        if key in seen:
-            raise SystemExit(f"重复的 --piece {raw}(同机同卡两个分片会互相踩,"
-                             "拆成不同卡或分开发射)")
-        seen.add(key)
+        gpu_ids = set(g for g in gpus.split(",") if g)
+        prior = claimed_by_host.setdefault(host, set())
+        clash = prior & gpu_ids
+        if clash:
+            raise SystemExit(
+                f"--piece {raw} 与同机已有分片在 gpu {','.join(sorted(clash))} 上重叠"
+                "(同机同卡两个分片会互相踩,拆成不同卡或分开发射)")
+        prior |= gpu_ids
         specs.append((host, gpus))
 
     n = len(specs)

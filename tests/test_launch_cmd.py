@@ -76,6 +76,24 @@ class TestBuildPieces(unittest.TestCase):
         with self.assertRaises(SystemExit):
             LCC.build_pieces(p, t)
 
+    def test_overlapping_multi_gpu_pieces_rejected(self):
+        # tokyo106:0,1 与 tokyo106:1,2 字符串不同,但都要占 gpu1,应当拒绝
+        t = fake_task(shardable=True)
+        p = LCC.parse_launch_argv(
+            ["faketask", "--run-id", "trun", "--track", "smoke",
+             "--piece", "tokyo106:0,1", "--piece", "tokyo106:1,2"])
+        with self.assertRaises(SystemExit):
+            LCC.build_pieces(p, t)
+
+    def test_disjoint_multi_gpu_pieces_same_host_allowed(self):
+        # 同机不重叠的卡应当放行
+        t = fake_task(shardable=True)
+        p = LCC.parse_launch_argv(
+            ["faketask", "--run-id", "trun", "--track", "smoke",
+             "--piece", "tokyo106:0,1", "--piece", "tokyo106:2,3"])
+        pieces = LCC.build_pieces(p, t)
+        self.assertEqual(len(pieces), 2)
+
     def test_session_name_format(self):
         t = fake_task()
         p = LCC.parse_launch_argv(
