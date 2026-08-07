@@ -292,7 +292,7 @@ def cmd_launch(argv):
     rich_pieces = [dict(host=pc["host"], gpus=pc["gpus"], session=pc["session"],
                         log=pc["log"], cmd=pc["cmd"], launched_at=now, kind=kind,
                         stall_line=p["stall_line"], escalate_line=p["escalate_line"],
-                        env=env)
+                        task=p["task"])
                    for pc in pieces]
 
     cmd_display = (rich_pieces[0]["cmd"] if len(rich_pieces) == 1
@@ -340,10 +340,15 @@ def cmd_refire(argv):
     launched_at 变了自动重开该分片的心跳时间轴并 refires+=1(工单 02/Task 6
     已实现)。
 
-    env 前缀:台账 piece 里存的 `env`(任务注册表 `TASKS[task]["env"]`,发射时
-    由 `cmd_launch` 写进 rich piece)原样传回 `build_inner`,补射的进程与原
-    进程带一样的环境变量前缀。旧台账里发射时(本次修复前)登记的 job 没有
-    `env` 字段,`piece.get("env")` 落空当空 dict 处理,不报错。
+    env 前缀:台账 piece 不存 env 的实际键值(env 可能带密钥,`ops/jobs.json`
+    是 git 追踪文件,原样写进去会让密钥随台账提交进版本库——finding N1,
+    2026-08-08)。台账 piece 只存 `task`(任务名,`cmd_launch` 写进 rich
+    piece);补射时用这个任务名反查*当前*的 `TASKS[task]["env"]`,现算现传给
+    `build_inner`,原值不落盘。这意味着如果任务注册表的 `env` 定义在原发射
+    与补射之间被改过,补射拿到的是改过之后的值,不是原发射当时的快照——用
+    这个代价换"env 原值永不写进 git 追踪文件"这条更硬的约束。`--cmd` 模式
+    (task 为 None)与旧台账(piece 没有 `task` 字段,或 `task` 不在当前
+    TASKS 里)一样落空当空 dict 处理,不报错。
     """
     p = parse_refire_argv(argv)
     if not p["run_id"]:
@@ -387,7 +392,9 @@ def cmd_refire(argv):
     sess = piece["session"]
     new_log = str(Path(piece["log"]).parent / f"{sess}.r{refires + 1}.log")
     Path(new_log).parent.mkdir(parents=True, exist_ok=True)
-    env = piece.get("env") or {}  # 台账里没存(补射功能落地前的旧 job)就当空
+    task_name = piece.get("task")
+    t = TASKS.get(task_name) if task_name else None
+    env = t.get("env", {}) if t is not None else {}  # 现算现传,原值不落盘
     inner = build_inner(piece["cmd"], job["workdir"], gpus, new_log, env)
     LC.tmux_launch(host, sess, inner)
 

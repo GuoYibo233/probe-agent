@@ -260,10 +260,38 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
         self.assertEqual(track, "smoke")
         self.assertEqual(len(pieces), 1)
         for key in ("host", "gpus", "session", "log", "cmd", "launched_at",
-                    "kind", "stall_line", "escalate_line"):
+                    "kind", "stall_line", "escalate_line", "task"):
             self.assertIn(key, pieces[0])
         self.assertEqual(pieces[0]["kind"], "batch")
+        self.assertEqual(pieces[0]["task"], "faketask")
         self.assertEqual(kwargs.get("note"), "测试")
+
+    @patch("launch_cmd.LC.register_all", return_value="登记回执")
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=True)
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    def test_success_does_not_persist_raw_env_values(
+            self, _gd, _hs, _pf, mtmux, mreg):
+        """N1 回归:任务定义了非空 env(可能带密钥)时,登记进台账的 rich
+        piece 不能原样带着 env 的实际键值——只许存 task 名,env 值只留在
+        本次发射的局部变量/inner 命令里,不进 git 追踪的 ops/jobs.json。"""
+        with patch.dict(LCC.TASKS, {"sekrit": fake_task(
+                env={"HF_TOKEN": "shh-do-not-commit-me"})}):
+            with patch.object(LCC, "verify_alive", return_value=(True, [])):
+                rc = LCC.cmd_launch(
+                    ["sekrit", "--run-id", "r6", "--track", "smoke",
+                     "--piece", "tokyo106:0"])
+        self.assertEqual(rc, 0)
+        _host, _sess, inner = mtmux.call_args[0]
+        self.assertIn("HF_TOKEN=shh-do-not-commit-me", inner)  # 发射本身照常带 env
+
+        args, _kwargs = mreg.call_args
+        pieces = args[2]
+        self.assertNotIn("env", pieces[0])
+        self.assertEqual(pieces[0]["task"], "sekrit")
+        dumped = repr(pieces[0])
+        self.assertNotIn("shh-do-not-commit-me", dumped)
 
 
 class TestCmdRefire(unittest.TestCase):
@@ -334,8 +362,10 @@ class TestCmdRefire(unittest.TestCase):
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=False)
     def test_env_prefix_restored(self, _hs, _pf, _gd, mtmux):
-        """F1 回归:台账 piece 存了 env(任务注册表非空 env 的场景),补射要把它
-        原样恢复进 tmux inner 命令,不能悄悄丢掉。"""
+        """F1 回归,N1 修复后的形态:台账 piece 不存 env 实际键值(finding N1,
+        env 写进 git 追踪的 jobs.json 有泄露风险),只存 task 名;补射要用这个
+        task 名反查*当前* TASKS[task]["env"] 现算现传,原样恢复进 tmux inner
+        命令,不能悄悄丢掉。"""
         gpu_jobs.mutate_reg(lambda reg: reg["active"].append({
             "name": "erun", "workdir": "/tmp/wd", "note": None,
             "started_at": "2026-08-08 00:00",
@@ -344,10 +374,12 @@ class TestCmdRefire(unittest.TestCase):
                 "log": "/tmp/wd/logs/new1_erun_t106g0.log",
                 "cmd": "python3 foo.py --x 1", "launched_at": 1000.0,
                 "kind": "batch", "stall_line": None, "escalate_line": None,
-                "env": {"FOO": "bar", "BAZ": "qux"},
+                "task": "envtask",
             }],
         }))
-        rc = LCC.cmd_launch(["--refire", "erun", "--idx", "0"])
+        with patch.dict(LCC.TASKS, {"envtask": fake_task(
+                env={"FOO": "bar", "BAZ": "qux"})}):
+            rc = LCC.cmd_launch(["--refire", "erun", "--idx", "0"])
         self.assertEqual(rc, 0)
         _host, _sess, inner = mtmux.call_args[0]
         self.assertIn("FOO=bar", inner)
@@ -358,10 +390,33 @@ class TestCmdRefire(unittest.TestCase):
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=False)
-    def test_missing_env_field_defaults_empty(self, _hs, _pf, _gd, mtmux):
-        """旧台账(本次修复前登记)的 piece 没有 env 字段,补射不能因此报错——
-        落空当空 dict 处理。"""
+    def test_missing_task_field_defaults_empty_env(self, _hs, _pf, _gd, mtmux):
+        """旧台账(本次修复前登记)的 piece 没有 task 字段,补射不能因此报错——
+        反查落空当空 dict 处理。"""
         rc = LCC.cmd_launch(["--refire", "rrun", "--idx", "0"])
+        self.assertEqual(rc, 0)
+        _host, _sess, inner = mtmux.call_args[0]
+        self.assertIn("python3 foo.py --x 1", inner)
+
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=False)
+    def test_unknown_task_field_defaults_empty_env(self, _hs, _pf, _gd, mtmux):
+        """台账存的 task 名不在当前 TASKS 里(任务后来被下线),补射不能因此
+        报错——反查落空当空 dict 处理,cmd 仍原样重发。"""
+        gpu_jobs.mutate_reg(lambda reg: reg["active"].append({
+            "name": "grun", "workdir": "/tmp/wd", "note": None,
+            "started_at": "2026-08-08 00:00",
+            "pieces": [{
+                "host": "tokyo106", "gpus": "0", "session": "new1_grun_t106g0",
+                "log": "/tmp/wd/logs/new1_grun_t106g0.log",
+                "cmd": "python3 foo.py --x 1", "launched_at": 1000.0,
+                "kind": "batch", "stall_line": None, "escalate_line": None,
+                "task": "gone-task",
+            }],
+        }))
+        rc = LCC.cmd_launch(["--refire", "grun", "--idx", "0"])
         self.assertEqual(rc, 0)
         _host, _sess, inner = mtmux.call_args[0]
         self.assertIn("python3 foo.py --x 1", inner)
