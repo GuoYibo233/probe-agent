@@ -67,6 +67,9 @@ import readonly_map                                     # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_tool import RISK_TARGETS, THETAS              # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
+import heartbeat                                         # noqa: E402
+
 MAX_GEN_TOK = 96            # 【照抄 train_causal_callgen.py 的 MAX_GEN_TOK】
 FALLBACK_SEP = "\n[CALL] "  # meta.json 没写 call_sep 时的兜底(应当写了)
 TOPK_TOOLS = 10             # 分工具明细表行数
@@ -204,6 +207,7 @@ def generate(model, tok, prompts, dev, bs, max_len, max_new):
     tok.padding_side = "left"                       # 生成必须左 padding
     model.config.use_cache = True
     out = []
+    heartbeat.emit(0, len(prompts), "item")
     for i in range(0, len(prompts), bs):
         chunk = prompts[i:i + bs]
         enc = tok(chunk, truncation=True,
@@ -217,6 +221,7 @@ def generate(model, tok, prompts, dev, bs, max_len, max_new):
         out += [t.split("\n")[0].strip() for t in txt]
         print(f"generated {min(i + bs, len(prompts))}/{len(prompts)}",
               flush=True)
+        heartbeat.emit(min(i + bs, len(prompts)), len(prompts), "item")
     tok.padding_side, model.config.use_cache = prev_side, prev_cache
     return out
 
@@ -708,6 +713,7 @@ def main():
                "所以它天然算错——这一列才是\"让探针自己决定何时发射\"的真成绩。",
                "- 右列只看真值 ready 的开火点,用来和旧模式那张表对照读。"]
     (cgen / "CALLGEN_REPORT.md").write_text("\n".join(md) + "\n")
+    heartbeat.emit(n, n, "item", status="done")
     if old_mode:
         print(json.dumps({k: out[k] for k in
                           ("n_events_scored", "parse_fail_rate", "tool_ok",
