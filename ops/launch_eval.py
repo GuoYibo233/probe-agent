@@ -27,17 +27,12 @@
 import argparse
 import json
 import shlex
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 WD = Path(__file__).resolve().parent.parent
 LOGD = WD / "logs"
-
-LOCAL = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
-ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}
-LOCAL = ALIAS.get(LOCAL, LOCAL)
 
 # 评测格唯一真源在仓库根 run.py 的 EVAL_CELLS(2026-08-02 审计 C14 起),
 # 这里只 import——解释器/脚本/固定参数全从对应 TASKS 条目取,不再另抄一份。
@@ -46,6 +41,9 @@ sys.path.insert(0, str(WD))
 from run import EVAL_CELLS, PY, TASKS  # noqa: E402
 sys.path.insert(0, str(WD / "ops"))
 from runmeta import append_runmeta  # noqa: E402
+# has_session/tmux_launch 原来是本地函数,现在改 import 公共件(工单 11,
+# 先扩后收的收这一步——探卡/登记也从这里一并接进来)。
+from launch_common import has_session, tmux_launch, probe_free, register_all  # noqa: E402
 
 TOOL_KEYS = [c for c, (_, dep) in EVAL_CELLS.items() if dep is None]
 CALL_KEYS = [c for c, (_, dep) in EVAL_CELLS.items() if dep is not None]
@@ -59,21 +57,42 @@ def cell_cmd_parts(cell):
             list(t.get("args", [])), dep)
 
 
-def has_session(host, s):
-    cmd = f"tmux has-session -t {shlex.quote(s)}"
-    argv = ["bash", "-c", cmd] if host == LOCAL else ["ssh", "-n", host, cmd]
-    return subprocess.run(argv, capture_output=True, text=True).returncode == 0
-
-
-def launch(host, gpu, session, cmd, log):
-    if has_session(host, session):
-        print(f"SKIP (exists): {session}")
+def launch_and_register(host, gpu, sess, cmd, log, meta_dir, stage, batch,
+                        placement=""):
+    """一格的完整发射:探卡(fail-closed)→session 存在性检查→tmux 发射→RUNMETA→
+    台账/记录登记。session 已存在或目标卡非 FREE 都算跳过,不发射也不登记。
+    登记(台账/record.py)失败只 WARN 不中断——发射已经真实发生了,不能因为
+    登记这一步(比如重复 run_id)把已经跑起来的任务藏起来不让 alive check 看见。
+    返回 True 表示真的发出去了(供 main() 的 alive check 用)。"""
+    if has_session(host, sess):
+        print(f"SKIP (exists): {sess}")
+        return False
+    ok, why = probe_free(host, str(gpu))
+    if not ok:
+        print(f"SKIP (非 FREE): {sess}  {host} gpu{gpu}  {why}")
         return False
     inner = f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd} 2>&1 | tee {log}"
-    tmux = f"tmux new-session -d -s {shlex.quote(session)} {shlex.quote(inner)}"
-    argv = ["bash", "-c", tmux] if host == LOCAL else ["ssh", "-n", host, tmux]
-    subprocess.run(argv, check=True)
-    print(f"LAUNCHED {session}  ({host} gpu{gpu})  log={log}")
+    tmux_launch(host, sess, inner)
+    print(f"LAUNCHED {sess}  ({host} gpu{gpu})  log={log}")
+    # 产物钉代码:发射成功立刻把 commit+argv 落进产物目录(审计 B6)。
+    # 记账失败只告警不中断——不能让 RUNMETA 把剩下的发射打死
+    try:
+        append_runmeta(meta_dir, cmd, kind=f"eval_{stage}",
+                       extra={"session": sess, "launch_host": host,
+                              "gpu": gpu, "log": log,
+                              "placement": placement or ""})
+    except Exception as e:
+        print(f"WARN RUNMETA 没写上({meta_dir}): {e}", file=sys.stderr)
+    rid = sess[len("eval_"):]
+    piece = {"host": host, "gpus": str(gpu), "session": sess, "log": str(log),
+              "cmd": cmd, "launched_at": time.time(), "kind": f"eval_{stage}",
+              "stall_line": None, "escalate_line": None}
+    try:
+        receipt = register_all(rid, str(WD), [piece], f"eval_{batch}", cmd,
+                               outdir=None)
+        print(receipt)
+    except SystemExit as e:
+        print(f"WARN 登记失败({rid}): {e}")
     return True
 
 
@@ -150,16 +169,8 @@ def main():
         return
 
     for host, gpu, sess, cmd, log, meta_dir in plan:
-        if launch(host, gpu, sess, cmd, log):
-            # 产物钉代码:发射成功立刻把 commit+argv 落进产物目录(审计 B6)。
-            # 记账失败只告警不中断——不能让 RUNMETA 把剩下的发射打死
-            try:
-                append_runmeta(meta_dir, cmd, kind=f"eval_{args.stage}",
-                               extra={"session": sess, "launch_host": host,
-                                      "gpu": gpu, "log": log,
-                                      "placement": args.placement})
-            except Exception as e:
-                print(f"WARN RUNMETA 没写上({meta_dir}): {e}", file=sys.stderr)
+        launch_and_register(host, gpu, sess, cmd, log, meta_dir, args.stage,
+                            args.batch, args.placement)
     time.sleep(6)
     print("\n--- alive check ---")
     for host, gpu, sess, cmd, log, meta_dir in plan:
