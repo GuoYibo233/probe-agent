@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 心跳模块与判定引擎
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 语法检查通过，appworld 的 venv 下 `--help` 正常打印（证明心跳模块在那个 venv 里 import 得动）
 - [ ] 每题收尾和 SKIP 分支都推进 done，循环结束打 status=done

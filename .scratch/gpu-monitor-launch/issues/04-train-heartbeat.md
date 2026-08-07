@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 心跳模块与判定引擎
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 四个文件语法检查通过
 - [ ] mbert-env 和 cprobe-env 两个训练 venv 都能 import 心跳模块

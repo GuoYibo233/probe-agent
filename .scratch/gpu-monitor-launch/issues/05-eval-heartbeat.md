@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 心跳模块与判定引擎
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 三个文件语法检查通过
 - [ ] 每个脚本只有一根进度轴，正常结束点打 status=done

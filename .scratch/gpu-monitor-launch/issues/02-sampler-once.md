@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 心跳模块与判定引擎
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 采样器测试通过：假台账两分片（一活一死），活的判定是健康或 warm-up 中，死的判定是已挂，累计 token 读对
 - [ ] 三份落盘文件都出现并且能 json.load；再采一轮，没变的日志不重复追加心跳
