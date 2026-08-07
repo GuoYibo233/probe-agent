@@ -80,7 +80,7 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
     中止(不吞异常)。
 
     ①台账:直接把 pieces(每个已经是 rich piece——host/gpus/session/log/cmd/
-    launched_at/kind/stall_line/escalate_line)append 成一个 job；job 级字段
+    launched_at/kind/stall_line/escalate_line/env)append 成一个 job；job 级字段
     `monitor`(给了才写,采样器缺省会退到 verdicts.DEFAULTS)与 `note`。
     重复 run_id(台账里已有同名 job)拒绝——护栏,不是障碍。
 

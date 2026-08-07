@@ -291,7 +291,8 @@ def cmd_launch(argv):
     now = time.time()
     rich_pieces = [dict(host=pc["host"], gpus=pc["gpus"], session=pc["session"],
                         log=pc["log"], cmd=pc["cmd"], launched_at=now, kind=kind,
-                        stall_line=p["stall_line"], escalate_line=p["escalate_line"])
+                        stall_line=p["stall_line"], escalate_line=p["escalate_line"],
+                        env=env)
                    for pc in pieces]
 
     cmd_display = (rich_pieces[0]["cmd"] if len(rich_pieces) == 1
@@ -333,10 +334,16 @@ def cmd_refire(argv):
     [--allow-dirty]`(工单 10,实施计划 Task 12)。
 
     活 session 拒绝 → 目标卡(--piece 给的或原卡)实探非 FREE 拒绝 → 台账里
-    piece 存的 cmd 原样重发(session 名不变,log 换新文件) → 台账该 piece 的
-    host/gpus/log/launched_at 就地更新。不新开 record、不重复 register——
-    补射不是新任务,登记只有台账这一处要动。采样器看到 launched_at 变了
-    自动重开该分片的心跳时间轴并 refires+=1(工单 02/Task 6 已实现)。
+    piece 存的 cmd 原样重发,env 前缀原样恢复(session 名不变,log 换新文件)
+    → 台账该 piece 的 host/gpus/log/launched_at 就地更新。不新开 record、
+    不重复 register——补射不是新任务,登记只有台账这一处要动。采样器看到
+    launched_at 变了自动重开该分片的心跳时间轴并 refires+=1(工单 02/Task 6
+    已实现)。
+
+    env 前缀:台账 piece 里存的 `env`(任务注册表 `TASKS[task]["env"]`,发射时
+    由 `cmd_launch` 写进 rich piece)原样传回 `build_inner`,补射的进程与原
+    进程带一样的环境变量前缀。旧台账里发射时(本次修复前)登记的 job 没有
+    `env` 字段,`piece.get("env")` 落空当空 dict 处理,不报错。
     """
     p = parse_refire_argv(argv)
     if not p["run_id"]:
@@ -380,7 +387,8 @@ def cmd_refire(argv):
     sess = piece["session"]
     new_log = str(Path(piece["log"]).parent / f"{sess}.r{refires + 1}.log")
     Path(new_log).parent.mkdir(parents=True, exist_ok=True)
-    inner = build_inner(piece["cmd"], job["workdir"], gpus, new_log)
+    env = piece.get("env") or {}  # 台账里没存(补射功能落地前的旧 job)就当空
+    inner = build_inner(piece["cmd"], job["workdir"], gpus, new_log, env)
     LC.tmux_launch(host, sess, inner)
 
     now = time.time()

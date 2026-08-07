@@ -333,6 +333,43 @@ class TestCmdRefire(unittest.TestCase):
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=False)
+    def test_env_prefix_restored(self, _hs, _pf, _gd, mtmux):
+        """F1 回归:台账 piece 存了 env(任务注册表非空 env 的场景),补射要把它
+        原样恢复进 tmux inner 命令,不能悄悄丢掉。"""
+        gpu_jobs.mutate_reg(lambda reg: reg["active"].append({
+            "name": "erun", "workdir": "/tmp/wd", "note": None,
+            "started_at": "2026-08-08 00:00",
+            "pieces": [{
+                "host": "tokyo106", "gpus": "0", "session": "new1_erun_t106g0",
+                "log": "/tmp/wd/logs/new1_erun_t106g0.log",
+                "cmd": "python3 foo.py --x 1", "launched_at": 1000.0,
+                "kind": "batch", "stall_line": None, "escalate_line": None,
+                "env": {"FOO": "bar", "BAZ": "qux"},
+            }],
+        }))
+        rc = LCC.cmd_launch(["--refire", "erun", "--idx", "0"])
+        self.assertEqual(rc, 0)
+        _host, _sess, inner = mtmux.call_args[0]
+        self.assertIn("FOO=bar", inner)
+        self.assertIn("BAZ=qux", inner)
+        self.assertIn("python3 foo.py --x 1", inner)
+
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=False)
+    def test_missing_env_field_defaults_empty(self, _hs, _pf, _gd, mtmux):
+        """旧台账(本次修复前登记)的 piece 没有 env 字段,补射不能因此报错——
+        落空当空 dict 处理。"""
+        rc = LCC.cmd_launch(["--refire", "rrun", "--idx", "0"])
+        self.assertEqual(rc, 0)
+        _host, _sess, inner = mtmux.call_args[0]
+        self.assertIn("python3 foo.py --x 1", inner)
+
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=False)
     def test_piece_override_changes_target_gpu(self, _hs, mprobe, _gd, mtmux):
         rc = LCC.cmd_launch(
             ["--refire", "rrun", "--idx", "0", "--piece", "tokyo107:2"])
