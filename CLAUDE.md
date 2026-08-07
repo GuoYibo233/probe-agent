@@ -92,3 +92,20 @@
 - 环境一律 uv 管理。
 - 模型权重下载到 `/net/tokyo100-10g/data/str01_01/y-guo/models`，不放 /home。
 - 动手前先取得同意；一个请求只做那一件事。
+
+## Agent skills
+
+### Issue tracker
+
+spec 和工单以本地 markdown 文件存放：一个功能一个目录 `.scratch/<功能名>/`，
+spec 是 `spec.md`，工单是 `issues/NN-<名字>.md`。约定见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+工单状态用五个默认标签字符串（needs-triage / needs-info / ready-for-agent /
+ready-for-human / wontfix），写在工单文件的 Status 行。对照表见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单库布局：词汇表是仓库根的 `CONTEXT.md`，架构决策记录放 `docs/adr/`。
+读取规则见 `docs/agents/domain.md`。
