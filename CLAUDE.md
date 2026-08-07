@@ -105,6 +105,13 @@ spec 是 `spec.md`，工单是 `issues/NN-<名字>.md`。约定见 `docs/agents/
 工单状态用五个默认标签字符串（needs-triage / needs-info / ready-for-agent /
 ready-for-human / wontfix），写在工单文件的 Status 行。对照表见 `docs/agents/triage-labels.md`。
 
+### Ticket 执行
+
+成批执行 `.scratch/<功能名>/issues/` 里的工单，唯一入口是
+`.claude/skills/ticket-run/SKILL.md`：主会话按 Blocked by 分波 → 预检+发射前 commit →
+每波发射一个 workflow（`wave.js`，波内串行，实现-评审-修复循环上限 5 轮定死在脚本里）→
+收账裁决 → 整分支终审。subagent 模型写死 sonnet/opus，实现者禁发 GPU 进程（回 BLOCKED 走 gpu-run）。
+
 ### Domain docs
 
 单库布局：词汇表是仓库根的 `CONTEXT.md`，架构决策记录放 `docs/adr/`。
