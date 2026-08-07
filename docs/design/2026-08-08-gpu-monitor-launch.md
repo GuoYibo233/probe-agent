@@ -38,8 +38,11 @@
   - 评测脚本（实施时逐个过一遍名单）
 - vLLM 服务是第三方，不打心跳，也没有 done/total 这回事。它按服务类
   分片走另一套判定（见 §4 末尾）；它日志里的吞吐行只拿来出 token 速率
-  显示，不参与判定。吞吐行的确切字样仓库里还没有真实样本可核，
-  实施前先抓一条真实 vLLM 日志确认（进 §10）。
+  显示，不参与判定。吞吐行已在真实日志里核实
+  （`/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log`，
+  vllm 0.26.0，原文：`Avg prompt throughput: 785.1 tokens/s, Avg generation
+  throughput: 671.8 tokens/s, Running: 4 reqs, ...`，默认每 10 秒一条，
+  引擎空闲时降级成 debug 不打印——这正好印证"空闲不打吞吐行不算停摆"）。
 
 ## 3 采样器（监控侧）
 
@@ -216,7 +219,6 @@ paper-write / 两个 knowledge-map skill（无引用）。
 
 ## 10 留到实施时定的小事
 
-- vLLM 吞吐行的确切字样：先起一次真实 vLLM 服务抓日志核对，再写解析。
 - 事故记录与 json 出口的字段表。
 - 评测脚本接心跳的具体文件名单（逐个过）。
 - 分片输出文件名怎么从模板生成。
