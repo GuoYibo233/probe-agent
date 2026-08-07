@@ -411,6 +411,13 @@ TASKS = {
         stage="ops", py="sys", script="ops/gpu_jobs.py",
         desc="GPU 台账(register/finish/watch/free/status 原样透传)",
         notes=["register 对拼错的 flag 静默忽略;free 会 exec bash 顶掉进程"]),
+    "sampler": dict(
+        stage="ops", py="sys", script="ops/sampler.py",
+        desc="长程任务采样器(常驻;60s 一轮采心跳/探存活/算判定,开网页)",
+        notes=["常驻进程,登录机 tmux 里跑: tmux new-session -d -s new1_sampler "
+               "'python3 run.py sampler'",
+               "落盘在 NFS monitor/(latest.json/state.json/history/incidents),不进 git",
+               "冒烟: python3 run.py sampler --once 采一轮就退"]),
     "record": dict(
         stage="ops", py="sys", script="ops/record.py",
         desc="实验记录(start/finish/render/list/show 原样透传)",
