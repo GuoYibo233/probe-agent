@@ -128,6 +128,7 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 | `ops/record.py` | 数字账 CLI：start（发射时记，自动抓 git HEAD 与脏否）/ finish（补数字与结论）/ render（重渲染 RESULTS.md）/ list / show | `python3 run.py record start --run-id X --track <方向> …`；`… record finish RUN_ID --metric k=v --conclusion …`；`… record render`。⚠️ 要 run_id 四处一致只能用 `--run-id`：`--name` 会自动加时间戳前缀 |
 | `ops/gpu_jobs.py` | GPU 台账 CLI：register / finish / watch / free / status / json。卡的实时占用永远现场探测 | `python3 run.py gpu-jobs register --name N --workdir W --piece host:gpus:session:logpath …`；`… free`；`… finish NAME [--force]`；⚠️ watch 对 shiga 误报 EXIT（ssh host key） |
 | `ops/jobs.json` | 台账本体 | 只经 register/finish 读写 |
+| `ops/launch_common.py` | 发射公共件：探卡 `probe_free`（ssh 查计算进程，占用/探测失败都算非 FREE，fail-closed）、`local_host`/`has_session`/`tmux_launch`（本机 vs 远程 ssh 分支）、`register_all`（三处登记一口气：台账 rich 分片 → `record.py start` 子进程 → RUNMETA，任何一步失败原样中止，重复 run_id 在台账这步就被拒）。只是库，不接注册表；被谁接见 `run.py launch`（工单 09）与两个排卡发射器（工单 11） | 不单独跑，`import launch_common` 后调用 |
 | `ops/launch_probe.py` | 四格训练的通用 tmux 发射壳（批次/数据/环境参数化）。**gate 型任务：run.py 真执行它，它自己 ssh+tmux 发射**，所以出手前过脏树门禁 | `python3 run.py launch-probe smoke --batch <b> --data-root <d> --env <e> --model <m> --host <h> --gpus …`；`full … --placement <排卡表.json>`（一格一行 host/gpu/extra）；`--dry-run` 只打印；`--force` 透传（smoke 重跑必用） |
 | `ops/launch_eval.py` | 评测格的 tmux 发射壳，格表从 run.py import | 经注册表评测任务间接用 |
 | `ops/runmeta.py` | 产物钉代码：往产物目录写 RUNMETA.json（commit+argv+脏清单）；发射器自动调，手搓发射必须补 | `python3 run.py runmeta <产物目录> --cmd '<完整命令>'` |
