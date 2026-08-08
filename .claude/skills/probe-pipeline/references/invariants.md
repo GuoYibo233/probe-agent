@@ -74,7 +74,7 @@
 | run_id 四处一致 | 原始数据目录名 = tmux session 前缀 = 台账 name = commit message | `CLAUDE.md`、PLAY §0.10 | 出了问题追不回是哪次跑、用的哪版代码 |
 | 训练 run_id 模板 | `<批次>_<model_short>_<cell>`，cell ∈ `{mtool, mext, ctool, cgen}` | ENG §2.4 | 汇总脚本按目录名认格，命名一乱矩阵表就拼不出来 |
 | 模型称呼 | qwen3.5 与 qwen3.6 **永远是两个模型**，任何场合不写成"qwen 侧" | PLAY §0.6 | 合并会掩盖两代模型的差异，这是用户明确的红线 |
-| 记账双写 | 发射时 `python3 run.py record start` + `python3 run.py gpu-jobs register`；收尾 `python3 run.py record finish` + `python3 run.py gpu-jobs finish` | `CLAUDE.md`、PLAY §0.10 | 漏登记就是占卡不销号；数字进不了 `runs.jsonl` 就不进 `RESULTS.md` |
+| 记账双写 | **双写由 launch 保证；绕过 launch 手搓发射的，双登记责任回到人**——`python3 run.py launch`/`launch-probe`/`launch-eval` 发射成功自动做完 `record.py start` + `gpu-jobs register`；收尾仍手动 `python3 run.py record finish` + `python3 run.py gpu-jobs finish` | `CLAUDE.md`、`ops/launch_common.py`、PLAY §0.10 | 漏登记就是占卡不销号；数字进不了 `runs.jsonl` 就不进 `RESULTS.md` |
 | 只增不改 | `ops/runs.jsonl` append-only；`RESULTS.md` 是渲染产物不许手改 | `CLAUDE.md`、ENG §0.5 | 手改渲染产物下次渲染即被覆盖，且账实不符 |
 | 发射前 commit | 工作树必须干净 | PLAY §0.11 | 记录里存的 HEAD 追不回真实代码，实验等于没留痕 |
 | 新产物新目录 | 旧数据与旧数字一个字节不动，新东西一律新目录 + 新版本号 | PLAY §0.7 | 覆盖旧产物 = 永久失去复现基准 |

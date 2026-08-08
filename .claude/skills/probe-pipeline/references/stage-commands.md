@@ -17,6 +17,10 @@
 各环境的版本锁快照在 `ops/env_locks/`(一个 venv 一份 `uv pip freeze` 的 txt,含上表两个和 `envs/` 下的采集/服务环境),说明与生成命令见该目录的 `README.md`。**重大升级前先重生成对应快照并 commit**,再动手装包——这样"某环境突然行为不一样"时能直接 `git log -p` 对出是哪个包变了,不用重趟一遍装包过程。
 
 **哪些任务占卡、哪些不占:完整清单一律现查 `python3 run.py list`,标 `[发射]` 的才交 gpu-run**(run.py 对它们只把命令拼出来打印),没标的直接跑完出结果;本文件不再抄一份会过期的名单。两个例外要知道:① `launch-probe` / `launch-eval` 列表里不带 `[发射]` 标(它们自己 ssh+tmux 发射,不是交出命令),但同样过脏树门禁;② `ann-check-callstr` 是第三类——不占卡,但 import 链上有 torch,注册表给它钉的是 cprobe-env 并清空 `CUDA_VISIBLE_DEVICES`,绕过 run.py 手写 `python3 pipeline/annotate/check_callstr.py` 必死在 ModuleNotFoundError。单个任务的解释器/固定参数/是否过门禁看 `python3 run.py show <task>`。
+标 `[发射]` 的任务不用再手动"`show` 出命令 → 复制进 tmux → 手打三条登记"：
+`python3 run.py launch <task> [参数...] --run-id ID --track 方向 --piece host:gpus`
+一条命令做完探卡→tmux→30 秒验活→台账/record/RUNMETA 三处登记（见 gates.md G16）；
+`launch-probe`/`launch-eval` 是给排卡表批量场景的专用发射壳，同样接了这套登记。
 
 | 名目 | 路径 |
 |---|---|
@@ -349,7 +353,7 @@ S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             �
 - **S8 四格 × 三模型 = 12 个 run 全并行**,只受卡数限制(c1 批次:tokyo105 八卡 + tokyo106 四卡)。
 - **S9 六个并行**;S10 必须等对应的 S9,因为它要读 `REPLAY_REPORT.json` 的温度/θ 与 `logits_test.pt`。
 - S11 任何时候都能跑,不完整就是一张带 PENDING 的表。
-- 每次 GPU 发射前先 commit(记录里的 HEAD 只有工作树干净时才追得回真实代码;run.py 对发射类任务是**硬门禁**,脏树直接拒绝出命令,`show` 出命令也一样拦,`--allow-dirty` 才放行),发射后双登记 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...`,收尾各跑一次 `finish`。产物侧还有第三条痕迹:`launch-probe` / `launch-eval` 自动写 `<out>/RUNMETA.json`,手搓发射要自己补 `python3 run.py runmeta <outdir> --cmd '<命令>'`。
+- 每次 GPU 发射前先 commit(记录里的 HEAD 只有工作树干净时才追得回真实代码;run.py 对发射类任务是**硬门禁**,脏树直接拒绝出命令,`show` 出命令也一样拦,`--allow-dirty` 才放行)。**launch 自动写三处;手搓/register 补录路径仍在,漏了照旧算违规**——`python3 run.py launch <task> ...`(单任务)或 `launch-probe`/`launch-eval`(排卡批量)发射成功会自动做完台账登记 + `record.py start` + `<out>/RUNMETA.json` 三处;手搓发射(未接 launch 的老脚本)要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` + `python3 run.py runmeta <outdir> --cmd '<命令>'`,收尾各跑一次 `finish`。
 
 ---
 

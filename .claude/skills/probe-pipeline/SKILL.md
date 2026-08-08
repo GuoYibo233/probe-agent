@@ -131,7 +131,9 @@ smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这
 `<MODELS>` × `<CELLS>` 全独立，**一把全上并行**，墙钟 ≈ 单次时长。
 发射前 **G1 工作树干净**（先 commit；run.py 对发射类任务是**硬门禁**，
 连 `show` 出命令都拒绝，`--allow-dirty` 才放行）→ **G2 实探空卡** → 发射 →
-**G16 双登记**（`python3 run.py gpu-jobs register` + `python3 run.py record start`，一个都不能漏）。
+**G16 双登记**——launch 自动写三处；手搓/register 补录路径仍在，漏了照旧算违规
+（`python3 run.py launch <task> ...` 一条命令做完台账 + `record.py start` + RUNMETA
+三处登记；手搓发射要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...`）。
 
 两条与"同一个 `--out` 二次训练"有关的新行为（2026-08-02 起）：四格都有 `--force`，
 **不带它时 `--out` 下已有 `train_log.jsonl` 就直接拒绝开训**（防两次产物混进同一个
@@ -218,7 +220,7 @@ skill 是活文档，用一次不回写就腐烂一次——下次调用它的�
 | 活 | 派谁 | 备注 |
 |---|---|---|
 | 写代码 / 记账 / 清点 | `general-purpose`（opus） | 任务明确就用 opus，别上 Fable |
-| 发射与评测 | `gpu-runner` | 探卡→smoke→tmux→登记→验活一条龙 |
+| 发射与评测 | `gpu-runner` | 探卡→smoke→`launch`（自动三处登记+验活）一条龙 |
 | 长任务巡检 | `job-monitor` | 只读，kill 建议写报告里由主对话定 |
 
 **同一个 subagent 用 SendMessage 续派**，上下文不重建（本轮发射员续派 3 次、评测员 6 次）。

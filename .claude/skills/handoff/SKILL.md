@@ -29,7 +29,10 @@ version: 1.1.0
 
 ## Phase 1 — 实探（四路取证）
 
-1. `python3 ops/gpu_jobs.py json`：active 台账；逐 piece tail 日志取真实进度。
+1. `python3 run.py gpu-jobs json`：active 台账；逐 piece tail 日志取真实进度。
+   判定/速率/ETA 的采样历史目前只在网页出口 `http://localhost:8377/json`
+   （登录机常驻采样器落的 `latest.json`）齐全——终端 `gpu-jobs json` 接读同一份
+   历史仍在推进（工单 07），接上之前进度靠 tail 日志人工读。
 2. `git log --oneline -5` + `git status --short`：HEAD 在哪、有哪些未提交的账。
 3. `tail ops/runs.jsonl`：哪些 run_id 有 start 没 finish。
 4. 读 `WORKPLAN.md` 当前节 + `TIMELINE.md` 最新条，确认方向没变；变了先补 TIMELINE。
@@ -39,7 +42,7 @@ version: 1.1.0
 ```markdown
 # <线名> 交接书（<YYYY-MM-DD HH:MM JST>，交接自 session <短id>）
 > 旧 session 退场姿态：收尾模式看护到毕业 / 立即停手（二选一写死，附时刻）
-## 在跑的任务        台账名 / host / tmux / 当下进度@时刻 / 完成判据 / ETA 绝对时刻 / 收尾义务
+## 在跑的任务        台账名 / host / tmux / 当下进度@时刻(来源:`run.py gpu-jobs json` + 采样历史 `http://localhost:8377/json`) / 完成判据 / ETA 绝对时刻 / 收尾义务
 ## 下一步队列（已拍板） 按序；每条给可直接复制执行的命令 + 成功判据
 ## 未拍板事项        禁止擅自开工；注明问过没答 / 没问过
 ## 资产地图          数据 / 脚本 / 环境 / 权重的真实路径；逐条标注是否已 commit

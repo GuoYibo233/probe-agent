@@ -8,7 +8,7 @@
 | 编号 | 检查点 | 在哪一步 | 判据 | 不过时的标准动作 |
 |---|---|---|---|---|
 | G1 | 工作树干净 | 任何 GPU 发射前 | `git status --short` 为空 | 先 commit 再发射；不干净就发射，记录里的 HEAD 追不回真实代码（PLAY §0.11、§3.1） |
-| G2 | 实探空卡 | 发射前 | `python3 run.py gpu-jobs free`，只用 `OWNERS=FREE` 的卡，永不信缓存 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
+| G2 | 实探空卡 | 发射前 | `python3 run.py gpu-jobs free`，只用 `OWNERS=FREE` 的卡，永不信缓存；`python3 run.py launch`/`launch-probe`/`launch-eval` 内部对每个 piece 也会自动重探一遍，任何一张非 FREE 整次拒绝——手动 `free` 是给人挑卡用，不是唯一防线 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
 | G3 | 服务健康 | 采集放量前 | 日志出现 `Application startup complete`，且 `curl /v1/models` 返回模型名；**全部实例健康才放量** | 读服务日志定位；单实例救不活就把它的分片改指同模型另一实例的端口，不停摆（PLAY §3.2、§3.7） |
 | G4 | 采集 smoke | 每模型各 1 题 | outdir 出现 `<env>_<tid>.jsonl`；`type:"gen"` 带非空 `reasoning`、`type:"env"` 带代码动作、末行 `type:"final"` | 先查服务日志再修；反复修不好按 §4 判断是否死局（PLAY §3.3） |
 | G5 | outdir 命名 | 采集发射时 | 目录名必须是 `<env>_<model_key>` 标准名（如 `appworld_gptoss`），尾巴对上 `MODEL_OF` 的键 | 改名重跑；名字不标准会被下游事件抽取**静默跳过**，见 §3.6（PLAY §3.3、ENG §4.2.1、§7） |
@@ -22,8 +22,8 @@
 | G13 | 对齐检查 | 因果格开训前 | `ALIGN_CHECK` PASS，FAIL 即 `exit 2`；先用 `--align-only` 单独跑一遍 | 看 §3.1：先判是数值噪声还是实现错误，放宽阈值必须记 TIMELINE（ENG §5.3、§9） |
 | G14 | 四格 smoke | 批量训练发射前 | 各跑一次 `--smoke`：mtool/mext/cgen **按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（四个脚本都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，不是原序截断；mext 的 500/200 落在 `join_rows` 展开出来的**参数实例**上，不是样本），ctool 同法随机抽 200 / 80 **事件**，四格都是 1 epoch、**没有步数上限**（口径同 `stage-commands.md §3` 的 `--smoke` 行）；判据是 loss 在降、ckpt 能存能读；ctool 含 ALIGN_CHECK PASS | 修脚本重 smoke，不许直接放量（PLAY §5.2、ENG §9）。⚠️ 重跑同一个 smoke 目录要带 `--force`（同 out 已有 `train_log.jsonl` 即拒绝开训），出命令阶段树脏就 `--allow-dirty` |
 | G15 | bundle 校验 | 批量训练发射前 | `check_bundle.py` 对 smoke 产物跑通：能加载、出 softmax、打印预测/置信度/是否过 θ/真值 | 产物格式不合 `probe_server.py` 就改存盘格式（ENG §8、§9） |
-| G16 | 双登记 | 发射后立刻 | `python3 run.py gpu-jobs register` 与 `python3 run.py record start` 同时做完 | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
-| G17 | 收尾销号 | 每个 run 结束 | `python3 run.py record finish --metric …` + `python3 run.py gpu-jobs finish` + 释放显存 + commit | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5）。`gpu-jobs finish` 是 fail-closed 的：session 还活着、或 ssh 探测失败（分不清死活）都会拒绝销号，确认要销带 `--force` |
+| G16 | 双登记 | 发射后立刻 | **launch 自动写三处；手搓/register 补录路径仍在，漏了照旧算违规**——`python3 run.py launch`/`launch-probe`/`launch-eval` 发射成功自动做完台账 + `record.py start` + RUNMETA 三处登记；手搓发射要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
+| G17 | 收尾销号 | 每个 run 结束 | `python3 run.py record finish --metric …` + `python3 run.py gpu-jobs finish` + 释放显存 + commit——**这一步 launch 没有收编，G16 的自动化只管发射时的登记，销号仍要手动跑这四连** | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5）。`gpu-jobs finish` 是 fail-closed 的：session 还活着、或 ssh 探测失败（分不清死活）都会拒绝销号，确认要销带 `--force` |
 | G18 | 总验收清单 | 批量训练发射前逐项打勾 | ENG §9 的七条：G8 / G12 / 产物清单齐 / 题单一致 / 四格 smoke / G15 / 全部新代码已 commit | 缺哪条补哪条，一条不缺才发射（ENG §9） |
 | G19 | 题单缺口逐条列出 | annotate 段末 | 三模型共用一份题单，但**实现出的 unit 集合允许有缺口**；缺口必须逐条列进 `CALLSTR_CHECK.md` 并说明原因（轨迹一个可用事件都没出：思考 <40 字符 或 调用正则解析不出）。bfcl 实测缺口：q35 0 题、q36 4 题（`multi_turn_base_{63,84,176,187}`，其中 176 在 test 堆 → q36 test 只有 19 实例）、gptoss 1 题（`multi_turn_base_30`，val 堆） | 缺口列不出来 = G10 的字面版本失守，"三模型同题对比"这句话有水分，报告里必须改口成"近似同题"（`check_callstr.py` 偏差 2） |
 | G20 | 真值调用串可回读 | annotate 段末，进 train 前 | 把每个事件的 `label_call` 喂给 `eval_causal_call.parse_call`，切回来的 `(key, norm(value))` 必须与该事件的 `args_named` 全等。回读率 = `params_all_ok` / `full_call_ok` 的**天花板**，必须写进报告。实测（事件级回读率，q35/q36/gptoss）：bfcl 0.9735 / 0.9763 / 0.9755，appworld 0.9932 / 0.9953 / 0.9985 | 回读率异常低（<0.95）先查 `make_call` 与 `split_named_raw` 的切法是不是漂了；正常低（参数值含逗号）**只记录不修口径**——给单个环境补逗号闸门会让它与已上账的 appworld 不是一把尺子（EXT §5 #21） |

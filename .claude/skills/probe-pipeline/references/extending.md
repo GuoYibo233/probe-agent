@@ -128,6 +128,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | `SEED = 20260729` + `torch.manual_seed`/`random.seed` | 常量 mtool`:33` / mext`:38` / ctool`:52` / cgen`:41`(另有 `rules.py:13` 第五份);设种子 mtool`:101-102` / mext`:232-233` / ctool`:257-258` / cgen`:200-201` | 五处独立常量,**没有单一真源**;新格必须自己写死同一个数,设种子位置照抄 |
 | `collate()` 与 Dataset 类 | `collate` mtool`:56` / mext`:124` / ctool`:98` / cgen`:76`;数据集 `JsonlDS`(mtool`:36`)/ `InstDS`+`join_rows`(mext`:63`)/ `load_events`+`EventDS`(ctool)/ `CallDS`(cgen`:58-63`) | 八份签名各不相同,一律不能复用;按"新格吃什么标签"挑最近的抄 |
 | `train_log.jsonl` 的 `log()` 闭包 | mtool`:132-138` / mext`:265-267` / ctool`:313-315` / cgen`:234-236` | 一律 `open(..., "a")` **追加模式**;事件名约定 `start`/`step`/`eval`/`save_best`/`done`,新格不照这套写,读日志的人和 job-monitor 都认不出 |
+| 心跳 emit(`ops/heartbeat.py`) | 四个训练脚本、三个 eval 脚本、`run_appworld.py` 已接(`import heartbeat` / `heartbeat.emit` grep 定位,不引行号;`run_tales.py`/`run_alfworld.py`/`run_tau2.py` 尚未接) | **新采集/训练/评测脚本必须接 `ops/heartbeat.py`(进主循环 emit(0,...),每单位 emit,收尾 status=done),不接的脚本在窗口里永远是 warm-up 中** |
 | smoke 限额 | mtool`:118`、mext`:247`、cgen`:210` 都是 500/200 **实例**;ctool`:269` 是 200/80 **事件** | 新格自己定,定完写进 stage-commands §3 的表 |
 | 日志字段旧名 | `calA_weighted_acc`(mtool`:168`)、`calA_param_acc`(mext`:323`)、`best_calA_weighted_acc`(ctool`:368`) | 堆名早已是 val,字段名故意保留旧的 `calA_*`(规格 `plans/2026-07-31-pipeline-engineering.md:330` 明令"保持原名不改,下游按名读") |
 

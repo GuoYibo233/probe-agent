@@ -3,6 +3,8 @@
 > 只记不会分钟级变化的东西。**卡的实时占用永远现场探测**：
 > `python3 run.py gpu-jobs free`（≈6 秒扫全集群，仓库根执行）。
 > 任务台账在 `ops/jobs.json`，只通过 `run.py gpu-jobs register/finish` 读写。
+> 登录机常驻采样器算判定：`python3 run.py sampler --interval 60 --port 8377`；
+> 网页 `http://localhost:8377`（ssh 端口转发）、`/json` 出机器可读判定。
 > 本文件更新时机：驱动升级、硬件变动、发现新坑。
 
 勘察日期：2026-07-29（实测，非道听途说）
