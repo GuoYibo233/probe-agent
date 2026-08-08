@@ -22,11 +22,21 @@ import sys
 import time
 from datetime import datetime
 
+import verdicts
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 REG_PATH = os.path.join(ROOT, "jobs.json")
 GPU_STATUS_SH = os.path.join(
     os.path.dirname(ROOT), ".claude", "skills", "gpu-run", "scripts", "gpu_status.sh"
 )
+
+# 采样历史(latest.json,采样器 ops/sampler.py 落盘)——终端出口(status/
+# watch/json)新鲜时直接读它渲染，过期退回下面的现场实探老路(collect())。
+# free/register/finish 永远现场实探，不读这份文件(spec §终端出口读采样历史)。
+MONITOR_DIR = os.environ.get(
+    "NEW1_MONITOR_DIR",
+    "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor")
+FRESH_S = 300.0  # 新鲜度门槛:最后采样时刻 5 分钟内才信(工单 07)
 
 # tqdm 行（\r 已换成 \n 后）: " 42%|####  | 42/100 [00:31<00:43,  1.35it/s]"
 TQDM_RE = re.compile(
@@ -192,9 +202,156 @@ def fmt_table(rows):
     return "\n".join(out)
 
 
-def cmd_status():
+def read_latest():
+    """采样历史出口:读 MONITOR_DIR/latest.json。返回 (latest_dict|None,
+    age_s|None)——文件不在/读不了/JSON 语法坏了/顶层不是 dict/sampled_at
+    字段类型不对，都返回 (None, None)，退回现场实探老路，不让 status/
+    watch/json 三个出口在畸形但语法合法的 latest.json 上崩溃。latest
+    没有 sampled_at 字段（不该发生，但别炸）返回 age_s=None、latest 原样
+    透传。age_s 用调用时的挂钟算，与 latest["sampled_at"]（采样器落盘时
+    的挂钟）同机比较，不跨机比钟。"""
+    p = os.path.join(MONITOR_DIR, "latest.json")
+    try:
+        with open(p) as f:
+            latest = json.load(f)
+    except (OSError, ValueError):
+        return None, None
+    if not isinstance(latest, dict):
+        return None, None
+    sampled_at = latest.get("sampled_at")
+    if sampled_at is None:
+        return latest, None
+    if isinstance(sampled_at, bool) or not isinstance(sampled_at, (int, float)):
+        return None, None
+    try:
+        age_s = time.time() - sampled_at
+    except (TypeError, OverflowError, OSError):
+        return None, None
+    return latest, age_s
+
+
+def _stale_warning(latest):
+    """终端出口过期时打的警告行，措辞是工单 07 给定的原文。"""
+    if latest and latest.get("sampled_at"):
+        stamp = datetime.fromtimestamp(latest["sampled_at"]).strftime("%H:%M:%S")
+    else:
+        stamp = "无"
+    return f"采样器不在跑(最后采样 {stamp}),现场实探一次"
+
+
+def _fmt_progress_v2(r):
+    done, total, unit = r.get("done"), r.get("total"), r.get("unit")
+    if done is None or total is None:
+        return "-"
+    pct = r.get("progress_pct")
+    pct_s = "-" if pct is None else f"{pct}%"
+    tail = f" {unit}" if unit else ""
+    return f"{done}/{total} ({pct_s}){tail}"
+
+
+def _fmt_rate_v2(r):
+    """recent_rate 没值 -> "-"；有值时按数量级挑单位：>=1/s 本身就够读，
+    保留 /s；小于 1/s（批任务常见，比如几十秒一个 task）乘 3600 换算成
+    /h 更好读。"""
+    rate = r.get("recent_rate")
+    if rate is None:
+        return "-"
+    if rate >= 1:
+        return f"{rate:.3g}/s"
+    return f"{rate * 3600:.3g}/h"
+
+
+def _fmt_tok_short(v):
+    if v is None:
+        return "-"
+    if v >= 1_000_000:
+        return f"{v / 1_000_000:.1f}M"
+    if v >= 1_000:
+        return f"{v / 1_000:.0f}k"
+    return str(v)
+
+
+def _fmt_tok_v2(r):
+    tok_in, tok_out = r.get("tok_in"), r.get("tok_out")
+    if tok_in is None and tok_out is None:
+        return "-"
+    return f"{_fmt_tok_short(tok_in)}/{_fmt_tok_short(tok_out)}"
+
+
+def _fmt_eta_v2(r):
+    eta_s = r.get("eta_s")
+    if eta_s is None:
+        return "-"
+    m, s = divmod(max(0, int(eta_s)), 60)
+    h, m = divmod(m, 60)
+    return f"{h:02d}:{m:02d}"
+
+
+def fmt_table_v2(rows, sampled_at=None):
+    """采样历史新鲜时的渲染路径(工单 07)。列: JOB/HOST/GPU/判定/
+    PROGRESS/RATE/TOK/ETA/SESSION。sampled_at 给了就加一行表头
+    `最后采样 HH:MM:SS`。已完成/已挂两种判定仍保留收尾/看日志提示行，
+    措辞沿用 fmt_table()。"""
+    out = []
+    if sampled_at is not None:
+        stamp = datetime.fromtimestamp(sampled_at).strftime("%H:%M:%S")
+        out.append(f"最后采样 {stamp}")
+    if not rows:
+        out.append("台账为空——当前没有登记中的任务。发射走 gpu-run skill 会自动登记。")
+        return "\n".join(out)
+    cols = ["job", "host", "gpus", "verdict", "progress", "rate", "tok", "eta", "session"]
+    head = {"job": "JOB", "host": "HOST", "gpus": "GPU", "verdict": "判定",
+            "progress": "PROGRESS", "rate": "RATE", "tok": "TOK",
+            "eta": "ETA", "session": "SESSION"}
+    disp = []
+    for r in rows:
+        disp.append({
+            "job": r.get("job"), "host": r.get("host"), "gpus": r.get("gpus"),
+            "verdict": r.get("verdict"), "progress": _fmt_progress_v2(r),
+            "rate": _fmt_rate_v2(r), "tok": _fmt_tok_v2(r),
+            "eta": _fmt_eta_v2(r), "session": r.get("session"),
+        })
+    widths = {c: max(len(head[c]), *(len(str(d[c])) for d in disp)) for c in cols}
+    out.append("  ".join(head[c].ljust(widths[c]) for c in cols))
+    out.append("  ".join("-" * widths[c] for c in cols))
+    for d in disp:
+        out.append("  ".join(str(d[c]).ljust(widths[c]) for c in cols))
+
+    by_job = {}
+    for r in rows:
+        by_job.setdefault(r.get("job"), []).append(r.get("verdict"))
+    all_done = sorted(j for j, vs in by_job.items()
+                      if vs and all(v == verdicts.V_DONE for v in vs))
+    dead = [r for r in rows if r.get("verdict") == verdicts.V_DEAD]
+    if all_done or dead:
+        out.append("")
+    for j in all_done:
+        out.append(f"{verdicts.V_DONE} = 全部分片判定已完成——该收尾了: "
+                   f"python3 run.py gpu-jobs finish {j}")
+    if dead:
+        out.append(f"{verdicts.V_DEAD} = session 没了，进度未到 100%，看日志: "
+                   f"{dead[0].get('log')}")
+    return "\n".join(out)
+
+
+def _print_table_from_latest_or_fallback():
+    """status/watch 两个终端出口共用的新鲜度判断:latest.json 新鲜就渲染
+    快照(fmt_table_v2)，过期/读不到/畸形就打警告退回现场实探老路
+    (collect + fmt_table)。抽出来是因为这段判断两处出口原样各写一遍，
+    新鲜度门槛或渲染选择逻辑改动容易漏改一处(工单 07 复核 F2)。返回
+    extras(台账外 tmux session)供调用方接着打印。"""
+    latest, age_s = read_latest()
+    if latest is not None and age_s is not None and age_s <= FRESH_S:
+        print(fmt_table_v2(latest.get("rows", []), latest.get("sampled_at")))
+        return latest.get("extras") or {}
+    print(_stale_warning(latest))
     rows, extras = collect(with_extras=True)
     print(fmt_table(rows))
+    return extras
+
+
+def cmd_status():
+    extras = _print_table_from_latest_or_fallback()
     if extras:
         print("\n台账外 tmux session(实际在跑但没登记——漏 register?别的对话在用?):")
         for h, ss in sorted(extras.items()):
@@ -203,10 +360,9 @@ def cmd_status():
 
 def cmd_watch(sec):
     while True:
-        rows, extras = collect(with_extras=True)
         sys.stdout.write("\x1b[2J\x1b[H")
         print(f"new1 GPU jobs  @ {datetime.now().strftime('%H:%M:%S')}  (每 {sec}s 刷新, Ctrl-C 退出)\n")
-        print(fmt_table(rows))
+        extras = _print_table_from_latest_or_fallback()
         if extras:
             print("\n台账外 tmux session:")
             for h, ss in sorted(extras.items()):
@@ -296,6 +452,19 @@ def cmd_finish_force(name):
     print(f"{name} 已强行销号（移入 history,标记 force_finished）")
 
 
+def cmd_json():
+    """json 出口(工单 07):新鲜时原样吐 latest.json；过期退回 collect()
+    老路，外加 sampler_stale=true 标记给 agent 识别。老路的 rows 换个
+    外壳装进 "rows" 键——裸列表加不了字段，latest.json 本来就是这个
+    键名，两条路径的调用方看到的结构对得上。"""
+    latest, age_s = read_latest()
+    if latest is not None and age_s is not None and age_s <= FRESH_S:
+        print(json.dumps(latest, indent=2, ensure_ascii=False))
+    else:
+        out = {"rows": collect(), "sampler_stale": True}
+        print(json.dumps(out, indent=2, ensure_ascii=False))
+
+
 def main():
     args = sys.argv[1:]
     if not args or args[0] == "status":
@@ -316,7 +485,7 @@ def main():
         else:
             cmd_finish(names[0])
     elif args[0] == "json":
-        print(json.dumps(collect(), indent=2, ensure_ascii=False))
+        cmd_json()
     else:
         sys.exit(__doc__)
 
