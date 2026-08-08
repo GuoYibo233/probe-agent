@@ -204,17 +204,29 @@ def fmt_table(rows):
 
 def read_latest():
     """采样历史出口:读 MONITOR_DIR/latest.json。返回 (latest_dict|None,
-    age_s|None)——文件不在/读不了返回 (None, None)；latest 没有 sampled_at
-    字段（不该发生，但别炸）也返回 age_s=None。age_s 用调用时的挂钟算，
-    与 latest["sampled_at"]（采样器落盘时的挂钟）同机比较，不跨机比钟。"""
+    age_s|None)——文件不在/读不了/JSON 语法坏了/顶层不是 dict/sampled_at
+    字段类型不对，都返回 (None, None)，退回现场实探老路，不让 status/
+    watch/json 三个出口在畸形但语法合法的 latest.json 上崩溃。latest
+    没有 sampled_at 字段（不该发生，但别炸）返回 age_s=None、latest 原样
+    透传。age_s 用调用时的挂钟算，与 latest["sampled_at"]（采样器落盘时
+    的挂钟）同机比较，不跨机比钟。"""
     p = os.path.join(MONITOR_DIR, "latest.json")
     try:
         with open(p) as f:
             latest = json.load(f)
     except (OSError, ValueError):
         return None, None
+    if not isinstance(latest, dict):
+        return None, None
     sampled_at = latest.get("sampled_at")
-    age_s = None if sampled_at is None else time.time() - sampled_at
+    if sampled_at is None:
+        return latest, None
+    if isinstance(sampled_at, bool) or not isinstance(sampled_at, (int, float)):
+        return None, None
+    try:
+        age_s = time.time() - sampled_at
+    except (TypeError, OverflowError, OSError):
+        return None, None
     return latest, age_s
 
 
@@ -322,15 +334,24 @@ def fmt_table_v2(rows, sampled_at=None):
     return "\n".join(out)
 
 
-def cmd_status():
+def _print_table_from_latest_or_fallback():
+    """status/watch 两个终端出口共用的新鲜度判断:latest.json 新鲜就渲染
+    快照(fmt_table_v2)，过期/读不到/畸形就打警告退回现场实探老路
+    (collect + fmt_table)。抽出来是因为这段判断两处出口原样各写一遍，
+    新鲜度门槛或渲染选择逻辑改动容易漏改一处(工单 07 复核 F2)。返回
+    extras(台账外 tmux session)供调用方接着打印。"""
     latest, age_s = read_latest()
     if latest is not None and age_s is not None and age_s <= FRESH_S:
         print(fmt_table_v2(latest.get("rows", []), latest.get("sampled_at")))
-        extras = latest.get("extras") or {}
-    else:
-        print(_stale_warning(latest))
-        rows, extras = collect(with_extras=True)
-        print(fmt_table(rows))
+        return latest.get("extras") or {}
+    print(_stale_warning(latest))
+    rows, extras = collect(with_extras=True)
+    print(fmt_table(rows))
+    return extras
+
+
+def cmd_status():
+    extras = _print_table_from_latest_or_fallback()
     if extras:
         print("\n台账外 tmux session(实际在跑但没登记——漏 register?别的对话在用?):")
         for h, ss in sorted(extras.items()):
@@ -341,14 +362,7 @@ def cmd_watch(sec):
     while True:
         sys.stdout.write("\x1b[2J\x1b[H")
         print(f"new1 GPU jobs  @ {datetime.now().strftime('%H:%M:%S')}  (每 {sec}s 刷新, Ctrl-C 退出)\n")
-        latest, age_s = read_latest()
-        if latest is not None and age_s is not None and age_s <= FRESH_S:
-            print(fmt_table_v2(latest.get("rows", []), latest.get("sampled_at")))
-            extras = latest.get("extras") or {}
-        else:
-            print(_stale_warning(latest))
-            rows, extras = collect(with_extras=True)
-            print(fmt_table(rows))
+        extras = _print_table_from_latest_or_fallback()
         if extras:
             print("\n台账外 tmux session:")
             for h, ss in sorted(extras.items()):

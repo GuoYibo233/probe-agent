@@ -79,6 +79,29 @@ class TestReadLatest(unittest.TestCase):
         self.assertIsNone(latest)
         self.assertIsNone(age_s)
 
+    def test_sampled_at_wrong_type_returns_none_none(self):
+        # 合法 JSON，但 sampled_at 是字符串——不该抛 TypeError(F1 复核)
+        (self.mon / "latest.json").write_text(
+            json.dumps({"sampled_at": "x", "rows": []}))
+        latest, age_s = gpu_jobs.read_latest()
+        self.assertIsNone(latest)
+        self.assertIsNone(age_s)
+
+    def test_top_level_not_dict_returns_none_none(self):
+        # 合法 JSON，但顶层是数组不是 dict——不该抛 AttributeError(F1 复核)
+        (self.mon / "latest.json").write_text(json.dumps([]))
+        latest, age_s = gpu_jobs.read_latest()
+        self.assertIsNone(latest)
+        self.assertIsNone(age_s)
+
+    def test_missing_sampled_at_field_returns_latest_and_none_age(self):
+        # sampled_at 字段整个缺失(不是类型错，是没有)——latest 原样透传，
+        # age_s=None，调用方走过期分支
+        (self.mon / "latest.json").write_text(json.dumps({"rows": []}))
+        latest, age_s = gpu_jobs.read_latest()
+        self.assertIsNotNone(latest)
+        self.assertIsNone(age_s)
+
 
 class TestFmtTableV2(unittest.TestCase):
     def test_renders_all_columns_and_header_stamp(self):
