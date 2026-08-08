@@ -83,7 +83,14 @@ def launch_and_register(host, gpu, sess, cmd, log, meta_dir, stage, batch,
                               "placement": placement or ""})
     except Exception as e:
         print(f"WARN RUNMETA 没写上({meta_dir}): {e}", file=sys.stderr)
-    rid = sess[len("eval_"):]
+    # rid 用完整 sess(含 eval_ 前缀),不能去掉前缀——去掉前缀后就等于
+    # launch_probe.build() 给同一格训练 job 用的 rid(`{batch}_{model}_{cell}`),
+    # 而训练 job 的销号(gpu_jobs finish)按 SKILL.md Phase D 排在评测(Phase C4)
+    # 之后,标准跑法下训练 job 此时还在台账 active 里,会撞 register_all 的重复
+    # run_id 检查(F1 复核)。带前缀的 rid 在结构上不可能等于任何训练 rid
+    # (`"eval_" + x == x` 无解),历史台账里也确有 `eval_c2_q36_mtool` 这个
+    # 带前缀的 job name 先例(见 ops/gpu_jobs.py cmd_finish 的审计注释)。
+    rid = sess
     piece = {"host": host, "gpus": str(gpu), "session": sess, "log": str(log),
               "cmd": cmd, "launched_at": time.time(), "kind": f"eval_{stage}",
               "stall_line": None, "escalate_line": None}
