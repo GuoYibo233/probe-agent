@@ -8,7 +8,7 @@
 | 编号 | 检查点 | 在哪一步 | 判据 | 不过时的标准动作 |
 |---|---|---|---|---|
 | G1 | 工作树干净 | 任何 GPU 发射前 | `git status --short` 为空 | 先 commit 再发射；不干净就发射，记录里的 HEAD 追不回真实代码（PLAY §0.11、§3.1） |
-| G2 | 实探空卡 | 发射前 | `python3 run.py gpu-jobs free`，只用 `OWNERS=FREE` 的卡，永不信缓存；`python3 run.py launch`/`launch-probe`/`launch-eval` 内部对每个 piece 也会自动重探一遍，任何一张非 FREE 整次拒绝——手动 `free` 是给人挑卡用，不是唯一防线 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
+| G2 | 实探空卡 | 发射前 | `python3 run.py gpu-jobs free`，只用 `OWNERS=FREE` 的卡，永不信缓存；`python3 run.py launch` 内部对每个 piece 也会自动重探一遍，任何一张非 FREE 整次拒绝（fail-closed，一张都不发射）；`launch-probe`/`launch-eval`（排卡批量）逐格重探，非 FREE 只打印原因跳过该格、继续发下一格，不是整批拒绝——手动 `free` 是给人挑卡用，不是唯一防线 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
 | G3 | 服务健康 | 采集放量前 | 日志出现 `Application startup complete`，且 `curl /v1/models` 返回模型名；**全部实例健康才放量** | 读服务日志定位；单实例救不活就把它的分片改指同模型另一实例的端口，不停摆（PLAY §3.2、§3.7） |
 | G4 | 采集 smoke | 每模型各 1 题 | outdir 出现 `<env>_<tid>.jsonl`；`type:"gen"` 带非空 `reasoning`、`type:"env"` 带代码动作、末行 `type:"final"` | 先查服务日志再修；反复修不好按 §4 判断是否死局（PLAY §3.3） |
 | G5 | outdir 命名 | 采集发射时 | 目录名必须是 `<env>_<model_key>` 标准名（如 `appworld_gptoss`），尾巴对上 `MODEL_OF` 的键 | 改名重跑；名字不标准会被下游事件抽取**静默跳过**，见 §3.6（PLAY §3.3、ENG §4.2.1、§7） |
