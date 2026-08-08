@@ -8,9 +8,10 @@
 巡检 → 收尾（汇报/记数字/释放/销号/提交）或中断。
 禁止绕过它手搓 ssh/nohup 启动。
 
+- 发射与登记收成 `python3 run.py launch` 一条命令（探卡/tmux/验活/三处登记一口气做完）。
 - 集群慢变量（驱动/CUDA/坑）：`ops/gpu_state.md`
 - 任务台账：`ops/jobs.json`，只通过 `python3 run.py gpu-jobs register/finish` 读写
-- 用户自助监控：`python3 run.py gpu-jobs watch`
+- 用户自助监控：`python3 run.py gpu-jobs watch` + 网页 `http://localhost:8377`（ssh 端口转发）
 - 实时空卡：`python3 run.py gpu-jobs free`（永不信缓存的占用状态）
 - 产物钉代码：发射器自动往产物目录写 `RUNMETA.json`（commit+argv+脏清单）；
   手搓发射必须补 `python3 run.py runmeta <产物目录> --cmd '<完整命令>'`
