@@ -6,7 +6,8 @@
   gpu_jobs.py watch [SEC]        # 自动刷新，默认每 30 秒
   gpu_jobs.py free               # 全集群空卡表（转调 gpu_status.sh）
   gpu_jobs.py register --name N --workdir W [--note TEXT] \
-              --piece host:gpus:session:logpath [--piece ...]
+              --piece host:gpus:session:logpath [--piece ...] \
+              [--kind batch|service] [--port 端口]  # 手工补录服务分片用
   gpu_jobs.py finish NAME        # 收尾销号（session 还活着会拒绝;--force 强销）
   gpu_jobs.py json               # 机器可读输出（给 agent 用）
 
@@ -375,7 +376,16 @@ def cmd_free():
 
 
 def cmd_register(argv):
+    """`--kind`/`--port`(C2,final-review 2026-08-09):手工补录路径原来只会
+    落 host/gpus/session/log 四元组，没有 kind/port 就等于永远登记成
+    batch——服务分片（比如手起的 vLLM，没走 `run.py launch --service`）
+    补录进台账后，采样器的 `probe_port` 判定链路照样断掉。`--kind` 默认
+    `batch`（不给就和以前行为一致）；`--port` 只在给了才写进 piece，两个
+    旗标应用到这次调用里的全部 `--piece`（手工补录一般一次只补一个分片，
+    不为这条 legacy 路径单独做「每个 piece 各自 kind/port」的精细化）。"""
     name = workdir = note = None
+    kind = "batch"
+    port = None
     pieces = []
     it = iter(argv)
     for a in it:
@@ -389,8 +399,16 @@ def cmd_register(argv):
             host, gpus, session, log = next(it).split(":", 3)
             pieces.append({"host": host, "gpus": gpus,
                            "session": session, "log": log})
+        elif a == "--kind":
+            kind = next(it)
+        elif a == "--port":
+            port = int(next(it))
     if not name or not pieces:
         sys.exit("register 需要 --name 和至少一个 --piece host:gpus:session:log")
+    for piece in pieces:
+        piece["kind"] = kind
+        if port is not None:
+            piece["port"] = port
 
     def _add(reg):
         if any(j["name"] == name for j in reg["active"]):

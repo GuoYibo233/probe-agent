@@ -7,7 +7,9 @@
      `--` 之后全透传)。
   2. task 模式: `t = TASKS[task]`;`--cmd` 模式跳过注册表。
   3. `gate_dirty(...)`(honor_dry=True,复用 run.py 的实现)。
-  4. `--run-id`/`--track` 必填校验(record start 硬要求)。
+  4. `--run-id`/`--track` 必填校验(record start 硬要求);`--service` 给了
+     就必须带 `--port`(C2,final-review 2026-08-09:没有端口,采样器的
+     `probe_port` 判定链路就断了,服务分片会卡死在 warm-up)。
   5. pieces 解析 + 分片注入(标了 shardable 才许多 `--piece`) + session/log 命名。
   6. `--dry-run` 打印每分片的 inner 命令,不碰任何登记。
   7. 逐 piece `probe_free`,任何一张非 FREE 整次拒绝(一张都不发射)。
@@ -20,7 +22,7 @@
   python3 run.py launch <task> [任务参数...] --run-id ID --piece host:gpus [--piece ...]
       --track 方向 [--note ...] [--outdir DIR]
       [--stall-line 秒] [--escalate-line 秒] [--warmup-line 秒]
-      [--service] [--allow-dirty] [--dry-run]
+      [--service --port 端口] [--allow-dirty] [--dry-run]
   python3 run.py launch --cmd '<完整命令>' --run-id ID --workdir DIR --piece ... (其余同上)
 
 注册表外的一次性命令(2026-08-02 裁决的唯一例外)走 `--cmd` 逃生口:不查
@@ -49,7 +51,7 @@ ALIVE_POLL_S = 5
 # 一切)原样透传给任务/`--cmd`。
 _VALUE_FLAGS = ("--cmd", "--workdir", "--run-id", "--track", "--note",
                 "--outdir", "--piece", "--stall-line", "--escalate-line",
-                "--warmup-line")
+                "--warmup-line", "--port")
 _BOOL_FLAGS = ("--service", "--allow-dirty", "--dry-run")
 
 
@@ -65,10 +67,12 @@ def parse_launch_argv(argv):
     task(str|None,--cmd 模式下 None) / cmd(str|None) / workdir(str|None) /
     run_id / track / note / outdir / pieces(list[str] 'host:gpus') /
     stall_line / escalate_line / warmup_line(float|None) / service(bool) /
+    port(int|None,服务档探活端口,见 cmd_launch 里的 --service 校验) /
     dry_run / allow_dirty(bool) / extra(list[str],透传给任务/--cmd)。
 
     `--` 之后的一切不再当 launch 旗标解析,直接进 extra——这是任务自己的
-    `--outdir`/`--port` 这类同名旗标与 launch 自己的旗标区分开的办法。
+    `--outdir`/`--port` 这类同名旗标与 launch 自己的旗标区分开的办法
+    (任务自己的 --port,比如某个任务脚本自带的端口参数,写在 `--` 之后)。
     """
     argv = list(argv)
     if "--" in argv:
@@ -79,7 +83,7 @@ def parse_launch_argv(argv):
 
     p = dict(task=None, cmd=None, workdir=None, run_id=None, track=None,
               note=None, outdir=None, pieces=[], stall_line=None,
-              escalate_line=None, warmup_line=None, service=False,
+              escalate_line=None, warmup_line=None, service=False, port=None,
               dry_run=False, allow_dirty=False, extra=[])
 
     if head and not head[0].startswith("-"):
@@ -109,6 +113,8 @@ def parse_launch_argv(argv):
             p["escalate_line"] = float(_need(it, a))
         elif a == "--warmup-line":
             p["warmup_line"] = float(_need(it, a))
+        elif a == "--port":
+            p["port"] = int(_need(it, a))
         elif a == "--service":
             p["service"] = True
         elif a == "--allow-dirty":
@@ -248,6 +254,11 @@ def cmd_launch(argv):
     if not p["track"]:
         raise SystemExit(
             "launch 要 --track(这个实验服务于哪个方向,跟 TIMELINE.md 对齐)")
+    if p["service"] and p["port"] is None:
+        # C2(final-review,2026-08-09):没有 port,rich piece 就没有 "port"
+        # 字段,sampler.update_piece_state 的 probe_port 分支永远拿不到端口,
+        # 判定卡死在 warm-up——服务档必须在发射时就把端口钉进台账。
+        raise SystemExit("服务档需要 --port")
 
     pieces = build_pieces(p, t)
     env = t.get("env", {}) if t is not None else {}
@@ -292,7 +303,7 @@ def cmd_launch(argv):
     rich_pieces = [dict(host=pc["host"], gpus=pc["gpus"], session=pc["session"],
                         log=pc["log"], cmd=pc["cmd"], launched_at=now, kind=kind,
                         stall_line=p["stall_line"], escalate_line=p["escalate_line"],
-                        task=p["task"])
+                        task=p["task"], port=p["port"])
                    for pc in pieces]
 
     cmd_display = (rich_pieces[0]["cmd"] if len(rich_pieces) == 1

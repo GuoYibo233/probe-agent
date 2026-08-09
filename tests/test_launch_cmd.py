@@ -208,6 +208,17 @@ class TestCmdLaunchValidation(unittest.TestCase):
                 LCC.cmd_launch(["faketask", "--run-id", "r",
                                "--piece", "tokyo106:0", "--dry-run"])
 
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    def test_service_without_port_rejected(self, _gd):
+        """C2(final-review):没有 --port,rich piece 就没有 port 字段,
+        采样器的端口判定链路断掉——发射前直接拒绝,不许发出去再无声卡死。"""
+        with patch.dict(LCC.TASKS, {"faketask": fake_task()}):
+            with self.assertRaises(SystemExit) as cm:
+                LCC.cmd_launch(["faketask", "--run-id", "r", "--track", "t",
+                               "--piece", "tokyo106:0", "--service",
+                               "--dry-run"])
+        self.assertIn("--port", str(cm.exception))
+
 
 class TestCmdLaunchFullFlow(unittest.TestCase):
     """探卡拒绝 / 验活失败不登记 / 成功登记三条主干路径。"""
@@ -265,6 +276,28 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
         self.assertEqual(pieces[0]["kind"], "batch")
         self.assertEqual(pieces[0]["task"], "faketask")
         self.assertEqual(kwargs.get("note"), "测试")
+
+    @patch("launch_cmd.LC.register_all", return_value="登记回执")
+    @patch("launch_cmd.LC.tmux_launch")
+    @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
+    @patch("launch_cmd.LC.has_session", return_value=True)
+    @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
+    def test_service_with_port_registers_service_kind_and_port(
+            self, _gd, _hs, _pf, mtmux, mreg):
+        """C2(final-review):--service --port 走完整流程,登记进台账的 rich
+        piece 带 port(int) 且 kind=="service"——采样器 probe_port 判定链路
+        接上,不再永远卡在 warm-up。"""
+        with patch.dict(LCC.TASKS, {"faketask": fake_task()}):
+            with patch.object(LCC, "verify_alive", return_value=(True, [])):
+                rc = LCC.cmd_launch(
+                    ["faketask", "--run-id", "r7", "--track", "smoke",
+                     "--piece", "tokyo106:0", "--service", "--port", "8103"])
+        self.assertEqual(rc, 0)
+        mreg.assert_called_once()
+        args, _kwargs = mreg.call_args
+        pieces = args[2]
+        self.assertEqual(pieces[0]["kind"], "service")
+        self.assertEqual(pieces[0]["port"], 8103)
 
     @patch("launch_cmd.LC.register_all", return_value="登记回执")
     @patch("launch_cmd.LC.tmux_launch")

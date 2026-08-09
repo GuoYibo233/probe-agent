@@ -235,5 +235,44 @@ class TestCmdStatus(unittest.TestCase):
         self.assertIn("stray_session", out)  # extras 照旧渲染
 
 
+class TestCmdRegister(unittest.TestCase):
+    """C2(final-review,2026-08-09):手工补录路径也要能登记服务分片——
+    没有 --kind/--port 时行为不变(默认 batch,没有 port 字段);给了就落
+    进 piece,采样器的 probe_port 判定链路才接得上。"""
+
+    def setUp(self):
+        self.td = tempfile.TemporaryDirectory()
+        d = pathlib.Path(self.td.name)
+        self.jobs = d / "jobs.json"
+        self.jobs.write_text(json.dumps({"active": [], "history": []}))
+        self._orig_reg_path = gpu_jobs.REG_PATH
+        gpu_jobs.REG_PATH = str(self.jobs)
+
+    def tearDown(self):
+        gpu_jobs.REG_PATH = self._orig_reg_path
+        self.td.cleanup()
+
+    def test_default_kind_is_batch_no_port_field(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gpu_jobs.cmd_register([
+                "--name", "reg1", "--workdir", "/tmp/wd",
+                "--piece", "tokyo106:0:new1_reg1_t106g0:/tmp/a.log"])
+        piece = gpu_jobs.load_reg()["active"][0]["pieces"][0]
+        self.assertEqual(piece["kind"], "batch")
+        self.assertNotIn("port", piece)
+
+    def test_kind_and_port_land_on_piece(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            gpu_jobs.cmd_register([
+                "--name", "reg2", "--workdir", "/tmp/wd",
+                "--piece", "tokyo108:0:new1_reg2_t108g0:/tmp/b.log",
+                "--kind", "service", "--port", "8103"])
+        piece = gpu_jobs.load_reg()["active"][0]["pieces"][0]
+        self.assertEqual(piece["kind"], "service")
+        self.assertEqual(piece["port"], 8103)
+
+
 if __name__ == "__main__":
     unittest.main()
