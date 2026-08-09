@@ -1,0 +1,17 @@
+{
+  "run_family": "aw_z1_v1",
+  "env": "appworld",
+  "model_short": "gptoss",
+  "model_full": "gpt-oss-120b",
+  "traj_runs": [
+    "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/z1_aw"
+  ],
+  "split_mode": "official",
+  "official_split_files": {
+    "train": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/train.txt",
+    "val": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/dev.txt",
+    "test": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/test_normal.txt"
+  },
+  "data_out": "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/aw_z1_v1/gptoss",
+  "seed": 20260729
+}
