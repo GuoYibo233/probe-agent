@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <text x="40" y="40" font-size="17" font-weight="600" fill="#0b0b0b">2 tasks &#215; 2 agent models — one probe per cell</text>
+
+  <!-- column headers -->
+  <text x="330" y="86" font-size="15" font-weight="600" fill="#52514e" text-anchor="middle">gpt-oss-120b</text>
+  <text x="560" y="86" font-size="15" font-weight="600" fill="#52514e" text-anchor="middle">qwen3.6-27b</text>
+
+  <!-- row headers -->
+  <text x="185" y="146" font-size="15" font-weight="600" fill="#52514e" text-anchor="end">AppWorld</text>
+  <text x="185" y="236" font-size="15" font-weight="600" fill="#52514e" text-anchor="end">ALFWorld</text>
+
+  <!-- cells -->
+  <g stroke="#e1e0d9" stroke-width="1.5" fill="#fcfcfb">
+    <rect x="220" y="104" width="220" height="72" rx="10"/>
+    <rect x="450" y="104" width="220" height="72" rx="10"/>
+    <rect x="220" y="194" width="220" height="72" rx="10"/>
+    <rect x="450" y="194" width="220" height="72" rx="10"/>
+  </g>
+  <g font-variant-numeric="tabular-nums" text-anchor="middle">
+    <text x="330" y="140" font-size="22" font-weight="700" fill="#0b0b0b">2,138</text>
+    <text x="330" y="162" font-size="12.5" fill="#898781">test events</text>
+    <text x="560" y="140" font-size="22" font-weight="700" fill="#0b0b0b">3,150</text>
+    <text x="560" y="162" font-size="12.5" fill="#898781">test events</text>
+    <text x="330" y="230" font-size="22" font-weight="700" fill="#0b0b0b">3,497</text>
+    <text x="330" y="252" font-size="12.5" fill="#898781">test events</text>
+    <text x="560" y="230" font-size="22" font-weight="700" fill="#0b0b0b">2,146</text>
+    <text x="560" y="252" font-size="12.5" fill="#898781">test events</text>
+  </g>
+
+  <text x="40" y="308" font-size="14" fill="#52514e">Official task splits (AppWorld: 90 train / 57 val / 168 test tasks) &#183; split by task instance</text>
+  <text x="40" y="332" font-size="14" fill="#52514e">All models run with vLLM &#183; one probe per task &#215; model pair</text>
+</svg>

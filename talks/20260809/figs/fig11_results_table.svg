@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 352" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <!-- header -->
+  <g font-size="14" font-weight="600" fill="#52514e">
+    <text x="60" y="52">Task</text>
+    <text x="220" y="52">Model</text>
+    <text x="400" y="52">&#952;</text>
+    <text x="600" y="52" text-anchor="end">Coverage</text>
+    <text x="740" y="52" text-anchor="end">Precision</text>
+    <text x="880" y="34" text-anchor="end">Majority-class</text>
+    <text x="880" y="52" text-anchor="end">baseline</text>
+  </g>
+  <line x1="60" y1="66" x2="900" y2="66" stroke="#c3c2b7" stroke-width="1.5"/>
+
+  <!-- rows -->
+  <g font-size="16" fill="#0b0b0b" font-variant-numeric="tabular-nums">
+    <text x="60" y="98">AppWorld</text>
+    <text x="220" y="98">qwen3.6-27b</text>
+    <text x="400" y="98">0.925 <tspan font-size="12.5" fill="#898781">(risk 0.1)</tspan></text>
+    <text x="600" y="98" text-anchor="end">29%</text>
+    <text x="740" y="98" text-anchor="end" font-weight="700">0.937</text>
+    <text x="880" y="98" text-anchor="end" fill="#898781">0.159</text>
+  </g>
+  <line x1="60" y1="112" x2="900" y2="112" stroke="#e1e0d9" stroke-width="1"/>
+  <g font-size="16" fill="#0b0b0b" font-variant-numeric="tabular-nums">
+    <text x="60" y="144">AppWorld</text>
+    <text x="220" y="144">gpt-oss-120b</text>
+    <text x="400" y="144">0.975</text>
+    <text x="600" y="144" text-anchor="end">30%</text>
+    <text x="740" y="144" text-anchor="end" font-weight="700">0.951</text>
+    <text x="880" y="144" text-anchor="end" fill="#898781">0.404</text>
+  </g>
+  <line x1="60" y1="158" x2="900" y2="158" stroke="#e1e0d9" stroke-width="1"/>
+  <g font-size="16" fill="#0b0b0b" font-variant-numeric="tabular-nums">
+    <text x="60" y="190">ALFWorld</text>
+    <text x="220" y="190">qwen3.6-27b</text>
+    <text x="400" y="190">0.5</text>
+    <text x="600" y="190" text-anchor="end">100%</text>
+    <text x="740" y="190" text-anchor="end" font-weight="700">0.944</text>
+    <text x="880" y="190" text-anchor="end" fill="#898781">0.548</text>
+  </g>
+  <line x1="60" y1="204" x2="900" y2="204" stroke="#e1e0d9" stroke-width="1"/>
+  <g font-size="16" fill="#0b0b0b" font-variant-numeric="tabular-nums">
+    <text x="60" y="236">ALFWorld</text>
+    <text x="220" y="236">gpt-oss-120b</text>
+    <text x="400" y="236">0.95</text>
+    <text x="600" y="236" text-anchor="end">94%</text>
+    <text x="740" y="236" text-anchor="end" font-weight="700">0.947</text>
+    <text x="880" y="236" text-anchor="end" fill="#898781">0.470</text>
+  </g>
+  <line x1="60" y1="250" x2="900" y2="250" stroke="#c3c2b7" stroke-width="1.5"/>
+
+  <!-- footnote -->
+  <text x="60" y="284" font-size="13" fill="#898781">Causal probe (Qwen3-0.6B). Precision is computed only on events where the probe made a prediction.</text>
+  <text x="60" y="306" font-size="13" fill="#898781">Majority-class baseline = always predicting the most frequent tool.</text>
+  <text x="60" y="328" font-size="13" fill="#898781">The qwen3.6 AppWorld row uses the 0.90 precision target (no &#952; reached 0.95); all others 0.95.</text>
+</svg>

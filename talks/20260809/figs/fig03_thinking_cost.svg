@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 230" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <text x="40" y="38" font-size="17" font-weight="600" fill="#0b0b0b">Median reasoning length per step (characters)</text>
+
+  <!-- baseline -->
+  <line x1="200" y1="60" x2="200" y2="190" stroke="#c3c2b7" stroke-width="1.5"/>
+
+  <!-- gpt-oss bar: 2991 -> full width 520 -->
+  <text x="188" y="97" font-size="15" fill="#52514e" text-anchor="end">gpt-oss-120b</text>
+  <path d="M 200 78 H 716 a 4 4 0 0 1 4 4 v 22 a 4 4 0 0 1 -4 4 H 200 Z" fill="#2a78d6"/>
+  <text x="712" y="97" font-size="15" font-weight="600" fill="#ffffff" text-anchor="end" font-variant-numeric="tabular-nums">2,991</text>
+
+  <!-- qwen3.6 bar: 292 -> 520*292/2991 = 50.8 -->
+  <text x="188" y="157" font-size="15" fill="#52514e" text-anchor="end">qwen3.6-27b</text>
+  <path d="M 200 138 H 247 a 4 4 0 0 1 4 4 v 22 a 4 4 0 0 1 -4 4 H 200 Z" fill="#2a78d6"/>
+  <text x="261" y="157" font-size="15" font-weight="600" fill="#0b0b0b" font-variant-numeric="tabular-nums">292</text>
+
+  <text x="200" y="215" font-size="13" fill="#898781">A 10&#215; gap — the longer the reasoning, the more there is to save by predicting early.</text>
+</svg>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 270" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#52514e"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="40" font-size="16" font-weight="600" fill="#0b0b0b">&#952; is a calibration product, not a training product</text>
+
+  <!-- train -->
+  <rect x="40" y="66" width="330" height="88" rx="10" fill="#cde2fb" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="60" y="96" font-size="15" font-weight="600" fill="#0b0b0b">Train &#183; 70%</text>
+  <text x="60" y="120" font-size="13.5" fill="#52514e">probe learns tool-name</text>
+  <text x="60" y="138" font-size="13.5" fill="#52514e">prediction</text>
+
+  <!-- calA -->
+  <rect x="398" y="66" width="158" height="88" rx="10" fill="#f0efec" stroke="#c3c2b7" stroke-width="1.5"/>
+  <text x="414" y="96" font-size="15" font-weight="600" fill="#0b0b0b">Fit T &#183; 10%</text>
+  <text x="414" y="120" font-size="13.5" fill="#52514e">temperature-scale</text>
+  <text x="414" y="138" font-size="13.5" fill="#52514e">the confidence</text>
+
+  <!-- calB -->
+  <rect x="584" y="66" width="158" height="88" rx="10" fill="#f0efec" stroke="#c3c2b7" stroke-width="1.5"/>
+  <text x="600" y="96" font-size="15" font-weight="600" fill="#0b0b0b">Scan &#952; &#183; 10%</text>
+  <text x="600" y="120" font-size="13.5" fill="#52514e">precision &#8805; 90 / 95%</text>
+  <text x="600" y="138" font-size="13.5" fill="#52514e">among fired events</text>
+
+  <!-- test -->
+  <rect x="770" y="66" width="158" height="88" rx="10" fill="#d9f3e9" stroke="#1baf7a" stroke-width="1.5"/>
+  <text x="786" y="96" font-size="15" font-weight="600" fill="#0b0b0b">Test &#183; 10%</text>
+  <text x="786" y="120" font-size="13.5" fill="#52514e">&#952; frozen,</text>
+  <text x="786" y="138" font-size="13.5" fill="#52514e">report numbers</text>
+
+  <!-- arrows -->
+  <path d="M 370 110 L 392 110" fill="none" stroke="#52514e" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M 556 110 L 578 110" fill="none" stroke="#52514e" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M 742 110 L 764 110" fill="none" stroke="#52514e" stroke-width="2" marker-end="url(#arr)"/>
+
+  <text x="40" y="204" font-size="14" fill="#52514e">Risk contract: precision &#8805; 90% (risk 0.1) or &#8805; 95% (risk 0.05) among fired events &#183; pass bar: beat the majority-class baseline.</text>
+  <text x="40" y="230" font-size="14" fill="#52514e">Block widths not to scale — splits follow the official task lists.</text>
+</svg>

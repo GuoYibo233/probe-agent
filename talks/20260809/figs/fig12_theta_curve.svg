@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 470" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <text x="60" y="36" font-size="17" font-weight="600" fill="#0b0b0b">AppWorld &#215; gpt-oss-120b</text>
+
+  <!-- legend -->
+  <g font-size="14" fill="#52514e">
+    <circle cx="562" cy="31" r="5" fill="#2a78d6"/>
+    <text x="574" y="36">coverage</text>
+    <circle cx="668" cy="31" r="5" fill="#eb6834"/>
+    <text x="680" y="36">tool-name accuracy</text>
+  </g>
+
+  <!-- gridlines + y ticks -->
+  <g stroke="#e1e0d9" stroke-width="1">
+    <line x1="90" y1="50" x2="760" y2="50"/>
+    <line x1="90" y1="132.5" x2="760" y2="132.5"/>
+    <line x1="90" y1="215" x2="760" y2="215"/>
+    <line x1="90" y1="297.5" x2="760" y2="297.5"/>
+  </g>
+  <line x1="90" y1="380" x2="760" y2="380" stroke="#c3c2b7" stroke-width="1.5"/>
+  <g font-size="13" fill="#898781" text-anchor="end" font-variant-numeric="tabular-nums">
+    <text x="80" y="55">1.0</text>
+    <text x="80" y="137.5">0.75</text>
+    <text x="80" y="220">0.5</text>
+    <text x="80" y="302.5">0.25</text>
+    <text x="80" y="385">0</text>
+  </g>
+
+  <!-- x ticks -->
+  <g font-size="13" fill="#898781" text-anchor="middle" font-variant-numeric="tabular-nums">
+    <text x="123.5" y="404">0.5</text>
+    <text x="257.5" y="404">0.6</text>
+    <text x="391.5" y="404">0.7</text>
+    <text x="525.5" y="404">0.8</text>
+    <text x="659.5" y="404">0.9</text>
+    <text x="726.5" y="404">0.95</text>
+  </g>
+  <text x="425" y="434" font-size="14" fill="#52514e" text-anchor="middle">confidence threshold &#952;</text>
+
+  <!-- fires on (blue) -->
+  <polyline points="123.5,79.8 391.5,114.8 525.5,143.2 626,183.1 693,216.2 726.5,240" fill="none" stroke="#2a78d6" stroke-width="2"/>
+  <g fill="#2a78d6" stroke="#fcfcfb" stroke-width="2">
+    <circle cx="123.5" cy="79.8" r="4.5"/>
+    <circle cx="391.5" cy="114.8" r="4.5"/>
+    <circle cx="525.5" cy="143.2" r="4.5"/>
+    <circle cx="626" cy="183.1" r="4.5"/>
+    <circle cx="693" cy="216.2" r="4.5"/>
+    <circle cx="726.5" cy="240" r="4.5"/>
+  </g>
+  <text x="134" y="66" font-size="14" fill="#2a78d6" font-weight="600">coverage</text>
+  <text x="738" y="245" font-size="14" fill="#2a78d6" font-variant-numeric="tabular-nums">0.42</text>
+  <text x="112" y="84" font-size="13" fill="#2a78d6" text-anchor="end" font-variant-numeric="tabular-nums">0.91</text>
+
+  <!-- tool-name accuracy (orange) -->
+  <polyline points="123.5,161.9 391.5,132.2 525.5,114.5 626,95.5 693,81.1 726.5,74.7" fill="none" stroke="#eb6834" stroke-width="2"/>
+  <g fill="#eb6834" stroke="#fcfcfb" stroke-width="2">
+    <circle cx="123.5" cy="161.9" r="4.5"/>
+    <circle cx="391.5" cy="132.2" r="4.5"/>
+    <circle cx="525.5" cy="114.5" r="4.5"/>
+    <circle cx="626" cy="95.5" r="4.5"/>
+    <circle cx="693" cy="81.1" r="4.5"/>
+    <circle cx="726.5" cy="74.7" r="4.5"/>
+  </g>
+  <text x="134" y="188" font-size="14" fill="#eb6834" font-weight="600">tool-name accuracy</text>
+  <text x="738" y="79" font-size="14" fill="#eb6834" font-variant-numeric="tabular-nums">0.93</text>
+  <text x="112" y="166" font-size="13" fill="#eb6834" text-anchor="end" font-variant-numeric="tabular-nums">0.66</text>
+
+  <!-- corner note -->
+  <text x="60" y="460" font-size="12.5" fill="#898781">Different eval batch than the main table (here &#952; = 0.95 &#8594; 0.925; there &#952; = 0.975 &#8594; 0.951).</text>
+</svg>

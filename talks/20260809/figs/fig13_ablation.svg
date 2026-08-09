@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 470" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <text x="30" y="30" font-size="17" font-weight="600" fill="#0b0b0b">Removing the reasoning text drops accuracy</text>
+  <text x="30" y="52" font-size="13" fill="#52514e">Calibration-split weighted accuracy — AppWorld</text>
+
+  <!-- gridlines + y ticks -->
+  <g stroke="#e1e0d9" stroke-width="1">
+    <line x1="90" y1="60" x2="500" y2="60"/>
+    <line x1="90" y1="130" x2="500" y2="130"/>
+    <line x1="90" y1="200" x2="500" y2="200"/>
+    <line x1="90" y1="270" x2="500" y2="270"/>
+  </g>
+  <g font-size="13" fill="#898781" text-anchor="end" font-variant-numeric="tabular-nums">
+    <text x="80" y="65">0.8</text>
+    <text x="80" y="135">0.6</text>
+    <text x="80" y="205">0.4</text>
+    <text x="80" y="275">0.2</text>
+    <text x="80" y="345">0</text>
+  </g>
+
+  <!-- bars -->
+  <path d="M 170 129.45 a 4 4 0 0 1 4 -4 h 82 a 4 4 0 0 1 4 4 V 340 H 170 Z" fill="#2a78d6"/>
+  <path d="M 262 196.65 a 4 4 0 0 1 4 -4 h 82 a 4 4 0 0 1 4 4 V 340 H 262 Z" fill="#eb6834"/>
+  <text x="215" y="115" font-size="15" font-weight="600" fill="#0b0b0b" text-anchor="middle" font-variant-numeric="tabular-nums">0.613</text>
+  <text x="307" y="182" font-size="15" font-weight="600" fill="#0b0b0b" text-anchor="middle" font-variant-numeric="tabular-nums">0.421</text>
+
+  <!-- baseline + condition labels -->
+  <line x1="90" y1="340" x2="500" y2="340" stroke="#c3c2b7" stroke-width="1.5"/>
+  <g font-size="14" fill="#52514e" text-anchor="middle">
+    <text x="215" y="368">with reasoning</text>
+    <text x="307" y="368">without</text>
+    <text x="307" y="386">reasoning</text>
+  </g>
+
+  <!-- footnote -->
+  <text x="30" y="414" font-size="12.5" fill="#898781">Earlier data generation (self-mined splits, ModernBERT</text>
+  <text x="30" y="432" font-size="12.5" fill="#898781">probe) &#8212; direction only, not comparable to the main table.</text>
+  <text x="30" y="450" font-size="12.5" fill="#898781">Runs 20260730_0056 (baseline) / 20260730_1713 (ablation).</text>
+</svg>

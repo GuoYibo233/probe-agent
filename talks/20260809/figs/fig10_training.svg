@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <marker id="arrB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#2a78d6"/>
+    </marker>
+  </defs>
+
+  <text x="40" y="40" font-size="16" font-weight="600" fill="#0b0b0b">One forward pass per event, supervised at every boundary at once</text>
+
+  <!-- loss row -->
+  <rect x="140" y="66" width="560" height="44" rx="8" fill="#cde2fb" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="160" y="94" font-size="14" fill="#0b0b0b">cross-entropy at each boundary position &#183; weight 1/m&#7522; &#183; same label</text>
+
+  <!-- label box -->
+  <rect x="730" y="66" width="190" height="44" rx="8" fill="#fde3d9" stroke="#eb6834" stroke-width="1.5"/>
+  <text x="748" y="86" font-size="13.5" font-weight="600" fill="#0b0b0b">label: tool name</text>
+  <text x="748" y="103" font-size="12.5" fill="#52514e">actually called</text>
+
+  <!-- token strip: 24 tokens, boundaries at idx 5, 11, 17, 23 -->
+  <g>
+    <rect x="60" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="92" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="124" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="156" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="188" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="220" y="170" width="26" height="26" rx="4" fill="#2a78d6"/>
+    <rect x="252" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="284" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="316" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="348" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="380" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="412" y="170" width="26" height="26" rx="4" fill="#2a78d6"/>
+    <rect x="444" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="476" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="508" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="540" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="572" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="604" y="170" width="26" height="26" rx="4" fill="#2a78d6"/>
+    <rect x="636" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="668" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="700" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="732" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="764" y="170" width="26" height="26" rx="4" fill="#f0efec" stroke="#c3c2b7"/>
+    <rect x="796" y="170" width="26" height="26" rx="4" fill="#2a78d6"/>
+  </g>
+  <!-- arrows from supervised positions up to loss -->
+  <g fill="none" stroke="#2a78d6" stroke-width="2">
+    <path d="M 233 164 L 233 118" marker-end="url(#arrB)"/>
+    <path d="M 425 164 L 425 118" marker-end="url(#arrB)"/>
+    <path d="M 617 164 L 617 118" marker-end="url(#arrB)"/>
+    <path d="M 809 164 L 809 118" marker-end="url(#arrB)"/>
+  </g>
+  <text x="60" y="152" font-size="13" fill="#52514e">token sequence: task + history + full reasoning</text>
+  <text x="846" y="188" font-size="13" fill="#2a78d6">= sentence</text>
+  <text x="846" y="204" font-size="13" fill="#2a78d6">boundaries</text>
+
+  <!-- single-pass bracket -->
+  <path d="M 60 214 v 8 h 762 v -8" fill="none" stroke="#898781" stroke-width="1.5"/>
+  <text x="441" y="244" font-size="13" fill="#898781" text-anchor="middle">encoded once — a single forward pass</text>
+
+  <!-- recipe -->
+  <text x="40" y="296" font-size="14" fill="#52514e">Backbone: Qwen3-0.6B-Base, full fine-tune + linear head over tool names</text>
+  <text x="40" y="320" font-size="14" fill="#52514e">Baseline probe: ModernBERT-base (150M), same recipe</text>
+  <text x="40" y="344" font-size="14" fill="#52514e">lr 1e-5 &#183; 3 epochs &#183; max len 4,096, left-truncated to keep the tail of the reasoning</text>
+  <text x="40" y="368" font-size="14" fill="#52514e">fp32 weights + bf16 compute &#183; fixed seed</text>
+  <text x="40" y="392" font-size="14" fill="#52514e">Weight 1/m&#7522;: at run time the probe is asked at every boundary &#8212; training weighs boundaries the same way.</text>
+</svg>

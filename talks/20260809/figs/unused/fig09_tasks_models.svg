@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 340" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <!-- ===== task table ===== -->
+  <text x="40" y="40" font-size="16" font-weight="600" fill="#0b0b0b">Two very different tasks</text>
+
+  <g font-size="14">
+    <!-- header row -->
+    <text x="150" y="76" fill="#52514e" font-weight="600">AppWorld</text>
+    <text x="320" y="76" fill="#52514e" font-weight="600">ALFWorld</text>
+    <line x1="40" y1="88" x2="500" y2="88" stroke="#c3c2b7" stroke-width="1.5"/>
+    <!-- rows -->
+    <text x="40" y="116" fill="#898781">What</text>
+    <text x="150" y="116" fill="#0b0b0b">phone-app operations</text>
+    <text x="320" y="116" fill="#0b0b0b">household text game</text>
+    <line x1="40" y1="130" x2="500" y2="130" stroke="#e1e0d9" stroke-width="1"/>
+    <text x="40" y="158" fill="#898781">Tool set</text>
+    <text x="150" y="158" fill="#0b0b0b">183 tools</text>
+    <text x="320" y="158" fill="#0b0b0b">~a dozen actions</text>
+    <line x1="40" y1="172" x2="500" y2="172" stroke="#e1e0d9" stroke-width="1"/>
+    <text x="40" y="200" fill="#898781">Majority-class baseline</text>
+    <text x="150" y="200" fill="#0b0b0b" font-variant-numeric="tabular-nums">0.16&#8211;0.40</text>
+    <text x="320" y="200" fill="#0b0b0b" font-variant-numeric="tabular-nums">0.47&#8211;0.55</text>
+    <text x="320" y="222" font-size="12.5" fill="#898781">`go` &#8776; half of all calls</text>
+  </g>
+
+  <!-- ===== model table ===== -->
+  <text x="560" y="40" font-size="16" font-weight="600" fill="#0b0b0b">Two very different thinkers</text>
+
+  <g font-size="14">
+    <text x="670" y="76" fill="#52514e" font-weight="600">gpt-oss-120b</text>
+    <text x="810" y="76" fill="#52514e" font-weight="600">qwen3.6-27b</text>
+    <line x1="560" y1="88" x2="930" y2="88" stroke="#c3c2b7" stroke-width="1.5"/>
+    <text x="560" y="116" fill="#898781">Size</text>
+    <text x="670" y="116" fill="#0b0b0b">120B</text>
+    <text x="810" y="116" fill="#0b0b0b">27B</text>
+    <line x1="560" y1="130" x2="930" y2="130" stroke="#e1e0d9" stroke-width="1"/>
+    <text x="560" y="158" fill="#898781">Median reasoning</text>
+    <text x="560" y="176" fill="#898781">per step</text>
+    <text x="670" y="158" fill="#0b0b0b" font-variant-numeric="tabular-nums">2,991 chars</text>
+    <text x="810" y="158" fill="#0b0b0b" font-variant-numeric="tabular-nums">292 chars</text>
+  </g>
+
+  <text x="40" y="290" font-size="14" font-style="italic" fill="#52514e">The longer the reasoning, the more there is to save by predicting early.</text>
+  <text x="40" y="316" font-size="13" fill="#898781">Baseline: always guessing the most frequent tool. Every later number is read against this floor.</text>
+</svg>
