@@ -10,6 +10,7 @@ import html
 import http.server
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -167,9 +168,44 @@ def build_incident_prompt(row, allow_refire):
         log=row.get("log"), refire_clause=refire_clause)
 
 
+def spawn_agent(prompt, out_path):
+    """拉一个无头事故 agent(设计 §5,工单 12,用户 2026-08-08 授权):
+    detach 的 claude 子进程,模型钉 opus,stdout/stderr 全进 out_path。
+    Popen 不 wait——采样循环不许被验尸挡住。返回 Popen 对象(测试用)。"""
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "ab") as f:
+        return subprocess.Popen(
+            ["claude", "-p", prompt, "--model", "opus",
+             "--dangerously-skip-permissions"],
+            cwd=str(OPS.parent), stdin=subprocess.DEVNULL,
+            stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+
+
 def maybe_trigger_incidents(rows, st):
-    """事故触发在 Task 14(工单 12)实装,这里先占位。"""
-    pass
+    """逐分片查 should_trigger,命中就:事故记录 append 进 incidents.jsonl
+    → spawn_agent → ps["incident_open"] = 事故编号(防重复的关键位)。
+    调用方必须在本函数之后才落盘 state.json,否则 incident_open 只活在
+    内存里,常驻循环下一轮会对同一事故再拉一个 agent。"""
+    for row in rows:
+        ps = st.get(piece_key(row["job"], row["idx"]))
+        if not ps:
+            continue
+        trigger, allow_refire = should_trigger(row, ps)
+        if not trigger:
+            continue
+        inc_id = "{}_{}#{}".format(
+            datetime.now().strftime("%Y%m%d-%H%M%S"), row["job"], row["idx"])
+        out_path = MONITOR_DIR / "incidents" / f"{inc_id}.out"
+        append_jsonl(MONITOR_DIR / "incidents.jsonl", [{
+            "id": inc_id, "t": time.time(), "job": row["job"],
+            "idx": row["idx"], "host": row.get("host"),
+            "gpus": row.get("gpus"), "session": row.get("session"),
+            "verdict": row["verdict"], "log": row.get("log"),
+            "allow_refire": allow_refire, "out": str(out_path),
+        }])
+        spawn_agent(build_incident_prompt(row, allow_refire), out_path)
+        ps["incident_open"] = inc_id
 
 
 def piece_key(job_name, idx):
@@ -398,13 +434,15 @@ def sample_once():
         if unreg:
             extras[h] = unreg
 
+    # 事故触发在 state.json 落盘之前:incident_open 必须跟着这轮状态一起
+    # 持久化,否则常驻循环下一轮 load_state() 读到旧状态,同一事故重复拉 agent
+    maybe_trigger_incidents(rows, st)
     latest = {"sampled_at": now_wall, "rows": rows, "extras": extras,
               "incidents_tail": read_incidents_tail()}
     for jname, lines in per_job_lines.items():
         append_jsonl(MONITOR_DIR / "history" / f"{jname}.jsonl", lines)
     atomic_write(MONITOR_DIR / "state.json", st)
     atomic_write(MONITOR_DIR / "latest.json", latest)
-    maybe_trigger_incidents(rows, st)  # Task 14(工单 12)前先放空函数 pass
     return latest
 
 

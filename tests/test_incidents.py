@@ -73,5 +73,80 @@ class TestBuildIncidentPrompt(unittest.TestCase):
         self.assertNotIn("--refire x --idx 0", prompt)
 
 
+class TestMaybeTriggerIncidents(unittest.TestCase):
+    """触发闭环:mock 掉 spawn_agent(不拉真进程),查事故记录、
+    incident_open 置位、二次调用不重触发。落盘用临时 MONITOR_DIR。"""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self._old_dir = sampler.MONITOR_DIR
+        sampler.MONITOR_DIR = pathlib.Path(self._tmp.name)
+        self._spawned = []
+        self._old_spawn = sampler.spawn_agent
+        sampler.spawn_agent = lambda prompt, out: self._spawned.append(
+            (prompt, str(out)))
+
+    def tearDown(self):
+        sampler.MONITOR_DIR = self._old_dir
+        sampler.spawn_agent = self._old_spawn
+        self._tmp.cleanup()
+
+    def test_trigger_writes_record_and_sets_open(self):
+        row = _row()
+        st = {sampler.piece_key("x", 0): sampler._new_piece_state(0.0)}
+        sampler.maybe_trigger_incidents([row], st)
+        self.assertEqual(len(self._spawned), 1)
+        prompt, out = self._spawned[0]
+        self.assertIn("/tmp/x.log", prompt)
+        self.assertIn("--refire", prompt)
+        recs = sampler.read_incidents_tail()
+        self.assertEqual(len(recs), 1)
+        self.assertEqual(recs[0]["job"], "x")
+        self.assertTrue(recs[0]["allow_refire"])
+        self.assertEqual(recs[0]["out"], out)
+        self.assertTrue(st[sampler.piece_key("x", 0)]["incident_open"])
+
+    def test_second_round_does_not_retrigger(self):
+        row = _row()
+        st = {sampler.piece_key("x", 0): sampler._new_piece_state(0.0)}
+        sampler.maybe_trigger_incidents([row], st)
+        sampler.maybe_trigger_incidents([row], st)
+        self.assertEqual(len(self._spawned), 1)
+        self.assertEqual(len(sampler.read_incidents_tail()), 1)
+
+    def test_healthy_row_never_triggers(self):
+        row = _row(verdict=verdicts.V_OK, escalated=False)
+        st = {sampler.piece_key("x", 0): sampler._new_piece_state(0.0)}
+        sampler.maybe_trigger_incidents([row], st)
+        self.assertEqual(self._spawned, [])
+
+
+class TestSpawnAgentArgs(unittest.TestCase):
+    """spawn_agent 的子进程参数:mock Popen,断言无头旗标组合与重定向。"""
+
+    def test_popen_args(self):
+        import tempfile
+        calls = []
+
+        class FakePopen:
+            def __init__(self, argv, **kw):
+                calls.append((argv, kw))
+
+        old = sampler.subprocess.Popen
+        sampler.subprocess.Popen = FakePopen
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                sampler.spawn_agent("PROMPT", pathlib.Path(d) / "a.out")
+        finally:
+            sampler.subprocess.Popen = old
+        argv, kw = calls[0]
+        self.assertEqual(argv[:3], ["claude", "-p", "PROMPT"])
+        self.assertIn("--model", argv)
+        self.assertIn("opus", argv)
+        self.assertIn("--dangerously-skip-permissions", argv)
+        self.assertTrue(kw["start_new_session"])
+
+
 if __name__ == "__main__":
     unittest.main()
