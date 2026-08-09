@@ -7,6 +7,33 @@
 > 网页 `http://localhost:8377`（ssh 端口转发）、`/json` 出机器可读判定。
 > 本文件更新时机：驱动升级、硬件变动、发现新坑。
 
+## 采样器部署事实（2026-08-08 上线，2026-08-09 final-review 补记）
+
+- 常驻 tmux session 名 `new1_sampler`，跑在登录机，cwd 指主仓
+  `/home/y-guo/reproduce/new1`（不是任何工作树——工作树收尾会删，指过去
+  就是悬空）。
+- 看门狗是 crontab，每 5 分钟探一次 session、不在就拉回来（`crontab -l`
+  实测原文，2026-08-09）：
+  `*/5 * * * * tmux has-session -t new1_sampler 2>/dev/null || tmux new-session -d -s new1_sampler 'cd /home/y-guo/reproduce/new1 && python3 run.py sampler 2>&1 | tee -a /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log'`。
+  `cd` 在 tmux 起的 session 内部执行——cron 的默认 cwd 是 `$HOME`，不加
+  这个 `cd` 会找不到 `run.py`。
+- **cron 环境的 PATH 通常不继承登录 shell 的配置**——事故 agent
+  （`ops/sampler.py` 的 `spawn_agent`）靠 `shutil.which("claude")`
+  解析绝对路径，PATH 里找不到 `claude` 就会直接 `raise RuntimeError`
+  （被 `maybe_trigger_incidents` 接住记进事故记录，不会拖垮采样循环，
+  但那一次事故也就没有真的拉起 agent）。crontab 那一行要么把
+  `claude` 所在目录写进 `PATH=` 前缀，要么确认 cron 默认 PATH 已经
+  覆盖到它，否则事故 agent 这条链在 cron 环境下永远走不通。
+- 采样器自己的日志 tee 到 NFS：
+  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log`。
+- **端口 8377 已经被这个常驻进程占用**——手敲
+  `python3 run.py sampler --port 8377` 或裸起一个新的 `sampler.py` 会跟
+  它冲突（`OSError: Address already in use`），排错/临时起第二份用别的端口。
+- T12（事故触发）、T13（vLLM 服务档）合并进 main 后，这个常驻 session
+  跑的还是合并前的代码，需要重启一次才吃到新代码——final-review 这一批
+  改动（C1/C3 的 spawn_agent、sample_once 落盘顺序）合入后同理，由主会话
+  记账重启，不在本次修复范围内。
+
 勘察日期：2026-07-29（实测，非道听途说）
 
 ## 硬件与驱动

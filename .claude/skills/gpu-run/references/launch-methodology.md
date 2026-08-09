@@ -138,7 +138,7 @@ No `sleep N; check` loops in the foreground. For "tell me when done":
 until ! ssh <host> "pgrep -u y-guo -f '<distinctive_cmd_fragment>'" >/dev/null; do sleep 60; done; echo DONE
 ```
 
-Or check back on wakeup by reading log tails / output file counts. ETA claims come from the sampler's verdict, not hand-parsed tqdm: read `python3 run.py gpu-jobs json` once the terminal outlet reads sampler history, or `http://localhost:8377/json` in the meantime (see `monitor-methodology.md` in this same directory).
+Or check back on wakeup by reading log tails / output file counts. ETA claims come from the sampler's verdict, not hand-parsed tqdm: read `python3 run.py gpu-jobs json` — the terminal outlet already reads sampler history (5-minute freshness gate, falls back to a live probe past that), and `http://localhost:8377/json` is the same data on another route (see `monitor-methodology.md` in this same directory).
 
 ## Step 7 — Report
 

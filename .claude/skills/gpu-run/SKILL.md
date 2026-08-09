@@ -108,9 +108,10 @@ smoke 也可以先用 `python3 run.py launch <task> ... --dry-run` 看每个分�
    外加浏览器 `http://localhost:8377`（ssh 端口转发）：后台采样器（下一节）
    自己起的网页，展示的是 `ops/verdicts.py` 算出来的六格判定
    （健康/变慢/warm-up 中/疑似卡死/已挂/已完成），`/json` 路径出机器可读的
-   同一份数据——终端 `gpu-jobs`/`watch`/`json` 三个出口接读这份采样历史还在
-   推进（口径见 `references/monitor-methodology.md`），接上之前判定只有网页
-   能看到。
+   同一份数据——终端 `gpu-jobs`/`watch`/`json` 三个出口已经接读这份采样历史
+   （工单 07，口径见 `references/monitor-methodology.md`）：`latest.json`
+   在 5 分钟新鲜度门槛内就直接渲染判定，过期退回现场实探老路（tail 日志/
+   ssh 探 session），不必再单独去开网页看。
 
 ## Phase 5 — 采样器接管（Claude 不再常设巡检）
 
@@ -120,8 +121,9 @@ ETA，写进它自己的状态文件（`latest.json`，网页出口直接读这�
 `references/monitor-methodology.md`）——不用再靠 Claude 定时排程巡检。
 
 Claude 只在两种时机派只读的 `job-monitor` agent 读采样结果
-（`python3 run.py gpu-jobs json`，终端出口接好之后就是这份判定；接好之前
-先读网页 `http://localhost:8377/json`）：
+（`python3 run.py gpu-jobs json`——5 分钟新鲜度门槛内直接吐采样器的判定，
+过期自动退回现场实探；网页 `http://localhost:8377/json` 是同一份数据的
+另一个出口，两边选一个读就够）：
 1. 用户问起进度/ETA/是不是卡住了；
 2. 事故记录（`incidents.jsonl`）里有新内容（说明采样器至少判过一次升级）。
 

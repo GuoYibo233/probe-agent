@@ -29,10 +29,11 @@ version: 1.1.0
 
 ## Phase 1 — 实探（四路取证）
 
-1. `python3 run.py gpu-jobs json`：active 台账；逐 piece tail 日志取真实进度。
-   判定/速率/ETA 的采样历史目前只在网页出口 `http://localhost:8377/json`
-   （登录机常驻采样器落的 `latest.json`）齐全——终端 `gpu-jobs json` 接读同一份
-   历史仍在推进（工单 07），接上之前进度靠 tail 日志人工读。
+1. `python3 run.py gpu-jobs json`：active 台账；判定/速率/ETA 的采样历史
+   （登录机常驻采样器落的 `latest.json`）已经接读进这条命令（工单 07，5
+   分钟新鲜度门槛，过期自动退回现场实探）；网页出口
+   `http://localhost:8377/json` 是同一份数据的另一条路。逐 piece tail 日志
+   仍然拿得到最原始的文本,采样过期或没接心跳的任务靠这个补。
 2. `git log --oneline -5` + `git status --short`：HEAD 在哪、有哪些未提交的账。
 3. `tail ops/runs.jsonl`：哪些 run_id 有 start 没 finish。
 4. 读 `WORKPLAN.md` 当前节 + `TIMELINE.md` 最新条，确认方向没变；变了先补 TIMELINE。
