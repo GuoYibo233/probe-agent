@@ -4,14 +4,14 @@
 所以三件"模型侧"的事都收进本服务,HTTP JSON 交接:
 
   POST /score  {"text": 探针输入}          -> {"conf","label","fired"}
-               置信度 = softmax(logits/T).max(),T 与 θ 在启动时从 ctool 的
-               REPLAY_REPORT.json 读定;fired = conf >= theta
+               置信度 = softmax(logits/T).max(),T 在启动时从 ctool 的
+               REPLAY_REPORT.json 读定,θ 由 --theta 必传;fired = conf >= theta
   POST /gen    {"text": 触发点的探针输入}  -> {"call": 整条预测调用}
                【照抄 replay_inject.gen_calls 的口径】text + call_sep 后
                greedy 续写,截到首行
   POST /render {"messages":[...]}          -> {"prefix": harmony 前缀串}
-               rebuild.build_prefix,pin_date=None(活跑用当天日期,
-               这是与回放线的口径差之一,设计书 §1)
+               rebuild.build_prefix,pin_date=COLLECT_DATE(2026-08-02 起
+               活跑与回放同口径钉采集日;vLLM 侧配套钉法见 METHOD.md §6-④)
   GET  /health                             -> 启动配置回显(θ/T/模型路径等)
 
 探针前向口径(设计书 §4.1,与训练/回放的已知差别):
@@ -23,13 +23,13 @@
 单线程 HTTP 即可:驱动器是串行的,一次只有一个请求在飞。
 
 用法:
-  # 服务(GPU;两个 0.6B 探针 bf16 约 3GB)
+  # 服务(GPU;两个 0.6B 探针 bf16 约 3GB)。--theta 必传,不给就拒跑(METHOD.md 轴4)
   cprobe-env/bin/python pipeline/inject/probe_server.py serve \\
-      --port 8790 --device cuda:0
+      --theta 0.925 --port 8790 --device cuda:0
 
   # 自检(纯 CPU 也能跑,float32;抽 N 个测试堆事件对账触发行为)
   cprobe-env/bin/python pipeline/inject/probe_server.py selftest \\
-      --events 3 --device cpu
+      --theta 0.925 --events 3 --device cpu
 """
 
 import argparse
@@ -262,7 +262,8 @@ def main():
         p.add_argument("--ctool-run", default=str(CTOOL))
         p.add_argument("--cgen-run", default=str(CGEN))
         p.add_argument("--tokenizer", default=GPTOSS_TOK)
-        p.add_argument("--theta", type=float, default=0.925)
+        p.add_argument("--theta", type=float, required=True,
+                       help="触发阈值,必传(METHOD.md 轴4:θ 永远手动,不给就拒跑)")
         p.add_argument("--device", default="cuda:0")
         p.set_defaults(fn=fn)
     sub.choices["serve"].add_argument("--port", type=int, default=8790)

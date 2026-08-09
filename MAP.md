@@ -100,7 +100,7 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
 | `pipeline/inject/live_appworld.py` | 驱动器：整题活跑。分段生成（每段 `--chunk-tokens` 默认 64，贪心），每个新句子级切口问探针，首过 θ 触发注入（默认每步至多 1 次），`<\|end\|>` 后放大段长收尾；每题落一个 `live_<task_id>.jsonl`（meta/gen/spec/env/final）。自带 `--selftest-shadow <轨迹>`（无服务验证三连不污染正身） | `python3 run.py live-appworld --base-url <vLLM /v1> --probe-url <probe_server> --split test_normal --outdir … --exp …`（发射类）；⚠️ 只能 `envs/appworld/venv/bin/python` 跑；对照臂加 `--no-probe`；分片 `--num-shards/--shard-id`；默认跑完即删 appworld 输出目录 |
-| `pipeline/inject/probe_server.py` | 探针服务（GPU，两个 0.6B 约 3GB）：/score 前缀→置信度、/gen 触发点→整条预测调用、/render messages→harmony 前缀（appworld venv 没有 transformers，渲染只能放这侧）、/health 配置回显。`selftest` 子命令拿存好的 logits 对账活跑口径 | serve：`python3 run.py probe-serve --port 8790 --device cuda:0`（发射类）；selftest：`python3 run.py probe-selftest --events 2`（纯 CPU） |
+| `pipeline/inject/probe_server.py` | 探针服务（GPU，两个 0.6B 约 3GB）：/score 前缀→置信度、/gen 触发点→整条预测调用、/render messages→harmony 前缀（appworld venv 没有 transformers，渲染只能放这侧）、/health 配置回显。`selftest` 子命令拿存好的 logits 对账活跑口径 | serve：`python3 run.py probe-serve --theta <θ> --port 8790 --device cuda:0`（发射类）；selftest：`python3 run.py probe-selftest --theta <θ> --events 2`（纯 CPU）。--theta 必传无默认（METHOD.md 轴4） |
 | `pipeline/inject/score_live.py` | 打分器（纯 CPU）：活跑轨迹 + 已采对照轨迹按题配对 → `LIVE_REPORT.{json,md}`。任务成败、billed token（含丢弃溢出）、出手事后账 | `python3 run.py score-live --live-dir <outdir> --base-root <对照轨迹根>`（纯 CPU） |
 
 已知口径差（报告必带）：探针逐前缀前向 vs 训练侧整段前向（分词边界效应）；

@@ -56,7 +56,7 @@ vLLM 侧受控复跑至今没做过（`learn/vllm/lessons/0004` 原话
 | R1 | 注入只落在思考段内部，思考一闭合就停手 | 【现状】满足（`live_appworld.py:273-279`） |
 | R2 | 注入内容本身零特殊 token（纯文本模板） | 【现状】满足（`replay_inject.py:147`） |
 | R3 | 注入后重发的整串重编码后是合法 harmony 串、与原生成逐 token 对齐；重分词缝（`live_appworld.py:320`）每次机制检查实测 | 【现状】未验，验法见 §5-(ii) |
-| R4 | 请求参数与已验证等价的采集路一致 | skip_special_tokens 一致；add_special_tokens【已定要改】见 §6-③ |
+| R4 | 请求参数与已验证等价的采集路一致 | 【现状】满足（skip_special_tokens 与 add_special_tokens 都已显式，§6-③ 2026-08-10 改齐） |
 
 ## 3 轴（每轴：现役取值 + 进线口 + 待试）
 
@@ -77,7 +77,7 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
 **轴4 触发规则**
 【现状】ctool softmax（温度 T 校准）最大概率 ≥ θ，切口从早到晚首过线出手。
 θ **永远手动给定，不给就拒绝启动**：
-活跑 `--theta`【已定要改】去掉默认值 0.925、改必传（§6-①）；
+活跑 `--theta`【现状】必传无默认（§6-① 2026-08-10 改齐）；
 离线 `--theta` 手动 或 `--risk` 查 `REPLAY_REPORT.json` 风险档（保留）。
 进线口：`external_fire` 判定文件（JSONL 每行
 `{"event":…, "fire": bool, "sent_idx": int|null}`，给了它 θ 完全不参与，
@@ -133,12 +133,14 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
 
 ## 6 对齐清单（文档 ≠ 现状之处；定稿后动手，改齐走三件套）
 
-| # | 改什么 | 依据 |
-|---|---|---|
-| ① | `probe_server.py` `--theta` 去默认 0.925、改必传 | 轴4：θ 永远手动，不给就拒跑 |
-| ② | `live_appworld.py:1` 指向已删设计书 `plans/2026-08-01-live-inject-design.md` 的断指针，改指本文件 | 08-02 清场删了 plans/ |
-| ③ | `live_appworld.py` open_stream 载荷补 `add_special_tokens: False` | §2.2-R4；采集路显式钉死，活跑靠缺省碰对（tokenizer post_processor=ByteLevel，静态证据缺省无害，仍须显式） |
-| ④ | 活跑/对照用的 vLLM 发射脚本设 `VLLM_SYSTEM_START_DATE`=钉死日期 | §2.1 同设前提 |
+**四件全部于 2026-08-10 改齐**，此表留作依据记录：
+
+| # | 改什么 | 依据 | 落点 |
+|---|---|---|---|
+| ① | `probe_server.py` `--theta` 去默认 0.925、改必传 | 轴4：θ 永远手动，不给就拒跑 | `probe_server.py` argparse `required=True`，serve/selftest 两个子命令都管 |
+| ② | `live_appworld.py:1` 指向已删设计书 `plans/2026-08-01-live-inject-design.md` 的断指针，改指本文件 | 08-02 清场删了 plans/ | 文件头已改指 METHOD.md |
+| ③ | `live_appworld.py` open_stream 载荷补 `add_special_tokens: False` | §2.2-R4；采集路显式钉死，活跑靠缺省碰对（tokenizer post_processor=ByteLevel，静态证据缺省无害，仍须显式） | 载荷字典加键（全文件唯一 completions 请求点） |
+| ④ | 活跑/对照用的 vLLM 发射脚本设 `VLLM_SYSTEM_START_DATE`=钉死日期 | §2.1 同设前提 | `launch_vllm_splice.py` 钉 2026-07-31（=`rebuild.COLLECT_DATE`）；其余 launch_vllm_* 是一次性发射器，要用时再钉 |
 
 ## 7 定案记录（2026-08-08 grilling 会话）
 

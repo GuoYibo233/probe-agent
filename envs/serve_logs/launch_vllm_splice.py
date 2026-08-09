@@ -3,7 +3,8 @@
 与 launch_vllm_thsweep4.py 逐字同参(同模型、同 --served-model-name、
 --max-model-len 65536、--gpu-memory-utilization 0.92、同三个环境变量、
 编译缓存与日志都走 /net —— /home 有 NFS 服务端配额,写满会连死 vllm),
-只换卡与端口:
+只换卡与端口。2026-08-10 起比 thsweep4 多设一个 VLLM_SYSTEM_START_DATE
+(钉服务端 prompt 日期,METHOD.md §6-④):
 
   gpt-oss-120b -> H100 GPU 0, port 8114   (shard s0: nofill,skel_switch)
   gpt-oss-120b -> H100 GPU 1, port 8115   (shard s1: inject,inject_stop,
@@ -22,6 +23,10 @@ CACHE_ROOT = "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache"
 LOGDIR = f"{CACHE_ROOT}/logs"
 
 GPTOSS_FLAGS = "--max-model-len 65536 --gpu-memory-utilization 0.92"
+
+# 同设前提(METHOD.md §2.1/§6-④):chat 基线的 prompt 日期由服务端生成,
+# 活跑前缀由 /render 钉 rebuild.COLLECT_DATE;两边要可比,服务端也钉同一天。
+SYSTEM_START_DATE = "2026-07-31"   # = pipeline/inject/rebuild.py COLLECT_DATE
 
 JOBS = [
     (0, 8114, "new1_splice_srv_a_t108g0"),
@@ -49,6 +54,7 @@ def main() -> None:
             "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 "
             "VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID "
             f"VLLM_CACHE_ROOT={CACHE_ROOT} TRITON_CACHE_DIR={CACHE_ROOT}/triton "
+            f"VLLM_SYSTEM_START_DATE={SYSTEM_START_DATE} "
             f"CUDA_VISIBLE_DEVICES={gpu} {cmd} > {log} 2>&1"
         )
         tmux = f"tmux new-session -d -s {session} {shlex.quote(inner)}"

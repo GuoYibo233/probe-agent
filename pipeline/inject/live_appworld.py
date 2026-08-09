@@ -1,4 +1,4 @@
-"""活跑注入线驱动器(appworld venv,纯 CPU)。设计书:plans/2026-08-01-live-inject-design.md
+"""活跑注入线驱动器(appworld venv,纯 CPU)。方法规范:METHOD.md(旧设计书已随 08-02 清场删除)
 
 回答的问题:探针实时出手、把预测调用的真实执行返回注进思考,**整道题**还做不做
 得对、省不省 token。这是回放线(单步续写)给不出的任务级成绩,2026-08-01 用户
@@ -261,7 +261,8 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
             model=a.model, prompt=prompt_head + raw,
             max_tokens=max(1, MAX_STEP_TOKENS - usage["gen_tok"]),
             temperature=0.0, stop=DEFAULT_STOP,
-            skip_special_tokens=False), a.timeout)
+            skip_special_tokens=False,
+            add_special_tokens=False), a.timeout)
         usage["req"] += 1
         fired = False
         for delta in st:

@@ -339,12 +339,14 @@ TASKS = {
     "probe-serve": dict(
         stage="live", py="cprobe", script="pipeline/inject/probe_server.py",
         gpu=True, args=["serve"],
-        desc="探针常驻服务(ctool+cgen,~3GB;默认端口 8790)",
-        notes=["serve_forever 永不返回;温度从 <ctool-run>/REPLAY_REPORT.json 读"]),
+        desc="探针常驻服务(ctool+cgen,~3GB;默认端口 8790;--theta 必传)",
+        notes=["serve_forever 永不返回;温度从 <ctool-run>/REPLAY_REPORT.json 读",
+               "--theta 无默认值,不给拒跑(METHOD.md 轴4:θ 永远手动)"]),
     "probe-selftest": dict(
         stage="live", py="cprobe", script="pipeline/inject/probe_server.py",
         args=["selftest", "--device", "cpu"],
-        desc="探针触发一致性自检(纯 CPU)"),
+        desc="探针触发一致性自检(纯 CPU;--theta 必传)",
+        notes=["--theta 无默认值;对账 θ=0.925 那次回放的 logits 就传 0.925"]),
     "score-live": dict(
         stage="live", py="cprobe", script="pipeline/inject/score_live.py",
         desc="活跑打分 -> LIVE_REPORT(必给 --live-dir --base-root)",
@@ -360,7 +362,8 @@ TASKS = {
         stage="live", py="sys", script="envs/serve_logs/launch_vllm_splice.py",
         handoff=True, gpu=True,
         desc="gpt-oss 三副本 vLLM 发射器(tokyo108:8114-8116;自己 ssh+tmux,幂等)",
-        notes=["环境变量(cuda-compat/FLASHINFER/缓存进 /net)已内嵌在脚本里"]),
+        notes=["环境变量(cuda-compat/FLASHINFER/缓存进 /net)已内嵌在脚本里",
+               "VLLM_SYSTEM_START_DATE 钉 2026-07-31(=COLLECT_DATE,METHOD §6-④)"]),
     "serve-awdiag": dict(
         stage="live", py="sys", script="envs/serve_logs/launch_vllm_awdiag.py",
         handoff=True, gpu=True,
