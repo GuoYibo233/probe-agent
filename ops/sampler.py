@@ -10,6 +10,7 @@ import html
 import http.server
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -73,6 +74,45 @@ def read_beats(log_path, max_bytes=262144):
         if rec is not None:
             beats.append(rec)
     return beats
+
+
+# vLLM 吞吐行(工单 13/实施计划 Task 15):2026-08-08 从真实日志核实的格式,
+# 源于 vllm 0.26.0 `vllm/v1/metrics/loggers.py:263-313`。默认每 10 秒一条,
+# 引擎空闲时降级成 debug 不打印——断流不代表停摆,判定不看这行,只用来
+# 出 token 速率显示位。原文样例(逐字节核对过):
+#   Engine 000: Avg prompt throughput: 785.1 tokens/s, Avg generation
+#   throughput: 671.8 tokens/s, Running: 4 reqs, Waiting: 0 reqs, ...
+VLLM_STATS_RE = re.compile(
+    r"Avg prompt throughput:\s*([\d.]+)\s*tokens/s,\s*"
+    r"Avg generation throughput:\s*([\d.]+)\s*tokens/s,\s*"
+    r"Running:\s*(\d+)\s*reqs")
+
+
+def parse_vllm_stats(text):
+    """vLLM 吞吐行 -> {"prompt_tok_s","gen_tok_s","running"};无匹配 None。
+    `text` 可以是多行,命中多条时取最后一条(最新一次采样)。只做速率显示,
+    不进判定(判定是 probe_port,见 verdicts._judge_service)。"""
+    matches = list(VLLM_STATS_RE.finditer(text))
+    if not matches:
+        return None
+    m = matches[-1]
+    return {"prompt_tok_s": float(m.group(1)), "gen_tok_s": float(m.group(2)),
+            "running": int(m.group(3))}
+
+
+def read_vllm_stats(log_path, max_bytes=8192):
+    """服务分片日志尾 max_bytes 字节里最新一条吞吐行(工单 13)。日志读不了
+    或这一轮没有吞吐行(引擎空闲降级 debug)都返回 None——调用方决定是否
+    沿用上一轮的显示值,这里不猜。"""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - max_bytes))
+            tail = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    return parse_vllm_stats(tail)
 
 
 def atomic_write(path, obj):
@@ -255,6 +295,7 @@ def _new_piece_state(launched_at, refires=0):
         "port_ok": None,
         "port_ever_ok": False,
         "port_fail_rounds": 0,
+        "vllm_stats": None,
         "verdict": None,
         "escalated_since_mono": None,
         "incident_open": False,
@@ -262,7 +303,8 @@ def _new_piece_state(launched_at, refires=0):
     }
 
 
-def update_piece_state(st, job, idx, piece, beats, alive, now_mono):
+def update_piece_state(st, job, idx, piece, beats, alive, now_mono,
+                        vllm_stats=None):
     """攒一个分片的累计状态(设计 §3):
     - launched_at 变了(补射) -> 整段状态重开,refires += 1
     - beats 里比 last_done/last_ts 新的条目 append 进 recent_beats(截
@@ -271,7 +313,10 @@ def update_piece_state(st, job, idx, piece, beats, alive, now_mono):
     - alive: None(探测失败) -> alive_last 沿用,probe_fail_rounds += 1;
       True/False -> 直取,probe_fail_rounds = 0
     - 服务类:port_ok 由 probe_port() 出,port_ever_ok/port_fail_rounds
-      同理攒
+      同理攒;`vllm_stats` 是调用方(sample_once)传进来的这一轮吞吐行解析
+      结果(工单 13),只做速率显示,不进判定——这一轮没有吞吐行(引擎空闲
+      降级 debug,读不到日志)时 vllm_stats=None,沿用上一轮的显示值,不
+      因为断流就把速率显示闪回空白(spec:"空闲不打吞吐行不算停摆")
     返回值是这个分片的状态字典(已经就地挂在 st 里,st 由调用方落盘)。
     """
     key = piece_key(job["name"], idx)
@@ -320,7 +365,7 @@ def update_piece_state(st, job, idx, piece, beats, alive, now_mono):
     if len(ps["recent_beats"]) > _BEATS_CAP:
         ps["recent_beats"] = ps["recent_beats"][-_BEATS_CAP:]
 
-    # 服务类:端口探测
+    # 服务类:端口探测 + 吞吐行显示(工单 13,判定只用 port_ok,不用 vllm_stats)
     if piece.get("kind") == "service":
         port = piece.get("port")
         port_ok = probe_port(piece["host"], port) if port else False
@@ -330,6 +375,8 @@ def update_piece_state(st, job, idx, piece, beats, alive, now_mono):
             ps["port_fail_rounds"] = 0
         else:
             ps["port_fail_rounds"] = ps.get("port_fail_rounds", 0) + 1
+        if vllm_stats is not None:
+            ps["vllm_stats"] = vllm_stats
 
     return ps
 
@@ -389,6 +436,15 @@ def build_row(job, idx, piece, ps, now_mono, now_wall):
     last_beat = ps["recent_beats"][-1] if ps.get("recent_beats") else {}
     probe_fail_rounds = ps.get("probe_fail_rounds", 0)
 
+    # 服务类的 tok_in/tok_out 显示位复用心跳协议的同名字段位置,但语义换成
+    # 吞吐速率(tokens/s)而不是累计计数——服务分片不产生心跳,last_beat
+    # 永远是空 dict,这里改从 vllm_stats 取(工单 13:吞吐行只做显示,不进判定)
+    if kind == "service":
+        vs = ps.get("vllm_stats") or {}
+        tok_in, tok_out = vs.get("prompt_tok_s"), vs.get("gen_tok_s")
+    else:
+        tok_in, tok_out = last_beat.get("tok_in"), last_beat.get("tok_out")
+
     return {
         "job": job["name"], "idx": idx, "host": piece["host"],
         "gpus": piece.get("gpus"), "session": piece.get("session"),
@@ -396,7 +452,7 @@ def build_row(job, idx, piece, ps, now_mono, now_wall):
         "done": done, "total": total, "unit": ps.get("last_unit"),
         "progress_pct": progress_pct,
         "avg_rate": avg_rate, "recent_rate": recent_rate,
-        "tok_in": last_beat.get("tok_in"), "tok_out": last_beat.get("tok_out"),
+        "tok_in": tok_in, "tok_out": tok_out,
         "loss": last_beat.get("loss"), "eta_s": eta_s,
         "log": piece.get("log"),
         "probe_failed": probe_fail_rounds >= _PROBE_FAIL_ROUNDS_RED,
@@ -416,8 +472,14 @@ def sample_once():
         for idx, piece in enumerate(job["pieces"]):
             sess_set = live.get(piece["host"])
             alive = None if sess_set is None else (piece["session"] in sess_set)
-            beats = read_beats(piece["log"])
-            ps = update_piece_state(st, job, idx, piece, beats, alive, now_mono)
+            # 服务分片(工单 13):不走心跳解析,日志走 read_vllm_stats 只取
+            # 吞吐行做显示;判定单独由 update_piece_state 里的 probe_port 定。
+            if piece.get("kind") == "service":
+                beats, vllm_stats = [], read_vllm_stats(piece["log"])
+            else:
+                beats, vllm_stats = read_beats(piece["log"]), None
+            ps = update_piece_state(st, job, idx, piece, beats, alive,
+                                    now_mono, vllm_stats=vllm_stats)
             row = build_row(job, idx, piece, ps, now_mono, now_wall)
             rows.append(row)
             per_job_lines.setdefault(job["name"], []).append(dict(row, t=now_wall))
