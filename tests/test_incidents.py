@@ -126,6 +126,7 @@ class TestSpawnAgentArgs(unittest.TestCase):
     """spawn_agent 的子进程参数:mock Popen,断言无头旗标组合与重定向。"""
 
     def test_popen_args(self):
+        import os
         import tempfile
         calls = []
 
@@ -135,17 +136,25 @@ class TestSpawnAgentArgs(unittest.TestCase):
 
         old = sampler.subprocess.Popen
         sampler.subprocess.Popen = FakePopen
+        # tests/__init__ 全局设了 NEW1_NO_SPAWN(C1 兜底开关),这里要测的
+        # 正是"真发射时的参数",临时摘掉,测完还原
+        saved_env = os.environ.pop("NEW1_NO_SPAWN", None)
         try:
             with tempfile.TemporaryDirectory() as d:
                 sampler.spawn_agent("PROMPT", pathlib.Path(d) / "a.out")
         finally:
             sampler.subprocess.Popen = old
+            if saved_env is not None:
+                os.environ["NEW1_NO_SPAWN"] = saved_env
         argv, kw = calls[0]
-        self.assertEqual(argv[:3], ["claude", "-p", "PROMPT"])
-        self.assertIn("--model", argv)
-        self.assertIn("opus", argv)
+        # C3 起 argv[0] 是 shutil.which 解析出的绝对路径,不再是裸字符串
+        self.assertTrue(argv[0].endswith("claude"), argv[0])
+        self.assertEqual(argv[1:3], ["-p", "PROMPT"])
+        model_i = argv.index("--model")
+        self.assertEqual(argv[model_i + 1], "opus")
         self.assertIn("--dangerously-skip-permissions", argv)
         self.assertTrue(kw["start_new_session"])
+        self.assertEqual(kw["stdin"], sampler.subprocess.DEVNULL)
 
 
 if __name__ == "__main__":
