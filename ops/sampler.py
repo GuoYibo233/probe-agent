@@ -11,6 +11,7 @@ import http.server
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -216,16 +217,27 @@ def spawn_agent(prompt, out_path):
     环境开关 `NEW1_NO_SPAWN`(final-review C1,2026-08-09):非空时不建子
     进程,只往 out_path 写一行占位并返回 None——单测的结构性兜底,mock
     掉本函数是第一道防线,这个开关是万一漏 mock 时不让真进程跑起来的
-    第二道。"""
+    第二道。
+
+    `claude` 解析成绝对路径(`shutil.which`)才发射(final-review C3):
+    crontab 起的常驻采样器 PATH 往往没继承登录 shell 的配置,解析不到就
+    没法确认发射的是不是对的可执行文件——找不到直接 raise,交给调用方
+    (`maybe_trigger_incidents`)接住记进事故记录,不悄悄用裸 "claude"
+    字符串赌 PATH 里有它。"""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if os.environ.get("NEW1_NO_SPAWN"):
         with open(out_path, "ab") as f:
             f.write(b"[NEW1_NO_SPAWN] would spawn incident agent\n")
         return None
+    claude_bin = shutil.which("claude")
+    if claude_bin is None:
+        raise RuntimeError(
+            "claude 在 PATH 里解析不到(spawn_agent 需要绝对路径;"
+            "crontab 环境常见坑:PATH 没继承登录 shell 配置)")
     with open(out_path, "ab") as f:
         return subprocess.Popen(
-            ["claude", "-p", prompt, "--model", "opus",
+            [claude_bin, "-p", prompt, "--model", "opus",
              "--dangerously-skip-permissions"],
             cwd=str(OPS.parent), stdin=subprocess.DEVNULL,
             stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
@@ -246,14 +258,22 @@ def maybe_trigger_incidents(rows, st):
         inc_id = "{}_{}#{}".format(
             datetime.now().strftime("%Y%m%d-%H%M%S"), row["job"], row["idx"])
         out_path = MONITOR_DIR / "incidents" / f"{inc_id}.out"
-        append_jsonl(MONITOR_DIR / "incidents.jsonl", [{
+        inc = {
             "id": inc_id, "t": time.time(), "job": row["job"],
             "idx": row["idx"], "host": row.get("host"),
             "gpus": row.get("gpus"), "session": row.get("session"),
             "verdict": row["verdict"], "log": row.get("log"),
             "allow_refire": allow_refire, "out": str(out_path),
-        }])
-        spawn_agent(build_incident_prompt(row, allow_refire), out_path)
+        }
+        # spawn 失败(常见:PATH 里没有 claude)不许把异常抛穿 sample_once——
+        # 常驻循环靠 main() 的 try/except 兜底不假,但一次 spawn 失败不该
+        # 连累这一轮其余分片的采样和落盘。失败原样记进事故记录,
+        # incident_open 照样置位——同一事故不会因为 spawn 失败就每轮重试。
+        try:
+            spawn_agent(build_incident_prompt(row, allow_refire), out_path)
+        except Exception as e:
+            inc["spawn_error"] = str(e)
+        append_jsonl(MONITOR_DIR / "incidents.jsonl", [inc])
         ps["incident_open"] = inc_id
 
 
@@ -505,14 +525,17 @@ def sample_once():
         if unreg:
             extras[h] = unreg
 
-    # 事故触发在 state.json 落盘之前:incident_open 必须跟着这轮状态一起
-    # 持久化,否则常驻循环下一轮 load_state() 读到旧状态,同一事故重复拉 agent
+    # 事故触发之后立刻落盘 state.json(final-review C3,2026-08-09):
+    # incident_open 必须跟着这轮状态一起持久化,否则常驻循环下一轮
+    # load_state() 读到旧状态,同一事故重复拉 agent。history/latest 的落盘
+    # 挪到 state.json 之后——history 写失败(比如 NFS 抖动)不许连累
+    # incident_open 也跟着丢:state.json 已经先落地了。
     maybe_trigger_incidents(rows, st)
+    atomic_write(MONITOR_DIR / "state.json", st)
     latest = {"sampled_at": now_wall, "rows": rows, "extras": extras,
               "incidents_tail": read_incidents_tail()}
     for jname, lines in per_job_lines.items():
         append_jsonl(MONITOR_DIR / "history" / f"{jname}.jsonl", lines)
-    atomic_write(MONITOR_DIR / "state.json", st)
     atomic_write(MONITOR_DIR / "latest.json", latest)
     return latest
 
