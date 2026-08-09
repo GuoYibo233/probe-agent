@@ -85,7 +85,9 @@ smoke 也可以先用 `python3 run.py launch <task> ... --dry-run` 看每个分�
    `--run-id`/`--track` 必填（`record start` 硬要求，`--track` 要和
    `TIMELINE.md` 里的方向对得上）；给了 `--outdir` 才写 RUNMETA，没给只打一行
    `WARN`（产物目录事后才能确定的任务，回头自己补
-   `python3 run.py runmeta <产物目录> --cmd '<完整命令>' --kind <kind>`）。
+   `python3 run.py runmeta <产物目录> --cmd '<完整命令>' --kind <kind>`；
+   kind 是自由字符串，launch 自动登记写 `launch`，两个排卡发射器写
+   `train` / `eval_<阶段>`，手搓补录照这批值挑一个贴切的）。
    注册表外的一次性命令走 `--cmd '<完整命令>' --workdir <dir>` 逃生口，不查
    TASKS，命令原样进 tmux，登记照做。
    分片死了要重发同一 session（补射）：
