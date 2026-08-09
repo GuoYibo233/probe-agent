@@ -183,3 +183,139 @@ python3 run.py launch-eval tool --batch zz --data-root /tmp/t11_smoke_eval_data 
 文件原有的 `append_runmeta` 失败处理写法。两个文件里 `shlex` 仍在
 `build()`/`cell_cmd_parts()` 里用，`subprocess` 已经不再需要（探卡/
 tmux 全部转给 `launch_common`），删掉了 `import subprocess`。
+
+---
+
+## 修复第 1 轮（F1）
+
+工作树：`/home/y-guo/reproduce/new1-wt/20260808-par-T11-fix1`，
+同一分支 `ticket/20260808-par/T11`（检出已有分支，不新建）。
+
+### F1（critical）：launch-eval 的 run_id 与 launch-probe 完全同名，标准流程下 register_all 必撞
+
+**评审指出的问题**：`ops/launch_eval.py:86` 原来 `rid = sess[len("eval_"):]`，
+`sess = f"eval_{batch}_{model}_{cell}"`，去掉 `eval_` 前缀后等于
+`f"{batch}_{model}_{cell}"`——与 `ops/launch_probe.py` 的 `build()` 给同一格
+训练 job 用的 `rid`（`f"{batch}_{model}_{cell}"`）逐字符相同。`register_all`
+的去重检查（`ops/launch_common.py` `if any(j["name"]==run_id for j in
+reg["active"])`）只看 `jobs.json` 的 `active` 列表；训练 job 从 `active`
+移出只发生在 `gpu_jobs finish`（销号），按 `probe-pipeline/SKILL.md`，
+销号排在 Phase D（收官），明确排在 C4 评测之后（C4 小节原文：'不必等
+训练全批收官，逐格收官逐格派评测'）。标准跑法下，`launch-eval` 调
+`register_all` 时同名训练 job 几乎总还在 `active` 里，`register_all` 会
+`sys.exit(f"run_id {run_id} 已在台账里…")`，被 `launch_and_register` 的
+`except SystemExit` 吞成一行 WARN——tmux 评测任务照常发出去，但从头到尾
+没有台账条目，也没有 `record.py` 记录。
+
+**复核加深的一层**：追查 `ops/record.py` 后发现问题比评审描述的还要严重——
+`record.py start`（`register_all` 第②步）自己也有一层独立的重复检查
+（`record.py:237-238` `if ev["run_id"] in load(): sys.exit(...)`）。`load()`
+是把 `runs.jsonl` 里全部历史事件按 `run_id` 折叠出来的，`finish` 只是往
+事件流里再 append 一条 `finish` 事件，不会把 `run_id` 从 `load()` 的返回值
+里删掉。也就是说，即便训练 job 已经在 `jobs.json` 里 `finish` 销号完毕
+（绕开了评审描述的第一层撞车），只要这个 `run_id` 曾经在 `record.py` 里
+`start` 过，`record.py start` 自己就会再撞一次、独立于 `jobs.json` 的
+`active` 列表状态——`rid = sess[len("eval_"):]` 这个写法在**任何**训练/
+评测时序下都会撞车，不只是"标准跑法下几乎总撞"。
+
+**修法**：把 `rid = sess[len("eval_"):]` 改成 `rid = sess`（不去掉
+`eval_` 前缀）。选这个修法而不是另起一套编码规则的理由：
+1. 结构上不可能再跟训练 rid 撞——训练 rid 是 `x = f"{batch}_{model}_{cell}"`，
+   评测 rid 现在是 `f"eval_{x}"`，`"eval_" + x == x` 对任何非空 `x` 都无解，
+   不依赖 `batch`/`model`/`cell` 的具体取值，是构造上的保证而不是"通常不会"。
+2. 有历史先例：`ops/gpu_jobs.py` 的 `cmd_finish` 里有一条审计注释——
+   "防提前销号(审计实例 eval_c2_q36_mtool 16:52 被销号,实际跑到 18:17)"，
+   说明这个项目历史上真实跑过、台账里真实登记过的评测 job name 就是带
+   `eval_` 前缀的完整 session 名，不是去掉前缀的版本。改成 `rid = sess`
+   是回到这个已经验证过的命名先例，不是发明新规则。
+3. 没有下游代码依赖"评测 rid 等于训练 rid 去掉前缀"这个约定——搜索了
+   `ops/*.py`、`run.py`、`tests/*.py` 里所有 `eval_` 相关字符串，没有
+   找到任何地方假设两者的 rid 存在这种对应关系。
+
+`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 13 Step 2 原文写的就是
+"rid 用 sess 去掉前缀 eval_ 的 `{batch}_{model}_{cell}`"——这条撞车是计划
+文本本身携带的缺陷，上一轮实现者是照办的，不是实现偏离了计划。这次修复
+没有回改这份计划文档（不在工单范围内，且这段 Task 13 已经执行完毕，没有
+后续工单会再读这一步去重新执行）。
+
+**改的文件**：
+- `ops/launch_eval.py`：`rid = sess[len("eval_"):]` → `rid = sess`，加了
+  一段注释解释为什么不能去前缀（撞车机制 + 结构保证 + 历史先例三点）。
+- `tests/test_launch_eval.py`：测试名从
+  `test_launches_and_registers_rich_piece_rid_strips_eval_prefix` 改成
+  `test_launches_and_registers_rich_piece_rid_keeps_eval_prefix`；断言从
+  `self.assertEqual(run_id, "c2_q36_mtool")` 改成
+  `self.assertEqual(run_id, "eval_c2_q36_mtool")` 并加了一行
+  `self.assertNotEqual(run_id, "c2_q36_mtool")` 把"不能等于训练 rid"这条
+  钉死成显式断言；文件头 docstring 同步改了措辞。
+- `MAP.md`：`ops/launch_eval.py` 那一行里"run_id 取 session 去掉 `eval_`
+  前缀"改成"run_id = session 原样，不去掉前缀"，附一句撞车原因。
+
+### 验证
+
+```
+python3 -m unittest tests.test_launch_probe tests.test_launch_eval -v
+```
+
+尾部输出：
+
+```
+test_launches_and_registers_rich_piece (tests.test_launch_probe.TestLaunchAndRegister) ... ok
+test_register_failure_warns_but_launch_still_reported (tests.test_launch_probe.TestLaunchAndRegister) ... ok
+test_skips_when_gpu_not_free (tests.test_launch_probe.TestLaunchAndRegister) ... ok
+test_skips_when_session_exists (tests.test_launch_probe.TestLaunchAndRegister) ... ok
+test_launches_and_registers_rich_piece_rid_keeps_eval_prefix (tests.test_launch_eval.TestLaunchAndRegister) ... ok
+test_register_failure_warns_but_launch_still_reported (tests.test_launch_eval.TestLaunchAndRegister) ... ok
+test_skips_when_gpu_not_free (tests.test_launch_eval.TestLaunchAndRegister) ... ok
+test_skips_when_session_exists (tests.test_launch_eval.TestLaunchAndRegister) ... ok
+
+Ran 8 tests in 0.007s
+
+OK
+```
+
+发射模拟打印里能看到修复生效——WARN 那一行现在带的是完整前缀名：
+
+```
+WARN 登记失败(eval_c2_q36_mtool): run_id 已在台账里
+```
+
+（改之前这一行会打印 `WARN 登记失败(c2_q36_mtool): ...`，跟训练 rid 撞的
+就是这个字符串。）
+
+全量：
+
+```
+python3 -m unittest discover -s tests -v
+```
+
+37 个测试全绿，与改动前数量一致（这一轮没加新测试文件，只改了已有的一个
+断言 + 测试名）。
+
+```
+python3 run.py selfcheck
+```
+
+`62 任务 / 4 配方, 16 处缺失`——16 处缺失全部是 `envs/*/venv`、
+`mbert-env`、`cprobe-env` 之类的解释器路径，与上一轮报告记录的一致
+（`git worktree add` 不带走未跟踪的 venv 目录，工作树隔离导致，与本轮
+代码改动无关）；`launch-probe`/`launch-eval` 两个任务本身不在缺失清单里。
+
+dry-run 路径这一轮没有重新跑：F1 的改动只碰 `launch_and_register` 内部
+`rid` 这一行赋值，`build()`/`main()` 的 dry-run 分支（`args.dry_run` 为真
+时直接 `return`，不进 `launch_and_register`）完全没有触碰这行代码，
+上一轮报告里两条 dry-run 命令的输出仍然如实反映当前代码的 dry-run 行为；
+`launch_and_register` 本身的四条路径由上面的单测直接覆盖（含新改的
+`rid` 断言），判断不需要重复跑一次真实 CLI dry-run 来确认。
+
+### commit 清单（本轮）
+
+- `b49705b` — `T11: 修复评测 rid 与训练 rid 撞车(F1)——eval rid 保留 eval_ 前缀不去掉`
+  （`ops/launch_eval.py`、`tests/test_launch_eval.py`、`MAP.md`）
+
+### 自查发现与存疑（本轮）
+
+未发现新的问题。这一轮改动只涉及一处赋值语句 + 对应测试断言 + 两处文档
+描述行，没有触碰上一轮报告里记录的另外两条自查存疑（`workdir` 传
+`str(WD)`、`stall_line`/`escalate_line` 固定传 `None`）——它们不在这次
+findings 范围内，按"逐条修掉，不许扩大范围重构"的指示原样保留。
