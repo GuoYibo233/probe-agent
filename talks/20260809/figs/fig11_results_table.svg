@@ -15,7 +15,7 @@
   <g font-size="16" fill="#0b0b0b" font-variant-numeric="tabular-nums">
     <text x="60" y="98">AppWorld</text>
     <text x="220" y="98">qwen3.6-27b</text>
-    <text x="400" y="98">0.925 <tspan font-size="12.5" fill="#898781">(risk 0.1)</tspan></text>
+    <text x="400" y="98">0.925</text>
     <text x="600" y="98" text-anchor="end">29%</text>
     <text x="740" y="98" text-anchor="end" font-weight="700">0.937</text>
     <text x="880" y="98" text-anchor="end" fill="#898781">0.159</text>

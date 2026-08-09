@@ -40,6 +40,122 @@
         "warmup_s": 1800.0
       },
       "finished_at": "2026-08-10 01:42"
+    },
+    {
+      "name": "z1_srv",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "z1 冒烟批 vLLM 服务:采集/训练评测期间常驻,收官时杀",
+      "started_at": "2026-08-10 02:00",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_z1_srv_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/logs/new1_z1_srv_t108g0.log",
+          "cmd": "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_CACHE_ROOT=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache TRITON_CACHE_DIR=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton VLLM_SYSTEM_START_DATE=2026-07-31 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --port 8114 --host 0.0.0.0 --max-model-len 65536 --gpu-memory-utilization 0.92",
+          "launched_at": 1786294821.367372,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": 8114
+        }
+      ],
+      "monitor": {
+        "warmup_s": 1800.0
+      },
+      "finished_at": "2026-08-10 04:57"
+    },
+    {
+      "name": "z1_probe_srv",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "z1 探针服务:θ=0.65 手动(val 扫描 coverage 0.64),小样 ctool/cgen",
+      "started_at": "2026-08-10 04:13",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "0",
+          "session": "new1_z1_probe_srv_t105g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_z1_probe_srv_t105g0.r2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/inject/probe_server.py serve --theta 0.65 --ctool-run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/z1_gptoss_ctool --cgen-run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/z1_gptoss_cgen --port 8790 --device cuda:0",
+          "launched_at": 1786304206.0334687,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": "probe-serve",
+          "port": 8790
+        }
+      ],
+      "monitor": {
+        "warmup_s": 600.0
+      },
+      "finished_at": "2026-08-10 04:57"
+    },
+    {
+      "name": "z1_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "z1 冒烟批 ctool(小样)",
+      "started_at": "2026-08-10 02:50",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_z1_gptoss_ctool_t105g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_z1_gptoss_ctool_t105g0.r1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/aw_z1_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/z1_gptoss_ctool --align-tol 3e-4",
+          "launched_at": 1786298107.5337613,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": "train-ctool",
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-10 04:57"
+    },
+    {
+      "name": "z1_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "z1 冒烟批 cgen(小样)",
+      "started_at": "2026-08-10 02:50",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_z1_gptoss_cgen_t105g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_z1_gptoss_cgen_t105g1.r1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/aw_z1_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/z1_gptoss_cgen",
+          "launched_at": 1786298109.3296306,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": "train-cgen",
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-10 04:57"
+    },
+    {
+      "name": "z1_eval_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "z1 ctool 回放评测:出 REPLAY_REPORT 温度",
+      "started_at": "2026-08-10 04:09",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_z1_eval_ctool_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_z1_eval_ctool_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/z1_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/aw_z1_v1/gptoss",
+          "launched_at": 1786302542.3594017,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": "eval-tool-causal",
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-10 04:57"
     }
   ]
 }

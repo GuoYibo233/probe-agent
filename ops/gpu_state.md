@@ -24,6 +24,10 @@
   但那一次事故也就没有真的拉起 agent）。crontab 那一行要么把
   `claude` 所在目录写进 `PATH=` 前缀，要么确认 cron 默认 PATH 已经
   覆盖到它，否则事故 agent 这条链在 cron 环境下永远走不通。
+  - **2026-08-10 实战验证（z1 批）**：两次训练 OOM + 一次手杀服务共 3 条
+    事故都被正确判"已挂"写入 `incidents.jsonl`，事故 agent 三次都因上述
+    PATH 问题未拉起（`spawn_error` 照实入账）。crontab 补 PATH 这件事
+    到今天还没做。
 - 采样器自己的日志 tee 到 NFS：
   `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log`。
 - **端口 8377 已经被这个常驻进程占用**——手敲

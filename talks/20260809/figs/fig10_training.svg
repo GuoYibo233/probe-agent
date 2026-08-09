@@ -1,15 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 420" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 56 960 196" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
   <defs>
     <marker id="arrB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 1 L 8 5 L 0 9 z" fill="#2a78d6"/>
     </marker>
   </defs>
 
-  <text x="40" y="40" font-size="16" font-weight="600" fill="#0b0b0b">One forward pass per event, supervised at every boundary at once</text>
 
   <!-- loss row -->
   <rect x="140" y="66" width="560" height="44" rx="8" fill="#cde2fb" stroke="#2a78d6" stroke-width="1.5"/>
-  <text x="160" y="94" font-size="14" fill="#0b0b0b">cross-entropy at each boundary position &#183; weight 1/m&#7522; &#183; same label</text>
+  <text x="160" y="94" font-size="14" fill="#0b0b0b">cross-entropy at each boundary position &#183; same label</text>
 
   <!-- label box -->
   <rect x="730" y="66" width="190" height="44" rx="8" fill="#fde3d9" stroke="#eb6834" stroke-width="1.5"/>
@@ -56,12 +55,7 @@
 
   <!-- single-pass bracket -->
   <path d="M 60 214 v 8 h 762 v -8" fill="none" stroke="#898781" stroke-width="1.5"/>
-  <text x="441" y="244" font-size="13" fill="#898781" text-anchor="middle">encoded once — a single forward pass</text>
+  <text x="441" y="244" font-size="13" fill="#898781" text-anchor="middle">one forward pass</text>
 
-  <!-- recipe -->
-  <text x="40" y="296" font-size="14" fill="#52514e">Backbone: Qwen3-0.6B-Base, full fine-tune + linear head over tool names</text>
-  <text x="40" y="320" font-size="14" fill="#52514e">Baseline probe: ModernBERT-base (150M), same recipe</text>
-  <text x="40" y="344" font-size="14" fill="#52514e">lr 1e-5 &#183; 3 epochs &#183; max len 4,096, left-truncated to keep the tail of the reasoning</text>
-  <text x="40" y="368" font-size="14" fill="#52514e">fp32 weights + bf16 compute &#183; fixed seed</text>
-  <text x="40" y="392" font-size="14" fill="#52514e">Weight 1/m&#7522;: at run time the probe is asked at every boundary &#8212; training weighs boundaries the same way.</text>
+
 </svg>

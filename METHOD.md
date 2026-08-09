@@ -46,6 +46,11 @@ vLLM 侧受控复跑至今没做过（`learn/vllm/lessons/0004` 原话
 活跑前缀日期由 `/render` 客户端钉死——两边要可比，发射 vLLM 时必须设
 `VLLM_SYSTEM_START_DATE` 与钉死日期一致（见 §6-④）。
 
+已修掉的一处渲染口径差（2026-08-10 z1 冒烟抓到）：`build_prefix` 走模型
+jinja 模板，developer 正文与 `<|end|>` 之间多 `\n\n` 两字符，chat 端点的
+harmony 渲染器与采集手拼串都没有——活跑臂曾因此第 0 步即分叉。修后
+`/render` 与 chat 服务端渲染逐字节全等（实测 1533=1533）。
+
 ### 2.2 注入格式同效
 
 注入进思考链的内容，落到 token 层必须与模型自己写出的思考完全同效——
@@ -55,7 +60,7 @@ vLLM 侧受控复跑至今没做过（`learn/vllm/lessons/0004` 原话
 |---|---|---|
 | R1 | 注入只落在思考段内部，思考一闭合就停手 | 【现状】满足（`live_appworld.py:273-279`） |
 | R2 | 注入内容本身零特殊 token（纯文本模板） | 【现状】满足（`replay_inject.py:147`） |
-| R3 | 注入后重发的整串重编码后是合法 harmony 串、与原生成逐 token 对齐；重分词缝（`live_appworld.py:320`）每次机制检查实测 | 【现状】未验，验法见 §5-(ii) |
+| R3 | 注入后重发的整串重编码后是合法 harmony 串、与原生成逐 token 对齐；重分词缝（`live_appworld.py:320`）每次机制检查实测 | 【现状】已验（2026-08-10 z1 冒烟：10/10 注入事件服务端分词与 openai_harmony 重编码逐位一致，见 `plans/2026-08-10-z1-smoke-report.md`） |
 | R4 | 请求参数与已验证等价的采集路一致 | 【现状】满足（skip_special_tokens 与 add_special_tokens 都已显式，§6-③ 2026-08-10 改齐） |
 
 ## 3 轴（每轴：现役取值 + 进线口 + 待试）
