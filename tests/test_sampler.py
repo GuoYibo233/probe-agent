@@ -31,10 +31,23 @@ class TestSampleOnce(unittest.TestCase):
         import sampler
         importlib.reload(sampler)
         self.S = sampler
+        self._old_reg_path = self.S.REG_PATH
+        self._old_live_sessions = self.S.live_sessions
+        self._old_spawn_agent = self.S.spawn_agent
         self.S.REG_PATH = str(self.jobs)
         self.S.live_sessions = lambda hosts: {"tokyo106": {"new1_x_t106g0"}}
+        # 事故触发链路不许在这个测试文件里真的拉子进程(final-review C1):
+        # b.log 那个分片一上来就判"已挂"并达到升级线,round 1 就会命中
+        # maybe_trigger_incidents -> spawn_agent。mock 成记录用的 lambda,
+        # tearDown 还原,不留给下一个测试。
+        self._spawned = []
+        self.S.spawn_agent = lambda prompt, out: self._spawned.append(
+            (prompt, str(out)))
 
     def tearDown(self):
+        self.S.REG_PATH = self._old_reg_path
+        self.S.live_sessions = self._old_live_sessions
+        self.S.spawn_agent = self._old_spawn_agent
         self.td.cleanup()
         os.environ.pop("NEW1_MONITOR_DIR", None)
 

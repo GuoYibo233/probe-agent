@@ -211,9 +211,18 @@ def build_incident_prompt(row, allow_refire):
 def spawn_agent(prompt, out_path):
     """拉一个无头事故 agent(设计 §5,工单 12,用户 2026-08-08 授权):
     detach 的 claude 子进程,模型钉 opus,stdout/stderr 全进 out_path。
-    Popen 不 wait——采样循环不许被验尸挡住。返回 Popen 对象(测试用)。"""
+    Popen 不 wait——采样循环不许被验尸挡住。返回 Popen 对象(测试用)。
+
+    环境开关 `NEW1_NO_SPAWN`(final-review C1,2026-08-09):非空时不建子
+    进程,只往 out_path 写一行占位并返回 None——单测的结构性兜底,mock
+    掉本函数是第一道防线,这个开关是万一漏 mock 时不让真进程跑起来的
+    第二道。"""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    if os.environ.get("NEW1_NO_SPAWN"):
+        with open(out_path, "ab") as f:
+            f.write(b"[NEW1_NO_SPAWN] would spawn incident agent\n")
+        return None
     with open(out_path, "ab") as f:
         return subprocess.Popen(
             ["claude", "-p", prompt, "--model", "opus",

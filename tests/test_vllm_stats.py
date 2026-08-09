@@ -127,11 +127,26 @@ class TestServicePieceSampling(unittest.TestCase):
         import sampler
         importlib.reload(sampler)
         self.S = sampler
+        self._old_reg_path = self.S.REG_PATH
+        self._old_live_sessions = self.S.live_sessions
+        self._old_spawn_agent = self.S.spawn_agent
+        self._old_probe_port = self.S.probe_port
         self.S.REG_PATH = str(self.jobs)
         self.S.live_sessions = (
             lambda hosts: {"tokyo108": {"new1_diag_srv_a_t108g0"}})
+        # 端口一直不应答那条用例(test_port_down_...)会把这个分片判"已挂"
+        # 并达到升级线,触发 maybe_trigger_incidents -> spawn_agent——
+        # mock 成记录用的 lambda,不许真拉子进程(final-review C1),
+        # tearDown 还原,不留给下一个测试文件。
+        self._spawned = []
+        self.S.spawn_agent = lambda prompt, out: self._spawned.append(
+            (prompt, str(out)))
 
     def tearDown(self):
+        self.S.REG_PATH = self._old_reg_path
+        self.S.live_sessions = self._old_live_sessions
+        self.S.spawn_agent = self._old_spawn_agent
+        self.S.probe_port = self._old_probe_port
         self.td.cleanup()
         os.environ.pop("NEW1_MONITOR_DIR", None)
 
