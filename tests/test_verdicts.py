@@ -66,7 +66,30 @@ class TestJudge(unittest.TestCase):
         s.update(port_ok=False, port_fail_rounds=3)
         self.assertEqual(V.judge(s)[0], V.V_STALL)           # 连续 3 轮不应答
         s.update(alive=False)
-        self.assertEqual(V.judge(s)[0], V.V_DEAD)
+        # 已挂当场达升级线(与 batch 一样),I5(final-review):断言整个二元组
+        # 而不是只看判定值,漏了 escalated 这半这条回归会跑不出来。
+        self.assertEqual(V.judge(s), (V.V_DEAD, True))
+
+    def test_service_never_answered_past_warmup_is_stall(self):
+        # 端口从未应答过(port_ever_ok=False)且超过 warm-up 上限:疑似卡死,
+        # 还没过升级线(2000 < 1800×3=5400)所以 escalated=False。
+        s = dict(kind="service", alive=True, done=None, total=None, status=None,
+                 has_beat=False, beat_age_s=0.0, since_launch_s=2000.0,
+                 stall_s=None, escalate_s=None, warmup_s=1800.0,
+                 avg_rate=None, recent_rate=None,
+                 port_ok=False, port_ever_ok=False, port_fail_rounds=0)
+        self.assertEqual(V.judge(s), (V.V_STALL, False))
+
+    def test_service_answered_before_recent_failures_under_threshold_ok(self):
+        # 曾经应答过(port_ever_ok=True),当前这一轮失败,但连续失败轮数
+        # (1 或 2)还没到 port_fail_rounds 的下限(3)——健康,不许提前报警。
+        for n in (1, 2):
+            s = dict(kind="service", alive=True, done=None, total=None,
+                     status=None, has_beat=False, beat_age_s=0.0,
+                     since_launch_s=600.0, stall_s=None, escalate_s=None,
+                     warmup_s=1800.0, avg_rate=None, recent_rate=None,
+                     port_ok=False, port_ever_ok=True, port_fail_rounds=n)
+            self.assertEqual(V.judge(s), (V.V_OK, False))
 
 
 class TestLinesAndRates(unittest.TestCase):
@@ -79,6 +102,12 @@ class TestLinesAndRates(unittest.TestCase):
         self.assertEqual(V.stall_line_s(ts), 180.0)
         self.assertEqual(V.stall_line_s(ts, override=42.0), 42.0)
         self.assertIsNone(V.stall_line_s([0, 10]))  # 只有 1 个间隔 -> None
+
+    def test_stall_line_uses_mult_when_above_floor(self):
+        # I5(final-review):判定线主公式的另一支没测过——典型间隔 60s 时
+        # 5×60=300 > 3×60=180 下限,判定线该走 stall_mult 那一支,不是下限。
+        ts = [0, 60, 120, 180]                    # 间隔全 60s,中位 60
+        self.assertEqual(V.stall_line_s(ts), 300.0)
 
     def test_rates(self):
         first = {"ts": 0.0, "done": 0}
