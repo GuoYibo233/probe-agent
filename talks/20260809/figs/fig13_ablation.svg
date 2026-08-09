@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 470" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
-  <text x="30" y="30" font-size="17" font-weight="600" fill="#0b0b0b">Removing the reasoning text drops accuracy</text>
-  <text x="30" y="52" font-size="13" fill="#52514e">Calibration-split weighted accuracy — AppWorld</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 36 560 364" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <text x="30" y="52" font-size="13" fill="#52514e">Calibration-split weighted accuracy (AppWorld)</text>
 
   <!-- gridlines + y ticks -->
   <g stroke="#e1e0d9" stroke-width="1">
@@ -32,7 +31,5 @@
   </g>
 
   <!-- footnote -->
-  <text x="30" y="414" font-size="12.5" fill="#898781">Earlier data generation (self-mined splits, ModernBERT</text>
-  <text x="30" y="432" font-size="12.5" fill="#898781">probe) &#8212; direction only, not comparable to the main table.</text>
-  <text x="30" y="450" font-size="12.5" fill="#898781">Runs 20260730_0056 (baseline) / 20260730_1713 (ablation).</text>
+
 </svg>

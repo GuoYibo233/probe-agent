@@ -1,5 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
-  <text x="40" y="40" font-size="17" font-weight="600" fill="#0b0b0b">2 tasks &#215; 2 agent models — one probe per cell</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 62 760 222" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
 
   <!-- column headers -->
   <text x="330" y="86" font-size="15" font-weight="600" fill="#52514e" text-anchor="middle">gpt-oss-120b</text>
@@ -27,6 +26,4 @@
     <text x="560" y="252" font-size="12.5" fill="#898781">test events</text>
   </g>
 
-  <text x="40" y="308" font-size="14" fill="#52514e">Official task splits (AppWorld: 90 train / 57 val / 168 test tasks) &#183; split by task instance</text>
-  <text x="40" y="332" font-size="14" fill="#52514e">All models run with vLLM &#183; one probe per task &#215; model pair</text>
 </svg>

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 352" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 14 960 252" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
   <!-- header -->
   <g font-size="14" font-weight="600" fill="#52514e">
     <text x="60" y="52">Task</text>
@@ -49,8 +49,5 @@
   </g>
   <line x1="60" y1="250" x2="900" y2="250" stroke="#c3c2b7" stroke-width="1.5"/>
 
-  <!-- footnote -->
-  <text x="60" y="284" font-size="13" fill="#898781">Causal probe (Qwen3-0.6B). Precision is computed only on events where the probe made a prediction.</text>
-  <text x="60" y="306" font-size="13" fill="#898781">Majority-class baseline = always predicting the most frequent tool.</text>
-  <text x="60" y="328" font-size="13" fill="#898781">The qwen3.6 AppWorld row uses the 0.90 precision target (no &#952; reached 0.95); all others 0.95.</text>
+
 </svg>
