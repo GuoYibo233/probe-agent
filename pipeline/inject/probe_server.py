@@ -96,6 +96,7 @@ def load_cgen(run, dev):
 
 class Probe:
     def __init__(self, ctool_run, cgen_run, tokenizer_path, theta, dev):
+        self.ctool_run, self.cgen_run = str(ctool_run), str(cgen_run)
         self.dev = dev
         self.theta = theta
         (self.ct, self.ct_tok, self.ct_meta,
@@ -145,7 +146,7 @@ class Probe:
 
     def config(self):
         return dict(theta=self.theta, temperature=self.T,
-                    ctool=str(CTOOL), cgen=str(CGEN),
+                    ctool=self.ctool_run, cgen=self.cgen_run,
                     n_labels=self.ct_meta["n_labels"],
                     max_len=self.max_len, device=str(self.dev))
 
