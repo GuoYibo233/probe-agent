@@ -22,7 +22,9 @@ Runs a launch order's `argv` exactly once, sequentially:
 5. `<artifact_dir>/RUNMETA.json` is written fresh on the first attempt and
    only ever appended to after that -- attempt_no increments, and every
    earlier attempt's argv/log_path/resources are left untouched byte for
-   byte (rows.json runmeta.attempts).
+   byte (rows.json runmeta.attempts). Steps 3-5 for a given launch order run
+   inside one hold of the RUNMETA lock, so two concurrent launches of the
+   same launch order serialize instead of racing to the same attempt_no.
 
 `argv` is the sole authoritative execution body (spec §5): this script
 never re-derives it from `registry_task`, and never retries, swaps cards,
@@ -126,73 +128,84 @@ def run(args) -> int:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     runmeta_file = artifact_dir / "RUNMETA.json"
 
-    existing_runmeta = _load_json(runmeta_file) or None
-    attempt_no = len(existing_runmeta["attempts"]) + 1 if existing_runmeta else 1
-
-    log_rel = str(Path(order["artifact_dir"]) / f"attempt{attempt_no}.log")
-    log_path = artifact_dir / f"attempt{attempt_no}.log"
-
     jobs_path = Path(cfg.ledger_path("jobs"))
     launch_order_ref = str(args.launch_order)
 
-    with _lib.locked(jobs_path):
-        jobs = _load_json(jobs_path)
-        jobs[order["run_id"]] = {
-            "launch_order_ref": launch_order_ref,
-            "state": "running",
-            "started_at": _lib.now_iso(),
-            "finished_at": None,
-            "log_path": log_rel,
-        }
-        _save_json(jobs_path, jobs)
+    # The whole read-modify-write of RUNMETA.json (attempt_no computed from
+    # the current attempts, then appended back) lives inside one hold of the
+    # RUNMETA lock -- two concurrent launches of the *same* launch order
+    # would otherwise both read the same attempts length, both compute the
+    # same attempt_no, and the later writer would silently clobber the
+    # earlier attempt's record. Locking on runmeta_file (rather than a
+    # separate short critical section) is the only way to make the
+    # attempt_no decision and the eventual append atomic together, since the
+    # decision has to stay valid across the argv run that produces the
+    # attempt it numbers.
+    with _lib.locked(runmeta_file):
+        existing_runmeta = _load_json(runmeta_file) or None
+        attempt_no = len(existing_runmeta["attempts"]) + 1 if existing_runmeta else 1
 
-    started_at = _lib.now_iso()
-    runtime_factor = cfg.get("runtime_factor")
-    timeout = order["expected_runtime_s"] * runtime_factor
-    exit_code, stdout, stderr, _elapsed = _lib.run_argv(
-        order["argv"], cwd=str(workdir), timeout=timeout,
-    )
-    finished_at = _lib.now_iso()
+        log_rel = str(Path(order["artifact_dir"]) / f"attempt{attempt_no}.log")
+        log_path = artifact_dir / f"attempt{attempt_no}.log"
 
-    log_text = stdout
-    if stderr:
-        log_text += "\n--- stderr ---\n" + stderr
-    log_path.write_text(log_text, encoding="utf-8")
+        with _lib.locked(jobs_path):
+            jobs = _load_json(jobs_path)
+            jobs[order["run_id"]] = {
+                "launch_order_ref": launch_order_ref,
+                "state": "running",
+                "started_at": _lib.now_iso(),
+                "finished_at": None,
+                "log_path": log_rel,
+            }
+            _save_json(jobs_path, jobs)
 
-    if exit_code is None:
-        state = "timeout"
-        process_exit = _EXIT_TIMEOUT
-    elif exit_code == 0:
-        state = "done"
-        process_exit = 0
-    else:
-        state = "failed"
-        process_exit = exit_code
+        started_at = _lib.now_iso()
+        runtime_factor = cfg.get("runtime_factor")
+        timeout = order["expected_runtime_s"] * runtime_factor
+        exit_code, stdout, stderr, _elapsed = _lib.run_argv(
+            order["argv"], cwd=str(workdir), timeout=timeout,
+        )
+        finished_at = _lib.now_iso()
 
-    attempt = {
-        "attempt_no": attempt_no,
-        "argv": order["argv"],
-        "exit_code": exit_code,
-        "log_path": log_rel,
-        "resources": order.get("resources", {}),
-        "started_at": started_at,
-        "finished_at": finished_at,
-    }
+        log_text = stdout
+        if stderr:
+            log_text += "\n--- stderr ---\n" + stderr
+        log_path.write_text(log_text, encoding="utf-8")
 
-    if existing_runmeta is None:
-        runmeta = {
-            "commit": head,
+        if exit_code is None:
+            state = "timeout"
+            process_exit = _EXIT_TIMEOUT
+        elif exit_code == 0:
+            state = "done"
+            process_exit = 0
+        else:
+            state = "failed"
+            process_exit = exit_code
+
+        attempt = {
+            "attempt_no": attempt_no,
             "argv": order["argv"],
-            "dirty_files": [],
-            "launch_order_ref": launch_order_ref,
-            "attempts": [attempt],
-            "env_name": order.get("env_name"),
-            "outputs": [],
+            "exit_code": exit_code,
+            "log_path": log_rel,
+            "resources": order.get("resources", {}),
+            "started_at": started_at,
+            "finished_at": finished_at,
         }
-    else:
-        runmeta = existing_runmeta
-        runmeta["attempts"].append(attempt)
-    _save_json(runmeta_file, runmeta)
+
+        if existing_runmeta is None:
+            runmeta = {
+                "commit": head,
+                "argv": order["argv"],
+                "dirty_files": [],
+                "launch_order_ref": launch_order_ref,
+                "attempts": [attempt],
+                "env_name": order.get("env_name"),
+                "outputs": [],
+            }
+        else:
+            runmeta = existing_runmeta
+            runmeta["attempts"].append(attempt)
+        _save_json(runmeta_file, runmeta)
 
     with _lib.locked(jobs_path):
         jobs = _load_json(jobs_path)

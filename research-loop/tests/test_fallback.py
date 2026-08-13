@@ -284,6 +284,56 @@ def test_launch_rerun_appends_attempt_and_leaves_the_first_untouched():
 
 
 # ---------------------------------------------------------------------------
+# Supplemental: two concurrent launches of the *same* launch order must not
+# clobber each other's RUNMETA attempt (fix-round F1 finding -- the RUNMETA
+# read-modify-write in launch.py now holds `_lib.locked(runmeta_file)`
+# across the whole read/run/append, so a racing second launch blocks until
+# the first has appended its attempt instead of both computing the same
+# attempt_no and the later writer silently overwriting the earlier one).
+# Not one of the ticket's original nine tests.
+# ---------------------------------------------------------------------------
+
+
+def test_launch_concurrent_same_order_does_not_lose_an_attempt():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        order_path, order = _make_order(
+            root, "fake-concurrent-1", mode="ok", expected_runtime_s=30,
+        )
+        # Swap argv for a plain 1s sleep: fake-experiment's real argv
+        # completes near-instantly, too narrow a window to reliably overlap
+        # two independently-spawned processes. A short, controlled sleep
+        # inside the (now-locked) critical section gives the race a fair
+        # chance to manifest if the fix regresses, without slowing the
+        # suite down the way reusing the 30s `timeout` mode would.
+        raw_order = json.loads(order_path.read_text(encoding="utf-8"))
+        raw_order["argv"] = [sys.executable, "-c", "import time; time.sleep(1)"]
+        order_path.write_text(json.dumps(raw_order, ensure_ascii=False), encoding="utf-8")
+
+        launch_py = _lib.plugin_root() / "scripts" / "fallback" / "launch.py"
+        procs = [
+            subprocess.Popen(
+                [sys.executable, str(launch_py), str(order_path)],
+                cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            for _ in range(2)
+        ]
+        outcomes = [proc.communicate(timeout=30) for proc in procs]
+        for proc, (out, err) in zip(procs, outcomes):
+            assert proc.returncode == 0, (out, err)
+
+        runmeta_path = root / order["artifact_dir"] / "RUNMETA.json"
+        runmeta = json.loads(runmeta_path.read_text(encoding="utf-8"))
+        assert len(runmeta["attempts"]) == 2
+        assert {a["attempt_no"] for a in runmeta["attempts"]} == {1, 2}
+
+        cfg = _lib.load_config(root)
+        jobs = json.loads(Path(cfg.ledger_path("jobs")).read_text(encoding="utf-8"))
+        assert jobs[order["run_id"]]["state"] == "done"
+        assert jobs[order["run_id"]]["finished_at"] is not None
+
+
+# ---------------------------------------------------------------------------
 # 6. timeout mode + expected_runtime_s=1 -> state=timeout, exit != 0, ~3s
 # ---------------------------------------------------------------------------
 
