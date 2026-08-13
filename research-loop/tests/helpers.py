@@ -85,6 +85,7 @@ def make_sandbox(tmp) -> Path:
             "import json; print(json.dumps({'value': 3, 'evidence_path': 'ops/evidence.txt'}))",
         ],
         "record": [sys.executable, "-c", "pass"],
+        "noop": [sys.executable, "-c", "pass"],
     })
     registry_cmd = f"{sys.executable} {root / 'stub_registry.py'}"
 
