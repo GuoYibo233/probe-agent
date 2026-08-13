@@ -730,3 +730,33 @@ layer_param 加 _source 键。原文"每个会话开工第一动作是声明本�
      `<run_id>.json`，run_id 是发射单主键；CLI 原始路径随调用 cwd 漂移、
      不可复现。T10 工单文字"launch_order_ref: 发射单路径"以此更正。
      修复随 T16 修复轮落地（2a84828），主会话亲核认可跨范围改动。
+
+以下四条是终审（sdd/final-review.md，2026-08-14）四道裁决题的主会话裁决，
+关键事实（两个写入口一收一拒、--spec-item 查无、statuscmd 扁平输出）均亲核过：
+
+146. **常设授权不经 blocked answer（终审 F9/F10 的裁决）**：blockedcmd 对
+     `--grant` 只收活跃 grant 的行为保留——spec §2.6 快车道的字面就是"常设
+     授权直接干、事后 R6 留痕"，不走待决账问答。`r5-choices.md:41` 那处
+     教人把 `spec-standing-gpu-1h` 当 grant_ref 传的括号删掉，改指 §2.6；
+     同文档补 `ledger.py decision` 的完整调用形态（F11）。代码侧加一条机验
+     堵 F10：`to_layer=user` 的行答复时禁止带 `--grant`——带了就说明不是
+     用户在裁决，答案却会被记成 `answered_by=user`，属审计链反写。
+147. **evidence_lint 的行为是准，表与文档向它对齐（终审 F13 的裁决）**：
+     "账本行数"这类裸数字与经验数值在形状上不可分，linter 不可能按内容
+     豁免；真正的豁免机制只有两个——落在 frontmatter 块里（块级豁免），或
+     跟 `$ `/`= ` 复现对（声明行豁免）。`rows.json` `evidence_lint_exempt`
+     的 `_rule` 补一句实现方式说明，`report-genre.md` 改成"溯源三件落
+     frontmatter，正文里的行数必须带 `$ ` 复现行"。
+148. **实现 `query runs --spec-item`（终审 F8 的裁决）**：spec §2.1（93 行）
+     白纸黑字承诺了这个维度，R3 全量扫描陈述靠它撑，删 spec 那句是削设计
+     迁就实现。实现走发射单 join：扫 launch_orders 目录收集 spec_ref 匹配
+     的 run_id 集，再过滤 runs 行；`ledgers.json` 的过滤集补上
+     `--spec-item`（改表，复跑 spec_lint + gen-schemas --check）。
+149. **status 补齐 spec §2 的分层视图（终审 F15 的裁决）**：spec §2 是设计
+     权威，采终审"补表再补码"的正解、不做改文档止血。`rows.json`
+     `status_view` 两处改动：`open_blocked` 的派生源改成"status=open 且
+     to_layer=--layer"（原"全部 open"会把别层队列混进本层）；新增
+     `answered_blocked` = "status=answered 且 from_layer=--layer"（本层
+     提出且已有答复、待本层消化收尾的条目）。statuscmd 照表实现；
+     `pending_user_decisions`（to_layer=user）与 `active_grants` 不动，
+     四份 SKILL.md 的"三块分层视图"描述随之变真。
