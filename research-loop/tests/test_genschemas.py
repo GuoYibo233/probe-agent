@@ -64,17 +64,24 @@ def test_check_flag_catches_mismatch_without_writing_then_clean_again():
         code, out, err = helpers.run_ledger(tmp, "gen-schemas", "--check")
         assert code == 0, (out, err)
 
+        # _SCHEMAS_DIR is the real, git-tracked research-loop/schemas/ (see
+        # _lib.plugin_root()) -- not a sandbox. The mutate-assert-restore
+        # sequence below must restore the original bytes even if an
+        # assertion fails, or a real bug in --check would leave the
+        # tracked story.schema.json corrupted on disk for whoever runs the
+        # suite next.
         target = _SCHEMAS_DIR / "story.schema.json"
         original = target.read_bytes()
         mutated = original + b" "
         target.write_bytes(mutated)
+        try:
+            code, out, err = helpers.run_ledger(tmp, "gen-schemas", "--check")
+            assert code == 1
+            assert "story.schema.json" in err
+            assert target.read_bytes() == mutated  # --check must not write to disk
+        finally:
+            target.write_bytes(original)
 
-        code, out, err = helpers.run_ledger(tmp, "gen-schemas", "--check")
-        assert code == 1
-        assert "story.schema.json" in err
-        assert target.read_bytes() == mutated  # --check must not write to disk
-
-        target.write_bytes(original)
         code, out, err = helpers.run_ledger(tmp, "gen-schemas", "--check")
         assert code == 0, (out, err)
 
@@ -158,3 +165,33 @@ def test_unimplemented_subcommand_exits_3_with_message():
         code, out, err = helpers.run_ledger(root, "status")
         assert code == 3
         assert err.strip() == "not implemented yet: status"
+
+
+# ---------------------------------------------------------------------------
+# 8. build_parser() imports at most the one ledger_cmds module the invoked
+#    subcommand needs -- not every module in _SUBCOMMAND_MODULES. Otherwise a
+#    non-ImportError exception while importing an unrelated module (e.g. a
+#    syntax error added by a later ticket) would crash every subcommand,
+#    including ones that don't need that module at all.
+# ---------------------------------------------------------------------------
+
+
+def test_build_parser_imports_only_the_module_the_invoked_command_needs():
+    calls = []
+    real_import_cmd_module = ledger_dispatcher._import_cmd_module
+
+    def _recording(module_name):
+        calls.append(module_name)
+        return real_import_cmd_module(module_name)
+
+    ledger_dispatcher._import_cmd_module = _recording
+    try:
+        parser, dispatch = ledger_dispatcher.build_parser(["gen-schemas"])
+    finally:
+        ledger_dispatcher._import_cmd_module = real_import_cmd_module
+
+    assert calls == ["genschemas"], calls
+
+    args = parser.parse_args(["gen-schemas"])
+    assert args.command == "gen-schemas"
+    assert dispatch["gen-schemas"] is not None

@@ -8,9 +8,15 @@ Each implemented module exposes two functions:
     register(subparsers)   -- adds its own argparse parser(s)
     run(args) -> int        -- does the work, returns the process exit code
 
-ledger.py lazily imports `ledger_cmds.<module>` for each subcommand at
-startup. A subcommand whose module is missing (ImportError) or incomplete
-(no register/run) still gets a placeholder parser that accepts arbitrary
+ledger.py lazily imports `ledger_cmds.<module>` for a subcommand only when
+that subcommand is the one actually being invoked -- build_parser() peeks at
+raw argv to work out which single module (if any) this call needs and
+imports at most that one; every other subcommand's module is left untouched
+for this process. That keeps subcommands fault-isolated from each other: an
+import-time exception in an unrelated module (e.g. a later ticket's file
+with a syntax error) can never affect a subcommand that doesn't need it. A
+subcommand whose module is missing (ImportError) or incomplete (no
+register/run) still gets a placeholder parser that accepts arbitrary
 arguments, so argparse itself never rejects the call -- the dispatcher's own
 "not implemented yet" message and exit code 3 are what the caller sees.
 
@@ -91,14 +97,54 @@ def _add_placeholder(subparsers, name: str):
     return parser
 
 
-def build_parser():
-    """Build the top-level argparse parser and a {subcommand: module} dict
-    for subcommands whose module loaded successfully (render is handled
-    separately at run time, since its module depends on args.target)."""
+def _peek_positional(argv):
+    """First non-flag token in argv, skipping "--" and anything starting
+    with "-". Used only to guess which single ledger_cmds module this
+    invocation needs before the real parser exists -- never trusted for
+    anything else. argparse's own parse (right after, against the fully
+    registered parser) is what actually validates and extracts arguments;
+    if the guess is wrong (or there's no top-level command at all, e.g.
+    `--help`), the affected group just falls back to a placeholder and
+    argparse reports whatever error it normally would."""
+    for token in argv:
+        if token == "--" or token.startswith("-"):
+            continue
+        return token
+    return None
+
+
+def _module_name_for_argv(argv):
+    """Which single ledger_cmds module name (if any) this invocation
+    implies, guessed from raw argv. None means "can't tell" (missing/
+    unknown command, --help, ...) -- the caller then registers a
+    placeholder for every group and lets the real argparse parse below
+    report the proper error."""
+    command = _peek_positional(argv)
+    if command is None:
+        return None
+    if command == "render":
+        target = _peek_positional(argv[argv.index(command) + 1:])
+        return _RENDER_TARGET_MODULES.get(target)
+    return _SUBCOMMAND_MODULES.get(command)
+
+
+def build_parser(argv):
+    """Build the top-level argparse parser and a {subcommand: module} dict.
+
+    Imports at most the one ledger_cmds module `argv` implies is needed
+    (via _module_name_for_argv) -- every other subcommand gets a
+    placeholder parser with no import attempted at all, so an import-time
+    exception in an unrelated module can never reach this invocation.
+    `render`'s own module (chosen by args.target) is resolved separately, at
+    dispatch time in _dispatch(), since render's parser is fixed and owned
+    by ledger.py itself rather than delegated to a module's register()."""
     parser = argparse.ArgumentParser(
         prog="ledger.py", description="research-loop plugin ledger CLI"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    wanted_module_name = _module_name_for_argv(argv)
+    wanted_module = _import_cmd_module(wanted_module_name) if wanted_module_name else None
 
     names_by_module: dict[str, list[str]] = {}
     for name, module_name in _SUBCOMMAND_MODULES.items():
@@ -106,11 +152,10 @@ def build_parser():
 
     dispatch: dict[str, object] = {}
     for module_name, names in names_by_module.items():
-        module = _import_cmd_module(module_name)
-        if module is not None:
-            module.register(subparsers)
+        if module_name == wanted_module_name and wanted_module is not None:
+            wanted_module.register(subparsers)
             for name in names:
-                dispatch[name] = module
+                dispatch[name] = wanted_module
         else:
             for name in names:
                 _add_placeholder(subparsers, name)
@@ -139,8 +184,10 @@ def _dispatch(args, dispatch: dict) -> int:
 
 
 def main(argv=None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
     try:
-        parser, dispatch = build_parser()
+        parser, dispatch = build_parser(argv)
         args = parser.parse_args(argv)
 
         if args.command not in _UNWIRED_EXEMPT:
