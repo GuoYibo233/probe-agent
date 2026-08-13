@@ -698,3 +698,28 @@ layer_param 加 _source 键。原文"每个会话开工第一动作是声明本�
 137. **层身份来源收两口**：按用户裁决落地。路由薄壳的"认阶段→转层"
      不与本裁决冲突——路由句本身是用户说的话（routes.json say 列），
      属"用户触发 skill"入口；inspector 等 agent 派发属第二入口。
+
+## 实施期（2026-08-13，用户令"出计划，然后直接执行，迭代到分层验证全过"）
+
+计划 `plan.md` + 工单 `issues/01-16`，执行走 ticket-run。实施期自决点
+（全部可推翻，推翻即改 plan/工单重跑对应波）：
+
+138. **plugin 落点**：在 new1 仓库根 `research-loop/` 开发（git 管版本、
+     ticket-run 的工作树机制要求在本仓库内；R9 反馈改 skill 本体要进 git）。
+     "机器级安装"（拷贝/软链到 ~/.claude）后置，不在本轮。
+139. **表搬家**：`git mv .scratch/research-loop/tables research-loop/tables`，
+     spec_lint 与 spec.md §0.5 同步指向——§0.5 第 5 条"spec 与实现共用
+     一个真源"的字面落地，消除两份表的可能性。
+140. **纯 stdlib + Python 3.10**：机器级 plugin 不得假设任何虚拟环境；
+     测试用自带 stdlib 跑器 `tests/run_all.py`，不用 pytest。
+141. **ledger.py 拆薄分发器 + ledger_cmds/ 包**：spec 说"九个脚本"计数不变
+     （ledger.py 仍是账本总入口），包是文件组织——一组子命令一个模块，
+     让工单并行施工不撞同一个文件，也控住单文件体量。
+142. **生成 schema 丢 `_note`**：表里的说明是中文，plugin 本体要英文；
+     生成物只带结构（enum 展开、$ref_to 保留为注解），散文说明留在表里。
+143. **报告体裁机验约定**（plan.md §C6）：`$ ` 复现命令行、`= ` 回显行、
+     `> ` 摘录行、`path:line` 引用——R3"可粘贴执行的复现命令"要机验就得
+     定死可解析形态；写进 oversight SKILL.md 与三件 lint/校验器，两边共用。
+144. **自测场景⑥的 fail→ok 实现**：不给 fake.mode 加 flaky 值（枚举是
+     封闭清单，动表=动 spec），用"同 run_id 重写发射单（--mode 改 ok）+
+     重新发射"实现重试，RUNMETA attempts 两条留痕正好考到"前条不得覆写"。

@@ -23,7 +23,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 SPEC = ROOT / "spec.md"
-TABLES = ROOT / "tables"
+# 表自 2026-08-13 实施起随 plugin 本体住仓库根 research-loop/tables/（§0.5 第 5 条
+# "spec 与实现共用一个真源"的落地），spec_lint 指向同一份。
+TABLES = ROOT.parent.parent / "research-loop" / "tables"
 
 # 散文里合法出现、但不属于任何表的 snake_case 词（W1 白名单）
 ALLOW = {

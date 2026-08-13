@@ -143,6 +143,14 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 
 ---
 
+## 3.5 research-loop plugin（`research-loop/`，机器级通用件）
+
+| 程序 | 干什么 | 怎么用 |
+|---|---|---|
+| `research-loop/` 整目录 | 研究循环 plugin 本体（三层 + 监察面 + 账本机制）：五个 skill、inspector agent、九个脚本、fallback 假铁轨、从 `research-loop/tables/` 生成的 schemas/。设计稿在 `.scratch/research-loop/spec.md`，工单在同目录 `issues/` | 入口 `python3 research-loop/scripts/ledger.py <子命令>`；自测 `python3 research-loop/tests/run_all.py`。**不是 run.py 注册表任务**，不挂 TASKS；new1 挂接（写仓库根 research-loop.json）是后续单独一步 |
+
+---
+
 ## 4. 环境与权重
 
 **训练两环境（uv 建，⚠️ 均未装 pip，版本读自 dist-info）：**
