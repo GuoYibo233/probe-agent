@@ -129,7 +129,12 @@ def run(args) -> int:
     runmeta_file = artifact_dir / "RUNMETA.json"
 
     jobs_path = Path(cfg.ledger_path("jobs"))
-    launch_order_ref = str(args.launch_order)
+    # trace_check.py's _load_launch_orders() indexes launch orders by
+    # filename stem (the canonical run_id, spec §5 "发射单按 run_id 命名") --
+    # the same convention launchcmd.py's promoted_from resolution and
+    # decisions.affects both use. launch_order_ref must match that, not the
+    # raw CLI path string this script was invoked with.
+    launch_order_ref = order["run_id"]
 
     # The whole read-modify-write of RUNMETA.json (attempt_no computed from
     # the current attempts, then appended back) lives inside one hold of the
