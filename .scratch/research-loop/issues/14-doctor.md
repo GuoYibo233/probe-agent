@@ -1,6 +1,6 @@
 # T14 doctor.py（一键体检，只查不动）
 
-Status: claimed
+Status: resolved
 Blocked by: 04, 07, 09, 11, 13
 
 ## 范围声明
@@ -68,3 +68,11 @@ exit 恒 0（体检是建议件）；末行汇总 `doctor: <N> findings across <
   {claim_id, metric_name, filter, old, new}——都是 T13 实现自定的。本工单
   doctor --dry-run 消费这两个脚本时先读实际实现/跑 --help 对接，别按
   假想结构写解析。
+
+- 2026-08-14 wave6 收账：DONE，1 轮 0 修复，commit 范围 e8539e0..0e0fad8，
+  merge 进 main。主仓复跑全量 268/268 过、双 lint 绿。concerns 留档：各节
+  findings 计数口径是实现按字面+子工具语义自定（工单只给 0/非0/finding 三类
+  断言）；workplan 节只算 status_view 的 inconsistencies[]、不算在办清单；
+  caps/archives 遍历全部 jsonl 账（工单例句只点四个，范围偏宽但 runs 两账
+  cap 恒 null 不会误触发）；evidence 节多文件汇总无专测；"section failed:
+  尾三行"契约补了工单外用例验证。16 张工单全部 resolved，进入终审。
