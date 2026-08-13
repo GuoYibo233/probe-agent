@@ -156,6 +156,21 @@ def test_evidence_lint_exempt_shapes_never_need_a_repro_command():
         assert out.strip() == ""
 
 
+def test_evidence_lint_pure_decimal_long_number_is_not_hex_exempt():
+    # A >=7-digit number with no a-f letter at all is not hash-shaped -- it
+    # must not be swallowed by the git-HEAD/commit exemption, or a genuine
+    # unsupported empirical claim (sample count, step count, ...) would go
+    # unreported (F1, T13 wave5 fix round 1).
+    text = "we processed 1234567 records total\nnothing else nearby\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", text)
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 1
+        assert f"{path}:1: no-repro-command:" in out
+
+
 def test_evidence_lint_dollar_and_echo_lines_are_not_self_flagged():
     # the $ line and its = echo carry numbers themselves but are the
     # declaration this rule checks FOR, not a claim needing one of their own.

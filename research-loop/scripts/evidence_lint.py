@@ -23,10 +23,12 @@ violation classes, one finding per offending line:
    the next 3 lines, by a line starting with "$ " (a pasteable repro
    command). Before judging "does this line contain a number", the ticket's
    closed exemption list is stripped out of the line first (ISO timestamp,
-   YYYY-MM-DD, a hex run of >=7 chars [git HEAD/commit], a `path:line`
-   token, an `[A-Z]\\d{3,}` id or a `chk-...`/batch-id shape) -- only a
-   digit surviving that strip counts as an empirical claim (rows.json
-   evidence_lint_exempt; plan.md §C6). Unlike rule 1, this exemption is
+   YYYY-MM-DD, a hex run of >=7 chars containing at least one a-f letter
+   [git HEAD/commit -- a run of only 0-9 digits is NOT stripped here, since
+   that shape is indistinguishable from a plain empirical number], a
+   `path:line` token, an `[A-Z]\\d{3,}` id or a `chk-...`/batch-id shape) --
+   only a digit surviving that strip counts as an empirical claim
+   (rows.json evidence_lint_exempt; plan.md §C6). Unlike rule 1, this exemption is
    block-level: every frontmatter line is skipped outright (metadata belongs
    to the header, not a claim in prose). A `$ ` line itself, and the `= `
    echo line immediately under it, are also exempt -- they are the
@@ -80,7 +82,14 @@ _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _ID_DATE_SEQ_RE = re.compile(r"\b[\w.]+-\d{8}-\d+\b")
 _LETTER_ID_RE = re.compile(r"\b[A-Z]\d{3,}\b")
 _PATH_LINE_RE = re.compile(r"\b[\w~-]+(?:[./][\w~-]+)+:\d+\b")
-_HEX_RE = re.compile(r"\b[0-9a-fA-F]{7,}\b")
+# Character class [0-9a-fA-F] alone also matches a pure-decimal run (no
+# a-f letter at all) -- that would silently strip a genuine >=7-digit
+# empirical number (sample count, step count, ...) as if it were a git
+# hash. A leading lookahead requires at least one a-f letter to actually
+# occur among the run's hex characters before the run counts as
+# hash-shaped; a run of nothing but digits 0-9 is left for _asserts_number
+# to see.
+_HEX_RE = re.compile(r"\b(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{7,}\b")
 
 _STRIP_PATTERNS = (
     _ISO_TS_RE, _DATE_RE, _ID_DATE_SEQ_RE, _LETTER_ID_RE, _PATH_LINE_RE, _HEX_RE,
