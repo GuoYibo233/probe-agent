@@ -52,9 +52,11 @@ moves on to the next section (spec.md §5 "半状态由 doctor 扫出", §9 "单
 The report goes to stdout always; `--out PATH` additionally writes the exact
 same text to that path. Nothing is ever written under reports/ or any
 ledger directory, and no ledger is ever touched (only read) -- doctor is
-purely advisory, so it always exits 0 once it has a wired project to look
-at (a project that isn't wired at all exits 2, the same "can't even start"
-convention trace_check.py/regression_check.py use).
+purely advisory, so the exit code is unconditionally 0 (issues/14-doctor.md:
+"exit 恒 0（体检是建议件）"), even when the project isn't wired at all: that
+case still prints a diagnostic to stderr (unlike trace_check.py/
+regression_check.py, which exit 2 for the same "can't even start" case --
+doctor's own contract carves out no such exception).
 
 Spec: .scratch/research-loop/issues/14-doctor.md; spec.md §4 (doctor
 comment block), §5 ("复合动作的中断一致性" ③), §10 (archive is v1-advisory
@@ -489,7 +491,7 @@ def build_report(root: Path) -> str:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="One-shot read-only health check across every research-loop ledger "
-                    "and check script; always exits 0 once it can find a wired project.",
+                    "and check script; always exits 0 -- doctor is purely advisory.",
     )
     parser.add_argument("--project-root", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=None)
@@ -504,7 +506,7 @@ def main(argv=None) -> int:
                 "doctor: project not wired: research-loop.json not found (run: ledger.py init)",
                 file=sys.stderr,
             )
-            return 2
+            return 0
 
     report = build_report(root)
     print(report, end="")

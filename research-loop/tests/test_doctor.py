@@ -257,3 +257,22 @@ def test_doctor_out_file_matches_stdout():
         assert code == 0
         assert out_path.exists()
         assert out_path.read_text(encoding="utf-8") == out
+
+
+# ---------------------------------------------------------------------------
+# 6. exit is unconditionally 0, even when there's no project to inspect --
+#    doctor is advisory (issues/14-doctor.md: "exit 恒 0"), and that promise
+#    carves out no exception for the "can't even find research-loop.json"
+#    case the way trace_check.py/regression_check.py do (those exit 2).
+# ---------------------------------------------------------------------------
+
+
+def test_doctor_unwired_project_still_exits_zero():
+    with tempfile.TemporaryDirectory() as tmp:
+        unwired_root = Path(tmp)  # no research-loop.json anywhere above this
+
+        code, out, err = helpers.run_script(unwired_root, "doctor.py")
+
+        assert code == 0
+        assert "project not wired" in err
+        assert out == ""
