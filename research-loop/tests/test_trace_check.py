@@ -1,0 +1,705 @@
+"""Tests for scripts/trace_check.py (issues/11-trace-check.md).
+
+Every fixture is hand-written straight to disk (jsonl rows via
+helpers.write_jsonl / row factories, launch orders and RUNMETA as raw JSON,
+spec/batch-report md files with hand-built '---' frontmatter) rather than
+going through another ticket's CLI -- trace_check only depends on T03, and
+this suite must not depend on T08's launch-order writer or T09's query/
+status commands to exist.
+"""
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+
+import _lib
+import helpers
+
+
+# ---------------------------------------------------------------------------
+# Fixture helpers
+# ---------------------------------------------------------------------------
+
+
+def _lines(out: str) -> list:
+    return [line for line in out.strip().splitlines() if line.strip()]
+
+
+def _dump_launch_order(root: Path, filename: str, order: dict) -> None:
+    directory = root / "ops" / "launch_orders"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{filename}.json").write_text(json.dumps(order, ensure_ascii=False), encoding="utf-8")
+
+
+def _write_launch_order(root: Path, **over) -> dict:
+    """Write a launch order under its own run_id's canonical filename."""
+    order = helpers.make_launch_order(**over)
+    _dump_launch_order(root, order["run_id"], order)
+    return order
+
+
+def _write_launch_order_as(root: Path, filename: str, **over) -> dict:
+    """Write a launch order under a filename that may disagree with its own
+    run_id field -- for exercising the run_id-mismatch finding."""
+    order = helpers.make_launch_order(**over)
+    _dump_launch_order(root, filename, order)
+    return order
+
+
+def _write_issue(root: Path, rel_dir: str, issue_id: str) -> Path:
+    path = root / rel_dir / f"{issue_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"# {issue_id}\n\nStatus: ready-for-agent\n", encoding="utf-8")
+    return path
+
+
+def _spec_render(spec_version, approved_by, approved_date, approved_digest, withdrawals, body) -> str:
+    return (
+        "---\n"
+        f"spec_version: {json.dumps(spec_version)}\n"
+        f"approved_by: {json.dumps(approved_by)}\n"
+        f"approved_date: {json.dumps(approved_date)}\n"
+        f"approved_digest: {json.dumps(approved_digest)}\n"
+        f"withdrawals: {json.dumps(withdrawals)}\n"
+        "---\n" + body
+    )
+
+
+def _write_spec(root: Path, rel_path: str, item_id: str, *, approved: bool = False,
+                 approved_by: str = "user", spec_version: int = 1, withdrawals=None) -> Path:
+    """Write a spec md file whose body contains `item_id` (forward-chain's
+    own existence test: "字符串含 item_id"). approved=True fills in a
+    correctly recomputed approved_digest for the body actually written."""
+    path = root / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = f"# spec\n\nItem {item_id} does something.\n"
+    withdrawals = withdrawals if withdrawals is not None else []
+
+    path.write_text(
+        _spec_render(spec_version, None, None, None, withdrawals, body), encoding="utf-8",
+    )
+    if approved:
+        digest = _lib.spec_digest(path)
+        path.write_text(
+            _spec_render(spec_version, approved_by, "2026-08-14", digest, withdrawals, body),
+            encoding="utf-8",
+        )
+    return path
+
+
+def _touch_spec_body(path: Path) -> None:
+    """Append a byte to the spec's body -- the frontmatter header is left
+    untouched, so the stored approved_digest goes stale."""
+    path.write_text(path.read_text(encoding="utf-8") + ".", encoding="utf-8")
+
+
+def _bump_spec_header(path: Path, *, withdrawals=None, spec_version=None) -> None:
+    """Rewrite only frontmatter fields, byte-for-byte preserving the body
+    (and, unless overridden, approved_digest) -- for the "only withdrawals /
+    spec_version changed" not-stale case."""
+    fields, body = _lib.parse_frontmatter(path.read_text(encoding="utf-8"))
+    if withdrawals is not None:
+        fields["withdrawals"] = withdrawals
+    if spec_version is not None:
+        fields["spec_version"] = spec_version
+    header = "---\n" + "".join(f"{k}: {json.dumps(v)}\n" for k, v in fields.items()) + "---\n"
+    path.write_text(header + body, encoding="utf-8")
+
+
+def _write_runmeta(root: Path, rel_path: str, launch_order_ref) -> Path:
+    path = root / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"launch_order_ref": launch_order_ref}), encoding="utf-8")
+    return path
+
+
+def _write_jobs(root: Path, entries: dict) -> None:
+    (root / "ops" / "jobs.json").write_text(json.dumps(entries), encoding="utf-8")
+
+
+def _write_batch_report(root: Path, batch_id: str, *, run_ids=None, inspection_report: str = "") -> Path:
+    path = root / "plans" / f"{batch_id}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "---\n"
+        f"batch_id: {json.dumps(batch_id)}\n"
+        f"spec_items: {json.dumps([])}\n"
+        f"run_ids: {json.dumps(run_ids or [])}\n"
+        f"date: {json.dumps('2026-08-14')}\n"
+        f"how_to_read: {json.dumps('read via ledger.py query runs --batch ' + batch_id)}\n"
+        f"inspection_report: {json.dumps(inspection_report)}\n"
+        f"rejections: {json.dumps([])}\n"
+        "---\n"
+    )
+    path.write_text(header + "\nbody\n", encoding="utf-8")
+    return path
+
+
+def _set_config_key(root: Path, key: str, value) -> None:
+    cfg_path = root / "research-loop.json"
+    data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    data[key] = value
+    cfg_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8",
+    )
+
+
+def _fix_method_criterion_cmd(root: Path) -> None:
+    """helpers.METHOD_MD's P001 row carries criterion_cmd "python3
+    stub_registry.py check-p001", which does not start with make_sandbox()'s
+    actual registry_cmd prefix (sys.executable + an absolute stub path) --
+    the same pre-existing mismatch issues/08-launch-order.md's Comments
+    section and T07's own tests correct for. Rewrites P001's cell to the
+    sandbox's real registry_cmd so criterion-row checks can resolve it."""
+    cfg = _lib.load_config(root)
+    method_path = root / "METHOD.md"
+    text = method_path.read_text(encoding="utf-8")
+    text = text.replace(
+        "python3 stub_registry.py check-p001", f"{cfg.get('registry_cmd')} check-p001",
+    )
+    method_path.write_text(text, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 1. Broken-chain findings (spec_ref / issue_ref / decision_ref / runmeta_path
+#    / launch_order_ref / jobs reference)
+# ---------------------------------------------------------------------------
+
+
+def test_forward_chain_spec_ref_missing_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="NOPE-1",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("forward_chain.spec_ref:") and "NOPE-1" in line for line in _lines(out)
+        ), out
+
+
+def test_forward_chain_issue_ref_missing_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="99-nope", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("forward_chain.issue_ref:") and "99-nope" in line for line in _lines(out)
+        ), out
+
+
+def test_forward_chain_decision_ref_missing_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=["D999"])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("forward_chain.decision_ref:") and "D999" in line for line in _lines(out)
+        ), out
+
+
+def test_forward_chain_decision_ref_not_decided_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        helpers.write_jsonl(root / "ops" / "decisions.jsonl", [
+            helpers.make_decision_row(decision_id="D001", status="withdrawn",
+                                       withdrawn_by="user", withdrawn_reason="changed mind"),
+        ])
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=["D001"])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("forward_chain.decision_ref:") and "D001" in line and "withdrawn" in line
+            for line in _lines(out)
+        ), out
+
+
+def test_runs_backlink_runmeta_path_missing_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001",
+                                          runmeta_path="ops/runs/run-001/RUNMETA.json"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("runs_backlink.runmeta_missing:") and "run-001" in line
+            for line in _lines(out)
+        ), out
+
+
+def test_runs_backlink_launch_order_ref_missing_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_runmeta(root, "ops/runs/run-001/RUNMETA.json", "run-999")
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001",
+                                          runmeta_path="ops/runs/run-001/RUNMETA.json"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("runs_backlink.launch_order_ref_missing:") and "run-999" in line
+            for line in _lines(out)
+        ), out
+
+
+def test_runs_backlink_run_id_mismatch_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        # Filed under ops/launch_orders/run-001.json, but the JSON body's own
+        # run_id field says run-999 -- a real drift, distinct from "file
+        # missing" (spec §5: filename IS the canonical run_id).
+        _write_launch_order_as(root, "run-001", run_id="run-999", quick=True,
+                                spec_ref=None, issue_ref=None, decision_refs=None)
+        _write_runmeta(root, "ops/runs/run-001/RUNMETA.json", "run-001")
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001",
+                                          runmeta_path="ops/runs/run-001/RUNMETA.json"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("runs_backlink.run_id_mismatch:") and "run-999" in line
+            for line in _lines(out)
+        ), out
+
+
+def test_jobs_backlink_missing_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_jobs(root, {"run-001": {"launch_order_ref": "run-999", "state": "done"}})
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("jobs_backlink:") and "run-999" in line for line in _lines(out)
+        ), out
+
+
+# ---------------------------------------------------------------------------
+# 2. quick exemption + criterion (judged) row's own path
+# ---------------------------------------------------------------------------
+
+
+def test_quick_launch_order_exempts_forward_chain_refs():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_launch_order(root, run_id="quick-20260814-1", quick=True,
+                             spec_ref=None, issue_ref=None, decision_refs=None)
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert _lines(out)[-1] == "trace_check: 0 errors, 0 warnings"
+
+
+def test_criterion_row_checks_principle_and_registry_not_spec_chain():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _fix_method_criterion_cmd(root)
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_criterion(run_id="chk-P001-20260814-1", principle_id="P001"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert not any(line.startswith("runs_backlink.") for line in _lines(out)), out
+
+
+def test_criterion_row_principle_id_not_in_principles_doc_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_criterion(run_id="chk-P999-20260814-1", principle_id="P999"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("runs_backlink.principle_missing:") and "P999" in line
+            for line in _lines(out)
+        ), out
+
+
+def test_criterion_row_registry_query_null_reports_unwired():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _fix_method_criterion_cmd(root)
+        _set_config_key(root, "registry_query", None)
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_criterion(run_id="chk-P001-20260814-1", principle_id="P001"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(line.startswith("unwired:") for line in _lines(out)), out
+
+
+# ---------------------------------------------------------------------------
+# 3. cross-archive reads
+# ---------------------------------------------------------------------------
+
+
+def test_cross_archive_referenced_run_only_in_archive_not_reported_broken():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+
+        runmeta_rel = "ops/runs/run-001/RUNMETA.json"
+        _write_runmeta(root, runmeta_rel, "run-001")
+        # This run row lives ONLY in runs.archive.jsonl -- never written to
+        # the live runs.jsonl main file. Every read in trace_check.py must
+        # go through include_archive=True (spec §2.1) to see it at all.
+        helpers.write_jsonl(root / "ops" / "runs.archive.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001", runmeta_path=runmeta_rel, quick=False),
+        ])
+        helpers.write_jsonl(root / "ops" / "story.jsonl", [
+            helpers.make_story_row(claim_id="S001", evidence_runs=["run-001"],
+                                    baseline_runs=["run-001"], candidate_runs=["run-001"],
+                                    status="active"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert _lines(out)[-1] == "trace_check: 0 errors, 0 warnings"
+
+
+# ---------------------------------------------------------------------------
+# 4. Approval face
+# ---------------------------------------------------------------------------
+
+
+def test_approval_stale_on_body_punctuation_change():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        spec_path = _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _touch_spec_body(spec_path)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("approval_stale:") and "run-001" in line for line in _lines(out)
+        ), out
+
+
+def test_approval_not_stale_on_withdrawals_or_spec_version_bump():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        spec_a = _write_spec(root, ".scratch/demo-a/spec.md", "IT-001", approved=True)
+        _bump_spec_header(spec_a, withdrawals=[{"date": "2026-08-14", "by": "user", "reason": "n/a"}])
+        spec_b = _write_spec(root, ".scratch/demo-b/spec.md", "IT-002", approved=True)
+        _bump_spec_header(spec_b, spec_version=2)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+        _write_launch_order(root, run_id="run-002", quick=False, spec_ref="IT-002",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert not any(line.startswith("approval_stale:") for line in _lines(out)), out
+
+
+def test_approval_empty_approved_by_reports_not_approved():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=False)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("not-approved:") and "run-001" in line for line in _lines(out)
+        ), out
+
+
+# ---------------------------------------------------------------------------
+# 5. affects consistency
+# ---------------------------------------------------------------------------
+
+
+def test_affects_missing_reported_with_rerun_guidance():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(root / "ops" / "decisions.jsonl", [
+            helpers.make_decision_row(decision_id="D001", affects=[]),
+        ])
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=["D001"])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        matches = [line for line in _lines(out) if line.startswith("affects-missing:")]
+        assert matches, out
+        assert "D001" in matches[0] and "run-001" in matches[0]
+        assert "re-run" in matches[0] and "launch-order" in matches[0]
+
+
+def test_affects_extra_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(root / "ops" / "decisions.jsonl", [
+            helpers.make_decision_row(decision_id="D001", affects=["run-001"]),
+        ])
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("affects-extra:") and "D001" in line and "run-001" in line
+            for line in _lines(out)
+        ), out
+
+
+# ---------------------------------------------------------------------------
+# 6. story references
+# ---------------------------------------------------------------------------
+
+
+def test_story_refs_broken_run_reference_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(root / "ops" / "story.jsonl", [
+            helpers.make_story_row(claim_id="S001", evidence_runs=["run-ghost"],
+                                    baseline_runs=["run-ghost"], candidate_runs=["run-ghost"],
+                                    status="active"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("story_refs:") and "run-ghost" in line for line in _lines(out)
+        ), out
+
+
+def test_story_refs_quick_run_reference_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-quick", quick=True),
+        ])
+        helpers.write_jsonl(root / "ops" / "story.jsonl", [
+            helpers.make_story_row(claim_id="S001", evidence_runs=["run-quick"],
+                                    baseline_runs=["run-quick"], candidate_runs=["run-quick"],
+                                    status="active"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("story_refs:") and "run-quick" in line for line in _lines(out)
+        ), out
+
+
+# ---------------------------------------------------------------------------
+# 7. promoted_from field drift
+# ---------------------------------------------------------------------------
+
+
+def test_promotion_field_drift_names_seed():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="quick-20260814-1", quick=True, seed=0,
+                             spec_ref=None, issue_ref=None, decision_refs=None)
+        _write_launch_order(root, run_id="run-001", quick=False, seed=1,
+                             promoted_from="quick-20260814-1", spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        matches = [line for line in _lines(out) if line.startswith("promotion-field-drift:")]
+        assert matches, out
+        assert "run-001" in matches[0] and "seed" in matches[0]
+
+
+def test_promotion_all_fields_match_is_clean():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="quick-20260814-1", quick=True,
+                             spec_ref=None, issue_ref=None, decision_refs=None)
+        _write_launch_order(root, run_id="run-001", quick=False,
+                             promoted_from="quick-20260814-1", spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert not any(line.startswith("promotion-field-drift:") for line in _lines(out)), out
+
+
+# ---------------------------------------------------------------------------
+# 8. --closeout batch gate
+# ---------------------------------------------------------------------------
+
+
+def test_closeout_empty_inspection_report_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_batch_report(root, "IT-001-20260814-1", run_ids=[], inspection_report="")
+
+        code, out, err = helpers.run_script(root, "trace_check.py", "--closeout", "IT-001-20260814-1")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("closeout.inspection_report_empty:") for line in _lines(out)
+        ), out
+
+
+def test_closeout_filled_inspection_report_passes():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=[])
+        runmeta_rel = "ops/runs/run-001/RUNMETA.json"
+        _write_runmeta(root, runmeta_rel, "run-001")
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001", runmeta_path=runmeta_rel, quick=False),
+        ])
+        (root / "reports" / "IT-001-20260814-1.md").write_text("inspection body\n", encoding="utf-8")
+        _write_batch_report(root, "IT-001-20260814-1", run_ids=["run-001"],
+                             inspection_report="reports/IT-001-20260814-1.md")
+
+        code, out, err = helpers.run_script(root, "trace_check.py", "--closeout", "IT-001-20260814-1")
+
+        assert code == 0, (out, err)
+        assert _lines(out)[-1] == "trace_check: 0 errors, 0 warnings"
+
+
+def test_normal_mode_empty_inspection_report_not_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_batch_report(root, "IT-001-20260814-1", run_ids=[], inspection_report="")
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert not any(line.startswith("closeout.") for line in _lines(out)), out
+
+
+def test_closeout_missing_report_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+
+        code, out, err = helpers.run_script(root, "trace_check.py", "--closeout", "no-such-batch")
+
+        assert code == 1, (out, err)
+        assert any(line.startswith("closeout.report_missing:") for line in _lines(out)), out
+
+
+def test_closeout_run_id_not_recorded_reported():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        (root / "reports" / "r.md").write_text("body\n", encoding="utf-8")
+        _write_batch_report(root, "IT-001-20260814-1", run_ids=["run-ghost"],
+                             inspection_report="reports/r.md")
+
+        code, out, err = helpers.run_script(root, "trace_check.py", "--closeout", "IT-001-20260814-1")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("closeout.run_id_unrecorded:") and "run-ghost" in line
+            for line in _lines(out)
+        ), out
+
+
+# ---------------------------------------------------------------------------
+# All-green fixture: exit 0, summary line reads exactly "0 errors"
+# ---------------------------------------------------------------------------
+
+
+def test_all_green_fixture_exits_zero_with_zero_errors():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _fix_method_criterion_cmd(root)
+
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_issue(root, ".scratch/demo/issues", "01-example")
+        helpers.write_jsonl(root / "ops" / "decisions.jsonl", [
+            helpers.make_decision_row(decision_id="D001", affects=["run-001"]),
+        ])
+
+        _write_launch_order(root, run_id="quick-20260814-1", quick=True,
+                             spec_ref=None, issue_ref=None, decision_refs=None)
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-example", decision_refs=["D001"],
+                             promoted_from="quick-20260814-1")
+
+        runmeta_rel = "ops/runs/run-001/RUNMETA.json"
+        _write_runmeta(root, runmeta_rel, "run-001")
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001", runmeta_path=runmeta_rel, quick=False),
+            helpers.make_runs_row_criterion(run_id="chk-P001-20260814-1", principle_id="P001"),
+        ])
+
+        _write_jobs(root, {"run-001": {"launch_order_ref": "run-001", "state": "done"}})
+
+        helpers.write_jsonl(root / "ops" / "story.jsonl", [
+            helpers.make_story_row(claim_id="S001", evidence_runs=["run-001"],
+                                    baseline_runs=["run-001"], candidate_runs=["run-001"],
+                                    principle_id="P001", status="active"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert _lines(out) == ["trace_check: 0 errors, 0 warnings"], out
