@@ -113,3 +113,9 @@ stdout 提醒把 runs_legacy 补进 config 的 ledgers+owners 两处键。
 9. freeze-legacy：两条机验过、重复执行拒、传 --layer 被 argparse 拒。
 
 ## Comments
+
+- 2026-08-14 预警（T12 落地后的对接契约）：output_check.py 把发射单里的
+  artifact_dir 按**本脚本进程的 cwd** 解析（相对路径时）。本工单的
+  launch.py/record.py 若调用 output_check 或按发射单解析 artifact_dir，
+  统一以工程根为 cwd（与 tests/helpers.run_script 的 cwd=root 约定一致），
+  或直接在发射单里写绝对路径；两边解析基准不一致会静默指向错目录。

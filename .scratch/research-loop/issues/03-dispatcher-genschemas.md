@@ -1,6 +1,6 @@
 # T03 ledger.py 分发器 + gen-schemas + schemas/ 落盘
 
-Status: claimed
+Status: resolved
 Blocked by: 02
 
 ## 范围声明
@@ -69,3 +69,12 @@ research-loop plugin 件，不改 run.py / MAP.md；英文、纯 stdlib。需求
    （T09 落地后该测试自动失效——写成"若模块存在则跳过"。）
 
 ## Comments
+
+- 2026-08-14 wave2 收账：DONE，2 轮（1 轮修复），commit 范围 41ed123..76672f1，
+  merge 进 main。主仓复跑全量 58/58 过，gen-schemas --check 绿。
+  遗留 minor N2（已接受）：`--help`/无参调用会 import 全部已实现模块，任一模块
+  import 期炸会带崩 --help——报告自查已认这个取舍，留给终审裁量是否加防护。
+  实现者自定的三处约定已转写进 T07/T09 工单 Comments（render 分发映射、
+  not-implemented 文案取顶层子命令名、--check 的 stderr 格式测试未锁死整行）。
+  cannotVerify 里"块→账名映射无显式对照表"一条主会话已核：genschemas 落的
+  ledger 字段值与 tables/ledgers.json 主表键集一致，后续消费方工单落地时再验。

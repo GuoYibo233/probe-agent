@@ -103,3 +103,11 @@ fixture 全用 helpers 行工厂裸写账本（不依赖其他工单的 CLI）�
 10. waiting_on 的 action 值恰是 routes.json to 列原文（断言字符串相等）。
 
 ## Comments
+
+- 2026-08-14 预警（T03 落地后的对接契约，实现前必读 ledger.py 现状）：
+  `render` 的 argparse parser 由 ledger.py 自己注册（只有一个 target 位置参数），
+  target→模块映射在 ledger.py 的 `_RENDER_TARGET_MODULES`（blocked→querycmd）。
+  本工单**不要**给 render 注册 parser，只需在 querycmd.run(args) 里认
+  `args.command == 'render'` 分支；认为映射不对就回头改 ledger.py 那张表。
+  另：分组子命令未实现时的文案是 `not implemented yet: <顶层子命令名>`（不带
+  二级动词），测试断言按此格式。

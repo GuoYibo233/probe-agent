@@ -1,6 +1,6 @@
 # T07 runs-append（判据 run）+ principles-lint + render principles
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 03
 
 ## 范围声明
@@ -76,3 +76,13 @@ criterion_cmd 空或不过 check_in_registry（registry_query null → 报
    （比对渲染前后除该列外的内容）。
 
 ## Comments
+
+- 2026-08-14 预警（T03 落地后的对接契约，实现前必读 ledger.py 现状）：
+  ① `render` 的 argparse parser 由 ledger.py 自己注册（只有一个 target 位置
+  参数），target→模块映射在 ledger.py 的 `_RENDER_TARGET_MODULES`
+  （principles→principlescmd）。本工单**不要**给 render 注册 parser，只需在
+  principlescmd.run(args) 里认 `args.command == 'render'` 分支；认为映射不对
+  就回头改 ledger.py 那张表。
+  ② 分组子命令未实现时 dispatcher 的文案是 `not implemented yet: <顶层子命令名>`
+  （不带二级动词）；本工单测试如断言这条 stderr，按这个格式来，不合适就改
+  ledger.py 的 `_dispatch()` 并说明。

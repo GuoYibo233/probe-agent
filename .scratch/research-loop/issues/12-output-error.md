@@ -1,6 +1,6 @@
 # T12 output_check.py + error_classify.py（运行层两件）
 
-Status: claimed
+Status: resolved
 Blocked by: 02
 
 ## 范围声明
@@ -54,3 +54,12 @@ research-loop plugin 件，不改 run.py / MAP.md；英文、纯 stdlib。需求
 4. 全不中 → action=unknown，rule=null。
 
 ## Comments
+
+- 2026-08-14 wave2 收账：DONE，1 轮 0 修复，commit 范围 41ed123..29a1711，
+  merge 进 main。主仓复跑全量 58/58 过。
+  遗留 minor N1（已接受）：min_bytes/min_lines 类型错也走"failed to read
+  launch order"文案，措辞不准但 exit code 与 stdout 契约不受影响，留给终审。
+  实现者自定三处（failures 逐条件一条、file 用相对 artifact_dir 的相对路径、
+  非法输入 stderr+exit 2）主会话认可留档。
+  cannotVerify 关键一条：artifact_dir 按进程 cwd 解析——已转写进 T10 工单
+  Comments，要求 fallback 调用方对齐。
