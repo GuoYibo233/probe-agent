@@ -328,6 +328,19 @@ def test_feedback_review_rejects_non_user_layer():
         assert err.strip() == "feedback.layer: review rows only accept --layer user", err
 
 
+def test_feedback_review_rejects_ref_not_found():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _add_suggestion(root)
+
+        code, out, err = helpers.run_ledger(
+            root, "feedback", "review", "--layer", "user", "--ref", "F999",
+            "--verdict", "accepted",
+        )
+        assert code == 2, (out, err)
+        assert err.strip() == "feedback.ref: row not found (got: 'F999')", err
+
+
 def test_feedback_review_rejects_ref_pointing_at_a_review_row():
     with tempfile.TemporaryDirectory() as tmp:
         root = helpers.make_sandbox(tmp)
