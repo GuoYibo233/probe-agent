@@ -9,12 +9,16 @@ status commands to exist.
 """
 from __future__ import annotations
 
+import builtins
+import importlib
 import json
 import tempfile
 from pathlib import Path
 
 import _lib
 import helpers
+import trace_check
+from ledger_cmds.principlescmd import parse_principles as _real_parse_principles
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +163,120 @@ def _fix_method_criterion_cmd(root: Path) -> None:
         "python3 stub_registry.py check-p001", f"{cfg.get('registry_cmd')} check-p001",
     )
     method_path.write_text(text, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# 0. Loading resilience (fix round 1, F2) + ImportError fallback (F3)
+#
+# F2: a launch order file, ops/jobs.json, or a RUNMETA file that exists but
+# fails to parse as JSON used to raise json.JSONDecodeError straight out of
+# _load_launch_orders / _load_jobs / check_runs_backlink, uncaught by
+# main()'s `except _lib.RLError` -- one corrupted file crashed the whole
+# run (unhandled traceback, exit 1 with no finding printed) instead of
+# being reported like every other broken reference this script checks for.
+# F3: the `except ImportError` fallback for ledger_cmds.principlescmd (used
+# only in a stripped deployment where that module isn't importable) had no
+# automated coverage -- ledger_cmds.principlescmd is always importable in
+# this test environment, so the primary branch always won and the ~40 lines
+# of duplicated fallback parser were only ever hand-checked, not tested.
+# ---------------------------------------------------------------------------
+
+
+def test_load_malformed_launch_order_json_reported_not_crashed():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        bad_path = root / "ops" / "launch_orders" / "run-bad.json"
+        bad_path.write_text("{not valid json", encoding="utf-8")
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        lines = _lines(out)
+        assert any(
+            line.startswith("load.launch_order_unreadable:") and "run-bad.json" in line
+            for line in lines
+        ), (out, err)
+        # No traceback on stderr -- reported as a finding, not an uncaught
+        # exception (err would carry "Traceback" if json.loads had raised
+        # straight out of main()).
+        assert "Traceback" not in err, err
+        assert lines[-1] == "trace_check: 1 errors, 0 warnings", out
+
+
+def test_load_malformed_jobs_json_reported_not_crashed():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        (root / "ops" / "jobs.json").write_text("[not valid json", encoding="utf-8")
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        lines = _lines(out)
+        assert any(
+            line.startswith("load.jobs_unreadable:") and "jobs.json" in line for line in lines
+        ), (out, err)
+        assert "Traceback" not in err, err
+        assert lines[-1] == "trace_check: 1 errors, 0 warnings", out
+
+
+def test_runs_backlink_runmeta_unreadable_reported_not_crashed():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        runmeta_path = root / "ops" / "runs" / "run-001" / "RUNMETA.json"
+        runmeta_path.parent.mkdir(parents=True, exist_ok=True)
+        runmeta_path.write_text("{not valid json", encoding="utf-8")
+        helpers.write_jsonl(root / "ops" / "runs.jsonl", [
+            helpers.make_runs_row_normal(run_id="run-001",
+                                          runmeta_path="ops/runs/run-001/RUNMETA.json"),
+        ])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert any(
+            line.startswith("runs_backlink.runmeta_unreadable:") and "run-001" in line
+            for line in _lines(out)
+        ), (out, err)
+        assert "Traceback" not in err, err
+
+
+def test_import_error_fallback_parses_principles_same_as_primary():
+    """trace_check.py's `except ImportError` fallback (its own copy of
+    ledger_cmds.principlescmd.parse_principles) is reached only when `from
+    ledger_cmds.principlescmd import parse_principles` fails at
+    trace_check's module-load time -- which never happens through the
+    normal `import trace_check` path in this test environment, since the
+    real module is always importable here. Force that ImportError with a
+    builtins.__import__ patch, reload trace_check under it (re-running its
+    module body, which rebinds trace_check._parse_principles to the
+    fallback def), and diff the fallback's parse of a real principles table
+    (helpers.METHOD_MD, written by make_sandbox) against the real parser's
+    output on the same file, byte for byte."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        method_path = root / "METHOD.md"
+        expected = _real_parse_principles(method_path)
+        assert expected, "fixture must produce at least one principle row"
+
+        real_import = builtins.__import__
+
+        def _blocking_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "ledger_cmds.principlescmd":
+                raise ImportError("blocked by test_import_error_fallback_... to force the fallback")
+            return real_import(name, globals, locals, fromlist, level)
+
+        builtins.__import__ = _blocking_import
+        try:
+            importlib.reload(trace_check)
+            fallback_rows = trace_check._parse_principles(method_path)
+        finally:
+            builtins.__import__ = real_import
+            importlib.reload(trace_check)  # restore the primary-import binding for later tests
+
+        assert fallback_rows == expected, (fallback_rows, expected)
+        # The primary binding is back after the restoring reload above --
+        # confirms the reload dance leaves no lasting state for other tests.
+        assert trace_check._parse_principles is _real_parse_principles
 
 
 # ---------------------------------------------------------------------------

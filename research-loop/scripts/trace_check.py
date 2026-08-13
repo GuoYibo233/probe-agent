@@ -32,9 +32,11 @@ numbered list -- one function per item):
    ("affects-extra").
 4. check_runs_backlink    -- normal runs.jsonl rows: runmeta_path exists,
    its launch_order_ref resolves, and that launch order's own run_id field
-   equals the row's run_id. Criterion (judged) rows: principle_id exists in
-   the principles ledger and its criterion_cmd passes check_in_registry
-   (registry_query null -> "unwired", never silently passed).
+   equals the row's run_id. A RUNMETA file that exists but fails to parse
+   as JSON is "runs_backlink.runmeta_unreadable" (not a crash). Criterion
+   (judged) rows: principle_id exists in the principles ledger and its
+   criterion_cmd passes check_in_registry (registry_query null -> "unwired",
+   never silently passed).
 5. check_jobs_backlink    -- every jobs-ledger entry's launch_order_ref
    resolves to an existing launch order.
 6. check_story_refs       -- every active story claim's evidence_runs /
@@ -49,6 +51,13 @@ numbered list -- one function per item):
    only reported here -- normal runs never flag it, per
    rows.json batch_report_header.inspection_report), and every run_id it
    lists is recorded in the runs ledger.
+
+Loading is itself read-only and fallible the same way: a launch order file
+or ops/jobs.json that exists but fails to parse as JSON is reported as
+"load.launch_order_unreadable" / "load.jobs_unreadable" and the rest of the
+run proceeds on whatever did parse -- one bad file must not crash the whole
+check (an uncaught exception) or silently pass as "0 errors" (this script's
+entire job is catching exactly this kind of ledger corruption).
 
 Output: one line per finding, `<check>: <detail>`; a final summary line
 `trace_check: <N> errors, <M> warnings`. Exit 1 if any error was found
@@ -74,7 +83,15 @@ import _lib  # noqa: E402
 
 try:
     from ledger_cmds.principlescmd import parse_principles as _parse_principles
-except ImportError:  # pragma: no cover -- exercised only in a stripped deployment
+except ImportError:
+    # Only reached in a stripped deployment where ledger_cmds isn't on
+    # sys.path; ledger_cmds.principlescmd is always importable in this
+    # repo's normal test environment, so the primary branch above always
+    # wins here. Exercised (not just hand-verified) by
+    # test_trace_check.py::test_import_error_fallback_parses_principles_same_as_primary,
+    # which forces this branch via a builtins.__import__ patch + module
+    # reload and diffs its output against the real parser's, on the same
+    # fixture file, byte for byte.
     import re as _re
 
     _CELL_SPLIT_RE = _re.compile(r"(?<!\\)\|")
@@ -143,42 +160,72 @@ class _Context:
     def __init__(self, cfg):
         self.cfg = cfg
         self.root = cfg.root
-        self.launch_orders = _load_launch_orders(cfg)
+        # Findings raised while loading the ledgers themselves (malformed
+        # JSON) -- collected here rather than raised, so one corrupted file
+        # is reported instead of killing the whole run (F2); folded into the
+        # regular findings list by run() below.
+        self.load_findings = []
+        self.launch_orders, launch_order_findings = _load_launch_orders(cfg)
+        self.load_findings.extend(launch_order_findings)
         self.decisions_rows = _lib.jsonl_rows(cfg.ledger_path("decisions"), include_archive=True)
         self.decisions_by_id = {row.get("decision_id"): row for row in self.decisions_rows}
         self.runs_rows = _lib.jsonl_rows(cfg.ledger_path("runs"), include_archive=True)
-        self.jobs = _load_jobs(cfg)
+        self.jobs, jobs_findings = _load_jobs(cfg)
+        self.load_findings.extend(jobs_findings)
         self.story_rows = _lib.jsonl_rows(cfg.ledger_path("story"), include_archive=True)
         self.principles_rows = _load_principles(cfg)
         self.principles_by_id = {row.get("principle_id"): row for row in self.principles_rows}
 
 
-def _load_launch_orders(cfg) -> dict:
-    """{filename stem: parsed launch order dict}. The filename stem is the
-    canonical run_id (spec §5: "发射单按 run_id 命名") -- it is the key used
-    everywhere else in this script (RUNMETA/jobs launch_order_ref,
-    decisions.affects, promoted_from). A launch order file whose own
-    "run_id" field disagrees with its filename is exactly what
-    check_runs_backlink's run_id-mismatch finding is for; this loader does
-    not paper over that by keying off the field instead."""
+def _load_launch_orders(cfg) -> tuple:
+    """(orders, findings). orders is {filename stem: parsed launch order
+    dict}. The filename stem is the canonical run_id (spec §5: "发射单按
+    run_id 命名") -- it is the key used everywhere else in this script
+    (RUNMETA/jobs launch_order_ref, decisions.affects, promoted_from). A
+    launch order file whose own "run_id" field disagrees with its filename
+    is exactly what check_runs_backlink's run_id-mismatch finding is for;
+    this loader does not paper over that by keying off the field instead.
+
+    findings carries one "load.launch_order_unreadable" entry per file that
+    is not valid JSON (corrupted outside the normal write path, e.g. by a
+    non-atomic write racing a reader -- issues/08-launch-order.md notes
+    launchcmd.py writes via a plain Path.write_text) -- that file is skipped
+    (absent from orders, so it cannot silently satisfy any check that looks
+    it up) rather than raising and killing the whole run."""
     directory = Path(cfg.ledger_path("launch_orders"))
     orders = {}
+    findings = []
     if not directory.exists():
-        return orders
+        return orders, findings
     for path in sorted(directory.glob("*.json")):
-        orders[path.stem] = json.loads(path.read_text(encoding="utf-8"))
-    return orders
+        try:
+            orders[path.stem] = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            findings.append(_err(
+                "load.launch_order_unreadable",
+                f"launch order file {path} could not be read as JSON: {exc}",
+            ))
+    return orders, findings
 
 
-def _load_jobs(cfg) -> list:
-    """Job-ledger entries as a flat list of dicts, each carrying at least a
-    run_id key. plan.md §C5: jobs.json may be `{run_id: {...}}` or a list of
-    dicts with a run_id/name key -- read both shapes leniently the same way
-    statuscmd is specified to (this script never writes jobs.json)."""
+def _load_jobs(cfg) -> tuple:
+    """(entries, findings). entries is job-ledger rows as a flat list of
+    dicts, each carrying at least a run_id key. plan.md §C5: jobs.json may
+    be `{run_id: {...}}` or a list of dicts with a run_id/name key -- read
+    both shapes leniently the same way statuscmd is specified to (this
+    script never writes jobs.json). findings carries one
+    "load.jobs_unreadable" entry (entries then empty) if the file exists but
+    is not valid JSON -- reported, not a crash and not a silent 0-jobs read."""
     path = Path(cfg.ledger_path("jobs"))
     if not path.exists():
-        return []
-    data = json.loads(path.read_text(encoding="utf-8"))
+        return [], []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [], [_err(
+            "load.jobs_unreadable",
+            f"jobs ledger {path} could not be read as JSON: {exc}",
+        )]
     entries = []
     if isinstance(data, dict):
         for run_id, entry in data.items():
@@ -191,7 +238,7 @@ def _load_jobs(cfg) -> list:
                 merged = dict(entry)
                 merged.setdefault("run_id", merged.get("run_id") or merged.get("name"))
                 entries.append(merged)
-    return entries
+    return entries, []
 
 
 def _load_principles(cfg) -> list:
@@ -459,7 +506,15 @@ def check_runs_backlink(ctx: _Context) -> list:
             ))
             continue
 
-        runmeta = json.loads(runmeta_path.read_text(encoding="utf-8"))
+        try:
+            runmeta = json.loads(runmeta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            findings.append(_err(
+                "runs_backlink.runmeta_unreadable",
+                f"runs row {run_id}: runmeta_path {runmeta_path_str!r} could not be read as JSON: {exc}",
+            ))
+            continue
+
         launch_order_ref = runmeta.get("launch_order_ref")
         order = ctx.launch_orders.get(launch_order_ref) if launch_order_ref else None
         if not launch_order_ref or order is None:
@@ -613,7 +668,7 @@ _REGULAR_CHECKS = (
 def run(root: Path, closeout_batch_id) -> list:
     cfg = _lib.load_config(root)
     ctx = _Context(cfg)
-    findings = []
+    findings = list(ctx.load_findings)
     for check in _REGULAR_CHECKS:
         findings.extend(check(ctx))
     if closeout_batch_id is not None:
