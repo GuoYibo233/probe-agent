@@ -133,6 +133,96 @@ def make_git_sandbox(tmp) -> Path:
     return root
 
 
+def make_rails_sandbox(tmp) -> Path:
+    """make_git_sandbox() plus everything issues/16-e2e.md's fake-rails
+    scenarios need already wired and committed:
+
+    - registry_cmd/registry_query/record_cmd repointed at scripts/fallback/
+      registry.py|record.py (the real fallback trio, not make_sandbox()'s
+      stub_registry.py -- fake-experiment/fake-metrics only live there);
+      rails.gpu set to fallback/launch.py's command form (issues/16-e2e.md:
+      "rails.gpu 指向 fallback launch.py 的命令形态" -- no code in this repo
+      actually dispatches through the rails.gpu config key, callers invoke
+      launch.py directly the same way test_fallback.py does, so this is
+      wired for completeness/config-check rather than exercised itself).
+    - an approved demo spec at .scratch/demo/spec.md containing item IT-001.
+    - one demo issue ticket at .scratch/demo/issues/01-demo.md.
+    - one decided decisions row D001 (affects=[]).
+    - `ops/` gitignored (test_fallback.py's own convention): every file a
+      scenario writes at runtime -- launch orders, jobs.json, fake-run
+      artifact_dirs, runs/blocked/decisions/story jsonl -- lives under it,
+      so launch.py's dirty-tree gate never trips on a scenario's own writes.
+    - everything committed, so the *first* launch.py call in any scenario
+      starts from a clean tree (issue's own "全部 commit（脏树门禁要过）").
+    """
+    root = make_git_sandbox(tmp)
+
+    fallback_dir = _lib.plugin_root() / "scripts" / "fallback"
+    registry_cmd = f"{sys.executable} {fallback_dir / 'registry.py'}"
+    cfg_path = root / "research-loop.json"
+    cfg_data = json.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg_data["registry_cmd"] = registry_cmd
+    cfg_data["registry_query"] = f"{registry_cmd} --list"
+    cfg_data["record_cmd"] = f"{sys.executable} {fallback_dir / 'record.py'}"
+    cfg_data["rails.gpu"] = f"{sys.executable} {fallback_dir / 'launch.py'}"
+    cfg_path.write_text(
+        json.dumps(cfg_data, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+    spec_path = root / ".scratch" / "demo" / "spec.md"
+    spec_path.parent.mkdir(parents=True, exist_ok=True)
+    spec_header = {
+        "spec_version": 1, "approved_by": None, "approved_date": None,
+        "approved_digest": None, "withdrawals": [],
+    }
+    spec_lines = ["---\n"]
+    for key, value in spec_header.items():
+        spec_lines.append(f"{key}: {json.dumps(value)}\n")
+    spec_lines.append("---\n")
+    spec_path.write_text(
+        "".join(spec_lines) + "Item IT-001 does the demo thing.\n", encoding="utf-8",
+    )
+
+    # Body deliberately never repeats the spec item's id string ("IT-001"):
+    # the specs ledger's default_path (".scratch/") and the issues ledger's
+    # default_path (".scratch/*/issues/") overlap on disk, so trace_check's
+    # _find_spec_file (a substring scan over every *.md under ".scratch/")
+    # would otherwise match this issue file before the real spec file (path
+    # sort puts "demo/issues/01-demo.md" ahead of "demo/spec.md") and then
+    # fail to parse it as frontmatter'd -- approval.spec_unreadable.
+    issue_path = root / ".scratch" / "demo" / "issues" / "01-demo.md"
+    issue_path.parent.mkdir(parents=True, exist_ok=True)
+    issue_path.write_text(
+        "# 01-demo\n\nStatus: ready-for-agent\n\n"
+        "acceptance: demo fixture ticket for the e2e self-test.\n\nBlocked by: none\n",
+        encoding="utf-8",
+    )
+
+    decision_row = make_decision_row(decision_id="D001", status="decided", affects=[])
+    write_jsonl(root / "ops" / "decisions.jsonl", [decision_row])
+
+    (root / ".gitignore").write_text("ops/\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "wire fake rails + demo spec/issue/decision"],
+        cwd=root, check=True,
+    )
+
+    approve_code = subprocess.run(
+        [sys.executable, str(_lib.plugin_root() / "scripts" / "ledger.py"),
+         "approve-spec", str(spec_path), "--by", "user"],
+        cwd=root, capture_output=True, text=True,
+    ).returncode
+    if approve_code != 0:
+        raise RuntimeError("make_rails_sandbox: approve-spec on the demo spec failed")
+
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "approve demo spec"], cwd=root, check=True)
+
+    return root
+
+
 def _run_python_script(script_path, root, args, env):
     full_env = None
     if env:
