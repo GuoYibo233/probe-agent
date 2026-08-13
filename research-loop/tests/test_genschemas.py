@@ -195,3 +195,48 @@ def test_build_parser_imports_only_the_module_the_invoked_command_needs():
     args = parser.parse_args(["gen-schemas"])
     assert args.command == "gen-schemas"
     assert dispatch["gen-schemas"] is not None
+
+
+# ---------------------------------------------------------------------------
+# 9. N1 regression (fix-round-2): a bare `--help`/`-h`/no-args invocation
+#    names no subcommand at all, so build_parser() cannot single out one
+#    module to import the way it does for a real subcommand (test 8 above).
+#    It must fall back to importing every implemented module instead --
+#    otherwise every subcommand's real (help-bearing) parser gets replaced
+#    by a placeholder with no help text, and top-level --help goes blank
+#    for every already-built subcommand except `render`.
+# ---------------------------------------------------------------------------
+
+
+def test_build_parser_bare_help_imports_every_module_so_help_text_survives():
+    calls = []
+    real_import_cmd_module = ledger_dispatcher._import_cmd_module
+
+    def _recording(module_name):
+        calls.append(module_name)
+        return real_import_cmd_module(module_name)
+
+    ledger_dispatcher._import_cmd_module = _recording
+    try:
+        parser, _dispatch = ledger_dispatcher.build_parser(["--help"])
+    finally:
+        ledger_dispatcher._import_cmd_module = real_import_cmd_module
+
+    # Every module group got a real import attempt, not just genschemas.
+    assert sorted(calls) == sorted(set(ledger_dispatcher._SUBCOMMAND_MODULES.values())), calls
+
+    # gen-schemas is implemented, so its real register() ran and its
+    # top-level --help description (from genschemas.py's own parser.add_
+    # parser(..., help=...)) shows up instead of a blank placeholder line.
+    help_text = parser.format_help()
+    assert "Generate schemas/*.schema.json" in help_text, help_text
+
+
+def test_build_parser_empty_and_short_help_argv_also_import_every_module():
+    # `-h` and no-args at all hit the same "no positional token" case as
+    # `--help` -- _peek_positional skips every "-"-prefixed token and an
+    # empty argv has no tokens to find one in either way.
+    for argv in ([], ["-h"]):
+        parser, _dispatch = ledger_dispatcher.build_parser(argv)
+        help_text = parser.format_help()
+        assert "Generate schemas/*.schema.json" in help_text, (argv, help_text)

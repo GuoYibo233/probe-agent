@@ -20,6 +20,13 @@ register/run) still gets a placeholder parser that accepts arbitrary
 arguments, so argparse itself never rejects the call -- the dispatcher's own
 "not implemented yet" message and exit code 3 are what the caller sees.
 
+The one exception is when argv names no subcommand at all -- bare
+`--help`/`-h`, or no args -- since there is then no single module to single
+out. build_parser() imports every implemented module in that case so
+top-level --help lists each subcommand's real description instead of a
+blank placeholder line (a module that fails to import there still just
+falls back to its placeholder, same as an unimplemented one).
+
 Every subcommand except gen-schemas/init/config-check requires a wired
 project (a research-loop.json findable by walking up from cwd) before it is
 dispatched at all. RLError raised by any module is caught once, here, in
@@ -131,10 +138,20 @@ def _module_name_for_argv(argv):
 def build_parser(argv):
     """Build the top-level argparse parser and a {subcommand: module} dict.
 
-    Imports at most the one ledger_cmds module `argv` implies is needed
-    (via _module_name_for_argv) -- every other subcommand gets a
+    Normally imports at most the one ledger_cmds module `argv` implies is
+    needed (via _module_name_for_argv) -- every other subcommand gets a
     placeholder parser with no import attempted at all, so an import-time
     exception in an unrelated module can never reach this invocation.
+
+    Exception: when argv names no subcommand at all (bare `--help`/`-h`,
+    or no args) -- the "what commands exist" exploration path -- there is
+    no single module to single out, so every implemented module is
+    imported and registered instead. That is what makes top-level --help
+    show each subcommand's real description rather than a blank
+    placeholder line; a module that fails to import still just falls back
+    to its placeholder (no help text for that one entry), the same as an
+    unimplemented module.
+
     `render`'s own module (chosen by args.target) is resolved separately, at
     dispatch time in _dispatch(), since render's parser is fixed and owned
     by ledger.py itself rather than delegated to a module's register()."""
@@ -143,8 +160,13 @@ def build_parser(argv):
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    wanted_module_name = _module_name_for_argv(argv)
-    wanted_module = _import_cmd_module(wanted_module_name) if wanted_module_name else None
+    import_all = _peek_positional(argv) is None
+    if import_all:
+        wanted_module_name = None
+        wanted_module = None
+    else:
+        wanted_module_name = _module_name_for_argv(argv)
+        wanted_module = _import_cmd_module(wanted_module_name) if wanted_module_name else None
 
     names_by_module: dict[str, list[str]] = {}
     for name, module_name in _SUBCOMMAND_MODULES.items():
@@ -152,10 +174,17 @@ def build_parser(argv):
 
     dispatch: dict[str, object] = {}
     for module_name, names in names_by_module.items():
-        if module_name == wanted_module_name and wanted_module is not None:
-            wanted_module.register(subparsers)
+        if import_all:
+            module = _import_cmd_module(module_name)
+        elif module_name == wanted_module_name:
+            module = wanted_module
+        else:
+            module = None
+
+        if module is not None:
+            module.register(subparsers)
             for name in names:
-                dispatch[name] = wanted_module
+                dispatch[name] = module
         else:
             for name in names:
                 _add_placeholder(subparsers, name)
