@@ -487,3 +487,58 @@ def test_status_approved_specs_in_flight_and_open_issues():
         assert "01-open-thing" in issue_ids
         assert "02-done-thing" not in issue_ids
         assert "01-all-done" not in issue_ids
+
+
+# ---------------------------------------------------------------------------
+# extra: jobs.json's list-of-dicts shape (plan.md §C5's other tolerated
+# shape, alongside the dict-keyed-by-run_id fixture every other test here
+# uses) is read the same tolerant way -- run_id/name and state/status keys,
+# non-dict entries and entries missing run_id or state skipped, not raised on
+# ---------------------------------------------------------------------------
+
+
+def test_status_jobs_list_form_read_tolerantly():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _write_jobs(root, [
+            {"run_id": "run-list-running", "state": "running"},
+            {"name": "run-list-named-done", "status": "done"},
+            "not-a-dict-entry",
+            {"state": "done"},  # no run_id/name -> skipped
+            {"run_id": "run-list-no-state"},  # no state/status -> skipped
+        ])
+
+        code, out, err = helpers.run_ledger(root, "status", "--layer", "deploy")
+        assert code == 0, err
+        view = json.loads(out)
+
+        assert view["running_runs"] == ["run-list-running"]
+        assert view["unrecorded_runs"] == ["run-list-named-done"]
+        for field in ("running_runs", "unrecorded_runs"):
+            assert "run-list-no-state" not in view[field]
+
+
+# ---------------------------------------------------------------------------
+# extra: unrecorded_runs reads the runs ledger "跨档" (ticket's own
+# parenthetical on this one field) -- a run row that only exists in
+# runs.archive.jsonl still counts as recorded, so the matching terminal job
+# must not show up as unrecorded.
+# ---------------------------------------------------------------------------
+
+
+def test_status_unrecorded_runs_reads_across_archive():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        cfg = _lib.load_config(root)
+        _write_jobs(root, {"run-archived-done": {"state": "done"}})
+
+        runs_path = Path(cfg.ledger_path("runs"))
+        archive_path = runs_path.with_name(f"{runs_path.stem}.archive{runs_path.suffix}")
+        archived_row = helpers.make_runs_row_normal(run_id="run-archived-done")
+        helpers.write_jsonl(archive_path, [archived_row])
+
+        code, out, err = helpers.run_ledger(root, "status", "--layer", "deploy")
+        assert code == 0, err
+        view = json.loads(out)
+
+        assert view["unrecorded_runs"] == []

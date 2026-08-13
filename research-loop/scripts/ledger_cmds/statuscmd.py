@@ -163,7 +163,14 @@ def _running_runs(jobs: dict) -> list:
 
 
 def _unrecorded_runs(cfg, jobs: dict) -> list:
-    runs_ids = {r.get("run_id") for r in _lib.jsonl_rows(cfg.ledger_path("runs"))}
+    # Ticket wording for this field alone says "runs 账（跨档）" -- read the
+    # archive too, unlike the other two runs-ledger reads in this module
+    # (batches_pending_report / inconsistencies), which the ticket does not
+    # mark with that parenthetical.
+    runs_ids = {
+        r.get("run_id")
+        for r in _lib.jsonl_rows(cfg.ledger_path("runs"), include_archive=True)
+    }
     return sorted(
         run_id for run_id, state in jobs.items()
         if state in _TERMINAL_JOB_STATES and run_id not in runs_ids
