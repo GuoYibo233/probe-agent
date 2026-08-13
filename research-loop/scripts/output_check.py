@@ -62,6 +62,8 @@ def check_file(path: Path, glob: str, entry: dict) -> list:
 
     min_bytes = entry.get("min_bytes")
     if min_bytes is not None:
+        if not isinstance(min_bytes, (int, float)):
+            raise ValueError(f"expected_outputs: min_bytes must be a number, got {min_bytes!r}")
         size = path.stat().st_size
         if size < min_bytes:
             failures.append({
@@ -71,6 +73,8 @@ def check_file(path: Path, glob: str, entry: dict) -> list:
 
     min_lines = entry.get("min_lines")
     if min_lines is not None:
+        if not isinstance(min_lines, (int, float)):
+            raise ValueError(f"expected_outputs: min_lines must be a number, got {min_lines!r}")
         n_lines = _count_lines(path)
         if n_lines < min_lines:
             failures.append({
@@ -152,7 +156,7 @@ def main(argv=None) -> int:
 
     try:
         result = run(args.launch_order)
-    except (OSError, json.JSONDecodeError, KeyError) as exc:
+    except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
         print(f"output_check: failed to read launch order {args.launch_order}: {exc}", file=sys.stderr)
         return 2
 

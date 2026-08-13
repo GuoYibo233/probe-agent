@@ -51,8 +51,13 @@ def _rule_matches(match: dict, exit_code, log_text, output_check) -> bool:
             if exit_code is None or exit_code != expected:
                 return False
         elif key == "log_regex":
-            if log_text is None or re.search(expected, log_text) is None:
+            if log_text is None:
                 return False
+            try:
+                if re.search(expected, log_text) is None:
+                    return False
+            except re.error as exc:
+                raise ValueError(f"error-classes: invalid log_regex {expected!r}: {exc}") from exc
         elif key == "output_check":
             if output_check is None or output_check != expected:
                 return False
@@ -62,6 +67,8 @@ def _rule_matches(match: dict, exit_code, log_text, output_check) -> bool:
 def classify(classes: dict, exit_code, log_text, output_check) -> dict:
     for name, rule in classes.items():
         if _rule_matches(rule.get("match", {}), exit_code, log_text, output_check):
+            if "action" not in rule:
+                raise ValueError(f"error-classes: rule {name!r} is missing required key 'action'")
             return {"rule": name, "action": rule["action"]}
     return {"rule": None, "action": "unknown"}
 

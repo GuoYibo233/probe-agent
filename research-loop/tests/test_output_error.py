@@ -124,6 +124,45 @@ def test_output_check_short_file_is_empty_output():
         assert code == 4
 
 
+def test_output_check_non_numeric_min_bytes_errors_cleanly():
+    # a hand-authored launch order with min_bytes typoed as a string must not
+    # crash the script with a raw TypeError traceback -- it fails cleanly
+    # like any other unreadable launch order (T12/F2).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        art = root / "artifacts"
+        art.mkdir()
+        (art / "out.txt").write_text("hello", encoding="utf-8")
+        order_path = _write_launch_order(root, [
+            {"path_glob": "out.txt", "min_bytes": "not-a-number"},
+        ])
+
+        code, out, err = helpers.run_script(root, "output_check.py", "--launch-order", str(order_path))
+
+        assert code == 2
+        assert out.strip() == ""
+        assert "output_check:" in err
+        assert "min_bytes" in err
+
+
+def test_output_check_non_numeric_min_lines_errors_cleanly():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        art = root / "artifacts"
+        art.mkdir()
+        (art / "out.txt").write_text("hello\n", encoding="utf-8")
+        order_path = _write_launch_order(root, [
+            {"path_glob": "out.txt", "min_lines": "not-a-number"},
+        ])
+
+        code, out, err = helpers.run_script(root, "output_check.py", "--launch-order", str(order_path))
+
+        assert code == 2
+        assert out.strip() == ""
+        assert "output_check:" in err
+        assert "min_lines" in err
+
+
 def test_output_check_missing_output_wins_priority_over_empty_output():
     # one entry misses entirely, another entry's file is present but too
     # small -- missing-output must win the overall verdict either way.
@@ -238,6 +277,48 @@ def test_error_classify_unknown_when_nothing_matches():
 
         assert _last_json_line(out) == {"rule": None, "action": "unknown"}
         assert code == 0
+
+
+def test_error_classify_missing_action_field_errors_cleanly():
+    # a rule that hand-authors forgot to give an "action" must not crash the
+    # script with a raw KeyError traceback -- it fails cleanly like any other
+    # malformed error-classes table (findings T12/F1).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        classes_path = _write_error_classes(root, {
+            "bad-rule": {"match": {"exit_code": 1}},
+        })
+
+        code, out, err = helpers.run_script(
+            root, "error_classify.py", "--error-classes", str(classes_path),
+            "--exit-code", "1",
+        )
+
+        assert code == 2
+        assert out.strip() == ""
+        assert "error_classify:" in err
+        assert "bad-rule" in err
+
+
+def test_error_classify_invalid_log_regex_errors_cleanly():
+    # a log_regex that is not valid regex syntax must not crash the script
+    # with a raw re.error traceback -- it fails cleanly instead (T12/F1).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        classes_path = _write_error_classes(root, {
+            "bad-regex-rule": {"match": {"log_regex": "(unclosed"}, "action": "retry"},
+        })
+        log_path = root / "run.log"
+        log_path.write_text("anything\n", encoding="utf-8")
+
+        code, out, err = helpers.run_script(
+            root, "error_classify.py", "--error-classes", str(classes_path),
+            "--log", str(log_path),
+        )
+
+        assert code == 2
+        assert out.strip() == ""
+        assert "error_classify:" in err
 
 
 def test_error_classify_first_matching_rule_wins_key_order():
