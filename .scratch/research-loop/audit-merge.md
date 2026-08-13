@@ -590,3 +590,90 @@ doctor --out 与不写账本目录句、md/小 json 机验对号。12 处全部�
 修后 spec_lint 全绿 + 五表 JSON 可解析。lint 自身经注入实测：E1×2/E2/E3/W1
 五类病各能触发。判保留的高危角落（撤销全链、r5-choice 拼装、freeze-legacy、
 per-kind/per-transition、快车道、R5 双模式等 22 项）扫描逐一验过下落。
+
+## 用户裁决第三批（2026-08-13，外部评审采纳令 + 减防御追加令）→ 第十八轮
+
+用户原话一（采纳令，ultracode）：
+> ultracode review/research-loop-advisor-notes.md review/research-loop-spec-review 查看这两个review意见，看看他说的有无道理，如果有的话采纳意见继续完善计划
+
+用户原话二（执行中追加）：
+> 我觉得这两个稍微有一点过度防御，我很希望能够快速执行，可以删除一些过度防御，如果有的话
+
+两份评审：`review/research-loop-spec-review.md`（架构评审，P0×4/P1×6/P2×3）、
+`review/research-loop-advisor-notes.md`（advisor 细化，建议 A–I + 实体模型）。
+
+## 第十八轮：评审逐条裁断与落地
+
+- 裁断方式：workflow 派 7 个 opus 评估组（schema 真源/恢复现场/崩溃一致性/
+  实体模型/批准与命令权威/R2R3R4 边界/分层与范围）逐条对照 spec 原文与
+  用户既有裁决裁断，1 个 opus 合成。共 111 条裁断：adopt 41 / partial 47 /
+  reject 22 / user-decision 1；合成 15 个采纳项、34 条驳回（重型机器全驳：
+  事务日志 operations.jsonl、staging manifest、observations/attempts 新账本、
+  独立 approval 账本、五步 canonicalization、state.json、next 命令、
+  顶层 CLI 门面、registry_digest、task_id+args 重构等，逐条反证在案）。
+  完整方案存档 `review-adoption-plan.json`（含全部 verdicts 与驳回理由）。
+- 落地：15 项采纳全部进 spec.md 与五表（用户追加令再裁两刀，见自决点
+  #125/#132）。spec_lint 升级 E4（表可生成性）并经注入实测七类病全触发
+  （六类表病 + 一类散文旧枚举链），真本 0 errors 0 warnings。
+- 三条 user_flags 按用户两道原话就地落地（#132/#133/#134），随本轮汇报
+  明列，可推翻。
+
+## 第十八轮自决点（按 R6 留痕，authorized_by=用户采纳令；#125/#132 加引减防御追加令）
+
+117. **runs 主键取三元组 (run_id, metric_name, filter)**：filter 已是行内
+     字段且从发射单透传；二元组会把"同指标不同口径子集"误判重复。
+118. **decisions 回指字段命名 blocked_ref**：与 blocked_row 已有的
+     decision_ref/grant_ref 命名法对称；评估组提的 ref 与 blocked_row.ref
+     同名不同义，撞一物一名。
+119. **不发 observation_id**：观察值身份 = 主键三元组自然键，无第二消费者。
+120. **只方言化 rows.json 一张表**：拒"拆 schemas/+policies/ 三套、tables
+     降级文档视图"——ledgers 四列已是机器值且 E1 在验，拆表退回自决点 115
+     判过的老形态。$enum 就地展开、不引 $defs 与跨文件 $ref。
+121. **gen-schemas 挂 ledger.py 子命令**：不新开脚本；生成物一致性归
+     gen-schemas --check，不塞 spec_lint（设计稿检查与实施期产物检查分工）。
+122. **复合动作取最低档**：严格写序（翻状态的一笔最后写）+ 派生行回指查重
+     （重跑即修复）+ doctor 半状态扫描（只查不动）。拒事务日志、staging、
+     全账本 operation_id——幂等键用自然回指键。
+123. **不提供自动重放与自动补齐**：修复动作恒为重跑原命令，验收措辞钉死，
+     防实施期照"reconcile 自动恢复"造重放引擎。收官链判已被现文覆盖，不加协议。
+124. **digest canonicalization 取"文件头整块不入哈希"**：approved_digest =
+     sha256(第二条 --- 之后的正文原始字节)。拒五步 YAML 归一化（新漂移面）、
+     拒 approved_commit（批准时多半未 commit）、拒独立 approval 账本。
+125. **【减防御追加令】砍原则文档 digest 半边**：不加
+     approved_against_principles_digest（按列归一化+置空回填列+第二类 stale
+     报警，堵的是没踩过的坑）；悬空引用 approved_against_principles_version
+     直接删（该版本号在 spec 里无人递增，是修缺陷）。保留 spec 正文
+     approved_digest（堵真洞：批准戳所在文件归部署层写，偷改无机验可见）。
+     R1 补"原则的批准是逐行事件"一句。
+126. **status 不设全局 stage 标量**：原则逐行状态、多批并行、快车道与正轨
+     并行，一个标量装不下；矛盾只进 inconsistencies[] 不推断阶段。不开
+     next 命令（动作名取 routes.json to 列进 waiting_on[]，不立第二套映射）；
+     不建 state.json 第六表、不建 current.json 物化视图。版本字段沿用
+     schema_version 不引入 state_version。
+127. **R2/R3/R4 收窄的例子全落 §9 验收用例**，不进 §3 正文（守 461 行内核）；
+     不引入 extractor 一词（已有名字 metrics_cmd/criterion_cmd）。
+128. **拒"未配置时继承会话默认模型"**：与用户全局硬规则（派 subagent 一律
+     显式传模型）冲突；改 plugin 携带默认值 opus/sonnet 且显式传，
+     配置键 roles.inspector_model/reader_model。
+129. **inspection_policy v1 值域只收 always**：risk-based 判定规则无人写、
+     manual 等于关核查，v1 无使用者；加值须回 spec 走 R5。
+130. **快车道转正只加 promoted_from 一个字段**：发射单按 run_id 命名，
+     source_launch_order_ref 与它互推，存两个键 = 同一事实两处成文。
+     "种子固定重跑即复现"改成"沿用整张发射单"（六因子漏五是现文自己的反证）。
+131. **假铁轨复用 fallback 三件**：不建平行 tests/fixtures 工程（两套铁轨
+     要同步维护）；崩溃类验收用半状态 fixture + 重复执行，不搭进程 kill
+     注入框架。fake 两脚本不计入"九个脚本"计数。
+132. **【减防御追加令 + user_flags①就地裁决】archive 执行件整体排 v1.1**：
+     v1 只留行数到 cap 告警（doctor 既有扫描）；archive 命令、归档索引、
+     跨档就地更新（第 13 项）随 v1.1；设计文字留表不删，届时不重谈。
+133. **【裁决点，user_flags③】runs 账本 schema 变更落地**：一次实验多指标 =
+     同 run_id 多行、一行一指标；metrics_cmd 尾行改 metrics 数组。R5 第二问
+     （schema 变更）恒真，authorized_by=用户采纳令原话；随本轮汇报明列可推翻。
+134. **【user_flags②】R4 预授权句落地**：批过的口径每批照算不再上桌；
+     口径没写全不算预授权；改口径一律重新提案。
+135. **blocked answered 的 force_fields 补 _when 条件**：执行 agent 自报的
+     缺陷——无条件强制会把授权自决答复（answered_by=agent）也翻成 user；
+     现限定"仅 to_layer=user 代笔特例生效"。
+136. **fake.mode 五值收进 rows.enums**：spec_lint E2 咬住 §9 散文里新长的
+     封闭清单（--mode 值域），按 §0.5 迁表；E2 加"完整落在某表枚举 = 合法
+     引用"豁免，豁免不放走冲突链（注入实测：resolved 混入四态链仍报错）。

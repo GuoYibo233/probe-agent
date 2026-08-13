@@ -77,10 +77,25 @@
     },
     "raw_data_roots": {
       "example": "[/net/.../reproduce/new1/]",
-      "domain": "产物根（大产物一律 NFS）",
+      "domain": "产物根（大产物一律落此处，不落仓库）",
       "null_effect": "路径模板不可解析 → 相关登记拒"
+    },
+    "roles": {
+      "example": "{inspector_model, reader_model}",
+      "domain": "派 subagent 一律显式传模型，禁止不传继承会话默认",
+      "null_effect": "取 plugin 默认 inspector_model=opus / reader_model=sonnet，不锁功能"
+    },
+    "standing_authorization": {
+      "example": "{max_expected_runtime_s: 3600, resource: compute}",
+      "domain": "R5 常设授权阈值，以发射单 expected_runtime_s 合计",
+      "null_effect": "取 plugin 默认 3600 秒，常设授权照常生效（不锁）"
+    },
+    "inspection_policy": {
+      "example": "always",
+      "domain": "部署收官例行核查策略；v1 值域只收 always（用户裁决：每批都通读）；加值须回 spec 走 R5",
+      "null_effect": "取默认 always"
     }
   },
   "_null_lock_rule": "未接线拒绝的执行者与时点：ledger.py config-check——每次写入/query 自动做（被锁功能的子命令直接拒）；铁轨类动作触发前跑（经层转交的由该层 SKILL.md，薄壳直接转交的由薄壳）；四轨 null 按动作锁不按路由行锁；原则落档不被锁——走 R1 未接线态标【想法待定】；doctor 拼装的'配置校验'即此件",
-  "_fallback_rule": "兜底件最低必做项（溯源链兜底态不打折）：launch.py = 顺序执行发射单 argv + 脏树检查 + 写 RUNMETA（commit/argv/launch_order_ref/脏树清单；attempt_no/env_name/outputs 允许空）+ 登记极简台账；record.py = append 记账、加载 runs schema、持同一把锁；registry.py = 极简注册表 + --list 只读免门禁；除此之外不复刻任何高级功能。其余铁轨（build/pipeline/paper/literature）无兜底件，未接留 null 按被锁功能处理"
+  "_fallback_rule": "兜底件最低必做项（溯源链兜底态不打折）：launch.py = 顺序执行发射单 argv + 脏树检查 + 写 RUNMETA（commit/argv/launch_order_ref/脏树清单；attempts/env_name/outputs 允许空）+ 登记极简台账；record.py = append 记账、加载 runs schema、持同一把锁；registry.py = 极简注册表 + --list 只读免门禁；除此之外不复刻任何高级功能。兜底三件同时充当 plugin 自测的假铁轨，fake 任务经 registry.py 注册。其余铁轨（build/pipeline/paper/literature）无兜底件，未接留 null 按被锁功能处理"
 }

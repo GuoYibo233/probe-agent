@@ -2,11 +2,17 @@
 """spec_lint: 机械校验 spec.md 散文与 tables/ 数据表的一致性。
 
 设计依据（2026-08-13 用户重构令）：封闭清单只在 tables/ 成文一次，
-散文引用不复述。本脚本抓两类病：
+散文引用不复述。本脚本抓的病：
   E1 表间不一致（表自己坏了）
   E2 散文里出现与表冲突的旧枚举（"两处成文一处漂移"——15 轮复审的头号缺陷类）
   E3 散文里重新长出封闭清单（路由表、管道枚举链）
+  E4 rows.json 受管块不够生成 schema（缺 required/properties/primary_key、
+     required 越界、$enum 指向不存在的枚举、$ref_to 指向不存在的账、
+     jsonl 账行型缺 schema_version）——§0.5 第 5 条"从表生成"的静态前提
   W1 散文里的 snake_case 反引号词不在任何表的词汇表里（疑似发明了新字段）
+
+定位：设计稿静态一致性检查。生成物（schemas/ 与 owners 默认表）与表的
+一致性不归本脚本——那是实施期产物，归 ledger.py gen-schemas --check。
 
 exit 0 = 干净（警告不拦）；exit 1 = 有 error。
 """
@@ -33,8 +39,8 @@ ALLOW = {
     "answered_by", "answered_at", "raised_at", "decided_at", "decided_by",
     "authorized_by", "superseded_by", "withdrawn_by", "withdrawn_reason",
     "retired_by", "retired_reason", "retired_date", "applies_when",
-    "approved_by", "approved_date", "approved_against_principles_version",
-    "path_globs", "expires_at", "from_layer", "to_layer", "attempt_no",
+    "approved_by", "approved_date",
+    "path_globs", "expires_at", "from_layer", "to_layer",
     "env_name", "dataset_version", "error_classes", "runs_schema",
     "no_log_growth_s", "gpu_idle_s", "startup_grace_s", "min_vram_gb",
     "evidence_path", "metric_name", "evidence_runs", "baseline_runs",
@@ -123,8 +129,80 @@ def check_tables(tabs):
             err(f"E1 ledgers.json optional {name}.owner 不在 owner_values")
     # form2 白名单账必须存在
     for acct in tabs["writes"]["write_forms"]["form2_inplace_whitelist"]:
+        if acct.startswith("_"):
+            continue
         if acct not in led:
             err(f"E1 writes.json 就地更新白名单指向不存在的账 {acct}")
+    check_generatable(tabs)
+
+
+# E4: rows.json 受管块必须够生成 schema（§0.5 第 5 条的静态前提）。
+# 块名 → 对应账名（schema_version 要求只对 format=jsonl 的账生效）。
+GEN_BLOCKS = {
+    "story_row": "story", "decisions_row": "decisions", "blocked_row": "blocked",
+    "feedback_rows.suggestion": "feedback", "feedback_rows.review": "feedback",
+    "runs_row_normal": "runs", "runs_row_criterion": "runs",
+    "launch_order": "launch_orders",
+}
+
+
+def check_generatable(tabs):
+    rows = tabs["rows"]
+    enums = set(rows.get("enums", {}))
+    led = dict(tabs["ledgers"]["ledgers"])
+    led.update(tabs["ledgers"].get("optional_ledgers", {}))
+
+    def field_defs(prop):
+        yield prop
+        if isinstance(prop.get("items"), dict):
+            yield prop["items"]
+
+    for bname, acct in GEN_BLOCKS.items():
+        node = rows
+        for part in bname.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+            if node is None:
+                break
+        if node is None:
+            err(f"E4 rows.json 缺受管块 {bname}")
+            continue
+        missing = [k for k in ("required", "properties", "primary_key")
+                   if k not in node]
+        if missing:
+            err(f"E4 {bname} 缺 {'/'.join(missing)}")
+            continue
+        props = set(node["properties"])
+        for r in node["required"]:
+            if r not in props:
+                err(f"E4 {bname} required 字段 {r} 不在 properties")
+        for k in node["primary_key"]:
+            if k not in props:
+                err(f"E4 {bname} primary_key 字段 {k} 不在 properties")
+        for fname, prop in node["properties"].items():
+            if not isinstance(prop, dict):
+                err(f"E4 {bname}.{fname} 不是方言字段对象")
+                continue
+            for d in field_defs(prop):
+                if "$enum" in d and d["$enum"] not in enums:
+                    err(f"E4 {bname}.{fname} $enum={d['$enum']} 不在 rows.enums")
+                for ref in ([d["$ref_to"]] if isinstance(d.get("$ref_to"), str)
+                            else d.get("$ref_to") or []):
+                    if ref.split(".")[0] not in led:
+                        err(f"E4 {bname}.{fname} $ref_to={ref} 账名不在 ledgers.json")
+        for cond in node.get("conditional", []):
+            whens = cond.get("when")
+            whens = whens if isinstance(whens, list) else [whens]
+            for w in whens:
+                if not isinstance(w, dict) or w.get("op") not in ("eq", "neq", "in"):
+                    err(f"E4 {bname} conditional 的 op 非法: {w}")
+                elif w.get("field") not in props:
+                    err(f"E4 {bname} conditional 引用不存在的字段 {w.get('field')}")
+            for k in cond.get("require", []) + cond.get("allow_null", []):
+                if k not in props:
+                    err(f"E4 {bname} conditional 目标字段 {k} 不在 properties")
+        if led.get(acct, {}).get("format") == "jsonl" \
+                and "schema_version" not in node["required"]:
+            err(f"E4 {bname} 对应 jsonl 账 {acct}，required 必含 schema_version")
 
 
 def strip_fences(text):
@@ -151,6 +229,8 @@ def check_prose(tabs):
             continue
         for m in chain_re.finditer(ln):
             members = set(m.group(0).split("|"))
+            if any(members <= evals for evals in enums.values()):
+                continue  # 完整落在某个表枚举里 = 合法引用
             for ename, evals in enums.items():
                 if len(members & evals) >= 2 and not members <= evals:
                     err(f"E2 spec.md:{i} 枚举链 `{m.group(0)}` 与 {ename} 冲突"

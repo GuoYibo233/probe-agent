@@ -4,7 +4,7 @@
     "query-only": "只经 ledger.py query 拿最小视图，禁整文件读进上下文",
     "md-full": "md 定稿件：允许整读或按条目切片（给人读的）",
     "direct": "小 json 单件：直读",
-    "sliced": "大体量：脚本切片或派读手 subagent（sonnet）"
+    "sliced": "大体量：脚本切片或派读手 subagent（roles.reader_model）"
   },
   "ledgers": {
     "principles":    {"default_path": "METHOD.md",                      "format": "md-table", "owner": "idea",           "read": "md-full",    "cap": null},
@@ -30,7 +30,8 @@
     "runs":          {"default_path": "ops/runs.jsonl",                 "format": "jsonl",    "owner": "per-row-type",   "read": "query-only", "cap": null,
                       "active": "无活跃行概念：不轮转，cap 只许 null；query runs 必须带过滤（--batch/--run/--since/--metric 至少其一），无过滤拒绝返回全表——读全量走渲染产物"},
     "jobs":          {"default_path": "ops/jobs.json",                  "format": "json",     "owner": "run",            "read": "sliced",     "cap": null},
-    "cluster_state": {"default_path": "ops/gpu_state.md",               "format": "md",       "owner": "run",            "read": "md-full",    "cap": null},
+    "cluster_state": {"default_path": "ops/cluster_state.md",           "format": "md",       "owner": "run",            "read": "md-full",    "cap": null,
+                      "_note": "new1 覆盖为 ops/gpu_state.md；无集群设施的工程该键留空"},
     "runmeta":       {"default_path": "<artifact_dir>/RUNMETA.json",    "format": "json",     "owner": "run",            "read": "direct",     "cap": null},
     "raw_data":      {"default_path": "<raw_data_roots>/**",            "format": "raw",      "owner": "run",            "read": "sliced",     "cap": null},
     "reports":       {"default_path": "reports/",                      "format": "md",       "owner": "oversight",      "read": "md-full",    "cap": null}

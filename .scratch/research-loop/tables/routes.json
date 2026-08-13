@@ -17,6 +17,8 @@
     {"say": "这个不行，重做（打回）",  "stage": "批次验收后", "to": "退回对应层，理由落批次报告头部 rejections[]（spec/原则阶段的不批准另走 §2.5：不落 approved_by + 开待决条）"},
     {"say": "审一下反馈",              "stage": "收官后",  "to": "ledger.py feedback review（R9）"},
     {"say": "体检一下 / doctor",       "stage": "任意",    "to": "doctor.py 一键检查（§4）：只查不动，建议清单确认后执行"},
-    {"say": "深查这批 / 核查部署",     "stage": "⑤⑥后",   "to": "inspector（opus）通读核查——部署收官例行核查（§1）的手动触发口"}
+    {"say": "深查这批 / 核查部署",     "stage": "⑤⑥后",   "to": "inspector（roles.inspector_model）通读核查——部署收官例行核查（§1）的手动触发口"},
+    {"say": "接一下这个工程 / init",   "stage": "⓪",       "to": "ledger.py init 挂接问卷（§7）"},
+    {"say": "我们跑到哪了 / 接着干",   "stage": "任意",    "to": "ledger.py status --layer <本层>（工作面 + 待决队列 + 有效授权；会话开工同此）"}
   ]
 }

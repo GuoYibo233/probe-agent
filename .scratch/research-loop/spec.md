@@ -7,6 +7,8 @@
 快车道 + 重构令）。全程记录、每轮发现与全部自决点见 `audit-merge.md`。
 v2 按用户重构令把 v1（git 历史 `643cb94`）拆成**散文内核 + 结构化表**，
 并执行"减防御性设计"指令（裁掉的条目见 audit-merge 第十七轮自决点）。
+第十八轮：两份外部评审（`review/`）经多 agent 逐条裁断后落地——
+111 条裁断、15 项采纳、34 项驳回，全程与再裁剪见 audit-merge 第十八轮。
 **形态：** 机器级 plugin（跟机器走），工程铁轨通过仓库根配置文件挂接。
 
 ## 0 一句话
@@ -33,8 +35,11 @@ v2 用结构堵死它：
 4. **spec 改动交付前 `python3 spec_lint.py` 必须全绿**：lint 机械校验散文与表
    一致（旧枚举、路由表复述、生造字段）。一致性检查是确定重复的活，
    从此不再派 LLM 复审轮去人肉扫（吃 spec 自己的 R7/I12 药）。
-5. 这些表不是脚手架：实施时 plugin 的 `schemas/`、owners 默认表、路由薄壳
-   直接从表生成或引用，spec 与实现共用一个真源。
+5. 这些表不是脚手架：实施时 plugin 的 `schemas/*.schema.json` 与 owners 默认表
+   由 `ledger.py gen-schemas` 从表**单向生成**（表 → 生成物），路由薄壳直接引用表，
+   spec 与实现共用一个真源。生成物禁手改——改表再生成；生成器键序固定，
+   重复生成逐字节相同；生成物与表不一致以表为准，由 `gen-schemas --check` 拦下
+   （检查面只含 plugin 携带的默认版，工程覆盖件不入比对）。
 
 ## 1 三层 + 监察面
 
@@ -83,12 +88,15 @@ v2 用结构堵死它：
   全量读进上下文的场合；query 为此提供 --batch/--run/--spec-item/--since/
   --metric 与 --all-rows/--include-archive 维度。R3 报告的全量扫描陈述由此支撑。
 - **部署收官例行核查**（部署层 SKILL.md 收官段写死的规程步骤）三步闭环：
-  ① 批次报告落盘后派 inspector（opus），派发契约成文——必传 batch_id、
+  ① 批次报告落盘后派 inspector（模型取 roles.inspector_model），派发契约成文——必传 batch_id、
   批次报告路径、research-loop.json 路径、机验三件套命令
   （trace_check、evidence_lint、verify_report）；核查范围由批次报告头部
   run_ids/spec_items 定位——批次报告是落盘物，派发因此仍符合"信在账里"；
-  ② inspector 跑三件套并**通读**本批账目与报告（用户裁决：每次都通读），
-  核查报告落 reports/，头部带 `verdict: clean | blockers[]`；
+  ② inspector 跑三件套并**通读**本批账目与报告（用户裁决：每次都通读——
+  本工程策略值，落 research-loop.json inspection_policy=always），
+  核查报告落 reports/，头部带 verdict 字段（取值见 `tables/rows.json`
+  inspection_report_header）；blocker 只写流程缺陷与证据缺陷（断链、缺命令、
+  口径对不上），不写科学结论（R2）；
   ③ 部署层会话读回：有 blocker 逐条转录成 blocked 条目（from_layer=deploy，
   溯源靠 evidence 指核查报告；to_layer 向上取到最近可答复层）且本批不算收官；
   无 blocker 才收官，核查报告路径回填批次报告 `inspection_report`，
@@ -99,7 +107,7 @@ v2 用结构堵死它：
   各层不读它、不依赖它。
 
 **解读不过层**：上行只有事实，一切解读发生在 idea 层、由用户拍板。
-派生量计算是 idea 层活动（R4）；部署层只跑既有机械汇总管道。
+派生量计算是 idea 层活动（R4，口径预授权的成文在 R4）；部署层只跑既有机械汇总管道。
 **悬案攒批上报**：一层撞到多个不确定点，把手头任务扫完、一次性开一批
 待决账条目，不许问一个等一个。问题走待决账楼梯，不报给监察面——
 监察面看得到一切，但不做路由节点。
@@ -113,10 +121,13 @@ v2 用结构堵死它：
 | 3 | 部署 → 运行 | 注册表命令、**发射单** | 不在注册表不许跑；**脏树一律拒发并升级部署层**（豁免清单在配置）；产物钉 RUNMETA。工单是部署层层内物，不跨层下发 |
 | 4 | 运行 → 部署 | 日志、RUNMETA、台账、采样器判定（进台账，`tables/rows.json` jobs_min_additions）、待决账条目（故障升级） | 升级必须带证据：错误原文、日志路径、已试动作表 |
 
-**会话开工必读两样**（每层 SKILL.md 骨架写死）：① 本层待决队列
-（open 且 to_layer=本层 + answered 且 from_layer=本层，都算未决）；
-② 有效授权视图（定义见 `tables/rows.json` decisions_row）。两样都是动态视图，
-只出活跃条目——"用完即清"靠视图过滤实现，不删账。
+**会话开工必读**（每层 SKILL.md 骨架写死）：开工跑一条
+`ledger.py status --layer <本层>`，输出三块——① 本层工作面（在办事项：
+发射单已写未发、run 跑完未入账、批次待报告/待核查等，字段与逐项派生源见
+`tables/rows.json` status_view）；② 本层待决队列（open 且 to_layer=本层 +
+answered 且 from_layer=本层，都算未决）；③ 有效授权视图（定义见
+`tables/rows.json` decisions_row）。三块全是跨账本派生的动态视图，
+不落盘、不建状态文件，只出活跃条目——"用完即清"靠视图过滤实现，不删账。
 
 总规矩：**可追溯链双向**（正向：工单→spec→原则条目；反向：run→发射单→工单，
 靠 RUNMETA.launch_order_ref 与台账回指；抉择→run 靠发射单 decision_refs）；
@@ -132,8 +143,12 @@ v2 用结构堵死它：
 - **查询口（主）**：jsonl 账只经 `ledger.py query` 读；默认视图只出活跃行，
   逐账判定式在 `tables/ledgers.json` active 列。`query runs` 必须带过滤，
   无过滤拒绝返回全表——读全量走渲染产物（RESULTS）。
-- **读手 subagent（辅）**：非结构化材料需要摘要时派小读手（sonnet，一次一件），
-  主会话只收摘要 + 原件路径。
+- **工作面视图（status）**：跨账本派生的在办清单，只出计数、id 与路径，
+  不出行内容；字段与逐项派生源见 `tables/rows.json` status_view；纯只读，
+  不落盘、不建状态文件。跨账对不上只列进 inconsistencies[]，不推断阶段、
+  不自行修补——要么按 R8 开待决条，要么跑 trace_check/doctor 深查。
+- **读手 subagent（辅）**：非结构化材料需要摘要时派小读手（模型取
+  roles.reader_model，一次一件），主会话只收摘要 + 原件路径。
 - **归档轮转（辅）**：jsonl 账到行数上限（`tables/ledgers.json` cap 列，
   工程经 ledger_caps 覆盖）时 `ledger.py archive` 把非活跃行原样搬进
   `<name>.archive.jsonl`（同 schema、逐字节不改），伴生索引
@@ -142,7 +157,8 @@ v2 用结构堵死它：
   归档由 doctor 建议、用户确认后执行，不自动跑。
 - **校验/追溯脚本一律跨档读**：trace_check、verify_report、regression_check、
   spotcheck 与 story/runs 写入时的存在性校验默认等价于 `--include-archive`；
-  只有面向会话上下文的 query 默认只出活跃行。
+  只有面向会话上下文的 query 默认只出活跃行。撤销与更正的就地更新同样跨档
+  （写入侧唯一跨档口，规则见 `tables/writes.json` form2）。
 - **append-only 的实义**：任何行永不删丢、事实字段永不改写——就地更新只有
   `tables/writes.json` form2 白名单那几个字段。
 - md 账不轮转、不设体量机制（v2 裁员）：整理由写权层会话或用户看着办，
@@ -157,6 +173,8 @@ v2 用结构堵死它：
 转录的会话，不是你：
 
 - **拍板**：原则定稿、spec 批准、故事裁决、待决条目答复——落对应账本带日期；
+  spec 批准的转录是机械动作：你拍板当场跑 `ledger.py approve-spec`，一次落
+  approved_by/approved_date/approved_digest 三字段，会话不手填 digest；
   待决答复由当场会话代笔（answered_by 填 user）；
 - **授权**：R4 计算批准、R6 自决授权——原话当场落抉择账
   （kind=grant，含结构化 scope 与有效期）；
@@ -207,8 +225,11 @@ v2 用结构堵死它：
 - **与 R5 常设授权衔接**：预计低于一小时的快实验，部署层默认模式下也可
   直接发射，事后按 §2.5 回报条款向你明列。
 - **结果的去向**：quick 行不得被故事账引用（story 写入校验拒）；要进故事，
-  按正轨补 spec 条目重跑（种子固定，重跑即复现）。
-  快车道是试想法的入口，不是论文证据的入口。
+  按正轨补 spec 条目重跑——以原 quick 发射单为模板生成正轨发射单：
+  seed/dataset_version/argv/env_name/filter 逐字沿用，允许变的只有
+  run_id/batch_id/spec_ref/issue_ref/decision_refs/expected_commit 与
+  quick=false（`promoted_from` 指回原 quick run）。种子固定只是其中一项，
+  沿用整张发射单才算重跑。快车道是试想法的入口，不是论文证据的入口。
 
 ## 3 十条硬规矩（全 plugin 通用）
 
@@ -219,30 +240,44 @@ v2 用结构堵死它：
   暂空落档，但必须标【想法待定】；补上判据才可转【现状】/【已定要改】。
   **最近实测不手填**：判据每跑一次就是一次 run，进 runs.jsonl 带 principle_id，
   原则文档的"最近实测+日期"由渲染脚本自动回填。
-  **判据必须轻量只读**（不占 GPU、部署层会话当场可跑）；要重算力的证据先按
-  普通 run 跑出产物，criterion_cmd 吃产物路径做检查。写不出轻量判据的原则
-  退回 idea 层重谈。
-- **R2 机验人判**：判据机器跑，判断人来下。AI 在验收里只做两件事：
-  把检查跑起来、把原始证据摆到用户面前。
+  **判据必须轻量只读**（不占算力资源——不走 rails.gpu，部署层会话当场可跑）；
+  要重算力的证据先按普通 run 跑出产物，criterion_cmd 吃产物路径做检查。
+  写不出轻量判据的原则退回 idea 层重谈。
+  **原则的批准是逐行事件**——用户拍板即落 status（§8 步 2），
+  原则文档不设文件级批准戳。
+- **R2 机验人判**：判据机器跑，最终判断人来下。机械检查一律脚本执行；
+  agent 可以做三件事——判结构缺陷、按错误分类表归类故障（R8）、
+  提带证据的 blocker（§1 收官核查）并把原始证据摆到用户面前。
+  科学结论归用户：结果算不算数、进不进故事，agent 不得代下。
 - **R3 证据体裁**：判据/监察/观察输出只许——计数、差异定位（分叉点原文并排，
   两侧各带路径+行号）、可点开的文件路径（带行号/记录号）。
-  **每个数字必须配一条可直接粘贴执行的复现命令**，命令输出必须等于报告数字。
+  **支撑经验主张的数值**（计数、指标值、差异量）**必须配一条可直接粘贴执行的
+  复现命令**，命令输出必须等于报告数字；溯源元数据（生成时间、git HEAD、
+  账本行数与哈希、行号、记录号、路径）不逐项配命令，但必须能从所引文件
+  机械读出——豁免面成文在 `tables/rows.json` evidence_lint_exempt。
   计数为 0 的否定性陈述必须附扫描范围全量清单与总行数。
   报告头带溯源块：生成时间、git HEAD、所读账本行数/哈希。
-  "通过/没问题/符合预期"等结论词违禁。lint + 机械校验器双重把关（§4）。
-- **R4 计算授权**：对数据只许忠实呈现原始值。任何派生量先提案——公式、分母、
-  过滤条件、作用文件——用户批了才算，算完连同命令附在结果旁
-  （进故事账的记 derivation_command）。
+  "通过/没问题/符合预期"等散文结论词违禁；结构化枚举字段（核查报告头
+  verdict，取值见 `tables/rows.json`）不算结论词，evidence_lint 按字段豁免。
+  lint + 机械校验器双重把关（§4）。
+- **R4 计算授权**：对数据只许忠实呈现原始值。派生量先提案——公式、分母、
+  过滤条件、作用文件——用户批了才算。**批过的口径即预授权**：公式、分母、
+  过滤条件、聚合层级已写进 spec 条目并经用户批准的，每批照算不再上桌；
+  口径没写全的不算预授权，仍要提案；新增或改动公式、分母、过滤条件、
+  聚合层级、缺失值处理，一律重新提案（§2.5 实验设定硬边界照旧）。
+  算完连同命令附在结果旁（进故事账的记 derivation_command）。
 - **R5 抉择点分模式处理**（用户裁决 2026-08-13：不写成铁的，看用户的决定）。
   先识别：施工撞到方案分岔，机械三问判定它算不算抉择点——会改变某条判据的
-  输出吗？会引入原则文档没有对应条目的新约束吗？不可逆吗（耗大量 GPU 时长/
-  产物已被下游引用；**写 NFS 本身不算不可逆**）？三问全否即施工自由度，
+  输出吗？会引入原则文档没有对应条目的新约束吗？不可逆吗（耗大量算力时长/
+  产物已被下游引用；**写产物盘（raw_data_roots 下的路径）本身不算不可逆**）？
+  三问全否即施工自由度，
   直接干。**账本 schema 变更永远算第二问为是**。是抉择点的，按当下模式走：
   **默认（无覆盖授权）**——停手，写待决账，上桌等裁决；
   **授权自决**——你一句"这类事你自己定"当场落成 grant，scope 覆盖眼前分岔
   且未过期的，会话自决，照 R6 留痕 + §2.5 回报条款事后明列。
   **常设授权一条**（plugin 携带，无须另发 grant）：抉择点若只关系到发射
-  GPU 任务且预计总时长低于一小时（以发射单 expected_runtime_s 合计），
+  算力任务且预计总时长低于 standing_authorization.max_expected_runtime_s
+  （plugin 默认 3600 秒；以发射单 expected_runtime_s 合计），
   默认模式下也可直接干——照 R6 留痕（authorized_by 填 `spec-standing-gpu-1h`）、
   事后必须通知你干了什么。
   裁决后：ledger.py 把 answered 的 R5 条目同步生成一条抉择账 decision 条目
@@ -291,21 +326,30 @@ research-loop/                      # plugin 根
 │   └── inspector.md                # 只读监察员：写权限定 reports/、R3 体裁
 │                                   #   （监察面参与共享账的两条口子归监察会话，
 │                                   #     不给这个 agent，§1）；
-│                                   #   frontmatter 钉 model: opus
+│                                   #   frontmatter 钉 model: 取 research-loop.json
+│                                   #     roles.inspector_model（plugin 默认 opus）
 ├── schemas/                        # 各账 + 发射单 JSON Schema（从 tables/ 生成，
 │                                   #   plugin 携带默认版、工程可覆盖；
 │                                   #   变更走 R5 + schema_version 递增）
 └── scripts/                        # 全部确定性
     ├── ledger.py                   # 账本总入口：写入+校验+状态机+写权检查+渲染+查询
-    │                               #   （子命令：query / config-check / archive /
-    │                               #    principles-lint / runs-append / init /
-    │                               #    freeze-legacy / feedback review / 发射单写入）
+    │                               #   （子命令：query / status / config-check /
+    │                               #    archive / principles-lint / runs-append /
+    │                               #    init / freeze-legacy / feedback review /
+    │                               #    发射单写入 / approve-spec / gen-schemas——
+    │                               #    gen-schemas 从 tables/ 生成 schemas/ 与
+    │                               #    owners 默认表，--check 只重生成到内存
+    │                               #    逐字节比对不写盘，§0.5 第 5 条的机验落点）
     ├── trace_check.py              # (deploy) 溯源检查：正反链 + decision→run
     │                               #   （扫发射单 decision_refs + 抉择账 affects，
     │                               #    校验两者一致性）+ 批次收官门禁
     │                               #   （--closeout；quick 发射单豁免回指，§2.6；
     │                               #    判据缩减行改查 principle_id 在原则文档 +
-    │                               #    criterion_cmd 在注册表）
+    │                               #    criterion_cmd 在注册表）；
+    │                               #   重算 approved_digest 不等报 approval_stale；
+    │                               #   promoted_from 非空时比对与来源 quick 发射单
+    │                               #   的沿用字段（seed/dataset_version/argv/
+    │                               #   env_name/filter），不一致报错
     ├── output_check.py             # (run) 产物校验：expected_outputs 逐条比
     ├── error_classify.py           # (run) 错误分类：按分类表判自愈/升级
     ├── spotcheck.py                # (oversight) 固定种子抽样：直达路径清单+总体指纹
@@ -318,14 +362,22 @@ research-loop/                      # plugin 根
     ├── doctor.py                   # (用户) 一键体检：拼装 config-check + trace_check +
     │                               #   evidence_lint + principles-lint +
     │                               #   regression_check --dry-run + 账本行数上限扫描 +
-    │                               #   归档量汇报与归档建议 + 遗留 worktree 清单。
+    │                               #   归档量汇报与归档建议 + 遗留 worktree 清单 +
+    │                               #   半状态扫描（孤儿 decision：blocked_ref 指向的
+    │                               #   blocked 无 decision_ref 回指；撤销中断：
+    │                               #   blocked=withdrawn 但同步 decision 仍 decided
+    │                               #   或缺重开条；affects 与发射单 decision_refs
+    │                               #   不一致）——修复动作一律是重跑原命令；
+    │                               #   工作面段直接调 status，不重复实现跨账本派生。
     │                               #   只查不动，报告只出 stdout（可选 --out 用户
     │                               #   指定路径），不写 reports/、不写任何账本目录；
     │                               #   代码检查不在范围（归 rails.build 会话收尾）
     └── fallback/                   # 默认铁轨兜底件三件（tables/config.json
-        ├── registry.py             #   fallback 列与 _fallback_rule）
-        ├── launch.py
-        └── record.py
+        ├── registry.py             #   fallback 列与 _fallback_rule）；
+        ├── launch.py               #   兜底三件同时充当 §9 plugin 自测的假铁轨
+        ├── record.py
+        ├── fake_experiment.py      # 只在自测用（--seed / --mode / --out），
+        └── fake_metrics.py         #   经 registry.py 注册；不计入"九个脚本"计数
 ```
 
 runs.jsonl 有且只有两个写入口，按行型分工：普通实验行走工程侧记账脚本
@@ -339,10 +391,18 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
 ## 5 账本机制（结构在表里，这里只写机制）
 
 行结构、字段、枚举的唯一真源是 `tables/rows.json`；写权、跃迁、撤销、
-维护动作的唯一真源是 `tables/writes.json`。散文只写四段机制语义：
+维护动作的唯一真源是 `tables/writes.json`。散文只写五段机制语义：
 
 - **写入两式**：原子追加 + 白名单字段就地更新（都过 schema 与写权检查、
   都持文件锁）。防呆不是防伪——挡误用，不设防恶意冒报。
+- **复合动作的中断一致性**：① 每个跨文件复合动作定死写序——先 append
+  派生行，最后落那笔翻状态的就地更新（各动作的写序成文在
+  `tables/writes.json` 的 _write_order），崩溃只会停在"旧状态"或
+  "旧状态 + 一条孤儿派生行"，永不停在"新状态 + 缺派生行"；
+  ② 每条机械拼出的派生行必带回指触发行的引用，重跑同一命令先按回指查重，
+  命中就复用不再新建——**重跑即修复**；③ 半状态由 doctor 扫出（只查不动），
+  修复动作就是重跑原命令。明写：不引入事务日志与 staging manifest，
+  不提供自动重放与自动补齐。
 - **待决账是贯穿信道 2/4 的双向体裁**。kind=r5-choice 承载 R5 抉择：
   开条必填 where/options，答复必传 --chosen，ledger.py 机械拼出 decision
   条目回填 decision_ref——answered_by≠user 的答复必传 --grant，这是 R6 的
@@ -350,16 +410,26 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
   问题不因撤销而消失，被收回的裁决不得保持生效。
 - **判据 run 执行契约**：部署层会话只负责发起——执行与入账是同一个动作
   `ledger.py runs-append --layer deploy --principle <id>`：脚本按 principle_id
-  从原则文档 criterion_cmd 列取命令（缩减行不存命令本体），代为拉起并计时，
+  从原则文档 criterion_cmd 列取命令（缩减行不存命令本体），代为拉起
+  （shlex.split 后直接起进程、不经 shell）并计时，
   退出码/elapsed_s 由脚本自取，尾行结构化输出由脚本解析（契约见
   `tables/rows.json` structured_output_contract），会话不经手任何数字（R7）。
-  判据一律轻量只读（R1）：不占 GPU、不过脏树发射门禁、不登台账、不写 RUNMETA。
+  判据一律轻量只读（R1）：不占算力资源、不过脏树发射门禁、不登台账、
+  不写 RUNMETA。
   **只有退出码 0 且尾行解析成功才落行（status=ok）**——判据没跑成不算实测，
   "最近实测"不更新，按 R8 升级。
 - **发射单与台账的顺序**：部署层写发射单（同一动作把 run_id 回填进
   decision_refs 所指抉择的 affects；decision_refs 是权威，affects 是物化索引，
-  不一致以发射单为准，trace_check 校验一致性）→ 运行层铁轨读发射单发射并登记台账 → RUNMETA/台账
+  不一致以发射单为准，trace_check 校验一致性——发射单先落盘、affects 回填
+  后写：affects 缺失只是索引缺失，trace_check 报出后由部署层重跑同一写发射单
+  动作补齐，发射单按 run_id 命名、重写同路径幂等，不产生第二张）
+  → 运行层铁轨读发射单发射并登记台账 → RUNMETA/台账
   回指 launch_order_ref。发射单=要跑什么（前瞻），台账=跑成什么样（后验）。
+  同理 argv 是权威执行体、registry_task 是归属声明，两者不一致时写入直接拒
+  （机验规则见 `tables/rows.json` launch_order）。
+  **发射前批准门禁**：写发射单时 spec_ref 非空则校验该 spec approved_by 非空
+  且 approved_digest 重算匹配，stale 拒发并升级；spec_ref 空的 quick 发射单
+  豁免（§2.6），照 trace_check 既有豁免写法。
   超时判定用 expected_runtime_s × runtime_factor；"卡死"判定用 stall_thresholds，
   两者分工。seed 永不可变。
 
@@ -367,6 +437,8 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
 
 路由表唯一真源：`tables/routes.json`（research-loop 薄壳的全部内容）。
 表里一切动作都可随时手动触发，不限阶段列；路由句只是常用入口，不是白名单。
+脚本名只在 routes.json 出现一次，上层 skill 与用户一律经路由句进，
+不直接依赖脚本路径。
 
 ## 7 工程挂接（plugin 通用 ↔ 项目铁轨）
 
@@ -374,6 +446,10 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
 `tables/config.json`。散文只写机制语义：
 
 - **通用/特化分界**：plugin 本体不含任何工程专名，特化只发生在这份配置里。
+  三分界：plugin 本体（层、账本、跃迁、溯源、批准、报告）｜rails.* 五键指向的
+  工程铁轨与发射单契约（怎么探资源、怎么发射、怎么记账——这就是适配接口）｜
+  research-loop.json 的策略值（常设授权阈值、角色模型、核查策略、豁免清单）。
+  不新建目录层。
 - **兜底**：裸项目四键指向 `scripts/fallback/` 即装上可用，项目长出自己的
   设施后换指；兜底最低必做项与"其余铁轨无兜底"见 `tables/config.json`
   _fallback_rule。兜底态溯源链不打折（run→RUNMETA→launch_order_ref 不断）。
@@ -395,8 +471,8 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
 2. 谈熟 → 写/改原则，每条过 R1。用户拍板。
 3. 出 spec（含 acceptance/depends_on，文件头记批准）→ trace_check 全绿。用户拍板。
 4. spec → 工单 → rails.build 施工。抉择点走 R5：三问识别、分模式处理——
-   自决先查有效授权视图（开工必读②）与常设授权（GPU<1h），命中才自决并
-   留痕（R6）、事后回报（§2.5）。
+   自决先查有效授权视图（status 的有效授权块）与常设授权（算力<1h），
+   命中才自决并留痕（R6）、事后回报（§2.5）。
 5. 部署层出发射单 → 冒烟 → 判据实跑（runs-append）→ 证据报告（R3）→
    evidence_lint + verify_report 过 → 用户亲验 → 批量发射走 rails.gpu
    （铁轨读发射单、登记台账、RUNMETA 回指）；output_check 防空产物；
@@ -407,7 +483,8 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
 7. 用户拍板进故事 → ledger.py story 记账（run 存在性 + status=ok + 非 quick）。
 8. 回 1，或走 rails.paper，数字溯源对故事账。
 9. 任意时刻"查 X" → inspector 顺账本清单挖到原始文件（runmeta_path→RUNMETA→
-   outputs 字典）；"有什么在等我" → 待决队列渲染。
+   outputs 字典）；"有什么在等我" → 待决队列渲染。新会话接手同此：
+   开工跑 status 取工作面，不靠用户复述进度。
 10. 收官：各层反馈进反馈账；"审一下反馈"走 R9 审查；部署收官例行核查走
     §1 三步闭环。全程失败按 R8 走楼梯。
 
@@ -449,7 +526,60 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
     不猜，运行层只机械升级。
   - evidence_lint / verify_report / spotcheck / regression_check：
     违禁词、伪造计数、总体指纹变化、claim 冲突各能揪出。
-  - doctor：单项检查件挂掉能正确汇总；只出建议清单不执行变更。
+  - doctor：单项检查件挂掉能正确汇总；只出建议清单不执行变更；
+    三类半状态 fixture（孤儿 decision、撤销中断、affects 缺失）各能报出
+    且不写任何账本。
+  - **schema 与入账面**：schema 校验单入口——删任一 required 字段 / 塞不在
+    rows.enums 的枚举值 / 违反 conditional 三种注入各被拒，且由同一入口拒
+    （两个 runs 写入口、发射单写入、四本 jsonl 账写入共用）；失败信息格式
+    固定 `<账名>.<字段路径>: <说明>`，必须带实际非法值。记账脚本：metrics
+    尾行两项落两行、run 级字段逐字相同；metrics 空数组或非数组拒并按 R8
+    升级；同主键 (run_id, metric_name, filter) 重复入账拒、判据行同 run_id
+    重复拒、同 run_id 两行的 run 级字段不一致拒。regression_check：
+    metric_names 为空的 claim 列入跳过清单，不报冲突也不静默漏掉；
+    metric_names 指向不存在的指标则 story 写入拒。
+  - **交付门禁与批准面**：ledger.py gen-schemas --check 全绿——生成器键序
+    固定、重复生成逐字节相同、plugin 默认 schemas/ 与表一致（工程覆盖件
+    不在检查面内）。trace_check 批准面：spec 正文改一个标点报 approval_stale
+    且写发射单拒；只追 withdrawals[] 或只递增 spec_version 不报 stale；
+    quick 发射单不受批准门禁影响。
+  - **复合动作与恢复面**：answer-r5-choice / 撤销重开 / 记账三条命令各重复
+    执行两次，实体数量与引用关系不变；三类半状态 fixture 重跑原命令后收敛
+    到完整新状态；崩溃后只可能停在旧状态一侧或旧状态加孤儿派生行。
+    不做进程 kill 注入，不提供自动重放与自动补齐。
+    ledger.py status：同一份落盘账本连查两次输出一致（generated_at 除外）；
+    四个断点 fixture（发射单已写未发/跑完未入账/报告未核查/批次未收官）
+    各落进对应字段；批次报告引用不存在的 run_id 只进 inconsistencies[]，
+    其余字段照常出、不推断阶段；全程不写任何文件。
+  - **注册表与判据面**：写发射单——argv 前缀与 registry_cmd 不符 / 前缀后
+    首个 token 不等于 registry_task / task 不在 registry_query 清单，三者
+    各拒；registry_query 未接线时按 null_effect 报未接线、不放行。
+    principles-lint 追加：criterion_cmd 含管道符或换行报错；首 token 前缀
+    不等于 registry_cmd 或任务不在清单报错（与发射单共用一份"在注册表"
+    判定）。evidence_lint 追加：元数据数字（生成时间、git HEAD、行号、哈希）
+    不报"无复现命令"，经验数字缺命令必报；指标值与分母必须能由同一条
+    metrics_cmd 或 criterion_cmd 复算。快车道转正面：promoted_from 指向的
+    quick 发射单不存在则拒，沿用字段被改则 trace_check 报错，转正后的
+    正轨 run 进故事放行。
+- **plugin 自测（假铁轨）**：用 scripts/fallback/ 三件加 fake 任务
+  （fake_experiment.py：--seed / --mode ok|fail|timeout|empty|bad-metrics /
+  --out DIR，输出遵 `tables/rows.json` structured_output_contract），
+  不碰 GPU、不碰外部服务，走通 §8 步 3→10 的机械链。九个场景：
+  ① 正轨闭环：spec 条目→工单→发射单→fake run(ok)→RUNMETA/jobs/runs→
+  批次报告→核查 clean→story 入账→trace_check --closeout 过；
+  ② 快车道链：缩减发射单→fake run→runs 行 quick=true，story 引用被拒，
+  且 trace_check 不因缺 spec_ref/issue_ref 报断链；
+  ③ 同一 fake 任务按正轨重跑（新 spec 条目 + 完整发射单、promoted_from
+  指原 quick run）→ 新 run 可进故事，两条 runs 行 value 逐字相同；
+  ④ --mode empty → output_check 判 empty-output，runs 行 status=empty-output
+  且 metric 三字段为 null；
+  ⑤ --mode bad-metrics → runs 无新行、blocked 新增一条 kind=failure 且
+  evidence 带日志路径；
+  ⑥ 第一次 --mode fail、重试后 ok → runs 单行 status=ok，RUNMETA attempts
+  两条俱在、第一条 argv 与日志路径未被覆盖；
+  ⑦ spec 批准后改一字 → 写发射单被 approval_stale 拒；
+  ⑧ 三类半状态 fixture 重跑原命令后收敛；
+  ⑨ 新会话只跑 ledger.py status 即可接着干。
 - 在 new1 挂接后，端到端剧本 §8 的 1-3 步（不动 GPU）真实走通一遍。
 - **铁轨兼容承诺**：不改变 ticket-run/gpu-run/probe-pipeline/paper-write 的
   对外流程；new1 挂接的增量改动单列挂接清单进实施计划，已知七项：
@@ -461,11 +591,12 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
   地位见 `tables/writes.json`；legacy 挂 ledgers.runs_legacy，owners=frozen，
   接线会话同批补齐两处键）；(c) recorded_at 等 §5 字段由 record.py 自动补齐
   （arm/filter/quick 从发射单透传，recorded_at 由脚本自动打不许手填）；
-  ③ RUNMETA 增 outputs 字典；④ 发射器接受部署层给定的 run_id（需核实，
+  ③ RUNMETA 增 outputs 字典与 attempts 数组；④ 发射器接受部署层给定的 run_id（需核实，
   大概率零改动）；⑤ registry_query 只读免门禁入口核实/新增；
   ⑥ METHOD.md 改造成 R1 条目表（列按 `tables/rows.json` principles_columns；
   rationale 缺的回 idea 层追问用户；挂不上判据的标【想法待定】）；
-  ⑦ RESULTS.md 渲染器跟随②行型改造。
+  ⑦ RESULTS.md 渲染器跟随②行型改造，并处理同 run_id 多行（一行一指标）
+  的合并展示。
   每项过工程自检；任一项涉及流程改动，先回本 spec 走 R5。
 
 ## 10 不做什么（YAGNI）
@@ -476,5 +607,11 @@ plugin 本体一律用**英文**交付（SKILL.md、schema 字段说明、脚本
 - 不做自动触发（hooks）；路由由对话触发。
 - **后置不弃**（实施后按需拾起）：reports/ 与待决账的通知/时限提醒；
   下行"临时指令/补证请求"专用体裁；台账成本字段的可行性查询视图；
-  监察会话只读性的钩子验证；归档的自动执行（用户批注"可自动"的诉求）。
+  监察会话只读性的钩子验证；归档的自动执行（用户批注"可自动"的诉求）；
+  多资源适配器（local-process/scheduler/remote-service）、risk-based 与
+  manual 核查策略、兜底件的高级功能——这三项有第二个使用者时再做。
+- **archive 执行件整体排 v1.1**（用户裁决 2026-08-13：删过度防御、要快）：
+  v1 只做行数到 cap 上限的告警（doctor 已有账本行数上限扫描）；
+  archive 命令、归档索引、跨档就地更新随 v1.1 一并落地——设计已在
+  `tables/writes.json` maintenance_exempt 与 §2.1 成文，届时不重谈。
 - md 系统最终定形（哪些渲染到根目录、叫什么名）随实施定，不在 spec 锁死。

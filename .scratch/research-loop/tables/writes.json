@@ -2,60 +2,112 @@
   "_about": "写权与写入规则唯一真源（spec.md 只引用不复述）。写权说的是账本内容的归属，不是脚本入口；检查是防呆不是防伪。",
   "layer_param": {
     "_rule": "ledger.py 一切写入必带 --layer 自报参数（各层 SKILL.md 骨架写死本层取值）",
-    "values": ["idea", "deploy", "run", "oversight"],
-    "special": {"user": "只有 feedback review 子命令收"}
+    "values": [
+      "idea",
+      "deploy",
+      "run",
+      "oversight"
+    ],
+    "special": {
+      "user": "只有 feedback review 子命令收"
+    }
   },
   "owner_values": {
-    "idea":           "单层独占：idea 层",
-    "deploy":         "单层独占：部署层",
-    "run":            "单层独占：运行层",
-    "oversight":      "监察面独占（reports/）。对其余账仅有两个成文口子：往待决账开条（from_layer=oversight 的 open 跃迁）、往反馈账追加 suggestion——两个口子归监察会话，不给 inspector agent；除此之外零写权",
-    "frozen":         "只读冻结件：任何 --layer 写入一律拒（挂接迁移产生的 runs_legacy 用它）",
+    "idea": "单层独占：idea 层",
+    "deploy": "单层独占：部署层",
+    "run": "单层独占：运行层",
+    "oversight": "监察面独占（reports/）。对其余账仅有两个成文口子：往待决账开条（from_layer=oversight 的 open 跃迁）、往反馈账追加 suggestion——两个口子归监察会话，不给 inspector agent；除此之外零写权",
+    "frozen": "只读冻结件：任何 --layer 写入一律拒（挂接迁移产生的 runs_legacy 用它）",
     "per-transition": "blocked 专用：按跃迁规则机验（见 blocked_transitions），含撤销代笔特例",
-    "shared-append":  "feedback 专用：只许追加，条目 layer 自证；校验器只放行 append（唯一例外：archive 搬运）",
-    "per-row-type":   "runs 专用：普通行归 run 层经工程记账脚本；判据缩减行归 deploy 层经 ledger.py runs-append（机验 = runs-append 只收 --layer deploy）",
-    "per-kind":       "decisions 专用：kind=decision 直接写入只收 deploy——例外：R6 自决留痕条目（decided_by=agent 且 authorized_by 指向有效 grant 或 spec-standing-gpu-1h）收 idea|deploy|run 三层；kind=grant 三层会话当场代笔（均不含 oversight）；r5-choice 同步条目由 ledger.py 机械拼装自动落账，不算会话写入、不查 --layer"
+    "shared-append": "feedback 专用：只许追加，条目 layer 自证；校验器只放行 append（唯一例外：archive 搬运）",
+    "per-row-type": "runs 专用：普通行归 run 层经工程记账脚本；判据缩减行归 deploy 层经 ledger.py runs-append（机验 = runs-append 只收 --layer deploy）",
+    "per-kind": "decisions 专用：kind=decision 直接写入只收 deploy——例外：R6 自决留痕条目（decided_by=agent 且 authorized_by 指向有效 grant 或 spec-standing-gpu-1h）收 idea|deploy|run 三层；kind=grant 三层会话当场代笔（均不含 oversight）；r5-choice 同步条目由 ledger.py 机械拼装自动落账，不算会话写入、不查 --layer"
   },
   "write_forms": {
     "_rule": "写入两式，都过 schema 与写权检查、都持文件锁",
     "form1": "原子追加新行",
     "form2_inplace_whitelist": {
-      "blocked":   ["status", "answer", "answered_at", "answered_by", "grant_ref", "decision_ref"],
-      "decisions": ["affects", "status", "superseded_by", "withdrawn_by", "withdrawn_reason"],
-      "story":     ["status", "retired_reason", "retired_date", "retired_by", "superseded_by"]
+      "blocked": [
+        "status",
+        "answer",
+        "answered_at",
+        "answered_by",
+        "grant_ref",
+        "decision_ref"
+      ],
+      "decisions": [
+        "affects",
+        "status",
+        "superseded_by",
+        "withdrawn_by",
+        "withdrawn_reason"
+      ],
+      "story": [
+        "status",
+        "retired_reason",
+        "retired_date",
+        "retired_by",
+        "superseded_by"
+      ],
+      "_rule": "就地更新的定位默认跨档——主文件未命中时经 <name>.archive.idx.json 定位归档文件原地改，持主文件与归档文件两把锁；归档行的白名单字段与主文件同"
     },
     "_closing": "除白名单字段外行内容不可变；任何行永不删丢"
   },
   "blocked_transitions": {
-    "open":      "只能 from_layer 写",
-    "answered":  "只能 to_layer 写；to_layer=user 特例——任何层的当场会话都可代笔，但字段级强制 answered_by=user 且 answer 含用户原话",
-    "closed":    "只能 from_layer 写",
-    "withdrawn": "走撤销代笔特例（见 withdrawal_proxy）；撤销 answered 条时 ledger.py 同一动作机械重开新条（不查 --layer）：from_layer/to_layer/kind/question/where/options/evidence 逐字沿用旧条、ref 指旧 blocked_id、status=open——新条回到 to_layer 待办，问题不因撤销而消失；该答复已同步拼出 decision 条的，同一动作把它置 withdrawn + 同一份撤销原话"
+    "open": {
+      "writable_by": "from_layer",
+      "_note": "只能 from_layer 写"
+    },
+    "answered": {
+      "writable_by": "to_layer",
+      "_note": "只能 to_layer 写；to_layer=user 特例——任何层的当场会话都可代笔，但字段级强制 answered_by=user 且 answer 含用户原话",
+      "force_fields": {
+        "_when": "仅 to_layer=user 的代笔特例（writable_by 之外的会话代笔时）生效；to_layer 为其他层的 answered 写入不套此强制",
+        "answered_by": "user"
+      }
+    },
+    "closed": {
+      "writable_by": "from_layer",
+      "_note": "只能 from_layer 写"
+    },
+    "withdrawn": {
+      "writable_by": "proxy",
+      "_note": "走撤销代笔特例（见 withdrawal_proxy）；撤销 answered 条时 ledger.py 同一动作机械重开新条（不查 --layer）：from_layer/to_layer/kind/question/where/options/evidence 逐字沿用旧条、ref 指旧 blocked_id、status=open——新条回到 to_layer 待办，问题不因撤销而消失；该答复已同步拼出 decision 条的，同一动作把它置 withdrawn + 同一份撤销原话",
+      "_write_order": "① 先把同步 decision 置 withdrawn（经 blocked.decision_ref；decision_ref 为空时按 decisions.blocked_ref 反查孤儿）② 再 append 重开新条（ref=旧 blocked_id）③ 最后把旧条置 withdrawn——翻状态的那一笔最后写，崩溃只会停在『旧条仍 answered』",
+      "_idempotency": "重开前按 (ref=旧 blocked_id, status=open) 查重，命中不再开第二条；三步各自可重入，重跑整条命令结果不变"
+    }
   },
   "r5_choice_assembly": {
     "_rule": "kind=r5-choice：open 必填 where/options；answer 跃迁必传 --chosen（可 grep 的具体值）；ledger.py 用 where/options/chosen/answer 四样机械拼出 decision 条目并回填 decision_ref，不猜自由文本",
     "field_map": {
       "reason": "answer 原文",
       "decided_by": "answered_by=user → user；否则 agent",
-      "authorized_by": "answered_by=user → answer 原话；否则 grant:<grant_ref>（answered_by≠user 必传 --grant，没有就拒——R6 的机验落点）"
-    }
+      "authorized_by": "answered_by=user → answer 原话；否则 grant:<grant_ref>（answered_by≠user 必传 --grant，没有就拒——R6 的机验落点）",
+      "blocked_ref": "触发的 blocked_id"
+    },
+    "_write_order": "① append decision（含 blocked_ref）② 就地更新 blocked（status/answer/answered_at/answered_by/decision_ref）——翻状态的那一笔最后写",
+    "_idempotency": "append 前先按 blocked_ref 查已有 status=decided 的 decision，命中则不再 append、只补 decision_ref；同一 blocked_id 至多一条 decided 的同步 decision，违反即拒"
   },
   "withdrawal_proxy": {
     "_rule": "撤销是用户下行动作，发起会话不必是归属层：撤销体裁的成文就地更新由当场会话代笔、不查 --layer，但字段级强制留发起人与依据，无用户原话拒",
     "decisions": "status=withdrawn + withdrawn_by=user + withdrawn_reason=用户原话",
-    "story":     "status=retired + retired_by=user + retired_reason=用户原话",
-    "blocked":   "status=withdrawn，原话进 answer 附注（无 superseded_by 字段，不加）",
+    "story": "status=retired + retired_by=user + retired_reason=用户原话",
+    "blocked": "status=withdrawn，原话进 answer 附注（无 superseded_by 字段，不加）",
     "superseded_by_source": "纯撤销留空；更正时由用户给 --superseded-by S00x/D00x，脚本校验存在后回填"
   },
   "withdrawal_routes_md": {
     "principles": "条目标【已撤销】+ 用户原话注日期追进 rationale（归属层会话改文件）",
-    "spec": "approved_by/approved_date 清空（回未批态）+ spec_version 递增 + withdrawals[] 追一条（归属层会话改文件）"
+    "spec": "approved_by/approved_date/approved_digest 清空（回未批态）+ spec_version 递增 + withdrawals[] 追一条（归属层会话改文件）"
   },
   "maintenance_exempt": {
     "_rule": "行级写权/跃迁/append 校验对三个维护动作豁免，合法性由各自机验代替；渲染/回填类动作（最近实测回填、账本→md 渲染）同样不过 --layer——不产生新内容，只物化已入账数据",
     "archive": {
       "_what": "到 cap 上限把非活跃行原样搬进 <name>.archive.jsonl，伴生索引 <name>.archive.idx.json；doctor 建议、用户确认后执行；全 spec 唯一允许把行搬出 jsonl 主文件的动作（唯一成文豁免：freeze-legacy）",
-      "checks": ["被搬的每一行逐字节出现在归档文件", "主文件剩余行是原行序列的子序列", "归档新增行数 = 主文件减少行数"],
+      "checks": [
+        "被搬的每一行逐字节出现在归档文件",
+        "主文件剩余行是原行序列的子序列",
+        "归档新增行数 = 主文件减少行数"
+      ],
       "concurrency": "全程持该账文件锁、原子替换主文件",
       "idx": "伴生索引 <name>.archive.idx.json 字段 {path, rows, last_id, archived_at}；消费者两个——query --include-archive 靠它定位归档文件、doctor 靠它汇报归档量"
     },
@@ -64,7 +116,10 @@
     },
     "freeze-legacy": {
       "_what": "一次性接线迁移：旧 runs.jsonl 冻结为 runs.legacy.jsonl（owners=frozen）、新主文件从零行；用户确认下跑",
-      "checks": ["legacy 与原文件逐字节一致", "新主文件零行"],
+      "checks": [
+        "legacy 与原文件逐字节一致",
+        "新主文件零行"
+      ],
       "repeat": "重复执行拒"
     }
   }

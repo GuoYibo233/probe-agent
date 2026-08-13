@@ -1,141 +1,1267 @@
 {
   "_about": "行结构与枚举唯一真源（spec.md 只引用不复述）。jsonl 实体行必带 schema_version；md 账版本号在文件头。各账 id（S/D/B/F 前缀）由 ledger.py 自增分配。",
+  "_schema_dialect": {
+    "_about": "参与 schema 生成的块统一写成这套方言，ledger.py gen-schemas 只认这套形态；生成方向单向（本表 → schemas/），生成物禁手改。",
+    "block_shape": "{_note, primary_key[], required[], additionalProperties, properties{字段: {type|$enum|$ref_to|const, items, _note}}, conditional[]}",
+    "type": "JSON Schema 基本类型 string|integer|number|boolean|array|object|null；写成数组即联合类型（如 [\"string\", \"null\"]）",
+    "items": "type=array 时写元素形态 {type|$enum|$ref_to}",
+    "$enum": "值必须是本文件 enums 的键，生成器就地展开成 {\"enum\": [...]}；不产生 $defs，不产生跨文件 $ref",
+    "$ref_to": "值写「账名.主键」（账名取 ledgers.json 的键，如 runs.run_id）；多目标写成数组。生成器不把它变成 JSON Schema $ref，引用是否存在由 trace_check 查",
+    "conditional": "[{when, require[]|allow_null[]}]——when = {field, op, value}，op 值域 eq|neq|in；when 也可以是条件对象数组，数组即全部成立才触发",
+    "_doc_keys": "块内除上列键以外的键（_notes、_write_check、_grant_view、_dup_rule、_run_level_fields 等）是文档件，生成器不读、不生成",
+    "_not_generated": [
+      "batch_report_header",
+      "spec_header",
+      "issue_min",
+      "structured_output_contract",
+      "runmeta",
+      "jobs_min_additions",
+      "principles_columns",
+      "error_classes",
+      "status_view",
+      "inspection_report_header",
+      "evidence_lint_exempt"
+    ],
+    "_not_generated_note": "md 头部三块与非行式契约块不参与 schema 生成：它们不是 jsonl 行，字段清单以工程现状或散文契约为准"
+  },
   "enums": {
-    "blocked.kind": ["principle-gap", "r5-choice", "failure", "other"],
-    "blocked.status": ["open", "answered", "closed", "withdrawn"],
-    "blocked.from_layer": ["idea", "deploy", "run", "oversight"],
-    "blocked.to_layer": ["user", "idea", "deploy"],
-    "decisions.kind": ["decision", "grant"],
-    "decisions.status": ["decided", "withdrawn"],
-    "decisions.decided_by": ["user", "agent"],
-    "story.status": ["active", "retired"],
-    "story.role": ["主结果", "消融", "反例", "动机"],
-    "feedback.kind": ["suggestion", "review"],
-    "feedback.verdict": ["accepted", "rejected"],
-    "runs.status": ["ok", "failed", "oom", "timeout", "empty-output", "killed", "partial"],
-    "runs.arm": ["实验组", "对照组"],
-    "principles.status": ["【现状】", "【已定要改】", "【想法待定】", "【已撤销】"]
+    "blocked.kind": [
+      "principle-gap",
+      "r5-choice",
+      "failure",
+      "other"
+    ],
+    "blocked.status": [
+      "open",
+      "answered",
+      "closed",
+      "withdrawn"
+    ],
+    "blocked.from_layer": [
+      "idea",
+      "deploy",
+      "run",
+      "oversight"
+    ],
+    "blocked.to_layer": [
+      "user",
+      "idea",
+      "deploy"
+    ],
+    "decisions.kind": [
+      "decision",
+      "grant"
+    ],
+    "decisions.status": [
+      "decided",
+      "withdrawn"
+    ],
+    "decisions.decided_by": [
+      "user",
+      "agent"
+    ],
+    "story.status": [
+      "active",
+      "retired"
+    ],
+    "story.role": [
+      "主结果",
+      "消融",
+      "反例",
+      "动机"
+    ],
+    "feedback.kind": [
+      "suggestion",
+      "review"
+    ],
+    "feedback.verdict": [
+      "accepted",
+      "rejected"
+    ],
+    "runs.status": [
+      "ok",
+      "failed",
+      "oom",
+      "timeout",
+      "empty-output",
+      "killed",
+      "partial"
+    ],
+    "runs.arm": [
+      "实验组",
+      "对照组"
+    ],
+    "principles.status": [
+      "【现状】",
+      "【已定要改】",
+      "【想法待定】",
+      "【已撤销】"
+    ],
+    "inspection.verdict": [
+      "clean",
+      "blockers"
+    ],
+    "fake.mode": [
+      "ok",
+      "fail",
+      "timeout",
+      "empty",
+      "bad-metrics"
+    ]
   },
   "story_row": {
-    "claim_id": "S 前缀自增", "claim": "一句话主张",
-    "evidence_runs": "[run_id]", "baseline_runs": "[run_id]", "candidate_runs": "[run_id]",
-    "selection_rule": "怎么从候选里挑的",
-    "derivation_command": "派生量的复算命令（R4）", "principle_id": "P00x",
-    "role": "enum story.role", "decided_by": "user", "date": "YYYY-MM-DD",
-    "status": "enum story.status", "retired_reason": "", "retired_date": "", "retired_by": "",
-    "superseded_by": "", "note": "",
-    "_write_check": "所有被引 run_id 必须存在于 runs.jsonl 且 status=ok 且非 quick 行（§2.6）"
+    "_note": "故事账一行 = 一条主张。",
+    "primary_key": [
+      "claim_id"
+    ],
+    "required": [
+      "claim_id",
+      "claim",
+      "evidence_runs",
+      "baseline_runs",
+      "candidate_runs",
+      "selection_rule",
+      "derivation_command",
+      "principle_id",
+      "role",
+      "decided_by",
+      "date",
+      "status",
+      "schema_version"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "claim_id": {
+        "type": "string",
+        "_note": "S 前缀自增"
+      },
+      "claim": {
+        "type": "string",
+        "_note": "一句话主张"
+      },
+      "evidence_runs": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "$ref_to": "runs.run_id"
+        },
+        "_note": "[run_id]"
+      },
+      "baseline_runs": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "$ref_to": "runs.run_id"
+        },
+        "_note": "[run_id]"
+      },
+      "candidate_runs": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "$ref_to": "runs.run_id"
+        },
+        "_note": "[run_id]"
+      },
+      "metric_names": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        },
+        "_note": "[metric_name]（可空）——本 claim 的口径锚点，regression_check 按它加各 run 行的 filter 同口径重比；空则该 claim 不参与回归比对"
+      },
+      "selection_rule": {
+        "type": "string",
+        "_note": "怎么从候选里挑的"
+      },
+      "derivation_command": {
+        "type": "string",
+        "_note": "派生量的复算命令（R4）"
+      },
+      "principle_id": {
+        "type": "string",
+        "$ref_to": "principles.principle_id",
+        "_note": "P00x"
+      },
+      "role": {
+        "$enum": "story.role"
+      },
+      "decided_by": {
+        "type": "string",
+        "const": "user",
+        "_note": "user"
+      },
+      "date": {
+        "type": "string",
+        "_note": "YYYY-MM-DD"
+      },
+      "status": {
+        "$enum": "story.status"
+      },
+      "retired_reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "retired_date": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "retired_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "superseded_by": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "story.claim_id"
+      },
+      "note": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "schema_version": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "conditional": [],
+    "_write_check": "所有被引 run_id 必须存在于 runs.jsonl 且 status=ok 且非 quick 行（§2.6）；metric_names 非空时，每个值必须在被引 run 的 runs 行里存在"
   },
   "decisions_row": {
-    "decision_id": "D 前缀自增", "kind": "enum decisions.kind",
-    "where": "文件路径|spec条目|工单号（kind=grant 可空）",
-    "question": "抉择点或授权的事项类别",
-    "options": "[...]（grant 可空）", "chosen": "可 grep 的具体值（grant 可空）",
-    "reason": "...", "authorized_by": "用户原话 | discussed | grant:D00x | spec-standing-gpu-1h",
-    "scope": "{desc, path_globs[], expires_at: ISO|null}——kind=grant 必须结构化填全",
-    "principle_ref": "P00x|null", "affects": "[spec条目/工单/run_id]",
-    "decided_by": "enum decisions.decided_by", "raised_at": "ISO秒级", "decided_at": "ISO秒级",
-    "status": "enum decisions.status", "superseded_by": "",
-    "withdrawn_by": "", "withdrawn_reason": "撤销时必填用户原话",
-    "_grant_view": "有效授权视图 = kind=grant 且 status=decided 且未过期且无 superseded_by"
+    "_note": "抉择账一行 = 一次拍板或一次授权。",
+    "primary_key": [
+      "decision_id"
+    ],
+    "required": [
+      "decision_id",
+      "kind",
+      "question",
+      "reason",
+      "authorized_by",
+      "affects",
+      "decided_by",
+      "raised_at",
+      "decided_at",
+      "status",
+      "schema_version"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "decision_id": {
+        "type": "string",
+        "_note": "D 前缀自增"
+      },
+      "kind": {
+        "$enum": "decisions.kind"
+      },
+      "where": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "文件路径|spec条目|工单号（kind=grant 可空）"
+      },
+      "question": {
+        "type": "string",
+        "_note": "抉择点或授权的事项类别"
+      },
+      "options": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "_note": "[...]（grant 可空）"
+      },
+      "chosen": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "可 grep 的具体值（grant 可空）"
+      },
+      "reason": {
+        "type": "string",
+        "_note": "..."
+      },
+      "authorized_by": {
+        "type": "string",
+        "_note": "用户原话 | discussed | grant:D00x | spec-standing-gpu-1h"
+      },
+      "scope": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "_note": "{desc, path_globs[], expires_at: ISO|null}——kind=grant 必须结构化填全"
+      },
+      "principle_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "principles.principle_id",
+        "_note": "P00x|null"
+      },
+      "affects": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "$ref_to": [
+            "specs.item_id",
+            "issues.issue_id",
+            "runs.run_id"
+          ]
+        },
+        "_note": "[spec条目/工单/run_id]——多目标联合类型，判别靠 id 前缀与命名规则（spec 条目 item_id、工单号、run_id 按工程命名规则）"
+      },
+      "blocked_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "blocked.blocked_id",
+        "_note": "B00x|null（r5-choice 机械拼装的 decision 必填，回指触发它的 blocked 行；重跑查重键）"
+      },
+      "decided_by": {
+        "$enum": "decisions.decided_by"
+      },
+      "raised_at": {
+        "type": "string",
+        "_note": "ISO秒级"
+      },
+      "decided_at": {
+        "type": "string",
+        "_note": "ISO秒级"
+      },
+      "status": {
+        "$enum": "decisions.status"
+      },
+      "superseded_by": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "decisions.decision_id"
+      },
+      "withdrawn_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "withdrawn_reason": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "撤销时必填用户原话"
+      },
+      "schema_version": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "conditional": [
+      {
+        "when": {
+          "field": "kind",
+          "op": "eq",
+          "value": "decision"
+        },
+        "require": [
+          "where",
+          "options",
+          "chosen"
+        ],
+        "_note": "where/options/chosen 三处『（kind=grant 可空）』『（grant 可空）』的机器形态"
+      },
+      {
+        "when": {
+          "field": "kind",
+          "op": "eq",
+          "value": "grant"
+        },
+        "require": [
+          "scope"
+        ],
+        "_note": "kind=grant 必须结构化填全 {desc, path_globs[], expires_at}"
+      },
+      {
+        "when": {
+          "field": "status",
+          "op": "eq",
+          "value": "withdrawn"
+        },
+        "require": [
+          "withdrawn_reason"
+        ],
+        "_note": "withdrawn_reason 的『撤销时必填用户原话』的机器形态"
+      }
+    ],
+    "_grant_view": "有效授权视图 = kind=grant 且 status=decided 且未过期且无 superseded_by",
+    "_notes": {
+      "blocked_ref": "r5-choice 机械拼装路径（writes.json r5_choice_assembly）必填 blocked_ref。行内没有判别字段（decisions.kind 值域只有 decision|grant，r5-choice 是 blocked.kind），schema 判不出来，由 ledger.py 的拼装写入口强制并按它查重"
+    }
   },
   "blocked_row": {
-    "blocked_id": "B 前缀自增", "from_layer": "enum blocked.from_layer",
-    "to_layer": "enum blocked.to_layer", "kind": "enum blocked.kind",
-    "ref": "spec条目/工单/run_id/blocked_id（撤销重开时指旧条）",
-    "question": "卡在哪、缺什么",
-    "where": "kind=r5-choice 必填", "options": "kind=r5-choice 必填",
-    "evidence": "[日志路径, 已试动作]", "raised_at": "ISO秒级",
-    "status": "enum blocked.status",
-    "answer": "", "answered_at": "", "answered_by": "",
-    "grant_ref": "D00x|null（answered_by≠user 的 r5-choice 必填）",
-    "decision_ref": "D00x|null"
+    "_note": "待决账一行 = 一个卡住的问题。",
+    "primary_key": [
+      "blocked_id"
+    ],
+    "required": [
+      "blocked_id",
+      "from_layer",
+      "to_layer",
+      "kind",
+      "ref",
+      "question",
+      "evidence",
+      "raised_at",
+      "status",
+      "schema_version"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "blocked_id": {
+        "type": "string",
+        "_note": "B 前缀自增"
+      },
+      "from_layer": {
+        "$enum": "blocked.from_layer"
+      },
+      "to_layer": {
+        "$enum": "blocked.to_layer"
+      },
+      "kind": {
+        "$enum": "blocked.kind"
+      },
+      "ref": {
+        "type": "string",
+        "$ref_to": [
+          "specs.item_id",
+          "issues.issue_id",
+          "runs.run_id",
+          "blocked.blocked_id"
+        ],
+        "_note": "spec条目/工单/run_id/blocked_id（撤销重开时指旧条）——多目标联合类型，判别靠 id 前缀与命名规则（B 前缀即回指旧待决条）"
+      },
+      "question": {
+        "type": "string",
+        "_note": "卡在哪、缺什么"
+      },
+      "where": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "kind=r5-choice 必填"
+      },
+      "options": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "_note": "kind=r5-choice 必填"
+      },
+      "evidence": {
+        "type": "array",
+        "_note": "[日志路径, 已试动作]"
+      },
+      "raised_at": {
+        "type": "string",
+        "_note": "ISO秒级"
+      },
+      "status": {
+        "$enum": "blocked.status"
+      },
+      "answer": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "answered_at": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "answered_by": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "grant_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "decisions.decision_id",
+        "_note": "D00x|null（answered_by≠user 的 r5-choice 必填）"
+      },
+      "decision_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "decisions.decision_id",
+        "_note": "D00x|null"
+      },
+      "schema_version": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "conditional": [
+      {
+        "when": {
+          "field": "kind",
+          "op": "eq",
+          "value": "r5-choice"
+        },
+        "require": [
+          "where",
+          "options"
+        ],
+        "_note": "where 与 options 的『kind=r5-choice 必填』的机器形态"
+      },
+      {
+        "when": [
+          {
+            "field": "kind",
+            "op": "eq",
+            "value": "r5-choice"
+          },
+          {
+            "field": "answered_by",
+            "op": "neq",
+            "value": "user"
+          }
+        ],
+        "require": [
+          "grant_ref"
+        ],
+        "_note": "grant_ref 的『answered_by≠user 的 r5-choice 必填』的机器形态"
+      }
+    ]
   },
   "feedback_rows": {
-    "suggestion": {"fb_id": "F 前缀自增", "kind": "suggestion", "date": "YYYY-MM-DD",
-                   "layer": "idea|deploy|run|oversight",
-                   "context": "哪个阶段/哪轮运行", "problem": "哪里不顺", "suggestion": "建议怎么改"},
-    "review":     {"fb_id": "F 前缀自增", "kind": "review", "ref": "F00x", "layer": "user",
-                   "verdict": "enum feedback.verdict", "note": "", "date": "YYYY-MM-DD"}
+    "suggestion": {
+      "_note": "反馈账的建议行。",
+      "primary_key": [
+        "fb_id"
+      ],
+      "required": [
+        "fb_id",
+        "kind",
+        "date",
+        "layer",
+        "context",
+        "problem",
+        "suggestion",
+        "schema_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fb_id": {
+          "type": "string",
+          "_note": "F 前缀自增"
+        },
+        "kind": {
+          "type": "string",
+          "const": "suggestion",
+          "_note": "suggestion"
+        },
+        "date": {
+          "type": "string",
+          "_note": "YYYY-MM-DD"
+        },
+        "layer": {
+          "type": "string",
+          "_note": "idea|deploy|run|oversight"
+        },
+        "context": {
+          "type": "string",
+          "_note": "哪个阶段/哪轮运行"
+        },
+        "problem": {
+          "type": "string",
+          "_note": "哪里不顺"
+        },
+        "suggestion": {
+          "type": "string",
+          "_note": "建议怎么改"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "conditional": []
+    },
+    "review": {
+      "_note": "反馈账的复核行（用户对建议行的裁决）。",
+      "primary_key": [
+        "fb_id"
+      ],
+      "required": [
+        "fb_id",
+        "kind",
+        "ref",
+        "layer",
+        "verdict",
+        "date",
+        "schema_version"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fb_id": {
+          "type": "string",
+          "_note": "F 前缀自增"
+        },
+        "kind": {
+          "type": "string",
+          "const": "review",
+          "_note": "review"
+        },
+        "ref": {
+          "type": "string",
+          "$ref_to": "feedback.fb_id",
+          "_note": "F00x"
+        },
+        "layer": {
+          "type": "string",
+          "const": "user",
+          "_note": "user"
+        },
+        "verdict": {
+          "$enum": "feedback.verdict"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "date": {
+          "type": "string",
+          "_note": "YYYY-MM-DD"
+        },
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "conditional": []
+    }
   },
   "runs_row_normal": {
-    "_fields": ["run_id", "status", "output_dir", "runmeta_path", "metric_name", "value",
-                "n", "filter", "seed", "dataset_version", "batch_id", "arm", "quick",
-                "principle_id", "commit", "elapsed_s", "gpu_count", "recorded_at", "schema_version"],
+    "_note": "数字账的普通行：一次逻辑实验的一个指标。",
+    "primary_key": [
+      "run_id",
+      "metric_name",
+      "filter"
+    ],
+    "required": [
+      "run_id",
+      "status",
+      "output_dir",
+      "runmeta_path",
+      "metric_name",
+      "value",
+      "n",
+      "filter",
+      "seed",
+      "dataset_version",
+      "batch_id",
+      "arm",
+      "quick",
+      "principle_id",
+      "commit",
+      "elapsed_s",
+      "gpu_count",
+      "recorded_at",
+      "schema_version"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "run_id": {
+        "type": "string"
+      },
+      "status": {
+        "$enum": "runs.status"
+      },
+      "output_dir": {
+        "type": "string"
+      },
+      "runmeta_path": {
+        "type": "string"
+      },
+      "metric_name": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "value": {
+        "type": [
+          "number",
+          "string",
+          "null"
+        ]
+      },
+      "n": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "_note": "分母"
+      },
+      "filter": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "记账脚本从发射单透传（部署层填、可空），运行层不判语义"
+      },
+      "seed": {
+        "type": "integer"
+      },
+      "dataset_version": {
+        "type": "string"
+      },
+      "batch_id": {
+        "type": "string"
+      },
+      "arm": {
+        "$enum": "runs.arm",
+        "_note": "记账脚本从发射单透传（部署层填、可空），运行层不判语义"
+      },
+      "quick": {
+        "type": "boolean",
+        "_note": "记账脚本从发射单透传（部署层填、可空），运行层不判语义"
+      },
+      "principle_id": {
+        "type": "null",
+        "_note": "普通行一律 null（非 null 即判据缩减行）"
+      },
+      "commit": {
+        "type": "null",
+        "_note": "普通行 null——普通行的 commit 在 RUNMETA"
+      },
+      "elapsed_s": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "gpu_count": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "_note": "资源类字段——动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
+      },
+      "recorded_at": {
+        "type": "string",
+        "_note": "ISO秒级，两个入账脚本自动打、不许手填；query --since 按它过滤"
+      },
+      "schema_version": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "conditional": [
+      {
+        "when": {
+          "field": "status",
+          "op": "neq",
+          "value": "ok"
+        },
+        "allow_null": [
+          "metric_name",
+          "value",
+          "n"
+        ],
+        "_note": "status≠ok：metric_name/value/n 允许 null"
+      }
+    ],
+    "_dup_rule": "同主键重复入账拒（两个入账脚本都跨档查存在性）——重试补记不产生第二份数字",
+    "_run_level_fields": "status/output_dir/runmeta_path/seed/dataset_version/batch_id/arm/quick/commit/elapsed_s/gpu_count 是 run 级事实，同 run_id 各行必须逐字相同",
     "_notes": {
-      "n": "分母",
-      "status≠ok": "metric_name/value/n 允许 null",
-      "principle_id": "普通行一律 null（非 null 即判据缩减行）",
-      "commit": "普通行 null——普通行的 commit 在 RUNMETA",
-      "arm/filter/quick": "记账脚本从发射单透传（部署层填、可空），运行层不判语义",
-      "recorded_at": "ISO秒级，两个入账脚本自动打、不许手填；query --since 按它过滤"
+      "主键": "主键 (run_id, metric_name, filter)；metric_name 为 null 的行（status≠ok 的失败行）每 run_id 至多一行",
+      "多指标": "一次实验多指标 = 同 run_id 多行，一行一指标；只出一个指标就是一行",
+      "写入粒度": "记账脚本一次把该 run 的全部行写完，不分次追加",
+      "run 的含义": "一次逻辑实验——不是一次进程启动（那是 runmeta.attempts），也不是一个指标（那是本账的一行）"
     }
   },
   "runs_row_criterion": {
-    "_required": ["run_id", "status", "principle_id", "value", "output_dir", "commit",
-                  "elapsed_s", "recorded_at", "schema_version"],
+    "_note": "数字账的判据缩减行：一次判据 run 一行。",
+    "primary_key": [
+      "run_id"
+    ],
+    "required": [
+      "run_id",
+      "status",
+      "principle_id",
+      "value",
+      "output_dir",
+      "commit",
+      "elapsed_s",
+      "recorded_at",
+      "schema_version"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "run_id": {
+        "type": "string",
+        "_note": "ledger.py 按 chk-<principle_id>-<YYYYMMDD>-<序> 分配（判据 run 不开发射单，run_id 由部署层给定的唯一成文例外）；日期段即渲染回填'最近实测'的日期来源"
+      },
+      "status": {
+        "$enum": "runs.status"
+      },
+      "principle_id": {
+        "type": "string",
+        "$ref_to": "principles.principle_id",
+        "_note": "非空——本块的行型判别式（普通行恒 null）"
+      },
+      "value": {
+        "type": [
+          "number",
+          "string"
+        ],
+        "_note": "判据输出的计数/判定值"
+      },
+      "output_dir": {
+        "type": "string",
+        "_note": "证据文件路径"
+      },
+      "runmeta_path": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "metric_name": {
+        "type": "null",
+        "_note": "判据缩减行恒 null"
+      },
+      "n": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "filter": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "seed": {
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "dataset_version": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "batch_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "arm": {
+        "type": "null"
+      },
+      "quick": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "commit": {
+        "type": "string",
+        "_note": "runs-append 自动抓 git HEAD，脏树加 -dirty 后缀"
+      },
+      "elapsed_s": {
+        "type": "integer"
+      },
+      "gpu_count": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "_note": "资源类字段——动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
+      },
+      "recorded_at": {
+        "type": "string",
+        "_note": "ISO秒级，两个入账脚本自动打、不许手填；query --since 按它过滤"
+      },
+      "schema_version": {
+        "type": "integer",
+        "minimum": 1
+      }
+    },
+    "conditional": [],
     "_notes": {
-      "run_id": "ledger.py 按 chk-<principle_id>-<YYYYMMDD>-<序> 分配（判据 run 不开发射单，run_id 由部署层给定的唯一成文例外）；日期段即渲染回填'最近实测'的日期来源",
-      "value": "判据输出的计数/判定值", "output_dir": "证据文件路径",
-      "commit": "runs-append 自动抓 git HEAD，脏树加 -dirty 后缀",
+      "主键": "主键退化为 run_id（chk-<principle_id>-<YYYYMMDD>-<序>），一个判据 run 一行，重复拒",
       "其余": "允许 null"
     }
   },
   "launch_order": {
-    "run_id": "部署层按工程命名规则给定，运行层不得自造", "spec_ref": "item_id（quick 可空）",
-    "issue_ref": "工单（quick 可空）", "decision_refs": "[D00x]（quick 可空）", "batch_id": "...",
-    "registry_task": "注册表任务名", "argv": "[...]", "env_name": "...", "workdir": "...",
-    "expected_commit": "...", "seed": "int（快车道也必填，永不可变）", "dataset_version": "...",
-    "arm": "enum runs.arm", "filter": "口径过滤条件字符串（可空）", "quick": "布尔（§2.6 快车道）",
-    "resources": "{gpus, min_vram_gb, exclusive}",
-    "expected_runtime_s": "int（超时判定 = 此值 × runtime_factor；R5 常设授权 GPU<1h 以它合计）",
-    "depends_on": "[run_id]",
-    "expected_outputs": "[{path_glob, min_bytes, min_lines, required_keys[]}]",
-    "metrics_cmd": "结构化抽数命令", "smoke_cmd": "...",
-    "retry": "{max_attempts, retriable_errors[], allow_card_swap}",
-    "artifact_dir": "...", "created_by": "...", "created_at": "ISO秒级"
+    "_note": "发射单：一次逻辑实验一张，按 run_id 命名。",
+    "primary_key": [
+      "run_id"
+    ],
+    "required": [
+      "run_id",
+      "batch_id",
+      "registry_task",
+      "argv",
+      "env_name",
+      "workdir",
+      "expected_commit",
+      "seed",
+      "dataset_version",
+      "arm",
+      "quick",
+      "resources",
+      "expected_runtime_s",
+      "expected_outputs",
+      "metrics_cmd",
+      "artifact_dir",
+      "created_by",
+      "created_at"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "run_id": {
+        "type": "string",
+        "_note": "部署层按工程命名规则给定，运行层不得自造"
+      },
+      "spec_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "specs.item_id",
+        "_note": "item_id（quick 可空）"
+      },
+      "issue_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "issues.issue_id",
+        "_note": "工单（quick 可空）"
+      },
+      "decision_refs": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string",
+          "$ref_to": "decisions.decision_id"
+        },
+        "_note": "[D00x]（quick 可空）"
+      },
+      "batch_id": {
+        "type": "string",
+        "_note": "..."
+      },
+      "promoted_from": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$ref_to": "runs.run_id",
+        "_note": "原 quick run_id（quick 转正生成的正轨发射单必填，其余空）——发射单按 run_id 命名，不另存路径"
+      },
+      "registry_task": {
+        "type": "string",
+        "_note": "注册表任务名（归属声明）。写入机验：shlex.split(registry_cmd) 是 argv 的前缀，其后第一个 token = registry_task，且该 task 在 registry_query 清单内——信道 3『不在注册表不许跑』的机验落点"
+      },
+      "argv": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "_note": "权威执行体：铁轨与兜底 launch.py 只执行它"
+      },
+      "env_name": {
+        "type": "string",
+        "_note": "..."
+      },
+      "workdir": {
+        "type": "string",
+        "_note": "..."
+      },
+      "expected_commit": {
+        "type": "string",
+        "_note": "..."
+      },
+      "seed": {
+        "type": "integer",
+        "_note": "int（快车道也必填，永不可变）"
+      },
+      "dataset_version": {
+        "type": "string",
+        "_note": "..."
+      },
+      "arm": {
+        "$enum": "runs.arm"
+      },
+      "filter": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "口径过滤条件字符串（可空）"
+      },
+      "quick": {
+        "type": "boolean",
+        "_note": "布尔（§2.6 快车道）"
+      },
+      "resources": {
+        "type": "object",
+        "_note": "{gpus, min_vram_gb, exclusive}——动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
+      },
+      "expected_runtime_s": {
+        "type": "integer",
+        "_note": "int（超时判定 = 此值 × runtime_factor；R5 常设授权 GPU<1h 以它合计）"
+      },
+      "depends_on": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string",
+          "$ref_to": "runs.run_id"
+        },
+        "_note": "[run_id]"
+      },
+      "expected_outputs": {
+        "type": "array",
+        "_note": "[{path_glob, min_bytes, min_lines, required_keys[]}]"
+      },
+      "metrics_cmd": {
+        "type": "string",
+        "_note": "结构化抽数命令"
+      },
+      "smoke_cmd": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "_note": "..."
+      },
+      "retry": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "_note": "{max_attempts, retriable_errors[], allow_card_swap}——动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
+      },
+      "artifact_dir": {
+        "type": "string",
+        "_note": "..."
+      },
+      "created_by": {
+        "type": "string",
+        "_note": "..."
+      },
+      "created_at": {
+        "type": "string",
+        "_note": "ISO秒级"
+      },
+      "ext": {
+        "type": "object",
+        "_note": "工程铁轨扩展字段，plugin 不解释"
+      }
+    },
+    "conditional": [
+      {
+        "when": {
+          "field": "quick",
+          "op": "eq",
+          "value": false
+        },
+        "require": [
+          "spec_ref",
+          "issue_ref",
+          "decision_refs"
+        ],
+        "_note": "spec_ref/issue_ref/decision_refs 三处『（quick 可空）』的机器形态"
+      }
+    ]
   },
   "structured_output_contract": {
-    "_rule": "metrics_cmd 与 criterion_cmd 通用：stdout 最后一行必须是单个 JSON 对象；入账脚本只解析这最后一行；解析失败 = 入账拒绝并按 R8 升级，禁止人眼读日志补数",
-    "criterion_cmd_min": {"value": "...", "evidence_path": "落缩减行 output_dir"},
-    "metrics_cmd_min": {"metric_name": "...", "value": "...", "n": "..."}
+    "_rule": "metrics_cmd 与 criterion_cmd 通用：stdout 最后一行必须是单个 JSON 对象；入账脚本只解析这最后一行；解析失败 = 入账拒绝并按 R8 升级，禁止人眼读日志补数；metrics 至少一项；记账脚本按项落行，同一 run 的各行共享 run 级事实字段",
+    "criterion_cmd_min": {
+      "value": "...",
+      "evidence_path": "落缩减行 output_dir"
+    },
+    "metrics_cmd_min": {
+      "metrics": [
+        {
+          "metric_name": "...",
+          "value": "...",
+          "n": "...",
+          "filter": "可空，缺省取发射单透传值"
+        }
+      ]
+    }
   },
   "runmeta": {
     "_path": "artifact_dir 根下 RUNMETA.json，runs.jsonl.runmeta_path 回指",
-    "_fields": ["commit", "argv", "脏树清单", "launch_order_ref", "attempt_no", "env_name",
-                "outputs"],
+    "_fields": [
+      "commit",
+      "argv",
+      "脏树清单",
+      "launch_order_ref",
+      "attempts",
+      "env_name",
+      "outputs"
+    ],
+    "attempts": "[{attempt_no, argv, exit_code, log_path, resources, started_at, finished_at}]——每次实际启动（重试/换卡/进程重启）追一条，前条的 argv、日志路径与资源不得覆写或截断；兜底态允许只有一条或空",
     "outputs": "[{file, format, fields:{字段名: 含义}}]——产物字段字典，由写文件的代码自动生成，监察面读格式的唯一权威来源；兜底态允许空（监察面回落直接读产物）"
   },
   "jobs_min_additions": {
     "_note": "任务台账字段以工程现状为准（v2 裁员：不再开列完整字段清单），最低补两个回指与采样器判定落点",
-    "_required_additions": ["launch_order_ref", "escalation_ref(blocked_id)",
-                            "采样器判定（stall|dead|ok + 判定时间；阈值见 config stall_thresholds，判定进台账）"]
+    "_required_additions": [
+      "launch_order_ref",
+      "escalation_ref(blocked_id)",
+      "采样器判定（stall|dead|ok + 判定时间；阈值见 config stall_thresholds，判定进台账）"
+    ]
+  },
+  "status_view": {
+    "_about": "本块是 status 的输入输出唯一契约：每个字段一句派生源，实现只许照抄，不许在脚本里另加派生规则",
+    "_rule": "纯派生：只读既有账本与目录，不写任何文件，不缓存中间结果",
+    "schema_version": "整数，本块契约版本（派生源：本表）",
+    "generated_at": "ISO秒级，命令执行时刻（派生源：系统时钟）",
+    "layer": "本层名（派生源：--layer 参数）",
+    "approved_specs_in_flight": "approved_by 非空且尚有未完成条目的 spec 文件路径列表，允许多份，不猜当前唯一 spec（派生源：specs 账文件头 × 各条目对应工单的 Status 行）",
+    "open_issues": "Status 行非终态的工单 id 与路径（派生源：issues 账）",
+    "pending_launch_orders": "已写盘但 run_id 在 jobs 台账里查无的发射单 run_id 与路径（派生源：launch_orders 账 × jobs 台账）",
+    "running_runs": "未结束的任务 run_id（派生源是 jobs 台账，runs.jsonl 没有 running 态）",
+    "unrecorded_runs": "jobs 台账已结束、runs.jsonl 无对应 run_id 行的 run（派生源：jobs 台账 × runs 账）",
+    "batches_pending_report": "runs 账里有行、plans/ 下无批次报告的 batch_id（派生源：runs 账 × batch_reports 账）",
+    "batches_pending_inspection": "批次报告头 inspection_report 为空串的 batch_id 与报告路径（派生源：batch_reports 账文件头）",
+    "open_blocked": "status=open 的待决条 id（派生源：blocked 账）",
+    "pending_user_decisions": "status=open 且 to_layer=user 的待决条 id（派生源：blocked 账）",
+    "active_grants": "有效授权视图的 decision_id（派生源：decisions 账，定义见 decisions_row._grant_view）",
+    "waiting_on": "[{item, ref, layer, action}]——action 取值只许是 tables/routes.json 的 to 列已有动作名",
+    "inconsistencies": "[{code, ref, source}]——只列不猜；核对范围限三条廉价交叉核对（批次报告 run_ids 对 runs、jobs 结束态对 runs、发射单超 expected_runtime_s × runtime_factor 仍无台账），深检归 trace_check 与 doctor",
+    "_no_stage": "不设 stage 字段：原则是逐行状态、批次可多批同时在办、快车道与正轨并行，一个标量装不下"
   },
   "batch_report_header": {
-    "_fields": ["batch_id", "spec_items[]", "run_ids[]", "date", "how_to_read",
-                "inspection_report", "rejections[]"],
+    "_fields": [
+      "batch_id",
+      "spec_items[]",
+      "run_ids[]",
+      "date",
+      "how_to_read",
+      "inspection_report",
+      "rejections[]"
+    ],
     "how_to_read": "读数脚本 + 口径说明（部署层向 idea 层交底的落点）",
     "inspection_report": "本批例行核查报告路径；允许空串 = 未收官（trace_check 平时非空才查，--closeout 模式空串报错）",
     "rejections": "[{date, by, reason}]——打回记录，reason=用户原话转录，evidence_lint 豁免此字段",
     "batch_id_pattern": "<spec条目>-<YYYYMMDD>-<序号>；快车道 run 归 quick-<YYYYMMDD>-<序>"
   },
+  "inspection_report_header": {
+    "_fields": [
+      "batch_id",
+      "verdict",
+      "blockers[]",
+      "date",
+      "生成时间/git HEAD/所读账本行数与哈希（R3 溯源块）"
+    ],
+    "verdict": {
+      "$enum": "inspection.verdict",
+      "_note": "blockers 非空时 verdict=blockers"
+    },
+    "_lint": "verdict 字段 evidence_lint 豁免"
+  },
+  "evidence_lint_exempt": {
+    "_rule": "evidence_lint 的『有数字无复现命令』规则只查经验主张数值；下列类别豁免",
+    "metadata_kinds": [
+      "时间戳",
+      "git HEAD/commit",
+      "账本行数与哈希",
+      "行号/记录号",
+      "文件路径",
+      "id 类字段"
+    ],
+    "_field_level": "字段级豁免登记在各自行条目（batch_report_header.rejections、spec_header.withdrawals），本键不复述"
+  },
   "spec_header": {
-    "_fields": ["spec_version", "approved_by", "approved_date",
-                "approved_against_principles_version", "withdrawals[]"],
+    "_fields": [
+      "spec_version",
+      "approved_by",
+      "approved_date",
+      "approved_digest",
+      "withdrawals[]"
+    ],
     "withdrawals": "[{date, by, reason}]——批准撤销记录，reason=用户原话，evidence_lint 豁免",
-    "item": "{item_id, principle_id, 内容, acceptance, depends_on[], priority, droppable}"
+    "item": "{item_id, principle_id, 内容, acceptance, depends_on[], priority, droppable}",
+    "_digest_rule": "approved_digest = sha256(YAML frontmatter 结束分隔线之后的正文原始字节)，文件头整块不入哈希",
+    "_stale_rule": "approved_by 非空且重算 digest 不等 = approval_stale",
+    "_header_rule": "spec 文件头必须是 --- 定界的 frontmatter，字段集合即 _fields，digest 的正文起点 = 第二条 --- 之后第一个字节"
   },
   "issue_min": {
-    "_fields": ["issue_id", "spec_item(回指 item_id)", "Status 行", "acceptance(抄或引 spec 条目)", "Blocked by"]
+    "_fields": [
+      "issue_id",
+      "spec_item(回指 item_id)",
+      "Status 行",
+      "acceptance(抄或引 spec 条目)",
+      "Blocked by"
+    ]
   },
-  "principles_columns": [
-    "principle_id（全表唯一，principles-lint 查重）", "status（enum principles.status）",
-    "scope", "applies_when（必填不许空，principles-lint 查）",
-    "原则一句话", "rationale（用户原话或讨论出处，必填不许空）",
-    "criterion_cmd（注册表命令；【想法待定】允许暂空）", "最近实测（ledger.py 回填，不手填）"
-  ],
+  "principles_columns": {
+    "_columns": [
+      "principle_id（全表唯一，principles-lint 查重）",
+      "status（enum principles.status）",
+      "scope",
+      "applies_when（必填不许空，principles-lint 查）",
+      "原则一句话",
+      "rationale（用户原话或讨论出处，必填不许空）",
+      "criterion_cmd（注册表命令；【想法待定】允许暂空）",
+      "最近实测（ledger.py 回填，不手填）"
+    ],
+    "_exec_rule": {
+      "_note": "criterion_cmd 单元格的执行契约（metrics_cmd 同规则）",
+      "起进程": "shlex.split 后不经 shell 起进程（禁 shell=True）",
+      "单元格": "禁含管道符与换行",
+      "pipeline": "需要 shell pipeline 的判据/抽数把 pipeline 封成注册表里的一个任务、criterion_cmd 与 metrics_cmd 指向该任务",
+      "在注册表": "判定与 launch_order.registry_task 同规则，两处共用一份判定"
+    }
+  },
   "error_classes": {
     "_shape": "{特征: {exit_code | output_check 判定 | log_regex} → 动作: 重试|换卡|升级}",
-    "_note": "unknown 的新规则提议路径见 R8"
+    "_note": "unknown 的新规则提议路径见 R8",
+    "_adapter_note": "动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
   }
 }

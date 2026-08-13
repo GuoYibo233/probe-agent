@@ -1,0 +1,2319 @@
+{
+ "plan": {
+  "adoption_plan": [
+   {
+    "order": 1,
+    "item": "实体模型定案：runs 一行一指标 + 三元主键、RUNMETA attempts 数组、quick 转正回指、story 口径锚点、decisions→blocked 回指",
+    "summary": "先把数据模型钉死，后面所有协议和验收都建在它上面。六件事：① runs.jsonl 允许同 run_id 多行、一行一指标（现文 metrics_cmd_min 字面只吐一个指标，一次 eval 出 accuracy 和 f1 就只能丢一个或塞进 value）；② 主键 (run_id, metric_name, filter) 成文，同键重复入账拒；③ RUNMETA 的 attempt_no 标量换成 attempts 数组（R8 明写\"解决了留痕\"，而重试成功这条路上唯一的落点被下一次覆盖，是 spec 自己打自己）；④ launch_order 加 promoted_from（quick 转正的来源引用）；⑤ story_row 加 metric_names（多行以后 regression_check 的\"同口径重比\"失去锚点，这是本次改动自己引入的洞）；⑥ decisions_row 加 blocked_ref（现文 blocked→decision 是单向链，崩在\"decision 已 append、blocked 未回填\"时孤儿 decision 无人可查、重跑会拼出第二条、撤销路径也失灵）。不是过度防御：这六项全部是补已承诺却无落点的东西（R7 数字只经脚本、R8 解决了留痕、regression_check 同口径重比），且不新开任何账本、不新增写入路径、不引入状态机。三组一致驳回了 observations.jsonl / observation_id / attempt_id 三个新实体。",
+    "self_decision": "三处授权内自决：(1) 主键取三元组 (run_id, metric_name, filter) 而非 consistency 组提的二元组——filter 已是行内字段且从发射单透传，二元组会把\"同指标不同口径子集\"的合法第二行误判成重复入账；(2) decisions 回指字段命名取 blocked_ref 而非 ref——blocked_row 已有 decision_ref/grant_ref 的命名法，且 blocked_row.ref 本身是四选一联合类型，同名不同义会撞 §0.5 一物一名；(3) 按减防御性裁决，观察值身份用 (run_id, metric_name, filter) 自然键，不发 observation_id。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "runs_row_normal",
+      "change": "新增 \"_key\": \"主键 (run_id, metric_name, filter)；metric_name 为 null 的行（status≠ok 的失败行）每 run_id 至多一行\"；新增 \"_dup_rule\": \"同主键重复入账拒（两个入账脚本都跨档查存在性）——重试补记不产生第二份数字\"；新增 \"_run_level_fields\": \"status/output_dir/runmeta_path/seed/dataset_version/batch_id/arm/quick/commit/elapsed_s/gpu_count 是 run 级事实，同 run_id 各行必须逐字相同\"；_notes 增三条：\"多指标\": \"一次实验多指标 = 同 run_id 多行，一行一指标；只出一个指标就是一行\"、\"写入粒度\": \"记账脚本一次把该 run 的全部行写完，不分次追加\"、\"run 的含义\": \"一次逻辑实验——不是一次进程启动（那是 runmeta.attempts），也不是一个指标（那是本账的一行）\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "runs_row_criterion._notes",
+      "change": "补两句：\"metric_name\": \"判据缩减行恒 null\"、\"_key\": \"主键退化为 run_id（chk-<principle_id>-<YYYYMMDD>-<序>），一个判据 run 一行，重复拒\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "structured_output_contract.metrics_cmd_min",
+      "change": "改成数组式唯一形态 {\"metrics\": [{\"metric_name\": \"...\", \"value\": \"...\", \"n\": \"...\", \"filter\": \"可空，缺省取发射单透传值\"}]}；_rule 末补一句\"metrics 至少一项；记账脚本按项落行，同一 run 的各行共享 run 级事实字段\"。criterion_cmd_min 不动（判据 run 一值）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "story_row",
+      "change": "新增 \"metric_names\": \"[metric_name]（可空）——本 claim 的口径锚点，regression_check 按它加各 run 行的 filter 同口径重比；空则该 claim 不参与回归比对\"；_write_check 末补\"metric_names 非空时，每个值必须在被引 run 的 runs 行里存在\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "launch_order",
+      "change": "新增 \"promoted_from\": \"原 quick run_id（quick 转正生成的正轨发射单必填，其余空）——发射单按 run_id 命名，不另存路径\"（不加 source_launch_order_ref：同一事实两处成文）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "runmeta",
+      "change": "_fields 里 \"attempt_no\" 换成 \"attempts\"；新增 \"attempts\": \"[{attempt_no, argv, exit_code, log_path, resources, started_at, finished_at}]——每次实际启动（重试/换卡/进程重启）追一条，前条的 argv、日志路径与资源不得覆写或截断；兜底态允许只有一条或空\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "decisions_row",
+      "change": "新增 \"blocked_ref\": \"B00x|null（r5-choice 机械拼装的 decision 必填，回指触发它的 blocked 行；重跑查重键）\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/config.json",
+      "section": "_fallback_rule",
+      "change": "\"attempt_no/env_name/outputs 允许空\" 改为 \"attempts/env_name/outputs 允许空\""
+     }
+    ]
+   },
+   {
+    "order": 2,
+    "item": "rows.json 升级成可生成 schema 的方言：七个 jsonl 实体块改 required/properties/type/primary_key/conditional/$enum/$ref_to",
+    "summary": "spec §0.5 第 5 条和 §9 第一条都已经把\"schemas 与 owners 默认表从 tables/ 生成\"写成承诺，但 rows.json 现在是 _fields 平铺清单加中文说明，生成不出验证器；可空有三种写法并存（\"（grant 可空）\"、\"（quick 可空）\"、\"（可空）\"、_notes 里\"允许 null\"），条件必填有六处全是中文，而 §9 已经点名要机验其中三条。这是 spec 内部的不自洽，不是外部加戏。改造是加法不是替换：每个字段的中文整句原样搬进该字段的 _note（\"记账脚本从发射单透传\"是来源规则、\"非 null 即判据缩减行\"是行型判别式，JSON Schema 表达不了，删了就真丢东西）。范围严格收在走 jsonl schema 校验的七块。不是过度防御：schema 校验本来就写在 §5\"都过 schema 与写权检查\"和 §4 schemas/ 里，第十七轮裁掉的 9 处（自决点 108-116）不含 schema；这里做的是把已承诺的东西补成真的。",
+    "self_decision": "按减防御性裁决选了更小方案：驳回评审甲的\"拆 schemas/ + policies/owners.json + policies/queries.json、tables 降为文档视图\"，只升级五表中的 rows.json 一张（外加 writes.json 一处，见第 4 项）——ledgers.json 的 owner/cap/format/read 四列已是机器值且 spec_lint 已在机验；拆表会退回自决点 115 判过的\"两表键集互校\"老形态。$enum 取就地展开、不引 $defs 与跨文件 $ref，少一处能漂的地方。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "顶部 _about 之后新增 _schema_dialect",
+      "change": "成文方言定义：块形 = {_note, primary_key[], required[], additionalProperties, properties{字段: {type|$enum|$ref_to, _note}}, conditional[]}；$enum 的值必须是 rows.enums 的键，生成器就地展开成 {\"enum\": [...]}，不产生 $defs 与跨文件 $ref；$ref_to 的值写\"账名.主键\"；conditional 的 op 值域 eq|neq|in。并写明不参与 schema 生成的块：md 头部三块（batch_report_header、spec_header、issue_min）、非行式契约块（structured_output_contract、runmeta、jobs_min_additions、principles_columns、error_classes、status_view、inspection_report_header、evidence_lint_exempt）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "story_row / decisions_row / blocked_row / feedback_rows.suggestion / feedback_rows.review / runs_row_normal / runs_row_criterion / launch_order（八块，七本 jsonl 行型 + 发射单）",
+      "change": "统一改成 _schema_dialect 块形：required + properties + type 取代 _fields/_required；原字段值的中文整句一字不改搬进该字段 _note；\"enum story.role\" 一类字符串改成 {\"$enum\": \"story.role\"}"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "各块 primary_key",
+      "change": "story=[claim_id]、decisions=[decision_id]、blocked=[blocked_id]、feedback=[fb_id]、launch_order=[run_id]、runs_row_normal=[run_id, metric_name, filter]、runs_row_criterion=[run_id]（后两条取第 1 项定案）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "各块 conditional[]",
+      "change": "六处中文条件译成机器形态：runs 普通行 [{\"when\":{\"field\":\"status\",\"op\":\"neq\",\"value\":\"ok\"},\"allow_null\":[\"metric_name\",\"value\",\"n\"]}]；blocked 的 kind=r5-choice 必填 where/options；blocked 的 answered_by≠user 且 kind=r5-choice 必填 grant_ref；decisions 的 kind=grant 必填结构化 scope；runs 判据行 principle_id 非空；decisions 的 kind=r5-choice 拼装件必填 blocked_ref。原中文留在同块 _note"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "各块 additionalProperties",
+      "change": "story/decisions/blocked/feedback 两型/runs 两型 = false（这几本只有 ledger.py 与工程记账脚本两个写入口，关死能挡拼错字段名静默入账）；launch_order = false 且 properties 加 \"ext\": {\"type\":\"object\", \"_note\":\"工程铁轨扩展字段，plugin 不解释\"}；runmeta 与 jobs_min_additions 不关（rows.json 自己写死\"以工程现状为准\"，关死会与 §7 通用/特化分界打架）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "story_row / decisions_row / blocked_row / feedback_rows 两型 的 properties",
+      "change": "补 \"schema_version\": {\"type\":\"integer\",\"minimum\":1} 并进 required——_about 已写死\"jsonl 实体行必带 schema_version\"，但这五块的字段清单里没有，照现文生成器直接跑第一次写入就与 _about 相抵"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "各引用字段 $ref_to",
+      "change": "evidence_runs/baseline_runs/candidate_runs → \"runs.run_id\"；decision_refs → \"decisions.decision_id\"；grant_ref/decision_ref → \"decisions.decision_id\"；blocked_ref → \"blocked.blocked_id\"；superseded_by → 同账主键；blocked_row.ref 与 decisions_row.affects 写成 $ref_to 数组（多目标）并在 _note 说明判别靠 id 前缀（S/D/B/F/chk- 与 run_id 命名规则）"
+     }
+    ]
+   },
+   {
+    "order": 3,
+    "item": "schemas 生成器 gen-schemas 与生成物门禁",
+    "summary": "§0.5 第 5 条与 §9 第一条已承诺\"从 tables/ 生成\"，但 §4 的九个脚本里没有生成器、§9 也没有一条查生成。schemas/ 一旦作为文件随 plugin 交付，它就是封闭清单的第二份拷贝——正是 §0.5 立法要堵的病。堵它的最小方案是生成器确定性加一条比对命令，不需要事务、不需要状态机。挂成 ledger.py 的子命令而不是新开脚本，§9 的\"九个脚本\"计数不用改，也不多一个交付件。边界必须写清否则误伤：§4 明写工程可覆盖 schema，检查面只覆盖 plugin 携带的默认版。",
+    "self_decision": "按减防御性裁决选了更小方案：不新开生成器脚本，挂 ledger.py gen-schemas；生成物一致性归 gen-schemas --check，不塞进 spec_lint（spec_lint 管设计稿，生成物是实施期产物，此时还不存在——评审甲第 9 节自己也把 spec_lint 定位成设计稿静态一致性检查）。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§0.5 第 5 条",
+      "change": "把\"直接从表生成或引用\"写实：点名生成物是 schemas/*.schema.json 与 owners 默认表，生成方向单向（表 → 生成物），生成物禁手改、改表再生成，生成器键序固定、重复生成逐字节相同；两者不一致以表为准，由 gen-schemas --check 拦下"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§4 组件结构，ledger.py 子命令清单",
+      "change": "子命令加 gen-schemas：从 tables/rows.json 生成 schemas/*.schema.json 与 owners 默认表；--check 模式只重生成到内存并逐字节比对，不写盘；检查面只含 plugin 携带的默认版，工程覆盖件不入比对"
+     }
+    ]
+   },
+   {
+    "order": 4,
+    "item": "writes.json 机器化 + 复合动作的写序与幂等（r5-choice 答复、撤销重开）",
+    "summary": "§5 全文只有一句\"原子追加 + 白名单字段就地更新（都持文件锁）\"，没有任何跨文件语义。真正会被违反的不变量只有两条，都是 writes.json 自己写死的：\"问题不因撤销而消失\"、\"被收回的裁决不得保持生效\"。堵这两个洞只需要三件小事：定死写序（翻状态的那一笔最后写，崩溃只会停在语义安全的旧状态一侧）、派生行带回指、按回指查重使重跑幂等。另外 blocked_transitions 四个状态的\"谁能写\"现在是中文句，而 §9 点名要机验\"--layer 传错拒\"，抽成一层键即可。不是过度防御：新增账本 + prepared/committed 状态机 + 重放引擎是数量级更大的机制，且它自身的写入也是一次文件写，只是把崩溃窗口挪位置、不消灭它。",
+    "self_decision": "按减防御性裁决取评审自列的最低档：拒事务日志（operations.jsonl）与 staging manifest，采\"严格写序 + 回指查重 + doctor 检测\"；拒 operation_id 全账本字段——幂等键用已有的自然回指键（撤销重开是 (ref=旧 blocked_id, status=open)，r5-choice 是 blocked_ref）。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/writes.json",
+      "section": "blocked_transitions",
+      "change": "四个状态的值从中文串改成 {\"writable_by\": \"from_layer|to_layer|proxy\", \"_note\": \"<原中文整句一字不改>\"}；answered 的 to_layer=user 特例保留在 _note，字段级强制项另起 \"force_fields\": {\"answered_by\": \"user\"}。合法跃迁图不在本轮补（另一件事）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/writes.json",
+      "section": "r5_choice_assembly",
+      "change": "field_map 增一项 \"blocked_ref\": \"触发的 blocked_id\"；新增 \"_write_order\": \"① append decision（含 blocked_ref）② 就地更新 blocked（status/answer/answered_at/answered_by/decision_ref）——翻状态的那一笔最后写\"；新增 \"_idempotency\": \"append 前先按 blocked_ref 查已有 status=decided 的 decision，命中则不再 append、只补 decision_ref；同一 blocked_id 至多一条 decided 的同步 decision，违反即拒\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/writes.json",
+      "section": "blocked_transitions.withdrawn",
+      "change": "条文末追加 \"_write_order\": \"① 先把同步 decision 置 withdrawn（经 blocked.decision_ref；decision_ref 为空时按 decisions.blocked_ref 反查孤儿）② 再 append 重开新条（ref=旧 blocked_id）③ 最后把旧条置 withdrawn——翻状态的那一笔最后写，崩溃只会停在『旧条仍 answered』\"；\"_idempotency\": \"重开前按 (ref=旧 blocked_id, status=open) 查重，命中不再开第二条；三步各自可重入，重跑整条命令结果不变\""
+     }
+    ]
+   },
+   {
+    "order": 5,
+    "item": "spec §5 增第五段机制语义\"复合动作的中断一致性\"，doctor 增半状态扫描",
+    "summary": "把第 4 项的表内规则在散文里成文一次，并给它一个只查不动的检测口。三句：写序定死、派生行带回指且重跑查重、半状态由 doctor 扫出而修复动作就是重跑原命令。检测挂进已有的 doctor.py（它已经是\"只查不动\"的聚合体检口，加一项扫描是零新增入口），不新开 reconcile 子命令，也不做自动补齐引擎——回指查重已经让重跑幂等，专门写一个补齐器等于把同一段拼装逻辑写两遍，正是 §0.5 要堵的两处成文。发射单侧只补一句修复路径：现文已写\"decision_refs 是权威、affects 是物化索引、trace_check 校验一致性\"，发射单按 run_id 命名重写同路径天然幂等，缺的只是\"affects 丢了怎么补\"。",
+    "self_decision": "按减防御性裁决明写\"不引入事务日志与 staging manifest、不提供自动重放/自动补齐\"，把承诺从\"reconcile 自动恢复\"降到\"doctor 报得出 + 重跑修得好\"，避免实施期照『自动恢复』去造重放引擎。收官（closeout）一路判定为已被现文覆盖，不加协议。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§5 账本机制，\"写入两式\"之后新增一条机制句",
+      "change": "新增\"复合动作的中断一致性\"三句：① 每个跨文件复合动作定死写序——先 append 派生行，最后落那笔翻状态的就地更新，崩溃只会停在『旧状态』或『旧状态 + 一条孤儿派生行』，永不停在『新状态 + 缺派生行』；② 每条机械拼出的派生行必带回指触发行的引用，重跑同一命令先按回指查重，命中就复用不再新建——重跑即修复；③ 半状态由 doctor 扫出（只查不动），修复动作就是重跑原命令。明写：不引入事务日志与 staging manifest，不提供自动重放与自动补齐"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§4 组件结构，doctor.py 注释行",
+      "change": "检查项清单增一项\"半状态扫描（孤儿 decision：有 blocked_ref 指向 blocked 但该 blocked 无 decision_ref；撤销中断：blocked=withdrawn 但其同步 decision 仍 status=decided，或缺重开条；affects 与发射单 decision_refs 不一致）\"，保持\"只查不动\"，并注明修复动作是重跑原命令"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§5 发射单与台账的顺序",
+      "change": "在\"不一致以发射单为准，trace_check 校验一致性\"之后补一句：发射单先落盘、affects 回填后写——affects 缺失只是索引缺失，trace_check 报出后由部署层重跑同一写发射单动作补齐（发射单按 run_id 命名，重写同路径幂等，不产生第二张）"
+     }
+    ]
+   },
+   {
+    "order": 6,
+    "item": "批准指纹链：spec 批准戳绑定被批准的内容，原则批准改成逐行事件",
+    "summary": "spec_header 现有五个字段没有任何内容指纹，而承载用户批准戳的 md 文件归部署层写（ledgers.json specs.owner=deploy）——部署层改完条目、批准戳原样留着，全 spec 没有一个机验能发现。这直接架空核心意图第 5 条（用户在 idea 层顶端、拍板是终点），所以是堵洞不是加防御：一个 sha256 字段加两个已有脚本各一次比对，不新增账本、不新增状态机。顺带修一根悬空引用：approved_against_principles_version 指向一个 spec 里根本不存在的版本号（principles_columns 没有版本列，全 spec 没写谁递增它），换成 digest 是修缺陷、净字段数不变。原则 digest 必须按列归一化并把\"最近实测\"列置空——该列由渲染脚本自动回填（R1），整文件哈希会让每次判据 run 都把全部 spec 打成 stale，纯噪声。",
+    "self_decision": "按减防御性裁决选了更小的 canonicalization：拒评审乙的五步版（解析 frontmatter + 固定 key 序列化引入 YAML 序列化器的实现依赖，本身就是新漂移面），改成\"文件头整块不入哈希，digest 只覆盖第二条 --- 之后的正文原始字节\"——同样满足评审的三个例子，循环问题从『排除特定字段』变成『压根不碰文件头』。另拒 approved_commit（代码版本已被 expected_commit 与 RUNMETA.commit 加脏树清单两头钉死）与独立 approval 账本。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "spec_header",
+      "change": "_fields 增 approved_digest、approved_against_principles_digest，删 approved_against_principles_version；新增 _digest_rule：approved_digest = sha256(YAML frontmatter 结束分隔线之后的正文原始字节)，文件头整块不入哈希；approved_against_principles_digest = 原则文档按 principles_columns 逐行归一化、\"最近实测\"列置空后的 sha256；新增 _stale_rule：approved_by 非空且重算 digest 不等 = approval_stale，原则侧不等 = principles_stale（只报告不拦发射）；新增 _header_rule：spec 文件头必须是 --- 定界的 frontmatter，字段集合即 _fields，digest 的正文起点 = 第二条 --- 之后第一个字节"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§2.5 下行五路的\"拍板\"条",
+      "change": "spec 批准的转录动作改成机械动作：用户拍板当场跑 ledger.py approve-spec，一次落 approved_by/approved_date/两个 digest 四字段，会话不手填 digest"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§3 R1",
+      "change": "补一句：原则的批准是逐行事件——用户拍板即落 status（§8 步 2），原则文档不设文件级批准戳"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§4 组件结构，ledger.py 子命令清单 + trace_check.py 注释",
+      "change": "子命令加 approve-spec；trace_check 注释加\"重算 approved_digest 不等报 approval_stale；原则 digest 不等报 principles_stale（只报告不拦发射）\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§5 发射单与台账的顺序（发射前门禁）",
+      "change": "成文：写发射单时 spec_ref 非空则校验该 spec approved_by 非空且 digest 匹配，stale 拒发并升级；spec_ref 空的 quick 发射单豁免（§2.6），照 trace_check 既有豁免写法"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/writes.json",
+      "section": "withdrawal_routes_md.spec",
+      "change": "撤销时清空的字段从 approved_by/approved_date 扩到含 approved_digest、approved_against_principles_digest"
+     }
+    ]
+   },
+   {
+    "order": 7,
+    "item": "开工恢复现场：rows.json 新增 status_view 契约块 + ledger.py status 只读派生视图",
+    "summary": "现文的开工必读两样装的是问题（blocked.kind 四值）和权限（有效授权视图），都不记录在飞的活。发射单已写但没发射、run 已跑完但没入账、批次报告已落但没派核查，这三种状态下 blocked 是空的，新会话开工读到两个空视图，看不出手上有活。修法只是把已有落盘事实组合起来读：纯只读、不落盘、不建状态文件、不过写权检查，走 R7\"账本的读同样走脚本\"的已有轨道，同时替 §2.1 的读法纪律干活（把跨账本状态压成计数、id、路径，避免为了搞清进度整读账本）。不是过度防御：不新增账本、不新增写入路径、不新增状态机，只加一条组合派生的只读命令。",
+    "self_decision": "三处授权内自决：(1) 不设全局 stage 标量——原则是逐行状态、批次可多批同时在办、快车道与正轨并行，一个标量装不下，矛盾只进 inconsistencies[] 且其余字段照常出；(2) 不开独立的 next 命令——动作名直接取 routes.json 的 to 列词进 waiting_on[]，不新立第二套阶段到动作映射（§0.5 两处成文）；(3) 不建 tables/state.json 第六张表、不建 current.json 物化视图——前者退回自决点 115 判过的形态，后者是与账本并列的第二真源。版本字段用 schema_version 不引入 state_version（一物一名）。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "新增顶层块 status_view",
+      "change": "字段定为 schema_version, generated_at, layer, approved_specs_in_flight[], open_issues[], pending_launch_orders[], running_runs[], unrecorded_runs[], batches_pending_report[], batches_pending_inspection[], open_blocked[], pending_user_decisions[], active_grants[], waiting_on[], inconsistencies[]，每个字段旁写一句派生源；approved_specs_in_flight 定义为\"approved_by 非空且尚有未完成条目的 spec 文件路径列表，允许多份，不猜当前唯一 spec\"；running_runs 注明\"派生源是 jobs 台账，runs.jsonl 没有 running 态\"；waiting_on: \"[{item, ref, layer, action}]——action 取值只许是 tables/routes.json 的 to 列已有动作名\"；inconsistencies: \"[{code, ref, source}]——只列不猜；核对范围限三条廉价交叉核对（批次报告 run_ids 对 runs、jobs 结束态对 runs、发射单超 expected_runtime_s × runtime_factor 仍无台账），深检归 trace_check 与 doctor\"；_rule: \"纯派生：只读既有账本与目录，不写任何文件，不缓存中间结果\"；_about: \"本块是 status 的输入输出唯一契约：每个字段一句派生源，实现只许照抄，不许在脚本里另加派生规则\"；不设 stage 字段"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§2 信道（会话开工必读段）",
+      "change": "改成：会话开工跑一条 ledger.py status --layer <本层>，输出三块——① 本层工作面（在办事项，派生规则见 tables/rows.json status_view）；② 本层待决队列（定义原样不动）；③ 有效授权视图（定义原样不动）。三块全是跨账本派生视图，不落盘、不建状态文件"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§2.1 账本读写纪律与回收，\"查询口（主）\"之后",
+      "change": "加一条 bullet：工作面视图（status）——跨账本派生的在办清单，只出计数、id 与路径，不出行内容；字段与逐项派生源见 tables/rows.json status_view；纯只读，不落盘、不建状态文件。跨账对不上只列进 inconsistencies[]，不推断阶段、不自行修补；要么按 R8 开待决条，要么跑 trace_check/doctor 深查"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§4 组件结构，ledger.py 子命令清单 + doctor.py 注释",
+      "change": "子命令加 status；doctor 注释里注明\"工作面段直接调 status，不重复实现跨账本派生\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§8 步 4 与步 9",
+      "change": "步 4 的\"（开工必读②）\"改为\"（status 的有效授权块）\"保持指代唯一；步 9 的\"有什么在等我\"一句后补\"新会话接手同此：开工跑 status 取工作面，不靠用户复述进度\""
+     }
+    ]
+   },
+   {
+    "order": 8,
+    "item": "发射单 argv 与 registry_task 的权威关系 + criterion_cmd 的执行契约",
+    "summary": "launch_order 的 registry_task 与 argv 两个字段并列、没有权威声明；信道 3\"不在注册表不许跑\"是散文纪律、没有机验落点。最小等价方案照抄 §5 已有句式（decision_refs 权威、affects 物化索引）：argv 是权威执行体、registry_task 是归属声明，写入时机验一行——shlex.split(registry_cmd) 必须是 argv 的前缀，紧随的 token 等于 registry_task，且该 task 在 registry_query 清单里。这一行顺手把散文纪律变成机验的，比评审的方案多堵一个洞（手写 argv 绕过注册表），零新接口。criterion_cmd 那半是另一个具体故障：它住在 md 表格的一个单元格里，命令里只要出现一个管道符就把表格列切坏，principles-lint 读到半截命令。两条最小规则堵住：shlex.split 后直接起进程禁 shell=True，单元格禁含管道符与换行，要 pipeline 就封成注册表任务。",
+    "self_decision": "按减防御性裁决拒了两个重构：删 argv 只存 task_id+args、criterion_cmd 拆 criterion_task+criterion_args——都要求工程注册表额外提供结构化 resolve 接口（config.json 现在只有 registry_cmd 与 registry_query 两个入口）并改写兜底 launch.py 与 new1 发射器。另拒 registry_digest：注册表是仓库里的代码，版本已被 expected_commit 与 RUNMETA.commit 加脏树清单两头钉死。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "launch_order.argv / launch_order.registry_task",
+      "change": "argv 的 _note 改为\"权威执行体：铁轨与兜底 launch.py 只执行它\"；registry_task 的 _note 改为\"注册表任务名（归属声明）。写入机验：shlex.split(registry_cmd) 是 argv 的前缀，其后第一个 token = registry_task，且该 task 在 registry_query 清单内——信道 3『不在注册表不许跑』的机验落点\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "principles_columns 的 criterion_cmd 项旁新增 _exec_rule 块",
+      "change": "写明：shlex.split 后不经 shell 起进程（禁 shell=True）；单元格禁含管道符与换行，需要 shell pipeline 的判据/抽数把 pipeline 封成注册表里的一个任务、criterion_cmd 与 metrics_cmd 指向该任务；\"在注册表\"的判定与 launch_order.registry_task 同规则，两处共用一份判定"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§5 发射单与台账的顺序",
+      "change": "补一句权威声明，句式照本段 decision_refs/affects 那句：argv 是权威执行体、registry_task 是归属声明，两者不一致时写入直接拒"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§5 判据 run 执行契约",
+      "change": "\"代为拉起并计时\"后补半句：拉起方式是 shlex.split 后直接起进程、不经 shell"
+     }
+    ]
+   },
+   {
+    "order": 9,
+    "item": "R2/R3/R4 收窄作用域 + 核查报告 verdict 枚举入表 + evidence_lint 豁免面成文",
+    "summary": "三条硬规矩都与 spec 自己的其他条文打架，是现文自相矛盾不是评审挑刺。R2 的\"AI 只做两件事\"排除了 §1 让 inspector 出 blockers 和 R8 让部署层归类 unknown 故障，实施者照 R2 写 SKILL.md 就会顶牛；收窄成\"AI 不下科学结论\"正是裁决 5 列的核心意图。R3 的\"每个数字必须配复现命令\"字面把它自己规定的溯源块、行号、哈希都罩进去，而 evidence_lint 的成文规则就是\"有数字无复现命令\"报错，所以机验会真的误报，而且给哈希配命令后那条命令的输出又是数字、递归不收敛。R4 的\"任何派生量先提案\"不分新旧口径，每批算一次准确率就得再上桌。另有一处现文硬伤：§1 强制的报告头 verdict: clean 就是 R3 禁的结论词，且这个封闭清单成文在散文里跑掉了。三条修法都是给现有规矩加限定句，不新增账本、字段或脚本。",
+    "self_decision": "两处授权内自决：(1) 例子全部落 §9 验收用例、不进 §3 正文——§9 已成文『只列拒绝面与豁免面』，散文内核 461 行是重构令的成果，往硬规矩里塞例子会把它重新撑大；(2) 不用评审乙的 extractor 一词——spec 里这件事已经有名字叫 metrics_cmd 与 criterion_cmd，引入第二个名字违反一物一名且会被 spec_lint W1 报成生造字段。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§3 R2（225-226 行）",
+      "change": "整条替换为：**R2 机验人判**：判据机器跑，最终判断人来下。机械检查一律脚本执行；agent 可以做三件事——判结构缺陷、按错误分类表归类故障（R8）、提带证据的 blocker（§1 收官核查）并把原始证据摆到用户面前。科学结论归用户：结果算不算数、进不进故事，agent 不得代下"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§3 R3（229-232 行）",
+      "change": "\"每个数字必须配复现命令\"改为\"**支撑经验主张的数值**（计数、指标值、差异量）**必须配一条可直接粘贴执行的复现命令**，命令输出必须等于报告数字。溯源元数据（生成时间、git HEAD、账本行数与哈希、行号、记录号、路径）不逐项配命令，但必须能从所引文件机械读出；豁免面见 tables/rows.json evidence_lint_exempt\"；结论词那句改为\"『通过/没问题/符合预期』等散文结论词违禁；结构化枚举字段（核查报告头 verdict，取值见 tables/rows.json）不算结论词，evidence_lint 按字段豁免\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§3 R4（233-235 行）",
+      "change": "在\"用户批了才算\"之后插入：**批过的口径即预授权**：公式、分母、过滤条件、聚合层级已写进 spec 条目并经用户批准的，每批照算不再上桌；口径没写全的不算预授权，仍要提案。新增或改动公式、分母、过滤条件、聚合层级、缺失值处理，一律重新提案（§2.5 实验设定硬边界照旧）"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§1（102 行）与 §1 收官核查 ②（91 行）",
+      "change": "102 行\"部署层只跑既有机械汇总管道\"后加\"（口径预授权的成文在 R4）\"；91 行的 `verdict: clean | blockers[]` 改成引用式\"头部带 verdict 字段（取值见 tables/rows.json inspection_report_header）\"，并加一句\"blocker 只写流程缺陷与证据缺陷（断链、缺命令、口径对不上），不写科学结论（R2）\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "enums 与新增块 inspection_report_header / evidence_lint_exempt",
+      "change": "enums 加 \"inspection.verdict\": [\"clean\", \"blockers\"]；新增 inspection_report_header: {_fields: [batch_id, verdict, blockers[], date, 生成时间/git HEAD/所读账本行数与哈希（R3 溯源块）], verdict: {$enum: inspection.verdict, _note: \"blockers 非空时 verdict=blockers\"}, _lint: \"verdict 字段 evidence_lint 豁免\"}；新增 evidence_lint_exempt: {_rule: \"evidence_lint 的『有数字无复现命令』规则只查经验主张数值；下列类别豁免\", metadata_kinds: [时间戳, git HEAD/commit, 账本行数与哈希, 行号/记录号, 文件路径, id 类字段], _field_level: \"字段级豁免登记在各自行条目（batch_report_header.rejections、spec_header.withdrawals），本键不复述\"}"
+     }
+    ]
+   },
+   {
+    "order": 10,
+    "item": "去工程专名：模型名、GPU、NFS、核查策略、集群档案全部搬进配置，§7 写清三分界，§10 补后置清单",
+    "summary": "§4 与 §7 已经写死\"plugin 本体不含任何工程专名\"，但正文自己违反：inspector.md frontmatter 钉 model: opus、§1\"派 inspector（opus）\"、§2.1\"小读手（sonnet）\"、routes.json\"inspector（opus）\"、ledgers.json\"派读手 subagent（sonnet）\"、R5\"发射 GPU 任务\"与\"低于一小时\"与\"写 NFS 不算不可逆\"、R1 与 §5 两处\"不占 GPU\"、ledgers.cluster_state 默认路径 ops/gpu_state.md。改字不改语义、成本一次性。不是过度防御：不建 core/adapter/policy 三套目录、不做多适配器抽象——现在只有一条 rails.gpu 要落地，rails.* 五键加发射单契约已经在充当 adapter 接口，config.json 已经在充当 project policy，缺的只是把分界写成一句话。用户裁决 1 的语义一字不动：阈值来源改成配置键，默认值携带即生效（3600 秒），不允许缺省变成 null 锁；哨兵值 spec-standing-gpu-1h 不改名（rows.json 与 writes.json 已按此值成文）；回报义务原样保留。",
+    "self_decision": "三处授权内自决：(1) 拒\"未配置时使用当前会话默认模型\"——用户全局硬规则是派 subagent 一律显式指定模型、禁止继承主会话，改成 plugin 携带默认值并显式传；(2) inspection_policy 的值域 v1 只收 always（risk-based 的判定规则没人写、manual 等于关掉核查，v1 都没有使用者），加值须回 spec 走 R5；(3) 给出反证驳回评审的两项：全文 grep 无 tokyo、无 48G，这两个专名根本不在；\"换卡\"两处判为 adapter 概念（error_classes._shape 是形状不是值域），加注不改名。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/config.json",
+      "section": "keys 新增 roles / standing_authorization / inspection_policy",
+      "change": "roles: {inspector_model, reader_model}，domain 写\"派 subagent 一律显式传模型，禁止不传继承会话默认\"，null_effect 写\"取 plugin 默认 inspector_model=opus / reader_model=sonnet，不锁功能\"；standing_authorization: {max_expected_runtime_s: 3600, resource: compute}，domain 写\"R5 常设授权阈值，以发射单 expected_runtime_s 合计\"，null_effect 写\"取 plugin 默认 3600 秒，常设授权照常生效（不锁）\"；inspection_policy: domain 写\"部署收官例行核查策略；v1 值域只收 always（用户裁决：每批都通读）；加值须回 spec 走 R5\"，null_effect 写\"取默认 always\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/config.json",
+      "section": "keys.raw_data_roots.domain",
+      "change": "\"产物根（大产物一律 NFS）\"改成\"产物根（大产物一律落此处，不落仓库）\"，NFS 只留在 example 列"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/ledgers.json",
+      "section": "_read_classes.sliced 与 ledgers.cluster_state",
+      "change": "sliced 的\"派读手 subagent（sonnet）\"改成\"派读手 subagent（roles.reader_model）\"；cluster_state.default_path 改 ops/cluster_state.md，_note 注明 new1 覆盖为 ops/gpu_state.md、无集群设施的工程该键留空"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§1（inspector 派发行与收官核查②）、§2.1（读手 subagent 条）、§4（inspector.md 注释）",
+      "change": "三处模型名改成配置引用：\"派 inspector（opus）\"→\"派 inspector（模型取 roles.inspector_model）\"；\"派小读手（sonnet，一次一件）\"→\"派小读手（模型取 roles.reader_model，一次一件）\"；\"frontmatter 钉 model: opus\"→\"frontmatter 钉 model: 取 research-loop.json roles.inspector_model（plugin 默认 opus）\"；收官核查②的\"（用户裁决：每次都通读）\"后补\"——本工程策略值，落 research-loop.json inspection_policy=always\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§3 R5 与 R1、§5 判据 run 执行契约",
+      "change": "R5 常设授权条的\"只关系到发射 GPU 任务且预计总时长低于一小时\"改成\"只关系到发射算力任务且预计总时长低于 standing_authorization.max_expected_runtime_s（plugin 默认 3600 秒）\"，哨兵值与留痕、事后必须通知一字不动；R5 三问的\"写 NFS 本身不算不可逆\"改成\"写产物盘（raw_data_roots 下的路径）本身不算不可逆\"；R1 与 §5 两处\"不占 GPU\"改成\"不占算力资源（不走 rails.gpu）\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§7 工程挂接，\"通用/特化分界\"条",
+      "change": "后面补一句三分界：plugin 本体（层、账本、跃迁、溯源、批准、报告）｜rails.* 五键指向的工程铁轨与发射单契约（怎么探资源、怎么发射、怎么记账，这就是 adapter 接口）｜research-loop.json（策略值：常设授权阈值、角色模型、核查策略、豁免清单）。不新建目录层"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§10 后置不弃",
+      "change": "追加三条：多资源适配器（local-process/scheduler/remote-service）、risk-based 与 manual 核查策略、兜底件的高级功能；三条均注明\"有第二个使用者时再做\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+      "section": "error_classes 与 launch_order.retry / launch_order.resources / runs_row_normal.gpu_count",
+      "change": "加统一注：动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
+     }
+    ]
+   },
+   {
+    "order": 11,
+    "item": "快车道口径：\"重跑即复现\"改成沿用整张发射单，转正加机验",
+    "summary": "§2.6 现在写\"种子固定，重跑即复现\"，而 launch_order 自己承认结果由 expected_commit、dataset_version、env_name、argv、filter 等一共六样东西决定，只提种子是漏写。反证就在同一张表里。改一句散文加一条机验落点，不加任何机制。不做机械转正命令：发射单本来就走 ledger.py 写入，转正只是这个写入路径上的一个开关，属实施细节；真正需要成文的是 trace_check 在 promoted_from 非空时比对沿用字段，这样即使会话手抄发射单、抄错也被抓。用户裁决 2 的语义不动：quick 结果不进故事账，要进按正轨重跑。",
+    "self_decision": "按减防御性裁决只加一个 promoted_from 字段而不是评审提的两个（promoted_from_run_id + source_launch_order_ref）——发射单按 run_id 命名，两者互相可推，存两个键就是同一事实两处成文。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§2.6 结果的去向",
+      "change": "\"（种子固定，重跑即复现）\"改为\"——以原 quick 发射单为模板生成正轨发射单：seed/dataset_version/argv/env_name/filter 逐字沿用，允许变的只有 run_id/batch_id/spec_ref/issue_ref/decision_refs/expected_commit 与 quick=false。种子固定只是其中一项，沿用整张发射单才算重跑\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§4 组件结构，trace_check.py 注释块",
+      "change": "加一句：promoted_from 非空时比对与来源 quick 发射单的沿用字段（seed/dataset_version/argv/env_name/filter），不一致报错"
+     }
+    ]
+   },
+   {
+    "order": 12,
+    "item": "routes.json 汇总三改（init 入口、status 入口、模型名引用）+ §6 补半句",
+    "summary": "三组各提一处路由改动，并到一次改。真洞只有一个：init 是接线第一步（§7 明写\"接线第一步就是 init 问卷\"）却没有路由句，用户没有入口说\"接一下这个工程\"。status 那行是第 7 项的触发口，与已有的\"有什么在等我\"分工写清——那条是给用户看待决队列的上行视图，新加的是会话开工取工作面。不是过度防御：驳回了顶层 research-loop init/status/next/check/query CLI 门面——面向人的统一入口已经存在，它是路由表里的中文句子，再套一层壳只是把脚本名换个地方写。",
+    "self_decision": "",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/routes.json",
+      "section": "routes[]",
+      "change": "追加两行：{\"say\": \"接一下这个工程 / init\", \"stage\": \"⓪\", \"to\": \"ledger.py init 挂接问卷（§7）\"} 与 {\"say\": \"我们跑到哪了 / 接着干\", \"stage\": \"任意\", \"to\": \"ledger.py status --layer <本层>（工作面 + 待决队列 + 有效授权；会话开工同此）\"}；把最后一行\"inspector（opus）\"改成\"inspector（roles.inspector_model）\""
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§6 路由",
+      "change": "补半句：脚本名只在 routes.json 出现一次，上层 skill 与用户一律经路由句进，不直接依赖脚本路径"
+     }
+    ]
+   },
+   {
+    "order": 13,
+    "item": "（条件项，待用户裁决归档范围后动）撤销/更正的就地更新跨档",
+    "summary": "一条已归档的 closed blocked 或 retired story 行，用户回头撤销或更正时，form2 就地更新找不到落点——§2.1 只写了\"校验/追溯脚本一律跨档读\"，写入侧一句跨档都没有；decisions 有\"被引用的永不归档\"兜住，blocked 与 story 没有。最小方案是把已有的\"跨档\"口径从读扩到写，一行规则、一条机验，不引入事务日志、也不引入\"可撤销行永不归档\"这种会把归档架空的规则。依赖：若用户把 archive 排进 v1.1（见 user_flags 第 1 条），本项随之推迟；若 archive 留在 v1，本项必须同批落地，否则归档一开就有这个洞。",
+    "self_decision": "",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/writes.json",
+      "section": "write_forms.form2_inplace_whitelist",
+      "change": "补 _rule：就地更新的定位默认跨档——主文件未命中时经 <name>.archive.idx.json 定位归档文件原地改，持主文件与归档文件两把锁；归档行的白名单字段与主文件同"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§2.1 \"校验/追溯脚本一律跨档读\"条",
+      "change": "末尾补半句：撤销与更正的就地更新同样跨档（写入侧唯一跨档口，规则见 writes.json form2）"
+     }
+    ]
+   },
+   {
+    "order": 14,
+    "item": "§9 验收标准统一改写：单件拒绝面补齐 + 新增假铁轨端到端自测",
+    "summary": "两件事并到一次改，因为都动 §9。第一件是把前面各项的机验落点写成用例（体例照现文『正例从略，只列拒绝面与豁免面』）。第二件是真洞：§9 的端到端验收只到 §8 第 3 步，步 4-10（施工、发射、入账、批次报告、核查、故事裁决、收官）全部没有端到端验收，而整条链最容易断的正是跨件接缝（发射单→RUNMETA→runs→批次报告→核查→story 写入校验→closeout 门禁），单件自测一个都测不到。这不是防御性设计，是证明设计成立的最低验收。落地取最小形态：直接拿 §7 已有的 fallback 三件当铁轨，加两个 fake 脚本，不建平行的 tests/fixtures/fake-project 工程（兜底三件已经是一个可跑的裸工程，再造一份就有两套铁轨要同步维护）；中断类用例用半状态 fixture 加重复执行，不搭进程 kill 注入框架（研究代码，fixture 堵同一个洞且确定性更好）。",
+    "self_decision": "两处授权内自决：(1) 崩溃类验收措辞钉死为『崩溃后只可能停在旧状态一侧或旧状态加孤儿派生行；重跑原命令收敛到完整新状态』并明写『不提供自动重放与自动补齐』，避免实施期照『reconcile 自动恢复』去造重放引擎；(2) 假铁轨的 fake 脚本注明不计入『九个脚本』的计数，§9 第一条的数不用改。",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§9 验收标准，脚本用例清单（补 schema 与入账面）",
+      "change": "加四条：① schema 校验入口——删任一 required 字段 / 塞不在 rows.enums 的枚举值 / 违反 conditional 三种注入各被拒，且三种由同一入口拒（两个 runs 写入口、发射单写入、四本 jsonl 账写入共用）；校验失败信息格式固定为 <账名>.<字段路径>: <说明>，必须带实际非法值；② 记账脚本——metrics 尾行两项落两行、run 级字段逐字相同；metrics 空数组或非数组拒并按 R8 升级；③ 同主键 (run_id, metric_name, filter) 重复入账拒、判据行同 run_id 重复拒、同 run_id 两行的 run 级字段不一致拒；④ regression_check：metric_names 为空的 claim 列入跳过清单、不报冲突也不静默漏掉；metric_names 指向不存在的指标则 story 写入拒"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§9 验收标准，交付门禁与批准面",
+      "change": "加三条：① ledger.py gen-schemas --check 全绿——生成器键序固定、重复生成逐字节相同、磁盘上的 plugin 默认 schemas/ 与表一致，工程覆盖的 schema 不在检查面内；② trace_check 批准面四条——spec 正文改一个标点报 approval_stale 且写发射单拒；只追 withdrawals[] 或只递增 spec_version 不报 stale；原则文档条目内容变化则引用它的 spec 报 principles_stale；跑一次判据 run 触发『最近实测』回填后不得报 principles_stale；③ quick 发射单不受批准门禁影响"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§9 验收标准，复合动作与恢复面",
+      "change": "加三条：① 复合动作幂等与半状态——answer-r5-choice / 撤销重开 / 记账三条命令各重复执行两次，实体数量与引用关系不变；三类半状态 fixture（孤儿 decision、撤销中断、affects 缺失）重跑原命令后收敛到完整新状态；崩溃后只可能停在旧状态一侧或旧状态加孤儿派生行；不做进程 kill 注入，不提供自动重放与自动补齐；② doctor——构造三类半状态 fixture 各能报出且不写任何账本；③ ledger.py status——同一份落盘账本连查两次输出一致（generated_at 除外）；四个断点 fixture（发射单已写未发 / 跑完未入账 / 报告未核查 / 批次未收官）各落进对应字段；批次报告引用不存在的 run_id 只进 inconsistencies[]，其余字段照常出、不推断阶段；全程不写任何文件"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§9 验收标准，注册表与判据面 / evidence_lint 面 / R4 面",
+      "change": "加四条：① 写发射单——argv 前缀与 registry_cmd 不符 / 首任务 token 不等于 registry_task / task 不在 registry_query 清单，三者各拒；registry_query 未接线时按 config.json null_effect 报未接线、不放行；② principles-lint——criterion_cmd 含管道符或换行报错；首 token 前缀不等于 registry_cmd 或任务不在清单报错；【想法待定】暂空仍放行；③ evidence_lint——元数据数字（生成时间、git HEAD、行号、哈希）不报『无复现命令』，经验数字缺命令必报；accuracy 与 n 必须能由同一条 metrics_cmd 或 criterion_cmd 复算，生成日期与行号只查可溯源不查命令；④ 快车道面补：转正发射单 promoted_from 指向的 quick 发射单不存在则拒，沿用字段被改则 trace_check 报错，转正后的正轨 run 进故事放行"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§9 验收标准，\"在 new1 挂接后……1-3 步\"之前新增一条",
+      "change": "新增 **plugin 自测（假铁轨）**：用 scripts/fallback/ 三件加 fake 任务，不碰 GPU、不碰外部服务，走通 §8 步 3→10 的机械链。fake 任务参数 --seed / --mode ok|fail|timeout|empty|bad-metrics / --out DIR，输出遵 rows.json structured_output_contract。九个场景：① 正轨闭环（spec 条目→工单→发射单→fake run(ok)→RUNMETA/jobs/runs→批次报告→核查 clean→story 入账→trace_check --closeout 过）；② 快车道链（缩减发射单→fake run→runs 行 quick=true）story 引用被拒，且 trace_check 不因缺 spec_ref/issue_ref 报断链；③ 同一 fake 任务按正轨重跑（新 spec 条目 + 完整发射单、promoted_from 指原 quick run）新 run 可进故事，两条 runs 行 value 逐字相同；④ --mode empty → output_check 判 empty-output，runs 行 status=empty-output 且 metric 三字段为 null；⑤ --mode bad-metrics → runs 无新行、blocked 新增一条 kind=failure 且 evidence 带日志路径；⑥ 第一次 --mode fail、重试后 ok → runs 单行 status=ok，RUNMETA attempts 两条俱在、第一条 argv 与日志路径未被覆盖；⑦ spec 批准后改一字 → 写发射单被 approval_stale 拒；⑧ 三类半状态 fixture 重跑原命令后收敛；⑨ 新会话只跑 ledger.py status 即可接着干。new1 挂接后的 1-3 步真实走通一条保留不动"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§4 组件结构 scripts/fallback/ 与 tables/config.json _fallback_rule",
+      "change": "fallback 下加 fake_experiment.py 与 fake_metrics.py（只在自测用），注明不计入\"九个脚本\"的计数；_fallback_rule 补半句：兜底三件同时充当 plugin 自测的假铁轨，fake 任务经 registry.py 注册"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "§9 铁轨兼容承诺 挂接清单 ③ 与 ⑦",
+      "change": "③ 改为\"RUNMETA 增 outputs 字典与 attempts 数组\"；⑦ 改为\"RESULTS.md 渲染器跟随②行型改造，并处理同 run_id 多行的合并展示\""
+     }
+    ]
+   },
+   {
+    "order": 15,
+    "item": "spec_lint.py 升级：E4 表可生成性检查、E1 补充、ALLOW 清理，交付门禁复跑全绿",
+    "summary": "spec 改动交付前 spec_lint 必须全绿是 §0.5 第 4 条的门禁，本轮改了五张表和大段散文，lint 必须跟上。新增 E4 组查\"表自身够不够生成 schema\"——这是设计稿层面的静态一致性，正是 spec_lint 的定位。生成物一致性不归它（生成物是实施期产物，此时还不存在），归 gen-schemas --check，两处口径写进 docstring 免得后人重复实现。不是过度防御：E4 全是对已成文承诺的机械核对，四条规则、几十行代码。注意 collect_vocab 走全表递归，本轮新增的字段（promoted_from、attempts、metric_names、blocked_ref、approved_digest、status_view、inspection_report_header、evidence_lint_exempt、approval_stale、principles_stale 等）只要先落进 tables/ 就自动进词汇表，W1 白名单不用逐个补。",
+    "self_decision": "",
+    "edits": [
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec_lint.py",
+      "section": "check_tables 新增 E4 组",
+      "change": "查 rows.json 的八个受管块（story_row、decisions_row、blocked_row、feedback_rows 两型、runs_row_normal、runs_row_criterion、launch_order；名单写死在脚本里，与 _schema_dialect 的不参与清单互补）：必须有 required/properties/primary_key；required 是 properties 键集的子集；primary_key 每项在 properties 里；每个 $enum 的值存在于 rows.enums；每个 $ref_to 指向的账名在 ledgers.json 里；ledgers.json 中 format=jsonl 的账对应块 required 必含 schema_version"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec_lint.py",
+      "section": "ALLOW",
+      "change": "删 attempt_no（已被 attempts 取代）与 approved_against_principles_version（字段已删）；其余不动——新字段经 collect_vocab 自动覆盖"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec_lint.py",
+      "section": "模块 docstring",
+      "change": "检查面清单加 E4（表是否够生成 schema），并写明生成物一致性不归本脚本、归 ledger.py gen-schemas --check"
+     },
+     {
+      "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+      "section": "（无改动，交付动作）",
+      "change": "全部改完跑 python3 /home/y-guo/reproduce/new1/.scratch/research-loop/spec_lint.py，0 errors 才算交付；散文新增句子避免写出三段以上的管道符枚举链，否则触发 E2/W2"
+     }
+    ]
+   }
+  ],
+  "user_flags": [
+   {
+    "item": "甲 P2-3a：首版是否暂缓 archive 与 archive index（v1 只保留 cap 告警，archive 命令排进 v1.1）",
+    "question": "归档轮转留在 v1，还是 v1 只做行数上限告警、archive 命令排进 v1.1？",
+    "options": "选项 A（留在 v1）：§2.1 归档段不动，同批落地第 13 项『撤销/更正就地更新跨档』——否则归档一开，用户撤销一条已归档的 blocked 或 story 行就没有落点。选项 B（排进 v1.1）：§2.1 归档段标注 v1.1；config.json ledger_caps 的 domain 注明 v1 只做上限告警不搬行；§10 后置清单加『归档轮转』；第 13 项随之推迟。冲突面：你 2026-08-13 裁过『上限进配置（ledger_caps）』，也批注过归档『可自动』（已存档进 §10 后置）；选 B 会让 ledger_caps 在 v1 变成半死键，并拿掉 §2.1 三个上下文卫生手段（读法为主、读手为辅、归档为辅）里的一个。评审甲给的暂缓理由有一半站得住（已归档行的撤销确实没成文），那一半已由第 13 项单独修好，可以脱离暂缓决定独立成立。"
+   },
+   {
+    "item": "R4 收窄：spec 中已批准的口径视为预授权（第 9 项）",
+    "question": "『公式、分母、过滤条件、聚合层级已写进 spec 条目并经你批准的，每批照算不再上桌』——这一句要不要加？",
+    "options": "选项 A（加，两组评审的共同建议，已写进第 9 项）：省掉每批重复上桌；硬核不变——原始值忠实呈现，新增或改动公式、分母、过滤、聚合层级、缺失值处理一律重新提案，口径没写全的不算预授权。选项 B（不加，维持 R4 字面）：任何派生量每次都先提案。之所以拿出来问：这一句实质上放宽了 agent 不问你就能算的范围，属于你在 idea 层顶端这条核心意图的边界，不该由我替你定。现文只有 §1 一句『部署层只跑既有机械汇总管道』半掩着，两条口径不一致的状态本身要收掉——选 B 的话，§1 那半句也要一并改成与 R4 字面一致。"
+   },
+   {
+    "item": "runs.jsonl 基数变更：一次实验多指标 = 同 run_id 多行（第 1 项）",
+    "question": "确认这次账本 schema 变更？按 spec 自己的 R5 第二问『账本 schema 变更永远算第二问为是』，它必须上桌。",
+    "options": "选项 A（确认，推荐）：现文 metrics_cmd_min 字面只允许一个指标，一次 eval 同时出 accuracy 和 f1 就只能丢一个或塞进 value，两条都违反 R7『数字只经脚本入账』。改法不拆账、不新开账本，只改 rows.json 两块加抽数契约；代价是 §9 挂接清单第 ② ⑦ 两项的工作量（record.py 行型改造与 RESULTS 渲染器）从『一行一 run』变成『一行一指标』——这两项本来就在清单里要改。选项 B（维持一 run 一行）：需要你指定第二个指标怎么办——目前 spec 里没有任何位置放得下。附带：本轮对 rows.json 的整体 schema 方言改造（第 2 项）同样落在 R5 第二问的范围里，一并请你确认。"
+   }
+  ],
+  "rejects": [
+   {
+    "item": "甲 P0-1 方案①：拆成 schemas/*.schema.json + policies/owners.json + policies/queries.json，tables/ 降为生成后的文档视图",
+    "reason": "收益与方案②相同，改动面大得多，还多出一份要维护的『生成后的文档视图』。policies/owners.json 会把 owner 从 ledgers.json 的一列拆出去，正好退回自决点 115 判过的『两表键集要互相校验』的老形态。"
+   },
+   {
+    "item": "乙 建议A：tables/ledgers.json 也要可执行化",
+    "reason": "已被现文覆盖：每账四列都是机器值，spec_lint.py check_tables 已在校验 owner 落在 writes.json owner_values 九值域内、非 jsonl 账不许设 cap、runs.cap 只许 null、form2 白名单指向的账必须存在。只有 active 一列是中文，那一列的问题在第 7 项（status_view）与归档判定里单独处理。"
+   },
+   {
+    "item": "乙 建议A：writes.json 的 owner_values / withdrawal_proxy / maintenance_exempt 三段也要 schema 形态",
+    "reason": "这三段是写给人看的口径说明，机器只用到键名，改成 schema 形态没有堵到任何洞。只有 blocked_transitions 的『谁能写』是 §9 点名要机验的，已在第 4 项抽成机器值。"
+   },
+   {
+    "item": "甲 P0-3 方案 1 / 乙 建议 D 主方案：新增 append-only operations.jsonl，prepared/committed 两行，effects 预分配 ID，reconcile 重放缺失步骤",
+    "reason": "一本新账要连带 owner 值、active 判定式、cap、归档规则、query 视图、config 键集一整套，外加状态机与重放引擎，而 spec 里没有任何消费者要读操作历史（上行六类没有一类是操作流水）。另有具体不兼容：现文 id 由 ledger.py 自增分配，预分配要改 ID 分配机制。它自身的写入也是一次文件写，只是把崩溃窗口挪位置、不消灭它。按裁决 3 自证不了必要性。"
+   },
+   {
+    "item": "甲 P0-3 方案 2：staging manifest + commit marker",
+    "reason": "等于给每个复合动作做一次两阶段提交，复杂度不低于事务日志，堵的洞与最小方案相同。审计记录 #111 刚把 archive 的临时件细则压成一句话，此时反向给五个动作各加一套 staging 与裁员方向相反。"
+   },
+   {
+    "item": "甲 P0-3：所有复合操作必须有 operation_id 保证重试幂等",
+    "reason": "幂等键已经存在，不必新造：撤销重开的查重键是 (ref=旧 blocked_id, status=open)，r5-choice 只缺一个回指字段（已在第 1 项补成 blocked_ref）。给每行加 operation_id 是全账本级字段成本，而 ledger.py query 的过滤维度里没有一个按操作查。"
+   },
+   {
+    "item": "乙 建议 D 第 5 项：closeout-batch 需要事务协议",
+    "reason": "已被现文覆盖。核查报告落 reports/ 是 append 新文件，回填 inspection_report 是幂等的字段赋值，中断的表现就是 inspection_report 仍是空串等于未收官，而 trace_check --closeout 门禁保证半状态不会被误判为已收官。"
+   },
+   {
+    "item": "乙 建议 D 故障注入的场景 1 与 4（只写 prepared 后退出 / 写 committed 前退出）",
+    "reason": "依附 operations.jsonl 方案，随该方案一并拒。其余三种（append 后崩、就地更新后崩、重复执行）改成半状态 fixture 加重复执行，不搭进程 kill 注入框架。"
+   },
+   {
+    "item": "甲 P1-1b / 乙 §13：新开 observations.jsonl（或 attempts/operations）独立账本",
+    "reason": "拆账的收益只有一个——省掉 run 级字段在多行之间的重复；代价是新账本条目、owners/ledgers/ledger_caps 三处键集、新写权规则、story/trace_check/regression_check/query 全部改引用口径、再写一条归档活跃行判定式。重复字段的洞用一条机验就堵死（run 级字段同 run_id 各行必须一致 + 一次写入全部行）。审计自决点 1 已判过同型问题：判据实测走 runs.jsonl 不新开账，理由是少一本账。"
+   },
+   {
+    "item": "乙 §3.3：observation_id 作为独立标识",
+    "reason": "没有消费者。观察值的身份就是 (run_id, metric_name, filter)，story 要精确引用用它就够，再发一个 id 是白发。"
+   },
+   {
+    "item": "甲 P1-6e / 乙 §3.2：attempt_id 作为独立主键实体，或每个 attempt 一份独立 RUNMETA",
+    "reason": "attempts 数组已经把『不覆盖失败证据』这个洞堵死，独立 attempt_id 再无别的消费者——runs 行、story、trace_check 引的都是 run_id。每 attempt 一份 RUNMETA 更差：产物目录下出现一组文件名，runmeta_path 单值回指立刻失效，监察面的 direct 读法要改成扫目录。"
+   },
+   {
+    "item": "乙 §3.1：runs 行加 started_at/finished_at，以及 runs 行直接加 launch_order_ref",
+    "reason": "elapsed_s 加 recorded_at 已经覆盖时长与入账时刻；launch_order_ref 现文靠 runmeta_path→RUNMETA→launch_order_ref 两跳回指，链条不断，加一跳捷径等于同一事实两处成文，还得再写一条一致性机验。"
+   },
+   {
+    "item": "甲 P1-2 子项：approved_commit（与 digest 二选一）",
+    "reason": "批准发生在会话当场，spec 文件此刻多半没 commit，钉 commit 只能拿到批准前的树；而『跑这次实验用的是哪份代码』已由 expected_commit 加 RUNMETA.commit 加脏树清单两头钉死。评审甲自己也写『优先 digest』。"
+   },
+   {
+    "item": "乙 建议E 备选：改用独立 approval 账本，让批准事件引用文档 digest",
+    "reason": "新开一本账要连带 owner 值、active 判定式、cap、query 视图、归档规则、config 键集一整套。审计需求已由文件头 withdrawals[] 加 approved_* 四字段承担（批准与撤销都留日期、人、用户原话）。评审乙自己也写『首版工作量更大』。"
+   },
+   {
+    "item": "乙 建议E：五步 canonicalization（解析 frontmatter → 删 approved_* → 固定 key 序列化 → 拼正文 → sha256）",
+    "reason": "引入 YAML 序列化器的实现依赖（key 序、引号、多行标量），本身就是新的漂移面。改用更小的等价规则：文件头整块不入哈希，digest 只覆盖分隔线之后的正文原始字节——同样满足评审给的三个例子，且循环问题从『排除特定字段』变成『压根不碰文件头』。"
+   },
+   {
+    "item": "甲 P1-3：删 argv、只存 task_id + args、运行时经 registry 解析；乙 建议F：criterion_cmd 拆成 criterion_task + criterion_args",
+    "reason": "两者都要求工程注册表额外提供结构化 resolve 接口（config.json 现在只有 registry_cmd 与 registry_query 两个入口），并改写兜底 launch.py 与 new1 的发射器。最小等价方案是权威声明加一条前缀机验，还多堵一个洞（手写 argv 绕过注册表）。"
+   },
+   {
+    "item": "乙 建议F：发射单存 registry_digest",
+    "reason": "注册表是仓库里的代码，版本已被 expected_commit（前瞻）与 RUNMETA.commit 加脏树清单（后验）两头钉死，再算一个 digest 是同一件事记第三遍，还要额外定义『注册表的哈希覆盖哪些文件』这个新的归一化面。"
+   },
+   {
+    "item": "乙 建议F：RUNMETA 保存解析后的 argv[]",
+    "reason": "现文已经这么写了：runmeta._fields 里有 argv，且前瞻与后验的分工在 §5 成文。不是缺口。"
+   },
+   {
+    "item": "乙 建议H-4：artifact_roots 进 policy",
+    "reason": "已被现文覆盖：config.json 已有 raw_data_roots 键，plugin 本体只用 <raw_data_roots>/<artifact_dir> 模板。唯一要改的是 domain 里那句『大产物一律 NFS』，已并进第 10 项。"
+   },
+   {
+    "item": "乙 建议H-2 附注 / 甲 P1-5 附注：未配置时使用当前会话默认模型",
+    "reason": "与用户全局硬规则冲突：派 subagent 一律显式指定模型，禁止继承主会话。改成 plugin 携带默认值 opus/sonnet，配置未填时用默认值并显式传。"
+   },
+   {
+    "item": "乙 建议H-5：core 里不该出现 tokyo、48G",
+    "reason": "反证：spec.md 与五张表全文 grep，tokyo 零命中、48G 零命中，这两个专名根本不在。清单里其余四项（NFS、换卡、模型名、GPU）属实，已在第 10 项处理；『换卡』两处判为 adapter 概念（error_classes._shape 是形状不是值域），加注不改名。"
+   },
+   {
+    "item": "建议C：全局线性 stage 枚举与 stage 标量字段",
+    "reason": "与并发结构直接冲突，一个标量装不下。反证三处：principles.status 是逐行状态、没有『全体原则已批准』这个全局门；batch_id 带序号且发射单有 depends_on，多批可同时在办；§2.6 明说快车道批不触发收官核查，与正轨并行。每实体状态在表里已经齐了（blocked/decisions/runs/story/principles 五个 status 加批次的 inspection_report 空串）。"
+   },
+   {
+    "item": "建议C 子状态图：quick_ready → quick_running → quick_recorded → quick_closed",
+    "reason": "快车道按用户裁决免批次报告、免收官通读，quick_closed 没有任何落盘事实与之对应。quick 行的真实状态已由 runs.status 加 jobs 台账表达。"
+   },
+   {
+    "item": "建议C：新增 tables/state.json 第六张表；P0-2 兜底：只由脚本维护的 current.json 物化状态视图",
+    "reason": "表的划分在自决点 115 已定为五件套，status 的输出是一份行结构契约，rows.json 本来就装这类契约（structured_output_contract、batch_report_header、runmeta 都在里面）。current.json 更差：造出一份与账本并列的第二真源，且 writes.json 明写『渲染/回填类动作不产生新内容，只物化已入账数据』，记录当前阶段不满足这条。"
+   },
+   {
+    "item": "建议C：另设 ledger.py next --layer 命令给出 next_actions",
+    "reason": "『下一步干什么』要么来自 SKILL.md 的阶段索引，要么来自 next 背后的一张阶段到动作表，两处都写就是 §0.5 点名要堵的病。改成 status 输出里带 waiting_on[]，动作名直接取 routes.json 的 to 列词。"
+   },
+   {
+    "item": "甲 P2-1：顶层统一入口 research-loop init/status/next/check/query",
+    "reason": "面向人的统一入口已经存在，它是路由表里的中文句子，不是 CLI 子命令；再套一层壳只是把 routes.json 里已经出现一次的脚本名换个地方写。它顺手暴露的真洞（init 没有路由句）已在第 12 项补上。"
+   },
+   {
+    "item": "甲 P2-2：inspection_policy 三值状态机 always | risk-based | manual",
+    "reason": "risk-based 的判定规则没人写、manual 等于关掉核查，v1 都没有使用者，评审自己也把 risk-based 排进 v1.1。值域先收成 always 一个值，加值时再改。评审说的『机械三件套始终执行、只有通读可变』在 v1 没有对应场景——唯一豁免面是快车道，而快车道连批次报告都不出。"
+   },
+   {
+    "item": "甲 P2-3b：首版暂缓 feedback review 与 skill 进化（R9）",
+    "reason": "用户裁决第二批第 3 条已点名『R9 加反馈账留下』。评审的理由是首版状态机太多，但反馈账没有状态机：rows.json feedback_rows 只有 suggestion/review 两个行型、全 append、写权是 shared-append、命令是一条子命令加一条路由句。理由与实际重量对不上。"
+   },
+   {
+    "item": "甲 P2-3c：首版暂缓 regression_check",
+    "reason": "回归警报是用户确认的上行六类之一，砍掉它等于砍掉一类上行。实现面上它是一个查询加对比：runs 行带 metric_name/value/n/filter，story 行带 evidence_runs 与 selection_rule，同口径重比不需要新状态。"
+   },
+   {
+    "item": "甲 P2-3d：首版暂缓 doctor 聚合报告",
+    "reason": "doctor 按定义是已有检查件的拼装壳，零新语义、零写权（明文不写 reports/、不写任何账本目录），暂缓省不下工作量。而且归档的『建议』环节挂在它身上，砍 doctor 会连带砍掉归档的触发口。"
+   },
+   {
+    "item": "甲 P2-3e：首版暂缓通用 fallback",
+    "reason": "已被现文覆盖：_fallback_rule 已把兜底裁到三件最低必做项并写死『除此之外不复刻任何高级功能』，评审要暂缓的『更完整的 fallback 设施』本来就不在 v1 范围里。反过来这三件在 v1 有硬用途——假铁轨端到端自测需要一条不碰 GPU 的真实发射路径，正是它们。"
+   },
+   {
+    "item": "乙 建议I：另起 tests/fixtures/fake-project 平行工程与 expected/artifact.json 期望值文件",
+    "reason": "兜底三件已经是一个可跑的裸工程，再造一份就有两套铁轨要同步维护。fake 任务与 fake metrics 两件采纳并挂进 fallback，断言写在自测脚本里，不单独立期望值文件。"
+   },
+   {
+    "item": "乙 建议I：metrics 输出用 observations[] 数组示例",
+    "reason": "依赖被驳回的 observation 实体。输出形状按 rows.json 现有契约：stdout 最后一行是单个 JSON 对象，对象里带 metrics 数组（第 1 项）。"
+   },
+   {
+    "item": "甲 §6-A：把 v1 交付清单写进 spec 新开一节排期",
+    "reason": "spec 已有 §10 管范围，排期该落实施计划（WORKPLAN 与 .scratch/research-loop/issues/），在 spec 里再开一节排期就是两处成文，违反 §0.5 元规则 1。出 v1 交付清单时以 §4 组件结构加 §9 验收为骨架逐项挂工单。"
+   }
+  ],
+  "conflicts_resolved": [
+   "runs 主键三方分歧：schema-truth 组把 runs 的 primary_key 挂待定、consistency 组提 (run_id, metric_name)、entity-model 组提 (run_id, metric_name, filter)。裁给 entity-model 的三元组——filter 已是 runs_row_normal 的字段且由记账脚本从发射单透传，二元组会把『同指标不同口径子集』的合法第二行误判成重复入账。schema-truth 的待定标记随之取消，consistency 的 _unique 条目并入 entity-model 的 _key/_dup_rule，不重复写。",
+   "observations 拆账：entity-model 与 schema-truth 两组都驳回新开 observations.jsonl。因此 schema-truth 的表内改造无需级联——账本数量、owners 与 ledgers 键集、query 维度全不动，只有 runs 两个行型的块内容变。",
+   "decisions 回指字段命名：consistency 组提的字段名是 ref，与 blocked_row.ref（四选一联合类型）同名不同义，撞 §0.5 一物一名。改名 blocked_ref，与 blocked_row 已有的 decision_ref/grant_ref 命名法对称。writes.json r5_choice_assembly 与 blocked_transitions.withdrawn 的反查条款同步改用 decisions.blocked_ref。",
+   "跨账本一致性检查的分工：session-recovery 组给 ledger.py status 加 inconsistencies[]，consistency 组给 doctor 加半状态扫描，两者都是跨账核对。裁定分工——status 只做三条廉价交叉核对（批次报告 run_ids 对 runs、jobs 结束态对 runs、发射单超时仍无台账），深度检查（孤儿 decision、撤销中断、affects 不一致）只在 doctor，两处不许互相重造。doctor 的工作面段直接调 status，已写进第 7 项的 §4 编辑。",
+   "RUNMETA attempt 断言：fake-rail 组的场景 6 断言 RUNMETA.attempt_no=2 并注明待 attempt 实体裁断。entity-model 组已采纳 attempts 数组，故场景 6 改成『attempts 两条俱在、第一条 argv 与日志路径未被覆盖』。config.json _fallback_rule 与 spec_lint ALLOW 里的 attempt_no 一并跟改。",
+   "fake-rail 的三个待定场景：场景 7（批准 stale 门禁）依赖 approval-digest 组、场景 8（崩溃恢复）依赖 consistency 组、场景 9（status 恢复现场）依赖 session-recovery 组，三组都已采纳，故三个场景全部进 §9 假铁轨自测；场景 3 的转正断言按 entity-model 采纳的 promoted_from 写。",
+   "rows.json 新增的非行式契约块（status_view、inspection_report_header、evidence_lint_exempt）与 md 头部三块（batch_report_header、spec_header、issue_min）不参与 schema 生成，必须写进 _schema_dialect 的排除清单，否则 spec_lint 的 E4 会对它们误报缺 required/properties/primary_key。",
+   "status_view 的版本字段：建议C 提 state_version，rows.json 已把 schema_version 定为版本字段的唯一名字。取 schema_version，不引入第二个名字。",
+   "§9 验收被七个组各加一段：全部并进第 14 项一次改写，按面分组（schema 与入账面、交付门禁与批准面、复合动作与恢复面、注册表与判据面、假铁轨自测），不各写各的。",
+   "ledger.py 子命令被三个组各加一个（gen-schemas、status、approve-spec）：并成一次改 §4 的子命令清单。§9 第一条的『九个脚本』计数不变——三者都是子命令，fake 任务两件也注明不计入。",
+   "routes.json 被三个组各改一处（init 行、status 行、inspector 模型名引用）：并成第 12 项一次改。",
+   "用户裁决 1 的形态保全：R5 常设授权阈值移进 config 的 standing_authorization 键，但钉死三条不许丢——默认 3600 秒携带即生效不许 null 锁功能、哨兵值 spec-standing-gpu-1h 字符串不改名（rows.json 与 writes.json 已按此值成文）、§2.5 回报义务原样保留。『写 NFS 不算不可逆』改成『写产物盘（raw_data_roots 下的路径）不算不可逆』，语义不动。",
+   "归档相关的两条分头处理：P2-3a『整件事暂缓』属用户裁决范围，进 user_flags；它的衍生洞（已归档行的撤销没有写入落点）与暂缓与否无关，单独作为第 13 项，并标明依赖用户对 user_flags 第 1 条的选择。",
+   "甲 §6-B 的七项分流：多资源适配器、risk-based 核查策略、更完整兜底件三项进 §10 后置清单（已并入第 10 项）；archive 与 archive index 转用户裁决；feedback 进化、regression_check、doctor 三项驳回并给反证。"
+  ]
+ },
+ "all_verdicts": [
+  {
+   "item": "甲 P0-1 主张：tables/ 不足以直接生成运行时 schema，表是文档真源不是运行时真源",
+   "verdict": "partial",
+   "spec_evidence": "rows.json `runs_row_normal` 全部内容是 `\"_fields\": [\"run_id\",\"status\",\"output_dir\",...]` 加中文 `_notes`，没有一处类型；`runs_row_criterion` 只有 `_required` 列表加 \"其余：允许 null\"。可空有三种写法并存：`\"options\": \"[...]（grant 可空）\"`、`\"decision_refs\": \"[D00x]（quick 可空）\"`、`\"filter\": \"口径过滤条件字符串（可空）\"`，另有 `_notes` 里的 \"允许 null\"/\"一律 null\"。嵌套结构只有散文：`\"scope\": \"{desc, path_globs[], expires_at: ISO|null}——kind=grant 必须结构化填全\"`。联合类型无判别式：`\"ref\": \"spec条目/工单/run_id/blocked_id（撤销重开时指旧条）\"`。而 spec §0.5 第 5 条写死 \"实施时 plugin 的 schemas/、owners 默认表、路由薄壳直接从表生成或引用\"，§9 第一条重申 \"（schemas 与 owners 默认表从 tables/ 生成）\"。",
+   "rationale": "采纳一半：就 schemas/ 这一项，评审说的问题在原文里坐实——rows.json 现有写法生成不出验证器，spec 却已经把\"从表生成\"写进 §0.5 和 §9 验收，这是 spec 内部的不自洽，不是外部加戏。驳回另一半：评审把 owner 默认表和路由实现一并说成生成不了，与原文不符——ledgers.json 的 owner/cap/format/read 四列是机器值，spec_lint.py 的 check_tables 已经在机验 owner 落在 writes.json owner_values 九值域内、非 jsonl 账不许设 cap、runs.cap 只许 null；routes.json 是 say/stage/to 三键的数组，薄壳直接吃。所以修改面只有 rows.json（外加 writes.json 一处，见后条），不是五张表。与裁决 3 不冲突：schema 校验本来就在 spec 里（§5 \"都过 schema 与写权检查\"、§4 schemas/、§9 齐备条），第十七轮裁掉的 9 处是自决点 108-116 那批，schema 不在其中；这里做的是把已承诺的东西补成真的，不是新加防御层。另外提醒一个自指关系：按 spec 自己的 R5 第二问 \"账本 schema 变更永远算第二问为是\"，改 rows.json 本身就算抉择点，默认模式下要上桌——本轮改的是设计稿，按你拍板走。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "顶部 _about 之后新增 _schema_dialect",
+     "change": "成文一段方言定义：块形 = {_note, primary_key[], required[], additionalProperties, properties{字段: {type|$enum|$ref_to, _note}}, conditional[]}；$enum 的值必须是 rows.enums 的键；$ref_to 的值写\"账名.主键\"；conditional 的 op 值域 eq|neq|in；生成器把 $enum 就地展开成 JSON Schema 的 enum 数组、不产生 $defs。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§0.5 第 5 条",
+     "change": "把\"直接从表生成或引用\"写实：点名生成物是 schemas/*.schema.json 与 owners 默认表，生成方向单向（表 → 生成物），生成物禁手改，生成器键序固定、重复生成逐字节相同。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-1 方案①：拆成 schemas/*.schema.json + policies/owners.json + policies/queries.json，tables/ 降为生成后的文档视图",
+   "verdict": "reject",
+   "spec_evidence": "spec §0.5 开篇：\"十五轮复审的头号缺陷类是'同一份封闭清单在两处成文，改一处漏一处'\"；第 1 条：\"封闭清单只成文一次，全部住在 tables/ 五个数据文件里，散文引用不复述\"。audit-merge 自决点 115：\"表的划分取五件套：owners 与 ledger_caps 默认值并进 ledgers.json 单表，不单独立表——键集相等约束从'校验两表'变成'天然同源'\"。",
+   "rationale": "收益与方案②相同，改动面大得多，还多出一份要维护的\"生成后的文档视图\"。policies/owners.json 会把 owner 从 ledgers.json 的一列拆出去，正好退回自决点 115 判过的\"两表键集要互相校验\"的老形态；policies/queries.json 承载的 active 规则属于建议 B，不该由本条顺手改掉存放位置。方案②（保留五表为源、升级字段写法）能达到同一个验收，选它。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "甲 P0-1 方案②：坚持五表为源时，字段至少写成 {\"type\": \"string\", \"minLength\": 1} / {\"enumRef\": \"runs.status\"} 形态",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json 现状如上条；spec §0.5 第 1 条要求封闭清单只住 tables/。",
+   "rationale": "这是本条评审里唯一与既有结构相容的方案。落地要点是加法不是替换：每个字段保留原来的中文说明进 `_note`，机器约束另起键——`\"principle_id\": {\"type\": [\"string\",\"null\"], \"_note\": \"普通行一律 null（非 null 即判据缩减行）\"}`。中文里有 JSON Schema 表达不了的语义（\"记账脚本从发射单透传\"是来源规则，\"非 null 即判据缩减行\"是行型判别式），删了就真丢东西。改造面按最小口径收在 ledger.py 落盘时真做校验的七个块：story_row、decisions_row、blocked_row、feedback_rows 两个、runs_row_normal、runs_row_criterion、launch_order；md 头部类（batch_report_header、spec_header、issue_min、principles_columns）与 error_classes 不动，它们不走 jsonl schema 校验。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "story_row / decisions_row / blocked_row / feedback_rows.suggestion / feedback_rows.review / runs_row_normal / runs_row_criterion / launch_order",
+     "change": "七个块统一改成 _schema_dialect 定义的块形；原字段值的中文整句搬进该字段的 _note，一字不改；`_fields`/`_required` 两个旧键删除，由 required + properties 取代。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-1 条件规则确定表示（when/allowNull） / 乙 建议A conditional requirements",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json runs_row_normal._notes：`\"status≠ok\": \"metric_name/value/n 允许 null\"`、`\"principle_id\": \"普通行一律 null（非 null 即判据缩减行）\"`；runs_row_criterion._notes：\"其余：允许 null\"；decisions_row.scope：\"kind=grant 必须结构化填全\"；blocked_row：`\"where\": \"kind=r5-choice 必填\"`、`\"grant_ref\": \"D00x|null（answered_by≠user 的 r5-choice 必填）\"`。",
+   "rationale": "条件必填在现文里至少有六处，全是中文，而且 §9 验收已经点名要机验其中三条（\"r5-choice 缺 where/options 拒\"、\"answered_by≠user 缺 --grant 拒\"、\"grant：无结构化 scope 拒\"）。验收要求存在、机器表示不存在，等于把这三条实现留给实现者临场发挥。用评审给的两键形态（when + allow_null/require）就够，不引入表达式语言。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "各实体块新增 conditional[]",
+     "change": "把六处中文条件译成 [{\"when\": {\"field\": \"status\", \"op\": \"neq\", \"value\": \"ok\"}, \"allow_null\": [\"metric_name\",\"value\",\"n\"]}] 形态；blocked 的 r5-choice 必填、decisions 的 grant 必填 scope、runs 判据行的 principle_id 非空同理各写一条。原中文留在同块 _note。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-1 验收②：删一个 required、塞非法枚举、违反条件必填，都被同一个验证入口拒",
+   "verdict": "adopt",
+   "spec_evidence": "spec §9 现有用例只列到具体子命令层：\"ledger.py blocked：跃迁级写权（--layer 传错拒）、非法跃迁拒；r5-choice 缺 where/options 拒\"，没有一条针对 schema 校验入口本身；§5 只写\"都过 schema 与写权检查\"，没说这个检查有自测。",
+   "rationale": "三类注入是 schema 生效的最小证明，成本是 §9 加一条、实现期加三个用例。现有验收把 schema 校验当既成事实用（story/blocked/runs-append 各条都假定它在），却没人验它在。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，重点用例列表",
+     "change": "加一条：schema 校验入口——删任一 required 字段 / 塞不在 rows.enums 的枚举值 / 违反 conditional 三种注入各被拒，且三种都由同一入口拒（两个 runs 写入口、发射单写入、四本 jsonl 账写入共用）。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-1 验收③：query 与 archive 对 active 的判断调用同一份已解析规则",
+   "verdict": "partial",
+   "spec_evidence": "audit-merge 自决点 112：\"活跃行判定式数据化：从 §2.1 散文迁入 ledgers.json active 列，query 默认视图与 archive 共用同一份\"；spec §2.1：\"逐账判定式在 tables/ledgers.json active 列\"。但 active 列的值是中文，例如 feedback 的 \"建议条按最新 review 行合并后为 pending；suggestion 与指向它的全部 review 行永远同批归档\"。",
+   "rationale": "\"共用同一份\"这半已经成文并落到 ledgers.json，评审说的\"各自重新实现\"在设计层面已被堵——判 reject 那半。剩下那半成立：共用的是同一句中文，不是同一份已解析规则，实现者仍要各写一遍解析。这一半的主体是建议 B（active query 机器语义），归另一组裁断，本组不出改动，只把这个事实交接过去：本条与建议 B 是同一件事，不要两处各改一次。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "乙 建议A 子项：为每个实体明确 type / required / properties（替换 _fields 写法）",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json 里评审点名的反例逐字存在：`\"runs_row_normal\": {\"_fields\": [...]}`、`\"runmeta\": {\"_fields\": [...]}`、`\"batch_report_header\": {\"_fields\": [...]}`、`\"issue_min\": {\"_fields\": [...]}`。",
+   "rationale": "与方案②是同一件事的字段级说法，一并采。范围仍收在走 schema 校验的七个块：batch_report_header、spec_header、issue_min 三处 `_fields` 是 md 文件的头部字段清单，trace_check/verify_report 按名取值即可，不需要 JSON Schema，留原样。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "七个实体块",
+     "change": "同上条：required + properties + type 取代 _fields/_required。md 头部三块（batch_report_header、spec_header、issue_min）保持 _fields 写法，并在 _schema_dialect 里注明它们不参与 schema 生成。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 子项：additionalProperties",
+   "verdict": "partial",
+   "spec_evidence": "rows.json jobs_min_additions._note：\"任务台账字段以工程现状为准（v2 裁员：不再开列完整字段清单），最低补两个回指\"；runmeta._fields 只列七项而 new1 现有 RUNMETA 还有 branch/dirty 等键（ops/runmeta.py:43）；spec §7：\"plugin 本体不含任何工程专名，特化只发生在这份配置里\"。",
+   "rationale": "对四本 jsonl 账的行（story/decisions/blocked/feedback）与 runs 两个行型采 false——这几本只有 ledger.py 和工程记账脚本两个写入口，关死能挡拼错字段名静默入账，一行成本。对 runmeta、jobs 判 reject：rows.json 自己写死了\"以工程现状为准\"，关死等于把工程自有字段判非法，与 §7 的通用/特化分界打架，这两块用 additionalProperties: true + required 只管回指字段。launch_order 取中间：核心字段关死，另开一个 \"ext\": {\"type\": \"object\"} 逃生口给铁轨放工程扩展字段（new1 的排卡分片一类），plugin 不解释 ext 内容。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "各实体块 additionalProperties",
+     "change": "story/decisions/blocked/feedback 两型/runs 两型 = false；launch_order = false 且 properties 加 \"ext\": {\"type\": \"object\", \"_note\": \"工程铁轨扩展字段，plugin 不解释\"}；runmeta/jobs_min_additions = true，required 只列回指字段。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 子项：primary_key / unique_by",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json 现在只在描述里带主键含义：`\"claim_id\": \"S 前缀自增\"`、`\"decision_id\": \"D 前缀自增\"`、`\"blocked_id\": \"B 前缀自增\"`、`\"fb_id\": \"F 前缀自增\"`，_about 说\"各账 id（S/D/B/F 前缀）由 ledger.py 自增分配\"；唯一性只有 principles_columns 里一句 \"principle_id（全表唯一，principles-lint 查重）\"。runs 行的主键完全没说——run_id 是否允许重复出现在多行，现文无定义。",
+   "rationale": "采。runs 的主键缺失是实打实的洞：判据缩减行的 run_id 由 ledger.py 按 `chk-<principle_id>-<YYYYMMDD>-<序>` 分配，普通行由部署层给定，两个入口写同一本账，没有唯一性声明就没人能判重复 run_id 是错还是特性。这条也是 P1-1（run 与 metric 基数）能不能落地的前提，但本条只声明主键，不动数据模型。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "各实体块 primary_key",
+     "change": "story=[claim_id]、decisions=[decision_id]、blocked=[blocked_id]、feedback=[fb_id]、launch_order=[run_id]；runs 的主键留一条待定标记进 _note，指向 P1-1 的 run/metric 基数裁断，不在本条自定。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 子项：schema_version",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json _about：\"jsonl 实体行必带 schema_version；md 账版本号在文件头\"。但 story_row、decisions_row、blocked_row、feedback_rows 的 suggestion 与 review 五个字段字典里都没有 schema_version 这个字段；只有 runs_row_normal._fields 和 runs_row_criterion._required 里有。",
+   "rationale": "采，而且这里已经有一个现成的不一致：全局规则说 jsonl 实体行必带，五个块的字段清单里没有。照现文生成器直接跑，会给 story/decisions/blocked/feedback 生成不含 schema_version 的 schema，第一次写入就与 _about 相抵。这条是最便宜的实证——现有写法不能唯一确定验证器，不用假设两个实现者就已经自相矛盾。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "story_row / decisions_row / blocked_row / feedback_rows 两型",
+     "change": "五个块的 properties 补 \"schema_version\": {\"type\": \"integer\", \"minimum\": 1}，并进 required；_about 那句保持不变作为交叉引用。"
+    },
+    {
+     "file": ".scratch/research-loop/spec_lint.py",
+     "section": "check_tables",
+     "change": "加一条 E1：rows.json 里凡 ledgers.json 中 format=jsonl 的账对应的实体块，required 必须含 schema_version。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 子项：reference targets（引用目标声明）",
+   "verdict": "adopt",
+   "spec_evidence": "现文的引用关系全是自由文本：story_row `\"evidence_runs\": \"[run_id]\"` 加 `\"_write_check\": \"所有被引 run_id 必须存在于 runs.jsonl 且 status=ok 且非 quick 行（§2.6）\"`；decisions_row `\"affects\": \"[spec条目/工单/run_id]\"`；blocked_row `\"ref\": \"spec条目/工单/run_id/blocked_id（撤销重开时指旧条）\"`；launch_order `\"decision_refs\": \"[D00x]（quick 可空）\"`。",
+   "rationale": "采。spec §5 把 decision_refs 与 affects 的一致性交给 trace_check 校验（\"decision_refs 是权威，affects 是物化索引，不一致以发射单为准\"），§4 又要 trace_check 扫\"发射单 decision_refs + 抉择账 affects\"——这两条实现都要知道字段指向哪本账的哪个主键，现在只能从中文猜。blocked_row.ref 的四选一联合类型必须给判别方式，否则撤销重开那条机验（ref 指旧 blocked_id）没法只查一种目标。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "各引用字段",
+     "change": "引用字段加 $ref_to：evidence_runs/baseline_runs/candidate_runs → \"runs.run_id\"，decision_refs → \"decisions.decision_id\"，grant_ref/decision_ref → \"decisions.decision_id\"，superseded_by → 同账主键；blocked_row.ref 与 decisions_row.affects 写成 $ref_to 数组（多目标）并在 _note 说明判别靠 id 前缀（S/D/B/F/chk-/run_id 命名规则）。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 子项：enumRef 不是标准语法，需明确生成器怎么展开或直接用 $ref",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json 现在已经在用同形写法：`\"role\": \"enum story.role\"`、`\"status\": \"enum blocked.status\"`、`\"arm\": \"enum runs.arm\"`，指向同文件 enums 段的 14 个枚举；spec_lint.py collect_enums 已经在读 rows.enums。",
+   "rationale": "采，取\"就地展开\"这一侧。rows.enums 已经是唯一真源、lint 已经在吃它，生成器把 $enum 展开成 JSON Schema 的 enum 数组即可，不引 $defs、不引跨文件 $ref——多一层间接只会多一处能漂的地方。把展开规则写进 _schema_dialect 就闭合。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "_schema_dialect",
+     "change": "写死：$enum 的值必须是 rows.enums 的键，生成器就地展开成 {\"enum\": [...]}，不产生 $defs 与跨文件 $ref；现有 \"enum story.role\" 一类字符串统一改成 {\"$enum\": \"story.role\"}。"
+    },
+    {
+     "file": ".scratch/research-loop/spec_lint.py",
+     "section": "check_tables",
+     "change": "加一条 E1：rows.json 里每个 $enum 的值必须存在于 rows.enums。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 子项：校验失败输出稳定的字段路径与非法值（如 runs.status: value \"looks-good\" is not one of [...]）",
+   "verdict": "adopt",
+   "spec_evidence": "spec §9 现有用例只写判定结果不写输出形态，例如 \"ledger.py runs-append：--layer≠deploy 拒；退出非 0 或尾行非 JSON → 不落行、升级\"；§4 只说 plugin 本体英文交付含\"脚本报错信息\"。",
+   "rationale": "采，成本一句话。修错的人多半是下一个会话的 agent，报错里没有字段路径和实际非法值，它只能整表重读——正撞 §0.5 的\"上下文是一等设计对象\"。写成 §9 一条格式要求即可，不必进表。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准",
+     "change": "在 schema 校验那条后面补一句：校验失败信息格式固定为 `<账名>.<字段路径>: <说明>`，必须带实际非法值。"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议A 涉及位置：tables/ledgers.json 也要可执行化",
+   "verdict": "reject",
+   "spec_evidence": "ledgers.json 每账四列都是机器值：`{\"default_path\": \"ops/story.jsonl\", \"format\": \"jsonl\", \"owner\": \"idea\", \"read\": \"query-only\", \"cap\": 1000}`；spec_lint.py check_tables 已在校验 owner ∈ writes.owner_values、非 jsonl 账不许设 cap、runs.cap 只许 null、form2 白名单指向的账必须存在。",
+   "rationale": "驳回。除 active 一列外，ledgers.json 已经是可执行形态，owners 默认表可以直接从 owner 列生成，lint 已经在机验它。active 一列的中文问题成立，但那是建议 B 的裁断范围，本条不重复出改动，也不要在这里顺手改坏与建议 B 的裁断口径。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "乙 建议A 涉及位置：tables/writes.json 也要可执行化",
+   "verdict": "partial",
+   "spec_evidence": "writes.json 里 layer_param.values、owner_values 键集、form2_inplace_whitelist 都是机器可读的清单，r5_choice_assembly.field_map 已是键值映射。但 blocked_transitions 的值是中文句：`\"open\": \"只能 from_layer 写\"`、`\"answered\": \"只能 to_layer 写；to_layer=user 特例——任何层的当场会话都可代笔，但字段级强制 answered_by=user 且 answer 含用户原话\"`。而 spec §9 要求机验 \"跃迁级写权（--layer 传错拒）、非法跃迁拒\"。",
+   "rationale": "只采一处：把 blocked_transitions 每个状态的\"谁能写\"抽成机器值，其余留中文。跃迁写权是 §9 点名要机验的，现在实现者要从中文句里自己解析出\"--layer 必须等于该行的 from_layer\"这条规则；抽成 {\"writable_by\": \"from_layer\"} 只加一层键。合法跃迁图（open→answered→closed、answered→withdrawn 等）现文根本没列，本条不顺手补，属另一件事。owner_values、withdrawal_proxy、maintenance_exempt 三段判 reject：它们是写给人看的口径说明，机器只用到键名，改成 schema 形态没有堵到洞。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/writes.json",
+     "section": "blocked_transitions",
+     "change": "四个状态的值从中文串改成 {\"writable_by\": \"from_layer|to_layer|proxy\", \"_note\": \"<原中文整句一字不改>\"}；answered 的 to_layer=user 特例保留在 _note，字段级强制项另起 \"force_fields\": {\"answered_by\": \"user\"}。"
+    }
+   ]
+  },
+  {
+   "item": "甲 §7 静态门禁：源表可以确定生成 schema 和默认配置",
+   "verdict": "adopt",
+   "spec_evidence": "spec §0.5 第 5 条与 §9 第一条都已承诺\"schemas 与 owners 默认表从 tables/ 生成\"，但 §4 的 scripts/ 九个脚本里没有生成器，§9 的验收用例里也没有一条查生成。",
+   "rationale": "采。承诺已经在 spec 里，缺的只是执行者和门禁。按最小方案落：不新开脚本，挂成 `ledger.py gen-schemas`（§4 已列 ledger.py 的子命令清单，加一项即可），这样 §9 \"九个脚本\"的数不用改，也不多一个交付件。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§4 组件结构，ledger.py 子命令行",
+     "change": "子命令清单加 gen-schemas：从 tables/rows.json 生成 schemas/*.schema.json 与 owners 默认表；--check 模式只重生成到内存并逐字节比对，不写盘。"
+    }
+   ]
+  },
+  {
+   "item": "甲 §7 静态门禁：生成物重复生成无 diff",
+   "verdict": "adopt",
+   "spec_evidence": "spec §4：\"schemas/ ... 从 tables/ 生成，plugin 携带默认版、工程可覆盖；变更走 R5 + schema_version 递增\"；§0.5 开篇的头号缺陷类是\"同一份封闭清单在两处成文，改一处漏一处\"。",
+   "rationale": "采，并且这条按裁决 3 自证得了必要性：schemas/ 一旦作为文件随 plugin 交付，它就是那份封闭清单的第二份拷贝——正是 §0.5 立法要堵的病。堵它的最小方案是生成器确定性加一条比对命令，不需要事务、不需要状态机。有一处必须写清边界，否则这道门禁会误伤：§4 明写工程可覆盖 schema，检查面只覆盖 plugin 携带的默认版，new1 侧的覆盖件不进比对。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，第二条（spec 自身门禁）之后",
+     "change": "加一条交付门禁：`ledger.py gen-schemas --check` 全绿——生成器键序固定，重复生成逐字节相同，磁盘上的 plugin 默认 schemas/ 与表一致；工程覆盖的 schema 不在检查面内。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§0.5 第 5 条",
+     "change": "补一句：生成物禁手改，改表再生成；两者不一致以表为准，由 gen-schemas --check 拦下。"
+    }
+   ]
+  },
+  {
+   "item": "乙 §14 评估问题 1 与 10：不读自然语言也能从表生成全部 schema；spec_lint 增加 schema 生成确定性检查",
+   "verdict": "partial",
+   "spec_evidence": "spec_lint.py 现有四类检查（E1 表间一致性、E2 散文枚举链冲突、E3 路由表复述、W1 生造字段）都不碰生成；audit-merge 自决点 116 逐条列了这四类加 W2。",
+   "rationale": "采\"表自身可生成\"这一半，进 spec_lint：加 E4 类，查每个实体块有 required/properties/primary_key、required 是 properties 的子集、$enum 名存在、jsonl 账必含 schema_version——这些是设计稿层面的静态一致性，正是 spec_lint 的定位。驳回把\"生成物无 diff\"也塞进 spec_lint：spec_lint 管的是 spec 与表，生成物是实施期产物，此时还不存在；那道门禁归上一条的 gen-schemas --check。评审甲第 9 节自己也把 spec_lint 定位成\"设计稿静态一致性检查\"，两处口径要一致。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec_lint.py",
+     "section": "check_tables 新增 E4 组",
+     "change": "查 rows.json 的七个实体块：必须有 required/properties/primary_key；required ⊆ properties 键集；每个 $enum 值存在于 rows.enums；每个 $ref_to 指向的账名在 ledgers.json 里；format=jsonl 的账对应块 required 必含 schema_version。"
+    },
+    {
+     "file": ".scratch/research-loop/spec_lint.py",
+     "section": "模块 docstring",
+     "change": "检查面清单加 E4（表是否够生成 schema），并写明生成物一致性不归本脚本、归 ledger.py gen-schemas --check。"
+    }
+   ]
+  },
+  {
+   "item": "P0-1（顺带核对，非本组主判）",
+   "verdict": "reject",
+   "rationale": "本组不裁 P0-1，只记一条与本组相关的事实：五表已经是机器可读 JSON，spec_lint 从表里自动收词汇与枚举（collect_vocab / collect_enums 走全表递归），所以本组给出的表内新增块（status_view）不需要另外改 lint 白名单就能被 W1 检查覆盖。P0-1 本身留给负责它的那组。",
+   "spec_evidence": "spec_lint.py: `def collect_vocab(tabs)` 递归 walk 全部表节点收 snake_case 词；`ALLOW` 只是补集。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 主命题：开工只读待决队列+有效授权，不足以恢复现场",
+   "verdict": "adopt",
+   "rationale": "命题成立。待决账装的是问题（blocked.kind = principle-gap / r5-choice / failure / other），授权视图装的是权限，两者都不记录在飞的活。具体的洞：发射单已写但没发射、run 已跑完但没入账、批次报告已落但没派核查，这三种状态下 blocked 是空的，新会话开工读到两个空视图，看不出手上有活。这不是防御性设计（裁决3），而是 spec 自己 §0 写的『上下文是一等设计对象』的直接要求，且修法只是把已有落盘事实组合起来读，不新增账本、不新增写入路径。",
+   "spec_evidence": "spec.md §2『**会话开工必读两样**（每层 SKILL.md 骨架写死）：① 本层待决队列（open 且 to_layer=本层 + answered 且 from_layer=本层，都算未决）；② 有效授权视图』；tables/rows.json enums『blocked.kind: [principle-gap, r5-choice, failure, other]』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§2 信道（开工必读段）",
+     "change": "把『会话开工必读两样』改成『会话开工跑一条 `ledger.py status --layer <本层>`，输出三块：① 本层工作面（在办事项，派生规则见 tables/rows.json status_view）；② 本层待决队列（定义不变，同现文①）；③ 有效授权视图（定义不变，同现文②）。三块全是跨账本派生视图，不落盘、不新建状态文件。』两个旧视图的定义原样保留，只是改为由 status 组合输出。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 现状清单六问的准确性",
+   "verdict": "partial",
+   "rationale": "六问里五问的答案其实已经在落盘物里，缺的只是一条把它们拼起来的命令，不是数据模型缺口。逐问核对：issue 完成度可从 issues 目录的 Status 行读（rows.json issue_min 有 Status 行）；等执行的发射单 = ops/launch_orders/ 里没有对应台账与 runs 行的那些；在跑的 run 只在 jobs 台账（runs.status 枚举里没有 running）；等报告/等监察/等用户裁决分别可从 batch 报告缺失、inspection_report 空串、blocked to_layer=user 派生。真缺口只有一处：spec 文件头没有任何『这份是当前在办』的标记，多份 spec 并存时无法机械判定 active_spec。所以采纳问题，但改小修法：status 只做组合派生，active_spec 一项不假装单数。",
+   "spec_evidence": "tables/rows.json batch_report_header『inspection_report … 允许空串 = 未收官』；enums『runs.status: [ok, failed, oom, timeout, empty-output, killed, partial]』（无 running）；tables/ledgers.json『jobs … owner run, read sliced』+ rows.json jobs_min_additions 含 launch_order_ref 与采样器判定；rows.json spec_header._fields 只有 spec_version/approved_by/approved_date/approved_against_principles_version/withdrawals[]，无状态字段。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "新增顶层块 status_view",
+     "change": "把每个字段连同派生源写死，其中 approved_specs_in_flight 定义为『specs 目录下 approved_by 非空且尚有未完成条目的 spec 文件路径列表，允许多份，不猜当前唯一 spec』；running_runs 注明『派生源是 jobs 台账，runs.jsonl 没有 running 态』。若实现期发现『未完成条目』派生歧义太大，再单独议给 spec_header 加一个状态字段，本轮不加。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 建议：提供 ledger.py status 恢复入口",
+   "verdict": "adopt",
+   "rationale": "采纳，且它是本组唯一需要新增的机制。成本很小：只读、不落盘、不写任何账本、不过写权检查，走 R7『账本的读同样走脚本』这条已有轨道。它同时替 §2.1 的读法纪律干活：把跨账本状态压成计数/id/路径，避免会话为了搞清进度去整读账本。",
+   "spec_evidence": "spec.md R7『账本写入、schema 校验、溯源检查、抽样、lint、渲染，一律脚本干；账本的读同样走脚本（§2.1）』；§2.1『jsonl 账不许整文件读进上下文，只许 `ledger.py query` 拿最小视图』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§4 组件结构（ledger.py 行）",
+     "change": "子命令清单加 `status`：『query / status / config-check / archive / principles-lint / runs-append / init / freeze-legacy / feedback review / 发射单写入』。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§2.1 账本读写纪律与回收",
+     "change": "在『查询口（主）』之后加一条：『**工作面视图（status）**：跨账本派生的在办清单，只出计数、id 与路径，不出行内容；字段与逐项派生源见 `tables/rows.json` status_view；纯只读，不落盘、不建状态文件。』"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§4 组件结构（doctor.py 注释）",
+     "change": "在 doctor 的拼装清单里注明『工作面段直接调 status，不重复实现』，防止 doctor 与 status 各写一套跨账本派生。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 建议：另设 ledger.py next --layer 命令给出 next_actions",
+   "verdict": "partial",
+   "rationale": "『下一步干什么』要么来自 SKILL.md 的阶段索引，要么来自 next 背后的一张阶段到动作表。两处都写就是 §0.5 点名要堵的病（同一份封闭清单在两处成文）。采一半：status 输出里带 waiting_on[]，每项只写『这件事在等谁、等哪个动作名』，动作名直接取 tables/routes.json 的 to 列词，不新立第二套阶段到动作映射；拒绝独立的 next 命令。这样恢复现场够用，判断仍归会话。",
+   "spec_evidence": "spec.md §0.5『**封闭清单只成文一次**，全部住在 `tables/` 五个数据文件里；散文引用不复述』；§4『skills/… SKILL.md # 路由薄壳：认阶段 → 转层（tables/routes.json）』；R10『SKILL.md 只放骨架（职责、信道、账本写权、开工必读、阶段索引）』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "status_view",
+     "change": "加字段 waiting_on: '[{item, ref, layer, action}] —— action 取值只许是 tables/routes.json 的 to 列已有动作名，不另立阶段到动作表'。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 建议：状态优先从已有账本派生",
+   "verdict": "adopt",
+   "rationale": "与 spec 现有纪律同向。所有派生源都是既有落盘物：blocked、decisions、runs、jobs、launch_orders 目录、plans 下的批次报告、issues 目录。派生不引入新的写入路径，也不违反 append-only。",
+   "spec_evidence": "spec.md §2『一切通信落盘，不走会话记忆』；§2.1『**append-only 的实义**：任何行永不删丢、事实字段永不改写』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "status_view._rule",
+     "change": "写死『纯派生：只读既有账本与目录，不写任何文件，不缓存中间结果』。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 兜底方案：增加只由脚本维护的 current.json 物化状态视图",
+   "verdict": "reject",
+   "rationale": "拒绝。这会造出一份与账本并列的第二真源，正是 §0.5 立法要堵的漂移面；写权表也明确『渲染/回填类动作不产生新内容，只物化已入账数据』，一份记录当前阶段的 current.json 不满足这条（阶段是新内容，不是已入账数据）。上一条采纳的派生方案已经覆盖全部六问，派生成本并不高（都是目录列举加一次 jsonl 过滤），触发兜底的前提不成立。",
+   "spec_evidence": "spec.md §0.5『一个字段/枚举只有一个归属表』；tables/writes.json maintenance_exempt._rule『渲染/回填类动作（最近实测回填、账本→md 渲染）同样不过 --layer——不产生新内容，只物化已入账数据』。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 建议输出字段清单（active_spec / stage / open_issues / … / next_actions[]）",
+   "verdict": "partial",
+   "rationale": "逐字段裁：open_issues、pending_launch_orders、running_runs、unrecorded_or_unchecked_runs、open_blockers、pending_inspection、pending_user_decisions 全采，它们都有确定派生源。active_spec 改成复数列表（见前条）。active_batch 改成 batches_pending_report / batches_pending_inspection 两个列表，理由是 spec 允许同时有多批（batch_id 命名规则带序号，发射单有 depends_on，快车道另有 quick 批）。stage 与 next_actions[] 两项按后面两条分别拒和减。",
+   "spec_evidence": "tables/rows.json batch_report_header『batch_id_pattern: <spec条目>-<YYYYMMDD>-<序号>；快车道 run 归 quick-<YYYYMMDD>-<序>』；launch_order 有『depends_on: [run_id]』；spec.md §2.6『快车道批（§2.6）不触发本核查』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "status_view",
+     "change": "字段定为：schema_version, generated_at, layer, approved_specs_in_flight[], open_issues[], pending_launch_orders[], running_runs[], unrecorded_runs[], batches_pending_report[], batches_pending_inspection[], open_blocked[], pending_user_decisions[], active_grants[], waiting_on[], inconsistencies[]。每个字段旁写一句派生源。不设 stage 字段。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 建议：各层 SKILL.md 开工步骤改成读 status + 本层 next + 待决队列 + 有效授权",
+   "verdict": "partial",
+   "rationale": "方向采纳，条目数收成一条命令：开工跑 `ledger.py status --layer <本层>`，一次拿到工作面、待决队列、有效授权三块，不再单列 next。这比现状（两条视图各读一次）还少一次调用，且两个旧视图的语义原文一字不动，别处对它们的引用（§2.5 回报条款、R5 自决先查有效授权视图、§8 步 4）不受影响。",
+   "spec_evidence": "spec.md §8 步 4『自决先查有效授权视图（开工必读②）与常设授权（GPU<1h）』；§2『两样都是动态视图，只出活跃条目——用完即清靠视图过滤实现，不删账』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§8 步 4 与 §2",
+     "change": "§2 已在前面改写；§8 步 4 的『（开工必读②）』改为『（status 的有效授权块）』，保持指代唯一。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§8 步 9",
+     "change": "在『有什么在等我』一句后补『新会话接手同此：开工跑 status 取工作面，不靠用户复述进度』。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "P0-2 验收三条（任意一步中断可恢复 / 同一落盘多次查询同一 next / 矛盾返回 inconsistent）",
+   "verdict": "partial",
+   "rationale": "第二条与第三条采纳，写进 §9。第一条『在端到端流程的任意一步关闭会话都能恢复』缩为固定断点 fixture 用例（发射单已写未发、跑完未入账、报告未核查、批次未收官四个断点），全流程崩溃注入矩阵属于评审甲 P0-4 的假铁轨范围，不在本组，也不该由 status 这一条命令的验收去承担。第三条的落法见下条（只列 inconsistencies[]，不返回 stage）。",
+   "spec_evidence": "spec.md §9『在 new1 挂接后，端到端剧本 §8 的 1-3 步（不动 GPU）真实走通一遍』；§9 用例体例是『正例从略，只列拒绝面与豁免面』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准（脚本用例清单）",
+     "change": "加一条：『- ledger.py status：同一份落盘账本连查两次输出一致（generated_at 除外）；四个断点 fixture（发射单已写未发 / 跑完未入账 / 报告未核查 / 批次未收官）各落进对应字段；批次报告引用不存在的 run_id → 只进 inconsistencies[]，其余字段照常出、不推断阶段；全程不写任何文件。』"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C 原因段：待决队列+授权只能恢复问题和权限，恢复不了工作进度",
+   "verdict": "adopt",
+   "rationale": "对 spec 现状的引述准确，与 P0-2 主命题同一件事，按同一套修法落地，不重复开条。",
+   "spec_evidence": "spec.md §2 开工必读两样原文（同上）。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C 落点清单（§1/§2.1/§4/§8/§9/routes.json，必要时新增 tables/state.json）",
+   "verdict": "partial",
+   "rationale": "落点大体采纳，前面各条已分配到 §2、§2.1、§4、§8、§9 与 routes.json。新增 tables/state.json 拒绝：表的划分在第十七轮自决点 115 已定为五件套，而 status 的输出是一份行结构契约，rows.json 本来就装这类契约（structured_output_contract、batch_report_header、runmeta 都在里面），加第六张表只会多一处键集约束。§1 不改，因为层纪律段不涉及开工读法。",
+   "spec_evidence": "audit-merge.md 自决点 115『表的划分取五件套……弃照配置文件结构分表』；tables/rows.json 现有块 structured_output_contract / batch_report_header / runmeta / jobs_min_additions 均为非行式契约。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "顶层",
+     "change": "status_view 作为 rows.json 的新块落地，不新建 tables/state.json。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C 状态图：全局线性 stage 枚举（idea_draft → … → closed）与 stage 标量字段",
+   "verdict": "reject",
+   "rationale": "与 spec 的并发结构直接冲突，一个标量装不下。反证三处：原则是逐行状态（principles.status 四值），没有『全体原则已批准』这个全局门；批次可以多批同时在办（batch_id 带序号、发射单有 depends_on），一个 stage 说不清 A 批在跑而 B 批等核查；快车道与正轨并行（§2.6 明说快车道批不触发收官核查）。真正需要的每实体状态已经在表里齐了：blocked.status、decisions.status、runs.status、story.status、principles.status，加上批次的 inspection_report 空串即未收官。缺显式状态的只有发射单和批次，两者都能从『有没有对应 run 行 / 有没有报告』派生，不需要新状态机。",
+   "spec_evidence": "tables/rows.json enums『principles.status: [【现状】,【已定要改】,【想法待定】,【已撤销】]』（逐行），『batch_id_pattern: <spec条目>-<YYYYMMDD>-<序号>』；spec.md §2.6『快车道批（§2.6）不触发本核查』；spec.md §1『**悬案攒批上报**』。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C 子状态图：quick_ready → quick_running → quick_recorded → quick_closed",
+   "verdict": "reject",
+   "rationale": "快车道按用户裁决免批次报告、免收官通读，quick_closed 没有任何落盘事实与之对应，落成状态就是凭空造一个没人写的字段。quick 行的真实状态已经由 runs.status 加 jobs 台账表达，quick 与否由发射单和 runs 行的 quick 布尔标记。",
+   "spec_evidence": "spec.md §2.6『**免的手续**：不开 spec 条目、不开工单、不出批次报告、不派收官通读』；tables/rows.json launch_order『quick: 布尔（§2.6 快车道）』。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C `status --json` 输出示例（含 state_version 字段）",
+   "verdict": "partial",
+   "rationale": "--json 输出采纳，它让『多次查询同一结果』这条验收可机械比对。字段名不照抄：state_version 改用 schema_version，因为 rows.json 已把 schema_version 定为版本字段的唯一名字，再造一个 state_version 违反 §0.5 的一物一名。示例里的 stage 字段按上一条不要。",
+   "spec_evidence": "tables/rows.json _about『jsonl 实体行必带 schema_version』；spec.md §0.5『**一物一名**：专名全文只指一物』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "status_view",
+     "change": "版本字段用 schema_version，不引入 state_version；输出格式默认给人读的摘要，`--json` 出机器格式，两者字段集相同。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C 矛盾态：状态对不上时返回 stage=inconsistent，不猜阶段",
+   "verdict": "partial",
+   "rationale": "『不猜』采纳，它和 spec 已有的 R8 unknown 不猜、error_classify 不猜是同一条纪律。落法改小两点：一是没有 stage 标量，矛盾只进 inconsistencies[]，工作面其余字段照常出（否则一处对不上会把整份状态废掉）；二是 status 只做廉价交叉核对（批次报告引的 run_id 不在 runs、jobs 已结束而 runs 无行、发射单无台账且已过 expected_runtime_s × runtime_factor），深度一致性检查不在 status 里重造一套，仍归 trace_check 与 doctor。",
+   "spec_evidence": "spec.md R8『没命中的（error_classify 输出 unknown）分层处理：**运行层不判**』；§9『error_classify：……无命中输出 unknown 不猜』；§4 trace_check『溯源检查：正反链 + decision→run』、doctor『只查不动』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "status_view",
+     "change": "加字段 inconsistencies: '[{code, ref, source}] —— 只列不猜；核对范围限三条廉价交叉核对（批次报告 run_ids 对 runs、jobs 结束态对 runs、发射单超 expected_runtime_s × runtime_factor 仍无台账），深检不在此重造，指向 trace_check 与 doctor'。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§2.1（工作面视图那条 bullet 末）",
+     "change": "补一句『跨账对不上只列进 inconsistencies[]，不推断阶段、不自行修补；要么按 R8 开待决条，要么跑 trace_check/doctor 深查』。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "建议C/advisor §13：routes.json 增 status/resume 入口",
+   "verdict": "adopt",
+   "rationale": "路由表是薄壳的全部内容，新命令不进表就没有触发口。加一行，且与已有的『有什么在等我』分工写清：那条是给用户看待决队列的上行视图，新加的这条是会话开工取工作面。",
+   "spec_evidence": "tables/routes.json _about『路由表唯一真源（research-loop 薄壳的全部内容）』；现有行『{\"say\": \"有什么在等我\", \"to\": \"ledger.py blocked 渲染（待决队列视图）\"}』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/routes.json",
+     "section": "routes[]",
+     "change": "追加 {\"say\": \"我们跑到哪了 / 接着干\", \"stage\": \"任意\", \"to\": \"ledger.py status --layer <本层>（工作面 + 待决队列 + 有效授权；会话开工同此）\"}。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "advisor §14 问题 3：status/next 的输入、输出与 stage 派生规则已成文",
+   "verdict": "partial",
+   "rationale": "作为验收口径采纳前半（输入输出成文，落在 rows.json status_view，逐字段带派生源），后半的 stage 派生规则不成文，因为按前面裁断根本不设 stage。改写成：每个工作面字段的派生源单一且成文，两个实现者读表能写出同一份 status。",
+   "spec_evidence": "spec.md §0.5 第 5 条『这些表不是脚手架：实施时 plugin 的 `schemas/`、owners 默认表、路由薄壳直接从表生成或引用，spec 与实现共用一个真源』。",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "status_view._about",
+     "change": "写明『本块是 status 的输入输出唯一契约：每个字段一句派生源，实现只许照抄，不许在脚本里另加派生规则』。"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P0-3（多账本联动崩溃一致性）总体",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §5「写入两式：原子追加 + 白名单字段就地更新（都过 schema 与写权检查、都持文件锁）。防呆不是防伪」——全文仅此一句涉及写入原子性，无任何跨文件语义；§2.1「append-only 的实义：任何行永不删丢」同样只管单文件。",
+   "rationale": "问题描述属实：跨文件半状态确实无成文处理。但采最低方案（评审自列的第 3 档：严格写序 + 检测），不采事务日志。理由是用户裁决 3「防御性机制必须自证必要，优先能堵住洞的最小方案」：真正会被违反的不变量只有两条，都写在现文里——writes.json blocked_transitions.withdrawn「问题不因撤销而消失」「被收回的裁决不得保持生效」；堵这两个洞只需要三件小事：定死写序、派生行带回指、按回指查重使重跑幂等。新增账本+prepared/committed 状态机+重放引擎是数量级更大的机制，且它自身的写入也是一次文件写，只是把崩溃窗口挪位置，不消灭它。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§5 账本机制（「写入两式」条目之后新增一条机制句）",
+     "change": "补第五段机制语义「复合动作的中断一致性」三句：① 每个跨文件复合动作定死写序——先 append 派生行，最后落那笔翻状态的就地更新，崩溃只会停在『旧状态 + 一条孤儿派生行』，永不停在『新状态 + 缺派生行』；② 每条机械拼出的派生行必带回指触发行的 ref，重跑同一命令先按回指查重，命中就复用不再新建——重跑即修复，不产生第二条；③ 半状态由 doctor 扫出（只报不动），修复动作就是重跑原命令。明确写一句：不引入事务日志与 staging manifest。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-3 方案 1（首选：transaction journal，prepared→committed，各账本为物化视图）",
+   "verdict": "reject",
+   "spec_evidence": "tables/ledgers.json 现有 22 本账 + 1 本 optional，全部有明确 owner 与读法类；§2.1 读法纪律要求每本 jsonl 账只经 ledger.py query 读、有 active 判定式、有 cap 与归档规则。",
+   "rationale": "新增 operations.jsonl 意味着：一本新账 + 一列 active 判定式 + 一条 cap/归档规则 + 一套 prepared/committed 状态机 + 一个重放引擎 + 预分配 ID 机制，还要回答『账本是物化视图』之后 archive/freeze-legacy/query 怎么跟它对齐。收益相对于最小方案只多出『可审计的操作历史』，而 spec 里没有任何消费者要读操作历史（用户要看的是 §2.5 上行六类，没有一类是操作流水）。按裁决 3，这是自证不了必要性的防御性机制。",
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P0-3 方案 2（次选：staging manifest + commit marker）",
+   "verdict": "reject",
+   "spec_evidence": "tables/writes.json maintenance_exempt.archive.concurrency「全程持该账文件锁、原子替换主文件」——现文只在 archive 这一处用到临时件+原子替换，且已被自决点 #111 压成一行。",
+   "rationale": "staging manifest 要求每个复合动作先把全部 effect 写进暂存件再提交，等于给每个动作做一次两阶段提交，复杂度不低于方案 1，而堵的洞与最小方案相同。审计记录 #111 刚把 archive 的临时件细则压成一句话交给实施计划，此时反向给五个动作各加一套 staging 与裁员方向相反。",
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P0-3 方案 3（最低：严格写序 + ledger.py reconcile 检测补齐）",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §4 doctor.py 注释：「一键体检：拼装 config-check + trace_check + evidence_lint + principles-lint + regression_check --dry-run + 账本行数上限扫描 + 归档量汇报与归档建议 + 遗留 worktree 清单。只查不动」。",
+   "rationale": "写序采纳；检测采纳但不新开 reconcile 子命令，挂进已有的 doctor.py（它已经是『只查不动』的聚合体检口，再加一项扫描是零新增入口）。『补齐可机械恢复的半状态』这半条不采：不做自动补齐引擎，修复动作定义为重跑原命令——因为回指查重已经让重跑幂等，专门写一个补齐器等于把同一段拼装逻辑写两遍，正是 §0.5 元规则要堵的『两处成文』。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§4 组件结构，doctor.py 注释行",
+     "change": "检查项清单里增一项『半状态扫描（孤儿 decision：有 ref 指向 blocked 但该 blocked 无 decision_ref；撤销中断：blocked=withdrawn 但其同步 decision 仍 status=decided，或缺重开条；affects 与发射单 decision_refs 不一致）』，保持『只查不动』不变，修复动作写明是重跑原命令。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，doctor 用例行",
+     "change": "doctor 一行补一句：『构造三类半状态 fixture 各能报出，且不写任何账本』。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-3「所有复合操作必须有 operation_id 保证重试幂等」",
+   "verdict": "reject",
+   "spec_evidence": "tables/rows.json blocked_row：「ref: spec条目/工单/run_id/blocked_id（撤销重开时指旧条）」；tables/writes.json blocked_transitions.withdrawn：重开新条「ref 指旧 blocked_id」。",
+   "rationale": "幂等键已经存在，不必新造。撤销重开的查重键就是现成的 (ref=旧 blocked_id, status=open)；r5-choice 只缺 decisions 行回指 blocked 的那一个字段（见下条）。给每行加 operation_id 是全账本级的字段成本，而没有任何读者消费它——现文查询口 ledger.py query 的过滤维度（--batch/--run/--spec-item/--since/--metric）里没有一个按操作查。用自然回指键替代，等价且更小。",
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议 D 主方案（新增 append-only operations.jsonl，prepared/committed 两行，effects 预分配 ID，reconcile 重放缺失步骤）",
+   "verdict": "reject",
+   "spec_evidence": "tables/rows.json _about：「各账 id（S/D/B/F 前缀）由 ledger.py 自增分配」；tables/writes.json r5_choice_assembly：「ledger.py 用 where/options/chosen/answer 四样机械拼出 decision 条目并回填 decision_ref，不猜自由文本」。",
+   "rationale": "与方案 1 同一件东西，一并拒。另有一处具体不兼容：建议 D 靠『effect 预分配 ID 所以重放不产生重复行』，而现文 ID 是 ledger.py 自增分配的；预分配要改 ID 分配机制（谁分配、崩溃后号段怎么回收、与 archive 的 last_id 怎么对齐），把一个小洞换成一个新机制。回指查重不动 ID 分配，代价只有一个字段。",
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议 D 覆盖清单第 1 项 answer-r5-choice",
+   "verdict": "adopt",
+   "spec_evidence": "tables/writes.json r5_choice_assembly.field_map 只映射 reason/decided_by/authorized_by 三项；tables/rows.json decisions_row 字段表里没有任何指回 blocked 的字段（where 是『文件路径|spec条目|工单号』，affects 是『[spec条目/工单/run_id]』）——反向链只存在于 blocked.decision_ref 一处。",
+   "rationale": "这是真洞，而且比评审说的更具体：单向链意味着崩在『decision 已 append、blocked 未回填』时，孤儿 decision 无法被任何人反查到，重跑会拼出第二条 decision；连撤销路径也失灵——writes.json 撤销条款说『该答复已同步拼出 decision 条的，同一动作把它置 withdrawn』，而它只能经 decision_ref 找到那条。补一个回指字段同时修复三件事：可检测、可查重（重跑即修复）、撤销可达。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "decisions_row",
+     "change": "增字段 \"ref\": \"B00x|null（r5-choice 机械拼装的 decision 必填，回指触发它的 blocked 行；重跑查重键）\"。"
+    },
+    {
+     "file": ".scratch/research-loop/tables/writes.json",
+     "section": "r5_choice_assembly",
+     "change": "field_map 增一项 \"ref\": \"触发的 blocked_id\"；新增 \"_write_order\": \"① append decision（含 ref=blocked_id）② 就地更新 blocked（status/answer/answered_at/answered_by/decision_ref）——翻状态的那一笔最后写\"；新增 \"_idempotency\": \"append 前先按 ref 查已有 status=decided 的 decision，命中则不再 append、只补 decision_ref；同一 blocked_id 至多一条 decided 的同步 decision，违反即拒\"。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，ledger.py blocked 用例行",
+     "change": "追加两句：『同一条 r5-choice 答复命令重复执行两次，decision 只有一条、decision_ref 不变；预置孤儿 decision（ref 指向该 blocked、blocked 未回填）的 fixture，重跑该命令后仍只有一条 decision 且 decision_ref 正确。』"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议 D 覆盖清单第 2 项 withdraw-blocked-answer",
+   "verdict": "adopt",
+   "spec_evidence": "tables/writes.json blocked_transitions.withdrawn：「撤销 answered 条时 ledger.py 同一动作机械重开新条…新条回到 to_layer 待办，问题不因撤销而消失；该答复已同步拼出 decision 条的，同一动作把它置 withdrawn + 同一份撤销原话」。",
+   "rationale": "这一条动三个落点（旧 blocked 就地更新、新 blocked 追加、decisions 就地更新），且中断会直接违反本条自己写死的两个不变量：崩在重开前=问题消失，崩在 decision 置 withdrawn 前=被收回的裁决仍生效。定死写序即可让崩溃只落在『旧条仍 answered』这一侧（对外表现为撤销没生效，语义安全），重开条的查重键 ref 现文已有，不需要新字段。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/writes.json",
+     "section": "blocked_transitions.withdrawn",
+     "change": "在现有条文末尾追加写序与幂等两句：\"_write_order\": \"① 先把同步 decision 置 withdrawn（经 blocked.decision_ref；decision_ref 为空时按 decisions.ref 反查孤儿）② 再 append 重开新条（ref=旧 blocked_id）③ 最后把旧条置 withdrawn——翻状态的那一笔最后写，崩溃只会停在『旧条仍 answered』\"；\"_idempotency\": \"重开前按 (ref=旧 blocked_id, status=open) 查重，命中不再开第二条；三步各自可重入，重跑整条命令结果不变\"。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，撤销用例行",
+     "change": "追加一句：『同一条撤销命令重复执行两次，重开条只有一条；预置半状态 fixture（decision 已 withdrawn、新条未开、旧条仍 answered）重跑后新条唯一、旧条 withdrawn。』"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议 D 覆盖清单第 3 项 create-launch-order（写发射单 + 更新 decision.affects）",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §5：「部署层写发射单（同一动作把 run_id 回填进 decision_refs 所指抉择的 affects；decision_refs 是权威，affects 是物化索引，不一致以发射单为准，trace_check 校验一致性）」；tables/ledgers.json launch_orders 是 ops/launch_orders/ 目录下按 run_id 命名的单件 json。",
+   "rationale": "评审说这里缺协议，但现文已经写了权威关系（发射单为准）+ 物化索引定位 + trace_check 一致性校验，这正是最低方案要的两件事，不需要另立协议。发射单是按 run_id 命名的单文件，重写同路径天然幂等，也不会出现第二张发射单。只缺一句修复路径的成文——affects 丢了怎么补。采这半条，拒『需要事务/staging』那半条。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§5 账本机制，「发射单与台账的顺序」条目",
+     "change": "在『不一致以发射单为准，trace_check 校验一致性』之后补一句：『发射单先落盘、affects 回填后写——affects 缺失只是索引缺失，trace_check 报出后由部署层重跑同一写发射单动作补齐（发射单按 run_id 命名，重写同路径幂等，不产生第二张）。』"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议 D 覆盖清单第 4 项 record-run-completion（RUNMETA/jobs/runs/RESULTS）",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §4：「runs.jsonl 有且只有两个写入口…两个入口加载同一份 runs schema、共用同一把文件锁」；§2.1「渲染产物不手改」与 R7；tables/rows.json runs_row_normal/_criterion 没有唯一键约束。",
+   "rationale": "四个落点里 RESULTS 是渲染产物（可重渲，不需要协议），RUNMETA 与 jobs 归铁轨与发射器代码（§1 代笔分野，不在 ledger.py 事务边界内，硬拉进事务等于要求 plugin 接管 gpu-run 的写入，违反 §10『不重写任何现有铁轨』）。真需要堵的只有评审甲点的『第二次指标入账』——现文 runs 行没有唯一键，重跑记账会重复入账。补唯一键即可，不做 jobs↔runs 跨文件对账：缺一条 runs 行是响的（批次报告没数字），不是静默洞。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "runs_row_normal._notes 与 runs_row_criterion._notes",
+     "change": "各增一条唯一键：普通行 \"_unique\": \"(run_id, metric_name) 唯一，同键重复入账拒——重跑记账不产生第二次指标入账\"；判据缩减行 \"_unique\": \"run_id 唯一（chk-<principle_id>-<日期>-<序>），重复拒\"。"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，ledger.py runs-append 用例行",
+     "change": "追加一句：『同一 (run_id, metric_name) 重复入账拒；判据行同 run_id 重复拒。』"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议 D 覆盖清单第 5 项 closeout-batch（写核查报告 + 回填 batch report + 收官门禁）",
+   "verdict": "reject",
+   "spec_evidence": "spec.md §1 三步闭环：「无 blocker 才收官，核查报告路径回填批次报告 inspection_report，收官段末跑 trace_check --closeout <batch_id> 过非空门禁」；tables/rows.json batch_report_header：「inspection_report：允许空串 = 未收官（trace_check 平时非空才查，--closeout 模式空串报错）」。",
+   "rationale": "这条已被现文覆盖，不需要任何新协议。核查报告落 reports/ 是 append 新文件（oversight 独占，不改任何账本行）；回填 inspection_report 是幂等的字段赋值（同一路径写第二遍值不变）；中断的表现就是 inspection_report 仍是空串=未收官，下次重跑收官段即可，而 --closeout 门禁保证半状态不会被误判为已收官。反证充分，判 reject。",
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议 D 的故障注入五场景（只写 prepared 后退出 / append decision 后退出 / 更新 blocked 后退出 / 写 committed 前退出 / 完成后重复执行）",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §9：「每个脚本有可跑自测。重点用例（正例从略，只列拒绝面与豁免面）」。",
+   "rationale": "场景 1 与 4 依附 operations.jsonl，随该方案一并拒。剩下三种（append 后崩、就地更新后崩、重复执行）采纳，但改成更小的等价做法：直接构造半状态账本 fixture + 重复执行同一命令，不搭进程 kill 注入框架。理由是裁决 3——研究代码，fixture 断言与 kill -9 注入堵的是同一个洞，fixture 还确定性更好；且现文 §9 的体例本来就是列拒绝面用例，不是搭测试框架。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准（在现有用例列表末尾新增一条并列项）",
+     "change": "新增一行『复合动作幂等与半状态：answer-r5-choice / 撤销重开 / 记账三条命令各重复执行两次，实体数量与引用关系不变；三类半状态 fixture（孤儿 decision、撤销中断、affects 缺失）重跑原命令后收敛到完整新状态。不做进程 kill 注入。』"
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-3 验收「在每两个文件写入之间注入进程退出，重启后 reconcile 能恢复到完整旧状态或完整新状态」",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §5 现无跨文件写序；§9 无任何中断相关用例。",
+   "rationale": "『恢复到完整旧状态或完整新状态』这个目标采纳，但实现路径改成：写序保证崩溃只落在语义安全的旧状态一侧，重跑同一命令推到完整新状态。因此不承诺『reconcile 自动恢复』，只承诺『doctor 报得出 + 重跑修得好』。这一差别要写进验收措辞，避免实施时按『自动恢复』去造重放引擎。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准，新增的复合动作条目",
+     "change": "措辞钉死为『崩溃后只可能停在旧状态一侧或旧状态+孤儿派生行；重跑原命令收敛到完整新状态』，并明写『不提供自动重放/自动补齐』。"
+    }
+   ]
+  },
+  {
+   "item": "乙 §14 评估问题第 4 条「五类复合操作有幂等和中断恢复协议」作为修订稿完成条件",
+   "verdict": "partial",
+   "spec_evidence": "评审乙自述「本文不分配任务、不代表用户批准」「advisor 建议…不是预先确定的需求」；spec.md §10 YAGNI「后置不弃」已有成文的后置机制。",
+   "rationale": "『复合操作要有幂等与中断语义』采纳为修订项，但五类收缩为二类半（r5-choice、撤销重开各一条完整协议；发射单只补一句重建路径；收官与记账各只补一个已有机制的收口）。评审自己声明这不是完成条件，因此不把它作为门禁，只作为本轮修订内容。",
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P1-1a：一次实验多指标怎么记，现文没成文",
+   "verdict": "adopt",
+   "spec_evidence": "tables/rows.json runs_row_normal `_fields` 里只有一组 \"metric_name\", \"value\", \"n\"；structured_output_contract 的 metrics_cmd_min 写死 {\"metric_name\": \"...\", \"value\": \"...\", \"n\": \"...\"}，即抽数命令尾行只能吐一个指标。tables/ledgers.json runs 条只写了 \"无活跃行概念：不轮转…query runs 必须带过滤（--batch/--run/--since/--metric 至少其一）\"，没写一次 run 落几行。",
+   "rationale": "评审说的现状属实：抽数契约字面只允许一个指标，账本没定基数。一个 eval 通常同时出 accuracy 和 f1，现文只能把第二个指标丢掉或者塞进 value，两条都违反 R7「数字只经脚本入账」的初衷。最小改法不是拆账：runs.jsonl 允许同 run_id 多行、一行一指标，抽数契约尾行改成 metrics 数组，一次写全。改动只落在两张表条目 + 记账脚本的循环，账本数量、owners 键集、query 维度（--metric 本来就在）全不动。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "runs_row_normal",
+     "change": "_notes 增两条：\"多指标\": \"一次实验多指标 = 同 run_id 多行，一行一指标；一次实验只出一个指标就是一行\"；\"写入粒度\": \"记账脚本一次把该 run 的全部行写完，不分次追加\"。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "structured_output_contract.metrics_cmd_min",
+     "change": "改成数组式唯一形态：{\"metrics\": [{\"metric_name\": \"...\", \"value\": \"...\", \"n\": \"...\", \"filter\": \"可空，缺省取发射单透传值\"}]}，并在 _rule 补一句「metrics 至少一项；记账脚本按项落行，同一 run 的各行共享 run 级字段」。criterion_cmd_min 不动（判据 run 一值）。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 验收标准，ledger.py runs-append/记账相关用例",
+     "change": "加一条：记账脚本 —— metrics 尾行两项 → 落两行、run 级字段逐字相同；metrics 空数组或非数组 → 拒并按 R8 升级。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 铁轨兼容承诺 挂接清单 ⑦",
+     "change": "⑦ 改为「RESULTS.md 渲染器跟随②行型改造，并处理同 run_id 多行的合并展示」。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-1b / 乙 §13：新开 observations.jsonl（或 attempts/operations）独立账本",
+   "verdict": "reject",
+   "spec_evidence": "audit-merge.md 自决点 1：「判据实测走 runs.jsonl 不新开账……我选前者——少一本账」；tables/config.json owners 键：「键集与 ledgers 严格相等（config-check 查）」；用户裁决 3（audit-merge 第十六轮快车道段）：「大实验也不需要那么多防御性设计，毕竟是研究代码，它不会用到生产环境里的」。",
+   "rationale": "拆账的收益只有一个：省掉 run 级字段在多行之间的重复。代价是一整串——新账本条目、owners/ledgers/ledger_caps 三处键集、新的写权规则、story/trace_check/regression_check/query 全部改引用口径、归档活跃行判定式再写一条。重复字段的洞用一条机验就堵死（run 级字段同 run_id 各行必须一致 + 一次写入全部行），不需要一张新账。observation_id 也没有消费者：story 要精确引用，用 (run_id, metric_name) 就够。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "甲 P1-1c：重复 run_id 的语义未定义（主键、去重规则）",
+   "verdict": "adopt",
+   "spec_evidence": "tables/rows.json runs_row_normal 只有 `_fields` 平铺清单，没有主键或唯一键声明；runs_row_criterion 只说 run_id 由 ledger.py 按 chk-<principle_id>-<YYYYMMDD>-<序> 分配；tables/writes.json owner_values.per-row-type 只分工「普通行归 run 层……判据缩减行归 deploy 层」，也没定基数。",
+   "rationale": "允许多行以后，主键必须成文，否则两个实现者一个按 run_id 去重、一个不去重。同时这条顺手把重跑记账的幂等问题堵上：同一个 (run_id, metric_name, filter) 第二次入账直接拒，重试后补记不会出现第二份数字。这是一条 schema 级检查，成本一行。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "runs_row_normal",
+     "change": "新增 \"_key\": \"主键 (run_id, metric_name, filter)；metric_name 为 null 的行（status≠ok 的失败行）每 run_id 至多一行\"；新增 \"_dup_rule\": \"同主键重复入账拒（两个入账脚本都跨档查存在性）——重试补记不产生第二份数字\"；新增 \"_run_level_fields\": \"status/output_dir/runmeta_path/seed/dataset_version/batch_id/arm/quick/commit/elapsed_s/gpu_count 是 run 级事实，同 run_id 各行必须逐字相同\"。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "runs_row_criterion",
+     "change": "_notes 补一句：判据缩减行 metric_name 恒 null，主键退化为 run_id，一个判据 run 一行。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 验收标准",
+     "change": "加两条用例：同主键重复入账 → 拒；同 run_id 两行的 run 级字段不一致 → 拒。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-1d / 乙 §3.3 末句：story 引用要精确到 run 还是到观察值",
+   "verdict": "partial",
+   "spec_evidence": "tables/rows.json story_row 只有 \"evidence_runs\": \"[run_id]\", \"baseline_runs\", \"candidate_runs\", \"selection_rule\", \"derivation_command\"，没有指标字段；spec.md §4 脚本清单：\"regression_check.py # (oversight) 新批次 vs 故事账 active claim 同口径重比\"。",
+   "rationale": "采一半。多行以后 regression_check 的「同口径重比」失去锚点——它不知道这条 claim 比的是哪个 metric，这是我自己引入的洞，必须补。补法是给 story 行加一个可空的指标锚点，不是引入 observation_id：观察值的身份就是 (run_id, metric_name, filter)，再发一个 id 是白发。evidence_runs 的形态不动，避免 story 写入路径大改。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "story_row",
+     "change": "新增 \"metric_names\": \"[metric_name]（可空）——本 claim 的口径锚点，regression_check 按它 + 各 run 行的 filter 同口径重比；空则该 claim 不参与回归比对\"。_write_check 补一句：metric_names 非空时，每个值必须在被引 run 的 runs 行里存在。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 验收标准 regression_check 用例",
+     "change": "改成：claim 冲突能揪出；metric_names 为空的 claim 列入跳过清单、不报冲突也不静默漏掉；metric_names 指向不存在的指标 → story 写入拒。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-6a：「固定 seed 不等于复现」，§2.6 的「重跑即复现」措辞不成立",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md §2.6：「要进故事，按正轨补 spec 条目重跑（种子固定，重跑即复现）」；同节：「种子仍固定进发射单」。而 tables/rows.json launch_order 里另有 expected_commit、dataset_version、env_name、argv、filter 五项同样决定结果。",
+   "rationale": "评审说得对，而且反证就在同一张表里：发射单自己就承认结果由六样东西决定，只提种子是漏写。改法是改一句散文，不加任何机制。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§2.6 结果的去向",
+     "change": "「（种子固定，重跑即复现）」改为「——以原 quick 发射单为模板生成正轨发射单：seed/dataset_version/argv/env_name/filter 逐字沿用，允许变的只有 run_id/batch_id/spec_ref/issue_ref/decision_refs/expected_commit 与 quick=false。种子固定只是其中一项，沿用整张发射单才算重跑」。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-6b：quick 转正加 promoted_from_run_id + source_launch_order_ref",
+   "verdict": "partial",
+   "spec_evidence": "tables/rows.json launch_order 现有字段里没有任何指回来源的键；tables/ledgers.json launch_orders：\"default_path\": \"ops/launch_orders/\", \"format\": \"json\"（audit-merge A4：体裁为 launch_orders/<run_id>.json）。",
+   "rationale": "来源引用值得加，两个字段不值得。发射单按 run_id 命名，run_id 和发射单路径互相可推，存两个键就是同一事实两处成文——正是 §0.5 要堵的病。只加一个 promoted_from，填原 quick run_id。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "launch_order",
+     "change": "新增 \"promoted_from\": \"原 quick run_id（quick 转正生成的正轨发射单必填，其余空）——发射单按 run_id 命名，不另存路径\"。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-6c / 乙 §13 §2.6 行：转正发射单由脚本机械生成，并明确哪些字段允许改变",
+   "verdict": "partial",
+   "spec_evidence": "spec.md §1 代笔分野：「小 json 单件逐件归口——发射单走 ledger.py」；spec.md §4 trace_check 注释：「--closeout；quick 发射单豁免回指，§2.6」。",
+   "rationale": "「明确哪些字段允许改变」采纳，已写进 P1-6a 那条散文改动。「由脚本复制生成」不新开命令：发射单本来就走 ledger.py 写入，转正只是这个写入路径上的一个 --from-quick 开关，属实施细节，spec 不必锁死入口形态。真正需要成文的是机验落点——trace_check 在 promoted_from 非空时比对沿用字段，不一致报错。这样即使会话手抄发射单，抄错也被抓。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§4 组件结构，trace_check.py 注释块",
+     "change": "注释里加一句：promoted_from 非空时比对与来源 quick 发射单的沿用字段（seed/dataset_version/argv/env_name/filter），不一致报错。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 验收标准 快车道用例",
+     "change": "现有「快车道：缩减发射单入账正常、trace_check 不误报、story 引用 quick 行拒」后加：转正发射单 promoted_from 指向的 quick 发射单不存在 → 拒；沿用字段被改 → trace_check 报错；转正后的正轨 run 进故事放行。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-6d / 乙 §3.2：RUNMETA 单个 attempt_no 会覆盖失败 attempt 的证据",
+   "verdict": "adopt",
+   "spec_evidence": "tables/rows.json runmeta._fields = [\"commit\", \"argv\", \"脏树清单\", \"launch_order_ref\", \"attempt_no\", \"env_name\", \"outputs\"]，attempt_no 是标量；tables/ledgers.json runmeta：\"default_path\": \"<artifact_dir>/RUNMETA.json\"，一个 run 一份；launch_order.retry = {max_attempts, retriable_errors[], allow_card_swap}，重试和换卡都会换 argv 与资源；spec.md R8：「解决了留痕」。",
+   "rationale": "洞是真的，而且是 spec 自己打自己：R8 要求自愈解决了也留痕、升级要带「已试动作表」，但重试成功这条路上唯一能记下前一次 attempt 的地方（RUNMETA）被下一次覆盖。这不是防御性设计，是补一个已经承诺过的证据落点。最小形态是把标量换成追加数组，不新开账本、不拆文件。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "runmeta",
+     "change": "_fields 里 \"attempt_no\" 换成 \"attempts\"；新增 \"attempts\": \"[{attempt_no, argv, exit_code, log_path, resources, started_at, finished_at}]——每次实际启动（重试/换卡/进程重启）追一条，前条的 argv、日志路径与资源不得覆写或截断；兜底态允许只有一条或空\"。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/config.json",
+     "section": "_fallback_rule",
+     "change": "「attempt_no/env_name/outputs 允许空」改为「attempts/env_name/outputs 允许空」。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§5 发射单与台账的顺序",
+     "change": "末尾加一句：重试与换卡不新开 run_id，每次实际启动往 RUNMETA `attempts` 追一条，前次不覆盖——R8「解决了留痕」在运行层的落点就是它。"
+    },
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 验收标准 + 挂接清单 ③",
+     "change": "验收加一条：attempt 1 失败、attempt 2 成功 → RUNMETA attempts 两条俱在，第一条 argv 与日志路径未被覆盖。挂接清单 ③ 改为「RUNMETA 增 outputs 字典与 attempts 数组」。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-6e / 乙 §3.2：attempt_id 作为独立主键实体，或每个 attempt 一份独立 RUNMETA",
+   "verdict": "reject",
+   "spec_evidence": "tables/ledgers.json runmeta owner=run、read=direct，是「小 json 单件直读」；spec.md §1：「读权同样走脚本……jsonl 账不许整文件读进上下文」，RUNMETA 走的是 direct 读法；用户裁决 3：研究代码不需要那么多防御性设计。",
+   "rationale": "attempts 数组已经把「不覆盖失败证据」这个洞堵死，独立 attempt_id 再无别的消费者——没有任何账本需要按 attempt join，runs 行、story、trace_check 引的都是 run_id。每 attempt 一份 RUNMETA 更差：产物目录下出现一组文件名，runmeta_path 单值回指立刻失效，监察面的 direct 读法要改成扫目录。收益为零，改动面反而最大。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "乙 §3 实体模型总关系图（Principle/SpecItem/Issue/LaunchOrder/Run/Attempt/Observation/Batch/Story/Blocked/Decision）",
+   "verdict": "partial",
+   "spec_evidence": "图中除 Attempt/Observation 外的关系现文已有：spec.md §2 总规矩「可追溯链双向（正向：工单→spec→原则条目；反向：run→发射单→工单，靠 RUNMETA.launch_order_ref 与台账回指；抉择→run 靠发射单 decision_refs）」；tables/rows.json batch_report_header._fields 含 run_ids[]/spec_items[]/inspection_report；story_row 含 evidence_runs/principle_id；blocked_row 含 decision_ref。",
+   "rationale": "这张图的价值是把已有关系画出来，不是引入新实体。九条边里七条在现文里逐条对得上，采纳它作为实施期的对照图；剩下两条（Run—Attempt、Run—Observation）按上面的最小形态落成 RUNMETA attempts 数组和 runs 多行，不是两个新实体。要提醒的一点：图里「LaunchOrder 1 ── 1 Run」和现文一致，但判据 run 是唯一例外——rows.json runs_row_criterion 明写「判据 run 不开发射单，run_id 由部署层给定的唯一成文例外」，照抄这张图会漏掉它。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§5 账本机制 开头",
+     "change": "可选：加一句指向关系的总述——「实体关系不另画图：正反溯源链在 §2 总规矩，run 与观察值、run 与 attempt 的基数分别在 rows.json runs_row_normal._key 与 runmeta.attempts」。目的是让实施期只有一个查处，不再新增第六张表。"
+    }
+   ]
+  },
+  {
+   "item": "乙 §3.1 Run 示例（独立 Run 实体，含 started_at/finished_at/schema_version）",
+   "verdict": "partial",
+   "spec_evidence": "tables/rows.json runs_row_normal._fields 已含 run_id/status/batch_id/runmeta_path/quick/elapsed_s/recorded_at/schema_version；launch_order_ref 在 RUNMETA 里（runmeta._fields），runs 行经 runmeta_path 两跳可达。",
+   "rationale": "示例里的字段现文基本都有，只差两样，两样我都不采。started_at/finished_at：elapsed_s + recorded_at 已经覆盖时长和入账时刻，加两个时间戳只是多两处要保持一致的事实。runs 行直接加 launch_order_ref：现文靠 runmeta_path→RUNMETA→launch_order_ref 两跳回指，链条不断，加一跳捷径就等于同一事实两处成文，还得再写一条一致性机验。采纳的部分只有「Run 表示一次逻辑实验，不表示一次进程启动，也不表示单个指标」这句定义，它正好是 P1-1a 和 P1-6d 两条改动的口径依据。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/tables/rows.json",
+     "section": "runs_row_normal._notes",
+     "change": "加一条口径句：\"run 的含义\": \"一次逻辑实验——不是一次进程启动（那是 RUNMETA.attempts），也不是一个指标（那是本账的一行）\"。"
+    }
+   ]
+  },
+  {
+   "item": "乙 §3.3 Observation 示例（observation_id / extractor 块 / evidence_path / filter）",
+   "verdict": "partial",
+   "spec_evidence": "tables/rows.json runs_row_normal 已含 filter（\"arm/filter/quick\": \"记账脚本从发射单透传\"）；抽数命令在 launch_order.metrics_cmd；证据路径在 output_dir 与 runmeta_path；structured_output_contract.criterion_cmd_min 已有 evidence_path 落 output_dir。",
+   "rationale": "四样东西里三样已经在现文的别处：filter 在行里，extractor 就是发射单的 metrics_cmd（发射单是权威、RUNMETA 记实际执行），证据路径是 output_dir/runmeta_path。只有「一个 run 多个观察值」这一条现文缺，已按 P1-1a 采纳。observation_id 单独驳回：没有消费者，(run_id, metric_name, filter) 就是身份。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "甲 §7 v1 门禁「一个 run 能记录多个 observation」进验收",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md §9 现有 runs 相关用例只有「ledger.py runs-append：--layer≠deploy 拒；退出非 0 或尾行非 JSON → 不落行、升级」，没有多指标用例；§9 末「在 new1 挂接后，端到端剧本 §8 的 1-3 步（不动 GPU）真实走通一遍」。",
+   "rationale": "改了基数就得有机验兜着，否则 P1-1a 只是散文承诺。用例已写在 P1-1a、P1-1c 的 edits 里，这里只是确认它进 §9 拒绝面清单，不额外扩验收范围（甲提的 fake rail 全链验收不在本组裁断范围）。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec.md",
+     "section": "§9 验收标准",
+     "change": "确认 P1-1a/P1-1c 的四条用例（多行落账、空 metrics 拒、同主键重复拒、run 级字段不一致拒）合并进 runs 入账用例块，不另起一节。"
+    }
+   ]
+  },
+  {
+   "item": "本组改动对 spec_lint 的影响",
+   "verdict": "adopt",
+   "spec_evidence": "spec_lint.py collect_vocab：\"表里出现过的一切键名/字段名/枚举值/哨兵值 → 词汇表\"，walk 会把表内字符串按 [a-z][a-z0-9_]{2,} 切词收进 vocab。",
+   "rationale": "新字段 promoted_from、attempts、metric_names 全部先落进 tables/，W1 词汇表自动覆盖，spec_lint.py 的 ALLOW 白名单不用改。ALLOW 里遗留的 attempt_no 无害，可留可删。改完照 §0.5 交付门禁跑一遍 spec_lint 全绿。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "/home/y-guo/reproduce/new1/.scratch/research-loop/spec_lint.py",
+     "section": "ALLOW",
+     "change": "可选清理：删掉 \"attempt_no\"（字段已被 attempts 取代）。功能上不影响，跑 lint 仍全绿。"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-2（spec 批准绑定不可变内容 / approved_digest）",
+   "verdict": "adopt",
+   "spec_evidence": "tables/rows.json spec_header._fields = [\"spec_version\",\"approved_by\",\"approved_date\",\"approved_against_principles_version\",\"withdrawals[]\"] —— 没有任何内容指纹。spec.md:55 \"'这轮做什么'由部署层拆进 spec、用户在 spec 文件头批准\"；ledgers.json specs.owner=\"deploy\" —— 承载用户批准戳的文件归部署层写。全文 grep \"approved\" 只出现在 §2.5:170（不批准=不落 approved_by）与 writes.json withdrawal_routes_md.spec，没有任何一处在发射/施工前校验批准仍然有效。",
+   "rationale": "洞是真的，而且比评审说的更大：批准戳与被批准内容住在同一个由部署层写的 md 文件里，部署层改完条目、批准戳原样留着，全 spec 没有一个机验能发现。这直接架空核心意图第 5 条（用户在 idea 层顶端、拍板是终点），所以它不是防御性冗余，是堵洞——按裁决 3 只取最小方案：一个 sha256 字段 + 已有两个脚本各加一次比对，不新增账本、不新增状态机。canonicalization 取比建议 E 更小的形状（见下条）。落地时同时补上现在缺的那道门禁：写发射单时校验 spec_ref 所指 spec 已批准且 digest 匹配，否则拒发；quick 发射单 spec_ref 可空（§2.6），照 trace_check 既有豁免写法一并豁免。",
+   "edits": [
+    {
+     "file": "tables/rows.json",
+     "section": "spec_header._fields",
+     "change": "增 approved_digest、approved_against_principles_digest 两字段；删 approved_against_principles_version（见下一条：它指向一个不存在的真源）"
+    },
+    {
+     "file": "tables/rows.json",
+     "section": "spec_header 新增 _digest_rule / _stale_rule",
+     "change": "_digest_rule: approved_digest = sha256(YAML frontmatter 结束分隔线之后的正文原始字节)；文件头整块不入哈希。_stale_rule: approved_by 非空且重算 digest 不等 = approval_stale"
+    },
+    {
+     "file": "spec.md",
+     "section": "§2.5 下行五路的'拍板'条",
+     "change": "spec 批准的转录动作改成机械动作：用户拍板当场跑 ledger.py approve-spec，一次落 approved_by/approved_date/两个 digest 四字段，会话不手填 digest"
+    },
+    {
+     "file": "spec.md",
+     "section": "§4 组件结构 ledger.py 子命令行 + trace_check 注释",
+     "change": "ledger.py 子命令清单加 approve-spec；trace_check 注释加'重算 approved_digest，不等报 approval_stale'"
+    },
+    {
+     "file": "spec.md",
+     "section": "§4 ledger.py 发射单写入 / §5 发射单与台账的顺序",
+     "change": "成文发射前门禁：spec_ref 非空时校验该 spec approved_by 非空且 digest 匹配，stale 拒发并升级；spec_ref 空的 quick 发射单豁免（§2.6）"
+    },
+    {
+     "file": "tables/writes.json",
+     "section": "withdrawal_routes_md.spec",
+     "change": "撤销时清空的字段从 approved_by/approved_date 扩到含 approved_digest、approved_against_principles_digest"
+    },
+    {
+     "file": "spec.md",
+     "section": "§9 验收标准 拒绝面",
+     "change": "加：spec 正文改一个标点 → trace_check 报 approval_stale、写发射单拒；只追 withdrawals[] 或只递增 spec_version → 不报 stale；quick 发射单不受批准门禁影响"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P1-2 子项：approved_commit（digest / commit 二选一）",
+   "verdict": "reject",
+   "spec_evidence": "tables/rows.json launch_order 已有 \"expected_commit\"；runmeta._fields 已含 \"commit\" 与\"脏树清单\"；CLAUDE.md 铁律\"发射实验前先 commit\"。评审甲自己写\"二选一即可，优先 digest，因为 spec 可能在尚未 commit 时由用户批准\"。",
+   "rationale": "commit 那一半没道理再取：批准发生在会话当场，spec 文件此刻多半没 commit，钉 commit 只能拿到批准前的树；而\"跑这次实验用的是哪份代码\"已经由 expected_commit + RUNMETA.commit + 脏树清单钉住，approved_commit 不增加任何追溯能力。只取 digest 一半。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P1-2 子项：principles 的批准需同等机制（乙 建议E 的 approved_against_principles_digest）",
+   "verdict": "adopt",
+   "spec_evidence": "tables/rows.json spec_header 有 \"approved_against_principles_version\"，但 principles_columns = [principle_id, status, scope, applies_when, 原则一句话, rationale, criterion_cmd, 最近实测] —— 没有版本列；ledgers.json principles = METHOD.md（md-table），全 spec 没有一处成文原则文档的版本号在哪、谁递增。spec.md:220-221 R1：\"最近实测不手填……原则文档的'最近实测+日期'由渲染脚本自动回填\"。",
+   "rationale": "这条比评审说的更划算：现文的 approved_against_principles_version 是一根悬空引用（指向一个 spec 里根本不存在的版本号），换成 digest 是修缺陷不是加重量，净字段数不变。评审没看见的坑必须写进 canonicalization：METHOD.md 的'最近实测'列由渲染脚本自动回填（R1），整文件哈希会让每一次判据 run 都把全部 spec 打成 stale，纯噪声——所以原则 digest 必须按列归一化、把'最近实测'列置空后再算。批准语义那一半取评审给的\"或者\"分支：原则的批准就是逐行 status 变更，§8 步 2\"每条过 R1。用户拍板\"已经是这个意思，补一句成文即可，不设独立逐行批准事件账。失效后果按最小档：digest 不匹配只由 trace_check 报出、回 idea 层复核，不拦发射（原则内容变了不等于这次实验不能跑）。",
+   "edits": [
+    {
+     "file": "tables/rows.json",
+     "section": "spec_header._digest_rule",
+     "change": "补：approved_against_principles_digest = 原则文档按 principles_columns 逐行归一化、'最近实测'列置空后的 sha256（该列由渲染脚本自动回填，入哈希必然全量误报）"
+    },
+    {
+     "file": "spec.md",
+     "section": "§3 R1",
+     "change": "补一句：原则的批准是逐行事件——用户拍板即落 status（§8 步 2），原则文档不设文件级批准戳"
+    },
+    {
+     "file": "spec.md",
+     "section": "§4 trace_check 注释 + §9 拒绝面",
+     "change": "principles digest 不匹配报 principles_stale（只报告不拦发射）；加用例：跑一次判据 run 触发'最近实测'回填后，不得报 principles_stale"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议E：五步 canonicalization（解析 frontmatter → 删 approved_*/withdrawals → 固定 key 序列化 → 拼正文 → sha256）",
+   "verdict": "partial",
+   "spec_evidence": "建议E 原文：\"计算时需要排除批准字段本身，否则回填 digest 会再次改变 digest\"；spec.md §0.5 元规则 1\"封闭清单只成文一次\"、4\"交付前 spec_lint 全绿\"。",
+   "rationale": "采\"canonicalization 必须成文\"这一半——不成文两个实现者算出两个 digest，这正是 §0.5 要堵的漂移类。不采五步版：解析 frontmatter + 固定 key 序列化引入 YAML 序列化器的实现依赖（key 序、引号、多行标量），本身就是新的漂移面。改成更小的等价规则：**文件头整块不入哈希，digest 只覆盖分隔线之后的正文原始字节**。它同样满足建议E 的三个例子，而且循环问题从'排除特定字段'变成'压根不碰文件头'，无解释成本。代价是文件头里非批准字段的改动（spec_version）不被覆盖——那正是希望它不被覆盖的一类。附带要求：spec 文件头必须用 --- 分隔的 frontmatter 定界，否则'正文起点'无定义。",
+   "edits": [
+    {
+     "file": "tables/rows.json",
+     "section": "spec_header",
+     "change": "加一条 _header_rule：spec 文件头必须是 --- 定界的 frontmatter，字段集合即 _fields；digest 的正文起点 = 第二条 --- 之后第一个字节"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议E 备选：改用独立 approval 账本，让批准事件引用文档 digest",
+   "verdict": "reject",
+   "spec_evidence": "建议E 自己写\"后者审计性更好，但首版工作量更大\"。tables/ledgers.json 已有 23 本账 + config.json ledgers 键\"键集与 ledgers.json 严格相等\"；rows.json spec_header 已有 withdrawals[]（{date, by, reason}，reason=用户原话）。",
+   "rationale": "与裁决 3 直接冲突：新开一本账要连带 owner 值、active 判定式、cap、query 视图、归档规则、config 键集一整套，是本轮被裁的那类重量。审计需求已由文件头 withdrawals[] 加 approved_* 四字段承担（批准与撤销都留日期、人、用户原话）；研究代码不需要批准事件的全历史时序账。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议E 的三个评估例子（改标点即 stale / withdrawal 不产生循环 / 原则变化使 spec 失效）",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md §9 \"每个脚本有可跑自测。重点用例（正例从略，只列拒绝面与豁免面）\"；第十七轮自决点 113\"§9 验收用例改列'拒绝面与豁免面'\"。",
+   "rationale": "三个例子正好是拒绝面与豁免面各一半，落进 §9 是零新增机制的写法，符合 113 的既定体例。补第四例——判据 run 回填'最近实测'不得触发 principles_stale——这是三个例子漏掉的、new1 挂接后必然天天发生的误报路径。",
+   "edits": [
+    {
+     "file": "spec.md",
+     "section": "§9 验收标准",
+     "change": "trace_check 用例组加四条：改一个标点报 approval_stale；只追 withdrawals[] / 只递增 spec_version 不报 stale；原则文档条目内容变化 → 引用它的 spec 报 principles_stale；判据 run 回填'最近实测'后不报 principles_stale"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P1-3（前半）：发射单 registry_task 与 argv 谁是权威",
+   "verdict": "partial",
+   "spec_evidence": "tables/rows.json launch_order: \"registry_task\": \"注册表任务名\", \"argv\": \"[...]\" —— 两个字段并列，无权威声明。spec.md:113 信道 3\"不在注册表不许跑\"是散文纪律，无机验落点。config.json _fallback_rule: \"launch.py = 顺序执行发射单 argv\" —— 兜底态里 argv 事实上就是被执行的东西。spec.md:359-361 已有同型成文法：\"decision_refs 是权威，affects 是物化索引，不一致以发射单为准，trace_check 校验一致性\"。",
+   "rationale": "\"两个字段没有权威顺序\"这个诊断成立，采。不采评审开的方子（删 argv、只存 task_id+args、运行时经 registry 解析）：那要求工程注册表额外提供结构化 resolve 接口（config.json 现在只有 registry_cmd 与 registry_query 两个入口），并改写兜底 launch.py 与 new1 的发射器，属于裁决 3 点名的重量。最小等价方案照抄同段既有句式：**argv 是权威执行体，registry_task 是归属声明**，写发射单时机验一行——shlex.split(registry_cmd) 必须是 argv 的前缀，紧随其后的 token 必须等于 registry_task，且该 task 在 registry_query 清单里。这一行同时把散文纪律\"不在注册表不许跑\"变成机验的，比原方案多堵一个洞（手写 argv 绕过注册表），零新接口。如果用户要更强的\"argv 只能由 registry 生成\"，那是另一档取舍，可以回头开。",
+   "edits": [
+    {
+     "file": "tables/rows.json",
+     "section": "launch_order.argv / launch_order.registry_task",
+     "change": "argv 值说明改为\"[...]——权威执行体：铁轨与兜底 launch.py 只执行它\"；registry_task 改为\"注册表任务名（归属声明）。写入机验：shlex.split(registry_cmd) 是 argv 的前缀，其后第一个 token = registry_task，且该 task 在 registry_query 清单内——信道 3'不在注册表不许跑'的机验落点\""
+    },
+    {
+     "file": "spec.md",
+     "section": "§5 发射单与台账的顺序",
+     "change": "补一句权威声明，句式照本段 decision_refs/affects 那句：argv 是权威、registry_task 是归属声明，两者不一致时写入直接拒（不是以谁为准的问题，是拒收）"
+    },
+    {
+     "file": "spec.md",
+     "section": "§9 验收标准",
+     "change": "加拒绝面：argv 前缀与 registry_cmd 不符 / 首任务 token≠registry_task / task 不在 registry_query 清单 → 写发射单拒；registry_query 未接线时按 config.json null_effect 报未接线，不放行"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议F 子项：发射单存 registry_digest",
+   "verdict": "reject",
+   "spec_evidence": "tables/rows.json launch_order 已有 \"expected_commit\"；runmeta._fields = [commit, argv, 脏树清单, launch_order_ref, attempt_no, env_name, outputs]；config.json registry_cmd example \"python3 run.py\"（注册表就是仓库内代码）。",
+   "rationale": "注册表是仓库里的代码，它的版本已经被 expected_commit（前瞻）与 RUNMETA.commit + 脏树清单（后验）两头钉死，再算一个 registry_digest 是同一件事记第三遍，且要额外定义\"注册表的哈希覆盖哪些文件\"这个新的 canonicalization 面。按裁决 3 不取。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "甲 P1-3（后半）+ 乙 建议F：criterion_cmd 是 md 单元格里的 shell 字符串（改 criterion_task + criterion_args）",
+   "verdict": "partial",
+   "spec_evidence": "tables/rows.json principles_columns: \"criterion_cmd（注册表命令；【想法待定】允许暂空）\"；spec.md §5 判据 run 执行契约：\"脚本按 principle_id 从原则文档 criterion_cmd 列取命令（缩减行不存命令本体），代为拉起并计时\"；§9: \"principles-lint：……【现状】【已定要改】条目 criterion_cmd 空或不在注册表 → 报错\" —— 但全 spec 没写\"在注册表\"怎么机械判定，也没写用什么方式拉起。",
+   "rationale": "\"从 md 单元格执行自由 shell 字符串\"这个风险成立，而且有一个评审没点破的具体故障：criterion_cmd 住在 md 表格的一个单元格里，命令里只要出现一个管道符 `|` 就把表格列切坏，principles-lint 读到的是半截命令。采两条最小规则堵住：① 执行方式成文——shlex.split 后直接起进程，禁 shell=True；② 单元格禁含 `|` 与换行，要 pipeline 就照建议F 末尾那句封成注册表里的脚本任务，principles-lint 加一条查。不采 criterion_task + criterion_args 重构：那要给每条原则定义 args schema 并依赖注册表 resolve 接口，和上一条同一个理由被裁；而\"必须在注册表\"这道闸 spec 里已经有了，只是判定方式没成文——顺手用与发射单同一条前缀规则把它定死，两处共用一份判定。",
+   "edits": [
+    {
+     "file": "tables/rows.json",
+     "section": "principles_columns 的 criterion_cmd 项（或 structured_output_contract 旁新增 _exec_rule）",
+     "change": "补执行契约：shlex.split 后不经 shell 起进程（禁 shell=True）；单元格禁含 | 与换行，需要 pipeline 的封成注册表任务；\"在注册表\"的判定与 launch_order.registry_task 同规则——shlex.split(registry_cmd) 为前缀，其后第一个 token 在 registry_query 清单内"
+    },
+    {
+     "file": "spec.md",
+     "section": "§5 判据 run 执行契约",
+     "change": "\"代为拉起并计时\"后补半句：拉起方式是 shlex.split 后直接起进程、不经 shell"
+    },
+    {
+     "file": "spec.md",
+     "section": "§9 principles-lint 用例",
+     "change": "加拒绝面：criterion_cmd 含 | 或换行 → 报错；首 token 前缀不等于 registry_cmd 或任务不在清单 → 报错（【想法待定】暂空仍放行，R1 未接线态不变）"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议F 子项：RUNMETA 保存解析后的 argv[]",
+   "verdict": "reject",
+   "spec_evidence": "tables/rows.json runmeta._fields = [\"commit\", \"argv\", \"脏树清单\", \"launch_order_ref\", \"attempt_no\", \"env_name\", \"outputs\"]；spec.md §5 \"发射单=要跑什么（前瞻），台账=跑成什么样（后验）\"。",
+   "rationale": "现文已经这么写了：RUNMETA 有 argv 字段，且前瞻/后验的分工在 §5 成文。这条不是缺口，无需改动。",
+   "edits": [],
+   "conflicts": ""
+  },
+  {
+   "item": "乙 建议F 子项：shell pipeline 封成注册表里的脚本任务",
+   "verdict": "adopt",
+   "spec_evidence": "config.json registry_cmd domain: \"注册表入口（判据实跑/发射/施工的前提）\"；CLAUDE.md 工程铁律\"注册表里没有的任务：先挂进 TASKS/RECIPES 再跑\"。",
+   "rationale": "与工程现行铁律同向，且是上一条'禁 shell、单元格禁管道符'的唯一逃生口——不给这个口子，需要 pipeline 的判据就没地方去。零新增机制，一句话成文。",
+   "edits": [
+    {
+     "file": "tables/rows.json",
+     "section": "criterion_cmd 的 _exec_rule",
+     "change": "写明逃生口：需要 shell pipeline 的判据/抽数，把 pipeline 封成注册表里的一个任务，criterion_cmd/metrics_cmd 指向该任务"
+    }
+   ],
+   "conflicts": ""
+  },
+  {
+   "item": "评审甲 P1-4（总纲：收窄 R2/R3/R4 的作用域）",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md:225-235 三条原文；对照点 spec.md:91-96（inspector 头部带 `verdict: clean | blockers[]`、\"判定发生在 inspector 的独立上下文里\"）、spec.md:264（\"归类判断由部署层（及以上）agent 做\"）、spec.md:229-231（\"每个数字必须配一条可直接粘贴执行的复现命令\" 与同段要求的行号、生成时间、git HEAD、账本行数/哈希）、spec.md:102（\"派生量计算是 idea 层活动（R4）；部署层只跑既有机械汇总管道\"）",
+   "rationale": "三处冲突我逐条回原文核实过，都真实存在，不是评审读错。R2 的\"只做两件事\"与 §1 收官核查、R8 归类判断直接打架；R3 的\"每个数字\"字面把它自己要求的溯源块和行号也罩进去，而 evidence_lint 的成文规则就是\"有数字无复现命令\"报错（spec.md:312），所以这不是纸面问题而是机验会真的误报；R4 的\"任何派生量先提案\"只有 §1 一句\"既有机械汇总管道\"半掩着，没有成文说已批准口径算预授权。三条修法都是给现有规矩加限定句，不新增账本、字段或脚本，符合裁决 3 的最小方案要求，也不动裁决 5 的核心意图（AI 不下科学结论、用户在 idea 层顶端）。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§3 R2/R3/R4（第 225-235 行）",
+     "change": "按下面三条分项 verdict 逐条改写，改完跑 python3 .scratch/research-loop/spec_lint.py 保持全绿"
+    }
+   ]
+  },
+  {
+   "item": "评审甲 P1-4 · R2 口径（最终科学判断与故事裁决归用户；agent 可做结构检查、缺陷判定、证据整理）",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md:225-226 \"**R2 机验人判**：判据机器跑，判断人来下。AI 在验收里只做两件事：把检查跑起来、把原始证据摆到用户面前。\"；冲突面 spec.md:91 \"头部带 `verdict: clean | blockers[]`\"、spec.md:96 \"转录 blocker 不算自查顶数：判定发生在 inspector 的独立上下文里\"、spec.md:264 \"归类判断由部署层（及以上）agent 做\"",
+   "rationale": "spec 自己在两处把\"判定\"派给了 AI：inspector 出 blockers，部署层对 error_classify 输出 unknown 的故障做归类。R2 字面的\"只做两件事\"把这两件事都排除在外，实施者照 R2 写 SKILL.md 就会和 §1、R8 顶牛。改法是把 R2 的禁区从\"AI 只能做两件事\"收成\"AI 不下科学结论\"，这正是裁决 5 列的核心意图，收窄反而让它更准。零新增机制。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§3 R2（225-226 行）",
+     "change": "整条替换为：\"**R2 机验人判**：判据机器跑，最终判断人来下。机械检查一律脚本执行；agent 可以做三件事——判结构缺陷、按错误分类表归类故障（R8）、提带证据的 blocker（§1 收官核查）并把原始证据摆到用户面前。科学结论归用户：结果算不算数、进不进故事，agent 不得代下。\""
+    }
+   ]
+  },
+  {
+   "item": "评审甲 P1-4 · R3 口径（支撑经验性主张的数值必须可复算；元数据数字只要求可溯源）",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md:229-231 \"**每个数字必须配一条可直接粘贴执行的复现命令**，命令输出必须等于报告数字。……报告头带溯源块：生成时间、git HEAD、所读账本行数/哈希。\"；spec.md:227-228 差异定位要求\"两侧各带路径+行号\"；spec.md:312 \"evidence_lint.py # (oversight) 违禁结论词 + \\\"有数字无复现命令\\\"\"",
+   "rationale": "R3 在同一段里既要求每个数字配复现命令，又强制报告头写生成时间、git HEAD、账本行数和哈希，还要求差异定位带行号。这些本身都是数字，字面执行下去 evidence_lint 会对 R3 自己规定的必填项报错，而且给 hash 配一条复现命令后，那条命令的输出又是数字，递归下去不收敛。所以这不是评审挑刺，是现文自相矛盾。收窄成\"经验主张的数值必须可复算，溯源元数据只要求能从所引文件机械读出\"既堵住原来那个洞（防编造计数，见 audit-merge C1），又让机验可实现。豁免清单是封闭清单，按 §0.5 规则 1 必须住在 tables/，不写进散文。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§3 R3（229-230 行）",
+     "change": "把\"**每个数字必须配一条可直接粘贴执行的复现命令**，命令输出必须等于报告数字。\"改成：\"**支撑经验主张的数值**（计数、指标值、差异量）**必须配一条可直接粘贴执行的复现命令**，命令输出必须等于报告数字。溯源元数据（生成时间、git HEAD、账本行数/哈希、行号、记录号、路径）不逐项配命令，但必须能从所引文件机械读出；豁免面见 `tables/rows.json` evidence_lint_exempt。\""
+    },
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "新增顶层键 evidence_lint_exempt",
+     "change": "加 {\"_rule\": \"evidence_lint 的\\\"有数字无复现命令\\\"规则只查经验主张数值；下列类别豁免\", \"metadata_kinds\": [\"时间戳\", \"git HEAD/commit\", \"账本行数与哈希\", \"行号/记录号\", \"文件路径\", \"id 类字段\"], \"_field_level\": \"字段级豁免登记在各自行条目（batch_report_header.rejections、spec_header.withdrawals），本键不复述\"}"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收（450-451 行 evidence_lint 用例）",
+     "change": "追加一句用例：\"元数据数字（生成时间、git HEAD、行号、哈希）不报'无复现命令'；经验数字缺命令必报。\""
+    }
+   ]
+  },
+  {
+   "item": "评审甲 P1-4 · R4 口径（spec 中已批准的 metric/criterion/derivation 定义视为预授权）",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md:233-235 \"**R4 计算授权**：对数据只许忠实呈现原始值。任何派生量先提案——公式、分母、过滤条件、作用文件——用户批了才算……\"；半覆盖面 spec.md:102 \"派生量计算是 idea 层活动（R4）；部署层只跑既有机械汇总管道。\"；spec.md:161-162 \"**授权**：R4 计算批准、R6 自决授权——原话当场落抉择账（kind=grant，含结构化 scope 与有效期）\"",
+   "rationale": "\"任何派生量先提案\"字面上不分新旧口径，每批算一次准确率就得再上桌一次。现文只有两处半掩着：§1 说部署层跑\"既有机械汇总管道\"，§2.5 说计算批准可以落成带 scope 的 grant。但\"spec 里被批准的口径本身就算预授权\"没有一处成文，实施者只能照 R4 字面办。补一句限定即可，载体用已有物（spec 条目的内容/acceptance，或 kind=grant 的 scope），不新增字段、不新增账本。R4 的两条硬核不动：原始值忠实呈现，新增或改动公式、分母、过滤、聚合、缺失值处理一律重新上桌。用户想收紧回去，删这一句就行。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§3 R4（233-235 行）",
+     "change": "在\"用户批了才算\"之后插入：\"**批过的口径即预授权**：公式、分母、过滤条件、聚合层级已写进 spec 条目并经用户批准的，每批照算不再上桌；口径没写全的不算预授权，仍要提案。新增或改动公式、分母、过滤条件、聚合层级、缺失值处理，一律重新提案（§2.5 实验设定硬边界照旧）。\""
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§1（102 行）",
+     "change": "\"部署层只跑既有机械汇总管道\"后加\"（口径预授权的成文在 R4）\"，让两处指向同一条规矩，避免第二处成文"
+    }
+   ]
+  },
+  {
+   "item": "评审乙 建议G · R2 建议文本（\"机械检查由程序执行……不得替用户作科学结论\"）",
+   "verdict": "partial",
+   "spec_evidence": "advisor notes 第 433-438 行的建议文本；spec.md:264 \"归类判断由部署层（及以上）agent 做，动作在本层写权内就执行（顺手往分类表加行……）\"",
+   "rationale": "边界口径采纳，措辞不照抄。它列的三件事是\"识别结构缺陷、整理证据、提出带证据的 blocker\"，漏了 R8 明写的第四件：部署层对 unknown 故障做归类判断并往错误分类表加行。照它的文本改，R2 和 R8 仍然对不上。另外它把首句写成\"机械检查由程序执行\"，丢了 R2 标题\"机验人判\"里\"判断人来下\"的落点，标题会和正文脱节。采上面 P1-4·R2 的改写版：保留白话首句，把 agent 可做的事列成三项（含归类），禁区只留科学结论。它对 blocker 性质的解释（blocker 是流程或证据缺陷，不是科学结论）有用，进 §1 收官核查段一句话。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§1 部署收官例行核查 ②（91 行附近）",
+     "change": "在\"头部带 `verdict: clean | blockers[]`\"后加一句：\"blocker 只写流程缺陷与证据缺陷（断链、缺命令、口径对不上），不写科学结论（R2）。\""
+    }
+   ]
+  },
+  {
+   "item": "评审乙 建议G · R3 建议文本（经验数值必须有复算命令或结构化 extractor 引用；元数据不逐项配命令）",
+   "verdict": "partial",
+   "spec_evidence": "advisor notes 第 442-445 行；spec.md 全文无 extractor 一词，对应专名是 `metrics_cmd` / `criterion_cmd`（tables/rows.json structured_output_contract：\"metrics_cmd 与 criterion_cmd 通用：stdout 最后一行必须是单个 JSON 对象\"）",
+   "rationale": "经验数值与溯源元数据的二分采纳，这是 P1-4·R3 的落地依据。\"或结构化 extractor 引用\"这半句不采：extractor 是评审乙自己实体模型里的名字（advisor notes §3.3 Observation.extractor），spec 里这件事已经有名字叫 metrics_cmd 和 criterion_cmd，引入第二个名字直接违反 §0.5 规则 3 的一物一名，spec_lint 的 W1 也会把 `extractor` 报成生造字段。要表达同一个意思就写\"结构化输出契约（tables/rows.json structured_output_contract）\"。它给的四个例子（accuracy 必复算、n 由同一条命令输出、生成日期属元数据、\"见第 42 行\"属定位信息）好用，但落点是 §9 验收用例，不进 R3 正文——R3 正文越短越好。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收（450-451 行）",
+     "change": "把评审乙四个例子压成一行用例：\"accuracy 与 n 必须能由同一条 metrics_cmd/criterion_cmd 复算；生成日期、行号只查可溯源不查命令。\"（不使用 extractor 这个词）"
+    }
+   ]
+  },
+  {
+   "item": "评审乙 建议G · R4 建议文本（已批准的 observation/derivation 定义视为预授权；改公式、分母、过滤、聚合、缺失值处理须重批）",
+   "verdict": "adopt",
+   "spec_evidence": "advisor notes 第 456-465 行；spec.md:233-235 R4 原文；rows.json story_row.derivation_command \"派生量的复算命令（R4）\"",
+   "rationale": "这条比评审甲的口径更具体，重批触发面列得更全（多出聚合层级与缺失值处理），直接采进 R4 的插入句。它举的三个例子也准：correct/total 已批不再问、临时把分母换成\"成功完成样本\"要重批、spec 没写的 bootstrap CI 要先提案。用词上把 observation 换成 spec 已有说法（口径 / 派生量），不引入新实体名。要补一句它没写的：口径没在 spec 条目里写全的不算预授权，否则\"批准 spec 条目\"会被当成对一切派生量的空白支票。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§3 R4",
+     "change": "重批触发面按评审乙列全：公式、分母、过滤条件、聚合层级、缺失值处理（已并进 P1-4·R4 的插入句）"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收",
+     "change": "可选加一行用例：\"spec 已批 correct/total 的批次不产生新提案；发射单口径与 spec 条目口径不一致时 trace_check 报错\"（仅当实施时确认 trace_check 能拿到口径字段，否则不加）"
+    }
+   ]
+  },
+  {
+   "item": "评审乙 建议G · 三组例子的落点（R2 无例子，R3 四例，R4 三例）",
+   "verdict": "adopt",
+   "spec_evidence": "advisor notes 第 447-452、461-465 行；spec.md:419 \"每个脚本有可跑自测。重点用例（正例从略，只列拒绝面与豁免面）\"",
+   "rationale": "例子采纳，但全部落 §9 验收用例，不进 §3 正文。理由是 §9 已经成文\"只列拒绝面与豁免面\"，这些例子正好是豁免面（元数据不报错、已批口径不重复上桌）与拒绝面（改分母不重批要拒）。散文内核 461 行是 v2 重构令的成果，往硬规矩里塞例子会把它重新撑大。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收",
+     "change": "evidence_lint 一行、R4 一行，如上两条 edits 所述；§3 R2/R3/R4 正文不加例子"
+    }
+   ]
+  },
+  {
+   "item": "附加-1（我核实 R2/R3 边界时发现的现文硬伤，非评审条目）：§1 的 `verdict: clean` 撞 R3 违禁结论词",
+   "verdict": "adopt",
+   "spec_evidence": "spec.md:91 \"核查报告落 reports/，头部带 `verdict: clean | blockers[]`\"；spec.md:232 \"\\\"通过/没问题/符合预期\\\"等结论词违禁。lint + 机械校验器双重把关（§4）\"；spec.md:312 evidence_lint 查违禁结论词；核查报告落 reports/，属 R3 管的监察输出",
+   "rationale": "R3 禁结论词，禁的对象包含监察输出；核查报告头部的 verdict=clean 就是监察输出里的结论词。plugin 本体交英文（spec.md:335），违禁词表英文化后 clean 落不落表都尴尬：落表则 §1 强制的字段自己违规，不落表则禁令有个没成文的窟窿。修法取最小的一种：R3 加一句说结构化枚举字段不算散文结论词，并把 verdict 枚举按 §0.5 规则 1 收进 tables/rows.json（现在它成文在散文里，本身就是封闭清单跑到散文的漏网，spec_lint 的枚举链正则要两个竖线才触发，所以没抓到）。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§3 R3（232 行）",
+     "change": "改成：\"\\\"通过/没问题/符合预期\\\"等散文结论词违禁；结构化枚举字段（核查报告头 verdict，取值见 `tables/rows.json`）不算结论词，evidence_lint 按字段豁免。lint + 机械校验器双重把关（§4）。\""
+    },
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "enums 加 inspection.verdict；新增 inspection_report_header 条目",
+     "change": "enums 加 \"inspection.verdict\": [\"clean\", \"blockers\"]；新增 inspection_report_header: {\"_fields\": [\"batch_id\", \"verdict\", \"blockers[]\", \"date\", \"生成时间/git HEAD/所读账本行数与哈希（R3 溯源块）\"], \"verdict\": \"enum inspection.verdict；blockers 非空时 verdict=blockers\", \"_lint\": \"verdict 字段 evidence_lint 豁免\"}"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§1 收官核查 ②（91 行）",
+     "change": "把 `verdict: clean | blockers[]` 改成引用式\"头部带 verdict 字段（取值见 `tables/rows.json` inspection_report_header）\"，散文不再复述枚举"
+    }
+   ]
+  },
+  {
+   "item": "甲 P1-5（core/adapter/policy 分层，core 不出现 GPU/NFS/opus 专名）",
+   "verdict": "partial",
+   "spec_evidence": "§4「plugin 本体是**通用层**：只要是\"idea→实验\"形态的项目都装得上；项目特化全部收进仓库根配置 + 可覆盖 schema（§7）」、§7「通用/特化分界：plugin 本体不含任何工程专名，特化只发生在这份配置里」——意图已成文；但正文自己违反了它：§4「inspector.md … frontmatter 钉 model: opus」、§1「派 inspector（opus）」、§2.1「派小读手（sonnet，一次一件）」、routes.json 第 20 行「inspector（opus）」、ledgers.json _read_classes.sliced「派读手 subagent（sonnet）」、R5「只关系到发射 GPU 任务且预计总时长低于一小时」「写 NFS 本身不算不可逆」、R1/§5「不占 GPU」、ledgers.json cluster_state.default_path=ops/gpu_state.md。反面：全文 grep 无 tokyo / 48G。",
+   "rationale": "评审说的现象在原文里确实存在（模型名、GPU、NFS、一小时都写死在散文内核里），采「把常量搬进 research-loop.json、散文只引用键名」这半——这是改字不改语义、成本一次性。不采「core/adapter/policy 三套目录 + local-process|gpu-cluster|scheduler|remote-service 多适配器」这半：现在只有一条 rails.gpu 需要落地，多适配器抽象没有第二个使用者来自证必要，按裁决 3 优先最小方案；spec 里 rails.* 五键已经在充当 adapter 接口，config.json 已经在充当 project policy，缺的只是把一句分界话写清。GPU<1h 常设授权按用户裁决 1 语义不动：阈值来源改成配置键，但默认值携带即生效（3600 秒），不允许缺省变成 null 锁。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§4 组件结构",
+     "change": "inspector.md 行的「frontmatter 钉 model: opus」改成「frontmatter 钉 model: 取 research-loop.json roles.inspector_model（plugin 默认 opus）」"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§1 部署收官例行核查①",
+     "change": "「派 inspector（opus）」改成「派 inspector（模型取 roles.inspector_model）」"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§2.1 读手 subagent（辅）",
+     "change": "「派小读手（sonnet，一次一件）」改成「派小读手（模型取 roles.reader_model，一次一件）」"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "R5",
+     "change": "「只关系到发射 GPU 任务且预计总时长低于一小时」改成「只关系到发射算力任务且预计总时长低于 standing_authorization.max_expected_runtime_s（plugin 默认 3600 秒）」；哨兵值 spec-standing-gpu-1h 不改名（rows.json/writes.json 已按此值成文）"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "R5 三问",
+     "change": "「写 NFS 本身不算不可逆」改成「写产物盘（raw_data_roots 下的路径）本身不算不可逆」，用户裁决语义不动"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "R1 判据 / §5 判据 run 执行契约",
+     "change": "两处「不占 GPU」改成「不占算力资源（不走 rails.gpu）」"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§7 工程挂接",
+     "change": "「通用/特化分界」那条后面补一句：三分界 = plugin 本体（层/账本/跃迁/溯源/批准/报告）｜rails.* 五键指向的工程铁轨（怎么探资源、怎么发射、怎么记账）｜research-loop.json（策略值：常设授权阈值、角色模型、豁免清单）。不新建目录层"
+    },
+    {
+     "file": ".scratch/research-loop/tables/config.json",
+     "section": "keys",
+     "change": "新增 roles 键：{inspector_model, reader_model}，domain 写「派 subagent 一律显式传模型，不许继承会话默认」，null_effect 写「取 plugin 默认 opus/sonnet，不锁功能」；新增 standing_authorization 键：{max_expected_runtime_s: 3600, resource: compute}，null_effect 写「取 plugin 默认 3600 秒，常设授权照常生效（不锁）」"
+    },
+    {
+     "file": ".scratch/research-loop/tables/routes.json",
+     "section": "最后一行「深查这批 / 核查部署」",
+     "change": "「inspector（opus）」改成「inspector（roles.inspector_model）」"
+    },
+    {
+     "file": ".scratch/research-loop/tables/ledgers.json",
+     "section": "_read_classes.sliced",
+     "change": "「派读手 subagent（sonnet）」改成「派读手 subagent（roles.reader_model）」"
+    },
+    {
+     "file": ".scratch/research-loop/tables/ledgers.json",
+     "section": "ledgers.cluster_state",
+     "change": "default_path 改 ops/cluster_state.md，_note 注明 new1 覆盖为 ops/gpu_state.md；无集群设施的工程该键留空"
+    },
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "launch_order.resources / runs_row_normal.gpu_count / launch_order.retry / error_classes._shape",
+     "change": "加一句统一注：资源类字段（resources、gpu_count、allow_card_swap、动作\"换卡\"）由 adapter 定义，非算力集群工程可空、可不实现"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议H-1（Core 只保留 role/ledger/approval/transition/provenance/query/report + resource request 抽象字段；Adapter 负责探测/发射/采样/台账/registry/产物定位）",
+   "verdict": "partial",
+   "spec_evidence": "§4「plugin 本体是通用层……项目特化全部收进仓库根配置 + 可覆盖 schema」；config.json rails.gpu「两型：skill 名（路由转交）或可执行命令/脚本路径（运行层直接执行，入参为发射单路径）」——adapter 接口已经存在，形态是配置键 + 发射单契约，不是代码层。",
+   "rationale": "这份职责清单跟现文的实际分工基本重合：探测/发射/采样归 rails.gpu 指向的铁轨、台账归 jobs（ledgers.json owner=run）、registry 解析归 registry_cmd、产物定位归 raw_data_roots。采纳的是把这条分界在 §7 写成一句话，让后续实施者不再把策略常量写回内核；不采纳把它做成三套目录/三套包，那是没有第二个 adapter 时的空抽象（裁决 3）。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§7",
+     "change": "与 P1-5 同一处：补三分界一句话，并点名 rails.* 五键 + 发射单字段就是 adapter 接口"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议H-2（roles.inspector_model / reader_model 进 policy；甲 P1-5 附注\"未配置时使用当前会话默认模型\"）",
+   "verdict": "partial",
+   "spec_evidence": "§4「frontmatter 钉 model: opus」、§1「派 inspector（opus）」、§2.1「小读手（sonnet）」——模型名现在硬写在 plugin 本体里。",
+   "rationale": "把模型名搬进配置这半采纳，理由同 P1-5。「未配置时使用当前会话默认模型」这半拒绝：用户的全局硬规则是派 subagent 一律显式指定模型、禁止继承主会话（~/.claude/CLAUDE.md「Subagent 模型策略」）。改成 plugin 携带默认值 opus/sonnet，配置未填时用默认值并显式传，不走继承。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/config.json",
+     "section": "keys.roles",
+     "change": "domain 明写：值必须显式传给 subagent，禁止\"不传模型继承会话默认\"；缺省取 plugin 默认 inspector_model=opus / reader_model=sonnet"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议H-3（standing_authorization 进 new1 policy：max_expected_runtime_s 3600 / resource_type gpu）",
+   "verdict": "partial",
+   "spec_evidence": "R5「**常设授权一条**（plugin 携带，无须另发 grant）：抉择点若只关系到发射 GPU 任务且预计总时长低于一小时（以发射单 expected_runtime_s 合计），默认模式下也可直接干——照 R6 留痕（authorized_by 填 `spec-standing-gpu-1h`）、事后必须通知你干了什么」；rows.json decisions_row.authorized_by 值域含 spec-standing-gpu-1h；writes.json owner_values.per-kind 同。",
+   "rationale": "阈值和资源类型是策略值，挪进配置符合 P1-5，且用户裁决 1 只锁语义（常设授权存在、干了必须回报），没锁它写在哪。采纳时钉死三条不许丢：① 默认值携带即生效，不许变成 null → 锁功能（那才叫推翻裁决 1）；② 哨兵值 spec-standing-gpu-1h 字符串不改名，否则要连改 rows.json/writes.json 两表且历史条目失配；③ 回报义务（§2.5「授权覆盖下自决了实验设定的，事后必须回报你」+ R6 清单渲染）原样保留。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/config.json",
+     "section": "keys.standing_authorization",
+     "change": "新增键，domain 写「R5 常设授权阈值：max_expected_runtime_s（默认 3600，以发射单 expected_runtime_s 合计）、resource（默认 compute）」，null_effect 写「取 plugin 默认，常设授权照常生效」"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "R5 常设授权一条",
+     "change": "阈值改成引用配置键，其余（哨兵值、留痕、事后必须通知）一字不动"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议H-4（artifact_roots 进 policy）",
+   "verdict": "reject",
+   "spec_evidence": "config.json keys.raw_data_roots：example「[/net/.../reproduce/new1/]」、domain「产物根（大产物一律 NFS）」、null_effect「路径模板不可解析 → 相关登记拒」；ledgers.json runmeta.default_path「<artifact_dir>/RUNMETA.json」、raw_data「<raw_data_roots>/**」。",
+   "rationale": "已被现文覆盖：产物根本来就是配置键，plugin 本体只用 <raw_data_roots>/<artifact_dir> 模板。唯一要改的是 domain 里那句「大产物一律 NFS」——NFS 是 new1 的存储形态，改成「大产物落产物根，不落仓库」，这条并进 H-5 的编辑里，不另开动作。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/config.json",
+     "section": "keys.raw_data_roots.domain",
+     "change": "「产物根（大产物一律 NFS）」改成「产物根（大产物一律落此处，不落仓库）」，NFS 只留在 example 列"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议H-5（core 不应出现 tokyo、NFS、48G、换卡或具体模型名）",
+   "verdict": "partial",
+   "spec_evidence": "全文 grep：tokyo 零命中、48G 零命中——这两项不成立。NFS 命中两处（spec.md R5「写 NFS 本身不算不可逆」、config.json raw_data_roots.domain）；「换卡」命中两处（rows.json error_classes._shape「动作: 重试|换卡|升级」、launch_order.retry.allow_card_swap）；模型名命中四处（spec.md §1/§2.1/§4、routes.json、ledgers.json）。",
+   "rationale": "清单里一半是评审假想的（tokyo/48G 根本不在），按纪律直接给反证；另一半属实，按 P1-5 的编辑一并改。「换卡」这两处判为 adapter 概念而不是内核专名：error_classes 的动作集本来就由工程自己填（rows.json _shape 是形状不是值域），加一句注即可，不改名。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/rows.json",
+     "section": "error_classes / launch_order.retry",
+     "change": "加注：动作集与 retry 策略字段由 adapter/工程定义，plugin 只定形状"
+    }
+   ]
+  },
+  {
+   "item": "甲 P2-1（顶层统一入口 research-loop init/status/next/check/query）",
+   "verdict": "partial",
+   "spec_evidence": "§6「路由表唯一真源：`tables/routes.json`（research-loop 薄壳的全部内容）。表里一切动作都可随时手动触发」；routes.json 17 行里有「体检一下 / doctor → doctor.py」「有什么在等我 → ledger.py blocked 渲染」；但**没有一行指向 `ledger.py init`**，而 §7 写着「接线第一步就是 init 问卷」。",
+   "rationale": "面向人的统一入口已经存在，它是路由表里的中文句子，不是 CLI 子命令——再套一层 research-loop 壳只是把 routes.json 里已经出现一次的脚本名换个地方写，没堵任何洞，按裁决 3 拒。但评审顺手暴露了一个真洞：init 是接线第一步却没有路由句，用户没有入口说\"接一下这个工程\"。采最小等价方案：补一行路由。check≈doctor 已有行，query 是脚本口不该给用户直接用（§2.1 规定 jsonl 只经 query 拿最小视图，是给会话用的），status/next 归 P0-2，采不采都只是往 routes.json 加一行，不需要新壳。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/routes.json",
+     "section": "routes",
+     "change": "补一行：{\"say\": \"接一下这个工程 / init\", \"stage\": \"⓪\", \"to\": \"ledger.py init 挂接问卷（§7）\"}"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§6",
+     "change": "补半句：脚本名只在 routes.json 出现一次，上层 skill 与用户一律经路由句进，不直接依赖脚本路径"
+    }
+   ]
+  },
+  {
+   "item": "甲 P2-2（inspection_policy = always | risk-based | manual 策略化）",
+   "verdict": "partial",
+   "spec_evidence": "§1「② inspector 跑三件套并**通读**本批账目与报告（用户裁决：每次都通读）」；「快车道批（§2.6）不触发本核查」。",
+   "rationale": "「每次都通读」是 new1 的策略值而不是内核语义，按 P1-5 的同一把尺子该落到 research-loop.json，这半采纳，成本是一个键。三值状态机拒：risk-based 的判定规则没人写、manual 等于关掉核查，两者在 v1 都没有使用者，评审自己也把 risk-based 排进 v1.1；先把值域收成 always 一个值，将来加值时再改值域。评审说的「机械三件套始终执行、只有通读可变」在 v1 没有对应场景——唯一豁免面是快车道，而快车道按用户裁决连批次报告都不出，没有报告可供三件套检查。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/config.json",
+     "section": "keys",
+     "change": "新增 inspection_policy 键：domain「部署收官例行核查策略；v1 值域只收 always（用户裁决：每批都通读）；加值须回 spec 走 R5」，null_effect「取默认 always」"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§1 部署收官例行核查",
+     "change": "「（用户裁决：每次都通读）」后补「——本工程策略值，落 research-loop.json inspection_policy=always」"
+    }
+   ]
+  },
+  {
+   "item": "甲 P2-3a（首版暂缓 archive / archive index）",
+   "verdict": "user-decision",
+   "spec_evidence": "§2.1「**归档轮转（辅）**：jsonl 账到行数上限（`tables/ledgers.json` cap 列，工程经 ledger_caps 覆盖）时 `ledger.py archive` 把非活跃行原样搬进 `<name>.archive.jsonl`……归档由 doctor 建议、用户确认后执行，不自动跑」；config.json keys.ledger_caps「归档轮转行数上限（用户裁决 2026-08-13：上限进配置）」；§10 后置清单「归档的自动执行（用户批注\"可自动\"的诉求）」；audit-merge 自决点 47「归档不自动跑（用户原话\"看看能不能自动进行\"）：首期 doctor 建议 + 用户确认，后置进 §10」。",
+   "rationale": "这不是纯排期问题：用户对归档拍过两次板（上限进配置、问过能不能自动），把整件事挪出 v1 会让 ledger_caps 这个用户裁决产物在 v1 变成死键，也把 §2.1 三个上下文卫生手段之一（读法为主、读手为辅、归档为辅）拿掉一个。同时评审的暂缓理由有一半站得住（见下一条：撤销触及已归档行确实没成文）。这两点相加超出我能自决的范围，列出来给用户拍：v1 保留归档（并补撤销落点），还是 v1 只保留 cap 告警、archive 命令排进 v1.1。",
+   "conflicts": "用户裁决 4（归档上限进配置 ledger_caps）+ 用户批注\"归档可自动\"（已存档进 §10 后置）",
+   "edits": [
+    {
+     "file": "（待用户裁决后再动）",
+     "section": "§2.1 / config.json ledger_caps / §10",
+     "change": "若裁\"排进 v1.1\"：§2.1 归档段标注 v1.1、ledger_caps domain 注明 v1 只做上限告警不搬行、§10 后置清单加\"归档轮转\"；若裁\"v1 保留\"：不动，只落下一条的补丁"
+    }
+   ]
+  },
+  {
+   "item": "P2-3a 衍生（评审的暂缓理由：用户撤销已归档的 decision/blocked 行时写哪里没成文）",
+   "verdict": "adopt",
+   "spec_evidence": "ledgers.json blocked.active「status∈{open, answered}」——closed/withdrawn 行会被搬走；story.active「status=active」——retired 行会被搬走；writes.json form2_inplace_whitelist 给 blocked/decisions/story 定了就地更新字段，withdrawal_proxy 规定撤销就是这类就地更新；§2.1 只写了「校验/追溯脚本一律跨档读」，**写入侧没有一句跨档**。decisions 有「被任何 decision_refs/affects/grant_ref/decision_ref/superseded_by 指向的行（被引用的永不归档）」兜住，blocked 与 story 没有。",
+   "rationale": "洞是真的：一条已归档的 closed blocked 或 retired story 行，用户回头撤销/更正时，form2 就地更新找不到落点。按裁决 3 取最小方案——不引入事务日志、不引入\"可撤销行永不归档\"这种会把归档架空的规则，只把已有的\"跨档\"口径从读扩到写：form2 就地更新先在主文件找，找不到经 archive.idx 定位到归档文件原地改，全程持两把锁。一行规则，机验一条。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/tables/writes.json",
+     "section": "write_forms.form2_inplace_whitelist",
+     "change": "补 _rule：就地更新的定位默认跨档——主文件未命中时经 <name>.archive.idx.json 定位归档文件原地改，持主文件与归档文件两把锁；归档行的白名单字段与主文件同"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§2.1 校验/追溯脚本一律跨档读",
+     "change": "该条末补半句：撤销/更正的就地更新同样跨档（写入侧唯一跨档口，规则见 writes.json form2）"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收（ledger.py archive / 撤销 用例）",
+     "change": "加一条拒绝面：撤销一条已归档的 blocked/story 行 → 归档文件内原地改成功、主文件不新增行、idx 行数不变"
+    }
+   ]
+  },
+  {
+   "item": "甲 P2-3b（首版暂缓 feedback review 与 skill 进化，即 R9）",
+   "verdict": "reject",
+   "spec_evidence": "R9「每轮循环收官，各层把\"skill 哪里不顺、建议怎么改\"写进反馈账。建议不自动生效：用户定期审（路由句\"审一下反馈\"），批准的才改 skill 本体（进 git），驳回的记理由——审查以追加 review 行落账，只能由用户审查会话经脚本写」；audit-merge 用户裁决第二批第 3 条「**R9+反馈账留下**（\"第3个要留下\"）」。",
+   "rationale": "用户已经点名要留。评审的理由是\"首版同时实现太多状态机和豁免规则\"，但反馈账没有状态机：rows.json feedback_rows 只有 suggestion/review 两个行型，全 append，写权是 shared-append，命令是 `ledger.py feedback review` 一条子命令加一条路由句。理由与实际重量对不上，给反证拒。",
+   "conflicts": "用户裁决第二批第 3 条（R9+反馈账留下）",
+   "edits": []
+  },
+  {
+   "item": "甲 P2-3c（首版暂缓 regression_check）",
+   "verdict": "reject",
+   "spec_evidence": "§4「regression_check.py # (oversight) 新批次 vs 故事账 active claim 同口径重比（--dry-run 只出 stdout 不落盘）」；§2.5 上行六类含「**回归警报**：新批次数字与故事账 active claim 冲突时的清单（只报事实不判）」；§8 步 6「regression_check 对照故事账，冲突清单落 reports/」；§4 doctor 拼装项含「regression_check --dry-run」。",
+   "rationale": "回归警报是用户确认的上行六类之一，砍掉它等于砍掉一类上行。实现面上它是一个查询加对比：runs 行带 metric_name/value/n/filter，story 行带 evidence_runs 与 selection_rule，同口径重比不需要新状态。评审没给它单独的重量论证，拒。",
+   "conflicts": "用户裁决（上行常用六类，含回归警报）",
+   "edits": []
+  },
+  {
+   "item": "甲 P2-3d（首版暂缓 doctor 聚合报告）",
+   "verdict": "reject",
+   "spec_evidence": "§4「doctor.py # (用户) 一键体检：拼装 config-check + trace_check + evidence_lint + principles-lint + regression_check --dry-run + 账本行数上限扫描 + 归档量汇报与归档建议 + 遗留 worktree 清单。只查不动，报告只出 stdout」；routes.json「体检一下 / doctor」；§2.1「归档由 doctor 建议、用户确认后执行」。",
+   "rationale": "doctor 按定义就是已有检查件的拼装壳，零新语义、零写权（明文\"不写 reports/、不写任何账本目录\"），暂缓省不下工作量。而且归档的\"建议\"环节挂在它身上，砍 doctor 会连带砍掉归档的触发口。拒。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "甲 P2-3e（首版暂缓通用 fallback）",
+   "verdict": "reject",
+   "spec_evidence": "config.json _fallback_rule「兜底件最低必做项……launch.py = 顺序执行发射单 argv + 脏树检查 + 写 RUNMETA + 登记极简台账；record.py = append 记账、加载 runs schema、持同一把锁；registry.py = 极简注册表 + --list 只读免门禁；**除此之外不复刻任何高级功能**。其余铁轨（build/pipeline/paper/literature）无兜底件」；§7「裸项目四键指向 `scripts/fallback/` 即装上可用」。",
+   "rationale": "评审要暂缓的是\"更完整的 fallback 工程设施\"，而现文已经把兜底裁到三件最低必做项，\"更完整\"那部分本来就不在 v1 范围里，属已被现文覆盖。反过来，这三件在 v1 有硬用途：P0-4 的 fake rail 需要一条不碰 GPU 的真实发射路径，fallback launch.py+record.py+registry.py 正是它，砍掉 fallback 就得另造一条等价的。拒。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "甲 §6-A（建议纳入 v1 的十项）",
+   "verdict": "partial",
+   "spec_evidence": "§4 组件结构（五 skill + inspector + 九脚本 + fallback 三件 + schemas/）、§9「五个 skill + inspector agent + 九个脚本 + fallback 三件 + schemas/ 齐备……plugin 可安装、路由表可触发」、§10「不做什么（YAGNI）」与「后置不弃（实施后按需拾起）」。",
+   "rationale": "十项里 1/2/4/6/7 已经是现文范围，3（可执行 schema）、5 里的 attempt/observation、8（status/next/reconcile）、7 的\"转正规则\"归其他组裁断，9（fake rail）与 10（不硬编码 new1）我这组已单独采纳。采纳的是\"把 v1 交付清单成文\"这件事本身；但落点不在 spec：spec 已有 §10 管范围，排期该落实施计划（WORKPLAN/issues），不在 spec 里再开一节排期，否则两处成文违反 §0.5 元规则 1。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": "（实施计划，非 spec）",
+     "section": "WORKPLAN / .scratch/research-loop/issues/",
+     "change": "出 v1 交付清单时以 §4 组件结构 + §9 验收为骨架，逐项挂工单；spec 不新增排期节"
+    }
+   ]
+  },
+  {
+   "item": "甲 §6-B（建议留到 v1.1 的七项）",
+   "verdict": "partial",
+   "spec_evidence": "§10「**后置不弃**（实施后按需拾起）：reports/ 与待决账的通知/时限提醒；下行\"临时指令/补证请求\"专用体裁；台账成本字段的可行性查询视图；监察会话只读性的钩子验证；归档的自动执行（用户批注\"可自动\"的诉求）」。",
+   "rationale": "逐项分流：多种 resource adapter、risk-based inspection policy、更完整 fallback 三项同意留后（前两项本来就不在 spec，第三项 _fallback_rule 已排除），这半采纳并归入 §10 后置清单；archive/archive index 转用户裁决（见 P2-3a）；feedback 进化、regression_check、doctor 三项拒（见 P2-3b/c/d）。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§10 后置不弃",
+     "change": "追加三条：多资源适配器（local-process/scheduler/remote-service）、risk-based/manual 核查策略、兜底件的高级功能；三条均注明\"有第二个使用者时再做\""
+    }
+   ]
+  },
+  {
+   "item": "甲 P0-4（用假铁轨验收完整循环，v1 必须实跑 init→…→closeout 并走通 quick path）",
+   "verdict": "adopt",
+   "spec_evidence": "§9「在 new1 挂接后，端到端剧本 §8 的 1-3 步（不动 GPU）真实走通一遍」——验收确实只到第 3 步，§8 的步 4-10（施工、发射、入账、批次报告、核查、故事裁决、收官）全部无端到端验收；§9 其余全是单脚本自测用例。",
+   "rationale": "现状与评审描述一致，洞是真的：整条链最容易断的是跨件接缝（发射单→RUNMETA→runs→批次报告→核查→story 写入校验→closeout 门禁），单件自测一个都测不到。这条不算防御性设计，它是\"证明设计成立\"的最低验收，按裁决 3 的口径自证得了必要。落地取最小形态：不建评审说的 tests/fixtures/fake-project 全套工程，直接拿 §7 已有的 fallback 三件当铁轨，加一个 fake 任务脚本挂进 fallback registry，模式 ok|fail|empty 必做，timeout 用极小 expected_runtime_s × runtime_factor 顺带覆盖。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 验收标准",
+     "change": "「在 new1 挂接后……1-3 步真实走通」上面加一条：**plugin 自测（假铁轨）**——用 scripts/fallback/ 三件 + fake 任务，不碰 GPU、不碰外部服务，走通 §8 步 3→10 的机械链：发射单 → run → RUNMETA/jobs/runs → 批次报告 → 例行核查 → story 写入校验 → trace_check --closeout；new1 挂接后的 1-3 步真实走通一条保留不动"
+    },
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§4 组件结构",
+     "change": "scripts/fallback/ 下加 fake_experiment.py 与 fake_metrics.py（只在自测用），并注明不计入\"九个脚本\"的计数"
+    },
+    {
+     "file": ".scratch/research-loop/tables/config.json",
+     "section": "_fallback_rule",
+     "change": "补半句：兜底三件同时充当 plugin 自测的假铁轨；fake 任务经 registry.py 注册"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-fixture（tests/fixtures/fake-project：registry.json / fake_experiment.py / fake_metrics.py / expected/artifact.json；模式 ok|fail|timeout|empty|bad-metrics）",
+   "verdict": "partial",
+   "spec_evidence": "config.json _fallback_rule「registry.py = 极简注册表 + --list 只读免门禁」「launch.py = 顺序执行发射单 argv + 脏树检查 + 写 RUNMETA」；rows.json structured_output_contract「metrics_cmd 与 criterion_cmd 通用：stdout 最后一行必须是单个 JSON 对象」。",
+   "rationale": "fake 任务与 fake metrics 两件采纳，且模式集照评审的五个（ok|fail|timeout|empty|bad-metrics 正好一一对上 runs.status 枚举与 structured_output_contract 的拒绝面）。不采纳另起 tests/fixtures/fake-project 这套平行工程：兜底三件已经是一个可跑的裸工程，再造一份就有两套铁轨要同步维护。expected/artifact.json 这类期望值文件也不单独立，断言写在自测脚本里。metrics 输出形状按 rows.json 现有契约（最后一行单个 JSON 对象），不按评审示例的 observations[] 数组——那依赖 observation 实体，归其他组裁断。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测（假铁轨）",
+     "change": "写明 fake 任务参数：--seed / --mode ok|fail|timeout|empty|bad-metrics / --out DIR；输出遵 rows.json structured_output_contract"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景1（正轨成功闭环）",
+   "verdict": "adopt",
+   "spec_evidence": "§8 步 3-10 全链无端到端验收（同 P0-4）。",
+   "rationale": "这是假铁轨的主用例，必进 §9。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测",
+     "change": "场景 1：spec 条目 → 工单 → 发射单 → fake run(ok) → RUNMETA/jobs/runs → 批次报告 → 核查 clean → story 入账 → trace_check --closeout 过"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景2（quick 成功但 story 拒绝）",
+   "verdict": "adopt",
+   "spec_evidence": "§2.6「quick 行不得被故事账引用（story 写入校验拒）」；§9 现有单件用例「ledger.py story：run 不存在 / status≠ok / quick=true → 拒」「快车道：缩减发射单入账正常、trace_check 不误报、story 引用 quick 行拒」。",
+   "rationale": "单件用例已有，但没人验过\"缩减发射单一路跑到 runs 行 quick=true 透传正确\"这条链——透传经发射单→记账脚本→runs 行三跳（rows.json runs_row_normal._notes\"arm/filter/quick：记账脚本从发射单透传\"），端到端一条串起来才测得到。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测",
+     "change": "场景 2：快车道链（缩减发射单 → fake run → runs 行 quick=true）→ story 引用被拒；同时验 trace_check 不因缺 spec_ref/issue_ref 报断链"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景3（quick 转正后 normal run 可进 story）",
+   "verdict": "partial",
+   "spec_evidence": "§2.6「要进故事，按正轨补 spec 条目重跑（种子固定，重跑即复现）。快车道是试想法的入口，不是论文证据的入口」——现文的转正是人手按正轨重跑，没有机械转正命令。",
+   "rationale": "场景本身该有（它验的是\"quick 结果的正确出路是通的\"），但按现文形态写：新开 spec 条目 + 新发射单 + 新 run，不是评审假设的\"由脚本从原 launch order 机械生成 + promoted_from_run_id\"。那套机械转正是 P1-6 的内容，归其他组；若那组采纳，本场景再加一条来源引用断言。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测",
+     "change": "场景 3：同一 fake 任务按正轨重跑（新 spec 条目 + 完整发射单，seed 不变）→ 新 run 可进 story；断言两条 runs 行的 value 逐字相同（种子固定即复现）"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景4（empty output 记 empty-output）",
+   "verdict": "adopt",
+   "spec_evidence": "§9「output_check：退出码 0 + 空产物 → empty-output，不得记 ok」；rows.json enums「runs.status: [ok, failed, oom, timeout, empty-output, killed, partial]」。",
+   "rationale": "单件用例已有，端到端补一条验的是\"这个判定真的走到 runs 行里、而不是被记账脚本覆盖成 ok\"。fake 任务 --mode empty 直接覆盖。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测",
+     "change": "场景 4：fake run --mode empty → output_check 判 empty-output → runs 行 status=empty-output 且 metric 三字段为 null（rows.json runs_row_normal._notes「status≠ok：metric_name/value/n 允许 null」）"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景5（metrics 最后一行不是 JSON → 拒绝入账并开 failure blocker）",
+   "verdict": "adopt",
+   "spec_evidence": "rows.json structured_output_contract._rule「解析失败 = 入账拒绝并按 R8 升级，禁止人眼读日志补数」；§9「ledger.py runs-append：退出非 0 或尾行非 JSON → 不落行、升级」；R8「运行层不判——只做机械动作，把错误原文、日志路径、已试动作表收齐开 blocked 条目（kind=failure）升级部署层」。",
+   "rationale": "规则三处成文但没有端到端验收；fake 任务 --mode bad-metrics 一次覆盖\"不落行 + 开 blocked(kind=failure) + 数字没被人手补进去\"三条。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测",
+     "change": "场景 5：fake_metrics --mode bad-metrics → runs 无新行、blocked 新增一条 kind=failure 且 evidence 带日志路径"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景6（第一次 attempt 失败、第二次成功，两个 attempt 都可查）",
+   "verdict": "partial",
+   "spec_evidence": "rows.json runmeta._fields 含「attempt_no」但只有单值；launch_order.retry「{max_attempts, retriable_errors[], allow_card_swap}」；全文无 attempt 实体、无\"不覆盖前次 attempt\"的规定。",
+   "rationale": "重试链该进假铁轨验收，这半采纳；\"两个 attempt 都可查\"的断言依赖 attempt 实体（甲 P1-6 / 乙 §3.2），归其他组，我这组不替它拍板。v1 最小断言按现文写得出来的部分：失败→重试→成功后 runs 只有一行且 status=ok，RUNMETA.attempt_no=2。若 attempt 实体获采纳，再把\"第一次的 argv/日志不被覆盖\"加进来。",
+   "conflicts": "",
+   "edits": [
+    {
+     "file": ".scratch/research-loop/spec.md",
+     "section": "§9 plugin 自测",
+     "change": "场景 6：fake run 第一次 --mode fail、重试后 ok → runs 单行 status=ok、RUNMETA.attempt_no=2；attempt 存档断言待 attempt 实体裁断后补"
+    }
+   ]
+  },
+  {
+   "item": "乙 建议I-场景7（spec 批准后改一字，发射被 stale approval 门禁拒）",
+   "verdict": "partial",
+   "spec_evidence": "rows.json spec_header._fields「[spec_version, approved_by, approved_date, approved_against_principles_version, withdrawals[]]」——无 digest；全文无 approval_stale 门禁。",
+   "rationale": "场景验的对象在现文里不存在，采不采取决于甲 P1-2 / 乙 建议E（approval digest）那一组的裁断，不归我这组拍板。表个态：若那组采纳，本场景应进 §9；若不采纳，本场景无对象，届时直接删而不是留一条永远跑不了的验收。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "乙 建议I-场景8（复合操作中间崩溃，reconcile 后链路完整）",
+   "verdict": "partial",
+   "spec_evidence": "§5「**写入两式**：原子追加 + 白名单字段就地更新（都过 schema 与写权检查、都持文件锁）」——只保单文件；全文无 reconcile、无 operation_id。",
+   "rationale": "同场景 7：验收对象归甲 P0-3 那一组。若那组按最小方案落地（严格写序 + reconcile 检测，不做事务日志），本场景就是它的验收出口，应进 §9；我这组只记依赖关系，不替它拍。",
+   "conflicts": "",
+   "edits": []
+  },
+  {
+   "item": "乙 建议I-场景9（新会话只调 status/next 即可继续）",
+   "verdict": "partial",
+   "spec_evidence": "§2「**会话开工必读两样**……① 本层待决队列；② 有效授权视图」——没有阶段恢复入口；routes.json 无 status/next 行。",
+   "rationale": "同上：依赖甲 P0-2。若 status/next 获采纳，它进 §9 顺带只需在 routes.json 加一行（见 P2-1 的编辑口径），不需要新建 CLI 门面。",
+   "conflicts": "",
+   "edits": []
+  }
+ ]
+}
