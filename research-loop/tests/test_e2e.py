@@ -12,30 +12,6 @@ one scenario as built "on top of" another (③ says as much about ②); this
 file instead has each scenario construct its own copy of whatever earlier
 state it needs, so `run_all.py` can run these in any order and a failure in
 one scenario never cascades into a false failure in another.
-
-KNOWN, DOCUMENTED PRE-EXISTING DEFECT (not introduced by, and out of file
-scope for, this ticket -- see this ticket's own report for the full writeup):
-scripts/fallback/launch.py (T10) sets both RUNMETA.launch_order_ref and
-ops/jobs.json's per-run launch_order_ref to `str(args.launch_order)` -- the
-raw CLI path string a caller invokes it with. trace_check.py's (T11)
-check_runs_backlink / check_jobs_backlink, and _load_launch_orders's own
-docstring (citing spec §5 "发射单按 run_id 命名"), instead treat
-launch_order_ref as the launch order's bare run_id (`ops/launch_orders/
-<run_id>.json`'s filename stem) -- the same convention launchcmd.py's
-promoted_from resolution and decisions.affects both already use. Any launch
-order actually run through the real fallback launch.py (exactly what this
-file's mk_order()/`_run_launch` do, and exactly how the fallback trio is
-meant to be driven per this ticket's own "铁轨用 scripts/fallback/ 三件")
-therefore always trips `runs_backlink.launch_order_ref_missing` +
-`jobs_backlink` findings that have nothing to do with the scenario under
-test. That blocks scenario ①'s and ②'s literal "trace_check ... exit 0"
-requirement until launch.py is fixed (recommended: `launch_order_ref =
-order["run_id"]`, a one-line change -- but landing it also means updating
-test_fallback.py's two `launch_order_ref == str(order_path)` assertions,
-both files outside this ticket's declared scope). test_1/test_2 below keep
-the spec-mandated `assert code == 0` (rather than quietly loosening it) so
-the two tests fail loudly, with this paragraph's diagnosis inline in the
-assertion message, until that fix lands.
 """
 from __future__ import annotations
 
@@ -46,14 +22,6 @@ from pathlib import Path
 
 import _lib
 import helpers
-
-_LAUNCH_ORDER_REF_BUG = (
-    "trace_check is expected to exit 0 per spec.md §9; if this failed on "
-    "'runs_backlink.launch_order_ref_missing' / 'jobs_backlink' findings, that is "
-    "T16's documented pre-existing defect in fallback/launch.py (T10) -- see this "
-    "module's top-of-file docstring and T16's report for the full diagnosis and the "
-    "one-line fix. Not something this ticket's own file scope can repair."
-)
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +289,7 @@ def test_1_clean_loop_reaches_closeout():
         assert code == 0, (out, err)
 
         code, out, err = _run_trace_check(root, "--closeout", batch_id)
-        assert code == 0, f"{_LAUNCH_ORDER_REF_BUG}\nout={out!r}\nerr={err!r}"
+        assert code == 0, (out, err)
         assert "trace_check: 0 errors" in out
 
 
@@ -358,7 +326,7 @@ def test_2_quick_lane_skips_refs_and_blocks_story():
         code, out, err = _run_trace_check(root)
         # never reports a broken chain for a quick order
         assert "forward_chain" not in out, (out, err)
-        assert code == 0, f"{_LAUNCH_ORDER_REF_BUG}\nout={out!r}\nerr={err!r}"
+        assert code == 0, (out, err)
 
 
 # ---------------------------------------------------------------------------

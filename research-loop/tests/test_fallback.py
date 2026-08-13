@@ -157,7 +157,7 @@ def test_launch_ok_writes_runmeta_and_marks_jobs_done():
         jobs = json.loads(Path(cfg.ledger_path("jobs")).read_text(encoding="utf-8"))
         entry = jobs[order["run_id"]]
         assert entry["state"] == "done"
-        assert entry["launch_order_ref"] == str(order_path)
+        assert entry["launch_order_ref"] == order["run_id"]
         assert entry["finished_at"] is not None
         assert entry["log_path"] == f"{order['artifact_dir']}/attempt1.log"
 
@@ -166,7 +166,7 @@ def test_launch_ok_writes_runmeta_and_marks_jobs_done():
         assert runmeta["commit"] == _lib.git_head(root)
         assert runmeta["argv"] == order["argv"]
         assert runmeta["dirty_files"] == []
-        assert runmeta["launch_order_ref"] == str(order_path)
+        assert runmeta["launch_order_ref"] == order["run_id"]
         assert runmeta["env_name"] == "default"
         assert runmeta["outputs"] == []
         assert len(runmeta["attempts"]) == 1
