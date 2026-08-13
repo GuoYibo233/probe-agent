@@ -75,26 +75,33 @@ def run(args) -> int:
 
 
 def _run_approve_spec(args) -> int:
+    # Read, recompute and write all happen inside the same locked section --
+    # this is a read-modify-write like decisionscmd._run_decision_withdraw
+    # and every blockedcmd transition, so it takes the lock before the read,
+    # not just around the final write (a lock scoped to only the write would
+    # let two concurrent approve-spec calls each read the pre-write file and
+    # the second writer silently clobber the first's approval).
     path = Path(args.spec_file)
-    text = path.read_text(encoding="utf-8")
-    fields, body = _lib.parse_frontmatter(text)
-
-    fields["approved_by"] = args.by
-    fields["approved_date"] = _lib.today()
-    if fields.get("spec_version") is None:
-        fields["spec_version"] = 1
-    # Digest is read off the file as it stands before this write -- approving
-    # never touches the body, so the pre-write and post-write digest are the
-    # same value either way (rows.json spec_header._digest_rule).
-    fields["approved_digest"] = _lib.spec_digest(path)
-
-    header_lines = ["---\n"]
-    for key, value in fields.items():
-        header_lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}\n")
-    header_lines.append("---\n")
-    new_text = "".join(header_lines) + body
-
     with _lib.locked(path):
+        text = path.read_text(encoding="utf-8")
+        fields, body = _lib.parse_frontmatter(text)
+
+        fields["approved_by"] = args.by
+        fields["approved_date"] = _lib.today()
+        if fields.get("spec_version") is None:
+            fields["spec_version"] = 1
+        # Digest is read off the file as it stands before this write --
+        # approving never touches the body, so the pre-write and post-write
+        # digest are the same value either way (rows.json
+        # spec_header._digest_rule).
+        fields["approved_digest"] = _lib.spec_digest(path)
+
+        header_lines = ["---\n"]
+        for key, value in fields.items():
+            header_lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}\n")
+        header_lines.append("---\n")
+        new_text = "".join(header_lines) + body
+
         path.write_text(new_text, encoding="utf-8")
 
     print(json.dumps(fields, ensure_ascii=False))

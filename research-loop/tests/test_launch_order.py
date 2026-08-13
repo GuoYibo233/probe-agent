@@ -92,6 +92,21 @@ def _write_spec(root, rel=".scratch/demo/spec.md") -> Path:
     return path
 
 
+def _write_spec_custom(root, rel, header) -> Path:
+    """Fixture-only spec write with a caller-given header dict -- unlike
+    _write_spec (which hardcodes spec_version: 1), this lets a test build
+    frontmatter where the spec_version key is missing entirely or present as
+    an explicit null."""
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["---\n"]
+    for key, value in header.items():
+        lines.append(f"{key}: {json.dumps(value)}\n")
+    lines.append("---\n")
+    path.write_text("".join(lines) + SPEC_BODY, encoding="utf-8")
+    return path
+
+
 def _set_header_fields(path, **updates):
     """Fixture-only header mutation (not launchcmd's own write path) --
     used to exercise header-only vs body edits against spec_digest."""
@@ -278,6 +293,28 @@ def test_approval_gate_not_stale_after_header_only_edits():
         assert code == 0, (out, err)
 
 
+def test_quick_true_with_nonnull_unapproved_spec_ref_skips_approval_gate():
+    """quick=true -> the whole approval gate is skipped (spec.md §2.6
+    "quick=true -> 本条整个跳过"), not only when spec_ref happens to be
+    null. spec_ref here names a real, but unapproved, spec item -- if the
+    gate ran at all it would reject with "spec not approved" (as
+    test_approval_gate_rejects_unapproved_then_passes_after_approve does for
+    quick=false); this pins down that quick=true bypasses that check
+    entirely rather than narrowing it to spec_ref-is-null."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _write_spec(root)  # exists, unapproved (approved_by stays null)
+
+        row = _draft(
+            root, quick=True, spec_ref="IT-001", issue_ref=None, decision_refs=None,
+            run_id="run-quick-spec-ref",
+        )
+        path = _write_draft(root, "run-quick-spec-ref", row)
+
+        code, out, err = _launch_order(root, path)
+        assert code == 0, (out, err)
+
+
 # ---------------------------------------------------------------------------
 # 4. quick=true with all three refs null -> every gate waived, write
 #    succeeds.
@@ -430,3 +467,49 @@ def test_approve_spec_rejects_file_without_frontmatter():
 
         code, out, err = _approve_spec(root, bad_path)
         assert code == 2
+
+
+def test_approve_spec_defaults_missing_spec_version_key_to_one():
+    """The ticket's "spec_version 缺则置 1" default only actually fires when
+    spec_version starts out missing or null -- _write_spec's own fixture
+    always starts at 1, so test_approve_spec_preserves_body_bytes_and_
+    sets_header_fields's `== 1` assertion passes whether or not the default
+    branch runs. This pins the branch down with a frontmatter that has no
+    spec_version key at all."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        header = {
+            "approved_by": None,
+            "approved_date": None,
+            "approved_digest": None,
+            "withdrawals": [],
+        }
+        spec_path = _write_spec_custom(root, ".scratch/demo/spec-missing-version.md", header)
+
+        code, out, err = _approve_spec(root, spec_path, by="user")
+        assert code == 0, (out, err)
+
+        fields, _body = _lib.parse_frontmatter(spec_path.read_text(encoding="utf-8"))
+        assert fields["spec_version"] == 1
+
+
+def test_approve_spec_defaults_null_spec_version_to_one():
+    """Same default branch as the missing-key case above, but the key is
+    present with an explicit JSON null -- fields.get("spec_version") is None
+    either way, but the frontmatter shape differs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        header = {
+            "spec_version": None,
+            "approved_by": None,
+            "approved_date": None,
+            "approved_digest": None,
+            "withdrawals": [],
+        }
+        spec_path = _write_spec_custom(root, ".scratch/demo/spec-null-version.md", header)
+
+        code, out, err = _approve_spec(root, spec_path, by="user")
+        assert code == 0, (out, err)
+
+        fields, _body = _lib.parse_frontmatter(spec_path.read_text(encoding="utf-8"))
+        assert fields["spec_version"] == 1
