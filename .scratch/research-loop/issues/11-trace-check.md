@@ -74,3 +74,11 @@ CLI：`trace_check.py [--project-root P] [--closeout BATCH_ID]`。
   helpers 默认值**；--project-root 显式指向未接线目录按零账本 0 errors 放行
   （与 output_check/error_classify 同风格）。cannotVerify：§9 九场景端到端
   归 T16；T08 写入门禁与本单宽松存在性检查的配合已随 T08 合并可核。
+
+- 2026-08-14 wave4 收账补记：续跑复审抓出真 finding F2（trace_check.py 三处
+  裸 json.loads，坏行直接崩栈）+ F3（ImportError 回退无测试），修复 commit
+  81be3bc（只碰 trace_check.py + test_trace_check.py，新增守卫与 118 行
+  测试）已 merge 进 main，全量 221/221 过。留档 minor 两条：F4
+  --project-root 显式指错路径时假干净 0 errors（--closeout 路径不受影响，
+  已自曝）；N1 `_lib.py` `_read_jsonl_file` 里同款裸 json.loads 还在
+  （共享库、超本单范围）——**已转写 T02 工单 Comments，归终审清单**。

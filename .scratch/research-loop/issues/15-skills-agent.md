@@ -1,6 +1,6 @@
 # T15 五个 SKILL.md + references + inspector agent（全英文）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 04, 05, 06, 07, 08, 09
 
 ## 范围声明

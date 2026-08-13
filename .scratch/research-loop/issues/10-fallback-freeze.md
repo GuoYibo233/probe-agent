@@ -119,3 +119,14 @@ stdout 提醒把 runs_legacy 补进 config 的 ledgers+owners 两处键。
   launch.py/record.py 若调用 output_check 或按发射单解析 artifact_dir，
   统一以工程根为 cwd（与 tests/helpers.run_script 的 cwd=root 约定一致），
   或直接在发射单里写绝对路径；两边解析基准不一致会静默指向错目录。
+
+- 2026-08-14 wave4 收账：DONE，commit 范围 963bdaa..339715c，merge 进 main。
+  首轮报的 CAP_TRIPPED 是复审 agent API 断连造成的假象——修复 commit
+  339715c（RUNMETA read-modify-write 整段持 `_lib.locked(runmeta_file)`）
+  主会话亲核过分支代码，续跑复审通过、无未决 findings。主仓复跑全量
+  221/221 过。遗留 minor（已接受）：timeout 测试断言只排除睡满 30s、未收紧
+  到 3s 区间；workdir≠project_root 的子目录分支无测试。concerns 留档：
+  超时哨兵退出码用 1（可议改 124）；jobs 登记期多写 finished_at:null 占位；
+  fake_experiment 数据行 k 从 0 起。cannotVerify：§9 场景⑤（bad-metrics →
+  blocked 开条）链路归 T16；jobs 行不写 escalation_ref/sampler 两键是否碍
+  下游，T13/T14 落地后核。

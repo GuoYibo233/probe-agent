@@ -1,6 +1,6 @@
 # T13 监察面四件：evidence_lint / verify_report / spotcheck / regression_check
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 03
 
 ## 范围声明

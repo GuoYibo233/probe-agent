@@ -83,3 +83,7 @@ fixture：helpers.make_launch_order() 给合法 draft（argv 用 stub_registry �
   spec_ref 递归搜索多文件命中时按路径排序取第一个（未去重未报错）；
   单张 draft 内 decision_refs 含重复 id 时 affects 回填会重复追加（跨命令
   重跑幂等已测绿，单内重复未测、工单未提）。
+
+- 2026-08-14 补记：续跑复审新增 minor N1（test_launch_order.py 的
+  _write_spec 与 _write_spec_custom 约 8 行拼 header 逻辑重复，纯 fixture
+  风格问题），留档给终审顺手清。

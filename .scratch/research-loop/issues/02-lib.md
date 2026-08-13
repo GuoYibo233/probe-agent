@@ -125,3 +125,8 @@ stub 任务 `check-p001` 的行为：stdout 最后一行打
   make_launch_order 默认 argv 与 make_sandbox 的 registry_cmd 不对齐（下游要 override）。
   concerns 留档：Config 四个默认值是代码字面量（config.json 表只有文档字段无机读默认，
   工单原文如此）；record stub 是占位。
+
+- 2026-08-14 终审待办（T11 续跑复审发现，超 T11 范围转记于此）：`_lib.py`
+  `_read_jsonl_file`（jsonl_rows 的底层）对每行 `json.loads(line)` 无
+  try/except——账本文件里有一行坏 JSON 会直接崩栈，而非报可读错误。
+  trace_check.py 同款问题已在 81be3bc 修掉，共享库这处归终审统一裁决。
