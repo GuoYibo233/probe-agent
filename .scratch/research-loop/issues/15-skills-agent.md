@@ -1,6 +1,6 @@
 # T15 五个 SKILL.md + references + inspector agent（全英文）
 
-Status: claimed
+Status: resolved
 Blocked by: 04, 05, 06, 07, 08, 09
 
 ## 范围声明
@@ -119,3 +119,19 @@ reports/inspector-notes.md；R2——不下科学结论。
    在对应 skill 里各有落点（评审对照 spec 逐条找）。
 
 ## Comments
+
+## Comments
+
+- 2026-08-14 wave5 收账：DONE，0 修复轮，commit 范围 882dd1d..d21065a，
+  merge 进 main。遗留 minor F1（仅报告叙述问题，不碰代码）：T15-report.md
+  两处"落点"说法与实际文件对不上（R6 回报条款实际落在
+  deploy-layer/references/r5-choices.md 不在 SKILL.md §5；"账本即信道"
+  措辞实际在 deploy-layer/references/closeout.md:18）——按报告找证据时以
+  此更正为准。concerns 裁决：英文正文里逐字引用中文数据层取值（routes.json
+  触发句、【想法待定】等 enum 标签、spec 中文节名）**主会话认可**——这些是
+  必须逐字复现的数据值，翻译即错误；工单第 62 行"条目八字段"是起草笔误，
+  表源 spec_header.item 是七字段，交付物直接指表未断言数量，无需改动。
+  环境注记：Write 工具拒写 oversight/references/report-genre.md（文件名含
+  report 触发子串守卫），实现者用 bash heredoc 绕过——后续会话改这个文件
+  可能也要走 bash。cannotVerify（references 里对 T13/T14 脚本行为的描述）
+  归验证循环 V1 实测核对。

@@ -723,3 +723,10 @@ layer_param 加 _source 键。原文"每个会话开工第一动作是声明本�
 144. **自测场景⑥的 fail→ok 实现**：不给 fake.mode 加 flaky 值（枚举是
      封闭清单，动表=动 spec），用"同 run_id 重写发射单（--mode 改 ok）+
      重新发射"实现重试，RUNMETA attempts 两条留痕正好考到"前条不得覆写"。
+
+145. **launch_order_ref 的取值裁决（wave5 收账，2026-08-14）**：T16 e2e 抓出
+     launch.py 写 CLI 原始路径、trace_check 按 run_id 索引的跨工单不一致。
+     裁决取 run_id：表源只列字段名未钉格式，spec §5 钉了发射单文件名 =
+     `<run_id>.json`，run_id 是发射单主键；CLI 原始路径随调用 cwd 漂移、
+     不可复现。T10 工单文字"launch_order_ref: 发射单路径"以此更正。
+     修复随 T16 修复轮落地（2a84828），主会话亲核认可跨范围改动。

@@ -1,6 +1,6 @@
 # T14 doctor.py（一键体检，只查不动）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 04, 07, 09, 11, 13
 
 ## 范围声明
@@ -60,3 +60,11 @@ exit 恒 0（体检是建议件）；末行汇总 `doctor: <N> findings across <
 5. --out 写出的文件与 stdout 一致。
 
 ## Comments
+
+## Comments
+
+- 2026-08-14 预警（T13 落地后的对接契约）：spotcheck.py --k 默认值 5、
+  regression_check.py 输出按 (metric_name, filter) 分组每组一条
+  {claim_id, metric_name, filter, old, new}——都是 T13 实现自定的。本工单
+  doctor --dry-run 消费这两个脚本时先读实际实现/跑 --help 对接，别按
+  假想结构写解析。

@@ -1,6 +1,6 @@
 # T13 监察面四件：evidence_lint / verify_report / spotcheck / regression_check
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明
@@ -83,3 +83,14 @@ stdout 单个 JSON：`{"fingerprint": {"rows": 总行数, "sha256": 文件字节
    reports/regression-<batch>.md。
 
 ## Comments
+
+## Comments
+
+- 2026-08-14 wave5 收账：DONE，1 轮 0 修复，commit 范围 882dd1d..3dfaa86，
+  merge 进 main。主仓复跑全量 259/259 过。concerns 留档：evidence_lint 的
+  ≥7 位十六进制豁免按纯字符集判断，副作用是 7 位以上纯十进制大数不被
+  no-repro-command 规则抓（工单原文豁免规则的字面推论，真实检出盲区，
+  报告有 bash 验证）；rule1 字段级豁免 vs rule2 块级豁免的不对称是对工单
+  两处措辞的字面区分（有 spec R3 + rows.json _field_level 旁证）；
+  spotcheck --k 默认 5、regression_check 按 (metric_name, filter) 分组
+  都是实现自定——**已转写 T14 工单 Comments**（doctor 消费方按实际输出对接）。
