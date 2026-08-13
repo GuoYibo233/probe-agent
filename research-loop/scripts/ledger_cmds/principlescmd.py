@@ -78,8 +78,14 @@ def parse_principles(path) -> list:
     applies_when/principle/rationale/criterion_cmd/last_tested). Returns one
     dict per body row (header cell -> stripped cell text); the row
     immediately after the header (the `|---|---|...` separator) is skipped.
-    A malformed body row (wrong cell count) is skipped, not raised on."""
-    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    A malformed body row (wrong cell count) is skipped, not raised on. A
+    missing `path` is a regular RLError rejection (exit 2), not an
+    uncaught FileNotFoundError -- every caller (principles-lint, runs-append,
+    render principles) goes through this function or _render() below."""
+    path = Path(path)
+    if not path.exists():
+        _lib.fail("principles", "file", "not found", str(path))
+    lines = path.read_text(encoding="utf-8").splitlines()
     header_idx, header = _find_header(lines)
     if header_idx is None:
         return []
@@ -244,6 +250,8 @@ def _render(args) -> int:
     root = _lib.find_project_root()
     cfg = _lib.load_config(root)
     principles_path = Path(cfg.ledger_path("principles"))
+    if not principles_path.exists():
+        _lib.fail("principles", "file", "not found", str(principles_path))
 
     lines = principles_path.read_text(encoding="utf-8").splitlines(keepends=True)
     header_idx, header = _find_header(lines)

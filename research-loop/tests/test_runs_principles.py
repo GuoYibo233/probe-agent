@@ -85,6 +85,57 @@ def test_parse_principles_returns_empty_for_a_table_with_no_data_rows():
         assert parse_principles(root / "METHOD.md") == []
 
 
+def test_parse_principles_rejects_a_missing_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        missing = Path(tmp) / "no-such-METHOD.md"
+        try:
+            parse_principles(missing)
+        except _lib.RLError as e:
+            assert e.message == f"principles.file: not found (got: {str(missing)!r})"
+        else:
+            raise AssertionError("expected RLError for a missing principles file")
+
+
+# ---------------------------------------------------------------------------
+# A missing/misconfigured principles ledger file is a regular exit-2
+# rejection at every CLI entry point that reads it, not an uncaught
+# FileNotFoundError.
+# ---------------------------------------------------------------------------
+
+
+def test_principles_lint_rejects_missing_principles_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        root, cfg, registry_cmd = _sandbox(tmp)
+        (root / "METHOD.md").unlink()
+
+        code, out, err = helpers.run_ledger(root, "principles-lint")
+        assert code == 2
+        assert "principles.file: not found" in err
+
+
+def test_runs_append_rejects_missing_principles_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        root, cfg, registry_cmd = _sandbox(tmp)
+        (root / "METHOD.md").unlink()
+
+        code, out, err = helpers.run_ledger(
+            root, "runs-append", "--layer", "deploy", "--principle", "P001", env=_ENV,
+        )
+        assert code == 2
+        assert "principles.file: not found" in err
+        assert _lib.jsonl_rows(cfg.ledger_path("runs")) == []
+
+
+def test_render_principles_rejects_missing_principles_file():
+    with tempfile.TemporaryDirectory() as tmp:
+        root, cfg, registry_cmd = _sandbox(tmp)
+        (root / "METHOD.md").unlink()
+
+        code, out, err = helpers.run_ledger(root, "render", "principles")
+        assert code == 2
+        assert "principles.file: not found" in err
+
+
 # ---------------------------------------------------------------------------
 # 1. --layer run is rejected
 # ---------------------------------------------------------------------------
@@ -100,6 +151,37 @@ def test_runs_append_rejects_non_deploy_layer():
         )
         assert code == 2
         assert "runs.layer: runs-append only accepts --layer deploy" in err
+        assert _lib.jsonl_rows(cfg.ledger_path("runs")) == []
+
+
+def test_runs_append_rejects_when_registry_cmd_is_null():
+    with tempfile.TemporaryDirectory() as tmp:
+        root, cfg, registry_cmd = _sandbox(tmp)
+        _write_method(root, [_row("P001", "【现状】", f"{registry_cmd} check-p001")])
+
+        cfg_path = root / "research-loop.json"
+        data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        data["registry_cmd"] = None
+        cfg_path.write_text(json.dumps(data), encoding="utf-8")
+
+        code, out, err = helpers.run_ledger(
+            root, "runs-append", "--layer", "deploy", "--principle", "P001", env=_ENV,
+        )
+        assert code == 2
+        assert "config.registry_cmd: not wired (null); cannot run criterion" in err
+        assert _lib.jsonl_rows(cfg.ledger_path("runs")) == []
+
+
+def test_runs_append_rejects_unknown_principle_id():
+    with tempfile.TemporaryDirectory() as tmp:
+        root, cfg, registry_cmd = _sandbox(tmp)
+        _write_method(root, [_row("P001", "【现状】", f"{registry_cmd} check-p001")])
+
+        code, out, err = helpers.run_ledger(
+            root, "runs-append", "--layer", "deploy", "--principle", "P999", env=_ENV,
+        )
+        assert code == 2
+        assert "principles.principle_id: not found (got: 'P999')" in err
         assert _lib.jsonl_rows(cfg.ledger_path("runs")) == []
 
 
