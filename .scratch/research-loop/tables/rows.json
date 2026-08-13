@@ -1,0 +1,141 @@
+{
+  "_about": "行结构与枚举唯一真源（spec.md 只引用不复述）。jsonl 实体行必带 schema_version；md 账版本号在文件头。各账 id（S/D/B/F 前缀）由 ledger.py 自增分配。",
+  "enums": {
+    "blocked.kind": ["principle-gap", "r5-choice", "failure", "other"],
+    "blocked.status": ["open", "answered", "closed", "withdrawn"],
+    "blocked.from_layer": ["idea", "deploy", "run", "oversight"],
+    "blocked.to_layer": ["user", "idea", "deploy"],
+    "decisions.kind": ["decision", "grant"],
+    "decisions.status": ["decided", "withdrawn"],
+    "decisions.decided_by": ["user", "agent"],
+    "story.status": ["active", "retired"],
+    "story.role": ["主结果", "消融", "反例", "动机"],
+    "feedback.kind": ["suggestion", "review"],
+    "feedback.verdict": ["accepted", "rejected"],
+    "runs.status": ["ok", "failed", "oom", "timeout", "empty-output", "killed", "partial"],
+    "runs.arm": ["实验组", "对照组"],
+    "principles.status": ["【现状】", "【已定要改】", "【想法待定】", "【已撤销】"]
+  },
+  "story_row": {
+    "claim_id": "S 前缀自增", "claim": "一句话主张",
+    "evidence_runs": "[run_id]", "baseline_runs": "[run_id]", "candidate_runs": "[run_id]",
+    "selection_rule": "怎么从候选里挑的",
+    "derivation_command": "派生量的复算命令（R4）", "principle_id": "P00x",
+    "role": "enum story.role", "decided_by": "user", "date": "YYYY-MM-DD",
+    "status": "enum story.status", "retired_reason": "", "retired_date": "", "retired_by": "",
+    "superseded_by": "", "note": "",
+    "_write_check": "所有被引 run_id 必须存在于 runs.jsonl 且 status=ok 且非 quick 行（§2.6）"
+  },
+  "decisions_row": {
+    "decision_id": "D 前缀自增", "kind": "enum decisions.kind",
+    "where": "文件路径|spec条目|工单号（kind=grant 可空）",
+    "question": "抉择点或授权的事项类别",
+    "options": "[...]（grant 可空）", "chosen": "可 grep 的具体值（grant 可空）",
+    "reason": "...", "authorized_by": "用户原话 | discussed | grant:D00x | spec-standing-gpu-1h",
+    "scope": "{desc, path_globs[], expires_at: ISO|null}——kind=grant 必须结构化填全",
+    "principle_ref": "P00x|null", "affects": "[spec条目/工单/run_id]",
+    "decided_by": "enum decisions.decided_by", "raised_at": "ISO秒级", "decided_at": "ISO秒级",
+    "status": "enum decisions.status", "superseded_by": "",
+    "withdrawn_by": "", "withdrawn_reason": "撤销时必填用户原话",
+    "_grant_view": "有效授权视图 = kind=grant 且 status=decided 且未过期且无 superseded_by"
+  },
+  "blocked_row": {
+    "blocked_id": "B 前缀自增", "from_layer": "enum blocked.from_layer",
+    "to_layer": "enum blocked.to_layer", "kind": "enum blocked.kind",
+    "ref": "spec条目/工单/run_id/blocked_id（撤销重开时指旧条）",
+    "question": "卡在哪、缺什么",
+    "where": "kind=r5-choice 必填", "options": "kind=r5-choice 必填",
+    "evidence": "[日志路径, 已试动作]", "raised_at": "ISO秒级",
+    "status": "enum blocked.status",
+    "answer": "", "answered_at": "", "answered_by": "",
+    "grant_ref": "D00x|null（answered_by≠user 的 r5-choice 必填）",
+    "decision_ref": "D00x|null"
+  },
+  "feedback_rows": {
+    "suggestion": {"fb_id": "F 前缀自增", "kind": "suggestion", "date": "YYYY-MM-DD",
+                   "layer": "idea|deploy|run|oversight",
+                   "context": "哪个阶段/哪轮运行", "problem": "哪里不顺", "suggestion": "建议怎么改"},
+    "review":     {"fb_id": "F 前缀自增", "kind": "review", "ref": "F00x", "layer": "user",
+                   "verdict": "enum feedback.verdict", "note": "", "date": "YYYY-MM-DD"}
+  },
+  "runs_row_normal": {
+    "_fields": ["run_id", "status", "output_dir", "runmeta_path", "metric_name", "value",
+                "n", "filter", "seed", "dataset_version", "batch_id", "arm", "quick",
+                "principle_id", "commit", "elapsed_s", "gpu_count", "recorded_at", "schema_version"],
+    "_notes": {
+      "n": "分母",
+      "status≠ok": "metric_name/value/n 允许 null",
+      "principle_id": "普通行一律 null（非 null 即判据缩减行）",
+      "commit": "普通行 null——普通行的 commit 在 RUNMETA",
+      "arm/filter/quick": "记账脚本从发射单透传（部署层填、可空），运行层不判语义",
+      "recorded_at": "ISO秒级，两个入账脚本自动打、不许手填；query --since 按它过滤"
+    }
+  },
+  "runs_row_criterion": {
+    "_required": ["run_id", "status", "principle_id", "value", "output_dir", "commit",
+                  "elapsed_s", "recorded_at", "schema_version"],
+    "_notes": {
+      "run_id": "ledger.py 按 chk-<principle_id>-<YYYYMMDD>-<序> 分配（判据 run 不开发射单，run_id 由部署层给定的唯一成文例外）；日期段即渲染回填'最近实测'的日期来源",
+      "value": "判据输出的计数/判定值", "output_dir": "证据文件路径",
+      "commit": "runs-append 自动抓 git HEAD，脏树加 -dirty 后缀",
+      "其余": "允许 null"
+    }
+  },
+  "launch_order": {
+    "run_id": "部署层按工程命名规则给定，运行层不得自造", "spec_ref": "item_id（quick 可空）",
+    "issue_ref": "工单（quick 可空）", "decision_refs": "[D00x]（quick 可空）", "batch_id": "...",
+    "registry_task": "注册表任务名", "argv": "[...]", "env_name": "...", "workdir": "...",
+    "expected_commit": "...", "seed": "int（快车道也必填，永不可变）", "dataset_version": "...",
+    "arm": "enum runs.arm", "filter": "口径过滤条件字符串（可空）", "quick": "布尔（§2.6 快车道）",
+    "resources": "{gpus, min_vram_gb, exclusive}",
+    "expected_runtime_s": "int（超时判定 = 此值 × runtime_factor；R5 常设授权 GPU<1h 以它合计）",
+    "depends_on": "[run_id]",
+    "expected_outputs": "[{path_glob, min_bytes, min_lines, required_keys[]}]",
+    "metrics_cmd": "结构化抽数命令", "smoke_cmd": "...",
+    "retry": "{max_attempts, retriable_errors[], allow_card_swap}",
+    "artifact_dir": "...", "created_by": "...", "created_at": "ISO秒级"
+  },
+  "structured_output_contract": {
+    "_rule": "metrics_cmd 与 criterion_cmd 通用：stdout 最后一行必须是单个 JSON 对象；入账脚本只解析这最后一行；解析失败 = 入账拒绝并按 R8 升级，禁止人眼读日志补数",
+    "criterion_cmd_min": {"value": "...", "evidence_path": "落缩减行 output_dir"},
+    "metrics_cmd_min": {"metric_name": "...", "value": "...", "n": "..."}
+  },
+  "runmeta": {
+    "_path": "artifact_dir 根下 RUNMETA.json，runs.jsonl.runmeta_path 回指",
+    "_fields": ["commit", "argv", "脏树清单", "launch_order_ref", "attempt_no", "env_name",
+                "outputs"],
+    "outputs": "[{file, format, fields:{字段名: 含义}}]——产物字段字典，由写文件的代码自动生成，监察面读格式的唯一权威来源；兜底态允许空（监察面回落直接读产物）"
+  },
+  "jobs_min_additions": {
+    "_note": "任务台账字段以工程现状为准（v2 裁员：不再开列完整字段清单），最低补两个回指与采样器判定落点",
+    "_required_additions": ["launch_order_ref", "escalation_ref(blocked_id)",
+                            "采样器判定（stall|dead|ok + 判定时间；阈值见 config stall_thresholds，判定进台账）"]
+  },
+  "batch_report_header": {
+    "_fields": ["batch_id", "spec_items[]", "run_ids[]", "date", "how_to_read",
+                "inspection_report", "rejections[]"],
+    "how_to_read": "读数脚本 + 口径说明（部署层向 idea 层交底的落点）",
+    "inspection_report": "本批例行核查报告路径；允许空串 = 未收官（trace_check 平时非空才查，--closeout 模式空串报错）",
+    "rejections": "[{date, by, reason}]——打回记录，reason=用户原话转录，evidence_lint 豁免此字段",
+    "batch_id_pattern": "<spec条目>-<YYYYMMDD>-<序号>；快车道 run 归 quick-<YYYYMMDD>-<序>"
+  },
+  "spec_header": {
+    "_fields": ["spec_version", "approved_by", "approved_date",
+                "approved_against_principles_version", "withdrawals[]"],
+    "withdrawals": "[{date, by, reason}]——批准撤销记录，reason=用户原话，evidence_lint 豁免",
+    "item": "{item_id, principle_id, 内容, acceptance, depends_on[], priority, droppable}"
+  },
+  "issue_min": {
+    "_fields": ["issue_id", "spec_item(回指 item_id)", "Status 行", "acceptance(抄或引 spec 条目)", "Blocked by"]
+  },
+  "principles_columns": [
+    "principle_id（全表唯一，principles-lint 查重）", "status（enum principles.status）",
+    "scope", "applies_when（必填不许空，principles-lint 查）",
+    "原则一句话", "rationale（用户原话或讨论出处，必填不许空）",
+    "criterion_cmd（注册表命令；【想法待定】允许暂空）", "最近实测（ledger.py 回填，不手填）"
+  ],
+  "error_classes": {
+    "_shape": "{特征: {exit_code | output_check 判定 | log_regex} → 动作: 重试|换卡|升级}",
+    "_note": "unknown 的新规则提议路径见 R8"
+  }
+}

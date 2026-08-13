@@ -1,0 +1,86 @@
+{
+  "_about": "仓库根 research-loop.json 的键表唯一真源（spec.md 只引用不复述）。写权归用户/主会话，变更过 git。example 列是 new1 挂接值。",
+  "keys": {
+    "ledgers": {
+      "example": "见 ledgers.json 各账 default_path（new1 覆盖：principles→METHOD.md 等）",
+      "domain": "完整账本清单（监察面追溯起点）：键集与 ledgers.json 严格相等（含挂接新增如 runs_legacy）；值允许 <artifact_dir>/<raw_data_roots> 路径模板；归档伴生物 <name>.archive.jsonl/.archive.idx.json 不进本清单（config-check 拦挂键）",
+      "null_effect": "没有配置文件 = 工程未接线：铁轨动作与一切记账都拒绝，只有谈可用"
+    },
+    "owners": {
+      "example": "plugin 携带全键默认表（值按 ledgers.json owner 列固定），init 自动生成",
+      "domain": "键集与 ledgers 严格相等（config-check 查）；值按 writes.json owner_values 九值收，别的非法；工程改值 = 改写权约定，先回 spec 走 R5",
+      "null_effect": "—"
+    },
+    "ledger_caps": {
+      "example": "{blocked: 500, decisions: 1000, feedback: 500, story: 1000, runs: null}",
+      "domain": "归档轮转行数上限（用户裁决 2026-08-13：上限进配置）：键必须是 ledgers 键的子集且只许 jsonl 账；缺键取 plugin 默认；null = 不轮转；runs 与 runs_legacy 只许 null（无活跃行判定式/冻结件，归档无定义）",
+      "null_effect": "该账不轮转"
+    },
+    "registry_cmd": {
+      "example": "python3 run.py",
+      "domain": "注册表入口（判据实跑/发射/施工的前提）",
+      "null_effect": "锁判据实跑、发射、施工",
+      "fallback": "scripts/fallback/registry.py"
+    },
+    "registry_query": {
+      "example": "python3 run.py show --list",
+      "domain": "必须只读且不受脏树门禁（不满足就加只读入口）",
+      "null_effect": "principles-lint 与 trace_check 的'在注册表'存在性校验报未接线（不放行）",
+      "fallback": "scripts/fallback/registry.py --list"
+    },
+    "record_cmd": {
+      "example": "python3 run.py record",
+      "domain": "工程记账脚本入口（runs.jsonl 普通行的写入者）",
+      "null_effect": "锁 runs 普通行入账",
+      "fallback": "scripts/fallback/record.py"
+    },
+    "dirty_exempt_globs": {
+      "example": "[ops/jobs.json*, ops/runs.jsonl, RESULTS.md, *.lock]",
+      "domain": "脏树发射门禁的豁免清单",
+      "null_effect": "无豁免"
+    },
+    "stall_thresholds": {
+      "example": "{no_log_growth_s, gpu_idle_s, startup_grace_s}",
+      "domain": "'卡死'判定阈值（与超时判定分工：超时 = expected_runtime_s × runtime_factor）",
+      "null_effect": "铁轨自带判定"
+    },
+    "runtime_factor": {
+      "example": "3",
+      "domain": "超时系数（用户裁决 2026-08-13 确认保留）",
+      "null_effect": "取 plugin 默认 3"
+    },
+    "rails.build": {
+      "example": "ticket-run",
+      "domain": "只许 skill 名（会话形态流程，施工不跨层下发）",
+      "null_effect": "锁施工动作（陪谈与落原则永不被锁）"
+    },
+    "rails.gpu": {
+      "example": "gpu-run",
+      "domain": "两型：skill 名（路由转交）或可执行命令/脚本路径（运行层直接执行，入参为发射单路径）；区分机械——值命中已装 skill 名按前者，否则按命令执行",
+      "null_effect": "锁批量发射",
+      "fallback": "scripts/fallback/launch.py"
+    },
+    "rails.pipeline": {
+      "example": "probe-pipeline",
+      "domain": "只许 skill 名",
+      "null_effect": "只锁走 pipeline 的发射路径（rails.gpu 已接线时'跑实验'照常）"
+    },
+    "rails.paper": {
+      "example": "paper-write",
+      "domain": "只许 skill 名",
+      "null_effect": "锁写作取材动作（薄壳直接转交前跑 config-check，被锁则拒并说明 null 键）"
+    },
+    "rails.literature": {
+      "example": "update-knowledge-map",
+      "domain": "只许 skill 名",
+      "null_effect": "只锁文献核实入 KNOWLEDGE_MAP（陪谈与落原则照常）"
+    },
+    "raw_data_roots": {
+      "example": "[/net/.../reproduce/new1/]",
+      "domain": "产物根（大产物一律 NFS）",
+      "null_effect": "路径模板不可解析 → 相关登记拒"
+    }
+  },
+  "_null_lock_rule": "未接线拒绝的执行者与时点：ledger.py config-check——每次写入/query 自动做（被锁功能的子命令直接拒）；铁轨类动作触发前跑（经层转交的由该层 SKILL.md，薄壳直接转交的由薄壳）；四轨 null 按动作锁不按路由行锁；原则落档不被锁——走 R1 未接线态标【想法待定】；doctor 拼装的'配置校验'即此件",
+  "_fallback_rule": "兜底件最低必做项（溯源链兜底态不打折）：launch.py = 顺序执行发射单 argv + 脏树检查 + 写 RUNMETA（commit/argv/launch_order_ref/脏树清单；attempt_no/env_name/outputs 允许空）+ 登记极简台账；record.py = append 记账、加载 runs schema、持同一把锁；registry.py = 极简注册表 + --list 只读免门禁；除此之外不复刻任何高级功能。其余铁轨（build/pipeline/paper/literature）无兜底件，未接留 null 按被锁功能处理"
+}
