@@ -19,7 +19,11 @@
 修订十三；
 第 14 轮（上限第 2 轮）：复验 12 项 9 净 + 白手 2 硬 2 软 → 修订十四；
 第 15 轮（上限第 3 轮，最后一轮）：复验 6 项 4 净 + 白手 3 硬 3 软 →
-修订十五按报告修复，**未再复验**（迭代上限已到），残留风险见 audit-merge）
+修订十五按报告修复，**未再复验**（迭代上限已到），残留风险见 audit-merge）。
+保真审计的裁决清单经用户 2026-08-13 逐条裁决（八条 + 快车道，原话记
+audit-merge.md"用户裁决第二批"）→ **修订十六**：六处漂移全部转为用户确认、
+下行体裁解除封闭、上行格式开放列表、R5 改双模式（NFS 写豁免、GPU<1h 常设
+授权）、授权内自决加回报义务、新增小实验快车道 §2.6。
 **形态：** 机器级 plugin（跟机器走），工程铁轨通过仓库根配置文件挂接。
 
 ## 0 一句话
@@ -209,10 +213,11 @@
 
 ### 2.5 人的位置（idea 层顶端）
 
-用户本人是 idea 层的顶端，一切判断的终点。人与系统之间的**落账物**只有固定体裁
-（对话本身不受限，见"聊天自由，落账定格"）：
+用户本人是 idea 层的顶端，一切判断的终点。
 
-**下行（你 → 系统）五种：**
+**下行（你 → 系统）不设体裁**（用户裁决 2026-08-13）：你怎么说都行，
+不用套任何格式。会话负责把你的话转录落账；下面五类是**转录路径**——
+说明"你的哪类话落进哪本账、怎么落"，约束的是转录的会话，不是你：
 - **拍板**：原则定稿、spec 批准、故事裁决、**待决条目答复**——落对应账本带日期；
   待决答复由当场会话代笔（answered_by 填 user）；
 - **授权**：R4 计算批准、R6 自决授权——原话当场落抉择账（kind=grant，
@@ -236,13 +241,17 @@
   evidence_lint 对此字段豁免（其余正文照管）。spec/原则阶段的不批准
   不叫打回：不落 approved_by（草稿态即未生效）+ 悬案开待决账 open 条。
 
-**聊天自由，落账定格**（2026-08-13 批注）：固定体裁约束的是**落账的东西**，
-不是对话。你和 idea 层怎么聊都行；聊天里产生的任何决定，生效前必须转录成
-上述体裁落账（裁决进对应账、授权进抉择账）。硬边界单列一条：
+**落账定格**（2026-08-13 批注）：聊天里产生的任何决定，生效前必须由会话
+转录落账（裁决进对应账、授权进抉择账）——没落账的决定不存在。硬边界单列一条：
 **凡涉及实验设定（模型、温度、采样、数据版本等）的悬案，没有你的明说或
 有效授权覆盖，不许自行解决**——这是 R5 的明确适用范围。
+**授权覆盖下自决了实验设定的，事后必须回报你**（用户裁决 2026-08-13）：
+回报走 R6 自决清单——decisions 账里 decided_by=agent 的近期条目渲染成清单，
+随下一次对你的汇报明列，不许静默；GPU<1h 常设授权（R5）下干的活同此回报。
 
-**上行（系统 → 你）六种：**
+**上行（系统 → 你）常用六类**（用户裁决 2026-08-13：**清单不闭**——
+常见的按下面六类格式化，需要时可以报额外类别；任何类别都守两条不变量，
+见本节末）：
 - **提案**：计算提案（R4）、方案抉择（R5）——凡要你拍板的，必须以"提案+证据"形态
   到你面前，不许以既成事实形态出现；
 - **证据报告**：R3 体裁（监察报告、观察报告、判据验收报告都是它的子类）；
@@ -251,13 +260,31 @@
 - **回归警报**：新批次数字与故事账 active claim 冲突时的清单（只报事实不判）；
 - **数字账**：批次报告 + RESULTS 渲染。
 
-上行同理：六种体裁管的是**入账物**，不管汇报风格。汇报可以自由发挥、
-可以有创造性，可以提框架外的建议（技术方向、框架选型、体裁之外的观察）——
-框架外建议走提案体裁或反馈账 suggestion，落了账就进了框架。
+六类管的是**入账物**的格式，不管汇报风格。汇报可以自由发挥、
+可以有创造性，可以提框架外的建议（技术方向、框架选型、格式之外的观察），
+也可以整类地报清单外的新形态。
 不变量只有两条：凡数字有据（R3），凡决定入账（R5/R6）。
 
-**你不在场时**：只有有效授权（kind=grant，scope 覆盖、未过期）内的自决可以继续
-（R6 留痕），其余一律停在待决账 open，不许"先做了再说"。
+**你不在场时**：只有有效授权（kind=grant，scope 覆盖、未过期）内的自决
+与 R5 常设授权（GPU<1h）内的发射可以继续（都照 R6 留痕、事后回报），
+其余一律停在待决账 open，不许"先做了再说"。
+
+### 2.6 小实验快车道（用户裁决 2026-08-13）
+
+探索性小实验专用通道：**一口气完事，平直快，复用已有基建**。
+触发句"快试一下"（§6 路由表）。
+
+- **免的手续**：不开 spec 条目、不开工单、不出批次报告、不派收官通读。
+  发射单允许缩减——spec_ref/issue_ref/decision_refs 可空、标 `quick: true`，
+  run_id 归入 `quick-<YYYYMMDD>-<序>` 批。
+- **不免的底线**（这两条是数字纪律，不是防御手续）：数字仍只经
+  metrics_cmd/criterion_cmd 脚本入账（R7，禁止人眼读日志填数）；
+  种子仍固定进发射单。发射仍走 rails.gpu——工程唯一发射入口不破。
+- **与 R5 常设授权衔接**：预计低于一小时的快实验，部署层默认模式下也可
+  直接发射，事后按 §2.5 回报条款向你明列。
+- **结果的去向**：`quick: true` 的 run 行不得被故事账引用（story 写入校验拒）；
+  要进故事，按正轨补 spec 条目重跑（种子固定，重跑即复现）。
+  快车道是试想法的入口，不是论文证据的入口。
 
 ## 3 十条硬规矩（全 plugin 通用）
 
@@ -286,10 +313,21 @@
 - **R4 计算授权**：对数据只许忠实呈现原始值。任何派生量先提案
   ——公式、分母、过滤条件、作用文件——用户批了才算，算完连同命令附在结果旁
   （进故事账的记 derivation_command）。
-- **R5 抉择点上桌**：施工撞到方案分岔必须停手，写待决账，等裁决。
-  机械判定三问（任一为是即停）：会改变某条判据的输出吗？会引入原则文档没有
-  对应条目的新约束吗？不可逆吗（耗 GPU 时长/写 NFS/产物被下游引用）？
-  三问全否才是施工自由度。**账本 schema 变更永远算第二问为是**，必上桌。
+- **R5 抉择点分模式处理**（用户裁决 2026-08-13：不写成铁的，看用户的决定）。
+  先识别：施工撞到方案分岔，机械三问判定它算不算抉择点——会改变某条判据的
+  输出吗？会引入原则文档没有对应条目的新约束吗？不可逆吗（耗大量 GPU 时长/
+  产物已被下游引用；**写 NFS 本身不算不可逆**，用户裁决 2026-08-13）？
+  三问全否即施工自由度，直接干。**账本 schema 变更永远算第二问为是**。
+  是抉择点的，按当下模式走两条路之一：
+  **默认（无覆盖授权）**：停手，写待决账，上桌等裁决；
+  **授权自决**：你一句"这类事你自己定"当场落成 grant（§6 路由句），
+  scope 覆盖眼前分岔且未过期的，会话自决——照 R6 留痕，且必须按 §2.5
+  回报条款事后向你明列干了什么。
+  **常设授权一条**（用户裁决 2026-08-13，plugin 携带、无须另发 grant）：
+  抉择点若只关系到发射 GPU 任务且预计总时长低于一小时
+  （以发射单 expected_runtime_s 合计），默认模式下也可以直接干——
+  照 R6 留痕（authorized_by 填 `spec-standing-gpu-1h`），事后必须通知你
+  干了什么（§2.5 回报条款）。
   裁决后：ledger.py 把 answered 的 R5 条目**同步生成一条抉择账 decision 条目**
   （chosen 填可 grep 的具体值）——这是抉择账的强制入账口，不许只留自由文本 answer。
 - **R6 授权自决留痕**：只有有效授权（grant 的 scope 覆盖眼前分岔且未过期）才许自决；
@@ -361,7 +399,8 @@ research-loop/                      # plugin 根
     │                               #   init（挂接问卷生成 research-loop.json 骨架，§7）、
     │                               #   freeze-legacy（一次性接线迁移，§9②）
     ├── trace_check.py              # (deploy) 溯源检查：spec→principle_id、工单→spec、
-    │                               #   反向 run→发射单→工单、decision→run（扫发射单
+    │                               #   反向 run→发射单→工单（quick=true 发射单
+    │                               #     豁免 spec/工单回指，§2.6）、decision→run（扫发射单
     │                               #   decision_refs + 抉择账 affects）；
     │                               #   批次报告 inspection_report 存在性（平时
     │                               #     非空才查；--closeout <batch_id> 模式
@@ -490,7 +529,8 @@ evidence_lint 对此字段豁免，§2.5）；batch_id 规则
  "retired_by": "",
  "superseded_by": "", "note": ""}
 ```
-写入校验：所有被引 run_id 必须存在于 runs.jsonl **且 status=ok**。
+写入校验：所有被引 run_id 必须存在于 runs.jsonl **且 status=ok
+且非 quick 行**（§2.6：快车道结果要进故事先按正轨重跑）。
 
 **抉择账 `decisions.jsonl`**（§1 第四例外，按 kind 分工——kind=decision 直接
 写入只收 `--layer deploy`，例外：decided_by=agent 且 authorized_by=grant:D00x
@@ -575,6 +615,7 @@ review 行同批归档）因此成立。
  "registry_task": "注册表任务名", "argv": [...], "env_name": "...", "workdir": "...",
  "expected_commit": "...", "seed": 0, "dataset_version": "...",
  "arm": "实验组|对照组", "filter": "口径过滤条件字符串（可空）",
+ "quick": false,
  "resources": {"gpus": 1, "min_vram_gb": 0, "exclusive": false},
  "expected_runtime_s": 0, "depends_on": ["run_id"],
  "expected_outputs": [{"path_glob": "...", "min_bytes": 0, "min_lines": 0, "required_keys": []}],
@@ -597,7 +638,8 @@ review 行同批归档）因此成立。
 判据缩减行归部署层，§1 第三例外；写入前脚本校验）：
 行至少含 `run_id, status(ok|failed|oom|timeout|empty-output|killed|partial), output_dir,
 runmeta_path, metric_name, value, n(分母), filter, seed, dataset_version, batch_id,
-arm(实验组|对照组), principle_id(判据缩减行专用，普通行一律为 null),
+arm(实验组|对照组), quick(布尔，记账脚本从发射单透传，§2.6 快车道行为 true),
+principle_id(判据缩减行专用，普通行一律为 null),
 commit(判据缩减行用，普通行为 null——普通行的 commit 在 RUNMETA), elapsed_s, gpu_count,
 recorded_at(ISO秒级，两个入账脚本自动打，不许手填——`query --since` 按它过滤),
 schema_version`。**status≠ok 的行 metric_name/value/n 允许为 null**。
@@ -653,6 +695,7 @@ md 账，回收走 §2.1 的 doctor 扫描 + 写权层人工整理路径。
 | 这轮做什么 / 出 spec | ③ | deploy-layer（spec + trace_check） |
 | 施工 / 执行工单 | ④ | deploy-layer → rails.build（new1: ticket-run） |
 | 跑实验 | ⑤ | deploy-layer 出发射单 → rails.gpu / rails.pipeline |
+| 快试一下 / 快实验 | ⑤ | deploy-layer 快车道（§2.6：缩减发射单 → rails.gpu；预计 <1h 免上桌、事后回报） |
 | 这个结果进故事吗 | ⑥ | idea-layer（用户拍板 → ledger.py story） |
 | 写论文 | ⑦ | rails.paper（new1: paper-write），溯源对故事账取材 |
 | 查 X / 让我亲眼看看 | 任意 | oversight → inspector |
@@ -792,8 +835,9 @@ md 账，回收走 §2.1 的 doctor 扫描 + 写权层人工整理路径。
 1. "我有个想法" → idea-layer 陪谈，文献入 KNOWLEDGE_MAP（rails.literature）。产出候选假设。
 2. 谈熟 → 写/改原则，每条过 R1。用户拍板。
 3. 出 spec（含 acceptance/depends_on，文件头记批准）→ trace_check 全绿。用户拍板。
-4. spec → 工单（§5 工单契约）→ rails.build 施工。抉择点走 R5 三问；
-   自决先查有效授权视图（开工必读②），命中才自决并留痕（R6）。
+4. spec → 工单（§5 工单契约）→ rails.build 施工。抉择点走 R5：三问识别、
+   分模式处理——自决先查有效授权视图（开工必读②）与 R5 常设授权（GPU<1h），
+   命中才自决并留痕（R6）、事后回报（§2.5）。
 5. 部署层出发射单（含 seed/dataset_version/decision_refs；同一动作把 run_id 回填进
    被引抉择的 affects）→ 冒烟 →
    判据实跑（criterion_cmd 结构化输出进 runs.jsonl 带 principle_id）→
@@ -823,7 +867,10 @@ md 账，回收走 §2.1 的 doctor 扫描 + 写权层人工整理路径。
     判据缩减行（principle_id 非空）→ 不按断链报错，
     改验 principle_id 在原则文档、criterion_cmd 在注册表；
     decision→run 反查（经 decision_refs 与 affects）返回正确集合。
-  - ledger.py story：run_id 不存在或 status≠ok → 拒收；撤销 → status+superseded_by。
+  - ledger.py story：run_id 不存在或 status≠ok 或 quick=true → 拒收（§2.6）；
+    撤销 → status+superseded_by。
+  - 快车道：缩减发射单（quick=true、spec_ref 空）→ trace_check 不按断链报错；
+    quick 行进 runs.jsonl 正常，被 story 引用 → 拒。
   - ledger.py blocked：状态机与跃迁级写权（--layer 传错 → 拒），非法跃迁 → 拒绝；
     kind=r5-choice 缺 where/options 开条 → 拒，answer 未传 --chosen → 拒；
     answered 后自动同步 decision 条目并回填 decision_ref（机械拼装，不解析自由文本）；
