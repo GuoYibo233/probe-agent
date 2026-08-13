@@ -1,6 +1,6 @@
 # T03 ledger.py 分发器 + gen-schemas + schemas/ 落盘
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02
 
 ## 范围声明

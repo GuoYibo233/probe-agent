@@ -1,6 +1,6 @@
 # T02 共用库 `_lib.py` + 测试基建
 
-Status: claimed
+Status: resolved
 Blocked by: 01
 
 ## 范围声明
@@ -118,3 +118,10 @@ stub 任务 `check-p001` 的行为：stdout 最后一行打
 跑法：`python3 research-loop/tests/run_all.py test_lib`（跑器 T01 已给）。
 
 ## Comments
+
+- 2026-08-13 wave1 收账：DONE，0 修复轮，commit 范围 b737bf9..d7b3fee（merge 进 main）。
+  主仓复跑 test_lib 32/32 过。cannotVerify 三条全是"等 T03/消费方工单"性质，
+  留待后波核实：load_schema 无场地测、run_ledger 等 ledger.py 落地、
+  make_launch_order 默认 argv 与 make_sandbox 的 registry_cmd 不对齐（下游要 override）。
+  concerns 留档：Config 四个默认值是代码字面量（config.json 表只有文档字段无机读默认，
+  工单原文如此）；record stub 是占位。

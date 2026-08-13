@@ -71,3 +71,8 @@ fixture：helpers.make_launch_order() 给合法 draft（argv 用 stub_registry �
 7. approve-spec：批准前后正文字节逐字相同（读原文件比对），头部三字段就位。
 
 ## Comments
+
+- 2026-08-13 预警（wave1 实现者发现）：helpers.make_launch_order() 的默认 argv
+  （相对形式）与 make_sandbox() 生成的 registry_cmd（sys.executable+绝对路径）
+  不对齐；本工单测试造发射单时用 config 里实际 registry_cmd 拼 argv 并 override，
+  别指望默认值能过 check_in_registry。

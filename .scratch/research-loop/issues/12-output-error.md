@@ -1,6 +1,6 @@
 # T12 output_check.py + error_classify.py（运行层两件）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02
 
 ## 范围声明
