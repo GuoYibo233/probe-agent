@@ -63,3 +63,14 @@ CLI：`trace_check.py [--project-root P] [--closeout BATCH_ID]`。
 8. 全绿 fixture：exit 0 且汇总行 `0 errors`。
 
 ## Comments
+
+- 2026-08-14 wave4 收账：DONE，1 轮 0 修复，commit 范围 963bdaa..c6cc2d2，
+  merge 进 main。主仓复跑全量 204/204 过（本单自带 28 个）。concerns 留档：
+  发射单查找表用文件名 stem 当 run_id（使 run_id 一致性检查是真交叉核对，
+  有专测）；criterion_cmd 空串不跳过 check_in_registry、无专测；
+  registry_cmd 为 null 的 unwired 支路无专测；helpers 默认 METHOD_MD 的
+  criterion_cmd 与 make_sandbox 的 registry_cmd 前缀不对齐——本单用局部
+  _fix_method_criterion_cmd 重写、没改 helpers 本体，**终审考虑统一修
+  helpers 默认值**；--project-root 显式指向未接线目录按零账本 0 errors 放行
+  （与 output_check/error_classify 同风格）。cannotVerify：§9 九场景端到端
+  归 T16；T08 写入门禁与本单宽松存在性检查的配合已随 T08 合并可核。

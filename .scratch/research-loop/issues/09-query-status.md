@@ -116,3 +116,11 @@ fixture 全用 helpers 行工厂裸写账本（不依赖其他工单的 CLI）�
   `active_grants(rows, now)`，语义 = kind=grant 且 status=decided 且
   superseded_by 为 null 且（scope.expires_at 为 null 或 > now）。本工单
   query decisions 默认视图直接 import 这个函数，别自己重写一份语义。
+
+- 2026-08-14 wave4 收账：DONE，1 轮 0 修复，commit 范围 963bdaa..635a028，
+  merge 进 main。主仓复跑全量 204/204 过。cannotVerify 留待后波：waiting_on
+  的 item/layer 两个子字段取值是实现自定（item∈{"blocked","batch"}，layer
+  取 user/deploy），action 字段有测试钉死 routes.json to 列原文；T13/T15/T16
+  落地时如按名消费这两个子字段再核。concerns 留档：便利过滤对不带该字段的
+  账静默返回空；_decisions_referenced_ids 扫描按各账默认读、不跟随
+  --include-archive；`query <未知账名>` 路径存在但无专测。

@@ -76,3 +76,10 @@ fixture：helpers.make_launch_order() 给合法 draft（argv 用 stub_registry �
   （相对形式）与 make_sandbox() 生成的 registry_cmd（sys.executable+绝对路径）
   不对齐；本工单测试造发射单时用 config 里实际 registry_cmd 拼 argv 并 override，
   别指望默认值能过 check_in_registry。
+
+- 2026-08-14 wave4 收账：DONE，1 轮 0 修复，commit 范围 963bdaa..2fffc36，
+  merge 进 main。主仓复跑全量 204/204 过。concerns 留档："spec not approved"
+  实现带 `launch_order.spec_ref:` 前缀（按 _lib.fail 惯例，判断工单是省写）；
+  spec_ref 递归搜索多文件命中时按路径排序取第一个（未去重未报错）；
+  单张 draft 内 decision_refs 含重复 id 时 affects 回填会重复追加（跨命令
+  重跑幂等已测绿，单内重复未测、工单未提）。
