@@ -19,7 +19,11 @@ numbered list -- one function per item):
    quick=true launch orders are exempt from all three (spec §2.6).
 2. check_approval         -- for every launch order with a non-empty
    spec_ref: empty approved_by -> "not-approved"; recomputed approved_digest
-   mismatch -> "approval_stale" (spec_header._digest_rule/_stale_rule).
+   mismatch -> "approval_stale" (spec_header._digest_rule/_stale_rule); the
+   spec file check 1 found by substring but that fails to parse as valid
+   frontmatter -> "approval.spec_unreadable" (not silently skipped as
+   "check 1's problem" -- check 1's existence test does not require valid
+   frontmatter, so this is the only check that catches that corruption).
 3. check_affects          -- the launch order is authoritative (spec §5):
    forward, each decision_refs entry's own `affects` must name the launch
    order's run_id ("affects-missing", detail carries the re-run fix);
@@ -217,9 +221,16 @@ def _find_issue_file(cfg, issue_ref: str):
 
 def _find_spec_file(cfg, item_id: str):
     """First *.md file (by sorted path, deterministic) under the specs
-    ledger whose raw text contains `item_id` as a substring -- issue #1's
-    own wording ("字符串含 item_id"), same existence test T08's launch-order
-    write path uses for spec_ref."""
+    ledger whose raw text contains `item_id` as a substring -- this
+    ticket's own check-1 wording ("字符串含 item_id"). This is looser than
+    T08's write-time gate (issues/08-launch-order.md step 4: "含该 item_id
+    字符串且带 frontmatter"), which additionally requires the file to carry
+    valid frontmatter before a launch order is ever allowed to reference
+    it -- a spec_ref this function resolves may still fail to parse as
+    frontmatter (e.g. corrupted after the fact, outside the normal write
+    path). That case is not silently treated as "found and fine": callers
+    that need the frontmatter (check_approval) report a finding when
+    parsing it fails, instead of swallowing the error."""
     specs_root = Path(cfg.ledger_path("specs"))
     if not specs_root.exists():
         return None
@@ -318,8 +329,18 @@ def check_approval(ctx: _Context) -> list:
 
         try:
             fields, _ = _lib.parse_frontmatter(spec_path.read_text(encoding="utf-8"))
-        except _lib.RLError:
-            continue  # malformed frontmatter is not this check's concern
+        except _lib.RLError as exc:
+            # _find_spec_file's existence test is substring-only (this
+            # ticket's check 1), not "has valid frontmatter" -- so a spec
+            # file corrupted outside the normal write path can resolve
+            # here and still fail to parse. Report it rather than silently
+            # treating "found by check 1" as "approval face is fine".
+            findings.append(_err(
+                "approval.spec_unreadable",
+                f"launch order {run_id}: spec {spec_path} has no valid frontmatter "
+                f"({exc.message}); cannot confirm approval",
+            ))
+            continue
 
         approved_by = fields.get("approved_by")
         if not approved_by:
