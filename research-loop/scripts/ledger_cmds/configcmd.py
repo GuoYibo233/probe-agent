@@ -141,11 +141,14 @@ def _check_structure(cfg: _lib.Config) -> None:
                 value,
             )
 
-    # 4. ledger_caps: keys are known ledgers, jsonl-format only;
+    # 4. ledger_caps: keys must be actual config.ledgers keys (not merely
+    #    known to tables/ledgers.json -- an un-hooked optional ledger, e.g.
+    #    runs_legacy before freeze-legacy, has no entry in config.ledgers and
+    #    so may not appear in ledger_caps either), jsonl-format only;
     #    runs/runs_legacy accept only null.
     caps = cfg.data.get("ledger_caps") or {}
     for key, value in caps.items():
-        if key not in known_ledger_names:
+        if key not in ledgers_keys:
             fail("config", f"ledger_caps.{key}", "key is not a known ledger", value)
         if key in ("runs", "runs_legacy"):
             if value is not None:

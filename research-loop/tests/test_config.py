@@ -288,3 +288,120 @@ def test_config_check_with_no_config_file_exits_1():
         code, out, err = helpers.run_ledger(root, "config-check")
         assert code == 1
         assert "config not found" in err
+
+
+# ---------------------------------------------------------------------------
+# 12. boundary: roles/standing_authorization/runtime_factor left null print
+#     the "-> default: <plugin default>" form of the null report (the
+#     ticket names this trio individually), not the generic
+#     "-> locks: <null_effect>" form every other null key gets.
+# ---------------------------------------------------------------------------
+
+
+def test_null_report_shows_plugin_default_for_roles_and_runtime_factor_and_standing_authorization():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        code, out, err = _init(root)
+        assert code == 0, (out, err)
+
+        code, out, err = helpers.run_ledger(root, "config-check")
+        assert code == 0, (out, err)
+
+        cfg = _lib.load_config(root)
+        for key in ("roles", "standing_authorization", "runtime_factor"):
+            assert cfg.null_locked(key)
+            default_text = json.dumps(cfg.get(key), sort_keys=True, ensure_ascii=False)
+            assert f"null key {key} -> default: {default_text}" in out, (key, out)
+            assert f"null key {key} -> locks:" not in out
+
+
+# ---------------------------------------------------------------------------
+# 13. boundary: an explicit --root is authoritative for config-check no
+#     matter what cwd is (issues/04-config.md signature: "config-check
+#     [--root PATH]").
+# ---------------------------------------------------------------------------
+
+
+def test_root_flag_for_config_check_is_used_regardless_of_cwd():
+    with tempfile.TemporaryDirectory() as tmp:
+        project_root = Path(tmp) / "project"
+        project_root.mkdir()
+        code, out, err = _init(project_root)
+        assert code == 0, (out, err)
+
+        unrelated_cwd = Path(tmp) / "elsewhere"
+        unrelated_cwd.mkdir()
+
+        code, out, err = helpers.run_ledger(
+            unrelated_cwd, "config-check", "--root", str(project_root),
+        )
+        assert code == 0, (out, err)
+
+
+# ---------------------------------------------------------------------------
+# 14. boundary: with no --root, config-check walks up from a cwd that is a
+#     genuine descendant of the project root (not just cwd == root).
+# ---------------------------------------------------------------------------
+
+
+def test_config_check_walks_up_from_a_subdirectory_without_root_flag():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        code, out, err = _init(root)
+        assert code == 0, (out, err)
+
+        nested = root / "a" / "b"
+        nested.mkdir(parents=True)
+
+        code, out, err = helpers.run_ledger(nested, "config-check")
+        assert code == 0, (out, err)
+
+
+# ---------------------------------------------------------------------------
+# 15. boundary: an explicit --root for init writes the skeleton at that
+#     root, not at cwd -- init's signature carries the same --root PATH
+#     flag as config-check.
+# ---------------------------------------------------------------------------
+
+
+def test_root_flag_for_init_writes_at_given_root_not_cwd():
+    with tempfile.TemporaryDirectory() as tmp:
+        cwd_dir = Path(tmp) / "cwd"
+        cwd_dir.mkdir()
+        target_root = Path(tmp) / "target"
+        target_root.mkdir()
+
+        code, out, err = helpers.run_ledger(
+            cwd_dir, "init", "--non-interactive", "--root", str(target_root),
+        )
+        assert code == 0, (out, err)
+
+        assert (target_root / "research-loop.json").exists()
+        assert not (cwd_dir / "research-loop.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# 16. boundary: ledger_caps keys must be actual config.ledgers keys, not
+#     merely known to tables/ledgers.json's main-or-optional domain -- an
+#     un-hooked optional ledger (runs_legacy, before freeze-legacy) has no
+#     config.ledgers entry, so it must not be settable in ledger_caps
+#     either, even though "runs_legacy": null would otherwise satisfy the
+#     runs/runs_legacy null-only rule.
+# ---------------------------------------------------------------------------
+
+
+def test_ledger_caps_rejects_a_ledger_name_not_hooked_into_config_ledgers():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        code, out, err = _init(root)
+        assert code == 0, (out, err)
+
+        data = _read_config(root)
+        assert "runs_legacy" not in data["ledgers"]  # optional, not hooked by init
+        data["ledger_caps"] = {"runs_legacy": None}
+        _write_config(root, data)
+
+        code, out, err = helpers.run_ledger(root, "config-check")
+        assert code == 1
+        assert "config.ledger_caps.runs_legacy" in err
+        assert "key is not a known ledger" in err
