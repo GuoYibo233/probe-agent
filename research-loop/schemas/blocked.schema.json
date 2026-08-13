@@ -24,6 +24,11 @@
           "value": "r5-choice"
         },
         {
+          "field": "status",
+          "op": "eq",
+          "value": "answered"
+        },
+        {
           "field": "answered_by",
           "op": "neq",
           "value": "user"
