@@ -1,6 +1,6 @@
 # T09 query + status + render blocked
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 03
 
 ## 范围声明
@@ -111,3 +111,8 @@ fixture 全用 helpers 行工厂裸写账本（不依赖其他工单的 CLI）�
   `args.command == 'render'` 分支；认为映射不对就回头改 ledger.py 那张表。
   另：分组子命令未实现时的文案是 `not implemented yet: <顶层子命令名>`（不带
   二级动词），测试断言按此格式。
+
+- 2026-08-14 预警（T05 落地后的对接契约）：decisionscmd 已导出
+  `active_grants(rows, now)`，语义 = kind=grant 且 status=decided 且
+  superseded_by 为 null 且（scope.expires_at 为 null 或 > now）。本工单
+  query decisions 默认视图直接 import 这个函数，别自己重写一份语义。

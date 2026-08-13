@@ -59,3 +59,11 @@ null 打 `-> default: <plugin默认>`。
 8. config.ledgers 塞一个 `"foo": "x.jsonl"` → exit 1（表里没有的账名）。
 
 ## Comments
+
+- 2026-08-14 wave3 收账：DONE，1 轮 0 修复，commit 范围 6cce8bc..412771e，
+  merge 进 main。主仓复跑全量 141/141 过。
+  遗留 minor F4（已接受）：config 文件不存在时 config-check 报
+  `config not found: <path> (run: ledger.py init)` + exit 1——工单未点名的
+  自补分支，有测试覆盖，文风与 dispatcher 门禁一致。
+  concerns 留档：键集不等报错锚在 config.owners、用对称差集不分 missing/extra；
+  inspection_policy 的 null 报告走通用 locks 分支（照抄表原文的必然结果）。

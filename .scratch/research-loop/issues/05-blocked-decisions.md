@@ -156,3 +156,12 @@ def active_grants(rows: list[dict], now: str) -> list[dict]
   是把裁决依据摆到工单本身（而不是只写进 T05 自己的报告里），方便 T06–T09
   的实现者或复核者不用重新查一遍就能看到结论；最终是否合并仍由主会话在
   分支终审时拍板。
+
+- 2026-08-14 wave3 收账：DONE，1 轮 0 修复，commit 范围 6cce8bc..5996e9a，
+  merge 进 main。超范围表修补（8498bcb：blocked_row 的 grant_ref conditional
+  加 status=answered 子句）主会话已亲核 diff 并认可：open 态 answered_by 恒
+  null、`null neq "user"` 为真，无此子句 r5-choice 行开不出来。合并后
+  spec_lint 0 errors / gen-schemas --check 绿 / 全量 141/141 过，三道机器
+  门禁都证实修补自洽。active_grants(rows, now) 的签名与语义已转写进 T09
+  工单 Comments。自定错误文案与"成功路径 stdout 单行 JSON"形态留档，
+  T15/T16 如有不同期待再改。

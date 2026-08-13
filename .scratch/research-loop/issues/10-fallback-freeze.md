@@ -1,6 +1,6 @@
 # T10 fallback 铁轨五件 + freeze-legacy
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 03
 
 ## 范围声明

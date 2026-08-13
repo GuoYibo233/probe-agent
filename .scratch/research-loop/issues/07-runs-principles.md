@@ -86,3 +86,11 @@ criterion_cmd 空或不过 check_in_registry（registry_query null → 报
   ② 分组子命令未实现时 dispatcher 的文案是 `not implemented yet: <顶层子命令名>`
   （不带二级动词）；本工单测试如断言这条 stderr，按这个格式来，不合适就改
   ledger.py 的 `_dispatch()` 并说明。
+
+- 2026-08-14 wave3 收账：DONE，1 轮 0 修复，commit 范围 6cce8bc..462f429，
+  merge 进 main。主仓复跑全量 141/141 过。cannotVerify 留待后波：与
+  fallback/record.py 的锁文件名约定（T10 落地后核）；parse_principles 返回
+  形状是否满足 T09/T11（落地后核）。"同 run_id 已存在拒"在单进程+持锁路径下
+  不可达，按工单要求保留、无单测，留档。concern：md 表格 `\|` 转义是超出
+  工单字面"按 | 切分"的设计决定（没有它工单要求的管道符 lint 测试不可达），
+  范围限于 principlescmd.py，认可留档。

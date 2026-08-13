@@ -1,6 +1,6 @@
 # T08 发射单写入 + approve-spec + affects 回填
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 03, 05
 
 ## 范围声明

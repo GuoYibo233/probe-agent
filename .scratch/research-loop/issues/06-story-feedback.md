@@ -67,3 +67,9 @@ suggestion 行：fb_id 自增 F、kind=suggestion、date=today()、layer=--layer
    suggestion 文本 → RLError。
 
 ## Comments
+
+- 2026-08-14 wave3 收账：DONE，1 轮 0 修复，commit 范围 6cce8bc..a88395f，
+  merge 进 main。主仓复跑全量 141/141 过。concerns 留档：三种被引 run 违反
+  消息按工单字面统一用 story.evidence_runs 字段名；多处错误措辞自拟（语义
+  按 writes.json）；成功路径 stdout 整行 JSON；story retire 空 --reason 拒
+  是按 writes.json withdrawal_proxy 条款主动补的实现+测试。
