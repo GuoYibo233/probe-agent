@@ -129,3 +129,30 @@ def active_grants(rows: list[dict], now: str) -> list[dict]
     decision、blocked 翻 answered、decision_ref 回填。
 
 ## Comments
+
+- 2026-08-14（T05 修复第 1 轮，回应审查 finding F1——commit 8498bcb 越过工单
+  文件范围改了 `tables/rows.json`/`schemas/blocked.schema.json`）：
+  finding 本身认定修复内容是对的（不然 R5/R6 那一半功能连 `open` 都过不去），
+  但要求主会话在合并前对"是否与 T06–T09 冲突"给出明确裁决，而不是实现者
+  自行决定后事后补"存疑"。逐个查了同批次工单的实际状态：
+  - T06（`ticket/20260814-wave3/T06`，已有 2 个 commit）：
+    `git diff main T06 -- tables/rows.json schemas/ tables/writes.json`
+    为空，完全没碰这几个文件。
+  - T07（`ticket/20260814-wave3/T07`，已有 3 个 commit）：同上，diff 为空。
+  - T08（`08-launch-order.md`）：`Blocked by: 03, 05`——按依赖图它本来就要
+    等 T05 合并之后才能起，不存在"并行读到旧表"的时间窗口。
+  - T09（`09-query-status.md`）：`Blocked by: 03`，当前 `Status:
+    ready-for-agent`，还没建分支；工单自己也写明"fixture 全用 helpers
+    行工厂裸写账本（不依赖其他工单的 CLI）"——它读的是 `status_view` 这条
+    派生源，不经过 `blocked open` 的 `_lib.validate()`，跟这条
+    `grant_ref` conditional 无关，谁先合并都不影响它。
+  裁决：commit 8498bcb 按原样保留在 T05 分支里，不拆、不撤。理由——
+  ① 这条 `when` 子句是 `blocked_row` 唯一真源里的一处机器规则翻译错误，
+  不是 T05 自己发明的新需求，留着不修等于让 T05 自己 12 条测试里的 7 条
+  永远绿不了；② 上面四张同批次工单实测无一张会撞见这处改动引发的行为
+  差异；③ 改动仍然是独立一个 commit、一条 `when` 子句，`gen-schemas
+  --check` 证实除 `blocked.schema.json` 外零改动，合并/回滚都可以单独
+  对这一个 commit 操作而不牵连 T05 自己的功能 commit。这条记录留在这里
+  是把裁决依据摆到工单本身（而不是只写进 T05 自己的报告里），方便 T06–T09
+  的实现者或复核者不用重新查一遍就能看到结论；最终是否合并仍由主会话在
+  分支终审时拍板。

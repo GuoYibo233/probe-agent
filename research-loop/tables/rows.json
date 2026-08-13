@@ -547,6 +547,11 @@
             "value": "r5-choice"
           },
           {
+            "field": "status",
+            "op": "eq",
+            "value": "answered"
+          },
+          {
             "field": "answered_by",
             "op": "neq",
             "value": "user"
@@ -555,7 +560,7 @@
         "require": [
           "grant_ref"
         ],
-        "_note": "grant_ref 的『answered_by≠user 的 r5-choice 必填』的机器形态"
+        "_note": "grant_ref 的『answered_by≠user 的 r5-choice 必填』的机器形态——第三个 status 子句是 T05 自查补的：answered_by 在 open 态恒为 null，null neq 'user' 也成立，没有 status 子句会让这条规则在 open 时就误触发（把从没答过的行也当成『被非 user 答过』），r5-choice 的行永远开不出来。加 status=answered 把『答复』限定成真的发生过一次 answer 动作，跟本字段 _note 顶头那句『answered_by≠user 的 r5-choice 必填』的『答』字本身对齐"
       }
     ]
   },
