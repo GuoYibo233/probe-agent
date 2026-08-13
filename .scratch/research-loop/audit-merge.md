@@ -176,3 +176,321 @@ P1 共 11 条，P2 共 4 条——P2 建议只在 spec §10 记一笔"后置"，
 32. **成文留白一处（复验判定非硬伤，留给实施）**：判据 evidence_path 指向
     空文件时算什么，spec 未规定——实施 runs-append 时定（建议按 R8 的
     "输出仍空必升级"精神处理），不回改 spec。
+
+## 用户批注合并（2026-08-13 → 修订六）
+
+用户在 spec.md 正文里留 19 处批注，讨论一轮后定四项裁决：
+①工单维持部署层开（idea 层产出原则与目标）；②账本行数上限进 research-loop.json
+（`ledger_caps`，plugin 带默认值）；③部署收官例行核查 = 派 opus inspector 通读
+（不只跑机验脚本）；④上下文卫生主次 = 读走脚本为主、归档为辅。
+
+批注 → 落点对照：上下文一等对象（§0）；账本回收（新 §2.1）；三层职责细化 +
+会话身份 + 跨层传输细则 + 悬案攒批上报（§1 层纪律）；读权走脚本（§1 + R7 扩展）；
+部署收官核查 + 监察面记忆（§1 监察面条目 + §6 路由 + §8 步 10）；开工必读动态视图
+（§2）；聊天自由落账定格 + 实验设定硬边界 + 上行不死板（§2.5）；原则条目加
+applies_when/rationale（R1 + §5）；通用/特化两层 + 默认铁轨兜底 + init 问卷
+（§4 + §7）；doctor（§4 + §6 + §9）；错误处理程序先 LLM 兜底（R8 + §8 + §9）；
+路由动作可手动触发不限阶段（§6 表下注）；账本上限 ledger_caps（§7）；
+集群慢变量档案回收（§5）。
+
+## 第六轮自决点（批注合并中的实施细节，按 R6 留痕）
+
+33. **归档文件不进 ledgers 注册表**：`<name>.archive.jsonl` 与主账同目录，
+    是主账伴生物；读写只经 ledger.py。备选是登记进 ledgers——弃：owners 键集合
+    与 ledgers 严格相等的机验会被"归档行保留原归属层"搅浑（归档动作是机械搬运，
+    没有单一归属层可填）。
+34. **runs.jsonl 默认不轮转**（ledger_caps.runs=null）：new1 渲染链（RESULTS.md）
+    依赖全量行，且会话读数走渲染产物与查询口、不直读原文件。其余四本 jsonl
+    默认上限 blocked 500 / decisions 1000 / feedback 500 / story 1000（拍脑袋量级，
+    工程可覆盖；doctor 报体量，值不合适随时改配置）。
+35. **读手 subagent 钉 sonnet**：非结构化材料摘要属机械活（全局 subagent 模型
+    策略：机械用 sonnet）；结构化账本一律脚本直查，不派 LLM。
+36. **error_classify 无命中输出 unknown**（已被自决点 44 取代：接手层限部署层及以上），由各层 SKILL.md 引导 agent 接手
+    （读日志、给归类建议、提议加分类行）；脚本本身不猜。§9 用例同步改。
+37. **部署收官核查定为部署层收官规程的一步**（SKILL.md 收官段写死），
+    不做自动 hook——守住 §10"不做 hooks"的边界；手动触发口进路由表（"深查这批"）。
+38. **`how_to_read` 落批次报告头部**：部署层向 idea 层交"怎么读这批结果"
+    （读数脚本+口径说明）的落点，对应用户批注"把实验结果怎么读交给上一层"。
+39. **默认铁轨兜底脚本**只做顺序执行+文件锁+append 三件事，不复刻 gpu-run/
+    ticket-run 的任何高级功能——裸项目能用即可，长出设施后换指配置。
+
+## 第七轮：修订六对抗审核（三份 opus：批注覆盖/机制一致性/隔离重放）→ 修订七
+
+38 条发现（28 硬）。硬伤七簇与修法：
+
+- **归档机制五处对撞**（append-only 机验、指针行撞 schema、--layer 无值、活跃行
+  两套定义、追溯脚本不读归档）→ 归档指针改伴生索引文件、archive 不收 --layer
+  改三条搬运机验、逐账活跃行判定式写死、校验/追溯脚本默认跨档读、并发锁协议成文。
+- **收官核查无闭环**（派发无契约、报告无人接、inspector 开不了待决账、"通读"与
+  读权禁令对撞）→ §1 三步闭环：派发契约成文、verdict 字段、blocker 由部署层
+  转录 blocked 并阻断收官、批次报告 inspection_report 回指、监察面读法豁免成文。
+- **查询口外延未定义** → §2.1 读法对照表（jsonl 走 query / md 定稿件可整读 /
+  小 json 直读 / 大体量走切片或读手）。
+- **运行层 unknown 兜底与"只跑不解释"对撞** → R8 分层：运行层只机械升级，
+  归类归部署层。
+- **"目标"无载体** → idea 层下行产出只有原则，"这轮做什么"由部署层拆进 spec。
+- **信道 3 工单跨层** → 体裁删工单，注明工单是部署层层内物。
+- **rationale 校验无人接 + METHOD.md 现状差距** → 新 principles-lint 子命令、
+  原则文档机器可解析格式约定、挂接清单加第⑥项（METHOD.md 改造）。
+
+soft 项处理：批注计数 17→19 两处改正；§2.5 开头句改"落账物只有固定体裁"；
+doctor 落点成文（stdout/--out，regression_check 加 --dry-run）；md 整理归属改
+用户/idea 层会话代笔；归档不自动跑记自决点并进 §10 后置；编号名字空间成文。
+
+## 第七轮自决点（按 R6 留痕）
+
+40. **归档指针改伴生索引**（`<name>.archive.idx.json`）：主文件零新行型——
+    弃"指针行进主文件"（撞各账 kind 枚举与实体行必填字段，还得走一轮 schema 上桌）。
+41. **archive 不收 --layer**：维护动作无归属层；写权检查换三条搬运机验
+    （逐字节在归档、剩余为子序列、行数守恒）；shared-append/跃迁校验器开唯一豁免。
+42. **活跃行判定式逐账写死**，query 与 archive 共用；被 decision_refs/affects/
+    grant_ref/decision_ref/superseded_by 指向的抉择行永不归档。
+43. **校验/追溯脚本默认跨档读**（等价 --include-archive）；只有 query 默认活跃视图。
+44. **运行层 unknown 只机械升级**：用户批注 19"agent 帮忙判断"落在部署层
+    （Claude Code 部署会话），与运行层"只跑不解释"两立；提议加分类行不开新 kind，
+    走 kind=failure 升级 + 部署层答复时改表。
+45. **监察面读法豁免成文**（"只读一切"的含义）；收官闭环 verdict/转录/阻断/回指
+    四件套；转录 blocker 不算自查顶数（判定在 inspector 独立上下文）。
+46. **doctor 只出 stdout（可选 --out）**；regression_check 加 --dry-run 供 doctor，
+    避免越权写 oversight 独占的 reports/；代码/bug 检查沿用工程自检，doctor 只调用；
+    worktree 清理动作归部署层。
+47. **归档不自动跑**（用户原话"看看能不能自动进行"）：首期 doctor 建议 + 用户确认，
+    自动执行（--auto）进 §10 后置不弃——理由：重写主文件的动作首期保守 +
+    不做 hooks 的边界。
+48. **md_size_caps 新配置键**（md 账字节上限，doctor 读）；cluster_state 默认
+    64KiB，其余 null（拍脑袋量级，工程可覆盖）。
+49. **兜底铁轨最低必做项** = 写 RUNMETA + 脏树检查 + 极简台账（修正自决点 39
+    的"只做三件事"：溯源链在兜底态不打折）。
+50. **R1 未接线态**：criterion_cmd 暂空必标【想法待定】，补判据才转
+    【现状】/【已定要改】——顺带覆盖 METHOD.md 现有无判据条目的迁移路径。
+
+## 第八轮：修订七复验（两份 opus：逐条复核 + 白手扫描）→ 修订八
+
+复验判定：38 条中 35 条干净解决，3 条残留（§9 error_classify 用例没跟上 R8 分层、
+读法对照漏 reports//schemas、挂接清单"五项"实列六项）；白手另揪 14 条新伤
+（8 硬 6 软），全部是修订七自己带出来的：md 整理执行者两处互斥、runs 查询视图
+无谓词、四色标注无列可放、兜底脚本无落点、抉择账"任何层落账"与 owners=deploy
+打架、init 无合法 --layer、"唯一重写主文件"说过头、to_layer 填不出运行层归属、
+md_size_caps 缺键行为、idx 无读者、trace_check 注释缺两职、§1 表头自称完整。
+修订八 17 处全修。
+
+## 第八轮自决点（按 R6 留痕）
+
+51. **md 账整理归写权层会话**（TIMELINE→idea、集群档案→运行层；用户可亲自改）：
+    推翻修订七"由用户或 idea 层代笔"——内容判断需要归属层知识，整理罕发，
+    运行层偶做一次可承受；与 §5"写权层人工整理"两处并一处。
+52. **query runs 必须带过滤**（--batch/--run/--since/--metric 至少其一），
+    无过滤拒绝返回全表；runs 无活跃行概念，读全量走 RESULTS 渲染。
+53. **原则文档加 status 列**（四色取值）：principles-lint 与撤销体裁都落这一列，
+    "文档头标注四色"的旧表述废除。
+54. **兜底件落地 `scripts/fallback/`**（registry.py/launch.py/record.py），
+    §9 计数与验收同步；弃"归 §10 后置"备选——裸项目可用是通用层的卖点。
+55. **抉择账升为第四成文例外**（owners 值 per-kind，值域八个）：kind=decision
+    只收 deploy、kind=grant 任意层、r5 同步拼装不查——把"任何层会话经脚本落账"
+    从与"一本账一个层"的矛盾里解出来。
+56. **init 与渲染/回填动作不过 --layer 检查**：init 豁免条件=目标文件不存在或
+    用户确认覆盖；渲染/回填不产生新内容只物化已入账数据。
+57. **blocked to_layer 填法**：按问题归属向上取到最近可答复层（运行层问题填
+    deploy），枚举不加 run 值——运行层没有答复职能，加值只会造死信。
+
+## 第九轮：修订八复验 → 修订九
+
+复验判定：17 项 16 净、1 残留（--metric 只在 runs 过滤句出现、两份维度清单没有）；
+白手 11 新伤（6 硬 5 软）：archive"唯一重写"与状态跃迁就地改行打架、per-kind
+堵死 idea 层 R6 自决入账、收官③ from_layer 无来源、"记账脚本"无配置键、
+未接线拒绝无执行者、兜底 outputs 无来源；软伤：表头表体不齐、decisions 幽灵
+open 态、grant 活跃口径不齐、rails 兜底无件、--metric。修订九 12 处全修。
+
+## 第九轮自决点（按 R6 留痕）
+
+58. **写入两式成文**：原子追加 + 成文字段级就地更新（blocked 跃迁字段、decisions
+    affects/superseded_by、story 撤销字段），此外行内容不可变；archive 措辞收窄为
+    "唯一允许把行搬出主文件的动作"。
+59. **per-kind 补 R6 通道**：decided_by=agent 且 authorized_by 指向有效 grant 的
+    decision 行收任意层——授权自决在哪层发生就在哪层落账（idea 层 R4 计算自决
+    因此有入账路径）。
+60. **收官③ from_layer=deploy**（转录者），溯源靠 evidence 指核查报告；弃
+    "监察会话开条"备选——例行核查用的是 agent 形态，会话形态另属手动深查。
+61. **decisions 删幽灵 open 态**：status 枚举收成 decided|withdrawn，
+    未决态一律归待决账（R5）；活跃判定式 grant 分支补 status=decided 与
+    §5 有效授权视图对齐。
+62. **新配置键 record_cmd**（工程记账脚本入口；new1 = python3 run.py record）；
+    "null 键对照"改用它表达 runs 普通行锁。
+63. **config-check 成为 ledger.py 子命令**：每次写入/query 自动做，铁轨动作由
+    SKILL.md 触发前跑；doctor 拼装的"配置校验"即此件。
+64. **兜底态 RUNMETA.outputs 允许空**（监察面回落直接读产物）；rails.* 明文无
+    兜底件，未接留 null 按锁功能处理。
+
+## 第十轮：修订九复验 → 修订十
+
+复验判定：12 项 10 净、2 残留（都是"主体已修、别处没跟着改"：§9 query 用例
+仍列 decisions open 态；§4 fallback 注释仍说 rails.* 可指入）；白手 12 新伤
+（4 硬 8 软，其中 2 硬与 2 残留同源）。硬伤：§9 decisions open 幽灵用例、
+fallback/launch.py 无配置落点（§4↔§7 打脸且 §9 兜底自测无从跑）、判据缩减行
+elapsed_s/退出码无来源（会话执行 vs 脚本入账断档，撞 R7）、ledger_caps 允许
+给 runs 配上限但 runs 无归档判定式。软伤：§2.1 就地更新清单漏 status、
+R6"收任意层"与监察面零写权打架、init 没有 config-check 豁免、registry_query
+不进问卷与 null 对照、query runs --since 无时间字段可依、兜底 RUNMETA 三字段
+无空值豁免、fallback/record.py 与"plugin 不替代入口"措辞打架。修订十 11 处全修
+（2 残留并入同源硬伤）。
+
+## 第十轮自决点（按 R6 留痕）
+
+65. **R6 自决与 grant 代笔收窄为 idea|deploy|run 三层**（不含 oversight）：
+    监察面零写权是更硬的约束，抉择不是它的职能；三处（§1/§5/§7）同口径。
+66. **rails.gpu 有兜底件**：fallback/launch.py 的配置落点就是 rails.gpu；
+    "无兜底件"限缩为 build/pipeline/paper/literature 四轨。取此而非"launch.py
+    由 registry 间接进"，因为 §9 要求兜底态反向溯源链可跑，直指最短。
+67. **判据执行与入账合一**：`ledger.py runs-append` 代拉起 criterion_cmd 并计时，
+    退出码/elapsed_s/尾行解析全由脚本自取，会话只发起不经手数字（R7 闭环）。
+68. **runs 行加必填 recorded_at**（ISO 秒级，两个入账脚本自动打，不许手填），
+    `query --since` 按它过滤；弃"从 batch_id 反解日期"备选——依赖命名约定太脆。
+69. **ledger_caps.runs 只许 null**（config-check 判非法）：runs 无活跃行判定式，
+    归档在它身上无定义；渲染链依赖全量行。
+
+## 第十一轮：修订十复验 → 修订十一
+
+复验判定：12 项 11 净、1 残留（rails.gpu 兜底落点有了，但 rails.* 值域全文仍
+只写"skill 名"，launch.py 这种脚本路径没有调用契约）；白手 3 硬 3 软，其中
+白手 agent 实读了 new1 的 ops/record.py 与 runs.jsonl（主会话已复核属实）：
+record.py 写的是 ev=start/finish 两行事件流、写入路径上无任何锁——挂接清单②
+"现有锁协议需核实兼容"前提不成立，是从零新增；registry_query 无兜底件导致
+"裸项目装上即可用"与"registry_query=null 锁 principles-lint"打脸；撤销体裁
+"status+superseded_by"在 blocked/spec 两类拍板上无字段可写。软伤：
+inspection_report 在途空值无成文、criterion_cmd 取值来源未写、§1"注册表
+脚本代笔"专名混用。修订十一 7 处全修。
+
+## 第十一轮自决点（按 R6 留痕）
+
+70. **rails.* 值域两型成文**：skill 名（路由转交）或可执行命令/脚本路径
+    （运行层直接执行，入参为发射单路径）；区分机械——命中已装 skill 名按前者。
+71. **fallback/registry.py 带 `--list` 只读免门禁子命令**，registry_query 兜底
+    落点即它；兜底映射从三键扩为四键。
+72. **撤销体裁按账分四路**（弃"给 blocked 加 superseded_by"备选，不加字段）：
+    抉择/故事账走 status+superseded_by；原则标【已撤销】；spec 改文件头
+    approved_* 并递增版本；待决答复由 from_layer 写 withdrawn 并另开新条
+    ref 指旧 blocked_id。
+73. **挂接清单②扩为三件新增 + 新增⑦渲染器跟随**：runs.jsonl 锁从零建
+    （与 runs-append 同协议）；行型改造为 §5 单指标行，旧事件流冻结为
+    runs.legacy.jsonl（不进 ledgers 注册表）；§5 字段由 record.py 自动补齐。
+    弃"spec 放宽允许事件流"备选——query 维度与 --since 都靠平铺行型。
+74. **inspection_report 允许空串 = 未收官**：trace_check 只在非空时校验，
+    收官门禁另查非空。
+75. **criterion_cmd 取值链成文**：runs-append 按 --principle 从原则文档
+    criterion_cmd 列取命令，行内不存命令本体；trace_check 豁免检查同链。
+
+## 第十二轮：修订十一复验 → 修订十二
+
+复验判定：7 项 5 净、2 残留（"注册表"专名声明立了但 R7/§7/§8 旧用法没扫；
+spec 版本递增无落点字段）；白手 5 硬 6 软。硬伤：撤销四路里两路无合法代笔人
+（用户在 idea 层收回 deploy 的 decision 被 per-kind 拒）、owners 键全文无来源
+（init 不问、无默认表，接线产物必过不了 config-check）、"收官门禁另查非空"
+无执行者、legacy 冻结撞 §2.1 archive 唯一性且监察面追溯缺块、rails 值域两型
+误写成五轨通用（撞 §2 信道 3"施工不跨层下发"）。修订十二 13 处全修。
+**用户同轮指令：最多再迭代三轮，之后不论如何停。**
+
+## 第十二轮自决点（按 R6 留痕）
+
+76. **撤销代笔特例**：撤销体裁的成文就地更新由当场会话代笔、不查 --layer
+    归属，字段级强制留用户原话，无原话拒。
+77. **spec 文件头加 spec_version**；批准撤销 = approved_by/approved_date 清空
+    （回未批态）+ spec_version 递增。
+78. **owners 由 plugin 携带全键默认表**（值按 §1 固定），init 自动生成不询问；
+    工程改值走 R5。
+79. **收官非空门禁的执行者 = `trace_check --closeout <batch_id>`**（空串即
+    报错），部署层 SKILL.md 收官段末跑。
+80. **legacy 冻结定为一次性接线迁移**：执行者=用户确认下的接线会话，机验=
+    逐字节一致+新主文件从零行，是 §2.1 archive 唯一性的唯一成文豁免；
+    legacy 挂 ledgers.runs_legacy（owners=run，只读，任何写入拒）。
+81. **rails 值域按键分收**：只有 rails.gpu 两型（skill 名或可执行命令），
+    其余四轨只许 skill 名（施工不跨层下发，§2 信道 3）；弃"gpu/pipeline 都开
+    第二型"备选——pipeline 是会话形态整链流程，无发射单可作入参。
+82. **打回理由落批次报告头部 rejections[]**（用户原话转录，evidence_lint
+    对此字段豁免）；弃"落待决账"备选——打回的消费者是被退回层，顺批次报告看。
+83. **"注册表"全文只指 registry_cmd**：ledgers 改称"账本清单"，R7 改"两条
+    脚本路径"。
+
+## 第十三轮（用户上限第 1 轮）：修订十二复验 + 保真审计 → 修订十三
+
+复验判定：13 项 10 净、3 残留；白手 9 新伤（5 硬 4 软），仍集中在修订十二
+新改文字。硬伤：撤销特例与 blocked 跃迁旧句打脸（withdrawn 两种口径并存）、
+decisions 撤销留痕字段不在白名单（"无原话拒"恒成立）、"所有账本脚本代笔"对
+md 账不成立、撤销 answered 后原提问层视图掉条、doctor"调用工程自检"调不动
+skill。修订十三 13 处全修（含补一条丢失的意图承载：plugin 本体英文成文进 §4）。
+
+保真审计三件（结果全文在 tasks/wb23lj1xc.output，交用户裁决不自动改）：
+- diff：73 处设计级改动，49 追自决点、12 追批注、6 追裁决、
+  **6 处 untraceable-drift**（§2.5 五下六上体裁清单、R5 三问、R9+反馈账、
+  R10 按需加载、batch_id 命名规则、runtime_factor 键）——均出现在用户批注
+  过的修订五文本里（用户见过未逐条确认）。
+- intent：I1–I16 无 lost；8 held、8 strengthened、3 weakened
+  （I3 英文约定未成文——本轮已修；I13a"idea 层产目标"挪成部署层拆 spec；
+  I15"永不自决"降为"无 grant 覆盖时不自决"）。
+- loop 总判：原目标没丢、原则先行仍是唯一被脚本强制的骨架，但重心已从
+  "循环"移到"账本与核查"：857 行里约 705 行讲账本/配置/校验；"跑一个实验"
+  至少四道批准、六处登记、一次强制 opus 通读；小实验无快车道。
+
+## 第十三轮自决点（按 R6 留痕）
+
+84. **decisions 撤销留痕字段**：加 withdrawn_by/withdrawn_reason 进 schema 与
+    白名单；story 加 retired_by（归 retired_* 族）；特例句按账点名落点。
+85. **blocked withdrawn 跃迁改口径**：closed 仍 from_layer，withdrawn 走撤销
+    特例；撤销 answered 条由 ledger.py 同一动作机械重开（沿旧条 from/to/kind/
+    question，ref 指旧条）——原提问层视图不掉条。
+86. **owners 值域加第九值 frozen**（只读冻结件，任何写入拒）；新增键由接线
+    会话与 ledgers 同批补齐，init 对默认表外键提示补填。
+87. **freeze-legacy 成为 ledger.py 子命令**（不收 --layer、用户确认、机验
+    两条、重复执行拒）。
+88. **§1 代笔句分野**：jsonl 脚本代笔 / md 归属层会话直编+lint 事后把关。
+89. **doctor 不调用工程自检**（skill 不是脚本调得动的），代码检查归
+    rails.build 会话收尾。
+90. **打回限定批次验收阶段**；spec/原则不批准 = 不落 approved_by + 开待决条。
+91. **撤销留痕对称**：spec 头加 withdrawals[]；原则撤销原话注日期追进
+    rationale。
+92. **四轨 null 锁对应 §6 路由句**（触发即报未接线）。
+
+## 第十四轮（用户上限第 2 轮）：修订十三复验 → 修订十四
+
+复验判定：12 项 9 净、3 残留（freeze-legacy 未进 §5 豁免闭集与 §2.1"唯一
+例外"句；§2.1 白名单复述漏新字段；机械重开沿用清单漏 where/options/evidence
+且同步 decision 条无联动）；白手 2 硬 2 软（硬 #1 与残留 #1 同源）。
+硬伤：freeze-legacy 被 §5"一切写入必带 --layer"罩住无豁免落点；四轨 null
+"锁路由句"把"我有个想法"整行锁死（比无配置文件还严）。修订十四 6 处全修。
+
+## 第十四轮自决点（按 R6 留痕）
+
+93. **豁免闭集扩为三个维护动作**（archive/init/freeze-legacy），freeze-legacy
+    合法性由两条迁移机验+重复拒代替写权检查；§2.1"唯一例外"改双例外。
+94. **§2.1 白名单复述改概括式**，逐项以 §5 写入两式②为唯一穷举——防两份
+    穷举再漂移。
+95. **机械重开沿用清单补全**（+where/options/evidence）；被撤销答复的同步
+    decision 条同一动作置 withdrawn+撤销原话——被收回的裁决不得保持生效。
+96. **四轨 null 按动作锁不按路由行锁**（literature 只锁文献核实、pipeline
+    只锁自己那条发射路径、build 锁施工、paper 锁取材），陪谈与落原则永不被锁。
+97. **§1 代笔句补第三类小 json 逐件归口**（发射单走 ledger.py、error_classes/
+    schemas 会话直编、jobs/RUNMETA 归代码）。
+98. **superseded_by 来源成文**：纯撤销留空；更正由用户给 --superseded-by，
+    脚本校验存在后回填。
+
+## 第十五轮（用户上限第 3 轮，最后一轮）：修订十四复验 → 修订十五（未再复验）
+
+复验判定：6 项 4 净、2 残留（§2.5 第四路清单又是"两处成文一处旧"、§1 代笔句
+枚举与 §2.1 读法类目错位）；白手 3 硬 3 软。硬伤：机械重开的"原提问层视图
+不掉条"与必读视图定义打脸（open 只进 to_layer 待办）——按裁决(a)改成事实
+描述；rails.paper 的 null 锁无执行者（写论文路由不经层）——薄壳转交前跑
+config-check；runs 普通行 arm/filter 全文无来源——发射单加两字段、记账脚本
+透传。修订十五 8 处全修（含把 §2.5/§2.1 的重复穷举一律改成指回 §5 唯一真源）。
+**按用户 2026-08-13 指令迭代到此为止，修订十五未经复验轮验证**——修法全部
+来自第 15 轮报告的精确落点，但"修复引入新伤"的风险未经机器复查，
+残留风险以此为界。
+
+## 第十五轮自决点（按 R6 留痕）
+
+99. **机械重开的口径按事实改**（弃"扩必读视图"备选）：新 open 条回 to_layer
+    待办，问题不因撤销而消失；不改 §2 必读视图定义。
+100. **发射单加 arm/filter 两字段**（部署层填、可空），runs 普通行由记账脚本
+    从发射单透传——运行层不判语义。
+101. **薄壳获得 config-check 职责**：直接转交铁轨（写论文）前跑，被锁则拒
+    并说明 null 键。
+102. **重复穷举一律指回唯一真源**：§2.5 第四路沿用清单、§2.1 就地更新白名单
+    复述、§2.1 豁免句全改为指回 §5。
