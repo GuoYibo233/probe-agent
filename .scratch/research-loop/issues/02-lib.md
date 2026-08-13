@@ -1,6 +1,6 @@
 # T02 共用库 `_lib.py` + 测试基建
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 
 ## 范围声明

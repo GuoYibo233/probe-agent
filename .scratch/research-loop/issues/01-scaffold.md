@@ -1,6 +1,6 @@
 # T01 脚手架（主会话执行，不派发）
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: —
 执行者：主会话（不进 ticket-run）
 
