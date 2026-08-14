@@ -1,6 +1,6 @@
 # T18 §V 第一轮修复：skill 文档面（三块承重新参考 + 全部措辞修）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 17
 
 ## 范围声明

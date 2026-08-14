@@ -1,6 +1,6 @@
 # T17 §V 第一轮修复：代码+表+schema（R6 两步路 / 跳层锚点 / jobs 钉名 / 分类器兜底等）
 
-Status: claimed
+Status: resolved
 Blocked by:
 
 ## 范围声明
@@ -122,3 +122,18 @@ rows.json launch_order.run_id 的 `_note` 改为成文缺省：
 7. G/H：spec_lint + gen-schemas --check 双绿（表改动的回归门）。
 
 ## Comments
+
+- 2026-08-14 wave7 收账：DONE，1 轮 0 修复，commit 范围 e4fb336..cad4770，
+  merge 进 main。主仓复跑全量 311/311 + gen-schemas --check + spec_lint 三绿。
+  三条 concerns 主会话亲核裁决：
+  ① runs_row_normal.commit 的 schema 从 type:null 放宽为 [string,null]——
+  这是自决点 #156 对原表设计（"普通行 commit 只在 RUNMETA"）的**推翻**而非
+  补缺，实现者按工单"裁决为准"改表正确；旧行 commit=null 仍合法，留痕在
+  表 _note 与本条。② helpers 缺省 expected_outputs 未用工单示例里的
+  "required" 键——表里第四字段本来就是 required_keys[]，工单示例是主会话
+  笔误，实现者取实际被 output_check 消费的三字段，认可。③ routes.json
+  12/13 行（撤销/打回）标 kind=command：成立（command=当场处置不换层，
+  含多步程序不只单条 CLI）——kind 语义这句话转 T18 写进 SKILL.md。
+  接受的 minor：test_fallback 本地 _make_order 仍造 expected_outputs=[] 的
+  单（手写落盘不过 launch-order 门，行为无洞，fixture 与新 minItems 语义
+  不一致而已）。
