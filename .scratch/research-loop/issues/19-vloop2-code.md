@@ -1,6 +1,6 @@
 # T19 §V 第二轮修复：代码+表（jobs 合并 / evidence_lint 误火 / render 状态列 / routes 拆列 / 表注）
 
-Status: claimed
+Status: resolved
 Blocked by:
 
 ## 范围声明
@@ -87,3 +87,14 @@ rows.json：
 4. D/E：spec_lint + gen-schemas --check 双绿。
 
 ## Comments
+- 2026-08-14 wave9 收账：DONE，1 轮 0 修复，commit 范围 5926300..7fa9d1c，merge 进
+  main。主仓复跑 319/319 + gen-schemas --check + spec_lint 三绿。首次发射的实现者
+  在建工作树一步调 EnterWorktree 工具吊死 6 小时，TaskStop 后在 wave.js 派发消息里
+  禁掉该工具重发成功（skill 修复 commit 5926300）。四条 concerns 裁决：① 工单 E 节
+  标题"五处"实列六条，按内容为准，认可；② grant/feedback review 两行 cmd 的占位参数
+  经主会话对照两个子命令的 argparse 实核（--layer/--question/--reason 与
+  --layer/--ref/--verdict 均必填），认可；③ routes 表头新增 _cmd 说明字段是仿 _kind
+  先例的合理延伸，纯下划线说明字段不进 schema，保留（评审 minor F1 同此裁决）；
+  ④ 工单"12/13 行"行号对不上，实现者按语义定位撤销/打回两行，认可。
+  cannotVerify 四条：前三条按范围声明归 T20 核（router SKILL.md 文字、r5-choices.md
+  判定文本、report-genre.md 体裁半条）；第四条（测试输出采信报告）已由主仓复跑覆盖。
