@@ -1,6 +1,6 @@
 # T04 config-check + init
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明

@@ -1,6 +1,6 @@
 # T05 待决账全跃迁 + r5 拼装 + 抉择账（grant/decision/R6）
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明

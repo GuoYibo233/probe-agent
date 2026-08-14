@@ -1,6 +1,6 @@
 # T06 故事账 + 反馈账
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明

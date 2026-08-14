@@ -1,6 +1,6 @@
 # T11 trace_check.py（溯源检查 + 收官门禁）
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明

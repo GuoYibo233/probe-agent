@@ -1,6 +1,6 @@
 # T09 query + status + render blocked
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明

@@ -1,6 +1,6 @@
 # T07 runs-append（判据 run）+ principles-lint + render principles
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 
 ## 范围声明
