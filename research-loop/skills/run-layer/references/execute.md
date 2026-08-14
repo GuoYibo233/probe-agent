@@ -15,9 +15,21 @@ Whatever `rails.gpu` resolves to in config runs the order: a skill name means ro
 python3 <plugin-root>/scripts/fallback/launch.py <launch_order> [--project-root <root>]
 ```
 
-**Two refusal categories, checked in this order, before anything runs:**
+**Three rejection categories, checked in this order, before anything runs:**
 
-1. **A dirty working tree always refuses the launch** -- except paths
+1. **An explicit `--project-root` with no `research-loop.json` under it
+   refuses before either of the other two checks even runs.** The fallback
+   launcher resolves `--project-root` through the same `_lib.resolve_project_root`
+   the other scripts share (`scripts/trace_check.py`, `regression_check.py`,
+   `verify_report.py`, `doctor.py`) -- a wrong path raises `RLError`, caught
+   by `main()`'s own handler: stderr gets just the error text
+   (`--project-root <root> has no research-loop.json (wrong path?)`), exit
+   code **2**, not 3. There's no "escalate to deploy layer" line here --
+   this is a mis-invocation of the launcher (the wrong path was passed on
+   the command line), not a fact about the repository state that the
+   deploy layer needs to act on. Omitting `--project-root` never hits this
+   path; it falls back to walking up from cwd instead.
+2. **A dirty working tree always refuses the launch** -- except paths
    matching config's `dirty_exempt_globs`. "Dirty" is `git status
    --porcelain` on the launch order's `workdir`, filtered through that
    exempt list -- it counts **untracked-but-not-ignored files**, not just
@@ -25,7 +37,7 @@ python3 <plugin-root>/scripts/fallback/launch.py <launch_order> [--project-root 
    launch order, a debug output) is enough to trip this; the fallback
    launcher's own stderr is `refuse to launch: dirty tree; escalate to
    deploy layer`, exit code 3.
-2. **An `expected_commit` mismatch also refuses the launch.** The fallback
+3. **An `expected_commit` mismatch also refuses the launch.** The fallback
    rail compares it against this project's git HEAD (`-dirty` suffix
    stripped from both sides first) -- same stderr shape, same exit code:
    `refuse to launch: expected_commit mismatch (expected ..., got ...);
@@ -33,10 +45,12 @@ python3 <plugin-root>/scripts/fallback/launch.py <launch_order> [--project-root 
    `references/launch-orders.md` covers where this field's value comes
    from and what the `no-git` sentinel means.
 
-Either refusal escalates back to deploy (`references/failures.md`) exactly
-the same way -- it never launches "just this once" against uncommitted or
-unexpected code, and (see "Job-ledger registration" below) neither refusal
-ever gets an entry in the job ledger at all.
+Categories 2 and 3 both escalate back to deploy (`references/failures.md`)
+exactly the same way -- neither ever launches "just this once" against
+uncommitted or unexpected code, and (see "Job-ledger registration" below)
+neither ever gets an entry in the job ledger at all. Category 1 gets no
+job-ledger entry either, but it is not a deploy-layer escalation: fix the
+`--project-root` value passed to the launcher and re-invoke it.
 
 **A launch that does start writes nothing to this session's own stdout on
 failure.** The child process's stdout+stderr are captured straight to
@@ -103,15 +117,22 @@ this whole gate exists to prevent (v1-run-6).
 ## Job-ledger registration
 
 The fallback launcher already writes a base entry into `ops/jobs.json`
-itself, keyed by `run_id`, right after both refusal checks above pass and
-right before it starts the child process -- **so a launch that actually
-started always has one** (a precheck refusal never reaches this point, so
-a refused launch gets no job-ledger entry at all;
-`tables/rows.json` → `jobs_min_additions._precheck_refusal` -- the refusal
-stderr is archived into the escalation entry's evidence instead, not
-dropped). The base entry's keys: `launch_order_ref`, `state`
-(`running` → `done`/`failed`/`timeout`), `started_at`, `finished_at`,
-`log_path`.
+itself, keyed by `run_id`, right after every check above passes and right
+before it starts the child process -- **so a launch that actually started
+always has one** (a precheck rejection never reaches this point, so a
+rejected launch gets no job-ledger entry at all; `tables/rows.json` →
+`jobs_min_additions._precheck_refusal`). For categories 2 and 3 (dirty
+tree, `expected_commit` mismatch) the refusal stderr is archived into the
+escalation entry's evidence instead of dropped. Category 1 (invalid
+`--project-root`) never gets that treatment: `main()`'s own exception
+handler prints the `RLError` text and returns straight away, no blocked
+entry is opened for it at all -- it's a mis-invocation of the launcher
+caught before config or the job ledger's path are even resolved, not a
+fact about a run that run-layer failure handling (`references/failures.md`)
+would escalate; the invoker fixes the `--project-root` value and re-runs
+the launcher directly. The base entry's
+keys: `launch_order_ref`, `state` (`running` → `done`/`failed`/`timeout`),
+`started_at`, `finished_at`, `log_path`.
 
 This layer's own job is adding the **two required backrefs on top of
 that** -- there is no `ledger.py jobs` verb; this is a direct edit to

@@ -4,13 +4,14 @@
 (`../../..`).
 
 The entries this covers are the ones `status --layer idea`'s `open_blocked`
-block lists: `blocked` rows with `to_layer=idea`. Only `deploy` and
-`oversight` may open one here (`tables/writes.json` blocked_transitions.open
-`legal_to`) -- typically a principle gap deploy hit while turning a
-principle into a spec item, a fork that needs a ruling only this layer's
-user conversation can give, or a failure escalation deploy couldn't resolve
-within its own write rights and pushed one step further up the ladder
-(R8's "运行→部署→idea→你").
+block lists: `blocked` rows with `to_layer=idea`. Only `deploy` may open one
+here (`tables/writes.json` blocked_transitions.open `legal_to`: `deploy`'s
+legal targets are `idea` and `user`, `oversight`'s are `user` and `deploy`
+only -- `oversight` can never open a row targeting `idea`) -- typically a
+principle gap deploy hit while turning a principle into a spec item, a fork
+that needs a ruling only this layer's user conversation can give, or a
+failure escalation deploy couldn't resolve within its own write rights and
+pushed one step further up the ladder (R8's "运行→部署→idea→你").
 
 ## Reading the row
 
@@ -91,10 +92,11 @@ authorization, not every answer (`tables/writes.json` →
 Answering only moves the row to `status=answered` -- it does **not** close
 it. Closing is `from_layer`'s job (`tables/writes.json`
 blocked_transitions.closed: `writable_by: from_layer`): for a row this
-layer received (`to_layer=idea`), that's whichever layer opened it (deploy
-or oversight), consuming the answer and running
-`ledger.py blocked close --layer <deploy|oversight> <BID>` in its own
-session. This layer's involvement with a row it merely answered ends here.
+layer received (`to_layer=idea`), `from_layer` is always `deploy` -- the
+only layer whose `legal_to` includes `idea` (see above) -- so deploy
+consumes the answer and runs `ledger.py blocked close --layer deploy <BID>`
+in its own session. This layer's involvement with a row it merely answered
+ends here.
 
 The mirror case is entries **this layer raised** (`to_layer=user`, since
 `idea`'s only legal escalation target is `user` --
