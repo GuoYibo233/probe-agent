@@ -1,6 +1,6 @@
 # T18 §V 第一轮修复：skill 文档面（三块承重新参考 + 全部措辞修）
 
-Status: claimed
+Status: resolved
 Blocked by: 17
 
 ## 范围声明
@@ -97,3 +97,14 @@ research-loop plugin 件，只动 `research-loop/skills/**` 与本工单点名�
 全量 run_all 不破 + 每条上表 finding 在文档里能指到落点（评审逐条对）。
 
 ## Comments
+
+- 2026-08-14 wave8 收账：DONE，1 轮 0 修复，commit 范围 3d10324..d8e168b，
+  merge 进 main。主仓复跑 311/311 + gen-schemas --check + spec_lint 三绿。
+  两条 minor 主会话收账时当场修掉（execute.md "either gate"→三类拒发措辞；
+  rows.json _precheck_refusal 注记区分两类处置：脏树/expected_commit 拒发
+  存档进升级条 evidence，无效 --project-root 是调用错误不开升级条），顺手
+  把 concerns 点名的 dataset_version "..." 占位填实。三条 concerns 裁决：
+  ① dataset_version 已补（见上）；② run/oversight 两份 SKILL.md 的
+  config-check 句写成"本层无转交场景"的诚实陈述——认可保留；③ 顺带写进
+  两份 SKILL.md 的"open_blocked 对 run/oversight 恒空（to_layer 枚举只有
+  user/idea/deploy）"是工单外的合理延伸——认可保留。

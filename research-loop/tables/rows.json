@@ -1032,7 +1032,7 @@
       },
       "dataset_version": {
         "type": "string",
-        "_note": "..."
+        "_note": "数据版本字符串，部署层从 issue/spec 的数据口径抄进来（自由文本，DATA 版本号原样），record 时逐字进 runs 行同名字段"
       },
       "arm": {
         "$enum": "runs.arm"
@@ -1162,7 +1162,7 @@
       "sampler_verdict": "enum stall|dead|ok（本表专用枚举，不进 rows.json 顶层 enums——jobs.json 无 schema 产物，不走 gen-schemas 的 $enum 展开）——只对『进程真启动过』的 run 有值：发射在预检被拒时不写 jobs 条目（见 _precheck_refusal），这个键无从落起",
       "sampler_verdict_at": "string|null，ISO 秒级，sampler_verdict 落值的同一刻"
     },
-    "_precheck_refusal": "发射在预检被拒时不写 jobs 条目；拒绝的 stderr 原文存档进升级条（kind=failure 的 blocked 行）evidence 文件——不是丢弃，是换了个账本",
+    "_precheck_refusal": "发射在预检被拒时不写 jobs 条目。拒绝分两类处置：脏树 / expected_commit 不符是工程事件，拒绝的 stderr 原文存档进升级条（kind=failure 的 blocked 行）evidence 文件——不是丢弃，是换了个账本；无效 --project-root 是调用方打错路径（launch.py 打印后 exit 2，不开升级条），改对路径重跑即可",
     "_fallback_mapping": "fallback 铁轨（scripts/fallback/*）判定映射钉死：done/failed → ok（活性不是成败，两者都是进程活到终态）、timeout → stall",
     "_schema_note": "纯表面契约，不参与 gen-schemas（本块在 _not_generated 清单内，jobs.json 无 schema 产物）——改动只过 spec_lint + gen-schemas --check（后者本就不碰这块，跑一遍确认没连带破坏）"
   },

@@ -92,7 +92,7 @@ python3 <plugin-root>/scripts/fallback/record.py --launch-order <launch_order> [
 This is the only path that writes a normal row -- never hand-type a number
 into runs.jsonl from a log (R7). **This step does not apply to a refused
 launch**: `record.py` hard-requires `<artifact_dir>/RUNMETA.json`, which a
-launch refused at either gate above never produces
+launch refused at any of the three rejection categories above never produces
 (`record: RUNMETA not found: ...`, exit 2) -- there is nothing to record,
 and nothing downstream expects a row for it.
 
