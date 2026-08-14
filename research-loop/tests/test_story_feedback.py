@@ -40,7 +40,10 @@ def test_story_add_rejects_evidence_run_not_found():
         root = helpers.make_sandbox(tmp)
         code, out, err = helpers.run_ledger(
             root, "story", "add", "--layer", "idea", "--claim", "X beats baseline",
-            "--evidence-runs", "run-001", "--baseline-runs", "run-001",
+            # single-arm (no --baseline-runs): the referenced-run check this
+            # test targets is orthogonal to #157's baseline/candidate
+            # equality check, so it must not also trip that one.
+            "--evidence-runs", "run-001",
             "--candidate-runs", "run-001", "--selection-rule", "best of 3",
             "--derivation-command", "python3 run.py eval run-001",
             "--principle-id", "P001", "--role", "主结果",
@@ -58,7 +61,7 @@ def test_story_add_rejects_run_status_not_ok():
         ])
         code, out, err = helpers.run_ledger(
             root, "story", "add", "--layer", "idea", "--claim", "X beats baseline",
-            "--evidence-runs", "run-001", "--baseline-runs", "run-001",
+            "--evidence-runs", "run-001",
             "--candidate-runs", "run-001", "--selection-rule", "best of 3",
             "--derivation-command", "python3 run.py eval run-001",
             "--principle-id", "P001", "--role", "主结果",
@@ -75,7 +78,7 @@ def test_story_add_rejects_quick_run():
         ])
         code, out, err = helpers.run_ledger(
             root, "story", "add", "--layer", "idea", "--claim", "X beats baseline",
-            "--evidence-runs", "run-001", "--baseline-runs", "run-001",
+            "--evidence-runs", "run-001",
             "--candidate-runs", "run-001", "--selection-rule", "best of 3",
             "--derivation-command", "python3 run.py eval run-001",
             "--principle-id", "P001", "--role", "主结果",
@@ -111,6 +114,59 @@ def test_story_add_legit_lands_s001():
 
 
 # ---------------------------------------------------------------------------
+# 1b. #157: --baseline-runs is optional (omitted -> baseline_runs=null, a
+#     single-arm claim); given, it must not equal candidate_runs' set.
+# ---------------------------------------------------------------------------
+
+
+def test_story_add_without_baseline_runs_lands_null():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(_runs_path(root), [
+            helpers.make_runs_row_normal(run_id="run-001", status="ok", quick=False),
+        ])
+        code, out, err = helpers.run_ledger(
+            root, "story", "add", "--layer", "idea", "--claim", "single-arm absolute claim",
+            "--evidence-runs", "run-001",
+            "--candidate-runs", "run-001", "--selection-rule", "best of 3",
+            "--derivation-command", "python3 run.py eval run-001",
+            "--principle-id", "P001", "--role", "主结果",
+        )
+        assert code == 0, (out, err)
+        row = _story_row(root, "S001")
+        assert row["baseline_runs"] is None
+
+        schema = _lib.load_schema("story")
+        _lib.validate(row, schema, "story")  # raises _lib.RLError on failure
+
+
+def test_story_add_baseline_equals_candidate_set_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        helpers.write_jsonl(_runs_path(root), [
+            helpers.make_runs_row_normal(run_id="run-000", status="ok", quick=False),
+            helpers.make_runs_row_normal(run_id="run-001", status="ok", quick=False),
+        ])
+        # same two run_ids on both sides, different order -- the equality
+        # check is set-based, not order-based.
+        code, out, err = helpers.run_ledger(
+            root, "story", "add", "--layer", "idea", "--claim", "X beats baseline",
+            "--evidence-runs", "run-000,run-001",
+            "--baseline-runs", "run-001,run-000",
+            "--candidate-runs", "run-000,run-001",
+            "--selection-rule", "best of 3",
+            "--derivation-command", "python3 run.py eval run-001",
+            "--principle-id", "P001", "--role", "主结果",
+        )
+        assert code == 2, (out, err)
+        assert err.strip() == (
+            "story.baseline_runs: baseline set equals candidate set; a comparison "
+            "against itself is empty (got: ['run-001', 'run-000'])"
+        ), err
+        assert not _story_path(root).exists() or _story_path(root).read_text() == ""
+
+
+# ---------------------------------------------------------------------------
 # 2. metric_names must exist on every referenced run
 # ---------------------------------------------------------------------------
 
@@ -124,7 +180,7 @@ def test_story_add_rejects_unknown_metric_name():
         ])
         code, out, err = helpers.run_ledger(
             root, "story", "add", "--layer", "idea", "--claim", "X beats baseline",
-            "--evidence-runs", "run-001", "--baseline-runs", "run-001",
+            "--evidence-runs", "run-001",
             "--candidate-runs", "run-001", "--metric-names", "accuracy,f1",
             "--selection-rule", "best of 3",
             "--derivation-command", "python3 run.py eval run-001",
@@ -143,7 +199,7 @@ def test_story_add_accepts_metric_name_present_on_every_referenced_run():
         ])
         code, out, err = helpers.run_ledger(
             root, "story", "add", "--layer", "idea", "--claim", "X beats baseline",
-            "--evidence-runs", "run-001", "--baseline-runs", "run-001",
+            "--evidence-runs", "run-001",
             "--candidate-runs", "run-001", "--metric-names", "accuracy",
             "--selection-rule", "best of 3",
             "--derivation-command", "python3 run.py eval run-001",
@@ -168,7 +224,7 @@ def test_story_add_allows_criterion_row_as_evidence():
         ])
         code, out, err = helpers.run_ledger(
             root, "story", "add", "--layer", "idea", "--claim", "criterion clears the bar",
-            "--evidence-runs", "chk-P001-20260813-1", "--baseline-runs", "run-001",
+            "--evidence-runs", "chk-P001-20260813-1",
             "--candidate-runs", "run-001", "--selection-rule", "best of 3",
             "--derivation-command", "python3 run.py eval run-001",
             "--principle-id", "P001", "--role", "反例",
@@ -209,7 +265,7 @@ def _add_story(root, claim="X beats baseline"):
     ])
     code, out, err = helpers.run_ledger(
         root, "story", "add", "--layer", "idea", "--claim", claim,
-        "--evidence-runs", "run-001", "--baseline-runs", "run-001",
+        "--evidence-runs", "run-001",
         "--candidate-runs", "run-001", "--selection-rule", "best of 3",
         "--derivation-command", "python3 run.py eval run-001",
         "--principle-id", "P001", "--role", "主结果",

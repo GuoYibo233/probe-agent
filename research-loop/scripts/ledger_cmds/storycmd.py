@@ -9,6 +9,12 @@ present on every referenced run. `story retire` is the withdrawal-proxy
 special case (tables/writes.json withdrawal_proxy.story): any session may
 retire a claim without a --layer, but the user's own words are mandatory and
 land verbatim in retired_reason.
+
+`--baseline-runs` is optional (#157, rows.json story_row.baseline_runs):
+omitted entirely, the claim lands with baseline_runs=null -- a single-arm
+absolute statement, not a comparison with the baseline left unspecified.
+Given, its run set must not equal candidate_runs' set exactly -- a claim
+"compared" against itself is empty and the write is refused.
 """
 from __future__ import annotations
 
@@ -70,11 +76,23 @@ def _cmd_add(args, cfg) -> int:
         _lib.fail("story", "layer", "story add is idea-layer only", args.layer)
 
     evidence_runs = _split_csv(args.evidence_runs)
-    baseline_runs = _split_csv(args.baseline_runs)
+    # #157: --baseline-runs is optional now -- not given at all means
+    # baseline_runs=null (a single-arm claim, no comparison), distinct from
+    # "given but empty" (which _split_csv would also turn into [] -- that
+    # still counts as "given" for the equality check below, same as any
+    # other explicit baseline set).
+    baseline_runs = _split_csv(args.baseline_runs) if args.baseline_runs is not None else None
     candidate_runs = _split_csv(args.candidate_runs)
     metric_names = _split_csv(args.metric_names) if args.metric_names is not None else None
 
-    referenced_runs = evidence_runs + baseline_runs + candidate_runs
+    if baseline_runs is not None and set(baseline_runs) == set(candidate_runs):
+        _lib.fail(
+            "story", "baseline_runs",
+            "baseline set equals candidate set; a comparison against itself is empty",
+            baseline_runs,
+        )
+
+    referenced_runs = evidence_runs + (baseline_runs or []) + candidate_runs
     runs_rows = _lib.jsonl_rows(cfg.ledger_path("runs"), include_archive=True)
     _check_referenced_runs(referenced_runs, runs_rows)
     _check_metric_names(metric_names, referenced_runs, runs_rows)
@@ -150,7 +168,7 @@ def register(subparsers) -> None:
     add_p.add_argument("--layer", required=True)
     add_p.add_argument("--claim", required=True)
     add_p.add_argument("--evidence-runs", required=True)
-    add_p.add_argument("--baseline-runs", required=True)
+    add_p.add_argument("--baseline-runs", default=None)
     add_p.add_argument("--candidate-runs", required=True)
     add_p.add_argument("--metric-names", default=None)
     add_p.add_argument("--selection-rule", required=True)

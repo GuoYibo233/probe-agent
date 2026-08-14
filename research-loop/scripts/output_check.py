@@ -13,6 +13,13 @@ resolved relative to the current working directory), and checks:
   min_lines -> empty-output; required_keys non-empty and the file's first
   non-empty line does not parse as a JSON object containing every key (a
   parse failure counts as missing) -> empty-output.
+- expected_outputs itself empty (or absent) -> empty-output, verdict/exit
+  identical to any other empty-output launch order (rows.json launch_order.
+  expected_outputs carries minItems: 1 -- this is the runtime side of that
+  same contract, for launch orders written before the minItems bump landed
+  or hand-authored around it): an artifact gate with zero expectations is
+  vacuously "ok" otherwise, exactly the bug this whole script exists to
+  prevent (v1-run-6).
 - overall verdict: any entry missing-output -> missing-output; else any
   entry empty-output -> empty-output; else ok.
 
@@ -129,11 +136,25 @@ def check_entry(artifact_dir: Path, entry: dict):
 
 def run(launch_order_path: Path) -> dict:
     order = json.loads(launch_order_path.read_text(encoding="utf-8"))
+    expected_outputs = order.get("expected_outputs") or []
+
+    if not expected_outputs:
+        return {
+            "verdict": "empty-output",
+            "failures": [{
+                "glob": None, "file": None,
+                "why": (
+                    "expected_outputs is empty; an artifact gate with no "
+                    "expectations is vacuous — declare at least one"
+                ),
+            }],
+        }
+
     artifact_dir = Path(order["artifact_dir"])
 
     all_failures = []
     entry_verdicts = []
-    for entry in order.get("expected_outputs", []):
+    for entry in expected_outputs:
         verdict, failures = check_entry(artifact_dir, entry)
         entry_verdicts.append(verdict)
         all_failures.extend(failures)

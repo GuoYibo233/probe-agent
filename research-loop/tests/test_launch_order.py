@@ -392,6 +392,10 @@ def test_quick_true_all_refs_null_writes_successfully():
         written = json.loads(lo_path.read_text(encoding="utf-8"))
         assert written["run_id"] == "run-quick-1"
         assert written["quick"] is True
+        # #157: helpers.make_launch_order()'s default expected_outputs is a
+        # real, non-empty contract now -- schema validation (minItems: 1)
+        # passes it same as everything else here, pinned down explicitly.
+        assert written["expected_outputs"]
 
 
 # ---------------------------------------------------------------------------

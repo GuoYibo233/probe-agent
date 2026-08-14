@@ -148,12 +148,12 @@
         "_note": "[run_id]"
       },
       "baseline_runs": {
-        "type": "array",
+        "type": ["array", "null"],
         "items": {
           "type": "string",
           "$ref_to": "runs.run_id"
         },
-        "_note": "[run_id]"
+        "_note": "[run_id]|null——null=单臂绝对陈述（没有对照对象，不是漏填），字段仍必须出现在行内（#157）"
       },
       "candidate_runs": {
         "type": "array",
@@ -765,8 +765,8 @@
         "_note": "普通行一律 null（非 null 即判据缩减行）"
       },
       "commit": {
-        "type": "null",
-        "_note": "普通行 null——普通行的 commit 在 RUNMETA"
+        "type": ["string", "null"],
+        "_note": "取 RUNMETA 的 commit 键，缺键才 null（#156）——record.py 记账脚本从 RUNMETA.json 读，不猜、不落工作树当场 git HEAD"
       },
       "elapsed_s": {
         "type": [
@@ -962,7 +962,7 @@
     "properties": {
       "run_id": {
         "type": "string",
-        "_note": "部署层按工程命名规则给定，运行层不得自造"
+        "_note": "部署层按工程命名规则给定，运行层不得自造。plugin 缺省命名形态成文（#154）：`<name>-<YYYYMMDD>-<序>`，name 限 [A-Za-z0-9_.]+（连字符留作段分隔符——这个形态恰好落进 evidence_lint.py 既有 _ID_DATE_SEQ_RE 的豁免正则，脚本不用改）；工程可另立成文规则覆盖。"
       },
       "spec_ref": {
         "type": [
@@ -1069,7 +1069,8 @@
       },
       "expected_outputs": {
         "type": "array",
-        "_note": "[{path_glob, min_bytes, min_lines, required_keys[]}]"
+        "minItems": 1,
+        "_note": "[{path_glob, min_bytes, min_lines, required_keys[]}]（不许空——#157：空清单形同没设产物门禁，output_check.py 拒）"
       },
       "metrics_cmd": {
         "type": "string",
@@ -1154,12 +1155,16 @@
     "outputs": "[{file, format, fields:{字段名: 含义}}]——产物字段字典，由写文件的代码自动生成，监察面读格式的唯一权威来源；兜底态允许空（监察面回落直接读产物）"
   },
   "jobs_min_additions": {
-    "_note": "任务台账字段以工程现状为准（v2 裁员：不再开列完整字段清单），最低补两个回指与采样器判定落点",
-    "_required_additions": [
-      "launch_order_ref",
-      "escalation_ref(blocked_id)",
-      "采样器判定（stall|dead|ok + 判定时间；阈值见 config stall_thresholds，判定进台账）"
-    ]
+    "_note": "任务台账字段以工程现状为准（v2 裁员：不再开列完整字段清单），最低补三个键——本块钉死键名与语义（#153：v1 只给了字段类别没给字段名，三个执行者各猜一头）",
+    "_required_additions": {
+      "launch_order_ref": "string——回指发射单 run_id",
+      "escalation_ref": "string|null，回指 blocked_id；未升级过的 run 恒 null",
+      "sampler_verdict": "enum stall|dead|ok（本表专用枚举，不进 rows.json 顶层 enums——jobs.json 无 schema 产物，不走 gen-schemas 的 $enum 展开）——只对『进程真启动过』的 run 有值：发射在预检被拒时不写 jobs 条目（见 _precheck_refusal），这个键无从落起",
+      "sampler_verdict_at": "string|null，ISO 秒级，sampler_verdict 落值的同一刻"
+    },
+    "_precheck_refusal": "发射在预检被拒时不写 jobs 条目；拒绝的 stderr 原文存档进升级条（kind=failure 的 blocked 行）evidence 文件——不是丢弃，是换了个账本",
+    "_fallback_mapping": "fallback 铁轨（scripts/fallback/*）判定映射钉死：done/failed → ok（活性不是成败，两者都是进程活到终态）、timeout → stall",
+    "_schema_note": "纯表面契约，不参与 gen-schemas（本块在 _not_generated 清单内，jobs.json 无 schema 产物）——改动只过 spec_lint + gen-schemas --check（后者本就不碰这块，跑一遍确认没连带破坏）"
   },
   "status_view": {
     "_about": "本块是 status 的输入输出唯一契约：每个字段一句派生源，实现只许照抄，不许在脚本里另加派生规则",
@@ -1266,8 +1271,14 @@
     }
   },
   "error_classes": {
-    "_shape": "{特征: {exit_code | output_check 判定 | log_regex} → 动作: 重试|换卡|升级}",
-    "_note": "unknown 的新规则提议路径见 R8",
+    "_shape": "顶层是 {rule_name: rule}，键序即匹配优先级（error_classify.py 按文件里的 dict 键序遍历，先中先得）。rule = {match: {...}, action: string}——action 必填，rule 缺这个键是表损坏，error_classify.py 报错升级，不当作 unknown",
+    "_match_fields": {
+      "exit_code": "int，可选；与调用方 --exit-code 数值相等才算命中",
+      "log_regex": "string（Python re 语法），可选；对调用方 --log 文件全文 re.search 命中；调用方没给 --log 时这个键恒不命中",
+      "output_check": "string，可选；与调用方 --output-check 字符串相等才算命中——值域即 output_check.py 的 verdict：ok|missing-output|empty-output"
+    },
+    "_match_semantics": "match 里给出的键全体 AND；一个键都没给的 rule 恒命中。命中判定只看『调用方是否传了对应输入』，没传即视为该键不命中，不当自由通过（exit_code 缺 --exit-code、log_regex 缺 --log、output_check 缺 --output-check 时都是如此）",
+    "_note": "unknown 的新规则提议路径见 R8；表缺失或解析失败按零规则处理，产 unknown 判定，不裸崩（#155，见 error_classify.py 模块docstring）",
     "_adapter_note": "动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
   }
 }

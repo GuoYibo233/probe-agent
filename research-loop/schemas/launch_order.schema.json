@@ -74,6 +74,7 @@
       "type": "string"
     },
     "expected_outputs": {
+      "minItems": 1,
       "type": "array"
     },
     "expected_runtime_s": {
