@@ -16,7 +16,11 @@ Runs a launch order's `argv` exactly once, sequentially:
    exempt-only dirt at this point).
 3. Minimal `ops/jobs.json` bookkeeping (plan.md §C5 shape): register
    state=running before running, finalize state=done/failed/timeout +
-   finished_at after.
+   finished_at after. Both writes merge into any existing entry instead of
+   replacing it wholesale (#161, tables/jobs_min_additions) -- a relaunch of
+   an already-registered run_id must not erase the run layer's own
+   escalation_ref/sampler_verdict/sampler_verdict_at backrefs, which live
+   outside the five keys this script owns.
 4. `argv` run via `_lib.run_argv` with a timeout of `expected_runtime_s *
    runtime_factor`; stdout+stderr land in `<artifact_dir>/attempt<N>.log`.
 5. `<artifact_dir>/RUNMETA.json` is written fresh on the first attempt and
@@ -158,13 +162,19 @@ def run(args) -> int:
 
         with _lib.locked(jobs_path):
             jobs = _load_json(jobs_path)
-            jobs[order["run_id"]] = {
-                "launch_order_ref": launch_order_ref,
-                "state": "running",
-                "started_at": _lib.now_iso(),
-                "finished_at": None,
-                "log_path": log_rel,
-            }
+            # Merge into any existing entry rather than replacing it (#161,
+            # v2-hop4-2): a relaunch of an already-registered run_id must not
+            # wipe out the run layer's own backrefs (escalation_ref/
+            # sampler_verdict/sampler_verdict_at) -- only the five keys the
+            # launcher itself owns are (re)written. Mirrors the terminal
+            # update below, which already merged this way.
+            entry = jobs.get(order["run_id"], {})
+            entry["launch_order_ref"] = launch_order_ref
+            entry["state"] = "running"
+            entry["started_at"] = _lib.now_iso()
+            entry["finished_at"] = None
+            entry["log_path"] = log_rel
+            jobs[order["run_id"]] = entry
             _save_json(jobs_path, jobs)
 
         started_at = _lib.now_iso()
