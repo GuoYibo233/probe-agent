@@ -44,7 +44,17 @@ python3 <plugin-root>/scripts/ledger.py blocked answer <BID> --layer deploy \
   [--answered-by user] [--grant <D00x>]
 ```
 
-Answering mechanically assembles a decisions-ledger entry from where/options/chosen/answer -- never leave the ruling as free text in `--answer` alone (`tables/writes.json` → `r5_choice_assembly`). Self-deciding requires `--grant <D00x>` pointing at an *active* grant row's `decision_id` -- omitting it when the answering session isn't the user is rejected outright. `--grant` only ever names a live grant row: `spec-standing-gpu-1h` is not a grant and is rejected here (standing authorization never goes through `blocked answer` -- see the bullet above). And `--grant` itself is rejected outright on a `--to-layer user` entry, regardless of whether it names a real grant -- that entry is where the user's own words get transcribed (`--answered-by user`, no `--grant`), not where a self-decision gets recorded.
+This whole page -- opening with `--kind r5-choice`, answering with
+`--chosen` -- is scoped to `kind=r5-choice` rows: that's what R5's own
+mechanism is defined to use. Answering mechanically assembles a
+decisions-ledger entry from where/options/chosen/answer -- never leave the
+ruling as free text in `--answer` alone (`tables/writes.json` →
+`r5_choice_assembly`). A row of any other `kind` (`failure`,
+`principle-gap`, `other`) does not get this treatment even though the CLI
+accepts the same flags on it -- answering one of those follows the separate
+two-step R6 path documented for an inbound failure in
+`references/failures-inbound.md` (the same two-step mechanics apply
+whatever the row's `kind` is). Self-deciding requires `--grant <D00x>` pointing at an *active* grant row's `decision_id` -- omitting it when the answering session isn't the user is rejected outright. `--grant` only ever names a live grant row: `spec-standing-gpu-1h` is not a grant and is rejected here (standing authorization never goes through `blocked answer` -- see the bullet above). And `--grant` itself is rejected outright on a `--to-layer user` entry, regardless of whether it names a real grant -- that entry is where the user's own words get transcribed (`--answered-by user`, no `--grant`), not where a self-decision gets recorded.
 
 **No blocked entry was opened** -- grant self-decide or standing authorization, resolved in the same breath the fork was spotted:
 

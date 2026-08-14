@@ -993,7 +993,7 @@
       },
       "batch_id": {
         "type": "string",
-        "_note": "..."
+        "_note": "批次号，格式见 batch_report_header.batch_id_pattern（<spec条目>-<YYYYMMDD>-<序号>；快车道 run 归 quick-<YYYYMMDD>-<序>）"
       },
       "promoted_from": {
         "type": [
@@ -1016,15 +1016,15 @@
       },
       "env_name": {
         "type": "string",
-        "_note": "..."
+        "_note": "本工程的环境命名（如 uv/conda 环境名）——plugin 不定形态"
       },
       "workdir": {
         "type": "string",
-        "_note": "..."
+        "_note": "argv 执行时的工作目录（相对项目根）；也是 fallback launch.py 脏树门禁检查的那棵树"
       },
       "expected_commit": {
         "type": "string",
-        "_note": "..."
+        "_note": "本次发射钉住的 git HEAD；fallback 铁轨用 _lib.git_head(project_root) 去掉 -dirty 后缀后比对，不符即拒发并升级部署层（同脏树门禁一路处理）。无 git 仓库的工程填字面哨兵值 no-git（git_head() 在这种工程上的既有返回值），不猜一个 commit hash"
       },
       "seed": {
         "type": "integer",
@@ -1081,7 +1081,7 @@
           "string",
           "null"
         ],
-        "_note": "..."
+        "_note": "冒烟命令（可空）——§8 步 5 批次序列里正式发射前先跑这条；不设就是 null"
       },
       "retry": {
         "type": [
@@ -1092,15 +1092,15 @@
       },
       "artifact_dir": {
         "type": "string",
-        "_note": "..."
+        "_note": "本 run 产物、日志、RUNMETA.json 的落点目录；expected_outputs 的 path_glob 与 output_check.py 都相对它解析"
       },
       "created_by": {
         "type": "string",
-        "_note": "..."
+        "_note": "恒为 \"deploy\"——launch-order 只收 --layer deploy，这个字段记的是层归属，不是会话 id 或用户名"
       },
       "created_at": {
         "type": "string",
-        "_note": "ISO秒级"
+        "_note": "ISO秒级，naive 本地时间——与 _lib.now_iso() 打在其余账本上的同一把钟，不是 UTC；status 的 launch-overdue 交叉核对（created_at + expected_runtime_s × runtime_factor）按这把钟算，记错时区会把没超时的发射单判成超时"
       },
       "ext": {
         "type": "object",

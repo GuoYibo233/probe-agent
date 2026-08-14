@@ -52,3 +52,21 @@ No layer-skipping (escalate to deploy, not straight to idea or the user).
 No silently swallowing an error and reporting the run as done. No fixing
 someone else's layer's code to make the failure go away -- that's a deploy
 job, handed up through the entry above.
+
+## Consuming the answer
+
+Deploy answering this entry (the deploy-layer skill's
+`references/failures-inbound.md`) does not close it -- closing is
+`from_layer`'s job (`tables/writes.json` blocked_transitions.closed:
+`writable_by: from_layer`), and `from_layer=run` for whatever this layer
+raised. Once `status --layer run`'s `answered_blocked` block lists it, read
+the answer and do what it says (a self-heal action, or nothing further if
+it only added a rule to `ops/error_classes.json` for next time), then close
+it:
+
+```
+python3 <plugin-root>/scripts/ledger.py blocked close --layer run <BID>
+```
+
+Skipping this leaves an already-answered escalation sitting in this
+layer's own queue indefinitely -- an answer nobody ever consumed.

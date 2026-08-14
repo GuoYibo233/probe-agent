@@ -15,6 +15,17 @@ Every report oversight writes -- routine inspection, on-demand observation, crit
 
 Any prose line containing an experiential number (a count, a metric value, a difference) needs a `$ ` line within 3 lines below it. `tables/rows.json` → `evidence_lint_exempt` names six metadata categories that are not experiential claims: timestamps, git HEAD / commit, ledger row counts and hashes, line/record numbers, file paths, id-shaped fields. Only some of these have a shape `evidence_lint.py` can strip on sight, anywhere in the body: an ISO timestamp, a hex-looking git hash, a `chk-.../S001`-style id, a `path:line` token. A plain decimal count -- a ledger's row count stated in prose, a record number with no path in front of it -- looks exactly like any other empirical number and is **not** exempt by content: it still needs a `$ ` repro line right where it's stated, or it has to live inside the report's frontmatter (the other place the linter exempts a number wholesale -- see "Provenance block" below). Frontmatter enum fields (`verdict`, `rejections[]`, `withdrawals[]`) are exempt too -- they're structured data, not prose claims.
 
+An id like a `run_id`/`batch_id` naming a compliant shape (the plugin's own
+default `<name>-<YYYYMMDD>-<序>`, `tables/rows.json` →
+`launch_order.run_id._note`) is one of the shape-recognized exemptions --
+it's what `evidence_lint.py`'s own `_ID_DATE_SEQ_RE` matches on sight,
+wherever it appears in the body, same as a timestamp or a git hash. An id
+that doesn't match that shape but still carries a bare digit sequence (a
+hand-typed identifier, a project convention the plugin default doesn't
+cover) is **not** exempt just because it looks id-shaped to a human reader
+-- it either goes in the frontmatter or gets its own `$ ` repro line, same
+as any other experiential number.
+
 ## Banned words
 
 Verdict prose is disallowed in report bodies, in either language: 通过 / 没问题 / 符合预期 / passed / looks good / no problems / as expected / all good / everything is fine. Say what was checked and what it showed instead of characterizing it. Frontmatter enum fields (like `verdict` itself) are not prose and are exempt from this list.

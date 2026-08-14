@@ -16,7 +16,7 @@ tests happen here), then launches experiments and collects numbers.
 Downward it hands the run layer "what to run" (a launch order, one job,
 fully specified); upward it hands the idea layer "how to read" (a batch
 report's `how_to_read` header field). Bugs the run layer escalates come back
-here for fixing.
+here for fixing (`references/failures-inbound.md`).
 
 Identity is set at exactly one of two entry points: the user triggering
 this skill (including via the router), or a subagent dispatch contract
@@ -30,11 +30,17 @@ session carrying a ledger entry), never a mid-session switch.
 python3 <plugin-root>/scripts/ledger.py status --layer deploy
 ```
 
-Run this before anything else, every session. Three read-only blocks: this
-layer's working face (specs in flight, open tickets, pending/unrecorded
-launch orders, batches awaiting a report or an inspection), this layer's
-pending queue (open entries addressed to deploy, plus answered entries
-deploy raised now awaiting confirmation), and the active-grants view.
+Run this before anything else, every session. Three read-only blocks, plus
+two annex blocks that belong to none of the three: **working face**
+(`approved_specs_in_flight`, `open_issues`, `pending_launch_orders`,
+`running_runs`, `unrecorded_runs`, `batches_pending_report`,
+`batches_pending_inspection` -- specs in flight, open tickets,
+pending/unrecorded launch orders, batches awaiting a report or an
+inspection), **pending queue** (`open_blocked` -- open entries addressed to
+deploy, including inbound failure escalations, `references/failures-inbound.md`;
+`answered_blocked` -- answered entries deploy raised now awaiting
+confirmation), and **authorization** (`active_grants`). `waiting_on` and
+`inconsistencies` are the two annex blocks -- not part of the three.
 Field-by-field derivation: `tables/rows.json` → `status_view`.
 
 ## 3. Write permissions
@@ -60,10 +66,15 @@ edited by this layer's session per the write-form split (spec §1
 - **Out, channel 3** (deploy → run): registry commands and launch orders.
   Nothing runs that isn't in the registry; a dirty tree always refuses
   launch and escalates back here. Tickets are ticketed-work handed to
-  `rails.build` in-session -- they are not dispatched cross-layer.
+  `rails.build` in-session -- they are not dispatched cross-layer. A null
+  `rails.build` key locks only that hand-off (opening tickets and writing
+  spec items are never locked by it) -- run
+  `python3 <plugin-root>/scripts/ledger.py config-check` before the
+  hand-off to see whether it's live.
 - **In, channel 4** (run → deploy): logs, RUNMETA, job-ledger state,
   sampler verdicts, and fault escalations (which must carry evidence: the
-  verbatim error, log paths, a table of what was already tried).
+  verbatim error, log paths, a table of what was already tried). Answering
+  a `kind=failure` escalation: `references/failures-inbound.md`.
 
 ## 5. Hard rules digest
 
@@ -92,8 +103,10 @@ Full text: spec §3 (design draft) and `tables/rows.json` / `tables/writes.json`
 | Stage | Read |
 |---|---|
 | Writing or approving a spec item | `references/spec-items.md` |
+| Ticketing a spec item and handing it to `rails.build` | §4 channel 3 above |
 | Writing or launching a launch order | `references/launch-orders.md` |
 | Hit a construction decision fork | `references/r5-choices.md` |
+| An inbound failure escalation from the run layer | `references/failures-inbound.md` |
 | Running a principle's criterion | `references/criteria.md` |
 | Closing out a batch | `references/closeout.md` |
 | A small exploratory experiment | `references/quick-lane.md` |
