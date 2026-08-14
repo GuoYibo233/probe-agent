@@ -31,8 +31,16 @@ python3 <plugin-root>/scripts/ledger.py status --layer oversight
 ```
 
 Run this before anything else. Same three read-only blocks as any other
-layer -- working face, pending queue, active-grants view -- derived per
-`tables/rows.json` → `status_view`.
+layer, plus the same two annex blocks: **working face** (the seven fields
+`tables/rows.json` → `status_view` names; oversight neither writes toward
+nor consumes most of them, it just reads the same cross-ledger snapshot
+every layer does), **pending queue** (`open_blocked` -- always empty here:
+`to_layer` has no `oversight` value, this face has no answering role;
+`answered_blocked` -- entries this session itself opened, via the write
+slot below, now sitting answered and waiting for this session to consume
+and close them), **authorization** (`active_grants`). `waiting_on` and
+`inconsistencies` are the two annex blocks -- not part of the three.
+Derived per `tables/rows.json` → `status_view`.
 
 ## 3. Write permissions
 
@@ -49,7 +57,10 @@ Oversight isn't on channels 1-4 (those move work between the three
 layers); its output is the R3 evidence-report genre, addressed to the
 user, plus the two write slots above when it's participating rather than
 just observing. See `references/report-genre.md` for what the reports
-themselves must look like.
+themselves must look like. This face never hands off to a `rails.*` key
+itself (that's a working-layer act); `config-check` (config §7) is still
+the one place to check whether a rail a report is about to discuss is
+wired at all, before writing anything about it.
 
 ## 5. Hard rules digest
 
@@ -72,3 +83,4 @@ Full text: spec §3 (design draft) and `tables/rows.json` / `tables/writes.json`
 | Running a routine or on-demand inspection | `references/inspection.md` |
 | Writing any report (routine, observation, spot-check) | `references/report-genre.md` |
 | Delivering a spot-check | `references/spotcheck.md` |
+| Running a regression check against the story ledger | `references/regression.md` |
