@@ -234,7 +234,7 @@
 2. **launch order 不单独开账，是 handoff 的一种。** 发射单就是"部署代码交给跑实验"这条边上的交接物，字段比别的 handoff 多几个（跑什么命令、预计耗时、指标命令），用 work_type 区分即可。
 3. **原则/方向不单独开账，是 decision log 里没有父引用的根决定。** 第七节已经定了决定之间用"依据决定"字段串成链，链的顶端天然就是原则。再单开一本 principles 等于把链的头砍下来另放一个盒子，追溯链还要跨账本查。
 
-砍完剩六本：decisions、issues、handoffs、runs、grants、feedback。
+砍完剩六本：decisions、issues、handoffs、runs、grants、feedback。（口径随后由你改成第七本账 evaluations，见本节末尾。）
 
 ### init 建出来的树
 
@@ -248,7 +248,7 @@
 │   ├── runs.jsonl           ← 数字账：所有实验的数字，一个 schema
 │   ├── grants.jsonl         ← 授权：用户批给某角色的权限范围
 │   ├── feedback.jsonl       ← 反馈账：对这套规矩本身的改进意见与用户裁决
-│   └── EVALUATION.md        ← 口径定义，人写；通例⑥"不许自己发明口径"指的就是这份
+│   └── evaluations.jsonl    ← 口径账：一行一个指标（原为人写的 EVALUATION.md，你已改，见下）
 └── analysis/                ← 故意放在 loop/ 外面：这是你要自己打开来跑的东西
     ├── common.py            ← 账本路径常量、读账函数、均值这类通用统计
     └── notebooks/           ← 一个统计项目一个 .ipynb
@@ -271,3 +271,29 @@
 - **P9 挂在 decisions.jsonl 上**：决定账"按 work_type 分开看"落成一个字段（一本账、查询时过滤），还是落成拆文件（`decisions/idea.jsonl`、`decisions/deploy.jsonl` …）。我的判断仍是字段，理由是拆文件之后"依据决定"的引用链要跨文件查、行号引用也不稳。等你裁。
 - **通用与 new1 的口子只在路径这一层**。字段层面的接管（把 new1 的 TIMELINE 条目转成 decision 行）我没设计，也不打算在这一轮设计——那是一次性迁移，不是插件功能。
 - `analysis/common.py` 默认假设 Python。通用插件不该假设语言，但换语言这件事我先不做，记在这里。
+
+### 口径改成第七本账（2026-08-15 你的修正）
+
+原设计里口径是一份人写的 `EVALUATION.md`。你的原话："这个不要人写 也是json的形式，每一条都是一个指标，比如说名字叫tool正误判断准确率，给什么程序在什么情况下的输出用，代码在哪，这些信息要含进去，它和analysis要保持一致"。
+
+**落法**：`loop/evaluations.jsonl`，第七本账，一行一个指标，跟别的账一样只经脚本进出、只增不改。行里装这些字段：
+
+- `eval_id` —— 主键。
+- `name` —— 指标名，例如 `tool 正误判断准确率`。
+- `measures` —— 一句话说它量的是什么。
+- `applies_to_task` —— **给什么程序的输出用**：产出原始结果的那个任务或程序的名字（在 new1 就是 `run.py` 注册表里的任务名，别的仓库填自己的）。
+- `applies_to_when` —— **在什么情况下用**：限定条件，例如某个 split、某个模型、某个档位。空着表示不限。
+- `code_path` —— **代码在哪**：文件路径加函数名，例如 `analysis/common.py:tool_judgment_accuracy`。这一条是它和 analysis 挂钩的那根钉子。
+- `definition` —— 精确到能照着写代码的算法：分子分母各是什么、边界情形怎么算（部分对算不算对、崩掉的样本进不进分母、同一条跑多遍怎么记）。
+- `status` —— `proposed` / `approved` / `retired`。
+- `approved_by`、`approved_at` —— 谁批的、什么时候批的。
+- `schema_version`。
+
+**"和 analysis 保持一致"落成两道机器检查**，这是这一改最值钱的地方：
+
+1. **每条 approved 的口径行，`code_path` 指的文件和函数必须真实存在、导得进来**；指不到就报警。这挡的是口径登记完代码被改名或删掉，账上还写着。
+2. **analysis 里算出来的每个指标，都要在口径账里找得到对应的 approved 行**；找不到就报警。这挡的是有人在 notebook 里现场编一个新算法出数。
+
+这两道检查合起来，把通例⑥"口径不发明"从"自觉打底、reviewer 事后核对"升级成机器当场拦。通例⑥的强制手段那一栏随之改写。
+
+**我替你定的一处（可否决）**：你说"不要人写"，我读成"不由人手写维护这份文件"，不是"用户不再批口径"。所以流程仍是——统计角色提案（写一行 `status=proposed`），用户批一条命令改成 `approved`，只有 `approved` 的口径才允许被 analysis 用。通例⑥"派生量只用批过的口径"这一条不变。
