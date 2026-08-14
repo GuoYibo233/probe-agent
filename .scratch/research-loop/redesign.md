@@ -334,3 +334,71 @@
 ### 六本账里还缺一个位置：功能 spec
 
 `.scratch/<功能名>/spec.md` 这类东西在六本账里没有位置。**我的判断**：它不是账，是 deploy 角色的工作产物，放研究仓库自己约定的地方就行，`config.json` 里登记一条路径给角色们找得到，不进 `loop/`。理由是账本的定义是"只增不改、经脚本进出、有结构化行"，spec 三条都不满足。
+
+## 十六、目录结构：现在长什么样、要长成什么样（2026-08-15）
+
+分两棵树说：插件自己一棵，init 在研究仓库里建的一棵。
+
+### 树一：插件本体 `research-loop/`
+
+现状（我实扫）：`agents/`（1 个 md）、`.claude-plugin/plugin.json`、`schemas/`（9 个生成产物）、`scripts/`（13 个 py + `ledger_cmds/` 14 个 + `fallback/` 5 个）、`skills/`（5 个目录：deploy-layer、idea-layer、oversight、research-loop、run-layer）、`tables/`（5 张表）、`tests/`（16 个文件）。
+
+目标：
+
+```
+research-loop/
+├── .claude-plugin/plugin.json     门面。description 还写着"three working layers…
+│                                  an independent oversight plane"，改名时一起改
+├── skills/                        一个角色一个 skill，session 靠它加载成角色
+│   ├── research-loop/SKILL.md     入口：讲这套东西是什么、跑 init（现有，留）
+│   ├── idea/SKILL.md              出主意          （idea-layer 改名）
+│   ├── deploy/SKILL.md            部署代码        （deploy-layer 改名）
+│   ├── run/SKILL.md               跑实验          （run-layer 改名）
+│   ├── analysis/SKILL.md          统计            （新建，无对应旧目录）
+│   └── reviewer/SKILL.md          检查            （oversight 改名）
+├── common/                        五个 skill 共用的母版（新建目录）
+│   ├── GLOSSARY.md                词表：16 个词 + 五栏栏名
+│   ├── GLOBAL-RULES.md            通例九条
+│   ├── PERMISSION.md              分权表，人读版（由 tables/ 渲染，不手写）
+│   └── SPEC-TEMPLATE.md           五栏规格模板
+├── tables/                        机器读的真源
+│   ├── config.json                （roles 键改名叫 models）
+│   ├── ledgers.json               （22 本账砍到 7 本）
+│   ├── rows.json                  （decisions_row 加 work_type 与依据决定）
+│   ├── writes.json                （layer_param.values 四值改五值）
+│   └── routes.json                退役（退役前先拆 statuscmd.py 的依赖）
+├── schemas/                       从 tables/ 生成，不手改，改表重跑 gen-schemas
+├── scripts/                       账本读写 + 机器检查 + 桩发射器
+└── tests/                         319 项，改名工作量的一大半在这里
+```
+
+`agents/inspector.md` 的去留没定——检查角色现在是一个 session 不是 subagent，这个文件在盘点没覆盖到的那一片里。
+
+### 树二：init 在研究仓库里建的
+
+```
+<研究仓库>/
+├── research-loop.json         配置。init 现在就会写这一份（见第十一节），
+│                              里面装七本账各自的实际路径、产物根、本仓库跑法
+├── loop/                      七本账，只经脚本进出，只增不改
+│   ├── decisions.jsonl        决定账（含 assumption、原则根决定）
+│   ├── issues.jsonl           问题条
+│   ├── handoffs.jsonl         派活单（含工单、发射单，用 work_type 区分）
+│   ├── runs.jsonl             数字账，一个 schema
+│   ├── grants.jsonl           授权
+│   ├── feedback.jsonl         反馈账
+│   └── evaluations.jsonl      口径账
+└── analysis/                  放 loop/ 外面：你要自己打开来跑的东西
+    ├── common.py              账本路径、读账函数、通用统计
+    └── notebooks/             一个统计项目一个 .ipynb
+```
+
+**更正第十五节的一处**：第十五节把配置画成 `loop/config.json`。改成仓库根的 `research-loop.json`，理由是现有 `init` 已经写这个名字这个位置，配套的结构检查和测试都在，没必要为了好看搬家。`loop/` 底下只放账本文件。
+
+大产物不在这棵树里——它们写 config 里登记的产物根（new1 填 NFS 那条路径），仓库里只留软链接。
+
+### 这棵树里还没定的
+
+- P9：`decisions.jsonl` 一本账加一个 `work_type` 字段，还是拆成 `decisions/idea.jsonl` 这样一层一个文件。我的判断是字段。
+- `skills/research-loop/` 这个入口 skill 留不留：我留着，让它当"讲这套东西是什么、跑 init"的门面。可否决。
+- `agents/inspector.md` 去留，见上。
