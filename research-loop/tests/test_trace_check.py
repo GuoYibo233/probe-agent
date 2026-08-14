@@ -559,15 +559,15 @@ def test_approval_not_stale_on_withdrawals_or_spec_version_bump():
         assert not any(line.startswith("approval_stale:") for line in _lines(out)), out
 
 
-def test_approval_malformed_spec_frontmatter_reported_not_silently_dropped():
-    # check_forward_chain's spec_ref existence test is substring-only (this
-    # ticket's own check-1 wording) -- it does not require valid frontmatter,
-    # unlike T08's write-time gate. A spec file that still contains the
-    # item_id string but has no '---' frontmatter at all (corrupted outside
-    # the normal write path) must not silently produce zero findings across
-    # the whole tool: check_forward_chain calls it "found" (no
-    # forward_chain.spec_ref finding), so check_approval is the only check
-    # left that can catch the corruption.
+def test_spec_ref_without_frontmatter_reported_as_not_found():
+    # F1 (sdd/final-review.md): _lib.find_spec_files requires valid
+    # frontmatter as part of "found" -- a file that merely contains the
+    # item_id string, with no frontmatter at all, is no longer a candidate
+    # to either check. check_forward_chain now reports it exactly as if no
+    # file mentioned the id at all; check_approval's old "found by check 1
+    # but fails to parse" finding (approval.spec_unreadable) no longer
+    # exists -- there is nothing left for it to catch that check_forward_
+    # chain hasn't already reported.
     with tempfile.TemporaryDirectory() as tmp:
         root = helpers.make_sandbox(tmp)
         spec_path = root / ".scratch" / "demo" / "spec.md"
@@ -582,10 +582,40 @@ def test_approval_malformed_spec_frontmatter_reported_not_silently_dropped():
 
         assert code == 1, (out, err)
         lines = _lines(out)
-        assert not any(line.startswith("forward_chain.spec_ref:") for line in lines), out
         assert any(
-            line.startswith("approval.spec_unreadable:") and "run-001" in line for line in lines
+            line.startswith("forward_chain.spec_ref:") and "IT-001" in line for line in lines
         ), out
+        assert not any(line.startswith("approval.spec_unreadable:") for line in lines), out
+        assert not any(line.startswith("not-approved:") for line in lines), out
+
+
+def test_spec_ref_resolves_past_a_non_frontmatter_issue_file_mentioning_the_same_id():
+    # F1 false-red repro: a real issue ticket legitimately references its
+    # spec item's id (issue_min's own "spec_item(回指 item_id)" convention),
+    # lives under the same .scratch/ tree the specs ledger scans, has no
+    # frontmatter, and sorts ahead of the real spec.md ("issues/01-demo.md"
+    # < "spec.md"). The old substring-only search (no frontmatter check
+    # during the scan itself) picked the issue file as "the" spec file and
+    # then failed to parse it -- approval.spec_unreadable, even though a
+    # perfectly valid, approved spec.md sat right next to it. Rerun this
+    # exact fixture against the pre-fix code (git stash the trace_check.py/
+    # _lib.py changes) and it reports that finding; against the fix, it's
+    # clean.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        spec_path = _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        issue_path = root / ".scratch" / "demo" / "issues" / "01-demo.md"
+        issue_path.parent.mkdir(parents=True, exist_ok=True)
+        issue_path.write_text(
+            "# 01-demo\n\nStatus: ready-for-agent\n\nspec_item: IT-001\n", encoding="utf-8",
+        )
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                             issue_ref="01-demo", decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 0, (out, err)
+        assert "trace_check: 0 errors" in out
 
 
 def test_approval_empty_approved_by_reports_not_approved():

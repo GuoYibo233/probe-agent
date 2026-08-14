@@ -277,6 +277,18 @@ def test_1_clean_loop_reaches_closeout():
         insp_fields, _body = _lib.parse_frontmatter(inspection_path.read_text(encoding="utf-8"))
         assert insp_fields["verdict"] == "clean"
 
+        # F16 (sdd/final-review.md): the pre-fix version of this scenario
+        # never actually ran the report body's own governing checks -- a
+        # hand-written "verdict: clean" round-tripping as clean proves
+        # nothing about whether the report would survive R3's two real
+        # gates. Run them for real.
+        code, out, err = helpers.run_script(root, "evidence_lint.py", str(inspection_path))
+        assert code == 0, (out, err)
+        code, out, err = helpers.run_script(
+            root, "verify_report.py", str(inspection_path), "--project-root", str(root),
+        )
+        assert code == 0, (out, err)
+
         inspection_rel = f"reports/inspection-{batch_id}.md"
         _set_inspection_report(report_path, inspection_rel)
         fields, _body = _lib.parse_frontmatter(report_path.read_text(encoding="utf-8"))
@@ -426,13 +438,36 @@ def test_5_bad_metrics_opens_blocked_with_evidence():
         code, out, err = _run_launch(root, order_path)
         assert code == 0, (out, err)
 
-        code, out, err = _run_record(root, order_path)
-        assert code == 2, (out, err)
-        assert "no row recorded" in err
+        record_code, record_out, record_err = _run_record(root, order_path)
+        assert record_code == 2, (record_out, record_err)
+        assert "no row recorded" in record_err
         assert _runs_rows(root, "run-badmetrics") == []
 
         log_path = root / order["artifact_dir"] / "attempt1.log"
         assert log_path.exists()
+
+        # F16 (sdd/final-review.md): the pre-fix version of this scenario
+        # only asserted the blocked row round-tripped the exact --evidence
+        # string it was just given -- that's true of any string, evidence or
+        # not, and would still pass if the tool wrote no evidence at all.
+        # Feed record.py's own failure signal (its exit code, plus the
+        # attempt log) to error_classify.py and require it to actually
+        # classify as something other than "unknown" -- the R8 escalation
+        # path this whole scenario exists to exercise.
+        error_classes_path = root / "ops" / "error_classes.json"
+        error_classes_path.write_text(json.dumps({
+            "metrics-output-invalid": {"match": {"exit_code": 2}, "action": "escalate"},
+        }), encoding="utf-8")
+        classify_code, classify_out, classify_err = helpers.run_script(
+            root, "error_classify.py",
+            "--error-classes", str(error_classes_path),
+            "--exit-code", str(record_code),
+            "--log", str(log_path),
+        )
+        assert classify_code == 0, (classify_out, classify_err)
+        classification = json.loads(classify_out.strip())
+        assert classification["action"] != "unknown"
+        assert classification["rule"] == "metrics-output-invalid"
 
         before = len(_blocked_rows(root))
         code, out, err = helpers.run_ledger(

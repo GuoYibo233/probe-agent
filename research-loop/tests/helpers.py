@@ -184,19 +184,34 @@ def make_rails_sandbox(tmp) -> Path:
         "".join(spec_lines) + "Item IT-001 does the demo thing.\n", encoding="utf-8",
     )
 
-    # Body deliberately never repeats the spec item's id string ("IT-001"):
-    # the specs ledger's default_path (".scratch/") and the issues ledger's
-    # default_path (".scratch/*/issues/") overlap on disk, so trace_check's
-    # _find_spec_file (a substring scan over every *.md under ".scratch/")
-    # would otherwise match this issue file before the real spec file (path
-    # sort puts "demo/issues/01-demo.md" ahead of "demo/spec.md") and then
-    # fail to parse it as frontmatter'd -- approval.spec_unreadable.
+    # The specs ledger's default_path (".scratch/") and the issues ledger's
+    # default_path (".scratch/*/issues/") genuinely overlap on disk -- this
+    # is the real, everyday layout (a feature's spec and its issue tickets
+    # share one directory, e.g. this very repo's own .scratch/research-loop/
+    # tree), not a corner case to fixture around. The issue body below
+    # deliberately DOES repeat the spec item's id string ("IT-001"),
+    # exactly as issue_min's own "spec_item(回指 item_id)" convention
+    # requires every real issue ticket to; "demo/issues/01-demo.md" also
+    # sorts ahead of "demo/spec.md" (path sort). A stray, non-frontmatter'd
+    # scratch note in the same directory that also mentions the id is added
+    # alongside it. Both used to be exactly what broke F1 (sdd/
+    # final-review.md): trace_check.py's own substring-only search picked
+    # whichever of these non-spec files sorted first and then failed to
+    # parse it as frontmatter'd. _lib.find_spec_files requires frontmatter
+    # to even count as a candidate, so both are skipped and every scenario
+    # in this file resolves to the real spec.md -- this sandbox is the
+    # regression coverage for that fix, not a workaround around it.
     issue_path = root / ".scratch" / "demo" / "issues" / "01-demo.md"
     issue_path.parent.mkdir(parents=True, exist_ok=True)
     issue_path.write_text(
         "# 01-demo\n\nStatus: ready-for-agent\n\n"
+        "spec_item: IT-001\n\n"
         "acceptance: demo fixture ticket for the e2e self-test.\n\nBlocked by: none\n",
         encoding="utf-8",
+    )
+    stray_note_path = root / ".scratch" / "demo" / "notes.md"
+    stray_note_path.write_text(
+        "# scratch notes\n\nsomething about IT-001, no frontmatter here.\n", encoding="utf-8",
     )
 
     decision_row = make_decision_row(decision_id="D001", status="decided", affects=[])

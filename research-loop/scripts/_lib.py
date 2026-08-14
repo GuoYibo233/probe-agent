@@ -520,6 +520,43 @@ def parse_frontmatter(text: str):
     return fields, body
 
 
+def find_spec_files(cfg, item_id: str) -> list:
+    """Every *.md file under the specs ledger that both parses as
+    frontmatter'd and whose body (post-frontmatter content, not the header)
+    contains `item_id` as a substring -- the plugin's single definition of
+    "this spec item's home file" (skills/deploy-layer/references/
+    spec-items.md: every spec file carries frontmatter, so a file without
+    one -- an issue ticket, a scratch note, anything else that happens to
+    also share the specs ledger's directory tree and mention the id in
+    prose -- is never a candidate, no matter how early it sorts).
+
+    Returns every match, sorted by path, for the caller to judge: 0 hits is
+    "not found", 2+ hits is "ambiguous" (list every path, don't guess).
+    Silently taking the first hit is exactly the bug this function replaces
+    (F1, sdd/final-review.md) -- two independent hand-rolled searches, one
+    in trace_check.py and one in launchcmd.py, each cut a different corner
+    and broke in opposite directions (a false "unreadable" when a
+    non-frontmatter'd file sorted first, a false approval pass when an
+    unrelated but coincidentally-approved file did) -- so no caller may
+    reintroduce a "take the first match" shortcut around this function."""
+    specs_root = Path(cfg.ledger_path("specs"))
+    if not specs_root.exists():
+        return []
+    matches = []
+    for path in sorted(specs_root.rglob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        try:
+            _fields, body = parse_frontmatter(text)
+        except RLError:
+            continue
+        if item_id in body:
+            matches.append(path)
+    return matches
+
+
 def spec_digest(path) -> str:
     """sha256 of the raw bytes after the second '---' line (rows.json
     spec_header._digest_rule)."""

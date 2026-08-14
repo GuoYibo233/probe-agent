@@ -14,16 +14,19 @@ Checks (spec §4 trace_check comment block, spec §9, this ticket's own
 numbered list -- one function per item):
 
 1. check_forward_chain   -- every non-quick launch order's spec_ref resolves
-   under the specs ledger, issue_ref names an existing issue file, and each
+   under the specs ledger via `_lib.find_spec_files` (a file must both parse
+   as frontmatter'd and carry the item_id in its body to count -- F1, sdd/
+   final-review.md), issue_ref names an existing issue file, and each
    decision_refs entry exists in the decisions ledger with status=decided.
+   Zero matching spec files -> "not found"; two or more -> "ambiguous"
+   (every candidate path is named, never silently narrowed to the first).
    quick=true launch orders are exempt from all three (spec §2.6).
 2. check_approval         -- for every launch order with a non-empty
-   spec_ref: empty approved_by -> "not-approved"; recomputed approved_digest
-   mismatch -> "approval_stale" (spec_header._digest_rule/_stale_rule); the
-   spec file check 1 found by substring but that fails to parse as valid
-   frontmatter -> "approval.spec_unreadable" (not silently skipped as
-   "check 1's problem" -- check 1's existence test does not require valid
-   frontmatter, so this is the only check that catches that corruption).
+   spec_ref whose resolution above found exactly one file: empty
+   approved_by -> "not-approved"; recomputed approved_digest mismatch ->
+   "approval_stale" (spec_header._digest_rule/_stale_rule). Zero or
+   ambiguous resolutions are already reported by check_forward_chain and
+   are not re-reported here.
 3. check_affects          -- the launch order is authoritative (spec §5):
    forward, each decision_refs entry's own `affects` must name the launch
    order's run_id ("affects-missing", detail carries the re-run fix);
@@ -266,31 +269,6 @@ def _find_issue_file(cfg, issue_ref: str):
     return None
 
 
-def _find_spec_file(cfg, item_id: str):
-    """First *.md file (by sorted path, deterministic) under the specs
-    ledger whose raw text contains `item_id` as a substring -- this
-    ticket's own check-1 wording ("字符串含 item_id"). This is looser than
-    T08's write-time gate (issues/08-launch-order.md step 4: "含该 item_id
-    字符串且带 frontmatter"), which additionally requires the file to carry
-    valid frontmatter before a launch order is ever allowed to reference
-    it -- a spec_ref this function resolves may still fail to parse as
-    frontmatter (e.g. corrupted after the fact, outside the normal write
-    path). That case is not silently treated as "found and fine": callers
-    that need the frontmatter (check_approval) report a finding when
-    parsing it fails, instead of swallowing the error."""
-    specs_root = Path(cfg.ledger_path("specs"))
-    if not specs_root.exists():
-        return None
-    for path in sorted(specs_root.rglob("*.md")):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if item_id in text:
-            return path
-    return None
-
-
 def _find_batch_report(cfg, batch_id: str):
     """<batch_reports>/<batch_id>.md first (rows.json batch_id_pattern names
     the file this way); falls back to scanning every *.md for a frontmatter
@@ -325,10 +303,17 @@ def check_forward_chain(ctx: _Context) -> list:
 
         spec_ref = order.get("spec_ref")
         if spec_ref:
-            if _find_spec_file(ctx.cfg, spec_ref) is None:
+            matches = _lib.find_spec_files(ctx.cfg, spec_ref)
+            if not matches:
                 findings.append(_err(
                     "forward_chain.spec_ref",
                     f"launch order {run_id}: spec_ref {spec_ref!r} not found under the specs ledger",
+                ))
+            elif len(matches) > 1:
+                findings.append(_err(
+                    "forward_chain.spec_ref",
+                    f"launch order {run_id}: spec_ref {spec_ref!r} is ambiguous across "
+                    f"{len(matches)} files: {[str(p) for p in matches]}",
                 ))
 
         issue_ref = order.get("issue_ref")
@@ -370,24 +355,19 @@ def check_approval(ctx: _Context) -> list:
         if not spec_ref:
             continue
 
-        spec_path = _find_spec_file(ctx.cfg, spec_ref)
-        if spec_path is None:
-            continue  # already reported by check_forward_chain
+        matches = _lib.find_spec_files(ctx.cfg, spec_ref)
+        if len(matches) != 1:
+            continue  # not-found / ambiguous already reported by check_forward_chain
 
-        try:
-            fields, _ = _lib.parse_frontmatter(spec_path.read_text(encoding="utf-8"))
-        except _lib.RLError as exc:
-            # _find_spec_file's existence test is substring-only (this
-            # ticket's check 1), not "has valid frontmatter" -- so a spec
-            # file corrupted outside the normal write path can resolve
-            # here and still fail to parse. Report it rather than silently
-            # treating "found by check 1" as "approval face is fine".
-            findings.append(_err(
-                "approval.spec_unreadable",
-                f"launch order {run_id}: spec {spec_path} has no valid frontmatter "
-                f"({exc.message}); cannot confirm approval",
-            ))
-            continue
+        spec_path = matches[0]
+        # find_spec_files already required this exact file to parse as
+        # frontmatter'd -- re-parsing it here can only fail if the file was
+        # rewritten (outside the normal write path) in the instant between
+        # that scan and this read, which check_forward_chain's own
+        # not-found/ambiguous findings do not cover either; this read is not
+        # wrapped in a second try/except (there is nothing left for this
+        # function to distinguish that check_forward_chain hasn't already).
+        fields, _ = _lib.parse_frontmatter(spec_path.read_text(encoding="utf-8"))
 
         approved_by = fields.get("approved_by")
         if not approved_by:
@@ -685,16 +665,17 @@ def main(argv=None) -> int:
     parser.add_argument("--closeout", metavar="BATCH_ID", default=None)
     args = parser.parse_args(argv)
 
-    if args.project_root is not None:
-        root = Path(args.project_root).resolve()
-    else:
-        root = _lib.find_project_root()
-        if root is None:
-            print(
-                "trace_check: project not wired: research-loop.json not found (run: ledger.py init)",
-                file=sys.stderr,
-            )
-            return 2
+    try:
+        root = _lib.resolve_project_root(args.project_root)
+    except _lib.RLError as exc:
+        print(f"trace_check: {exc.message}", file=sys.stderr)
+        return 2
+    if root is None:
+        print(
+            "trace_check: project not wired: research-loop.json not found (run: ledger.py init)",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         findings = run(root, args.closeout)

@@ -92,6 +92,28 @@ def _write_spec(root, rel=".scratch/demo/spec.md") -> Path:
     return path
 
 
+def _write_approved_spec_with_body(root, rel, body, *, approved_by="user") -> Path:
+    """Write and approve (correctly recomputed approved_digest) a spec file
+    at `rel` whose body is exactly `body` -- same two-phase digest dance
+    _write_spec()'s own approved=True path does, but for an arbitrary path
+    and body (used to build an unrelated-but-genuinely-approved decoy)."""
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    header = {
+        "spec_version": 1, "approved_by": None, "approved_date": None,
+        "approved_digest": None, "withdrawals": [],
+    }
+    lines = ["---\n"] + [f"{k}: {json.dumps(v)}\n" for k, v in header.items()] + ["---\n"]
+    path.write_text("".join(lines) + body, encoding="utf-8")
+    digest = _lib.spec_digest(path)
+    header["approved_by"] = approved_by
+    header["approved_date"] = _lib.today()
+    header["approved_digest"] = digest
+    lines = ["---\n"] + [f"{k}: {json.dumps(v)}\n" for k, v in header.items()] + ["---\n"]
+    path.write_text("".join(lines) + body, encoding="utf-8")
+    return path
+
+
 def _write_spec_custom(root, rel, header) -> Path:
     """Fixture-only spec write with a caller-given header dict -- unlike
     _write_spec (which hardcodes spec_version: 1), this lets a test build
@@ -236,6 +258,38 @@ def test_approval_gate_rejects_unapproved_then_passes_after_approve():
 
         code, out, err = _launch_order(root, path)
         assert code == 0, (out, err)
+
+
+def test_approval_gate_ambiguous_spec_ref_rejected_not_first_match():
+    # F1 false-green repro (sdd/final-review.md): an unrelated file that
+    # happens to also mention the same item_id, carries its own valid
+    # frontmatter with a correctly-approved header, and sorts alphabetically
+    # before the real spec ("another/spec.md" < "demo/spec.md") -- the old
+    # per-caller "first parseable+matching file wins" search picked this
+    # decoy and let the launch through even though the *real* spec item was
+    # never approved. find_spec_files instead reports every match and both
+    # callers refuse to guess among them. Rerun this fixture against the
+    # pre-fix launchcmd.py and it exits 0 (bug reproduced); against the fix,
+    # it's a hard reject naming both files.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        decoy_path = _write_approved_spec_with_body(
+            root, ".scratch/another/spec.md",
+            "Unrelated spec that happens to also mention IT-001 in passing.\n",
+        )
+        real_spec_path = _write_spec(root)  # .scratch/demo/spec.md -- never approved
+
+        row = _draft(
+            root, quick=False, spec_ref="IT-001", issue_ref="01-example",
+            decision_refs=[], run_id="run-001",
+        )
+        path = _write_draft(root, "run-001", row)
+
+        code, out, err = _launch_order(root, path)
+        assert code == 2
+        assert "launch_order.spec_ref" in err
+        assert str(decoy_path) in err
+        assert str(real_spec_path) in err
 
 
 def test_approval_gate_stale_after_body_edit():

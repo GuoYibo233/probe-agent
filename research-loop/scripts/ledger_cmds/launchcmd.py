@@ -114,28 +114,23 @@ def _run_approve_spec(args) -> int:
 
 
 def _check_spec_approval(cfg, item_id: str) -> None:
-    """spec.md §5 pre-launch approval gate. Recursively searches the
-    configured specs directory (default .scratch/) for a *.md file that both
-    contains `item_id` and parses as frontmatter'd -- the first such match
-    (sorted path order, for determinism) is the spec item's home file."""
-    specs_root = cfg.ledger_path("specs")
-    match = None
-    if specs_root.exists():
-        for md_path in sorted(specs_root.rglob("*.md")):
-            text = md_path.read_text(encoding="utf-8")
-            if item_id not in text:
-                continue
-            try:
-                fields, _body = _lib.parse_frontmatter(text)
-            except _lib.RLError:
-                continue
-            match = (md_path, fields)
-            break
-
-    if match is None:
+    """spec.md §5 pre-launch approval gate. `_lib.find_spec_files` names the
+    spec item's home file -- 0 matches or 2+ (ambiguous, every candidate
+    path named) both refuse outright (F1, sdd/final-review.md); this
+    function never silently narrows an ambiguous set to "the first one"."""
+    matches = _lib.find_spec_files(cfg, item_id)
+    if not matches:
         _lib.fail("launch_order", "spec_ref", "spec item not found", item_id)
+    if len(matches) > 1:
+        _lib.fail(
+            "launch_order", "spec_ref",
+            f"spec item is ambiguous across {len(matches)} files: "
+            + ", ".join(str(p) for p in matches),
+            item_id,
+        )
 
-    spec_path, fields = match
+    spec_path = matches[0]
+    fields, _body = _lib.parse_frontmatter(spec_path.read_text(encoding="utf-8"))
     if not fields.get("approved_by"):
         _lib.fail("launch_order", "spec_ref", "spec not approved", item_id)
     if _lib.spec_digest(spec_path) != fields.get("approved_digest"):
