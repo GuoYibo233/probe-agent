@@ -19,9 +19,22 @@ write itself, and carries no other content.
 
 `tables/routes.json` is the single source of the routing table; nothing in
 this file repeats a row from it. Each entry has a trigger phrase (`say`), a
-stage tag, and a target (`to`). Match on intent, not exact string. Two rules
-about the table, not its rows:
+stage tag, a target (`to`), and a `kind` (`handoff` or `command`). Match on
+intent, not exact string. Four rules about the table, not its rows:
 
+- **Every bare CLI string in the `to` column is one invocation shape**:
+  `python3 <plugin-root>/scripts/<file>.py ...` for a standalone script, or
+  `python3 <plugin-root>/scripts/ledger.py <subcommand> ...` for anything
+  the ledger CLI owns. No row spells out the interpreter or the script
+  path a second time -- this is the one place that convention is stated,
+  and every `to` value in the table follows it.
+- **`kind` tells a layer/role/rail target apart from a command target.**
+  `handoff` hands control to a layer skill, `inspector`, or a project rail
+  -- and only a `handoff` target is capable of setting the receiving
+  session's layer identity ("Layer identity, restated once" below).
+  `command` executes in place, in this session, right now -- it never
+  changes who this session is, and this session stays exactly where it was
+  once the command returns.
 - **Every entry can fire at any time.** `stage` is a common-case label for
   when people usually reach for that entry, not a whitelist that blocks it
   outside that stage.
