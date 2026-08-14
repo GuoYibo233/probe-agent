@@ -22,18 +22,30 @@ violation classes, one finding per offending line:
 2. no-repro-command -- a line that asserts a number must be followed, within
    the next 3 lines, by a line starting with "$ " (a pasteable repro
    command). Before judging "does this line contain a number", the ticket's
-   closed exemption list is stripped out of the line first (ISO timestamp,
-   YYYY-MM-DD, a hex run of >=7 chars containing at least one a-f letter
-   [git HEAD/commit -- a run of only 0-9 digits is NOT stripped here, since
-   that shape is indistinguishable from a plain empirical number], a
-   `path:line` token, an `[A-Z]\\d{3,}` id or a `chk-...`/batch-id shape) --
-   only a digit surviving that strip counts as an empirical claim
-   (rows.json evidence_lint_exempt; plan.md §C6). Unlike rule 1, this exemption is
-   block-level: every frontmatter line is skipped outright (metadata belongs
-   to the header, not a claim in prose). A `$ ` line itself, and the `= `
-   echo line immediately under it, are also exempt -- they are the
-   declaration this rule is checking FOR, not a claim needing one of their
-   own.
+   closed exemption list is stripped out of the line first, in order: a
+   leading heading/list-numbering prefix (`## 2.` / `3.` -- only the numeral
+   at the very start of the line is stripped, never a digit elsewhere on
+   it), ISO timestamp, YYYY-MM-DD, a hex run of >=7 chars containing at
+   least one a-f letter [git HEAD/commit -- a run of only 0-9 digits is NOT
+   stripped here, since that shape is indistinguishable from a plain
+   empirical number], a `path:line` token, an `[A-Z]\\d{3,}` id or a
+   `chk-...`/batch-id shape, a `§N` section reference (including the
+   parenthesised `(§1)` form), and a single token where letters run straight
+   into digits with no space (`python3`/`sha256`/`attempt1`/`utf8`) -- only a
+   digit surviving that strip counts as an empirical claim (rows.json
+   evidence_lint_exempt; plan.md §C6). A space-separated ordinal ("attempt
+   1") is deliberately NOT exempt and keeps tripping this rule -- a machine
+   can't tell an ordinal from a genuine count, so the report has to be
+   reworded instead (v1-oversight-3/v2-hop6-4/5/6).
+
+   Unlike rule 1, this exemption is block-level: every frontmatter line is
+   skipped outright (metadata belongs to the header, not a claim in prose),
+   and a `> ` quoted-excerpt line is skipped outright too -- an excerpt is
+   the thing being quoted, not the agent's own claim, and its byte-for-byte
+   fidelity is verify_report's job, not this lint's. A `$ ` line itself, any
+   of its backslash-continuation lines, and the `= ` echo line immediately
+   after the continuation ends, are also exempt -- they are the declaration
+   this rule is checking FOR, not a claim needing one of their own.
 
 Output: one line per violation, `<file>:<line>: <rule>: <detail>` (1-indexed
 line numbers). Exit 1 if any file has any violation, else 0.
@@ -72,6 +84,10 @@ _FRONTMATTER_EXEMPT_FIELDS = {"verdict", "rejections", "withdrawals"}
 # in this order (rows.json evidence_lint_exempt.metadata_kinds).
 # ---------------------------------------------------------------------------
 
+# Leading heading/list-numbering prefix (v1-oversight-3 shape 2, #159):
+# `## 2.` or `3.` at the very start of the line only -- a digit anywhere
+# else on the line is untouched by this pattern.
+_HEADING_NUM_RE = re.compile(r"^\s*#{0,6}\s*\d+[.)]\s*")
 _ISO_TS_RE = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"
 )
@@ -90,9 +106,21 @@ _PATH_LINE_RE = re.compile(r"\b[\w~-]+(?:[./][\w~-]+)+:\d+\b")
 # hash-shaped; a run of nothing but digits 0-9 is left for _asserts_number
 # to see.
 _HEX_RE = re.compile(r"\b(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{7,}\b")
+# `§N` section reference, including the parenthesised `(§1)` form -- only
+# the `§N` token itself is removed, so `(§1)` is left as the digit-free `()`
+# (v1-oversight-3 shape 3, #159).
+_SECTION_REF_RE = re.compile(r"§\d+")
+# A single token where letters run straight into digits with no space
+# (python3/sha256/attempt1/utf8) -- an ordinal written with a space
+# ("attempt 1") does NOT match this and keeps tripping the rule on purpose
+# (v1-oversight-3 shape 4, #159).
+_ALNUM_TOKEN_RE = re.compile(r"\b[A-Za-z_]+\d+\b")
 
 _STRIP_PATTERNS = (
+    _HEADING_NUM_RE,
     _ISO_TS_RE, _DATE_RE, _ID_DATE_SEQ_RE, _LETTER_ID_RE, _PATH_LINE_RE, _HEX_RE,
+    _SECTION_REF_RE,
+    _ALNUM_TOKEN_RE,
 )
 
 
@@ -116,6 +144,13 @@ def _is_dollar_line(line: str) -> bool:
 
 def _is_echo_line(line: str) -> bool:
     return line.lstrip().startswith("= ")
+
+
+def _is_quote_line(line: str) -> bool:
+    """A markdown blockquote/excerpt line -- quoting a source is not the
+    agent's own claim, and the excerpt's byte-for-byte fidelity is
+    verify_report's job, not this rule's (v1-oversight-3 shape 1, #159)."""
+    return line.lstrip().startswith("> ")
 
 
 # ---------------------------------------------------------------------------
@@ -181,18 +216,26 @@ def lint_file(path: Path) -> list:
                 "detail": f"banned conclusion phrase {hit!r}",
             })
 
-    # Rule 2: block-level frontmatter exemption; skip $/= declaration lines.
+    # Rule 2: block-level frontmatter exemption; skip $/= declaration lines
+    # (including a $ line's own backslash-continuation lines, #159).
     protected = set()
     for i, line in enumerate(lines):
-        if _is_dollar_line(line):
-            protected.add(i)
-            if i + 1 < len(lines) and _is_echo_line(lines[i + 1]):
-                protected.add(i + 1)
+        if not _is_dollar_line(line):
+            continue
+        protected.add(i)
+        j = i
+        while lines[j].rstrip("\r\n").endswith("\\") and j + 1 < len(lines):
+            j += 1
+            protected.add(j)
+        if j + 1 < len(lines) and _is_echo_line(lines[j + 1]):
+            protected.add(j + 1)
 
     for i, line in enumerate(lines):
         if fm_end is not None and i <= fm_end:
             continue
         if i in protected:
+            continue
+        if _is_quote_line(line):
             continue
         if not _asserts_number(line):
             continue
