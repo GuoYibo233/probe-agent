@@ -142,14 +142,14 @@ def test_query_runs_requires_filter_and_all_rows_does_not_exempt():
         assert code == 2
         assert err.strip() == (
             "query.runs: refuse to return the full table; add a filter "
-            "(--batch/--run/--since/--metric) or read the rendered product"
+            "(--batch/--run/--since/--metric/--spec-item) or read the rendered product"
         )
 
         code, out, err = helpers.run_ledger(root, "query", "runs", "--all-rows")
         assert code == 2, "--all-rows must not exempt runs from the filter requirement"
         assert err.strip() == (
             "query.runs: refuse to return the full table; add a filter "
-            "(--batch/--run/--since/--metric) or read the rendered product"
+            "(--batch/--run/--since/--metric/--spec-item) or read the rendered product"
         )
 
 
@@ -180,6 +180,25 @@ def test_query_runs_batch_run_metric_since_filters():
         code, out, err = helpers.run_ledger(root, "query", "runs", "--since", "2026-08-11T00:00:00")
         assert code == 0, err
         assert [r["run_id"] for r in json.loads(out)] == ["run-b"]
+
+
+def test_query_runs_spec_item_filter_joins_via_launch_orders():
+    # F8 (sdd/final-review.md's #148 ruling): runs rows carry no spec field
+    # of their own -- --spec-item resolves through the launch_orders
+    # directory (spec_ref -> run_id), then filters runs on that run_id set.
+    # It also counts as a filter on its own for the "at least one" gate.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        cfg = _lib.load_config(root)
+        row_a = helpers.make_runs_row_normal(run_id="run-a", batch_id="B1")
+        row_b = helpers.make_runs_row_normal(run_id="run-b", batch_id="B2")
+        helpers.write_jsonl(cfg.ledger_path("runs"), [row_a, row_b])
+        _write_launch_order(root, run_id="run-a", spec_ref="IT-001")
+        _write_launch_order(root, run_id="run-b", spec_ref="IT-002")
+
+        code, out, err = helpers.run_ledger(root, "query", "runs", "--spec-item", "IT-001")
+        assert code == 0, err
+        assert [r["run_id"] for r in json.loads(out)] == ["run-a"]
 
 
 # ---------------------------------------------------------------------------

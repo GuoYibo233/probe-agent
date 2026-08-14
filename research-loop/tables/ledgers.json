@@ -28,7 +28,7 @@
     "error_classes": {"default_path": "ops/error_classes.json",         "format": "json",     "owner": "deploy",         "read": "direct",     "cap": null},
     "datasets":      {"default_path": "DATA.md",                        "format": "md",       "owner": "deploy",         "read": "md-full",    "cap": null},
     "runs":          {"default_path": "ops/runs.jsonl",                 "format": "jsonl",    "owner": "per-row-type",   "read": "query-only", "cap": null,
-                      "active": "无活跃行概念：不轮转，cap 只许 null；query runs 必须带过滤（--batch/--run/--since/--metric 至少其一），无过滤拒绝返回全表——读全量走渲染产物"},
+                      "active": "无活跃行概念：不轮转，cap 只许 null；query runs 必须带过滤（--batch/--run/--since/--metric/--spec-item 至少其一，--spec-item 经发射单 spec_ref join 出 run_id 集再过滤），无过滤拒绝返回全表——读全量走渲染产物"},
     "jobs":          {"default_path": "ops/jobs.json",                  "format": "json",     "owner": "run",            "read": "sliced",     "cap": null},
     "cluster_state": {"default_path": "ops/cluster_state.md",           "format": "md",       "owner": "run",            "read": "md-full",    "cap": null,
                       "_note": "new1 覆盖为 ops/gpu_state.md；无集群设施的工程该键留空"},

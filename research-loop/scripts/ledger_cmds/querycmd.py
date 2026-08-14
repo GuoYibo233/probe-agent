@@ -181,11 +181,13 @@ def _run_query(args) -> int:
         detail = _REJECT_DETAIL.get(read_class, f"not queryable ({read_class})")
         _lib.fail("query", ledger_name, detail)
 
-    if ledger_name == "runs" and not (args.batch or args.run or args.metric or args.since):
+    if ledger_name == "runs" and not (
+        args.batch or args.run or args.metric or args.since or args.spec_item
+    ):
         _lib.fail(
             "query", "runs",
             "refuse to return the full table; add a filter "
-            "(--batch/--run/--since/--metric) or read the rendered product",
+            "(--batch/--run/--since/--metric/--spec-item) or read the rendered product",
         )
 
     rows = _lib.jsonl_rows(cfg.ledger_path(ledger_name), include_archive=args.include_archive)
@@ -205,6 +207,17 @@ def _run_query(args) -> int:
         rows = [r for r in rows if r.get("run_id") == args.run]
     if args.metric is not None:
         rows = [r for r in rows if r.get("metric_name") == args.metric]
+    if args.spec_item is not None:
+        # No spec-item column on a runs row -- join through the launch
+        # orders directory instead (F8, sdd/final-review.md's #148 ruling):
+        # every launch order whose own spec_ref matches names a run_id, and
+        # that set is what this filters on.
+        spec_run_ids = {
+            order.get("run_id")
+            for _path, order in _iter_launch_orders(cfg)
+            if order.get("spec_ref") == args.spec_item
+        }
+        rows = [r for r in rows if r.get("run_id") in spec_run_ids]
     if args.since is not None:
         since_field = _SINCE_FIELD.get(ledger_name)
         if since_field is not None:
@@ -266,6 +279,7 @@ def register(subparsers) -> None:
     parser.add_argument("--run")
     parser.add_argument("--metric")
     parser.add_argument("--since")
+    parser.add_argument("--spec-item", dest="spec_item")
 
 
 def run(args) -> int:
