@@ -61,6 +61,34 @@ def find_project_root(start=None) -> Path | None:
         cur = cur.parent
 
 
+def resolve_project_root(explicit_root):
+    """Shared --project-root CLI handling for trace_check.py,
+    regression_check.py, verify_report.py and doctor.py (F2, sdd/
+    final-review.md). `explicit_root` is the parsed --project-root value (a
+    Path/str or None, straight off argparse).
+
+    An explicit root must actually be wired: find_project_root()'s own
+    cwd-search branch can only ever return a directory that has
+    research-loop.json (or None), but a caller-given path was never checked
+    at all before this fix -- every ledger read under a wrong path silently
+    came back empty, and the caller read that as "0 errors" / "clean"
+    instead of "wrong path". Raises RLError (the caller's existing
+    `except _lib.RLError` -> stderr + exit 2 path already covers this) when
+    `explicit_root` doesn't have one; returns the resolved root otherwise.
+
+    Returns None only when `explicit_root` is None and no research-loop.json
+    is found walking up from cwd -- each caller already has its own
+    "not wired" message and exit code for that branch (doctor's differs
+    from the other three), so this function does not print anything for
+    that case."""
+    if explicit_root is not None:
+        root = Path(explicit_root).resolve()
+        if not (root / "research-loop.json").exists():
+            raise RLError(f"--project-root {root} has no research-loop.json (wrong path?)")
+        return root
+    return find_project_root()
+
+
 # Plugin-level defaults for config keys that have one (plan.md §C1).
 # Every other key's absence/null resolves to None -- callers interpret that
 # as "not wired" per tables/config.json null_effect.

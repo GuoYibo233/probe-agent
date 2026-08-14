@@ -219,17 +219,18 @@ def main(argv=None) -> int:
     parser.add_argument("--project-root", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    if args.project_root is not None:
-        root = Path(args.project_root).resolve()
-    else:
-        root = _lib.find_project_root()
-        if root is None:
-            print(
-                "verify_report: project not wired: research-loop.json not found "
-                "(pass --project-root)",
-                file=sys.stderr,
-            )
-            return 2
+    try:
+        root = _lib.resolve_project_root(args.project_root)
+    except _lib.RLError as exc:
+        print(f"verify_report: {exc.message}", file=sys.stderr)
+        return 2
+    if root is None:
+        print(
+            "verify_report: project not wired: research-loop.json not found "
+            "(pass --project-root)",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         findings = run(args.file, root)

@@ -880,3 +880,26 @@ def test_all_green_fixture_exits_zero_with_zero_errors():
 
         assert code == 0, (out, err)
         assert _lines(out) == ["trace_check: 0 errors, 0 warnings"], out
+
+
+# ---------------------------------------------------------------------------
+# F2 (sdd/final-review.md): an explicit --project-root with no
+# research-loop.json under it must refuse outright, not silently read as an
+# empty (so falsely "clean") project.
+# ---------------------------------------------------------------------------
+
+
+def test_project_root_explicit_wrong_path_exits_2_not_false_clean():
+    with tempfile.TemporaryDirectory() as tmp_wrong, tempfile.TemporaryDirectory() as tmp_real:
+        # a genuine broken chain in the real project -- normally 1 error.
+        root = helpers.make_sandbox(tmp_real)
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="NOPE-1",
+                             issue_ref=None, decision_refs=None)
+
+        wrong_root = Path(tmp_wrong)  # exists on disk, but no research-loop.json
+
+        code, out, err = helpers.run_script(root, "trace_check.py", "--project-root", str(wrong_root))
+
+        assert code == 2, (out, err)
+        assert "research-loop.json" in err
+        assert out == ""  # never got far enough to print a false "0 errors"

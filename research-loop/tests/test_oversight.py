@@ -209,6 +209,13 @@ def _vr_sandbox(tmp) -> Path:
     (root / "ops" / "target.txt").write_text(
         "alpha\nbeta line with UNIQUE_MARKER\ngamma\n", encoding="utf-8",
     )
+    # verify_report.py never calls _lib.load_config(root) -- it only uses
+    # root to resolve path:line references and as the cwd for repro-command
+    # reruns -- but --project-root is still checked for a research-loop.json
+    # marker before anything else runs (F2, sdd/final-review.md: the same
+    # explicit-root guard trace_check.py/regression_check.py/doctor.py all
+    # got), so every fixture that passes --project-root needs one on disk.
+    (root / "research-loop.json").write_text("{}\n", encoding="utf-8")
     return root
 
 
@@ -301,6 +308,23 @@ def test_verify_report_nonzero_exit_command_is_a_failure():
 
         assert code == 1
         assert "repro-command" in out
+
+
+# F2 (sdd/final-review.md): explicit --project-root with no
+# research-loop.json under it refuses outright.
+def test_verify_report_project_root_explicit_wrong_path_exits_2():
+    with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as tmp_wrong:
+        root = _vr_sandbox(tmp)
+        path = _write(root / "report.md", "see ops/missing.txt:1\n")
+        wrong_root = Path(tmp_wrong)
+
+        code, out, err = helpers.run_script(
+            root, "verify_report.py", str(path), "--project-root", str(wrong_root),
+        )
+
+        assert code == 2, (out, err)
+        assert "research-loop.json" in err
+        assert out == ""
 
 
 # ---------------------------------------------------------------------------
@@ -530,3 +554,22 @@ def test_regression_check_no_new_data_for_filter_emits_no_comparison():
         assert code == 0
         comparisons_section = out.split("## Comparisons", 1)[1].split("## Skipped", 1)[0]
         assert "S001" not in comparisons_section
+
+
+# F2 (sdd/final-review.md): explicit --project-root with no
+# research-loop.json under it refuses outright -- the pre-fix behavior was
+# a false-clean report (story_rows_read: 0, exit 0) instead of this.
+def test_regression_check_project_root_explicit_wrong_path_exits_2():
+    with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as tmp_wrong:
+        root = _sandbox(tmp)
+        _rc_fixture(root, "quick-20260814-1")
+        wrong_root = Path(tmp_wrong)
+
+        code, out, err = helpers.run_script(
+            root, "regression_check.py", "--batch", "quick-20260814-1", "--dry-run",
+            "--project-root", str(wrong_root),
+        )
+
+        assert code == 2, (out, err)
+        assert "research-loop.json" in err
+        assert out == ""

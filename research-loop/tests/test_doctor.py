@@ -260,10 +260,13 @@ def test_doctor_out_file_matches_stdout():
 
 
 # ---------------------------------------------------------------------------
-# 6. exit is unconditionally 0, even when there's no project to inspect --
-#    doctor is advisory (issues/14-doctor.md: "exit 恒 0"), and that promise
-#    carves out no exception for the "can't even find research-loop.json"
-#    case the way trace_check.py/regression_check.py do (those exit 2).
+# 6. exit is unconditionally 0 when there's simply no project to find by
+#    walking up from cwd -- doctor is advisory (issues/14-doctor.md: "exit
+#    恒 0"). One case does exit non-zero: an explicit --project-root that
+#    points at a directory with no research-loop.json at all (F2, sdd/
+#    final-review.md) -- that's not "nothing to inspect", it's a caller
+#    mistake that would otherwise make every section below silently read an
+#    empty, falsely-clean project.
 # ---------------------------------------------------------------------------
 
 
@@ -275,4 +278,17 @@ def test_doctor_unwired_project_still_exits_zero():
 
         assert code == 0
         assert "project not wired" in err
+        assert out == ""
+
+
+def test_doctor_project_root_explicit_wrong_path_exits_2():
+    with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as tmp_wrong:
+        root = _sandbox(tmp)
+        _write_clean_method(root)
+        wrong_root = Path(tmp_wrong)  # exists on disk, but no research-loop.json
+
+        code, out, err = helpers.run_script(root, "doctor.py", "--project-root", str(wrong_root))
+
+        assert code == 2, (out, err)
+        assert "research-loop.json" in err
         assert out == ""

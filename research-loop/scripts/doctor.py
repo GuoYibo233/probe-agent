@@ -53,10 +53,14 @@ The report goes to stdout always; `--out PATH` additionally writes the exact
 same text to that path. Nothing is ever written under reports/ or any
 ledger directory, and no ledger is ever touched (only read) -- doctor is
 purely advisory, so the exit code is unconditionally 0 (issues/14-doctor.md:
-"exit 恒 0（体检是建议件）"), even when the project isn't wired at all: that
-case still prints a diagnostic to stderr (unlike trace_check.py/
-regression_check.py, which exit 2 for the same "can't even start" case --
-doctor's own contract carves out no such exception).
+"exit 恒 0（体检是建议件）") for the "nothing found by walking up from cwd"
+case: that prints a diagnostic to stderr, same as trace_check.py/
+regression_check.py, but (unlike those two) still exits 0 rather than 2.
+One case does exit non-zero: an explicit `--project-root` that has no
+research-loop.json under it (F2, sdd/final-review.md) -- doctor cannot
+advise its way past a caller mistake that would otherwise make every
+section below silently read an empty, falsely-clean project, so this one
+case exits 2 instead.
 
 Spec: .scratch/research-loop/issues/14-doctor.md; spec.md §4 (doctor
 comment block), §5 ("复合动作的中断一致性" ③), §10 (archive is v1-advisory
@@ -109,6 +113,12 @@ def _scripts_dir() -> Path:
 
 
 def _section_config(root: Path):
+    # ledger.py's dispatcher has no --project-root flag at all (every
+    # subcommand resolves its own root by walking up from cwd,
+    # _lib.find_project_root() with no argument) -- cwd=root is the only
+    # channel available to steer it at the same project doctor itself is
+    # reading. Since root is guaranteed to carry research-loop.json (F2,
+    # sdd/final-review.md), that walk-up finds it immediately at cwd.
     ledger_py = _scripts_dir() / "ledger.py"
     code, out, err, _elapsed = _lib.run_argv(
         [sys.executable, str(ledger_py), "config-check"], cwd=root,
@@ -123,8 +133,13 @@ def _section_config(root: Path):
 
 def _section_trace(root: Path):
     trace_check_py = _scripts_dir() / "trace_check.py"
+    # --project-root is passed explicitly, not left to trace_check.py's own
+    # cwd-search fallback (which `cwd=root` alone would otherwise rely on)
+    # -- root is doctor's own already-resolved root (F2, sdd/final-
+    # review.md); every subprocess this module launches should read the
+    # same project doctor itself is reading, not re-derive it.
     code, out, err, _elapsed = _lib.run_argv(
-        [sys.executable, str(trace_check_py)], cwd=root,
+        [sys.executable, str(trace_check_py), "--project-root", str(root)], cwd=root,
     )
     lines = _combine_output(out, err)
     findings = None
@@ -205,8 +220,12 @@ def _section_regression(cfg: _lib.Config, root: Path):
         return ["skipped: no batch_id found in the runs ledger"], 0
 
     regression_check_py = _scripts_dir() / "regression_check.py"
+    # --project-root passed explicitly, same reasoning as _section_trace above.
     code, out, err, _elapsed = _lib.run_argv(
-        [sys.executable, str(regression_check_py), "--batch", batch_id, "--dry-run"],
+        [
+            sys.executable, str(regression_check_py),
+            "--batch", batch_id, "--dry-run", "--project-root", str(root),
+        ],
         cwd=root,
     )
     return _combine_output(out, err), (0 if code == 0 else 1)
@@ -497,16 +516,23 @@ def main(argv=None) -> int:
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    if args.project_root is not None:
-        root = Path(args.project_root).resolve()
-    else:
-        root = _lib.find_project_root()
-        if root is None:
-            print(
-                "doctor: project not wired: research-loop.json not found (run: ledger.py init)",
-                file=sys.stderr,
-            )
-            return 0
+    try:
+        root = _lib.resolve_project_root(args.project_root)
+    except _lib.RLError as exc:
+        # The one exception to "doctor always exits 0" (issues/14-doctor.md):
+        # an explicit --project-root that doesn't actually point at a wired
+        # project is a caller mistake doctor cannot advise its way past --
+        # every section below would just read as an empty, falsely-clean
+        # project (F2, sdd/final-review.md). The no-flag "nothing found by
+        # walking up from cwd" branch below is unaffected and still exits 0.
+        print(f"doctor: {exc.message}", file=sys.stderr)
+        return 2
+    if root is None:
+        print(
+            "doctor: project not wired: research-loop.json not found (run: ledger.py init)",
+            file=sys.stderr,
+        )
+        return 0
 
     report = build_report(root)
     print(report, end="")
