@@ -284,6 +284,48 @@ def test_launch_rerun_appends_attempt_and_leaves_the_first_untouched():
 
 
 # ---------------------------------------------------------------------------
+# Supplemental: relaunching an already-registered run_id merges into the
+# existing jobs.json entry instead of replacing it wholesale (#161,
+# v2-hop4-2) -- the run layer's own escalation_ref/sampler_verdict/
+# sampler_verdict_at backrefs, added on top of the launcher's own entry,
+# must survive a relaunch untouched. Not one of T10's original nine tests.
+# ---------------------------------------------------------------------------
+
+
+def test_launch_relaunch_merges_jobs_entry_keeping_run_layer_backrefs():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        order_path, order = _make_order(root, "fake-relaunch-1", mode="ok")
+
+        code, out, err = _run_launch(root, order_path)
+        assert code == 0, (out, err)
+
+        # Simulate the run layer's own backref write on top of the
+        # launcher's base entry (execute.md "Job-ledger registration").
+        cfg = _lib.load_config(root)
+        jobs_path = Path(cfg.ledger_path("jobs"))
+        jobs = json.loads(jobs_path.read_text(encoding="utf-8"))
+        jobs[order["run_id"]]["escalation_ref"] = "B001"
+        jobs[order["run_id"]]["sampler_verdict"] = "ok"
+        jobs[order["run_id"]]["sampler_verdict_at"] = "2026-08-14T10:03:00"
+        jobs_path.write_text(json.dumps(jobs, ensure_ascii=False), encoding="utf-8")
+
+        # Same run_id, relaunched (RUNMETA attempts leaves the earlier
+        # attempt in place -- test 5 above already pins that behavior down;
+        # this test is only about the jobs.json entry).
+        code, out, err = _run_launch(root, order_path)
+        assert code == 0, (out, err)
+
+        jobs = json.loads(jobs_path.read_text(encoding="utf-8"))
+        entry = jobs[order["run_id"]]
+        assert entry["escalation_ref"] == "B001"
+        assert entry["sampler_verdict"] == "ok"
+        assert entry["sampler_verdict_at"] == "2026-08-14T10:03:00"
+        assert entry["state"] == "done"
+        assert entry["log_path"] == f"{order['artifact_dir']}/attempt2.log"
+
+
+# ---------------------------------------------------------------------------
 # Supplemental: two concurrent launches of the *same* launch order must not
 # clobber each other's RUNMETA attempt (fix-round F1 finding -- the RUNMETA
 # read-modify-write in launch.py now holds `_lib.locked(runmeta_file)`

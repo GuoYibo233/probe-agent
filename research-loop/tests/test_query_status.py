@@ -495,31 +495,48 @@ def test_query_direct_ledger_rejected():
 
 
 # ---------------------------------------------------------------------------
-# extra: render blocked groups open/answered rows by to_layer, excludes
-# closed rows, and uses the fixed column set
+# extra: render blocked groups open rows by to_layer and answered rows by
+# from_layer, excludes closed rows, and carries a status column
+# (v1-router-1, #160)
 # ---------------------------------------------------------------------------
 
 
-def test_render_blocked_groups_by_to_layer():
+def test_render_blocked_groups_open_by_to_layer_answered_by_from_layer():
     with tempfile.TemporaryDirectory() as tmp:
         root = _sandbox(tmp)
         cfg = _lib.load_config(root)
-        open_deploy = helpers.make_blocked_row(blocked_id="B001", status="open", to_layer="deploy")
-        answered_idea = helpers.make_blocked_row(
-            blocked_id="B002", status="answered", to_layer="idea",
+        # open: still owes a reply from deploy (to_layer) -- groups by
+        # to_layer, unchanged from before.
+        open_row = helpers.make_blocked_row(
+            blocked_id="B001", status="open", from_layer="run", to_layer="deploy",
+        )
+        # answered: deploy already answered it -- idea (from_layer, who
+        # raised it) now owes the close step, so it groups there instead of
+        # under deploy (the to_layer that already discharged its duty).
+        answered_row = helpers.make_blocked_row(
+            blocked_id="B002", status="answered", from_layer="idea", to_layer="deploy",
             answer="ok", answered_at=_lib.now_iso(), answered_by="user",
         )
         closed_row = helpers.make_blocked_row(blocked_id="B003", status="closed", to_layer="deploy")
-        helpers.write_jsonl(cfg.ledger_path("blocked"), [open_deploy, answered_idea, closed_row])
+        helpers.write_jsonl(cfg.ledger_path("blocked"), [open_row, answered_row, closed_row])
 
         code, out, err = helpers.run_ledger(root, "render", "blocked")
         assert code == 0, err
-        assert "## deploy" in out
-        assert "## idea" in out
-        assert "| blocked_id | kind | question | from_layer | raised_at |" in out
-        assert "B001" in out
-        assert "B002" in out
+        assert "| blocked_id | kind | question | from_layer | raised_at | status |" in out
         assert "B003" not in out
+
+        deploy_section = out.split("## deploy", 1)[1].split("## ", 1)[0]
+        assert "B001" in deploy_section
+        assert "B002" not in deploy_section
+
+        idea_section = out.split("## idea", 1)[1].split("## ", 1)[0]
+        assert "B002" in idea_section
+        assert "B001" not in idea_section
+
+        b001_line = next(line for line in out.splitlines() if "B001" in line)
+        assert b001_line.rstrip().endswith("| open |")
+        b002_line = next(line for line in out.splitlines() if "B002" in line)
+        assert b002_line.rstrip().endswith("| answered |")
 
 
 # ---------------------------------------------------------------------------

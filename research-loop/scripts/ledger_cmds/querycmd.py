@@ -237,22 +237,38 @@ def _run_render_blocked(args) -> int:
     rows = _lib.jsonl_rows(cfg.ledger_path("blocked"))
     relevant = _blocked_default_view(rows)
 
+    # v1-router-1 (#160): an answered row still owes its close step to
+    # whoever raised it (from_layer), not to the to_layer that already
+    # answered -- so it groups by from_layer, not to_layer. An open row is
+    # unchanged: it groups by to_layer, the layer that still owes a reply.
     groups: dict = {}
     for row in relevant:
-        groups.setdefault(row.get("to_layer"), []).append(row)
+        group_layer = (
+            row.get("from_layer") if row.get("status") == "answered" else row.get("to_layer")
+        )
+        groups.setdefault(group_layer, []).append(row)
 
-    to_layer_order = _lib.load_tables()["rows"]["enums"]["blocked.to_layer"]
-    for layer in to_layer_order:
+    # Layer order to walk: blocked.to_layer's own enum order, plus any
+    # from_layer value it doesn't already cover (from_layer's enum includes
+    # run/oversight, which to_layer's does not, since an answered row can
+    # now group under either).
+    enums = _lib.load_tables()["rows"]["enums"]
+    layer_order = list(enums["blocked.to_layer"])
+    for layer in enums["blocked.from_layer"]:
+        if layer not in layer_order:
+            layer_order.append(layer)
+
+    for layer in layer_order:
         layer_rows = groups.get(layer)
         if not layer_rows:
             continue
         print(f"## {layer}")
-        print("| blocked_id | kind | question | from_layer | raised_at |")
-        print("|---|---|---|---|---|")
+        print("| blocked_id | kind | question | from_layer | raised_at | status |")
+        print("|---|---|---|---|---|---|")
         for row in sorted(layer_rows, key=lambda r: r.get("blocked_id") or ""):
             print(
                 f"| {row.get('blocked_id')} | {row.get('kind')} | {row.get('question')} | "
-                f"{row.get('from_layer')} | {row.get('raised_at')} |"
+                f"{row.get('from_layer')} | {row.get('raised_at')} | {row.get('status')} |"
             )
         print()
     return 0

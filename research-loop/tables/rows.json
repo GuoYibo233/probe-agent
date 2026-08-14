@@ -305,7 +305,7 @@
           "object",
           "null"
         ],
-        "_note": "{desc, path_globs[], expires_at: ISO|null}——kind=grant 必须结构化填全"
+        "_note": "{desc, path_globs[], expires_at: ISO|null}——kind=grant 必须结构化填全。覆盖判定（v1-idea-1）：fork 触及的文件/产物全部落在 scope.path_globs 内，且 scope.desc 的用途白话明白涵盖该 fork 的主题，两条同时成立才算覆盖——拿不准即不覆盖，走开条"
       },
       "principle_ref": {
         "type": [
@@ -805,7 +805,7 @@
         "_note": "status≠ok：metric_name/value/n 允许 null"
       }
     ],
-    "_dup_rule": "同主键重复入账拒（两个入账脚本都跨档查存在性）——重试补记不产生第二份数字",
+    "_dup_rule": "同主键重复入账拒（两个入账脚本都跨档查存在性）——重试补记不产生第二份数字。两段式重试纪律（#158）：run 尚未入账时，同 run_id 改单重发合法，走 RUNMETA attempts 留痕；失败已经入账后，获准的重试是一张新发射单——新 run_id、decision_refs 带裁决、全新 artifact_dir，旧失败行留在账上是事实不是垃圾。",
     "_run_level_fields": "status/output_dir/runmeta_path/seed/dataset_version/batch_id/arm/quick/commit/elapsed_s/gpu_count 是 run 级事实，同 run_id 各行必须逐字相同",
     "_notes": {
       "主键": "主键 (run_id, metric_name, filter)；metric_name 为 null 的行（status≠ok 的失败行）每 run_id 至多一行",
@@ -1050,7 +1050,7 @@
       },
       "resources": {
         "type": "object",
-        "_note": "{gpus, min_vram_gb, exclusive}——动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程可空、可不实现"
+        "_note": "{gpus, min_vram_gb, exclusive}——动作集与 retry 策略字段、资源类字段由 adapter 与工程定义，plugin 只定形状；非算力集群工程的空值形态是 `{}`（字段 required、不可 null——v2-hop1-1）"
       },
       "expected_runtime_s": {
         "type": "integer",
@@ -1158,7 +1158,7 @@
     "_note": "任务台账字段以工程现状为准（v2 裁员：不再开列完整字段清单），最低补三个键——本块钉死键名与语义（#153：v1 只给了字段类别没给字段名，三个执行者各猜一头）",
     "_required_additions": {
       "launch_order_ref": "string——回指发射单 run_id",
-      "escalation_ref": "string|null，回指 blocked_id；未升级过的 run 恒 null",
+      "escalation_ref": "string|null，回指最新一条升级的 blocked_id；未升级过的 run 恒 null。多次升级只存最新一条——升级历史不在这个字段找，去 blocked 账本身查（#161 尾句；v2-hop4-3）",
       "sampler_verdict": "enum stall|dead|ok（本表专用枚举，不进 rows.json 顶层 enums——jobs.json 无 schema 产物，不走 gen-schemas 的 $enum 展开）——只对『进程真启动过』的 run 有值：发射在预检被拒时不写 jobs 条目（见 _precheck_refusal），这个键无从落起",
       "sampler_verdict_at": "string|null，ISO 秒级，sampler_verdict 落值的同一刻"
     },
@@ -1174,10 +1174,10 @@
     "layer": "本层名（派生源：--layer 参数）",
     "approved_specs_in_flight": "approved_by 非空且尚有未完成条目的 spec 文件路径列表，允许多份，不猜当前唯一 spec（派生源：specs 账文件头 × 各条目对应工单的 Status 行）",
     "open_issues": "Status 行非终态的工单 id 与路径（派生源：issues 账）",
-    "pending_launch_orders": "已写盘但 run_id 在 jobs 台账里查无的发射单 run_id 与路径（派生源：launch_orders 账 × jobs 台账）",
+    "pending_launch_orders": "已写盘但 run_id 在 jobs 台账里查无的发射单 run_id 与路径（派生源：launch_orders 账 × jobs 台账）；获准重试的新单自然落入本字段（#158）",
     "running_runs": "未结束的任务 run_id（派生源是 jobs 台账，runs.jsonl 没有 running 态）",
     "unrecorded_runs": "jobs 台账已结束、runs.jsonl 无对应 run_id 行的 run（派生源：jobs 台账 × runs 账）",
-    "batches_pending_report": "runs 账里有行、plans/ 下无批次报告的 batch_id（派生源：runs 账 × batch_reports 账）",
+    "batches_pending_report": "runs 账里有行、plans/ 下无批次报告的 batch_id（派生源：runs 账 × batch_reports 账）；失败/空产物 run 的批次同样欠报告——报告解释失败也是报告（v2-hop3-4 按此定）",
     "batches_pending_inspection": "批次报告头 inspection_report 为空串的 batch_id 与报告路径（派生源：batch_reports 账文件头）",
     "open_blocked": "status=open 且 to_layer=--layer 的待决条 id（派生源：blocked 账；R6 2026-08-14 终审 F15 改窄，原'status=open 的全部'会把别层的待决队列混进本层）",
     "answered_blocked": "status=answered 且 from_layer=--layer 的待决条 id（派生源：blocked 账；本层自己提出、已有答复、等本层消化收尾的条目——spec §2 本层待决队列的另一半，R6 2026-08-14 终审 F15 新增）",

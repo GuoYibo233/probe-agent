@@ -199,6 +199,100 @@ def test_evidence_lint_multiple_files_report_all_violations():
 
 
 # ---------------------------------------------------------------------------
+# evidence_lint.py -- rule 2 machine false-fire exemptions (v1-oversight-3 /
+# v2-hop6-4/5/6, #159): five shapes that must go clean, plus two shapes that
+# must keep firing (non-regression).
+# ---------------------------------------------------------------------------
+
+
+def test_evidence_lint_heading_number_prefix_is_stripped_not_flagged():
+    # shape 2: a markdown heading/list numeral at the very start of the
+    # line is not an empirical claim.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", "## 2. Full-scope ledger read\n")
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 0
+        assert out.strip() == ""
+
+
+def test_evidence_lint_section_reference_is_stripped_not_flagged():
+    # shape 3: a `§N` reference, including the parenthesised `(§1)` form,
+    # is not an empirical claim.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", "see the rule at (§1) for detail\n")
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 0
+        assert out.strip() == ""
+
+
+def test_evidence_lint_quoted_excerpt_line_is_not_flagged():
+    # shape 1: a `> ` excerpt line is quoting a source, not asserting a
+    # number of its own -- verify_report already checks the excerpt
+    # byte-for-byte.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", '> {"seed": 7, "elapsed_s": 0}\n')
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 0
+        assert out.strip() == ""
+
+
+def test_evidence_lint_letter_digit_token_is_stripped_not_flagged():
+    # shape 4: a letter-digit token with no space between them (python3)
+    # is an identifier, not an empirical claim.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", "we ran python3 on the file\n")
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 0
+        assert out.strip() == ""
+
+
+def test_evidence_lint_dollar_line_continuation_is_protected():
+    # shape 5: a `$ ` command's own backslash continuation line carries
+    # the command's own arguments, not a claim.
+    text = '$ python3 -c "print(1+1)" \\\n  --extra 5\n= 2\n'
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", text)
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 0
+        assert out.strip() == ""
+
+
+def test_evidence_lint_bare_row_count_still_caught():
+    # non-regression: a bare decimal claim with no letter-digit fusion, no
+    # heading marker, and no `$ ` follow-up must still fire.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", "row count: 5\nnothing else nearby\n")
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 1
+        assert f"{path}:1: no-repro-command:" in out
+
+
+def test_evidence_lint_space_separated_ordinal_still_caught():
+    # non-regression: "attempt 1" is not letter-digit-fused, so it stays
+    # indistinguishable from a genuine count and must still fire.
+    text = "between attempt 1 and attempt 2 nothing changed\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp) / "report.md", text)
+
+        code, out, err = helpers.run_script(tmp, "evidence_lint.py", str(path))
+
+        assert code == 1
+        assert f"{path}:1: no-repro-command:" in out
+
+
+# ---------------------------------------------------------------------------
 # verify_report.py
 # ---------------------------------------------------------------------------
 
