@@ -5,6 +5,24 @@
 
 A batch is not closed by this session deciding the numbers look fine -- close-out runs through an independent inspection every time (config `inspection_policy=always`). **Quick-lane batches (§2.6) skip this entire flow.**
 
+## Step 0: write the batch report
+
+Once this batch's runs have landed (§8 step 5's sequence -- smoke, criterion
+run, R3 evidence, `evidence_lint`/`verify_report` clean, the user's own
+look, then the real launch), write the report itself: an md file under
+`plans/`, named after the batch (`tables/rows.json` →
+`batch_report_header.batch_id_pattern`: `<spec条目>-<YYYYMMDD>-<序号>`).
+Its full field set -- including the two easiest to drop when copying a
+sibling report as a template -- is `tables/rows.json` →
+`batch_report_header`: `batch_id`, `spec_items[]`, `run_ids[]`, `date`,
+`how_to_read` (the read-script +口径 explanation this layer owes the idea
+layer -- §1's "how to read" deliverable, channel 2), `inspection_report`
+(leave it an empty string here -- that's what marks the batch
+`batches_pending_inspection` until step 3 below back-fills it),
+`rejections[]` (leave empty unless this batch is itself a rewrite after a
+send-back). This step's output is what Step 1 dispatches on -- the report
+must exist and carry a real `run_ids[]` before there's anything to inspect.
+
 ## Step 1: drop the report, dispatch the inspector
 
 Once the batch report lands (md, in `plans/`), dispatch the `inspector` agent. Model comes from `research-loop.json` → `roles.inspector_model` (plugin default: opus) -- name it explicitly in the dispatch, never let it default. The dispatch contract must carry the `batch_id`, the batch report's path, the project's `research-loop.json` path, and the three mechanical-check commands the inspector must run:
