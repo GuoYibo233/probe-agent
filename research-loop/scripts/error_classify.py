@@ -23,10 +23,16 @@ If nothing matches, this script does not guess (spec R8: the run layer
 classifies mechanically or not at all; escalating an unknown failure is the
 caller's job, not this script's).
 
+A missing or unparseable error-classes table (#155) is treated as zero
+rules, not a crash: R8's mandatory first step must never itself be the
+thing that traceback-dies on a bare project -- it falls straight through to
+the same "unknown" outcome nothing-matched would produce, with one extra
+line on stderr naming the table path so the caller knows why.
+
 stdout's last (and only) line is a single JSON object:
     {"rule": <name>|null, "action": "retry"|"swap-card"|"escalate"|"unknown"}
 Exit code is always 0 -- "unknown" is a valid classification, not a script
-failure.
+failure (that includes the missing/unreadable-table case above).
 
 Spec: .scratch/research-loop/issues/12-output-error.md; shape reference:
 research-loop/tables/rows.json error_classes.
@@ -85,9 +91,19 @@ def main(argv=None) -> int:
 
     try:
         classes = json.loads(args.error_classes.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"error_classify: failed to read error classes {args.error_classes}: {exc}", file=sys.stderr)
-        return 2
+    except (OSError, json.JSONDecodeError):
+        # #155: the error-classes table is deploy-owned and may simply not
+        # exist yet on a bare project -- R8's mandatory first step must not
+        # itself traceback-die for that. Zero rules classifies exactly like
+        # nothing-matched: same stdout shape, same exit code (0), one extra
+        # stderr line naming the path so the caller can tell "unclassified
+        # because no table" from "unclassified because no rule fit".
+        print(
+            f"error_classify: error classes table not found/unreadable at "
+            f"{args.error_classes}; treating as unclassified",
+            file=sys.stderr,
+        )
+        classes = {}
 
     log_text = None
     if args.log is not None:

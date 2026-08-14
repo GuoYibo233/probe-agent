@@ -227,6 +227,19 @@ def test_validate_minimum():
         raise AssertionError("expected RLError for a value below minimum")
 
 
+def test_validate_minitems():
+    schema = {"required": [], "additionalProperties": True,
+              "properties": {"expected_outputs": {"type": "array", "minItems": 1}},
+              "conditional": []}
+    _lib.validate({"expected_outputs": ["x"]}, schema, "t")
+    try:
+        _lib.validate({"expected_outputs": []}, schema, "t")
+    except _lib.RLError:
+        pass
+    else:
+        raise AssertionError("expected RLError for an array shorter than minItems")
+
+
 def test_validate_array_items_checked_per_element():
     schema = {"required": [], "additionalProperties": True,
               "properties": {"evidence_runs": {"type": "array", "items": {"type": "string"}}},

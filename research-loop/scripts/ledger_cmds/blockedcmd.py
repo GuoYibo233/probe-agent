@@ -90,6 +90,7 @@ def register(subparsers):
     answer_p.add_argument("--answered-by", choices=["user"])
     answer_p.add_argument("--chosen")
     answer_p.add_argument("--grant", dest="grant_ref")
+    answer_p.add_argument("--decision-ref", dest="decision_ref")
 
     close_p = actions.add_parser(
         "close", help="Close an open or answered row (writable by from_layer)."
@@ -120,6 +121,20 @@ def run(args) -> int:
 def _run_open(args) -> int:
     if args.kind == "r5-choice" and (args.where is None or not args.options):
         _lib.fail("blocked", "where", "kind=r5-choice requires --where and --options")
+
+    # #152: escalation must go one step, never skip a layer (failures.md
+    # "升级走楼梯不跳层" / spec §2 通道表) -- writes.json blocked_transitions.
+    # open.legal_to is the closed from_layer -> {legal to_layer} mapping this
+    # checks against.
+    legal_to = _lib.load_tables()["writes"]["blocked_transitions"]["open"]["legal_to"]
+    allowed = legal_to.get(args.layer, [])
+    if args.to_layer not in allowed:
+        _lib.fail(
+            "blocked", "to_layer",
+            f"escalation must go one step (from_layer={args.layer!r}; "
+            f"legal targets: {allowed})",
+            args.to_layer,
+        )
 
     cfg = _context()
     path = cfg.ledger_path("blocked")
@@ -187,23 +202,104 @@ def _run_answer(args) -> int:
                     "idea or --to-layer deploy, not --to-layer user)",
                     args.grant_ref,
                 )
+            # Same reasoning as --grant just above (F10, sdd/final-review.md)
+            # extended to #151's --decision-ref: a to_layer=user row is a
+            # transcript of the user's own ruling, never a self-decision, so
+            # it must not carry a decisions-ledger citation either.
+            if args.decision_ref is not None:
+                _lib.fail(
+                    "blocked", "decision_ref",
+                    "to_layer=user answers are a transcript of the user's own ruling and "
+                    "may not carry --decision-ref (a self-decision must open its row "
+                    "--to-layer idea or --to-layer deploy, not --to-layer user)",
+                    args.decision_ref,
+                )
             answered_by = "user"
         else:
             if args.layer != row["to_layer"]:
                 _lib.fail("blocked", "to_layer", "only to_layer may write answered", args.layer)
             answered_by = "user" if args.answered_by == "user" else args.layer
-            # A provided --grant must name an active grant row no matter the
-            # row's kind -- grant_ref is an audit-chain pointer, so a literal
-            # like "spec-standing-gpu-1h" (valid only for `decision
-            # --authorized-by`) must not land in it via a kind=other/
-            # failure/principle-gap answer. The r5-choice branch re-checks
-            # under the decisions lock at assembly time.
-            if args.grant_ref is not None:
-                if not any(
-                    g["decision_id"] == args.grant_ref
-                    for g in decisionscmd.active_grants(_lib.jsonl_rows(decisions_path), now)
-                ):
-                    _lib.fail("blocked", "grant_ref", "grant is not active", args.grant_ref)
+
+            if row["kind"] == "r5-choice":
+                # A provided --grant must name an active grant row -- grant_ref
+                # is an audit-chain pointer, so a literal like
+                # "spec-standing-gpu-1h" (valid only for `decision
+                # --authorized-by`) must not land in it. r5-choice 分支一字
+                # 不动 (#151): this is the same early fail-fast pre-check as
+                # before, unchanged; the assembly block below re-checks under
+                # the decisions lock at assembly time.
+                if args.grant_ref is not None:
+                    if not any(
+                        g["decision_id"] == args.grant_ref
+                        for g in decisionscmd.active_grants(_lib.jsonl_rows(decisions_path), now)
+                    ):
+                        _lib.fail("blocked", "grant_ref", "grant is not active", args.grant_ref)
+            else:
+                # #151 R6 two-step path (tables/writes.json
+                # blocked_transitions.answered._non_r5_self_decision): a
+                # non-r5-choice self-decision is never recorded by citing
+                # --grant directly on the answer -- that used to produce an
+                # "authorized" answer with zero decisions-ledger trace (the
+                # R6 hole, v1-deploy-2 / v2-hop3-1). The only route is: record
+                # the decision first (`ledger.py decision --blocked-ref ...
+                # --authorized-by grant:D0xx|spec-standing-gpu-1h`), then
+                # answer citing that decision via --decision-ref. This
+                # replaces the "validate --grant is active regardless of
+                # kind" gate the previous round put here as a stopgap against
+                # the literal spec-standing-gpu-1h landing in grant_ref.
+                if args.grant_ref is not None:
+                    _lib.fail(
+                        "blocked", "grant_ref",
+                        f"kind={row['kind']!r} answers do not take --grant directly -- "
+                        "record the self-decision first (ledger.py decision --blocked-ref "
+                        f"{args.blocked_id} --authorized-by grant:D0xx|spec-standing-gpu-1h), "
+                        "then answer with --decision-ref D0xx",
+                        args.grant_ref,
+                    )
+                # An optional --decision-ref cites an already-recorded
+                # self-decision (step 1 above). Not given at all is still a
+                # legal plain answer -- R6 only governs self-decisions that
+                # cite authorization, not every answer.
+                if args.decision_ref is not None:
+                    decision_rows = _lib.jsonl_rows(decisions_path)
+                    decision_row = _find_row(decision_rows, "decision_id", args.decision_ref)
+                    if decision_row is None:
+                        _lib.fail("blocked", "decision_ref", "row not found", args.decision_ref)
+                    if decision_row.get("kind") != "decision":
+                        _lib.fail(
+                            "blocked", "decision_ref",
+                            "decision_ref must point at a kind=decision row",
+                            args.decision_ref,
+                        )
+                    if decision_row.get("blocked_ref") != args.blocked_id:
+                        _lib.fail(
+                            "blocked", "decision_ref",
+                            "decision.blocked_ref does not point back at this blocked row",
+                            args.decision_ref,
+                        )
+                    if decision_row.get("decided_by") != "agent":
+                        _lib.fail(
+                            "blocked", "decision_ref",
+                            "decision.decided_by must be agent", args.decision_ref,
+                        )
+                    authorized_by = decision_row.get("authorized_by") or ""
+                    if authorized_by.startswith("grant:"):
+                        grant_id = authorized_by[len("grant:"):]
+                        if not any(
+                            g["decision_id"] == grant_id
+                            for g in decisionscmd.active_grants(decision_rows, now)
+                        ):
+                            _lib.fail(
+                                "blocked", "decision_ref",
+                                "decision.authorized_by grant is not active",
+                                args.decision_ref,
+                            )
+                    elif authorized_by != "spec-standing-gpu-1h":
+                        _lib.fail(
+                            "blocked", "decision_ref",
+                            "decision.authorized_by must be grant:D0xx or spec-standing-gpu-1h",
+                            args.decision_ref,
+                        )
 
         updates = {
             "status": "answered",
@@ -213,6 +309,8 @@ def _run_answer(args) -> int:
         }
         if args.grant_ref is not None:
             updates["grant_ref"] = args.grant_ref
+        if row["kind"] != "r5-choice" and args.decision_ref is not None:
+            updates["decision_ref"] = args.decision_ref
 
         if row["kind"] == "r5-choice":
             if args.chosen is None:

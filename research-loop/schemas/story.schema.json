@@ -12,7 +12,10 @@
         "$ref_to": "runs.run_id",
         "type": "string"
       },
-      "type": "array"
+      "type": [
+        "array",
+        "null"
+      ]
     },
     "candidate_runs": {
       "items": {

@@ -455,7 +455,12 @@ def make_launch_order(**over):
         "resources": {"gpus": 1, "min_vram_gb": 8, "exclusive": False},
         "expected_runtime_s": 600,
         "depends_on": None,
-        "expected_outputs": [],
+        # #157: expected_outputs must be non-empty (rows.json launch_order.
+        # expected_outputs minItems: 1) -- a real, checkable contract, not a
+        # placeholder shape output_check.py doesn't actually consume.
+        "expected_outputs": [
+            {"path_glob": "result.jsonl", "min_bytes": 1, "min_lines": 1},
+        ],
         "metrics_cmd": "python3 stub_registry.py check-p001",
         "smoke_cmd": None,
         "retry": None,

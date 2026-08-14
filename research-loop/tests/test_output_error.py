@@ -163,6 +163,52 @@ def test_output_check_non_numeric_min_lines_errors_cleanly():
         assert "min_lines" in err
 
 
+def test_output_check_empty_expected_outputs_rejected():
+    # #157: an artifact gate with zero declared expectations must not be
+    # vacuously ok -- rows.json launch_order.expected_outputs now carries
+    # minItems: 1, this is the runtime-side refusal for a launch order
+    # written before that (or hand-authored around it).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        art = root / "artifacts"
+        art.mkdir()
+        order_path = _write_launch_order(root, [])
+
+        code, out, err = helpers.run_script(root, "output_check.py", "--launch-order", str(order_path))
+
+        result = _last_json_line(out)
+        assert result["verdict"] == "empty-output"
+        assert result["failures"] == [{
+            "glob": None, "file": None,
+            "why": (
+                "expected_outputs is empty; an artifact gate with no "
+                "expectations is vacuous — declare at least one"
+            ),
+        }]
+        assert code == 4
+
+
+def test_output_check_helpers_default_contract_ok_against_a_real_artifact():
+    # helpers.make_launch_order()'s default expected_outputs (#157) is a
+    # real, checkable contract -- write the artifact it actually names and
+    # confirm output_check.py passes it (not just that schema validation
+    # doesn't choke on it).
+    default_order = helpers.make_launch_order()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        art = root / default_order["artifact_dir"]
+        art.mkdir(parents=True)
+        (art / "result.jsonl").write_text('{"metric": 1}\n', encoding="utf-8")
+        order_path = root / "launch_order.json"
+        order_path.write_text(json.dumps(default_order), encoding="utf-8")
+
+        code, out, err = helpers.run_script(root, "output_check.py", "--launch-order", str(order_path))
+
+        result = _last_json_line(out)
+        assert result == {"verdict": "ok", "failures": []}
+        assert code == 0
+
+
 def test_output_check_missing_output_wins_priority_over_empty_output():
     # one entry misses entirely, another entry's file is present but too
     # small -- missing-output must win the overall verdict either way.
@@ -319,6 +365,44 @@ def test_error_classify_invalid_log_regex_errors_cleanly():
         assert code == 2
         assert out.strip() == ""
         assert "error_classify:" in err
+
+
+def test_error_classify_missing_table_treated_as_unclassified():
+    # #155: R8's mandatory first step must not crash just because the
+    # deploy-owned table hasn't been bootstrapped yet on a bare project --
+    # same stdout shape and exit code as nothing-matched, one extra stderr
+    # line naming the path.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        missing_path = root / "no-such-error-classes.json"
+        assert not missing_path.exists()
+
+        code, out, err = helpers.run_script(
+            root, "error_classify.py", "--error-classes", str(missing_path),
+            "--exit-code", "137",
+        )
+
+        assert _last_json_line(out) == {"rule": None, "action": "unknown"}
+        assert code == 0
+        assert "error classes table not found/unreadable" in err
+        assert str(missing_path) in err
+
+
+def test_error_classify_unreadable_table_treated_as_unclassified():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        bad_path = root / "error_classes.json"
+        bad_path.write_text("{not valid json", encoding="utf-8")
+
+        code, out, err = helpers.run_script(
+            root, "error_classify.py", "--error-classes", str(bad_path),
+            "--exit-code", "137",
+        )
+
+        assert _last_json_line(out) == {"rule": None, "action": "unknown"}
+        assert code == 0
+        assert "error classes table not found/unreadable" in err
+        assert str(bad_path) in err
 
 
 def test_error_classify_first_matching_rule_wins_key_order():

@@ -42,9 +42,14 @@ moves on to the next section (spec.md §5 "半状态由 doctor 扫出", §9 "单
                   synced decision is still status=decided, or the
                   mechanically-reopened row is missing), and an affects
                   mismatch (a launch order's decision_refs names a decision
-                  whose own affects doesn't list that run_id back). Every
-                  finding's fix is "the same command, re-run" (spec.md §5
-                  "重跑即修复") -- doctor never fixes anything itself.
+                  whose own affects doesn't list that run_id back). Plus a
+                  fourth, R6-specific reverse scan (#151, tables/writes.json
+                  blocked_transitions.answered._non_r5_self_decision): a
+                  kind!=r5-choice blocked row with grant_ref set but
+                  decision_ref still null -- a self-decision whose two-step
+                  R6 trace never got completed. Every finding's fix is "the
+                  same command, re-run" (spec.md §5 "重跑即修复") -- doctor
+                  never fixes anything itself.
 10. workplan   -- subprocess `ledger.py status --layer deploy`, relayed
                   verbatim (status_view already does the cross-ledger
                   derivation; this section does not reimplement it).
@@ -432,6 +437,29 @@ def _affects_mismatch_findings(launch_orders: dict, decisions_by_id: dict, cfg: 
     return out
 
 
+def _missing_r6_trace_findings(blocked_rows: list) -> list:
+    """#151 reverse scan (tables/writes.json blocked_transitions.answered.
+    _non_r5_self_decision): a kind!=r5-choice row that carries a grant_ref
+    but no decision_ref is a self-decision whose R6 trace never got
+    recorded -- either a pre-#151 row (the old "answer with --grant"
+    stopgap left exactly this shape on disk) or one hand-edited around the
+    new two-step path. Advisory only, same as every other doctor finding:
+    it names the fix, it never writes it."""
+    out = []
+    for row in blocked_rows:
+        if row.get("kind") == "r5-choice":
+            continue
+        if row.get("grant_ref") and not row.get("decision_ref"):
+            blocked_id = row.get("blocked_id")
+            out.append(
+                f"missing R6 trace: blocked {blocked_id} (kind={row.get('kind')}) has "
+                f"grant_ref={row.get('grant_ref')} but decision_ref is null -> record via "
+                f"ledger.py decision --blocked-ref {blocked_id} --authorized-by "
+                f"grant:{row.get('grant_ref')} ..."
+            )
+    return out
+
+
 def _section_half_state(cfg: _lib.Config):
     decisions_rows = _lib.jsonl_rows(cfg.ledger_path("decisions"), include_archive=True)
     blocked_rows = _lib.jsonl_rows(cfg.ledger_path("blocked"), include_archive=True)
@@ -443,6 +471,7 @@ def _section_half_state(cfg: _lib.Config):
     findings.extend(_orphan_decision_findings(decisions_rows, blocked_by_id))
     findings.extend(_withdrawal_interrupted_findings(blocked_rows, decisions_rows, decisions_by_id))
     findings.extend(_affects_mismatch_findings(launch_orders, decisions_by_id, cfg))
+    findings.extend(_missing_r6_trace_findings(blocked_rows))
 
     lines = findings or ["no half-state anomalies found"]
     return lines, len(findings)

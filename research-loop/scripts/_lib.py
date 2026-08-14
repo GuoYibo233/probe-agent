@@ -382,6 +382,9 @@ def _check_value(value, field_schema: dict, ledger: str, field_path: str):
     if "minimum" in field_schema:
         if not isinstance(value, int) or isinstance(value, bool) or value < field_schema["minimum"]:
             fail(ledger, field_path, f"below minimum {field_schema['minimum']}", value)
+    if "minItems" in field_schema:
+        if not isinstance(value, list) or len(value) < field_schema["minItems"]:
+            fail(ledger, field_path, f"fewer than minItems {field_schema['minItems']}", value)
     if isinstance(value, list) and "items" in field_schema:
         for i, item in enumerate(value):
             _check_value(item, field_schema["items"], ledger, f"{field_path}[{i}]")
@@ -390,8 +393,8 @@ def _check_value(value, field_schema: dict, ledger: str, field_path: str):
 def validate(row: dict, schema: dict, ledger: str) -> None:
     """Single validation entry point. Checks required, additionalProperties,
     type (union-aware, bool excluded from integer/number), enum, const,
-    minimum, array items, conditional require and conditional allow_null.
-    Raises RLError via fail() on the first violation found."""
+    minimum, minItems, array items, conditional require and conditional
+    allow_null. Raises RLError via fail() on the first violation found."""
     properties = schema.get("properties", {})
     conditional = schema.get("conditional", [])
 

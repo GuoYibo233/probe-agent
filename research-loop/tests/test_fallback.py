@@ -384,7 +384,9 @@ def test_record_ok_writes_two_metric_rows_with_matching_run_level_fields():
         assert acc_row["n"] == 5
         assert isinstance(acc_row["value"], float) and 0 <= acc_row["value"] < 1
         assert acc_row["gpu_count"] == 1
-        assert acc_row["commit"] is None
+        # #156: commit is carried over from RUNMETA (launch.py wrote the
+        # real git_head there), not hard-coded null.
+        assert acc_row["commit"] == _lib.git_head(root)
         assert acc_row["principle_id"] is None
 
         for field in _RUN_LEVEL_FIELDS:
@@ -399,6 +401,31 @@ def test_record_ok_writes_two_metric_rows_with_matching_run_level_fields():
         code, out, err = _run_record(root, order_path)
         assert code == 2, (out, err)
         assert _lib.jsonl_rows(runs_path) == rows
+
+
+def test_record_commit_missing_from_runmeta_lands_null():
+    # #156: commit is only ever taken from RUNMETA, never guessed or
+    # defaulted to the working tree's current HEAD -- a RUNMETA that lacks
+    # the key (hand-edited, or written by an older launcher) must record
+    # null, not silently substitute something else.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        order_path, order = _make_order(root, "fake-record-commit-1", mode="ok", seed=3)
+        code, out, err = _run_launch(root, order_path)
+        assert code == 0, (out, err)
+
+        runmeta_path = root / order["artifact_dir"] / "RUNMETA.json"
+        runmeta = json.loads(runmeta_path.read_text(encoding="utf-8"))
+        assert runmeta["commit"] == _lib.git_head(root)  # sanity: the key is really there
+        del runmeta["commit"]
+        runmeta_path.write_text(json.dumps(runmeta, ensure_ascii=False), encoding="utf-8")
+
+        code, out, err = _run_record(root, order_path)
+        assert code == 0, (out, err)
+
+        cfg = _lib.load_config(root)
+        rows = _lib.jsonl_rows(cfg.ledger_path("runs"))
+        assert rows and all(r["commit"] is None for r in rows)
 
 
 def test_record_status_override_writes_a_single_row_with_null_metric_fields():

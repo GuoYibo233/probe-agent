@@ -52,7 +52,7 @@ def _elapsed_s(attempt: dict) -> int:
     return int(round((finished - started).total_seconds()))
 
 
-def _run_level_row(order: dict, run_id: str, status: str, elapsed_s: int, gpu_count) -> dict:
+def _run_level_row(order: dict, run_id: str, status: str, elapsed_s: int, gpu_count, commit) -> dict:
     return {
         "run_id": run_id,
         "status": status,
@@ -64,7 +64,7 @@ def _run_level_row(order: dict, run_id: str, status: str, elapsed_s: int, gpu_co
         "arm": order["arm"],
         "quick": order["quick"],
         "principle_id": None,
-        "commit": None,
+        "commit": commit,
         "elapsed_s": elapsed_s,
         "gpu_count": gpu_count,
         "recorded_at": _lib.now_iso(),
@@ -107,7 +107,12 @@ def run(args) -> int:
     elapsed_s = _elapsed_s(last_attempt)
     resources = order.get("resources") or {}
     gpu_count = resources.get("gpus")
-    base = _run_level_row(order, run_id, status, elapsed_s, gpu_count)
+    # #156: RUNMETA carries the real commit the launch ran at (the
+    # 发射前 commit discipline the project's whole run-recording story exists
+    # to preserve) -- take it from there, null only when the key itself is
+    # missing (never guessed, never defaulted to the working tree's HEAD).
+    commit = runmeta.get("commit")
+    base = _run_level_row(order, run_id, status, elapsed_s, gpu_count, commit)
 
     if status == "ok":
         argv = _lib.split_cmd(order["metrics_cmd"], "launch_order", "metrics_cmd")

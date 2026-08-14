@@ -662,11 +662,13 @@ def test_row_not_found_errors():
         assert code == 2
 
 
-def test_non_r5_answer_grant_must_be_active_regardless_of_kind():
-    # --grant used to be validated only inside the r5-choice branch, so a
-    # kind=other/failure/principle-gap answer could land any literal (e.g.
-    # "spec-standing-gpu-1h") in grant_ref -- an audit-chain pointer that
-    # must only ever name an active grant row.
+def test_non_r5_answer_grant_always_rejected_regardless_of_active_status():
+    # #151 superseded the previous round's stopgap (validate --grant is
+    # active regardless of kind) with an outright reject: a non-r5-choice
+    # kind never takes --grant directly on the answer at all, active grant
+    # or not -- self-decisions must go through the two-step path (`decision
+    # --blocked-ref` then `answer --decision-ref`) so the decisions ledger
+    # actually gets a trace. Untouched by either failure: no grant_ref lands.
     with tempfile.TemporaryDirectory() as tmp:
         root = _sandbox(tmp)
         _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
@@ -676,7 +678,9 @@ def test_non_r5_answer_grant_must_be_active_regardless_of_kind():
             "--answer", "x", "--grant", "spec-standing-gpu-1h",
         )
         assert code == 2, (out, err)
-        assert "grant is not active" in err
+        assert "blocked.grant_ref" in err
+        assert "do not take --grant directly" in err
+        assert "decision --blocked-ref" in err
         assert _blocked_rows(root)[0]["status"] == "open"  # untouched
 
         gcode, gout, _ = _grant(root, expires="2099-01-01T00:00:00")
@@ -686,7 +690,283 @@ def test_non_r5_answer_grant_must_be_active_regardless_of_kind():
             root, "blocked", "answer", "--layer", "deploy", "B001",
             "--answer", "x", "--grant", grant_id,
         )
+        assert code == 2, (out, err)
+        assert "blocked.grant_ref" in err
+        assert "do not take --grant directly" in err
+        assert _blocked_rows(root)[0]["status"] == "open"  # untouched, active grant or not
+
+
+# ---------------------------------------------------------------------------
+# #151: the R6 two-step path for non-r5-choice self-decisions -- `decision
+# --blocked-ref` (decisionscmd.py) then `blocked answer --decision-ref`
+# (blockedcmd.py). A plain answer with neither flag stays legal (already
+# covered by test_answer_write_rights_to_layer_must_match's kind="other"
+# default). Numbered comment blocks correspond to the ticket's test list
+# item 1.
+# ---------------------------------------------------------------------------
+
+
+def test_non_r5_two_step_path_decision_then_answer_with_decision_ref():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="failure")  # B001
+        gcode, gout, _ = _grant(root, expires="2099-01-01T00:00:00")
+        grant_id = json.loads(gout.strip())["decision_id"]
+
+        # step 1: decision --blocked-ref lands blocked_ref on the decision row
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "how to recover",
+            "--options", "retry", "escalate", "--chosen", "retry",
+            "--reason", "transient network blip, safe to retry", "--where", "B001",
+            "--authorized-by", f"grant:{grant_id}", "--blocked-ref", "B001",
+        )
         assert code == 0, (out, err)
-        row = _blocked_rows(root)[0]
-        assert row["status"] == "answered"
-        assert row["grant_ref"] == grant_id
+        decision_row = json.loads(out.strip())
+        assert decision_row["blocked_ref"] == "B001"
+        assert decision_row["decided_by"] == "agent"
+        decision_id = decision_row["decision_id"]
+
+        # step 2: answer --decision-ref cites it back, decision_ref lands
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "retried and it worked", "--decision-ref", decision_id,
+        )
+        assert code == 0, (out, err)
+        answered = json.loads(out.strip())
+        assert answered["decision_ref"] == decision_id
+        assert answered["grant_ref"] is None  # #151: never lands via this path
+        assert answered["status"] == "answered"
+
+
+def test_non_r5_decision_ref_must_point_back_at_this_blocked_row():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="failure", ref="S001")  # B001
+        _open_blocked(root, layer="run", to_layer="deploy", kind="failure", ref="S002")  # B002
+
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "q", "--options", "A", "B",
+            "--chosen", "A", "--reason", "r", "--where", "B002",
+            "--authorized-by", "spec-standing-gpu-1h", "--blocked-ref", "B002",
+        )
+        assert code == 0, (out, err)
+        decision_id = json.loads(out.strip())["decision_id"]
+
+        # decision was recorded against B002; citing it from B001 is rejected.
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--decision-ref", decision_id,
+        )
+        assert code == 2, (out, err)
+        assert "blocked.decision_ref" in err
+        assert "does not point back" in err
+        assert _blocked_rows(root)[0]["status"] == "open"  # B001 untouched
+
+
+def test_non_r5_decision_ref_not_found_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--decision-ref", "D999",
+        )
+        assert code == 2, (out, err)
+        assert "blocked.decision_ref: row not found" in err
+
+
+def test_non_r5_decision_ref_wrong_kind_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+        gcode, gout, _ = _grant(root, expires="2099-01-01T00:00:00")
+        grant_id = json.loads(gout.strip())["decision_id"]  # kind=grant, not kind=decision
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--decision-ref", grant_id,
+        )
+        assert code == 2, (out, err)
+        assert "blocked.decision_ref: decision_ref must point at a kind=decision row" in err
+
+
+def test_non_r5_decision_ref_decided_by_user_rejected():
+    # a deploy-approved decided_by=user decision is a legitimate decisions
+    # row, but it is not a self-decision -- #151's two-step path exists to
+    # trace agent self-decisions, so citing a user-decided row is refused.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "q", "--options", "A", "B",
+            "--chosen", "A", "--reason", "r", "--where", "B001",
+            "--authorized-by", "the user said so directly", "--decided-by", "user",
+            "--blocked-ref", "B001",
+        )
+        assert code == 0, (out, err)
+        decision_id = json.loads(out.strip())["decision_id"]
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--decision-ref", decision_id,
+        )
+        assert code == 2, (out, err)
+        assert "blocked.decision_ref: decision.decided_by must be agent" in err
+
+
+def test_non_r5_decision_ref_authorized_by_not_recognized_form_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "q", "--options", "A", "B",
+            "--chosen", "A", "--reason", "r", "--where", "B001",
+            "--authorized-by", "spec-standing-gpu-1h", "--blocked-ref", "B001",
+        )
+        assert code == 0, (out, err)
+        decision_id = json.loads(out.strip())["decision_id"]
+
+        # fixture: hand-corrupt authorized_by past what decisionscmd would
+        # ever write, to exercise the answer-side re-validation directly.
+        decisions_path = _lib.load_config(root).ledger_path("decisions")
+        rows = _decisions_rows(root)
+        for row in rows:
+            if row["decision_id"] == decision_id:
+                row["authorized_by"] = "just because"
+        helpers.write_jsonl(decisions_path, rows)
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--decision-ref", decision_id,
+        )
+        assert code == 2, (out, err)
+        assert (
+            "blocked.decision_ref: decision.authorized_by must be grant:D0xx "
+            "or spec-standing-gpu-1h" in err
+        )
+
+
+def test_non_r5_decision_ref_grant_no_longer_active_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+        gcode, gout, _ = _grant(root, expires="2000-01-01T00:00:00")  # already expired
+        expired_id = json.loads(gout.strip())["decision_id"]
+
+        # write the decision row directly -- decisionscmd's own --authorized-by
+        # active-grant check would refuse this at write time, so this exercises
+        # the answer-side re-check against a row that predates the grant's
+        # expiry (or was written before it lapsed).
+        decisions_path = _lib.load_config(root).ledger_path("decisions")
+        decision_row = helpers.make_decision_row(
+            decision_id="D900", blocked_ref="B001", decided_by="agent",
+            authorized_by=f"grant:{expired_id}",
+        )
+        helpers.write_jsonl(decisions_path, [
+            *_decisions_rows(root), decision_row,
+        ])
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--decision-ref", "D900",
+        )
+        assert code == 2, (out, err)
+        assert "blocked.decision_ref: decision.authorized_by grant is not active" in err
+
+
+def test_to_layer_user_answer_with_decision_ref_is_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="deploy", to_layer="user")  # B001
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "run", "B001",
+            "--answer", "x", "--decision-ref", "D001",
+        )
+        assert code == 2, (out, err)
+        assert "blocked.decision_ref" in err
+        assert _blocked_rows(root)[0]["status"] == "open"  # untouched
+
+
+def test_decision_blocked_ref_must_exist():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "q", "--options", "A", "B",
+            "--chosen", "A", "--reason", "r", "--where", "S1",
+            "--authorized-by", "spec-standing-gpu-1h", "--blocked-ref", "B999",
+        )
+        assert code == 2, (out, err)
+        assert "decisions.blocked_ref: row not found" in err
+        assert _decisions_rows(root) == []
+
+
+def test_decision_blocked_ref_found_cross_archive():
+    # #151 explicitly reads blocked cross-archive (spec.md §2.1: 校验/追溯
+    # 脚本一律跨档读) -- a blocked row that has already been archived off
+    # the main jsonl must still resolve.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        archived_row = helpers.make_blocked_row(blocked_id="B001", status="closed")
+        helpers.write_jsonl(
+            _lib.load_config(root).ledger_path("blocked").with_name("blocked.archive.jsonl"),
+            [archived_row],
+        )
+
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "q", "--options", "A", "B",
+            "--chosen", "A", "--reason", "r", "--where", "B001",
+            "--authorized-by", "spec-standing-gpu-1h", "--blocked-ref", "B001",
+        )
+        assert code == 0, (out, err)
+        assert json.loads(out.strip())["blocked_ref"] == "B001"
+
+
+def test_decision_blocked_ref_valid_lands_field_previously_always_null():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+
+        code, out, err = _decision(root, where="B001", authorized_by="spec-standing-gpu-1h")
+        # _decision() helper doesn't pass --blocked-ref by default -> stays null
+        assert code == 0, (out, err)
+        assert json.loads(out.strip())["blocked_ref"] is None
+
+        code, out, err = helpers.run_ledger(
+            root, "decision", "--layer", "deploy", "--question", "q2", "--options", "A", "B",
+            "--chosen", "A", "--reason", "r", "--where", "B001",
+            "--authorized-by", "spec-standing-gpu-1h", "--blocked-ref", "B001",
+        )
+        assert code == 0, (out, err)
+        assert json.loads(out.strip())["blocked_ref"] == "B001"
+
+
+# ---------------------------------------------------------------------------
+# #152: escalation must go one step, from writes.json blocked_transitions.
+# open.legal_to's closed mapping -- blockedcmd._run_open checks --layer
+# (from_layer) -> --to-layer against it. Numbered comment block corresponds
+# to the ticket's test list item 2.
+# ---------------------------------------------------------------------------
+
+
+def test_open_legal_to_layer_enforced():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+
+        code, out, err = _open_blocked(root, layer="run", to_layer="user")
+        assert code == 2, (out, err)
+        assert "blocked.to_layer" in err
+        assert "escalation must go one step" in err
+
+        code, out, err = _open_blocked(root, layer="run", to_layer="deploy")
+        assert code == 0, (out, err)
+
+        code, out, err = _open_blocked(root, layer="idea", to_layer="deploy")
+        assert code == 2, (out, err)
+        assert "blocked.to_layer" in err
+
+        code, out, err = _open_blocked(root, layer="oversight", to_layer="user")
+        assert code == 0, (out, err)

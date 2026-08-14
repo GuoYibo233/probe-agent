@@ -57,7 +57,14 @@
   "blocked_transitions": {
     "open": {
       "writable_by": "from_layer",
-      "_note": "只能 from_layer 写"
+      "_note": "只能 from_layer 写",
+      "legal_to": {
+        "run": ["deploy"],
+        "deploy": ["idea", "user"],
+        "idea": ["user"],
+        "oversight": ["user", "deploy"]
+      },
+      "_legal_to_note": "封闭映射：from_layer 只能 open 到列出的 to_layer，一步到位不许跳层（#152，依据 failures.md『升级走楼梯不跳层』与 spec §2 通道表）；机验落点 blockedcmd._run_open。deploy→run 不设——下行走发射单/答复，不走开条"
     },
     "answered": {
       "writable_by": "to_layer",
@@ -65,6 +72,13 @@
       "force_fields": {
         "_when": "仅 to_layer=user 的代笔特例（writable_by 之外的会话代笔时）生效；to_layer 为其他层的 answered 写入不套此强制",
         "answered_by": "user"
+      },
+      "_non_r5_self_decision": {
+        "_rule": "kind≠r5-choice 的答复不接受 --grant 直接落 grant_ref（#151）：那会产出一条『带授权』却在抉择账零留痕的答复——R6 洞（v1-deploy-2/v2-hop3-1）。自决必须走两步显式路：① 先 `ledger.py decision --blocked-ref B0xx --authorized-by grant:D0xx|spec-standing-gpu-1h`（decided_by 缺省 agent）落一条 decisions 行，回填该行 blocked_ref=B0xx；② 再 `ledger.py blocked answer B0xx --decision-ref D0xx` 校验通过后回填 blocked.decision_ref=D0xx。",
+        "_decision_ref_checks": "--decision-ref 校验清单（blockedcmd._run_answer 机验，kind≠r5-choice 分支）：行存在、kind=decision、blocked_ref 等于本 blocked_id、decided_by=agent、authorized_by 是 grant:<活跃 grant> 或字面量 spec-standing-gpu-1h（authorized_by 是 grant: 前缀时同时校验该 grant 此刻仍活跃）——过了才把 decision_ref 写进答复更新（whitelist 已含该字段）",
+        "_plain_answer": "不带 --grant 也不带 --decision-ref 的平答仍合法——R6 只管『引用授权的自决』留痕，不要求每条答复都挂决策",
+        "_to_layer_user_exception": "to_layer=user 分支拒 --grant 的规则不变，同样拒 --decision-ref：那一行是用户原话的转录，不是自决，不该有决策引用",
+        "_r5_choice_unaffected": "kind=r5-choice 分支一字不动——r5 拼装（见下方 r5_choice_assembly）继续走 answer 一步带 --grant 的既有路径，本条不适用"
       }
     },
     "closed": {

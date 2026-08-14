@@ -32,7 +32,10 @@
       "type": "string"
     },
     "commit": {
-      "type": "null"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "dataset_version": {
       "type": "string"
