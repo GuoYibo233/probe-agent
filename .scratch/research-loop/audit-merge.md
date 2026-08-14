@@ -767,3 +767,52 @@ layer_param 加 _source 键。原文"每个会话开工第一动作是声明本�
      搁置 4 条（b589621 bisect 断点 / e2e ⑤ 日志摆设 / 手工 --ref 顶重开 /
      --spec-item 非 runs 账静默空表，理由同见该节）。修后 288/288 +
      gen-schemas --check + spec_lint 三绿，主会话亲跑。
+
+以下七条是 §V 验证循环第一轮（sdd/vloop-round1.md，45 confirmed）里
+设计裁决题的主会话定案，补丁工单 17/18 按此实现：
+
+151. **非 r5-choice 自决的 R6 机验路（v1-deploy-2 / v2-hop3-1）**：r5 拼装
+     保持 r5 专属不外扩（writes.json r5_choice_assembly 的 _rule 字面就是
+     kind=r5-choice）。非 r5 行走两步显式路：`ledger.py decision` 新增
+     `--blocked-ref B0xx`（校验行存在，落既有 blocked_ref 字段）；
+     blockedcmd 对 kind≠r5-choice 的答复拒收 --grant（文案指向两步路），
+     新增可选 `--decision-ref D0xx`（校验：行存在、kind=decision、
+     blocked_ref 等于本条、authorized_by 指活跃 grant 或常设字面量），给了
+     就回填 blocked.decision_ref。机验边界定为"引用授权必留痕"：不带
+     grant/decision-ref 的平答（转录既有账面信息）仍合法——R6 管的是自决点，
+     不是一切答复。doctor 半状态补反向扫描：kind≠r5-choice 且 grant_ref
+     非空且 decision_ref 空 → missing-R6-trace 建议（兜历史/手写形状）。
+152. **开条跳层的机器锚点（v3-1）**：writes.json blocked_transitions.open
+     新增封闭映射 legal_to：run→[deploy]、deploy→[idea,user]、idea→[user]、
+     oversight→[user,deploy]；blockedcmd._run_open 照表校验。依据
+     failures.md:51"升级走楼梯"与 spec §2 通道表；deploy→run 不设
+     （下行走发射单/答复，不走开条）。
+153. **jobs 台账两个必加键钉名（v1-run-2/5、v2-hop2-1/2、v2-hop4-2/3）**：
+     rows.json jobs_min_additions 钉死字段名 escalation_ref（可空，指
+     blocked_id）与 sampler_verdict/sampler_verdict_at；sampler_verdict
+     只对"进程真启动过"的 run 有值，枚举不加新值——发射在预检被拒时
+     **不写 jobs 条目**，拒绝原文存档进升级条的 evidence 文件；fallback
+     铁轨的判定映射钉死：done/failed→ok（活性不是成败）、timeout→stall。
+     run 层对 ops/jobs.json 的直接编辑权在 run SKILL.md §3 成文（对齐
+     deploy §3 的既有写法）。
+154. **run_id 缺省命名规则（v2-hop1-1）→ 顺带解 evidence_lint 冲突
+     （v1-oversight-2）**：rows.json launch_order.run_id 的 note 钉缺省
+     形态 `<name>-<YYYYMMDD>-<序>`，name 限 [A-Za-z0-9_.]（连字符留作
+     段分隔）；工程可另立成文规则覆盖。该形态恰好命中 evidence_lint 既有
+     _ID_DATE_SEQ_RE 豁免——linter 一字不动，第一轮沙盒里 run-101 那种
+     形状是种子自己不合规。report-genre.md 补一句：合规 id 按形状豁免，
+     不合规含数字标识符要么进 frontmatter 要么配 `$ ` 行。
+155. **error_classify 缺表不裸崩（v1-run-1 / v2-hop2-3）**：
+     ops/error_classes.json 缺失/不可解析 → 按零规则处理，产 unknown 判定
+     并在 stderr 报表路径，退出码与 unknown 分类同路；rows.json
+     error_classes 补真字段契约，deploy 侧新参考文档教如何起表（走 18）。
+156. **record.py 带 commit 入行（v2-audit-1）**：runs 行 commit 字段取
+     RUNMETA.commit（RUNMETA 无此键才落 null），不再写死 null。
+157. **expected_outputs 不许空产物契约（v1-run-6）**：rows.json
+     launch_order.expected_outputs 加 minItems 1（重生 schema），
+     output_check 对空清单拒绝并说明；tests/helpers 缺省发射单跟着补一条
+     真实产物契约。execute.md 的门禁语义由此成立。
+     story 行的对照口径（v1-idea-2）一并定：baseline_runs 放宽为可空
+     （null = 单臂绝对陈述，不是对照主张），CLI --baseline-runs 变可选，
+     给了则与 candidate_runs 集合不得完全相同；表+schema+CLI+story.md
+     四处同步。
