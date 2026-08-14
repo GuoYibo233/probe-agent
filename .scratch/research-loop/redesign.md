@@ -164,7 +164,30 @@
 
 ## 十一、资产账：重设计之后现有的东西还有什么能用（2026-08-15 盘点）
 
-（本节由一次全插件盘点填充：六个分片并行读代码、表、测试、技能文档，逐件判去向，判完由复核员对抗性核一遍。盘点结果回来后写在这里。）
+盘点跑完了（13 个 agent，六个分片读代码/表/测试/技能文档，逐件判去向，判完由复核员对抗性核一遍，74 件里推翻 20 件）。**全文存 `.scratch/research-loop/asset-inventory.md`**，本节只记会改变施工的那些条。六片里有三片没进到汇总（`_lib.py` 619 行、`tests/` 8672 行、`fallback/` 636 行、`skills/` 与 `agents/` 24 个 md、`plugin.json` 没人判过），所以这份账不全，缺口在盘点文档第八节点名。
+
+**三个数（只覆盖到的那三片，28 个条目）**：原样留用 9 件、要改造 17 件、退役 1 件（`tables/routes.json`）。
+
+**跑得起来的现成基线（盘点员实跑）**：`python3 research-loop/tests/run_all.py` 输出 `-- run_all: 319 passed, 0 failed`；`python3 research-loop/scripts/ledger.py gen-schemas --check` 退出码 0。现有代码是能跑的真代码。
+
+**四条会改变施工顺序的事实**（我逐条自己复核过，下面标"我复核"的是我这次亲手跑命令看的）：
+
+1. **`ledger.py init` 不建任何目录、不建任何账本文件——我在第十四节写"现有代码里 `ledger.py init` 干的就是这件事"是错的，就地更正见第十四节。** 我复核 `scripts/ledger_cmds/configcmd.py` 第 254 到 292 行的 `_run_init`：它只写一个 `research-loop.json`，内容是从 `tables/ledgers.json`、`tables/config.json` 和 `schemas/owners.default.json` 拼出来的骨架，写完自己过一遍结构检查就返回。**但这件事本身是好消息**：它写出来的那份骨架里已经装着每本账的路径和 owner，正是第十五节 `config.json` 要的那个路径映射口子。所以 config 那一半是现成的，建树那一半是新写，能抄的是 `tests/helpers.py` 第 116 行的 `_SANDBOX_DIRS`。
+2. **`decisions_row` 确实没有 work_type、也没有指回上层决定的字段，但引用字段的形状是现成的。** 我复核 `tables/rows.json` 的 `decisions_row`：二十个字段（必填十一个）里没有 work_type，也没有父决定引用；不过 `superseded_by` 已经是一个 `$ref_to: decisions.decision_id` 的同账自引用，"依据决定"照抄它的形状即可，不用从零发明。`principle_ref`（`$ref_to: principles.principle_id`）在原则并进 decisions 之后正好变成链顶那一节。（盘点复核员说 `decision_refs` 就是这个字段，不对——我复核过，`decision_refs` 挂在 launch_order 行上，是发射单指向决定，不是决定指向父决定。它作为形状模板仍然有用。）
+3. **两处改名漏了不会报错，必须写进施工清单。** `decisionscmd.py` 第 85 到 88 行的 `non_oversight_layers` 用字面量 `"oversight"` 做减法，改名成 reviewer 而漏掉这一行，过滤条件永远不成立，reviewer 会**静默拿到 grant 和 decision 的写权**，一声不响。`feedbackcmd.py` 第 17 行 `_SUGGESTION_LAYERS` 是硬编码四值集合，只往表里加 analysis 而不改这里，analysis 提不了反馈，报错信息里连 analysis 这个词都不会出现。
+4. **改名的一大半工作量在测试里，之前的清单一条都没提。** 盘点员实测：`blocked` 出现在 41 个文件里（`tests/test_blocked_decisions.py` 174 次、`blockedcmd.py` 119 次、`tests/test_e2e.py` 81 次），`oversight` 出现在 30 个文件里。反过来有个好消息：`--layer` 的可选值四处都是注册时现从 `tables/writes.json` 读的，表里四个值换五个，那四个文件零行代码改动。
+
+**机械改名要跳过的假朋友**：`domain` 这个词在 `configcmd.py`（4 处）和 `tables/config.json`（18 处）里意思是"取值范围"，是配置键说明的栏名，跟要新建的 work_type 毫无关系。扫 `domain` 会把这 22 处一起扫掉。
+
+**施工机器离第一段的要求差三件**：`.claude/skills/ticket-run/wave.js`（203 行）有底子，但它现在没有任何执行 shell 的路径（`exec`、`spawn`、`require(` 全零命中），只派 agent，所以"工单带验收命令、退出码 0 才算完"是新写；`MAX_ROUNDS` 是 5，不是三轮废掉重做；收账在 `SKILL.md` 的 Phase 3，靠主会话人工读；看门狗全仓零命中，从零造。工单的验收命令有三条现成的可以填：`tests/run_all.py`、`ledger.py gen-schemas --check`、`doctor.py`。
+
+**留着以后补机器兜底用的现成零件**（第十四节的敞口本轮不解决，只记零件在哪）：`tests/helpers.py`（488 行）里 `make_sandbox`、`run_ledger`、`run_script` 加八个行工厂，干净沙盒加跑命令加收退出码三件齐全，319 个测试正在用；`scripts/_lib.py` 的 `validate()` 是现成的结构化比对引擎；`scripts/fallback/` 五件是插件自带的桩发射器，跑发射类动作不占显卡。另外 `.scratch/research-loop/spec_lint.py`（11137 字节）是**仓库里唯一一件拿机器判说明书还准不准的东西**，它机械校验 `spec.md` 与 `tables/` 数据表是否一致。
+
+**散文文档整体退役，五处规矩本体要抢救**：`skills/` 五个 SKILL.md 加 14 份 references 加 `agents/inspector.md`，共 24 个 md、1860 行，按第十四节整体退役。里面五处是规矩本体不是散文，退役前要把内容搬走——`skills/oversight/references/report-genre.md`（43 行，证据体裁成文，通例⑤保留了这条规矩，`evidence_lint.py` 和 `verify_report.py` 是它的执法者）、`skills/deploy-layer/references/launch-orders.md`（131 行，发射单格式唯一现成底稿）、`skills/deploy-layer/references/failures-inbound.md`（112 行）加 `skills/run-layer/references/failures.md`（72 行，通例⑦的成文）、`skills/run-layer/references/execute.md`（165 行，全仓唯一写了 `doctor.py` 调用点的技能文档）、`agents/inspector.md`（65 行，检查 subagent 的三件套调用清单）。
+
+**插件门面还写着旧结构**：`.claude-plugin/plugin.json` 的 description 是「three working layers, four on-disk channels……an independent oversight plane」，改名时要一起改。
+
+**规模合计**：Python 代码 15570 行（`scripts/` 根 3255、`ledger_cmds/` 3007、`fallback/` 636、`tests/` 8672），tables 加 schemas 2604 行，skills 加 agents 1860 行。
 
 ## 十二、example 到底跑不跑（2026-08-15 已裁：只给人看，本节作废，结论见第十四节）
 
@@ -193,7 +216,7 @@
 
 **交付物是一个 Claude Code plugin。** 它的运行形态按三步走：
 
-1. **init**：plugin 装进一个研究仓库之后，先跑一条初始化命令，在那个仓库里建出目录和账本文件。（"首先初始化仓库，弄一下结构"指的是这一步——你已明确不是指把 `research-loop/` 这个插件目录推倒重建。现有代码里 `ledger.py init` 干的就是这件事。）
+1. **init**：plugin 装进一个研究仓库之后，先跑一条初始化命令，在那个仓库里建出目录和账本文件。（"首先初始化仓库，弄一下结构"指的是这一步——你已明确不是指把 `research-loop/` 这个插件目录推倒重建。~~现有代码里 `ledger.py init` 干的就是这件事。~~ **这句是错的，2026-08-15 盘点后我复核源码更正**：`configcmd.py` 的 `_run_init` 只写一个 `research-loop.json` 配置骨架，不建任何目录、不建任何账本文件。那份骨架里已经装着每本账的路径和 owner，所以第十五节 `config.json` 那一半是现成的，建树那一半是新写。详见第十一节。）
 2. **加载角色**：每开一个 session，用一个 skill 把这个 session 加载成一个角色，这个 session 从此只干这个角色的活。五个角色就是五个 skill：idea、deploy、run、analysis、reviewer。
 3. **角色交流**：角色之间靠 init 建出来的那套账本互相读写来交流，向下派活走 handoff，向上提问题走 issue。
 
@@ -297,3 +320,17 @@
 这两道检查合起来，把通例⑥"口径不发明"从"自觉打底、reviewer 事后核对"升级成机器当场拦。通例⑥的强制手段那一栏随之改写。
 
 **我替你定的一处（可否决）**：你说"不要人写"，我读成"不由人手写维护这份文件"，不是"用户不再批口径"。所以流程仍是——统计角色提案（写一行 `status=proposed`），用户批一条命令改成 `approved`，只有 `approved` 的口径才允许被 analysis 用。通例⑥"派生量只用批过的口径"这一条不变。
+
+### 盘点查出的两处撞名，我给的解法（可否决）
+
+第一段的机械改名清单里写着 `blocked→issues`，盘点查实这个名字已经被占了，另有一处配置键也撞。两处 redesign.md 之前都没检查过。
+
+**撞名一：`issues` 已经是工单账的键。** `tables/ledgers.json` 第 16 行的 `issues` 指的是工单 md 账（`.scratch/*/issues/`，owner 是 deploy），第 19 行的 `blocked` 才是待决升级账。硬取 `issues` 这个字面量的地方有：`trace_check.py` 第 259 到 263 行与第 319 到 324 行、`statuscmd.py` 第 85 行和第 100 行，行结构里还有独立的 `issue_min` 块和三处 `$ref_to: issues.issue_id`。
+
+**我的解法：第四处合并——工单也是 handoff。** 工单就是"出主意交给部署代码"这条边上的交接物，跟发射单（"部署代码交给跑实验"）是同一类东西，用 `work_type` 区分即可，这和前面三处合并是同一条理由。合并之后工单账不再占 `issues` 这个名字，问题条拿走它，撞名消失，也不用另起一个别扭的名字。连带要改的：`affects` 字段里 `$ref_to: issues.issue_id` 改指 `handoffs.handoff_id`。
+
+**撞名二：`roles` 已经是配置键。** `tables/config.json` 的 `roles` 键装的是 `{inspector_model, reader_model}`，默认值硬写在 `scripts/_lib.py` 第 97 行，`configcmd.py` 第 39 行的 `_DEFAULTED_KEYS` 写死了这个键名，`tests/test_lib.py` 第 547 行对这个字面量做断言。词表把 role 定成正式名之后，这个配置键再叫 roles 就是一词两义。**我的解法**：把配置键改名叫 `models`（它装的本来就是两个模型名），role 这个词留给角色。改动是三个文件加一个测试断言。
+
+### 六本账里还缺一个位置：功能 spec
+
+`.scratch/<功能名>/spec.md` 这类东西在六本账里没有位置。**我的判断**：它不是账，是 deploy 角色的工作产物，放研究仓库自己约定的地方就行，`config.json` 里登记一条路径给角色们找得到，不进 `loop/`。理由是账本的定义是"只增不改、经脚本进出、有结构化行"，spec 三条都不满足。
