@@ -396,9 +396,15 @@ def _withdrawal_interrupted_findings(blocked_rows: list, decisions_rows: list, d
         synced = _synced_decision(blocked_id, row, decisions_rows, decisions_by_id)
         decision_still_decided = synced is not None and synced.get("status") == "decided"
 
-        reopened = any(
-            r.get("ref") == blocked_id and r.get("status") == "open" for r in blocked_rows
-        )
+        # Existence of a ref=<blocked_id> row is what "the mechanical reopen
+        # happened" means -- not "and it's still status=open" (F3, sdd/
+        # final-review.md): the reopened row moving on to answered/closed/
+        # withdrawn on its own is completely normal, expected lifecycle, not
+        # a sign the reopen itself never happened. Requiring status=open
+        # here made doctor re-flag B001 as an interrupted withdrawal (and
+        # suggest re-running the withdraw, which mechanically opens a third
+        # row) the moment its already-reopened B002 got answered.
+        reopened = any(r.get("ref") == blocked_id for r in blocked_rows)
 
         if decision_still_decided or not reopened:
             out.append(

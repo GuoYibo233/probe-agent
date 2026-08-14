@@ -71,17 +71,24 @@ def _find_header(lines: list):
     return None, None
 
 
-def parse_principles(path) -> list:
+def parse_principles(path, malformed=None) -> list:
     """Parse the first markdown table in `path` whose header row contains a
     `principle_id` cell. Column names are exactly that header row's cells
     (helpers.py's eight-column METHOD.md layout: principle_id/status/scope/
     applies_when/principle/rationale/criterion_cmd/last_tested). Returns one
     dict per body row (header cell -> stripped cell text); the row
     immediately after the header (the `|---|---|...` separator) is skipped.
-    A malformed body row (wrong cell count) is skipped, not raised on. A
-    missing `path` is a regular RLError rejection (exit 2), not an
+    A malformed body row (wrong cell count) is skipped, not raised on -- this
+    function's own parsing behavior is unchanged by F6 (sdd/final-review.md).
+    A missing `path` is a regular RLError rejection (exit 2), not an
     uncaught FileNotFoundError -- every caller (principles-lint, runs-append,
-    render principles) goes through this function or _render() below."""
+    render principles) goes through this function or _render() below.
+
+    `malformed`, if given a list, gets one (line_no, expected_cells,
+    got_cells) tuple appended per skipped row (1-indexed line_no) --
+    principles-lint is the only caller that passes one, to report what it
+    would otherwise silently drop; every other caller leaves it None and
+    sees exactly the same rows list as before."""
     path = Path(path)
     if not path.exists():
         _lib.fail("principles", "file", "not found", str(path))
@@ -91,12 +98,15 @@ def parse_principles(path) -> list:
         return []
 
     rows = []
-    for line in lines[header_idx + 2:]:
+    for offset, line in enumerate(lines[header_idx + 2:]):
         stripped = line.strip()
         if not stripped.startswith("|"):
             break
         cells = _split_row(stripped)
         if len(cells) != len(header):
+            if malformed is not None:
+                line_no = header_idx + 2 + offset + 1
+                malformed.append((line_no, len(header), len(cells)))
             continue
         rows.append(dict(zip(header, cells)))
     return rows
@@ -185,8 +195,19 @@ def _lint(args) -> int:
     cfg = _lib.load_config(root)
     path = Path(args.file) if args.file is not None else Path(cfg.ledger_path("principles"))
 
-    rows = parse_principles(path)
-    errors = _lint_errors(rows, cfg)
+    # A malformed row (wrong cell count) is where parse_principles's own
+    # tolerant parsing quietly drops it -- principles-lint is R1's one
+    # machine-verified gate, so a row that can't even be counted must still
+    # be reported, not made to look like it never existed (F6, sdd/
+    # final-review.md). Reported ahead of the ordinary per-row checks below,
+    # which never see these rows at all (they're simply absent from `rows`).
+    malformed = []
+    rows = parse_principles(path, malformed)
+    errors = [
+        f"principles.{line_no}.format: malformed row (expected {expected} cells, got {got})"
+        for line_no, expected, got in malformed
+    ]
+    errors.extend(_lint_errors(rows, cfg))
     if errors:
         for line in errors:
             print(line, file=sys.stderr)

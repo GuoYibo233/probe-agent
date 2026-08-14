@@ -169,6 +169,24 @@ def _run_answer(args) -> int:
             # answer on the user's behalf, but the field is force-set --
             # argparse's choices=["user"] already rejects any other
             # explicit --answered-by value before we get here.
+            #
+            # --grant is rejected outright here (F10, sdd/final-review.md):
+            # a to_layer=user row is a transcript of the user's own ruling,
+            # never a self-decision -- answered_by is about to be forced to
+            # "user" two lines down regardless of who actually typed the
+            # answer, so a --grant here would get recorded as if the user
+            # ruled on it when an agent actually self-decided under a
+            # grant. A real self-decision opens its row --to-layer idea or
+            # --to-layer deploy instead (r5-choices.md "Which mode
+            # applies").
+            if args.grant_ref is not None:
+                _lib.fail(
+                    "blocked", "grant_ref",
+                    "to_layer=user answers are a transcript of the user's own ruling and "
+                    "may not carry --grant (a self-decision must open its row --to-layer "
+                    "idea or --to-layer deploy, not --to-layer user)",
+                    args.grant_ref,
+                )
             answered_by = "user"
         else:
             if args.layer != row["to_layer"]:
@@ -289,6 +307,15 @@ def _run_close(args) -> int:
 
 
 def _run_withdraw(args) -> int:
+    # withdrawal_proxy: "无用户原话拒" -- same rule and phrasing storycmd's
+    # own retire path enforces (F5, sdd/final-review.md: this was the one
+    # of the three withdrawal-proxy write paths that didn't check it yet).
+    if not args.reason or not args.reason.strip():
+        _lib.fail(
+            "blocked", "reason",
+            "withdrawal requires the user's own words",
+        )
+
     cfg = _context()
     blocked_path = cfg.ledger_path("blocked")
     decisions_path = cfg.ledger_path("decisions")
@@ -338,12 +365,14 @@ def _run_withdraw(args) -> int:
                     _whitelist("decisions"),
                 )
 
-        # Step 2 -- mechanical reopen, deduped on (ref=BID, status=open) so
-        # a rerun (crash recovery or the idempotent-withdrawn path below)
-        # never opens a second one.
-        already_reopened = any(
-            r.get("ref") == args.blocked_id and r.get("status") == "open" for r in rows
-        )
+        # Step 2 -- mechanical reopen, deduped on ref=BID alone (F3, sdd/
+        # final-review.md) so a rerun (crash recovery, the idempotent-
+        # withdrawn path below, or doctor's own "re-run the same withdraw"
+        # fix suggestion) never opens a second one -- even after the
+        # already-reopened row has itself moved past status=open (answered,
+        # closed, ...), which is ordinary lifecycle, not a sign the reopen
+        # needs doing again.
+        already_reopened = any(r.get("ref") == args.blocked_id for r in rows)
         if not already_reopened:
             new_row = {
                 "blocked_id": _lib.alloc_id(rows, "blocked_id", "B"),

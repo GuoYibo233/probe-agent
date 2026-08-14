@@ -302,6 +302,28 @@ def test_principles_lint_passes_a_valid_table():
         assert code == 0, err
 
 
+def test_principles_lint_reports_malformed_row_by_line_number():
+    # F6 (sdd/final-review.md): parse_principles's own tolerant parsing
+    # silently drops a row whose cell count doesn't match the header --
+    # principles-lint is R1's one machine-verified gate, so a row that
+    # can't even be counted must be reported, not made to look like it
+    # never existed. parse_principles's parsing behavior itself is
+    # unchanged (still silently dropped from the returned rows list); only
+    # principles-lint's own reporting changes.
+    with tempfile.TemporaryDirectory() as tmp:
+        root, cfg, registry_cmd = _sandbox(tmp)
+        _write_method(root, [
+            _row("P001", "【想法待定】", ""),
+            "| P002 | 【想法待定】 | scope | always | text | reason |\n",  # 6 cells, header wants 8
+        ])
+        code, out, err = helpers.run_ledger(root, "principles-lint")
+        assert code == 1
+        assert "principles.6.format: malformed row (expected 8 cells, got 6)" in err
+        # the malformed row is absent from every other check, not
+        # double-reported under some other field path.
+        assert "P002" not in err
+
+
 def test_principles_lint_reports_duplicate_principle_id():
     with tempfile.TemporaryDirectory() as tmp:
         root, cfg, registry_cmd = _sandbox(tmp)

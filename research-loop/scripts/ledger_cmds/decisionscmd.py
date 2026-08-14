@@ -231,6 +231,14 @@ def _run_decision(args) -> int:
 
 
 def _run_decision_withdraw(args) -> int:
+    # withdrawal_proxy: "无用户原话拒" -- same rule and phrasing storycmd's
+    # own retire path enforces (F5, sdd/final-review.md).
+    if not args.reason or not args.reason.strip():
+        _lib.fail(
+            "decisions", "withdrawn_reason",
+            "withdrawal requires the user's own words",
+        )
+
     cfg = _context()
     path = cfg.ledger_path("decisions")
     schema = _lib.load_schema("decisions")

@@ -203,11 +203,14 @@ def _read_jsonl_file(path: Path) -> list:
         return []
     rows = []
     with open(path, "r", encoding="utf-8") as f:
-        for line in f:
+        for line_no, line in enumerate(f, start=1):
             line = line.strip()
             if not line:
                 continue
-            rows.append(json.loads(line))
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                fail(path.stem, f"line {line_no}", "is not valid JSON", line[:80])
     return rows
 
 
@@ -248,12 +251,15 @@ def inplace_update(path, key_field, key_value, updates: dict, whitelist) -> dict
 
     updated_row = None
     new_lines = []
-    for line in lines:
+    for line_no, line in enumerate(lines, start=1):
         stripped = line.strip()
         if not stripped:
             new_lines.append(line)
             continue
-        row = json.loads(stripped)
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError:
+            fail(path.stem, f"line {line_no}", "is not valid JSON", stripped[:80])
         if row.get(key_field) == key_value:
             row = dict(row)
             row.update(updates)

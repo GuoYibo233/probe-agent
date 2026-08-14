@@ -75,7 +75,7 @@
       "writable_by": "proxy",
       "_note": "走撤销代笔特例（见 withdrawal_proxy）；撤销 answered 条时 ledger.py 同一动作机械重开新条（不查 --layer）：from_layer/to_layer/kind/question/where/options/evidence 逐字沿用旧条、ref 指旧 blocked_id、status=open——新条回到 to_layer 待办，问题不因撤销而消失；该答复已同步拼出 decision 条的，同一动作把它置 withdrawn + 同一份撤销原话",
       "_write_order": "① 先把同步 decision 置 withdrawn（经 blocked.decision_ref；decision_ref 为空时按 decisions.blocked_ref 反查孤儿）② 再 append 重开新条（ref=旧 blocked_id）③ 最后把旧条置 withdrawn——翻状态的那一笔最后写，崩溃只会停在『旧条仍 answered』",
-      "_idempotency": "重开前按 (ref=旧 blocked_id, status=open) 查重，命中不再开第二条；三步各自可重入，重跑整条命令结果不变"
+      "_idempotency": "重开前按 ref=旧 blocked_id 单键查重（不论重开条现在是什么状态），命中不再开第二条；三步各自可重入，重跑整条命令结果不变（原按 (ref, status=open) 双键查重会在重开条自己流转出 open 态后把同一条撤销再判成'未重开'，R6 2026-08-14 终审 F3 改窄）"
     }
   },
   "r5_choice_assembly": {

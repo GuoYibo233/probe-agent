@@ -32,8 +32,65 @@ def test_alloc_id_widens_past_999():
 
 
 # ---------------------------------------------------------------------------
+# 1a. jsonl_rows / _read_jsonl_file -- malformed line handling (F4, sdd/
+#     final-review.md): a bad line used to blow up as a bare
+#     json.decoder.JSONDecodeError -- not the contract's exit 2, no
+#     "<ledger>.<field>: <detail>" text, no file/line pointer -- crashing
+#     every command that starts a session (`status` is the first thing every
+#     session runs). It must now surface as an ordinary RLError naming the
+#     ledger and the 1-indexed line number.
+# ---------------------------------------------------------------------------
+
+
+def test_jsonl_rows_bad_line_raises_rlerror_with_ledger_and_line_number():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "ops" / "blocked.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"blocked_id": "B001", "status": "open"}\n{"blocked_id": "B002"\n',
+                         encoding="utf-8")
+        try:
+            _lib.jsonl_rows(path)
+        except _lib.RLError as e:
+            assert e.message.startswith("blocked.line 2: is not valid JSON")
+        else:
+            raise AssertionError("expected RLError for a malformed jsonl line")
+
+
+def test_query_blocked_bad_jsonl_line_exits_2_with_ledger_and_line_number():
+    # CLI-level companion to the unit test above: the same corruption, hit
+    # through `ledger.py query` the way a real session would, lands the
+    # contract's exit 2 with the same text -- not a bare traceback.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(Path(tmp))
+        cfg = _lib.load_config(root)
+        blocked_path = cfg.ledger_path("blocked")
+        blocked_path.parent.mkdir(parents=True, exist_ok=True)
+        blocked_path.write_text('{"blocked_id": "B001"\n', encoding="utf-8")  # truncated
+
+        code, out, err = helpers.run_ledger(root, "query", "blocked", "--all-rows")
+
+        assert code == 2, (out, err)
+        assert "blocked.line 1: is not valid JSON" in err
+
+
+# ---------------------------------------------------------------------------
 # 2. inplace_update
 # ---------------------------------------------------------------------------
+
+
+def test_inplace_update_bad_line_raises_rlerror_with_ledger_and_line_number():
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "ops" / "blocked.jsonl"
+        helpers.write_jsonl(path, [helpers.make_blocked_row(blocked_id="B001")])
+        with open(path, "a", encoding="utf-8") as f:
+            f.write('{"blocked_id": "B002", unterminated\n')
+        try:
+            _lib.inplace_update(path, "blocked_id", "B001", {"status": "closed"},
+                                 whitelist={"status"})
+        except _lib.RLError as e:
+            assert e.message.startswith("blocked.line 2: is not valid JSON")
+        else:
+            raise AssertionError("expected RLError for a malformed jsonl line")
 
 
 def test_inplace_update_rejects_non_whitelisted_field_with_exact_message():

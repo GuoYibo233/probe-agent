@@ -314,6 +314,42 @@ def test_withdraw_answered_row_reopens_then_idempotent_rerun():
         assert len(_blocked_rows(root)) == len(rows)  # idempotent: no new rows
 
 
+def test_withdraw_rerun_does_not_reopen_a_second_time_once_the_reopened_row_moved_on():
+    # F3 (sdd/final-review.md): the reopen dedup key used to require the
+    # existing reopened row to still be status=open -- once that row moved
+    # on (got answered, closed, whatever), a re-run of the same withdraw
+    # command (crash recovery, or doctor's own suggested fix text) would
+    # mechanically open a *second* reopen for the same original question.
+    # Deduping on ref alone, regardless of the reopened row's own current
+    # status, fixes it.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other", ref="S1")
+        helpers.run_ledger(root, "blocked", "answer", "--layer", "deploy", "B001", "--answer", "go with A")
+        code, out, err = helpers.run_ledger(root, "blocked", "withdraw", "B001", "--reason", "changed my mind")
+        assert code == 0, (out, err)
+
+        rows = _blocked_rows(root)
+        reopened = next(r for r in rows if r["ref"] == "B001")
+
+        # the reopened row lives out its own lifecycle -- answered, no
+        # longer "open" -- before B001 gets withdrawn a second time.
+        blocked_path = _lib.load_config(root).ledger_path("blocked")
+        for row in rows:
+            if row["blocked_id"] == reopened["blocked_id"]:
+                row["status"] = "answered"
+                row["answer"] = "resolved separately"
+                row["answered_at"] = _lib.now_iso()
+                row["answered_by"] = "deploy"
+        helpers.write_jsonl(blocked_path, rows)
+
+        code, out, err = helpers.run_ledger(root, "blocked", "withdraw", "B001", "--reason", "again")
+        assert code == 0, (out, err)
+
+        after = _blocked_rows(root)
+        assert len([r for r in after if r["ref"] == "B001"]) == 1  # no second reopen created
+
+
 def test_withdraw_syncs_decision_to_withdrawn():
     with tempfile.TemporaryDirectory() as tmp:
         root = _sandbox(tmp)
@@ -363,6 +399,62 @@ def test_withdraw_orphan_reverse_lookup_via_blocked_ref():
 
         decision = next(d for d in _decisions_rows(root) if d["decision_id"] == decision_id)
         assert decision["status"] == "withdrawn"
+
+
+# ---------------------------------------------------------------------------
+# F5 (sdd/final-review.md): withdrawal_proxy's "no user words, no
+# withdrawal" rule -- storycmd's own retire path already checked this;
+# blockedcmd's withdraw and decisionscmd's decision-withdraw didn't.
+# ---------------------------------------------------------------------------
+
+
+def test_blocked_withdraw_blank_reason_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other", ref="S1")
+        helpers.run_ledger(root, "blocked", "answer", "--layer", "deploy", "B001", "--answer", "go with A")
+
+        code, out, err = helpers.run_ledger(root, "blocked", "withdraw", "B001", "--reason", "   ")
+        assert code == 2
+        assert "blocked.reason" in err
+        assert _blocked_rows(root)[0]["status"] == "answered"  # untouched
+
+
+def test_decision_withdraw_blank_reason_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _, out1, _ = _decision(root, authorized_by="spec-standing-gpu-1h")
+        d1 = json.loads(out1.strip())["decision_id"]
+
+        code, out, err = helpers.run_ledger(root, "decision-withdraw", d1, "--reason", "  ")
+        assert code == 2
+        assert "decisions.withdrawn_reason" in err
+        assert _decisions_rows(root)[0]["status"] == "decided"  # untouched
+
+
+# ---------------------------------------------------------------------------
+# F10 (sdd/final-review.md): a to_layer=user row is a transcript of the
+# user's own ruling -- answering it with --grant would get recorded as
+# answered_by=user (the field is force-set either way) even though an
+# agent actually self-decided under a grant, an audit-trail reversal.
+# ---------------------------------------------------------------------------
+
+
+def test_to_layer_user_answer_with_grant_is_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="deploy", to_layer="user")  # B001
+        gcode, gout, _ = _grant(root, expires="2099-01-01T00:00:00")
+        assert gcode == 0, gout
+        grant_id = json.loads(gout.strip())["decision_id"]
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "run", "B001",
+            "--answer", "x", "--grant", grant_id,
+        )
+        assert code == 2
+        assert "blocked.grant_ref" in err
+        assert _blocked_rows(root)[0]["status"] == "open"  # untouched
 
 
 # ---------------------------------------------------------------------------

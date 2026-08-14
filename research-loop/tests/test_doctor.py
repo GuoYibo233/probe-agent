@@ -147,6 +147,47 @@ def test_doctor_interrupted_withdrawal_is_reported_and_sandbox_is_untouched():
         assert "re-run: ledger.py blocked withdraw B001 --reason ..." in out
 
 
+def test_doctor_reopened_row_moving_past_open_is_not_reported_as_interrupted_again():
+    # F3 (sdd/final-review.md): once B001's withdrawal mechanically reopened
+    # B002, B002 living out its own ordinary lifecycle (getting answered)
+    # must not make doctor think the reopen never happened and suggest
+    # re-running the withdraw -- that re-run would mechanically open a
+    # *third* row for a question the user already has two live threads on.
+    # The old status=open-only "reopened" criterion did exactly that the
+    # moment B002 stopped being open; requiring only that a ref=B001 row
+    # exist (regardless of its current status) fixes it.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        withdrawn_row = helpers.make_blocked_row(
+            blocked_id="B001", kind="r5-choice", to_layer="deploy", status="withdrawn",
+            where="which approach", options=["A", "B"], decision_ref="D001",
+            answer="chose A\n[withdrawn by user: changed my mind]",
+            answered_at=_lib.now_iso(), answered_by="deploy",
+        )
+        reopened_and_answered_row = helpers.make_blocked_row(
+            blocked_id="B002", kind="r5-choice", to_layer="deploy", status="answered",
+            where="which approach", options=["A", "B"], ref="B001",
+            answer="chose B", answered_at=_lib.now_iso(), answered_by="deploy",
+            decision_ref="D002",
+        )
+        decision_row_withdrawn = helpers.make_decision_row(
+            decision_id="D001", blocked_ref="B001", status="withdrawn",
+            withdrawn_by="user", withdrawn_reason="changed my mind",
+        )
+        decision_row_new = helpers.make_decision_row(decision_id="D002", blocked_ref="B002")
+        helpers.write_jsonl(
+            root / "ops" / "blocked.jsonl", [withdrawn_row, reopened_and_answered_row],
+        )
+        helpers.write_jsonl(
+            root / "ops" / "decisions.jsonl", [decision_row_withdrawn, decision_row_new],
+        )
+
+        code, out, err = _run_doctor(root)
+
+        assert code == 0
+        assert "interrupted withdrawal" not in out
+
+
 def test_doctor_affects_mismatch_is_reported_and_sandbox_is_untouched():
     with tempfile.TemporaryDirectory() as tmp:
         root = _sandbox(tmp)
