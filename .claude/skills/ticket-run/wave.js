@@ -98,6 +98,8 @@ const implPrompt = (t, report) =>
   `工作树协议（并行执行，必须照办）：在 ${A.repo} 里先 git rev-parse HEAD 记为 base，` +
   `然后 git worktree add ${wtPath(t, '')} -b ${branchOf(t)} 建出你自己的工作树和分支，` +
   `所有改动、测试、commit 只发生在这个工作树里；主仓工作树一个文件都不许动。` +
+  `工作树只用 Bash 里的 git 命令建和进（后续命令带工作树绝对路径或 git -C），` +
+  `禁止调用 EnterWorktree 工具——从 subagent 调它会吊死不返回（wave3、wave9 各挂过一次）。` +
   `收尾把工作树里的东西 commit 干净后 git worktree remove ${wtPath(t, '')}，分支留着。\n` +
   `完整报告写到 ${report}（主仓里的绝对路径，直接写）。commit 消息前缀 T${t.id}:。\n` +
   `返回结构化字段（status/base/head/testSummary/concerns/reason）。`
@@ -118,7 +120,8 @@ const fixPrompt = (t, report, open, round) =>
   `把已有分支检出到你自己的工作树；如果报 already checked out，说明上一轮的工作树没删干净，` +
   `先 git worktree prune，还不行就对那个残留路径 git worktree remove --force 再重试。` +
   `所有改动只发生在这个工作树里，修完 commit 到分支（前缀 T${t.id}:），` +
-  `然后 git worktree remove ${wtPath(t, `-fix${round}`)}。\n` +
+  `然后 git worktree remove ${wtPath(t, `-fix${round}`)}。` +
+  `工作树只用 Bash 里的 git 命令操作，禁止调用 EnterWorktree 工具（会吊死不返回）。\n` +
   `未决 findings（逐条修掉，不许扩大范围重构）：\n${JSON.stringify(open, null, 2)}\n` +
   `修完重跑覆盖被改代码的测试，把修复报告（含每条 finding 怎么修的、测试命令与输出）` +
   `追加到 ${report}。返回 head 与 testEvidence。`

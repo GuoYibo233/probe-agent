@@ -59,7 +59,11 @@ Workflow({
 - 波内工单并行，一张工单内部严格串行。每张工单的改动全部落在自己的分支
   `ticket/<波名>/T<NN>` 上，agent 在仓库旁边的 `<repo>-wt/` 下自建工作树、
   用完即删（git 的各工作树共享对象库，所以评审在主仓用 sha 就取得到 diff）。
-  发射后主仓工作树谁都不动，代码合并等收账时做。
+  发射后主仓工作树谁都不动，代码合并等收账时做。工作树只用 git 命令建和进，
+  派发消息里明令禁调 EnterWorktree 工具——subagent 调它会吊死不返回，
+  wave3 和 wave9 各挂过一次（wave9 吊了 6 小时才被发现）。
+  卡住的判法：读 workflow 目录下 agent-*.jsonl 的末行时间戳，
+  停滞半小时以上就 TaskStop 后按下面的 resumeFromRunId 续跑。
 - 每个 agent 的模型显式写死：实现和评审用 sonnet，修复第 4、5 轮升级 opus。
   不传模型就会继承主会话的 Fable，这条撞 subagent 禁 Fable 的硬规则。
 - 修复循环上限 5 轮，到顶就带着未决 findings 返回，脚本不做裁决。
