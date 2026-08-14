@@ -37,7 +37,9 @@ up from a previous one -- don't ask the user to re-explain where things
 stand. It returns three read-only blocks: this layer's working face, this
 layer's pending queue (open entries addressed to idea, plus answered entries
 idea raised now awaiting idea's confirmation -- both count unresolved), and
-the active-grants view (unexpired grants scoped to idea). Field-by-field
+the active-grants view (all unexpired grants -- grant rows carry no layer
+field, so the view is global; read each grant's scope text before treating
+it as yours). Field-by-field
 derivation: `tables/rows.json` → `status_view`.
 
 ## 3. Write permissions

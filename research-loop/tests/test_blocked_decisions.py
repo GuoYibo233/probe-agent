@@ -660,3 +660,33 @@ def test_row_not_found_errors():
         assert code == 2
         code, _, _ = helpers.run_ledger(root, "decision-withdraw", "D999", "--reason", "x")
         assert code == 2
+
+
+def test_non_r5_answer_grant_must_be_active_regardless_of_kind():
+    # --grant used to be validated only inside the r5-choice branch, so a
+    # kind=other/failure/principle-gap answer could land any literal (e.g.
+    # "spec-standing-gpu-1h") in grant_ref -- an audit-chain pointer that
+    # must only ever name an active grant row.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        _open_blocked(root, layer="run", to_layer="deploy", kind="other")  # B001
+
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--grant", "spec-standing-gpu-1h",
+        )
+        assert code == 2, (out, err)
+        assert "grant is not active" in err
+        assert _blocked_rows(root)[0]["status"] == "open"  # untouched
+
+        gcode, gout, _ = _grant(root, expires="2099-01-01T00:00:00")
+        assert gcode == 0, gout
+        grant_id = json.loads(gout.strip())["decision_id"]
+        code, out, err = helpers.run_ledger(
+            root, "blocked", "answer", "--layer", "deploy", "B001",
+            "--answer", "x", "--grant", grant_id,
+        )
+        assert code == 0, (out, err)
+        row = _blocked_rows(root)[0]
+        assert row["status"] == "answered"
+        assert row["grant_ref"] == grant_id

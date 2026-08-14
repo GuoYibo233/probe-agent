@@ -760,3 +760,10 @@ layer_param 加 _source 键。原文"每个会话开工第一动作是声明本�
      提出且已有答复、待本层消化收尾的条目）。statuscmd 照表实现；
      `pending_user_decisions`（to_layer=user）与 `active_grants` 不动，
      四份 SKILL.md 的"三块分层视图"描述随之变真。
+150. **复审残余的裁决（2026-08-14）**：范围限定复审判 15 FIXED + F15 文档
+     半边 PARTIAL + 11 条观察。处置全文见 sdd/final-review.md 末节：修掉
+     6 条（含唯一挡合并残余 idea-layer/SKILL.md 授权视图措辞、blockedcmd
+     全 kind 校验 --grant、fallback/launch.py 接 F2 根校验，各配测试），
+     搁置 4 条（b589621 bisect 断点 / e2e ⑤ 日志摆设 / 手工 --ref 顶重开 /
+     --spec-item 非 runs 账静默空表，理由同见该节）。修后 288/288 +
+     gen-schemas --check + spec_lint 三绿，主会话亲跑。

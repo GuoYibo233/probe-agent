@@ -51,7 +51,10 @@ _EXIT_TIMEOUT = 1
 
 def _project_root(args) -> Path:
     if args.project_root:
-        return Path(args.project_root)
+        # Same wrong-path guard as the four checkers (F2): an unwired
+        # explicit root would silently read config as empty and drop
+        # jobs.json/artifacts under the wrong tree.
+        return _lib.resolve_project_root(args.project_root)
     found = _lib.find_project_root()
     return found if found is not None else Path.cwd()
 
@@ -228,7 +231,11 @@ def main(argv=None) -> int:
     parser.add_argument("launch_order")
     parser.add_argument("--project-root", dest="project_root", default=None)
     args = parser.parse_args(argv)
-    return run(args)
+    try:
+        return run(args)
+    except _lib.RLError as exc:
+        print(exc.message, file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

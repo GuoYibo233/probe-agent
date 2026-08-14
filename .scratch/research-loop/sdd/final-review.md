@@ -166,3 +166,55 @@
 10. 自决点 #138-145 → 全部认可，不推翻。#145（`launch_order_ref=run_id`）单独核过：`launch.py:137` 写 run_id、发射单按 `<run_id>.json` 命名、`trace_check` 按文件名 stem 索引，三处闭合。
 
 修复排序建议：F1 → F2 → F15 是一组（都动溯源/视图这条主干，且 F1 修完 e2e 的 fixture 绕行要跟着拆）；F3/F4/F5/F6 是四个独立小修；B 组八条文档改动可以并成一波；F16 跟着 F1 一起改测试。
+
+---
+
+# 修复轮与范围限定复审的处置（主会话，2026-08-14）
+
+修复：单个 sonnet 修复 agent 一次修完 16 条，六个 commit（b589621 F1+F16 /
+cf4bc8d F2 / 77c66be F3-F6+F10 代码 / bc155a4 F8 / 72ad332 F15 / 0a56f99 B 组
+文档+表）。四道裁决题按自决点 #146–149 落地。修完主会话亲跑三门禁：285/285、
+gen-schemas --check exit 0、spec_lint 0 errors。
+
+复审：opus 复审 agent 只读复审 `356cae6..HEAD`，方法是两棵树（旧 356cae6 /
+新 HEAD）各自跑同一套按终审报告原文自写的复现脚本，测试有效性用变异法验证，
+四张表逐行核对授权范围。逐条 verdict：**F1–F14、F16 共 15 条 FIXED**（每条
+附两棵树对照证据；F1 的 fixture 绕行确认真拆掉、变异法证明 e2e 已成为该修复
+的回归覆盖；F1 顺手删 `approval.spec_unreadable` 分支被单独判定成立——同种
+损坏由 forward_chain.spec_ref 报出、finding 名不在任何封闭清单）；**F15
+PARTIAL**——机械半边全好（open_blocked 按 to_layer 过滤、answered_blocked
+新增，四层实测视图各不相同），文档半边 `idea-layer/SKILL.md:40` 说授权视图
+"scoped to idea" 与实际的全局视图不符，列为复审唯一挡合并残余。另报 11 条
+不挡合并观察。六处表改动全部在裁决/修法授权内，`research-loop/` 之外零改动。
+
+残余处置（主会话逐条裁决，修复直接落在主仓、以 288/288 + 双 lint 复验）：
+
+**修掉（6 条）**：
+1. 挡合并残余：idea-layer/SKILL.md:40 改为"全局视图 + grant 行无 layer 字段、
+   用前自读 scope"。
+2. 观察2：report-genre.md 末句收窄——正文里时间戳/哈希仍按形状豁免，只有
+   裸账本行数需要 `$ ` 行（原句过头，会逼人给豁免物配复现命令）。
+3. 观察3：r5-choices.md 开条模板 `--to-layer` 补 deploy 取值并交叉引用
+   自决规则（原模板与 :33 新句自相矛盾）。
+4. 观察4：blockedcmd 对任何 kind 的答复统一校验 `--grant` 指向活跃 grant
+   （原来只有 r5-choice 分支查，kind=other 可落任意字面量进 grant_ref，
+   审计链指针失守；配测试 test_non_r5_answer_grant_must_be_active_regardless_of_kind）。
+5. 观察5：fallback/launch.py 接上 `_lib.resolve_project_root` 同款 F2 门
+   （第五个 --project-root 入口；原来错根静默把 jobs/产物落错树；配测试
+   test_launch_project_root_wrong_path_exits_2）。
+6. 观察6：trace_check 侧歧义分支补测试（原来只有 launchcmd 侧一条守着，
+   变异 matches[:1] 全套只红一条；补 test_spec_ref_ambiguous_across_two_frontmatter_specs_reported）。
+   另修观察8（writes.json "改窄"→"放宽为 ref 单键"，措辞方向原是反的）与
+   观察9（T14 工单 exit 恒 0 那行补 F2 例外注记）。
+
+**搁置（4 条，理由留档）**：
+- 观察1：b589621 单独 checkout 跑不通（F2 的一半提前混入）。历史已在 main，
+  重写已合并历史代价大于收益；HEAD 正确，只损 bisect 粒度。
+- 观察7：e2e 场景⑤的 attempt log 是摆设（error_classify 规则只按 exit_code
+  匹配）。exit_code 匹配本身已被钉住，日志承重要改 fixture 规则用 log_regex，
+  属测试强化不属缺陷；spec §9 ⑤ 的字面（blocked 条 kind=failure、evidence
+  带日志路径）已有断言覆盖。
+- 观察10：手工 `--ref B001` 开的普通条会顶掉撤销机械重开。rows.json 写明
+  B 前缀即回指语义，自洽；无机验强制，真源表未要求，留待实际误用再议。
+- 观察11：`--spec-item` 用在非 runs 账静默空表。与既有 `--run`/`--metric`
+  的旧模式同形，单独修一个过滤器不一致，整类收紧另立工单。

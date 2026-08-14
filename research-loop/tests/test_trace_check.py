@@ -903,3 +903,21 @@ def test_project_root_explicit_wrong_path_exits_2_not_false_clean():
         assert code == 2, (out, err)
         assert "research-loop.json" in err
         assert out == ""  # never got far enough to print a false "0 errors"
+
+
+def test_spec_ref_ambiguous_across_two_frontmatter_specs_reported():
+    # trace_check's own side of the find_spec_files ambiguity contract
+    # (launchcmd's side already has a test): two parseable specs both
+    # containing the item id must be reported, never silently first-picked.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = helpers.make_sandbox(tmp)
+        _write_spec(root, ".scratch/demo/spec.md", "IT-001", approved=True)
+        _write_spec(root, ".scratch/other/spec.md", "IT-001", approved=True)
+        _write_launch_order(root, run_id="run-001", quick=False, spec_ref="IT-001",
+                            decision_refs=[])
+
+        code, out, err = helpers.run_script(root, "trace_check.py")
+
+        assert code == 1, (out, err)
+        assert "forward_chain.spec_ref" in out
+        assert "ambiguous across 2 files" in out

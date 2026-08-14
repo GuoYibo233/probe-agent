@@ -15,12 +15,12 @@ Three no's is construction freedom -- just build it, no entry needed. Any yes pu
 
 ```
 python3 <plugin-root>/scripts/ledger.py blocked open --layer deploy \
-  --to-layer <user|idea> --kind r5-choice --ref <spec item / ticket / run_id> \
+  --to-layer <user|idea|deploy> --kind r5-choice --ref <spec item / ticket / run_id> \
   --question "<the decision point>" --evidence <log path / prior attempt> [<more...>] \
   --where "<file path | spec item | ticket>" --options "<option A>" "<option B>" [...]
 ```
 
-`--to-layer` is whichever layer can rule on this -- usually `user`, sometimes `idea`.
+`--to-layer` is whichever layer can rule on this -- usually `user`, sometimes `idea`; a self-decision under a grant goes `--to-layer idea` or `--to-layer deploy` instead, never `user` (see "Which mode applies").
 
 ## Which mode applies
 

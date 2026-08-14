@@ -19,6 +19,8 @@ research-loop plugin 件，不改 run.py / MAP.md；英文、纯 stdlib。需求
 CLI：`doctor.py [--project-root P] [--out PATH]`。报告只出 stdout；--out 给了
 另写用户指定路径；**不写 reports/、不写任何账本目录**（测试盯死）。
 exit 恒 0（体检是建议件）；末行汇总 `doctor: <N> findings across <M> sections`。
+（2026-08-14 终审 F2 修复后的唯一例外：`--project-root` 显式指向没有
+`research-loop.json` 的路径 → exit 2 报错，不再假绿。）
 
 分节（每节独立跑，单节崩溃 → 该节记 `section failed: <尾 3 行 stderr>`
 继续下一节——§9"单项检查件挂掉能正确汇总"）：

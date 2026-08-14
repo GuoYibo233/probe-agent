@@ -484,3 +484,24 @@ def test_freeze_legacy_checks_pass_repeat_refused_and_layer_flag_rejected():
         code, out, err = helpers.run_ledger(root, "freeze-legacy", "--layer", "deploy", "--confirm")
         assert code == 2
         assert "unrecognized" in err.lower()
+
+
+def test_launch_project_root_wrong_path_exits_2():
+    # launch.py is the fifth --project-root entrance (the four checkers got
+    # the F2 guard): an unwired explicit root used to be taken verbatim --
+    # config read back empty, jobs.json and artifacts landed under the wrong
+    # tree. Now it must refuse before doing anything.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        order_path, order = _make_order(root, "fake-wrongroot-1", mode="ok", seed=7)
+        wrong = Path(tmp) / "not-a-project"
+        wrong.mkdir()
+
+        code, out, err = _run_launch(root, order_path, "--project-root", str(wrong))
+
+        assert code == 2, (out, err)
+        assert "research-loop.json" in err
+        cfg = _lib.load_config(root)
+        jobs_path = Path(cfg.ledger_path("jobs"))
+        if jobs_path.exists():
+            assert order["run_id"] not in json.loads(jobs_path.read_text(encoding="utf-8"))

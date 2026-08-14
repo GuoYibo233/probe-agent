@@ -192,6 +192,18 @@ def _run_answer(args) -> int:
             if args.layer != row["to_layer"]:
                 _lib.fail("blocked", "to_layer", "only to_layer may write answered", args.layer)
             answered_by = "user" if args.answered_by == "user" else args.layer
+            # A provided --grant must name an active grant row no matter the
+            # row's kind -- grant_ref is an audit-chain pointer, so a literal
+            # like "spec-standing-gpu-1h" (valid only for `decision
+            # --authorized-by`) must not land in it via a kind=other/
+            # failure/principle-gap answer. The r5-choice branch re-checks
+            # under the decisions lock at assembly time.
+            if args.grant_ref is not None:
+                if not any(
+                    g["decision_id"] == args.grant_ref
+                    for g in decisionscmd.active_grants(_lib.jsonl_rows(decisions_path), now)
+                ):
+                    _lib.fail("blocked", "grant_ref", "grant is not active", args.grant_ref)
 
         updates = {
             "status": "answered",
