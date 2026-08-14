@@ -230,8 +230,25 @@ def _batches_pending_inspection(cfg, batch_headers: list) -> list:
 # ---------------------------------------------------------------------------
 
 
-def _open_blocked(blocked_rows: list) -> list:
-    return sorted(r["blocked_id"] for r in blocked_rows if r.get("status") == "open")
+def _open_blocked(blocked_rows: list, layer: str) -> list:
+    # status=open AND to_layer=--layer (F15, sdd/final-review.md's #149
+    # ruling) -- this is spec §2's "本层待决队列" half of the working face;
+    # "status=open 的全部" mixed every other layer's open queue into this
+    # one's view.
+    return sorted(
+        r["blocked_id"] for r in blocked_rows
+        if r.get("status") == "open" and r.get("to_layer") == layer
+    )
+
+
+def _answered_blocked(blocked_rows: list, layer: str) -> list:
+    # status=answered AND from_layer=--layer -- spec §2's other half of
+    # "本层待决队列": rows this layer itself raised that now have an answer
+    # waiting to be consumed/closed out by this layer.
+    return sorted(
+        r["blocked_id"] for r in blocked_rows
+        if r.get("status") == "answered" and r.get("from_layer") == layer
+    )
 
 
 def _pending_user_decisions(blocked_rows: list) -> list:
@@ -375,7 +392,8 @@ def run(args) -> int:
         "unrecorded_runs": _unrecorded_runs(cfg, jobs),
         "batches_pending_report": _batches_pending_report(cfg, batch_headers),
         "batches_pending_inspection": batches_pending_inspection,
-        "open_blocked": _open_blocked(blocked_rows),
+        "open_blocked": _open_blocked(blocked_rows, args.layer),
+        "answered_blocked": _answered_blocked(blocked_rows, args.layer),
         "pending_user_decisions": pending_user_decisions,
         "active_grants": _active_grants(cfg, now),
         "waiting_on": _waiting_on(pending_user_decisions, batches_pending_inspection),

@@ -440,6 +440,48 @@ def test_status_waiting_on_action_matches_routes_to_column():
 
 
 # ---------------------------------------------------------------------------
+# F15 (sdd/final-review.md's #149 ruling): status §2's "本层待决队列" is two
+# halves -- open_blocked filtered to this layer's own to_layer, plus a new
+# answered_blocked filtered to this layer's own from_layer. The old
+# open_blocked ("status=open 的全部") mixed every other layer's open queue
+# into this one's view; there was no way to see "I raised this and it's
+# been answered" at all.
+# ---------------------------------------------------------------------------
+
+
+def test_status_open_blocked_and_answered_blocked_are_filtered_by_layer():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        cfg = _lib.load_config(root)
+        rows = [
+            # open, to_layer=deploy -> this layer's own open queue.
+            helpers.make_blocked_row(blocked_id="B001", status="open",
+                                      from_layer="run", to_layer="deploy"),
+            # open, to_layer=idea -> a different layer's queue, must not leak in.
+            helpers.make_blocked_row(blocked_id="B002", status="open",
+                                      from_layer="run", to_layer="idea"),
+            # answered, from_layer=deploy -> this layer raised it, answer is in.
+            helpers.make_blocked_row(
+                blocked_id="B003", status="answered", from_layer="deploy", to_layer="user",
+                answer="ok", answered_at=_lib.now_iso(), answered_by="user",
+            ),
+            # answered, from_layer=idea -> a different layer raised this one.
+            helpers.make_blocked_row(
+                blocked_id="B004", status="answered", from_layer="idea", to_layer="user",
+                answer="ok", answered_at=_lib.now_iso(), answered_by="user",
+            ),
+        ]
+        helpers.write_jsonl(cfg.ledger_path("blocked"), rows)
+
+        code, out, err = helpers.run_ledger(root, "status", "--layer", "deploy")
+        assert code == 0, err
+        view = json.loads(out)
+
+        assert view["open_blocked"] == ["B001"]
+        assert view["answered_blocked"] == ["B003"]
+
+
+# ---------------------------------------------------------------------------
 # extra: json single-file ledgers ("direct" read class) are rejected too
 # ---------------------------------------------------------------------------
 
