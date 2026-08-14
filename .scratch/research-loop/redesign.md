@@ -368,6 +368,10 @@ research-loop/
 │   ├── writes.json                （layer_param.values 四值改五值）
 │   └── routes.json                退役（退役前先拆 statuscmd.py 的依赖）
 ├── schemas/                       从 tables/ 生成，不手改，改表重跑 gen-schemas
+├── hooks/hooks.json               事件拦截（第十七节新增，原树漏了）
+├── monitors/monitors.json         后台监视器（第十七节新增，原树漏了）
+├── bin/                           进 PATH 的可执行文件（第十七节新增，原树漏了）
+├── agents/                        subagent 定义（inspector.md 去留见下）
 ├── scripts/                       账本读写 + 机器检查 + 桩发射器
 └── tests/                         319 项，改名工作量的一大半在这里
 ```
@@ -402,3 +406,60 @@ research-loop/
 - P9：`decisions.jsonl` 一本账加一个 `work_type` 字段，还是拆成 `decisions/idea.jsonl` 这样一层一个文件。我的判断是字段。
 - `skills/research-loop/` 这个入口 skill 留不留：我留着，让它当"讲这套东西是什么、跑 init"的门面。可否决。
 - `agents/inspector.md` 去留，见上。
+
+## 十七、插件还能带 hooks / monitors / bin，第十六节的树漏了（2026-08-15 你点出来的）
+
+你的原话："这里面应该还得有 agents hooks monitors settings这些吧 你看 https://code.claude.com/docs/en/plugins"。我去读了 `plugins` 和 `plugins-reference` 两页，抄回来的完整清单（插件根目录下的合法组成，全部可选）：
+
+| 目录或文件 | 装什么 |
+|---|---|
+| `.claude-plugin/plugin.json` | 门面清单 |
+| `skills/` | 技能，`<名字>/SKILL.md` |
+| `commands/` | 老式扁平 md 技能，新插件用 `skills/` |
+| `agents/` | subagent 定义 |
+| `hooks/hooks.json` | 事件拦截 |
+| `monitors/monitors.json` | 后台监视器 |
+| `bin/` | 插件启用期间进 Bash 工具 PATH 的可执行文件 |
+| `settings.json` | 插件默认设置，**只认 `agent` 和 `subagentStatusLine` 两个键** |
+| `.mcp.json` / `.lsp.json` | MCP 服务器 / 语言服务器 |
+| `workflows/`、`output-styles/`、`themes/` | 工作流脚本、输出风格、配色 |
+
+三个路径变量可以在 skill 内容、hook 与 monitor 命令里用：`${CLAUDE_PLUGIN_ROOT}`（插件安装目录）、`${CLAUDE_PLUGIN_DATA}`（跨更新存活的持久目录）、`${CLAUDE_PROJECT_DIR}`（工程根）。
+
+### 这一条改变了设计里最弱的那一环
+
+整套设计里反复出现"强制：自觉打底，reviewer 角色事后核对"。之所以只能这么写，是因为我一直以为除了账本写入口，没有别的地方能让机器当场拦。**`hooks/hooks.json` 就是那个能当场拦的地方**，事实如下（我从 `hooks` 文档抄的）：
+
+- `PreToolUse` 事件在工具调用之前触发，钩子从标准输入拿到 `session_id`、`cwd`、`transcript_path`、`permission_mode`、`tool_name`、`tool_input`、`tool_use_id` 等字段。
+- 拦的办法两种：退出码 2 直接拦掉（stderr 回给会话）；或者退出 0 并输出 `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"|"allow"|"escalate","permissionDecisionReason":"…"}}`。`escalate` 是弹给用户批。
+
+于是下面这些原来只能靠自觉的规矩，都能改成机器当场拦：
+
+1. **分权矩阵的代码目录格**。第七节写的是"代码目录这类机器拦不住的标检查角色事后核对，不假装全能机拦"——这句话过时了。`PreToolUse` 匹配 `Write|Edit`，比对 `tool_input.file_path` 和当前角色的"我管"域，出界就拦。
+2. **通例④ 数字只经脚本入账**。现在靠的是"数字账只有两条脚本入口"，但没有任何东西拦得住一个会话直接 `Write` 一行进 `loop/runs.jsonl`。加一条钩子：任何 `Write`/`Edit` 落到 `loop/*.jsonl` 一律拦，账本只能经命令行进出。
+3. **P4 冒名写账**。`--answered-by user` 这类替用户说话的参数，钩子匹配 `Bash` 命令文本直接拦，或者 `escalate` 弹给用户当场确认。
+4. **通例⑨ 越权即开条**。越权动作被钩子拦住时，`permissionDecisionReason` 里直接写"这件事不归 <角色> 管，开 issue 挂给 <有权角色>"，把规矩送到出错的当场。
+
+**没解决的前提：钩子怎么知道当前会话是哪个角色。** 钩子输入里有 `session_id`、`cwd`、`transcript_path`，没有"当前加载了哪个 skill"。我的办法是让钩子脚本读 `transcript_path`，往回找最近一次 `research-loop:<角色>` 的技能调用，那就是当前角色。**这条要先动手验证 transcript 里技能调用是不是稳定可认的，验证之前不许当成已经成立。** 备选办法是角色 skill 第一步写一个以 `session_id` 为名的标记文件，但 skill 自己拿不到 session_id，所以这条要另想。
+
+### monitors 顶掉了"看门狗从零造"
+
+第十一节记着施工机器缺一件看门狗，全仓零命中。`monitors/monitors.json` 就是它：一条 monitor 是一个常驻后台进程，`command` 的每一行标准输出都会作为通知送进会话。字段是 `name`、`command`、`description`，可选 `when`——`"always"` 是缺省（会话开始就起），`"on-skill-invoke:<技能名>"` 是第一次派发那个技能时才起。
+
+两处用得上：**发射看门狗**用 `when: "on-skill-invoke:run"`，只有跑实验角色上线才起，盯 tmux 会话和日志；**反常结果预警**盯 `loop/runs.jsonl`，指标落到极端值就吐一行，接通例③"机器标了必须排查"那一路。
+
+### bin/ 让例子里的命令变短
+
+`bin/` 里的可执行文件在插件启用期间直接进 Bash 工具的 PATH，裸命令就能调。现在角色要敲的是 `python3 research-loop/scripts/ledger.py blocked open --layer run …`，这串东西还跟着插件装在哪走。放一个 `bin/rl` 进去，例子里就写 `rl issue open --role run …`。写进 skill 的 example 因此不必带绝对路径，换个仓库也不用改。
+
+### 不要的几样，记下理由
+
+- **`settings.json`**：只认 `agent` 和 `subagentStatusLine` 两个键，`agent` 的作用是把插件里某个 subagent 顶成主线程。我们要的是每个 session 自己选角色，不是全局钉死一个，所以不用。
+- **`.mcp.json` / `.lsp.json`**：不接外部工具服务器，不用。
+- **`commands/`**：老式扁平技能，文档明说新插件用 `skills/`。
+- **`workflows/` / `output-styles/` / `themes/`**：这一轮用不上，记着能加。
+- **`agents/`**：留着。角色是 session 不是 subagent，但角色干活时派 subagent 做机械扫描是合理的，现有 `agents/inspector.md` 的三件套调用清单可以改造成这个用途。第十六节说它"去留没定"，现在定为留、改造。
+
+### 连带要改的旧条目
+
+第七节分权矩阵那条的"不假装全能机拦"要重写；通例①③④⑨的"强制"栏要按上面重排；第十一节"看门狗从零造"改成"用 monitors 配"。这些等钩子那条前提验证完再一次性改，不在这里边改边猜。
