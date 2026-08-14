@@ -1,6 +1,6 @@
 # T19 §V 第二轮修复：代码+表（jobs 合并 / evidence_lint 误火 / render 状态列 / routes 拆列 / 表注）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by:
 
 ## 范围声明
