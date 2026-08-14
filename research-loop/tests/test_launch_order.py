@@ -398,6 +398,28 @@ def test_quick_true_all_refs_null_writes_successfully():
         assert written["expected_outputs"]
 
 
+def test_empty_expected_outputs_rejected_by_schema_before_write():
+    """F1 (wave7 fix1): rows.json launch_order.expected_outputs carries
+    minItems: 1, but that keyword only bites if _lib._check_value() actually
+    reads it -- before this fix it silently passed straight through schema
+    validation, so `launch-order --file draft.json` with `expected_outputs:
+    []` wrote the file to disk (exit 0). output_check.py's own empty-list
+    refusal is a read-time backstop for orders written before the minItems
+    bump; it must not be the only gate. Nothing lands on disk here."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        row = _draft(root, expected_outputs=[], run_id="run-empty-outputs")
+        path = _write_draft(root, "run-empty-outputs", row)
+
+        code, out, err = _launch_order(root, path)
+        assert code == 2, (out, err)
+        assert "launch_order.expected_outputs" in err
+        assert "minItems" in err
+
+        lo_path = _launch_orders_dir(root) / "run-empty-outputs.json"
+        assert not lo_path.exists()
+
+
 # ---------------------------------------------------------------------------
 # 5. promoted_from: missing target rejected, target quick=false rejected,
 #    target quick=true passes.
