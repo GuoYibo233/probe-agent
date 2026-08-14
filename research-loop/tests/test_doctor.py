@@ -210,6 +210,57 @@ def test_doctor_affects_mismatch_is_reported_and_sandbox_is_untouched():
         assert expected_fix in out
 
 
+def test_doctor_missing_r6_trace_is_reported_and_sandbox_is_untouched():
+    # #151 reverse scan: a kind!=r5-choice blocked row with grant_ref set
+    # but decision_ref still null -- the shape the pre-#151 "answer with
+    # --grant" stopgap left on disk, or a hand-edited row around the new
+    # two-step path.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        blocked_row = helpers.make_blocked_row(
+            blocked_id="B001", kind="failure", to_layer="deploy", status="answered",
+            answer="retried it", answered_at=_lib.now_iso(), answered_by="deploy",
+            grant_ref="D001", decision_ref=None,
+        )
+        helpers.write_jsonl(root / "ops" / "blocked.jsonl", [blocked_row])
+        before = _snapshot(root)
+
+        code, out, err = _run_doctor(root)
+        after = _snapshot(root)
+
+        assert code == 0
+        assert after == before
+        assert "missing R6 trace" in out
+        assert (
+            "record via ledger.py decision --blocked-ref B001 "
+            "--authorized-by grant:D001 ..." in out
+        )
+
+
+def test_doctor_missing_r6_trace_skips_r5_choice_and_complete_rows():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = _sandbox(tmp)
+        # r5-choice with grant_ref/decision_ref null -- untouched shape
+        # (that's the existing r5-choice life-cycle, this scan doesn't own
+        # it), and a non-r5-choice row where decision_ref is already filled
+        # in (the trace already exists -- nothing to flag).
+        r5_row = helpers.make_blocked_row(
+            blocked_id="B001", kind="r5-choice", to_layer="deploy", status="open",
+            where="which env", options=["A", "B"],
+        )
+        complete_row = helpers.make_blocked_row(
+            blocked_id="B002", kind="other", to_layer="deploy", status="answered",
+            answer="x", answered_at=_lib.now_iso(), answered_by="deploy",
+            grant_ref="D001", decision_ref="D002",
+        )
+        helpers.write_jsonl(root / "ops" / "blocked.jsonl", [r5_row, complete_row])
+
+        code, out, err = _run_doctor(root)
+
+        assert code == 0
+        assert "missing R6 trace" not in out
+
+
 # ---------------------------------------------------------------------------
 # 3. one check goes red, doctor still finishes every other section, exit 0
 # ---------------------------------------------------------------------------

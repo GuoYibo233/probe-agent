@@ -15,7 +15,12 @@ This module owns:
   at either an active grant (`grant:D0xx`) or the literal standing
   authorization `spec-standing-gpu-1h` (spec.md R5/R6) -- decided_by=user
   is only accepted from --layer deploy (spec approval is a deploy-layer
-  act, §2.5).
+  act, §2.5). Optional `--blocked-ref B0xx` is step 1 of the non-r5-choice
+  R6 two-step path (#151, tables/writes.json blocked_transitions.answered.
+  _non_r5_self_decision): it names the blocked row this self-decision
+  answers (must already exist, checked cross-archive) and lands in the
+  row's own `blocked_ref` field -- step 2 is `blocked answer
+  --decision-ref D0xx` in blockedcmd.py, which cites this row back.
 - `decision-withdraw`: withdrawal-proxy special case (no --layer) --
   writes.json withdrawal_proxy applies to decisions generically, not just
   to r5-choice-assembled rows.
@@ -104,6 +109,7 @@ def register(subparsers):
     decision_p.add_argument("--decided-by", choices=["user", "agent"])
     decision_p.add_argument("--principle-ref")
     decision_p.add_argument("--affects", nargs="+")
+    decision_p.add_argument("--blocked-ref", dest="blocked_ref")
 
     withdraw_p = subparsers.add_parser(
         "decision-withdraw",
@@ -190,6 +196,15 @@ def _run_decision(args) -> int:
     schema = _lib.load_schema("decisions")
     now = _lib.now_iso()
 
+    # #151 R6 two-step path: `decision --blocked-ref B0xx` is step 1 of the
+    # non-r5-choice self-decision trail (blockedcmd.py `answer --decision-ref`
+    # is step 2). blocked is read cross-archive (spec.md §2.1: 校验/追溯脚本
+    # 一律跨档读) since the referenced row may already have been archived.
+    if args.blocked_ref is not None:
+        blocked_rows = _lib.jsonl_rows(cfg.ledger_path("blocked"), include_archive=True)
+        if not any(b.get("blocked_id") == args.blocked_ref for b in blocked_rows):
+            _lib.fail("decisions", "blocked_ref", "row not found", args.blocked_ref)
+
     with _lib.locked(path):
         rows = _lib.jsonl_rows(path)
 
@@ -213,7 +228,7 @@ def _run_decision(args) -> int:
             "scope": None,
             "principle_ref": args.principle_ref,
             "affects": args.affects or [],
-            "blocked_ref": None,
+            "blocked_ref": args.blocked_ref,
             "decided_by": decided_by,
             "raised_at": now,
             "decided_at": now,
