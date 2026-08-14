@@ -1,6 +1,6 @@
 # T17 §V 第一轮修复：代码+表+schema（R6 两步路 / 跳层锚点 / jobs 钉名 / 分类器兜底等）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by:
 
 ## 范围声明
