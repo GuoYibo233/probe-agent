@@ -11,7 +11,7 @@
     {"say": "写论文",                  "stage": "⑦",       "to": "rails.paper，溯源对故事账取材"},
     {"say": "查 X / 让我亲眼看看",     "stage": "任意",    "to": "oversight → inspector"},
     {"say": "看看输出里有什么",        "stage": "任意",    "to": "oversight → inspector（观察报告 = R3 子类）"},
-    {"say": "有什么在等我",            "stage": "任意",    "to": "ledger.py blocked 渲染（待决队列视图）"},
+    {"say": "有什么在等我",            "stage": "任意",    "to": "ledger.py render blocked（待决队列视图）"},
     {"say": "这类事你自己定（授权）",  "stage": "任意",    "to": "ledger.py grant 落账（结构化 scope，当场）"},
     {"say": "我收回那条决定",          "stage": "任意",    "to": "撤销体裁 → 按账落账（§2.5；规则见 writes.json withdrawal_*）"},
     {"say": "这个不行，重做（打回）",  "stage": "批次验收后", "to": "退回对应层，理由落批次报告头部 rejections[]（spec/原则阶段的不批准另走 §2.5：不落 approved_by + 开待决条）"},

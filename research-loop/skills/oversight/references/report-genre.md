@@ -13,7 +13,7 @@ Every report oversight writes -- routine inspection, on-demand observation, crit
 
 ## What must carry a repro command
 
-Any prose line containing an experiential number (a count, a metric value, a difference) needs a `$ ` line within 3 lines below it -- no exceptions. Metadata-class numbers are exempt (`tables/rows.json` → `evidence_lint_exempt`): timestamps, git HEAD / hashes, ledger line numbers, file paths, id-form fields. Frontmatter enum fields (`verdict`, `rejections[]`, `withdrawals[]`) are exempt too -- they're structured data, not prose claims.
+Any prose line containing an experiential number (a count, a metric value, a difference) needs a `$ ` line within 3 lines below it. `tables/rows.json` → `evidence_lint_exempt` names six metadata categories that are not experiential claims: timestamps, git HEAD / commit, ledger row counts and hashes, line/record numbers, file paths, id-shaped fields. Only some of these have a shape `evidence_lint.py` can strip on sight, anywhere in the body: an ISO timestamp, a hex-looking git hash, a `chk-.../S001`-style id, a `path:line` token. A plain decimal count -- a ledger's row count stated in prose, a record number with no path in front of it -- looks exactly like any other empirical number and is **not** exempt by content: it still needs a `$ ` repro line right where it's stated, or it has to live inside the report's frontmatter (the other place the linter exempts a number wholesale -- see "Provenance block" below). Frontmatter enum fields (`verdict`, `rejections[]`, `withdrawals[]`) are exempt too -- they're structured data, not prose claims.
 
 ## Banned words
 
@@ -29,4 +29,4 @@ A negative claim ("no X found") is not just a bare zero -- attach the full scan 
 
 ## Provenance block
 
-Every report header carries three items: generation time, git HEAD, and the line counts/hashes of the ledgers read. These are metadata, not experiential claims -- they don't each need their own `$ ` repro line, but they must be mechanically re-derivable from whatever file the report names (per the metadata exemption above).
+Every report header carries three items: generation time, git HEAD, and the line counts/hashes of the ledgers read. Put all three inside the report's `---`-delimited frontmatter -- that block is the only place `evidence_lint.py` exempts a bare number wholesale (block-level exemption). They also have to be mechanically re-derivable from whatever file the report names. Stating any of these three again in the body is an ordinary experiential claim and needs its own `$ ` repro line, the same as any other count.

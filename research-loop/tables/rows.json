@@ -1212,7 +1212,7 @@
     "_lint": "verdict 字段 evidence_lint 豁免"
   },
   "evidence_lint_exempt": {
-    "_rule": "evidence_lint 的『有数字无复现命令』规则只查经验主张数值；下列类别豁免",
+    "_rule": "evidence_lint 的『有数字无复现命令』规则只查经验主张数值；下列类别豁免。实现方式（R6 2026-08-14 终审 F13 补）：豁免只有两条结构性路——按形状能被正则识别的类别（时间戳、git HEAD、id 类字段、path:line）在正文任意位置生效；裸十进制数（账本行数即此类）与经验数值同形，linter 不按内容语义豁免，只能靠落在 frontmatter 块内（块级豁免）或紧跟 `$ `/`= ` 复现对（声明行豁免）两条路径过",
     "metadata_kinds": [
       "时间戳",
       "git HEAD/commit",

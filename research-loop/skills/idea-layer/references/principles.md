@@ -20,9 +20,12 @@ behavioral rule, not the full column list.
 - **criterion_cmd is the exception**: it may be left empty only when the
   status column is the "idea-pending" tag (`tables/rows.json` enums →
   `principles.status`) -- meaning: this principle exists but nothing checks
-  it yet, because the registry command it needs isn't wired up. Every other
-  status value requires a non-empty `criterion_cmd` that resolves to a
-  registry command; `principles-lint` enforces this too.
+  it yet, because the registry command it needs isn't wired up. Only the two
+  in-use statuses (current state, decided-change) require a non-empty
+  `criterion_cmd` that resolves to a registry command; `principles-lint`
+  enforces this too. The withdrawn status carries no such requirement --
+  withdrawing a principle that was never wired up must not be blocked on
+  inventing a criterion for it just to satisfy the lint.
 - Once a criterion is wired, the row moves out of the idea-pending tag into
   whichever of the other status values fits (current state vs. decided
   change) -- that transition only happens when `criterion_cmd` actually

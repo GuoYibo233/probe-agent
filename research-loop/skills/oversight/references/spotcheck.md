@@ -10,12 +10,14 @@ one of oversight's routing entries ("查 X" also lands here).
 ## Running one
 
 ```
-python3 <plugin-root>/scripts/spotcheck.py <material>
+python3 <plugin-root>/scripts/spotcheck.py --file <material> --seed <fixed integer> [--k <n>]
 ```
 
-Sampling is fixed-seed -- rerunning the same command against the same
-material picks the same sample, so a spot-check is itself reproducible,
-not a fresh roll each time it's requested.
+`--file` and `--seed` are both required; `--k` defaults to 5. The caller
+picks `--seed` (any fixed integer) and writes it into the report alongside
+the fingerprint -- "same command, same sample" only holds when `(file,
+seed, k)` are all pinned down, so a spot-check report that names the file
+but not the seed cannot actually be reproduced by whoever reads it later.
 
 ## What gets delivered
 
