@@ -1,0 +1,464 @@
+{
+ "confirmed": [
+  {
+   "id": "v1-router-1",
+   "severity": "friction",
+   "where": "scripts/ledger_cmds/querycmd.py::_run_render_blocked (lines 235-256) + tables/routes.json row say='有什么在等我' (to='ledger.py render blocked（待决队列视图）')",
+   "what": "`render blocked` prints the blocked ledger's *active* view (status ∈ {open, answered}) grouped by `to_layer`, with no status column. An already-answered row is visually identical to an open one, and grouping an answered row by `to_layer` names the layer that already answered instead of the `from_layer` that still owes the close step.",
+   "why_real": "Reproduced verbatim in /home/y-guo/.claude/jobs/c3027054/tmp/vloop/round2/v1-router: B004 (status=answered, decision_ref=D003) prints under `## idea` beside the genuinely open B002, columns `blocked_id|kind|question|from_layer|raised_at`. _blocked_default_view (querycmd.py:109-110) keeps both statuses by design (ledgers.json blocked.active='status∈{open, answered}'), but the only place that view is labelled for the router is routes.json's '待决队列视图' gloss, and nothing in the router's allowed context says answered rows are included or who owes the next move.",
+   "fix_locus": "research-loop/scripts/ledger_cmds/querycmd.py::_run_render_blocked (add a status column; group answered rows by from_layer) or tables/routes.json's gloss for that row"
+  },
+  {
+   "id": "v1-router-2",
+   "severity": "friction",
+   "where": "skills/research-loop/SKILL.md 'How to read the table' vs tables/routes.json `to` values",
+   "what": "The `to` column concatenates a runnable argv string with a Chinese gloss and, in some rows, Chinese verbs, with no stated delimiter or quoting convention. SKILL.md's only stated convention covers the omitted interpreter/script-path prefix; it says nothing about where the runnable part ends.",
+   "why_real": "routes.json rows read `\"ledger.py render blocked（待决队列视图）\"`, `\"ledger.py grant 落账（结构化 scope，当场）\"`, `\"ledger.py feedback review（R9）\"`, `\"doctor.py 一键检查（§4）：只查不动，建议清单确认后执行\"`. A router matching a `kind: command` row has to decide by eye which characters to paste. SKILL.md's bullet 'Every bare CLI string in the `to` column is one invocation shape' is the only rule offered and does not address the trailing text.",
+   "fix_locus": "research-loop/tables/routes.json (split `to` into a command field and a note field) or skills/research-loop/SKILL.md 'How to read the table'"
+  },
+  {
+   "id": "v1-idea-1",
+   "severity": "friction",
+   "where": "skills/deploy-layer/references/r5-choices.md 'Which mode applies' + skills/idea-layer/references/answering.md (r5-choice self-decide) + tables/rows.json decisions_row.scope",
+   "what": "Both self-decide paths gate on 'an active grant's scope covers this fork', but nothing anywhere states how coverage is decided: which field of the blocked row `scope.path_globs` is matched against, whether `scope.desc` prose alone can carry the decision, or what happens when the row names no path at all.",
+   "why_real": "rows.json decisions_row.scope only says `{desc, path_globs[], expires_at}——kind=grant 必须结构化填全`; r5-choices.md and answering.md never mention matching. Independently hit from the other side by v2-hop3-2, where the executor picked a `--where` value *because* it fell inside `ops/**`, without knowing whether that mattered.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/r5-choices.md 'Which mode applies' (state the coverage test) + tables/rows.json decisions_row.scope._note"
+  },
+  {
+   "id": "v1-deploy-2",
+   "severity": "friction",
+   "where": "skills/deploy-layer/SKILL.md §2 field enumeration vs `ledger.py status --layer deploy` output",
+   "what": "The status view emits a top-level `pending_user_decisions` array that §2's enumeration never names; it belongs to none of the three blocks or the two annexes the prose defines.",
+   "why_real": "statuscmd.py:397 emits `pending_user_decisions` for every layer; the relay's own run shows `\"pending_user_decisions\": [\"B003\"]`. deploy SKILL.md §2 lists exactly the 7 working-face fields, open_blocked/answered_blocked, active_grants, waiting_on, inconsistencies. Only idea-layer SKILL.md §2 names the field ('plus `pending_user_decisions` in a session talking to the user'); deploy/run/oversight do not. Round-1's v2-hop5-1 fix (name the fields per block) landed everywhere except this field in three of the four skills.",
+   "fix_locus": "research-loop/skills/deploy-layer/SKILL.md §2 (and the same sentence in run-layer/ and oversight/ SKILL.md §2)"
+  },
+  {
+   "id": "v1-deploy-6",
+   "severity": "note",
+   "where": "skills/deploy-layer/references/closeout.md Step 1 (lines 30-34)",
+   "what": "The dispatch commands pass `<inspection material>` to evidence_lint.py and verify_report.py; the placeholder is never bound to a concrete value anywhere in the file.",
+   "why_real": "Every other placeholder in the same block is bound (`<root>` from the project). The adjacent sentence lists what the dispatch contract carries ('the batch_id, the batch report's path, the project's research-loop.json path'), so the batch report path is inferable — but it is an inference, and the mirrored gap on the receiving side (v1-oversight-1) leaves both ends of the same dispatch unbound.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/closeout.md Step 1 (name the batch report path explicitly)"
+  },
+  {
+   "id": "v1-run-1",
+   "severity": "note",
+   "where": "skills/run-layer/references/execute.md 'After it lands' (lines 67-82) vs 'Recording' (lines 93-97)",
+   "what": "'Recording' carries an explicit carve-out ('This step does not apply to a refused launch'); the preceding output_check step carries none, and on a refused launch output_check returns a well-formed `missing-output` verdict whose documented mapping points straight at the record step the next section forbids.",
+   "why_real": "Reproduced by the executor: `output_check.py --launch-order ops/launch_orders/democ-20260814-1.json` → `{\"verdict\": \"missing-output\", ...}`, exit 4, for an order that never launched. The verdict→--status table (execute.md:104-108) then maps that to `--status empty-output`, which record.py refuses with `record: RUNMETA not found`. Round-1's v1-run-3 fix added the carve-out to Recording only.",
+   "fix_locus": "research-loop/skills/run-layer/references/execute.md 'After it lands' (one sentence mirroring Recording's carve-out)"
+  },
+  {
+   "id": "v1-run-3",
+   "severity": "note",
+   "where": "skills/run-layer/references/execute.md line 48 ('Categories 2 and 3 both escalate back to deploy ... exactly the same way') + references/failures.md 'Classify first'",
+   "what": "Nothing scopes failures.md's mandatory 'Classify first' step out of a precheck refusal, and none of error_classify.py's three inputs (experiment exit code, output_check verdict, log regex) exists for a launch that never started. The executor guessed that the launcher's own refusal exit code (3) was the right `--exit-code` value.",
+   "why_real": "failures.md:9-17 presents classification as the first step for any failure; execute.md sends categories 2/3 there 'exactly the same way'. execute.md:124-126 does say the refusal stderr is archived into the escalation evidence, but never says the classifier pass is skipped, and 'exit code' everywhere else in the file means the experiment process's exit code.",
+   "fix_locus": "research-loop/skills/run-layer/references/execute.md line 48 (say the classifier step does not apply to a precheck refusal)"
+  },
+  {
+   "id": "v1-run-4",
+   "severity": "note",
+   "where": "skills/run-layer/references/failures.md 'Classify first'",
+   "what": "A missing `ops/error_classes.json` makes error_classify.py print a stderr warning and return `{\"rule\": null, \"action\": \"unknown\"}` with exit 0. The run layer's own two reference files never mention this state, so the only way to know it is safe to proceed (rather than itself escalation-worthy) is to run the command and read stderr.",
+   "why_real": "Reproduced: `error_classify.py --error-classes ops/error_classes.json --exit-code 3` → stderr `error_classify: error classes table not found/unreadable at ops/error_classes.json; treating as unclassified`, exit 0. The behaviour is documented on the deploy side (failures-inbound.md:48-53) and in tables/rows.json error_classes._note, neither of which failures.md points at from this step.",
+   "fix_locus": "research-loop/skills/run-layer/references/failures.md 'Classify first' (one clause: a missing table means zero rules → unknown)"
+  },
+  {
+   "id": "v1-run-5",
+   "severity": "friction",
+   "where": "skills/run-layer/SKILL.md §2 'First action' vs `ledger.py status --layer run` output",
+   "what": "Same omission as v1-deploy-2, independently hit: §2 names pending queue's contents as exactly {open_blocked, answered_blocked}; the actual output also carries `pending_user_decisions`, which the executor could only resolve by reading tables/rows.json → status_view.",
+   "why_real": "statuscmd.py:397 emits the field unconditionally; run SKILL.md §2 never names it. rows.json line for it reads `status=open 且 to_layer=user 的待决条 id（派生源：blocked 账）`.",
+   "fix_locus": "research-loop/skills/run-layer/SKILL.md §2"
+  },
+  {
+   "id": "v1-run-6",
+   "severity": "note",
+   "where": "tables/rows.json → status_view.waiting_on vs scripts/ledger_cmds/statuscmd.py::_waiting_on (lines 278-295)",
+   "what": "`waiting_on`'s membership rule is stated nowhere. The table entry constrains only the `action` sub-field's vocabulary; the implementation lists exactly `pending_user_decisions` + `batches_pending_inspection`, so an escalation this layer just raised (to_layer=deploy) correctly never appears — but no reader can know that without reading the script.",
+   "why_real": "rows.json: `\"waiting_on\": \"[{item, ref, layer, action}]——action 取值只许是 tables/routes.json 的 to 列已有动作名\"`. statuscmd.py::_waiting_on builds one entry per pending_user_decision and one per batch pending inspection, nothing else. The executor stopped rather than read a file outside its allowed context.",
+   "fix_locus": "research-loop/tables/rows.json status_view.waiting_on (state the two sources)"
+  },
+  {
+   "id": "v1-oversight-1",
+   "severity": "note",
+   "where": "skills/oversight/references/inspection.md 'Running an inspection' step 1",
+   "what": "`<material>` for evidence_lint.py/verify_report.py is defined only by reference to a dispatch object or a user pointing at something; a session that has neither (and the skill's own First Action is what surfaced the work) has no binding for it.",
+   "why_real": "inspection.md:42-49 reads 'against the material named in the dispatch (or the material the user pointed at ...)'. The executor bound it to `batches_pending_inspection[].path` from the status output — correct, but stated nowhere. Same unbound placeholder as v1-deploy-6 on the dispatching side, so both ends of one contract are unspecified.",
+   "fix_locus": "research-loop/skills/oversight/references/inspection.md step 1 (name the batch report path / status field as the default material)"
+  },
+  {
+   "id": "v1-oversight-2",
+   "severity": "friction",
+   "where": "skills/oversight/SKILL.md §3 and references/inspection.md 'Two people, two jobs' — the cite `agents/inspector.md`",
+   "what": "The path is written bare, which under the skill's own convention reads as skill-directory-relative; the file actually lives at the plugin root (`research-loop/agents/inspector.md`).",
+   "why_real": "`find skills/oversight/` shows no agents/ directory at any depth; every other path in the same two files is either `<plugin-root>/scripts/...` or `references/...`. The file exists only at research-loop/agents/inspector.md.",
+   "fix_locus": "research-loop/skills/oversight/SKILL.md §3 + references/inspection.md (write `<plugin-root>/agents/inspector.md`)"
+  },
+  {
+   "id": "v1-oversight-3",
+   "severity": "blocker",
+   "where": "skills/oversight/references/report-genre.md 'The marker conventions' / 'What must carry a repro command' vs scripts/evidence_lint.py::_asserts_number and scripts/_lib.py::split_cmd/run_argv",
+   "what": "The two enforcement scripts impose four hard rules report-genre.md never states: (1) a `$ ` command must be pipe-free; (2) it is run without a shell, so `<`/`>` become literal argv; (3) `> ` verbatim excerpt lines are scanned for digits and need their own `$ ` line, even though verify_report already checks them byte-for-byte; (4) any surviving digit anywhere on a line counts, including markdown section numerals, `(§1)` refs, the `3` in `python3`, and ordinals like 'attempt 1'. A compliant report cannot be written first-try from the documented conventions.",
+   "why_real": "Reproduced directly. `_lib.split_cmd` (lines 465-470): `if \"|\" in cmd or \"\\n\" in cmd: fail(... 'command must not contain pipes or newlines')`; `_lib.run_argv` uses subprocess with no shell. evidence_lint.py:_asserts_number greps `\\d` on the line after stripping only 6 shape patterns (ISO ts, date, `X-YYYYMMDD-N`, `[A-Z]\\d{3,}`, path:line, hex≥7 with a-f) and its `protected` set covers only the `$ ` line itself and the `= ` line under it. My own probe file flagged all five shapes: `## 2. Full-scope ledger read`, `some prose (§1) here`, `> {\"seed\": 7, \"elapsed_s\": 0}`, `we ran python3 on the file`, `between attempt 1 and attempt 2 ...` — 5/5 no-repro-command. Both oversight sessions in this round independently burned 4-5 lint iterations and had to degrade their prose ('attempt 1' → 'the first attempt') to pass.",
+   "fix_locus": "research-loop/scripts/evidence_lint.py (exempt `> ` excerpt lines following a path:line ref, heading/§ numerals, digits inside identifier tokens; protect continuation lines of a multi-line `$ ` block) + skills/oversight/references/report-genre.md (state the pipe-free / no-shell constraints on `$ ` lines)"
+  },
+  {
+   "id": "v1-oversight-4",
+   "severity": "note",
+   "where": "skills/oversight/SKILL.md §2, first sentence",
+   "what": "'Same three read-only blocks as any other layer, plus the same two annex blocks:' is followed by a colon-list of three items, so the three blocks read as the promised two annexes until the next sentence retroactively corrects it.",
+   "why_real": "Verbatim §2: '...plus the same two annex blocks: **working face** (...), **pending queue** (...), **authorization** (`active_grants`). `waiting_on` and `inconsistencies` are the two annex blocks -- not part of the three.' The other three skills at least put a disambiguating clause before the colon ('two annex blocks that belong to none of the three:'); oversight's does not.",
+   "fix_locus": "research-loop/skills/oversight/SKILL.md §2 (move the annex names before the colon-list)"
+  },
+  {
+   "id": "v1-oversight-5",
+   "severity": "friction",
+   "where": "skills/oversight/SKILL.md §2 field taxonomy vs `ledger.py status --layer oversight` output",
+   "what": "Same `pending_user_decisions` omission as v1-deploy-2/v1-run-5, third independent hit: the field sits outside all five documented groupings.",
+   "why_real": "Confirmed by running the command in the relay sandbox: `\"pending_user_decisions\": [\"B003\"]`. oversight SKILL.md §2 defers the working face to 'the seven fields tables/rows.json → status_view names' and names only open_blocked/answered_blocked/active_grants/waiting_on/inconsistencies beyond that — eight of the sixteen keys, with this one unaccounted for.",
+   "fix_locus": "research-loop/skills/oversight/SKILL.md §2"
+  },
+  {
+   "id": "v1-oversight-6",
+   "severity": "note",
+   "where": "skills/oversight/references/inspection.md 'The reading exemption' example block + step 2",
+   "what": "Step 2 orders a full read of 'the batch's ledgers' without enumerating them; the only concrete guidance is a two-command example under a heading that reads as exhaustive ('A full-scope read for one batch, everything included'). Whether story/decisions/feedback are in scope for a routine batch inspection is unstated.",
+   "why_real": "inspection.md:19-24 shows exactly `query runs --batch <id> --all-rows --include-archive` and `query blocked --all-rows --include-archive`, while line 18 of the same file names five query-only ledgers (story, blocked, decisions, feedback, runs). The executor treated the two-command example as the complete set and skipped three ledgers.",
+   "fix_locus": "research-loop/skills/oversight/references/inspection.md step 2 (enumerate the ledgers a routine inspection must read)"
+  },
+  {
+   "id": "v2-hop1-1",
+   "severity": "note",
+   "where": "tables/rows.json → launch_order.properties.resources",
+   "what": "`resources` is in `required[]` with `\"type\": \"object\"` (null not allowed), while its own note says a non-cluster project '可空、可不实现' — wording that reads as nullable. No empty-shape convention is given, so the writer must guess `{}`.",
+   "why_real": "rows.json required[] includes `resources`; properties.resources is `{\"type\": \"object\", \"_note\": \"...非算力集群工程可空、可不实现\"}` and schemas/launch_order.schema.json generates `{\"type\": \"object\"}`. A literal reading of 可空 (null) fails validation; `{}` passes. The executor guessed `{}` and the write succeeded.",
+   "fix_locus": "research-loop/tables/rows.json launch_order.properties.resources._note (say the empty value is `{}`)"
+  },
+  {
+   "id": "v2-hop1-2",
+   "severity": "note",
+   "where": "skills/deploy-layer/references/launch-orders.md 'Sourcing expected_outputs'",
+   "what": "The doc gives the entry shape `{path_glob, min_bytes, min_lines, required_keys[]}` and never says whether `required_keys: []` is the way to express 'this artifact promises line/byte counts only, no JSON keys'.",
+   "why_real": "rows.json launch_order.expected_outputs is `{\"type\": \"array\", \"minItems\": 1}` with the entry shape carried only in prose — the generated schema validates nothing inside an entry, so any guess passes silently. The issue this hop worked from promised only 'at least 1 line, at least 1 byte'.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/launch-orders.md 'Sourcing expected_outputs' (state that an empty required_keys means no key-level contract)"
+  },
+  {
+   "id": "v2-hop2-1",
+   "severity": "friction",
+   "where": "skills/run-layer/references/execute.md 'Execution' (the three rejection categories, lines 18-65) vs scripts/fallback/launch.py",
+   "what": "execute.md documents exit 2 and exit 3 only. A launch that starts and whose child fails returns the child's own exit code, undocumented — and worse, `_EXIT_TIMEOUT = 1` collides with a child that exits 1, so exit 1 is genuinely ambiguous between 'child failed with 1' and 'the launcher timed out', resolvable only by reading `ops/jobs.json`'s `state`.",
+   "why_real": "launch.py:48-49 `_EXIT_REFUSE = 3`, `_EXIT_TIMEOUT = 1`; lines 183-191: `if exit_code is None: state='timeout'; process_exit=_EXIT_TIMEOUT` / `else: state='failed'; process_exit=exit_code`. execute.md only says 'the launcher itself prints nothing about what went wrong, only its own exit code', never what that code is. The hop got exit 1 with empty stdout/stderr and had to infer from jobs.json state=failed that this was not a fourth rejection category.",
+   "fix_locus": "research-loop/skills/run-layer/references/execute.md (exit-code map) + scripts/fallback/launch.py (give timeout a code that cannot collide with a child's)"
+  },
+  {
+   "id": "v2-hop2-2",
+   "severity": "note",
+   "where": "skills/run-layer/references/failures.md 'Classify first' (second independent hit of v1-run-4)",
+   "what": "A project that has never had `ops/error_classes.json` created gets no guidance: whether to create it, whether the missing table is itself escalation-worthy, or whether `unknown` from a missing table means the same as `unknown` from a real table.",
+   "why_real": "`ls ops/error_classes.json` → No such file or directory in the relay at hop2; the classifier degraded with a stderr warning and exit 0. failures.md never mentions the state; the answer lives in the deploy layer's failures-inbound.md:48-53, which the run layer is not pointed at.",
+   "fix_locus": "research-loop/skills/run-layer/references/failures.md 'Classify first'"
+  },
+  {
+   "id": "v2-hop3-2",
+   "severity": "friction",
+   "where": "skills/deploy-layer/references/r5-choices.md 'Opening it' / 'Recording the ruling' (`--where`)",
+   "what": "`--where \"<file path | spec item | ticket>\"` gives three alternatives with no rule for a fork that touches all three, and nothing states whether the value is checked against the self-decide grant's `scope.path_globs`. The executor deliberately picked a value inside `ops/**` 'to be safe' and got no signal either way.",
+   "why_real": "Same root gap as v1-idea-1, reached from the deploy side. The command `ledger.py decision --blocked-ref B001 --authorized-by grant:D002 ... --where ops/launch_orders/it001a-20260815-1.json` returned exit 0; grant scope matching is nowhere implemented or specified, so a value outside `ops/**` would also have been accepted.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/r5-choices.md (disambiguate `--where`; state whether it is load-bearing for grant scope)"
+  },
+  {
+   "id": "v2-hop3-3",
+   "severity": "friction",
+   "where": "tables/rows.json → status_view.pending_launch_orders + skills/deploy-layer/SKILL.md §2 (working face)",
+   "what": "A sanctioned relaunch has no queue representation. `pending_launch_orders` is derived as 'written to disk but run_id not in the jobs ledger', so rewriting an already-launched run_id's order (the exact fallback D003 ordered) leaves the working face empty and the only record that a relaunch is due is prose inside a blocked row's `answer`.",
+   "why_real": "rows.json: `pending_launch_orders` = `已写盘但 run_id 在 jobs 台账里查无的发射单`. Verified on disk: after hop3 rewrote ops/launch_orders/it001a-20260815-1.json with `--mode ok`, `status --layer deploy` still reported `\"pending_launch_orders\": []`, and B001 had just left the queue as answered.",
+   "fix_locus": "research-loop/tables/rows.json status_view.pending_launch_orders (a relaunch-due derivation) or a documented retry protocol in skills/deploy-layer/references/failures-inbound.md"
+  },
+  {
+   "id": "v2-hop3-4",
+   "severity": "note",
+   "where": "tables/rows.json → status_view.batches_pending_report vs skills/deploy-layer/references/closeout.md Step 0",
+   "what": "`batches_pending_report` fires on any runs.jsonl row for the batch, including a failed/empty-output one, so the working face invites a report for a batch that has landed nothing reportable. Step 0's gate ('once this batch's runs have landed') is prose with no cross-reference to the bucket.",
+   "why_real": "rows.json: `batches_pending_report` = `runs 账里有行、plans/ 下无批次报告的 batch_id`. On disk, IT-001-20260815-1 sat in that bucket through all eight hops while its only runs row is `{\"run_id\": \"it001a-20260815-1\", \"status\": \"empty-output\", \"metric_name\": null, \"value\": null}`.",
+   "fix_locus": "research-loop/tables/rows.json status_view.batches_pending_report._note + skills/deploy-layer/references/closeout.md Step 0"
+  },
+  {
+   "id": "v2-hop4-1",
+   "severity": "blocker",
+   "where": "scripts/fallback/record.py lines 148-168 + skills/run-layer/references/execute.md 'Recording' and references/failures.md 'Consuming the answer' + tables/rows.json runs_row_normal",
+   "what": "The self-heal `retry` action — a first-class value in the error-classes table, and the exact action D003 ordered — is unrecordable once the failed attempt has been recorded. record.py refuses both a differing status ('run-level field does not match this run_id's existing rows') and a matching one ('duplicate primary key ... repeat record refused'), and exposes no supersede/append flag. Nothing in the plugin documents this dead end or an alternative.",
+   "why_real": "Reproduced twice by two different hops in the relay. record.py:151-160 compares every `_RUN_LEVEL_FIELDS` value against the existing row and fails on any difference; 163-171 rejects a duplicate `(run_id, metric_name, filter)`. rows.json runs_row_normal._dup_rule states the intent ('重试补记不产生第二份数字'), which contradicts execute.md's mandatory Recording step that writes `status=empty-output` for a failed attempt. `record.py --help` offers only `--launch-order`/`--status`; `ledger.py runs-append` is criterion-rows-only, deploy-only. On disk today ops/runs.jsonl still says `empty-output` while RUNMETA.json records attempt2 exit 0 and result.jsonl has 5 lines — the relay chain terminated here.",
+   "fix_locus": "research-loop/scripts/fallback/record.py (a supersede path for a sanctioned retry) + tables/rows.json runs_row_normal (retry semantics) + skills/run-layer/references/execute.md 'Recording' and failures.md 'Consuming the answer'"
+  },
+  {
+   "id": "v2-hop4-2",
+   "severity": "blocker",
+   "where": "scripts/fallback/launch.py lines 159-168 vs skills/run-layer/references/execute.md 'Job-ledger registration' and tables/rows.json jobs_min_additions",
+   "what": "Re-invoking the launcher on the same run_id replaces that run's `ops/jobs.json` entry wholesale, silently destroying the `escalation_ref` / `sampler_verdict` / `sampler_verdict_at` backrefs the run layer is required to add. The doc says the launcher writes a base entry and this layer adds backrefs 'on top of that', and never warns that the documented relaunch flow erases them.",
+   "why_real": "launch.py:161-168 does `jobs[order[\"run_id\"]] = {launch_order_ref, state, started_at, finished_at, log_path}` — assignment, not merge — while the terminal update at 219-225 does merge (`entry = jobs.get(run_id, {})`). The hop recorded before/after: `{... \"state\": \"failed\", \"escalation_ref\": \"B001\", \"sampler_verdict\": \"ok\", \"sampler_verdict_at\": \"2026-08-14T13:22:27\"}` → `{\"finished_at\": ..., \"launch_order_ref\": ..., \"log_path\": \"...attempt2.log\", \"started_at\": ..., \"state\": \"done\"}`, all three backrefs gone. It was caught only because the hop diffed the file by hand; a session following execute.md verbatim loses the escalation trace with no error.",
+   "fix_locus": "research-loop/scripts/fallback/launch.py (merge into the existing entry instead of replacing it)"
+  },
+  {
+   "id": "v2-hop4-3",
+   "severity": "note",
+   "where": "tables/rows.json → jobs_min_additions._required_additions.escalation_ref + skills/run-layer/references/execute.md 'Job-ledger registration'",
+   "what": "Both texts assume at most one escalation per run ('the blocked_id of the entry raised for this run, if one was'; '回指 blocked_id；未升级过的 run 恒 null'). A run_id that accumulates a closed and an open escalation has no stated rule for which id the field carries.",
+   "why_real": "The hop wrote B001, then rewrote it to B002 in the same session on its own reasoning. On disk today ops/jobs.json carries `\"escalation_ref\": \"B002\"` while ops/blocked.jsonl holds both B001 (closed) and B002 (open) against the same run_id — a choice the plugin never specifies.",
+   "fix_locus": "research-loop/tables/rows.json jobs_min_additions._required_additions.escalation_ref (say which one, or make it a list)"
+  },
+  {
+   "id": "v2-hop4-5",
+   "severity": "friction",
+   "where": "skills/run-layer/SKILL.md §4 channel 3 vs §2 'First action'",
+   "what": "§4 frames `pending_launch_orders` as the field carrying inbound work ('Take a job on only when a launch order says exactly what to run'), but §2 never lists it among the fields this layer checks, and the field is structurally empty for exactly the case this hop faced — a relaunch of an already-launched run_id. The only pointer to the order was free text inside an answered blocked row.",
+   "why_real": "Verified derivation (rows.json: pending_launch_orders excludes any run_id present in the jobs ledger) plus the hop's own before/after status calls, both `\"pending_launch_orders\": []`, while ops/launch_orders/it001a-20260815-1.json sat on disk rewritten and awaiting execution. Same root cause as v2-hop3-3, on the receiving side.",
+   "fix_locus": "research-loop/skills/run-layer/SKILL.md §2 (list the field the layer must watch) + the retry-representation fix in tables/rows.json status_view"
+  },
+  {
+   "id": "v2-hop4-6",
+   "severity": "note",
+   "where": "skills/run-layer/references/failures.md 'Classify first'",
+   "what": "'Classify first' reads as mandatory for any failure, but its three input kinds all describe the launched experiment's outcome. A bookkeeping-script failure (record.py exiting 2) has no such triple, and nothing scopes the step to run failures only.",
+   "why_real": "error_classify.py's flags are --exit-code/--log/--output-check, all about the registry task; the failing command here was fallback/record.py with a runs.jsonl schema conflict. The hop had to decide on its own that the step did not apply and escalate directly.",
+   "fix_locus": "research-loop/skills/run-layer/references/failures.md (scope 'Classify first' to the launched run's own failure)"
+  },
+  {
+   "id": "v2-hop4-7",
+   "severity": "friction",
+   "where": "skills/run-layer/SKILL.md §2 (`inconsistencies` annex) — and the same omission in all four layer skills",
+   "what": "`inconsistencies` is named as an annex block in every layer's SKILL.md §2 and appears in no other file in any skill. No layer is told what a populated entry means or what to do about it.",
+   "why_real": "`grep -rn inconsistencies skills/` returns exactly four hits, one per SKILL.md §2, each only the sentence '`waiting_on` and `inconsistencies` are the two annex blocks -- not part of the three'. The relay produced a live entry (`jobs-runs-status-mismatch` on it001a-20260815-1) that three separate hops (run, oversight, deploy) each had to interpret from scratch.",
+   "fix_locus": "research-loop/skills/*/SKILL.md §6 stage index (a row for a non-empty inconsistencies annex) or a shared reference section"
+  },
+  {
+   "id": "v2-hop5-1",
+   "severity": "note",
+   "where": "skills/deploy-layer/references/failures-inbound.md lines 6-11",
+   "what": "The file scopes itself to escalations 'raised when its own error_classify.py pass came back unknown', but the query it prescribes returns every open kind=failure row addressed to deploy. A kind=failure row that is not an error_classify-shaped run failure has no stated branch.",
+   "why_real": "failures-inbound.md:16 is `query blocked --status open --to-layer deploy --kind failure`; B002 on disk is kind=failure with evidence about record.py's primary-key guard and no mention of error_classify.py at all. The hop had to decide for itself that the file's two branches were still exhaustive.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/failures-inbound.md lines 6-11 (widen the scoping sentence to any kind=failure row)"
+  },
+  {
+   "id": "v2-hop5-2",
+   "severity": "note",
+   "where": "skills/deploy-layer/references/closeout.md Step 0 (line 10)",
+   "what": "The gate for writing a batch report is stated only as 'once this batch's runs have landed' and never tells the session to check `open_blocked` / `inconsistencies` first, even when the status view is actively flagging the batch's only run as inconsistent.",
+   "why_real": "closeout.md:10 verbatim; the status view returned `inconsistencies: [{\"code\": \"jobs-runs-status-mismatch\", \"ref\": \"it001a-20260815-1\", ...}]` on every call from hop3 onward. Withholding the report was the hop's own inference; a session reading Step 0 literally would have written a report citing a run whose ledger status is stale.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/closeout.md Step 0"
+  },
+  {
+   "id": "v2-hop5-3",
+   "severity": "friction",
+   "where": "skills/deploy-layer/references/failures-inbound.md lines 65-71",
+   "what": "The escalate-upward branch offers `--to-layer idea` or `--to-layer user` with no criterion for choosing between them. The two examples it gives (a principle gap, an experimental-settings ambiguity) do not cover a tooling/ledger-capability gap, which is what this hop actually had.",
+   "why_real": "Verbatim: 'This needs a decision only idea/the user can make (a principle gap, an experimental-settings ambiguity §2.5 forbids self-resolving) -- open a new entry the normal way ... `--to-layer idea` or `--to-layer user`'. The choice is load-bearing: a `--to-layer user` row rejects `--grant` outright (writes.json blocked_transitions.answered), so picking wrong changes which answering paths remain legal.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/failures-inbound.md lines 65-71"
+  },
+  {
+   "id": "v2-hop5-4",
+   "severity": "note",
+   "where": "skills/deploy-layer/references/failures-inbound.md lines 62-64 vs SKILL.md §5 'Hard rules digest'",
+   "what": "failures-inbound.md quotes a rows.json note pointing to 'R8' for the new-rule proposal path, but the deploy skill's own digest covers only R5/R6/R7/R3 and its 'Full text' pointer is spec §3 — a design draft that does not ship with the plugin.",
+   "why_real": "deploy SKILL.md §5 lists exactly R5, R6, R7, R3 then 'Full text: spec §3 (design draft) and tables/rows.json / tables/writes.json'. R8's text lives only in run-layer SKILL.md §5 and the spec. The shipped plugin (research-loop/) contains no spec.md; the design draft is at .scratch/research-loop/spec.md, outside it. `grep -rno '§[0-9.]*\\|R[0-9]' skills/ agents/` counts ~50 such dangling pointers, including 9 `spec §1`, 9 `§2.5`, 4 `§8`.",
+   "fix_locus": "research-loop/skills/deploy-layer/SKILL.md §5 (add R8) and, systemically, every skill's `spec §N` cite — either ship the spec inside the plugin or restate what each cite is load-bearing for"
+  },
+  {
+   "id": "v2-hop5-5",
+   "severity": "friction",
+   "where": "tables/rows.json → issue_min + status_view.open_issues; skills/deploy-layer/ (all 8 files)",
+   "what": "`open_issues` is derived from an issue file's `Status:` line being non-terminal, but nothing in the deploy skill or the tables defines the status vocabulary, which values are terminal, or who sets it — and `ledger.py` has no issue/ticket verb at all.",
+   "why_real": "rows.json status_view.open_issues: `Status 行非终态的工单 id 与路径`; rows.json issue_min._fields lists `Status 行` with no enum. `grep -rn Status skills/deploy-layer/` returns nothing. `ledger.py --help` subcommands contain no issue verb. Consequence on disk: .scratch/demo/issues/01-demo.md still reads `Status: ready-for-agent` after two launches, three blocked rows and eight hops, and IT-001's issue can never leave the working face.",
+   "fix_locus": "research-loop/tables/rows.json issue_min (name the vocabulary and which values are terminal) + skills/deploy-layer/references/spec-items.md (who updates it, when)"
+  },
+  {
+   "id": "v2-hop6-1",
+   "severity": "friction",
+   "where": "skills/oversight/references/inspection.md 'The reading exemption' (jobs ledger) vs tables/ledgers.json jobs.read=sliced",
+   "what": "Reading the jobs ledger is documented as one path only — dispatch a reader subagent at `roles.reader_model`. The CLI hard-refuses a direct query regardless of file size, inspection.md names no script-slicing alternative (which ledgers.json's own read-class definition allows), and it never points at `config-check`/`doctor`, the only places that reveal `roles` has plugin defaults when the project's key is null.",
+   "why_real": "`ledger.py query jobs --all-rows` → stderr `query.jobs: large ledger, use a reader subagent (sliced)`, exit 2 — on a jobs.json that is 353 bytes / 12 lines. research-loop.json in the relay has `\"roles\": null`; `doctor.py` prints `null key roles -> default: {\"inspector_model\": \"opus\", \"reader_model\": \"sonnet\"}`, but inspection.md never sends the reader there. ledgers.json _read_classes defines sliced as `脚本切片或派读手 subagent`, i.e. the script route exists and the skill omits it. Net effect: the oversight session shipped a report explicitly stating it never opened ops/jobs.json, leaving the flagged inconsistency's cause unconfirmed.",
+   "fix_locus": "research-loop/skills/oversight/references/inspection.md 'The reading exemption' (name the script-slicing route and the config-check lookup for roles defaults)"
+  },
+  {
+   "id": "v2-hop6-2",
+   "severity": "friction",
+   "where": "skills/oversight/references/report-genre.md line 1 + references/inspection.md step 3 + references/regression.md",
+   "what": "report-genre.md names three report genres (routine inspection, on-demand observation, criterion acceptance) but only two have a filename convention anywhere: `reports/<batch_id>.md` for routine, `reports/regression-<batch_id>.md` for regression checks. The observation and spot-check genres have none.",
+   "why_real": "Round-1's v1-oversight-8 ('no filename convention for a report under reports/') was fixed for the routine genre only. The hop invented `reports/observation-IT-001-20260815-1.md` by analogy; that file is the one report on disk in the relay today, under a name the plugin never sanctioned.",
+   "fix_locus": "research-loop/skills/oversight/references/report-genre.md (a naming rule covering every genre it names)"
+  },
+  {
+   "id": "v2-hop6-3",
+   "severity": "friction",
+   "where": "skills/oversight/references/report-genre.md 'Excerpt line' / 'What the mechanical verifier checks' vs scripts/evidence_lint.py",
+   "what": "A `> ` excerpt is presented as self-sufficient verbatim evidence (and verify_report does re-check it byte-for-byte), yet evidence_lint still demands a `$ ` repro command within 3 lines below it for any digit inside the excerpt — forcing a redundant command that restates numbers already mechanically verified.",
+   "why_real": "evidence_lint.py's `protected` set covers only `$ ` lines and the `= ` line under them; `> ` lines go through `_asserts_number` like any prose. My probe confirmed: a line `> {\"seed\": 7, \"elapsed_s\": 0}` is flagged no-repro-command. The hop resolved it by adding a redundant `$ ` command and then had to delete a blank line to get inside the 3-line window.",
+   "fix_locus": "research-loop/scripts/evidence_lint.py (exempt `> ` excerpt lines that follow a path:line reference) — same locus as v1-oversight-3"
+  },
+  {
+   "id": "v2-hop6-4",
+   "severity": "friction",
+   "where": "skills/oversight/references/report-genre.md 'The marker conventions' — the `$ ` repro line",
+   "what": "The doc calls a `$ ` line 'a paste-and-run command' and never states that a pipe makes it unparseable; verify_report rejects it before attempting to run it.",
+   "why_real": "_lib.split_cmd (scripts/_lib.py:465-470) fails on `|` or newline before shelling out. Reproduced in the hop's first draft: `repro-command: could not parse command: verify_report.cmd: command must not contain pipes or newlines`. Independently hit by v1-oversight-3 in the other oversight session.",
+   "fix_locus": "research-loop/skills/oversight/references/report-genre.md 'The marker conventions'"
+  },
+  {
+   "id": "v2-hop6-5",
+   "severity": "friction",
+   "where": "skills/oversight/references/report-genre.md 'The marker conventions' — the `$ ` repro line",
+   "what": "The doc does not say repro commands run without a shell, so `<`/`>` redirection is passed to the target program as a literal argument.",
+   "why_real": "_lib.run_argv uses subprocess.run(argv) with no shell. Reproduced: `$ wc -l < ops/runs.jsonl` → `wc: '<': No such file or directory`, exit 1. 'paste-and-run' is precisely the phrasing that invites a shell idiom.",
+   "fix_locus": "research-loop/skills/oversight/references/report-genre.md 'The marker conventions'"
+  },
+  {
+   "id": "v2-hop6-6",
+   "severity": "friction",
+   "where": "skills/oversight/references/report-genre.md 'What must carry a repro command' vs scripts/evidence_lint.py::_asserts_number",
+   "what": "The numeric-claim scan matches any surviving decimal digit, not an experiential number: it fires on the `3` in `python3`, on ordinals like 'attempt 1', and on continuation lines of a multi-line `$ ` command (only the marker line itself is protected). None of this is stated.",
+   "why_real": "My probe file reproduced all three shapes as no-repro-command findings. evidence_lint.py's protected set is built only from `_is_dollar_line` plus one following `= ` line, so a heredoc's body lines are scanned as prose. The hop's fix was to reword its own prose and split every command onto one line — the doc's rule was degraded to satisfy the tool.",
+   "fix_locus": "research-loop/scripts/evidence_lint.py (token-aware digit test; protect `$ ` continuation lines) — same locus as v1-oversight-3"
+  },
+  {
+   "id": "v2-hop6-7",
+   "severity": "friction",
+   "where": "skills/oversight/SKILL.md §2 and references/inspection.md",
+   "what": "With no dispatch and an empty `batches_pending_inspection`, a populated `inconsistencies` annex is the only actionable signal, and no oversight file says whether acting on it is in scope or what acting means. rows.json assigns deep-checking to trace_check (which ran clean) and doctor (named nowhere in the oversight stage index), leaving the session itself unaddressed.",
+   "why_real": "Same systemic omission as v2-hop4-7/v2-hop7-2, on the oversight face. rows.json status_view.inconsistencies: `只列不猜；...深检归 trace_check 与 doctor`; `grep -rn doctor skills/oversight/` returns nothing. The hop wrote an on-demand observation report on its own judgment.",
+   "fix_locus": "research-loop/skills/oversight/SKILL.md §6 stage index (a row for a flagged inconsistency) + references/inspection.md"
+  },
+  {
+   "id": "v2-hop7-1",
+   "severity": "friction",
+   "where": "skills/deploy-layer/SKILL.md §2 (fourth independent hit of the pending_user_decisions omission)",
+   "what": "Same defect as v1-deploy-2, hit again by a different deploy session in the relay, which resolved it only by reading tables/rows.json → status_view.",
+   "why_real": "Four of the seven executors in this round independently reported it; the field is emitted unconditionally by statuscmd.py:397 and named in only one of the four layer skills.",
+   "fix_locus": "research-loop/skills/deploy-layer/SKILL.md §2"
+  },
+  {
+   "id": "v2-hop7-2",
+   "severity": "friction",
+   "where": "skills/deploy-layer/SKILL.md §6 stage index + all 7 files under skills/deploy-layer/references/",
+   "what": "A non-empty `inconsistencies` annex has no stage-index row and no reference file; the deploy layer, which owns the batch report the annex is about to invalidate, is given nothing to do with it.",
+   "why_real": "`grep -rln inconsistenc skills/deploy-layer/` returns only SKILL.md, whose sole mention is the annex-naming sentence in §2. The hop resolved it by reading ops/jobs.json against ops/runs.jsonl and inferring the link to B002/B003 — its own inference, not the skill's.",
+   "fix_locus": "research-loop/skills/deploy-layer/SKILL.md §6 + a references section on the annex"
+  },
+  {
+   "id": "v2-hop7-3",
+   "severity": "friction",
+   "where": ".scratch/demo/issues/01-demo.md `Status:` line vs skills/deploy-layer/SKILL.md §3 and its 7 reference files",
+   "what": "Second independent hit of v2-hop5-5: deploy owns tickets, but no file documents the Status vocabulary or who advances it, so the issue stays `ready-for-agent` forever and `open_issues` never clears.",
+   "why_real": "`grep -rn 'Status:' skills/deploy-layer/` returns nothing; rows.json issue_min lists `Status 行` with no enum; `ledger.py --help` exposes no issue verb. The hop deliberately left the line untouched rather than guess a value.",
+   "fix_locus": "research-loop/tables/rows.json issue_min + skills/deploy-layer/references/spec-items.md"
+  },
+  {
+   "id": "v2-hop7-4",
+   "severity": "note",
+   "where": "skills/deploy-layer/references/closeout.md line 10",
+   "what": "Step 0's gate cites '§8 step 5's sequence' — a section of the design spec, which does not ship inside the plugin. The parenthetical restates the sequence, so nothing was blocked, but the pointer itself is unfollowable from a plugin install.",
+   "why_real": "The shipped tree research-loop/ contains no spec.md (the draft lives at .scratch/research-loop/spec.md). The same sequence is restated in launch-orders.md 'The batch sequence (§8 step 5)', which is where the cite should point. One instance of the ~50-pointer systemic issue described under v2-hop5-4.",
+   "fix_locus": "research-loop/skills/deploy-layer/references/closeout.md line 10 (point at launch-orders.md's restatement instead of the spec section)"
+  },
+  {
+   "id": "v2-hop8-2",
+   "severity": "friction",
+   "where": "skills/idea-layer/SKILL.md §4 'With the user'",
+   "what": "The five transcription paths (ruling, authorization, revocation/correction, trigger, send-back) are named and attributed to spec §2.5, which does not ship with the plugin. Four have documented mechanics in the idea layer's references; 'send-back' has none there, and `ledger.py blocked --help` exposes only {open, answer, close, withdraw}.",
+   "why_real": "idea SKILL.md §6's stage index covers principles, story, derivations, withdrawals and answering — no send-back row. The mechanism does exist elsewhere (routes.json '这个不行，重做（打回）' → rejections[] in the batch report header, rows.json batch_report_header.rejections, closeout.md Step 3), all outside the idea layer's own materials. So a named path the layer is told it owns has no reachable mechanics from where it is named.",
+   "fix_locus": "research-loop/skills/idea-layer/SKILL.md §4 + a references entry (or stage-index row) for the send-back path"
+  },
+  {
+   "id": "v2-hop8-3",
+   "severity": "note",
+   "where": "skills/idea-layer/SKILL.md §6 stage index",
+   "what": "§2 tells the idea layer that `pending_user_decisions` counts on its queue in a session talking to the user, but §6's five stage rows have no entry for handling one; the operative command surfaced only from the status JSON's own `waiting_on.action` field.",
+   "why_real": "§6's rows are: writing a principle, ruling on a story claim, proposing a derived computation, withdrawing a ruling, answering a pending entry addressed to idea. A `to_layer=user` row is none of those (it is not addressed to idea). The hop got `ledger.py render blocked` from the status output, not the stage index.",
+   "fix_locus": "research-loop/skills/idea-layer/SKILL.md §6"
+  },
+  {
+   "id": "v2-hop8-4",
+   "severity": "note",
+   "where": "skills/idea-layer/SKILL.md §2 (working-face field list)",
+   "what": "§2 lists the seven working-face fields with no statement of which ones this layer acts on versus merely observes. The run layer's SKILL.md carries exactly that sentence ('this layer only ever populates these two of the seven'); idea's does not.",
+   "why_real": "idea SKILL.md §2 verbatim ends the working-face clause at the field list. The hop resolved scope by reading research-loop.json's `owners` map (issues/launch_orders/batch_reports → deploy; jobs/runmeta → run), a resolution route the skill never names.",
+   "fix_locus": "research-loop/skills/idea-layer/SKILL.md §2 (one sentence on which fields this layer acts on)"
+  }
+ ],
+ "refuted": [
+  {
+   "id": "v1-router-3",
+   "basis": "Working as documented. routes.json's `_about` states the table is not a whitelist ('路由句只是常用入口，不是白名单') and the router SKILL.md's 'No match' rule is explicit: 'don't guess which layer the user means. List the say column back to them and ask.' The executor followed that rule and reported it worked. Adding a row for every concept present in ledger data is not a stated goal of a 19-row index."
+  },
+  {
+   "id": "v1-idea-2",
+   "basis": "Test-fixture artifact, not a doc defect. seed_v_sandboxes.py:138 seeds B002 with `evidence=[\"ops/evidence.txt\"]` and never creates that file. The documented behaviour for an idea-layer r5-choice is that the user rules on it in conversation (answering.md: '--answered-by user ... the common case here, since idea is the layer talking to them'); the executor had no user because the harness runs the layer unattended. The plugin's default mode for an unresolvable fork is stop-and-table (r5-choices.md 'Default (no override): stop here, open the entry, wait')."
+  },
+  {
+   "id": "v1-idea-3",
+   "basis": "The doc is unambiguous and prescribes exactly one resolution. story.md's principle_id bullet: 'don't guess one when more than one principle could plausibly fit, ask the user which.' The executor chose a different, self-invented signal (matching METHOD.md's criterion_cmd against a launch order's metrics_cmd) rather than following it. The obstacle was the unattended harness, not the text."
+  },
+  {
+   "id": "v1-idea-4",
+   "basis": "Behaviour is exactly as designed and the design is stated in a file the idea skill names. tables/writes.json `_about`: '写权说的是账本内容的归属，不是脚本入口；检查是防呆不是防伪' — the checks are foolproofing, not forgery-proofing. Grant scope is `{desc, path_globs[]}` where `desc` is prose, so coverage is a session judgment by construction; idea SKILL.md §2 says so directly ('read each grant's scope text before treating it as yours'). The separate, real defect — that no rule says HOW to judge coverage — is confirmed as v1-idea-1 / v2-hop3-2."
+  },
+  {
+   "id": "v1-idea-5",
+   "basis": "By design and discoverable. tables/rows.json story_row.decided_by is `{\"type\": \"string\", \"const\": \"user\"}` — the schema encodes that a story row IS a user ruling; story.md states the matching discipline in its first paragraph. Same 防呆不是防伪 principle as above: no CLI can verify a live human, and the plugin never claims to."
+  },
+  {
+   "id": "v1-deploy-1",
+   "basis": "Test-fixture artifact, not a plugin defect. The 0.88/0.91 values were hand-written into runs.jsonl by the harness's own seeder: seed_v_sandboxes.py:80-86 constructs the rows with `metric_name=\"accuracy\", value=seed_metric_value, n=100`, called at lines 165-166 with 0.91/0.88. They never came through metrics_cmd, so metrics_cmd naturally disagrees. Nothing in the plugin's write path produced the mismatch (fallback/record.py:115-136 takes metric_name/value/n straight from the metrics_cmd JSON)."
+  },
+  {
+   "id": "v1-deploy-3",
+   "basis": "Test-fixture artifact. seed_v_sandboxes.py:128-132 seeds B001 with `evidence=[f\"ops/artifacts/{fail_run}/attempt1.log\"]` — one item. The three-item shape failures-inbound.md describes is what the run layer is required to send (failures.md:22-34), and the plugin's own run layer does produce it (relay B001 on disk carries three items). execute.md:124-126 additionally specifies that a precheck refusal's stderr is archived into evidence, so the shape is defined for that case too."
+  },
+  {
+   "id": "v1-deploy-4",
+   "basis": "The criterion is stated. failures-inbound.md:65-66 defines the escalate branch's trigger explicitly — 'This needs a decision only idea/the user can make (a principle gap, an experimental-settings ambiguity §2.5 forbids self-resolving)' — and by exclusion everything else is the self-heal branch, which is also what R8 assigns to this layer ('Classification judgment on an unknown belongs here'). A one-line transient failure is neither a principle gap nor a settings ambiguity, so the executor's 'retry' call is the branch the doc names."
+  },
+  {
+   "id": "v1-deploy-5",
+   "basis": "Stated in the doc the executor read. launch-orders.md 'Handing off to run': 'The launch order itself is the handoff -- the run layer never gets free-text instructions, only this file', and 'a command/script path means the run layer executes it directly'. Combined with SKILL.md §1's fixed layer identity, the deploy-layer action for an already-written order is: nothing further. No guess was required."
+  },
+  {
+   "id": "v1-oversight-7",
+   "basis": "The indirection is documented in the same file. tables/rows.json `_schema_dialect.$enum`: '值必须是本文件 enums 的键，生成器就地展开成 {\"enum\": [...]}'. So `{\"$enum\": \"inspection.verdict\"}` resolving to the top-level `enums[\"inspection.verdict\"]` key is the table's stated convention, not an unexplained hop, and the executor resolved it inside its allowed context."
+  },
+  {
+   "id": "v1-run-2",
+   "basis": "Covered by the run layer's own reference file. execute.md 'Job-ledger registration' (lines 124-126): 'For categories 2 and 3 (dirty tree, expected_commit mismatch) the refusal stderr is archived into the escalation entry's evidence instead of dropped.' tables/rows.json jobs_min_additions._precheck_refusal says the same. A precheck refusal's evidence is the refusal stderr, not a log path, and the plugin says so."
+  },
+  {
+   "id": "v2-hop1-3",
+   "basis": "Not a plugin defect. launch-orders.md is explicit that run_id 'is given by this layer, never invented by the run layer' and supplies the default naming shape `<name>-<YYYYMMDD>-<序>`. Deploy is free to mint the id; matching the artifact-dir stem the ticket already used is a sensible choice, not a required inference. The unlabelled folder name belongs to the harness's seeded issue text (seed_v_sandboxes.py:213-222), not to the plugin."
+  },
+  {
+   "id": "v2-hop2-3",
+   "basis": "Resolvable inside the run layer's allowed context. tables/rows.json (named by run SKILL.md §2 and §5) → error_classes._match_fields.output_check: 'string，可选；与调用方 --output-check 字符串相等才算命中——值域即 output_check.py 的 verdict：ok|missing-output|empty-output'. The bare verdict string is specified; the executor's guess matched the spec and did not need to be a guess."
+  },
+  {
+   "id": "v2-hop3-1",
+   "basis": "The doc pre-empts exactly this mistake. failures-inbound.md:28-31 introduces the JSON block with 'Its real shape (tables/rows.json → error_classes, matching error_classify.py's own _MATCH_KEYS/_rule_matches exactly -- read the table entry there before writing a rule, not the sketch elsewhere)'. The example is a self-consistent CUDA-OOM illustration (exit 137 + OOM regex + empty-output), never presented as this failure's values, and the executor followed the instruction and got the right value."
+  },
+  {
+   "id": "v2-hop3-5",
+   "basis": "Derived from explicit statements, not guessed. launch-orders.md 'Handing off to run' ('The launch order itself is the handoff'), SKILL.md §4 channel 3, and `ledger.py launch-order --help` ('Write (or idempotently rewrite) a launch order; deploy-layer only') each say what the write is; execute.md is named as the place the launching happens. Cross-referencing three explicit statements to a correct conclusion is normal doc use, not a forced guess."
+  },
+  {
+   "id": "v2-hop4-4",
+   "basis": "Partly stated, and the unstated part is already confirmed elsewhere. run SKILL.md §2 says this layer 'only ever populates these two of the seven working-face fields the view can carry' — which tells a reader the other five are out of scope without naming them. The one field genuinely outside the taxonomy is `pending_user_decisions`, confirmed as v1-run-5; this finding adds nothing beyond it."
+  },
+  {
+   "id": "v2-hop8-1",
+   "basis": "The protocol worked. B003 is kind=r5-choice with to_layer=user; answering.md and SKILL.md R2 both reserve that ruling for the user ('whether a result counts ... is this layer's call to make with the user, never a script's or an agent's'), and the session correctly declined to fabricate one or stretch grant D002 past deploy's own precedent. The absence of a user is a property of the unattended relay harness, not a plugin defect. The real defect underneath — that record.py made D003's ruling unexecutable in the first place — is confirmed as v2-hop4-1."
+  }
+ ],
+ "v2_audit": {
+  "chain_completed": false,
+  "trace_check_clean": true,
+  "evidence": "ON-DISK INVENTORY of /home/y-guo/.claude/jobs/c3027054/tmp/vloop/round2/v2-relay, read before the hop reports. (1) Launch order: ops/launch_orders/it001a-20260815-1.json, one file, argv `--mode ok`, decision_refs [\"D003\"], created_by deploy, created_at 2026-08-14T13:29:56, expected_commit ad8db1b7…, quick false, resources {}, expected_outputs [{result.jsonl,1,1,[]}]. (2) RUNMETA: ops/artifacts/it001a-20260815-1/RUNMETA.json, attempts[] length 2 — attempt1 argv `--mode fail` exit_code 1 finished 13:21:24, attempt2 argv `--mode ok` exit_code 0 finished 13:37:17; commit ad8db1b7…; artifacts also hold attempt1.log ('simulated failure'), attempt2.log (empty), mode.txt=ok, result.jsonl (5 lines). (3) jobs: ops/jobs.json has exactly one entry, it001a-20260815-1 = {state done, started/finished 13:37:17, log_path attempt2.log, launch_order_ref it001a-20260815-1, escalation_ref B002, sampler_verdict ok, sampler_verdict_at 13:39:35} — attempt1's state and its B001 backref are gone (launch.py replaces the entry wholesale on relaunch). (4) runs: ops/runs.jsonl has ONE row — run_id it001a-20260815-1, status empty-output, metric_name/value/n all null, elapsed_s 0, commit ad8db1b7… (round-1's v2-audit-1 commit-null defect is fixed), recorded_at 13:21:47. attempt2's success is not in the numbers ledger. (5) blocked: B001 run→deploy kind=failure, status closed, answer cites D003/D002 and the error_classes rule, decision_ref D003; B002 run→deploy kind=failure status open (record.py refusal); B003 deploy→user kind=r5-choice status open, where='ops/runs.jsonl (run_id it001a-20260815-1)', three options, no answer. (6) decisions: D001 (seed), D002 grant (user, scope ops/**, expires 2099), D003 kind=decision decided_by agent authorized_by grant:D002 blocked_ref B001 affects [it001a-20260815-1] — the R6 two-step trace is linked in both directions (B001.decision_ref=D003 ↔ D003.blocked_ref=B001) and the launch order's decision_refs[]=[D003] matches D003.affects[]. (7) error_classes: ops/error_classes.json created by deploy with one rule (exit_code 1 + log_regex 'simulated failure' + output_check missing-output → retry). (8) plans/: EMPTY — no batch report. (9) reports/: one file, observation-IT-001-20260815-1.md (an on-demand observation, not a batch inspection); it passes evidence_lint (exit 0) and verify_report (`verify_report: 0 failures`, exit 0). (10) No inspection_report header backfill (no batch report to backfill into). (11) story: ops/story.jsonl does not exist; zero story rows. Git tree: `git status --short` → `?? reports/` only (ops/ is gitignored).\n\nSCRIPT TAILS, run in that directory: `python3 .../trace_check.py --project-root .` → `trace_check: 0 errors, 0 warnings` (exit 0). `python3 .../doctor.py --project-root .` → last line `doctor: 1 findings across 10 sections` (exit 0); its config section reports the null-key defaults including `null key roles -> default: {\"inspector_model\": \"opus\", \"reader_model\": \"sonnet\"}`, its evidence section `1 report file(s) checked, clean`, its caps section blocked 3/500 decisions 3/1000 feedback 0/500 story 0/1000, and its workplan section carries the single finding: `inconsistencies: [{\"code\": \"jobs-runs-status-mismatch\", \"ref\": \"it001a-20260815-1\", \"source\": \"ops/jobs.json\"}]`. `python3 .../trace_check.py --project-root . --closeout IT-001-20260815-1` → `closeout.report_missing: batch IT-001-20260815-1: no batch report found under .../plans` then `trace_check: 1 errors, 0 warnings` (exit 1).\n\nHOP-REPORT CROSS-CHECK: no contradictions found. Every hop's claimed writes are on disk with matching values and timestamps, including hop4's two edits to escalation_ref (B001 → B002) and hop6's statement inside its own report that ops/jobs.json was never opened. Provenance is clean: every link's input is attributable to a prior link's on-disk output — hop2 took the order from ops/launch_orders/, hop3 took B001 from the blocked ledger, hop4 took the relaunch instruction from B001's `answer` field, hop5 took B002 from the ledger and reproduced record.py's refusal firsthand before escalating, hop6 took its material from the status view, hop7 and hop8 re-derived state from `status` alone. Nothing was smuggled through prompts.",
+  "gaps": "The chain runs order → launch fail → escalation → R6-traced ruling → retry ok and then STOPS at 'recorded'. Missing links, in order: (a) runs.jsonl never records attempt2 — its only row still says empty-output while RUNMETA and jobs.json say the run succeeded; this is the jobs-runs-status-mismatch doctor/status keep flagging, and it is caused by fallback/record.py refusing any second write for a run_id (confirmed finding v2-hop4-1, blocker); (b) no batch report in plans/ — correctly withheld by two deploy hops because the batch's only recorded run is stale, so `--closeout` fails with report_missing; (c) no routine inspection — batches_pending_inspection stayed empty because it derives from a batch report header that was never written, so the inspector was never dispatched and the reports/ file that does exist is an unsanctioned on-demand genre; (d) no inspection_report backfill and no close-out; (e) no story ruling — ops/story.jsonl does not exist, and could not: story.md requires every cited run to be `status=ok` in runs.jsonl, which (a) makes impossible. The chain's terminal state is B003 (deploy→user, r5-choice) sitting open with no user in the relay, which is the protocol behaving correctly given the harness. Secondary loss: hop4's relaunch silently erased attempt1's job-ledger backrefs (escalation_ref B001, sampler_verdict, sampler_verdict_at) — recovered only because the hop diffed the file by hand (v2-hop4-2, blocker). Separately, the v3-probe sandbox was left with prober fixtures on disk (decisions row D004 written under grant:D002 with blocked_ref=B002, and an untracked .scratch/demo2/ holding an unapproved spec plus a draft launch order); no v3 findings were submitted to this round for adjudication, so I re-ran the privilege probes myself on a copy: layer-skipping opens are now rejected (`run→user` and `oversight→idea` both exit 2 with 'escalation must go one step'), `story add --layer run`, `launch-order --layer run`, and a launch order against an unapproved spec are all rejected — round-1's v3-1 fix holds."
+ }
+}

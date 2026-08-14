@@ -816,3 +816,35 @@ layer_param 加 _source 键。原文"每个会话开工第一动作是声明本�
      （null = 单臂绝对陈述，不是对照主张），CLI --baseline-runs 变可选，
      给了则与 candidate_runs 集合不得完全相同；表+schema+CLI+story.md
      四处同步。
+
+以下四条是 §V 第二轮（sdd/vloop-round2.md，48 confirmed）设计裁决题的定案，
+补丁工单 19/20 按此实现：
+
+158. **记过账的重试用新 run_id（第二轮 v2-hop4-1/v2-hop3-3 的裁决）**：
+     runs 账保持 append-only 纯度，不给 record.py 开 supersede 口。纪律
+     分两段：run 尚未入账时，同 run_id 改单重发合法（RUNMETA attempts
+     留痕，e2e 场景⑥形状，#144 语义收窄到这一段）；**失败已经入账后，
+     获准的重试是一张新发射单**——新 run_id（缺省命名规则取下一个序号）、
+     decision_refs 带裁决 decision、全新 artifact_dir。旧 run 的失败行
+     留在账上是事实不是垃圾。附带收益：新单自然落进
+     pending_launch_orders（v2-hop3-3 的队列表示问题消解）、jobs 与 runs
+     状态各自一致（mismatch 告警消解）。纯文档+表注改动，代码零改。
+159. **evidence_lint 收四类机械误火、门不松（v1-oversight-3/v2-hop6-4/5/6）**：
+     规则 2 新增豁免——`> ` 摘录行整行跳过（引用不是主张，摘录保真由
+     verify_report 逐字节比对）；行首标题/列表编号前缀剥除；`§\d+` 引用
+     剥除；字母紧连数字的单 token（python3/sha256/attempt1）剥除；`$ `
+     行的续行（反斜杠续行）进保护集。带空格的序数词（"attempt 1"）保持
+     命中——机器分不出它和计数，体裁文档教改写。report-genre.md 补成文：
+     `$ ` 行禁管道、无 shell 执行（重定向符会变成字面 argv）。非回归底线：
+     裸行数（"row count: 5"）必须仍被命中。
+160. **routes 命令拆列 + render blocked 补状态（v1-router-1/2）**：
+     routes.json 的 kind=command 行新增 `cmd` 字段只装可粘贴的命令尾巴，
+     `to` 列留散文说明；router SKILL.md 教"kind=command 执行 cmd 列"。
+     `render blocked` 加 status 列；answered 行改按 from_layer 分组（欠
+     close 的一方），open 行仍按 to_layer 分组（欠答复的一方）。
+161. **launch.py 首次登记合并不覆盖（v2-hop4-2）**：对既有 jobs 条目
+     只更新发射器自有的五个键（launch_order_ref/state/started_at/
+     finished_at/log_path），run 层加的 escalation_ref / sampler_verdict /
+     sampler_verdict_at 等外来键原样保留——与收尾更新既有的 merge 写法
+     对齐。escalation_ref 存最新一条升级的 blocked_id（历史在 blocked
+     账本身，表注成文）。
