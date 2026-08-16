@@ -38,3 +38,14 @@
 - 要改的地方：`05-rl-cli.md` `rl run add` 签名去掉 `--artifact-dir`；`12-role-run.md` 第 70 行发射版必填清单去掉 `artifact_dir`、第 62 行补「产物目录是 `<artifact_root>/<run_id>/`」、第 80 行看门狗「产物目录多久没新文件」按约定找；`21-pair-deploy-run.md` 第 77 行、`23-pair-run-analysis.md` 第 17 行发射版字段清单去掉 `artifact_dir`，23 第 38 行和「没写清」第 1 条改写；设计文档 run 一节收尾版四样补 `data_path`。「`<artifact_root>/<run_id>/`」这条约定归 08 还是 12 请统筹定。
 - 事项 7（不用同步，备案）：`schema_version` 共用一个数从 1 起；编号从 1 起四位起步自然进五位；`log_tail` 存文本；`applies_to` 自由文本但要写具体程序或参数——别的 part 都只指回 03。
 - 状态：已处理 2026-08-17（09/07/08/12/21/23 与两份源文档由统筹改；05 两处交 rl-part-05；事项 3 的定义处并入问题 1、事项 6 的约定归属立为问题 4，都在第一段等 gyb）
+
+## 2026-08-17 来自 rl-part-04 关于 04-handoffs-and-sessions.md
+- 事项：`04-handoffs-and-sessions.md` 定稿，commit `130ec90`。「没写清」八条和正文三处不一致全部裁完；`03` 转来的 `last_activity` 裁决已照改。牵连别处的五条一次性列在这里（也在 `04` 文末「要同步到别处的」）。
+- 裁决原文：「不用」（progress_note）；「全部」（销号交回）；「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」（dispatch）；「留着吧」（last_holder）；「a」（session end --session 不拦）；「删了吧」（release 行 gyb）；「可以 发」（reject 发 fyi）；「不杀」（reclaim）；「按照施工计划吧」（stuck 只改派 issue）。
+- 要改的地方：
+  1. `20-pair-idea-deploy.md` 第 26 行「`progress_note`（进 `todo` 且不是新建时必填）」改成「`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）」。
+  2. `20-pair-idea-deploy.md` 第 58 行、`21-pair-deploy-run.md` 第 134 行、`22-pair-idea-analysis.md` 第 79 行抄的转移表 `in_progress` → `todo` 行：「谁能写」栏改成「销号钩子、`reclaim`、owner」（删单列的 gyb）；「之后谁拉起」栏改成「owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」」。
+  3. 新增一条入账校验「sessions 账最新版是 `closed` 的 `session_id` 再写任何账，rl 拒收并提示重新加载角色登记」，定义处按判断规矩 3 找不到（`03` 入账校验 / `05` 命令），请问 gyb 归哪一份。
+  4. `01-gyb.md` 第 148 行「按裁决以施工计划的表为准」（fyi 只在 accept 发）改成「2026-08-17 gyb 裁：验收和打回都发 fyi」；`20`、`21`、`22` 抄的转移表 `done_pending_review` → `rejected` 行前提栏「`reason` 非空」后加「；gyb 越过 owner 时 rl 给 owner 发 `fyi`」。
+  5. `01-gyb.md` 第 45 行、`05-rl-cli.md` 第 170 行标的 reclaim 杀不杀不一致，两处「按裁决以施工计划的表为准」改成「2026-08-17 gyb 裁：默认不杀，`--kill` 才杀」。
+- 状态：待处理
