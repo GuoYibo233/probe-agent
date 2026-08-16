@@ -216,7 +216,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 决定账的 `root_id`、`{"id","version"}` 引用格式、`--decision ID@V`：定义在 `02-decisions.md`（原文指 `03`，按 HANDOFF 四点五节改指 `02`）；handoffs 的 `line` 字段从 `root_id` 算出来，`reissue` 那一行用 `ID@V`。
 - `bin/rl` 每条子命令的签名与「谁能调」、`loop/.lock` 一把全局锁、`rl status` 的十段全文、`rl inbox` 的四类、`rl trace`、`rl doctor` 的扫描项和修法：写在 `05-rl-cli.md`；本份只写 `rl handoff`、`rl session`、`rl reclaim` 三组子命令背后的判据和 status 段 7 的内容。
 - 阈值 `status.stale_holder_minutes`（默认 30）、`reclaim.session_idle_hours`（48）、`reclaim.handoff_idle_hours`（72）、`reclaim.ql_idle_days`（7）、`notify.reminder_days`（7）：阈值表定义在 `08-trees-init-and-host.md`（原文指「`05` 指到的施工计划第八节」，按 HANDOFF 四点五节改指 `08`）。
-- gyb 豁免「谁能调」和转移表「谁能写」、完整性前提照查、`--force --reason` 留痕、`--as-gyb` 加 `--quote`、actor 按会话判：gyb 身份规矩在 `01-gyb.md`，命令行写法在 `05-rl-cli.md`，钩子在 `06-hooks-and-permissions.md`；这一组的定义处怎么分，sync-inbox 里统筹 session 已在问 gyb，裁了照改。
+- gyb 豁免「谁能调」和转移表「谁能写」、完整性前提照查、`--force --reason` 留痕、`--as-gyb` 加 `--quote`、actor 按会话判：定义在 `01-gyb.md` 第二节（2026-08-17 gyb 裁）；命令行参数写法在 `05-rl-cli.md`；钩子那一层在 `06-hooks-and-permissions.md`。
 - 销号钩子挂在 SessionEnd 和 SubagentStop 上、登记钩子从钩子输入取 model、会话状态文件：钩子本体写在 `06-hooks-and-permissions.md`。
 - 快车道补单的两行（新建直达 `done_pending_review`、只有 gyb 能 accept）、`ql_tag`、scratch 账的 `merged` 状态：快车道进出在 `07-quick-lane.md`，scratch 行格式在 `03-ledgers.md`。
 - `attempts` 里的 `step_table`、`estimated_seconds` 怎么填、认领之后 run 怎么接管看门狗和收尾、`--kill` 走的中断收尾四步：写在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
@@ -528,6 +528,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 2026-08-17 gyb 裁：gyb 越过 owner 打回（`reject`）也给 owner 发 fyi，和验收通过一样。gyb 原话「可以 发」。对回原则 6（送进「等某人」状态的那一行必须出现在那个人的收件箱里）。转移表 `rejected` 行和第五节的不一致标注照改，「没写清」原第 8 条销掉。
 - 2026-08-17 gyb 裁：`rl reclaim --apply` 回收开干的发射单默认不杀 GPU 进程，留给下一个 run 认领，`--kill` 才杀。gyb 原话「不杀」。对回原则 11（GPU 任务本体在 tmux 里跑、不跟会话走）。第八节不一致第一处照改。
 - 2026-08-17 gyb 裁：reclaim 对卡住的单子只改派 issue 给 owner、状态保持卡住，不提 holder（按不变量已空）。gyb 原话「按照施工计划吧」。对回原则 3（holder 非空当且仅当开干）。第八节不一致第二处照改。
+- 2026-08-17 来自 sync-inbox 问题 1 的裁决（rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 这一组规矩定义处归 `01-gyb.md` 第二节；`05` 的「actor 怎么定」是命令行写法，算写了两遍、每次同步对齐；`06` 只留钩子对 `--as-gyb` 不生效那一句。gyb 原话「这个归01吧」。对回原则 8（文档只有一处为准）。接口一节那条照改。
 
 ## 要同步到别处的
 
