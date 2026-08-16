@@ -37,8 +37,8 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
 | `rl init` | 在研究仓库建 `research-loop.json`、`loop/` 九本账、`experiments/`、`analysis/`（含公共统计件模板和 `analysis/scratch/`）、`review/`、`notes/`，往 CLAUDE.md 追加一节（三句），问一次要不要给 idea 发 `read:notes`；读到会话状态文件就拒收，退出码 3，提示换裸终端跑 | gyb，只在裸终端 |
-| `rl session start --role R [--model M] [--launched-by manual\|subagent\|workflow]` / `rl session end [--session ID] [--reason]` / `rl session focus --decision ID` / `rl session amend ID --model M` / `rl session show ID` / `rl session list [--alive] [--role R]` | 登记和销号，钩子调；`amend` 只许改 `model`，是 doctor 第 19 项的修法；`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话 | start/end 钩子和 gyb，focus reviewer，amend gyb，查谁都行 |
-| `rl inbox` | 角色的收件箱：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决 | 角色会话，上线第一动作 |
+| `rl session start --role R [--model M] [--launched-by manual\|subagent\|workflow]` / `rl session end [--session ID] [--reason]` / `rl session focus --decision ID` / `rl session amend ID --model M` / `rl session show ID` / `rl session list [--alive] [--role R]` | 登记和销号，钩子调；`amend` 只许改 `model`，是 doctor 第 19 项的修法；`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就全部 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话；`start` 的 `rules_version` 由 rl 从母版读；细则（`--session ID` 不查活、`end_reason` 记 `manual`、closed 会话再写账拒收）见 04 第七节 | start/end 钩子和 gyb，focus reviewer，amend gyb，查谁都行 |
+| `rl inbox` | 角色的收件箱：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决 | 角色会话，上线第一动作；查谁都行 |
 
 ### 决定账
 
@@ -61,8 +61,8 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl handoff open --type T --to R [--parent ID] [--decision ID@V ...] [--explain ...] [--eval ID@V ...] [--command ... --workdir ... --track ... --config k=v ...] [--batch B] [--manual\|--no-dispatch] [--quick-lane --report-method P --ql QL]` | 开单，落 `todo`；`launch_order` 从父单抄 decision_refs 和 batch、分 run_id；带 `--quick-lane` 的工单直接落 `done_pending_review` | owner |
-| `rl handoff start ID [--batch B]` / `amend ID [--command ... --workdir ... --track ... --config ...] [--report-method P --report-detail P --code-path P ...] [--eval ID@V ...]` / `stuck ID --issue ID` / `resume ID` / `done ID [--notebook P --figure P ...]` / `accept ID` / `reject ID --reason` / `withdraw ID --reason [--quote] [--cascade]` / `release ID --note ...` / `reissue ID --decision ID@V` | 转移表里的每一行一个子命令 | 按转移表 |
+| `rl handoff open --type T --to R [--parent ID] [--decision ID@V ...] [--explain ...] [--eval ID@V ...] [--command ... --workdir ... --track ... --config k=v ...] [--batch B] [--manual\|--no-dispatch] [--quick-lane --report-method P --ql QL]` | 开单，落 `todo`；`launch_order` 从父单抄 decision_refs 和 batch、分 run_id；带 `--quick-lane` 的工单直接落 `done_pending_review` | owner；快车道补单是 deploy 调、owner 记 gyb（04 第 60 行） |
+| `rl handoff start ID [--batch B]` / `amend ID [--command ... --workdir ... --track ... --config ...] [--report-method P --report-detail P --code-path P ...] [--notebook P --figure P ...] [--eval ID@V ...]` / `stuck ID --issue ID` / `resume ID` / `done ID [--notebook P --figure P ...]` / `accept ID`（顺带关这张单关联的 `answered` issue） / `reject ID --reason` / `withdraw ID --reason [--quote] [--cascade]` / `release ID [--note ...]`（`in_progress`→`todo` 时 `--note` 必给，`rejected`→`todo` 不要求） / `reissue ID --decision ID@V` | 转移表里的每一行一个子命令 | 按转移表 |
 | `rl handoff estimate ID --step NAME --kind gpu\|cpu --smoke-seconds S --scale F` / `rl handoff estimate ID --copy-from ID2 [--scale F]` | 往最新一次尝试追加分步表一行，`estimated_seconds` 加总本次尝试；同 batch 复制 | run |
 | `rl handoff show ID` / `rl handoff list [--status S] [--owner R] [--holder SESSION] [--to R] [--batch B] [--decision ID] [--line L]` | 查（`--mine` 删掉，拆成 owner 和 holder） | 谁都行 |
 
@@ -70,21 +70,21 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账两版，`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出；`relink` 是 doctor 修法 | 写 run 和 gyb，查谁都行 |
+| `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账两版，`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出，`--decision` 和 `--line` 经 `handoff_id` 反查 handoffs 的 `decision_refs` 和 line；`started_at`、`finished_at` 由 rl 填；`relink` 是 doctor 修法 | 写 run 和 gyb，查谁都行 |
 
 ### 授权、反馈、口径
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl grant add --to R --permission P [--expires ...] [--issue ID]` / `rl grant revoke ID` / `rl grant list` / `rl grant show ID` | 授权，只收 `cli` | 写 gyb，查谁都行 |
-| `rl feedback add --target ... --text` / `rl feedback accept ID --applied-to FILE ... [--text]` / `rl feedback reject ID --text` / `rl feedback show ID` / `rl feedback list` | 反馈账；accept 校验路径存在、自动 bump `rules_version`、列出还活着的会话和它们的 rules_version、打印待办（还要改哪几处、要不要收会话、单独 commit 加跑测试） | 提谁都行，裁只有 gyb，查谁都行 |
-| `rl eval propose --kind metric\|figure --name ... --definition ... [--metrics-key K \| --code-path P] [--group-by ... --x ... --y ... --uses ID ...] --applies-to ...` / `rl eval update ID ...` / `rl eval approve ID ... --quote` / `rl eval reject ID --reason` / `rl eval retire ID` / `rl eval show ID` / `rl eval list [--status S]` | 口径账；approve 一次多条一句 quote；approved 后 update 回 proposed | 提和改 analysis，批和打回 gyb，查谁都行 |
+| `rl grant add --to R --permission P --text ... [--expires ...] [--issue ID]` / `rl grant revoke ID` / `rl grant list` / `rl grant show ID` | 授权，只收 `cli` | 写 gyb，查谁都行 |
+| `rl feedback add --target ... --text` / `rl feedback accept ID --applied-to FILE ... --text ...` / `rl feedback reject ID --text` / `rl feedback show ID` / `rl feedback list` | 反馈账；accept 校验路径存在、自动 bump `rules_version`、列出还活着的会话和它们的 rules_version、打印待办（还要改哪几处、要不要收会话、单独 commit 加跑测试） | 提谁都行，裁只有 gyb，查谁都行 |
+| `rl eval propose --kind metric\|figure --name ... --definition ... [--metrics-key K \| --code-path P] [--group-by ... --x ... --y ... --uses ID ...] --applies-to ...` / `rl eval update ID ...` / `rl eval approve ID ... --quote` / `rl eval reject ID --reason` / `rl eval retire ID` / `rl eval show ID` / `rl eval list [--status S]` | 口径账；approve 一次多条一句 quote；approved 后 update 回 proposed | 提和改 analysis，批、打回、退役都是 gyb，查谁都行 |
 
 ### 快车道与杂账
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl ql open [--role deploy\|analysis] [--from ho-ID]` / `rl ql close QL --merged --handoff ID \| --dropped --reason` / `rl scratch add QL [--note ...] [--metric k=v]` / `rl scratch list [--status S]` / `rl scratch show QL` | 快车道进出和杂账；open 在锁里分 ql_tag、建 worktree（`quick_lane.worktree_root/<ql_tag>`，分支同名）或 `analysis/scratch/<ql_tag>/`；`--from` 把待干工单标 quick_lane | deploy、analysis |
+| `rl ql open [--role deploy\|analysis] [--from ho-ID]` / `rl ql close QL --merged --handoff ID \| --dropped --reason` / `rl scratch add QL [--note ...] [--metric k=v]` / `rl scratch list [--status S]` / `rl scratch show QL` | 快车道进出和杂账；open 在锁里分 ql_tag、建 worktree（`quick_lane.worktree_root/<ql_tag>`，分支同名）或 `analysis/scratch/<ql_tag>/`；`--from` 把待干工单标 quick_lane | deploy、analysis；`scratch list/show` 查谁都行 |
 
 ### 收件箱、回收、体检、通知
 
@@ -103,7 +103,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 
 ## 退出码与 --json
 
-退出码四个：
+退出码四个（定义处 03，本份照抄、两边一字不差）：
 
 | 码 | 含义 | 附带什么 |
 |---|---|---|
@@ -120,7 +120,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 
 ## 锁与写序
 
-`loop/.lock` 一把全局文件锁。扫号、分配编号、追加这三步放在同一把锁里，不许扫完号再排队写，否则同角色两个会话会撞号。锁里分配的编号包括 `ql_tag`、`run_id`、`batch`。
+定义处 03，本份照抄、两边一字不差。`loop/.lock` 一把全局文件锁。扫号、分配编号、追加这三步放在同一把锁里，不许扫完号再排队写，否则同角色两个会话会撞号。锁里分配的编号包括 `ql_tag`、`run_id`、`batch`。
 
 跨两本账的写入定死写序：先写 issue 拿到编号，再写单子那一行引它。中间崩了顶多多一条没人引的 issue，`rl doctor` 扫得出来。
 
@@ -134,7 +134,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 4. 发给本角色的通知，读过即关。通知类 issue 是 `withdrawn`、`orphaned`、`fyi` 三种 kind。
 5. 本角色提的 feedback 的裁决。
 
-run 的 inbox 不查过版，因为发射单不引决定这件事在原则 9 之后已经改掉了、发射单从父单继承 decision_refs，但是施工计划第五节仍然写着「run 的 `rl inbox` 不查过版」，这一句照抄。
+施工计划第五节写着「run 的 `rl inbox` 不查过版」，依据是发射单不引决定；原则 9 之后发射单从父单继承 decision_refs，依据没了，这句例外删掉：run 的 inbox 第 3 项照查（rl-part-05 定，待 gyb 过目）。
 
 两处原文不一致：第 3 项的范围。设计文档写的是「本角色持有或拥有的单子里过版的决定引用」，施工计划第六节写的是「本会话手上单子引的过版决定」。2026-08-17 gyb 裁：取施工计划，只列 holder 是本会话的单子引的过版决定；owner 名下但不在本会话手上的过版单子归 `rl status` 段 6，由 gyb 看。
 
@@ -161,13 +161,15 @@ run 的 inbox 不查过版，因为发射单不引决定这件事在原则 9 之
 
 第一行打印距上次 reclaim 几天。整份可以按 `--line` 过滤、按 `--group-by line|batch` 归组；`line` 就是根决定编号。
 
+段 7 和 reclaim 用的 `last_activity` 不落账，取九本账里该 `session_id` 的最大 `ts`（含 sessions 账自己的行）。`rl status --json` 里 `holder_alive` 是 holder 那个 `session_id` 在 sessions 账的最新版是不是 `open`；`age_hours` 从这张单当前状态那一版的 `ts` 起算到现在（rl-part-05 定，待 gyb 过目）。
+
 段落用到的阈值默认值定义在 `08-trees-init-and-host.md` 第三节阈值表：段 2 的 `issues.gyb_stale_hours` 是 24 小时，段 7 的 `status.stale_holder_minutes` 是 30 分钟，段 9 的 `status.review_recent_days` 是 7 天。
 
 ## rl reclaim
 
 参数六个：`--session-older-than H`、`--handoff-older-than H`、`--only ID ...`、`--skip ID ...`、`--kill`、`--apply`。不带 `--apply` 只列出，带了才动手。
 
-动手的规矩，一类一条：
+动手的规矩，一类一条（处置规矩定义处 04，本份照抄）：
 
 - 会话：标 `reclaim` 销号，并 release 名下开干的单。
 - 开干的发射单：默认不杀进程，留给下一个 run 认领；带 `--kill` 才走中断收尾，也就是杀进程、释放显存、宿主销号、runs 落 `killed`。
@@ -223,11 +225,11 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 
 - actor 判定、`--as-gyb` 加 `--quote`、`--force --reason`（含 `--force` 只越完整性前提、不越表外转移）、grants 只收裸终端：定义处是 `01-gyb.md` 第二节，本份「actor 怎么定」一节是命令行写法，两边一字不差。gyb 的 use case 表（`rl status` 十段和各 list 的过滤维度从它倒推）、推送表归哪几段：`01-gyb.md`。
 - 决定账的来源三类、新版本还是新条的判据、`rl decision add/update/confirm/retire/merge/stale` 背后的规矩：`02-decisions.md`（`02` 抄了这几条的签名，`stale` 签名已改成 `[--handoff ID] [--all]`，两边同步）。
-- 九本账公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和三个可选栏（`fix_for`、`force_reason`、`via`），七本账的字段与必填规则，退出码 2 查的就是这些：`03-ledgers.md`。本份裁了 `via` 栏、sessions 的 `amend` 版（只改 `model`）、handoffs 的 `actual_seconds` 只从 runs 来，要 `03` 收。
-- 派活单七个状态、转移表六栏全文、holder 只在 `in_progress` 非空这条不变量、会话登记与销号的钩子、reclaim 动手的规矩：`04-handoffs-and-sessions.md`。命令表里 `rl handoff start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue` 十条各自的前提在那张表里；`done` 已去掉 `--actual-seconds`、`session end` 顺带 release 的 actor 和 `via` 写法，要 `04` 收。
+- 九本账公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和三个可选栏（`fix_for`、`force_reason`、`via`），七本账的字段与必填规则，退出码 2 查的就是这些：`03-ledgers.md`。本份裁了 `via` 栏、sessions 的 `amend` 版（只改 `model`）、handoffs 的 `actual_seconds` 只从 runs 来，已收（03 第 43/118/176 行）。
+- 派活单七个状态、转移表六栏全文、holder 只在 `in_progress` 非空这条不变量、会话登记与销号的钩子、reclaim 动手的规矩：`04-handoffs-and-sessions.md`。命令表里 `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue/estimate` 十二条各自的前提在那张表里；`done` 已去掉 `--actual-seconds`、`session end` 顺带 release 的 actor 和 `via` 写法，已收（04 第 41/72 行）。
 - 角色 json 的 `reads`、`writes`、`ledger_writes`、`dispatches_to`、`model` 五栏，钩子只挂 Write 和 Edit、只拦两类事，`test_skill_refs` 只查写命令，会话状态文件的路径：`06-hooks-and-permissions.md`。
 - `rl ql open/close` 的进出规矩、`ql_tag` 的形状、快车道补正式发射单（doctor 第 9 项的依据）：`07-quick-lane.md`。
-- `rl init` 建的六样加一节、`research-loop.json` 阈值表（本份用到 `issues.gyb_stale_hours`、`issues.answered_stale_days`、`status.stale_holder_minutes`、`status.review_recent_days`、`reclaim.*`、`notify.reminder_days`、`quick_lane.worktree_root`，新加 `lock.timeout_seconds` 默认 10 秒）、宿主发射器的命令模板（`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`）、`rl run finish` 调哪条宿主命令：`08-trees-init-and-host.md`。`rl init` 在角色会话里拒收退出码 3，要 `08` 收。
+- `rl init` 建的六样加一节、`research-loop.json` 阈值表（本份用到 `issues.gyb_stale_hours`、`issues.answered_stale_days`、`status.stale_holder_minutes`、`status.review_recent_days`、`reclaim.*`、`notify.reminder_days`、`quick_lane.worktree_root`，新加 `lock.timeout_seconds` 默认 10 秒）、宿主发射器的命令模板（`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`）、`rl run finish` 调哪条宿主命令：`08-trees-init-and-host.md`。`rl init` 在角色会话里拒收退出码 3，已收（08 第一节）。
 - `rl feedback accept` 的 `rules_version` 和母版改动的规矩、公共规矩八条、issues 九种 kind、判断类检查的问题清单文件（本份裁：放 `common/`）：`09-common-and-feedback.md`。
 - `read:notes` 的申请走法（`rl init` 问的那一次和 doctor 第 16 项）：`10-role-idea.md`。
 - `rl handoff estimate` 的分步表怎么填、看门狗（独立进程，只许调查询命令，判定由 run 会话转写进账）、`rl run add/finish` 的两版：`12-role-run.md`。
@@ -639,6 +641,8 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17（gyb 原话「全都推荐，只要不影响正在跑的进程」，没写清第 12、13 条与 inbox 不一致）：`--ack` 写 `loop/.doctor-acks.jsonl` 永久消音、`--list-acks`、`--unack`；`rl init` 读到会话状态文件拒收退出码 3；`rl inbox` 第 3 项取施工计划，只列 holder 是本会话的单子。对回原则 1、4、6、8。
 - 2026-08-17：来自 sync-inbox 问题 2（rl-hub 转来；gyb 原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；05「rl notify」一节缩成一句指过去，推送表和机制那段删掉（05 独有的两句已列在同步第 1 条给 01）。对回原则 8。
 - 2026-08-17：来自 sync-inbox 问题 3（rl-hub 转来；gyb 原话「按照08吧」）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，05 里三处「施工计划第八节」和退出码 4 那句改成指 08 第三节。对回原则 8。
+- 2026-08-17 三份互查，rl-hub 转来（对齐 03/04 定义处，不是新裁决）：`release` 的 `--note` 只在 `in_progress`→`todo` 必给；`amend` 加 `--notebook --figure`；`open` 谁能调补快车道补单 deploy 调 owner 记 gyb；`session end` 全部 release、细则指 04 第七节、`rules_version` rl 从母版读；`grant add` 加 `--text`；`feedback accept --text` 必给；`eval` 退役也是 gyb；`scratch list/show` 和 `inbox` 查谁都行；`last_activity` 现算写法与 03 第 186 行一字不差；`accept` 顺带关 `answered` issue；`run list --decision/--line` 反查、`started_at/finished_at` rl 填；锁与写序、退出码表标定义处 03，reclaim 处置标定义处 04；接口一节三处「要收」改「已收」、十条改十二条。
+- 2026-08-17（rl-part-05 定，待 gyb 过目）：`holder_alive` 是 holder 会话在 sessions 账最新版是不是 `open`；`age_hours` 从当前状态那一版 `ts` 起算；「run 的 inbox 不查过版」例外删掉，run 的 inbox 第 3 项照查。
 
 ## 要同步到别处的
 
