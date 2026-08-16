@@ -1,6 +1,6 @@
 # bin/rl 命令表
 
-> 这份是命令的唯一总表：actor 怎么定、每条子命令干什么谁能调、退出码、`--json`、锁与写序、`rl inbox`、`rl trace`、`rl status` 的十段、`rl reclaim`、`rl doctor` 的全部扫描项与修法、`rl notify` 的推送表。别的 part 引用命令时指到这一份。
+> 这份是命令的唯一总表：actor 怎么定、每条子命令干什么谁能调、退出码、`--json`、锁与写序、`rl inbox`、`rl trace`、`rl status` 的十段、`rl reclaim`、`rl doctor` 的全部扫描项与修法、`rl notify` 的签名（推送表归 01-gyb.md 第五节）。别的 part 引用命令时指到这一份。
 > 这份不覆盖：九本账每一行的字段和必填规则（03-ledgers.md）、派活单状态转移表的六栏全文与会话生命周期（04-handoffs-and-sessions.md）、钩子拦什么和角色 json 四栏（06-hooks-and-permissions.md）、gyb 自己怎么用这些命令和 gyb 的 use case 表（01-gyb.md）、快车道进出的规矩（07-quick-lane.md）、`rl init` 建出来的两棵树和宿主对接（08-trees-init-and-host.md）、公共母版和反馈账的用法（09-common-and-feedback.md）、五个角色各自调哪些命令（10 到 14 各份）、测试清单和施工步骤（30-build-steps-verify-tests.md）。
 > 源：设计文档的十一条原则第 1、2、5、6、9 条，「账本」一节的查询句与锁那一段，「交接与会话生命周期」一节的收件箱段与回收段，「分权与钩子」一节的第二层，「待验证清单」；施工计划第一节裁决 6 与末尾（b）（c）（d）（i），第二节词表，第五节开头两段与 gyb 的 use case 表，第六节全节，第八节阈值表里被命令用到的几个。
 
@@ -93,7 +93,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 | `rl status [--line L] [--group-by line\|batch] [--json]` | gyb 的收件箱十段，见下一节；第一行打印距上次 reclaim 几天 | 谁都行 |
 | `rl reclaim [--session-older-than H] [--handoff-older-than H] [--only ID ...] [--skip ID ...] [--kill] [--apply]` | 列出超过阈值没动的会话、单子、快车道，`--apply` 才动手，见下面「rl reclaim」一节 | gyb |
 | `rl doctor [--ack ITEM ID] [--unack ITEM ID] [--list-acks]` | 扫九本账，每项附修法命令和「修完归谁推」，扫描项见下面「rl doctor」一节 | 谁都行；角色跑只看不修，修法报给 owner 或 gyb |
-| `rl notify --text` | 发桌面通知，不进任何账，机制见待验证第 6 条；推送表见下面「rl notify」一节 | rl 自己；gyb 也可以手动调 |
+| `rl notify --text` | 发桌面通知，不进任何账；推送表和机制见 `01-gyb.md` 第五节 | rl 自己；gyb 也可以手动调 |
 
 ## 查询命令和写命令的分界
 
@@ -217,19 +217,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 
 ## rl notify
 
-`rl notify --text` 由 rl 在推送表的五个时机自己调，gyb 也可以手动调来给自己发一条提醒；两种调法都不进任何账（2026-08-17 gyb 裁）。机制挂在待验证清单第 6 条上：先试 Claude Code 自带推送、`notify-send`、终端铃三种，通过标准是 gyb 桌面看得到；三种都不成就退到 `rl status` 单列那一层，通知不做。
-
-推送表五条，出自施工计划第六节：
-
-| # | 什么时候推 |
-|---|---|
-| 1 | issue 的 assignee 变 gyb，含首次开单 |
-| 2 | 单子进 `done_pending_review` 且 owner 是 gyb 或 `dispatch=manual` |
-| 3 | feedback 提出 |
-| 4 | owner 无活会话的 todo 出现。rl 在两个动作上查并推（2026-08-17 gyb 裁）：单子落 `todo` 那一刻（`handoff open`、`release`、`reject`、`reissue`）查 owner 有没有活会话，没有就推这一张；`rl session end` 销号时查这个角色还有没有别的活会话，没有就把它 owner 名下全部 todo 汇总推一条 |
-| 5 | doctor 有没修的 |
-
-定期提醒是另一件事，机制挂在待验证第 7 条上：先试 Claude Code 的 schedule 和系统 cron，都不成就靠 `rl status` 第一行打印距上次 reclaim 几天。提醒周期 `notify.reminder_days` 默认 7 天，提醒的内容是叫 gyb 跑 `rl reclaim`、看 feedback 账、跑 doctor、把采纳的 feedback 落进母版并单独 commit。
+`rl notify --text` 的推送表和机制定义在 `01-gyb.md` 第五节（2026-08-17 gyb 裁，一件事归 01）；定期提醒（待验证第 7 条、`notify.reminder_days`）同在 01 第五节。本份只留命令表里的签名行。
 
 ## 和别的 part 的接口
 
@@ -649,6 +637,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17（gyb 原话「全推荐」，没写清第 2 到 6 条）：加 doctor 第 19 项 `sessions.model=unknown`，修法新子命令 `rl session amend ID --model M`；`rl decision stale` 签名改 `[--handoff ID] [--all]`；`rl handoff done` 去掉 `--actual-seconds`，耗时只由 `rl run finish` 算；`session end` 顺带 release 的 actor 记会话角色、加可选栏 `via=session_end`，reclaim 做的 `via=reclaim` actor gyb；`rl notify` gyb 也可手动调、不进账。对回原则 1、4、6、8、10。
 - 2026-08-17（gyb 原话「只要他不动目前的代码什么的就全推荐就行」，没写清第 7 到 11 条）：推送表第 4 条在单子落 todo 那刻和 session end 销号时查并推；独立进程只许查询、不留痕；`--force` 越不过表外转移；锁超时 `lock.timeout_seconds` 默认 10 秒；`inbox`/`doctor`/`reclaim` 三条 `--json` 最小结构按正文。对回原则 1、4、6、8、11。
 - 2026-08-17（gyb 原话「全都推荐，只要不影响正在跑的进程」，没写清第 12、13 条与 inbox 不一致）：`--ack` 写 `loop/.doctor-acks.jsonl` 永久消音、`--list-acks`、`--unack`；`rl init` 读到会话状态文件拒收退出码 3；`rl inbox` 第 3 项取施工计划，只列 holder 是本会话的单子。对回原则 1、4、6、8。
+- 2026-08-17：来自 sync-inbox 问题 2（rl-hub 转来；gyb 原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；05「rl notify」一节缩成一句指过去，推送表和机制那段删掉（05 独有的两句已列在同步第 1 条给 01）。对回原则 8。
 
 ## 要同步到别处的
 
