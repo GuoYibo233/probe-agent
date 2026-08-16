@@ -211,7 +211,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 
 1. `git status`、`git log --oneline -10`（HEAD `5401b7b` 之后应无 sync commit）；读 `sync-inbox.md` 第一段问题 6 和末段 7–29 的裁决原话。
 2. ListAgents，给 `rl-part-04`、`rl-part-05` 各发一条自报名字。
-3. 按上表落地。04、05 已落完（表里「交 rl-part-04/05」的格子都算完成，只剩别处）；统筹自己先 `03`（定义处最多，照 05 定的三处写），同时统筹改 `01`/`02`/`06`–`14`/`20`–`25`/README，再两份源文档逐句回写并各加一行「2026-08-17 按 sync-inbox 问题 N 的裁决改了哪句」；HANDOFF 四点五节表按新字段（`ql_tag`、`adopted`、`actual_seconds` 在 04；退出码六个在 03）改；inbox 每条「待落地」改「已落地 <commit>」。commit 前缀 `research-loop sync:`。
+3. 按上表落地。04、05 已落完（表里「交 rl-part-04/05」的格子都算完成，只剩别处）；**03 也已落完 `81377ac`（2026-08-17，rl-part-03 会话干的，第 220 行那两处漏列和白名单措辞一并落了；问题 31 已写进 inbox 末段等 gyb）**，剩下的是统筹改 `01`/`02`/`06`–`14`/`20`–`25`/README，再两份源文档逐句回写并各加一行「2026-08-17 按 sync-inbox 问题 N 的裁决改了哪句」；HANDOFF 四点五节表按新字段（`ql_tag`、`adopted`、`actual_seconds` 在 04；退出码六个在 03）改；inbox 每条「待落地」改「已落地 <commit>」。commit 前缀 `research-loop sync:`。
 4. 落地后做一轮小互查（问题 28 那条动了十几份，最容易漏），派 opus 审、统筹逐条核；发现新的两说立新问题攒着，按本节三条规矩问 gyb。
 
 ### 2026-08-17 晨 rl-hub-v2 对 04/05 落地的质量检查（三路 opus 审 + 统筹逐条核）结果
