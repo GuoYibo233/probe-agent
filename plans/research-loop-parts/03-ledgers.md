@@ -97,7 +97,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 
 ## runs
 
-数字账一个 schema，三版：发射成功那一刻落发射版（`launched`），跑完落收尾版（`finished`），另有 `adopted` 版——run 会话接单时发现最新一次尝试已发射没收尾就认领，`rl handoff start` 顺带给 runs 那条写一版 `adopted`，记新 holder 的 `session_id`、`ts`（这两样就是骨架栏，不另加字段），不另设 `rl run adopt`（2026-08-17 gyb 裁，sync-inbox 问题 17，形状由 `05` 定）。`status` 取 `launched`、`finished`、`adopted`。另有 `relink` 版只改 `handoff_id`，是 doctor 第 6 项的修法，命令 `rl run relink RUN_ID --handoff ID`（2026-08-17 随 `05` 定稿裁，见 `05` doctor 表）；`relink` 版的 `status` 填什么还没裁，见文末「源文档没写清的」。`actor` 是 `run` 或 `gyb`：数字账只有 run 角色的脚本能写，gyb 是原则 1 的例外。
+数字账一个 schema，三版：发射成功那一刻落发射版（`launched`），跑完落收尾版（`finished`），另有 `adopted` 版——run 会话接单时发现最新一次尝试已发射没收尾就认领，`rl handoff start` 顺带给 runs 那条写一版 `adopted`，记新 holder 的 `session_id`、`ts`（这两样就是骨架栏，不另加字段），不另设 `rl run adopt`（2026-08-17 gyb 裁，sync-inbox 问题 17，形状由 `05` 定）。`status` 取 `launched`、`finished`、`adopted`。另有 `relink` 版只改 `handoff_id`，是 doctor 第 6 项的修法，命令 `rl run relink RUN_ID --handoff ID`（2026-08-17 随 `05` 定稿裁，见 `05` doctor 表）；`relink` 版的 `status` 与其他栏照抄最新版、只换 `handoff_id`，和 sessions 的 `amend` 版一个做法，不另设状态值（2026-08-17 gyb 裁，sync-inbox 问题 31）。`actor` 是 `run` 或 `gyb`：数字账只有 run 角色的脚本能写，gyb 是原则 1 的例外。
 
 | 字段 | 取值或格式 | 必填条件 |
 |---|---|---|
@@ -248,9 +248,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 
 ## 源文档没写清的
 
-（原来的全部已裁，见「裁决记录」。下面这条是 2026-08-17 晨质量检查带出来的，等 gyb，sync-inbox 问题 31。）
-
-1. runs 的 `relink` 版 `status` 填什么。总规矩说入账校验按 `status` 查，runs 一段给了 `launched`、`finished`、`adopted` 三个值，`relink` 版（doctor 第 6 项修法，只改 `handoff_id`）没说填哪个。两种写法：（a）照 sessions 的 `amend` 版，`status` 与其他栏照抄最新版、只换 `handoff_id`；（b）另加一个 `relink` 值。
+（无，全部已裁，见「裁决记录」。）
 
 ## 第二轮模拟里归到这一份的摩擦
 
@@ -496,6 +494,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
   - 问题 25（原话「我想让agent有办法识别发生了什么就行」）：退出码加 1 内部错、5 用法错，共六个；非零退出标准错误第一行固定原因种类 `validation`/`forbidden`/`lock_timeout`/`usage`/`internal`，`--json` 放 `error.kind`（种类词是统筹拟的措辞，`05` 已用）。对回原则 6。
   - 问题 26（原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：feedback `applied_to` 至少一个即可。对回原则 4。
   - 问题 27（原话「3 不是，可以替我写」）：grants 不限裸终端，角色会话里 `--as-gyb --quote` 替 gyb 写也收；`actor` 仍必须是 `gyb`。定义处 `01` 第二节，本份 grants 段照改。对回原则 1。
+- 2026-08-17 gyb 裁（sync-inbox 问题 31，原话「a」，rl-part-03 直接问的）：runs 的 `relink` 版 `status` 与其他栏照抄最新版、只换 `handoff_id`，和 sessions 的 `amend` 版一个做法，不另设状态值。对回原则 4（校验按 status 查，修账版继承最新版的必填）。
 
 ## 要同步到别处的
 
@@ -519,4 +518,4 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
   - scratch `merged` 版与补单 `ql_tag` 互指、`merged` 只对 deploy 开：`07` scratch 表（写了两遍处）与第七节。
   - 锁那句去掉 `batch`：施工计划 `:172`；`21`/`23` 提 batch 处。
   - `04:133` amend 版说明写「写者是 gyb 裸终端或该角色的活会话」，本份按问题 30 写「gyb 或该角色自己的活会话」，`04:158`「谁能调」和 `05:40` 也是这个写法；`04:133` 那句的「裸终端」三个字要不要去掉，统筹定（措辞题，不问 gyb）。
-  - 问题 31（runs `relink` 版 `status` 填什么）等 gyb 裁，裁了本份 runs 一段改、`05:73`「三版」那句跟。
+  - 问题 31 已裁 (a)：`05:73` runs 那行「`relink` 是 doctor 修法」后补「`status` 与其他栏照抄最新版、只换 `handoff_id`」，与本份 runs 一段一致。
