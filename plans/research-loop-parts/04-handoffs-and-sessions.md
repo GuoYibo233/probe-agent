@@ -531,8 +531,8 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 
 ## 要同步到别处的
 
-- `20-pair-idea-deploy.md` 第 26 行「`progress_note`（进 `todo` 且不是新建时必填）」改成「`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）」。来源：本份 2026-08-17 裁决。
-- `20-pair-idea-deploy.md` 第 58 行、`21-pair-deploy-run.md` 第 134 行、`22-pair-idea-analysis.md` 第 79 行抄的转移表 `in_progress` → `todo` 那一行，「谁能写」栏删掉单列的 gyb（改成「销号钩子、`reclaim`、owner」），「之后谁拉起」栏「owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」」改成「owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」」。来源：本份 2026-08-17 裁决。
-- 新增一条入账校验：`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记。这条是本份 2026-08-17 裁决带出来的，定义处按 HANDOFF 判断规矩 3 找不到（入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`），请 rl-hub 问 gyb 归哪一份。
-- `01-gyb.md` 第 148 行「按裁决以施工计划的表为准」（fyi 只在 accept 发）改成「2026-08-17 gyb 裁：验收和打回都发 fyi」；`20-pair-idea-deploy.md`、`21-pair-deploy-run.md`、`22-pair-idea-analysis.md` 抄的转移表 `done_pending_review` → `rejected` 那一行，前提栏「`reason` 非空」后面加「；gyb 越过 owner 时 rl 给 owner 发 `fyi`」。来源：本份 2026-08-17 裁决。
-- `01-gyb.md` 第 45 行、`05-rl-cli.md` 第 170 行标的「reclaim 对开干发射单杀不杀进程」不一致，gyb 2026-08-17 在本份裁了：默认不杀、`--kill` 才杀，两处的「按裁决以施工计划的表为准」改成「2026-08-17 gyb 裁：默认不杀，`--kill` 才杀」。来源：本份裁决。
+- `20-pair-idea-deploy.md` 第 26 行「`progress_note`（进 `todo` 且不是新建时必填）」改成「`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）」。来源：本份 2026-08-17 裁决。——已同步 2026-08-17（rl-hub，`75ed02f`）。
+- `20-pair-idea-deploy.md` 第 58 行、`21-pair-deploy-run.md` 第 134 行、`22-pair-idea-analysis.md` 第 79 行抄的转移表 `in_progress` → `todo` 那一行，「谁能写」栏删掉单列的 gyb（改成「销号钩子、`reclaim`、owner」），「之后谁拉起」栏「owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」」改成「owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」」。来源：本份 2026-08-17 裁决。——已同步 2026-08-17（rl-hub，`75ed02f`）。
+- 新增一条入账校验：`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记。这条是本份 2026-08-17 裁决带出来的，定义处按 HANDOFF 判断规矩 3 找不到（入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`），请 rl-hub 问 gyb 归哪一份。——已立为 `sync-inbox.md` 第一段问题 5，等 gyb 2026-08-17。
+- `01-gyb.md` 第 148 行「按裁决以施工计划的表为准」（fyi 只在 accept 发）改成「2026-08-17 gyb 裁：验收和打回都发 fyi」；`20-pair-idea-deploy.md`、`21-pair-deploy-run.md`、`22-pair-idea-analysis.md` 抄的转移表 `done_pending_review` → `rejected` 那一行，前提栏「`reason` 非空」后面加「；gyb 越过 owner 时 rl 给 owner 发 `fyi`」。来源：本份 2026-08-17 裁决。——已同步 2026-08-17（rl-hub，`75ed02f`）。
+- `01-gyb.md` 第 45 行、`05-rl-cli.md` 第 170 行标的「reclaim 对开干发射单杀不杀进程」不一致，gyb 2026-08-17 在本份裁了：默认不杀、`--kill` 才杀，两处的「按裁决以施工计划的表为准」改成「2026-08-17 gyb 裁：默认不杀，`--kill` 才杀」。来源：本份裁决。——已同步 2026-08-17（rl-hub：`01` 在 `75ed02f`；`05` 第 170 行交 rl-part-05 改）。
