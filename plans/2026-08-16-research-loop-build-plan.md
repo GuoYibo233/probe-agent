@@ -139,7 +139,7 @@ gyb 的 use case 表（原则 5 推论，`rl status` 的段落和 list 的过滤
 
 ## 六、`bin/rl` 命令表（草案）
 
-actor 的判定（原则 1）：`rl` 从会话状态文件读当前角色（状态文件由角色 skill 头部钩子在加载时写，路径 `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json`）；读不到状态文件就是裸终端，actor 是 `gyb`，session_id 记 `cli`（gyb 2026-08-16 夜裁：裸终端就是 gyb，不要 `--as-gyb` 参数）。角色会话里任何命令加 `--as-gyb` 就以 gyb 身份写，session_id 照记当前会话，必须同时给 `--quote "<gyb 原话>"`，不论敲键盘的是谁（rl 分不出，见原则 1 推论），缺 quote 退出码 2；这是给 reviewer 事后查的痕迹。actor 是 gyb 时跳过「谁能调」和转移表「谁能写」；完整性前提照查，`--force --reason` 越过并记进账行。grants 只收 `cli`。
+actor 的判定（原则 1）：`rl` 从会话状态文件读当前角色（状态文件由角色 skill 头部钩子在加载时写，路径 `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json`）；读不到状态文件就是裸终端，actor 是 `gyb`，session_id 记 `cli`（gyb 2026-08-16 夜裁：裸终端就是 gyb，不要 `--as-gyb` 参数）。角色会话里任何命令加 `--as-gyb` 就以 gyb 身份写，session_id 照记当前会话，必须同时给 `--quote "<gyb 原话>"`，不论敲键盘的是谁（rl 分不出，见原则 1 推论），缺 quote 退出码 2；这是给 reviewer 事后查的痕迹。actor 是 gyb 时跳过「谁能调」和转移表「谁能写」；完整性前提照查，`--force --reason` 越过并记进账行；actor 是角色的命令带 `--force` 一律拒收，退出码 3，`--as-gyb --quote --force --reason` 算 gyb 身份照写。grants 只收 `cli`。
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
@@ -327,3 +327,4 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 - 2026-08-17，按 `03-ledgers.md` 的裁决（gyb 原话见设计文档同日那条），第三节 runs 行去掉发射版的 `artifact_dir`、补「产物目录按约定 `<artifact_root>/<run_id>/`」、`data_path` 补上定义；第六节命令表 `rl run add` 去掉 `--artifact-dir`。对回原则 8、原则 9。
 - 2026-08-17，按 `04-handoffs-and-sessions.md` 的裁决（gyb：「不用」），第三节 handoffs 行 `progress_note` 改成只在 `in_progress` → `todo` 那一版必填。对回原则 4。
 - 2026-08-17，按 `04-handoffs-and-sessions.md` 的裁决（gyb：「可以 发」「删了吧」，dispatch 原话见设计文档同日那条），第四节转移表 `rejected` 行前提栏补「gyb 越过 owner 时发 fyi」；`in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照 `dispatch` 拉起。对回原则 6、原则 8、原则 11。
+- 2026-08-17，按 `03-ledgers.md` 的裁决（gyb 原话见设计文档同日那条），第六节「actor 的判定」那段补「角色带 `--force` 一律拒收，退出码 3；`--as-gyb --quote --force --reason` 算 gyb 身份照写」。对回原则 1、原则 2。

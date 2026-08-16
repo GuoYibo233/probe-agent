@@ -230,7 +230,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 派活单的七个状态、转移表、每一版查哪些前提，定义在 `04-handoffs-and-sessions.md`，本份的「校验按 status 查」靠它落地；handoffs 的全部字段（`parent_id`、`attempts`、`decision_refs`、`evaluation_refs`、`report_paths`、`code_paths`、`output_paths`、`progress_note`）也定义在那一份，本份 handoffs 一段只留一句指过去。
 - 钩子代角色写 sessions 开始版、销号写结束版、reclaim 的动作定义在 `04-handoffs-and-sessions.md` 和 `06-hooks-and-permissions.md`；本份只定 sessions 的行格式。`last_activity` 不落账、查询时现算（2026-08-17 裁），`rl status`、`rl reclaim`、`rl session show` 算它的写法在 `05-rl-cli.md`。
 - decisions 的字段（`root_id`、`sources` 三类、`quote`、`merged_from`）、六个文件的落法、编号带 actor 前缀六个文件各排各的号，定义在 `02-decisions.md`。
-- actor 怎么判（裸终端记 `cli`、角色会话加 `--as-gyb` 要 `--quote`）和 `--force --reason` 的命令行写法，本份指 `05-rl-cli.md`；这一组规矩的定义处归 `01` / `05` / `06` 哪一处，sync-inbox 问题 1 等 gyb 裁，裁了本条跟着改。本份定的是：角色带 `--force` 拒收退出码 3，`--as-gyb --quote --force --reason` 算 gyb 身份照写。
+- actor 怎么判（裸终端记 `cli`、角色会话加 `--as-gyb` 要 `--quote`）和 `--force --reason` 的命令行写法，本份指 `01-gyb.md`（2026-08-17 gyb 裁：这一组规矩定义处归 `01`，`05` 的「actor 怎么定」是命令行写法）。本份定的是：角色带 `--force` 拒收退出码 3，`--as-gyb --quote --force --reason` 算 gyb 身份照写。
 - 每本账的写命令和查询命令清单、`rl trace`、`rl status`、`rl inbox`、`rl doctor`（含扫描项名字，`fix_for` 填它）、`rl reclaim` 在 `05-rl-cli.md`；`rl run add` 的签名去掉 `--artifact-dir`（2026-08-17 裁）。
 - 哪个角色能调哪条写命令（角色 json 的 `ledger_writes`）在 `06-hooks-and-permissions.md`；钩子拦直接写 `loop/` 也在那一份。
 - `ql_tag` 的分配、scratch 三态的开张关张动作（`rl ql open`、`rl ql close`）、analysis 的快车道 `base_commit` 和 `branch` 两栏填什么，在 `07-quick-lane.md`。本份定的是：中间版 `status` 仍是 `open`，校验头尾查中间不查。
@@ -468,13 +468,14 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 2026-08-17：公共骨架的可选字段是 `fix_for` 和 `force_reason` 两个（不一致 1 定稿，按施工计划的表）。对回原则 1（gyb 硬写留痕）。
 - 2026-08-17：runs 收尾版留 `data_path`（`ok` 时必填，是产物目录里给 analysis 算数用的文件或子目录）；发射版去掉 `artifact_dir`，产物目录按约定 `<artifact_root>/<run_id>/`，账上不记（不一致 2 定稿）。对回原则 8（约定已在 12，不写两处）和原则 9（analysis 从 run_id 直接到数据）。
 - 2026-08-17：scratch 校验头尾查、中间不查：`open`、`merged`、`dropped` 三版按表查必填，中间版只查骨架和 `ql_tag`；`branch` 改成 deploy 的 `open` 版必填，analysis 的 `base_commit`、`branch` 两栏交 `07` 定（不一致 3 定稿）。对回原则 7（进出两行得说得清自己是什么）。
+- 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
 
 ## 要同步到别处的
 
 - `04-handoffs-and-sessions.md`：sessions 字段表里 `last_activity` 那一栏「rl 每次替这个会话写任何账时顺带刷新，是 sessions 账上的一版还是内存索引施工时定」改成「不落账，rl 查询时现算，取九本账里该 `session_id` 的最大 `ts`；sessions 账不为刷新它追加版本」；04 的「没写清」第 6 条据此销掉。已同步 2026-08-17。
 - `09-common-and-feedback.md`：feedback 行格式那一句里 `verdict_text` 后面补「`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么」，和 03 的字段表一字不差。 已同步 2026-08-17。
 - `07-quick-lane.md`：scratch 那张「这一版 / 必填」表里「中间版」那一行改成「中间版（`status` 仍是 `open`）」，正文加一句「中间追加数字的每一版 `status` 仍是 `open`，不设第四态」。 已同步 2026-08-17。
-- `--force --reason` 的定义处（`01-gyb.md` / `05-rl-cli.md` / `06-hooks-and-permissions.md` 哪一处，sync-inbox 问题 1 待裁）：补一句「actor 是角色的命令带 `--force` 一律拒收，退出码 3；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写」；`05` 退出码 3 那一行同步加「含角色带 `--force`」。 已同步 2026-08-17：`05` 退出码那行已交 rl-part-05；规矩本身的定义处仍在 sync-inbox 问题 1 等 gyb。
+- `--force --reason` 的定义处（`01-gyb.md` / `05-rl-cli.md` / `06-hooks-and-permissions.md` 哪一处，sync-inbox 问题 1 待裁）：补一句「actor 是角色的命令带 `--force` 一律拒收，退出码 3；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写」；`05` 退出码 3 那一行同步加「含角色带 `--force`」。 已同步 2026-08-17：`05` 退出码那行已交 rl-part-05；规矩本身的定义处 2026-08-17 gyb 裁归 `01`，那一句已写进 `01` 第二节「豁免范围」（rl-hub）。
 - `08-trees-init-and-host.md`：init 那一段补「`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`」，08 的「没写清」第 5 条据此销掉。 已同步 2026-08-17。
 - 设计文档「账本」一节公共骨架那一句：「七样加一个可选的 `fix_for`」改成「七样加两个可选：`fix_for`、`force_reason`」（统筹 session 回写）。 已同步 2026-08-17。
 - runs 发射版去掉 `artifact_dir`、产物目录走 `<artifact_root>/<run_id>/` 约定，牵连四份：`05-rl-cli.md` 的 `rl run add` 签名去掉 `--artifact-dir`；`12-role-run.md` 第 70 行发射版必填清单去掉 `artifact_dir`、第 62 行「run_id 和产物目录名一致」补成「产物目录是 `<artifact_root>/<run_id>/`」、第 80 行看门狗「产物目录多久没新文件」按约定找；`21-pair-deploy-run.md` 第 77 行、`23-pair-run-analysis.md` 第 17 行发射版字段清单去掉 `artifact_dir`，`23` 第 38 行和「没写清」第 1 条（`data_path` 和 `artifact_dir` 差在哪）据此改写。这条约定归 `08`（`artifact_root`）还是 `12`（run 的产物）由统筹定。 已同步 2026-08-17：`12`、`21`、`23`、两份源文档由统筹改，`05` 交 rl-part-05；约定归 `08` 还是 `12` 攒进 sync-inbox 问题 4 等 gyb。

@@ -85,7 +85,7 @@ gyb 只豁免权限，不豁免账行的完整性：
 | 转移表的「前提」栏 | 生效 |
 | 必填字段、路径存在、引用存在 | 生效 |
 
-gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 `force_reason` 字段。runs 账的 actor 允许 `run` 或 `gyb`，gyb 例外这一条明写在字段表里。
+gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 `force_reason` 字段。actor 是角色的命令带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写（2026-08-17 gyb 裁，来自 `03-ledgers.md`）。runs 账的 actor 允许 `run` 或 `gyb`，gyb 例外这一条明写在字段表里。
 
 ### 三条只收裸终端的
 
@@ -488,3 +488,5 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 验收和打回都给 owner 发 fyi。对回原则 6。第 148 行的不一致标注照改。
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「不杀」）：reclaim 回收开干的发射单默认不杀进程，`--kill` 才杀。对回原则 11。第 45 行的不一致标注照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 这一组规矩的定义处归本份第二节；`05-rl-cli.md`「actor 怎么定」是命令行写法，算写了两遍、每次同步对齐；`06` 只留钩子对 `--as-gyb` 不生效那一句。对回原则 8。
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（rl-hub 转来；gyb 原话「你说得对」）：actor 是角色的命令带 `--force` 一律拒收，退出码 3，附开 issue 给 gyb 的命令；`--as-gyb --quote --force --reason` 算 gyb 身份照写。对回原则 1、原则 2。第二节「豁免范围」补了这一句。

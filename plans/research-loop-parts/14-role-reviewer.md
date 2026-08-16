@@ -126,7 +126,7 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 - 公共母版的读法栏、公共规矩第 6 条、feedback 怎么提：定义在 `09-common-and-feedback.md`。
 - grants 账里 `read:notes` 那条授权、doctor 那一项「决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 read:notes」的扫描：定义在 `03-ledgers.md` 和 `05-rl-cli.md`。
 - reviewer 的清单怎么成为 idea 下一轮的输入、idea 读 review/ 之后干什么：写在 `25-pair-reviewer-idea.md`。
-- `--as-gyb` 必须带 `--quote` 这条规矩本身：写在 `01-gyb.md` 和 `06-hooks-and-permissions.md`。
+- `--as-gyb` 必须带 `--quote` 这条规矩本身：定义在 `01-gyb.md` 第二节（2026-08-17 gyb 裁）；钩子对 `--as-gyb` 不生效那一句在 `06-hooks-and-permissions.md`。
 
 ## 源文档没写清的（留给 gyb）
 
@@ -209,3 +209,7 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 12. [cosmetic/missing] 第 5、9 步（修账那两版留不留痕）：gyb 在裸终端补的 stuck 和 reject 这两版，账上只留 status 和 reason，没有任何字段标明这是 doctor 修账修出来的。reviewer 事后翻 handoffs，分不出这张单子是真卡住过、还是只是把断掉的引用补回去。
    - 依据：2026-08-16-research-loop-build-plan.md:61; 2026-08-16-research-loop-build-plan.md:55; 2026-08-16-research-loop-next-steps.md:88
    - 改法：公共骨架加一个可选的 `fix_for` 字段，doctor 给的修法命令一律带上扫描项名字。
+
+## 裁决记录（日期）
+
+- 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。

@@ -102,7 +102,7 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 - 派活单七个状态的完整转移表、`holder` 的不变量、会话销号和 `rl reclaim`：`04-handoffs-and-sessions.md`。
 - `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue` 的完整参数、`rl inbox`、`rl status` 十段、`rl notify` 推送表：`05-rl-cli.md`。
 - issue 的九种 `kind`（这份用到 `cannot`、`withdrawn`、`orphaned`、`fyi`）、issue 的开与回与关：`03-ledgers.md`。
-- gyb 是超级用户、`--as-gyb` 与 `--quote`、`--force --reason`：`01-gyb.md` 和 `06-hooks-and-permissions.md`。
+- gyb 是超级用户、`--as-gyb` 与 `--quote`、`--force --reason`：定义在 `01-gyb.md` 第二节（2026-08-17 gyb 裁）；钩子那一层在 `06-hooks-and-permissions.md`。
 - idea 的全部 use case、`reads`、`ledger_writes`、`dispatches_to`：`10-role-idea.md`。
 - analysis 的全部 use case、写权只有 `analysis/`、`reads`：`13-role-analysis.md`。
 - 快车道 `rl ql open/close` 和 analysis 的轻路：`07-quick-lane.md`。
@@ -197,3 +197,4 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「删了吧」「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」）：抄的转移表 `in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent）。对回原则 8、原则 11、原则 3。
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。
+- 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
