@@ -131,7 +131,7 @@ grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义�
 - 九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选字段 `fix_for`、`force_reason`：`03-ledgers.md`。
 - `rl inbox` 五类里的两类归这一份（本角色名下 open 的 issue、本角色提的 feedback 的裁决），命令本身在 `05-rl-cli.md`。
 - `rl status` 段 2（assignee 是 gyb 的 open issue）、段 8（等裁的 feedback）、段 10（上次 doctor 没修的）：`01-gyb.md`。
-- `rl notify` 的推送表（issue assignee 变 gyb、feedback 提出两条归这一份）：`05-rl-cli.md`。
+- `rl notify` 的推送表（issue assignee 变 gyb、feedback 提出两条归这一份）：`01-gyb.md` 第五节（2026-08-17 gyb 裁，推送表和 `rl notify` 是一件事归 `01`）。
 - doctor 的全部扫描项，其中和这一份有关的五项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 applied_to 缺母版或文档、决定来源指 notes/ 但没有 read:notes）：`05-rl-cli.md`。
 - sessions 账的 `rules_version`、`last_activity`、`status` 与「还活着的会话」怎么判定：`04-handoffs-and-sessions.md`。
 - `rl handoff accept` 自动关 `answered` issue、转移表 `in_progress` 到 `stuck` 那一行要求 issue 与单子互相引用：`04-handoffs-and-sessions.md`。
@@ -351,3 +351,4 @@ grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义�
 ## 裁决记录（日期）
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「都必填」），feedback 的 `verdict_text` 在 `accepted` 和 `rejected` 两版都必填；第五节行格式那句照 03 字段表补齐。统筹 session 同步。
+- 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。

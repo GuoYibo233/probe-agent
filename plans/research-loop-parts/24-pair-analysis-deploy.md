@@ -72,7 +72,7 @@ close 的写权是「开单的 actor 或 gyb」（施工计划第三节 issues�
 ## 和别的 part 的接口
 
 - issues 的行格式、九种 kind 的取值、`assignee` 和 `handoff_id` 两栏的必填规则、reply 与 close 的写权：03-ledgers.md。
-- `rl issue open/reply/reassign/close/link/show/list` 的完整参数，`rl inbox` 列哪四类，`rl status` 的十段，`rl doctor` 的扫描项，`rl notify` 的推送表：05-rl-cli.md。
+- `rl issue open/reply/reassign/close/link/show/list` 的完整参数，`rl inbox` 列哪四类，`rl status` 的十段，`rl doctor` 的扫描项：05-rl-cli.md；`rl notify` 的推送表：01-gyb.md 第五节（2026-08-17 gyb 裁）。
 - 转移表 `in_progress`→`stuck` 和 `stuck`→`todo` 两行的完整六栏，以及 holder 只在 `in_progress` 非空这条不变量：04-handoffs-and-sessions.md。
 - analysis 的 `reads`、`writes`、`ledger_writes` 四栏和它的 use case 表：13-role-analysis.md。
 - deploy 的 `ledger_writes`、自决留痕的粒度、改 `experiments/` 外文件的纪律：11-role-deploy.md。
@@ -142,3 +142,7 @@ close 的写权是「开单的 actor 或 gyb」（施工计划第三节 issues�
 5. [slows/blocked] 第 6 步（补 stuck 那一版）：`rl handoff stuck` 的前提是「那条 issue 的 handoff_id 指回本单」，但 `rl issue open` 的 `--handoff` 是可选参数；崩在写序中途的那条 issue 如果当初没带 --handoff，这条前提永远满足不了，而 issues 的命令只有 reassign/reply/close，没有补 handoff_id 的路，第一类同样修不了。
    - 依据：2026-08-16-research-loop-build-plan.md:84; 2026-08-16-research-loop-build-plan.md:132; 2026-08-16-research-loop-build-plan.md:59
    - 改法：要么把 `--handoff` 在 kind 是 cannot/denied/withdrawn 时改成必填，要么加一条 `rl issue link ID --handoff ID`（追加一版只补这个字段）。
+
+## 裁决记录（日期）
+
+- 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。

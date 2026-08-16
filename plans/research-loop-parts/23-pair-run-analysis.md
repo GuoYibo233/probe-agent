@@ -80,7 +80,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 - 口径账的行格式、`metrics_key` 与 `code_path` 二选一、图行的 `group_by`/`x`/`y`/`uses`、四个状态：见 03-ledgers.md，提和批的规矩见 22-pair-idea-analysis.md。
 - 分析单交活时 `evaluation_refs` 每项必须 `approved`、`output_paths` 必须存在：见 04-handoffs-and-sessions.md。
 - 发射单的 `parent_id`、`decision_refs`、`batch`、`line` 四个字段的定义：见 03-ledgers.md；`line` 就是根决定编号，根决定的定义见 02-decisions.md。
-- issue 的 `kind` 取值（这一份用到 `cannot` 和 `anomaly`）、assignee 是 gyb 那一版触发桌面通知：见 03-ledgers.md，推送表见 05-rl-cli.md。
+- issue 的 `kind` 取值（这一份用到 `cannot` 和 `anomaly`）、assignee 是 gyb 那一版触发桌面通知：见 03-ledgers.md，推送表见 01-gyb.md 第五节（2026-08-17 gyb 裁，推送表和 `rl notify` 是一件事归 `01`）。
 - `rl trace`、`rl run list`、`rl doctor` 三条命令的完整参数和退出码：见 05-rl-cli.md。
 - 九本账的公共骨架七样字段、`--force --reason` 硬写留痕：见 03-ledgers.md 和 01-gyb.md。
 - 快车道的数字进杂账、`ql_tag` 怎么分：见 07-quick-lane.md。
@@ -186,3 +186,4 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 ## 裁决记录（日期）
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。
+- 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。

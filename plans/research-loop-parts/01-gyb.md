@@ -133,7 +133,7 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 ## 五、桌面通知推送表
 
-桌面通知只是 gyb 收件箱里几段的推送，不是第三个通道。`rl notify --text` 是内部命令，只有 rl 自己调。推送时机五档：
+桌面通知只是 gyb 收件箱里几段的推送，不是第三个通道。`rl notify --text` 是内部命令，只有 rl 自己调。推送表和 `rl notify` 的机制都定义在本节，`05-rl-cli.md` 只留命令签名（2026-08-17 gyb 裁）。推送时机五档：
 
 | # | 触发 |
 |---|---|
@@ -490,3 +490,4 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「不杀」）：reclaim 回收开干的发射单默认不杀进程，`--kill` 才杀。对回原则 11。第 45 行的不一致标注照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 这一组规矩的定义处归本份第二节；`05-rl-cli.md`「actor 怎么定」是命令行写法，算写了两遍、每次同步对齐；`06` 只留钩子对 `--as-gyb` 不生效那一句。对回原则 8。
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（rl-hub 转来；gyb 原话「你说得对」）：actor 是角色的命令带 `--force` 一律拒收，退出码 3，附开 issue 给 gyb 的命令；`--as-gyb --quote --force --reason` 算 gyb 身份照写。对回原则 1、原则 2。第二节「豁免范围」补了这一句。
+- 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归本份第五节；`05-rl-cli.md` 只留 `rl notify --text` 的签名行，其「rl notify」一节缩成一句指本份。对回原则 8。第五节开头补了一句。
