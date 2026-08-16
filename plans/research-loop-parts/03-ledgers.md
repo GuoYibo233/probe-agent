@@ -1,6 +1,6 @@
 # 九本账的行格式与入账规则
 
-> 这份覆盖三样：九本账共同的总规矩（只增不改、version 与 status、锁与写序、能写就能查）、公共骨架七样加两个可选字段、九本账每一本的字段级行格式，外加 `bin/rl` 的退出码。
+> 这份覆盖三样：九本账共同的总规矩（只增不改、version 与 status、锁与写序、能写就能查）、公共骨架七样加三个可选字段、九本账每一本的字段级行格式，外加 `bin/rl` 的退出码。
 > 不覆盖的：decisions 的行格式、编号规则和来源三类写在 `02-decisions.md`；handoffs 的行格式和派活单状态转移表写在 `04-handoffs-and-sessions.md`，会话的登记、销号、回收也在那一份（这份只写 sessions 的行格式）；每条子命令怎么写、`rl status` 和 `rl inbox` 列什么、doctor 扫什么，都在 `05-rl-cli.md`；哪个角色能调哪条写命令在 `06-hooks-and-permissions.md`；快车道的进出动作在 `07-quick-lane.md`；阈值和配置文件在 `08-trees-init-and-host.md`；母版 `rules_version` 和反馈账的用法在 `09-common-and-feedback.md`。
 > 源：设计文档的「账本」一节、原则 4、原则 6、原则 1 里 gyb 豁免那一段、「分权与钩子」的第二层；施工计划第二节词表、第三节九本账的字段级行格式、第六节末尾的退出码与锁那两段。
 
@@ -93,11 +93,11 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 
 ## handoffs
 
-派活单的字段级行格式（`work_type`、`owner` 与 `holder`、`parent_id`、`attempts`、`report_paths`、`code_paths`、`output_paths` 这些）和七个状态的转移表写在 `04-handoffs-and-sessions.md`。
+派活单的字段级行格式（`work_type`、`from_role`（就是 owner）与 `holder`、`parent_id`、`attempts`、`report_paths`、`code_paths`、`output_paths` 这些）和七个状态的转移表写在 `04-handoffs-and-sessions.md`。
 
 ## runs
 
-数字账一个 schema，一次尝试两版：发射成功那一刻落发射版，跑完落收尾版。`status` 取 `launched`、`finished`。`actor` 是 `run` 或 `gyb`：数字账只有 run 角色的脚本能写，gyb 是原则 1 的例外。
+数字账一个 schema，一次尝试两版：发射成功那一刻落发射版，跑完落收尾版。`status` 取 `launched`、`finished`。另有 `relink` 版只改 `handoff_id`，是 doctor 第 6 项的修法，命令 `rl run relink RUN_ID --handoff ID`（2026-08-17 随 `05` 定稿裁，见 `05` doctor 表）。`actor` 是 `run` 或 `gyb`：数字账只有 run 角色的脚本能写，gyb 是原则 1 的例外。
 
 | 字段 | 取值或格式 | 必填条件 |
 |---|---|---|
@@ -219,13 +219,13 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | 0 | 成功 | |
 | 2 | 校验拒收 | 原因写到标准错误，包含下一步该做什么 |
 | 3 | 角色无权（含角色带 `--force`） | 同上，附「开 issue 给谁」的命令 |
-| 4 | 文件锁等待超时 | |
+| 4 | 文件锁等待超时 | 等 `lock.timeout_seconds`（默认 10 秒，阈值表在 `08` 第三节） |
 
 所有子命令支持 `--json`。表外的转移一律拒收，退出码 2。
 
 ## 和别的 part 的接口
 
-本份是定义处的东西：九本账公共骨架（七样加 `fix_for`、`force_reason`）、总规矩（只增不改、按 `status` 查、锁与写序、编号从 1 起四位起步、能写就能查、gyb 豁免只到权限层、`loop/` 进 git）、issues / runs / grants / feedback / evaluations / sessions / scratch 七本的字段级行格式、退出码四个。别的 part 提到这些只指过来不抄；HANDOFF 四点五节标了「写了两遍」的三处（`09` 抄 issues/grants/feedback、`07` 抄 scratch、`04` 抄 sessions）每次同步要和本份一字不差。
+本份是定义处的东西：九本账公共骨架（七样加 `fix_for`、`force_reason`、`via`）、总规矩（只增不改、按 `status` 查、锁与写序、编号从 1 起四位起步、能写就能查、gyb 豁免只到权限层、`loop/` 进 git）、issues / runs / grants / feedback / evaluations / sessions / scratch 七本的字段级行格式、退出码四个。别的 part 提到这些只指过来不抄；HANDOFF 四点五节标了「写了两遍」的三处（`09` 抄 issues/grants/feedback、`07` 抄 scratch、`04` 抄 sessions）每次同步要和本份一字不差。
 
 本份指出去的：
 
@@ -483,7 +483,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - `--force --reason` 的定义处（`01-gyb.md` / `05-rl-cli.md` / `06-hooks-and-permissions.md` 哪一处，sync-inbox 问题 1 待裁）：补一句「actor 是角色的命令带 `--force` 一律拒收，退出码 3；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写」；`05` 退出码 3 那一行同步加「含角色带 `--force`」。 已同步 2026-08-17：`05` 退出码那行已交 rl-part-05；规矩本身的定义处 2026-08-17 gyb 裁归 `01`，那一句已写进 `01` 第二节「豁免范围」（rl-hub）。
 - `08-trees-init-and-host.md`：init 那一段补「`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`」，08 的「没写清」第 5 条据此销掉。 已同步 2026-08-17。
 - 设计文档「账本」一节公共骨架那一句：「七样加一个可选的 `fix_for`」改成「七样加两个可选：`fix_for`、`force_reason`」（统筹 session 回写）。 已同步 2026-08-17。
-- runs 发射版去掉 `artifact_dir`、产物目录走 `<artifact_root>/<run_id>/` 约定，牵连四份：`05-rl-cli.md` 的 `rl run add` 签名去掉 `--artifact-dir`；`12-role-run.md` 第 70 行发射版必填清单去掉 `artifact_dir`、第 62 行「run_id 和产物目录名一致」补成「产物目录是 `<artifact_root>/<run_id>/`」、第 80 行看门狗「产物目录多久没新文件」按约定找；`21-pair-deploy-run.md` 第 77 行、`23-pair-run-analysis.md` 第 17 行发射版字段清单去掉 `artifact_dir`，`23` 第 38 行和「没写清」第 1 条（`data_path` 和 `artifact_dir` 差在哪）据此改写。这条约定归 `08`（`artifact_root`）还是 `12`（run 的产物）由统筹定。 已同步 2026-08-17：`12`、`21`、`23`、两份源文档由统筹改，`05` 交 rl-part-05；约定归 `08` 还是 `12` 攒进 sync-inbox 问题 4 等 gyb。
+- runs 发射版去掉 `artifact_dir`、产物目录走 `<artifact_root>/<run_id>/` 约定，牵连四份：`05-rl-cli.md` 的 `rl run add` 签名去掉 `--artifact-dir`；`12-role-run.md` 第 70 行发射版必填清单去掉 `artifact_dir`、第 62 行「run_id 和产物目录名一致」补成「产物目录是 `<artifact_root>/<run_id>/`」、第 80 行看门狗「产物目录多久没新文件」按约定找；`21-pair-deploy-run.md` 第 77 行、`23-pair-run-analysis.md` 第 17 行发射版字段清单去掉 `artifact_dir`，`23` 第 38 行和「没写清」第 1 条（`data_path` 和 `artifact_dir` 差在哪）据此改写。这条约定归 `08`（`artifact_root`）还是 `12`（run 的产物）由统筹定。 已同步 2026-08-17：`12`、`21`、`23`、两份源文档由统筹改，`05` 交 rl-part-05；约定归 `08` 还是 `12` 攒进 sync-inbox 问题 4——2026-08-17 gyb 裁归 `08`，见裁决记录。
 - 设计文档 run 一节收尾版「结束时间、退出状态、指标、真实耗时」四样补 `data_path`（统筹 session 回写）。 已同步 2026-08-17。
 - `07-quick-lane.md`：第 60 行「格式松，入账校验只校验骨架和快车道标签」改成「中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填」；scratch 表 `open` 那一行 `branch` 改成「`branch`（deploy）」，并在 07 自己「没写清」第 1 条裁 analysis 的 `base_commit`、`branch` 填什么。 已同步 2026-08-17。
 - 设计文档「账本」一节杂账「格式松、只校验骨架和快车道标签」改成「中间版格式松；开张、合回、放弃三版各有必填」（统筹 session 回写）。 已同步 2026-08-17。
