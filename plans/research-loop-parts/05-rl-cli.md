@@ -70,7 +70,7 @@ grants 只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quot
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账三版（`launched`、`finished`，另有 `adopted` 由 `rl handoff start` 认领时顺带写），`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出，`--decision` 和 `--line` 经 `handoff_id` 反查 handoffs 的 `decision_refs` 和 line；`started_at`、`finished_at` 由 rl 填；`relink` 是 doctor 修法 | 写 run 和 gyb，查谁都行 |
+| `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账三版（`launched`、`finished`，另有 `adopted` 由 `rl handoff start` 认领时顺带写），`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出，`--decision` 和 `--line` 经 `handoff_id` 反查 handoffs 的 `decision_refs` 和 line；`started_at`、`finished_at` 由 rl 填；`relink` 是 doctor 修法，status 与其他栏照抄最新版、只换 `handoff_id`（2026-08-17 问题 31） | 写 run 和 gyb，查谁都行 |
 
 ### 授权、反馈、口径
 
@@ -666,6 +666,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17 来自 sync-inbox 问题 26（rl-hub-v2 转来；gyb 原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：doctor 第 17 项改成「applied_to 为空」。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 27（rl-hub-v2 转来；gyb 原话「3 不是，可以替我写」）：（b）（c）认；（d）不认，grants 角色会话里 `--as-gyb --quote` 替 gyb 写也收，`decisions.gyb.jsonl` 只收裸终端不变。对回原则 1。
 - 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」「每个角色创建时候，不要自动查收件箱……」「C」）：run 不查 inbox；角色被拉起不自动查 inbox，谁需要谁敲；「上线第一个动作是 rl inbox」删。对回原则 6。
+- 2026-08-17 来自 sync-inbox 问题 31（rl-part-03 转来；gyb 原话「a」）：runs 的 relink 版 status 与其他栏照抄最新版、只换 `handoff_id`，和 sessions 的 amend 版一个做法，不另设状态值。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 30（rl-hub-v2 转来；gyb 原话「B」）：sessions `amend` 版 gyb 或该角色自己的活会话都能写；命令表和 doctor 第 19 项归谁推同改。对回原则 5。
 - 2026-08-17 来自 sync-inbox 问题 29（rl-hub-v2 转来；gyb 原话「A」）：`holder_alive`、`age_hours` 算法认，去掉「待 gyb 过目」。对回原则 6。
 
