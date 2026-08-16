@@ -103,4 +103,5 @@
 - 事项：gyb 说「你现在就交给04和05让他们改了」。rl-hub-v2 已 SendMessage 打包发出：04 十一条（问题 7/8/9/10/13/14/17/18/19/20/21 加问题 28 的 inbox 措辞），05 十九条（问题 6/7/8/9/10/11/12/14/15/16/17/18/23/24/25/26/27/28/29）。每条附裁决原话与改法，消息全文在 rl-hub-v2 会话记录，要点与落点在 HANDOFF 第八节的表。
 - 统筹拟的措辞（问题 25，等 03 定义处照抄）：退出码 1 内部错误、5 用法错；所有非零退出标准错误第一行固定原因种类 2 validation / 3 forbidden / 4 lock_timeout / 5 usage / 1 internal，`--json` 时放 `error.kind`。rl-part-05 若改措辞会报回来，03 要跟它一字不差。
 - 要改的地方：等两个 session 回「收 N–M，commit <hash>」，统筹记进 README 进度表与本段；03 与其余各份、两份源文档仍按 HANDOFF 第八节清单由统筹落。
-- 状态：待处理（等 rl-part-04、rl-part-05 回 commit）
+- 04 已回：`a7d1ec9`，十一条加问题 28 全落，无相反裁决；顺带改了接口一节快车道那条；问题 19 走现有 rejected→todo 行没另加行。它提醒：`20`/`21`/`22` 抄的转移表行（新 estimate 行、start 行 adopted、withdraw 行通知、reissue 行到栏、两条 amend 行）要统筹同步。
+- 状态：待处理（04 已回；等 rl-part-05 回 commit）
