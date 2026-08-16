@@ -7,7 +7,7 @@
 - 问题 3：阈值表定义处按原表是 `08-trees-init-and-host.md`，但 `04`、`14`、`21`、`23`、`05`、`24` 六份各指了别处（见 HANDOFF 四点五节 `08` 那一行）。是照 `08` 传，还是阈值表另立一处？——已裁 2026-08-17：照 `08`，原话「按照08吧」。已处理：`14`/`21`/`23`/`24` 指向改 `08` 第三节；`04` 已指 `08`；`05` 交 rl-part-05；HANDOFF 改。
 - 问题 4（2026-08-17 加，来自 03 事项 6）：runs 发射版去掉 `artifact_dir` 之后，「产物目录是 `<artifact_root>/<run_id>/`」这条约定的定义处归 `08-trees-init-and-host.md`（`artifact_root` 在它那）还是 `12-role-run.md`（run 的产物）？现在 03、12、21、23 和两份源文档都写了这一句，等裁了再定谁是那一处。——已裁 2026-08-17：归 `08`，原话「问题4 给8」。已处理：`08` 第一节写成定义处并记裁决；`03`/`12`/`21`/`23` 那句加「约定定义在 08 第一节」；HANDOFF 记。
 - 问题 5（2026-08-17 加，来自 04 事项 3）：04 定稿带出一条新的入账校验「`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记」。定义处按 HANDOFF 判断规矩 3 找不到：入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`，事情本身写在 `04-handoffs-and-sessions.md` 第七节 `rl session end` 那条。归哪一份？——已裁 2026-08-17：归 `03`，原话「问题5 给3」。已处理：`03`「账本的总规矩」加一段并记裁决；`04` 第七节那句加指向交 rl-part-04；HANDOFF 记。
-- 问题 6（2026-08-17 加，来自 05 事项 8）：05 定稿裁「reviewer 按 `common/` 问题清单派 sonnet subagent 逐题查，查出的 `rl issue open --to <owner>` 落账」，可 `14-role-reviewer.md` 第八节和公共规矩第 6 条写的是「reviewer 不开 issue、不派活，卡住也只写进清单交给 gyb」，角色 json 的 `ledger_writes` 也没有 issues。两处不一致：reviewer 查出的问题是开 issue 落账（第八节和 json 跟着改），还是照旧只写进清单交 gyb？
+- 问题 6（2026-08-17 加，来自 05 事项 8）：05 定稿裁「reviewer 按 `common/` 问题清单派 sonnet subagent 逐题查，查出的 `rl issue open --to <owner>` 落账」，可 `14-role-reviewer.md` 第八节和公共规矩第 6 条写的是「reviewer 不开 issue、不派活，卡住也只写进清单交给 gyb」，角色 json 的 `ledger_writes` 也没有 issues。两处不一致：reviewer 查出的问题是开 issue 落账（第八节和 json 跟着改），还是照旧只写进清单交 gyb？——已裁 2026-08-17（待落地，gyb 要求 6–29 全收齐再一起改）：A，照旧只写清单，gyb 用自己的权限开 issue，原话「全给我审查，然后我用我的权限放到issue里面」。
 - 问题 1 附带（2026-08-17 加，来自 03 事项 3）：「角色带 `--force` 一律拒收，退出码 3；`--as-gyb --quote --force --reason` 算 gyb 身份照写」这一句，等问题 1 裁了定义处之后写进那一份。——已写进 `01` 第二节 2026-08-17。
 - 备案（2026-08-17，gyb 提的，不是问题）：「gyb」当机器标识符太怪，考虑改成 `admin` 或 `sudo`。gyb 定：现在不改，全部 part 定稿之后最后一次扫。到时候只改机器看得见的四种（旗子 `--as-gyb`、actor/owner/assignee 取值 `gyb`、`decisions.gyb.jsonl`、`01-gyb.md` 文件名），白话里指人的不动；名字到时候再定。gyb 原话「我觉得现在先不改吧 等最后改一下就行」。
 - 裁决原文：（待）
@@ -71,30 +71,30 @@
 ## 2026-08-17 夜 来自 rl-hub 关于 03/04/05 三份互查（四路 opus 审读，rl-hub 逐条对原文核过）
 - 事项：三份定稿后互查，58 条发现分三堆。甲：引用处没跟定义处、同步没传到位——`03` 的 rl-hub 已改（`701c95d` 及本段同 commit），`04` 八条交 rl-part-04、`05` 十六条交 rl-part-05（两条 SendMessage 全文见 rl-hub 会话记录；要点：04 补 sessions amend 版/六条子命令/字段表照 03 重抄/inbox 五项/accept 关 answered issue/lock 定义处 03/覆盖说明八本账改法/schema_version 从 1 起；05 改 release [--note]/amend 加 --notebook --figure/open 谁能调补快车道/session end 补全部/grant add 加 --text/feedback accept --text 必带/eval retire gyb/scratch list 与 inbox 查谁都行/补 last_activity 现算写法/accept 关 issue/接口一节三处「要 X 收」过期/第 137 行照抄过时句/第 27 行等问题 27/run list --decision --line 反查与 started_at 等由 rl 填/status --json 两键怎么算/锁与写序与退出码与 reclaim 各加一句定义处）。乙：真空白或两说，要 gyb 裁，列在下面 7–27。丙：审读报了但不是矛盾的（withdraw [--quote] 方括号；doctor 扫 handoff_id 为空 vs 必填；started_at/rules_version 无参数由 rl 填；issue reply/close 写权 03 按行 05 按 json 两层都查），不动。
 - 要 gyb 裁的（编号接第一段的 1–6）：
-  7. `rl handoff estimate` 往 `attempts.step_table` 写东西，`04` 转移表没它的行，`04:77` 又说改单子内容一律是表里的行。给 estimate 加一行，还是那句把 estimate 排除？
-  8. 快车道补单写序是环：`03:208` scratch 的 `merged` 版必填 `handoff_id`（补单先存在），`04:60` 开补单前提「关联的 scratch 行状态是 merged」（merged 先存在）；`05:64` `open --quick-lane --ql QL` 收 ql_tag，`04` handoffs 字段表没有存它的字段。哪个先写、单子上存不存 ql_tag？
-  9. `batch` 谁分配：`03:19` 说 rl 在锁里分，`04:26`/`05:64` 是调用者 `--batch B` 传的可选字段；`05:64` 说 launch_order 开单从父单抄 batch，`04` 字段表只写「可选」；batch 也没有格式。
-  10. amend 能改哪些字段：doctor 第 2 项用 `amend --decision ID@V` 换悬空引用，`04` 两行 amend 都不许改 decision_refs、`05` amend 签名也没 `--decision`；doctor 第 5 项修法带 `--code-path`，`04:66`（等验收态 amend）只许补 report_paths/output_paths。
-  11. issue 追问：doctor 第 11 项让开 issue 的角色 `rl issue reply` 追问、issue 回到 open；`03:92` 说 reply 只有 assignee 或 gyb 能写、`03:74` reply 字段挂在 answered 版。要不要追问这条路、怎么写？
-  12. `run list` 默认口径：`03:124`「每张单最新一次退出状态为 ok 的行」vs `05:73`「最新尝试且 ok」——最新一跑失败时一个列上一条 ok、一个一条不出。
-  13. 「handoffs 上的 actual_seconds」：`03:118`、`04:41` 都这么写，`04` handoffs 字段表没这一栏。handoffs 记不记（从 runs 抄一份）还是不记、看去 runs？
-  14. closed 会话再写账拒收（`03:15`）没给退出码：2（校验拒收）还是 3（无权）？gyb 能不能 `--force` 越过它？
-  15. `fix_for` 填什么：`03:43` 说 doctor 修法命令一律带 `--fix-for <扫描项名字>`，`05` doctor 表只有序号没名字、十九条修法命令一条没带 `--fix-for`、`--ack ITEM ID` 也按项号。填项号？命令带不带 `--fix-for`？
-  16. `04:9` 快车道补单是 deploy 开给 deploy，`05:87` 有 `ql open --role analysis`。analysis 的快车道有没有补单？（可能归 `07`，先记着。）
-  17. `adopted`：`04:61`、`04:95` 认领时「账行标 adopted」，handoffs 和 runs 字段表都没这一栏。哪本账的字段？
-  18. sessions `amend` 版和「校验按 status 查」（`03:13`）没接上：amend 行填哪个 status、要不要跟着填该 status 的必填项、能不能 amend 已 closed 的会话（doctor 第 19 项抓的往往是关掉的）。
-  19. `04:69` 给 reclaim 写 `rejected`→`todo` 的权，`04` 第八节四类处置没有 rejected 这一类（等验收和待干只列不动）。reclaim 动不动 rejected 的单？
-  20. `04:71` withdraw 行「有 holder 时通知 holder」——按不变量只有 in_progress 有 holder，从 todo/stuck/等验收/rejected 收回时通知没人收。用 `last_holder`？
-  21. `04:73` reissue 行「到＝同状态（接替）」，动作却是旧单 withdrawn、新开一张。「到」栏怎么写？
-  22. `03:104` runs 主键说「快车道用 ql_tag」，`03:213` 又说快车道数字不进 runs——同一份里两句。HANDOFF 原留给 07/23 裁；03 已定稿，gyb 直接定？
-  23. `rl inbox` 读过即关通知 issue、`rl doctor --ack` 写 ack 文件，`05:100` 却把它俩列进「查询命令、不进 ledger_writes」。「查询顺带自动写」怎么定性？
-  24. `loop/.doctor-acks.jsonl` 不算九本账（`05:212`）：03 总规矩（只增不改、锁、进 git、脏树白名单）管不管它、谁能 ack？
-  25. 退出码只有 0/2/3/4：查不到编号、内部错误、参数写错落哪个码？
-  26. doctor 第 17 项要 applied_to 同时含母版和文档，`03:152`「母版和文档都算」（有一样就行）。哪个？
-  27. `05:27` 说施工计划（b）（c）（d）三条（豁免收窄加 --force --reason、--as-gyb 一律 --quote、grants 只收裸终端）gyb 还没逐条裁，05 的 actor 一节和 01 第二节都建在它们上面。认不认？认了销这句、施工计划第一节那三条标日期。
-  28. （待 gyb 过目，rl-part-05 定，`c2f69c8`）「run 的 inbox 不查过版」这条例外删掉，run 的 inbox 第 3 项照查过版决定（发射单从父单继承 decision_refs）。
-  29. （待 gyb 过目，rl-part-05 定，`c2f69c8`）`rl status --json` 的 `holder_alive` = holder 会话在 sessions 账最新版是否 `open`；`age_hours` 从单子当前状态那一版的 `ts` 起算。
+  7. `rl handoff estimate` 往 `attempts.step_table` 写东西，`04` 转移表没它的行，`04:77` 又说改单子内容一律是表里的行。给 estimate 加一行，还是那句把 estimate 排除？——已裁 2026-08-17（待落地）：A，转移表加 `in_progress`→`in_progress` 内容追加行（holder 填分步表），原话「冒烟也是正式动作」。
+  8. 快车道补单写序是环：`03:208` scratch 的 `merged` 版必填 `handoff_id`（补单先存在），`04:60` 开补单前提「关联的 scratch 行状态是 merged」（merged 先存在）；`05:64` `open --quick-lane --ql QL` 收 ql_tag，`04` handoffs 字段表没有存它的字段。哪个先写、单子上存不存 ql_tag？——已裁 2026-08-17（待落地）：A，先开补单（前提改成关联 scratch 行状态是 `open`），拿到编号再 `ql close --merged --handoff ID`；handoffs 加一栏存 `ql_tag`，两边互指。原话「A」。
+  9. `batch` 谁分配：`03:19` 说 rl 在锁里分，`04:26`/`05:64` 是调用者 `--batch B` 传的可选字段；`05:64` 说 launch_order 开单从父单抄 batch，`04` 字段表只写「可选」；batch 也没有格式。——已裁 2026-08-17（待落地）：A，调用者自由文本、可选，rl 不分配（03 锁那句去掉 `batch`）；launch_order 从父单抄的规矩照旧。原话「A」。
+  10. amend 能改哪些字段：doctor 第 2 项用 `amend --decision ID@V` 换悬空引用，`04` 两行 amend 都不许改 decision_refs、`05` amend 签名也没 `--decision`；doctor 第 5 项修法带 `--code-path`，`04:66`（等验收态 amend）只许补 report_paths/output_paths。——已裁 2026-08-17（待落地）：A，转移表放宽跟修法走：两行 amend 都允许换 `decision_refs`/`evaluation_refs`（05 签名加 `--decision ID@V`）；`done_pending_review` 行 amend 允许改 `code_paths`。原话「A」。
+  11. issue 追问：doctor 第 11 项让开 issue 的角色 `rl issue reply` 追问、issue 回到 open；`03:92` 说 reply 只有 assignee 或 gyb 能写、`03:74` reply 字段挂在 answered 版。要不要追问这条路、怎么写？——已裁 2026-08-17（待落地）：B，不加追问；一条 issue 一问一答，回答不管用就 close 再开一条新的引旧编号；doctor 第 11 项修法那半句改掉。原话「B」。
+  12. `run list` 默认口径：`03:124`「每张单最新一次退出状态为 ok 的行」vs `05:73`「最新尝试且 ok」——最新一跑失败时一个列上一条 ok、一个一条不出。——已裁 2026-08-17（待落地）：B，只看最新一次尝试且 ok，失败不出；03:124 改成 05 的写法。原话「B」。
+  13. 「handoffs 上的 actual_seconds」：`03:118`、`04:41` 都这么写，`04` handoffs 字段表没这一栏。handoffs 记不记（从 runs 抄一份）还是不记、看去 runs？——已裁 2026-08-17（待落地）：B，handoffs 字段表加 `actual_seconds`（在 `attempts` 那一次尝试上），`rl run finish` 时 rl 自动从 runs 抄、人不填；预计和实际同一张单对着看。原话「B」。
+  14. closed 会话再写账拒收（`03:15`）没给退出码：2（校验拒收）还是 3（无权）？gyb 能不能 `--force` 越过它？——已裁 2026-08-17（待落地）：A，退出码 3，`--force`/`--as-gyb --force` 都越不过，唯一出路是重新加载角色。原话「A」。
+  15. `fix_for` 填什么：`03:43` 说 doctor 修法命令一律带 `--fix-for <扫描项名字>`，`05` doctor 表只有序号没名字、十九条修法命令一条没带 `--fix-for`、`--ack ITEM ID` 也按项号。填项号？命令带不带 `--fix-for`？——已裁 2026-08-17（待落地）：B，`fix_for` 栏删掉，公共骨架可选栏只剩 `force_reason`、`via`；修法命令不带 `--fix-for`；03 事项 5 那句「七样加两个可选」相应改。原话「B」。
+  16. `04:9` 快车道补单是 deploy 开给 deploy，`05:87` 有 `ql open --role analysis`。analysis 的快车道有没有补单？（可能归 `07`，先记着。）——已裁 2026-08-17（待落地）：A，没有补单；analysis 快车道只能 `--dropped`，要留就走正常路重做；`ql close --merged` 只对 deploy 开；07「没写清」第 5 条据此销。原话「A」。
+  17. `adopted`：`04:61`、`04:95` 认领时「账行标 adopted」，handoffs 和 runs 字段表都没这一栏。哪本账的字段？——已裁 2026-08-17（待落地）：C，两边都标：handoffs 的 `start` 那一版加 `adopted: true`；runs 加一版 `adopted`（记新 holder 会话与 ts）。原话「C」。
+  18. sessions `amend` 版和「校验按 status 查」（`03:13`）没接上：amend 行填哪个 status、要不要跟着填该 status 的必填项、能不能 amend 已 closed 的会话（doctor 第 19 项抓的往往是关掉的）。——已裁 2026-08-17（待落地）：A，amend 版 `status` 与其他栏照抄最新版、只换 `model`；closed 会话也能 amend（写者是 gyb 裸终端或该角色的活会话，不触问题 14 那条）。原话「A」。
+  19. `04:69` 给 reclaim 写 `rejected`→`todo` 的权，`04` 第八节四类处置没有 rejected 这一类（等验收和待干只列不动）。reclaim 动不动 rejected 的单？——已裁 2026-08-17（待落地）：B，reclaim `--apply` 把超阈值的 `rejected` 单推回 `todo`（actor gyb、`via=reclaim`），04 第八节四类处置加成五类，转移表那行照旧。原话「B」。
+  20. `04:71` withdraw 行「有 holder 时通知 holder」——按不变量只有 in_progress 有 holder，从 todo/stuck/等验收/rejected 收回时通知没人收。用 `last_holder`？——已裁 2026-08-17（待落地）：B，照字面，只在 `in_progress` 收回时通知 holder；其他状态不通知；04:71 那句改成「从 `in_progress` 收回时……」。原话「B」。
+  21. `04:73` reissue 行「到＝同状态（接替）」，动作却是旧单 withdrawn、新开一张。「到」栏怎么写？——已裁 2026-08-17（待落地）：A，新单一律从 `todo` 起、同新建拉起；表里写实：旧单→`withdrawn`，新单→`todo`（`supersedes` 指旧单）。原话「A」。
+  22. `03:104` runs 主键说「快车道用 ql_tag」，`03:213` 又说快车道数字不进 runs——同一份里两句。HANDOFF 原留给 07/23 裁；03 已定稿，gyb 直接定？——已裁 2026-08-17（待落地）：A，不进 runs；03:104 删「快车道用 `ql_tag`」；07/23 引用处同改。原话「A」。
+  23. `rl inbox` 读过即关通知 issue、`rl doctor --ack` 写 ack 文件，`05:100` 却把它俩列进「查询命令、不进 ledger_writes」。「查询顺带自动写」怎么定性？——已裁 2026-08-17（待落地）：B 的方向：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`（issues 写权 close 那条补「通知类 issue 的 assignee 也能关」）；`rl doctor --ack/--unack` 算写命令、只有 gyb 能敲。原话「只有做完了的时候才关，巡检要我本人确认」。
+  24. `loop/.doctor-acks.jsonl` 不算九本账（`05:212`）：03 总规矩（只增不改、锁、进 git、脏树白名单）管不管它、谁能 ack？——已裁 2026-08-17（待落地）：B，`.doctor-acks.jsonl` 是普通文件，03 总规矩不管它；谁能 ack 按问题 23：只有 gyb。原话「B」。
+  25. 退出码只有 0/2/3/4：查不到编号、内部错误、参数写错落哪个码？——已裁 2026-08-17（待落地）：要求是 agent 分得出发生了什么。落法：加退出码 5「用法错」（参数写错、编号不存在），内部错误 1；所有非零退出标准错误第一行固定格式给原因种类（`--json` 时 `error.kind`），四码变六码（0/1/2/3/4/5），定义处 03、05 照抄。原话「我想让agent有办法识别发生了什么就行」。
+  26. doctor 第 17 项要 applied_to 同时含母版和文档，`03:152`「母版和文档都算」（有一样就行）。哪个？——已裁 2026-08-17（待落地）：B，至少一个即可，doctor 第 17 项改成「applied_to 为空」才报。原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」
+  27. `05:27` 说施工计划（b）（c）（d）三条（豁免收窄加 --force --reason、--as-gyb 一律 --quote、grants 只收裸终端）gyb 还没逐条裁，05 的 actor 一节和 01 第二节都建在它们上面。认不认？认了销这句、施工计划第一节那三条标日期。——已裁 2026-08-17（待落地）：(b)(c) 认；(d) 不认——grants 可以在角色会话里 `--as-gyb --quote` 替 gyb 写、不限裸终端。改：01 第二节、05 actor 一节、设计文档原则 1 末句「授权（grants）只收裸终端写的行」、施工计划第一节 (d)、`decisions.gyb.jsonl` 只收裸终端那条不受影响。原话「3 不是，可以替我写」。
+  28. （待 gyb 过目，rl-part-05 定，`c2f69c8`）「run 的 inbox 不查过版」这条例外删掉，run 的 inbox 第 3 项照查过版决定（发射单从父单继承 decision_refs）。——2026-08-17 gyb 改了上位规矩（待落地）：角色会话被拉起时不自动查收件箱，先干拉它起来的那张单；「所有角色上线第一个动作是 `rl inbox`」这句作废（10–14 各份、01、12:19、两份源文档原则 6 补的「上线第一动作」都要改）。原话「每个角色创建时候，不要自动查收件箱。比如说idea层创建了一个新的idea，他要发给部署层，那么就创建一个新的部署层的角色，这个角色就应该先执行刚才idea给他的工作。」收件箱什么时候看：C，都不自动看，`rl inbox` 是谁需要谁敲的查询命令，gyb 要它看就说一声；SKILL.md 里不再写「上线先 inbox」。原话「C」。问题 28 本身（run 的 inbox 查不查过版）随之变成：inbox 对 run 也列过版，只是没人自动敲；rl-part-05 那条照认。
+  29. （待 gyb 过目，rl-part-05 定，`c2f69c8`）`rl status --json` 的 `holder_alive` = holder 会话在 sessions 账最新版是否 `open`；`age_hours` 从单子当前状态那一版的 `ts` 起算。——已过目 2026-08-17：认。原话「A」。
 - 甲的回报：rl-part-04 八条已改 `bc9bc90`；rl-part-05 十六条已改 `c2f69c8`（第 13 条第 27 行等问题 27）。
 - 裁决原文：（待）
 - 要改的地方：每条裁了按定义处改，再传引用处；04 的交 rl-part-04、05 的交 rl-part-05、03 的统筹直接改；两份源文档对应句子回写。
-- 状态：等 gyb（7–29）；甲已全部落地
+- 状态：7–29 已全部裁（2026-08-17，rl-hub-v2 逐条问的），待落地；甲已全部落地
