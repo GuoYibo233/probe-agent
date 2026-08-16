@@ -70,7 +70,7 @@ feedback：`id`；`target`（文件路径，或带前缀的编号 `rule-06`、`p
 
 evaluations：`id` 形如 `eval-0004`；`kind`；`name`；`definition`；`applies_to`；指标行二选一：`metrics_key` 或 `code_path`（形如 `analysis/common/metrics.py:accuracy`；`proposed` 时可以不存在，`approved` 时必须存在）；图行必填 `group_by`、`x`、`y`（三栏取值只能是 runs 顶层字段名、`config.<键>`、或已 `approved` 的指标口径编号）、`uses`；`status` 四选一；`reason`（打回时必填）；`quote`（批那一版必填，一句 quote 可以批多条）。`proposed` 那一版 `actor` 是 `analysis`；`approved` 的口径再 update 一版自动回 `proposed`；`approved`、`rejected`、`retired` 那一版 `actor` 必须是 `gyb`。
 
-sessions：`session_id`（主键）；`role`；`model`（钩子从钩子输入的 JSON 里取，取不到记 `unknown`）；`launched_by` 取 `manual`、`subagent`、`workflow`；`rules_version`；`status` 取 `open`、`closed`；`open` 版必填 `started_at`；`last_activity`（rl 每次替这个会话写任何账时顺带刷新，是 sessions 账上的一版还是内存索引施工时定，对外语义是「最后一次写账时间」）；`focus` 可选（reviewer 在审的决定编号）；`closed` 版必填 `ended_at`、`end_reason`（`hook`、`manual`、`reclaim`）、`released_handoffs`（销号时交回待干的单子列表）。开始版由钩子代角色写，`actor` 填角色。
+sessions：`session_id`（主键）；`role`；`model`（钩子从钩子输入的 JSON 里取，取不到记 `unknown`）；`launched_by` 取 `manual`、`subagent`、`workflow`；`rules_version`；`status` 取 `open`、`closed`；`open` 版必填 `started_at`；`last_activity`（不落账：rl 在查询 `rl session show`、`rl status`、`rl reclaim` 时现算，取九本账里该 `session_id` 的最大 `ts`，含 sessions 账自己的行；sessions 账不为刷新它追加版本；对外语义仍是「最后一次写账时间」）；`focus` 可选（reviewer 在审的决定编号）；`closed` 版必填 `ended_at`、`end_reason`（`hook`、`manual`、`reclaim`）、`released_handoffs`（销号时交回待干的单子列表）。开始版由钩子代角色写，`actor` 填角色。
 
 scratch：主键是 `ql_tag`；`status` 取 `open`、`merged`、`dropped`；`role`（`deploy` 或 `analysis`）；`open` 版必填 `worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`；中间版自由（建议 `note`、`metrics`）；`merged` 版必填 `handoff_id`；`dropped` 版必填 `reason`。`actor` 是 `deploy` 或 `analysis`。
 
@@ -320,3 +320,7 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 | 同步等占住终端 | 11 新 | 三层嵌套等几小时（6）；gyb 手动会话被占；等待期间收不到收回；下游没走到 done 就返回；会话死了 GPU 还跑谁接；N 个 run 抢卡、smoke 做 N 遍 | 第一节（a）（g）；第四节 start 认领、release 不杀进程；第五节 dispatch 语义；第六节 reclaim --kill、handoff start --batch、estimate --copy-from；第七节 Phase 0、2；第九节第 9 条改题 |
 
 第二轮模拟者数出来的手续量（未核实）在设计文档最后一节。第三轮模拟（要不要跑 gyb 定）走同样十七个场景，重点数手续量、验第一节（a）到（i）九条改动有没有引出新的打架。
+
+### 按 part 裁决回写（统筹 session 记，一行一条）
+
+- 2026-08-17，按 `03-ledgers.md` 的裁决（gyb：「我觉得用 b 可以 很对」，b 是不落账、查询时现算），第三节 sessions 行的 `last_activity` 那句从「rl 每次替这个会话写任何账时顺带刷新，是 sessions 账上的一版还是内存索引施工时定」改成「不落账，rl 查询时现算，取九本账里该 `session_id` 的最大 `ts`；sessions 账不为刷新它追加版本」。对回原则 4、原则 8。
