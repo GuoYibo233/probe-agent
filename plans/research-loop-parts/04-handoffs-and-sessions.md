@@ -2,13 +2,13 @@
 
 > 这份覆盖 handoffs 这一本账的字段级行格式、七个状态、holder 不变量、六栏状态转移表全文、接单的三种 dispatch、三类单子的交付物、验收人、销号钩子做的动作、`rl status` 段 7、`rl reclaim` 的全部规矩、sessions 这一本账的行格式与 `rl session` 子命令、以及 orphaned、withdrawn、fyi 三种通知。
 > 这份不覆盖：另外八本账的行格式与入账规则（decisions 在 `02-decisions.md`，其余七本在 `03-ledgers.md`；sessions 行格式本份第七节抄 `03`）、`bin/rl` 的完整命令表和 `rl status` 其余九段与 `rl inbox`（见 `05-rl-cli.md`）、钩子拦什么和角色 json（见 `06-hooks-and-permissions.md`）、快车道本身怎么进怎么出（见 `07-quick-lane.md`）、五个角色各自在单子上干什么（见 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`）、两个角色之间怎么交流（见 `20-pair-idea-deploy.md` 到 `25-pair-reviewer-idea.md`）、gyb 自己做的事（见 `01-gyb.md`）、十一条原则和裁决（见 `00-overview.md`、`02-decisions.md`）。
-> 源：设计文档《research-loop 插件开发计划》的「交接与会话生命周期」一节、「账本」一节里 handoffs 和 sessions 两条、「五个角色」总段里的上线第一动作、原则 3 和原则 11；施工计划《research-loop 插件施工计划》第一节裁决（a）（b）（g）（i）、第二节词表、第三节 handoffs 和 sessions 两段、第四节整张状态转移表、第六节 `rl session` 与 `rl handoff` 与 `rl reclaim` 三行、第八节阈值里的 `status.stale_holder_minutes` 和三条 `reclaim.*`。
+> 源：设计文档《research-loop 插件开发计划》的「交接与会话生命周期」一节、「账本」一节里 handoffs 和 sessions 两条、「五个角色」总段里的上线第一动作（2026-08-17 问题 28 作废）、原则 3 和原则 11；施工计划《research-loop 插件施工计划》第一节裁决（a）（b）（g）（i）、第二节词表、第三节 handoffs 和 sessions 两段、第四节整张状态转移表、第六节 `rl session` 与 `rl handoff` 与 `rl reclaim` 三行、第八节阈值里的 `status.stale_holder_minutes` 和三条 `reclaim.*`。
 
 ## 一、handoffs 这一本账的行格式
 
 handoffs 是一本账，文件是 `loop/handoffs.jsonl`，工单、分析单、发射单三种单子共用这一本，用 `work_type` 区分。三种 `work_type` 是：工单 `work_order`（idea 开给 deploy；快车道补单是 deploy 开给 deploy）、分析单 `analysis_order`（idea 或 gyb 开给 analysis）、发射单 `launch_order`（deploy 开给 run）。
 
-每一行先有九本账共用的公共骨架，一样不少：`id`（主键）、`version`（从 1 起，同一个 `id` 的新版本是新的一行，默认查询只取最新版）、`status`（每本账各自的取值，校验按它查）、`ts`（写入时间，ISO 8601）、`actor`（五个角色或 `gyb`）、`session_id`（写入会话，裸终端是 `cli`）、`schema_version`（整数，从 1 起）；可选 `fix_for`（doctor 修账时记扫描项名字）、`force_reason`（gyb `--force` 时必填）、`via`（标自动写的行，取 `session_end`、`reclaim`）。骨架本身的规矩在 `03-ledgers.md`。
+每一行先有九本账共用的公共骨架，一样不少：`id`（主键）、`version`（从 1 起，同一个 `id` 的新版本是新的一行，默认查询只取最新版）、`status`（每本账各自的取值，校验按它查）、`ts`（写入时间，ISO 8601）、`actor`（五个角色或 `gyb`）、`session_id`（写入会话，裸终端是 `cli`）、`schema_version`（整数，从 1 起）；可选 `force_reason`（gyb `--force` 时必填）、`via`（标自动写的行，取 `session_end`、`reclaim`）。骨架本身的规矩在 `03-ledgers.md`。
 
 handoffs 自己的字段，一条一条抄下来：
 
@@ -23,7 +23,7 @@ handoffs 自己的字段，一条一条抄下来：
 | `status` | 七选一 |
 | `parent_id` | `launch_order` 必填指工单，`analysis_order` 可选，快车道补单空 |
 | `supersedes` | 可选 |
-| `batch` | 可选，自由文本，调用者 `--batch B` 传；`launch_order` 开单时从父单抄；rl 不分配、锁里不扫它 |
+| `batch` | 可选，自由文本，调用者 `--batch B` 传；`launch_order` 开单时从父单抄；rl 不分配 |
 | `line` | 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着 |
 | `dispatch` | 三选一 |
 | `adopted` | 布尔，`start` 那一版可选，认领已发射未收尾的 run 时为 true |
@@ -95,7 +95,7 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 
 二是下游半路返回。下游 subagent 没走到交活或卡住就返回的（报错、上下文满），上游当场 `rl handoff release` 交回待干，然后读一眼返回的错误分两种办：外部原因（上下文满、进程被杀、终端没了）就照单子的 `dispatch` 走，`auto` 的当场再起一个 subagent 接；代码或想法有问题就不重起，开 issue 给该修的角色，单子留在 `todo`，等 issue 回了再派（2026-08-17 gyb 裁）。
 
-三是认领。GPU 任务本体在 tmux 里跑、不跟会话走。run 会话死了单子交回待干，下一个 run 会话接单时先看最新一次尝试有没有已经发射还没收尾的 run 行，有就认领它：不重新 smoke、不重新发射，只接管看门狗和收尾，账行标 `adopted`。等几个小时的事只发生在 tmux 里，不发生在任何会话里。一次开 N 张同 batch 的发射单时只起一个 run 会话，用 `rl handoff start --batch` 一次接下整个 batch。
+三是认领。GPU 任务本体在 tmux 里跑、不跟会话走。run 会话死了单子交回待干，下一个 run 会话接单时先看最新一次尝试有没有已经发射还没收尾的 run 行，有就认领它：不重新 smoke、不重新发射，只接管看门狗和收尾，接单那一版写 `adopted: true`，rl 同时给 runs 那条写一版 `adopted`。等几个小时的事只发生在 tmux 里，不发生在任何会话里。一次开 N 张同 batch 的发射单时只起一个 run 会话，用 `rl handoff start --batch` 一次接下整个 batch。
 
 ## 五、交付物与验收人
 
@@ -205,16 +205,16 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 
 本份是定义处的：
 
-- handoffs 账的全部字段（第一节字段表，含 `parent_id`、`supersedes`、`batch`、`line`、`dispatch`、`quick_lane`、`decision_refs`、`evaluation_refs`、`explanation`、`report_paths`、`code_paths`、`output_paths`、`attempts`、`progress_note`、`reason`、`issue_id`、`holder`、`last_holder`）；`03-ledgers.md` 的 handoffs 一段只留一句指过来。`10-role-idea.md`、`11-role-deploy.md`、`20-pair-idea-deploy.md` 等把这些字段指到 `03` 的，同步时改成指本份。
-- 七个状态、holder 不变量（第二节）、`tables/transitions.json` 全表（第三节）、三种 dispatch（第四节）、三类单子的交付物与验收人（第五节）、销号钩子做的四件事（第六节）、`rl reclaim` 的处置（第八节）、三种通知的触发点与收件人（第九节）。`20`、`21`、`22` 三份角色对 part 各抄了转移表里自己那条通道的几行，判断规矩 2：改一处必改另一处，本份 2026-08-17 改的 `in_progress` → `todo`、`done_pending_review` → `rejected` 两行已列进「要同步到别处的」。
+- handoffs 账的全部字段（第一节字段表，含 `parent_id`、`supersedes`、`batch`、`line`、`dispatch`、`quick_lane`、`decision_refs`、`evaluation_refs`、`explanation`、`report_paths`、`code_paths`、`output_paths`、`attempts`（含每次尝试的 `actual_seconds`）、`progress_note`、`reason`、`issue_id`、`holder`、`last_holder`、`ql_tag`、`adopted`）；`03-ledgers.md` 的 handoffs 一段只留一句指过来。`10-role-idea.md`、`11-role-deploy.md`、`20-pair-idea-deploy.md` 等把这些字段指到 `03` 的，同步时改成指本份。
+- 七个状态、holder 不变量（第二节）、`tables/transitions.json` 全表（第三节）、三种 dispatch（第四节）、三类单子的交付物与验收人（第五节）、销号钩子做的四件事（第六节）、`rl reclaim` 的处置（第八节）、三种通知的触发点与收件人（第九节）。`20`、`21`、`22` 三份角色对 part 各抄了转移表里自己那条通道的几行，判断规矩 2：改一处必改另一处，本份 2026-08-17 改动的行全部列在「要同步到别处的」（`in_progress` → `todo`、`done_pending_review` → `rejected` 两行已同步；新加的 estimate 行、start 行 `adopted`、两条 amend 行、快车道补单行前提、accept 行顺带关 issue、withdraw 行通知条件、reissue 行「到」栏待同步）。
 - sessions 账的行格式（第七节字段表）和 `03-ledgers.md` 的 sessions 一段是同一张表写了两遍（HANDOFF 判断规矩 2），两边要一字不差；rl-hub 2026-08-17 来信按 `03` 是定义处处理，本份照 `03` 的裁决改。`rl session` 六条子命令的判据（第七节）由本份定，签名在 `05-rl-cli.md`。
 
 本份引用别处定义的：
 
-- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）加可选的 `fix_for`、`force_reason`、`via`，退出码，`loop/.lock` 一把全局锁：定义在 `03-ledgers.md`「账本的总规矩」（`05` 只是照抄）。
+- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）加可选的 `force_reason`、`via`，退出码，`loop/.lock` 一把全局锁：定义在 `03-ledgers.md`「账本的总规矩」（`05` 只是照抄）。
 - 「写账的会话得活着」这条入账校验（`session_id` 在 sessions 账里最新版是 `closed` 的写命令 rl 拒收并提示重新加载角色登记）：定义在 `03-ledgers.md`「账本的总规矩」（2026-08-17 gyb 裁归 `03`）；本份第七节 `rl session end --session` 那条靠它。
 - issues 账的九种 `kind`、三个 `status`（`open`、`answered`、`closed`）、`handoff_id` 和 `reply` 的必填规则：定义在 `03-ledgers.md`（`09-common-and-feedback.md` 抄了一遍）；本份只用 `withdrawn`、`orphaned`、`fyi` 三种和 `answered` 这一个状态。
-- runs 账的 `status`（`launched`、`finished`）和 `exit_status`（`ok`、`failed`、`killed`）：定义在 `03-ledgers.md`；转移表的 `done` 行和认领判据都靠它。
+- runs 账的 `status`（`launched`、`finished`、`adopted` 三版）和 `exit_status`（`ok`、`failed`、`killed`）：定义在 `03-ledgers.md`；转移表的 `done` 行和认领判据都靠它。
 - evaluations 的四个状态（`proposed`、`approved`、`rejected`、`retired`）：定义在 `03-ledgers.md`；转移表 `analysis_order` 的开单和交活两行都引它。
 - 决定账的 `root_id`、`{"id","version"}` 引用格式、`--decision ID@V`：定义在 `02-decisions.md`（原文指 `03`，按 HANDOFF 四点五节改指 `02`）；handoffs 的 `line` 字段从 `root_id` 算出来，`reissue` 那一行用 `ID@V`。
 - `bin/rl` 每条子命令的签名与「谁能调」、`rl status` 的十段全文、`rl inbox` 的五项、`rl trace`、`rl doctor` 的扫描项和修法：写在 `05-rl-cli.md`；本份只写 `rl handoff`、`rl session`、`rl reclaim` 三组子命令背后的判据和 status 段 7 的内容。
@@ -537,7 +537,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 2026-08-17 三份互查（03/04/05），rl-hub 转来八条对齐，不是新裁决：（1）sessions 账加 `amend` 版只改 `model`（随 `05` 定稿裁），第七节补版说明、`rl session` 改六个子命令加 `rl session amend ID --model M`、谁能调加「amend 是 gyb」、接口一节改六条；（2）第七节 sessions 字段表按 `03` 第 172–190 行一字不差重抄，`status` 那句放表外正文；（3）`rl inbox` 五项不是四类，第九节和接口一节照改；（4）转移表 `done_pending_review` → `accepted` 行补「rl 顺带关这张单关联的 `answered` issue（`03` 定）」；（5）`loop/.lock` 全局锁定义处改指 `03`「账本的总规矩」；（6）第 4 行覆盖说明改成「decisions 在 `02`，其余七本在 `03`；sessions 行格式本份第七节抄 `03`」；（7）骨架句 `schema_version` 补「从 1 起」；（8）「要同步到别处的」第 5 条里 `05` 的行号改成「reclaim 一节的不一致标注」。
 - 2026-08-17 来自 sync-inbox 问题 7（rl-hub-v2 转来）：填分步表是正式动作。gyb 原话「冒烟也是正式动作」。转移表加 `in_progress` → `in_progress`（内容追加）行，holder（run）写，只改最新一次尝试的 `step_table` 与 `estimated_seconds`，命令 `handoff estimate`；第三节表下补一句。对回原则 4（改内容也是追加一版，允许改的状态写在转移表里）。
 - 2026-08-17 来自 sync-inbox 问题 8（rl-hub-v2 转来）：快车道合回先开补单再关杂账，单子上加一栏存快车道标签。gyb 原话「A」。补单行前提改成 scratch 行是 `open`，字段表加 `ql_tag`（补单必填，与 scratch `merged` 版的 `handoff_id` 互指）；接口一节同改。对回原则 7、原则 9。
-- 2026-08-17 来自 sync-inbox 问题 9（rl-hub-v2 转来）：`batch` 是调用者自由文本、可选，rl 不分配、锁里不扫。gyb 原话「A」。字段表 `batch` 栏照改。对回原则 9（发射单从父单继承 batch）。
+- 2026-08-17 来自 sync-inbox 问题 9（rl-hub-v2 转来）：`batch` 是调用者自由文本、可选，rl 不分配。gyb 原话「A」。字段表 `batch` 栏照改。对回原则 9（发射单从父单继承 batch）。
 - 2026-08-17 来自 sync-inbox 问题 10（rl-hub-v2 转来）：amend 放宽跟 doctor 修法走。gyb 原话「A」。`todo`/`stuck` 的 amend 行加「换 `decision_refs`/`evaluation_refs` 里的引用」，`done_pending_review` 的 amend 行改成「补或改 `report_paths`、`output_paths`、`code_paths` 里的路径，换引用」。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 13（rl-hub-v2 转来）：handoffs 记 `actual_seconds`，rl 从 runs 自动抄。gyb 原话「B」。`attempts` 每项加 `actual_seconds`，第一节说明改成「rl run finish 算出写进 runs 同时抄进发射单最新一次尝试」。对回原则 10。
 - 2026-08-17 来自 sync-inbox 问题 14（rl-hub-v2 转来）：被销号会话再写账退出码 3，任何 `--force` 越不过。gyb 原话「A」。第七节 `rl session end` 那条补句。对回原则 1（gyb 豁免只豁免权限，不豁免完整性）。
@@ -546,7 +546,8 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 2026-08-17 来自 sync-inbox 问题 19（rl-hub-v2 转来）：reclaim `--apply` 动被打回的单：超过 `reclaim.handoff_idle_hours` 没动的推回 `todo`。gyb 原话「B」。第八节处置四种改五种，加一条。对回原则 6（等 owner 拉起的单子要出现在收件箱里）。
 - 2026-08-17 来自 sync-inbox 问题 20（rl-hub-v2 转来）：withdraw 只在从 `in_progress` 收回时通知 holder，其他状态不通知。gyb 原话「B」。转移表 withdraw 行和第九节 withdrawn 触发点同改。对回原则 3。
 - 2026-08-17 来自 sync-inbox 问题 21（rl-hub-v2 转来）：reissue 新单一律从 `todo` 起。gyb 原话「A」。转移表 reissue 行「到」栏改成「旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单）」。对回原则 4、原则 9。
-- 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来）：角色被拉起不自动查 inbox，`rl inbox` 谁需要谁敲；通知类 issue 不再读过即关，收件人做完了自己 `rl issue close`。gyb 原话「每个角色创建时候，不要自动查收件箱」「只有做完了的时候才关」。第九节两处照改。对回原则 6（收件箱是等人的事的出口，关不关由收件人定）。
+- 2026-08-17 来自 sync-inbox 问题 23（rl-hub-v2 转来）：`rl inbox` 只读不关，通知类 issue 做完了收件人自己 `rl issue close`。gyb 原话「只有做完了的时候才关」。第九节通知段照改。对回原则 6（收件箱是等人的事的出口，关不关由收件人定）。
+- 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来）：角色被拉起不自动查 inbox，`rl inbox` 谁需要谁敲，run 不查 inbox。gyb 原话「每个角色创建时候，不要自动查收件箱」。第九节「上线第一个动作」那句照改，第 5 行源栏标作废。对回原则 6。
 
 ## 要同步到别处的
 
@@ -555,3 +556,4 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 新增一条入账校验：`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记。这条是本份 2026-08-17 裁决带出来的，定义处按 HANDOFF 判断规矩 3 找不到（入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`），请 rl-hub 问 gyb 归哪一份。——已立为 `sync-inbox.md` 第一段问题 5；2026-08-17 gyb 裁归 `03`（`ccdbe8f`），已同步。
 - `01-gyb.md` 第 148 行「按裁决以施工计划的表为准」（fyi 只在 accept 发）改成「2026-08-17 gyb 裁：验收和打回都发 fyi」；`20-pair-idea-deploy.md`、`21-pair-deploy-run.md`、`22-pair-idea-analysis.md` 抄的转移表 `done_pending_review` → `rejected` 那一行，前提栏「`reason` 非空」后面加「；gyb 越过 owner 时 rl 给 owner 发 `fyi`」。来源：本份 2026-08-17 裁决。——已同步 2026-08-17（rl-hub，`75ed02f`）。
 - `01-gyb.md` 第 45 行、`05-rl-cli.md` reclaim 一节的不一致标注（原第 170 行）「reclaim 对开干发射单杀不杀进程」，gyb 2026-08-17 在本份裁了：默认不杀、`--kill` 才杀，两处的「按裁决以施工计划的表为准」改成「2026-08-17 gyb 裁：默认不杀，`--kill` 才杀」。来源：本份裁决。——已同步 2026-08-17（rl-hub：`01` 在 `75ed02f`；`05` 那条交 rl-part-05 改）。
+- `20-pair-idea-deploy.md`（抄 idea→deploy 通道的行）、`21-pair-deploy-run.md`（抄 deploy→run 通道的行）、`22-pair-idea-analysis.md`（抄 idea→analysis 通道的行）抄的转移表要按本份第三节当前 HEAD 对齐这几行：新加的 `in_progress` → `in_progress` estimate 行（第 65 行，只有 21 用得上）；`todo` → `in_progress` start 行的 `adopted: true` 与 runs 同标（第 63 行）；两条 amend 行放宽后的允许内容（第 64、69 行）；快车道补单行前提改成 scratch 行是 `open`（第 62 行，20 用得上）；accept 行「rl 顺带关这张单关联的 `answered` issue」（第 70 行）；withdraw 行「从 `in_progress` 收回时通知，其他状态不通知」（第 74 行）；reissue 行「到」栏「旧单 `withdrawn`，新单 `todo`」（第 76 行）。来源：本份 2026-08-17 收 sync-inbox 问题 7、8、10、17、20、21 与三份互查第 4 条。——由统筹同步（rl-hub-v2 已列进 HANDOFF 第八节）。
