@@ -107,4 +107,5 @@
 - 05 已回：`1b37593`，十九条全落。它定的三处，03 定义处要一字不差跟上（新统筹落 03 时照抄）：（1）问题 9：05「锁与写序」那句「锁里分配的编号包括 ql_tag、run_id、batch」已去掉 batch，03:19 同改；（2）问题 25 种类词照统筹拟的（validation/forbidden/lock_timeout/usage/internal），03 退出码表照抄；（3）问题 17：不另设 `rl run adopt`，`rl handoff start` 认领时顺带给 runs 写 adopted 版，03 runs 写三版（launched/finished/adopted）；另 fix_for 删后可选栏是「force_reason、via」两个，03:43 同改。
 - 问题 30（2026-08-17 晨，质量检查抓出的两说）：sessions amend 版谁能写——已裁：B，gyb 或该角色自己的活会话都能；05 第 40 行谁能调栏「amend gyb」→「amend gyb 或该角色活会话」，04 第 158 行同改，04 第 133 行不动；03:176 落地时同写。原话「B」。
 - 质量检查（三路 opus 审 + 统筹逐条核，结果记 HANDOFF 第八节）后的补改：05 `2c965d9`（五处，含统筹漏发的问题 19）、`2dcdd23`（三处）；04 `cec2cc9`（八处）。只剩问题 30（sessions amend 谁能写）等 gyb，裁了发 04 第 158 行、05 第 40 行。
-- 状态：已处理 2026-08-17（04 `a7d1ec9`+`cec2cc9`、05 `1b37593`+`2c965d9`+`2dcdd23`；03 与其余各份、两份源文档按 HANDOFF 第八节由新统筹落）
+- 问题 30 已落：04 `9b78d7c`、05 `ddafd84`。
+- 状态：已处理 2026-08-17（04 `a7d1ec9`+`cec2cc9`+`9b78d7c`、05 `1b37593`+`2c965d9`+`2dcdd23`+`ddafd84`，04/05 这一轮齐了；03 与其余各份、两份源文档按 HANDOFF 第八节由新统筹落）
