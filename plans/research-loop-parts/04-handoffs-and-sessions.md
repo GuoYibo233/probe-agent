@@ -8,7 +8,7 @@
 
 handoffs 是一本账，文件是 `loop/handoffs.jsonl`，工单、分析单、发射单三种单子共用这一本，用 `work_type` 区分。三种 `work_type` 是：工单 `work_order`（idea 开给 deploy；快车道补单是 deploy 开给 deploy）、分析单 `analysis_order`（idea 或 gyb 开给 analysis）、发射单 `launch_order`（deploy 开给 run）。
 
-每一行先有九本账共用的公共骨架，一样不少：`id`（主键）、`version`（从 1 起，同一个 `id` 的新版本是新的一行，默认查询只取最新版）、`status`（每本账各自的取值，校验按它查）、`ts`（写入时间，ISO 8601）、`actor`（五个角色或 `gyb`）、`session_id`（写入会话，裸终端是 `cli`）、`schema_version`（整数）；可选 `fix_for`（doctor 修账时记扫描项名字）、`force_reason`（gyb `--force` 时必填）。骨架本身的规矩在 `03-ledgers.md`。
+每一行先有九本账共用的公共骨架，一样不少：`id`（主键）、`version`（从 1 起，同一个 `id` 的新版本是新的一行，默认查询只取最新版）、`status`（每本账各自的取值，校验按它查）、`ts`（写入时间，ISO 8601）、`actor`（五个角色或 `gyb`）、`session_id`（写入会话，裸终端是 `cli`）、`schema_version`（整数）；可选 `fix_for`（doctor 修账时记扫描项名字）、`force_reason`（gyb `--force` 时必填）、`via`（标自动写的行，取 `session_end`、`reclaim`）。骨架本身的规矩在 `03-ledgers.md`。
 
 handoffs 自己的字段，一条一条抄下来：
 
@@ -38,7 +38,7 @@ handoffs 自己的字段，一条一条抄下来：
 | `reason` | `rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote` |
 | `issue_id` | `stuck` 时必填 |
 
-`attempts` 里面还有两条细规矩：开单时第一项必填 `command`、`workdir`、`track`、`config`（字典：`model`、`params`、`dataset`、`split`、其余超参自由），`run_id` 由 rl 按 `<ho-id>-a<attempt>` 分配；`step_table` 每项是 `{"step","kind":"gpu"|"cpu","smoke_seconds","scale_factor","estimated_seconds"}`，`estimated_seconds` 只加总最新一次尝试的行。一张发射单可以跑几次，每一次是单子上的一个 attempt，这条是原则 10，详细的跑法在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
+`attempts` 里面还有两条细规矩：开单时第一项必填 `command`、`workdir`、`track`、`config`（字典：`model`、`params`、`dataset`、`split`、其余超参自由），`run_id` 由 rl 按 `<ho-id>-a<attempt>` 分配；`step_table` 每项是 `{"step","kind":"gpu"|"cpu","smoke_seconds","scale_factor","estimated_seconds"}`，`estimated_seconds` 只加总最新一次尝试的行。真实耗时不在发射单上填：由 `rl run finish` 从时间戳算出来、写进 runs 的 finish 版，handoffs 上的 `actual_seconds` 只从那里来，`handoff done` 不带 `--actual-seconds`（2026-08-17 随 `05` 定稿裁）。一张发射单可以跑几次，每一次是单子上的一个 attempt，这条是原则 10，详细的跑法在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
 
 ## 二、七个状态和 holder 不变量
 
@@ -50,9 +50,9 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 
 ## 三、状态转移表全文
 
-这张表是 `tables/transitions.json` 的内容，入账脚本只认这张表，表外的转移一律拒收，退出码 2。每行六栏：从、到、谁能写、前提、之后谁拉起下游、子命令。
+这张表是 `tables/transitions.json` 的内容，入账脚本只认这张表，表外的转移一律拒收，退出码 2；对 gyb 一样，`--force` 越不过表外的转移，硬要改状态走 `withdraw` 再重开（2026-08-17 随 `05` 定稿裁）。每行六栏：从、到、谁能写、前提、之后谁拉起下游、子命令。
 
-表头上还有三句规矩。第一句：gyb 对「谁能写」一栏一律豁免。第二句：「前提」一栏是完整性校验，对 gyb 生效，gyb 用 `--force --reason` 越过并留痕。第三句就是上一节的 holder 不变量。
+表头上还有三句规矩。第一句：gyb 对「谁能写」一栏一律豁免。第二句：「前提」一栏是完整性校验，对 gyb 生效，gyb 用 `--force --reason` 越过并留痕；`--force` 只越前提，越不了表外的转移。第三句就是上一节的 holder 不变量。
 
 | 从 | 到 | 谁能写 | 前提 | 之后谁拉起 | 子命令 |
 |---|---|---|---|---|---|
@@ -69,7 +69,7 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
-| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知 | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知；销号钩子写的这一版 `actor` 记会话的角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim` | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 | 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 表尾还有一句：`stuck` 的单子销号和 reclaim 都不动（holder 已空），只有 issue `answered` 之后 `resume` 才回 `todo`。
@@ -118,7 +118,7 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 
 销号那一刻程序当场检查这个会话作为 holder 有没有还挂在开干的单子，只查开干，别的状态一律放行。有开干的单子就不许悄悄下线，名下有几张开干的就交回几张，一张不留（比如 run 会话 `--batch` 接下的整批一起交回），交回的编号全部记进 sessions 账 `released_handoffs`（2026-08-17 gyb 裁）。钩子调的销号对每一张做四件事：
 
-1. 把单子交回待干（走转移表 `in_progress` → `todo` 那一行）。
+1. 把单子交回待干（走转移表 `in_progress` → `todo` 那一行，账行 `actor` 记会话的角色、`via=session_end`）。
 2. 写进度说明，内容是「会话销号，holder 是 X」。
 3. 给 owner 发 orphaned 通知。
 4. experiments/ 里的脏改动打一个 `wip/<ho-id>` 分支，分支名记进说明。
@@ -174,7 +174,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 
 不带 `--apply` 就只列出超过阈值没动的会话、单子和快车道，不动手。带 `--apply` 才动手，按单子状态分四种处置：
 
-- 会话：标 `reclaim` 销号，并 release 名下开干的单。
+- 会话：标 `reclaim` 销号，并 release 名下开干的单（release 那一版 `actor` 记 gyb、`via=reclaim`）。
 - 开干的发射单：默认不杀进程，留给下一个 run 认领；`--kill` 才走中断收尾，也就是杀进程、释放显存、宿主销号、runs 落 killed。
 - 卡住的单子：只把 issue 改派 owner，状态保持卡住。
 - 等验收和待干的单子：只列出，附现成命令，不动手。
@@ -529,6 +529,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 2026-08-17 gyb 裁：`rl reclaim --apply` 回收开干的发射单默认不杀 GPU 进程，留给下一个 run 认领，`--kill` 才杀。gyb 原话「不杀」。对回原则 11（GPU 任务本体在 tmux 里跑、不跟会话走）。第八节不一致第一处照改。
 - 2026-08-17 gyb 裁：reclaim 对卡住的单子只改派 issue 给 owner、状态保持卡住，不提 holder（按不变量已空）。gyb 原话「按照施工计划吧」。对回原则 3（holder 非空当且仅当开干）。第八节不一致第二处照改。
 - 2026-08-17 来自 sync-inbox 问题 1 的裁决（rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 这一组规矩定义处归 `01-gyb.md` 第二节；`05` 的「actor 怎么定」是命令行写法，算写了两遍、每次同步对齐；`06` 只留钩子对 `--as-gyb` 不生效那一句。gyb 原话「这个归01吧」。对回原则 8（文档只有一处为准）。接口一节那条照改。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来，gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」）三条：（1）`rl handoff done` 不带 `--actual-seconds`，真实耗时只由 `rl run finish` 算、写进 runs 的 finish 版，handoffs 的 `actual_seconds` 只从那里来（字段规矩定义处 `03`）——04 原文没抄过这条签名和字段，第一节 `attempts` 段补了一句说明；（2）公共骨架新加可选栏 `via`（`session_end`、`reclaim`，定义处 `03`），转移表 `in_progress` → `todo` 行：销号钩子写的 `actor` 记会话角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim`——第一节骨架句、转移表该行、第六节第 1 件事、第八节会话处置各补一句；（3）`--force` 越不过表外的转移，对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开（规矩定义处 `01`）——第三节开头和表头第二句各补一句。对回原则 10、原则 4、原则 1。
 
 ## 要同步到别处的
 
