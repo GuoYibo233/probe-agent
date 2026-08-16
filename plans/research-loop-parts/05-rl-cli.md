@@ -110,7 +110,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 | 0 | 成功 | 无 |
 | 2 | 校验拒收 | 原因写到标准错误，包含下一步该做什么 |
 | 3 | 角色无权（含角色带 `--force`） | 同上，附「开 issue 给谁」的命令 |
-| 4 | 文件锁等待超时（等 `lock.timeout_seconds`，默认 10 秒，进 `research-loop.json` 阈值表） | 无 |
+| 4 | 文件锁等待超时（等 `lock.timeout_seconds`，默认 10 秒，进 `research-loop.json` 阈值表（08 第三节）） | 无 |
 
 转移表外的转移一律拒收，退出码 2，带 `--force` 的 gyb 也一样。`rl handoff start` 遇到 holder 非空也是退出码 2，并把当前 holder 列出来。角色会话里 `--as-gyb` 缺 `--quote` 是退出码 2。`rl init` 在角色会话里跑是退出码 3。
 
@@ -161,7 +161,7 @@ run 的 inbox 不查过版，因为发射单不引决定这件事在原则 9 之
 
 第一行打印距上次 reclaim 几天。整份可以按 `--line` 过滤、按 `--group-by line|batch` 归组；`line` 就是根决定编号。
 
-段落用到的阈值默认值出自施工计划第八节：段 2 的 `issues.gyb_stale_hours` 是 24 小时，段 7 的 `status.stale_holder_minutes` 是 30 分钟，段 9 的 `status.review_recent_days` 是 7 天。
+段落用到的阈值默认值定义在 `08-trees-init-and-host.md` 第三节阈值表：段 2 的 `issues.gyb_stale_hours` 是 24 小时，段 7 的 `status.stale_holder_minutes` 是 30 分钟，段 9 的 `status.review_recent_days` 是 7 天。
 
 ## rl reclaim
 
@@ -177,7 +177,7 @@ run 的 inbox 不查过版，因为发射单不引决定这件事在原则 9 之
 
 两处原文不一致：开干的发射单杀不杀进程。设计文档「交接与会话生命周期」一节写的是「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，没有条件；施工计划第六节和第四节转移表写的是默认不杀、`--kill` 才杀。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：默认不杀，`--kill` 才杀。
 
-阈值默认值（施工计划第八节）：`reclaim.session_idle_hours` 48 小时，`reclaim.handoff_idle_hours` 72 小时，`reclaim.ql_idle_days` 7 天。
+阈值默认值（定义在 `08-trees-init-and-host.md` 第三节阈值表）：`reclaim.session_idle_hours` 48 小时，`reclaim.handoff_idle_hours` 72 小时，`reclaim.ql_idle_days` 7 天。
 
 ## rl doctor
 
@@ -205,7 +205,7 @@ run 的 inbox 不查过版，因为发射单不引决定这件事在原则 9 之
 | 18 | loop/runs.jsonl 与宿主 ops/runs.jsonl 对不上的 run_id | 只报不修：列出两边各有没有 | run |
 | 19 | sessions 行 `model` 是 `unknown` | `rl session amend ID --model M` | gyb |
 
-第 11 项的 N 是 `issues.answered_stale_days`，默认 3 天（施工计划第八节）。第 7 项的阈值直接用 `reclaim.handoff_idle_hours`（默认 72 小时），不另开一项。
+第 11 项的 N 是 `issues.answered_stale_days`，默认 3 天（定义在 `08-trees-init-and-host.md` 第三节阈值表）。第 7 项的阈值直接用 `reclaim.handoff_idle_hours`（默认 72 小时），不另开一项。
 
 doctor 修账写出来的账行带一个可选的 `fix_for` 字段，记扫描项名字。
 
@@ -638,6 +638,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17（gyb 原话「只要他不动目前的代码什么的就全推荐就行」，没写清第 7 到 11 条）：推送表第 4 条在单子落 todo 那刻和 session end 销号时查并推；独立进程只许查询、不留痕；`--force` 越不过表外转移；锁超时 `lock.timeout_seconds` 默认 10 秒；`inbox`/`doctor`/`reclaim` 三条 `--json` 最小结构按正文。对回原则 1、4、6、8、11。
 - 2026-08-17（gyb 原话「全都推荐，只要不影响正在跑的进程」，没写清第 12、13 条与 inbox 不一致）：`--ack` 写 `loop/.doctor-acks.jsonl` 永久消音、`--list-acks`、`--unack`；`rl init` 读到会话状态文件拒收退出码 3；`rl inbox` 第 3 项取施工计划，只列 holder 是本会话的单子。对回原则 1、4、6、8。
 - 2026-08-17：来自 sync-inbox 问题 2（rl-hub 转来；gyb 原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；05「rl notify」一节缩成一句指过去，推送表和机制那段删掉（05 独有的两句已列在同步第 1 条给 01）。对回原则 8。
+- 2026-08-17：来自 sync-inbox 问题 3（rl-hub 转来；gyb 原话「按照08吧」）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，05 里三处「施工计划第八节」和退出码 4 那句改成指 08 第三节。对回原则 8。
 
 ## 要同步到别处的
 
