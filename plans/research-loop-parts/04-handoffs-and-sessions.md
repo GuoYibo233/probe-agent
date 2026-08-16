@@ -136,7 +136,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 | `rules_version` | 会话开始时的母版版本 |
 | `status` | 取 `open`、`closed` |
 | `started_at` | `open` 版必填 |
-| `last_activity` | rl 每次替这个会话写任何账时顺带刷新，是 sessions 账上的一版还是内存索引施工时定，对外语义是「最后一次写账时间」 |
+| `last_activity` | 不落账，rl 查询时现算，取九本账里该 `session_id` 的最大 `ts`（含 sessions 账自己的行）；sessions 账不为刷新它追加版本；对外语义仍是「最后一次写账时间」 |
 | `focus` | 可选，reviewer 在审的决定编号 |
 | `ended_at` | `closed` 版必填 |
 | `end_reason` | `closed` 版必填，取 `hook`、`manual`、`reclaim` |
@@ -220,9 +220,8 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 3. 单子被交回 `todo` 之后 `dispatch` 字段怎么算没写。原来是 `auto` 的单子回到 `todo`，owner 是自动再起一个 subagent，还是要 gyb 说一声，两种读法都通。
 4. `last_holder` 什么时候清、清不清没写。单子走到终态之后 `last_holder` 是留着还是清空，源文档没有一句。
 5. `rl session end --session ID` 关的那个会话如果实际还活着（进程没死），会发生什么没写：是照样销号，还是先拦一下。
-6. sessions 的 `last_activity` 落成账上的一版还是内存索引，源文档明写「施工时定」，这一条是有意留白，不是漏写，但施工时得有人拍板。
-7. 转移表 `in_progress` → `todo` 那一行的「谁能写」把 gyb 单列进去了，其余各行没有列 gyb（gyb 靠表头的豁免）。为什么这一行要单写一个 gyb，源文档没解释。
-8. gyb 越过 owner 打回（`reject`）时发不发 fyi，两份源文档对不上，正文第五节已经标了不一致，最终取哪个由 gyb 定。
+6. 转移表 `in_progress` → `todo` 那一行的「谁能写」把 gyb 单列进去了，其余各行没有列 gyb（gyb 靠表头的豁免）。为什么这一行要单写一个 gyb，源文档没解释。
+7. gyb 越过 owner 打回（`reject`）时发不发 fyi，两份源文档对不上，正文第五节已经标了不一致，最终取哪个由 gyb 定。
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -509,3 +508,11 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 13. [cosmetic/missing] 第 1 步（谁跑 doctor、跑完能不能自己修）：doctor 写的是「谁都行」，但角色会话跑出问题之后能不能自己修没写。deploy 看到自己名下那张 done_pending_review 的报告路径没了，它是 to_role 不是 owner，按转移表打回只有 owner 能写，它只能开 issue，文档没说这一步该开给谁、kind 填哪个。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:89; 2026-08-16-research-loop-build-plan.md:45
    - 改法：在 doctor 那一行写一句「角色跑 doctor 只看不修，修法一律 `rl issue open --to <owner> --kind cannot` 报给 owner 或 gyb」。
+
+## 裁决记录（日期）
+
+- 2026-08-17 来自 `03-ledgers.md` 的裁决（rl-hub 转来）：`last_activity` 不落账，rl 查 `rl session show` / `rl status` / `rl reclaim` 时扫九本账取该 `session_id` 的最大 `ts`（含 sessions 账自己的行）；sessions 账不为刷时间戳追加版本。gyb 原话「我觉得用 b 可以 很对」。对回原则 4、原则 8。本份第七节字段表照改，「没写清」原第 6 条销掉。
+
+## 要同步到别处的
+
+（暂无）

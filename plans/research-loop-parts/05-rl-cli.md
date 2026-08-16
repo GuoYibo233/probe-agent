@@ -64,7 +64,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --artifact-dir ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账两版，`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出；`relink` 是 doctor 修法 | 写 run 和 gyb，查谁都行 |
+| `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账两版，`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出；`relink` 是 doctor 修法 | 写 run 和 gyb，查谁都行 |
 
 ### 授权、反馈、口径
 
@@ -103,7 +103,7 @@ grants 是唯一一本只收裸终端的账：`session_id` 必须是 `cli`，角
 |---|---|---|
 | 0 | 成功 | 无 |
 | 2 | 校验拒收 | 原因写到标准错误，包含下一步该做什么 |
-| 3 | 角色无权 | 同上，附「开 issue 给谁」的命令 |
+| 3 | 角色无权（含角色带 `--force`） | 同上，附「开 issue 给谁」的命令 |
 | 4 | 文件锁等待超时 | 无 |
 
 转移表外的转移一律拒收，退出码 2。`rl handoff start` 遇到 holder 非空也是退出码 2，并把当前 holder 列出来。角色会话里 `--as-gyb` 缺 `--quote` 是退出码 2。
@@ -633,3 +633,12 @@ doctor 修账写出来的账行带一个可选的 `fix_for` 字段，记扫描�
 13. [cosmetic/missing] 第 1 步（谁跑 doctor、跑完能不能自己修）：doctor 写的是「谁都行」，但角色会话跑出问题之后能不能自己修没写。deploy 看到自己名下那张 done_pending_review 的报告路径没了，它是 to_role 不是 owner，按转移表打回只有 owner 能写，它只能开 issue，文档没说这一步该开给谁、kind 填哪个。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:89; 2026-08-16-research-loop-build-plan.md:45
    - 改法：在 doctor 那一行写一句「角色跑 doctor 只看不修，修法一律 `rl issue open --to <owner> --kind cannot` 报给 owner 或 gyb」。
+
+## 裁决记录（日期）
+
+- 2026-08-17 来自 03（rl-hub 转，gyb 原话「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」）：`rl run add` 签名去掉 `--artifact-dir`，产物目录按约定 `<artifact_root>/<run_id>/`、账上不记；`rl run finish --data-path P` 不动。对回原则 8、9。
+- 2026-08-17 来自 03（rl-hub 转，gyb 原话「你说得对」）：actor 是角色的命令带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写。退出码表第 3 行加「含角色带 `--force`」。对回原则 1、2。
+
+## 要同步到别处的
+
+（暂无）
