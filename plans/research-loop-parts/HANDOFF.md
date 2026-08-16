@@ -54,6 +54,30 @@ part session 定稿之后会多两节：
 
 同步 session 的铁律和 part session 一样：只搬运不发明；改任何规矩都要能对回十一条原则；两处不一致不自己裁，问 gyb，一次一个问题；摩擦那一节永远不动；每份的固定结构不动。gyb 不在场时不猜他的意思，把问题攒着等他。
 
+## 四点五、总体关联：谁是什么的唯一定义处，谁引用谁
+
+传播的时候先按这张表判「这条改动该落在哪一份」：一样东西只有一份 part 是定义处，其余都是引用；改动从定义处出发往引用处传，引用处的 part session 裁了定义处的东西，同步 session 先把裁决搬回定义处，再从定义处往所有引用处传。
+
+| 东西 | 定义处 | 引用处 |
+|---|---|---|
+| 十一条原则、九条裁决、（a）到（i） | `00-overview.md` | 全部 |
+| gyb 的身份规矩、gyb use case 表、`rl status` 十段、推送表 | `01-gyb.md` | `05`（status 命令行）、`04`（销号与 reclaim）、`14`、`25` |
+| 决定账：行格式、来源、版本、root_id、stale、reissue、`rl decision` | `02-decisions.md` | `03`（只指过去）、`10`、`11`、`13`、`14`、`20`、`21`、`22`、`25` |
+| 九本账公共骨架、七本账行格式（issues、runs、grants、feedback、evaluations、sessions、scratch）、退出码 | `03-ledgers.md` | 全部角色和角色对；`09` 抄了 issues/grants/feedback 三本的规则、`07` 抄了 scratch、`04` 抄了 sessions——这四处是同一件事写了两遍，改一处必改另一处 |
+| handoffs 行格式、七个状态、holder 不变量、转移表、dispatch、交付物、销号、reclaim、三种通知 | `04-handoffs-and-sessions.md` | `10`、`11`、`12`、`13`、`20`、`21`、`22`、`24`、`05`（命令行那一栏） |
+| `bin/rl` 每条子命令的签名和「谁能调」、inbox、trace、doctor 十八项、notify、锁 | `05-rl-cli.md` | 全部；`04` 里 reclaim/session、`02` 里 decision、`07` 里 ql/scratch、`09` 里 feedback/issue/grant 各抄了自己那几条的签名 |
+| 三层约束、钩子拦放、CLAUDE.md 三句、五份角色 json 四栏、test_skill_refs、读的纪律 | `06-hooks-and-permissions.md` | 五份角色 part 各抄了自己那份 json；`08` 抄了 CLAUDE.md 三句 |
+| 快车道进出、scratch 三态、ql 命令、补单规矩 | `07-quick-lane.md` | `11`、`13`、`20`、`21`、`23` |
+| init 建什么、research-loop.json 的键、阈值表、插件树、入口 skill、宿主对接 | `08-trees-init-and-host.md` | `12`（宿主命令模板、阈值）、`06`（CLAUDE.md）、`01`（提醒阈值） |
+| common/ 四文件、公共规矩八条、rules_version、feedback 流程、issues 九种 kind 与 reply/close、grants | `09-common-and-feedback.md` | 全部角色 part 抄了规矩；issues 的 kind 在 `03`、`04`、`12`、`24` 各出现 |
+| 角色的职责、use case 表、模型 | `10` 到 `14` 各自 | 对应的角色对 part 和 `06`（json 四栏是从 use case 表倒推的，use case 改了 json 必改） |
+| 一条通道上的字段、状态走法、issue 往返 | `20` 到 `25` 各自 | 通道两头的角色 part |
+
+三条判断规矩：
+1. 角色对 part（`20` 到 `25`）里定的东西，只要是字段、状态、命令，定义处永远在 `03`、`04`、`05` 之一，角色对 part 只是「这条通道用了哪些」；同理角色 part 里的 json 四栏定义处在 `06`。
+2. 上表里标了「写了两遍」的四处（`03` 对 `09`/`07`/`04`、`05` 对 `04`/`02`/`07`/`09`、`06` 对五份角色、`06` 对 `08`），每次同步结束都要各对一遍，两边一字不差。
+3. 一条改动找不到定义处（比如新加一个字段、新加一条子命令），先问 gyb 归哪一份，不自己定。
+
 ## 五、还悬着的、同步 session 要记着的
 
 - 施工计划第一节末尾（a）到（i）九条是我改的设计、gyb 还没裁；哪一份 part 的裁决碰到它们，就等于 gyb 裁了那一条，同步的时候把结果回写到施工计划第一节那一条后面标日期。
