@@ -4,7 +4,7 @@
 > 这一份不覆盖：九本账的公共骨架和其余六本账的行格式（`03-ledgers.md`）、派活单状态转移表与会话生命周期（`04-handoffs-and-sessions.md`）、`bin/rl` 的完整命令表和 doctor 的全部扫描项（`05-rl-cli.md`）、`rl status` 的十段与 gyb 的 use case 表（`01-gyb.md`）、分权三层和角色 json（`06-hooks-and-permissions.md`）、五个角色各自什么时候开哪种 issue（`10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`，以及 `20-pair-idea-deploy.md` 到 `25-pair-reviewer-idea.md` 六份成对文件）、快车道和杂账（`07-quick-lane.md`）、阈值与配置文件（`08-trees-init-and-host.md`）、施工步骤和测试清单（`30-build-steps-verify-tests.md`）。
 > 源：设计文档的「gyb 自己做的事」「五个角色」总段、「账本」一节（行格式骨架与第 2、5、6 三本）、「分权与钩子」的读的纪律段、「两棵树」的插件本体段；施工计划第一节裁决 4、第二节词表、第三节 issues/grants/feedback 三本、第六节命令表的相关行、第八节阈值三条、第十一节的 commit 前缀、第十三节公共规矩八条。
 
-## 一、common/ 是什么，里面四个文件
+## 一、common/ 是什么，里面五个文件
 
 `common/` 是公共母版，放在插件本体里（插件本体的另外几层是 `skills/`、`tables/`、`schemas/`、`scripts/`、`bin/rl`、`hooks/`、`monitors/`、`tests/`）。母版带一个 `rules_version`。
 
@@ -14,6 +14,7 @@
 | `common/GLOSSARY.md` | 词表，就是施工计划第二节那份，再加一栏「它不是什么」 |
 | `common/SPEC-TEMPLATE.md` | 五栏 |
 | `common/READING.md` | 读法栏的原话 |
+| `common/<判断类检查问题清单>`（文件名归本份定，待定） | 判断类检查的问题清单：脚本判不了、要读了才知道对不对的那些项。不进 doctor（doctor 只留脚本能判的十九项），reviewer 按这份清单派 sonnet subagent 一人一题逐条查（2026-08-17 随 `05` 定稿裁） |
 
 词表那一栏「它不是什么」，施工计划第二节写的是「留到 `common/GLOSSARY.md` 写的时候逐条给 gyb 过，这里只钉名字」。
 
@@ -352,3 +353,4 @@ grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义�
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「都必填」），feedback 的 `verdict_text` 在 `accepted` 和 `rejected` 两版都必填；第五节行格式那句照 03 字段表补齐。统筹 session 同步。
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：`common/` 加一份判断类检查的问题清单文件（名字归本份定），reviewer 按它派 sonnet subagent 逐题查。对回原则 2、5。第一节的表加一行，四个文件改成五个。

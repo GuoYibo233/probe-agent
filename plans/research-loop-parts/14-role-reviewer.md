@@ -12,6 +12,8 @@ reviewer 由 gyb 手动开。没有任何角色能派活给 reviewer：五份角
 
 reviewer 审完之后动不动由 gyb 看完之后定。reviewer 自己不改任何东西。
 
+reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`（文件归 `09`），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出的东西 `rl issue open --to <owner>` 落账。这条和第八节「不开 issue、不派活」、公共规矩第 6 条「reviewer 不开 issue，卡住也只写进清单交给 gyb」冲突，角色 json 的 `ledger_writes` 也没有 issues：两处不一致，sync-inbox 问题 6 等 gyb 裁，裁了第八节和 json 跟着改。
+
 ## 上线第一个动作与 session focus
 
 reviewer 和其余四个角色一样，上线第一个动作是 `rl inbox`。inbox 列四类东西：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关），再加本角色提的 feedback 的裁决。
@@ -214,3 +216,4 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：reviewer 加一项职责，按 `common/` 问题清单派 sonnet subagent 一人一题逐条查，查出的 `rl issue open --to <owner>` 落账。对回原则 2、5。第一节补了一段；与第八节「不开 issue」的冲突立为 sync-inbox 问题 6。

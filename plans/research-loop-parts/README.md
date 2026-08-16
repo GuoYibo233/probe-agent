@@ -31,7 +31,7 @@
 | `23-pair-run-analysis.md` | run 与 analysis | runs 账契约：config、metrics、data_path、run list 过滤、分组键缺失、trace | 184 | 8 | 16 | 未开 |
 | `24-pair-analysis-deploy.md` | analysis 与 deploy | 只有一条 issue 通道 | 144 | 8 | 9 | 未开 |
 | `25-pair-reviewer-idea.md` | reviewer 与 idea | review/ 文件格式、status 列清单、idea 怎么读、来源指清单、只经文件不经 issue | 131 | 7 | 8 | 未开 |
-| `30-build-steps-verify-tests.md` | 待验证、测试、施工步骤 | 没写成，源在施工计划第九、十、十一节 | 0 | — | — | 未写 |
+| `30-build-steps-verify-tests.md` | 待验证、测试、施工步骤 | 没写成，源在施工计划第九、十、十一节 | 0 | — | — | 未写；写的时候要收 05 定稿留给它的三条（inbox 第五段第 9 项：待验证第 4 条备案升正案、第 10 条备案收成 doctor 第 19 项、`session amend`/`doctor --ack`/`lock.timeout_seconds` 要有测法） |
 
 「附的第二轮摩擦」一栏，标「约」的是 agent 没返回摘要、我按行式数的，可能多算几条。「状态」一栏由统筹 session 维护，取值三种：未开、在 `rl-part-NN` 手上、已定稿 `<commit>`（`30` 那份没写之前记「未写」）。
 

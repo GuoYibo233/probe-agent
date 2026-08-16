@@ -24,7 +24,7 @@
 
 gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和转移表的「谁能写」；必填字段、路径存在、引用存在这些完整性校验对 gyb 同样生效。gyb 要硬写就加 `--force --reason`，rl 照写并把原因记进账行的 `force_reason`。`--force` 是 gyb 的权：actor 是角色的命令带 `--force` 一律拒收，退出码 3，错误信息附「开 issue 给 gyb」的命令；角色遇到完整性校验拒收只有两条路，把行补齐，或开 issue 让 gyb 决定要不要硬写。角色会话里 `--as-gyb --quote --force --reason` 这个组合按原则 1 算 gyb 身份写，照写，`quote` 和 `force_reason` 都记进账行。
 
-## 公共骨架七样加两个可选字段
+## 公共骨架七样加三个可选字段
 
 每本账的每一行都有这七样：
 
@@ -38,7 +38,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `session_id` | 会话 id，裸终端记 `cli` | 写入会话 |
 | `schema_version` | 整数，从 1 起 | 行格式的版本，九本账共用一个数：任何一本账的字段表改了（加字段、改取值域、改必填条件）整套加一；rl 写每一行时填当前的数，读旧行时按行上标的那一版字段表解析和校验，不拿今天的表挑旧行的错 |
 
-另外两个字段可选，都是「这一行不是常规写入」的痕迹：`fix_for` 是 doctor 修账时记的扫描项名字（doctor 打印的修法命令一律带 `--fix-for <扫描项>`），`force_reason` 在 gyb 用 `--force` 时必填、记硬写的理由。设计文档原来只写了 `fix_for` 一个，2026-08-17 裁定两个都要，设计文档那一句回去改。
+另外三个字段可选，都是「这一行不是常规写入」的痕迹：`fix_for` 是 doctor 修账时记的扫描项名字（doctor 打印的修法命令一律带 `--fix-for <扫描项>`），`force_reason` 在 gyb 用 `--force` 时必填、记硬写的理由，`via` 标自动写的行、取 `session_end`（销号钩子写的 release 行，`actor` 记会话角色）或 `reclaim`（reclaim 写的，`actor` 记 gyb）（2026-08-17 随 `05` 定稿裁）。设计文档原来只写了 `fix_for` 一个，2026-08-17 裁定两个都要，设计文档那一句回去改。
 
 ## 九本账的名字和文件
 
@@ -113,7 +113,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `config` | 字典：`model`、`params`、`dataset`、`split`、其余超参 | `launched` 版必填，从发射单抄 |
 | `finished_at` | 时间 | `finished` 版必填 |
 | `exit_status` | `ok`、`failed`、`killed` | `finished` 版必填 |
-| `actual_seconds` | 秒 | `finished` 版必填，rl 从两个时间戳算 |
+| `actual_seconds` | 秒 | `finished` 版必填，rl 从两个时间戳算；handoffs 上的 `actual_seconds` 只从这里来，`rl handoff done` 不带 `--actual-seconds`（2026-08-17 随 `05` 定稿裁） |
 | `metrics` | 字典，键是指标名、值是数 | `exit_status` 是 `ok` 时必填 |
 | `data_path` | 路径：产物目录里给 analysis 算数用的那一个文件或子目录 | `exit_status` 是 `ok` 时必填 |
 
@@ -171,7 +171,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 
 ## sessions
 
-会话账两版：开始版和结束版。开始版由钩子代角色写，`actor` 填角色。`status` 取 `open`、`closed`。
+会话账两版：开始版和结束版；另有 `amend` 版，只许改 `model`，是 doctor 第 19 项 `model=unknown` 的修法，命令 `rl session amend ID --model M`（2026-08-17 随 `05` 定稿裁）。开始版由钩子代角色写，`actor` 填角色。`status` 取 `open`、`closed`。
 
 | 字段 | 取值或格式 | 必填条件 |
 |---|---|---|
@@ -469,6 +469,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 2026-08-17：runs 收尾版留 `data_path`（`ok` 时必填，是产物目录里给 analysis 算数用的文件或子目录）；发射版去掉 `artifact_dir`，产物目录按约定 `<artifact_root>/<run_id>/`，账上不记（不一致 2 定稿）。对回原则 8（约定已在 12，不写两处）和原则 9（analysis 从 run_id 直接到数据）。
 - 2026-08-17：scratch 校验头尾查、中间不查：`open`、`merged`、`dropped` 三版按表查必填，中间版只查骨架和 `ql_tag`；`branch` 改成 deploy 的 `open` 版必填，analysis 的 `base_commit`、`branch` 两栏交 `07` 定（不一致 3 定稿）。对回原则 7（进出两行得说得清自己是什么）。
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：公共骨架可选栏加 `via`（`session_end`、`reclaim`）；sessions 账加 `amend` 版只许改 `model`；handoffs 的 `actual_seconds` 只从 runs 的 `finish` 版来、`done` 不填。对回原则 4、6、8、10。骨架一节、sessions 一节、runs 字段表照改。
 
 ## 要同步到别处的
 

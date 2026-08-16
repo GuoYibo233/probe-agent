@@ -87,7 +87,7 @@ update、confirm、retire、merge 的「谁能调」是同 actor；跨角色改�
 
 `rl decision update` 和 `rl decision retire` 写完那一刻，rl 当场列出引着旧版而没到终态的单子和它们的 holder。施工计划把 confirm 和 update 写在同一行子命令表里，共用这条打印。
 
-`rl decision stale [--mine] [--handoff ID]` 是过版检查命令，默认只列和本会话手上单子有关的，`--all` 全库。这条命令是查询命令，谁都能调。
+`rl decision stale [--handoff ID] [--all]` 是过版检查命令，默认只列和本会话手上单子有关的，`--handoff ID` 只查那张单子引的，`--all` 全库（2026-08-17 随 `05` 定稿裁：去掉 `--mine`）。这条命令是查询命令，谁都能调。
 
 决定改了一版，不影响已经派出去的单子：单子按派出时引的那一版继续做，rl 只标过时，不自动打回、不自动标待复核、不自动停。停不停由 gyb 点名，停就用收回（`rl handoff withdraw`）。改版之后要重派的用 `rl handoff reissue ID --decision ID@V`，一条命令收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder。这一行的前提和「谁能写」在 `04-handoffs-and-sessions.md` 的转移表里。
 
@@ -114,7 +114,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 | `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 合并成新决定，被合并编号自动进 sources 和 merged_from，旧的各追加一版 `retired` | 同 actor |
 | `rl decision show ID [--version V] [--history] [--with-runs]` | 默认最新版；`--with-runs` 沿 parent_id 链反查各版本派出的单子和 run 与 metrics | 谁都行 |
 | `rl decision list [--actor A] [--line L]` | 列决定 | 谁都行 |
-| `rl decision stale [--mine] [--handoff ID]` | 过版检查，默认只列和本会话手上单子有关的，`--all` 全库 | 谁都行 |
+| `rl decision stale [--handoff ID] [--all]` | 过版检查，默认只列和本会话手上单子有关的，`--all` 全库 | 谁都行 |
 
 查询命令（show、list、stale）谁都能调，不进角色 json 的 `ledger_writes`。写命令进哪个角色的 `ledger_writes` 见 `06-hooks-and-permissions.md`：idea 有 decisions.idea 全部、deploy 有 decisions.deploy 全部、analysis 有 decisions.analysis 全部、reviewer 有 decisions.reviewer 全部、run 有 decisions.run add（自决极少，比如挑卡的理由）。
 
@@ -139,7 +139,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 
 1. 决定行落哪个文件，两份文档给了两种口径（词表按 actor、第三节按编号前缀、第六节按 actor 加括号例外）。上文按第三节写了，但施工的时候要钉死一句话。
 2. 编号序号是每个前缀各自一套（`dec-idea-0007` 和 `dec-deploy-0007` 可以并存）还是六个文件共用一套，两份文档都没写；锁那一段只说「扫号、分配编号、追加三步在同一把锁里」。
-3. `rl decision stale` 的签名写的是 `[--mine] [--handoff ID]`，说明文字里又出现 `--all`，`--all` 没进签名。
+3. `rl decision stale` 的签名写的是 `[--mine] [--handoff ID]`，说明文字里又出现 `--all`，`--all` 没进签名。——2026-08-17 随 `05` 定稿裁：签名改成 `[--handoff ID] [--all]`，去掉 `--mine`，已改（rl-hub）。
 4. `rl decision confirm` 算不算「改版」：设计文档说「决定改版或废除的那一刻」当场列出受影响的单子，施工计划把 confirm 和 update 写在同一行共用这条打印，confirm 正文不变要不要打印没有单独一句。
 5. `merge --root` 只说指定保留哪个根，没写被合并的那几条旧决定追加的 `retired` 那一版里 `root_id` 变不变。
 6. `rl decision show --with-runs` 写的是「沿 parent_id 链反查各版本派出的单子和 run 与 metrics」，但决定到第一张单子那一跳靠的是 handoffs 的 `decision_refs` 不是 `parent_id`，这一跳按哪个字段查没写。
@@ -381,3 +381,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 依据：plans/2026-08-16-research-loop-next-steps.md:111; plans/2026-08-16-research-loop-build-plan.md:105; plans/2026-08-16-research-loop-build-plan.md:131
 
 改法：明写过版检查只对 idea、deploy、analysis、reviewer 强制，run 免跑；或者把 decisions 的只读加进 run 的 reads。
+
+## 裁决记录（日期）
+
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：`rl decision stale` 签名改成 `[--handoff ID] [--all]`，去掉 `--mine`。对回原则 8。第 90 行、命令表那一行照改，「没写清」第 3 条据此销掉。

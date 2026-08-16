@@ -6,12 +6,12 @@
 
 ## 一、研究仓库这棵树：init 建什么
 
-`rl init` 在研究仓库里建六样东西，再往仓库的 CLAUDE.md 追加一节。
+`rl init` 在研究仓库里建六样东西，再往仓库的 CLAUDE.md 追加一节。`rl init` 只在裸终端跑：读到会话状态文件就拒收，退出码 3（2026-08-17 随 `05` 定稿裁，待验证第 4 条的失败备案升正案）。
 
 | 建什么 | 是什么 |
 |---|---|
 | `research-loop.json` | 配置文件，键见第二节和第三节 |
-| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/` |
+| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`。`loop/.doctor-acks.jsonl` 不算九本账，由 doctor 首次 `--ack` 时建，init 不建（2026-08-17 随 `05` 定稿裁） |
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
 | `review/` | reviewer 的问题清单 |
@@ -70,6 +70,7 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 | `anomaly.duration_factor` | 3 | 实际耗时超过预计 3 倍触发反常预警，同上 |
 | `status.review_recent_days` | 7 | `rl status` 列最近 7 天的 review 清单 |
 | `notify.reminder_days` | 7 | 每 7 天提醒 gyb 跑 `rl reclaim`、看 feedback、跑 doctor、落母版 |
+| `lock.timeout_seconds` | 10 | 文件锁等多久算超时，超时退出码 4（2026-08-17 随 `05` 定稿加） |
 | `quick_lane.worktree_root` | `<仓库>/../<仓库名>-ql/` | 快车道 worktree 建在哪 |
 
 ## 四、插件本体这棵树
@@ -96,7 +97,7 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 
 入口 skill 只干三件事：init、迁移提醒、领路。SKILL.md 里明写「本 skill 不干别的」。
 
-入口 skill 只许 gyb 手动调用，永远不许模型或其他东西调用。候选机制是 skill 头部声明禁止模型调用，这条还没测，测法和失败备案在 `30-build-steps-verify-tests.md`（待验证第 4 条）。
+入口 skill 只许 gyb 手动调用，永远不许模型或其他东西调用。候选机制是 skill 头部声明禁止模型调用，这条还没测，测法和失败备案在 `30-build-steps-verify-tests.md`（待验证第 4 条）。2026-08-17 随 `05` 定稿裁：第 4 条的失败备案「`rl init` 检查调用者状态文件不是任何角色」升正案，`rl init` 只在裸终端跑，见第一节。
 
 领路是几条常见路线图，头几条是：
 
@@ -279,3 +280,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 ## 裁决记录（日期）
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「A」，路 A 是进 git、每次 commit 顺手带上），`loop/` 九本账进 git，不另设 commit 动作，`.gitignore` 不排除 `loop/`；第一节表里 `loop/` 那行补上，「没写清」第 5 条销掉（后面条目编号没重排）。统筹 session 同步。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：阈值表加 `lock.timeout_seconds` 默认 10 秒；`rl init` 读到会话状态文件拒收退出码 3、只在裸终端跑（待验证第 4 条备案升正案）；`loop/.doctor-acks.jsonl` 不算九本账、doctor 首次 `--ack` 时建、init 不建。对回原则 1、4、8。第一节、第三节、第五节照改。

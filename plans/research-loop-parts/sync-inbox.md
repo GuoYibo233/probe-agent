@@ -7,6 +7,7 @@
 - 问题 3：阈值表定义处按原表是 `08-trees-init-and-host.md`，但 `04`、`14`、`21`、`23`、`05`、`24` 六份各指了别处（见 HANDOFF 四点五节 `08` 那一行）。是照 `08` 传，还是阈值表另立一处？——已裁 2026-08-17：照 `08`，原话「按照08吧」。已处理：`14`/`21`/`23`/`24` 指向改 `08` 第三节；`04` 已指 `08`；`05` 交 rl-part-05；HANDOFF 改。
 - 问题 4（2026-08-17 加，来自 03 事项 6）：runs 发射版去掉 `artifact_dir` 之后，「产物目录是 `<artifact_root>/<run_id>/`」这条约定的定义处归 `08-trees-init-and-host.md`（`artifact_root` 在它那）还是 `12-role-run.md`（run 的产物）？现在 03、12、21、23 和两份源文档都写了这一句，等裁了再定谁是那一处。
 - 问题 5（2026-08-17 加，来自 04 事项 3）：04 定稿带出一条新的入账校验「`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记」。定义处按 HANDOFF 判断规矩 3 找不到：入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`，事情本身写在 `04-handoffs-and-sessions.md` 第七节 `rl session end` 那条。归哪一份？
+- 问题 6（2026-08-17 加，来自 05 事项 8）：05 定稿裁「reviewer 按 `common/` 问题清单派 sonnet subagent 逐题查，查出的 `rl issue open --to <owner>` 落账」，可 `14-role-reviewer.md` 第八节和公共规矩第 6 条写的是「reviewer 不开 issue、不派活，卡住也只写进清单交给 gyb」，角色 json 的 `ledger_writes` 也没有 issues。两处不一致：reviewer 查出的问题是开 issue 落账（第八节和 json 跟着改），还是照旧只写进清单交 gyb？
 - 问题 1 附带（2026-08-17 加，来自 03 事项 3）：「角色带 `--force` 一律拒收，退出码 3；`--as-gyb --quote --force --reason` 算 gyb 身份照写」这一句，等问题 1 裁了定义处之后写进那一份。——已写进 `01` 第二节 2026-08-17。
 - 备案（2026-08-17，gyb 提的，不是问题）：「gyb」当机器标识符太怪，考虑改成 `admin` 或 `sudo`。gyb 定：现在不改，全部 part 定稿之后最后一次扫。到时候只改机器看得见的四种（旗子 `--as-gyb`、actor/owner/assignee 取值 `gyb`、`decisions.gyb.jsonl`、`01-gyb.md` 文件名），白话里指人的不动；名字到时候再定。gyb 原话「我觉得现在先不改吧 等最后改一下就行」。
 - 裁决原文：（待）
@@ -65,4 +66,4 @@
   7. `12-role-run.md`：看门狗（独立进程）只许调 rl 查询命令、不留痕，判定由 run 会话转写进账。
   8. `14-role-reviewer.md`：reviewer 加一项职责：按 `common/` 问题清单派 sonnet subagent 一人一题逐条查，查出的 `rl issue open --to <owner>` 落账（判断类检查不进 doctor，doctor 只留脚本十九项）。
   9. `30-build-steps-verify-tests.md`：待验证第 4 条备案「`rl init` 检查调用者不是任何角色」升正案；第 10 条备案「doctor 列 `model=unknown`」已收成 doctor 第 19 项；`rl session amend`、`rl doctor --ack/--unack/--list-acks`、`lock.timeout_seconds` 要有测法。
-- 状态：待处理
+- 状态：已处理 2026-08-17（1/2/3/5/6/7/8 与 20/21/22 抄的转移表行、22 的 done 签名、两份源文档由统筹改；4 由 rl-part-04 改 `42b6594`；9 的 30 未写，记进 README 30 那行给写它的人；8 与 `14` 第八节「不开 issue」冲突，立为第一段问题 6 等 gyb）

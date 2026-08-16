@@ -109,10 +109,10 @@ reviewer 什么都能读（2026-08-16 晚 gyb 裁，原来的「默认不读 dep
 5. grants，授权，只有 gyb 在裸终端能写。
 6. feedback，反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的人在 `rl inbox` 里看得到裁决。裁成采纳的那一版写清改了哪几个文件（列表，母版和文档都算）；母版改动在下次加载角色时生效，正在跑的会话不追、不通知，按现行母版干到底。母版带一个 rules_version，会话开始版记下它，采纳时 rl 列出还活着的会话让 gyb 挑要不要收；母版改动单独一个 commit。
 7. evaluations，口径账，一行一条口径（指标或图），gyb 说、analysis 记、gyb 批准后才生效，gyb 也可以打回；引用带版本。
-8. sessions，会话账：哪个会话、什么角色、什么模型（钩子从钩子输入里取真实模型标识，取不到记 unknown）、怎么起的（手动、subagent、workflow）、几点开始、几点销号，两版（开始版、结束版）；「最后一次写账几点」不落在这本账上，rl 查询时从九本账里该会话的最大 `ts` 现算。
+8. sessions，会话账：哪个会话、什么角色、什么模型（钩子从钩子输入里取真实模型标识，取不到记 unknown）、怎么起的（手动、subagent、workflow）、几点开始、几点销号，两版（开始版、结束版），另有 amend 版只改 model（doctor 列出 unknown 之后补）；「最后一次写账几点」不落在这本账上，rl 查询时从九本账里该会话的最大 `ts` 现算。
 9. scratch，杂账：快车道的开张、数字、关张，只有快车道写，中间版格式松，开张、合回、放弃三版各有必填，analysis 和 reviewer 默认不读。快车道的东西一旦要进正账拿来复用，它就不是快车道了，得按正常路重跑。
 
-行格式的公共骨架：主键、版本、状态、时间、写这行的 actor（五个角色或 gyb）、写入会话的 session_id（裸终端写的记 `cli`）、schema_version，加两个可选：fix_for（doctor 修账时记是修哪一项）、force_reason（gyb 用 `--force` 时必填，记硬写原因）。
+行格式的公共骨架：主键、版本、状态、时间、写这行的 actor（五个角色或 gyb）、写入会话的 session_id（裸终端写的记 `cli`）、schema_version，加三个可选：fix_for（doctor 修账时记是修哪一项）、force_reason（gyb 用 `--force` 时必填，记硬写原因）、via（标自动写的行：销号钩子写的记 session_end、reclaim 写的记 reclaim）。
 
 决定账的结构是一棵引用树：
 - 编号带角色前缀（dec-idea-0007、dec-gyb-0002），更新不换编号、版本号加一，谁写的记在 actor 里，编号前缀只说这条决定开在哪本账。默认读取对每个编号只取最新版，历史全在文件里但默认读不到，要旧版本用 `--version` 或历史命令。废除等于追加一版标 retired，来源默认继承上一版，停一条方向的时候鼓励再加上那次 run 和那张图。
@@ -140,7 +140,7 @@ reviewer 什么都能读（2026-08-16 晚 gyb 裁，原来的「默认不读 dep
 
 第一层是钩子，硬拦，宽宽的：只挂 Write 和 Edit 两个工具，只按研究仓库内的相对路径判，仓库外的路径（git worktree、产物根、/tmp）一律放行；只拦两类事：写别的角色的目录（experiments/ 只有 deploy 能写，analysis/ 只有 analysis 能写，review/ 只有 reviewer 能写，notes/ 只有 gyb 能写），和直接 Write/Edit loop/。其余路径（仓库根的 run.py、MAP.md、ops/、docs 之类）钩子放行，纪律管（见 deploy 一节）。Bash 写出来的文件钩子不看，所以宿主发射器 `run.py launch` 写 ops/jobs.json、ops/runs.jsonl、RUNMETA.json 这些照旧，不算越权。硬拦只管加载了角色的会话；gyb 的裸终端和 `--as-gyb` 不受钩子约束。
 
-第二层是入账校验，硬的：九本账只能经 bin/rl，每本账内部谁能追加哪种行、哪一版哪些字段必填、转移表允许哪些变化，都由入账脚本按施工计划校验，违反的拒收并说明下一步。gyb 只豁免「谁能调」和「谁能写」，完整性校验对 gyb 同样生效，`--force --reason` 硬写留痕（原则 1 推论）。
+第二层是入账校验，硬的：九本账只能经 bin/rl，每本账内部谁能追加哪种行、哪一版哪些字段必填、转移表允许哪些变化，都由入账脚本按施工计划校验，违反的拒收并说明下一步。gyb 只豁免「谁能调」和「谁能写」，完整性校验对 gyb 同样生效，`--force --reason` 硬写留痕（原则 1 推论）；`--force` 只越过完整性前提，越不过转移表外的转移。
 
 第三层是纪律，写在 SKILL.md 里：读什么、怎么读、Bash 里能写什么、什么时候该开 issue、什么时候该停下来问 gyb。读权一律不硬拦，查询命令谁都能调。reviewer 事后审的就是这一层。
 
@@ -156,7 +156,7 @@ reviewer 什么都能读（2026-08-16 晚 gyb 裁，原来的「默认不读 dep
 
 init 在研究仓库里建的（六样加一节）：research-loop.json 配置（各账路径、产物根、分析产物根、快车道 worktree 根、本仓库跑法、宿主发射器的命令模板：探卡、发射、收尾、中断，宿主台账清单）、loop/ 九本账、experiments/ 运行实验的代码、analysis/ 统计代码和 notebook（公共统计件由 init 播模板，notebook 由 analysis 干活时新建，analysis/scratch/ 给快车道）、review/ reviewer 的产出、notes/ gyb 自己写的文档；另外往仓库的 CLAUDE.md 里追加一节（内容见「分权与钩子」），追加不覆盖，new1 原有的规矩照旧。原始数据不新建目录，走配置里的产物根，在 new1 指到 net 盘。宿主自己的四层记录（new1 的 TIMELINE.md、DATA.md、RESULTS.md、ops/runs.jsonl）角色一律不碰，只有 `rl run finish` 经宿主收尾命令模板往 ops/runs.jsonl 落数字；TIMELINE 和 DATA 由 gyb 手动补。new1 里插件的 loop/runs.jsonl 和宿主的 ops/runs.jsonl 两本并存，前者是插件的正账，后者是宿主发射器自己的登记，不合并，doctor 有一项对账。
 
-插件本体：skills/ 六个（入口加五个角色）、common/ 公共母版（公共规矩、词表、五栏规格、读法，带 rules_version）、tables/ 和 schemas/（九本账的表结构和行格式、派活单的状态转移表、角色 json、gyb 的 use case 表）、scripts/ 入账与查询的实现、bin/rl 命令入口（含 status、inbox、trace、回收、doctor）、hooks/ 钩子脚本本体（五个角色共用一个脚本、参数报角色名，落不落得下见待验证；登记和销号的钩子也在这里）、monitors/ 一个（发射看门狗只在 run 上线时起，只写自己的状态文件；反常结果预警并进 `rl run finish`）、tests/。
+插件本体：skills/ 六个（入口加五个角色）、common/ 公共母版（公共规矩、词表、五栏规格、读法、判断类检查的问题清单，带 rules_version）、tables/ 和 schemas/（九本账的表结构和行格式、派活单的状态转移表、角色 json、gyb 的 use case 表）、scripts/ 入账与查询的实现、bin/rl 命令入口（含 status、inbox、trace、回收、doctor）、hooks/ 钩子脚本本体（五个角色共用一个脚本、参数报角色名，落不落得下见待验证；登记和销号的钩子也在这里）、monitors/ 一个（发射看门狗只在 run 上线时起，只写自己的状态文件；反常结果预警并进 `rl run finish`）、tests/。
 
 ## 入口 skill 与代码迁移
 
@@ -245,3 +245,4 @@ init 在研究仓库里建的（六样加一节）：research-loop.json 配置�
 - 2026-08-17，按 `04-handoffs-and-sessions.md` 的裁决（gyb：「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」），「接单」一段下游半路返回那句「决定重起还是开 issue 给 gyb」改成分外部原因照 dispatch 重起、代码问题开 issue 给该修的角色。对回原则 11、原则 3。
 - 2026-08-17，按 `04-handoffs-and-sessions.md` 的裁决（gyb：「不杀」「按照施工计划吧」），「会话生命周期」一段 reclaim 那句改成默认不杀、`--kill` 才中断收尾；卡住的单子只改派 issue、不提 holder。对回原则 11、原则 3。
 - 2026-08-17，按 `03-ledgers.md` 的裁决（gyb：「你说得对」；定义处 2026-08-17 gyb 裁归 `01-gyb.md`），原则 1 那段末尾补「角色的命令带 `--force` 一律拒收，`--as-gyb --quote --force --reason` 算 gyb 身份照写」。对回原则 1、原则 2。
+- 2026-08-17，按 `05-rl-cli.md` 定稿的裁决（gyb：「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：分权第二层补「`--force` 只越完整性前提、越不过表外转移」；「账本」一节骨架可选栏加 via、sessions 加 amend 版只改 model；「两棵树」common/ 加判断类检查问题清单。对回原则 1、2、4、5、8。

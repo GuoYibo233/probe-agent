@@ -54,7 +54,7 @@ issue 的九种 `kind`：`cannot`（干不了）、`not_mine`（不归我干）�
 
 ## 三、九本账的字段级行格式（草案）
 
-公共骨架七样，每本账每一行都有：`id`（主键）、`version`（从 1 起，同一个 `id` 的新版本是新的一行，默认查询只取最新版）、`status`（每本账各自的取值，校验按它查）、`ts`（写入时间，ISO 8601）、`actor`（五个角色或 `gyb`）、`session_id`（写入会话，裸终端是 `cli`）、`schema_version`（整数）；可选 `fix_for`（doctor 修账时记扫描项名字）、`force_reason`（gyb `--force` 时必填）。
+公共骨架七样，每本账每一行都有：`id`（主键）、`version`（从 1 起，同一个 `id` 的新版本是新的一行，默认查询只取最新版）、`status`（每本账各自的取值，校验按它查）、`ts`（写入时间，ISO 8601）、`actor`（五个角色或 `gyb`）、`session_id`（写入会话，裸终端是 `cli`）、`schema_version`（整数）；可选 `fix_for`（doctor 修账时记扫描项名字）、`force_reason`（gyb `--force` 时必填）、`via`（标自动写的行，取 `session_end`、`reclaim`）。
 
 decisions（六个文件同一个格式）：`id` 形如 `dec-idea-0007`、`dec-gyb-0002`，前缀只说开在哪本账，谁写的看 `actor`；`root_id`（add 时等于自己，update 继承，merge 时 `--root` 指定保留哪个）；`status` 取 `active` 或 `retired`；`text`；`sources` 列表，每项是 `{"kind":"decision","id":...,"version":...}`、`{"kind":"file","path":...,"anchor":可选}`、`{"kind":"run","run_id":...}` 三种之一，每一版都非空（update、confirm、retire、merge 不给 `--source` 时自动继承上一版）；`quote` 角色会话里 `--as-gyb` 写的行必填；`merged_from` 合并时必填。`decisions.gyb.jsonl` 只收 `session_id` 是 `cli` 的行。
 
@@ -93,10 +93,10 @@ scratch：主键是 `ql_tag`；`status` 取 `open`、`merged`、`dropped`；`rol
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
-| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知 | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知；销号钩子写的这一版 `actor` 记会话的角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim` | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 | 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
-`accepted` 和 `withdrawn` 是终态。入账脚本只认这张表，表外的转移一律拒收，退出码 2。`stuck` 的单子销号和 reclaim 都不动（holder 已空），只有 issue `answered` 之后 `resume` 才回 `todo`。
+`accepted` 和 `withdrawn` 是终态。入账脚本只认这张表，表外的转移一律拒收，退出码 2；gyb 同样，`--force` 越不过表外转移，硬改状态走 `withdraw` 再重开。`stuck` 的单子销号和 reclaim 都不动（holder 已空），只有 issue `answered` 之后 `resume` 才回 `todo`。
 
 ## 五、角色 json 与 gyb 的 use case 表（草案，`tables/roles/<role>.json`、`tables/gyb-usecases.json`）
 
@@ -143,18 +143,18 @@ actor 的判定（原则 1）：`rl` 从会话状态文件读当前角色（状�
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl init` | 在研究仓库建 `research-loop.json`、`loop/` 九本账、`experiments/`、`analysis/`（含公共统计件模板和 `analysis/scratch/`）、`review/`、`notes/`，往 CLAUDE.md 追加一节（三句，见设计文档「分权与钩子」），问一次要不要给 idea 发 `read:notes` | gyb |
+| `rl init` | 在研究仓库建 `research-loop.json`、`loop/` 九本账、`experiments/`、`analysis/`（含公共统计件模板和 `analysis/scratch/`）、`review/`、`notes/`，往 CLAUDE.md 追加一节（三句，见设计文档「分权与钩子」），问一次要不要给 idea 发 `read:notes`；只在裸终端跑，读到会话状态文件拒收退出码 3 | gyb |
 | `rl session start --role R [--model M] [--launched-by manual\|subagent\|workflow]` / `rl session end [--session ID] [--reason]` / `rl session focus --decision ID` / `rl session show ID` / `rl session list [--alive] [--role R]` | 登记和销号，钩子调；`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话 | start/end 钩子和 gyb，focus reviewer，查谁都行 |
 | `rl inbox` | 角色的收件箱：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决 | 角色会话，上线第一动作 |
 | `rl decision add --text --source K:V ... [--quote ...]` | 追加一条新决定，编号自动分配，落 actor 自己那本（角色会话 `--as-gyb` 落角色那本） | 五个角色、gyb |
 | `rl decision update ID --text [--source ...] [--quote ...]` / `rl decision confirm ID --source ...` | 追加一版（update 换正文；confirm 正文不变只加来源）；不给 source 就继承上一版；写完当场列出引旧版而没到终态的单子和 holder | 同 actor（跨角色改别人的决定在自己那本 add，来源指原决定） |
 | `rl decision retire ID [--source ...]` / `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 废除；合并成新决定，被合并编号自动进 sources 和 merged_from，旧的各追加一版 `retired`；retire 同样列受影响的单子 | 同 actor |
 | `rl decision show ID [--version V] [--history] [--with-runs]` / `rl decision list [--actor A] [--line L]` | 默认最新版；`--with-runs` 沿 parent_id 链反查各版本派出的单子和 run 与 metrics | 谁都行 |
-| `rl decision stale [--mine] [--handoff ID]` | 过版检查，默认只列和本会话手上单子有关的，`--all` 全库 | 谁都行 |
+| `rl decision stale [--handoff ID] [--all]` | 过版检查，默认只列和本会话手上单子有关的，`--all` 全库 | 谁都行 |
 | `rl trace <dec-\|ho-\|run_id\|iss-\|eval->` | 打出到决定各版本的整条链 | 谁都行 |
 | `rl issue open --to R --kind K [--stage S] --text [--handoff ID] [--log-tail FILE\|--log-text -]` / `rl issue reassign ID --to R` / `rl issue reply ID --text` / `rl issue close ID` / `rl issue link ID --handoff ID` / `rl issue show ID` / `rl issue list [--open] [--to R] [--kind K]` | 问题条；`--to gyb`（开单或改派）触发通知；`link` 是 doctor 修法 | 按第五节 ledger_writes，查谁都行 |
 | `rl handoff open --type T --to R [--parent ID] [--decision ID@V ...] [--explain ...] [--eval ID@V ...] [--command ... --workdir ... --track ... --config k=v ...] [--batch B] [--manual\|--no-dispatch] [--quick-lane --report-method P --ql QL]` | 开单，落 `todo`；`launch_order` 从父单抄 decision_refs 和 batch、分 run_id；带 `--quick-lane` 的工单直接落 `done_pending_review` | owner |
-| `rl handoff start ID [--batch B]` / `amend ID [--command ... --workdir ... --track ... --config ...] [--report-method P --report-detail P --code-path P ...] [--eval ID@V ...]` / `stuck ID --issue ID` / `resume ID` / `done ID [--actual-seconds N] [--notebook P --figure P ...]` / `accept ID` / `reject ID --reason` / `withdraw ID --reason [--quote] [--cascade]` / `release ID --note ...` / `reissue ID --decision ID@V` | 转移表里的每一行一个子命令 | 按转移表 |
+| `rl handoff start ID [--batch B]` / `amend ID [--command ... --workdir ... --track ... --config ...] [--report-method P --report-detail P --code-path P ...] [--eval ID@V ...]` / `stuck ID --issue ID` / `resume ID` / `done ID [--notebook P --figure P ...]` / `accept ID` / `reject ID --reason` / `withdraw ID --reason [--quote] [--cascade]` / `release ID --note ...` / `reissue ID --decision ID@V` | 转移表里的每一行一个子命令 | 按转移表 |
 | `rl handoff estimate ID --step NAME --kind gpu\|cpu --smoke-seconds S --scale F` / `rl handoff estimate ID --copy-from ID2 [--scale F]` | 往最新一次尝试追加分步表一行，`estimated_seconds` 加总本次尝试；同 batch 复制 | run |
 | `rl handoff show ID` / `rl handoff list [--status S] [--owner R] [--holder SESSION] [--to R] [--batch B] [--decision ID] [--line L]` | 查（`--mine` 删掉，拆成 owner 和 holder） | 谁都行 |
 | `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...` / `rl run finish RUN_ID --exit ok\|failed\|killed [--metric k=v ...] [--data-path P]` / `rl run relink RUN_ID --handoff ID` / `rl run show RUN_ID` / `rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` | 数字账两版，`add` 从发射单抄 command、config、run_id；`finish` 算 actual_seconds、同进程跑反常预警、调宿主收尾命令模板；`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 全出；`relink` 是 doctor 修法 | 写 run 和 gyb，查谁都行 |
@@ -165,7 +165,7 @@ actor 的判定（原则 1）：`rl` 从会话状态文件读当前角色（状�
 | `rl status [--line L] [--group-by line\|batch] [--json]` | gyb 的收件箱十段：1 没到终态的单子（owner、holder 及活没活着、状态、挂了多久、线、发射单带 log_path 和 watch_cmd）；2 assignee 是 gyb 的 open issue（超过阈值的标出）；3 等批的口径；4 等验收的单子；5 等 gyb 拉起的（owner 无活会话的 todo、`dispatch=manual` 的）；6 过版的单子和 retired 决定名下的活单；7 holder 会话超过 `status.stale_holder_minutes` 没写账的开干单；8 等裁的 feedback；9 review/ 最近的清单、活着的会话（含 focus）、没关的快车道；10 上次 doctor 没修的。第一行打印距上次 reclaim 几天 | 谁都行 |
 | `rl reclaim [--session-older-than H] [--handoff-older-than H] [--only ID ...] [--skip ID ...] [--kill] [--apply]` | 列出超过阈值没动的会话和单子和快车道，`--apply` 才动手：会话标 `reclaim` 销号并 release 名下开干的单；开干的发射单默认不杀进程（留给认领），`--kill` 才走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）；`stuck` 的只把 issue 改派 owner；`done_pending_review` 和 `todo` 的只列出附现成命令；结束按 owner 分组打印待拉起的单子和加载命令，并自动跑一遍 doctor | gyb |
 | `rl doctor [--ack ITEM ID]` | 扫九本账，每项附修法命令和「修完归谁推」：编号重复；引用悬空；`stuck` 单子没有 issue（修法 `issue link`）；`cannot`/`failed`/`denied` 且 open 且没有单子指回的 issue；`done_pending_review` 的交付物路径不存在（修法 `handoff amend`）；runs 行 `handoff_id` 为空、悬空或不是 launch_order（修法 `run relink` 或 `--ack`）；runs 有 `launched` 版长期没 `finished` 版；runs 挂在 `withdrawn` 的单子上；快车道工单已 accepted 但没有关联发射单；approved 口径引的 metrics 键在 runs 账里不存在；`answered` 超过 N 天没 close 的 issue；单子回了 `todo` 而关联 issue 还 open；`in_progress` 的 holder 不在活着的会话里；sessions 没有结束版且超阈值没写账；retired 决定名下有活单；决定来源指 notes/ 但 grants 里没有该 actor 的 read:notes；accepted 的 feedback 的 applied_to 里没同时含母版和文档；loop/runs.jsonl 与宿主 ops/runs.jsonl 对不上的 run_id | 谁都行；角色跑只看不修，修法报给 owner 或 gyb |
-| `rl notify --text` | 内部用，发桌面通知，机制见待验证第 6 条；推送表：issue assignee 变 gyb（含首次开单）、单子进 `done_pending_review` 且 owner 是 gyb 或 `dispatch=manual`、feedback 提出、owner 无活会话的 todo 出现、doctor 有没修的 | rl 自己 |
+| `rl notify --text` | 内部用，发桌面通知，机制见待验证第 6 条；推送表：issue assignee 变 gyb（含首次开单）、单子进 `done_pending_review` 且 owner 是 gyb 或 `dispatch=manual`、feedback 提出、owner 无活会话的 todo 出现（在单子落 todo 那刻和 `session end` 销号时查并推）、doctor 有没修的；gyb 也可手动调给自己发提醒，两种调法都不进账 | rl 自己，gyb 手动也行 |
 
 退出码：0 成功；2 校验拒收（原因写到标准错误，包含下一步该做什么）；3 角色无权（同上，附「开 issue 给谁」的命令）；4 文件锁等待超时。所有子命令支持 `--json`；`rl status --json` 每行至少含 `id`、`work_type`、`owner`、`holder`、`holder_alive`、`status`、`age_hours`、`line`、`decision_refs`、`batch`、`log_path`、`watch_cmd`。
 
@@ -182,7 +182,7 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 | Phase 2 挑卡分片 | 同，规则引用 gpu-run 的 `references/launch-methodology.md`；一个 run 会话接整个 batch，按宿主发射器自己的分片规矩发 N 份 | 不再一个 workflow 起 N 个 run |
 | Phase 3 smoke | 同，并且多做一件事：先读代码列出每一步干什么，smoke 时逐步计时，`rl handoff estimate` 填分步表（同 batch 只实测一张，其余 `--copy-from`）；smoke 标准输出落 `artifact_root/smoke/<run_id>.log`；smoke 失败直接 `issue open --kind failed --stage smoke` 加 stuck，分步表不是前提 | 分步计时和 smoke 日志是新增 |
 | Phase 4 发射前 commit、`run.py launch`、交监控命令 | 同，命令模板进配置的 `launcher.launch_cmd`，`--run-id` 和 `--track` 从发射单尝试上抄；发射成功后 `rl run add` 落发射版（含 tmux session 名和监控命令） | 三处登记之外多一处 runs 账；宿主发射器写 ops/ 的三个文件是 Bash 写入，钩子不看；loop/ 进宿主脏树白名单 |
-| Phase 5 采样器接管 | 看门狗 monitor 只在 run 上线时起，只判、只写自己的状态文件，卡死和超时分开判，每轮顺带查本单是不是 `withdrawn` 或被 reclaim；run 会话每轮读状态文件，杀进程和写账都由 run 会话做 | 卡死阈值沿用 new1 `ops/verdicts.py` 的自适应判定线，超时用最新尝试的 `estimated_seconds` 乘宽松系数；monitor 不写九本账 |
+| Phase 5 采样器接管 | 看门狗 monitor 只在 run 上线时起，只判、只写自己的状态文件，卡死和超时分开判，每轮顺带查本单是不是 `withdrawn` 或被 reclaim；run 会话每轮读状态文件，杀进程和写账都由 run 会话做；看门狗只许调 rl 查询命令、不留痕 | 卡死阈值沿用 new1 `ops/verdicts.py` 的自适应判定线，超时用最新尝试的 `estimated_seconds` 乘宽松系数；monitor 不写九本账 |
 | Phase 6a 正常收尾五连 | 汇报、`rl run finish --exit ok` 记数字（算 actual_seconds、同进程跑反常预警、调 `launcher.finish_cmd` 落宿主账）、释放显存、销号、commit；然后 `rl handoff done` | 数字进 `loop/runs.jsonl`，宿主 `ops/runs.jsonl` 由 finish_cmd 一起落，两本并存，doctor 对账 |
 | Phase 6b 中断 | 跑挂：`rl run finish --exit failed`（同样调 finish_cmd），`issue open --kind failed --stage crash`，`handoff stuck`。被收回或被 reclaim `--kill`：`rl run finish --exit killed` 加收尾，不改单子状态 | 中断一律留痕；两种中断分开写 |
 
@@ -207,6 +207,7 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 | `anomaly.duration_factor` | 3 | 实际耗时超过预计 3 倍触发反常预警，同上 |
 | `status.review_recent_days` | 7 | `rl status` 列最近 7 天的 review 清单 |
 | `notify.reminder_days` | 7 | 每 7 天提醒 gyb 跑 `rl reclaim`、看 feedback、跑 doctor、落母版 |
+| `lock.timeout_seconds` | 10 | 文件锁等多久算超时，超时退出码 4 |
 | `quick_lane.worktree_root` | `<仓库>/../<仓库名>-ql/` | 快车道 worktree 建在哪 |
 
 ## 九、待验证清单（讨论已收口，施工第 0 步就测；每条写测法、通过标准、失败备案）
@@ -216,13 +217,13 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 | 1 | Bash 环境里有没有现成的会话 id 变量 | 在会话里 `env \| grep -i session`，再对比钩子输入的 `session_id` | 同一个值 | SessionStart 钩子写状态文件，rl 按 `cwd` 加最近一次登记找 |
 | 2 | skill 头部声明的钩子能不能给命令带参数 | 写一个测试 skill，头部钩子命令 `hook.sh --role test`，加载后触发看参数到没到 | 脚本收到 `--role test` | 五个角色各一份钩子脚本，内容相同只差常量 |
 | 3 | monitor 的 `when: "on-skill-invoke:run"` 写法 | 写一个只打印一行的 monitor，加载 run skill 看起不起 | 加载后进程在、不加载不在 | monitor 常驻，脚本自己读会话状态文件判断当前角色是不是 run |
-| 4 | skill 头部禁止模型调用的声明能不能锁入口 skill | 加声明后让模型自己调一次 | 调不动 | 入口 skill 的 SKILL.md 第一行写「模型调用即违规」靠纪律，另外 rl init 检查调用者状态文件不是任何角色 |
+| 4 | skill 头部禁止模型调用的声明能不能锁入口 skill | 加声明后让模型自己调一次 | 调不动 | 入口 skill 的 SKILL.md 第一行写「模型调用即违规」靠纪律，另外 rl init 检查调用者状态文件不是任何角色（2026-08-17 裁：这条备案升正案，`rl init` 只在裸终端跑） |
 | 5 | SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个 | 起一个加载角色的 subagent，让它写一行账，结束后查 sessions 账 | 有 `ended_at`、`session_id` 和 `started_at` 那行相同 | 全靠 `rl status` 段 7 加 `rl reclaim`，提醒周期从 7 天缩到 1 天 |
 | 6 | 桌面通知机制 | 试 Claude Code 自带推送、`notify-send`、终端铃三种 | gyb 桌面看得到 | 退到 `rl status` 单列那一层，通知不做 |
 | 7 | 定时提醒机制 | 试 Claude Code 的 schedule 和系统 cron | 到点 gyb 收得到 | `rl status` 第一行打印距上次 reclaim 几天（已是正案的一部分），提醒不做 |
 | 8 | subagent 里加载角色 skill，头部钩子装不装得上、写权拦不拦 | 起 subagent 加载 deploy，让它写 `analysis/x.md` | 被 deny | subagent 路线改成 workflow 里的 `agentType` 指向 `agents/<role>.md`，钩子在 agent 定义里声明；再不行 subagent 接单只靠纪律加 reviewer 事后查。测完在设计文档 run 一节写死走哪一案，删掉另一案 |
 | 9 | 后台 subagent（原则 11）：父会话活着时后台 subagent 能不能跑几个小时；父会话结束后台 subagent 会不会被杀 | 起 deploy 会话后台起一个 sleep 两小时的 run subagent，两种情况各试一次 | 活着时能跑完并回通知；父会话结束时的行为有结论 | 被杀的话正案不变（GPU 在 tmux、单子在账上、下一个 run 认领），只是待认领的单子多；同步等的老方案不再回来 |
-| 10 | 钩子输入里有没有模型标识 | 打印 SessionStart 钩子的输入 JSON | 有 model 字段 | sessions.model 记 `unknown`，doctor 列出来，gyb 事后补 |
+| 10 | 钩子输入里有没有模型标识 | 打印 SessionStart 钩子的输入 JSON | 有 model 字段 | sessions.model 记 `unknown`，doctor 列出来，gyb 事后补（2026-08-17 裁：已收成 doctor 第 19 项，修法 `rl session amend ID --model M`） |
 | 11 | 改一行母版不重启 claude 再加载一次角色，读到的是不是新文本 | 改 common/ 一行，同一进程再 `/` 加载角色 | 模型看到新文本 | feedback accept 的待办里加一句「改完母版必须重开终端」 |
 
 原第 9 条「rl 读不到状态文件按 gyb 处理」gyb 2026-08-16 夜已裁：就是 gyb，不加参数。原第 9 条「上游同步等几个小时」按原则 11 改题成现在的第 9 条。
@@ -260,7 +261,7 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 | 2 架构文档 | `research-loop/ARCHITECTURE.md`，两棵树每个文件一行：干什么、谁读、谁写、改它连带改哪些；十一条原则抄一份在开头 | gyb 读一遍点头 | 步 0（备案影响树） | 主会话写 |
 | 3 共同底座 | `tables/ledgers.json`、`tables/transitions.json`、`tables/roles/*.json`、`tables/gyb-usecases.json`、`schemas/*.schema.json`、`scripts/rl_lib.py`（锁、编号、追加、校验、actor 判定）、`bin/rl` 骨架、第十节测试 1 到 7、9、10、14、17 | `tests/run_all.py` 全绿 | 步 2 | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
 | 4 交流机制 | `hooks/`（写权钩子、登记销号钩子）、`rl status`、`rl inbox`、`rl trace`、`rl reclaim`、`rl doctor`、`rl notify`、`monitors/`（看门狗）、快车道命令、测试 8、11、15、16 | 全绿；在真会话里手动触发一次 deny 和一次销号 | 步 3 | 工单化同上；真会话验证主会话做 |
-| 5 公共母版 | `common/GLOBAL-RULES.md`（第十三节八条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（第二节词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话） | gyb 逐条过 | 步 3 | 主会话写，中文底稿给 gyb 过，正式版英文 |
+| 5 公共母版 | `common/GLOBAL-RULES.md`（第十三节八条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（第二节词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话）、判断类检查的问题清单（文件名待定，reviewer 派 sonnet subagent 按它逐题查，2026-08-17 裁） | gyb 逐条过 | 步 3 | 主会话写，中文底稿给 gyb 过，正式版英文 |
 | 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（英文，头部带钩子声明，正文有 use case 表，只引用母版不抄），run 的照第七节，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图见设计文档） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
 | 7 最小一条路 | 在临时沙盒仓库 `rl init` → 加载 idea 写一条决定开一张工单 → 加载 deploy 接单写代码写报告提验收 → 回 idea 打回 → deploy 再接 → idea 验收 → `rl doctor` 零报告；再走一遍测试 12 的第二条（发射单 smoke 失败到 trace）；然后在 new1 跑 `rl init`，gyb 改 new1 CLAUDE.md 的 GPU 那一行和脏树白名单 | 沙盒全程只经 rl；new1 的 `loop/` 长出来、CLAUDE.md 只多一节 | 步 6 | 主会话，真会话 |
 | 8 总验收 | gyb 定五个任务，每个角色两个 agent 一个加载 skill 一个不加载各做一遍，产出摆一起 | gyb 自己看 | 步 7 | gyb 定任务，主会话派 agent（模型按第一节第 3 条） |
@@ -328,3 +329,4 @@ gpu-run 的八个阶段对应到 run 的 use cases，一行一个：
 - 2026-08-17，按 `04-handoffs-and-sessions.md` 的裁决（gyb：「不用」），第三节 handoffs 行 `progress_note` 改成只在 `in_progress` → `todo` 那一版必填。对回原则 4。
 - 2026-08-17，按 `04-handoffs-and-sessions.md` 的裁决（gyb：「可以 发」「删了吧」，dispatch 原话见设计文档同日那条），第四节转移表 `rejected` 行前提栏补「gyb 越过 owner 时发 fyi」；`in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照 `dispatch` 拉起。对回原则 6、原则 8、原则 11。
 - 2026-08-17，按 `03-ledgers.md` 的裁决（gyb 原话见设计文档同日那条），第六节「actor 的判定」那段补「角色带 `--force` 一律拒收，退出码 3；`--as-gyb --quote --force --reason` 算 gyb 身份照写」。对回原则 1、原则 2。
+- 2026-08-17，按 `05-rl-cli.md` 定稿的裁决（gyb 原话见设计文档同日那条）：第四节表外转移句补 gyb 同样、`--force` 越不过；第六节 `rl notify` 行推送表第 4 条补时机、gyb 可手动调不进账；`rl decision stale` 签名改 `[--handoff ID] [--all]`；`rl handoff done` 去 `--actual-seconds`；第三节骨架加 `via`；转移表 release 行补 `via`；第八节阈值表加 `lock.timeout_seconds`；`rl init` 行补只在裸终端；待验证第 4 条备案升正案、第 10 条备案收成 doctor 第 19 项；施工步骤公共母版行加判断类问题清单；Phase 5 看门狗补只查询不留痕。对回原则 1、4、6、8、10、11。

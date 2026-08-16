@@ -85,7 +85,7 @@ gyb 只豁免权限，不豁免账行的完整性：
 | 转移表的「前提」栏 | 生效 |
 | 必填字段、路径存在、引用存在 | 生效 |
 
-gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 `force_reason` 字段。actor 是角色的命令带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写（2026-08-17 gyb 裁，来自 `03-ledgers.md`）。runs 账的 actor 允许 `run` 或 `gyb`，gyb 例外这一条明写在字段表里。
+gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 `force_reason` 字段。actor 是角色的命令带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写（2026-08-17 gyb 裁，来自 `03-ledgers.md`）。`--force` 只越过完整性前提，越不过转移表外的转移：表外转移对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开（2026-08-17 gyb 裁，来自 `05-rl-cli.md`）。runs 账的 actor 允许 `run` 或 `gyb`，gyb 例外这一条明写在字段表里。
 
 ### 三条只收裸终端的
 
@@ -133,14 +133,14 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 ## 五、桌面通知推送表
 
-桌面通知只是 gyb 收件箱里几段的推送，不是第三个通道。`rl notify --text` 是内部命令，只有 rl 自己调。推送表和 `rl notify` 的机制都定义在本节，`05-rl-cli.md` 只留命令签名（2026-08-17 gyb 裁）。推送时机五档：
+桌面通知只是 gyb 收件箱里几段的推送，不是第三个通道。`rl notify --text` 是内部命令，由 rl 在推送表的时机自己调；gyb 也可以手动调来给自己发一条提醒，两种调法都不进任何账（2026-08-17 gyb 裁）。推送表和 `rl notify` 的机制都定义在本节，`05-rl-cli.md` 只留命令签名（2026-08-17 gyb 裁）。推送时机五档：
 
 | # | 触发 |
 |---|---|
 | 1 | issue 的 assignee 变 gyb（含首次开单） |
 | 2 | 单子进 `done_pending_review` 且 owner 是 gyb 或 `dispatch=manual` |
 | 3 | feedback 提出 |
-| 4 | owner 无活会话的 `todo` 出现 |
+| 4 | owner 无活会话的 `todo` 出现——在单子落 `todo` 那刻（open / release / reject / reissue）和 `session end` 销号时查 owner 有无活会话并推（2026-08-17 gyb 裁） |
 | 5 | doctor 有没修的 |
 
 通知机制本身还没定，是待验证第 6 条：试 Claude Code 自带推送、`notify-send`、终端铃三种，通过标准是 gyb 桌面看得到；失败备案是退到 `rl status` 单列那一层，通知不做。
@@ -179,7 +179,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 4. 定时提醒机制不成立时备案是「`rl status` 第一行打印距上次 reclaim 几天」，可谁提醒 gyb 去打 `rl status` 没有第二条路。
 5. 只写死了 `rl status --json` 的行结构，`rl reclaim` 和 `rl doctor` 的 `--json` 结构没写。
 6. gyb 手动开 reviewer 之后：gyb 怎么点名审哪条决定（除了 reviewer 自己打 `rl session focus`）、gyb 看完 `review/` 清单之后决定的动作落在哪本账，都没写。
-7. `--force --reason` 只写了「rl 照写并把 reason 记进账行」，没写哪些完整性前提允许被 force 越过、有没有一条也不许越过的（比如转移表里表外的转移）。
+7. `--force --reason` 只写了「rl 照写并把 reason 记进账行」，没写哪些完整性前提允许被 force 越过、有没有一条也不许越过的（比如转移表里表外的转移）。——2026-08-17 随 `05` 定稿裁：只越过完整性前提、越不过表外转移，已写进第二节「豁免范围」（rl-hub）。
 8. gyb 手动加载角色时 sessions 账的 `model` 记「解析后的真实模型名或 `unknown`」，`unknown` 由 doctor 列出来让 gyb 事后补，可补的命令是哪一条没写。
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
@@ -491,3 +491,4 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 这一组规矩的定义处归本份第二节；`05-rl-cli.md`「actor 怎么定」是命令行写法，算写了两遍、每次同步对齐；`06` 只留钩子对 `--as-gyb` 不生效那一句。对回原则 8。
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（rl-hub 转来；gyb 原话「你说得对」）：actor 是角色的命令带 `--force` 一律拒收，退出码 3，附开 issue 给 gyb 的命令；`--as-gyb --quote --force --reason` 算 gyb 身份照写。对回原则 1、原则 2。第二节「豁免范围」补了这一句。
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归本份第五节；`05-rl-cli.md` 只留 `rl notify --text` 的签名行，其「rl notify」一节缩成一句指本份。对回原则 8。第五节开头补了一句。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：第二节补「`--force` 只越完整性前提、越不过表外转移，gyb 同样退出码 2，硬改走 `withdraw` 再重开」；第五节推送表第 4 条补查的时机（落 `todo` 那刻和 `session end` 销号时）；`rl notify` 补「gyb 也可手动调、不进账」。对回原则 1、4、6、8。「没写清」第 7 条据此销掉。
