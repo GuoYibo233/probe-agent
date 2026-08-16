@@ -57,14 +57,14 @@ gyb 只想先看一眼图的时候走这条：图落 `analysis/scratch/<ql_tag>/
 
 ## 六、杂账（scratch）的行格式
 
-杂账只有快车道写，只写三样事：开张、数字、关张。格式松，入账校验只校验骨架和快车道标签。analysis 和 reviewer 默认不读这本账。
+杂账只有快车道写，只写三样事：开张、数字、关张。中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填。中间追加数字的每一版 `status` 仍是 `open`，不设第四态。analysis 和 reviewer 默认不读这本账。
 
 主键是 `ql_tag`，同一条快车道的每一次写入是一个新版本。`status` 三取一：`open`、`merged`、`dropped`。`actor` 是 `deploy` 或 `analysis`。
 
 | 这一版 | 必填 |
 |---|---|
-| `open` | `role`（`deploy` 或 `analysis`）、`worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch` |
-| 中间版 | 自由，建议 `note`、`metrics` |
+| `open` | `role`（`deploy` 或 `analysis`）、`worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`（deploy） |
+| 中间版（`status` 仍是 `open`） | 自由，建议 `note`、`metrics` |
 | `merged` | `handoff_id` |
 | `dropped` | `reason` |
 
@@ -146,7 +146,7 @@ deploy 补一张标了 quick_lane 的工单，六条规矩：
 
 ## 源文档没写清的（留给 gyb）
 
-1. analysis 的快车道 scratch 开张版怎么填：第三节写 `open` 版必填 `worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`，可 analysis 的快车道既不建 worktree 也不建分支，`base_commit` 和 `branch` 两栏对 analysis 填什么没写。
+1. analysis 的快车道 scratch 开张版怎么填：第三节写 `open` 版必填 `worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`，可 analysis 的快车道既不建 worktree 也不建分支，`base_commit` 和 `branch` 两栏对 analysis 填什么没写。（2026-08-17 按 `03-ledgers.md` 的裁决，`branch` 已改成只对 deploy 的 `open` 版必填；analysis 的 `base_commit` 填什么、要不要 `branch`，03 交这一份裁。）
 2. 快车道要不要往 runs 账落一行：设计文档写「数字追加进杂账，不进 runs 账」，施工计划第三节 runs 的 `run_id` 那一栏写「快车道用 `ql_tag`」。两句同时成立推不出结论。
 3. 快车道补单的报告目录取什么名：设计文档写部署报告放「experiments/ 下这张工单自己的目录」，而快车道补单是新建直达 `done_pending_review`、开单那一刻才分配单号，前提又要求 `report_paths.method` 已经存在。目录名在拿到单号之前取不出来。
 4. 快车道补单要不要 `code_paths`：第三节写 `work_order` 进 `done_pending_review` 时 `code_paths` 必填，第四节快车道那一行的前提只列了 `quick_lane`、`method`、`explanation`、scratch `merged` 四条，没列 `code_paths`。两处对补单要不要这一栏没说到一起。
@@ -268,3 +268,7 @@ deploy 补一张标了 quick_lane 的工单，六条规矩：
 10. [slows/too_heavy] 步 19 到步 30（整个修复回路）：一个 import 报错要走完：落一条 issue、把单子标 stuck、run 会话销号、deploy 读 issue、改代码、回 issue、把单子拉回 todo、重起一个 run subagent、重读慢变量档案、重探空卡、重挑卡、重跑 smoke。至少八次账写入加两次会话生死。文档还把两条捷径都堵死了：run 不许自行重试，下游不许小修，快车道只能由 gyb 事先点名进、单子已经在正常路上时没有中途改走快车道的路。这和「想法要快速、多次迭代」的目标拧着。
    - 依据：plans/2026-08-16-research-loop-next-steps.md:7; plans/2026-08-16-research-loop-next-steps.md:185; plans/2026-08-16-research-loop-next-steps.md:180; plans/2026-08-16-research-loop-next-steps.md:64
    - 改法：给发射单加一条 smoke 失败专用短路：run 返回 traceback，deploy 在同一会话里就地修完打 rl handoff release 再起 run，issue 照开但不必等回复，并明写这不算 run 自行重试。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「可以」「可以 那就头尾查 中间不查」），scratch 中间版 `status` 仍是 `open`、不设第四态；校验头尾查中间不查（`open`、`merged`、`dropped` 三版按表查必填，中间版只查骨架和 `ql_tag`）；`branch` 改成 deploy 的 `open` 版必填。第六节两处照改。analysis 的 `base_commit`、`branch` 填什么留给本份「没写清」第 1 条。统筹 session 同步。

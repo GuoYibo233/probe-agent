@@ -13,7 +13,7 @@
 | `00-overview.md` | 总览 | 目标、十一条原则全文、九条裁决、（a）到（i）待裁改动、没采纳的九条、改掉的十六条、两轮模拟说明、这套文档的索引 | 316 | 7 | 18 | 未开 |
 | `01-gyb.md` | gyb 自己做的事与收件箱 | gyb 亲自做的七件事、身份规矩、gyb 的 use case 表、rl status 十段、推送表、定期提醒 | 485 | 8 | 约 80 | 未开 |
 | `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 | 未开 |
-| `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | 在 `rl-part-03` 手上 |
+| `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | 已定稿 `a5d05d4` |
 | `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 | 在 `rl-part-04` 手上 |
 | `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十八项、notify | 635 | 13 | 约 100 | 在 `rl-part-05` 手上 |
 | `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 未开 |

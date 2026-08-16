@@ -59,7 +59,7 @@ smoke 就失败的时候分步表和预计时长还没有，单子直接标卡�
 
 发射前先 commit，因为记录里存的 HEAD 只有工作树干净时才追得回真实代码。`loop/*.jsonl` 和 `loop/.lock` 不算脏树，要进宿主发射门禁的白名单，new1 这一行由 gyb 亲手改。
 
-发射走宿主发射器，命令模板在配置的 `launcher.launch_cmd`，new1 是 `run.py launch`。`--run-id` 和 `--track` 从发射单这次尝试上抄，run 只抄不猜（原则 9）：run_id 由 rl 按 `<ho-id>-a<attempt>` 分配（形如 `ho-0013-a1`），track 是宿主发射器要的方向名，由 deploy 开单时填。run_id 四处一致：产物目录名、tmux session、台账 name、commit message。
+发射走宿主发射器，命令模板在配置的 `launcher.launch_cmd`，new1 是 `run.py launch`。`--run-id` 和 `--track` 从发射单这次尝试上抄，run 只抄不猜（原则 9）：run_id 由 rl 按 `<ho-id>-a<attempt>` 分配（形如 `ho-0013-a1`），track 是宿主发射器要的方向名，由 deploy 开单时填。run_id 四处一致：产物目录名、tmux session、台账 name、commit message；产物目录是 `<artifact_root>/<run_id>/`，账上不另记。
 
 宿主发射器用 Bash 往 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 写字，钩子不看 Bash 写出来的文件，这不算越权（原则 2）。
 
@@ -67,7 +67,7 @@ smoke 就失败的时候分步表和预计时长还没有，单子直接标卡�
 
 一张单子的一次尝试在数字账上落两版（原则 4、原则 10）。
 
-发射成功那一刻落发射版，命令是 `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --artifact-dir ... --log ... --tmux ... --watch-cmd ...`。这一版 `status` 是 `launched`，必填 `commit`、`command`、`host`、`gpus`、`artifact_dir`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`；`command`、`config`、`run_id` 三样从发射单抄，run 只补机器和卡。`watch_cmd` 是交给 gyb 的自助监控命令，`rl status` 靠它和 `log_path` 把在跑的实验摆到 gyb 眼前。
+发射成功那一刻落发射版，命令是 `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...`。这一版 `status` 是 `launched`，必填 `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`；`command`、`config`、`run_id` 三样从发射单抄，run 只补机器和卡。`watch_cmd` 是交给 gyb 的自助监控命令，`rl status` 靠它和 `log_path` 把在跑的实验摆到 gyb 眼前。
 
 跑完落收尾版，命令是 `rl run finish RUN_ID --exit ok|failed|killed [--metric k=v ...] [--data-path P]`。这一版 `status` 是 `finished`，必填 `finished_at`、`exit_status`、`actual_seconds`；`exit_status` 是 `ok` 的时候 `metrics` 和 `data_path` 也必填。真实耗时由 `rl run finish` 从两个时间戳算出来，不管退出状态是什么都记，几次之后就知道外推偏多少。
 
@@ -77,7 +77,7 @@ runs 账的 `actor` 是 `run` 或 `gyb`。
 
 看门狗是独立进程，只在 run 上线时起，只判、只写自己的状态文件，不写九本账。run 会话每轮读它，杀进程和写账一律由 run 会话做。
 
-它判两件事，分开判：卡死看进展停没停（日志多久没新行、产物目录多久没新文件、显卡利用率是不是掉到零），和预计时长无关；超时才用最新尝试的 `estimated_seconds` 乘一个宽松系数。默认阈值写在 `research-loop.json`，gyb 可改：
+它判两件事，分开判：卡死看进展停没停（日志多久没新行、产物目录 `<artifact_root>/<run_id>/` 多久没新文件、显卡利用率是不是掉到零），和预计时长无关；超时才用最新尝试的 `estimated_seconds` 乘一个宽松系数。默认阈值写在 `research-loop.json`，gyb 可改：
 
 | 键 | 默认值 | 用在哪 |
 |---|---|---|
@@ -382,3 +382,7 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 16. [cosmetic/missing] 步 2 与步 9（钩子登记会话）：sessions 账要求 model 记真实模型标识、手动加载也记真实的、不记 inherit，rl session start --role R --model M 由钩子调；但钩子从哪拿到这个真实模型名，文档没写，待验证清单第 1 条只查了会话 id 有没有现成变量，没查模型标识。
    - 依据：plans/2026-08-16-research-loop-build-plan.md:71; plans/2026-08-16-research-loop-build-plan.md:126; plans/2026-08-16-research-loop-build-plan.md:189; plans/2026-08-16-research-loop-next-steps.md:103
    - 改法：待验证清单加一条「钩子输入里有没有模型标识」，拿不到就退成记 unknown 并把启动命令一起写进账行。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。

@@ -74,10 +74,10 @@ smoke 就失败的时候，分步表和预计时长还没有，单子直接标�
 
 | 版 | `status` | 必填 |
 |---|---|---|
-| 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`artifact_dir`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`（从发射单抄） |
+| 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`（从发射单抄） |
 | 收尾版 | `finished` | `finished_at`、`exit_status`（`ok`、`failed`、`killed`）、`actual_seconds`；`exit_status` 是 `ok` 时还要 `metrics` 和 `data_path` |
 
-`run_id` 是 runs 账的主键，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致。runs 账只有 run 角色的脚本能写，gyb 例外。
+`run_id` 是 runs 账的主键，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致；产物目录按约定是 `<artifact_root>/<run_id>/`，账上不另记。runs 账只有 run 角色的脚本能写，gyb 例外。
 
 `rl run finish` 干四件事：算 `actual_seconds`（从两个时间戳算，退出状态是什么都记）、同一个进程里跑反常预警、调宿主的收尾命令模板（new1 是 `run.py record finish`，ok 和失败都调）、落收尾版。
 
@@ -359,3 +359,7 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 6. [slows/guessed] 步 13、步 14：设计 L120 只写「上游开完单直接起一个 subagent 接走并同步等它回来」，没写下游 subagent 没走到 done 或 stuck 就返回的时候上游拿到什么、该做什么。待验证第 9 条（设计 L168、施工 L197）只问「等几个小时会不会被超时收掉」，不问「等的对象死了怎么办」。最快能发现这件事的就是被阻塞的上游会话，文档没给它任何职责，我只能按原则 3 推它该 release 加重起。
    - 依据：plans/2026-08-16-research-loop-next-steps.md:120; plans/2026-08-16-research-loop-next-steps.md:168; plans/2026-08-16-research-loop-build-plan.md:197
    - 改法：设计 L120 补一句「下游 subagent 没走到 done 或 stuck 就返回的，上游当场 rl handoff release 并决定重起还是开 issue 给 gyb」，并写进 idea 和 deploy 的 SKILL.md。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。

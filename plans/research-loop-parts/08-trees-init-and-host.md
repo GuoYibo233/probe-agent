@@ -11,7 +11,7 @@
 | 建什么 | 是什么 |
 |---|---|
 | `research-loop.json` | 配置文件，键见第二节和第三节 |
-| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出 |
+| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/` |
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
 | `review/` | reviewer 的问题清单 |
@@ -180,7 +180,6 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 2. 「本仓库跑法」这一项在 `research-loop.json` 里的键名和取值形状没写。
 3. 「宿主台账清单」这一项的键名和取值形状没写；new1 要列的是哪几个文件（`ops/jobs.json`、`ops/runs.jsonl`、`RESULTS.md`、`RUNMETA.json`？）也没写死。
 4. 配置里的「各账路径」和词表里写死的九个文件名（`loop/issues.jsonl` 这些）谁说了算：账路径可配置的话，词表那张表是默认值还是硬编码。
-5. `loop/` 九本账进不进 git 没写。
 6. 脏树白名单那处改动的执行位置。设计文档说「new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改」，CLAUDE.md 那一行谁改写清楚了，`run.py` 里门禁代码那一处谁改、`rl init` 动不动它，没写。
 7. `analysis/` 里的公共统计件模板具体播哪几个文件，没写。
 8. `rl init` 跑第二次会怎样（已有 `loop/` 和已追加过的 CLAUDE.md 一节），没写。
@@ -276,3 +275,7 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 6. [slows/missing] 步 33（第二次 smoke 通过后发射）：正常路的 run_id 谁定、怎么命名，文档没写。只有快车道写了 ql_tag 兼作宿主发射器要的 run_id、track 一律填 quick_lane。宿主 run.py launch 的 --run-id 和 --track 都是必填，new1 的规矩还要求 run_id 在产物目录名、tmux session、台账 name、commit message 四处一致，run 在这一步只能自己编一个，且 --track 要和 TIMELINE.md 的方向对得上，谁给这个值也没写。
    - 依据：plans/2026-08-16-research-loop-next-steps.md:64; plans/2026-08-16-research-loop-build-plan.md:61; plans/2026-08-16-research-loop-build-plan.md:161; plans/2026-08-16-research-loop-build-plan.md:63
    - 改法：rl handoff open --type launch_order 时自动分配 run_id 写进 launch 子对象（形如 ho-0013-01），track 由 deploy 开单时必填。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「A」，路 A 是进 git、每次 commit 顺手带上），`loop/` 九本账进 git，不另设 commit 动作，`.gitignore` 不排除 `loop/`；第一节表里 `loop/` 那行补上，「没写清」第 5 条销掉（后面条目编号没重排）。统筹 session 同步。

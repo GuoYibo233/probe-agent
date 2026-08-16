@@ -14,12 +14,12 @@ runs 是事件流，只增不改，每一行带 `version` 和 `status`，默认�
 
 | 版 | status | 必填字段 |
 |---|---|---|
-| 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`artifact_dir`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config` |
+| 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config` |
 | 收尾版 | `finished` | `finished_at`、`exit_status`、`actual_seconds`；`exit_status` 是 `ok` 时再加 `metrics` 和 `data_path` |
 
 主键是 `run_id`，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致；快车道用 `ql_tag`。另外两个身份字段是 `handoff_id` 和 `attempt`，指这条 run 属于哪张发射单的第几次尝试。`exit_status` 三选一：`ok`、`failed`、`killed`。`actual_seconds` 由 rl 从 `started_at` 和 `finished_at` 两个时间戳算，退出状态是什么都记。
 
-两处原文不一致：设计文档 run 一节列收尾版字段时写的是「结束时间、退出状态、指标、真实耗时」，没有 data_path；施工计划第三节 runs 那一行写 `exit_status` 是 `ok` 时 `metrics` 和 `data_path` 必填。按施工计划的表为准，收尾版的 ok 行有 data_path。
+两处原文不一致：设计文档 run 一节列收尾版字段时写的是「结束时间、退出状态、指标、真实耗时」，没有 data_path；施工计划第三节 runs 那一行写 `exit_status` 是 `ok` 时 `metrics` 和 `data_path` 必填。按施工计划的表为准，收尾版的 ok 行有 data_path。（2026-08-17 按 `03-ledgers.md` 的裁决定稿，设计文档那句由统筹 session 回写补上 data_path。）
 
 还有一处原文不一致：设计文档快车道一节写「数字追加进杂账，不进 runs 账」，施工计划第三节 runs 主键那一行写「快车道用 `ql_tag`」，等于承认 runs 里会有快车道的行。按施工计划的表为准，`run_id` 这一栏留了 `ql_tag` 这个取值。快车道本身在 07-quick-lane.md。
 
@@ -35,7 +35,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 
 `metrics` 是一个字典，键是指标名，值是数。口径账里的指标行（`kind` 是 `metric`）二选一：要么写 `metrics_key`，直接取 runs 账 metrics 里的那个键，不重算；要么写 `code_path`，由 analysis 按代码现算的派生量。所以 metrics 的键名就是口径账 `metrics_key` 引的那个字符串，两头得是同一个名字。doctor 有一项扫这件事：approved 口径引的 metrics 键在 runs 账里不存在。
 
-`data_path` 只在收尾版且 `exit_status` 是 `ok` 时必填。它和发射版里的 `artifact_dir` 是两个字段，`artifact_dir` 是产物目录、`log_path` 是日志路径，都在发射版上；`data_path` 在收尾版上。这两个字段各自指什么，源文档只给了名字，见文末「源文档没写清的」。
+`data_path` 只在收尾版且 `exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录。产物目录本身账上不记，按约定是 `<artifact_root>/<run_id>/`（发射版原来的 `artifact_dir` 一栏 2026-08-17 去掉了）；`log_path` 是日志路径，在发射版上。
 
 ## 查：一条 show，一条 list
 
@@ -88,7 +88,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 
 ## 源文档没写清的（留给 gyb）
 
-1. `data_path` 指什么，两份源文档只在施工计划第三节 runs 那一行出现过一次名字，没有一句说它和 `artifact_dir` 差在哪、是一个目录还是一个文件、由谁决定路径。设计文档的收尾版字段清单里根本没有它。
+1. （2026-08-17 按 `03-ledgers.md` 的裁决销掉：`data_path` 是产物目录里给 analysis 算数用的那一个文件或子目录，`artifact_dir` 一栏去掉、产物目录走 `<artifact_root>/<run_id>/` 约定。）
 2. `exit_status` 是 `failed` 或 `killed` 的收尾版要不要 `data_path`。施工计划只写了 ok 时必填，测试 10 只写了「`failed` 不要求 metrics 但要有 actual_seconds」，没提 data_path。
 3. `rl run list --line L` 和 `--decision ID` 怎么解析。runs 行上既没有 `line` 也没有 `decision_refs`，这两个字段在发射单上，源文档没写这两个开关是先查发射单再回来筛，还是别的走法。
 4. 默认过滤那句「每张单最新尝试且 `exit_status=ok`」，两个条件是并列还是有先后。一张发射单跑了三次、第二次 ok 第三次 failed 的时候，默认出不出第二次那一行，两种读法都说得通。
@@ -182,3 +182,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 11. [slows/guessed] 第 21 步（第三类到底指什么）：「runs 行没有对应发射单」有两种读法：handoff_id 为空，还是 handoff_id 指向的单子不存在或者 work_type 不是 launch_order。命令表里 `rl run add --handoff ID` 看着是必给的，第一种读法在文档里产生不出来，我只能猜是第二种，而文档也没写这条脏数据是怎么进来的。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:137; 2026-08-16-research-loop-build-plan.md:63
    - 改法：把这一项改写成「runs.handoff_id 为空、悬空、或者指向的单子 work_type 不是 launch_order」，并在旁边注一句它怎么产生。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。

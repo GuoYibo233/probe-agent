@@ -472,12 +472,12 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 ## 要同步到别处的
 
 - `04-handoffs-and-sessions.md`：sessions 字段表里 `last_activity` 那一栏「rl 每次替这个会话写任何账时顺带刷新，是 sessions 账上的一版还是内存索引施工时定」改成「不落账，rl 查询时现算，取九本账里该 `session_id` 的最大 `ts`；sessions 账不为刷新它追加版本」；04 的「没写清」第 6 条据此销掉。已同步 2026-08-17。
-- `09-common-and-feedback.md`：feedback 行格式那一句里 `verdict_text` 后面补「`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么」，和 03 的字段表一字不差。
-- `07-quick-lane.md`：scratch 那张「这一版 / 必填」表里「中间版」那一行改成「中间版（`status` 仍是 `open`）」，正文加一句「中间追加数字的每一版 `status` 仍是 `open`，不设第四态」。
-- `--force --reason` 的定义处（`01-gyb.md` / `05-rl-cli.md` / `06-hooks-and-permissions.md` 哪一处，sync-inbox 问题 1 待裁）：补一句「actor 是角色的命令带 `--force` 一律拒收，退出码 3；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写」；`05` 退出码 3 那一行同步加「含角色带 `--force`」。
-- `08-trees-init-and-host.md`：init 那一段补「`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`」，08 的「没写清」第 5 条据此销掉。
-- 设计文档「账本」一节公共骨架那一句：「七样加一个可选的 `fix_for`」改成「七样加两个可选：`fix_for`、`force_reason`」（统筹 session 回写）。
-- runs 发射版去掉 `artifact_dir`、产物目录走 `<artifact_root>/<run_id>/` 约定，牵连四份：`05-rl-cli.md` 的 `rl run add` 签名去掉 `--artifact-dir`；`12-role-run.md` 第 70 行发射版必填清单去掉 `artifact_dir`、第 62 行「run_id 和产物目录名一致」补成「产物目录是 `<artifact_root>/<run_id>/`」、第 80 行看门狗「产物目录多久没新文件」按约定找；`21-pair-deploy-run.md` 第 77 行、`23-pair-run-analysis.md` 第 17 行发射版字段清单去掉 `artifact_dir`，`23` 第 38 行和「没写清」第 1 条（`data_path` 和 `artifact_dir` 差在哪）据此改写。这条约定归 `08`（`artifact_root`）还是 `12`（run 的产物）由统筹定。
-- 设计文档 run 一节收尾版「结束时间、退出状态、指标、真实耗时」四样补 `data_path`（统筹 session 回写）。
-- `07-quick-lane.md`：第 60 行「格式松，入账校验只校验骨架和快车道标签」改成「中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填」；scratch 表 `open` 那一行 `branch` 改成「`branch`（deploy）」，并在 07 自己「没写清」第 1 条裁 analysis 的 `base_commit`、`branch` 填什么。
-- 设计文档「账本」一节杂账「格式松、只校验骨架和快车道标签」改成「中间版格式松；开张、合回、放弃三版各有必填」（统筹 session 回写）。
+- `09-common-and-feedback.md`：feedback 行格式那一句里 `verdict_text` 后面补「`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么」，和 03 的字段表一字不差。 已同步 2026-08-17。
+- `07-quick-lane.md`：scratch 那张「这一版 / 必填」表里「中间版」那一行改成「中间版（`status` 仍是 `open`）」，正文加一句「中间追加数字的每一版 `status` 仍是 `open`，不设第四态」。 已同步 2026-08-17。
+- `--force --reason` 的定义处（`01-gyb.md` / `05-rl-cli.md` / `06-hooks-and-permissions.md` 哪一处，sync-inbox 问题 1 待裁）：补一句「actor 是角色的命令带 `--force` 一律拒收，退出码 3；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写」；`05` 退出码 3 那一行同步加「含角色带 `--force`」。 已同步 2026-08-17：`05` 退出码那行已交 rl-part-05；规矩本身的定义处仍在 sync-inbox 问题 1 等 gyb。
+- `08-trees-init-and-host.md`：init 那一段补「`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`」，08 的「没写清」第 5 条据此销掉。 已同步 2026-08-17。
+- 设计文档「账本」一节公共骨架那一句：「七样加一个可选的 `fix_for`」改成「七样加两个可选：`fix_for`、`force_reason`」（统筹 session 回写）。 已同步 2026-08-17。
+- runs 发射版去掉 `artifact_dir`、产物目录走 `<artifact_root>/<run_id>/` 约定，牵连四份：`05-rl-cli.md` 的 `rl run add` 签名去掉 `--artifact-dir`；`12-role-run.md` 第 70 行发射版必填清单去掉 `artifact_dir`、第 62 行「run_id 和产物目录名一致」补成「产物目录是 `<artifact_root>/<run_id>/`」、第 80 行看门狗「产物目录多久没新文件」按约定找；`21-pair-deploy-run.md` 第 77 行、`23-pair-run-analysis.md` 第 17 行发射版字段清单去掉 `artifact_dir`，`23` 第 38 行和「没写清」第 1 条（`data_path` 和 `artifact_dir` 差在哪）据此改写。这条约定归 `08`（`artifact_root`）还是 `12`（run 的产物）由统筹定。 已同步 2026-08-17：`12`、`21`、`23`、两份源文档由统筹改，`05` 交 rl-part-05；约定归 `08` 还是 `12` 攒进 sync-inbox 问题 4 等 gyb。
+- 设计文档 run 一节收尾版「结束时间、退出状态、指标、真实耗时」四样补 `data_path`（统筹 session 回写）。 已同步 2026-08-17。
+- `07-quick-lane.md`：第 60 行「格式松，入账校验只校验骨架和快车道标签」改成「中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填」；scratch 表 `open` 那一行 `branch` 改成「`branch`（deploy）」，并在 07 自己「没写清」第 1 条裁 analysis 的 `base_commit`、`branch` 填什么。 已同步 2026-08-17。
+- 设计文档「账本」一节杂账「格式松、只校验骨架和快车道标签」改成「中间版格式松；开张、合回、放弃三版各有必填」（统筹 session 回写）。 已同步 2026-08-17。

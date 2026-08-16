@@ -60,7 +60,7 @@
 
 feedback 是反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的人在 `rl inbox` 里看得到裁决。文件是 `loop/feedback.jsonl`。
 
-行格式（公共骨架七样另见 `03-ledgers.md`）：`id`；`target`，取值是文件路径，或者带前缀的编号 `rule-06`、`principle-06`；`text`；`status` 取 `proposed`、`accepted`、`rejected`；`verdict_text`；`applied_to`，采纳时必填，是路径列表，rl 校验每个路径存在；`rules_version_after`，采纳时 rl 自动填。提的那一版谁都能写，裁的那一版 `actor` 必须是 `gyb`。
+行格式（公共骨架七样另见 `03-ledgers.md`）：`id`；`target`，取值是文件路径，或者带前缀的编号 `rule-06`、`principle-06`；`text`；`status` 取 `proposed`、`accepted`、`rejected`；`verdict_text`，`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么；`applied_to`，采纳时必填，是路径列表，rl 校验每个路径存在；`rules_version_after`，采纳时 rl 自动填。提的那一版谁都能写，裁的那一版 `actor` 必须是 `gyb`。
 
 裁成采纳的那一版写清改了哪几个文件，是个列表，母版和文档都算。
 
@@ -347,3 +347,7 @@ grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义�
 13. [cosmetic/missing] 第 1 步（谁跑 doctor、跑完能不能自己修）：doctor 写的是「谁都行」，但角色会话跑出问题之后能不能自己修没写。deploy 看到自己名下那张 done_pending_review 的报告路径没了，它是 to_role 不是 owner，按转移表打回只有 owner 能写，它只能开 issue，文档没说这一步该开给谁、kind 填哪个。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:89; 2026-08-16-research-loop-build-plan.md:45
    - 改法：在 doctor 那一行写一句「角色跑 doctor 只看不修，修法一律 `rl issue open --to <owner> --kind cannot` 报给 owner 或 gyb」。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「都必填」），feedback 的 `verdict_text` 在 `accepted` 和 `rejected` 两版都必填；第五节行格式那句照 03 字段表补齐。统筹 session 同步。
