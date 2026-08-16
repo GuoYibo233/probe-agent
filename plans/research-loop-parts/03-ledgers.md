@@ -1,22 +1,22 @@
 # 九本账的行格式与入账规则
 
-> 这份覆盖三样：九本账共同的总规矩（只增不改、version 与 status、锁与写序、能写就能查）、公共骨架七样加三个可选字段、九本账每一本的字段级行格式，外加 `bin/rl` 的退出码。
+> 这份覆盖三样：九本账共同的总规矩（只增不改、version 与 status、锁与写序、能写就能查）、公共骨架七样加两个可选字段、九本账每一本的字段级行格式，外加 `bin/rl` 的退出码。
 > 不覆盖的：decisions 的行格式、编号规则和来源三类写在 `02-decisions.md`；handoffs 的行格式和派活单状态转移表写在 `04-handoffs-and-sessions.md`，会话的登记、销号、回收也在那一份（这份只写 sessions 的行格式）；每条子命令怎么写、`rl status` 和 `rl inbox` 列什么、doctor 扫什么，都在 `05-rl-cli.md`；哪个角色能调哪条写命令在 `06-hooks-and-permissions.md`；快车道的进出动作在 `07-quick-lane.md`；阈值和配置文件在 `08-trees-init-and-host.md`；母版 `rules_version` 和反馈账的用法在 `09-common-and-feedback.md`。
 > 源：设计文档的「账本」一节、原则 4、原则 6、原则 1 里 gyb 豁免那一段、「分权与钩子」的第二层；施工计划第二节词表、第三节九本账的字段级行格式、第六节末尾的退出码与锁那两段。
 
 ## 账本的总规矩
 
-九本账全放 `loop/`，一行一条 json，不用 markdown，只经 `bin/rl` 进出。角色会话直接 Write 或 Edit `loop/` 由钩子拦下，见 `06-hooks-and-permissions.md`。`loop/` 进 git：每次 commit 顺手带上，不另设 commit 动作，账本 diff 永远是纯追加行；`loop/*.jsonl` 和 `loop/.lock` 不算脏树，宿主白名单那一处见 `08-trees-init-and-host.md`。
+九本账全放 `loop/`，一行一条 json，不用 markdown，只经 `bin/rl` 进出。角色会话直接 Write 或 Edit `loop/` 由钩子拦下，见 `06-hooks-and-permissions.md`。`loop/` 进 git：每次 commit 顺手带上，不另设 commit 动作，账本 diff 永远是纯追加行；九本账的 jsonl 和 `loop/.lock` 不算脏树，宿主白名单那一处见 `08-trees-init-and-host.md`。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，本节的总规矩（只增不改、锁、进 git、脏树白名单）不管它（2026-08-17 gyb 裁，sync-inbox 问题 24；它由 doctor 首次 `--ack` 时建、`rl init` 不建，见 `08` 第一节和 `05` doctor 一节）。
 
 只增不改。任何「改」都是追加一版，一行写下去就不再动。默认查询对每个主键只取最新版，历史全在文件里，要旧版本得显式要。
 
 每本账都有 `status` 字段，runs 和 sessions 也不例外。入账校验按 `status` 查：一个字段必不必填看这一版的 `status`，不看全局。
 
-写账的会话得活着：一条写命令的 `session_id` 在 sessions 账里最新版是 `closed` 的，rl 拒收并提示「会话已被销号，重新加载角色登记」（2026-08-17 gyb 裁，事情本身在 `04-handoffs-and-sessions.md` 第七节 `rl session end --session ID` 那条；这条校验的定义处是本份，sync-inbox 问题 5）。销号钩子自己写的那些 release 行不会被这条拒掉：`04` 第六节定的顺序是先把名下开干的单子交回待干（release 行的 `session_id` 记那个会话），最后才落 sessions 的 `closed` 版。
+写账的会话得活着：一条写命令的 `session_id` 在 sessions 账里最新版是 `closed` 的，rl 拒收并提示「会话已被销号，重新加载角色登记」，退出码 3；`--force`、`--as-gyb --force` 都越不过这条，唯一出路是重新加载角色（2026-08-17 gyb 裁，事情本身在 `04-handoffs-and-sessions.md` 第七节 `rl session end --session ID` 那条；这条校验的定义处是本份，sync-inbox 问题 5；退出码和越不过是问题 14）。销号钩子自己写的那些 release 行不会被这条拒掉：`04` 第六节定的顺序是先把名下开干的单子交回待干（release 行的 `session_id` 记那个会话），最后才落 sessions 的 `closed` 版。
 
 前提查在交付那一刻，不查在开单那一刻。开单只查「这一行说得清自己是什么」，交付才查「东西齐不齐」。哪一版查哪些前提写在转移表里，见 `04-handoffs-and-sessions.md`。
 
-锁是 `loop/.lock`，一把全局文件锁。扫号、分配编号（含 `ql_tag`、`run_id`、`batch`）、追加，这三步放在同一把锁里，不许扫完号再排队写，否则同一个角色的两个会话会撞号。
+`loop/.lock` 一把全局文件锁。扫号、分配编号、追加这三步放在同一把锁里，不许扫完号再排队写，否则同角色两个会话会撞号。锁里分配的编号包括 `ql_tag`、`run_id`（`batch` 是调用者自由文本，rl 不分配，2026-08-17 问题 9）。
 
 编号的序号从 1 起，四位是最小宽度不是上限（`iss-0001` 到 `iss-9999`，下一条是 `iss-10000`），rl 排序按数值不按字符串；编号一旦发出去永远不重发、不回收。decisions 的编号带 actor 前缀（`dec-idea-0007`），六个文件各排各的序号，规则在 `02-decisions.md`。
 
@@ -26,7 +26,7 @@
 
 gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和转移表的「谁能写」；必填字段、路径存在、引用存在这些完整性校验对 gyb 同样生效。gyb 要硬写就加 `--force --reason`，rl 照写并把原因记进账行的 `force_reason`。`--force` 是 gyb 的权：actor 是角色的命令带 `--force` 一律拒收，退出码 3，错误信息附「开 issue 给 gyb」的命令；角色遇到完整性校验拒收只有两条路，把行补齐，或开 issue 让 gyb 决定要不要硬写。角色会话里 `--as-gyb --quote --force --reason` 这个组合按原则 1 算 gyb 身份写，照写，`quote` 和 `force_reason` 都记进账行。
 
-## 公共骨架七样加三个可选字段
+## 公共骨架七样加两个可选字段
 
 每本账的每一行都有这七样：
 
@@ -40,7 +40,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `session_id` | 会话 id，裸终端记 `cli` | 写入会话 |
 | `schema_version` | 整数，从 1 起 | 行格式的版本，九本账共用一个数：任何一本账的字段表改了（加字段、改取值域、改必填条件）整套加一；rl 写每一行时填当前的数，读旧行时按行上标的那一版字段表解析和校验，不拿今天的表挑旧行的错 |
 
-另外三个字段可选，都是「这一行不是常规写入」的痕迹：`fix_for` 是 doctor 修账时记的扫描项名字（doctor 打印的修法命令一律带 `--fix-for <扫描项>`），`force_reason` 在 gyb 用 `--force` 时必填、记硬写的理由，`via` 标自动写的行、取 `session_end`（销号钩子写的 release 行，`actor` 记会话角色）或 `reclaim`（reclaim 写的，`actor` 记 gyb）（2026-08-17 随 `05` 定稿裁）。设计文档原来只写了 `fix_for` 一个，2026-08-17 裁定两个都要，设计文档那一句回去改。
+另外两个字段可选，都是「这一行不是常规写入」的痕迹：`force_reason` 在 gyb 用 `--force` 时必填、记硬写的理由；`via` 标自动写的行、取 `session_end`（销号钩子写的 release 行，`actor` 记会话角色）或 `reclaim`（`rl reclaim --apply` 写的，`actor` 记 gyb）（2026-08-17 随 `05` 定稿裁）。设计文档原来只写了 `fix_for` 一个；2026-08-17 先裁成 `fix_for`、`force_reason` 两个，同日随 `05` 定稿加了 `via`，再按 sync-inbox 问题 15 把 `fix_for` 删掉（doctor 的修法命令不带 `--fix-for`），最后就是 `force_reason`、`via` 两个，设计文档那一句回去改。
 
 ## 九本账的名字和文件
 
@@ -89,7 +89,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `orphaned` | holder 会话死了单子交回了，通知类 |
 | `fyi` | gyb 越过 owner 处理了你的单子，通知类 |
 
-入账规则四条：改派等于追加一版换 `assignee`；`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知；`reply` 只有 `assignee` 或 gyb 能写；`close` 只有开单的 actor 或 gyb 能写。另有两处自动关：`rl handoff accept` 关这张单关联的 `answered` issue，`rl inbox` 关读到的通知类 issue。
+入账规则四条：改派等于追加一版换 `assignee`；`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知；`reply` 只有 `assignee` 或 gyb 能写；`close` 只有开单的 actor 或 gyb 能写，通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 `assignee` 也能关（2026-08-17 gyb 裁，sync-inbox 问题 23：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`）。另有一处自动关：`rl handoff accept` 关这张单关联的 `answered` issue。
 
 ## handoffs
 
@@ -97,11 +97,11 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 
 ## runs
 
-数字账一个 schema，一次尝试两版：发射成功那一刻落发射版，跑完落收尾版。`status` 取 `launched`、`finished`。另有 `relink` 版只改 `handoff_id`，是 doctor 第 6 项的修法，命令 `rl run relink RUN_ID --handoff ID`（2026-08-17 随 `05` 定稿裁，见 `05` doctor 表）。`actor` 是 `run` 或 `gyb`：数字账只有 run 角色的脚本能写，gyb 是原则 1 的例外。
+数字账一个 schema，三版：发射成功那一刻落发射版（`launched`），跑完落收尾版（`finished`），另有 `adopted` 版——run 会话接单时发现最新一次尝试已发射没收尾就认领，`rl handoff start` 顺带给 runs 那条写一版 `adopted`，记新 holder 的 `session_id`、`ts`（这两样就是骨架栏，不另加字段），不另设 `rl run adopt`（2026-08-17 gyb 裁，sync-inbox 问题 17，形状由 `05` 定）。`status` 取 `launched`、`finished`、`adopted`。另有 `relink` 版只改 `handoff_id`，是 doctor 第 6 项的修法，命令 `rl run relink RUN_ID --handoff ID`（2026-08-17 随 `05` 定稿裁，见 `05` doctor 表）；`relink` 版的 `status` 填什么还没裁，见文末「源文档没写清的」。`actor` 是 `run` 或 `gyb`：数字账只有 run 角色的脚本能写，gyb 是原则 1 的例外。
 
 | 字段 | 取值或格式 | 必填条件 |
 |---|---|---|
-| `run_id` | 形如 `ho-0013-a1`，快车道用 `ql_tag` | 主键，和产物目录名、tmux session、commit message 一致；产物目录按约定是 `<artifact_root>/<run_id>/`，账上不另记 |
+| `run_id` | 形如 `ho-0013-a1` | 主键，和产物目录名、tmux session、commit message 一致；产物目录按约定是 `<artifact_root>/<run_id>/`，账上不另记 |
 | `handoff_id` | 发射单编号 | 必填 |
 | `attempt` | 整数 | 必填 |
 | `commit` | git commit | `launched` 版必填 |
@@ -115,17 +115,17 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `config` | 字典：`model`、`params`、`dataset`、`split`、其余超参 | `launched` 版必填，从发射单抄 |
 | `finished_at` | 时间 | `finished` 版必填 |
 | `exit_status` | `ok`、`failed`、`killed` | `finished` 版必填 |
-| `actual_seconds` | 秒 | `finished` 版必填，rl 从两个时间戳算；handoffs 上的 `actual_seconds` 只从这里来，`rl handoff done` 不带 `--actual-seconds`（2026-08-17 随 `05` 定稿裁） |
+| `actual_seconds` | 秒 | `finished` 版必填，rl 从两个时间戳算；handoffs 发射单最新一次尝试上的 `actual_seconds` 由 rl 在 `run finish` 时从这里抄、人不填，`rl handoff done` 不带 `--actual-seconds`（2026-08-17 随 `05` 定稿裁；抄进 handoffs 是 sync-inbox 问题 13） |
 | `metrics` | 字典，键是指标名、值是数 | `exit_status` 是 `ok` 时必填 |
 | `data_path` | 路径：产物目录里给 analysis 算数用的那一个文件或子目录 | `exit_status` 是 `ok` 时必填 |
 
 收尾版有 `data_path`（2026-08-17 裁，按施工计划的表；设计文档收尾版四样那一句回去补）；发射版原来的 `artifact_dir` 一栏去掉，产物目录走 `<artifact_root>/<run_id>/` 的约定，看门狗和翻半截产物都按约定找。
 
-真实耗时不管退出状态是什么都记。数字账默认只列每张单最新一次退出状态为 `ok` 的行，全出要另外要，见 `05-rl-cli.md`。
+真实耗时不管退出状态是什么都记。数字账默认只列每张单最新一次尝试的行，且退出状态是 `ok`；最新一次不是 `ok` 的这张单不出（2026-08-17 gyb 裁，sync-inbox 问题 12），全出要另外要（`--all`），见 `05-rl-cli.md`。
 
 ## grants
 
-授权只有 gyb 在裸终端能写：`actor` 必须是 `gyb`，`session_id` 必须是 `cli`。角色会话里替 gyb 批授权不收。`status` 取 `active`、`revoked`。
+授权只有 gyb 能写：`actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节 (d)「grants 只收裸终端」不认）。`status` 取 `active`、`revoked`。
 
 | 字段 | 取值或格式 | 必填条件 |
 |---|---|---|
@@ -146,10 +146,10 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `target` | 文件路径，或带前缀的编号 `rule-06`、`principle-06` | 必填 |
 | `text` | 文本 | 必填 |
 | `verdict_text` | 文本 | `accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么 |
-| `applied_to` | 路径列表，rl 校验每个路径存在 | 采纳时必填 |
+| `applied_to` | 路径列表，rl 校验每个路径存在 | 采纳时必填，至少写一个 |
 | `rules_version_after` | 母版版本 | 采纳时 rl 自动填 |
 
-采纳的那一版要写清改了哪几个文件，母版和文档都算。
+采纳的那一版要写清改了哪几个文件，母版和文档都算，至少写一个、不要求两样都有（2026-08-17 gyb 裁，sync-inbox 问题 26；doctor 第 17 项只在 `applied_to` 为空时报）。
 
 ## evaluations
 
@@ -173,7 +173,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 
 ## sessions
 
-会话账两版：开始版和结束版；另有 `amend` 版，只许改 `model`，是 doctor 第 19 项 `model=unknown` 的修法，命令 `rl session amend ID --model M`（2026-08-17 随 `05` 定稿裁）。开始版由钩子代角色写，`actor` 填角色。`status` 取 `open`、`closed`。
+会话账两版：开始版和结束版；另有 `amend` 版，只许改 `model`，是 doctor 第 19 项 `model=unknown` 的修法，命令 `rl session amend ID --model M`（2026-08-17 随 `05` 定稿裁）；amend 版的 `status` 与其他栏照抄最新版、只换 `model`，`closed` 的会话也能 amend，写者是 gyb 或该角色自己的活会话（不触「写账的会话得活着」那条）（2026-08-17 gyb 裁，sync-inbox 问题 18、30）。开始版由钩子代角色写，`actor` 填角色。`status` 取 `open`、`closed`。
 
 | 字段 | 取值或格式 | 必填条件 |
 |---|---|---|
@@ -205,46 +205,52 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 | `branch` | 分支名 | deploy 的 `open` 版必填；analysis 的快车道不建分支，要不要这一栏由 `07-quick-lane.md` 定 |
 | `note` | 文本 | 中间版（`status` 仍是 `open`）自由，建议写 |
 | `metrics` | 键值对 | 中间版（`status` 仍是 `open`）自由，建议写 |
-| `handoff_id` | 快车道补单编号 | `merged` 版必填 |
+| `handoff_id` | 快车道补单编号 | `merged` 版必填；写序是先开补单拿到编号再 `rl ql close --merged --handoff ID`，补单那头的 `ql_tag` 栏反过来指这条 scratch 行，两边互指（2026-08-17 gyb 裁，sync-inbox 问题 8）。`merged` 只对 deploy 的快车道开，analysis 的快车道只有 `dropped`（问题 16，进出动作在 `07`） |
 | `reason` | 文本 | `dropped` 版必填 |
 
 校验头尾查、中间不查（2026-08-17 裁，按施工计划的表）：`open`、`merged`、`dropped` 三版各按上表查必填，中间追加数字的版只查骨架和 `ql_tag`。设计文档「格式松、只校验骨架和快车道标签」那句只对中间版成立，回去改成「中间版格式松」。
 
-快车道的数字追加进杂账，不进 runs 账。杂账里的东西一旦要进正账拿来复用，它就不是快车道了，得按正常路重跑。
+快车道的数字追加进杂账，不进 runs 账（2026-08-17 gyb 裁，sync-inbox 问题 22；runs 表 `run_id` 那格原来写的「快车道用 `ql_tag`」已删）。杂账里的东西一旦要进正账拿来复用，它就不是快车道了，得按正常路重跑。
 
 ## 退出码
 
-| 码 | 意思 | 附带 |
+| 码 | 含义 | 附带什么 |
 |---|---|---|
-| 0 | 成功 | |
+| 0 | 成功 | 无 |
+| 1 | rl 内部错误 | 标准错误第一行固定原因种类 |
 | 2 | 校验拒收 | 原因写到标准错误，包含下一步该做什么 |
-| 3 | 角色无权（含角色带 `--force`） | 同上，附「开 issue 给谁」的命令 |
-| 4 | 文件锁等待超时 | 等 `lock.timeout_seconds`（默认 10 秒，阈值表在 `08` 第三节） |
+| 3 | 角色无权（含角色带 `--force`、被销号会话再写账，`--as-gyb --force` 也越不过） | 同上，附「开 issue 给谁」的命令 |
+| 4 | 文件锁等待超时（等 `lock.timeout_seconds`，默认 10 秒，进 `research-loop.json` 阈值表（08 第三节）） | 无 |
+| 5 | 用法错（参数写错、编号不存在） | 原因写到标准错误，附正确用法或查不到的编号 |
 
-所有子命令支持 `--json`。表外的转移一律拒收，退出码 2。
+所有非零退出，标准错误第一行是固定格式的原因种类（2 `validation`、3 `forbidden`、4 `lock_timeout`、5 `usage`、1 `internal`），`--json` 时同一个值放 `error.kind`（2026-08-17 问题 25）。
+
+所有子命令支持 `--json`。表外的转移一律拒收，退出码 2，带 `--force` 的 gyb 也一样（`--force` 只越过完整性前提，定义处 `01` 第二节）。上表和「原因种类」那句 `05-rl-cli.md` 照抄，两边一字不差。
 
 ## 和别的 part 的接口
 
-本份是定义处的东西：九本账公共骨架（七样加 `fix_for`、`force_reason`、`via`）、总规矩（只增不改、按 `status` 查、锁与写序、编号从 1 起四位起步、能写就能查、gyb 豁免只到权限层、`loop/` 进 git）、issues / runs / grants / feedback / evaluations / sessions / scratch 七本的字段级行格式、退出码四个。别的 part 提到这些只指过来不抄；HANDOFF 四点五节标了「写了两遍」的三处（`09` 抄 issues/grants/feedback、`07` 抄 scratch、`04` 抄 sessions）每次同步要和本份一字不差。
+本份是定义处的东西：九本账公共骨架（七样加 `force_reason`、`via` 两个可选栏；`fix_for` 2026-08-17 问题 15 删）、总规矩（只增不改、按 `status` 查、写账的会话得活着、锁与写序、编号从 1 起四位起步、能写就能查、gyb 豁免只到权限层、`loop/` 进 git；`loop/.doctor-acks.jsonl` 不归总规矩管）、issues / runs / grants / feedback / evaluations / sessions / scratch 七本的字段级行格式、退出码六个（0/1/2/3/4/5）与非零退出的原因种类。别的 part 提到这些只指过来不抄；HANDOFF 四点五节标了「写了两遍」的几处（`09` 抄 issues/grants/feedback、`07` 抄 scratch、`04` 抄 sessions、`05` 抄锁与写序和退出码表）每次同步要和本份一字不差。
 
 本份指出去的：
 
-- 派活单的七个状态、转移表、每一版查哪些前提，定义在 `04-handoffs-and-sessions.md`，本份的「校验按 status 查」靠它落地；handoffs 的全部字段（`parent_id`、`attempts`、`decision_refs`、`evaluation_refs`、`report_paths`、`code_paths`、`output_paths`、`progress_note`）也定义在那一份，本份 handoffs 一段只留一句指过去。
+- 派活单的七个状态、转移表、每一版查哪些前提，定义在 `04-handoffs-and-sessions.md`，本份的「校验按 status 查」靠它落地；handoffs 的全部字段（`parent_id`、`attempts`（含每次尝试的 `actual_seconds`，rl 从 runs 抄）、`decision_refs`、`evaluation_refs`、`report_paths`、`code_paths`、`output_paths`、`progress_note`、`ql_tag`、`adopted`）也定义在那一份，本份 handoffs 一段只留一句指过去。runs 的 `adopted` 版由 `rl handoff start` 认领时顺带写，认领的判据在 `04` 转移表 `start` 那一行。
 - 钩子代角色写 sessions 开始版、销号写结束版、reclaim 的动作定义在 `04-handoffs-and-sessions.md` 和 `06-hooks-and-permissions.md`；本份只定 sessions 的行格式。`last_activity` 不落账、查询时现算（2026-08-17 裁），`rl status`、`rl reclaim`、`rl session show` 算它的写法在 `05-rl-cli.md`。
 - decisions 的字段（`root_id`、`sources` 三类、`quote`、`merged_from`）、六个文件的落法、编号带 actor 前缀六个文件各排各的号，定义在 `02-decisions.md`。
-- actor 怎么判（裸终端记 `cli`、角色会话加 `--as-gyb` 要 `--quote`）和 `--force --reason` 的命令行写法，本份指 `01-gyb.md`（2026-08-17 gyb 裁：这一组规矩定义处归 `01`，`05` 的「actor 怎么定」是命令行写法）。本份定的是：角色带 `--force` 拒收退出码 3，`--as-gyb --quote --force --reason` 算 gyb 身份照写。
-- 每本账的写命令和查询命令清单、`rl trace`、`rl status`、`rl inbox`、`rl doctor`（含扫描项名字，`fix_for` 填它）、`rl reclaim` 在 `05-rl-cli.md`；`rl run add` 的签名去掉 `--artifact-dir`（2026-08-17 裁）。
+- actor 怎么判（裸终端记 `cli`、角色会话加 `--as-gyb` 要 `--quote`）和 `--force --reason` 的命令行写法，本份指 `01-gyb.md`（2026-08-17 gyb 裁：这一组规矩定义处归 `01`，`05` 的「actor 怎么定」是命令行写法）。本份定的是：角色带 `--force` 拒收退出码 3，`--as-gyb --quote --force --reason` 算 gyb 身份照写；被销号会话再写账退出码 3、任何 `--force` 越不过。grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，问题 27）定义处也是 `01` 第二节，本份 grants 一段照它写。
+- 每本账的写命令和查询命令清单、`rl trace`、`rl status`、`rl inbox`（只读不关）、`rl doctor`（十九项与修法；`--ack/--unack` 是写命令、只有 gyb）、`rl reclaim` 在 `05-rl-cli.md`；`rl run add` 的签名去掉 `--artifact-dir`（2026-08-17 裁）。`05` 的「锁与写序」一节和退出码表照抄本份，两边一字不差。
 - 哪个角色能调哪条写命令（角色 json 的 `ledger_writes`）在 `06-hooks-and-permissions.md`；钩子拦直接写 `loop/` 也在那一份。
-- `ql_tag` 的分配、scratch 三态的开张关张动作（`rl ql open`、`rl ql close`）、analysis 的快车道 `base_commit` 和 `branch` 两栏填什么，在 `07-quick-lane.md`。本份定的是：中间版 `status` 仍是 `open`，校验头尾查中间不查。
+- `ql_tag` 的分配、scratch 三态的开张关张动作（`rl ql open`、`rl ql close`）、合回六步的顺序（先开补单再 `ql close --merged`）、analysis 的快车道只有 `--dropped`、analysis 的快车道 `base_commit` 和 `branch` 两栏填什么，在 `07-quick-lane.md`。本份定的是：中间版 `status` 仍是 `open`，校验头尾查中间不查，`merged` 版必填 `handoff_id` 与补单的 `ql_tag` 互指，快车道数字不进 runs。
 - 九本账的路径、产物根 `artifact_root`、阈值（`issues.answered_stale_days` 这类）写在 `research-loop.json`，见 `08-trees-init-and-host.md`；`loop/` 进 git、脏树白名单那一处也在 `08`。产物目录 `<artifact_root>/<run_id>/` 这条约定定义在 `08` 第一节（2026-08-17 gyb 裁），本份 runs 表只引它。
 - feedback 的 `rules_version_after` 和母版 `rules_version` 的关系、feedback 的流程在 `09-common-and-feedback.md`；`verdict_text` 两版都必填由本份定。
 - 口径怎么提、怎么批、批的时候一句话批一组，在 `13-role-analysis.md` 和 `22-pair-idea-analysis.md`；`applies_to` 是自由文本但要写具体程序或参数由本份定。
-- runs 两版什么时候落、`rl run finish` 顺带调宿主收尾命令、看门狗按 `<artifact_root>/<run_id>/` 找产物目录，在 `12-role-run.md`；`data_path` 是产物目录里给 analysis 算数用的那一份，analysis 那头怎么用在 `23-pair-run-analysis.md`。
+- runs 三版什么时候落（`launched`、`finished` 由 run 写，`adopted` 由 `rl handoff start` 认领时顺带写）、`rl run finish` 顺带调宿主收尾命令、看门狗按 `<artifact_root>/<run_id>/` 找产物目录，在 `12-role-run.md`；`data_path` 是产物目录里给 analysis 算数用的那一份，analysis 那头怎么用在 `23-pair-run-analysis.md`。
 - 九本账的测试用例（锁与撞号、runs schema、口径、feedback）在 `30-build-steps-verify-tests.md`。
 
 ## 源文档没写清的
 
-（无，全部已裁，见「裁决记录」。）
+（原来的全部已裁，见「裁决记录」。下面这条是 2026-08-17 晨质量检查带出来的，等 gyb，sync-inbox 问题 31。）
+
+1. runs 的 `relink` 版 `status` 填什么。总规矩说入账校验按 `status` 查，runs 一段给了 `launched`、`finished`、`adopted` 三个值，`relink` 版（doctor 第 6 项修法，只改 `handoff_id`）没说填哪个。两种写法：（a）照 sessions 的 `amend` 版，`status` 与其他栏照抄最新版、只换 `handoff_id`；（b）另加一个 `relink` 值。
 
 ## 第二轮模拟里归到这一份的摩擦
 
@@ -474,6 +480,22 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：公共骨架可选栏加 `via`（`session_end`、`reclaim`）；sessions 账加 `amend` 版只许改 `model`；handoffs 的 `actual_seconds` 只从 runs 的 `finish` 版来、`done` 不填。对回原则 4、6、8、10。骨架一节、sessions 一节、runs 字段表照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。
 - 2026-08-17 gyb 裁（sync-inbox 问题 5，原话「问题5 给3」，rl-hub 转来）：「sessions 最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记」这条入账校验定义处归本份「账本的总规矩」一节。对回原则 1、4。
+- 2026-08-17 晨，sync-inbox 问题 6–30 的裁决落进本份（rl-hub-v2 逐条问 gyb，新统筹落地；`05` 定的四处措辞照抄）：
+  - 问题 9（原话「A」）：`batch` 是调用者自由文本、可选，rl 不分配；锁那句去掉 `batch`。对回原则 8。
+  - 问题 12（原话「B」）：runs 默认列表是每张单最新一次尝试且 `ok`，最新一次不是 `ok` 的这张单不出。对回原则 10。
+  - 问题 13（原话「B」）：handoffs 发射单最新一次尝试记 `actual_seconds`，`rl run finish` 时 rl 从 runs 抄、人不填。对回原则 10。
+  - 问题 14（原话「A」）：被销号会话再写账退出码 3，`--force`、`--as-gyb --force` 都越不过，唯一出路重新加载角色。对回原则 1。
+  - 问题 15（原话「B」）：`fix_for` 栏删掉，可选栏是 `force_reason`、`via` 两个；修法命令不带 `--fix-for`。对回原则 4。
+  - 问题 16（原话「A」）：analysis 的快车道没有补单，只能 `--dropped`；scratch `merged` 版只对 deploy 开。对回原则 7。
+  - 问题 8（原话「A」）：先开补单拿编号再 `ql close --merged --handoff ID`；handoffs 加 `ql_tag` 栏，与 scratch `merged` 版 `handoff_id` 互指。对回原则 7、9。
+  - 问题 17（原话「C」）：认领两边都标，runs 加一版 `adopted`（记新 holder 的 `session_id`、`ts`），由 `rl handoff start` 顺带写、不另设 `rl run adopt`（`05` 定形状）；runs `status` 取值加 `adopted`。对回原则 11。
+  - 问题 18（原话「A」）与问题 30（原话「B」）：sessions `amend` 版 `status` 与其他栏照抄最新版、只换 `model`，`closed` 也能 amend；写者是 gyb 或该角色自己的活会话。对回原则 4、5。
+  - 问题 22（原话「A」）：快车道数字不进 runs，runs 表 `run_id` 格删「快车道用 `ql_tag`」。对回原则 7。
+  - 问题 23（原话「只有做完了的时候才关，巡检要我本人确认」）：`rl inbox` 只读不关；通知类 issue 由收件人做完了自己 `rl issue close`，issues 写权 close 那条补「通知类 issue 的 `assignee` 也能关」；`doctor --ack/--unack` 是写命令、只有 gyb。对回原则 2、6。
+  - 问题 24（原话「B」）：`loop/.doctor-acks.jsonl` 是普通文件，本份总规矩不管它。对回原则 4。
+  - 问题 25（原话「我想让agent有办法识别发生了什么就行」）：退出码加 1 内部错、5 用法错，共六个；非零退出标准错误第一行固定原因种类 `validation`/`forbidden`/`lock_timeout`/`usage`/`internal`，`--json` 放 `error.kind`（种类词是统筹拟的措辞，`05` 已用）。对回原则 6。
+  - 问题 26（原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：feedback `applied_to` 至少一个即可。对回原则 4。
+  - 问题 27（原话「3 不是，可以替我写」）：grants 不限裸终端，角色会话里 `--as-gyb --quote` 替 gyb 写也收；`actor` 仍必须是 `gyb`。定义处 `01` 第二节，本份 grants 段照改。对回原则 1。
 
 ## 要同步到别处的
 
@@ -487,3 +509,14 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 设计文档 run 一节收尾版「结束时间、退出状态、指标、真实耗时」四样补 `data_path`（统筹 session 回写）。 已同步 2026-08-17。
 - `07-quick-lane.md`：第 60 行「格式松，入账校验只校验骨架和快车道标签」改成「中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填」；scratch 表 `open` 那一行 `branch` 改成「`branch`（deploy）」，并在 07 自己「没写清」第 1 条裁 analysis 的 `base_commit`、`branch` 填什么。 已同步 2026-08-17。
 - 设计文档「账本」一节杂账「格式松、只校验骨架和快车道标签」改成「中间版格式松；开张、合回、放弃三版各有必填」（统筹 session 回写）。 已同步 2026-08-17。
+- 2026-08-17 晨问题 6–30 落进本份之后，本份牵出去、还等统筹落的（`04`、`05` 已各自改完；落点全在 HANDOFF 第八节的表里，这里只列本份定义处变了、引用处要跟的）：
+  - 公共骨架可选栏两个（`force_reason`、`via`）：设计文档「账本」一节「七样加两个可选：`fix_for`、`force_reason`」改成「`force_reason`、`via`」；施工计划同句；`00`/`01`/`02`/`04`/`06`/`09`/`14` 提 `fix_for` 处 grep 删。
+  - 退出码六个与原因种类那句：施工计划退出码段；`12:158` 等写「0/2/3/4」的改「0/1/2/3/4/5」。
+  - runs 三版（`adopted`）、默认列表口径、`actual_seconds` 抄进 handoffs、快车道不进 runs：`12` runs 两版处、`21:19`/`21:30` attempts 形状、`23`（runs 口径与销「快车道用 ql_tag」）、`07:56`/`07:150`、设计文档 run 一节、施工计划 runs 段与 `:65`。
+  - issues close 写权补通知类 assignee、删「`rl inbox` 关读到的通知类 issue」：`09` issues 段（写了两遍处，一字不差）；「读过即关」在 `04`/`09`/`10`–`14`/`20`/`21`/README 与两份源文档逐处删。
+  - grants 不限裸终端：`09:124` grants 段（写了两遍处）；`00:21`、`00:72` (d) 行；设计文档 `:17` 末句、`:37`；施工计划 `:21` (d)。
+  - feedback `applied_to` 至少一个：`09` feedback 段（写了两遍处）。
+  - scratch `merged` 版与补单 `ql_tag` 互指、`merged` 只对 deploy 开：`07` scratch 表（写了两遍处）与第七节。
+  - 锁那句去掉 `batch`：施工计划 `:172`；`21`/`23` 提 batch 处。
+  - `04:133` amend 版说明写「写者是 gyb 裸终端或该角色的活会话」，本份按问题 30 写「gyb 或该角色自己的活会话」，`04:158`「谁能调」和 `05:40` 也是这个写法；`04:133` 那句的「裸终端」三个字要不要去掉，统筹定（措辞题，不问 gyb）。
+  - 问题 31（runs `relink` 版 `status` 填什么）等 gyb 裁，裁了本份 runs 一段改、`05:73`「三版」那句跟。
