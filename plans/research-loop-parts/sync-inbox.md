@@ -51,3 +51,18 @@
   4. `01-gyb.md` 第 148 行「按裁决以施工计划的表为准」（fyi 只在 accept 发）改成「2026-08-17 gyb 裁：验收和打回都发 fyi」；`20`、`21`、`22` 抄的转移表 `done_pending_review` → `rejected` 行前提栏「`reason` 非空」后加「；gyb 越过 owner 时 rl 给 owner 发 `fyi`」。
   5. `01-gyb.md` 第 45 行、`05-rl-cli.md` 第 170 行标的 reclaim 杀不杀不一致，两处「按裁决以施工计划的表为准」改成「2026-08-17 gyb 裁：默认不杀，`--kill` 才杀」。
 - 状态：已处理 2026-08-17（1、2、4、5 里的 `20`/`21`/`22`/`01` 与两份源文档由统筹改，源文档「接单」「会话生命周期」两段和施工计划第三节、第四节表一并回写；`05-rl-cli.md` 第 170 行在 rl-part-05 手上，已 SendMessage 交代；事项 3 立为第一段问题 5 等 gyb；04 文末「要同步到别处的」五条已标，rl-part-04 已停）
+
+## 2026-08-17 来自 rl-part-05 关于 05-rl-cli.md
+- 事项：`05-rl-cli.md` 定稿，commit `656c8a9`。「没写清」十三条和正文一处不一致（inbox 第 3 项）全部裁完；rl-hub 转来的 03/04/sync-inbox 问题 1 三处已改进正文。牵连别处的九条如下，原文和裁决全文见 05 文末「裁决记录」和「要同步到别处的」。
+- 裁决原文：「可以」「都同意」「doctor不太关键，先全都按照你推荐的来吧，很费劲的就不用了，我想的是脚本检查和subagent检查结合，比如说写好问题，然后让很多sonnetsubagent去逐个检查」「A」「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」。
+- 要改的地方：
+  1. `01-gyb.md` 第二节（定义处）：补「`--force` 只越过完整性前提，越不过转移表外的转移，表外转移对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开」；推送表第 4 条补「在单子落 todo 那刻（open/release/reject/reissue）和 `session end` 销号时查 owner 有无活会话并推」；`rl notify` 补「gyb 也可手动调，不进账」。
+  2. `02-decisions.md`：`rl decision stale` 签名改成 `[--handoff ID] [--all]`，去掉 `--mine`。
+  3. `03-ledgers.md`：公共骨架可选栏加 `via`（值 `session_end`、`reclaim`，标自动写的行）；sessions 账加 `amend` 版，只许改 `model`（doctor 第 19 项 `model=unknown` 的修法）；handoffs 的 `actual_seconds` 只从 runs 的 `finish` 版来，`done` 不填。
+  4. `04-handoffs-and-sessions.md`：`rl handoff done` 签名去掉 `--actual-seconds`；转移表 `in_progress`→`todo` 由销号钩子写的行 actor 记会话角色、`via=session_end`，由 reclaim 写的 actor 记 gyb、`via=reclaim`；`--force` 越不过表外转移。
+  5. `08-trees-init-and-host.md`：阈值表加 `lock.timeout_seconds` 默认 10 秒（退出码 4 等多久）；`rl init` 读到会话状态文件拒收退出码 3、只在裸终端跑；`loop/.doctor-acks.jsonl` 由 doctor 首次 `--ack` 时建，不算九本账，`rl init` 不建。
+  6. `09-common-and-feedback.md`：`common/` 加一份判断类检查的问题清单文件（名字归 09 定），reviewer 按它派 sonnet subagent 逐题查。
+  7. `12-role-run.md`：看门狗（独立进程）只许调 rl 查询命令、不留痕，判定由 run 会话转写进账。
+  8. `14-role-reviewer.md`：reviewer 加一项职责：按 `common/` 问题清单派 sonnet subagent 一人一题逐条查，查出的 `rl issue open --to <owner>` 落账（判断类检查不进 doctor，doctor 只留脚本十九项）。
+  9. `30-build-steps-verify-tests.md`：待验证第 4 条备案「`rl init` 检查调用者不是任何角色」升正案；第 10 条备案「doctor 列 `model=unknown`」已收成 doctor 第 19 项；`rl session amend`、`rl doctor --ack/--unack/--list-acks`、`lock.timeout_seconds` 要有测法。
+- 状态：待处理
