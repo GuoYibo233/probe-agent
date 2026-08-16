@@ -77,7 +77,7 @@ smoke 就失败的时候，分步表和预计时长还没有，单子直接标�
 | 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`（从发射单抄） |
 | 收尾版 | `finished` | `finished_at`、`exit_status`（`ok`、`failed`、`killed`）、`actual_seconds`；`exit_status` 是 `ok` 时还要 `metrics` 和 `data_path` |
 
-`run_id` 是 runs 账的主键，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致；产物目录按约定是 `<artifact_root>/<run_id>/`，账上不另记。runs 账只有 run 角色的脚本能写，gyb 例外。
+`run_id` 是 runs 账的主键，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致；产物目录按约定是 `<artifact_root>/<run_id>/`（约定定义在 `08-trees-init-and-host.md` 第一节），账上不另记。runs 账只有 run 角色的脚本能写，gyb 例外。
 
 `rl run finish` 干四件事：算 `actual_seconds`（从两个时间戳算，退出状态是什么都记）、同一个进程里跑反常预警、调宿主的收尾命令模板（new1 是 `run.py record finish`，ok 和失败都调）、落收尾版。
 
@@ -367,3 +367,4 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：抄的转移表 `in_progress` → `todo` 行补「销号钩子写的 `actor` 记会话角色、`via=session_end`；reclaim 写的 `actor` 记 gyb、`via=reclaim`」，与 `04` 一字不差。对回原则 4。
+- 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。

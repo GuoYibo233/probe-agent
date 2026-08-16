@@ -19,7 +19,7 @@
 
 `analysis/` 下面的公共统计件由 init 播模板，notebook 由 analysis 干活时新建，`analysis/scratch/` 留给快车道。
 
-原始数据不新建目录，走配置里的产物根 `artifact_root`，在 new1 指到 net 盘。
+原始数据不新建目录，走配置里的产物根 `artifact_root`，在 new1 指到 net 盘。每次 run 的产物目录按约定是 `<artifact_root>/<run_id>/`，账上不另记，看门狗和 analysis 都按这条约定找（这条约定的定义处是本份，2026-08-17 gyb 裁；runs 账去掉 `artifact_dir` 见 `03`）。
 
 往 CLAUDE.md 追加的那一节有三句话，追加不覆盖，new1 原有的规矩照旧：
 
@@ -281,3 +281,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「A」，路 A 是进 git、每次 commit 顺手带上），`loop/` 九本账进 git，不另设 commit 动作，`.gitignore` 不排除 `loop/`；第一节表里 `loop/` 那行补上，「没写清」第 5 条销掉（后面条目编号没重排）。统筹 session 同步。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：阈值表加 `lock.timeout_seconds` 默认 10 秒；`rl init` 读到会话状态文件拒收退出码 3、只在裸终端跑（待验证第 4 条备案升正案）；`loop/.doctor-acks.jsonl` 不算九本账、doctor 首次 `--ack` 时建、init 不建。对回原则 1、4、8。第一节、第三节、第五节照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「产物目录是 `<artifact_root>/<run_id>/`」这条约定的定义处归本份第一节，`03`、`12`、`21`、`23` 只引。对回原则 8。

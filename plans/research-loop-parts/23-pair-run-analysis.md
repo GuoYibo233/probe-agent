@@ -35,7 +35,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 
 `metrics` 是一个字典，键是指标名，值是数。口径账里的指标行（`kind` 是 `metric`）二选一：要么写 `metrics_key`，直接取 runs 账 metrics 里的那个键，不重算；要么写 `code_path`，由 analysis 按代码现算的派生量。所以 metrics 的键名就是口径账 `metrics_key` 引的那个字符串，两头得是同一个名字。doctor 有一项扫这件事：approved 口径引的 metrics 键在 runs 账里不存在。
 
-`data_path` 只在收尾版且 `exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录。产物目录本身账上不记，按约定是 `<artifact_root>/<run_id>/`（发射版原来的 `artifact_dir` 一栏 2026-08-17 去掉了）；`log_path` 是日志路径，在发射版上。
+`data_path` 只在收尾版且 `exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录。产物目录本身账上不记，按约定是 `<artifact_root>/<run_id>/`（约定定义在 `08-trees-init-and-host.md` 第一节；发射版原来的 `artifact_dir` 一栏 2026-08-17 去掉了）；`log_path` 是日志路径，在发射版上。
 
 ## 查：一条 show，一条 list
 
@@ -188,3 +188,4 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。

@@ -12,6 +12,8 @@
 
 每本账都有 `status` 字段，runs 和 sessions 也不例外。入账校验按 `status` 查：一个字段必不必填看这一版的 `status`，不看全局。
 
+写账的会话得活着：一条写命令的 `session_id` 在 sessions 账里最新版是 `closed` 的，rl 拒收并提示「会话已被销号，重新加载角色登记」（2026-08-17 gyb 裁，事情本身在 `04-handoffs-and-sessions.md` 第七节 `rl session end --session ID` 那条；这条校验的定义处是本份，sync-inbox 问题 5）。
+
 前提查在交付那一刻，不查在开单那一刻。开单只查「这一行说得清自己是什么」，交付才查「东西齐不齐」。哪一版查哪些前提写在转移表里，见 `04-handoffs-and-sessions.md`。
 
 锁是 `loop/.lock`，一把全局文件锁。扫号、分配编号（含 `ql_tag`、`run_id`、`batch`）、追加，这三步放在同一把锁里，不许扫完号再排队写，否则同一个角色的两个会话会撞号。
@@ -234,7 +236,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 每本账的写命令和查询命令清单、`rl trace`、`rl status`、`rl inbox`、`rl doctor`（含扫描项名字，`fix_for` 填它）、`rl reclaim` 在 `05-rl-cli.md`；`rl run add` 的签名去掉 `--artifact-dir`（2026-08-17 裁）。
 - 哪个角色能调哪条写命令（角色 json 的 `ledger_writes`）在 `06-hooks-and-permissions.md`；钩子拦直接写 `loop/` 也在那一份。
 - `ql_tag` 的分配、scratch 三态的开张关张动作（`rl ql open`、`rl ql close`）、analysis 的快车道 `base_commit` 和 `branch` 两栏填什么，在 `07-quick-lane.md`。本份定的是：中间版 `status` 仍是 `open`，校验头尾查中间不查。
-- 九本账的路径、产物根 `artifact_root`、阈值（`issues.answered_stale_days` 这类）写在 `research-loop.json`，见 `08-trees-init-and-host.md`；`loop/` 进 git、脏树白名单那一处也在 `08`。产物目录 `<artifact_root>/<run_id>/` 这条约定归 `08` 还是 `12` 由统筹定，本份 runs 表只引它。
+- 九本账的路径、产物根 `artifact_root`、阈值（`issues.answered_stale_days` 这类）写在 `research-loop.json`，见 `08-trees-init-and-host.md`；`loop/` 进 git、脏树白名单那一处也在 `08`。产物目录 `<artifact_root>/<run_id>/` 这条约定定义在 `08` 第一节（2026-08-17 gyb 裁），本份 runs 表只引它。
 - feedback 的 `rules_version_after` 和母版 `rules_version` 的关系、feedback 的流程在 `09-common-and-feedback.md`；`verdict_text` 两版都必填由本份定。
 - 口径怎么提、怎么批、批的时候一句话批一组，在 `13-role-analysis.md` 和 `22-pair-idea-analysis.md`；`applies_to` 是自由文本但要写具体程序或参数由本份定。
 - runs 两版什么时候落、`rl run finish` 顺带调宿主收尾命令、看门狗按 `<artifact_root>/<run_id>/` 找产物目录，在 `12-role-run.md`；`data_path` 是产物目录里给 analysis 算数用的那一份，analysis 那头怎么用在 `23-pair-run-analysis.md`。
@@ -470,6 +472,8 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 2026-08-17：scratch 校验头尾查、中间不查：`open`、`merged`、`dropped` 三版按表查必填，中间版只查骨架和 `ql_tag`；`branch` 改成 deploy 的 `open` 版必填，analysis 的 `base_commit`、`branch` 两栏交 `07` 定（不一致 3 定稿）。对回原则 7（进出两行得说得清自己是什么）。
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：公共骨架可选栏加 `via`（`session_end`、`reclaim`）；sessions 账加 `amend` 版只许改 `model`；handoffs 的 `actual_seconds` 只从 runs 的 `finish` 版来、`done` 不填。对回原则 4、6、8、10。骨架一节、sessions 一节、runs 字段表照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。
+- 2026-08-17 gyb 裁（sync-inbox 问题 5，原话「问题5 给3」，rl-hub 转来）：「sessions 最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记」这条入账校验定义处归本份「账本的总规矩」一节。对回原则 1、4。
 
 ## 要同步到别处的
 
