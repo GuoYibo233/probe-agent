@@ -19,7 +19,7 @@ handoffs 自己的字段，一条一条抄下来：
 | `from_role` | 就是 owner，可以是 `gyb` |
 | `to_role` | 派给谁 |
 | `holder` | 当前在干的会话的 session_id |
-| `last_holder` | 上一个 holder |
+| `last_holder` | 上一个 holder，离开 `in_progress` 时由 rl 从 `holder` 搬过来；永远不清，走到终态也留着，只是痕迹，不参与校验（2026-08-17 gyb 裁） |
 | `status` | 七选一 |
 | `parent_id` | `launch_order` 必填指工单，`analysis_order` 可选，快车道补单空 |
 | `supersedes` | 可选 |
@@ -34,7 +34,7 @@ handoffs 自己的字段，一条一条抄下来：
 | `code_paths` | 列表（`work_order` 进 `done_pending_review` 时必填） |
 | `output_paths` | 形如 `{"notebook":...,"figures":[...]}`（`analysis_order` 进 `done_pending_review` 时必填且存在） |
 | `attempts` | 列表只在 `launch_order` 上，每项 `{"attempt":序号,"command","args","workdir","track","config":{...},"run_id","estimated_seconds","step_table":[...]}` |
-| `progress_note` | 进 `todo` 且不是新建时必填 |
+| `progress_note` | 只在 `in_progress` → `todo`（交回待干）那一版必填，写清干到哪了；`rejected` → `todo` 不要求，打回原因已经在 `reason` 里（2026-08-17 gyb 裁） |
 | `reason` | `rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote` |
 | `issue_id` | `stuck` 时必填 |
 
@@ -65,11 +65,11 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 | `in_progress` | `done_pending_review` | holder | `work_order` 的 `report_paths` 和 `code_paths` 齐；`launch_order` 最新尝试的 run 行有 `exit_status=ok` 的 `finished` 版；`analysis_order` 的 `output_paths` 存在且 `evaluation_refs` 每项 `approved` | 无 | `handoff done` |
 | `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 只补 `report_paths` 或 `output_paths` 里丢了的路径，状态不变（doctor 修法用） | 无 | `handoff amend` |
 | `done_pending_review` | `accepted` | owner；快车道补单只有 gyb | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
-| `done_pending_review` | `rejected` | owner | `reason` 非空 | owner | `handoff reject` |
+| `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
-| `in_progress` | `todo` | 销号钩子、`reclaim`、owner、gyb | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知 | owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知 | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 | 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 表尾还有一句：`stuck` 的单子销号和 reclaim 都不动（holder 已空），只有 issue `answered` 之后 `resume` 才回 `todo`。
@@ -84,11 +84,13 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 
 `manual` 由开单时的 `--manual` 写进去，上游只开单，gyb 自己开 session 去接，owner 不起 subagent。`none` 由 `--no-dispatch` 写进去，单子停在 `todo` 等 gyb 说开跑。
 
+`dispatch` 在单子交回 `todo` 之后照旧算数：能走到 release 这条路的都是外部原因（会话死了、被回收），代码没问题，owner 拉起时照原来的派法再来一次；代码或想法有问题的单子走的是 `stuck` 开 issue 那条路，修好之前回不到 `todo`（2026-08-17 gyb 裁）。
+
 三件跟着接单一起定的事：
 
 一是登记。subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账。
 
-二是下游半路返回。下游 subagent 没走到交活或卡住就返回的（报错、上下文满），上游当场 `rl handoff release` 交回待干，并决定重起还是开 issue 给 gyb。
+二是下游半路返回。下游 subagent 没走到交活或卡住就返回的（报错、上下文满），上游当场 `rl handoff release` 交回待干，然后读一眼返回的错误分两种办：外部原因（上下文满、进程被杀、终端没了）就照单子的 `dispatch` 走，`auto` 的当场再起一个 subagent 接；代码或想法有问题就不重起，开 issue 给该修的角色，单子留在 `todo`，等 issue 回了再派（2026-08-17 gyb 裁）。
 
 三是认领。GPU 任务本体在 tmux 里跑、不跟会话走。run 会话死了单子交回待干，下一个 run 会话接单时先看最新一次尝试有没有已经发射还没收尾的 run 行，有就认领它：不重新 smoke、不重新发射，只接管看门狗和收尾，账行标 `adopted`。等几个小时的事只发生在 tmux 里，不发生在任何会话里。一次开 N 张同 batch 的发射单时只起一个 run 会话，用 `rl handoff start --batch` 一次接下整个 batch。
 
@@ -106,7 +108,7 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 
 验收人是 owner。gyb 随时可以自己验：先读不带文件的那一份看做法对不对，再读带文件的那一份看写出来的东西和说的是不是一回事，打回要写明原因。gyb 越过 owner 验收或打回时 rl 给 owner 发一条 fyi 通知。快车道补单是唯一一种验收人固定的单子，只有 gyb 能 accept。
 
-两处原文不一致：设计文档写的是 gyb 越过 owner「验收或打回」都发 fyi，施工计划第四节的转移表只在 `done_pending_review` → `accepted` 那一行写了发 fyi，`rejected` 那一行没写。这里按施工计划的表算。
+2026-08-17 gyb 裁：gyb 越过 owner 验收和打回都发 fyi，转移表 `accepted`、`rejected` 两行各写一句。（原来两份源文档不一致：设计文档写「验收或打回」都发，施工计划的转移表只在 `accepted` 那一行写了。）
 
 ## 六、会话生命周期与销号钩子
 
@@ -114,7 +116,7 @@ holder 的不变量只有一句：holder 非空当且仅当单子在 `in_progres
 
 销号也由钩子自动做，挂在 SessionEnd 和 SubagentStop 上，不指望模型自觉调结束命令。gyb 也可以手动结束，可以指定别的会话。
 
-销号那一刻程序当场检查这个会话作为 holder 有没有还挂在开干的单子，只查开干，别的状态一律放行。有开干的单子就不许悄悄下线，钩子调的销号做四件事：
+销号那一刻程序当场检查这个会话作为 holder 有没有还挂在开干的单子，只查开干，别的状态一律放行。有开干的单子就不许悄悄下线，名下有几张开干的就交回几张，一张不留（比如 run 会话 `--batch` 接下的整批一起交回），交回的编号全部记进 sessions 账 `released_handoffs`（2026-08-17 gyb 裁）。钩子调的销号对每一张做四件事：
 
 1. 把单子交回待干（走转移表 `in_progress` → `todo` 那一行）。
 2. 写进度说明，内容是「会话销号，holder 是 X」。
@@ -147,7 +149,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 `rl session` 的五个子命令：
 
 - `rl session start --role R [--model M] [--launched-by manual|subagent|workflow]`：登记，钩子调。
-- `rl session end [--session ID] [--reason]`：销号，钩子调。`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话。
+- `rl session end [--session ID] [--reason]`：销号，钩子调。`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就全部 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话。gyb 用 `--session ID` 关别的会话时 rl 不拦、不查那个会话活没活着（rl 看不见进程，只看得见账），照样销号，`end_reason` 记 `manual`；那个会话要是其实还活着、之后又来写账，rl 看到它的 session 已经 `closed` 就拒收，提示「会话已被销号，重新加载角色登记」（2026-08-17 gyb 裁）。
 - `rl session focus --decision ID`：reviewer 开工时记一下在审什么，`rl status` 的活着会话那一段带出来。
 - `rl session show ID`。
 - `rl session list [--alive] [--role R]`。
@@ -179,7 +181,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 
 跑完还有两件事：结束时按 owner 分组打印待拉起的单子和加载命令，并自动跑一遍 doctor。
 
-两处原文不一致：设计文档说回收对开干的发射单「先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，施工计划第四节的转移表和第六节的 reclaim 行说默认不杀进程、`--kill` 才杀。这里按施工计划的表算。同一段还有第二处：设计文档说回收对卡住的单子「只清 holder 状态保持卡住并把 issue 改派给 owner」，施工计划的 holder 不变量说卡住的单子 holder 已经是空的、reclaim 只改派 issue。这里也按施工计划算。
+2026-08-17 gyb 裁：reclaim 回收开干的发射单默认不杀进程，`--kill` 才走中断收尾。（原来两份源文档不一致：设计文档说「先走中断收尾再交回待干」，施工计划的转移表和 reclaim 行说默认不杀。）同一段的第二处也是 2026-08-17 gyb 裁：reclaim 对卡住的单子只把 issue 改派给 owner，状态保持卡住，不提 holder，因为按第二节的不变量卡住的单子 holder 早已清空。（原来设计文档写「只清 holder 状态保持卡住并把 issue 改派给 owner」，是不变量定死之前的写法。）
 
 ## 九、三种通知：orphaned、withdrawn、fyi
 
@@ -197,31 +199,36 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 
 ## 和别的 part 的接口
 
-- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）加可选的 `fix_for`、`force_reason`：定义在 `03-ledgers.md`。
-- issues 账的九种 `kind`、三个 `status`（`open`、`answered`、`closed`）、`handoff_id` 和 `reply` 的必填规则：定义在 `03-ledgers.md`；本份只用 `withdrawn`、`orphaned`、`fyi` 三种和 `answered` 这一个状态。
+按 HANDOFF 四点五节的关联表，先列本份是定义处的东西（别处只引用、不重抄），再列本份引用别处定义的东西。
+
+本份是定义处的：
+
+- handoffs 账的全部字段（第一节字段表，含 `parent_id`、`supersedes`、`batch`、`line`、`dispatch`、`quick_lane`、`decision_refs`、`evaluation_refs`、`explanation`、`report_paths`、`code_paths`、`output_paths`、`attempts`、`progress_note`、`reason`、`issue_id`、`holder`、`last_holder`）；`03-ledgers.md` 的 handoffs 一段只留一句指过来。`10-role-idea.md`、`11-role-deploy.md`、`20-pair-idea-deploy.md` 等把这些字段指到 `03` 的，同步时改成指本份。
+- 七个状态、holder 不变量（第二节）、`tables/transitions.json` 全表（第三节）、三种 dispatch（第四节）、三类单子的交付物与验收人（第五节）、销号钩子做的四件事（第六节）、`rl reclaim` 的处置（第八节）、三种通知的触发点与收件人（第九节）。`20`、`21`、`22` 三份角色对 part 各抄了转移表里自己那条通道的几行，判断规矩 2：改一处必改另一处，本份 2026-08-17 改的 `in_progress` → `todo`、`done_pending_review` → `rejected` 两行已列进「要同步到别处的」。
+- sessions 账的行格式（第七节字段表）和 `03-ledgers.md` 的 sessions 一段是同一张表写了两遍（HANDOFF 判断规矩 2），两边要一字不差；rl-hub 2026-08-17 来信按 `03` 是定义处处理，本份照 `03` 的裁决改。`rl session` 五条子命令的判据（第七节）由本份定，签名在 `05-rl-cli.md`。
+
+本份引用别处定义的：
+
+- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）加可选的 `fix_for`、`force_reason`，退出码：定义在 `03-ledgers.md`。
+- issues 账的九种 `kind`、三个 `status`（`open`、`answered`、`closed`）、`handoff_id` 和 `reply` 的必填规则：定义在 `03-ledgers.md`（`09-common-and-feedback.md` 抄了一遍）；本份只用 `withdrawn`、`orphaned`、`fyi` 三种和 `answered` 这一个状态。
 - runs 账的 `status`（`launched`、`finished`）和 `exit_status`（`ok`、`failed`、`killed`）：定义在 `03-ledgers.md`；转移表的 `done` 行和认领判据都靠它。
 - evaluations 的四个状态（`proposed`、`approved`、`rejected`、`retired`）：定义在 `03-ledgers.md`；转移表 `analysis_order` 的开单和交活两行都引它。
-- decisions 的 `root_id`：定义在 `03-ledgers.md`；handoffs 的 `line` 字段从它算出来。
-- `bin/rl` 的完整命令表、退出码（0、2、3、4）、`loop/.lock` 一把全局锁、`rl status` 的十段全文、`rl inbox` 的四类、`rl trace`、`rl doctor` 的扫描项和修法：写在 `05-rl-cli.md`；本份只引用其中 `rl handoff`、`rl session`、`rl reclaim` 三行和 status 段 7。
-- 阈值 `status.stale_holder_minutes`（默认 30）、`reclaim.session_idle_hours`（48）、`reclaim.handoff_idle_hours`（72）、`reclaim.ql_idle_days`（7）、`notify.reminder_days`（7）：全表在 `05-rl-cli.md` 指到的施工计划第八节。
-- gyb 豁免「谁能调」和转移表「谁能写」、完整性前提照查、`--force --reason` 留痕、`--as-gyb` 加 `--quote` 的规矩：定义在 `06-hooks-and-permissions.md` 和 `01-gyb.md`。
-- 销号钩子挂在 SessionEnd 和 SubagentStop 上、登记钩子从钩子输入取 model：钩子本体写在 `06-hooks-and-permissions.md`。
-- 快车道补单的两行（新建直达 `done_pending_review`、只有 gyb 能 accept）、`ql_tag`、scratch 账的 `merged` 状态：写在 `07-quick-lane.md`。
-- `attempts` 里的 `step_table`、`estimated_seconds` 怎么填、认领之后 run 怎么接管看门狗和收尾：写在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
+- 决定账的 `root_id`、`{"id","version"}` 引用格式、`--decision ID@V`：定义在 `02-decisions.md`（原文指 `03`，按 HANDOFF 四点五节改指 `02`）；handoffs 的 `line` 字段从 `root_id` 算出来，`reissue` 那一行用 `ID@V`。
+- `bin/rl` 每条子命令的签名与「谁能调」、`loop/.lock` 一把全局锁、`rl status` 的十段全文、`rl inbox` 的四类、`rl trace`、`rl doctor` 的扫描项和修法：写在 `05-rl-cli.md`；本份只写 `rl handoff`、`rl session`、`rl reclaim` 三组子命令背后的判据和 status 段 7 的内容。
+- 阈值 `status.stale_holder_minutes`（默认 30）、`reclaim.session_idle_hours`（48）、`reclaim.handoff_idle_hours`（72）、`reclaim.ql_idle_days`（7）、`notify.reminder_days`（7）：阈值表定义在 `08-trees-init-and-host.md`（原文指「`05` 指到的施工计划第八节」，按 HANDOFF 四点五节改指 `08`）。
+- gyb 豁免「谁能调」和转移表「谁能写」、完整性前提照查、`--force --reason` 留痕、`--as-gyb` 加 `--quote`、actor 按会话判：gyb 身份规矩在 `01-gyb.md`，命令行写法在 `05-rl-cli.md`，钩子在 `06-hooks-and-permissions.md`；这一组的定义处怎么分，sync-inbox 里统筹 session 已在问 gyb，裁了照改。
+- 销号钩子挂在 SessionEnd 和 SubagentStop 上、登记钩子从钩子输入取 model、会话状态文件：钩子本体写在 `06-hooks-and-permissions.md`。
+- 快车道补单的两行（新建直达 `done_pending_review`、只有 gyb 能 accept）、`ql_tag`、scratch 账的 `merged` 状态：快车道进出在 `07-quick-lane.md`，scratch 行格式在 `03-ledgers.md`。
+- `attempts` 里的 `step_table`、`estimated_seconds` 怎么填、认领之后 run 怎么接管看门狗和收尾、`--kill` 走的中断收尾四步：写在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
 - 部署报告分 `method` 和 `detail` 两份、`code_paths` 谁填：写在 `11-role-deploy.md` 和 `20-pair-idea-deploy.md`。
 - `output_paths` 和口径要 approved 才交活：写在 `13-role-analysis.md` 和 `22-pair-idea-analysis.md`。
+- 母版 `rules_version`、feedback 采纳时列活会话让 gyb 挑：写在 `09-common-and-feedback.md`。
 - 测试 2（转移表与 holder）、测试 4（交付物）、测试 7（销号）、测试 11（status 与 reclaim）、测试 15（收回与接替）：写在 `30-build-steps-verify-tests.md`。
 - 待验证第 5 条（SessionEnd 和 SubagentStop 在 subagent 上触不触发）、第 8 条（subagent 里加载角色 skill 钩子装不装得上）、第 9 条（后台 subagent 能不能跑几个小时、父会话结束会不会被杀）、第 10 条（钩子输入里有没有模型标识）：写在 `30-build-steps-verify-tests.md`；这四条不成立会改掉本份第四、六、七节的写法。
 
 ## 源文档没写清的（留给 gyb）
 
-1. `rejected` → `todo` 那一行的前提栏写的是「无」，没写要不要 `progress_note`；而 `in_progress` → `todo` 那一行的 `progress_note` 是必填。可是 handoffs 字段表里 `progress_note` 的规则写的是「进 `todo` 且不是新建时必填」，两处对不上：按字段表，打回后 release 也要填。
-2. 销号时如果这个会话名下有好几张开干的单子，是不是全部交回待干，源文档没明写。sessions 的 `released_handoffs` 是一个列表，看起来是全部，但没有一句话钉死。
-3. 单子被交回 `todo` 之后 `dispatch` 字段怎么算没写。原来是 `auto` 的单子回到 `todo`，owner 是自动再起一个 subagent，还是要 gyb 说一声，两种读法都通。
-4. `last_holder` 什么时候清、清不清没写。单子走到终态之后 `last_holder` 是留着还是清空，源文档没有一句。
-5. `rl session end --session ID` 关的那个会话如果实际还活着（进程没死），会发生什么没写：是照样销号，还是先拦一下。
-6. 转移表 `in_progress` → `todo` 那一行的「谁能写」把 gyb 单列进去了，其余各行没有列 gyb（gyb 靠表头的豁免）。为什么这一行要单写一个 gyb，源文档没解释。
-7. gyb 越过 owner 打回（`reject`）时发不发 fyi，两份源文档对不上，正文第五节已经标了不一致，最终取哪个由 gyb 定。
+（2026-08-17 全部裁完，见文末「裁决记录」。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -512,7 +519,20 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 ## 裁决记录（日期）
 
 - 2026-08-17 来自 `03-ledgers.md` 的裁决（rl-hub 转来）：`last_activity` 不落账，rl 查 `rl session show` / `rl status` / `rl reclaim` 时扫九本账取该 `session_id` 的最大 `ts`（含 sessions 账自己的行）；sessions 账不为刷时间戳追加版本。gyb 原话「我觉得用 b 可以 很对」。对回原则 4、原则 8。本份第七节字段表照改，「没写清」原第 6 条销掉。
+- 2026-08-17 gyb 裁：打回（`rejected`）之后 release 回 `todo` 不要求 `progress_note`，打回原因已在 `reason` 里；`progress_note` 只在 `in_progress` → `todo` 那一版必填。gyb 原话「不用」。对回原则 4（一个字段必不必填看这一版的状态）。字段表 `progress_note` 那一行照改，「没写清」原第 1 条销掉。
+- 2026-08-17 gyb 裁：会话销号时名下所有开干的单子全部交回待干，一张不留，编号全记进 `released_handoffs`。gyb 原话「全部」。对回原则 3（holder 是当前正在干的会话，会话没了就没人在干）。第六节照改，「没写清」原第 2 条销掉。
+- 2026-08-17 gyb 裁：单子交回 `todo` 后 `dispatch` 照旧算数，能不能再干取决于原因：外部原因（会话死、被回收、进程被杀）照 `auto` 再起一个 subagent；代码有问题的先修，走 `stuck` 开 issue，下游半路报错返回时上游读错误分这两种办。gyb 原话「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」。对回原则 11（派活不占终端）和原则 3（owner 负责拉起）。第四节两处、转移表 release 行「之后谁拉起」栏照改，「没写清」原第 3 条销掉。
+- 2026-08-17 gyb 裁：`last_holder` 永远不清，终态也留着。gyb 原话「留着吧」。对回原则 4（账是事件流，痕迹只增不删）。字段表 `last_holder` 那一行照改，「没写清」原第 4 条销掉。
+- 2026-08-17 gyb 裁：`rl session end --session ID` 关别的会话时 rl 不拦、照样销号；被误关的会话再写账时 rl 拒收并提示重新登记。gyb 原话「a」。对回原则 1（rl 只认会话，不认手指；gyb 是超级用户）。第七节 `rl session end` 那一条照改，「没写清」原第 5 条销掉。
+- 2026-08-17 gyb 裁：转移表 `in_progress` → `todo` 那一行「谁能写」栏里单列的 gyb 删掉，gyb 靠表头豁免，跟别的行一个写法。gyb 原话「删了吧」。对回原则 8（可枚举的东西只写一遍）。「没写清」原第 7 条销掉。
+- 2026-08-17 gyb 裁：gyb 越过 owner 打回（`reject`）也给 owner 发 fyi，和验收通过一样。gyb 原话「可以 发」。对回原则 6（送进「等某人」状态的那一行必须出现在那个人的收件箱里）。转移表 `rejected` 行和第五节的不一致标注照改，「没写清」原第 8 条销掉。
+- 2026-08-17 gyb 裁：`rl reclaim --apply` 回收开干的发射单默认不杀 GPU 进程，留给下一个 run 认领，`--kill` 才杀。gyb 原话「不杀」。对回原则 11（GPU 任务本体在 tmux 里跑、不跟会话走）。第八节不一致第一处照改。
+- 2026-08-17 gyb 裁：reclaim 对卡住的单子只改派 issue 给 owner、状态保持卡住，不提 holder（按不变量已空）。gyb 原话「按照施工计划吧」。对回原则 3（holder 非空当且仅当开干）。第八节不一致第二处照改。
 
 ## 要同步到别处的
 
-（暂无）
+- `20-pair-idea-deploy.md` 第 26 行「`progress_note`（进 `todo` 且不是新建时必填）」改成「`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）」。来源：本份 2026-08-17 裁决。
+- `20-pair-idea-deploy.md` 第 58 行、`21-pair-deploy-run.md` 第 134 行、`22-pair-idea-analysis.md` 第 79 行抄的转移表 `in_progress` → `todo` 那一行，「谁能写」栏删掉单列的 gyb（改成「销号钩子、`reclaim`、owner」），「之后谁拉起」栏「owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」」改成「owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」」。来源：本份 2026-08-17 裁决。
+- 新增一条入账校验：`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记。这条是本份 2026-08-17 裁决带出来的，定义处按 HANDOFF 判断规矩 3 找不到（入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`），请 rl-hub 问 gyb 归哪一份。
+- `01-gyb.md` 第 148 行「按裁决以施工计划的表为准」（fyi 只在 accept 发）改成「2026-08-17 gyb 裁：验收和打回都发 fyi」；`20-pair-idea-deploy.md`、`21-pair-deploy-run.md`、`22-pair-idea-analysis.md` 抄的转移表 `done_pending_review` → `rejected` 那一行，前提栏「`reason` 非空」后面加「；gyb 越过 owner 时 rl 给 owner 发 `fyi`」。来源：本份 2026-08-17 裁决。
+- `01-gyb.md` 第 45 行、`05-rl-cli.md` 第 170 行标的「reclaim 对开干发射单杀不杀进程」不一致，gyb 2026-08-17 在本份裁了：默认不杀、`--kill` 才杀，两处的「按裁决以施工计划的表为准」改成「2026-08-17 gyb 裁：默认不杀，`--kill` 才杀」。来源：本份裁决。
