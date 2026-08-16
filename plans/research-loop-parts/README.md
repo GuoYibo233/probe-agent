@@ -8,32 +8,32 @@
 
 ## 每份一行
 
-| 文件 | 标题 | 覆盖什么 | 行数 | 留给 gyb 的点 | 附的第二轮摩擦 |
-|---|---|---|---|---|---|
-| `00-overview.md` | 总览 | 目标、十一条原则全文、九条裁决、（a）到（i）待裁改动、没采纳的九条、改掉的十六条、两轮模拟说明、这套文档的索引 | 316 | 7 | 18 |
-| `01-gyb.md` | gyb 自己做的事与收件箱 | gyb 亲自做的七件事、身份规矩、gyb 的 use case 表、rl status 十段、推送表、定期提醒 | 485 | 8 | 约 80 |
-| `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 |
-| `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 |
-| `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 |
-| `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十八项、notify | 635 | 13 | 约 100 |
-| `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 |
-| `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 |
-| `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 |
-| `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩八条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 |
-| `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、上线第一动作、决定落账、开工单、开分析单、验收打回、收回重派拉起、申请读 notes、模型 | 359 | 11 | 约 55 |
-| `11-role-deploy.md` | deploy 角色 | 写权、报告与 code_paths、自决、宿主文件三条纪律、开发射单、后台起 run 与验收、卡住之后、补报告提验收、快车道里的 deploy、四栏 | 381 | 7 | 约 56 |
-| `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 两版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 |
-| `13-role-analysis.md` | analysis 角色 | 写权与读、先问再提口径、口径两类四态、接单交活、卡住两条路、快车道、产物落哪 | 230 | 10 | 18 |
-| `14-role-reviewer.md` | reviewer 角色 | 谁开、focus、审查基准、审三样、读的顺序、审哪一版、清单五栏、不开 issue、五栏 json | 211 | 10 | 16 |
-| `20-pair-idea-deploy.md` | idea 与 deploy | 工单字段、开单、状态走法、验收、打回、收回与 cascade、reissue、issue 往返、过版、快车道补单指到 07 | 330 | 8 | 41 |
-| `21-pair-deploy-run.md` | deploy 与 run | attempts、父单与继承、开单、认领、smoke、发射与 runs、交付物、四种失败到 amend/resume、验收、相关转移行、中断、对账 | 361 | 10 | 约 59 |
-| `22-pair-idea-analysis.md` | idea 与 analysis | 谁开单谁接、单子上带什么、交活、验收打回卡住收回、相关转移行、原始指标与跨 run 聚合 | 194 | 8 | 18 |
-| `23-pair-run-analysis.md` | run 与 analysis | runs 账契约：config、metrics、data_path、run list 过滤、分组键缺失、trace | 184 | 8 | 16 |
-| `24-pair-analysis-deploy.md` | analysis 与 deploy | 只有一条 issue 通道 | 144 | 8 | 9 |
-| `25-pair-reviewer-idea.md` | reviewer 与 idea | review/ 文件格式、status 列清单、idea 怎么读、来源指清单、只经文件不经 issue | 131 | 7 | 8 |
-| `30-build-steps-verify-tests.md` | 待验证、测试、施工步骤 | 没写成，源在施工计划第九、十、十一节 | 0 | — | — |
+| 文件 | 标题 | 覆盖什么 | 行数 | 留给 gyb 的点 | 附的第二轮摩擦 | 状态 |
+|---|---|---|---|---|---|---|
+| `00-overview.md` | 总览 | 目标、十一条原则全文、九条裁决、（a）到（i）待裁改动、没采纳的九条、改掉的十六条、两轮模拟说明、这套文档的索引 | 316 | 7 | 18 | 未开 |
+| `01-gyb.md` | gyb 自己做的事与收件箱 | gyb 亲自做的七件事、身份规矩、gyb 的 use case 表、rl status 十段、推送表、定期提醒 | 485 | 8 | 约 80 | 未开 |
+| `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 | 未开 |
+| `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | 未开 |
+| `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 | 未开 |
+| `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十八项、notify | 635 | 13 | 约 100 | 未开 |
+| `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 未开 |
+| `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 未开 |
+| `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 未开 |
+| `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩八条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 未开 |
+| `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、上线第一动作、决定落账、开工单、开分析单、验收打回、收回重派拉起、申请读 notes、模型 | 359 | 11 | 约 55 | 未开 |
+| `11-role-deploy.md` | deploy 角色 | 写权、报告与 code_paths、自决、宿主文件三条纪律、开发射单、后台起 run 与验收、卡住之后、补报告提验收、快车道里的 deploy、四栏 | 381 | 7 | 约 56 | 未开 |
+| `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 两版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 | 未开 |
+| `13-role-analysis.md` | analysis 角色 | 写权与读、先问再提口径、口径两类四态、接单交活、卡住两条路、快车道、产物落哪 | 230 | 10 | 18 | 未开 |
+| `14-role-reviewer.md` | reviewer 角色 | 谁开、focus、审查基准、审三样、读的顺序、审哪一版、清单五栏、不开 issue、五栏 json | 211 | 10 | 16 | 未开 |
+| `20-pair-idea-deploy.md` | idea 与 deploy | 工单字段、开单、状态走法、验收、打回、收回与 cascade、reissue、issue 往返、过版、快车道补单指到 07 | 330 | 8 | 41 | 未开 |
+| `21-pair-deploy-run.md` | deploy 与 run | attempts、父单与继承、开单、认领、smoke、发射与 runs、交付物、四种失败到 amend/resume、验收、相关转移行、中断、对账 | 361 | 10 | 约 59 | 未开 |
+| `22-pair-idea-analysis.md` | idea 与 analysis | 谁开单谁接、单子上带什么、交活、验收打回卡住收回、相关转移行、原始指标与跨 run 聚合 | 194 | 8 | 18 | 未开 |
+| `23-pair-run-analysis.md` | run 与 analysis | runs 账契约：config、metrics、data_path、run list 过滤、分组键缺失、trace | 184 | 8 | 16 | 未开 |
+| `24-pair-analysis-deploy.md` | analysis 与 deploy | 只有一条 issue 通道 | 144 | 8 | 9 | 未开 |
+| `25-pair-reviewer-idea.md` | reviewer 与 idea | review/ 文件格式、status 列清单、idea 怎么读、来源指清单、只经文件不经 issue | 131 | 7 | 8 | 未开 |
+| `30-build-steps-verify-tests.md` | 待验证、测试、施工步骤 | 没写成，源在施工计划第九、十、十一节 | 0 | — | — | 未写 |
 
-「附的第二轮摩擦」一栏，标「约」的是 agent 没返回摘要、我按行式数的，可能多算几条。
+「附的第二轮摩擦」一栏，标「约」的是 agent 没返回摘要、我按行式数的，可能多算几条。「状态」一栏由统筹 session 维护，取值三种：未开、在 `rl-part-NN` 手上、已定稿 `<commit>`（`30` 那份没写之前记「未写」）。
 
 ## 各份留给 gyb 的点（agent 写的原话，逐份抄在这里，方便一眼扫）
 
@@ -83,4 +83,4 @@
 
 - `30-build-steps-verify-tests.md`：源在施工计划第九、十、十一节，等 gyb 手动写或下次再派。
 - 覆盖检查：两份源文档每一段是不是都落进了某个 part、part 之间有没有互相打架、有没有发明源文档没有的规矩，没有机器核过。
-- 三份源文件（设计文档、施工计划、这个目录）都还没 commit。
+- 三份源文件（设计文档、施工计划、这个目录）已 commit：`601f835`（2026-08-16 夜）。
