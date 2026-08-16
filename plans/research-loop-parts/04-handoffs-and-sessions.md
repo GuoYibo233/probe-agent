@@ -155,7 +155,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - `rl session show ID`。
 - `rl session list [--alive] [--role R]`。
 
-谁能调：start 和 end 是钩子和 gyb，amend 是 gyb，focus 是 reviewer，查询谁都行。
+谁能调：start 和 end 是钩子和 gyb，amend 是 gyb 或该角色的活会话，focus 是 reviewer，查询谁都行。
 
 母版版本这条链跟 sessions 有关：母版带一个 `rules_version`，会话开始版记下它，feedback 采纳的时候 rl 列出还活着的会话让 gyb 挑要不要收；母版改动在下次加载角色时生效，正在跑的会话不追、不通知，按现行母版干到底。反馈账本身在 `09-common-and-feedback.md`。
 
@@ -548,6 +548,7 @@ sessions 记的是：哪个会话、什么角色、什么模型、怎么起的�
 - 2026-08-17 来自 sync-inbox 问题 21（rl-hub-v2 转来）：reissue 新单一律从 `todo` 起。gyb 原话「A」。转移表 reissue 行「到」栏改成「旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单）」。对回原则 4、原则 9。
 - 2026-08-17 来自 sync-inbox 问题 23（rl-hub-v2 转来）：`rl inbox` 只读不关，通知类 issue 做完了收件人自己 `rl issue close`。gyb 原话「只有做完了的时候才关」。第九节通知段照改。对回原则 6（收件箱是等人的事的出口，关不关由收件人定）。
 - 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来）：角色被拉起不自动查 inbox，`rl inbox` 谁需要谁敲，run 不查 inbox。gyb 原话「每个角色创建时候，不要自动查收件箱」。第九节「上线第一个动作」那句照改，第 5 行源栏标作废。对回原则 6。
+- 2026-08-17 来自 sync-inbox 问题 30（rl-hub-v2 转来）：sessions amend 版 gyb 或该角色自己的活会话都能写。gyb 原话「B」。第七节「谁能调」那句照改，amend 版说明那句不动。对回原则 5（权限从动作倒推）。
 
 ## 要同步到别处的
 
