@@ -8,6 +8,7 @@
 - 问题 4（2026-08-17 加，来自 03 事项 6）：runs 发射版去掉 `artifact_dir` 之后，「产物目录是 `<artifact_root>/<run_id>/`」这条约定的定义处归 `08-trees-init-and-host.md`（`artifact_root` 在它那）还是 `12-role-run.md`（run 的产物）？现在 03、12、21、23 和两份源文档都写了这一句，等裁了再定谁是那一处。
 - 问题 5（2026-08-17 加，来自 04 事项 3）：04 定稿带出一条新的入账校验「`session_id` 对应的 sessions 账最新版是 `closed` 的会话再写任何账，rl 拒收并提示重新加载角色登记」。定义处按 HANDOFF 判断规矩 3 找不到：入账校验在 `03-ledgers.md`，命令在 `05-rl-cli.md`，事情本身写在 `04-handoffs-and-sessions.md` 第七节 `rl session end` 那条。归哪一份？
 - 问题 1 附带（2026-08-17 加，来自 03 事项 3）：「角色带 `--force` 一律拒收，退出码 3；`--as-gyb --quote --force --reason` 算 gyb 身份照写」这一句，等问题 1 裁了定义处之后写进那一份。——已写进 `01` 第二节 2026-08-17。
+- 备案（2026-08-17，gyb 提的，不是问题）：「gyb」当机器标识符太怪，考虑改成 `admin` 或 `sudo`。gyb 定：现在不改，全部 part 定稿之后最后一次扫。到时候只改机器看得见的四种（旗子 `--as-gyb`、actor/owner/assignee 取值 `gyb`、`decisions.gyb.jsonl`、`01-gyb.md` 文件名），白话里指人的不动；名字到时候再定。gyb 原话「我觉得现在先不改吧 等最后改一下就行」。
 - 裁决原文：（待）
 - 要改的地方：裁了之后改 HANDOFF 四点五节对应行，再往指错的 part 传。
 - 状态：等 gyb
