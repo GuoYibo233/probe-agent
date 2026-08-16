@@ -76,7 +76,7 @@ grants 只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quot
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl grant add --to R --permission P --text ... [--expires ...] [--issue ID]` / `rl grant revoke ID` / `rl grant list` / `rl grant show ID` | 授权，只收 `cli` | 写 gyb，查谁都行 |
+| `rl grant add --to R --permission P --text ... [--expires ...] [--issue ID]` / `rl grant revoke ID` / `rl grant list` / `rl grant show ID` | 授权；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收（问题 27） | 写 gyb，查谁都行 |
 | `rl feedback add --target ... --text` / `rl feedback accept ID --applied-to FILE ... --text ...` / `rl feedback reject ID --text` / `rl feedback show ID` / `rl feedback list` | 反馈账；accept 校验路径存在、自动 bump `rules_version`、列出还活着的会话和它们的 rules_version、打印待办（还要改哪几处、要不要收会话、单独 commit 加跑测试） | 提谁都行，裁只有 gyb，查谁都行 |
 | `rl eval propose --kind metric\|figure --name ... --definition ... [--metrics-key K \| --code-path P] [--group-by ... --x ... --y ... --uses ID ...] --applies-to ...` / `rl eval update ID ...` / `rl eval approve ID ... --quote` / `rl eval reject ID --reason` / `rl eval retire ID` / `rl eval show ID` / `rl eval list [--status S]` | 口径账；approve 一次多条一句 quote；approved 后 update 回 proposed | 提和改 analysis，批、打回、退役都是 gyb，查谁都行 |
 
@@ -112,7 +112,7 @@ grants 只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quot
 | 2 | 校验拒收 | 原因写到标准错误，包含下一步该做什么 |
 | 3 | 角色无权（含角色带 `--force`、被销号会话再写账，`--as-gyb --force` 也越不过） | 同上，附「开 issue 给谁」的命令 |
 | 4 | 文件锁等待超时（等 `lock.timeout_seconds`，默认 10 秒，进 `research-loop.json` 阈值表（08 第三节）） | 无 |
-| 5 | 用法错（参数写错、编号不存在） | 同上，附正确用法或查不到的编号 |
+| 5 | 用法错（参数写错、编号不存在） | 原因写到标准错误，附正确用法或查不到的编号 |
 
 所有非零退出，标准错误第一行是固定格式的原因种类（2 `validation`、3 `forbidden`、4 `lock_timeout`、5 `usage`、1 `internal`），`--json` 时同一个值放 `error.kind`（2026-08-17 问题 25）。
 
@@ -179,6 +179,7 @@ run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单
 - 开干的发射单：默认不杀进程，留给下一个 run 认领；带 `--kill` 才走中断收尾，也就是杀进程、释放显存、宿主销号、runs 落 `killed`。
 - `stuck` 的单子：只把 issue 改派 owner，状态不动。
 - `done_pending_review` 和 `todo` 的单子：只列出附现成命令，不动手。
+- 被打回的单子：超过 `reclaim.handoff_idle_hours` 没动的推回 `todo`（走 `rejected`→`todo` 那一行，`actor` 记 gyb、`via=reclaim`），owner 重新拉起。
 - 结束时按 owner 分组打印待拉起的单子和加载命令，并自动跑一遍 doctor。
 
 两处原文不一致：开干的发射单杀不杀进程。设计文档「交接与会话生命周期」一节写的是「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，没有条件；施工计划第六节和第四节转移表写的是默认不杀、`--kill` 才杀。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：默认不杀，`--kill` 才杀。
@@ -225,7 +226,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 
 ## 和别的 part 的接口
 
-- actor 判定、`--as-gyb` 加 `--quote`、`--force --reason`（含 `--force` 只越完整性前提、不越表外转移）、grants 只收裸终端：定义处是 `01-gyb.md` 第二节，本份「actor 怎么定」一节是命令行写法，两边一字不差。gyb 的 use case 表（`rl status` 十段和各 list 的过滤维度从它倒推）、推送表归哪几段：`01-gyb.md`。
+- actor 判定、`--as-gyb` 加 `--quote`、`--force --reason`（含 `--force` 只越完整性前提、不越表外转移）、grants 不限裸终端（角色会话 `--as-gyb --quote` 也收）：定义处是 `01-gyb.md` 第二节，本份「actor 怎么定」一节是命令行写法，两边一字不差。gyb 的 use case 表（`rl status` 十段和各 list 的过滤维度从它倒推）、推送表归哪几段：`01-gyb.md`。
 - 决定账的来源三类、新版本还是新条的判据、`rl decision add/update/confirm/retire/merge/stale` 背后的规矩：`02-decisions.md`（`02` 抄了这几条的签名，`stale` 签名已改成 `[--handoff ID] [--all]`，两边同步）。
 - 九本账公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选栏（`force_reason`、`via`；`fix_for` 2026-08-17 问题 15 删），七本账的字段与必填规则，退出码 2 查的就是这些：`03-ledgers.md`。本份裁了 `via` 栏、sessions 的 `amend` 版（只改 `model`）、handoffs 的 `actual_seconds` 只从 runs 来，已收（03 第 43/118/176 行）。
 - 派活单七个状态、转移表六栏全文、holder 只在 `in_progress` 非空这条不变量、会话登记与销号的钩子、reclaim 动手的规矩：`04-handoffs-and-sessions.md`。命令表里 `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue/estimate` 十二条各自的前提在那张表里（`estimate` 现在在表里有行，`in_progress` 上，holder 写）；`done` 已去掉 `--actual-seconds`、`session end` 顺带 release 的 actor 和 `via` 写法，已收（04 第 41/72 行）。
@@ -234,7 +235,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - `rl init` 建的六样加一节、`research-loop.json` 阈值表（本份用到 `issues.gyb_stale_hours`、`issues.answered_stale_days`、`status.stale_holder_minutes`、`status.review_recent_days`、`reclaim.*`、`notify.reminder_days`、`quick_lane.worktree_root`，新加 `lock.timeout_seconds` 默认 10 秒）、宿主发射器的命令模板（`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`）、`rl run finish` 调哪条宿主命令：`08-trees-init-and-host.md`。`rl init` 在角色会话里拒收退出码 3，已收（08 第一节）。
 - `rl feedback accept` 的 `rules_version` 和母版改动的规矩、公共规矩八条、issues 九种 kind、判断类检查的问题清单文件（本份裁：放 `common/`）：`09-common-and-feedback.md`。
 - `read:notes` 的申请走法（`rl init` 问的那一次和 doctor 第 16 项）：`10-role-idea.md`。
-- `rl handoff estimate` 的分步表怎么填、看门狗（独立进程，只许调查询命令，判定由 run 会话转写进账）、`rl run add/finish` 的两版：`12-role-run.md`。
+- `rl handoff estimate` 的分步表怎么填、看门狗（独立进程，只许调查询命令，判定由 run 会话转写进账）、`rl run add/finish` 与认领顺带写的 `adopted`，三版：`12-role-run.md`。
 - `rl eval propose/update/approve/reject/retire` 的口径两类与四态：`13-role-analysis.md`。
 - `rl session focus` 谁用、`review/` 清单的五栏、判断类检查怎么派 sonnet subagent 一人一题：`14-role-reviewer.md`。
 - 待验证清单十一条（含第 6 条桌面通知、第 7 条定时提醒、第 1 条会话 id 变量）的测法、通过标准、失败备案：`30-build-steps-verify-tests.md`。本份把待验证第 4 条备案「`rl init` 检查调用者不是任何角色」升成正案、把第 10 条备案里的「doctor 列 `model=unknown`」收成 doctor 第 19 项，要 `30` 收。
@@ -644,7 +645,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17：来自 sync-inbox 问题 2（rl-hub 转来；gyb 原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；05「rl notify」一节缩成一句指过去，推送表和机制那段删掉（05 独有的两句已列在同步第 1 条给 01）。对回原则 8。
 - 2026-08-17：来自 sync-inbox 问题 3（rl-hub 转来；gyb 原话「按照08吧」）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，05 里三处「施工计划第八节」和退出码 4 那句改成指 08 第三节。对回原则 8。
 - 2026-08-17 三份互查，rl-hub 转来（对齐 03/04 定义处，不是新裁决）：`release` 的 `--note` 只在 `in_progress`→`todo` 必给；`amend` 加 `--notebook --figure`；`open` 谁能调补快车道补单 deploy 调 owner 记 gyb；`session end` 全部 release、细则指 04 第七节、`rules_version` rl 从母版读；`grant add` 加 `--text`；`feedback accept --text` 必给；`eval` 退役也是 gyb；`scratch list/show` 和 `inbox` 查谁都行；`last_activity` 现算写法与 03 第 186 行一字不差；`accept` 顺带关 `answered` issue；`run list --decision/--line` 反查、`started_at/finished_at` rl 填；锁与写序、退出码表标定义处 03，reclaim 处置标定义处 04；接口一节三处「要收」改「已收」、十条改十二条。
-- 2026-08-17（rl-part-05 定，待 gyb 过目）：`holder_alive` 是 holder 会话在 sessions 账最新版是不是 `open`；`age_hours` 从当前状态那一版 `ts` 起算；「run 的 inbox 不查过版」例外删掉，run 的 inbox 第 3 项照查。（前两句问题 29 gyb 认；第三句被问题 28 推翻，run 不查 inbox）
+- 2026-08-17（rl-part-05 定，待 gyb 过目；已过目）：`holder_alive` 是 holder 会话在 sessions 账最新版是不是 `open`；`age_hours` 从当前状态那一版 `ts` 起算；「run 的 inbox 不查过版」例外删掉，run 的 inbox 第 3 项照查。（前两句问题 29 gyb 认；第三句被问题 28 推翻，run 不查 inbox）
 
 - 2026-08-17 来自 sync-inbox 问题 6（rl-hub-v2 转来；gyb 原话「全给我审查，然后我用我的权限放到issue里面」）：reviewer 查出的只写 review/ 清单，不开 issue，gyb 看完用自己的权限开。对回原则 2。
 - 2026-08-17 来自 sync-inbox 问题 7（rl-hub-v2 转来；gyb 原话「冒烟也是正式动作」）：`estimate` 在 04 转移表有行（`in_progress`→`in_progress`，holder 写），接口一节注明。对回原则 4。
@@ -657,6 +658,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17 来自 sync-inbox 问题 15（rl-hub-v2 转来；gyb 原话「B」）：`fix_for` 栏删掉，可选栏剩 `force_reason`、`via`。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 16（rl-hub-v2 转来；gyb 原话「A」）：analysis 快车道没有补单，`ql close --merged` 只有 deploy，`--dropped` deploy、analysis 都行。对回原则 7。
 - 2026-08-17 来自 sync-inbox 问题 17（rl-hub-v2 转来；gyb 原话「C」）：认领两边都标，handoffs `start` 版 `adopted: true`，runs 加一版 `adopted`（记新 holder 的 `session_id`、`ts`），由 `rl handoff start` 顺带写、不另设 `rl run adopt`（rl-part-05 定）。对回原则 11。
+- 2026-08-17 来自 sync-inbox 问题 19（rl-hub-v2 转来；gyb 原话「B」）：reclaim 处置加第五类，被打回的单子超过 `reclaim.handoff_idle_hours` 没动的推回 `todo`，`actor` gyb、`via=reclaim`，owner 重新拉起，与 04 第八节一字不差。对回原则 3。
 - 2026-08-17 来自 sync-inbox 问题 18（rl-hub-v2 转来；gyb 原话「A」）：`rl session amend` 只换 model，status 与其他栏照抄最新版，closed 也能 amend。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 23（rl-hub-v2 转来；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：`rl inbox` 只读不关；通知类 issue 收件人做完了自己 close；`doctor --ack/--unack` 是写命令、只有 gyb。对回原则 2、6。
 - 2026-08-17 来自 sync-inbox 问题 24（rl-hub-v2 转来；gyb 原话「B」）：`loop/.doctor-acks.jsonl` 是普通文件，03 账本总规矩不管它。对回原则 4。
