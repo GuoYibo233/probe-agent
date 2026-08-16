@@ -67,3 +67,31 @@
   8. `14-role-reviewer.md`：reviewer 加一项职责：按 `common/` 问题清单派 sonnet subagent 一人一题逐条查，查出的 `rl issue open --to <owner>` 落账（判断类检查不进 doctor，doctor 只留脚本十九项）。
   9. `30-build-steps-verify-tests.md`：待验证第 4 条备案「`rl init` 检查调用者不是任何角色」升正案；第 10 条备案「doctor 列 `model=unknown`」已收成 doctor 第 19 项；`rl session amend`、`rl doctor --ack/--unack/--list-acks`、`lock.timeout_seconds` 要有测法。
 - 状态：已处理 2026-08-17（1/2/3/5/6/7/8 与 20/21/22 抄的转移表行、22 的 done 签名、两份源文档由统筹改；4 由 rl-part-04 改 `42b6594`；9 的 30 未写，记进 README 30 那行给写它的人；8 与 `14` 第八节「不开 issue」冲突，立为第一段问题 6 等 gyb）
+
+## 2026-08-17 夜 来自 rl-hub 关于 03/04/05 三份互查（四路 opus 审读，rl-hub 逐条对原文核过）
+- 事项：三份定稿后互查，58 条发现分三堆。甲：引用处没跟定义处、同步没传到位——`03` 的 rl-hub 已改（`701c95d` 及本段同 commit），`04` 八条交 rl-part-04、`05` 十六条交 rl-part-05（两条 SendMessage 全文见 rl-hub 会话记录；要点：04 补 sessions amend 版/六条子命令/字段表照 03 重抄/inbox 五项/accept 关 answered issue/lock 定义处 03/覆盖说明八本账改法/schema_version 从 1 起；05 改 release [--note]/amend 加 --notebook --figure/open 谁能调补快车道/session end 补全部/grant add 加 --text/feedback accept --text 必带/eval retire gyb/scratch list 与 inbox 查谁都行/补 last_activity 现算写法/accept 关 issue/接口一节三处「要 X 收」过期/第 137 行照抄过时句/第 27 行等问题 27/run list --decision --line 反查与 started_at 等由 rl 填/status --json 两键怎么算/锁与写序与退出码与 reclaim 各加一句定义处）。乙：真空白或两说，要 gyb 裁，列在下面 7–27。丙：审读报了但不是矛盾的（withdraw [--quote] 方括号；doctor 扫 handoff_id 为空 vs 必填；started_at/rules_version 无参数由 rl 填；issue reply/close 写权 03 按行 05 按 json 两层都查），不动。
+- 要 gyb 裁的（编号接第一段的 1–6）：
+  7. `rl handoff estimate` 往 `attempts.step_table` 写东西，`04` 转移表没它的行，`04:77` 又说改单子内容一律是表里的行。给 estimate 加一行，还是那句把 estimate 排除？
+  8. 快车道补单写序是环：`03:208` scratch 的 `merged` 版必填 `handoff_id`（补单先存在），`04:60` 开补单前提「关联的 scratch 行状态是 merged」（merged 先存在）；`05:64` `open --quick-lane --ql QL` 收 ql_tag，`04` handoffs 字段表没有存它的字段。哪个先写、单子上存不存 ql_tag？
+  9. `batch` 谁分配：`03:19` 说 rl 在锁里分，`04:26`/`05:64` 是调用者 `--batch B` 传的可选字段；`05:64` 说 launch_order 开单从父单抄 batch，`04` 字段表只写「可选」；batch 也没有格式。
+  10. amend 能改哪些字段：doctor 第 2 项用 `amend --decision ID@V` 换悬空引用，`04` 两行 amend 都不许改 decision_refs、`05` amend 签名也没 `--decision`；doctor 第 5 项修法带 `--code-path`，`04:66`（等验收态 amend）只许补 report_paths/output_paths。
+  11. issue 追问：doctor 第 11 项让开 issue 的角色 `rl issue reply` 追问、issue 回到 open；`03:92` 说 reply 只有 assignee 或 gyb 能写、`03:74` reply 字段挂在 answered 版。要不要追问这条路、怎么写？
+  12. `run list` 默认口径：`03:124`「每张单最新一次退出状态为 ok 的行」vs `05:73`「最新尝试且 ok」——最新一跑失败时一个列上一条 ok、一个一条不出。
+  13. 「handoffs 上的 actual_seconds」：`03:118`、`04:41` 都这么写，`04` handoffs 字段表没这一栏。handoffs 记不记（从 runs 抄一份）还是不记、看去 runs？
+  14. closed 会话再写账拒收（`03:15`）没给退出码：2（校验拒收）还是 3（无权）？gyb 能不能 `--force` 越过它？
+  15. `fix_for` 填什么：`03:43` 说 doctor 修法命令一律带 `--fix-for <扫描项名字>`，`05` doctor 表只有序号没名字、十九条修法命令一条没带 `--fix-for`、`--ack ITEM ID` 也按项号。填项号？命令带不带 `--fix-for`？
+  16. `04:9` 快车道补单是 deploy 开给 deploy，`05:87` 有 `ql open --role analysis`。analysis 的快车道有没有补单？（可能归 `07`，先记着。）
+  17. `adopted`：`04:61`、`04:95` 认领时「账行标 adopted」，handoffs 和 runs 字段表都没这一栏。哪本账的字段？
+  18. sessions `amend` 版和「校验按 status 查」（`03:13`）没接上：amend 行填哪个 status、要不要跟着填该 status 的必填项、能不能 amend 已 closed 的会话（doctor 第 19 项抓的往往是关掉的）。
+  19. `04:69` 给 reclaim 写 `rejected`→`todo` 的权，`04` 第八节四类处置没有 rejected 这一类（等验收和待干只列不动）。reclaim 动不动 rejected 的单？
+  20. `04:71` withdraw 行「有 holder 时通知 holder」——按不变量只有 in_progress 有 holder，从 todo/stuck/等验收/rejected 收回时通知没人收。用 `last_holder`？
+  21. `04:73` reissue 行「到＝同状态（接替）」，动作却是旧单 withdrawn、新开一张。「到」栏怎么写？
+  22. `03:104` runs 主键说「快车道用 ql_tag」，`03:213` 又说快车道数字不进 runs——同一份里两句。HANDOFF 原留给 07/23 裁；03 已定稿，gyb 直接定？
+  23. `rl inbox` 读过即关通知 issue、`rl doctor --ack` 写 ack 文件，`05:100` 却把它俩列进「查询命令、不进 ledger_writes」。「查询顺带自动写」怎么定性？
+  24. `loop/.doctor-acks.jsonl` 不算九本账（`05:212`）：03 总规矩（只增不改、锁、进 git、脏树白名单）管不管它、谁能 ack？
+  25. 退出码只有 0/2/3/4：查不到编号、内部错误、参数写错落哪个码？
+  26. doctor 第 17 项要 applied_to 同时含母版和文档，`03:152`「母版和文档都算」（有一样就行）。哪个？
+  27. `05:27` 说施工计划（b）（c）（d）三条（豁免收窄加 --force --reason、--as-gyb 一律 --quote、grants 只收裸终端）gyb 还没逐条裁，05 的 actor 一节和 01 第二节都建在它们上面。认不认？认了销这句、施工计划第一节那三条标日期。
+- 裁决原文：（待）
+- 要改的地方：每条裁了按定义处改，再传引用处；04 的交 rl-part-04、05 的交 rl-part-05、03 的统筹直接改；两份源文档对应句子回写。
+- 状态：等 gyb（7–27）；甲的 04/05 部分等 rl-part-04/05 回报

@@ -15,7 +15,7 @@
 | `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 | 未开 |
 | `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | 已定稿 `a5d05d4` |
 | `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 | 已定稿 `130ec90`|
-| `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十八项、notify | 635 | 13 | 约 100 | 已定稿 `656c8a9`|
+| `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十九项、notify | 635 | 13 | 约 100 | 已定稿 `656c8a9`|
 | `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 未开 |
 | `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 未开 |
 | `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 未开 |
@@ -47,7 +47,7 @@
 
 04 派活单与会话：rejected→todo 要不要 progress_note（字段表和转移表对不上）；销号时多张开干单是不是全交回；交回 todo 之后 dispatch 怎么算；last_holder 清不清；--session ID 关一个还活着的会话怎么办；last_activity 施工时定；in_progress→todo 那行为什么单列 gyb；gyb 越过 owner 打回发不发 fyi 两处不一致。
 
-05 rl 命令：doctor 十八项只有三项写了修法、「修完归谁推」一条没写；sessions.model unknown 那项算不算第十九项；stale 的 --all；handoff done 的 --actual-seconds 和「rl 算」打架；session end 顺带的 release 账行 actor 填谁；notify 能不能手动调；推送表第 4 条在哪条命令里发现；看门狗读 rl 时 actor 算谁；--force 能不能越表外转移；锁超时多久；inbox/doctor/reclaim 的 --json；--ack 之后还报不报；在角色会话里跑 init 会怎样。
+05 rl 命令（2026-08-17 定稿时全部裁完，见 05 裁决记录）：doctor 十八项只有三项写了修法、「修完归谁推」一条没写；sessions.model unknown 那项算不算第十九项；stale 的 --all；handoff done 的 --actual-seconds 和「rl 算」打架；session end 顺带的 release 账行 actor 填谁；notify 能不能手动调；推送表第 4 条在哪条命令里发现；看门狗读 rl 时 actor 算谁；--force 能不能越表外转移；锁超时多久；inbox/doctor/reclaim 的 --json；--ack 之后还报不报；在角色会话里跑 init 会怎样。
 
 06 分权与钩子：相对路径怎么判、软链接算不算仓库内；共用一个钩子脚本还是各一份挂在待验证 2；idea writes 是无目录但仓库根放行；notes/ 那条在角色会话里等于永远 deny；会话状态文件谁清理、`${CLAUDE_PLUGIN_DATA}` 解析到哪；加载第二个角色 skill 会怎样；dispatches_to 谁查；reads 栏写法不统一测试 13 按哪种查；角色 json 改动算不算母版改动；denied issue 归谁；Bash 直写角色目录钩子看不见、纪律里没专句。
 

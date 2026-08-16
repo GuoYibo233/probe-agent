@@ -12,7 +12,7 @@
 
 每本账都有 `status` 字段，runs 和 sessions 也不例外。入账校验按 `status` 查：一个字段必不必填看这一版的 `status`，不看全局。
 
-写账的会话得活着：一条写命令的 `session_id` 在 sessions 账里最新版是 `closed` 的，rl 拒收并提示「会话已被销号，重新加载角色登记」（2026-08-17 gyb 裁，事情本身在 `04-handoffs-and-sessions.md` 第七节 `rl session end --session ID` 那条；这条校验的定义处是本份，sync-inbox 问题 5）。
+写账的会话得活着：一条写命令的 `session_id` 在 sessions 账里最新版是 `closed` 的，rl 拒收并提示「会话已被销号，重新加载角色登记」（2026-08-17 gyb 裁，事情本身在 `04-handoffs-and-sessions.md` 第七节 `rl session end --session ID` 那条；这条校验的定义处是本份，sync-inbox 问题 5）。销号钩子自己写的那些 release 行不会被这条拒掉：`04` 第六节定的顺序是先把名下开干的单子交回待干（release 行的 `session_id` 记那个会话），最后才落 sessions 的 `closed` 版。
 
 前提查在交付那一刻，不查在开单那一刻。开单只查「这一行说得清自己是什么」，交付才查「东西齐不齐」。哪一版查哪些前提写在转移表里，见 `04-handoffs-and-sessions.md`。
 
@@ -467,7 +467,7 @@ gyb 的豁免只到权限那一层。actor 是 gyb 时跳过「谁能调」和�
 - 2026-08-17：scratch 中间追加数字的每一版 `status` 仍是 `open`，不设第四态。对回原则 4（校验按 status 查，中间版继承 open 版必填）和原则 7（快车道只有进和出两个动作）。
 - 2026-08-17：角色会话带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；`--as-gyb --quote --force --reason` 算 gyb 身份写，照写。对回原则 1（豁免只属于 gyb）和原则 2（入账校验是硬的）。
 - 2026-08-17：`loop/` 九本账进 git，每次 commit 顺手带上，不另设 commit 动作。对回原则 8（账本是唯一为准的记录，要有历史）和原则 4（只增不改，diff 纯追加）。
-- 2026-08-17：公共骨架的可选字段是 `fix_for` 和 `force_reason` 两个（不一致 1 定稿，按施工计划的表）。对回原则 1（gyb 硬写留痕）。
+- 2026-08-17：公共骨架的可选字段是 `fix_for` 和 `force_reason` 两个（不一致 1 定稿，按施工计划的表）。对回原则 1（gyb 硬写留痕）。——同日随 `05` 定稿又加了 `via`，现在是三个，见下面那条。
 - 2026-08-17：runs 收尾版留 `data_path`（`ok` 时必填，是产物目录里给 analysis 算数用的文件或子目录）；发射版去掉 `artifact_dir`，产物目录按约定 `<artifact_root>/<run_id>/`，账上不记（不一致 2 定稿）。对回原则 8（约定已在 12，不写两处）和原则 9（analysis 从 run_id 直接到数据）。
 - 2026-08-17：scratch 校验头尾查、中间不查：`open`、`merged`、`dropped` 三版按表查必填，中间版只查骨架和 `ql_tag`；`branch` 改成 deploy 的 `open` 版必填，analysis 的 `base_commit`、`branch` 两栏交 `07` 定（不一致 3 定稿）。对回原则 7（进出两行得说得清自己是什么）。
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。

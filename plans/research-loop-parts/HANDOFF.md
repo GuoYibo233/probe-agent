@@ -83,7 +83,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 | 决定账：行格式、来源三类、版本、root_id、stale、reissue、`rl decision` | `02-decisions.md` | `03`（只指过去）、`07`、`09`、`11`、`20`、`23`、`25`。原表列的 `10`、`14`、`21` 把决定字段（`root_id`、`quote`、`actor`、`sources`）指到了 `03`，`13`、`22` 接口一节没提决定账，`05` 把 `rl decision` 五条子命令「新版本还是新条」的判据指到 `10`：这五处指错了定义处，同步时以 `02` 为准 |
 | 九本账公共骨架、七本账行格式（issues、runs、grants、feedback、evaluations、sessions、scratch）、退出码 | `03-ledgers.md` | 全部；`09` 抄了 issues/grants/feedback 三本的规则、`07` 抄了 scratch、`04` 抄了 sessions——这四处是同一件事写了两遍，改一处必改另一处。另外 `10`、`11`、`12`、`13`、`20`、`21`、`22` 把 handoffs 的字段指到 `03`，而 `03` 自己说 handoffs 字段定义在 `04`：handoffs 行格式的定义处按本表是 `04` |
 | handoffs 行格式、七个状态、holder 不变量、转移表、dispatch、交付物、销号、reclaim、三种通知、sessions 账 | `04-handoffs-and-sessions.md` | 全部除 `08`（原表只列九份；核下来 `00`、`01`、`02`、`03`、`06`、`07`、`09`、`14`、`23`、`25` 也引了它） |
-| `bin/rl` 每条子命令的签名和「谁能调」、actor 判定的命令行写法、inbox、trace、doctor 十八项、`rl notify --text` 的签名行（推送表与机制归 `01`）、锁 | `05-rl-cli.md` | 全部；`04` 里 reclaim/session、`02` 里 decision、`07` 里 ql/scratch、`09` 里 feedback/issue/grant 各抄了自己那几条的签名。`05` 自己的接口一节把子命令背后的判据往角色 part 指：`rl decision` 指 `10`（应为 `02`）、`rl eval` 四态指 `13`、`rl handoff estimate` 与看门狗指 `12`、`rl session focus` 指 `14`、`rl ql` 指 `07`、`rl init` 与宿主模板指 `08`、`rl feedback accept` 指 `09` |
+| `bin/rl` 每条子命令的签名和「谁能调」、actor 判定的命令行写法、inbox、trace、doctor 十九项、`rl notify --text` 的签名行（推送表与机制归 `01`）、锁 | `05-rl-cli.md` | 全部；`04` 里 reclaim/session、`02` 里 decision、`07` 里 ql/scratch、`09` 里 feedback/issue/grant 各抄了自己那几条的签名。`05` 自己的接口一节把子命令背后的判据往角色 part 指：`rl decision` 指 `10`（应为 `02`）、`rl eval` 四态指 `13`、`rl handoff estimate` 与看门狗指 `12`、`rl session focus` 指 `14`、`rl ql` 指 `07`、`rl init` 与宿主模板指 `08`、`rl feedback accept` 指 `09` |
 | 三层约束、钩子拦放、CLAUDE.md 三句、五份角色 json 四栏、test_skill_refs、读的纪律、会话状态文件 | `06-hooks-and-permissions.md` | 全部（原表只列五份角色和 `08`；五份角色 part 各抄了自己那份 json，`08` 抄了 CLAUDE.md 三句） |
 | 快车道进出、scratch 三态、ql 命令、补单规矩、`ql_tag` | `07-quick-lane.md` | 全部除 `14`、`24`、`25`（原表只列 `11`、`13`、`20`、`21`、`23`） |
 | init 建什么、research-loop.json 的键、阈值表、插件树、入口 skill、宿主对接、宿主命令模板 | `08-trees-init-and-host.md` | `00`、`01`、`03`、`05`、`06`、`07`、`09`、`10`、`11`、`12`、`13`、`21`、`22`。阈值表的定义处是这一份，但各 part 指法散：`04` 指「`05` 指到的施工计划第八节」、`14` 指「`05` 对应的配置表」、`21` 指 `30`、`23` 直接指施工计划第八节、`05` 和 `24` 指 `00` 的索引；同步时以 `08` 为准 |
@@ -94,7 +94,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 
 三条判断规矩：
 1. 角色对 part（`20` 到 `25`）里定的东西，只要是字段、状态、命令，定义处永远在 `03`、`04`、`05` 之一，角色对 part 只是「这条通道用了哪些」；同理角色 part 里的 json 四栏定义处在 `06`。
-2. 上表里标了「写了两遍」的五处（`03` 对 `09`/`07`/`04`、`05` 对 `04`/`02`/`07`/`09`、`06` 对五份角色、`06` 对 `08`、`01` 对 `05` 的 `rl status` 十段——README 里 `01` 和 `05` 的覆盖栏都写着 status 十段、`01` 第二节对 `05`「actor 怎么定」——2026-08-17 加），每次同步结束都要各对一遍，两边一字不差。
+2. 上表里标了「写了两遍」的五处（`03` 对 `09`/`07`/`04`、`05` 对 `04`/`02`/`07`/`09`、`06` 对五份角色、`06` 对 `08`、`01` 对 `05` 的 `rl status` 十段——README 里 `01` 和 `05` 的覆盖栏都写着 status 十段、`01` 第二节对 `05`「actor 怎么定」、`03` 的「锁与写序」和退出码表对 `05` 的照抄、`04` 第八节 reclaim 处置对 `05`「rl reclaim」一节、`08` 阈值默认值对 `04`/`05` 印的那几份——2026-08-17 三份互查后加），每次同步结束都要各对一遍，两边一字不差。
 3. 一条改动找不到定义处（比如新加一个字段、新加一条子命令），先问 gyb 归哪一份，不自己定。
 
 首次核对（2026-08-16 夜，统筹 session）：上表是把 21 份的「和别的 part 的接口」一节全读一遍之后改出来的，改动都是加引用处和记「part 指错了定义处」，没有动定义处那一栏。核对时发现三样东西各 part 指的定义处不一致、原表也没说死，攒着等 gyb 裁：
@@ -109,7 +109,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 ## 五、还悬着的、统筹 session 要记着的
 
 - 施工计划第一节末尾（a）到（i）九条是我改的设计、gyb 还没裁；哪一份 part 的裁决碰到它们，就等于 gyb 裁了那一条，同步的时候把结果回写到施工计划第一节那一条后面标日期。
-- 五处两份源文档互相不一致，各 part 已标出、等 part session 裁：决定行落哪个文件三处口径（`02`）；发射单引不引决定（`21`、`02`）；快车道数字进不进 runs（`07`、`23`）；actual_seconds 谁算（`21`、`05`）；reviewer 只由 gyb 手动开还是也能当 subagent（`14`）。哪份先裁到，统筹 session 负责把另一份改成一样。
+- 五处两份源文档互相不一致，各 part 已标出、等 part session 裁：决定行落哪个文件三处口径（`02`）；发射单引不引决定（`21`、`02`）；快车道数字进不进 runs（`07`、`23`）；actual_seconds 谁算（`21`、`05`——2026-08-17 已裁：rl run finish 算、handoff done 不带参数，03/04/05 都改了）；reviewer 只由 gyb 手动开还是也能当 subagent（`14`）。哪份先裁到，统筹 session 负责把另一份改成一样。「快车道数字进不进 runs」03 定稿里两句并存（第 104 行 vs 第 213 行），已立为 sync-inbox 问题 22。
 - 覆盖检查没跑成：两份源文档每一段是不是都落进了某个 part 没有机器核过。统筹 session 手头空的时候可以做：把两份源文档从头过一遍，每段在某个 part 里找到落点，找不到的补进最合适的 part 并在 README 里记一笔。
 - `30-build-steps-verify-tests.md` 没写。
 - 第三轮模拟跑不跑、跑几个场景，gyb 定；跑的话 workflow 脚本在会话目录里（`rl-scenario-simulation-r2-wf_0b204aaa-355.js`），场景清单和 schema 可以直接复用，模型一律显式写 opus。
