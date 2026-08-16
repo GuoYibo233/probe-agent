@@ -127,11 +127,11 @@ issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `a
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `launch_order` 最新尝试的 run 行有 `exit_status=ok` 的 `finished` 版 | 无 | `handoff done` |
 | `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
-| `done_pending_review` | `rejected` | owner | `reason` 非空 | owner | `handoff reject` |
+| `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
-| `in_progress` | `todo` | 销号钩子、`reclaim`、owner、gyb | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知 | owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知 | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 
 `accepted` 和 `withdrawn` 是终态，表外的转移一律拒收，退出码 2。
 
@@ -363,3 +363,5 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 ## 裁决记录（日期）
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「删了吧」「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」）：抄的转移表 `in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent）。对回原则 8、原则 11、原则 3。
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。

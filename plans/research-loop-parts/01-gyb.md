@@ -42,7 +42,7 @@ reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问�
 - `done_pending_review` 和 `todo` 的只列出来附现成命令，不动手；
 - 结束时按 owner 分组打印待拉起的单子和加载命令，并自动跑一遍 `rl doctor`。
 
-两处原文不一致：设计文档「交接与会话生命周期」写「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，施工计划第六节的 reclaim 行和第四节转移表写「默认不杀进程（等下一个 run 认领），`--kill` 才走中断收尾」。按裁决以施工计划的表为准：默认不杀，`--kill` 才杀。
+两处原文不一致：设计文档「交接与会话生命周期」写「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，施工计划第六节的 reclaim 行和第四节转移表写「默认不杀进程（等下一个 run 认领），`--kill` 才走中断收尾」。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：默认不杀，`--kill` 才杀。
 
 阈值默认值（施工计划第八节，写进 `research-loop.json`，gyb 可改）：
 
@@ -145,7 +145,7 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 通知机制本身还没定，是待验证第 6 条：试 Claude Code 自带推送、`notify-send`、终端铃三种，通过标准是 gyb 桌面看得到；失败备案是退到 `rl status` 单列那一层，通知不做。
 
-gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi` 的 issue，进那个角色的 `rl inbox`，不进桌面通知。两处原文不一致：设计文档「交接」一节写「gyb 越过 owner 验收或打回时 rl 给 owner 发一条 fyi 通知」，施工计划第四节转移表只在 `done_pending_review → accepted` 那一行写了 fyi，`rejected` 那一行没写。按裁决以施工计划的表为准。
+gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi` 的 issue，进那个角色的 `rl inbox`，不进桌面通知。两处原文不一致：设计文档「交接」一节写「gyb 越过 owner 验收或打回时 rl 给 owner 发一条 fyi 通知」，施工计划第四节转移表只在 `done_pending_review → accepted` 那一行写了 fyi，`rejected` 那一行没写。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：验收和打回都发 fyi。
 
 ## 六、定期提醒
 
@@ -483,3 +483,8 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 13. [cosmetic/missing] 第 1 步（谁跑 doctor、跑完能不能自己修）：doctor 写的是「谁都行」，但角色会话跑出问题之后能不能自己修没写。deploy 看到自己名下那张 done_pending_review 的报告路径没了，它是 to_role 不是 owner，按转移表打回只有 owner 能写，它只能开 issue，文档没说这一步该开给谁、kind 填哪个。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:89; 2026-08-16-research-loop-build-plan.md:45
    - 改法：在 doctor 那一行写一句「角色跑 doctor 只看不修，修法一律 `rl issue open --to <owner> --kind cannot` 报给 owner 或 gyb」。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 验收和打回都给 owner 发 fyi。对回原则 6。第 148 行的不一致标注照改。
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「不杀」）：reclaim 回收开干的发射单默认不杀进程，`--kill` 才杀。对回原则 11。第 45 行的不一致标注照改。

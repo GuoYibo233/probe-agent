@@ -72,11 +72,11 @@ analysis 会话销号的时候，如果它是某张 `in_progress` 分析单的 h
 | `in_progress` | `done_pending_review` | holder | `analysis_order` 的 `output_paths` 存在且 `evaluation_refs` 每项 `approved` | 无 | `handoff done` |
 | `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 只补 `output_paths` 里丢了的路径，状态不变（doctor 修法用） | 无 | `handoff amend` |
 | `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
-| `done_pending_review` | `rejected` | owner | `reason` 非空 | owner | `handoff reject` |
+| `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner | 无 | `handoff withdraw` |
-| `in_progress` | `todo` | 销号钩子、`reclaim`、owner、gyb | `progress_note` 非空（钩子和 reclaim 自动填）；rl 给 owner 开 `orphaned` 通知 | owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；rl 给 owner 开 `orphaned` 通知 | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 | 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 `accepted` 和 `withdrawn` 是终态。入账脚本只认这张表，表外的转移一律拒收，退出码 2。
@@ -192,3 +192,8 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
    - 改法：明写「照抄 runs 账 metrics 里的原始数不算分析，任何对比、聚合、画图都要走口径账」
 </content>
 </invoke>
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「删了吧」「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」）：抄的转移表 `in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent）。对回原则 8、原则 11、原则 3。
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。

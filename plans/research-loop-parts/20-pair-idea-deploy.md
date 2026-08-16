@@ -23,7 +23,7 @@ idea 把决定拆成工单派给 deploy，工单就是 `work_type` 取 `work_ord
 | `dispatch` | 派发方式，取 `auto`（owner 后台起 subagent）、`manual`（gyb 亲自接）、`none`（暂不派） | 三选一 |
 | `supersedes` | 接替哪张单 | 可选，`rl handoff reissue` 开新单时指旧单 |
 
-工单还带这些公用字段：`id` 形如 `ho-0012`；`status` 七选一；`parent_id`、`batch`、`quick_lane` 布尔；`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着；`progress_note`（进 `todo` 且不是新建时必填）；`reason`（`rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote`）；`issue_id`（`stuck` 时必填）。九本账的公共骨架七样在 03-ledgers.md。
+工单还带这些公用字段：`id` 形如 `ho-0012`；`status` 七选一；`parent_id`、`batch`、`quick_lane` 布尔；`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着；`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）；`reason`（`rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote`）；`issue_id`（`stuck` 时必填）。九本账的公共骨架七样在 03-ledgers.md。
 
 工单里不能只甩决定编号。`explanation` 的解释权在 idea：idea 要把那条决定里的东西讲明白。怎么测试、什么算成功也要 idea 自己想明白，只是不预写成单子上的字段。
 
@@ -51,11 +51,11 @@ idea 打 `rl handoff open --type work_order --to deploy --decision ID@V ... --ex
 | `in_progress` | `done_pending_review` | holder | `work_order` 的 `report_paths` 和 `code_paths` 齐 | 无 | `handoff done` |
 | `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 只补 `report_paths` 里丢了的路径，状态不变（doctor 修法用） | 无 | `handoff amend` |
 | `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
-| `done_pending_review` | `rejected` | owner | `reason` 非空 | owner | `handoff reject` |
+| `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
-| `in_progress` | `todo` | 销号钩子、`reclaim`、owner、gyb | `progress_note` 非空（钩子和 reclaim 自动填）；rl 给 owner 开 `orphaned` 通知 | owner，owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；rl 给 owner 开 `orphaned` 通知 | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 | 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 工单被打回、被回收、下游销号之后回到待干，都由 idea 重新拉起下游。
@@ -328,3 +328,9 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 13. [cosmetic/missing] 第 1 步（谁跑 doctor、跑完能不能自己修）：doctor 写的是「谁都行」，但角色会话跑出问题之后能不能自己修没写。deploy 看到自己名下那张 done_pending_review 的报告路径没了，它是 to_role 不是 owner，按转移表打回只有 owner 能写，它只能开 issue，文档没说这一步该开给谁、kind 填哪个。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:89; 2026-08-16-research-loop-build-plan.md:45
    - 改法：在 doctor 那一行写一句「角色跑 doctor 只看不修，修法一律 `rl issue open --to <owner> --kind cannot` 报给 owner 或 gyb」。
+
+## 裁决记录（日期）
+
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「不用」）：`progress_note` 只在 `in_progress` → `todo` 那一版必填，`rejected` → `todo` 不要求。对回原则 4。公用字段那一句照改。
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「删了吧」「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」）：抄的转移表 `in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent）。对回原则 8、原则 11、原则 3。
+- 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。
