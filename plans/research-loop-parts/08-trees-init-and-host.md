@@ -1,0 +1,278 @@
+# 两棵树、init、入口 skill、宿主对接
+
+> 这份覆盖四件事：`rl init` 在研究仓库里建什么（含 `research-loop.json` 的全部键和阈值默认值表）、插件本体那棵树长什么样、入口 skill 干哪三件事和领路路线图怎么写、迁移老代码的规矩，以及 research-loop 和 new1 这个宿主仓库的每一条对接。
+> 这份不覆盖：九本账每一行的字段格式（在 `03-ledgers.md`）、`bin/rl` 每条子命令的参数（在 `05-rl-cli.md`）、钩子拦什么和角色 json（在 `06-hooks-and-permissions.md`）、快车道的进出动作（在 `07-quick-lane.md`）、run 角色照 gpu-run 写的八个阶段（在 `12-role-run.md`）、deploy 改宿主文件的三条纪律本身（在 `11-role-deploy.md`）、待验证清单和施工步骤（在 `30-build-steps-verify-tests.md`）。
+> 源：设计文档的「两棵树」「入口 skill 与代码迁移」「分权与钩子」「gyb 自己做的事」四节；施工计划的第一节裁决 2、第二节词表、第六节 `rl init` 那一行、第七节、第八节阈值表、第十一节步 7、第十二节。
+
+## 一、研究仓库这棵树：init 建什么
+
+`rl init` 在研究仓库里建六样东西，再往仓库的 CLAUDE.md 追加一节。
+
+| 建什么 | 是什么 |
+|---|---|
+| `research-loop.json` | 配置文件，键见第二节和第三节 |
+| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出 |
+| `experiments/` | 运行实验的代码，写权只有 deploy |
+| `analysis/` | 统计代码和 notebook，写权只有 analysis |
+| `review/` | reviewer 的问题清单 |
+| `notes/` | gyb 自己写的文档，只有 gyb 写，谁都能读 |
+
+`analysis/` 下面的公共统计件由 init 播模板，notebook 由 analysis 干活时新建，`analysis/scratch/` 留给快车道。
+
+原始数据不新建目录，走配置里的产物根 `artifact_root`，在 new1 指到 net 盘。
+
+往 CLAUDE.md 追加的那一节有三句话，追加不覆盖，new1 原有的规矩照旧：
+
+1. 「没有 gyb 允许，experiments/、analysis/、review/、loop/ 只能在加载了对应角色的会话里改」。
+2. 「加载了 run 角色的会话以 run 的 SKILL.md 为准，它是 gpu-run 的超集，宿主 GPU 铁律里的『唯一入口』对 run 会话读作 run skill」。
+3. 「loop/*.jsonl 和 loop/.lock 不算脏树」。
+
+这三句是给没加载角色的裸会话看的纪律。裸会话身上没有钩子，什么都能写，这一点不用兜底钩子去堵，靠这一节加 reviewer 事后查。
+
+init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。发了，idea 之后读 `notes/` 不再走申请；没发，idea 要读的时候开一条 kind 是 `request` 的 issue 给 gyb，gyb 在裸终端写一条 grant。
+
+## 二、`research-loop.json` 的键
+
+配置文件里放两类东西：路径和宿主命令模板是一类，阈值是另一类（阈值全表在第三节）。
+
+设计文档「两棵树」一节列的是：各账路径、产物根、分析产物根、快车道 worktree 根、本仓库跑法、宿主发射器的命令模板（探卡、发射、收尾、中断）、宿主台账清单。施工计划第七节和第八节给出了其中几样的键名：
+
+| 键 | 装什么 | 出处 |
+|---|---|---|
+| `artifact_root` | 产物根，实验产物和原始数据落这里；new1 指到 net 盘 | 词表、设计文档「两棵树」 |
+| `analysis_artifact_root` | 分析产物根，大文件落这里，小图和 notebook 进仓库 `analysis/` | 词表、设计文档 analysis 一节 |
+| `quick_lane.worktree_root` | 快车道 worktree 建在哪，分支名和目录名都用 `ql_tag` | 第八节阈值表 |
+| `gpu_state_path` | 宿主的慢变量档案路径，new1 是 `ops/gpu_state.md` | 第七节 Phase 0 |
+| `launcher.free_cmd` | 探卡命令模板，new1 是 `run.py gpu-jobs free` | 第七节 Phase 1 |
+| `launcher.launch_cmd` | 发射命令模板，new1 是 `run.py launch` | 第七节 Phase 4 |
+| `launcher.finish_cmd` | 宿主收尾命令模板，new1 是 `run.py record finish` | 第七节 Phase 6a |
+
+两处原文不一致：设计文档说宿主发射器的命令模板有四条（探卡、发射、收尾、中断），施工计划第七节只给了 `free_cmd`、`launch_cmd`、`finish_cmd` 三个键名，中断那条模板叫什么没写。四条这个数以设计文档为准，键名缺一个，记在文末留给 gyb。
+
+## 三、阈值默认值表（全文）
+
+这张表写进 `research-loop.json`，gyb 可以改。
+
+| 键 | 默认值 | 用在哪 |
+|---|---|---|
+| `watchdog.stall_mult` | 5 | 卡死判定线 = 5 倍典型心跳间隔，沿用 `ops/verdicts.py` |
+| `watchdog.stall_floor_samples` | 3 | 判定线下限三轮采样 |
+| `watchdog.warmup_seconds` | 1800 | 开局 30 分钟不判卡死 |
+| `watchdog.gpu_util_zero_seconds` | 900 | 显卡利用率连续 15 分钟为零算一路证据 |
+| `watchdog.timeout_factor` | 3 | 超时 = 最新尝试 `estimated_seconds` 乘 3 |
+| `issues.gyb_stale_hours` | 24 | `rl status` 段 2 标出超过 24 小时没动的 |
+| `issues.answered_stale_days` | 3 | doctor 报 answered 超过 3 天没 close |
+| `status.stale_holder_minutes` | 30 | `rl status` 段 7：holder 会话超过 30 分钟没写账的开干单 |
+| `reclaim.session_idle_hours` | 48 | 会话超过 48 小时没写任何账算很久没动 |
+| `reclaim.handoff_idle_hours` | 72 | 单子超过 72 小时没转移算很久没动 |
+| `reclaim.ql_idle_days` | 7 | 快车道超过 7 天没关列进 reclaim |
+| `anomaly.metric_extremes` | `[0, 1]` | 指标落在 0 或 1 触发反常预警，`rl run finish` 里查 |
+| `anomaly.duration_factor` | 3 | 实际耗时超过预计 3 倍触发反常预警，同上 |
+| `status.review_recent_days` | 7 | `rl status` 列最近 7 天的 review 清单 |
+| `notify.reminder_days` | 7 | 每 7 天提醒 gyb 跑 `rl reclaim`、看 feedback、跑 doctor、落母版 |
+| `quick_lane.worktree_root` | `<仓库>/../<仓库名>-ql/` | 快车道 worktree 建在哪 |
+
+## 四、插件本体这棵树
+
+插件本体留在 `new1/research-loop/` 子目录里，不另开仓库。`research-loop/` 目录下现有的 93 个文件整体退役，新插件从空目录开始写，旧代码留在 git 历史里。
+
+| 目录或文件 | 装什么 |
+|---|---|
+| `skills/` | 六个 skill：入口一个，五个角色各一个 |
+| `common/` | 公共母版：公共规矩、词表、五栏规格、读法，带 `rules_version` |
+| `tables/` | 九本账的表结构、派活单的状态转移表、角色 json、gyb 的 use case 表 |
+| `schemas/` | 九本账的行格式 |
+| `scripts/` | 入账与查询的实现 |
+| `bin/rl` | 命令入口，含 status、inbox、trace、回收、doctor |
+| `hooks/` | 钩子脚本本体：五个角色共用一个脚本、参数报角色名；登记和销号的钩子也在这里 |
+| `monitors/` | 一个，发射看门狗，只在 run 上线时起，只写自己的状态文件 |
+| `tests/` | 测试 |
+
+反常结果预警不做常驻进程，并进 `rl run finish`。
+
+两处原文不一致：设计文档「两棵树」列的插件目录没有 `.claude-plugin/plugin.json`、`ARCHITECTURE.md`、`README` 这三样，施工计划第一节裁决 3 提到 README（要明写「fable 是 gyb 2026-08-16 点名的例外」）、第十一节步 1 要新写一份 `.claude-plugin/plugin.json`、步 2 要写 `research-loop/ARCHITECTURE.md`。按施工计划补上这三样。
+
+## 五、入口 skill 干哪三件事
+
+入口 skill 只干三件事：init、迁移提醒、领路。SKILL.md 里明写「本 skill 不干别的」。
+
+入口 skill 只许 gyb 手动调用，永远不许模型或其他东西调用。候选机制是 skill 头部声明禁止模型调用，这条还没测，测法和失败备案在 `30-build-steps-verify-tests.md`（待验证第 4 条）。
+
+领路是几条常见路线图，头几条是：
+
+1. 一批结果出来之后先开 analysis 出数再开 idea 落决定。
+2. 新想法先开 idea 落决定再派工单。
+3. 结果不对先开 reviewer。
+4. 只想先跑一把看数、不打算留决定和报告的，gyb 直接点快车道；其余走正常路。
+5. 收到定期提醒：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`。
+
+加载角色的动作是 gyb 在终端里 `/` 加角色 skill 名。
+
+## 六、迁移的规矩
+
+迁移是搬文件，不是登记指向。理由是写权钩子按路径拦，文件不搬，这条拦截就只覆盖新写的代码，老代码全在钩子外面。
+
+new1 的老代码由 gyb 手动按需搬（2026-08-16 晚裁，全量搬的 workflow 作废）。入口 skill 不做全量搬迁的 workflow，只在 deploy 的报告里列出「这次改了哪些 experiments/ 外的文件」时提醒 gyb 搬。研究仓库代码量小，搬得动。
+
+老代码要不要搬进 `experiments/` 由 gyb 手动定，deploy 只提醒。
+
+## 七、new1 宿主对接
+
+### 7.1 GPU 铁律对 run 会话怎么读
+
+new1 的 CLAUDE.md 现在写的是「任何要用显卡跑的程序一律走 gpu-run skill，禁止绕过」。run 角色照 `.claude/skills/gpu-run/SKILL.md` 写，能力至少覆盖 gpu-run 的全生命周期，所以加载了 run 角色的会话以 run 的 SKILL.md 为准，它是 gpu-run 的超集，宿主 GPU 铁律里的「唯一入口」对 run 会话读作 run skill。这句话两处都要有：init 追加的那一节里有一句，new1 原来那一行由 gyb 亲手改。
+
+### 7.2 loop/ 进脏树白名单
+
+`loop/*.jsonl` 和 `loop/.lock` 不算脏树。new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改。
+
+### 7.3 两本 runs 账并存
+
+插件的 `loop/runs.jsonl` 和宿主的 `ops/runs.jsonl` 在 new1 里并存：前者是插件的正账，后者是宿主发射器自己的登记。两本不合并，doctor 有一项对账，扫「`loop/runs.jsonl` 与宿主 `ops/runs.jsonl` 对不上的 run_id」。
+
+宿主发射器 `run.py launch` 写 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 这三个文件是 Bash 写入，钩子不看，不算越权。
+
+### 7.4 record finish 由 rl run finish 调
+
+`rl run finish` 同时调宿主发射器的收尾命令，new1 是 `run.py record finish`，命令模板在配置的 `launcher.finish_cmd` 里。退出状态是 ok 还是失败都调，两本账一次落。Phase 6b 的两种中断（跑挂、被收回或被 reclaim `--kill`）也照样调。
+
+### 7.5 TIMELINE、DATA、RESULTS 角色不碰
+
+宿主自己的四层记录是 `TIMELINE.md`、`DATA.md`、`RESULTS.md`、`ops/runs.jsonl`。角色一律不碰这四样，只有 `rl run finish` 经宿主收尾命令模板往 `ops/runs.jsonl` 落数字。TIMELINE 和 DATA 由 gyb 手动补。
+
+### 7.6 probe-pipeline 与 run.py 注册表
+
+deploy 改到 `experiments/` 外的宿主文件（仓库根 `run.py` 的注册表、`MAP.md`、`ops/` 里的东西）钩子不拦，纪律是三条：改动列进部署报告带文件的那一份；在 `decisions.deploy.jsonl` 留一条来源指向那个文件；宿主仓库自己对这些文件的规矩照守。new1 的规矩就是 CLAUDE.md 里的 probe-pipeline skill 和 run.py 注册表三件套。三条纪律的完整写法在 `11-role-deploy.md`。
+
+### 7.7 产物根指到 net 盘
+
+原始数据不新建目录，走配置里的 `artifact_root`，在 new1 指到 net 盘。
+
+### 7.8 快车道在 new1 的宿主动作
+
+快车道里 GPU 照旧走宿主发射器：宿主的台账照登记，`record finish` 的结论栏写 `quick_lane` 加标签，track 沿用被微调的那个实验的方向。这几条属于快车道，详见 `07-quick-lane.md`。
+
+### 7.9 gyb 要亲手改的两处
+
+new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑完 `rl init` 之后：
+
+1. GPU 铁律那一行，改成对 run 会话的读法（见 7.1）。
+2. 脏树白名单那一行，加 `loop/`（见 7.2）。
+
+步 7 的验收标准是：new1 的 `loop/` 长出来、CLAUDE.md 只多一节。
+
+## 和别的 part 的接口
+
+- 九本账的文件名（`loop/decisions.<actor>.jsonl` 等九个）和每一行的字段：`03-ledgers.md`。
+- `rl init` 这一行子命令的完整定义、`rl run finish` 的参数、doctor 的全部扫描项：`05-rl-cli.md`。
+- 钩子只挂 Write 和 Edit、只拦写别的角色的目录和直接写 `loop/` 两类，以及裸会话不装兜底钩子这条裁决：`06-hooks-and-permissions.md`。
+- `ql_tag` 的形状、快车道 worktree 怎么建、`rl ql open/close`：`07-quick-lane.md`。
+- run 角色照 gpu-run 写的八个阶段、看门狗、smoke 日志落 `artifact_root/smoke/`：`12-role-run.md`。
+- deploy 改宿主文件的三条纪律、部署报告两份的分工：`11-role-deploy.md`。
+- idea 申请 `read:notes` 的那条 issue 和 grants 只收裸终端：`10-role-idea.md`、`03-ledgers.md`。
+- 母版的 `rules_version` 和 feedback 采纳后改哪几个文件：`09-common-and-feedback.md`。
+- 待验证清单第 4 条（入口 skill 能不能锁成只许手动）、施工步 1、2、7 的交付与验收：`30-build-steps-verify-tests.md`。
+- 十一条设计原则和文档索引：`00-overview.md`。
+
+## 源文档没写清的（留给 gyb）
+
+1. 中断的命令模板叫什么键名。设计文档列了四条宿主命令模板（探卡、发射、收尾、中断），施工计划第七节只给了 `free_cmd`、`launch_cmd`、`finish_cmd` 三个名字。
+2. 「本仓库跑法」这一项在 `research-loop.json` 里的键名和取值形状没写。
+3. 「宿主台账清单」这一项的键名和取值形状没写；new1 要列的是哪几个文件（`ops/jobs.json`、`ops/runs.jsonl`、`RESULTS.md`、`RUNMETA.json`？）也没写死。
+4. 配置里的「各账路径」和词表里写死的九个文件名（`loop/issues.jsonl` 这些）谁说了算：账路径可配置的话，词表那张表是默认值还是硬编码。
+5. `loop/` 九本账进不进 git 没写。
+6. 脏树白名单那处改动的执行位置。设计文档说「new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改」，CLAUDE.md 那一行谁改写清楚了，`run.py` 里门禁代码那一处谁改、`rl init` 动不动它，没写。
+7. `analysis/` 里的公共统计件模板具体播哪几个文件，没写。
+8. `rl init` 跑第二次会怎样（已有 `loop/` 和已追加过的 CLAUDE.md 一节），没写。
+9. 入口 skill 在 new1 之外的仓库怎么用：`research-loop.json` 是 init 现问 gyb 生成还是有一份默认模板，没写。
+10. 插件树里要不要有 `workflows/` 或 `agents/` 一层。设计文档的目录清单里没有，待验证第 8 条的失败备案里出现过「workflow 里的 `agentType` 指向 `agents/<role>.md`」，正文没定。
+
+## 第二轮模拟里归到这一份的摩擦（原样，未核实）
+
+以下条目照抄 `plans/2026-08-16-research-loop-simulation-round2.md`，不做判断、不改字。那份文件开头写明：16 个场景的摩擦全部是未经核实的模拟者原话，可能有误报。
+
+### param-tweak（45 步，gyb 动手 8 次）
+
+11. [slows/contradiction] 第 16、20 步：快车道说数字进杂账不进 runs 账，但 GPU「照旧走 gpu-run」，run.py launch 一条命令自动往宿主 ops/runs.jsonl 登记、Phase 6a 五连还要 record finish 把数字渲进 RESULTS.md；文档没说快车道要不要跑这一步
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:64; plans/2026-08-16-research-loop-next-steps.md:148; plans/2026-08-16-research-loop-build-plan.md:161; /home/y-guo/reproduce/new1/.claude/skills/gpu-run/SKILL.md:140
+    - 改法：快车道那一段明写「宿主台账照登记，record finish 的 conclusion 写 quick_lane 加 ql_tag」
+
+12. [slows/contradiction] 第 16 步：设计文档要求快车道发射时 track 一律填 quick_lane，gpu-run 要求 --track 和 TIMELINE.md 里的方向对得上，quick_lane 不是 TIMELINE 里的任何一条方向
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:64; /home/y-guo/reproduce/new1/.claude/skills/gpu-run/SKILL.md:91
+    - 改法：在 TIMELINE.md 里固定登记一条 quick_lane 方向，或者改成沿用被微调那个实验的 track
+
+15. [slows/guessed] 第 7 步：快车道的 worktree 建在哪、分支叫什么名字文档一个字没写，deploy 只能自己编一个路径；同一天开第二条快车道时路径撞不撞也没人管
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:64; plans/2026-08-16-research-loop-build-plan.md:141
+    - 改法：research-loop.json 加 quick_lane.worktree_root，路径和分支名都用 ql_tag 拼出来
+
+### new-idea（39 步，gyb 动手 7 次）
+
+8. [slows/ambiguous] 第 2 步和第 3 步：这个场景走正常路还是快车道两种读法都成立：领路卡片写着「新想法先开 idea 落决定再派工单」，快车道的典型情形又写着「一个想法还没成型先跑一把看看」，而进快车道只看 gyb 点不点名、明说不设别的判据，gyb 不点名的时候模型没有依据选
+   - 依据：plans/2026-08-16-research-loop-next-steps.md:154; plans/2026-08-16-research-loop-next-steps.md:64
+   - 改法：领路卡片加一句「只想先跑一把看数、不打算留决定和报告的，gyb 直接点快车道；其余走正常路」
+
+11. [slows/missing] 第 15 步：new1 的探针代码没搬进 experiments/，deploy 改的是仓库根的宿主代码，插件只写了钩子放行加「列进报告并留决定」；宿主仓库 CLAUDE.md 要求扩展流水线必须从 probe-pipeline skill 进、代码与 run.py 注册表同一个 commit，两套规矩没有对接句，deploy 会绕过宿主的注册表
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:62; plans/2026-08-16-research-loop-next-steps.md:132; plans/2026-08-16-research-loop-build-plan.md:10
+    - 改法：deploy 的 SKILL.md 加一句「改 experiments/ 外的宿主文件时按宿主仓库 CLAUDE.md 的规矩走，new1 是 probe-pipeline 加 run.py 注册表」
+
+13. [slows/missing] 第 39 步：插件的 loop/ 九本账和 new1 自己的四层记录（TIMELINE.md、DATA.md、RESULTS.md、ops/runs.jsonl）谁写谁不写只交代了 runs 一本两账并存，这次跑出来的数字要不要同时进 RESULTS.md、结论要不要补 TIMELINE 没人负责
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:148; plans/2026-08-16-research-loop-build-plan.md:163
+    - 改法：在 research-loop.json 里列一张宿主台账清单，明写角色一律不碰 TIMELINE/DATA/RESULTS，由 gyb 收尾时手动补
+
+### plot-new-plan（17 步，gyb 动手 8 次）
+
+13. [cosmetic/missing] 第 12 步（图和 notebook 落盘位置）：决定的来源里把 analysis/ 里的图当仓库内文件路径，init 又说原始数据走配置里的产物根；图和 notebook 进不进 git、多大算大产物要挪到产物根，两份文档都没划线。
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:46; plans/2026-08-16-research-loop-next-steps.md:148; plans/2026-08-16-research-loop-build-plan.md:107
+    - 改法：在 research-loop.json 里加一个 analysis 产物根，明写小图和 notebook 进仓库 analysis/、大文件进产物根并在口径行里记路径。
+
+### run-crash-midway（40 步，gyb 动手 4 次）
+
+15. [cosmetic/missing] 第 6、27、30 步：崩溃分支下宿主那本账怎么收没写。build-plan.md:163 只在 Phase 6a 说明「数字进 loop/runs.jsonl，new1 的 ops/runs.jsonl 照旧由 run.py launch 写，两本并存」，:164 的 Phase 6b 完全没提宿主账，所以 r1 在 ops/runs.jsonl 里那条永远停在 `record start` 没有 finish，宿主的 RESULTS.md 缺一行。
+    - 依据：plans/2026-08-16-research-loop-build-plan.md:163; plans/2026-08-16-research-loop-build-plan.md:164; plans/2026-08-16-research-loop-next-steps.md:148
+    - 改法：Phase 6b 那一行补一句：`rl run finish --exit failed|killed` 的同时打宿主的 `python3 run.py record finish <run_id>`。
+
+### n-launch-orders（58 步，gyb 动手 10 次）
+
+2. [blocks/missing] 第 11 步：deploy 用什么起那个 workflow、workflow 定义文件放在插件树的哪里、5 张单号怎么分派给 5 个 subagent，三样都没写。插件本体的目录清单里只有 skills/common/tables/schemas/scripts/bin/hooks/monitors/tests，没有 workflows/ 或 agents/；待验证第 8 条的备案里出现过「workflow 里的 agentType 指向 agents/<role>.md」，但那只是备案，正文没定。这个场景的核心机制整个是猜的。
+   - 依据：2026-08-16-research-loop-next-steps.md:68; 2026-08-16-research-loop-next-steps.md:150; 2026-08-16-research-loop-build-plan.md:196
+   - 改法：在插件树里加一层 workflows/fanout.js（或 agents/<role>.md），明写 deploy 起 N 个 run 时把单号、batch、分到的卡逐个写进 subagent 提示。
+
+18. [slows/too_heavy] 第 21 步：同一批数字要在两处各填一遍：先按宿主流水线 run.py record finish 写 ops/runs.jsonl，再 rl run finish 写 loop/runs.jsonl，两本并存不合并，谁对账没写。5 张单就是 10 次填数。
+    - 依据：2026-08-16-research-loop-build-plan.md:163; 2026-08-16-research-loop-next-steps.md:148; .claude/skills/gpu-run/SKILL.md:143
+    - 改法：让 rl run finish 顺带调宿主的 record finish（或反过来），一次输入两本账都落，doctor 加一条两本对账的扫描。
+
+### gyb-manual-takeover（27 步，gyb 动手 9 次）
+
+3. [slows/missing] 第 17 步：正常路的 run_id 谁生成、按什么规则没写。快车道有 ql_tag 的形状规定（ql-20260816-01，兼作宿主要的 run_id，track 一律填 quick_lane），正常路只说 run_id「和产物目录名、tmux session、commit message 一致」，没说谁造、什么格式；发射单的 launch 子对象也只有 command / args / workdir，没有 run_id 和 track 两栏，而宿主 run.py launch 的 --run-id 和 --track 是必填。
+   - 依据：plans/2026-08-16-research-loop-build-plan.md:63; plans/2026-08-16-research-loop-build-plan.md:61; plans/2026-08-16-research-loop-next-steps.md:64; /home/y-guo/reproduce/new1/.claude/skills/gpu-run/SKILL.md:85
+   - 改法：在 launch 子对象里加 run_id 和 track 两个必填字段，run_id 由 rl handoff open 时按 ho 号加日期自动生成。
+
+4. [blocks/missing] 第 17 步：没写 loop/ 九本账进不进 git、要不要加进宿主的脏树白名单。new1 的门禁把 ops/jobs.json、ops/runs.jsonl、RESULTS.md、*.lock 排除在脏之外，loop/*.jsonl 不在里面；而每一条 rl 命令都在追加行，run 走到「发射前 commit」那一刻工作树必脏，要么把账本一起 commit 进去（发射前 commit 那一步禁止 --allow-dirty），要么被门禁拦住。
+   - 依据：plans/2026-08-16-research-loop-next-steps.md:148; plans/2026-08-16-research-loop-build-plan.md:161; /home/y-guo/reproduce/new1/CLAUDE.md:36; /home/y-guo/reproduce/new1/.claude/skills/gpu-run/SKILL.md:54
+   - 改法：rl init 时把 loop/*.jsonl 和 loop/.lock 一起加进宿主 run.py 的脏树白名单，并在 research-loop.json 里记一句账本入不入 git。
+
+5. [slows/contradiction] 第 13 到 19 步：run 角色 skill 照 gpu-run 写、能力至少覆盖它的全生命周期，等于 GPU 活从 run skill 走；但 new1 的 CLAUDE.md 是「任何要用显卡跑的程序一律走 gpu-run skill，禁止绕过」，而 rl init 明写「往 CLAUDE.md 追加一节，追加不覆盖，new1 原有的规矩照旧」。两条都是工程内的规矩，原则 8 的「工程内为准」裁不动这一对。
+   - 依据：plans/2026-08-16-research-loop-build-plan.md:19; plans/2026-08-16-research-loop-build-plan.md:153; plans/2026-08-16-research-loop-next-steps.md:148; plans/2026-08-16-research-loop-next-steps.md:22; /home/y-guo/reproduce/new1/CLAUDE.md:3
+   - 改法：rl init 追加的那一节里明写一句「加载了 run 角色的会话以 run SKILL.md 为准，gpu-run 铁律对它不适用」，并同步改 new1 CLAUDE.md 第 3 行。
+
+### idea-request-notes（15 步，gyb 动手 4 次）
+
+6. [slows/too_heavy] 第 6 步到第 11 步整段：gyb 就坐在这个会话里说了句「你去读吧」，为了读一份 md 却要走 issue open、通知、grant add、issue reply、issue close 五个动作四行账。permission 第一版只有 read:notes 一种、grantee 是角色不是会话，所以批一次就永久覆盖整个 notes/，这套手续一辈子只有第一次有信息量，和「想法要快速、多次迭代」这条总目标对不上
+   - 依据：plans/2026-08-16-research-loop-next-steps.md:7; plans/2026-08-16-research-loop-next-steps.md:28; plans/2026-08-16-research-loop-build-plan.md:65
+   - 改法：`rl init` 时问一次 gyb 要不要当场给 idea 发 read:notes，发了以后就不用走申请，没发才走 issue 那条路
+
+### periodic-reclaim（27 步，gyb 动手 11 次）
+
+15. [slows/missing] 第 1 步：定时提醒的失败备案是「入口 skill 加载时打印一行距上次 reclaim 几天」，可入口 skill 只许 gyb 手动调用，gyb 不主动加载就永远看不到这一行。备案落空的时候没有第二条路。
+    - 依据：plans/2026-08-16-research-loop-build-plan.md:195; plans/2026-08-16-research-loop-next-steps.md:163; plans/2026-08-16-research-loop-next-steps.md:154
+    - 改法：备案改成 rl status 的第一行打印距上次 reclaim 的天数，rl status 谁都能调、gyb 天天用。
+
+16. [cosmetic/missing] 第 2、4 步：入口 skill 的领路清单里四条路线图都是做实验的路线，没有这条定期收拾的路线，gyb 收到提醒之后要凭记忆敲 status 和 reclaim 的顺序。
+    - 依据：plans/2026-08-16-research-loop-next-steps.md:154; plans/2026-08-16-research-loop-build-plan.md:143
+    - 改法：领路加一条「收到 7 天提醒 → rl status → rl reclaim 看列表 → --apply → 按 owner 逐个拉起 → rl doctor」。
+
+### smoke-fails（44 步，gyb 动手 4 次）
+
+6. [slows/missing] 步 33（第二次 smoke 通过后发射）：正常路的 run_id 谁定、怎么命名，文档没写。只有快车道写了 ql_tag 兼作宿主发射器要的 run_id、track 一律填 quick_lane。宿主 run.py launch 的 --run-id 和 --track 都是必填，new1 的规矩还要求 run_id 在产物目录名、tmux session、台账 name、commit message 四处一致，run 在这一步只能自己编一个，且 --track 要和 TIMELINE.md 的方向对得上，谁给这个值也没写。
+   - 依据：plans/2026-08-16-research-loop-next-steps.md:64; plans/2026-08-16-research-loop-build-plan.md:61; plans/2026-08-16-research-loop-build-plan.md:161; plans/2026-08-16-research-loop-build-plan.md:63
+   - 改法：rl handoff open --type launch_order 时自动分配 run_id 写进 launch 子对象（形如 ho-0013-01），track 由 deploy 开单时必填。
