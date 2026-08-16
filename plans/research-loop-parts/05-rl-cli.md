@@ -642,6 +642,8 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 
 ## 要同步到别处的
 
+（九条已同步 2026-08-17：rl-hub 改的见 commit cb5e1e2；04 由 rl-part-04 改，见 42b6594；30 未写成，记在 README 30 那行。第 8 条 reviewer 派 subagent 并 `rl issue open` 落账，rl-hub 指出和 14 第八节「不开 issue、不派活」、公共规矩第 6 条冲突，立为 sync-inbox 问题 6 等 gyb 裁，裁下来若动 05 再改。）
+
 - `01-gyb.md` 第二节（定义处）：补「`--force` 只越过完整性前提，越不过转移表外的转移，表外转移对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开」；推送表第 4 条补「在单子落 todo 那刻和 `session end` 销号时查并推」；`rl notify` 补「gyb 也可手动调，不进账」。
 - `02-decisions.md`：`rl decision stale` 签名改成 `[--handoff ID] [--all]`，去掉 `--mine`。
 - `03-ledgers.md`：公共骨架可选栏加 `via`（值 `session_end`、`reclaim`）；sessions 账加 `amend` 版，只许改 `model`；handoffs 的 `actual_seconds` 只从 runs 的 `finish` 版来，`done` 不填。
