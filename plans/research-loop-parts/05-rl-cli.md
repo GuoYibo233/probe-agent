@@ -37,7 +37,7 @@ grants 只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quot
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
 | `rl init` | 在研究仓库建 `research-loop.json`、`loop/` 九本账、`experiments/`、`analysis/`（含公共统计件模板和 `analysis/scratch/`）、`review/`、`notes/`，往 CLAUDE.md 追加一节（三句），问一次要不要给 idea 发 `read:notes`；读到会话状态文件就拒收，退出码 3，提示换裸终端跑 | gyb，只在裸终端 |
-| `rl session start --role R [--model M] [--launched-by manual\|subagent\|workflow]` / `rl session end [--session ID] [--reason]` / `rl session focus --decision ID` / `rl session amend ID --model M` / `rl session show ID` / `rl session list [--alive] [--role R]` | 登记和销号，钩子调；`amend` 只许改 `model`，status 与其他栏照抄最新版、closed 的会话也能 amend，是 doctor 第 19 项的修法；`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就全部 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话；`start` 的 `rules_version` 由 rl 从母版读；细则（`--session ID` 不查活、`end_reason` 记 `manual`、closed 会话再写账拒收）见 04 第七节 | start/end 钩子和 gyb，focus reviewer，amend gyb，查谁都行 |
+| `rl session start --role R [--model M] [--launched-by manual\|subagent\|workflow]` / `rl session end [--session ID] [--reason]` / `rl session focus --decision ID` / `rl session amend ID --model M` / `rl session show ID` / `rl session list [--alive] [--role R]` | 登记和销号，钩子调；`amend` 只许改 `model`，status 与其他栏照抄最新版、closed 的会话也能 amend，是 doctor 第 19 项的修法；`end` 只扫 `in_progress` 且 holder 是本会话的单子，有就全部 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned`、experiments/ 脏改动打 `wip/<ho-id>` 分支；`--session ID` 给 gyb 关别的会话；`start` 的 `rules_version` 由 rl 从母版读；细则（`--session ID` 不查活、`end_reason` 记 `manual`、closed 会话再写账拒收）见 04 第七节 | start/end 钩子和 gyb，focus reviewer，amend gyb 或该角色活会话，查谁都行 |
 | `rl inbox` | 角色的收件箱：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决；只读，不顺带关任何 issue | 谁都能调（查询）；角色谁需要谁敲，不是上线动作；run 不用查 |
 
 ### 决定账
@@ -210,7 +210,7 @@ run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单
 | 16 | 决定来源指 notes/ 但 grants 里没有该 actor 的 read:notes | 只报不修：附 `rl grant add --to R --permission read:notes`（事后补授权）或 `rl decision update ID` 换来源两条命令 | gyb |
 | 17 | accepted 的 feedback 的 applied_to 为空 | `rl feedback accept ID --applied-to FILE ...` 追加一版补齐 | gyb |
 | 18 | loop/runs.jsonl 与宿主 ops/runs.jsonl 对不上的 run_id | 只报不修：列出两边各有没有 | run |
-| 19 | sessions 行 `model` 是 `unknown` | `rl session amend ID --model M` | gyb |
+| 19 | sessions 行 `model` 是 `unknown` | `rl session amend ID --model M` | gyb 或该角色 |
 
 第 11 项的 N 是 `issues.answered_stale_days`，默认 3 天（定义在 `08-trees-init-and-host.md` 第三节阈值表）。第 7 项的阈值直接用 `reclaim.handoff_idle_hours`（默认 72 小时），不另开一项。
 
@@ -666,6 +666,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17 来自 sync-inbox 问题 26（rl-hub-v2 转来；gyb 原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：doctor 第 17 项改成「applied_to 为空」。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 27（rl-hub-v2 转来；gyb 原话「3 不是，可以替我写」）：（b）（c）认；（d）不认，grants 角色会话里 `--as-gyb --quote` 替 gyb 写也收，`decisions.gyb.jsonl` 只收裸终端不变。对回原则 1。
 - 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」「每个角色创建时候，不要自动查收件箱……」「C」）：run 不查 inbox；角色被拉起不自动查 inbox，谁需要谁敲；「上线第一个动作是 rl inbox」删。对回原则 6。
+- 2026-08-17 来自 sync-inbox 问题 30（rl-hub-v2 转来；gyb 原话「B」）：sessions `amend` 版 gyb 或该角色自己的活会话都能写；命令表和 doctor 第 19 项归谁推同改。对回原则 5。
 - 2026-08-17 来自 sync-inbox 问题 29（rl-hub-v2 转来；gyb 原话「A」）：`holder_alive`、`age_hours` 算法认，去掉「待 gyb 过目」。对回原则 6。
 
 ## 要同步到别处的
