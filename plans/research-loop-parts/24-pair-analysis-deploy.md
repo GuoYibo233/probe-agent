@@ -80,7 +80,7 @@ close 的写权是「开单的 actor 或 gyb」（施工计划第三节 issues�
 - 公共规矩第 6 条故障分域的全文、公共规矩第 2 条自决必留痕：09-common-and-feedback.md。
 - 分析单的 owner 是 idea 或 gyb、验收由 owner 做：22-pair-idea-analysis.md。
 - analysis 遇到分组键缺失时开给 gyb 的那条 issue（kind 是 `cannot`）：22-pair-idea-analysis.md。
-- 阈值 `issues.answered_stale_days`（默认 3）和 `issues.gyb_stale_hours`（默认 24）出自施工计划第八节；这张阈值表归哪一份 part 收，见 00-overview.md 的文档索引。
+- 阈值 `issues.answered_stale_days`（默认 3）和 `issues.gyb_stale_hours`（默认 24）定义在 08-trees-init-and-host.md 第三节阈值表（2026-08-17 gyb 裁）。
 
 ## 源文档没写清的（留给 gyb）
 
@@ -146,3 +146,4 @@ close 的写权是「开单的 actor 或 gyb」（施工计划第三节 issues�
 ## 裁决记录（日期）
 
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。

@@ -121,7 +121,7 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 - runs 账发射版上的 `commit` 字段：定义在 `03-ledgers.md`。
 - sessions 账的 `focus` 字段、`rl session focus --decision ID` 这条命令：定义在 `03-ledgers.md` 和 `05-rl-cli.md`。
 - `rl inbox` 列哪四类、`rl status` 哪一段列 review 清单、哪一段列活着的会话带 focus：定义在 `05-rl-cli.md`。
-- 阈值 `status.review_recent_days`（默认 7）：定义在 `05-rl-cli.md` 对应的配置表。
+- 阈值 `status.review_recent_days`（默认 7）：定义在 `08-trees-init-and-host.md` 第三节阈值表（2026-08-17 gyb 裁）。
 - 钩子对 reviewer 的拦法（Write/Edit 出了 review/ 一律 deny、直接写 loop/ 一律 deny）、读不设权这条推论：定义在 `06-hooks-and-permissions.md`。
 - 公共母版的读法栏、公共规矩第 6 条、feedback 怎么提：定义在 `09-common-and-feedback.md`。
 - grants 账里 `read:notes` 那条授权、doctor 那一项「决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 read:notes」的扫描：定义在 `03-ledgers.md` 和 `05-rl-cli.md`。
@@ -213,3 +213,4 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 ## 裁决记录（日期）
 
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。

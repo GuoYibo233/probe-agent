@@ -76,7 +76,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 - `run_id` 由 rl 按 `<ho-id>-a<attempt>` 分配、`attempt` 是发射单上尝试列表的序号：见 21-pair-deploy-run.md。
 - config 字典由 deploy 开发射单时填在那次尝试上：见 21-pair-deploy-run.md。
 - `rl run add` 和 `rl run finish` 在 run 的哪一步打、`finish` 调的宿主收尾命令模板是哪一条：见 12-role-run.md。
-- 反常预警的两个阈值 `anomaly.metric_extremes` 和 `anomaly.duration_factor` 在施工计划第八节，预警动作归 run：见 12-role-run.md。
+- 反常预警的两个阈值 `anomaly.metric_extremes` 和 `anomaly.duration_factor` 定义在 08-trees-init-and-host.md 第三节阈值表（2026-08-17 gyb 裁），预警动作归 run：见 12-role-run.md。
 - 口径账的行格式、`metrics_key` 与 `code_path` 二选一、图行的 `group_by`/`x`/`y`/`uses`、四个状态：见 03-ledgers.md，提和批的规矩见 22-pair-idea-analysis.md。
 - 分析单交活时 `evaluation_refs` 每项必须 `approved`、`output_paths` 必须存在：见 04-handoffs-and-sessions.md。
 - 发射单的 `parent_id`、`decision_refs`、`batch`、`line` 四个字段的定义：见 03-ledgers.md；`line` 就是根决定编号，根决定的定义见 02-decisions.md。
@@ -187,3 +187,4 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
+- 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。

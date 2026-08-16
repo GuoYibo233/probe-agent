@@ -164,7 +164,7 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 快车道里的 GPU 怎么跑、`ql_tag` 当 run_id：`07-quick-lane.md`。
 - `artifact_root`、`launcher.launch_cmd`、`launcher.finish_cmd`、`gpu_state_path` 这些配置项和宿主台账对接：`08-trees-init-and-host.md`。
 - `runs` 账的 `config` 给 analysis 分组用的那一面：`23-pair-run-analysis.md`。
-- 阈值 `watchdog.timeout_factor`、`anomaly.metric_extremes`、`anomaly.duration_factor`、`issues.answered_stale_days` 的默认值表：`30-build-steps-verify-tests.md` 指的施工计划第八节。
+- 阈值 `watchdog.timeout_factor`、`anomaly.metric_extremes`、`anomaly.duration_factor`、`issues.answered_stale_days` 的默认值表：`08-trees-init-and-host.md` 第三节阈值表（2026-08-17 gyb 裁）。
 
 ## 源文档没写清的（留给 gyb）
 
@@ -365,3 +365,4 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「删了吧」「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」）：抄的转移表 `in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent）。对回原则 8、原则 11、原则 3。
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。
+- 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
