@@ -174,7 +174,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 
 ### part session 的现状
 
-`rl-part-04`、`rl-part-05` 2026-08-17 晨还活着，已经被告知统筹叫 `rl-hub-v2`。**新统筹起来先 ListAgents，再给它们各发一条自报新名字**（它们只认最后一次告知的名字）。gyb 2026-08-17 晨说「你现在就交给04和05让他们改了」，rl-hub-v2 已把下表里标「交 rl-part-04」的十一条和标「交 rl-part-05」的十九条打包发出（inbox 末段记着），它们改完会 SendMessage 报 commit——报到旧名字 `rl-hub-v2` 上就收不到了，所以新统筹自报名字之后要问它们一句「04/05 那包收完了没、commit 几号」，或者直接 `git log --oneline -- 04-handoffs-and-sessions.md 05-rl-cli.md` 看有没有新 commit；ListAgents 里没有了才自己改。问题 25 的原因种类词（validation/forbidden/lock_timeout/usage/internal）是统筹拟的、写在 inbox 末段，03 定义处要和 05 最终写法一字不差。
+`rl-part-04`、`rl-part-05` 2026-08-17 晨还活着，已经被告知统筹叫 `rl-hub-v2`。**新统筹起来先 ListAgents，再给它们各发一条自报新名字**（它们只认最后一次告知的名字）。gyb 2026-08-17 晨说「你现在就交给04和05让他们改了」，rl-hub-v2 已把下表里标「交 rl-part-04」的十一条和标「交 rl-part-05」的十九条打包发出（inbox 末段记着），**两包都已收完**：04 `a7d1ec9`，05 `1b37593`（inbox 末段记着它们的回话）。05 定的三处 03 要一字不差跟上：锁那句去掉 batch；退出码表六个、种类词 validation/forbidden/lock_timeout/usage/internal；runs 三版 launched/finished/adopted、adopted 由 `rl handoff start` 顺带写不另设子命令；可选栏 `force_reason`、`via` 两个。04 提醒 `20`/`21`/`22` 抄的转移表行（新 estimate 行、start 行 adopted、withdraw 行通知、reissue 行到栏、两条 amend 行）要统筹同步。ListAgents 里没有 04/05 了才自己改它们。
 
 ### 落地清单（按定义处排；「引用处」是统筹 grep 到的，落地时每条再 grep 一遍，写了两遍的地方见第七节的坑）
 
@@ -211,6 +211,6 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 
 1. `git status`、`git log --oneline -10`（HEAD `5401b7b` 之后应无 sync commit）；读 `sync-inbox.md` 第一段问题 6 和末段 7–29 的裁决原话。
 2. ListAgents，给 `rl-part-04`、`rl-part-05` 各发一条自报名字。
-3. 按上表落地。04、05 那两包已发（见上），先看它们回没回 commit；统筹自己先 `03`（定义处最多），同时统筹改 `01`/`02`/`06`–`14`/`20`–`25`/README，再两份源文档逐句回写并各加一行「2026-08-17 按 sync-inbox 问题 N 的裁决改了哪句」；HANDOFF 四点五节表按新字段（`ql_tag`、`adopted`、`actual_seconds` 在 04；退出码六个在 03）改；inbox 每条「待落地」改「已落地 <commit>」。commit 前缀 `research-loop sync:`。
+3. 按上表落地。04、05 已落完（表里「交 rl-part-04/05」的格子都算完成，只剩别处）；统筹自己先 `03`（定义处最多，照 05 定的三处写），同时统筹改 `01`/`02`/`06`–`14`/`20`–`25`/README，再两份源文档逐句回写并各加一行「2026-08-17 按 sync-inbox 问题 N 的裁决改了哪句」；HANDOFF 四点五节表按新字段（`ql_tag`、`adopted`、`actual_seconds` 在 04；退出码六个在 03）改；inbox 每条「待落地」改「已落地 <commit>」。commit 前缀 `research-loop sync:`。
 4. 落地后做一轮小互查（问题 28 那条动了十几份，最容易漏），派 opus 审、统筹逐条核；发现新的两说立新问题攒着，按本节三条规矩问 gyb。
 5. 空下来的：第五节还悬着的、`30` 未写。

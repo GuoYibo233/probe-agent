@@ -104,4 +104,5 @@
 - 统筹拟的措辞（问题 25，等 03 定义处照抄）：退出码 1 内部错误、5 用法错；所有非零退出标准错误第一行固定原因种类 2 validation / 3 forbidden / 4 lock_timeout / 5 usage / 1 internal，`--json` 时放 `error.kind`。rl-part-05 若改措辞会报回来，03 要跟它一字不差。
 - 要改的地方：等两个 session 回「收 N–M，commit <hash>」，统筹记进 README 进度表与本段；03 与其余各份、两份源文档仍按 HANDOFF 第八节清单由统筹落。
 - 04 已回：`a7d1ec9`，十一条加问题 28 全落，无相反裁决；顺带改了接口一节快车道那条；问题 19 走现有 rejected→todo 行没另加行。它提醒：`20`/`21`/`22` 抄的转移表行（新 estimate 行、start 行 adopted、withdraw 行通知、reissue 行到栏、两条 amend 行）要统筹同步。
-- 状态：待处理（04 已回；等 rl-part-05 回 commit）
+- 05 已回：`1b37593`，十九条全落。它定的三处，03 定义处要一字不差跟上（新统筹落 03 时照抄）：（1）问题 9：05「锁与写序」那句「锁里分配的编号包括 ql_tag、run_id、batch」已去掉 batch，03:19 同改；（2）问题 25 种类词照统筹拟的（validation/forbidden/lock_timeout/usage/internal），03 退出码表照抄；（3）问题 17：不另设 `rl run adopt`，`rl handoff start` 认领时顺带给 runs 写 adopted 版，03 runs 写三版（launched/finished/adopted）；另 fix_for 删后可选栏是「force_reason、via」两个，03:43 同改。
+- 状态：已处理 2026-08-17（04 `a7d1ec9`、05 `1b37593` 都回了；03 与其余各份、两份源文档按 HANDOFF 第八节由新统筹落）
