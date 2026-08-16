@@ -665,7 +665,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 - 2026-08-17 来自 sync-inbox 问题 25（rl-hub-v2 转来；gyb 原话「我想让agent有办法识别发生了什么就行」）：退出码加 1 内部错、5 用法错，共六个；非零退出标准错误第一行固定原因种类（`validation`、`forbidden`、`lock_timeout`、`usage`、`internal`），`--json` 放 `error.kind`。种类词是统筹拟的措辞。对回原则 6。
 - 2026-08-17 来自 sync-inbox 问题 26（rl-hub-v2 转来；gyb 原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：doctor 第 17 项改成「applied_to 为空」。对回原则 4。
 - 2026-08-17 来自 sync-inbox 问题 27（rl-hub-v2 转来；gyb 原话「3 不是，可以替我写」）：（b）（c）认；（d）不认，grants 角色会话里 `--as-gyb --quote` 替 gyb 写也收，`decisions.gyb.jsonl` 只收裸终端不变。对回原则 1。
-- 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」「每个角色创建时候，不要自动查收件箱」「C」）：run 不查 inbox；角色被拉起不自动查 inbox，谁需要谁敲；「上线第一个动作是 rl inbox」删。对回原则 6。
+- 2026-08-17 来自 sync-inbox 问题 28（rl-hub-v2 转来；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」「每个角色创建时候，不要自动查收件箱……」「C」）：run 不查 inbox；角色被拉起不自动查 inbox，谁需要谁敲；「上线第一个动作是 rl inbox」删。对回原则 6。
 - 2026-08-17 来自 sync-inbox 问题 29（rl-hub-v2 转来；gyb 原话「A」）：`holder_alive`、`age_hours` 算法认，去掉「待 gyb 过目」。对回原则 6。
 
 ## 要同步到别处的
