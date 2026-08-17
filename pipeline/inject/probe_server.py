@@ -107,18 +107,34 @@ def load_cgen(run, dev):
 
 
 class Probe:
-    def __init__(self, ctool_run, cgen_run, tokenizer_path, theta, dev):
+    def __init__(self, ctool_run, cgen_run, tokenizer_path, theta, dev,
+                 render_only=False):
         self.ctool_run, self.cgen_run = str(ctool_run), str(cgen_run)
         self.dev = dev
         self.theta = theta
+        self.render_only = render_only
+        self.oss_tok = AutoTokenizer.from_pretrained(tokenizer_path)
+        if render_only:
+            # 只开 /render /encode /health:no probe 臂与 chat baseline 对比时
+            # 用不着探针(2026-08-18 加;此时 c1_gptoss_* 探针已随 08-02 清场
+            # 删除,尚未重训)。/score /gen 打过来一律 503,不静默装作有探针
+            self.ct = self.cg = None
+            self.ct_meta = dict(n_labels=None, max_len=None)
+            self.T = None
+            self.max_len = None
+            return
         (self.ct, self.ct_tok, self.ct_meta,
          self.id2label, self.T) = load_ctool(Path(ctool_run), dev)
         self.cg, self.cg_tok, self.cg_meta = load_cgen(Path(cgen_run), dev)
-        self.oss_tok = AutoTokenizer.from_pretrained(tokenizer_path)
         self.max_len = self.ct_meta["max_len"]
+
+    def _need_probes(self, what):
+        if self.render_only:
+            raise RuntimeError(f"{what}: 服务以 --render-only 启动,没有装探针")
 
     @torch.no_grad()
     def score(self, text):
+        self._need_probes("/score")
         enc = self.ct_tok([text], truncation=True, max_length=self.max_len,
                           return_tensors="pt")
         enc = {k: v.to(self.dev) for k, v in enc.items()}
@@ -134,6 +150,7 @@ class Probe:
 
     @torch.no_grad()
     def gen(self, text, max_new=96):
+        self._need_probes("/gen")
         meta = self.cg_meta
         prompt = text + meta.get("call_sep", "\n[CALL] ")
         enc = self.cg_tok([prompt], truncation=True,
@@ -161,14 +178,19 @@ class Probe:
 
     def config(self):
         return dict(theta=self.theta, temperature=self.T,
-                    ctool=self.ctool_run, cgen=self.cgen_run,
+                    ctool=None if self.render_only else self.ctool_run,
+                    cgen=None if self.render_only else self.cgen_run,
+                    render_only=self.render_only,
                     n_labels=self.ct_meta["n_labels"],
                     max_len=self.max_len, device=str(self.dev),
                     render="harmony_ids", start_date=R.COLLECT_DATE)
 
 
 def serve(a):
-    probe = Probe(a.ctool_run, a.cgen_run, a.tokenizer, a.theta, a.device)
+    if a.theta is None and not a.render_only:
+        sys.exit("--theta 必传(METHOD.md 轴4:θ 永远手动);只开渲染用 --render-only")
+    probe = Probe(a.ctool_run, a.cgen_run, a.tokenizer, a.theta, a.device,
+                  render_only=a.render_only)
     print(f"probe ready: {json.dumps(probe.config())}", flush=True)
 
     class H(BaseHTTPRequestHandler):
@@ -225,6 +247,8 @@ def selftest(a):
     退出码:触发边界全一致 = 0,有不一致 = 1(数值差只打印不判死——bf16/float32
     与分词边界效应本来就允许小差)。
     """
+    if a.theta is None:
+        sys.exit("--theta 必传(对账 θ=0.925 那次回放就传 0.925)")
     probe = Probe(a.ctool_run, a.cgen_run, a.tokenizer, a.theta, a.device)
     data = PROJ / "pipeline/data/aw_official_v1/gptoss"
     label2id = json.loads(
@@ -281,11 +305,15 @@ def main():
         p.add_argument("--ctool-run", default=str(CTOOL))
         p.add_argument("--cgen-run", default=str(CGEN))
         p.add_argument("--tokenizer", default=GPTOSS_TOK)
-        p.add_argument("--theta", type=float, required=True,
+        p.add_argument("--theta", type=float, default=None,
                        help="触发阈值,必传(METHOD.md 轴4:θ 永远手动,不给就拒跑)")
         p.add_argument("--device", default="cuda:0")
         p.set_defaults(fn=fn)
     sub.choices["serve"].add_argument("--port", type=int, default=8790)
+    sub.choices["serve"].add_argument(
+        "--render-only", action="store_true",
+        help="不装探针,只开 /render /encode /health(CPU 就够;no probe 臂 vs "
+             "chat baseline 对比用)。/score /gen 返回 500")
     sub.choices["selftest"].add_argument("--events", type=int, default=3)
     a = ap.parse_args()
     a.fn(a)
