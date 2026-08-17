@@ -14,7 +14,7 @@ decisions 这一本账拆成六个文件，五个角色各一个加 gyb 一个�
 
 ## 一行决定长什么样
 
-九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）加两个可选字段（`fix_for`、`force_reason`）写在 `03-ledgers.md`，这里不抄。decisions 自己的字段是：
+九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）加两个可选字段（`force_reason`、`via`）写在 `03-ledgers.md`，这里不抄。decisions 自己的字段是：
 
 | 字段 | 取值和必填规则 |
 |---|---|
@@ -89,11 +89,11 @@ update、confirm、retire、merge 的「谁能调」是同 actor；跨角色改�
 
 `rl decision stale [--handoff ID] [--all]` 是过版检查命令，默认只列和本会话手上单子有关的，`--handoff ID` 只查那张单子引的，`--all` 全库（2026-08-17 随 `05` 定稿裁：去掉 `--mine`）。这条命令是查询命令，谁都能调。
 
-决定改了一版，不影响已经派出去的单子：单子按派出时引的那一版继续做，rl 只标过时，不自动打回、不自动标待复核、不自动停。停不停由 gyb 点名，停就用收回（`rl handoff withdraw`）。改版之后要重派的用 `rl handoff reissue ID --decision ID@V`，一条命令收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder。这一行的前提和「谁能写」在 `04-handoffs-and-sessions.md` 的转移表里。
+决定改了一版，不影响已经派出去的单子：单子按派出时引的那一版继续做，rl 只标过时，不自动打回、不自动标待复核、不自动停。停不停由 gyb 点名，停就用收回（`rl handoff withdraw`）。改版之后要重派的用 `rl handoff reissue ID --decision ID@V`，一条命令收旧单（`withdrawn`，级联）、开新单（新单一律从 `todo` 起、同新建拉起，继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder。这一行的前提和「谁能写」在 `04-handoffs-and-sessions.md` 的转移表里。
 
 retired 决定名下还有活单的进 `rl status` 段 6 和 doctor。
 
-两处原文不一致：设计文档「五个角色」一节写「run 的 inbox 不查过版，发射单不引决定」，deploy 一节又写发射单「父单填工单，决定引用和 batch 自动继承」，施工计划第三节 handoffs 的 `decision_refs` 写「`launch_order` 开单时从父单抄」。按施工计划的表：发射单从父单抄 decision_refs，run 的 inbox 仍然不查过版。
+两处原文不一致：设计文档「五个角色」一节写「run 的 inbox 不查过版，发射单不引决定」，deploy 一节又写发射单「父单填工单，决定引用和 batch 自动继承」，施工计划第三节 handoffs 的 `decision_refs` 写「`launch_order` 开单时从父单抄」。按施工计划的表：发射单从父单抄 decision_refs。2026-08-17 gyb 又裁（sync-inbox 问题 28）：run 不查 inbox，只关注自己那张发射单，原来「run 的 inbox 不查过版」这句例外扩大成这一句。
 
 ## reviewer 的基准按 actor
 
@@ -118,19 +118,19 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 
 查询命令（show、list、stale）谁都能调，不进角色 json 的 `ledger_writes`。写命令进哪个角色的 `ledger_writes` 见 `06-hooks-and-permissions.md`：idea 有 decisions.idea 全部、deploy 有 decisions.deploy 全部、analysis 有 decisions.analysis 全部、reviewer 有 decisions.reviewer 全部、run 有 decisions.run add（自决极少，比如挑卡的理由）。
 
-退出码：0 成功；2 校验拒收；3 角色无权；4 文件锁等待超时。所有子命令支持 `--json`。
+退出码六个（定义处 `03-ledgers.md`）：0 成功；1 rl 内部错误；2 校验拒收；3 角色无权；4 文件锁等待超时；5 用法错。非零退出的标准错误第一行是固定的原因种类。所有子命令支持 `--json`。
 
 决定账相关的测试用例（空来源拒收、三类来源各一个、`decisions.gyb.jsonl` 拒收非 cli 行、update 继承来源、confirm 版本加一、merge 记根、update 时打印引旧版的活单）在 `30-build-steps-verify-tests.md` 的测试第 3 条。
 
 ## 和别的 part 的接口
 
-- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和可选的 `fix_for`、`force_reason`：定义在 `03-ledgers.md`。
+- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和可选的 `force_reason`、`via`：定义在 `03-ledgers.md`。
 - actor 的判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：定义在 `01-gyb.md`，钩子那一层在 `06-hooks-and-permissions.md`。
 - handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `03-ledgers.md`。
 - `rl handoff reissue` 和 `rl handoff withdraw` 那两行转移的前提与「谁能写」：定义在 `04-handoffs-and-sessions.md`。
 - `rl status` 段 6（过版的单子和 retired 决定名下的活单）、`rl inbox` 里的过版一类、`rl trace`、doctor 的两项决定相关扫描：定义在 `05-rl-cli.md`。
 - runs 账的 `run_id`（`file` 类之外第三类来源要引它）：定义在 `03-ledgers.md`。
-- `read:notes` 授权和 grants 只收裸终端：定义在 `01-gyb.md`。
+- `read:notes` 授权和 grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）：定义在 `01-gyb.md`。
 - 快车道不写决定账、合回时在补单里一并补一条 decisions.deploy：定义在 `07-quick-lane.md`。
 - 角色 json 的 `ledger_writes` 四栏和机器检查：定义在 `06-hooks-and-permissions.md`。
 - 测试清单第 3 条：在 `30-build-steps-verify-tests.md`。
@@ -385,3 +385,8 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 ## 裁决记录（日期）
 
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：`rl decision stale` 签名改成 `[--handoff ID] [--all]`，去掉 `--mine`。对回原则 8。第 90 行、命令表那一行照改，「没写清」第 3 条据此销掉。
+- 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：「一行决定长什么样」和接口一节的两个可选栏由「`fix_for`、`force_reason`」改成「`force_reason`、`via`」。对回原则 4。
+- 2026-08-17 来自 sync-inbox 问题 21 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：「过版、改版那一刻的打印、在办单子怎么办、reissue」一节的 reissue 那句补「新单一律从 `todo` 起、同新建拉起」。对回原则 4。
+- 2026-08-17 来自 sync-inbox 问题 25 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「我想让agent有办法识别发生了什么就行」）：`rl decision` 子命令一节末尾的退出码由四个改成六个（0/1/2/3/4/5），并写上非零退出第一行给原因种类。对回原则 5。
+- 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：接口一节「grants 只收裸终端」改成「grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）」。对回原则 1。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：「过版」一节两处原文不一致那段的末句「run 的 inbox 仍然不查过版」改成「run 不查 inbox，只关注自己那张发射单」。对回原则 6。

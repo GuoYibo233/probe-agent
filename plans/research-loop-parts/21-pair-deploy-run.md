@@ -16,7 +16,7 @@ deploy 和 run 之间只有一样东西在走，就是发射单。发射单的 `
 
 ## 二、发射单上的 attempts
 
-`attempts` 是一个列表，只在 `launch_order` 上。每一项的形状是 `{"attempt":序号,"command","args","workdir","track","config":{...},"run_id","estimated_seconds","step_table":[...]}`。
+`attempts` 是一个列表，只在 `launch_order` 上。每一项的形状是 `{"attempt":序号,"command","args","workdir","track","config":{...},"run_id","estimated_seconds","actual_seconds","step_table":[...]}`。
 
 | 字段 | 谁填 | 说明 |
 |---|---|---|
@@ -28,6 +28,7 @@ deploy 和 run 之间只有一样东西在走，就是发射单。发射单的 `
 | `config` | deploy | 字典，键是 `model`、`params`、`dataset`、`split`，其余超参自由；开单时第一项必填 |
 | `run_id` | rl | 按 `<ho-id>-a<attempt>` 分配 |
 | `estimated_seconds` | run | 预计时长，只加总最新一次尝试的 `step_table` 行 |
+| `actual_seconds` | rl | 真实耗时，人不填；`rl run finish` 从时间戳算出写进 runs 的收尾版，同时由 rl 抄进最新一次尝试 |
 | `step_table` | run | 分步表，每项 `{"step","kind":"gpu"\|"cpu","smoke_seconds","scale_factor","estimated_seconds"}` |
 
 `config` 是给 analysis 分组用的（见 `23-pair-run-analysis.md`），由 deploy 在开单时填，`rl run add` 默认从发射单抄，run 只补机器和卡。
@@ -36,9 +37,9 @@ deploy 和 run 之间只有一样东西在走，就是发射单。发射单的 `
 
 `launch_order` 的 `parent_id` 必填，指它所属的工单。开单时 rl 从父单抄 `decision_refs` 和 `batch`，`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着。这条链是原则 9 要的：从任何一个编号打 `rl trace` 都能顺回 run 到发射单到工单到决定。
 
-两处原文不一致：设计文档「五个角色」总段那一句写「run 的 inbox 不查过版，发射单不引决定」，同一份文档的 deploy 一节和施工计划第三节都写发射单开单时从父单继承决定引用。按施工计划的表，发射单上带 `decision_refs`；「run 的 inbox 不查过版」这一句照旧。
+两处原文不一致：设计文档「五个角色」总段那一句写「run 的 inbox 不查过版，发射单不引决定」，同一份文档的 deploy 一节和施工计划第三节都写发射单开单时从父单继承决定引用。按施工计划的表，发射单上带 `decision_refs`；「run 的 inbox 不查过版」那句 2026-08-17 扩大成「run 不查 inbox」：run 只关注自己那张发射单，一般不会有没带单子的 run 会话。
 
-`batch` 形如 `b-20260816-01`，rl 在锁里分，只有分片语义，不表示研究线；研究线归组用 `line`。deploy 一次开 N 张同 `batch` 的发射单时，只起一个 run 会话接整个 batch，不再一个 workflow 起 N 个 run 各自探卡抢同一张卡。
+`batch` 是调用者用 `--batch B` 传的自由文本（比如 `b-20260816-01`），可选，rl 不分配，只有分片语义，不表示研究线；研究线归组用 `line`。deploy 一次开 N 张同 `batch` 的发射单时，只起一个 run 会话接整个 batch，不再一个 workflow 起 N 个 run 各自探卡抢同一张卡。
 
 ## 四、开单
 
@@ -50,7 +51,7 @@ deploy 打 `rl handoff open --type launch_order --to run --parent ho-XXXX --comm
 
 ## 五、run 接单：先看认领，再走 smoke
 
-run 接单的第一件事是看这张单最新一次尝试有没有已经发射还没收尾的 run 行。有就认领：不重新 smoke、不重新发射，只接管看门狗和收尾，账行标 `adopted`。没有才走 smoke。
+run 接单的第一件事是看这张单最新一次尝试有没有已经发射还没收尾的 run 行。有就认领：不重新 smoke、不重新发射，只接管看门狗和收尾，接单那一版写 `adopted: true`，rl 同时给 runs 那条写一版 `adopted`。没有才走 smoke。
 
 `rl handoff start ID [--batch B]` 的前提有两条：写入会话的角色等于 `to_role`；`holder` 为空，非空退出码 2 并列出当前 holder。
 
@@ -66,16 +67,17 @@ smoke 的标准输出一律落到 `artifact_root/smoke/<run_id>.log`，开 issue
 
 smoke 就失败的时候，分步表和预计时长还没有，单子直接标卡住，这两样不是标卡住的前提。
 
-## 七、发射与 runs 两版
+## 七、发射与 runs 三版
 
 发射前 commit，然后按配置里的 `launcher.launch_cmd` 发射，`--run-id` 和 `--track` 从发射单的这次尝试上抄。
 
-数字账一张单子一次尝试两版：
+数字账一张单子一次尝试落两版，被认领的时候另加一版：
 
 | 版 | `status` | 必填 |
 |---|---|---|
 | 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`（从发射单抄） |
 | 收尾版 | `finished` | `finished_at`、`exit_status`（`ok`、`failed`、`killed`）、`actual_seconds`；`exit_status` 是 `ok` 时还要 `metrics` 和 `data_path` |
+| 认领版 | `adopted` | 不另加栏：骨架里的 `session_id` 和 `ts` 就是新 holder 和认领那一刻，由 `rl handoff start` 认领时顺带写，不另设子命令 |
 
 `run_id` 是 runs 账的主键，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致；产物目录按约定是 `<artifact_root>/<run_id>/`（约定定义在 `08-trees-init-and-host.md` 第一节），账上不另记。runs 账只有 run 角色的脚本能写，gyb 例外。
 
@@ -106,7 +108,7 @@ run 出问题一律开 issue 回给 deploy，四种：smoke 失败、发射失�
 
 `to_role` 的任何一个会话都能接回来的这张单，默认还是 owner 再起一个下游。
 
-issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `answered` issue；通知类的 issue 被 `rl inbox` 读过即关。doctor 有一项扫 `answered` 超过 `issues.answered_stale_days`（默认 3 天）没关的 issue。
+issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `answered` issue；通知类的 issue 由收件人做完了自己 `rl issue close`，`rl inbox` 只读不关。doctor 有一项扫 `answered` 超过 `issues.answered_stale_days`（默认 3 天）没关的 issue。
 
 ## 十、deploy 验收发射单
 
@@ -121,16 +123,17 @@ issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `a
 | 从 | 到 | 谁能写 | 前提 | 之后谁拉起 | 子命令 |
 |---|---|---|---|---|---|
 | （新建） | `todo` | `from_role` | `launch_order` 有 `parent_id` 和第一次尝试的 `command`、`workdir`、`track`、`config` | `dispatch=auto` 时 owner 后台起 subagent；`manual` 等 gyb；`none` 不动 | `handoff open` |
-| `todo` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`；`holder` 为空（非空退出码 2 并列出当前 holder）；`launch_order` 最新尝试已有 `launched` 未 `finished` 的 run 行时是认领，账行标 `adopted` | 无 | `handoff start [--batch B]` |
-| `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`launch_order` 追加一次尝试；状态不变 | 无 | `handoff amend` |
+| `todo` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`；`holder` 为空（非空退出码 2 并列出当前 holder）；`launch_order` 最新尝试已有 `launched` 未 `finished` 的 run 行时是认领，这一版写 `adopted: true`，rl 同时给 runs 那条写一版 `adopted`（`03` 定） | 无 | `handoff start [--batch B]` |
+| `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`launch_order` 追加一次尝试；换 `decision_refs` 里的引用（doctor 悬空引用的修法）；状态不变 | 无 | `handoff amend` |
+| `in_progress` | `in_progress`（内容追加） | holder（run） | 只改 `attempts` 最新一次尝试的 `step_table` 与 `estimated_seconds`；状态不变 | 无 | `handoff estimate` |
 | `in_progress` | `stuck` | holder | `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单 | 无 | `handoff stuck` |
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `launch_order` 最新尝试的 run 行有 `exit_status=ok` 的 `finished` 版 | 无 | `handoff done` |
-| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
+| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
 | `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
-| `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
+| `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；从 `in_progress` 收回时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner，其他状态不通知；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
 | `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知；销号钩子写的这一版 `actor` 记会话的角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim` | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
 
 `accepted` 和 `withdrawn` 是终态，表外的转移一律拒收，退出码 2。
@@ -139,7 +142,7 @@ issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `a
 
 被收回、被回收这两种中断，run 只做 `rl run finish --exit killed` 加收尾，不再改单子状态；状态由收回那一步或者回收那一步改。看门狗每轮采样顺带查一次本单状态，见到被收回或被回收就走中断流程。
 
-`rl handoff withdraw` 走的是收回：owner 写，`reason` 非空，角色会话发起还要 `quote`；有 holder 的时候 rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 沿 `parent_id` 把派生的下游单一起收，所以 idea 收工单的时候能连着收掉正在烧卡的那张发射单。
+`rl handoff withdraw` 走的是收回：owner 写，`reason` 非空，角色会话发起还要 `quote`；从 `in_progress` 收回时 rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner、其他状态不通知；`--cascade` 沿 `parent_id` 把派生的下游单一起收，所以 idea 收工单的时候能连着收掉正在烧卡的那张发射单。
 
 `rl reclaim` 走的是回收：开干的发射单默认不杀进程，留给下一个 run 认领；带 `--kill` 才先走中断收尾，杀进程、释放显存、宿主销号、runs 落 `killed`，然后交回 `todo`。
 
@@ -161,7 +164,7 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue/estimate`、`rl run add/finish/list/relink`、`rl issue open/reply`、`rl trace`、`rl reclaim`、`rl doctor` 的完整签名和退出码：`05-rl-cli.md`。
 - deploy 和 run 的 `reads`、`writes`、`ledger_writes`、`dispatches_to`、`model`：`06-hooks-and-permissions.md`。
 - 看门狗判定、探卡挑卡、gpu-run 八个阶段的对照：`12-role-run.md`。
-- 快车道里的 GPU 怎么跑、`ql_tag` 当 run_id：`07-quick-lane.md`。
+- 快车道里的 GPU 怎么跑、`ql_tag` 怎么分、快车道的数字进杂账不进 runs：`07-quick-lane.md`。
 - `artifact_root`、`launcher.launch_cmd`、`launcher.finish_cmd`、`gpu_state_path` 这些配置项和宿主台账对接：`08-trees-init-and-host.md`。
 - `runs` 账的 `config` 给 analysis 分组用的那一面：`23-pair-run-analysis.md`。
 - 阈值 `watchdog.timeout_factor`、`anomaly.metric_extremes`、`anomaly.duration_factor`、`issues.answered_stale_days` 的默认值表：`08-trees-init-and-host.md` 第三节阈值表（2026-08-17 gyb 裁）。
@@ -169,8 +172,8 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 ## 源文档没写清的（留给 gyb）
 
 1. 发射单到底带不带 `decision_refs`：设计文档一处说不引决定，另一处和施工计划说从父单继承，见上文第三节的不一致标注。这条要 gyb 定一个值。
-2. `actual_seconds` 谁算：施工计划第三节和设计文档都说 `rl run finish` 从两个时间戳算，第六节命令表的 `handoff done` 又留着一个 `--actual-seconds N` 参数。两处原文不一致，按表是 rl 算，那个参数留着干什么没写。
-3. 认领时账行标 `adopted`，但第三节 handoffs 的字段表里没有 `adopted` 这个字段，标在哪一栏没写。
+2. `actual_seconds` 谁算：施工计划第三节和设计文档都说 `rl run finish` 从两个时间戳算，第六节命令表的 `handoff done` 又留着一个 `--actual-seconds N` 参数。两处原文不一致，按表是 rl 算，那个参数留着干什么没写。——2026-08-17 已裁（sync-inbox 问题 13）：`rl run finish` 从两个时间戳算，rl 再把它抄进发射单最新一次尝试的 `actual_seconds`，人不填；`rl handoff done` 的 `--actual-seconds` 去掉了。
+3. 认领时账行标 `adopted`，但第三节 handoffs 的字段表里没有 `adopted` 这个字段，标在哪一栏没写。——2026-08-17 已裁（sync-inbox 问题 17）：两边都标，handoffs 的 `start` 那一版写 `adopted: true`，runs 那条同时落一版 `adopted`。
 4. `rl handoff amend` 追加一次尝试的时候，新的 `run_id` 是不是按新的 `attempt` 序号重新分配，命令表和转移表都没写。
 5. `attempts` 里的 `args` 不在开单必填之列，它和 `command` 的分工（是不是命令行拆开写）没写。
 6. 一个 run 会话接整个 batch 的时候，N 张单的 `host` 和 `gpus` 怎么分、分完写回哪里没写；`rl handoff start --batch B` 是不是一次把 N 张单都置 `in_progress` 且 `holder` 都记同一个会话，表里只有单张单的那一行。
@@ -368,3 +371,13 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：抄的转移表 `in_progress` → `todo` 行补「销号钩子写的 `actor` 记会话角色、`via=session_end`；reclaim 写的 `actor` 记 gyb、`via=reclaim`」，与 `04` 一字不差。对回原则 4。
 - 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。
+- 2026-08-17 来自 sync-inbox 问题 7 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「冒烟也是正式动作」）：第十一节抄的转移表加一行 `in_progress` → `in_progress`（内容追加），holder（run）写，只改 `attempts` 最新一次尝试的 `step_table` 与 `estimated_seconds`，子命令 `handoff estimate`。
+- 2026-08-17 来自 sync-inbox 问题 9 的裁决（定义处 `03`、`04`，rl-hub-v3 传；gyb 原话「A」）：第三节「`batch` 形如 `b-20260816-01`，rl 在锁里分」改成「`batch` 是调用者用 `--batch B` 传的自由文本（比如 `b-20260816-01`），可选，rl 不分配」。
+- 2026-08-17 来自 sync-inbox 问题 10 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：第十一节抄的转移表 `todo` / `stuck` 上的 `handoff amend` 行加「换 `decision_refs` 里的引用（doctor 悬空引用的修法）」。
+- 2026-08-17 来自 sync-inbox 问题 13 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「B」）：第二节 `attempts` 的形状和字段表加 `actual_seconds`（rl 填，`rl run finish` 从时间戳算出之后抄进最新一次尝试，人不填）；「没写清」第 2 条标已裁。
+- 2026-08-17 来自 sync-inbox 问题 17 的裁决（定义处 `04`、`03`，rl-hub-v3 传；gyb 原话「C」）：第五节「账行标 `adopted`」和第十一节抄的 start 行改成「接单那一版写 `adopted: true`，rl 同时给 runs 那条写一版 `adopted`」；第七节 runs 两版表加认领版（`adopted`）一行；「没写清」第 3 条标已裁。
+- 2026-08-17 来自 sync-inbox 问题 20 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「B」）：第十一节抄的转移表 withdraw 行和第十二节那句「有 holder 时通知」改成「从 `in_progress` 收回时通知，其他状态不通知」。
+- 2026-08-17 来自 sync-inbox 问题 22 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「A」）：接口一节「`ql_tag` 当 run_id」改成「`ql_tag` 怎么分、快车道的数字进杂账不进 runs」。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第九节「通知类的 issue 被 `rl inbox` 读过即关」改成「通知类的 issue 由收件人做完了自己 `rl issue close`，`rl inbox` 只读不关」；第十一节抄的 accept 行按 `04` 第三节补「rl 顺带关这张单关联的 `answered` issue」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：第三节「run 的 inbox 不查过版」那句扩大成「run 不查 inbox」。
+- 2026-08-17 rl-hub-v3 审后补：第七节节名「runs 两版」改「runs 三版」（问题 17）。

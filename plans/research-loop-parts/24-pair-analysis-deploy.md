@@ -24,7 +24,7 @@ kind 从九种里挑：`cannot`（干不了）、`not_mine`（不归我干）、
 
 `handoff_id` 这一栏，issues 的行格式规定 `cannot`、`failed`、`denied`、`withdrawn`、`orphaned` 五种 kind 必填，其余可选（施工计划第三节）。analysis 发现代码问题的时候手上一般正拿着一张 `analysis_order`，填的就是这张单子的编号。
 
-开给 deploy 的 issue 不发桌面通知。桌面通知只在 `assignee` 是 `gyb` 的那一版触发，含首次开单（施工计划第三节 issues、第六节 `rl notify` 的推送表）。这条 issue 露头的地方是 deploy 的 `rl inbox`，那里列「本角色名下 open 的 issue」。deploy 上线的第一个动作就是 `rl inbox`。
+开给 deploy 的 issue 不发桌面通知。桌面通知只在 `assignee` 是 `gyb` 的那一版触发，含首次开单（施工计划第三节 issues、第六节 `rl notify` 的推送表）。这条 issue 露头的地方是 deploy 的 `rl inbox`，那里列「本角色名下 open 的 issue」。`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 deploy 会话先干拉它起来的那张单。
 
 ## 要不要把手上的分析单标 stuck
 
@@ -48,9 +48,9 @@ deploy 解决不了就改派 gyb，命令是 `rl issue reassign ID --to gyb`。�
 
 ## 谁 close
 
-close 的写权是「开单的 actor 或 gyb」（施工计划第三节 issues）。这条通道上开单的是 analysis，所以手动关的人是 analysis 或者 gyb，deploy 关不了。
+close 的写权是「开单的 actor 或 gyb，通知类 issue 的 assignee 也能关」（03-ledgers.md）。这条通道开的不是通知类 issue，开单的是 analysis，所以手动关的人是 analysis 或者 gyb，deploy 关不了。
 
-另外有两处自动关。一处是 `rl handoff accept`，验收一张单子的时候，它关联的 `answered` issue 自动关掉；分析单由 idea 或 gyb 验收，验收那一刻这条 issue 就跟着关了。另一处是 `rl inbox` 读到通知类 issue 即关，但是这条通道开的不是通知类 issue，用不上。
+自动关只有一处：`rl handoff accept`，验收一张单子的时候，它关联的 `answered` issue 自动关掉；分析单由 idea 或 gyb 验收，验收那一刻这条 issue 就跟着关了。原来还写着 `rl inbox` 读到通知类 issue 即关，2026-08-17 改成 `rl inbox` 只读不关、通知类 issue 由收件人做完了自己 `rl issue close`；这条通道开的不是通知类 issue，那一条用不上。
 
 没人关的时候有两道网。`rl doctor` 有一项扫「`answered` 超过 N 天没 close 的 issue」，N 是 `issues.answered_stale_days`，默认 3 天（施工计划第八节）。`rl doctor` 还有一项扫「`cannot`/`failed`/`denied` 且 open 且没有单子指回的 issue」。
 
@@ -147,3 +147,5 @@ close 的写权是「开单的 actor 或 gyb」（施工计划第三节 issues�
 
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「谁 close」一节两处自动关改成只有 `rl handoff accept` 一处，`rl inbox` 只读不关、通知类 issue 由收件人做完了自己关；close 写权那句加「通知类 issue 的 assignee 也能关」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：「analysis 这一头：开单填什么」一节「deploy 上线的第一个动作就是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 deploy 会话先干拉它起来的那张单」。

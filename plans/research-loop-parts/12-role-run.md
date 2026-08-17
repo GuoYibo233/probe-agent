@@ -1,6 +1,6 @@
 # run 角色
 
-> 这份覆盖 run 角色的 SKILL.md 要写的一切：接单与认领、接整个 batch、读档案探卡挑卡、smoke 与分步计时、发射前 commit 与发射、runs 账两版、看门狗、四种失败的 issue、6a 正常收尾与 6b 中断、宿主收尾命令、被收回被回收的中断、run 的 inbox、模型。不覆盖 deploy 怎么开发射单和怎么验收发射单（见 `11-role-deploy.md` 和 `21-pair-deploy-run.md`）、runs 账给 analysis 用的数据契约（见 `23-pair-run-analysis.md`）、派活单状态转移表全表和会话生命周期（见 `04-handoffs-and-sessions.md`）、`bin/rl` 命令表全表（见 `05-rl-cli.md`）、九本账的行格式（见 `03-ledgers.md`）、钩子机制与角色 json 的写法（见 `06-hooks-and-permissions.md`）、快车道（见 `07-quick-lane.md`）、`research-loop.json` 和宿主对接（见 `08-trees-init-and-host.md`）、公共母版八条规矩（见 `09-common-and-feedback.md`）。
+> 这份覆盖 run 角色的 SKILL.md 要写的一切：接单与认领、接整个 batch、读档案探卡挑卡、smoke 与分步计时、发射前 commit 与发射、runs 账三版、看门狗、四种失败的 issue、6a 正常收尾与 6b 中断、宿主收尾命令、被收回被回收的中断、run 的 inbox、模型。不覆盖 deploy 怎么开发射单和怎么验收发射单（见 `11-role-deploy.md` 和 `21-pair-deploy-run.md`）、runs 账给 analysis 用的数据契约（见 `23-pair-run-analysis.md`）、派活单状态转移表全表和会话生命周期（见 `04-handoffs-and-sessions.md`）、`bin/rl` 命令表全表（见 `05-rl-cli.md`）、九本账的行格式（见 `03-ledgers.md`）、钩子机制与角色 json 的写法（见 `06-hooks-and-permissions.md`）、快车道（见 `07-quick-lane.md`）、`research-loop.json` 和宿主对接（见 `08-trees-init-and-host.md`）、公共母版八条规矩（见 `09-common-and-feedback.md`）。
 >
 > 源：设计文档的「五个角色」总段、run 一节、账本一节里 runs 和 issues 与 handoffs 三条、交接与会话生命周期一节、两棵树一节、原则 9 与 10 与 11；施工计划第一节裁决 3 和末尾（a）（g）（h）（i）、第二节词表、第三节 handoffs 与 runs 两本账的字段、第四节转移表里和发射单有关的几行、第五节 run 的 use case 与角色 json、第六节命令表里 run 能调的几行、第七节整节、第八节阈值默认值、第十三节规矩 3 与规矩 6。
 
@@ -14,15 +14,15 @@ run 要小要快。模型：由 agent 调用的时候是 opus（2026-08-16 晚 g
 
 run 会话装的钩子只拦写：Write 和 Edit 进 `experiments/`、`analysis/`、`review/`、`notes/`、`loop/` 一律 deny 并提示开 issue，其余路径放行。run 的写权目录只有 `artifact_root`（产物根，在仓库外，钩子不判）。产物根只有 run 的任务能写；数字账只有 run 的脚本能写，gyb 例外（规矩 3、原则 1）。
 
-## 上线第一个动作
+## 收件箱：run 不查
 
-所有角色上线第一个动作是 `rl inbox`。run 的 inbox 不查过版，因为发射单不引决定。inbox 对 run 列的是：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决。
+run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单子的 run 会话。上位规矩是角色被拉起不自动查收件箱，`rl inbox` 谁需要谁敲。
 
 ## 接单：认领、单张、整个 batch
 
 接单命令是 `rl handoff start ID [--batch B]`，把单子从 `todo` 推到 `in_progress`，holder 写成本会话的 session_id。前提两条：写入会话的角色等于 `to_role`；holder 为空，非空就退出码 2 并列出当前 holder。
 
-接单之后第一件事是看这张单最新一次尝试有没有已经 `launched` 还没 `finished` 的 run 行。有就是认领（`adopt`，账行标 `adopted`）：不重新 smoke、不重新发射，只接管看门狗和收尾，直接跳到 Phase 5。没有才走 smoke。这条是原则 11 的落点：GPU 任务本体在 tmux 里跑、不跟会话走，run 会话死了单子交回待干，下一个 run 会话接单时认领它。
+接单之后第一件事是看这张单最新一次尝试有没有已经 `launched` 还没 `finished` 的 run 行。有就是认领：`rl handoff start` 那一版写 `adopted: true`，rl 同时给这条 run 写一版 `adopted`（记新 holder 的 `session_id`、`ts`），不另设 `rl run adopt`；认领不重新 smoke、不重新发射，只接管看门狗和收尾，直接跳到 Phase 5。没有才走 smoke。这条是原则 11 的落点：GPU 任务本体在 tmux 里跑、不跟会话走，run 会话死了单子交回待干，下一个 run 会话接单时认领它。
 
 deploy 一次开 N 张同 batch 的发射单时，一个 run 会话用 `rl handoff start --batch` 一次接下整个 batch：smoke 做一次、分步表填一次（其余单子按规模系数复制）、探卡挑卡一次、按宿主发射器自己的分片规矩发射 N 份、落 N 条 run 行。不再一个 workflow 起 N 个 run 各自探卡抢同一张卡。
 
@@ -63,13 +63,15 @@ smoke 就失败的时候分步表和预计时长还没有，单子直接标卡�
 
 宿主发射器用 Bash 往 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 写字，钩子不看 Bash 写出来的文件，这不算越权（原则 2）。
 
-## runs 账两版
+## runs 账三版
 
-一张单子的一次尝试在数字账上落两版（原则 4、原则 10）。
+一张单子的一次尝试在数字账上落两版（原则 4、原则 10），被下一个会话认领的时候多一版。
 
 发射成功那一刻落发射版，命令是 `rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...`。这一版 `status` 是 `launched`，必填 `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config`；`command`、`config`、`run_id` 三样从发射单抄，run 只补机器和卡。`watch_cmd` 是交给 gyb 的自助监控命令，`rl status` 靠它和 `log_path` 把在跑的实验摆到 gyb 眼前。
 
-跑完落收尾版，命令是 `rl run finish RUN_ID --exit ok|failed|killed [--metric k=v ...] [--data-path P]`。这一版 `status` 是 `finished`，必填 `finished_at`、`exit_status`、`actual_seconds`；`exit_status` 是 `ok` 的时候 `metrics` 和 `data_path` 也必填。真实耗时由 `rl run finish` 从两个时间戳算出来，不管退出状态是什么都记，几次之后就知道外推偏多少。
+跑完落收尾版，命令是 `rl run finish RUN_ID --exit ok|failed|killed [--metric k=v ...] [--data-path P]`。这一版 `status` 是 `finished`，必填 `finished_at`、`exit_status`、`actual_seconds`；`exit_status` 是 `ok` 的时候 `metrics` 和 `data_path` 也必填。真实耗时由 `rl run finish` 从两个时间戳算出来，不管退出状态是什么都记，几次之后就知道外推偏多少。发射单最新一次尝试上的 `actual_seconds` 由 rl 在 `run finish` 时从这里抄、人不填，`rl handoff done` 不带 `--actual-seconds`，预计和实际在同一张单上对着看。
+
+认领那一刻落 `adopted` 版：`rl handoff start` 顺带给这条 run 写一版，记新 holder 的 `session_id` 和 `ts`，`status` 取 `adopted`。
 
 runs 账的 `actor` 是 `run` 或 `gyb`。
 
@@ -130,7 +132,7 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 
 三种外部动作会打断一个正在干的 run 会话，处理办法各不相同：
 
-- 单子被 owner 或 gyb 收回（`withdrawn`）：看门狗每轮查到，run 走中断收尾。rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner，通知类 issue 被 `rl inbox` 读过即关。
+- 单子被 owner 或 gyb 收回（`withdrawn`）：看门狗每轮查到，run 走中断收尾。rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner，通知类 issue 由收件人做完了自己 close。
 - 被 `rl reclaim` 回收：开干的发射单默认不杀进程（留给下一个 run 认领），`--kill` 才先走中断收尾再把单子交回 `todo`。看门狗把 reclaim 和 withdrawn 一起当中断信号。
 - 会话销号：钩子挂在 SessionEnd 和 SubagentStop 上，`rl session end` 只扫 holder 是本会话且状态是 `in_progress` 的单子，有就 release 交回 `todo`、自动填 `progress_note`、给 owner 开 `orphaned` 通知。`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程，等下一个 run 会话认领。等几个小时的事只发生在 tmux 里，不发生在任何会话里（原则 11）。
 
@@ -144,7 +146,7 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 | dispatches_to | 无 |
 | model | `as_subagent` 是 opus，`manual` 是 `inherit` |
 
-查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；读一律不设权（原则 2）。机器检查只查 SKILL.md 正文里的写命令在不在 `ledger_writes` 里。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」。
+查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）；读一律不设权（原则 2）。机器检查只查 SKILL.md 正文里的写命令在不在 `ledger_writes` 里。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」。
 
 ## 和宿主的关系
 
@@ -153,9 +155,9 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 ## 和别的 part 的接口
 
 - 发射单 `launch_order` 的字段（`attempts` 里每项的 `command`、`args`、`workdir`、`track`、`config`、`run_id`、`estimated_seconds`、`step_table`，以及 `parent_id`、`batch`、`decision_refs`）：定义在 `03-ledgers.md`，由 deploy 开单时填，见 `11-role-deploy.md`。
-- runs 账的完整行格式（`launched` 与 `finished` 两版的必填栏、`metrics`、`data_path`、`config`）：定义在 `03-ledgers.md`；给 analysis 用的分组契约在 `23-pair-run-analysis.md`。
+- runs 账的完整行格式（`launched`、`finished`、`adopted` 三版的必填栏、`metrics`、`data_path`、`config`）：定义在 `03-ledgers.md`；给 analysis 用的分组契约在 `23-pair-run-analysis.md`。
 - 派活单七个状态、转移表每一行的谁能写和前提、holder 只在 `in_progress` 非空这条不变量、会话登记与销号：定义在 `04-handoffs-and-sessions.md`。
-- `rl handoff start/estimate/done/stuck`、`rl run add/finish`、`rl issue open`、`rl inbox` 的完整参数：定义在 `05-rl-cli.md`；退出码 0/2/3/4 同。
+- `rl handoff start/estimate/done/stuck`、`rl run add/finish`、`rl issue open`、`rl inbox` 的完整参数：定义在 `05-rl-cli.md`；退出码 0/1/2/3/4/5 同。
 - 写权钩子拦哪些路径、角色 json 的四栏怎么被机器检查、`--as-gyb` 与 `--quote`：定义在 `06-hooks-and-permissions.md`。
 - 快车道里 GPU 怎么跑（run_id 用 ql_tag、track 沿用被微调那个实验的方向、数字进杂账不进 runs 账、deploy 可以派 gpu-runner）：定义在 `07-quick-lane.md`，那条路上没有 run 会话、不开发射单、不做分步计时。
 - `research-loop.json` 里的 `artifact_root`、`gpu_state_path`、`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`、中断命令模板、宿主台账清单、脏树白名单和 CLAUDE.md 那一节：定义在 `08-trees-init-and-host.md`。
@@ -388,3 +390,9 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「我感觉很轻松能从data_path 找出artifact_path啊，而且artifact path定义有点暧昧 能不能不要了」「选A吧那就」），runs 发射版去掉 `artifact_dir`，产物目录按约定是 `<artifact_root>/<run_id>/`、账上不记；收尾版留 `data_path`（`exit_status` 是 `ok` 时必填，是产物目录里给 analysis 算数用的那一个文件或子目录）。统筹 session 同步。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：看门狗只许调 rl 查询命令、不留痕，判定由 run 会话转写进账。对回原则 1、11。「看门狗」一节开头照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。
+- 2026-08-17 来自 sync-inbox 问题 13 的裁决（定义处 `03`、`04`，rl-hub-v3 传；gyb 原话「B」）：「runs 账三版」一节补一句「发射单最新一次尝试上的 `actual_seconds` 由 rl 在 `run finish` 时从这里抄、人不填，`rl handoff done` 不带 `--actual-seconds`」。
+- 2026-08-17 来自 sync-inbox 问题 17 的裁决（定义处 `03`、`04`，rl-hub-v3 传；gyb 原话「C」）：「接单」一节认领那句改成 `rl handoff start` 那一版写 `adopted: true`、rl 同时给这条 run 写一版 `adopted`；「runs 账两版」一节改名「runs 账三版」并补 `adopted` 版一段；接口一节 runs 行格式写成三版。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「被收回、被回收、会话死了」一节「通知类 issue 被 `rl inbox` 读过即关」改成「通知类 issue 由收件人做完了自己 close」。
+- 2026-08-17 来自 sync-inbox 问题 25 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「我想让agent有办法识别发生了什么就行」）：接口一节「退出码 0/2/3/4 同」改成「退出码 0/1/2/3/4/5 同」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」「C」）：「上线第一个动作」这一节改名「收件箱：run 不查」，整段改成「run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单子的 run 会话。上位规矩是角色被拉起不自动查收件箱，`rl inbox` 谁需要谁敲」。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。

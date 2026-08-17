@@ -20,7 +20,7 @@
 
 gyb 只豁免「谁能调」和「谁能写」两样。完整性校验对 gyb 同样生效：必填字段、路径存在、引用存在这些数据校验不看是谁在写，gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行（原则 1 推论）。转移表的「前提」一栏就是完整性校验，对 gyb 生效。
 
-退出码分两个：校验拒收是 2，角色无权是 3，两种都把原因写到标准错误，3 还附一条「开 issue 给谁」的命令。退出码的完整表在 `05-rl-cli.md`。
+这一层拦下来的退出码有两个：校验拒收是 2，角色无权是 3，两种都把原因写到标准错误第一行（固定的原因种类），3 还附一条「开 issue 给谁」的命令。退出码一共六个（0/1/2/3/4/5），完整表在 `03-ledgers.md`，`05-rl-cli.md` 照抄同一张表。
 
 ### 第三层是纪律，写在 SKILL.md 里
 
@@ -141,7 +141,7 @@ hooks/ 是钩子脚本本体：五个角色共用一个脚本、参数报角色�
 
 `model` 这一栏的 `manual` 写 `inherit` 是声明跟当前会话走，sessions 账落解析后的真实模型名或 `unknown`。
 
-所有角色上线第一个动作都是 `rl inbox`。查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`。
+`rl inbox` 是查询命令，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单，谁需要谁敲（2026-08-17 gyb 裁，sync-inbox 问题 28）。查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。
 
 ### 五份 json
 
@@ -175,7 +175,7 @@ run：
 | `dispatches_to` | 无 |
 | `model` | `as_subagent` 是 opus，`manual` 是 inherit |
 
-run 的 `rl inbox` 不查过版。
+run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单子的 run 会话（2026-08-17 gyb 裁，sync-inbox 问题 28）。
 
 analysis：
 
@@ -239,10 +239,10 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 
 ## 和别的 part 的接口
 
-- 九本账的公共骨架（`actor`、`session_id`、`force_reason`、`fix_for`）和每本账的必填规则：定义在 `03-ledgers.md`。
+- 九本账的公共骨架（`actor`、`session_id`、`force_reason`、`via`）和每本账的必填规则：定义在 `03-ledgers.md`。
 - issue 的 kind `denied`、`request`，以及 `handoff_id` 什么时候必填：定义在 `03-ledgers.md`。
 - sessions 账的 `role`、`model`、`launched_by`、`rules_version`、`status`、`focus` 各栏：定义在 `03-ledgers.md`。
-- grants 账的 `grantee`、`permission`（第一版只有 `read:notes`）、只收 `cli` 这条规矩：定义在 `03-ledgers.md` 和 `01-gyb.md`。
+- grants 账的 `grantee`、`permission`（第一版只有 `read:notes`）、谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：定义在 `03-ledgers.md` 和 `01-gyb.md`。
 - 转移表的「谁能写」和「前提」两栏、gyb 对哪一栏豁免：定义在 `04-handoffs-and-sessions.md`。
 - 会话登记和销号那两个钩子调的命令 `rl session start` 和 `rl session end`、销号时扫哪些状态：定义在 `04-handoffs-and-sessions.md` 和 `05-rl-cli.md`。
 - `rl` 的 actor 判定、`--as-gyb`、`--quote`、`--force --reason` 这一组规矩：定义在 `01-gyb.md` 第二节（2026-08-17 gyb 裁）；参数写法和退出码在 `05-rl-cli.md`。
@@ -400,3 +400,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 ## 裁决记录（日期）
 
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
+- 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：`fix_for` 栏删掉，公共骨架的可选栏是 `force_reason`、`via` 两个。「和别的 part 的接口」一节第一条里的 `fix_for` 换成 `via`。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲。「角色 json：五栏和五份内容」一节里「查询命令谁都能调，不进 `ledger_writes`」那句后面补上这一条。
+- 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。接口一节 grants 那条的「只收 `cli` 这条规矩」改成「谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，命令行写法在 `05`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：「角色 json：五栏和五份内容」一节的「所有角色上线第一个动作都是 `rl inbox`」改成「`rl inbox` 是查询命令，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单，谁需要谁敲」；run 那份 json 后面的「run 的 `rl inbox` 不查过版」改成「run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单子的 run 会话」。

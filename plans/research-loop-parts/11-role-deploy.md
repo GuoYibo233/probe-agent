@@ -10,7 +10,7 @@ deploy 写代码，把探索性概念转成清晰可发布的实现，把怎么�
 
 模型按施工计划第一节裁决 3：由 agent（subagent 或 workflow）调用的时候用 opus；gyb 手动加载 deploy 的时候跟当前会话的模型一致，角色 json 的 `model` 栏里 `manual` 写 `inherit`，sessions 账落解析后的真实模型名，取不到记 `unknown`。
 
-deploy 上线第一个动作是 `rl inbox`（原则 6）。inbox 列五样：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决。
+`rl inbox` 谁需要谁敲，不是上线动作：deploy 被派单拉起时先干那张单，收件箱要看的时候自己敲。inbox 列五样：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
 
 deploy 一个会话只装 deploy 一个角色。加载 skill 那一刻钩子把这个会话登记进 sessions 账，销号也由钩子做，规矩在 `04-handoffs-and-sessions.md`。
 
@@ -69,7 +69,7 @@ deploy 给 run 开发射单（`launch_order`），deploy 是发射单的 owner�
 |---|---|---|
 | `parent_id` | deploy 填 | 指这张发射单所属的工单，`launch_order` 必填 |
 | `decision_refs` | rl 自动 | 开单时从父单抄 |
-| `batch` | 见下面的不一致 | 一次开 N 张同 batch 的发射单时共用，只有分片语义 |
+| `batch` | deploy 填，可选；`launch_order` 开单时从父单抄 | 自由文本，调用者 `--batch B` 传，rl 不分配；一次开 N 张同 batch 的发射单时共用，只有分片语义 |
 | `command`、`workdir` | deploy 填 | 第一次尝试的必填项 |
 | `track` | deploy 填 | 宿主发射器要的方向名，从被派的工单继承或 deploy 填 |
 | `config` | deploy 填 | 字典：`model`、`params`、`dataset`、`split`、其余超参自由，给 analysis 分组用 |
@@ -80,7 +80,7 @@ deploy 不跑 smoke、不估时长，这两样都是 run 的活：分步表 `ste
 
 一次开 N 张同 batch 的发射单时，只起一个 run 会话接整个 batch，run 用 `rl handoff start --batch B` 一次接下来：smoke 做一次、分步表填一次、探卡挑卡一次、按宿主发射器自己的分片规矩发 N 份、落 N 条 run 行。不是一个 workflow 起 N 个 run 各自探卡抢同一张卡。
 
-两处原文不一致：batch 谁分。施工计划第六节的命令表把 `--batch B` 写成 `rl handoff open` 的一个参数（调用方给），同一节末尾讲锁的那段又把 batch 和 ql_tag、run_id 一起列进「rl 在锁里分配的编号」。
+batch 谁分原来两处不一致，2026-08-17 gyb 裁定（sync-inbox 问题 9）：`--batch B` 是调用者传的自由文本、可选，rl 不分配，施工计划第六节讲锁那段把 batch 列进「rl 在锁里分配的编号」那句作废。
 
 ## 七、后台起 run 并验收发射单
 
@@ -117,10 +117,10 @@ deploy 自己卡住的时候走 `rl issue open` 加 `rl handoff stuck ID --issue
 
 中间：deploy 在 worktree 上改代码、自己小规模跑。GPU 照旧走宿主发射器，快车道里 deploy 可以派 gpu-runner，这是 deploy 唯一能派 run 之外的对象。run_id 用快车道标签，track 沿用被微调的那个实验的方向，宿主的台账照登记、`record finish` 的结论栏写 `quick_lane` 加标签。数字追加进杂账，不进 runs 账。不开发射单、不叫 run、不做分步计时、不写决定账。
 
-出：两条路，各是杂账上的一行，`rl ql close --merged --handoff ID` 或 `rl ql close --dropped --reason`。合回的时候 gyb 亲自 merge 主分支，deploy 只把命令交出来。合回之后 deploy 补一张标了 `quick_lane` 的工单，这张单子的特别之处：
+出：两条路，各是杂账上的一行。合回分两步，先开补单、拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指；丢掉走 `rl ql close --dropped --reason`。合回的时候 gyb 亲自 merge 主分支，deploy 只把命令交出来。补的是一张标了 `quick_lane` 的工单，这张单子的特别之处：
 
 - `from_role` 和 `to_role` 都是 deploy，验收人固定是 gyb，只有 gyb 能 accept。
-- 允许新建就直接进 `done_pending_review`，命令是 `rl handoff open --quick-lane --report-method P --ql QL`。
+- 允许新建就直接进 `done_pending_review`，命令是 `rl handoff open --quick-lane --report-method P --ql QL`；`QL` 存进单子的 `ql_tag` 栏，开单前提是 `ql_tag` 指的杂账行状态是 `open`。
 - 只要一份不带文件的简报（`report_paths.method`），带文件的那一份用杂账里的记录顶替。
 - `explanation` 由 deploy 写，并抄一句 gyb 点名的原话。
 - 同时补一条 `decisions.deploy` 记这次改动。
@@ -141,7 +141,7 @@ use case（施工计划第五节原文）：接工单（handoff start）；写�
 | dispatches_to | run；gpu-runner（只在快车道） |
 | model | as_subagent 是 opus；manual 是 inherit |
 
-reads 是纪律不设门禁，查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`。机器检查只查 SKILL.md 正文里出现的 rl 写命令在不在 `ledger_writes` 里。
+reads 是纪律不设门禁，查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查只查 SKILL.md 正文里出现的 rl 写命令在不在 `ledger_writes` 里。
 
 SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试会查抄没抄。
 
@@ -379,3 +379,12 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 13. [cosmetic/missing] 第 1 步（谁跑 doctor、跑完能不能自己修）：doctor 写的是「谁都行」，但角色会话跑出问题之后能不能自己修没写。deploy 看到自己名下那张 done_pending_review 的报告路径没了，它是 to_role 不是 owner，按转移表打回只有 owner 能写，它只能开 issue，文档没说这一步该开给谁、kind 填哪个。
    - 依据：2026-08-16-research-loop-build-plan.md:144; 2026-08-16-research-loop-build-plan.md:89; 2026-08-16-research-loop-build-plan.md:45
    - 改法：在 doctor 那一行写一句「角色跑 doctor 只看不修，修法一律 `rl issue open --to <owner> --kind cannot` 报给 owner 或 gyb」。
+
+## 裁决记录（日期）
+
+- 2026-08-17 来自 sync-inbox 问题 8 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：第十节「出」那段改成先开补单、拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指；补单那一条加「`QL` 存进单子的 `ql_tag` 栏，开单前提是 `ql_tag` 指的杂账行状态是 `open`」。
+- 2026-08-17 来自 sync-inbox 问题 9 的裁决（定义处 `03`、`04`，rl-hub-v3 传；gyb 原话「A」）：第六节 `batch` 那一行改成「deploy 填，可选，自由文本，rl 不分配」，「两处原文不一致：batch 谁分」那段改成裁决结论。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第一节 inbox 五样里通知那一项后面的「（读过即关）」删掉。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：第一节「deploy 上线第一个动作是 `rl inbox`（原则 6）」改成「`rl inbox` 谁需要谁敲，不是上线动作：deploy 被派单拉起时先干那张单，收件箱要看的时候自己敲」。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。
+- 2026-08-17 rl-hub-v3 审后补：第六节 `batch` 行按 `04-handoffs-and-sessions.md` 字段表补回「`launch_order` 开单时从父单抄」「调用者 `--batch B` 传」（问题 9 原话说 launch_order 从父单抄的规矩照旧）。

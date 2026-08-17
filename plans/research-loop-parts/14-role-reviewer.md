@@ -1,6 +1,6 @@
 # reviewer 角色
 
-> 这份覆盖 reviewer 这个角色的 SKILL.md 要写的一切：谁开它、上线做什么、读什么、按什么基准审、审哪三样、审哪一版代码、清单写成什么样、不许做什么、角色 json 的四栏和模型。
+> 这份覆盖 reviewer 这个角色的 SKILL.md 要写的一切：谁开它、收件箱与 session focus、读什么、按什么基准审、审哪三样、审哪一版代码、清单写成什么样、不许做什么、角色 json 的四栏和模型。
 > 不覆盖的：reviewer 的清单怎么回到 idea 手上写在 `25-pair-reviewer-idea.md`；钩子和分权三层写在 `06-hooks-and-permissions.md`；九本账的行格式写在 `03-ledgers.md`；`rl` 每条子命令的参数和 `rl status` 的十段写在 `05-rl-cli.md`；会话登记与销号写在 `04-handoffs-and-sessions.md`；公共母版和反馈账写在 `09-common-and-feedback.md`；别的四个角色各在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`。
 > 源：设计文档的「五个角色」总段、「reviewer」一节、「gyb 自己做的事」、「账本」一节的 decisions 与 sessions、「分权与钩子」的第三层、「审读意见里没采纳的」第 5 和第 9 条；施工计划第一节裁决 3 和裁决 7、第二节词表、第五节 reviewer 的 use case 与角色 json、第八节阈值、第十三节公共规矩第 6 条。
 
@@ -12,11 +12,11 @@ reviewer 由 gyb 手动开。没有任何角色能派活给 reviewer：五份角
 
 reviewer 审完之后动不动由 gyb 看完之后定。reviewer 自己不改任何东西。
 
-reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`（文件归 `09`），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出的东西 `rl issue open --to <owner>` 落账。这条和第八节「不开 issue、不派活」、公共规矩第 6 条「reviewer 不开 issue，卡住也只写进清单交给 gyb」冲突，角色 json 的 `ledger_writes` 也没有 issues：两处不一致，sync-inbox 问题 6 等 gyb 裁，裁了第八节和 json 跟着改。
+reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`（文件归 `09`），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出来的写进 review/ 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 gyb 裁，sync-inbox 问题 6）。问题 6 只裁了开不开 issue 这一半；「派 sonnet subagent 逐题查」和第八节「不派活」、角色 json 的 `dispatches_to` 是无仍然对不上，两处原文不一致，等 gyb 裁（sync-inbox 问题 33）。
 
-## 上线第一个动作与 session focus
+## 收件箱与 session focus
 
-reviewer 和其余四个角色一样，上线第一个动作是 `rl inbox`。inbox 列四类东西：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关），再加本角色提的 feedback 的裁决。
+reviewer 和其余四个角色一样，`rl inbox` 谁需要谁敲，不是上线动作：被 gyb 开起来先干 gyb 点名的那件事。inbox 列四类东西：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知，再加本角色提的 feedback 的裁决。
 
 reviewer 开工时 `rl session focus --decision ID` 记一下在审什么。这一行落在 sessions 账的 `focus` 字段上，`rl status` 的活着会话那一段把它带出来，gyb 因此在 reviewer 还没落盘清单的时候就看得见有人在审哪条决定。
 
@@ -216,4 +216,8 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 
 - 2026-08-17 gyb 裁（sync-inbox 问题 1，原话「这个归01吧」，rl-hub 转来）：actor 判定、`--as-gyb` 加 `--quote`、`--force --reason` 定义处归 `01-gyb.md`。接口一节的指向照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
-- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：reviewer 加一项职责，按 `common/` 问题清单派 sonnet subagent 一人一题逐条查，查出的 `rl issue open --to <owner>` 落账。对回原则 2、5。第一节补了一段；与第八节「不开 issue」的冲突立为 sync-inbox 问题 6。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：reviewer 加一项职责，按 `common/` 问题清单派 sonnet subagent 一人一题逐条查，查出的 `rl issue open --to <owner>` 落账（2026-08-17 问题 6 后改：只写清单不开 issue）。对回原则 2、5。第一节补了一段；与第八节「不开 issue」的冲突立为 sync-inbox 问题 6。
+- 2026-08-17 来自 sync-inbox 问题 6 的裁决（定义处本份第一节与第八节，rl-hub-v3 传；gyb 原话「全给我审查，然后我用我的权限放到issue里面」）：reviewer 按 `common/` 问题清单查出来的东西只写进 review/ 清单，不开 issue，要不要开由 gyb 看完用自己的权限开；第一节那段的「查出的 `rl issue open --to <owner>` 落账」照改，与第八节冲突那句删掉，第八节和角色 json 不动。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「收件箱与 session focus」一节通知那一项后面的「（读过即关）」删掉。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：「上线第一个动作与 session focus」这一节改名「收件箱与 session focus」，头一句改成「`rl inbox` 谁需要谁敲，不是上线动作：被 gyb 开起来先干 gyb 点名的那件事」。
+- 2026-08-17 rl-hub-v3 审后补：摘要行「上线做什么」改成「收件箱与 session focus」（问题 28）；第一节 reviewer 新职责那段末尾补回「派 subagent 与第八节不派活、`dispatches_to` 无对不上」的不一致标注，立 sync-inbox 问题 33 等 gyb。

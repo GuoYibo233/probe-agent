@@ -1,10 +1,10 @@
 # analysis 角色
 
-> 这份覆盖 analysis 这个角色的 SKILL.md 要写进去的一切：写权和读法、模型、上线第一个动作、先问 gyb 再提口径的规矩、口径账（evaluations）的两类与四态、接分析单与交活的前提、卡住时开 issue 的两条路、快车道里先画一张图、图和 notebook 落在哪。
+> 这份覆盖 analysis 这个角色的 SKILL.md 要写进去的一切：写权和读法、模型、收件箱、先问 gyb 再提口径的规矩、口径账（evaluations）的两类与四态、接分析单与交活的前提、卡住时开 issue 的两条路、快车道里先画一张图、图和 notebook 落在哪。
 > 不覆盖的：evaluations 和 handoffs 两本账的完整行格式在 `03-ledgers.md`，派活单的状态转移表和会话登记销号在 `04-handoffs-and-sessions.md`，rl 的完整命令表在 `05-rl-cli.md`，钩子和角色 json 的写法在 `06-hooks-and-permissions.md`，快车道的总规矩（进出两行账、ql_tag 怎么分）在 `07-quick-lane.md`，公共母版八条规矩在 `09-common-and-feedback.md`，idea 或 gyb 怎么开分析单在 `22-pair-idea-analysis.md`，analysis 从 runs 账里读什么在 `23-pair-run-analysis.md`，analysis 开 issue 给 deploy 那一头在 `24-pair-analysis-deploy.md`，reviewer 怎么审分析代码在 `14-role-reviewer.md`。
 > 源：设计文档的「五个角色」总段、analysis 一节、快车道一节、「gyb 自己做的事」、账本一节的 evaluations 与 scratch 两条、「交接与会话生命周期」的交付物段、「两棵树」一节；施工计划第一节裁决 3 与第六轮改动 (e)(f)、第二节词表、第三节 evaluations 与 handoffs、第四节转移表、第五节 analysis 的 use case 与模型表、第六节 eval 与 ql 两行命令、第十三节规矩 4 和规矩 5。
 
-## 一、写权、读的东西、模型、上线第一个动作
+## 一、写权、读的东西、模型、收件箱
 
 analysis 的写权只有 `analysis/` 一个目录。钩子只挂 Write 和 Edit，拦两类事：写别的角色的目录（`experiments/`、`review/`、`notes/`），和直接写 `loop/`。`analysis/` 之外的其余仓库内路径钩子放行，靠纪律管。仓库外的路径（产物根、`/tmp`）钩子一律不判。
 
@@ -23,7 +23,7 @@ analysis 的写权只有 `analysis/` 一个目录。钩子只挂 Write 和 Edit�
 
 reads 一栏是纪律不设门禁：九本账的查询命令谁都能调，机器检查只查 SKILL.md 里出现的 rl 写命令在不在 `ledger_writes` 里，查询命令不查。
 
-上线第一个动作是 `rl inbox`，列五样：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决。
+`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单。inbox 列五样：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
 
 ## 二、先问 gyb 再提口径
 
@@ -80,7 +80,7 @@ analysis 接的单子是 `analysis_order`，owner 是 idea 或 gyb。
 
 交完活由 owner 验收（`rl handoff accept`）或打回（`rl handoff reject --reason`）；gyb 随时可以自己验，gyb 越过 owner 验收或打回时 rl 给 owner 发一条 `fyi` 通知。被打回的单子回到 `todo`，由 owner 重新拉起。
 
-补东西也有路：单子在 `todo` 或 `stuck` 上可以 `rl handoff amend` 补 `evaluation_refs`，状态不变；单子在 `done_pending_review` 上只允许 amend 补丢了的 `output_paths` 路径（doctor 的修法用）。
+补东西也有路：单子在 `todo` 或 `stuck` 上可以 `rl handoff amend` 补 `evaluation_refs`、换 `decision_refs` 或 `evaluation_refs` 里的引用，状态不变；单子在 `done_pending_review` 上 amend 只允许补或改 `report_paths`、`output_paths`、`code_paths` 里的路径，换 `decision_refs` 或 `evaluation_refs` 里的引用（doctor 的修法用）。
 
 交回待干（`rl handoff release`）那一版必填 `progress_note`：干到哪、产物在哪。
 
@@ -100,9 +100,9 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 
 进：`rl ql open --role analysis`。rl 在锁里分配标签（形如 `ql-20260816-01`）、往杂账（scratch）写开张的一行。analysis 的快车道不建 worktree，产物放 `analysis/scratch/<标签>/`。
 
-中间：不开口径、不开分析单，图落 `analysis/scratch/`，数字追加进杂账、不进 runs 账。杂账格式松，只校验骨架和快车道标签。
+中间：不开口径、不开分析单，图落 `analysis/scratch/`，数字追加进杂账、不进 runs 账。杂账中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填。
 
-出：`rl ql close`，两条路各是杂账上的一行——`--merged --handoff ID` 或者 `--dropped --reason`。要引用或者复用这张图的时候再补口径和分析单。快车道的东西一旦要进正账拿来复用，它就不是快车道了，得按正常路重来。
+出：`rl ql close QL --dropped --reason`，杂账上的一行。analysis 的快车道没有补单，只有丢掉这一条出路；`--merged --handoff ID` 只有 deploy 能打。要引用或者复用这张图的时候，按正常路重做一遍，补口径和分析单。快车道的东西一旦要进正账拿来复用，它就不是快车道了，得按正常路重来。
 
 没关掉的快车道出现在 `rl status` 里；超过 `reclaim.ql_idle_days`（默认 7 天）没关的，`rl reclaim` 也列进来。
 
@@ -137,7 +137,6 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 
 1. analysis 发现代码问题开给 deploy 的那条 issue 填哪个 kind：九种 kind（`cannot`、`not_mine`、`denied`、`failed`、`anomaly`、`request`、`withdrawn`、`orphaned`、`fyi`）里没有一种是「别人的代码有问题」，施工计划第五节只写「发现代码问题开 issue 给 deploy」，kind 没定。分组键缺失那条明写了 `cannot`，这条没有。
 2. analysis 快车道的 scratch 开张版填什么：第三节写 scratch 的 `open` 版必填 `worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`，可 analysis 的快车道不建 worktree 也不建分支，`base_commit` 和 `branch` 两栏对 analysis 填什么没写。
-3. analysis 走 `rl ql close --merged --handoff ID` 时那张单子是谁开的：词表里快车道补单写死是 deploy 开给 deploy、owner 记 gyb、只要一份 `method` 简报，analysis 这一头合回要补哪一种单、谁开、交付物是什么，两份源文档都没写。
 4. analysis 的自决是什么：角色 json 的 ledger_writes 里有 `decisions.analysis` 全部，可公共规矩 2 把自决定义成「改变实验结果的选择」，analysis 不跑实验，哪些选择算 analysis 的自决没有例子。
 5. `rl eval retire` 归谁调：第三节写 `retired` 那一版 actor 必须是 gyb，第六节命令表那一行的「谁能调」写的是「提和改 analysis，批和打回 gyb」，retire 没点名。
 6. 口径的 add 还是 update 没有判据：决定账有「同一个问题换做法就追加一版、换了要回答的问题就开新条」这条判据，口径账只写了 `approved` 之后 update 回 `proposed`，什么时候该开一条新口径没写。
@@ -228,3 +227,11 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 10. [blocks/blocked] 第 22 步：分析单和口径互为前提。新建 analysis_order 的前提是 evaluation_refs 每项已 approved，设计文档也写「单子里只能引已经批准的口径行」；而 analysis 的 use case 第一条是接分析单，接完才问 gyb 要统计什么、才提口径给 gyb 批。一批新数出来之后的第一张分析单永远开不出来。
    - 依据：plans/2026-08-16-research-loop-build-plan.md:81; plans/2026-08-16-research-loop-next-steps.md:50; plans/2026-08-16-research-loop-next-steps.md:76; plans/2026-08-16-research-loop-build-plan.md:107
    - 改法：把 evaluation_refs 每项 approved 这个前提从新建那一行挪到 in_progress→done_pending_review 那一行，新建时允许空。
+
+## 裁决记录（日期）
+
+- 2026-08-17 来自 sync-inbox 问题 10 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：第四节 amend 那段照 `04` 转移表两行 amend 改：`todo`/`stuck` 上还能换 `decision_refs` 或 `evaluation_refs` 里的引用，`done_pending_review` 上能补或改 `report_paths`、`output_paths`、`code_paths` 并换引用。
+- 2026-08-17 来自 sync-inbox 问题 16 的裁决（定义处 `07`，rl-hub-v3 传；gyb 原话「A」）：第六节「出」那句改成 analysis 的快车道只有 `rl ql close QL --dropped --reason`，没有补单，`--merged --handoff ID` 只有 deploy 能打；「源文档没写清的」第 3 条末尾标已裁。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第一节 inbox 五样里通知那一项后面的「（读过即关）」删掉。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：第一节标题里的「上线第一个动作」改成「收件箱」，那句改成「`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单」；开头摘要那一行跟着改。
+- 2026-08-17 rl-hub-v3 按 HANDOFF 第八节问题 16 那行「`13:140`（销）」：「源文档没写清的」第 3 条（analysis 走 `--merged` 补哪张单）已被问题 16 答掉，整条销掉，编号不重排；第六节「中间」那句按 `07-quick-lane.md` 第五节改成「中间版格式松，只校验骨架和 `ql_tag`；三版按表查必填」（`03` 事项 2 的裁决，05 定稿那一轮漏传）。

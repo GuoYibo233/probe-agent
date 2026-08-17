@@ -14,7 +14,7 @@
 | `common/GLOSSARY.md` | 词表，就是施工计划第二节那份，再加一栏「它不是什么」 |
 | `common/SPEC-TEMPLATE.md` | 五栏 |
 | `common/READING.md` | 读法栏的原话 |
-| `common/<判断类检查问题清单>`（文件名归本份定，待定） | 判断类检查的问题清单：脚本判不了、要读了才知道对不对的那些项。不进 doctor（doctor 只留脚本能判的十九项），reviewer 按这份清单派 sonnet subagent 一人一题逐条查（2026-08-17 随 `05` 定稿裁） |
+| `common/<判断类检查问题清单>`（文件名归本份定，待定） | 判断类检查的问题清单：脚本判不了、要读了才知道对不对的那些项。不进 doctor（doctor 只留脚本能判的十九项），reviewer 按这份清单派 sonnet subagent 一人一题逐条查，查出来的写进 `review/` 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 随 `05` 定稿裁；只写清单不开 issue 是 gyb 裁，sync-inbox 问题 6） |
 
 词表那一栏「它不是什么」，施工计划第二节写的是「留到 `common/GLOSSARY.md` 写的时候逐条给 gyb 过，这里只钉名字」。
 
@@ -61,9 +61,9 @@
 
 feedback 是反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的人在 `rl inbox` 里看得到裁决。文件是 `loop/feedback.jsonl`。
 
-行格式（公共骨架七样另见 `03-ledgers.md`）：`id`；`target`，取值是文件路径，或者带前缀的编号 `rule-06`、`principle-06`；`text`；`status` 取 `proposed`、`accepted`、`rejected`；`verdict_text`，`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么；`applied_to`，采纳时必填，是路径列表，rl 校验每个路径存在；`rules_version_after`，采纳时 rl 自动填。提的那一版谁都能写，裁的那一版 `actor` 必须是 `gyb`。
+行格式（公共骨架七样另见 `03-ledgers.md`）：`id`；`target`，取值是文件路径，或者带前缀的编号 `rule-06`、`principle-06`；`text`；`status` 取 `proposed`、`accepted`、`rejected`；`verdict_text`，`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么；`applied_to`，采纳时必填、至少写一个，是路径列表，rl 校验每个路径存在；`rules_version_after`，采纳时 rl 自动填。提的那一版谁都能写，裁的那一版 `actor` 必须是 `gyb`。
 
-裁成采纳的那一版写清改了哪几个文件，是个列表，母版和文档都算。
+采纳的那一版要写清改了哪几个文件，母版和文档都算，至少写一个、不要求两样都有（2026-08-17 gyb 裁，sync-inbox 问题 26；doctor 第 17 项只在 `applied_to` 为空时报）。
 
 命令五条：
 
@@ -79,7 +79,7 @@ feedback 是反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的
 
 采纳之后的 commit：母版改动单独一个 commit，前缀是 `research-loop rules:`，改完跑一遍 `tests/run_all.py`。施工那八步用的前缀是 `research-loop v2:`，两个前缀分开用。
 
-feedback 的入口和出口各挂在三处：`rl status` 段 8 列等裁的 feedback；`rl notify` 的推送表里有「feedback 提出」一条；角色的 `rl inbox` 里有一类是本角色提的 feedback 的裁决。定期提醒（`notify.reminder_days` 默认 7）叫 gyb 做四件事，其中一件是把采纳的 feedback 落进母版并单独 commit。doctor 有一项扫描：accepted 的 feedback 的 `applied_to` 里没同时含母版和文档。
+feedback 的入口和出口各挂在三处：`rl status` 段 8 列等裁的 feedback；`rl notify` 的推送表里有「feedback 提出」一条；角色的 `rl inbox` 里有一类是本角色提的 feedback 的裁决。定期提醒（`notify.reminder_days` 默认 7）叫 gyb 做四件事，其中一件是把采纳的 feedback 落进母版并单独 commit。doctor 有一项扫描：accepted 的 feedback 的 `applied_to` 为空（2026-08-17 gyb 裁，sync-inbox 问题 26；`05-rl-cli.md` doctor 第 17 项）。
 
 五个角色的 `ledger_writes` 里都有 `feedback add`。
 
@@ -105,7 +105,7 @@ issues 是问题条，文件是 `loop/issues.jsonl`。用途是九类里的这�
 
 改派等于追加一版换 `assignee`。`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`。
 
-写权三条：`reply` 只有 `assignee` 或 gyb 能写；`close` 只有开单的 actor 或 gyb 能写；另有两处自动关，`rl handoff accept` 关这张单关联的 `answered` issue，`rl inbox` 关读到的通知类 issue。reviewer 不开 issue。
+写权三条：`reply` 只有 `assignee` 或 gyb 能写；`close` 只有开单的 actor 或 gyb 能写，通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 `assignee` 也能关（2026-08-17 gyb 裁，sync-inbox 问题 23：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`）；另有一处自动关：`rl handoff accept` 关这张单关联的 `answered` issue。reviewer 不开 issue。
 
 命令：`rl issue open --to R --kind K [--stage S] --text [--handoff ID] [--log-tail FILE|--log-text -]`、`rl issue reassign ID --to R`、`rl issue reply ID --text`、`rl issue close ID`、`rl issue link ID --handoff ID`、`rl issue show ID`、`rl issue list [--open] [--to R] [--kind K]`。`--to gyb`（开单或改派）触发通知；`link` 是 doctor 给的修法。谁能调按角色 json 的 `ledger_writes`，查询谁都行。
 
@@ -115,25 +115,25 @@ issues 是问题条，文件是 `loop/issues.jsonl`。用途是九类里的这�
 
 ## 七、grants 账
 
-grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 在裸终端能写。
+grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
-行格式：`id` 形如 `grant-0003`；`grantee` 是角色；`permission` 是字符串，第一版只有一种 `read:notes`；`status` 取 `active`、`revoked`；`expires_at` 可选；`text`；`issue_id` 可选。`actor` 必须是 `gyb` 且 `session_id` 必须是 `cli`。
+行格式：`id` 形如 `grant-0003`；`grantee` 是角色；`permission` 是字符串，第一版只有一种 `read:notes`；`status` 取 `active`、`revoked`；`expires_at` 可选；`text`；`issue_id` 可选。`actor` 必须是 `gyb`；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话。
 
 命令：`rl grant add --to R --permission P [--expires ...] [--issue ID]`、`rl grant revoke ID`、`rl grant list`、`rl grant show ID`。写只有 gyb，查谁都行。
 
-grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义（原则 1 的推论）。所以 grants 不接受 `--as-gyb`。
+授权只有 gyb 能写：`actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节 (d)「grants 只收裸终端」不认）。
 
-这本账现在只服务一件事：idea 读 `notes/` 的权。`notes/` 只有 gyb 写，谁都能读这条不成立——idea 要经 gyb 允许才有读文献的权限。两条路：`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 在裸终端写一条 grant，idea 之后才读 `notes/`。
+这本账现在只服务一件事：idea 读 `notes/` 的权。`notes/` 只有 gyb 写，谁都能读这条不成立——idea 要经 gyb 允许才有读文献的权限。两条路：`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。
 
 读权不上钩子。grant 是给 reviewer 事后查的凭据。doctor 有一项扫描接住这条纪律：决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`。
 
 ## 和别的 part 的接口
 
-- 九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选字段 `fix_for`、`force_reason`：`03-ledgers.md`。
+- 九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选字段 `force_reason`、`via`（`fix_for` 2026-08-17 按 sync-inbox 问题 15 删）：`03-ledgers.md`。
 - `rl inbox` 五类里的两类归这一份（本角色名下 open 的 issue、本角色提的 feedback 的裁决），命令本身在 `05-rl-cli.md`。
 - `rl status` 段 2（assignee 是 gyb 的 open issue）、段 8（等裁的 feedback）、段 10（上次 doctor 没修的）：`01-gyb.md`。
 - `rl notify` 的推送表（issue assignee 变 gyb、feedback 提出两条归这一份）：`01-gyb.md` 第五节（2026-08-17 gyb 裁，推送表和 `rl notify` 是一件事归 `01`）。
-- doctor 的全部扫描项，其中和这一份有关的五项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 applied_to 缺母版或文档、决定来源指 notes/ 但没有 read:notes）：`05-rl-cli.md`。
+- doctor 的全部扫描项，其中和这一份有关的五项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 applied_to 为空、决定来源指 notes/ 但没有 read:notes）：`05-rl-cli.md`。
 - sessions 账的 `rules_version`、`last_activity`、`status` 与「还活着的会话」怎么判定：`04-handoffs-and-sessions.md`。
 - `rl handoff accept` 自动关 `answered` issue、转移表 `in_progress` 到 `stuck` 那一行要求 issue 与单子互相引用：`04-handoffs-and-sessions.md`。
 - 角色 json 的 `reads`、`writes`、`ledger_writes`、`dispatches_to` 四栏，以及钩子的三层分权：`06-hooks-and-permissions.md`。
@@ -152,10 +152,10 @@ grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义�
 2. `common/` 四个文件的正式版是英文（施工步 5 写的是「中文底稿给 gyb 过，正式版英文」），但公共规矩八条的英文措辞没定；`rule-NN` 这套编号在英文版里保持不变这件事也没明写。
 3. rule-01 要求不可逆动作硬停并带原话或理由，点名的两个动作是收回和废除。收回那一头有落点（`rl handoff withdraw --reason [--quote]`），废除那一头没有：`rl decision retire ID [--source ...]` 在命令表里既没有 `--reason` 也没有 `--quote`，决定行上也没有 reason 字段。
 4. feedback 的 `target` 只举了两种取值：文件路径，和带前缀的编号 `rule-06`、`principle-06`。要改的是施工计划里的一张表（比如转移表的某一行、命令表的某一行）时 `target` 填什么，没写。
-5. doctor 那一项写的是「accepted 的 feedback 的 `applied_to` 里没同时含母版和文档」，这里的「文档」指设计文档、施工计划、还是拆开之后的 parts 文件，没写。
+5. doctor 那一项写的是「accepted 的 feedback 的 `applied_to` 里没同时含母版和文档」，这里的「文档」指设计文档、施工计划、还是拆开之后的 parts 文件，没写。——2026-08-17 已裁（sync-inbox 问题 26）：doctor 第 17 项改成只在 `applied_to` 为空时报，母版和文档至少写一个即可，「文档」指哪几份不再影响这一项。
 6. feedback 被 reject 之后能不能改一版再提，没写。口径账写了「被打回之后 analysis 改了再提一版」，feedback 没有对应的一句，`rl feedback` 也没有 update 子命令。
 7. run 的角色 json 的 `reads` 没列 feedback，`ledger_writes` 里却有 `feedback add`。按原则 2 的推论读不设权，所以不影响能不能查，但 `reads` 那一栏要不要补上 feedback，没写。
-8. 通知类 issue（`withdrawn`、`orphaned`、`fyi`）被 `rl inbox` 读过即关，这一跳从 `open` 直接到 `closed`，中间没有 `answered`。写这一版账行的 actor 记谁（读它的那个角色，还是 rl 自己），没写。
+8. 通知类 issue（`withdrawn`、`orphaned`、`fyi`）被 `rl inbox` 读过即关，这一跳从 `open` 直接到 `closed`，中间没有 `answered`。写这一版账行的 actor 记谁（读它的那个角色，还是 rl 自己），没写。——2026-08-17 已裁（sync-inbox 问题 23）：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`，写这一版的 actor 就是关它的那个收件人。
 9. `rules_version` 的格式没写（整数还是日期），母版文件里的这个值由谁写进去、`rl feedback accept` 加一之后怎么同步到 `common/GLOBAL-RULES.md` 的正文里，也没写。
 10. grants 的 `permission` 第一版只有 `read:notes` 一种，`revoke` 之后已经加载了这条 grant 的会话怎么办，没写（母版改动那一头写了「正在跑的会话不追」，授权这一头没有对应的一句）。
 
@@ -353,4 +353,9 @@ grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义�
 
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「都必填」），feedback 的 `verdict_text` 在 `accepted` 和 `rejected` 两版都必填；第五节行格式那句照 03 字段表补齐。统筹 session 同步。
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
-- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：`common/` 加一份判断类检查的问题清单文件（名字归本份定），reviewer 按它派 sonnet subagent 逐题查。对回原则 2、5。第一节的表加一行，四个文件改成五个。
+- 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：`common/` 加一份判断类检查的问题清单文件（名字归本份定），reviewer 按它派 sonnet subagent 逐题查。对回原则 2、5。第一节的表加一行，四个文件改成五个。（2026-08-17 问题 6 后改：查出的只写 `review/` 清单，不开 issue，gyb 看完用自己的权限开。）
+- 2026-08-17 来自 sync-inbox 问题 6 的裁决（定义处 `14`，rl-hub-v3 传；gyb 原话「全给我审查，然后我用我的权限放到issue里面」）：reviewer 查出的只写 `review/` 清单，不开 issue，gyb 看完用自己的权限开。第一节表里问题清单那行照 `05` doctor 一节末段补「查出来的写进 `review/` 清单，要不要开 issue 由 gyb 看完用自己的权限开」；上一条裁决记录标「后改」。
+- 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：`fix_for` 栏删掉，可选栏是 `force_reason`、`via` 两个。接口一节第一条照改。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`。第六节写权三条里的「`rl inbox` 关读到的通知类 issue」删掉，`close` 那条照 `03` 补「通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 `assignee` 也能关」；「没写清」第 8 条标已裁。
+- 2026-08-17 来自 sync-inbox 问题 26 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：`applied_to` 至少写一个即可。第五节行格式那句补「至少写一个」，下一句照 `03` 一字不差改写，doctor 那一项改成「`applied_to` 为空」；接口一节 doctor 五项那条同改；「没写清」第 5 条标已裁。
+- 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。第七节开头「只有 gyb 在裸终端能写」改成「只有 gyb 能写」，行格式末句的「`session_id` 必须是 `cli`」改成「裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话」，「grants 只收裸终端写的行……不接受 `--as-gyb`」那段照 `03` grants 段一字不差换掉。

@@ -11,7 +11,7 @@
 | 建什么 | 是什么 |
 |---|---|
 | `research-loop.json` | 配置文件，键见第二节和第三节 |
-| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`。`loop/.doctor-acks.jsonl` 不算九本账，由 doctor 首次 `--ack` 时建，init 不建（2026-08-17 随 `05` 定稿裁） |
+| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，`03-ledgers.md` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它，它由 doctor 首次 `--ack` 时建、`rl init` 不建（2026-08-17 随 `05` 定稿裁；不归总规矩管是 gyb 裁，sync-inbox 问题 24） |
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
 | `review/` | reviewer 的问题清单 |
@@ -29,7 +29,7 @@
 
 这三句是给没加载角色的裸会话看的纪律。裸会话身上没有钩子，什么都能写，这一点不用兜底钩子去堵，靠这一节加 reviewer 事后查。
 
-init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。发了，idea 之后读 `notes/` 不再走申请；没发，idea 要读的时候开一条 kind 是 `request` 的 issue 给 gyb，gyb 在裸终端写一条 grant。
+init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。发了，idea 之后读 `notes/` 不再走申请；没发，idea 要读的时候开一条 kind 是 `request` 的 issue 给 gyb，gyb 写一条 grant。
 
 ## 二、`research-loop.json` 的键
 
@@ -170,7 +170,7 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - `ql_tag` 的形状、快车道 worktree 怎么建、`rl ql open/close`：`07-quick-lane.md`。
 - run 角色照 gpu-run 写的八个阶段、看门狗、smoke 日志落 `artifact_root/smoke/`：`12-role-run.md`。
 - deploy 改宿主文件的三条纪律、部署报告两份的分工：`11-role-deploy.md`。
-- idea 申请 `read:notes` 的那条 issue 和 grants 只收裸终端：`10-role-idea.md`、`03-ledgers.md`。
+- idea 申请 `read:notes` 的那条 issue 和 grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：`10-role-idea.md`、`03-ledgers.md`。
 - 母版的 `rules_version` 和 feedback 采纳后改哪几个文件：`09-common-and-feedback.md`。
 - 待验证清单第 4 条（入口 skill 能不能锁成只许手动）、施工步 1、2、7 的交付与验收：`30-build-steps-verify-tests.md`。
 - 十一条设计原则和文档索引：`00-overview.md`。
@@ -282,3 +282,5 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（gyb：「A」，路 A 是进 git、每次 commit 顺手带上），`loop/` 九本账进 git，不另设 commit 动作，`.gitignore` 不排除 `loop/`；第一节表里 `loop/` 那行补上，「没写清」第 5 条销掉（后面条目编号没重排）。统筹 session 同步。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：阈值表加 `lock.timeout_seconds` 默认 10 秒；`rl init` 读到会话状态文件拒收退出码 3、只在裸终端跑（待验证第 4 条备案升正案）；`loop/.doctor-acks.jsonl` 不算九本账、doctor 首次 `--ack` 时建、init 不建。对回原则 1、4、8。第一节、第三节、第五节照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「产物目录是 `<artifact_root>/<run_id>/`」这条约定的定义处归本份第一节，`03`、`12`、`21`、`23` 只引。对回原则 8。
+- 2026-08-17 来自 sync-inbox 问题 24 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：`loop/.doctor-acks.jsonl` 是普通文件，`03` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它。第一节表里 `loop/` 那行照 `03` 补这一句。
+- 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。接口一节「grants 只收裸终端」那条改成「grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）」。

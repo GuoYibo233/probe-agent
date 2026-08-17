@@ -10,7 +10,7 @@
 
 gyb 自己做文献调查，把调查报告写成 md 放进 `notes/`，`notes/` 只有 gyb 写，谁都能读。这一版不加文献线，也没有角色去查「这个想法别人做过没有」，要加文献账是另一件事；`notes/` 就是文献进入这套系统的唯一入口。
 
-idea 要经 gyb 允许才有读文献的权限。`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 在裸终端写一条 grant，idea 之后才读 `notes/`。读权不上钩子，grant 是给 reviewer 事后查的凭据，`rl doctor` 有一项扫描「决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`」。
+idea 要经 gyb 允许才有读文献的权限。`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。读权不上钩子，grant 是给 reviewer 事后查的凭据，`rl doctor` 有一项扫描「决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`」。
 
 ### 2. 说要分析什么、画什么图
 
@@ -18,11 +18,11 @@ evaluations 每一行都是 gyb 说、analysis 记、gyb 批。任何角色都�
 
 ### 3. 写 grants
 
-授权只有 gyb 能写，而且只收裸终端写的行：grants 的 actor 必须是 `gyb`、`session_id` 必须是 `cli`，角色会话里 `--as-gyb` 写 grant 一律拒收。角色会话里替 gyb 批授权没有意义，所以这条不给例外。`grant list` 和 `grant show` 是查询命令，谁都能调（原则 2 推论：读一律不设权）。
+授权只有 gyb 能写：grants 的 `actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节（d）「grants 只收裸终端」不认）。`grant list` 和 `grant show` 是查询命令，谁都能调（原则 2 推论：读一律不设权）。
 
 ### 4. 裁 feedback
 
-feedback 谁都能提、只有 gyb 能裁，谁都能读。裁成采纳的那一版写清改了哪几个文件（`applied_to` 是路径列表，母版和文档都算），rl 校验每个路径存在、自动把 `rules_version` 加一、列出还活着的会话和它们的 `rules_version` 让 gyb 挑要不要收，并打印一张待办（还要改哪几处、要不要收会话、单独 commit 加跑测试）。母版改动在下次加载角色时生效，正在跑的会话不追、不通知，按现行母版干到底；母版改动单独一个 commit。
+feedback 谁都能提、只有 gyb 能裁，谁都能读。裁成采纳的那一版写清改了哪几个文件（`applied_to` 是路径列表，母版和文档都算，至少写一个、不要求两样都有），rl 校验每个路径存在、自动把 `rules_version` 加一、列出还活着的会话和它们的 `rules_version` 让 gyb 挑要不要收，并打印一张待办（还要改哪几处、要不要收会话、单独 commit 加跑测试）。母版改动在下次加载角色时生效，正在跑的会话不追、不通知，按现行母版干到底；母版改动单独一个 commit。
 
 ### 5. 手动结束会话
 
@@ -39,6 +39,7 @@ reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问�
 - 会话标 `reclaim` 销号，并 release 名下 `in_progress` 的单子；
 - `in_progress` 的 `launch_order` 默认不杀进程（留给下一个 run 认领），带 `--kill` 才先走中断收尾（杀进程、释放显存、宿主销号、runs 落 `killed`）；
 - `stuck` 的单子只把 issue 改派给 owner，状态保持 `stuck`；
+- `rejected` 的单子超过 `reclaim.handoff_idle_hours` 没动的推回 `todo`（`actor` 记 gyb、`via=reclaim`），owner 重新拉起；
 - `done_pending_review` 和 `todo` 的只列出来附现成命令，不动手；
 - 结束时按 owner 分组打印待拉起的单子和加载命令，并自动跑一遍 `rl doctor`。
 
@@ -85,12 +86,12 @@ gyb 只豁免权限，不豁免账行的完整性：
 | 转移表的「前提」栏 | 生效 |
 | 必填字段、路径存在、引用存在 | 生效 |
 
-gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 `force_reason` 字段。actor 是角色的命令带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写（2026-08-17 gyb 裁，来自 `03-ledgers.md`）。`--force` 只越过完整性前提，越不过转移表外的转移：表外转移对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开（2026-08-17 gyb 裁，来自 `05-rl-cli.md`）。runs 账的 actor 允许 `run` 或 `gyb`，gyb 例外这一条明写在字段表里。
+gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 `force_reason` 字段。actor 是角色的命令带 `--force` 一律拒收，退出码 3，附「开 issue 给 gyb」的命令；角色会话里 `--as-gyb --quote --force --reason` 算 gyb 身份写，照写（2026-08-17 gyb 裁，来自 `03-ledgers.md`）。`--force` 只越过完整性前提，越不过转移表外的转移：表外转移对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开（2026-08-17 gyb 裁，来自 `05-rl-cli.md`）。runs 账的 actor 允许 `run` 或 `gyb`，gyb 例外这一条明写在字段表里。还有一条 `--force` 越不过：写命令的 `session_id` 在 sessions 账里最新版是 `closed` 的，rl 拒收并提示重新加载角色登记，退出码 3，`--force`、`--as-gyb --force` 都越不过，唯一出路是重新加载角色（2026-08-17 gyb 裁，sync-inbox 问题 14，定义处 `03-ledgers.md`）。
 
-### 三条只收裸终端的
+### 只收裸终端的
 
-- grants：actor 必须 `gyb` 且 `session_id` 必须 `cli`，不接受 `--as-gyb`。
 - `decisions.gyb.jsonl`：只收 `session_id` 是 `cli` 的行。
+- grants 不在这一类里（2026-08-17 gyb 裁，sync-inbox 问题 27）：只有 gyb 能写，裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收。
 - 其余一切写命令角色会话里都能用 `--as-gyb` 打。
 
 ## 三、gyb 的 use case 表
@@ -112,7 +113,7 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 ## 四、rl status：gyb 的收件箱
 
-收件箱有两个（原则 6）：gyb 的叫 `rl status`，角色的叫 `rl inbox`（见 `05-rl-cli.md`）。任何一版把某一行送进「等 gyb」的状态，那一行必须出现在 `rl status` 里。`rl status` 谁都能调。
+收件箱有两个（原则 6）：gyb 的叫 `rl status`，角色的叫 `rl inbox`（见 `05-rl-cli.md`）。`rl inbox` 是查询命令，谁需要谁敲：角色被拉起不自动查收件箱，先干拉它起来的那张单；run 不查 inbox，只关注自己那张发射单（2026-08-17 gyb 裁，sync-inbox 问题 28）。任何一版把某一行送进「等 gyb」的状态，那一行必须出现在 `rl status` 里。`rl status` 谁都能调。
 
 参数是 `[--line L] [--group-by line|batch] [--json]`。第一行打印距上次 `reclaim` 几天。十段：
 
@@ -145,7 +146,7 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 通知机制本身还没定，是待验证第 6 条：试 Claude Code 自带推送、`notify-send`、终端铃三种，通过标准是 gyb 桌面看得到；失败备案是退到 `rl status` 单列那一层，通知不做。
 
-gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi` 的 issue，进那个角色的 `rl inbox`，不进桌面通知。两处原文不一致：设计文档「交接」一节写「gyb 越过 owner 验收或打回时 rl 给 owner 发一条 fyi 通知」，施工计划第四节转移表只在 `done_pending_review → accepted` 那一行写了 fyi，`rejected` 那一行没写。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：验收和打回都发 fyi。
+gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi` 的 issue，进那个角色的 `rl inbox`，不进桌面通知；这条 issue 不是读过即关，owner 做完了自己 `rl issue close`（2026-08-17 gyb 裁，sync-inbox 问题 23）。两处原文不一致：设计文档「交接」一节写「gyb 越过 owner 验收或打回时 rl 给 owner 发一条 fyi 通知」，施工计划第四节转移表只在 `done_pending_review → accepted` 那一行写了 fyi，`rejected` 那一行没写。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：验收和打回都发 fyi。
 
 ## 六、定期提醒
 
@@ -159,7 +160,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 
 - 派活单的七个状态（`todo`、`in_progress`、`stuck`、`done_pending_review`、`accepted`、`rejected`、`withdrawn`）、`owner`、`holder`、`last_holder`、`dispatch`（`auto`/`manual`/`none`）的定义在 `04-handoffs-and-sessions.md`；`rl status` 段 1、4、5、6、7 全按这些字段过滤。
 - 转移表里「前提」栏和「谁能写」栏的分工在 `04-handoffs-and-sessions.md`；本文第二节的豁免表只说这两栏对 gyb 生不生效。
-- 九本账的公共骨架（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`、`fix_for`、`force_reason`）和每本的字段在 `03-ledgers.md`。
+- 九本账的公共骨架（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`、`force_reason`、`via`）和每本的字段在 `03-ledgers.md`。
 - grants、feedback、evaluations、sessions 四本账的行格式和状态取值在 `03-ledgers.md`；本文只写 gyb 这一头的动作。
 - `rl status`、`rl reclaim`、`rl doctor`、`rl notify`、`rl grant`、`rl feedback`、`rl eval`、`rl session`、`rl inbox`、`rl trace` 的完整参数和退出码在 `05-rl-cli.md`。
 - actor 判定的实现（会话状态文件路径 `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json`、钩子在加载角色时写）在 `06-hooks-and-permissions.md`。
@@ -177,7 +178,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 2. `rl status` 段 2（assignee 是 gyb 的 open issue）在 gyb 的 use case 表里没有对应行，这一段是从哪个 use case 倒推出来的没写。
 3. 推送表五档没写通知里带什么字段、gyb 点开之后该打哪条命令；`rl notify --text` 只有一个文本参数。
 4. 定时提醒机制不成立时备案是「`rl status` 第一行打印距上次 reclaim 几天」，可谁提醒 gyb 去打 `rl status` 没有第二条路。
-5. 只写死了 `rl status --json` 的行结构，`rl reclaim` 和 `rl doctor` 的 `--json` 结构没写。
+5. 只写死了 `rl status --json` 的行结构，`rl reclaim` 和 `rl doctor` 的 `--json` 结构没写。——2026-08-17 已定（`05-rl-cli.md` 定稿「退出码与 --json」一节写了 `rl inbox --json`、`rl doctor --json`、`rl reclaim --json` 三条的最小结构，gyb 裁）。
 6. gyb 手动开 reviewer 之后：gyb 怎么点名审哪条决定（除了 reviewer 自己打 `rl session focus`）、gyb 看完 `review/` 清单之后决定的动作落在哪本账，都没写。
 7. `--force --reason` 只写了「rl 照写并把 reason 记进账行」，没写哪些完整性前提允许被 force 越过、有没有一条也不许越过的（比如转移表里表外的转移）。——2026-08-17 随 `05` 定稿裁：只越过完整性前提、越不过表外转移，已写进第二节「豁免范围」（rl-hub）。
 8. gyb 手动加载角色时 sessions 账的 `model` 记「解析后的真实模型名或 `unknown`」，`unknown` 由 doctor 列出来让 gyb 事后补，可补的命令是哪一条没写。
@@ -492,3 +493,10 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-17：来自 `03-ledgers.md` 的裁决（rl-hub 转来；gyb 原话「你说得对」）：actor 是角色的命令带 `--force` 一律拒收，退出码 3，附开 issue 给 gyb 的命令；`--as-gyb --quote --force --reason` 算 gyb 身份照写。对回原则 1、原则 2。第二节「豁免范围」补了这一句。
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」）：推送表和 `rl notify` 是一件事，定义处归本份第五节；`05-rl-cli.md` 只留 `rl notify --text` 的签名行，其「rl notify」一节缩成一句指本份。对回原则 8。第五节开头补了一句。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：第二节补「`--force` 只越完整性前提、越不过表外转移，gyb 同样退出码 2，硬改走 `withdraw` 再重开」；第五节推送表第 4 条补查的时机（落 `todo` 那刻和 `session end` 销号时）；`rl notify` 补「gyb 也可手动调、不进账」。对回原则 1、4、6、8。「没写清」第 7 条据此销掉。
+- 2026-08-17 来自 sync-inbox 问题 14 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「A」）：第二节「豁免范围」补一句——`session_id` 在 sessions 账里最新版是 `closed` 的会话再写任何账，rl 拒收，退出码 3，`--force`、`--as-gyb --force` 都越不过，唯一出路是重新加载角色。对回原则 1、原则 4。
+- 2026-08-17 来自 sync-inbox 问题 19 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「B」）：第一节第 7 件事 reclaim 的处置从四类加成五类，补「`rejected` 的单子超过 `reclaim.handoff_idle_hours` 没动的推回 `todo`（`actor` 记 gyb、`via=reclaim`），owner 重新拉起」。对回原则 3。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`、`03`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第五节 `fyi` 那句补「这条 issue 不是读过即关，owner 做完了自己 `rl issue close`」。对回原则 6。
+- 2026-08-17 来自 sync-inbox 问题 26 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：第一节第 4 件事 `applied_to` 那句补「至少写一个、不要求两样都有」。对回原则 4。
+- 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处本份第二节，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：第一节第 3 件事「写 grants」改成「授权只有 gyb 能写：`actor` 必须是 `gyb`；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话」；第二节小节名由「三条只收裸终端的」改成「只收裸终端的」，grants 那一条改写成不在这一类里。对回原则 1。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处本份第四节，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱……这个角色就应该先执行刚才idea给他的工作」「C」「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：第四节开头补一句——`rl inbox` 是查询命令，谁需要谁敲，角色被拉起不自动查收件箱、先干拉它起来的那张单，run 不查 inbox。对回原则 6。
+- 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：接口一节公共骨架那行的两个可选栏由「`fix_for`、`force_reason`」改成「`force_reason`、`via`」。对回原则 4。

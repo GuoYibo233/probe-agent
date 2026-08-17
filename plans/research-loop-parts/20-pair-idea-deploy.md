@@ -23,7 +23,7 @@ idea 把决定拆成工单派给 deploy，工单就是 `work_type` 取 `work_ord
 | `dispatch` | 派发方式，取 `auto`（owner 后台起 subagent）、`manual`（gyb 亲自接）、`none`（暂不派） | 三选一 |
 | `supersedes` | 接替哪张单 | 可选，`rl handoff reissue` 开新单时指旧单 |
 
-工单还带这些公用字段：`id` 形如 `ho-0012`；`status` 七选一；`parent_id`、`batch`、`quick_lane` 布尔；`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着；`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）；`reason`（`rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote`）；`issue_id`（`stuck` 时必填）。九本账的公共骨架七样在 03-ledgers.md。
+工单还带这些公用字段：`id` 形如 `ho-0012`；`status` 七选一；`parent_id`、`batch`、`quick_lane` 布尔；`ql_tag`（快车道补单必填，指它合回的那条 scratch 行；其余单子空）；`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着；`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）；`reason`（`rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote`）；`issue_id`（`stuck` 时必填）。九本账的公共骨架七样在 03-ledgers.md。
 
 工单里不能只甩决定编号。`explanation` 的解释权在 idea：idea 要把那条决定里的东西讲明白。怎么测试、什么算成功也要 idea 自己想明白，只是不预写成单子上的字段。
 
@@ -45,18 +45,18 @@ idea 打 `rl handoff open --type work_order --to deploy --decision ID@V ... --ex
 |---|---|---|---|---|---|
 | （新建） | `todo` | `from_role` | `work_order` 有 `decision_refs` 和 `explanation` | `dispatch=auto` 时 owner 后台起 subagent；`manual` 等 gyb；`none` 不动 | `handoff open` |
 | `todo` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`；`holder` 为空（非空退出码 2 并列出当前 holder） | 无 | `handoff start` |
-| `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`work_order` 补 `report_paths` 或 `code_paths`；状态不变 | 无 | `handoff amend` |
+| `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`work_order` 补 `report_paths` 或 `code_paths`；换 `decision_refs` 里的引用（doctor 悬空引用的修法）；状态不变 | 无 | `handoff amend` |
 | `in_progress` | `stuck` | holder | `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单 | 无 | `handoff stuck` |
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `work_order` 的 `report_paths` 和 `code_paths` 齐 | 无 | `handoff done` |
-| `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 只补 `report_paths` 里丢了的路径，状态不变（doctor 修法用） | 无 | `handoff amend` |
-| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
+| `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 补或改 `report_paths`、`code_paths` 里的路径，换 `decision_refs` 里的引用；状态不变（doctor 修法用） | 无 | `handoff amend` |
+| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
 | `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
-| `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
+| `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；从 `in_progress` 收回时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner，其他状态不通知；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
 | `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；rl 给 owner 开 `orphaned` 通知；销号钩子写的这一版 `actor` 记会话的角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim` | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
-| 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
+| 任一非终态 | 旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 工单被打回、被回收、下游销号之后回到待干，都由 idea 重新拉起下游。
 
@@ -78,7 +78,7 @@ deploy 提「干完等待验收」的时候，派活单记两份报告路径和�
 
 ## 收回与 cascade
 
-收回是 `rl handoff withdraw ID --reason [--quote] [--cascade]`，只有 owner 能写，单子关闭，`withdrawn` 是终态。从 `todo`、`in_progress`、`stuck`、`done_pending_review`、`rejected` 五个状态都能收回。角色会话发起收回还要带 gyb 的原话。收回一张有 holder 的单子时，rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner。
+收回是 `rl handoff withdraw ID --reason [--quote] [--cascade]`，只有 owner 能写，单子关闭，`withdrawn` 是终态。从 `todo`、`in_progress`、`stuck`、`done_pending_review`、`rejected` 五个状态都能收回。角色会话发起收回还要带 gyb 的原话。从 `in_progress` 收回时，rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner；从其他状态收回不通知。
 
 带 `--cascade` 的时候，rl 代 owner 把 `parent_id` 指向本单的下游单子一起收，下游那几行账的 actor 记发起人。工单下面挂着的发射单就是这么被一起收掉的：发射单的 `parent_id` 填的是工单。发射单被收回之后 run 那一头只做 `rl run finish --exit killed` 加收尾，不再改单子状态，见 21-pair-deploy-run.md。
 
@@ -90,7 +90,7 @@ deploy 提「干完等待验收」的时候，派活单记两份报告路径和�
 
 deploy 干不下去的时候先开一条 issue，再把单子标卡住。写序定死：先写 issue 拿到编号，再写单子那一行引它，中间崩了顶多多一条没人引的 issue，doctor 扫得出来。`handoff stuck` 的前提是 `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单。issue 的九种 `kind` 里，`cannot`（干不了）、`not_mine`（不归我干）、`denied`（被钩子拦了）三种都必填 `handoff_id`。
 
-issue 的三个状态是 `open`、`answered`、`closed`。回复只有 assignee 或者 gyb 能写；关闭由开单的 actor 或者 gyb 做；`rl handoff accept` 关这张单关联的 `answered` issue；通知类 issue 被 `rl inbox` 读过即关。assignee 是 gyb 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`。
+issue 的三个状态是 `open`、`answered`、`closed`。回复只有 assignee 或者 gyb 能写；关闭由开单的 actor 或者 gyb 做，通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 assignee 也能关；`rl handoff accept` 关这张单关联的 `answered` issue；`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`。assignee 是 gyb 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`。
 
 deploy 解决不了的问题改派给 gyb，用 `rl issue reassign ID --to gyb`。改派之后这条 issue 落进 gyb 的收件箱，见 01-gyb.md。
 
@@ -98,13 +98,13 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 
 ## 过版检查对工单的影响
 
-引用记的版本比账里最新版小就是过时。`rl decision update` 和 `rl decision retire` 写完那一刻，rl 当场列出引旧版而没到终态的单子和它们的 holder。过版的单子进 `rl status`，也进相关角色的 `rl inbox`——idea 和 deploy 上线第一个动作是 `rl inbox`，里面有一段就是本角色持有或拥有的单子里过版的决定引用。`rl decision stale [--mine] [--handoff ID]` 默认只列和本会话手上单子有关的，`--all` 才是全库。retired 决定名下还有活单的进 `rl status` 和 doctor。
+引用记的版本比账里最新版小就是过时。`rl decision update` 和 `rl decision retire` 写完那一刻，rl 当场列出引旧版而没到终态的单子和它们的 holder。过版的单子进 `rl status`，也进相关角色的 `rl inbox`，`rl inbox` 里有一段就是本角色持有或拥有的单子里过版的决定引用。`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的会话先干拉它起来的那张单。`rl decision stale [--handoff ID] [--all]` 默认只列和本会话手上单子有关的，`--all` 才是全库。retired 决定名下还有活单的进 `rl status` 和 doctor。
 
 工单的 `line` 是根决定编号，rl 从 `decision_refs` 第一项的 `root_id` 算出来存在单子上，`rl status --group-by line` 按它切开两条并行的研究线。
 
 ## 快车道补单
 
-快车道合回的时候 deploy 补一张标了 `quick_lane` 的工单，`from_role` 和 `to_role` 都是 deploy，验收人固定是 gyb，允许新建直接进 `done_pending_review`，只要一份 `method` 简报，`explanation` 由 deploy 写并抄 gyb 点名的原话。这一整条路（`rl ql open`、杂账、`rl ql close`、免掉哪些手续）在 07-quick-lane.md。
+快车道合回的时候 deploy 补一张标了 `quick_lane` 的工单，`from_role` 和 `to_role` 都是 deploy，验收人固定是 gyb，允许新建直接进 `done_pending_review`，只要一份 `method` 简报，`explanation` 由 deploy 写并抄 gyb 点名的原话，`ql_tag` 指它合回的那条 scratch 行。补单的前提是那条 scratch 行状态还是 `open`：先开补单拿到编号，再 `rl ql close --merged --handoff ID` 关杂账，两边互指。这一整条路（`rl ql open`、杂账、`rl ql close`、免掉哪些手续）在 07-quick-lane.md。
 
 两处原文不一致：设计文档写快车道补单「from_role 和 to_role 都是 deploy」，施工计划第二节词表把 owner 定义成「开单角色，就是 from_role」又补一句「快车道补单和 gyb 开的单 owner 记 gyb」，第四节那一行也写「owner 记 gyb」。按施工计划的表，这一行的 owner 记 gyb。
 
@@ -335,3 +335,10 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「删了吧」「我想这个问题应该取决于再干能不能成功吧，如果是啥外部元素，重试能成功那可以再来，但是如果代码有问题得给代码先修了啊」）：抄的转移表 `in_progress` → `todo` 行「谁能写」删单列的 gyb，「之后谁拉起」改成 owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent）。对回原则 8、原则 11、原则 3。
 - 2026-08-17：来自 `04-handoffs-and-sessions.md` 的裁决（rl-hub 转来；gyb 原话「可以 发」）：gyb 越过 owner 打回也发 fyi，抄的转移表 `done_pending_review` → `rejected` 行前提栏补上。对回原则 6。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：抄的转移表 `in_progress` → `todo` 行补「销号钩子写的 `actor` 记会话角色、`via=session_end`；reclaim 写的 `actor` 记 gyb、`via=reclaim`」，与 `04` 一字不差。对回原则 4。
+- 2026-08-17 来自 sync-inbox 问题 8 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：「工单上的字段」一节公用字段那句加 `ql_tag`（快车道补单必填，指它合回的那条 scratch 行；其余单子空），「快车道补单」一节补上补单前提是那条 scratch 行状态还是 `open`、先开补单拿编号再 `rl ql close --merged --handoff ID`。
+- 2026-08-17 来自 sync-inbox 问题 10 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：抄的转移表两条 `handoff amend` 行的允许内容跟 doctor 修法放宽——`todo` / `stuck` 那行加「换 `decision_refs` 里的引用（doctor 悬空引用的修法）」，`done_pending_review` 那行改成「补或改 `report_paths`、`code_paths` 里的路径，换 `decision_refs` 里的引用」。
+- 2026-08-17 来自 sync-inbox 问题 20 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「B」）：抄的转移表 withdraw 行和「收回与 cascade」一节的「有 holder 时通知」改成「从 `in_progress` 收回时通知 holder 的角色和 owner，其他状态不通知」。
+- 2026-08-17 来自 sync-inbox 问题 21 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：抄的转移表 reissue 行「到」栏由「同状态（接替）」改成「旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单）」。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「issue 往返」一节「通知类 issue 被 `rl inbox` 读过即关」改成「`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`」，关闭写权那句加通知类 issue 的 assignee 也能关；抄的转移表 accept 行按 `04` 第三节补「rl 顺带关这张单关联的 `answered` issue」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：「过版检查对工单的影响」一节「idea 和 deploy 上线第一个动作是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的会话先干拉它起来的那张单」。
+- 2026-08-17 rl-hub-v3 审后补：第九节 `rl decision stale` 签名按 `05-rl-cli.md` 命令表改成 `[--handoff ID] [--all]`，去掉 `--mine`（05 定稿那一轮的引用滞后）。

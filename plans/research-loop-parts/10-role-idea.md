@@ -1,6 +1,6 @@
 # idea 角色
 
-> 这份覆盖 idea 角色的 SKILL.md 要写的全部内容：它干什么、use case 表、读什么写什么、能调哪些 rl 写命令、决定怎么落账（来源三类、新版还是新条、confirm、跨角色改别人的决定）、工单和分析单怎么开（explanation、`--manual`、`--no-dispatch`）、怎么验收和打回、收回和 reissue、申请读 notes/、上线第一个动作 `rl inbox`、模型用 fable 的例外。
+> 这份覆盖 idea 角色的 SKILL.md 要写的全部内容：它干什么、use case 表、读什么写什么、能调哪些 rl 写命令、决定怎么落账（来源三类、新版还是新条、confirm、跨角色改别人的决定）、工单和分析单怎么开（explanation、`--manual`、`--no-dispatch`）、怎么验收和打回、收回和 reissue、申请读 notes/、`rl inbox` 谁需要谁敲、模型用 fable 的例外。
 > 不覆盖的：派活单的七个状态和状态转移表、会话生命周期与销号，在 `04-handoffs-and-sessions.md`；九本账的行格式和字段必填规则，在 `03-ledgers.md`；`bin/rl` 每条子命令的完整参数和退出码，在 `05-rl-cli.md`；钩子、角色 json 的四栏机制和机器检查，在 `06-hooks-and-permissions.md`；快车道，在 `07-quick-lane.md`；gyb 自己做的事和 `rl status`，在 `01-gyb.md`；公共母版和 feedback 账，在 `09-common-and-feedback.md`。idea 和别的角色来回的细节分别在 `20-pair-idea-deploy.md`、`22-pair-idea-analysis.md`、`25-pair-reviewer-idea.md`。
 > 源：设计文档的「gyb 自己做的事」「五个角色」总段、「idea」一节、「账本」一节的决定账部分、「交接与会话生命周期」；施工计划第一节裁决 3、第二节词表、第三节 decisions 与 handoffs、第四节转移表、第五节 idea 的 use case 与角色 json、第六节命令表。
 
@@ -40,11 +40,11 @@ idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。i
 | dispatches_to | deploy、analysis |
 | model | 由 agent 调用时 fable，gyb 手动加载时跟当前会话的模型一致 |
 
-读一律不设权：九本账的查询命令谁都能调，reads 这一栏是纪律不是门禁。查询命令（show、list、trace、status、inbox、stale、doctor）不进 ledger_writes。机器检查只查 SKILL.md 正文出现的每条 rl 写命令在不在 ledger_writes 里，查询命令不查。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试同样查抄没抄。
+读一律不设权：九本账的查询命令谁都能调，reads 这一栏是纪律不是门禁。查询命令（show、list、trace、status、inbox、stale、doctor）不进 ledger_writes；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查只查 SKILL.md 正文出现的每条 rl 写命令在不在 ledger_writes 里，查询命令不查。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试同样查抄没抄。
 
-## 上线第一个动作
+## 收件箱
 
-idea 上线第一个动作是 `rl inbox`。它列本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知（读过即关）、本角色提的 feedback 的裁决。
+`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单。inbox 列本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
 
 两处原文不一致：过版那一项，设计文档写的是「本角色持有或拥有的单子里过版的决定引用」，施工计划第六节写的是「本会话手上单子引的过版决定」；feedback 裁决那一项，设计文档把它算进通知里，施工计划单列成一项。这份按施工计划的表走。
 
@@ -136,7 +136,7 @@ gyb 随时可以自己验。gyb 越过 owner 验收或打回时，rl 给 owner �
 
 ## 收回、重派、拉起
 
-收回是对派出去还没干完的单子追加一版标 `withdrawn`，单子关闭，这是终态。收回要带原因，角色会话里发起还要带 gyb 原话。收回一张有 holder 的单子时，rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner。带 `--cascade` 时，rl 代 owner 连它派生的下游单子一起收，下游单的账行 actor 记发起人。
+收回是对派出去还没干完的单子追加一版标 `withdrawn`，单子关闭，这是终态。收回要带原因，角色会话里发起还要带 gyb 原话。从 `in_progress` 收回时，rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner，其他状态不通知。带 `--cascade` 时，rl 代 owner 连它派生的下游单子一起收，下游单的账行 actor 记发起人。
 
 改版之后要重派的用 `rl handoff reissue ID --decision ID@V`：一条命令收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder。
 
@@ -148,7 +148,7 @@ gyb 随时可以自己验。gyb 越过 owner 验收或打回时，rl 给 owner �
 
 notes/ 只有 gyb 写，谁都能读，但 idea 要经 gyb 允许才有读文献的权限。
 
-`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`。发了就不再走申请。没发的话 idea 开一条 issue 给 gyb，kind 是 `request`；gyb 在裸终端写一条 grant，idea 之后才读 notes/。grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义。
+`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`。发了就不再走申请。没发的话 idea 开一条 issue 给 gyb，kind 是 `request`；gyb 在裸终端写一条 grant，idea 之后才读 notes/。授权只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收。
 
 读权不上钩子，grant 是给 reviewer 事后查的凭据。doctor 有一项扫描：决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 `read:notes`。
 
@@ -163,7 +163,7 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 派活单的七个状态、状态转移表的六栏、holder 只在 `in_progress` 非空这条不变量：`04-handoffs-and-sessions.md`。
 - handoffs 的字段（`work_type`、`from_role`、`to_role`、`parent_id`、`supersedes`、`batch`、`line`、`dispatch`、`decision_refs`、`evaluation_refs`、`explanation`、`report_paths`、`code_paths`、`output_paths`、`progress_note`、`reason`）：`03-ledgers.md`。
 - decisions 的字段（`id` 前缀、`root_id`、`status`、`sources` 三类的写法、`quote`、`merged_from`）和 `decisions.gyb.jsonl` 只收 `cli` 这条：`03-ledgers.md`。
-- issues 的九种 kind、三个状态、reply 和 close 谁能写、通知类 issue 被 `rl inbox` 读过即关：`03-ledgers.md`。
+- issues 的九种 kind、三个状态、reply 和 close 谁能写、通知类 issue 由收件人做完了自己 close：`03-ledgers.md`。
 - `rl decision add/update/confirm/retire/merge/show/list/stale`、`rl handoff open/accept/reject/withdraw/release/reissue/resume/amend`、`rl issue open/reply/reassign/close`、`rl inbox`、`rl trace` 的完整参数与退出码：`05-rl-cli.md`。
 - actor 判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：`01-gyb.md` 和 `05-rl-cli.md`。
 - `rl status` 的十段、哪几段推送桌面通知、`fyi` 通知：`01-gyb.md`。
@@ -357,3 +357,11 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 6. [slows/guessed] 步 13、步 14：设计 L120 只写「上游开完单直接起一个 subagent 接走并同步等它回来」，没写下游 subagent 没走到 done 或 stuck 就返回的时候上游拿到什么、该做什么。待验证第 9 条（设计 L168、施工 L197）只问「等几个小时会不会被超时收掉」，不问「等的对象死了怎么办」。最快能发现这件事的就是被阻塞的上游会话，文档没给它任何职责，我只能按原则 3 推它该 release 加重起。
    - 依据：plans/2026-08-16-research-loop-next-steps.md:120; plans/2026-08-16-research-loop-next-steps.md:168; plans/2026-08-16-research-loop-build-plan.md:197
    - 改法：设计 L120 补一句「下游 subagent 没走到 done 或 stuck 就返回的，上游当场 rl handoff release 并决定重起还是开 issue 给 gyb」，并写进 idea 和 deploy 的 SKILL.md。
+
+## 裁决记录（日期）
+
+- 2026-08-17 来自 sync-inbox 问题 20 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「B」）：「收回、重派、拉起」一节「收回一张有 holder 的单子时」改成「从 `in_progress` 收回时……其他状态不通知」，跟 `04` 转移表 withdraw 那一行一致。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「收件箱」一节通知那一项后面的「（读过即关）」删掉；接口一节「通知类 issue 被 `rl inbox` 读过即关」改成「通知类 issue 由收件人做完了自己 close」。
+- 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `01`，`03` grants 段照它写，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：「申请读 notes/」一节「grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义」改成「授权只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：「上线第一个动作」这一节改名叫「收件箱」，头一句改成「`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单」；开头摘要那一行的「上线第一个动作 `rl inbox`」跟着改。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。

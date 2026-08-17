@@ -22,7 +22,7 @@ owner 负责这张单子从开到关：拉起下游、验收、收回（原则 3
 
 派发方式记在 `dispatch` 栏，三个取值：`auto` 是 owner 后台起 subagent，`manual` 是 gyb 亲自接，`none` 是暂不派。idea 开分析单的命令可以带 `--manual` 或 `--no-dispatch`（施工计划第五节 idea 的 use case）。
 
-analysis 上线第一个动作是 `rl inbox`，`rl inbox` 里有本角色名下 open 的 issue、owner 是本角色而 `holder` 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
+`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 analysis 会话先干拉它起来的那张单。`rl inbox` 里有本角色名下 open 的 issue、owner 是本角色而 `holder` 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
 
 ## 三、开单时单子上带什么
 
@@ -52,7 +52,7 @@ analysis 交活写 `output_paths`，格式是 `{"notebook":..., "figures":[...]}
 
 分析单卡住走 `handoff stuck`，必须连带一条 issue 互相引用：单子的 `issue_id` 指向那条 issue，那条 issue 的 `handoff_id` 指回本单。analysis 遇到历史 run 的 `config` 里缺这次要用的分组键的时候开 issue 给 gyb，`kind` 是 `cannot`（设计文档 analysis 一节；施工计划第五节 analysis 的 use case）。issue 被回到 `answered` 之后，回了 issue 的那个角色或者 owner 用 `handoff resume` 把单子交回 `todo`。
 
-收回走 `handoff withdraw`，`reason` 非空，角色会话发起还要 `--quote`；单子有 holder 的时候 `rl` 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner。
+收回走 `handoff withdraw`，`reason` 非空，角色会话发起还要 `--quote`；从 `in_progress` 收回时 `rl` 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner，从其他状态收回不通知。
 
 analysis 会话销号的时候，如果它是某张 `in_progress` 分析单的 holder，销号钩子把单子 release 回 `todo`、自动填 `progress_note`、给 owner 开一条 `orphaned` 通知。
 
@@ -66,18 +66,18 @@ analysis 会话销号的时候，如果它是某张 `in_progress` 分析单的 h
 |---|---|---|---|---|---|
 | （新建） | `todo` | `from_role` | `analysis_order` 有 `evaluation_refs`（可以是 proposed） | `dispatch=auto` 时 owner 后台起 subagent；`manual` 等 gyb；`none` 不动 | `handoff open` |
 | `todo` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`；`holder` 为空（非空退出码 2 并列出当前 holder） | 无 | `handoff start` |
-| `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`analysis_order` 补 `evaluation_refs`；状态不变 | 无 | `handoff amend` |
+| `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`analysis_order` 补 `evaluation_refs`；换 `evaluation_refs` 里的引用（doctor 悬空引用的修法）；状态不变 | 无 | `handoff amend` |
 | `in_progress` | `stuck` | holder | `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单 | 无 | `handoff stuck` |
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `analysis_order` 的 `output_paths` 存在且 `evaluation_refs` 每项 `approved` | 无 | `handoff done` |
-| `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 只补 `output_paths` 里丢了的路径，状态不变（doctor 修法用） | 无 | `handoff amend` |
-| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi` | 无 | `handoff accept` |
+| `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 补或改 `output_paths` 里的路径，换 `evaluation_refs` 里的引用；状态不变（doctor 修法用） | 无 | `handoff amend` |
+| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
 | `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
-| `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；有 holder 时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner | 无 | `handoff withdraw` |
+| `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；从 `in_progress` 收回时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner，其他状态不通知 | 无 | `handoff withdraw` |
 | `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；rl 给 owner 开 `orphaned` 通知；销号钩子写的这一版 `actor` 记会话的角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim` | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
-| 任一非终态 | 同状态（接替） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
+| 任一非终态 | 旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 `accepted` 和 `withdrawn` 是终态。入账脚本只认这张表，表外的转移一律拒收，退出码 2。
 
@@ -91,7 +91,7 @@ analysis 会话销号的时候，如果它是某张 `in_progress` 分析单的 h
 
 配套的两条：analysis 只算 gyb 说要看的数、只画 gyb 说要画的图；写代码不算算数，出数才要 `approved` 的口径（施工计划第十三节公共规矩第 5 条）。
 
-gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analysis/scratch/`，要引用或者复用的时候再补口径和分析单，见 `07-quick-lane.md`。
+gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analysis/scratch/`，要引用或者复用的时候按正常路重做：补口径、开分析单重跑。analysis 的快车道没有合回补单这条路，只有 `rl ql close --dropped`（2026-08-17 gyb 裁，sync-inbox 问题 16），见 `07-quick-lane.md`。
 
 ## 和别的 part 的接口
 
@@ -201,3 +201,9 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：抄的转移表 `in_progress` → `todo` 行补「销号钩子写的 `actor` 记会话角色、`via=session_end`；reclaim 写的 `actor` 记 gyb、`via=reclaim`」，与 `04` 一字不差。对回原则 4。
 - 2026-08-17 来自 `05-rl-cli.md` 定稿（`656c8a9`）的裁决（rl-hub 转来；gyb 原话「全推荐」「只要他不动目前的代码什么的就全推荐就行」「全都推荐，只要不影响正在跑的进程」「A」）：`rl handoff done` 签名去掉 `--actual-seconds`。对回原则 8。第 41 行照改。
+- 2026-08-17 来自 sync-inbox 问题 10 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：第六节抄的转移表两条 `handoff amend` 行加「换 `evaluation_refs` 里的引用（doctor 悬空引用的修法）」，`done_pending_review` 那行改成「补或改 `output_paths` 里的路径」。
+- 2026-08-17 来自 sync-inbox 问题 16 的裁决（定义处 `03`、`07`，rl-hub-v3 传；gyb 原话「A」）：第七节末句补「analysis 的快车道没有合回补单这条路，只有 `rl ql close --dropped`，要留就按正常路重做」。
+- 2026-08-17 来自 sync-inbox 问题 20 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「B」）：第五节和第六节抄的转移表 withdraw 行「有 holder 时通知」改成「从 `in_progress` 收回时通知，其他状态不通知」。
+- 2026-08-17 来自 sync-inbox 问题 21 的裁决（定义处 `04`，rl-hub-v3 传；gyb 原话「A」）：第六节抄的转移表 reissue 行「到」栏由「同状态（接替）」改成「旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单）」。
+- 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：第二节「analysis 上线第一个动作是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 analysis 会话先干拉它起来的那张单」。
+- 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第六节抄的转移表 accept 行按 `04` 第三节补「rl 顺带关这张单关联的 `answered` issue」。

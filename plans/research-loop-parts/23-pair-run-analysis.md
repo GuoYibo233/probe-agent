@@ -8,20 +8,21 @@ runs 这本账叫数字账，文件是 `loop/runs.jsonl`，一个 schema。写�
 
 公共规矩第 3 条把这件事写死了：runs 账只有 run 的脚本能写（gyb 例外），实验数据一个 schema，禁止用眼睛读日志填数。公共规矩第 4 条接着写：每个数字配可复现的执行路径，统计类证据走 analysis 的 notebook；单个 run 的原始指标可以直接引，跨 run 的对比、聚合、画图一律走分析单。哪些人能直接念 metrics、哪些事必须走口径账，在 22-pair-idea-analysis.md。
 
-## 一次尝试两版
+## 一次尝试三版
 
-runs 是事件流，只增不改，每一行带 `version` 和 `status`，默认查询每个主键只取最新版（原则 4）。一张发射单的一次尝试落两版：发射成功那一刻落发射版，跑完落收尾版。`status` 取 `launched` 或 `finished`，入账校验按 `status` 查必填字段。
+runs 是事件流，只增不改，每一行带 `version` 和 `status`，默认查询每个主键只取最新版（原则 4）。一张发射单的一次尝试落两版，被认领时另加一版：发射成功那一刻落发射版，跑完落收尾版，run 接单认领时落认领版。`status` 取 `launched`、`finished`、`adopted`（认领版记新 holder 的 `session_id` 和 `ts`，由 `rl handoff start` 认领时顺带写，不带数字，见 21-pair-deploy-run.md），入账校验按 `status` 查必填字段。
 
 | 版 | status | 必填字段 |
 |---|---|---|
 | 发射版 | `launched` | `commit`、`command`、`host`、`gpus`、`log_path`、`tmux_session`、`watch_cmd`、`started_at`、`config` |
 | 收尾版 | `finished` | `finished_at`、`exit_status`、`actual_seconds`；`exit_status` 是 `ok` 时再加 `metrics` 和 `data_path` |
+| 认领版 | `adopted` | 不另加栏：骨架里的 `session_id` 和 `ts` 就是新 holder 和认领那一刻，由 `rl handoff start` 认领时顺带写，不另设子命令 |
 
-主键是 `run_id`，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致；快车道用 `ql_tag`。另外两个身份字段是 `handoff_id` 和 `attempt`，指这条 run 属于哪张发射单的第几次尝试。`exit_status` 三选一：`ok`、`failed`、`killed`。`actual_seconds` 由 rl 从 `started_at` 和 `finished_at` 两个时间戳算，退出状态是什么都记。
+主键是 `run_id`，形如 `ho-0013-a1`，和产物目录名、tmux session、commit message 一致。另外两个身份字段是 `handoff_id` 和 `attempt`，指这条 run 属于哪张发射单的第几次尝试。`exit_status` 三选一：`ok`、`failed`、`killed`。`actual_seconds` 由 rl 从 `started_at` 和 `finished_at` 两个时间戳算，退出状态是什么都记。
 
 两处原文不一致：设计文档 run 一节列收尾版字段时写的是「结束时间、退出状态、指标、真实耗时」，没有 data_path；施工计划第三节 runs 那一行写 `exit_status` 是 `ok` 时 `metrics` 和 `data_path` 必填。按施工计划的表为准，收尾版的 ok 行有 data_path。（2026-08-17 按 `03-ledgers.md` 的裁决定稿，设计文档那句由统筹 session 回写补上 data_path。）
 
-还有一处原文不一致：设计文档快车道一节写「数字追加进杂账，不进 runs 账」，施工计划第三节 runs 主键那一行写「快车道用 `ql_tag`」，等于承认 runs 里会有快车道的行。按施工计划的表为准，`run_id` 这一栏留了 `ql_tag` 这个取值。快车道本身在 07-quick-lane.md。
+快车道的数字追加进杂账，不进 runs 账（2026-08-17 gyb 裁，sync-inbox 问题 22）。快车道本身在 07-quick-lane.md。
 
 写这两版的命令是 `rl run add` 和 `rl run finish`：`add` 从发射单抄 `command`、`config`、`run_id`；`finish` 算 `actual_seconds`、在同一个进程里跑反常预警、调宿主的收尾命令模板。反常预警看两个阈值，`anomaly.metric_extremes` 默认 `[0, 1]`（指标落在 0 或 1 就开一条 `anomaly` issue 给 gyb），`anomaly.duration_factor` 默认 3（实际耗时超过预计 3 倍）。什么时候打这两条命令归 run，见 12-role-run.md。
 
@@ -41,9 +42,9 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 
 `rl run show RUN_ID` 出一条。`rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]` 出一批，谁都能调。
 
-默认过滤是这条契约里的第二个要紧处（原则 10）：`list` 默认只出每张单最新尝试且 `exit_status=ok` 的行，`--all` 才全出。所以 analysis 按默认走的时候，跑挂的、被杀的、修完重来之前那几次尝试，都不会混进来。测试 10 里有一条对应的用例：`run list` 默认不出 killed 和旧尝试，`--all` 出。
+默认过滤是这条契约里的第二个要紧处（原则 10）：`list` 默认只出每张单最新一次尝试且 `exit_status=ok` 的行，最新一次不是 `ok` 的这张单一行都不出，`--all` 才全出。所以 analysis 按默认走的时候，跑挂的、被杀的、修完重来之前那几次尝试，都不会混进来。测试 10 里有一条对应的用例：`run list` 默认不出 killed 和旧尝试，`--all` 出。
 
-四个过滤开关对应四种问法：`--handoff` 是「这张发射单跑出来的」，`--decision` 是「这条决定名下的」，`--batch` 是「这一次分片的」，`--line` 是「这条研究线的」。`batch` 只有分片语义，形如 `b-20260816-01`，指 deploy 一次开 N 张同 batch 的发射单；研究线是另一个字段 `line`，就是根决定编号，由 rl 从发射单 `decision_refs` 第一项的 `root_id` 算出来存在发射单上。这两个不是一回事，别拿 batch 当研究线用。
+四个过滤开关对应四种问法：`--handoff` 是「这张发射单跑出来的」，`--decision` 是「这条决定名下的」，`--batch` 是「这一次分片的」，`--line` 是「这条研究线的」。`batch` 只有分片语义，是调用者传的自由文本（比如 `b-20260816-01`）、rl 不分配，指 deploy 一次开 N 张同 batch 的发射单；研究线是另一个字段 `line`，就是根决定编号，由 rl 从发射单 `decision_refs` 第一项的 `root_id` 算出来存在发射单上。这两个不是一回事，别拿 batch 当研究线用。
 
 ## 分组键缺了怎么办
 
@@ -69,7 +70,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 | approved 口径引的 metrics 键在 runs 账里不存在 | 同上 |
 | `loop/runs.jsonl` 与宿主 `ops/runs.jsonl` 对不上的 run_id | 同上 |
 
-`rl run relink RUN_ID --handoff ID` 是专门给 doctor 修法用的第三种写法，只补 `handoff_id`。两本 runs 账并存不合并这件事在 08-trees-init-and-host.md。
+`rl run relink RUN_ID --handoff ID` 是专门给 doctor 修法用的一版，只换 `handoff_id`，`status` 与其他栏照抄最新版。两本 runs 账并存不合并这件事在 08-trees-init-and-host.md。
 
 ## 和别的 part 的接口
 
@@ -91,10 +92,10 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 1. （2026-08-17 按 `03-ledgers.md` 的裁决销掉：`data_path` 是产物目录里给 analysis 算数用的那一个文件或子目录，`artifact_dir` 一栏去掉、产物目录走 `<artifact_root>/<run_id>/` 约定。）
 2. `exit_status` 是 `failed` 或 `killed` 的收尾版要不要 `data_path`。施工计划只写了 ok 时必填，测试 10 只写了「`failed` 不要求 metrics 但要有 actual_seconds」，没提 data_path。
 3. `rl run list --line L` 和 `--decision ID` 怎么解析。runs 行上既没有 `line` 也没有 `decision_refs`，这两个字段在发射单上，源文档没写这两个开关是先查发射单再回来筛，还是别的走法。
-4. 默认过滤那句「每张单最新尝试且 `exit_status=ok`」，两个条件是并列还是有先后。一张发射单跑了三次、第二次 ok 第三次 failed 的时候，默认出不出第二次那一行，两种读法都说得通。
+4. 默认过滤那句「每张单最新尝试且 `exit_status=ok`」，两个条件是并列还是有先后。一张发射单跑了三次、第二次 ok 第三次 failed 的时候，默认出不出第二次那一行，两种读法都说得通。——2026-08-17 已裁（sync-inbox 问题 12）：只看最新一次尝试，最新一次不是 `ok` 这张单就一行都不出，第二次那一行默认不出。
 5. config 里除了 `model`、`params`、`dataset`、`split` 四个约定键，其余超参自由，源文档没写自由键的命名规矩；两张发射单把同一个概念填成两个不同的键名时，analysis 按哪个分组也没写。
 6. metrics 的键名谁定、由谁保证不同 run 的同名指标是同一个东西。施工计划只写「键是指标名、值是数」，而口径账的 `metrics_key` 引的就是这个键。
-7. 快车道的数字到底进不进 runs（正文里标出的第二处原文不一致）。按施工计划的表读，`run_id` 那一栏收 `ql_tag`；按设计文档快车道一节读，数字只进杂账。
+7. 快车道的数字到底进不进 runs（正文里标出的第二处原文不一致）。按施工计划的表读，`run_id` 那一栏收 `ql_tag`；按设计文档快车道一节读，数字只进杂账。——2026-08-17 已裁（sync-inbox 问题 22）：不进 runs，`run_id` 那一栏的 `ql_tag` 取值删掉。
 8. doctor 五项里只有第一项写死了修法命令（`run relink` 或 `--ack`），另外四项在施工计划第六节 doctor 那一行里只有扫描项名字，没有修法命令模板。
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
@@ -189,3 +190,9 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 - 2026-08-17 gyb 裁（sync-inbox 问题 2，原话「算一件事」「给rl notify指到01吧」，rl-hub 转来）：推送表和 `rl notify` 是一件事，定义处归 `01-gyb.md` 第五节；`05-rl-cli.md` 命令表只留 `rl notify --text` 的签名行，「rl notify」一节缩成一句指 `01`。接口一节的指向照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
 - 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「`<artifact_root>/<run_id>/`」约定定义处归 `08-trees-init-and-host.md` 第一节，本份那句只引。
+- 2026-08-17 来自 sync-inbox 问题 9 的裁决（定义处 `03`、`04`，rl-hub-v3 传；gyb 原话「A」）：「查：一条 show，一条 list」一节 `batch` 那句「形如 `b-20260816-01`」改成「是调用者传的自由文本（比如 `b-20260816-01`）、rl 不分配」。
+- 2026-08-17 来自 sync-inbox 问题 12 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：默认过滤那句补「最新一次不是 `ok` 的这张单一行都不出」；「没写清」第 4 条标已裁。
+- 2026-08-17 来自 sync-inbox 问题 17 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「C」）：「一次尝试两版」一节 `status` 取值加 `adopted`（认领版记新 holder 的 `session_id` 和 `ts`，由 `rl handoff start` 顺带写，不带数字）。
+- 2026-08-17 来自 sync-inbox 问题 22 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「A」）：主键那句删「快车道用 `ql_tag`」，第二处原文不一致那段改成按裁决快车道数字不进 runs；「没写清」第 7 条标已裁。
+- 2026-08-17 来自 sync-inbox 问题 31 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「a」）：「账面对不上的时候谁扫」一节 `rl run relink` 那句改成「只换 `handoff_id`，`status` 与其他栏照抄最新版」。
+- 2026-08-17 rl-hub-v3 审后补：节名「一次尝试两版」改「三版」，正文「落两版」句和版表补认领版一行，与 `21-pair-deploy-run.md` 第七节同表（问题 17）；第一节那段「原文不一致」按 HANDOFF 第八节问题 22 那行的「销」收成一句「快车道的数字追加进杂账，不进 runs 账」。
