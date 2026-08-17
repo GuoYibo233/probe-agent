@@ -12,7 +12,7 @@ reviewer 由 gyb 手动开。没有任何角色能派活给 reviewer：五份角
 
 reviewer 审完之后动不动由 gyb 看完之后定。reviewer 自己不改任何东西。
 
-reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`（文件归 `09`），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出来的写进 review/ 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 gyb 裁，sync-inbox 问题 6）。问题 6 只裁了开不开 issue 这一半；「派 sonnet subagent 逐题查」和第八节「不派活」、角色 json 的 `dispatches_to` 是无仍然对不上，两处原文不一致，等 gyb 裁（sync-inbox 问题 33）。
+reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`（文件归 `09`），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出来的写进 review/ 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 gyb 裁，sync-inbox 问题 6）。派 sonnet subagent 逐题查不算「派活」（2026-08-18 gyb 裁，sync-inbox 问题 33，原话「选a」）：「派活」指派给别的角色、会开工单的那种，起 subagent 逐题查是 reviewer 自己干活的方式，所以第八节「不派活」和角色 json 的 `dispatches_to` 是无都不用动。
 
 ## 收件箱与 session focus
 
@@ -92,7 +92,7 @@ reviewer 的产出只有一样：review/ 里的问题清单。清单不进 noteb
 
 ## 不开 issue、不派活
 
-reviewer 不开 issue、不派活。角色 json 的 `ledger_writes` 里没有 issues 的任何一条，`dispatches_to` 是无。
+reviewer 不开 issue、不派活；按 `common/` 问题清单起 sonnet subagent 一人一题逐条查不算派活，那是 reviewer 自己干活的方式（2026-08-18 gyb 裁，sync-inbox 问题 33）。角色 json 的 `ledger_writes` 里没有 issues 的任何一条，`dispatches_to` 是无。
 
 公共规矩第 6 条（故障分域）里 reviewer 那半句写的是：reviewer 不开 issue，卡住也只写进清单交给 gyb。设计文档同一句加了注：施工计划公共规矩第 6 条里 reviewer 那半句按这一句改。
 
@@ -221,3 +221,4 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「收件箱与 session focus」一节通知那一项后面的「（读过即关）」删掉。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：「上线第一个动作与 session focus」这一节改名「收件箱与 session focus」，头一句改成「`rl inbox` 谁需要谁敲，不是上线动作：被 gyb 开起来先干 gyb 点名的那件事」。
 - 2026-08-17 rl-hub-v3 审后补：摘要行「上线做什么」改成「收件箱与 session focus」（问题 28）；第一节 reviewer 新职责那段末尾补回「派 subagent 与第八节不派活、`dispatches_to` 无对不上」的不一致标注，立 sync-inbox 问题 33 等 gyb。
+- 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处本份第八节与 `06` 的 reviewer json，rl-hub-v4 落；gyb 原话「选a」）：reviewer 起 sonnet subagent 逐题查不算派活，`dispatches_to` 仍是无；第一节那段的不一致标注结掉，第八节补半句。对回原则 5。

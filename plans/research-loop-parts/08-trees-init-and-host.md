@@ -125,7 +125,7 @@ new1 的 CLAUDE.md 现在写的是「任何要用显卡跑的程序一律走 gpu
 
 ### 7.2 loop/ 进脏树白名单
 
-`loop/*.jsonl` 和 `loop/.lock` 不算脏树。new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改。
+`loop/*.jsonl` 和 `loop/.lock` 不算脏树。new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改。白名单按 `loop/*.jsonl` 字面照旧，`loop/.doctor-acks.jsonl` 顺带不算脏、ack 之后可以直接发射；`03` 说账本总规矩不管 ack 文件，只是说它不受账本约束，不是说门禁要拦它（2026-08-18 gyb 裁，sync-inbox 问题 32，原话「a」）。
 
 ### 7.3 两本 runs 账并存
 
@@ -285,3 +285,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-17 来自 sync-inbox 问题 24 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：`loop/.doctor-acks.jsonl` 是普通文件，`03` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它。第一节表里 `loop/` 那行照 `03` 补这一句。
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。接口一节「grants 只收裸终端」那条改成「grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）」。
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「那些分的就是说明，总的没用」）：第五节「两处原文不一致」段插件目录要补的三样去掉 `ARCHITECTURE.md`，剩 `.claude-plugin/plugin.json`、`README` 两样。
+- 2026-08-18 来自 sync-inbox 问题 32 的裁决（定义处 `06` 第三节 CLAUDE.md 三句与本份第六节，rl-hub-v4 落；gyb 原话「a」）：宿主白名单照旧 `loop/*.jsonl` 字面，`.doctor-acks.jsonl` 顺带不算脏；第六节那句后补说明，三句本身不改。对回原则 4。

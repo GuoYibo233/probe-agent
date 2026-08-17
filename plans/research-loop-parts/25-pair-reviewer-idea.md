@@ -6,7 +6,7 @@
 
 ## 这条通道只经文件
 
-reviewer 由 gyb 手动开，审整条链，产出只写 `review/` 里的问题清单，不开 issue、不派活，动不动由 gyb 看完之后定。reviewer 的角色 json 里 `ledger_writes` 只有 decisions.reviewer 全部、`session focus`、`feedback add` 三样，issues 不在里面；`writes` 只有 `review/`；`dispatches_to` 是无。所以 reviewer 到 idea 没有派活单、没有问题条，只有 `review/` 里的一个 markdown 文件。reviewer 中途卡住也一样：施工计划第十三节规矩 6 写的是「reviewer 不开 issue，卡住也只写进清单交给 gyb」，设计文档 reviewer 一节写的是同一句，两处一致。
+reviewer 由 gyb 手动开，审整条链，产出只写 `review/` 里的问题清单，不开 issue、不派活（按 `common/` 问题清单起 sonnet subagent 逐题查不算派活，2026-08-18 gyb 裁，sync-inbox 问题 33），动不动由 gyb 看完之后定。reviewer 的角色 json 里 `ledger_writes` 只有 decisions.reviewer 全部、`session focus`、`feedback add` 三样，issues 不在里面；`writes` 只有 `review/`；`dispatches_to` 是无。所以 reviewer 到 idea 没有派活单、没有问题条，只有 `review/` 里的一个 markdown 文件。reviewer 中途卡住也一样：施工计划第十三节规矩 6 写的是「reviewer 不开 issue，卡住也只写进清单交给 gyb」，设计文档 reviewer 一节写的是同一句，两处一致。
 
 idea 那一头是读：idea 的 `reads` 里列着 `review/`，设计文档在那一栏后面加了一句「reviewer 的清单是 idea 下一轮的输入」，施工计划 idea 的 use case 表最后一条也是「读 reviewer 清单」。
 
@@ -129,3 +129,4 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 7. [slows/missing] 第 33 步：「这条方向看完结果继续做、设定不变」这一支没有落点。决定不换做法就不追加版、不换问题就不开新条，账上留不下 gyb 看过这批数字并确认继续的痕迹，下一轮 reviewer 和 `rl decision stale` 都看不到这次复核
    - 依据：2026-08-16-research-loop-next-steps.md:46; 2026-08-16-research-loop-next-steps.md:109
    - 改法：加一条 `rl decision confirm ID --source run:... --source file:...`，追加一版正文不变、只增来源
+- 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处 `14`，rl-hub-v4 传；gyb 原话「选a」）：第一节「不派活」后补半句「起 sonnet subagent 逐题查不算派活」。对回原则 5。
