@@ -8,16 +8,20 @@
 
 `rl init` 在研究仓库里建六样东西，再往仓库的 CLAUDE.md 追加一节。`rl init` 只在裸终端跑：读到会话状态文件（`loop/.sessions/<session_id>.json`，2026-08-18 gyb 裁，定义处 `06`）就拒收，退出码 3（2026-08-17 随 `05` 定稿裁，待验证第 4 条的失败备案升正案）。
 
+`rl init` 重跑没有副作用（2026-08-18 gyb 裁）：已经有的东西一样不动（配置文件里 gyb 改过的值不覆盖，`loop/` 不动），缺的补上，CLAUDE.md 那一节已经在就不再追加，跑完打印一张清单分两栏「已存在，跳过」和「这次新建」，退出码 0。插件新版本多了要建的东西，重跑一次就补齐。
+
+`rl init` 只动研究仓库自己的东西：不改宿主的代码（new1 的 `run.py` 门禁那处改动归施工，见 7.2、7.9），不往仓库的 `.claude/agents/` 播文件，不动仓库的 `.claude/settings.json`（角色 agent 定义和钩子都在插件本体里，见第四节；2026-08-18 gyb 裁）。
+
 | 建什么 | 是什么 |
 |---|---|
-| `research-loop.json` | 配置文件，键见第二节和第三节 |
-| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`，但 `rl init` 往 `.gitignore` 加一行 `loop/.sessions/`：会话状态文件 `loop/.sessions/<session_id>.json` 是普通文件、不算九本账、不进 git、不算脏树（2026-08-18 gyb 裁，定义处 `06`「会话状态文件」；`rl init` 建 `loop/.sessions/` 这个空目录）。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，`03-ledgers.md` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它，它由 doctor 首次 `--ack` 时建、`rl init` 不建（2026-08-17 随 `05` 定稿裁；不归总规矩管是 gyb 裁，sync-inbox 问题 24） |
+| `research-loop.json` | 配置文件，键见第二节和第三节。init 自带一份默认模板：阈值全按第三节的默认值直接落；跟仓库绑定的那几项（`artifact_root`、`analysis_artifact_root`、`launcher.*` 四条、`repo_run`、`host_ledgers`）init 逐项问 gyb，答完写进去；gyb 跳过的留空，跑完把留空的项列出来，留空的命令模板对应的动作就跳过（2026-08-18 gyb 裁，见第二节） |
+| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。九本账的位置和文件名钉死：永远是 `loop/` 下 `03-ledgers.md` 词表里那九个名字，配置里没有「各账路径」这一项（2026-08-18 gyb 裁，原话「定死吧」）。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`，但 `rl init` 往 `.gitignore` 加一行 `loop/.sessions/`：会话状态文件 `loop/.sessions/<session_id>.json` 是普通文件、不算九本账、不进 git、不算脏树（2026-08-18 gyb 裁，定义处 `06`「会话状态文件」；`rl init` 建 `loop/.sessions/` 这个空目录）。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，`03-ledgers.md` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它，它由 doctor 首次 `--ack` 时建、`rl init` 不建（2026-08-17 随 `05` 定稿裁；不归总规矩管是 gyb 裁，sync-inbox 问题 24） |
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
 | `review/` | reviewer 的问题清单 |
 | `notes/` | gyb 自己写的文档，gyb 和 idea 写（idea 能写 `notes/` 是 2026-08-18 gyb 裁，定义处 `06`），谁都能读 |
 
-`analysis/` 下面的公共统计件由 init 播模板，notebook 由 analysis 干活时新建，`analysis/scratch/` 留给快车道。
+`analysis/` 下面的公共统计件由 init 播模板，播三样（2026-08-18 gyb 裁）：`analysis/common/metrics.py`（指标函数文件，只有骨架和一个示例函数；`13` 里派生指标的 `code_path` 形如 `analysis/common/metrics.py:accuracy`，指的就是它）、`analysis/common/ledger.py`（从 runs 账取数的辅助函数，只经 `bin/rl` 的查询命令读）、`analysis/scratch/` 空目录（留给快车道）。notebook 不播，由 analysis 干活时新建；画图风格、notebook 模板都不播。
 
 原始数据不新建目录，走配置里的产物根 `artifact_root`，在 new1 指到 net 盘。每次 run 的产物目录按约定是 `<artifact_root>/<run_id>/`，账上不另记，看门狗和 analysis 都按这条约定找（这条约定的定义处是本份，2026-08-17 gyb 裁；runs 账去掉 `artifact_dir` 见 `03`）。
 
@@ -29,25 +33,26 @@
 
 这三句是给没加载角色的裸会话看的纪律。裸会话身上没有钩子，什么都能写，这一点不用兜底钩子去堵，靠这一节加 reviewer 事后查。
 
-init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。发了，idea 之后读 `notes/` 不再走申请；没发，idea 要读的时候开一条 kind 是 `request` 的 issue 给 gyb，gyb 写一条 grant。
+init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓库绑定的那几项（第二节表里标「init 问」的），外加一问「要不要当场给 idea 发 `read:notes` 授权」。发了，idea 之后读 `notes/` 不再走申请；没发，idea 要读的时候开一条 kind 是 `request` 的 issue 给 gyb，gyb 写一条 grant。重跑 init 时已经填过的项不再问。
 
 ## 二、`research-loop.json` 的键
 
-配置文件里放两类东西：路径和宿主命令模板是一类，阈值是另一类（阈值全表在第三节）。
+配置文件里放两类东西：路径、宿主命令模板和两项带格式的说明是一类，阈值是另一类（阈值全表在第三节）。设计文档「两棵树」一节列的是：各账路径、产物根、分析产物根、快车道 worktree 根、本仓库跑法、宿主发射器的命令模板（探卡、发射、收尾、中断）、宿主台账清单。其中「各账路径」2026-08-18 gyb 裁掉：账的位置钉死在 `loop/`，配置里没有这一项（见第一节）。其余各项的键如下，「init 问」一栏标 ✓ 的由 `rl init` 逐项问 gyb 填，其余是阈值表或有默认值：
 
-设计文档「两棵树」一节列的是：各账路径、产物根、分析产物根、快车道 worktree 根、本仓库跑法、宿主发射器的命令模板（探卡、发射、收尾、中断）、宿主台账清单。施工计划第七节和第八节给出了其中几样的键名：
+| 键 | 装什么 | init 问 | 出处 |
+|---|---|---|---|
+| `artifact_root` | 产物根，实验产物和原始数据落这里；new1 指到 net 盘 | ✓ | 词表、设计文档「两棵树」 |
+| `analysis_artifact_root` | 分析产物根，大文件落这里，小图和 notebook 进仓库 `analysis/` | ✓ | 词表、设计文档 analysis 一节 |
+| `quick_lane.worktree_root` | 快车道 worktree 建在哪，分支名和目录名都用 `ql_tag`；有默认值 | | 第八节阈值表 |
+| `gpu_state_path` | 宿主的慢变量档案路径，new1 是 `ops/gpu_state.md` | ✓ | 第七节 Phase 0 |
+| `launcher.free_cmd` | 探卡命令模板，new1 是 `run.py gpu-jobs free` | ✓ | 第七节 Phase 1 |
+| `launcher.launch_cmd` | 发射命令模板，new1 是 `run.py launch` | ✓ | 第七节 Phase 4 |
+| `launcher.finish_cmd` | 宿主收尾命令模板，new1 是 `run.py record finish` | ✓ | 第七节 Phase 6a |
+| `launcher.abort_cmd` | 宿主中断收尾命令模板，中断收尾四步（杀进程、释放显存、宿主销号、runs 落 killed，见 `12`）里「宿主销号」那一步调它，new1 是 `run.py gpu-jobs finish`；宿主没有这条命令的仓库留空，留空就跳过这一步（2026-08-18 gyb 裁，四条模板各一个键） | ✓ | 设计文档「两棵树」四条模板 |
+| `repo_run` | 「本仓库跑法」，固定三栏、每栏装自然语言或命令，机器不解析、角色上线读配置时原样看到：`env`（环境怎么起，new1 是「一律 uv 环境」）、`entry`（任务从哪进，new1 是 `python3 run.py <task>`）、`notes`（其它要知道的自由文字，new1 是「注册表里没有的任务先挂进注册表再跑」）（2026-08-18 gyb 裁，形状是「有格式又能装自然语言」） | ✓ | 设计文档「两棵树」 |
+| `host_ledgers` | 「宿主台账清单」，一张列表、每项三栏：`path`（宿主文件路径）、`note`（一句自然语言说它是什么、谁写它）、`kind`（只有宿主 runs 账那一项填 `runs`，doctor 对账时按这个标记找宿主 runs 账；其余项留空）。角色一律不碰清单里的文件（7.5），机器只解析 `kind`，其余供 reviewer 事后查。new1 的五项：`TIMELINE.md`（方向，gyb 手写）、`DATA.md`（数据设定，gyb 手写）、`RESULTS.md`（渲染产物，宿主脚本写）、`ops/runs.jsonl`（宿主数字账，宿主发射器写，`kind: runs`）、`ops/jobs.json`（宿主任务台账，宿主发射器写）；产物目录里的 `RUNMETA.json` 不在仓库里，不列（2026-08-18 gyb 裁） | ✓ | 设计文档「两棵树」 |
 
-| 键 | 装什么 | 出处 |
-|---|---|---|
-| `artifact_root` | 产物根，实验产物和原始数据落这里；new1 指到 net 盘 | 词表、设计文档「两棵树」 |
-| `analysis_artifact_root` | 分析产物根，大文件落这里，小图和 notebook 进仓库 `analysis/` | 词表、设计文档 analysis 一节 |
-| `quick_lane.worktree_root` | 快车道 worktree 建在哪，分支名和目录名都用 `ql_tag` | 第八节阈值表 |
-| `gpu_state_path` | 宿主的慢变量档案路径，new1 是 `ops/gpu_state.md` | 第七节 Phase 0 |
-| `launcher.free_cmd` | 探卡命令模板，new1 是 `run.py gpu-jobs free` | 第七节 Phase 1 |
-| `launcher.launch_cmd` | 发射命令模板，new1 是 `run.py launch` | 第七节 Phase 4 |
-| `launcher.finish_cmd` | 宿主收尾命令模板，new1 是 `run.py record finish` | 第七节 Phase 6a |
-
-两处原文不一致：设计文档说宿主发射器的命令模板有四条（探卡、发射、收尾、中断），施工计划第七节只给了 `free_cmd`、`launch_cmd`、`finish_cmd` 三个键名，中断那条模板叫什么没写。四条这个数以设计文档为准，键名缺一个，记在文末留给 gyb。
+`launcher.*` 四条模板留空的含义都一样：这个宿主没有这一步，rl 调到这里就跳过、不报错，`rl init` 跑完的清单里列出哪几条留空。
 
 ## 三、阈值默认值表（全文）
 
@@ -80,19 +85,22 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 
 | 目录或文件 | 装什么 |
 |---|---|
-| `skills/` | 六个 skill：入口一个，五个角色各一个 |
+| `.claude-plugin/plugin.json` | 插件清单，施工步 1 新写（施工计划第十一节步 1） |
+| `README` | 插件说明，要明写「fable 是 gyb 2026-08-16 点名的例外」（施工计划第一节裁决 3） |
+| `skills/` | 六个 skill：入口一个，五个角色各一个。角色 skill 的头部**不再声明钩子**（2026-08-18 gyb 裁，待验证第 8 条测出 skill 头部钩子只管顶层会话、subagent 的调用不经过它，见下面 `hooks/` 一行） |
+| `agents/` | 五份角色 agent 定义，派活起 subagent 时一律用这五个类型（`06`、`04` 定具体名字和用法）。每份只做「塑形」：角色提示词、预加载那个角色的 skill、收窄工具面（比如 reviewer 直接禁 Write 和 Edit）；**不写钩子**——插件里的 agent 定义头部的钩子字段被 Claude Code 忽略（官方文档明写，2026-08-18 实测三个变体都不触发）。init 不把这五份播进研究仓库（2026-08-18 gyb 裁） |
 | `common/` | 公共母版：公共规矩、词表、五栏规格、读法、判断类检查问题清单 `REVIEW-CHECKLIST.md`，带 `rules_version`（整数，`GLOBAL-RULES.md` 头部一行） |
 | `tables/` | 九本账的表结构、派活单的状态转移表、角色 json、gyb 的 use case 表 |
 | `schemas/` | 九本账的行格式 |
 | `scripts/` | 入账与查询的实现 |
 | `bin/rl` | 命令入口，含 status、inbox、trace、回收、doctor |
-| `hooks/` | 钩子脚本本体：五个角色共用一个脚本、参数报角色名（2026-08-18 已实测，待验证第 2 条通过，见 `06`「钩子脚本本身」）；登记和销号的钩子也在这里 |
+| `hooks/` | 插件级钩子文件（`hooks/hooks.json`）加钩子脚本本体，一份总钩子，装插件即对这个仓库里所有会话的工具调用生效——顶层会话、subagent、嵌套 subagent 都过闸（2026-08-18 实测：仓库 settings 级和插件级钩子对 subagent 生效，输入里带 `agent_type` 和 `agent_id`，`session_id` 与父会话相同）。脚本判角色两路：先看 `agent_type`，认识的类型名对应角色、不认识的一律按最严策略拦；没有 `agent_type` 才是顶层会话，按会话状态文件查角色。会话状态文件的写入也由这份钩子文件里的一条钩子做（检测到加载角色 skill 时按 `session_id` 落文件，`agent_type` 非空不写，防 subagent 污染父会话状态）；销号钩子也在这里。匹配范围含 Write、Edit 和 Bash（Bash 分支解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径，自己 realpath；2026-08-18 gyb 裁，归 `06`/`00` 改）。第 2 条测通的「参数报角色名」写法作废：角色由脚本自己判，不从参数来（2026-08-18 gyb 裁，钩子怎么挂的定义处仍是 `06`） |
 | `monitors/` | 一个，发射看门狗，只在 run 上线时起，只写自己的状态文件 |
 | `tests/` | 测试 |
 
 反常结果预警不做常驻进程，并进 `rl run finish`。
 
-两处原文不一致：设计文档「两棵树」列的插件目录没有 `.claude-plugin/plugin.json`、`README` 这两样，施工计划第一节裁决 3 提到 README（要明写「fable 是 gyb 2026-08-16 点名的例外」）、第十一节步 1 要新写一份 `.claude-plugin/plugin.json`。按施工计划补上这两样。施工计划步 2 的 `research-loop/ARCHITECTURE.md` 2026-08-18 gyb 裁掉不写（`00` 定稿：定稿的拆分文档本身就是架构说明），插件目录里没有它。
+上表比设计文档「两棵树」列的插件目录多三样，来历各是：`.claude-plugin/plugin.json` 和 `README` 按施工计划补（第一节裁决 3、第十一节步 1，原文不一致按后裁的施工计划）；`agents/` 是 2026-08-18 待验证第 8 条测完 gyb 裁加的。施工计划步 2 的 `research-loop/ARCHITECTURE.md` 2026-08-18 gyb 裁掉不写（`00` 定稿：定稿的拆分文档本身就是架构说明），插件目录里没有它。不加 `workflows/`：派活是每张单各起一个 subagent（`04`），不需要扇出脚本，加了就是第二套派活机制。
 
 ## 五、入口 skill 干哪三件事
 
@@ -126,7 +134,7 @@ new1 的 CLAUDE.md 现在写的是「任何要用显卡跑的程序一律走 gpu
 
 ### 7.2 loop/ 进脏树白名单
 
-`loop/*.jsonl` 和 `loop/.lock` 不算脏树。new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改。白名单按 `loop/*.jsonl` 字面照旧，`loop/.doctor-acks.jsonl` 顺带不算脏、ack 之后可以直接发射；`03` 说账本总规矩不管 ack 文件，只是说它不受账本约束，不是说门禁要拦它（2026-08-18 gyb 裁，sync-inbox 问题 32，原话「a」）。
+`loop/*.jsonl` 和 `loop/.lock` 不算脏树。这条落在 new1 的两个地方：宿主 CLAUDE.md 那一行由 gyb 亲手改（7.9）；`run.py` 门禁代码里那张白名单加上这两样，归施工步 7 的交付——施工者改，是 new1 自己的代码改动，按 new1 自己的规矩走（改代码和注册表同一个 commit、`selfcheck` 过），gyb 验收；`rl init` 不碰宿主代码（2026-08-18 gyb 裁）。白名单按 `loop/*.jsonl` 字面照旧，`loop/.doctor-acks.jsonl` 顺带不算脏、ack 之后可以直接发射；`03` 说账本总规矩不管 ack 文件，只是说它不受账本约束，不是说门禁要拦它（2026-08-18 gyb 裁，sync-inbox 问题 32，原话「a」）。
 
 ### 7.3 两本 runs 账并存
 
@@ -136,11 +144,11 @@ new1 的 CLAUDE.md 现在写的是「任何要用显卡跑的程序一律走 gpu
 
 ### 7.4 record finish 由 rl run finish 调
 
-`rl run finish` 同时调宿主发射器的收尾命令，new1 是 `run.py record finish`，命令模板在配置的 `launcher.finish_cmd` 里。退出状态是 ok 还是失败都调，两本账一次落。Phase 6b 的两种中断（跑挂、被收回或被 reclaim `--kill`）也照样调。
+`rl run finish` 同时调宿主发射器的收尾命令，new1 是 `run.py record finish`，命令模板在配置的 `launcher.finish_cmd` 里。退出状态是 ok 还是失败都调，两本账一次落。Phase 6b 的两种中断（跑挂、被收回或被 reclaim `--kill`）也照样调；中断收尾里「宿主销号」那一步另调 `launcher.abort_cmd`，new1 是 `run.py gpu-jobs finish`（第二节；杀进程和释放显存由 run 自己做，见 `12`）。
 
 ### 7.5 TIMELINE、DATA、RESULTS 角色不碰
 
-宿主自己的四层记录是 `TIMELINE.md`、`DATA.md`、`RESULTS.md`、`ops/runs.jsonl`。角色一律不碰这四样，只有 `rl run finish` 经宿主收尾命令模板往 `ops/runs.jsonl` 落数字。TIMELINE 和 DATA 由 gyb 手动补。
+宿主自己的四层记录是 `TIMELINE.md`、`DATA.md`、`RESULTS.md`、`ops/runs.jsonl`。角色一律不碰这四样，只有 `rl run finish` 经宿主收尾命令模板往 `ops/runs.jsonl` 落数字。TIMELINE 和 DATA 由 gyb 手动补。这四样加 `ops/jobs.json` 就是 new1 在配置 `host_ledgers` 里列的五项（第二节），`ops/runs.jsonl` 那项 `kind: runs`，doctor 对账（7.3）按它找宿主 runs 账。
 
 ### 7.6 probe-pipeline 与 run.py 注册表
 
@@ -154,39 +162,37 @@ deploy 改到 `experiments/` 外的宿主文件（仓库根 `run.py` 的注册�
 
 快车道里 GPU 照旧走宿主发射器：宿主的台账照登记，`record finish` 的结论栏写 `quick_lane` 加标签，track 沿用被微调的那个实验的方向。这几条属于快车道，详见 `07-quick-lane.md`。
 
-### 7.9 gyb 要亲手改的两处
+### 7.9 gyb 要亲手改的两处、施工要改的一处
 
 new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑完 `rl init` 之后：
 
 1. GPU 铁律那一行，改成对 run 会话的读法（见 7.1）。
 2. 脏树白名单那一行，加 `loop/`（见 7.2）。
 
-步 7 的验收标准是：new1 的 `loop/` 长出来、CLAUDE.md 只多一节。
+`run.py` 门禁代码里的白名单加 `loop/*.jsonl` 和 `loop/.lock`，由施工者在步 7 改、gyb 验收（见 7.2；2026-08-18 gyb 裁）。
+
+步 7 的验收标准是：new1 的 `loop/` 长出来、CLAUDE.md 只多一节、`run.py` 门禁白名单多两样且 `selfcheck` 过（最后一项 2026-08-18 加，`30` 的步 7 交付清单要同步）。
 
 ## 和别的 part 的接口
 
-- 九本账的文件名（`loop/decisions.<actor>.jsonl` 等九个）和每一行的字段：`03-ledgers.md`。
-- `rl init` 这一行子命令的完整定义、`rl run finish` 的参数、doctor 的全部扫描项：`05-rl-cli.md`。
-- 钩子只挂 Write 和 Edit、只拦写别的角色的目录和直接写 `loop/` 两类，以及裸会话不装兜底钩子这条裁决：`06-hooks-and-permissions.md`。
-- `ql_tag` 的形状、快车道 worktree 怎么建、`rl ql open/close`：`07-quick-lane.md`。
-- run 角色照 gpu-run 写的八个阶段、看门狗、smoke 日志落 `artifact_root/smoke/`：`12-role-run.md`。
+本份是定义处的东西：`rl init` 建什么、init 问什么、init 重跑无副作用、init 不动宿主代码和仓库 `.claude/`；`research-loop.json` 的全部键（含 `launcher.abort_cmd`、`repo_run`、`host_ledgers`，2026-08-18 加）和阈值默认值表；九本账位置钉死在 `loop/`、配置里没有账路径；产物目录约定 `<artifact_root>/<run_id>/`；插件本体那棵树（含 `agents/` 层、插件级钩子文件放 `hooks/`）；入口 skill 的三件事和领路；迁移规矩；new1 宿主对接每一条（含 `run.py` 门禁白名单归施工步 7、gyb 亲手改的两处）。别的 part 提到这些只指过来。
+
+- 九本账的文件名（`loop/decisions.<actor>.jsonl` 等九个）和每一行的字段、`loop/.doctor-acks.jsonl` 不归总规矩管：`03-ledgers.md`。本份第一节「钉死在 `loop/`」指的就是 `03` 词表那九个名字。
+- `rl init` 这一行子命令的完整签名（只在裸终端跑、退出码 3）、`rl run finish` 的参数、doctor 的全部扫描项（含「两本 runs 账对账」那一项按 `host_ledgers` 里 `kind: runs` 找宿主账）：`05-rl-cli.md`。
+- 钩子怎么挂（一份插件级钩子文件、判角色先 `agent_type` 后会话状态文件、会话状态文件由钩子写、匹配范围 Write/Edit/Bash、Bash 分支怎么解析路径、`hooks.path_allowlist` 怎么用）、角色 json 四栏、五份角色 agent 定义的名字和「只塑形不设闸」的写法：`06-hooks-and-permissions.md`。本份第四节 `hooks/`、`agents/` 两行只是目录清单，规矩本体在 `06`（2026-08-18 待验证第 8 条的结论要落到 `06`，见「要同步到别处的」）。
+- 派活时用哪个 agent 类型起 subagent、`launched_by` 的取值：`04-handoffs-and-sessions.md`。
+- `ql_tag` 的形状、快车道 worktree 怎么建、`rl ql open/close`、快车道在宿主的台账动作：`07-quick-lane.md`。
+- run 角色照 gpu-run 写的八个阶段、看门狗、smoke 日志落 `artifact_root/smoke/`、中断收尾四步（`launcher.abort_cmd` 只管其中「宿主销号」一步）、`launcher.*` 留空时 run 怎么办：`12-role-run.md`。
 - deploy 改宿主文件的三条纪律、部署报告两份的分工：`11-role-deploy.md`。
-- idea 申请 `read:notes` 的那条 issue 和 grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：`10-role-idea.md`、`03-ledgers.md`。
-- 母版的 `rules_version` 和 feedback 采纳后改哪几个文件：`09-common-and-feedback.md`。
-- 待验证清单第 4 条（入口 skill 能不能锁成只许手动）、施工步 1、2、7 的交付与验收：`30-build-steps-verify-tests.md`。
-- 十一条设计原则和文档索引：`00-overview.md`。
+- analysis 的派生指标 `code_path` 指向 `analysis/common/metrics.py:<函数>`、`analysis_artifact_root` 怎么用：`13-role-analysis.md`。init 播的三样在本份第一节。
+- idea 申请 `read:notes` 的那条 issue：`10-role-idea.md`；grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：`01-gyb.md` 第二节，`03-ledgers.md` grants 一段照它写。
+- 母版的 `rules_version` 和 feedback 采纳后改哪几个文件（角色 agent 定义是不是母版的一部分，归 `09`/`06` 定）：`09-common-and-feedback.md`。
+- 待验证清单第 4 条（入口 skill 能不能锁成只许手动）、第 8 条（2026-08-18 已测，结论见「要同步到别处的」）、施工步 1、2、7 的交付与验收（步 7 交付加 `run.py` 门禁白名单）：`30-build-steps-verify-tests.md`。
+- 十一条设计原则和文档索引：`00-overview.md`。本份 2026-08-18 的裁决对回的原则：init 幂等与钉死账路径对回原则 8（一处为准）；钩子挂法对回原则 2（第一层约束是硬的，subagent 也要过闸）；`agents/` 层不带钩子、init 不播文件对回原则 8；`launcher.abort_cmd` 对回原则 10/11（中断是尝试的一种结束，宿主销号要留痕）；`repo_run`、`host_ledgers` 对回原则 2（宿主的东西靠纪律，纪律要有具体落点）。
 
 ## 源文档没写清的（留给 gyb）
 
-1. 中断的命令模板叫什么键名。设计文档列了四条宿主命令模板（探卡、发射、收尾、中断），施工计划第七节只给了 `free_cmd`、`launch_cmd`、`finish_cmd` 三个名字。
-2. 「本仓库跑法」这一项在 `research-loop.json` 里的键名和取值形状没写。
-3. 「宿主台账清单」这一项的键名和取值形状没写；new1 要列的是哪几个文件（`ops/jobs.json`、`ops/runs.jsonl`、`RESULTS.md`、`RUNMETA.json`？）也没写死。
-4. 配置里的「各账路径」和词表里写死的九个文件名（`loop/issues.jsonl` 这些）谁说了算：账路径可配置的话，词表那张表是默认值还是硬编码。
-6. 脏树白名单那处改动的执行位置。设计文档说「new1 的发射门禁白名单要加这两样，宿主 CLAUDE.md 那一行由 gyb 改」，CLAUDE.md 那一行谁改写清楚了，`run.py` 里门禁代码那一处谁改、`rl init` 动不动它，没写。
-7. `analysis/` 里的公共统计件模板具体播哪几个文件，没写。
-8. `rl init` 跑第二次会怎样（已有 `loop/` 和已追加过的 CLAUDE.md 一节），没写。
-9. 入口 skill 在 new1 之外的仓库怎么用：`research-loop.json` 是 init 现问 gyb 生成还是有一份默认模板，没写。
-10. 插件树里要不要有 `workflows/` 或 `agents/` 一层。设计文档的目录清单里没有，待验证第 8 条的失败备案里出现过「workflow 里的 `agentType` 指向 `agents/<role>.md`」，正文没定。
+（2026-08-18 全部裁完：原第 1 至 4、6 至 10 条的裁决见文末「裁决记录」，第 5 条 2026-08-17 已销。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -290,3 +296,30 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「有的时候会用到仓库外的东西，建议弄一个白名单，白名单下的文件都允许修改」「问题2现在就测一下」「让idea能写gyb」）：第三节阈值表加 `hooks.path_allowlist`（默认空）；第四节 hooks/ 行注已实测；第一节 `notes/` 行改「gyb 和 idea 写」。对回原则 2、8、3。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 追裁（`f820504`，rl-hub-v4 传；gyb 原话「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」）：会话状态文件放 `loop/.sessions/<session_id>.json`；第一节 `loop/` 行补 `rl init` 建 `loop/.sessions/` 并往 `.gitignore` 加一行；「读到会话状态文件就拒收」那句写上路径。对回原则 8。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：第四节插件树 `common/` 那行加「判断类检查问题清单 `REVIEW-CHECKLIST.md`」，`rules_version` 注「整数，`GLOBAL-RULES.md` 头部一行」。对回原则 8。
+- 2026-08-18 gyb 裁（rl-part-08 会话，第 1 问，原话「第一个选 A」）：宿主中断的命令模板单独一个键 `launcher.abort_cmd`，跟另外三条同一组写法；宿主没有这条命令的仓库留空，留空就跳过；四条模板留空的语义一样。new1 值 `run.py gpu-jobs finish`。对回原则 10、11。第二节表加一行，7.4 补一句。
+- 2026-08-18 gyb 裁（第 2 问，原话「第二个选 A 这个要 init 的时候问的」，形状按 gyb 前一句「我希望的是传递信息又能传递自然语言又有格式」）：「本仓库跑法」键 `repo_run`，固定三栏 `env`/`entry`/`notes`，每栏装自然语言或命令，机器不解析，init 时问 gyb 填。对回原则 2。第二节表加一行。
+- 2026-08-18 gyb 裁（第 3 问，按同一句「有格式又能装自然语言」记，gyb 没另说）：「宿主台账清单」键 `host_ledgers`，列表、每项 `path`/`note`/`kind` 三栏，`kind: runs` 标宿主 runs 账给 doctor 对账；init 时问 gyb 填；new1 五项 `TIMELINE.md`、`DATA.md`、`RESULTS.md`、`ops/runs.jsonl`、`ops/jobs.json`，`RUNMETA.json` 不列。对回原则 2。第二节表加一行，7.5 补一句。
+- 2026-08-18 gyb 裁（原第 4 条，原话「定死吧」）：九本账位置和文件名钉死在 `loop/` 下 `03` 词表那九个名字，配置里没有「各账路径」这一项。对回原则 8。第一节 `loop/` 行、第二节开头照改。
+- 2026-08-18 gyb 裁（原第 6 条，原话「A A A」第一个 A）：`run.py` 门禁代码里的脏树白名单加 `loop/*.jsonl` 和 `loop/.lock` 归施工步 7 的交付，施工者改、按 new1 自己的规矩走、gyb 验收；`rl init` 不碰宿主代码；步 7 验收标准加一项。对回原则 2。7.2、7.9 照改，第一节加一段。
+- 2026-08-18 gyb 裁（原第 7 条，「A A A」第二个 A）：init 往 `analysis/` 播三样：`analysis/common/metrics.py`（骨架加一个示例函数）、`analysis/common/ledger.py`（从 runs 账取数的辅助）、`analysis/scratch/` 空目录；notebook、画图风格、notebook 模板都不播。对回原则 8（`13` 的 `code_path` 形状有唯一落点）。第一节照改。
+- 2026-08-18 gyb 裁（原第 8 条，「A A A」第三个 A）：`rl init` 重跑无副作用——已有的不动、缺的补、CLAUDE.md 那节不重复追加、打印「已存在跳过 / 这次新建」清单、退出码 0。对回原则 8。第一节加一段。
+- 2026-08-18 gyb 裁（原第 9 条，按 A 记，gyb 未另说）：init 自带默认模板，阈值直接落默认值；跟仓库绑定的项逐项问 gyb，跳过的留空并列出，留空的命令模板对应动作跳过；重跑不再问已填的项。对回原则 8。第一节 `research-loop.json` 行、第二节表「init 问」栏。
+- 2026-08-18 gyb 裁（原第 10 条，第一次答「A 然后现在就测 8」= 先不建、挂第 8 条；测完改裁）：待验证第 8 条当场测（八个变体，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）。结论：skill 头部钩子只管顶层会话、subagent 不经过它，主案不成立；插件 `agents/` 里 agent 定义头部的钩子被 Claude Code 忽略（官方文档明写「plugin subagents don't support the hooks, mcpServers, or permissionMode frontmatter fields」），仓库 `.claude/agents/` 里的要仓库受信任才跑，备案一不成立；仓库 settings 级和插件级钩子对 subagent 生效，输入带 `agent_type`。gyb 采纳外部咨询意见裁（原话「剩下的建议我确认」）：钩子一份放插件级 hooks 文件；脚本先看 `agent_type`（认识的按角色、不认识的最严），没有才按会话状态文件查顶层会话角色；会话状态文件由同一份钩子文件里的一条钩子在加载角色 skill 时写（`agent_type` 非空不写）；skill 头部不再声明钩子、第 2 条的「参数报角色名」写法作废；插件 `agents/` 层要建，五份角色 agent 定义只塑形（提示词、预加载角色 skill、收窄工具面）不带钩子；派活一律用这五个类型起 subagent；init 不往仓库播 agent 文件、不动仓库 settings；不加 `workflows/`。对回原则 2、8。第四节表加 `agents/` 行、改 `skills/`、`hooks/` 两行、不一致段改写。
+- 2026-08-18 gyb 裁（同一轮，原话「你就说我也定了，让统筹给06 00也改了」）：钩子匹配范围加 Bash（Bash 分支解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径，自己 realpath），原则 2「钩子只管 Write 和 Edit」那句和 `06` 定稿的「Bash 绕钩子不许」纪律句要跟着改。定义处 `00`（原则）和 `06`（钩子），本份只在 `hooks/` 行记一句。
+
+## 要同步到别处的
+
+按 HANDOFF 四点五节，本份 2026-08-18 的裁决动到别的 part 的，一条一条列在这里；`03`/`04`/`05` 冻结三份只报不催。
+
+1. `06-hooks-and-permissions.md`（定义处：钩子怎么挂、角色 json、会话状态文件、SKILL.md 纪律）：待验证第 8 条结论落地——(a) 角色 skill 头部不再声明钩子，「钩子脚本本身」一节「五个角色共用一个脚本、参数报角色名」改成「一份插件级钩子文件 `hooks/hooks.json`，脚本自己判角色：先 `agent_type`（认识的按角色、不认识的最严），没有才按 `loop/.sessions/<session_id>.json`」；(b) 会话状态文件由钩子文件里的一条钩子在加载角色 skill 时写、`agent_type` 非空不写；(c) 加一段「五份角色 agent 定义（`agents/<role>.md`）只塑形不设闸：提示词、预加载角色 skill、收窄工具面（reviewer 禁 Write/Edit 等按 use case 表倒推），不写钩子（插件 agent 忽略钩子字段）」；(d) 钩子匹配范围加 Bash，Bash 分支解析重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径并 realpath；「Bash 绕钩子不许」那句 SKILL.md 纪律相应改（Bash 现在过闸，纪律句改成「钩子拦不到的写法一律不许」或删，`06` 定）；(e) 「读的纪律」不变。角色 agent 定义改动走不走母版流程归 `06`/`09` 定。
+2. `00-overview.md`（定义处：十一条原则）：原则 2「钩子只管 Write 和 Edit 两个工具」改成「钩子管 Write、Edit、Bash 三个工具」，「其余一切（Bash 写出来的文件……）靠 SKILL.md 的纪律」里去掉 Bash；2026-08-18 gyb 裁，原话「你就说我也定了，让统筹给06 00也改了」。第八节施工步骤一览、第九节索引里 `08` 的覆盖栏加「`agents/` 层」。
+3. `04-handoffs-and-sessions.md`（冻结，等最后一期）：`dispatch=auto` 起 subagent 时用插件的角色 agent 类型（名字 `06` 定），不用 general-purpose；第四节「登记」那句「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」要按 (b) 改——subagent 的 `session_id` 与父会话相同、钩子输入多 `agent_id`/`agent_type`，subagent 算不算一次 sessions 行、`session_id` 记什么，等待验证第 5 条测完再定（`04` 自己的事，本份只报事实）。
+4. `30-build-steps-verify-tests.md`：待验证第 8 条状态改「已测 2026-08-18：主案不成立、备案一不成立、走插件级钩子文件按 `agent_type` 判角色，见 `06`」；测试记录路径 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`；第 2 条的结论备注「参数报角色名写法已被第 8 条结论取代，脚本自己判角色」；「没写清」第 5 条（`workflows/` 或 `agents/` 层步 1 建不建）改「建 `agents/`，步 1 建空目录；不建 `workflows/`」；施工步 7 交付加「`run.py` 门禁白名单加 `loop/*.jsonl`、`loop/.lock`，`selfcheck` 过」、验收标准加同一项；步 1 交付加 `agents/` 五份。
+5. `05-rl-cli.md`（冻结，等最后一期）：`rl init` 一行补「重跑无副作用；逐项问配置；不动宿主代码和仓库 `.claude/`」；`rl run finish` 一节补「中断收尾里宿主销号调 `launcher.abort_cmd`，留空跳过」；doctor「两本 runs 账对账」那项按 `host_ledgers` 里 `kind: runs` 找宿主账；接口一节 `08` 那条的键清单加 `launcher.abort_cmd`、`repo_run`、`host_ledgers`。
+6. `12-role-run.md`：Phase 6b 中断收尾四步里「宿主销号」调配置的 `launcher.abort_cmd`（new1 `run.py gpu-jobs finish`），留空跳过；接口一节「中断命令模板」补键名；`launcher.*` 留空时 run 怎么办由 `12` 写一句。
+7. `13-role-analysis.md`：第 119 行「公共统计件由 init 播模板」补「三样：`analysis/common/metrics.py`、`analysis/common/ledger.py`、`analysis/scratch/`，见 `08` 第一节」。
+8. `03-ledgers.md`（冻结，等最后一期）：词表九个文件名旁注一句「位置钉死，配置里没有账路径（2026-08-18 gyb 裁，`08` 第一节）」。
+9. `07-quick-lane.md` 接口一节：「宿主发射器的命令模板（探卡、发射、收尾、中断）与宿主台账清单」补键名 `launcher.abort_cmd`、`host_ledgers`。
+10. `09-common-and-feedback.md`：角色 agent 定义（`agents/<role>.md`）算不算母版的一部分、`rules_version` 覆不覆盖它，`09` 与 `06` 定；本份只报有这一层。
+11. `10`–`14` 五份角色 part：各自「加载方式」处加一句「被派活时以插件角色 agent 类型起 subagent，agent 定义预加载本角色 skill」（写法等 `06` 定稿后统一传）。
+12. `01-gyb.md`：入口 skill 领路和 `rl init` 问答无变化；`rl status` 无变化。无需改，列此备查。
