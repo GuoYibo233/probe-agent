@@ -129,36 +129,43 @@
   4. `30` 测试第 3 条加两例：confirm 之后不标过版；merge 后旧决定废除版 `root_id` 不动。
   5. 「发射单不引决定」这句凡在引用处（`11`、`12`、`23` 若有）出现的，删掉或改成「发射单从父单抄 `decision_refs`，run 不查 inbox」（八确认）。
   6. `README.md` 进度表 02 那行：由「8 留给 gyb / 未开」改成「定稿 `7549704`」（README 我没动，留给统筹）。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
 
 ## 2026-08-18 来自 rl-part-00 关于 00-overview.md
 
 - 事项：架构总说明不写——施工步 2 的 `research-loop/ARCHITECTURE.md` 裁掉，定稿的拆分文档本身就是架构说明。
 - 裁决原文：「那个旧的说明已经可以不要了 毕竟都变成新的了」「是的 那些分的就是说明，总的没用」
 - 要改的地方：`30-build-steps-verify-tests.md`：施工步骤表步 2 改成「不做（2026-08-18 gyb 裁），编号保留」；`08-trees-init-and-host.md`：「两处原文不一致」段里插件目录要补的三样去掉 `ARCHITECTURE.md`。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
 
 - 事项：一切默认英语，任何 part 里不写语言相关的约束。
 - 裁决原文：「所有的东西都默认用英语，插件本体里面用英语写，然后不要出现语言相关的约束，就默认只有英语就可以了，不需要强调任何语言」
 - 要改的地方：`09-common-and-feedback.md`：「中文底稿给 gyb 过，正式版是英文」去掉语言字样，「没写清」里英文措辞那条销掉（`rule-NN` 编号不变这一句保留）；`30-build-steps-verify-tests.md`：步 6 那行「（英文，……）」去掉「英文」。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
 
 - 事项：拆分文档定稿为准，两份源文档从此不再回写。
 - 裁决原文：「b」（选项 b：拆分文档为准，源文档从此不再回写，开头加一句「已被拆分文档取代，只留作历史」）
 - 要改的地方：`HANDOFF.md`：传播规矩里「回写两份源文档」去掉；两份源文档 `plans/2026-08-16-research-loop-next-steps.md`、`plans/2026-08-16-research-loop-build-plan.md`：开头各加一句「已被 plans/research-loop-parts/ 取代，只留作历史（2026-08-18）」，之后不再回写任何裁决。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
 
 - 事项：（a）到（i）九条全裁完——（a）（e）（f）（g）（h）（i）六条 2026-08-18 一并认，不写回退清单。
 - 裁决原文：「a」（选项 a：六条一并裁「认」，九条全已裁，不需要回退清单）
 - 要改的地方：`22-pair-idea-analysis.md`：「没写清」里「（e）待裁」改成「（e）2026-08-18 gyb 认：分析单开单时口径可以是 proposed，交活才要全 approved」；`HANDOFF.md`：「（a）到（i）gyb 还没裁」改成已全裁。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
 
 - 事项：总验收怎么算过——gyb 每看完一对产出说一句「过 / 不过」加一句原因，记进 `00` 裁决记录，五对都过才算过。
 - 裁决原文：「总验收是b」
 - 要改的地方：`30-build-steps-verify-tests.md`：步 8 总验收验收栏「gyb 自己看」后面补上面这句。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
 
 - 事项：第三轮模拟先不跑，等整套拆分文档定稿、施工完成之后再说。
 - 裁决原文：「第三轮先不跑，等整个plan完事，施工完成后再说」
 - 要改的地方：`30-build-steps-verify-tests.md`：「第三轮模拟要不要跑」那句改成「先不跑，施工完成后再说」；`HANDOFF.md`：第三轮那句同改。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v4 传，commit 见 git log `research-loop sync:` 2026-08-18）
+
+## 2026-08-18 来自 rl-hub-v4 关于 02 定稿动到冻结三份的几句（冻结后待议）
+- 事项：`02-decisions.md` 定稿（`7549704`）的三条裁决，引用处落在冻结的 `03`/`05` 里，按冻结规矩不改、攒着问 gyb 要不要解冻。
+- 裁决原文：gyb 2026-08-18 对 02 答「甲」（按编号前缀落文件）、「乙」（confirm 不算改版、加 `op`）、「甲」（`--with-runs` 第一跳按 `decision_refs`）。
+- 要改的地方（都是引用处照抄定义处，字面上过时、意思上没有相反裁决）：
+  34. 冻结后待议：（a）`05:47` `rl decision add` 那行「落 actor 自己那本（角色会话 `--as-gyb` 落角色那本）」→「落编号前缀那本：角色会话开的用那个角色的前缀（`--as-gyb` 也一样，`actor` 记 gyb），裸终端开的用 `gyb` 前缀」；（b）`05:48` update/confirm 那行「写完当场列出引旧版而没到终态的单子和 holder」只对 update 成立，confirm 不打印、不算改版；（c）`05:50` `--with-runs`「沿 parent_id 链反查」→「先按 `decision_refs` 找起点单子再沿 `parent_id` 收」；（d）`03:49` 词表 `loop/decisions.<actor>.jsonl` 的 `<actor>` 读作编号前缀里的角色名，只是读法说明，可不动字。`04` 里没找到写「比最新版小就是过时」的句子，不需要动。
+- 状态：等 gyb（要不要解冻改这四处；不解冻的话由 `02` 的定稿说了算，读 `05` 命令表时按 `02`）

@@ -10,13 +10,13 @@
 
 | 文件 | 标题 | 覆盖什么 | 行数 | 留给 gyb 的点 | 附的第二轮摩擦 | 状态 |
 |---|---|---|---|---|---|---|
-| `00-overview.md` | 总览 | 目标、十一条原则全文、九条裁决、（a）到（i）待裁改动、没采纳的九条、改掉的十六条、两轮模拟说明、这套文档的索引 | 316 | 7 | 18 | 未开 |
+| `00-overview.md` | 总览 | 目标、十一条原则全文、九条裁决、（a）到（i）待裁改动、没采纳的九条、改掉的十六条、两轮模拟说明、这套文档的索引 | 316 | 7 | 18 | 已定稿 `6ea0edc`（2026-08-18，rl-part-00；六条同步事项 rl-hub-v4 已传） |
 | `01-gyb.md` | gyb 自己做的事与收件箱 | gyb 亲自做的七件事、身份规矩、gyb 的 use case 表、rl status 十段、推送表、定期提醒 | 485 | 8 | 约 80 | 未开 |
-| `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 | 未开 |
+| `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 | 已定稿 `7549704`（2026-08-18，rl-part-02；六条同步事项 rl-hub-v4 已传，动到冻结三份的三处记「冻结后待议」） |
 | `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | **冻结 `884ac0b`**（2026-08-17 gyb 定；定稿 `a5d05d4`，收问题 6–31 `81377ac`/`884ac0b`） |
 | `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 | **冻结 `9b78d7c`**（2026-08-17 gyb 定；定稿 `130ec90`，收问题 7–30 `a7d1ec9`/`cec2cc9`/`9b78d7c`） |
 | `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十九项、notify | 635 | 13 | 约 100 | **冻结 `77213e5`**（2026-08-17 gyb 定；定稿 `656c8a9`，收问题 6–31 `1b37593`/`2c965d9`/`2dcdd23`/`ddafd84`/`77213e5`） |
-| `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 未开 |
+| `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 在 `rl-part-06` 手上（2026-08-18） |
 | `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 未开 |
 | `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 未开 |
 | `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩八条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 未开 |
@@ -37,11 +37,11 @@
 
 ## 各份留给 gyb 的点（agent 写的原话，逐份抄在这里，方便一眼扫）
 
-00 总览：parts 和施工步 2 的 ARCHITECTURE.md 什么关系；parts 和源文档谁为准；（a）到（i）被否掉时的回退清单；十一条原则彼此打架按谁；总验收怎么算通过；第三轮模拟跑不跑、手续量没再数；原则 9、10、11 没有第一轮语境下的对应条目。
+00 总览（2026-08-18 定稿时全部裁完，见 00 裁决记录）：parts 和施工步 2 的 ARCHITECTURE.md 什么关系；parts 和源文档谁为准；（a）到（i）被否掉时的回退清单；十一条原则彼此打架按谁；总验收怎么算通过；第三轮模拟跑不跑、手续量没再数；原则 9、10、11 没有第一轮语境下的对应条目。
 
 01 gyb：use case 表和 status 段落没一一对上（收拾那行指段 6、7、9 但段 6 是过版）；status 段 2 没有对应 use case；推送表没写通知带什么字段；定时提醒备案没有第二条路；reclaim 和 doctor 的 --json 没写；gyb 点名 reviewer 审什么、看完清单的动作落哪；--force 能越过哪些前提；sessions.model 是 unknown 时用哪条命令补。
 
-02 决定账：决定行落哪个文件三处口径（按 actor、按 id 前缀、落 actor 自己那本）；序号六个文件各排还是共用；stale 的 --all 不在签名里；confirm 算不算改版要不要打印；merge 后旧决定的 root_id 变不变；--with-runs 第一跳按哪个字段；有新证据的改版和口头改主意长得一样；锚点不校验是有意还是漏。另标两处原文不一致：文件落盘口径；发射单引不引决定。
+02 决定账（2026-08-18 定稿时全部裁完，见 02 裁决记录）：决定行落哪个文件三处口径（按 actor、按 id 前缀、落 actor 自己那本）；序号六个文件各排还是共用；stale 的 --all 不在签名里；confirm 算不算改版要不要打印；merge 后旧决定的 root_id 变不变；--with-runs 第一跳按哪个字段；有新证据的改版和口头改主意长得一样；锚点不校验是有意还是漏。另标两处原文不一致：文件落盘口径；发射单引不引决定。
 
 03 九本账：schema_version 从几起怎么加；last_activity 落账还是内存；编号位数与序号起点、decisions 六文件序号；log_tail 存路径还是文本；verdict_text 哪版必填；applies_to 取值域；scratch 中间版 status；角色能不能用 --force；loop/ 进不进 git。
 
@@ -69,9 +69,9 @@
 
 20 idea 与 deploy：deploy 卡在工单上时 issue 归 idea 还是 gyb；普通工单 parent_id 填不填；转移表 amend 两行的「到」栏和「状态不变」对不上；reissue 继不继承 report_paths 和 code_paths；「怎么测试」落哪；打回后重新交活旧路径留不留；收回之后代码和产物怎么处置；正文里快车道那句指的是 07 不是题目里写的 22。
 
-21 deploy 与 run：发射单带不带 decision_refs 两处不一致；actual_seconds 谁算（2026-08-17 已裁：`rl run finish` 算、rl 抄进发射单，`handoff done` 不带参数，问题 13）；adopted 标在哪一栏（2026-08-17 已裁：handoffs 的 start 版和 runs 的 adopted 版两边都标，问题 17）；amend 新尝试的 run_id 重不重新分；args 和 command 的分工；整 batch 时 host 和 gpus 怎么分、start --batch 是不是一次全置 in_progress；后台起 run 的机制；reject 之后要不要 amend；deploy 验收发射单看什么、什么时候 reject 一张 ok 的；认领怎么接管看门狗。
+21 deploy 与 run：发射单带不带 decision_refs 两处不一致（2026-08-18 已裁：从父单抄 decision_refs，02 定稿）；actual_seconds 谁算（2026-08-17 已裁：`rl run finish` 算、rl 抄进发射单，`handoff done` 不带参数，问题 13）；adopted 标在哪一栏（2026-08-17 已裁：handoffs 的 start 版和 runs 的 adopted 版两边都标，问题 17）；amend 新尝试的 run_id 重不重新分；args 和 command 的分工；整 batch 时 host 和 gpus 怎么分、start --batch 是不是一次全置 in_progress；后台起 run 的机制；reject 之后要不要 amend；deploy 验收发射单看什么、什么时候 reject 一张 ok 的；认领怎么接管看门狗。
 
-22 idea 与 analysis：分析单要不要 decision_refs（没有就算不出 line）；要不要 explanation；口径引用的过版检查由哪条命令出；gyb 在裸终端开的分析单谁去后台起 analysis；output_paths 记仓库内还是产物根、大文件怎么查存在、两个 notebook；分析单的人工验收办法；analysis 的 ledger_writes 缺 amend；（e）待裁。
+22 idea 与 analysis：分析单要不要 decision_refs（没有就算不出 line）；要不要 explanation；口径引用的过版检查由哪条命令出；gyb 在裸终端开的分析单谁去后台起 analysis；output_paths 记仓库内还是产物根、大文件怎么查存在、两个 notebook；分析单的人工验收办法；analysis 的 ledger_writes 缺 amend；（e）待裁（2026-08-18 已认，00 定稿：分析单开单时口径可以是 proposed，交活才要全 approved）。
 
 23 run 与 analysis：data_path 指什么、和 artifact_dir 差在哪；failed/killed 要不要 data_path；run list 的 --line 和 --decision 怎么解析（runs 行没这两栏）；默认过滤两个条件的先后；config 其余键没有命名规矩；metrics 键名谁定谁保证同名同义；快车道数字进不进 runs 两处不一致（2026-08-17 已裁：不进 runs，问题 22）；doctor 五项只有一项写了修法。
 

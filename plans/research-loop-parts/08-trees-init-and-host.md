@@ -91,7 +91,7 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 
 反常结果预警不做常驻进程，并进 `rl run finish`。
 
-两处原文不一致：设计文档「两棵树」列的插件目录没有 `.claude-plugin/plugin.json`、`ARCHITECTURE.md`、`README` 这三样，施工计划第一节裁决 3 提到 README（要明写「fable 是 gyb 2026-08-16 点名的例外」）、第十一节步 1 要新写一份 `.claude-plugin/plugin.json`、步 2 要写 `research-loop/ARCHITECTURE.md`。按施工计划补上这三样。
+两处原文不一致：设计文档「两棵树」列的插件目录没有 `.claude-plugin/plugin.json`、`README` 这两样，施工计划第一节裁决 3 提到 README（要明写「fable 是 gyb 2026-08-16 点名的例外」）、第十一节步 1 要新写一份 `.claude-plugin/plugin.json`。按施工计划补上这两样。施工计划步 2 的 `research-loop/ARCHITECTURE.md` 2026-08-18 gyb 裁掉不写（`00` 定稿：定稿的拆分文档本身就是架构说明），插件目录里没有它。
 
 ## 五、入口 skill 干哪三件事
 
@@ -284,3 +284,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-17 gyb 裁（sync-inbox 问题 4，原话「问题4 给8」，rl-hub 转来）：「产物目录是 `<artifact_root>/<run_id>/`」这条约定的定义处归本份第一节，`03`、`12`、`21`、`23` 只引。对回原则 8。
 - 2026-08-17 来自 sync-inbox 问题 24 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：`loop/.doctor-acks.jsonl` 是普通文件，`03` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它。第一节表里 `loop/` 那行照 `03` 补这一句。
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。接口一节「grants 只收裸终端」那条改成「grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）」。
+- 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「那些分的就是说明，总的没用」）：第五节「两处原文不一致」段插件目录要补的三样去掉 `ARCHITECTURE.md`，剩 `.claude-plugin/plugin.json`、`README` 两样。

@@ -72,7 +72,7 @@ rl 能看到的只有「这条命令从哪个会话发出来」，看不到键�
 
 ### 决定落哪本账
 
-gyb 直接写的决定落 `decisions.gyb.jsonl`（第六个决定文件），这个文件只收 `session_id` 是 `cli` 的行。角色会话里替 gyb 记的决定落那个角色自己那本，actor 记 `gyb`，带 quote。gyb 坐在 deploy 会话里当场拍板一个影响实验结果的参数，按这条落 `decisions.deploy.jsonl`、actor 记 `gyb`、带 quote，不算 deploy 自决。决定编号的前缀只说这条决定开在哪本账，谁写的看 actor。
+决定行按编号前缀落文件，一条决定的所有版本永远同一个文件，谁写的另记 `actor`（2026-08-18 gyb 裁，定义处 `02-decisions.md`）。gyb 在裸终端新开的决定用 `gyb` 前缀、落 `decisions.gyb.jsonl`（第六个决定文件），这个文件只装 gyb 在裸终端新开的决定和它们的后续版本，所以里面只有 `session_id` 是 `cli` 的行；gyb 在裸终端给角色的决定（比如 `dec-idea-0007`）追加的一版落那个角色那本，actor 记 `gyb`、`session_id` 记 `cli`。角色会话里替 gyb 记的决定落那个角色自己那本，actor 记 `gyb`，带 quote。gyb 坐在 deploy 会话里当场拍板一个影响实验结果的参数，按这条落 `decisions.deploy.jsonl`、actor 记 `gyb`、带 quote，不算 deploy 自决。决定编号的前缀只说这条决定开在哪本账，谁写的看 actor。
 
 ### 豁免范围
 
@@ -500,3 +500,4 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处本份第二节，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：第一节第 3 件事「写 grants」改成「授权只有 gyb 能写：`actor` 必须是 `gyb`；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话」；第二节小节名由「三条只收裸终端的」改成「只收裸终端的」，grants 那一条改写成不在这一类里。对回原则 1。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处本份第四节，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱……这个角色就应该先执行刚才idea给他的工作」「C」「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：第四节开头补一句——`rl inbox` 是查询命令，谁需要谁敲，角色被拉起不自动查收件箱、先干拉它起来的那张单，run 不查 inbox。对回原则 6。
 - 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：接口一节公共骨架那行的两个可选栏由「`fix_for`、`force_reason`」改成「`force_reason`、`via`」。对回原则 4。
+- 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「甲」）：第二节「决定落哪本账」按编号前缀落文件改写：gyb 裸终端新开的用 `gyb` 前缀落 `decisions.gyb.jsonl`，gyb 裸终端给角色决定追加的一版落角色那本、`session_id` 记 `cli`。对回原则 4。

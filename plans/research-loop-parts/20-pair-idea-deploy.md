@@ -98,7 +98,7 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 
 ## 过版检查对工单的影响
 
-引用记的版本比账里最新版小就是过时。`rl decision update` 和 `rl decision retire` 写完那一刻，rl 当场列出引旧版而没到终态的单子和它们的 holder。过版的单子进 `rl status`，也进相关角色的 `rl inbox`，`rl inbox` 里有一段就是本角色持有或拥有的单子里过版的决定引用。`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的会话先干拉它起来的那张单。`rl decision stale [--handoff ID] [--all]` 默认只列和本会话手上单子有关的，`--all` 才是全库。retired 决定名下还有活单的进 `rl status` 和 doctor。
+引用记的版本比账里最新一个非 `confirm` 版小才算过时（`confirm` 版不算改版，2026-08-18 gyb 裁，定义处 `02-decisions.md`）。`rl decision update` 和 `rl decision retire` 写完那一刻，rl 当场列出引旧版而没到终态的单子和它们的 holder。过版的单子进 `rl status`，也进相关角色的 `rl inbox`，`rl inbox` 里有一段就是本角色持有或拥有的单子里过版的决定引用。`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的会话先干拉它起来的那张单。`rl decision stale [--handoff ID] [--all]` 默认只列和本会话手上单子有关的，`--all` 才是全库。retired 决定名下还有活单的进 `rl status` 和 doctor。
 
 工单的 `line` 是根决定编号，rl 从 `decision_refs` 第一项的 `root_id` 算出来存在单子上，`rl status --group-by line` 按它切开两条并行的研究线。
 
@@ -342,3 +342,4 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「issue 往返」一节「通知类 issue 被 `rl inbox` 读过即关」改成「`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`」，关闭写权那句加通知类 issue 的 assignee 也能关；抄的转移表 accept 行按 `04` 第三节补「rl 顺带关这张单关联的 `answered` issue」。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：「过版检查对工单的影响」一节「idea 和 deploy 上线第一个动作是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的会话先干拉它起来的那张单」。
 - 2026-08-17 rl-hub-v3 审后补：第九节 `rl decision stale` 签名按 `05-rl-cli.md` 命令表改成 `[--handoff ID] [--all]`，去掉 `--mine`（05 定稿那一轮的引用滞后）。
+- 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」）：「过版检查对工单的影响」一节过版判定改成「比账里最新一个非 `confirm` 版小才算过时」。对回原则 9。

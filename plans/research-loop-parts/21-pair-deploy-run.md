@@ -37,7 +37,7 @@ deploy 和 run 之间只有一样东西在走，就是发射单。发射单的 `
 
 `launch_order` 的 `parent_id` 必填，指它所属的工单。开单时 rl 从父单抄 `decision_refs` 和 `batch`，`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着。这条链是原则 9 要的：从任何一个编号打 `rl trace` 都能顺回 run 到发射单到工单到决定。
 
-两处原文不一致：设计文档「五个角色」总段那一句写「run 的 inbox 不查过版，发射单不引决定」，同一份文档的 deploy 一节和施工计划第三节都写发射单开单时从父单继承决定引用。按施工计划的表，发射单上带 `decision_refs`；「run 的 inbox 不查过版」那句 2026-08-17 扩大成「run 不查 inbox」：run 只关注自己那张发射单，一般不会有没带单子的 run 会话。
+两处原文不一致：设计文档「五个角色」总段那一句写「run 的 inbox 不查过版，发射单不引决定」，同一份文档的 deploy 一节和施工计划第三节都写发射单开单时从父单继承决定引用。2026-08-18 gyb 确认（定义处 `02-decisions.md`）：发射单从父单抄 `decision_refs`，源文档「发射单不引决定」作废；「run 的 inbox 不查过版」那句 2026-08-17 扩大成「run 不查 inbox」：run 只关注自己那张发射单，一般不会有没带单子的 run 会话。
 
 `batch` 是调用者用 `--batch B` 传的自由文本（比如 `b-20260816-01`），可选，rl 不分配，只有分片语义，不表示研究线；研究线归组用 `line`。deploy 一次开 N 张同 `batch` 的发射单时，只起一个 run 会话接整个 batch，不再一个 workflow 起 N 个 run 各自探卡抢同一张卡。
 
@@ -171,7 +171,7 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 
 ## 源文档没写清的（留给 gyb）
 
-1. 发射单到底带不带 `decision_refs`：设计文档一处说不引决定，另一处和施工计划说从父单继承，见上文第三节的不一致标注。这条要 gyb 定一个值。
+1. 发射单到底带不带 `decision_refs`：设计文档一处说不引决定，另一处和施工计划说从父单继承，见上文第三节的不一致标注。这条要 gyb 定一个值。——2026-08-18 已裁（`02-decisions.md` 定稿，gyb 确认「甲」）：发射单从父单抄 `decision_refs`，「run 不查 inbox」与之并存不矛盾，源文档「发射单不引决定」作废。
 2. `actual_seconds` 谁算：施工计划第三节和设计文档都说 `rl run finish` 从两个时间戳算，第六节命令表的 `handoff done` 又留着一个 `--actual-seconds N` 参数。两处原文不一致，按表是 rl 算，那个参数留着干什么没写。——2026-08-17 已裁（sync-inbox 问题 13）：`rl run finish` 从两个时间戳算，rl 再把它抄进发射单最新一次尝试的 `actual_seconds`，人不填；`rl handoff done` 的 `--actual-seconds` 去掉了。
 3. 认领时账行标 `adopted`，但第三节 handoffs 的字段表里没有 `adopted` 这个字段，标在哪一栏没写。——2026-08-17 已裁（sync-inbox 问题 17）：两边都标，handoffs 的 `start` 那一版写 `adopted: true`，runs 那条同时落一版 `adopted`。
 4. `rl handoff amend` 追加一次尝试的时候，新的 `run_id` 是不是按新的 `attempt` 序号重新分配，命令表和转移表都没写。
@@ -381,3 +381,4 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第九节「通知类的 issue 被 `rl inbox` 读过即关」改成「通知类的 issue 由收件人做完了自己 `rl issue close`，`rl inbox` 只读不关」；第十一节抄的 accept 行按 `04` 第三节补「rl 顺带关这张单关联的 `answered` issue」。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：第三节「run 的 inbox 不查过版」那句扩大成「run 不查 inbox」。
 - 2026-08-17 rl-hub-v3 审后补：第七节节名「runs 两版」改「runs 三版」（问题 17）。
+- 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 确认「甲」）：第三节「两处原文不一致」段结成「发射单从父单抄 `decision_refs`，源文档『发射单不引决定』作废」；「没写清」第 1 条标已裁。对回原则 9。

@@ -53,7 +53,7 @@
 
 原文：空列表拒收；三类来源各一个用例；`file` 类路径不存在拒收、带锚点通过；`run` 类 run_id 不在 runs 账拒收；update 不给 source 继承上一版；confirm 正文不变版本加一；merge 自动并入被合并编号并按 `--root` 记根；`decisions.gyb.jsonl` 拒收非 cli 行；update 时打印引旧版的活单。
 
-要加的：`file` 类是仓库内任意路径，`review/` 里的清单和 `experiments/` 里的部署报告都算（`02`「来源三类与锚点」），用例里各放一个；`retire` 同样打印受影响的单子（`02` 子命令表）。
+要加的：`file` 类是仓库内任意路径，`review/` 里的清单和 `experiments/` 里的部署报告都算（`02`「来源三类与锚点」），用例里各放一个；`retire` 同样打印受影响的单子（`02` 子命令表）。2026-08-18 按 `02` 定稿再加两例：`confirm` 之后不标过版（引 confirm 前那一版的单子 `rl decision stale` 不列，`confirm` 写完也不打印受影响单子，行上 `op` 记 `confirm`）；`merge` 之后被合并旧决定的废除版 `root_id` 不动。
 
 ### 测试 4：交付物
 
@@ -192,17 +192,17 @@
 |---|---|---|---|---|
 | 0 验证 | 第一节 11 条的结果写进 `plans/2026-08-1x-research-loop-verify.md`，每条写实测结果和选了主案还是备案；备案影响正文的当场改设计文档，删掉另一案 | 11 条都有结论 | 无 | 主会话亲自做，要真会话 |
 | 1 清空 | `git rm -r research-loop/`，只留空目录和 `.claude-plugin/plugin.json` 新写一份 | 目录里只有 plugin.json | 无 | 主会话 |
-| 2 架构文档 | `research-loop/ARCHITECTURE.md`，两棵树每个文件一行：干什么、谁读、谁写、改它连带改哪些；十一条原则抄一份在开头 | gyb 读一遍点头 | 步 0（备案影响树） | 主会话写 |
-| 3 共同底座 | `tables/ledgers.json`、`tables/transitions.json`、`tables/roles/*.json`、`tables/gyb-usecases.json`、`schemas/*.schema.json`、`scripts/rl_lib.py`（锁、编号、追加、校验、actor 判定）、`bin/rl` 骨架，测试 1 到 7、9、10、14、17、18、20 | `tests/run_all.py` 全绿 | 步 2 | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
+| 2 架构文档 | 不做（2026-08-18 gyb 裁，`00` 定稿：定稿的拆分文档 `plans/research-loop-parts/` 本身就是架构说明，`research-loop/ARCHITECTURE.md` 不写），编号保留，步 3 的依赖改成步 0、1 | 无 | 无 | 无 |
+| 3 共同底座 | `tables/ledgers.json`、`tables/transitions.json`、`tables/roles/*.json`、`tables/gyb-usecases.json`、`schemas/*.schema.json`、`scripts/rl_lib.py`（锁、编号、追加、校验、actor 判定）、`bin/rl` 骨架，测试 1 到 7、9、10、14、17、18、20 | `tests/run_all.py` 全绿 | 步 0、1（步 2 不做） | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
 | 4 交流机制 | `hooks/`（写权钩子、登记销号钩子）、`rl status`、`rl inbox`、`rl trace`、`rl reclaim`、`rl doctor`、`rl notify`、`monitors/`（看门狗）、快车道命令，测试 8、11、15、16、19 | 全绿；在真会话里手动触发一次 deny 和一次销号 | 步 3 | 工单化同上；真会话验证主会话做 |
-| 5 公共母版 | `common/GLOBAL-RULES.md`（公共规矩八条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话）、判断类检查的问题清单（文件名待定，reviewer 派 sonnet subagent 按它逐题查，2026-08-17 裁；和 `14` 第一节「不开 issue、不派活」的冲突等 sync-inbox 问题 6） | gyb 逐条过 | 步 3 | 主会话写，中文底稿给 gyb 过，正式版英文 |
-| 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（英文，头部带钩子声明，正文有 use case 表，只引用母版不抄），run 的照 `12`，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图在 `08` 第五节） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
+| 5 公共母版 | `common/GLOBAL-RULES.md`（公共规矩八条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话）、判断类检查的问题清单（文件名待定，reviewer 派 sonnet subagent 按它逐题查，2026-08-17 裁；和 `14` 第一节「不开 issue、不派活」的冲突等 sync-inbox 问题 6） | gyb 逐条过 | 步 3 | 主会话写，底稿给 gyb 过，过了就是正式版 |
+| 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（头部带钩子声明，正文有 use case 表，只引用母版不抄），run 的照 `12`，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图在 `08` 第五节） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
 | 7 最小一条路 | 在临时沙盒仓库 `rl init`（裸终端）→ 加载 idea 写一条决定开一张工单 → 加载 deploy 接单写代码写报告提验收 → 回 idea 打回 → deploy 再接 → idea 验收 → `rl doctor` 零报告；再走一遍测试 12 的第二条（发射单 smoke 失败到 trace）；然后在 new1 跑 `rl init`，gyb 改 new1 CLAUDE.md 的 GPU 那一行和脏树白名单（`08` 第七节 7.9） | 沙盒全程只经 rl；new1 的 `loop/` 长出来、CLAUDE.md 只多一节 | 步 6 | 主会话，真会话 |
-| 8 总验收 | gyb 定五个任务，每个角色两个 agent 一个加载 skill 一个不加载各做一遍，产出摆一起 | gyb 自己看 | 步 7 | gyb 定任务，主会话派 agent（模型按 `00` 第三节裁决 3 的表：idea、reviewer 用 fable，deploy、run、analysis 用 opus） |
+| 8 总验收 | gyb 定五个任务，每个角色两个 agent 一个加载 skill 一个不加载各做一遍，产出摆一起 | gyb 自己看：每看完一对产出说一句「过 / 不过」加一句原因，记进 `00` 裁决记录，五对都过才算过（2026-08-18 gyb 裁，`00` 定稿） | 步 7 | gyb 定任务，主会话派 agent（模型按 `00` 第三节裁决 3 的表：idea、reviewer 用 fable，deploy、run、analysis 用 opus） |
 
 每步一个或多个 commit，commit message 前缀 `research-loop v2:`；用起来之后改母版的 commit 前缀 `research-loop rules:`，改完跑一遍 `tests/run_all.py`。
 
-施工计划第十二节留给 gyb 的四件事，和本份有关的抄在这里：总验收的五个任务在步 8 前定；第三轮模拟要不要跑、跑之前先把 new1 第一次 `rl init` 那个没跑成的场景补上（第三轮的题目另有一份，`plans/2026-08-17-research-loop-usage-scenarios.md`）；new1 CLAUDE.md 的两处宿主改动在步 7 时由 gyb 亲手改。
+施工计划第十二节留给 gyb 的四件事，和本份有关的抄在这里：总验收的五个任务在步 8 前定；第三轮模拟先不跑，等整套拆分文档定稿、施工完成之后再说（2026-08-18 gyb 裁，`00` 定稿；跑的时候先把 new1 第一次 `rl init` 那个没跑成的场景补上，题目另有一份 `plans/2026-08-17-research-loop-usage-scenarios.md`）；new1 CLAUDE.md 的两处宿主改动在步 7 时由 gyb 亲手改。
 
 ## 和别的 part 的接口
 
@@ -342,3 +342,5 @@
 - 2026-08-17：本份补写（前一天的 workflow 没写成这一份）。正文只搬运施工计划第九、十、十一节和各 part 2026-08-17 的裁决，测试 18、19、20 是 `05` 定稿点名要有测法的三条，本份给了用例；三条归步 3 还是步 4 是本份补的归属，记在留给 gyb 第 10 条。
 - 2026-08-17：待验证第 4 条备案升正案、第 10 条备案收成 doctor 第 19 项，两条都来自 `05` 定稿（`656c8a9`）的裁决，本份第一节状态栏照记；两条照测不改正文。
 - 2026-08-17：测试 9 里「角色会话 `--as-gyb` 的 `grant add` 拒收」按 sync-inbox 问题 27 的裁决改成「`--as-gyb --quote` 替 gyb 写也收」，`01-gyb.md` 两处相反的句子标为不一致、等 `01` 开的时候改。
+- 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」「甲」）：测试 3「要加的」再加两例，`confirm` 之后不标过版、`merge` 后被合并旧决定废除版 `root_id` 不动。对回原则 9、4。
+- 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「那些分的就是说明，总的没用」「不要出现语言相关的约束，就默认只有英语」「总验收是b」「第三轮先不跑，等整个plan完事，施工完成后再说」）：施工步 2 改「不做、编号保留」，步 3 依赖改步 0、1；步 5、步 6 去掉语言字样；步 8 验收栏补「每看完一对说过 / 不过加原因，记进 `00` 裁决记录，五对都过才算过」；第三轮那句改成先不跑。

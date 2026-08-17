@@ -66,7 +66,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 统筹 session 常驻，干四件事：
 
 1. 记谁在干什么。维护 `README.md` 进度表里每份的状态（未开、在 `rl-part-NN` 手上、已定稿 commit 几号），part session 报定稿就更新。
-2. 收回报、传播。收到 part session 的消息或 `sync-inbox.md` 里的待处理段，先按第四点五节的表判定义处：定义处在别的 part，就把裁决搬回定义处那一份（改它的正文并补进它的「裁决记录」，注明来自哪份），再从定义处往所有引用处传，包括两份源文档（源文档改正文那一句，并在设计文档最后一节或施工计划第十四节补一行「哪天、按哪份 part 的裁决、改了哪句」）。目标 part 正在某个 `rl-part-NN` 手上的，不直接改它的文件，`SendMessage` 交代给那个 session 去改（避免两个会话同时写一个文件），它不在了才自己改。传播完把来源 part 里那条标「已同步 <日期>」，把邮箱那段标「已处理」，commit 前缀 `research-loop sync:`。
+2. 收回报、传播。收到 part session 的消息或 `sync-inbox.md` 里的待处理段，先按第四点五节的表判定义处：定义处在别的 part，就把裁决搬回定义处那一份（改它的正文并补进它的「裁决记录」，注明来自哪份），再从定义处往所有引用处传。两份源文档不再回写（2026-08-18 gyb 裁，`00` 定稿：拆分文档定稿为准，源文档开头已加「已被取代、只留作历史」一句；此前「源文档改正文那一句并补一行回写记录」的做法到 2026-08-17 为止）。目标 part 正在某个 `rl-part-NN` 手上的，不直接改它的文件，`SendMessage` 交代给那个 session 去改（避免两个会话同时写一个文件），它不在了才自己改。传播完把来源 part 里那条标「已同步 <日期>」，把邮箱那段标「已处理」，commit 前缀 `research-loop sync:`。
 3. 攒问题等 gyb。传播时发现目标 part 已经有相反的裁决，或者 part session 报上来的打架，不自己裁：把两边裁决原文并排记进 `sync-inbox.md` 一段（状态「等 gyb」），gyb 来了一次问一个，裁了再改并回话给相关的 part session、补进两份 part 的「裁决记录」。
 4. 补漏。第一次开工先按第四点五节末尾那步核关联表；空下来的时候做覆盖检查（第五节）。
 
@@ -80,7 +80,7 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 |---|---|---|
 | 十一条原则、九条裁决、（a）到（i）、这套文档的索引 | `00-overview.md` | 全部（`05`、`24` 把「阈值表归哪一份」也指到 `00` 的索引去查） |
 | gyb 的身份规矩（裸终端就是 gyb、actor 判定、`--as-gyb` 加 `--quote`、`--force --reason`、豁免范围、grants 只有 gyb 能写（裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，2026-08-17 问题 27 裁）——2026-08-17 gyb 裁这一组定义处归 `01`，`05`「actor 怎么定」是命令行写法算写了两遍）、gyb use case 表、`rl status` 十段、推送表与 `rl notify`（2026-08-17 gyb 裁：一件事，归 `01`；`05` 只留签名行）、定期提醒 | `01-gyb.md` | 全部除 `08`（原表只列 `05`、`04`、`14`、`25`；核下来其余十六份的接口一节都指了它） |
-| 决定账：行格式、来源三类、版本、root_id、stale、reissue、`rl decision` | `02-decisions.md` | `03`（只指过去）、`07`、`09`、`11`、`20`、`23`、`25`。原表列的 `10`、`14`、`21` 把决定字段（`root_id`、`quote`、`actor`、`sources`）指到了 `03`，`13`、`22` 接口一节没提决定账，`05` 把 `rl decision` 五条子命令「新版本还是新条」的判据指到 `10`：这五处指错了定义处，同步时以 `02` 为准 |
+| 决定账：行格式（含 `op` 字段，2026-08-18 加）、按编号前缀落文件、来源三类、版本、root_id、过版判定（跳过 confirm 版）、stale、reissue、`rl decision` | `02-decisions.md` | `03`（只指过去）、`07`、`09`、`11`、`20`、`23`、`25`。原表列的 `10`、`14`、`21` 把决定字段（`root_id`、`quote`、`actor`、`sources`）指到了 `03`，`13`、`22` 接口一节没提决定账，`05` 把 `rl decision` 五条子命令「新版本还是新条」的判据指到 `10`：这五处指错了定义处，同步时以 `02` 为准 |
 | 九本账公共骨架（可选栏 `force_reason`、`via`）、七本账行格式（issues、runs——三版 launched/finished/adopted、grants、feedback、evaluations、sessions、scratch）、退出码六个（0/1/2/3/4/5）与原因种类 | `03-ledgers.md` | 全部；`09` 抄了 issues/grants/feedback 三本的规则、`07` 抄了 scratch、`04` 抄了 sessions——这四处是同一件事写了两遍，改一处必改另一处。另外 `10`、`11`、`12`、`13`、`20`、`21`、`22` 把 handoffs 的字段指到 `03`，而 `03` 自己说 handoffs 字段定义在 `04`：handoffs 行格式的定义处按本表是 `04` |
 | handoffs 行格式（含 `ql_tag`、`adopted`、`attempts[].actual_seconds`——2026-08-17 问题 8/17/13 加）、七个状态、holder 不变量、转移表（含 estimate 行）、dispatch、交付物、销号、reclaim、三种通知、sessions 账 | `04-handoffs-and-sessions.md` | 全部除 `08`（原表只列九份；核下来 `00`、`01`、`02`、`03`、`06`、`07`、`09`、`14`、`23`、`25` 也引了它） |
 | `bin/rl` 每条子命令的签名和「谁能调」、actor 判定的命令行写法、inbox、trace、doctor 十九项、`rl notify --text` 的签名行（推送表与机制归 `01`）、锁 | `05-rl-cli.md` | 全部；`04` 里 reclaim/session、`02` 里 decision、`07` 里 ql/scratch、`09` 里 feedback/issue/grant 各抄了自己那几条的签名。`05` 自己的接口一节把子命令背后的判据往角色 part 指：`rl decision` 指 `10`（应为 `02`）、`rl eval` 四态指 `13`、`rl handoff estimate` 与看门狗指 `12`、`rl session focus` 指 `14`、`rl ql` 指 `07`、`rl init` 与宿主模板指 `08`、`rl feedback accept` 指 `09` |
@@ -108,11 +108,11 @@ part session 要回报的三种事：（1）一条裁决动到了别的 part 或
 
 ## 五、还悬着的、统筹 session 要记着的
 
-- 施工计划第一节末尾（a）到（i）九条是我改的设计、gyb 还没裁；哪一份 part 的裁决碰到它们，就等于 gyb 裁了那一条，同步的时候把结果回写到施工计划第一节那一条后面标日期。
-- 五处两份源文档互相不一致，各 part 已标出、等 part session 裁：决定行落哪个文件三处口径（`02`）；发射单引不引决定（`21`、`02`）；快车道数字进不进 runs（`07`、`23`）；actual_seconds 谁算（`21`、`05`——2026-08-17 已裁：rl run finish 算、handoff done 不带参数，03/04/05 都改了）；reviewer 只由 gyb 手动开还是也能当 subagent（`14`）。哪份先裁到，统筹 session 负责把另一份改成一样。「快车道数字进不进 runs」03 定稿里两句并存（第 104 行 vs 第 213 行），已立为 sync-inbox 问题 22——2026-08-17 已裁：不进 runs，`03:104`「快车道用 `ql_tag`」已删（`81377ac`），引用处 rl-hub-v3 已传。
+- 施工计划第一节末尾（a）到（i）九条是我改的设计——2026-08-18 已全裁（`00` 定稿：（b）（c）（d）2026-08-17 问题 27 裁，（a）（e）（f）（g）（h）（i）六条 2026-08-18 一并认，不写回退清单，gyb 原话「a」）。
+- 五处两份源文档互相不一致，各 part 已标出、等 part session 裁：决定行落哪个文件三处口径（`02`——2026-08-18 已裁：按编号前缀落文件，`actor` 另记）；发射单引不引决定（`21`、`02`——2026-08-18 已裁：发射单从父单抄 `decision_refs`，「不引决定」作废）；快车道数字进不进 runs（`07`、`23`）；actual_seconds 谁算（`21`、`05`——2026-08-17 已裁：rl run finish 算、handoff done 不带参数，03/04/05 都改了）；reviewer 只由 gyb 手动开还是也能当 subagent（`14`）。哪份先裁到，统筹 session 负责把另一份改成一样。「快车道数字进不进 runs」03 定稿里两句并存（第 104 行 vs 第 213 行），已立为 sync-inbox 问题 22——2026-08-17 已裁：不进 runs，`03:104`「快车道用 `ql_tag`」已删（`81377ac`），引用处 rl-hub-v3 已传。
 - 覆盖检查没跑成：两份源文档每一段是不是都落进了某个 part 没有机器核过。统筹 session 手头空的时候可以做：把两份源文档从头过一遍，每段在某个 part 里找到落点，找不到的补进最合适的 part 并在 README 里记一笔。
 - `30-build-steps-verify-tests.md` 没写。
-- 第三轮模拟跑不跑、跑几个场景，gyb 定；跑的话 workflow 脚本在会话目录里（`rl-scenario-simulation-r2-wf_0b204aaa-355.js`），场景清单和 schema 可以直接复用，模型一律显式写 opus。
+- 第三轮模拟先不跑，等整套拆分文档定稿、施工完成之后再说（2026-08-18 gyb 裁，`00` 定稿，原话「第三轮先不跑，等整个plan完事，施工完成后再说」）；跑的话 workflow 脚本在会话目录里（`rl-scenario-simulation-r2-wf_0b204aaa-355.js`），场景清单和 schema 可以直接复用，模型一律显式写 opus。
 - 用量：subagent 一次派 22 个会撞月度上限，上一轮 22 个里 13 个报错（文件都写完了只是最后一步没返回）；再派一律六个以内。
 
 ## 六、跟这件事有关的工程规矩（从 new1 的 CLAUDE.md 和记忆里抄的，统筹 session 也要守）

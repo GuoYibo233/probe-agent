@@ -1,5 +1,7 @@
 # research-loop 插件开发计划（2026-08-16 定稿，同日夜间按两轮模拟走查修订）
 
+> 这份文档已被 `plans/research-loop-parts/` 里定稿的拆分文档取代，只留作历史（2026-08-18 gyb 裁，见 `00-overview.md` 裁决记录）：从这天起不再往这里回写任何裁决，正文里的句子以对应 part 的定稿为准。
+
 这份文档是 research-loop 插件在 2026-08-16 六轮讨论之后的设计现状：上午一轮逐步确认锁了六个裁决和五块架构，下午一轮语音打磨，晚上一轮按 gyb 的真实用法从 init 走到 reviewer 做了纸上走查，第四轮拿三个 subagent 的审读意见（原文在 `plans/2026-08-16-research-loop-plan-critiques.md`）逐条裁了八个题目，第五轮拿十一个 subagent 对五个使用场景的模拟结果（原文在 `plans/2026-08-16-research-loop-simulation-round1.md`）抽出八条设计原则并按原则改了正文，第六轮拿十六个 subagent 对十七个场景的第二次模拟结果（原文在 `plans/2026-08-16-research-loop-simulation-round2.md`，只有模拟没有核实，见那份文件开头的说明）把八条原则补成十一条、再按十一条把正文审了一遍。六轮的结论全部合并写在这里，往后施工以这份为准，和 `.scratch/research-loop/redesign.md` 冲突的地方以这份为准。第五轮、第六轮各改了哪些地方、为什么改，列在最后两节。
 
 两份文档的分工（原则 8）：这份写「做成什么样」和「为什么」，字段名、状态转移表、命令表、阈值、测试清单这些可枚举的东西只在 `plans/2026-08-16-research-loop-build-plan.md`（下面叫「施工计划」）里写一遍，这份只指过去，不抄一遍。施工计划第一节的裁决优先于这份正文。

@@ -94,7 +94,7 @@ reviewer 的审查基准是「actor 是 gyb 或 idea 的决定行」，不看落
 
 决定改了一版不影响已经派出去的单子：单子按派出时引的那一版继续做，rl 只标过时，不自动打回、不自动标待复核、不自动停。停不停由 gyb 点名，停就用收回；改版之后要重派的用 `rl handoff reissue`。
 
-引用记的版本比账里最新版小就是过时，查询命令当场标出「上层依据已从第 2 版更新到第 3 版，复核这条还成不成立」。过版的单子进 `rl status` 和相关角色的 `rl inbox`。retired 决定名下还有活单的进 `rl status` 和 doctor。
+引用记的版本比账里最新一个非 `confirm` 版小才算过时（`confirm` 版不算改版，2026-08-18 gyb 裁，定义处 `02-decisions.md`），查询命令当场标出「上层依据已从第 2 版更新到第 3 版，复核这条还成不成立」。过版的单子进 `rl status` 和相关角色的 `rl inbox`。retired 决定名下还有活单的进 `rl status` 和 doctor。
 
 ## 工单怎么开
 
@@ -365,3 +365,4 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `01`，`03` grants 段照它写，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：「申请读 notes/」一节「grants 只收裸终端写的行，角色会话里替 gyb 批授权没有意义」改成「授权只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收」。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：「上线第一个动作」这一节改名叫「收件箱」，头一句改成「`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单」；开头摘要那一行的「上线第一个动作 `rl inbox`」跟着改。
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。
+- 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」）：第五节过版判定改成「比账里最新一个非 `confirm` 版小才算过时」。对回原则 9。
