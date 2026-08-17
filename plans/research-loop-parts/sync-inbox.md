@@ -168,4 +168,20 @@
 - 裁决原文：gyb 2026-08-18 对 02 答「甲」（按编号前缀落文件）、「乙」（confirm 不算改版、加 `op`）、「甲」（`--with-runs` 第一跳按 `decision_refs`）。
 - 要改的地方（都是引用处照抄定义处，字面上过时、意思上没有相反裁决）：
   34. 冻结后待议：（a）`05:47` `rl decision add` 那行「落 actor 自己那本（角色会话 `--as-gyb` 落角色那本）」→「落编号前缀那本：角色会话开的用那个角色的前缀（`--as-gyb` 也一样，`actor` 记 gyb），裸终端开的用 `gyb` 前缀」；（b）`05:48` update/confirm 那行「写完当场列出引旧版而没到终态的单子和 holder」只对 update 成立，confirm 不打印、不算改版；（c）`05:50` `--with-runs`「沿 parent_id 链反查」→「先按 `decision_refs` 找起点单子再沿 `parent_id` 收」；（d）`03:49` 词表 `loop/decisions.<actor>.jsonl` 的 `<actor>` 读作编号前缀里的角色名，只是读法说明，可不动字。`04` 里没找到写「比最新版小就是过时」的句子，不需要动。
-- 状态：等 gyb（要不要解冻改这四处；不解冻的话由 `02` 的定稿说了算，读 `05` 命令表时按 `02`）
+- 状态：等最后一期（2026-08-18 gyb 说「你先不要改，等最后一期改」：冻结三份动不动，攒到全部 part 定稿之后一起裁；此前读 `05` 命令表时以 `02` 定稿为准）
+
+## 2026-08-18 03:36 来自 rl-part-06 关于 06-hooks-and-permissions.md
+- 事项：06 定稿，十一条「没写清」加一处「两处原文不一致」共十二条 gyb 2026-08-18 全裁完，牵连别处的十条见下；完整清单在 06 文末「要同步到别处的」。
+- 裁决原文：问题一「有的时候会用到仓库外的东西，建议弄一个白名单，白名单下的文件都允许修改」；问题二「问题2现在就测一下」（已测通过：头部钩子命令带参数原样到达）；问题三「选a」；问题四「让idea能写gyb」；问题五「5a」；问题六「6 c」；问题七到十二各「a」。
+- 要改的地方：
+  - `08-trees-init-and-host.md`：阈值表加钩子路径白名单配置项（默认为空，列在里面的路径钩子一律放行）；hooks/ 那行可注「共用脚本带角色参数 2026-08-18 已实测」。
+  - `30-build-steps-verify-tests.md`：待验证第 2 条改「已测通过（2026-08-18），主案定，备案删」；第 1 条并入「${CLAUDE_PLUGIN_DATA} 在本机解析到哪，宿主不给就插件在用户目录下自定数据目录」；第 6 条可注「一次 PreToolUse 观察里没有模型标识，正式结论仍等测」。
+  - `09-common-and-feedback.md`：rule-08 补「用 Bash 往四个角色目录和 loop/ 写等于绕钩子，不许，要写就用 Write/Edit，账本一律走 rl」；母版加「一个会话只加载一个角色，要换角色另开会话」；第四节补「角色 json 改动同母版流程：feedback 记一条、单独 commit、rules_version 加一」；第七节「notes/ 只有 gyb 写」改「gyb 和 idea 写」。
+  - `10-role-idea.md`：json 副本 writes「无目录」改 `notes/`；第 13 行「writes 一栏是空的」照改；reads 按新写法展开（清单抄 06 idea 表）；SKILL.md 加两句纪律（Bash 绕钩子、一会话一角色）。
+  - `11-role-deploy.md`：json 副本 reads 去括号备注、dispatches_to 改「run、gpu-runner」、备注移到表下；SKILL.md 加两句纪律。
+  - `12-role-run.md`：json 副本 reads 改「handoffs、issues、runs、experiments/、ops/gpu_state.md」，「只读自己那张 launch_order」「只读归自己的 issue」移到表下；SKILL.md 加两句纪律。
+  - `13-role-analysis.md`：json 副本 reads 核对无句子；SKILL.md 加两句纪律。
+  - `14-role-reviewer.md`：json 副本 reads 从「一切」展开成清单（抄 06 reviewer 表）；第 117 行测试 13 描述对齐「三样都查」；SKILL.md 加两句纪律。
+  - `05-rl-cli.md`（冻结后待议）：doctor 加一项「陈旧会话状态文件」（sessions 已销号或超过一天没动，修法删文件，归 gyb 推）；第 100 行「机器检查只查写命令」与 06「三样都查」不一致。
+  - `04-handoffs-and-sessions.md`（冻结后待议）：销号钩子动作清单加「删本会话的状态文件」。
+- 状态：待处理
