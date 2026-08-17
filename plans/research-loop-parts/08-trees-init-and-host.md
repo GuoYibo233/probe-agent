@@ -15,7 +15,7 @@
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
 | `review/` | reviewer 的问题清单 |
-| `notes/` | gyb 自己写的文档，只有 gyb 写，谁都能读 |
+| `notes/` | gyb 自己写的文档，gyb 和 idea 写（idea 能写 `notes/` 是 2026-08-18 gyb 裁，定义处 `06`），谁都能读 |
 
 `analysis/` 下面的公共统计件由 init 播模板，notebook 由 analysis 干活时新建，`analysis/scratch/` 留给快车道。
 
@@ -72,6 +72,7 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 | `notify.reminder_days` | 7 | 每 7 天提醒 gyb 跑 `rl reclaim`、看 feedback、跑 doctor、落母版 |
 | `lock.timeout_seconds` | 10 | 文件锁等多久算超时，超时退出码 4（2026-08-17 随 `05` 定稿加） |
 | `quick_lane.worktree_root` | `<仓库>/../<仓库名>-ql/` | 快车道 worktree 建在哪 |
+| `hooks.path_allowlist` | `[]`（空） | 写权钩子的路径白名单：列在里面的路径不管折成什么一律放行，用来放「路径写在仓库里、东西其实在仓库外」的地方；默认为空，gyb 在 `rl init` 之后按需填（2026-08-18 gyb 裁，定义处 `06`「路径怎么判」；键名是本份定的，`06` 只说「插件配置里的一项、和阈值表放一起」） |
 
 ## 四、插件本体这棵树
 
@@ -85,7 +86,7 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 | `schemas/` | 九本账的行格式 |
 | `scripts/` | 入账与查询的实现 |
 | `bin/rl` | 命令入口，含 status、inbox、trace、回收、doctor |
-| `hooks/` | 钩子脚本本体：五个角色共用一个脚本、参数报角色名；登记和销号的钩子也在这里 |
+| `hooks/` | 钩子脚本本体：五个角色共用一个脚本、参数报角色名（2026-08-18 已实测，待验证第 2 条通过，见 `06`「钩子脚本本身」）；登记和销号的钩子也在这里 |
 | `monitors/` | 一个，发射看门狗，只在 run 上线时起，只写自己的状态文件 |
 | `tests/` | 测试 |
 
@@ -286,3 +287,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。接口一节「grants 只收裸终端」那条改成「grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）」。
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「那些分的就是说明，总的没用」）：第五节「两处原文不一致」段插件目录要补的三样去掉 `ARCHITECTURE.md`，剩 `.claude-plugin/plugin.json`、`README` 两样。
 - 2026-08-18 来自 sync-inbox 问题 32 的裁决（定义处 `06` 第三节 CLAUDE.md 三句与本份第六节，rl-hub-v4 落；gyb 原话「a」）：宿主白名单照旧 `loop/*.jsonl` 字面，`.doctor-acks.jsonl` 顺带不算脏；第六节那句后补说明，三句本身不改。对回原则 4。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「有的时候会用到仓库外的东西，建议弄一个白名单，白名单下的文件都允许修改」「问题2现在就测一下」「让idea能写gyb」）：第三节阈值表加 `hooks.path_allowlist`（默认空）；第四节 hooks/ 行注已实测；第一节 `notes/` 行改「gyb 和 idea 写」。对回原则 2、8、3。

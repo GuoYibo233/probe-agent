@@ -16,7 +16,7 @@
 | `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | **冻结 `884ac0b`**（2026-08-17 gyb 定；定稿 `a5d05d4`，收问题 6–31 `81377ac`/`884ac0b`） |
 | `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 | **冻结 `9b78d7c`**（2026-08-17 gyb 定；定稿 `130ec90`，收问题 7–30 `a7d1ec9`/`cec2cc9`/`9b78d7c`） |
 | `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十九项、notify | 635 | 13 | 约 100 | **冻结 `77213e5`**（2026-08-17 gyb 定；定稿 `656c8a9`，收问题 6–31 `1b37593`/`2c965d9`/`2dcdd23`/`ddafd84`/`77213e5`） |
-| `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 在 `rl-part-06` 手上（2026-08-18） |
+| `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 已定稿 `d430192`（2026-08-18，rl-part-06；十条同步事项 rl-hub-v4 已传，动到冻结 04/05 的两处记「冻结后待议」问题 35） |
 | `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 未开 |
 | `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 未开 |
 | `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩八条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 未开 |
@@ -49,7 +49,7 @@
 
 05 rl 命令（2026-08-17 定稿时全部裁完，见 05 裁决记录）：doctor 十八项只有三项写了修法、「修完归谁推」一条没写；sessions.model unknown 那项算不算第十九项；stale 的 --all；handoff done 的 --actual-seconds 和「rl 算」打架；session end 顺带的 release 账行 actor 填谁；notify 能不能手动调；推送表第 4 条在哪条命令里发现；看门狗读 rl 时 actor 算谁；--force 能不能越表外转移；锁超时多久；inbox/doctor/reclaim 的 --json；--ack 之后还报不报；在角色会话里跑 init 会怎样。
 
-06 分权与钩子：相对路径怎么判、软链接算不算仓库内；共用一个钩子脚本还是各一份挂在待验证 2；idea writes 是无目录但仓库根放行；notes/ 那条在角色会话里等于永远 deny；会话状态文件谁清理、`${CLAUDE_PLUGIN_DATA}` 解析到哪；加载第二个角色 skill 会怎样；dispatches_to 谁查；reads 栏写法不统一测试 13 按哪种查；角色 json 改动算不算母版改动；denied issue 归谁；Bash 直写角色目录钩子看不见、纪律里没专句。
+06 分权与钩子（2026-08-18 定稿时全部裁完，见 06 裁决记录）：相对路径怎么判、软链接算不算仓库内；共用一个钩子脚本还是各一份挂在待验证 2；idea writes 是无目录但仓库根放行；notes/ 那条在角色会话里等于永远 deny；会话状态文件谁清理、`${CLAUDE_PLUGIN_DATA}` 解析到哪；加载第二个角色 skill 会怎样；dispatches_to 谁查；reads 栏写法不统一测试 13 按哪种查；角色 json 改动算不算母版改动；denied issue 归谁；Bash 直写角色目录钩子看不见、纪律里没专句。
 
 07 快车道：analysis 的 scratch 开张版填什么；快车道数字进不进 runs 两句打架（2026-08-17 已裁：不进 runs，问题 22）；补单报告目录名在拿到单号之前取不出来；补单要不要 code_paths 两处没说到一起；analysis 合回补哪张单；--from 转进快车道之后那张工单怎么走；gpu-runner 起来之后登不登记、run-id 和 track 谁填；merge 之后 worktree 和分支谁删；补的 decisions.deploy 来源填哪棵树的路径；scratch 行归哪条线。
 

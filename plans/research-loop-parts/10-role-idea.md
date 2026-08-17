@@ -10,7 +10,7 @@ idea 和 gyb 谈想法，谈定的东西写进 idea 的决定账。gyb 会参与
 
 idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。idea 是这两种单子的 owner：单子从开到关归它，它负责拉起下游、验收、收回。
 
-有三件事 idea 不做。文献变成想法由 gyb 亲自做，idea 没有 gyb 的允许连 notes/ 都不读。分析什么、画什么图由 gyb 亲自说，idea 不替 gyb 主张要看什么数。写代码不归 idea，idea 的角色 json 里 writes 一栏是空的，一个目录都不能 Write 或 Edit。
+有三件事 idea 不做。文献变成想法由 gyb 亲自做，idea 没有 gyb 的允许连 notes/ 都不读。分析什么、画什么图由 gyb 亲自说，idea 不替 gyb 主张要看什么数。写代码不归 idea，idea 的角色 json 里 writes 一栏只有 `notes/`（2026-08-18 gyb 裁，原来是「无目录」，定义处 `06`），`experiments/`、`analysis/`、`review/`、`loop/` 一个都不能 Write 或 Edit。
 
 ## use case 表
 
@@ -34,13 +34,17 @@ idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。i
 
 | 栏 | 内容 |
 |---|---|
-| reads | 九本账全部、`notes/`（要 grant）、`analysis/`、`experiments/` 下的部署报告目录、`review/` |
-| writes | 无目录 |
+| reads | `decisions.idea`、`decisions.deploy`、`decisions.run`、`decisions.analysis`、`decisions.reviewer`、`decisions.gyb`、issues、handoffs、runs、grants、feedback、evaluations、sessions、scratch、`notes/`、`analysis/`、`experiments/`、`review/` |
+| writes | `notes/`（2026-08-18 gyb 裁，原来是「无目录」） |
 | ledger_writes | decisions.idea 全部；handoffs 的 open、accept、reject、withdraw、release、reissue、resume、amend；issues 的 open、reply、reassign、close；feedback add |
 | dispatches_to | deploy、analysis |
 | model | 由 agent 调用时 fable，gyb 手动加载时跟当前会话的模型一致 |
 
-读一律不设权：九本账的查询命令谁都能调，reads 这一栏是纪律不是门禁。查询命令（show、list、trace、status、inbox、stale、doctor）不进 ledger_writes；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查只查 SKILL.md 正文出现的每条 rl 写命令在不在 ledger_writes 里，查询命令不查。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试同样查抄没抄。
+备注（不进 json，2026-08-18 `reads` 写法裁决：账写账名、目录写相对仓库根的路径、备注移到表下）：`notes/` 要 gyb 发 `read:notes` 才读；`experiments/` 只读部署报告目录。
+
+SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；一个会话只加载一个角色，要换角色另开会话。
+
+读一律不设权：九本账的查询命令谁都能调，reads 这一栏是纪律不是门禁。查询命令（show、list、trace、status、inbox、stale、doctor）不进 ledger_writes；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试同样查抄没抄。
 
 ## 收件箱
 
@@ -146,7 +150,7 @@ gyb 随时可以自己验。gyb 越过 owner 验收或打回时，rl 给 owner �
 
 ## 申请读 notes/
 
-notes/ 只有 gyb 写，谁都能读，但 idea 要经 gyb 允许才有读文献的权限。
+notes/ gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读，但 idea 要经 gyb 允许才有读文献的权限。
 
 `rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`。发了就不再走申请。没发的话 idea 开一条 issue 给 gyb，kind 是 `request`；gyb 在裸终端写一条 grant，idea 之后才读 notes/。授权只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收。
 
@@ -366,3 +370,4 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：「上线第一个动作」这一节改名叫「收件箱」，头一句改成「`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单」；开头摘要那一行的「上线第一个动作 `rl inbox`」跟着改。
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」）：第五节过版判定改成「比账里最新一个非 `confirm` 版小才算过时」。对回原则 9。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「让idea能写gyb」「a」（问题八、十一、十二）「6 c」）：json 副本 `writes` 改 `notes/`、`reads` 按新写法展开成清单、备注移到表下；第一节「writes 一栏是空的」照改；「申请读 notes/」一节首句改「gyb 和 idea 写」；机器检查改三样都查；加两句 SKILL.md 纪律。对回原则 3、8、2。

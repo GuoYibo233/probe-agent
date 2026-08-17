@@ -8,7 +8,7 @@
 
 ### 1. 文献变成想法
 
-gyb 自己做文献调查，把调查报告写成 md 放进 `notes/`，`notes/` 只有 gyb 写，谁都能读。这一版不加文献线，也没有角色去查「这个想法别人做过没有」，要加文献账是另一件事；`notes/` 就是文献进入这套系统的唯一入口。
+gyb 自己做文献调查，把调查报告写成 md 放进 `notes/`，`notes/` gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读。这一版不加文献线，也没有角色去查「这个想法别人做过没有」，要加文献账是另一件事；`notes/` 就是文献进入这套系统的唯一入口。
 
 idea 要经 gyb 允许才有读文献的权限。`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。读权不上钩子，grant 是给 reviewer 事后查的凭据，`rl doctor` 有一项扫描「决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`」。
 
@@ -501,3 +501,4 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处本份第四节，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱……这个角色就应该先执行刚才idea给他的工作」「C」「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：第四节开头补一句——`rl inbox` 是查询命令，谁需要谁敲，角色被拉起不自动查收件箱、先干拉它起来的那张单，run 不查 inbox。对回原则 6。
 - 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：接口一节公共骨架那行的两个可选栏由「`fix_for`、`force_reason`」改成「`force_reason`、`via`」。对回原则 4。
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「甲」）：第二节「决定落哪本账」按编号前缀落文件改写：gyb 裸终端新开的用 `gyb` 前缀落 `decisions.gyb.jsonl`，gyb 裸终端给角色决定追加的一版落角色那本、`session_id` 记 `cli`。对回原则 4。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「让idea能写gyb」）：第一节「`notes/` 只有 gyb 写」改「gyb 和 idea 写」。对回原则 3。

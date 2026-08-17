@@ -16,7 +16,7 @@ deploy 一个会话只装 deploy 一个角色。加载 skill 那一刻钩子把�
 
 ## 二、写权只有 experiments/
 
-deploy 的 `writes` 只有 `experiments/`。钩子只挂 Write 和 Edit 两个工具，只按研究仓库内的相对路径判，只拦两类事：写别的角色的目录（`analysis/`、`review/`、`notes/`），和直接 Write 或 Edit `loop/`。仓库外的路径一律放行，所以快车道的 worktree 和产物根 deploy 写得进去，钩子不判。仓库根的 `run.py`、`MAP.md`、`ops/` 这些路径钩子也放行，靠第五节的三条纪律管。Bash 写出来的文件钩子不看。
+deploy 的 `writes` 只有 `experiments/`。钩子只挂 Write 和 Edit 两个工具，只按研究仓库内的相对路径判，只拦两类事：写别的角色的目录（`analysis/`、`review/`、`notes/`；`notes/` idea 也能写，2026-08-18 gyb 裁，定义处 `06`），和直接 Write 或 Edit `loop/`。仓库外的路径一律放行，所以快车道的 worktree 和产物根 deploy 写得进去，钩子不判。仓库根的 `run.py`、`MAP.md`、`ops/` 这些路径钩子也放行，靠第五节的三条纪律管。Bash 写出来的文件钩子不看。
 
 钩子拦下来的时候回话要指路：告诉模型你是谁、为什么拦、去开哪条 issue 的命令是什么。分权三层的全文在 `06-hooks-and-permissions.md`。
 
@@ -135,13 +135,17 @@ use case（施工计划第五节原文）：接工单（handoff start）；写�
 
 | 栏 | 内容 |
 |---|---|
-| reads | `decisions.idea`、`decisions.gyb`、`decisions.deploy`、handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md`（快车道自己跑 GPU 时） |
+| reads | `decisions.idea`、`decisions.gyb`、`decisions.deploy`、handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md` |
 | writes | `experiments/`（worktree 在仓库外，钩子不判） |
 | ledger_writes | decisions.deploy 全部、handoffs 的 start/done/stuck/open/accept/reject/withdraw/release/resume/amend、issues 全部、scratch 全部（含 ql open/close）、feedback add |
-| dispatches_to | run；gpu-runner（只在快车道） |
+| dispatches_to | run、gpu-runner |
 | model | as_subagent 是 opus；manual 是 inherit |
 
-reads 是纪律不设门禁，查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查只查 SKILL.md 正文里出现的 rl 写命令在不在 `ledger_writes` 里。
+备注（不进 json，2026-08-18 `reads` 写法裁决：备注移到表下）：`ops/gpu_state.md` 只在快车道自己跑 GPU 时读；gpu-runner 只在快车道派。`dispatches_to` 机器不查、纯纪律，事后从 sessions 账看谁起了谁（2026-08-18 gyb 裁，定义处 `06`）。
+
+SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；一个会话只加载一个角色，要换角色另开会话。
+
+reads 是纪律不设门禁，查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。
 
 SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试会查抄没抄。
 
@@ -388,3 +392,4 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：第一节「deploy 上线第一个动作是 `rl inbox`（原则 6）」改成「`rl inbox` 谁需要谁敲，不是上线动作：deploy 被派单拉起时先干那张单，收件箱要看的时候自己敲」。
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。
 - 2026-08-17 rl-hub-v3 审后补：第六节 `batch` 行按 `04-handoffs-and-sessions.md` 字段表补回「`launch_order` 开单时从父单抄」「调用者 `--batch B` 传」（问题 9 原话说 launch_order 从父单抄的规矩照旧）。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题七、八、十一、十二）「6 c」「让idea能写gyb」）：json 副本 `reads` 去括号备注、`dispatches_to` 改「run、gpu-runner」、两条备注移到表下；第二节写别的角色目录那句注 `notes/` idea 也能写；机器检查改三样都查；加两句 SKILL.md 纪律。对回原则 5、8、2。

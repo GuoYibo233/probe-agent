@@ -46,7 +46,7 @@ reviewer 具体审三样：
 
 ## 什么都能读，但读的顺序是死的
 
-reviewer 什么都能读（2026-08-16 晚 gyb 裁，原来的「默认不读 deploy 的想法和部署报告」作废；同一条也是施工计划第一节裁决 7）。角色 json 的 `reads` 栏写的是「一切（九本账、全部目录）」。
+reviewer 什么都能读（2026-08-16 晚 gyb 裁，原来的「默认不读 deploy 的想法和部署报告」作废；同一条也是施工计划第一节裁决 7）。角色 json 的 `reads` 栏原来写「一切（九本账、全部目录）」，2026-08-18 按 `06` 的写法裁决展开成清单（第九节那张表），意思不变。
 
 对抗性只体现在读的顺序：
 
@@ -104,17 +104,19 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 
 | 栏 | reviewer 的值 |
 |---|---|
-| `reads` | 一切（九本账、全部目录） |
+| `reads` | `decisions.idea`、`decisions.deploy`、`decisions.run`、`decisions.analysis`、`decisions.reviewer`、`decisions.gyb`、issues、handoffs、runs、grants、feedback、evaluations、sessions、scratch、`experiments/`、`analysis/`、`review/`、`notes/`（2026-08-18 按 `reads` 写法裁决从「一切（九本账、全部目录）」展开，意思不变） |
 | `writes` | `review/` |
 | `ledger_writes` | decisions.reviewer 全部、session focus、feedback add |
 | `dispatches_to` | 无 |
 | `model` | `as_subagent` 是 fable，`manual` 是 inherit |
 
+SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；一个会话只加载一个角色，要换角色另开会话。
+
 模型这一栏按施工计划第一节裁决 3：由 agent（subagent 或 workflow）调用的时候 idea、reviewer 用 fable；gyb 手动加载角色的时候跟当前会话的模型一致。这条与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable」不一致，按原则 8 工程内为准，插件的 README 和角色 json 里都要明写「fable 是 gyb 2026-08-16 点名的例外」。
 
 两处原文不一致：设计文档写 reviewer 由 gyb 手动开、审读意见第 9 条也写「reviewer 只由 gyb 手动开」，施工计划第一节裁决 3 又给 reviewer 定了 `as_subagent` 的模型 fable，说的是「由 agent（subagent 或 workflow）调用的时候」。按裁决优先，角色 json 照裁决 3 写两个取值；谁去起这张 subagent，源文档没写，留在下一节。
 
-有一条机器检查（测试 13）：SKILL.md 正文出现的每条 rl 写命令都要在这个角色 json 的 `ledger_writes` 里，查询命令不查；每个读的目录都要在 `reads` 里；SKILL.md 里不许有 common/ 母版条文的副本。
+有一条机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。
 
 ## 和别的 part 的接口
 
@@ -222,3 +224,4 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：「上线第一个动作与 session focus」这一节改名「收件箱与 session focus」，头一句改成「`rl inbox` 谁需要谁敲，不是上线动作：被 gyb 开起来先干 gyb 点名的那件事」。
 - 2026-08-17 rl-hub-v3 审后补：摘要行「上线做什么」改成「收件箱与 session focus」（问题 28）；第一节 reviewer 新职责那段末尾补回「派 subagent 与第八节不派活、`dispatches_to` 无对不上」的不一致标注，立 sync-inbox 问题 33 等 gyb。
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处本份第八节与 `06` 的 reviewer json，rl-hub-v4 落；gyb 原话「选a」）：reviewer 起 sonnet subagent 逐题查不算派活，`dispatches_to` 仍是无；第一节那段的不一致标注结掉，第八节补半句。对回原则 5。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 从「一切」展开成清单（第四节那句同改）；第九节测试 13 描述改三样都查；加两句 SKILL.md 纪律。对回原则 8、2。

@@ -41,15 +41,19 @@
 5. 口径不发明：analysis 只算 gyb 说要看的数、只画 gyb 说要画的图；写代码不算算数，出数才要 `approved` 的口径。
 6. 故障分域：deploy 和 idea 接到问题先判病因在不在自己域，在就地修；run 出问题一律开 issue 给 deploy，不自行重试，重来是发射单上的下一次尝试；analysis 卡住开 issue 给出问题的角色；reviewer 不开 issue，卡住也只写进清单交给 gyb。
 7. 改规矩走反馈账：角色不许自改母版和规格，提到 feedback 之后照现行母版继续干，不等裁决；裁决只对下次加载的会话生效。
-8. 出圈即留痕：钩子拦下的，原话告诉模型开哪条 issue；钩子不拦但越出自己 writes 的（宿主文件、Bash 写入），列进报告并留决定并守宿主规矩；读账一律经 rl 查询命令，查询命令谁都能调。
+8. 出圈即留痕：钩子拦下的，原话告诉模型开哪条 issue；钩子不拦但越出自己 writes 的（宿主文件、Bash 写入），列进报告并留决定并守宿主规矩；读账一律经 rl 查询命令，查询命令谁都能调。用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；reviewer 事后拿 git 历史对着 sessions 账查（这半句 2026-08-18 gyb 裁，定义处 `06` 第三层）。
 
 8 月 15 日第③条「机验人判」不收录，理由是 gyb 裁定意义不明。
+
+母版里另有一句纪律，不占编号（2026-08-18 gyb 裁，定义处 `06`「钩子跟角色绑定」）：一个会话只加载一个角色，要换角色另开会话；机器不管，第二次加载的行为不定义、不兜底。这句同时写进每份角色 SKILL.md。
 
 设计文档 reviewer 一节里还留着一句「施工计划公共规矩第 6 条里 reviewer 那半句按这一句改」，施工计划第十三节 rule-06 现在的写法已经是改过的那一版（reviewer 不开 issue，卡住也只写进清单交给 gyb），两处说的是同一件事，不用再裁。
 
 ## 四、rules_version 与母版改动的生效时刻
 
 母版文件里带一个 `rules_version`。会话账的开始版记下这个会话加载时的 `rules_version`（sessions 的字段在 `04-handoffs-and-sessions.md`）。feedback 采纳的那一版由 rl 自动填 `rules_version_after`，`rl feedback accept` 顺带把 `rules_version` 加一。
+
+角色 json 改一栏算改母版，同一个流程（2026-08-18 gyb 裁，定义处 `06`「五栏是什么」）：feedback 账记一条、采纳后单独 commit（前缀 `research-loop rules:`）、`rules_version` 一起加一，生效时刻同母版。
 
 生效时刻定死一句：母版改动在下次加载角色时生效，正在跑的会话不追、不通知，按现行母版干到底。规矩 7 是同一件事的角色侧写法：提到 feedback 之后照现行母版继续干，不等裁决；裁决只对下次加载的会话生效。
 
@@ -123,7 +127,7 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
 授权只有 gyb 能写：`actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节 (d)「grants 只收裸终端」不认）。
 
-这本账现在只服务一件事：idea 读 `notes/` 的权。`notes/` 只有 gyb 写，谁都能读这条不成立——idea 要经 gyb 允许才有读文献的权限。两条路：`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。
+这本账现在只服务一件事：idea 读 `notes/` 的权。`notes/` gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读这条不成立——idea 要经 gyb 允许才有读文献的权限。两条路：`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。
 
 读权不上钩子。grant 是给 reviewer 事后查的凭据。doctor 有一项扫描接住这条纪律：决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`。
 
@@ -360,3 +364,4 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 - 2026-08-17 来自 sync-inbox 问题 26 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「我觉得。有一些改的方法，不一定会改公共规矩，如果是这样的话就选b。」）：`applied_to` 至少写一个即可。第五节行格式那句补「至少写一个」，下一句照 `03` 一字不差改写，doctor 那一项改成「`applied_to` 为空」；接口一节 doctor 五项那条同改；「没写清」第 5 条标已裁。
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。第七节开头「只有 gyb 在裸终端能写」改成「只有 gyb 能写」，行格式末句的「`session_id` 必须是 `cli`」改成「裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话」，「grants 只收裸终端写的行……不接受 `--as-gyb`」那段照 `03` grants 段一字不差换掉。
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「所有的东西都默认用英语，插件本体里面用英语写，然后不要出现语言相关的约束，就默认只有英语就可以了，不需要强调任何语言」）：第二节施工步 5 那句「中文底稿给 gyb 过，正式版是英文」去掉语言字样；「没写清」第 2 条英文措辞那一半销掉，只留 `rule-NN` 编号保持不变一句。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题十一、九）「6 c」「让idea能写gyb」）：rule-08 补 Bash 绕钩子那半句；八条之后加一句不占编号的纪律「一个会话只加载一个角色」；第四节补「角色 json 改动同母版流程」；第七节「`notes/` 只有 gyb 写」改「gyb 和 idea 写」。对回原则 2、9、3。

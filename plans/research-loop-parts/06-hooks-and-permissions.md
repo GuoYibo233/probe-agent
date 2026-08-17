@@ -447,13 +447,13 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 
 下面这些是 2026-08-18 定稿时牵连别的 part 的，这边只列不改，已经 SendMessage 报给 rl-hub-v4 并追加到 `sync-inbox.md`。
 
-- `08-trees-init-and-host.md`：阈值表加一项钩子路径白名单（配置项，默认为空，gyb 在 `rl init` 之后按需填；列在里面的路径钩子一律放行）。hooks/ 那行「五个角色共用一个脚本、参数报角色名」维持，可注「2026-08-18 已实测」。
-- `30-build-steps-verify-tests.md`：待验证第 2 条状态改「已测通过（2026-08-18，参数原样到达），主案定，备案删」；第 1 条并入「`${CLAUDE_PLUGIN_DATA}` 在本机解析到哪，宿主不给就插件在用户目录下自定数据目录」；第 6 条（钩子输入里有没有模型标识）可注「2026-08-18 一次 PreToolUse 观察里没有，正式结论仍等测」。
-- `09-common-and-feedback.md`：rule-08 补半句「用 Bash 往四个角色目录和 `loop/` 写等于绕钩子，不许，要写就用 Write/Edit，账本一律走 `rl`」；母版加一句「一个会话只加载一个角色，要换角色另开会话」；第四节 `rules_version` 补「角色 json 改动同流程：feedback 记一条、单独 commit、`rules_version` 加一」；第七节「`notes/` 只有 gyb 写」改成「`notes/` gyb 和 idea 写」。
-- `10-role-idea.md`：json 副本 `writes` 「无目录」改 `notes/`；第 13 行「idea 的角色 json 里 writes 一栏是空的，一个目录都不能 Write 或 Edit」照改；`reads` 行按新写法展开（清单见本份 idea 那张表）；SKILL.md 加两句纪律（Bash 绕钩子、一会话一角色）。
-- `11-role-deploy.md`：json 副本 `reads` 去掉括号备注、`dispatches_to` 改「run、gpu-runner」并把「只在快车道」「快车道自己跑 GPU 时」两条备注移到表下；第 19 行「写别的角色的目录（`analysis/`、`review/`、`notes/`）」仍对，可加「`notes/` idea 也能写」；SKILL.md 加两句纪律。
-- `12-role-run.md`：json 副本 `reads` 改「handoffs、issues、runs、`experiments/`、`ops/gpu_state.md`」，「只读自己那张 `launch_order`」「只读归自己的 issue」移到表下；SKILL.md 加两句纪律。
-- `13-role-analysis.md`：json 副本 `reads` 写法核对（现在已经是账名加路径，只要确认没有句子）；SKILL.md 加两句纪律。
-- `14-role-reviewer.md`：json 副本 `reads` 从「一切（九本账、全部目录）」展开成清单（见本份 reviewer 那张表）；第 117 行测试 13 的描述对齐本份「三样都查」；SKILL.md 加两句纪律。
-- `05-rl-cli.md`（已冻结，冻结后待议）：doctor 加一项「陈旧会话状态文件」——sessions 账已销号或超过一天没动的状态文件，修法是删文件、归 gyb 推；第 100 行「机器检查只查 SKILL.md 里出现的写命令在不在 `ledger_writes` 里」与本份「三样都查」不一致。
-- `04-handoffs-and-sessions.md`（已冻结，冻结后待议）：销号钩子的动作清单加「删本会话的状态文件」。
+- `08-trees-init-and-host.md`：阈值表加一项钩子路径白名单（配置项，默认为空，gyb 在 `rl init` 之后按需填；列在里面的路径钩子一律放行）。hooks/ 那行「五个角色共用一个脚本、参数报角色名」维持，可注「2026-08-18 已实测」。（已同步 2026-08-18 rl-hub-v4）
+- `30-build-steps-verify-tests.md`：待验证第 2 条状态改「已测通过（2026-08-18，参数原样到达），主案定，备案删」；第 1 条并入「`${CLAUDE_PLUGIN_DATA}` 在本机解析到哪，宿主不给就插件在用户目录下自定数据目录」；第 6 条（钩子输入里有没有模型标识）可注「2026-08-18 一次 PreToolUse 观察里没有，正式结论仍等测」。（已同步 2026-08-18 rl-hub-v4）
+- `09-common-and-feedback.md`：rule-08 补半句「用 Bash 往四个角色目录和 `loop/` 写等于绕钩子，不许，要写就用 Write/Edit，账本一律走 `rl`」；母版加一句「一个会话只加载一个角色，要换角色另开会话」；第四节 `rules_version` 补「角色 json 改动同流程：feedback 记一条、单独 commit、`rules_version` 加一」；第七节「`notes/` 只有 gyb 写」改成「`notes/` gyb 和 idea 写」。（已同步 2026-08-18 rl-hub-v4）
+- `10-role-idea.md`：json 副本 `writes` 「无目录」改 `notes/`；第 13 行「idea 的角色 json 里 writes 一栏是空的，一个目录都不能 Write 或 Edit」照改；`reads` 行按新写法展开（清单见本份 idea 那张表）；SKILL.md 加两句纪律（Bash 绕钩子、一会话一角色）。（已同步 2026-08-18 rl-hub-v4）
+- `11-role-deploy.md`：json 副本 `reads` 去掉括号备注、`dispatches_to` 改「run、gpu-runner」并把「只在快车道」「快车道自己跑 GPU 时」两条备注移到表下；第 19 行「写别的角色的目录（`analysis/`、`review/`、`notes/`）」仍对，可加「`notes/` idea 也能写」；SKILL.md 加两句纪律。（已同步 2026-08-18 rl-hub-v4）
+- `12-role-run.md`：json 副本 `reads` 改「handoffs、issues、runs、`experiments/`、`ops/gpu_state.md`」，「只读自己那张 `launch_order`」「只读归自己的 issue」移到表下；SKILL.md 加两句纪律。（已同步 2026-08-18 rl-hub-v4）
+- `13-role-analysis.md`：json 副本 `reads` 写法核对（现在已经是账名加路径，只要确认没有句子）；SKILL.md 加两句纪律。（已同步 2026-08-18 rl-hub-v4）
+- `14-role-reviewer.md`：json 副本 `reads` 从「一切（九本账、全部目录）」展开成清单（见本份 reviewer 那张表）；第 117 行测试 13 的描述对齐本份「三样都查」；SKILL.md 加两句纪律。（已同步 2026-08-18 rl-hub-v4）
+- `05-rl-cli.md`（已冻结，冻结后待议）：doctor 加一项「陈旧会话状态文件」——sessions 账已销号或超过一天没动的状态文件，修法是删文件、归 gyb 推；第 100 行「机器检查只查 SKILL.md 里出现的写命令在不在 `ledger_writes` 里」与本份「三样都查」不一致。（记 sync-inbox 问题 35，等最后一期，2026-08-18 rl-hub-v4）
+- `04-handoffs-and-sessions.md`（已冻结，冻结后待议）：销号钩子的动作清单加「删本会话的状态文件」。（记 sync-inbox 问题 35，等最后一期，2026-08-18 rl-hub-v4）

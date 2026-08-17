@@ -17,11 +17,15 @@ analysis 的写权只有 `analysis/` 一个目录。钩子只挂 Write 和 Edit�
 | ledger_writes | evaluations 的 propose/update、handoffs 的 start/done/stuck、issues 的 open/reply、scratch 全部、decisions.analysis 全部、feedback add |
 | dispatches_to | 无 |
 
+（`reads` 一行 2026-08-18 按 `06` 定稿的写法核对：账写账名、目录写相对仓库根的路径，没有句子，不用改。）
+
+SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；一个会话只加载一个角色，要换角色另开会话。
+
 两处原文不一致：设计文档 analysis 一节写的 reads 是「runs 账、口径账、派给自己的分析单、`decisions.idea` 和 `decisions.gyb`，加 handoffs」，施工计划第五节的表多了 issues、feedback、`analysis/` 三项。按施工计划的表为准。
 
 模型（施工计划第一节裁决 3、第五节表）：由 agent 调用时 analysis 用 opus；gyb 手动加载角色时跟当前会话的模型一致，角色 json 的 `manual` 栏写 `inherit`，sessions 账落解析后的真实模型名，取不到记 `unknown`。
 
-reads 一栏是纪律不设门禁：九本账的查询命令谁都能调，机器检查只查 SKILL.md 里出现的 rl 写命令在不在 `ledger_writes` 里，查询命令不查。
+reads 一栏是纪律不设门禁：九本账的查询命令谁都能调。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。
 
 `rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单。inbox 列五样：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
 
@@ -121,7 +125,7 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 - 派活单七个状态、转移表每一行的谁能写和前提、holder 的不变量：`04-handoffs-and-sessions.md`。
 - 会话登记与销号（钩子代 analysis 写 sessions 账、销号时把 `in_progress` 的单子交回 `todo`）：`04-handoffs-and-sessions.md`。
 - `rl eval propose/update/approve/reject/retire/show/list`、`rl handoff start/done/stuck/amend`、`rl ql open/close`、`rl scratch add`、`rl inbox` 的参数：`05-rl-cli.md`。
-- 钩子拦哪两类路径、角色 json 四栏的格式、机器检查只查写命令：`06-hooks-and-permissions.md`。
+- 钩子拦哪两类路径、角色 json 四栏的格式、机器检查三样都查（2026-08-18 裁）：`06-hooks-and-permissions.md`。
 - 快车道的总规矩：ql_tag 谁分、进出两行账、`rl status` 和 `reclaim` 怎么列：`07-quick-lane.md`。
 - `analysis_artifact_root` 和 `analysis/` 目录由 init 建出来的样子：`08-trees-init-and-host.md`。
 - 公共规矩 4（证据配路径）、规矩 5（口径不发明）、规矩 6（故障分域）、读法栏：`09-common-and-feedback.md`。
@@ -235,3 +239,4 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第一节 inbox 五样里通知那一项后面的「（读过即关）」删掉。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「每个角色创建时候，不要自动查收件箱」「C」）：第一节标题里的「上线第一个动作」改成「收件箱」，那句改成「`rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单」；开头摘要那一行跟着改。
 - 2026-08-17 rl-hub-v3 按 HANDOFF 第八节问题 16 那行「`13:140`（销）」：「源文档没写清的」第 3 条（analysis 走 `--merged` 补哪张单）已被问题 16 答掉，整条销掉，编号不重排；第六节「中间」那句按 `07-quick-lane.md` 第五节改成「中间版格式松，只校验骨架和 `ql_tag`；三版按表查必填」（`03` 事项 2 的裁决，05 定稿那一轮漏传）。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 核对无句子；机器检查改三样都查（第二节与接口一节）；加两句 SKILL.md 纪律。对回原则 8、2。

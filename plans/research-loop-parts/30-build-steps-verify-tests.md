@@ -10,8 +10,8 @@
 
 | # | 要验证的 | 测法 | 通过标准 | 失败备案 | 2026-08-17 之后的状态 |
 |---|---|---|---|---|---|
-| 1 | Bash 环境里有没有现成的会话 id 变量 | 在会话里 `env \| grep -i session`，再对比钩子输入的 `session_id` | 同一个值 | SessionStart 钩子写状态文件，rl 按 `cwd` 加最近一次登记找 | 待测 |
-| 2 | skill 头部声明的钩子能不能给命令带参数 | 写一个测试 skill，头部钩子命令 `hook.sh --role test`，加载后触发看参数到没到 | 脚本收到 `--role test` | 五个角色各一份钩子脚本，内容相同只差常量 | 待测；`08` 第四节写的是「五个角色共用一个脚本、参数报角色名」，就是主案 |
+| 1 | Bash 环境里有没有现成的会话 id 变量；`${CLAUDE_PLUGIN_DATA}` 在本机解析到哪（2026-08-18 并入，`06` 定稿） | 在会话里 `env \| grep -i session`，再对比钩子输入的 `session_id`；同时打印 `${CLAUDE_PLUGIN_DATA}` | 同一个值；变量解析到一个可写目录 | SessionStart 钩子写状态文件，rl 按 `cwd` 加最近一次登记找；宿主不给 `${CLAUDE_PLUGIN_DATA}` 就插件在用户目录下自定一个数据目录 | 待测 |
+| 2 | skill 头部声明的钩子能不能给命令带参数 | 写一个测试 skill，头部钩子命令 `hook.sh --role test`，加载后触发看参数到没到 | 脚本收到 `--role test` | 五个角色各一份钩子脚本，内容相同只差常量 | 已测通过（2026-08-18，`06` 定稿时 gyb 点名先测：参数原样到达，标准错误里的角色名模型原话收到），主案定，备案删；测试留在 `~/.claude/jobs/8a102def/tmp/hookargs/` |
 | 3 | monitor 的 `when: "on-skill-invoke:run"` 写法 | 写一个只打印一行的 monitor，加载 run skill 看起不起 | 加载后进程在、不加载不在 | monitor 常驻，脚本自己读会话状态文件判断当前角色是不是 run | 待测 |
 | 4 | skill 头部禁止模型调用的声明能不能锁入口 skill | 加声明后让模型自己调一次 | 调不动 | 入口 skill 的 SKILL.md 第一行写「模型调用即违规」靠纪律，另外 rl init 检查调用者状态文件不是任何角色 | 备案已升正案（2026-08-17 随 `05` 定稿裁）：`rl init` 读到会话状态文件就拒收，退出码 3，只在裸终端跑（`08` 第一节、`05` 命令表）。这一条照测，测的结论只决定 skill 头部要不要再加那句声明，不改正文 |
 | 5 | SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个 | 起一个加载角色的 subagent，让它写一行账，结束后查 sessions 账 | 有 `ended_at`、`session_id` 和 `started_at` 那行相同 | 全靠 `rl status` 段 7 加 `rl reclaim`，提醒周期从 7 天缩到 1 天 | 待测；不成立会改 `04` 第六、七节和 `12` 的走法 |
@@ -19,12 +19,12 @@
 | 7 | 定时提醒机制 | 试 Claude Code 的 schedule 和系统 cron | 到点 gyb 收得到 | `rl status` 第一行打印距上次 reclaim 几天（已是正案的一部分），提醒不做 | 待测 |
 | 8 | subagent 里加载角色 skill，头部钩子装不装得上、写权拦不拦 | 起 subagent 加载 deploy，让它写 `analysis/x.md` | 被 deny | subagent 路线改成 workflow 里的 `agentType` 指向 `agents/<role>.md`，钩子在 agent 定义里声明；再不行 subagent 接单只靠纪律加 reviewer 事后查。测完在设计文档 run 一节写死走哪一案，删掉另一案 | 待测；插件树要不要有 `workflows/` 或 `agents/` 一层挂在这条上（`08` 留给 gyb 第 10 条） |
 | 9 | 后台 subagent（原则 11）：父会话活着时后台 subagent 能不能跑几个小时；父会话结束后台 subagent 会不会被杀 | 起 deploy 会话后台起一个 sleep 两小时的 run subagent，两种情况各试一次 | 活着时能跑完并回通知；父会话结束时的行为有结论 | 被杀的话正案不变（GPU 在 tmux、单子在账上、下一个 run 认领），只是待认领的单子多；同步等的老方案不再回来 | 待测 |
-| 10 | 钩子输入里有没有模型标识 | 打印 SessionStart 钩子的输入 JSON | 有 model 字段 | sessions.model 记 `unknown`，doctor 列出来，gyb 事后补 | 备案已收成正案的一部分（2026-08-17 随 `05` 定稿裁）：doctor 第 19 项扫 `model` 是 `unknown` 的 sessions 行，修法 `rl session amend ID --model M`（`05`「rl doctor」、`04` 第七节）。这一条照测，测出有 model 字段就少走一次 amend，不改正文 |
+| 10 | 钩子输入里有没有模型标识 | 打印 SessionStart 钩子的输入 JSON | 有 model 字段 | sessions.model 记 `unknown`，doctor 列出来，gyb 事后补 | 备案已收成正案的一部分（2026-08-17 随 `05` 定稿裁）：doctor 第 19 项扫 `model` 是 `unknown` 的 sessions 行，修法 `rl session amend ID --model M`（`05`「rl doctor」、`04` 第七节）。这一条照测，测出有 model 字段就少走一次 amend，不改正文。顺带看到的（2026-08-18，不算正式测）：一次 PreToolUse 观察里钩子输入有会话 id、工作目录、权限模式、工具入参，没有模型标识，正式结论仍等测 |
 | 11 | 改一行母版不重启 claude 再加载一次角色，读到的是不是新文本 | 改 common/ 一行，同一进程再 `/` 加载角色 | 模型看到新文本 | feedback accept 的待办里加一句「改完母版必须重开终端」 | 待测；`09` 第二节引了这一条 |
 
 施工计划第九节末尾的一句照抄：原第 9 条「rl 读不到状态文件按 gyb 处理」gyb 2026-08-16 夜已裁：就是 gyb，不加参数。原第 9 条「上游同步等几个小时」按原则 11 改题成现在的第 9 条。
 
-第 0 步的交付物是把十一条的实测结果写进 `plans/2026-08-1x-research-loop-verify.md`，每条写实测结果和选了主案还是备案；备案影响正文的当场改设计文档，删掉另一案。第 4 条和第 10 条的备案已经升成正案，第 0 步测完这两条只记结果，不用再改正文。
+第 0 步的交付物是把十一条的实测结果写进 `plans/2026-08-1x-research-loop-verify.md`，每条写实测结果和选了主案还是备案；备案影响正文的当场改对应的 part（两份源文档 2026-08-18 起不再回写），删掉另一案。第 4 条和第 10 条的备案已经升成正案，第 0 步测完这两条只记结果，不用再改正文。
 
 ## 二、测试清单十七条，加 `05` 定稿点名的三条
 
@@ -345,3 +345,4 @@
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」「甲」）：测试 3「要加的」再加两例，`confirm` 之后不标过版、`merge` 后被合并旧决定废除版 `root_id` 不动。对回原则 9、4。
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「那些分的就是说明，总的没用」「不要出现语言相关的约束，就默认只有英语」「总验收是b」「第三轮先不跑，等整个plan完事，施工完成后再说」）：施工步 2 改「不做、编号保留」，步 3 依赖改步 0、1；步 5、步 6 去掉语言字样；步 8 验收栏补「每看完一对说过 / 不过加原因，记进 `00` 裁决记录，五对都过才算过」；第三轮那句改成先不跑。
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处 `14`，rl-hub-v4 传；gyb 原话「选a」）：施工步 5 那格「和 `14` 第一节的冲突等问题 6」改成问题 6、33 已裁。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「问题2现在就测一下」）：待验证第 2 条改「已测通过、主案定、备案删」；第 1 条并入 `${CLAUDE_PLUGIN_DATA}` 解析到哪；第 10 条注一次 PreToolUse 观察里没有模型标识、正式结论仍等测；第 0 步交付物那句「改设计文档」改成「改对应的 part」。对回原则 8。
