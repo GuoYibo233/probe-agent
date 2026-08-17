@@ -8,9 +8,9 @@
 
 decisions 这一本账拆成六个文件，五个角色各一个加 gyb 一个，文件名是 `loop/decisions.<actor>.jsonl`。拆文件的理由是并行各写各的不撞车。
 
-`decisions.gyb.jsonl` 只收 `session_id` 是 `cli` 的行，也就是裸终端写的行。角色会话里替 gyb 记的决定落那个角色自己那本，`actor` 记 `gyb`，带 `quote`。这条判据是「哪个会话」，不是「谁亲手敲的键盘」：rl 只看得到命令从哪个会话发出来，看不到键盘前面坐的是 gyb 还是模型。
+决定行按编号前缀落文件：`dec-idea-*` 全在 `decisions.idea.jsonl`，`dec-gyb-*` 全在 `decisions.gyb.jsonl`，一条决定的所有版本永远同一个文件，谁写的另记 `actor`。开新条时前缀由会话定：角色会话开的用那个角色的前缀（角色会话里替 gyb 记的也一样，`actor` 记 `gyb`，带 `quote`），裸终端开的用 `gyb` 前缀；所以 `decisions.gyb.jsonl` 只装 gyb 在裸终端新开的决定和它们的后续版本，gyb 在裸终端给 `dec-idea-0007` 追加的一版落 `decisions.idea.jsonl`，`actor` 记 `gyb`、`session_id` 记 `cli`。前缀的判据是「哪个会话」，不是「谁亲手敲的键盘」：rl 只看得到命令从哪个会话发出来，看不到键盘前面坐的是 gyb 还是模型。
 
-两处原文不一致：施工计划第二节的词表把文件名写成 `loop/decisions.<actor>.jsonl`（按 actor 落文件），第三节又写「`id` 形如 `dec-idea-0007`、`dec-gyb-0002`，前缀只说开在哪本账，谁写的看 `actor`」（按编号前缀落文件），第六节 `rl decision add` 那一行写的是「落 actor 自己那本（角色会话 `--as-gyb` 落角色那本）」。三处摆在一起，角色会话里 actor 是 gyb 的那一行按第二节该落 `decisions.gyb.jsonl`、按第三节和第六节该落角色那本。按施工计划的表以第三节的行格式为准：行按编号前缀落文件，`actor` 是单独一个字段。
+源文档三处口径（词表按 actor、第三节按编号前缀、第六节按 actor 加括号例外）2026-08-18 gyb 裁定按编号前缀落文件，`actor` 是单独一个字段（见文末裁决记录）。词表里 `loop/decisions.<actor>.jsonl` 的 `<actor>` 读作「前缀里的角色名」，不是「写这一行的人」。
 
 ## 一行决定长什么样
 
@@ -18,8 +18,9 @@ decisions 这一本账拆成六个文件，五个角色各一个加 gyb 一个�
 
 | 字段 | 取值和必填规则 |
 |---|---|
-| `id` | 形如 `dec-idea-0007`、`dec-gyb-0002`；前缀只说开在哪本账 |
-| `root_id` | add 时等于自己，update 继承，merge 时 `--root` 指定保留哪个 |
+| `id` | 形如 `dec-idea-0007`、`dec-gyb-0002`；前缀说落哪个文件，序号每个前缀各排各的 |
+| `op` | 这一版是哪个动作：`add`、`update`、`confirm`、`retire`、`merge`；过版判定靠它跳过 `confirm` 版 |
+| `root_id` | add 时等于自己，之后每一版都继承、一条决定内不变；merge 出的新决定用 `--root` 指定继承哪一条的根，被合并的旧决定废除版根照旧不动 |
 | `status` | `active` 或 `retired` |
 | `text` | 决定正文 |
 | `sources` | 列表，三类来源之一，每一版都非空 |
@@ -38,19 +39,19 @@ decisions 这一本账拆成六个文件，五个角色各一个加 gyb 一个�
 | `file` | `{"kind":"file","path":...,"anchor":可选}` | 仓库里的文件路径，锚点可选 |
 | `run` | `{"kind":"run","run_id":...}` | runs 账里的一个 run_id |
 
-三类可以混着放，至少一项，空列表入账脚本拒收。`file` 类是仓库内任意路径：notes/ 里 gyb 的调查报告、analysis/ 里的图和 notebook、experiments/ 里的部署报告、review/ 里的清单、experiments/ 里的代码文件都算；锚点指到小节或行号区间，命令写成 `--source file:notes/x.md#<小节>`。`file` 类路径不存在拒收，带锚点通过；`run` 类的 run_id 不在 runs 账里拒收。
+三类可以混着放，至少一项，空列表入账脚本拒收。`file` 类是仓库内任意路径：notes/ 里 gyb 的调查报告、analysis/ 里的图和 notebook、experiments/ 里的部署报告、review/ 里的清单、experiments/ 里的代码文件都算；锚点指到小节或行号区间，命令写成 `--source file:notes/x.md#<小节>`。`file` 类路径不存在拒收，带锚点通过——锚点本身不校验，这是有意的（2026-08-18 gyb 裁）：笔记会改、小节会挪、行号会漂，写入时查了也只保证那一刻；锚点是给读的人和模型定位用的提示，doctor 也不扫。`run` 类的 run_id 不在 runs 账里拒收。
 
 不设「口头」这一类来源，每条决定都要能追到一个文件或一个数字。一条决定链的第一条决定，来源指现有代码文件或 notes/ 里的一行，两样都没有就先让 gyb 在 notes/ 写一行。
 
 跑完实验才知道的结论（比如「学习率太低，换高一点再跑」）就是这么进账的：来源指那次跑的 run_id 和 analysis 的图，成为原决定的新一版或者一条新决定。
 
-update、confirm、retire、merge 四个动作不给 `--source` 时自动继承上一版的来源。
+update、confirm、retire、merge 四个动作不给 `--source` 时自动继承上一版的来源。「有新证据改的一版」和「gyb 当场改主意的一版」不另设「改的原因」一栏（2026-08-18 gyb 裁，第二轮模拟提的 `change_reason` 不采纳）：分辨靠 `sources` 和 `quote`——有新证据就把那次 run 或那份文件挂上来当来源，gyb 当场改的带 `quote`，两样都没有就是延续上一版依据改了做法。纪律是有证据必挂，不靠多一栏。
 
 doctor 有一项扫描盯着来源：决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 `read:notes`。扫描项全表在 `05-rl-cli.md`。
 
 ## 编号、版本、新一版还是新一条
 
-编号带角色前缀，更新不换编号、版本号加一，谁写的记在 `actor` 里。默认读取对每个编号只取最新版，历史全在文件里但默认读不到，要旧版本用 `--version` 或历史命令。
+编号带角色前缀，序号每个前缀各排各的：`dec-idea-0007` 和 `dec-deploy-0007` 可以并存，分号只扫自己那本。更新不换编号、版本号加一，谁写的记在 `actor` 里。默认读取对每个编号只取最新版，历史全在文件里但默认读不到，要旧版本用 `--version` 或历史命令。
 
 判据分三条：
 
@@ -58,13 +59,13 @@ doctor 有一项扫描盯着来源：决定的来源指向 notes/ 但 grants 里
 2. 换了要回答的问题就开新条。
 3. 跨角色改别人的决定一律在自己那本开新条，来源指原决定的编号加版本。
 
-看过一批结果之后确认「继续、设定不变」也要留痕，用 `rl decision confirm` 追加一版，正文不变、只加来源。
+看过一批结果之后确认「继续、设定不变」也要留痕，用 `rl decision confirm` 追加一版，正文不变、只加来源，`op` 记 `confirm`；这一版不算改版，不触发过版（见下一节）。
 
-编号、分配、追加三步放在同一把锁（`loop/.lock`）里，不许扫完号再排队写，否则同角色两个会话会撞号。
+扫号、分配、追加三步放在同一把锁（`loop/.lock`）里，不许扫完号再排队写，否则同角色两个会话会撞号；扫号只读本前缀那一个文件。
 
 ## root_id 与 line
 
-每条决定记根决定：新开的决定根是自己，追加一版继承，合并时用 `--root` 指定保留哪个根。词表里研究线 `line` 就是根决定编号。
+每条决定记根决定：新开的决定根是自己，追加一版继承，一条决定内根只写一次不变；合并时用 `--root` 指定新决定继承哪一条的根，被合并的旧决定废除版根照旧（2026-08-18 gyb 裁）。合并的正向靠新决定的 `merged_from`，反向靠 `sources` 里的 `decision` 项，不靠改根。词表里研究线 `line` 就是根决定编号。
 
 派活单上的 `line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着（handoffs 的字段在 `03-ledgers.md`）。两条研究线并行时按根决定切开看：`rl status --group-by line`、`rl decision list --line L`、`rl handoff list --line L`、`rl run list --line L`。
 
@@ -73,9 +74,9 @@ doctor 有一项扫描盯着来源：决定的来源指向 notes/ 但 grants 里
 | 动作 | 命令 | 这一版做什么 |
 |---|---|---|
 | 追加一版 | `rl decision update ID --text [--source ...] [--quote ...]` | 换正文，版本号加一 |
-| 确认继续 | `rl decision confirm ID --source ...` | 正文不变，只加来源，版本号加一 |
+| 确认继续 | `rl decision confirm ID --source ...` | 正文不变，只加来源，版本号加一，`op` 记 `confirm`，不算改版 |
 | 废除 | `rl decision retire ID [--source ...]` | 追加一版标 `retired`，来源默认继承上一版 |
-| 合并 | `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 新决定拿新编号，`sources` 自动含全部被合并的旧决定，`merged_from` 必填，旧的各追加一版标 `retired` |
+| 合并 | `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 新决定拿新编号，根继承 `--root` 那条，`sources` 自动含全部被合并的旧决定，`merged_from` 必填，旧的各追加一版标 `retired`、根不动 |
 
 废除等于追加一版标 retired。停一条方向的时候鼓励再加上那次 run 和那张图当来源。
 
@@ -83,9 +84,9 @@ update、confirm、retire、merge 的「谁能调」是同 actor；跨角色改�
 
 ## 过版、改版那一刻的打印、在办单子怎么办、reissue
 
-跨层引用带版本，写法是「依据 dec-idea-0007 第 2 版」。引用记的版本比账里最新版小就是过时，查询命令当场标出「上层依据已从第 2 版更新到第 3 版，复核这条还成不成立」。过版的单子进 `rl status` 段 6 和相关角色的 `rl inbox`。
+跨层引用带版本，写法是「依据 dec-idea-0007 第 2 版」。过版判定跳过 `confirm` 版：引用记的版本比账里最新一个 `op` 不是 `confirm` 的版本小才算过时；单子引第 2 版、账上第 3 版是 confirm 出来的，不算过时。过时的查询命令当场标出「上层依据已从第 2 版更新到第 3 版，复核这条还成不成立」。过版的单子进 `rl status` 段 6 和相关角色的 `rl inbox`。
 
-`rl decision update` 和 `rl decision retire` 写完那一刻，rl 当场列出引着旧版而没到终态的单子和它们的 holder。施工计划把 confirm 和 update 写在同一行子命令表里，共用这条打印。
+`rl decision update`、`rl decision retire`、`rl decision merge` 写完那一刻，rl 当场列出引着旧版而没到终态的单子和它们的 holder。`rl decision confirm` 不打印：确认继续没有东西要复核（2026-08-18 gyb 裁）。
 
 `rl decision stale [--handoff ID] [--all]` 是过版检查命令，默认只列和本会话手上单子有关的，`--handoff ID` 只查那张单子引的，`--all` 全库（2026-08-17 随 `05` 定稿裁：去掉 `--mine`）。这条命令是查询命令，谁都能调。
 
@@ -93,7 +94,7 @@ update、confirm、retire、merge 的「谁能调」是同 actor；跨角色改�
 
 retired 决定名下还有活单的进 `rl status` 段 6 和 doctor。
 
-两处原文不一致：设计文档「五个角色」一节写「run 的 inbox 不查过版，发射单不引决定」，deploy 一节又写发射单「父单填工单，决定引用和 batch 自动继承」，施工计划第三节 handoffs 的 `decision_refs` 写「`launch_order` 开单时从父单抄」。按施工计划的表：发射单从父单抄 decision_refs。2026-08-17 gyb 又裁（sync-inbox 问题 28）：run 不查 inbox，只关注自己那张发射单，原来「run 的 inbox 不查过版」这句例外扩大成这一句。
+发射单开单时从父单抄 `decision_refs`（原则 9），run 不查 inbox、只关注自己那张发射单（2026-08-17 sync-inbox 问题 28）。两句不矛盾：抄引用是为了从决定反查跑过什么，不查是因为 run 不管过版。源文档「run 的 inbox 不查过版，发射单不引决定」那句里「发射单不引决定」按上述作废（2026-08-18 gyb 确认）。
 
 ## reviewer 的基准按 actor
 
@@ -107,12 +108,12 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 
 | 子命令 | 干什么 | 谁能调 |
 |---|---|---|
-| `rl decision add --text --source K:V ... [--quote ...]` | 追加一条新决定，编号自动分配，落 actor 自己那本（角色会话 `--as-gyb` 落角色那本） | 五个角色、gyb |
+| `rl decision add --text --source K:V ... [--quote ...]` | 追加一条新决定，前缀按会话定（角色会话用角色前缀，`--as-gyb` 也一样；裸终端用 `gyb`），序号在本前缀内自动分配，落前缀那本 | 五个角色、gyb |
 | `rl decision update ID --text [--source ...] [--quote ...]` | 追加一版换正文；不给 source 就继承上一版；写完当场列出引旧版而没到终态的单子和 holder | 同 actor |
-| `rl decision confirm ID --source ...` | 追加一版，正文不变只加来源 | 同 actor |
+| `rl decision confirm ID --source ...` | 追加一版，正文不变只加来源，`op` 记 `confirm`；不算改版，不打印受影响单子，过版判定跳过这一版 | 同 actor |
 | `rl decision retire ID [--source ...]` | 废除；同样列受影响的单子 | 同 actor |
 | `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 合并成新决定，被合并编号自动进 sources 和 merged_from，旧的各追加一版 `retired` | 同 actor |
-| `rl decision show ID [--version V] [--history] [--with-runs]` | 默认最新版；`--with-runs` 沿 parent_id 链反查各版本派出的单子和 run 与 metrics | 谁都行 |
+| `rl decision show ID [--version V] [--history] [--with-runs]` | 默认最新版；`--with-runs` 先按 handoffs 的 `decision_refs` 找出引这条决定（任一版）的单子当起点，再沿 `parent_id` 往下收子孙单和它们的 run 与 metrics，按单子编号去重，按引的版本分组 | 谁都行 |
 | `rl decision list [--actor A] [--line L]` | 列决定 | 谁都行 |
 | `rl decision stale [--handoff ID] [--all]` | 过版检查，默认只列和本会话手上单子有关的，`--all` 全库 | 谁都行 |
 
@@ -120,31 +121,27 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 
 退出码六个（定义处 `03-ledgers.md`）：0 成功；1 rl 内部错误；2 校验拒收；3 角色无权；4 文件锁等待超时；5 用法错。非零退出的标准错误第一行是固定的原因种类。所有子命令支持 `--json`。
 
-决定账相关的测试用例（空来源拒收、三类来源各一个、`decisions.gyb.jsonl` 拒收非 cli 行、update 继承来源、confirm 版本加一、merge 记根、update 时打印引旧版的活单）在 `30-build-steps-verify-tests.md` 的测试第 3 条。
+决定账相关的测试用例（空来源拒收、三类来源各一个、`decisions.gyb.jsonl` 拒收非 cli 行、update 继承来源、confirm 版本加一且不标过版、merge 记根且旧决定根不动、update 时打印引旧版的活单）在 `30-build-steps-verify-tests.md` 的测试第 3 条。
 
 ## 和别的 part 的接口
 
-- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和可选的 `force_reason`、`via`：定义在 `03-ledgers.md`。
-- actor 的判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：定义在 `01-gyb.md`，钩子那一层在 `06-hooks-and-permissions.md`。
-- handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `03-ledgers.md`。
-- `rl handoff reissue` 和 `rl handoff withdraw` 那两行转移的前提与「谁能写」：定义在 `04-handoffs-and-sessions.md`。
-- `rl status` 段 6（过版的单子和 retired 决定名下的活单）、`rl inbox` 里的过版一类、`rl trace`、doctor 的两项决定相关扫描：定义在 `05-rl-cli.md`。
-- runs 账的 `run_id`（`file` 类之外第三类来源要引它）：定义在 `03-ledgers.md`。
-- `read:notes` 授权和 grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）：定义在 `01-gyb.md`。
+这一份是决定账的定义处（HANDOFF 四点五节）：六个文件、行的字段（含 `op`）、三类来源与锚点、编号与版本、`root_id`、过版判定（跳过 confirm 版）、reissue 的触发、reviewer 基准、`rl decision` 全部子命令，别处引用以这里为准。这里向外要的东西：
+
+- 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和可选的 `force_reason`、`via`：定义在 `03-ledgers.md`（冻结）。decisions 自己的字段（`root_id`、`op`、`text`、`sources`、`quote`、`merged_from`）定义在本份。
+- actor 的判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：定义在 `01-gyb.md`，钩子那一层在 `06-hooks-and-permissions.md`。本份只用到：角色会话里 `--as-gyb` 的行 `actor` 记 gyb、`quote` 必填、仍落角色前缀那本。
+- handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `03-ledgers.md`（冻结）。本份用它们做三件事：`line` 由 `decision_refs` 第一项的 `root_id` 算出；过版判定拿 `decision_refs` 的版本和本账最新非 confirm 版比；`show --with-runs` 第一跳按 `decision_refs` 找单子、之后沿 `parent_id`。
+- `rl handoff reissue` 和 `rl handoff withdraw` 那两行转移的前提与「谁能写」：定义在 `04-handoffs-and-sessions.md`（冻结）。本份只定「改版不自动动单子，重派用 reissue、停用 withdraw」。
+- `rl status` 段 6（过版的单子和 retired 决定名下的活单）、`rl inbox` 里的过版一类、`rl trace`、doctor 的决定相关扫描：定义在 `05-rl-cli.md`（冻结）。过版的定义以本份为准：比最新一个非 confirm 版小才算过时。
+- runs 账的 `run_id`（`run` 类来源要引它，不在 runs 账里拒收）：定义在 `03-ledgers.md`。
+- `read:notes` 授权和 grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）：定义在 `01-gyb.md`。doctor「来源指 notes/ 但 actor 没有 `read:notes`」那一项靠它。
 - 快车道不写决定账、合回时在补单里一并补一条 decisions.deploy：定义在 `07-quick-lane.md`。
-- 角色 json 的 `ledger_writes` 四栏和机器检查：定义在 `06-hooks-and-permissions.md`。
-- 测试清单第 3 条：在 `30-build-steps-verify-tests.md`。
+- 角色 json 的 `ledger_writes` 四栏和机器检查：定义在 `06-hooks-and-permissions.md`。本份给的输入：五个角色各有自己那本的写权，run 只有 add；查询命令不进 `ledger_writes`。
+- 退出码六个和非零退出第一行的原因种类：定义在 `03-ledgers.md`。
+- 测试清单第 3 条：在 `30-build-steps-verify-tests.md`，本份定稿后要补两例（confirm 不标过版、merge 后旧决定根不动），见「要同步到别处的」。
 
 ## 源文档没写清的（留给 gyb）
 
-1. 决定行落哪个文件，两份文档给了两种口径（词表按 actor、第三节按编号前缀、第六节按 actor 加括号例外）。上文按第三节写了，但施工的时候要钉死一句话。
-2. 编号序号是每个前缀各自一套（`dec-idea-0007` 和 `dec-deploy-0007` 可以并存）还是六个文件共用一套，两份文档都没写；锁那一段只说「扫号、分配编号、追加三步在同一把锁里」。
-3. `rl decision stale` 的签名写的是 `[--mine] [--handoff ID]`，说明文字里又出现 `--all`，`--all` 没进签名。——2026-08-17 随 `05` 定稿裁：签名改成 `[--handoff ID] [--all]`，去掉 `--mine`，已改（rl-hub）。
-4. `rl decision confirm` 算不算「改版」：设计文档说「决定改版或废除的那一刻」当场列出受影响的单子，施工计划把 confirm 和 update 写在同一行共用这条打印，confirm 正文不变要不要打印没有单独一句。
-5. `merge --root` 只说指定保留哪个根，没写被合并的那几条旧决定追加的 `retired` 那一版里 `root_id` 变不变。
-6. `rl decision show --with-runs` 写的是「沿 parent_id 链反查各版本派出的单子和 run 与 metrics」，但决定到第一张单子那一跳靠的是 handoffs 的 `decision_refs` 不是 `parent_id`，这一跳按哪个字段查没写。
-7. update 不给 `--source` 时继承上一版，账上「有新证据的改版」和「gyb 当场改主意」长得一样，两份文档都没写要不要在行上分开（第二轮模拟提过 `change_reason` 这个提议，两份文档都没采纳，也没写为什么不采纳）。
-8. 来源 `file` 类的锚点只说「小节或行号区间」，写法和校验只到「路径存在、带锚点通过」，锚点本身对不对不校验；这是有意还是漏了没写。
+（八条 2026-08-17 至 2026-08-18 全部裁完，逐条见文末「裁决记录」。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -390,3 +387,19 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 - 2026-08-17 来自 sync-inbox 问题 25 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「我想让agent有办法识别发生了什么就行」）：`rl decision` 子命令一节末尾的退出码由四个改成六个（0/1/2/3/4/5），并写上非零退出第一行给原因种类。对回原则 5。
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：接口一节「grants 只收裸终端」改成「grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）」。对回原则 1。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`，rl-hub-v3 传；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：「过版」一节两处原文不一致那段的末句「run 的 inbox 仍然不查过版」改成「run 不查 inbox，只关注自己那张发射单」。对回原则 6。
+- 2026-08-18 gyb 裁「甲」：决定行按编号前缀落文件，一条决定所有版本同文件，`actor` 单独记；gyb 那本只装 gyb 裸终端新开的决定及其后续版本，gyb 裸终端给角色决定追加的版本落角色那本。对回原则 4。「六个决定文件」一节两段照改，`id` 字段说明照改，「没写清」第 1 条销掉，第一处「两处原文不一致」结掉。
+- 2026-08-18 gyb 裁「甲」：序号每个前缀各排各的，`dec-idea-0007` 和 `dec-deploy-0007` 可并存，扫号只读本前缀那一个文件。对回原则 4。「编号、版本」一节两句照改，「没写清」第 2 条销掉。
+- 2026-08-18 gyb 裁「乙」：`rl decision confirm` 不算改版——写完不打印受影响单子，过版判定跳过 `confirm` 版（引用版本比最新一个非 confirm 版小才算过时）；为此行上加 `op` 字段（`add`/`update`/`confirm`/`retire`/`merge`）。对回原则 9。「一行决定长什么样」加 `op` 行，「编号、版本」「update…」表、「过版」一节前两段照改，「没写清」第 4 条销掉。
+- 2026-08-18 gyb 裁「甲」：merge 时被合并旧决定的废除版 `root_id` 不动，一条决定内根只写一次；新决定的根按 `--root` 继承；正反向靠 `merged_from` 和 `sources`。对回原则 4。`root_id` 字段行、「root_id 与 line」一节、merge 表行照改，「没写清」第 5 条销掉。
+- 2026-08-18 gyb 裁「甲」：`rl decision show --with-runs` 第一跳按 handoffs 的 `decision_refs`（任一版）找起点单子，再沿 `parent_id` 收子孙单和 run/metrics，去重、按版本分组。对回原则 9。子命令表那一行照改，「没写清」第 6 条销掉。
+- 2026-08-18 gyb 裁「甲」：不加 `change_reason` 栏；「有新证据的改版」和「gyb 改主意」靠 `sources` 和 `quote` 分辨，纪律是有证据必挂。对回原则 8。「来源三类与锚点」一节继承来源那句后补一段，「没写清」第 7 条销掉。
+- 2026-08-18 gyb 裁「甲」：`file` 类来源的锚点有意不校验（只查路径存在），doctor 也不扫。对回原则 7。「来源三类与锚点」一节那句照改，「没写清」第 8 条销掉。
+- 2026-08-18 gyb 确认「甲」：发射单从父单抄 `decision_refs`、run 不查 inbox 两句并存不矛盾，源文档「发射单不引决定」作废。对回原则 9。「过版」一节第二处「两处原文不一致」改成结论。
+
+## 要同步到别处的
+
+- 决定行按编号前缀落文件（2026-08-18 裁「甲」）：凡写「gyb 的决定落 gyb 那本」「按 actor 落文件」的引用处改成「按编号前缀落文件，`actor` 另记」；`03` 词表 `loop/decisions.<actor>.jsonl` 的 `<actor>` 读作前缀里的角色名（03 冻结，冻结后待议，只是读法说明，不必改字）。
+- decisions 行新增 `op` 字段（`add`/`update`/`confirm`/`retire`/`merge`），confirm 不算改版（2026-08-18 裁「乙」）：凡写「引用版本比最新版小就是过时」的地方（`04` 派活单「依据过时」、`05` `rl status` 段 6 / `rl inbox` 过版项、`07`/`09`/`23` 若有）改成「比最新一个非 confirm 版小才算过时」；`04`/`05` 冻结，冻结后待议。`30` 测试第 3 条要加一例「confirm 之后不标过版」。
+- `rl decision show --with-runs` 的说明（2026-08-18 裁「甲」）：`05` 命令表若照抄「沿 parent_id 链反查」，改成「先按 `decision_refs` 找起点单子再沿 `parent_id` 收」；`05` 冻结，冻结后待议。
+- 测试第 3 条（`30`）加两例：confirm 之后不标过版；merge 后旧决定废除版 `root_id` 不动。
+- 「发射单不引决定」这句凡在引用处（`11`、`12`、`23` 若有）出现的，删掉或改成「发射单从父单抄 `decision_refs`，run 不查 inbox」（2026-08-18 确认）。
