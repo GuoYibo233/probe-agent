@@ -10,6 +10,21 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-18 五题实跑：no probe 与 chat baseline 的分叉来自前缀缓存状态，不来自端点
+
+- 触发：`cmp_chat_noprobe_5`（tokyo108 单副本 gpt-oss-120b，`VLLM_SYSTEM_START_DATE`
+  钉 2026-07-31；两臂各跑 test_normal 前 5 题，串行、一次只飞一个请求）。
+- 事实：五题第 0 步 prompt token 数两臂全等（341/341/341/336/337）；3 题第 0 步
+  输出就不同，2 题到第 2/3 步才分叉；成败 chat 3/5、no probe 3/5，题不同。
+  同 prompt 反复打：暖缓存下 completions(ids) 与 chat 逐字同；清缓存后重发与
+  暖时不同（13/13），冷/暖两态内部各自两端点逐字同（13/13）。chat 跑里第 0 步
+  "异样"的三题正是当时那条 prompt 首次进服务（缓存未命中）。
+- 决定：no probe 与 chat baseline 的口径对齐到此为止（渲染/采样/停止/切分已逐层
+  同）；两臂要可比，下一步是把服务端状态压成一致（候选：`--no-enable-prefix-caching`
+  + 串行；`VLLM_BATCH_INVARIANT=1` 对 MXFP4 起不来，作废）。没定案前不放量。
+- 产物：`/net/.../pipeline/inject/runs/cmp_chat_noprobe_5/{chat,noprobe,analysis}`；
+  台账 `cmp_chat_noprobe_5_srv{,2,3}`。
+
 ## 2026-08-18 no probe 的 prompt 改成 chat 端点同款 token id，三个臂定名
 
 - 决定：no probe 与 chat baseline 之间凡是代码能对齐的差异一律向 chat 端点

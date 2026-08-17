@@ -156,6 +156,72 @@
         }
       ],
       "finished_at": "2026-08-10 04:57"
+    },
+    {
+      "name": "cmp_chat_noprobe_5_srv",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "chat baseline vs no probe 五题对比用的 gpt-oss-120b 单副本",
+      "started_at": "2026-08-18 04:31",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_cmp_chat_noprobe_5_srv_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/logs/new1_cmp_chat_noprobe_5_srv_t108g0.log",
+          "cmd": "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_CACHE_ROOT=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache TRITON_CACHE_DIR=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton VLLM_SYSTEM_START_DATE=2026-07-31 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --port 8114 --host 0.0.0.0 --max-model-len 65536 --gpu-memory-utilization 0.92",
+          "launched_at": 1786995077.2163584,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": 8114
+        }
+      ],
+      "finished_at": "2026-08-18 05:10"
+    },
+    {
+      "name": "cmp_chat_noprobe_5_srv2",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "同 srv 加 VLLM_SERVER_DEV_MODE=1(开 /reset_prefix_cache),测缓存未命中的输出是否稳定",
+      "started_at": "2026-08-18 05:11",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_cmp_chat_noprobe_5_srv2_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/logs/new1_cmp_chat_noprobe_5_srv2_t108g0.log",
+          "cmd": "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_CACHE_ROOT=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache TRITON_CACHE_DIR=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton VLLM_SYSTEM_START_DATE=2026-07-31 VLLM_SERVER_DEV_MODE=1 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --port 8114 --host 0.0.0.0 --max-model-len 65536 --gpu-memory-utilization 0.92",
+          "launched_at": 1786997477.5518327,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": 8114
+        }
+      ],
+      "finished_at": "2026-08-18 05:17"
+    },
+    {
+      "name": "cmp_chat_noprobe_5_srv3",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "同 srv2 加 VLLM_BATCH_INVARIANT=1,测冷/暖缓存输出是否变一致",
+      "started_at": "2026-08-18 05:17",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_cmp_chat_noprobe_5_srv3_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/logs/new1_cmp_chat_noprobe_5_srv3_t108g0.log",
+          "cmd": "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_CACHE_ROOT=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache TRITON_CACHE_DIR=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton VLLM_SYSTEM_START_DATE=2026-07-31 VLLM_SERVER_DEV_MODE=1 VLLM_BATCH_INVARIANT=1 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --port 8114 --host 0.0.0.0 --max-model-len 65536 --gpu-memory-utilization 0.92",
+          "launched_at": 1786997858.1458092,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": 8114
+        }
+      ],
+      "finished_at": "2026-08-18 05:20"
     }
   ]
 }
