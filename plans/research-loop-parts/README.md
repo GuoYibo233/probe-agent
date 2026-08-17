@@ -4,7 +4,7 @@
 
 ## 进度
 
-22 份里 21 份写完了，每份都有固定的五段（覆盖说明、正文、和别的 part 的接口、源文档没写清的、第二轮摩擦）。workflow 报了 13 个 agent 失败，失败的原因全是月度用量上限，但其中 12 个是把文件写完之后在最后一步返回摘要时才撞上的，文件本身完整（我逐个查了五段都在、末尾以最后一条摩擦收尾）。真正没写成的只有一份：`30-build-steps-verify-tests.md`（待验证十一条、测试十七条、施工步骤 0 到 8）。覆盖检查那个 agent 也没跑成，所以「两份源文档每一段都落进了某个 part」这件事没有机器核过；下面每份的「源文档没写清的」是各个 agent 自己写的。
+22 份里 21 份写完了，每份都有固定的五段（覆盖说明、正文、和别的 part 的接口、源文档没写清的、第二轮摩擦）。workflow 报了 13 个 agent 失败，失败的原因全是月度用量上限，但其中 12 个是把文件写完之后在最后一步返回摘要时才撞上的，文件本身完整（我逐个查了五段都在、末尾以最后一条摩擦收尾）。真正没写成的只有一份：`30-build-steps-verify-tests.md`（待验证十一条、测试十七条、施工步骤 0 到 8），2026-08-17 由主会话补写完。覆盖检查那个 agent 也没跑成，所以「两份源文档每一段都落进了某个 part」这件事没有机器核过；下面每份的「源文档没写清的」是各个 agent 自己写的。
 
 ## 每份一行
 
@@ -20,9 +20,9 @@
 | `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 未开 |
 | `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 未开 |
 | `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩八条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 未开 |
-| `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、上线第一动作、决定落账、开工单、开分析单、验收打回、收回重派拉起、申请读 notes、模型 | 359 | 11 | 约 55 | 未开 |
+| `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、收件箱、决定落账、开工单、开分析单、验收打回、收回重派拉起、申请读 notes、模型 | 359 | 11 | 约 55 | 未开 |
 | `11-role-deploy.md` | deploy 角色 | 写权、报告与 code_paths、自决、宿主文件三条纪律、开发射单、后台起 run 与验收、卡住之后、补报告提验收、快车道里的 deploy、四栏 | 381 | 7 | 约 56 | 未开 |
-| `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 两版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 | 未开 |
+| `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 三版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 | 未开 |
 | `13-role-analysis.md` | analysis 角色 | 写权与读、先问再提口径、口径两类四态、接单交活、卡住两条路、快车道、产物落哪 | 230 | 10 | 18 | 未开 |
 | `14-role-reviewer.md` | reviewer 角色 | 谁开、focus、审查基准、审三样、读的顺序、审哪一版、清单五栏、不开 issue、五栏 json | 211 | 10 | 16 | 未开 |
 | `20-pair-idea-deploy.md` | idea 与 deploy | 工单字段、开单、状态走法、验收、打回、收回与 cascade、reissue、issue 往返、过版、快车道补单指到 07 | 330 | 8 | 41 | 未开 |
@@ -31,7 +31,7 @@
 | `23-pair-run-analysis.md` | run 与 analysis | runs 账契约：config、metrics、data_path、run list 过滤、分组键缺失、trace | 184 | 8 | 16 | 未开 |
 | `24-pair-analysis-deploy.md` | analysis 与 deploy | 只有一条 issue 通道 | 144 | 8 | 9 | 未开 |
 | `25-pair-reviewer-idea.md` | reviewer 与 idea | review/ 文件格式、status 列清单、idea 怎么读、来源指清单、只经文件不经 issue | 131 | 7 | 8 | 未开 |
-| `30-build-steps-verify-tests.md` | 待验证、测试、施工步骤 | 没写成，源在施工计划第九、十、十一节 | 0 | — | — | 未写；写的时候要收 05 定稿留给它的三条（inbox 第五段第 9 项：待验证第 4 条备案升正案、第 10 条备案收成 doctor 第 19 项、`session amend`/`doctor --ack`/`lock.timeout_seconds` 要有测法） |
+| `30-build-steps-verify-tests.md` | 待验证、测试、施工步骤 | 待验证十一条（含第 4、10 条已裁的状态）、测试十七条逐条附 2026-08-17 定稿后要加要改的用例、`05` 点名新加的测试 18 到 20、施工步骤 0 到 8、施工纪律四条 | 344 | 10 | 17 | 2026-08-17 补写（主会话亲写，收了 05 定稿留给它的三条；测试 9 里 grant 那句按问题 27 改，`01` 两处相反的句子标了不一致） |
 
 「附的第二轮摩擦」一栏，标「约」的是 agent 没返回摘要、我按行式数的，可能多算几条。「状态」一栏由统筹 session 维护，取值三种：未开、在 `rl-part-NN` 手上、已定稿 `<commit>`（`30` 那份没写之前记「未写」）。
 
@@ -51,11 +51,11 @@
 
 06 分权与钩子：相对路径怎么判、软链接算不算仓库内；共用一个钩子脚本还是各一份挂在待验证 2；idea writes 是无目录但仓库根放行；notes/ 那条在角色会话里等于永远 deny；会话状态文件谁清理、`${CLAUDE_PLUGIN_DATA}` 解析到哪；加载第二个角色 skill 会怎样；dispatches_to 谁查；reads 栏写法不统一测试 13 按哪种查；角色 json 改动算不算母版改动；denied issue 归谁；Bash 直写角色目录钩子看不见、纪律里没专句。
 
-07 快车道：analysis 的 scratch 开张版填什么；快车道数字进不进 runs 两句打架；补单报告目录名在拿到单号之前取不出来；补单要不要 code_paths 两处没说到一起；analysis 合回补哪张单；--from 转进快车道之后那张工单怎么走；gpu-runner 起来之后登不登记、run-id 和 track 谁填；merge 之后 worktree 和分支谁删；补的 decisions.deploy 来源填哪棵树的路径；scratch 行归哪条线。
+07 快车道：analysis 的 scratch 开张版填什么；快车道数字进不进 runs 两句打架（2026-08-17 已裁：不进 runs，问题 22）；补单报告目录名在拿到单号之前取不出来；补单要不要 code_paths 两处没说到一起；analysis 合回补哪张单；--from 转进快车道之后那张工单怎么走；gpu-runner 起来之后登不登记、run-id 和 track 谁填；merge 之后 worktree 和分支谁删；补的 decisions.deploy 来源填哪棵树的路径；scratch 行归哪条线。
 
 08 两棵树与宿主：中断命令模板的键名；「本仓库跑法」的键与形状；「宿主台账清单」的键与 new1 要列哪几个文件；账路径可配置和词表写死的文件名谁说了算；loop/ 进不进 git；脏树白名单在 run.py 里谁改、init 动不动；analysis/ 播哪几个模板文件；init 跑第二次；new1 之外的仓库 research-loop.json 怎么来；插件树要不要 workflows/ 或 agents/。
 
-09 母版与反馈：SPEC-TEMPLATE 的五栏是哪五栏、和 reviewer 清单五栏是不是同一份；英文版措辞和 rule-NN 编号保持；retire 没有 --reason/--quote 而 rule-01 要求废除硬停带原话；target 指到施工计划某张表的某一行时填什么；doctor 那项的「文档」指哪份；feedback 被 reject 之后能不能改一版再提；run 的 reads 要不要补 feedback；通知类 issue 读过即关那一版 actor 记谁；rules_version 格式与同步；grant revoke 之后已加载的会话怎么办。
+09 母版与反馈：SPEC-TEMPLATE 的五栏是哪五栏、和 reviewer 清单五栏是不是同一份；英文版措辞和 rule-NN 编号保持；retire 没有 --reason/--quote 而 rule-01 要求废除硬停带原话；target 指到施工计划某张表的某一行时填什么；doctor 那项的「文档」指哪份；feedback 被 reject 之后能不能改一版再提；run 的 reads 要不要补 feedback；通知类 issue 谁关（2026-08-17 已裁：`rl inbox` 只读不关，收件人做完了自己 close，问题 23）；rules_version 格式与同步；grant revoke 之后已加载的会话怎么办。
 
 10 idea：ledger_writes 里的 release 和 amend 没有 use case 点名用；「重新拉起下游」是 rl 动作还是纪律；「怎么测试什么算成功」落在哪；explanation 写多长；一张工单引两个根决定时 line 怎么算；验收要不要读 code_paths 的代码；读完 review/ 之后做什么动作；request issue 谁 close；等 gyb 回话期间会话干什么、销号后谁叫起 idea；后台起 subagent 具体怎么起（待验证 8、9）；--manual 的单子 gyb 接完谁验收。
 
@@ -69,18 +69,20 @@
 
 20 idea 与 deploy：deploy 卡在工单上时 issue 归 idea 还是 gyb；普通工单 parent_id 填不填；转移表 amend 两行的「到」栏和「状态不变」对不上；reissue 继不继承 report_paths 和 code_paths；「怎么测试」落哪；打回后重新交活旧路径留不留；收回之后代码和产物怎么处置；正文里快车道那句指的是 07 不是题目里写的 22。
 
-21 deploy 与 run：发射单带不带 decision_refs 两处不一致；actual_seconds 谁算（handoff done 还留着 --actual-seconds）；adopted 标在哪一栏；amend 新尝试的 run_id 重不重新分；args 和 command 的分工；整 batch 时 host 和 gpus 怎么分、start --batch 是不是一次全置 in_progress；后台起 run 的机制；reject 之后要不要 amend；deploy 验收发射单看什么、什么时候 reject 一张 ok 的；认领怎么接管看门狗。
+21 deploy 与 run：发射单带不带 decision_refs 两处不一致；actual_seconds 谁算（2026-08-17 已裁：`rl run finish` 算、rl 抄进发射单，`handoff done` 不带参数，问题 13）；adopted 标在哪一栏（2026-08-17 已裁：handoffs 的 start 版和 runs 的 adopted 版两边都标，问题 17）；amend 新尝试的 run_id 重不重新分；args 和 command 的分工；整 batch 时 host 和 gpus 怎么分、start --batch 是不是一次全置 in_progress；后台起 run 的机制；reject 之后要不要 amend；deploy 验收发射单看什么、什么时候 reject 一张 ok 的；认领怎么接管看门狗。
 
 22 idea 与 analysis：分析单要不要 decision_refs（没有就算不出 line）；要不要 explanation；口径引用的过版检查由哪条命令出；gyb 在裸终端开的分析单谁去后台起 analysis；output_paths 记仓库内还是产物根、大文件怎么查存在、两个 notebook；分析单的人工验收办法；analysis 的 ledger_writes 缺 amend；（e）待裁。
 
-23 run 与 analysis：data_path 指什么、和 artifact_dir 差在哪；failed/killed 要不要 data_path；run list 的 --line 和 --decision 怎么解析（runs 行没这两栏）；默认过滤两个条件的先后；config 其余键没有命名规矩；metrics 键名谁定谁保证同名同义；快车道数字进不进 runs 两处不一致；doctor 五项只有一项写了修法。
+23 run 与 analysis：data_path 指什么、和 artifact_dir 差在哪；failed/killed 要不要 data_path；run list 的 --line 和 --decision 怎么解析（runs 行没这两栏）；默认过滤两个条件的先后；config 其余键没有命名规矩；metrics 键名谁定谁保证同名同义；快车道数字进不进 runs 两处不一致（2026-08-17 已裁：不进 runs，问题 22）；doctor 五项只有一项写了修法。
 
 24 analysis 与 deploy：issue 填哪个 kind；要不要把分析单标 stuck；deploy 修完谁把分析单交回待干（analysis 没有 resume）；反方向没有通道；「代码问题」的范围含不含公共统计件；analysis 怎么看到实验代码（reads 没列 experiments/）；要不要附证据；deploy 改完之后已跑出来的数字算不算。
 
 25 reviewer 与 idea：审一批时文件名；清单里的问题条没编号锚点指什么；idea 怎么知道有新清单（inbox 没这一项）；status 段 9 扫目录还是另有登记；清单没有状态没有关掉的办法；建议动作被否掉往哪写；idea 按清单改决定要不要先等 gyb 点头。
 
+30 待验证、测试、施工步骤：doctor 十九项只有第 3、19 项有测试用例；测试 5 口径过版由哪条命令出；测试 12 第二条 amend 分不分新 run_id；测试 13 按 reads 哪种写法查；待验证 8 备案要的 workflows/ 或 agents/ 层步 1 建不建；待验证 9 两层嵌套没测；步 3、4 工单怎么切对应哪些测试；步 8 不加载 skill 的 agent 用什么模型；运行期改母版跑全套测试还是只跑测试 13；新加测试 18 到 20 归步 3 还是步 4。另标一处不一致：测试 9 的 grant 那句按问题 27 改了，`01` 两处当时仍写角色会话 `--as-gyb` 写 grant 拒收——2026-08-17 rl-hub-v3 传问题 27 时已把 `01` 那两处改成「角色会话里 `--as-gyb --quote` 替 gyb 写也收」，不一致已消。
+
 ## 还没做的
 
-- `30-build-steps-verify-tests.md`：源在施工计划第九、十、十一节，等 gyb 手动写或下次再派。
+- `30-build-steps-verify-tests.md`：2026-08-17 已补写，留给 gyb 十条在那份末尾。
 - 覆盖检查：两份源文档每一段是不是都落进了某个 part、part 之间有没有互相打架、有没有发明源文档没有的规矩，没有机器核过。
 - 三份源文件（设计文档、施工计划、这个目录）已 commit：`601f835`（2026-08-16 夜）。
