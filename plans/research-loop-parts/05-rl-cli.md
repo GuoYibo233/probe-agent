@@ -672,7 +672,7 @@ doctor 只做脚本能判的检查，也就是上面十九项。判断类的检�
 
 ## 要同步到别处的
 
-（九条已同步 2026-08-17：rl-hub 改的见 commit cb5e1e2；04 由 rl-part-04 改，见 42b6594；30 未写成，记在 README 30 那行。第 8 条 reviewer 派 subagent 并 `rl issue open` 落账，rl-hub 指出和 14 第八节「不开 issue、不派活」、公共规矩第 6 条冲突，问题 6 已裁（只写清单不开 issue），05 doctor 一节末段已改。）
+（九条已同步 2026-08-17：rl-hub 改的见 commit cb5e1e2；rl-hub-v3 2026-08-17 夜审出的四处漏传已补 `70c766b`（20 `decision stale` 签名、13 杂账中间版、施工计划命令表 release/session amend/grant --text/doctor 第 19 项）；04 由 rl-part-04 改，见 42b6594；30 未写成，记在 README 30 那行。第 8 条 reviewer 派 subagent 并 `rl issue open` 落账，rl-hub 指出和 14 第八节「不开 issue、不派活」、公共规矩第 6 条冲突，问题 6 已裁（只写清单不开 issue），05 doctor 一节末段已改。）
 
 - `01-gyb.md` 第二节（定义处）：补「`--force` 只越过完整性前提，越不过转移表外的转移，表外转移对 gyb 同样退出码 2，硬改状态走 `withdraw` 再重开」；推送表第 4 条补「在单子落 todo 那刻和 `session end` 销号时查并推」；`rl notify` 补「gyb 也可手动调，不进账」。
 - `02-decisions.md`：`rl decision stale` 签名改成 `[--handoff ID] [--all]`，去掉 `--mine`。
