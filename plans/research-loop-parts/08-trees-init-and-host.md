@@ -6,12 +6,12 @@
 
 ## 一、研究仓库这棵树：init 建什么
 
-`rl init` 在研究仓库里建六样东西，再往仓库的 CLAUDE.md 追加一节。`rl init` 只在裸终端跑：读到会话状态文件就拒收，退出码 3（2026-08-17 随 `05` 定稿裁，待验证第 4 条的失败备案升正案）。
+`rl init` 在研究仓库里建六样东西，再往仓库的 CLAUDE.md 追加一节。`rl init` 只在裸终端跑：读到会话状态文件（`loop/.sessions/<session_id>.json`，2026-08-18 gyb 裁，定义处 `06`）就拒收，退出码 3（2026-08-17 随 `05` 定稿裁，待验证第 4 条的失败备案升正案）。
 
 | 建什么 | 是什么 |
 |---|---|
 | `research-loop.json` | 配置文件，键见第二节和第三节 |
-| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，`03-ledgers.md` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它，它由 doctor 首次 `--ack` 时建、`rl init` 不建（2026-08-17 随 `05` 定稿裁；不归总规矩管是 gyb 裁，sync-inbox 问题 24） |
+| `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`，但 `rl init` 往 `.gitignore` 加一行 `loop/.sessions/`：会话状态文件 `loop/.sessions/<session_id>.json` 是普通文件、不算九本账、不进 git、不算脏树（2026-08-18 gyb 裁，定义处 `06`「会话状态文件」；`rl init` 建 `loop/.sessions/` 这个空目录）。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，`03-ledgers.md` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它，它由 doctor 首次 `--ack` 时建、`rl init` 不建（2026-08-17 随 `05` 定稿裁；不归总规矩管是 gyb 裁，sync-inbox 问题 24） |
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
 | `review/` | reviewer 的问题清单 |
@@ -288,3 +288,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「那些分的就是说明，总的没用」）：第五节「两处原文不一致」段插件目录要补的三样去掉 `ARCHITECTURE.md`，剩 `.claude-plugin/plugin.json`、`README` 两样。
 - 2026-08-18 来自 sync-inbox 问题 32 的裁决（定义处 `06` 第三节 CLAUDE.md 三句与本份第六节，rl-hub-v4 落；gyb 原话「a」）：宿主白名单照旧 `loop/*.jsonl` 字面，`.doctor-acks.jsonl` 顺带不算脏；第六节那句后补说明，三句本身不改。对回原则 4。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「有的时候会用到仓库外的东西，建议弄一个白名单，白名单下的文件都允许修改」「问题2现在就测一下」「让idea能写gyb」）：第三节阈值表加 `hooks.path_allowlist`（默认空）；第四节 hooks/ 行注已实测；第一节 `notes/` 行改「gyb 和 idea 写」。对回原则 2、8、3。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 追裁（`f820504`，rl-hub-v4 传；gyb 原话「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」）：会话状态文件放 `loop/.sessions/<session_id>.json`；第一节 `loop/` 行补 `rl init` 建 `loop/.sessions/` 并往 `.gitignore` 加一行；「读到会话状态文件就拒收」那句写上路径。对回原则 8。

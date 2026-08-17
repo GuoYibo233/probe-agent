@@ -163,7 +163,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 九本账的公共骨架（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`、`force_reason`、`via`）和每本的字段在 `03-ledgers.md`。
 - grants、feedback、evaluations、sessions 四本账的行格式和状态取值在 `03-ledgers.md`；本文只写 gyb 这一头的动作。
 - `rl status`、`rl reclaim`、`rl doctor`、`rl notify`、`rl grant`、`rl feedback`、`rl eval`、`rl session`、`rl inbox`、`rl trace` 的完整参数和退出码在 `05-rl-cli.md`。
-- actor 判定的实现（会话状态文件路径 `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json`、钩子在加载角色时写）在 `06-hooks-and-permissions.md`。
+- actor 判定的实现（会话状态文件路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁，原来是宿主给插件的数据目录）、钩子在加载角色时写）在 `06-hooks-and-permissions.md`。
 - 钩子对 gyb 裸终端和 `--as-gyb` 不生效这一条的另一半（钩子挂在哪两个工具、拦哪两类路径）在 `06-hooks-and-permissions.md`。
 - `ql_tag`、快车道补单验收人固定是 gyb、没关的快车道进 status 段 9 与 reclaim，在 `07-quick-lane.md`。
 - `rl init` 问 gyb 要不要给 idea 发 `read:notes`、`notes/` 目录、`research-loop.json` 里的阈值，在 `08-trees-init-and-host.md`。
@@ -502,3 +502,4 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-17 来自 sync-inbox 问题 15 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「B」）：接口一节公共骨架那行的两个可选栏由「`fix_for`、`force_reason`」改成「`force_reason`、`via`」。对回原则 4。
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「甲」）：第二节「决定落哪本账」按编号前缀落文件改写：gyb 裸终端新开的用 `gyb` 前缀落 `decisions.gyb.jsonl`，gyb 裸终端给角色决定追加的一版落角色那本、`session_id` 记 `cli`。对回原则 4。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「让idea能写gyb」）：第一节「`notes/` 只有 gyb 写」改「gyb 和 idea 写」。对回原则 3。
+- 2026-08-18 来自 `06-hooks-and-permissions.md` 追裁（`f820504`，rl-hub-v4 传；gyb 原话「a」）：接口一节会话状态文件路径改 `loop/.sessions/<session_id>.json`。对回原则 8。
