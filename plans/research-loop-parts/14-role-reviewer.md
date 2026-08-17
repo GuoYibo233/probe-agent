@@ -12,7 +12,7 @@ reviewer 由 gyb 手动开。没有任何角色能派活给 reviewer：五份角
 
 reviewer 审完之后动不动由 gyb 看完之后定。reviewer 自己不改任何东西。
 
-reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`（文件归 `09`），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出来的写进 review/ 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 gyb 裁，sync-inbox 问题 6）。派 sonnet subagent 逐题查不算「派活」（2026-08-18 gyb 裁，sync-inbox 问题 33，原话「选a」）：「派活」指派给别的角色、会开工单的那种，起 subagent 逐题查是 reviewer 自己干活的方式，所以第八节「不派活」和角色 json 的 `dispatches_to` 是无都不用动。
+reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查不进 doctor（doctor 只留脚本能判的十九项），问题清单放 `common/`，文件是 `common/REVIEW-CHECKLIST.md`（定义处 `09`，2026-08-18 gyb 裁），reviewer 按清单派 sonnet subagent 一人一题逐条查，查出来的写进 review/ 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 gyb 裁，sync-inbox 问题 6）。派 sonnet subagent 逐题查不算「派活」（2026-08-18 gyb 裁，sync-inbox 问题 33，原话「选a」）：「派活」指派给别的角色、会开工单的那种，起 subagent 逐题查是 reviewer 自己干活的方式，所以第八节「不派活」和角色 json 的 `dispatches_to` 是无都不用动。
 
 ## 收件箱与 session focus
 
@@ -92,7 +92,7 @@ reviewer 的产出只有一样：review/ 里的问题清单。清单不进 noteb
 
 ## 不开 issue、不派活
 
-reviewer 不开 issue、不派活；按 `common/` 问题清单起 sonnet subagent 一人一题逐条查不算派活，那是 reviewer 自己干活的方式（2026-08-18 gyb 裁，sync-inbox 问题 33）。角色 json 的 `ledger_writes` 里没有 issues 的任何一条，`dispatches_to` 是无。
+reviewer 不开 issue、不派活；按 `common/REVIEW-CHECKLIST.md` 起 sonnet subagent 一人一题逐条查不算派活，那是 reviewer 自己干活的方式（2026-08-18 gyb 裁，sync-inbox 问题 33）。角色 json 的 `ledger_writes` 里没有 issues 的任何一条，`dispatches_to` 是无。
 
 公共规矩第 6 条（故障分域）里 reviewer 那半句写的是：reviewer 不开 issue，卡住也只写进清单交给 gyb。设计文档同一句加了注：施工计划公共规矩第 6 条里 reviewer 那半句按这一句改。
 
@@ -111,6 +111,8 @@ reviewer 能写的账只有三样：自己那本决定账、`session focus`、fe
 | `model` | `as_subagent` 是 fable，`manual` 是 inherit |
 
 SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；一个会话只加载一个角色，要换角色另开会话。
+
+SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
 模型这一栏按施工计划第一节裁决 3：由 agent（subagent 或 workflow）调用的时候 idea、reviewer 用 fable；gyb 手动加载角色的时候跟当前会话的模型一致。这条与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable」不一致，按原则 8 工程内为准，插件的 README 和角色 json 里都要明写「fable 是 gyb 2026-08-16 点名的例外」。
 
@@ -225,3 +227,4 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 - 2026-08-17 rl-hub-v3 审后补：摘要行「上线做什么」改成「收件箱与 session focus」（问题 28）；第一节 reviewer 新职责那段末尾补回「派 subagent 与第八节不派活、`dispatches_to` 无对不上」的不一致标注，立 sync-inbox 问题 33 等 gyb。
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处本份第八节与 `06` 的 reviewer json，rl-hub-v4 落；gyb 原话「选a」）：reviewer 起 sonnet subagent 逐题查不算派活，`dispatches_to` 仍是无；第一节那段的不一致标注结掉，第八节补半句。对回原则 5。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 从「一切」展开成清单（第四节那句同改）；第九节测试 13 描述改三样都查；加两句 SKILL.md 纪律。对回原则 8、2。
+- 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：判断类检查问题清单带上文件名 `common/REVIEW-CHECKLIST.md`（第一节、第八节两处）；两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写。对回原则 8。

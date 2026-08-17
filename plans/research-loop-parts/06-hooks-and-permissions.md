@@ -157,6 +157,8 @@ hooks/ 是钩子脚本本体：五个角色共用一个脚本、参数报角色�
 
 `model` 这一栏的 `manual` 写 `inherit` 是声明跟当前会话走，sessions 账落解析后的真实模型名或 `unknown`。
 
+这五栏是角色 json 的栏，不是 SKILL.md 的栏：SKILL.md 的骨架是 `common/SPEC-TEMPLATE.md` 的五栏（角色设定、使用场景、可用工具、限制条件、输出样式），「可用工具」那一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
+
 `reads` 栏的写法定死两种（2026-08-18 gyb 裁）：账写账名（九本账的英文名，decisions 细到 `decisions.<角色>`），目录和文件写相对仓库根的路径（目录带尾斜杠）；「全部」「一切」一律展开成清单，不写句子。备注（要 grant、只在快车道、只读部署报告目录）不进 json，写在表下面。测试 13 按这两种形式逐个对。
 
 `dispatches_to` 栏机器不查、纯纪律（2026-08-18 gyb 裁，对回原则 2 钩子只管写、原则 5 权限从用例来）：这一栏是写给角色 SKILL.md 和 reviewer 看的清单，子会话登记时带角色和 `launched_by`，谁起了谁的下线从 sessions 账一目了然，越权派活当场不拦、事后能查。reviewer 起 sonnet subagent 逐题查不算这一栏的「派活」，reviewer 的 `dispatches_to` 仍是无（2026-08-18 已裁：不算派活，`dispatches_to` 不动；sync-inbox 问题 33，原话「选a」）。
@@ -195,7 +197,7 @@ run：
 
 | 栏 | 值 |
 |---|---|
-| `reads` | handoffs、issues、runs、`experiments/`、`ops/gpu_state.md` |
+| `reads` | handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md` |
 | `writes` | `artifact_root`（仓库外，钩子不判） |
 | `ledger_writes` | runs 全部、handoffs 的 start/estimate/done/stuck、issues 的 open、decisions.run add（自决极少，比如挑卡的理由）、feedback add |
 | `dispatches_to` | 无 |
@@ -443,6 +445,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（rl-hub-v4 转来，gyb 原话「选a」）：reviewer 起 sonnet subagent 逐题查不算派活，reviewer json 的 `dispatches_to` 仍是无，本份「等问题 33」的标注结掉。
 - 2026-08-18 gyb 裁（问题十二，正文那处「两处原文不一致」，原话「a」）：`tests/test_skill_refs.py` 三样都查——写命令 ∈ `ledger_writes`；SKILL.md 里出现的账名和目录 ∈ `reads`；引用的名字都存在、母版不抄。对回原则 8。那一节重写。
 - 2026-08-18 gyb 裁（定稿后追问，原话「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」）：会话状态文件放 `loop/.sessions/<session_id>.json`，普通文件不算九本账，`rl init` 往 `.gitignore` 加 `loop/.sessions/`；不再依赖宿主给插件的数据目录变量，那半条待验证撤销。对回原则 8（状态跟仓库走，一处真源）。「会话状态文件」小节照改。
+- 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：run 那张 json 表 `reads` 加 feedback（五个角色齐了）；「五栏是什么」一节末补一句 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏、「可用工具」只指到角色 json。对回原则 5、6、8。
 
 ## 要同步到别处的
 

@@ -81,7 +81,7 @@ init 还要问 gyb 一次：要不要当场给 idea 发 `read:notes` 授权。�
 | 目录或文件 | 装什么 |
 |---|---|
 | `skills/` | 六个 skill：入口一个，五个角色各一个 |
-| `common/` | 公共母版：公共规矩、词表、五栏规格、读法，带 `rules_version` |
+| `common/` | 公共母版：公共规矩、词表、五栏规格、读法、判断类检查问题清单 `REVIEW-CHECKLIST.md`，带 `rules_version`（整数，`GLOBAL-RULES.md` 头部一行） |
 | `tables/` | 九本账的表结构、派活单的状态转移表、角色 json、gyb 的 use case 表 |
 | `schemas/` | 九本账的行格式 |
 | `scripts/` | 入账与查询的实现 |
@@ -289,3 +289,4 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-18 来自 sync-inbox 问题 32 的裁决（定义处 `06` 第三节 CLAUDE.md 三句与本份第六节，rl-hub-v4 落；gyb 原话「a」）：宿主白名单照旧 `loop/*.jsonl` 字面，`.doctor-acks.jsonl` 顺带不算脏；第六节那句后补说明，三句本身不改。对回原则 4。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「有的时候会用到仓库外的东西，建议弄一个白名单，白名单下的文件都允许修改」「问题2现在就测一下」「让idea能写gyb」）：第三节阈值表加 `hooks.path_allowlist`（默认空）；第四节 hooks/ 行注已实测；第一节 `notes/` 行改「gyb 和 idea 写」。对回原则 2、8、3。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 追裁（`f820504`，rl-hub-v4 传；gyb 原话「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」）：会话状态文件放 `loop/.sessions/<session_id>.json`；第一节 `loop/` 行补 `rl init` 建 `loop/.sessions/` 并往 `.gitignore` 加一行；「读到会话状态文件就拒收」那句写上路径。对回原则 8。
+- 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：第四节插件树 `common/` 那行加「判断类检查问题清单 `REVIEW-CHECKLIST.md`」，`rules_version` 注「整数，`GLOBAL-RULES.md` 头部一行」。对回原则 8。

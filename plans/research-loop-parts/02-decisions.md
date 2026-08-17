@@ -75,10 +75,10 @@ doctor 有一项扫描盯着来源：决定的来源指向 notes/ 但 grants 里
 |---|---|---|
 | 追加一版 | `rl decision update ID --text [--source ...] [--quote ...]` | 换正文，版本号加一 |
 | 确认继续 | `rl decision confirm ID --source ...` | 正文不变，只加来源，版本号加一，`op` 记 `confirm`，不算改版 |
-| 废除 | `rl decision retire ID [--source ...]` | 追加一版标 `retired`，来源默认继承上一版 |
+| 废除 | `rl decision retire ID [--source ...]` | 追加一版标 `retired`，来源默认继承上一版；必须带理由（谁废都要，gyb 也要），理由记进这一版决定行 |
 | 合并 | `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 新决定拿新编号，根继承 `--root` 那条，`sources` 自动含全部被合并的旧决定，`merged_from` 必填，旧的各追加一版标 `retired`、根不动 |
 
-废除等于追加一版标 retired。停一条方向的时候鼓励再加上那次 run 和那张图当来源。
+废除等于追加一版标 retired。废除必须带理由，谁废都要（gyb 也要），理由记进这一版决定行；角色会话里替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩带，不另加（2026-08-18 gyb 裁，来自 `09`）。理由记在行上哪一栏（新加一栏还是复用 `force_reason`）等 gyb 裁，见 sync-inbox 问题 36；命令上怎么带理由归 `05`（冻结后待议）。停一条方向的时候鼓励再加上那次 run 和那张图当来源。
 
 update、confirm、retire、merge 的「谁能调」是同 actor；跨角色改别人的决定在自己那本 add，来源指原决定。gyb 是超级用户，「谁能调」这一类检查对 gyb 不生效，完整性校验照查（见 `01-gyb.md`）。
 
@@ -111,7 +111,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 | `rl decision add --text --source K:V ... [--quote ...]` | 追加一条新决定，前缀按会话定（角色会话用角色前缀，`--as-gyb` 也一样；裸终端用 `gyb`），序号在本前缀内自动分配，落前缀那本 | 五个角色、gyb |
 | `rl decision update ID --text [--source ...] [--quote ...]` | 追加一版换正文；不给 source 就继承上一版；写完当场列出引旧版而没到终态的单子和 holder | 同 actor |
 | `rl decision confirm ID --source ...` | 追加一版，正文不变只加来源，`op` 记 `confirm`；不算改版，不打印受影响单子，过版判定跳过这一版 | 同 actor |
-| `rl decision retire ID [--source ...]` | 废除；同样列受影响的单子 | 同 actor |
+| `rl decision retire ID [--source ...]` | 废除，必须带理由（谁废都要），理由记进这一版；同样列受影响的单子 | 同 actor |
 | `rl decision merge ID1 ID2 ... --text --root ID [--source ...]` | 合并成新决定，被合并编号自动进 sources 和 merged_from，旧的各追加一版 `retired` | 同 actor |
 | `rl decision show ID [--version V] [--history] [--with-runs]` | 默认最新版；`--with-runs` 先按 handoffs 的 `decision_refs` 找出引这条决定（任一版）的单子当起点，再沿 `parent_id` 往下收子孙单和它们的 run 与 metrics，按单子编号去重，按引的版本分组 | 谁都行 |
 | `rl decision list [--actor A] [--line L]` | 列决定 | 谁都行 |
@@ -395,6 +395,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 - 2026-08-18 gyb 裁「甲」：不加 `change_reason` 栏；「有新证据的改版」和「gyb 改主意」靠 `sources` 和 `quote` 分辨，纪律是有证据必挂。对回原则 8。「来源三类与锚点」一节继承来源那句后补一段，「没写清」第 7 条销掉。
 - 2026-08-18 gyb 裁「甲」：`file` 类来源的锚点有意不校验（只查路径存在），doctor 也不扫。对回原则 7。「来源三类与锚点」一节那句照改，「没写清」第 8 条销掉。
 - 2026-08-18 gyb 确认「甲」：发射单从父单抄 `decision_refs`、run 不查 inbox 两句并存不矛盾，源文档「发射单不引决定」作废。对回原则 9。「过版」一节第二处「两处原文不一致」改成结论。
+- 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：`rl decision retire` 必须带理由，谁废都要（gyb 也要），理由记进这一版决定行；替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。第五节表、表下一段、接口一节命令表三处照改。理由落行上哪一栏（新加一栏还是复用 `force_reason`）本份是定义处，等 gyb 裁（sync-inbox 问题 36）；命令签名归 `05`（冻结后待议，问题 37）。对回原则 1、8。
 
 ## 要同步到别处的
 

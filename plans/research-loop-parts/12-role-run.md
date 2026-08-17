@@ -140,7 +140,7 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 
 | 栏 | 内容 |
 |---|---|
-| reads | handoffs、issues、runs、`experiments/`、`ops/gpu_state.md` |
+| reads | handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md` |
 | writes | `artifact_root`（仓库外，钩子不判） |
 | ledger_writes | runs 全部、handoffs 的 start/estimate/done/stuck、issues 的 open、decisions.run add（自决极少，比如挑卡的理由）、feedback add |
 | dispatches_to | 无 |
@@ -149,6 +149,8 @@ ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会�
 备注（不进 json，2026-08-18 `reads` 写法裁决：备注移到表下）：handoffs 只读自己那张 `launch_order`，issues 只读归自己的。
 
 SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许，要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`；一个会话只加载一个角色，要换角色另开会话。
+
+SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
 查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）；读一律不设权（原则 2）。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」。
 
@@ -401,3 +403,4 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「顺便run只需要关注自己的工单，一般不会空run，不需要查，这个改了」「C」）：「上线第一个动作」这一节改名「收件箱：run 不查」，整段改成「run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单子的 run 会话。上位规矩是角色被拉起不自动查收件箱，`rl inbox` 谁需要谁敲」。
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 改成账名加路径、两条备注移到表下；机器检查改三样都查；加两句 SKILL.md 纪律。对回原则 8、2。
+- 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：json 副本 `reads` 加 feedback，和另外四个角色一样（定义处 `06`）；第五节两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写。对回原则 5、6、8。

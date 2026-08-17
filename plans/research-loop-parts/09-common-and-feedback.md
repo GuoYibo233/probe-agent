@@ -383,13 +383,13 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
 下面这些是 2026-08-18 定稿时牵连别的 part 的，这边只列不改，SendMessage 报给 rl-hub-v5 并追加到 `sync-inbox.md`；动到 `03`/`04`/`05` 冻结三份的只报不催，等最后一期。
 
-- `02-decisions.md`：`rl decision retire` 必须带理由（谁废都要），理由记进那一版决定行——行格式上要有记理由的地方，是新加一栏还是复用 `force_reason` 归 `02` 定；角色会话里替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。
-- `05-rl-cli.md`（已冻结，冻结后待议）：三处——`rl decision retire ID [--source ...]` 签名加理由项（必填）；`rl feedback accept` 那句「自动把 `rules_version` 加一」补「并写回 `common/GLOBAL-RULES.md` 头部那一行」；`rl grant revoke` 一节补「列出 grantee 还活着的会话和各自加载时间，让 gyb 挑要不要收，不自动收」。另：doctor 一节末段「判断类检查的问题清单」可带上文件名 `common/REVIEW-CHECKLIST.md`。
-- `03-ledgers.md`（已冻结，冻结后待议）：grants 段（与本份写了两遍）加「撤销时刻之后再读算越权，reviewer 按时间戳查；撤销时 rl 列出还活着的会话让 gyb 挑」；feedback 段 `target` 那句加「表的某一行填那张表所在文件的路径，哪一行写进 `text`」、`status` 那句加「`rejected` 是终态，再提开新一条」；`rules_version` 相关字段说明可注「整数」。
-- `04-handoffs-and-sessions.md`（已冻结，冻结后待议）：sessions 账开始版 `rules_version` 补「从 `common/GLOBAL-RULES.md` 头部那一行读」；`rl grant revoke` 列会话之后收会话走 `rl session end`（只是引用，那边若有「谁会调 session end」的清单可加一条）。
-- `06-hooks-and-permissions.md`：run 那张 json 表 `reads` 加 feedback（改成「handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md`」）；「五栏是什么」或 `test_skill_refs` 一节可注 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏。
-- `12-role-run.md`：json 副本 `reads` 同 `06` 加 feedback。
-- `10-role-idea.md` 到 `14-role-reviewer.md`：SKILL.md 按 `common/SPEC-TEMPLATE.md` 五栏（角色设定、使用场景、可用工具、限制条件、输出样式）写，「可用工具」栏只指到角色 json；`14` 另把「判断类检查问题清单」带上文件名 `common/REVIEW-CHECKLIST.md`。
-- `08-trees-init-and-host.md`：插件树 `common/` 那行「公共规矩、词表、五栏规格、读法，带 `rules_version`」加「判断类检查问题清单 `REVIEW-CHECKLIST.md`」，`rules_version` 可注「整数，头部一行」。
-- `30-build-steps-verify-tests.md`：步 5 那行「判断类检查的问题清单（文件名待定……）」改成 `common/REVIEW-CHECKLIST.md`；测试 17（feedback）若列了 `accept` 的动作，加「写回母版头部 `rules_version` 那一行」。
-- `00-overview.md`：索引里 `09` 那行「公共母版（公共规矩八条、词表、五栏规格、读法）」可加「判断类检查清单」；不改也不打架。
+- `02-decisions.md`：`rl decision retire` 必须带理由（谁废都要），理由记进那一版决定行——行格式上要有记理由的地方，是新加一栏还是复用 `force_reason` 归 `02` 定；角色会话里替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。（已同步 2026-08-18 rl-hub-v5：retire 带理由三处已改；理由落哪一栏立 sync-inbox 问题 36 等 gyb）
+- `05-rl-cli.md`（已冻结，冻结后待议）：三处——`rl decision retire ID [--source ...]` 签名加理由项（必填）；`rl feedback accept` 那句「自动把 `rules_version` 加一」补「并写回 `common/GLOBAL-RULES.md` 头部那一行」；`rl grant revoke` 一节补「列出 grantee 还活着的会话和各自加载时间，让 gyb 挑要不要收，不自动收」。另：doctor 一节末段「判断类检查的问题清单」可带上文件名 `common/REVIEW-CHECKLIST.md`。（记 sync-inbox 问题 37，等最后一期，2026-08-18 rl-hub-v5）
+- `03-ledgers.md`（已冻结，冻结后待议）：grants 段（与本份写了两遍）加「撤销时刻之后再读算越权，reviewer 按时间戳查；撤销时 rl 列出还活着的会话让 gyb 挑」；feedback 段 `target` 那句加「表的某一行填那张表所在文件的路径，哪一行写进 `text`」、`status` 那句加「`rejected` 是终态，再提开新一条」；`rules_version` 相关字段说明可注「整数」。（记 sync-inbox 问题 37，等最后一期，2026-08-18 rl-hub-v5）
+- `04-handoffs-and-sessions.md`（已冻结，冻结后待议）：sessions 账开始版 `rules_version` 补「从 `common/GLOBAL-RULES.md` 头部那一行读」；`rl grant revoke` 列会话之后收会话走 `rl session end`（只是引用，那边若有「谁会调 session end」的清单可加一条）。（记 sync-inbox 问题 37，等最后一期，2026-08-18 rl-hub-v5）
+- `06-hooks-and-permissions.md`：run 那张 json 表 `reads` 加 feedback（改成「handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md`」）；「五栏是什么」或 `test_skill_refs` 一节可注 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏。（已同步 2026-08-18 rl-hub-v5）
+- `12-role-run.md`：json 副本 `reads` 同 `06` 加 feedback。（已同步 2026-08-18 rl-hub-v5）
+- `10-role-idea.md` 到 `14-role-reviewer.md`：SKILL.md 按 `common/SPEC-TEMPLATE.md` 五栏（角色设定、使用场景、可用工具、限制条件、输出样式）写，「可用工具」栏只指到角色 json；`14` 另把「判断类检查问题清单」带上文件名 `common/REVIEW-CHECKLIST.md`。（已同步 2026-08-18 rl-hub-v5）
+- `08-trees-init-and-host.md`：插件树 `common/` 那行「公共规矩、词表、五栏规格、读法，带 `rules_version`」加「判断类检查问题清单 `REVIEW-CHECKLIST.md`」，`rules_version` 可注「整数，头部一行」。（已同步 2026-08-18 rl-hub-v5）
+- `30-build-steps-verify-tests.md`：步 5 那行「判断类检查的问题清单（文件名待定……）」改成 `common/REVIEW-CHECKLIST.md`；测试 17（feedback）若列了 `accept` 的动作，加「写回母版头部 `rules_version` 那一行」。（已同步 2026-08-18 rl-hub-v5）
+- `00-overview.md`：索引里 `09` 那行「公共母版（公共规矩八条、词表、五栏规格、读法）」可加「判断类检查清单」；不改也不打架。（已同步 2026-08-18 rl-hub-v5）
