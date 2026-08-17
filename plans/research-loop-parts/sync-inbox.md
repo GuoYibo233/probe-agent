@@ -118,3 +118,15 @@
   32. 宿主脏树白名单的字面盖住了 doctor 的 ack 文件：`06` 第三节 CLAUDE.md 三句之一和 `08` 抄的同句写「`loop/*.jsonl` 和 `loop/.lock` 不算脏树」，`03` 总规矩按问题 24 已收窄成「九本账的 jsonl 和 `loop/.lock` 不算脏树，`loop/.doctor-acks.jsonl` 不归总规矩管」。白话场景：gyb 敲 `rl doctor --ack` 之后 ack 文件变了，宿主发射门禁按现在的白名单不会拦；要是白名单也收窄成只放九本账，ack 一次就得多 commit 一次才能发射。两个选项：（a）宿主白名单照旧用 `loop/*.jsonl` 字面，ack 文件顺带不算脏，`03` 那句只是说账本规矩不管它、不是说白名单不放它；（b）宿主白名单收窄成九本账 + `.lock`，ack 文件算脏树，改 `06`/`08` 三句。
   33. reviewer 派 sonnet subagent 算不算「派活」：05 定稿（gyb「全推荐」）让 reviewer 按 `common/` 问题清单派 sonnet subagent 一人一题逐条查；`14` 第八节写「reviewer 不开 issue、不派活」，角色 json 五栏 `dispatches_to` 是无（`06` 同）。问题 6 只裁了开 issue 那一半（只写清单，gyb 自己开）。白话场景：reviewer 会话起一群 sonnet 逐题查是「派活」吗？两个选项：（a）不算——`dispatches_to` 记的是派给别的角色、会开工单的那种；sonnet 逐题查是 reviewer 自己干活的方式，json 不动，`14` 第八节「不派活」后补半句「派 sonnet subagent 逐题查不算」；（b）算——`14` 第八节和 json `dispatches_to` 改成「sonnet subagent（只为问题清单）」，`06` 抄的那份同改。
 - 状态：传播已落地（commit 见 git log `research-loop sync:` 2026-08-17 夜两条）；问题 32、33 等 gyb。
+
+## 2026-08-18 来自 rl-part-02 关于 02-decisions.md
+- 事项：`02-decisions.md` 定稿，commit `7549704`；八条「没写清」和两处「原文不一致」全裁完；牵连别处的六条如下，全部只是同步、不改 02 本身。
+- 裁决原文：gyb 逐题答「甲 甲 乙」「4 甲 5甲 6甲」「甲 甲」（问题一至八；题面见 02 文末裁决记录）。
+- 要改的地方：
+  1. 决定行按编号前缀落文件（一裁）：凡写「gyb 的决定落 gyb 那本」「按 actor 落文件」的引用处改成「按编号前缀落文件，`actor` 另记」；`03` 词表 `loop/decisions.<actor>.jsonl` 的 `<actor>` 读作前缀里的角色名（03 冻结，冻结后待议，只是读法说明）。
+  2. decisions 行新增 `op` 字段（`add`/`update`/`confirm`/`retire`/`merge`），confirm 不算改版（三裁）：凡写「引用版本比最新版小就是过时」的地方（`04` 派活单「依据过时」、`05` `rl status` 段 6 / `rl inbox` 过版项、`07`/`09`/`23` 若有）改成「比最新一个非 confirm 版小才算过时」；`04`/`05` 冻结，冻结后待议。
+  3. `rl decision show --with-runs`（五裁）：`05` 命令表若照抄「沿 parent_id 链反查」，改成「先按 `decision_refs` 找起点单子再沿 `parent_id` 收」；05 冻结，冻结后待议。
+  4. `30` 测试第 3 条加两例：confirm 之后不标过版；merge 后旧决定废除版 `root_id` 不动。
+  5. 「发射单不引决定」这句凡在引用处（`11`、`12`、`23` 若有）出现的，删掉或改成「发射单从父单抄 `decision_refs`，run 不查 inbox」（八确认）。
+  6. `README.md` 进度表 02 那行：由「8 留给 gyb / 未开」改成「定稿 `7549704`」（README 我没动，留给统筹）。
+- 状态：待处理
