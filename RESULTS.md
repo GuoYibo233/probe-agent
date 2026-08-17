@@ -6,6 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `cmp_chat_noprobe_5_srv4` | 2026-08-18 05:30 | 探针线重启 | `4a6ca2b` | - | ok | branch_points=7 max_top2_gap_at_branch=0.25 | 7 个冷/暖分叉位:top1-top2 logprob 差全是 0/0.125/0.25(bf16 logit 步长),两态同位 top1 logprob 最大差 ≤0.17 |
 | `cmp_chat_noprobe_5_srv3` | 2026-08-18 05:17 | 探针线重启 | `a7831de` | - | ok | started=0 | VLLM_BATCH_INVARIANT=1 下 gpt-oss-120b(MXFP4) 起不来:走 _dequant_mxfp4 要 amd-quark(未装),且反量化成 bf16 单卡也放不下;此路不通 |
 | `cmp_chat_noprobe_5_srv2` | 2026-08-18 05:11 | 探针线重启 | `a7831de` | - | ok | cases=13 cold_eq_warm=0 comp_eq_chat_same_state=13 | 13 个 prompt:同缓存状态下 completions(ids)==chat 13/13;清缓存(冷)与命中(暖)输出 13/13 不同 |
 | `cmp_chat_noprobe_5_srv` | 2026-08-18 04:31 | 探针线重启 | `5c712b6` | - | ok | chat_tasks=5 noprobe_tasks=5 | 服务档:五题 chat baseline + no probe 串行各跑一遍;同 prompt 暖缓存下两端点逐字同,首次前缀(缓存未命中)输出与后续不同(8 个新 prompt 里 7 个) |
@@ -18,6 +19,17 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `cmp_chat_noprobe_5_srv4`
+
+- **结论**：7 个冷/暖分叉位:top1-top2 logprob 差全是 0/0.125/0.25(bf16 logit 步长),两态同位 top1 logprob 最大差 ≤0.17
+- **方向**：探针线重启 ｜ **状态**：ok ｜ **起止**：2026-08-18 05:30 → 2026-08-18 05:34
+- **代码**：`4a6ca2b` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：branch_points=7 max_top2_gap_at_branch=0.25
+- **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/inject/runs/cmp_chat_noprobe_5/analysis/branch_logprobs.txt`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/envs/serve_logs/logs/new1_cmp_chat_noprobe_5_srv4_t108g0.log`
+- **命令**：`LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_CACHE_ROOT=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache TRITON_CACHE_DIR=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton VLLM_SYSTEM_START_DATE=2026-07-31 VLLM_SERVER_DEV_MODE=1 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --port 8114 --host 0.0.0.0 --max-model-len 65536 --gpu-memory-utilization 0.92`
 
 ### `cmp_chat_noprobe_5_srv3`
 
