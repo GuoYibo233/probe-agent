@@ -5,12 +5,18 @@ vLLM 的 chat 端点做不到这件事——它的模板永远只在末尾吐 `<
 且拒绝回灌带 `<|channel|>` 的历史消息(chat_template.jinja 会 raise)。所以必须
 走 completions 端点,自己把 prompt 拼到"思考写到一半"那个位置。
 
+2026-08-18 起活跑线不再用本文件的 build_prefix(jinja 文本路):/render 改走
+harmony_render.render_ids 直接出 token id,与 chat 端点逐 token 相同(jinja 文本
+路在"空 content 的 assistant 轮"与"content 里字面 <|...|> 标记"两处与 chat 端点
+不一致,见 harmony_render.py 文件头)。build_prefix 仍供离线回放线
+(replay_inject / acceptance / verify_traj)使用,那边的口径不动。
+
 口径来源(改任何一条都会让重建串与采集时不一致):
-- SYSTEM / NO_CODE_MSG / 历史拼法: envs/collect/run_appworld.py:17-36, 85-107
+- SYSTEM / NO_CODE_MSG / 历史拼法: envs/collect/run_appworld.py:19-38, 103-132
 - 采集参数 reasoning_effort=high: envs/runs/w0_aw_official/launch_clients.sh
 - harmony 模板: 模型目录下 chat_template.jinja,由 apply_chat_template 套
 - 环境返回在采集时已截到 4000 字符并原样写进日志,所以日志里的 result 与模型
-  当时看到的逐字相同(run_appworld.py:104-107)
+  当时看到的逐字相同(run_appworld.py:125-129)
 
 两道自检(都不需要 GPU):
 - check_system_verbatim(): 回源文件比对 SYSTEM 常量,漂了就报错
@@ -29,7 +35,7 @@ import json
 import re
 from pathlib import Path
 
-# 【照抄 envs/collect/run_appworld.py:17-36】check_system_verbatim() 保证不漂移
+# 【照抄 envs/collect/run_appworld.py:19-38】check_system_verbatim() 保证不漂移
 SYSTEM = """You are an autonomous agent operating a phone-like environment \
 on behalf of your supervisor.
 
@@ -51,7 +57,7 @@ access_token=token to that app's other APIs.
 - When the task is fully done, call apis.supervisor.complete_task() \
 (pass answer=... if the task asks a question)."""
 
-# 【照抄 run_appworld.py:98-100】没写代码块那一步,发给模型的是这一句,
+# 【照抄 run_appworld.py:120-122】没写代码块那一步,发给模型的是这一句,
 # 而日志里写的是 result="NO_CODE_BLOCK"——两者不同,重放时必须换回来
 NO_CODE_MSG = ("No ```python``` block found. Reply with "
                "exactly one python code block.")
@@ -108,7 +114,7 @@ def load_traj(path):
 def build_messages(meta, gens, envs, step):
     """重建模型在第 step 步发请求时的 messages(不含该步自己的输出)。
 
-    【照抄 run_appworld.py:85-107】:
+    【照抄 run_appworld.py:103-132】:
     - 首两条 = system + "Task from supervisor: {instruction}"
     - 每轮追加 assistant(只放 content,思考不回灌) + user(执行输出)
     - 没有代码块的那一轮,user 换成 NO_CODE_MSG

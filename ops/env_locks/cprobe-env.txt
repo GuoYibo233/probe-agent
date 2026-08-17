@@ -1,10 +1,11 @@
-# frozen 2026-08-02 by audit E26
+# frozen 2026-08-02 by audit E26; 2026-08-18 加 openai-harmony==0.0.8(+pydantic 2 及其依赖),给 probe_server /render 出 token id 用
 # 双环境铁律: mbert 线钉 transformers==4.57.6 / cprobe 线 >=5.14
 accelerate==1.14.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3
 aiosignal==1.4.0
 annotated-doc==0.0.5
+annotated-types==0.8.0
 anyio==4.14.2
 attrs==26.1.0
 certifi==2026.7.22
@@ -48,11 +49,14 @@ nvidia-nccl-cu12==2.28.9
 nvidia-nvjitlink-cu12==12.8.93
 nvidia-nvshmem-cu12==3.4.5
 nvidia-nvtx-cu12==12.8.90
+openai-harmony==0.0.8
 packaging==26.2
 pandas==3.0.5
 propcache==0.5.2
 psutil==7.2.2
 pyarrow==25.0.0
+pydantic==2.13.4
+pydantic-core==2.46.4
 pygments==2.20.0
 python-dateutil==2.9.0.post0
 pyyaml==6.0.3
@@ -71,6 +75,7 @@ transformers==5.14.1
 triton==3.6.0
 typer==0.27.0
 typing-extensions==4.15.0
+typing-inspection==0.4.4
 urllib3==2.7.0
 xxhash==3.8.1
 yarl==1.24.5

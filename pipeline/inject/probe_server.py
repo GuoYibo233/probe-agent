@@ -1,4 +1,4 @@
-"""活跑注入线的探针服务(cprobe-env,GPU)。设计书:plans/2026-08-01-live-inject-design.md
+"""活跑注入线的探针服务(cprobe-env,GPU)。方法规范:METHOD.md(旧设计书已随 08-02 清场删除)
 
 驱动器(live_appworld.py)跑在 appworld venv 里,没有 torch/transformers,
 所以三件"模型侧"的事都收进本服务,HTTP JSON 交接:
@@ -9,10 +9,21 @@
   POST /gen    {"text": 触发点的探针输入}  -> {"call": 整条预测调用}
                【照抄 replay_inject.gen_calls 的口径】text + call_sep 后
                greedy 续写,截到首行
-  POST /render {"messages":[...]}          -> {"prefix": harmony 前缀串}
-               rebuild.build_prefix,pin_date=COLLECT_DATE(2026-08-02 起
-               活跑与回放同口径钉采集日;vLLM 侧配套钉法见 METHOD.md §6-④)
-  GET  /health                             -> 启动配置回显(θ/T/模型路径等)
+  POST /render {"messages":[...],"effort":?} -> {"prefix_ids":[token id...],
+               "n_tokens", "prefix": 解码文本(只给人眼看)}
+               harmony_render.render_ids:照抄 vLLM chat 端点的渲染,直接出
+               token id,与 chat baseline 逐 token 相同(2026-08-18 起;之前走
+               jinja 出文本再由 completions 分词,空 content 轮与字面 <|...|>
+               标记两处与 chat 不一致,见 harmony_render.py 文件头)。日期钉
+               COLLECT_DATE(vLLM 侧配套钉法见 METHOD.md §6-④)
+  POST /encode {"text": 生成文本}          -> {"ids":[...]}
+               gpt-oss HF 分词器 encode(add_special_tokens=False),给注入后
+               重发用:prompt = prefix_ids + encode(切口前生成文本 + NOTE)。
+               生成文本里的 <|channel|> 等是模型真写的特殊 token,收成特殊
+               id 是对的(R3 检查验的就是这条:重编码与服务端分词逐位一致)
+  GET  /health                             -> 启动配置回显(θ/T/模型路径/
+               render 口径等)。驱动器开跑前核 render == "harmony_ids",
+               防止指到老服务
 
 探针前向口径(设计书 §4.1,与训练/回放的已知差别):
   训练与回放评测按事件整段一次前向、在各边界 token 位取 logits
@@ -48,6 +59,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "train"))
 sys.path.insert(0, str(HERE.parent / "annotate"))
 
+import harmony_render as HR                                   # noqa: E402
 import rebuild as R                                           # noqa: E402
 
 # 默认路径全部取自 θ=0.925 那次注入回放的 plan_config.json —— 活跑线评的
@@ -137,18 +149,22 @@ class Probe:
 
     def render(self, messages, effort=None):
         # effort 不传 = 采集口径(high);effort 对照臂传 low/medium
-        # pin_date=COLLECT_DATE(2026-08-02 改):活跑与 w0 的框架对齐排查发现
+        # 日期钉 COLLECT_DATE(2026-08-02 改):活跑与 w0 的框架对齐排查发现
         # 当天日期是相对采集口径的无谓扰动,贪心解码下会放大成轨迹分叉;
         # 回放线一直钉采集日,活跑从 v2 起同口径。
-        return dict(prefix=R.build_prefix(self.oss_tok, messages,
-                                          effort=effort or R.REASONING_EFFORT,
-                                          pin_date=R.COLLECT_DATE))
+        ids = HR.render_ids(messages, effort=effort or R.REASONING_EFFORT,
+                            start_date=R.COLLECT_DATE)
+        return dict(prefix_ids=ids, n_tokens=len(ids), prefix=HR.decode(ids))
+
+    def encode(self, text):
+        return dict(ids=self.oss_tok.encode(text, add_special_tokens=False))
 
     def config(self):
         return dict(theta=self.theta, temperature=self.T,
                     ctool=self.ctool_run, cgen=self.cgen_run,
                     n_labels=self.ct_meta["n_labels"],
-                    max_len=self.max_len, device=str(self.dev))
+                    max_len=self.max_len, device=str(self.dev),
+                    render="harmony_ids", start_date=R.COLLECT_DATE)
 
 
 def serve(a):
@@ -184,6 +200,8 @@ def serve(a):
                     out = probe.gen(req["text"])
                 elif self.path == "/render":
                     out = probe.render(req["messages"], req.get("effort"))
+                elif self.path == "/encode":
+                    out = probe.encode(req["text"])
                 else:
                     self._reply(dict(error="unknown path"), 404)
                     return

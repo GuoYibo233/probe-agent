@@ -6,7 +6,8 @@
 
 一步之内(设计书 §2):
   1. 消息历史照采集脚本拼(SYSTEM 从 rebuild 取,启动时回源核对);
-  2. harmony 前缀问探针服务要(/render;appworld venv 没有 transformers);
+  2. harmony 前缀问探针服务要(/render 出 token id,与 chat 端点渲染逐 token
+     相同;appworld venv 没有 transformers/openai_harmony);
   3. 分段生成:每段 --chunk-tokens 个 token,贪心,stop=<|return|>;
   4. 每个新句子级切口把 assemble(task, hist, thinking[:cut]) 发 /score,
      首过 θ 触发(切口查满 MAX_BOUNDS 个就歇手,口径差见设计书 §4.2);
@@ -67,6 +68,9 @@ MAX_STEP_TOKENS = 8192     # 采集时 max_tokens=8192(common.py:20),整步上�
 # v4(2026-08-02):与 w0 的 chat 路径逻辑同构。三条对齐:
 # (1) 不预填通道头——prompt 止于 <|start|>assistant,模型自己写
 #     <|channel|>analysis<|message|>,与 chat 渲染逐字节相同;
+#     v5(2026-08-18):prompt 直接以 token id 发(/render 出 id,照抄 chat 端点
+#     渲染),不再让 completions 端点分词——空 content 轮与字面 <|...|> 标记
+#     两处的 chat/completions 口径差随之消掉(harmony_render.py 文件头);
 # (2) 流式一枪解码——一步一个 stream=true 请求,服务器不间断解码,
 #     只在探针真开火时 close() 中止重发(注入本身要改 prompt,缝不可约);
 # (3) 停止只认 <|return|>,final 后模型续写的消息照 vLLM HarmonyParser
@@ -240,10 +244,12 @@ def speculate(world, gen_call, t_frozen, dt_guard):
                 exec_ok=(ek is None), error_kind=ek)
 
 
-def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
+def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
     """v4:一步一枪流式生成,与 w0 的 chat 解码同构。
-    prompt_head = harmony 前缀,止于 <|start|>assistant(无预填);
+    prefix_ids = harmony 前缀 token id,止于 <|start|>assistant(无预填);
     raw = 之后的全部生成文本(模型自己写通道头;注入时截到切口拼 NOTE)。
+    发请求时 prompt = prefix_ids(+ 注入后 /encode(raw) 的 id):不出手的步
+    prompt 就是 chat 端点会喂给引擎的那串 id;重发才有重分词缝。
     探测骑在流上:新句子切口出现就打分,开火才 close() 中断、注入、重发续写
     ——不开火的步是单请求不间断解码,与 chat 完全同款。
     返回 (thinking, content, usage聚合, 溢出账, 出手数)。"""
@@ -257,12 +263,16 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
     accepted = 0               # 注入点之前的 thinking 长度(重启后不回探)
 
     while True:
+        # prompt 一律 token id:前缀来自 /render(chat 同款渲染);注入后重发
+        # 把切口前生成文本+NOTE 交 /encode 分词接在后面(重分词缝就在这一接)
+        prompt = list(prefix_ids)
+        if raw:
+            prompt += http_json(a.probe_url + "/encode", dict(text=raw))["ids"]
         st = open_stream(a.base_url, dict(
-            model=a.model, prompt=prompt_head + raw,
+            model=a.model, prompt=prompt,
             max_tokens=max(1, MAX_STEP_TOKENS - usage["gen_tok"]),
             temperature=0.0, stop=DEFAULT_STOP,
-            skip_special_tokens=False,
-            add_special_tokens=False), a.timeout)
+            skip_special_tokens=False), a.timeout)
         usage["req"] += 1
         fired = False
         for delta in st:
@@ -323,6 +333,16 @@ def gen_step(a, prompt_head, task, hist, world, t_frozen, dt_guard, log, step):
 
     t_final, content = parse_step(raw)
     return (t_final, content, usage, discard, n_inject)
+
+
+def probe_cfg_problem(cfg):
+    """/health 回显不合口径就给一句拒跑理由,合口径返回 None。
+    老服务的 /render 出的是 jinja 文本,与 chat 端点两处不齐(harmony_render.py
+    文件头);教训:老 8790 曾静默丢 effort 字段按 high 渲,指错服务不报错只出错数。"""
+    if cfg.get("render") != "harmony_ids":
+        return (f"probe 服务 /health 没回 render=harmony_ids(拿到 "
+                f"{cfg.get('render')!r}),是旧版 probe_server,拒跑")
+    return None
 
 
 def claim(outdir, tid):
@@ -394,6 +414,9 @@ def main():
     with urllib.request.urlopen(a.probe_url + "/health", timeout=30) as r:
         probe_cfg = json.loads(r.read())
     print(f"probe: {probe_cfg}", flush=True)
+    bad = probe_cfg_problem(probe_cfg)
+    if bad:
+        sys.exit(bad)
 
     ids = load_task_ids(a.split)
     if a.task_ids:
@@ -466,13 +489,13 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
         completed, step, abort = False, -1, None
         try:
             for step in range(a.max_steps):
-                prefix = http_json(a.probe_url + "/render",
-                                   dict(messages=msgs,
-                                        effort=a.effort))["prefix"]
+                prefix_ids = http_json(a.probe_url + "/render",
+                                       dict(messages=msgs,
+                                            effort=a.effort))["prefix_ids"]
                 t0 = time.time()
                 # v4:不预填通道头,prompt 止于 <|start|>assistant(chat 同款)
                 think, content, usage, discard, n_inj = gen_step(
-                    a, prefix, instr, hist, world,
+                    a, prefix_ids, instr, hist, world,
                     t_frozen, dt_guard, log, step)
                 log.w(dict(type="gen", step=step, reasoning=think,
                            content=content, usage=usage, discard=discard,

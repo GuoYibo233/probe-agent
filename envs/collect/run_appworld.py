@@ -51,7 +51,10 @@ def main():
     ap.add_argument("--exp", default="smoke")
     ap.add_argument("--api", default="raw",
                     choices=["raw", "chat", "harmony"])
-    ap.add_argument("--reasoning-effort", default=None)
+    ap.add_argument("--reasoning-effort", default=None,
+                    help="harmony 的 Reasoning 档。--api chat 下不传按 high "
+                         "(与 live_appworld --effort 缺省一致;服务端缺省是 "
+                         "medium,2026-08-18 实测,不显式给就与 no probe 差一个词)")
     ap.add_argument("--start-date", default="2026-08-06",
                     help="harmony 模式下钉死 prompt 里的 Current date")
     ap.add_argument("--shard-id", type=int, default=0)
@@ -59,6 +62,8 @@ def main():
     ap.add_argument("--resume", action="store_true",
                     help="跳过 outdir 里已写完的任务")
     args = ap.parse_args()
+    if args.api == "chat" and args.reasoning_effort is None:
+        args.reasoning_effort = "high"
 
     outdir = Path(args.outdir).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
@@ -100,39 +105,48 @@ def main():
                      "content": f"Task from supervisor: {instr}"}]
             completed = False
             step = -1
-            for step in range(args.max_steps):
-                g = chat(msgs)
-                tok_in += g["usage"]["in"]
-                tok_out += g["usage"]["out"]
-                log.w({"type": "gen", "step": step, **g})
-                m = CODE_RE.search(g["content"])
-                msgs.append({"role": "assistant", "content": g["content"]})
-                if not m:
-                    log.w({"type": "env", "step": step, "action": None,
-                           "result": "NO_CODE_BLOCK"})
-                    msgs.append({"role": "user", "content":
-                                 "No ```python``` block found. Reply with "
-                                 "exactly one python code block."})
-                    continue
-                code = m.group(1)
-                out = str(world.execute(code))
-                log.w({"type": "env", "step": step, "action": code,
-                       "result": out[:4000]})
-                msgs.append({"role": "user",
-                             "content": f"Execution output:\n{out[:4000]}"})
-                if world.task_completed():
-                    completed = True
-                    break
+            abort = None
+            try:
+                for step in range(args.max_steps):
+                    g = chat(msgs)
+                    tok_in += g["usage"]["in"]
+                    tok_out += g["usage"]["out"]
+                    log.w({"type": "gen", "step": step, **g})
+                    m = CODE_RE.search(g["content"])
+                    msgs.append({"role": "assistant", "content": g["content"]})
+                    if not m:
+                        log.w({"type": "env", "step": step, "action": None,
+                               "result": "NO_CODE_BLOCK"})
+                        msgs.append({"role": "user", "content":
+                                     "No ```python``` block found. Reply with "
+                                     "exactly one python code block."})
+                        continue
+                    code = m.group(1)
+                    out = str(world.execute(code))
+                    log.w({"type": "env", "step": step, "action": code,
+                           "result": out[:4000]})
+                    msgs.append({"role": "user",
+                                 "content": f"Execution output:\n{out[:4000]}"})
+                    if world.task_completed():
+                        completed = True
+                        break
+            except Exception as e:
+                # 单题炸了不许陪葬整个分片(2026-08-18,与 live_appworld 同款):
+                # 服务端 400(上下文撞顶)/ 500(harmony 解析器抛 HarmonyError)
+                # 重试 4 次仍失败会落到这里。世界还开着,照常 evaluate,
+                # 失败记诚实,abort 字段说明是哪一步、什么错。
+                abort = f"step{step}:{type(e).__name__}:{str(e)[:200]}"
+                print(f"task={tid} STEP_ERROR {abort}", flush=True)
             try:
                 ev = world.evaluate()
                 ev_s = str(ev.to_dict() if hasattr(ev, "to_dict") else ev)[:600]
             except Exception as e:  # 评测失败不弃轨迹
                 ev_s = f"eval_error: {e}"
             log.w({"type": "final", "steps": step + 1,
-                   "completed": completed, "eval": ev_s})
+                   "completed": completed, "abort": abort, "eval": ev_s})
             log.close()
             print(f"task={tid} steps={step + 1} completed={completed} "
-                  f"eval={ev_s[:120]}", flush=True)
+                  f"abort={abort} eval={ev_s[:120]}", flush=True)
             n_done += 1
             heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in,
                            tok_out=tok_out)

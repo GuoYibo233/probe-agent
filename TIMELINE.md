@@ -10,6 +10,23 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-18 no probe 的 prompt 改成 chat 端点同款 token id，三个臂定名
+
+- 决定：no probe 与 chat baseline 之间凡是代码能对齐的差异一律向 chat 端点
+  对齐：`/render` 不再走 jinja 出文本，改照抄 vLLM chat 端点的渲染直接出
+  token id，驱动器把 prompt 以 id 列表发；chat baseline 的 `--reasoning-effort`
+  缺省改 high、单题异常按题兜底。服务端批组成的数值抖动不在客户端能对的
+  范围，留待发射时试 `VLLM_BATCH_INVARIANT`。
+- 依据：同日逐层对 vLLM 0.26.0 源码并实测，jinja 文本路在两处与 chat 端点
+  不齐（空 content 的 assistant 轮被 chat 端点整条丢掉；content 里字面
+  `<|...|>` 标记被 completions 端点收成真特殊 token），任一触发后每步 prompt
+  永久偏离；其余各层（采样参数、停止 token、输出切分、环境种子）对码相同。
+  细节在 `METHOD.md` §2.1 与 §6-⑤⑥，裁判测试 `tests/test_harmony_render.py`。
+- 定名：chat baseline / with probe / no probe（`CONTEXT.md`，同日）。
+- 与旧记录的关系：2026-08-02 `awdiag_job.sh` 排查「活跑 noprobe 17.3% vs
+  w0 28.6%」时上述两处与 `\n\n` 渲染差、chat 侧日期未钉都还在，那次数字
+  不能归因到单一原因。
+
 ## 2026-08-08 探针线重启，定性为实验空间，METHOD.md 立为方法真源
 
 - 决定：重启探针投机执行工具调用这条线，定性从"一个定死的方法"改成

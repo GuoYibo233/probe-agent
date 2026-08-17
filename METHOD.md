@@ -24,7 +24,8 @@
 
 【现状】现役实例化：gpt-oss-120b + AppWorld，活跑驱动器
 `pipeline/inject/live_appworld.py` + 探针服务 `pipeline/inject/probe_server.py`
-（`/score` 打分、`/gen` 生成整条调用、`/render` 拼 harmony 前缀）。
+（`/score` 打分、`/gen` 生成整条调用、`/render` 出 harmony 前缀 token id、
+`/encode` 给注入后重发分词）。三个臂的名字见 `CONTEXT.md`：chat baseline / with probe / no probe。
 
 ## 2 铁律（凌驾于一切轴）
 
@@ -46,10 +47,26 @@ vLLM 侧受控复跑至今没做过（`learn/vllm/lessons/0004` 原话
 活跑前缀日期由 `/render` 客户端钉死——两边要可比，发射 vLLM 时必须设
 `VLLM_SYSTEM_START_DATE` 与钉死日期一致（见 §6-④）。
 
-已修掉的一处渲染口径差（2026-08-10 z1 冒烟抓到）：`build_prefix` 走模型
-jinja 模板，developer 正文与 `<|end|>` 之间多 `\n\n` 两字符，chat 端点的
-harmony 渲染器与采集手拼串都没有——活跑臂曾因此第 0 步即分叉。修后
-`/render` 与 chat 服务端渲染逐字节全等（实测 1533=1533）。
+已修掉的三处渲染口径差：
+- 2026-08-10 z1 冒烟抓到：`build_prefix` 走模型 jinja 模板，developer 正文与
+  `<|end|>` 之间多 `\n\n` 两字符，chat 端点的 harmony 渲染器与采集手拼串都
+  没有——活跑臂曾因此第 0 步即分叉。修后 `/render` 与 chat 服务端渲染逐字节
+  全等（实测 1533=1533）。
+- 2026-08-18 逐层对 vLLM 0.26.0 源码抓到两条，都在 jinja 文本路：(a) content
+  为空的 assistant 轮，chat 端点整条丢掉，jinja 照渲染一条空 final 消息（实测
+  同一段历史 367 vs 373 token）；(b) content 里字面的 `<|end|>` `<|channel|>`
+  等标记，chat 端点当普通文本编码，completions 端点分词收成真特殊 token
+  （实测 377 vs 370 token）。两条一旦触发，此后每步 prompt 永久偏离。修法：
+  `/render` 改走 `pipeline/inject/harmony_render.py`，照抄 chat 端点的三步渲染
+  直接出 token id，驱动器把 prompt 以 id 列表发；裁判测试
+  `tests/test_harmony_render.py` 用 vLLM 自己的函数对逐 token 相等（vllm-env 下跑）。
+  同一次对码确认逐层相同的还有：采样参数、停止 token（`<|return|>` `<|call|>`
+  `<|endoftext|>` 两路都由 generation_config 并入）、max_tokens、输出切分口径
+  （截断在思考中/畸形头/伪造 user 轮五种输出实测同结果）、AppWorld 种子与截断。
+  剩下对不齐的只有服务端批组成的数值抖动（`VLLM_BATCH_INVARIANT` 缺省关，
+  z1 实测两臂 prompt token 数相同仍在生成中途分叉），以及畸形输出/上下文撞顶
+  时的处理路径（chat 端点回 500/400；2026-08-18 起 `run_appworld.py` 也按题兜底
+  记 abort，对比时只比两边都有结果的题）。
 
 ### 2.2 注入格式同效
 
@@ -61,7 +78,7 @@ harmony 渲染器与采集手拼串都没有——活跑臂曾因此第 0 步即
 | R1 | 注入只落在思考段内部，思考一闭合就停手 | 【现状】满足（`live_appworld.py:273-279`） |
 | R2 | 注入内容本身零特殊 token（纯文本模板） | 【现状】满足（`replay_inject.py:147`） |
 | R3 | 注入后重发的整串重编码后是合法 harmony 串、与原生成逐 token 对齐；重分词缝（`live_appworld.py:320`）每次机制检查实测 | 【现状】已验（2026-08-10 z1 冒烟：10/10 注入事件服务端分词与 openai_harmony 重编码逐位一致，见 `plans/2026-08-10-z1-smoke-report.md`） |
-| R4 | 请求参数与已验证等价的采集路一致 | 【现状】满足（skip_special_tokens 与 add_special_tokens 都已显式，§6-③ 2026-08-10 改齐） |
+| R4 | 请求参数与已验证等价的采集路一致 | 【现状】满足。2026-08-18 起 prompt 以 token id 发，服务端不再分词，`add_special_tokens` 无作用已去掉；`skip_special_tokens=False` 保留（输出切分要看标记） |
 
 ## 3 轴（每轴：现役取值 + 进线口 + 待试）
 
@@ -146,6 +163,13 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
 | ② | `live_appworld.py:1` 指向已删设计书 `plans/2026-08-01-live-inject-design.md` 的断指针，改指本文件 | 08-02 清场删了 plans/ | 文件头已改指 METHOD.md |
 | ③ | `live_appworld.py` open_stream 载荷补 `add_special_tokens: False` | §2.2-R4；采集路显式钉死，活跑靠缺省碰对（tokenizer post_processor=ByteLevel，静态证据缺省无害，仍须显式） | 载荷字典加键（全文件唯一 completions 请求点） |
 | ④ | 活跑/对照用的 vLLM 发射脚本设 `VLLM_SYSTEM_START_DATE`=钉死日期 | §2.1 同设前提 | `launch_vllm_splice.py` 钉 2026-07-31（=`rebuild.COLLECT_DATE`）；其余 launch_vllm_* 是一次性发射器，要用时再钉 |
+
+2026-08-18 追加两件（chat baseline 与 no probe 对码，已改齐）：
+
+| # | 改什么 | 依据 | 落点 |
+|---|---|---|---|
+| ⑤ | `/render` 改出 token id（照抄 chat 端点渲染），驱动器 prompt 以 id 发，注入后重发经 `/encode` | §2.1 两条渲染口径差 (a)(b) | `harmony_render.py` 新增；`probe_server.py` `/render` `/encode` `/health` 回显 `render=harmony_ids`；`live_appworld.py` 开跑前核该字段，老服务拒跑；`cprobe-env` 加 openai-harmony（锁文件已更新） |
+| ⑥ | `run_appworld.py --api chat` 不传 `--reasoning-effort` 按 high；单题异常按题兜底记 `abort` | 服务端缺省 medium 与 no probe 缺省 high 差一个词；chat 端点 500/400 不该陪葬整个分片 | `run_appworld.py` argparse 后置缺省；主循环 try/except，final 多 `abort` 字段 |
 
 ## 7 定案记录（2026-08-08 grilling 会话）
 
