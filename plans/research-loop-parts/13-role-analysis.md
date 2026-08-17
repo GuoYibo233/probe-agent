@@ -23,6 +23,8 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 
 SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
+被派活时以插件的角色 agent 类型起 subagent：agent 定义 `agents/<role>.md` 预加载本角色 skill、收窄工具面、不带钩子；写权钩子是一份插件级钩子文件，按钩子输入的 `agent_type` 认角色（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`，插件树在 `08`）。
+
 两处原文不一致：设计文档 analysis 一节写的 reads 是「runs 账、口径账、派给自己的分析单、`decisions.idea` 和 `decisions.gyb`，加 handoffs」，施工计划第五节的表多了 issues、feedback、`analysis/` 三项。按施工计划的表为准。
 
 模型（施工计划第一节裁决 3、第五节表）：由 agent 调用时 analysis 用 opus；gyb 手动加载角色时跟当前会话的模型一致，角色 json 的 `manual` 栏写 `inherit`，sessions 账落解析后的真实模型名，取不到记 `unknown`。
@@ -116,7 +118,7 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 
 小图和 notebook 进仓库的 `analysis/`。大文件进配置里的分析产物根（`research-loop.json` 的 `analysis_artifact_root`），并且在口径行里记路径。
 
-`analysis/` 这棵树由 `rl init` 建：公共统计件由 init 播模板，notebook 由 analysis 干活时新建，`analysis/scratch/` 留给快车道。
+`analysis/` 这棵树由 `rl init` 建：公共统计件由 init 播模板——三样：`analysis/common/metrics.py`（骨架加一个示例函数）、`analysis/common/ledger.py`（从 runs 账取数的辅助）、`analysis/scratch/` 空目录，notebook 和画图风格不播（2026-08-18 gyb 裁，见 `08` 第一节）；notebook 由 analysis 干活时新建，`analysis/scratch/` 留给快车道。
 
 宿主自己的四层记录（new1 的 TIMELINE.md、DATA.md、RESULTS.md、`ops/runs.jsonl`）analysis 一律不碰。
 
@@ -243,3 +245,5 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 - 2026-08-17 rl-hub-v3 按 HANDOFF 第八节问题 16 那行「`13:140`（销）」：「源文档没写清的」第 3 条（analysis 走 `--merged` 补哪张单）已被问题 16 答掉，整条销掉，编号不重排；第六节「中间」那句按 `07-quick-lane.md` 第五节改成「中间版格式松，只校验骨架和 `ql_tag`；三版按表查必填」（`03` 事项 2 的裁决，05 定稿那一轮漏传）。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 核对无句子；机器检查改三样都查（第二节与接口一节）；加两句 SKILL.md 纪律。对回原则 8、2。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写（角色设定、使用场景、可用工具、限制条件、输出样式），「可用工具」只指到角色 json。对回原则 8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：第 119 行 init 播的公共统计件写成三样 `analysis/common/metrics.py`、`analysis/common/ledger.py`、`analysis/scratch/`。对回原则 8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。

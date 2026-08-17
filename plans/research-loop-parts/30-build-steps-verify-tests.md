@@ -11,13 +11,13 @@
 | # | 要验证的 | 测法 | 通过标准 | 失败备案 | 2026-08-17 之后的状态 |
 |---|---|---|---|---|---|
 | 1 | Bash 环境里有没有现成的会话 id 变量 | 在会话里 `env \| grep -i session`，再对比钩子输入的 `session_id` | 同一个值 | SessionStart 钩子写状态文件（`loop/.sessions/<session_id>.json`），rl 按 `cwd` 加最近一次登记找 | 待测（2026-08-18 一度并入「`${CLAUDE_PLUGIN_DATA}` 解析到哪」半条，同日撤销：状态文件改放 `loop/.sessions/`，不再依赖宿主变量，`06` 追裁） |
-| 2 | skill 头部声明的钩子能不能给命令带参数 | 写一个测试 skill，头部钩子命令 `hook.sh --role test`，加载后触发看参数到没到 | 脚本收到 `--role test` | 五个角色各一份钩子脚本，内容相同只差常量 | 已测通过（2026-08-18，`06` 定稿时 gyb 点名先测：参数原样到达，标准错误里的角色名模型原话收到），主案定，备案删；测试留在 `~/.claude/jobs/8a102def/tmp/hookargs/` |
+| 2 | skill 头部声明的钩子能不能给命令带参数 | 写一个测试 skill，头部钩子命令 `hook.sh --role test`，加载后触发看参数到没到 | 脚本收到 `--role test` | 五个角色各一份钩子脚本，内容相同只差常量 | 已测通过（2026-08-18，`06` 定稿时 gyb 点名先测：参数原样到达，标准错误里的角色名模型原话收到），主案定，备案删；测试留在 `~/.claude/jobs/8a102def/tmp/hookargs/`。同日第 8 条测完，「参数报角色名」写法被取代：钩子一份放插件级、脚本自己判角色（`06`） |
 | 3 | monitor 的 `when: "on-skill-invoke:run"` 写法 | 写一个只打印一行的 monitor，加载 run skill 看起不起 | 加载后进程在、不加载不在 | monitor 常驻，脚本自己读会话状态文件判断当前角色是不是 run | 待测 |
 | 4 | skill 头部禁止模型调用的声明能不能锁入口 skill | 加声明后让模型自己调一次 | 调不动 | 入口 skill 的 SKILL.md 第一行写「模型调用即违规」靠纪律，另外 rl init 检查调用者状态文件不是任何角色 | 备案已升正案（2026-08-17 随 `05` 定稿裁）：`rl init` 读到会话状态文件就拒收，退出码 3，只在裸终端跑（`08` 第一节、`05` 命令表）。这一条照测，测的结论只决定 skill 头部要不要再加那句声明，不改正文 |
 | 5 | SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个 | 起一个加载角色的 subagent，让它写一行账，结束后查 sessions 账 | 有 `ended_at`、`session_id` 和 `started_at` 那行相同 | 全靠 `rl status` 段 7 加 `rl reclaim`，提醒周期从 7 天缩到 1 天 | 待测；不成立会改 `04` 第六、七节和 `12` 的走法 |
 | 6 | 桌面通知机制 | 试 Claude Code 自带推送、`notify-send`、终端铃三种 | gyb 桌面看得到 | 退到 `rl status` 单列那一层，通知不做 | 待测；推送表在 `01` 第五节 |
 | 7 | 定时提醒机制 | 试 Claude Code 的 schedule 和系统 cron | 到点 gyb 收得到 | `rl status` 第一行打印距上次 reclaim 几天（已是正案的一部分），提醒不做 | 待测 |
-| 8 | subagent 里加载角色 skill，头部钩子装不装得上、写权拦不拦 | 起 subagent 加载 deploy，让它写 `analysis/x.md` | 被 deny | subagent 路线改成 workflow 里的 `agentType` 指向 `agents/<role>.md`，钩子在 agent 定义里声明；再不行 subagent 接单只靠纪律加 reviewer 事后查。测完在设计文档 run 一节写死走哪一案，删掉另一案 | 待测；插件树要不要有 `workflows/` 或 `agents/` 一层挂在这条上（`08` 留给 gyb 第 10 条） |
+| 8 | subagent 里加载角色 skill，头部钩子装不装得上、写权拦不拦 | 起 subagent 加载 deploy，让它写 `analysis/x.md` | 被 deny | subagent 路线改成 workflow 里的 `agentType` 指向 `agents/<role>.md`，钩子在 agent 定义里声明；再不行 subagent 接单只靠纪律加 reviewer 事后查。测完在设计文档 run 一节写死走哪一案，删掉另一案 | 已测 2026-08-18（八个变体，`08` 定稿时 gyb 点名测，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）：主案不成立（skill 头部钩子只管顶层会话）、备案一不成立（插件 agent 定义里的钩子被忽略）；走插件级钩子文件按 `agent_type` 判角色，`agents/` 层只塑形，见 `06`。插件树建 `agents/`、不建 `workflows/` |
 | 9 | 后台 subagent（原则 11）：父会话活着时后台 subagent 能不能跑几个小时；父会话结束后台 subagent 会不会被杀 | 起 deploy 会话后台起一个 sleep 两小时的 run subagent，两种情况各试一次 | 活着时能跑完并回通知；父会话结束时的行为有结论 | 被杀的话正案不变（GPU 在 tmux、单子在账上、下一个 run 认领），只是待认领的单子多；同步等的老方案不再回来 | 待测 |
 | 10 | 钩子输入里有没有模型标识 | 打印 SessionStart 钩子的输入 JSON | 有 model 字段 | sessions.model 记 `unknown`，doctor 列出来，gyb 事后补 | 备案已收成正案的一部分（2026-08-17 随 `05` 定稿裁）：doctor 第 19 项扫 `model` 是 `unknown` 的 sessions 行，修法 `rl session amend ID --model M`（`05`「rl doctor」、`04` 第七节）。这一条照测，测出有 model 字段就少走一次 amend，不改正文。顺带看到的（2026-08-18，不算正式测）：一次 PreToolUse 观察里钩子输入有会话 id、工作目录、权限模式、工具入参，没有模型标识，正式结论仍等测 |
 | 11 | 改一行母版不重启 claude 再加载一次角色，读到的是不是新文本 | 改 common/ 一行，同一进程再 `/` 加载角色 | 模型看到新文本 | feedback accept 的待办里加一句「改完母版必须重开终端」 | 待测；`09` 第二节引了这一条 |
@@ -191,13 +191,13 @@
 | 步 | 交付 | 验收 | 依赖 | 执行者 |
 |---|---|---|---|---|
 | 0 验证 | 第一节 11 条的结果写进 `plans/2026-08-1x-research-loop-verify.md`，每条写实测结果和选了主案还是备案；备案影响正文的当场改设计文档，删掉另一案 | 11 条都有结论 | 无 | 主会话亲自做，要真会话 |
-| 1 清空 | `git rm -r research-loop/`，只留空目录和 `.claude-plugin/plugin.json` 新写一份 | 目录里只有 plugin.json | 无 | 主会话 |
+| 1 清空 | `git rm -r research-loop/`，只留空目录（含 `agents/`，不建 `workflows/`）和 `.claude-plugin/plugin.json` 新写一份；`agents/` 五份角色 agent 定义随步 6 的 SKILL.md 一起交（2026-08-18 `08` 定稿裁） | 目录里只有 plugin.json 和空目录 | 无 | 主会话 |
 | 2 架构文档 | 不做（2026-08-18 gyb 裁，`00` 定稿：定稿的拆分文档 `plans/research-loop-parts/` 本身就是架构说明，`research-loop/ARCHITECTURE.md` 不写），编号保留，步 3 的依赖改成步 0、1 | 无 | 无 | 无 |
 | 3 共同底座 | `tables/ledgers.json`、`tables/transitions.json`、`tables/roles/*.json`、`tables/gyb-usecases.json`、`schemas/*.schema.json`、`scripts/rl_lib.py`（锁、编号、追加、校验、actor 判定）、`bin/rl` 骨架，测试 1 到 7、9、10、14、17、18、20 | `tests/run_all.py` 全绿 | 步 0、1（步 2 不做） | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
 | 4 交流机制 | `hooks/`（写权钩子、登记销号钩子）、`rl status`、`rl inbox`、`rl trace`、`rl reclaim`、`rl doctor`、`rl notify`、`monitors/`（看门狗）、快车道命令，测试 8、11、15、16、19 | 全绿；在真会话里手动触发一次 deny 和一次销号 | 步 3 | 工单化同上；真会话验证主会话做 |
 | 5 公共母版 | `common/GLOBAL-RULES.md`（公共规矩八条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话）、`common/REVIEW-CHECKLIST.md`（判断类检查的问题清单，文件名 2026-08-18 `09` 定稿裁；reviewer 派 sonnet subagent 按它逐题查，2026-08-17 裁；查出的只写 `review/` 清单不开 issue、起 subagent 逐题查不算派活，sync-inbox 问题 6、33 已裁） | gyb 逐条过 | 步 3 | 主会话写，底稿给 gyb 过，过了就是正式版 |
 | 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（头部带钩子声明，正文有 use case 表，只引用母版不抄），run 的照 `12`，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图在 `08` 第五节） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
-| 7 最小一条路 | 在临时沙盒仓库 `rl init`（裸终端）→ 加载 idea 写一条决定开一张工单 → 加载 deploy 接单写代码写报告提验收 → 回 idea 打回 → deploy 再接 → idea 验收 → `rl doctor` 零报告；再走一遍测试 12 的第二条（发射单 smoke 失败到 trace）；然后在 new1 跑 `rl init`，gyb 改 new1 CLAUDE.md 的 GPU 那一行和脏树白名单（`08` 第七节 7.9） | 沙盒全程只经 rl；new1 的 `loop/` 长出来、CLAUDE.md 只多一节 | 步 6 | 主会话，真会话 |
+| 7 最小一条路 | 在临时沙盒仓库 `rl init`（裸终端）→ 加载 idea 写一条决定开一张工单 → 加载 deploy 接单写代码写报告提验收 → 回 idea 打回 → deploy 再接 → idea 验收 → `rl doctor` 零报告；再走一遍测试 12 的第二条（发射单 smoke 失败到 trace）；然后在 new1 跑 `rl init`，gyb 改 new1 CLAUDE.md 的 GPU 那一行；施工者改 `run.py` 门禁的脏树白名单加 `loop/*.jsonl`、`loop/.lock`，按 new1 自己的规矩走、`selfcheck` 过、gyb 验收（2026-08-18 `08` 定稿裁：`rl init` 不碰宿主代码，`08` 第七节 7.2、7.9） | 沙盒全程只经 rl；new1 的 `loop/` 长出来、CLAUDE.md 只多一节；`run.py` 白名单加了两项且 `selfcheck` 过 | 步 6 | 主会话，真会话 |
 | 8 总验收 | gyb 定五个任务，每个角色两个 agent 一个加载 skill 一个不加载各做一遍，产出摆一起 | gyb 自己看：每看完一对产出说一句「过 / 不过」加一句原因，记进 `00` 裁决记录，五对都过才算过（2026-08-18 gyb 裁，`00` 定稿） | 步 7 | gyb 定任务，主会话派 agent（模型按 `00` 第三节裁决 3 的表：idea、reviewer 用 fable，deploy、run、analysis 用 opus） |
 
 每步一个或多个 commit，commit message 前缀 `research-loop v2:`；用起来之后改母版的 commit 前缀 `research-loop rules:`，改完跑一遍 `tests/run_all.py`。
@@ -226,7 +226,7 @@
 2. 测试 5 里「口径引用同样查过版」由哪条命令出（`22` 留给 gyb 第 3 条），没裁之前这一句写不成用例。
 3. 测试 12 第二条里 amend 追加的那次尝试分不分新 run_id（`21` 留给 gyb 第 4 条），用例只能先按一种写。
 4. 测试 13 按 `reads` 栏查「每个读的目录都在 reads 里」，五份 json 里 reads 的写法不统一（`06` 留给 gyb 第 8 条），按哪种形式查没裁。
-5. 待验证第 8 条的备案「workflow 里的 `agentType` 指向 `agents/<role>.md`」要求插件树多一层 `workflows/` 或 `agents/`，`08` 第四节的目录清单里没有（`08` 留给 gyb 第 10 条），第 0 步测出走备案的时候步 1 建的空目录要不要多这一层没写。
+5. （2026-08-18 已裁，`08` 定稿：建 `agents/`，步 1 建空目录；不建 `workflows/`。）待验证第 8 条的备案「workflow 里的 `agentType` 指向 `agents/<role>.md`」要求插件树多一层 `workflows/` 或 `agents/`，`08` 第四节的目录清单里没有（`08` 留给 gyb 第 10 条），第 0 步测出走备案的时候步 1 建的空目录要不要多这一层没写。
 6. 待验证第 9 条只测 deploy 起 run 这一层，idea 起 deploy、deploy 再起 run 的两层嵌套没测（第二轮 run-crash-midway 第 10 条、new-idea 第 4 条报过）；原则 11 之后是后台派活、不再同步嵌套等，这一条要不要补测两层各自的后台行为没写。
 7. 步 3 和步 4 用 ticket-run 工单化，工单怎么切、每张工单对应第二节的哪几条测试，第十一节没写。
 8. 步 8 总验收「每个角色两个 agent 一个加载 skill 一个不加载」，不加载 skill 的那个 agent 用什么模型、按裁决 3 的 as_subagent 那一栏还是别的，没写。
@@ -348,3 +348,4 @@
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「问题2现在就测一下」）：待验证第 2 条改「已测通过、主案定、备案删」；第 1 条并入 `${CLAUDE_PLUGIN_DATA}` 解析到哪（同日撤销，见下一行）；第 10 条注一次 PreToolUse 观察里没有模型标识、正式结论仍等测；第 0 步交付物那句「改设计文档」改成「改对应的 part」。对回原则 8。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 追裁（`f820504`，rl-hub-v4 传；gyb 原话「a」）：待验证第 1 条撤销刚并入的「`${CLAUDE_PLUGIN_DATA}` 解析到哪」半条，状态文件路径改 `loop/.sessions/<session_id>.json`。对回原则 8。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：施工步 5 那行问题清单改成 `common/REVIEW-CHECKLIST.md`；测试 17「要加的」补 accept 写回母版头部 `rules_version` 那一行。对回原则 8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：待验证第 8 条状态改已测（主案、备案一都不成立，走插件级钩子按 `agent_type` 判角色，记录路径见表）；第 2 条备注写法被取代；「没写清」第 5 条标已裁（建 `agents/` 不建 `workflows/`）；步 1 交付加 `agents/` 空目录与五份定义；步 7 交付与验收加 `run.py` 门禁白名单两项、`selfcheck` 过。对回原则 2、8。

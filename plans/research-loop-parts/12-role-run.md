@@ -124,7 +124,7 @@ run 出问题一律开 issue，不修代码、不重试。四种情形对应的 
 
 跑挂：`rl run finish --exit failed`（同样调 `finish_cmd`），`rl issue open --to deploy --kind failed --stage crash`，`rl handoff stuck`。
 
-被收回或者被 `rl reclaim --kill`：只做 `rl run finish --exit killed` 加收尾（杀进程、释放显存、宿主销号），不再改单子状态，状态由收回或回收那一步改。
+被收回或者被 `rl reclaim --kill`：只做 `rl run finish --exit killed` 加收尾（杀进程、释放显存、宿主销号），不再改单子状态，状态由收回或回收那一步改。宿主销号那一步调配置的 `launcher.abort_cmd`（new1 是 `run.py gpu-jobs finish`），留空就跳过这一步（2026-08-18 gyb 裁，定义处 `08`）；`launcher.*` 四条模板留空的语义一样：对应动作跳过，run 不自己补一条宿主命令。
 
 ok 和失败都调宿主收尾命令，两本账一次落，宿主那本不会停在只有开始没有结束。
 
@@ -152,6 +152,8 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 
 SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
+被派活时以插件的角色 agent 类型起 subagent：agent 定义 `agents/<role>.md` 预加载本角色 skill、收窄工具面、不带钩子；写权钩子是一份插件级钩子文件，按钩子输入的 `agent_type` 认角色（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`，插件树在 `08`）。
+
 查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）；读一律不设权（原则 2）。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」。
 
 ## 和宿主的关系
@@ -166,7 +168,7 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 - `rl handoff start/estimate/done/stuck`、`rl run add/finish`、`rl issue open`、`rl inbox` 的完整参数：定义在 `05-rl-cli.md`；退出码 0/1/2/3/4/5 同。
 - 写权钩子拦哪些路径、角色 json 的四栏怎么被机器检查、`--as-gyb` 与 `--quote`：定义在 `06-hooks-and-permissions.md`。
 - 快车道里 GPU 怎么跑（run_id 用 ql_tag、track 沿用被微调那个实验的方向、数字进杂账不进 runs 账、deploy 可以派 gpu-runner）：定义在 `07-quick-lane.md`，那条路上没有 run 会话、不开发射单、不做分步计时。
-- `research-loop.json` 里的 `artifact_root`、`gpu_state_path`、`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`、中断命令模板、宿主台账清单、脏树白名单和 CLAUDE.md 那一节：定义在 `08-trees-init-and-host.md`。
+- `research-loop.json` 里的 `artifact_root`、`gpu_state_path`、`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`、中断命令模板 `launcher.abort_cmd`、宿主台账清单 `host_ledgers`、本仓库跑法 `repo_run`、脏树白名单和 CLAUDE.md 那一节：定义在 `08-trees-init-and-host.md`。
 - 公共母版的规矩 3（数字只经脚本入账）和规矩 6（故障分域，run 出问题一律开 issue 给 deploy、不自行重试）：定义在 `09-common-and-feedback.md`。
 - 收回、reclaim、doctor 的扫描项（含 runs 有 `launched` 版长期没 `finished` 版、runs 挂在 `withdrawn` 的单子上、两本 runs 账对账）：定义在 `01-gyb.md` 与 `05-rl-cli.md`。
 - 待验证第 5、8、9 条（SubagentStop 触不触发、subagent 里钩子装不装得上、后台 subagent 能不能跑几小时）会改掉 run 这一段的走法，结论落在 `30-build-steps-verify-tests.md`。
@@ -404,3 +406,5 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `05`，rl-hub-v3 传；gyb 原话见 inbox）：查询命令那句后补「`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲」，与 `06-hooks-and-permissions.md` 同句一字不差。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 改成账名加路径、两条备注移到表下；机器检查改三样都查；加两句 SKILL.md 纪律。对回原则 8、2。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：json 副本 `reads` 加 feedback，和另外四个角色一样（定义处 `06`）；第五节两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写。对回原则 5、6、8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：Phase 6b 中断收尾里「宿主销号」调配置的 `launcher.abort_cmd`（new1 `run.py gpu-jobs finish`），留空跳过，四条模板留空语义一样；接口一节补键名 `launcher.abort_cmd`、`host_ledgers`、`repo_run`。对回原则 10、11。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。

@@ -147,6 +147,8 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 
 SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
+被派活时以插件的角色 agent 类型起 subagent：agent 定义 `agents/<role>.md` 预加载本角色 skill、收窄工具面、不带钩子；写权钩子是一份插件级钩子文件，按钩子输入的 `agent_type` 认角色（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`，插件树在 `08`）。
+
 reads 是纪律不设门禁，查询命令（show、list、trace、status、inbox、stale、doctor）谁都能调，不进 `ledger_writes`；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。
 
 SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试会查抄没抄。
@@ -396,3 +398,4 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 - 2026-08-17 rl-hub-v3 审后补：第六节 `batch` 行按 `04-handoffs-and-sessions.md` 字段表补回「`launch_order` 开单时从父单抄」「调用者 `--batch B` 传」（问题 9 原话说 launch_order 从父单抄的规矩照旧）。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题七、八、十一、十二）「6 c」「让idea能写gyb」）：json 副本 `reads` 去括号备注、`dispatches_to` 改「run、gpu-runner」、两条备注移到表下；第二节写别的角色目录那句注 `notes/` idea 也能写；机器检查改三样都查；加两句 SKILL.md 纪律。对回原则 5、8、2。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写（角色设定、使用场景、可用工具、限制条件、输出样式），「可用工具」只指到角色 json。对回原则 8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。

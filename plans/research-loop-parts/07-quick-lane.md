@@ -137,7 +137,7 @@ deploy 补一张标了 quick_lane 的工单，六条规矩：
 - 锁 `loop/.lock` 的三步合一规矩、跨账写序：`03-ledgers.md`。
 - 钩子只按仓库内相对路径判、仓库外路径一律放行：`06-hooks-and-permissions.md`。
 - deploy 角色 json 的四栏（含 `dispatches_to` 里的 gpu-runner、reads 里的 `ops/gpu_state.md`）：`06-hooks-and-permissions.md` 和 `11-role-deploy.md`。
-- `quick_lane.worktree_root`、`reclaim.ql_idle_days` 两个键在配置文件里的位置，宿主发射器的命令模板（探卡、发射、收尾、中断）与宿主台账清单：`08-trees-init-and-host.md`。
+- `quick_lane.worktree_root`、`reclaim.ql_idle_days` 两个键在配置文件里的位置，宿主发射器的命令模板（探卡、发射、收尾、中断：`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`、`launcher.abort_cmd`）与宿主台账清单 `host_ledgers`：`08-trees-init-and-host.md`。
 - `rl status` 十段每段列什么、桌面通知推送表、`rl reclaim` 的全部参数与行为、`rl doctor` 的全部扫描项：`01-gyb.md`。
 - 正式重跑那张发射单怎么开、attempt 怎么记、run 怎么接：`11-role-deploy.md`、`12-role-run.md`、`21-pair-deploy-run.md`。
 - `decisions.deploy` 的来源三类与自决的粒度：`02-decisions.md`、`11-role-deploy.md`。
@@ -278,3 +278,4 @@ deploy 补一张标了 quick_lane 的工单，六条规矩：
 - 2026-08-17 来自 sync-inbox 问题 22 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「A」）：快车道数字不进 runs。第五节那段「两处原文不一致」改成「快车道的数字追加进杂账，不进 runs 账（`03` runs 表 `run_id` 那格的『快车道用 `ql_tag`』已删）」；「没写清」第 2 条标已裁。
 - 2026-08-17 对齐定义处（不是新裁决，rl-hub-v3 传）：第七节转移表 `done_pending_review` → `accepted` 那一行照 `04` HEAD 补「rl 顺带关这张单关联的 `answered` issue（`03` 定）」；接口一节 handoffs 字段那条加 `ql_tag`、定义处改指 `04`（`03` 的 handoffs 一段只指过去）。
 - 2026-08-17 rl-hub-v3 按 HANDOFF 第八节问题 16、22 两行的「销」：「源文档没写清的」第 2 条（快车道要不要往 runs 落一行）和第 5 条（analysis 走 `--merged` 补哪张单）已被裁决答掉，整条销掉，编号不重排（照 `08` 销第 5 条的先例）。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：接口一节命令模板与宿主台账清单补键名 `launcher.abort_cmd`、`host_ledgers`。

@@ -46,6 +46,8 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 
 SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
+被派活时以插件的角色 agent 类型起 subagent：agent 定义 `agents/<role>.md` 预加载本角色 skill、收窄工具面、不带钩子；写权钩子是一份插件级钩子文件，按钩子输入的 `agent_type` 认角色（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`，插件树在 `08`）。
+
 读一律不设权：九本账的查询命令谁都能调，reads 这一栏是纪律不是门禁。查询命令（show、list、trace、status、inbox、stale、doctor）不进 ledger_writes；`rl doctor --ack`、`--unack` 是写命令、只有 gyb 能敲（2026-08-17 gyb 裁，sync-inbox 问题 23）。机器检查（测试 13）三样都查（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里（查询命令不查）；SKILL.md 正文出现的每个账名和目录都在 `reads` 里（按 `reads` 栏定死的两种写法逐个对：账写账名，目录和文件写相对仓库根的路径）；引用的名字都在定义处查得到、母版不抄。SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，测试同样查抄没抄。
 
 ## 收件箱
@@ -374,3 +376,4 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」）：第五节过版判定改成「比账里最新一个非 `confirm` 版小才算过时」。对回原则 9。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「让idea能写gyb」「a」（问题八、十一、十二）「6 c」）：json 副本 `writes` 改 `notes/`、`reads` 按新写法展开成清单、备注移到表下；第一节「writes 一栏是空的」照改；「申请读 notes/」一节首句改「gyb 和 idea 写」；机器检查改三样都查；加两句 SKILL.md 纪律。对回原则 3、8、2。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写（角色设定、使用场景、可用工具、限制条件、输出样式），「可用工具」只指到角色 json。对回原则 8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。

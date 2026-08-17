@@ -114,6 +114,8 @@ SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-pe
 
 SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄（2026-08-18 gyb 裁，定义处 `09-common-and-feedback.md`）。
 
+被派活时以插件的角色 agent 类型起 subagent：agent 定义 `agents/<role>.md` 预加载本角色 skill、收窄工具面、不带钩子；写权钩子是一份插件级钩子文件，按钩子输入的 `agent_type` 认角色（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`，插件树在 `08`）。
+
 模型这一栏按施工计划第一节裁决 3：由 agent（subagent 或 workflow）调用的时候 idea、reviewer 用 fable；gyb 手动加载角色的时候跟当前会话的模型一致。这条与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable」不一致，按原则 8 工程内为准，插件的 README 和角色 json 里都要明写「fable 是 gyb 2026-08-16 点名的例外」。
 
 两处原文不一致：设计文档写 reviewer 由 gyb 手动开、审读意见第 9 条也写「reviewer 只由 gyb 手动开」，施工计划第一节裁决 3 又给 reviewer 定了 `as_subagent` 的模型 fable，说的是「由 agent（subagent 或 workflow）调用的时候」。按裁决优先，角色 json 照裁决 3 写两个取值；谁去起这张 subagent，源文档没写，留在下一节。
@@ -228,3 +230,4 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处本份第八节与 `06` 的 reviewer json，rl-hub-v4 落；gyb 原话「选a」）：reviewer 起 sonnet subagent 逐题查不算派活，`dispatches_to` 仍是无；第一节那段的不一致标注结掉，第八节补半句。对回原则 5。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题八、十一、十二）「6 c」）：json 副本 `reads` 从「一切」展开成清单（第四节那句同改）；第九节测试 13 描述改三样都查；加两句 SKILL.md 纪律。对回原则 8、2。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：判断类检查问题清单带上文件名 `common/REVIEW-CHECKLIST.md`（第一节、第八节两处）；两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写。对回原则 8。
+- 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。

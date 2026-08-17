@@ -233,4 +233,19 @@
 - 事项：`08` 定稿（commit `eb02403`），「没写清」九条全裁；待验证第 8 条当场测完，钩子挂法要改；配置新加三键；十二条同步条目全在 `08` 文末「要同步到别处的」，此处只列要点。
 - 裁决原文：第 8 条——gyb「A 然后现在就测8」「剩下的建议我确认」；Bash 进钩子——gyb「你就说我也定了，让统筹给06 00也改了」；账路径「定死吧」；中断模板/跑法/门禁/播模板/幂等「第一个选 A 第二个选A 这个要init的时候问的」「A A A」。测试记录 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`。
 - 要改的地方：`06-hooks-and-permissions.md`：钩子一份放插件级 `hooks/hooks.json`，脚本先看 `agent_type`（认识的按角色、不认识的最严）没有才按会话状态文件；状态文件由钩子在加载角色 skill 时写、`agent_type` 非空不写；skill 头部不再声明钩子、「参数报角色名」作废；加一段五份角色 agent 定义只塑形不带钩子；匹配范围加 Bash（解析重定向/tee/sed -i/mv/cp 并 realpath），「Bash 绕钩子不许」句相应改。`00-overview.md`：原则 2 改「钩子管 Write、Edit、Bash」；索引 `08` 覆盖栏加 `agents/`。`30`：第 8 条状态改已测（主案、备案一都不成立，走插件级钩子按 `agent_type` 判角色）、第 2 条备注被取代、「没写清」第 5 条改「建 agents/ 不建 workflows/」、步 1 交付加 agents/ 五份、步 7 交付与验收加 `run.py` 门禁白名单加 `loop/*.jsonl`/`loop/.lock` 且 selfcheck 过。`12`：Phase 6b 宿主销号调 `launcher.abort_cmd`（new1 `run.py gpu-jobs finish`）留空跳过。`13`：init 播三样。`07`/`05` 接口一节补 `launcher.abort_cmd`、`repo_run`、`host_ledgers`。冻结三份等最后一期：`04`（派活用插件角色 agent 类型起 subagent；subagent 的 session_id 与父会话相同、登记那句等第 5 条测完定）、`05`（`rl init` 幂等/逐项问/不动宿主代码；`rl run finish` 调 abort_cmd；doctor 对账按 `host_ledgers` 的 `kind: runs`）、`03`（词表九名旁注「位置钉死，配置里没有账路径」）。
-- 状态：待处理
+- 状态：已处理 2026-08-18（rl-hub-v5 传：06 六处改写、00 原则 2 与裁决 5 与索引与第八节、30 四处、12 两处、13 一处、07 一处、10–14 各一句；纪律句改法与 agent 定义母版流程立问题 38 等 gyb；03/04/05 三条立问题 39 等最后一期）
+
+## 2026-08-18 来自 rl-hub-v5 关于 08 定稿带出的两条空白（等 gyb）
+- 事项：`08` 定稿把 Bash 裁进钩子匹配范围、加了 `agents/` 层五份角色 agent 定义，两处后果 `08` 说归 `06`/`09` 定，统筹不自己定，等 gyb。
+- 裁决原文：（待）
+- 问题 38（两小问）：
+  - 38-1. 钩子现在也看 Bash 命令里能解析出的写目标（重定向、`tee`、`sed -i`、`mv`/`cp`），原来那句「用 Bash 往四个角色目录和 `loop/` 写等于绕钩子，不许」的纪律怎么改？选项：（a）删掉，钩子管了就不用纪律——利：少一句；弊：钩子解析不出的写法（脚本内部写文件、`python -c`、heredoc）没人管。（b）改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或走 `rl`」——利：钩子和纪律接上，没有缝；弊：想不出。推荐（b），强烈推荐。落点：`06` 第三层那句、`09` rule-08、`10`–`14` 两句纪律里的第一句。
+  - 38-2. 五份角色 agent 定义（`agents/<role>.md`，提示词加预加载 skill 加工具面）改一处，走不走母版流程（记 feedback、单独 commit、`rules_version` 加一）？选项：（a）走，和角色 json 一样——利：所有会话行为的来源都进版本号，reviewer 能对；弊：小改也要走一遍。（b）不走，随手改——利：省事；弊：agent 定义改了没人知道，和「角色 json 改一栏算改母版」那条裁决不一致。推荐（a），强烈推荐。落点：`06` agents/ 那段、`09` 第四节。
+- 状态：等 gyb
+
+## 2026-08-18 来自 rl-hub-v5 关于 08 定稿动到冻结三份的几处（冻结后待议）
+- 事项：`08-trees-init-and-host.md` 定稿（`eb02403`）有三条的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，和问题 34、35、37 一起等最后一期。
+- 裁决原文：gyb 2026-08-18 对 08「定死吧」「A A A」「剩下的建议我确认」（原话见 `08` 裁决记录）。
+- 要改的地方：
+  39. 冻结后待议：（a）`04` `dispatch=auto` 起 subagent 时用插件的角色 agent 类型（`agents/<role>.md`），不用 general-purpose；第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句——subagent 的 `session_id` 与父会话相同、钩子输入多 `agent_id`/`agent_type`、状态文件不写，subagent 算不算一次 sessions 行、`session_id` 记什么，等待验证第 5 条测完再定；（b）`05` `rl init` 一行补「重跑无副作用；逐项问配置；不动宿主代码和仓库 `.claude/`」；`rl run finish` 一节补「中断收尾里宿主销号调 `launcher.abort_cmd`，留空跳过」；doctor「两本 runs 账对账」按 `host_ledgers` 里 `kind: runs` 找宿主账；接口一节 `08` 那条键清单加 `launcher.abort_cmd`、`repo_run`、`host_ledgers`；（c）`03` 词表九个文件名旁注「位置钉死，配置里没有账路径（2026-08-18 gyb 裁，`08` 第一节）」。
+- 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `08` 定稿为准）
