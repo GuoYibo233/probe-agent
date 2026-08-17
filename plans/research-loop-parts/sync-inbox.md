@@ -192,3 +192,9 @@
 - 要改的地方：
   35. 冻结后待议：（a）`05` doctor 表加一项「陈旧会话状态文件」——sessions 账已销号或超过一天没动的状态文件，修法删文件、归 gyb 推（十九项变二十项，`03`/`05` 提到「十九项」的句子跟着改）；（b）`05:100` 附近「机器检查只查 SKILL.md 里出现的写命令在不在 `ledger_writes` 里」与 `06`「三样都查」不一致，改成三样；（c）`04` 销号钩子的动作清单加「删本会话的状态文件」。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `06` 定稿为准）
+
+## 2026-08-18 03:41 来自 rl-part-06 关于 06-hooks-and-permissions.md
+- 事项：定稿后追问一条——会话状态文件放哪。
+- 裁决原文：「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」（a 是「放 loop/ 下子文件夹」）。
+- 要改的地方：`08-trees-init-and-host.md`：`rl init` 建的东西加 `loop/.sessions/`，`.gitignore` 加一行 `loop/.sessions/`，第一节「读到会话状态文件就拒收」指的路径改成 `loop/.sessions/<session_id>.json`；`30-build-steps-verify-tests.md`：第 1 条刚并进去的「`${CLAUDE_PLUGIN_DATA}` 解析到哪」半条撤销；`03-ledgers.md`、`04-handoffs-and-sessions.md`（冻结后待议，可并进问题 35）：普通文件清单加 `loop/.sessions/`、状态文件路径同改。
+- 状态：待处理

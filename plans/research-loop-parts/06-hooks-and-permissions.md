@@ -55,7 +55,7 @@ Bash 写出来的文件钩子不看，宿主发射器的台账、读什么、怎
 
 钩子按敲出来的路径判：绝对路径折成相对仓库根的写法，相对路径按会话工作目录折，不追软链接。软链接指到仓库外的东西（new1 的产物目录就是仓库里一个指到 net 盘的软链接）按它在仓库里的位置判：落在四个角色目录或 `loop/` 里照拦，不落就放。这样谁也不能靠在角色目录里放一个指到外面的软链接绕过钩子。
 
-另有一张白名单：列在白名单里的路径不管折成什么一律放行。白名单是插件配置里的一项（和阈值表放一起，见 `08-trees-init-and-host.md`），默认为空，由 gyb 在 `rl init` 之后按需填，用来放那些「路径写在仓库里、东西其实在仓库外」的地方。
+另有一张白名单：列在白名单里的路径不管折成什么一律放行。白名单是插件配置里的一项 `hooks.path_allowlist`（键名 `08` 定，和阈值表放一起，见 `08-trees-init-and-host.md`），默认为空，由 gyb 在 `rl init` 之后按需填，用来放那些「路径写在仓库里、东西其实在仓库外」的地方。
 
 仓库外的路径仍一律放行不变。
 
@@ -115,9 +115,9 @@ hooks/ 里除了写权钩子，还有登记和销号两个钩子。
 
 ### 会话状态文件
 
-`rl` 判 actor 靠会话状态文件：状态文件由角色 skill 头部钩子在加载时写，路径 `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json`；`rl` 从它读当前角色，读不到状态文件就是裸终端，actor 是 `gyb`，session_id 记 `cli`。
+`rl` 判 actor 靠会话状态文件：状态文件由角色 skill 头部钩子在加载时写，路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁：放记忆文件夹下的子文件夹，不用宿主给插件的数据目录变量）。它和 `loop/.lock`、`loop/.doctor-acks.jsonl` 一样是普通文件、不算九本账；`rl init` 往研究仓库的 `.gitignore` 加一行 `loop/.sessions/`，状态文件不进 git、不算脏树，发射门禁不看它。`rl` 从它读当前角色，读不到状态文件就是裸终端，actor 是 `gyb`，session_id 记 `cli`。
 
-状态文件谁删（2026-08-18 gyb 裁）：销号钩子在会话结束时顺手删；会话被强杀删不掉的留着，由 `rl doctor` 扫，sessions 账里对应会话已销号、或文件超过一天没动的当垃圾清。活死以 sessions 账为准，状态文件只是缓存（原则 8）。`${CLAUDE_PLUGIN_DATA}` 在这台机器上解析到哪还没测，并进待验证清单第 1 条一起测；宿主不给这个变量的备案是插件在用户目录下自定一个数据目录。
+状态文件谁删（2026-08-18 gyb 裁）：销号钩子在会话结束时顺手删；会话被强杀删不掉的留着，由 `rl doctor` 扫，sessions 账里对应会话已销号、或文件超过一天没动的当垃圾清。活死以 sessions 账为准，状态文件只是缓存（原则 8）。位置定在 `loop/.sessions/` 之后不再依赖宿主变量，原来「`${CLAUDE_PLUGIN_DATA}` 解析到哪」那半条待验证撤销，不测了。
 
 ### 钩子脚本本身
 
@@ -283,7 +283,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 快车道里 deploy 派 gpu-runner 这条 `dispatches_to` 的例外：写在 `07-quick-lane.md`。
 - 插件树里 hooks/、monitors/、tables/roles/ 摆在哪，`rl init` 往 CLAUDE.md 追加那一节的时机，宿主脏树白名单那处改动，阈值表：写在 `08-trees-init-and-host.md`。钩子路径白名单是配置里的一项，落在 `08` 的阈值表（本份 2026-08-18 加，列在「要同步到别处的」）。
 - 公共母版八条规矩（尤其第 8 条出圈即留痕）、`common/READING.md`、`rules_version` 与母版改动流程：写在 `09-common-and-feedback.md`。本份 2026-08-18 加的三句要进那边：第 8 条补「Bash 往角色目录和 `loop/` 写等于绕钩子，不许」；母版加「一个会话只加载一个角色，要换角色另开会话」；`rules_version` 一节补「角色 json 改动同流程」。
-- 待验证清单每条的测法、通过标准、失败备案，测试 8 和测试 13 在施工步骤里的位置：写在 `30-build-steps-verify-tests.md`。第 2 条（头部钩子带参数）2026-08-18 已测通过、备案作废；`${CLAUDE_PLUGIN_DATA}` 解析到哪并进第 1 条一起测。
+- 待验证清单每条的测法、通过标准、失败备案，测试 8 和测试 13 在施工步骤里的位置：写在 `30-build-steps-verify-tests.md`。第 2 条（头部钩子带参数）2026-08-18 已测通过、备案作废；「`${CLAUDE_PLUGIN_DATA}` 解析到哪」那半条同日撤销（状态文件改放 `loop/.sessions/`）。
 - 五份角色 json 的副本、每个角色的 use case 表和干活流程：写在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`。副本要跟本份一字不差：2026-08-18 改了 idea 的 `writes`（`notes/`）、五份的 `reads` 写法、deploy 的 `dispatches_to` 写法（备注移到表下）；每份 SKILL.md 要加两句纪律（Bash 绕钩子、一会话一角色）。
 - deploy 改宿主文件的三条纪律、reviewer 的读顺序：写在 `11-role-deploy.md` 和 `14-role-reviewer.md`。
 
@@ -442,13 +442,14 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 2026-08-18 来自 sync-inbox 问题 32 的裁决（rl-hub-v4 转来，gyb 原话「a」）：CLAUDE.md 第三句不改字；「第三句连带一处宿主改动」那段末尾补上和 `08` 第六节一字不差的一句（白名单按 `loop/*.jsonl` 字面照旧，`loop/.doctor-acks.jsonl` 顺带不算脏、ack 之后可以直接发射）。
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（rl-hub-v4 转来，gyb 原话「选a」）：reviewer 起 sonnet subagent 逐题查不算派活，reviewer json 的 `dispatches_to` 仍是无，本份「等问题 33」的标注结掉。
 - 2026-08-18 gyb 裁（问题十二，正文那处「两处原文不一致」，原话「a」）：`tests/test_skill_refs.py` 三样都查——写命令 ∈ `ledger_writes`；SKILL.md 里出现的账名和目录 ∈ `reads`；引用的名字都存在、母版不抄。对回原则 8。那一节重写。
+- 2026-08-18 gyb 裁（定稿后追问，原话「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」）：会话状态文件放 `loop/.sessions/<session_id>.json`，普通文件不算九本账，`rl init` 往 `.gitignore` 加 `loop/.sessions/`；不再依赖宿主给插件的数据目录变量，那半条待验证撤销。对回原则 8（状态跟仓库走，一处真源）。「会话状态文件」小节照改。
 
 ## 要同步到别处的
 
 下面这些是 2026-08-18 定稿时牵连别的 part 的，这边只列不改，已经 SendMessage 报给 rl-hub-v4 并追加到 `sync-inbox.md`。
 
 - `08-trees-init-and-host.md`：阈值表加一项钩子路径白名单（配置项，默认为空，gyb 在 `rl init` 之后按需填；列在里面的路径钩子一律放行）。hooks/ 那行「五个角色共用一个脚本、参数报角色名」维持，可注「2026-08-18 已实测」。（已同步 2026-08-18 rl-hub-v4）
-- `30-build-steps-verify-tests.md`：待验证第 2 条状态改「已测通过（2026-08-18，参数原样到达），主案定，备案删」；第 1 条并入「`${CLAUDE_PLUGIN_DATA}` 在本机解析到哪，宿主不给就插件在用户目录下自定数据目录」；第 6 条（钩子输入里有没有模型标识）可注「2026-08-18 一次 PreToolUse 观察里没有，正式结论仍等测」。（已同步 2026-08-18 rl-hub-v4）
+- `30-build-steps-verify-tests.md`：待验证第 2 条状态改「已测通过（2026-08-18，参数原样到达），主案定，备案删」；第 1 条并入「`${CLAUDE_PLUGIN_DATA}` 在本机解析到哪，宿主不给就插件在用户目录下自定数据目录」（同日撤销，见下面追加的一条）；第 6 条（钩子输入里有没有模型标识）可注「2026-08-18 一次 PreToolUse 观察里没有，正式结论仍等测」。（已同步 2026-08-18 rl-hub-v4）
 - `09-common-and-feedback.md`：rule-08 补半句「用 Bash 往四个角色目录和 `loop/` 写等于绕钩子，不许，要写就用 Write/Edit，账本一律走 `rl`」；母版加一句「一个会话只加载一个角色，要换角色另开会话」；第四节 `rules_version` 补「角色 json 改动同流程：feedback 记一条、单独 commit、`rules_version` 加一」；第七节「`notes/` 只有 gyb 写」改成「`notes/` gyb 和 idea 写」。（已同步 2026-08-18 rl-hub-v4）
 - `10-role-idea.md`：json 副本 `writes` 「无目录」改 `notes/`；第 13 行「idea 的角色 json 里 writes 一栏是空的，一个目录都不能 Write 或 Edit」照改；`reads` 行按新写法展开（清单见本份 idea 那张表）；SKILL.md 加两句纪律（Bash 绕钩子、一会话一角色）。（已同步 2026-08-18 rl-hub-v4）
 - `11-role-deploy.md`：json 副本 `reads` 去掉括号备注、`dispatches_to` 改「run、gpu-runner」并把「只在快车道」「快车道自己跑 GPU 时」两条备注移到表下；第 19 行「写别的角色的目录（`analysis/`、`review/`、`notes/`）」仍对，可加「`notes/` idea 也能写」；SKILL.md 加两句纪律。（已同步 2026-08-18 rl-hub-v4）
@@ -457,3 +458,4 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - `14-role-reviewer.md`：json 副本 `reads` 从「一切（九本账、全部目录）」展开成清单（见本份 reviewer 那张表）；第 117 行测试 13 的描述对齐本份「三样都查」；SKILL.md 加两句纪律。（已同步 2026-08-18 rl-hub-v4）
 - `05-rl-cli.md`（已冻结，冻结后待议）：doctor 加一项「陈旧会话状态文件」——sessions 账已销号或超过一天没动的状态文件，修法是删文件、归 gyb 推；第 100 行「机器检查只查 SKILL.md 里出现的写命令在不在 `ledger_writes` 里」与本份「三样都查」不一致。（记 sync-inbox 问题 35，等最后一期，2026-08-18 rl-hub-v4）
 - `04-handoffs-and-sessions.md`（已冻结，冻结后待议）：销号钩子的动作清单加「删本会话的状态文件」。（记 sync-inbox 问题 35，等最后一期，2026-08-18 rl-hub-v4）
+- 2026-08-18 追加（gyb 裁「a」，状态文件放记忆文件夹子目录）：`08-trees-init-and-host.md` `rl init` 建的东西加 `loop/.sessions/` 和 `.gitignore` 里的 `loop/.sessions/` 一行，第一节「读到会话状态文件就拒收」指的路径同改；`30-build-steps-verify-tests.md` 第 1 条刚并进去的「`${CLAUDE_PLUGIN_DATA}` 解析到哪」半条撤销；`03-ledgers.md`（已冻结，冻结后待议）总规矩里「`loop/.doctor-acks.jsonl` 是普通文件不算九本账」那句可加 `loop/.sessions/` 同列；`04-handoffs-and-sessions.md`（已冻结，冻结后待议）提到状态文件路径的地方同改。
