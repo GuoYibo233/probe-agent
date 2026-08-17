@@ -440,9 +440,14 @@ def analyze(arm, splice, text):
     return parse_step(PY_CALL_RE.sub("", text))
 
 
+# 模型自己写的 python 调用段。实测(smoke)它写的是
+# `<|start|>assistant<|channel|>analysis to=python code<|message|>CODE<|call|>`
+# (收件人在通道后、还带 " code"),harmony 库渲染的是 `<|start|>assistant to=python
+# <|channel|>analysis<|message|>`;两种都认:从 " to=python" 起吞到 <|call|>/文末,
+# 连带紧挨着的 <|start|>assistant / <|channel|>analysis 头
 PY_CALL_RE = re.compile(
-    r"(?:<\|start\|>assistant)? to=python<\|channel\|>analysis<\|message\|>.*?(?:<\|call\|>|$)",
-    re.S)
+    r"(?:<\|start\|>assistant)?(?:<\|channel\|>analysis)? to=python.*?<\|message\|>"
+    r".*?(?:<\|call\|>|$)", re.S)
 
 
 def python_call_code(text):

@@ -169,6 +169,12 @@ class TestScoreParse(unittest.TestCase):
         self.assertIn("show_playlists", S.python_call_code(t))
         self.assertEqual(S.first_tool(S.python_call_code(t)), "apis.spotify.show_playlists")
         self.assertIsNone(S.python_call_code("no tool here"))
+        # 模型实际写法(smoke 实测):收件人在通道后、带 " code"
+        t2 = ("<|channel|>analysis<|message|>We need phone APIs.\n\n<|end|><|start|>assistant"
+              "<|channel|>analysis to=python code<|message|>print(apis.api_docs.show_api_descriptions(app_name=\"phone\"))")
+        think, content = S.analyze("p4", "", t2)
+        self.assertEqual(think.strip(), "We need phone APIs.")
+        self.assertEqual(S.first_tool(S.python_call_code(t2)), "apis.api_docs.show_api_descriptions")
         self.assertTrue(S.stopped_on_call(dict(stop_reason=200012)))
         self.assertTrue(S.stopped_on_call(dict(stop_reason="<|call|>")))
         self.assertFalse(S.stopped_on_call(dict(stop_reason=None)))
