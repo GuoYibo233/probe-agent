@@ -198,3 +198,19 @@
 - 裁决原文：「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」（a 是「放 loop/ 下子文件夹」）。
 - 要改的地方：`08-trees-init-and-host.md`：`rl init` 建的东西加 `loop/.sessions/`，`.gitignore` 加一行 `loop/.sessions/`，第一节「读到会话状态文件就拒收」指的路径改成 `loop/.sessions/<session_id>.json`；`30-build-steps-verify-tests.md`：第 1 条刚并进去的「`${CLAUDE_PLUGIN_DATA}` 解析到哪」半条撤销；`03-ledgers.md`、`04-handoffs-and-sessions.md`（冻结后待议，可并进问题 35）：普通文件清单加 `loop/.sessions/`、状态文件路径同改。
 - 状态：已处理 2026-08-18（rl-hub-v4 传：08 第一节、30 第 1 条、01 接口一节已改；03/04/05 并进问题 35 (d)(e)）
+
+## 2026-08-18 04:58 来自 rl-part-09 关于 09-common-and-feedback.md
+- 事项：09 定稿，「没写清」剩下的八条加第一节表里问题清单文件名一处共九条 gyb 2026-08-18 全裁完（三轮各三个、全答「a」），牵连别处的见下；完整清单在 09 文末「要同步到别处的」，裁决原文在「裁决记录（日期）」。
+- 裁决原文：九问全「a」。要点：（1）规格模板五栏 = 8 月 15 日角色定义五栏（角色设定、使用场景、可用工具、限制条件、输出样式），是 SKILL.md 骨架，「可用工具」栏只指到角色 json；（2）rule-NN/principle-NN 编号不变，废掉留空号、新加往后排；（3）`rl decision retire` 必须带理由，谁废都要，理由记进决定行；（4）feedback `target` 只认路径/带前缀编号，表的某一行填文件路径、行写进 text；（5）`rejected` 是终态，再提开新一条；（6）run 的 `reads` 补 feedback；（7）`rules_version` 整数从 1 起、`GLOBAL-RULES.md` 头部一行是唯一真源、`rl feedback accept` 加一并写回那一行；（8）`rl grant revoke` 列出 grantee 还活着的会话让 gyb 挑要不要收、不自动收、撤销后再读算越权 reviewer 按时间戳查；（9）问题清单文件名 `common/REVIEW-CHECKLIST.md`。
+- 要改的地方：
+  - `02-decisions.md`：`rl decision retire` 带理由，理由记进那一版决定行；行上记理由的栏是新加还是复用 `force_reason` 归 02 定；替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。
+  - `06-hooks-and-permissions.md`：run 那张 json 表 `reads` 加 feedback（「handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md`」）；可注 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏。
+  - `12-role-run.md`：json 副本 `reads` 同 06 加 feedback。
+  - `10-role-idea.md` 到 `14-role-reviewer.md`：SKILL.md 按 `common/SPEC-TEMPLATE.md` 五栏写，「可用工具」栏只指到角色 json；`14` 把判断类检查问题清单带上文件名 `common/REVIEW-CHECKLIST.md`。
+  - `08-trees-init-and-host.md`：插件树 `common/` 那行加「判断类检查问题清单 `REVIEW-CHECKLIST.md`」，`rules_version` 可注「整数，头部一行」。
+  - `30-build-steps-verify-tests.md`：步 5「判断类检查的问题清单（文件名待定……）」改 `common/REVIEW-CHECKLIST.md`；测试 17 若列 accept 动作，加「写回母版头部 rules_version 那一行」。
+  - `00-overview.md`：索引 09 那行可加「判断类检查清单」，不改也不打架。
+  - `05-rl-cli.md`（冻结后待议）：`rl decision retire ID [--source ...]` 签名加理由项（必填）；`rl feedback accept`「自动把 rules_version 加一」补「并写回 `common/GLOBAL-RULES.md` 头部那一行」；`rl grant revoke` 一节补「列出 grantee 还活着的会话和加载时间，gyb 挑要不要收，不自动收」；doctor 末段判断类清单可带文件名。
+  - `03-ledgers.md`（冻结后待议）：grants 段加撤销后处置两句（列会话让 gyb 挑；撤销后再读算越权按时间戳查）；feedback 段 `target` 加「表的某一行填文件路径、行写进 text」、`status` 加「rejected 终态、再提开新一条」；`rules_version` 可注整数。
+  - `04-handoffs-and-sessions.md`（冻结后待议）：sessions 开始版 `rules_version` 补「从 `common/GLOBAL-RULES.md` 头部那一行读」；`rl grant revoke` 列会话后收会话走 `rl session end`。
+- 状态：待处理

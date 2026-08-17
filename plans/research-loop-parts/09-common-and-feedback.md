@@ -1,6 +1,6 @@
 # 公共母版与反馈账
 
-> 这一份覆盖六样东西：`common/` 四个文件各写什么、公共规矩八条（rule-01 到 rule-08）的全文、`rules_version` 怎么走、feedback 账的行格式和五条命令加采纳之后的待办、issues 账的行格式与九种 kind 与 reply 和 close 的规矩、grants 账的行格式与写入限制。issues 和 grants 是跨角色的公共件，所以放在这一份里。
+> 这一份覆盖六样东西：`common/` 五个文件各写什么（含规格模板的五栏是哪五栏、判断类检查问题清单的文件名）、公共规矩八条（rule-01 到 rule-08）的全文、`rules_version` 是什么样、怎么走、`rule-NN`/`principle-NN` 编号不变、feedback 账的行格式和五条命令加采纳之后的待办、issues 账的行格式与九种 kind 与 reply 和 close 的规矩、grants 账的行格式与写入限制。issues 和 grants 是跨角色的公共件，所以放在这一份里。
 > 这一份不覆盖：九本账的公共骨架和其余六本账的行格式（`03-ledgers.md`）、派活单状态转移表与会话生命周期（`04-handoffs-and-sessions.md`）、`bin/rl` 的完整命令表和 doctor 的全部扫描项（`05-rl-cli.md`）、`rl status` 的十段与 gyb 的 use case 表（`01-gyb.md`）、分权三层和角色 json（`06-hooks-and-permissions.md`）、五个角色各自什么时候开哪种 issue（`10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`，以及 `20-pair-idea-deploy.md` 到 `25-pair-reviewer-idea.md` 六份成对文件）、快车道和杂账（`07-quick-lane.md`）、阈值与配置文件（`08-trees-init-and-host.md`）、施工步骤和测试清单（`30-build-steps-verify-tests.md`）。
 > 源：设计文档的「gyb 自己做的事」「五个角色」总段、「账本」一节（行格式骨架与第 2、5、6 三本）、「分权与钩子」的读的纪律段、「两棵树」的插件本体段；施工计划第一节裁决 4、第二节词表、第三节 issues/grants/feedback 三本、第六节命令表的相关行、第八节阈值三条、第十一节的 commit 前缀、第十三节公共规矩八条。
 
@@ -10,11 +10,11 @@
 
 | 文件 | 写什么 |
 |---|---|
-| `common/GLOBAL-RULES.md` | 公共规矩八条加十一条设计原则，带 `rules_version`，条目编号是 `rule-NN` 和 `principle-NN` |
+| `common/GLOBAL-RULES.md` | 公共规矩八条加十一条设计原则，头部一行带 `rules_version`（整数，这一行是唯一真源，见第四节），条目编号是 `rule-NN` 和 `principle-NN`，编号一经定下不再变（见第三节） |
 | `common/GLOSSARY.md` | 词表，就是施工计划第二节那份，再加一栏「它不是什么」 |
-| `common/SPEC-TEMPLATE.md` | 五栏 |
+| `common/SPEC-TEMPLATE.md` | 角色定义的五栏——角色设定、使用场景、可用工具、限制条件、输出样式，是每份角色 SKILL.md 的骨架；「可用工具」一栏只指到角色 json 的四栏，不抄。这五栏沿用 8 月 15 日 `redesign.md` 里 gyb 定的「五栏规格」，和 reviewer 清单「一条问题五栏」是两份东西（2026-08-18 gyb 裁） |
 | `common/READING.md` | 读法栏的原话 |
-| `common/<判断类检查问题清单>`（文件名归本份定，待定） | 判断类检查的问题清单：脚本判不了、要读了才知道对不对的那些项。不进 doctor（doctor 只留脚本能判的十九项），reviewer 按这份清单派 sonnet subagent 一人一题逐条查，查出来的写进 `review/` 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 随 `05` 定稿裁；只写清单不开 issue 是 gyb 裁，sync-inbox 问题 6） |
+| `common/REVIEW-CHECKLIST.md`（文件名 2026-08-18 gyb 裁） | 判断类检查的问题清单：脚本判不了、要读了才知道对不对的那些项。不进 doctor（doctor 只留脚本能判的十九项），reviewer 按这份清单派 sonnet subagent 一人一题逐条查，查出来的写进 `review/` 清单，要不要开 issue 由 gyb 看完用自己的权限开（2026-08-17 随 `05` 定稿裁；只写清单不开 issue 是 gyb 裁，sync-inbox 问题 6） |
 
 词表那一栏「它不是什么」，施工计划第二节写的是「留到 `common/GLOSSARY.md` 写的时候逐条给 gyb 过，这里只钉名字」。
 
@@ -24,7 +24,7 @@
 
 ## 二、SKILL.md 只引用母版，不抄条文
 
-角色的 SKILL.md 不抄公共母版的条文，只写一句「按 `common/` 执行」。这一条有机器检查兜着：`tests/test_skill_refs.py` 查 SKILL.md 里没有 `common/` 母版条文的副本。抄了条文，改母版就不生效，gyb 只能自己去 grep 五份 SKILL.md。
+角色的 SKILL.md 按 `common/SPEC-TEMPLATE.md` 的五栏写（角色设定、使用场景、可用工具、限制条件、输出样式；「可用工具」一栏只指到角色 json，不抄四栏内容——2026-08-18 gyb 裁），不抄公共母版的条文，只写一句「按 `common/` 执行」。这一条有机器检查兜着：`tests/test_skill_refs.py` 查 SKILL.md 里没有 `common/` 母版条文的副本。抄了条文，改母版就不生效，gyb 只能自己去 grep 五份 SKILL.md。
 
 同一个测试还查另外两件事：SKILL.md 正文出现的每条 rl 写命令都在这个角色 json 的 `ledger_writes` 里，查询命令不查（这是原则 2 的推论，读不设权）；SKILL.md 里出现的每条 rl 子命令、账名、状态名、目录名都在施工计划第二、五、六节里查得到。角色 json 那四栏怎么倒推，在 `06-hooks-and-permissions.md`。
 
@@ -45,13 +45,17 @@
 
 8 月 15 日第③条「机验人判」不收录，理由是 gyb 裁定意义不明。
 
+编号 `rule-01` 到 `rule-08`、`principle-01` 到 `principle-11` 一经定下不再变（2026-08-18 gyb 裁）：废掉一条留空号、不补位；新加一条往后排；改一条只换内容、不换号。反馈的 `target` 和决定的来源都引这些编号，编号不动旧引用才对得上（原则 8、4）。
+
+rule-01 点名的两个不可逆动作各有落点：收回是 `rl handoff withdraw --reason [--quote]`（`04-handoffs-and-sessions.md`）；废除是 `rl decision retire`，2026-08-18 gyb 裁废除也必须带理由，谁废都要（角色废自己的、gyb 在裸终端废都一样），理由记进那一版决定行；角色会话里替 gyb 废除的原话按 `--as-gyb --quote` 的既有身份规矩带，不另加。命令签名归 `05-rl-cli.md`、决定行上记理由的那一栏归 `02-decisions.md`，本份只引。
+
 母版里另有一句纪律，不占编号（2026-08-18 gyb 裁，定义处 `06`「钩子跟角色绑定」）：一个会话只加载一个角色，要换角色另开会话；机器不管，第二次加载的行为不定义、不兜底。这句同时写进每份角色 SKILL.md。
 
 设计文档 reviewer 一节里还留着一句「施工计划公共规矩第 6 条里 reviewer 那半句按这一句改」，施工计划第十三节 rule-06 现在的写法已经是改过的那一版（reviewer 不开 issue，卡住也只写进清单交给 gyb），两处说的是同一件事，不用再裁。
 
 ## 四、rules_version 与母版改动的生效时刻
 
-母版文件里带一个 `rules_version`。会话账的开始版记下这个会话加载时的 `rules_version`（sessions 的字段在 `04-handoffs-and-sessions.md`）。feedback 采纳的那一版由 rl 自动填 `rules_version_after`，`rl feedback accept` 顺带把 `rules_version` 加一。
+母版文件里带一个 `rules_version`：整数、从 1 起、写在 `common/GLOBAL-RULES.md` 头部一行，这一行是唯一真源（2026-08-18 gyb 裁）。会话账的开始版就从这一行读，记下这个会话加载时的 `rules_version`（sessions 的字段在 `04-handoffs-and-sessions.md`）。feedback 采纳的那一版由 rl 自动填 `rules_version_after`，`rl feedback accept` 顺带把头部那一行加一并写回文件；母版正文的改动仍由人手改，rl 只动这一行，这是 rl 唯一一处往母版文件写字的动作。
 
 角色 json 改一栏算改母版，同一个流程（2026-08-18 gyb 裁，定义处 `06`「五栏是什么」）：feedback 账记一条、采纳后单独 commit（前缀 `research-loop rules:`）、`rules_version` 一起加一，生效时刻同母版。
 
@@ -65,7 +69,7 @@
 
 feedback 是反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的人在 `rl inbox` 里看得到裁决。文件是 `loop/feedback.jsonl`。
 
-行格式（公共骨架七样另见 `03-ledgers.md`）：`id`；`target`，取值是文件路径，或者带前缀的编号 `rule-06`、`principle-06`；`text`；`status` 取 `proposed`、`accepted`、`rejected`；`verdict_text`，`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么；`applied_to`，采纳时必填、至少写一个，是路径列表，rl 校验每个路径存在；`rules_version_after`，采纳时 rl 自动填。提的那一版谁都能写，裁的那一版 `actor` 必须是 `gyb`。
+行格式（公共骨架七样另见 `03-ledgers.md`）：`id`；`target`，取值只有两种：文件路径，或者带前缀的编号 `rule-06`、`principle-06`；要改的是某张表的某一行（转移表的一行、命令表的一行）时，`target` 填那张表所在文件的路径，哪一行写进 `text`（2026-08-18 gyb 裁）；`text`；`status` 取 `proposed`、`accepted`、`rejected`，`accepted` 和 `rejected` 都是终态：被打回之后要再提就 `rl feedback add` 开新一条，`text` 里说明接着哪一条，rl 不建链，没有改一版的子命令（2026-08-18 gyb 裁）；`verdict_text`，`accepted` 和 `rejected` 两版都必填：采纳的写采纳成什么样，不采纳的写为什么；`applied_to`，采纳时必填、至少写一个，是路径列表，rl 校验每个路径存在；`rules_version_after`，采纳时 rl 自动填。提的那一版谁都能写，裁的那一版 `actor` 必须是 `gyb`。
 
 采纳的那一版要写清改了哪几个文件，母版和文档都算，至少写一个、不要求两样都有（2026-08-17 gyb 裁，sync-inbox 问题 26；doctor 第 17 项只在 `applied_to` 为空时报）。
 
@@ -79,13 +83,13 @@ feedback 是反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的
 | `rl feedback show ID` | 查一条 | 谁都行 |
 | `rl feedback list` | 列表 | 谁都行 |
 
-`accept` 做四件事：校验 `applied_to` 每个路径存在、自动把 `rules_version` 加一、列出还活着的会话和它们的 `rules_version`、打印一张待办。待办上写的是还要改哪几处、要不要收会话、单独 commit 加跑测试。
+`accept` 做四件事：校验 `applied_to` 每个路径存在、自动把 `rules_version` 加一并写回 `common/GLOBAL-RULES.md` 头部那一行、列出还活着的会话和它们的 `rules_version`、打印一张待办。待办上写的是还要改哪几处、要不要收会话、单独 commit 加跑测试。
 
 采纳之后的 commit：母版改动单独一个 commit，前缀是 `research-loop rules:`，改完跑一遍 `tests/run_all.py`。施工那八步用的前缀是 `research-loop v2:`，两个前缀分开用。
 
 feedback 的入口和出口各挂在三处：`rl status` 段 8 列等裁的 feedback；`rl notify` 的推送表里有「feedback 提出」一条；角色的 `rl inbox` 里有一类是本角色提的 feedback 的裁决。定期提醒（`notify.reminder_days` 默认 7）叫 gyb 做四件事，其中一件是把采纳的 feedback 落进母版并单独 commit。doctor 有一项扫描：accepted 的 feedback 的 `applied_to` 为空（2026-08-17 gyb 裁，sync-inbox 问题 26；`05-rl-cli.md` doctor 第 17 项）。
 
-五个角色的 `ledger_writes` 里都有 `feedback add`。
+五个角色的 `ledger_writes` 里都有 `feedback add`，`reads` 里也都有 feedback（run 那份原来缺，2026-08-18 gyb 裁补上：能提就能查自己那条的裁决，原则 5、6；定义处 `06-hooks-and-permissions.md`）。
 
 ## 六、issues 账
 
@@ -125,6 +129,8 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
 命令：`rl grant add --to R --permission P [--expires ...] [--issue ID]`、`rl grant revoke ID`、`rl grant list`、`rl grant show ID`。写只有 gyb，查谁都行。
 
+撤销之后已经加载了这条 grant 的会话怎么办（2026-08-18 gyb 裁）：`rl grant revoke` 时 rl 列出 grantee 还活着的会话和各自的加载时间，让 gyb 挑要不要收（和 `rl feedback accept` 列会话是同一个套路），不自动追、不自动收；收会话走 `rl session end --session ID`。读权不上钩子，所以撤销之后那个会话再读 `notes/` 机器不拦，但撤销时刻之后的读算越权，reviewer 拿 grants 账和决定行的时间戳对着查。
+
 授权只有 gyb 能写：`actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节 (d)「grants 只收裸终端」不认）。
 
 这本账现在只服务一件事：idea 读 `notes/` 的权。`notes/` gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读这条不成立——idea 要经 gyb 允许才有读文献的权限。两条路：`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。
@@ -133,35 +139,32 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
 ## 和别的 part 的接口
 
-- 九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选字段 `force_reason`、`via`（`fix_for` 2026-08-17 按 sync-inbox 问题 15 删）：`03-ledgers.md`。
+这一份是定义处的东西：`common/` 五个文件各写什么（含 `SPEC-TEMPLATE.md` 五栏是哪五栏、`REVIEW-CHECKLIST.md` 这个名字）、公共规矩八条全文与「编号不变」、`rules_version` 的样子和生效时刻、feedback 账的行格式与五条命令、issues 账的行格式与九种 kind 与 reply/close 写权、grants 账的行格式与写入限制与撤销之后的处置。别处引用这些的时候指到这一份。下面是本份引别处、或与别处写了两遍的：
+
+- 九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选栏 `force_reason`、`via`（`fix_for` 2026-08-17 按 sync-inbox 问题 15 删）：`03-ledgers.md`。issues、grants、feedback 三本的行格式在 `03` 和本份写了两遍（HANDOFF 四点五节判断规矩 2），改一处必改另一处；issues 九种 kind 的定义处是本份，`04`、`06`、`10`、`21` 到 `24` 指到 `03` 的按同一份内容读。
+- 「closed 会话再写账拒收」的入账校验：`03-ledgers.md` 账本的总规矩。
 - `rl inbox` 五类里的两类归这一份（本角色名下 open 的 issue、本角色提的 feedback 的裁决），命令本身在 `05-rl-cli.md`。
 - `rl status` 段 2（assignee 是 gyb 的 open issue）、段 8（等裁的 feedback）、段 10（上次 doctor 没修的）：`01-gyb.md`。
 - `rl notify` 的推送表（issue assignee 变 gyb、feedback 提出两条归这一份）：`01-gyb.md` 第五节（2026-08-17 gyb 裁，推送表和 `rl notify` 是一件事归 `01`）。
-- doctor 的全部扫描项，其中和这一份有关的五项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 applied_to 为空、决定来源指 notes/ 但没有 read:notes）：`05-rl-cli.md`。
-- sessions 账的 `rules_version`、`last_activity`、`status` 与「还活着的会话」怎么判定：`04-handoffs-and-sessions.md`。
-- `rl handoff accept` 自动关 `answered` issue、转移表 `in_progress` 到 `stuck` 那一行要求 issue 与单子互相引用：`04-handoffs-and-sessions.md`。
-- 角色 json 的 `reads`、`writes`、`ledger_writes`、`dispatches_to` 四栏，以及钩子的三层分权：`06-hooks-and-permissions.md`。
-- `--as-gyb` 加 `--quote` 的判定、gyb 的豁免范围、`--force --reason`：`06-hooks-and-permissions.md`（分权）与 `02-decisions.md`（决定账那一头）。
-- 三条阈值 `issues.gyb_stale_hours`、`issues.answered_stale_days`、`notify.reminder_days` 写在 `research-loop.json` 里：`08-trees-init-and-host.md`。
+- gyb 的身份规矩（裸终端就是 gyb、`--as-gyb` 加 `--quote`、`--force --reason`、豁免范围、grants 只有 gyb 能写）：`01-gyb.md`；命令行写法在 `05-rl-cli.md`；钩子那一层在 `06-hooks-and-permissions.md`。
+- `bin/rl` 每条子命令的签名和「谁能调」：`05-rl-cli.md`。本份抄了 `rl feedback` 五条、`rl issue` 七条、`rl grant` 四条的签名（写了两遍，改一处必改另一处）。2026-08-18 本份裁的三处要 `05` 跟着改：`rl decision retire` 带理由；`rl feedback accept` 把 `rules_version` 写回母版头部那一行；`rl grant revoke` 列出 grantee 还活着的会话。
+- `rl decision retire` 带理由之后决定行上记理由的那一栏：`02-decisions.md`（决定账的定义处；栏名归 `02` 定，是新加一栏还是复用 `force_reason` 归 `02`）。
+- doctor 的全部扫描项，其中和这一份有关的五项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 `applied_to` 为空、决定来源指 `notes/` 但没有 `read:notes`）：`05-rl-cli.md`。doctor 只留脚本能判的项，判断类的进 `common/REVIEW-CHECKLIST.md`。
+- sessions 账的 `rules_version`（开始版从 `common/GLOBAL-RULES.md` 头部那一行读）、`last_activity`、`status` 与「还活着的会话」怎么判定、`rl session end`：`04-handoffs-and-sessions.md`。
+- `rl handoff accept` 自动关 `answered` issue、转移表 `in_progress` 到 `stuck` 那一行要求 issue 与单子互相引用、`rl handoff withdraw --reason [--quote]`：`04-handoffs-and-sessions.md`。
+- 角色 json 的 `reads`、`writes`、`ledger_writes`、`dispatches_to`、`model` 五栏（run 的 `reads` 2026-08-18 补 feedback）、钩子的三层分权、`tests/test_skill_refs.py` 查三样、角色 json 改动同母版流程：`06-hooks-and-permissions.md`。
+- 五份角色 SKILL.md 按 `common/SPEC-TEMPLATE.md` 五栏写、各自的 use case 表和模型：`10-role-idea.md` 到 `14-role-reviewer.md`；json 副本也在那五份，要跟 `06` 一字不差。
+- 三条阈值 `issues.gyb_stale_hours`、`issues.answered_stale_days`、`notify.reminder_days` 写在 `research-loop.json` 里、插件树 `common/` 那一行：`08-trees-init-and-host.md`。
 - `rl init` 问一次要不要给 idea 发 `read:notes`：`08-trees-init-and-host.md`。
 - idea 申请读 `notes/` 的那条 `request` issue 怎么走：`10-role-idea.md`；gyb 那一头怎么批：`01-gyb.md`。
 - run 的四种失败各配哪个 kind 和 stage、smoke 日志落哪：`12-role-run.md` 与 `21-pair-deploy-run.md`。
-- reviewer 不开 issue、只写 `review/` 清单：`14-role-reviewer.md`。
+- reviewer 不开 issue、只写 `review/` 清单、按 `common/REVIEW-CHECKLIST.md` 派 sonnet subagent 一人一题（不算派活，sync-inbox 问题 33）、清单一条问题五栏：`14-role-reviewer.md` 与 `25-pair-reviewer-idea.md`。
 - 快车道的杂账 scratch 与 `ql open/close`：`07-quick-lane.md`。
-- 施工步 5（母版）、步 6（五份 SKILL.md）、测试 13（引用检查）、测试 17（feedback）、待验证第 11 条（改母版要不要重启）：`30-build-steps-verify-tests.md`。
+- 施工步 5（母版五个文件）、步 6（五份 SKILL.md）、测试 13（引用检查三样）、测试 17（feedback）、待验证第 11 条（改母版要不要重启）：`30-build-steps-verify-tests.md`。
 
 ## 源文档没写清的（留给 gyb）
 
-1. `common/SPEC-TEMPLATE.md` 的「五栏」是哪五栏，两份源文档都只写了「五栏」两个字。reviewer 的问题清单也是一条问题五栏（决定编号加版本、代码或记录的位置、对不上在哪、建议动作、决定账里没写但代码里做了的选择），这两个「五栏」是不是同一份，没写。
-2. `rule-NN` 这套编号在正式版里保持不变这件事没明写。（原来这条还问公共规矩八条的英文措辞怎么定，2026-08-18 gyb 裁「一切默认英语，任何 part 里不写语言相关的约束」，`00` 定稿，措辞那一半销掉。）
-3. rule-01 要求不可逆动作硬停并带原话或理由，点名的两个动作是收回和废除。收回那一头有落点（`rl handoff withdraw --reason [--quote]`），废除那一头没有：`rl decision retire ID [--source ...]` 在命令表里既没有 `--reason` 也没有 `--quote`，决定行上也没有 reason 字段。
-4. feedback 的 `target` 只举了两种取值：文件路径，和带前缀的编号 `rule-06`、`principle-06`。要改的是施工计划里的一张表（比如转移表的某一行、命令表的某一行）时 `target` 填什么，没写。
-5. doctor 那一项写的是「accepted 的 feedback 的 `applied_to` 里没同时含母版和文档」，这里的「文档」指设计文档、施工计划、还是拆开之后的 parts 文件，没写。——2026-08-17 已裁（sync-inbox 问题 26）：doctor 第 17 项改成只在 `applied_to` 为空时报，母版和文档至少写一个即可，「文档」指哪几份不再影响这一项。
-6. feedback 被 reject 之后能不能改一版再提，没写。口径账写了「被打回之后 analysis 改了再提一版」，feedback 没有对应的一句，`rl feedback` 也没有 update 子命令。
-7. run 的角色 json 的 `reads` 没列 feedback，`ledger_writes` 里却有 `feedback add`。按原则 2 的推论读不设权，所以不影响能不能查，但 `reads` 那一栏要不要补上 feedback，没写。
-8. 通知类 issue（`withdrawn`、`orphaned`、`fyi`）被 `rl inbox` 读过即关，这一跳从 `open` 直接到 `closed`，中间没有 `answered`。写这一版账行的 actor 记谁（读它的那个角色，还是 rl 自己），没写。——2026-08-17 已裁（sync-inbox 问题 23）：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`，写这一版的 actor 就是关它的那个收件人。
-9. `rules_version` 的格式没写（整数还是日期），母版文件里的这个值由谁写进去、`rl feedback accept` 加一之后怎么同步到 `common/GLOBAL-RULES.md` 的正文里，也没写。
-10. grants 的 `permission` 第一版只有 `read:notes` 一种，`revoke` 之后已经加载了这条 grant 的会话怎么办，没写（母版改动那一头写了「正在跑的会话不追」，授权这一头没有对应的一句）。
+（原来的十条：第 5、8 条 2026-08-17 随 sync-inbox 问题 26、23 裁，其余八条加第一节表里问题清单文件名一处 2026-08-18 全部裁完，逐条见文末「裁决记录（日期）」，正文已按裁决改。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -365,3 +368,28 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 - 2026-08-17 来自 sync-inbox 问题 27 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「3 不是，可以替我写」）：grants 在角色会话里 `--as-gyb --quote` 替 gyb 写也收。第七节开头「只有 gyb 在裸终端能写」改成「只有 gyb 能写」，行格式末句的「`session_id` 必须是 `cli`」改成「裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话」，「grants 只收裸终端写的行……不接受 `--as-gyb`」那段照 `03` grants 段一字不差换掉。
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「所有的东西都默认用英语，插件本体里面用英语写，然后不要出现语言相关的约束，就默认只有英语就可以了，不需要强调任何语言」）：第二节施工步 5 那句「中文底稿给 gyb 过，正式版是英文」去掉语言字样；「没写清」第 2 条英文措辞那一半销掉，只留 `rule-NN` 编号保持不变一句。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「a」（问题十一、九）「6 c」「让idea能写gyb」）：rule-08 补 Bash 绕钩子那半句；八条之后加一句不占编号的纪律「一个会话只加载一个角色」；第四节补「角色 json 改动同母版流程」；第七节「`notes/` 只有 gyb 写」改「gyb 和 idea 写」。对回原则 2、9、3。
+- 2026-08-18 gyb 裁（问题 1，原话「a」）：`common/SPEC-TEMPLATE.md` 的五栏就是 8 月 15 日 `redesign.md` 里定的角色定义五栏——角色设定、使用场景、可用工具、限制条件、输出样式，是每份角色 SKILL.md 的骨架；「可用工具」一栏只指到角色 json、不抄；和 reviewer 清单「一条问题五栏」是两份东西。对回原则 5、8。第一节表和第二节照改。
+- 2026-08-18 gyb 裁（问题 2，原话「a」）：`rule-NN`、`principle-NN` 编号一经定下不再变——废掉留空号不补位、新加往后排、改内容不换号。对回原则 8、4。第三节加一段。
+- 2026-08-18 gyb 裁（问题 3，原话「a」）：`rl decision retire` 必须带理由，谁废都要，理由记进那一版决定行；角色会话里替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩带，不另加。对回原则 1、8。第三节 rule-01 之后加一段；命令签名归 `05`、行上那一栏归 `02`，列进「要同步到别处的」。
+- 2026-08-18 gyb 裁（问题 4，原话「a」）：feedback 的 `target` 只认两种——文件路径、带前缀编号；表的某一行填那张表所在文件的路径，哪一行写进 `text`。对回原则 4、6。第五节行格式照改。
+- 2026-08-18 gyb 裁（问题 5，原话「a」）：`rejected` 是终态，要再提就开新一条、`text` 说明接着哪条，rl 不建链，不加改一版的子命令。对回原则 4。第五节行格式照改。
+- 2026-08-18 gyb 裁（问题 6，原话「a」）：run 的角色 json `reads` 补 feedback，和另外四个角色一样。对回原则 5、6。第五节末句照改；定义处 `06`、副本 `12`，列进「要同步到别处的」。
+- 2026-08-18 gyb 裁（问题 7，原话「a」）：`rules_version` 是整数、从 1 起、写在 `common/GLOBAL-RULES.md` 头部一行，这一行是唯一真源；`rl feedback accept` 自动加一并写回那一行，母版正文仍人手改，rl 只动这一行；会话开始版从这一行读。对回原则 8。第一节表、第四节、第五节 accept 四件事照改；`05` 的 accept 描述、`04` 的开始版来源列进「要同步到别处的」。
+- 2026-08-18 gyb 裁（问题 8，原话「a」）：`rl grant revoke` 时列出 grantee 还活着的会话和加载时间，gyb 挑要不要收，不自动追不自动收；撤销时刻之后再读算越权，reviewer 按时间戳查。对回原则 1、2、6。第七节加一段；`05` revoke 一节、`03` grants 段列进「要同步到别处的」。
+- 2026-08-18 gyb 裁（问题 9，原话「a」）：判断类检查问题清单的文件名定为 `common/REVIEW-CHECKLIST.md`。第一节表照改；`05` doctor 末段、`08` 插件树、`14`、`30` 步 5 列进「要同步到别处的」。
+- 2026-08-18 定稿时的编辑性改动（不是新裁决）：开头覆盖句「`common/` 四个文件」改「五个文件」，与第一节标题和 2026-08-17 加的第五行对齐；「源文档没写清的」一节收成一句。
+
+## 要同步到别处的
+
+下面这些是 2026-08-18 定稿时牵连别的 part 的，这边只列不改，SendMessage 报给 rl-hub-v5 并追加到 `sync-inbox.md`；动到 `03`/`04`/`05` 冻结三份的只报不催，等最后一期。
+
+- `02-decisions.md`：`rl decision retire` 必须带理由（谁废都要），理由记进那一版决定行——行格式上要有记理由的地方，是新加一栏还是复用 `force_reason` 归 `02` 定；角色会话里替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。
+- `05-rl-cli.md`（已冻结，冻结后待议）：三处——`rl decision retire ID [--source ...]` 签名加理由项（必填）；`rl feedback accept` 那句「自动把 `rules_version` 加一」补「并写回 `common/GLOBAL-RULES.md` 头部那一行」；`rl grant revoke` 一节补「列出 grantee 还活着的会话和各自加载时间，让 gyb 挑要不要收，不自动收」。另：doctor 一节末段「判断类检查的问题清单」可带上文件名 `common/REVIEW-CHECKLIST.md`。
+- `03-ledgers.md`（已冻结，冻结后待议）：grants 段（与本份写了两遍）加「撤销时刻之后再读算越权，reviewer 按时间戳查；撤销时 rl 列出还活着的会话让 gyb 挑」；feedback 段 `target` 那句加「表的某一行填那张表所在文件的路径，哪一行写进 `text`」、`status` 那句加「`rejected` 是终态，再提开新一条」；`rules_version` 相关字段说明可注「整数」。
+- `04-handoffs-and-sessions.md`（已冻结，冻结后待议）：sessions 账开始版 `rules_version` 补「从 `common/GLOBAL-RULES.md` 头部那一行读」；`rl grant revoke` 列会话之后收会话走 `rl session end`（只是引用，那边若有「谁会调 session end」的清单可加一条）。
+- `06-hooks-and-permissions.md`：run 那张 json 表 `reads` 加 feedback（改成「handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md`」）；「五栏是什么」或 `test_skill_refs` 一节可注 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏。
+- `12-role-run.md`：json 副本 `reads` 同 `06` 加 feedback。
+- `10-role-idea.md` 到 `14-role-reviewer.md`：SKILL.md 按 `common/SPEC-TEMPLATE.md` 五栏（角色设定、使用场景、可用工具、限制条件、输出样式）写，「可用工具」栏只指到角色 json；`14` 另把「判断类检查问题清单」带上文件名 `common/REVIEW-CHECKLIST.md`。
+- `08-trees-init-and-host.md`：插件树 `common/` 那行「公共规矩、词表、五栏规格、读法，带 `rules_version`」加「判断类检查问题清单 `REVIEW-CHECKLIST.md`」，`rules_version` 可注「整数，头部一行」。
+- `30-build-steps-verify-tests.md`：步 5 那行「判断类检查的问题清单（文件名待定……）」改成 `common/REVIEW-CHECKLIST.md`；测试 17（feedback）若列了 `accept` 的动作，加「写回母版头部 `rules_version` 那一行」。
+- `00-overview.md`：索引里 `09` 那行「公共母版（公共规矩八条、词表、五栏规格、读法）」可加「判断类检查清单」；不改也不打架。
