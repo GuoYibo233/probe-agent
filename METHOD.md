@@ -34,8 +34,9 @@
 基线与方法必须是同一套实验设置：同模型、同服务、同采样、同解码；
 方法侧不得引入基线没有的解码手段。
 
-检验办法 = **空注入对照**：全套机器挂上、一次不出手（`--no-probe` 臂），
-输出与 chat 基线（`envs/collect/run_appworld.py --api chat`）逐步对比。
+检验办法 = **空注入对照**：全套机器挂上、一次不出手（no probe 臂，
+`--no-probe`），输出与 chat baseline（`envs/collect/run_appworld.py --api chat`）
+逐步对比。
 允许小浮动。依据一次偶然观测：hcap 采集时第 2 步与对照重发用了同一个
 prompt（1457 token）、temperature 0，一次 8192 撞顶、一次 136 正常收尾
 ——单次观测、非受控实测，见 `learn/vllm/reference/token-walk.html`；
@@ -43,14 +44,14 @@ vLLM 侧受控复跑至今没做过（`learn/vllm/lessons/0004` 原话
 "vLLM 侧我们没有做过对照实测"）。浮动数字报告出来由人判，
 逐字节一致不作保证。
 
-同设的一个运行时前提：chat 基线的 prompt 日期由服务端 `datetime.now()` 生成，
+同设的一个运行时前提：chat baseline 的 prompt 日期由服务端 `datetime.now()` 生成，
 活跑前缀日期由 `/render` 客户端钉死——两边要可比，发射 vLLM 时必须设
 `VLLM_SYSTEM_START_DATE` 与钉死日期一致（见 §6-④）。
 
 已修掉的三处渲染口径差：
 - 2026-08-10 z1 冒烟抓到：`build_prefix` 走模型 jinja 模板，developer 正文与
   `<|end|>` 之间多 `\n\n` 两字符，chat 端点的 harmony 渲染器与采集手拼串都
-  没有——活跑臂曾因此第 0 步即分叉。修后 `/render` 与 chat 服务端渲染逐字节
+  没有——no probe 臂曾因此第 0 步即分叉。修后 `/render` 与 chat 服务端渲染逐字节
   全等（实测 1533=1533）。
 - 2026-08-18 逐层对 vLLM 0.26.0 源码抓到两条，都在 jinja 文本路：(a) content
   为空的 assistant 轮，chat 端点整条丢掉，jinja 照渲染一条空 final 消息（实测
@@ -131,7 +132,7 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
 
 | 环节 | 代码 | 备注 |
 |---|---|---|
-| 采集 | `envs/collect/run_appworld.py` + `common.py` | chat 基线与 harmony 全录都在这 |
+| 采集 | `envs/collect/run_appworld.py` + `common.py` | chat baseline 与 harmony 全录都在这 |
 | 标注 | `pipeline/annotate/build.py` / `param_label.py` / `rules.py` | 标签=该步实际调用；样本按句边界切前缀 |
 | 训练 | `pipeline/train/` 四格 | 唯一真源 `run.py` CELLS |
 | 评测 | `pipeline/eval/` | 产 `REPLAY_REPORT.json`（T 与各风险档 θ） |
@@ -147,7 +148,7 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
   多确信/猜了什么调用执行返回了什么/塞了什么，且后续 gen 记录能看到模型怎么接。
 - (ii) **R3 token 比对**：注入后重发的串带 `return_token_ids` 回读，
   与 openai_harmony 重编码序列逐位对（hcap 工具链现成）。
-- (iii) **空注入对照**：同批题，chat 路与 `--no-probe` 臂各跑一遍，
+- (iii) **空注入对照**：同批题，chat baseline 与 no probe 臂各跑一遍，
   逐步对比输出，报"相同/分叉"计数——浮动容不容忍，人看了数字再定，不预设阈值。
 
 准确率浮动检验（"少少浮动"）放冒烟通过后的第一个正式批次——批量才量得出。

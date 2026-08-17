@@ -333,7 +333,7 @@ TASKS = {
         stage="live", py="appworld", script="pipeline/inject/live_appworld.py",
         handoff=True,
         desc="活跑驱动器(要 vLLM+探针服务;必给 --base-url --probe-url --outdir --exp)",
-        notes=["--no-probe 臂也要 --probe-url(/render 在服务侧)",
+        notes=["no probe 臂(--no-probe)也要 --probe-url(/render 在服务侧)",
                "临时故障会写 task_error final,--resume 不重试:重试先删该题 live_*.jsonl",
                "放量走 live-arm-job 12 分片"]),
     "probe-serve": dict(
