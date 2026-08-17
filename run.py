@@ -320,6 +320,22 @@ TASKS = {
     "parse-call-selftest": dict(
         stage="inject", py="cprobe", script="pipeline/inject/parse_call.py",
         desc="括号配平提取器自测(无参数;也是 run.py 的冒烟件)"),
+    # ---- splice 塞法回放(上帝视角,不要探针;计划 plans/2026-08-18-splice-replay.md)----
+    "splice-replay-events": dict(
+        stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
+        args=["events"],
+        desc="从 chat 轨迹抽事件+四个切口 -> events.jsonl(必给 --traj-root --out;CPU)",
+        notes=["只取单调用块、同题重复步去重(D1/D2);基线顶到 8192 的标 baseline_capped"]),
+    "splice-replay-run": dict(
+        stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
+        handoff=True, args=["run"],
+        desc="事件x切口x臂 发 completions 续写(要 vLLM;必给 --run-dir --base-url;长活)",
+        notes=["prompt 是 token id(前缀 chat 同款渲染,p3k/p4 由 openai_harmony 渲染)",
+               "--dry-run 只打印 prompt 尾不落盘;断点续跑按 (event,cut,arm) 跳过",
+               "p4 多一个停止符 <|call|>(D11)"]),
+    "splice-replay-score": dict(
+        stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
+        args=["score"], desc="打分出 SPLICE_REPORT(必给 --run-dir;CPU)"),
     "launch-plan-sweep": dict(
         stage="inject", py="sys", script="pipeline/inject/launch_plan_sweep.py",
         handoff=True, gpu=True,
