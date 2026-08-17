@@ -10,6 +10,21 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-18 立项：塞法回放（splice_replay_v1）——探针开火时结果怎么拼回去，先上帝视角量单步
+
+- 触发：对比 with probe 重发 prompt 与 no probe 时量到重分词缝——NOTE 前导 `\n`
+  与模型的 `.\n\n` 合成一个 token（换行切口 3558/3865 不齐，空格切口全齐）；
+  顺势问"塞回去的方式"本身哪种最好。探针权重已删（`c1_gptoss_*`），活跑起不来。
+- 决定（gyb）：不等探针，拿 5 条 chat baseline 轨迹做上帝视角回放：52 个单调用步 ×
+  思考的 66/75/80/100% 句尾切口 × 十臂（思考内 4 种措辞 + system 预告 / 塞完强切
+  正文 ×2 / 伪造整轮留思考 / harmony 原生 python 工具），每条只续一步，不跑到底、
+  不 evaluate、不判预测对错。切口比例四个点是 gyb 定的。
+- 裁决点 D1–D14 全在 `plans/2026-08-18-splice-replay.md` §6（缝修法 D5'：head 以
+  空白结尾不加前导换行；n1 措辞改塞代码块原文 D13；`<|call|>` 是 eos、所有臂都停 D11）。
+- 结果：`splice_replay_v1_srv`（RESULTS.md）；`…/pipeline/inject/runs/splice_replay_v1/SPLICE_REPORT.md`。
+  上帝视角下退化的两种塞法（伪造整轮丢思考 = 跳到下一步；结果随下一轮到 = baseline）没跑。
+- 未做：真探针下的活跑（要先重训探针）；把胜出塞法接进 live_appworld。
+
 ## 2026-08-18 裁决：服务端数值抖动当噪声，不再追逐字复现
 
 - 触发：`cmp_chat_noprobe_5_srv4` 量了 7 个冷/暖分叉位——top-1/top-2 logprob 差全是
