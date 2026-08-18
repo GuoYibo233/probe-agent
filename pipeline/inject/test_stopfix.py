@@ -114,18 +114,31 @@ def test_think_span():
 
 # ---------- gen_step(流式) ----------
 
+# 假分词:一字一 id(id = 码位),流每块交 (文本, ids);/decode = chr 拼回。
+# v6(2026-08-18 ident3):prompt 是 id 列表,开火重发 = 前缀 + 模型自己的 id[:k]
+# + /encode(NOTE),gen_step 返回 7 元组(多 gen_ids 与 text_ids_consistent)。
+PREFIX = [11, 22, 33]
+
+
+def _ids(text):
+    return [ord(c) for c in text]
+
+
 class _FakeStream:
     def __init__(self, deltas, finish, usage):
         self._deltas, self._fin, self._usage = deltas, finish, usage
         self.finish = None
+        self.stop_reason = None
         self.usage = None
         self.n_chunks = 0
+        self.n_ids = 0
         self.closed = False
 
     def __iter__(self):
         for d in self._deltas:
             self.n_chunks += 1
-            yield d
+            self.n_ids += len(d)
+            yield d, _ids(d)
         self.finish = self._fin
         self.usage = self._usage
 
@@ -145,7 +158,7 @@ def _args(no_probe=True):
     return argparse.Namespace(
         no_probe=no_probe, chunk_tokens=64, tail_tokens=1024,
         max_inject_per_step=1, base_url="http://fake", model="m",
-        probe_url="http://fake", timeout=1)
+        probe_url="http://fake", timeout=1, fire_nth_cut=0, nofill=False)
 
 
 def _run(scripted, no_probe=True, score_fire=None, gen_call="apis.x.y()"):
@@ -169,6 +182,10 @@ def _run(scripted, no_probe=True, score_fire=None, gen_call="apis.x.y()"):
             return dict(fired=(calls["n"] == score_fire), conf=0.99, label="x")
         if url.endswith("/gen"):
             return dict(call=gen_call)
+        if url.endswith("/decode"):
+            return dict(text="".join(chr(i) for i in payload["ids"]))
+        if url.endswith("/encode"):
+            return dict(ids=_ids(payload["text"]))
         raise AssertionError(url)
 
     def fake_spec(world, call, t_frozen, dt_guard):
@@ -179,7 +196,7 @@ def _run(scripted, no_probe=True, score_fire=None, gen_call="apis.x.y()"):
     L.open_stream, L.http_json, L.speculate = fake_open, fake_http, fake_spec
     try:
         log = _FakeLog()
-        out = L.gen_step(_args(no_probe), "PROMPT_HEAD", "task", [], None,
+        out = L.gen_step(_args(no_probe), PREFIX, "task", [], None,
                          "t0", False, log, 0)
     finally:
         L.open_stream, L.http_json, L.speculate = orig
@@ -190,50 +207,56 @@ def test_loop_clean_single():
     """不开火:单请求不间断解码,与 chat 同款;stop 恒为 <|return|> 一项。"""
     deltas = [ANALYSIS_HEAD, "think. ", "more.", "<|end|>",
               FINAL_HEAD, "Done. ```python\ny()\n```"]
-    (t, c, usage, discard, n_inj), streams, prompts, _ = _run(
+    (t, c, usage, discard, n_inj, gen_ids, cons), streams, prompts, _ = _run(
         [(deltas, "stop", dict(prompt_tokens=10, completion_tokens=50))])
     assert usage["req"] == 1 and usage["gen_tok"] == 50, usage
     assert t == "think. more." and c == "Done. ```python\ny()\n```", (t, c)
     assert n_inj == 0 and discard["events"] == 0
-    assert prompts == ["PROMPT_HEAD"], prompts
+    assert prompts == [PREFIX], prompts
+    assert gen_ids == _ids("".join(deltas)) and cons is None
 
 
 def test_loop_noprobe_never_scores():
     """noprobe 臂全程不打 /score(fake_http 一被调就会炸)。"""
     deltas = [ANALYSIS_HEAD + "s1. s2. s3.", "<|end|>", FINAL_HEAD, "c"]
-    (_, c, _, _, _), _, _, _ = _run(
+    (_, c, _, _, _, _, _), _, _, _ = _run(
         [(deltas, "stop", dict(prompt_tokens=1, completion_tokens=9))])
     assert c == "c"
 
 
 def test_loop_fire_restart():
-    """开火:流被 close(),截到切口拼 NOTE 重发;溢出入账;二段续写收尾。"""
-    deltas1 = [ANALYSIS_HEAD, "We need to inspect the venmo documentation. "
-               "Overrun text arrives in the same chunk."]
+    """开火:流被 close(),head = 模型自己的 id 到句尾标点,NOTE 单独编码接上
+    重发;溢出入账;二段续写收尾。"""
+    head = "We need to inspect the venmo documentation."
+    deltas1 = [ANALYSIS_HEAD, head + " Overrun text arrives in the same chunk."]
     deltas2 = ["Continue think.", "<|end|>", FINAL_HEAD, "```python\nz()\n```"]
-    (t, c, usage, discard, n_inj), streams, prompts, log = _run(
+    (t, c, usage, discard, n_inj, gen_ids, cons), streams, prompts, log = _run(
         [(deltas1, None, None),
          (deltas2, "stop", dict(prompt_tokens=30, completion_tokens=20))],
         no_probe=False, score_fire=1)
     assert n_inj == 1 and discard["events"] == 1
-    assert discard["chars"] > 0
+    assert discard["chars"] > 0 and discard["tokens"] > 0
     assert streams[0].closed, "开火必须中止第一条流"
     assert usage["req"] == 2, usage
-    # 被中止的流以块数近似 gen token
-    assert usage["gen_tok"] == streams[0].n_chunks + 20, usage
-    # 重发 prompt = 头 + 已接受思考(截到切口) + NOTE,NOTE 带执行返回
-    assert prompts[1].startswith("PROMPT_HEAD" + ANALYSIS_HEAD
-                                 + "We need to inspect the venmo documentation.")
-    assert "RESULT" in prompts[1] and "Overrun" not in prompts[1], prompts[1]
-    assert [r["type"] for r in log.recs] == ["spec"]
+    # 被中止的流按收到的 id 数记 gen token(含溢出)
+    assert usage["gen_tok"] == streams[0].n_ids + 20, usage
+    # 重发 prompt = 前缀 + 模型自己的 id 到 "documentation." + NOTE 的 id
+    head_ids = _ids(ANALYSIS_HEAD + head)
+    assert prompts[1][:len(PREFIX) + len(head_ids)] == PREFIX + head_ids
+    note = "".join(chr(i) for i in prompts[1][len(PREFIX) + len(head_ids):])
+    assert note.startswith("\n[SYSTEM NOTE") and "RESULT" in note, note
+    assert "Overrun" not in note
+    assert [r["type"] for r in log.recs] == ["spec", "resume"]
+    assert log.recs[0]["head_tok"] == len(head_ids)
     assert c == "```python\nz()\n```", repr(c)
     assert "Continue think." in t and "RESULT" in t, repr(t)
+    assert cons is True, cons
 
 
 def test_loop_budget_exhaust():
     """finish=length(预算打满):有什么收什么,不再发请求。"""
     deltas = [ANALYSIS_HEAD + "endless thinking"]
-    (t, c, usage, _, _), _, prompts, _ = _run(
+    (t, c, usage, _, _, _, _), _, prompts, _ = _run(
         [(deltas, "length", dict(prompt_tokens=5, completion_tokens=8192))])
     assert usage["req"] == 1 and len(prompts) == 1
     assert t == "endless thinking" and c == "", (t, c)

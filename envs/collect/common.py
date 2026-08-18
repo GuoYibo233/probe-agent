@@ -164,14 +164,18 @@ class Chat:
 
     def _chat(self, messages):
         t0 = time.time()
-        extra = {}
+        # return_token_ids(2026-08-18 ident3):vLLM 把 prompt 与生成的 token id
+        # 一并交回(openai 客户端 extra=allow,字段留在 choice/response 上),
+        # 只多存两个字段,行为不变——三臂逐 token 比对要它
+        extra = {"return_token_ids": True}
         if self.reasoning_effort:
             extra["reasoning_effort"] = self.reasoning_effort
         r = self.client.chat.completions.create(
             model=self.model, messages=messages,
             temperature=self.temperature, max_tokens=self.max_tokens,
             extra_body=extra)
-        m = r.choices[0].message
+        ch = r.choices[0]
+        m = ch.message
         reasoning = (getattr(m, "reasoning", None)
                      or getattr(m, "reasoning_content", None) or "")
         content = m.content or ""
@@ -179,6 +183,9 @@ class Chat:
             "reasoning": reasoning,
             "content": content,
             "raw": None,
+            "out_token_ids": getattr(ch, "token_ids", None),
+            "prompt_token_ids": getattr(r, "prompt_token_ids", None),
+            "finish_reason": ch.finish_reason,
             "usage": {"in": r.usage.prompt_tokens, "out": r.usage.completion_tokens},
             "wall_s": round(time.time() - t0, 2),
         }

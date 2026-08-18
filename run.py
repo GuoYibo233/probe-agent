@@ -374,6 +374,26 @@ TASKS = {
         notes=["端口 8114-8116 与探针 tokyo105:8790 写死,换机器改文件",
                "run_name 必填(如 live_aw_gptoss_v2)=runs/ 下输出目录,"
                "防呆:漏传曾经会静默空跑 v1 目录再假报 DONE"]),
+    # ---- ident3 三臂逐 token 同(计划 plans/2026-08-18-ident3.md)----
+    "ident3-job": dict(
+        stage="live", py="bash", script="envs/serve_logs/ident3_job.sh",
+        handoff=True,
+        desc="ident3 一臂 10 遍串行(位置参数 chat|noprobe|nofill <root> "
+             "[reps n_tasks vllm_port probe_url];tmux 里整段跑)",
+        notes=["三臂各起一份并行;要 vLLM(tokyo108:8114)+ render-only probe_server"
+               "(--render-only --device cpu,带 /decode)在线",
+               "伪触发切口序号由环境变量 IDENT3_FIRE_NTH 定,默认 5(计划 E1)",
+               "chat 臂 outdir 名以 appworld_gptoss 收尾(采集器约定)"]),
+    "ident3-gate": dict(
+        stage="live", py="sys", script="pipeline/inject/ident3_gate.py",
+        desc="ident3 发射前门禁:chat prompt_token_ids == /render prefix_ids"
+             "(必给 --base-url --probe-url;CPU)",
+        notes=["ident3_job.sh 开跑前自动调;不过=vLLM 没钉 VLLM_SYSTEM_START_DATE"
+               " 或 return_token_ids 没生效"]),
+    "ident3-score": dict(
+        stage="live", py="sys", script="pipeline/inject/ident3_score.py",
+        desc="ident3 打分 -> IDENT3_REPORT(必给 --root;CPU,stdlib)",
+        notes=["三臂 x 5 题 x 10 遍两两逐 token 比;同臂对 vs 跨臂对分开报"]),
     "serve-splice": dict(
         stage="live", py="sys", script="envs/serve_logs/launch_vllm_splice.py",
         handoff=True, gpu=True,

@@ -17,10 +17,12 @@
                标记两处与 chat 不一致,见 harmony_render.py 文件头)。日期钉
                COLLECT_DATE(vLLM 侧配套钉法见 METHOD.md §6-④)
   POST /encode {"text": 生成文本}          -> {"ids":[...]}
-               gpt-oss HF 分词器 encode(add_special_tokens=False),给注入后
-               重发用:prompt = prefix_ids + encode(切口前生成文本 + NOTE)。
-               生成文本里的 <|channel|> 等是模型真写的特殊 token,收成特殊
-               id 是对的(R3 检查验的就是这条:重编码与服务端分词逐位一致)
+               gpt-oss HF 分词器 encode(add_special_tokens=False)。2026-08-18
+               (ident3)起注入后重发的 head 直接用模型生成的 token id,/encode
+               只给 NOTE 单独编码:prompt = prefix_ids + head_ids + encode(NOTE)
+  POST /decode {"ids":[...]}                -> {"text": ...}
+               HF 分词器 decode(skip_special_tokens=False),驱动器重发前核对
+               decode(head_ids) == 流里收到的文本前缀
   GET  /health                             -> 启动配置回显(θ/T/模型路径/
                render 口径等)。驱动器开跑前核 render == "harmony_ids",
                防止指到老服务
@@ -176,6 +178,12 @@ class Probe:
     def encode(self, text):
         return dict(ids=self.oss_tok.encode(text, add_special_tokens=False))
 
+    def decode(self, ids):
+        # 2026-08-18(ident3):驱动器按 token 边界切 head 之后拿这个核对
+        # decode(head_ids) == 流里收到的文本前缀,不等就拒绝重发。
+        # skip_special_tokens=False:<|channel|> 等是模型真写的 token
+        return dict(text=self.oss_tok.decode(ids, skip_special_tokens=False))
+
     def config(self):
         return dict(theta=self.theta, temperature=self.T,
                     ctool=None if self.render_only else self.ctool_run,
@@ -183,7 +191,8 @@ class Probe:
                     render_only=self.render_only,
                     n_labels=self.ct_meta["n_labels"],
                     max_len=self.max_len, device=str(self.dev),
-                    render="harmony_ids", start_date=R.COLLECT_DATE)
+                    render="harmony_ids", decode=True,
+                    start_date=R.COLLECT_DATE)
 
 
 def serve(a):
@@ -224,6 +233,8 @@ def serve(a):
                     out = probe.render(req["messages"], req.get("effort"))
                 elif self.path == "/encode":
                     out = probe.encode(req["text"])
+                elif self.path == "/decode":
+                    out = probe.decode(req["ids"])
                 else:
                     self._reply(dict(error="unknown path"), 404)
                     return

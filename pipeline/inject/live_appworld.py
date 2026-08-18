@@ -27,7 +27,8 @@
   meta  任务与全部口径(θ/T/服务端点/chunk 尺寸/探针配置回显)
   gen   每步聚合:thinking/content/逐段 usage 累加/丢弃溢出的字符与 token 数
   spec  每次出手:切口、置信度、预测调用、requote 分支、执行返回(截 4000)、
-        错误种类、注入行全文
+        错误种类、注入行全文;v6 加 head_tok/dropped_chars/overflow_ids
+  resume 每次重发续写收尾:新 id 与被丢弃 id 的 match_len/identical(v6)
   env   每步真代码与执行输出(与采集侧同款)
   final steps/completed/eval(结构化 dict,不存 str——打分要读它)
 
@@ -37,9 +38,18 @@
       --split dev --n 2 --outdir pipeline/inject/runs/live_smoke \\
       --exp live_smoke
   对照臂(同路径不挂探针,回放线 nofill 的活跑版): 加 --no-probe
+  probe but nofill 臂(ident3,2026-08-18;探针权重已删,伪触发):
+      加 --fire-nth-cut 5 --nofill(第 5 个句尾切口中断,head 用模型自己的
+      token id 原样重发,什么都不塞)
+
+v6(2026-08-18 ident3):流带 return_token_ids,gen 记录多 gen_ids(整步 token id);
+开火重发 prompt = prefix_ids + gen_ids[:k](切口退到 token 边界,/decode 核对)
++ /encode(NOTE),不再整段重分词;spec 记 overflow_ids(中断时丢弃的 id),
+resume 记录记重发续写与之逐位比的 match_len/identical。
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -129,6 +139,16 @@ def think_span(raw):
     return (start, end if end >= 0 else len(raw))
 
 
+def sent_starts(text):
+    """句尾切口按**起点**(标点之后、空白之前,`m.start()`)列出——活跑用这个。
+    流式下句尾空白是一段段到的:`. ` 先到、`\\n` 后到,按 `m.end()` 记的话同一个
+    句尾会先后算成两个切口(p 与 p+1),"第 N 个切口"就随分块变;起点不随后续
+    空白移动,同一句尾永远只算一次。MIN_THINK//2 过滤照旧(strip 后长度,与
+    end 口径等价)。回放线的 sent_cuts(按 end)保持不动。"""
+    pts = sorted({m.start() for m in SENT_RE.finditer(text)})
+    return [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
+
+
 def sent_cuts(text):
     """真实句子级切口(不含全文末尾伪切口)。
 
@@ -141,20 +161,25 @@ def sent_cuts(text):
 
 
 class Stream:
-    """流式 /v1/completions。iter 出文本增量;中途 close() 即中止服务端解码。
+    """流式 /v1/completions。iter 出 (文本增量, token id 增量);中途 close()
+    即中止服务端解码。请求带 return_token_ids=True(vLLM 0.26:每块的
+    token_ids 与 text 是同一步解码的增量,文本可能因未凑齐的 UTF-8 字节
+    滞后于 id,所以两者按块一起交出去,调用方按块记边界)。
     收尾后 finish/usage 可读(带 include_usage;被中止时 usage 为 None,
-    调用方用增量块数近似 gen token——vLLM 补全流通常一块一 token)。"""
+    调用方用收到的 id 数记 gen token)。"""
 
     def __init__(self, base_url, payload, timeout):
         url = base_url.rstrip("/") + "/completions"
-        body = json.dumps(dict(payload, stream=True,
+        body = json.dumps(dict(payload, stream=True, return_token_ids=True,
                                stream_options={"include_usage": True})).encode()
         req = urllib.request.Request(
             url, data=body, headers={"Content-Type": "application/json"})
         self.resp = urllib.request.urlopen(req, timeout=timeout)
         self.finish = None
+        self.stop_reason = None
         self.usage = None
         self.n_chunks = 0
+        self.n_ids = 0
 
     def __iter__(self):
         for line in self.resp:
@@ -169,9 +194,13 @@ class Stream:
             for c in ck.get("choices") or []:
                 if c.get("finish_reason"):
                     self.finish = c["finish_reason"]
-                if c.get("text"):
+                    self.stop_reason = c.get("stop_reason")
+                text = c.get("text") or ""
+                ids = c.get("token_ids") or []
+                if text or ids:
                     self.n_chunks += 1
-                    yield c["text"]
+                    self.n_ids += len(ids)
+                    yield text, ids
         self.close()
 
     def close(self):
@@ -244,39 +273,126 @@ def speculate(world, gen_call, t_frozen, dt_guard):
                 exec_ok=(ek is None), error_kind=ek)
 
 
+def token_boundary(bounds, pos):
+    """bounds = 每个流块结束处的 (n_chars, n_ids),n_chars 单调不减;
+    返回不晚于字符位 pos 的最后一个边界 (n_chars, n_ids)。同一 n_chars 有多个
+    边界(文本滞后于 id)时取 id 数最少的那个。没有就返回 None。
+    只当 find_head 的起点:流文本会落后于 id(见 find_head),块边界不是准的。"""
+    best = None
+    for c, k in bounds:
+        if c > pos:
+            break
+        if best is None or c > best[0]:
+            best = (c, k)
+    return best
+
+
+def find_head(gen_ids, raw, pos, k0, decode):
+    """head = 最短的 id 前缀,其解码文本盖住字符位 pos(句尾切口的起点 = 标点
+    之后)。返回 (k, head_text)。也就是"含句尾标点的那个 token"为止:`.` 与
+    ` Then` 分开时 head 止于 `.`;`.\\n\\n` 是一个 token 时 head 连它一起。
+    这个规则只看模型的 token 序列,不看流怎么分块。
+
+    为什么不能按块边界 (len(raw), len(gen_ids)) 算:vLLM 有 stop 串时压着
+    len(stop)-1 个字符不吐(v1/engine/detokenizer.py get_next_output_text 的
+    stop_buffer_length,<|return|> 是 10 字符 → 文本恒比 id 落后 9 字符 ≈ 2 个
+    token;smoke 实测 decode(head_ids) 多出 ' We have'),多字节字符没凑齐时也压;
+    生产端快过消费端时几个 token 并成一块。所以 k 要拿 decode 逐个核出来,
+    块边界 k0 只当起点。decode 是 HTTP 调用,每次开火通常只要几次。
+    head_text 与流文本的公共部分必须逐字相同(不同就抛错,不静默)。"""
+    if not gen_ids:
+        raise RuntimeError("find_head: 还没有生成 id")
+    k = max(1, min(k0, len(gen_ids)))
+    txt = decode(gen_ids[:k])
+    while len(txt) < pos and k < len(gen_ids):          # 往前进到盖住 pos
+        k += 1
+        txt = decode(gen_ids[:k])
+    while k > 1:                                        # 再退到最短
+        prev = decode(gen_ids[:k - 1])
+        if len(prev) < pos:
+            break
+        k, txt = k - 1, prev
+    if len(txt) < pos:
+        raise RuntimeError(f"find_head: 全部 {len(gen_ids)} 个 id 解码后 "
+                           f"({len(txt)} 字符)盖不住切口 {pos}")
+    n = min(len(txt), len(raw))
+    if txt[:n] != raw[:n]:
+        raise RuntimeError(f"find_head: decode(ids[:{k}]) 与流文本不一致:"
+                           f"{txt[max(0, n - 60):n]!r} vs {raw[max(0, n - 60):n]!r}")
+    return k, txt
+
+
+def ids_sha(ids):
+    """token id 列表的 sha1(逗号串);chat 臂存整段 prompt_token_ids,
+    活跑臂只存这个,打分侧两边算同一个 sha 就是逐 id 比。"""
+    return hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()
+
+
+def sep_for(head):
+    """NOTE 前的缝(2026-08-18 splice_replay D5'):head 以空白结尾就不再加换行
+    (换行切口另起一行、空格切口 inline),否则加一个 \\n。head 是模型自己的
+    token,NOTE 单独编码,模型的最后一个 token 不会被合并改写。"""
+    return "" if head[-1:].isspace() else "\n"
+
+
+def log_resume(log, step, pending, gen_ids, st):
+    """重发续写出的同位新 id 与上次中断时被丢弃的 id 逐位比
+    (nofill 下这就是"token 同的重发能不能复现模型自己的续写")。"""
+    new = gen_ids[pending["head_tok"] + pending["note_tok"]:]
+    ov = pending["overflow_ids"]
+    m = 0
+    while m < min(len(new), len(ov)) and new[m] == ov[m]:
+        m += 1
+    log.w(dict(type="resume", step=step, overflow_tok=len(ov),
+               new_tok=len(new), match_len=m,
+               identical=(m == len(ov) and len(new) >= len(ov)),
+               finish=st.finish, stop_reason=st.stop_reason))
+
+
 def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
     """v4:一步一枪流式生成,与 w0 的 chat 解码同构。
     prefix_ids = harmony 前缀 token id,止于 <|start|>assistant(无预填);
-    raw = 之后的全部生成文本(模型自己写通道头;注入时截到切口拼 NOTE)。
-    发请求时 prompt = prefix_ids(+ 注入后 /encode(raw) 的 id):不出手的步
-    prompt 就是 chat 端点会喂给引擎的那串 id;重发才有重分词缝。
-    探测骑在流上:新句子切口出现就打分,开火才 close() 中断、注入、重发续写
-    ——不开火的步是单请求不间断解码,与 chat 完全同款。
-    返回 (thinking, content, usage聚合, 溢出账, 出手数)。"""
+    raw = 之后的全部生成文本(模型自己写通道头),gen_ids = 与之对应的 token id
+    (流带 return_token_ids,逐块攒;v6 2026-08-18 ident3)。
+    发请求时 prompt = prefix_ids + gen_ids:不出手的步 prompt 就是 chat 端点
+    会喂给引擎的那串 id;开火后重发的 head 也是模型自己生成的 id 原样
+    (切口退到不晚于它的 token 边界,重发前 /decode 核对),NOTE 单独 /encode
+    接在后面——不再把文本整段重分词,重分词缝只剩 NOTE 自己。
+    探测骑在流上:新句子切口出现就打分(真探针 /score;或 --fire-nth-cut 伪
+    触发:第 N 个切口开火),开火才 close() 中断、(--nofill 则什么都不塞)、重发
+    续写——不开火的步是单请求不间断解码,与 chat 完全同款。
+    每次中断把切口后已生成、被丢弃的 id 存进 spec 记录(overflow_ids),重发续
+    写出的同位新 id 与它逐位比,写一条 resume 记录(match_len/identical)。
+    返回 (thinking, content, usage聚合, 溢出账, 出手数, gen_ids)。"""
     raw = ""
+    gen_ids = []
+    bounds = [(0, 0)]          # 每块结束处 (len(raw), len(gen_ids))
     usage = dict(prompt_tok=0, gen_tok=0, req=0)
-    discard = dict(chars=0, events=0)
+    discard = dict(chars=0, tokens=0, events=0)
     checked = set()            # 已探测切口(thinking 坐标)
     n_checked = 0
     n_inject = 0
     probing = not a.no_probe
     accepted = 0               # 注入点之前的 thinking 长度(重启后不回探)
+    pending = None             # 上次中断丢弃的 id,等重发续写出来后逐位比
 
     while True:
-        # prompt 一律 token id:前缀来自 /render(chat 同款渲染);注入后重发
-        # 把切口前生成文本+NOTE 交 /encode 分词接在后面(重分词缝就在这一接)
-        prompt = list(prefix_ids)
-        if raw:
-            prompt += http_json(a.probe_url + "/encode", dict(text=raw))["ids"]
+        # prompt 一律 token id:前缀来自 /render(chat 同款渲染);gen_ids 是
+        # 模型自己生成的 id(开火后 = head_ids + NOTE 的 id)
+        prompt = list(prefix_ids) + list(gen_ids)
+        # 步预算按**留下的** id 算(chat 一步 8192 全是留下的;中断丢弃的溢出
+        # 只进 usage 账,不吃预算——否则 nofill 步比别的臂早顶到 length)
         st = open_stream(a.base_url, dict(
             model=a.model, prompt=prompt,
-            max_tokens=max(1, MAX_STEP_TOKENS - usage["gen_tok"]),
+            max_tokens=max(1, MAX_STEP_TOKENS - len(gen_ids)),
             temperature=0.0, stop=DEFAULT_STOP,
             skip_special_tokens=False), a.timeout)
         usage["req"] += 1
         fired = False
-        for delta in st:
+        for delta, ids in st:
             raw += delta
+            gen_ids += ids
+            bounds.append((len(raw), len(gen_ids)))
             if not probing or n_inject >= a.max_inject_per_step:
                 continue
             if not any(c in delta for c in ".!?\n"):
@@ -289,7 +405,7 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
                 probing = False    # analysis 已闭合,进入 commentary/final
                 continue
             t_all = raw[ts:]
-            for cut in sent_cuts(t_all):
+            for cut in sent_starts(t_all):
                 if cut in checked or cut <= accepted:
                     continue
                 if n_checked >= MAX_BOUNDS:
@@ -297,51 +413,104 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
                     break
                 checked.add(cut)
                 n_checked += 1
-                s = http_json(a.probe_url + "/score",
-                              dict(text=assemble(task, hist, t_all[:cut])))
-                if s["fired"]:
+                if a.fire_nth_cut:
+                    # 伪触发(探针权重已删):第 N 个切口开火,不打 /score /gen
+                    s = dict(conf=None, label=None,
+                             fired=(n_checked == a.fire_nth_cut))
+                else:
+                    s = http_json(a.probe_url + "/score",
+                                  dict(text=assemble(task, hist, t_all[:cut])))
+                if not s["fired"]:
+                    continue
+                # ---- 开火:head = 盖住句尾标点的最短 id 前缀(模型自己的 id)----
+                pos = ts + cut                          # raw 坐标(标点之后)
+                _, k0 = token_boundary(bounds, pos)
+                k, head_txt = find_head(
+                    gen_ids, raw, pos, k0,
+                    lambda ids: http_json(a.probe_url + "/decode",
+                                          dict(ids=ids))["text"])
+                head_ids = gen_ids[:k]
+                overflow_ids = gen_ids[k:]
+                if a.nofill:
+                    g, note = None, ""
+                    spec = dict(exec_code=None, arg_modes=None, exec_out=None,
+                                exec_ok=None, error_kind=None)
+                else:
                     g = http_json(a.probe_url + "/gen",
                                   dict(text=assemble(task, hist, t_all[:cut])))
                     spec = speculate(world, g["call"], t_frozen, dt_guard)
-                    note = NOTE_TMPL.format(call=g["call"],
-                                            result=spec["exec_out"])
-                    discard["chars"] += len(t_all) - cut
-                    discard["events"] += 1
-                    log.w(dict(type="spec", step=step, cut=cut,
-                               n_checked=n_checked, conf=s["conf"],
-                               pred_label=s["label"], gen_call=g["call"],
-                               note=note, discarded_chars=len(t_all) - cut,
-                               **spec))
-                    raw = raw[: ts + cut] + note   # 切口后溢出丢弃
-                    accepted = cut + len(note)
-                    checked = set()                # 偏移整体位移,旧集合作废
-                    n_inject += 1
-                    fired = True
-                    break
+                    note = sep_for(head_txt) + NOTE_TMPL.lstrip("\n").format(
+                        call=g["call"], result=spec["exec_out"])
+                note_ids = (http_json(a.probe_url + "/encode",
+                                      dict(text=note))["ids"] if note else [])
+                discard["chars"] += max(0, len(raw) - len(head_txt))
+                discard["tokens"] += len(overflow_ids)
+                discard["events"] += 1
+                log.w(dict(type="spec", step=step, cut=cut,
+                           n_checked=n_checked, conf=s["conf"],
+                           pred_label=s["label"],
+                           gen_call=g["call"] if g else None,
+                           note=note, nofill=bool(a.nofill),
+                           discarded_chars=max(0, len(raw) - len(head_txt)),
+                           head_chars=len(head_txt) - ts,
+                           head_ends_ws=head_txt[-1:].isspace(),
+                           head_tok=k, note_tok=len(note_ids),
+                           head_tail=head_txt[-40:],
+                           n_chunks=st.n_chunks,
+                           overflow_ids=overflow_ids, **spec))
+                if pending is not None:     # 同步第二次开火:先把上次的账结掉
+                    log_resume(log, step, pending, gen_ids, st)
+                raw = head_txt + note        # 文本以 decode(head) 为准,溢出丢弃
+                gen_ids = head_ids + note_ids
+                bounds = [(len(raw), len(gen_ids))]
+                pending = dict(head_tok=k, note_tok=len(note_ids),
+                               overflow_ids=overflow_ids)
+                accepted = (len(head_txt) - ts) + len(note)
+                checked = set()                # 偏移整体位移,旧集合作废
+                n_inject += 1
+                fired = True
+                break
             if fired:
                 break
-        # 账:完整收尾有 usage;被中止时用增量块数近似 gen(一块≈一 token)
+        # 账:完整收尾有 usage;被中止时用本请求收到的 id 数(含丢弃的溢出)
         if st.usage:
             usage["prompt_tok"] += st.usage.get("prompt_tokens", 0)
             usage["gen_tok"] += st.usage.get("completion_tokens", 0)
         else:
-            usage["gen_tok"] += st.n_chunks
+            usage["gen_tok"] += st.n_ids
+        if pending is not None and not fired:
+            log_resume(log, step, pending, gen_ids, st)
+            pending = None
         if fired:
             st.close()
-            continue               # 注入后续写(此处的重分词缝是干预本身,不可约)
+            continue               # 开火后续写(head 是模型自己的 id)
         break                      # stop=<|return|> 或预算打满,整步收官
 
+    # 收官核对:文本与 id 要对得上(decode(gen_ids) = raw + 停止 token 的文本
+    # 或 = raw)。不等就打印告警并把 text_ids_consistent=False 记进 gen 记录,
+    # 打分侧能看见;不在这里抛——整题成绩不能因记录核对失败作废。
+    consistent = None
+    if n_inject:
+        full = http_json(a.probe_url + "/decode", dict(ids=gen_ids))["text"]
+        consistent = full.startswith(raw) and \
+            full[len(raw):] in ("", "<|return|>", "<|call|>")
+        if not consistent:
+            print(f"    WARN step {step}: decode(gen_ids) 与 raw 不一致 "
+                  f"(len {len(full)} vs {len(raw)})", flush=True)
     t_final, content = parse_step(raw)
-    return (t_final, content, usage, discard, n_inject)
+    return (t_final, content, usage, discard, n_inject, gen_ids, consistent)
 
 
-def probe_cfg_problem(cfg):
+def probe_cfg_problem(cfg, need_decode=False):
     """/health 回显不合口径就给一句拒跑理由,合口径返回 None。
     老服务的 /render 出的是 jinja 文本,与 chat 端点两处不齐(harmony_render.py
     文件头);教训:老 8790 曾静默丢 effort 字段按 high 渲,指错服务不报错只出错数。"""
     if cfg.get("render") != "harmony_ids":
         return (f"probe 服务 /health 没回 render=harmony_ids(拿到 "
                 f"{cfg.get('render')!r}),是旧版 probe_server,拒跑")
+    if need_decode and not cfg.get("decode"):
+        return ("probe 服务 /health 没回 decode=true:开火重发要 /decode 核对 "
+                "head_ids(2026-08-18 ident3),是旧版 probe_server,拒跑")
     return None
 
 
@@ -383,6 +552,12 @@ def main():
                          "effort 对照臂传 low/medium")
     ap.add_argument("--no-probe", action="store_true",
                     help="对照臂:同一条分段生成路径,不挂探针不注入")
+    ap.add_argument("--fire-nth-cut", type=int, default=0,
+                    help="伪触发(探针权重已删时用):每步第 N 个句尾切口开火一次,"
+                         "不打 /score;0=用真探针 /score")
+    ap.add_argument("--nofill", action="store_true",
+                    help="开火时什么都不塞(不 /gen、不投机执行、不写 NOTE),"
+                         "只中断+按模型自己的 token id 重发续写")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
@@ -397,6 +572,8 @@ def main():
                          "存档/执行/回档三连,再继续重放并逐字核对——证明投机"
                          "执行不污染正身。")
     a = ap.parse_args()
+    if a.no_probe and (a.fire_nth_cut or a.nofill):
+        ap.error("--no-probe 与 --fire-nth-cut/--nofill 互斥(no probe 臂不开火)")
 
     # 路径一律先 resolve 再 chdir【exec_calls.py 同款教训】
     outdir = Path(a.outdir).resolve()
@@ -414,7 +591,7 @@ def main():
     with urllib.request.urlopen(a.probe_url + "/health", timeout=30) as r:
         probe_cfg = json.loads(r.read())
     print(f"probe: {probe_cfg}", flush=True)
-    bad = probe_cfg_problem(probe_cfg)
+    bad = probe_cfg_problem(probe_cfg, need_decode=not a.no_probe)
     if bad:
         sys.exit(bad)
 
@@ -473,8 +650,11 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
         instr = world.task.instruction
         log = W(out_path, dict(
             env="appworld", task_id=tid, model=a.model, instruction=instr,
-            arm=("no_probe" if a.no_probe else "probe"), effort=a.effort,
-            probe=probe_cfg,
+            arm=("no_probe" if a.no_probe else
+                 "probe_nofill" if a.nofill else "probe"),
+            fire=(f"nth_cut:{a.fire_nth_cut}" if a.fire_nth_cut else "probe"),
+            nofill=bool(a.nofill), token_exact_resend=True,
+            effort=a.effort, probe=probe_cfg,
             chunk_tokens=a.chunk_tokens, tail_tokens=a.tail_tokens,
             max_inject_per_step=a.max_inject_per_step,
             appworld_seed=APPWORLD_SEED, date=time.strftime("%Y-%m-%d")))
@@ -494,12 +674,16 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
                                             effort=a.effort))["prefix_ids"]
                 t0 = time.time()
                 # v4:不预填通道头,prompt 止于 <|start|>assistant(chat 同款)
-                think, content, usage, discard, n_inj = gen_step(
-                    a, prefix_ids, instr, hist, world,
-                    t_frozen, dt_guard, log, step)
+                (think, content, usage, discard, n_inj, gen_ids,
+                 consistent) = gen_step(a, prefix_ids, instr, hist, world,
+                                        t_frozen, dt_guard, log, step)
+                # prefix 不整段存(每步几万 id),存 sha1 + 长度;chat 臂存了整段
+                # prompt_token_ids,打分侧对 sha 就是逐 id 比
                 log.w(dict(type="gen", step=step, reasoning=think,
                            content=content, usage=usage, discard=discard,
-                           n_inject=n_inj, wall_s=round(time.time() - t0, 2)))
+                           n_inject=n_inj, wall_s=round(time.time() - t0, 2),
+                           prefix_tok=len(prefix_ids), prefix_sha=ids_sha(prefix_ids),
+                           text_ids_consistent=consistent, gen_ids=gen_ids))
                 msgs.append({"role": "assistant", "content": content})
                 m = re.search(r"```python\s*(.*?)```", content, re.S)
                 if not m:
