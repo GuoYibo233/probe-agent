@@ -266,6 +266,28 @@
         }
       ],
       "finished_at": "2026-08-18 07:40"
+    },
+    {
+      "name": "ident3_v1_srv",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "ident3 三臂逐token同 5题x10遍 的 gpt-oss-120b 单副本(同 splice_replay_v1_srv 口径)",
+      "started_at": "2026-08-18 10:21",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_ident3_v1_srv_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/logs/new1_ident3_v1_srv_t108g0.log",
+          "cmd": "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_CACHE_ROOT=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache TRITON_CACHE_DIR=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton VLLM_SYSTEM_START_DATE=2026-07-31 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --port 8114 --host 0.0.0.0 --max-model-len 65536 --gpu-memory-utilization 0.92",
+          "launched_at": 1787016094.8318317,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": 8114
+        }
+      ],
+      "finished_at": "2026-08-18 20:15"
     }
   ]
 }

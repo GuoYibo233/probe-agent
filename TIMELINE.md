@@ -10,6 +10,29 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-18 三臂逐 token 同（ident3_v1）：活跑重发改用模型自己的 token id，5 题 × 10 遍量噪声
+
+- 触发：gyb 要求把 chat baseline / no probe / probe-but-nofill 做到逐 token 同，5 题
+  每题每臂 10 遍看结果。探针权重已删，nofill 臂用伪触发（每步第 5 个句尾切口开火、
+  中断、按模型自己的 id 重发、什么都不塞）。
+- 决定（实现层，计划 `plans/2026-08-18-ident3.md` §5 E1–E13）：活跑流带
+  `return_token_ids`，开火重发 = 前缀 + 模型自己生成的 id[:k] + 单独编码的 NOTE，
+  不再把文本整段重分词；head = 盖住句尾标点的最短 id 前缀、切口按起点计数（两者只看
+  token 序列不看流分块——vLLM 有 stop 串时压 9 字符不吐、生产快时多 token 并块，
+  块边界不是 token 边界）；步预算按留下的 id 算；发射前门禁核 chat 的
+  prompt_token_ids 与 /render 逐 id 相等。
+- 事实（`ident3_v1`，RESULTS.md；`…/runs/ident3_v1/IDENT3_REPORT.md`）：150 跑 0 失败；
+  跨臂 prompt id sha 1780/1780 全等（三臂喂引擎的 prompt 逐 id 同已成立）；
+  2175 对同题配对没有一对整题逐 token 全同，每题每臂 10 遍 10 条不同轨迹；首分叉在
+  第 0 步的比例同臂对 chat-chat 137/225、noprobe-noprobe 144/225、nofill-nofill
+  131/225，跨臂 chat-noprobe 308/500、chat-nofill 499/500、noprobe-nofill 496/500；
+  成功 chat 14/50、noprobe 13/50、nofill 20/50；nofill 564 次中断重发里 534 次
+  （0.947）逐位复现被丢弃的溢出 token。三臂并行打同一副本（批组成随时变）。
+- 与上一条"服务端数值抖动当噪声"的关系：这批数字是那层噪声在整题上的量；同臂
+  10 遍之间就已经条条不同，臂间比较只能靠题量。
+- 未做：真探针下的活跑（要先重训探针）；nofill 与 noprobe 首分叉几乎全在第 0 步而
+  同臂对只有六成——这个差别没有分析，先记事实。
+
 ## 2026-08-18 立项：塞法回放（splice_replay_v1）——探针开火时结果怎么拼回去，先上帝视角量单步
 
 - 触发：对比 with probe 重发 prompt 与 no probe 时量到重分词缝——NOTE 前导 `\n`
