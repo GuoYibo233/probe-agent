@@ -26,7 +26,7 @@ gyb 只豁免「谁能调」和「谁能写」两样。完整性校验对 gyb �
 
 第三层管的是：读什么、怎么读、Bash 里能写什么、什么时候该开 issue、什么时候该停下来问 gyb。
 
-钩子解析不出目标路径的 Bash 写法（脚本内部写文件、`python -c`、heredoc 之类）钩子不看，宿主发射器的台账、读什么、怎么读，全归这一层。这一层有一句专门管绕钩子的（2026-08-18 gyb 裁）：用 Bash 往四个角色目录和 `loop/` 写（重定向、脚本、`cp`、`mv` 都算）等于绕钩子，不许；要写就用 Write/Edit 让钩子看得见，账本一律走 `rl`。这句进公共规矩第 8 条和每份角色 SKILL.md，reviewer 事后拿 git 历史对着 sessions 账查。Bash 进了钩子匹配范围之后这句要跟着改（改成什么等 gyb 裁，sync-inbox 问题 38；裁之前这句照旧，`09` rule-08 和五份角色 SKILL.md 里的同一句一起改）。reviewer 事后审的就是这一层。
+钩子解析不出目标路径的 Bash 写法（脚本内部写文件、`python -c`、heredoc 之类）钩子不看，宿主发射器的台账、读什么、怎么读，全归这一层。这一层有一句专门管绕钩子的（2026-08-18 gyb 裁，同日 Bash 进钩子匹配范围后按 sync-inbox 问题 38 选 b 改成现在这样）：钩子拦不到的写法（脚本内部写文件、`python -c`、heredoc、任何钩子解析不出目标路径的 Bash 命令）一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`。这句进公共规矩第 8 条和每份角色 SKILL.md，reviewer 事后拿 git 历史对着 sessions 账查。reviewer 事后审的就是这一层。
 
 公共规矩第 8 条把三层的出圈处理写成一句：钩子拦下的，原话告诉模型开哪条 issue；钩子不拦但越出自己 writes 的（宿主文件、钩子解析不出的 Bash 写入），列进报告并留决定并守宿主规矩；读账一律经 rl 查询命令，查询命令谁都能调。八条规矩的正文在 `09-common-and-feedback.md`。
 
@@ -123,7 +123,7 @@ hooks/ 里除了写权钩子，还有登记和销号两个钩子。
 
 hooks/ 是一份插件级钩子文件 `hooks/hooks.json` 加脚本本体，写权、登记、销号都在这一份里；脚本不靠参数认角色，按上一节的顺序自己判（`agent_type`，再状态文件）。「五个角色共用一个脚本、参数报角色名」的写法 2026-08-18 作废（同日实测 skill 头部钩子带参数能到，测试留在 `~/.claude/jobs/8a102def/tmp/hookargs/`，事实保留、写法不用了）。
 
-插件另有 `agents/` 一层，五份角色 agent 定义 `agents/<role>.md`（2026-08-18 gyb 裁，来自 `08`）：只塑形、不设闸——提示词、预加载本角色 skill、收窄工具面（按 use case 表倒推，比如 reviewer 禁 Write/Edit），不写钩子（插件 agent 定义里的钩子字段被忽略）。派活一律用这五个类型起 subagent，钩子输入的 `agent_type` 就是这么来的；`rl init` 不往研究仓库播 agent 文件、不动仓库 settings。agent 定义改动走不走母版流程（像角色 json 那样记 feedback、单独 commit、`rules_version` 加一）等 gyb 裁，sync-inbox 问题 38。monitors/ 里只有一个看门狗，只在 run 上线时起，只写自己的状态文件，不写九本账。
+插件另有 `agents/` 一层，五份角色 agent 定义 `agents/<role>.md`（2026-08-18 gyb 裁，来自 `08`）：只塑形、不设闸——提示词、预加载本角色 skill、收窄工具面（按 use case 表倒推，比如 reviewer 禁 Write/Edit），不写钩子（插件 agent 定义里的钩子字段被忽略）。派活一律用这五个类型起 subagent，钩子输入的 `agent_type` 就是这么来的；`rl init` 不往研究仓库播 agent 文件、不动仓库 settings。agent 定义改一处算改母版，和角色 json 同一个流程：feedback 账记一条、采纳后单独 commit（前缀 `research-loop rules:`）、`rules_version` 一起加一，生效时刻同母版（2026-08-18 gyb 裁，sync-inbox 问题 38 选 a；流程正文在 `09` 第四节）。monitors/ 里只有一个看门狗，只在 run 上线时起，只写自己的状态文件，不写九本账。
 
 和钩子有关的待验证条目有五条，测法和失败备案在 `30-build-steps-verify-tests.md`：Bash 环境里有没有现成的会话 id 变量；skill 头部声明的钩子能不能给命令带参数；monitor 的 `when: "on-skill-invoke:run"` 写法；SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个；subagent 里加载角色 skill 头部钩子装不装得上、写权拦不拦；钩子输入里有没有模型标识。第 2 条已测通过（见上）；第 8 条 2026-08-18 已测（八个变体，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）：主案不成立、备案一不成立，走插件级钩子文件按 `agent_type` 判角色，见上两节；其余仍按 gyb 裁定：讨论全部收口之前一律不测。顺带看到的一个事实，不算正式测：2026-08-18 那次测试里 PreToolUse 的钩子输入有会话 id、工作目录、权限模式、工具入参，没有模型标识。
 
@@ -286,7 +286,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - gyb 的豁免范围从 gyb 那头怎么用、裸终端就是 gyb 这条推论：写在 `01-gyb.md`。
 - 快车道里 deploy 派 gpu-runner 这条 `dispatches_to` 的例外：写在 `07-quick-lane.md`。
 - 插件树里 hooks/（一份插件级钩子文件）、`agents/`（五份角色 agent 定义）、monitors/、tables/roles/ 摆在哪，`rl init` 往 CLAUDE.md 追加那一节的时机，宿主脏树白名单那处改动，阈值表：写在 `08-trees-init-and-host.md`。钩子路径白名单是配置里的一项，落在 `08` 的阈值表（本份 2026-08-18 加，列在「要同步到别处的」）。
-- 公共母版八条规矩（尤其第 8 条出圈即留痕）、`common/READING.md`、`rules_version` 与母版改动流程：写在 `09-common-and-feedback.md`。本份 2026-08-18 加的三句要进那边：第 8 条补「Bash 往角色目录和 `loop/` 写等于绕钩子，不许」；母版加「一个会话只加载一个角色，要换角色另开会话」；`rules_version` 一节补「角色 json 改动同流程」。
+- 公共母版八条规矩（尤其第 8 条出圈即留痕）、`common/READING.md`、`rules_version` 与母版改动流程：写在 `09-common-and-feedback.md`。本份 2026-08-18 加的三句要进那边：第 8 条补「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写」（Bash 进钩子匹配范围后按问题 38 改的措辞）；母版加「一个会话只加载一个角色，要换角色另开会话」；`rules_version` 一节补「角色 json 改动同流程」，同日再补「角色 agent 定义改动同流程」（问题 38）。
 - 待验证清单每条的测法、通过标准、失败备案，测试 8 和测试 13 在施工步骤里的位置：写在 `30-build-steps-verify-tests.md`。第 2 条（头部钩子带参数）2026-08-18 已测通过、备案作废；「`${CLAUDE_PLUGIN_DATA}` 解析到哪」那半条同日撤销（状态文件改放 `loop/.sessions/`）。
 - 五份角色 json 的副本、每个角色的 use case 表和干活流程：写在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`。副本要跟本份一字不差：2026-08-18 改了 idea 的 `writes`（`notes/`）、五份的 `reads` 写法、deploy 的 `dispatches_to` 写法（备注移到表下）；每份 SKILL.md 要加两句纪律（Bash 绕钩子、一会话一角色）。
 - deploy 改宿主文件的三条纪律、reviewer 的读顺序：写在 `11-role-deploy.md` 和 `14-role-reviewer.md`。
@@ -449,6 +449,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 2026-08-18 gyb 裁（定稿后追问，原话「这个放到记忆那个文件夹下面可以吗。如果是tmp的话就弄个tmp的子文件夹」「a」）：会话状态文件放 `loop/.sessions/<session_id>.json`，普通文件不算九本账，`rl init` 往 `.gitignore` 加 `loop/.sessions/`；不再依赖宿主给插件的数据目录变量，那半条待验证撤销。对回原则 8（状态跟仓库走，一处真源）。「会话状态文件」小节照改。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：run 那张 json 表 `reads` 加 feedback（五个角色齐了）；「五栏是什么」一节末补一句 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏、「可用工具」只指到角色 json。对回原则 5、6、8。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传；gyb 原话「剩下的建议我确认」「你就说我也定了，让统筹给06 00也改了」）：待验证第 8 条实测结论落地——钩子一份放插件级 `hooks/hooks.json`，不写在 skill 头部；脚本先按 `agent_type` 判角色（不认识的最严）、没有才按 `loop/.sessions/<session_id>.json`；状态文件由同一份钩子文件里的钩子在加载角色 skill 时写、`agent_type` 非空不写；「共用一个脚本、参数报角色名」写法作废；加 `agents/` 层五份角色 agent 定义只塑形不带钩子、派活一律用它们起 subagent、init 不播不动 settings；钩子匹配范围加 Bash（解析重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径并 realpath），第一层、第三层、「放行什么」、公共规矩第 8 条那句照改。对回原则 2、8。两处空白等 gyb（sync-inbox 问题 38）：「Bash 绕钩子不许」纪律句改成什么；agent 定义改动走不走母版流程。
+- 2026-08-18 gyb 裁（sync-inbox 问题 38，rl-hub-v5 问，原话「b」「a」）：38-1 纪律句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`」，第三层那句照改，`09` rule-08 与五份角色 SKILL.md 同句同改；38-2 角色 agent 定义改一处算改母版，走角色 json 同一个流程，`agents/` 那段照改，`09` 第四节补一句。对回原则 2、9。
 
 ## 要同步到别处的
 
