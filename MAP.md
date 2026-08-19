@@ -143,7 +143,10 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 | `ops/gpu_state.md` | 集群慢变量：tokyo105(=shiga) 8×A6000、106 10×A6000、107 4×RTX6000Ada、108(=saitama) 3×H100+3×H200；驱动/CUDA/坑（cu128 轮子在 12.2 驱动机可跑、HF 缓存在 NFS 等） | 挑卡前读 |
 | `ops/env_locks/` | 环境锁文件 | 环境变更时核对 |
 | `learn/vllm/build_artifact.py` | 课页 → artifact 单文件的确定性转换器：内联 `assets/` 的样式与脚本、去掉文档外壳、本地链接降级成纯文本；出口自检拦 doctype/body/相对路径/外链资源 | `python3 run.py build-lesson-artifact --lesson learn/vllm/lessons/<课页>.html`；`--check` 只校验同步（发布前先跑）；⚠️ `*.artifact.html` 是渲染产物，手改会被下次重跑覆盖——要改改课页或 `learn/vllm/assets/` |
-| `model_registry.py` | 模型地址映射，脚本一律经 resolve() 取路径 | `python3 model_registry.py <别名>`；⚠️ 落后于磁盘：LFM2.5-350M-Base 与 Qwen3-0.6B-Base（cgen 硬编码在用）都没注册 |
+| `model_registry.py` | 模型地址映射的读取口，表本体在 `configs/models.json`（2026-08-20 gen-preset 改造搬过去），脚本一律经 resolve() 取路径 | `python3 model_registry.py <别名>`；缺条目已补齐（LFM2.5-350M-Base / Qwen3-0.6B-Base / MirrorAPI-Cache 都在表里） |
+| `configs/models.json` + `configs/presets/*.json` | 生成设置的唯一真源：models.json 是模型地址映射；一份预设 = 模型别名 + server 节（vLLM 启动参数）+ client 节（api/effort/temperature/max_tokens/stop/start_date/top_p/seed）。现有五份 gptoss 预设与改造前五处写死值逐项等价（tests/test_preset.py 钉着） | 采集/活跑/回放入口 `--preset <名>`；BFCL handler 走环境变量 `NEW1_PRESET_JSON=<预设绝对路径>`；命令行显式参数永远压过预设 |
+| `preset_loader.py` | configs/ 的读取器（纯标准库，采集 venv 装不进 pydantic 2）：load_preset 校验 + merge_client 三层优先级（CLI 显式值 > 预设 > 原缺省） | 入口脚本 import 用；`python3 preset_loader.py` 列全部预设，`python3 preset_loader.py <名>` 看展开 |
+| `serve_preset.py` | 通用 vLLM 发射器：读预设 server 节，模型路径经 resolve()，ssh+tmux 起服务并把预设全文抄到 `envs/serve_logs/<session>.preset.json`。新服务从这里起，13 个旧 `launch_vllm_*.py` 留作历史 | `python3 run.py show serve-preset`（发射类，脏树门禁）；`--preset <名> --gpu <卡>`，`--dry-run` 只打印 |
 
 ---
 
@@ -166,7 +169,7 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 
 **基准环境（envs/ 下）：** `appworld`（pip 包 0.1.3.post1，venv 是 exec_calls/live_appworld 的唯一解释器）、`alfworld`（0.4.2，data 软链 → NFS `envs/alfworld_data`，2026-08-02 改指）、`bfcl`（bfcl_eval 2026.3.23；⚠️ 自带独立 cu13 系 torch 2.13.0）、`tales`（tale_suite 1.0.0rc2，捆带 alfworld/scienceworld 等）、`tau2-bench`（唯一真源码 clone，.venv 装 tau2 1.0.1）、`toolhop` + `toolhop-env`、`stabletoolbench` + `stb-server-env`、`vllm-env`（vllm 0.26.0 服务环境）、`cuda-compat-13.0`（驱动 580 兼容库）。toolhop/stabletoolbench 数据实体在 NFS，home 是软链。
 
-**权重（`/net/tokyo100-10g/data/str01_01/y-guo/models/`）：** gpt-oss-120b 122G（含 original/ 65G 参考格式，vLLM 用不到）、ModernBERT-base 3.0G（含 onnx/ 1.5G 用不到）、Qwen3-0.6B-Base 1.2G、LFM2.5-350M-Base 681M。⚠️ 后两个未进 model_registry。两个 27B Qwen 在 zhou-y 共享盘（registry 有条目）；Qwen3-8B 等走 HF 缓存（`HF_HOME=/net/…/y-guo/hf`）。
+**权重（`/net/tokyo100-10g/data/str01_01/y-guo/models/`）：** gpt-oss-120b 122G（含 original/ 65G 参考格式，vLLM 用不到）、ModernBERT-base 3.0G（含 onnx/ 1.5G 用不到）、Qwen3-0.6B-Base 1.2G、LFM2.5-350M-Base 681M（这两个 2026-08-20 已补进 `configs/models.json`）。两个 27B Qwen 在 zhou-y 共享盘（registry 有条目）；Qwen3-8B 等走 HF 缓存（`HF_HOME=/net/…/y-guo/hf`）。
 
 ---
 
@@ -174,7 +177,7 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 
 1. **磁盘配额**：/home 用户配额炸过两次（训练存权重、appworld 输出目录）。大产物一律直接写 NFS；exec_calls/live_appworld 默认删中间目录自保。
 2. **`.claude/skills/probe-pipeline/references/stage-commands.md` 落后于代码**：inject 主线缺失、check_callstr 解释器写错。照它跑之前以本文和 `run.py show` 为准。
-3. **model_registry 缺条目**：LFM2.5-350M-Base、Qwen3-0.6B-Base 未注册（后者 cgen 硬编码在用）。
+3. ~~model_registry 缺条目~~：2026-08-20 已销——LFM2.5-350M-Base、Qwen3-0.6B-Base、MirrorAPI-Cache 都进了 `configs/models.json`（cgen 的硬编码还在，改它属另一张工单）。
 4. **跨批 token 数不可直比**：不同服务实现、不同 --bs、不同并发都会抖；同一条曲线必须同服务同 --bs 同机。
 5. **bfcl 冻结题单已删**：老随机规则复现不出老三堆，要用从 git 快照 `b1f5b9c` 找回（§1.1）。
 6. **发射前 commit 铁律**：旧阶段执行率为零，记录里的 HEAD 大多追不回真实代码。新阶段从第一发起就守住。

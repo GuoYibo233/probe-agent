@@ -1,0 +1,49 @@
+{
+  "_readme": "本工程唯一的模型地址映射。model_registry.py 从这里读,脚本一律经 resolve() 取路径,不许硬编码。新增模型加一条 models 条目(别名全小写):本地目录写绝对路径,走 HF 缓存的写 hub ID。",
+  "models": {
+    "qwen3.5-4b": {
+      "path": "Qwen/Qwen3.5-4B",
+      "note": "HF 缓存;fig1/traj pilot 主力"
+    },
+    "qwen3-8b": {
+      "path": "Qwen/Qwen3-8B",
+      "note": "HF 缓存;probe v1 / pilot8b"
+    },
+    "qwen3.5-9b": {
+      "path": "/home/zhou-y/hf_models/Qwen3.5-9B",
+      "note": "旧目录;共享盘暂无"
+    },
+    "qwen3.5-27b": {
+      "path": "/net/tokyo100-10g/data/str01_01/zhou-y/models/Qwen3.5-27B",
+      "note": "共享盘,2026-07-28 验完整(11/11 分片)"
+    },
+    "qwen3.6-27b": {
+      "path": "/net/tokyo100-10g/data/str01_01/zhou-y/models/Qwen3.6-27B",
+      "note": "共享盘,2026-07-28 验完整(16 分片+tokenizer);多模态壳 Qwen3_5ForConditionalGeneration,64 层,bf16 52G,单 48G 卡放不下"
+    },
+    "gpt-oss-120b": {
+      "path": "/net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b",
+      "note": "自有副本,2026-07-28 下完并验收(15 分片+tokenizer,~61G 主权重);MoE 激活 5B 级,单 H200 可载;original/ 子目录 65G 是参考格式,vLLM 用不到"
+    },
+    "modernbert-base": {
+      "path": "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base",
+      "note": "自有副本,2026-07-29 验收(config+model.safetensors 571M+tokenizer);ModernBertForMaskedLM,149M 参数,max_pos 8192;onnx/ 子目录 1.5G 是导出格式,transformers 用不到"
+    },
+    "lfm2.5-350m-base": {
+      "path": "/net/tokyo100-10g/data/str01_01/y-guo/models/LFM2.5-350M-Base",
+      "note": "自有副本 681M;cgen 格在用,2026-08-20 补进注册表(此前 MAP.md 记为缺条目)"
+    },
+    "qwen3-0.6b-base": {
+      "path": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
+      "note": "自有副本 1.2G;cgen 格在用,2026-08-20 补进注册表(此前 MAP.md 记为缺条目)"
+    },
+    "mirrorapi-cache": {
+      "path": "/net/tokyo100-10g/data/str01_01/y-guo/models/MirrorAPI-Cache",
+      "note": "StableToolBench 模拟器(Qwen2.5-7B 微调,bf16 ~15G);served-model-name 必须=mirrorapi-cache,2026-08-20 补进注册表"
+    }
+  },
+  "aliases": {
+    "qwen3.6": "qwen3.6-27b",
+    "qwen3.5": "qwen3.5-27b"
+  }
+}

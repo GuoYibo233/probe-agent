@@ -1,5 +1,10 @@
 # bfcl_gptoss 补采执行手册(2026-07-30)
 
+> 2026-08-20 gen-preset 改造:handler 的 max_tokens/effort/temperature 可由
+> 环境变量 `NEW1_PRESET_JSON=<configs/presets/某份.json 的绝对路径>` 指定
+> (取其 client 节的非 null 值);不设环境变量走写死缺省,行为与改造前一致。
+> 现成的一份:`configs/presets/gptoss_bfcl_high.json`(= 旧写死值)。
+
 代码全部就绪(handler 已装进 venv 并注册,commit 6fc03f3),
 本 session 被权限拦截无法 ssh 发射,按下列步骤由 gpu-runner 或人工执行。
 每步都幂等,断了从当步重跑。

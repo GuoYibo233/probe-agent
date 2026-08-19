@@ -60,8 +60,9 @@ QWEN_FLAGS_SRC = ('    "--reasoning-parser deepseek_r1 --max-model-len 65536 "\n
                   '    "--enable-auto-tool-choice --tool-call-parser qwen3_coder"\n')
 # gpt-oss 不带 Qwen 旗标,只要显存占比
 GPTOSS_SERVE_FLAGS = "--gpu-memory-utilization 0.92"
-# gpt-oss 客户端追加旗标
-GPTOSS_CLIENT_EXTRA = "--api chat --reasoning-effort high"
+# gpt-oss 客户端追加旗标。2026-08-20 起走预设文件,gptoss_chat_high 展开后
+# 与旧串 "--api chat --reasoning-effort high" 逐项等价(tests/test_preset.py 钉着)
+GPTOSS_CLIENT_EXTRA = "--preset gptoss_chat_high"
 
 # 采集器统一参数(执行手册 §3.4)
 CLIENT_COMMON = "--n 0 --max-steps 30"

@@ -125,7 +125,7 @@ from loguru import logger
 REPO = "/home/y-guo/reproduce/new1"
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, f"{REPO}/pipeline/annotate")
-from common import Chat, TrajLog  # noqa: E402
+from common import Chat, TrajLog, chat_of, settings_from_args  # noqa: E402
 from rules import MODEL_OF, SEED, first_call_named  # noqa: E402
 
 # loguru 静音必须在 import tau2 之前:tau2.registry 在 import 时就吐一大段
@@ -469,6 +469,9 @@ def run_task(T, env, domain, task, chat, user_chat, args, out_path):
         "max_steps": args.max_steps, "max_errors": args.max_errors,
         "tau2_task_id": task.id,
         "user_scenario_hidden": str(task.user_scenario),
+        # selftest 走 _ScriptedChat,没有 settings 方法,记 None
+        "preset": getattr(args, "preset", None),
+        "gen_settings": getattr(chat, "settings", lambda: None)(),
     })
     log.w(pending_user)
 
@@ -854,7 +857,12 @@ def main():
                          "只数 agent 轮 —— 改这个值会改 termination 分布")
     ap.add_argument("--outdir")
     ap.add_argument("--exp", default="smoke")
-    ap.add_argument("--api", default="raw", choices=["raw", "chat"])
+    ap.add_argument("--preset", default=None,
+                    help="configs/presets/<名>.json 的一套生成设置;"
+                         "命令行显式给的参数压过预设值(只管 agent 侧,"
+                         "用户模拟器沿用 --user-* 三件套)")
+    ap.add_argument("--api", default=None, choices=["raw", "chat"],
+                    help="缺省 raw(预设也没给时)")
     ap.add_argument("--reasoning-effort", default=None)
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
@@ -878,9 +886,12 @@ def main():
         return
 
     # --base-url/--model 不用 argparse 的 required=True,这样 --selftest 不必喂假 URL
-    for flag in ("base_url", "model", "outdir"):
-        if not getattr(args, flag):
-            raise SystemExit(f"缺 --{flag.replace('_', '-')}(非 --selftest 必填)")
+    if not args.outdir:
+        raise SystemExit("缺 --outdir(非 --selftest 必填)")
+    # 缺 --base-url/--model 且预设也补不上时,settings_from_args 里报错退出
+    eff = settings_from_args(args)
+    args.base_url, args.model = eff["base_url"], eff["model"]
+    args.api, args.reasoning_effort = eff["api"], eff["reasoning_effort"]
     args.user_base_url = args.user_base_url or args.base_url
     args.user_model = args.user_model or args.model
     args.user_api = args.user_api or args.api
@@ -914,8 +925,7 @@ def main():
         if not ID_RE.fullmatch(t.id):
             raise SystemExit(f"task id 不能当文件名: {t.id!r}")
 
-    chat = Chat(args.base_url, args.model, api=args.api,
-                reasoning_effort=args.reasoning_effort)
+    chat = chat_of(eff)
     user_chat = Chat(args.user_base_url, args.user_model, api=args.user_api,
                      reasoning_effort=args.reasoning_effort)
 

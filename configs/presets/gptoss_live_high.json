@@ -1,0 +1,14 @@
+{
+  "desc": "活跑线:与 live_appworld 缺省等价(effort high,temperature 0.0,步预算 8192,stop=<|return|>);服务是 serve-splice 三副本(8114-8116),不进单 server 节",
+  "model": "gpt-oss-120b",
+  "client": {
+    "api": null,
+    "reasoning_effort": "high",
+    "temperature": 0.0,
+    "top_p": null,
+    "max_tokens": 8192,
+    "stop": ["<|return|>"],
+    "start_date": null,
+    "seed": null
+  }
+}

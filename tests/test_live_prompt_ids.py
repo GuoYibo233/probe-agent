@@ -11,6 +11,7 @@ http_json / open_stream 把这些断言钉死,顺带钉住 /health 缺 render/de
 import sys
 import types
 import unittest
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +48,10 @@ def words(text):
 
 
 def word_id(w):
-    return 3000 + (hash(w) % 100000)
+    # 不能用内置 hash():字符串 hash 每个进程加随机盐,两个词偶尔撞出同一个
+    # id,decoder 的反查表就串词,find_head 随机报不一致(2026-08-20 抓到的
+    # 老毛病:改造前的代码连跑八遍挂四遍)。crc32 确定性,过一次永远过。
+    return 3000 + (zlib.crc32(w.encode()) % 100000)
 
 
 class FakeStream:
@@ -88,7 +92,10 @@ class Args(types.SimpleNamespace):
 def mk_args(**kw):
     a = Args(base_url="http://vllm", probe_url="http://probe", model="m",
              timeout=5, no_probe=False, max_inject_per_step=1,
-             fire_nth_cut=0, nofill=False)
+             fire_nth_cut=0, nofill=False,
+             # gen-preset(2026-08-20):这三个字段原来是模块常量/写死值,
+             # 现在挂在 args 上,缺省与旧值相同
+             max_step_tokens=8192, temperature=0.0, stop=["<|return|>"])
     a.__dict__.update(kw)
     return a
 

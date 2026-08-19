@@ -8,12 +8,30 @@ BFCL 默认提示词协议——与 qwen 批次的轨迹格式保持一致。
 
 安装:install_patch.py 把本文件拷进 venv 的 local_inference/ 并在
 model_config.py 末尾注册 "openai/gpt-oss-120b"。
+
+生成设置:环境变量 NEW1_PRESET_JSON 指一份 configs/presets/*.json 的绝对路径,
+设了就取其 client 节的 max_tokens / reasoning_effort / temperature(非 null 的);
+没设走下面的写死缺省(max_tokens 16384 / effort high / temperature 用 BFCL 自带),
+与 2026-08-20 加这个口子之前逐字节一致。用环境变量不用 --preset 的原因:
+本文件被拷进 BFCL 的 venv,没有自己的命令行,也够不到仓库根的 preset_loader。
 """
+import json
+import os
 import time
 from typing import Any
 
 from bfcl_eval.model_handler.local_inference.base_oss_handler import OSSHandler
 from overrides import override
+
+_PRESET_PATH = os.environ.get("NEW1_PRESET_JSON")
+_CLIENT = {}
+if _PRESET_PATH:
+    with open(_PRESET_PATH) as _f:
+        _CLIENT = json.load(_f).get("client") or {}
+_MAX_TOKENS = (_CLIENT.get("max_tokens")
+               if _CLIENT.get("max_tokens") is not None else 16384)
+_EFFORT = (_CLIENT.get("reasoning_effort")
+           if _CLIENT.get("reasoning_effort") is not None else "high")
 
 
 class GptOssChatHandler(OSSHandler):
@@ -55,10 +73,12 @@ class GptOssChatHandler(OSSHandler):
         start_time = time.time()
         api_response = self.client.chat.completions.create(
             model=self.model_path_or_id,
-            temperature=self.temperature,
+            temperature=(_CLIENT["temperature"]
+                         if _CLIENT.get("temperature") is not None
+                         else self.temperature),
             messages=chat_messages,
-            max_tokens=16384,
-            extra_body={"reasoning_effort": "high"},
+            max_tokens=_MAX_TOKENS,
+            extra_body={"reasoning_effort": _EFFORT},
             timeout=72000,
         )
         end_time = time.time()

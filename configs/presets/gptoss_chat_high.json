@@ -1,0 +1,26 @@
+{
+  "desc": "采集线 chat 口径:与 gen_launch.py 旧常量 --api chat --reasoning-effort high 逐项等价;server 节复刻 launch_vllm_gptoss.py(tokyo108:8103,显存 0.92)",
+  "model": "gpt-oss-120b",
+  "server": {
+    "host": "tokyo108",
+    "port": 8103,
+    "served_model_name": "gpt-oss-120b",
+    "gpu_memory_utilization": 0.92,
+    "max_model_len": null,
+    "env": {
+      "LD_LIBRARY_PATH": "/home/y-guo/reproduce/new1/envs/cuda-compat-13.0",
+      "VLLM_USE_FLASHINFER_SAMPLER": "0"
+    },
+    "extra_flags": ""
+  },
+  "client": {
+    "api": "chat",
+    "reasoning_effort": "high",
+    "temperature": 0.0,
+    "top_p": null,
+    "max_tokens": 8192,
+    "stop": null,
+    "start_date": null,
+    "seed": null
+  }
+}

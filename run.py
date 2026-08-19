@@ -101,6 +101,8 @@ TASKS = {
         desc="AppWorld 采集器(要 vLLM /v1 在线)", shardable=True,
         notes=["必给 --base-url --model --outdir;outdir 名必须 appworld_<q35|q36|gptoss>,"
                "别的尾巴下游静默跳过整目录",
+               "--preset <名> 选 configs/presets/ 的一套生成设置,命令行显式"
+               "参数压过预设;预设带 server 节时 --base-url/--model 可省",
                "重跑必带 --resume,否则同名轨迹被截断重写",
                "脚本自己 chdir envs/appworld;相对 --outdir 按 ROOT 解析",
                "--api harmony:自拼 harmony 走 /v1/completions,原始输出与生成的 "
@@ -113,6 +115,7 @@ TASKS = {
         stage="collect", py="alfworld", script="envs/collect/run_alfworld.py",
         desc="ALFWorld 采集器(要 vLLM /v1 在线)",
         notes=["必给 --base-url --model --outdir;--split val=官方 valid_seen",
+               "--preset <名> 选一套生成设置(同 collect-aw)",
                "外部 export 过 ALFWORLD_DATA 会盖过 --data-root(脚本 setdefault)",
                "重跑必带 --resume",
                "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
@@ -120,6 +123,7 @@ TASKS = {
         stage="collect", py="tales", script="envs/collect/run_tales.py",
         desc="TALES/TWX 采集器(要 vLLM /v1 在线)",
         notes=["无 --split/--exp/分片,分片靠拆 --seeds;--game 写错直接 KeyError",
+               "--preset <名> 选一套生成设置(同 collect-aw)",
                "重跑必带 --resume",
                "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
     "collect-tau2": dict(
@@ -128,6 +132,7 @@ TASKS = {
         notes=["端点冒烟已过(2026-08-02,airline 2 题,gptoss 双端点同服;解析失败/"
                "参数丢失全 0);正式放量未跑,放量时 agent 与用户模拟器要分服分模型",
                "--user-base-url/--user-model 另给,缺省=agent 同端点",
+               "--preset <名> 只管 agent 侧的生成设置,用户模拟器沿用 --user-*",
                "服务要 --max-model-len 65536 量级(系统提示 ~6k token)",
                "--domain 只接了 airline/retail;telecom(2285 题,solo 采集要用"
                " llm_agent_solo)还没进 DOMAINS,扩它是集成期的活"]),
@@ -271,6 +276,7 @@ TASKS = {
         handoff=True, args=["run"],
         desc="按 plan 发续写请求(要 vLLM;长活,进 tmux 跑)",
         notes=["--base-url 必须以 /v1 结尾;输出写 --plan 同目录",
+               "--preset <名> 选一套生成设置(temperature/max_tokens/stop)",
                "--tag 只是 raw 文件后缀,分片要靠外部按臂拆(参 splice_client.py)",
                "单条请求失败只计数,整体照样退 0——完成判据看 raw 行数不是 rc"]),
     "inject-merge-exec": dict(
@@ -350,6 +356,8 @@ TASKS = {
         handoff=True,
         desc="活跑驱动器(要 vLLM+探针服务;必给 --base-url --probe-url --outdir --exp)",
         notes=["no probe 臂(--no-probe)也要 --probe-url(/render 在服务侧)",
+               "--preset <名> 选一套生成设置(effort/temperature/步预算/stop),"
+               "命令行显式参数压过预设",
                "临时故障会写 task_error final,--resume 不重试:重试先删该题 live_*.jsonl",
                "放量走 live-arm-job 12 分片"]),
     "probe-serve": dict(
@@ -407,6 +415,16 @@ TASKS = {
         notes=["**不给 --max-model-len**:native 131072,复刻 w0 采集时配置;"
                "65536 就是发错了,诊断的嫌疑链之一正是 65k 上下文",
                "配套客户端 awdiag_job.sh(PORTS 写死 8103/8106/8107)"]),
+    "serve-preset": dict(
+        stage="live", py="sys", script="serve_preset.py",
+        handoff=True, gpu=True,
+        desc="通用 vLLM 发射器:读 configs/presets/<名>.json 的 server 节"
+             "(必给 --preset --gpu;--host/--port/--session 可覆盖)",
+        notes=["模型路径经 model_registry.resolve(),不吃硬编码",
+               "发射时抄一份预设到 envs/serve_logs/<session>.preset.json",
+               "只有带 server 节的预设能发射(现有五份里只有 gptoss_chat_high)",
+               "--dry-run 只打印 ssh+tmux 命令;旧 launch_vllm_*.py 一律不动,"
+               "新服务从这里起"]),
     "serve-mirrorapi": dict(
         stage="live", prog=str(ROOT / "envs/vllm-env/bin/vllm"),
         handoff=True, gpu=True,
@@ -1018,8 +1036,35 @@ def cmd_selfcheck():
         if dep is not None and dep not in EVAL_CELLS:
             print(f"EVAL_CELLS[{cell}] 依赖不存在的格 {dep}")
             bad += 1
-    print(f"selfcheck: {len(TASKS)} 任务 / {len(RECIPES)} 配方, "
-          f"{'全部就位' if not bad else f'{bad} 处缺失'}")
+    # configs/ 的模型表与生成预设(gen-preset 改造,2026-08-20):
+    # 别名解析得开、字段类型对得上,坏一处就拦——预设是发射与采集共用的口径,
+    # 坏了不在这里报就要到实验中间才炸
+    n_presets = 0
+    try:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        import preset_loader as PL
+        m = PL.load_models()
+        for k, v in m["models"].items():
+            if not v.get("path") or not v.get("note"):
+                print(f"models.json 条目 {k} 缺 path/note")
+                bad += 1
+        for alias, tgt in m["aliases"].items():
+            if tgt not in m["models"]:
+                print(f"models.json 别名 {alias} 指向不存在的条目 {tgt}")
+                bad += 1
+        names = PL.list_presets()
+        n_presets = len(names)
+        for name in names:
+            p = json.loads((PL.PRESET_DIR / f"{name}.json").read_text())
+            for e in PL.validate(p, m):
+                print(f"预设 {name}: {e}")
+                bad += 1
+    except Exception as e:
+        print(f"configs/ 读取失败: {type(e).__name__}: {e}")
+        bad += 1
+    print(f"selfcheck: {len(TASKS)} 任务 / {len(RECIPES)} 配方 / "
+          f"{n_presets} 预设, {'全部就位' if not bad else f'{bad} 处缺失'}")
     return 1 if bad else 0
 
 

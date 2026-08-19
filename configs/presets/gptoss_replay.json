@@ -1,0 +1,14 @@
+{
+  "desc": "回放续写线:与 replay_inject run 子命令缺省等价(temperature 0.0,max_tokens 8192,stop=<|return|>);effort 不适用(续写接在已有 harmony 前缀后);服务另起,无 server 节",
+  "model": "gpt-oss-120b",
+  "client": {
+    "api": null,
+    "reasoning_effort": null,
+    "temperature": 0.0,
+    "top_p": null,
+    "max_tokens": 8192,
+    "stop": ["<|return|>"],
+    "start_date": null,
+    "seed": null
+  }
+}

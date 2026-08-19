@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import Chat, TrajLog  # noqa: E402
+from common import TrajLog, chat_of, settings_from_args  # noqa: E402
 
 SYSTEM = """You are playing a text-based game. At each turn you receive an \
 observation. Think step by step, then reply with exactly one command on the \
@@ -34,13 +34,17 @@ ACT_RE = re.compile(r"ACTION:\s*(.+)")
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base-url", required=True)
-    ap.add_argument("--model", required=True)
+    ap.add_argument("--preset", default=None,
+                    help="configs/presets/<名>.json 的一套生成设置;"
+                         "命令行显式给的参数压过预设值")
+    ap.add_argument("--base-url", help="预设带 server 节时可省")
+    ap.add_argument("--model", help="预设带 server 节时可省")
     ap.add_argument("--game", default="cookingworld")
     ap.add_argument("--seeds", default="7,8")
     ap.add_argument("--max-steps", type=int, default=25)
     ap.add_argument("--outdir", required=True)
-    ap.add_argument("--api", default="raw", choices=["raw", "chat"])
+    ap.add_argument("--api", default=None, choices=["raw", "chat"],
+                    help="缺省 raw(预设也没给时)")
     ap.add_argument("--reasoning-effort", default=None)
     ap.add_argument("--game-params", default=None,
                     help="覆盖 TWX 默认难度参数串,如 'numLocations=5, ...'")
@@ -56,8 +60,8 @@ def main():
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    chat = Chat(args.base_url, args.model, api=args.api,
-                reasoning_effort=args.reasoning_effort)
+    eff = settings_from_args(args)
+    chat = chat_of(eff)
 
     for seed in [int(s) for s in args.seeds.split(",")]:
         out_path = outdir / f"tales_{args.game}_s{seed}.jsonl"
@@ -69,8 +73,10 @@ def main():
         obs, info = env.reset(seed=seed)
         log = TrajLog(outdir / f"tales_{args.game}_s{seed}.jsonl",
                       {"env": "tales/twx", "game": args.game, "seed": seed,
-                       "model": args.model,
-                       "task": info.get("taskDescription", "")})
+                       "model": eff["model"],
+                       "task": info.get("taskDescription", ""),
+                       "preset": eff["preset"],
+                       "gen_settings": chat.settings()})
         first = (f"Task: {info.get('taskDescription', '')}\n\n{obs}")
         msgs = [{"role": "system", "content": SYSTEM},
                 {"role": "user", "content": first}]

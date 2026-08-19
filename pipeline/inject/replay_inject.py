@@ -724,6 +724,22 @@ def cmd_run(a):
     import threading
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from transformers import AutoTokenizer
+
+    # --preset 合并(CLI 显式值 > 预设 client 节 > 原缺省),展开值挂回 a;
+    # 不传 --preset 时逐键落回原缺省,行为与加参数前一致
+    root = str(HERE.parents[1])
+    if root not in sys.path:
+        sys.path.append(root)
+    from preset_loader import load_preset, merge_client
+    pre = load_preset(a.preset) if a.preset else None
+    eff = merge_client(
+        {"max_tokens": a.max_tokens},
+        (pre or {}).get("client"),
+        {"max_tokens": 8192, "temperature": 0.0, "stop": DEFAULT_STOP})
+    a.max_tokens = eff["max_tokens"]
+    a.temperature = eff["temperature"]
+    a.stop = eff["stop"]
+
     plan_path = Path(a.plan)
     out_dir = plan_path.parent
     # config 跟着 plan 文件名走:plan_exec.jsonl 配 plan_exec_config.json。
@@ -810,7 +826,7 @@ def cmd_run(a):
         t0 = time.time()
         r = post_completions(a.base_url, dict(
             model=a.model, prompt=prompt, max_tokens=a.max_tokens,
-            temperature=0.0, stop=DEFAULT_STOP,
+            temperature=a.temperature, stop=a.stop,
             skip_special_tokens=False), a.timeout)
         ch = r["choices"][0]
         return dict(event=p["event"], arm=arm, text=ch["text"],
@@ -1278,9 +1294,13 @@ def main():
     p.add_argument("--form-table", default=str(HERE / "form_table.json"),
                    help="build_form_table.py 的产物,决定骨架是 print 形还是"
                         "赋值形;文件不在就一律 print 形")
-    # 采集时 max_tokens=8192(envs/collect/common.py:20)。设小了 nofill 会被
-    # 截断,与 baseline 不可比 —— 单步 baseline_out_tok 实测有到 5681 的
-    p.add_argument("--max-tokens", type=int, default=8192)
+    p.add_argument("--preset", default=None,
+                   help="configs/presets/<名>.json 的一套生成设置"
+                        "(temperature/max_tokens/stop);命令行显式给的压过预设值")
+    # 采集时 max_tokens=8192(envs/collect/common.py 的 Chat 缺省)。设小了 nofill
+    # 会被截断,与 baseline 不可比 —— 单步 baseline_out_tok 实测有到 5681 的
+    p.add_argument("--max-tokens", type=int, default=None,
+                   help="缺省 8192(预设也没给时)")
     p.add_argument("--dry-run", action="store_true",
                    help="只拼 prompt 落盘,不发请求(验证拼接,不占服务)")
     p.add_argument("--timeout", type=int, default=600)

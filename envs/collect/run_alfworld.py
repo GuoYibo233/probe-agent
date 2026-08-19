@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import Chat, TrajLog  # noqa: E402
+from common import TrajLog, chat_of, settings_from_args  # noqa: E402
 
 REPO = "/home/y-guo/reproduce/new1"
 DATA_ROOT = f"{REPO}/envs/alfworld/data"
@@ -129,14 +129,18 @@ def user_turn(task, obs, step, max_steps, admissible=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base-url", required=True)
-    ap.add_argument("--model", required=True)
+    ap.add_argument("--preset", default=None,
+                    help="configs/presets/<名>.json 的一套生成设置;"
+                         "命令行显式给的参数压过预设值")
+    ap.add_argument("--base-url", help="预设带 server 节时可省")
+    ap.add_argument("--model", help="预设带 server 节时可省")
     ap.add_argument("--split", default="val", choices=sorted(PARTITION))
     ap.add_argument("--n", type=int, default=1, help="0 = 整个 split")
     ap.add_argument("--max-steps", type=int, default=50)
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--exp", default="smoke")
-    ap.add_argument("--api", default="raw", choices=["raw", "chat"])
+    ap.add_argument("--api", default=None, choices=["raw", "chat"],
+                    help="缺省 raw(预设也没给时)")
     ap.add_argument("--reasoning-effort", default=None)
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
@@ -149,8 +153,8 @@ def main():
     os.environ.setdefault("ALFWORLD_DATA", str(Path(args.data_root).resolve()))
     outdir = Path(args.outdir).resolve()
     outdir.mkdir(parents=True, exist_ok=True)
-    chat = Chat(args.base_url, args.model, api=args.api,
-                reasoning_effort=args.reasoning_effort)
+    eff = settings_from_args(args)
+    chat = chat_of(eff)
 
     part = PARTITION[args.split]
     games = Path(args.data_root) / "json_2.1.1" / part
@@ -182,10 +186,11 @@ def main():
         m = TASK_RE.search(obs)
         task = m.group(1).strip() if m else obs.strip().split("\n")[-1]
         log = TrajLog(out_path,
-                      {"env": "alfworld", "task_id": uid, "model": args.model,
+                      {"env": "alfworld", "task_id": uid, "model": eff["model"],
                        "instruction": task, "split": args.split,
                        "partition": part, "gamefile": str(gamefile),
-                       "exp": args.exp})
+                       "exp": args.exp, "preset": eff["preset"],
+                       "gen_settings": chat.settings()})
         adm = list(infos.get("admissible_commands") or [])
         msgs = [{"role": "system", "content": SYSTEM},
                 {"role": "user",

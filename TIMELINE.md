@@ -10,6 +10,26 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-20 生成设置进配置文件（gen-preset）：py 文件只留逻辑，模型和设置按名字选
+
+- 触发：gyb 要调 gpt-oss 的生成设置，盘点发现设置散在五处且值不一致
+  （采集 Chat 缺省 / gen_launch 常量 / BFCL handler 写死 / 活跑常量 / 回放缺省），
+  改一处漏一处；gyb 裁决"以后要能选很多套设置"，且模型路径也要出 py 文件。
+- 决定：仓库根建 `configs/`——`models.json` 是唯一模型地址映射
+  （`model_registry.py` 降级为读取器，resolve() 不变，顺手补上缺注册的
+  LFM2.5-350M-Base / Qwen3-0.6B-Base / MirrorAPI-Cache 三条）；
+  `presets/<名>.json` 一份一套生成设置（model 别名 + server 节 + client 节）。
+  七个入口接 `--preset`（四采集器 / live_appworld / replay run；BFCL handler
+  走环境变量 NEW1_PRESET_JSON），优先级定死：命令行显式值 > 预设 > 原缺省。
+  通用发射器 `serve_preset.py` 挂注册表（serve-preset，发射类），读 server 节
+  起 vLLM 并把预设抄进日志目录；13 个旧 launch_vllm_*.py 不动留作历史。
+  轨迹 meta 从此落 preset 名 + 展开后的 gen_settings（此前连 effort 都不记）。
+- 等价性不靠肉眼：五份 gptoss 预设与改造前写死值逐项相等、
+  `--preset gptoss_chat_high` 与显式旗标在 appworld venv 里逐键相等、
+  serve_preset 对 gptoss_chat_high 拼的 tmux 命令与旧 launch_vllm_gptoss.py
+  逐字符相等，都钉在 `tests/test_preset.py`（18 个用例）。
+  spec 在 `.scratch/gen-preset/spec.md`。
+
 ## 2026-08-18 三臂逐 token 同（ident3_v1）：活跑重发改用模型自己的 token id，5 题 × 10 遍量噪声
 
 - 触发：gyb 要求把 chat baseline / no probe / probe-but-nofill 做到逐 token 同，5 题

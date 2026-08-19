@@ -4,8 +4,10 @@
 
 import json
 import re
+import sys
 import time
 import urllib.request
+from pathlib import Path
 
 from openai import OpenAI
 
@@ -46,7 +48,8 @@ class Chat:
     """
 
     def __init__(self, base_url, model, temperature=0.0, max_tokens=8192,
-                 api="raw", reasoning_effort=None, start_date="2026-08-06"):
+                 api="raw", reasoning_effort=None, start_date="2026-08-06",
+                 top_p=None, seed=None):
         self.client = OpenAI(base_url=base_url, api_key="EMPTY", timeout=600)
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -55,6 +58,28 @@ class Chat:
         self.api = api
         self.reasoning_effort = reasoning_effort
         self.start_date = start_date
+        # top_p/seed 缺省 None = 不进请求体,行为与加参数前逐字节一致;
+        # 只有预设或调用方显式给了才发(temperature>0 的采样口径要 seed 可复现)
+        self.top_p = top_p
+        self.seed = seed
+
+    def settings(self):
+        """本次采集的生成设置,进轨迹 meta 用——没有这份,回头说不清一批
+        轨迹是哪套设置跑出来的(2026-08-20 之前的轨迹 meta 只有 model)。"""
+        return {"api": self.api, "model": self.model,
+                "temperature": self.temperature, "top_p": self.top_p,
+                "max_tokens": self.max_tokens, "seed": self.seed,
+                "reasoning_effort": self.reasoning_effort,
+                "start_date": self.start_date if self.api == "harmony" else None}
+
+    def _sample_extras(self):
+        """top_p/seed 只在显式给了的时候进请求体。"""
+        d = {}
+        if self.top_p is not None:
+            d["top_p"] = self.top_p
+        if self.seed is not None:
+            d["seed"] = self.seed
+        return d
 
     @staticmethod
     def build_prompt(messages):
@@ -149,7 +174,7 @@ class Chat:
         r = self.client.completions.create(
             model=self.model, prompt=self.build_prompt(messages),
             temperature=self.temperature, max_tokens=self.max_tokens,
-            stop=["<|im_end|>"])
+            stop=["<|im_end|>"], **self._sample_extras())
         raw = r.choices[0].text
         reasoning, sep, content = raw.partition("</think>")
         if not sep:  # 思考超长被截断:全部算思考,内容为空
@@ -173,7 +198,7 @@ class Chat:
         r = self.client.chat.completions.create(
             model=self.model, messages=messages,
             temperature=self.temperature, max_tokens=self.max_tokens,
-            extra_body=extra)
+            extra_body=extra, **self._sample_extras())
         ch = r.choices[0]
         m = ch.message
         reasoning = (getattr(m, "reasoning", None)
@@ -204,6 +229,7 @@ class Chat:
             "add_special_tokens": False,   # harmony 串自带 <|start|>,别再加
             "skip_special_tokens": False,  # 默认 True 会把频道标记抹掉
             "return_token_ids": True,      # 服务端把真实生成的 id 交回来
+            **self._sample_extras(),
         }).encode()
         req = urllib.request.Request(
             f"{self.base_url}/completions", data=body,
@@ -228,6 +254,47 @@ class Chat:
                       "out": r["usage"]["completion_tokens"]},
             "wall_s": round(time.time() - t0, 2),
         }
+
+
+def settings_from_args(args, fallbacks=None):
+    """四个采集器共用的设置合并。--preset 指 configs/presets/<名>.json,
+    优先级三层:命令行显式值 > 预设 client 节里的非 null 值 > 原有缺省。
+    返回一个字典,装 base_url、model、preset 名和 Chat 的全部生成参数。
+    不传 --preset 的时候逐键落回原有缺省,行为与加这个参数之前一致。
+    预设带 server 节时 --base-url/--model 可省:端点按 host:port 拼,
+    模型名取 served_model_name。
+    """
+    root = Path(__file__).resolve().parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from preset_loader import load_preset, merge_client, base_url_of
+    pre = load_preset(args.preset) if getattr(args, "preset", None) else None
+    fb = {"api": "raw", "reasoning_effort": None, "temperature": 0.0,
+          "top_p": None, "max_tokens": 8192, "seed": None,
+          "start_date": "2026-08-06"}
+    fb.update(fallbacks or {})
+    cli = {k: getattr(args, k, None)
+           for k in ("api", "reasoning_effort", "start_date")}
+    eff = merge_client(cli, (pre or {}).get("client"), fb)
+    srv = (pre or {}).get("server") or {}
+    eff["model"] = getattr(args, "model", None) or srv.get("served_model_name")
+    eff["base_url"] = (getattr(args, "base_url", None)
+                       or (base_url_of(pre) if pre else None))
+    eff["preset"] = pre["_name"] if pre else None
+    for need in ("base_url", "model"):
+        if not eff[need]:
+            raise SystemExit(f"缺 --{need.replace('_', '-')}"
+                             "(预设没带 server 节时必给)")
+    return eff
+
+
+def chat_of(eff):
+    """settings_from_args 的结果 -> Chat。"""
+    return Chat(eff["base_url"], eff["model"], api=eff["api"],
+                temperature=eff["temperature"], max_tokens=eff["max_tokens"],
+                reasoning_effort=eff["reasoning_effort"],
+                start_date=eff["start_date"],
+                top_p=eff["top_p"], seed=eff["seed"])
 
 
 class TrajLog:

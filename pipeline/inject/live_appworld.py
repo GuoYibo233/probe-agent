@@ -384,8 +384,8 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
         # 只进 usage 账,不吃预算——否则 nofill 步比别的臂早顶到 length)
         st = open_stream(a.base_url, dict(
             model=a.model, prompt=prompt,
-            max_tokens=max(1, MAX_STEP_TOKENS - len(gen_ids)),
-            temperature=0.0, stop=DEFAULT_STOP,
+            max_tokens=max(1, a.max_step_tokens - len(gen_ids)),
+            temperature=a.temperature, stop=a.stop,
             skip_special_tokens=False), a.timeout)
         usage["req"] += 1
         fired = False
@@ -533,7 +533,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--base-url", required=True, help="vLLM /v1 端点")
     ap.add_argument("--probe-url", required=True, help="probe_server 端点")
-    ap.add_argument("--model", default="gpt-oss-120b")
+    ap.add_argument("--model", default=None,
+                    help="缺省 gpt-oss-120b(预设也没给时)")
     ap.add_argument("--split", default="test_normal")
     ap.add_argument("--n", type=int, default=0, help="0 = 整个 split")
     ap.add_argument("--task-ids", default="",
@@ -546,10 +547,14 @@ def main():
     ap.add_argument("--tail-tokens", type=int, default=1024,
                     help="<|end|> 之后(或不挂探针时)的段长")
     ap.add_argument("--max-inject-per-step", type=int, default=1)
-    ap.add_argument("--effort", default="high",
+    ap.add_argument("--preset", default=None,
+                    help="configs/presets/<名>.json 的一套生成设置"
+                         "(effort/temperature/步预算/stop);"
+                         "命令行显式给的参数压过预设值")
+    ap.add_argument("--effort", default=None,
                     choices=["high", "medium", "low"],
-                    help="harmony 模板的 Reasoning 档;采集口径=high,"
-                         "effort 对照臂传 low/medium")
+                    help="harmony 模板的 Reasoning 档;缺省 high(预设也没给时)。"
+                         "采集口径=high,effort 对照臂传 low/medium")
     ap.add_argument("--no-probe", action="store_true",
                     help="对照臂:同一条分段生成路径,不挂探针不注入")
     ap.add_argument("--fire-nth-cut", type=int, default=0,
@@ -574,6 +579,26 @@ def main():
     a = ap.parse_args()
     if a.no_probe and (a.fire_nth_cut or a.nofill):
         ap.error("--no-probe 与 --fire-nth-cut/--nofill 互斥(no probe 臂不开火)")
+
+    # --preset 合并(CLI 显式值 > 预设 client 节 > 原缺省),展开值挂回 a,
+    # 下游只认 a.*;不传 --preset 时逐键落回原缺省,行为与加参数前一致
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.append(root)
+    from preset_loader import load_preset, merge_client
+    pre = load_preset(a.preset) if a.preset else None
+    eff = merge_client(
+        {"reasoning_effort": a.effort},
+        (pre or {}).get("client"),
+        {"reasoning_effort": "high", "temperature": 0.0,
+         "max_tokens": MAX_STEP_TOKENS, "stop": DEFAULT_STOP})
+    a.effort = eff["reasoning_effort"]
+    a.temperature = eff["temperature"]
+    a.max_step_tokens = eff["max_tokens"]
+    a.stop = eff["stop"]
+    a.model = (a.model
+               or ((pre or {}).get("server") or {}).get("served_model_name")
+               or "gpt-oss-120b")
 
     # 路径一律先 resolve 再 chdir【exec_calls.py 同款教训】
     outdir = Path(a.outdir).resolve()
@@ -654,7 +679,10 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
                  "probe_nofill" if a.nofill else "probe"),
             fire=(f"nth_cut:{a.fire_nth_cut}" if a.fire_nth_cut else "probe"),
             nofill=bool(a.nofill), token_exact_resend=True,
-            effort=a.effort, probe=probe_cfg,
+            effort=a.effort, probe=probe_cfg, preset=a.preset,
+            gen_settings=dict(temperature=a.temperature,
+                              max_step_tokens=a.max_step_tokens,
+                              stop=a.stop),
             chunk_tokens=a.chunk_tokens, tail_tokens=a.tail_tokens,
             max_inject_per_step=a.max_inject_per_step,
             appworld_seed=APPWORLD_SEED, date=time.strftime("%Y-%m-%d")))

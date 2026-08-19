@@ -59,6 +59,9 @@ envs/bert_runs/**
 !*/results/**/
 !*/results/**/*.md
 
+# ── 发射副产品:serve_preset.py 抄到日志目录的预设快照(正本在 configs/presets/)
+envs/serve_logs/*.preset.json
+
 # ── 日志与权重
 logs/
 *.log
