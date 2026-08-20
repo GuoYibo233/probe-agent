@@ -100,7 +100,7 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 - 口径怎么提（`rl eval propose`、`rl eval update`）、analysis 先问 gyb 要统计什么：`13-role-analysis.md`。
 - 口径怎么批和怎么打回（`rl eval approve ID... --quote`、`rl eval reject`），一句话批一组：`01-gyb.md`。
 - 派活单七个状态的完整转移表、`holder` 的不变量、会话销号和 `rl reclaim`：`04-handoffs-and-sessions.md`。
-- `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue` 的完整参数、`rl inbox`、`rl status` 十段：`05-rl-cli.md`；`rl notify` 推送表：`01-gyb.md` 第五节（2026-08-17 gyb 裁）。
+- `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue` 的完整参数、`rl inbox`、`rl status` 十段：`05-rl-cli.md`；gyb 怎么看到等他的事（桌面通知与 `rl notify` 2026-08-21 裁掉不做，只剩 `rl status`）：`01-gyb.md` 第五节（2026-08-17 gyb 裁）。
 - issue 的九种 `kind`（这份用到 `cannot`、`withdrawn`、`orphaned`、`fyi`）、issue 的开与回与关：`03-ledgers.md`。
 - gyb 是超级用户、`--as-gyb` 与 `--quote`、`--force --reason`：定义在 `01-gyb.md` 第二节（2026-08-17 gyb 裁）；钩子那一层在 `06-hooks-and-permissions.md`。
 - idea 的全部 use case、`reads`、`ledger_writes`、`dispatches_to`：`10-role-idea.md`。

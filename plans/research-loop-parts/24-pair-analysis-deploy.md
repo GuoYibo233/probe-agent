@@ -72,7 +72,7 @@ close 的写权是「开单的 actor 或 gyb，通知类 issue 的 assignee 也�
 ## 和别的 part 的接口
 
 - issues 的行格式、九种 kind 的取值、`assignee` 和 `handoff_id` 两栏的必填规则、reply 与 close 的写权：03-ledgers.md。
-- `rl issue open/reply/reassign/close/link/show/list` 的完整参数，`rl inbox` 列哪四类，`rl status` 的十段，`rl doctor` 的扫描项：05-rl-cli.md；`rl notify` 的推送表：01-gyb.md 第五节（2026-08-17 gyb 裁）。
+- `rl issue open/reply/reassign/close/link/show/list` 的完整参数，`rl inbox` 列哪四类，`rl status` 的十段，`rl doctor` 的扫描项：05-rl-cli.md；gyb 怎么看到等他的事（桌面通知与 `rl notify` 2026-08-21 裁掉不做，只剩 `rl status`）：01-gyb.md 第五节（2026-08-17 gyb 裁）。
 - 转移表 `in_progress`→`stuck` 和 `stuck`→`todo` 两行的完整六栏，以及 holder 只在 `in_progress` 非空这条不变量：04-handoffs-and-sessions.md。
 - analysis 的 `reads`、`writes`、`ledger_writes` 四栏和它的 use case 表：13-role-analysis.md。
 - deploy 的 `ledger_writes`、自决留痕的粒度、改 `experiments/` 外文件的纪律：11-role-deploy.md。
@@ -150,3 +150,4 @@ close 的写权是「开单的 actor 或 gyb，通知类 issue 的 assignee 也�
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「谁 close」一节两处自动关改成只有 `rl handoff accept` 一处，`rl inbox` 只读不关、通知类 issue 由收件人做完了自己关；close 写权那句加「通知类 issue 的 assignee 也能关」。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：「analysis 这一头：开单填什么」一节「deploy 上线的第一个动作就是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 deploy 会话先干拉它起来的那张单」。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：三处「触发桌面通知」按「桌面通知这一版不做」改成「进 `rl status` 段 2」。对回原则 6。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节 `rl notify` 推送表那半句按「桌面通知这一版不做」改。对回原则 6。

@@ -194,7 +194,7 @@
 | 1 清空 | `git rm -r research-loop/`，只留空目录（含 `agents/`，不建 `workflows/`）和 `.claude-plugin/plugin.json` 新写一份；`agents/` 五份角色 agent 定义随步 6 的 SKILL.md 一起交（2026-08-18 `08` 定稿裁） | 目录里只有 plugin.json 和空目录 | 无 | 主会话 |
 | 2 架构文档 | 不做（2026-08-18 gyb 裁，`00` 定稿：定稿的拆分文档 `plans/research-loop-parts/` 本身就是架构说明，`research-loop/ARCHITECTURE.md` 不写），编号保留，步 3 的依赖改成步 0、1 | 无 | 无 | 无 |
 | 3 共同底座 | `tables/ledgers.json`、`tables/transitions.json`、`tables/roles/*.json`、`tables/gyb-usecases.json`、`schemas/*.schema.json`、`scripts/rl_lib.py`（锁、编号、追加、校验、actor 判定）、`bin/rl` 骨架，测试 1 到 7、9、10、14、17、18、20 | `tests/run_all.py` 全绿 | 步 0、1（步 2 不做） | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
-| 4 交流机制 | `hooks/`（写权钩子、登记销号钩子）、`rl status`、`rl inbox`、`rl trace`、`rl reclaim`、`rl doctor`、`rl notify`、`monitors/`（看门狗）、快车道命令，测试 8、11、15、16、19 | 全绿；在真会话里手动触发一次 deny 和一次销号 | 步 3 | 工单化同上；真会话验证主会话做 |
+| 4 交流机制 | `hooks/`（写权钩子、登记销号钩子）、`rl status`、`rl inbox`、`rl trace`、`rl reclaim`、`rl doctor`（`rl notify` 2026-08-21 随桌面通知裁掉）、`monitors/`（看门狗）、快车道命令，测试 8、11、15、16、19 | 全绿；在真会话里手动触发一次 deny 和一次销号 | 步 3 | 工单化同上；真会话验证主会话做 |
 | 5 公共母版 | `common/GLOBAL-RULES.md`（公共规矩九条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话）、`common/REVIEW-CHECKLIST.md`（判断类检查的问题清单，文件名 2026-08-18 `09` 定稿裁；reviewer 派 sonnet subagent 按它逐题查，2026-08-17 裁；查出的只写 `review/` 清单不开 issue、起 subagent 逐题查不算派活，sync-inbox 问题 6、33 已裁） | gyb 逐条过 | 步 3 | 主会话写，底稿给 gyb 过，过了就是正式版 |
 | 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（头部带钩子声明，正文有 use case 表，只引用母版不抄），run 的照 `12`，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图在 `08` 第五节） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
 | 7 最小一条路 | 在临时沙盒仓库 `rl init`（裸终端）→ 加载 idea 写一条决定开一张工单 → 加载 deploy 接单写代码写报告提验收 → 回 idea 打回 → deploy 再接 → idea 验收 → `rl doctor` 零报告；再走一遍测试 12 的第二条（发射单 smoke 失败到 trace）；然后在 new1 跑 `rl init`，gyb 改 new1 CLAUDE.md 的 GPU 那一行；施工者改 `run.py` 门禁的脏树白名单加 `loop/*.jsonl`、`loop/.lock`，按 new1 自己的规矩走、`selfcheck` 过、gyb 验收（2026-08-18 `08` 定稿裁：`rl init` 不碰宿主代码，`08` 第七节 7.2、7.9） | 沙盒全程只经 rl；new1 的 `loop/` 长出来、CLAUDE.md 只多一节；`run.py` 白名单加了两项且 `selfcheck` 过 | 步 6 | 主会话，真会话 |
@@ -209,7 +209,7 @@
 - 待验证第 4 条备案升正案（`rl init` 只在裸终端跑）：定义在 `08-trees-init-and-host.md` 第一节和 `05-rl-cli.md` 命令表，本份只记状态。
 - 待验证第 10 条备案收成 doctor 第 19 项、修法 `rl session amend`：定义在 `05-rl-cli.md`「rl doctor」和 `04-handoffs-and-sessions.md` 第七节。
 - 待验证第 5、8、9、10 条不成立会改掉的正文：`04-handoffs-and-sessions.md` 第四、六、七节，`12-role-run.md` 接单与销号那几节；两份的接口一节各有一句指回本份。
-- 待验证第 6、7 条（桌面通知、定时提醒）的推送表和提醒周期：`01-gyb.md` 第五、六节。
+- 待验证第 6、7 条（桌面通知、定时提醒）2026-08-21 已销（`01` 定稿裁：都不做，`rl status` 是唯一出口）：`01-gyb.md` 第五、六节。
 - 待验证第 11 条（改母版要不要重启）和测试 13、17：`09-common-and-feedback.md`。
 - 测试 2、4、7、11、15 背后的转移表、holder 不变量、销号、reclaim：`04-handoffs-and-sessions.md`。
 - 测试 1、3、10、14、17、18 背后的账行格式、退出码、锁：`03-ledgers.md`；`02-decisions.md` 抄了测试 3 的用例名。

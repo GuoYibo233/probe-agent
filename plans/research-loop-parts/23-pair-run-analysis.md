@@ -81,7 +81,7 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 - 口径账的行格式、`metrics_key` 与 `code_path` 二选一、图行的 `group_by`/`x`/`y`/`uses`、四个状态：见 03-ledgers.md，提和批的规矩见 22-pair-idea-analysis.md。
 - 分析单交活时 `evaluation_refs` 每项必须 `approved`、`output_paths` 必须存在：见 04-handoffs-and-sessions.md。
 - 发射单的 `parent_id`、`decision_refs`、`batch`、`line` 四个字段的定义：见 03-ledgers.md；`line` 就是根决定编号，根决定的定义见 02-decisions.md。
-- issue 的 `kind` 取值（这一份用到 `cannot` 和 `anomaly`）、assignee 是 gyb 那一版触发桌面通知：见 03-ledgers.md，推送表见 01-gyb.md 第五节（2026-08-17 gyb 裁，推送表和 `rl notify` 是一件事归 `01`）。
+- issue 的 `kind` 取值（这一份用到 `cannot` 和 `anomaly`）、assignee 是 gyb 那一版进 `rl status` 段 2（桌面通知 2026-08-21 裁掉不做）：见 03-ledgers.md 和 01-gyb.md 第五节（2026-08-17 gyb 裁，推送表和 `rl notify` 是一件事归 `01`）。
 - `rl trace`、`rl run list`、`rl doctor` 三条命令的完整参数和退出码：见 05-rl-cli.md。
 - 九本账的公共骨架七样字段、`--force --reason` 硬写留痕：见 03-ledgers.md 和 01-gyb.md。
 - 快车道的数字进杂账、`ql_tag` 怎么分：见 07-quick-lane.md。
@@ -196,3 +196,4 @@ config 进 runs 行是这条契约里最要紧的一格：analysis 画图时的�
 - 2026-08-17 来自 sync-inbox 问题 22 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「A」）：主键那句删「快车道用 `ql_tag`」，第二处原文不一致那段改成按裁决快车道数字不进 runs；「没写清」第 7 条标已裁。
 - 2026-08-17 来自 sync-inbox 问题 31 的裁决（定义处 `03`，rl-hub-v3 传；gyb 原话「a」）：「账面对不上的时候谁扫」一节 `rl run relink` 那句改成「只换 `handoff_id`，`status` 与其他栏照抄最新版」。
 - 2026-08-17 rl-hub-v3 审后补：节名「一次尝试两版」改「三版」，正文「落两版」句和版表补认领版一行，与 `21-pair-deploy-run.md` 第七节同表（问题 17）；第一节那段「原文不一致」按 HANDOFF 第八节问题 22 那行的「销」收成一句「快车道的数字追加进杂账，不进 runs 账」。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「触发桌面通知」与推送表字样按「桌面通知这一版不做」改。对回原则 6。
