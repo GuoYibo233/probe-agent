@@ -1,6 +1,6 @@
 # deploy 角色
 
-> 这份写 deploy 这个角色的 SKILL.md 里要有的全部东西：写权、两份部署报告和 code_paths、自决的粒度、改宿主文件的三条纪律、开发射单、后台起 run 并验收、发射单卡住之后怎么办、把数字补回报告再提验收、快车道里 deploy 做的动作、gyb 坐在 deploy 会话里拍板怎么落账、用哪个模型。
+> 这份写 deploy 这个角色的 SKILL.md 里要有的全部东西：写权、两份部署报告和 code_paths、自决的粒度、改宿主文件的三条纪律、开发射单、后台起 run 并验收、发射单卡住之后怎么办、单子被收回后半截东西的处置、体检发现报告丢了怎么办、把数字补回报告再提验收、快车道里 deploy 做的动作、gyb 坐在 deploy 会话里拍板怎么落账、用哪个模型。
 > 这份不覆盖：handoffs 和 decisions 两本账的行格式（在 `03-ledgers.md`）、派活单的状态转移表和会话生命周期（在 `04-handoffs-and-sessions.md`）、`bin/rl` 的完整命令表和退出码（在 `05-rl-cli.md`）、钩子和角色 json 的文件格式（在 `06-hooks-and-permissions.md`）、快车道本身的机制（在 `07-quick-lane.md`）、宿主对接（在 `08-trees-init-and-host.md`）、公共母版八条规矩（在 `09-common-and-feedback.md`）、工单是怎么开过来的（在 `20-pair-idea-deploy.md`）、发射单交给 run 之后的事（在 `21-pair-deploy-run.md`）。
 > 源：设计文档的「五个角色」总段、deploy 一节、快车道一节、「分权与钩子」、「交接与会话生命周期」；施工计划第一节裁决 3、第二节词表、第三节 handoffs、第四节转移表、第五节 deploy 的 use case、第六节命令表、第七节、第十三节。
 
@@ -16,7 +16,7 @@ deploy 一个会话只装 deploy 一个角色。加载 skill 那一刻钩子把�
 
 ## 二、写权只有 experiments/
 
-deploy 的 `writes` 只有 `experiments/`。钩子只挂 Write 和 Edit 两个工具，只按研究仓库内的相对路径判，只拦两类事：写别的角色的目录（`analysis/`、`review/`、`notes/`；`notes/` idea 也能写，2026-08-18 gyb 裁，定义处 `06`），和直接 Write 或 Edit `loop/`。仓库外的路径一律放行，所以快车道的 worktree 和产物根 deploy 写得进去，钩子不判。仓库根的 `run.py`、`MAP.md`、`ops/` 这些路径钩子也放行，靠第五节的三条纪律管。Bash 写出来的文件钩子不看。
+deploy 的 `writes` 只有 `experiments/`。钩子挂 Write、Edit、Bash 三个工具（Bash 2026-08-18 gyb 裁进来，定义处 `06`：钩子解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 的目标路径，解析不出的归纪律），只按研究仓库内的相对路径判，只拦两类事：写别的角色的目录（`analysis/`、`review/`、`notes/`；`notes/` idea 也能写，2026-08-18 gyb 裁，定义处 `06`），和直接写 `loop/`。仓库外的路径一律放行，所以快车道的 worktree 和产物根 deploy 写得进去，钩子不判。仓库根的 `run.py`、`MAP.md`、`ops/` 这些路径钩子也放行，靠第五节的三条纪律管。钩子解析不出目标路径的 Bash 写法归纪律管，见第十一节的两句纪律。
 
 钩子拦下来的时候回话要指路：告诉模型你是谁、为什么拦、去开哪条 issue 的命令是什么。分权三层的全文在 `06-hooks-and-permissions.md`。
 
@@ -24,7 +24,7 @@ deploy 的 `writes` 只有 `experiments/`。钩子只挂 Write 和 Edit 两个�
 
 工单（`work_order`）由 idea 开给 deploy，owner 是 idea。deploy 用 `rl handoff start ID` 接单，单子从 `todo` 进 `in_progress`，holder 记这个会话；holder 非空的时候接不进去，rl 退出码 2 并列出当前 holder。
 
-干完写部署报告，分两份，都放 `experiments/` 下这张工单自己的目录里（快车道补单的报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名——2026-08-21 gyb 裁，定义处 `07`）：
+干完写部署报告，分两份，都放 `experiments/` 下这张工单自己的目录里。正常工单的目录照单子的编号起名（`experiments/<单号>/`，2026-08-21 gyb 裁）；快车道补单的报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名（2026-08-21 gyb 裁，定义处 `07`）：
 
 | 报告 | 字段名 | 里面写什么 |
 |---|---|---|
@@ -33,11 +33,13 @@ deploy 的 `writes` 只有 `experiments/`。钩子只挂 Write 和 Edit 两个�
 
 不带文件的那份是 reviewer 的锚，reviewer 拿它审「代码和决定是不是一回事」。
 
-除了两份报告，交活时还要填 `code_paths`，是要审的代码路径清单，reviewer 的代码清单就从这一栏来。
+除了两份报告，交活时还要填 `code_paths`，是要审的代码路径清单，reviewer 的代码清单就从这一栏来。这一栏全收：这张单改过的代码路径，不论在不在 `experiments/` 里，都列进去，宿主文件也算（2026-08-21 gyb 裁）。reviewer 的读顺序把 `detail` 报告排在最后，清单不全的话先读代码那一遍必漏宿主改动。
 
 提 `done_pending_review` 的前提是 `report_paths` 和 `code_paths` 齐：`method` 必填且路径存在，`detail` 非快车道时必填且路径存在。缺了入账脚本不收这个状态。开单的时候不查这些，前提查在交付那一刻（原则 4 推论）。
 
 验收人是 owner，也就是 idea；gyb 随时可以自己验。被打回（`rejected`）之后单子回 `todo`，由 idea 重新拉起 deploy；原会话还活着的话 deploy 可以直接 `rl handoff start` 从 `rejected` 接着干。
+
+deploy 跑 `rl doctor` 看到自己名下那张 `done_pending_review` 的报告路径没了：直接开 issue 报给 gyb 修（`rl issue open --to gyb --kind cannot --handoff ID`），自己不动单子——打回的权在 owner 手里，deploy 是 `to_role` 没有（2026-08-21 gyb 裁）。
 
 ## 四、自决的粒度与 decisions.deploy
 
@@ -71,10 +73,10 @@ deploy 给 run 开发射单（`launch_order`），deploy 是发射单的 owner�
 | `decision_refs` | rl 自动 | 开单时从父单抄 |
 | `batch` | deploy 填，可选；`launch_order` 开单时从父单抄 | 自由文本，调用者 `--batch B` 传，rl 不分配；一次开 N 张同 batch 的发射单时共用，只有分片语义 |
 | `command`、`workdir` | deploy 填 | 第一次尝试的必填项 |
-| `track` | deploy 填 | 宿主发射器要的方向名，从被派的工单继承或 deploy 填 |
+| `track` | deploy 填，从父单抄 | 宿主发射器要的方向名。工单格式里加方向名一栏，idea 开工单时填，发射单开单时照抄（2026-08-21 gyb 裁；工单加栏动 `04` 的字段表，冻结、等最后一期，见「要同步到别处的」） |
 | `config` | deploy 填 | 字典：`model`、`params`、`dataset`、`split`、其余超参自由，给 analysis 分组用 |
 | `run_id` | rl 自动 | 按 `<ho-id>-a<attempt>` 分配 |
-| `line` | rl 自动 | 从 `decision_refs` 第一项的 `root_id` 算出来存着 |
+| `line` | rl 自动 | 从 `decision_refs` 的 `root_id` 算出来存着；引用允许分属不同根决定，跨根的单在每条相关线的视图里都出现（2026-08-21 gyb 裁，sync-inbox 问题 43；字段语义定义处 `03` 冻结、等最后一期收口） |
 
 deploy 不跑 smoke、不估时长，这两样都是 run 的活：分步表 `step_table` 和 `estimated_seconds` 由 run 在 smoke 的时候填。
 
@@ -84,11 +86,13 @@ batch 谁分原来两处不一致，2026-08-17 gyb 裁定（sync-inbox 问题 9�
 
 ## 七、后台起 run 并验收发射单
 
-按原则 11，派活不占终端：deploy 开完发射单后台起一个 run 的 subagent 接走，deploy 会话继续可用，subagent 回来时 deploy 验收。开单带 `--manual` 的 deploy 只开单、gyb 自己开 session 去接；带 `--no-dispatch` 的停在 `todo` 等 gyb 说开跑。deploy 会话先结束了，单子照常在账上等 owner 下次上线或 gyb 验收。
+按原则 11，派活不占终端：deploy 开完发射单后台起一个 run 的 subagent 接走，deploy 会话继续可用，subagent 回来时 deploy 验收。给 run subagent 的开场提示把单子的内容全抄一遍（单号、命令、工作目录、方向名、`config`、`batch`），不是只给单号让它自己查账；成批时按批次一次交接（2026-08-21 gyb 裁）。开单带 `--manual` 的 deploy 只开单、gyb 自己开 session 去接；带 `--no-dispatch` 的停在 `todo` 等 gyb 说开跑。deploy 会话先结束了，单子照常在账上等 owner 下次上线或 gyb 验收。
 
 run 交活的前提是最新一次尝试的 run 行有 `exit_status=ok` 的收尾版。deploy 用 `rl handoff accept ID` 验收、`rl handoff reject ID --reason` 打回。发射单被打回或者 run 会话销号把单子交回 `todo`，都由 deploy 重新起 run。
 
 下游 subagent 没走到交活或卡住就返回的（报错、上下文满），deploy 当场 `rl handoff release ID --note ...` 把单子交回 `todo`，并决定是重起还是开 issue 给 gyb。
+
+单子被上游收回时，deploy 把已写进 `experiments/` 的代码位置和产物根里半截产物目录的路径回进那条 `withdrawn` 通知 issue，东西留着不动，处置由 gyb 定（2026-08-21 gyb 裁）。
 
 ## 八、发射单卡住之后
 
@@ -117,7 +121,7 @@ deploy 自己卡住的时候走 `rl issue open` 加 `rl handoff stuck ID --issue
 
 中间：deploy 在 worktree 上改代码、自己小规模跑。GPU 照旧走宿主发射器，快车道里 deploy 可以派 gpu-runner，这是 deploy 唯一能派 run 之外的对象。run_id 用快车道标签，track 沿用被微调的那个实验的方向，宿主的台账照登记、`record finish` 的结论栏写 `quick_lane` 加标签。数字追加进杂账，不进 runs 账。不开发射单、不叫 run、不做分步计时、不写决定账。
 
-出：两条路，各是杂账上的一行。合回分两步，先开补单、拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指；丢掉走 `rl ql close --dropped --reason`。合回的时候 gyb 亲自 merge 主分支，deploy 只把命令交出来。补的是一张标了 `quick_lane` 的工单，这张单子的特别之处：
+出：两条路，各是杂账上的一行。合回分三步：gyb 先亲自 merge 主分支（deploy 只把命令交出来）→ deploy 开补单、同时补那条 `decisions.deploy` → 拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指（2026-08-21 gyb 裁：先合并再补记，决定来源和报告路径的存在性检查一律按主树查，入账工具不用多认副本写法）；丢掉走 `rl ql close --dropped --reason`。补的是一张标了 `quick_lane` 的工单，这张单子的特别之处：
 
 - `from_role` 和 `to_role` 都是 deploy，验收人固定是 gyb，只有 gyb 能 accept。
 - 允许新建就直接进 `done_pending_review`，命令是 `rl handoff open --quick-lane --report-method P --ql QL`；`QL` 存进单子的 `ql_tag` 栏，开单前提是 `ql_tag` 指的杂账行状态是 `open`。
@@ -125,7 +129,7 @@ deploy 自己卡住的时候走 `rl issue open` 加 `rl handoff stuck ID --issue
 - `explanation` 由 deploy 写，并抄一句 gyb 点名的原话。
 - 同时补一条 `decisions.deploy` 记这次改动。
 
-主分支上永远只有走过工单的代码。合回之后要正式数字，按正常路再开发射单跑一遍，那张发射单的父单就是这张快车道工单；doctor 会报「快车道工单已验收但没有关联发射单」。
+主分支上永远只有走过工单的代码（先合并后补单之间有个短窗口，主干上短暂有还没挂上单子的代码——补单是紧跟着的下一步，2026-08-21 gyb 认了这个窗口）。合回之后要正式数字，按正常路再开发射单跑一遍，那张发射单的父单就是这张快车道工单；doctor 会报「快车道工单已验收但没有关联发射单」。
 
 两处原文不一致（2026-08-21 已由 `07` 定稿收口：开单动作 deploy、owner 记 gyb，见文末裁决记录，别再问）：快车道补单的 owner。施工计划第二节说 owner 就是 `from_role`、又说快车道补单的 owner 记 `gyb`，第三节说 `from_role` 就是 owner、取值可以是 `gyb`，设计文档说这张单子 `from_role` 和 `to_role` 都是 deploy。按施工计划第四节的表，那一行的「谁能写」是 deploy、括号注「快车道补单，owner 记 gyb」，accept 只有 gyb 能打。
 
@@ -155,30 +159,25 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 
 ## 和别的 part 的接口
 
-- handoffs 的行格式与字段（`parent_id`、`attempts`、`report_paths`、`code_paths`、`batch`、`line`、`progress_note`）：`03-ledgers.md`。
-- decisions 的行格式、编号加版本、来源三类、`root_id`：`02-decisions.md` 和 `03-ledgers.md`。
+- handoffs 的行格式与字段（`parent_id`、`attempts`、`report_paths`、`code_paths`、`batch`、`line`、`progress_note`；`track` 栏 2026-08-21 裁定加进工单、等最后一期落账，见「要同步到别处的」）：`03-ledgers.md`；handoffs 行格式的定义处按 HANDOFF 四点五节是 `04-handoffs-and-sessions.md`。
+- decisions 的行格式、编号加版本、来源三类、`root_id`：`02-decisions.md`。
 - 七个状态和状态转移表（谁能写、前提、之后谁拉起、对应哪个子命令），以及 holder 只在 `in_progress` 非空这条不变量：`04-handoffs-and-sessions.md`。
-- 会话登记与销号、销号时单子怎么交回 `todo`、脏改动打 `wip/<单号>` 分支：`04-handoffs-and-sessions.md`。
+- 会话登记与销号、销号时单子怎么交回 `todo`、脏改动打 `wip/<单号>` 分支、收回时半截产物报进 `withdrawn` issue（2026-08-21 裁、等最后一期落 `04`）：`04-handoffs-and-sessions.md`。
 - `rl handoff open/start/amend/resume/done/accept/reject/withdraw/release`、`rl issue open/reply/reassign/close`、`rl decision add`、`rl ql open/close`、`rl scratch add`、`rl inbox` 的完整参数和退出码：`05-rl-cli.md`。
-- 钩子挂在哪两个工具上、拦哪两类路径、拦下来怎么回话，角色 json 的文件格式：`06-hooks-and-permissions.md`。
-- `ql_tag` 怎么分、worktree 建在哪（`quick_lane.worktree_root`）、杂账三个状态：`07-quick-lane.md`。
+- 钩子挂在哪三个工具上（Write/Edit/Bash）、拦哪两类路径、Bash 分支怎么解析目标路径、拦下来怎么回话，角色 json 的文件格式：`06-hooks-and-permissions.md`。
+- `ql_tag` 怎么分、worktree 建在哪（`quick_lane.worktree_root`）、杂账三个状态、出口三步的顺序（2026-08-21 裁：先合并再补记，见「要同步到别处的」）：`07-quick-lane.md`。
 - 宿主发射器的命令模板、宿主台账清单、new1 的 run.py 注册表三件套和脏树白名单：`08-trees-init-and-host.md`。
-- 公共规矩九条（尤其是自决必留痕、故障分域、出圈即留痕、修必销案）、读法、词表：`09-common-and-feedback.md`。
+- 公共规矩九条（尤其是自决必留痕、故障分域、出圈即留痕、修必销案）、读法、词表、issues 的九种 kind（本份用到 `cannot`、`failed`、`anomaly`、`withdrawn`）：`09-common-and-feedback.md`。
 - 工单是谁开的、`explanation` 谁写、验收和打回：`20-pair-idea-deploy.md`。
-- 发射单交给 run 之后 run 做什么、run 开回来的 issue 长什么样：`21-pair-deploy-run.md`。
+- 发射单交给 run 之后 run 做什么、run 开回来的 issue 长什么样、派活开场提示全抄的口径（2026-08-21 裁，见「要同步到别处的」）：`21-pair-deploy-run.md`。
 - analysis 发现代码问题开 issue 给 deploy：`24-pair-analysis-deploy.md`。
+- reviewer 从 `code_paths` 拿要审的代码清单（2026-08-21 裁：全收，含宿主文件）：`25-pair-reviewer-idea.md`。
 - `rl status` 的十段（桌面通知与推送表 2026-08-21 裁掉不做）、gyb 越过 owner 验收时给 owner 发 `fyi`：`01-gyb.md`。
 - 测试清单里和 deploy 有关的条目（钩子、交付物、快车道、端到端）和施工步骤：`30-build-steps-verify-tests.md`。
 
 ## 源文档没写清的（留给 gyb）
 
-1. （快车道半边 2026-08-21 已裁，定义处 `07`：目录用 `experiments/<ql_tag>/`，拿到单号之后不改名；正常工单的目录名仍没写。）部署报告目录的名字怎么拼。设计文档只说两份报告放「experiments/ 下这张工单自己的目录里」，没写目录名是单号还是别的；快车道补单是新建就直达 `done_pending_review`、开单那一刻才分配单号，报告目录名更取不出来。
-2. `track` 说「从被派的工单继承或 deploy 填」，但 handoffs 的字段表里 `work_order` 没有 track 这一栏，继承从哪继承没写。
-3. `code_paths` 的范围。detail 报告要列 experiments/ 外的宿主文件清单，`code_paths` 只写了「代码路径清单」，宿主文件算不算进这一栏没写。
-4. deploy 后台起 run subagent 用什么机制起、提示里写什么、一次开 N 张单时怎么把单号和 batch 交给那个 subagent，两份文档都没写；施工计划待验证第 8、9 条还没测出结论。
-5. deploy 自决时来源填的文件路径在快车道 worktree 里的情况：主树同路径存在但内容是旧的，填哪棵树的路径、入账校验查哪棵树没写。
-6. deploy 跑 `rl doctor` 看到自己名下那张 `done_pending_review` 的报告路径没了的时候该怎么办。施工计划说角色跑 doctor 只看不修、修法报给 owner 或 gyb，但 deploy 是 `to_role` 不是 owner，开 issue 给谁、kind 填哪个没写。
-7. 单子被收回之后，deploy 已经写在 `experiments/` 里的代码和产物根里那半截产物目录怎么处置，两份文档都没写。
+（2026-08-21 七条全部裁毕，见裁决记录。原第 4 条里挂着的待验证第 9 条「后台 subagent 能不能跑几小时、父会话结束会不会被杀」仍在 `30` 的待验证清单上，测出的结论不动已裁的开场话与批次交接口径。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -402,3 +401,24 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：报告目录约定补「快车道补单用 `experiments/<ql_tag>/`，拿到单号之后不改名」；「两处原文不一致」快车道补单 owner 处收口（开单动作 deploy、owner 记 gyb，定义处 `04` 冻结后待议）；「没写清」第 1 条快车道半边标已裁。对回原则 4。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节推送表字样按「桌面通知不做」改；公共规矩八条改九条。对回原则 6。
+- 2026-08-21 gyb 裁（本份定稿，rl-part-11 问；gyb 选「照单子的编号起名」）：正常工单的报告目录照单号起名（`experiments/<单号>/`）；快车道半边维持 `07` 已裁的 `experiments/<ql_tag>/`。对回原则 6。
+- 2026-08-21 gyb 裁（本份定稿；gyb 选「工单格式里加一个位置」）：方向名（`track`）从工单继承——工单格式加方向名一栏，idea 开工单时填，发射单开单时照抄；工单加栏动 `04` 字段表（冻结），等最后一期，见「要同步到别处的」。对回原则 9。
+- 2026-08-21 gyb 裁（本份定稿；gyb 选「全收」）：`code_paths` 全收，这张单改过的代码路径不论在不在 `experiments/` 里都进清单，宿主文件也算。对回原则 2。
+- 2026-08-21 gyb 裁（本份定稿；gyb 选「开场话把单子内容全抄一遍」）：deploy 后台起 run subagent 的开场提示把单子内容全抄（单号、命令、工作目录、方向名、config、batch），不是只给单号让它查账；成批按批次一次交接（已有规矩不动）。对回原则 9。
+- 2026-08-21 gyb 裁（本份定稿；gyb 原话「不能先合并好再记上去吗」加确认「就这么定：先合并再补记」）：快车道出口顺序改成 gyb 先 merge → deploy 开补单、补 `decisions.deploy` → 关杂账；决定来源和报告路径的存在性检查一律按主树查；「主分支上永远只有走过工单的代码」认下合并到补单之间的短窗口。牵连 `07`，见「要同步到别处的」。对回原则 7。
+- 2026-08-21 gyb 裁（本份定稿；gyb 选「直接报给 gyb 让他修」）：deploy 跑 doctor 看到自己名下 `done_pending_review` 的报告路径没了，开 issue 报给 gyb 修，自己不动单子；kind 取 `09` 九种里既有的 `cannot`（干不了，`handoff_id` 必填），不加新种。对回原则 1。
+- 2026-08-21 gyb 裁（本份定稿；gyb 选「报位置、留着不动，处置由你定」）：单子被收回时 deploy 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` 通知 issue，东西不动，处置由 gyb 定。对回原则 3。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传）：`rl inbox` 过版项口径统一「本会话手上单子引的过版决定」；feedback 裁决在 `rl inbox` 单列一项、不并进通知（合计五类）。第一节五样清单已一字一致，正文没动。对回原则 6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；第六节 `line` 行按新口径并句（字段语义定义处 `03` 冻结、等最后一期收口，sync-inbox 问题 43）。对回原则 9。
+- 2026-08-21 rl-part-11 定稿自查（按已有裁决补传播，没新问）：第二节钩子口径按 `06` 定稿与 sync-inbox 问题 38 补齐——「只挂 Write 和 Edit 两个工具」「Bash 写出来的文件钩子不看」两句改成三工具口径（Bash 解析重定向、tee、sed -i、mv/cp 目标路径，解析不出的归纪律），与第十一节两句纪律对齐。对回原则 2、8。
+
+## 要同步到别处的
+
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：handoffs 字段表 `work_order` 加 `track` 一栏（idea 开单时填）；`launch_order` 开单从父单抄 `track`。gyb 原话「工单格式里加一个位置」（2026-08-21）。
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：withdraw 一侧补一句——收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定。gyb 原话「报位置、留着不动，处置由你定」（2026-08-21）。
+- `05-rl-cli.md`（冻结，等最后一期）：`rl handoff open --type work_order` 要能收方向名；`launch_order` 开单自动从父单抄之后，发射单侧的方向名参数改成可省。
+- `03-ledgers.md`（冻结，等最后一期）：`code_paths` 字段说明补「全收：这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算」。
+- `07-quick-lane.md`：出口顺序改成「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」；决定来源和报告路径的存在性检查一律按主树查；「主分支上永远只有走过工单的代码」句认下合并到补单之间的短窗口。gyb 原话「不能先合并好再记上去吗」加确认「就这么定：先合并再补记」（2026-08-21）。
+- `10-role-idea.md`、`20-pair-idea-deploy.md`：idea 开工单时填方向名一栏，deploy 开发射单照抄。
+- `25-pair-reviewer-idea.md`：reviewer 的代码清单按全量口径读（含 `experiments/` 外宿主文件）。
+- `12-role-run.md`、`21-pair-deploy-run.md`：派活开场提示全抄单子内容的口径（run 被拉起时开场话里有全貌；裁的场景是 deploy 派 run，别的通道要不要照此由统筹定）。
