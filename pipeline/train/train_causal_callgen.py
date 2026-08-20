@@ -5,6 +5,7 @@
 
 - 输入: <data_out>/{train,val}.jsonl,每行取 text / label_call / w 三个字段;
   一条样本 = 一条训练实例
+- 底座: --base qwen -> Qwen3-0.6B-Base(默认)/ qwen17 -> 1.7B / qwen4 -> 4B
 - 拼串: 输入串 = text + CALL_SEP("\\n[CALL] "),目标串 = label_call + eos
 - 防左截吃目标: 先 tokenize 目标得 tgt_ids(不截断),超 MAX_TGT_TOK 的实例整条
   丢弃并计数;再按 max_length = --max-len - len(tgt_ids) 左截输入串,拼接后
@@ -64,7 +65,13 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat
 
 
-QWEN = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
+# 底座三档(2026-08-21 起因果线从单档扩成三档,样式与 train_causal_tool.MODELS 同)。
+# --base 默认 qwen,不传时的行为与加这张表之前逐字节相同。
+MODELS = {
+    "qwen":   "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
+    "qwen17": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base",
+    "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
+}
 SEED = 20260729
 CALL_SEP = "\n[CALL] "
 MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃
@@ -199,9 +206,9 @@ def collate(batch, tok, max_len):
 
 # ---------------------------------------------------------------- 模型
 
-def build(dev):
+def build(dev, base="qwen"):
     """tokenizer 构造照抄 train_causal_probe.build():pad=eos / 左截 / 右 pad。"""
-    path = QWEN
+    path = MODELS[base]
     tok = AutoTokenizer.from_pretrained(path)
     if tok.pad_token_id is None:                      # 照抄 check_causal_candidates
         tok.pad_token = tok.eos_token
@@ -308,6 +315,9 @@ def eval_gen(model, tok, rows, dev, amp, max_len, bs):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--base", default="qwen", choices=sorted(MODELS),
+                    help="底座三档:qwen=0.6B(默认,与旧行为一致)/"
+                         "qwen17=1.7B/qwen4=4B")
     ap.add_argument("--env", default="appworld",
                     choices=["tales", "appworld", "bfcl", "alfworld"],
                     help="仅作日志标签(数据路径已由 --data 直接给定)")
@@ -358,7 +368,7 @@ def main():
     dev = args.device
     amp = dev.startswith("cuda")
 
-    tok, model, path = build(dev)
+    tok, model, path = build(dev, args.base)
 
     lim_tr, lim_ev = (500, 200) if args.smoke else (0, 0)
     if args.max_inst:

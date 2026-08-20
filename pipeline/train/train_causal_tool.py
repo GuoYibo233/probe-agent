@@ -6,7 +6,7 @@
 样本的 text);整段一次前向,每个边界位置放一份分类监督(权重 = 样本自带 w)。
 
 - 输入: <data_out>/{train,val}.jsonl + tool_vocab.json
-- 底座: --base qwen -> Qwen3-0.6B-Base
+- 底座: --base qwen -> Qwen3-0.6B-Base / qwen17 -> 1.7B / qwen4 -> 4B
 - 截断: fast tokenizer 左截 --max-len(保思考尾巴),offset_mapping 指向原字符串;
   左截丢掉的边界跳过并计数(n_bound_dropped)
 - 评估: 每轮 val 报 calA_weighted_acc + calA_lastbound_acc(日志字段名照旧不改)
@@ -59,8 +59,11 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat
 
 
+# 底座三档(2026-08-21 起因果线从单档扩成三档,目的是横向比三个规模)
 MODELS = {
-    "qwen": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
+    "qwen":   "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
+    "qwen17": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base",
+    "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
 SEED = 20260729
 ALIGN_TOL = 1e-4

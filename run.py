@@ -28,8 +28,8 @@
 扩展规矩(与记忆、probe-pipeline skill Phase E 同一条线):
   以后任何扩展——新模型/新环境/新格/新脚本/新参数——代码落地的同时必须挂进
   本文件:新脚本加 TASKS 条目,新多步流程加 RECIPES 条目,底层脚本加参数不用
-  改这里(透传)。训练四格的唯一真源是本文件的 CELLS,ops/launch_probe.py 从
-  这里 import——别再另写一张格表。评测四格同理:唯一真源是本文件的
+  改这里(透传)。训练格表的唯一真源是本文件的 CELLS,ops/launch_probe.py 从
+  这里 import——别再另写一张格表。评测格表同理:唯一真源是本文件的
   EVAL_CELLS,ops/launch_eval.py 从这里 import。
 
 配方状态与日志:logs/recipe/<name>__<id>/ 下 NN_<step>.log 一步一个文件 +
@@ -65,7 +65,7 @@ PY = {
     "bash":     "bash",
 }
 
-# 训练四格唯一真源:格 -> (解释器, 训练脚本, 该格固定要带的参数)。
+# 训练格唯一真源:格 -> (解释器, 训练脚本, 该格固定要带的参数)。
 # ops/launch_probe.py 从这里 import,别处不许再抄一份。
 CELLS = {
     "mtool": (PY["mbert"], str(ROOT / "pipeline/train/train_mbert_tool.py"), []),
@@ -73,18 +73,24 @@ CELLS = {
     "ctool": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_tool.py"),
               ["--base", "qwen"]),
     "cgen":  (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_callgen.py"), []),
+    "cparam": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_param.py"), []),
 }
-CELL_ORDER = ("mtool", "mext", "ctool", "cgen")
+# 默认 smoke 顺序,允许是 CELLS 的子集:ModernBERT 线(mtool/mext)2026-08-21 起
+# 停跑(plans/2026-08-21-new-probe-training.md 第一条总体决定),两格仍留在
+# CELLS 里可以单发,只是不进默认 smoke 顺序。ops/launch_probe.py 的 smoke 档
+# 按这张表一格一卡分配,--gpus 的张数必须等于本元组长度。
+CELL_ORDER = ("ctool", "cgen", "cparam")
 
-# 评测四格唯一真源:格 -> (run.py 任务名, 依赖的工具格|None)。
+# 评测格表唯一真源:格 -> (run.py 任务名, 依赖的工具格|None)。
 # ops/launch_eval.py 从这里 import 并取任务的解释器/脚本/固定参数,
 # 别处不许再抄一份(同构表必漂移,而那种漂移是静默的)。
-# 依赖语义:mext 吃同模型 mtool 的 REPLAY_REPORT,cgen 吃 ctool 的。
+# 依赖语义:mext 吃同模型 mtool 的 REPLAY_REPORT,cgen 与 cparam 吃 ctool 的。
 EVAL_CELLS = {
     "mtool": ("eval-tool-mbert", None),
     "ctool": ("eval-tool-causal", None),
     "mext":  ("eval-mcall", "mtool"),
     "cgen":  ("eval-ccall", "ctool"),
+    "cparam": ("eval-cparam", "ctool"),
 }
 
 # ---------------------------------------------------------------- 任务注册表
@@ -216,7 +222,7 @@ TASKS = {
         desc="只读/非只读工具真值表生成器",
         notes=["没有 __main__ 保护,import 即执行;产物是 readonly/{appworld,bfcl}.json"]),
 
-    # ---- train 训练(四格全 GPU,发射走 gpu-run;排卡发射器是 launch-probe) ----
+    # ---- train 训练(各格全 GPU,发射走 gpu-run;排卡发射器是 launch-probe) ----
     "train-mtool": dict(
         stage="train", py="mbert", script="pipeline/train/train_mbert_tool.py",
         gpu=True, desc="ModernBERT 工具名探针(必给 --data --out)",
@@ -231,13 +237,22 @@ TASKS = {
     "train-ctool": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_tool.py",
         gpu=True, args=["--base", "qwen"],
-        desc="因果工具名探针(必给 --data --out;固定 --base qwen)",
-        notes=["开训对齐门禁 FAIL 退 2(reldiff 1e-6 量级=噪声,1e-3 以上=真错)",
+        desc="因果工具名探针(必给 --data --out;默认 --base qwen,三档可换)",
+        notes=["--base 三档:qwen=Qwen3-0.6B-Base / qwen17=1.7B / qwen4=4B;"
+               "注册表固定带 --base qwen,发射时用排卡表 extra 再传一次覆盖",
+               "开训对齐门禁 FAIL 退 2(reldiff 1e-6 量级=噪声,1e-3 以上=真错)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-cgen": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_callgen.py",
         gpu=True, desc="因果整条调用生成头(必给 --data --out)",
-        notes=["没有 --base,换底座要改源码",
+        notes=["--base 三档 qwen/qwen17/qwen4,默认 qwen(=0.6B,与旧口径一致)",
+               "同 out 二次训练默认拒绝,--force 逃生"]),
+    "train-cparam": dict(
+        stage="train", py="cprobe", script="pipeline/train/train_causal_param.py",
+        gpu=True, desc="因果参数生成头(给定工具名只写参数;必给 --data --out)",
+        notes=["输入串 = text + \\n[CALL] + 工具名 + 左括号,目标 = 括号里那截 + 右括号",
+               "--base 三档 qwen/qwen17/qwen4,默认 qwen",
+               "没有 --fire-head:触发永远由 ctool 做",
                "同 out 二次训练默认拒绝,--force 逃生"]),
 
     # ---- eval 评测 ----
@@ -263,6 +278,14 @@ TASKS = {
         stage="eval", py="cprobe", script="pipeline/eval/eval_causal_call.py",
         gpu=True, desc="causal 整条调用评测(必给 --env --ctool-run --cgen-run --data)",
         notes=["必须等 eval-tool-causal 跑完;--env 传错静默毁数字"]),
+    "eval-cparam": dict(
+        stage="eval", py="cprobe", script="pipeline/eval/eval_causal_param.py",
+        gpu=True,
+        desc="causal 参数生成评测(必给 --env --ctool-run --cparam-run --data)",
+        notes=["必须等 eval-tool-causal 跑完;--env 传错静默毁数字",
+               "报告 PARAM_REPORT.{json,md} 写进 --cparam-run,两块:"
+               "gt_tool(喂真值工具名)与 pred_tool(喂分类头 argmax)",
+               "矩阵只取 pred_tool 块——那是系统乙的真实口径"]),
     "matrix": dict(
         stage="eval", py="sys", script="pipeline/eval/summarize_matrix.py",
         desc="矩阵汇总(必给 --runs-dir --out)",
@@ -505,7 +528,7 @@ TASKS = {
                "θ 扫描是 sweep-run/sweep-curve(sweep_theta.py),这里扫的是采样设置,别混"]),
     "launch-probe": dict(
         stage="ops", py="sys", script="ops/launch_probe.py",
-        gate=True, desc="训练四格排卡发射器(smoke/full;格表从本文件 CELLS 读)",
+        gate=True, desc="训练格排卡发射器(smoke/full;格表从本文件 CELLS 读)",
         notes=["它自己 ssh+tmux 发射,所以出手前过脏树门禁;--dry-run 不拦"]),
     "launch-eval": dict(
         stage="ops", py="sys", script="ops/launch_eval.py",

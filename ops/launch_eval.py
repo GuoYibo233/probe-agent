@@ -21,8 +21,10 @@
   [{"model": "q36", "cell": "mtool", "host": "tokyo106", "gpu": 0,
     "extra": ["--risk", "0.1"]}, ...]
 
-`cell` 在 tool 档取 mtool/ctool,在 call 档取 mext/cgen(写头的名字,脚本自己
-换算成它依赖的工具格路径)。session 名 = eval_<batch>_<model>_<cell>。
+`cell` 在 tool 档取 mtool/ctool,在 call 档取 mext/cgen/cparam(写头的名字,
+脚本自己换算成它依赖的工具格路径)。两档各认哪些格由 run.py 的 EVAL_CELLS 定
+(dep=None 的进 tool 档、有 dep 的进 call 档),发哪几格只看 --placement 排卡表
+——表里没写的格一律不发。session 名 = eval_<batch>_<model>_<cell>。
 """
 import argparse
 import json
@@ -133,10 +135,15 @@ def build(stage, batch, data_root, env, model, cell, extra=None):
             sys.exit(f"依赖未就绪: {rep} 不存在——先把 {batch}_{model}_{dep} 评完")
         if not (head_run / "best").is_dir():
             sys.exit(f"训练产物不存在: {head_run}/best")
-        # 两个 call 脚本的参数形状不同,这是发射器自己的知识(脚本 argparse 定的)
+        # 三个 call 脚本的参数形状各不相同,这是发射器自己的知识(脚本 argparse 定的)。
+        # 新加参数格必须在这里显式加一条:落进 else 会把头 run 传成 --cgen-run,
+        # 而 eval_causal_param.py 根本没有这个参数,argparse 当场拒(响,但错在发射器)。
         if cell == "mext":
             args = [py, script, "--env", env, "--run", str(dep_run),
                     "--extractor", str(head_run), "--data", str(data)] + fixed
+        elif cell == "cparam":
+            args = [py, script, "--env", env, "--ctool-run", str(dep_run),
+                    "--cparam-run", str(head_run), "--data", str(data)] + fixed
         else:
             args = [py, script, "--env", env, "--ctool-run", str(dep_run),
                     "--cgen-run", str(head_run), "--data", str(data)] + fixed

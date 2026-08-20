@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""四格矩阵汇总(规格 §6.4,纯标准库):把 12 个 run 的报告收成一张表。
+"""矩阵汇总(规格 §6.4,纯标准库):把一批 run 的报告收成一张表(模型 × 格)。
 
 读每个 run 目录:
 - mtool / ctool: `REPLAY_REPORT.json` → 风险 0.05 档的 theta / coverage /
   trig_acc / earliness / wrong_spec,外加 n_events_test 与 prior_baseline_event_acc
 - mext: `EXTRACT_REPORT.json` → overall 的 params_all_ok / full_call_ok
 - cgen: `CALLGEN_REPORT.json` → params_all_ok / full_call_ok
+- cparam: `PARAM_REPORT.json` 的 **pred_tool 块** → theta / params_all_ok /
+  full_call_ok / n_events_scored(pred_tool = 工具名喂分类头预测,即系统乙的
+  真实口径;同报告里的 gt_tool 块喂真值工具名,不进矩阵)
 
 报告文件缺席的格标 `PENDING`(不报错,方便边跑边看)。
 
@@ -18,9 +21,10 @@ import argparse
 import json
 from pathlib import Path
 
-CELLS = ("mtool", "mext", "ctool", "cgen")
+CELLS = ("mtool", "mext", "ctool", "cgen", "cparam")
 REPORT_OF = {"mtool": "REPLAY_REPORT.json", "ctool": "REPLAY_REPORT.json",
-             "mext": "EXTRACT_REPORT.json", "cgen": "CALLGEN_REPORT.json"}
+             "mext": "EXTRACT_REPORT.json", "cgen": "CALLGEN_REPORT.json",
+             "cparam": "PARAM_REPORT.json"}
 RISK = "0.05"
 
 
@@ -52,6 +56,17 @@ def read_cell(run_dir, cell, risk):
                           params_all_ok=ov.get("params_all_ok"),
                           full_call_ok=ov.get("full_call_ok"),
                           n_events_scored=rep.get("n_events_scored"))
+    if cell == "cparam":
+        # PARAM_REPORT 有两块:gt_tool(喂真值工具名)与 pred_tool(喂分类头
+        # argmax)。矩阵一律取 pred_tool——那是系统乙(ctool + cparam)的真实
+        # 口径;gt_tool 只留在报告里给人对照。必须显式分支:落进下面那条 else
+        # 会按顶层键取 params_all_ok/full_call_ok,而顶层根本没有这两个键,
+        # rep.get() 全 None → 整行 "-" 但状态列还写 OK(extending §5 #15)。
+        pt = rep.get("pred_tool") or {}
+        return "OK", dict(theta=pt.get("theta"),
+                          params_all_ok=pt.get("params_all_ok"),
+                          full_call_ok=pt.get("full_call_ok"),
+                          n_events_scored=pt.get("n_events_scored"))
     return "OK", dict(theta=rep.get("theta"),
                       params_all_ok=rep.get("params_all_ok"),
                       full_call_ok=rep.get("full_call_ok"),
@@ -78,7 +93,7 @@ def main():
             if c in ("mtool", "ctool") and st == "OK" and m not in per_model:
                 per_model[m] = (d.get("n_events_test"), d.get("prior"))
 
-    md = ["# 四格矩阵汇总",
+    md = ["# 矩阵汇总",
           f"- run 目录 {root};run_id 前缀 {args.prefix};风险档 {args.risk};"
           "缺报告的格标 PENDING",
           f"- 模型 {' / '.join(args.models)};格 {' / '.join(CELLS)}",
@@ -102,8 +117,10 @@ def main():
         n, pr = per_model.get(m, (None, None))
         md.append(f"| {m} | {fmt(n)} | {fmt(pr)} |")
     md += ["", "口径:tool 格(mtool/ctool)四列来自 REPLAY_REPORT 的 "
-           f"test_frozen[\"{args.risk}\"];参数格(mext/cgen)两列来自 "
-           "EXTRACT_REPORT.overall / CALLGEN_REPORT,都是同一风险档触发点上的数。"]
+           f"test_frozen[\"{args.risk}\"];参数格(mext/cgen/cparam)两列来自 "
+           "EXTRACT_REPORT.overall / CALLGEN_REPORT / PARAM_REPORT.pred_tool,"
+           "都是同一风险档触发点上的数。cparam 取 pred_tool 块(工具名喂分类头"
+           "预测);同报告里喂真值工具名的 gt_tool 块不进本表。"]
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

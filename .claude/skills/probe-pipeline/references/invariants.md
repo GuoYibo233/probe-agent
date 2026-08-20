@@ -27,7 +27,7 @@
 | 样本权重 | `w = 1/m`，m = 该事件切点数，round 6 位 | `rules.py` / `build.py`（PLAN §1.2、ENG §3.2） | 每事件总贡献不再恒为 1，长思考的事件会主导损失，跨模型比较作废（gptoss 切点密，受影响最大） |
 | 参数值归一化 | `strip()` 后 `strip("\"'")`，空值跳过 | 照抄 `envs/bert/param_label.py`（ENG §3.3） | 宽松/严格两档的差距被人为拉开或抹平（本轮结论"差距只出现在抽取路线"就靠这一条口径成立，TIMELINE 2026-07-31 c1 条③） |
 | 参数名规则 | kwarg 取名字，位置参数取 `pos0/pos1/…` | 照抄 `split_args_named()`（ENG §3.3） | 键匹配判定变，参数正确率整体漂移 |
-| `label_call` 格式 | `f"{label}({', '.join(f'{k}={v}')})"`，无参数时 `f"{label}()"` | `build.py`（ENG §3.3） | cgen 的训练目标串变形，`val_exact_call` 与 `full_call_ok` 两个数字与历史不可比 |
+| `label_call` 格式 | `f"{label}({', '.join(f'{k}={v}')})"`，无参数时 `f"{label}()"` | `build.py`（ENG §3.3） | cgen 的训练目标串、cparam 的目标推导（按 `label+"("` 前缀剥离）一起变形，`val_exact_call` 与 `full_call_ok` 等数字与历史不可比 |
 | 参数区间定位 | `str.rfind`——取值在该样本自己 text 里**最靠末尾**一次出现的区间，找不到 `found=false` | `param_label.py`（ENG §3.4） | mext 的 span 标注变，抽取头训练目标变 |
 | 分区判法 | 认官方题单、任务实例级归属；unit 不在任何题单里**报错退出**，不许静默丢 | `build.py`【改动②】（ENG §4.2.3、PLAN §1.6） | 静默丢题会让三个模型的题单不再一致，"同题对比"这条前提垮掉（DATA.md §3.1） |
 | 堆名 | 只有 `train / val / test` 三堆；旧代码读 `calA`/`calB` 的地方一律读 `val` | ENG §2.5 | 温度和门槛必须在同一个 val 上定；分开定就变成另一套评测法 |
@@ -40,16 +40,17 @@
 | 口径 | 固定值 | 写死在哪 | 改了会怎样 |
 |---|---|---|---|
 | mbert 超参 | lr 2e-5 / bs 8 / accum 4 / epochs 3 / maxlen 4096 / 左截断 / fp32 权重 + bf16 autocast / warmup 5% / clip 1.0 | `train_mbert_tool.py`、`train_mbert_extract.py`（ENG §5.1、§5.2） | 有效批大小或学习率一变，同一格跨模型的成绩不再是同一训练配方下的比较 |
-| causal 超参 | lr 1e-5 / bs 4 事件 / accum 8 / epochs 3 / warmup 5% / clip 1.0 / fp32 + bf16 autocast | `train_causal_tool.py`、`train_causal_callgen.py`（ENG §5.3、§5.4） | 同上；且 cgen 的超参是**故意对齐 ctool** 的，动一个就破坏"同一骨架两个头"的对照 |
+| causal 超参 | lr 1e-5 / bs 4 事件 / accum 8 / epochs 3 / warmup 5% / clip 1.0 / fp32 + bf16 autocast | `train_causal_tool.py`、`train_causal_callgen.py`、`train_causal_param.py`（ENG §5.3、§5.4） | 同上；且 cgen/cparam 的超参是**故意对齐 ctool** 的，动一个就破坏"同一骨架多个头"的对照（cgen 对 cparam 的比较更是同批样本同答案只差拼串，超参一分家差距就没法归因到"工具名是否给定"） |
 | 左截断 | `truncation_side="left"`，`padding_side="right"`，pad=eos | 照抄 `train_causal_probe.py` 的 `build()`（ENG §5.4） | 右截会吃掉紧邻调用的思考尾巴，正是探针最该看的那一段 |
 | cgen 目标构造 | 先 tokenize 目标不截断（>160 token 的实例丢弃并计数），再按 `max_length = 4096 - L_t` 左截输入，`labels` 前缀段填 `-100` | `train_causal_callgen.py`（ENG §5.4） | 顺序反了就会被左截吃掉目标，损失算在错的位置上 |
 | cgen 损失 | 逐实例目标段 mean CE，批损失 `Σ(w_i·ce_i)/Σw_i` | `train_causal_callgen.py`（ENG §5.4） | 丢掉 w 加权 = 丢掉事件等权，与其余三格口径分家 |
-| cgen 选 best | 唯一依据是 val 全量 masked-CE（越低越好）；`val_exact_call`（200 条 greedy）只进日志不选 best | ENG §5.4 | 用 exact_call 选 best 会让 val 被用两次（选点 + 报数），破坏 val/test 分工 |
-| smoke 规模 | mtool / mext / cgen：**按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（mext 的这两个数落在展开后的**参数实例**上，不是样本）；**ctool：同法随机抽 200 / 80 事件**（它按事件计数，不是实例）；四格都是 1 epoch | ENG §5.1、§5.4；实现在四个训练脚本各自的 `--smoke` 分支——四处都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，**不是原序截断** | 只影响冒烟，但改了就失去"和历史 smoke 同口径"的对照价值；改种子或改成原序截断都会换掉抽中的那批样本 |
+| cgen/cparam 选 best | 唯一依据是 val 全量 masked-CE（越低越好）；`val_exact_call` / `val_exact_params`（200 条 greedy）只进日志不选 best | ENG §5.4；cparam 2026-08-21 同口径 | 用 exact 指标选 best 会让 val 被用两次（选点 + 报数），破坏 val/test 分工 |
+| cparam 拼串 | 输入 = `text + "\n[CALL] " + label + "("`，目标 = `label_call` 剥掉 `label+"("` 前缀的剩余段（含收尾右括号）+ eos；推导唯一真源是对 make_call 产物做前缀剥离，对不上整条丢弃并计 `assembly_mismatch` | `train_causal_param.py` 的 `param_target`（2026-08-21） | 改拼法 = 换任务定义，cgen 对 cparam 的"工具名给定收益"对比作废 |
+| smoke 规模 | mtool / mext / cgen / cparam：**按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（mext 的这两个数落在展开后的**参数实例**上，不是样本）；**ctool：同法随机抽 200 / 80 事件**（它按事件计数，不是实例）；各格都是 1 epoch | ENG §5.1、§5.4；实现在各训练脚本自己的 `--smoke` 分支——都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，**不是原序截断** | 只影响冒烟，但改了就失去"和历史 smoke 同口径"的对照价值；改种子或改成原序截断都会换掉抽中的那批样本 |
 | 解释器 | mbert 格 `mbert-env`（transformers 4.57.6 钉死）、causal 格 `cprobe-env`（≥5.14），谁也不许升级谁 | PLAY §0.13、ENG §2.1 | 混架构在旧版上会**静默算错**（分块增量喂），这是对齐检查存在的理由 |
 | 对齐检查 | 因果格开训前必过，FAIL 即 `exit 2` | `train_causal_tool.py`（ENG §5.3） | 跳过它 = 允许一个数值上错误的骨架进入训练，产出的一切数字都不作数 |
 | `--out` | 必填，无默认值 | ENG §5.1.3 | 默认值会让两次训练悄悄覆盖同一目录 |
-| 只读折叠（ro1 起，`--readonly-env` 开启时） | 真值表 `pipeline/annotate/readonly/{appworld,bfcl}.json`；mtool/ctool 词表 = 只读工具原顺序 + 末位哨兵 `<NON_READONLY>`；mext/cgen 只训真值只读的事件；**不传 flag 与旧行为字节级等价**（G12 用 c1 报告 cmp 验证过） | `pipeline/train/readonly_map.py`（唯一实现，四格共用） | 折叠规则或哨兵位置一变，ro1 起所有带此旗的数字与旧批不可比；登录/认证类判非只读是 2026-08-01 用户拍板，改判要过 TIMELINE |
+| 只读折叠（ro1 起，`--readonly-env` 开启时） | 真值表 `pipeline/annotate/readonly/{appworld,bfcl}.json`；mtool/ctool 词表 = 只读工具原顺序 + 末位哨兵 `<NON_READONLY>`；mext/cgen/cparam 只训真值只读的事件；**不传 flag 与旧行为字节级等价**（G12 用 c1 报告 cmp 验证过） | `pipeline/train/readonly_map.py`（唯一实现，各格共用） | 折叠规则或哨兵位置一变，ro1 起所有带此旗的数字与旧批不可比；登录/认证类判非只读是 2026-08-01 用户拍板，改判要过 TIMELINE |
 | 开火真值 ready | ready = 真值工具只读 ∧ 该边界上事件全部参数 found=true（无参事件空真）；found 按 `(event, sent_idx)` 联表 `params/<split>.jsonl` | `train_mbert_extract.py` / `train_causal_callgen.py` 的 `--fire-head` 路径与两个 call 脚本的 `load_ready` | ready 定义一变，θ_fire 与开火精度全线重算，且与 ro1 批不可比 |
 
 ## 4. 评测侧口径
@@ -60,7 +61,8 @@
 | θ 网格 | 0.5 → 0.975 步长 0.025，共 20 档 | `THETAS`（ENG §2.2） | 网格一变，"两档皆无解"这类判定的含义就变了（本轮 `c1_q35_mtool` 正是判到无解） |
 | 风险目标 | `RISK_TARGETS = [0.10, 0.05]`，矩阵汇总表报 0.05 档 | ENG §2.2、§6.4 | 放宽风险目标 = 换了契约，等于给不合格的格发通行证（见 gates.md §3.4 的裁决） |
 | bootstrap | `BOOT = 1000`，随机数取用次序也算口径 | ENG §2.2 | 置信区间不再能与旧报告逐位对上；本轮 ACCEPT_EVAL 专门确认过这一点（`ACCEPT_EVAL.md` §2） |
-| 触发点来源 | mext 用 mtool 的 REPLAY_REPORT（温度 + `chosen_theta`），cgen 用 ctool 的 | ENG §6.2、§6.3.1 | 借用别格的触发点 = 参数格评的不再是自己那条路线（gates.md §3.4 裁决拒绝过这个做法） |
+| 触发点来源 | mext 用 mtool 的 REPLAY_REPORT（温度 + `chosen_theta`），cgen 与 cparam 都用 ctool 的 | ENG §6.2、§6.3.1 | 借用别格的触发点 = 参数格评的不再是自己那条路线（gates.md §3.4 裁决拒绝过这个做法） |
+| cparam 矩阵取数 | `summarize_matrix` 的 cparam 四列一律取 `PARAM_REPORT.json` 的 **pred_tool 块**（工具名喂 ctool argmax，= 系统乙 ctool+cparam 的真实口径）；gt_tool 块（喂真值工具名，纯填参能力）只进报告 | `pipeline/eval/summarize_matrix.py`（2026-08-21） | 混块引用会把"纯填参数能力"错当系统数字；两口径的差恰是 ctool 选错工具漏下来的损失，混了就量不出来 |
 | 参数三档 | 宽松（归一化后相等）/ 严格（原串相等）/ 整调用；键不匹配即该参数错；无参事件单独成列 | ENG §6.3.5、PLAN §1.4 | 判分松紧一变，跨路线比较作废 |
 | 报告字段名 | 一律沿用旧名：`theta_sweep_calB`、`stoptime_calibration_test`、`depth_bucket_acc_test`、`prior_baseline_event_acc`、`speculation_economics`、`temperature` | ENG §3.6、§2.5、`ACCEPT_EVAL.md` §4.7 | 下游脚本按名读；`probe_server.py` 靠 `temperature` 这个键装载探针，改名即断链 |
 | 先验基线 | 每个数据集报 test 堆的频率先验，随版本和模型变；`--readonly-env` 下**在折叠后词表上取最高频**（de1c781） | `ANNOTATE_REPORT.md` / `router_stats.md`（ENG §4.2.7、DATA.md §3.1）；折叠版在 `eval_tool.py` 的 `readonly_stats` | 拿错基线会把 gptoss（先验 0.404）的探针成绩高估——它的门槛比 q35 的 0.174 高一倍多；折叠前取会把"最高频是非只读工具"的环境（bfcl）先验错印成 0.0，探针被制造假优势 |
@@ -72,7 +74,7 @@
 | 口径 | 固定值 | 写死在哪 | 改了会怎样 |
 |---|---|---|---|
 | run_id 四处一致 | 原始数据目录名 = tmux session 前缀 = 台账 name = commit message | `CLAUDE.md`、PLAY §0.10 | 出了问题追不回是哪次跑、用的哪版代码 |
-| 训练 run_id 模板 | `<批次>_<model_short>_<cell>`，cell ∈ `{mtool, mext, ctool, cgen}` | ENG §2.4 | 汇总脚本按目录名认格，命名一乱矩阵表就拼不出来 |
+| 训练 run_id 模板 | `<批次>_<model_short>_<cell>`，cell ∈ `{mtool, mext, ctool, cgen, cparam}`；模板里没有底座档位段 → **一个批次只跑一档 `--base`**（extending §3.4） | ENG §2.4 | 汇总脚本按目录名认格，命名一乱矩阵表就拼不出来 |
 | 模型称呼 | qwen3.5 与 qwen3.6 **永远是两个模型**，任何场合不写成"qwen 侧" | PLAY §0.6 | 合并会掩盖两代模型的差异，这是用户明确的红线 |
 | 记账双写 | **双写由 launch 保证；绕过 launch 手搓发射的，双登记责任回到人**——`python3 run.py launch`/`launch-probe`/`launch-eval` 发射成功自动做完 `record.py start` + `gpu-jobs register`；收尾仍手动 `python3 run.py record finish` + `python3 run.py gpu-jobs finish` | `CLAUDE.md`、`ops/launch_common.py`、PLAY §0.10 | 漏登记就是占卡不销号；数字进不了 `runs.jsonl` 就不进 `RESULTS.md` |
 | 只增不改 | `ops/runs.jsonl` append-only；`RESULTS.md` 是渲染产物不许手改 | `CLAUDE.md`、ENG §0.5 | 手改渲染产物下次渲染即被覆盖，且账实不符 |

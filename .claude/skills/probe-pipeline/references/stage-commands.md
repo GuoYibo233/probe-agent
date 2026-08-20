@@ -10,7 +10,7 @@
 | 环境 | 绝对路径 | transformers | 管哪条线 |
 |---|---|---|---|
 | mbert-env | `/home/y-guo/reproduce/new1/mbert-env/bin/python` | 4.57.6 | ModernBERT:mtool / mext,以及评它们的 eval |
-| cprobe-env | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` | 5.14.1 | 因果模型:ctool / cgen,以及评它们的 eval |
+| cprobe-env | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` | 5.14.1 | 因果模型:ctool / cgen / cparam,以及评它们的 eval |
 
 两个环境互不升级(混合架构在旧版分块增量喂会静默算错,这是钉版本的原因)。**走 run.py 就不用自己选解释器**——上表只是让你看懂报错来自哪条线。
 
@@ -137,13 +137,13 @@ done
 
 ---
 
-## 3. train — 四格训练
+## 3. train — 训练格
 
-**干什么**:同一份数据训四个格——mtool(ModernBERT 判工具种类)、mext(ModernBERT 圈参数区间)、ctool(因果模型判工具种类)、cgen(因果模型直接写整条调用)。四格互不依赖,可全并行。**四格全要显卡 → 走 gpu-run skill 发射,不要手搓 ssh/nohup。**
+**干什么**:同一份数据训各格。现役三格(2026-08-21 起 m 线停跑):ctool(因果模型判工具种类)、cgen(因果模型直接写整条调用)、cparam(因果模型给定工具名只写参数段,数据与 cgen 同源零新标注);停跑存档两格:mtool(ModernBERT 判工具种类)、mext(ModernBERT 圈参数区间),仍可单发。各格互不依赖,可全并行。底座三档:ctool/cgen/cparam 都认 `--base qwen(0.6B,默认)/qwen17(1.7B)/qwen4(4B)`,**一个批次只跑一档底座**(run_id 没有档位段,混档撞 rid,见 extending §3.4)。**训练全要显卡 → 走 gpu-run skill 发射,不要手搓 ssh/nohup。**
 
 先冒烟(每格加 `--smoke`,产物写 `pipeline/runs/smoke/`,不污染正式目录),再全量。以下是 c1 批次**真实跑过的 12 条命令**的形态(每格一条,只有模型段不同):
 
-四格都是发射类任务:`run.py` 只把完整命令**拼出来打印**(解释器与脚本路径由
+各训练格都是发射类任务:`run.py` 只把完整命令**拼出来打印**(解释器与脚本路径由
 注册表填,不带 cd/CUDA_VISIBLE_DEVICES/tee——那是 gpu-run 发射模板的活),
 发射本身走 gpu-run。⚠️ 出命令前过脏树门禁:`git status --porcelain` 非空就拒绝,
 先 commit;非要跑加 `--allow-dirty`。**这道门连 `run.py show <task>` 也过**
@@ -157,8 +157,10 @@ python3 run.py train-mtool --data $D/q35 --out $R/c1_q35_mtool
 python3 run.py train-mext  --data $D/q35 --out $R/c1_q35_mext
 # ctool 的 --base qwen 已固定在注册表里,不用再传;--align-tol 是唯一动过的超参
 python3 run.py train-ctool --data $D/q35 --out $R/c1_q35_ctool --align-tol 3e-4
-# cgen 没有 --base,底座硬编码 Qwen3-0.6B-Base
+# cgen/cparam 的 --base 默认 qwen(0.6B),换档传 --base qwen17 / qwen4
 python3 run.py train-cgen  --data $D/q35 --out $R/c1_q35_cgen
+# cparam(2026-08-21 新格):给定工具名只生成参数
+python3 run.py train-cparam --data $D/<m> --out $R/<batch>_<m>_cparam
 ```
 
 一把发全批走排卡发射器 `python3 run.py launch-probe`(格表的唯一真源是 `run.py`
@@ -176,17 +178,18 @@ python3 run.py train-cgen  --data $D/q35 --out $R/c1_q35_cgen
 
 | flag | 谁有 | 说明 |
 |---|---|---|
-| `--data` | 四格 | 必填,`<DATA_ROOT>`;mext 另可用 `--params`(默认 `<DATA_ROOT>/params`) |
-| `--out` | 四格 | 必填,防覆盖旧件 |
-| `--force` | 四格 | **2026-08-02 起(审计 B7)**:不传时,`--out` 下已经有 `train_log.jsonl` 就**直接 SystemExit 拒绝开训**——那个目录训过一次,再训会把两次产物混进同一个 `best/` 且无法归属。正常处置是**换一个 `--out`**;确认要覆盖才加 `--force`。→ 重发某一格前先看目标目录有没有 `train_log.jsonl`,别把这个退出当成脚本坏了 |
+| `--data` | 各格 | 必填,`<DATA_ROOT>`;mext 另可用 `--params`(默认 `<DATA_ROOT>/params`) |
+| `--out` | 各格 | 必填,防覆盖旧件 |
+| `--force` | 各格 | **2026-08-02 起(审计 B7)**:不传时,`--out` 下已经有 `train_log.jsonl` 就**直接 SystemExit 拒绝开训**——那个目录训过一次,再训会把两次产物混进同一个 `best/` 且无法归属。正常处置是**换一个 `--out`**;确认要覆盖才加 `--force`。→ 重发某一格前先看目标目录有没有 `train_log.jsonl`,别把这个退出当成脚本坏了 |
 | `--base qwen` | 仅 ctool | **必填**,choices 只有 `qwen` |
 | `--align-tol` | 仅 ctool | 默认 1e-4;长窗口下 fp32 舍入噪声会把绝对差顶到 1e-4,c1 批次统一用 `3e-4`。判是不是真算错看报告里的 reldiff:1e-6 量级=纯噪声,1e-3 以上=真算错,放宽也没用 |
 | `--align-only` | 仅 ctool | 只跑对齐检查即退(0),开训前想单独验就用它 |
-| `--smoke` | 四格 | mtool/mext/cgen = 500 训练 / 200 评估实例,ctool = 200 / 80 事件,均 1 epoch |
-| `--env` | 四格 | 默认 appworld,**仅作日志标签**,不影响数据路径 |
+| `--base` | ctool/cgen/cparam | 三档 qwen=0.6B / qwen17=1.7B / qwen4=4B(权重都在 NFS models 盘)。ctool 必填(注册表已带 qwen);cgen/cparam 默认 qwen。发射换档走排卡表 extra(`--base qwen17`,argparse 后写的赢) |
+| `--smoke` | 各格 | cgen/cparam(以及停跑的 mtool/mext) = 500 训练 / 200 评估实例,ctool = 200 / 80 事件,均 1 epoch |
+| `--env` | 各格 | 默认 appworld,**仅作日志标签**,不影响数据路径 |
 | `--device` | 除 mtool | 默认 cuda |
-| `--readonly-env` | 四格 | choices `appworld/bfcl`,默认不传(**不传 = 字节级旧行为**)。传了即"只读+弃权"口径(ro1 批起):mtool/ctool 真值折叠、词表 = 只读工具(原顺序)+ 末位哨兵 `<NON_READONLY>`;mext/cgen 只在只读事件上训任务,非只读样本仅当开火头负例。真值表在 `pipeline/annotate/readonly/<env>.json`,表外标签超 5% 硬停(`readonly_map.audit`)。产物多一份 `<out>/READONLY.json` |
-| `--fire-head` | mext/cgen | 随训开火头(二值:该边界参数是否全就绪)。ready 真值按 `(event, sent_idx)` 联表 `params/<split>.jsonl`;mext 走独立样本流第二次前向,cgen 取 prompt 末位置(labels 最后一个 -100)的 logit 以免看见目标串。产物 `best/fire_head.pt`,`meta.json` 记 `fire_head: true` |
+| `--readonly-env` | 各格 | choices `appworld/bfcl`,默认不传(**不传 = 字节级旧行为**)。传了即"只读+弃权"口径(ro1 批起):mtool/ctool 真值折叠、词表 = 只读工具(原顺序)+ 末位哨兵 `<NON_READONLY>`;mext/cgen 只在只读事件上训任务,非只读样本仅当开火头负例;cparam 非只读样本整条丢弃(它没有开火头)。真值表在 `pipeline/annotate/readonly/<env>.json`,表外标签超 5% 硬停(`readonly_map.audit`)。产物多一份 `<out>/READONLY.json` |
+| `--fire-head` | mext/cgen(cparam 没有这旗) | 随训开火头(二值:该边界参数是否全就绪)。ready 真值按 `(event, sent_idx)` 联表 `params/<split>.jsonl`;mext 走独立样本流第二次前向,cgen 取 prompt 末位置(labels 最后一个 -100)的 logit 以免看见目标串。产物 `best/fire_head.pt`,`meta.json` 记 `fire_head: true` |
 | `--grad-ckpt` | ctool/mext | OOM 唯一合规处置(invariants §6)。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解。**z1 实测(2026-08-10)更宽:gptoss 轨迹的 ctool/cgen 不带 fire-head、默认超参也在 48G A6000 直接 OOM**——cgen 没有本旗,处置是换 H100/H200 大卡(`launch --refire` 换 `--piece` 即可)或降 `--bs` |
 
 其余全用默认(`--max-len 4096`;mbert 两格 `--bs 8 --accum 4 --lr 2e-5`,因果两格 `--bs 4 --accum 8 --lr 1e-5`;一律 `--epochs 3`)。**本轮 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参。**
@@ -196,8 +199,9 @@ python3 run.py train-cgen  --data $D/q35 --out $R/c1_q35_cgen
 - mext → `<out>/best/{model.pt(裸 state_dict,不是 HF 目录), tokenizer, meta.json}` + `train_log.jsonl`
 - ctool → `<out>/ALIGN_CHECK.json` + `<out>/best/{HF backbone, tokenizer, head.pt, label_map.json, meta.json}` + `train_log.jsonl`
 - cgen → `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep`)+ `train_log.jsonl`
+- cparam → `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
 
-**退出码**:三格无显式非 0。**ctool 的对齐检查 FAIL → `sys.exit(2)`**(整段一次前向 vs 逐 token 增量前向,末位置隐状态/logits 必须 max|diff| < tol),`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。
+**退出码**:除 ctool 外无显式非 0。**ctool 的对齐检查 FAIL → `sys.exit(2)`**(整段一次前向 vs 逐 token 增量前向,末位置隐状态/logits 必须 max|diff| < tol),`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。
 
 ---
 
@@ -207,8 +211,8 @@ python3 run.py train-cgen  --data $D/q35 --out $R/c1_q35_cgen
 
 ### 4.1 依赖顺序(不能颠倒)
 
-1. **先评 6 个工具格**(3 模型 × mtool/ctool):`eval_tool.py` 产出 `REPLAY_REPORT.json` 与 `logits_test.pt` / `logits_val.pt`。6 个之间互不依赖,可并行。
-2. **再评参数格**:`eval_mbert_call.py` 吃**同模型 mtool** 的报告与 logits;`eval_causal_call.py` 吃**同模型 ctool** 的报告与 logits。跨模型串会 assert 失败。
+1. **先评工具格**(现役 ctool;m 线停跑前还有 mtool):`eval_tool.py` 产出 `REPLAY_REPORT.json` 与 `logits_test.pt` / `logits_val.pt`。工具格之间互不依赖,可并行。
+2. **再评参数/调用格**:`eval_mbert_call.py` 吃**同模型 mtool** 的报告与 logits;`eval_causal_call.py`(cgen)与 `eval_causal_param.py`(cparam)都吃**同模型 ctool** 的报告与 logits。跨模型串会 assert 失败。
 3. **最后汇总**:`summarize_matrix.py`(纯 CPU)。
 
 前两步占卡 → **走 gpu-run skill 发射,不要手搓 ssh/nohup**。
@@ -229,6 +233,9 @@ python3 run.py eval-mcall --env <ENV> --run $R/<BATCH>_<MODEL>_mtool \
   --extractor $R/<BATCH>_<MODEL>_mext --data $D/<MODEL>
 python3 run.py eval-ccall --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
   --cgen-run $R/<BATCH>_<MODEL>_cgen --data $D/<MODEL>
+# cparam:同一批 ctool 触发点跑 gt_tool/pred_tool 两口径,报告写进 --cparam-run
+python3 run.py eval-cparam --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
+  --cparam-run $R/<BATCH>_<MODEL>_cparam --data $D/<MODEL>
 
 # 汇总(纯 CPU,run.py 直接跑;缺报告的格自动标 PENDING,可边跑边看)
 python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT.md --prefix <BATCH>
@@ -341,7 +348,7 @@ S5 (CPU)  run.py ann-params --config 同一份 config                        ←
           (S4+S5+check 也可一条 run.py recipe annotate-chain --set config=...)
 S6 (GPU)  run.py train-<格> ... --smoke,产物进 pipeline/runs/smoke/       ← 等 S5
 S7 (CPU)  run.py check-bundle-mbert 对 smoke 产物跑一遍                    ← 等 S6
-S8 (GPU)  run.py train-<格> 四格全量(或 run.py launch-probe 一把排卡)     ← 等 S7 放行
+S8 (GPU)  run.py train-<格> 各格全量(或 run.py launch-probe 一把排卡)     ← 等 S7 放行
 S9 (GPU)  run.py eval-tool-mbert / eval-tool-causal × 6                   ← 等 S8 对应格训完
 S10(GPU)  run.py eval-mcall(吃同模型 mtool)/ eval-ccall(吃同模型 ctool) ← 等 S9
           (S9+S10 排卡一把发走 run.py launch-eval,它替依赖顺序上锁)
@@ -360,13 +367,16 @@ S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             �
 ## 7. 接口陷阱
 
 - **产物写向不对称**:`eval_tool.py` 的 `logits_*.pt` 永远写进 `--run`(`--report-dir` 只改报告);`eval_mbert_call.py` 的报告写进 `--extractor` 而非 `--run`;`eval_causal_call.py` 的报告写进 `--cgen-run` 而非 `--ctool-run`。→ 去 mtool 目录找 EXTRACT_REPORT 会一无所获。
-- **`train_log.jsonl` 是 append 模式**(四个训练脚本一致):同一个 `--out` 重跑会在旧日志后面续写,不清空。→ 读日志算轮次/耗时前先确认只有一段 `event=start`,否则数字是两次跑的混合。**2026-08-02 起这个坑被堵住了**:四格开训前先查 `--out` 下有没有 `train_log.jsonl`,有且没传 `--force` 就 SystemExit(见 §3 的 `--force` 行);所以现在只有显式 `--force` 才可能出现混合日志,读到两段 `event=start` 就说明有人加过 `--force`。
+- **`train_log.jsonl` 是 append 模式**(各训练脚本一致):同一个 `--out` 重跑会在旧日志后面续写,不清空。→ 读日志算轮次/耗时前先确认只有一段 `event=start`,否则数字是两次跑的混合。**2026-08-02 起这个坑被堵住了**:各格开训前先查 `--out` 下有没有 `train_log.jsonl`,有且没传 `--force` 就 SystemExit(见 §3 的 `--force` 行);所以现在只有显式 `--force` 才可能出现混合日志,读到两段 `event=start` 就说明有人加过 `--force`。
 - **`--env` 在训练脚本里只是日志标签**,数据路径完全由 `--data` 决定;但在三个 eval 脚本里 `--env` 是必填且**影响判分**(选调用解析正则)。→ 训练时写错无害,评测时写错会让工具名全判错。
-- **cgen 没有 `--base`**,底座硬编码;ctool 的 `--base qwen` 却是必填。→ 换底座要改源码,不是加 flag。
+- **底座三档(2026-08-21 起)**:ctool 的 `--base` 必填(注册表带 `qwen`),cgen/cparam 默认 `qwen`;三个脚本各有一份同构 `MODELS` 表(qwen/qwen17/qwen4),**没有单一真源,加档要改三处**。发射时换档走排卡表 extra(argparse 后写的赢)。
+- **eval_causal_param.py 的报告写进 `--cparam-run`**(PARAM_REPORT.{json,md});它带格保险丝:`best/meta.json` 没有 `param_only: true`(比如误喂 cgen 的 run)直接 SystemExit——cparam 的 prompt 自带工具名,喂 cgen run 会把工具名写两遍、数字静默变形,所以硬停。矩阵只读它的 **pred_tool 块**(系统乙口径),gt_tool 块只进报告。
+- **gen_launch 的 gpt-oss 客户端预设 2026-08-21 起可配**:manifest 顶层可选字段 `gptoss_client_preset`,缺省 `gptoss_chat_high`(老 manifest 行为逐字节不变);给了名字就校验 `configs/presets/<名>.json` 存在,缺文件退 2。
+- **launch_probe smoke 档的 `--gpus` 缺省 2026-08-21 起是 `0,1,2`**:张数必须等于 `CELL_ORDER` 长度(现为三格),给四张退 1。
 - **mext 的权重是 `best/model.pt` 裸 state_dict**,不是 HF 目录,不能用 `from_pretrained` 直接读。→ 复用它必须走 `train_mbert_extract.load_extractor()`。
 - **`--head causal` 的 eval_tool 会 import `pipeline/train/train_causal_tool.py`**,所以必须用 cprobe-env 跑;拿 mbert-env 跑 causal 头会在 import 或加载处炸。
 - **两个 call 脚本对 θ 为 null 是硬失败**(退 1),不是跳过。→ 批量评测脚本要接住这个退出码并降档到 `--risk 0.1`,否则整批中断。**例外**:带 `--self-fire` 时 θ null 不退 1——旧模式块整块跳过、只出 `self_fire` 块并打一行提示;别把"跑完了"当成"旧口径也有数"。
 - **`--self-fire` 与 `--readonly-env` 是绑定的**(缺一即 SystemExit);`--readonly-env` 自己又与 label_map 里的哨兵双向绑定(带哨兵的 run 不传旗、或不带哨兵的 run 传旗,都硬停)。→ 排查这类 SystemExit 先看 `best/label_map.json` 末位是不是 `<NON_READONLY>`,再看命令行,别去翻数据。
 - **`build.py` 对"unit 不在官方题单"零容忍**(退 1)。→ 换环境(appworld→bfcl→alfworld)时,题单文件的命名与 task_id 格式必须先对齐,否则第一步就全量报错。
 - **`gen_launch.py` 强制 `outdir = <env>_<model_key>`**(`env` 取 manifest 顶层的 `env` 字段,缺省 `appworld`;所以 appworld 批是 `appworld_q35`,alfworld 批是 `alfworld_q36`),自定义名只会被 WARN 并改掉;下游事件抽取按目录名尾巴认模型,`MODEL_OF` 只认 q35/q36/gptoss(`annotate/rules.py` 的 `MODEL_OF` 常量)。→ 新模型必须先往这张表里加一行,否则采到的轨迹会被静默跳过。
-- **`--smoke` 不改 `--out`**:冒烟和全量传同一个 `--out` 会让冒烟权重占住 `best/`。→ 照 `ops/launch_probe.py:71` 的做法,冒烟一律写 `pipeline/runs/smoke/<rid>_smoke`。**2026-08-02 起这条有了硬拦**:四格都带 `--force`,不带它时 `--out` 下已有 `train_log.jsonl` 就拒绝开训(见 §3 的 `--force` 行),所以"冒烟占住正式目录"现在会当场退出而不是静默混产物。
+- **`--smoke` 不改 `--out`**:冒烟和全量传同一个 `--out` 会让冒烟权重占住 `best/`。→ 照 `ops/launch_probe.py:71` 的做法,冒烟一律写 `pipeline/runs/smoke/<rid>_smoke`。**2026-08-02 起这条有了硬拦**:各格都带 `--force`,不带它时 `--out` 下已有 `train_log.jsonl` 就拒绝开训(见 §3 的 `--force` 行),所以"冒烟占住正式目录"现在会当场退出而不是静默混产物。

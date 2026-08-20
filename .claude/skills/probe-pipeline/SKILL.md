@@ -1,6 +1,6 @@
 ---
 name: probe-pipeline
-description: new1 探针流水线的执行入口——从轨迹采集到矩阵报告的全链一条龙：定批次 → 采集(GPU) → 写码/改码(CPU，与采集并行) → 双验收线 → 造数据集 → 四格 smoke → 批量训练 → 依赖顺序评测 → 矩阵汇总 → 记账收官 → 回写本 skill。也是**扩展这条流水线的唯一入口**：加新模型 / 加新环境 / 加新训练方法(新格) / 换新 split 方法，都从这里进，并在收尾时按 Phase E 把新方法写回 skill。Invoke whenever Dungeon♂Master says "跑流水线"、"跑一批探针"、"新数据集跑一遍"、"出矩阵"、"换个环境跑"、"加个新模型/新格"、"换个切分方式"、"加一种训练方法"、"run the pipeline"、或任何要把 collect/annotate/train/eval 串起来跑或扩展的活。单个 GPU 任务只用 gpu-run，这个 skill 管的是整条链。
+description: new1 探针流水线的执行入口——从轨迹采集到矩阵报告的全链一条龙：定批次 → 采集(GPU) → 写码/改码(CPU，与采集并行) → 双验收线 → 造数据集 → 各格 smoke → 批量训练 → 依赖顺序评测 → 矩阵汇总 → 记账收官 → 回写本 skill。也是**扩展这条流水线的唯一入口**：加新模型 / 加新环境 / 加新训练方法(新格) / 换新 split 方法，都从这里进，并在收尾时按 Phase E 把新方法写回 skill。Invoke whenever Dungeon♂Master says "跑流水线"、"跑一批探针"、"新数据集跑一遍"、"出矩阵"、"换个环境跑"、"加个新模型/新格"、"换个切分方式"、"加一种训练方法"、"run the pipeline"、或任何要把 collect/annotate/train/eval 串起来跑或扩展的活。单个 GPU 任务只用 gpu-run，这个 skill 管的是整条链。
 version: 1.0.0
 ---
 
@@ -25,8 +25,8 @@ version: 1.0.0
 任务清单现查 `python3 run.py list`（别在文档里另抄一份会过期的名单），
 `show <task>` / `selfcheck` 同样从它进。本 skill 的命令表仍是
 参数细节的权威；解释器用哪个以 run.py 注册表为准。**任何扩展在改代码的同一个
-commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯一真源是它的 `CELLS`，
-`ops/launch_probe.py` 从它 import；**评测四格唯一真源是它的 `EVAL_CELLS`**，
+commit 里必须把新脚本/新格挂进 run.py 注册表**（训练格表唯一真源是它的 `CELLS`，
+`ops/launch_probe.py` 从它 import；**评测格表唯一真源是它的 `EVAL_CELLS`**，
 `ops/launch_eval.py` 只 import 不另抄），`selfcheck` 过了才算齐——这条与 Phase E
 回写并列，谁都不能替谁：skill 记流程与坑，run.py 记怎么跑。
 ⚠️ `run.py show <task>` 对**发射类任务**也过脏树门禁（`git status --porcelain`
@@ -41,7 +41,7 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 | `<BATCH>` | `c1` | run_id 前缀，一批一个，全链四处一致 |
 | `<ENV>` | `appworld` | appworld / bfcl / tales，决定事件抽取正则 |
 | `<MODELS>` | `q35 q36 gptoss` | 被探测的 agent 模型，**永不合并同族**（q35≠q36） |
-| `<CELLS>` | `mtool mext ctool cgen` | 骨架(mbert/causal) × 头(工具/参数) 四格 |
+| `<CELLS>` | `ctool cgen cparam` | 因果线三格：判工具名 / 写整条调用 / 给定工具名只填参数。m 线(mtool/mext)2026-08-21 起停跑，两格仍留在 CELLS 可单发。底座三档 `--base qwen/qwen17/qwen4`，**一个批次只跑一档**（extending §3.4） |
 | `<DATA_ROOT>` | `pipeline/data/aw_official_v1/` | 数据集版本目录，**换口径就换版本号** |
 
 这五个变量里有四个可以扩展，各自的改动清单在 `references/extending.md`：
@@ -83,7 +83,7 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 
 这是全链最大的并行红利：采集占满 GPU 的那几小时，把代码全写完。
 
-- 写码顺序：annotate → eval → train 四格 → collect 生成器 → inject 校验器。
+- 写码顺序：annotate → eval → train 各格 → collect 生成器 → inject 校验器。
 - **一把写完再跑验收，不逐段试跑正式数据。**
 - 派 subagent 并行施工（本轮三个并发，eval 因 import 依赖稍后发）。
   任务书标准结构见下文「派活的写法」。
@@ -112,12 +112,14 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练四格唯�
 后写覆盖，test 赢。交叠会静默让 train/test 边界失守，而报告照出、退出码 0。
 换环境时先跑一句 `comm` 对拍三份题单。
 
-### C2 四格 smoke（占卡，转 gpu-run）
-门禁 **G14**：四格各跑一次 `--smoke`（mtool/mext/cgen 按固定种子 `SEED=20260729`
-随机抽 500 训练 / 200 评估**实例**——mext 的这两个数是**参数实例级**不是样本级；
-ctool 按同一种子随机抽 200 / 80 **事件**；四格都是 1 epoch，没有步数上限），
+### C2 各格 smoke（占卡，转 gpu-run）
+门禁 **G14**：`CELL_ORDER` 各格跑一次 `--smoke`（现役三格：cgen/cparam 按固定种子
+`SEED=20260729` 随机抽 500 训练 / 200 评估**实例**；ctool 同种子随机抽
+200 / 80 **事件**；各格都是 1 epoch，没有步数上限。停跑的 mtool/mext 限额
+也是 500/200 实例——mext 是**参数实例级**不是样本级——留档备查），
 判据是 loss 在降、ckpt 能存能读。
-因果两格另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`。
+ctool 另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`
+（cgen/cparam 同骨架但没有这套检查，见 extending §3.4）。
 **smoke 不过不许放量**，一次都不许。
 
 全链各段的小规模入口（采集 `--n`/训练 `--smoke`/评测 `--limit`/注入 `--limit`/
@@ -140,7 +142,7 @@ smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这
 （`python3 run.py launch <task> ...` 一条命令做完台账 + `record.py start` + RUNMETA
 三处登记；手搓发射要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...`）。
 
-两条与"同一个 `--out` 二次训练"有关的新行为（2026-08-02 起）：四格都有 `--force`，
+两条与"同一个 `--out` 二次训练"有关的新行为（2026-08-02 起）：各训练格都有 `--force`，
 **不带它时 `--out` 下已有 `train_log.jsonl` 就直接拒绝开训**（防两次产物混进同一个
 `best/`）；`run.py launch-probe` / `launch-eval` 发射成功后自动往产物目录写
 `RUNMETA.json`（append 一条 commit + 实际命令），手搓发射要自己补
@@ -152,9 +154,9 @@ smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这
 ### C4 评测（**内部必须串行，这是唯一有依赖的一段**）
 
 ```
-先评 6 个工具格 (mtool/ctool) ── 出 REPLAY_REPORT.json + logits_test.pt
+先评工具格 (ctool；m 线停跑前还有 mtool) ── 出 REPLAY_REPORT.json + logits_test.pt
                     ↓ 提供温度与触发点 θ
-后评 6 个参数格 (mext 吃 mtool 的、cgen 吃 ctool 的)
+后评参数/调用格 (cgen 与 cparam 都吃同模型 ctool 的；mext 吃 mtool 的)
 ```
 
 **双档策略**：先取 `--risk 0.05`；该档 θ 为 null 就退 `--risk 0.10` 并在报告里显式标注；

@@ -44,7 +44,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 1. 改 `rules.py:18` + `gen_launch.py:47-54`,写 config 与 manifest → **stage-commands §1** 生成发射器(先 `--dry-run --out-override`)。
 2. **stage-commands §1** 正式生成 → 走 gpu-run 采集,验 outdir 名必须是 `appworld_<key>`(`gen_launch.py:117-122` 会强制改名并 WARN)。
 3. **stage-commands §2**:`build.py` + `param_label.py`,各一次,同一份 config。
-4. **stage-commands §3**:四格 `--smoke` → **§5** `check_bundle.py --device cpu` → 四格全量。
+4. **stage-commands §3**:各格 `--smoke` → **§5** `check_bundle.py --device cpu` → 各格全量。
 5. **stage-commands §4.1** 的依赖顺序:先 `eval_tool.py`(mtool/ctool),再 `eval_mbert_call.py` / `eval_causal_call.py`。
 6. **stage-commands §4.2** 的 `summarize_matrix.py`,**记得带 `--models ... <新模型>`**。
 
@@ -96,7 +96,9 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 
 ## 3. 情形 C:加一种新训练方法(新格)
 
-"格" = 骨架 × 头。现状四格:
+"格" = 骨架 × 头。现状五格(m 线两格 2026-08-21 起停跑,仍可单发;因果三格的
+底座 2026-08-21 起扩成三档 `--base qwen/qwen17/qwen4`,三个脚本各一份同构
+`MODELS` 表,没有单一真源,加档要改三处):
 
 **行号一律不引**(这批漂过一次):下表的定位靠常量名与日志事件名 grep——选 best 的判断都在 `log(event="eval", …)` 之后那个 `if`,存盘都在紧跟着的 `log(event="save_best", …)` 之前。
 
@@ -104,8 +106,9 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 |---|---|---|---|---|---|
 | mtool | `train_mbert_tool.py` | ModernBERT(常量 `MODEL`) | 序列分类 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | HF 目录(`save_pretrained`)+ tokenizer + `label_map.json` |
 | mext | `train_mbert_extract.py` | ModernBERT(常量 `MODEL`) | span 抽取(start/end/可答) | val 参数 acc(日志字段 `calA_param_acc`,越大越好) | **裸 state_dict** `best/model.pt`(`torch.save(model.state_dict(), …)`)+ tokenizer + `meta.json` |
-| ctool | `train_causal_tool.py` | Qwen3-0.6B(常量 `MODELS`) | 线性头挂末位隐状态 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | backbone HF + `head.pt` + `label_map.json` + `meta.json` |
-| cgen | `train_causal_callgen.py` | Qwen3-0.6B(常量 `QWEN`) | 语言建模(直接写整条调用) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**) | HF 目录 + tokenizer + `meta.json` |
+| ctool | `train_causal_tool.py` | Qwen3 三档(常量 `MODELS`,`--base` 必填) | 线性头挂末位隐状态 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | backbone HF + `head.pt` + `label_map.json` + `meta.json` |
+| cgen | `train_causal_callgen.py` | Qwen3 三档(常量 `MODELS`,`--base` 默认 qwen) | 语言建模(直接写整条调用) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**) | HF 目录 + tokenizer + `meta.json` |
+| cparam | `train_causal_param.py` | Qwen3 三档(常量 `MODELS`,`--base` 默认 qwen) | 语言建模(给定工具名与左括号,只写参数段;目标从 `label_call` 按 `label+"("` 前缀剥离,对不上整条丢弃计 `assembly_mismatch`) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**;`val_exact_params` 只进日志) | HF 目录 + tokenizer + `meta.json`(含 `param_only: true`) |
 
 ### 3.1 必改清单
 
@@ -140,7 +143,8 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 |---|---|---|
 | `eval_tool.py` | 任何**分类头**:要 `best/label_map.json`(`:253`);mbert 分支走 `AutoModelForSequenceClassification`(`:270-272`),causal 分支 `from train_causal_tool import CausalProbe`(`:69-70`) | 分类头 + 现有两种骨架之一 → **一行不用改直接复用**;新骨架 → 在 `:255-272` 加第三个 `--head` 选项 |
 | `eval_mbert_call.py` | **只吃 mext**:`:28-29` 直接 `from train_mbert_extract import FIND, collate, decode, load_extractor, span_ok` | 换头就得换 import,等于新写 |
-| `eval_causal_call.py` | **只吃 cgen**:`:238-249` 按 HF CausalLM 装 `best/`,`:239` 从 meta 读 `call_sep` | 同上;它也是三个里最独立的,新写评测脚本抄它 |
+| `eval_causal_call.py` | **只吃 cgen**:`:238-249` 按 HF CausalLM 装 `best/`,`:239` 从 meta 读 `call_sep` | 同上;它也是最独立的,新写评测脚本抄它 |
+| `eval_causal_param.py` | **只吃 cparam**:meta 没有 `param_only: true` 即 SystemExit(格保险丝,防误喂 cgen run——那样工具名会被写两遍,数字静默变形)。同一批 ctool 触发点跑两口径:gt_tool 喂真值工具名(纯填参能力)、pred_tool 喂分类头 argmax(系统乙真实数字),判分前重组 `工具名+"("+生成串` 再走 cgen 同一套 parse/判分 | 2026-08-21 照 eval_causal_call.py 抄出来的先例;矩阵四列只读 pred_tool 块 |
 
 两个 call 脚本的共同结构:从工具格 `REPLAY_REPORT.json` 取温度与 θ(`eval_mbert_call.py:125-130`、`eval_causal_call.py:214-219`),再靠 `logits_test.pt` 的行数 assert 对齐(`:139` / `:228`)。新的"依赖格"照这个结构写。
 
@@ -148,6 +152,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 
 - **独立格 vs 依赖格**:mtool/ctool 只吃数据集,互不依赖;mext/cgen 要吃**同模型工具格**的触发点(`eval_mbert_call.py:140`、`eval_causal_call.py:229` 的 `replay_fire`)。新格只要是"在触发点上评",就必须排在工具格之后,顺序照 stage-commands §4.1。
 - **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 loss 在降 + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。
+- **run_id 没有底座档位段**(`{batch}_{model}_{cell}`):同一格换 `--base` 档重训会撞 rid,两次产物无法归属。约定**一个训练批次只跑一档底座**(如 p1 线的 p1b06/p1b17/p1b4),换档在排卡表 extra 里写 `--base <档>`(2026-08-21 定,配三档底座一起生效)。
 - **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_probe.py:67` 的 `rid = f"{batch}_{model}_{cell}"`、`summarize_matrix.py:75` 的 `rid = f"{args.prefix}_{m}_{c}"`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_probe.py:66` 的 `CELLS[cell]`、`summarize_matrix.py:22` 的 `REPORT_OF`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_probe.py:112`(smoke 档)/`:123`(full 档)拼的 session 名人读歧义。建议单段小写。
 
 ### 3.5 最短路径
@@ -253,7 +258,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | 5 | `build.py:70-79` / `param_label.py:63-69` | 新 env 复用 `jsonl_events` 但没加分支 | else 是 catch-all,**任何非 appworld 都拿 tales 的"动词=工具名"语义**,数据照造 |
 | 6 | `rules.py:18` | 两个 key 映到同一个 `model_full` | `build.py:225` 的过滤把两批轨迹**静默合并**,直接破"永不合并同族"的口径(SKILL.md Phase 0) |
 | 7 | `eval_causal_call.py:119-124` | `--env` 传错 | 只换正则不报错。appworld 数据传 `--env bfcl`,`apis.spotify.login(` 会被解析成工具 `login`,**tool_ok 全 false、数字整体塌陷**。注意:同一个 `--env` 在 `eval_tool.py`(只用于 `:239` 的 legacy 路径拼接与 `:355`/`:380` 的标题)和 `eval_mbert_call.py`(只用于 `:210`/`:225` 的标题字段)里**纯属标签**——三个 eval 里只有这一个真影响判分 |
-| 8 | `summarize_matrix.py:67` | 忘了给 `--models` 加新模型 | 新模型四格**整体不出现在表里**,退 0 且 stdout 不提示 |
+| 8 | `summarize_matrix.py:67` | 忘了给 `--models` 加新模型 | 该模型全部格**整体不出现在表里**,退 0 且 stdout 不提示 |
 | 9 | `summarize_matrix.py:49-58` + `104-105` | 某个参数格是在 `--risk 0.1` 下跑出来的 | `--risk` 只作用于 tool 格的 `test_frozen[risk]`(`:38`);参数格两列**无条件读该 run 的报告**,而 `EXTRACT_REPORT.json` / `CALLGEN_REPORT.json` 是单文件覆盖写 → 0.05 档的表里会混进 0.10 档的数 |
 | 10 | `gen_launch.py:172-177` + `:266` | 新模型 `family` 既不是 qwen 也不是 gptoss | 走 else,**按 gptoss 发服务旗标与客户端旗标**,发射脚本照常生成 |
 | 11 | 四个训练脚本的 `--env` | 传错 | 只污染 `train_log.jsonl` 与 `best/meta.json` 的标签,数字不受影响(反向的静默:看日志的人会被误导) |
@@ -264,7 +269,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | 16 | `build.py:231` | config 里写了新 `split_mode` 但没在这里加分发 | **永远走官方切法**,配置形同虚设,数据照造照出报告 |
 | 17 | `build.py:260-267` | 新切法沿用官方切法的自检 3 | `lists` 是新切法自己造的,`assert u in lists[name]` 恒真,自检失效却照样在 `:341-342` 打 ✓ |
 | 18 | `build.py` 的两行报告文案 / `eval_tool.py:356` `:366` | 换了切法没改文案与字段名 | 报告里写着"官方题单"、字段叫 `theta_sweep_calB`,数字却来自别的切法/别的堆。**已部分接线**(`bfcl_mtb_v1` 批次):`build.py` 的"规则"行与"切分"行都改成从 `cfg.get("split_desc", "官方题单,任务实例级")` 取,不写该字段的 config 保持旧说法;`check_callstr.py` 门禁 E 会**硬拦**"SPLIT_REPORT.json 说没有官方分区、报告里却印着『官方题单』"这种撒谎。`eval_tool.py` 那两个 `calB` 旧字段名**仍未动**(规格明令保留给下游按名读) |
-| 19 | `train_mbert_tool.py:30` `:96-98` | 拿 `--input-mode` 做 T5 消融 | `apply_mode` **只有 mtool 一个格 import**;另外三格连这个参数都没有(传了会被 argparse 拒,响),但"四格一起做消融"这件事会**静默只做成一格** |
+| 19 | `train_mbert_tool.py:30` `:96-98` | 拿 `--input-mode` 做 T5 消融 | `apply_mode` **只有 mtool 一个格 import**;其余各格连这个参数都没有(传了会被 argparse 拒,响),但"各格一起做消融"这件事会**静默只做成一格** |
 | 20 | `build.py:101`(`runs.glob("bfcl_*")`)+ config 的 `traj_runs[]` | `traj_runs` 写成 run 目录的**父目录**(如 `/envs/runs` 而不是 `/envs/runs/full_v1`) | glob 只在该目录**平级**找 `bfcl_*`,于是命中的是 21 题的 smoke 批次 `envs/runs/bfcl_q35/`;若父目录与正确的 run 目录**同时**列进 `traj_runs`,smoke 批次的 traj 名(`bfcl_q35/<id>`)与全量批次逐字相同,同一批 event key **重复进库**、退 0、无告警,只是样本数悄悄涨。实测 bfcl q35 从 11094 涨到 12395 样本(+1301),报告里三堆实例数全都还是 140/40/20,肉眼看不出来。防线:`check_callstr.py` 门禁 C(traj_runs 项下不许再有嵌套 run 目录)+ 门禁 B(`(event, sent_idx)` 全局唯一、一个 unit 只对一条 traj) |
 | 21 | `build.py:154-156`(`make_call`)对 `eval_causal_call.py:83-116`(`split_named_raw`) | 真值参数值里含**逗号** | `make_call` 是 `", ".join(f"{k}={v}")` 手拼、**不加引号**,eval 侧按顶层逗号切 → 一条真值被切成 `k=前半` + `pos0=后半`,`params_all_ok` / `full_call_ok` 被**静默压低**,生成侧写得再对也拿不到分。实测(`check_callstr.py` 全量算的,不是抽样;两批都是三模型加总):bfcl 3325 事件里 **83 条回读失败(2.50%)**、5027 个参数实例里 229 个含逗号(4.56%);appworld 16030 事件里 **76 条(0.47%)**、24674 个参数实例里 104 个含逗号(0.42%)。所以 bfcl 的参数侧数字天生比 appworld 难看 **约 5.3 倍**,原因是 bfcl 的工具里有 `send_message` / `resolve_ticket` / `post_tweet` 这类自由文本参数,而 appworld 的参数多是 id 与短字段。`rules.py` 的 ALFWorld 有 `ALF_BAD_CHARS` 逗号闸门专门拦这件事,appworld / bfcl 都没有;**不要单给一个环境补闸门**(appworld 的 c1_* 十二格已按无闸门口径上账,补了就不是一把尺子)。防线:`check_callstr.py` 偏差 1 逐批量出天花板,写进 `CALLSTR_CHECK.md` |
 | 22 | `eval_mbert_call.py:274`(`pick_theta`,`eval_causal_call.py` 同款) | 拿 `self_fire.theta_sweep_val` 扫描表对着 risk 找"达标行"来判有没有解 | 选 θ_fire 的真实约束是 `fire_acc ≥ 1-risk`(开火**精度**),而扫描表里的 `wrong_fire_rate` 是按**全事件**归一的另一个数——后者 ≤ risk 时该档照样可能 null。ro1 批实测:bf_q36_mext 在 θ=0.95 处 wrong_fire_rate 0.09 ≤ 0.1 但 fire_acc 只有 0.78,0.1 档判 null 是**正确行为**;不知道这条的人会把它当 bug 去"修",一修就换了契约 |
@@ -279,7 +284,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 |---|---|---|
 | 加了新模型 | `extending §1` / `stage-commands §0` | §1 的三处枚举表补上新短名;§0 若引入了新权重目录,补一行路径 |
 | 加了新环境 | `extending §2` / `SKILL.md` Phase 0 的 `<ENV>` 行 / `stage-commands §1 §2` | §2 的分支清单标注"这个环境已接";Phase 0 的候选环境列表加名;§1 的 outdir 命名规则、§2 的 config `env` 字段取值同步 |
-| 加了新格 | `extending §3` / `SKILL.md` Phase 0 的 `<CELLS>` 行与 Phase C4 的依赖图 / `stage-commands §3 §4` | §3 的四格表变五格(骨架/头/best 格式/选 best 指标四列都要填);§3 的命令表加一条真实跑过的命令;§4 的依赖顺序图标出新格排在哪一层 |
+| 加了新格 | `extending §3` / `SKILL.md` Phase 0 的 `<CELLS>` 行与 Phase C4 的依赖图 / `stage-commands §3 §4` | §3 的格表加一行(骨架/头/best 格式/选 best 指标四列都要填);§3 的命令表加一条真实跑过的命令;§4 的依赖顺序图标出新格排在哪一层 |
 | 加了新 split 方法 | `extending §4` / `invariants.md §2` | §4.1 的 `split_mode` 结论从"没接线"改成"已接线,取值有 X/Y";invariants §2 记录新切法的口径与"与旧数字不可比"这句 |
 | 改了任何写死的口径 | `invariants.md` 对应节 + `TIMELINE.md` | invariants 改数;TIMELINE 追加一条说明"为什么改、改之前的数字作废到什么程度" |
 | 踩了一个新坑 | `gates.md §3` 加一个案例 / 本文件 §5 加一行 | 坑会报错 → 进 gates §3;坑**不报错** → 必须进 §5 静默总表,并写清"症状长什么样" |

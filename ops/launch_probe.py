@@ -5,9 +5,10 @@
 smoke 的模型 `q35` 三处写死,每加一个批次就得复制一份)。
 
 用法:
-  # 四格 smoke(一个模型,四张卡)
+  # 默认顺序 smoke(一个模型,一格一张卡;格与张数看 run.py 的 CELL_ORDER,
+  # 2026-08-21 起是 ctool/cgen/cparam 三格)
   launch_probe.py smoke --batch c2 --data-root pipeline/data/alf_official_v1 \
-      --env alfworld --model q36 --host tokyo107 --gpus 0,1,2,3
+      --env alfworld --model q36 --host tokyo107 --gpus 0,1,2
 
   # 全量(排卡表驱动)
   launch_probe.py full --batch c2 --data-root pipeline/data/alf_official_v1 \
@@ -104,7 +105,9 @@ def main():
                     choices=["appworld", "alfworld", "bfcl", "tales"])
     ap.add_argument("--model", help="smoke 模式:拿哪个模型的数据跑四格")
     ap.add_argument("--host", default="tokyo107", help="smoke 模式:跑在哪台")
-    ap.add_argument("--gpus", default="0,1,2,3", help="smoke 模式:四张卡")
+    ap.add_argument("--gpus", default="0,1,2",
+                    help="smoke 模式:一格一张卡,张数必须等于 run.py 的 "
+                         "CELL_ORDER 长度(现在是 ctool/cgen/cparam 三张)")
     ap.add_argument("--placement", help="full 模式:排卡表 json")
     ap.add_argument("--force", action="store_true",
                     help="透传训练脚本的 --force:同 out 目录重训(B7 守卫逃生,"
