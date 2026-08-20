@@ -284,7 +284,11 @@ def eval_ce(model, loader, dev, amp, fire=None):
             n_pos += int(y.sum())
             n_neg += int((~y).sum())
     model.train()
-    vce = s / max(w_tot, 1e-9)
+    if w_tot <= 0:
+        raise SystemExit(
+            "val 一个 LM 目标位都没有(加权分母 w_tot=0)——继续算会得到 val_ce=0.0,"
+            "每个 epoch 都当 best 存,run 看起来完美。数据或过滤口径有问题,硬停。")
+    vce = s / w_tot
     if fire is None:
         return vce
     return vce, dict(fire_acc=round(hit / max(fw_tot, 1e-9), 4),
@@ -419,6 +423,13 @@ def main():
             ro_out["fire_head"] = fire_st
         (out / "READONLY.json").write_text(json.dumps(
             ro_out, ensure_ascii=False, indent=1))
+    # 保险丝:val 装载后 0 行硬停。空 val 不会在训练里崩(SequentialSampler 不拦空),
+    # 只会让 val_ce 恒 0、每个 epoch 都存 best,run 看起来完美。
+    if not len(ev):
+        raise SystemExit(
+            f"{data / 'val.jsonl'} 装载后 val 是 0 行(dropped={ev.dropped}"
+            + (f", readonly_dropped={ro_ev['dropped']}" if ro_ev else "")
+            + ")——选 best 的指标没有分母,硬停。")
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -525,8 +536,8 @@ def main():
                 lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             meta = dict(
-                base_path=path, data=str(data), max_len=args.max_len,
-                seed=SEED, epoch=ep, call_sep=CALL_SEP,
+                base=args.base, base_path=path, data=str(data),
+                max_len=args.max_len, seed=SEED, epoch=ep, call_sep=CALL_SEP,
                 transformers=transformers.__version__)
             if args.readonly_env:
                 meta["readonly_env"] = args.readonly_env

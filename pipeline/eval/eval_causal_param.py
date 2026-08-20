@@ -344,6 +344,18 @@ def main():
             f"{cparam / 'best' / 'meta.json'} 里没有 \"param_only\": true——"
             "这不是 cparam 格的产物。整条调用生成的 run 用 eval_causal_call.py 评。")
 
+    # 数据三方对拍:cparam 训练时的 data、--data 实参、ctool 训练时的 data 必须是
+    # 同一个目录。两档底座并行时,p1b06 的 ctool 配 p1b17 的 cparam 这类交叉喂法
+    # 会静默通过其余全部保险丝。
+    ctool_meta = json.loads((ctool / "best" / "meta.json").read_text())
+    trio = {"--data 实参": str(data),
+            "cparam meta.data": meta.get("data"),
+            "ctool meta.data": ctool_meta.get("data")}
+    canon = {k: (str(Path(v).resolve()) if v else None) for k, v in trio.items()}
+    if len(set(canon.values())) != 1:
+        raise SystemExit("数据三方对拍不一致,硬停:\n" + "\n".join(
+            f"  {k} = {trio[k]!r} -> {canon[k]!r}" for k in trio))
+
     # 防串味双向保险丝:ctool 的 label_map 有弃权哨兵、cparam 的 meta 有
     # readonly_env 键(缺失=旧模式),两处都必须与 --readonly-env 同时成立
     has_sentinel = readonly_map.NON_READONLY in label2id
@@ -452,7 +464,8 @@ def main():
           "| 指标 | gt_tool(喂真值工具名) | pred_tool(喂分类头预测) |",
           "|---|---|---|",
           f"| 判分事件数 | {g['n_events_scored']} | {p['n_events_scored']} |",
-          f"| 解析失败率 | {g['parse_fail_rate']} | {p['parse_fail_rate']} |",
+          f"| 解析失败率(本表结构上恒 0,见判分口径) | {g['parse_fail_rate']} | "
+          f"{p['parse_fail_rate']} |",
           f"| 工具名正确率 | {g['tool_ok']} | {p['tool_ok']} |",
           f"| 参数全对率(宽松) | {g['params_all_ok']} | {p['params_all_ok']} |",
           f"| 参数全对率(严格) | {g['params_all_ok_strict']} | "
@@ -477,8 +490,13 @@ def main():
            "逐字相同的 parse_call / match_params。",
            "- 参数逐个比:宽松=归一化(strip 后去引号)后值相等;严格=原串逐字相等;"
            "键按 union 比,多参/少参/名错各记一个错实例。",
+           "- 解析失败率在本表结构上恒为 0:工具名是脚本自己拼在串首的,"
+           "parse_call 必命中。这一行与 cgen 报告的解析失败率不可比,"
+           "也不反映生成质量。",
            "- 参数全对率里,真值无参的事件恒真(单独列出占比);"
-           "完整调用正确 = 工具名对 且 参数全对(宽松)。",
+           "完整调用正确 = 工具名对 且 参数全对(宽松)。gt_tool 块里无参事件"
+           "连完整调用正确也恒真(工具名是喂进去的),这份白拿分比 cgen 格大"
+           "(那边工具名要自己生成);横比时矩阵只吃 pred_tool 的 full_call_ok。",
            "- gt_tool 块的工具名由真值给定,所以工具名正确率恒为 1(如实记);"
            "pred_tool 块的工具名来自分类头 argmax,两块的差就是分类头选错工具"
            "漏下来的损失。矩阵只取 pred_tool——那是系统乙的真实口径。",

@@ -241,7 +241,7 @@ python3 run.py eval-cparam --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
 python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT.md --prefix <BATCH>
 python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT_risk10.md --prefix <BATCH> --risk 0.1
 
-# "只读+弃权"批(ro1 起):三个 eval 都加 --readonly-env <ENV>(须与训练侧一致,双向保险丝见 §4.4);
+# "只读+弃权"批(ro1 起):四个 eval 都加 --readonly-env <ENV>(须与训练侧一致,双向保险丝见 §4.4);
 # 参数格另可加 --self-fire 出自主开火块。ro1 实跑形态:
 python3 run.py eval-tool-mbert --env bfcl --run $R/ro1bf_q35_mtool --data $D/q35 --readonly-env bfcl
 python3 run.py eval-mcall --env bfcl --run $R/ro1bf_q35_mtool \
@@ -250,7 +250,7 @@ python3 run.py eval-ccall --env bfcl --ctool-run $R/ro1bf_q35_ctool \
   --cgen-run $R/ro1bf_q35_cgen --data $D/q35 --readonly-env bfcl --self-fire
 ```
 
-四个 eval 任务全是发射类:`run.py` 只打印命令,发射交 gpu-run,出命令前过脏树门禁
+五个 eval 任务全是发射类:`run.py` 只打印命令,发射交 gpu-run,出命令前过脏树门禁
 (连 `run.py show <task>` 也过——出命令这条路不是绕门的后门;非要脏树出命令加
 `--allow-dirty`)。`--head mbert` / `--head causal` 已固定在注册表里,**不要再手传**。
 排卡一把发走 `python3 run.py launch-eval`——它在发 call 档前硬检查依赖的工具格
@@ -259,7 +259,7 @@ python3 run.py eval-ccall --env bfcl --ctool-run $R/ro1bf_q35_ctool \
 只 import。它同样**发射成功后自动写 `RUNMETA.json`**(append 一条 commit + 实际命令,
 不覆盖),但**落点与 §3 不同,别沿用那段的 `--out` 口径**:tool 档写进它的 `--run`
 目录(=`<BATCH>_<MODEL>_<mtool|ctool>`),call 档写进**头自己的目录**
-(mext / cgen 那个 run,不是它依赖的工具格目录),`kind` 分别记 `eval_tool` / `eval_call`。
+(mext / cgen / cparam 那个 run,不是它依赖的工具格目录),`kind` 分别记 `eval_tool` / `eval_call`。
 两档的 RUNMETA 落点与各自报告的落点是一致的(EXTRACT_REPORT 在 mext 目录、
 CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。记账失败只打 `WARN` 不中断发射,
 看到 WARN 要自己补 `python3 run.py runmeta <目录> --cmd '<命令>' --kind eval_tool|eval_call`。
@@ -276,17 +276,18 @@ CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。记账失败只打 `WARN` �
 
 | flag | 脚本 | 说明 |
 |---|---|---|
-| `--env` | 三个 eval | **必填**,choices tales/appworld/bfcl;`eval_causal_call.py` 用它选调用解析正则(appworld 用 `apis.x.y(`,其余用 `名字(`) |
+| `--env` | 四个 eval | **必填**,choices tales/appworld/bfcl;`eval_causal_call.py` 与 `eval_causal_param.py` 用它选调用解析正则(appworld 用 `apis.x.y(`,其余用 `名字(`) |
 | `--head mbert\|causal` | eval_tool | 默认 mbert;causal 走 backbone + head.pt 路径 |
 | `--cached-logits` | eval_tool | 读已存的 `logits_*.pt` 跳过推理,纯 CPU 后处理,重出报告时用它不占卡。**2026-08-02 起有权重指纹校验(审计 B9)**:每份 `logits_<sp>.pt` 旁边配一个 `logits_<sp>.meta.json`,记 `best/` 下每个权重文件的指纹(**大小 + 首尾各 64KB 的 sha1,不含 mtime**——正常拷贝/恢复不该作废缓存)与行数;正常跑(不带本旗)会自动写/更新这份指纹。带本旗时两种情况硬退:**缺 `.meta.json`**(旧缓存无从判断出自哪份权重)、**指纹对不上**(权重被重训或覆盖过,拒绝拿旧 logits 冒充新权重的结果)。指纹不符只能去掉本旗重算;**缺指纹**(指纹机制之前产的旧 logits)多一条路,见下一行 |
 | `--adopt-logits-fingerprint` | eval_tool | **给指纹机制之前产的 logits 补档**,单独一趟跑:把 `--cached-logits` 换成本旗、其余参数照旧(`--env` / `--run` / `--data` 都仍必填),它给 `--run` 下每份已存在的 `logits_<sp>.pt` 写出 `.meta.json` 然后**直接 return 退出,不评测**。放行条件是 `best/` 下**所有**权重文件的 mtime 都不比该 logits 新——只有这样才能证明"当前权重就是产这些 logits 的权重";权重更新就 SystemExit,提示去掉 `--cached-logits` 重算。`best/` 下一个权重文件都没有时也 SystemExit(没东西可认领)。补完再按原命令带 `--cached-logits` |
 | `--report-dir` | eval_tool | 默认 = `--run`;验收/试跑时指向别处以免覆盖旧件 |
 | `--legacy-splits` | eval_tool | 读旧 calA/calB/test 三堆,仅历史验收用,新批次不要碰 |
-| `--risk` | 两个 call | 默认 0.05,见 §4.3 |
-| `--limit` | 两个 call | 截前 N 触发事件,冒烟用 |
-| `--device` | 三个 eval | 默认 cuda |
-| `--bs` | **只有两个 call 脚本有** | 默认 8。⚠️ `eval_tool.py` **没有这个 flag**——它的批大小是脚本里的常量:mbert 头走 `score()` 的默认 `bs=16`,因果头走 `EVAL_BS = 4`(事件/批)。想改只能改代码,命令行传 `--bs` 会被 argparse 拒 |
-| `--readonly-env` | 三个 eval | choices `appworld/bfcl`,默认不传。传了:真值折叠,触发条件加"argmax ≠ 弃权哨兵",参数指标只算真值为只读的触发事件;eval_tool 报告多 `readonly_stats` 块,`prior_baseline_event_acc` 改在**折叠后**词表上取最高频(de1c781 修的坑:折叠前取会把 bfcl 先验错印成 0.0)。**双向保险丝**:run 的 `best/label_map.json` 含哨兵 ⇔ 必须传本旗,单边即 SystemExit |
+| `--risk` | 三个 call | 默认 0.05,见 §4.3 |
+| `--limit` | 三个 call | 截前 N 触发事件,冒烟用 |
+| `--device` | 四个 eval | 默认 cuda |
+| `--bs` | **只有三个 call 脚本有** | 默认 8。⚠️ `eval_tool.py` **没有这个 flag**——它的批大小是脚本里的常量:mbert 头走 `score()` 的默认 `bs=16`,因果头走 `EVAL_BS = 4`(事件/批)。想改只能改代码,命令行传 `--bs` 会被 argparse 拒 |
+| `--max-new-tokens` | **只有 eval_causal_param 有** | 默认 96(=`MAX_GEN_TOK`,照抄训练侧生成评估的上限);greedy 生成参数段的 token 上限 |
+| `--readonly-env` | 四个 eval | choices `appworld/bfcl`,默认不传。传了:真值折叠,触发条件加"argmax ≠ 弃权哨兵",参数指标只算真值为只读的触发事件;eval_tool 报告多 `readonly_stats` 块,`prior_baseline_event_acc` 改在**折叠后**词表上取最高频(de1c781 修的坑:折叠前取会把 bfcl 先验错印成 0.0)。**双向保险丝**:run 的 `best/label_map.json` 含哨兵 ⇔ 必须传本旗,单边即 SystemExit |
 | `--self-fire` | 两个 call | 自主开火评测:θ_fire 在 val 扫、test 冻结一次,触发点由参数格自己的开火头定。**必须与 `--readonly-env` 同传**(ready 定义依赖只读真值表),否则 SystemExit。要求参数格是 `--fire-head` 训的。只加 `self_fire` 报告块,旧字段一个不动 |
 | `--fire-bs` | 两个 call | 开火打分批大小,0 = 沿用 `--bs` |
 | `--params` | 两个 call | 参数标签目录,默认 `<data>/params`;self-fire 用它算 ready 真值 |
@@ -297,10 +298,11 @@ CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。记账失败只打 `WARN` �
 |---|---|---|
 | eval_tool | `<DATA_ROOT>/{val,test}.jsonl` + `tool_vocab.json`;`<run>/best/label_map.json`(causal 另读 `meta.json`、`head.pt`) | `<run>/logits_val.pt`、`<run>/logits_test.pt`、`<report-dir>/REPLAY_REPORT.{json,md}` |
 | eval_mbert_call | `<run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json`;`<DATA_ROOT>/test.jsonl` + `router_stats.md`;`<DATA_ROOT>/params/test.jsonl`;`<extractor>/best/` | `<extractor>/EXTRACT_REPORT.{json,md}` |
-| eval_causal_call | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json`;`<DATA_ROOT>/test.jsonl`;`<cgen-run>/best/`(`call_sep` 从它的 meta.json 读,不硬编码) | `<cgen-run>/CALLGEN_REPORT.{json,md}` |
-| summarize_matrix | 各 run 的 `REPLAY_REPORT.json`(mtool/ctool)、`EXTRACT_REPORT.json`(mext)、`CALLGEN_REPORT.json`(cgen) | `--out` 指的 .md,同时打到 stdout |
+| eval_causal_call | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json` + `best/meta.json`;`<DATA_ROOT>/test.jsonl`;`<cgen-run>/best/`(`call_sep` 从它的 meta.json 读,不硬编码) | `<cgen-run>/CALLGEN_REPORT.{json,md}` |
+| eval_causal_param | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json` + `best/meta.json`;`<DATA_ROOT>/test.jsonl`;`<cparam-run>/best/`(`call_sep` 同上从 meta.json 读) | `<cparam-run>/PARAM_REPORT.{json,md}`(矩阵只读它的 `pred_tool` 块) |
+| summarize_matrix | 各 run 的 `REPLAY_REPORT.json`(mtool/ctool)、`EXTRACT_REPORT.json`(mext)、`CALLGEN_REPORT.json`(cgen)、`PARAM_REPORT.json`(cparam,取 `pred_tool` 块) | `--out` 指的 .md,同时打到 stdout |
 
-**退出码**:eval_tool 正常路径无显式非 0;`--cached-logits` 下有三条硬退——缺 `logits_<sp>.meta.json`、权重指纹对不上(两条都是 SystemExit,见 §4.4 该行)、logits 行数与数据行数不符(assert 退 1,意味着 `--data` 与当次评测不同源)。另外 `best/` 下一个权重文件都找不到时建不了指纹,也 SystemExit。两个 call 脚本:该 risk 档 θ 为 null → `SystemExit` 退 1。`eval_causal_call` 另有一条 assert 防止调用切分口径与 `annotate/rules.py` 漂移。summarize_matrix 永远 0。
+**退出码**:eval_tool 正常路径无显式非 0;`--cached-logits` 下有三条硬退——缺 `logits_<sp>.meta.json`、权重指纹对不上(两条都是 SystemExit,见 §4.4 该行)、logits 行数与数据行数不符(assert 退 1,意味着 `--data` 与当次评测不同源)。另外 `best/` 下一个权重文件都找不到时建不了指纹,也 SystemExit。三个 call 脚本:该 risk 档 θ 为 null → `SystemExit` 退 1。`eval_causal_call` 与 `eval_causal_param` 另各有一条 assert 防止调用切分口径与 `annotate/rules.py` 漂移,外加三条格保险丝(都是 SystemExit 退 1):`eval_causal_param` 要求头 run 的 meta 带 `param_only: true`,`eval_causal_call` 反向拒收带 `param_only` 的 run(cparam 的 run 只训过写参数段,喂过去判分会全塌不报错);两脚本都做**数据三方对拍**——头 run 的 meta.data、`--data` 实参、`--ctool-run` 的 meta.data 三方 resolve 后不一致即硬停(防两档底座并行时交叉喂)。summarize_matrix 永远 0。
 
 ---
 

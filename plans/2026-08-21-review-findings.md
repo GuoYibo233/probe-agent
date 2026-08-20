@@ -7,6 +7,13 @@ commit a35b580 与 05b3abc（基准 HEAD 28dbec8）。采集配置六项全过�
 执行时机约束：LoRA 实现 agent 落地验收后一起改（文件重叠）,全部 commit
 之后才许发训练。
 
+**执行状态（2026-08-21 当天办结）**：LoRA 验收通过并落库（commit 822cfce,
+13 单测 + 三格 sha256 逐字节一致 + CPU e2e 证据都由主会话亲自重验）;
+包一/包二/包三与 skill 回写全部落地,六条保险丝逐条实测触发
+（空 val / 剥离失败率 3/36 / param_only 拒收 / 双向三方对拍 / 一致不误伤）,
+三环境 discover 全过（cprobe 230 OK,mbert 只剩已知 test_splice_replay,
+系统 python 同),selfcheck 就位。下面的清单与行号保持原样留档。
+
 ## 包一 保险丝（已批,三条都加）
 
 1. `pipeline/eval/eval_causal_call.py`（约 :509 读 best/meta.json 处）：
@@ -72,14 +79,15 @@ commit a35b580 与 05b3abc（基准 HEAD 28dbec8）。采集配置六项全过�
 
 ## 流程状态（写于 2026-08-21 发射当天,过时就地更新）
 
-- 在跑：①LoRA 实现 agent——三训练脚本加 --lora（rank16/alpha32/dropout0.05/
-  lr2e-4 默认）与 --grad-ckpt,peft 装 cprobe-env（transformers/torch 版本不许
-  动）,存档 merge_and_unload 并回底座、评测零改动,CPU e2e,不 commit,主会话
-  验收。②采集发射员 agent——manifest_p1,tokyo108 双 H200 起 gpt-oss-120b,
-  G2 实探→gen-launch 正式生成→双服务→G3 健康→G4 一题 smoke（meta 预设
-  gptoss_harmony_high/effort high/末行 final）→放量 7 分片→jobs.json+record
-  start+RUNMETA 三处登记。脏树经 gyb 裁决用 --allow-dirty 放行(脏的是训练侧
-  半成品与 research-loop 会话文档,不在采集代码路径)。
+- 两个 agent 都已交活：①LoRA 实现验收通过,commit 822cfce（peft 0.20.0 进
+  cprobe-env,torch/transformers 没动）。②采集批已放量在跑：tokyo108 GPU 4/5
+  双 H200 起 gpt-oss-120b（port 8103/8106）,7 客户端分片跑在 tokyo105（CPU）,
+  台账三个名字 p1 / p1_srv_a / p1_srv_b,record start + RUNMETA 都已登记
+  (commit 51ee4f5 时点,--allow-dirty 经 gyb 裁决)。G4 smoke 全对
+  (preset gptoss_harmony_high / effort high / 末行 final)。已知观察不解读：
+  客户端心跳 ts 进 AppWorld 上下文后变常数 1684411200.0,台账 RATE/ETA 列
+  因此是 '-',判定仍「健康」;完成判据只认 315 个 appworld_*.jsonl 末行 final。
+  主会话挂了持续监视器盯完成与 Traceback。
 - 顺序：采集收尾（G6 315 文件/G7 归零/finish/record finish/提交台账）→标注造
   数据（p1_gptoss.json,G9 90/57/168,check_callstr,逐字节重建,DATA.md）;
   LoRA 验收+三包修复+回写 commit 完→训练 smoke（1.7B 全参显存/LoRA 三档/

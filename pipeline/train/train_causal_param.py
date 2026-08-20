@@ -77,6 +77,7 @@ MODELS = {
 }
 SEED = 20260729
 FULL_LR = 1e-5             # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
+ASSEMBLY_MISMATCH_LIMIT = 0.05   # 剥离失败率硬停线,对齐 readonly_map.UNKNOWN_HARD_LIMIT
 CALL_SEP = "\n[CALL] "
 MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃
 MAX_GEN_TOK = 96           # 评估生成的 max_new_tokens
@@ -135,6 +136,7 @@ class ParamDS(Dataset):
                 continue
             self.rows.append((r["text"], tgt, float(r["w"]), r["label"],
                               tgt_str, r["label_call"]))
+        self.kept = len(self.rows)     # 截 limit 之前的保留数(算剥离失败率用)
         if limit:
             rng = random.Random(SEED)
             rng.shuffle(self.rows)
@@ -222,7 +224,11 @@ def eval_ce(model, loader, dev, amp):
         s += (ce.float() * wd).sum().item()
         w_tot += wd.sum().item()
     model.train()
-    return s / max(w_tot, 1e-9)
+    if w_tot <= 0:
+        raise SystemExit(
+            "val 一个目标位都没有(加权分母 w_tot=0)——继续算会得到 val_ce=0.0,"
+            "每个 epoch 都当 best 存,run 看起来完美。数据或过滤口径有问题,硬停。")
+    return s / w_tot
 
 
 @torch.no_grad()
@@ -328,6 +334,23 @@ def main():
             dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"]))
         (out / "READONLY.json").write_text(json.dumps(
             ro_out, ensure_ascii=False, indent=1))
+    # 保险丝:val 装载后 0 行硬停。空 val 不会在训练里崩(SequentialSampler 不拦空),
+    # 只会让 val_ce 恒 0、每个 epoch 都存 best,run 看起来完美。
+    if not len(ev):
+        raise SystemExit(
+            f"{data / 'val.jsonl'} 装载后 val 是 0 行"
+            f"(dropped={ev.dropped}, assembly_mismatch={ev.mismatch}"
+            + (f", readonly_dropped={ro_ev['dropped']}" if ro_ev else "")
+            + ")——选 best 的指标没有分母,硬停。")
+    # 保险丝:剥离失败率超限硬停。label 与 label_call 前缀对不上通常是上游拼串
+    # 口径变了,继续训会静默吞样本;5% 对齐 readonly_map.UNKNOWN_HARD_LIMIT 先例。
+    for split, ds in (("train", tr), ("val", ev)):
+        tot = ds.kept + ds.mismatch
+        if tot and ds.mismatch / tot > ASSEMBLY_MISMATCH_LIMIT:
+            raise SystemExit(
+                f"{split} 的剥离失败率 {ds.mismatch}/{tot} = "
+                f"{ds.mismatch / tot:.3f} 超过 {ASSEMBLY_MISMATCH_LIMIT}——"
+                "上游拼串口径漂移,硬停。")
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -409,7 +432,8 @@ def main():
             meta = dict(
                 base=args.base, base_path=path, data=str(data),
                 max_len=args.max_len, seed=SEED, epoch=ep, call_sep=CALL_SEP,
-                param_only=True, transformers=transformers.__version__)
+                param_only=True, transformers=transformers.__version__,
+                assembly_mismatch=dict(train=tr.mismatch, val=ev.mismatch))
             if args.readonly_env:
                 meta["readonly_env"] = args.readonly_env
             if args.lora:

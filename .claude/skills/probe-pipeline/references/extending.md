@@ -27,14 +27,14 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | `pipeline/collect/gen_launch.py:47-54` 的 `family` 字段 | 只有 `"qwen"` 与 `"gptoss"` 两族有分支 | ⚠️**静默**:`serve_flags()`(`gen_launch.py:172-177`)把非 qwen 一律当 gptoss 发旗标(只给 `--gpu-memory-utilization 0.92`,不给 tool-call parser);`gen_clients` 同理(`gen_launch.py:266`)会给它加 `--preset gptoss_chat_high`(2026-08-20 起走预设文件,展开后 = `--api chat --reasoning-effort high`,预设在 `configs/presets/`)。生成的发射脚本能跑,只是服务端解析口径不对 | 新族要加一个分支 |
 | 新建 `pipeline/configs/<BATCH>_<MODEL>.json` | 照抄 `pipeline/configs/aw_q35.json`(19 行),换 `model_short` / `model_full` / `data_out` 三处 | `model_full` 必须与 `MODEL_OF` 的值**逐字**相同,否则 `build.py:225-227` 退 1(响) | 新建一份 json |
 | 新建 `pipeline/collect/manifest_<BATCH>.json` | 照抄 `pipeline/collect/manifest_w0.json`,加 `servers[]` 与 `clients[]` | 校验规则见 `gen_launch.py:86-122`(单机、端口/session/卡不重复、`len(shard_ports)==num_shards`、分片端口的模型必须对上),全部 `die` 退 2,响 | 新建一份 json |
-| `pipeline/eval/summarize_matrix.py:67` | `--models` 默认表加新模型,或每次命令行显式传全 | ⚠️**静默**:不传就是这条默认表,新模型的四行**根本不出现在矩阵表里**,脚本退 0、stdout 也不提 | 改一行 / 命令行加参数 |
+| `pipeline/eval/summarize_matrix.py:82` | `--models` 默认表加新模型,或每次命令行显式传全 | ⚠️**静默**:不传就是这条默认表,新模型的四行**根本不出现在矩阵表里**,脚本退 0、stdout 也不提 | 改一行 / 命令行加参数 |
 | `ops/<BATCH>_placement.json` | 照 `ops/c1_placement.json`(12 行)加四行(model/cell/host/gpu,ctool 那行带 `--align-tol`) | 排卡表是人读的输入,漏了只是重发时要重新推机位 | 加四行 |
 
 ### 1.2 不用改的(省得白费功夫)
 
 - **四个训练脚本一个字都不用改**。`--env` 在训练侧**纯粹是日志标签**:四个脚本各有一条 `ap.add_argument("--env", default="appworld", …)`,`args.env` 的全部用处就是 `log(event="start", env=args.env, …)` 那一行,外加 mext 与 ctool 写 `best/meta.json` 时带上它——没有任何一处进入数据路径或损失。(**按 `--env` / `args.env` grep,不引行号:这批行号漂过。**)
 - **底座权重常量不用改**:`train_mbert_tool.py` 与 `train_mbert_extract.py` 的模块级常量 `MODEL`(ModernBERT-base)、`train_causal_tool.py` 的 `MODELS` 表、`train_causal_callgen.py` 的 `QWEN`(**按常量名 grep,不引行号——这批行号漂过一次**)。这四个是**探针自己的骨架**,与被探测的 agent 模型无关。
-- **三个 eval 脚本不用改**:模型全靠 `--run` / `--data` 指路径。
+- **四个 eval 脚本不用改**:模型全靠 `--run` / `--data` 指路径。
 - **`pipeline/inject/check_bundle.py` 不用改**:全文无环境常量也无模型表,参数只有 `--run/--data/--head/--device/--dtype/--index/--temperature/--max-len`(全在它的 `main()` 里,grep `add_argument`)。
 - **`pipeline/annotate/accept_v3diff.py` 不用改**:输入路径写死旧数据(模块级常量 `BASE` / `RUNS` / `V3`),它只负责证明新代码复现旧口径,不该跟着新模型走。
 - `rules.py` 的 `AW_CALL`/`BFCL_CALL` 两个正则常量不用改——同环境同解析。
@@ -117,9 +117,9 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | 新建 `pipeline/train/train_<新格>.py` | 模板选法见 §3.2 | —— | 新写 180–372 行(四个现成脚本的行数区间) |
 | 仓库根 `run.py` 的 `CELLS`(训练格表唯一真源) | 加一行 `"<格名>": (解释器, 脚本绝对路径, base_args)`,并把格名加进 `CELL_ORDER` | `ops/launch_probe.py` 从 run.py import 这张表,`build()` 里 `CELLS[cell]` KeyError,响;顺带 `TASKS` 也要加一条 `train-<格名>`,否则 `run.py` 里没有这个任务 | 加一行 |
 | 仓库根 `run.py` 的 `EVAL_CELLS`(评测格表唯一真源) | 加一行 `"<格名>": ("<eval 任务名>", "<依赖的工具格>" 或 None)` | `ops/launch_eval.py` 从这里 import 并据此排依赖顺序,漏挂 = 排卡发射器发不出这个格的评测 | 加一行 |
-| `pipeline/eval/summarize_matrix.py:21` | `CELLS` 元组加格名 | ⚠️**静默**:新格四行**根本不进矩阵表**,脚本退 0、stdout 不提 | 加一项 |
-| `pipeline/eval/summarize_matrix.py:22-23` | `REPORT_OF` 加 `"<格名>": "<报告文件名>.json"` | `read_cell` 在 `:33` `REPORT_OF[cell]` KeyError,响 | 加一项 |
-| `pipeline/eval/summarize_matrix.py:37-58` | 取数的三分支 | ⚠️**静默**:新格落到 `:55-58` 的 else,按 `params_all_ok`/`full_call_ok` 取字段,名字对不上就 `rep.get()` 全 None → 表里一整行 `-`,状态列却写着 `OK` | 加一个分支 |
+| `pipeline/eval/summarize_matrix.py:24` | `CELLS` 元组加格名 | ⚠️**静默**:新格四行**根本不进矩阵表**,脚本退 0、stdout 不提 | 加一项 |
+| `pipeline/eval/summarize_matrix.py:25-27` | `REPORT_OF` 加 `"<格名>": "<报告文件名>.json"` | `read_cell` 在 `:37` `REPORT_OF[cell]` KeyError,响 | 加一项 |
+| `pipeline/eval/summarize_matrix.py:41-73` | 取数的四分支 | ⚠️**静默**:新格落到 `:70-73` 的 else,按 `params_all_ok`/`full_call_ok` 取字段,名字对不上就 `rep.get()` 全 None → 表里一整行 `-`,状态列却写着 `OK` | 加一个分支 |
 | `pipeline/inject/check_bundle.py:82-160` + `:165` | 加一个 Bundle 类 + `--head` 加一个 choice | 两个现成类都要求 `best/label_map.json` 并让 `probs()` 吐类别分布(`:104-110`、`:145-160`);非分类头拿现成类装会当场崩(响)。不加 = **这个格没有 inject 凭证**(mext/cgen 现在就是这个状态) | 加一个类(约 40 行) |
 
 ### 3.2 能照抄什么、不能照抄什么
@@ -131,13 +131,13 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | `SEED = 20260729` + `torch.manual_seed`/`random.seed` | 常量 mtool`:33` / mext`:38` / ctool`:52` / cgen`:41`(另有 `rules.py:13` 第五份);设种子 mtool`:101-102` / mext`:232-233` / ctool`:257-258` / cgen`:200-201` | 五处独立常量,**没有单一真源**;新格必须自己写死同一个数,设种子位置照抄 |
 | `collate()` 与 Dataset 类 | `collate` mtool`:56` / mext`:124` / ctool`:98` / cgen`:76`;数据集 `JsonlDS`(mtool`:36`)/ `InstDS`+`join_rows`(mext`:63`)/ `load_events`+`EventDS`(ctool)/ `CallDS`(cgen`:58-63`) | 八份签名各不相同,一律不能复用;按"新格吃什么标签"挑最近的抄 |
 | `train_log.jsonl` 的 `log()` 闭包 | mtool`:132-138` / mext`:265-267` / ctool`:313-315` / cgen`:234-236` | 一律 `open(..., "a")` **追加模式**;事件名约定 `start`/`step`/`eval`/`save_best`/`done`,新格不照这套写,读日志的人和 job-monitor 都认不出 |
-| 心跳 emit(`ops/heartbeat.py`) | 四个训练脚本、三个 eval 脚本、`run_appworld.py` 已接(`import heartbeat` / `heartbeat.emit` grep 定位,不引行号;`run_tales.py`/`run_alfworld.py`/`run_tau2.py` 尚未接) | **新采集/训练/评测脚本必须接 `ops/heartbeat.py`(进主循环 emit(0,...),每单位 emit,收尾 status=done),不接的脚本在窗口里永远是 warm-up 中** |
+| 心跳 emit(`ops/heartbeat.py`) | 五个训练脚本、四个 eval 脚本、`run_appworld.py` 已接(`import heartbeat` / `heartbeat.emit` grep 定位,不引行号;`run_tales.py`/`run_alfworld.py`/`run_tau2.py` 尚未接) | **新采集/训练/评测脚本必须接 `ops/heartbeat.py`(进主循环 emit(0,...),每单位 emit,收尾 status=done),不接的脚本在窗口里永远是 warm-up 中** |
 | smoke 限额 | mtool`:118`、mext`:247`、cgen`:210` 都是 500/200 **实例**;ctool`:269` 是 200/80 **事件** | 新格自己定,定完写进 stage-commands §3 的表 |
 | 日志字段旧名 | `calA_weighted_acc`(mtool`:168`)、`calA_param_acc`(mext`:323`)、`best_calA_weighted_acc`(ctool`:368`) | 堆名早已是 val,字段名故意保留旧的 `calA_*`(规格 `plans/2026-07-31-pipeline-engineering.md:330` 明令"保持原名不改,下游按名读") |
 
 **模板怎么选**:换头不换骨架 → 抄同骨架那两个里更近的一个(ModernBERT 线抄 mtool/mext,Qwen 线抄 ctool/cgen);换骨架不换头 → 抄同头那一个,只改权重常量与加载方式;**新目标函数** → 抄 cgen,它是四个里损失最独立的(masked-CE,`:13-14`)。
 
-### 3.3 评测侧:三个评测脚本的适用边界
+### 3.3 评测侧:四个评测脚本的适用边界
 
 | 脚本 | 只吃什么 | 新格能不能复用 |
 |---|---|---|
@@ -146,7 +146,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | `eval_causal_call.py` | **只吃 cgen**:`:238-249` 按 HF CausalLM 装 `best/`,`:239` 从 meta 读 `call_sep` | 同上;它也是最独立的,新写评测脚本抄它 |
 | `eval_causal_param.py` | **只吃 cparam**:meta 没有 `param_only: true` 即 SystemExit(格保险丝,防误喂 cgen run——那样工具名会被写两遍,数字静默变形)。同一批 ctool 触发点跑两口径:gt_tool 喂真值工具名(纯填参能力)、pred_tool 喂分类头 argmax(系统乙真实数字),判分前重组 `工具名+"("+生成串` 再走 cgen 同一套 parse/判分 | 2026-08-21 照 eval_causal_call.py 抄出来的先例;矩阵四列只读 pred_tool 块 |
 
-两个 call 脚本的共同结构:从工具格 `REPLAY_REPORT.json` 取温度与 θ(`eval_mbert_call.py:125-130`、`eval_causal_call.py:214-219`),再靠 `logits_test.pt` 的行数 assert 对齐(`:139` / `:228`)。新的"依赖格"照这个结构写。
+三个 call 脚本的共同结构:从工具格 `REPLAY_REPORT.json` 取温度与 θ(`eval_mbert_call.py:125-130`、`eval_causal_call.py:495-497`、`eval_causal_param.py:328-330`),再靠 `logits_test.pt` 的行数 assert 对齐(`:139` / `:569` / `:397`)。新的"依赖格"照这个结构写。
 
 ### 3.4 依赖关系与门禁
 
@@ -160,7 +160,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 1. 先答"改的是骨架还是头" → 按 §3.2 末段选模板 → 写训练脚本 → 双环境 `py_compile` → `--smoke` 跑一遍(**stage-commands §3**),看 loss 与 `best/` 落盘。
 2. 加 `check_bundle.py` 的 Bundle 类 → `--device cpu` 验产物(**stage-commands §5**)。
 3. 按 §3.3 判能不能复用 `eval_tool.py`;不能就照 `eval_causal_call.py` 新写(**stage-commands §4**)。
-4. 四处登记:`summarize_matrix.py:21-23`、仓库根 `run.py` 的 `CELLS`+`CELL_ORDER`(训练格表真源)、同文件的 `EVAL_CELLS`(评测格表真源)、`ops/<batch>_placement.json`。
+4. 四处登记:`summarize_matrix.py:24-27`、仓库根 `run.py` 的 `CELLS`+`CELL_ORDER`(训练格表真源)、同文件的 `EVAL_CELLS`(评测格表真源)、`ops/<batch>_placement.json`。
 5. **回写 skill(§6)**。
 
 ---
@@ -257,15 +257,15 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | 4 | `build.py:196-205` | 三份官方题单之间有重叠 unit | `part[u]=name` 按 `SPLITS=("train","val","test")` 顺序后写覆盖,**test 最后写赢**,全程无重叠检查 → 划分静默变形、train/test 边界失守 |
 | 5 | `build.py:70-79` / `param_label.py:63-69` | 新 env 复用 `jsonl_events` 但没加分支 | else 是 catch-all,**任何非 appworld 都拿 tales 的"动词=工具名"语义**,数据照造 |
 | 6 | `rules.py:18` | 两个 key 映到同一个 `model_full` | `build.py:225` 的过滤把两批轨迹**静默合并**,直接破"永不合并同族"的口径(SKILL.md Phase 0) |
-| 7 | `eval_causal_call.py:119-124` | `--env` 传错 | 只换正则不报错。appworld 数据传 `--env bfcl`,`apis.spotify.login(` 会被解析成工具 `login`,**tool_ok 全 false、数字整体塌陷**。注意:同一个 `--env` 在 `eval_tool.py`(只用于 `:239` 的 legacy 路径拼接与 `:355`/`:380` 的标题)和 `eval_mbert_call.py`(只用于 `:210`/`:225` 的标题字段)里**纯属标签**——三个 eval 里只有这一个真影响判分 |
-| 8 | `summarize_matrix.py:67` | 忘了给 `--models` 加新模型 | 该模型全部格**整体不出现在表里**,退 0 且 stdout 不提示 |
-| 9 | `summarize_matrix.py:49-58` + `104-105` | 某个参数格是在 `--risk 0.1` 下跑出来的 | `--risk` 只作用于 tool 格的 `test_frozen[risk]`(`:38`);参数格两列**无条件读该 run 的报告**,而 `EXTRACT_REPORT.json` / `CALLGEN_REPORT.json` 是单文件覆盖写 → 0.05 档的表里会混进 0.10 档的数 |
+| 7 | `eval_causal_call.py:155-157` / `eval_causal_param.py:149-151` | `--env` 传错 | 只换正则不报错。appworld 数据传 `--env bfcl`,`apis.spotify.login(` 会被解析成工具 `login`,**tool_ok 全 false、数字整体塌陷**。注意:同一个 `--env` 在 `eval_tool.py`(只用于 `:239` 的 legacy 路径拼接与 `:355`/`:380` 的标题)和 `eval_mbert_call.py`(只用于 `:210`/`:225` 的标题字段)里**纯属标签**——四个 eval 里只有 `eval_causal_call.py` 与 `eval_causal_param.py` 两个真影响判分 |
+| 8 | `summarize_matrix.py:82` | 忘了给 `--models` 加新模型 | 该模型全部格**整体不出现在表里**,退 0 且 stdout 不提示 |
+| 9 | `summarize_matrix.py:53-73` + `108-111` | 某个参数格是在 `--risk 0.1` 下跑出来的 | `--risk` 只作用于 tool 格的 `test_frozen[risk]`(`:42`);参数格两列**无条件读该 run 的报告**,而 `EXTRACT_REPORT.json` / `CALLGEN_REPORT.json` / `PARAM_REPORT.json` 是单文件覆盖写 → 0.05 档的表里会混进 0.10 档的数 |
 | 10 | `gen_launch.py:172-177` + `:266` | 新模型 `family` 既不是 qwen 也不是 gptoss | 走 else,**按 gptoss 发服务旗标与客户端旗标**,发射脚本照常生成 |
 | 11 | 四个训练脚本的 `--env` | 传错 | 只污染 `train_log.jsonl` 与 `best/meta.json` 的标签,数字不受影响(反向的静默:看日志的人会被误导) |
 | 12 | `pipeline/configs/*.json` 的 `split_mode` 字段 | 改它 | **全流水线没有任何代码读这个字段**(grep 无命中),纯装饰。`bfcl_mtb_v1` 那三份 config 写的是 `"frozen_v3_1"`,同样没人读——它只是给人看的标记。**真正被读的是同批新加的 `split_desc`**(`build.py` 报告文案从它取,见 #18) |
 | 13 | `eval_causal_call.py:228` / `eval_mbert_call.py:139` | 跨模型串 run 与 data | 唯一的防线是 `len(rows) == logits.shape[0]` 的形状 assert;两个模型的 test 行数**恰好相等**时就静默串味 |
-| 14 | `summarize_matrix.py:21` | 加了新格没往 `CELLS` 登记 | 新格**整体不进矩阵表**,退 0 且 stdout 不提(与 #8 同源:这个脚本的两张表全靠常量枚举) |
-| 15 | `summarize_matrix.py:55-58` | 新格的报告字段名不叫 `params_all_ok` / `full_call_ok` | 落进 else 分支,`rep.get()` 全取到 `None` → 表里一整行 `-`,**状态列却写着 OK**,比 PENDING 更容易被当成"跑出来就是这么差" |
+| 14 | `summarize_matrix.py:24` | 加了新格没往 `CELLS` 登记 | 新格**整体不进矩阵表**,退 0 且 stdout 不提(与 #8 同源:这个脚本的两张表全靠常量枚举) |
+| 15 | `summarize_matrix.py:70-73` | 新格的报告字段名不叫 `params_all_ok` / `full_call_ok` | 落进 else 分支,`rep.get()` 全取到 `None` → 表里一整行 `-`,**状态列却写着 OK**,比 PENDING 更容易被当成"跑出来就是这么差" |
 | 16 | `build.py:231` | config 里写了新 `split_mode` 但没在这里加分发 | **永远走官方切法**,配置形同虚设,数据照造照出报告 |
 | 17 | `build.py:260-267` | 新切法沿用官方切法的自检 3 | `lists` 是新切法自己造的,`assert u in lists[name]` 恒真,自检失效却照样在 `:341-342` 打 ✓ |
 | 18 | `build.py` 的两行报告文案 / `eval_tool.py:356` `:366` | 换了切法没改文案与字段名 | 报告里写着"官方题单"、字段叫 `theta_sweep_calB`,数字却来自别的切法/别的堆。**已部分接线**(`bfcl_mtb_v1` 批次):`build.py` 的"规则"行与"切分"行都改成从 `cfg.get("split_desc", "官方题单,任务实例级")` 取,不写该字段的 config 保持旧说法;`check_callstr.py` 门禁 E 会**硬拦**"SPLIT_REPORT.json 说没有官方分区、报告里却印着『官方题单』"这种撒谎。`eval_tool.py` 那两个 `calB` 旧字段名**仍未动**(规格明令保留给下游按名读) |

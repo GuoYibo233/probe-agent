@@ -508,6 +508,25 @@ def main():
     label2id = json.loads((ctool / "best" / "label_map.json").read_text())
     meta = json.loads((cgen / "best" / "meta.json").read_text())
 
+    # 格保险丝:本脚本只吃 cgen 格的产物。cparam 的 run 只训过"写参数段",
+    # 喂进来生成的串没有工具名,判分会全塌而且一路跑通不报错。
+    if meta.get("param_only"):
+        raise SystemExit(
+            f"{cgen / 'best' / 'meta.json'} 带 \"param_only\": true——"
+            "这是 cparam 格的产物。参数生成的 run 用 eval_causal_param.py 评。")
+
+    # 数据三方对拍:cgen 训练时的 data、--data 实参、ctool 训练时的 data 必须是
+    # 同一个目录。两档底座并行时,p1b06 的 ctool 配 p1b17 的 cgen 这类交叉喂法
+    # 会静默通过其余全部保险丝。
+    ctool_meta = json.loads((ctool / "best" / "meta.json").read_text())
+    trio = {"--data 实参": str(data),
+            "cgen meta.data": meta.get("data"),
+            "ctool meta.data": ctool_meta.get("data")}
+    canon = {k: (str(Path(v).resolve()) if v else None) for k, v in trio.items()}
+    if len(set(canon.values())) != 1:
+        raise SystemExit("数据三方对拍不一致,硬停:\n" + "\n".join(
+            f"  {k} = {trio[k]!r} -> {canon[k]!r}" for k in trio))
+
     # 防串味双向保险丝:ctool 的 label_map 有弃权哨兵、cgen 的 meta 有
     # readonly_env 键(缺失=旧模式),两处都必须与 --readonly-env 同时成立
     has_sentinel = readonly_map.NON_READONLY in label2id
