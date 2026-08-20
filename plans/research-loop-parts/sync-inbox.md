@@ -295,11 +295,12 @@
 - 裁决原文：gyb 2026-08-21「砍掉，默认能读」「不用申请」（notes/ 获准机制整套砍掉）；「我有时候会手动要求更改的」（amend 补用例）；「只在交代里说」（测试标准）；「允许，两边都算」（跨根单归线）；「你干完自己算数」（--manual 单验收）；「只报你，你裁了才动」（reviewer 清单）；「只列本会话手上的」「单列一项」（inbox 两处不一致收口）。
 - 要改的地方：
   42. （a）`06-hooks-and-permissions.md`：idea json `reads` 表下备注「`notes/` 要 gyb 发 `read:notes` 才读」删（10 的 json 副本未动，等 `06` 改了传回）；（b）`08-trees-init-and-host.md`：`rl init` 逐项问里「问 gyb 一次要不要当场给 idea 发 `read:notes`」删；（c）`01-gyb.md`：gyb use case 表「批 `read:notes`」的活删，「授权只有 gyb 能写」段里 `read:notes` 例子随 grants 账存废定（存废见 43(c)）；（d）`20-pair-idea-deploy.md`：「怎么测试、什么算成功」只在起下游 subagent 的交代里说、不写进单子；`--manual` 单默认 gyb 自己验收；（e）`14-role-reviewer.md`、`25-pair-reviewer-idea.md`：reviewer 拿 grant 当「idea 有没有读过 notes/」凭据的核对项删；idea 读完清单不自行处置、只报 gyb 裁了才动；（f）`11` 到 `14` 收件箱段：过版项口径统一「本会话手上单子引的过版决定」、feedback 裁决单列一项。
-- 状态：待处理
+- 状态：已处理 2026-08-21（rl-hub-v6：(a) `06` 已改、json 副本已传回 `10`；(b) `08` 已改；(c) `01` 获准段、第 3 件事、接口行已改，use case 表查无「批 `read:notes`」行、授权段无 `read:notes` 例子；连带 `00` 砍掉手续清单、`02` doctor 段与接口两处、`09` grants 两段与接口三行统筹补扫已改；(d) `20` 正文两处已改、`21` 抄的转移表 accept 行同步补备注、跨根归线裁决连带记进 `20`/`21`/`22`/`23` 裁决记录；(e) `25` 已改并销「没写清」第 7 条，`14` 已 SendMessage 交代 rl-part-14；(f) 已 SendMessage 交代 rl-part-11 到 14——`11`/`13` 正文五样已与口径一致、`12` run 不查 inbox 不涉、`14` 「四类…再加」句要改；`24` 接口「列哪四类」顺手收成五类）
 
 ## 2026-08-21 来自 rl-part-10 关于 10 定稿动到冻结三份的几处（冻结后待议）
 - 事项：`10-role-idea.md` 定稿（`96459b4`）裁决的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，等最后一期。
 - 裁决原文：同上一段。
 - 要改的地方：
   43. 冻结后待议：（a）`05` doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；（b）`05` `rl status --group-by line` 改「跨根的单在每条相关线里都出现」；（c）`05` `rl grant` 子命令与 `03` grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；（d）`03` `line` 字段语义改「`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现」；（e）`04` 转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」。
+  （统筹补扫 2026-08-21 rl-hub-v6：(a) 的连带还有两处——`05` `rl init` 签名行里「问一次要不要给 idea 发 `read:notes`」那半句、`05` 接口一节「`read:notes` 的申请走法」一行，同属获准机制砍掉，最后一期一起删。）
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `10` 定稿为准）

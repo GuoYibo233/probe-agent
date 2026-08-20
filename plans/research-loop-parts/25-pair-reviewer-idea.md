@@ -78,7 +78,7 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 - 清单第二栏「代码或记录的位置」用的 `code_paths` 和两份部署报告，由 deploy 在工单上填：见 `20-pair-idea-deploy.md`。
 - 清单头部的 run_id 和 commit 从 runs 账取，runs 行格式见 `03-ledgers.md`。
 - reviewer 什么都能读、隔离只体现在读的顺序（施工计划第一节裁决 7）：见 `14-role-reviewer.md`。
-- idea 读 `notes/` 要 grant、idea 的其余 reads：见 `10-role-idea.md`。
+- idea 读 `notes/` 不用获准（获准机制 2026-08-21 gyb 裁掉，grant 凭据随之取消）、idea 的其余 reads：见 `10-role-idea.md`。
 
 ## 源文档没写清的（留给 gyb）
 
@@ -88,7 +88,7 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 4. `rl status` 段 9 怎么找到这些清单。清单是 `review/` 下的文件、不是账行，rl 是扫目录按文件名日期排还是另有登记，两份都没写。
 5. 清单没有状态，也没有关掉的办法。idea 读完、按不按清单改决定，账上不留痕；doctor 的扫描项里没有「清单里的问题有没有被处理」这一类。
 6. 清单第四栏「建议动作」被 idea 或 gyb 否掉的时候往哪写。设计文档只写「动不动由 gyb 看完之后定」，没写不动的那一支要不要留一条决定或者一行记录。
-7. idea 按清单改决定要不要先等 gyb 点头。设计文档一边写「动不动由 gyb 看完之后定」，一边把 `review/` 列进 idea 的 reads 并说清单是 idea 下一轮的输入，idea 能不能不等 gyb 直接 `rl decision update`，没写。
+7. idea 按清单改决定要不要先等 gyb 点头。设计文档一边写「动不动由 gyb 看完之后定」，一边把 `review/` 列进 idea 的 reads 并说清单是 idea 下一轮的输入，idea 能不能不等 gyb 直接 `rl decision update`，没写。（已裁 2026-08-21：idea 读完清单不自行处置，只报 gyb、gyb 裁了才动，见文末传播行。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -131,3 +131,5 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
    - 改法：加一条 `rl decision confirm ID --source run:... --source file:...`，追加一版正文不变、只增来源
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处 `14`，rl-hub-v4 传；gyb 原话「选a」）：第一节「不派活」后补半句「起 sonnet subagent 逐题查不算派活」。对回原则 5。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「哪几段推桌面通知」按「桌面通知这一版不做」改。对回原则 6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只报你，你裁了才动」）：idea 读完 reviewer 清单不自行处置，改决定、打回单子都等 gyb 裁了才动；「没写清」第 7 条标已裁。对回原则 6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：idea 读 `notes/` 的获准机制整套砍掉，grant 当 reviewer 事后查凭据的核对项随之取消；接口一节「idea 读 `notes/` 要 grant」那行照改。对回原则 2。

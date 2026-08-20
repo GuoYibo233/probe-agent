@@ -129,7 +129,7 @@ issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `a
 | `in_progress` | `stuck` | holder | `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单 | 无 | `handoff stuck` |
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `launch_order` 最新尝试的 run 行有 `exit_status=ok` 的 `finished` 版 | 无 | `handoff done` |
-| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
+| `done_pending_review` | `accepted` | owner（`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发，2026-08-21 裁） | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
 | `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
@@ -382,3 +382,5 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「run只需要关注自己的工单，一般不会空run，不需要查，这个改了」）：第三节「run 的 inbox 不查过版」那句扩大成「run 不查 inbox」。
 - 2026-08-17 rl-hub-v3 审后补：第七节节名「runs 两版」改「runs 三版」（问题 17）。
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 确认「甲」）：第三节「两处原文不一致」段结成「发射单从父单抄 `decision_refs`，源文档『发射单不引决定』作废」；「没写清」第 1 条标已裁。对回原则 9。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「你干完自己算数」）：第十一节抄的转移表 `done_pending_review`→`accepted` 行「谁能写」补「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」（`04` 原表的备注等最后一期，sync-inbox 问题 43）。对回原则 1。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；第三节「`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着」那句以此为准（字段语义定义处 `03` 冻结、等最后一期收口），正文句留给定稿时并。对回原则 9。

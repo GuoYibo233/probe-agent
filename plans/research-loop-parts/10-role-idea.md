@@ -42,7 +42,7 @@ idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。i
 | dispatches_to | deploy、analysis |
 | model | 由 agent 调用时 fable，gyb 手动加载时跟当前会话的模型一致 |
 
-备注（不进 json，2026-08-18 `reads` 写法裁决：账写账名、目录写相对仓库根的路径、备注移到表下）：`notes/` 要 gyb 发 `read:notes` 才读；`experiments/` 只读部署报告目录。
+备注（不进 json，2026-08-18 `reads` 写法裁决：账写账名、目录写相对仓库根的路径、备注移到表下）：`experiments/` 只读部署报告目录。
 
 SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：钩子拦不到的写法（脚本内部写文件、`python -c`、heredoc、任何钩子解析不出目标路径的 Bash 命令）一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`（Bash 进钩子匹配范围后按 sync-inbox 问题 38 改的措辞）；一个会话只加载一个角色，要换角色另开会话。
 
@@ -179,7 +179,7 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - `rl decision add/update/confirm/retire/merge/show/list/stale`、`rl handoff open/accept/reject/withdraw/release/reissue/resume/amend`、`rl issue open/reply/reassign/close`、`rl inbox`、`rl trace` 的完整参数与退出码：`05-rl-cli.md`。
 - actor 判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：`01-gyb.md` 和 `05-rl-cli.md`。
 - `rl status` 的十段（桌面通知 2026-08-21 裁掉不做）、`fyi` 通知：`01-gyb.md`。
-- 角色 json 的五样、`tests/test_skill_refs.py` 的机器检查范围、钩子管 Write/Edit/Bash 三个工具：`06-hooks-and-permissions.md`。idea 的 json `reads` 备注里 `read:notes` 那半句随获准机制砍掉（2026-08-21 裁）要删，json 相关归 `06`，见「要同步到别处的」。
+- 角色 json 的五样、`tests/test_skill_refs.py` 的机器检查范围、钩子管 Write/Edit/Bash 三个工具：`06-hooks-and-permissions.md`。idea 的 json `reads` 备注里 `read:notes` 那半句随获准机制砍掉已删（2026-08-21 裁，`06` 与本份 rl-hub-v6 已同步），json 相关归 `06`。
 - 两份部署报告的分工和 `code_paths` 由谁填：`11-role-deploy.md` 和 `20-pair-idea-deploy.md`。
 - 口径账的两种 kind、四个状态、谁提谁批：`13-role-analysis.md` 和 `22-pair-idea-analysis.md`。
 - reviewer 清单的文件名和五栏：`14-role-reviewer.md` 和 `25-pair-reviewer-idea.md`。idea 读完清单只报 gyb、gyb 裁了才动（2026-08-21 裁）动到清单的下游动作，见「要同步到别处的」。
@@ -387,12 +387,12 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 
 ## 要同步到别处的
 
-- `06-hooks-and-permissions.md`：idea json `reads` 表下备注「`notes/` 要 gyb 发 `read:notes` 才读」删（获准机制 2026-08-21 砍掉）；本份的 json 副本和备注未动，等 `06` 改了传回来。
-- `08-trees-init-and-host.md`：`rl init` 逐项问里「问 gyb 一次要不要当场给 idea 发 `read:notes`」删。
-- `05-rl-cli.md`（冻结，只报）：doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；`rl grant` 子命令与 grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；`rl status --group-by line` 改成跨根的单每条相关线都出现。
-- `01-gyb.md`：gyb use case 表里「批 `read:notes`」的活删；「授权只有 gyb 能写」那段里 `read:notes` 的例子随 grants 账存废定。
-- `03-ledgers.md`（冻结，只报）：`line` 字段语义改「`decision_refs` 可跨根，跨根的单在每条相关线的视图里都出现」；grants 账存废同上。
-- `04-handoffs-and-sessions.md`（冻结，只报）：转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收（2026-08-21 裁）」。
-- `20-pair-idea-deploy.md`：「怎么测试、什么算成功」只在起 subagent 的交代里说、不进单子字段；`--manual` 单默认 gyb 验收。
-- `14-role-reviewer.md`、`25-pair-reviewer-idea.md`：reviewer 拿 grant 当「idea 有没有读过 notes/」凭据的核对项删；idea 读完清单只报 gyb、gyb 裁了才动（清单的下游动作）。
-- `11` 到 `14` 各角色 part 的收件箱段（统筹从定义处传）：过版项口径统一「本会话手上单子引的过版决定」，feedback 裁决单列一项，两处源文档不一致按此收口。
+- `06-hooks-and-permissions.md`：idea json `reads` 表下备注「`notes/` 要 gyb 发 `read:notes` 才读」删（获准机制 2026-08-21 砍掉）；本份的 json 副本和备注未动，等 `06` 改了传回来。（已同步 2026-08-21 rl-hub-v6：`06` 已改，本份备注行已传回，两处一字不差）
+- `08-trees-init-and-host.md`：`rl init` 逐项问里「问 gyb 一次要不要当场给 idea 发 `read:notes`」删。（已同步 2026-08-21 rl-hub-v6）
+- `05-rl-cli.md`（冻结，只报）：doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；`rl grant` 子命令与 grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；`rl status --group-by line` 改成跨根的单每条相关线都出现。（记 sync-inbox 问题 43，等最后一期；grants 存废到时问 gyb）
+- `01-gyb.md`：gyb use case 表里「批 `read:notes`」的活删；「授权只有 gyb 能写」那段里 `read:notes` 的例子随 grants 账存废定。（已同步 2026-08-21 rl-hub-v6：获准段、第 3 件事、接口行已改；use case 表查无「批 `read:notes`」行；授权段无 `read:notes` 例子，存废随问题 43）
+- `03-ledgers.md`（冻结，只报）：`line` 字段语义改「`decision_refs` 可跨根，跨根的单在每条相关线的视图里都出现」；grants 账存废同上。（记 sync-inbox 问题 43，等最后一期；非冻结引用处 `02`/`20`/`21`/`22`/`23`/`11` 已按新口径处理）
+- `04-handoffs-and-sessions.md`（冻结，只报）：转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收（2026-08-21 裁）」。（记 sync-inbox 问题 43，等最后一期；`20`/`21` 的抄件已改）
+- `20-pair-idea-deploy.md`：「怎么测试、什么算成功」只在起 subagent 的交代里说、不进单子字段；`--manual` 单默认 gyb 验收。（已同步 2026-08-21 rl-hub-v6：正文两处改、裁决记录补行）
+- `14-role-reviewer.md`、`25-pair-reviewer-idea.md`：reviewer 拿 grant 当「idea 有没有读过 notes/」凭据的核对项删；idea 读完清单只报 gyb、gyb 裁了才动（清单的下游动作）。（`25` 已同步 2026-08-21 rl-hub-v6；`14` 在 rl-part-14 手上，已 SendMessage 交代）
+- `11` 到 `14` 各角色 part 的收件箱段（统筹从定义处传）：过版项口径统一「本会话手上单子引的过版决定」，feedback 裁决单列一项，两处源文档不一致按此收口。（已 SendMessage 交代 rl-part-11 到 14：`11`、`13` 正文五样已与两条口径一致、只记裁决记录行；`12` run 不查 inbox 不涉；`14` 「四类…再加」句要改成五样单列）

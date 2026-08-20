@@ -181,7 +181,7 @@ idea：
 | `dispatches_to` | deploy、analysis |
 | `model` | `as_subagent` 是 fable，`manual` 是 inherit |
 
-备注：`notes/` 要 gyb 发 `read:notes` 才读；`experiments/` 只读部署报告目录。
+备注：`experiments/` 只读部署报告目录。
 
 deploy：
 
@@ -269,7 +269,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 
 这几句的正式文本落在 `common/READING.md` 里，见 `09-common-and-feedback.md`。
 
-读权一律不硬拦，所以这一栏全靠纪律加 reviewer 事后查。唯一接回机器的一处是授权：idea 读 `notes/` 要 gyb 发 `read:notes`，grant 是给 reviewer 事后查的凭据，doctor 有一项扫描「决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 read:notes」。授权账的行格式在 `03-ledgers.md`，这项扫描在 `05-rl-cli.md`。
+读权一律不硬拦，这一栏全靠纪律加 reviewer 事后查。idea 读 `notes/` 也不用获准：原来接回机器的那一处授权（gyb 发 `read:notes`、grant 当 reviewer 事后查的凭据、doctor 扫「来源指向 notes/ 而无 grant」）2026-08-21 gyb 整套裁掉，只留一句纪律：文献变成想法由 gyb 亲自做，idea 不替 gyb 归纳方向（定义处 `10-role-idea.md`）。
 
 ## 和别的 part 的接口
 
@@ -278,7 +278,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 九本账的公共骨架（`actor`、`session_id`、`force_reason`、`via`）和每本账的必填规则：定义在 `03-ledgers.md`。
 - issue 的 kind `denied`、`request`，`handoff_id` 什么时候必填，`assignee` 的取值：定义在 `03-ledgers.md`；`denied` issue 的收件人填目录主人这条规矩定义在本份「钩子的回话要指路」。
 - sessions 账的 `role`、`model`、`launched_by`、`rules_version`、`status`、`focus` 各栏：定义在 `03-ledgers.md`。
-- grants 账的 `grantee`、`permission`（第一版只有 `read:notes`）、谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：定义在 `03-ledgers.md` 和 `01-gyb.md`。
+- grants 账的 `grantee`、`permission`、谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：定义在 `03-ledgers.md` 和 `01-gyb.md`。`read:notes`（第一版唯一一种 permission）随获准机制 2026-08-21 裁掉，账里暂无内容，grants 账与 `rl grant` 的存废等最后一期（sync-inbox 问题 43）。
 - 转移表的「谁能写」和「前提」两栏、gyb 对哪一栏豁免：定义在 `04-handoffs-and-sessions.md`。
 - 会话登记和销号那两个钩子调的命令 `rl session start` 和 `rl session end`、销号时扫哪些状态：定义在 `04-handoffs-and-sessions.md` 和 `05-rl-cli.md`。销号钩子顺手删会话状态文件这一步是本份 2026-08-18 加的，`04` 已冻结，列在「要同步到别处的」等统筹。
 - `rl doctor` 的扫描项：定义在 `05-rl-cli.md`。本份 2026-08-18 加的「陈旧会话状态文件」清理项，`05` 已冻结，列在「要同步到别处的」等统筹。
@@ -451,6 +451,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传；gyb 原话「剩下的建议我确认」「你就说我也定了，让统筹给06 00也改了」）：待验证第 8 条实测结论落地——钩子一份放插件级 `hooks/hooks.json`，不写在 skill 头部；脚本先按 `agent_type` 判角色（不认识的最严）、没有才按 `loop/.sessions/<session_id>.json`；状态文件由同一份钩子文件里的钩子在加载角色 skill 时写、`agent_type` 非空不写；「共用一个脚本、参数报角色名」写法作废；加 `agents/` 层五份角色 agent 定义只塑形不带钩子、派活一律用它们起 subagent、init 不播不动 settings；钩子匹配范围加 Bash（解析重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径并 realpath），第一层、第三层、「放行什么」、公共规矩第 8 条那句照改。对回原则 2、8。两处空白等 gyb（sync-inbox 问题 38）：「Bash 绕钩子不许」纪律句改成什么；agent 定义改动走不走母版流程。
 - 2026-08-18 gyb 裁（sync-inbox 问题 38，rl-hub-v5 问，原话「b」「a」）：38-1 纪律句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`」，第三层那句照改，`09` rule-08 与五份角色 SKILL.md 同句同改；38-2 角色 agent 定义改一处算改母版，走角色 json 同一个流程，`agents/` 那段照改，`09` 第四节补一句。对回原则 2、9。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：接口一节公共母版八条规矩改九条（rule-09「修必销案」2026-08-21 gyb 立，定义处 `09`）。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：idea 读 `notes/` 的获准机制整套砍掉——idea json `reads` 备注删「`notes/` 要 gyb 发 `read:notes` 才读」半句，「读的纪律」一节授权那处改成只留纪律一句，接口一节 grants 行注存废等最后一期（sync-inbox 问题 43）。对回原则 2（读一律不设权）。
 
 ## 要同步到别处的
 

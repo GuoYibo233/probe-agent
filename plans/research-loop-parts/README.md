@@ -20,11 +20,11 @@
 | `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 已定稿 `7a01842`（2026-08-21，rl-part-07；同步事项 rl-hub-v5 已传，动到冻结三份的记「冻结后待议」问题 41，新公共规矩 rule-09 落 `09`） |
 | `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 已定稿 `eb02403`（2026-08-18，rl-part-08；十二条同步事项 rl-hub-v5 已传，动到冻结三份的三条记「冻结后待议」问题 39，纪律句改法与 agent 定义母版流程立问题 38 等 gyb） |
 | `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩九条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 已定稿 `aaca3c9`（2026-08-18，rl-part-09；十条同步事项 rl-hub-v5 已传，动到冻结三份的五处记「冻结后待议」问题 37，retire 理由栏立问题 36 等 gyb） |
-| `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、收件箱、决定落账、开工单、开分析单、验收打回、收回重派拉起、申请读 notes、模型 | 359 | 11 | 约 55 | 未开 |
-| `11-role-deploy.md` | deploy 角色 | 写权、报告与 code_paths、自决、宿主文件三条纪律、开发射单、后台起 run 与验收、卡住之后、补报告提验收、快车道里的 deploy、四栏 | 381 | 7 | 约 56 | 未开 |
-| `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 三版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 | 未开 |
-| `13-role-analysis.md` | analysis 角色 | 写权与读、先问再提口径、口径两类四态、接单交活、卡住两条路、快车道、产物落哪 | 230 | 10 | 18 | 未开 |
-| `14-role-reviewer.md` | reviewer 角色 | 谁开、focus、审查基准、审三样、读的顺序、审哪一版、清单五栏、不开 issue、五栏 json | 211 | 10 | 16 | 未开 |
+| `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、收件箱、决定落账、开工单、开分析单、验收打回、收回重派拉起、notes/ 与问 gyb 的条子、模型 | 398 | 11 | 约 55 | 已定稿 `96459b4`（2026-08-21 rl-part-10；获准机制砍掉等十一条全裁，传播 rl-hub-v6 已做） |
+| `11-role-deploy.md` | deploy 角色 | 写权、报告与 code_paths、自决、宿主文件三条纪律、开发射单、后台起 run 与验收、卡住之后、补报告提验收、快车道里的 deploy、四栏 | 381 | 7 | 约 56 | 在 `rl-part-11` 手上 |
+| `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 三版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 | 在 `rl-part-12` 手上 |
+| `13-role-analysis.md` | analysis 角色 | 写权与读、先问再提口径、口径两类四态、接单交活、卡住两条路、快车道、产物落哪 | 230 | 10 | 18 | 在 `rl-part-13` 手上 |
+| `14-role-reviewer.md` | reviewer 角色 | 谁开、focus、审查基准、审三样、读的顺序、审哪一版、清单五栏、不开 issue、五栏 json | 211 | 10 | 16 | 在 `rl-part-14` 手上 |
 | `20-pair-idea-deploy.md` | idea 与 deploy | 工单字段、开单、状态走法、验收、打回、收回与 cascade、reissue、issue 往返、过版、快车道补单指到 07 | 330 | 8 | 41 | 未开 |
 | `21-pair-deploy-run.md` | deploy 与 run | attempts、父单与继承、开单、认领、smoke、发射与 runs、交付物、四种失败到 amend/resume、验收、相关转移行、中断、对账 | 361 | 10 | 约 59 | 未开 |
 | `22-pair-idea-analysis.md` | idea 与 analysis | 谁开单谁接、单子上带什么、交活、验收打回卡住收回、相关转移行、原始指标与跨 run 聚合 | 194 | 8 | 18 | 未开 |

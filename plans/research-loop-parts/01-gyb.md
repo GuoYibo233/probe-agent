@@ -10,7 +10,7 @@
 
 gyb 自己做文献调查，把调查报告写成 md 放进 `notes/`，`notes/` gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读。这一版不加文献线，也没有角色去查「这个想法别人做过没有」，要加文献账是另一件事；`notes/` 就是文献进入这套系统的唯一入口。
 
-idea 要经 gyb 允许才有读文献的权限。`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。读权不上钩子，grant 是给 reviewer 事后查的凭据，`rl doctor` 有一项扫描「决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`」。
+idea 读 `notes/` 不用获准：原来的整套获准机制（`rl init` 那一问、`request` issue 申请、grant 凭据、doctor 无 grant 扫描）2026-08-21 gyb 裁掉（定义处 `10-role-idea.md`），只留一句纪律：文献变成想法由 gyb 亲自做，idea 不替 gyb 归纳方向。读权不上钩子。
 
 ### 2. 说要分析什么、画什么图
 
@@ -18,7 +18,7 @@ evaluations 每一行都是 gyb 说、analysis 记、gyb 批。任何角色都�
 
 ### 3. 写 grants
 
-授权只有 gyb 能写：grants 的 `actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节（d）「grants 只收裸终端」不认）。`grant list` 和 `grant show` 是查询命令，谁都能调（原则 2 推论：读一律不设权）。
+授权只有 gyb 能写：grants 的 `actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节（d）「grants 只收裸终端」不认）。`grant list` 和 `grant show` 是查询命令，谁都能调（原则 2 推论：读一律不设权）。第一版没有要批的授权了：唯一一种 permission `read:notes` 随获准机制 2026-08-21 裁掉，这件事暂时空置，grants 账与 `rl grant` 的存废等最后一期（sync-inbox 问题 43）。
 
 ### 4. 裁 feedback
 
@@ -158,7 +158,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - actor 判定的实现（会话状态文件路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁，原来是宿主给插件的数据目录）、钩子在加载角色时写）在 `06-hooks-and-permissions.md`。
 - 钩子对 gyb 裸终端和 `--as-gyb` 不生效这一条的另一半（钩子挂在哪两个工具、拦哪两类路径）在 `06-hooks-and-permissions.md`。
 - `ql_tag`、快车道补单验收人固定是 gyb、没关的快车道进 status 段 9 与 reclaim，在 `07-quick-lane.md`。
-- `rl init` 问 gyb 要不要给 idea 发 `read:notes`、`notes/` 目录、`research-loop.json` 里的阈值表、入口 skill 的领路，在 `08-trees-init-and-host.md`；阈值表删 `notify.reminder_days`、领路里定期提醒那条改成 gyb 自己定期开工（都是 2026-08-21 裁的连带，待同步 `08`）。
+- `notes/` 目录、`research-loop.json` 里的阈值表、入口 skill 的领路，在 `08-trees-init-and-host.md`；阈值表删 `notify.reminder_days`、领路里定期提醒那条改成 gyb 自己定期开工（都是 2026-08-21 裁的连带，已同步 `08`）；`rl init` 问要不要给 idea 发 `read:notes` 那一问随获准机制 2026-08-21 砍掉（定义处 `10-role-idea.md`）。
 - feedback 采纳之后母版的 `rules_version` 怎么走、`common/` 母版本身、issues 的九种 kind 与 reply/close 写权，在 `09-common-and-feedback.md`；issues 里「assignee 是 gyb 的那一版触发桌面通知」那句随通知销掉改成「进 `rl status` 段 2」（待同步 `09` 与写了两遍的 `03`）。
 - `decisions.gyb.jsonl` 的编号、版本、来源三类、根决定，在 `02-decisions.md`。
 - gyb 直接开分析单（owner 记 gyb）在 `22-pair-idea-analysis.md`；gyb 越过 owner 验收后给 owner 的 `fyi` issue 走 `rl inbox`，见对应角色的 part。
@@ -497,6 +497,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-21 gyb 裁（没写清第 6 条后半，原话「都按推荐来」）：gyb 看完 `review/` 清单后的动作不新加登记，废决定、收单、开 issue 各落各的账，清单不标处理状态。对回原则 4。
 - 2026-08-21 gyb 裁（没写清第 8 条，原话「甲」）：sessions 账 `model` 是 `unknown` 的事后走追加一版补真实模型名、doctor 附现成命令、不加新命令——与 `05` 定稿 2026-08-17 已定的 `rl session amend ID --model M` 是同一个值，本条是确认，不需要同步。对回原则 4。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：`rl status` 段 9 补「没关的快车道不归线，按线分组时单独列一堆」。对回原则 6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：第一节第 1 件事里 idea 读 `notes/` 的获准段改成不用获准、只留纪律一句；第 3 件事「写 grants」补第一版空置、存废等最后一期（sync-inbox 问题 43）；接口一节 `rl init` 那一问删。use case 表查无「批 `read:notes`」行，无从删。对回原则 2。
 
 ## 要同步到别处的
 

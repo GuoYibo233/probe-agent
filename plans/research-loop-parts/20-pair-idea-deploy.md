@@ -25,7 +25,7 @@ idea 把决定拆成工单派给 deploy，工单就是 `work_type` 取 `work_ord
 
 工单还带这些公用字段：`id` 形如 `ho-0012`；`status` 七选一；`parent_id`、`batch`、`quick_lane` 布尔；`ql_tag`（快车道补单必填，指它合回的那条 scratch 行；其余单子空）；`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着；`progress_note`（只在 `in_progress` → `todo` 那一版必填；`rejected` → `todo` 不要求）；`reason`（`rejected`、`withdrawn` 时必填，角色会话发起的 `withdrawn` 还要 `quote`）；`issue_id`（`stuck` 时必填）。九本账的公共骨架七样在 03-ledgers.md。
 
-工单里不能只甩决定编号。`explanation` 的解释权在 idea：idea 要把那条决定里的东西讲明白。怎么测试、什么算成功也要 idea 自己想明白，只是不预写成单子上的字段。
+工单里不能只甩决定编号。`explanation` 的解释权在 idea：idea 要把那条决定里的东西讲明白。怎么测试、什么算成功也要 idea 自己想明白，只是不预写成单子上的字段，只在起下游 subagent 的交代里说（2026-08-21 gyb 裁，定义处 `10-role-idea.md`）。
 
 ## 开单
 
@@ -68,7 +68,7 @@ deploy 干完写两份部署报告，都放 experiments/ 下这张工单自己�
 
 deploy 提「干完等待验收」的时候，派活单记两份报告路径和代码路径清单，路径为空入账脚本不收这个状态。deploy 在这条工单下面开的发射单验收完之后，deploy 先把 run_id 和关键指标补进 `detail` 那一份，再提工单的「干完等待验收」。
 
-验收人是 owner，也就是 idea；gyb 随时可以自己验。读的顺序是先读不带文件的 `method` 那一份看做法对不对，再读带文件的 `detail` 那一份看写出来的东西和说的是不是一回事。gyb 越过 owner 验收或者打回的时候，rl 给 owner 发一条 `fyi` 通知。验收一张单子时，它关联的已回复 issue 自动关。
+验收人是 owner，也就是 idea；gyb 随时可以自己验；`dispatch=manual` 的单 gyb 亲自接、干完默认由 gyb 自己验收，`fyi` 照发（2026-08-21 gyb 裁，定义处 `10-role-idea.md`；`04` 转移表的备注等最后一期）。读的顺序是先读不带文件的 `method` 那一份看做法对不对，再读带文件的 `detail` 那一份看写出来的东西和说的是不是一回事。gyb 越过 owner 验收或者打回的时候，rl 给 owner 发一条 `fyi` 通知。验收一张单子时，它关联的已回复 issue 自动关。
 
 ## 打回
 
@@ -127,7 +127,7 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 2. 普通工单的 `parent_id` 填不填。施工计划第三节只规定了 `launch_order` 必填指工单、`analysis_order` 可选、快车道补单空，`rl handoff open` 又有 `--parent ID` 这个参数。
 3. 转移表两行 `handoff amend` 的「到」栏写的是 `todo`（内容追加），前提栏又写「状态不变」，两栏对不上。`done_pending_review` 上 amend 完停在 `done_pending_review` 还是回 `todo`，照字面读不出来。
 4. `rl handoff reissue` 开的新单继承 `explanation`、`parent_id`、`batch`，`report_paths` 和 `code_paths` 继不继承没写。
-5. idea「怎么测试、什么算成功也要自己想明白，只是不预写成单子上的字段」，那这段想法落在 `explanation` 里还是只在会话里说给 deploy 听，没写。
+5. idea「怎么测试、什么算成功也要自己想明白，只是不预写成单子上的字段」，那这段想法落在 `explanation` 里还是只在会话里说给 deploy 听，没写。（已裁 2026-08-21：只在起下游 subagent 的交代里说，见裁决记录。）
 6. 打回之后 deploy 重新交活的时候，旧的 `report_paths` 和 `code_paths` 留着还是换新路径，没写。
 7. 工单被收回之后，deploy 已经写在 experiments/ 里的代码和产物怎么处置，两份文档都没写（第二轮模拟 decision-revised-while-in-flight 第 18 条报的就是这条）。
 
@@ -344,3 +344,6 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 2026-08-17 rl-hub-v3 审后补：第九节 `rl decision stale` 签名按 `05-rl-cli.md` 命令表改成 `[--handoff ID] [--all]`，去掉 `--mine`（05 定稿那一轮的引用滞后）。
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」）：「过版检查对工单的影响」一节过版判定改成「比账里最新一个非 `confirm` 版小才算过时」。对回原则 9。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节推送表字样按「桌面通知这一版不做」改。对回原则 6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只在交代里说」）：「怎么测试、什么算成功」不写进单子字段，只在起下游 subagent 的交代里说；「工单里不能只甩决定编号」那段照改，「没写清」第 5 条标已裁。对回原则 4。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「你干完自己算数」）：`dispatch=manual` 的单 gyb 亲自接、干完默认由 gyb 自己验收，`fyi` 照发；验收一节照改（`04` 转移表的备注等最后一期，sync-inbox 问题 43）。对回原则 1。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；正文两处「`line` 由 `decision_refs` 第一项的 `root_id` 算出来」以此为准（字段语义定义处 `03` 冻结、等最后一期收口，sync-inbox 问题 43），正文句留给定稿时并。对回原则 9。

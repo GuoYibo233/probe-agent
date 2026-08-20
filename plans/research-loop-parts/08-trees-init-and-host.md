@@ -33,7 +33,7 @@
 
 这三句是给没加载角色的裸会话看的纪律。裸会话身上没有钩子，什么都能写，这一点不用兜底钩子去堵，靠这一节加 reviewer 事后查。
 
-init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓库绑定的那几项（第二节表里标「init 问」的），外加一问「要不要当场给 idea 发 `read:notes` 授权」。发了，idea 之后读 `notes/` 不再走申请；没发，idea 要读的时候开一条 kind 是 `request` 的 issue 给 gyb，gyb 写一条 grant。重跑 init 时已经填过的项不再问。
+init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓库绑定的那几项（第二节表里标「init 问」的）。原来外加的一问「要不要当场给 idea 发 `read:notes` 授权」随获准机制 2026-08-21 砍掉，不问了（定义处 `10-role-idea.md`）。重跑 init 时已经填过的项不再问。
 
 ## 二、`research-loop.json` 的键
 
@@ -184,7 +184,7 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - run 角色照 gpu-run 写的八个阶段、看门狗、smoke 日志落 `artifact_root/smoke/`、中断收尾四步（`launcher.abort_cmd` 只管其中「宿主销号」一步）、`launcher.*` 留空时 run 怎么办：`12-role-run.md`。
 - deploy 改宿主文件的三条纪律、部署报告两份的分工：`11-role-deploy.md`。
 - analysis 的派生指标 `code_path` 指向 `analysis/common/metrics.py:<函数>`、`analysis_artifact_root` 怎么用：`13-role-analysis.md`。init 播的三样在本份第一节。
-- idea 申请 `read:notes` 的那条 issue：`10-role-idea.md`；grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：`01-gyb.md` 第二节，`03-ledgers.md` grants 一段照它写。
+- grants 谁能写（只有 gyb；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收）：`01-gyb.md` 第二节，`03-ledgers.md` grants 一段照它写。idea 申请 `read:notes` 的那条 issue 随获准机制 2026-08-21 砍掉（定义处 `10-role-idea.md`）；grants 账存废等最后一期（sync-inbox 问题 43）。
 - 母版的 `rules_version` 和 feedback 采纳后改哪几个文件（角色 agent 定义是不是母版的一部分，归 `09`/`06` 定）：`09-common-and-feedback.md`。
 - 待验证清单第 4 条（入口 skill 能不能锁成只许手动）、第 8 条（2026-08-18 已测，结论见「要同步到别处的」）、施工步 1、2、7 的交付与验收（步 7 交付加 `run.py` 门禁白名单）：`30-build-steps-verify-tests.md`。
 - 十一条设计原则和文档索引：`00-overview.md`。本份 2026-08-18 的裁决对回的原则：init 幂等与钉死账路径对回原则 8（一处为准）；钩子挂法对回原则 2（第一层约束是硬的，subagent 也要过闸）；`agents/` 层不带钩子、init 不播文件对回原则 8；`launcher.abort_cmd` 对回原则 10/11（中断是尝试的一种结束，宿主销号要留痕）；`repo_run`、`host_ledgers` 对回原则 2（宿主的东西靠纪律，纪律要有具体落点）。
@@ -306,6 +306,7 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-18 gyb 裁（原第 10 条，第一次答「A 然后现在就测 8」= 先不建、挂第 8 条；测完改裁）：待验证第 8 条当场测（八个变体，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）。结论：skill 头部钩子只管顶层会话、subagent 不经过它，主案不成立；插件 `agents/` 里 agent 定义头部的钩子被 Claude Code 忽略（官方文档明写「plugin subagents don't support the hooks, mcpServers, or permissionMode frontmatter fields」），仓库 `.claude/agents/` 里的要仓库受信任才跑，备案一不成立；仓库 settings 级和插件级钩子对 subagent 生效，输入带 `agent_type`。gyb 采纳外部咨询意见裁（原话「剩下的建议我确认」）：钩子一份放插件级 hooks 文件；脚本先看 `agent_type`（认识的按角色、不认识的最严），没有才按会话状态文件查顶层会话角色；会话状态文件由同一份钩子文件里的一条钩子在加载角色 skill 时写（`agent_type` 非空不写）；skill 头部不再声明钩子、第 2 条的「参数报角色名」写法作废；插件 `agents/` 层要建，五份角色 agent 定义只塑形（提示词、预加载角色 skill、收窄工具面）不带钩子；派活一律用这五个类型起 subagent；init 不往仓库播 agent 文件、不动仓库 settings；不加 `workflows/`。对回原则 2、8。第四节表加 `agents/` 行、改 `skills/`、`hooks/` 两行、不一致段改写。
 - 2026-08-18 gyb 裁（同一轮，原话「你就说我也定了，让统筹给06 00也改了」）：钩子匹配范围加 Bash（Bash 分支解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径，自己 realpath），原则 2「钩子只管 Write 和 Edit」那句和 `06` 定稿的「Bash 绕钩子不许」纪律句要跟着改。定义处 `00`（原则）和 `06`（钩子），本份只在 `hooks/` 行记一句。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传；gyb 原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」）：桌面通知与定期提醒这一版都不做——阈值表删 `notify.reminder_days` 一行；入口 skill 领路第 5 条触发词改成 gyb 自己定期开工，路线不变。对回原则 6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：`rl init` 的「要不要当场给 idea 发 `read:notes`」那一问随获准机制砍掉，第一节 init 问话段与接口一节照改。对回原则 2。
 
 ## 要同步到别处的
 

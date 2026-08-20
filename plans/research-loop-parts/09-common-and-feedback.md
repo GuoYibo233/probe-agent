@@ -134,9 +134,9 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
 授权只有 gyb 能写：`actor` 必须是 `gyb`。裸终端直接写；角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话（2026-08-17 gyb 裁，sync-inbox 问题 27，原话「3 不是，可以替我写」；施工计划第一节 (d)「grants 只收裸终端」不认）。
 
-这本账现在只服务一件事：idea 读 `notes/` 的权。`notes/` gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读这条不成立——idea 要经 gyb 允许才有读文献的权限。两条路：`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`，发了就不再走申请；没发的话 idea 开一条 issue 给 gyb（kind 是 `request`），gyb 写一条 grant，idea 之后才读 `notes/`。
+这本账原来只服务一件事：idea 读 `notes/` 的权。那套获准机制（`rl init` 那一问、`request` issue 申请、grant 凭据、doctor 无 grant 扫描）2026-08-21 gyb 整套裁掉（定义处 `10-role-idea.md`）：idea 默认能读 `notes/`，只留一句纪律——文献变成想法由 gyb 亲自做，idea 不替 gyb 归纳方向。砍掉之后第一版账里没有内容，这本账和 `rl grant` 子命令的存废等最后一期（sync-inbox 问题 43）。
 
-读权不上钩子。grant 是给 reviewer 事后查的凭据。doctor 有一项扫描接住这条纪律：决定的来源指向 `notes/` 但 grants 里查不到这个 actor 的 `read:notes`。
+读权不上钩子。
 
 ## 和别的 part 的接口
 
@@ -150,14 +150,12 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 - gyb 的身份规矩（裸终端就是 gyb、`--as-gyb` 加 `--quote`、`--force --reason`、豁免范围、grants 只有 gyb 能写）：`01-gyb.md`；命令行写法在 `05-rl-cli.md`；钩子那一层在 `06-hooks-and-permissions.md`。
 - `bin/rl` 每条子命令的签名和「谁能调」：`05-rl-cli.md`。本份抄了 `rl feedback` 五条、`rl issue` 七条、`rl grant` 四条的签名（写了两遍，改一处必改另一处）。2026-08-18 本份裁的三处要 `05` 跟着改：`rl decision retire` 带理由；`rl feedback accept` 把 `rules_version` 写回母版头部那一行；`rl grant revoke` 列出 grantee 还活着的会话。
 - `rl decision retire` 带理由之后决定行上记理由的那一栏：`02-decisions.md`（决定账的定义处；栏名归 `02` 定，是新加一栏还是复用 `force_reason` 归 `02`）。
-- doctor 的全部扫描项，其中和这一份有关的五项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 `applied_to` 为空、决定来源指 `notes/` 但没有 `read:notes`）：`05-rl-cli.md`。doctor 只留脚本能判的项，判断类的进 `common/REVIEW-CHECKLIST.md`。
+- doctor 的全部扫描项，其中和这一份有关的四项（answered 超期未 close、没人指回的 open issue、单子回 todo 而 issue 还 open、feedback 的 `applied_to` 为空）：`05-rl-cli.md`；「决定来源指 `notes/` 但没有 `read:notes`」那一项 2026-08-21 随获准机制砍掉（`05` 冻结，等最后一期删）。doctor 只留脚本能判的项，判断类的进 `common/REVIEW-CHECKLIST.md`。
 - sessions 账的 `rules_version`（开始版从 `common/GLOBAL-RULES.md` 头部那一行读）、`last_activity`、`status` 与「还活着的会话」怎么判定、`rl session end`：`04-handoffs-and-sessions.md`。
 - `rl handoff accept` 自动关 `answered` issue、转移表 `in_progress` 到 `stuck` 那一行要求 issue 与单子互相引用、`rl handoff withdraw --reason [--quote]`：`04-handoffs-and-sessions.md`。
 - 角色 json 的 `reads`、`writes`、`ledger_writes`、`dispatches_to`、`model` 五栏（run 的 `reads` 2026-08-18 补 feedback）、钩子的三层分权、`tests/test_skill_refs.py` 查三样、角色 json 改动同母版流程：`06-hooks-and-permissions.md`。
 - 五份角色 SKILL.md 按 `common/SPEC-TEMPLATE.md` 五栏写、各自的 use case 表和模型：`10-role-idea.md` 到 `14-role-reviewer.md`；json 副本也在那五份，要跟 `06` 一字不差。
 - 两条阈值 `issues.gyb_stale_hours`、`issues.answered_stale_days` 写在 `research-loop.json` 里、插件树 `common/` 那一行：`08-trees-init-and-host.md`（`notify.reminder_days` 2026-08-21 随定期提醒裁掉）。
-- `rl init` 问一次要不要给 idea 发 `read:notes`：`08-trees-init-and-host.md`。
-- idea 申请读 `notes/` 的那条 `request` issue 怎么走：`10-role-idea.md`；gyb 那一头怎么批：`01-gyb.md`。
 - run 的四种失败各配哪个 kind 和 stage、smoke 日志落哪：`12-role-run.md` 与 `21-pair-deploy-run.md`。
 - reviewer 不开 issue、只写 `review/` 清单、按 `common/REVIEW-CHECKLIST.md` 派 sonnet subagent 一人一题（不算派活，sync-inbox 问题 33）、清单一条问题五栏：`14-role-reviewer.md` 与 `25-pair-reviewer-idea.md`。
 - 快车道的杂账 scratch 与 `ql open/close`：`07-quick-lane.md`。
@@ -382,6 +380,7 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」「a」）：rule-08 里「用 Bash 往四个角色目录和 `loop/` 写等于绕钩子，不许」改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写」（Bash 2026-08-18 进了钩子匹配范围，来自 `08`）；第四节补「五份角色 agent 定义改一处也算改母版，同流程」。对回原则 2、9。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传；gyb 原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」）：桌面通知与定期提醒不做——第五节 feedback 入口出口改两处、第六节 issues「触发桌面通知」改「进 `rl status` 段 2」、接口一节推送表行与阈值行改。对回原则 6。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：公共规矩加 rule-09「修必销案：凡修的东西是账上报过的 issue，修完必须回复并关掉那条 issue，不许静默修」（gyb 原话「我希望这个是个规则，而不是什么补丁特例」），标题与编号句改九条。对回原则 4、6。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：第七节 grants 账那两段按获准机制整套砍掉改写（idea 默认能读、只留纪律一句、账与 `rl grant` 存废等最后一期 sync-inbox 问题 43）；接口一节 doctor 五项改四项、`rl init` 那一问与 `request` issue 两行删。对回原则 2。
 
 ## 要同步到别处的
 

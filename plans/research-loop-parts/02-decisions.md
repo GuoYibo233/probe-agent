@@ -47,8 +47,6 @@ decisions 这一本账拆成六个文件，五个角色各一个加 gyb 一个�
 
 update、confirm、retire、merge 四个动作不给 `--source` 时自动继承上一版的来源。「有新证据改的一版」和「gyb 当场改主意的一版」不另设「改的原因」一栏（2026-08-18 gyb 裁，第二轮模拟提的 `change_reason` 不采纳）：分辨靠 `sources` 和 `quote`——有新证据就把那次 run 或那份文件挂上来当来源，gyb 当场改的带 `quote`，两样都没有就是延续上一版依据改了做法。纪律是有证据必挂，不靠多一栏。
 
-doctor 有一项扫描盯着来源：决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 `read:notes`。扫描项全表在 `05-rl-cli.md`。
-
 ## 编号、版本、新一版还是新一条
 
 编号带角色前缀，序号每个前缀各排各的：`dec-idea-0007` 和 `dec-deploy-0007` 可以并存，分号只扫自己那本。更新不换编号、版本号加一，谁写的记在 `actor` 里。默认读取对每个编号只取最新版，历史全在文件里但默认读不到，要旧版本用 `--version` 或历史命令。
@@ -129,11 +127,11 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 
 - 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和可选的 `force_reason`、`via`：定义在 `03-ledgers.md`（冻结）。decisions 自己的字段（`root_id`、`op`、`text`、`sources`、`quote`、`merged_from`）定义在本份。
 - actor 的判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：定义在 `01-gyb.md`，钩子那一层在 `06-hooks-and-permissions.md`。本份只用到：角色会话里 `--as-gyb` 的行 `actor` 记 gyb、`quote` 必填、仍落角色前缀那本。
-- handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `03-ledgers.md`（冻结）。本份用它们做三件事：`line` 由 `decision_refs` 第一项的 `root_id` 算出；过版判定拿 `decision_refs` 的版本和本账最新非 confirm 版比；`show --with-runs` 第一跳按 `decision_refs` 找单子、之后沿 `parent_id`。
+- handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `03-ledgers.md`（冻结）。本份用它们做三件事：`line` 按 `decision_refs` 的 `root_id` 归线（2026-08-21 gyb 裁：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；`03` 冻结，字段语义等最后一期收口）；过版判定拿 `decision_refs` 的版本和本账最新非 confirm 版比；`show --with-runs` 第一跳按 `decision_refs` 找单子、之后沿 `parent_id`。
 - `rl handoff reissue` 和 `rl handoff withdraw` 那两行转移的前提与「谁能写」：定义在 `04-handoffs-and-sessions.md`（冻结）。本份只定「改版不自动动单子，重派用 reissue、停用 withdraw」。
 - `rl status` 段 6（过版的单子和 retired 决定名下的活单）、`rl inbox` 里的过版一类、`rl trace`、doctor 的决定相关扫描：定义在 `05-rl-cli.md`（冻结）。过版的定义以本份为准：比最新一个非 confirm 版小才算过时。
 - runs 账的 `run_id`（`run` 类来源要引它，不在 runs 账里拒收）：定义在 `03-ledgers.md`。
-- `read:notes` 授权和 grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）：定义在 `01-gyb.md`。doctor「来源指 notes/ 但 actor 没有 `read:notes`」那一项靠它。
+- grants 谁能写（只有 gyb，裸终端和角色会话里 `--as-gyb --quote` 都收）：定义在 `01-gyb.md`。`read:notes` 获准机制和 doctor「来源指 notes/ 但 actor 没有 `read:notes`」那一项 2026-08-21 随 `10-role-idea.md` 定稿砍掉；grants 账存废等最后一期（sync-inbox 问题 43）。
 - 快车道不写决定账、合回时在补单里一并补一条 decisions.deploy：定义在 `07-quick-lane.md`。
 - 角色 json 的 `ledger_writes` 四栏和机器检查：定义在 `06-hooks-and-permissions.md`。本份给的输入：五个角色各有自己那本的写权，run 只有 add；查询命令不进 `ledger_writes`。
 - 退出码六个和非零退出第一行的原因种类：定义在 `03-ledgers.md`。
@@ -397,6 +395,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 - 2026-08-18 gyb 确认「甲」：发射单从父单抄 `decision_refs`、run 不查 inbox 两句并存不矛盾，源文档「发射单不引决定」作废。对回原则 9。「过版」一节第二处「两处原文不一致」改成结论。
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：`rl decision retire` 必须带理由，谁废都要（gyb 也要），理由记进这一版决定行；替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。第五节表、表下一段、接口一节命令表三处照改。理由落行上哪一栏（新加一栏还是复用 `force_reason`）本份是定义处，等 gyb 裁（sync-inbox 问题 36）；命令签名归 `05`（冻结后待议，问题 37）。对回原则 1、8。
 - 2026-08-18 gyb 裁（sync-inbox 问题 36，rl-hub-v5 问，原话「c」）：废除理由不另加栏、不复用 `force_reason`，直接写进废除那一版的正文 `text`。第五节表、表下一段、接口一节命令表三处照改。对回原则 8。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」、选「允许，两边都算」）：doctor「来源指 notes/ 而无 `read:notes`」扫描随获准机制砍掉，正文那段删、接口一节 grants 行照改；`decision_refs` 可分属不同根决定、跨根的单在每条相关线的视图里都出现，接口一节 `line` 那句照改（`03` 冻结，等最后一期收口）。对回原则 2、9。
 
 ## 要同步到别处的
 
