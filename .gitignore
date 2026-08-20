@@ -34,6 +34,7 @@ traj_pipeline/data/
 envs/bert_runs
 fig1_pilot/alfworld_data
 envs/toolhop
+envs/runs
 envs/stabletoolbench
 
 # ── 回放执行缓存（exec_calls 的结果缓存，纯产物）

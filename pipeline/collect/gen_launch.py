@@ -61,8 +61,10 @@ QWEN_FLAGS_SRC = ('    "--reasoning-parser deepseek_r1 --max-model-len 65536 "\n
 # gpt-oss 不带 Qwen 旗标,只要显存占比
 GPTOSS_SERVE_FLAGS = "--gpu-memory-utilization 0.92"
 # gpt-oss 客户端追加旗标。2026-08-20 起走预设文件,gptoss_chat_high 展开后
-# 与旧串 "--api chat --reasoning-effort high" 逐项等价(tests/test_preset.py 钉着)
-GPTOSS_CLIENT_EXTRA = "--preset gptoss_chat_high"
+# 与旧串 "--api chat --reasoning-effort high" 逐项等价(tests/test_preset.py 钉着)。
+# 2026-08-21 起预设名可用 manifest 顶层可选字段 "gptoss_client_preset" 覆盖,
+# 缺省不变,老 manifest 行为逐字节相同(p1 批用 gptoss_harmony_high)。
+GPTOSS_CLIENT_PRESET_DEFAULT = "gptoss_chat_high"
 
 # 采集器统一参数(执行手册 §3.4)
 CLIENT_COMMON = "--n 0 --max-steps 30"
@@ -99,6 +101,12 @@ def load_manifest(path):
     if env not in ENV_TABLE:
         die(f"未知 env {env}(表里只有 {sorted(ENV_TABLE)})")
     cfg["env"] = env
+
+    preset = cfg.get("gptoss_client_preset", GPTOSS_CLIENT_PRESET_DEFAULT)
+    pf = Path(REPO) / "configs" / "presets" / f"{preset}.json"
+    if not pf.exists():
+        die(f"gptoss_client_preset {preset!r} 没有对应预设文件:{pf}")
+    cfg["gptoss_client_preset"] = preset
 
     hosts = {s["host"] for s in cfg["servers"]}
     if len(hosts) != 1:
@@ -268,7 +276,7 @@ def gen_clients(cfg):
             f"E={cfg['envs_root']}",
             f"F=$E/runs/{cfg['run_id']}",
             "mkdir -p $F/logs",
-            f'GPTOSS_EXTRA="{GPTOSS_CLIENT_EXTRA}"',
+            f'GPTOSS_EXTRA="--preset {cfg["gptoss_client_preset"]}"',
             "",
             CLIENT_TM,
             f"{e['fn']}() {{ # tag model url extra split num_shards shard_id "
@@ -334,11 +342,11 @@ def gen_manifest_md(cfg):
     L += ["",
           f"`$F` = `{cfg['envs_root']}/runs/{cfg['run_id']}`,日志 `$F/logs/<session>.log`。",
           f"客户端统一参数 `{e['common']} --resume`;"
-          f"gpt-oss 分片额外 `{GPTOSS_CLIENT_EXTRA}`。",
+          f"gpt-oss 分片额外 `--preset {cfg['gptoss_client_preset']}`。",
           f"outdir 一律 `{cfg['env']}_<model_key>` 标准名"
           "(下游事件抽取按目录名尾巴认模型)。",
           "", "## 发射顺序", "",
-          "1. `python3 launch_servers.py`(六实例起齐,日志出现 "
+          f"1. `python3 launch_servers.py`({len(cfg['servers'])} 实例起齐,日志出现 "
           "\"Application startup complete\" 且 `curl -s http://<host>:<port>/v1/models` 有返回)",
           "2. smoke:每模型 1 题(执行手册 §3.3)",
           "3. `bash launch_clients.sh`",

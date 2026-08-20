@@ -1,0 +1,14 @@
+{
+  "desc": "采集线 harmony 口径 effort high:p1 批 2026-08-21 起用,与 gptoss_harmony_medium 只差 reasoning_effort=high(与活跑线 live_high 同档,探针训练数据取活跑同分布);Current date 钉 2026-08-06;服务另起,无 server 节",
+  "model": "gpt-oss-120b",
+  "client": {
+    "api": "harmony",
+    "reasoning_effort": "high",
+    "temperature": 0.0,
+    "top_p": null,
+    "max_tokens": 8192,
+    "stop": null,
+    "start_date": "2026-08-06",
+    "seed": null
+  }
+}
