@@ -249,3 +249,17 @@
 - 要改的地方：
   39. 冻结后待议：（a）`04` `dispatch=auto` 起 subagent 时用插件的角色 agent 类型（`agents/<role>.md`），不用 general-purpose；第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句——subagent 的 `session_id` 与父会话相同、钩子输入多 `agent_id`/`agent_type`、状态文件不写，subagent 算不算一次 sessions 行、`session_id` 记什么，等待验证第 5 条测完再定；（b）`05` `rl init` 一行补「重跑无副作用；逐项问配置；不动宿主代码和仓库 `.claude/`」；`rl run finish` 一节补「中断收尾里宿主销号调 `launcher.abort_cmd`，留空跳过」；doctor「两本 runs 账对账」按 `host_ledgers` 里 `kind: runs` 找宿主账；接口一节 `08` 那条键清单加 `launcher.abort_cmd`、`repo_run`、`host_ledgers`；（c）`03` 词表九个文件名旁注「位置钉死，配置里没有账路径（2026-08-18 gyb 裁，`08` 第一节）」。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `08` 定稿为准）
+
+## 2026-08-21 04:00 来自 rl-part-01 关于 01-gyb.md
+- 事项：01 定稿。「没写清」八条全清（第 5、7、8 条此前已由 05 定稿覆盖，第 8 条今天确认同值不需同步）；今天新裁六条，其中「桌面通知不做」「定期提醒不做」两条牵连面大，完整清单在 01 文末「要同步到别处的」，裁决原文在「裁决记录（日期）」。
+- 裁决原文：要点五条。（1）「收拾」use case 只指 status 段 7、9 加 reclaim 预览，段 6 挪进「收回、改版重派」；原话「A 这个回收是一个完全单独的命令，大部分情况下自动找全部」。（2）use case 表加一行「回问题单」倒推 status 段 2；原话「那么就加入回问题单子」。（3）桌面通知这一版整个不做，推送表五档、`rl notify` 一并销，等 gyb 的事只维护 `rl status` 一个出口；原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」。（4）定期提醒也不做，`notify.reminder_days` 删；原话「那这个砍了吧」。（5）reviewer：gyb 口头交代审哪条决定、reviewer 照交代 focus 登记；gyb 看完清单后动作各落各的账不新加登记；原话「都按推荐来」。
+- 要改的地方（详见 01「要同步到别处的」）：
+  - `05-rl-cli.md`（冻结，只报不催）：「rl notify」一节与签名行删；接口一节待验证 6、7 两条标已销。
+  - `04-handoffs-and-sessions.md`（冻结，只报不催）：第 164 行「定时提醒每 `notify.reminder_days` 天叫他一次」改「gyb 自己记得定期手动跑」。
+  - `08-trees-init-and-host.md`：阈值表删 `notify.reminder_days`；入口 skill 领路「收到定期提醒」条触发词改 gyb 自己定期开工；`research-loop.json` 键表如列 `notify.*` 同删。
+  - `09-common-and-feedback.md`（连带冻结的 `03` 写了两遍处）：「assignee 是 gyb 的那一版触发桌面通知」改「进 `rl status` 段 2」；三条阈值那句删 `notify.reminder_days`。
+  - `30-build-steps-verify-tests.md`：待验证第 6、7 条销，失败备案转正。
+  - `00-overview.md`（已定稿）：原则 6 推论「桌面通知只是……写成一张表」半句冲突，怎么改归 00 裁。
+  - 引用处措辞：`07:141`、`10:177`、`11:170`、`20:121`、`25:76`「桌面通知推送表/哪几段推送」改「桌面通知这一版不做」；`22:59` 整句、`24:27/47/66`「触发桌面通知」同口径改。
+  - `14-role-reviewer.md`：开工登记那句补「照 gyb 口头交代登记」。
+- 状态：待处理

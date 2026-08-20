@@ -1,6 +1,6 @@
 # gyb 自己做的事与 gyb 的收件箱
 
-> 这份覆盖三样：gyb 亲自做而任何角色都不代劳的事（文献、口径、grants、feedback、手动结束会话、手动开 reviewer、reclaim）；gyb 的身份规矩（cli、`--as-gyb` 加 `--quote`、`--force --reason`、`decisions.gyb.jsonl` 只收裸终端、豁免范围）；gyb 这一头的出口（gyb 的 use case 表、`rl status` 十段与 `--json` 行结构、桌面通知推送表、定期提醒）。不覆盖：五个角色各自干什么在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`；九本账的行格式在 `03-ledgers.md`；派活单状态转移表和会话生命周期在 `04-handoffs-and-sessions.md`；`bin/rl` 完整命令表在 `05-rl-cli.md`；钩子与角色 json 在 `06-hooks-and-permissions.md`；快车道在 `07-quick-lane.md`；`rl init` 建的树和宿主对接在 `08-trees-init-and-host.md`；反馈账本身的行格式与母版在 `09-common-and-feedback.md`；决定账在 `02-decisions.md`。源：设计文档的「十一条设计原则」第 1、5、6 条、「gyb 自己做的事」、「交接与会话生命周期」的收件箱段与回收段、「分权与钩子」的豁免段、「入口 skill 与代码迁移」的领路；施工计划第一节裁决 6 与（b）（c）（d）、第二节词表、第五节 gyb 的 use case 表、第六节 actor 判定与各命令行、第八节阈值、第九节待验证第 6、7 条。
+> 这份覆盖三样：gyb 亲自做而任何角色都不代劳的事（文献、口径、grants、feedback、手动结束会话、手动开 reviewer、reclaim）；gyb 的身份规矩（cli、`--as-gyb` 加 `--quote`、`--force --reason`、`decisions.gyb.jsonl` 只收裸终端、豁免范围）；gyb 这一头的出口（gyb 的 use case 表、`rl status` 十段与 `--json` 行结构、桌面通知与定期提醒这一版都不做的裁决）。不覆盖：五个角色各自干什么在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`；九本账的行格式在 `03-ledgers.md`；派活单状态转移表和会话生命周期在 `04-handoffs-and-sessions.md`；`bin/rl` 完整命令表在 `05-rl-cli.md`；钩子与角色 json 在 `06-hooks-and-permissions.md`；快车道在 `07-quick-lane.md`；`rl init` 建的树和宿主对接在 `08-trees-init-and-host.md`；反馈账本身的行格式与母版在 `09-common-and-feedback.md`；决定账在 `02-decisions.md`。源：设计文档的「十一条设计原则」第 1、5、6 条、「gyb 自己做的事」、「交接与会话生命周期」的收件箱段与回收段、「分权与钩子」的豁免段、「入口 skill 与代码迁移」的领路；施工计划第一节裁决 6 与（b）（c）（d）、第二节词表、第五节 gyb 的 use case 表、第六节 actor 判定与各命令行、第八节阈值、第九节待验证第 6、7 条。
 
 ## 一、gyb 亲自做的七件事
 
@@ -30,11 +30,11 @@ feedback 谁都能提、只有 gyb 能裁，谁都能读。裁成采纳的那一
 
 ### 6. 手动开 reviewer
 
-reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问题清单，不开 issue、不派活，动不动由 gyb 看完之后定。reviewer 开工时 `rl session focus --decision ID` 记一下在审什么，`rl status` 的活着会话那一段带出来；`rl status` 还列出最近 `status.review_recent_days`（默认 7）天的清单。reviewer 的审查基准是「actor 是 gyb 或 idea 的决定行」，不看落在哪个文件里。reviewer 自己怎么读、清单五栏长什么样在 `14-role-reviewer.md`。
+reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问题清单，不开 issue、不派活，动不动由 gyb 看完之后定。gyb 交代「这回审哪条决定」不走任何新接口：开会话的时候口头说一句，reviewer 照这句交代打 `rl session focus --decision ID` 登记在审什么，登记本身就是交代的痕迹（2026-08-21 gyb 裁）；`rl status` 的活着会话那一段把 focus 带出来，还列出最近 `status.review_recent_days`（默认 7）天的清单。gyb 看完清单之后动手，动作不新加任何登记：废决定落决定账、收单落 handoffs 账、开 issue 落 issues 账，各落各的账；清单只是给 gyb 看的线索，不标「处理过」（2026-08-21 gyb 裁）。reviewer 的审查基准是「actor 是 gyb 或 idea 的决定行」，不看落在哪个文件里。reviewer 自己怎么读、清单五栏长什么样在 `14-role-reviewer.md`。
 
 ### 7. 定期跑回收
 
-`rl reclaim` 收拾很久没动的会话和单子，只有 gyb 能跑，`--apply` 才动手。参数是 `--session-older-than H`、`--handoff-older-than H`、`--only ID ...`、`--skip ID ...`、`--kill`、`--apply`，可以逐条挑或跳过。它做的事：
+`rl reclaim` 收拾很久没动的会话和单子，只有 gyb 能跑，`--apply` 才动手。reclaim 是一条完全独立的命令，大部分情况下不带挑选参数、自动找全部候选（2026-08-21 gyb 原话「回收是一个完全单独的命令，大部分情况下自动找全部」）；`--only`、`--skip` 是逐条挑的例外用法。参数是 `--session-older-than H`、`--handoff-older-than H`、`--only ID ...`、`--skip ID ...`、`--kill`、`--apply`，可以逐条挑或跳过。它做的事：
 
 - 会话标 `reclaim` 销号，并 release 名下 `in_progress` 的单子；
 - `in_progress` 的 `launch_order` 默认不杀进程（留给下一个 run 认领），带 `--kill` 才先走中断收尾（杀进程、释放显存、宿主销号、runs 落 `killed`）；
@@ -43,9 +43,9 @@ reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问�
 - `done_pending_review` 和 `todo` 的只列出来附现成命令，不动手；
 - 结束时按 owner 分组打印待拉起的单子和加载命令，并自动跑一遍 `rl doctor`。
 
-两处原文不一致：设计文档「交接与会话生命周期」写「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，施工计划第六节的 reclaim 行和第四节转移表写「默认不杀进程（等下一个 run 认领），`--kill` 才走中断收尾」。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：默认不杀，`--kill` 才杀。
+杀不杀进程两份源文档原来写的不一致，2026-08-17 gyb 裁（定义处 `04-handoffs-and-sessions.md`）：默认不杀，`--kill` 才杀。
 
-阈值默认值（施工计划第八节，写进 `research-loop.json`，gyb 可改）：
+阈值默认值（定义处 `08-trees-init-and-host.md` 阈值表，写进 `research-loop.json`，gyb 可改）：
 
 | 键 | 默认值 | 用在哪 |
 |---|---|---|
@@ -55,7 +55,8 @@ reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问�
 | `status.stale_holder_minutes` | 30 | `rl status` 段 7：holder 会话超过 30 分钟没写账的开干单 |
 | `issues.gyb_stale_hours` | 24 | `rl status` 段 2 标出超过 24 小时没动的 |
 | `status.review_recent_days` | 7 | `rl status` 列最近 7 天的 review 清单 |
-| `notify.reminder_days` | 7 | 每 7 天提醒 gyb 跑 `rl reclaim`、看 feedback、跑 doctor、落母版 |
+
+原表还有一行 `notify.reminder_days`（每 7 天提醒 gyb 一次），2026-08-21 gyb 把定期提醒裁掉了（见第六节），这个键随之删除（阈值表定义处 `08-trees-init-and-host.md`，待同步）。
 
 ## 二、gyb 的身份规矩
 
@@ -96,24 +97,25 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 ## 三、gyb 的 use case 表
 
-五个角色的读写权从各自的 use case 表倒推（原则 5）。gyb 也有一张，`rl status` 的段落和各 list 命令的过滤维度从这张表倒推，不是从五个角色的表推。表在施工计划第五节，落成 `tables/gyb-usecases.json`：
+五个角色的读写权从各自的 use case 表倒推（原则 5）。gyb 也有一张，`rl status` 的段落和各 list 命令的过滤维度从这张表倒推，不是从五个角色的表推。这张表落成 `tables/gyb-usecases.json`（源出施工计划第五节，定稿以本份为准）：
 
 | use case | 要看什么 | 倒推出的命令或段落 |
 |---|---|---|
 | 开工第一眼 | 两条线各到哪一步、谁在干、哪些等我 | `rl status [--line L] [--group-by line\|batch]`，每行带线名和决定编号，`--json` 行结构写死 |
 | 批 | 等批的口径、等裁的 feedback | status 段 3、段 8；`eval approve ID... --quote`、`feedback accept` |
+| 回问题单 | 派给我的、还开着的 issue（超过 `issues.gyb_stale_hours` 没动的标出） | status 段 2；`issue reply`、`issue close`（2026-08-21 gyb 裁加这一行） |
 | 验收 | 等验收的单子（含快车道补单）、报告路径 | status 段 4；`handoff accept/reject` |
 | 拉起 | owner 没有活会话的待干单、gyb 手动接的单 | status 段 5，每行附「加载哪个角色」的命令 |
 | 看进度 | 在跑的实验到哪了、日志和监控命令 | status 段 1 的发射单行带 `log_path`、`watch_cmd`、按 batch 汇一段 |
 | 查一个数从哪来 | run 到发射单到工单到决定 | `rl trace <任何编号>` |
-| 收回、改版重派 | 引旧版的活单和它们的 holder | `decision update/retire` 当场打印；`handoff withdraw/reissue` |
-| 收拾 | 很久没动的会话和单子、卡住的、没关的快车道 | status 段 6、7、9；`rl reclaim --only/--skip`，输出按 owner 分组附现成命令 |
+| 收回、改版重派 | 引旧版的活单和它们的 holder、过版的单子和 retired 决定名下的活单 | status 段 6；`decision update/retire` 当场打印；`handoff withdraw/reissue`（段 6 归这一行是 2026-08-21 gyb 裁） |
+| 收拾 | 很久没动的会话和单子、卡住的、没关的快车道 | status 段 7、9 加 `rl reclaim` 不带 `--apply` 的预览；`rl reclaim` 输出按 owner 分组附现成命令 |
 | 修账 | doctor 扫出没修的 | status 段 10；`rl doctor` 每项附修法和「修完之后归谁推」 |
 | 会话 | holder 那个 session 是谁、活没活着 | `rl session show/list [--alive] [--role R]` |
 
 ## 四、rl status：gyb 的收件箱
 
-收件箱有两个（原则 6）：gyb 的叫 `rl status`，角色的叫 `rl inbox`（见 `05-rl-cli.md`）。`rl inbox` 是查询命令，谁需要谁敲：角色被拉起不自动查收件箱，先干拉它起来的那张单；run 不查 inbox，只关注自己那张发射单（2026-08-17 gyb 裁，sync-inbox 问题 28）。任何一版把某一行送进「等 gyb」的状态，那一行必须出现在 `rl status` 里。`rl status` 谁都能调。
+收件箱有两个（原则 6）：gyb 的叫 `rl status`，角色的叫 `rl inbox`（见 `05-rl-cli.md`）。`rl inbox` 是查询命令，谁需要谁敲：角色被拉起不自动查收件箱，先干拉它起来的那张单；run 不查 inbox，只关注自己那张发射单（2026-08-17 gyb 裁，sync-inbox 问题 28）。任何一版把某一行送进「等 gyb」的状态，那一行必须出现在 `rl status` 里。桌面通知和定期提醒这一版都不做（2026-08-21 gyb 裁，见第五、六节），所以等 gyb 的事只有 `rl status` 这一个出口，gyb 自己记得定期手动看。`rl status` 谁都能调。
 
 参数是 `[--line L] [--group-by line|batch] [--json]`。第一行打印距上次 `reclaim` 几天。十段：
 
@@ -132,56 +134,40 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 
 `--json` 每行至少含 `id`、`work_type`、`owner`、`holder`、`holder_alive`、`status`、`age_hours`、`line`、`decision_refs`、`batch`、`log_path`、`watch_cmd`。可以按 batch 或根决定（`line`）归组。
 
-## 五、桌面通知推送表
+## 五、桌面通知：这一版不做
 
-桌面通知只是 gyb 收件箱里几段的推送，不是第三个通道。`rl notify --text` 是内部命令，由 rl 在推送表的时机自己调；gyb 也可以手动调来给自己发一条提醒，两种调法都不进任何账（2026-08-17 gyb 裁）。推送表和 `rl notify` 的机制都定义在本节，`05-rl-cli.md` 只留命令签名（2026-08-17 gyb 裁）。推送时机五档：
+2026-08-21 gyb 裁（原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」）：桌面通知这一版整个不做。等 gyb 的事只维护 `rl status` 这一个出口，gyb 自己定期手动看。对回原则 6：通知在原设计里就只是收件箱几段的推送、不是第三个通道，砍掉推送之后收件箱本身一段不少。
 
-| # | 触发 |
-|---|---|
-| 1 | issue 的 assignee 变 gyb（含首次开单） |
-| 2 | 单子进 `done_pending_review` 且 owner 是 gyb 或 `dispatch=manual` |
-| 3 | feedback 提出 |
-| 4 | owner 无活会话的 `todo` 出现——在单子落 `todo` 那刻（open / release / reject / reissue）和 `session end` 销号时查 owner 有无活会话并推（2026-08-17 gyb 裁） |
-| 5 | doctor 有没修的 |
+随这条裁决一起销掉的东西有三样：原设计的推送表五档（issue 改派给 gyb、单子等 gyb 验收、feedback 提出、owner 无活会话的 `todo` 出现、doctor 有没修的）、`rl notify --text` 命令（`05-rl-cli.md` 里的签名行待删）、待验证第 6 条（通知机制试哪三种）。原来写的失败备案「退到 `rl status` 单列那一层，通知不做」就是现在的正案。
 
-通知机制本身还没定，是待验证第 6 条：试 Claude Code 自带推送、`notify-send`、终端铃三种，通过标准是 gyb 桌面看得到；失败备案是退到 `rl status` 单列那一层，通知不做。
+gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi` 的 issue，进那个角色的 `rl inbox`；验收和打回都开（2026-08-17 gyb 裁，定义处 `04-handoffs-and-sessions.md`）；这条 issue 不是读过即关，owner 做完了自己 `rl issue close`（2026-08-17 gyb 裁，sync-inbox 问题 23）。
 
-gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi` 的 issue，进那个角色的 `rl inbox`，不进桌面通知；这条 issue 不是读过即关，owner 做完了自己 `rl issue close`（2026-08-17 gyb 裁，sync-inbox 问题 23）。两处原文不一致：设计文档「交接」一节写「gyb 越过 owner 验收或打回时 rl 给 owner 发一条 fyi 通知」，施工计划第四节转移表只在 `done_pending_review → accepted` 那一行写了 fyi，`rejected` 那一行没写。2026-08-17 gyb 裁（在 `04-handoffs-and-sessions.md`）：验收和打回都发 fyi。
+## 六、定期提醒：这一版不做
 
-## 六、定期提醒
+2026-08-21 gyb 裁（原话「那这个砍了吧」）：每 `notify.reminder_days`（默认 7）天提醒 gyb 四件事（跑 `rl reclaim`、看 feedback 账、跑 `rl doctor`、把采纳的 feedback 落进母版）的机制不做，`notify.reminder_days` 这个阈值键随之删掉（阈值表定义处 `08-trees-init-and-host.md`，待同步），待验证第 7 条（提醒机制试哪两种）销掉。留下的机制只有原来失败备案里那一条，现在转正：`rl status` 第一行打印距上次 reclaim 几天，gyb 自己记得定期手动看。
 
-每 `notify.reminder_days`（默认 7）天提醒 gyb 四件事：跑 `rl reclaim`、看 feedback 账、跑 `rl doctor`、把采纳的 feedback 落进母版并单独 commit。
-
-提醒机制也没定，是待验证第 7 条：试 Claude Code 的 schedule 和系统 cron，通过标准是到点 gyb 收得到；失败备案是 `rl status` 第一行打印距上次 reclaim 几天（这一条已经是正案的一部分），提醒不做。
-
-入口 skill 的领路里有一条对应路线：「收到定期提醒：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`」。入口 skill 只许 gyb 手动调用，见 `08-trees-init-and-host.md`。
+入口 skill 的领路里原来有一条「收到定期提醒：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`」，提醒砍掉之后触发词改成 gyb 自己定期开工，路线本身不变（入口 skill 定义处 `08-trees-init-and-host.md`，待同步）。入口 skill 只许 gyb 手动调用，见 `08-trees-init-and-host.md`。
 
 ## 和别的 part 的接口
 
 - 派活单的七个状态（`todo`、`in_progress`、`stuck`、`done_pending_review`、`accepted`、`rejected`、`withdrawn`）、`owner`、`holder`、`last_holder`、`dispatch`（`auto`/`manual`/`none`）的定义在 `04-handoffs-and-sessions.md`；`rl status` 段 1、4、5、6、7 全按这些字段过滤。
 - 转移表里「前提」栏和「谁能写」栏的分工在 `04-handoffs-and-sessions.md`；本文第二节的豁免表只说这两栏对 gyb 生不生效。
 - 九本账的公共骨架（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`、`force_reason`、`via`）和每本的字段在 `03-ledgers.md`。
-- grants、feedback、evaluations、sessions 四本账的行格式和状态取值在 `03-ledgers.md`；本文只写 gyb 这一头的动作。
-- `rl status`、`rl reclaim`、`rl doctor`、`rl notify`、`rl grant`、`rl feedback`、`rl eval`、`rl session`、`rl inbox`、`rl trace` 的完整参数和退出码在 `05-rl-cli.md`。
+- grants、feedback、evaluations、sessions 四本账的行格式和状态取值在 `03-ledgers.md`；本文只写 gyb 这一头的动作。sessions 的 `amend` 版（只许改 `model`，是 doctor 第 19 项 `model=unknown` 的修法，2026-08-21 gyb 确认走这条路、不加新机制）在 `04-handoffs-and-sessions.md` 第七节，命令签名 `rl session amend ID --model M` 在 `05-rl-cli.md`。
+- `rl status`、`rl reclaim`、`rl doctor`、`rl grant`、`rl feedback`、`rl eval`、`rl session`、`rl inbox`、`rl trace` 的完整参数和退出码在 `05-rl-cli.md`。`rl notify` 已随桌面通知一起销掉（2026-08-21 gyb 裁，见第五节），`05-rl-cli.md` 的签名行待删。
 - actor 判定的实现（会话状态文件路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁，原来是宿主给插件的数据目录）、钩子在加载角色时写）在 `06-hooks-and-permissions.md`。
 - 钩子对 gyb 裸终端和 `--as-gyb` 不生效这一条的另一半（钩子挂在哪两个工具、拦哪两类路径）在 `06-hooks-and-permissions.md`。
 - `ql_tag`、快车道补单验收人固定是 gyb、没关的快车道进 status 段 9 与 reclaim，在 `07-quick-lane.md`。
-- `rl init` 问 gyb 要不要给 idea 发 `read:notes`、`notes/` 目录、`research-loop.json` 里的阈值，在 `08-trees-init-and-host.md`。
-- feedback 采纳之后母版的 `rules_version` 怎么走、`common/` 母版本身，在 `09-common-and-feedback.md`。
+- `rl init` 问 gyb 要不要给 idea 发 `read:notes`、`notes/` 目录、`research-loop.json` 里的阈值表、入口 skill 的领路，在 `08-trees-init-and-host.md`；阈值表删 `notify.reminder_days`、领路里定期提醒那条改成 gyb 自己定期开工（都是 2026-08-21 裁的连带，待同步 `08`）。
+- feedback 采纳之后母版的 `rules_version` 怎么走、`common/` 母版本身、issues 的九种 kind 与 reply/close 写权，在 `09-common-and-feedback.md`；issues 里「assignee 是 gyb 的那一版触发桌面通知」那句随通知销掉改成「进 `rl status` 段 2」（待同步 `09` 与写了两遍的 `03`）。
 - `decisions.gyb.jsonl` 的编号、版本、来源三类、根决定，在 `02-decisions.md`。
-- gyb 直接开分析单（owner 记 gyb）在 `22-pair-idea-analysis.md`；gyb 越过 owner 验收后给 owner 的 `fyi` 通知走 `rl inbox`，见对应角色的 part。
-- 待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）的测法、通过标准、失败备案在 `30-build-steps-verify-tests.md`。
+- gyb 直接开分析单（owner 记 gyb）在 `22-pair-idea-analysis.md`；gyb 越过 owner 验收后给 owner 的 `fyi` issue 走 `rl inbox`，见对应角色的 part。
+- reviewer 怎么读、清单五栏在 `14-role-reviewer.md`；gyb 口头交代审哪条决定、reviewer 照交代 `rl session focus` 登记、gyb 看完清单后的动作各落各的账不新加登记（2026-08-21 gyb 裁），gyb 这一侧的定义在本文第一节第 6 件事。
+- 待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）已随 2026-08-21 的裁决销掉，`30-build-steps-verify-tests.md` 的待验证清单待同步。
 
 ## 源文档没写清的（留给 gyb）
 
-1. gyb 的 use case 表里「收拾」这一行指向 `rl status` 段 6、7、9，可段 6 列的是「过版的单子和 retired 决定名下的活单」，和这一行「很久没动的会话和单子、卡住的、没关的快车道」对不上；哪一段归哪个 use case 没有一一对上。
-2. `rl status` 段 2（assignee 是 gyb 的 open issue）在 gyb 的 use case 表里没有对应行，这一段是从哪个 use case 倒推出来的没写。
-3. 推送表五档没写通知里带什么字段、gyb 点开之后该打哪条命令；`rl notify --text` 只有一个文本参数。
-4. 定时提醒机制不成立时备案是「`rl status` 第一行打印距上次 reclaim 几天」，可谁提醒 gyb 去打 `rl status` 没有第二条路。
-5. 只写死了 `rl status --json` 的行结构，`rl reclaim` 和 `rl doctor` 的 `--json` 结构没写。——2026-08-17 已定（`05-rl-cli.md` 定稿「退出码与 --json」一节写了 `rl inbox --json`、`rl doctor --json`、`rl reclaim --json` 三条的最小结构，gyb 裁）。
-6. gyb 手动开 reviewer 之后：gyb 怎么点名审哪条决定（除了 reviewer 自己打 `rl session focus`）、gyb 看完 `review/` 清单之后决定的动作落在哪本账，都没写。
-7. `--force --reason` 只写了「rl 照写并把 reason 记进账行」，没写哪些完整性前提允许被 force 越过、有没有一条也不许越过的（比如转移表里表外的转移）。——2026-08-17 随 `05` 定稿裁：只越过完整性前提、越不过表外转移，已写进第二节「豁免范围」（rl-hub）。
-8. gyb 手动加载角色时 sessions 账的 `model` 记「解析后的真实模型名或 `unknown`」，`unknown` 由 doctor 列出来让 gyb 事后补，可补的命令是哪一条没写。
+（八条 2026-08-17 至 2026-08-21 全部裁完，一条不剩，逐条见文末「裁决记录」。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -503,3 +489,23 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「甲」）：第二节「决定落哪本账」按编号前缀落文件改写：gyb 裸终端新开的用 `gyb` 前缀落 `decisions.gyb.jsonl`，gyb 裸终端给角色决定追加的一版落角色那本、`session_id` 记 `cli`。对回原则 4。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 定稿（`d430192`，rl-hub-v4 传；gyb 原话「让idea能写gyb」）：第一节「`notes/` 只有 gyb 写」改「gyb 和 idea 写」。对回原则 3。
 - 2026-08-18 来自 `06-hooks-and-permissions.md` 追裁（`f820504`，rl-hub-v4 传；gyb 原话「a」）：接口一节会话状态文件路径改 `loop/.sessions/<session_id>.json`。对回原则 8。
+- 2026-08-21 gyb 裁（没写清第 1 条，原话「A 这个回收是一个完全单独的命令，大部分情况下自动找全部」）：use case 表「收拾」行只指 status 段 7、9 加 `rl reclaim` 不带 `--apply` 的预览，段 6（过版的单子和 retired 决定名下的活单）挪进「收回、改版重派」行；第一节第 7 件事补「reclaim 是完全独立的命令，大部分情况下自动找全部候选」。对回原则 5。
+- 2026-08-21 gyb 裁（没写清第 2 条，原话「那么就加入回问题单子」）：use case 表加一行「回问题单」（看 status 段 2，用 `issue reply`、`issue close`），status 段 2 从这一行倒推。对回原则 5、6。
+- 2026-08-21 gyb 裁（没写清第 3 条，原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」）：桌面通知这一版整个不做，推送表五档、`rl notify` 一并销掉，等 gyb 的事只维护 `rl status` 一个出口；待验证第 6 条销，原失败备案转正。对回原则 6。没写清第 4 条（谁提醒 gyb 打 status）随之销掉：没人提醒，gyb 自己定期手动看。
+- 2026-08-21 gyb 裁（原话「那这个砍了吧」）：定期提醒也不做，`notify.reminder_days` 阈值键删（定义处 `08`），待验证第 7 条销；`rl status` 第一行打印距上次 reclaim 几天转正为唯一机制，入口 skill 领路那条的触发词改成 gyb 自己定期开工。对回原则 6。
+- 2026-08-21 gyb 裁（没写清第 6 条前半，原话「都按推荐来」）：gyb 交代 reviewer 审哪条决定不加接口，开会话时口头说，reviewer 照交代打 `rl session focus` 登记，登记即痕迹。对回原则 5。
+- 2026-08-21 gyb 裁（没写清第 6 条后半，原话「都按推荐来」）：gyb 看完 `review/` 清单后的动作不新加登记，废决定、收单、开 issue 各落各的账，清单不标处理状态。对回原则 4。
+- 2026-08-21 gyb 裁（没写清第 8 条，原话「甲」）：sessions 账 `model` 是 `unknown` 的事后走追加一版补真实模型名、doctor 附现成命令、不加新命令——与 `05` 定稿 2026-08-17 已定的 `rl session amend ID --model M` 是同一个值，本条是确认，不需要同步。对回原则 4。
+
+## 要同步到别处的
+
+以下全部出自 2026-08-21 的两条裁决「桌面通知不做」「定期提醒不做」（第五、六节）：
+
+- `05-rl-cli.md`（冻结，只报不催）：「rl notify」一节（含 `rl notify --text` 签名行）删掉，命令表如有该行同删；接口一节「待验证清单十一条（含第 6 条桌面通知、第 7 条定时提醒……）」那句里这两条改成「已销」。
+- `04-handoffs-and-sessions.md`（冻结，只报不催）：第 164 行附近「`rl reclaim` 是兜底，由 gyb 定期手动跑，定时提醒每 `notify.reminder_days`（默认 7）天叫他一次」后半句删掉，改成「gyb 自己记得定期手动跑」。
+- `08-trees-init-and-host.md`：阈值表删 `notify.reminder_days` 一行；入口 skill 领路「收到定期提醒：…」那条触发词改成 gyb 自己定期开工，路线不变；`research-loop.json` 键表如列 `notify.*` 同删。
+- `09-common-and-feedback.md`：issues 一节「`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`」改成「`assignee` 是 `gyb` 的进 `rl status` 段 2，其余进角色的 `rl inbox`」；「三条阈值 …`notify.reminder_days` 写在 `research-loop.json` 里」那句删掉这个键。`03-ledgers.md`（冻结，只报不催）issues 行格式写了两遍处如有同句同改。
+- `30-build-steps-verify-tests.md`：待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）销掉，失败备案转正为正案。
+- `00-overview.md`（已定稿）：原则 6 推论里「桌面通知只是 gyb 收件箱里几段的推送，哪几段推送写成一张表」那半句与通知裁掉冲突，怎么改归 `00` 裁。
+- 引用处措辞（都指本份为定义处，指向不变、字面要改）：`07-quick-lane.md:141`、`10-role-idea.md:177`、`11-role-deploy.md:170`、`20-pair-idea-deploy.md:121`、`25-pair-reviewer-idea.md:76` 里「桌面通知推送表 / 哪几段推送」字样改成「桌面通知这一版不做」；`22-pair-idea-analysis.md:59`「桌面通知按推送表走…」整句、`24-pair-analysis-deploy.md:27/47/66` 三处「触发桌面通知」按同一口径改。
+- `14-role-reviewer.md`：reviewer 开工登记那句补「照 gyb 口头交代登记」（2026-08-21 裁，gyb 侧定义在本份第一节第 6 件事）。
