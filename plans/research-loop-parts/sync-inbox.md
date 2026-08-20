@@ -304,3 +304,17 @@
   43. 冻结后待议：（a）`05` doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；（b）`05` `rl status --group-by line` 改「跨根的单在每条相关线里都出现」；（c）`05` `rl grant` 子命令与 `03` grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；（d）`03` `line` 字段语义改「`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现」；（e）`04` 转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」。
   （统筹补扫 2026-08-21 rl-hub-v6：(a) 的连带还有两处——`05` `rl init` 签名行里「问一次要不要给 idea 发 `read:notes`」那半句、`05` 接口一节「`read:notes` 的申请走法」一行，同属获准机制砍掉，最后一期一起删。）
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `10` 定稿为准）
+
+## 2026-08-21 来自 rl-part-11 关于 11-role-deploy.md
+- 事项：`11-role-deploy.md` 定稿（`5e8dffa`），七条「没写清」全部 gyb 裁毕，「两处原文不一致」此前已由 `07` 收口未再问；牵连非冻结五份的四处如下，冻结三份的另立下一段。
+- 裁决原文：gyb 2026-08-21「照单子的编号起名」（正常工单报告目录）；「工单格式里加一个位置」（方向名 track 从工单继承）；「全收」（code_paths 含宿主文件）；「开场话把单子内容全抄一遍」（派活提示）；「不能先合并好再记上去吗」加确认「就这么定：先合并再补记」（快车道出口顺序）；「直接报给 gyb 让他修」（done_pending_review 报告丢了，kind 取既有 `cannot`）；「报位置、留着不动，处置由你定」（收回后的半截产物）。
+- 要改的地方：
+  44. （a）`07-quick-lane.md`：出口顺序改「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」，决定来源和报告路径的存在性检查一律按主树查，「主分支上永远只有走过工单的代码」句认下合并到补单之间的短窗口；（b）`10-role-idea.md`、`20-pair-idea-deploy.md`：idea 开工单时填方向名一栏，deploy 开发射单照抄；（c）`25-pair-reviewer-idea.md`：reviewer 的代码清单按全量口径读（含 `experiments/` 外宿主文件）；（d）`12-role-run.md`、`21-pair-deploy-run.md`：派活开场提示全抄单子内容（run 被拉起时开场话里有全貌；裁的场景是 deploy 派 run，别的通道要不要照此由统筹定）。
+- 状态：待处理
+
+## 2026-08-21 来自 rl-part-11 关于 11 定稿动到冻结三份的几处（冻结后待议）
+- 事项：`11-role-deploy.md` 定稿（`5e8dffa`）裁决的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，等最后一期。
+- 裁决原文：同上一段。
+- 要改的地方：
+  45. 冻结后待议：（a）`04` handoffs 字段表 `work_order` 加 `track` 一栏（idea 开单时填），`launch_order` 开单从父单抄 `track`；（b）`04` withdraw 一侧补一句「收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定」；（c）`05` `rl handoff open --type work_order` 要能收方向名，`launch_order` 自动从父单抄之后发射单侧的方向名参数改可省；（d）`03` `code_paths` 字段说明补「全收：这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算」。
+- 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `11` 定稿为准）
