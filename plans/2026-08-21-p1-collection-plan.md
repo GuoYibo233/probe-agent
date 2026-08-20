@@ -107,6 +107,18 @@ run_id 的拼法是 `<batch>_<model>_<cell>`,里面没有底座档位这一段;�
 前缀）,不进锁超参的横比。4B 的 LoRA 在 48G 上装不装得下没实测,发射前 smoke
 说了算,挤不进用梯度检查点旗标。
 
+## 自主执行授权（gyb 2026-08-21 离开前口头授权）
+
+gyb 离开期间由 Claude 自主走完整条链，不再逐步请示：
+1. 采集放量后盯到收尾（G6 315 文件末行 final / G7 显存归零 / finish / record finish / 提交台账）。
+2. 标注造数据（build + param_label,G9/G11/check_callstr/逐字节重建对比,ANNOTATE_REPORT 数字进 DATA.md）。
+3. LoRA 实现验收 + 已批的三包修复（保险丝三条/口径补齐三件/测试四件）+ skill 回写欠账,全部落 commit 之后才发训练。
+4. 训练 smoke（1.7B 全参显存、LoRA 三档、4B LoRA 挤不进就开梯度检查点）→ 发射前 commit →
+   并行发射：全参 p1b06+p1b17 共 6 个单卡任务上 tokyo108,LoRA p1l06/p1l17/p1l4 共 9 个上 tokyo106。
+5. 训练发射前如果 research-loop 会话的两个文档（CLAUDE.md/plans/research-loop-parts）还脏着,
+   单独一笔注明来源的 commit 收进去过脏树门禁,不和代码改动混在一笔里。
+6. 评测不在本次授权内：训练发射并确认健康后停下汇报,评测等 gyb 回来再定。
+
 ## DATA.md §7 检查清单过账
 
 1. 数据版本 aw_p1_v1,写进 config 与 run_id。 2. 先验基线：ANNOTATE_REPORT 自带,
