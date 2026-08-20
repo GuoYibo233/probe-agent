@@ -117,7 +117,11 @@ gyb 离开期间由 Claude 自主走完整条链，不再逐步请示：
    并行发射：全参 p1b06+p1b17 共 6 个单卡任务上 tokyo108,LoRA p1l06/p1l17/p1l4 共 9 个上 tokyo106。
 5. 训练发射前如果 research-loop 会话的两个文档（CLAUDE.md/plans/research-loop-parts）还脏着,
    单独一笔注明来源的 commit 收进去过脏树门禁,不和代码改动混在一笔里。
-6. 评测不在本次授权内：训练发射并确认健康后停下汇报,评测等 gyb 回来再定。
+6. 评测也已授权（gyb 2026-08-21 补授权）：训练收尾后按 EVAL_CELLS 依赖序发
+   （先 eval-ctool,后 eval-cgen / eval-cparam,cparam 依赖同批同模型 ctool 的
+   REPLAY_REPORT）,五个训练批次各自出报告,`summarize_matrix --prefix <批>` 逐批
+   出矩阵,record finish 记数;全链跑完写总汇报。评审发现与已批修复清单在
+   `plans/2026-08-21-review-findings.md`。
 
 ## DATA.md §7 检查清单过账
 
