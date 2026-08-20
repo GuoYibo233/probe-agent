@@ -24,7 +24,7 @@ deploy 和 run 之间只有一样东西在走，就是发射单。发射单的 `
 | `command` | deploy | 开单时第一项必填 |
 | `args` | deploy | 参数 |
 | `workdir` | deploy | 工作目录，开单时第一项必填 |
-| `track` | deploy | 宿主发射器要的方向名，从被派的工单继承或者 deploy 填；开单时第一项必填 |
+| `track` | deploy | 宿主发射器要的方向名，从父单（工单）抄——idea 开工单时填（2026-08-21 gyb 裁）；开单时第一项必填 |
 | `config` | deploy | 字典，键是 `model`、`params`、`dataset`、`split`，其余超参自由；开单时第一项必填 |
 | `run_id` | rl | 按 `<ho-id>-a<attempt>` 分配 |
 | `estimated_seconds` | run | 预计时长，只加总最新一次尝试的 `step_table` 行 |
@@ -384,3 +384,5 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 确认「甲」）：第三节「两处原文不一致」段结成「发射单从父单抄 `decision_refs`，源文档『发射单不引决定』作废」；「没写清」第 1 条标已裁。对回原则 9。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「你干完自己算数」）：第十一节抄的转移表 `done_pending_review`→`accepted` 行「谁能写」补「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」（`04` 原表的备注等最后一期，sync-inbox 问题 43）。对回原则 1。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；第三节「`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着」那句以此为准（字段语义定义处 `03` 冻结、等最后一期收口），正文句留给定稿时并。对回原则 9。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「工单格式里加一个位置」）：工单加 `track` 栏、idea 开单时填，发射单的 `track` 从父单抄；第二节字段表那行照改（`04`/`05` 侧等最后一期，sync-inbox 问题 45）。对回原则 9。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「开场话把单子内容全抄一遍」）：deploy 派 run 的开场提示把发射单内容全抄一遍，run 被拉起时开场话里就有全貌；别的派活通道要不要照此，sync-inbox 问题 46 等 gyb。对回原则 9。

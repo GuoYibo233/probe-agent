@@ -133,3 +133,4 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「哪几段推桌面通知」按「桌面通知这一版不做」改。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只报你，你裁了才动」）：idea 读完 reviewer 清单不自行处置，改决定、打回单子都等 gyb 裁了才动；「没写清」第 7 条标已裁。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：idea 读 `notes/` 的获准机制整套砍掉，grant 当 reviewer 事后查凭据的核对项随之取消；接口一节「idea 读 `notes/` 要 grant」那行照改。对回原则 2。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「全收」）：`code_paths` 全收口径（这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算），reviewer 的代码清单按全量口径读；清单第二栏与相关句定稿时并（`03` 字段说明等最后一期，sync-inbox 问题 45）。对回原则 3。

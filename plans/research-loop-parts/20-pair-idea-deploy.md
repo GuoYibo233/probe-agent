@@ -129,7 +129,7 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 4. `rl handoff reissue` 开的新单继承 `explanation`、`parent_id`、`batch`，`report_paths` 和 `code_paths` 继不继承没写。
 5. idea「怎么测试、什么算成功也要自己想明白，只是不预写成单子上的字段」，那这段想法落在 `explanation` 里还是只在会话里说给 deploy 听，没写。（已裁 2026-08-21：只在起下游 subagent 的交代里说，见裁决记录。）
 6. 打回之后 deploy 重新交活的时候，旧的 `report_paths` 和 `code_paths` 留着还是换新路径，没写。
-7. 工单被收回之后，deploy 已经写在 experiments/ 里的代码和产物怎么处置，两份文档都没写（第二轮模拟 decision-revised-while-in-flight 第 18 条报的就是这条）。
+7. 工单被收回之后，deploy 已经写在 experiments/ 里的代码和产物怎么处置，两份文档都没写（第二轮模拟 decision-revised-while-in-flight 第 18 条报的就是这条）。（已裁 2026-08-21：收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定，见裁决记录。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -347,3 +347,6 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只在交代里说」）：「怎么测试、什么算成功」不写进单子字段，只在起下游 subagent 的交代里说；「工单里不能只甩决定编号」那段照改，「没写清」第 5 条标已裁。对回原则 4。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「你干完自己算数」）：`dispatch=manual` 的单 gyb 亲自接、干完默认由 gyb 自己验收，`fyi` 照发；验收一节照改（`04` 转移表的备注等最后一期，sync-inbox 问题 43）。对回原则 1。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；正文两处「`line` 由 `decision_refs` 第一项的 `root_id` 算出来」以此为准（字段语义定义处 `03` 冻结、等最后一期收口，sync-inbox 问题 43），正文句留给定稿时并。对回原则 9。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「工单格式里加一个位置」）：工单加方向名 `track` 一栏，idea 开单时填、deploy 开发射单照抄；第二节字段表「六个字段」定稿时补行改数（`04` 补栏等最后一期，sync-inbox 问题 45）。对回原则 9。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「报位置、留着不动，处置由你定」）：工单收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定；「没写清」第 7 条标已裁（`04` withdraw 侧补句等最后一期，sync-inbox 问题 45）。对回原则 11。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「全收」）：`code_paths` 全收口径——这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算；字段表那行的说明定稿时并（`03` 字段说明补句等最后一期，sync-inbox 问题 45）。对回原则 3。
