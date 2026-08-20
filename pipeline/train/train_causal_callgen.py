@@ -14,6 +14,11 @@
 - 评估: 每轮 val 全量加权 masked-CE(val_ce,选 best 的唯一依据,越低越好)+
   定种子抽 GEN_N 条 greedy 生成报 val_exact_call(只进日志,不选 best)
 - 产物: <out>/best/(HF 权重 + tokenizer + meta.json)+ train_log.jsonl
+- LoRA: `--lora` 把底座换成 LoRA 训(开火头如果有,照常全参),存 best 之前先
+  merge_and_unload 把适配器并回底座,所以 best/ 的文件与全参存的逐项同构、
+  eval_causal_call.py 零改动就装得回来;meta.json 多一个 "lora" 块记超参。
+  不传 --lora 时脚本自己不碰 peft(peft 的 import 全在 --lora 分支里),
+  行为与加这套旗标之前一致;详见 lora_util.py 的说明。
 
 开火头(`--fire-head`,必须与 --readonly-env 同传;默认不传 = 行为与旧版一致):
 - backbone 末层隐状态 -> Linear(h,1) 的样本级二分类头,学"此刻该不该发射投机"。
@@ -57,6 +62,7 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
+import lora_util
 import readonly_map
 
 import sys as _sys
@@ -73,6 +79,7 @@ MODELS = {
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
 SEED = 20260729
+FULL_LR = 1e-5             # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
 CALL_SEP = "\n[CALL] "
 MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃
 MAX_GEN_TOK = 96           # 评估生成的 max_new_tokens
@@ -327,12 +334,16 @@ def main():
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=4)
     ap.add_argument("--accum", type=int, default=8)
-    ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--lr", type=float, default=None,
+                    help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
+                         "这里显式给了就以显式值为准)")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
                     help="500 训练实例/200 评估实例/1 epoch,验证管线")
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--grad-ckpt", action="store_true")
+    ap.add_argument("--grad-ckpt", action="store_true",
+                    help="底座开梯度检查点省显存(全参与 --lora 两种模式都能用;"
+                         "同时关 use_cache,LoRA 下另保证输入 require_grad)")
     ap.add_argument("--gen-bs", type=int, default=8, help="生成评估的批大小")
     ap.add_argument("--max-inst", type=int, default=0,
                     help="调试用:再限实例数(0=不限)")
@@ -347,7 +358,9 @@ def main():
                          "必须与 --readonly-env 同传,默认关=行为不变")
     ap.add_argument("--force", action="store_true",
                     help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+    lora_util.add_args(ap)
     args = ap.parse_args()
+    lr = lora_util.resolve_lr(args, FULL_LR)
 
     if args.fire_head and not args.readonly_env:
         raise SystemExit(
@@ -415,9 +428,14 @@ def main():
     random.Random(SEED).shuffle(gen_rows)
     gen_rows = gen_rows[:GEN_N]
 
+    # LoRA:就地把底座换成 LoRA 训。开火头(如果有)是新初始化的线性头,照常
+    # 全参训练,与适配器一起进优化器。
+    lora_wrap = lora_util.wrap(model, args) if args.lora else None
     if args.grad_ckpt:
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
+        if args.lora:
+            lora_util.prepare_grad_ckpt(model)
     model.train()
 
     fire = None
@@ -426,8 +444,9 @@ def main():
         fire = torch.nn.Linear(h, 1).to(dev)          # 建在 backbone 之后
     bcef = torch.nn.BCEWithLogitsLoss(reduction="none")
     steps = math.ceil(len(tr_dl) / args.accum) * epochs
-    pars = list(model.parameters()) + (list(fire.parameters()) if fire else [])
-    opt = torch.optim.AdamW(pars, lr=args.lr, weight_decay=0.01)
+    pars = (lora_util.opt_params(model.parameters(), args.lora)
+            + (list(fire.parameters()) if fire else []))
+    opt = torch.optim.AdamW(pars, lr=lr, weight_decay=0.01)
     sch = get_linear_schedule_with_warmup(opt, int(steps * 0.05), steps)
 
     logf = open(out / "train_log.jsonl", "a")
@@ -446,7 +465,8 @@ def main():
         **(dict(fire_head=True, n_gen_lm=len(gen_rows),
                 fire_ready_train=fire_st["train"]["frac_ready"],
                 fire_ready_val=fire_st["val"]["frac_ready"])
-           if args.fire_head else {}))
+           if args.fire_head else {}),
+        **(dict(lora=lora_util.meta_block(args, lr)) if args.lora else {}))
     heartbeat.emit(0, steps, "step")
 
     best = float("inf")
@@ -498,7 +518,11 @@ def main():
         if vce < best:
             best = vce
             (out / "best").mkdir(parents=True, exist_ok=True)
-            model.save_pretrained(out / "best")
+            if lora_wrap is None:
+                model.save_pretrained(out / "best")
+            else:
+                # 适配器并回底座再落盘:best/ 与全参存的逐项同构,评测端零改动
+                lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             meta = dict(
                 base_path=path, data=str(data), max_len=args.max_len,
@@ -506,6 +530,10 @@ def main():
                 transformers=transformers.__version__)
             if args.readonly_env:
                 meta["readonly_env"] = args.readonly_env
+            if args.lora:
+                meta["lora"] = lora_util.meta_block(args, lr)
+            if args.grad_ckpt:
+                meta["grad_ckpt"] = True
             if fire is not None:
                 meta["fire_head"] = True
                 torch.save(fire.state_dict(), out / "best" / "fire_head.pt")

@@ -11,6 +11,11 @@
   左截丢掉的边界跳过并计数(n_bound_dropped)
 - 评估: 每轮 val 报 calA_weighted_acc + calA_lastbound_acc(日志字段名照旧不改)
 - 产物: <out>/{ALIGN_CHECK.json, train_log.jsonl, best/}
+- LoRA: `--lora` 只把底座换成 LoRA 训(分类头照常全参),存 best 之前先
+  merge_and_unload 把适配器并回底座,所以 best/ 的文件与全参存的逐项同构、
+  eval_tool.py 零改动就装得回来;meta.json 多一个 "lora" 块记超参。
+  不传 --lora 时脚本自己不碰 peft(peft 的 import 全在 --lora 分支里),
+  行为与加这套旗标之前一致;详见 lora_util.py 的说明。
 
 **开训前对齐检查是铁律**(--align-only 只跑它):同一段真实文本,整段一次前向 vs
 逐 token 增量前向(带 past_key_values),末位置隐状态与分类头 logits 必须
@@ -51,6 +56,7 @@ if _TV < (5, 14):
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup
 
+import lora_util
 import readonly_map
 
 import sys as _sys
@@ -66,6 +72,7 @@ MODELS = {
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
 SEED = 20260729
+FULL_LR = 1e-5     # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
 ALIGN_TOL = 1e-4
 SPOT = 50          # 前缀性质抽查的事件数
 
@@ -267,12 +274,16 @@ def main():
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=4, help="事件数/批")
     ap.add_argument("--accum", type=int, default=8)
-    ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--lr", type=float, default=None,
+                    help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
+                         "这里显式给了就以显式值为准)")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
                     help="200 训练事件/80 评估事件/1 epoch,验证管线")
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--grad-ckpt", action="store_true")
+    ap.add_argument("--grad-ckpt", action="store_true",
+                    help="底座开梯度检查点省显存(全参与 --lora 两种模式都能用;"
+                         "同时关 use_cache,LoRA 下另保证输入 require_grad)")
     ap.add_argument("--max-events", type=int, default=0,
                     help="调试用:再限事件数(0=不限)")
     ap.add_argument("--align-only", action="store_true",
@@ -288,7 +299,9 @@ def main():
                          f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
     ap.add_argument("--force", action="store_true",
                     help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+    lora_util.add_args(ap)
     args = ap.parse_args()
+    lr = lora_util.resolve_lr(args, FULL_LR)
 
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -353,13 +366,20 @@ def main():
         EventDS(ds), batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
     tr_dl, ev_dl = mk(tr_events, True), mk(ev_events, False)
+    # LoRA 只包底座:分类头照常全参训练(头是新初始化的,没有可低秩化的旧权重),
+    # 头的参数与适配器一起进优化器。包装动作放在对齐检查之后,ALIGN_CHECK.json
+    # 与全参跑逐字段可比。
+    lora_wrap = lora_util.wrap(model.backbone, args) if args.lora else None
     if args.grad_ckpt:
         model.backbone.gradient_checkpointing_enable()
         model.backbone.config.use_cache = False
+        if args.lora:
+            lora_util.prepare_grad_ckpt(model.backbone)
     model.train()
 
     steps = math.ceil(len(tr_dl) / args.accum) * epochs
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    opt = torch.optim.AdamW(lora_util.opt_params(model.parameters(), args.lora),
+                            lr=lr, weight_decay=0.01)
     sch = get_linear_schedule_with_warmup(opt, int(steps * 0.05), steps)
     lossf = torch.nn.CrossEntropyLoss(reduction="none")
 
@@ -376,7 +396,8 @@ def main():
         steps=steps, smoke=args.smoke, max_len=args.max_len, seed=SEED,
         align_pass=rep["PASS"], align_maxdiff_hidden=rep["maxdiff_hidden"],
         align_maxdiff_logits=rep["maxdiff_logits"],
-        readonly_env=args.readonly_env)
+        readonly_env=args.readonly_env,
+        **(dict(lora=lora_util.meta_block(args, lr)) if args.lora else {}))
     heartbeat.emit(0, steps, "step")
 
     best = -1.0
@@ -412,7 +433,11 @@ def main():
         if wacc > best:
             best = wacc
             (out / "best").mkdir(parents=True, exist_ok=True)
-            model.backbone.save_pretrained(out / "best")
+            if lora_wrap is None:
+                model.backbone.save_pretrained(out / "best")
+            else:
+                # 适配器并回底座再落盘:best/ 与全参存的逐项同构,评测端零改动
+                lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             torch.save(model.head.state_dict(), out / "best" / "head.pt")
             (out / "best" / "label_map.json").write_text(
@@ -423,6 +448,10 @@ def main():
                 epoch=ep, transformers=transformers.__version__)
             if args.readonly_env:
                 meta["readonly_env"] = args.readonly_env
+            if args.lora:
+                meta["lora"] = lora_util.meta_block(args, lr)
+            if args.grad_ckpt:
+                meta["grad_ckpt"] = True
             (out / "best" / "meta.json").write_text(json.dumps(meta, indent=1))
             log(event="save_best", ep=ep, acc=round(best, 4))
     log(event="done", best_calA_weighted_acc=round(best, 4))

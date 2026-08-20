@@ -241,11 +241,23 @@ TASKS = {
         notes=["--base 三档:qwen=Qwen3-0.6B-Base / qwen17=1.7B / qwen4=4B;"
                "注册表固定带 --base qwen,发射时用排卡表 extra 再传一次覆盖",
                "开训对齐门禁 FAIL 退 2(reldiff 1e-6 量级=噪声,1e-3 以上=真错)",
+               "--lora 只训底座适配器(分类头照常全参),存 best 之前 "
+               "merge_and_unload 并回底座——best/ 与全参存的逐项同构,"
+               "eval-tool-causal 零改动就装得回来;"
+               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
+               "--lora-lr 2e-4(显式给 --lr 就以 --lr 为准)",
+               "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-cgen": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_callgen.py",
         gpu=True, desc="因果整条调用生成头(必给 --data --out)",
         notes=["--base 三档 qwen/qwen17/qwen4,默认 qwen(=0.6B,与旧口径一致)",
+               "--lora 只训底座适配器(开火头照常全参),存 best 之前 "
+               "merge_and_unload 并回底座——best/ 与全参存的逐项同构,"
+               "eval-ccall 零改动就装得回来;"
+               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
+               "--lora-lr 2e-4(显式给 --lr 就以 --lr 为准)",
+               "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-cparam": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_param.py",
@@ -253,6 +265,11 @@ TASKS = {
         notes=["输入串 = text + \\n[CALL] + 工具名 + 左括号,目标 = 括号里那截 + 右括号",
                "--base 三档 qwen/qwen17/qwen4,默认 qwen",
                "没有 --fire-head:触发永远由 ctool 做",
+               "--lora 只训底座适配器,存 best 之前 merge_and_unload 并回底座"
+               "——best/ 与全参存的逐项同构,eval-cparam 零改动就装得回来;"
+               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
+               "--lora-lr 2e-4(显式给 --lr 就以 --lr 为准)",
+               "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
 
     # ---- eval 评测 ----

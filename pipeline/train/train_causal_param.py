@@ -23,6 +23,11 @@
   定种子抽 GEN_N 条 greedy 生成报 val_exact_params(目标段整串命中,只进日志、
   不选 best;对齐 cgen 的 val_exact_call 口径)
 - 产物: <out>/best/(HF 权重 + tokenizer + meta.json)+ train_log.jsonl
+- LoRA: `--lora` 把底座换成 LoRA 训,存 best 之前先 merge_and_unload 把适配器
+  并回底座,所以 best/ 的文件与全参存的逐项同构、eval_causal_param.py 零改动
+  就装得回来;meta.json 多一个 "lora" 块记超参。不传 --lora 时脚本自己不碰
+  peft(peft 的 import 全在 --lora 分支里),行为与加这套旗标之前一致;
+  详见 lora_util.py 的说明。
 
 没有开火头:两套系统对比里触发永远由 ctool 做(规格「使用的时候」节),所以
 cgen 那套 `--fire-head` 机制在本格里整套不存在。
@@ -55,6 +60,7 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
+import lora_util
 import readonly_map
 
 import sys as _sys
@@ -70,6 +76,7 @@ MODELS = {
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
 SEED = 20260729
+FULL_LR = 1e-5             # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
 CALL_SEP = "\n[CALL] "
 MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃
 MAX_GEN_TOK = 96           # 评估生成的 max_new_tokens
@@ -261,12 +268,16 @@ def main():
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=4)
     ap.add_argument("--accum", type=int, default=8)
-    ap.add_argument("--lr", type=float, default=1e-5)
+    ap.add_argument("--lr", type=float, default=None,
+                    help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
+                         "这里显式给了就以显式值为准)")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
                     help="500 训练实例/200 评估实例/1 epoch,验证管线")
     ap.add_argument("--device", default="cuda")
-    ap.add_argument("--grad-ckpt", action="store_true")
+    ap.add_argument("--grad-ckpt", action="store_true",
+                    help="底座开梯度检查点省显存(全参与 --lora 两种模式都能用;"
+                         "同时关 use_cache,LoRA 下另保证输入 require_grad)")
     ap.add_argument("--gen-bs", type=int, default=8, help="生成评估的批大小")
     ap.add_argument("--max-inst", type=int, default=0,
                     help="调试用:再限实例数(0=不限)")
@@ -275,7 +286,9 @@ def main():
                     help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
     ap.add_argument("--force", action="store_true",
                     help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+    lora_util.add_args(ap)
     args = ap.parse_args()
+    lr = lora_util.resolve_lr(args, FULL_LR)
 
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -323,13 +336,18 @@ def main():
     random.Random(SEED).shuffle(gen_rows)
     gen_rows = gen_rows[:GEN_N]
 
+    # LoRA:就地把底座换成 LoRA 训。本格没有额外的头,进优化器的就只有适配器。
+    lora_wrap = lora_util.wrap(model, args) if args.lora else None
     if args.grad_ckpt:
         model.gradient_checkpointing_enable()
         model.config.use_cache = False
+        if args.lora:
+            lora_util.prepare_grad_ckpt(model)
     model.train()
 
     steps = math.ceil(len(tr_dl) / args.accum) * epochs
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.01)
+    opt = torch.optim.AdamW(lora_util.opt_params(model.parameters(), args.lora),
+                            lr=lr, weight_decay=0.01)
     sch = get_linear_schedule_with_warmup(opt, int(steps * 0.05), steps)
 
     logf = open(out / "train_log.jsonl", "a")
@@ -345,7 +363,8 @@ def main():
         smoke=args.smoke, max_len=args.max_len, max_tgt_tok=MAX_TGT_TOK,
         seed=SEED, dropped_train=tr.dropped, dropped_eval=ev.dropped,
         assembly_mismatch=dict(train=tr.mismatch, val=ev.mismatch),
-        device=dev, readonly_env=args.readonly_env, param_only=True)
+        device=dev, readonly_env=args.readonly_env, param_only=True,
+        **(dict(lora=lora_util.meta_block(args, lr)) if args.lora else {}))
     heartbeat.emit(0, steps, "step")
 
     best = float("inf")
@@ -381,7 +400,11 @@ def main():
         if vce < best:
             best = vce
             (out / "best").mkdir(parents=True, exist_ok=True)
-            model.save_pretrained(out / "best")
+            if lora_wrap is None:
+                model.save_pretrained(out / "best")
+            else:
+                # 适配器并回底座再落盘:best/ 与全参存的逐项同构,评测端零改动
+                lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             meta = dict(
                 base=args.base, base_path=path, data=str(data),
@@ -389,6 +412,10 @@ def main():
                 param_only=True, transformers=transformers.__version__)
             if args.readonly_env:
                 meta["readonly_env"] = args.readonly_env
+            if args.lora:
+                meta["lora"] = lora_util.meta_block(args, lr)
+            if args.grad_ckpt:
+                meta["grad_ckpt"] = True
             (out / "best" / "meta.json").write_text(json.dumps(meta, indent=1))
             log(event="save_best", ep=ep, val_ce=round(best, 4))
     log(event="done", best_val_ce=round(best, 4))
