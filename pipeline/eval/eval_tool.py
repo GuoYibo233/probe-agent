@@ -283,8 +283,18 @@ def main():
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具+弃权类模式(默认关);打开后真值折叠、"
                          "触发条件加\"argmax 不是弃权类\",并出 readonly_stats")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="每堆截前 N 行(分钟级冒烟口子);截断的 logits_*.pt 与"
+                         " REPLAY_REPORT 照常落盘,所以只许对名字带 smoke 的"
+                         " --run 目录用")
     args = ap.parse_args()
     run = Path(args.run)
+    if args.limit and "smoke" not in run.name:
+        raise SystemExit(
+            f"--limit 只许对名字带 smoke 的 --run 目录用(现在是 {run.name}):"
+            "截断的 logits_*.pt 和 REPLAY_REPORT.json 会写进 --run,下游 call "
+            "评测按这里的 θ/logits 走,真 run 会被静默污染。要小样评真权重,"
+            "先把 run 目录拷一份带 smoke 的名字再跑。")
     data = Path(args.data) / args.env if args.legacy_splits else Path(args.data)
     rep_dir = Path(args.report_dir) if args.report_dir else run
     rep_dir.mkdir(parents=True, exist_ok=True)
@@ -371,6 +381,8 @@ def main():
             for r in raw_rows:
                 r["label"] = readonly_map.collapse(r["label"], ro_set)
         rows = [r for r in raw_rows if r["label"] in label2id]
+        if args.limit:
+            rows = rows[: args.limit]
         for r in rows:
             r["y"] = label2id[r["label"]]
         lp = run / f"logits_{sp}.pt"
@@ -525,6 +537,9 @@ def main():
     }
     if ro_stats is not None:
         rep["readonly_stats"] = ro_stats
+    if args.limit:
+        # 冒烟戳:带这个字段的报告是截断跑,数字不作数
+        rep["limit"] = args.limit
     # 因果探针专有的两个诊断字段(【照抄 eval_replay_causal.py】,旧字段一个不动)
     if args.head == "causal":
         bert_tok, causal_tok = token_cost(tok, rows_t)

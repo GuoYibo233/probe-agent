@@ -186,7 +186,7 @@ class TestEntrypointsCompile(unittest.TestCase):
         "envs/collect/run_alfworld.py", "envs/collect/run_tales.py",
         "envs/collect/run_tau2.py", "envs/collect/bfcl_gptoss/gpt_oss_chat.py",
         "pipeline/inject/live_appworld.py", "pipeline/inject/replay_inject.py",
-        "pipeline/collect/gen_launch.py",
+        "pipeline/collect/gen_launch.py", "pipeline/eval/eval_tool.py",
     ]
 
     def test_all_compile(self):

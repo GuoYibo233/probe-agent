@@ -123,6 +123,7 @@ TASKS = {
         stage="collect", py="tales", script="envs/collect/run_tales.py",
         desc="TALES/TWX 采集器(要 vLLM /v1 在线)",
         notes=["无 --split/--exp/分片,分片靠拆 --seeds;--game 写错直接 KeyError",
+               "冒烟: --seeds 只给一个种子=只跑一集(没有 --n)",
                "--preset <名> 选一套生成设置(同 collect-aw)",
                "重跑必带 --resume",
                "长活客户端:放量跑进 tmux(走 gpu-run),小样冒烟才可前台"]),
@@ -244,12 +245,15 @@ TASKS = {
         stage="eval", py="mbert", script="pipeline/eval/eval_tool.py",
         gpu=True, args=["--head", "mbert"],
         desc="工具名评测 mbert 头(必给 --env --run --data)",
-        notes=["logits 永远写 --run,报告跟 --report-dir;是两个 call 评测的前置"]),
+        notes=["logits 永远写 --run,报告跟 --report-dir;是两个 call 评测的前置",
+               "冒烟: --limit N 每堆截前 N 行;只许对名字带 smoke 的 --run 用"
+               "(截断的 logits/REPLAY_REPORT 会写进 --run,真 run 不许沾)"]),
     "eval-tool-causal": dict(
         stage="eval", py="cprobe", script="pipeline/eval/eval_tool.py",
         gpu=True, args=["--head", "causal"],
         desc="工具名评测 causal 头(同上,解释器不同)",
-        notes=["同一脚本两解释器按 --head 分岔,注册表拆成两条任务"]),
+        notes=["同一脚本两解释器按 --head 分岔,注册表拆成两条任务",
+               "冒烟: --limit N(同 eval-tool-mbert,只许 smoke 目录)"]),
     "eval-mcall": dict(
         stage="eval", py="mbert", script="pipeline/eval/eval_mbert_call.py",
         gpu=True, desc="mbert 整条调用评测(必给 --env --run --data --extractor)",

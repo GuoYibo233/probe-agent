@@ -25,6 +25,32 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 
 ---
 
+## 0.5 冒烟总表：每条链的小规模入口，改完代码先跑这个再放量
+
+2026-08-21 逐链盘点的结果。规矩两条：加新链/新实验的时候这张表跟着加一行；
+表里说「纯 CPU」的才可以不占卡直接跑，其余照旧走 gpu-run。
+
+| 链 | 小规模入口 | 要什么在线 |
+|---|---|---|
+| 采集 appworld | `collect-aw --n 2`（--n 缺省就是 2 题） | vLLM |
+| 采集 alfworld | `collect-alf --n 1`（缺省） | vLLM |
+| 采集 tales | `collect-tales --seeds 7`（单种子=一集，没有 --n） | vLLM |
+| 采集 tau2 | `collect-tau2 --selftest`（纯 CPU）；联机 `--n 1`（缺省） | selftest 不要服务 |
+| 采集 toolhop | `toolhop-official --input_file ../data/smoke_2.json` | vLLM |
+| 采集 bfcl | 小题单 json（流程在 envs/collect/bfcl_gptoss/RUNBOOK.md） | vLLM |
+| 标注链 | 没有小样口子（全量 CPU 跑）；要小样就把 --config 指向小批次 | 无 |
+| 训练四格 | 单格 `train-* --smoke`（必须同时换 --out）；四格一起 `launch-probe smoke` | GPU |
+| 评测 tool 格 | `eval-tool-{mbert,causal} --limit N`（只许名字带 smoke 的 --run，2026-08-21 加） | GPU |
+| 评测 call 格 | `eval-mcall / eval-ccall --limit N`（依赖同模型 tool 格先跑完） | GPU |
+| 回放注入 | `inject-run --limit N`；执行段 `exec-calls --limit-units N` | vLLM |
+| 塞法回放 | `splice-replay-run --limit N`，`--dry-run` 只打印不落盘 | vLLM |
+| 活跑 | `live-appworld --n K` 或 `--task-ids`；`--selftest-shadow <轨迹>` 纯 CPU 不连服务 | vLLM+探针 |
+| 探针服务 | `probe-selftest`（纯 CPU，--theta 必传） | 无 |
+| 配方引擎 | `recipe engine-smoke`（纯 CPU 两步自测） | 无 |
+| 采样器 | `sampler --once`（采一轮就退） | 无 |
+
+---
+
 ## 1. 流水线程序（pipeline/ 与 envs/collect/）
 
 ### 1.1 采集段
@@ -70,7 +96,7 @@ envs/runs/<批次>   pipeline/data/      pipeline/runs/    REPLAY/EXTRACT/      
 
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
-| `pipeline/eval/eval_tool.py` | 工具格回放：val 拟温度 + 20 档 θ（0.5–0.975 步长 0.025）里按风险档（0.10/0.05）选"满足精度约束下触发比例最大"的 θ，test 冻结出数 | mbert 头：`python3 run.py eval-tool-mbert --env <e> --run <run> --data <d>`；因果头：`python3 run.py eval-tool-causal …`（`--head` 与解释器都由注册表钉死）。两条都是发射类，run.py 只出命令、发射走 gpu-run；`--cached-logits` 纯 CPU 重算（换 θ 不碰 GPU）。⚠️ logits 永远写进 `--run`，`--report-dir` 只改报告 |
+| `pipeline/eval/eval_tool.py` | 工具格回放：val 拟温度 + 20 档 θ（0.5–0.975 步长 0.025）里按风险档（0.10/0.05）选"满足精度约束下触发比例最大"的 θ，test 冻结出数 | mbert 头：`python3 run.py eval-tool-mbert --env <e> --run <run> --data <d>`；因果头：`python3 run.py eval-tool-causal …`（`--head` 与解释器都由注册表钉死）。两条都是发射类，run.py 只出命令、发射走 gpu-run；`--cached-logits` 纯 CPU 重算（换 θ 不碰 GPU）。⚠️ logits 永远写进 `--run`，`--report-dir` 只改报告。冒烟 `--limit N` 每堆截前 N 行，只许对名字带 smoke 的 `--run` 用（截断产物防污染，报告带 `limit` 戳；2026-08-21 加） |
 | `pipeline/eval/eval_mbert_call.py` | mext 触发时刻评测：吃 mtool 的温度与 θ，触发前缀上抽参数，按无参/选择/自由三档报 | `python3 run.py eval-mcall --env <e> --run <mtool run> --extractor <mext run> --data <d> --risk 0.05`（发射类）；⚠️ 报告写进 `--extractor`；θ 为 null 硬退 1 |
 | `pipeline/eval/eval_causal_call.py` | cgen 触发时刻评测：ctool 触发点上 greedy 写整条调用，判 tool_ok/参数/full_call_ok | `python3 run.py eval-ccall --env <e> --ctool-run … --cgen-run … --data …`（发射类）；⚠️ 报告写进 `--cgen-run` |
 | `pipeline/eval/summarize_matrix.py` | 矩阵汇总：多 run 收一张表，缺报告标 PENDING | `python3 run.py matrix --runs-dir pipeline/runs --out …/MATRIX_REPORT.md [--prefix …] [--models …] [--risk 0.05]`；⚠️ N/A 显示成 PENDING、固定读单风险档，引用必须配文字 |

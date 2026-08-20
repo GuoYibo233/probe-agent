@@ -120,6 +120,11 @@ ctool 按同一种子随机抽 200 / 80 **事件**；四格都是 1 epoch，没�
 因果两格另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`。
 **smoke 不过不许放量**，一次都不许。
 
+全链各段的小规模入口（采集 `--n`/训练 `--smoke`/评测 `--limit`/注入 `--limit`/
+活跑 `--n`）汇总在 `MAP.md` §0.5 冒烟总表（2026-08-21 盘点）——改完代码先挑
+对应行跑一遍再放量；评测侧 `eval-tool-* --limit` 只许对名字带 smoke 的
+`--run` 目录用（截断的 logits/REPLAY_REPORT 会写进 `--run`，真 run 不许沾）。
+
 ⚠️ **smoke 阶段树常是脏的**（代码刚改完还没定稿）：出命令用
 `python3 run.py show <task> --allow-dirty` 或 `python3 run.py launch-probe smoke … --allow-dirty`。
 smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这条追溯约束。
