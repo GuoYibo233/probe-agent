@@ -21,6 +21,9 @@
    （校验别名解析与字段类型）和 `python3 -m unittest tests.test_preset`。
 3. 用了预设的跑，run_id 里带上预设名（DATA.md 检查清单第 9 条）。
 
-现有五份 gptoss 预设与 2026-08-20 改造前散在五处的写死值逐项等价，
-等价性由 `tests/test_preset.py` 钉死，别手改预设去"顺手调参"——
-调参就新开一份预设，名字说清口径。
+现有六份 gptoss 预设分两类：五份（chat_high / harmony_medium / bfcl_high /
+live_high / replay）与 2026-08-20 改造前散在五处的写死值逐项等价，
+等价性由 `tests/test_preset.py` 钉死；第六份 `gptoss_default` 是 OpenAI
+官方推荐口径（temperature=1.0 / top_p=1.0 / top_k=0 / min_p=0.0 /
+effort medium / 上下文 131072，出处与对照写在它的 desc 里），不对应任何旧写死值。
+别手改预设去"顺手调参"——调参就新开一份预设，名字说清口径。
