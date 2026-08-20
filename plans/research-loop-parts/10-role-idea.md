@@ -1,6 +1,6 @@
 # idea 角色
 
-> 这份覆盖 idea 角色的 SKILL.md 要写的全部内容：它干什么、use case 表、读什么写什么、能调哪些 rl 写命令、决定怎么落账（来源三类、新版还是新条、confirm、跨角色改别人的决定）、工单和分析单怎么开（explanation、`--manual`、`--no-dispatch`）、怎么验收和打回、收回和 reissue、申请读 notes/、`rl inbox` 谁需要谁敲、模型用 fable 的例外。
+> 这份覆盖 idea 角色的 SKILL.md 要写的全部内容：它干什么、use case 表、读什么写什么、能调哪些 rl 写命令、决定怎么落账（来源三类、新版还是新条、confirm、跨角色改别人的决定）、工单和分析单怎么开（explanation、`--manual`、`--no-dispatch`）、怎么验收和打回、收回和 reissue、notes/ 的读写纪律与问 gyb 的条子、`rl inbox` 谁需要谁敲、模型用 fable 的例外。
 > 不覆盖的：派活单的七个状态和状态转移表、会话生命周期与销号，在 `04-handoffs-and-sessions.md`；九本账的行格式和字段必填规则，在 `03-ledgers.md`；`bin/rl` 每条子命令的完整参数和退出码，在 `05-rl-cli.md`；钩子、角色 json 的四栏机制和机器检查，在 `06-hooks-and-permissions.md`；快车道，在 `07-quick-lane.md`；gyb 自己做的事和 `rl status`，在 `01-gyb.md`；公共母版和 feedback 账，在 `09-common-and-feedback.md`。idea 和别的角色来回的细节分别在 `20-pair-idea-deploy.md`、`22-pair-idea-analysis.md`、`25-pair-reviewer-idea.md`。
 > 源：设计文档的「gyb 自己做的事」「五个角色」总段、「idea」一节、「账本」一节的决定账部分、「交接与会话生命周期」；施工计划第一节裁决 3、第二节词表、第三节 decisions 与 handoffs、第四节转移表、第五节 idea 的 use case 与角色 json、第六节命令表。
 
@@ -10,7 +10,7 @@ idea 和 gyb 谈想法，谈定的东西写进 idea 的决定账。gyb 会参与
 
 idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。idea 是这两种单子的 owner：单子从开到关归它，它负责拉起下游、验收、收回。
 
-有三件事 idea 不做。文献变成想法由 gyb 亲自做，idea 没有 gyb 的允许连 notes/ 都不读。分析什么、画什么图由 gyb 亲自说，idea 不替 gyb 主张要看什么数。写代码不归 idea，idea 的角色 json 里 writes 一栏只有 `notes/`（2026-08-18 gyb 裁，原来是「无目录」，定义处 `06`），`experiments/`、`analysis/`、`review/`、`loop/` 一个都不能 Write 或 Edit。
+有三件事 idea 不做。文献变成想法由 gyb 亲自做：idea 读 notes/ 不用获准（2026-08-21 gyb 裁，砍掉原「要 gyb 允许才读」的获准机制），但不替 gyb 从文献里归纳方向。分析什么、画什么图由 gyb 亲自说，idea 不替 gyb 主张要看什么数。写代码不归 idea，idea 的角色 json 里 writes 一栏只有 `notes/`（2026-08-18 gyb 裁，原来是「无目录」，定义处 `06`），`experiments/`、`analysis/`、`review/`、`loop/` 一个都不能 Write 或 Edit。
 
 ## use case 表
 
@@ -23,8 +23,10 @@ idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。i
 | 后台起 deploy 或 analysis subagent，并在它回来时验收或打回 | `handoff accept`/`reject` |
 | 决定改版后重派 | `handoff reissue` |
 | 收回 | `handoff withdraw` |
-| 重新拉起下游 | 源文档没给命令 |
-| 申请读 notes/ | `issue open --kind request --to gyb` |
+| 重新拉起下游 | 不是 rl 动作：直接再起下游 subagent，接单那笔账由下游写（2026-08-21 gyb 裁） |
+| 下游 subagent 没走到交活就返回（报错、上下文满）时把单子交回待干 | `handoff release`（2026-08-21 gyb 裁补进表） |
+| gyb 点名更正单子上的说明时执行修改 | `handoff amend`（2026-08-21 gyb 裁补进表，gyb 原话「我有时候会手动要求更改的」） |
+| 问 gyb（下游死了拿不准重起还是问、或别的要 gyb 裁的事） | `issue open --to gyb` |
 | 回下游的 issue 并把单子交回待干 | `issue reply`、`handoff resume` |
 | 读 reviewer 清单 | 只用查询命令 |
 
@@ -54,7 +56,7 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 
 `rl inbox` 谁需要谁敲，不是上线动作：角色被拉起不自动查收件箱，先干拉它起来的那张单。inbox 列本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知、本角色提的 feedback 的裁决。
 
-两处原文不一致：过版那一项，设计文档写的是「本角色持有或拥有的单子里过版的决定引用」，施工计划第六节写的是「本会话手上单子引的过版决定」；feedback 裁决那一项，设计文档把它算进通知里，施工计划单列成一项。这份按施工计划的表走。
+过版那一项按「本会话手上单子引的过版决定」定，不列本角色名下全部（2026-08-21 gyb 裁，原设计文档「本角色持有或拥有的单子」与施工计划「本会话手上单子」两处不一致就此收口；要看全部用 `rl decision stale --all` 或 gyb 的 `rl status`，窄默认只是不自动灌上下文）。feedback 裁决单列一项、不并进通知（2026-08-21 gyb 裁，原设计文档并进通知与施工计划单列两处不一致就此收口）。
 
 `rl decision stale` 默认也只列和本会话手上单子有关的，要全库才加 `--all`。
 
@@ -108,7 +110,9 @@ reviewer 的审查基准是「actor 是 gyb 或 idea 的决定行」，不看落
 
 工单是 `work_order`，idea 开给 deploy，owner 就是 idea。开单时落 `todo`。
 
-单子上必填 `decision_refs`（每项是编号加版本，至少一项）和 `explanation`。工单里不能只甩决定编号，还要附一段 idea 自己写的解释，把那条决定里的东西讲明白，解释权在 idea。怎么测试、什么算成功，也要 idea 自己想明白，只是不预写成单子上的字段。
+单子上必填 `decision_refs`（每项是编号加版本，至少一项）和 `explanation`。工单里不能只甩决定编号，还要附一段 idea 自己写的解释，把那条决定里的东西讲明白，解释权在 idea。解释的要求只立一条原则：下游不用回头翻账、不用再问就能开工，长短和写法 idea 自定（2026-08-21 gyb 裁）。怎么测试、什么算成功，也要 idea 自己想明白，不写进单子，只在起下游 subagent 的交代里说（2026-08-21 gyb 裁）。
+
+`decision_refs` 的多项可以分属不同的根决定，允许这么开单；按根决定归线的视图里，这样的单在每条相关线里都出现、两边都算（2026-08-21 gyb 裁；`line` 的算法定义处在别处，见「要同步到别处的」）。
 
 派发方式三档：
 
@@ -136,9 +140,11 @@ reviewer 的审查基准是「actor 是 gyb 或 idea 的决定行」，不看落
 
 deploy 提「干完等待验收」必须附报告路径，路径为空入账脚本不收这个状态。工单的交付物是两份部署报告的路径加代码路径清单，分析单的交付物是 notebook 和图的路径加口径全部 approved，三样都是「路径存在或行存在」这种机器可查的前提。
 
-验收人是 owner，也就是 idea。先读不带文件的那一份看做法对不对，再读带文件的那一份看写出来的东西和说的是不是一回事。打回要写明原因，`reason` 为空入账脚本不收。打回之后单子回待干，由 idea 重新拉起下游。
+验收人是 owner，也就是 idea。先读不带文件的那一份看做法对不对，再读带文件的那一份看写出来的东西和说的是不是一回事。报告里说得含糊或和决定对不上的地方，再打开 `code_paths` 里的代码核对，不通读（2026-08-21 gyb 裁）。打回要写明原因，`reason` 为空入账脚本不收。打回之后单子回待干，由 idea 重新拉起下游。
 
-gyb 随时可以自己验。gyb 越过 owner 验收或打回时，rl 给 owner 发一条 `fyi` 通知，idea 下次 `rl inbox` 看得到。
+gyb 随时可以自己验。gyb 越过 owner 验收或打回时，rl 给 owner 发一条 `fyi` 通知，idea 下次 `rl inbox` 看得到。`--manual` 的单子 gyb 亲自接，干完默认也由 gyb 自己验收，`fyi` 照发（2026-08-21 gyb 裁，转移表那句「验收人是 owner」在这种单上让位）。
+
+idea 读完 reviewer 的清单不自行处置：改决定、打回单子都等 gyb 裁了才动，idea 只把清单里的事项报给 gyb（2026-08-21 gyb 裁，对回「不替 gyb 主张」）。
 
 验收一张单子时，它关联的已回复 issue 自动关。
 
@@ -148,17 +154,15 @@ gyb 随时可以自己验。gyb 越过 owner 验收或打回时，rl 给 owner �
 
 改版之后要重派的用 `rl handoff reissue ID --decision ID@V`：一条命令收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder。
 
-工单被打回、被回收、下游销号之后回到待干，都由 idea 重新拉起下游。owner 是角色不是会话，idea 当下没有活着的会话时，单子由 gyb 拉起，`rl status` 单列这一类。
+工单被打回、被回收、下游销号之后回到待干，都由 idea 重新拉起下游。拉起不是 rl 的动作：idea 直接再起一个下游 subagent，接单那笔账由下游自己写（2026-08-21 gyb 裁）。owner 是角色不是会话，idea 当下没有活着的会话时，单子由 gyb 拉起，`rl status` 单列这一类。
 
 下游卡住的时候，idea 回 issue，再用 `rl handoff resume` 把单子交回待干；`resume` 的前提是关联 issue 状态已经是 `answered`。交回待干之后 `to_role` 的任何一个会话都能接，默认还是 idea 再起一个下游。
 
-## 申请读 notes/
+## notes/ 与问 gyb 的条子
 
-notes/ gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读，但 idea 要经 gyb 允许才有读文献的权限。
+notes/ gyb 和 idea 写（idea 能写是 2026-08-18 gyb 裁，定义处 `06`），谁都能读。idea 读 notes/ 不用获准：原设计的整套获准机制——「idea 要经 gyb 允许才有读文献的权限、`rl init` 时问一次要不要发 `read:notes`、没发就开 `request` issue 等 gyb 写 grant、doctor 扫『来源指 notes/ 而无 grant』」——2026-08-21 gyb 裁掉，只留纪律一句：文献变成想法由 gyb 亲自做，idea 不替 gyb 归纳方向（对回原则 2：读一律不设权，reads 是纪律不是门禁）。这条裁决牵连 grants 账、doctor 扫描项、`rl init` 的那一问、reviewer 的凭据核对，见「要同步到别处的」。
 
-`rl init` 的时候问 gyb 一次要不要当场给 idea 发 `read:notes`。发了就不再走申请。没发的话 idea 开一条 issue 给 gyb，kind 是 `request`；gyb 在裸终端写一条 grant，idea 之后才读 notes/。授权只有 gyb 能写：裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收。
-
-读权不上钩子，grant 是给 reviewer 事后查的凭据。doctor 有一项扫描：决定的来源指向 notes/ 但 grants 里查不到这个 actor 的 `read:notes`。
+idea 开给 gyb 的 issue（问事、报下游卡死、要裁决），开完就收尾：本轮到此结束，issue 留在账上，gyb 下次开 idea 会话时捡起来接着走；gyb 在场就当场裁当场继续（2026-08-21 gyb 裁，对回原则 11：等人的事不占会话）。
 
 ## 模型
 
@@ -168,34 +172,23 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 
 ## 和别的 part 的接口
 
-- 派活单的七个状态、状态转移表的六栏、holder 只在 `in_progress` 非空这条不变量：`04-handoffs-and-sessions.md`。
-- handoffs 的字段（`work_type`、`from_role`、`to_role`、`parent_id`、`supersedes`、`batch`、`line`、`dispatch`、`decision_refs`、`evaluation_refs`、`explanation`、`report_paths`、`code_paths`、`output_paths`、`progress_note`、`reason`）：`03-ledgers.md`。
+- 派活单的七个状态、状态转移表的六栏、holder 只在 `in_progress` 非空这条不变量：`04-handoffs-and-sessions.md`。`--manual` 单默认由 gyb 自己验收这条裁决（2026-08-21）动到转移表「验收人是 owner」的备注，见「要同步到别处的」。
+- handoffs 的字段（`work_type`、`from_role`、`to_role`、`parent_id`、`supersedes`、`batch`、`line`、`dispatch`、`decision_refs`、`evaluation_refs`、`explanation`、`report_paths`、`code_paths`、`output_paths`、`progress_note`、`reason`）：`03-ledgers.md`。`line` 的算法与「跨根的单两边都算」（2026-08-21 裁）也归 `03`（字段语义）和 `05-rl-cli.md`（`rl status --group-by line`），见「要同步到别处的」。
 - decisions 的字段（`id` 前缀、`root_id`、`status`、`sources` 三类的写法、`quote`、`merged_from`）和 `decisions.gyb.jsonl` 只收 `cli` 这条：`03-ledgers.md`。
 - issues 的九种 kind、三个状态、reply 和 close 谁能写、通知类 issue 由收件人做完了自己 close：`03-ledgers.md`。
 - `rl decision add/update/confirm/retire/merge/show/list/stale`、`rl handoff open/accept/reject/withdraw/release/reissue/resume/amend`、`rl issue open/reply/reassign/close`、`rl inbox`、`rl trace` 的完整参数与退出码：`05-rl-cli.md`。
 - actor 判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：`01-gyb.md` 和 `05-rl-cli.md`。
 - `rl status` 的十段（桌面通知 2026-08-21 裁掉不做）、`fyi` 通知：`01-gyb.md`。
-- 角色 json 的五样、`tests/test_skill_refs.py` 的机器检查范围、钩子只挂 Write 和 Edit：`06-hooks-and-permissions.md`。
+- 角色 json 的五样、`tests/test_skill_refs.py` 的机器检查范围、钩子管 Write/Edit/Bash 三个工具：`06-hooks-and-permissions.md`。idea 的 json `reads` 备注里 `read:notes` 那半句随获准机制砍掉（2026-08-21 裁）要删，json 相关归 `06`，见「要同步到别处的」。
 - 两份部署报告的分工和 `code_paths` 由谁填：`11-role-deploy.md` 和 `20-pair-idea-deploy.md`。
 - 口径账的两种 kind、四个状态、谁提谁批：`13-role-analysis.md` 和 `22-pair-idea-analysis.md`。
-- reviewer 清单的文件名和五栏：`14-role-reviewer.md` 和 `25-pair-reviewer-idea.md`。
+- reviewer 清单的文件名和五栏：`14-role-reviewer.md` 和 `25-pair-reviewer-idea.md`。idea 读完清单只报 gyb、gyb 裁了才动（2026-08-21 裁）动到清单的下游动作，见「要同步到别处的」。
 - feedback 账、公共母版 `rules_version`：`09-common-and-feedback.md`。
 - 快车道补单的 explanation 由 deploy 写、验收人固定 gyb：`07-quick-lane.md`。
-- `rl init` 时问 gyb 要不要给 idea 发 `read:notes`、grants 账的字段：`08-trees-init-and-host.md` 和 `01-gyb.md`。
 
 ## 源文档没写清的（留给 gyb）
 
-1. idea 的 ledger_writes 里有 `handoffs 的 release` 和 `handoffs 的 amend`，但 use case 表里没有哪一条点名用它们。按原则 5 权限从动作倒推，这两条要么补进 use case 表，要么从 json 里去掉。
-2. use case 表里「重新拉起下游」没有对应命令。拉起下游到底是 rl 的一个动作还是 SKILL.md 里的一句纪律（直接起 subagent），源文档没写。
-3. 「怎么测试、什么算成功，也要 idea 自己想明白，只是不预写成单子上的字段」——那它落在哪里没写：写进 `explanation` 里，还是只在起 subagent 的提示里说，还是不落盘。
-4. `explanation` 要写多长、写哪几样，只有「把那条决定里的东西讲明白」这一句。
-5. 一张工单可以引多条决定，`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来。引的多条决定分属两个不同根决定时，`line` 怎么算、允不允许这么开单，源文档没写。
-6. idea 验收工单时要不要读 `code_paths` 里的代码本身、读到什么程度，源文档只说读两份报告。
-7. idea 读 review/ 的清单之后该做什么动作没写：是开一条新决定、给旧决定追加一版、还是打回某张单子。
-8. idea 开给 gyb 的 `request` issue 谁来 close 没写死。「验收一张单子时它关联的已回复 issue 自动关」这条对 request issue 不适用，它不挂在任何单子上。
-9. idea 开完 `--to gyb` 的 issue 之后、等 gyb 回话的这段时间，会话该干什么、该不该销号、销号之后谁把 idea 重新叫起来，源文档没写。idea 是最上游，手上没有派活单，转移表里的 stuck 只有 holder 能写，对 idea 不适用。
-10. `dispatch=auto` 的「后台起 subagent」具体怎么起没写：插件树里没有 workflows/ 或 agents/ 这一层，subagent 里加载角色 skill 钩子装不装得上、后台 subagent 能不能跑几个小时都还挂在待验证清单第 8、9 条上。
-11. `--manual` 的单子由 gyb 接，owner 仍是 idea。gyb 接完之后由谁验收，转移表写的是 owner，设计文档写的是 gyb 随时可以自己验，这一种单子上两句话叠在一起没有裁过。
+（2026-08-21 全部处理完毕：第 1 到 9、11 条 gyb 逐条裁了，见文末「裁决记录」；第 10 条按已有裁决销——subagent 以插件的角色 agent 类型起、agent 定义预加载本角色 skill、写权钩子是插件级按 `agent_type` 认（2026-08-18 裁，定义处 `06`、`08`），「后台 subagent 能不能跑几个小时」仍挂在待验证清单第 8、9 条上，归 `30`。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -379,3 +372,27 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「哪几段推送桌面通知」按「桌面通知这一版不做」改。对回原则 6。
+- 2026-08-21 本份定稿问题 1（gyb 原话「我有时候会手动要求更改的」）：`release`、`amend` 两条权限都留，use case 表补两行——下游 subagent 没走到交活就返回时 `release` 交回待干；gyb 点名更正单子上的说明时 `amend`。对回原则 5。
+- 2026-08-21 本份定稿问题 2（gyb 选「动作本身」）：重新拉起下游不是 rl 动作，idea 直接再起下游 subagent，接单那笔账由下游写。对回原则 2、3。
+- 2026-08-21 本份定稿问题 3（gyb 选「只在交代里说」）：「怎么测试、什么算成功」不写进单子，只在起下游 subagent 的交代里说。对回原则 4（开单只查「单子说得清自己是什么」）。
+- 2026-08-21 本份定稿问题 4（gyb 选「只立一条原则」）：`explanation` 的要求只有一条——下游不用回头翻账、不用再问就能开工，长短写法 idea 自定。对回原则 9。
+- 2026-08-21 本份定稿问题 5（gyb 选「允许，两边都算」）：`decision_refs` 可以分属不同根决定，按根归线时跨根的单在每条相关线的视图里都出现。对回原则 9。
+- 2026-08-21 本份定稿问题 6（gyb 选「报告加抽查」）：idea 验收先读两份报告，说得含糊或和决定对不上的地方打开 `code_paths` 里的代码核对，不通读。对回原则 3。
+- 2026-08-21 本份定稿问题 7（gyb 选「只报你，你裁了才动」）：idea 读完 reviewer 清单不自行处置，改决定、打回单子都等 gyb 裁了才动。对回原则 6。
+- 2026-08-21 本份定稿问题 8（gyb 原话「砍掉，默认能读」「不用申请」）：idea 读 notes/ 的获准机制整套砍掉（`rl init` 那一问、`request` issue 申请、grant 凭据、doctor 无 grant 扫描），idea 默认能读，只留「文献变成想法由 gyb 亲自做、不替 gyb 归纳方向」一句纪律。对回原则 2（读一律不设权）。
+- 2026-08-21 本份定稿问题 9（gyb 选「开完就收尾」）：idea 开给 gyb 的 issue 开完就结束本轮，issue 留在账上，gyb 下次开 idea 会话捡起来；gyb 在场当场裁当场继续。对回原则 11。
+- 2026-08-21 本份定稿问题 11（gyb 选「你干完自己算数」）：`--manual` 的单子 gyb 亲自接、干完默认由 gyb 自己验收，`fyi` 通知照发。对回原则 1（转移表「谁能写」对 gyb 不生效）。
+- 2026-08-21 本份定稿问题 12（gyb 选「只列本会话手上的」）：`rl inbox` 过版那一项按「本会话手上单子引的过版决定」定，两处原文不一致收口；全量走 `rl decision stale --all` 或 `rl status`。对回原则 6。
+- 2026-08-21 本份定稿问题 13（gyb 选「单列一项」）：feedback 裁决在 `rl inbox` 单列一项、不并进通知，两处原文不一致收口。对回原则 6。
+
+## 要同步到别处的
+
+- `06-hooks-and-permissions.md`：idea json `reads` 表下备注「`notes/` 要 gyb 发 `read:notes` 才读」删（获准机制 2026-08-21 砍掉）；本份的 json 副本和备注未动，等 `06` 改了传回来。
+- `08-trees-init-and-host.md`：`rl init` 逐项问里「问 gyb 一次要不要当场给 idea 发 `read:notes`」删。
+- `05-rl-cli.md`（冻结，只报）：doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；`rl grant` 子命令与 grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；`rl status --group-by line` 改成跨根的单每条相关线都出现。
+- `01-gyb.md`：gyb use case 表里「批 `read:notes`」的活删；「授权只有 gyb 能写」那段里 `read:notes` 的例子随 grants 账存废定。
+- `03-ledgers.md`（冻结，只报）：`line` 字段语义改「`decision_refs` 可跨根，跨根的单在每条相关线的视图里都出现」；grants 账存废同上。
+- `04-handoffs-and-sessions.md`（冻结，只报）：转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收（2026-08-21 裁）」。
+- `20-pair-idea-deploy.md`：「怎么测试、什么算成功」只在起 subagent 的交代里说、不进单子字段；`--manual` 单默认 gyb 验收。
+- `14-role-reviewer.md`、`25-pair-reviewer-idea.md`：reviewer 拿 grant 当「idea 有没有读过 notes/」凭据的核对项删；idea 读完清单只报 gyb、gyb 裁了才动（清单的下游动作）。
+- `11` 到 `14` 各角色 part 的收件箱段（统筹从定义处传）：过版项口径统一「本会话手上单子引的过版决定」，feedback 裁决单列一项，两处源文档不一致按此收口。
