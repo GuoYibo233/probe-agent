@@ -8,6 +8,8 @@
 
 快车道有明确的进和出，进出都是账上的一行（原则 7）。进是 gyb 点名之后 `rl ql open`，出是 `rl ql close`，中间的一切都在 worktree 和杂账里。
 
+总纲（2026-08-21 gyb 定，原则 7 的推论）：快车道期间的一切对主程序不存在——正账、主分支、正常流程都看不见它；验证好之后，出口那一刻一口气合并落账。中间不落正账，落账只发生在进出两行。
+
 快车道不是 deploy 专属。analysis 想先画一张图给 gyb 看，走的是同一条。
 
 进快车道由 gyb 点名，口头就行，不设别的判据。典型情形三种：决定不动只微调代码；一个想法还没成型先跑一把看看；gyb 想先看一眼图再定要不要正式算。
@@ -26,7 +28,7 @@
 2. 建目录。deploy 的快车道在配置里的 `quick_lane.worktree_root` 下建 worktree，路径是 `quick_lane.worktree_root/<ql_tag>`，分支同名。analysis 的快车道不建 worktree，产物放 `analysis/scratch/<ql_tag>/`。
 3. 往杂账（scratch）写开张的一行，status 是 `open`。
 
-`--from ho-ID` 是另一条进法：把一张待干的工单转进快车道，rl 把那张工单标 `quick_lane`。
+`--from ho-ID` 是另一条进法：把一张待干的工单转进快车道。rl 把那张工单追加一版标 `quick_lane`，单子从此离开待干队列——正常流程不再派人接它、不占 holder；这张单就是出口的补单，不另开新单，出口怎么走见第七节（2026-08-21 gyb 裁，问题 6）。
 
 ## 三、中间：deploy 能做什么
 
@@ -53,6 +55,8 @@ gyb 只想先看一眼图的时候走这条：图落 `analysis/scratch/<ql_tag>/
 - track 沿用被微调的那个实验的方向，不填别的值。
 - 宿主的台账照登记，`record finish` 的结论栏写 quick_lane 加标签。
 
+gpu-runner 是宿主的东西，不进插件的账：不登记 sessions 账、不写杂账（2026-08-21 gyb 裁，问题 7）。deploy 把完整命令备好——`--run-id` 填 ql_tag、`--track` 填被微调实验的方向——交给 gpu-runner，gpu-runner 只管探卡和发射；跑完的数字由 deploy 自己追加进杂账。
+
 快车道的数字追加进杂账，不进 runs 账（2026-08-17 gyb 裁，sync-inbox 问题 22；`03-ledgers.md` runs 表 `run_id` 那格原来写的「快车道用 `ql_tag`」已删）。ql_tag 当宿主发射器要的 run_id 用，这一点不变。
 
 ## 六、杂账（scratch）的行格式
@@ -63,7 +67,7 @@ gyb 只想先看一眼图的时候走这条：图落 `analysis/scratch/<ql_tag>/
 
 | 这一版 | 必填 |
 |---|---|
-| `open` | `role`（`deploy` 或 `analysis`）、`worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`（deploy） |
+| `open` | `role`（`deploy` 或 `analysis`）；deploy 填 `worktree`、`base_commit`、`branch`，analysis 只填 `dir`——`base_commit`、`branch` 两栏对 analysis 不设（2026-08-21 gyb 裁，问题 1） |
 | 中间版（`status` 仍是 `open`） | 自由，建议 `note`、`metrics` |
 | `merged` | `handoff_id`：写序是先开补单拿到编号再 `rl ql close --merged --handoff ID`，补单那头的 `ql_tag` 栏反过来指这条 scratch 行，两边互指；`merged` 只对 deploy 的快车道开，analysis 的快车道只有 `dropped` |
 | `dropped` | `reason` |
@@ -85,35 +89,41 @@ gyb 只想先看一眼图的时候走这条：图落 `analysis/scratch/<ql_tag>/
 
 gyb 亲自 merge 主分支。deploy 只把命令交出来。
 
-deploy 补一张标了 quick_lane 的工单，六条规矩：
+`rl ql close` 关张时把工作树和同名分支一并删掉，`--merged` 和 `--dropped` 两条路都删（2026-08-21 gyb 裁，问题 8）：合回的代码已经在主分支上，放弃的改动随分支一起没了，gyb 想留就在关张前自己处理；改动留下的记录只剩杂账那几行。关张即清干净，对应第一节总纲。
+
+deploy 补一张标了 quick_lane 的工单，八条规矩：
 
 1. `from_role` 和 `to_role` 都是 deploy。
 2. 验收人固定是 gyb。
 3. 允许新建直接进「干完等待验收」（`done_pending_review`），不经 `todo` 和 `in_progress`。
-4. 只要一份不带文件的简报（`report_paths.method`），带文件的那一份（`detail`）用杂账里的记录顶替。
+4. 只要一份不带文件的简报（`report_paths.method`），放在用快车道标签命名的目录里（`experiments/<ql_tag>/`），拿到单号之后目录名不改（2026-08-21 gyb 裁，问题 3）；带文件的那一份（`detail`）用杂账里的记录顶替。
 5. 解释栏（`explanation`）由 deploy 写，并且抄一句 gyb 点名的原话。
-6. 同时补一条 `decisions.deploy` 记这次改动。
+6. `code_paths` 必填，列出这次改了哪些代码路径，要求和正常工单进 `done_pending_review` 时一样（2026-08-21 gyb 裁，问题 4）。
+7. 同时补一条 `decisions.deploy` 记这次改动。file 类来源按普通规矩填主仓库路径：补决定发生在 gyb 合并之后，那时主树已经是新内容，路径存在、内容也对，不需要指定哪棵树的特殊写法（2026-08-21 gyb 裁，问题 9）。
+8. 这条快车道修的东西是某个角色报上来的 issue 时（发射员报的运行报错是典型），合回时 deploy 回复并关掉那条 issue：发现者一方从收件箱看到修好了，卡住的单子照正常路回到待干，新拉起的发射员接着发。这不是快车道特例，是公共规矩「凡修的东西是账上报过的 issue，修完必须回复并关掉、不许静默修」（2026-08-21 gyb 立，定义处 `09-common-and-feedback.md`）落在快车道上的时点：回复发生在合回那一刻，因为合回之前快车道对主程序不存在、不算修好。
 
 对应的两行转移表（施工计划第四节）：
 
 | 从 | 到 | 谁能写 | 前提 | 之后谁拉起 | 子命令 |
 |---|---|---|---|---|---|
-| （新建） | `done_pending_review` | `deploy`（快车道补单，owner 记 gyb） | `quick_lane` 为 true，`report_paths.method` 存在，`explanation` 非空，`ql_tag` 指的 scratch 行状态是 `open`（补单开完拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指） | 无（等 gyb 验收，只有 gyb 能 accept） | `handoff open --quick-lane` |
+| （新建） | `done_pending_review` | `deploy`（快车道补单，owner 记 gyb） | `quick_lane` 为 true，`report_paths.method` 存在，`explanation` 非空，`code_paths` 非空（2026-08-21 加，问题 4，`04` 冻结表未跟、在要同步的清单里），`ql_tag` 指的 scratch 行状态是 `open`（补单开完拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指） | 无（等 gyb 验收，只有 gyb 能 accept） | `handoff open --quick-lane` |
 | `done_pending_review` | `accepted` | owner；快车道补单只有 gyb | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue（`03` 定） | 无 | `handoff accept` |
 
 开单命令带的三个旗子是 `--quick-lane --report-method P --ql QL`；`QL` 存进单子的 `ql_tag` 栏，和那条 scratch 行互指（字段在 `04-handoffs-and-sessions.md`）。
 
-两处原文不一致：设计文档快车道一节写补单的 `from_role` 和 `to_role` 都是 deploy，施工计划第二节词表写「owner（开单角色，就是 `from_role`）……快车道补单和 gyb 开的单 owner 记 `gyb`」，转移表那一行也写「谁能写 deploy（快车道补单，owner 记 gyb）」。按施工计划的表为准：写这一行的是 deploy，owner 记 gyb。
+从待干转进来的单子（`--from`）不走上表「（新建）」那一行：出口合回时把原单追加一版直达 `done_pending_review`，前提同上表那一栏（简报、`code_paths`、`explanation`、和 scratch 行互指），验收人同样是 gyb，不另开新单，原有的决定引用照留；放弃时追加一版退回 `todo`、去掉 `quick_lane` 标（或 gyb 收回）。这两行 `04` 的转移表要补、子命令名归 `05` 定，都在要同步的清单里（2026-08-21 gyb 裁，问题 6）。
+
+开单动作由 deploy 做，owner 记 gyb（2026-08-21 gyb 裁定稿：验收本来就是 owner 的职责，「已合并」的信息回到点名进快车道的 gyb 手里，也堵死 deploy 自己开自己收；「owner 就是开单角色」的通则要加这一句例外，通则在 `04-handoffs-and-sessions.md`，在要同步的清单里）。设计文档「`from_role` 和 `to_role` 都是 deploy」那句照旧成立，说的是谁干的活。
 
 主分支上永远只有走过工单的代码。
 
 合回之后要正式数字，按正常路再开发射单跑一遍。那张发射单的父单（`parent_id`）就是这张快车道工单。`rl doctor` 有一项扫描是「快车道工单已 accepted 但没有关联发射单」。
 
-快车道补单自己的 `parent_id` 是空的。
+快车道补单自己的 `parent_id` 是空的；从待干转进来的单子保留它原有的引用。
 
 ## 八、快车道在 status、reclaim、doctor 里的位置
 
-没关掉的快车道出现在 `rl status` 里，在段 9（review/ 最近的清单、活着的会话含 focus、没关的快车道）。
+没关掉的快车道出现在 `rl status` 里，在段 9（review/ 最近的清单、活着的会话含 focus、没关的快车道）。按线分组看（`--group-by line`）的时候，没关的快车道不归任何一条研究线，单独列成一堆：杂账行不引决定、算不出线，也不加可选栏（2026-08-21 gyb 裁，问题 10）。
 
 `rl reclaim` 把超期的快车道也列进来：列出超过阈值没动的会话、单子和快车道，`--apply` 才动手。
 
@@ -130,32 +140,31 @@ deploy 补一张标了 quick_lane 的工单，六条规矩：
 
 ## 和别的 part 的接口
 
+（2026-08-21 按定稿重写。标了「在要同步的清单里」的条目是本份裁的、定义处还没跟，落地前以本份为准。）
+
 - handoffs 的 `quick_lane` 布尔、`report_paths` 的 `{"method":...,"detail":...}` 形状、`explanation`、`parent_id`、`code_paths`、`ql_tag` 各自的必填规则：`04-handoffs-and-sessions.md`（`03-ledgers.md` 的 handoffs 一段只指过去）。
-- scratch 每个字段的类型和公共骨架七样：`03-ledgers.md`。
-- 派活单七个状态的全名与完整转移表（本份只抄了快车道相关的两行）：`04-handoffs-and-sessions.md`。
-- `rl ql open/close`、`rl scratch add/list/show`、`rl handoff open --quick-lane`、`rl handoff accept` 的完整参数与退出码：`05-rl-cli.md`。
+- scratch 每个字段的类型和公共骨架七样：`03-ledgers.md`（`open` 版必填 2026-08-21 按问题 1 改成 deploy 三样、analysis 只 `dir`，在要同步的清单里）。
+- 派活单七个状态的全名与完整转移表：`04-handoffs-and-sessions.md`（本份抄了快车道相关的两行；前提加 `code_paths`、`--from` 单的转进与出口两行是 2026-08-21 裁的，在要同步的清单里）。
+- 「owner 就是开单角色」的通则与快车道补单「开单动作 deploy、owner 记 gyb」这条例外：`04-handoffs-and-sessions.md`（例外 2026-08-21 定稿，在要同步的清单里）。
+- sessions 账本体：`04-handoffs-and-sessions.md`（宿主 gpu-runner 不登记 sessions 账是 2026-08-21 裁的，在要同步的清单里）。
+- `rl ql open/close`、`rl scratch add/list/show`、`rl handoff open --quick-lane`、`rl handoff accept` 的完整参数与退出码：`05-rl-cli.md`（`rl ql close` 两条路都删工作树与分支、`--from` 标完单子离开待干、转进单出口那一步的子命令名，都是 2026-08-21 裁的，在要同步的清单里）。
 - 锁 `loop/.lock` 的三步合一规矩、跨账写序：`03-ledgers.md`。
 - 钩子只按仓库内相对路径判、仓库外路径一律放行：`06-hooks-and-permissions.md`。
 - deploy 角色 json 的四栏（含 `dispatches_to` 里的 gpu-runner、reads 里的 `ops/gpu_state.md`）：`06-hooks-and-permissions.md` 和 `11-role-deploy.md`。
 - `quick_lane.worktree_root`、`reclaim.ql_idle_days` 两个键在配置文件里的位置，宿主发射器的命令模板（探卡、发射、收尾、中断：`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`、`launcher.abort_cmd`）与宿主台账清单 `host_ledgers`：`08-trees-init-and-host.md`。
-- `rl status` 十段每段列什么、桌面通知推送表、`rl reclaim` 的全部参数与行为、`rl doctor` 的全部扫描项：`01-gyb.md`。
+- `rl status` 十段每段列什么、桌面通知推送表、`rl reclaim` 的全部参数与行为、`rl doctor` 的全部扫描项：`01-gyb.md`（段 9 里没关的快车道不归线、按线分组时单独列一堆是 2026-08-21 裁的，在要同步的清单里）。
 - 正式重跑那张发射单怎么开、attempt 怎么记、run 怎么接：`11-role-deploy.md`、`12-role-run.md`、`21-pair-deploy-run.md`。
+- 快车道补单的报告目录用 `experiments/<ql_tag>/`、单号事后不改（2026-08-21 裁，在要同步的清单里）；部署报告目录约定本体：`11-role-deploy.md`。
 - `decisions.deploy` 的来源三类与自决的粒度：`02-decisions.md`、`11-role-deploy.md`。
+- 公共规矩「凡修的东西是账上报过的 issue，修完必须回复并关掉、不许静默修」（2026-08-21 gyb 立，在要同步的清单里）与 issues 的 reply/close 机制：`09-common-and-feedback.md`。
 - analysis 的口径账、分析单、`analysis/scratch/` 目录：`13-role-analysis.md`。
 - 入口 skill 的领路卡片全文：`08-trees-init-and-host.md`。
-- 十一条设计原则原文（原则 7 是这一份的根）：`00-overview.md`。
+- 十一条设计原则原文（原则 7 是这一份的根，第一节总纲是它的推论）：`00-overview.md`。
 - 测试 16（快车道）、测试 4 里快车道补单那两句：`30-build-steps-verify-tests.md`。
 
 ## 源文档没写清的（留给 gyb）
 
-1. analysis 的快车道 scratch 开张版怎么填：第三节写 `open` 版必填 `worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`，可 analysis 的快车道既不建 worktree 也不建分支，`base_commit` 和 `branch` 两栏对 analysis 填什么没写。（2026-08-17 按 `03-ledgers.md` 的裁决，`branch` 已改成只对 deploy 的 `open` 版必填；analysis 的 `base_commit` 填什么、要不要 `branch`，03 交这一份裁。）
-3. 快车道补单的报告目录取什么名：设计文档写部署报告放「experiments/ 下这张工单自己的目录」，而快车道补单是新建直达 `done_pending_review`、开单那一刻才分配单号，前提又要求 `report_paths.method` 已经存在。目录名在拿到单号之前取不出来。
-4. 快车道补单要不要 `code_paths`：第三节写 `work_order` 进 `done_pending_review` 时 `code_paths` 必填，第四节快车道那一行的前提只列了 `quick_lane`、`method`、`explanation`、scratch 行状态四条（那一栏 2026-08-17 按问题 8 从 `merged` 改成 `open`），没列 `code_paths`。两处对补单要不要这一栏没说到一起。
-6. `--from ho-ID` 转进快车道之后那张工单怎么走：第六节命令表写 `--from` 把待干工单标 `quick_lane`，第四节转移表里没有「`todo` 的工单转 `quick_lane`」这一行；标完之后单子还在 `todo`、谁接、出快车道时是复用这张单还是另补一张，都没写。
-7. gpu-runner 那一段的规矩：写了 deploy 在快车道里可以派 gpu-runner，可 gpu-runner 起来之后要不要登记 sessions 账、写不写杂账、宿主发射器要的 `--run-id` 和 `--track` 由谁往命令里填，没写。
-8. merge 之后 worktree 和分支怎么处置：合回由 gyb 亲自 merge，merge 完那棵 worktree 和那条同名分支删不删、谁删，没写；`--dropped` 那条路上同样没写。
-9. 补单一并补的那条 `decisions.deploy` 来源填什么：决定来源的 `file` 类要求仓库里的文件路径且路径不存在拒收，快车道改的文件在 worktree 里，主树同路径的内容是旧的，填哪棵树的路径没写。
-10. 快车道的 scratch 行归哪条研究线：handoffs 有 `line`（由 rl 从 `decision_refs` 第一项的 `root_id` 算），scratch 行没有这一栏，`rl status --group-by line` 怎么把没关的快车道归进某条线没写。
+（2026-08-21 全部裁完：第 1、3、4、6、7、8、9、10 条的裁决见当日裁决记录，正文已改；第 2、5 条 2026-08-17 已销。此节清空。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
 
@@ -279,3 +288,27 @@ deploy 补一张标了 quick_lane 的工单，六条规矩：
 - 2026-08-17 对齐定义处（不是新裁决，rl-hub-v3 传）：第七节转移表 `done_pending_review` → `accepted` 那一行照 `04` HEAD 补「rl 顺带关这张单关联的 `answered` issue（`03` 定）」；接口一节 handoffs 字段那条加 `ql_tag`、定义处改指 `04`（`03` 的 handoffs 一段只指过去）。
 - 2026-08-17 rl-hub-v3 按 HANDOFF 第八节问题 16、22 两行的「销」：「源文档没写清的」第 2 条（快车道要不要往 runs 落一行）和第 5 条（analysis 走 `--merged` 补哪张单）已被裁决答掉，整条销掉，编号不重排（照 `08` 销第 5 条的先例）。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：接口一节命令模板与宿主台账清单补键名 `launcher.abort_cmd`、`host_ledgers`。
+- 2026-08-21（gyb，rl-part-07 定稿）总纲：快车道期间的一切对主程序不存在，验证好之后出口一口气合并落账（原话「对于主程序，快车道的东西在验证完之前是不存在的，验证好之后一口气合并到主要的地方」）。第一节补段。
+- 2026-08-21 问题 1 裁 A（原话「A」）：analysis 的 scratch 开张行只填 `dir`，`base_commit`、`branch` 两栏不设、只对 deploy 必填。第六节表改；`03` 冻结，列同步。
+- 2026-08-21 问题 3 裁 A（原话「A」）：快车道补单的报告目录用 ql_tag 命名（`experiments/<ql_tag>/`），拿到单号之后不改名。第七节规矩 4 改；目录约定本体在 `11`，列同步。
+- 2026-08-21 问题 4 裁 A（原话「A」）：补单 `code_paths` 必填，和正常工单一样。第七节规矩 6 加、转移表前提加；`04` 冻结，列同步。
+- 2026-08-21 问题 6 裁 A（gyb 确认「可以」，按总纲）：`--from` 转进的单子离开待干、就是出口的补单，不另开新单；合回追加一版直达 `done_pending_review`，放弃退回 `todo` 去标记。第二节、第七节改；转移表两行归 `04`、子命令名归 `05`，列同步。
+- 2026-08-21 问题 7 裁 A（gyb 确认「可以」）：宿主 gpu-runner 不进插件的账（不登记 sessions、不写杂账）；deploy 备好完整命令交给它，数字由 deploy 记杂账。第五节改；sessions 账定义处 `04`，列同步。
+- 2026-08-21 问题 8 裁 A（gyb 确认「可以」，按总纲关张即清干净）：`rl ql close` 两条路都自动删工作树、删同名分支，记录只剩杂账；gyb 想留在关张前自己处理。第七节改；`rl ql close` 行为归 `05`，列同步。
+- 2026-08-21 问题 9 裁 A（原话「A」）：`decisions.deploy` 的 file 来源按普通规矩填主仓库路径——补决定发生在合并之后，主树已是新内容。第七节规矩 7 补句；`02` 不用改。
+- 2026-08-21 问题 10 裁 A（原话「A」）：快车道不归研究线，`rl status` 按线分组时单独列一堆，不加可选栏。第八节补句；段 9 行为归 `01`，列同步。
+- 2026-08-21 不一致处裁定稿：开单动作 deploy 做，owner 记 gyb；gyb 的本意「修好的信息回报发现者」由下一条公共规矩承担，owner 这栏按原推荐收。「owner 就是开单角色」通则加例外，归 `04`，列同步。
+- 2026-08-21 gyb 立公共规矩（原话「我希望这个是个规则，而不是什么补丁特例」）：凡修的东西是账上报过的 issue，修完必须回复并关掉，发现者从收件箱看到，不许静默修。定义处归 `09`，列同步；本份第七节规矩 8 只写快车道的时点（回复发生在合回那一刻）。
+- 2026-08-21 错误处理机制裁 A（原话「那就选A吧」）：发射员发现报错、落 issue、单子标卡住后销号；修好后单子回待干、拉起新的发射员接单，信息由单子承载——维持 `04`/`12`/`21` 现状，本份正文无改动。
+
+## 要同步到别处的
+
+- `03-ledgers.md`（冻结，等最后一期）：scratch 表 `open` 版必填改成「deploy 填 `worktree`、`base_commit`、`branch`；analysis 只填 `dir`」（问题 1）。
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：转移表快车道「（新建）→ done_pending_review」行前提加「`code_paths` 非空」（问题 4）。
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：转移表补两行——「`todo` 的单 `rl ql open --from` 标 `quick_lane`、离开待干不占 holder」「`quick_lane` 标记的单出口追加一版直达 `done_pending_review`（前提同快车道新建行）／放弃退回 `todo` 去标记」（问题 6）。
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：「owner 就是开单角色」通则加例外「快车道补单开单动作 deploy、owner 记 gyb」（不一致处定稿）。
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：sessions 账补一句「宿主 gpu-runner 不登记 sessions 账」（问题 7）。
+- `05-rl-cli.md`（冻结，等最后一期）：`rl ql close` 行为补「`--merged` 和 `--dropped` 都删工作树与同名分支」（问题 8）；`rl ql open --from` 行为补「单子标 `quick_lane` 并离开待干」；转进单出口追加一版直达 `done_pending_review` 的子命令名归 `05` 定（问题 6）。
+- `01-gyb.md`：`rl status` 段 9／`--group-by line` 补「没关的快车道不归线，单独列一堆」（问题 10）。
+- `09-common-and-feedback.md`：公共规矩加一条「凡修的东西是账上报过的 issue，修完必须回复并关掉那条 issue，不许静默修」（gyb 2026-08-21 立，非快车道特例）。
+- `11-role-deploy.md`：部署报告目录约定补「快车道补单的报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名」（问题 3）。
