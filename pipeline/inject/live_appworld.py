@@ -75,6 +75,13 @@ END_MARK = "<|end|>"
 MAX_BOUNDS = 64            # rules.MAX_BOUNDS 同值:活跑最多查这么多切口(§4.2)
 MAX_STEP_TOKENS = 8192     # 采集时 max_tokens=8192(common.py:20),整步上限对齐
 
+# --preset 合并的兜底缺省。merge_client 只处理 cli∪fallbacks 里出现过的键,
+# 采样键不在这张表里 = 预设写了也静默不生效(2026-08-21 之前 top_p/seed 就是
+# 这么丢的);覆盖面由 tests/test_preset.py 钉着。
+PRESET_FB = {"reasoning_effort": "high", "temperature": 0.0,
+             "max_tokens": MAX_STEP_TOKENS, "stop": DEFAULT_STOP,
+             "top_p": None, "seed": None}
+
 # v4(2026-08-02):与 w0 的 chat 路径逻辑同构。三条对齐:
 # (1) 不预填通道头——prompt 止于 <|start|>assistant,模型自己写
 #     <|channel|>analysis<|message|>,与 chat 渲染逐字节相同;
@@ -219,6 +226,25 @@ def open_stream(base_url, payload, timeout, retries=3):
                 raise
             print(f"    stream retry {att + 1}: {e}", flush=True)
             time.sleep(2 ** att)
+
+
+def sample_extras(a):
+    """top_p/seed 只在显式给了的时候进请求体(envs/collect/common.py 的
+    Chat._sample_extras 同款口径):不给时请求体与加这两个键之前逐字节一致。"""
+    d = {}
+    if getattr(a, "top_p", None) is not None:
+        d["top_p"] = a.top_p
+    if getattr(a, "seed", None) is not None:
+        d["seed"] = a.seed
+    return d
+
+
+def gen_payload(a, prompt, max_tokens):
+    """主生成请求的请求体。预设 client 节的采样键(temperature/top_p/
+    max_tokens/stop/seed)全在这一处落地,tests/test_preset.py 钉着。"""
+    return dict(model=a.model, prompt=prompt, max_tokens=max_tokens,
+                temperature=a.temperature, stop=a.stop,
+                skip_special_tokens=False, **sample_extras(a))
 
 
 def http_json(url, payload, timeout=600, retries=3):
@@ -382,11 +408,8 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
         prompt = list(prefix_ids) + list(gen_ids)
         # 步预算按**留下的** id 算(chat 一步 8192 全是留下的;中断丢弃的溢出
         # 只进 usage 账,不吃预算——否则 nofill 步比别的臂早顶到 length)
-        st = open_stream(a.base_url, dict(
-            model=a.model, prompt=prompt,
-            max_tokens=max(1, a.max_step_tokens - len(gen_ids)),
-            temperature=a.temperature, stop=a.stop,
-            skip_special_tokens=False), a.timeout)
+        st = open_stream(a.base_url, gen_payload(
+            a, prompt, max(1, a.max_step_tokens - len(gen_ids))), a.timeout)
         usage["req"] += 1
         fired = False
         for delta, ids in st:
@@ -549,7 +572,7 @@ def main():
     ap.add_argument("--max-inject-per-step", type=int, default=1)
     ap.add_argument("--preset", default=None,
                     help="configs/presets/<名>.json 的一套生成设置"
-                         "(effort/temperature/步预算/stop);"
+                         "(effort/temperature/top_p/步预算/stop/seed);"
                          "命令行显式给的参数压过预设值")
     ap.add_argument("--effort", default=None,
                     choices=["high", "medium", "low"],
@@ -590,12 +613,13 @@ def main():
     eff = merge_client(
         {"reasoning_effort": a.effort},
         (pre or {}).get("client"),
-        {"reasoning_effort": "high", "temperature": 0.0,
-         "max_tokens": MAX_STEP_TOKENS, "stop": DEFAULT_STOP})
+        PRESET_FB)
     a.effort = eff["reasoning_effort"]
     a.temperature = eff["temperature"]
     a.max_step_tokens = eff["max_tokens"]
     a.stop = eff["stop"]
+    a.top_p = eff["top_p"]
+    a.seed = eff["seed"]
     a.model = (a.model
                or ((pre or {}).get("server") or {}).get("served_model_name")
                or "gpt-oss-120b")
@@ -682,7 +706,7 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
             effort=a.effort, probe=probe_cfg, preset=a.preset,
             gen_settings=dict(temperature=a.temperature,
                               max_step_tokens=a.max_step_tokens,
-                              stop=a.stop),
+                              stop=a.stop, top_p=a.top_p, seed=a.seed),
             chunk_tokens=a.chunk_tokens, tail_tokens=a.tail_tokens,
             max_inject_per_step=a.max_inject_per_step,
             appworld_seed=APPWORLD_SEED, date=time.strftime("%Y-%m-%d")))

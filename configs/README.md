@@ -14,6 +14,23 @@
   start_date / seed，采集器、活跑、回放的 `--preset` 吃，BFCL handler 走
   环境变量 `NEW1_PRESET_JSON`）。节里的 null = 不指定，落到调用方原有缺省。
 
+client 节八个键在四类入口的取用范围（2026-08-21 对齐；此前 top_p/seed 只有
+采集线取，活跑/回放/BFCL 静默吃不到，现在钉在 `tests/test_preset.py` 的
+TestSamplingForwarding 与 TestBfclHandlerPreset）：
+
+| 键 | 采集线(4 个收集器) | BFCL | 活跑 | 回放 |
+|---|---|---|---|---|
+| temperature / top_p / max_tokens / seed | 取 | 取 | 取 | 取 |
+| reasoning_effort | 取(chat/harmony 口径) | 取 | 取 | 不用(effort 定死在被回放的前缀里) |
+| stop | 不取(raw 钉死 `<\|im_end\|>`,chat/harmony 不传) | 不取 | 取 | 取 |
+| api / start_date | 取 | 不取 | 不取 | 不取 |
+
+以后加新采样键，四处一起动：`preset_loader.py` 的 CLIENT_KEYS、
+`envs/collect/common.py` settings_from_args 的兜底、活跑与回放的 PRESET_FB、
+BFCL handler 的预设读取段；`tests/test_preset.py` 的 SAMPLING_KEYS 跟着扩
+（活跑/回放兜底漏键测试会红，另两处靠 TestCollectorEquivalence 与
+TestBfclHandlerPreset 的取值断言盯着）。
+
 三条规矩：
 
 1. 命令行显式给的参数永远压过预设值（merge 逻辑在 `preset_loader.py`）。

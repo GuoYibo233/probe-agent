@@ -155,6 +155,12 @@ PERMIT = ("\n- A line marked [SYSTEM NOTE: prefetched ...] may appear inside "
 FINAL_OPEN = "<|channel|>final<|message|>"
 DEFAULT_STOP = ["<|return|>"]
 
+# --preset 合并的兜底缺省。merge_client 只处理 cli∪fallbacks 里出现过的键,
+# 采样键不在这张表里 = 预设写了也静默不生效(2026-08-21 之前 top_p/seed 就是
+# 这么丢的);覆盖面由 tests/test_preset.py 钉着。
+PRESET_FB = {"max_tokens": 8192, "temperature": 0.0, "stop": DEFAULT_STOP,
+             "top_p": None, "seed": None}
+
 # 这些 inject_source 没有可注入的内容,inject 臂不发请求(但照样占省 token 的分母)。
 # "none" = skip 档猜错;"exec_pending" = execute 档还没跑 exec 段;
 # "exec_missing" = execute 段没给出记录(unit 中途炸了 / 该步轨迹里没执行过)。
@@ -704,6 +710,25 @@ def spliced_tail(arm, p, form_table):
     return sk if arm == "skel_b" else FENCE_OPEN + sk
 
 
+def sample_extras(a):
+    """top_p/seed 只在显式给了的时候进请求体(envs/collect/common.py 的
+    Chat._sample_extras 同款口径):不给时请求体与加这两个键之前逐字节一致。"""
+    d = {}
+    if getattr(a, "top_p", None) is not None:
+        d["top_p"] = a.top_p
+    if getattr(a, "seed", None) is not None:
+        d["seed"] = a.seed
+    return d
+
+
+def gen_payload(a, prompt):
+    """塞法回放主生成请求的请求体。预设 client 节的采样键(temperature/
+    top_p/max_tokens/stop/seed)全在这一处落地,tests/test_preset.py 钉着。"""
+    return dict(model=a.model, prompt=prompt, max_tokens=a.max_tokens,
+                temperature=a.temperature, stop=a.stop,
+                skip_special_tokens=False, **sample_extras(a))
+
+
 def post_completions(base_url, payload, timeout, retries=4):
     url = base_url.rstrip("/") + "/completions"
     body = json.dumps(payload).encode()
@@ -735,10 +760,12 @@ def cmd_run(a):
     eff = merge_client(
         {"max_tokens": a.max_tokens},
         (pre or {}).get("client"),
-        {"max_tokens": 8192, "temperature": 0.0, "stop": DEFAULT_STOP})
+        PRESET_FB)
     a.max_tokens = eff["max_tokens"]
     a.temperature = eff["temperature"]
     a.stop = eff["stop"]
+    a.top_p = eff["top_p"]
+    a.seed = eff["seed"]
 
     plan_path = Path(a.plan)
     out_dir = plan_path.parent
@@ -824,10 +851,7 @@ def cmd_run(a):
                         baseline_out_tok=p["baseline_out_tok"],
                         tail=prompt[-160:])
         t0 = time.time()
-        r = post_completions(a.base_url, dict(
-            model=a.model, prompt=prompt, max_tokens=a.max_tokens,
-            temperature=a.temperature, stop=a.stop,
-            skip_special_tokens=False), a.timeout)
+        r = post_completions(a.base_url, gen_payload(a, prompt), a.timeout)
         ch = r["choices"][0]
         return dict(event=p["event"], arm=arm, text=ch["text"],
                     finish_reason=ch.get("finish_reason"),
@@ -1296,7 +1320,8 @@ def main():
                         "赋值形;文件不在就一律 print 形")
     p.add_argument("--preset", default=None,
                    help="configs/presets/<名>.json 的一套生成设置"
-                        "(temperature/max_tokens/stop);命令行显式给的压过预设值")
+                        "(temperature/top_p/max_tokens/stop/seed);"
+                        "命令行显式给的压过预设值")
     # 采集时 max_tokens=8192(envs/collect/common.py 的 Chat 缺省)。设小了 nofill
     # 会被截断,与 baseline 不可比 —— 单步 baseline_out_tok 实测有到 5681 的
     p.add_argument("--max-tokens", type=int, default=None,
