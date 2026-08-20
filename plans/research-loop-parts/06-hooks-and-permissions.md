@@ -286,7 +286,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - gyb 的豁免范围从 gyb 那头怎么用、裸终端就是 gyb 这条推论：写在 `01-gyb.md`。
 - 快车道里 deploy 派 gpu-runner 这条 `dispatches_to` 的例外：写在 `07-quick-lane.md`。
 - 插件树里 hooks/（一份插件级钩子文件）、`agents/`（五份角色 agent 定义）、monitors/、tables/roles/ 摆在哪，`rl init` 往 CLAUDE.md 追加那一节的时机，宿主脏树白名单那处改动，阈值表：写在 `08-trees-init-and-host.md`。钩子路径白名单是配置里的一项，落在 `08` 的阈值表（本份 2026-08-18 加，列在「要同步到别处的」）。
-- 公共母版八条规矩（尤其第 8 条出圈即留痕）、`common/READING.md`、`rules_version` 与母版改动流程：写在 `09-common-and-feedback.md`。本份 2026-08-18 加的三句要进那边：第 8 条补「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写」（Bash 进钩子匹配范围后按问题 38 改的措辞）；母版加「一个会话只加载一个角色，要换角色另开会话」；`rules_version` 一节补「角色 json 改动同流程」，同日再补「角色 agent 定义改动同流程」（问题 38）。
+- 公共母版九条规矩（尤其第 8 条出圈即留痕、第 9 条修必销案，rule-09 2026-08-21 立）、`common/READING.md`、`rules_version` 与母版改动流程：写在 `09-common-and-feedback.md`。本份 2026-08-18 加的三句要进那边：第 8 条补「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写」（Bash 进钩子匹配范围后按问题 38 改的措辞）；母版加「一个会话只加载一个角色，要换角色另开会话」；`rules_version` 一节补「角色 json 改动同流程」，同日再补「角色 agent 定义改动同流程」（问题 38）。
 - 待验证清单每条的测法、通过标准、失败备案，测试 8 和测试 13 在施工步骤里的位置：写在 `30-build-steps-verify-tests.md`。第 2 条（头部钩子带参数）2026-08-18 已测通过、备案作废；「`${CLAUDE_PLUGIN_DATA}` 解析到哪」那半条同日撤销（状态文件改放 `loop/.sessions/`）。
 - 五份角色 json 的副本、每个角色的 use case 表和干活流程：写在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`。副本要跟本份一字不差：2026-08-18 改了 idea 的 `writes`（`notes/`）、五份的 `reads` 写法、deploy 的 `dispatches_to` 写法（备注移到表下）；每份 SKILL.md 要加两句纪律（Bash 绕钩子、一会话一角色）。
 - deploy 改宿主文件的三条纪律、reviewer 的读顺序：写在 `11-role-deploy.md` 和 `14-role-reviewer.md`。
@@ -450,6 +450,7 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：run 那张 json 表 `reads` 加 feedback（五个角色齐了）；「五栏是什么」一节末补一句 SKILL.md 骨架是 `common/SPEC-TEMPLATE.md` 五栏、「可用工具」只指到角色 json。对回原则 5、6、8。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传；gyb 原话「剩下的建议我确认」「你就说我也定了，让统筹给06 00也改了」）：待验证第 8 条实测结论落地——钩子一份放插件级 `hooks/hooks.json`，不写在 skill 头部；脚本先按 `agent_type` 判角色（不认识的最严）、没有才按 `loop/.sessions/<session_id>.json`；状态文件由同一份钩子文件里的钩子在加载角色 skill 时写、`agent_type` 非空不写；「共用一个脚本、参数报角色名」写法作废；加 `agents/` 层五份角色 agent 定义只塑形不带钩子、派活一律用它们起 subagent、init 不播不动 settings；钩子匹配范围加 Bash（解析重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径并 realpath），第一层、第三层、「放行什么」、公共规矩第 8 条那句照改。对回原则 2、8。两处空白等 gyb（sync-inbox 问题 38）：「Bash 绕钩子不许」纪律句改成什么；agent 定义改动走不走母版流程。
 - 2026-08-18 gyb 裁（sync-inbox 问题 38，rl-hub-v5 问，原话「b」「a」）：38-1 纪律句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`」，第三层那句照改，`09` rule-08 与五份角色 SKILL.md 同句同改；38-2 角色 agent 定义改一处算改母版，走角色 json 同一个流程，`agents/` 那段照改，`09` 第四节补一句。对回原则 2、9。
+- 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：接口一节公共母版八条规矩改九条（rule-09「修必销案」2026-08-21 gyb 立，定义处 `09`）。
 
 ## 要同步到别处的
 

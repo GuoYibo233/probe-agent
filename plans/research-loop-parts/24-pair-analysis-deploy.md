@@ -24,7 +24,7 @@ kind 从九种里挑：`cannot`（干不了）、`not_mine`（不归我干）、
 
 `handoff_id` 这一栏，issues 的行格式规定 `cannot`、`failed`、`denied`、`withdrawn`、`orphaned` 五种 kind 必填，其余可选（施工计划第三节）。analysis 发现代码问题的时候手上一般正拿着一张 `analysis_order`，填的就是这张单子的编号。
 
-开给 deploy 的 issue 不发桌面通知。桌面通知只在 `assignee` 是 `gyb` 的那一版触发，含首次开单（施工计划第三节 issues、第六节 `rl notify` 的推送表）。这条 issue 露头的地方是 deploy 的 `rl inbox`，那里列「本角色名下 open 的 issue」。`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 deploy 会话先干拉它起来的那张单。
+桌面通知这一版不做（2026-08-21 gyb 裁，定义处 `01`）；`assignee` 是 `gyb` 的那一版（含首次开单）进 `rl status` 段 2。开给 deploy 的这条 issue 露头的地方是 deploy 的 `rl inbox`，那里列「本角色名下 open 的 issue」。`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 deploy 会话先干拉它起来的那张单。
 
 ## 要不要把手上的分析单标 stuck
 
@@ -44,7 +44,7 @@ deploy 在 `rl inbox` 里看到这条 issue，先按公共规矩第 6 条判病�
 
 回复的命令是 `rl issue reply ID --text`，写完这条 issue 到 `answered` 状态，`reply` 这一栏在 `answered` 那一版必填。写权限定在 assignee 或 gyb 手里（施工计划第三节 issues），这里 assignee 是 deploy。
 
-deploy 解决不了就改派 gyb，命令是 `rl issue reassign ID --to gyb`。改派等于追加一版换 `assignee`，`assignee` 变成 `gyb` 的这一版触发桌面通知。
+deploy 解决不了就改派 gyb，命令是 `rl issue reassign ID --to gyb`。改派等于追加一版换 `assignee`，`assignee` 变成 `gyb` 的这一版进 `rl status` 段 2（桌面通知 2026-08-21 裁掉不做）。
 
 ## 谁 close
 
@@ -63,7 +63,7 @@ close 的写权是「开单的 actor 或 gyb，通知类 issue 的 assignee 也�
 | 1 | analysis | `rl issue open --to deploy --kind K --text [--handoff ID]` | issues 一版，status `open`，assignee `deploy` |
 | 2（可选） | analysis | `rl handoff stuck ID --issue ID` | handoffs 一版，status `stuck`，holder 清空并记进 `last_holder` |
 | 3 | deploy | `rl issue reply ID --text` | issues 一版，status `answered`，`reply` 必填 |
-| 3 的岔路 | deploy | `rl issue reassign ID --to gyb` | issues 一版换 `assignee`，触发桌面通知 |
+| 3 的岔路 | deploy | `rl issue reassign ID --to gyb` | issues 一版换 `assignee`，进 `rl status` 段 2 |
 | 4 | deploy | 改 `experiments/` 里的代码 | 改变实验结果时 `decisions.deploy.jsonl` 一版，来源填改动的文件路径 |
 | 5 | deploy 或 owner | `rl handoff resume ID` | handoffs 一版，status 回 `todo`，之后 owner 拉起 |
 | 6 | analysis 或 gyb | `rl issue close ID` | issues 一版，status `closed` |
@@ -149,3 +149,4 @@ close 的写权是「开单的 actor 或 gyb，通知类 issue 的 assignee 也�
 - 2026-08-17 gyb 裁（sync-inbox 问题 3，原话「按照08吧」，rl-hub 转来）：阈值表定义处是 `08-trees-init-and-host.md` 第三节，接口一节的指向照改。
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：「谁 close」一节两处自动关改成只有 `rl handoff accept` 一处，`rl inbox` 只读不关、通知类 issue 由收件人做完了自己关；close 写权那句加「通知类 issue 的 assignee 也能关」。
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：「analysis 这一头：开单填什么」一节「deploy 上线的第一个动作就是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 deploy 会话先干拉它起来的那张单」。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：三处「触发桌面通知」按「桌面通知这一版不做」改成「进 `rl status` 段 2」。对回原则 6。

@@ -129,7 +129,7 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 | 6 | 过版的单子和 retired 决定名下的活单 |
 | 7 | holder 会话超过 `status.stale_holder_minutes` 没写账的开干单 |
 | 8 | 等裁的 feedback |
-| 9 | `review/` 最近的清单、活着的会话（含 focus）、没关的快车道 |
+| 9 | `review/` 最近的清单、活着的会话（含 focus）、没关的快车道（不归线：`--group-by line` 时单独列一堆，2026-08-21 裁，定义处 `07`） |
 | 10 | 上次 doctor 没修的 |
 
 `--json` 每行至少含 `id`、`work_type`、`owner`、`holder`、`holder_alive`、`status`、`age_hours`、`line`、`decision_refs`、`batch`、`log_path`、`watch_cmd`。可以按 batch 或根决定（`line`）归组。
@@ -496,16 +496,17 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-21 gyb 裁（没写清第 6 条前半，原话「都按推荐来」）：gyb 交代 reviewer 审哪条决定不加接口，开会话时口头说，reviewer 照交代打 `rl session focus` 登记，登记即痕迹。对回原则 5。
 - 2026-08-21 gyb 裁（没写清第 6 条后半，原话「都按推荐来」）：gyb 看完 `review/` 清单后的动作不新加登记，废决定、收单、开 issue 各落各的账，清单不标处理状态。对回原则 4。
 - 2026-08-21 gyb 裁（没写清第 8 条，原话「甲」）：sessions 账 `model` 是 `unknown` 的事后走追加一版补真实模型名、doctor 附现成命令、不加新命令——与 `05` 定稿 2026-08-17 已定的 `rl session amend ID --model M` 是同一个值，本条是确认，不需要同步。对回原则 4。
+- 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：`rl status` 段 9 补「没关的快车道不归线，按线分组时单独列一堆」。对回原则 6。
 
 ## 要同步到别处的
 
 以下全部出自 2026-08-21 的两条裁决「桌面通知不做」「定期提醒不做」（第五、六节）：
 
-- `05-rl-cli.md`（冻结，只报不催）：「rl notify」一节（含 `rl notify --text` 签名行）删掉，命令表如有该行同删；接口一节「待验证清单十一条（含第 6 条桌面通知、第 7 条定时提醒……）」那句里这两条改成「已销」。
-- `04-handoffs-and-sessions.md`（冻结，只报不催）：第 164 行附近「`rl reclaim` 是兜底，由 gyb 定期手动跑，定时提醒每 `notify.reminder_days`（默认 7）天叫他一次」后半句删掉，改成「gyb 自己记得定期手动跑」。
-- `08-trees-init-and-host.md`：阈值表删 `notify.reminder_days` 一行；入口 skill 领路「收到定期提醒：…」那条触发词改成 gyb 自己定期开工，路线不变；`research-loop.json` 键表如列 `notify.*` 同删。
-- `09-common-and-feedback.md`：issues 一节「`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`」改成「`assignee` 是 `gyb` 的进 `rl status` 段 2，其余进角色的 `rl inbox`」；「三条阈值 …`notify.reminder_days` 写在 `research-loop.json` 里」那句删掉这个键。`03-ledgers.md`（冻结，只报不催）issues 行格式写了两遍处如有同句同改。
-- `30-build-steps-verify-tests.md`：待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）销掉，失败备案转正为正案。
-- `00-overview.md`（已定稿）：原则 6 推论里「桌面通知只是 gyb 收件箱里几段的推送，哪几段推送写成一张表」那半句与通知裁掉冲突，怎么改归 `00` 裁。
-- 引用处措辞（都指本份为定义处，指向不变、字面要改）：`07-quick-lane.md:141`、`10-role-idea.md:177`、`11-role-deploy.md:170`、`20-pair-idea-deploy.md:121`、`25-pair-reviewer-idea.md:76` 里「桌面通知推送表 / 哪几段推送」字样改成「桌面通知这一版不做」；`22-pair-idea-analysis.md:59`「桌面通知按推送表走…」整句、`24-pair-analysis-deploy.md:27/47/66` 三处「触发桌面通知」按同一口径改。
-- `14-role-reviewer.md`：reviewer 开工登记那句补「照 gyb 口头交代登记」（2026-08-21 裁，gyb 侧定义在本份第一节第 6 件事）。
+- `05-rl-cli.md`（冻结，只报不催）：「rl notify」一节（含 `rl notify --text` 签名行）删掉，命令表如有该行同删；接口一节「待验证清单十一条（含第 6 条桌面通知、第 7 条定时提醒……）」那句里这两条改成「已销」。（记 sync-inbox 问题 40，等最后一期，2026-08-21 rl-hub-v5）
+- `04-handoffs-and-sessions.md`（冻结，只报不催）：第 164 行附近「`rl reclaim` 是兜底，由 gyb 定期手动跑，定时提醒每 `notify.reminder_days`（默认 7）天叫他一次」后半句删掉，改成「gyb 自己记得定期手动跑」。（记 sync-inbox 问题 40，等最后一期，2026-08-21 rl-hub-v5）
+- `08-trees-init-and-host.md`：阈值表删 `notify.reminder_days` 一行；入口 skill 领路「收到定期提醒：…」那条触发词改成 gyb 自己定期开工，路线不变；`research-loop.json` 键表如列 `notify.*` 同删。（已同步 2026-08-21 rl-hub-v5）
+- `09-common-and-feedback.md`：issues 一节「`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`」改成「`assignee` 是 `gyb` 的进 `rl status` 段 2，其余进角色的 `rl inbox`」；「三条阈值 …`notify.reminder_days` 写在 `research-loop.json` 里」那句删掉这个键。`03-ledgers.md`（冻结，只报不催）issues 行格式写了两遍处如有同句同改。（已同步 2026-08-21 rl-hub-v5；`03` 写两遍那句并进问题 40）
+- `30-build-steps-verify-tests.md`：待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）销掉，失败备案转正为正案。（已同步 2026-08-21 rl-hub-v5）
+- `00-overview.md`（已定稿）：原则 6 推论里「桌面通知只是 gyb 收件箱里几段的推送，哪几段推送写成一张表」那半句与通知裁掉冲突，怎么改归 `00` 裁。（已同步 2026-08-21 rl-hub-v5：原则 6 那半句统筹按「桌面通知不做」改掉，`00` 裁决记录补行）
+- 引用处措辞（都指本份为定义处，指向不变、字面要改）：`07-quick-lane.md:141`、`10-role-idea.md:177`、`11-role-deploy.md:170`、`20-pair-idea-deploy.md:121`、`25-pair-reviewer-idea.md:76` 里「桌面通知推送表 / 哪几段推送」字样改成「桌面通知这一版不做」；`22-pair-idea-analysis.md:59`「桌面通知按推送表走…」整句、`24-pair-analysis-deploy.md:27/47/66` 三处「触发桌面通知」按同一口径改。（已同步 2026-08-21 rl-hub-v5，七份九处全改）
+- `14-role-reviewer.md`：reviewer 开工登记那句补「照 gyb 口头交代登记」（2026-08-21 裁，gyb 侧定义在本份第一节第 6 件事）。（已同步 2026-08-21 rl-hub-v5）

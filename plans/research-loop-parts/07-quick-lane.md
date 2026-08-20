@@ -152,7 +152,7 @@ deploy 补一张标了 quick_lane 的工单，八条规矩：
 - 钩子只按仓库内相对路径判、仓库外路径一律放行：`06-hooks-and-permissions.md`。
 - deploy 角色 json 的四栏（含 `dispatches_to` 里的 gpu-runner、reads 里的 `ops/gpu_state.md`）：`06-hooks-and-permissions.md` 和 `11-role-deploy.md`。
 - `quick_lane.worktree_root`、`reclaim.ql_idle_days` 两个键在配置文件里的位置，宿主发射器的命令模板（探卡、发射、收尾、中断：`launcher.free_cmd`、`launcher.launch_cmd`、`launcher.finish_cmd`、`launcher.abort_cmd`）与宿主台账清单 `host_ledgers`：`08-trees-init-and-host.md`。
-- `rl status` 十段每段列什么、桌面通知推送表、`rl reclaim` 的全部参数与行为、`rl doctor` 的全部扫描项：`01-gyb.md`（段 9 里没关的快车道不归线、按线分组时单独列一堆是 2026-08-21 裁的，在要同步的清单里）。
+- `rl status` 十段每段列什么（桌面通知与推送表 2026-08-21 裁掉不做）、`rl reclaim` 的全部参数与行为、`rl doctor` 的全部扫描项：`01-gyb.md`（段 9 里没关的快车道不归线、按线分组时单独列一堆是 2026-08-21 裁的，在要同步的清单里）。
 - 正式重跑那张发射单怎么开、attempt 怎么记、run 怎么接：`11-role-deploy.md`、`12-role-run.md`、`21-pair-deploy-run.md`。
 - 快车道补单的报告目录用 `experiments/<ql_tag>/`、单号事后不改（2026-08-21 裁，在要同步的清单里）；部署报告目录约定本体：`11-role-deploy.md`。
 - `decisions.deploy` 的来源三类与自决的粒度：`02-decisions.md`、`11-role-deploy.md`。
@@ -300,15 +300,16 @@ deploy 补一张标了 quick_lane 的工单，八条规矩：
 - 2026-08-21 不一致处裁定稿：开单动作 deploy 做，owner 记 gyb；gyb 的本意「修好的信息回报发现者」由下一条公共规矩承担，owner 这栏按原推荐收。「owner 就是开单角色」通则加例外，归 `04`，列同步。
 - 2026-08-21 gyb 立公共规矩（原话「我希望这个是个规则，而不是什么补丁特例」）：凡修的东西是账上报过的 issue，修完必须回复并关掉，发现者从收件箱看到，不许静默修。定义处归 `09`，列同步；本份第七节规矩 8 只写快车道的时点（回复发生在合回那一刻）。
 - 2026-08-21 错误处理机制裁 A（原话「那就选A吧」）：发射员发现报错、落 issue、单子标卡住后销号；修好后单子回待干、拉起新的发射员接单，信息由单子承载——维持 `04`/`12`/`21` 现状，本份正文无改动。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节推送表字样按「桌面通知这一版不做」改。对回原则 6。
 
 ## 要同步到别处的
 
-- `03-ledgers.md`（冻结，等最后一期）：scratch 表 `open` 版必填改成「deploy 填 `worktree`、`base_commit`、`branch`；analysis 只填 `dir`」（问题 1）。
-- `04-handoffs-and-sessions.md`（冻结，等最后一期）：转移表快车道「（新建）→ done_pending_review」行前提加「`code_paths` 非空」（问题 4）。
-- `04-handoffs-and-sessions.md`（冻结，等最后一期）：转移表补两行——「`todo` 的单 `rl ql open --from` 标 `quick_lane`、离开待干不占 holder」「`quick_lane` 标记的单出口追加一版直达 `done_pending_review`（前提同快车道新建行）／放弃退回 `todo` 去标记」（问题 6）。
-- `04-handoffs-and-sessions.md`（冻结，等最后一期）：「owner 就是开单角色」通则加例外「快车道补单开单动作 deploy、owner 记 gyb」（不一致处定稿）。
-- `04-handoffs-and-sessions.md`（冻结，等最后一期）：sessions 账补一句「宿主 gpu-runner 不登记 sessions 账」（问题 7）。
-- `05-rl-cli.md`（冻结，等最后一期）：`rl ql close` 行为补「`--merged` 和 `--dropped` 都删工作树与同名分支」（问题 8）；`rl ql open --from` 行为补「单子标 `quick_lane` 并离开待干」；转进单出口追加一版直达 `done_pending_review` 的子命令名归 `05` 定（问题 6）。
-- `01-gyb.md`：`rl status` 段 9／`--group-by line` 补「没关的快车道不归线，单独列一堆」（问题 10）。
-- `09-common-and-feedback.md`：公共规矩加一条「凡修的东西是账上报过的 issue，修完必须回复并关掉那条 issue，不许静默修」（gyb 2026-08-21 立，非快车道特例）。
-- `11-role-deploy.md`：部署报告目录约定补「快车道补单的报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名」（问题 3）。
+- `03-ledgers.md`（冻结，等最后一期）：scratch 表 `open` 版必填改成「deploy 填 `worktree`、`base_commit`、`branch`；analysis 只填 `dir`」（问题 1）。（记 sync-inbox 问题 41，等最后一期，2026-08-21 rl-hub-v5）
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：转移表快车道「（新建）→ done_pending_review」行前提加「`code_paths` 非空」（问题 4）。（记 sync-inbox 问题 41，等最后一期，2026-08-21 rl-hub-v5）
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：转移表补两行——「`todo` 的单 `rl ql open --from` 标 `quick_lane`、离开待干不占 holder」「`quick_lane` 标记的单出口追加一版直达 `done_pending_review`（前提同快车道新建行）／放弃退回 `todo` 去标记」（问题 6）。（记 sync-inbox 问题 41，等最后一期，2026-08-21 rl-hub-v5）
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：「owner 就是开单角色」通则加例外「快车道补单开单动作 deploy、owner 记 gyb」（不一致处定稿）。（记 sync-inbox 问题 41，等最后一期，2026-08-21 rl-hub-v5）
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：sessions 账补一句「宿主 gpu-runner 不登记 sessions 账」（问题 7）。（记 sync-inbox 问题 41，等最后一期，2026-08-21 rl-hub-v5）
+- `05-rl-cli.md`（冻结，等最后一期）：`rl ql close` 行为补「`--merged` 和 `--dropped` 都删工作树与同名分支」（问题 8）；`rl ql open --from` 行为补「单子标 `quick_lane` 并离开待干」；转进单出口追加一版直达 `done_pending_review` 的子命令名归 `05` 定（问题 6）。（记 sync-inbox 问题 41，等最后一期，2026-08-21 rl-hub-v5）
+- `01-gyb.md`：`rl status` 段 9／`--group-by line` 补「没关的快车道不归线，单独列一堆」（问题 10）。（已同步 2026-08-21 rl-hub-v5）
+- `09-common-and-feedback.md`：公共规矩加一条「凡修的东西是账上报过的 issue，修完必须回复并关掉那条 issue，不许静默修」（gyb 2026-08-21 立，非快车道特例）。（已同步 2026-08-21 rl-hub-v5：立为 rule-09，标题与各处「八条」改九条）
+- `11-role-deploy.md`：部署报告目录约定补「快车道补单的报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名」（问题 3）。（已同步 2026-08-21 rl-hub-v5）

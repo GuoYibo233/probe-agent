@@ -18,7 +18,7 @@ reviewer 还有一项职责（2026-08-17 随 `05` 定稿裁）：判断类检查
 
 reviewer 和其余四个角色一样，`rl inbox` 谁需要谁敲，不是上线动作：被 gyb 开起来先干 gyb 点名的那件事。inbox 列四类东西：本角色名下 open 的 issue、owner 是本角色而 holder 为空的单子、本会话手上单子引的过版决定、发给本角色的通知，再加本角色提的 feedback 的裁决。
 
-reviewer 开工时 `rl session focus --decision ID` 记一下在审什么。这一行落在 sessions 账的 `focus` 字段上，`rl status` 的活着会话那一段把它带出来，gyb 因此在 reviewer 还没落盘清单的时候就看得见有人在审哪条决定。
+审哪条决定由 gyb 开会话时口头交代，不另加接口（2026-08-21 gyb 裁，定义处 `01` 第一节）；reviewer 开工时照交代打 `rl session focus --decision ID` 记一下在审什么。这一行落在 sessions 账的 `focus` 字段上，`rl status` 的活着会话那一段把它带出来，gyb 因此在 reviewer 还没落盘清单的时候就看得见有人在审哪条决定。
 
 `session focus` 这条命令在角色 json 里是 reviewer 独有的写命令，别的角色调不动。
 
@@ -232,3 +232,4 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：判断类检查问题清单带上文件名 `common/REVIEW-CHECKLIST.md`（第一节、第八节两处）；两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写。对回原则 8。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：开工登记那句补「审哪条决定由 gyb 口头交代，reviewer 照交代登记」。对回原则 5。

@@ -11,15 +11,15 @@
 | 文件 | 标题 | 覆盖什么 | 行数 | 留给 gyb 的点 | 附的第二轮摩擦 | 状态 |
 |---|---|---|---|---|---|---|
 | `00-overview.md` | 总览 | 目标、十一条原则全文、九条裁决、（a）到（i）待裁改动、没采纳的九条、改掉的十六条、两轮模拟说明、这套文档的索引 | 316 | 7 | 18 | 已定稿 `6ea0edc`（2026-08-18，rl-part-00；六条同步事项 rl-hub-v4 已传） |
-| `01-gyb.md` | gyb 自己做的事与收件箱 | gyb 亲自做的七件事、身份规矩、gyb 的 use case 表、rl status 十段、推送表、定期提醒 | 485 | 8 | 约 80 | 未开 |
+| `01-gyb.md` | gyb 自己做的事与收件箱 | gyb 亲自做的七件事、身份规矩、gyb 的 use case 表、rl status 十段、推送表、定期提醒 | 485 | 8 | 约 80 | 已定稿 `cd569ab`（2026-08-21，rl-part-01；同步事项 rl-hub-v5 已传，桌面通知与定期提醒都裁掉不做，动到冻结三份的记「冻结后待议」问题 40） |
 | `02-decisions.md` | 决定账 | 六个文件、行格式、来源三类与锚点、编号版本、root_id 与 line、update/confirm/retire/merge、过版与 reissue、reviewer 基准按 actor、rl decision 子命令 | 383 | 8 | 29 | 已定稿 `7549704`（2026-08-18，rl-part-02；六条同步事项 rl-hub-v4 已传，动到冻结三份的三处记「冻结后待议」） |
 | `03-ledgers.md` | 九本账行格式 | 总规矩、公共骨架七样、七本账的字段级行格式（decisions 指 02、handoffs 指 04）、退出码 | 462 | 9 | 约 60 | **冻结 `884ac0b`**（2026-08-17 gyb 定；定稿 `a5d05d4`，收问题 6–31 `81377ac`/`884ac0b`） |
 | `04-handoffs-and-sessions.md` | 派活单与会话 | handoffs 行格式、七个状态与 holder 不变量、六栏转移表全文、三种 dispatch、交付物与验收人、销号钩子、sessions 账与 rl session、reclaim 全部规矩、三种通知 | 511 | 8 | 约 90 | **冻结 `9b78d7c`**（2026-08-17 gyb 定；定稿 `130ec90`，收问题 7–30 `a7d1ec9`/`cec2cc9`/`9b78d7c`） |
 | `05-rl-cli.md` | rl 命令总表 | actor 判定、命令表全文、退出码与 --json、锁、inbox、trace、status 十段、reclaim、doctor 十九项、notify | 635 | 13 | 约 100 | **冻结 `77213e5`**（2026-08-17 gyb 定；定稿 `656c8a9`，收问题 6–31 `1b37593`/`2c965d9`/`2dcdd23`/`ddafd84`/`77213e5`） |
 | `06-hooks-and-permissions.md` | 分权、钩子、角色 json | 三层约束、钩子拦放、回话指路、钩子绑角色、CLAUDE.md 三句、角色 json 五栏与五份内容、test_skill_refs、读的纪律 | 398 | 11 | 约 40 | 已定稿 `d430192`（2026-08-18，rl-part-06；十条同步事项 rl-hub-v4 已传，动到冻结 04/05 的两处记「冻结后待议」问题 35） |
-| `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 未开 |
+| `07-quick-lane.md` | 快车道 | 进（ql open）、中间（deploy、analysis、GPU 走宿主）、杂账行格式、出（ql close 两条路、补单规矩）、在 status/reclaim/doctor 里的位置、阈值 | 270 | 10 | 约 30 | 已定稿 `7a01842`（2026-08-21，rl-part-07；同步事项 rl-hub-v5 已传，动到冻结三份的记「冻结后待议」问题 41，新公共规矩 rule-09 落 `09`） |
 | `08-trees-init-and-host.md` | 两棵树、init、宿主对接 | init 建什么、research-loop.json 的键、阈值表全文、插件树、入口 skill、迁移、new1 宿主对接逐条 | 278 | 10 | 约 26 | 已定稿 `eb02403`（2026-08-18，rl-part-08；十二条同步事项 rl-hub-v5 已传，动到冻结三份的三条记「冻结后待议」问题 39，纪律句改法与 agent 定义母版流程立问题 38 等 gyb） |
-| `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩八条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 已定稿 `aaca3c9`（2026-08-18，rl-part-09；十条同步事项 rl-hub-v5 已传，动到冻结三份的五处记「冻结后待议」问题 37，retire 理由栏立问题 36 等 gyb） |
+| `09-common-and-feedback.md` | 公共母版、反馈账、issues、grants | common/ 四个文件、只引用不抄、公共规矩九条、rules_version、feedback 账、issues 账九种 kind 与 reply/close、grants 账 | 349 | 10 | 约 50 | 已定稿 `aaca3c9`（2026-08-18，rl-part-09；十条同步事项 rl-hub-v5 已传，动到冻结三份的五处记「冻结后待议」问题 37，retire 理由栏立问题 36 等 gyb） |
 | `10-role-idea.md` | idea 角色 | 职责、use case 表、四栏、收件箱、决定落账、开工单、开分析单、验收打回、收回重派拉起、申请读 notes、模型 | 359 | 11 | 约 55 | 未开 |
 | `11-role-deploy.md` | deploy 角色 | 写权、报告与 code_paths、自决、宿主文件三条纪律、开发射单、后台起 run 与验收、卡住之后、补报告提验收、快车道里的 deploy、四栏 | 381 | 7 | 约 56 | 未开 |
 | `12-role-run.md` | run 角色 | 认领与整 batch、gpu-run 八阶段对照、探卡、smoke 与分步计时、发射、runs 三版、看门狗、四种失败、6a/6b、中断、四栏、和宿主的关系 | 384 | 11 | 59 | 未开 |

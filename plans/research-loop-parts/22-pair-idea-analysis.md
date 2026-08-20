@@ -56,7 +56,7 @@ analysis 交活写 `output_paths`，格式是 `{"notebook":..., "figures":[...]}
 
 analysis 会话销号的时候，如果它是某张 `in_progress` 分析单的 holder，销号钩子把单子 release 回 `todo`、自动填 `progress_note`、给 owner 开一条 `orphaned` 通知。
 
-桌面通知按推送表走（施工计划第六节 `rl notify` 那一行）：单子进 `done_pending_review` 且 owner 是 `gyb` 或者 `dispatch=manual` 的时候推送。owner 是 idea 的分析单交活之后不推送桌面通知，进 idea 的 `rl inbox` 和 `rl status` 的等验收那一段。
+桌面通知这一版不做（2026-08-21 gyb 裁，定义处 `01`）。分析单交活进 `done_pending_review` 之后：owner 是 idea 的进 idea 的 `rl inbox` 和 `rl status` 的等验收那一段；owner 是 `gyb` 或 `dispatch=manual` 的也只在 `rl status` 里露头，gyb 自己定期看。
 
 ## 六、转移表里和分析单有关的行
 
@@ -208,3 +208,4 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：第二节「analysis 上线第一个动作是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的 analysis 会话先干拉它起来的那张单」。
 - 2026-08-17 来自 sync-inbox 问题 23 的裁决（定义处 `03`、`05`，rl-hub-v3 传；gyb 原话「只有做完了的时候才关，巡检要我本人确认」）：第六节抄的转移表 accept 行按 `04` 第三节补「rl 顺带关这张单关联的 `answered` issue」。
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「a」）：第三节（e）那段由「gyb 不认就改回」改成「2026-08-18 gyb 认，不改回」。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：「桌面通知按推送表走」整句按「桌面通知这一版不做」改写，落点不变（inbox 与 status 等验收段）。对回原则 6。

@@ -118,7 +118,7 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 快车道补单的进出登记、杂账、免掉的手续：07-quick-lane.md。
 - 发射单的 `parent_id` 指工单、决定引用和 `batch` 从工单继承、`attempts`：21-pair-deploy-run.md。
 - 分析单的 `evaluation_refs` 和交付物：22-pair-idea-analysis.md。
-- `rl status` 里「等验收的单子」「等 gyb 拉起」「过版的单子」几段、桌面通知推送表：01-gyb.md。
+- `rl status` 里「等验收的单子」「等 gyb 拉起」「过版的单子」几段（桌面通知与推送表 2026-08-21 裁掉不做）：01-gyb.md。
 - reviewer 按工单交活时记的 `code_paths` 和 `runs` 账里的 commit 审代码：25-pair-reviewer-idea.md。
 
 ## 源文档没写清的（留给 gyb）
@@ -343,3 +343,4 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 2026-08-17 来自 sync-inbox 问题 28 的裁决（定义处 `01`、`05`，rl-hub-v3 传；gyb 原话「C」）：「过版检查对工单的影响」一节「idea 和 deploy 上线第一个动作是 `rl inbox`」改成「`rl inbox` 是查询命令，谁需要谁敲，不是上线动作：被派单拉起的会话先干拉它起来的那张单」。
 - 2026-08-17 rl-hub-v3 审后补：第九节 `rl decision stale` 签名按 `05-rl-cli.md` 命令表改成 `[--handoff ID] [--all]`，去掉 `--mine`（05 定稿那一轮的引用滞后）。
 - 2026-08-18 来自 `02-decisions.md` 定稿（`7549704`，rl-hub-v4 传；gyb 原话「乙」）：「过版检查对工单的影响」一节过版判定改成「比账里最新一个非 `confirm` 版小才算过时」。对回原则 9。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节推送表字样按「桌面通知这一版不做」改。对回原则 6。

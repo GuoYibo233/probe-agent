@@ -73,7 +73,7 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 - decisions 行的字段（`id`、`version`、`status`、`sources`、`root_id`、`quote`、`actor`）和 `decisions.gyb.jsonl` 只收裸终端的规矩：见 `03-ledgers.md`。
 - 决定的编号前缀、根决定、追加一版与新开一条的完整规则：见 `02-decisions.md`。
 - `rl decision add/update/confirm/retire/merge`、`rl session focus`、`rl status`、`rl inbox`、`rl trace` 的完整签名和「谁能调」：见 `05-rl-cli.md`。
-- `rl status` 十段各列什么、哪几段推桌面通知：见 `01-gyb.md`。
+- `rl status` 十段各列什么（桌面通知 2026-08-21 裁掉不做）：见 `01-gyb.md`。
 - sessions 账的 `focus` 字段和 reviewer 会话的销号：见 `04-handoffs-and-sessions.md`。
 - 清单第二栏「代码或记录的位置」用的 `code_paths` 和两份部署报告，由 deploy 在工单上填：见 `20-pair-idea-deploy.md`。
 - 清单头部的 run_id 和 commit 从 runs 账取，runs 行格式见 `03-ledgers.md`。
@@ -130,3 +130,4 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
    - 依据：2026-08-16-research-loop-next-steps.md:46; 2026-08-16-research-loop-next-steps.md:109
    - 改法：加一条 `rl decision confirm ID --source run:... --source file:...`，追加一版正文不变、只增来源
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处 `14`，rl-hub-v4 传；gyb 原话「选a」）：第一节「不派活」后补半句「起 sonnet subagent 逐题查不算派活」。对回原则 5。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「哪几段推桌面通知」按「桌面通知这一版不做」改。对回原则 6。

@@ -74,7 +74,6 @@ init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓�
 | `anomaly.metric_extremes` | `[0, 1]` | 指标落在 0 或 1 触发反常预警，`rl run finish` 里查 |
 | `anomaly.duration_factor` | 3 | 实际耗时超过预计 3 倍触发反常预警，同上 |
 | `status.review_recent_days` | 7 | `rl status` 列最近 7 天的 review 清单 |
-| `notify.reminder_days` | 7 | 每 7 天提醒 gyb 跑 `rl reclaim`、看 feedback、跑 doctor、落母版 |
 | `lock.timeout_seconds` | 10 | 文件锁等多久算超时，超时退出码 4（2026-08-17 随 `05` 定稿加） |
 | `quick_lane.worktree_root` | `<仓库>/../<仓库名>-ql/` | 快车道 worktree 建在哪 |
 | `hooks.path_allowlist` | `[]`（空） | 写权钩子的路径白名单：列在里面的路径不管折成什么一律放行，用来放「路径写在仓库里、东西其实在仓库外」的地方；默认为空，gyb 在 `rl init` 之后按需填（2026-08-18 gyb 裁，定义处 `06`「路径怎么判」；键名是本份定的，`06` 只说「插件配置里的一项、和阈值表放一起」） |
@@ -114,7 +113,7 @@ init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓�
 2. 新想法先开 idea 落决定再派工单。
 3. 结果不对先开 reviewer。
 4. 只想先跑一把看数、不打算留决定和报告的，gyb 直接点快车道；其余走正常路。
-5. 收到定期提醒：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`。
+5. 定期收拾（gyb 自己定期开工，没有提醒机制——桌面通知与定期提醒 2026-08-21 裁掉不做，定义处 `01`）：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`。
 
 加载角色的动作是 gyb 在终端里 `/` 加角色 skill 名。
 
@@ -306,6 +305,7 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-18 gyb 裁（原第 9 条，按 A 记，gyb 未另说）：init 自带默认模板，阈值直接落默认值；跟仓库绑定的项逐项问 gyb，跳过的留空并列出，留空的命令模板对应动作跳过；重跑不再问已填的项。对回原则 8。第一节 `research-loop.json` 行、第二节表「init 问」栏。
 - 2026-08-18 gyb 裁（原第 10 条，第一次答「A 然后现在就测 8」= 先不建、挂第 8 条；测完改裁）：待验证第 8 条当场测（八个变体，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）。结论：skill 头部钩子只管顶层会话、subagent 不经过它，主案不成立；插件 `agents/` 里 agent 定义头部的钩子被 Claude Code 忽略（官方文档明写「plugin subagents don't support the hooks, mcpServers, or permissionMode frontmatter fields」），仓库 `.claude/agents/` 里的要仓库受信任才跑，备案一不成立；仓库 settings 级和插件级钩子对 subagent 生效，输入带 `agent_type`。gyb 采纳外部咨询意见裁（原话「剩下的建议我确认」）：钩子一份放插件级 hooks 文件；脚本先看 `agent_type`（认识的按角色、不认识的最严），没有才按会话状态文件查顶层会话角色；会话状态文件由同一份钩子文件里的一条钩子在加载角色 skill 时写（`agent_type` 非空不写）；skill 头部不再声明钩子、第 2 条的「参数报角色名」写法作废；插件 `agents/` 层要建，五份角色 agent 定义只塑形（提示词、预加载角色 skill、收窄工具面）不带钩子；派活一律用这五个类型起 subagent；init 不往仓库播 agent 文件、不动仓库 settings；不加 `workflows/`。对回原则 2、8。第四节表加 `agents/` 行、改 `skills/`、`hooks/` 两行、不一致段改写。
 - 2026-08-18 gyb 裁（同一轮，原话「你就说我也定了，让统筹给06 00也改了」）：钩子匹配范围加 Bash（Bash 分支解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径，自己 realpath），原则 2「钩子只管 Write 和 Edit」那句和 `06` 定稿的「Bash 绕钩子不许」纪律句要跟着改。定义处 `00`（原则）和 `06`（钩子），本份只在 `hooks/` 行记一句。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传；gyb 原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」）：桌面通知与定期提醒这一版都不做——阈值表删 `notify.reminder_days` 一行；入口 skill 领路第 5 条触发词改成 gyb 自己定期开工，路线不变。对回原则 6。
 
 ## 要同步到别处的
 

@@ -24,7 +24,7 @@ deploy 的 `writes` 只有 `experiments/`。钩子只挂 Write 和 Edit 两个�
 
 工单（`work_order`）由 idea 开给 deploy，owner 是 idea。deploy 用 `rl handoff start ID` 接单，单子从 `todo` 进 `in_progress`，holder 记这个会话；holder 非空的时候接不进去，rl 退出码 2 并列出当前 holder。
 
-干完写部署报告，分两份，都放 `experiments/` 下这张工单自己的目录里：
+干完写部署报告，分两份，都放 `experiments/` 下这张工单自己的目录里（快车道补单的报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名——2026-08-21 gyb 裁，定义处 `07`）：
 
 | 报告 | 字段名 | 里面写什么 |
 |---|---|---|
@@ -127,7 +127,7 @@ deploy 自己卡住的时候走 `rl issue open` 加 `rl handoff stuck ID --issue
 
 主分支上永远只有走过工单的代码。合回之后要正式数字，按正常路再开发射单跑一遍，那张发射单的父单就是这张快车道工单；doctor 会报「快车道工单已验收但没有关联发射单」。
 
-两处原文不一致：快车道补单的 owner。施工计划第二节说 owner 就是 `from_role`、又说快车道补单的 owner 记 `gyb`，第三节说 `from_role` 就是 owner、取值可以是 `gyb`，设计文档说这张单子 `from_role` 和 `to_role` 都是 deploy。按施工计划第四节的表，那一行的「谁能写」是 deploy、括号注「快车道补单，owner 记 gyb」，accept 只有 gyb 能打。
+两处原文不一致（2026-08-21 已由 `07` 定稿收口：开单动作 deploy、owner 记 gyb，见文末裁决记录，别再问）：快车道补单的 owner。施工计划第二节说 owner 就是 `from_role`、又说快车道补单的 owner 记 `gyb`，第三节说 `from_role` 就是 owner、取值可以是 `gyb`，设计文档说这张单子 `from_role` 和 `to_role` 都是 deploy。按施工计划第四节的表，那一行的「谁能写」是 deploy、括号注「快车道补单，owner 记 gyb」，accept 只有 gyb 能打。
 
 ## 十一、deploy 的 use case 表和角色 json 四栏
 
@@ -163,16 +163,16 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 - 钩子挂在哪两个工具上、拦哪两类路径、拦下来怎么回话，角色 json 的文件格式：`06-hooks-and-permissions.md`。
 - `ql_tag` 怎么分、worktree 建在哪（`quick_lane.worktree_root`）、杂账三个状态：`07-quick-lane.md`。
 - 宿主发射器的命令模板、宿主台账清单、new1 的 run.py 注册表三件套和脏树白名单：`08-trees-init-and-host.md`。
-- 公共规矩八条（尤其是自决必留痕、故障分域、出圈即留痕）、读法、词表：`09-common-and-feedback.md`。
+- 公共规矩九条（尤其是自决必留痕、故障分域、出圈即留痕、修必销案）、读法、词表：`09-common-and-feedback.md`。
 - 工单是谁开的、`explanation` 谁写、验收和打回：`20-pair-idea-deploy.md`。
 - 发射单交给 run 之后 run 做什么、run 开回来的 issue 长什么样：`21-pair-deploy-run.md`。
 - analysis 发现代码问题开 issue 给 deploy：`24-pair-analysis-deploy.md`。
-- `rl status` 的十段、桌面通知推送表、gyb 越过 owner 验收时给 owner 发 `fyi`：`01-gyb.md`。
+- `rl status` 的十段（桌面通知与推送表 2026-08-21 裁掉不做）、gyb 越过 owner 验收时给 owner 发 `fyi`：`01-gyb.md`。
 - 测试清单里和 deploy 有关的条目（钩子、交付物、快车道、端到端）和施工步骤：`30-build-steps-verify-tests.md`。
 
 ## 源文档没写清的（留给 gyb）
 
-1. 部署报告目录的名字怎么拼。设计文档只说两份报告放「experiments/ 下这张工单自己的目录里」，没写目录名是单号还是别的；快车道补单是新建就直达 `done_pending_review`、开单那一刻才分配单号，报告目录名更取不出来。
+1. （快车道半边 2026-08-21 已裁，定义处 `07`：目录用 `experiments/<ql_tag>/`，拿到单号之后不改名；正常工单的目录名仍没写。）部署报告目录的名字怎么拼。设计文档只说两份报告放「experiments/ 下这张工单自己的目录里」，没写目录名是单号还是别的；快车道补单是新建就直达 `done_pending_review`、开单那一刻才分配单号，报告目录名更取不出来。
 2. `track` 说「从被派的工单继承或 deploy 填」，但 handoffs 的字段表里 `work_order` 没有 track 这一栏，继承从哪继承没写。
 3. `code_paths` 的范围。detail 报告要列 experiments/ 外的宿主文件清单，`code_paths` 只写了「代码路径清单」，宿主文件算不算进这一栏没写。
 4. deploy 后台起 run subagent 用什么机制起、提示里写什么、一次开 N 张单时怎么把单号和 batch 交给那个 subagent，两份文档都没写；施工计划待验证第 8、9 条还没测出结论。
@@ -400,3 +400,5 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写（角色设定、使用场景、可用工具、限制条件、输出样式），「可用工具」只指到角色 json。对回原则 8。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
+- 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：报告目录约定补「快车道补单用 `experiments/<ql_tag>/`，拿到单号之后不改名」；「两处原文不一致」快车道补单 owner 处收口（开单动作 deploy、owner 记 gyb，定义处 `04` 冻结后待议）；「没写清」第 1 条快车道半边标已裁。对回原则 4。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节推送表字样按「桌面通知不做」改；公共规矩八条改九条。对回原则 6。

@@ -174,7 +174,7 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - issues 的九种 kind、三个状态、reply 和 close 谁能写、通知类 issue 由收件人做完了自己 close：`03-ledgers.md`。
 - `rl decision add/update/confirm/retire/merge/show/list/stale`、`rl handoff open/accept/reject/withdraw/release/reissue/resume/amend`、`rl issue open/reply/reassign/close`、`rl inbox`、`rl trace` 的完整参数与退出码：`05-rl-cli.md`。
 - actor 判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：`01-gyb.md` 和 `05-rl-cli.md`。
-- `rl status` 的十段、哪几段推送桌面通知、`fyi` 通知：`01-gyb.md`。
+- `rl status` 的十段（桌面通知 2026-08-21 裁掉不做）、`fyi` 通知：`01-gyb.md`。
 - 角色 json 的五样、`tests/test_skill_refs.py` 的机器检查范围、钩子只挂 Write 和 Edit：`06-hooks-and-permissions.md`。
 - 两份部署报告的分工和 `code_paths` 由谁填：`11-role-deploy.md` 和 `20-pair-idea-deploy.md`。
 - 口径账的两种 kind、四个状态、谁提谁批：`13-role-analysis.md` 和 `22-pair-idea-analysis.md`。
@@ -378,3 +378,4 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：两句纪律之后补一句 SKILL.md 骨架按 `common/SPEC-TEMPLATE.md` 五栏写（角色设定、使用场景、可用工具、限制条件、输出样式），「可用工具」只指到角色 json。对回原则 8。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
+- 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「哪几段推送桌面通知」按「桌面通知这一版不做」改。对回原则 6。
