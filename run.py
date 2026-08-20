@@ -495,6 +495,14 @@ TASKS = {
         notes=["用法: run.py runmeta <outdir> --cmd '<实际命令>' [--kind K --note N]",
                "append 进 launches 列表不覆盖——同目录二次发射留双记录",
                "launch_probe/launch_eval 已自动调;gpu-run 手搓发射时要手动补一条"]),
+    "preset-sweep": dict(
+        stage="ops", py="sys", script="sweep_preset.py",
+        desc="参数网格生成一批预设(--base <预设> --grid 键=值,值,...;纯 CPU)",
+        notes=["网格键白名单 temperature/top_p/max_tokens/seed/reasoning_effort;"
+               "api/start_date/stop 要扫就手开预设",
+               "多条 --grid 取笛卡尔积;同名已存在拒绝覆盖,--force 放行;--dry-run 只打印",
+               "生成完先 commit 再发射(脏树门禁);逐点 run_id 带预设名",
+               "θ 扫描是 sweep-run/sweep-curve(sweep_theta.py),这里扫的是采样设置,别混"]),
     "launch-probe": dict(
         stage="ops", py="sys", script="ops/launch_probe.py",
         gate=True, desc="训练四格排卡发射器(smoke/full;格表从本文件 CELLS 读)",

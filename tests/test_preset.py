@@ -293,6 +293,73 @@ class TestSamplingForwarding(unittest.TestCase):
         self.assertEqual((p["top_p"], p["seed"]), (0.9, 7))
 
 
+class TestPresetSweep(unittest.TestCase):
+    """preset-sweep:参数网格 -> 一批合格预设文件,名字即口径。"""
+
+    def test_expand_cartesian_order(self):
+        import sweep_preset as SW
+        pts = SW.expand([("temperature", [0.2, 0.7]), ("top_p", [0.9, 1.0])])
+        self.assertEqual(pts, [
+            {"temperature": 0.2, "top_p": 0.9},
+            {"temperature": 0.2, "top_p": 1.0},
+            {"temperature": 0.7, "top_p": 0.9},
+            {"temperature": 0.7, "top_p": 1.0}])
+
+    def test_parse_grid_types_follow_client_keys(self):
+        import sweep_preset as SW
+        self.assertEqual(SW.parse_grid("seed=1,2"), ("seed", [1, 2]))
+        self.assertEqual(SW.parse_grid("temperature=0.2"),
+                         ("temperature", [0.2]))
+        self.assertEqual(SW.parse_grid("reasoning_effort=low,high"),
+                         ("reasoning_effort", ["low", "high"]))
+
+    def test_parse_grid_rejects_bad_input(self):
+        import sweep_preset as SW
+        with self.assertRaises(SystemExit):
+            SW.parse_grid("api=chat")            # 非采样键
+        with self.assertRaises(SystemExit):
+            SW.parse_grid("temperature=abc")     # 转不成数
+        with self.assertRaises(SystemExit):
+            SW.parse_grid("temperature")         # 没有 =
+
+    def test_main_writes_valid_presets_and_refuses_overwrite(self):
+        import sweep_preset as SW
+        with tempfile.TemporaryDirectory() as td:
+            SW.main(["--base", "gptoss_default",
+                     "--grid", "temperature=0.2,0.7", "--grid", "top_p=0.9",
+                     "--out-dir", td])
+            files = sorted(Path(td).glob("*.json"))
+            self.assertEqual([f.stem for f in files], [
+                "gptoss_default__temperature0.2__top_p0.9",
+                "gptoss_default__temperature0.7__top_p0.9"])
+            for f in files:
+                self.assertEqual(PL.validate(json.loads(f.read_text())),
+                                 [], f.name)
+            p0 = json.loads(files[0].read_text())
+            self.assertEqual((p0["client"]["temperature"],
+                              p0["client"]["top_p"]), (0.2, 0.9))
+            self.assertEqual(p0["model"], "gpt-oss-120b")  # base 的其余照抄
+            with self.assertRaises(SystemExit):   # 同名拒绝覆盖
+                SW.main(["--base", "gptoss_default",
+                         "--grid", "temperature=0.2,0.7",
+                         "--grid", "top_p=0.9", "--out-dir", td])
+
+    def test_dry_run_writes_nothing(self):
+        import sweep_preset as SW
+        with tempfile.TemporaryDirectory() as td:
+            SW.main(["--base", "gptoss_default", "--grid", "seed=1,2,3",
+                     "--out-dir", td, "--dry-run"])
+            self.assertEqual(list(Path(td).glob("*.json")), [])
+
+    def test_duplicate_grid_key_rejected(self):
+        import sweep_preset as SW
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(SystemExit):
+                SW.main(["--base", "gptoss_default",
+                         "--grid", "seed=1", "--grid", "seed=2",
+                         "--out-dir", td])
+
+
 class TestBfclHandlerPreset(unittest.TestCase):
     """BFCL handler 在仓库环境 import 不了(要 BFCL venv 的 bfcl_eval),
     只 exec NEW1_PRESET_PREFIX_END 以上的预设读取段——那一段纯标准库。"""

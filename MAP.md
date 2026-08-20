@@ -173,6 +173,7 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 | `configs/models.json` + `configs/presets/*.json` | 生成设置的唯一真源：models.json 是模型地址映射；一份预设 = 模型别名 + server 节（vLLM 启动参数）+ client 节（api/effort/temperature/max_tokens/stop/start_date/top_p/seed）。现有六份 gptoss 预设：五份与改造前五处写死值逐项等价（tests/test_preset.py 钉着），第六份 `gptoss_default` 是 OpenAI 官方推荐口径（temperature 1.0 / top_p 1.0 / top_k 0 / min_p 0 / effort medium / 上下文 131072，2026-08-20 加） | 采集/活跑/回放入口 `--preset <名>`；BFCL handler 走环境变量 `NEW1_PRESET_JSON=<预设绝对路径>`；命令行显式参数永远压过预设 |
 | `preset_loader.py` | configs/ 的读取器（纯标准库，采集 venv 装不进 pydantic 2）：load_preset 校验 + merge_client 三层优先级（CLI 显式值 > 预设 > 原缺省） | 入口脚本 import 用；`python3 preset_loader.py` 列全部预设，`python3 preset_loader.py <名>` 看展开 |
 | `serve_preset.py` | 通用 vLLM 发射器：读预设 server 节，模型路径经 resolve()，ssh+tmux 起服务并把预设全文抄到 `envs/serve_logs/<session>.preset.json`。新服务从这里起，13 个旧 `launch_vllm_*.py` 留作历史 | `python3 run.py show serve-preset`（发射类，脏树门禁）；`--preset <名> --gpu <卡>`，`--dry-run` 只打印 |
+| `sweep_preset.py` | 参数网格 → 一批预设文件（2026-08-21 加）：在 `--base` 预设上盖网格点，每个点生成一份 `configs/presets/<base>__<键><值>….json`，名字即口径；网格键白名单 temperature/top_p/max_tokens/seed/reasoning_effort，多条 `--grid` 取笛卡尔积。只生成不发射；θ 扫描是 `sweep_theta.py`（sweep-run/sweep-curve），别混 | `python3 run.py preset-sweep --base gptoss_default --grid temperature=0.2,0.7,1.0 [--grid top_p=…]`；`--dry-run` 只打印；同名拒绝覆盖，`--force` 放行；生成完先 commit 再发射，逐点 run_id 带预设名 |
 
 ---
 
