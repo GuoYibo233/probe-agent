@@ -288,6 +288,98 @@
         }
       ],
       "finished_at": "2026-08-18 20:15"
+    },
+    {
+      "name": "p1",
+      "workdir": "/home/y-guo/reproduce/new1/envs/runs/p1",
+      "note": "p1 采集批客户端 7 分片(train2/dev1/test_normal4,共315题),跑在 tokyo105(登录机,纯CPU),打 tokyo108 的两个 gptoss 实例;服务分片登在 p1_srv_a/p1_srv_b",
+      "started_at": "2026-08-21 08:28",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gptr_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gptr_s0.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gptr_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gptr_s1.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gpdv_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gpdv_s0.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gptn_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gptn_s0.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gptn_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gptn_s1.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gptn_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gptn_s2.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_p1_gptn_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/p1/logs/new1_p1_gptn_s3.log",
+          "kind": "batch"
+        }
+      ],
+      "finished_at": "2026-08-21 11:37"
+    },
+    {
+      "name": "p1_srv_a",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "p1 采集批 gpt-oss-120b 副本A(tokyo108 GPU4 H200,port 8103),采集全程常驻,收官时杀",
+      "started_at": "2026-08-21 08:28",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_p1_srv_gptossa_t108g4",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_p1_srv_gptossa_t108g4.log",
+          "kind": "service",
+          "port": 8103
+        }
+      ],
+      "finished_at": "2026-08-21 11:37"
+    },
+    {
+      "name": "p1_srv_b",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "p1 采集批 gpt-oss-120b 副本B(tokyo108 GPU5 H200,port 8106),采集全程常驻,收官时杀",
+      "started_at": "2026-08-21 08:28",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_p1_srv_gptossb_t108g5",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_p1_srv_gptossb_t108g5.log",
+          "kind": "service",
+          "port": 8106
+        }
+      ],
+      "finished_at": "2026-08-21 11:37"
     }
   ]
 }

@@ -6,6 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `p1` | 2026-08-21 08:29 | p1 采集批 | `51ee4f5+dirty` | gpt-oss-120b | ok | n_files=315 n_final=315 completed_true=305 abort_nonnull=0 split_train=90 split_dev=57 split_test_normal=168 steps_mean=13.1 | p1 采集批 315 题全部落轨迹,每文件末行 final,三堆 90/57/168 与官方题单对上,abort 全空,任务级 completed_true 305/315 |
 | `ident3_v1` | 2026-08-18 10:47 | 探针线重启 | `3fec724` | gpt-oss-120b | ok | runs=150 excluded=0 success_chat=14/50 success_noprobe=13/50 success_nofill=20/50 identical_pairs=0/2175 div_step0_same_arm=412/675 div_step0_cross_arm=1303/1500 prompt_sha_equal=1780/1780 nofill_fires=564/657 resume_identical=534/564 | ident3_v1 三臂逐 token 同(chat/noprobe/nofill 伪触发第5句尾)5题x10遍=150跑 0 失败;跨臂 prompt id sha 1780/1780 全等;2175 对配对没有一对整题逐 token 全同,同臂对首分叉步 0 占 137/225(chat)、144/225(noprobe)、131/225(nofill),跨臂 chat-noprobe 308/500、chat-nofill 499/500、noprobe-nofill 496/500;shared_tok 中位 同臂 123/61/225、跨臂 123/123/120;每题每臂 10 遍 10 条不同轨迹;成功 chat 14/50、noprobe 13/50、nofill 20/50;nofill 564 次中断重发,534 次(0.947)逐位复现被丢弃溢出。事实,不带解读。 |
 | `ident3_v1_srv` | 2026-08-18 10:21 | 探针线重启 | `91635ad+dirty` | - | running | - | - |
 | `splice_replay_v1_srv` | 2026-08-18 06:59 | 探针线重启 | `c10c167` | - | ok | p2_n1.has_action=0.994 p2_n1.repeated_call=0.22 p2_n1.next_hit_call=0.374 p2_n1.uses_result=0.034 p2_n1.python_call=0.0 p2_n1.vs_nofill_own_med=7 p2_n1.truncated=0.051 p2_n0.has_action=1.0 p2_n0.repeated_call=0.181 p2_n0.next_hit_call=0.363 p2_n0.uses_result=0.022 p2_n0.python_call=0.0 p2_n0.vs_nofill_own_med=-1 p2_n0.truncated=0.028 p4.has_action=1.0 p4.repeated_call=0.092 p4.next_hit_call=0.562 p4.uses_result=0.101 p4.python_call=0.938 p4.vs_nofill_own_med=74 p4.truncated=0.0 p1_n1.has_action=0.989 p1_n1.repeated_call=0.156 p1_n1.next_hit_call=0.545 p1_n1.uses_result=0.084 p1_n1.python_call=0.0 p1_n1.vs_nofill_own_med=-56 p1_n1.truncated=0.039 p1_n2.has_action=0.944 p1_n2.repeated_call=0.084 p1_n2.next_hit_call=0.484 p1_n2.uses_result=0.056 p1_n2.python_call=0.0 p1_n2.vs_nofill_own_med=-40 p1_n2.truncated=0.045 p1_n3.has_action=0.966 p1_n3.repeated_call=0.25 p1_n3.next_hit_call=0.399 p1_n3.uses_result=0.039 p1_n3.python_call=0.0 p1_n3.vs_nofill_own_med=-45 p1_n3.truncated=0.034 p3k.has_action=1.0 p3k.repeated_call=0.076 p3k.next_hit_call=0.551 p3k.uses_result=0.079 p3k.python_call=0.0 p3k.vs_nofill_own_med=-795 p3k.truncated=0.157 nofill.has_action=1.0 nofill.repeated_call=0.689 nofill.next_hit_call=0.123 nofill.uses_result=0.034 nofill.python_call=0.0 nofill.vs_nofill_own_med=0 nofill.truncated=0.028 p1_n0.has_action=0.989 p1_n0.repeated_call=0.12 p1_n0.next_hit_call=0.521 p1_n0.uses_result=0.073 p1_n0.python_call=0.0 p1_n0.vs_nofill_own_med=-66 p1_n0.truncated=0.028 p1_n0p.has_action=0.983 p1_n0p.repeated_call=0.093 p1_n0p.next_hit_call=0.56 p1_n0p.uses_result=0.045 p1_n0p.python_call=0.0 p1_n0p.vs_nofill_own_med=-66 p1_n0p.truncated=0.062 | 塞法回放 v1:52 事件x178 切口x10 臂=1780 条续写全跑完、0 失败;各臂 has_action 0.94–1.0;调用级 next_hit_call nofill 0.12、p1 臂 0.40–0.56、p2 臂 0.36–0.37、p3k 0.55、p4 0.56;p4 93.8% 再叫 python 停在 </call/>;token 与 nofill 的配对中位差 p1 −40~−66、p2 −1/+7、p3k −795、p4 +74(正=省)。事实,不带解读。 |
@@ -22,6 +23,20 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `p1`
+
+- **想验证什么**：p1 采集:AppWorld 官方三堆全量 315 题,gpt-oss-120b 单模型 harmony/effort high,双 vLLM 实例(tokyo108 GPU4/5 H200)+7 客户端分片,给三种训法×三档底座供数据
+- **结论**：p1 采集批 315 题全部落轨迹,每文件末行 final,三堆 90/57/168 与官方题单对上,abort 全空,任务级 completed_true 305/315
+- **方向**：p1 采集批 ｜ **状态**：ok ｜ **起止**：2026-08-21 08:29 → 2026-08-21 11:37
+- **代码**：`51ee4f5`  ⚠️ 发射时工作树是脏的（10 文件），这个 commit 追不回真实代码 (分支 main)
+- **机器**：tokyo108 GPU 4,5
+- **模型 / 种子**：gpt-oss-120b / 20260729
+- **参数**：preset=gptoss_harmony_high api=harmony reasoning_effort=high temperature=0.0 start_date=2026-08-06 max_steps=30 splits=train90+dev57+test_normal168 tasks=315 shards=7 servers=2 data_version=aw_p1_v1
+- **数字**：n_files=315 n_final=315 completed_true=305 abort_nonnull=0 split_train=90 split_dev=57 split_test_normal=168 steps_mean=13.1
+- **原始数据**：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/p1/appworld_gptoss`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/envs/runs/p1/logs`
+- **命令**：`python3 run.py gen-launch --config pipeline/collect/manifest_p1.json && cd envs/runs/p1 && python3 launch_servers.py && bash launch_clients.sh`
 
 ### `ident3_v1`
 
