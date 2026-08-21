@@ -14,7 +14,7 @@
 
 | 建什么 | 是什么 |
 |---|---|
-| `research-loop.json` | 配置文件，键见第二节和第三节。init 自带一份默认模板：阈值全按第三节的默认值直接落；跟仓库绑定的那几项（`artifact_root`、`analysis_artifact_root`、`launcher.*` 四条、`repo_run`、`host_ledgers`）init 逐项问 gyb，答完写进去；gyb 跳过的留空，跑完把留空的项列出来，留空的命令模板对应的动作就跳过（2026-08-18 gyb 裁，见第二节） |
+| `research-loop.json` | 配置文件，键见第二节和第三节。init 自带一份默认模板：阈值全按第三节的默认值直接落；跟仓库绑定的那几项（`artifact_root`、`analysis_artifact_root`、`gpu_state_path`、`launcher.*` 四条、`repo_run`、`host_ledgers`）init 逐项问 gyb，答完写进去；gyb 跳过的留空，跑完把留空的项列出来，留空的命令模板对应的动作就跳过（2026-08-18 gyb 裁，见第二节） |
 | `loop/` | 九本账，一行一条 json，只经 `bin/rl` 进出。九本账的位置和文件名钉死：永远是 `loop/` 下 `03-ledgers.md` 词表里那九个名字，配置里没有「各账路径」这一项（2026-08-18 gyb 裁，原话「定死吧」）。`loop/` 进 git，每次 commit 顺手带上，不另设 commit 动作；`.gitignore` 不排除 `loop/`，但 `rl init` 往 `.gitignore` 加一行 `loop/.sessions/`：会话状态文件 `loop/.sessions/<session_id>.json` 是普通文件、不算九本账、不进 git、不算脏树（2026-08-18 gyb 裁，定义处 `06`「会话状态文件」；`rl init` 建 `loop/.sessions/` 这个空目录）。`loop/.doctor-acks.jsonl` 是普通文件、不算九本账之一，`03-ledgers.md` 的账本总规矩（只增不改、锁、进 git、脏树白名单）不管它，它由 doctor 首次 `--ack` 时建、`rl init` 不建（2026-08-17 随 `05` 定稿裁；不归总规矩管是 gyb 裁，sync-inbox 问题 24） |
 | `experiments/` | 运行实验的代码，写权只有 deploy |
 | `analysis/` | 统计代码和 notebook，写权只有 analysis |
@@ -103,7 +103,7 @@ init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓�
 
 ## 五、入口 skill 干哪三件事
 
-入口 skill 只干三件事：init、迁移提醒、领路。SKILL.md 里明写「本 skill 不干别的」。
+入口 skill 只干三件事：init、迁移提醒（提的是第六节的规矩——老代码按需手动搬；日常「这次改了哪些 experiments/ 外的文件」的提醒落在 deploy 的报告里，不归本 skill）、领路。SKILL.md 里明写「本 skill 不干别的」。
 
 入口 skill 只许 gyb 手动调用，永远不许模型或其他东西调用。候选机制是 skill 头部声明禁止模型调用，这条还没测，测法和失败备案在 `30-build-steps-verify-tests.md`（待验证第 4 条）。2026-08-17 随 `05` 定稿裁：第 4 条的失败备案「`rl init` 检查调用者状态文件不是任何角色」升正案，`rl init` 只在裸终端跑，见第一节。
 
@@ -121,7 +121,7 @@ init 要问 gyb 的东西都在同一次交互里问完：配置文件里跟仓�
 
 迁移是搬文件，不是登记指向。理由是写权钩子按路径拦，文件不搬，这条拦截就只覆盖新写的代码，老代码全在钩子外面。
 
-new1 的老代码由 gyb 手动按需搬（2026-08-16 晚裁，全量搬的 workflow 作废）。入口 skill 不做全量搬迁的 workflow，只在 deploy 的报告里列出「这次改了哪些 experiments/ 外的文件」时提醒 gyb 搬。研究仓库代码量小，搬得动。
+new1 的老代码由 gyb 手动按需搬（2026-08-16 晚裁，全量搬的 workflow 作废）。入口 skill 不做全量搬迁的 workflow；日常的提醒由 deploy 给——deploy 的报告列出「这次改了哪些 experiments/ 外的文件」时顺带提醒 gyb 搬。研究仓库代码量小，搬得动。
 
 老代码要不要搬进 `experiments/` 由 gyb 手动定，deploy 只提醒。
 
@@ -139,7 +139,7 @@ new1 的 CLAUDE.md 现在写的是「任何要用显卡跑的程序一律走 gpu
 
 插件的 `loop/runs.jsonl` 和宿主的 `ops/runs.jsonl` 在 new1 里并存：前者是插件的正账，后者是宿主发射器自己的登记。两本不合并，doctor 有一项对账，扫「`loop/runs.jsonl` 与宿主 `ops/runs.jsonl` 对不上的 run_id」。
 
-宿主发射器 `run.py launch` 写 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 这三个文件是 Bash 写入，钩子不看，不算越权。
+宿主发射器 `run.py launch` 写 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 这三个文件，钩子解析 Bash 的写目标，但 ops/ 这类宿主路径不在拦的目录里，照放行，不算越权。
 
 ### 7.4 record finish 由 rl run finish 调
 
@@ -307,6 +307,12 @@ new1 CLAUDE.md 的两处宿主改动由 gyb 亲手改，时机是施工步 7 跑
 - 2026-08-18 gyb 裁（同一轮，原话「你就说我也定了，让统筹给06 00也改了」）：钩子匹配范围加 Bash（Bash 分支解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 目标路径，自己 realpath），原则 2「钩子只管 Write 和 Edit」那句和 `06` 定稿的「Bash 绕钩子不许」纪律句要跟着改。定义处 `00`（原则）和 `06`（钩子），本份只在 `hooks/` 行记一句。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传；gyb 原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」）：桌面通知与定期提醒这一版都不做——阈值表删 `notify.reminder_days` 一行；入口 skill 领路第 5 条触发词改成 gyb 自己定期开工，路线不变。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：`rl init` 的「要不要当场给 idea 发 `read:notes`」那一问随获准机制砍掉，第一节 init 问话段与接口一节照改。对回原则 2。
+
+## 裁决记录（2026-08-21，评审修复）
+
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：第一节 `research-loop.json` 行「init 逐项问」的键清单补 `gpu_state_path`——第二节表里标 ✓ 的键有 9 个，原清单漏了这一个。
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：第五节「入口 skill 只干三件事：init、迁移提醒、领路」补一句：迁移提醒提的是第六节的规矩——老代码按需手动搬；日常「这次改了哪些 experiments/ 外的文件」的提醒落在 deploy 的报告里，不归本 skill——消掉对第六节和 `11-role-deploy.md` 的归属矛盾。
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：7.3「是 Bash 写入，钩子不看，不算越权」改成「钩子解析 Bash 的写目标，但 ops/ 这类宿主路径不在拦的目录里，照放行，不算越权」——照 `06-hooks-and-permissions.md` 第 70 行定稿，Bash 已进钩子匹配范围。
 
 ## 要同步到别处的
 

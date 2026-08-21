@@ -1,7 +1,7 @@
 # 快车道
 
 > 这份覆盖快车道（quick_lane）从头到尾：怎么进（gyb 点名、`rl ql open`、ql_tag 谁分、worktree 和分支、`--from`）、中间能做什么（deploy 那一头、analysis 那一头、GPU 走宿主发射器、track 怎么填、宿主台账登不登记、数字进杂账）、怎么出（`rl ql close --merged` 和 `--dropped`、合回时 gyb 亲自 merge、deploy 补一张标了 quick_lane 的工单、只要一份 method 简报、补一条 decisions.deploy、正式重跑挂在补单上），加杂账（scratch）的行格式、快车道在 `rl status` 和 `rl reclaim` 和 `rl doctor` 里的位置、两个阈值。
-> 不覆盖的：deploy 这个角色本身的写权、自决、部署报告两份的分工在 `11-role-deploy.md`，analysis 的口径账和分析单在 `13-role-analysis.md`，九本账的完整行格式（含 handoffs 和 scratch 的每个字段）在 `03-ledgers.md`，派活单七个状态与完整转移表在 `04-handoffs-and-sessions.md`，rl 的完整命令表和退出码在 `05-rl-cli.md`，钩子拦什么与角色 json 四栏在 `06-hooks-and-permissions.md`，`research-loop.json` 的配置项和宿主发射器怎么对接在 `08-trees-init-and-host.md`，`rl status` 十段与 `rl reclaim` 的全部行为在 `01-gyb.md`，正常路的发射单怎么开怎么跑在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
+> 不覆盖的：deploy 这个角色本身的写权、自决、部署报告两份的分工在 `11-role-deploy.md`，analysis 的口径账和分析单在 `13-role-analysis.md`，七本账的完整行格式（含 scratch 的每个字段）在 `03-ledgers.md`，handoffs 的行格式、派活单七个状态与完整转移表在 `04-handoffs-and-sessions.md`，rl 的完整命令表和退出码在 `05-rl-cli.md`，钩子拦什么与角色 json 四栏在 `06-hooks-and-permissions.md`，`research-loop.json` 的配置项和宿主发射器怎么对接在 `08-trees-init-and-host.md`，`rl status` 十段与 `rl reclaim` 的全部行为在 `01-gyb.md`，正常路的发射单怎么开怎么跑在 `12-role-run.md` 和 `21-pair-deploy-run.md`。
 > 源：设计文档的原则 7、「快车道」一节、deploy 一节、analysis 一节、账本一节的 scratch 与锁那两段、「入口 skill 与代码迁移」的领路一句；施工计划第一节第六轮改动 (f)、第二节词表、第三节 handoffs 与 scratch、第四节转移表的快车道两行、第五节 deploy 与 analysis 的 use case、第六节 `rl ql`／`rl scratch`／`rl handoff open` 三行与 status、reclaim、doctor 三行、第八节阈值表、第十节测试 16 与测试 4。
 
 ## 一、快车道是什么，什么时候进
@@ -61,7 +61,7 @@ gpu-runner 是宿主的东西，不进插件的账：不登记 sessions 账、�
 
 ## 六、杂账（scratch）的行格式
 
-杂账只有快车道写，只写三样事：开张、数字、关张。中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填。中间追加数字的每一版 `status` 仍是 `open`，不设第四态。analysis 和 reviewer 默认不读这本账。
+杂账只有快车道写，只写三样事：开张、数字、关张。中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填。中间追加数字的每一版 `status` 仍是 `open`，不设第四态。这本账日常不进审读顺序：deploy 和 analysis 只在快车道里读写自己那条 ql_tag 的行，reviewer 审快车道时才读（reads 清单里有 scratch，见 `06`）。
 
 主键是 `ql_tag`，同一条快车道的每一次写入是一个新版本。`status` 三取一：`open`、`merged`、`dropped`。`actor` 是 `deploy` 或 `analysis`。
 
@@ -302,6 +302,11 @@ deploy 补一张标了 quick_lane 的工单，八条规矩：
 - 2026-08-21 错误处理机制裁 A（原话「那就选A吧」）：发射员发现报错、落 issue、单子标卡住后销号；修好后单子回待干、拉起新的发射员接单，信息由单子承载——维持 `04`/`12`/`21` 现状，本份正文无改动。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节推送表字样按「桌面通知这一版不做」改。对回原则 6。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「不能先合并好再记上去吗」加确认「就这么定：先合并再补记」）：出口顺序「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」确认不变；补「决定来源和报告路径的存在性检查一律按主树查」；「主分支上永远只有走过工单的代码」认下合并到补单之间的短窗口。对回原则 7。
+
+## 裁决记录（2026-08-21，评审修复）
+
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：覆盖说明「九本账的完整行格式（含 handoffs 和 scratch 的每个字段）在 `03-ledgers.md`」改成「（scratch 的每个字段在 `03-ledgers.md`，handoffs 的在 `04-handoffs-and-sessions.md`）」——handoffs 行格式的定义处是 `04`，不是 `03`。第 3 行照改。
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：第六节末句「analysis 和 reviewer 默认不读这本账」改成「这本账日常不进审读顺序：deploy 和 analysis 只在快车道里读写自己那条 ql_tag 的行，reviewer 审快车道时才读（reads 清单里有 scratch，见 `06`）」——`06` 定稿的 reviewer json `reads` 清单里有 scratch，原句和它相反。
 
 ## 要同步到别处的
 

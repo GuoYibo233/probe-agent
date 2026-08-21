@@ -70,7 +70,7 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 ## 和别的 part 的接口
 
 - `review/` 的写权只有 reviewer，别的角色 Write 或 Edit 这个目录被钩子 deny：见 `06-hooks-and-permissions.md`。
-- decisions 行的字段（`id`、`version`、`status`、`sources`、`root_id`、`quote`、`actor`）和 `decisions.gyb.jsonl` 只收裸终端的规矩：见 `03-ledgers.md`。
+- decisions 行的字段（`id`、`version`、`status`、`sources`、`root_id`、`quote`、`actor`）和 `decisions.gyb.jsonl` 只收裸终端的规矩：见 `02-decisions.md`。
 - 决定的编号前缀、根决定、追加一版与新开一条的完整规则：见 `02-decisions.md`。
 - `rl decision add/update/confirm/retire/merge`、`rl session focus`、`rl status`、`rl inbox`、`rl trace` 的完整签名和「谁能调」：见 `05-rl-cli.md`。
 - `rl status` 十段各列什么（桌面通知 2026-08-21 裁掉不做）：见 `01-gyb.md`。
@@ -84,10 +84,10 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 
 1. 一份清单审一批决定的时候文件名怎么取。施工计划第五节 reviewer 的 use case 写的是「按 gyb 点名审一条或一批决定」，设计文档写的文件名模板 `review/<日期>-<审的决定编号>.md` 只装得下一个决定编号，一批是拆成几个文件还是一个文件挂多个编号，两份都没写。
 2. 清单里的问题条没有编号。idea 拿 `file` 类来源加锚点指回某一条问题时，锚点指的是小节还是行号区间，清单本身要不要给每条问题一个可引用的编号，两份都没写。
-3. idea 怎么知道有新清单落盘。清单不进任何一本账，`rl inbox` 的四类里没有「新的 review 清单」这一项，只有 gyb 的 `rl status` 段 9 列最近 7 天的清单。idea 是靠 gyb 转达还是每次上线自己扫 `review/`，两份都没写。
+3. idea 怎么知道有新清单落盘。清单不进任何一本账，`rl inbox` 的五类里没有「新的 review 清单」这一项，只有 gyb 的 `rl status` 段 9 列最近 7 天的清单。idea 是靠 gyb 转达还是每次上线自己扫 `review/`，两份都没写。
 4. `rl status` 段 9 怎么找到这些清单。清单是 `review/` 下的文件、不是账行，rl 是扫目录按文件名日期排还是另有登记，两份都没写。
-5. 清单没有状态，也没有关掉的办法。idea 读完、按不按清单改决定，账上不留痕；doctor 的扫描项里没有「清单里的问题有没有被处理」这一类。
-6. 清单第四栏「建议动作」被 idea 或 gyb 否掉的时候往哪写。设计文档只写「动不动由 gyb 看完之后定」，没写不动的那一支要不要留一条决定或者一行记录。
+5. 清单没有状态，也没有关掉的办法。idea 读完、按不按清单改决定，账上不留痕；doctor 的扫描项里没有「清单里的问题有没有被处理」这一类。（已裁：01 定稿 2026-08-21，动作各落各的账不新加登记，清单本身不设状态）
+6. 清单第四栏「建议动作」被 idea 或 gyb 否掉的时候往哪写。设计文档只写「动不动由 gyb 看完之后定」，没写不动的那一支要不要留一条决定或者一行记录。（已裁：01 定稿 2026-08-21，动作各落各的账不新加登记，清单本身不设状态）
 7. idea 按清单改决定要不要先等 gyb 点头。设计文档一边写「动不动由 gyb 看完之后定」，一边把 `review/` 列进 idea 的 reads 并说清单是 idea 下一轮的输入，idea 能不能不等 gyb 直接 `rl decision update`，没写。（已裁 2026-08-21：idea 读完清单不自行处置，只报 gyb、gyb 裁了才动，见文末传播行。）
 
 ## 第二轮模拟里归到这一份的摩擦（原样，未核实）
@@ -129,8 +129,14 @@ reviewer 自己那本 decisions.reviewer 里的行不是 idea 改的对象：跨
 7. [slows/missing] 第 33 步：「这条方向看完结果继续做、设定不变」这一支没有落点。决定不换做法就不追加版、不换问题就不开新条，账上留不下 gyb 看过这批数字并确认继续的痕迹，下一轮 reviewer 和 `rl decision stale` 都看不到这次复核
    - 依据：2026-08-16-research-loop-next-steps.md:46; 2026-08-16-research-loop-next-steps.md:109
    - 改法：加一条 `rl decision confirm ID --source run:... --source file:...`，追加一版正文不变、只增来源
+
+## 裁决记录（日期）
+
 - 2026-08-18 来自 sync-inbox 问题 33 的裁决（定义处 `14`，rl-hub-v4 传；gyb 原话「选a」）：第一节「不派活」后补半句「起 sonnet subagent 逐题查不算派活」。对回原则 5。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节「哪几段推桌面通知」按「桌面通知这一版不做」改。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只报你，你裁了才动」）：idea 读完 reviewer 清单不自行处置，改决定、打回单子都等 gyb 裁了才动；「没写清」第 7 条标已裁。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：idea 读 `notes/` 的获准机制整套砍掉，grant 当 reviewer 事后查凭据的核对项随之取消；接口一节「idea 读 `notes/` 要 grant」那行照改。对回原则 2。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「全收」）：`code_paths` 全收口径（这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算），reviewer 的代码清单按全量口径读；清单第二栏与相关句定稿时并（`03` 字段说明等最后一期，sync-inbox 问题 45）。对回原则 3。
+- 2026-08-21 评审修复（gyb 授权，定义处 `02-decisions.md`）：接口一节 decisions 行字段的定义处由 `03-ledgers.md` 改指 `02-decisions.md`。
+- 2026-08-21 评审修复（gyb 授权，定义处 `01-gyb.md` 定稿 2026-08-21）：「没写清」第 5、6 条各补「（已裁：01 定稿 2026-08-21，动作各落各的账不新加登记，清单本身不设状态）」。
+- 2026-08-21 评审修复（gyb 授权，定义处 `10-role-idea.md` 定稿 2026-08-21，同上 137 行 feedback 裁决单列一项裁决）：「没写清」第 3 条「`rl inbox` 的四类」改「五类」，跟第 137 行同一次定稿对齐。

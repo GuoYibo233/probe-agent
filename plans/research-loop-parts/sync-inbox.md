@@ -168,6 +168,7 @@
 - 裁决原文：gyb 2026-08-18 对 02 答「甲」（按编号前缀落文件）、「乙」（confirm 不算改版、加 `op`）、「甲」（`--with-runs` 第一跳按 `decision_refs`）。
 - 要改的地方（都是引用处照抄定义处，字面上过时、意思上没有相反裁决）：
   34. 冻结后待议：（a）`05:47` `rl decision add` 那行「落 actor 自己那本（角色会话 `--as-gyb` 落角色那本）」→「落编号前缀那本：角色会话开的用那个角色的前缀（`--as-gyb` 也一样，`actor` 记 gyb），裸终端开的用 `gyb` 前缀」；（b）`05:48` update/confirm 那行「写完当场列出引旧版而没到终态的单子和 holder」只对 update 成立，confirm 不打印、不算改版；（c）`05:50` `--with-runs`「沿 parent_id 链反查」→「先按 `decision_refs` 找起点单子再沿 `parent_id` 收」；（d）`03:49` 词表 `loop/decisions.<actor>.jsonl` 的 `<actor>` 读作编号前缀里的角色名，只是读法说明，可不动字。`04` 里没找到写「比最新版小就是过时」的句子，不需要动。
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(e) `05:25`「`decisions.gyb.jsonl` 只收 `session_id` 是 `cli` 的行」与 `02` 定稿的编号前缀规矩打架——改成「`decisions.gyb.jsonl` 只装裸终端新开的决定及其全部后续版本（后续版本可以来自角色会话 `--as-gyb --quote`，`session_id` 照记那个会话），开新条的前缀判据见 `02` 第二节」。
 - 状态：等最后一期（2026-08-18 gyb 说「你先不要改，等最后一期改」：冻结三份动不动，攒到全部 part 定稿之后一起裁；此前读 `05` 命令表时以 `02` 定稿为准）
 
 ## 2026-08-18 03:36 来自 rl-part-06 关于 06-hooks-and-permissions.md
@@ -191,6 +192,7 @@
 - 裁决原文：gyb 2026-08-18 对 06 答「5a」（会话状态文件销号钩子顺手删、删不掉的 doctor 扫）、问题十二「a」（测试 13 三样都查）。
 - 要改的地方：
   35. 冻结后待议：（a）`05` doctor 表加一项「陈旧会话状态文件」——sessions 账已销号或超过一天没动的状态文件，修法删文件、归 gyb 推（十九项变二十项，`03`/`05` 提到「十九项」的句子跟着改）；（b）`05:100` 附近「机器检查只查 SKILL.md 里出现的写命令在不在 `ledger_writes` 里」与 `06`「三样都查」不一致，改成三样；（c）`04` 销号钩子的动作清单加「删本会话的状态文件」。（d）`06` 追裁（`f820504`）：会话状态文件路径改 `loop/.sessions/<session_id>.json`——`05:15` actor 判定那句的路径 `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>.json` 同改；（e）`03` 总规矩「普通文件不算九本账」的清单（`.lock`、`.doctor-acks.jsonl`）加 `loop/.sessions/`，`04` 提到状态文件路径的地方同改。
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(f) `05:233` 接口一节「钩子只挂 Write 和 Edit、只拦两类事」「`test_skill_refs` 只查写命令」同句连带改：钩子管 Write/Edit/Bash 三工具、`test_skill_refs` 三样都查，与 (a)(b) 同源（`06` 定稿）。(g) 落 (a) 和问题 43(a) 时 doctor 项号规矩：删的留空号不重排、新加接末尾编号，既有按项号写的引用（`05:237`、`01:156`、`30:225` 这类）不跟着漂（HANDOFF 第五节 2026-08-21 记）。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `06` 定稿为准）
 
 ## 2026-08-18 03:41 来自 rl-part-06 关于 06-hooks-and-permissions.md
@@ -248,6 +250,7 @@
 - 裁决原文：gyb 2026-08-18 对 08「定死吧」「A A A」「剩下的建议我确认」（原话见 `08` 裁决记录）。
 - 要改的地方：
   39. 冻结后待议：（a）`04` `dispatch=auto` 起 subagent 时用插件的角色 agent 类型（`agents/<role>.md`），不用 general-purpose；第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句——subagent 的 `session_id` 与父会话相同、钩子输入多 `agent_id`/`agent_type`、状态文件不写，subagent 算不算一次 sessions 行、`session_id` 记什么，等待验证第 5 条测完再定；（b）`05` `rl init` 一行补「重跑无副作用；逐项问配置；不动宿主代码和仓库 `.claude/`」；`rl run finish` 一节补「中断收尾里宿主销号调 `launcher.abort_cmd`，留空跳过」；doctor「两本 runs 账对账」按 `host_ledgers` 里 `kind: runs` 找宿主账；接口一节 `08` 那条键清单加 `launcher.abort_cmd`、`repo_run`、`host_ledgers`；（c）`03` 词表九个文件名旁注「位置钉死，配置里没有账路径（2026-08-18 gyb 裁，`08` 第一节）」。
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(a) 后半（subagent 算不算一次 sessions 行、`session_id` 记什么）依赖待验证第 5 条，最后一期时还没测完就明记挂起，别硬落。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `08` 定稿为准）
 
 ## 2026-08-21 04:00 来自 rl-part-01 关于 01-gyb.md
@@ -281,6 +284,7 @@
 - 裁决原文：gyb 2026-08-21「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」。
 - 要改的地方：
   40. 冻结后待议：（a）`05`「rl notify」一节（含 `rl notify --text` 签名行）删，命令表如有该行同删；接口一节待验证清单句里第 6、7 条标已销；（b）`04` 第 164 行附近「定时提醒每 `notify.reminder_days`（默认 7）天叫他一次」半句删，改「gyb 自己记得定期手动跑」；（c）`03:92` issues 入账规则「`assignee` 是 `gyb` 的那一版（含首次开单）触发桌面通知」改「进 `rl status` 段 2」（`03` 与 `09` 写了两遍处）。
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：问题 40 原来只盖住三处，评审又扫出三处同源残留——(d) `05:58` issue 命令行「`--to gyb`（开单或改派）触发通知」改「进 `rl status` 段 2」（`09:119` 同句 2026-08-21 已改，写了两遍处）；(e) `04:221` 阈值清单删 `notify.reminder_days` 一项；(f) `05:235` 接口一节阈值清单删 `notify.reminder_days`。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `01` 定稿为准）
 
 ## 2026-08-21 来自 rl-hub-v5 关于 07 定稿动到冻结三份的几处（冻结后待议）
@@ -288,6 +292,7 @@
 - 裁决原文：gyb 2026-08-21（原话见 `07` 裁决记录；总纲「快车道对主程序在验证完之前不存在，出口一口气合并落账」）。
 - 要改的地方：
   41. 冻结后待议：（a）`03` scratch 表 `open` 版必填改「deploy 填 `worktree`、`base_commit`、`branch`；analysis 只填 `dir`」；（b）`04` 转移表快车道「（新建）→ done_pending_review」行前提加「`code_paths` 非空」；（c）`04` 转移表补两行——「`todo` 的单 `rl ql open --from` 标 `quick_lane`、离开待干不占 holder」「`quick_lane` 标记的单出口追加一版直达 `done_pending_review`（前提同快车道新建行）／放弃退回 `todo` 去标记」；（d）`04`「owner 就是开单角色」通则加例外「快车道补单开单动作 deploy、owner 记 gyb」；（e）`04` sessions 账补「宿主 gpu-runner 不登记 sessions 账」；（f）`05` `rl ql close` 补「`--merged` 和 `--dropped` 都删工作树与同名分支」、`rl ql open --from` 补「单子标 `quick_lane` 并离开待干」、转进单出口那一步的子命令名归 `05` 定；（g）`05:236` 接口「公共规矩八条」改九条（rule-09 修必销案，2026-08-21 立）。
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(h) `05` `rl status` 段 9／`--group-by line` 那里补「没关的快车道不归线，单独列一堆」（`07` 定稿，`01` 已落，`05:163`/`05:166` 当时漏攒）；(i) (d) 那条评审核对 `04` 现文可能已有同义句，落地时先核对、已有就只核不加；(j) (f) 里「转进单出口那一步的子命令名归 `05` 定」读作「最后一期改 `05` 时由 gyb 定」——冻结规矩不给 rl-part-05 派活。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `07` 定稿为准）
 
 ## 2026-08-21 来自 rl-part-10 关于 10-role-idea.md
@@ -296,6 +301,7 @@
 - 要改的地方：
   42. （a）`06-hooks-and-permissions.md`：idea json `reads` 表下备注「`notes/` 要 gyb 发 `read:notes` 才读」删（10 的 json 副本未动，等 `06` 改了传回）；（b）`08-trees-init-and-host.md`：`rl init` 逐项问里「问 gyb 一次要不要当场给 idea 发 `read:notes`」删；（c）`01-gyb.md`：gyb use case 表「批 `read:notes`」的活删，「授权只有 gyb 能写」段里 `read:notes` 例子随 grants 账存废定（存废见 43(c)）；（d）`20-pair-idea-deploy.md`：「怎么测试、什么算成功」只在起下游 subagent 的交代里说、不写进单子；`--manual` 单默认 gyb 自己验收；（e）`14-role-reviewer.md`、`25-pair-reviewer-idea.md`：reviewer 拿 grant 当「idea 有没有读过 notes/」凭据的核对项删；idea 读完清单不自行处置、只报 gyb 裁了才动；（f）`11` 到 `14` 收件箱段：过版项口径统一「本会话手上单子引的过版决定」、feedback 裁决单列一项。
 - 状态：已处理 2026-08-21（rl-hub-v6：(a) `06` 已改、json 副本已传回 `10`；(b) `08` 已改；(c) `01` 获准段、第 3 件事、接口行已改，use case 表查无「批 `read:notes`」行、授权段无 `read:notes` 例子；连带 `00` 砍掉手续清单、`02` doctor 段与接口两处、`09` grants 两段与接口三行统筹补扫已改；(d) `20` 正文两处已改、`21` 抄的转移表 accept 行同步补备注、跨根归线裁决连带记进 `20`/`21`/`22`/`23` 裁决记录；(e) `25` 已改并销「没写清」第 7 条，`14` 已 SendMessage 交代 rl-part-14；(f) 已 SendMessage 交代 rl-part-11 到 14——`11`/`13` 正文五样已与口径一致、`12` run 不查 inbox 不涉、`14` 「四类…再加」句要改；`24` 接口「列哪四类」顺手收成五类）
+- 补记 2026-08-21（评审修复，gyb 授权）：(e) 交代 rl-part-14、(f) 交代 rl-part-12/14 的部分，文件本体一直没落（评审核实）；清单已重发给 rl-part-12/14，按回执制（HANDOFF 第四节 2026-08-21 立）等它们的回执段。
 
 ## 2026-08-21 来自 rl-part-10 关于 10 定稿动到冻结三份的几处（冻结后待议）
 - 事项：`10-role-idea.md` 定稿（`96459b4`）裁决的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，等最后一期。
@@ -303,6 +309,7 @@
 - 要改的地方：
   43. 冻结后待议：（a）`05` doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；（b）`05` `rl status --group-by line` 改「跨根的单在每条相关线里都出现」；（c）`05` `rl grant` 子命令与 `03` grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；（d）`03` `line` 字段语义改「`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现」；（e）`04` 转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」。
   （统筹补扫 2026-08-21 rl-hub-v6：(a) 的连带还有两处——`05` `rl init` 签名行里「问一次要不要给 idea 发 `read:notes`」那半句、`05` 接口一节「`read:notes` 的申请走法」一行，同属获准机制砍掉，最后一期一起删。）
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(d) 的 `line` 是 handoffs 字段，定义处是 `04`（`03` 里没有这个字段），落点从 `03` 改 `04`——`04` 字段表 `line` 的语义句照 (d) 的内容改。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `10` 定稿为准）
 
 ## 2026-08-21 来自 rl-part-11 关于 11-role-deploy.md
@@ -311,12 +318,14 @@
 - 要改的地方：
   44. （a）`07-quick-lane.md`：出口顺序改「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」，决定来源和报告路径的存在性检查一律按主树查，「主分支上永远只有走过工单的代码」句认下合并到补单之间的短窗口；（b）`10-role-idea.md`、`20-pair-idea-deploy.md`：idea 开工单时填方向名一栏，deploy 开发射单照抄；（c）`25-pair-reviewer-idea.md`：reviewer 的代码清单按全量口径读（含 `experiments/` 外宿主文件）；（d）`12-role-run.md`、`21-pair-deploy-run.md`：派活开场提示全抄单子内容（run 被拉起时开场话里有全貌；裁的场景是 deploy 派 run，别的通道要不要照此由统筹定）。
 - 状态：已处理 2026-08-21（rl-hub-v6：(a) `07` 出口顺序本来就是先 merge 后补单——2026-08-17 问题 8 已定，这次按确认补记，存在性按主树句、短窗口句已补进正文；(b) `10` 「工单怎么开」补 `track` 句，`20` 记裁决记录，`21` track 行改「从父单抄」；(c) `25` 记裁决记录，`14` 的代码清单口径已 SendMessage 交代 rl-part-14；(d) `21` 记裁决记录、`12` 已 SendMessage 交代；「别的通道要不要照此」不归统筹定，立问题 46 等 gyb）
+- 补记 2026-08-21（评审修复，gyb 授权）：(d) 交代 rl-part-12 的部分文件本体没落（评审核实）；清单已重发，按回执制等回执。
 
 ## 2026-08-21 来自 rl-part-11 关于 11 定稿动到冻结三份的几处（冻结后待议）
 - 事项：`11-role-deploy.md` 定稿（`5e8dffa`）裁决的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，等最后一期。
 - 裁决原文：同上一段。
 - 要改的地方：
   45. 冻结后待议：（a）`04` handoffs 字段表 `work_order` 加 `track` 一栏（idea 开单时填），`launch_order` 开单从父单抄 `track`；（b）`04` withdraw 一侧补一句「收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定」；（c）`05` `rl handoff open --type work_order` 要能收方向名，`launch_order` 自动从父单抄之后发射单侧的方向名参数改可省；（d）`03` `code_paths` 字段说明补「全收：这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算」。
+  - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(e) (d) 的 `code_paths` 是 handoffs 字段，定义处是 `04`（`03` 里没有这个字段），落点从 `03` 改 `04`；(f) (a) 的 `track` 与 `04` attempts 里已有的 `track` 同名同义——`work_order` 加顶层 `track`（idea 开单填），`launch_order` 不另加顶层栏，开单时从父单顶层 `track` 抄进第一次尝试的 `attempts[].track`，两处一个意思。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `11` 定稿为准）
 
 ## 2026-08-21 来自 rl-hub-v6 关于派活开场话的适用范围（等 gyb）
@@ -325,3 +334,14 @@
 - 要改的地方：
   46. 若推广到所有派活通道：`20`、`22` 各补一句「派活开场提示全抄单子内容」，`10` 的交代句同步；若只限 deploy 派 run：维持现状（`21` 裁决记录与 `12` 已落）。
 - 状态：等 gyb
+
+## 2026-08-21 来自 rl-part-13 关于 13-role-analysis.md
+- 事项：评审修复清单六条已落，commit `e31d4ca`。第 6 条只落了一半：`ledger_writes` 的 issues 已加 close（限自己开的），「use case 表补对应行」落不了，13 这份没有 use case 表，已回报 reviee。核对时 `06` 的 analysis json（reads 加 scratch、issues 加 close）还没改，等 reviee 落 `06` 侧。
+- 状态：已处理（评审修复确认 2026-08-21：13 不补 use case 表，json 副本加表下备注就是落点；`06` 侧同日由评审修复落）
+
+## 2026-08-21 来自 评审修复会话（gyb 授权） 关于 冻结三份的评审补扫
+- 事项：`plans/2026-08-21-research-loop-parts-review.md` 坐实的问题里落在冻结 `03`/`04`/`05` 正文、且不属于问题 34/35/37/39/40/41/43/45 任何一段的，编成问题 47 攒着等最后一期。34/35/39/40/41/43/45 各段 2026-08-21 追加的「统筹补扫」行也是这次评审补的。
+- 裁决原文：（gyb 2026-08-21 授权评审修复代裁，逐条依据写在行内；最后一期落地时 gyb 可逐条否）
+- 要改的地方：
+  47. 冻结后待议：（a）`03:242`「合回六步的顺序（先开补单再 `ql close --merged`）」——`07` 里没有「六步」这个说法，改成「合回的出口顺序（gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `ql close --merged --handoff ID`），见 `07` 出口一节」（问题 44(a) 已确认此序）。（b）`04` 第六节销号钩子那段补一句跨账写序：「先逐张 release 交回（release 行的 `session_id` 记本会话，此刻 sessions 还没 `closed`，写得进），最后落 sessions 的 `closed` 版（含 `released_handoffs` 清单）」——`03:15` 已明写此序并说「`04` 第六节定的顺序」，`04` 补上这句指向才成立。（c）`03:196` scratch 段「analysis 和 reviewer 默认不读这本账」改成「这本账日常不进审读顺序：deploy 和 analysis 只在快车道里读写自己那条 `ql_tag` 的行，reviewer 审快车道时才读（reads 清单里有）」——`06` 定稿的 json 里 reviewer 的 reads 有 scratch、analysis 的 ledger_writes 有 scratch 全部（`07:64` 同句 2026-08-21 已按此改，写了两遍处）。（d）`03:4` 与 `03:240`「`rl status`……在 `05-rl-cli.md`」各补半句「（十段内容定义处是 `01`，`05` 是命令表）」。（e）`04:220`「`rl status` 的十段全文……写在 `05-rl-cli.md`」同补这半句。（f）`04:209` 括号里那串「……待同步」补「（已同步 2026-08-17 夜 rl-hub-v3 `70c766b`，见文末「要同步到别处的」末条）」——正文标注与文末已同步标注打架，以文末为准。
+- 状态：等最后一期（2026-08-21 评审修复立）

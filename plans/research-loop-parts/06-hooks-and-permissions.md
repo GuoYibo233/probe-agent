@@ -1,7 +1,7 @@
 # 分权三层、钩子、角色 json
 
 > 这份覆盖约束分成的三层（钩子、入账校验、纪律）各管什么、钩子拦哪两类事又放行什么、钩子的回话怎么写、钩子怎么跟角色绑定、没加载角色的裸会话靠 CLAUDE.md 那一节的三句话、角色 json 的五栏定义和五份 json 逐栏的内容、`tests/test_skill_refs.py` 查什么、读的纪律。
-> 不覆盖的：九本账每一行的字段和 status 取值写在 `03-ledgers.md`；派活单转移表和会话登记销号的流程写在 `04-handoffs-and-sessions.md`；`rl` 每条子命令的参数、退出码、`rl status` 的十段写在 `05-rl-cli.md`；`--as-gyb` 和 `--quote` 这条规矩本身、gyb 的豁免范围从 gyb 那头看是什么样写在 `01-gyb.md`；公共母版八条规矩、`common/READING.md` 的正文、反馈账写在 `09-common-and-feedback.md`；插件树里 hooks/ 和 monitors/ 摆在哪、init 建什么写在 `08-trees-init-and-host.md`；每个角色的 use case 表和干活流程写在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`；待验证清单的测法和测试清单写在 `30-build-steps-verify-tests.md`。
+> 不覆盖的：九本账每一行的字段和 status 取值写在 `03-ledgers.md`；派活单转移表和会话登记销号的流程写在 `04-handoffs-and-sessions.md`；`rl` 每条子命令的参数、退出码、`rl status` 的十段写在 `05-rl-cli.md`；`--as-gyb` 和 `--quote` 这条规矩本身、gyb 的豁免范围从 gyb 那头看是什么样写在 `01-gyb.md`；公共母版九条规矩、`common/READING.md` 的正文、反馈账写在 `09-common-and-feedback.md`；插件树里 hooks/ 和 monitors/ 摆在哪、init 建什么写在 `08-trees-init-and-host.md`；每个角色的 use case 表和干活流程写在 `10-role-idea.md`、`11-role-deploy.md`、`12-role-run.md`、`13-role-analysis.md`、`14-role-reviewer.md`；待验证清单的测法和测试清单写在 `30-build-steps-verify-tests.md`。
 > 源：设计文档的「分权与钩子」一节、「五个角色」总段、「两棵树」一节里插件本体那一段、「待验证清单」；施工计划第一节裁决 3、5、6、7、8，第五节（角色 json 与 gyb 的 use case 表），第六节 actor 判定那一段，第七节 run 照 gpu-run 写的钩子那一格，第九节待验证清单，第十节测试 8、9、13，第十三节公共规矩第 8 条。
 
 ## 三层约束，各管各的
@@ -28,7 +28,7 @@ gyb 只豁免「谁能调」和「谁能写」两样。完整性校验对 gyb �
 
 钩子解析不出目标路径的 Bash 写法（脚本内部写文件、`python -c`、heredoc 之类）钩子不看，宿主发射器的台账、读什么、怎么读，全归这一层。这一层有一句专门管绕钩子的（2026-08-18 gyb 裁，同日 Bash 进钩子匹配范围后按 sync-inbox 问题 38 选 b 改成现在这样）：钩子拦不到的写法（脚本内部写文件、`python -c`、heredoc、任何钩子解析不出目标路径的 Bash 命令）一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`。这句进公共规矩第 8 条和每份角色 SKILL.md，reviewer 事后拿 git 历史对着 sessions 账查。reviewer 事后审的就是这一层。
 
-公共规矩第 8 条把三层的出圈处理写成一句：钩子拦下的，原话告诉模型开哪条 issue；钩子不拦但越出自己 writes 的（宿主文件、钩子解析不出的 Bash 写入），列进报告并留决定并守宿主规矩；读账一律经 rl 查询命令，查询命令谁都能调。八条规矩的正文在 `09-common-and-feedback.md`。
+公共规矩第 8 条把三层的出圈处理写成一句：钩子拦下的，原话告诉模型开哪条 issue；钩子不拦但越出自己 writes 的（宿主文件、钩子解析不出的 Bash 写入），列进报告并留决定并守宿主规矩；读账一律经 rl 查询命令，查询命令谁都能调。九条规矩的正文在 `09-common-and-feedback.md`。
 
 ### 读一律不设权
 
@@ -115,7 +115,7 @@ hooks/ 里除了写权钩子，还有登记和销号两个钩子。
 
 ### 会话状态文件
 
-`rl` 判 actor 靠会话状态文件：状态文件由插件级钩子文件里的一条钩子在加载角色 skill 时写（`agent_type` 非空的 subagent 不写，2026-08-18 gyb 裁），路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁：放记忆文件夹下的子文件夹，不用宿主给插件的数据目录变量）。它和 `loop/.lock`、`loop/.doctor-acks.jsonl` 一样是普通文件、不算九本账；`rl init` 往研究仓库的 `.gitignore` 加一行 `loop/.sessions/`，状态文件不进 git、不算脏树，发射门禁不看它。`rl` 从它读当前角色，读不到状态文件就是裸终端，actor 是 `gyb`，session_id 记 `cli`。
+`rl` 判 actor 靠会话状态文件：状态文件由插件级钩子文件里的一条钩子在加载角色 skill 时写（`agent_type` 非空的 subagent 不写，2026-08-18 gyb 裁），路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁：放记忆文件夹下的子文件夹，不用宿主给插件的数据目录变量）。它和 `loop/.lock`、`loop/.doctor-acks.jsonl` 一样是普通文件、不算九本账；`rl init` 往研究仓库的 `.gitignore` 加一行 `loop/.sessions/`，状态文件不进 git、不算脏树，发射门禁不看它。`rl` 从它读当前角色，读不到状态文件就是裸终端，actor 是 `gyb`，session_id 记 `cli`。subagent（`agent_type` 非空）不写状态文件而 `session_id` 与父会话相同，所以 subagent 里敲 `rl` 时按状态文件读到的是父会话的角色——这条对不对、要不要另立信号，连同 sessions 登记一起挂在待验证第 5 条，测完由 `04` 定（登记那段已这么挂）。
 
 状态文件谁删（2026-08-18 gyb 裁）：销号钩子在会话结束时顺手删；会话被强杀删不掉的留着，由 `rl doctor` 扫，sessions 账里对应会话已销号、或文件超过一天没动的当垃圾清。活死以 sessions 账为准，状态文件只是缓存（原则 8）。位置定在 `loop/.sessions/` 之后不再依赖宿主变量，原来「`${CLAUDE_PLUGIN_DATA}` 解析到哪」那半条待验证撤销，不测了。
 
@@ -123,9 +123,9 @@ hooks/ 里除了写权钩子，还有登记和销号两个钩子。
 
 hooks/ 是一份插件级钩子文件 `hooks/hooks.json` 加脚本本体，写权、登记、销号都在这一份里；脚本不靠参数认角色，按上一节的顺序自己判（`agent_type`，再状态文件）。「五个角色共用一个脚本、参数报角色名」的写法 2026-08-18 作废（同日实测 skill 头部钩子带参数能到，测试留在 `~/.claude/jobs/8a102def/tmp/hookargs/`，事实保留、写法不用了）。
 
-插件另有 `agents/` 一层，五份角色 agent 定义 `agents/<role>.md`（2026-08-18 gyb 裁，来自 `08`）：只塑形、不设闸——提示词、预加载本角色 skill、收窄工具面（按 use case 表倒推，比如 reviewer 禁 Write/Edit），不写钩子（插件 agent 定义里的钩子字段被忽略）。派活一律用这五个类型起 subagent，钩子输入的 `agent_type` 就是这么来的；`rl init` 不往研究仓库播 agent 文件、不动仓库 settings。agent 定义改一处算改母版，和角色 json 同一个流程：feedback 账记一条、采纳后单独 commit（前缀 `research-loop rules:`）、`rules_version` 一起加一，生效时刻同母版（2026-08-18 gyb 裁，sync-inbox 问题 38 选 a；流程正文在 `09` 第四节）。monitors/ 里只有一个看门狗，只在 run 上线时起，只写自己的状态文件，不写九本账。
+插件另有 `agents/` 一层，五份角色 agent 定义 `agents/<role>.md`（2026-08-18 gyb 裁，来自 `08`）：只塑形、不设闸——提示词、预加载本角色 skill、收窄工具面（按 use case 表倒推；写权的闸在钩子，工具面只是收窄），不写钩子（插件 agent 定义里的钩子字段被忽略）。派活一律用这五个类型起 subagent，钩子输入的 `agent_type` 就是这么来的；`rl init` 不往研究仓库播 agent 文件、不动仓库 settings。agent 定义改一处算改母版，和角色 json 同一个流程：feedback 账记一条、采纳后单独 commit（前缀 `research-loop rules:`）、`rules_version` 一起加一，生效时刻同母版（2026-08-18 gyb 裁，sync-inbox 问题 38 选 a；流程正文在 `09` 第四节）。monitors/ 里只有一个看门狗，只在 run 上线时起，只写自己的状态文件，不写九本账。
 
-和钩子有关的待验证条目有五条，测法和失败备案在 `30-build-steps-verify-tests.md`：Bash 环境里有没有现成的会话 id 变量；skill 头部声明的钩子能不能给命令带参数；monitor 的 `when: "on-skill-invoke:run"` 写法；SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个；subagent 里加载角色 skill 头部钩子装不装得上、写权拦不拦；钩子输入里有没有模型标识。第 2 条已测通过（见上）；第 8 条 2026-08-18 已测（八个变体，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）：主案不成立、备案一不成立，走插件级钩子文件按 `agent_type` 判角色，见上两节；其余仍按 gyb 裁定：讨论全部收口之前一律不测。顺带看到的一个事实，不算正式测：2026-08-18 那次测试里 PreToolUse 的钩子输入有会话 id、工作目录、权限模式、工具入参，没有模型标识。
+和钩子有关的待验证条目有六条，测法和失败备案在 `30-build-steps-verify-tests.md`：Bash 环境里有没有现成的会话 id 变量；skill 头部声明的钩子能不能给命令带参数；monitor 的 `when: "on-skill-invoke:run"` 写法；SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个；subagent 里加载角色 skill 头部钩子装不装得上、写权拦不拦；钩子输入里有没有模型标识。第 2 条已测通过（见上）；第 8 条 2026-08-18 已测（八个变体，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）：主案不成立、备案一不成立，走插件级钩子文件按 `agent_type` 判角色，见上两节；其余仍按 gyb 裁定：讨论全部收口之前一律不测。顺带看到的一个事实，不算正式测：2026-08-18 那次测试里 PreToolUse 的钩子输入有会话 id、工作目录、权限模式、工具入参，没有模型标识。
 
 ## 裸会话靠研究仓库的 CLAUDE.md
 
@@ -187,13 +187,13 @@ deploy：
 
 | 栏 | 值 |
 |---|---|
-| `reads` | `decisions.idea`、`decisions.gyb`、`decisions.deploy`、handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md` |
+| `reads` | `decisions.idea`、`decisions.gyb`、`decisions.deploy`、handoffs、issues、runs、feedback、scratch、`experiments/`、`ops/gpu_state.md` |
 | `writes` | `experiments/`（worktree 在仓库外，钩子不判） |
 | `ledger_writes` | decisions.deploy 全部、handoffs 的 start/done/stuck/open/accept/reject/withdraw/release/resume/amend、issues 全部、scratch 全部（含 ql open/close）、feedback add |
 | `dispatches_to` | run、gpu-runner |
 | `model` | `as_subagent` 是 opus，`manual` 是 inherit |
 
-备注：`ops/gpu_state.md` 只在快车道自己跑 GPU 时读；gpu-runner 只在快车道派。
+备注：`ops/gpu_state.md` 只在快车道自己跑 GPU 时读；gpu-runner 只在快车道派；scratch 只在快车道读写自己那条 ql_tag 的行。
 
 run：
 
@@ -213,11 +213,13 @@ analysis：
 
 | 栏 | 值 |
 |---|---|
-| `reads` | runs、evaluations、handoffs、issues、feedback、`decisions.idea`、`decisions.gyb`、`analysis/` |
+| `reads` | runs、evaluations、handoffs、issues、feedback、scratch、`decisions.idea`、`decisions.gyb`、`analysis/` |
 | `writes` | `analysis/` |
-| `ledger_writes` | evaluations 的 propose/update、handoffs 的 start/done/stuck、issues 的 open/reply、scratch 全部、decisions.analysis 全部、feedback add |
+| `ledger_writes` | evaluations 的 propose/update、handoffs 的 start/done/stuck、issues 的 open/reply/close（close 限自己开的）、scratch 全部、decisions.analysis 全部、feedback add |
 | `dispatches_to` | 无 |
 | `model` | `as_subagent` 是 opus，`manual` 是 inherit |
+
+备注：scratch 只在快车道读写自己那条 ql_tag 的行；issues 的 close 限自己开的（`03` 的写权：close 归开单的 actor 或 gyb；`24` 的通道表第 6 步）。
 
 reviewer：
 
@@ -452,12 +454,18 @@ run 的模型 2026-08-16 晚 gyb 改裁为 opus，原来写的 sonnet 那一句�
 - 2026-08-18 gyb 裁（sync-inbox 问题 38，rl-hub-v5 问，原话「b」「a」）：38-1 纪律句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写；要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`」，第三层那句照改，`09` rule-08 与五份角色 SKILL.md 同句同改；38-2 角色 agent 定义改一处算改母版，走角色 json 同一个流程，`agents/` 那段照改，`09` 第四节补一句。对回原则 2、9。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：接口一节公共母版八条规矩改九条（rule-09「修必销案」2026-08-21 gyb 立，定义处 `09`）。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：idea 读 `notes/` 的获准机制整套砍掉——idea json `reads` 备注删「`notes/` 要 gyb 发 `read:notes` 才读」半句，「读的纪律」一节授权那处改成只留纪律一句，接口一节 grants 行注存废等最后一期（sync-inbox 问题 43）。对回原则 2（读一律不设权）。
+- 2026-08-21 评审修复（gyb 授权，定义处 `14-role-reviewer.md` 加本份 reviewer 那张 json 表）：`agents/` 那段收窄工具面的括号里「比如 reviewer 禁 Write/Edit」删掉，改成「写权的闸在钩子，工具面只是收窄」。reviewer 的产出就是往 `review/` 写清单，`writes` 是 `review/`，禁掉 Write/Edit 它交不出活，原来那个例子是错的。
+- 2026-08-21 评审修复（gyb 授权）：「钩子脚本本身」一节末尾「和钩子有关的待验证条目有五条」改「六条」，那句后面分号列的实际是六项（会话 id 变量、头部钩子带参数、monitor 的 `when` 写法、SessionEnd 与 SubagentStop、subagent 里装钩子、钩子输入里有没有模型标识）。
+- 2026-08-21 评审修复（gyb 授权，定义处 `04-handoffs-and-sessions.md`）：「会话状态文件」一节末尾补一句——subagent 不写状态文件而 `session_id` 与父会话相同，所以 subagent 里敲 `rl` 时按状态文件读到的是父会话的角色；这个缺口连同 sessions 登记一起挂在待验证第 5 条，测完由 `04` 定。原来 102 行说钩子有 `agent_type` 和状态文件两条路，118 行说 `rl` 只按状态文件判，两句之间的 subagent 场景没人接。
+- 2026-08-21 评审修复（gyb 授权，定义处 `03-ledgers.md` 的写权栏加 `24-pair-analysis-deploy.md` 的通道表第 6 步）：deploy 和 analysis 两张 json 表的 `reads` 加 scratch，两张表下面各补一条 scratch 备注；analysis 的 `ledger_writes`「issues 的 open/reply」改「issues 的 open/reply/close（close 限自己开的）」。两份的 `ledger_writes` 有 scratch 全部而 `reads` 没有，机器检查（测试 13）会红；analysis 关自己开的 issue 是 `03` 写权加 `24` 通道表既有的走法，`13` 侧 rl-part-13 已落（`e31d4ca`）。
+- 2026-08-21 评审修复（gyb 授权，定义处 `09-common-and-feedback.md`，rule-09「修必销案」2026-08-21 立）：开头第二段「不覆盖的」和第三层那一节末尾两处当前口径引用的「公共母版八条规矩」「八条规矩的正文在 `09`」改成九条。历史句（「八条原则」「前八条」）不动。
+- 2026-08-21 评审修复（gyb 授权，定义处本份「钩子脚本本身」一节）：「要同步到别处的」给 `08` 那一条末尾加补注——「共用脚本带角色参数」写法 2026-08-18 已作废，本条不再照字面落，`08` 侧按现行口径处理。原条文不删。
 
 ## 要同步到别处的
 
 下面这些是 2026-08-18 定稿时牵连别的 part 的，这边只列不改，已经 SendMessage 报给 rl-hub-v4 并追加到 `sync-inbox.md`。
 
-- `08-trees-init-and-host.md`：阈值表加一项钩子路径白名单（配置项，默认为空，gyb 在 `rl init` 之后按需填；列在里面的路径钩子一律放行）。hooks/ 那行「五个角色共用一个脚本、参数报角色名」维持，可注「2026-08-18 已实测」。（已同步 2026-08-18 rl-hub-v4）
+- `08-trees-init-and-host.md`：阈值表加一项钩子路径白名单（配置项，默认为空，gyb 在 `rl init` 之后按需填；列在里面的路径钩子一律放行）。hooks/ 那行「五个角色共用一个脚本、参数报角色名」维持，可注「2026-08-18 已实测」。（已同步 2026-08-18 rl-hub-v4）（2026-08-21 评审补注：「共用脚本带角色参数」写法 2026-08-18 已作废，见「钩子脚本本身」一节；本条不再照字面落，`08` 侧按现行口径处理）
 - `30-build-steps-verify-tests.md`：待验证第 2 条状态改「已测通过（2026-08-18，参数原样到达），主案定，备案删」；第 1 条并入「`${CLAUDE_PLUGIN_DATA}` 在本机解析到哪，宿主不给就插件在用户目录下自定数据目录」（同日撤销，见下面追加的一条）；第 6 条（钩子输入里有没有模型标识）可注「2026-08-18 一次 PreToolUse 观察里没有，正式结论仍等测」。（已同步 2026-08-18 rl-hub-v4）
 - `09-common-and-feedback.md`：rule-08 补半句「用 Bash 往四个角色目录和 `loop/` 写等于绕钩子，不许，要写就用 Write/Edit，账本一律走 `rl`」；母版加一句「一个会话只加载一个角色，要换角色另开会话」；第四节 `rules_version` 补「角色 json 改动同流程：feedback 记一条、单独 commit、`rules_version` 加一」；第七节「`notes/` 只有 gyb 写」改成「`notes/` gyb 和 idea 写」。（已同步 2026-08-18 rl-hub-v4）
 - `10-role-idea.md`：json 副本 `writes` 「无目录」改 `notes/`；第 13 行「idea 的角色 json 里 writes 一栏是空的，一个目录都不能 Write 或 Edit」照改；`reads` 行按新写法展开（清单见本份 idea 那张表）；SKILL.md 加两句纪律（Bash 绕钩子、一会话一角色）。（已同步 2026-08-18 rl-hub-v4）

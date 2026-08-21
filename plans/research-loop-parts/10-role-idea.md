@@ -28,6 +28,9 @@ idea 把决定拆成工单派给 deploy，也可以给 analysis 开分析单。i
 | gyb 点名更正单子上的说明时执行修改 | `handoff amend`（2026-08-21 gyb 裁补进表，gyb 原话「我有时候会手动要求更改的」） |
 | 问 gyb（下游死了拿不准重起还是问、或别的要 gyb 裁的事） | `issue open --to gyb` |
 | 回下游的 issue 并把单子交回待干 | `issue reply`、`handoff resume` |
+| 手上的 issue 该由别人接时改派 | `issue reassign`（2026-08-21 评审修复补进表，正文里没有对应的活，从 `06` 定稿的 json 倒推） |
+| 做完发给本角色的通知类 issue 之后自己关 | `issue close`（2026-08-21 评审修复补进表） |
+| 提公共母版的修改意见 | `feedback add`（2026-08-21 评审修复补进表） |
 | 读 reviewer 清单 | 只用查询命令 |
 
 角色 json 的四栏是这张表的并集，model 另记。写 SKILL.md 的时候，每个 use case 底下还要写清读哪些账和目录、写哪个目录、调哪些 rl 写命令（原则 5），源文档只给了并集，没有逐条拆开。
@@ -385,6 +388,7 @@ idea 用 fable 与本机 `~/.claude/CLAUDE.md` 的「subagent 默认不用 Fable
 - 2026-08-21 本份定稿问题 12（gyb 选「只列本会话手上的」）：`rl inbox` 过版那一项按「本会话手上单子引的过版决定」定，两处原文不一致收口；全量走 `rl decision stale --all` 或 `rl status`。对回原则 6。
 - 2026-08-21 本份定稿问题 13（gyb 选「单列一项」）：feedback 裁决在 `rl inbox` 单列一项、不并进通知，两处原文不一致收口。对回原则 6。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「工单格式里加一个位置」）：工单加方向名 `track` 一栏，idea 开单时填、发射单从父单抄；「工单怎么开」一节补句（`04` 字段表补栏等最后一期，sync-inbox 问题 45）。对回原则 9。
+- 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md`）：use case 表补三行——手上的 issue 该由别人接时改派（`issue reassign`）、做完发给本角色的通知类 issue 之后自己关（`issue close`）、提公共母版的修改意见（`feedback add`）；补完之后 `ledger_writes` 一栏逐条在表里都有行（decisions.idea 五条、handoffs 八条、issues 四条、feedback add）。`issue close` 那一行的正文依据是接口一节「通知类 issue 由收件人做完了自己 close」加「验收一张单子时，它关联的已回复 issue 自动关」，`feedback add` 那一行的正文依据是收件箱一节「本角色提的 feedback 的裁决」；`issue reassign` 正文里找不到依据，这一行是从 `06` 定稿的 json 倒推回来的。对回原则 5。
 
 ## 要同步到别处的
 

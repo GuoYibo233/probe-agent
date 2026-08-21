@@ -46,7 +46,7 @@ analysis 交活写 `output_paths`，格式是 `{"notebook":..., "figures":[...]}
 
 ## 五、验收、打回、卡住、收回
 
-验收人是 owner，也就是开单的 idea 或 gyb。gyb 随时可以自己验（原则 1）；gyb 越过 owner 验收或者打回的时候，`rl` 给 owner 发一条 `fyi` 通知（设计文档「交接与会话生命周期」；施工计划第四节 `handoff accept` 那一行）。
+验收人是 owner，也就是开单的 idea 或 gyb。gyb 随时可以自己验（原则 1）；gyb 越过 owner 验收或者打回的时候，`rl` 给 owner 发一条 `fyi` 通知（设计文档「交接与会话生命周期」；施工计划第四节 `handoff accept` 那一行）。`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发（10 定稿已裁，gyb 原话「你干完自己算数」）。
 
 打回要附 `reason`，`reason` 为空入账脚本不收。打回之后单子进 `rejected`，由 owner 重新拉起下游；原会话还活着的话 analysis 可以从 `rejected` 直接 `handoff start` 接着干。
 
@@ -71,7 +71,7 @@ analysis 会话销号的时候，如果它是某张 `in_progress` 分析单的 h
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `analysis_order` 的 `output_paths` 存在且 `evaluation_refs` 每项 `approved` | 无 | `handoff done` |
 | `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 补或改 `output_paths` 里的路径，换 `evaluation_refs` 里的引用；状态不变（doctor 修法用） | 无 | `handoff amend` |
-| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
+| `done_pending_review` | `accepted` | owner | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue；`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发（10 定稿已裁） | 无 | `handoff accept` |
 | `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
@@ -190,8 +190,6 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 12. [slows/ambiguous] 第 37 步：「拿到数字给 gyb 看」两种读法都成立：idea 读九本账全部，可以直接 rl run show 把 metrics 念给 gyb；可另一处写着任何角色不许自己写新的要分析的东西、要看什么 gyb 一条条说由 analysis 记账批准，照抄一个原始指标算不算分析没有界
    - 依据：plans/2026-08-16-research-loop-next-steps.md:52; plans/2026-08-16-research-loop-next-steps.md:30; plans/2026-08-16-research-loop-next-steps.md:76
    - 改法：明写「照抄 runs 账 metrics 里的原始数不算分析，任何对比、聚合、画图都要走口径账」
-</content>
-</invoke>
 
 ## 裁决记录（日期）
 
@@ -210,3 +208,4 @@ gyb 只想先看一眼图的时候不开分析单，走快车道，图落 `analy
 - 2026-08-18 来自 `00-overview.md` 定稿（`6ea0edc`，rl-hub-v4 传；gyb 原话「a」）：第三节（e）那段由「gyb 不认就改回」改成「2026-08-18 gyb 认，不改回」。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：「桌面通知按推送表走」整句按「桌面通知这一版不做」改写，落点不变（inbox 与 status 等验收段）。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现（字段语义定义处 `03` 冻结、等最后一期收口，sync-inbox 问题 43）；「没写清」第 1 条里「`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来」那半句按此读，第 1 条本身（分析单要不要 `decision_refs`）未裁。对回原则 9。
+- 2026-08-21 评审修复（gyb 授权，定义处 `10-role-idea.md`）：第五节验收人那句、第六节转移表 `handoff accept` 行都补上「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」（10 定稿已裁，gyb 原话「你干完自己算数」，措辞对齐 `10` 第 148 行），owner 验收的常规路不动。

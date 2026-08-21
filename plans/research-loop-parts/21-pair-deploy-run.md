@@ -129,24 +129,26 @@ issue 的关闭：`rl handoff accept` 的时候自动关掉这张单关联的 `a
 | `in_progress` | `stuck` | holder | `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单 | 无 | `handoff stuck` |
 | `stuck` | `todo` | 回了 issue 的那个角色、owner | 关联 issue 状态是 `answered` | owner | `handoff resume` |
 | `in_progress` | `done_pending_review` | holder | `launch_order` 最新尝试的 run 行有 `exit_status=ok` 的 `finished` 版 | 无 | `handoff done` |
+| `done_pending_review` | `todo`（内容追加） | owner、`to_role` | 补或改 `report_paths`、`output_paths`、`code_paths` 里的路径，换 `decision_refs` / `evaluation_refs` 里的引用；状态不变（doctor 修法用） | 无 | `handoff amend` |
 | `done_pending_review` | `accepted` | owner（`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发，2026-08-21 裁） | 无；gyb 越过 owner 时 rl 给 owner 发 `fyi`；rl 顺带关这张单关联的 `answered` issue | 无 | `handoff accept` |
 | `done_pending_review` | `rejected` | owner | `reason` 非空；gyb 越过 owner 时 rl 给 owner 发 `fyi` | owner | `handoff reject` |
 | `rejected` | `todo` | owner、`reclaim` | 无 | owner | `handoff release` |
 | `rejected` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`（原会话还活着直接接着干） | 无 | `handoff start` |
 | `todo` / `in_progress` / `stuck` / `done_pending_review` / `rejected` | `withdrawn` | owner | `reason` 非空（角色会话发起还要 `quote`）；从 `in_progress` 收回时 rl 顺带开 `withdrawn` 通知给 holder 的角色和 owner，其他状态不通知；`--cascade` 时 rl 代 owner 连 `parent_id` 指向本单的下游单一起收，下游账行 actor 记发起人 | 无 | `handoff withdraw` |
 | `in_progress` | `todo` | 销号钩子、`reclaim`、owner | `progress_note` 非空（钩子和 reclaim 自动填）；`launch_order` 且最新尝试有 `launched` 未 `finished` 的 run 行时不杀进程（等下一个 run 认领），reclaim 带 `--kill` 才先走中断收尾；rl 给 owner 开 `orphaned` 通知；销号钩子写的这一版 `actor` 记会话的角色、`via=session_end`，reclaim 写的 `actor` 记 gyb、`via=reclaim` | owner 照单子原来的 `dispatch` 拉起（`auto` 再起一个 subagent），owner 无活会话时进 `rl status` 的「等 gyb 拉起」 | `handoff release` |
+| 任一非终态 | 旧单 `withdrawn`，新单 `todo`（`supersedes` 指旧单） | owner | `--decision ID@V` 给新版本；rl 收旧单（`withdrawn`，级联）、开新单（继承 `explanation`、`parent_id`、`batch`，`supersedes` 指旧单）、通知全部 holder | 同新建 | `handoff reissue` |
 
 `accepted` 和 `withdrawn` 是终态，表外的转移一律拒收，退出码 2。
 
 ## 十二、收回和回收时 run 怎么中断
 
-被收回、被回收这两种中断，run 只做 `rl run finish --exit killed` 加收尾，不再改单子状态；状态由收回那一步或者回收那一步改。看门狗每轮采样顺带查一次本单状态，见到被收回或被回收就走中断流程。
+被收回、被 `reclaim --kill` 回收这两种中断，run 只做 `rl run finish --exit killed` 加收尾，不再改单子状态；状态由收回那一步或者回收那一步改。看门狗每轮采样顺带查一次本单状态：见到被收回（withdrawn）或被 reclaim --kill 的，走中断流程；被默认回收（不带 --kill，单子交回 todo）的，本会话已不是 holder——停掉看门狗、会话销号即可，进程和 runs 行留给下一个认领，不做 rl run finish --exit killed（04 定稿：reclaim 默认不杀）。
 
 `rl handoff withdraw` 走的是收回：owner 写，`reason` 非空，角色会话发起还要 `quote`；从 `in_progress` 收回时 rl 顺带开一条 `withdrawn` 通知给 holder 的角色和 owner、其他状态不通知；`--cascade` 沿 `parent_id` 把派生的下游单一起收，所以 idea 收工单的时候能连着收掉正在烧卡的那张发射单。
 
 `rl reclaim` 走的是回收：开干的发射单默认不杀进程，留给下一个 run 认领；带 `--kill` 才先走中断收尾，杀进程、释放显存、宿主销号、runs 落 `killed`，然后交回 `todo`。
 
-两处原文不一致：设计文档「交接与会话生命周期」一节写「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，施工计划第四节转移表和第六节 `rl reclaim` 那一行写「默认不杀进程（留给认领），`--kill` 才走中断收尾」。按施工计划的表，默认不杀，`--kill` 才杀。
+两处原文不一致：设计文档「交接与会话生命周期」一节写「回收对开干的发射单先走中断收尾（杀进程、释放显存、宿主销号、runs 落 killed）再交回待干」，施工计划第四节转移表和第六节 `rl reclaim` 那一行写「默认不杀进程（留给认领），`--kill` 才走中断收尾」。按施工计划的表，默认不杀，`--kill` 才杀。（已裁：04 2026-08-17，默认不杀、--kill 才杀）
 
 run 会话销号也走 `handoff release`：单子交回 `todo`，填 `progress_note`，给 owner 开 `orphaned` 通知，GPU 进程不动，下一个 run 会话接单时认领。
 
@@ -174,10 +176,10 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 1. 发射单到底带不带 `decision_refs`：设计文档一处说不引决定，另一处和施工计划说从父单继承，见上文第三节的不一致标注。这条要 gyb 定一个值。——2026-08-18 已裁（`02-decisions.md` 定稿，gyb 确认「甲」）：发射单从父单抄 `decision_refs`，「run 不查 inbox」与之并存不矛盾，源文档「发射单不引决定」作废。
 2. `actual_seconds` 谁算：施工计划第三节和设计文档都说 `rl run finish` 从两个时间戳算，第六节命令表的 `handoff done` 又留着一个 `--actual-seconds N` 参数。两处原文不一致，按表是 rl 算，那个参数留着干什么没写。——2026-08-17 已裁（sync-inbox 问题 13）：`rl run finish` 从两个时间戳算，rl 再把它抄进发射单最新一次尝试的 `actual_seconds`，人不填；`rl handoff done` 的 `--actual-seconds` 去掉了。
 3. 认领时账行标 `adopted`，但第三节 handoffs 的字段表里没有 `adopted` 这个字段，标在哪一栏没写。——2026-08-17 已裁（sync-inbox 问题 17）：两边都标，handoffs 的 `start` 那一版写 `adopted: true`，runs 那条同时落一版 `adopted`。
-4. `rl handoff amend` 追加一次尝试的时候，新的 `run_id` 是不是按新的 `attempt` 序号重新分配，命令表和转移表都没写。
+4. `rl handoff amend` 追加一次尝试的时候，新的 `run_id` 是不是按新的 `attempt` 序号重新分配，命令表和转移表都没写。（已裁：`04` 字段表，rl 按 `<ho-id>-a<attempt>` 分配）
 5. `attempts` 里的 `args` 不在开单必填之列，它和 `command` 的分工（是不是命令行拆开写）没写。
 6. 一个 run 会话接整个 batch 的时候，N 张单的 `host` 和 `gpus` 怎么分、分完写回哪里没写；`rl handoff start --batch B` 是不是一次把 N 张单都置 `in_progress` 且 `holder` 都记同一个会话，表里只有单张单的那一行。
-7. deploy 后台起 run subagent 用什么机制、workflow 或 agent 定义文件放插件树的哪里没写，挂在待验证第 8、9 条上。
+7. deploy 后台起 run subagent 用什么机制、workflow 或 agent 定义文件放插件树的哪里没写，挂在待验证第 8、9 条上。（已裁：06/08 定稿，插件 agents/ 的角色 agent 类型起 subagent）
 8. 发射单被 `reject` 之后要不要 `amend` 一次新尝试再跑，还是直接拿最新尝试重发，没写。
 9. deploy 验收发射单的时候看什么、什么情况下该 `reject` 一张 `exit_status=ok` 的发射单，没写。
 10. 认领的那个 run 会话怎么接管看门狗（原来的看门狗进程还在不在、状态文件在哪），没写。
@@ -386,3 +388,8 @@ doctor 里和发射单相关的扫描项：runs 行 `handoff_id` 为空、悬空
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；第三节「`line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着」那句以此为准（字段语义定义处 `03` 冻结、等最后一期收口），正文句留给定稿时并。对回原则 9。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「工单格式里加一个位置」）：工单加 `track` 栏、idea 开单时填，发射单的 `track` 从父单抄；第二节字段表那行照改（`04`/`05` 侧等最后一期，sync-inbox 问题 45）。对回原则 9。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「开场话把单子内容全抄一遍」）：deploy 派 run 的开场提示把发射单内容全抄一遍，run 被拉起时开场话里就有全貌；别的派活通道要不要照此，sync-inbox 问题 46 等 gyb。对回原则 9。
+- 2026-08-21 评审修复（gyb 授权），定义处 `04-handoffs-and-sessions.md`（2026-08-17 已裁：reclaim 默认不杀、`--kill` 才杀）：第十二节看门狗那句改成「见到被收回（withdrawn）或被 `reclaim --kill` 的，走中断流程；被默认回收（不带 `--kill`，单子交回 `todo`）的，本会话已不是 holder——停掉看门狗、会话销号即可，进程和 runs 行留给下一个认领，不做 `rl run finish --exit killed`」，与第 147 行对齐。
+- 2026-08-21 评审修复（gyb 授权），定义处 `04-handoffs-and-sessions.md`（2026-08-17 已裁）：第十二节「两处原文不一致……默认不杀，`--kill` 才杀」那句后加已裁标注。
+- 2026-08-21 评审修复（gyb 授权），定义处 `04-handoffs-and-sessions.md` 字段表：「没写清」第 4 条（新 `run_id` 是不是按新 `attempt` 序号重新分配）后加已裁标注：`rl` 按 `<ho-id>-a<attempt>` 分配。
+- 2026-08-21 评审修复（gyb 授权），定义处 `06-hooks-and-permissions.md`/`08-trees-init-and-host.md`/`11-role-deploy.md` 定稿：「没写清」第 7 条（deploy 后台起 run subagent 的机制）后加已裁标注：插件 `agents/` 的角色 agent 类型起 subagent。
+- 2026-08-21 评审修复（gyb 授权），定义处 `04-handoffs-and-sessions.md` 第三节当前 HEAD：第十一节抄的转移表补两行——`done_pending_review` 上的 `handoff amend` 行、`reissue` 行，字句照抄。

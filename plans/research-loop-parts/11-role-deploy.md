@@ -1,7 +1,7 @@
 # deploy 角色
 
 > 这份写 deploy 这个角色的 SKILL.md 里要有的全部东西：写权、两份部署报告和 code_paths、自决的粒度、改宿主文件的三条纪律、开发射单、后台起 run 并验收、发射单卡住之后怎么办、单子被收回后半截东西的处置、体检发现报告丢了怎么办、把数字补回报告再提验收、快车道里 deploy 做的动作、gyb 坐在 deploy 会话里拍板怎么落账、用哪个模型。
-> 这份不覆盖：handoffs 和 decisions 两本账的行格式（在 `03-ledgers.md`）、派活单的状态转移表和会话生命周期（在 `04-handoffs-and-sessions.md`）、`bin/rl` 的完整命令表和退出码（在 `05-rl-cli.md`）、钩子和角色 json 的文件格式（在 `06-hooks-and-permissions.md`）、快车道本身的机制（在 `07-quick-lane.md`）、宿主对接（在 `08-trees-init-and-host.md`）、公共母版八条规矩（在 `09-common-and-feedback.md`）、工单是怎么开过来的（在 `20-pair-idea-deploy.md`）、发射单交给 run 之后的事（在 `21-pair-deploy-run.md`）。
+> 这份不覆盖：handoffs 和 decisions 两本账的行格式（在 `03-ledgers.md`）、派活单的状态转移表和会话生命周期（在 `04-handoffs-and-sessions.md`）、`bin/rl` 的完整命令表和退出码（在 `05-rl-cli.md`）、钩子和角色 json 的文件格式（在 `06-hooks-and-permissions.md`）、快车道本身的机制（在 `07-quick-lane.md`）、宿主对接（在 `08-trees-init-and-host.md`）、公共母版九条规矩（在 `09-common-and-feedback.md`）、工单是怎么开过来的（在 `20-pair-idea-deploy.md`）、发射单交给 run 之后的事（在 `21-pair-deploy-run.md`）。
 > 源：设计文档的「五个角色」总段、deploy 一节、快车道一节、「分权与钩子」、「交接与会话生命周期」；施工计划第一节裁决 3、第二节词表、第三节 handoffs、第四节转移表、第五节 deploy 的 use case、第六节命令表、第七节、第十三节。
 
 ## 一、deploy 是干什么的
@@ -139,13 +139,13 @@ use case（施工计划第五节原文）：接工单（handoff start）；写�
 
 | 栏 | 内容 |
 |---|---|
-| reads | `decisions.idea`、`decisions.gyb`、`decisions.deploy`、handoffs、issues、runs、feedback、`experiments/`、`ops/gpu_state.md` |
+| reads | `decisions.idea`、`decisions.gyb`、`decisions.deploy`、handoffs、issues、runs、feedback、scratch、`experiments/`、`ops/gpu_state.md` |
 | writes | `experiments/`（worktree 在仓库外，钩子不判） |
 | ledger_writes | decisions.deploy 全部、handoffs 的 start/done/stuck/open/accept/reject/withdraw/release/resume/amend、issues 全部、scratch 全部（含 ql open/close）、feedback add |
 | dispatches_to | run、gpu-runner |
 | model | as_subagent 是 opus；manual 是 inherit |
 
-备注（不进 json，2026-08-18 `reads` 写法裁决：备注移到表下）：`ops/gpu_state.md` 只在快车道自己跑 GPU 时读；gpu-runner 只在快车道派。`dispatches_to` 机器不查、纯纪律，事后从 sessions 账看谁起了谁（2026-08-18 gyb 裁，定义处 `06`）。
+备注（不进 json，2026-08-18 `reads` 写法裁决：备注移到表下）：`ops/gpu_state.md` 只在快车道自己跑 GPU 时读；gpu-runner 只在快车道派；scratch 只在快车道读写自己那条 ql_tag 的行。`dispatches_to` 机器不查、纯纪律，事后从 sessions 账看谁起了谁（2026-08-18 gyb 裁，定义处 `06`）。
 
 SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：钩子拦不到的写法（脚本内部写文件、`python -c`、heredoc、任何钩子解析不出目标路径的 Bash 命令）一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`（Bash 进钩子匹配范围后按 sync-inbox 问题 38 改的措辞）；一个会话只加载一个角色，要换角色另开会话。
 
@@ -411,14 +411,17 @@ SKILL.md 不抄公共母版的条文，只写一句「按 common/ 执行」，�
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传）：`rl inbox` 过版项口径统一「本会话手上单子引的过版决定」；feedback 裁决在 `rl inbox` 单列一项、不并进通知（合计五类）。第一节五样清单已一字一致，正文没动。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「允许，两边都算」）：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；第六节 `line` 行按新口径并句（字段语义定义处 `03` 冻结、等最后一期收口，sync-inbox 问题 43）。对回原则 9。
 - 2026-08-21 rl-part-11 定稿自查（按已有裁决补传播，没新问）：第二节钩子口径按 `06` 定稿与 sync-inbox 问题 38 补齐——「只挂 Write 和 Edit 两个工具」「Bash 写出来的文件钩子不看」两句改成三工具口径（Bash 解析重定向、tee、sed -i、mv/cp 目标路径，解析不出的归纪律），与第十一节两句纪律对齐。对回原则 2、8。
+- 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md`）：第十一节 json 副本 `reads` 加 scratch，表下备注补「scratch 只在快车道读写自己那条 ql_tag 的行」，与 `06` 的 deploy 表和备注一字不差。原来 `ledger_writes` 有「scratch 全部（含 ql open/close）」而 `reads` 没有 scratch，按测试 13 第 2 样这条机器检查会红。对回原则 8。
+- 2026-08-21 评审修复（gyb 授权，定义处 `09-common-and-feedback.md`）：第 4 行覆盖引言里的「公共母版八条规矩」改「九条」，与「和别的 part 的接口」一节已有的「公共规矩九条」一致。对回原则 8。
+- 2026-08-21 评审修复（gyb 授权，依据 sync-inbox 问题 45 与传播轮 `75929c6`）：文末「要同步到别处的」八条各补处置标注——目标是冻结 `03`/`04`/`05` 的四条标「等最后一期，sync-inbox 问题 45」；`07`、`10`/`20`、`25` 三条标已同步（`20` 那头落在裁决记录行，字段表补行随 `04` 等最后一期）；`12`/`21` 那条只 `21` 已同步，`12` 当时只发了 SendMessage、文件里没落，照原样记成待办。对回原则 6。
 
 ## 要同步到别处的
 
-- `04-handoffs-and-sessions.md`（冻结，等最后一期）：handoffs 字段表 `work_order` 加 `track` 一栏（idea 开单时填）；`launch_order` 开单从父单抄 `track`。gyb 原话「工单格式里加一个位置」（2026-08-21）。
-- `04-handoffs-and-sessions.md`（冻结，等最后一期）：withdraw 一侧补一句——收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定。gyb 原话「报位置、留着不动，处置由你定」（2026-08-21）。
-- `05-rl-cli.md`（冻结，等最后一期）：`rl handoff open --type work_order` 要能收方向名；`launch_order` 开单自动从父单抄之后，发射单侧的方向名参数改成可省。
-- `03-ledgers.md`（冻结，等最后一期）：`code_paths` 字段说明补「全收：这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算」。
-- `07-quick-lane.md`：出口顺序改成「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」；决定来源和报告路径的存在性检查一律按主树查；「主分支上永远只有走过工单的代码」句认下合并到补单之间的短窗口。gyb 原话「不能先合并好再记上去吗」加确认「就这么定：先合并再补记」（2026-08-21）。
-- `10-role-idea.md`、`20-pair-idea-deploy.md`：idea 开工单时填方向名一栏，deploy 开发射单照抄。
-- `25-pair-reviewer-idea.md`：reviewer 的代码清单按全量口径读（含 `experiments/` 外宿主文件）。
-- `12-role-run.md`、`21-pair-deploy-run.md`：派活开场提示全抄单子内容的口径（run 被拉起时开场话里有全貌；裁的场景是 deploy 派 run，别的通道要不要照此由统筹定）。
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：handoffs 字段表 `work_order` 加 `track` 一栏（idea 开单时填）；`launch_order` 开单从父单抄 `track`。gyb 原话「工单格式里加一个位置」（2026-08-21）。（等最后一期，sync-inbox 问题 45）
+- `04-handoffs-and-sessions.md`（冻结，等最后一期）：withdraw 一侧补一句——收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定。gyb 原话「报位置、留着不动，处置由你定」（2026-08-21）。（等最后一期，sync-inbox 问题 45）
+- `05-rl-cli.md`（冻结，等最后一期）：`rl handoff open --type work_order` 要能收方向名；`launch_order` 开单自动从父单抄之后，发射单侧的方向名参数改成可省。（等最后一期，sync-inbox 问题 45）
+- `03-ledgers.md`（冻结，等最后一期）：`code_paths` 字段说明补「全收：这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算」。（等最后一期，sync-inbox 问题 45）
+- `07-quick-lane.md`：出口顺序改成「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」；决定来源和报告路径的存在性检查一律按主树查；「主分支上永远只有走过工单的代码」句认下合并到补单之间的短窗口。gyb 原话「不能先合并好再记上去吗」加确认「就这么定：先合并再补记」（2026-08-21）。（已同步 2026-08-21，rl-hub-v6 传，commit 75929c6/e86d218 那两轮）
+- `10-role-idea.md`、`20-pair-idea-deploy.md`：idea 开工单时填方向名一栏，deploy 开发射单照抄。（已同步 2026-08-21，rl-hub-v6 传，commit 75929c6/e86d218 那两轮；`20` 那头落在裁决记录行，第二节「六个字段」表补 `track` 行随 `04` 等最后一期）
+- `25-pair-reviewer-idea.md`：reviewer 的代码清单按全量口径读（含 `experiments/` 外宿主文件）。（已同步 2026-08-21，rl-hub-v6 传，commit 75929c6/e86d218 那两轮）
+- `12-role-run.md`、`21-pair-deploy-run.md`：派活开场提示全抄单子内容的口径（run 被拉起时开场话里有全貌；裁的场景是 deploy 派 run，别的通道要不要照此由统筹定）。（`21` 已同步 2026-08-21，rl-hub-v6 传，commit 75929c6 那一轮记了裁决记录行；`12` 那头当时只发了 SendMessage，文件里还没有落，待办）

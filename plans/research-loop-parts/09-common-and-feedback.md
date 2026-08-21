@@ -79,7 +79,7 @@ feedback 是反馈账，谁都能提、只有 gyb 能裁；谁都能读，提的
 | 命令 | 干什么 | 谁能调 |
 |---|---|---|
 | `rl feedback add --target ... --text` | 提一条 | 谁都行 |
-| `rl feedback accept ID --applied-to FILE ... [--text]` | 采纳 | gyb |
+| `rl feedback accept ID --applied-to FILE ... --text ...` | 采纳 | gyb |
 | `rl feedback reject ID --text` | 打回 | gyb |
 | `rl feedback show ID` | 查一条 | 谁都行 |
 | `rl feedback list` | 列表 | 谁都行 |
@@ -116,7 +116,7 @@ issues 是问题条，文件是 `loop/issues.jsonl`。用途是九类里的这�
 
 写权三条：`reply` 只有 `assignee` 或 gyb 能写；`close` 只有开单的 actor 或 gyb 能写，通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 `assignee` 也能关（2026-08-17 gyb 裁，sync-inbox 问题 23：`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`）；另有一处自动关：`rl handoff accept` 关这张单关联的 `answered` issue。reviewer 不开 issue。
 
-命令：`rl issue open --to R --kind K [--stage S] --text [--handoff ID] [--log-tail FILE|--log-text -]`、`rl issue reassign ID --to R`、`rl issue reply ID --text`、`rl issue close ID`、`rl issue link ID --handoff ID`、`rl issue show ID`、`rl issue list [--open] [--to R] [--kind K]`。`--to gyb`（开单或改派）触发通知；`link` 是 doctor 给的修法。谁能调按角色 json 的 `ledger_writes`，查询谁都行。
+命令：`rl issue open --to R --kind K [--stage S] --text [--handoff ID] [--log-tail FILE|--log-text -]`、`rl issue reassign ID --to R`、`rl issue reply ID --text`、`rl issue close ID`、`rl issue link ID --handoff ID`、`rl issue show ID`、`rl issue list [--open] [--to R] [--kind K]`。`--to gyb`（开单或改派）进 `rl status` 段 2；`link` 是 doctor 给的修法。谁能调按角色 json 的 `ledger_writes`，查询谁都行。
 
 跨账写序定死：标卡住要同时开 issue 和改单子，先写 issue 拿到编号，再写单子那一行引它。中间崩了顶多多一条没人引的 issue，doctor 扫得出来。转移表里 `in_progress` 到 `stuck` 那一行的前提是 `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单。
 
@@ -126,9 +126,9 @@ issues 是问题条，文件是 `loop/issues.jsonl`。用途是九类里的这�
 
 grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
-行格式：`id` 形如 `grant-0003`；`grantee` 是角色；`permission` 是字符串，第一版只有一种 `read:notes`；`status` 取 `active`、`revoked`；`expires_at` 可选；`text`；`issue_id` 可选。`actor` 必须是 `gyb`；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话。
+行格式：`id` 形如 `grant-0003`；`grantee` 是角色；`permission` 是字符串，第一版原定只有一种 `read:notes`（获准机制 2026-08-21 砍掉后没有现行取值，grants 账存废等最后一期，sync-inbox 问题 43(c)）；`status` 取 `active`、`revoked`；`expires_at` 可选；`text`；`issue_id` 可选。`actor` 必须是 `gyb`；裸终端直接写，角色会话里 `--as-gyb --quote` 替 gyb 写也收，`session_id` 照记那个会话。
 
-命令：`rl grant add --to R --permission P [--expires ...] [--issue ID]`、`rl grant revoke ID`、`rl grant list`、`rl grant show ID`。写只有 gyb，查谁都行。
+命令：`rl grant add --to R --permission P --text ... [--expires ...] [--issue ID]`、`rl grant revoke ID`、`rl grant list`、`rl grant show ID`。写只有 gyb，查谁都行。
 
 撤销之后已经加载了这条 grant 的会话怎么办（2026-08-18 gyb 裁）：`rl grant revoke` 时 rl 列出 grantee 还活着的会话和各自的加载时间，让 gyb 挑要不要收（和 `rl feedback accept` 列会话是同一个套路），不自动追、不自动收；收会话走 `rl session end --session ID`。读权不上钩子，所以撤销之后那个会话再读 `notes/` 机器不拦，但撤销时刻之后的读算越权，reviewer 拿 grants 账和决定行的时间戳对着查。
 
@@ -140,7 +140,7 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 
 ## 和别的 part 的接口
 
-这一份是定义处的东西：`common/` 五个文件各写什么（含 `SPEC-TEMPLATE.md` 五栏是哪五栏、`REVIEW-CHECKLIST.md` 这个名字）、公共规矩八条全文与「编号不变」、`rules_version` 的样子和生效时刻、feedback 账的行格式与五条命令、issues 账的行格式与九种 kind 与 reply/close 写权、grants 账的行格式与写入限制与撤销之后的处置。别处引用这些的时候指到这一份。下面是本份引别处、或与别处写了两遍的：
+这一份是定义处的东西：`common/` 五个文件各写什么（含 `SPEC-TEMPLATE.md` 五栏是哪五栏、`REVIEW-CHECKLIST.md` 这个名字）、公共规矩九条全文与「编号不变」、`rules_version` 的样子和生效时刻、feedback 账的行格式与五条命令、issues 账的行格式与九种 kind 与 reply/close 写权、grants 账的行格式与写入限制与撤销之后的处置。别处引用这些的时候指到这一份。下面是本份引别处、或与别处写了两遍的：
 
 - 九本账的公共骨架七样（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和两个可选栏 `force_reason`、`via`（`fix_for` 2026-08-17 按 sync-inbox 问题 15 删）：`03-ledgers.md`。issues、grants、feedback 三本的行格式在 `03` 和本份写了两遍（HANDOFF 四点五节判断规矩 2），改一处必改另一处；issues 九种 kind 的定义处是本份，`04`、`06`、`10`、`21` 到 `24` 指到 `03` 的按同一份内容读。
 - 「closed 会话再写账拒收」的入账校验：`03-ledgers.md` 账本的总规矩。
@@ -381,6 +381,13 @@ grants 是授权，文件是 `loop/grants.jsonl`，只有 gyb 能写。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传；gyb 原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」）：桌面通知与定期提醒不做——第五节 feedback 入口出口改两处、第六节 issues「触发桌面通知」改「进 `rl status` 段 2」、接口一节推送表行与阈值行改。对回原则 6。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：公共规矩加 rule-09「修必销案：凡修的东西是账上报过的 issue，修完必须回复并关掉那条 issue，不许静默修」（gyb 原话「我希望这个是个规则，而不是什么补丁特例」），标题与编号句改九条。对回原则 4、6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：第七节 grants 账那两段按获准机制整套砍掉改写（idea 默认能读、只留纪律一句、账与 `rl grant` 存废等最后一期 sync-inbox 问题 43）；接口一节 doctor 五项改四项、`rl init` 那一问与 `request` issue 两行删。对回原则 2。
+
+## 裁决记录（2026-08-21，评审修复）
+
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：第六节「`--to gyb`（开单或改派）触发通知」改成「`--to gyb`（开单或改派）进 `rl status` 段 2」——通知线 2026-08-21 裁掉不做，定义处 `01-gyb.md`。
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：第七节 `rl grant add` 命令行补 `--text ...`，照 `05-rl-cli.md` 第 79 行冻结签名——`text` 是 grants 行格式的必填字段，命令行原来没口子填。
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：第五节 `rl feedback accept` 命令行的 `[--text]` 方括号去掉改成必给——本份第五节自己写了 `verdict_text` 在 `accepted`、`rejected` 两版都必填，`05-rl-cli.md` 第 80 行的冻结签名也是必给。
+- 2026-08-21 评审修复（gyb 授权，据 `plans/2026-08-21-research-loop-parts-review.md`）：接口一节「公共规矩八条全文」改「公共规矩九条全文」——`rule-09` 已于 2026-08-21 在本份第三节立，接口一节的口径要跟上。
 
 ## 要同步到别处的
 

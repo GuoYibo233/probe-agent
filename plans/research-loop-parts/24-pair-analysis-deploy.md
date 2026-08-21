@@ -18,7 +18,7 @@ analysis 的写权只有 `analysis/` 一个目录，实验代码在 `experiments
 
 ## analysis 这一头：开单填什么
 
-命令是 `rl issue open --to deploy --kind K --text [--handoff ID] [--log-tail FILE|--log-text -]`（施工计划第六节）。analysis 的 `ledger_writes` 里有 issues 的 open 和 reply 两个（施工计划第五节），所以这条命令 analysis 调得动。
+命令是 `rl issue open --to deploy --kind K --text [--handoff ID] [--log-tail FILE|--log-text -]`（施工计划第六节）。analysis 的 `ledger_writes` 里有 issues 的 open、reply、close 三个（close 限自己开的；2026-08-21 评审修复对齐：03 的写权本来就是开单 actor 能 close，本份第 6 步也这么走，06 和 13 的 json 同日已改）（施工计划第五节），所以这条命令 analysis 调得动。
 
 kind 从九种里挑：`cannot`（干不了）、`not_mine`（不归我干）、`denied`（被钩子拦了）、`failed`（跑失败，附 `stage`）、`anomaly`（结果反常）、`request`（申请）、`withdrawn`、`orphaned`、`fyi`（后三种是通知类）。两份源文档都没有给「analysis 发现代码有问题」这一条指定用哪个 kind，这件事留在文末。
 
@@ -152,3 +152,4 @@ close 的写权是「开单的 actor 或 gyb，通知类 issue 的 assignee 也�
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：三处「触发桌面通知」按「桌面通知这一版不做」改成「进 `rl status` 段 2」。对回原则 6。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传）：接口一节 `rl notify` 推送表那半句按「桌面通知这一版不做」改。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只列本会话手上的」「单列一项」）：`rl inbox` 过版项口径「本会话手上单子引的过版决定」、feedback 裁决单列一项（合计五类）；接口一节「列哪四类」改「列哪五类」，旧账「`rl inbox` 四类对 `05` 五项」在本份顺手收。对回原则 6。
+- 2026-08-21 评审修复（gyb 授权，定义处 `03-ledgers.md`）：「analysis 这一头：开单填什么」一节 `ledger_writes` 那句由「open 和 reply 两个」改成「open、reply、close 三个（close 限自己开的）」，对回 03 定义的「开单的 actor 或 gyb 能 close」；「谁 close」一节和「一条通道从头到尾」表核过，本来就写着 analysis 或 gyb 关，未改。

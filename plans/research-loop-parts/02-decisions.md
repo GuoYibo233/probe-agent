@@ -1,7 +1,7 @@
 # 决定账
 
 > 这份覆盖 decisions 这一本账：六个决定文件、一行决定的字段、来源三类与锚点、编号与版本、root_id 与 line、update 和 confirm 和 retire 和 merge、过版 stale 与改版那一刻的打印、改版不影响在办单子、reissue、reviewer 的基准按 actor、`rl decision` 的全部子命令。
-> 不覆盖：另外八本账的行格式和入账规则在 `03-ledgers.md`；派活单的状态转移表和 `rl handoff reissue` 那一行的前提在 `04-handoffs-and-sessions.md`；`rl status`、`rl inbox`、`rl trace`、`rl doctor` 的段落和扫描项在 `05-rl-cli.md`；`--as-gyb`、`--quote`、`--force --reason` 的判定规则在 `01-gyb.md` 和 `06-hooks-and-permissions.md`；idea 怎么和 gyb 谈决定在 `10-role-idea.md`，deploy 的自决粒度在 `11-role-deploy.md`，reviewer 怎么用这本账在 `14-role-reviewer.md`。
+> 不覆盖：另外七本账的行格式和入账规则在 `03-ledgers.md`（handoffs 的行格式在 `04-handoffs-and-sessions.md`）；派活单的状态转移表和 `rl handoff reissue` 那一行的前提在 `04-handoffs-and-sessions.md`；`rl status`、`rl inbox`、`rl trace`、`rl doctor` 的段落和扫描项在 `05-rl-cli.md`；`--as-gyb`、`--quote`、`--force --reason` 的判定规则在 `01-gyb.md` 和 `06-hooks-and-permissions.md`；idea 怎么和 gyb 谈决定在 `10-role-idea.md`，deploy 的自决粒度在 `11-role-deploy.md`，reviewer 怎么用这本账在 `14-role-reviewer.md`。
 > 源：设计文档「gyb 自己做的事」「五个角色」「idea」「deploy」「reviewer」「账本」几节；施工计划第一节裁决、第二节词表、第三节 decisions 行格式、第五节角色 json、第六节命令表、第十节测试第 3 条。
 
 ## 六个决定文件
@@ -65,7 +65,7 @@ update、confirm、retire、merge 四个动作不给 `--source` 时自动继承�
 
 每条决定记根决定：新开的决定根是自己，追加一版继承，一条决定内根只写一次不变；合并时用 `--root` 指定新决定继承哪一条的根，被合并的旧决定废除版根照旧（2026-08-18 gyb 裁）。合并的正向靠新决定的 `merged_from`，反向靠 `sources` 里的 `decision` 项，不靠改根。词表里研究线 `line` 就是根决定编号。
 
-派活单上的 `line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着（handoffs 的字段在 `03-ledgers.md`）。两条研究线并行时按根决定切开看：`rl status --group-by line`、`rl decision list --line L`、`rl handoff list --line L`、`rl run list --line L`。
+派活单上的 `line` 由 rl 从 `decision_refs` 第一项的 `root_id` 算出来存着（handoffs 的字段在 `04-handoffs-and-sessions.md`）。两条研究线并行时按根决定切开看：`rl status --group-by line`、`rl decision list --line L`、`rl handoff list --line L`、`rl run list --line L`。
 
 ## update、confirm、retire、merge
 
@@ -127,7 +127,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 
 - 公共骨架七样字段（`id`、`version`、`status`、`ts`、`actor`、`session_id`、`schema_version`）和可选的 `force_reason`、`via`：定义在 `03-ledgers.md`（冻结）。decisions 自己的字段（`root_id`、`op`、`text`、`sources`、`quote`、`merged_from`）定义在本份。
 - actor 的判定、`--as-gyb`、`--quote`、`--force --reason`、裸终端 session_id 记 `cli`：定义在 `01-gyb.md`，钩子那一层在 `06-hooks-and-permissions.md`。本份只用到：角色会话里 `--as-gyb` 的行 `actor` 记 gyb、`quote` 必填、仍落角色前缀那本。
-- handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `03-ledgers.md`（冻结）。本份用它们做三件事：`line` 按 `decision_refs` 的 `root_id` 归线（2026-08-21 gyb 裁：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；`03` 冻结，字段语义等最后一期收口）；过版判定拿 `decision_refs` 的版本和本账最新非 confirm 版比；`show --with-runs` 第一跳按 `decision_refs` 找单子、之后沿 `parent_id`。
+- handoffs 的 `decision_refs`（每项 `{"id":...,"version":...}`）、`line`、`parent_id`、`supersedes`：定义在 `04-handoffs-and-sessions.md`（冻结）。本份用它们做三件事：`line` 按 `decision_refs` 的 `root_id` 归线（2026-08-21 gyb 裁：`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现；`04` 冻结，字段语义等最后一期收口）；过版判定拿 `decision_refs` 的版本和本账最新非 confirm 版比；`show --with-runs` 第一跳按 `decision_refs` 找单子、之后沿 `parent_id`。
 - `rl handoff reissue` 和 `rl handoff withdraw` 那两行转移的前提与「谁能写」：定义在 `04-handoffs-and-sessions.md`（冻结）。本份只定「改版不自动动单子，重派用 reissue、停用 withdraw」。
 - `rl status` 段 6（过版的单子和 retired 决定名下的活单）、`rl inbox` 里的过版一类、`rl trace`、doctor 的决定相关扫描：定义在 `05-rl-cli.md`（冻结）。过版的定义以本份为准：比最新一个非 confirm 版小才算过时。
 - runs 账的 `run_id`（`run` 类来源要引它，不在 runs 账里拒收）：定义在 `03-ledgers.md`。
@@ -396,6 +396,7 @@ reviewer 清单一条问题五栏，第五栏是「决定账里没写但代码�
 - 2026-08-18 来自 `09-common-and-feedback.md` 定稿（`aaca3c9`，rl-hub-v5 传；gyb 原话「a」）：`rl decision retire` 必须带理由，谁废都要（gyb 也要），理由记进这一版决定行；替 gyb 废除的原话按 `--as-gyb --quote` 既有规矩。第五节表、表下一段、接口一节命令表三处照改。理由落行上哪一栏（新加一栏还是复用 `force_reason`）本份是定义处，等 gyb 裁（sync-inbox 问题 36）；命令签名归 `05`（冻结后待议，问题 37）。对回原则 1、8。
 - 2026-08-18 gyb 裁（sync-inbox 问题 36，rl-hub-v5 问，原话「c」）：废除理由不另加栏、不复用 `force_reason`，直接写进废除那一版的正文 `text`。第五节表、表下一段、接口一节命令表三处照改。对回原则 8。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」、选「允许，两边都算」）：doctor「来源指 notes/ 而无 `read:notes`」扫描随获准机制砍掉，正文那段删、接口一节 grants 行照改；`decision_refs` 可分属不同根决定、跨根的单在每条相关线的视图里都出现，接口一节 `line` 那句照改（`03` 冻结，等最后一期收口）。对回原则 2、9。
+- 2026-08-21 评审修复（gyb 授权，定义处 HANDOFF 四点五节：handoffs 行格式定义处是 `04-handoffs-and-sessions.md`）：第 68、130 行把 handoffs 的字段（`decision_refs`、`line`、`parent_id`、`supersedes`）的定义处由 `03-ledgers.md` 改指 `04-handoffs-and-sessions.md`；第 4 行未见对应指向，未改。
 
 ## 要同步到别处的
 

@@ -56,7 +56,7 @@ reviewer 只由 gyb 手动开，审整条链，产出只写 `review/` 里的问�
 | `issues.gyb_stale_hours` | 24 | `rl status` 段 2 标出超过 24 小时没动的 |
 | `status.review_recent_days` | 7 | `rl status` 列最近 7 天的 review 清单 |
 
-原表还有一行 `notify.reminder_days`（每 7 天提醒 gyb 一次），2026-08-21 gyb 把定期提醒裁掉了（见第六节），这个键随之删除（阈值表定义处 `08-trees-init-and-host.md`，待同步）。
+原表还有一行 `notify.reminder_days`（每 7 天提醒 gyb 一次），2026-08-21 gyb 把定期提醒裁掉了（见第六节），这个键随之删除（阈值表定义处 `08-trees-init-and-host.md`，已同步 2026-08-21）。
 
 ## 二、gyb 的身份规矩
 
@@ -81,7 +81,7 @@ gyb 只豁免权限，不豁免账行的完整性：
 
 | 检查 | 对 gyb 生效吗 |
 |---|---|
-| 钩子（Write/Edit 的目录限制） | 不生效 |
+| 钩子（Write/Edit/Bash 写目标的目录限制） | 不生效 |
 | 入账校验的「谁能调」 | 不生效 |
 | 转移表的「谁能写」 | 不生效 |
 | 转移表的「前提」栏 | 生效 |
@@ -144,9 +144,9 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 
 ## 六、定期提醒：这一版不做
 
-2026-08-21 gyb 裁（原话「那这个砍了吧」）：每 `notify.reminder_days`（默认 7）天提醒 gyb 四件事（跑 `rl reclaim`、看 feedback 账、跑 `rl doctor`、把采纳的 feedback 落进母版）的机制不做，`notify.reminder_days` 这个阈值键随之删掉（阈值表定义处 `08-trees-init-and-host.md`，待同步），待验证第 7 条（提醒机制试哪两种）销掉。留下的机制只有原来失败备案里那一条，现在转正：`rl status` 第一行打印距上次 reclaim 几天，gyb 自己记得定期手动看。
+2026-08-21 gyb 裁（原话「那这个砍了吧」）：每 `notify.reminder_days`（默认 7）天提醒 gyb 四件事（跑 `rl reclaim`、看 feedback 账、跑 `rl doctor`、把采纳的 feedback 落进母版）的机制不做，`notify.reminder_days` 这个阈值键随之删掉（阈值表定义处 `08-trees-init-and-host.md`，已同步 2026-08-21），待验证第 7 条（提醒机制试哪两种）销掉。留下的机制只有原来失败备案里那一条，现在转正：`rl status` 第一行打印距上次 reclaim 几天，gyb 自己记得定期手动看。
 
-入口 skill 的领路里原来有一条「收到定期提醒：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`」，提醒砍掉之后触发词改成 gyb 自己定期开工，路线本身不变（入口 skill 定义处 `08-trees-init-and-host.md`，待同步）。入口 skill 只许 gyb 手动调用，见 `08-trees-init-and-host.md`。
+入口 skill 的领路里原来有一条「收到定期提醒：`rl status`、`rl reclaim` 看列表、`--apply`、按 owner 逐个拉起、`rl doctor`」，提醒砍掉之后触发词改成 gyb 自己定期开工，路线本身不变（入口 skill 定义处 `08-trees-init-and-host.md`，已同步 2026-08-21）。入口 skill 只许 gyb 手动调用，见 `08-trees-init-and-host.md`。
 
 ## 和别的 part 的接口
 
@@ -156,14 +156,14 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - grants、feedback、evaluations、sessions 四本账的行格式和状态取值在 `03-ledgers.md`；本文只写 gyb 这一头的动作。sessions 的 `amend` 版（只许改 `model`，是 doctor 第 19 项 `model=unknown` 的修法，2026-08-21 gyb 确认走这条路、不加新机制）在 `04-handoffs-and-sessions.md` 第七节，命令签名 `rl session amend ID --model M` 在 `05-rl-cli.md`。
 - `rl status`、`rl reclaim`、`rl doctor`、`rl grant`、`rl feedback`、`rl eval`、`rl session`、`rl inbox`、`rl trace` 的完整参数和退出码在 `05-rl-cli.md`。`rl notify` 已随桌面通知一起销掉（2026-08-21 gyb 裁，见第五节），`05-rl-cli.md` 的签名行待删。
 - actor 判定的实现（会话状态文件路径 `loop/.sessions/<session_id>.json`（2026-08-18 gyb 裁，原来是宿主给插件的数据目录）、钩子在加载角色时写）在 `06-hooks-and-permissions.md`。
-- 钩子对 gyb 裸终端和 `--as-gyb` 不生效这一条的另一半（钩子挂在哪两个工具、拦哪两类路径）在 `06-hooks-and-permissions.md`。
+- 钩子对 gyb 裸终端和 `--as-gyb` 不生效这一条的另一半（钩子挂 Write、Edit、Bash 三个工具、拦哪两类路径；Bash 那一支解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 的写目标，解析不出目标路径的写法钩子不看、归纪律）在 `06-hooks-and-permissions.md`。
 - `ql_tag`、快车道补单验收人固定是 gyb、没关的快车道进 status 段 9 与 reclaim，在 `07-quick-lane.md`。
 - `notes/` 目录、`research-loop.json` 里的阈值表、入口 skill 的领路，在 `08-trees-init-and-host.md`；阈值表删 `notify.reminder_days`、领路里定期提醒那条改成 gyb 自己定期开工（都是 2026-08-21 裁的连带，已同步 `08`）；`rl init` 问要不要给 idea 发 `read:notes` 那一问随获准机制 2026-08-21 砍掉（定义处 `10-role-idea.md`）。
-- feedback 采纳之后母版的 `rules_version` 怎么走、`common/` 母版本身、issues 的九种 kind 与 reply/close 写权，在 `09-common-and-feedback.md`；issues 里「assignee 是 gyb 的那一版触发桌面通知」那句随通知销掉改成「进 `rl status` 段 2」（待同步 `09` 与写了两遍的 `03`）。
+- feedback 采纳之后母版的 `rules_version` 怎么走、`common/` 母版本身、issues 的九种 kind 与 reply/close 写权，在 `09-common-and-feedback.md`；issues 里「assignee 是 gyb 的那一版触发桌面通知」那句随通知销掉改成「进 `rl status` 段 2」（`09` 已同步 2026-08-21；写了两遍的 `03` 那句并进 sync-inbox 问题 40，冻结只报不催，等最后一期）。
 - `decisions.gyb.jsonl` 的编号、版本、来源三类、根决定，在 `02-decisions.md`。
 - gyb 直接开分析单（owner 记 gyb）在 `22-pair-idea-analysis.md`；gyb 越过 owner 验收后给 owner 的 `fyi` issue 走 `rl inbox`，见对应角色的 part。
 - reviewer 怎么读、清单五栏在 `14-role-reviewer.md`；gyb 口头交代审哪条决定、reviewer 照交代 `rl session focus` 登记、gyb 看完清单后的动作各落各的账不新加登记（2026-08-21 gyb 裁），gyb 这一侧的定义在本文第一节第 6 件事。
-- 待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）已随 2026-08-21 的裁决销掉，`30-build-steps-verify-tests.md` 的待验证清单待同步。
+- 待验证第 6 条（桌面通知机制）、第 7 条（定时提醒机制）已随 2026-08-21 的裁决销掉，`30-build-steps-verify-tests.md` 的待验证清单已同步 2026-08-21。
 
 ## 源文档没写清的（留给 gyb）
 
@@ -498,6 +498,8 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-21 gyb 裁（没写清第 8 条，原话「甲」）：sessions 账 `model` 是 `unknown` 的事后走追加一版补真实模型名、doctor 附现成命令、不加新命令——与 `05` 定稿 2026-08-17 已定的 `rl session amend ID --model M` 是同一个值，本条是确认，不需要同步。对回原则 4。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：`rl status` 段 9 补「没关的快车道不归线，按线分组时单独列一堆」。对回原则 6。
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：第一节第 1 件事里 idea 读 `notes/` 的获准段改成不用获准、只留纪律一句；第 3 件事「写 grants」补第一版空置、存废等最后一期（sync-inbox 问题 43）；接口一节 `rl init` 那一问删。use case 表查无「批 `read:notes`」行，无从删。对回原则 2。
+- 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md`）：钩子口径由两工具改成三工具——第二节豁免表那一行由「钩子（Write/Edit 的目录限制）」改成「钩子（Write/Edit/Bash 写目标的目录限制）」，接口一节「钩子挂在哪两个工具」改成「钩子挂 Write、Edit、Bash 三个工具，Bash 解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 的写目标，解析不出目标路径的写法钩子不看、归纪律」，与 `06` 定稿第 13 行同口径。对回原则 2。
+- 2026-08-21 评审修复（gyb 授权，定义处 `08-trees-init-and-host.md`、`09-common-and-feedback.md`、`30-build-steps-verify-tests.md`）：正文的「待同步」标注和文末「要同步到别处的」清单的「已同步」标注打架，逐处核实目标文件后对齐——第一节阈值表下那句、第六节两处（阈值键、入口 skill 领路）指 `08` 的三处「待同步」改「已同步 2026-08-21」（`08` 阈值表已无 `notify.reminder_days`、领路第 5 条已改成 gyb 自己定期开工）；接口一节待验证第 6、7 条那句指 `30` 的「待同步」改「已同步 2026-08-21」（`30` 第 18、19 行已标「已销 2026-08-21」）；接口一节 issues 那句按文末拆开写成 `09` 已同步 2026-08-21（`09` 第 115 行已改成「进 `rl status` 段 2」）、写了两遍的 `03` 并进 sync-inbox 问题 40 等最后一期（`03` 第 92 行仍写「触发桌面通知」，冻结不改）。对回原则 8。
 
 ## 要同步到别处的
 

@@ -1,7 +1,7 @@
 # 待验证清单、测试清单、施工步骤
 
 > 这份覆盖三张表：待验证十一条（每条的测法、通过标准、失败备案，加上 2026-08-17 已经裁掉的两条）、测试十七条（施工计划第十节原文，逐条附上 2026-08-17 各 part 定稿之后要加或者要改的用例，另加 `05` 定稿点名要有测法的三条）、施工步骤 0 到 8（每步交付物、验收、依赖、执行者与模型，加施工纪律四条和 commit 前缀）。
-> 这份不覆盖：每条测试用例背后的规矩本身，规矩的定义处在各自的 part 里（转移表在 `04-handoffs-and-sessions.md`，九本账行格式在 `03-ledgers.md`，命令表和退出码在 `05-rl-cli.md`，钩子在 `06-hooks-and-permissions.md`，快车道在 `07-quick-lane.md`，母版和 feedback 在 `09-common-and-feedback.md`，两棵树和 init 在 `08-trees-init-and-host.md`）；待验证第 5、8、9、10 条不成立会改掉哪些正文，写在 `04` 和 `12` 的接口一节，这份只写测法。
+> 这份不覆盖：每条测试用例背后的规矩本身，规矩的定义处在各自的 part 里（转移表在 `04-handoffs-and-sessions.md`，九本账行格式在 `03-ledgers.md`，命令表在 `05-rl-cli.md`、退出码在 `03-ledgers.md`（`05` 照抄），钩子在 `06-hooks-and-permissions.md`，快车道在 `07-quick-lane.md`，母版和 feedback 在 `09-common-and-feedback.md`，两棵树和 init 在 `08-trees-init-and-host.md`）；待验证第 5、8、9、10 条不成立会改掉哪些正文，写在 `04` 和 `12` 的接口一节，这份只写测法。
 > 源：施工计划第九节（待验证清单）、第十节（测试清单）、第十一节（施工步骤）、第十二节（留给 gyb 的）；设计文档「待验证清单」「施工步骤」两节；`05-rl-cli.md` 定稿（`656c8a9`）留给本份的三条（sync-inbox 第五段第 9 项）；`03`、`04`、`05`、`07`、`08` 各份 2026-08-17 的裁决记录里改动了测试用例的那几条。
 
 ## 一、待验证清单十一条
@@ -14,7 +14,7 @@
 | 2 | skill 头部声明的钩子能不能给命令带参数 | 写一个测试 skill，头部钩子命令 `hook.sh --role test`，加载后触发看参数到没到 | 脚本收到 `--role test` | 五个角色各一份钩子脚本，内容相同只差常量 | 已测通过（2026-08-18，`06` 定稿时 gyb 点名先测：参数原样到达，标准错误里的角色名模型原话收到），主案定，备案删；测试留在 `~/.claude/jobs/8a102def/tmp/hookargs/`。同日第 8 条测完，「参数报角色名」写法被取代：钩子一份放插件级、脚本自己判角色（`06`） |
 | 3 | monitor 的 `when: "on-skill-invoke:run"` 写法 | 写一个只打印一行的 monitor，加载 run skill 看起不起 | 加载后进程在、不加载不在 | monitor 常驻，脚本自己读会话状态文件判断当前角色是不是 run | 待测 |
 | 4 | skill 头部禁止模型调用的声明能不能锁入口 skill | 加声明后让模型自己调一次 | 调不动 | 入口 skill 的 SKILL.md 第一行写「模型调用即违规」靠纪律，另外 rl init 检查调用者状态文件不是任何角色 | 备案已升正案（2026-08-17 随 `05` 定稿裁）：`rl init` 读到会话状态文件就拒收，退出码 3，只在裸终端跑（`08` 第一节、`05` 命令表）。这一条照测，测的结论只决定 skill 头部要不要再加那句声明，不改正文 |
-| 5 | SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个 | 起一个加载角色的 subagent，让它写一行账，结束后查 sessions 账 | 有 `ended_at`、`session_id` 和 `started_at` 那行相同 | 全靠 `rl status` 段 7 加 `rl reclaim`，提醒周期从 7 天缩到 1 天 | 待测；不成立会改 `04` 第六、七节和 `12` 的走法 |
+| 5 | SessionEnd 和 SubagentStop 在 subagent 结束时触发不触发、会话 id 是不是同一个 | 起一个加载角色的 subagent，让它写一行账，结束后查 sessions 账 | 有 `ended_at`、`session_id` 和 `started_at` 那行相同 | 全靠 `rl status` 段 7 加 `rl reclaim`，提醒周期从 7 天缩到 1 天 | 待测；不成立会改 `04` 第六、七节和 `12` 的走法。连带 subagent 场景 rl 判 actor 的口子（状态文件读到父会话的角色对不对、要不要另立信号）一起，测完由 04 定（06 2026-08-21 补注同此） |
 | 6 | 桌面通知机制 | 试 Claude Code 自带推送、`notify-send`、终端铃三种 | gyb 桌面看得到 | 退到 `rl status` 单列那一层，通知不做 | 已销 2026-08-21（`01` 定稿裁：桌面通知这一版不做，失败备案转正为正案，等 gyb 的事只维护 `rl status` 一个出口） |
 | 7 | 定时提醒机制 | 试 Claude Code 的 schedule 和系统 cron | 到点 gyb 收得到 | `rl status` 第一行打印距上次 reclaim 几天（已是正案的一部分），提醒不做 | 已销 2026-08-21（`01` 定稿裁：定期提醒不做，打印距上次 reclaim 几天转正为唯一机制） |
 | 8 | subagent 里加载角色 skill，头部钩子装不装得上、写权拦不拦 | 起 subagent 加载 deploy，让它写 `analysis/x.md` | 被 deny | subagent 路线改成 workflow 里的 `agentType` 指向 `agents/<role>.md`，钩子在 agent 定义里声明；再不行 subagent 接单只靠纪律加 reviewer 事后查。测完在设计文档 run 一节写死走哪一案，删掉另一案 | 已测 2026-08-18（八个变体，`08` 定稿时 gyb 点名测，记录在 `~/.claude/jobs/caef83fb/tmp/verify8/RESULT.md`）：主案不成立（skill 头部钩子只管顶层会话）、备案一不成立（插件 agent 定义里的钩子被忽略）；走插件级钩子文件按 `agent_type` 判角色，`agents/` 层只塑形，见 `06`。插件树建 `agents/`、不建 `workflows/` |
@@ -34,7 +34,7 @@
 
 原文：两个进程同时追加同一本账各 100 行，编号无重复、行数正确；ql_tag 和 run_id 同样不撞。
 
-要改的：`batch` 不在锁里分，是调用者的自由文本（`05`「锁与写序」，2026-08-17 问题 9），撞号用例只测 ql_tag 和 run_id，不测 batch。
+要改的：`batch` 不在锁里分，是调用者的自由文本（`03`「账本的总规矩」，2026-08-17 问题 9），撞号用例只测 ql_tag 和 run_id，不测 batch。
 
 ### 测试 2：转移表
 
@@ -95,7 +95,7 @@
 
 原文：analysis 调 `rl grant add` 退出码 3；analysis 会话里 `rl eval approve --as-gyb` 缺 `--quote` 退出码 2、带 quote 通过且账行 actor 是 gyb、session_id 是当前会话；裸终端 `rl eval approve` 直接通过、session_id 是 `cli`；裸终端 `rl grant add` 通过、角色会话 `--as-gyb` 的 `grant add` 拒收；非 run 调 `rl run add` 退出码 3、gyb 调通过；gyb 缺必填字段拒收、带 `--force --reason` 通过且账行有 force_reason。
 
-要改的：「角色会话 `--as-gyb` 的 `grant add` 拒收」这一句改成「角色会话里 `--as-gyb --quote` 替 gyb 写 grant 也收」（`05`「actor 怎么定」和命令表，2026-08-17 gyb 裁，sync-inbox 问题 27，gyb 原话「3 不是，可以替我写」；`03` 裁决记录同）。两处原文不一致：`01-gyb.md` 第一节第 3 条和第二节「三条只收裸终端的」还写着「角色会话里 `--as-gyb` 写 grant 一律拒收」，`01` 在 README 里状态是「未开」，没跟上这条裁决。本份按后裁的 `05` 和 `03` 走，`01` 那两句等 `01` 开的时候改。
+要改的：「角色会话 `--as-gyb` 的 `grant add` 拒收」这一句改成「角色会话里 `--as-gyb --quote` 替 gyb 写 grant 也收」（`05`「actor 怎么定」和命令表，2026-08-17 gyb 裁，sync-inbox 问题 27，gyb 原话「3 不是，可以替我写」；`03` 裁决记录同）。`01-gyb.md` 第一节第 3 条和第二节「三条只收裸终端的」原先还写着「角色会话里 `--as-gyb` 写 grant 一律拒收」，2026-08-17 rl-hub-v3 传问题 27 时已把 `01` 那两处改成「角色会话里 `--as-gyb --quote` 替 gyb 写也收」，不一致已消。
 
 要加的：
 
@@ -126,7 +126,7 @@
 - `rl status` 第一行打印距上次 reclaim 几天；`--json` 每行至少含十二个键，`holder_alive` 按 sessions 最新版是不是 `open` 算，`age_hours` 从当前状态那一版的 `ts` 起算（`05`「rl status 的十段」，2026-08-17 问题 29）。
 - 段 7 和 reclaim 用的 `last_activity` 不落账、查询时现算（`03`、`04` 第七节）。
 - reclaim 对被打回超过 `reclaim.handoff_idle_hours` 没动的单子推回 `todo`，走 `rejected` 到 `todo` 那一行，`actor` 记 gyb、`via=reclaim`；对 `stuck` 的单子只改派 issue 给 owner，状态不动（`04` 第八节）。
-- `rl inbox --json`、`rl doctor --json`、`rl reclaim --json` 的最小结构（`05`「退出码与 --json」）。
+- `rl inbox --json`、`rl doctor --json`、`rl reclaim --json` 的最小结构（退出码定义在 `03`，`--json` 结构在 `05`「退出码与 --json」一节）。
 - run 不查 inbox（`05`「rl inbox」，问题 28），用例里不给 run 造 inbox 项。
 
 ### 测试 12：端到端
@@ -139,7 +139,7 @@
 
 原文：五份 SKILL.md 里出现的每条 rl 子命令、账名、状态名、目录名都在第二、五、六节里查得到，写命令在该角色的 `ledger_writes` 里，查询命令不查；SKILL.md 里没有 common/ 母版条文的副本。
 
-原文没动。查询命令是 show、list、trace、status、inbox、stale、doctor 七类，`doctor --ack` 和 `--unack` 算写命令（`05`「查询命令和写命令的分界」）；`reads` 栏五份 json 写法不统一、按哪种形式查还没裁（`06` 留给 gyb 第 8 条）。
+原文没动。查询命令是 show、list、trace、status、inbox、stale、doctor 七类，`doctor --ack` 和 `--unack` 算写命令（`05`「查询命令和写命令的分界」）；`reads` 栏五份 json 写法已统一、按哪种形式查已裁（06 已于 2026-08-18 定稿裁定，见 06 裁决记录）。
 
 ### 测试 14：口径
 
@@ -180,7 +180,7 @@
 
 ### 测试 20：`lock.timeout_seconds`（`05` 定稿点名新加）
 
-用例：一个进程占着 `loop/.lock` 超过 `lock.timeout_seconds`（默认 10 秒），另一个进程写账退出码 4，标准错误第一行是 `lock_timeout`，`--json` 时 `error.kind` 是 `lock_timeout`，账里没有新行；把 `research-loop.json` 里这个值改成 1 秒再跑一遍，等待时间跟着变（`05`「退出码与 --json」、`08` 第三节阈值表）。
+用例：一个进程占着 `loop/.lock` 超过 `lock.timeout_seconds`（默认 10 秒），另一个进程写账退出码 4，标准错误第一行是 `lock_timeout`，`--json` 时 `error.kind` 是 `lock_timeout`，账里没有新行；把 `research-loop.json` 里这个值改成 1 秒再跑一遍，等待时间跟着变（`03`「退出码」、`08` 第三节阈值表）。
 
 ## 三、施工步骤 0 到 8
 
@@ -214,7 +214,7 @@
 - 测试 2、4、7、11、15 背后的转移表、holder 不变量、销号、reclaim：`04-handoffs-and-sessions.md`。
 - 测试 1、3、10、14、17、18 背后的账行格式、退出码、锁：`03-ledgers.md`；`02-decisions.md` 抄了测试 3 的用例名。
 - 测试 8、13 背后的钩子和角色 json：`06-hooks-and-permissions.md`。
-- 测试 9、11、19、20 背后的 actor 判定、退出码六个、`--json`、doctor 十九项、`--ack`：`05-rl-cli.md`。
+- 测试 9、11、19、20 背后的 actor 判定、`--json`、doctor 十九项、`--ack`：`05-rl-cli.md`；退出码六个：`03-ledgers.md`（`05` 照抄）。
 - 测试 4 快车道那两句和测试 16：`07-quick-lane.md`。
 - 施工步 1、2、7 的交付与验收里两棵树和宿主改动：`08-trees-init-and-host.md`。
 - 施工步 6 里 run 的 SKILL.md 照哪份写：`12-role-run.md`。
@@ -225,7 +225,7 @@
 1. doctor 十九项只有第 3 项（经测试 6）和第 19 项（经测试 18）有对应的测试用例，其余十七项各造一条脏账、跑修法命令、再扫零报告，第十节没有这一条测试。
 2. 测试 5 里「口径引用同样查过版」由哪条命令出（`22` 留给 gyb 第 3 条），没裁之前这一句写不成用例。
 3. 测试 12 第二条里 amend 追加的那次尝试分不分新 run_id（`21` 留给 gyb 第 4 条），用例只能先按一种写。
-4. 测试 13 按 `reads` 栏查「每个读的目录都在 reads 里」，五份 json 里 reads 的写法不统一（`06` 留给 gyb 第 8 条），按哪种形式查没裁。
+4. 测试 13 按 `reads` 栏查「每个读的目录都在 reads 里」，五份 json 里 reads 的写法不统一（`06` 留给 gyb 第 8 条），按哪种形式查没裁。（06 已于 2026-08-18 定稿裁定，见 06 裁决记录。）
 5. （2026-08-18 已裁，`08` 定稿：建 `agents/`，步 1 建空目录；不建 `workflows/`。）待验证第 8 条的备案「workflow 里的 `agentType` 指向 `agents/<role>.md`」要求插件树多一层 `workflows/` 或 `agents/`，`08` 第四节的目录清单里没有（`08` 留给 gyb 第 10 条），第 0 步测出走备案的时候步 1 建的空目录要不要多这一层没写。
 6. 待验证第 9 条只测 deploy 起 run 这一层，idea 起 deploy、deploy 再起 run 的两层嵌套没测（第二轮 run-crash-midway 第 10 条、new-idea 第 4 条报过）；原则 11 之后是后台派活、不再同步嵌套等，这一条要不要补测两层各自的后台行为没写。
 7. 步 3 和步 4 用 ticket-run 工单化，工单怎么切、每张工单对应第二节的哪几条测试，第十一节没写。
@@ -351,3 +351,7 @@
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：待验证第 8 条状态改已测（主案、备案一都不成立，走插件级钩子按 `agent_type` 判角色，记录路径见表）；第 2 条备注写法被取代；「没写清」第 5 条标已裁（建 `agents/` 不建 `workflows/`）；步 1 交付加 `agents/` 空目录与五份定义；步 7 交付与验收加 `run.py` 门禁白名单两项、`selfcheck` 过。对回原则 2、8。
 - 2026-08-21 来自 `01-gyb.md` 定稿（`cd569ab`，rl-hub-v5 传；gyb 原话「收件箱这个算了 先不做，就维护一个我要看的东西就行，我自己记得定期手动看」「那这个砍了吧」）：待验证第 6 条（桌面通知）、第 7 条（定时提醒）销，失败备案转正。对回原则 6。
 - 2026-08-21 来自 `07-quick-lane.md` 定稿（`7a01842`，rl-hub-v5 传）：步 5 那行公共规矩八条改九条（rule-09 2026-08-21 gyb 立，定义处 `09`）。
+- 2026-08-21 评审修复（gyb 授权，定义处 README.md「30」那行末尾、sync-inbox 问题 27）：测试 9「要改的」那段「01 两处相反、等 01 开的时候改」的过时说法改成「2026-08-17 rl-hub-v3 传问题 27 时已把 `01` 那两处改成『角色会话里 `--as-gyb --quote` 替 gyb 写也收』，不一致已消」。
+- 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md` 裁决记录 2026-08-18 问题八）：测试 13 原文段落和「源文档没写清的」第 4 条两处「06 留给 gyb 第 8 条（reads 栏五份 json 写法不统一）还没裁」的说法标已裁——06 已于 2026-08-18 定稿裁定 reads 栏两种写法，测试 13 段改「已统一、已裁」，「没写清」第 4 条原文照抄不删，句后加括号补注已裁。
+- 2026-08-21 评审修复（gyb 授权，定义处 `03-ledgers.md` 第 240 行「账本的总规矩」「退出码」两节；HANDOFF 四点五节 2026-08-21 已把锁挂回 03 行）：测试 1（撞号）和测试 20（`lock.timeout_seconds`）两处把锁与写序、退出码的定义处指向从 `05` 改指 `03`——`03` 是定义处，`05`「锁与写序」「退出码与 --json」两处只是照抄。
+- 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md` 裁决记录 2026-08-21「会话状态文件」一节补注）：待验证第 5 条状态栏末尾补一句——subagent 场景 rl 判 actor 的口子（状态文件读到父会话的角色对不对、要不要另立信号）连带挂在这条上一起测，测完由 `04` 定，`06` 2026-08-21 补注同此。

@@ -39,11 +39,12 @@ idea 打 `rl handoff open --type work_order --to deploy --decision ID@V ... --ex
 
 七个状态是待干 `todo`、开干 `in_progress`、卡住 `stuck`、干完等待验收 `done_pending_review`、验收完成 `accepted`、打回 `rejected`、收回 `withdrawn`。`accepted` 和 `withdrawn` 是终态。入账脚本只认转移表，表外的转移一律拒收，退出码 2。
 
-下面这张表是施工计划第四节转移表里和 `work_order` 有关的行，另外两种 `work_type` 的前提删掉了，字句没改。全表在 04-handoffs-and-sessions.md。gyb 对「谁能写」一栏一律豁免，「前提」一栏是完整性校验，对 gyb 生效，gyb 用 `--force --reason` 越过并留痕。
+下面这张表是施工计划第四节转移表里和 `work_order` 有关的行，另外两种 `work_type` 的前提删掉了。转移表行照 04 第三节抄；抄来之后跟着 04 的裁决改过字句，逐条见文末裁决记录。全表在 04-handoffs-and-sessions.md。gyb 对「谁能写」一栏一律豁免，「前提」一栏是完整性校验，对 gyb 生效，gyb 用 `--force --reason` 越过并留痕。
 
 | 从 | 到 | 谁能写 | 前提 | 之后谁拉起 | 子命令 |
 |---|---|---|---|---|---|
 | （新建） | `todo` | `from_role` | `work_order` 有 `decision_refs` 和 `explanation` | `dispatch=auto` 时 owner 后台起 subagent；`manual` 等 gyb；`none` 不动 | `handoff open` |
+| （新建） | `done_pending_review` | `deploy`（快车道补单，owner 记 gyb） | `quick_lane` 为 true，`report_paths.method` 存在，`explanation` 非空，`ql_tag` 指的 scratch 行状态是 `open`（补单开完拿到编号再 `rl ql close --merged --handoff ID` 关杂账，两边互指） | 无（等 gyb 验收，只有 gyb 能 accept） | `handoff open --quick-lane` |
 | `todo` | `in_progress` | `to_role` | 写入会话的角色等于 `to_role`；`holder` 为空（非空退出码 2 并列出当前 holder） | 无 | `handoff start` |
 | `todo` / `stuck` | `todo`（内容追加） | owner、`to_role` | 只改内容：`work_order` 补 `report_paths` 或 `code_paths`；换 `decision_refs` 里的引用（doctor 悬空引用的修法）；状态不变 | 无 | `handoff amend` |
 | `in_progress` | `stuck` | holder | `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单 | 无 | `handoff stuck` |
@@ -90,7 +91,7 @@ deploy 提「干完等待验收」的时候，派活单记两份报告路径和�
 
 deploy 干不下去的时候先开一条 issue，再把单子标卡住。写序定死：先写 issue 拿到编号，再写单子那一行引它，中间崩了顶多多一条没人引的 issue，doctor 扫得出来。`handoff stuck` 的前提是 `issue_id` 指向一条已存在的 issue，并且那条 issue 的 `handoff_id` 指回本单。issue 的九种 `kind` 里，`cannot`（干不了）、`not_mine`（不归我干）、`denied`（被钩子拦了）三种都必填 `handoff_id`。
 
-issue 的三个状态是 `open`、`answered`、`closed`。回复只有 assignee 或者 gyb 能写；关闭由开单的 actor 或者 gyb 做，通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 assignee 也能关；`rl handoff accept` 关这张单关联的 `answered` issue；`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`。assignee 是 gyb 的那一版（含首次开单）触发桌面通知，其余进角色的 `rl inbox`。
+issue 的三个状态是 `open`、`answered`、`closed`。回复只有 assignee 或者 gyb 能写；关闭由开单的 actor 或者 gyb 做，通知类 issue（`withdrawn`、`orphaned`、`fyi`）的 assignee 也能关；`rl handoff accept` 关这张单关联的 `answered` issue；`rl inbox` 只读不关，通知类 issue 由收件人做完了自己 `rl issue close`。assignee 是 gyb 的那一版（含首次开单）进 `rl status` 段 2，其余进角色的 `rl inbox`（桌面通知这一版不做，2026-08-21 裁）。
 
 deploy 解决不了的问题改派给 gyb，用 `rl issue reassign ID --to gyb`。改派之后这条 issue 落进 gyb 的收件箱，见 01-gyb.md。
 
@@ -104,9 +105,9 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 
 ## 快车道补单
 
-快车道合回的时候 deploy 补一张标了 `quick_lane` 的工单，`from_role` 和 `to_role` 都是 deploy，验收人固定是 gyb，允许新建直接进 `done_pending_review`，只要一份 `method` 简报，`explanation` 由 deploy 写并抄 gyb 点名的原话，`ql_tag` 指它合回的那条 scratch 行。补单的前提是那条 scratch 行状态还是 `open`：先开补单拿到编号，再 `rl ql close --merged --handoff ID` 关杂账，两边互指。这一整条路（`rl ql open`、杂账、`rl ql close`、免掉哪些手续）在 07-quick-lane.md。
+快车道合回的时候 deploy 补一张标了 `quick_lane` 的工单，`from_role` 和 `to_role` 都是 deploy，验收人固定是 gyb，允许新建直接进 `done_pending_review`，只要一份 `method` 简报，`explanation` 由 deploy 写并抄 gyb 点名的原话，`ql_tag` 指它合回的那条 scratch 行。补单的前提是那条 scratch 行状态还是 `open`：先开补单拿到编号，再 `rl ql close --merged --handoff ID` 关杂账，两边互指。补单报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名（07 定稿 2026-08-21）。这一整条路（`rl ql open`、杂账、`rl ql close`、免掉哪些手续）在 07-quick-lane.md。
 
-两处原文不一致：设计文档写快车道补单「from_role 和 to_role 都是 deploy」，施工计划第二节词表把 owner 定义成「开单角色，就是 from_role」又补一句「快车道补单和 gyb 开的单 owner 记 gyb」，第四节那一行也写「owner 记 gyb」。按施工计划的表，这一行的 owner 记 gyb。
+两处原文不一致：设计文档写快车道补单「from_role 和 to_role 都是 deploy」，施工计划第二节词表把 owner 定义成「开单角色，就是 from_role」又补一句「快车道补单和 gyb 开的单 owner 记 gyb」，第四节那一行也写「owner 记 gyb」。按施工计划的表，这一行的 owner 记 gyb。（已裁：07 定稿 2026-08-21，开单 deploy、owner 记 gyb）
 
 ## 和别的 part 的接口
 
@@ -114,7 +115,7 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - handoffs 一本账的完整行格式和九本账的公共骨架七样：03-ledgers.md。
 - 转移表全表（含 `analysis_order` 和 `launch_order` 的行）、holder 不变量、销号与 `reclaim` 怎么把工单交回待干：04-handoffs-and-sessions.md。
 - `rl handoff open/start/amend/stuck/resume/done/accept/reject/withdraw/release/reissue` 和 `rl issue open/reassign/reply/close/link` 的完整参数、退出码、`--json`：05-rl-cli.md。
-- 「谁能写」一栏之外的分权（钩子只挂 Write 和 Edit）、idea 与 deploy 两份角色 json 的 `ledger_writes`：06-hooks-and-permissions.md。
+- 「谁能写」一栏之外的分权（钩子只挂 Write、Edit 和 Bash）、idea 与 deploy 两份角色 json 的 `ledger_writes`：06-hooks-and-permissions.md。
 - 快车道补单的进出登记、杂账、免掉的手续：07-quick-lane.md。
 - 发射单的 `parent_id` 指工单、决定引用和 `batch` 从工单继承、`attempts`：21-pair-deploy-run.md。
 - 分析单的 `evaluation_refs` 和交付物：22-pair-idea-analysis.md。
@@ -350,3 +351,9 @@ issue 被回复之后，由回 issue 的那个角色打 `rl handoff resume` 把�
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「工单格式里加一个位置」）：工单加方向名 `track` 一栏，idea 开单时填、deploy 开发射单照抄；第二节字段表「六个字段」定稿时补行改数（`04` 补栏等最后一期，sync-inbox 问题 45）。对回原则 9。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「报位置、留着不动，处置由你定」）：工单收回时 holder 把已写的代码位置和半截产物目录路径回进那条 `withdrawn` issue，东西不动，处置由 gyb 定；「没写清」第 7 条标已裁（`04` withdraw 侧补句等最后一期，sync-inbox 问题 45）。对回原则 11。
 - 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传；gyb 原话「全收」）：`code_paths` 全收口径——这张单改过的代码路径不论在不在 `experiments/` 里都列，宿主文件也算；字段表那行的说明定稿时并（`03` 字段说明补句等最后一期，sync-inbox 问题 45）。对回原则 3。
+- 2026-08-21 评审修复（gyb 授权），定义处 `01-gyb.md` 第五节：issue 往返一节「assignee 是 gyb 的那一版（含首次开单）触发桌面通知」改成「进 `rl status` 段 2」，桌面通知这一版不做，与本文件接口一节第 121 行对齐。
+- 2026-08-21 评审修复（gyb 授权），定义处 `07-quick-lane.md`（07 定稿）：快车道补单一节「两处原文不一致……owner 记 gyb」那句后补「（已裁：07 定稿 2026-08-21，开单 deploy、owner 记 gyb）」。
+- 2026-08-21 评审修复（gyb 授权），定义处 `06-hooks-and-permissions.md`（06 定稿）：接口一节「钩子只挂 Write 和 Edit」改成「钩子只挂 Write、Edit 和 Bash」。
+- 2026-08-21 评审修复（gyb 授权），定义处 `04-handoffs-and-sessions.md` 第三节：转移表引言「字句没改」改成「转移表行照 04 第三节抄；抄来之后跟着 04 的裁决改过字句，逐条见文末裁决记录」，与文末六条改字句的裁决记录对齐。
+- 2026-08-21 评审修复（gyb 授权），定义处 `07-quick-lane.md`（07 定稿）：快车道补单一节补一句「补单报告目录用 `experiments/<ql_tag>/`，拿到单号之后不改名」。
+- 2026-08-21 评审修复（gyb 授权），定义处 `04-handoffs-and-sessions.md` 第三节：转移表补一行快车道补单（新建）行，抄自 04 当前 HEAD。
