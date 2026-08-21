@@ -4,14 +4,16 @@
 
 任何要用显卡跑的程序（训练/推理/探针/vLLM，不分大小）一律走
 `.claude/skills/gpu-run/SKILL.md` 的全生命周期流水线：
-探卡 → 挑卡 → smoke → 发射前 commit → tmux 发射 → 双登记 → 交监控命令 →
-巡检 → 收尾（汇报/记数字/释放/销号/提交）或中断。
+探卡 → 挑卡 → smoke → 发射前 commit → `launch` 发射（tmux + 三处登记）→
+交监控命令 → 采样器接管判定与升级 → 收尾（汇报/记数字/释放/销号/提交）或中断。
 禁止绕过它手搓 ssh/nohup 启动。
 
 - 发射与登记收成 `python3 run.py launch` 一条命令（探卡/tmux/验活/三处登记一口气做完）。
 - 集群慢变量（驱动/CUDA/坑）：`ops/gpu_state.md`
-- 任务台账：`ops/jobs.json`，只通过 `python3 run.py gpu-jobs register/finish` 读写
-- 用户自助监控：`python3 run.py gpu-jobs watch` + 网页 `http://localhost:8377`（ssh 端口转发）
+- 任务台账：`ops/jobs.json`，`launch` 发射时自动登记，收尾 `python3 run.py gpu-jobs finish` 销号，
+  手搓发射才用 `gpu-jobs register` 补录；不许手改文件本体
+- 用户自助监控：`python3 run.py gpu-jobs watch`；网页 `http://localhost:8377`（ssh 端口转发）
+  由常驻采样器 `python3 run.py sampler` 提供，采样器没跑网页就没有
 - 实时空卡：`python3 run.py gpu-jobs free`（永不信缓存的占用状态）
 - 产物钉代码：发射器自动往产物目录写 `RUNMETA.json`（commit+argv+脏清单）；
   手搓发射必须补 `python3 run.py runmeta <产物目录> --cmd '<完整命令>'`
@@ -40,23 +42,23 @@
   （一次性发射器按 2026-08-02 裁决不进注册表，属唯一例外）。
 - 扩展代码与注册表更新同一个 commit，交付前过 `python3 run.py selfcheck`。
 
-## 记录：三层结构，主键 run_id
+## 记录：四本账加原始数据，主键 run_id
 
-每次实验都要留下痕迹，分四层，别混用：
+每次实验都要留下痕迹，分五层（四本账 + 原始数据），别混用：
 
 | 层 | 文件 | 谁写 | 回答什么问题 |
 |---|---|---|---|
 | 方向 | `TIMELINE.md` | 人写，只增不改 | 当初为什么这么定 |
 | 数字 | `ops/runs.jsonl` → `RESULTS.md` | `ops/record.py` | 数据长什么样 |
 | 数据设定 | `DATA.md` | 人写，随数据版本更新 | 这批数据是怎么造出来的 |
+| 计划 | `WORKPLAN.md` | 人写，会被覆盖 | 接下来打算做什么 |
 | 原始数据 | NFS，不进 git | 实验脚本 | 数据本体在哪 |
 
-- **开新实验之前先过 `DATA.md` 的检查清单**（版本 / 先验基线 / 档位编号 /
-  耗时可比性 / 种子）。里面每一条都对应一个已经踩过的坑。
+- **开新实验之前先过 `DATA.md` 的检查清单**。里面每一条都对应一个已经踩过的坑。
 - `DATA.md` 只写设定与口径，**不写结论**——结论归 `RESULTS.md`，否则会长成第二本账。
 - 代码地图在 `MAP.md`：每个程序是干什么的、怎么用。加新程序要更新对应行。
-- 发射时 `run.py record start`（自动抓 git HEAD），收尾时 `run.py record finish` 补数字，
-  两步都写在 gpu-run skill 的 Phase 4 / 6a 里，跟着流水线走就不会漏。
+- `run.py launch` 发射时自动调 `record start`（抓 git HEAD），收尾时手动
+  `run.py record finish` 补数字，两步写在 gpu-run skill 的 Phase 4 / 6a 里，跟着流水线走就不会漏。
 - `RESULTS.md` 是渲染产物，**不要手改**；`runs.jsonl` append-only，只增不改。
 - `WORKPLAN.md` 是会被覆盖的当前计划，`TIMELINE.md` 是永不覆盖的决策历史，
   两者分工不能颠倒。实验结论动了 WORKPLAN 任何一条判断 → 必须补一条 TIMELINE。
