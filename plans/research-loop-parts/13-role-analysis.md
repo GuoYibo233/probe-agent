@@ -1,23 +1,25 @@
 # analysis 角色
 
 > 这份覆盖 analysis 这个角色的 SKILL.md 要写进去的一切：写权和读法、模型、收件箱、先问 gyb 再提口径的规矩、口径账（evaluations）的两类与四态、接分析单与交活的前提、卡住时开 issue 的两条路、快车道里先画一张图、图和 notebook 落在哪。
-> 不覆盖的：evaluations 和 handoffs 两本账的完整行格式在 `03-ledgers.md`，派活单的状态转移表和会话登记销号在 `04-handoffs-and-sessions.md`，rl 的完整命令表在 `05-rl-cli.md`，钩子和角色 json 的写法在 `06-hooks-and-permissions.md`，快车道的总规矩（进出两行账、ql_tag 怎么分）在 `07-quick-lane.md`，公共母版八条规矩在 `09-common-and-feedback.md`，idea 或 gyb 怎么开分析单在 `22-pair-idea-analysis.md`，analysis 从 runs 账里读什么在 `23-pair-run-analysis.md`，analysis 开 issue 给 deploy 那一头在 `24-pair-analysis-deploy.md`，reviewer 怎么审分析代码在 `14-role-reviewer.md`。
+> 不覆盖的：evaluations 和 handoffs 两本账的完整行格式在 `03-ledgers.md`，派活单的状态转移表和会话登记销号在 `04-handoffs-and-sessions.md`，rl 的完整命令表在 `05-rl-cli.md`，钩子和角色 json 的写法在 `06-hooks-and-permissions.md`，快车道的总规矩（进出两行账、ql_tag 怎么分）在 `07-quick-lane.md`，公共母版九条规矩在 `09-common-and-feedback.md`，idea 或 gyb 怎么开分析单在 `22-pair-idea-analysis.md`，analysis 从 runs 账里读什么在 `23-pair-run-analysis.md`，analysis 开 issue 给 deploy 那一头在 `24-pair-analysis-deploy.md`，reviewer 怎么审分析代码在 `14-role-reviewer.md`。
 > 源：设计文档的「五个角色」总段、analysis 一节、快车道一节、「gyb 自己做的事」、账本一节的 evaluations 与 scratch 两条、「交接与会话生命周期」的交付物段、「两棵树」一节；施工计划第一节裁决 3 与第六轮改动 (e)(f)、第二节词表、第三节 evaluations 与 handoffs、第四节转移表、第五节 analysis 的 use case 与模型表、第六节 eval 与 ql 两行命令、第十三节规矩 4 和规矩 5。
 
 ## 一、写权、读的东西、模型、收件箱
 
-analysis 的写权只有 `analysis/` 一个目录。钩子只挂 Write 和 Edit，拦两类事：写别的角色的目录（`experiments/`、`review/`、`notes/`），和直接写 `loop/`。`analysis/` 之外的其余仓库内路径钩子放行，靠纪律管。仓库外的路径（产物根、`/tmp`）钩子一律不判。
+analysis 的写权只有 `analysis/` 一个目录。钩子挂 Write、Edit、Bash 三个工具，拦两类事：写别的角色的目录（`experiments/`、`review/`、`notes/`），和直接写 `loop/`。`analysis/` 之外的其余仓库内路径钩子放行，靠纪律管。仓库外的路径（产物根、`/tmp`）钩子一律不判。
 
 角色 json 四栏（施工计划第五节）：
 
 | 栏 | 取值 |
 |---|---|
-| reads | runs、evaluations、handoffs、issues、feedback、`decisions.idea`、`decisions.gyb`、`analysis/` |
+| reads | runs、evaluations、handoffs、issues、feedback、scratch、`decisions.idea`、`decisions.gyb`、`analysis/` |
 | writes | `analysis/` |
-| ledger_writes | evaluations 的 propose/update、handoffs 的 start/done/stuck、issues 的 open/reply、scratch 全部、decisions.analysis 全部、feedback add |
+| ledger_writes | evaluations 的 propose/update、handoffs 的 start/done/stuck、issues 的 open/reply/close（close 限自己开的）、scratch 全部、decisions.analysis 全部、feedback add |
 | dispatches_to | 无 |
 
 （`reads` 一行 2026-08-18 按 `06` 定稿的写法核对：账写账名、目录写相对仓库根的路径，没有句子，不用改。）
+
+（scratch 只在快车道读写自己那条 `ql_tag` 的行；issues 的 close 只关自己开的单，rl 按开单人查。两条 2026-08-21 评审修复补，`06` 侧同步改。）
 
 SKILL.md 里另写两句纪律（2026-08-18 gyb 裁，定义处 `06-hooks-and-permissions.md`）：钩子拦不到的写法（脚本内部写文件、`python -c`、heredoc、任何钩子解析不出目标路径的 Bash 命令）一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法，账本一律走 `rl`（Bash 进钩子匹配范围后按 sync-inbox 问题 38 改的措辞）；一个会话只加载一个角色，要换角色另开会话。
 
@@ -106,7 +108,7 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 
 快车道不是 deploy 专属。gyb 只想先看一眼图的时候走同一条：进快车道由 gyb 点名，口头就行，不设别的判据。
 
-进：`rl ql open --role analysis`。rl 在锁里分配标签（形如 `ql-20260816-01`）、往杂账（scratch）写开张的一行。analysis 的快车道不建 worktree，产物放 `analysis/scratch/<标签>/`。
+进：`rl ql open --role analysis`。rl 在锁里分配标签（形如 `ql-20260816-01`）、往杂账（scratch）写开张的一行；analysis 的开张行只填 `dir`，`base_commit`、`branch` 两栏不设、只对 deploy 必填（2026-08-21 `07` 问题 1 裁，`03` 冻结列同步）。analysis 的快车道不建 worktree，产物放 `analysis/scratch/<标签>/`。
 
 中间：不开口径、不开分析单，图落 `analysis/scratch/`，数字追加进杂账、不进 runs 账。杂账中间版格式松，只校验骨架和 `ql_tag`；`open`、`merged`、`dropped` 三版按表查必填。
 
@@ -134,7 +136,7 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 - `analysis_artifact_root` 和 `analysis/` 目录由 init 建出来的样子：`08-trees-init-and-host.md`。
 - 公共规矩 4（证据配路径）、规矩 5（口径不发明）、规矩 6（故障分域）、读法栏：`09-common-and-feedback.md`。
 - idea 开分析单、gyb 直接开分析单、口径谁批：`22-pair-idea-analysis.md`。
-- runs 账的 `metrics`、`config` 字典、`run list` 默认过滤：`23-pair-run-analysis.md`。
+- runs 账的 `metrics`、`config` 字典：`23-pair-run-analysis.md`；`run list` 默认过滤：`03-ledgers.md`。
 - analysis 开给 deploy 的 issue 那一头怎么接：`24-pair-analysis-deploy.md`。
 - reviewer 审分析代码和 notebook 的顺序与基准：`14-role-reviewer.md`。
 - `rl status` 里等批的口径、等验收的单子在哪一段：`01-gyb.md`。
@@ -144,9 +146,7 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 ## 源文档没写清的（留给 gyb）
 
 1. analysis 发现代码问题开给 deploy 的那条 issue 填哪个 kind：九种 kind（`cannot`、`not_mine`、`denied`、`failed`、`anomaly`、`request`、`withdrawn`、`orphaned`、`fyi`）里没有一种是「别人的代码有问题」，施工计划第五节只写「发现代码问题开 issue 给 deploy」，kind 没定。分组键缺失那条明写了 `cannot`，这条没有。
-2. analysis 快车道的 scratch 开张版填什么：第三节写 scratch 的 `open` 版必填 `worktree`（deploy）或 `dir`（analysis）、`base_commit`、`branch`，可 analysis 的快车道不建 worktree 也不建分支，`base_commit` 和 `branch` 两栏对 analysis 填什么没写。
 4. analysis 的自决是什么：角色 json 的 ledger_writes 里有 `decisions.analysis` 全部，可公共规矩 2 把自决定义成「改变实验结果的选择」，analysis 不跑实验，哪些选择算 analysis 的自决没有例子。
-5. `rl eval retire` 归谁调：第三节写 `retired` 那一版 actor 必须是 gyb，第六节命令表那一行的「谁能调」写的是「提和改 analysis，批和打回 gyb」，retire 没点名。
 6. 口径的 add 还是 update 没有判据：决定账有「同一个问题换做法就追加一版、换了要回答的问题就开新条」这条判据，口径账只写了 `approved` 之后 update 回 `proposed`，什么时候该开一条新口径没写。
 7. 没有分析单的 analysis 会话怎么交付：设计文档写「gyb 直接开 analysis session 的时候上游填 gyb」，也写「gyb 只想先看一眼图的时候走快车道」，可 gyb 直接开会话又不走快车道的那一种，notebook 和图落在哪、要不要补一张单，没写。
 8. analysis 的 ledger_writes 里有 `issues` 的 reply，可九本账的规矩里没有任何角色开 issue 给 analysis，analysis 回的是谁的 issue 没写。
@@ -248,3 +248,12 @@ issue 被回复之后，由回 issue 的那个角色 `rl handoff resume` 把单�
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：第 119 行 init 播的公共统计件写成三样 `analysis/common/metrics.py`、`analysis/common/ledger.py`、`analysis/scratch/`。对回原则 8。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「只列本会话手上的」）：`rl inbox` 过版项口径统一「本会话手上单子引的过版决定」；第一节五样清单已一字一致，正文不改。
+- 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 选「单列一项」）：feedback 裁决在 `rl inbox` 单列一项，合计五类；第一节五样清单已一字一致，正文不改。
+- 2026-08-21 rl-hub-v6 传 HANDOFF 挂账：接口一节 `run list` 默认过滤的定义处从 `23-pair-run-analysis.md` 改指 `03-ledgers.md`。
+- 2026-08-21 评审修复（gyb 授权，reviee 传，定义处 `06` 第 13 行）：第一节钩子口径从「只挂 Write 和 Edit」改成「挂 Write、Edit、Bash 三个工具」，和同文件两句纪律的三工具口径对齐。对回原则 2。
+- 2026-08-21 评审修复（gyb 授权，reviee 传，定义处 `09`）：开头摘要「公共母版八条规矩」改「九条」（rule-09 2026-08-21 立）。对回原则 8。
+- 2026-08-21 评审修复（gyb 授权，reviee 传，定义处 `07` 问题 1 裁 A）：analysis 的 scratch 开张行只填 `dir`，`base_commit`、`branch` 两栏不设、只对 deploy 必填；第六节「进」那句补这半句，「源文档没写清的」第 2 条销掉，编号不重排。
+- 2026-08-21 评审修复（gyb 授权，reviee 传，定义处 `05` 命令表）：`rl eval retire` 归 gyb（05 那行已写「批、打回、退役都是 gyb」，本份四态表同值）；「源文档没写清的」第 5 条销掉，编号不重排。
+- 2026-08-21 评审修复（gyb 授权，reviee 传，定义处 `06`）：json 副本 `reads` 加 scratch，表下备注补「scratch 只在快车道读写自己那条 `ql_tag` 的行」；依据是 `ledger_writes` 有 scratch 全部而 `reads` 没有，测试 13 第 2 样会红。`06` 侧 reviee 同步改。对回原则 2。
+- 2026-08-21 评审修复（gyb 授权，reviee 传，定义处 `03` close 写权、`24` 通道表第 6 步）：`ledger_writes` 的 issues 加 close（限自己开的，rl 按开单人查）。交代里「use case 表补对应行」落不了：本份没有 use case 表，已回报 reviee。`06` 侧 reviee 同步改。对回原则 2。
