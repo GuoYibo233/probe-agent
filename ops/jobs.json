@@ -1,44 +1,6 @@
 {
   "active": [
     {
-      "name": "p1b17_gptoss_cgen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "4",
-          "session": "new1_p1b17_gptoss_cgen_t108g4",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cgen_t108g4.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt",
-          "launched_at": 1787283842.997276,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "p1b17_gptoss_cparam",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "5",
-          "session": "new1_p1b17_gptoss_cparam_t108g5",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cparam_t108g5.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt",
-          "launched_at": 1787283845.7646618,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
       "name": "p1l06_gptoss_cgen",
       "workdir": "/home/y-guo/reproduce/new1",
       "note": null,
@@ -733,6 +695,106 @@
         }
       ],
       "finished_at": "2026-08-21 19:05"
+    },
+    {
+      "name": "p1b17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_p1b17_gptoss_cgen_t108g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cgen_t108g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787283842.997276,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 21:27"
+    },
+    {
+      "name": "p1b17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_p1b17_gptoss_cparam_t108g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cparam_t108g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787283845.7646618,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 21:27"
+    },
+    {
+      "name": "eval_p1b17_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 21:27",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "eval_p1b17_gptoss_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_p1b17_gptoss_ctool.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --head causal",
+          "launched_at": 1787315263.4772887,
+          "kind": "eval_tool",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 21:41"
+    },
+    {
+      "name": "eval_p1b17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 21:41",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "eval_p1b17_gptoss_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_p1b17_gptoss_cgen.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --risk 0.1",
+          "launched_at": 1787316117.9671934,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 21:55"
+    },
+    {
+      "name": "eval_p1b17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 21:42",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "eval_p1b17_gptoss_cparam",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_p1b17_gptoss_cparam.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --risk 0.1",
+          "launched_at": 1787316120.560777,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 21:55"
     }
   ]
 }

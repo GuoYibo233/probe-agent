@@ -6,6 +6,9 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `eval_p1b17_gptoss_cparam` | 2026-08-21 21:42 | eval_p1b17 | `9b1e660` | - | ok | risk=0.1 theta=0.925 n_scored=818 pred_tool_full_call_ok=0.7066 pred_tool_params_all_ok=0.7543 gt_tool_params_all_ok=0.7702 noparam_rate=0.3178 | p1b17 cparam评测(risk 0.1,theta 0.925):818事件,pred_tool full_call_ok 0.7066/params_all_ok 0.7543,gt_tool params 0.7702 |
+| `eval_p1b17_gptoss_cgen` | 2026-08-21 21:41 | eval_p1b17 | `9b1e660` | - | ok | risk=0.1 theta=0.925 n_scored=818 parse_fail=0 tool_ok=0.8998 params_all_ok=0.7494 full_call_ok=0.7066 | p1b17 cgen评测(risk 0.1,theta 0.925):818事件,parse_fail 0,tool_ok 0.8998,full_call_ok 0.7066 |
+| `eval_p1b17_gptoss_ctool` | 2026-08-21 21:27 | eval_p1b17 | `e29e2a9` | - | ok | theta_risk10=0.925 coverage=0.3596 trig_acc=0.9108 earliness=0.6878 wrong_spec=0.0321 temperature=1.2196 prior_acc=0.4193 | p1b17 ctool评测:0.05档theta选不出(null),0.1档theta 0.925,test冻结 coverage 0.3596/trig_acc 0.9108/earliness 0.6878/wrong_spec 0.0321;call档按§4.3改传--risk 0.1 |
 | `eval_p1b06_gptoss_cparam` | 2026-08-21 18:58 | eval_p1b06 | `4d540e3` | - | ok | n_events_scored=388 pred_tool_ok=0.9794 pred_params_all_ok=0.9046 pred_full_call_ok=0.8892 noparam_rate=0.3763 gt_params_all_ok=0.9072 | p1b06 cparam 评测 388 触发事件,pred_tool full_call_ok 0.8892 |
 | `eval_p1b06_gptoss_cgen` | 2026-08-21 18:58 | eval_p1b06 | `4d540e3` | - | ok | n_events_scored=388 parse_fail_rate=0.0 tool_ok=0.9794 params_all_ok=0.8582 full_call_ok=0.8454 exact_call_ok=0.8454 | p1b06 cgen 评测 388 触发事件,full_call_ok 0.8454 |
 | `eval_p1b06_gptoss_ctool` | 2026-08-21 18:47 | eval_p1b06 | `377d01e` | - | ok | theta_005=0.975 coverage=0.1705 trig_acc=0.9794 earliness=0.6109 wrong_spec=0.0035 temperature=1.2333 | p1b06 ctool 评测出报告,0.05 档 θ=0.975,test 冻结 coverage 0.1705 trig_acc 0.9794 |
@@ -18,8 +21,8 @@
 | `p1l06_gptoss_cparam` | 2026-08-21 12:44 | probe_p1l06 | `ba609fa` | - | running | - | - |
 | `p1l06_gptoss_cgen` | 2026-08-21 12:44 | probe_p1l06 | `ba609fa` | - | running | - | - |
 | `p1l06_gptoss_ctool` | 2026-08-21 12:44 | probe_p1l06 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6878 calA_lastbound_acc=0.7511 best_epoch=2 align_maxdiff_hidden=7.95e-05 | 0.6B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6878 |
-| `p1b17_gptoss_cparam` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | running | - | - |
-| `p1b17_gptoss_cgen` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | running | - | - |
+| `p1b17_gptoss_cparam` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | ok | best_val_ce=0.332 best_epoch=0 val_exact_params=0.705 assembly_mismatch_train=0 assembly_mismatch_val=0 | p1b17 cparam(1.7B全参+gc)训完3ep,best ep0 val_ce 0.332,exact_params 0.705,拼装mismatch 0/0 |
+| `p1b17_gptoss_cgen` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | ok | best_val_ce=0.4531 best_epoch=1 val_exact_call=0.505 | p1b17 cgen(1.7B全参+gc)训完3ep,best ep1 val_ce 0.4531,exact_call 0.505 |
 | `p1b17_gptoss_ctool` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6685 calA_lastbound_acc=0.7526 best_epoch=2 align_maxdiff_hidden=0.000202 | 1.7B 全参+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6685 |
 | `p1b06_gptoss_cparam` | 2026-08-21 12:43 | probe_p1b06 | `ba609fa` | - | ok | best_val_ce=0.3493 val_exact_params_at_best=0.675 best_epoch=0 assembly_mismatch_train=0 assembly_mismatch_val=0 | 0.6B 全参 cparam 三轮跑完,best 第 0 轮 val_ce 0.3493,剥离失败 0 |
 | `p1b06_gptoss_cgen` | 2026-08-21 12:43 | probe_p1b06 | `ba609fa` | - | ok | best_val_ce=0.4043 val_exact_call_at_best=0.49 best_epoch=0 | 0.6B 全参 cgen 三轮跑完,best 第 0 轮 val_ce 0.4043 |
@@ -41,6 +44,39 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `eval_p1b17_gptoss_cparam`
+
+- **结论**：p1b17 cparam评测(risk 0.1,theta 0.925):818事件,pred_tool full_call_ok 0.7066/params_all_ok 0.7543,gt_tool params 0.7702
+- **方向**：eval_p1b17 ｜ **状态**：ok ｜ **起止**：2026-08-21 21:42 → 2026-08-21 21:55
+- **代码**：`9b1e660` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：risk=0.1 theta=0.925 n_scored=818 pred_tool_full_call_ok=0.7066 pred_tool_params_all_ok=0.7543 gt_tool_params_all_ok=0.7702 noparam_rate=0.3178
+- **原始数据**：`pipeline/runs/p1b17_gptoss_cparam`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_p1b17_gptoss_cparam.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --risk 0.1`
+
+### `eval_p1b17_gptoss_cgen`
+
+- **结论**：p1b17 cgen评测(risk 0.1,theta 0.925):818事件,parse_fail 0,tool_ok 0.8998,full_call_ok 0.7066
+- **方向**：eval_p1b17 ｜ **状态**：ok ｜ **起止**：2026-08-21 21:41 → 2026-08-21 21:55
+- **代码**：`9b1e660` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：risk=0.1 theta=0.925 n_scored=818 parse_fail=0 tool_ok=0.8998 params_all_ok=0.7494 full_call_ok=0.7066
+- **原始数据**：`pipeline/runs/p1b17_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_p1b17_gptoss_cgen.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --risk 0.1`
+
+### `eval_p1b17_gptoss_ctool`
+
+- **结论**：p1b17 ctool评测:0.05档theta选不出(null),0.1档theta 0.925,test冻结 coverage 0.3596/trig_acc 0.9108/earliness 0.6878/wrong_spec 0.0321;call档按§4.3改传--risk 0.1
+- **方向**：eval_p1b17 ｜ **状态**：ok ｜ **起止**：2026-08-21 21:27 → 2026-08-21 21:41
+- **代码**：`e29e2a9` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：theta_risk10=0.925 coverage=0.3596 trig_acc=0.9108 earliness=0.6878 wrong_spec=0.0321 temperature=1.2196 prior_acc=0.4193
+- **原始数据**：`pipeline/runs/p1b17_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_p1b17_gptoss_ctool.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --head causal`
 
 ### `eval_p1b06_gptoss_cparam`
 
@@ -158,17 +194,23 @@
 
 ### `p1b17_gptoss_cparam`
 
-- **方向**：probe_p1b17 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **结论**：p1b17 cparam(1.7B全参+gc)训完3ep,best ep0 val_ce 0.332,exact_params 0.705,拼装mismatch 0/0
+- **方向**：probe_p1b17 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:44 → 2026-08-21 21:27
 - **代码**：`ba609fa` (分支 main)
 - **机器**：tokyo108 GPU 5
+- **数字**：best_val_ce=0.332 best_epoch=0 val_exact_params=0.705 assembly_mismatch_train=0 assembly_mismatch_val=0
+- **原始数据**：`pipeline/runs/p1b17_gptoss_cparam`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cparam_t108g5.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt`
 
 ### `p1b17_gptoss_cgen`
 
-- **方向**：probe_p1b17 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **结论**：p1b17 cgen(1.7B全参+gc)训完3ep,best ep1 val_ce 0.4531,exact_call 0.505
+- **方向**：probe_p1b17 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:44 → 2026-08-21 21:27
 - **代码**：`ba609fa` (分支 main)
 - **机器**：tokyo108 GPU 4
+- **数字**：best_val_ce=0.4531 best_epoch=1 val_exact_call=0.505
+- **原始数据**：`pipeline/runs/p1b17_gptoss_cgen`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cgen_t108g4.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt`
 
