@@ -147,3 +147,4 @@ sync-inbox.md:read:notes`」一项删；（b）`05` `rl
 sync-inbox.md:read:notes`」那半句、`05` 接口一节「`r
 09-common-and-feedback.md:获准机制 2026-08-21 砍掉后没有现行取值
 README.md:推送表与定期提醒 2026-08-21 裁掉不做
+12-role-run.md:「公共母版八条规矩」改「九条」
