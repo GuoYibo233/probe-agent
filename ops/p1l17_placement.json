@@ -1,0 +1,40 @@
+[
+ {
+  "model": "gptoss",
+  "cell": "ctool",
+  "host": "tokyo106",
+  "gpu": 3,
+  "extra": [
+   "--base",
+   "qwen17",
+   "--align-tol",
+   "3e-4",
+   "--lora",
+   "--grad-ckpt"
+  ]
+ },
+ {
+  "model": "gptoss",
+  "cell": "cgen",
+  "host": "tokyo106",
+  "gpu": 4,
+  "extra": [
+   "--base",
+   "qwen17",
+   "--lora",
+   "--grad-ckpt"
+  ]
+ },
+ {
+  "model": "gptoss",
+  "cell": "cparam",
+  "host": "tokyo106",
+  "gpu": 5,
+  "extra": [
+   "--base",
+   "qwen17",
+   "--lora",
+   "--grad-ckpt"
+  ]
+ }
+]

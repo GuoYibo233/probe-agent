@@ -107,6 +107,18 @@ run_id 的拼法是 `<batch>_<model>_<cell>`,里面没有底座档位这一段;�
 前缀）,不进锁超参的横比。4B 的 LoRA 在 48G 上装不装得下没实测,发射前 smoke
 说了算,挤不进用梯度检查点旗标。
 
+**发射前 smoke 结论（2026-08-21 实测,详见各 smoke 日志 logs/new1_p1*_smoke*）**：
+- 1.7B 全参在 H100 95G 三格全部 backward OOM（进程用到 90-93 GiB 再要
+  4.64 GiB 失败;ctool 对齐检查本身 PASS,maxdiff_hidden 2.02e-4）。
+  处置:p1b17 三格全参加 `--grad-ckpt`（只省激活显存,锁死的超参一个不动）,
+  补一轮 gc smoke 过了再发,正式排 H200。
+- LoRA 九格里八格 48G 首轮 OOM,加 `--grad-ckpt` 后八格全部退 0;唯一首轮
+  就过的 p1l06_ctool 峰值 46114 MiB,离 48G 只剩约 2.5G。处置:九格统一带
+  `--grad-ckpt`（0.6B+gc+lora+ctool 组合没单独 smoke,但比已实测过的
+  1.7B 同款严格更轻）。4B 的 cgen/cparam 带 gc 峰值 46426 MiB,边距窄,
+  正式跑靠采样器盯,挂了 refire。
+- 排卡表五张已按此改定:`ops/p1{b06,b17,l06,l17,l4}_placement.json`。
+
 ## 自主执行授权（gyb 2026-08-21 离开前口头授权）
 
 gyb 离开期间由 Claude 自主走完整条链，不再逐步请示：
