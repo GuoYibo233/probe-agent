@@ -6,6 +6,24 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `eval_p1b06_gptoss_cparam` | 2026-08-21 18:58 | eval_p1b06 | `4d540e3` | - | ok | n_events_scored=388 pred_tool_ok=0.9794 pred_params_all_ok=0.9046 pred_full_call_ok=0.8892 noparam_rate=0.3763 gt_params_all_ok=0.9072 | p1b06 cparam 评测 388 触发事件,pred_tool full_call_ok 0.8892 |
+| `eval_p1b06_gptoss_cgen` | 2026-08-21 18:58 | eval_p1b06 | `4d540e3` | - | ok | n_events_scored=388 parse_fail_rate=0.0 tool_ok=0.9794 params_all_ok=0.8582 full_call_ok=0.8454 exact_call_ok=0.8454 | p1b06 cgen 评测 388 触发事件,full_call_ok 0.8454 |
+| `eval_p1b06_gptoss_ctool` | 2026-08-21 18:47 | eval_p1b06 | `377d01e` | - | ok | theta_005=0.975 coverage=0.1705 trig_acc=0.9794 earliness=0.6109 wrong_spec=0.0035 temperature=1.2333 | p1b06 ctool 评测出报告,0.05 档 θ=0.975,test 冻结 coverage 0.1705 trig_acc 0.9794 |
+| `p1l4_gptoss_cparam` | 2026-08-21 12:44 | probe_p1l4 | `ba609fa` | - | running | - | - |
+| `p1l4_gptoss_cgen` | 2026-08-21 12:44 | probe_p1l4 | `ba609fa` | - | running | - | - |
+| `p1l4_gptoss_ctool` | 2026-08-21 12:44 | probe_p1l4 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6689 calA_lastbound_acc=0.7244 best_epoch=2 align_maxdiff_hidden=7.63e-05 | 4B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6689 |
+| `p1l17_gptoss_cparam` | 2026-08-21 12:44 | probe_p1l17 | `ba609fa` | - | running | - | - |
+| `p1l17_gptoss_cgen` | 2026-08-21 12:44 | probe_p1l17 | `ba609fa` | - | running | - | - |
+| `p1l17_gptoss_ctool` | 2026-08-21 12:44 | probe_p1l17 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6628 calA_lastbound_acc=0.7007 best_epoch=2 align_maxdiff_hidden=7.63e-05 | 1.7B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6628 |
+| `p1l06_gptoss_cparam` | 2026-08-21 12:44 | probe_p1l06 | `ba609fa` | - | running | - | - |
+| `p1l06_gptoss_cgen` | 2026-08-21 12:44 | probe_p1l06 | `ba609fa` | - | running | - | - |
+| `p1l06_gptoss_ctool` | 2026-08-21 12:44 | probe_p1l06 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6878 calA_lastbound_acc=0.7511 best_epoch=2 align_maxdiff_hidden=7.95e-05 | 0.6B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6878 |
+| `p1b17_gptoss_cparam` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | running | - | - |
+| `p1b17_gptoss_cgen` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | running | - | - |
+| `p1b17_gptoss_ctool` | 2026-08-21 12:44 | probe_p1b17 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6685 calA_lastbound_acc=0.7526 best_epoch=2 align_maxdiff_hidden=0.000202 | 1.7B 全参+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6685 |
+| `p1b06_gptoss_cparam` | 2026-08-21 12:43 | probe_p1b06 | `ba609fa` | - | ok | best_val_ce=0.3493 val_exact_params_at_best=0.675 best_epoch=0 assembly_mismatch_train=0 assembly_mismatch_val=0 | 0.6B 全参 cparam 三轮跑完,best 第 0 轮 val_ce 0.3493,剥离失败 0 |
+| `p1b06_gptoss_cgen` | 2026-08-21 12:43 | probe_p1b06 | `ba609fa` | - | ok | best_val_ce=0.4043 val_exact_call_at_best=0.49 best_epoch=0 | 0.6B 全参 cgen 三轮跑完,best 第 0 轮 val_ce 0.4043 |
+| `p1b06_gptoss_ctool` | 2026-08-21 12:43 | probe_p1b06 | `ba609fa` | - | ok | best_calA_weighted_acc=0.6924 calA_lastbound_acc=0.7585 best_epoch=2 align_maxdiff_hidden=0.000107 | 0.6B 全参 ctool 三轮跑完,best 第 2 轮 wacc 0.6924 |
 | `p1` | 2026-08-21 08:29 | p1 采集批 | `51ee4f5+dirty` | gpt-oss-120b | ok | n_files=315 n_final=315 completed_true=305 abort_nonnull=0 split_train=90 split_dev=57 split_test_normal=168 steps_mean=13.1 | p1 采集批 315 题全部落轨迹,每文件末行 final,三堆 90/57/168 与官方题单对上,abort 全空,任务级 completed_true 305/315 |
 | `ident3_v1` | 2026-08-18 10:47 | 探针线重启 | `3fec724` | gpt-oss-120b | ok | runs=150 excluded=0 success_chat=14/50 success_noprobe=13/50 success_nofill=20/50 identical_pairs=0/2175 div_step0_same_arm=412/675 div_step0_cross_arm=1303/1500 prompt_sha_equal=1780/1780 nofill_fires=564/657 resume_identical=534/564 | ident3_v1 三臂逐 token 同(chat/noprobe/nofill 伪触发第5句尾)5题x10遍=150跑 0 失败;跨臂 prompt id sha 1780/1780 全等;2175 对配对没有一对整题逐 token 全同,同臂对首分叉步 0 占 137/225(chat)、144/225(noprobe)、131/225(nofill),跨臂 chat-noprobe 308/500、chat-nofill 499/500、noprobe-nofill 496/500;shared_tok 中位 同臂 123/61/225、跨臂 123/123/120;每题每臂 10 遍 10 条不同轨迹;成功 chat 14/50、noprobe 13/50、nofill 20/50;nofill 564 次中断重发,534 次(0.947)逐位复现被丢弃溢出。事实,不带解读。 |
 | `ident3_v1_srv` | 2026-08-18 10:21 | 探针线重启 | `91635ad+dirty` | - | running | - | - |
@@ -23,6 +41,180 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `eval_p1b06_gptoss_cparam`
+
+- **结论**：p1b06 cparam 评测 388 触发事件,pred_tool full_call_ok 0.8892
+- **方向**：eval_p1b06 ｜ **状态**：ok ｜ **起止**：2026-08-21 18:58 → 2026-08-21 19:05
+- **代码**：`4d540e3` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：n_events_scored=388 pred_tool_ok=0.9794 pred_params_all_ok=0.9046 pred_full_call_ok=0.8892 noparam_rate=0.3763 gt_params_all_ok=0.9072
+- **原始数据**：`pipeline/runs/p1b06_gptoss_cparam`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_p1b06_gptoss_cparam.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cparam --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss`
+
+### `eval_p1b06_gptoss_cgen`
+
+- **结论**：p1b06 cgen 评测 388 触发事件,full_call_ok 0.8454
+- **方向**：eval_p1b06 ｜ **状态**：ok ｜ **起止**：2026-08-21 18:58 → 2026-08-21 19:05
+- **代码**：`4d540e3` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：n_events_scored=388 parse_fail_rate=0.0 tool_ok=0.9794 params_all_ok=0.8582 full_call_ok=0.8454 exact_call_ok=0.8454
+- **原始数据**：`pipeline/runs/p1b06_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_p1b06_gptoss_cgen.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cgen --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss`
+
+### `eval_p1b06_gptoss_ctool`
+
+- **结论**：p1b06 ctool 评测出报告,0.05 档 θ=0.975,test 冻结 coverage 0.1705 trig_acc 0.9794
+- **方向**：eval_p1b06 ｜ **状态**：ok ｜ **起止**：2026-08-21 18:47 → 2026-08-21 18:58
+- **代码**：`377d01e` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：theta_005=0.975 coverage=0.1705 trig_acc=0.9794 earliness=0.6109 wrong_spec=0.0035 temperature=1.2333
+- **原始数据**：`pipeline/runs/p1b06_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_p1b06_gptoss_ctool.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --head causal`
+
+### `p1l4_gptoss_cparam`
+
+- **方向**：probe_p1l4 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 8
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cparam_t106g8.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt`
+
+### `p1l4_gptoss_cgen`
+
+- **方向**：probe_p1l4 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 7
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cgen_t106g7.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cgen --env appworld --base qwen4 --lora --grad-ckpt`
+
+### `p1l4_gptoss_ctool`
+
+- **结论**：4B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6689
+- **方向**：probe_p1l4 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:44 → 2026-08-21 16:16
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 6
+- **数字**：best_calA_weighted_acc=0.6689 calA_lastbound_acc=0.7244 best_epoch=2 align_maxdiff_hidden=7.63e-05
+- **原始数据**：`pipeline/runs/p1l4_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_ctool_t106g6.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_ctool --env appworld --base qwen --base qwen4 --align-tol 3e-4 --lora --grad-ckpt`
+
+### `p1l17_gptoss_cparam`
+
+- **方向**：probe_p1l17 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 5
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cparam_t106g5.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt`
+
+### `p1l17_gptoss_cgen`
+
+- **方向**：probe_p1l17 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 4
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cgen_t106g4.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cgen --env appworld --base qwen17 --lora --grad-ckpt`
+
+### `p1l17_gptoss_ctool`
+
+- **结论**：1.7B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6628
+- **方向**：probe_p1l17 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:44 → 2026-08-21 14:16
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 3
+- **数字**：best_calA_weighted_acc=0.6628 calA_lastbound_acc=0.7007 best_epoch=2 align_maxdiff_hidden=7.63e-05
+- **原始数据**：`pipeline/runs/p1l17_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_ctool_t106g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --lora --grad-ckpt`
+
+### `p1l06_gptoss_cparam`
+
+- **方向**：probe_p1l06 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 2
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cparam_t106g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cparam --env appworld --base qwen --lora --grad-ckpt`
+
+### `p1l06_gptoss_cgen`
+
+- **方向**：probe_p1l06 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 1
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cgen_t106g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cgen --env appworld --base qwen --lora --grad-ckpt`
+
+### `p1l06_gptoss_ctool`
+
+- **结论**：0.6B LoRA+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6878
+- **方向**：probe_p1l06 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:44 → 2026-08-21 14:16
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo106 GPU 0
+- **数字**：best_calA_weighted_acc=0.6878 calA_lastbound_acc=0.7511 best_epoch=2 align_maxdiff_hidden=7.95e-05
+- **原始数据**：`pipeline/runs/p1l06_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_ctool_t106g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_ctool --env appworld --base qwen --base qwen --align-tol 3e-4 --lora --grad-ckpt`
+
+### `p1b17_gptoss_cparam`
+
+- **方向**：probe_p1b17 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo108 GPU 5
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cparam_t108g5.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt`
+
+### `p1b17_gptoss_cgen`
+
+- **方向**：probe_p1b17 ｜ **状态**：running ｜ **起止**：2026-08-21 12:44 → 未收尾
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo108 GPU 4
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cgen_t108g4.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt`
+
+### `p1b17_gptoss_ctool`
+
+- **结论**：1.7B 全参+gc ctool 三轮跑完,best 第 2 轮 wacc 0.6685
+- **方向**：probe_p1b17 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:44 → 2026-08-21 13:17
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：best_calA_weighted_acc=0.6685 calA_lastbound_acc=0.7526 best_epoch=2 align_maxdiff_hidden=0.000202
+- **原始数据**：`pipeline/runs/p1b17_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_ctool_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --grad-ckpt`
+
+### `p1b06_gptoss_cparam`
+
+- **结论**：0.6B 全参 cparam 三轮跑完,best 第 0 轮 val_ce 0.3493,剥离失败 0
+- **方向**：probe_p1b06 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:43 → 2026-08-21 18:47
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **数字**：best_val_ce=0.3493 val_exact_params_at_best=0.675 best_epoch=0 assembly_mismatch_train=0 assembly_mismatch_val=0
+- **原始数据**：`pipeline/runs/p1b06_gptoss_cparam`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b06_gptoss_cparam_t108g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cparam --env appworld --base qwen`
+
+### `p1b06_gptoss_cgen`
+
+- **结论**：0.6B 全参 cgen 三轮跑完,best 第 0 轮 val_ce 0.4043
+- **方向**：probe_p1b06 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:43 → 2026-08-21 18:47
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **数字**：best_val_ce=0.4043 val_exact_call_at_best=0.49 best_epoch=0
+- **原始数据**：`pipeline/runs/p1b06_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b06_gptoss_cgen_t108g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cgen --env appworld --base qwen`
+
+### `p1b06_gptoss_ctool`
+
+- **结论**：0.6B 全参 ctool 三轮跑完,best 第 2 轮 wacc 0.6924
+- **方向**：probe_p1b06 ｜ **状态**：ok ｜ **起止**：2026-08-21 12:43 → 2026-08-21 13:17
+- **代码**：`ba609fa` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：best_calA_weighted_acc=0.6924 calA_lastbound_acc=0.7585 best_epoch=2 align_maxdiff_hidden=0.000107
+- **原始数据**：`pipeline/runs/p1b06_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_p1b06_gptoss_ctool_t108g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --env appworld --base qwen --base qwen --align-tol 3e-4`
 
 ### `p1`
 

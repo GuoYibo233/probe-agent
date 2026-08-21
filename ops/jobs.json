@@ -1,5 +1,158 @@
 {
-  "active": [],
+  "active": [
+    {
+      "name": "p1b17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_p1b17_gptoss_cgen_t108g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cgen_t108g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787283842.997276,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1b17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_p1b17_gptoss_cparam_t108g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_cparam_t108g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787283845.7646618,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1l06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "1",
+          "session": "new1_p1l06_gptoss_cgen_t106g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cgen_t106g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cgen --env appworld --base qwen --lora --grad-ckpt",
+          "launched_at": 1787283859.672668,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1l06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_p1l06_gptoss_cparam_t106g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cparam_t106g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cparam --env appworld --base qwen --lora --grad-ckpt",
+          "launched_at": 1787283862.29938,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1l17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "4",
+          "session": "new1_p1l17_gptoss_cgen_t106g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cgen_t106g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cgen --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787283875.8073437,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1l17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "5",
+          "session": "new1_p1l17_gptoss_cparam_t106g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cparam_t106g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787283878.2055264,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1l4_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "7",
+          "session": "new1_p1l4_gptoss_cgen_t106g7",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cgen_t106g7.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cgen --env appworld --base qwen4 --lora --grad-ckpt",
+          "launched_at": 1787283891.1126218,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "p1l4_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "8",
+          "session": "new1_p1l4_gptoss_cparam_t106g8",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cparam_t106g8.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt",
+          "launched_at": 1787283893.3625748,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    }
+  ],
   "history": [
     {
       "name": "hcap",
@@ -380,6 +533,206 @@
         }
       ],
       "finished_at": "2026-08-21 11:37"
+    },
+    {
+      "name": "p1b06_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:43",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_p1b06_gptoss_ctool_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b06_gptoss_ctool_t108g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --env appworld --base qwen --base qwen --align-tol 3e-4",
+          "launched_at": 1787283823.9263494,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 13:17"
+    },
+    {
+      "name": "p1b17_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_p1b17_gptoss_ctool_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b17_gptoss_ctool_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --grad-ckpt",
+          "launched_at": 1787283840.3504403,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 13:17"
+    },
+    {
+      "name": "p1l06_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "0",
+          "session": "new1_p1l06_gptoss_ctool_t106g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_ctool_t106g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_ctool --env appworld --base qwen --base qwen --align-tol 3e-4 --lora --grad-ckpt",
+          "launched_at": 1787283857.0153925,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 14:16"
+    },
+    {
+      "name": "p1l17_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "3",
+          "session": "new1_p1l17_gptoss_ctool_t106g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_ctool_t106g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --lora --grad-ckpt",
+          "launched_at": 1787283873.3993256,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 14:16"
+    },
+    {
+      "name": "p1l4_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "6",
+          "session": "new1_p1l4_gptoss_ctool_t106g6",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_ctool_t106g6.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_ctool --env appworld --base qwen --base qwen4 --align-tol 3e-4 --lora --grad-ckpt",
+          "launched_at": 1787283888.7671552,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 16:16"
+    },
+    {
+      "name": "p1b06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:43",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_p1b06_gptoss_cgen_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b06_gptoss_cgen_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cgen --env appworld --base qwen",
+          "launched_at": 1787283826.5295513,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 18:47"
+    },
+    {
+      "name": "p1b06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:43",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_p1b06_gptoss_cparam_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1b06_gptoss_cparam_t108g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cparam --env appworld --base qwen",
+          "launched_at": 1787283829.1115339,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 18:47"
+    },
+    {
+      "name": "eval_p1b06_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 18:47",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "eval_p1b06_gptoss_ctool",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_p1b06_gptoss_ctool.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss --head causal",
+          "launched_at": 1787305676.084791,
+          "kind": "eval_tool",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 18:58"
+    },
+    {
+      "name": "eval_p1b06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 18:58",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "eval_p1b06_gptoss_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_p1b06_gptoss_cgen.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cgen --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss",
+          "launched_at": 1787306330.6032758,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 19:05"
+    },
+    {
+      "name": "eval_p1b06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 18:58",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "eval_p1b06_gptoss_cparam",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_p1b06_gptoss_cparam.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/p1b06_gptoss_cparam --data /home/y-guo/reproduce/new1/pipeline/data/aw_p1_v1/gptoss",
+          "launched_at": 1787306332.9173293,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 19:05"
     }
   ]
 }
