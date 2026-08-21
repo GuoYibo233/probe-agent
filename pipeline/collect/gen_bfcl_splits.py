@@ -53,7 +53,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-SEED = 20260729                       # 全线固定,与 rules.py / build.py 同值
+SEED = 20260729                       # 已入库题单的档案种子;np821 起 rules.py/build.py 缺省已换 42,本文件不跟随
 V31_DIR = ROOT / "envs/bert_data/v3_1/bfcl"
 UNIVERSE = (ROOT / "envs/bfcl/venv/lib/python3.11/site-packages/bfcl_eval"
             / "data/BFCL_v4_multi_turn_base.json")

@@ -32,7 +32,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-SEED = 20260729                       # 全线固定,与 rules.py / build.py 同值
+SEED = 20260729                       # 已入库题单的档案种子;np821 起 rules.py/build.py 缺省已换 42,本文件不跟随
 SPLIT_SRC = {                         # 我们的堆名 -> ALFWorld 官方分区目录名
     "train": "train",
     "val": "valid_seen",

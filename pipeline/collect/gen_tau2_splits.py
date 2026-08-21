@@ -59,7 +59,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-SEED = 20260729                       # 全线固定,与 rules.py / build.py 同值
+SEED = 20260729                       # 已入库题单的档案种子;np821 起 rules.py/build.py 缺省已换 42,本文件不跟随
 DOMAINS_DIR = ROOT / "envs/tau2-bench/data/tau2/domains"
 OUT_DIR = ROOT / "pipeline/splits/tau2_official_v1"
 

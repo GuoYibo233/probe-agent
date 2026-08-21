@@ -44,7 +44,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
-SEED = 20260729                       # 全线固定,与 rules.py / build.py 同值
+SEED = 20260729                       # 已入库题单的档案种子;np821 起 rules.py/build.py 缺省已换 42,本文件不跟随
 DATA = ROOT / "envs/toolhop/data/ToolHop.json"
 OUT_DIR = ROOT / "pipeline/splits/toolhop_v1"
 

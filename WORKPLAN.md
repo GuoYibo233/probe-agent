@@ -19,6 +19,11 @@ TIMELINE 2026-08-21 两条）。位置：施工块已完成并一个 commit 收�
    - `pipeline/collect/gen_*_splits.py` 四个切分生成器的 `SEED = 20260729`：
      它们是已入库题单的一次性生成器，常量是冻结产物的档案，动它们等于
      换切分，要动必须连题单一起重新裁决。
+   - `envs/collect/build_dataset.py:27` 的 `SEED = 20260729`（注册表里的
+     build-dataset-legacy，已被 pipeline/annotate/ 取代的旧线历史入口）：
+     常量是冻结产物 bert_data v2 的档案（出厂报告头一行印着这个 SEED），
+     动它等于换旧数据的复现口径，与四个切分生成器同一条标准，不动。
+     施工时全仓清点漏了这处，2026-08-22 验收补记。
    - `pipeline/inject/replay_inject.py:399` 与 `pipeline/inject/score_live.py:119`
      按 `appworld_<unit>.jsonl` 反查轨迹文件：多样本批的文件名带 `_r<k>` 后缀，
      反查会全部落空且是静默计数丢弃不报错（replay_inject 会退 0 出一份空
