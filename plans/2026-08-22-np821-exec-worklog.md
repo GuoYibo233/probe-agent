@@ -55,7 +55,46 @@ gyb 2026-08-22 授权：执行块全程自主运行，所有停点由 Claude 裁
 服务 session 数变化或 90 分钟无新文件 → 叫醒排查。
 预计墙钟 6 小时起（p1 实测折 52 题/h/实例 × 4 实例，温度 1 只会更慢）。
 
+## 等待期侦察摘要（2026-08-22 上午，两个 agent 读代码所得，行号见 agent 报告）
+
+后九步路线的要点，验证与开跑都按这里走：
+
+- a1 停点：驱动器自己按 max_bounds=10^9 扫全部轨迹出未截断切点分布
+  （p50/p90/p99/max + 超 32/64/128/256 计数），写进 state.json 的
+  cutpoint_stats。裁决写法是往 np821_gptoss.json 顶层加 `"max_bounds": <数>`，
+  留 64 也必须显式写。max_bounds 不进状态指纹，改配置不会撞 ident。
+- max_bounds 语义：限每事件（一步的 think 文本）切出的样本数；超限走
+  下标近似等距抽稀、末尾切点永远保留，抽掉的是思考中后段的渐进决策点样本。
+  p1 基线：4048 事件、每事件边界数 min 1 / med 56 / max 64（这份统计
+  本身被 64 截断过，p1 的真实截断率读不出来）。
+- a2 每敲整链重跑 annotate-chain（build → param_label → check_callstr），
+  门禁 A/B/D 在 check_callstr 里硬拦；a3 做 G9/G11 加 12 件产物重建逐字节
+  cmp（备份目录 `<data_out>_rebuild_ref`，NFS 要多备一份数据集大小）。
+- 改完配置进训练段之前必须 commit（t1 一开头查脏树）。
+- t1_smoke 只验判据：12 格 smoke 要手发，产物目录必须叫
+  `pipeline/runs/smoke/<批>_gptoss_<格>_smoke`。b06 可走
+  `launch-probe smoke`；b17/l17/l4 逐格手发 train_causal_{tool,callgen,param}.py
+  `--smoke`，旗标照 p1 台账同形（b17: --base qwen17 --grad-ckpt；l17: 再加
+  --lora；l4: --base qwen4 --lora --grad-ckpt；ctool 带 --align-tol 3e-4）。
+- smoke 排布草案（兼答排卡两问）：b06 与 b17 六格放 tokyo107 48G 实测
+  装不装得下（b17 若 OOM 则答案记「48G 装不下」，该格 smoke 挪 108 重跑过门禁）；
+  l17 与 l4 六格放 tokyo108 大卡实测 LoRA 速度。
+- t2_full 一敲发一批、四批严格串行（pend[0]），跨批并行要手发且有
+  「驱动器补发假 RUNMETA」的坑——是否跨批并行等 smoke 实测速度后再裁。
+- 驱动器不读 batches 里的 base/mode，--base/--lora/--grad-ckpt 全由排卡表
+  extra 决定；12 份排卡表（4 训练 + 4 eval_tool + 4 eval_call）现在一份都
+  没有，要在各自发射前手写，形状照 p1 的同名表。
+- 评测风险档：ctool 一次算完 0.05/0.10 两档进 REPLAY_REPORT.json；发 e2 之前
+  先读各批 REPLAY_REPORT 的 chosen_theta——0.05 有解按缺省发，无解就把
+  `--risk 0.1` 写进该批 eval_call 表的 extra（写 0.1 不许写 0.10，矩阵按
+  字符串键取数）并在报告标注。这样 0.05 无解不会变成 tmux 里静默退 1。
+- launch-probe/launch-eval 发射后驱动器退出码不保证进程活着（§6.3 偏离）：
+  发完必读 logs/pipeline/nyapass_aw_v1/t2_full.log 等分步日志尾部的
+  alive check，再用 gpu-jobs 盯。
+
 ## 待办的裁决点（预告）
 
 - 标注 a1_stats 切点分布出来后裁 `max_bounds`（口径类，进 TIMELINE）。
+- 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
+- e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
