@@ -1,6 +1,6 @@
 # run 角色
 
-> 这份覆盖 run 角色的 SKILL.md 要写的一切：接单与认领、接整个 batch、读档案探卡挑卡、smoke 与分步计时、发射前 commit 与发射、runs 账三版、看门狗、四种失败的 issue、6a 正常收尾与 6b 中断、宿主收尾命令、被收回被回收的中断、run 的 inbox、模型。不覆盖 deploy 怎么开发射单和怎么验收发射单（见 `11-role-deploy.md` 和 `21-pair-deploy-run.md`）、runs 账给 analysis 用的数据契约（见 `23-pair-run-analysis.md`）、派活单状态转移表全表和会话生命周期（见 `04-handoffs-and-sessions.md`）、`bin/rl` 命令表全表（见 `05-rl-cli.md`）、九本账的行格式（见 `03-ledgers.md`）、钩子机制与角色 json 的写法（见 `06-hooks-and-permissions.md`）、快车道（见 `07-quick-lane.md`）、`research-loop.json` 和宿主对接（见 `08-trees-init-and-host.md`）、公共母版八条规矩（见 `09-common-and-feedback.md`）。
+> 这份覆盖 run 角色的 SKILL.md 要写的一切：接单与认领、接整个 batch、读档案探卡挑卡、smoke 与分步计时、发射前 commit 与发射、runs 账三版、看门狗、四种失败的 issue、6a 正常收尾与 6b 中断、宿主收尾命令、被收回被回收的中断、run 的 inbox、模型。不覆盖 deploy 怎么开发射单和怎么验收发射单（见 `11-role-deploy.md` 和 `21-pair-deploy-run.md`）、runs 账给 analysis 用的数据契约（见 `23-pair-run-analysis.md`）、派活单状态转移表全表和会话生命周期（见 `04-handoffs-and-sessions.md`）、`bin/rl` 命令表全表（见 `05-rl-cli.md`）、九本账的行格式（见 `03-ledgers.md`）、钩子机制与角色 json 的写法（见 `06-hooks-and-permissions.md`）、快车道（见 `07-quick-lane.md`）、`research-loop.json` 和宿主对接（见 `08-trees-init-and-host.md`）、公共母版九条规矩（见 `09-common-and-feedback.md`）。
 >
 > 源：设计文档的「五个角色」总段、run 一节、账本一节里 runs 和 issues 与 handoffs 三条、交接与会话生命周期一节、两棵树一节、原则 9 与 10 与 11；施工计划第一节裁决 3 和末尾（a）（g）（h）（i）、第二节词表、第三节 handoffs 与 runs 两本账的字段、第四节转移表里和发射单有关的几行、第五节 run 的 use case 与角色 json、第六节命令表里 run 能调的几行、第七节整节、第八节阈值默认值、第十三节规矩 3 与规矩 6。
 
@@ -12,7 +12,7 @@ run 要小要快。模型：由 agent 调用的时候是 opus（2026-08-16 晚 g
 
 一张卡一个 run，多卡跑一个任务是例外。
 
-run 会话装的钩子只拦写：Write 和 Edit 进 `experiments/`、`analysis/`、`review/`、`notes/`、`loop/` 一律 deny 并提示开 issue，其余路径放行。run 的写权目录只有 `artifact_root`（产物根，在仓库外，钩子不判）。产物根只有 run 的任务能写；数字账只有 run 的脚本能写，gyb 例外（规矩 3、原则 1）。
+run 会话装的钩子只拦写：Write、Edit 和解析得出写目标的 Bash 命令（重定向、`tee`、`sed -i`、`mv`/`cp`，钩子管这三个工具，定义处 `06-hooks-and-permissions.md`），目标进 `experiments/`、`analysis/`、`review/`、`notes/`、`loop/` 一律 deny 并提示开 issue，其余路径放行。run 的写权目录只有 `artifact_root`（产物根，在仓库外，钩子不判）。产物根只有 run 的任务能写；数字账只有 run 的脚本能写，gyb 例外（规矩 3、原则 1）。
 
 ## 收件箱：run 不查
 
@@ -22,7 +22,7 @@ run 不查 inbox：run 只关注自己那张发射单，一般不会有没带单
 
 接单命令是 `rl handoff start ID [--batch B]`，把单子从 `todo` 推到 `in_progress`，holder 写成本会话的 session_id。前提两条：写入会话的角色等于 `to_role`；holder 为空，非空就退出码 2 并列出当前 holder。
 
-接单之后第一件事是看这张单最新一次尝试有没有已经 `launched` 还没 `finished` 的 run 行。有就是认领：`rl handoff start` 那一版写 `adopted: true`，rl 同时给这条 run 写一版 `adopted`（记新 holder 的 `session_id`、`ts`），不另设 `rl run adopt`；认领不重新 smoke、不重新发射，只接管看门狗和收尾，直接跳到 Phase 5。没有才走 smoke。这条是原则 11 的落点：GPU 任务本体在 tmux 里跑、不跟会话走，run 会话死了单子交回待干，下一个 run 会话接单时认领它。
+`rl handoff start` 时 rl 自动判认领：这张单最新一次尝试有已经 `launched` 还没 `finished` 的 run 行，start 那一版就写 `adopted: true`，rl 同时给这条 run 写一版 `adopted`（记新 holder 的 `session_id`、`ts`），不另设 `rl run adopt`。会话看 start 的结果决定走法：判成认领就不重新 smoke、不重新发射，只接管看门狗和收尾，直接跳到 Phase 5；没判成才走 smoke。这条是原则 11 的落点：GPU 任务本体在 tmux 里跑、不跟会话走，run 会话死了单子交回待干，下一个 run 会话接单时认领它。
 
 deploy 一次开 N 张同 batch 的发射单时，一个 run 会话用 `rl handoff start --batch` 一次接下整个 batch：smoke 做一次、分步表填一次（其余单子按规模系数复制）、探卡挑卡一次、按宿主发射器自己的分片规矩发射 N 份、落 N 条 run 行。不再一个 workflow 起 N 个 run 各自探卡抢同一张卡。
 
@@ -30,11 +30,11 @@ deploy 一次开 N 张同 batch 的发射单时，一个 run 会话用 `rl hando
 
 | gpu-run 阶段 | run 的 use case | 改动 |
 |---|---|---|
-| Phase 0 读档案 `ops/gpu_state.md` | 接到 `launch_order` 后第一件事读慢变量档案；接单前先看最新尝试有没有 `launched` 未 `finished` 的 run 行，有就认领，跳到 Phase 5 | 档案路径进 `research-loop.json` 的 `gpu_state_path`；认领是新增 |
+| Phase 0 读档案 `ops/gpu_state.md` | 接到 `launch_order` 后第一件事读慢变量档案；`rl handoff start` 时 rl 自动判认领（最新尝试有 `launched` 未 `finished` 的 run 行），判成就跳到 Phase 5 | 档案路径进 `research-loop.json` 的 `gpu_state_path`；认领是新增 |
 | Phase 1 实探空卡 `run.py gpu-jobs free` | 同 | 命令进配置的 `launcher.free_cmd` |
 | Phase 2 挑卡分片 | 同，规则引用 gpu-run 的 `references/launch-methodology.md`；一个 run 会话接整个 batch，按宿主发射器自己的分片规矩发 N 份 | 不再一个 workflow 起 N 个 run |
 | Phase 3 smoke | 同，并且多做一件事：先读代码列出每一步干什么，smoke 时逐步计时，`rl handoff estimate` 填分步表（同 batch 只实测一张，其余 `--copy-from`）；smoke 标准输出落 `artifact_root/smoke/<run_id>.log`；smoke 失败直接 `issue open --kind failed --stage smoke` 加 stuck，分步表不是前提 | 分步计时和 smoke 日志是新增 |
-| Phase 4 发射前 commit、`run.py launch`、交监控命令 | 同，命令模板进配置的 `launcher.launch_cmd`，`--run-id` 和 `--track` 从发射单尝试上抄；发射成功后 `rl run add` 落发射版（含 tmux session 名和监控命令） | 三处登记之外多一处 runs 账；宿主发射器写 ops/ 的三个文件是 Bash 写入，钩子不看；loop/ 进宿主脏树白名单 |
+| Phase 4 发射前 commit、`run.py launch`、交监控命令 | 同，命令模板进配置的 `launcher.launch_cmd`，`--run-id` 和 `--track` 从发射单尝试上抄；发射成功后 `rl run add` 落发射版（含 tmux session 名和监控命令） | 三处登记之外多一处 runs 账；钩子解析 Bash 写目标，但 ops/ 不在拦的目录里，照放行；loop/ 进宿主脏树白名单 |
 | Phase 5 采样器接管 | 看门狗 monitor 只在 run 上线时起，只判、只写自己的状态文件，卡死和超时分开判，每轮顺带查本单是不是 `withdrawn` 或被 reclaim；run 会话每轮读状态文件，杀进程和写账都由 run 会话做 | 卡死阈值沿用 new1 `ops/verdicts.py` 的自适应判定线，超时用最新尝试的 `estimated_seconds` 乘宽松系数；monitor 不写九本账 |
 | Phase 6a 正常收尾五连 | 汇报、`rl run finish --exit ok` 记数字（算 actual_seconds、同进程跑反常预警、调 `launcher.finish_cmd` 落宿主账）、释放显存、销号、commit；然后 `rl handoff done` | 数字进 `loop/runs.jsonl`，宿主 `ops/runs.jsonl` 由 finish_cmd 一起落，两本并存，doctor 对账 |
 | Phase 6b 中断 | 跑挂：`rl run finish --exit failed`（同样调 finish_cmd），`issue open --kind failed --stage crash`，`handoff stuck`。被收回或被 reclaim `--kill`：`rl run finish --exit killed` 加收尾，不改单子状态 | 中断一律留痕；两种中断分开写 |
@@ -59,9 +59,9 @@ smoke 就失败的时候分步表和预计时长还没有，单子直接标卡�
 
 发射前先 commit，因为记录里存的 HEAD 只有工作树干净时才追得回真实代码。`loop/*.jsonl` 和 `loop/.lock` 不算脏树，要进宿主发射门禁的白名单，new1 这一行由 gyb 亲手改。
 
-发射走宿主发射器，命令模板在配置的 `launcher.launch_cmd`，new1 是 `run.py launch`。`--run-id` 和 `--track` 从发射单这次尝试上抄，run 只抄不猜（原则 9）：run_id 由 rl 按 `<ho-id>-a<attempt>` 分配（形如 `ho-0013-a1`），track 是宿主发射器要的方向名，由 deploy 开单时填。run_id 四处一致：产物目录名、tmux session、台账 name、commit message；产物目录是 `<artifact_root>/<run_id>/`，账上不另记。
+发射走宿主发射器，命令模板在配置的 `launcher.launch_cmd`，new1 是 `run.py launch`。`--run-id` 和 `--track` 从发射单这次尝试上抄，run 只抄不猜（原则 9）：run_id 由 rl 按 `<ho-id>-a<attempt>` 分配（形如 `ho-0013-a1`），track 是宿主发射器要的方向名，idea 开工单时填在工单上，deploy 开发射单时从父单抄进尝试。run_id 四处一致：产物目录名、tmux session、台账 name、commit message；产物目录是 `<artifact_root>/<run_id>/`，账上不另记。
 
-宿主发射器用 Bash 往 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 写字，钩子不看 Bash 写出来的文件，这不算越权（原则 2）。
+宿主发射器用 Bash 往 `ops/jobs.json`、`ops/runs.jsonl`、`RUNMETA.json` 写字，钩子解析得出这些写目标，但拦的只有四个角色目录和 `loop/`，这几处都不在拦的范围里，照放行，不算越权（原则 2）。
 
 ## runs 账三版
 
@@ -104,11 +104,11 @@ run 出问题一律开 issue，不修代码、不重试。四种情形对应的 
 | 跑挂 | `rl issue open --kind failed --stage crash` | deploy |
 | 结果反常 | `rl issue open --kind anomaly` | gyb |
 
-三种 `failed` 的 issue 附日志末 40 行和 traceback（`--log-tail FILE` 或 `--log-text -`），issue 里带 `handoff_id`。`anomaly` 那条的 actor 记 run。
+三种 `failed` 的 issue 附日志末 40 行和 traceback（`--log-tail FILE` 或 `--log-text -`），issue 里带 `handoff_id`。`anomaly` 那条的 actor 记 run；它是 `rl run finish` 反常预警开出的知会，不标卡住，`exit_status` 是 `ok` 的单子照走 6a 提验收。
 
 两处原文不一致：设计文档 run 一节先写「反常结果预警……当场开一条 issue（kind 是 anomaly，actor 记 run，归 gyb）」，同一段又写「出问题一律开 issue 回给 deploy：smoke 失败、发射失败、跑挂、结果反常四种」；施工计划第七节写的是三种失败开给 deploy、结果反常 `--kind anomaly --to gyb`。按施工计划，反常那条开给 gyb。
 
-开完 issue 把单子标卡住：`rl handoff stuck ID --issue ID`，从 `in_progress` 到 `stuck`，谁能写是 holder，前提是那条 issue 已经存在并且它的 `handoff_id` 指回本单。跨两本账的写序定死：先写 issue 拿到编号，再写单子那一行引它。
+三种 `failed` 的 issue 开完把单子标卡住（`anomaly` 不标）：`rl handoff stuck ID --issue ID`，从 `in_progress` 到 `stuck`，谁能写是 holder，前提是那条 issue 已经存在并且它的 `handoff_id` 指回本单。跨两本账的写序定死：先写 issue 拿到编号，再写单子那一行引它。
 
 标了卡住之后 run 这一轮就结束了。改代码、给发射单追加一次新的尝试、回 issue、把单子交回待干、再起 run，都是 deploy 的活（见 `11-role-deploy.md`、`21-pair-deploy-run.md`）。
 
@@ -162,7 +162,7 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 
 ## 和别的 part 的接口
 
-- 发射单 `launch_order` 的字段（`attempts` 里每项的 `command`、`args`、`workdir`、`track`、`config`、`run_id`、`estimated_seconds`、`step_table`，以及 `parent_id`、`batch`、`decision_refs`）：定义在 `03-ledgers.md`，由 deploy 开单时填，见 `11-role-deploy.md`。
+- 发射单 `launch_order` 的字段（`attempts` 里每项的 `command`、`args`、`workdir`、`track`、`config`、`run_id`、`estimated_seconds`、`step_table`，以及 `parent_id`、`batch`、`decision_refs`）：定义在 `03-ledgers.md`，由 deploy 开单时填（`track` 从父工单抄），见 `11-role-deploy.md`。
 - runs 账的完整行格式（`launched`、`finished`、`adopted` 三版的必填栏、`metrics`、`data_path`、`config`）：定义在 `03-ledgers.md`；给 analysis 用的分组契约在 `23-pair-run-analysis.md`。
 - 派活单七个状态、转移表每一行的谁能写和前提、holder 只在 `in_progress` 非空这条不变量、会话登记与销号：定义在 `04-handoffs-and-sessions.md`。
 - `rl handoff start/estimate/done/stuck`、`rl run add/finish`、`rl issue open`、`rl inbox` 的完整参数：定义在 `05-rl-cli.md`；退出码 0/1/2/3/4/5 同。
@@ -409,3 +409,9 @@ SKILL.md 的骨架按 `common/SPEC-TEMPLATE.md` 五栏写——角色设定、�
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：Phase 6b 中断收尾里「宿主销号」调配置的 `launcher.abort_cmd`（new1 `run.py gpu-jobs finish`），留空跳过，四条模板留空语义一样；接口一节补键名 `launcher.abort_cmd`、`host_ledgers`、`repo_run`。对回原则 10、11。
 - 2026-08-18 来自 `08-trees-init-and-host.md` 定稿（`eb02403`，rl-hub-v5 传）：五栏骨架句之后补一句「被派活时以插件的角色 agent 类型起 subagent，agent 定义预加载本角色 skill、不带钩子，写权钩子是插件级、按 `agent_type` 认角色」。对回原则 2。
 - 2026-08-18 来自 sync-inbox 问题 38 的裁决（定义处 `06`，rl-hub-v5 传；gyb 原话「b」）：两句纪律的第一句改成「钩子拦不到的写法一律不许往四个角色目录和 `loop/` 写，要写就用 Write/Edit 或钩子看得见的 Bash 写法」（Bash 进了钩子匹配范围）。对回原则 2。
+- 2026-08-21 评审修复（gyb 授权，reviee 转来；定义处 `06`）：钩子管 Write/Edit/Bash 三个工具，Bash 解析重定向、`tee`、`sed -i`、`mv`/`cp` 的写目标；「钩子只拦 Write 和 Edit」「宿主发射器 Bash 写入钩子不看」三处改成「钩子解析 Bash 写目标，ops/ 等不在拦的目录里照放行」。对回原则 2。
+- 2026-08-21 评审修复（gyb 授权，reviee 转来；来源 `11` 定稿的裁决，sync-inbox 段 44(b)、45(a)(f)）：`track` 由 idea 开工单时填，deploy 开发射单时从父单抄进尝试；「由 deploy 开单时填」两处照改。对回原则 9。
+- 2026-08-21 评审修复（gyb 授权，reviee 转来；定义处 `09`）：「公共母版八条规矩」改「九条」（rule-09 修必销案 2026-08-21 立）。
+- 2026-08-21 评审修复（gyb 授权，reviee 转来；依据 `04` 问题 17 的裁决）：认领时点两句对齐成「`rl handoff start` 时 rl 自动判认领并写 `adopted: true`，会话看 start 结果决定跳 Phase 5 还是走 smoke」，删掉「接单之后先看」和「接单前先看」两种相反说法。对回原则 11。
+- 2026-08-21 评审修复（gyb 授权，reviee 转来；依据施工计划第七节三种失败与反常分开写）：标 `stuck` 只限三种 `failed`；`anomaly` 是 `rl run finish` 反常预警开给 gyb 的知会，不标卡住，`exit_status` 是 `ok` 的单子照走 6a 提验收。
+- 2026-08-21 来自 `11-role-deploy.md` 定稿（`5e8dffa`，rl-hub-v6 传）：deploy 派 run 起 subagent 时开场提示把发射单内容全抄一遍，run 被拉起时开场话里就有单子全貌，不用回头翻账。裁的范围只是 deploy 派 run 这条通道，别的派活通道要不要照此是 sync-inbox 问题 46、还没裁。本份正文没有「run 被拉起后怎么拿到单子内容」的句子，只记这一行备查。
