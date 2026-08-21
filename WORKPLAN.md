@@ -2,11 +2,27 @@
 
 > 会被覆盖重写的当前计划。决策历史归 `TIMELINE.md`，两者分工不能颠倒。
 
-2026-08-08 探针线重启，方法规范已定稿在 `METHOD.md`。接下来分两个会话做：
+当前主线是 np821 批（计划全文 `plans/2026-08-21-np821-plan.md`，口径定案见
+TIMELINE 2026-08-21 两条）。位置：施工块已完成并一个 commit 收口，
+执行块还没开始。
 
-1. **部署会话**：按 `METHOD.md` §6 把四件对齐改完（代码、run.py 注册表、
-   skill 回写进同一个 commit），然后按 §5 跑冒烟 2 道题（GPU 环节走 gpu-run）。
-   验收三件：每次出手可指认、R3 token 比对、空注入对照。
-2. **方向会话**：讨论轴上的新想法。遗留的议题有三个：塞什么的新方案、
-   探针改读隐藏状态的路线、工具类型按只读和会写分开处理。触发规则的
-   新想法已经有进线口（external_fire 判定文件，格式写在 `METHOD.md` 轴4）。
+1. **执行块**（按计划 §4 的依赖序走，入口是驱动器
+   `python3 run.py pipeline --config pipeline/configs/np821_gptoss.json`）：
+   NFS 空间预检 → 采集 1260 条 → 标注（切点分布停点裁决 `max_bounds`）→
+   三格 smoke 加排卡表 → 四批训练 → 评测 → 矩阵 → Phase D 收官 +
+   Phase E 回写 skill。
+2. **回写清单**（下次动到对应代码时一并做，np821 本批明确不动）：
+   - `pipeline/eval/eval_tool.py:49` 写死的 `SEED = 20260729`：评测五脚本
+     本批零改动，下次动评测代码时把种子并入 42 家族并重跑 G12 验收线。
+   - `pipeline/train/train_mbert_tool.py` / `train_mbert_extract.py` 的
+     `SEED = 20260729`：m 线 2026-08-21 起停跑，重启那天一并换。
+   - `pipeline/collect/gen_*_splits.py` 四个切分生成器的 `SEED = 20260729`：
+     它们是已入库题单的一次性生成器，常量是冻结产物的档案，动它们等于
+     换切分，要动必须连题单一起重新裁决。
+   - `pipeline/inject/replay_inject.py:399` 与 `pipeline/inject/score_live.py:119`
+     按 `appworld_<unit>.jsonl` 反查轨迹文件：多样本批的文件名带 `_r<k>` 后缀，
+     反查会全部落空且是静默计数丢弃不报错（replay_inject 会退 0 出一份空
+     plan）。哪天这两条线（回放注入、活跑打分）要吃多样本批的数据，先把
+     反查改成用样本行自带的 `traj` 字段拼路径；同一趟里
+     `pipeline/inject/exec_calls.py:573` 按 unit 分组也要改成按 traj 分组，
+     不然同题四条轨迹的事件会全被拍到一条轨迹上。np821 执行块用不到这两条线。

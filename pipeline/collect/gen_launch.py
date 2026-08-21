@@ -19,7 +19,9 @@ manifest schema(见 pipeline/collect/manifest_w0.json):
               shard_ports[k] = 第 k 个分片打哪个端口(长度必须 == num_shards)
   可选:env(采集环境,appworld|alfworld,默认 appworld;决定采集器/venv/步数上限
         与 outdir 前缀)、envs_root(默认 /home/y-guo/reproduce/new1/envs)、
-        client_session_prefix(默认由 run_id 前两段拼出,w0_aw_official -> new1_w0aw)
+        client_session_prefix(默认由 run_id 前两段拼出,w0_aw_official -> new1_w0aw)、
+        traj_per_task + seed_family(每题几条轨迹 + 逐条种子表,要么都给要么都不给,
+        长度必须相等;不给 = 每题一条,生成物与加这两个字段之前逐字节一致)
 
 用法:
   # 正式生成(写 envs/runs/<run_id>/,已存在同名文件时拒绝覆盖,除非 --force)
@@ -87,6 +89,11 @@ def die(msg):
     sys.exit(2)
 
 
+def is_int(v):
+    """json 里的 true 是 bool,而 bool 是 int 的子类——校验整数字段得排掉它。"""
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
 # ----------------------------------------------------------------- manifest
 
 def load_manifest(path):
@@ -107,6 +114,26 @@ def load_manifest(path):
     if not pf.exists():
         die(f"gptoss_client_preset {preset!r} 没有对应预设文件:{pf}")
     cfg["gptoss_client_preset"] = preset
+
+    # 多样本口径(2026-08-21 np821 起):两个字段成对出现才算数,一个都不给
+    # 就是老口径每题一条。校验放在生成之前,免得把不成对的字段拼进发射脚本。
+    n_traj, family = cfg.get("traj_per_task"), cfg.get("seed_family")
+    if (n_traj is None) != (family is None):
+        die("traj_per_task 与 seed_family 要么都给要么都不给"
+            f"(现在 traj_per_task={n_traj!r} / seed_family={family!r})")
+    if n_traj is not None:
+        if not is_int(n_traj) or n_traj < 1:
+            die(f"traj_per_task 必须是 >= 1 的整数,现在是 {n_traj!r}")
+        if not isinstance(family, list) or not family or \
+                not all(is_int(s) for s in family):
+            die(f"seed_family 必须是非空整数列表,现在是 {family!r}")
+        if len(family) != n_traj:
+            die(f"seed_family 有 {len(family)} 个种子,与 traj_per_task "
+                f"{n_traj} 对不上")
+        if env != "appworld":
+            die(f"traj_per_task/seed_family 目前只有 appworld 的采集器认"
+                f"(run_appworld.py 的 --traj-per-task/--seeds);本 manifest "
+                f"的 env 是 {env}")
 
     hosts = {s["host"] for s in cfg["servers"]}
     if len(hosts) != 1:
@@ -152,6 +179,16 @@ def load_manifest(path):
         tail = "".join(parts[:2]) if len(parts) >= 2 else run_id
         cfg["client_session_prefix"] = f"new1_{tail}"
     return cfg, warns
+
+
+def multi_flags(cfg):
+    """多样本采集追加给采集器的旗标串;manifest 没写那两个字段就是空串,
+    调用方据此原样吐老口径的生成物。"""
+    n_traj = cfg.get("traj_per_task")
+    if n_traj is None:
+        return ""
+    return (f"--traj-per-task {n_traj} "
+            f"--seeds {','.join(str(s) for s in cfg['seed_family'])}")
 
 
 def replica_map(servers):
@@ -272,12 +309,15 @@ def gen_clients(cfg):
         ports = sorted({p for c in cs for p in c["shard_ports"]})
         desc = ", ".join(f"{c['split']} {c['num_shards']} 分片" for c in cs)
         out.append(f"# {m['served']}({'/'.join(str(p) for p in ports)}): {desc}")
+    multi = multi_flags(cfg)
     out += ["# 每个分片一个本机 tmux session,日志在 logs/。",
             f"E={cfg['envs_root']}",
             f"F=$E/runs/{cfg['run_id']}",
             "mkdir -p $F/logs",
-            f'GPTOSS_EXTRA="--preset {cfg["gptoss_client_preset"]}"',
-            "",
+            f'GPTOSS_EXTRA="--preset {cfg["gptoss_client_preset"]}"']
+    if multi:   # 每题多条轨迹:整个环境的分片一视同仁,所以搁在函数体里
+        out.append(f'MULTI="{multi}"')
+    out += ["",
             CLIENT_TM,
             f"{e['fn']}() {{ # tag model url extra split num_shards shard_id "
             "exp outdir_tag",
@@ -286,7 +326,7 @@ def gen_clients(cfg):
             f'      --base-url $3 --model $2 --split $5 {e["common"]} $4 \\',
             f'      --outdir $F/{cfg["env"]}_$9 --exp $8 --num-shards $6 '
             '--shard-id $7 \\',
-            '      --resume"',
+            f'      --resume{" $MULTI" if multi else ""}"',
             "}",
             ""]
     for c in cfg["clients"]:
@@ -311,6 +351,7 @@ def gen_manifest_md(cfg):
     rep = replica_map(cfg["servers"])
     port2host = {s["port"]: s["host"] for s in cfg["servers"]}
     prefix = cfg["client_session_prefix"]
+    multi = multi_flags(cfg)
     n_shards = sum(c["num_shards"] for c in cfg["clients"])
     L = [f"# 发射清单 — {cfg['run_id']}", "",
          f"gen_launch.py 生成(勿手改)。服务 {len(cfg['servers'])} 实例 / "
@@ -342,8 +383,12 @@ def gen_manifest_md(cfg):
     L += ["",
           f"`$F` = `{cfg['envs_root']}/runs/{cfg['run_id']}`,日志 `$F/logs/<session>.log`。",
           f"客户端统一参数 `{e['common']} --resume`;"
-          f"gpt-oss 分片额外 `--preset {cfg['gptoss_client_preset']}`。",
-          f"outdir 一律 `{cfg['env']}_<model_key>` 标准名"
+          f"gpt-oss 分片额外 `--preset {cfg['gptoss_client_preset']}`。"]
+    if multi:
+        L.append(f"每题 {cfg['traj_per_task']} 条轨迹:所有分片额外 "
+                 f"`{multi}`,第 k 条用第 k 个种子,"
+                 f"轨迹落 `appworld_<task_id>_r<k>.jsonl`。")
+    L += [f"outdir 一律 `{cfg['env']}_<model_key>` 标准名"
           "(下游事件抽取按目录名尾巴认模型)。",
           "", "## 发射顺序", "",
           f"1. `python3 launch_servers.py`({len(cfg['servers'])} 实例起齐,日志出现 "

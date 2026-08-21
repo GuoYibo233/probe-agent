@@ -78,7 +78,7 @@ MODELS = {
     "qwen17": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base",
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
-SEED = 20260729
+SEED = 42                  # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在旧数据复现里生效
 FULL_LR = 1e-5             # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
 CALL_SEP = "\n[CALL] "
 MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃

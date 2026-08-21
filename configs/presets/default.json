@@ -1,0 +1,14 @@
+{
+  "desc": "np821 起用的温度 1 采集口径:2026-08-21 定稿,nyapass 批(采集 run_id nyapass)从这份预设采;与 gptoss_harmony_high 只差 temperature/top_p(此份 1.0/1.0,harmony_high 是 0.0/null,api/reasoning_effort/max_tokens/start_date 四项相同);种子不钉在预设里(seed 留 null),温度 1.0 下要复现由采集器 --seeds 按轨迹逐条派发(种子家族 42/67/4267/6742),预设本身管的是与采样档位无关的公共口径;旧 gptoss_default 是 2026-08-20 抄自 unsloth 文档的官方推荐口径(effort medium、不带 start_date),两份预设各自独立,互不覆盖;服务另起,无 server 节",
+  "model": "gpt-oss-120b",
+  "client": {
+    "api": "harmony",
+    "reasoning_effort": "high",
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "max_tokens": 8192,
+    "stop": null,
+    "start_date": "2026-08-06",
+    "seed": null
+  }
+}

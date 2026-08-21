@@ -60,7 +60,7 @@ python3 run.py gen-launch --config pipeline/collect/manifest_<BATCH>.json
 | `--out-override` | 否 | 改写到别处 |
 | `--force` | 否 | 允许覆盖目标目录已有同名文件 |
 
-**输入**:manifest 必需 `run_id` / `servers[]{host,gpu,model_key,port,session,extra_flags,card}` / `clients[]{tag,model_key,split,num_shards,shard_ports[],outdir,exp}`;可选 `envs_root`(默认 `envs`)、`client_session_prefix`(默认由 run_id 前两段拼,`w0_aw_official` → `new1_w0aw`)。
+**输入**:manifest 必需 `run_id` / `servers[]{host,gpu,model_key,port,session,extra_flags,card}` / `clients[]{tag,model_key,split,num_shards,shard_ports[],outdir,exp}`;可选 `envs_root`(默认 `envs`)、`client_session_prefix`(默认由 run_id 前两段拼,`w0_aw_official` → `new1_w0aw`)、`traj_per_task`+`seed_family`(2026-08-22 起,一题多轨迹:要么都给要么都不给,`len(seed_family)==traj_per_task`,只认 env=appworld;在场时客户端命令追加 `--traj-per-task N --seeds a,b,…`,缺省时生成物与旧版逐字节一致)。
 **输出**:`envs/runs/<run_id>/launch_servers.py`、`launch_clients.sh`(0o775)、`MANIFEST.md`。
 **退出码**:正常 0;所有校验失败一律 `sys.exit(2)`——server 必须同一台机、model_key 必须在表里(只认 q35/q36/gptoss)、端口/session/卡不许重复、`len(shard_ports)==num_shards`、分片端口必须存在且模型匹配、目标已有同名文件且无 `--force`。`outdir` 非标准名只 WARN 并强制改成 `<env>_<model_key>`(`env` 取 manifest 顶层的 `env` 字段,缺省 `appworld`;下游按目录名尾巴认模型,改名会被静默跳过)。
 
@@ -91,8 +91,9 @@ python3 run.py ann-accept-v3diff
 本身没坏,不验流水线数据。改过引擎或怀疑 `--resume` 不对时先跑它,别拿正式标注链当试验田。
 
 第三步 `ann-check-callstr` 是 **G19–G22 的实现**(不占卡,但注册表给它钉了
-cprobe-env——脚本 import eval_causal_call → torch,系统 python3 没有;
-必须在前两步之后跑),产物
+cprobe-env——main() 里 import eval_causal_call → torch,系统 python3 没有,
+2026-08-22 起这个 import 挪出了模块层,`import check_callstr` 本身不再要 torch,
+跑 main 照旧要 cprobe-env;必须在前两步之后跑),产物
 `<DATA_ROOT>/CALLSTR_CHECK.md`;它同时做五道硬门禁与四类"只报不拦"的已知偏差,
 细节见 `gates.md §1` 的 G19–G22。
 
@@ -130,7 +131,15 @@ done
 | `split_mode` | 纯装饰,**没有任何代码读它**(`extending.md §5 #12`) |
 | `split_desc` | 可选,**报告文案从它取**。默认 `"官方题单,任务实例级"`;没有官方分区的环境必须写(bfcl 写的是 `"冻结 v3_1 老三堆,任务实例级;BFCL 无官方分区"`),不写会被门禁 G22 拦住 |
 | `data_out` | 数据集输出目录 = 后续所有 `--data` |
-| `seed` | 默认 20260729 |
+| `seed` | 默认 42(np821 起,`rules.py` 常量已换种子家族首位);旧配置里显式写的 20260729 原样生效,压过默认值 |
+| `weight_mode` | 可选,2026-08-22 起。缺省 `uniform` = 每步等权 w=1(长期口径);旧口径 `per_event` = w=1/m 显式写才拿得到,用途只剩逐字节复现验收 |
+| `max_bounds` | 可选,2026-08-22 起。每事件切点上限,缺省 64,透传 `rules.boundaries` 抽稀 |
+| `trajs_per_unit` | 可选,2026-08-22 起。一题几条轨迹(np821 = 4):check_callstr 门禁 B 按它判「一个 unit 恰好 K 条 traj 且采样序号 `_r0..r{K-1}` 齐全」;**字段在场时** ANNOTATE_REPORT 追加四样统计(未截断切点分布、命中上限事件数、完全相同轨迹计数、30 步上限命中数),不在场时报告行集与旧版一致 |
+
+`ann-build` 另有两个 CLI 旗压过同名配置字段:`--weight-mode uniform|per_event`、
+`--max-bounds N`。逐字节复现旧产物(G8 验收线)就是拿旧 config 原样加
+`--weight-mode per_event --max-bounds 64` 原地重跑:config 文件不动,报告里的
+`config=`/`out=` 行才能一字不差。
 
 **输出**:`<DATA_ROOT>/{train,val,test}.jsonl`、`tool_vocab.json`、`router_stats.md`、`qa_sample.txt`、`ANNOTATE_REPORT.md`;param_label 再写 `<DATA_ROOT>/params/{train,val,test}.jsonl` + `PARAM_LABEL_REPORT.md` + `CHECK_50.md`;check_callstr 再写 `<DATA_ROOT>/CALLSTR_CHECK.md`(它**只读不写**数据本体)。
 **退出码**:0;`raise SystemExit`(=1)三种——过滤后没有 `model_full` 的事件、**有 unit 不在任何官方题单里**(拒绝静默丢弃,换环境时最常炸的一条:题单文件路径写错或换了 split 命名就会全量报错)、未知 env。自检 assert 失败也是 1(前缀=原文切片 200 抽检、unit 不跨 split、每堆 20 unit 题单归属)。accept_v3diff 特殊:**全一致=0,有任何不一致=1**,报告写 `pipeline/annotate/ACCEPT_V3DIFF.md`。
@@ -340,6 +349,11 @@ python3 run.py check-bundle-causal --run pipeline/runs/<BATCH>_<MODEL>_ctool --d
 
 从零到矩阵表。`(CPU)` = 不占卡直接跑,`(GPU)` = **走 gpu-run skill 发射,不要手搓 ssh/nohup**。
 
+2026-08-22 起 np821 系批次有断点续跑驱动器把这串 S1–S11 程序化:
+`python3 run.py pipeline --config pipeline/configs/<批次>.json`,每敲一次推进
+一步,门禁不过就地停下并把原因写进 `logs/pipeline/<run_family>/state.json`;
+下表仍是每一步的真源,驱动器坏了照表手跑。
+
 ```
 S1 (CPU)  run.py gen-launch --config manifest_<BATCH>.json --dry-run --out-override /tmp/... → 看清单
 S2 (CPU)  run.py gen-launch --config manifest_<BATCH>.json                → envs/runs/<BATCH>/
@@ -382,3 +396,8 @@ S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             �
 - **`build.py` 对"unit 不在官方题单"零容忍**(退 1)。→ 换环境(appworld→bfcl→alfworld)时,题单文件的命名与 task_id 格式必须先对齐,否则第一步就全量报错。
 - **`gen_launch.py` 强制 `outdir = <env>_<model_key>`**(`env` 取 manifest 顶层的 `env` 字段,缺省 `appworld`;所以 appworld 批是 `appworld_q35`,alfworld 批是 `alfworld_q36`),自定义名只会被 WARN 并改掉;下游事件抽取按目录名尾巴认模型,`MODEL_OF` 只认 q35/q36/gptoss(`annotate/rules.py` 的 `MODEL_OF` 常量)。→ 新模型必须先往这张表里加一行,否则采到的轨迹会被静默跳过。
 - **`--smoke` 不改 `--out`**:冒烟和全量传同一个 `--out` 会让冒烟权重占住 `best/`。→ 照 `ops/launch_probe.py:71` 的做法,冒烟一律写 `pipeline/runs/smoke/<rid>_smoke`。**2026-08-02 起这条有了硬拦**:各格都带 `--force`,不带它时 `--out` 下已有 `train_log.jsonl` 就拒绝开训(见 §3 的 `--force` 行),所以"冒烟占住正式目录"现在会当场退出而不是静默混产物。
+- **`ann-build` 的两个旋钮 CLI 压配置**(2026-08-22 起):`--weight-mode`/`--max-bounds` 显式给了就盖过 config 里的 `weight_mode`/`max_bounds` 字段;`weight_mode` **缺省是新口径 uniform**,老配置不加旗直接重跑得到的是等权数据,不是旧的 w=1/m;要复现旧产物必须显式 `--weight-mode per_event`。报告的四样新统计只在 config 带 `trajs_per_unit` 键时出现,别拿带这个键的 config 去做逐字节复现。
+- **门禁 B 的判据跟着 `trajs_per_unit` 走**(2026-08-22 起):缺省 K=1 时文案与旧版逐字节相同;K>1 时一个 unit 必须恰好 K 条 traj **且**文件名尾部采样序号 `_r0..r{K-1}` 齐全,少一条(某轨迹一个可用事件都没出)也硬停,和偏差 2 的"缺题"不是一回事。→ K 倍意外重扫会先撞 `(event, sent_idx)` 唯一判据,序号判据是第二道。
+- **多样本轨迹文件名带 `_r<k>` 后缀**(`appworld_<tid>_r0.jsonl`…,2026-08-22 起,`--traj-per-task 1` 时无后缀=旧名):`build.py`/`param_label.py` 的 glob 都吃得下;但 `pipeline/inject/replay_inject.py:399` 与 `pipeline/inject/score_live.py:119` 仍按 `appworld_<unit>.jsonl` 反查,吃多样本批之前要先改兼容(记录在 WORKPLAN 回写清单)。
+- **预设 `default` 与 `gptoss_default` 是两份文件**:`default` 是 np821 采集口径(harmony/high/温度 1/top_p 1/max_tokens 8192,无 server 节),`gptoss_default` 是 OpenAI 官方推荐口径(effort medium,带 server 节)。manifest 的 `gptoss_client_preset` 写错一个字就换了口径,发射前 `MANIFEST.md` 里核一眼预设名。
+- **驱动器 `run.py pipeline` 没有 `--allow-dirty`**:发射步撞上脏树只会 blocked(原因落 `logs/pipeline/<run_family>/state.json`),commit 干净了再敲;退出码 3 只表示本次真的发射了,已发射还没跑完的批次再敲返回 0(waiting,不重发),0 另外还盖住推进一步与全部完成,4=等裁决(a1 切点停点,把 `max_bounds` 写进批次配置再敲),1=门禁失败。状态文件里有 `launched` 发射标记(`--status` 印出来;确认某批已死要重发,先把它那条标记从状态文件里删掉)与 `manifest_sha1`(c1 生成后 manifest 又改过 → c2/c5 blocked,`gen-launch --force` 重生成并更新该字段)。状态文件在 git 忽略区,`--status` 只读不改。

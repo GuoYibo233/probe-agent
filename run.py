@@ -517,6 +517,19 @@ TASKS = {
         stage="ops", py="sys", script="ops/gpu_jobs.py",
         desc="GPU 台账(register/finish/watch/free/status 原样透传)",
         notes=["register 对拼错的 flag 静默忽略;free 会 exec bash 顶掉进程"]),
+    "pipeline": dict(
+        stage="ops", py="sys", script="pipeline/driver.py",
+        desc="流水线驱动器(断点续跑;必给 --config,每敲一次最多推进一步)",
+        notes=["用法: python3 run.py pipeline --config pipeline/configs/np821_gptoss.json;"
+               "--status 只读打印状态不推进",
+               "它是编排器不是发射器:发射类动作转手给 launch-probe/launch-eval"
+               "(自带脏树 gate)或批次自己的 launch_servers.py/launch_clients.sh,"
+               "出手前驱动器自己再过一遍 git_dirty(),脏树就地 blocked",
+               "退出码: 0 推进一步/已完成/还在跑, 3 本次发射了 GPU 任务, "
+               "4 awaiting_decision(裁决写进批次配置再敲), 1 门禁失败",
+               "状态与分步日志在 logs/pipeline/<run_family>/(logs/ 不进 git,"
+               "状态变化不弄脏工作树)",
+               "状态文件损坏或批次身份对不上一律拒绝覆盖,人工看过再删"]),
     "sampler": dict(
         stage="ops", py="sys", script="ops/sampler.py",
         desc="长程任务采样器(常驻;60s 一轮采心跳/探存活/算判定,开网页)",

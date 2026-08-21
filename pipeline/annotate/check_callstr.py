@@ -48,11 +48,12 @@ build.py + param_label.py 跑完之后、拿成品数据集才能验):
 import argparse
 import json
 import os
+import re
 import sys
 from collections import Counter
 from pathlib import Path
 
-# 纯 CPU 脚本,但 eval_causal_call 模块级 import torch。显式关掉可见显卡,
+# 纯 CPU 脚本,但 eval_causal_call 内部 import torch。显式关掉可见显卡,
 # 保证本脚本在任何情况下都碰不到 GPU。
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
@@ -60,7 +61,11 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "eval"))
 from rules import MODEL_OF, SEED                       # noqa: E402
-from eval_causal_call import norm, parse_call          # noqa: E402
+# eval_causal_call 的 import 延后到 main() 里真正用到 norm/parse_call 的地方
+# (偏差 1 回读检查)才做:它模块级 import torch,提前到这里会让整个文件在没装
+# torch 的环境下连 import 都做不到,门禁 B 的 K 条判据/§8b 补强判据这些纯逻辑
+# 就没法脱离 cprobe-env 单测(见 tests/test_check_callstr.py)。延迟不改变任何
+# 输出字节:torch 什么时候被拉起来对 stdout/报告文件没有影响。
 
 SPLITS = ("train", "val", "test")
 THIN_TEST_EVENTS = 200      # test 事件数低于此值就报"θ 可能全 null"的风险
@@ -98,6 +103,90 @@ def gate_c(traj_runs, env):
         if not direct:
             sys.exit(f"[门禁 C] traj_runs 项 {p} 下没有任何 bfcl_<模型> 子目录")
     return f"门禁 C {len(traj_runs)} 项 traj_runs 均为 run 目录本身 ✓"
+
+
+def parse_sample_idx(traj):
+    """从 traj 字符串(形如 "<batch>/<stem>")的 stem 尾部解析多样本采集的采样
+    序号 `_r<k>`。解析不出(老式无后缀文件名)返回 None。"""
+    stem = traj.rsplit("/", 1)[-1]
+    m = re.search(r"_r(\d+)$", stem)
+    return int(m.group(1)) if m else None
+
+
+def gate_b_unit_traj(rows_by_split, K):
+    """门禁 B 第二半:unit -> traj 判据(K 条判据,plans §4 + §8b 补强判据)。
+
+    刻意写成不 import eval_causal_call/torch 的纯函数,好让它能脱离 cprobe-env
+    单独单测(见 tests/test_check_callstr.py);第一半的样本键唯一判据
+    ((event, sent_idx) 全局唯一,main() 里 138-143 行区域)不在这个函数里,
+    维持原地不动。
+
+    K = cfg.get("trajs_per_unit", 1)。K==1 时判据与文案与旧版逐字节一致
+    (旧配置重跑 CALLSTR_CHECK.md 必须逐字节一致);K>1 时:
+      - 每个 unit 必须恰好对应 K 条互异 traj;
+      - §8b 补强判据 1:显式再核验一次 K 条 traj 互异(重复扫描产生同名 traj
+        理论上已被样本键唯一判据拦下,这里的 set 聚合本就天然去重,再显式断言
+        一次是防御性判据,报错文案与「条数不对」分开,便于区分症状);
+      - §8b 补强判据 2:K 条 traj 文件名尾部的采样序号解析出来后必须恰好是
+        {0..K-1} 各一个;解析不出(文件名不带 _r<k> 后缀)单独报错。
+
+    rows_by_split: {split: [row, ...]},row 至少带 "unit"/"traj" 两个键。
+    返回 (ok, msg):
+      ok=True  时 msg 是成功文案(不含 "门禁 B 样本键..." 前缀,调用方自己拼)。
+      ok=False 时 msg 是失败文案(不含 "[门禁 B] " 前缀,调用方自己拼再 sys.exit)。
+    """
+    u2t = {}
+    for sp in SPLITS:
+        for r in rows_by_split[sp]:
+            u2t.setdefault(r["unit"], set()).add(r["traj"])
+
+    if K == 1:
+        # 旧口径原样保留:len(t) > 1 即死,判据与文案逐字节不变。
+        multi = {u: sorted(t) for u, t in u2t.items() if len(t) > 1}
+        if multi:
+            return False, (f"{len(multi)} 个 unit 对应多个 traj,"
+                           f"例 {list(multi.items())[:2]};同一模型下一个任务实例只应有一条轨迹")
+        return True, f"{len(u2t)} 个 unit 各对一条 traj ✓"
+
+    # K > 1:每个 unit 必须恰好 K 条 traj。例子里带 (实际条数, traj 列表),
+    # 与 K 一并摆出来,别让人还得数 traj 列表的长度才知道差多少。
+    bad_count = {u: (len(t), sorted(t)) for u, t in u2t.items()
+                if len(t) != K}
+    if bad_count:
+        ex = list(bad_count.items())[:2]
+        return False, (f"{len(bad_count)} 个 unit 的 traj 条数不是 "
+                       f"trajs_per_unit={K},例(unit, (实际条数, traj)) {ex}")
+
+    # §8b 补强判据 1:显式再断言一次 K 条 traj 互异。
+    dup_units = [u for u, t in u2t.items() if len(t) != len(set(t))]
+    if dup_units:
+        return False, (f"{len(dup_units)} 个 unit 的 traj 出现重复字符串,"
+                       f"例 {dup_units[:3]};多半是 traj_runs 把同一批轨迹扫了两遍")
+
+    # §8b 补强判据 2:采样序号必须恰好是 {0..K-1} 各一个。
+    unparsed, idx_of = [], {}
+    for u, t in u2t.items():
+        idxs = []
+        for traj in sorted(t):
+            k = parse_sample_idx(traj)
+            if k is None:
+                unparsed.append((u, traj))
+            else:
+                idxs.append(k)
+        idx_of[u] = idxs
+    if unparsed:
+        return False, (f"{len(unparsed)} 条 traj 文件名不带采样序号(stem 尾部"
+                       f"解析不出 _r<k>),例 {unparsed[:3]};trajs_per_unit="
+                       f"{K} > 1 时每条 traj 文件名都必须带 _r0.._r{K - 1} "
+                       f"的采样序号后缀")
+    bad_idx = {u: sorted(idxs) for u, idxs in idx_of.items()
+              if sorted(idxs) != list(range(K))}
+    if bad_idx:
+        ex = list(bad_idx.items())[:2]
+        return False, (f"{len(bad_idx)} 个 unit 的采样序号不是 "
+                       f"{{0..{K - 1}}} 各一个,例 {ex}")
+
+    return True, f"{len(u2t)} 个 unit 各对恰好 {K} 条 traj ✓"
 
 
 def main():
@@ -141,16 +230,11 @@ def main():
     if dupk:
         sys.exit(f"[门禁 B] (event, sent_idx) 重复 {len(dupk)} 个,"
                  f"例 {dupk[:3]};多半是 traj_runs 把同一批轨迹扫了两遍")
-    u2t = {}
-    for sp in SPLITS:
-        for r in rows[sp]:
-            u2t.setdefault(r["unit"], set()).add(r["traj"])
-    multi = {u: sorted(t) for u, t in u2t.items() if len(t) > 1}
-    if multi:
-        sys.exit(f"[门禁 B] {len(multi)} 个 unit 对应多个 traj,"
-                 f"例 {list(multi.items())[:2]};同一模型下一个任务实例只应有一条轨迹")
-    gates.append(f"门禁 B 样本键 {len(keyc)} 个全唯一;"
-                 f"{len(u2t)} 个 unit 各对一条 traj ✓")
+    K = cfg.get("trajs_per_unit", 1)
+    gate_ok, gate_msg = gate_b_unit_traj(rows, K)
+    if not gate_ok:
+        sys.exit(f"[门禁 B] {gate_msg}")
+    gates.append(f"门禁 B 样本键 {len(keyc)} 个全唯一;{gate_msg}")
 
     # ---------- 门禁 D:题单归属全量核对 ----------
     wrong = []
@@ -181,6 +265,9 @@ def main():
         gates.append(f"门禁 E 跳过(没找到 {sp_report})")
 
     # ---------- 偏差 1:真值调用串回读 ----------
+    # 到这里才 import(见文件头注释:eval_causal_call 拉 torch,延后到真正用到
+    # 的地方,好让门禁 A-E 与结构性判据能在没装 torch 的环境下跑/单测)。
+    from eval_causal_call import norm, parse_call
     # 一个事件里所有样本共享同一条 label_call,按事件去重后逐条切。
     ev_call, ev_split = {}, {}
     for sp in SPLITS:

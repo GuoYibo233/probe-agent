@@ -399,5 +399,55 @@ class TestBfclHandlerPreset(unittest.TestCase):
         self.assertEqual(ns["_sample_kwargs"](), {"top_p": 0.9, "seed": 7})
 
 
+class TestDefaultPreset(unittest.TestCase):
+    """default.json:np821 起用的温度 1 采集口径(2026-08-21 定稿,
+    spec 在 plans/2026-08-21-np821-plan.md;与 gptoss_harmony_high 只差
+    temperature/top_p,种子不钉在预设里,由采集器 --seeds 按轨迹派发)。"""
+
+    def test_loads_and_validates(self):
+        # load_preset 内部就调 validate,不合格会抛;这里再对原始 json(不带
+        # load_preset 事后加的 _name/_path)显式校验一遍,与
+        # TestPresetsValidate.test_all_presets_pass 同一种查法
+        PL.load_preset("default")   # 不抛 = 过校验
+        raw = json.loads((PL.PRESET_DIR / "default.json").read_text())
+        self.assertEqual(PL.validate(raw), [])
+
+    def test_fields(self):
+        pre = PL.load_preset("default")
+        self.assertEqual(pre["model"], "gpt-oss-120b")
+        self.assertNotIn("server", pre)   # 服务另起,预设里无 server 节
+        c = pre["client"]
+        self.assertEqual(
+            (c["api"], c["reasoning_effort"], c["temperature"], c["top_p"],
+             c["max_tokens"], c["stop"], c["start_date"], c["seed"]),
+            ("harmony", "high", 1.0, 1.0, 8192, None, "2026-08-06", None))
+
+    def test_differs_from_harmony_high_only_in_temperature_top_p(self):
+        c = PL.load_preset("default")["client"]
+        h = PL.load_preset("gptoss_harmony_high")["client"]
+        self.assertNotEqual((c["temperature"], c["top_p"]),
+                            (h["temperature"], h["top_p"]))
+        for k in ("api", "reasoning_effort", "max_tokens", "stop",
+                  "start_date", "seed"):
+            self.assertEqual(c[k], h[k], k)
+
+    def test_merge_client_temperature_takes_1_0(self):
+        # 三层优先级下,CLI 未显式给、预设写了 1.0、旧缺省 0.0 -> 取预设的 1.0
+        pre = PL.load_preset("default")
+        out = PL.merge_client({"temperature": None}, pre["client"],
+                              {"temperature": 0.0})
+        self.assertEqual(out["temperature"], 1.0)
+
+    def test_gen_launch_default_preset_name_unchanged(self):
+        # 新增同名 default.json 不改发射器缺省预设名:gen_launch 的
+        # GPTOSS_CLIENT_PRESET_DEFAULT 是独立写死的模块常量,与
+        # configs/presets/ 下有没有 default.json 无关,仍是 gptoss_chat_high
+        gl_dir = str(ROOT / "pipeline/collect")
+        if gl_dir not in sys.path:
+            sys.path.insert(0, gl_dir)
+        import gen_launch as GL
+        self.assertEqual(GL.GPTOSS_CLIENT_PRESET_DEFAULT, "gptoss_chat_high")
+
+
 if __name__ == "__main__":
     unittest.main()

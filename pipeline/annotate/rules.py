@@ -10,7 +10,8 @@
 
 import re
 
-SEED = 20260729
+SEED = 42             # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在
+                      # 旧配置显式写的 seed 字段里生效(cfg.get("seed", SEED) 压过本值)
 MAX_BOUNDS = 64       # 每事件边界上限(gpt-oss 超长思考防爆)
 MIN_THINK = 40        # 字符;再短的思考没有可切性
 HIST_ROUNDS = 3       # 题干里保留最近几轮工具历史
@@ -21,16 +22,20 @@ MODEL_OF = {"q35": "qwen3.5-27b", "q36": "qwen3.6-27b", "gptoss": "gpt-oss-120b"
 SENT_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 
-def boundaries(text):
-    """全部合法切点(字符偏移,前缀=text[:i]),含全文末尾,上限 MAX_BOUNDS。"""
+def boundaries(text, max_bounds=MAX_BOUNDS):
+    """全部合法切点(字符偏移,前缀=text[:i]),含全文末尾,上限 max_bounds。
+
+    上限缺省 = MAX_BOUNDS(64),不传就与改动前逐字节一致;调用方要别的上限
+    (批次配置的 max_bounds、或统计未截断切点数时的 10**9)显式传。
+    """
     pts = sorted({m.end() for m in SENT_RE.finditer(text)} | {len(text)})
     pts = [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
     if not pts:
         pts = [len(text)]
-    if len(pts) > MAX_BOUNDS:
+    if len(pts) > max_bounds:
         keep = {len(pts) - 1}
-        step = (len(pts) - 1) / (MAX_BOUNDS - 1)
-        keep.update(round(k * step) for k in range(MAX_BOUNDS - 1))
+        step = (len(pts) - 1) / (max_bounds - 1)
+        keep.update(round(k * step) for k in range(max_bounds - 1))
         pts = [pts[j] for j in sorted(keep)]
     return pts
 

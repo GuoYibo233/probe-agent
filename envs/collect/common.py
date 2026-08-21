@@ -273,6 +273,12 @@ def settings_from_args(args, fallbacks=None):
           "top_p": None, "max_tokens": 8192, "seed": None,
           "start_date": "2026-08-06"}
     fb.update(fallbacks or {})
+    # seed 故意不进这个元组(2026-08-21 多样本改造时的裁决):run_tau2.py:879
+    # 的 --seed 是 tau2 环境/用户模拟器的种子,缺省是 rules.SEED 这个非 None
+    # 常量,跟着 cli 合并进来就会把 seed 塞进请求体与轨迹 meta 的 gen_settings,
+    # 老口径产物立刻变样。预设 client 节里写的 seed 本来就走 fallbacks 那一路
+    # 生效(fb 里有 "seed" 键),多样本采集的逐条种子由 run_appworld.py 直接
+    # 覆盖 eff["seed"],两条路都不需要这里认 --seed。
     cli = {k: getattr(args, k, None)
            for k in ("api", "reasoning_effort", "start_date")}
     eff = merge_client(cli, (pre or {}).get("client"), fb)

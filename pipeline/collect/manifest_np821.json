@@ -1,0 +1,80 @@
+{
+  "run_id": "nyapass",
+  "env": "appworld",
+  "_source": "plans/2026-08-21-np821-plan.md(nyanpasu-probtest821:温度 1、每题 4 条轨迹、每步等权的第一批)",
+  "_scale": "gptoss 单模型,官方三堆全量 315 题(train 90 / dev 57 / test_normal 168),每题 4 条轨迹 = 1260 条",
+  "_placement": "预排 tokyo108 GPU 2/3/4/5 四实例(权重 63G 只进大卡)。卡号是占位:发射前 G2 实探空卡,有变就改 servers[].gpu 与 session 名,再带 --force 重新生成。",
+  "_settings": "gptoss_client_preset = default(温度 1.0 / top_p 1.0 / harmony effort high / max_tokens 8192 / Current date 2026-08-06)。种子不进预设,由采集器按轨迹派发:seed_family 四个种子按序各配一条轨迹。",
+  "_shard_ports": "12 个分片按声明顺序轮着铺四个端口,每端口正好 3 片。",
+  "gptoss_client_preset": "default",
+  "traj_per_task": 4,
+  "seed_family": [42, 67, 4267, 6742],
+  "envs_root": "/home/y-guo/reproduce/new1/envs",
+  "servers": [
+    {
+      "host": "tokyo108",
+      "gpu": 2,
+      "card": "H100",
+      "model_key": "gptoss",
+      "port": 8103,
+      "session": "new1_nyapass_srv_gptossa_t108g2",
+      "extra_flags": ""
+    },
+    {
+      "host": "tokyo108",
+      "gpu": 3,
+      "card": "H200",
+      "model_key": "gptoss",
+      "port": 8106,
+      "session": "new1_nyapass_srv_gptossb_t108g3",
+      "extra_flags": ""
+    },
+    {
+      "host": "tokyo108",
+      "gpu": 4,
+      "card": "H200",
+      "model_key": "gptoss",
+      "port": 8107,
+      "session": "new1_nyapass_srv_gptossc_t108g4",
+      "extra_flags": ""
+    },
+    {
+      "host": "tokyo108",
+      "gpu": 5,
+      "card": "H200",
+      "model_key": "gptoss",
+      "port": 8108,
+      "session": "new1_nyapass_srv_gptossd_t108g5",
+      "extra_flags": ""
+    }
+  ],
+  "clients": [
+    {
+      "tag": "gptr",
+      "model_key": "gptoss",
+      "split": "train",
+      "num_shards": 4,
+      "shard_ports": [8103, 8106, 8107, 8108],
+      "outdir": "appworld_gptoss",
+      "exp": "np821gptr"
+    },
+    {
+      "tag": "gpdv",
+      "model_key": "gptoss",
+      "split": "dev",
+      "num_shards": 2,
+      "shard_ports": [8103, 8106],
+      "outdir": "appworld_gptoss",
+      "exp": "np821gpdv"
+    },
+    {
+      "tag": "gptn",
+      "model_key": "gptoss",
+      "split": "test_normal",
+      "num_shards": 6,
+      "shard_ports": [8107, 8108, 8103, 8106, 8107, 8108],
+      "outdir": "appworld_gptoss",
+      "exp": "np821gptn"
+    }
+  ]
+}

@@ -40,7 +40,7 @@ except ImportError as e:                      # 系统 python3 没有 torch/peft
     raise unittest.SkipTest(f"要 cprobe-env 解释器(torch/transformers/peft):{e}")
 
 
-SEED = 20260729          # 与三个训练脚本同一个种子体系
+SEED = 20260729          # 测试假件自己的固定种子;训练脚本 np821 起换 42,本测试不跟随
 
 
 def tiny_config():

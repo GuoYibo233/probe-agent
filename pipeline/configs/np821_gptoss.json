@@ -1,0 +1,37 @@
+{
+  "run_family": "nyapass_aw_v1",
+  "env": "appworld",
+  "model_short": "gptoss",
+  "model_full": "gpt-oss-120b",
+  "_source": "plans/2026-08-21-np821-plan.md(温度 1 / 每题 4 条 / 每步等权的第一批)",
+  "_note": "max_bounds 故意不写:驱动器的 a1_stats 先出切点分布并停在 awaiting_decision,裁决之后由人把 max_bounds 写进本文件再敲同一条命令。",
+  "traj_runs": [
+    "/home/y-guo/reproduce/new1/envs/runs/nyapass"
+  ],
+  "split_mode": "official",
+  "official_split_files": {
+    "train": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/train.txt",
+    "val": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/dev.txt",
+    "test": "/home/y-guo/reproduce/new1/envs/appworld/data/datasets/test_normal.txt"
+  },
+  "data_out": "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
+  "seed": 42,
+  "weight_mode": "uniform",
+  "trajs_per_unit": 4,
+  "collect": {
+    "manifest": "pipeline/collect/manifest_np821.json",
+    "run_id": "nyapass",
+    "seeds": [42, 67, 4267, 6742]
+  },
+  "train": {
+    "cells": ["ctool", "cgen", "cparam"],
+    "batches": {
+      "np821b06": {"base": "qwen", "mode": "full"},
+      "np821b17": {"base": "qwen17", "mode": "full", "grad_ckpt": true},
+      "np821l17": {"base": "qwen17", "mode": "lora"},
+      "np821l4": {"base": "qwen4", "mode": "lora"}
+    },
+    "placement": "ops/np821_placement.json",
+    "_placement": "这里给的是基名。真排卡表一批一份,照 p1 的命名法放在同目录:ops/<批次>_placement.json(训练)、ops/<批次>_eval_tool_placement.json 与 ops/<批次>_eval_call_placement.json(评测两档)。驱动器按批次名找,找不到就 blocked,不猜。"
+  }
+}
