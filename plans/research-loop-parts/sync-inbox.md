@@ -345,3 +345,7 @@
 - 要改的地方：
   47. 冻结后待议：（a）`03:242`「合回六步的顺序（先开补单再 `ql close --merged`）」——`07` 里没有「六步」这个说法，改成「合回的出口顺序（gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `ql close --merged --handoff ID`），见 `07` 出口一节」（问题 44(a) 已确认此序）。（b）`04` 第六节销号钩子那段补一句跨账写序：「先逐张 release 交回（release 行的 `session_id` 记本会话，此刻 sessions 还没 `closed`，写得进），最后落 sessions 的 `closed` 版（含 `released_handoffs` 清单）」——`03:15` 已明写此序并说「`04` 第六节定的顺序」，`04` 补上这句指向才成立。（c）`03:196` scratch 段「analysis 和 reviewer 默认不读这本账」改成「这本账日常不进审读顺序：deploy 和 analysis 只在快车道里读写自己那条 `ql_tag` 的行，reviewer 审快车道时才读（reads 清单里有）」——`06` 定稿的 json 里 reviewer 的 reads 有 scratch、analysis 的 ledger_writes 有 scratch 全部（`07:64` 同句 2026-08-21 已按此改，写了两遍处）。（d）`03:4` 与 `03:240`「`rl status`……在 `05-rl-cli.md`」各补半句「（十段内容定义处是 `01`，`05` 是命令表）」。（e）`04:220`「`rl status` 的十段全文……写在 `05-rl-cli.md`」同补这半句。（f）`04:209` 括号里那串「……待同步」补「（已同步 2026-08-17 夜 rl-hub-v3 `70c766b`，见文末「要同步到别处的」末条）」——正文标注与文末已同步标注打架，以文末为准。
 - 状态：等最后一期（2026-08-21 评审修复立）
+
+## 2026-08-21 来自 rl-part-12 关于 12-role-run.md
+- 事项：评审修复清单六条已落，commit `c214ebf`。六条是：钩子三工具口径三处、`track` 从父单抄两处、母版九条、认领时点两句对齐 rl 自动判、`stuck` 只限三种 `failed` 且 `anomaly` 照走 6a、`rl inbox` 过版项口径核对不涉（run 不查 inbox）。顺带把 `11` 定稿「开场话抄单」记了备查行。
+- 状态：已处理 2026-08-21
