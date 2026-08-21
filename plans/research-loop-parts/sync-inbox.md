@@ -302,6 +302,7 @@
   42. （a）`06-hooks-and-permissions.md`：idea json `reads` 表下备注「`notes/` 要 gyb 发 `read:notes` 才读」删（10 的 json 副本未动，等 `06` 改了传回）；（b）`08-trees-init-and-host.md`：`rl init` 逐项问里「问 gyb 一次要不要当场给 idea 发 `read:notes`」删；（c）`01-gyb.md`：gyb use case 表「批 `read:notes`」的活删，「授权只有 gyb 能写」段里 `read:notes` 例子随 grants 账存废定（存废见 43(c)）；（d）`20-pair-idea-deploy.md`：「怎么测试、什么算成功」只在起下游 subagent 的交代里说、不写进单子；`--manual` 单默认 gyb 自己验收；（e）`14-role-reviewer.md`、`25-pair-reviewer-idea.md`：reviewer 拿 grant 当「idea 有没有读过 notes/」凭据的核对项删；idea 读完清单不自行处置、只报 gyb 裁了才动；（f）`11` 到 `14` 收件箱段：过版项口径统一「本会话手上单子引的过版决定」、feedback 裁决单列一项。
 - 状态：已处理 2026-08-21（rl-hub-v6：(a) `06` 已改、json 副本已传回 `10`；(b) `08` 已改；(c) `01` 获准段、第 3 件事、接口行已改，use case 表查无「批 `read:notes`」行、授权段无 `read:notes` 例子；连带 `00` 砍掉手续清单、`02` doctor 段与接口两处、`09` grants 两段与接口三行统筹补扫已改；(d) `20` 正文两处已改、`21` 抄的转移表 accept 行同步补备注、跨根归线裁决连带记进 `20`/`21`/`22`/`23` 裁决记录；(e) `25` 已改并销「没写清」第 7 条，`14` 已 SendMessage 交代 rl-part-14；(f) 已 SendMessage 交代 rl-part-11 到 14——`11`/`13` 正文五样已与口径一致、`12` run 不查 inbox 不涉、`14` 「四类…再加」句要改；`24` 接口「列哪四类」顺手收成五类）
 - 补记 2026-08-21（评审修复，gyb 授权）：(e) 交代 rl-part-14、(f) 交代 rl-part-12/14 的部分，文件本体一直没落（评审核实）；清单已重发给 rl-part-12/14，按回执制（HANDOFF 第四节 2026-08-21 立）等它们的回执段。
+- 回执 2026-08-21（rl-hub-v6 核）：(f) 的 rl-part-12 侧随 `c214ebf` 收口——核对结论是不涉（run 不查 inbox，`12` 正文本来就没有收件箱段）；(e) 与 (f) 的 rl-part-14 侧仍等回执。
 
 ## 2026-08-21 来自 rl-part-10 关于 10 定稿动到冻结三份的几处（冻结后待议）
 - 事项：`10-role-idea.md` 定稿（`96459b4`）裁决的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，等最后一期。
@@ -319,6 +320,7 @@
   44. （a）`07-quick-lane.md`：出口顺序改「gyb 先 merge → deploy 开补单、补 `decisions.deploy` → `rl ql close --merged --handoff ID`」，决定来源和报告路径的存在性检查一律按主树查，「主分支上永远只有走过工单的代码」句认下合并到补单之间的短窗口；（b）`10-role-idea.md`、`20-pair-idea-deploy.md`：idea 开工单时填方向名一栏，deploy 开发射单照抄；（c）`25-pair-reviewer-idea.md`：reviewer 的代码清单按全量口径读（含 `experiments/` 外宿主文件）；（d）`12-role-run.md`、`21-pair-deploy-run.md`：派活开场提示全抄单子内容（run 被拉起时开场话里有全貌；裁的场景是 deploy 派 run，别的通道要不要照此由统筹定）。
 - 状态：已处理 2026-08-21（rl-hub-v6：(a) `07` 出口顺序本来就是先 merge 后补单——2026-08-17 问题 8 已定，这次按确认补记，存在性按主树句、短窗口句已补进正文；(b) `10` 「工单怎么开」补 `track` 句，`20` 记裁决记录，`21` track 行改「从父单抄」；(c) `25` 记裁决记录，`14` 的代码清单口径已 SendMessage 交代 rl-part-14；(d) `21` 记裁决记录、`12` 已 SendMessage 交代；「别的通道要不要照此」不归统筹定，立问题 46 等 gyb）
 - 补记 2026-08-21（评审修复，gyb 授权）：(d) 交代 rl-part-12 的部分文件本体没落（评审核实）；清单已重发，按回执制等回执。
+- 回执 2026-08-21（rl-hub-v6 核）：(d) 的 rl-part-12 侧已落——`c214ebf` 把「开场话抄单」记进 `12` 文末裁决记录备查行，这段的事项全部收口。
 
 ## 2026-08-21 来自 rl-part-11 关于 11 定稿动到冻结三份的几处（冻结后待议）
 - 事项：`11-role-deploy.md` 定稿（`5e8dffa`）裁决的引用处落在冻结的 `03`/`04`/`05` 里，按冻结规矩不改，等最后一期。
@@ -348,4 +350,4 @@
 
 ## 2026-08-21 来自 rl-part-12 关于 12-role-run.md
 - 事项：评审修复清单六条已落，commit `c214ebf`。六条是：钩子三工具口径三处、`track` 从父单抄两处、母版九条、认领时点两句对齐 rl 自动判、`stuck` 只限三种 `failed` 且 `anomaly` 照走 6a、`rl inbox` 过版项口径核对不涉（run 不查 inbox）。顺带把 `11` 定稿「开场话抄单」记了备查行。
-- 状态：已处理 2026-08-21
+- 状态：已处理 2026-08-21（rl-hub-v6 核 2026-08-21：`c214ebf` 的 diff 与六条逐一对上；机器检查 `12` 的警告已消，裁决记录引旧字样那行进白名单 `5f23ec1`；段 42(f) 与段 44(d) 的 rl-part-12 侧随之收口）
