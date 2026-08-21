@@ -1,120 +1,5 @@
 {
-  "active": [
-    {
-      "name": "p1l06_gptoss_cgen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "1",
-          "session": "new1_p1l06_gptoss_cgen_t106g1",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cgen_t106g1.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cgen --env appworld --base qwen --lora --grad-ckpt",
-          "launched_at": 1787283859.672668,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "p1l06_gptoss_cparam",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "2",
-          "session": "new1_p1l06_gptoss_cparam_t106g2",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cparam_t106g2.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cparam --env appworld --base qwen --lora --grad-ckpt",
-          "launched_at": 1787283862.29938,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "p1l17_gptoss_cgen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "4",
-          "session": "new1_p1l17_gptoss_cgen_t106g4",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cgen_t106g4.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cgen --env appworld --base qwen17 --lora --grad-ckpt",
-          "launched_at": 1787283875.8073437,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "p1l17_gptoss_cparam",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "5",
-          "session": "new1_p1l17_gptoss_cparam_t106g5",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cparam_t106g5.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt",
-          "launched_at": 1787283878.2055264,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "p1l4_gptoss_cgen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "7",
-          "session": "new1_p1l4_gptoss_cgen_t106g7",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cgen_t106g7.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cgen --env appworld --base qwen4 --lora --grad-ckpt",
-          "launched_at": 1787283891.1126218,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "p1l4_gptoss_cparam",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-21 12:44",
-      "pieces": [
-        {
-          "host": "tokyo106",
-          "gpus": "8",
-          "session": "new1_p1l4_gptoss_cparam_t106g8",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cparam_t106g8.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt",
-          "launched_at": 1787283893.3625748,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    }
-  ],
+  "active": [],
   "history": [
     {
       "name": "hcap",
@@ -795,6 +680,126 @@
         }
       ],
       "finished_at": "2026-08-21 21:55"
+    },
+    {
+      "name": "p1l06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "1",
+          "session": "new1_p1l06_gptoss_cgen_t106g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cgen_t106g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cgen --env appworld --base qwen --lora --grad-ckpt",
+          "launched_at": 1787283859.672668,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 22:42"
+    },
+    {
+      "name": "p1l06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "2",
+          "session": "new1_p1l06_gptoss_cparam_t106g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l06_gptoss_cparam_t106g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l06_gptoss_cparam --env appworld --base qwen --lora --grad-ckpt",
+          "launched_at": 1787283862.29938,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 22:42"
+    },
+    {
+      "name": "p1l17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "4",
+          "session": "new1_p1l17_gptoss_cgen_t106g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cgen_t106g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cgen --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787283875.8073437,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 22:42"
+    },
+    {
+      "name": "p1l17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "5",
+          "session": "new1_p1l17_gptoss_cparam_t106g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l17_gptoss_cparam_t106g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787283878.2055264,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 22:42"
+    },
+    {
+      "name": "p1l4_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "7",
+          "session": "new1_p1l4_gptoss_cgen_t106g7",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cgen_t106g7.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cgen --env appworld --base qwen4 --lora --grad-ckpt",
+          "launched_at": 1787283891.1126218,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 22:42"
+    },
+    {
+      "name": "p1l4_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-21 12:44",
+      "pieces": [
+        {
+          "host": "tokyo106",
+          "gpus": "8",
+          "session": "new1_p1l4_gptoss_cparam_t106g8",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_p1l4_gptoss_cparam_t106g8.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data pipeline/data/aw_p1_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/p1l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt",
+          "launched_at": 1787283893.3625748,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-21 22:42"
     }
   ]
 }
