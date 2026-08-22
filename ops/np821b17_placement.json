@@ -15,8 +15,8 @@
  {
   "model": "gptoss",
   "cell": "cgen",
-  "host": "tokyo107",
-  "gpu": 3,
+  "host": "tokyo108",
+  "gpu": 1,
   "extra": [
    "--base",
    "qwen17",
