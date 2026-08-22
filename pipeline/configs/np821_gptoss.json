@@ -4,7 +4,8 @@
   "model_short": "gptoss",
   "model_full": "gpt-oss-120b",
   "_source": "plans/2026-08-21-np821-plan.md(温度 1 / 每题 4 条 / 每步等权的第一批)",
-  "_note": "max_bounds 故意不写:驱动器的 a1_stats 先出切点分布并停在 awaiting_decision,裁决之后由人把 max_bounds 写进本文件再敲同一条命令。",
+  "_note": "max_bounds=64 是 2026-08-22 a1_stats 停点的裁决(Claude 按 gyb 授权自主裁决,依据见 TIMELINE 当日条):未截断分布 p50 60/p90 246/max 842,留 64 训练堆 186479 条=p1 的 4.02 倍恰合预算。",
+  "max_bounds": 64,
   "traj_runs": [
     "/home/y-guo/reproduce/new1/envs/runs/nyapass"
   ],

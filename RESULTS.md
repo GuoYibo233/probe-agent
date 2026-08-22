@@ -6,6 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `nyapass` | 2026-08-22 05:49 | collect_nyapass | `a8566db` | gpt-oss-120b | ok | trajs=1260 units=315 steps30_hit=41 | - |
 | `eval_p1b17_gptoss_cparam` | 2026-08-21 21:42 | eval_p1b17 | `9b1e660` | - | ok | risk=0.1 theta=0.925 n_scored=818 pred_tool_full_call_ok=0.7066 pred_tool_params_all_ok=0.7543 gt_tool_params_all_ok=0.7702 noparam_rate=0.3178 | p1b17 cparam评测(risk 0.1,theta 0.925):818事件,pred_tool full_call_ok 0.7066/params_all_ok 0.7543,gt_tool params 0.7702 |
 | `eval_p1b17_gptoss_cgen` | 2026-08-21 21:41 | eval_p1b17 | `9b1e660` | - | ok | risk=0.1 theta=0.925 n_scored=818 parse_fail=0 tool_ok=0.8998 params_all_ok=0.7494 full_call_ok=0.7066 | p1b17 cgen评测(risk 0.1,theta 0.925):818事件,parse_fail 0,tool_ok 0.8998,full_call_ok 0.7066 |
 | `eval_p1b17_gptoss_ctool` | 2026-08-21 21:27 | eval_p1b17 | `e29e2a9` | - | ok | theta_risk10=0.925 coverage=0.3596 trig_acc=0.9108 earliness=0.6878 wrong_spec=0.0321 temperature=1.2196 prior_acc=0.4193 | p1b17 ctool评测:0.05档theta选不出(null),0.1档theta 0.925,test冻结 coverage 0.3596/trig_acc 0.9108/earliness 0.6878/wrong_spec 0.0321;call档按§4.3改传--risk 0.1 |
@@ -44,6 +45,18 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `nyapass`
+
+- **想验证什么**：nyapass_aw_v1 采集:每题 4 条轨迹
+- **方向**：collect_nyapass ｜ **状态**：ok ｜ **起止**：2026-08-22 05:49 → 2026-08-22 11:10
+- **代码**：`a8566db` (分支 main)
+- **机器**：tokyo105 GPU cpu
+- **模型 / 种子**：gpt-oss-120b / -
+- **数字**：trajs=1260 units=315 steps30_hit=41
+- **原始数据**：`/home/y-guo/reproduce/new1/envs/runs/nyapass/appworld_gptoss`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/envs/runs/nyapass/logs`
+- **命令**：`bash /home/y-guo/reproduce/new1/envs/runs/nyapass/launch_clients.sh`
 
 ### `eval_p1b17_gptoss_cparam`
 

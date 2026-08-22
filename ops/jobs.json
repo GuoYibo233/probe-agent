@@ -800,6 +800,167 @@
         }
       ],
       "finished_at": "2026-08-21 22:42"
+    },
+    {
+      "name": "nyapass",
+      "workdir": "/home/y-guo/reproduce/new1/envs/runs/nyapass",
+      "note": "nyapass_aw_v1 采集批客户端 12 分片(每题 4 条,种子 [42, 67, 4267, 6742])",
+      "started_at": "2026-08-22 05:49",
+      "pieces": [
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptr_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptr_s0.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptr_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptr_s1.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptr_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptr_s2.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptr_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptr_s3.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gpdv_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gpdv_s0.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gpdv_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gpdv_s1.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptn_s0",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptn_s0.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptn_s1",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptn_s1.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptn_s2",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptn_s2.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptn_s3",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptn_s3.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptn_s4",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptn_s4.log",
+          "kind": "batch"
+        },
+        {
+          "host": "tokyo105",
+          "gpus": "cpu",
+          "session": "new1_nyapass_gptn_s5",
+          "log": "/home/y-guo/reproduce/new1/envs/runs/nyapass/logs/new1_nyapass_gptn_s5.log",
+          "kind": "batch"
+        }
+      ],
+      "finished_at": "2026-08-22 11:10"
+    },
+    {
+      "name": "nyapass_srv_a",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8103),采集全程常驻,收官时杀",
+      "started_at": "2026-08-22 05:49",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_nyapass_srv_gptossa_t108g2",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_nyapass_srv_gptossa_t108g2.log",
+          "kind": "service",
+          "port": 8103
+        }
+      ],
+      "finished_at": "2026-08-22 11:10"
+    },
+    {
+      "name": "nyapass_srv_b",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8106),采集全程常驻,收官时杀",
+      "started_at": "2026-08-22 05:49",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_nyapass_srv_gptossb_t108g3",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_nyapass_srv_gptossb_t108g3.log",
+          "kind": "service",
+          "port": 8106
+        }
+      ],
+      "finished_at": "2026-08-22 11:10"
+    },
+    {
+      "name": "nyapass_srv_c",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8107),采集全程常驻,收官时杀",
+      "started_at": "2026-08-22 05:49",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_nyapass_srv_gptossc_t108g4",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_nyapass_srv_gptossc_t108g4.log",
+          "kind": "service",
+          "port": 8107
+        }
+      ],
+      "finished_at": "2026-08-22 11:10"
+    },
+    {
+      "name": "nyapass_srv_d",
+      "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
+      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8108),采集全程常驻,收官时杀",
+      "started_at": "2026-08-22 05:49",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_nyapass_srv_gptossd_t108g5",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_nyapass_srv_gptossd_t108g5.log",
+          "kind": "service",
+          "port": 8108
+        }
+      ],
+      "finished_at": "2026-08-22 11:10"
     }
   ]
 }
