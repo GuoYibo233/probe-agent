@@ -3,7 +3,7 @@
   "model": "gptoss",
   "cell": "ctool",
   "host": "tokyo108",
-  "gpu": 0,
+  "gpu": 1,
   "extra": [
    "--base",
    "qwen17",
@@ -16,7 +16,7 @@
   "model": "gptoss",
   "cell": "cgen",
   "host": "tokyo108",
-  "gpu": 1,
+  "gpu": 3,
   "extra": [
    "--base",
    "qwen17",
