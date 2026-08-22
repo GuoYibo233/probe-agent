@@ -217,6 +217,21 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
 - 驱动器在第一次发射（gpu3 SKIP）时已打 launched 标记，补发走手动
   launch-probe（ctool/cparam 存活 SKIP，只发 cgen），三处登记齐，
   RUNMETA 三 run 补钉在 commit 7dbd28e。
+
+## 裁决 6：b17_cgen 在 Ada 首个 backward 就 OOM，改等安全大卡（2026-08-23 05:50）
+
+- 事实：发射 6 分钟后第一个 backward OOM（要 4.64G 只剩 3.61G；PyTorch
+  实占 34.75G + 碎片保留 8.63G，traceback 在 tmux 日志
+  `new1_np821b17_gptoss_cgen_t107g3.log` 全文保留）。smoke 的 500 条
+  子集没踩到全量首批的序列组合——「smoke 峰值 44.1G 可容」这个裁决 5 的
+  前提被实证推翻，48G 对 b17_cgen 全量记「装不下」。
+- 裁决：不做 expandable_segments 分配器实验（省下的时间对不上 30 小时级
+  run 中途再 OOM 的风险），cgen 改等安全大卡：b17_ctool 约 08:00 在
+  H100 gpu1 收官后落 gpu1；108 的 gpu0/gpu3 被占卡若更早释放就用先空的。
+  监控盯两个条件任一触发叫醒重发。
+- 已清理：死 session 杀净（gpu3 显存 4 MiB 空卡基线）、台账销号；失败
+  attempt 的 record start 留在 append-only 的 runs.jsonl 里，重发时再记
+  一条新 start，不冲突。
 - 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
 - e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
