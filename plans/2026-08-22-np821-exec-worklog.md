@@ -119,9 +119,47 @@ a1 停点统计：15216 事件，未截断切点 p50 60 / p90 246 / p99 572 / ma
 三堆事件数 train 4127 / dev 2556 / test_normal 8533。裁决理由四条见 TIMELINE
 当日条（预算吻合、等权下长尾支配、抽稀保深度覆盖、可逆）。
 
+## smoke 回执（2026-08-22 中午，12 格全过）
+
+判据四项（start/done/best/、ctool 加 ALIGN PASS）12 格全过，四个 ctool 的
+对齐检查全 PASS（b06_ctool 的 align_maxdiff_hidden 4.53e-05，tol 3e-4 内）。
+排卡两问的硬答案：
+
+- **48G 装不下 0.6B 全参（无检查点）**：tokyo107 上三格全 OOM（traceback
+  存档 `logs/smoke_np821b06_cparam.oom_t107.log`），挪大卡后实测峰值
+  ctool 60.2 / cgen 76.8 / cparam 76.7 GiB——差的不是一点。装下装不下的
+  分水岭是 `--grad-ckpt`，不是模型大小。
+- **48G 装得下 1.7B 全参+检查点**：峰值 ctool 35.4 / cgen 44.1 /
+  cparam 44.1 GiB，对 47.5 GiB 可用只剩 3.4 GiB 余量。
+- LoRA 显存小：l17 峰值 17.3/34.7/34.7，l4 峰值 32.1/37.6/37.6 GiB。
+- smoke 的 ips 是污染下限（区间含验证前向与 200 条生成，step 事件在 smoke
+  规模下一条都不写），不用于 ETA；ETA 基准换 p1 实跑墙钟。
+
+p1 实跑墙钟（runs.jsonl，×1 数据）：b06 在 H100 上 ctool 0.57h、cgen/cparam
+各 6.07h；b17 在 H200 上 ctool 0.55h、cgen/cparam 各 8.72h；LoRA 在 A6000 上
+只有 ctool 完成过（l17 1.53h / l4 3.53h），cgen/cparam 无 finish 记录。
+
+## 裁决 3：四批排卡与并行策略（过程性）
+
+数据 ×4.02 推算：b06 的 cgen/cparam 在 H100 约 24.4h；b17 同格在 H200 约
+35h（H100 略慢）。排布：
+
+- 现在发三批：b06 → 108 H100 idx0/1/2（唯一装得下 60–77G 峰值的空卡组）；
+  l4 → 108 H200 idx3/4/5（最大模型配最快卡）；l17 → 107 Ada idx0/1/2
+  （峰值 ≤35G 余量 13G，零 OOM 风险）。
+- b17 等 b06 跑完接它腾出的 H100 idx0/1/2（约 +24h，驱动器串行顺序正好
+  轮到它）。b17 不上 Ada：44.1G 贴 48G 只剩 3.4G，几十小时的 run 不冒
+  中途 OOM 的险。Ada idx3 留备用。
+- 驱动器只敲两次 t2（发 b06、b06 完发 b17）；l17/l4 用 launch-probe full
+  手动发（同一登记代码路径）。两次敲之外 t2 不敲，避开「部分完成批被
+  驱动器补发假 RUNMETA」（driver.py:1260-1269 注释的场景）。
+- LoRA 大卡速度无历史数据：发射后 1–2 小时从 train_log 的 step 事件取
+  实测 ips 重算 ETA 落档，跑不成立再裁（见待办）。
+
 ## 待办的裁决点（预告）
 
 - ~~标注 a1_stats 切点分布出来后裁 `max_bounds`~~（已裁：留 64，见上）。
+- ~~四批训练是否跨批并行占卡~~（已裁：三批即发 + b17 接棒，见裁决 3）。
 - 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
 - e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
