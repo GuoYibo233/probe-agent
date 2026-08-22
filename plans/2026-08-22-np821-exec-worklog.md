@@ -200,6 +200,23 @@ LoRA 跑满期间没有任何任务在等这六张卡；砍掉或缩配省不出
 三个 ctool 已全量收官并逐 run 收账（销号 + record finish）：
 b06 acc 0.6883（H100 约 1.0h）、l17 acc 0.6974（Ada 约 3.2h）、
 l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
+
+## b06 收官与 b17 接棒（2026-08-23 晨）+ 裁决 5：cgen 改道 Ada
+
+- b06 全批收官：ctool acc 0.6883、cgen best_val_ce 0.4793、cparam
+  best_val_ce 0.396，三 run 逐个销号 + record finish。epoch 边界验证
+  （val 115211 行 + 200 生成）每次约 1 小时，两格墙钟约 18h。
+- 变故：b06 腾出的 108 gpu0 与 l4_ctool 腾出的 gpu3 先后被他人进程占用
+  （gpu0 用户 glin 51.8G 已跑 7h48m；gpu3 pid 3144460 50.9G）。别人的卡
+  是禁区，不碰不等确定释放时间。
+- 裁决 5：b17 的 ctool/cparam 落 108 gpu1/gpu2（H100，正常发射 ALIVE）；
+  cgen 改道 107 Ada gpu3（备用卡）。依据：smoke 在 Ada 上实测 cgen 峰值
+  44.1G 稳定跑完，全量峰值同构（max_len 同批大小同）；等被占大卡释放
+  时长不可知。发射后 2 小时测 Ada 稳态速率：若 ETA 拖过 08-26 中午且
+  届时有大卡已释放，早期止损重发（放弃 2 小时 Ada 进度换 35h 大卡时长）。
+- 驱动器在第一次发射（gpu3 SKIP）时已打 launched 标记，补发走手动
+  launch-probe（ctool/cparam 存活 SKIP，只发 cgen），三处登记齐，
+  RUNMETA 三 run 补钉在 commit 7dbd28e。
 - 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
 - e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
