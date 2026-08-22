@@ -232,6 +232,22 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
 - 已清理：死 session 杀净（gpu3 显存 4 MiB 空卡基线）、台账销号；失败
   attempt 的 record start 留在 append-only 的 runs.jsonl 里，重发时再记
   一条新 start，不冲突。
+
+## b17_cgen 三次落位定稿（2026-08-23 07:17–07:2x）
+
+- b17_ctool 07:17 在 H100 gpu1 收官（acc 0.6867、ALIGN PASS 2.14e-04、
+  墙钟约 1.5h），销号 + record finish 完毕，gpu1 实测 0 MiB。
+- cgen 重发到 gpu1：用只含 cgen 一格的临时排卡表
+  （`$CLAUDE_JOB_DIR/tmp/np821b17_cgen_only_placement.json`，不进 git）
+  发射，避开 launch-probe 对已完成 ctool 格的「重发→守卫秒退→假登记」坑；
+  正式表 `ops/np821b17_placement.json` 的 cgen 行同步改成 108 gpu1 留档。
+- 登记实况：台账 active 有正确的新 session 条目（launch-probe 的
+  「登记失败」WARN 与实况不符，以 jobs.json 为准）；record start 复用
+  05:44 那条（commit 7dbd28e，重复 run_id 拒新增），实际发射 commit 是
+  097d81c——差异只有排卡表与 worklog，训练代码同一版，RUNMETA 第 4 条
+  钉的是 097d81c，追溯以 RUNMETA 为准。
+- 全批 12 run 的落位定格：b06=H100×3、b17 ctool/cparam=H100 gpu1/2、
+  b17 cgen=H100 gpu1（接棒 ctool）、l17=Ada×3、l4=H200×3。
 - 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
 - e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
