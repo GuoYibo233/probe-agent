@@ -156,10 +156,25 @@ p1 实跑墙钟（runs.jsonl，×1 数据）：b06 在 H100 上 ctool 0.57h、cg
 - LoRA 大卡速度无历史数据：发射后 1–2 小时从 train_log 的 step 事件取
   实测 ips 重算 ETA 落档，跑不成立再裁（见待办）。
 
+## 训练三批发射回执（2026-08-22 下午）
+
+- t1 门禁 12 格 smoke 判据全过（loss 在降一项 smoke 规模写不出 step 记录，
+  驱动器按已知口径记「没判」不拦）。
+- t2 第一敲发 np821b06 → H100 idx0/1/2，三格 ALIVE；l4 → H200 idx3/4/5、
+  l17 → Ada idx0/1/2 用 launch-probe full 手动发，六格 ALIVE。九格全部
+  record start 在 commit 1b9334f（树干净）。
+- launch-probe 不写 RUNMETA（WARN 实录），九个 run 已逐个补
+  `runmeta --kind train`，命令取自台账 cmd 字段，追溯链完整。
+- b06_cgen 的 start 记录确认全量在训：n_train 186479 / 总步数 17484
+  （批 32、3 epoch）。
+- 监控：采样器 + 30 分钟心跳（step 事件的 ips 直读），b06 三格 done 即
+  叫醒敲 t2 发 b17（接 H100 0/1/2），任何格无 done 死亡即告警。
+
 ## 待办的裁决点（预告）
 
 - ~~标注 a1_stats 切点分布出来后裁 `max_bounds`~~（已裁：留 64，见上）。
 - ~~四批训练是否跨批并行占卡~~（已裁：三批即发 + b17 接棒，见裁决 3）。
+- 裁决 4 待做：发射后 1–2 小时取 LoRA 六格实测 ips 重算 ETA，判跑不跑得成立。
 - 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
 - e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
