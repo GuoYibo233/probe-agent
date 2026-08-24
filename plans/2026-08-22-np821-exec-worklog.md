@@ -266,3 +266,13 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
 - 销号 + record finish 完毕。余 3 格：l4_cparam 在末次验证段（H200 验证
   约 2.5h，预计 08-25 晨收）；l17 cgen/cparam 在第 2 epoch 边界验证
   （Ada，预计 08-26 晨收）。
+
+## l4_cparam 收官（2026-08-25 04:5x），10/12 齐，l4 批 3/3
+
+- best_val_ce 0.3375（Qwen3-4B LoRA+gc，H200，墙钟约 64.4h）。末 epoch
+  val_ce 0.4186、val_exact_params 0.77，best/ 权重齐。销号 + record
+  finish 完毕。
+- 108 实探：gpu3/4/5 归零（l4 释放干净，且原占 gpu3 的他人进程已走）；
+  gpu0/1/2 各 34–36G 被他人占用（b17 08-24 已收官，非我方残留）。
+  预写的 eval_tool 排卡表指向 108 gpu0-3，届时按实探改排。
+- 余 2 格：l17 cgen/cparam（Ada，g11650/17484，预计 08-26 晨收）。

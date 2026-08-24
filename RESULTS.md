@@ -12,7 +12,7 @@
 | `np821l17_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | running | - | - |
 | `np821l17_gptoss_cgen` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | running | - | - |
 | `np821l17_gptoss_ctool` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | ok | best_calA_weighted_acc=0.6974 gsteps=387 align_maxdiff_hidden=0.000237 | np821l17 ctool 全量收官: best calA weighted acc 0.6974, ALIGN PASS(2.37e-04<3e-4), 墙钟约3.2h(RTX6000Ada) |
-| `np821l4_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | running | - | - |
+| `np821l4_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | ok | best_val_ce=0.3375 gsteps=17484 | np821 l4 cparam(Qwen3-4B LoRA+gc, H200) 3ep 完成, best_val_ce 0.3375, 墙钟约 64.4h |
 | `np821l4_gptoss_cgen` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | ok | best_val_ce=0.371 gsteps=17484 | np821 l4 cgen(Qwen3-4B LoRA+gc, H200) 3ep 完成, best_val_ce 0.371, 墙钟约 64.2h |
 | `np821l4_gptoss_ctool` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | ok | best_calA_weighted_acc=0.7016 gsteps=387 align_maxdiff_hidden=0.000175 | np821l4 ctool 全量收官: best calA weighted acc 0.7016, ALIGN PASS(1.75e-04<3e-4), 墙钟约3.0h(H200) |
 | `np821b06_gptoss_cparam` | 2026-08-22 12:03 | probe_np821b06 | `1b9334f` | - | ok | best_val_ce=0.396 gsteps=17484 | np821b06 cparam 全量收官: best val_ce 0.396, 3 epoch 跑满, 墙钟约18.0h(H100) |
@@ -120,9 +120,12 @@
 
 ### `np821l4_gptoss_cparam`
 
-- **方向**：probe_np821l4 ｜ **状态**：running ｜ **起止**：2026-08-22 12:04 → 未收尾
+- **结论**：np821 l4 cparam(Qwen3-4B LoRA+gc, H200) 3ep 完成, best_val_ce 0.3375, 墙钟约 64.4h
+- **方向**：probe_np821l4 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:04 → 2026-08-25 04:54
 - **代码**：`1b9334f` (分支 main)
 - **机器**：tokyo108 GPU 5
+- **数字**：best_val_ce=0.3375 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cparam`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_cparam_t108g5.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt`
 
