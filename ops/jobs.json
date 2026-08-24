@@ -1,5 +1,63 @@
 {
-  "active": [],
+  "active": [
+    {
+      "name": "np821l4_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_np821l4_gptoss_cparam_t108g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_cparam_t108g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt",
+          "launched_at": 1787367869.2432048,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "np821l17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_np821l17_gptoss_cgen_t107g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cgen_t107g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cgen --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787367883.4836519,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "np821l17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_np821l17_gptoss_cparam_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cparam_t107g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787367886.3600442,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    }
+  ],
   "history": [
     {
       "name": "hcap",
@@ -961,6 +1019,206 @@
         }
       ],
       "finished_at": "2026-08-22 11:10"
+    },
+    {
+      "name": "np821b06_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:03",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_np821b06_gptoss_ctool_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b06_gptoss_ctool_t108g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --env appworld --base qwen --base qwen --align-tol 3e-4",
+          "launched_at": 1787367830.2157955,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-22 13:32"
+    },
+    {
+      "name": "np821l17_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_np821l17_gptoss_ctool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_ctool_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --lora --grad-ckpt",
+          "launched_at": 1787367880.622869,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-22 15:02"
+    },
+    {
+      "name": "np821l4_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_np821l4_gptoss_ctool_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_ctool_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool --env appworld --base qwen --base qwen4 --align-tol 3e-4 --lora --grad-ckpt",
+          "launched_at": 1787367864.5962534,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-22 15:02"
+    },
+    {
+      "name": "np821b06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:03",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_np821b06_gptoss_cgen_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b06_gptoss_cgen_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen --env appworld --base qwen",
+          "launched_at": 1787367832.8528862,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-23 05:42"
+    },
+    {
+      "name": "np821b06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:03",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_np821b06_gptoss_cparam_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b06_gptoss_cparam_t108g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cparam --env appworld --base qwen",
+          "launched_at": 1787367835.4772313,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-23 05:42"
+    },
+    {
+      "name": "np821b17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-23 05:44",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_np821b17_gptoss_cgen_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_cgen_t107g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787431466.083027,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-23 05:51"
+    },
+    {
+      "name": "np821b17_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-23 05:42",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_np821b17_gptoss_ctool_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_ctool_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --grad-ckpt",
+          "launched_at": 1787431375.7904048,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-23 07:17"
+    },
+    {
+      "name": "np821b17_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-23 07:18",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_np821b17_gptoss_cgen_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_cgen_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787437088.5341258,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-24 15:34"
+    },
+    {
+      "name": "np821b17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-23 05:42",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_np821b17_gptoss_cparam_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_cparam_t108g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt",
+          "launched_at": 1787431379.6751194,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-24 15:34"
+    },
+    {
+      "name": "np821l4_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_np821l4_gptoss_cgen_t108g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_cgen_t108g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cgen --env appworld --base qwen4 --lora --grad-ckpt",
+          "launched_at": 1787367866.9181268,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-25 04:25"
     }
   ]
 }

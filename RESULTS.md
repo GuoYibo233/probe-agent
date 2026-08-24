@@ -6,6 +6,18 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `np821b17_gptoss_cgen` | 2026-08-23 05:44 | probe_np821b17 | `7dbd28e` | - | ok | best_val_ce=0.512 gsteps=17484 | np821b17 cgen 全量收官: best val_ce 0.512, 3 epoch 跑满, 墙钟约32.2h(H100,三次落位后) |
+| `np821b17_gptoss_cparam` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_val_ce=0.3378 gsteps=17484 | np821b17 cparam 全量收官: best val_ce 0.3378, 3 epoch 跑满, 墙钟约30.1h(H100) |
+| `np821b17_gptoss_ctool` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_calA_weighted_acc=0.6867 gsteps=387 align_maxdiff_hidden=0.000214 | np821b17 ctool 全量收官: best calA weighted acc 0.6867, ALIGN PASS(2.14e-04<3e-4), 墙钟约1.5h(H100) |
+| `np821l17_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | running | - | - |
+| `np821l17_gptoss_cgen` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | running | - | - |
+| `np821l17_gptoss_ctool` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | ok | best_calA_weighted_acc=0.6974 gsteps=387 align_maxdiff_hidden=0.000237 | np821l17 ctool 全量收官: best calA weighted acc 0.6974, ALIGN PASS(2.37e-04<3e-4), 墙钟约3.2h(RTX6000Ada) |
+| `np821l4_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | running | - | - |
+| `np821l4_gptoss_cgen` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | ok | best_val_ce=0.371 gsteps=17484 | np821 l4 cgen(Qwen3-4B LoRA+gc, H200) 3ep 完成, best_val_ce 0.371, 墙钟约 64.2h |
+| `np821l4_gptoss_ctool` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | ok | best_calA_weighted_acc=0.7016 gsteps=387 align_maxdiff_hidden=0.000175 | np821l4 ctool 全量收官: best calA weighted acc 0.7016, ALIGN PASS(1.75e-04<3e-4), 墙钟约3.0h(H200) |
+| `np821b06_gptoss_cparam` | 2026-08-22 12:03 | probe_np821b06 | `1b9334f` | - | ok | best_val_ce=0.396 gsteps=17484 | np821b06 cparam 全量收官: best val_ce 0.396, 3 epoch 跑满, 墙钟约18.0h(H100) |
+| `np821b06_gptoss_cgen` | 2026-08-22 12:03 | probe_np821b06 | `1b9334f` | - | ok | best_val_ce=0.4793 gsteps=17484 | np821b06 cgen 全量收官: best val_ce 0.4793, 3 epoch 跑满, 墙钟约17.9h(H100) |
+| `np821b06_gptoss_ctool` | 2026-08-22 12:03 | probe_np821b06 | `1b9334f` | - | ok | best_calA_weighted_acc=0.6883 gsteps=387 align_maxdiff_hidden=9.78e-05 | np821b06 ctool 全量收官: best calA weighted acc 0.6883, ALIGN PASS(9.78e-05<3e-4), 墙钟约1.0h(H100) |
 | `nyapass` | 2026-08-22 05:49 | collect_nyapass | `a8566db` | gpt-oss-120b | ok | trajs=1260 units=315 steps30_hit=41 | - |
 | `eval_p1b17_gptoss_cparam` | 2026-08-21 21:42 | eval_p1b17 | `9b1e660` | - | ok | risk=0.1 theta=0.925 n_scored=818 pred_tool_full_call_ok=0.7066 pred_tool_params_all_ok=0.7543 gt_tool_params_all_ok=0.7702 noparam_rate=0.3178 | p1b17 cparam评测(risk 0.1,theta 0.925):818事件,pred_tool full_call_ok 0.7066/params_all_ok 0.7543,gt_tool params 0.7702 |
 | `eval_p1b17_gptoss_cgen` | 2026-08-21 21:41 | eval_p1b17 | `9b1e660` | - | ok | risk=0.1 theta=0.925 n_scored=818 parse_fail=0 tool_ok=0.8998 params_all_ok=0.7494 full_call_ok=0.7066 | p1b17 cgen评测(risk 0.1,theta 0.925):818事件,parse_fail 0,tool_ok 0.8998,full_call_ok 0.7066 |
@@ -45,6 +57,129 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `np821b17_gptoss_cgen`
+
+- **结论**：np821b17 cgen 全量收官: best val_ce 0.512, 3 epoch 跑满, 墙钟约32.2h(H100,三次落位后)
+- **方向**：probe_np821b17 ｜ **状态**：ok ｜ **起止**：2026-08-23 05:44 → 2026-08-24 15:34
+- **代码**：`7dbd28e` (分支 main)
+- **机器**：tokyo107 GPU 3
+- **数字**：best_val_ce=0.512 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_cgen_t107g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen --env appworld --base qwen17 --grad-ckpt`
+
+### `np821b17_gptoss_cparam`
+
+- **结论**：np821b17 cparam 全量收官: best val_ce 0.3378, 3 epoch 跑满, 墙钟约30.1h(H100)
+- **方向**：probe_np821b17 ｜ **状态**：ok ｜ **起止**：2026-08-23 05:42 → 2026-08-24 15:34
+- **代码**：`63884f2` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **数字**：best_val_ce=0.3378 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cparam`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_cparam_t108g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cparam --env appworld --base qwen17 --grad-ckpt`
+
+### `np821b17_gptoss_ctool`
+
+- **结论**：np821b17 ctool 全量收官: best calA weighted acc 0.6867, ALIGN PASS(2.14e-04<3e-4), 墙钟约1.5h(H100)
+- **方向**：probe_np821b17 ｜ **状态**：ok ｜ **起止**：2026-08-23 05:42 → 2026-08-23 07:17
+- **代码**：`63884f2` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **数字**：best_calA_weighted_acc=0.6867 gsteps=387 align_maxdiff_hidden=0.000214
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821b17_gptoss_ctool_t108g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --grad-ckpt`
+
+### `np821l17_gptoss_cparam`
+
+- **方向**：probe_np821l17 ｜ **状态**：running ｜ **起止**：2026-08-22 12:04 → 未收尾
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo107 GPU 2
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cparam_t107g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt`
+
+### `np821l17_gptoss_cgen`
+
+- **方向**：probe_np821l17 ｜ **状态**：running ｜ **起止**：2026-08-22 12:04 → 未收尾
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo107 GPU 1
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cgen_t107g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cgen --env appworld --base qwen17 --lora --grad-ckpt`
+
+### `np821l17_gptoss_ctool`
+
+- **结论**：np821l17 ctool 全量收官: best calA weighted acc 0.6974, ALIGN PASS(2.37e-04<3e-4), 墙钟约3.2h(RTX6000Ada)
+- **方向**：probe_np821l17 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:04 → 2026-08-22 15:02
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：best_calA_weighted_acc=0.6974 gsteps=387 align_maxdiff_hidden=0.000237
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_ctool_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool --env appworld --base qwen --base qwen17 --align-tol 3e-4 --lora --grad-ckpt`
+
+### `np821l4_gptoss_cparam`
+
+- **方向**：probe_np821l4 ｜ **状态**：running ｜ **起止**：2026-08-22 12:04 → 未收尾
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo108 GPU 5
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_cparam_t108g5.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cparam --env appworld --base qwen4 --lora --grad-ckpt`
+
+### `np821l4_gptoss_cgen`
+
+- **结论**：np821 l4 cgen(Qwen3-4B LoRA+gc, H200) 3ep 完成, best_val_ce 0.371, 墙钟约 64.2h
+- **方向**：probe_np821l4 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:04 → 2026-08-25 04:25
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo108 GPU 4
+- **数字**：best_val_ce=0.371 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_cgen_t108g4.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cgen --env appworld --base qwen4 --lora --grad-ckpt`
+
+### `np821l4_gptoss_ctool`
+
+- **结论**：np821l4 ctool 全量收官: best calA weighted acc 0.7016, ALIGN PASS(1.75e-04<3e-4), 墙钟约3.0h(H200)
+- **方向**：probe_np821l4 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:04 → 2026-08-22 15:02
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：best_calA_weighted_acc=0.7016 gsteps=387 align_maxdiff_hidden=0.000175
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l4_gptoss_ctool_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool --env appworld --base qwen --base qwen4 --align-tol 3e-4 --lora --grad-ckpt`
+
+### `np821b06_gptoss_cparam`
+
+- **结论**：np821b06 cparam 全量收官: best val_ce 0.396, 3 epoch 跑满, 墙钟约18.0h(H100)
+- **方向**：probe_np821b06 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:03 → 2026-08-23 05:42
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **数字**：best_val_ce=0.396 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cparam`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821b06_gptoss_cparam_t108g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cparam --env appworld --base qwen`
+
+### `np821b06_gptoss_cgen`
+
+- **结论**：np821b06 cgen 全量收官: best val_ce 0.4793, 3 epoch 跑满, 墙钟约17.9h(H100)
+- **方向**：probe_np821b06 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:03 → 2026-08-23 05:42
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **数字**：best_val_ce=0.4793 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821b06_gptoss_cgen_t108g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_callgen.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen --env appworld --base qwen`
+
+### `np821b06_gptoss_ctool`
+
+- **结论**：np821b06 ctool 全量收官: best calA weighted acc 0.6883, ALIGN PASS(9.78e-05<3e-4), 墙钟约1.0h(H100)
+- **方向**：probe_np821b06 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:03 → 2026-08-22 13:32
+- **代码**：`1b9334f` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：best_calA_weighted_acc=0.6883 gsteps=387 align_maxdiff_hidden=9.78e-05
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821b06_gptoss_ctool_t108g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --env appworld --base qwen --base qwen --align-tol 3e-4`
 
 ### `nyapass`
 

@@ -251,3 +251,18 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
 - 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
 - LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
 - e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
+
+## b17 两格收官（2026-08-24 15:34）
+
+- cgen best_val_ce 0.512（H100 gpu1 接棒 ctool，含改道折腾，从 097d81c
+  重发算起墙钟约 32.2h）；cparam best_val_ce 0.3378（H100 gpu2，约 30.1h）。
+- 两 run 逐个销号 + record finish，b17 批 3/3 齐。全参两批（b06/b17）
+  六格全部收官。
+
+## l4_cgen 收官（2026-08-25 04:25），9/12 齐
+
+- best_val_ce 0.371（Qwen3-4B LoRA+gc，H200，墙钟约 64.2h）。末 epoch
+  val_ce 0.5716 比 best 差，best/ 取自更早 epoch，权重文件齐。
+- 销号 + record finish 完毕。余 3 格：l4_cparam 在末次验证段（H200 验证
+  约 2.5h，预计 08-25 晨收）；l17 cgen/cparam 在第 2 epoch 边界验证
+  （Ada，预计 08-26 晨收）。
