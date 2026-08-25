@@ -6,6 +6,10 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `eval_np821l4_gptoss_ctool` | 2026-08-26 03:58 | eval_np821l4 | `1edd5ae` | - | running | - | - |
+| `eval_np821l17_gptoss_ctool` | 2026-08-26 03:58 | eval_np821l17 | `1edd5ae` | - | running | - | - |
+| `eval_np821b17_gptoss_ctool` | 2026-08-26 03:58 | eval_np821b17 | `1edd5ae` | - | running | - | - |
+| `eval_np821b06_gptoss_ctool` | 2026-08-26 03:58 | eval_np821b06 | `1edd5ae` | - | running | - | - |
 | `np821b17_gptoss_cgen` | 2026-08-23 05:44 | probe_np821b17 | `7dbd28e` | - | ok | best_val_ce=0.512 gsteps=17484 | np821b17 cgen 全量收官: best val_ce 0.512, 3 epoch 跑满, 墙钟约32.2h(H100,三次落位后) |
 | `np821b17_gptoss_cparam` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_val_ce=0.3378 gsteps=17484 | np821b17 cparam 全量收官: best val_ce 0.3378, 3 epoch 跑满, 墙钟约30.1h(H100) |
 | `np821b17_gptoss_ctool` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_calA_weighted_acc=0.6867 gsteps=387 align_maxdiff_hidden=0.000214 | np821b17 ctool 全量收官: best calA weighted acc 0.6867, ALIGN PASS(2.14e-04<3e-4), 墙钟约1.5h(H100) |
@@ -57,6 +61,38 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `eval_np821l4_gptoss_ctool`
+
+- **方向**：eval_np821l4 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
+- **代码**：`1edd5ae` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821l4_gptoss_ctool.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --head causal`
+
+### `eval_np821l17_gptoss_ctool`
+
+- **方向**：eval_np821l17 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
+- **代码**：`1edd5ae` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821l17_gptoss_ctool.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --head causal`
+
+### `eval_np821b17_gptoss_ctool`
+
+- **方向**：eval_np821b17 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
+- **代码**：`1edd5ae` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b17_gptoss_ctool.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --head causal`
+
+### `eval_np821b06_gptoss_ctool`
+
+- **方向**：eval_np821b06 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
+- **代码**：`1edd5ae` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_ctool.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --head causal`
 
 ### `np821b17_gptoss_cgen`
 

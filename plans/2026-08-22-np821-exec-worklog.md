@@ -290,3 +290,37 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   git 提交各自只 add 自己动的文件。
 - 分支 03:5x 实探：108 六卡全空、105 八卡全空（此前占 108 gpu0/1/2 的
   他人进程已走），评测优先用 108。
+
+## 裁决 7：评测不另做 smoke，用发射验活 + 首进度行代替（分支会话，2026-08-26 03:5x）
+
+- 事实：驱动器 e1/e2/m1 的完成判据只看产物文件（各批 ctool 的
+  REPLAY_REPORT.json、cgen/cparam 的 CALLGEN/PARAM_REPORT.json、
+  MATRIX md），不看 state.json 的发射标记；t2_full 要 12 格全齐才放行。
+  所以现在用 `launch-eval` 直接评已训完的格，之后驱动器敲到评测段会
+  直接认作完成，不冲突（skill C4 本来就写着"逐格收官逐格派评测"）。
+- 裁决：不另做评测 smoke。依据：同一版评测代码在 p1 的 b06/b17 两批
+  （0.6B、1.7B 底座）全量跑通过；三个训练脚本存 best/ 前都
+  merge_and_unload，LoRA 格 best/ 与全参格逐项同构（l4 model.safetensors
+  16.09G、l17 6.88G，都是合并后整模），评测脚本一律 from_pretrained(best/)
+  零改动装回；cgen/cparam 评测的数据三方对拍（头 meta.data / --data /
+  ctool meta.data）都指向 nyapass_aw_v1/gptoss。用 `--limit` 做 smoke 要
+  复制 16G 的 run 目录，代价高于收益。替代验证点 = 发射 30 秒验活 +
+  首条 @hb 进度行。
+
+## 评测发射回执：四批 ctool（2026-08-26 03:58）
+
+- `launch-eval tool` 逐批发：b06→108 gpu0（H100）、b17→gpu1（H100）、
+  l17→gpu2（H100）、l4→gpu3（H200），四格 ALIVE，record start 钉
+  commit 1edd5ae（树干净），run_id `eval_np821{b06,b17,l17,l4}_gptoss_ctool`。
+- 验证点过：四格权重装完后 100 秒内都到 @hb 100/2556（先评 dev 堆
+  2556 事件，再评 test 堆 8533 事件）。
+- **RUNMETA WARN 文案与实况不符（要回写 skill）**：launch-eval 打
+  "没给 --outdir，RUNMETA 没写"，但它随后自己往 `<run>/RUNMETA.json`
+  的 `launches` 追加了一条 kind=eval_tool（03:58:10，带 session/gpu/
+  log/排卡表）。按 WARN 手补 `run.py runmeta` 的那条（03:59:07）成了
+  重复项。回看训练 run 同样：launch-probe 的 12:03:50 条 + 手补的
+  12:05:20 条。重复项无害（追溯链只多不少），以后 launch-probe /
+  launch-eval 发射后**不再手补 runmeta**，改为读 RUNMETA 核实。
+- 监控 b8phu882x：REPLAY_REPORT 落地/日志出错叫醒，30 分钟心跳。
+  报告落地后读 chosen_theta 定风险档、写 eval_call 排卡表、发
+  b06/b17/l4 的 cgen/cparam 评测；l17 的 call 档等母会话通知训练收官。
