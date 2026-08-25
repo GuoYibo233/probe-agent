@@ -8,8 +8,8 @@
 |---|---|---|---|---|---|---|---|
 | `eval_np821l4_gptoss_cparam` | 2026-08-26 04:47 | eval_np821l4 | `15c90e8` | - | running | - | - |
 | `eval_np821l4_gptoss_cgen` | 2026-08-26 04:46 | eval_np821l4 | `15c90e8` | - | running | - | - |
-| `eval_np821b17_gptoss_cparam` | 2026-08-26 04:40 | eval_np821b17 | `e6d1a39` | - | running | - | - |
-| `eval_np821b17_gptoss_cgen` | 2026-08-26 04:40 | eval_np821b17 | `e6d1a39` | - | running | - | - |
+| `eval_np821b17_gptoss_cparam` | 2026-08-26 04:40 | eval_np821b17 | `e6d1a39` | - | ok | risk=0.05 theta=0.975 n_scored=2806 parse_fail=0 pred_tool_ok=0.9533 pred_params_all_ok=0.8795 pred_full_call_ok=0.8525 pred_exact_call_ok=0.8521 pred_param_acc=0.8116 gt_params_all_ok=0.8902 gt_param_acc=0.864 noparam_rate=0.3977 | np821b17 cparam 评测(risk 0.05, θ 0.975): 2806 触发事件, parse_fail 0, pred_tool full_call_ok 0.8525/params_all_ok 0.8795, gt_tool params_all_ok 0.8902, H100 约 27 分钟 |
+| `eval_np821b17_gptoss_cgen` | 2026-08-26 04:40 | eval_np821b17 | `e6d1a39` | - | ok | risk=0.05 theta=0.975 n_scored=2806 parse_fail=0 tool_ok=0.9006 params_all_ok=0.8254 full_call_ok=0.7887 exact_call_ok=0.7876 param_acc=0.6927 noparam_rate=0.3977 | np821b17 cgen 评测(risk 0.05, θ 0.975): 2806 触发事件, parse_fail 0, tool_ok 0.9006, params_all_ok 0.8254, full_call_ok 0.7887, H100 约 26 分钟 |
 | `eval_np821b06_gptoss_cparam` | 2026-08-26 04:38 | eval_np821b06 | `d4ff119` | - | ok | risk=0.05 theta=0.975 n_scored=2227 parse_fail=0 pred_tool_ok=0.9529 pred_params_all_ok=0.9026 pred_full_call_ok=0.8752 pred_exact_call_ok=0.8765 pred_param_acc=0.8182 gt_params_all_ok=0.9106 gt_param_acc=0.8693 noparam_rate=0.467 | np821b06 cparam 评测(risk 0.05, θ 0.975): 2227 触发事件, parse_fail 0, pred_tool full_call_ok 0.8752/params_all_ok 0.9026, gt_tool params_all_ok 0.9106, H200 约 22 分钟 |
 | `eval_np821b06_gptoss_cgen` | 2026-08-26 04:38 | eval_np821b06 | `d4ff119` | - | ok | risk=0.05 theta=0.975 n_scored=2227 parse_fail=0 tool_ok=0.9057 params_all_ok=0.8702 full_call_ok=0.8276 exact_call_ok=0.8289 param_acc=0.7406 noparam_rate=0.467 | np821b06 cgen 评测(risk 0.05, θ 0.975): 2227 触发事件, parse_fail 0, tool_ok 0.9057, params_all_ok 0.8702, full_call_ok 0.8276, H200 约 23 分钟 |
 | `eval_np821l4_gptoss_ctool` | 2026-08-26 03:58 | eval_np821l4 | `1edd5ae` | - | ok | theta_005=0.975 theta_01=0.875 coverage=0.2569 trig_acc=0.9599 earliness=0.3886 wrong_spec=0.0103 temperature=1.2704 prior_acc=0.3867 n_events_test=8533 | np821l4 ctool 评测出报告, 0.05 档 θ=0.975(0.1 档 0.875), test 冻结 0.05 档 coverage 0.2569 trig_acc 0.9599 earliness 0.3886 wrong_spec 0.0103, H200 约 48 分钟 |
@@ -86,17 +86,23 @@
 
 ### `eval_np821b17_gptoss_cparam`
 
-- **方向**：eval_np821b17 ｜ **状态**：running ｜ **起止**：2026-08-26 04:40 → 未收尾
+- **结论**：np821b17 cparam 评测(risk 0.05, θ 0.975): 2806 触发事件, parse_fail 0, pred_tool full_call_ok 0.8525/params_all_ok 0.8795, gt_tool params_all_ok 0.8902, H100 约 27 分钟
+- **方向**：eval_np821b17 ｜ **状态**：ok ｜ **起止**：2026-08-26 04:40 → 2026-08-26 05:08
 - **代码**：`e6d1a39` (分支 main)
 - **机器**：tokyo108 GPU 1
+- **数字**：risk=0.05 theta=0.975 n_scored=2806 parse_fail=0 pred_tool_ok=0.9533 pred_params_all_ok=0.8795 pred_full_call_ok=0.8525 pred_exact_call_ok=0.8521 pred_param_acc=0.8116 gt_params_all_ok=0.8902 gt_param_acc=0.864 noparam_rate=0.3977
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cparam`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b17_gptoss_cparam.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss`
 
 ### `eval_np821b17_gptoss_cgen`
 
-- **方向**：eval_np821b17 ｜ **状态**：running ｜ **起止**：2026-08-26 04:40 → 未收尾
+- **结论**：np821b17 cgen 评测(risk 0.05, θ 0.975): 2806 触发事件, parse_fail 0, tool_ok 0.9006, params_all_ok 0.8254, full_call_ok 0.7887, H100 约 26 分钟
+- **方向**：eval_np821b17 ｜ **状态**：ok ｜ **起止**：2026-08-26 04:40 → 2026-08-26 05:07
 - **代码**：`e6d1a39` (分支 main)
 - **机器**：tokyo108 GPU 0
+- **数字**：risk=0.05 theta=0.975 n_scored=2806 parse_fail=0 tool_ok=0.9006 params_all_ok=0.8254 full_call_ok=0.7887 exact_call_ok=0.7876 param_acc=0.6927 noparam_rate=0.3977
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b17_gptoss_cgen.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss`
 

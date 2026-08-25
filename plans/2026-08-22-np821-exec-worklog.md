@@ -373,3 +373,20 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   （2079 个实例）；gt_tool 口径 params_all_ok 0.9106 / 参数实例准确率
   0.8693（1997 个实例）。
 - 两格销号 + record finish（run_id `eval_np821b06_gptoss_{cgen,cparam}`）。
+- b06 两档矩阵已出：`pipeline/runs/MATRIX_np821b06_r0.05.md` / `_r0.1.md`
+  （NFS 产物目录，驱动器 m1 同款命令与文件名）。矩阵脚本两条已知显示
+  局限这次都出现：m 线两格（本批没训）标 PENDING；0.1 档表里 cgen/cparam
+  两行仍是 0.05 档触发点（θ 0.975）的数——引用 0.1 档表必须配文字说明。
+
+## b17 call 档收官（2026-08-26 05:06–05:0x），b17 批三格评测齐
+
+- 两格都是 risk 0.05、θ 0.975、触发 2806 = 评分 2806 个 test 事件、
+  parse_fail 0、无参数事件占 0.3977。H100 上 cgen 约 26 分钟、cparam
+  约 27 分钟。
+- cgen：tool_ok 0.9006 / params_all_ok 0.8254 / full_call_ok 0.7887 /
+  exact_call_ok 0.7876 / 参数实例准确率 0.6927（3095 个实例）。
+- cparam：pred_tool 口径 tool_ok 0.9533 / params_all_ok 0.8795 /
+  full_call_ok 0.8525 / exact_call_ok 0.8521 / 参数实例准确率 0.8116
+  （2957 个实例）；gt_tool 口径 params_all_ok 0.8902 / 参数实例准确率
+  0.864（2830 个实例）。
+- 两格销号 + record finish；b17 两档矩阵随后出。
