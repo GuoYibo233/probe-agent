@@ -349,3 +349,14 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   未手补。
 - 监控 b7pufajd8 盯 call 档（读台账自动纳入新发的格）。l4 ctool 报告
   未落（H200 上 4B 慢一档），落地后 call 档落 gpu2/gpu3。
+
+## l4 ctool 收官 + call 档发射（2026-08-26 04:46–04:50），四批 ctool 评测齐
+
+- l4 REPLAY_REPORT（test 冻结 n=8533）：θ(0.05)=0.975、θ(0.1)=0.875；
+  0.05 档 coverage 0.2569 / trig_acc 0.9599 / earliness 0.3886 /
+  wrong_spec 0.0103；温度 1.2704。0.05 有解 → 缺省档。销号 + record
+  finish（H200 约 48 分钟）。
+- l4 call 档 04:50 发 108 gpu2（cgen，H100）/ gpu3（cparam，H200——两遍
+  生成给快卡），ALIVE，钉 15c90e8。至此 108 六卡跑 b06/b17/l4 六个
+  call 档评测；四批 ctool 评测报告全在，驱动器 e1_tool 判据已满足。
+- 四批 0.05 档 θ 全部有解，e2 的 `--risk 0.1` 退让条款一次都没触发。
