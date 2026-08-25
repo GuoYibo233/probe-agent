@@ -324,3 +324,28 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
 - 监控 b8phu882x：REPLAY_REPORT 落地/日志出错叫醒，30 分钟心跳。
   报告落地后读 chosen_theta 定风险档、写 eval_call 排卡表、发
   b06/b17/l4 的 cgen/cparam 评测；l17 的 call 档等母会话通知训练收官。
+
+## ctool 评测收官 ×3 + call 档发射 ×2（2026-08-26 04:37–04:45）
+
+- 速率实测：评测按事件走（dev 2556 + test 8533 事件），H100 上 0.6B/1.7B
+  各约 4.6–4.8 事件/秒，H200 上 4B 约 3.7 事件/秒；一批 ctool 评测约
+  40 分钟，远快于按 p1 样本行数外推的 2–3 小时。
+- 三批 REPLAY_REPORT（test 冻结，n=8533，先验基线 0.3867）：
+
+  | 批 | θ(0.05) | θ(0.1) | 0.05 档 coverage / trig_acc / earliness / wrong_spec | 温度 |
+  |---|---|---|---|---|
+  | b06 | 0.975 | 0.9 | 0.261 / 0.9529 / 0.565 / 0.0123 | 1.1959 |
+  | b17 | 0.975 | 0.925 | 0.3288 / 0.9533 / 0.4758 / 0.0154 | 1.2359 |
+  | l17 | 0.95 | 0.85 | 0.3401 / 0.9476 / 0.5042 / 0.0178 | 1.24 |
+
+  三批 0.05 档都有解，call 档一律缺省风险档（不加 --risk）。
+  三格逐个销号 + record finish（run_id `eval_np821<b>_gptoss_ctool`）。
+- b06 call 档 04:38 发 108 gpu4/gpu5（H200），b17 call 档 04:45 发
+  gpu0/gpu1（H100），四格 ALIVE；排卡表
+  `ops/np821{b06,b17}_eval_call_placement.json` 随台账一起提交
+  （d4ff119 / e6d1a39）。b06 两格 40 秒内出首进度：cgen 8/2227、
+  cparam 16/2227（2227 = θ=0.975 触发的 test 事件数；cparam 跑
+  gt_tool / pred_tool 两遍）。RUNMETA 的 eval_call 条由 launch-eval 自写，
+  未手补。
+- 监控 b7pufajd8 盯 call 档（读台账自动纳入新发的格）。l4 ctool 报告
+  未落（H200 上 4B 慢一档），落地后 call 档落 gpu2/gpu3。
