@@ -390,3 +390,19 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   （2957 个实例）；gt_tool 口径 params_all_ok 0.8902 / 参数实例准确率
   0.864（2830 个实例）。
 - 两格销号 + record finish；b17 两档矩阵随后出。
+
+## l4 call 档收官（2026-08-26 05:13–05:1x），l4 批三格评测齐；108 六卡归零
+
+- 两格都是 risk 0.05、θ 0.975、触发 2192 = 评分 2192 个 test 事件、
+  parse_fail 0、无参数事件占 0.3828。cgen（H100）约 23 分钟、cparam
+  （H200）约 24 分钟。
+- cgen：tool_ok 0.9056 / params_all_ok 0.8472 / full_call_ok 0.8294 /
+  exact_call_ok 0.8271 / 参数实例准确率 0.7291（2676 个实例）。
+- cparam：pred_tool 口径 tool_ok 0.9599 / params_all_ok 0.8828 /
+  full_call_ok 0.8654 / exact_call_ok 0.8645 / 参数实例准确率 0.8251
+  （2590 个实例）；gt_tool 口径 params_all_ok 0.8969 / 参数实例准确率
+  0.8794（2488 个实例）。
+- 两格销号 + record finish。108 实探：评测 session 清零、六卡显存全
+  0 MiB（G7 过）。评测线台账 active 里 np821 相关条目清空。
+- 已训完 10 格的评测至此全部收官（4 个 ctool + 6 个 call 档）；剩 l17
+  的 cgen/cparam 评测等母会话通知训练收官。
