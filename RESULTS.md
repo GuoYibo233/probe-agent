@@ -6,9 +6,11 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `eval_np821b06_gptoss_cparam` | 2026-08-26 04:38 | eval_np821b06 | `d4ff119` | - | running | - | - |
+| `eval_np821b06_gptoss_cgen` | 2026-08-26 04:38 | eval_np821b06 | `d4ff119` | - | running | - | - |
 | `eval_np821l4_gptoss_ctool` | 2026-08-26 03:58 | eval_np821l4 | `1edd5ae` | - | running | - | - |
-| `eval_np821l17_gptoss_ctool` | 2026-08-26 03:58 | eval_np821l17 | `1edd5ae` | - | running | - | - |
-| `eval_np821b17_gptoss_ctool` | 2026-08-26 03:58 | eval_np821b17 | `1edd5ae` | - | running | - | - |
+| `eval_np821l17_gptoss_ctool` | 2026-08-26 03:58 | eval_np821l17 | `1edd5ae` | - | ok | theta_005=0.95 theta_01=0.85 coverage=0.3401 trig_acc=0.9476 earliness=0.5042 wrong_spec=0.0178 temperature=1.24 prior_acc=0.3867 n_events_test=8533 | np821l17 ctool 评测出报告, 0.05 档 θ=0.95(0.1 档 0.85), test 冻结 0.05 档 coverage 0.3401 trig_acc 0.9476 earliness 0.5042 wrong_spec 0.0178, H100 约 41 分钟 |
+| `eval_np821b17_gptoss_ctool` | 2026-08-26 03:58 | eval_np821b17 | `1edd5ae` | - | ok | theta_005=0.975 theta_01=0.925 coverage=0.3288 trig_acc=0.9533 earliness=0.4758 wrong_spec=0.0154 temperature=1.2359 prior_acc=0.3867 n_events_test=8533 | np821b17 ctool 评测出报告, 0.05 档 θ=0.975(0.1 档 0.925), test 冻结 0.05 档 coverage 0.3288 trig_acc 0.9533 earliness 0.4758 wrong_spec 0.0154, H100 约 41 分钟 |
 | `eval_np821b06_gptoss_ctool` | 2026-08-26 03:58 | eval_np821b06 | `1edd5ae` | - | ok | theta_005=0.975 theta_01=0.9 coverage=0.261 trig_acc=0.9529 earliness=0.565 wrong_spec=0.0123 temperature=1.1959 prior_acc=0.3867 n_events_test=8533 | np821b06 ctool 评测出报告, 0.05 档 θ=0.975(0.1 档 0.9), test 冻结 0.05 档 coverage 0.261 trig_acc 0.9529 earliness 0.565 wrong_spec 0.0123, H100 约 38 分钟 |
 | `np821b17_gptoss_cgen` | 2026-08-23 05:44 | probe_np821b17 | `7dbd28e` | - | ok | best_val_ce=0.512 gsteps=17484 | np821b17 cgen 全量收官: best val_ce 0.512, 3 epoch 跑满, 墙钟约32.2h(H100,三次落位后) |
 | `np821b17_gptoss_cparam` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_val_ce=0.3378 gsteps=17484 | np821b17 cparam 全量收官: best val_ce 0.3378, 3 epoch 跑满, 墙钟约30.1h(H100) |
@@ -62,6 +64,22 @@
 
 ## 逐条详情
 
+### `eval_np821b06_gptoss_cparam`
+
+- **方向**：eval_np821b06 ｜ **状态**：running ｜ **起止**：2026-08-26 04:38 → 未收尾
+- **代码**：`d4ff119` (分支 main)
+- **机器**：tokyo108 GPU 5
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_cparam.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss`
+
+### `eval_np821b06_gptoss_cgen`
+
+- **方向**：eval_np821b06 ｜ **状态**：running ｜ **起止**：2026-08-26 04:38 → 未收尾
+- **代码**：`d4ff119` (分支 main)
+- **机器**：tokyo108 GPU 4
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_cgen.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss`
+
 ### `eval_np821l4_gptoss_ctool`
 
 - **方向**：eval_np821l4 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
@@ -72,17 +90,23 @@
 
 ### `eval_np821l17_gptoss_ctool`
 
-- **方向**：eval_np821l17 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
+- **结论**：np821l17 ctool 评测出报告, 0.05 档 θ=0.95(0.1 档 0.85), test 冻结 0.05 档 coverage 0.3401 trig_acc 0.9476 earliness 0.5042 wrong_spec 0.0178, H100 约 41 分钟
+- **方向**：eval_np821l17 ｜ **状态**：ok ｜ **起止**：2026-08-26 03:58 → 2026-08-26 04:39
 - **代码**：`1edd5ae` (分支 main)
 - **机器**：tokyo108 GPU 2
+- **数字**：theta_005=0.95 theta_01=0.85 coverage=0.3401 trig_acc=0.9476 earliness=0.5042 wrong_spec=0.0178 temperature=1.24 prior_acc=0.3867 n_events_test=8533
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821l17_gptoss_ctool.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --head causal`
 
 ### `eval_np821b17_gptoss_ctool`
 
-- **方向**：eval_np821b17 ｜ **状态**：running ｜ **起止**：2026-08-26 03:58 → 未收尾
+- **结论**：np821b17 ctool 评测出报告, 0.05 档 θ=0.975(0.1 档 0.925), test 冻结 0.05 档 coverage 0.3288 trig_acc 0.9533 earliness 0.4758 wrong_spec 0.0154, H100 约 41 分钟
+- **方向**：eval_np821b17 ｜ **状态**：ok ｜ **起止**：2026-08-26 03:58 → 2026-08-26 04:39
 - **代码**：`1edd5ae` (分支 main)
 - **机器**：tokyo108 GPU 1
+- **数字**：theta_005=0.975 theta_01=0.925 coverage=0.3288 trig_acc=0.9533 earliness=0.4758 wrong_spec=0.0154 temperature=1.2359 prior_acc=0.3867 n_events_test=8533
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821b17_gptoss_ctool.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --head causal`
 
