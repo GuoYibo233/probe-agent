@@ -360,3 +360,16 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   生成给快卡），ALIVE，钉 15c90e8。至此 108 六卡跑 b06/b17/l4 六个
   call 档评测；四批 ctool 评测报告全在，驱动器 e1_tool 判据已满足。
 - 四批 0.05 档 θ 全部有解，e2 的 `--risk 0.1` 退让条款一次都没触发。
+
+## b06 call 档收官（2026-08-26 05:00–05:0x），b06 批三格评测齐
+
+- 两格都是 risk 0.05、θ 0.975、触发 2227 = 评分 2227 个 test 事件、
+  parse_fail 0、无参数事件占 0.467。H200 上 cparam 约 22 分钟、cgen
+  约 23 分钟（生成速率 1.1–1.4 条/秒）。
+- cgen：tool_ok 0.9057 / params_all_ok 0.8702 / full_call_ok 0.8276 /
+  exact_call_ok 0.8289 / 参数实例准确率 0.7406（2120 个参数实例）。
+- cparam：pred_tool 口径 tool_ok 0.9529 / params_all_ok 0.9026 /
+  full_call_ok 0.8752 / exact_call_ok 0.8765 / 参数实例准确率 0.8182
+  （2079 个实例）；gt_tool 口径 params_all_ok 0.9106 / 参数实例准确率
+  0.8693（1997 个实例）。
+- 两格销号 + record finish（run_id `eval_np821b06_gptoss_{cgen,cparam}`）。

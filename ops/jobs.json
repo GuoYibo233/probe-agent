@@ -39,44 +39,6 @@
       ]
     },
     {
-      "name": "eval_np821b06_gptoss_cgen",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-26 04:38",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "4",
-          "session": "eval_np821b06_gptoss_cgen",
-          "log": "/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_cgen.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
-          "launched_at": 1787686686.755824,
-          "kind": "eval_call",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
-      "name": "eval_np821b06_gptoss_cparam",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-26 04:38",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "5",
-          "session": "eval_np821b06_gptoss_cparam",
-          "log": "/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_cparam.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
-          "launched_at": 1787686689.063204,
-          "kind": "eval_call",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    },
-    {
       "name": "eval_np821b17_gptoss_cgen",
       "workdir": "/home/y-guo/reproduce/new1",
       "note": null,
@@ -108,6 +70,44 @@
           "log": "/home/y-guo/reproduce/new1/logs/eval_np821b17_gptoss_cparam.log",
           "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
           "launched_at": 1787686808.2915154,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "eval_np821l4_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-26 04:46",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "eval_np821l4_gptoss_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_np821l4_gptoss_cgen.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cgen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
+          "launched_at": 1787687219.6789484,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "eval_np821l4_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-26 04:47",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "eval_np821l4_gptoss_cparam",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_np821l4_gptoss_cparam.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
+          "launched_at": 1787687222.0022693,
           "kind": "eval_call",
           "stall_line": null,
           "escalate_line": null
@@ -1376,6 +1376,46 @@
         }
       ],
       "finished_at": "2026-08-26 04:46"
+    },
+    {
+      "name": "eval_np821b06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-26 04:38",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "eval_np821b06_gptoss_cparam",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_cparam.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
+          "launched_at": 1787686689.063204,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-26 05:01"
+    },
+    {
+      "name": "eval_np821b06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-26 04:38",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "eval_np821b06_gptoss_cgen",
+          "log": "/home/y-guo/reproduce/new1/logs/eval_np821b06_gptoss_cgen.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss",
+          "launched_at": 1787686686.755824,
+          "kind": "eval_call",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-26 05:02"
     }
   ]
 }
