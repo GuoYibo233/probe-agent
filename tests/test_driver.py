@@ -1272,7 +1272,9 @@ class TestRealConfigs(unittest.TestCase):
         self.assertEqual(cfg["weight_mode"], "uniform")
         self.assertEqual(cfg["trajs_per_unit"], 4)
         self.assertEqual(cfg["collect"]["seeds"], [42, 67, 4267, 6742])
-        self.assertNotIn("max_bounds", cfg)      # a1 的停点靠这个
+        # a1 停点 2026-08-22 已裁(裁决 2):留 64 也必须显式写进配置,驱动器
+        # 从此按这个值造数据;缺了它 a1 会再次停下等裁决。
+        self.assertEqual(cfg["max_bounds"], 64)
         for p in cfg["official_split_files"].values():
             self.assertTrue(Path(p).is_file(), p)
         self.assertTrue(D.manifest_path(cfg).is_file())

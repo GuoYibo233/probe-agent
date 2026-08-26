@@ -80,8 +80,17 @@ smoke 也可以先用 `python3 run.py launch <task> ... --dry-run` 看每个分�
    的不回滚也不登记，失败会把每个失败分片的日志末 40 行打出来）→ 台账
    `ops/jobs.json`、实验记录 `ops/runs.jsonl`（经 `record.py start` 子进程）、
    产物目录 `RUNMETA.json` 三处登记一次做完（`ops/launch_common.py`
-   `register_all`，顺序固定台账→记录→RUNMETA，任何一步失败原样往外抛，
-   不吞）。手打三条登记命令的流程不存在了。
+   `register_all`，顺序固定 RUNMETA→台账→记录：RUNMETA 排最前，发射已经
+   真实发生，产物钉代码先落盘，后面台账/记录拒绝（重复 run_id）也不会把它
+   连带丢掉；RUNMETA 写失败只 WARN，台账/记录任何一步失败原样往外抛，
+   不吞）。`register_all` 是 RUNMETA 的唯一写手：两个排卡发射器
+   `launch-probe` / `launch-eval` 把产物目录、kind（`train` / `eval_tool` /
+   `eval_call`）和 session/gpu/log/排卡表交给它写，回执里有 `RUNMETA: <路径>`
+   一行；只有 `run.py launch` 没给 `--outdir` 时才会看到
+   `WARN 没给 --outdir，RUNMETA 没写`，那才是真没写。2026-08-26 之前两个排卡
+   发射器各自先写一条再调 `register_all`，回执里那句 WARN 是误报，按它手补
+   `runmeta` 会在同一份 RUNMETA 里留两条重复记录（np821 批实录）。
+   手打三条登记命令的流程不存在了。
    `--run-id`/`--track` 必填（`record start` 硬要求，`--track` 要和
    `TIMELINE.md` 里的方向对得上）；给了 `--outdir` 才写 RUNMETA，没给只打一行
    `WARN`（产物目录事后才能确定的任务，回头自己补

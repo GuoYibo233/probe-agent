@@ -42,7 +42,6 @@ LOGD = WD / "logs"
 sys.path.insert(0, str(WD))
 from run import EVAL_CELLS, PY, TASKS  # noqa: E402
 sys.path.insert(0, str(WD / "ops"))
-from runmeta import append_runmeta  # noqa: E402
 # has_session/tmux_launch 原来是本地函数,现在改 import 公共件(工单 11,
 # 先扩后收的收这一步——探卡/登记也从这里一并接进来)。
 from launch_common import has_session, tmux_launch, probe_free, register_all  # noqa: E402
@@ -76,15 +75,8 @@ def launch_and_register(host, gpu, sess, cmd, log, meta_dir, stage, batch,
     inner = f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd} 2>&1 | tee {log}"
     tmux_launch(host, sess, inner)
     print(f"LAUNCHED {sess}  ({host} gpu{gpu})  log={log}")
-    # 产物钉代码:发射成功立刻把 commit+argv 落进产物目录(审计 B6)。
-    # 记账失败只告警不中断——不能让 RUNMETA 把剩下的发射打死
-    try:
-        append_runmeta(meta_dir, cmd, kind=f"eval_{stage}",
-                       extra={"session": sess, "launch_host": host,
-                              "gpu": gpu, "log": log,
-                              "placement": placement or ""})
-    except Exception as e:
-        print(f"WARN RUNMETA 没写上({meta_dir}): {e}", file=sys.stderr)
+    # 产物钉代码(审计 B6)由 register_all 的第一步写进 meta_dir/RUNMETA.json——
+    # 它是唯一写手,这里只把 kind 与要并进记录的字段传过去。
     # rid 用完整 sess(含 eval_ 前缀),不能去掉前缀——去掉前缀后就等于
     # launch_probe.build() 给同一格训练 job 用的 rid(`{batch}_{model}_{cell}`),
     # 而训练 job 的销号(gpu_jobs finish)按 SKILL.md Phase D 排在评测(Phase C4)
@@ -98,7 +90,11 @@ def launch_and_register(host, gpu, sess, cmd, log, meta_dir, stage, batch,
               "stall_line": None, "escalate_line": None}
     try:
         receipt = register_all(rid, str(WD), [piece], f"eval_{batch}", cmd,
-                               outdir=None)
+                               outdir=meta_dir, runmeta_kind=f"eval_{stage}",
+                               runmeta_extra={"session": sess,
+                                              "launch_host": host, "gpu": gpu,
+                                              "log": log,
+                                              "placement": placement or ""})
         print(receipt)
     except SystemExit as e:
         print(f"WARN 登记失败({rid}): {e}")

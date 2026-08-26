@@ -7,10 +7,14 @@
   - `local_host()` / `has_session()` / `tmux_launch()`：与 `ops/launch_probe.py`
     原来的 `has_session`/`launch` 同一套 ssh/tmux 逻辑，搬来给多处共用；
     `LOCAL` 从「模块级常量」改成「按需算的函数」，方便测试里 monkeypatch。
-  - `register_all(...)`：一次发射要登记的三个地方——GPU 台账 `ops/jobs.json`、
-    实验记录 `ops/runs.jsonl`（经 `ops/record.py start` 子进程）、产物目录的
-    `RUNMETA.json`——收进一次调用，顺序固定为台账→记录→RUNMETA，任何一步失败
-    都不吞掉，原样往外抛。
+  - `register_all(...)`：一次发射要登记的三个地方——产物目录的 `RUNMETA.json`、
+    GPU 台账 `ops/jobs.json`、实验记录 `ops/runs.jsonl`（经 `ops/record.py start`
+    子进程）——收进一次调用，顺序固定为 RUNMETA→台账→记录。RUNMETA 排最前：
+    发射已经真实发生，产物钉代码这一步必须先落盘，后面台账/记录拒绝（重复
+    run_id 之类）也不能把它丢掉；RUNMETA 写失败只打 WARN，台账/记录任何一步
+    失败都不吞掉，原样往外抛。RUNMETA 只在这里写一次（唯一写手）——调用方不再
+    各自先写一条，否则一份产物目录里同一次发射会出现两条记录（2026-08-26
+    np821 批实录）。
 
 这一文件本身不改变任何现有发射器的行为（`launch_probe.py`/`launch_eval.py`
 接进来是工单 11 的事）。
@@ -75,11 +79,20 @@ def probe_free(host, gpus):
 
 
 def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
-                  outdir=None, monitor=None):
-    """三处登记一口气,顺序固定:①台账 ②实验记录 ③RUNMETA,任何一步失败就地
-    中止(不吞异常)。
+                  outdir=None, monitor=None, runmeta_kind="launch",
+                  runmeta_extra=None):
+    """三处登记一口气,顺序固定:①RUNMETA ②台账 ③实验记录。RUNMETA 写失败只
+    WARN;台账/记录任何一步失败就地中止(不吞异常)。
 
-    ①台账:直接把 pieces(每个已经是 rich piece——host/gpus/session/log/cmd/
+    ①RUNMETA:给了 outdir 就往 `outdir/RUNMETA.json` 追加一条(kind 用
+    `runmeta_kind`,`runmeta_extra` 里的字段——session/gpu/log/排卡表之类——
+    原样并进这条记录);排在最前面是因为发射已经真实发生,产物钉代码不能被
+    后面的台账/记录拒绝(重复 run_id)连带丢掉。没给 outdir 就打一行 WARN,
+    不当错误——`run.py launch` 跑产物目录事后才定的任务就是这种情形。
+    这里是 RUNMETA 的唯一写手:排卡发射器(launch_probe/launch_eval)把自己
+    的 outdir/kind/extra 传进来,不再各自先写一条。
+
+    ②台账:直接把 pieces(每个已经是 rich piece——host/gpus/session/log/cmd/
     launched_at/kind/stall_line/escalate_line/task)append 成一个 job；job 级字段
     `monitor`(给了才写,采样器缺省会退到 verdicts.DEFAULTS)与 `note`。piece 只存
     `task`(任务名,补射时反查 `TASKS[task]["env"]` 用),不存 env 实际键值——
@@ -87,14 +100,26 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
     的台账文件(finding N1,2026-08-08)。
     重复 run_id(台账里已有同名 job)拒绝——护栏,不是障碍。
 
-    ②实验记录:`ops/record.py start` 起子进程(隔离它自己的 sys.exit);多分片
+    ③实验记录:`ops/record.py start` 起子进程(隔离它自己的 sys.exit);多分片
     的 host/gpus/log 逗号拼成一个展示串;rc != 0 原样透出并中止(不捕获
     stdout/stderr,record.py 自己的报错直接打到终端)。
 
-    ③RUNMETA:给了 outdir 才写(`outdir` 已经知道要落在哪,不必调用方另算);
-    没给就打一行 WARN,不当错误。
-
     返回登记回执文本(三行,每步一行)。"""
+    lines = []
+    if outdir:
+        try:
+            p = runmeta.append_runmeta(outdir, cmd_display, kind=runmeta_kind,
+                                       extra=runmeta_extra)
+            lines.append(f"RUNMETA: {p}")
+        except Exception as e:
+            warn = f"WARN RUNMETA 没写上({outdir}): {e}"
+            print(warn, file=sys.stderr)
+            lines.append(warn)
+    else:
+        warn = "WARN 没给 --outdir，RUNMETA 没写"
+        print(warn)
+        lines.append(warn)
+
     def _add(reg):
         if any(j["name"] == run_id for j in reg["active"]):
             sys.exit(f"run_id {run_id} 已在台账里，换一个或先 finish 它")
@@ -105,7 +130,7 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
             job["monitor"] = monitor
         reg["active"].append(job)
     gpu_jobs.mutate_reg(_add)
-    lines = [f"台账: 已登记 {run_id}（{len(pieces)} 个分片）"]
+    lines.append(f"台账: 已登记 {run_id}（{len(pieces)} 个分片）")
 
     hosts = ",".join(p["host"] for p in pieces)
     gpus = ",".join(p["gpus"] for p in pieces)
@@ -117,13 +142,5 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
     if r.returncode != 0:
         sys.exit(r.returncode)
     lines.append(f"记录: run_id={run_id} track={track}")
-
-    if outdir:
-        p = runmeta.append_runmeta(outdir, cmd_display, kind="launch")
-        lines.append(f"RUNMETA: {p}")
-    else:
-        warn = "WARN 没给 --outdir，RUNMETA 没写"
-        print(warn)
-        lines.append(warn)
 
     return "\n".join(lines)

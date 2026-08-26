@@ -37,7 +37,6 @@ LOGD = WD / "logs"
 sys.path.insert(0, str(WD))
 from run import CELLS, CELL_ORDER  # noqa: E402
 sys.path.insert(0, str(WD / "ops"))
-from runmeta import append_runmeta  # noqa: E402
 # has_session/tmux_launch 原来是本地函数,现在改 import 公共件(工单 11,
 # 先扩后收的收这一步——探卡/登记也从这里一并接进来)。
 from launch_common import has_session, tmux_launch, probe_free, register_all  # noqa: E402
@@ -59,21 +58,18 @@ def launch_and_register(host, gpu, sess, cmd, log, out, rid, batch, placement=""
     inner = f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd} 2>&1 | tee {log}"
     tmux_launch(host, sess, inner)
     print(f"LAUNCHED {sess}  ({host} gpu{gpu})  log={log}")
-    # 产物钉代码:发射成功立刻把 commit+argv 落进产物目录(审计 B6)。
-    # 记账失败只告警不中断——不能让 RUNMETA 把剩下的发射打死
-    try:
-        append_runmeta(out, cmd, kind="train",
-                       extra={"run_id": rid, "session": sess,
-                              "launch_host": host, "gpu": gpu, "log": log,
-                              "placement": placement or ""})
-    except Exception as e:
-        print(f"WARN RUNMETA 没写上({out}): {e}", file=sys.stderr)
     piece = {"host": host, "gpus": str(gpu), "session": sess, "log": str(log),
               "cmd": cmd, "launched_at": time.time(), "kind": "train",
               "stall_line": None, "escalate_line": None}
+    # 产物钉代码(审计 B6)由 register_all 的第一步写进 out/RUNMETA.json——
+    # 它是唯一写手,这里只把 kind 与要并进记录的字段传过去。
     try:
         receipt = register_all(rid, str(WD), [piece], f"probe_{batch}", cmd,
-                               outdir=None)
+                               outdir=out, runmeta_kind="train",
+                               runmeta_extra={"run_id": rid, "session": sess,
+                                              "launch_host": host, "gpu": gpu,
+                                              "log": log,
+                                              "placement": placement or ""})
         print(receipt)
     except SystemExit as e:
         print(f"WARN 登记失败({rid}): {e}")

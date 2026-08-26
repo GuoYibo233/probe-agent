@@ -426,3 +426,37 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   l4 0.7016。
 - 训练监控收摊（监控任务在 TRAIN_ALL_DONE 后自行结束），已发消息通知
   分支会话补发 l17 的 call 档评测并出 l17 矩阵。本会话职责清空。
+
+## l17 call 档发射（2026-08-26 15:0x，分支会话）
+
+- 分支亲核母会话的收官事实：两格 train_log 的 done 事件（0.3814 /
+  0.3146）、best/ 权重齐、runs.jsonl 有 finish、台账 active 空、树干净在
+  7076c34、108 六卡实探全空。
+- l17 ctool 的 0.05 档 θ=0.95 有解 → call 档缺省风险档。排卡表
+  `ops/np821l17_eval_call_placement.json`（cgen→108 gpu0、cparam→gpu1）
+  提交 fad9abe 后 `launch-eval call` 发射，两格 ALIVE，record start 钉
+  fad9abe。监控 b7pufajd8 从台账自动纳入。
+- 驱动器此时不敲：e2_call 见 l17 两份报告缺、又无发射标记，会再发一遍
+  l17 的 call 档（驱动器不查台账里在飞的 eval 任务）。等报告落地再敲
+  t2→t3→e1→e2→m1 一路过，m1 只补 l17 两档矩阵（已存在的六份跳过）。
+
+## 根因修复：RUNMETA 两个写手 → register_all 唯一写手（2026-08-26 15:1x）
+
+- 根因：`launch_common.register_all` 自带 RUNMETA 步（给 outdir 才写，顺序
+  台账→记录→RUNMETA），两个排卡发射器 `launch_probe` / `launch_eval` 为了
+  "发射真实发生就先钉代码、后面登记拒绝也不能丢"在调它之前各自先
+  `append_runmeta` 一条（带 session/gpu/log/排卡表），再传 `outdir=None`
+  ——于是 register_all 打出 "WARN 没给 --outdir，RUNMETA 没写"，与实况相反。
+- 修法（肯定式、单一写手）：RUNMETA 步挪到 register_all 最前面（顺序改为
+  RUNMETA→台账→记录），新增 `runmeta_kind` / `runmeta_extra` 参数，写失败
+  只 WARN；两个发射器删掉私写，改传 outdir + kind + extra。`run.py launch`
+  没给 --outdir 时的 WARN 保留（那是真没写）。
+- 测试：`tests/test_launch_{probe,eval}.py` 去掉对私写的 patch，改为断言
+  outdir/kind/extra 传到了 register_all；`tests/test_launch_common.py` 加
+  两条（record 拒绝时 RUNMETA 已落盘；kind/extra 进了记录且只有一条）。
+  四份发射器测试 57 条全过，`run.py selfcheck` 过。
+- 文档：gpu-run SKILL.md Phase 4 的登记顺序与 WARN 语义改写；probe-pipeline
+  的 stage-commands 里"launch-probe 不写 RUNMETA / 看到 WARN 要自己补"两句
+  等回写 agent 交付后由本会话改（避免与 agent 同时编辑同一文件）。
+- 本批 12 个训练 run 与 6 个评测 run 目录里已有的重复 RUNMETA 条目
+  （发射器一条 + 手补一条）原样保留：追溯链只多不少，不回头删产物记录。

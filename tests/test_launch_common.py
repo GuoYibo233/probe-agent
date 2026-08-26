@@ -26,6 +26,13 @@ def _fake_record_call(argv, *a, **kw):
     return _REAL_RUN(argv, *a, **kw)
 
 
+def _fake_record_fail(argv, *a, **kw):
+    """record.py 拒绝(rc=1),其余调用(RUNMETA 里的 git 探测)原样放行。"""
+    if any("record.py" in str(x) for x in argv):
+        return MagicMock(returncode=1)
+    return _REAL_RUN(argv, *a, **kw)
+
+
 def rich_piece(**kw):
     base = dict(host="tokyo106", gpus="0", session="new1_trun_t106g0",
                 log="/tmp/new1_trun_t106g0.log", cmd="python3 foo.py --x 1",
@@ -178,6 +185,37 @@ class TestRegisterAll(unittest.TestCase):
         receipt = LC.register_all("trun_noout", "/tmp/wd", pieces, "smoke", "cmd")
         self.assertIn("WARN", receipt)
         self.assertIn("--outdir", receipt)
+
+    @patch("launch_common.subprocess.run", side_effect=_fake_record_fail)
+    def test_runmeta_written_even_when_record_refuses(self, mrun):
+        # RUNMETA 排在三处登记的最前面:发射已经真实发生,产物钉代码先落盘,
+        # 后面 record.py 拒绝(重复 run_id 之类)也不能把它连带丢掉
+        # (2026-08-26 np821 b17_cgen 重发实录)。
+        outdir = os.path.join(self.tmpdir, "out_recfail")
+        pieces = [rich_piece()]
+        with self.assertRaises(SystemExit):
+            LC.register_all("trun_rm_first", "/tmp/wd", pieces, "smoke",
+                            "cmd", outdir=outdir)
+        self.assertTrue(os.path.exists(os.path.join(outdir, "RUNMETA.json")))
+
+    @patch("launch_common.subprocess.run", side_effect=_fake_record_call)
+    def test_runmeta_kind_and_extra_land_in_entry(self, mrun):
+        # 排卡发射器把自己的 kind(train / eval_tool / eval_call)与
+        # session/gpu/log 这类字段交给 register_all 写,register_all 是唯一写手。
+        import json
+        outdir = os.path.join(self.tmpdir, "out_kind")
+        pieces = [rich_piece()]
+        receipt = LC.register_all("trun_kind", "/tmp/wd", pieces, "smoke",
+                                   "cmd", outdir=outdir, runmeta_kind="train",
+                                   runmeta_extra={"session": "s1", "gpu": 3})
+        self.assertIn("RUNMETA", receipt)
+        self.assertNotIn("WARN", receipt)
+        doc = json.load(open(os.path.join(outdir, "RUNMETA.json")))
+        ent = doc["launches"][-1]
+        self.assertEqual(ent["kind"], "train")
+        self.assertEqual(ent["session"], "s1")
+        self.assertEqual(ent["gpu"], 3)
+        self.assertEqual(len(doc["launches"]), 1)
 
 
 if __name__ == "__main__":

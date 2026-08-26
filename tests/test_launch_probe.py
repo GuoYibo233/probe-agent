@@ -15,11 +15,10 @@ import launch_probe as LP  # noqa: E402
 
 class TestLaunchAndRegister(unittest.TestCase):
     @patch("launch_probe.register_all")
-    @patch("launch_probe.append_runmeta")
     @patch("launch_probe.tmux_launch")
     @patch("launch_probe.probe_free")
     @patch("launch_probe.has_session", return_value=True)
-    def test_skips_when_session_exists(self, mhas, mfree, mtmux, mrm, mreg):
+    def test_skips_when_session_exists(self, mhas, mfree, mtmux, mreg):
         ok = LP.launch_and_register("tokyo106", "0", "sess1", "python3 x.py",
                                      "/tmp/sess1.log", "/tmp/out", "rid1", "c2")
         self.assertFalse(ok)
@@ -28,11 +27,10 @@ class TestLaunchAndRegister(unittest.TestCase):
         mreg.assert_not_called()
 
     @patch("launch_probe.register_all")
-    @patch("launch_probe.append_runmeta")
     @patch("launch_probe.tmux_launch")
     @patch("launch_probe.probe_free", return_value=(False, "占用中: 12345"))
     @patch("launch_probe.has_session", return_value=False)
-    def test_skips_when_gpu_not_free(self, mhas, mfree, mtmux, mrm, mreg):
+    def test_skips_when_gpu_not_free(self, mhas, mfree, mtmux, mreg):
         ok = LP.launch_and_register("tokyo106", "0", "sess1", "python3 x.py",
                                      "/tmp/sess1.log", "/tmp/out", "rid1", "c2")
         self.assertFalse(ok)
@@ -40,25 +38,34 @@ class TestLaunchAndRegister(unittest.TestCase):
         mreg.assert_not_called()
 
     @patch("launch_probe.register_all", return_value="登记回执")
-    @patch("launch_probe.append_runmeta")
     @patch("launch_probe.tmux_launch")
     @patch("launch_probe.probe_free", return_value=(True, ""))
     @patch("launch_probe.has_session", return_value=False)
-    def test_launches_and_registers_rich_piece(self, mhas, mfree, mtmux, mrm, mreg):
+    def test_launches_and_registers_rich_piece(self, mhas, mfree, mtmux, mreg):
         ok = LP.launch_and_register("tokyo106", "0", "sess1", "python3 x.py",
-                                     "/tmp/sess1.log", "/tmp/out", "rid1", "c2")
+                                     "/tmp/sess1.log", "/tmp/out", "rid1", "c2",
+                                     placement="ops/x_placement.json")
         self.assertTrue(ok)
         mtmux.assert_called_once_with("tokyo106", "sess1",
                                       "cd " + str(LP.WD) +
                                       " && CUDA_VISIBLE_DEVICES=0 python3 x.py"
                                       " 2>&1 | tee /tmp/sess1.log")
-        mrm.assert_called_once()
         mreg.assert_called_once()
         args, kwargs = mreg.call_args
         run_id, workdir, pieces, track, cmd_display = args[:5]
         self.assertEqual(run_id, "rid1")
         self.assertEqual(track, "probe_c2")
-        self.assertEqual(kwargs.get("outdir"), None)
+        # RUNMETA 由 register_all 写(唯一写手):产物目录、kind 与要并进记录的
+        # 字段都从这里传过去,发射器自己不再另写一条。
+        self.assertEqual(kwargs.get("outdir"), "/tmp/out")
+        self.assertEqual(kwargs.get("runmeta_kind"), "train")
+        extra = kwargs.get("runmeta_extra")
+        self.assertEqual(extra["run_id"], "rid1")
+        self.assertEqual(extra["session"], "sess1")
+        self.assertEqual(extra["launch_host"], "tokyo106")
+        self.assertEqual(extra["gpu"], "0")
+        self.assertEqual(extra["log"], "/tmp/sess1.log")
+        self.assertEqual(extra["placement"], "ops/x_placement.json")
         self.assertEqual(len(pieces), 1)
         piece = pieces[0]
         for key in ("host", "gpus", "session", "log", "cmd", "launched_at",
@@ -72,12 +79,11 @@ class TestLaunchAndRegister(unittest.TestCase):
         self.assertIsNone(piece["escalate_line"])
 
     @patch("launch_probe.register_all", side_effect=SystemExit("run_id 已在台账里"))
-    @patch("launch_probe.append_runmeta")
     @patch("launch_probe.tmux_launch")
     @patch("launch_probe.probe_free", return_value=(True, ""))
     @patch("launch_probe.has_session", return_value=False)
     def test_register_failure_warns_but_launch_still_reported(
-            self, mhas, mfree, mtmux, mrm, mreg):
+            self, mhas, mfree, mtmux, mreg):
         # 发射本身(tmux_launch)已经真实发生了；登记失败(比如重复 run_id)
         # 只 WARN，不能让异常往外抛炸掉调用方的循环。
         ok = LP.launch_and_register("tokyo106", "0", "sess1", "python3 x.py",
