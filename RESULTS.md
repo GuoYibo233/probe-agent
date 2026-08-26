@@ -19,7 +19,7 @@
 | `np821b17_gptoss_cgen` | 2026-08-23 05:44 | probe_np821b17 | `7dbd28e` | - | ok | best_val_ce=0.512 gsteps=17484 | np821b17 cgen 全量收官: best val_ce 0.512, 3 epoch 跑满, 墙钟约32.2h(H100,三次落位后) |
 | `np821b17_gptoss_cparam` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_val_ce=0.3378 gsteps=17484 | np821b17 cparam 全量收官: best val_ce 0.3378, 3 epoch 跑满, 墙钟约30.1h(H100) |
 | `np821b17_gptoss_ctool` | 2026-08-23 05:42 | probe_np821b17 | `63884f2` | - | ok | best_calA_weighted_acc=0.6867 gsteps=387 align_maxdiff_hidden=0.000214 | np821b17 ctool 全量收官: best calA weighted acc 0.6867, ALIGN PASS(2.14e-04<3e-4), 墙钟约1.5h(H100) |
-| `np821l17_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | running | - | - |
+| `np821l17_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | ok | best_val_ce=0.3146 gsteps=17484 | np821 l17 cparam(Qwen3-1.7B LoRA+gc, Ada) 3ep 完成, best_val_ce 0.3146, 墙钟约 98.3h |
 | `np821l17_gptoss_cgen` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | running | - | - |
 | `np821l17_gptoss_ctool` | 2026-08-22 12:04 | probe_np821l17 | `1b9334f` | - | ok | best_calA_weighted_acc=0.6974 gsteps=387 align_maxdiff_hidden=0.000237 | np821l17 ctool 全量收官: best calA weighted acc 0.6974, ALIGN PASS(2.37e-04<3e-4), 墙钟约3.2h(RTX6000Ada) |
 | `np821l4_gptoss_cparam` | 2026-08-22 12:04 | probe_np821l4 | `1b9334f` | - | ok | best_val_ce=0.3375 gsteps=17484 | np821 l4 cparam(Qwen3-4B LoRA+gc, H200) 3ep 完成, best_val_ce 0.3375, 墙钟约 64.4h |
@@ -213,9 +213,12 @@
 
 ### `np821l17_gptoss_cparam`
 
-- **方向**：probe_np821l17 ｜ **状态**：running ｜ **起止**：2026-08-22 12:04 → 未收尾
+- **结论**：np821 l17 cparam(Qwen3-1.7B LoRA+gc, Ada) 3ep 完成, best_val_ce 0.3146, 墙钟约 98.3h
+- **方向**：probe_np821l17 ｜ **状态**：ok ｜ **起止**：2026-08-22 12:04 → 2026-08-26 14:36
 - **代码**：`1b9334f` (分支 main)
 - **机器**：tokyo107 GPU 2
+- **数字**：best_val_ce=0.3146 gsteps=17484
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam`（不在 git 里）
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cparam_t107g2.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt`
 

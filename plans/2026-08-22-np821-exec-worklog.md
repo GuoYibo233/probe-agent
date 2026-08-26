@@ -406,3 +406,11 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   0 MiB（G7 过）。评测线台账 active 里 np821 相关条目清空。
 - 已训完 10 格的评测至此全部收官（4 个 ctool + 6 个 call 档）；剩 l17
   的 cgen/cparam 评测等母会话通知训练收官。
+
+## l17_cparam 训练收官（2026-08-26 14:3x，母会话），11/12 齐
+
+- best_val_ce 0.3146（Qwen3-1.7B LoRA+gc，Ada，墙钟约 98.3h）。末 epoch
+  val_ce 0.4518、val_exact_params 0.725，best/ 权重齐。销号 + record
+  finish 完毕。
+- 余 1 格：l17_cgen 在末次验证段（12:05 前后进验证，预计 15:00 前后出
+  done），收官后一并通知分支发 l17 的 call 档评测。

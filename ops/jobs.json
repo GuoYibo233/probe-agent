@@ -18,25 +18,6 @@
           "escalate_line": null
         }
       ]
-    },
-    {
-      "name": "np821l17_gptoss_cparam",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-22 12:04",
-      "pieces": [
-        {
-          "host": "tokyo107",
-          "gpus": "2",
-          "session": "new1_np821l17_gptoss_cparam_t107g2",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cparam_t107g2.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt",
-          "launched_at": 1787367886.3600442,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
     }
   ],
   "history": [
@@ -1420,6 +1401,26 @@
         }
       ],
       "finished_at": "2026-08-26 05:15"
+    },
+    {
+      "name": "np821l17_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-22 12:04",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_np821l17_gptoss_cparam_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_np821l17_gptoss_cparam_t107g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_param.py --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam --env appworld --base qwen17 --lora --grad-ckpt",
+          "launched_at": 1787367886.3600442,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-26 14:36"
     }
   ]
 }
