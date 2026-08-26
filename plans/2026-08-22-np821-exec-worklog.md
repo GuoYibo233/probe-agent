@@ -414,3 +414,15 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   finish 完毕。
 - 余 1 格：l17_cgen 在末次验证段（12:05 前后进验证，预计 15:00 前后出
   done），收官后一并通知分支发 l17 的 call 档评测。
+
+## l17_cgen 训练收官（2026-08-26 14:5x，母会话），12/12 训练全收
+
+- best_val_ce 0.3814（Qwen3-1.7B LoRA+gc，Ada，墙钟约 98.7h）。末 epoch
+  val_ce 0.643、val_exact_call 0.505，best/ 权重齐。销号 + record finish
+  完毕；107 四卡实测 4 MiB 基线，释放干净。
+- np821 十二格训练至此全部收官。四批 best_val_ce 汇总（cgen/cparam）：
+  b06 0.4793/0.396、b17 0.512/0.3378、l17 0.3814/0.3146、l4 0.371/0.3375；
+  四 ctool best_calA_weighted_acc：b06 0.6883、b17 0.6867、l17 0.6974、
+  l4 0.7016。
+- 训练监控收摊（监控任务在 TRAIN_ALL_DONE 后自行结束），已发消息通知
+  分支会话补发 l17 的 call 档评测并出 l17 矩阵。本会话职责清空。
