@@ -40,6 +40,8 @@ Output: one line per GPU with `OWNERS` column — `FREE`, `y-guo`, or another us
 Estimate VRAM need before picking cards:
 - bf16 weights ≈ `2 × params` GB (7B ≈ 15G, 14B ≈ 30G, 32B ≈ 65G, 70B ≈ 140G), plus KV cache / activations.
 - A vLLM server grabs ~90% of the card by default → one server = one whole card regardless of model size.
+- **Training is not inference — activations dominate, weights barely matter.** For fine-tuning, the fits / does-not-fit line is *gradient checkpointing on/off*, not model size: new1's probe cells measured 60–77 GiB peak for a 0.6B full-finetune **without** `--grad-ckpt`, but only 35–44 GiB for a 1.7B full-finetune **with** it, and 17–38 GiB for LoRA + ckpt (np821, seq len 4096, bs 4 × accum 8). Per-cell table: `.claude/skills/probe-pipeline/references/stage-commands.md §3.1`.
+- **A passing smoke run does not prove the card holds the full run.** Peak VRAM is set by the longest sequence in a batch, and a 500-instance smoke subset misses the combinations the full first epoch hits — np821's 1.7B cgen peaked at 44.1 GiB in smoke on a 47.51 GiB card, then OOM'd on its first full-run backward. Rule of thumb: if the smoke peak leaves less than ~10% of the card free, treat it as not fitting and move to a bigger card.
 
 Rules, in order:
 1. **Fits in 48G → tokyo105/106/107 first.** Keep tokyo108's big cards free for jobs that actually need them.

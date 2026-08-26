@@ -6,6 +6,8 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `eval_np821l17_gptoss_cparam` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 pred_tool_ok=0.9476 pred_params_all_ok=0.8322 pred_full_call_ok=0.8094 pred_exact_call_ok=0.8067 pred_param_acc=0.7498 gt_params_all_ok=0.8467 gt_param_acc=0.808 noparam_rate=0.387 | np821l17 cparam 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, pred_tool full_call_ok 0.8094/params_all_ok 0.8322, gt_tool params_all_ok 0.8467, H100 约 24 分钟 |
+| `eval_np821l17_gptoss_cgen` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 tool_ok=0.8866 params_all_ok=0.7774 full_call_ok=0.7326 exact_call_ok=0.7316 param_acc=0.6287 noparam_rate=0.387 | np821l17 cgen 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, tool_ok 0.8866, params_all_ok 0.7774, full_call_ok 0.7326, H100 约 23 分钟 |
 | `eval_np821l4_gptoss_cparam` | 2026-08-26 04:47 | eval_np821l4 | `15c90e8` | - | ok | risk=0.05 theta=0.975 n_scored=2192 parse_fail=0 pred_tool_ok=0.9599 pred_params_all_ok=0.8828 pred_full_call_ok=0.8654 pred_exact_call_ok=0.8645 pred_param_acc=0.8251 gt_params_all_ok=0.8969 gt_param_acc=0.8794 noparam_rate=0.3828 | np821l4 cparam 评测(risk 0.05, θ 0.975): 2192 触发事件, parse_fail 0, pred_tool full_call_ok 0.8654/params_all_ok 0.8828, gt_tool params_all_ok 0.8969, H200 约 24 分钟 |
 | `eval_np821l4_gptoss_cgen` | 2026-08-26 04:46 | eval_np821l4 | `15c90e8` | - | ok | risk=0.05 theta=0.975 n_scored=2192 parse_fail=0 tool_ok=0.9056 params_all_ok=0.8472 full_call_ok=0.8294 exact_call_ok=0.8271 param_acc=0.7291 noparam_rate=0.3828 | np821l4 cgen 评测(risk 0.05, θ 0.975): 2192 触发事件, parse_fail 0, tool_ok 0.9056, params_all_ok 0.8472, full_call_ok 0.8294, H100 约 23 分钟 |
 | `eval_np821b17_gptoss_cparam` | 2026-08-26 04:40 | eval_np821b17 | `e6d1a39` | - | ok | risk=0.05 theta=0.975 n_scored=2806 parse_fail=0 pred_tool_ok=0.9533 pred_params_all_ok=0.8795 pred_full_call_ok=0.8525 pred_exact_call_ok=0.8521 pred_param_acc=0.8116 gt_params_all_ok=0.8902 gt_param_acc=0.864 noparam_rate=0.3977 | np821b17 cparam 评测(risk 0.05, θ 0.975): 2806 触发事件, parse_fail 0, pred_tool full_call_ok 0.8525/params_all_ok 0.8795, gt_tool params_all_ok 0.8902, H100 约 27 分钟 |
@@ -67,6 +69,28 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `eval_np821l17_gptoss_cparam`
+
+- **结论**：np821l17 cparam 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, pred_tool full_call_ok 0.8094/params_all_ok 0.8322, gt_tool params_all_ok 0.8467, H100 约 24 分钟
+- **方向**：eval_np821l17 ｜ **状态**：ok ｜ **起止**：2026-08-26 14:52 → 2026-08-26 15:20
+- **代码**：`fad9abe` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **数字**：risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 pred_tool_ok=0.9476 pred_params_all_ok=0.8322 pred_full_call_ok=0.8094 pred_exact_call_ok=0.8067 pred_param_acc=0.7498 gt_params_all_ok=0.8467 gt_param_acc=0.808 noparam_rate=0.387
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821l17_gptoss_cparam.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_param.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool --cparam-run /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cparam --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss`
+
+### `eval_np821l17_gptoss_cgen`
+
+- **结论**：np821l17 cgen 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, tool_ok 0.8866, params_all_ok 0.7774, full_call_ok 0.7326, H100 约 23 分钟
+- **方向**：eval_np821l17 ｜ **状态**：ok ｜ **起止**：2026-08-26 14:52 → 2026-08-26 15:19
+- **代码**：`fad9abe` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 tool_ok=0.8866 params_all_ok=0.7774 full_call_ok=0.7326 exact_call_ok=0.7316 param_acc=0.6287 noparam_rate=0.387
+- **原始数据**：`/home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cgen`（不在 git 里）
+- **日志**：`/home/y-guo/reproduce/new1/logs/eval_np821l17_gptoss_cgen.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cgen --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss`
 
 ### `eval_np821l4_gptoss_cparam`
 

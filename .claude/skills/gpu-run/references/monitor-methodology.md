@@ -92,6 +92,16 @@ Use `ScheduleWakeup` after monitoring:
 
 Use the `prompt: <<autonomous-loop-dynamic>>` sentinel for autonomous chains.
 
+**Before a job has produced its first heartbeat there is no verdict to read, so a
+first-cut estimate has to come from somewhere else — use the measured wall times
+per stage, not a guess.** For the probe pipeline those live in
+`.claude/skills/probe-pipeline/references/stage-commands.md §4.5` (eval: what each
+script counts and minutes per cell) and `§3.1` (training: measured VRAM peaks).
+Read the counting unit before multiplying — np821's eval scripts count *events*
+(8533 in the test split) while the dataset holds *cut-point rows* (391893 in the
+same split), and extrapolating from rows turned a 40-minute job into a 2–3 hour
+estimate.
+
 ## Gotchas
 
 - `tail -c 1000 | tr '\r' '\n'` — the `\r` translation is essential because tqdm uses `\r` to overwrite the same line; without it you'll see one giant line.

@@ -17,14 +17,16 @@
 
 | 口径 | 固定值 | 写死在哪 | 改了会怎样 |
 |---|---|---|---|
-| 种子 SEED | `20260729` | `pipeline/annotate/rules.py`；出处 `build_dataset.py`（ENG §2.2） | 重跑不再逐样本一致，"可重跑"这条证据链断掉；DATA.md §7.5 明确写了这是铁律 |
-| 最短思考长度 MIN_THINK | `40` 字符 | `rules.py`（ENG §2.2） | 切点集合变→样本数变→`w=1/m` 全变→与历史任何一版都不可比 |
-| 每事件最大切点 MAX_BOUNDS | `64` | `rules.py`（ENG §2.2） | 同上；且 gptoss 的切点中位数已到 51、贴着 64（DATA.md §3.1），一动它 gptoss 的样本量会跳变 |
+| 种子 SEED | **种子家族 `42 / 67 / 4267 / 6742`，按顺序取用**（np821 起）：采集要 K 条轨迹就按序取前 K 个、逐条落进轨迹 meta；流水线内部所有单种子位置（切分、smoke 抽样、`torch.manual_seed`）一律取首位 **42** | `pipeline/annotate/rules.py` 的 `SEED` 与三个因果训练脚本各自的 `SEED` 都已换 42；**两个 mbert 训练脚本仍是 `20260729`**（m 线停跑，没跟着换）；旧配置里显式写的 `20260729` 原样生效、压过默认值（G8 逐字节复现靠它） | 重跑不再逐样本一致，"可重跑"这条证据链断掉；DATA.md §7.5 明确写了这是铁律。换家族成员或换取用顺序 = 新老数据不可比 |
+| 一题几条轨迹 | np821 起 `trajs_per_unit`，本批 **4**（温度 1.0、每条一个种子，`_r0..r3`）；缺省不写 = 每题 1 条 = 旧行为 | 批次配置字段；采集侧 manifest 的 `traj_per_task` + `seed_family`；文件名 `appworld_<tid>_r<k>.jsonl` | 同一题的 K 条轨迹靠 `unit`（meta 的 task_id）天然同堆，堆归属不受影响；但样本量按 K 倍涨、门禁 B 按 K 判齐全（`stage-commands §7`），改 K = 换数据集版本 |
+| 采集生成设置 | **唯一真源是 `configs/presets/<名>.json`，manifest 只写预设名**；np821 用的是 `default`（harmony、effort high、**温度 1.0**、top_p 1、max_tokens 8192）。⚠️ `default` 与 `gptoss_default` 是两份不同的文件（后者是 OpenAI 官方推荐口径，effort medium） | manifest 顶层 `gptoss_client_preset`，缺省 `gptoss_chat_high`；预设名与展开后的 gen_settings 自动落进轨迹 meta | 换温度 = 换被探测的行为分布，**温度 1 的数字与温度 0 的任何历史数字不可比**（np821 对 p1 就是这条）；预设名写错一个字就换了口径，发射前在 `MANIFEST.md` 里核一眼 |
+| 最短思考长度 MIN_THINK | `40` 字符 | `rules.py`（ENG §2.2） | 切点集合变→样本数变→每条样本的 w 与总量全变→与历史任何一版都不可比 |
+| 每事件最大切点 MAX_BOUNDS | 缺省仍 `64`，但 np821 起是**批次配置字段** `max_bounds`（CLI `--max-bounds` 压过配置）；超限按下标近似等距抽稀、**末尾切点永远保留** | `rules.py` 的 `MAX_BOUNDS` 只当缺省值，真值走 `rules.boundaries(text, max_bounds)` 的入参；`build.py` 从配置读 | 同上；且 gptoss 的切点中位数已到 51、贴着 64（DATA.md §3.1），一动它 gptoss 的样本量会跳变。上限直接决定样本量，所以驱动器把它做成 a1_stats 的显式停点：先出**未截断**切点分布再让人裁（各批的实测分布归 DATA.md / 批次 worklog）。一个批次定了就不许中途改 |
 | 历史轮数 HIST_ROUNDS | `3` | `rules.py`（ENG §2.2） | 输入 text 变→探针看到的上下文变→触发准确率不可比 |
 | 结果截断 RESULT_CAP | `400` | `rules.py`（ENG §2.2） | 同上 |
 | 句边界正则 SENT_RE | `(?<=[.!?])\s+\|\n` | `rules.py`（ENG §2.2） | 切点位置变，`depth` 和 earliness 全变 |
 | 文本拼版式 | `Task: …\n[HISTORY]\n…\n[THINKING]\n<前缀>`（`assemble()` 产出） | `rules.py`（ENG §3.2） | 训练分布和注入时线上分布对不上，注入段直接失效 |
-| 样本权重 | `w = 1/m`，m = 该事件切点数，round 6 位 | `rules.py` / `build.py`（PLAN §1.2、ENG §3.2） | 每事件总贡献不再恒为 1，长思考的事件会主导损失，跨模型比较作废（gptoss 切点密，受影响最大） |
+| 样本权重 | **每步等权 `w = 1`（np821 起的长期口径，`weight_mode` 缺省 `uniform`）**；旧口径事件内等权 `w = 1/m`（m = 该事件切点数，round 6 位）要显式 `per_event` 才拿得到，用途只剩逐字节复现验收 | `build.py` 的 `make_samples(events, weight_mode, max_bounds)`，配置字段 `weight_mode`、CLI `--weight-mode`（PLAN §1.2、ENG §3.2） | 两种口径的数字互不可比：`per_event` 下每事件总贡献恒为 1，`uniform` 下长思考事件按切点数占比更大。**老配置不加旗重跑拿到的是等权数据，不是旧的 1/m**——复现旧产物必须显式 `--weight-mode per_event` |
 | 参数值归一化 | `strip()` 后 `strip("\"'")`，空值跳过 | 照抄 `envs/bert/param_label.py`（ENG §3.3） | 宽松/严格两档的差距被人为拉开或抹平（本轮结论"差距只出现在抽取路线"就靠这一条口径成立，TIMELINE 2026-07-31 c1 条③） |
 | 参数名规则 | kwarg 取名字，位置参数取 `pos0/pos1/…` | 照抄 `split_args_named()`（ENG §3.3） | 键匹配判定变，参数正确率整体漂移 |
 | `label_call` 格式 | `f"{label}({', '.join(f'{k}={v}')})"`，无参数时 `f"{label}()"` | `build.py`（ENG §3.3） | cgen 的训练目标串、cparam 的目标推导（按 `label+"("` 前缀剥离）一起变形，`val_exact_call` 与 `full_call_ok` 等数字与历史不可比 |
@@ -43,10 +45,11 @@
 | causal 超参 | lr 1e-5 / bs 4 事件 / accum 8 / epochs 3 / warmup 5% / clip 1.0 / fp32 + bf16 autocast | `train_causal_tool.py`、`train_causal_callgen.py`、`train_causal_param.py`（ENG §5.3、§5.4） | 同上；且 cgen/cparam 的超参是**故意对齐 ctool** 的，动一个就破坏"同一骨架多个头"的对照（cgen 对 cparam 的比较更是同批样本同答案只差拼串，超参一分家差距就没法归因到"工具名是否给定"） |
 | 左截断 | `truncation_side="left"`，`padding_side="right"`，pad=eos | 照抄 `train_causal_probe.py` 的 `build()`（ENG §5.4） | 右截会吃掉紧邻调用的思考尾巴，正是探针最该看的那一段 |
 | cgen 目标构造 | 先 tokenize 目标不截断（>160 token 的实例丢弃并计数），再按 `max_length = 4096 - L_t` 左截输入，`labels` 前缀段填 `-100` | `train_causal_callgen.py`（ENG §5.4） | 顺序反了就会被左截吃掉目标，损失算在错的位置上 |
-| cgen 损失 | 逐实例目标段 mean CE，批损失 `Σ(w_i·ce_i)/Σw_i` | `train_causal_callgen.py`（ENG §5.4） | 丢掉 w 加权 = 丢掉事件等权，与其余三格口径分家 |
+| cgen 损失 | 逐实例目标段 mean CE，批损失 `Σ(w_i·ce_i)/Σw_i`。**权重全 1（`uniform` 数据）时它退化成普通平均**，量级不变——所以学习率 / 批大小 / epoch / warmup 都不用跟着权重口径改（np821 三格实测同一套超参直接跑） | `train_causal_callgen.py`（ENG §5.4），ctool / cparam 同款加权 | 丢掉 w 加权 = 丢掉"按权重口径算损失"这条链，与其余三格口径分家 |
 | cgen/cparam 选 best | 唯一依据是 val 全量 masked-CE（越低越好）；`val_exact_call` / `val_exact_params`（200 条 greedy）只进日志不选 best | ENG §5.4；cparam 2026-08-21 同口径 | 用 exact 指标选 best 会让 val 被用两次（选点 + 报数），破坏 val/test 分工 |
 | cparam 拼串 | 输入 = `text + "\n[CALL] " + label + "("`，目标 = `label_call` 剥掉 `label+"("` 前缀的剩余段（含收尾右括号）+ eos；推导唯一真源是对 make_call 产物做前缀剥离，对不上整条丢弃并计 `assembly_mismatch` | `train_causal_param.py` 的 `param_target`（2026-08-21） | 改拼法 = 换任务定义，cgen 对 cparam 的"工具名给定收益"对比作废 |
-| smoke 规模 | mtool / mext / cgen / cparam：**按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（mext 的这两个数落在展开后的**参数实例**上，不是样本）；**ctool：同法随机抽 200 / 80 事件**（它按事件计数，不是实例）；各格都是 1 epoch | ENG §5.1、§5.4；实现在各训练脚本自己的 `--smoke` 分支——都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，**不是原序截断** | 只影响冒烟，但改了就失去"和历史 smoke 同口径"的对照价值；改种子或改成原序截断都会换掉抽中的那批样本 |
+| LoRA 超参（`--lora` 开启时） | rank 16 / alpha 32 / dropout 0.05 / lr 2e-4；target modules 是 Qwen3 的七件套（`q,k,v,o_proj` + `gate,up,down_proj`）、`bias="none"`；**存 `best/` 之前先 `merge_and_unload` 并回底座**，所以 `best/` 与全参训练存的逐项同构、评测端零改动 | `pipeline/train/lora_util.py` 是三个因果格**共用的唯一实现**（常量 `DEFAULT_RANK/ALPHA/DROPOUT/LR` + `TARGET_MODULES`），别处不许再抄一份同构表 | 换 rank/alpha/lr 就换了训练配方，LoRA 批与全参批不再是同一把尺子；不合并直接落适配器会让评测脚本装不回（它一律 `from_pretrained(best/)`） |
+| smoke 规模 | mtool / mext / cgen / cparam：**按各脚本自己的 `SEED` 常量随机抽**（因果三格 np821 起是 42，两个 mbert 格仍 20260729）500 训练 / 200 评估**实例**（mext 的这两个数落在展开后的**参数实例**上，不是样本）；**ctool：同法随机抽 200 / 80 事件**（它按事件计数，不是实例）；各格都是 1 epoch | ENG §5.1、§5.4；实现在各训练脚本自己的 `--smoke` 分支——都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，**不是原序截断** | 只影响冒烟，但改了就失去"和历史 smoke 同口径"的对照价值；改种子或改成原序截断都会换掉抽中的那批样本 |
 | 解释器 | mbert 格 `mbert-env`（transformers 4.57.6 钉死）、causal 格 `cprobe-env`（≥5.14），谁也不许升级谁 | PLAY §0.13、ENG §2.1 | 混架构在旧版上会**静默算错**（分块增量喂），这是对齐检查存在的理由 |
 | 对齐检查 | 因果格开训前必过，FAIL 即 `exit 2` | `train_causal_tool.py`（ENG §5.3） | 跳过它 = 允许一个数值上错误的骨架进入训练，产出的一切数字都不作数 |
 | `--out` | 必填，无默认值 | ENG §5.1.3 | 默认值会让两次训练悄悄覆盖同一目录 |
@@ -74,7 +77,7 @@
 | 口径 | 固定值 | 写死在哪 | 改了会怎样 |
 |---|---|---|---|
 | run_id 四处一致 | 原始数据目录名 = tmux session 前缀 = 台账 name = commit message | `CLAUDE.md`、PLAY §0.10 | 出了问题追不回是哪次跑、用的哪版代码 |
-| 训练 run_id 模板 | `<批次>_<model_short>_<cell>`，cell ∈ `{mtool, mext, ctool, cgen, cparam}`；模板里没有底座档位段 → **一个批次只跑一档 `--base`**（extending §3.4） | ENG §2.4 | 汇总脚本按目录名认格，命名一乱矩阵表就拼不出来 |
+| 训练 run_id 模板 | `<批次>_<model_short>_<cell>`，cell ∈ `{mtool, mext, ctool, cgen, cparam}`；模板里**既没有底座档位段也没有训法段** → **一个批次只跑一档 `--base`、只跑一种训法**（全参或 LoRA，extending §3.4）。档位与训法写进批次前缀（np821 四批 `b06 / b17 / l17 / l4` = 0.6B 全参 / 1.7B 全参 / 1.7B LoRA / 4B LoRA） | ENG §2.4 | 汇总脚本按目录名认格，命名一乱矩阵表就拼不出来；混档或混训法会撞同一个 rid，两次产物无法归属 |
 | 模型称呼 | qwen3.5 与 qwen3.6 **永远是两个模型**，任何场合不写成"qwen 侧" | PLAY §0.6 | 合并会掩盖两代模型的差异，这是用户明确的红线 |
 | 记账双写 | **双写由 launch 保证；绕过 launch 手搓发射的，双登记责任回到人**——`python3 run.py launch`/`launch-probe`/`launch-eval` 发射成功自动做完 `record.py start` + `gpu-jobs register`；收尾仍手动 `python3 run.py record finish` + `python3 run.py gpu-jobs finish` | `CLAUDE.md`、`ops/launch_common.py`、PLAY §0.10 | 漏登记就是占卡不销号；数字进不了 `runs.jsonl` 就不进 `RESULTS.md` |
 | 只增不改 | `ops/runs.jsonl` append-only；`RESULTS.md` 是渲染产物不许手改 | `CLAUDE.md`、ENG §0.5 | 手改渲染产物下次渲染即被覆盖，且账实不符 |
@@ -96,7 +99,7 @@
 | run_id 的批次前缀（`c1_` → `c2_` …） | 自由，且换数据就**应该**换 | 纯命名。但必须四处一起换（第 5 节） |
 | 日志/报告的标题文字 | 自由，**除非在做逐字节验收** | 验收要求 md 也逐字节相同，所以验收路径下标题得沿用旧文案（`ACCEPT_EVAL.md` §4.6） |
 
-**明确不算旋钮的两个诱惑**：① 用降 batch size 解 OOM——有效批大小变了，跨模型不再是同一配方（gates.md §3.2）；② 用放宽风险目标或借用别格触发点来抢救"无解"的格——两者都直接破口径（gates.md §3.4）。
+**明确不算旋钮的三个诱惑**：① 用降 batch size 解 OOM——有效批大小变了，跨模型不再是同一配方（gates.md §3.2）；② 用放宽风险目标或借用别格触发点来抢救"无解"的格——两者都直接破口径（gates.md §3.4）；③ 用 `--lora` 或换 `--base` 档解 OOM——这两个都进梯度，换的是被比较的对象本身，属于"另开一个批次"而不是"调一个旋钮"（第 5 节 run_id 模板行）。显存不够的合规处置只有两条：`--grad-ckpt`，或换更大的卡。
 
 ## 7. 换环境 / 换数据集时**必须**同步改的
 

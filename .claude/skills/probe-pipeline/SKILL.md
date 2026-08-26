@@ -13,7 +13,7 @@ version: 1.0.0
 配套文档（照抄命令去第一份，判断该不该改去第二份，卡住了去第三份）：
 - 命令表：`references/stage-commands.md`
 - 口径清单：`references/invariants.md`（改这里任何一条 → 新老数字不可比）
-- 门禁与应急：`references/gates.md`（门禁编号 G1–G22，下文按编号引用）
+- 门禁与应急：`references/gates.md`（门禁编号 G1–G24，下文按编号引用）
 - 扩展清单：`references/extending.md`（**加新模型 / 新环境 / 新训练方法 / 新 split 方法
   从这份进**；§5 静默失败点总表；**§6 回写本 skill 的对照表**）
 
@@ -41,7 +41,7 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练格表唯�
 | `<BATCH>` | `c1` | run_id 前缀，一批一个，全链四处一致 |
 | `<ENV>` | `appworld` | appworld / bfcl / tales，决定事件抽取正则 |
 | `<MODELS>` | `q35 q36 gptoss` | 被探测的 agent 模型，**永不合并同族**（q35≠q36） |
-| `<CELLS>` | `ctool cgen cparam` | 因果线三格：判工具名 / 写整条调用 / 给定工具名只填参数。m 线(mtool/mext)2026-08-21 起停跑，两格仍留在 CELLS 可单发。底座三档 `--base qwen/qwen17/qwen4`，**一个批次只跑一档**（extending §3.4） |
+| `<CELLS>` | `ctool cgen cparam` | 因果线三格：判工具名 / 写整条调用 / 给定工具名只填参数。m 线(mtool/mext)2026-08-21 起停跑，两格仍留在 CELLS 可单发。底座三档 `--base qwen/qwen17/qwen4`，训法两种（全参 / `--lora`，np821 起），**一个批次只跑一档底座 + 一种训法**，两者写进批次前缀（extending §3.4、stage-commands §3.2） |
 | `<DATA_ROOT>` | `pipeline/data/aw_official_v1/` | 数据集版本目录，**换口径就换版本号** |
 
 这五个变量里有四个可以扩展，各自的改动清单在 `references/extending.md`：
@@ -71,8 +71,17 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练格表唯�
    27B 权重 54G、gpt-oss 63G，A6000 的 48G 装不下，一律单卡一实例。
 3. 门禁 **G3 服务健康**（六个全绿才放量）→ **G4 每模型 1 题 smoke** → 放量。
 4. 长杆模型（题最多那个）客户端并发开高一档，拉平三路墙钟。
-5. 收尾门禁 **G6 完整性**（文件数对上题数、每文件末行 `type:"final"`）
+5. 收尾门禁 **G6 完整性**（文件数对上 **题数 × 每题轨迹数**、每文件末行 `type:"final"`）
    → **G7 显存归零** → `python3 run.py gpu-jobs finish` → `python3 run.py record finish` → commit。
+
+⚠️ **一题多轨迹**（np821 起）：manifest 给 `traj_per_task` + `seed_family`（要么都给
+要么都不给，长度必须相等，只认 env=appworld），采集器按序给每条轨迹派一个种子并逐条
+落进轨迹 meta，文件名带采样序号 `appworld_<tid>_r0.jsonl … _r{K-1}.jsonl`
+（`--traj-per-task 1` 时无后缀 = 旧名、生成物与旧版逐字节一致）。K 条同题轨迹的 `unit`
+相同，所以**天然同堆**、不会跨 split 泄漏；样本量按 K 倍涨。下游连带项：标注侧配置写
+`trajs_per_unit`（门禁 B 按它判"一个 unit 恰好 K 条且序号齐全"）；**inject 线还没跟上**
+——`replay_inject.py` / `score_live.py` 仍按 `appworld_<unit>.jsonl` 反查，吃多样本批
+之前要先改（stage-commands §7）。
 
 ⚠️ **G5 outdir 命名**：必须是标准名 `<env>_<model_key>`（如 `appworld_gptoss`），
 名字不标准会被下游事件抽取**静默跳过**——这个坑不报错，只让样本数变少。
@@ -113,11 +122,13 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练格表唯�
 换环境时先跑一句 `comm` 对拍三份题单。
 
 ### C2 各格 smoke（占卡，转 gpu-run）
-门禁 **G14**：`CELL_ORDER` 各格跑一次 `--smoke`（现役三格：cgen/cparam 按固定种子
-`SEED=20260729` 随机抽 500 训练 / 200 评估**实例**；ctool 同种子随机抽
-200 / 80 **事件**；各格都是 1 epoch，没有步数上限。停跑的 mtool/mext 限额
-也是 500/200 实例——mext 是**参数实例级**不是样本级——留档备查），
-判据是 loss 在降、ckpt 能存能读。
+门禁 **G14**：`CELL_ORDER` 各格跑一次 `--smoke`（现役三格：cgen/cparam 按各脚本
+自己的 `SEED` 常量随机抽 500 训练 / 200 评估**实例**（因果三格 np821 起是 42，
+两个 mbert 格仍 20260729）；ctool 同法随机抽 200 / 80 **事件**；各格都是 1 epoch，
+没有步数上限。停跑的 mtool/mext 限额也是 500/200 实例——mext 是**参数实例级**
+不是样本级——留档备查），判据是 `train_log` 有 start 与 done、ckpt 能存能读
+（⚠️ "loss 在降"这一项 smoke 规模下判不了：每 50 个 gstep 才写一条 step 记录，
+smoke 一共才十几个 gstep，见 gates §1 的 G14 行）。
 ctool 另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`
 （cgen/cparam 同骨架但没有这套检查，见 extending §3.4）。
 **smoke 不过不许放量**，一次都不许。
@@ -134,6 +145,13 @@ smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这
 第二次会被"同 out 已有 `train_log.jsonl`"守卫拦住）。
 **正式发射（C3）之前必须 commit**，那道门不许用 `--allow-dirty` 糊过去。
 
+⚠️ **smoke 过了不等于这张卡装得下全量**（np821 实测）：smoke 只抽 500 条实例，
+踩不到全量首批的长序列组合，而显存峰值由**批内最长序列**决定。np821b17 的 cgen
+smoke 在 48G 卡上峰值 44.1 GiB 跑完，全量发上去六分钟后第一个 backward 就 OOM
+（gates §3.9）。判法：**smoke 峰值离卡容量不足 ~10% 就当装不下，直接上大卡**。
+四档形态（底座 × 训法 × 开不开 `--grad-ckpt`）的实测峰值表在 stage-commands §3.1
+——挑卡先查它，别按模型大小拍脑袋，装不装得下的分水岭是 gc 不是模型多大。
+
 ### C3 批量训练（占卡，转 gpu-run）
 `<MODELS>` × `<CELLS>` 全独立，**一把全上并行**，墙钟 ≈ 单次时长。
 发射前 **G1 工作树干净**（先 commit；run.py 对发射类任务是**硬门禁**，
@@ -145,11 +163,25 @@ smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这
 两条与"同一个 `--out` 二次训练"有关的新行为（2026-08-02 起）：各训练格都有 `--force`，
 **不带它时 `--out` 下已有 `train_log.jsonl` 就直接拒绝开训**（防两次产物混进同一个
 `best/`）；`run.py launch-probe` / `launch-eval` 发射成功后自动往产物目录写
-`RUNMETA.json`（append 一条 commit + 实际命令），手搓发射要自己补
+`RUNMETA.json`（`register_all` 第一步写，回执里有 `RUNMETA: <路径>` 一行；
+2026-08-26 之前回执里那句 `WARN 没给 --outdir，RUNMETA 没写` 是误报，按它手补
+会留重复条目，已修），手搓发射才要自己补
 `python3 run.py runmeta <outdir> --cmd '<命令>'`。
 
-排卡表落一份 `ops/<batch>_placement.json`，逐格写死 host/gpu/额外参数——
+排卡表落一份 `ops/<batch>_placement.json`，逐格写死 host/gpu/额外参数
+（`--base` / `--lora` / `--grad-ckpt` 都在 extra 里，排卡表是这三样的真源）——
 这样重发某一格时不用重新推理机位。
+
+⚠️ **补发单格不许拿整张排卡表重发**（np821 实测）：已经跑完的格会被"同 out 已有
+`train_log.jsonl`"守卫秒退，但**登记在守卫之前就做了**——给那个早跑完的 run 补一条
+假 RUNMETA、把 run_id 塞回台账 active，还得手动清。补哪一格就临时写一张**只含那
+一格**的排卡表放仓库外，正式表里那一行同步改成新机位留档（stage-commands §3、
+extending §5 #24）。
+
+**驱动器 `run.py pipeline` 的训练段一敲只发一批、四批严格串行**，发过的批留标记
+不重发；要跨批并行就自己用 `run.py launch-probe full --batch <批>` 手发其余批
+（同一套登记代码路径），手发批跑完驱动器照样认（它的判据是 `best/` 在 +
+`train_log` 有 done）。细节与两类完成判据见 stage-commands §6。
 
 ### C4 评测（**内部必须串行，这是唯一有依赖的一段**）
 
@@ -163,12 +195,22 @@ smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这
 两档皆无解 **记 N/A** ——不放宽风险目标、不借用别格触发点（两者都破口径，见 gates §3.4）。
 
 不必等训练全批收官，**逐格收官逐格派评测**（同一个 subagent 用 SendMessage 续派）。
+用驱动器跑的批次也照样能这么干：**评测三步的完成判据只看产物文件、不看发射标记**，
+所以训练没全齐时直接 `run.py launch-eval` 把已训完的批先评掉，报告落地后驱动器
+敲到那一步会认作完成。配套两道门禁：**G23**——手发的评测**在飞时不许敲驱动器**
+（报告还没落地、又没有它自己的发射标记，`e2_call` 会把那批再发一遍，它不查台账）；
+**G24** 见 C5。耗时怎么估看 stage-commands §4.5（ctool 档按切点行数走、call 档
+只按被 θ 触发的事件数走）。
 
 ### C5 矩阵汇总
 `python3 run.py matrix --runs-dir ... --out ... --risk 0.05`
 两档各出一份表。⚠️ 这个脚本有三个显示局限（N/A 显示成 PENDING、
 表固定读单一风险档、参数格两列无条件读可能混档），
 **引用矩阵表时必须配文字说明**，别让读者误读。
+
+**G24：某批的 call 档报告没齐之前不许先出那批的矩阵**——驱动器的 `m1_matrix`
+见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**，早产的那张带 PENDING 的表会
+一直留着、后面再敲也不重出（extending §5 #23）。已经留下了就删掉那两份 md 重出。
 
 ---
 
@@ -205,7 +247,7 @@ skill 是活文档，用一次不回写就腐烂一次——下次调用它的�
 对照 `references/extending.md §6` 的表逐行打勾，它写明了
 「做了什么 → 更新哪份文档的哪一节 → 更新什么内容」。三条硬规矩：
 
-- **新门禁编号从 G23 起顺延**，G1–G22 已占用，不许复用旧号（SKILL.md 按号引用）。
+- **新门禁编号从 G25 起顺延**，G1–G24 已占用，不许复用旧号（SKILL.md 按号引用）。
 - **区分"该进 skill"与"这一批一次性的事"**：判据是**下一个人会不会再遇到**。
   「gptoss 在 A6000 上装不下」进 skill（硬件约束长期成立）；
   「c1 批次里 q35 的 θ 是 0.85」不进（那是这批的结果，归 RESULTS.md）。

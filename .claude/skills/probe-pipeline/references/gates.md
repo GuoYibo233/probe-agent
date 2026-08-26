@@ -12,7 +12,7 @@
 | G3 | 服务健康 | 采集放量前 | 日志出现 `Application startup complete`，且 `curl /v1/models` 返回模型名；**全部实例健康才放量** | 读服务日志定位；单实例救不活就把它的分片改指同模型另一实例的端口，不停摆（PLAY §3.2、§3.7） |
 | G4 | 采集 smoke | 每模型各 1 题 | outdir 出现 `<env>_<tid>.jsonl`；`type:"gen"` 带非空 `reasoning`、`type:"env"` 带代码动作、末行 `type:"final"` | 先查服务日志再修；反复修不好按 §4 判断是否死局（PLAY §3.3） |
 | G5 | outdir 命名 | 采集发射时 | 目录名必须是 `<env>_<model_key>` 标准名（如 `appworld_gptoss`），尾巴对上 `MODEL_OF` 的键 | 改名重跑；名字不标准会被下游事件抽取**静默跳过**，见 §3.6（PLAY §3.3、ENG §4.2.1、§7） |
-| G6 | 采集完整性 | Phase A 收尾 | 各 outdir 的 jsonl 文件数对上题数，且每个文件末行是 `type:"final"` | 用 `--resume` 重发缺题分片补齐；补齐后才算 A 段结束（PLAY §3.8.1-2） |
+| G6 | 采集完整性 | Phase A 收尾 | 各 outdir 的 jsonl 文件数对上 **题数 × 每题轨迹数 K**（K>1 时文件名带采样序号 `_r0..r{K-1}`，同一题的 K 条落**同一个** outdir），且每个文件末行是 `type:"final"` | 用 `--resume` 重发缺题分片补齐（K>1 时 `--resume` 的判定粒度是"（题, 序号）"，不是整题）；补齐后才算 A 段结束（PLAY §3.8.1-2） |
 | G7 | 显存归零 | Phase A 收尾 | 服务 session 全杀，`nvidia-smi` 显存归零 | 批量任务结束不许占卡过夜，必须杀干净（PLAY §0.12、§3.8.3） |
 | G8 | **ACCEPT_V3DIFF** | annotate 段末，不过不许进 train | 新旧样本数相等、主键单边为 0、九字段（text/label/w/depth/n_sents/traj/unit/model/step）不一致计数**全 0**，每个有旧基准的环境各跑一遍 | 修 annotate 代码重跑；反复过不了属"推翻前提"，按 §4 停下问用户（ENG §4.5、§9） |
 | G9 | 题单行数 | annotate 自检 | 三个题单文件行数对上官方分区（本轮 90 / 57 / 168） | 注意题单文件**无末尾换行**，`wc -l` 会各少 1，别直接当真（ENG §4.6） |
@@ -20,17 +20,24 @@
 | G11 | label_call 抽查 | annotate 自检 | 抽 20 条：工具名 == label，参数与 action 原文对得上 | 回查 `split_args_named` 与归一化（ENG §4.6） |
 | G12 | **ACCEPT_EVAL** | eval 段末，不过不许进 Phase C 发射 | 重跑旧数据，`temperature / chosen_theta / test_frozen` 三块完全一致；新报告写临时目录，旧文件 md5 跑前跑后不变 | 修 eval 代码重跑；本轮就因"cached 时误跳 tokenizer 导致报告少两个字段"改回并重跑（ENG §6.5、ACCEPT_EVAL §4.4） |
 | G13 | 对齐检查 | 因果格开训前 | `ALIGN_CHECK` PASS，FAIL 即 `exit 2`；先用 `--align-only` 单独跑一遍 | 看 §3.1：先判是数值噪声还是实现错误，放宽阈值必须记 TIMELINE（ENG §5.3、§9） |
-| G14 | 各格 smoke | 批量训练发射前 | `CELL_ORDER` 各格跑一次 `--smoke`（现役 ctool/cgen/cparam；m 线 2026-08-21 停跑）：cgen/cparam（以及停跑的 mtool/mext）**按固定种子 `SEED=20260729` 随机抽** 500 训练 / 200 评估**实例**（各脚本都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，不是原序截断；mext 的 500/200 落在 `join_rows` 展开出来的**参数实例**上，不是样本），ctool 同法随机抽 200 / 80 **事件**，各格都是 1 epoch、**没有步数上限**（口径同 `stage-commands.md §3` 的 `--smoke` 行）；判据是 loss 在降、ckpt 能存能读；ctool 含 ALIGN_CHECK PASS | 修脚本重 smoke，不许直接放量（PLAY §5.2、ENG §9）。⚠️ 重跑同一个 smoke 目录要带 `--force`（同 out 已有 `train_log.jsonl` 即拒绝开训），出命令阶段树脏就 `--allow-dirty` |
+| G14 | 各格 smoke | 批量训练发射前 | `CELL_ORDER` 各格跑一次 `--smoke`（现役 ctool/cgen/cparam；m 线 2026-08-21 停跑）：cgen/cparam（以及停跑的 mtool/mext）**按各脚本自己的 `SEED` 常量随机抽**（因果三格 np821 起是 42，两个 mbert 格仍 20260729） 500 训练 / 200 评估**实例**（各脚本都是 `random.Random(SEED).shuffle(...)` 之后再切前 N 条，不是原序截断；mext 的 500/200 落在 `join_rows` 展开出来的**参数实例**上，不是样本），ctool 同法随机抽 200 / 80 **事件**，各格都是 1 epoch、**没有步数上限**（口径同 `stage-commands.md §3` 的 `--smoke` 行）；判据是 `train_log.jsonl` 有 `event=start` 与 `event=done`、`best/` 落盘能存能读，ctool 另含 ALIGN_CHECK PASS。⚠️ **"loss 在降"这一项在 smoke 规模上判不了**：各训练脚本每 50 个 gstep 才写一条 `event=step`，而 500 实例 ÷（bs 4 × accum 8）≈ 15 个 gstep，一条 step 记录都写不出来——要看曲线得读 stdout 的进度行，别拿"日志里没有 step"当训练没动 | 修脚本重 smoke，不许直接放量（PLAY §5.2、ENG §9）。⚠️ 重跑同一个 smoke 目录要带 `--force`（同 out 已有 `train_log.jsonl` 即拒绝开训），出命令阶段树脏就 `--allow-dirty` |
 | G15 | bundle 校验 | 批量训练发射前 | `check_bundle.py` 对 smoke 产物跑通：能加载、出 softmax、打印预测/置信度/是否过 θ/真值 | 产物格式不合 `probe_server.py` 就改存盘格式（ENG §8、§9） |
 | G16 | 双登记 | 发射后立刻 | **launch 自动写三处；手搓/register 补录路径仍在，漏了照旧算违规**——`python3 run.py launch`/`launch-probe`/`launch-eval` 发射成功自动做完台账 + `record.py start` + RUNMETA 三处登记；手搓发射要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
 | G17 | 收尾销号 | 每个 run 结束 | `python3 run.py record finish --metric …` + `python3 run.py gpu-jobs finish` + 释放显存 + commit——**这一步 launch 没有收编，G16 的自动化只管发射时的登记，销号仍要手动跑这四连** | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5）。`gpu-jobs finish` 是 fail-closed 的：session 还活着、或 ssh 探测失败（分不清死活）都会拒绝销号，确认要销带 `--force` |
 | G18 | 总验收清单 | 批量训练发射前逐项打勾 | ENG §9 的七条：G8 / G12 / 产物清单齐 / 题单一致 / 各格 smoke / G15 / 全部新代码已 commit | 缺哪条补哪条，一条不缺才发射（ENG §9） |
 | G19 | 题单缺口逐条列出 | annotate 段末 | 三模型共用一份题单，但**实现出的 unit 集合允许有缺口**；缺口必须逐条列进 `CALLSTR_CHECK.md` 并说明原因（轨迹一个可用事件都没出：思考 <40 字符 或 调用正则解析不出）。bfcl 实测缺口：q35 0 题、q36 4 题（`multi_turn_base_{63,84,176,187}`，其中 176 在 test 堆 → q36 test 只有 19 实例）、gptoss 1 题（`multi_turn_base_30`，val 堆） | 缺口列不出来 = G10 的字面版本失守，"三模型同题对比"这句话有水分，报告里必须改口成"近似同题"（`check_callstr.py` 偏差 2） |
 | G20 | 真值调用串可回读 | annotate 段末，进 train 前 | 把每个事件的 `label_call` 喂给 `eval_causal_call.parse_call`，切回来的 `(key, norm(value))` 必须与该事件的 `args_named` 全等。回读率 = `params_all_ok` / `full_call_ok` 的**天花板**，必须写进报告。实测（事件级回读率，q35/q36/gptoss）：bfcl 0.9735 / 0.9763 / 0.9755，appworld 0.9932 / 0.9953 / 0.9985 | 回读率异常低（<0.95）先查 `make_call` 与 `split_named_raw` 的切法是不是漂了；正常低（参数值含逗号）**只记录不修口径**——给单个环境补逗号闸门会让它与已上账的 appworld 不是一把尺子（EXT §5 #21） |
-| G21 | traj_runs 不许写父目录 | annotate 段末 | `traj_runs[]` 的每一项都是 run 目录**本身**（其下直接有 `<env>_<模型>` 子目录，且再往下没有嵌套的 run 目录）；且 `(event, sent_idx)` 全局唯一、一个 unit 只对一条 traj | 写成父目录 = 把 smoke 批次静默并进来，退 0 无告警、只是样本数悄悄涨（EXT §5 #20）。`check_callstr.py` 门禁 C + 门禁 B 硬拦 |
+| G21 | traj_runs 不许写父目录 | annotate 段末 | `traj_runs[]` 的每一项都是 run 目录**本身**（其下直接有 `<env>_<模型>` 子目录，且再往下没有嵌套的 run 目录）；且 `(event, sent_idx)` 全局唯一、**一个 unit 恰好对 K 条 traj**（K = config 的 `trajs_per_unit`，缺省 1；K>1 时还要求文件名尾部的采样序号 `_r0..r{K-1}` 齐全，少一条也硬停） | 写成父目录 = 把 smoke 批次静默并进来，退 0 无告警、只是样本数悄悄涨（EXT §5 #20）。`check_callstr.py` 门禁 C + 门禁 B 硬拦 |
 | G22 | 报告文案不撒谎 | annotate 段末 | 题单目录的 `SPLIT_REPORT.json` 写着 `official_split_exists: false` 时，`ANNOTATE_REPORT.md` 里不许出现"官方题单" | 在 config 里写 `split_desc` 说明真实切法（`build.py` 从该字段取文案，默认值保持旧说法）。`check_callstr.py` 门禁 E 硬拦（EXT §5 #18） |
+| G23 | 手发的评测不在飞 | **每次敲 `run.py pipeline` 之前**（只要这一批有过手发的 eval） | `python3 run.py gpu-jobs watch`（或 `json`）里没有本批在飞的 eval 任务，且手发那几格的报告已落地 | 等报告落地再敲驱动器。**驱动器只看产物文件与它自己的发射标记，不查台账**——手发的 `launch-eval` 不留标记，报告又还没落地，`e2_call` 就会把那一批**再发一遍**，两个进程写同一份报告（EXT §5 #23）。已经重发了：杀掉后发的那个 session、销号，让先发的跑完 |
+| G24 | 出矩阵前该批报告齐 | 跑 `run.py matrix` / 驱动器 `m1_matrix` 之前 | 该批要进表的每一格都有报告（ctool 的 `REPLAY_REPORT.json`、cgen 的 `CALLGEN_REPORT.json`、cparam 的 `PARAM_REPORT.json`） | 缺报告就先别出这一批的表。`m1_matrix` 见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**，于是一张带 PENDING 的早产表会一直留着、后面再敲驱动器也不会重出（EXT §5 #23）。已经留下早产表：删掉那两份 md 再敲，或手跑 `run.py matrix` 覆盖 |
 
 **G19–G22 的实现都在一个脚本里**：`pipeline/annotate/check_callstr.py --config <同一份 config>`，纯 CPU、跑在 `build.py` + `param_label.py` 之后，产物 `<DATA_ROOT>/CALLSTR_CHECK.md`。它内部编号 A–E（A 一模型一数据集 / B 样本键唯一 / C traj_runs 层级 / D 题单归属**全量**核对（比 G11 的抽 20 条更严）/ E 文案一致）全部 `sys.exit(1)` 硬拦，另有四类"只报不拦"的已知偏差（回读损失 / 题单缺口 / test 有 train 无的工具 / test 堆厚度告警）。
+
+**G23–G24 没有脚本实现**（np821 批新加）：它们拦的是"驱动器 `run.py pipeline` 与手发的
+`launch-eval` / `run.py matrix` 混用"这件事，判据靠人（或跑流水线的 agent）在敲命令前
+自己核一眼台账与报告落地情况。驱动器那边的两条对应行为写在 `stage-commands.md §6`，
+静默症状写在 `extending.md §5 #23`。
 
 ## 2. 两条复现验收线
 
@@ -112,6 +119,20 @@
 - **成因**：开火头走独立样本流，每步**多一次全长前向**，激活显存近乎翻倍；代价随思考长度上升，所以只打长思考模型（q36/gptoss 的边界数中位数是 q35 的数倍到数十倍）。
 - **处置**：按 §3.2 同款判据加 `--grad-ckpt` 原卡重发（mext 当时还没有这个旗，补旗即一次 commit `fbe4d15`，训练逻辑零改动）。8 个全部重发成功，超参一个未动。
 - **事后评价**：§3.2 的判据第二次验证成立，同时补一条经验：**给训练加"额外前向"类的新头时，显存预算按最长思考的模型档估**，q35 上冒烟通过不代表 gptoss 档放得下；发射前在排卡表里给长思考档预留 `--grad-ckpt` 是零成本的保险。
+
+### 3.9 smoke 在 48G 上过了，全量第一个 backward 就 OOM（np821 批，b17_cgen）
+
+- **现象**：`np821b17_gptoss_cgen`（Qwen3-1.7B 全参 + `--grad-ckpt`）的 smoke 在 RTX 6000 Ada（47.51 GiB 可用）上跑完、实测峰值 44.1 GiB，据此判"48G 装得下"并把全量发了上去；全量发射 **6 分钟后第一个 backward 就 OOM**——要 4.64 GiB、只剩 3.61 GiB，其中 PyTorch 实占 34.75 GiB、另有 8.63 GiB 是保留未分配的碎片（traceback 全文在 `logs/new1_np821b17_gptoss_cgen_t107g3.log`）。
+- **成因**：smoke 只喂固定种子抽的 500 条实例，**踩不到全量第一个批次里那种长序列组合**；显存峰值由批内最长序列决定，不由平均值决定。碎片 8.63 GiB 说明余量还要再打一道折。
+- **处置**：不做 `expandable_segments` 分配器实验（省下的时间对不上一个几十小时的 run 中途再 OOM 的风险），改等安全大卡——等同批 ctool 在 H100 上收官腾出卡再重发。**48G 对 1.7B 全参 + gc 的全量记「装不下」**，smoke 的那个 44.1 GiB 不作数。
+- **事后评价**：判据要改口——**smoke 通过只证明"代码跑得通"，不证明"这张卡装得下全量"**。余量的判法是：smoke 峰值离卡容量不足 ~10% 就当装不下，直接上大卡；`--grad-ckpt` 是显存的合规开关，但它救不了"余量本来就只剩个位数 GiB"这种局面。同批实测的四档峰值见 `stage-commands.md §3.1` 的显存表。
+
+### 3.10 48G 装不下 0.6B 全参（无梯度检查点）（np821 批，三格 smoke 全 OOM）
+
+- **现象**：`np821b06` 三格（Qwen3-0.6B 全参、**不带** `--grad-ckpt`）在 RTX 6000 Ada 上 smoke 全部 OOM（traceback 存档 `logs/smoke_np821b06_cparam.oom_t107.log`：47.51 GiB 里 PyTorch 已占 42.26 GiB，再要 128 MiB 就没了）；挪到大卡后实测峰值 ctool 60.2 / cgen 76.8 / cparam 76.7 GiB。
+- **判断依据**：0.6B 的权重才 1.2G 左右，60–77 GiB 全是激活——**装不装得下的分水岭是 `--grad-ckpt` 开没开，不是模型大小**。同批 1.7B 带 gc 的峰值只有 35–44 GiB，比 0.6B 不带 gc 低一半。
+- **处置**：0.6B 全参这一批整批上 H100（95G）。
+- **事后评价**：排卡前先问"这一格开不开 gc"，再问"多大模型"；顺序反了就会像这次一样，拿"模型小"推出"小卡放得下"，三格 smoke 一起白跑一轮。
 
 ## 4. 死局判据
 

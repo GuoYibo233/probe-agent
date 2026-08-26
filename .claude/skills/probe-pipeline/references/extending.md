@@ -110,6 +110,16 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | cgen | `train_causal_callgen.py` | Qwen3 三档(常量 `MODELS`,`--base` 默认 qwen) | 语言建模(直接写整条调用) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**) | HF 目录 + tokenizer + `meta.json` |
 | cparam | `train_causal_param.py` | Qwen3 三档(常量 `MODELS`,`--base` 默认 qwen) | 语言建模(给定工具名与左括号,只写参数段;目标从 `label_call` 按 `label+"("` 前缀剥离,对不上整条丢弃计 `assembly_mismatch`) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**;`val_exact_params` 只进日志) | HF 目录 + tokenizer + `meta.json`(含 `param_only: true`) |
 
+⚠️ **先分清"新格"与"新训法轴",清单只对前者**。np821 加的 `--lora` 不是新格:
+格没变(还是 ctool/cgen/cparam)、数据没变、评测脚本一行没改,变的只是底座怎么训。
+这类扩展**不走 §3.1 的必改清单**(不用新写训练脚本、不用登记 `CELLS` /
+`EVAL_CELLS` / `summarize_matrix` 的三张表),要做的是三件:① **实现收在一个共用
+模块里**——LoRA 收在 `pipeline/train/lora_util.py`,三个因果格共用旗标、默认值、
+target modules,别处不许再抄一份(同构表必漂移,而那种漂移是静默的);② **存档
+契约不许变**——LoRA 存 `best/` 之前先 `merge_and_unload` 并回底座再
+`save_pretrained`,`best/` 与全参训练存的逐项同构,四个评测脚本零改动装得回;
+③ **新轴写进 run_id 的批次前缀而不是格名**(§3.4 的 run_id 那条)。新格才往下走 §3.1。
+
 ### 3.1 必改清单
 
 | 文件:行 | 改什么 | 漏改的后果 | 改动量 |
@@ -128,7 +138,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 
 | 部件 | 四份各在哪 | 抄的时候注意 |
 |---|---|---|
-| `SEED = 20260729` + `torch.manual_seed`/`random.seed` | 常量 mtool`:33` / mext`:38` / ctool`:52` / cgen`:41`(另有 `rules.py:13` 第五份);设种子 mtool`:101-102` / mext`:232-233` / ctool`:257-258` / cgen`:200-201` | 五处独立常量,**没有单一真源**;新格必须自己写死同一个数,设种子位置照抄 |
+| `SEED` 常量 + `torch.manual_seed`/`random.seed` | 每个训练脚本一份模块级 `SEED`(另有 `rules.py` 第五份),按常量名 grep;设种子紧跟在 argparse 之后 | **各脚本一份独立常量,没有单一真源**,而且 np821 起**取值已经分家**:`rules.py` 与三个因果脚本换成种子家族首位 **42**,两个 mbert 脚本(m 线停跑)仍是 20260729。新格照它所在那条线的现值写死,别照抄本表里的数字;换种子家族要全仓 grep 一遍取值点 |
 | `collate()` 与 Dataset 类 | `collate` mtool`:56` / mext`:124` / ctool`:98` / cgen`:76`;数据集 `JsonlDS`(mtool`:36`)/ `InstDS`+`join_rows`(mext`:63`)/ `load_events`+`EventDS`(ctool)/ `CallDS`(cgen`:58-63`) | 八份签名各不相同,一律不能复用;按"新格吃什么标签"挑最近的抄 |
 | `train_log.jsonl` 的 `log()` 闭包 | mtool`:132-138` / mext`:265-267` / ctool`:313-315` / cgen`:234-236` | 一律 `open(..., "a")` **追加模式**;事件名约定 `start`/`step`/`eval`/`save_best`/`done`,新格不照这套写,读日志的人和 job-monitor 都认不出 |
 | 心跳 emit(`ops/heartbeat.py`) | 五个训练脚本、四个 eval 脚本、`run_appworld.py` 已接(`import heartbeat` / `heartbeat.emit` grep 定位,不引行号;`run_tales.py`/`run_alfworld.py`/`run_tau2.py` 尚未接) | **新采集/训练/评测脚本必须接 `ops/heartbeat.py`(进主循环 emit(0,...),每单位 emit,收尾 status=done),不接的脚本在窗口里永远是 warm-up 中** |
@@ -151,9 +161,10 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 ### 3.4 依赖关系与门禁
 
 - **独立格 vs 依赖格**:mtool/ctool 只吃数据集,互不依赖;mext/cgen 要吃**同模型工具格**的触发点(`eval_mbert_call.py:140`、`eval_causal_call.py:229` 的 `replay_fire`)。新格只要是"在触发点上评",就必须排在工具格之后,顺序照 stage-commands §4.1。
-- **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 loss 在降 + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。
-- **run_id 没有底座档位段**(`{batch}_{model}_{cell}`):同一格换 `--base` 档重训会撞 rid,两次产物无法归属。约定**一个训练批次只跑一档底座**(如 p1 线的 p1b06/p1b17/p1b4),换档在排卡表 extra 里写 `--base <档>`(2026-08-21 定,配三档底座一起生效)。
+- **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 `train_log` 有 start 与 done + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。("loss 在降"这一项 smoke 规模上判不了,新格照抄"每 50 gstep 写一条 `event=step`"的写法就会同样判不了,见 gates §1 的 G14 行。)
+- **run_id 没有底座档位段,也没有训法段**(`{batch}_{model}_{cell}`):同一格换 `--base` 档或换训法重训会撞 rid,两次产物无法归属。约定**一个训练批次只跑一档底座 + 一种训法**,两者都写进批次前缀(p1 线的 p1b06/p1b17/p1b4;np821 线的 np821b06/np821b17/np821l17/np821l4,`b`=全参、`l`=LoRA),换档换训法一律在排卡表 extra 里写 `--base <档>` / `--lora`(2026-08-21 定档位,np821 加训法轴)。**驱动器不读批次配置里的 `base`/`mode` 字段**,排卡表 extra 才是真源。
 - **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_probe.py:67` 的 `rid = f"{batch}_{model}_{cell}"`、`summarize_matrix.py:75` 的 `rid = f"{args.prefix}_{m}_{c}"`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_probe.py:66` 的 `CELLS[cell]`、`summarize_matrix.py:22` 的 `REPORT_OF`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_probe.py:112`(smoke 档)/`:123`(full 档)拼的 session 名人读歧义。建议单段小写。
+- **显存按"开不开 `--grad-ckpt`"估,不按模型大小估**:np821 实测 0.6B 全参**不带** gc 的峰值(60–77 GiB)比 1.7B 全参**带** gc(35–44 GiB)高一倍,LoRA + gc 又低一档(17–38 GiB)。四档形态的实测峰值表在 `stage-commands.md §3.1`,挑卡前查它;两次踩坑的经过见 `gates.md §3.9`(smoke 过了全量仍 OOM)与 `§3.10`(0.6B 全参在 48G 上三格全 OOM)。
 
 ### 3.5 最短路径
 
@@ -273,6 +284,8 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | 20 | `build.py:101`(`runs.glob("bfcl_*")`)+ config 的 `traj_runs[]` | `traj_runs` 写成 run 目录的**父目录**(如 `/envs/runs` 而不是 `/envs/runs/full_v1`) | glob 只在该目录**平级**找 `bfcl_*`,于是命中的是 21 题的 smoke 批次 `envs/runs/bfcl_q35/`;若父目录与正确的 run 目录**同时**列进 `traj_runs`,smoke 批次的 traj 名(`bfcl_q35/<id>`)与全量批次逐字相同,同一批 event key **重复进库**、退 0、无告警,只是样本数悄悄涨。实测 bfcl q35 从 11094 涨到 12395 样本(+1301),报告里三堆实例数全都还是 140/40/20,肉眼看不出来。防线:`check_callstr.py` 门禁 C(traj_runs 项下不许再有嵌套 run 目录)+ 门禁 B(`(event, sent_idx)` 全局唯一、一个 unit 只对一条 traj) |
 | 21 | `build.py:154-156`(`make_call`)对 `eval_causal_call.py:83-116`(`split_named_raw`) | 真值参数值里含**逗号** | `make_call` 是 `", ".join(f"{k}={v}")` 手拼、**不加引号**,eval 侧按顶层逗号切 → 一条真值被切成 `k=前半` + `pos0=后半`,`params_all_ok` / `full_call_ok` 被**静默压低**,生成侧写得再对也拿不到分。实测(`check_callstr.py` 全量算的,不是抽样;两批都是三模型加总):bfcl 3325 事件里 **83 条回读失败(2.50%)**、5027 个参数实例里 229 个含逗号(4.56%);appworld 16030 事件里 **76 条(0.47%)**、24674 个参数实例里 104 个含逗号(0.42%)。所以 bfcl 的参数侧数字天生比 appworld 难看 **约 5.3 倍**,原因是 bfcl 的工具里有 `send_message` / `resolve_ticket` / `post_tweet` 这类自由文本参数,而 appworld 的参数多是 id 与短字段。`rules.py` 的 ALFWorld 有 `ALF_BAD_CHARS` 逗号闸门专门拦这件事,appworld / bfcl 都没有;**不要单给一个环境补闸门**(appworld 的 c1_* 十二格已按无闸门口径上账,补了就不是一把尺子)。防线:`check_callstr.py` 偏差 1 逐批量出天花板,写进 `CALLSTR_CHECK.md` |
 | 22 | `eval_mbert_call.py:274`(`pick_theta`,`eval_causal_call.py` 同款) | 拿 `self_fire.theta_sweep_val` 扫描表对着 risk 找"达标行"来判有没有解 | 选 θ_fire 的真实约束是 `fire_acc ≥ 1-risk`(开火**精度**),而扫描表里的 `wrong_fire_rate` 是按**全事件**归一的另一个数——后者 ≤ risk 时该档照样可能 null。ro1 批实测:bf_q36_mext 在 θ=0.95 处 wrong_fire_rate 0.09 ≤ 0.1 但 fire_acc 只有 0.78,0.1 档判 null 是**正确行为**;不知道这条的人会把它当 bug 去"修",一修就换了契约 |
+| 23 | `pipeline/driver.py` 的 `step_e2_call` / `step_m1_matrix`(按函数名 grep) | 手发了评测(`launch-eval`)、报告还没落地时敲 `run.py pipeline`;或某批 call 档报告没齐就先出了那批矩阵 | 两条都退 0、都不报警。① `e2_call` 的判据只有"报告文件在不在"加"它自己的发射标记在不在",**不查台账里在飞的 eval 任务**——手发的那批两样都不满足,于是**再发一遍**,两个进程写同一份报告;② `m1_matrix` 见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**,所以报告没齐时出的那张带 PENDING 的早产表会**永久留着**,后面再敲驱动器也不重出,读表的人拿到的是缺格的旧数。防线:**G23**(敲驱动器前确认手发的评测不在飞)与 **G24**(出矩阵前确认该批报告齐) |
+| 24 | `pipeline/driver.py` 的 `step_t2_full`(docstring 里写着这个场景) | 对**部分完成**的批再敲 t2_full(比如删了 `launched` 标记想补一格) | 它重发整张排卡表,已完成的格撞训练脚本的"同 out 已有 `train_log.jsonl`"守卫秒退,**但登记在守卫之前就做了**:那个早跑完的 run 被补一条假 RUNMETA、run_id 被塞回台账 active,而 `launch_probe` 发没发都退 0。台账多个不会自己消失的僵尸条目,追溯链里多一条没跑过的命令。补一格的正确做法见 `stage-commands.md §3`(只含那一格的临时排卡表) |
 
 ---
 
@@ -285,6 +298,9 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 | 加了新模型 | `extending §1` / `stage-commands §0` | §1 的三处枚举表补上新短名;§0 若引入了新权重目录,补一行路径 |
 | 加了新环境 | `extending §2` / `SKILL.md` Phase 0 的 `<ENV>` 行 / `stage-commands §1 §2` | §2 的分支清单标注"这个环境已接";Phase 0 的候选环境列表加名;§1 的 outdir 命名规则、§2 的 config `env` 字段取值同步 |
 | 加了新格 | `extending §3` / `SKILL.md` Phase 0 的 `<CELLS>` 行与 Phase C4 的依赖图 / `stage-commands §3 §4` | §3 的格表加一行(骨架/头/best 格式/选 best 指标四列都要填);§3 的命令表加一条真实跑过的命令;§4 的依赖顺序图标出新格排在哪一层 |
+| 加了新训法轴(格没变,只换底座怎么训,如 LoRA) | `extending §3` 开头的"新格 vs 新训法轴" + `§3.4` 的 run_id 行 / `stage-commands §3` 的旗标表与 §3.2 / `invariants §3` | §3 写清共用模块在哪、存档契约有没有变;§3.4 补一句新轴写进批次前缀;旗标表补 flag 行;invariants 记死新轴的超参默认值 |
+| 实测了硬件占用(显存峰值、装不装得下) | `stage-commands §3.1` 的显存表 / `gates §3` 加案例 / `gpu-run` 的 `references/launch-methodology.md` Step 2 | 表里按"底座档 × 训法 × 开不开 gc"一行,写峰值与结论;OOM 有故事的进 gates §3;gpu-run 那侧只留一句结论加指路,细表不抄第二份 |
+| 实测了某一段的墙钟 | `stage-commands` 对应段的耗时参考(eval 是 §4.5) | **先写清这一段按什么计数**(事件?触发事件?样本行?),再给量与分钟数——不写单位的分钟数下一批就用错 |
 | 加了新 split 方法 | `extending §4` / `invariants.md §2` | §4.1 的 `split_mode` 结论从"没接线"改成"已接线,取值有 X/Y";invariants §2 记录新切法的口径与"与旧数字不可比"这句 |
 | 改了任何写死的口径 | `invariants.md` 对应节 + `TIMELINE.md` | invariants 改数;TIMELINE 追加一条说明"为什么改、改之前的数字作废到什么程度" |
 | 踩了一个新坑 | `gates.md §3` 加一个案例 / 本文件 §5 加一行 | 坑会报错 → 进 gates §3;坑**不报错** → 必须进 §5 静默总表,并写清"症状长什么样" |
@@ -297,7 +313,7 @@ EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算�
 
 **原则三:回写必须 commit,且和数字分开。** skill 的改动跟着 Phase D 第 6 步的收官 commit 一起进库即可,但 commit message 里要**单独点名**改了哪几节,让人从日志能查到方法是哪一版——`skill: probe-pipeline 补 <批次> 的方法改动——extending §3 加 <格名> 格 / §5 新增静默点 #23 / gates 新增 G23`。如果这一批只改了 skill 没出数字(例如只是清点),那就单独一个 `skill:` 前缀的 commit,不要混进 `exp:` 或 `data:`。
 
-⚠️ **门禁编号 G1–G22 已占用,新门禁从 G23 起顺延,不许复用旧号**——SKILL.md 与本文件都按号引用,复用旧号会让两处指向不同的东西。(G19–G22 是 `check_callstr.py` 那批,见 `gates.md §1`。)
+⚠️ **门禁编号 G1–G24 已占用,新门禁从 G25 起顺延,不许复用旧号**——SKILL.md 与本文件都按号引用,复用旧号会让两处指向不同的东西。(G19–G22 是 `check_callstr.py` 那批;G23–G24 是 np821 批加的"驱动器与手发评测混用"两道,见 `gates.md §1`。)
 
 ---
 

@@ -179,9 +179,25 @@ python3 run.py train-cparam --data $D/<m> --out $R/<batch>_<m>_cparam
 第二次会被"同 out 已有 `train_log.jsonl`"守卫拦成 SKIP/退出。full 档同理,
 只有确认要覆盖那个目录才加。
 它**发射成功后自动往每个 `--out` 目录 append 一条 `RUNMETA.json`**
-(时间/机器/kind/实际命令/commit/branch/dirty + 脏文件清单,append 不覆盖,
-同目录二次发射留两条),产物从此能钉回代码版本。手搓发射(不经 launch-probe)
-要自己补一条:`python3 run.py runmeta <outdir> --cmd '<实际命令>'`。
+(时间/机器/kind=`train`/实际命令/commit/branch/dirty + 脏文件清单,外加
+session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发射留两条),
+产物从此能钉回代码版本。这条由 `launch_common.register_all` 的第一步写
+(它是 RUNMETA 的唯一写手,三处登记顺序 RUNMETA→台账→记录),回执里有
+`RUNMETA: <路径>` 一行就是写了;只有回执出现 `WARN RUNMETA 没写上(<目录>): <错误>`
+才需要手补 `python3 run.py runmeta <outdir> --cmd '<实际命令>' --kind train`。
+(2026-08-26 之前发射器自己先写一条再调 `register_all`,回执里那句
+`WARN 没给 --outdir，RUNMETA 没写` 是误报——按它手补会在同一份 RUNMETA 里
+留两条重复记录,np821 的 12 个训练 run 目录就是这样;修复见 commit 6047f83。)
+手搓发射(不经 launch-probe)要自己补一条:`python3 run.py runmeta <outdir> --cmd '<实际命令>'`。
+
+⚠️ **补发单格时别拿整张排卡表重发**(np821 实测):`launch-probe` / `launch-eval`
+逐格发,已经跑完的那些格会被训练脚本的"同 out 已有 `train_log.jsonl`"守卫秒退
+(退出码不变、整批不中断),但**发射器在守卫拦下之前已经把登记做了**——给那个
+早就跑完的 run 补一条假 `RUNMETA` 记录、把它的 run_id 重新塞回台账 active。
+台账从此有个永远不会自己消失的僵尸条目,RUNMETA 里也多一条没跑过的命令。
+处置:**补发哪一格就临时写一张只含那一格的排卡表**,放仓库外(如
+`$CLAUDE_JOB_DIR/tmp/<批次>_<格>_only_placement.json`)避免弄脏工作树,
+正式表 `ops/<批次>_placement.json` 里那一行同步改成新机位留档。
 
 换批次时把 `q35` 换成 `<MODEL>`、`c1` 换成 `<BATCH>`、数据集名换掉即可。run_id 一律 `<BATCH>_<MODEL>_<格名>`,四处一致(数据目录名 / tmux session / 台账 name / commit message)。
 
@@ -199,9 +215,11 @@ python3 run.py train-cparam --data $D/<m> --out $R/<batch>_<m>_cparam
 | `--device` | 除 mtool | 默认 cuda |
 | `--readonly-env` | 各格 | choices `appworld/bfcl`,默认不传(**不传 = 字节级旧行为**)。传了即"只读+弃权"口径(ro1 批起):mtool/ctool 真值折叠、词表 = 只读工具(原顺序)+ 末位哨兵 `<NON_READONLY>`;mext/cgen 只在只读事件上训任务,非只读样本仅当开火头负例;cparam 非只读样本整条丢弃(它没有开火头)。真值表在 `pipeline/annotate/readonly/<env>.json`,表外标签超 5% 硬停(`readonly_map.audit`)。产物多一份 `<out>/READONLY.json` |
 | `--fire-head` | mext/cgen(cparam 没有这旗) | 随训开火头(二值:该边界参数是否全就绪)。ready 真值按 `(event, sent_idx)` 联表 `params/<split>.jsonl`;mext 走独立样本流第二次前向,cgen 取 prompt 末位置(labels 最后一个 -100)的 logit 以免看见目标串。产物 `best/fire_head.pt`,`meta.json` 记 `fire_head: true` |
-| `--grad-ckpt` | ctool/mext | OOM 唯一合规处置(invariants §6)。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解。**z1 实测(2026-08-10)更宽:gptoss 轨迹的 ctool/cgen 不带 fire-head、默认超参也在 48G A6000 直接 OOM**——cgen 没有本旗,处置是换 H100/H200 大卡(`launch --refire` 换 `--piece` 即可)或降 `--bs` |
+| `--lora` | ctool/cgen/cparam(np821 起) | 底座换 LoRA 训,**分类头/开火头照常全参**;存 `best/` 之前先 `merge_and_unload` 并回底座再 `save_pretrained`,所以 `best/` 与全参训练存的逐项同构、**四个评测脚本零改动装得回**(它们一律 `from_pretrained(best/)`)。`meta.json` 多一个 `lora` 块记超参。不传本旗时脚本自己不碰 peft(peft 的 import 全在 `--lora` 分支里),行为与加这套旗标之前一致。旗标/默认值/target modules 的唯一真源是 `pipeline/train/lora_util.py`(三格共用,别处不许再抄) |
+| `--lora-rank` / `--lora-alpha` / `--lora-dropout` / `--lora-lr` | 同上三格 | 默认 16 / 32 / 0.05 / 2e-4(口径见 invariants §3 的 LoRA 行)。**学习率的优先级**:显式 `--lr` > `--lora-lr`(开 `--lora` 时) > 全参默认 1e-5——三个脚本的 `--lr` 默认值是 `None` 就是为了分得清"没传"和"传了个跟默认一样的值" |
+| `--grad-ckpt` | **ctool/cgen/cparam/mext**(mtool 没有) | OOM 唯一合规处置(invariants §6)。全参与 `--lora` 两种模式都能用。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解。**z1 实测(2026-08-10):gptoss 轨迹的 ctool/cgen 不带 fire-head、默认超参也在 48G A6000 直接 OOM**——当时 cgen 还没有本旗,只能换 H100/H200 大卡(`launch --refire` 换 `--piece` 即可);np821 起三个因果格都有本旗,处置改为先加旗 |
 
-其余全用默认(`--max-len 4096`;mbert 两格 `--bs 8 --accum 4 --lr 2e-5`,因果两格 `--bs 4 --accum 8 --lr 1e-5`;一律 `--epochs 3`)。**本轮 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参。**
+其余全用默认(`--max-len 4096`;mbert 两格 `--bs 8 --accum 4 --lr 2e-5`,因果三格 `--bs 4 --accum 8 --lr 1e-5`,开 `--lora` 时 lr 换 2e-4;一律 `--epochs 3`)。**c1 那 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参;np821 四批同样只动 `--base` / `--lora` / `--grad-ckpt` 三个旗。**
 
 **输出**:
 - mtool → `<out>/best/`(HF 权重 + tokenizer + `label_map.json`)+ `train_log.jsonl`
@@ -211,6 +229,23 @@ python3 run.py train-cparam --data $D/<m> --out $R/<batch>_<m>_cparam
 - cparam → `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
 
 **退出码**:除 ctool 外无显式非 0。**ctool 的对齐检查 FAIL → `sys.exit(2)`**(整段一次前向 vs 逐 token 增量前向,末位置隐状态/logits 必须 max|diff| < tol),`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。
+
+### 3.1 显存实测表(np821 实测:gpt-oss 轨迹 / `--max-len 4096` / `--bs 4 --accum 8`)
+
+挑卡先查这张表,别按模型大小拍脑袋——**装不装得下的分水岭是 `--grad-ckpt` 开没开,不是模型多大**(0.6B 不开 gc 的峰值比 1.7B 开 gc 高一倍)。
+
+| 批次形态 | ctool | cgen | cparam | 48G 卡(可用 47.51 GiB)结论 |
+|---|---|---|---|---|
+| 0.6B 全参,**不带 gc** | 60.2 | 76.8 | 76.7 | **装不下**,三格 smoke 全 OOM(gates §3.10) |
+| 1.7B 全参 + gc | 35.4 | 44.1 | 44.1 | smoke 过得去,**全量装不下**——cgen 全量第一个 backward 就 OOM(gates §3.9) |
+| 1.7B LoRA + gc | 17.3 | 34.7 | 34.7 | 装得下,零 OOM 跑完 |
+| 4B LoRA + gc | 32.1 | 37.6 | 37.6 | 装得下,零 OOM 跑完 |
+
+(单位 GiB,峰值。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。
+
+### 3.2 LoRA 批与全参批的关系
+
+`--lora` 不是新格,是**训法轴**:同样三格(ctool/cgen/cparam)、同一份数据、同一套评测脚本,只换底座怎么训。run_id 模板里既没有底座档位段也没有训法段,所以**一个批次只跑一档 `--base` + 一种训法**,档位与训法写进批次前缀(np821 四批 `b06 / b17 / l17 / l4` = 0.6B 全参 / 1.7B 全参 / 1.7B LoRA / 4B LoRA)。发射时 `--base` / `--lora` / `--grad-ckpt` 一律写在**排卡表的 extra 里**(argparse 后写的赢);驱动器**不读**批次配置 `train.batches` 里的 `base`/`mode` 字段——那两个字段只是给人看的标记,排卡表才是真源。
 
 ---
 
@@ -270,8 +305,12 @@ python3 run.py eval-ccall --env bfcl --ctool-run $R/ro1bf_q35_ctool \
 目录(=`<BATCH>_<MODEL>_<mtool|ctool>`),call 档写进**头自己的目录**
 (mext / cgen / cparam 那个 run,不是它依赖的工具格目录),`kind` 分别记 `eval_tool` / `eval_call`。
 两档的 RUNMETA 落点与各自报告的落点是一致的(EXTRACT_REPORT 在 mext 目录、
-CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。记账失败只打 `WARN` 不中断发射,
-看到 WARN 要自己补 `python3 run.py runmeta <目录> --cmd '<命令>' --kind eval_tool|eval_call`。
+CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。RUNMETA 由 `register_all` 的第一步写
+(唯一写手,顺序 RUNMETA→台账→记录),回执里有 `RUNMETA: <路径>` 一行就是写了;
+台账/record 登记失败(比如重复 run_id)只打 `WARN 登记失败` 不中断发射,RUNMETA
+此时已经落盘。只有回执出现 `WARN RUNMETA 没写上(<目录>): <错误>` 才需要手补
+`python3 run.py runmeta <目录> --cmd '<命令>' --kind eval_tool|eval_call`。
+(2026-08-26 之前回执里那句 `WARN 没给 --outdir，RUNMETA 没写` 是误报,已修,见 §3 同款说明。)
 
 ### 4.3 `--risk` 双档策略
 
@@ -313,6 +352,23 @@ CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。记账失败只打 `WARN` �
 
 **退出码**:eval_tool 正常路径无显式非 0;`--cached-logits` 下有三条硬退——缺 `logits_<sp>.meta.json`、权重指纹对不上(两条都是 SystemExit,见 §4.4 该行)、logits 行数与数据行数不符(assert 退 1,意味着 `--data` 与当次评测不同源)。另外 `best/` 下一个权重文件都找不到时建不了指纹,也 SystemExit。三个 call 脚本:该 risk 档 θ 为 null → `SystemExit` 退 1。`eval_causal_call` 与 `eval_causal_param` 另各有一条 assert 防止调用切分口径与 `annotate/rules.py` 漂移,外加三条格保险丝(都是 SystemExit 退 1):`eval_causal_param` 要求头 run 的 meta 带 `param_only: true`,`eval_causal_call` 反向拒收带 `param_only` 的 run(cparam 的 run 只训过写参数段,喂过去判分会全塌不报错);两脚本都做**数据三方对拍**——头 run 的 meta.data、`--data` 实参、`--ctool-run` 的 meta.data 三方 resolve 后不一致即硬停(防两档底座并行时交叉喂)。summarize_matrix 永远 0。
 
+### 4.5 耗时参考(np821 实测,排评测班次照这个估)
+
+**先看清楚每个脚本按什么计数,再乘**——数据集行数(切点样本)和事件数是两个量级
+差几十倍的东西,np821 的 test 堆是 8533 个事件、391893 行样本,拿行数外推会把
+一个 40 分钟的活估成两三个小时。
+
+| 谁 | 计数单位(心跳的 `total` 就是它) | np821 实测量 | 一格墙钟 |
+|---|---|---|---|
+| `eval_tool`(ctool 档) | 事件:先 dev 全量、再 test 全量;每个事件内部给它**全部切点**打分(心跳的 `total` 在 dev 段是事件数、到 test 段换成切点行数,别拿"事件/秒"当稳定口径) | dev 2556 + test 8533 事件(= dev 115211 + test 391893 个切点) | H100 上 0.6B/1.7B 底座 **36–38 分钟**,H200 上 4B 底座 **约 45 分钟**(首末心跳跨度,np821 四批实算 35.7 / 37.6 / 38.0 / 44.8;台账窗口带权重加载与后处理是 39–48 分钟) |
+| `eval_causal_call` / `eval_causal_param`(call 档) | **被 θ 触发的 test 事件**,逐条 greedy 生成 | 该批 `REPLAY_REPORT.json` 里 test 的触发数(np821 四批落在 2192–2806) | **21–26 分钟**(心跳跨度;台账窗口 23–28 分钟)。cparam 内部跑 gt_tool / pred_tool 两遍,墙钟仍与 cgen 同量级 |
+
+两条推论:① **call 档的成本只跟触发事件数走**,与数据集有多少行样本无关——θ 越
+高触发越少、跑得越快,所以换批次估耗时要先看该批 `REPLAY_REPORT.json` 的
+`chosen_theta` 与触发数,别照抄别批的分钟数;② ctool 档的成本跟**切点行数**走,
+数据集样本翻几倍它就翻几倍(np821 数据是 p1 的约 4 倍,ctool 评测从 11–14 分钟
+涨到 39–48 分钟)。硬件那一侧的估法见 gpu-run 的 `references/launch-methodology.md`。
+
 ---
 
 ## 5. inject — 产物校验
@@ -353,6 +409,29 @@ python3 run.py check-bundle-causal --run pipeline/runs/<BATCH>_<MODEL>_ctool --d
 `python3 run.py pipeline --config pipeline/configs/<批次>.json`,每敲一次推进
 一步,门禁不过就地停下并把原因写进 `logs/pipeline/<run_family>/state.json`;
 下表仍是每一步的真源,驱动器坏了照表手跑。
+
+**驱动器的两类完成判据,决定了它能和手发混用到什么程度**(np821 实测):
+
+- **训练段 `t2_full` 认发射标记**:一敲**只发一批**、四批**严格串行**(按配置里
+  `train.batches` 的顺序取第一个没跑完的),发过的批在 state.json 里留一条
+  `launched` 标记、后面再敲只等不重发。要跨批并行就**自己用
+  `run.py launch-probe full --batch <批>` 手发其余批**(同一套登记代码路径,
+  台账/record/RUNMETA 一样齐);手发的批驱动器认不出发射标记,但它的完成判据是
+  `best/` 在 + `train_log` 有 `event=done`,所以跑完之后驱动器照样放行。
+  ⚠️ 对**部分完成**的批再敲 `t2_full`(比如删了标记想补一格),它会重发整张排卡
+  表——已完成的那些格撞守卫秒退,却先补了假 RUNMETA、把 run_id 塞回台账 active
+  (`driver.py` 的 `step_t2_full` docstring 记着这个场景)。补一格走 §3 那条
+  "只含那一格的临时排卡表"。
+- **评测段 `e1_tool` / `e2_call` / `m1_matrix` 的完成判据只有产物文件**——各批
+  ctool 的 `REPLAY_REPORT.json`、cgen 的 `CALLGEN_REPORT.json`、cparam 的
+  `PARAM_REPORT.json`、`MATRIX_<批>_r{0.05,0.1}.md`;发射标记只用来挡**它自己**
+  发过的那一批,不参与判完成、也管不到手发的任务。好处是
+  训练还没全齐时可以直接用 `run.py launch-eval` 把已经训完的批先评掉,报告落地
+  后驱动器敲到那一步会直接认作完成(SKILL.md C4 的"逐格收官逐格派评测")。
+  代价是两个坑,各配一道门禁:手发的评测**在飞时不许敲驱动器**(报告还没落地、
+  又没有发射标记 → `e2_call` 把那批再发一遍,**G23**);某批 call 档报告没齐之前
+  **不许先出那批的矩阵**(`m1_matrix` 见文件已存在就跳过,早产的 PENDING 表会
+  一直留着,**G24**)。
 
 ```
 S1 (CPU)  run.py gen-launch --config manifest_<BATCH>.json --dry-run --out-override /tmp/... → 看清单

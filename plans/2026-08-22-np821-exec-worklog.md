@@ -460,3 +460,68 @@ l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
   等回写 agent 交付后由本会话改（避免与 agent 同时编辑同一文件）。
 - 本批 12 个训练 run 与 6 个评测 run 目录里已有的重复 RUNMETA 条目
   （发射器一条 + 手补一条）原样保留：追溯链只多不少，不回头删产物记录。
+- 修复提交 6047f83（含 test_driver 里过期的 `max_bounds` 断言：裁决 2 后配置
+  显式写 64，测试改为断言 == 64；整套 354 条只剩已知的 test_splice_replay
+  环境差异 1 error）。
+
+## Phase E 回写 skill（2026-08-26 15:0x–15:3x）
+
+- opus 子代理按任务书回写 7 份文档（probe-pipeline 的 SKILL.md /
+  gates / invariants / stage-commands / extending，gpu-run 的
+  launch-methodology / monitor-methodology），187 行增 27 行删。要点：
+  立 **G23**（手发评测在飞时不敲驱动器）与 **G24**（该批报告齐才出矩阵），
+  静默表加 #23/#24；补 LoRA 训法轴整条（extending §3 开头、stage-commands
+  §3.2、invariants LoRA 行、run_id 前缀带训法）；显存实测表 stage-commands
+  §3.1 + gates §3.9/§3.10 两个 OOM 案例；评测耗时表 §4.5（先写计数单位）；
+  驱动器两类完成判据写进 §6；多轨迹口径（种子家族、trajs_per_unit、预设
+  唯一真源、max_bounds 字段、等权 w=1）补进 invariants；G14 判据改口
+  （smoke 规模写不出 step 记录，"loss 在降"判不了）。
+- 主会话验收：两批 diff 通读；对文档里的代码行为断言逐条 grep 源码核实
+  （SEED 常量分家、`--weight-mode` 缺省 uniform、check_callstr 门禁 B 按 K、
+  gen_launch 的 traj_per_task/seed_family 约束、inject 线仍按
+  `appworld_<unit>.jsonl` 反查）全部对上。数字订正一处：§4.5 的 ctool 分钟数
+  按首末心跳复算改为 36–38（H100）/ 约 45（H200 4B），并注明 ctool 的 @hb
+  单位在 dev 段是事件、test 段是切点行。
+- 评测速率订正（对本文件前文）：前文写的"4.6–4.8 事件/秒"与"生成 1.1–1.4
+  条/秒"是飞行早期窗口读数；全程首末心跳实算 cgen 生成 1.57–1.85 条/秒、
+  cparam 两遍合计 2.98–3.63 条/秒，call 档一格 21–26 分钟；记忆文件
+  gpu-time-reference 已按全程值更新。
+- RUNMETA 相关三处（stage-commands §3、§4.2，SKILL.md C3）由主会话按修复后
+  的单一写手语义改写；gates G16 行原文仍准确，未动。
+
+## l17 cgen 评测收官（2026-08-26 15:18）
+
+- risk 0.05、θ 0.95、触发 2902 = 评分 2902、parse_fail 0；tool_ok 0.8866 /
+  params_all_ok 0.7774 / full_call_ok 0.7326 / exact_call_ok 0.7316 /
+  参数实例准确率 0.6287（3420 个实例）；无参数事件占 0.387。H100 约 23
+  分钟。销号 + record finish；gpu0 归零。cparam 第二遍在跑。
+
+## l17 cparam 评测收官（2026-08-26 15:19），12/12 评测全收
+
+- risk 0.05、θ 0.95、触发 2902 = 评分 2902、parse_fail 0；pred_tool 口径
+  tool_ok 0.9476 / params_all_ok 0.8322 / full_call_ok 0.8094 /
+  exact_call_ok 0.8067 / 参数实例准确率 0.7498（3221 个实例）；gt_tool 口径
+  params_all_ok 0.8467 / 参数实例准确率 0.808（3083 个实例）。H100 约 24
+  分钟。销号 + record finish。
+- 108 实探：评测 session 清零、六卡显存全 0 MiB；台账 active 空。四批
+  ctool + 八格 call 档评测至此全部收官，接着敲驱动器 t2→t3→e1→e2→m1。
+
+## 驱动器收官（2026-08-26 15:21）：流水线 nyapass_aw_v1 全部完成
+
+- 连敲五次全绿：t2_full「12 个训练 run 全跑完」→ t3_close「12 个 run 三处
+  登记齐、数字已记」→ e1_tool「4 批 ctool 报告全在」→ e2_call「call 档报告
+  全在，θ 两档皆 null 记 N/A 的批次：无」→ m1_matrix 新出
+  `MATRIX_np821l17_r0.05.md` / `_r0.1.md`（其余六份早已在，按判据跳过）→
+  done。手发的评测被驱动器全部认作完成，与裁决 7 的预期一致。
+- 八份矩阵齐：`pipeline/runs/MATRIX_np821{b06,b17,l17,l4}_r{0.05,0.1}.md`。
+
+## Phase D 六连（2026-08-26 15:2x）
+
+1. 记数字：24 条 finish（12 训练 + 12 评测）全在 `ops/runs.jsonl`，`RESULTS.md` 已渲染。
+2. 补方向：不做——这批数字是否改动 WORKPLAN 的判断归 gyb 裁决（铁律：不解读结果）。
+3. 补口径：`DATA.md` 的 nyapass_aw_v1 节在标注环节已写，本轮无新增设定。
+4. 释放：三机实探 105/107/108 无一张非 FREE 卡，np821/nyapass 相关 tmux session
+   三机为零；call 档监控 b7pufajd8 已停。
+5. 销号：台账 active 空。
+6. 提交：结果报告 `plans/2026-08-26-np821-results.md`（只摆事实）+ 台账三文件 +
+   本 worklog + Phase E 的 7 份 skill 文档，一个 commit。
