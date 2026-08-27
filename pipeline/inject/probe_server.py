@@ -169,7 +169,7 @@ class Probe:
     def render(self, messages, effort=None):
         # effort 不传 = 采集口径(high);effort 对照臂传 low/medium
         # 日期钉 COLLECT_DATE(2026-08-02 改):活跑与 w0 的框架对齐排查发现
-        # 当天日期是相对采集口径的无谓扰动,贪心解码下会放大成轨迹分叉;
+        # 当天日期是相对采集口径的无谓扰动,解码下会放大成轨迹分叉;
         # 回放线一直钉采集日,活跑从 v2 起同口径。
         ids = HR.render_ids(messages, effort=effort or R.REASONING_EFFORT,
                             start_date=R.COLLECT_DATE)

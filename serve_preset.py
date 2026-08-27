@@ -6,8 +6,8 @@
 回头查"这台服务当时是什么设置"不用翻 shell 历史。
 
 用法(发射本身走 gpu-run skill,这里只拼命令和起 tmux):
-  python3 serve_preset.py --preset gptoss_chat_high --gpu 5
-  python3 serve_preset.py --preset gptoss_chat_high --gpu 5 --dry-run
+  python3 serve_preset.py --preset default --gpu 5
+  python3 serve_preset.py --preset default --gpu 5 --dry-run
 GPU 卡号故意不进预设:挑卡是发射时按实探空卡定的,跟着 gpu-run 走。
 """
 

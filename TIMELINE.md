@@ -10,6 +10,36 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-28 生成口径全线只有一套：预设 default（温度 1.0），活跑与对照同口径
+
+- 触发：np821 12 格评测收官（`plans/2026-08-26-np821-results.md`）之后，gyb 要把
+  探针接进活跑注入线看整道题的效果。活跑线原来的缺省生成设置（`live_appworld.py`
+  的兜底表与五份温度 0.0 的预设）和探针的训练数据（nyapass 批，预设 `default`，
+  温度 1.0）分属两种口径。
+- 决定（gyb）：全线只有一套现役生成口径，就是预设 `default`（harmony / effort high /
+  temperature 1.0 / top_p 1.0 / max_tokens 8192 / start_date 2026-08-06；seed 由入口
+  按轨迹逐条派发，种子家族 42/67/4267/6742）。采集、活跑三臂（with probe / no probe /
+  probe-but-nofill）、回放、对照轨迹全部用这一份，两臂差别靠题量平采样噪声。
+- 落地（当日，35 个文件）：`configs/presets/default.json` 补上 server 节（照 nyapass
+  批的发射器 `envs/runs/nyapass/launch_servers.py`：tokyo108:8103、显存 0.92、
+  `VLLM_USE_FLASHINFER_SAMPLER=0`）；八个生成入口（四个采集器 / live_appworld /
+  replay run / splice run / ident3_gate）的 `--preset` 缺省是 `default`；温度这个键
+  只从预设 client 节来，py 文件与测试里的温度字面值全部撤掉，`Chat.__init__` 的
+  temperature 改成必传，预设温度写 null 时 `preset_loader.require_temperature`
+  当场停下并点名预设；`gptoss_chat_high / gptoss_harmony_high / gptoss_harmony_medium /
+  gptoss_live_high / gptoss_replay` 五份预设文件从仓库移出（历史值在 git 与
+  `.scratch/gen-preset/spec.md`）；`acceptance.py` 的 echo 打分请求只带
+  model / prompt / max_tokens / echo / logprobs。探针自己写调用串的解码方式
+  （cgen / cparam 的 `do_sample=False`，np821 评测数字的口径）不在这次裁决范围内。
+- 连带的口径变化（事实，未另裁决）：tau2 采集的用户模拟器温度随 agent 侧取预设
+  （1.0）；BFCL handler 不设 `NEW1_PRESET_JSON` 时读 `default`（max_tokens 8192 /
+  top_p 1.0 / temperature 1.0），要 16384 档就指到 `gptoss_bfcl_high`；`gen_launch`
+  给 qwen 族客户端拼的命令不带 `--preset`，会落到 `default`（gpt-oss 的 harmony
+  格式），qwen 族再采集之前要开一份 qwen 自己的预设（api raw、温度 1.0）。
+- 与旧记录的关系：2026-08-18 的 ident3_v1 / splice_replay_v1 / cmp_chat_noprobe_5
+  是温度 0.0 口径下量的数字，只在各自批内比；2026-08-21 条里的 `gptoss_harmony_high`
+  （p1 采集口径）名字留在 `pipeline/collect/manifest_p1.json` 与账本里，文件已移出。
+
 ## 2026-08-22 np821 切点上限裁决：max_bounds 留 64（Claude 按 gyb 授权自主裁决）
 
 - 触发：驱动器 a1_stats 停点（run_id nyapass，1260 条轨迹采齐后）。未截断

@@ -5,13 +5,16 @@ configs/models.json  是唯一模型地址映射,model_registry.py 从这里读;
 configs/presets/*.json 一份文件一套生成设置:model 别名 + server 节
 (vLLM 启动参数,serve_preset.py 吃) + client 节(采样参数,各入口吃)。
 两节都可省;client 节里 null = 不指定,落到调用方原有缺省。
+temperature 只从 client 节来;预设把它写成 null 时,生成入口经
+require_temperature 当场停下并点名是哪份预设(BFCL handler 例外,
+null 时用 BFCL 自带的那一档)。
 
 入口脚本的用法(三层优先级 CLI 显式值 > 预设值 > 原有缺省):
 
     from preset_loader import load_preset, merge_client
-    pre = load_preset(args.preset) if args.preset else None
+    pre = load_preset(args.preset)                      # 各入口 argparse 缺省 "default"
     eff = merge_client({"api": args.api, ...},          # None = 用户没显式给
-                       (pre or {}).get("client"),
+                       pre.get("client"),
                        {"api": "raw", ...})             # 原有缺省
 """
 
@@ -123,6 +126,19 @@ def merge_client(cli, client_node, fallbacks):
         else:
             out[k] = fallbacks.get(k)
     return out
+
+
+def require_temperature(value, preset_name):
+    """生成入口的温度检查:合并完的 temperature 必须是个数,是数就原样返回。
+    温度只有预设 client 节一个来源,所以预设把它写成 null 的时候(比如 BFCL
+    那份,温度跟着 BFCL 自己那一档走)这里当场停下,报清楚是哪一份预设。
+    """
+    if isinstance(value, (int, float)):
+        return value
+    raise SystemExit(
+        f"预设 {preset_name} 的 client.temperature 是 null;"
+        f"生成入口的温度只从预设读,请换一份写了 temperature 的预设"
+        f"(现有: {list_presets()})")
 
 
 def base_url_of(preset):

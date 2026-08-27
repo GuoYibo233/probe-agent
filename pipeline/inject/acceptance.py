@@ -196,8 +196,11 @@ def part_c_echo(rows, plan, raw, tok, table, a):
             continue
         try:
             resp = post_completions(a.base_url, dict(
+                # max_tokens=0 + echo:这是打分请求,只取草稿里现成 token 的
+                # logprob;请求体带 model / prompt / max_tokens / echo /
+                # logprobs / skip_special_tokens 这几项
                 model=a.model, prompt=anc + r["draft"], max_tokens=0,
-                temperature=0.0, echo=True, logprobs=1,
+                echo=True, logprobs=1,
                 skip_special_tokens=False), a.timeout)
         except Exception as e:
             fail[f"http_{type(e).__name__}"] += 1

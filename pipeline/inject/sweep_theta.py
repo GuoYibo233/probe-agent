@@ -17,7 +17,7 @@
 口径铁律(曲线成立的前提):
 - 各点只允许差 θ 一个变量。plan 段的 ctool/cgen/data/traj_root/miss_policy
   必须完全一致,run 段的 arms/max_tokens/concurrency 也必须一致——
-  concurrency 变了服务端批组成就变,greedy 续写的 token 数会有数值抖动
+  concurrency 变了服务端批组成就变,续写的 token 数会有数值抖动
   (replay_inject.py 文件头已列这条已知偏差)。本壳对所有 θ 用同一个 --concurrency。
 - 省 token 用**部署总账**,不是"注入成功那些事件的均值":
       省 token 比例 = Σ(inject 段省下的 token) / Σ(nofill 段在全部出手事件上的 token)
@@ -39,7 +39,7 @@
 - **各点的 plan 段必须同参数同机器**,尤其 `--bs` 要一致。实测(2026-08-01,
   θ=0.925 跑两次:r10 用 `--bs 32` 在 tokyo105,th0925 用默认 `--bs 8` 在 tokyo106):
   探针出手这一层完全可复现——出手事件集合、触发句位置、深度、工具级预测
-  四项零差异;分叉出在参数产线的 greedy 生成上,14/1061 条(1.3%)写出了不同的
+  四项零差异;分叉出在参数产线的生成上,14/1061 条(1.3%)写出了不同的
   调用(例:同一事件 r10 写 show_api_doc(...show_album),th0925 写 ...show_liked_songs),
   连带 full_call_ok 差 7 个、可注入数 689 vs 686。
   已定位的原因是 **batch size 变了**:left padding 长度随之变,批内前向的浮点
@@ -503,7 +503,7 @@ def cmd_curve(a):
         # 也就是曲线上的差值有多少可能只是 serving 噪声。
         base = {p["theta"]: p for p in pts}
         L += ["", "## 服务侧对照(同 θ 同 plan,只换服务条件重跑)", "",
-              "> greedy 续写在服务端批组成变化下会有数值抖动"
+              "> 续写在服务端批组成变化下会有数值抖动"
               "(replay_inject.py 文件头已列这条已知偏差)。",
               "> 这张表量的就是那点抖动:同一个 θ、同一份 plan,换一批服务重跑,",
               "> 省 token 比例差多少。**这个差值是曲线的噪声地板**——曲线上小于",

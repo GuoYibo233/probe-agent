@@ -140,6 +140,7 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
 | 环节 | 代码 | 备注 |
 |---|---|---|
 | 采集 | `envs/collect/run_appworld.py` + `common.py` | chat baseline 与 harmony 全录都在这 |
+| 采样口径 | `configs/presets/default.json` | 全线唯一一份现役口径，每个入口的 `--preset` 缺省就是它：harmony、effort high、temperature 1.0、top_p 1.0、max_tokens 8192、Current date 2026-08-06；种子由采集器 `--seeds` 按轨迹逐条派 |
 | 标注 | `pipeline/annotate/build.py` / `param_label.py` / `rules.py` | 标签=该步实际调用；样本按句边界切前缀 |
 | 训练 | `pipeline/train/` 四格 | 唯一真源 `run.py` CELLS |
 | 评测 | `pipeline/eval/` | 产 `REPLAY_REPORT.json`（T 与各风险档 θ） |

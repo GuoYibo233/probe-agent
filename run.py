@@ -139,7 +139,8 @@ TASKS = {
         notes=["端点冒烟已过(2026-08-02,airline 2 题,gptoss 双端点同服;解析失败/"
                "参数丢失全 0);正式放量未跑,放量时 agent 与用户模拟器要分服分模型",
                "--user-base-url/--user-model 另给,缺省=agent 同端点",
-               "--preset <名> 只管 agent 侧的生成设置,用户模拟器沿用 --user-*",
+               "--preset <名> 选一套生成设置(缺省 default);用户模拟器的端点、模型、api"
+               " 由 --user-* 三件套给,温度与 agent 侧取同一份预设",
                "服务要 --max-model-len 65536 量级(系统提示 ~6k token)",
                "--domain 只接了 airline/retail;telecom(2285 题,solo 采集要用"
                " llm_agent_solo)还没进 DOMAINS,扩它是集成期的活"]),
@@ -381,6 +382,8 @@ TASKS = {
         handoff=True, args=["run"],
         desc="事件x切口x臂 发 completions 续写(要 vLLM;必给 --run-dir --base-url;长活)",
         notes=["prompt 是 token id(前缀 chat 同款渲染,p3k/p4 由 openai_harmony 渲染)",
+               "--preset <名> 选一套生成设置(缺省 default),"
+               "续写的 temperature 从它的 client 节读",
                "--dry-run 只打印 prompt 尾不落盘;断点续跑按 (event,cut,arm) 跳过",
                "p4 多一个停止符 <|call|>(D11)"]),
     "splice-replay-score": dict(
@@ -441,7 +444,9 @@ TASKS = {
         desc="ident3 发射前门禁:chat prompt_token_ids == /render prefix_ids"
              "(必给 --base-url --probe-url;CPU)",
         notes=["ident3_job.sh 开跑前自动调;不过=vLLM 没钉 VLLM_SYSTEM_START_DATE"
-               " 或 return_token_ids 没生效"]),
+               " 或 return_token_ids 没生效",
+               "--preset <名> 缺省 default,门禁请求的 temperature 从它的 "
+               "client 节读"]),
     "ident3-score": dict(
         stage="live", py="sys", script="pipeline/inject/ident3_score.py",
         desc="ident3 打分 -> IDENT3_REPORT(必给 --root;CPU,stdlib)",
@@ -466,7 +471,7 @@ TASKS = {
              "(必给 --preset --gpu;--host/--port/--session 可覆盖)",
         notes=["模型路径经 model_registry.resolve(),不吃硬编码",
                "发射时抄一份预设到 envs/serve_logs/<session>.preset.json",
-               "只有带 server 节的预设能发射(现有五份里只有 gptoss_chat_high)",
+               "只有带 server 节的预设能发射:default 与 gptoss_default 两份",
                "--dry-run 只打印 ssh+tmux 命令;旧 launch_vllm_*.py 一律不动,"
                "新服务从这里起"]),
     "serve-mirrorapi": dict(

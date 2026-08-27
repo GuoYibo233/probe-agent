@@ -1,6 +1,18 @@
 {
-  "desc": "np821 起用的温度 1 采集口径:2026-08-21 定稿,nyapass 批(采集 run_id nyapass)从这份预设采;与 gptoss_harmony_high 只差 temperature/top_p(此份 1.0/1.0,harmony_high 是 0.0/null,api/reasoning_effort/max_tokens/start_date 四项相同);种子不钉在预设里(seed 留 null),温度 1.0 下要复现由采集器 --seeds 按轨迹逐条派发(种子家族 42/67/4267/6742),预设本身管的是与采样档位无关的公共口径;旧 gptoss_default 是 2026-08-20 抄自 unsloth 文档的官方推荐口径(effort medium、不带 start_date),两份预设各自独立,互不覆盖;服务另起,无 server 节",
+  "desc": "现役唯一生成口径:全线各入口 --preset 的缺省就是这一份。client 节是温度 1 的采集口径(api harmony / reasoning_effort high / temperature 1.0 / top_p 1.0 / max_tokens 8192 / Current date 2026-08-06),nyapass 批(采集 run_id nyapass)从这份预设采;seed 留 null,温度 1.0 下的复现由采集器 --seeds 按轨迹逐条派发(种子家族 42/67/4267/6742),预设本身管的是与种子无关的公共口径;server 节抄 nyapass 批的服务发射器 envs/runs/nyapass/launch_servers.py(tokyo108:8103 副本 A,显存 0.92,max_model_len 跟 vLLM 出厂缺省),serve_preset.py 用它拼 vllm serve 命令",
   "model": "gpt-oss-120b",
+  "server": {
+    "host": "tokyo108",
+    "port": 8103,
+    "served_model_name": "gpt-oss-120b",
+    "gpu_memory_utilization": 0.92,
+    "max_model_len": null,
+    "env": {
+      "LD_LIBRARY_PATH": "/home/y-guo/reproduce/new1/envs/cuda-compat-13.0",
+      "VLLM_USE_FLASHINFER_SAMPLER": "0"
+    },
+    "extra_flags": ""
+  },
   "client": {
     "api": "harmony",
     "reasoning_effort": "high",

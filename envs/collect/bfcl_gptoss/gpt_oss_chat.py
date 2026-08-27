@@ -9,23 +9,26 @@ BFCL 默认提示词协议——与 qwen 批次的轨迹格式保持一致。
 安装:install_patch.py 把本文件拷进 venv 的 local_inference/ 并在
 model_config.py 末尾注册 "openai/gpt-oss-120b"。
 
-生成设置:环境变量 NEW1_PRESET_JSON 指一份 configs/presets/*.json 的绝对路径,
-设了就取其 client 节的 max_tokens / reasoning_effort / temperature / top_p /
-seed(非 null 的);
-没设走下面的写死缺省(max_tokens 16384 / effort high / temperature 用 BFCL 自带),
-与 2026-08-20 加这个口子之前逐字节一致。用环境变量不用 --preset 的原因:
-本文件被拷进 BFCL 的 venv,没有自己的命令行,也够不到仓库根的 preset_loader。
+生成设置全部来自一份预设文件的 client 节(max_tokens / reasoning_effort /
+temperature / top_p / seed,取其中非 null 的):环境变量 NEW1_PRESET_JSON 指一份
+configs/presets/*.json 的绝对路径,环境变量缺席时读仓库根下的
+configs/presets/default.json,也就是全线现役的那一份口径。
+预设把某个键留 null 时该键落 BFCL 自带的值(temperature)或下面的写死缺省。
+用环境变量不用 --preset 的原因:本文件被拷进 BFCL 的 venv,没有自己的命令行,
+也够不到仓库根的 preset_loader;仓库根因此写成绝对路径。
 """
 import json
 import os
 import time
 from typing import Any
 
-_PRESET_PATH = os.environ.get("NEW1_PRESET_JSON")
-_CLIENT = {}
-if _PRESET_PATH:
-    with open(_PRESET_PATH) as _f:
-        _CLIENT = json.load(_f).get("client") or {}
+# 仓库根写死绝对路径:本文件的运行位置在 BFCL 的 venv 里,__file__ 够不回仓库
+_REPO_ROOT = "/home/y-guo/reproduce/new1"
+_DEFAULT_PRESET = os.path.join(_REPO_ROOT, "configs", "presets", "default.json")
+
+_PRESET_PATH = os.environ.get("NEW1_PRESET_JSON") or _DEFAULT_PRESET
+with open(_PRESET_PATH) as _f:
+    _CLIENT = json.load(_f).get("client") or {}
 _MAX_TOKENS = (_CLIENT.get("max_tokens")
                if _CLIENT.get("max_tokens") is not None else 16384)
 _EFFORT = (_CLIENT.get("reasoning_effort")

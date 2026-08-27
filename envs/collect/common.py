@@ -45,9 +45,11 @@ class Chat:
     服务端 HarmonyParser 完全不参与,落在 IGNORE 档的段落不会被静默丢掉,
     生成的 token id 原样存进轨迹。当天日期由客户端钉死,跨天重跑前缀不变。
     历史 assistant 轮只回填 content(与官方模板一致,思考不进上下文)。
+    temperature 由调用方必传,值出自预设 client 节(settings_from_args 合并,
+    缺省预设 default = 温度 1.0)——这个键只有预设一个来源。
     """
 
-    def __init__(self, base_url, model, temperature=0.0, max_tokens=8192,
+    def __init__(self, base_url, model, temperature, max_tokens=8192,
                  api="raw", reasoning_effort=None, start_date="2026-08-06",
                  top_p=None, seed=None):
         self.client = OpenAI(base_url=base_url, api_key="EMPTY", timeout=600)
@@ -256,20 +258,25 @@ class Chat:
         }
 
 
+DEFAULT_PRESET = "default"
+
+
 def settings_from_args(args, fallbacks=None):
     """四个采集器共用的设置合并。--preset 指 configs/presets/<名>.json,
     优先级三层:命令行显式值 > 预设 client 节里的非 null 值 > 原有缺省。
     返回一个字典,装 base_url、model、preset 名和 Chat 的全部生成参数。
-    不传 --preset 的时候逐键落回原有缺省,行为与加这个参数之前一致。
+    --preset 缺省 DEFAULT_PRESET,所以每次采集都落在一份具名预设上;
+    temperature 的唯一来源是预设 client 节,合并时挂在 cli 一侧。
     预设带 server 节时 --base-url/--model 可省:端点按 host:port 拼,
     模型名取 served_model_name。
     """
     root = Path(__file__).resolve().parents[2]
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    from preset_loader import load_preset, merge_client, base_url_of
-    pre = load_preset(args.preset) if getattr(args, "preset", None) else None
-    fb = {"api": "raw", "reasoning_effort": None, "temperature": 0.0,
+    from preset_loader import (load_preset, merge_client, base_url_of,
+                               require_temperature)
+    pre = load_preset(getattr(args, "preset", None) or DEFAULT_PRESET)
+    fb = {"api": "raw", "reasoning_effort": None,
           "top_p": None, "max_tokens": 8192, "seed": None,
           "start_date": "2026-08-06"}
     fb.update(fallbacks or {})
@@ -279,14 +286,17 @@ def settings_from_args(args, fallbacks=None):
     # 老口径产物立刻变样。预设 client 节里写的 seed 本来就走 fallbacks 那一路
     # 生效(fb 里有 "seed" 键),多样本采集的逐条种子由 run_appworld.py 直接
     # 覆盖 eff["seed"],两条路都不需要这里认 --seed。
+    # temperature 进这个元组:采集器的温度全部来自预设 client 节(cli 一侧取到
+    # None,合并时落预设值);哪天长出 --temperature 旗标,显式值按同一条优先级
+    # 压过预设。
     cli = {k: getattr(args, k, None)
-           for k in ("api", "reasoning_effort", "start_date")}
-    eff = merge_client(cli, (pre or {}).get("client"), fb)
-    srv = (pre or {}).get("server") or {}
+           for k in ("api", "reasoning_effort", "start_date", "temperature")}
+    eff = merge_client(cli, pre.get("client"), fb)
+    eff["temperature"] = require_temperature(eff["temperature"], pre["_name"])
+    srv = pre.get("server") or {}
     eff["model"] = getattr(args, "model", None) or srv.get("served_model_name")
-    eff["base_url"] = (getattr(args, "base_url", None)
-                       or (base_url_of(pre) if pre else None))
-    eff["preset"] = pre["_name"] if pre else None
+    eff["base_url"] = getattr(args, "base_url", None) or base_url_of(pre)
+    eff["preset"] = pre["_name"]
     for need in ("base_url", "model"):
         if not eff[need]:
             raise SystemExit(f"缺 --{need.replace('_', '-')}"

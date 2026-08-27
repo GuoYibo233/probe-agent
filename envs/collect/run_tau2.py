@@ -857,10 +857,11 @@ def main():
                          "只数 agent 轮 —— 改这个值会改 termination 分布")
     ap.add_argument("--outdir")
     ap.add_argument("--exp", default="smoke")
-    ap.add_argument("--preset", default=None,
+    ap.add_argument("--preset", default="default",
                     help="configs/presets/<名>.json 的一套生成设置;"
-                         "命令行显式给的参数压过预设值(只管 agent 侧,"
-                         "用户模拟器沿用 --user-* 三件套)")
+                         "缺省 default;命令行显式给的参数压过预设值"
+                         "(用户模拟器的端点、模型、api 由 --user-* 三件套给,"
+                         "温度与 agent 侧取同一份预设)")
     ap.add_argument("--api", default=None, choices=["raw", "chat"],
                     help="缺省 raw(预设也没给时)")
     ap.add_argument("--reasoning-effort", default=None)
@@ -926,7 +927,9 @@ def main():
             raise SystemExit(f"task id 不能当文件名: {t.id!r}")
 
     chat = chat_of(eff)
+    # 用户模拟器与 agent 同一份预设的温度(Chat 的 temperature 必传)
     user_chat = Chat(args.user_base_url, args.user_model, api=args.user_api,
+                     temperature=eff["temperature"],
                      reasoning_effort=args.reasoning_effort)
 
     # 分片:先 --n 截断再取模【照抄 envs/collect/run_alfworld.py:158-160】。

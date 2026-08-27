@@ -174,7 +174,7 @@ def build_prefix(tok, msgs, effort=REASONING_EFFORT, pin_date=COLLECT_DATE):
     # jinja 模板在 developer 正文后、<|end|> 前多塞一个 "\n\n"(模板 248 行,
     # 无 tools 分支);chat 端点的 harmony 渲染器与采集时的手拼串都没有它
     # (hcap 已验两者逐字相同)。只剥 developer 段末尾这一处,否则 /render 出的
-    # prompt 与 chat 基线差 2 字符,贪心解码从第 0 步就分叉(z1 冒烟实测)。
+    # prompt 与 chat 基线差 2 字符,解码从第 0 步就分叉(z1 冒烟实测)。
     s = re.sub(r"(<\|start\|>developer<\|message\|>(?:(?!<\|end\|>).)*?)\n\n(<\|end\|>)",
                r"\1\2", s, count=1, flags=re.S)
     return s

@@ -204,7 +204,7 @@ class TestTrajMeta(unittest.TestCase):
 BASE_MANIFEST = {
     "run_id": "np821t",
     "env": "appworld",
-    "gptoss_client_preset": "gptoss_chat_high",
+    "gptoss_client_preset": "default",
     "envs_root": "/home/y-guo/reproduce/new1/envs",
     "servers": [
         {"host": "tokyo108", "gpu": 2, "card": "H200", "model_key": "gptoss",
@@ -286,10 +286,20 @@ class TestGenLaunchMultiSample(unittest.TestCase):
             self.assertNotIn("MULTI", text, name)
 
     def test_old_manifest_p1_untouched(self):
-        """在库的老 manifest 生成物里一个新旗标都不许冒出来。"""
+        """在库的老 manifest 生成物里一个新旗标都不许冒出来。
+
+        底本是 pipeline/collect/manifest_p1.json(那一批的历史清单,原样留档)。
+        p1 当时钉的是那一批自己的预设名;现役预设是 default,所以这里把顶层的
+        gptoss_client_preset 换成 default 再干跑,测的仍是"清单里没有多样本
+        字段 = 生成物里没有多样本旗标"这件事。
+        """
+        mf = json.loads(
+            (ROOT / "pipeline/collect/manifest_p1.json").read_text())
+        mf["gptoss_client_preset"] = "default"
         with tempfile.TemporaryDirectory() as td:
-            out = generate(ROOT / "pipeline/collect/manifest_p1.json",
-                           Path(td) / "p1")
+            p = Path(td) / "manifest_p1_default.json"
+            p.write_text(json.dumps(mf, ensure_ascii=False, indent=2))
+            out = generate(p, Path(td) / "p1")
             for name, text in out.items():
                 self.assertNotIn("--traj-per-task", text, name)
                 self.assertNotIn("$MULTI", text, name)

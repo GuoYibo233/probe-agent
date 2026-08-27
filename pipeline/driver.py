@@ -955,11 +955,11 @@ def step_c4_smoke(cfg, state, pr=None):
     if ok:
         return advanced("G4 smoke 判据已满足", str(d))
     s0 = mf["servers"][0]
-    preset = mf.get("gptoss_client_preset") or "gptoss_chat_high"
+    preset = mf.get("gptoss_client_preset") or "default"
     cmd = PYRUN + ["collect-aw", "--preset", preset,
                    "--base-url", f"http://{s0['host']}:{s0['port']}/v1",
-                   # 预设 default 没有 server 节,--model 省不掉(common.py
-                   # settings_from_args 会当场 SystemExit)
+                   # 端点与模型名照 manifest 的 servers[0] 显式给,压过预设
+                   # server 节 —— smoke 打的是这一批真发射的那个服务
                    "--model", cfg["model_full"],
                    "--split", "train", "--n", "1", "--max-steps", "30",
                    "--outdir", str(d), "--exp", f"{cfg['collect']['run_id']}smk"]

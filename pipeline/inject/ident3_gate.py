@@ -40,7 +40,17 @@ def main():
     ap.add_argument("--probe-url", required=True)
     ap.add_argument("--model", default="gpt-oss-120b")
     ap.add_argument("--effort", default="high")
+    ap.add_argument("--preset", default="default",
+                    help="configs/presets/<名>.json 的一套生成设置;"
+                         "门禁请求的 temperature 从这份预设的 client 节读")
     a = ap.parse_args()
+    # 采样键出自预设 client 节;temperature 只有这一个来源
+    root = str(HERE.parents[1])
+    if root not in sys.path:
+        sys.path.append(root)
+    from preset_loader import load_preset, require_temperature  # noqa: E402
+    pre = load_preset(a.preset)
+    temperature = require_temperature(pre["client"]["temperature"], pre["_name"])
     R.check_system_verbatim()
     msgs = [{"role": "system", "content": R.SYSTEM},
             {"role": "user", "content": "Task from supervisor: gate check."},
@@ -50,7 +60,7 @@ def main():
                dict(messages=msgs, effort=a.effort))
     chat = post(a.base_url.rstrip("/") + "/chat/completions",
                 dict(model=a.model, messages=msgs, max_tokens=1,
-                     temperature=0.0, return_token_ids=True,
+                     temperature=temperature, return_token_ids=True,
                      reasoning_effort=a.effort))
     pids = chat.get("prompt_token_ids")
     if pids is None:

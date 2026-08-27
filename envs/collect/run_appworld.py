@@ -102,9 +102,9 @@ def traj_meta(eff, tid, instr, chat, k, n):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--preset", default=None,
+    ap.add_argument("--preset", default="default",
                     help="configs/presets/<名>.json 的一套生成设置;"
-                         "命令行显式给的参数压过预设值")
+                         "缺省 default;命令行显式给的参数压过预设值")
     ap.add_argument("--base-url", help="预设带 server 节时可省")
     ap.add_argument("--model", help="预设带 server 节时可省")
     ap.add_argument("--split", default="dev")

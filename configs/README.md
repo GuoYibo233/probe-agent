@@ -13,6 +13,9 @@
   （api / reasoning_effort / temperature / top_p / max_tokens / stop /
   start_date / seed，采集器、活跑、回放的 `--preset` 吃，BFCL handler 走
   环境变量 `NEW1_PRESET_JSON`）。节里的 null = 不指定，落到调用方原有缺省。
+  temperature 只从 client 节来；预设把它写成 null 时，生成入口经
+  `require_temperature` 当场停下并点名是哪份预设（BFCL handler 例外，
+  null 时用 BFCL 自带的那一档）。
 
 client 节八个键在四类入口的取用范围（2026-08-21 对齐；此前 top_p/seed 只有
 采集线取，活跑/回放/BFCL 静默吃不到，现在钉在 `tests/test_preset.py` 的
@@ -28,7 +31,7 @@ TestSamplingForwarding 与 TestBfclHandlerPreset）：
 以后加新采样键，四处一起动：`preset_loader.py` 的 CLIENT_KEYS、
 `envs/collect/common.py` settings_from_args 的兜底、活跑与回放的 PRESET_FB、
 BFCL handler 的预设读取段；`tests/test_preset.py` 的 SAMPLING_KEYS 跟着扩
-（活跑/回放兜底漏键测试会红，另两处靠 TestCollectorEquivalence 与
+（活跑/回放兜底漏键测试会红，另两处靠 TestCollectorSettings 与
 TestBfclHandlerPreset 的取值断言盯着）。
 
 三条规矩：
@@ -38,11 +41,19 @@ TestBfclHandlerPreset 的取值断言盯着）。
    （校验别名解析与字段类型）和 `python3 -m unittest tests.test_preset`。
 3. 用了预设的跑，run_id 里带上预设名（DATA.md 检查清单第 9 条）。
 
-现有六份 gptoss 预设分两类：五份（chat_high / harmony_medium / bfcl_high /
-live_high / replay）与 2026-08-20 改造前散在五处的写死值逐项等价，
-等价性由 `tests/test_preset.py` 钉死；第六份 `gptoss_default` 是 OpenAI
-官方推荐口径（temperature=1.0 / top_p=1.0 / top_k=0 / min_p=0.0 /
-effort medium / 上下文 131072，出处与对照写在它的 desc 里），不对应任何旧写死值。
+现有三份预设，值由 `tests/test_preset.py` 钉着：
+
+- `default` 是全线现役的唯一口径，每个入口的 `--preset` 缺省就是它。
+  client 节 api harmony / effort high / temperature 1.0 / top_p 1.0 /
+  max_tokens 8192 / stop null / start_date 2026-08-06 / seed null；
+  server 节 tokyo108:8103、gpt-oss-120b、显存 0.92（`serve_preset.py` 直接发射）。
+- `gptoss_default` 是 OpenAI 官方推荐口径（temperature=1.0 / top_p=1.0 /
+  top_k=0 / min_p=0.0 / effort medium / 上下文 131072，出处与对照写在它的 desc 里）。
+- `gptoss_bfcl_high` 是 BFCL 线口径（api chat / effort high / max_tokens 16384；
+  temperature 留 null，BFCL handler 用它自己那一档；无 server 节）。
+  BFCL handler 不设 `NEW1_PRESET_JSON` 时读 `default`，取 max_tokens 8192 /
+  top_p 1.0 / temperature 1.0；指到 `gptoss_bfcl_high` 时取 max_tokens 16384、
+  温度用 BFCL 自带的那一档。
 别手改预设去"顺手调参"——调参就新开一份预设，名字说清口径。
 成组调参不用手开 N 份：`python3 run.py preset-sweep --base <名> --grid
 键=值,值,...`（可多条 --grid 取笛卡尔积）一条命令生成整批网格预设，

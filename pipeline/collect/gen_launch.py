@@ -62,11 +62,11 @@ QWEN_FLAGS_SRC = ('    "--reasoning-parser deepseek_r1 --max-model-len 65536 "\n
                   '    "--enable-auto-tool-choice --tool-call-parser qwen3_coder"\n')
 # gpt-oss 不带 Qwen 旗标,只要显存占比
 GPTOSS_SERVE_FLAGS = "--gpu-memory-utilization 0.92"
-# gpt-oss 客户端追加旗标。2026-08-20 起走预设文件,gptoss_chat_high 展开后
-# 与旧串 "--api chat --reasoning-effort high" 逐项等价(tests/test_preset.py 钉着)。
-# 2026-08-21 起预设名可用 manifest 顶层可选字段 "gptoss_client_preset" 覆盖,
-# 缺省不变,老 manifest 行为逐字节相同(p1 批用 gptoss_harmony_high)。
-GPTOSS_CLIENT_PRESET_DEFAULT = "gptoss_chat_high"
+# gpt-oss 客户端追加旗标:一个 --preset 带全套生成设置(configs/presets/<名>.json)。
+# 预设名来自 manifest 顶层可选字段 "gptoss_client_preset";字段缺席时用下面这个
+# 缺省 default,也就是全线现役的那一份口径(harmony / effort high / 温度 1.0 /
+# top_p 1.0 / max_tokens 8192 / Current date 2026-08-06),tests/test_preset.py 钉着。
+GPTOSS_CLIENT_PRESET_DEFAULT = "default"
 
 # 采集器统一参数(执行手册 §3.4)
 CLIENT_COMMON = "--n 0 --max-steps 30"

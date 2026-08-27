@@ -8,7 +8,7 @@
   1. 消息历史照采集脚本拼(SYSTEM 从 rebuild 取,启动时回源核对);
   2. harmony 前缀问探针服务要(/render 出 token id,与 chat 端点渲染逐 token
      相同;appworld venv 没有 transformers/openai_harmony);
-  3. 分段生成:每段 --chunk-tokens 个 token,贪心,stop=<|return|>;
+  3. 分段生成:每段 --chunk-tokens 个 token,采样键来自预设,stop=<|return|>;
   4. 每个新句子级切口把 assemble(task, hist, thinking[:cut]) 发 /score,
      首过 θ 触发(切口查满 MAX_BOUNDS 个就歇手,口径差见设计书 §4.2);
   5. 触发:/gen 出整条调用 -> 正身世界 save_state -> requote -> 执行 ->
@@ -78,7 +78,7 @@ MAX_STEP_TOKENS = 8192     # 采集时 max_tokens=8192(common.py:20),整步上�
 # --preset 合并的兜底缺省。merge_client 只处理 cli∪fallbacks 里出现过的键,
 # 采样键不在这张表里 = 预设写了也静默不生效(2026-08-21 之前 top_p/seed 就是
 # 这么丢的);覆盖面由 tests/test_preset.py 钉着。
-PRESET_FB = {"reasoning_effort": "high", "temperature": 0.0,
+PRESET_FB = {"reasoning_effort": "high",
              "max_tokens": MAX_STEP_TOKENS, "stop": DEFAULT_STOP,
              "top_p": None, "seed": None}
 
@@ -570,10 +570,10 @@ def main():
     ap.add_argument("--tail-tokens", type=int, default=1024,
                     help="<|end|> 之后(或不挂探针时)的段长")
     ap.add_argument("--max-inject-per-step", type=int, default=1)
-    ap.add_argument("--preset", default=None,
+    ap.add_argument("--preset", default="default",
                     help="configs/presets/<名>.json 的一套生成设置"
                          "(effort/temperature/top_p/步预算/stop/seed);"
-                         "命令行显式给的参数压过预设值")
+                         "缺省 default;命令行显式给的参数压过预设值")
     ap.add_argument("--effort", default=None,
                     choices=["high", "medium", "low"],
                     help="harmony 模板的 Reasoning 档;缺省 high(预设也没给时)。"
@@ -604,24 +604,25 @@ def main():
         ap.error("--no-probe 与 --fire-nth-cut/--nofill 互斥(no probe 臂不开火)")
 
     # --preset 合并(CLI 显式值 > 预设 client 节 > 原缺省),展开值挂回 a,
-    # 下游只认 a.*;不传 --preset 时逐键落回原缺省,行为与加参数前一致
+    # 下游只认 a.*;--preset 缺省 default,temperature 这个键只从预设文件来
     root = str(Path(__file__).resolve().parents[2])
     if root not in sys.path:
         sys.path.append(root)
-    from preset_loader import load_preset, merge_client
-    pre = load_preset(a.preset) if a.preset else None
+    from preset_loader import load_preset, merge_client, require_temperature
+    pre = load_preset(a.preset)
     eff = merge_client(
-        {"reasoning_effort": a.effort},
-        (pre or {}).get("client"),
+        {"reasoning_effort": a.effort,
+         "temperature": getattr(a, "temperature", None)},
+        pre.get("client"),
         PRESET_FB)
     a.effort = eff["reasoning_effort"]
-    a.temperature = eff["temperature"]
+    a.temperature = require_temperature(eff["temperature"], pre["_name"])
     a.max_step_tokens = eff["max_tokens"]
     a.stop = eff["stop"]
     a.top_p = eff["top_p"]
     a.seed = eff["seed"]
     a.model = (a.model
-               or ((pre or {}).get("server") or {}).get("served_model_name")
+               or (pre.get("server") or {}).get("served_model_name")
                or "gpt-oss-120b")
 
     # 路径一律先 resolve 再 chdir【exec_calls.py 同款教训】

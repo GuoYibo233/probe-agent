@@ -50,7 +50,7 @@
 口径与已知偏差(报告里都要带上,别静默):
 - 省 token 的主对照是**原轨迹**该步的 out token(盘上现成:模型当时从截断点
   一路写到发出调用实际花了多少),nofill 只当管线体检线 —— 从 cut 处重新
-  tokenize 再 greedy 续写无法逐字重现原始 token 流,两条线要一起看。
+  tokenize 再续写无法逐字重现原始 token 流,两条线要一起看。
   这个口径盖在 INJECT_REPORT 的 `saved_baseline` 键上,读 per_event 求和的下游
   (sweep_theta curve)必须先认戳。旧报告(saved_tok 相对 nofill)重跑 score 会
   被挡下,要换口径得整条 θ 曲线一起重跑并显式加 `--rebaseline`。
@@ -66,7 +66,7 @@
 - execute 档的前缀重放保真度**逐步核对**轨迹里录下的 result,漂了的事件标
   prefix_verbatim=False,报告里单列 —— 不核对就等于拿一个错的状态去执行预测
   调用、再把结果当真账报出来。
-- 采集时 temperature=0.0(envs/collect/common.py:20),所以续写也用 greedy;
+- 续写的采样键与采集来自同一份预设(--preset,缺省 default);
   但服务端批处理下的数值抖动仍可能让 nofill 与 baseline 不逐字相同。
 - 少数步的历史里混有字面 harmony 标记,重新 tokenize 与采集时差几个 token
   (rebuild.py 顶部注释),plan 阶段标记为 literal_harmony。
@@ -158,7 +158,7 @@ DEFAULT_STOP = ["<|return|>"]
 # --preset 合并的兜底缺省。merge_client 只处理 cli∪fallbacks 里出现过的键,
 # 采样键不在这张表里 = 预设写了也静默不生效(2026-08-21 之前 top_p/seed 就是
 # 这么丢的);覆盖面由 tests/test_preset.py 钉着。
-PRESET_FB = {"max_tokens": 8192, "temperature": 0.0, "stop": DEFAULT_STOP,
+PRESET_FB = {"max_tokens": 8192, "stop": DEFAULT_STOP,
              "top_p": None, "seed": None}
 
 # 这些 inject_source 没有可注入的内容,inject 臂不发请求(但照样占省 token 的分母)。
@@ -751,18 +751,19 @@ def cmd_run(a):
     from transformers import AutoTokenizer
 
     # --preset 合并(CLI 显式值 > 预设 client 节 > 原缺省),展开值挂回 a;
-    # 不传 --preset 时逐键落回原缺省,行为与加参数前一致
+    # --preset 缺省 default,temperature 这个键只从预设文件来
     root = str(HERE.parents[1])
     if root not in sys.path:
         sys.path.append(root)
-    from preset_loader import load_preset, merge_client
-    pre = load_preset(a.preset) if a.preset else None
+    from preset_loader import load_preset, merge_client, require_temperature
+    pre = load_preset(a.preset)
     eff = merge_client(
-        {"max_tokens": a.max_tokens},
-        (pre or {}).get("client"),
+        {"max_tokens": a.max_tokens,
+         "temperature": getattr(a, "temperature", None)},
+        pre.get("client"),
         PRESET_FB)
     a.max_tokens = eff["max_tokens"]
-    a.temperature = eff["temperature"]
+    a.temperature = require_temperature(eff["temperature"], pre["_name"])
     a.stop = eff["stop"]
     a.top_p = eff["top_p"]
     a.seed = eff["seed"]
@@ -1318,10 +1319,10 @@ def main():
     p.add_argument("--form-table", default=str(HERE / "form_table.json"),
                    help="build_form_table.py 的产物,决定骨架是 print 形还是"
                         "赋值形;文件不在就一律 print 形")
-    p.add_argument("--preset", default=None,
+    p.add_argument("--preset", default="default",
                    help="configs/presets/<名>.json 的一套生成设置"
                         "(temperature/top_p/max_tokens/stop/seed);"
-                        "命令行显式给的压过预设值")
+                        "缺省 default;命令行显式给的压过预设值")
     # 采集时 max_tokens=8192(envs/collect/common.py 的 Chat 缺省)。设小了 nofill
     # 会被截断,与 baseline 不可比 —— 单步 baseline_out_tok 实测有到 5681 的
     p.add_argument("--max-tokens", type=int, default=None,

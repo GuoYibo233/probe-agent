@@ -310,6 +310,13 @@ def post_json(url, payload, timeout, retries=4):
 
 def cmd_run(a):
     d = Path(a.run_dir)
+    # 采样键出自预设 client 节(--preset 缺省 default);temperature 只有这一个来源
+    root = str(HERE.parents[1])
+    if root not in sys.path:
+        sys.path.append(root)
+    from preset_loader import load_preset, require_temperature   # noqa: E402
+    pre = load_preset(a.preset)
+    a.temperature = require_temperature(pre["client"]["temperature"], pre["_name"])
     R.check_system_verbatim()               # run/score 也重建 prompt,同样回源核对
     H.encoding()                            # 线程池之前先把编码器装好(懒加载不线程安全)
     evs = [json.loads(l) for l in open(d / "events.jsonl")]
@@ -366,7 +373,7 @@ def cmd_run(a):
         t0 = time.time()
         r = post_json(a.base_url.rstrip("/") + "/completions", dict(
             model=a.model, prompt=ids, max_tokens=a.max_tokens,
-            temperature=0.0, stop=stop, skip_special_tokens=False),
+            temperature=a.temperature, stop=stop, skip_special_tokens=False),
             a.timeout)
         ch = r["choices"][0]
         rec.update(text=ch["text"], finish_reason=ch.get("finish_reason"),
@@ -655,6 +662,9 @@ def main():
     r.add_argument("--run-dir", required=True)
     r.add_argument("--base-url", default="http://tokyo108:8103/v1")
     r.add_argument("--model", default="gpt-oss-120b")
+    r.add_argument("--preset", default="default",
+                   help="configs/presets/<名>.json 的一套生成设置;"
+                        "续写的 temperature 从这份预设的 client 节读")
     r.add_argument("--arms", default=",".join(ARMS_ALL))
     r.add_argument("--max-tokens", type=int, default=MAX_STEP_TOKENS)   # D8
     r.add_argument("--concurrency", type=int, default=16)

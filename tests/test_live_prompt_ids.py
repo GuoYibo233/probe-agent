@@ -93,9 +93,9 @@ def mk_args(**kw):
     a = Args(base_url="http://vllm", probe_url="http://probe", model="m",
              timeout=5, no_probe=False, max_inject_per_step=1,
              fire_nth_cut=0, nofill=False,
-             # gen-preset(2026-08-20):这三个字段原来是模块常量/写死值,
-             # 现在挂在 args 上,缺省与旧值相同
-             max_step_tokens=8192, temperature=0.0, stop=["<|return|>"])
+             # gen-preset(2026-08-20):这三个字段挂在 args 上,由 --preset
+             # 展开而来;这里照预设 default 的值填(温度 1.0)
+             max_step_tokens=8192, temperature=1.0, stop=["<|return|>"])
     a.__dict__.update(kw)
     return a
 
