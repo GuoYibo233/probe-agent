@@ -154,6 +154,73 @@ class TestPackedForwardMatchesOldPath(unittest.TestCase):
         self._check_mode("cparam")
 
 
+class TestRefForwardUsesInstCe(unittest.TestCase):
+    """F1(评审发现):`train_causal_share._ref_forward`(对齐检查的参照路径)
+    的逐行 ce 必须真的来自调用 `inst_ce`,不是另一套同公式的手写替代——
+    (a) 只验新路径 `block_row_ce` 对 `inst_ce` 的差,不覆盖 `_ref_forward`
+    这段代码本身,这里直接对 `_ref_forward` 断言。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        if not VAL_PATH.exists():
+            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+        if cls.tok.pad_token_id is None:
+            cls.tok.pad_token = cls.tok.eos_token
+        cls.tok.truncation_side = "left"
+        cls.tok.padding_side = "right"
+
+        cls.tmpdir, cls.data_path = _load_five_short_events()
+
+        torch.manual_seed(SEED)
+        cls.model = AutoModelForCausalLM.from_config(_tiny_config(len(cls.tok)))
+        cls.model.eval()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmpdir.cleanup()
+
+    def _check_mode(self, mode):
+        OldDS = (train_causal_callgen.CallDS if mode == "cgen"
+                else train_causal_param.ParamDS)
+        old_collate = (train_causal_callgen.collate if mode == "cgen"
+                      else train_causal_param.collate)
+        old_inst_ce = (train_causal_callgen.inst_ce if mode == "cgen"
+                      else train_causal_param.inst_ce)
+        ds = OldDS(self.data_path, self.tok, limit=0)
+
+        with torch.no_grad():
+            row_ref, _tok_ref = tcs._ref_forward(
+                mode, self.model, self.tok, ds.rows, "cpu", 8192,
+                tcs.REF_BATCH)
+
+            # 不经过 `_ref_forward`,按同样的分批方式独立再走一遍旧
+            # collate + 真正调用 inst_ce——两边必须逐行相同(同一个模型、
+            # 同一批输入、同一次 no_grad 前向,理论上 bit 级一致),才能
+            # 证明 `_ref_forward` 返回的就是 `inst_ce` 的真实输出,不是
+            # 另一套同公式的独立实现。
+            direct = []
+            for i in range(0, len(ds.rows), tcs.REF_BATCH):
+                chunk = ds.rows[i:i + tcs.REF_BATCH]
+                enc, labels = old_collate(chunk, self.tok, 8192)[:2]
+                direct.extend(
+                    old_inst_ce(self.model, enc, labels, "cpu").tolist())
+
+        self.assertEqual(len(row_ref), len(direct))
+        diff = max(abs(a - b) for a, b in zip(row_ref, direct))
+        self.assertEqual(diff, 0.0,
+                         f"_ref_forward 的逐行结果与直接调用 inst_ce 不是"
+                         f"同一次计算(max diff {diff},mode={mode})")
+
+    def test_cgen(self):
+        self._check_mode("cgen")
+
+    def test_cparam(self):
+        self._check_mode("cparam")
+
+
 class TestBackwardBlockSplitInvariance(unittest.TestCase):
     """(b) 一个逻辑小批拆成 1 块和拆成 3 块的参数梯度逐元素差 <= 1e-6
 

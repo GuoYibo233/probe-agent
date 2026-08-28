@@ -22,10 +22,11 @@
 - 对齐检查(第 9 节):开训前(以及 `--align-only`)、`lora_util.wrap` 之前、
   `model.eval()` 下,fp32 关 TF32,抽 `--align-events` 个 val 短事件,同一份
   临时 jsonl 喂新路径(`share_data.load_events`)与参照路径(旧 `collate` +
-  自算的逐 token CE,公式与 `inst_ce` 相同但多留一步中间量给逐 token 门槛
-  用),按位置配对逐行/逐 token 比较。参照路径不套 EFFICIENT_ATTENTION(它
-  的『单行不补齐』批没有掩码,HF 会走 `enable_gqa`,mem-efficient 不支持
-  GQA,强制内核会报错——只有永远带掩码的新路径套这个上下文)。
+  真正调用的 `inst_ce` 得到逐行 ce;逐 token 门槛需要的中间量另用同一套
+  公式本地算,每批都断言与 `inst_ce` 的返回值一致),按位置配对逐行/逐
+  token 比较。参照路径不套 EFFICIENT_ATTENTION(它的『单行不补齐』批没有
+  掩码,HF 会走 `enable_gqa`,mem-efficient 不支持 GQA,强制内核会报错——
+  只有永远带掩码的新路径套这个上下文)。
 
 用法:
   # 只过对齐检查
@@ -79,6 +80,12 @@ BF16_MEAN_TOL = 2e-2
 BF16_MAX_TOL = 1e-1
 # 参照路径『整批』的行数,照旧训练器的 --bs 4(spec 第 9 节)。
 REF_BATCH = 4
+# `_ref_forward` 本地逐 token 公式聚合出的逐行结果,与真正调用 `inst_ce`
+# 的返回值之间允许的最大差(同一批数据同一次 no_grad 前向调两遍,理论上
+# bit 级相同;留这道容差只是防浮点求和顺序在不同内核调度下的极小抖动,
+# 比 --align-tol 的 2e-5 低一个量级,离真正的公式错位(1e-2 量级)还差
+# 1000 倍,不会把结构性错位放过)。
+REF_INST_CE_DRIFT_TOL = 1e-6
 
 
 # ---------------------------------------------------------------- 前向形态
@@ -270,11 +277,17 @@ def _write_align_tmpfile(picked):
 def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
     """参照路径:旧 `collate`,`bs` 行一批右 padding,过同一个模型。
 
-    与 `inst_ce`(`train_causal_callgen.py`/`train_causal_param.py`)同一套
-    公式(移位预测、只在目标位取 CE、按行 mean),这里多留一步逐 token 的
-    中间量——`inst_ce` 本身只回每行 mean CE,spec 第 9 节的『逐 token 最大
-    差』门槛需要更细的粒度。`bs=4` 是『整批』,`bs=1` 是补齐基线的『单行』
-    (spec:两者都用旧训练器的口径,只是分批大小不同)。参照路径不套
+    每行 ce 直接来自调用旧脚本的 `inst_ce`(`train_causal_callgen.py`/
+    `train_causal_param.py`,spec 第 9 节字面要求的『import collate、
+    inst_ce...得到每行 ce』)——`row_ce` 就是 `inst_ce` 的返回值,不是另一套
+    同公式的手写替代。`inst_ce` 本身只回每行 mean CE,不暴露逐 token 的
+    中间量,而 spec 同一节还要求逐 token 最大差门槛,所以本函数另外用与
+    `inst_ce` 完全相同的公式(移位预测、只在目标位取 CE)本地算一份逐
+    token CE 供 `tok_ce` 用,并在每一批上把这份本地公式聚合出的逐行结果
+    与真正调用 `inst_ce` 的返回值断言一致(`REF_INST_CE_DRIFT_TOL`)——
+    不一致就当场 `AssertionError`,不会把一个未经验证的手写公式悄悄当成
+    对齐检查的基准。`bs=4` 是『整批』,`bs=1` 是补齐基线的『单行』(spec:
+    两者都用旧训练器的口径,只是分批大小不同)。参照路径不套
     EFFICIENT_ATTENTION,用默认内核选择(design-attention.md 7.1 节:『单行
     不补齐』批没有掩码,HF 会跳过建掩码并开 enable_gqa,mem-efficient 不
     支持 GQA,强制内核会报错)。
@@ -283,6 +296,8 @@ def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
     """
     collate_fn = (train_causal_callgen.collate if mode == "cgen"
                  else train_causal_param.collate)
+    inst_ce_fn = (train_causal_callgen.inst_ce if mode == "cgen"
+                 else train_causal_param.inst_ce)
     row_ce, tok_ce = [], []
     for i in range(0, len(rows), bs):
         chunk = rows[i:i + bs]
@@ -298,7 +313,17 @@ def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
         rid = torch.arange(b, device=dev).unsqueeze(1).expand_as(tg)[m]
         ssum = torch.zeros(b, device=dev).index_add(0, rid, ce)
         cnt = torch.zeros(b, device=dev).index_add(0, rid, torch.ones_like(ce))
-        row_ce.extend((ssum / cnt.clamp(min=1)).tolist())
+        row_ce_local = ssum / cnt.clamp(min=1)
+
+        row_ce_inst = inst_ce_fn(model, enc, labels, dev).float()
+        drift = (row_ce_local - row_ce_inst).abs().max().item()
+        assert drift <= REF_INST_CE_DRIFT_TOL, (
+            f"_ref_forward 本地逐 token 公式聚合出的逐行结果与真正调用 "
+            f"inst_ce 的返回值不一致(max diff {drift} > "
+            f"{REF_INST_CE_DRIFT_TOL},mode={mode}):对齐检查的参照基线"
+            "不可信,先查两套公式的差异再继续。")
+
+        row_ce.extend(row_ce_inst.tolist())
         tok_ce.extend(ce.tolist())
     return row_ce, tok_ce
 
