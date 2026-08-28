@@ -17,8 +17,8 @@
   预期 = 固定项 + 每 token 系数 × n_tokens / 1000 + 1.8 × n_loss_pos / 1000
 固定项与系数按配置和检查点取(9.1 表);n_tokens / n_loss_pos 取探针事件里记的值,旧格式的事件
 (只有 B、L_pad)按 B × L_pad 与默认损失位(fullest_block 1,984、longest_event 1,344)补。tokens 探针
-默认块(16,384 个 token、1,984 个损失位)代进去:b17 不开检查点 98.1、l17 不开 77.7(1.7B 系数按冒烟
-校准成 3.88 之后的数;校准前按 3.68 是 94.8 / 74.5)、l4 开 38.1、b06 开 17.9。偏差 = (实测 − 预期) / 预期,
+默认块(16,384 个 token、1,984 个损失位)代进去:b17 不开检查点 98.1、l17 不开 77.7、l4 开 28.8、
+b06 开 15.8(四个配置都已按 2026-08-28 到 29 的冒烟校准,design 9.8 与 9.9)。偏差 = (实测 − 预期) / 预期,
 绝对值超过 --dev-threshold(默认 15%)的行打 "!!" 标记。
 """
 import argparse
@@ -26,12 +26,16 @@ import json
 import sys
 from pathlib import Path
 
-# 9.1 的显存模型(GB;固定项含 fp32 权重、bf16 副本、梯度、AdamW 状态或 LoRA 四份)
-FIXED_GB = {"b06": 10.86, "b17": 30.97, "l17": 10.60, "l4": 24.66}
+# 9.1 的显存模型(GB),按配置给 (不开检查点, 开检查点) 两个值。固定项:不开检查点含 fp32 权重、
+# bf16 副本、梯度、AdamW 状态或 LoRA 四份;开检查点时 LoRA 的 bf16 副本不常驻(design 9.9:l4 两点
+# 拟合 16.25,对 24.66 少的正是副本 8.04),全参少约 0.6。实测校准的:b06 两档、b17/l17 不开检查点
+# (design 9.8)、l4 开检查点(9.9);其余是推算值:b17 开检查点 30.4、l17 开检查点 7.16(10.60 减副本
+# 3.44)、l4 不开检查点 24.66。
+FIXED_GB = {"b06": (10.86, 10.27), "b17": (30.97, 30.4), "l17": (10.60, 7.16), "l4": (24.66, 16.25)}
 MB_PER_TOKEN = {  # (不开检查点, 开检查点)
-    # 1.7B 不开检查点的 3.88 是 2026-08-28 夜 b17/l17 冒烟的四个实测点反推(design 9.8),
-    # 9.1 按层内张量推的是 3.68;其余系数仍是 9.1 的推算值,等实测再校
-    "b06": (2.44, 0.21), "b17": (3.88, 0.38), "l17": (3.88, 0.38), "l4": (7.32, 0.60)}
+    # 实测校准:b06 不开 2.44(8.6/9.1)、开 0.12(9.9);1.7B 不开 3.88(9.8);l4 开 0.55(9.9)。
+    # 推算值:1.7B 开检查点 0.38、4B 不开检查点 7.32(两个底座峰值时刻不同,不能用倍率互推)
+    "b06": (2.44, 0.12), "b17": (3.88, 0.38), "l17": (3.88, 0.38), "l4": (7.32, 0.55)}
 MB_PER_LOSS_POS = 1.8
 # 排卡计划(决定 30)里各配置是否开检查点;meta.json 没有 grad_ckpt 的时候用这个假定
 PLANNED_GC = {"b06": True, "b17": False, "l17": False, "l4": True}
@@ -90,7 +94,8 @@ def expected_gb(tag, gc, n_tokens, n_loss_pos):
     if tag not in FIXED_GB or gc is None or n_tokens is None or n_loss_pos is None:
         return None
     coef = MB_PER_TOKEN[tag][1 if gc else 0]
-    return FIXED_GB[tag] + coef * n_tokens / 1e3 + MB_PER_LOSS_POS * n_loss_pos / 1e3
+    fixed = FIXED_GB[tag][1 if gc else 0]
+    return fixed + coef * n_tokens / 1e3 + MB_PER_LOSS_POS * n_loss_pos / 1e3
 
 
 def probe_numbers(m):
