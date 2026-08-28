@@ -1072,6 +1072,10 @@ def main():
         run_mem_probe(model, opt, tr_events, args, dev, log, amp,
                      full_events=full_tr_events)
         del full_tr_events
+        if dev.startswith("cuda"):
+            # 探针每块跑前各自归零、跑完不归零,第一条 step 读到的会是探针
+            # 最后一块的峰值(8-28-assistant 从五个冒烟的 gstep 1 核出来的)
+            torch.cuda.reset_peak_memory_stats()
 
     best = float("inf")
     best_ep = best_frac = None
