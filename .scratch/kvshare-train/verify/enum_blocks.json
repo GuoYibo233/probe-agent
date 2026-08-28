@@ -1,0 +1,923 @@
+{
+ "train": {
+  "load_s": 490.5,
+  "counts": {
+   "dropped_events": 1,
+   "dropped_rows_tgt": 0,
+   "assembly_mismatch": 0,
+   "n_rows": 186415
+  },
+  "n_events": 4126,
+  "M": 1032,
+  "U": 516,
+  "n_blocks": 1577,
+  "tot_tokens": 14961456,
+  "tot_real": 10635282,
+  "tot_loss": 2714738,
+  "pad_frac": 0.2892,
+  "hist_B": {
+   "4": 491,
+   "3": 337,
+   "1": 347,
+   "2": 402
+  },
+  "max_T": {
+   "B": 4,
+   "L_pad": 4096,
+   "tokens": 16384,
+   "real": 8797,
+   "rows": 173,
+   "loss": 2249,
+   "events": [
+    "appworld_gptoss/appworld_29caf6f_1_r2|s10",
+    "appworld_gptoss/appworld_82e2fac_3_r2|s2",
+    "appworld_gptoss/appworld_302c169_3_r2|s2",
+    "appworld_gptoss/appworld_aa8502b_3_r0|s1"
+   ],
+   "mb": 448,
+   "group": 224
+  },
+  "max_P": {
+   "B": 2,
+   "L_pad": 6368,
+   "tokens": 12736,
+   "real": 11917,
+   "rows": 128,
+   "loss": 5696,
+   "events": [
+    "appworld_gptoss/appworld_e85d92a_1_r1|s5",
+    "appworld_gptoss/appworld_6104387_2_r1|s7"
+   ],
+   "mb": 950,
+   "group": 475
+  },
+  "max_norm": {
+   "B": 3,
+   "L_pad": 5120,
+   "tokens": 15360,
+   "real": 12317,
+   "rows": 192,
+   "loss": 4992,
+   "events": [
+    "appworld_gptoss/appworld_07b42fd_3_r2|s27",
+    "appworld_gptoss/appworld_229360a_3_r2|s8",
+    "appworld_gptoss/appworld_771d8fc_3_r3|s6"
+   ],
+   "mb": 220,
+   "group": 110
+  },
+  "by_cost": {
+   "b06_nogc": [
+    {
+     "B": 4,
+     "L_pad": 4096,
+     "tokens": 16384,
+     "real": 11438,
+     "rows": 211,
+     "loss": 4271,
+     "events": [
+      "appworld_gptoss/appworld_cf6abd2_3_r2|s8",
+      "appworld_gptoss/appworld_e3d6c94_1_r1|s19",
+      "appworld_gptoss/appworld_76f2c72_1_r1|s12",
+      "appworld_gptoss/appworld_22cc237_3_r2|s6"
+     ],
+     "mb": 981,
+     "group": 490,
+     "cost_gb": 47.66
+    },
+    {
+     "B": 4,
+     "L_pad": 4096,
+     "tokens": 16384,
+     "real": 11441,
+     "rows": 250,
+     "loss": 3850,
+     "events": [
+      "appworld_gptoss/appworld_aa8502b_3_r0|s2",
+      "appworld_gptoss/appworld_2a163ab_2_r1|s7",
+      "appworld_gptoss/appworld_60d0b5b_1_r1|s1",
+      "appworld_gptoss/appworld_82e2fac_3_r0|s0"
+     ],
+     "mb": 664,
+     "group": 332,
+     "cost_gb": 46.91
+    },
+    {
+     "B": 4,
+     "L_pad": 3968,
+     "tokens": 15872,
+     "real": 11385,
+     "rows": 233,
+     "loss": 4299,
+     "events": [
+      "appworld_gptoss/appworld_d0b1f43_2_r3|s3",
+      "appworld_gptoss/appworld_e3d6c94_1_r3|s21",
+      "appworld_gptoss/appworld_07b42fd_1_r3|s4",
+      "appworld_gptoss/appworld_afc0fce_2_r1|s4"
+     ],
+     "mb": 108,
+     "group": 54,
+     "cost_gb": 46.47
+    }
+   ],
+   "b17_nogc": [
+    {
+     "B": 4,
+     "L_pad": 4096,
+     "tokens": 16384,
+     "real": 11438,
+     "rows": 211,
+     "loss": 4271,
+     "events": [
+      "appworld_gptoss/appworld_cf6abd2_3_r2|s8",
+      "appworld_gptoss/appworld_e3d6c94_1_r1|s19",
+      "appworld_gptoss/appworld_76f2c72_1_r1|s12",
+      "appworld_gptoss/appworld_22cc237_3_r2|s6"
+     ],
+     "mb": 981,
+     "group": 490,
+     "cost_gb": 69.95
+    },
+    {
+     "B": 4,
+     "L_pad": 4096,
+     "tokens": 16384,
+     "real": 11441,
+     "rows": 250,
+     "loss": 3850,
+     "events": [
+      "appworld_gptoss/appworld_aa8502b_3_r0|s2",
+      "appworld_gptoss/appworld_2a163ab_2_r1|s7",
+      "appworld_gptoss/appworld_60d0b5b_1_r1|s1",
+      "appworld_gptoss/appworld_82e2fac_3_r0|s0"
+     ],
+     "mb": 664,
+     "group": 332,
+     "cost_gb": 69.19
+    },
+    {
+     "B": 3,
+     "L_pad": 5456,
+     "tokens": 16368,
+     "real": 9716,
+     "rows": 141,
+     "loss": 3318,
+     "events": [
+      "appworld_gptoss/appworld_60d0b5b_2_r2|s10",
+      "appworld_gptoss/appworld_b7a9ee9_1_r3|s12",
+      "appworld_gptoss/appworld_60d0b5b_2_r0|s3"
+     ],
+     "mb": 639,
+     "group": 319,
+     "cost_gb": 68.17
+    }
+   ],
+   "b06_gc": [
+    {
+     "B": 2,
+     "L_pad": 6368,
+     "tokens": 12736,
+     "real": 11917,
+     "rows": 128,
+     "loss": 5696,
+     "events": [
+      "appworld_gptoss/appworld_e85d92a_1_r1|s5",
+      "appworld_gptoss/appworld_6104387_2_r1|s7"
+     ],
+     "mb": 950,
+     "group": 475,
+     "cost_gb": 12.67
+    },
+    {
+     "B": 3,
+     "L_pad": 4384,
+     "tokens": 13152,
+     "real": 12687,
+     "rows": 176,
+     "loss": 5328,
+     "events": [
+      "appworld_gptoss/appworld_e85d92a_3_r0|s9",
+      "appworld_gptoss/appworld_29caf6f_3_r2|s7",
+      "appworld_gptoss/appworld_6ea6792_1_r3|s16"
+     ],
+     "mb": 100,
+     "group": 50,
+     "cost_gb": 12.09
+    },
+    {
+     "B": 3,
+     "L_pad": 5120,
+     "tokens": 15360,
+     "real": 12317,
+     "rows": 192,
+     "loss": 4992,
+     "events": [
+      "appworld_gptoss/appworld_07b42fd_3_r2|s27",
+      "appworld_gptoss/appworld_229360a_3_r2|s8",
+      "appworld_gptoss/appworld_771d8fc_3_r3|s6"
+     ],
+     "mb": 220,
+     "group": 110,
+     "cost_gb": 11.9
+    }
+   ],
+   "b17_gc": [
+    {
+     "B": 2,
+     "L_pad": 6368,
+     "tokens": 12736,
+     "real": 11917,
+     "rows": 128,
+     "loss": 5696,
+     "events": [
+      "appworld_gptoss/appworld_e85d92a_1_r1|s5",
+      "appworld_gptoss/appworld_6104387_2_r1|s7"
+     ],
+     "mb": 950,
+     "group": 475,
+     "cost_gb": 14.58
+    },
+    {
+     "B": 3,
+     "L_pad": 5120,
+     "tokens": 15360,
+     "real": 12317,
+     "rows": 192,
+     "loss": 4992,
+     "events": [
+      "appworld_gptoss/appworld_07b42fd_3_r2|s27",
+      "appworld_gptoss/appworld_229360a_3_r2|s8",
+      "appworld_gptoss/appworld_771d8fc_3_r3|s6"
+     ],
+     "mb": 220,
+     "group": 110,
+     "cost_gb": 14.21
+    },
+    {
+     "B": 3,
+     "L_pad": 4384,
+     "tokens": 13152,
+     "real": 12687,
+     "rows": 176,
+     "loss": 5328,
+     "events": [
+      "appworld_gptoss/appworld_e85d92a_3_r0|s9",
+      "appworld_gptoss/appworld_29caf6f_3_r2|s7",
+      "appworld_gptoss/appworld_6ea6792_1_r3|s16"
+     ],
+     "mb": 100,
+     "group": 50,
+     "cost_gb": 14.06
+    }
+   ],
+   "b4_gc": [
+    {
+     "B": 3,
+     "L_pad": 5120,
+     "tokens": 15360,
+     "real": 12317,
+     "rows": 192,
+     "loss": 4992,
+     "events": [
+      "appworld_gptoss/appworld_07b42fd_3_r2|s27",
+      "appworld_gptoss/appworld_229360a_3_r2|s8",
+      "appworld_gptoss/appworld_771d8fc_3_r3|s6"
+     ],
+     "mb": 220,
+     "group": 110,
+     "cost_gb": 17.43
+    },
+    {
+     "B": 2,
+     "L_pad": 6368,
+     "tokens": 12736,
+     "real": 11917,
+     "rows": 128,
+     "loss": 5696,
+     "events": [
+      "appworld_gptoss/appworld_e85d92a_1_r1|s5",
+      "appworld_gptoss/appworld_6104387_2_r1|s7"
+     ],
+     "mb": 950,
+     "group": 475,
+     "cost_gb": 17.26
+    },
+    {
+     "B": 3,
+     "L_pad": 5120,
+     "tokens": 15360,
+     "real": 14144,
+     "rows": 192,
+     "loss": 4800,
+     "events": [
+      "appworld_gptoss/appworld_76f2c72_3_r2|s12",
+      "appworld_gptoss/appworld_29caf6f_2_r1|s21",
+      "appworld_gptoss/appworld_6ea6792_3_r3|s10"
+     ],
+     "mb": 413,
+     "group": 206,
+     "cost_gb": 17.09
+    }
+   ]
+  },
+  "loss_pos_quantiles": [
+   14,
+   279,
+   549,
+   1088,
+   1454,
+   1741,
+   2023,
+   2313,
+   2653,
+   3038,
+   4299
+  ],
+  "tokens_quantiles": [
+   208,
+   1056,
+   2400,
+   5728,
+   9280,
+   11648,
+   12736,
+   13536,
+   14400,
+   15312,
+   16384
+  ],
+  "n_blocks_over_4000_loss": 15,
+  "n_blocks_over_5000_loss": 2,
+  "group_of_max_P": 475,
+  "group_of_max_T": 224,
+  "groups_with_maxP": {
+   "tokens": 12736,
+   "loss": 5696,
+   "blocks": 4
+  },
+  "longest_event": {
+   "event": "appworld_gptoss/appworld_aa8502b_2_r2|s6",
+   "packed_len": 9492,
+   "rows": 64,
+   "loss": 1344
+  }
+ },
+ "val": {
+  "load_s": 327.4,
+  "counts": {
+   "dropped_events": 3,
+   "dropped_rows_tgt": 0,
+   "assembly_mismatch": 0,
+   "n_rows": 115019
+  },
+  "n_events": 2553,
+  "M": 1,
+  "U": null,
+  "n_blocks": 220,
+  "tot_tokens": 6773088,
+  "tot_real": 6705195,
+  "tot_loss": 1648028,
+  "pad_frac": 0.01,
+  "hist_B": {
+   "3": 7,
+   "4": 17,
+   "5": 18,
+   "6": 22,
+   "7": 21,
+   "8": 20,
+   "9": 21,
+   "10": 15,
+   "11": 11,
+   "12": 9,
+   "13": 5,
+   "14": 6,
+   "15": 4,
+   "16": 4,
+   "17": 4,
+   "18": 4,
+   "19": 3,
+   "20": 2,
+   "21": 2,
+   "22": 3,
+   "23": 2,
+   "24": 2,
+   "25": 1,
+   "26": 2,
+   "27": 1,
+   "28": 1,
+   "29": 1,
+   "30": 1,
+   "31": 1,
+   "32": 1,
+   "33": 1,
+   "35": 1,
+   "37": 1,
+   "40": 1,
+   "43": 1,
+   "46": 1,
+   "51": 1,
+   "58": 2
+  },
+  "max_T": {
+   "B": 4,
+   "L_pad": 8192,
+   "tokens": 32768,
+   "real": 32637,
+   "rows": 256,
+   "loss": 3776,
+   "events": [
+    "appworld_gptoss/appworld_57c3486_3_r3|s5",
+    "appworld_gptoss/appworld_6bdbc26_2_r1|s2",
+    "appworld_gptoss/appworld_0d8a4ee_3_r1|s2",
+    "appworld_gptoss/appworld_37a8675_2_r3|s23"
+   ],
+   "mb": 0,
+   "group": 0
+  },
+  "max_P": {
+   "B": 12,
+   "L_pad": 2720,
+   "tokens": 32640,
+   "real": 32305,
+   "rows": 676,
+   "loss": 11270,
+   "events": [
+    "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+    "appworld_gptoss/appworld_530b157_1_r3|s10",
+    "appworld_gptoss/appworld_530b157_2_r0|s11",
+    "appworld_gptoss/appworld_530b157_1_r3|s9",
+    "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+    "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+    "appworld_gptoss/appworld_530b157_1_r0|s3",
+    "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+    "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+    "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+    "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+    "appworld_gptoss/appworld_383cbac_1_r2|s5"
+   ],
+   "mb": 0,
+   "group": 0
+  },
+  "max_norm": {
+   "B": 12,
+   "L_pad": 2720,
+   "tokens": 32640,
+   "real": 32305,
+   "rows": 676,
+   "loss": 11270,
+   "events": [
+    "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+    "appworld_gptoss/appworld_530b157_1_r3|s10",
+    "appworld_gptoss/appworld_530b157_2_r0|s11",
+    "appworld_gptoss/appworld_530b157_1_r3|s9",
+    "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+    "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+    "appworld_gptoss/appworld_530b157_1_r0|s3",
+    "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+    "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+    "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+    "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+    "appworld_gptoss/appworld_383cbac_1_r2|s5"
+   ],
+   "mb": 0,
+   "group": 0
+  },
+  "by_cost": {
+   "b06_nogc": [
+    {
+     "B": 12,
+     "L_pad": 2720,
+     "tokens": 32640,
+     "real": 32305,
+     "rows": 676,
+     "loss": 11270,
+     "events": [
+      "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+      "appworld_gptoss/appworld_530b157_1_r3|s10",
+      "appworld_gptoss/appworld_530b157_2_r0|s11",
+      "appworld_gptoss/appworld_530b157_1_r3|s9",
+      "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+      "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+      "appworld_gptoss/appworld_530b157_1_r0|s3",
+      "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+      "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+      "appworld_gptoss/appworld_383cbac_1_r2|s5"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 99.93
+    },
+    {
+     "B": 24,
+     "L_pad": 1360,
+     "tokens": 32640,
+     "real": 31859,
+     "rows": 751,
+     "loss": 10302,
+     "events": [
+      "appworld_gptoss/appworld_df61dc5_1_r3|s3",
+      "appworld_gptoss/appworld_df61dc5_2_r3|s2",
+      "appworld_gptoss/appworld_fac291d_2_r0|s1",
+      "appworld_gptoss/appworld_37a8675_2_r3|s0",
+      "appworld_gptoss/appworld_6bdbc26_3_r2|s4",
+      "appworld_gptoss/appworld_6bdbc26_3_r1|s4",
+      "appworld_gptoss/appworld_37a8675_3_r1|s0",
+      "appworld_gptoss/appworld_3ab5b8b_1_r3|s2",
+      "appworld_gptoss/appworld_530b157_3_r2|s9",
+      "appworld_gptoss/appworld_6c2c621_1_r1|s5",
+      "appworld_gptoss/appworld_0d8a4ee_3_r0|s5",
+      "appworld_gptoss/appworld_530b157_1_r1|s3",
+      "appworld_gptoss/appworld_530b157_1_r3|s1",
+      "appworld_gptoss/appworld_57c3486_2_r3|s4",
+      "appworld_gptoss/appworld_396c5a2_1_r3|s7",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s2",
+      "appworld_gptoss/appworld_df61dc5_3_r2|s0",
+      "appworld_gptoss/appworld_37a8675_2_r1|s10",
+      "appworld_gptoss/appworld_57c3486_3_r1|s8",
+      "appworld_gptoss/appworld_23cf851_3_r2|s6",
+      "appworld_gptoss/appworld_df61dc5_2_r2|s3",
+      "appworld_gptoss/appworld_6171bbc_1_r3|s0",
+      "appworld_gptoss/appworld_fac291d_1_r0|s0",
+      "appworld_gptoss/appworld_b119b1f_3_r2|s0"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 98.19
+    },
+    {
+     "B": 10,
+     "L_pad": 3216,
+     "tokens": 32160,
+     "real": 32039,
+     "rows": 640,
+     "loss": 10816,
+     "events": [
+      "appworld_gptoss/appworld_383cbac_2_r0|s5",
+      "appworld_gptoss/appworld_0d8a4ee_2_r2|s2",
+      "appworld_gptoss/appworld_57c3486_1_r2|s17",
+      "appworld_gptoss/appworld_37a8675_3_r0|s7",
+      "appworld_gptoss/appworld_4fab96f_3_r0|s7",
+      "appworld_gptoss/appworld_fac291d_2_r2|s6",
+      "appworld_gptoss/appworld_6c2c621_1_r3|s8",
+      "appworld_gptoss/appworld_23cf851_1_r3|s3",
+      "appworld_gptoss/appworld_50e1ac9_3_r3|s8",
+      "appworld_gptoss/appworld_57c3486_1_r1|s9"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 97.94
+    }
+   ],
+   "b17_nogc": [
+    {
+     "B": 12,
+     "L_pad": 2720,
+     "tokens": 32640,
+     "real": 32305,
+     "rows": 676,
+     "loss": 11270,
+     "events": [
+      "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+      "appworld_gptoss/appworld_530b157_1_r3|s10",
+      "appworld_gptoss/appworld_530b157_2_r0|s11",
+      "appworld_gptoss/appworld_530b157_1_r3|s9",
+      "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+      "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+      "appworld_gptoss/appworld_530b157_1_r0|s3",
+      "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+      "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+      "appworld_gptoss/appworld_383cbac_1_r2|s5"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 144.32
+    },
+    {
+     "B": 24,
+     "L_pad": 1360,
+     "tokens": 32640,
+     "real": 31859,
+     "rows": 751,
+     "loss": 10302,
+     "events": [
+      "appworld_gptoss/appworld_df61dc5_1_r3|s3",
+      "appworld_gptoss/appworld_df61dc5_2_r3|s2",
+      "appworld_gptoss/appworld_fac291d_2_r0|s1",
+      "appworld_gptoss/appworld_37a8675_2_r3|s0",
+      "appworld_gptoss/appworld_6bdbc26_3_r2|s4",
+      "appworld_gptoss/appworld_6bdbc26_3_r1|s4",
+      "appworld_gptoss/appworld_37a8675_3_r1|s0",
+      "appworld_gptoss/appworld_3ab5b8b_1_r3|s2",
+      "appworld_gptoss/appworld_530b157_3_r2|s9",
+      "appworld_gptoss/appworld_6c2c621_1_r1|s5",
+      "appworld_gptoss/appworld_0d8a4ee_3_r0|s5",
+      "appworld_gptoss/appworld_530b157_1_r1|s3",
+      "appworld_gptoss/appworld_530b157_1_r3|s1",
+      "appworld_gptoss/appworld_57c3486_2_r3|s4",
+      "appworld_gptoss/appworld_396c5a2_1_r3|s7",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s2",
+      "appworld_gptoss/appworld_df61dc5_3_r2|s0",
+      "appworld_gptoss/appworld_37a8675_2_r1|s10",
+      "appworld_gptoss/appworld_57c3486_3_r1|s8",
+      "appworld_gptoss/appworld_23cf851_3_r2|s6",
+      "appworld_gptoss/appworld_df61dc5_2_r2|s3",
+      "appworld_gptoss/appworld_6171bbc_1_r3|s0",
+      "appworld_gptoss/appworld_fac291d_1_r0|s0",
+      "appworld_gptoss/appworld_b119b1f_3_r2|s0"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 142.58
+    },
+    {
+     "B": 10,
+     "L_pad": 3216,
+     "tokens": 32160,
+     "real": 32039,
+     "rows": 640,
+     "loss": 10816,
+     "events": [
+      "appworld_gptoss/appworld_383cbac_2_r0|s5",
+      "appworld_gptoss/appworld_0d8a4ee_2_r2|s2",
+      "appworld_gptoss/appworld_57c3486_1_r2|s17",
+      "appworld_gptoss/appworld_37a8675_3_r0|s7",
+      "appworld_gptoss/appworld_4fab96f_3_r0|s7",
+      "appworld_gptoss/appworld_fac291d_2_r2|s6",
+      "appworld_gptoss/appworld_6c2c621_1_r3|s8",
+      "appworld_gptoss/appworld_23cf851_1_r3|s3",
+      "appworld_gptoss/appworld_50e1ac9_3_r3|s8",
+      "appworld_gptoss/appworld_57c3486_1_r1|s9"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 141.68
+    }
+   ],
+   "b06_gc": [
+    {
+     "B": 12,
+     "L_pad": 2720,
+     "tokens": 32640,
+     "real": 32305,
+     "rows": 676,
+     "loss": 11270,
+     "events": [
+      "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+      "appworld_gptoss/appworld_530b157_1_r3|s10",
+      "appworld_gptoss/appworld_530b157_2_r0|s11",
+      "appworld_gptoss/appworld_530b157_1_r3|s9",
+      "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+      "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+      "appworld_gptoss/appworld_530b157_1_r0|s3",
+      "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+      "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+      "appworld_gptoss/appworld_383cbac_1_r2|s5"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 26.49
+    },
+    {
+     "B": 11,
+     "L_pad": 2848,
+     "tokens": 31328,
+     "real": 31183,
+     "rows": 695,
+     "loss": 10978,
+     "events": [
+      "appworld_gptoss/appworld_fac291d_1_r3|s7",
+      "appworld_gptoss/appworld_57c3486_2_r3|s2",
+      "appworld_gptoss/appworld_23cf851_3_r2|s3",
+      "appworld_gptoss/appworld_6bdbc26_3_r0|s2",
+      "appworld_gptoss/appworld_396c5a2_1_r0|s3",
+      "appworld_gptoss/appworld_396c5a2_2_r0|s6",
+      "appworld_gptoss/appworld_6bdbc26_3_r3|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s7",
+      "appworld_gptoss/appworld_0d8a4ee_1_r2|s7",
+      "appworld_gptoss/appworld_530b157_1_r3|s17",
+      "appworld_gptoss/appworld_37a8675_3_r1|s18"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 25.71
+    },
+    {
+     "B": 10,
+     "L_pad": 3216,
+     "tokens": 32160,
+     "real": 32039,
+     "rows": 640,
+     "loss": 10816,
+     "events": [
+      "appworld_gptoss/appworld_383cbac_2_r0|s5",
+      "appworld_gptoss/appworld_0d8a4ee_2_r2|s2",
+      "appworld_gptoss/appworld_57c3486_1_r2|s17",
+      "appworld_gptoss/appworld_37a8675_3_r0|s7",
+      "appworld_gptoss/appworld_4fab96f_3_r0|s7",
+      "appworld_gptoss/appworld_fac291d_2_r2|s6",
+      "appworld_gptoss/appworld_6c2c621_1_r3|s8",
+      "appworld_gptoss/appworld_23cf851_1_r3|s3",
+      "appworld_gptoss/appworld_50e1ac9_3_r3|s8",
+      "appworld_gptoss/appworld_57c3486_1_r1|s9"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 25.58
+    }
+   ],
+   "b17_gc": [
+    {
+     "B": 12,
+     "L_pad": 2720,
+     "tokens": 32640,
+     "real": 32305,
+     "rows": 676,
+     "loss": 11270,
+     "events": [
+      "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+      "appworld_gptoss/appworld_530b157_1_r3|s10",
+      "appworld_gptoss/appworld_530b157_2_r0|s11",
+      "appworld_gptoss/appworld_530b157_1_r3|s9",
+      "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+      "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+      "appworld_gptoss/appworld_530b157_1_r0|s3",
+      "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+      "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+      "appworld_gptoss/appworld_383cbac_1_r2|s5"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 31.38
+    },
+    {
+     "B": 11,
+     "L_pad": 2848,
+     "tokens": 31328,
+     "real": 31183,
+     "rows": 695,
+     "loss": 10978,
+     "events": [
+      "appworld_gptoss/appworld_fac291d_1_r3|s7",
+      "appworld_gptoss/appworld_57c3486_2_r3|s2",
+      "appworld_gptoss/appworld_23cf851_3_r2|s3",
+      "appworld_gptoss/appworld_6bdbc26_3_r0|s2",
+      "appworld_gptoss/appworld_396c5a2_1_r0|s3",
+      "appworld_gptoss/appworld_396c5a2_2_r0|s6",
+      "appworld_gptoss/appworld_6bdbc26_3_r3|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s7",
+      "appworld_gptoss/appworld_0d8a4ee_1_r2|s7",
+      "appworld_gptoss/appworld_530b157_1_r3|s17",
+      "appworld_gptoss/appworld_37a8675_3_r1|s18"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 30.41
+    },
+    {
+     "B": 10,
+     "L_pad": 3216,
+     "tokens": 32160,
+     "real": 32039,
+     "rows": 640,
+     "loss": 10816,
+     "events": [
+      "appworld_gptoss/appworld_383cbac_2_r0|s5",
+      "appworld_gptoss/appworld_0d8a4ee_2_r2|s2",
+      "appworld_gptoss/appworld_57c3486_1_r2|s17",
+      "appworld_gptoss/appworld_37a8675_3_r0|s7",
+      "appworld_gptoss/appworld_4fab96f_3_r0|s7",
+      "appworld_gptoss/appworld_fac291d_2_r2|s6",
+      "appworld_gptoss/appworld_6c2c621_1_r3|s8",
+      "appworld_gptoss/appworld_23cf851_1_r3|s3",
+      "appworld_gptoss/appworld_50e1ac9_3_r3|s8",
+      "appworld_gptoss/appworld_57c3486_1_r1|s9"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 30.4
+    }
+   ],
+   "b4_gc": [
+    {
+     "B": 12,
+     "L_pad": 2720,
+     "tokens": 32640,
+     "real": 32305,
+     "rows": 676,
+     "loss": 11270,
+     "events": [
+      "appworld_gptoss/appworld_6171bbc_1_r2|s10",
+      "appworld_gptoss/appworld_530b157_1_r3|s10",
+      "appworld_gptoss/appworld_530b157_2_r0|s11",
+      "appworld_gptoss/appworld_530b157_1_r3|s9",
+      "appworld_gptoss/appworld_6c2c621_2_r0|s9",
+      "appworld_gptoss/appworld_50e1ac9_2_r2|s2",
+      "appworld_gptoss/appworld_530b157_1_r0|s3",
+      "appworld_gptoss/appworld_6c2c621_3_r1|s9",
+      "appworld_gptoss/appworld_b119b1f_3_r1|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s8",
+      "appworld_gptoss/appworld_6171bbc_2_r1|s3",
+      "appworld_gptoss/appworld_383cbac_1_r2|s5"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 38.24
+    },
+    {
+     "B": 10,
+     "L_pad": 3216,
+     "tokens": 32160,
+     "real": 32039,
+     "rows": 640,
+     "loss": 10816,
+     "events": [
+      "appworld_gptoss/appworld_383cbac_2_r0|s5",
+      "appworld_gptoss/appworld_0d8a4ee_2_r2|s2",
+      "appworld_gptoss/appworld_57c3486_1_r2|s17",
+      "appworld_gptoss/appworld_37a8675_3_r0|s7",
+      "appworld_gptoss/appworld_4fab96f_3_r0|s7",
+      "appworld_gptoss/appworld_fac291d_2_r2|s6",
+      "appworld_gptoss/appworld_6c2c621_1_r3|s8",
+      "appworld_gptoss/appworld_23cf851_1_r3|s3",
+      "appworld_gptoss/appworld_50e1ac9_3_r3|s8",
+      "appworld_gptoss/appworld_57c3486_1_r1|s9"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 37.16
+    },
+    {
+     "B": 11,
+     "L_pad": 2848,
+     "tokens": 31328,
+     "real": 31183,
+     "rows": 695,
+     "loss": 10978,
+     "events": [
+      "appworld_gptoss/appworld_fac291d_1_r3|s7",
+      "appworld_gptoss/appworld_57c3486_2_r3|s2",
+      "appworld_gptoss/appworld_23cf851_3_r2|s3",
+      "appworld_gptoss/appworld_6bdbc26_3_r0|s2",
+      "appworld_gptoss/appworld_396c5a2_1_r0|s3",
+      "appworld_gptoss/appworld_396c5a2_2_r0|s6",
+      "appworld_gptoss/appworld_6bdbc26_3_r3|s8",
+      "appworld_gptoss/appworld_b119b1f_3_r0|s7",
+      "appworld_gptoss/appworld_0d8a4ee_1_r2|s7",
+      "appworld_gptoss/appworld_530b157_1_r3|s17",
+      "appworld_gptoss/appworld_37a8675_3_r1|s18"
+     ],
+     "mb": 0,
+     "group": 0,
+     "cost_gb": 36.99
+    }
+   ]
+  },
+  "loss_pos_quantiles": [
+   2560,
+   4672,
+   5696,
+   6647,
+   7328,
+   7808,
+   8312,
+   8728,
+   9219,
+   9622
+  ],
+  "tokens_quantiles": [
+   25248,
+   28480,
+   29568,
+   30240,
+   30784,
+   31248,
+   31584,
+   31920,
+   32256,
+   32512
+  ],
+  "n_blocks_over_4000_loss": 205,
+  "n_blocks_over_5000_loss": 191,
+  "group_of_max_P": 0,
+  "group_of_max_T": 0,
+  "groups_with_maxP": {
+   "tokens": 32768,
+   "loss": 11270,
+   "blocks": 220
+  },
+  "longest_event": {
+   "event": "appworld_gptoss/appworld_6bdbc26_1_r2|s17",
+   "packed_len": 9380,
+   "rows": 64,
+   "loss": 896
+  }
+ }
+}
