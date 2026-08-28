@@ -6,9 +6,9 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `ks828b06_gptoss_cgen_speed_b16k_es` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | running | - | - |
-| `ks828b06_gptoss_cgen_speed_b24k` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | running | - | - |
-| `ks828b06_gptoss_cgen_speed_b16k` | 2026-08-28 13:07 | kvshare-train | `10f1d12` | - | running | - | - |
+| `ks828b06_gptoss_cgen_speed_b16k_es` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | ok | ips_1600=180.39 ips_9600=178.81 ips_19200=176.96 ipswin_0_1600=180.39 ipswin_8000_9600=188.3 ipswin_17600_19200=148.47 peak_mem_gb=60.559 train_s=116.11 wall_s=590.62 val_ce=0.2615 | 同上 tok-budget 16384 + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True(H100 gpu2): 累计 ips 180.4/178.8/177.0, 窗值 180.4/188.3/148.5, 峰值 60.6 GB; 对不开 expandable_segments 无增益(慢 3%) |
+| `ks828b06_gptoss_cgen_speed_b24k` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | ok | ips_1600=152.49 ips_9600=155.25 ips_19200=155.77 ipswin_0_1600=152.49 ipswin_8000_9600=168.59 ipswin_17600_19200=135.16 peak_mem_gb=80.913 probe_fullest_gb=75.054 train_s=131.37 wall_s=621.38 val_ce=0.2604 | 同上 tok-budget 24576(H100 gpu1): 累计 ips 152.5/155.3/155.8, 窗口 152.5/168.6/135.2, 训练峰值 80.9 GB(93.1 GiB 的 87%), 最满块(B=3) 75.1; 比 16384 慢约 18% |
+| `ks828b06_gptoss_cgen_speed_b16k` | 2026-08-28 13:07 | kvshare-train | `10f1d12` | - | ok | ips_1600=185.61 ips_9600=189.48 ips_19200=184.09 ipswin_0_1600=185.61 ipswin_8000_9600=203.84 ipswin_17600_19200=145.26 peak_mem_gb=60.593 probe_longest_gb=31.425 probe_fullest_gb=51.105 train_s=112.34 wall_s=582.94 val_ce=0.2608 align_maxdiff=5.48e-06 | 新 cgen 训练器速度档(450 事件 20,641 行 57 更新, H100 gpu0, tok-budget 16384): 累计 ips 在 1600/9600/19200 行处 185.6/189.5/184.1 对旧 2.76/3.26/3.97; 窗口 185.6/203.8/145.3 对旧 2.77/3.94/6.24; 训练峰值 60.6 GB, 最长事件探针 31.4, 最满块(B=2) 51.1; ALIGN PASS 5.48e-6 |
 | `ks828b06_gptoss_cparam` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | best_val_ce=1.5926 wall_s=153.39 align_maxdiff=9.3e-06 total_rows=284 | 新训练器 cparam smoke 档(H200 gpu5): 对齐检查 PASS max_abs_diff 9.30e-6, assembly_mismatch 0/0, best_val_ce 1.5926, 153 秒, best/ 落盘 |
 | `ks828b06_gptoss_cgen` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | best_val_ce=1.2938 wall_s=151.49 align_maxdiff=5.48e-06 total_rows=284 | 新训练器 cgen smoke 档(40 训练事件/16 评估事件, H200 gpu4): 对齐检查 PASS max_abs_diff 5.48e-6(tol 2e-5), 5 次更新, 四次评估, best_val_ce 1.2938, 151 秒, best/ 落盘 |
 | `ks828b06_gptoss_ctool` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | running | - | - |
@@ -79,25 +79,31 @@
 
 ### `ks828b06_gptoss_cgen_speed_b16k_es`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:08 → 未收尾
+- **结论**：同上 tok-budget 16384 + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True(H100 gpu2): 累计 ips 180.4/178.8/177.0, 窗值 180.4/188.3/148.5, 峰值 60.6 GB; 对不开 expandable_segments 无增益(慢 3%)
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 13:08 → 2026-08-28 13:22
 - **代码**：`10f1d12` (分支 main)
 - **机器**：tokyo108 GPU 2
+- **数字**：ips_1600=180.39 ips_9600=178.81 ips_19200=176.96 ipswin_0_1600=180.39 ipswin_8000_9600=188.3 ipswin_17600_19200=148.47 peak_mem_gb=60.559 train_s=116.11 wall_s=590.62 val_ce=0.2615
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b16k_es_t108g2.log`
 - **命令**：`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True /home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b16k_es --tok-budget 16384`
 
 ### `ks828b06_gptoss_cgen_speed_b24k`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:08 → 未收尾
+- **结论**：同上 tok-budget 24576(H100 gpu1): 累计 ips 152.5/155.3/155.8, 窗口 152.5/168.6/135.2, 训练峰值 80.9 GB(93.1 GiB 的 87%), 最满块(B=3) 75.1; 比 16384 慢约 18%
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 13:08 → 2026-08-28 13:22
 - **代码**：`10f1d12` (分支 main)
 - **机器**：tokyo108 GPU 1
+- **数字**：ips_1600=152.49 ips_9600=155.25 ips_19200=155.77 ipswin_0_1600=152.49 ipswin_8000_9600=168.59 ipswin_17600_19200=135.16 peak_mem_gb=80.913 probe_fullest_gb=75.054 train_s=131.37 wall_s=621.38 val_ce=0.2604
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b24k_t108g1.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b24k --tok-budget 24576`
 
 ### `ks828b06_gptoss_cgen_speed_b16k`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:07 → 未收尾
+- **结论**：新 cgen 训练器速度档(450 事件 20,641 行 57 更新, H100 gpu0, tok-budget 16384): 累计 ips 在 1600/9600/19200 行处 185.6/189.5/184.1 对旧 2.76/3.26/3.97; 窗口 185.6/203.8/145.3 对旧 2.77/3.94/6.24; 训练峰值 60.6 GB, 最长事件探针 31.4, 最满块(B=2) 51.1; ALIGN PASS 5.48e-6
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 13:07 → 2026-08-28 13:22
 - **代码**：`10f1d12` (分支 main)
 - **机器**：tokyo108 GPU 0
+- **数字**：ips_1600=185.61 ips_9600=189.48 ips_19200=184.09 ipswin_0_1600=185.61 ipswin_8000_9600=203.84 ipswin_17600_19200=145.26 peak_mem_gb=60.593 probe_longest_gb=31.425 probe_fullest_gb=51.105 train_s=112.34 wall_s=582.94 val_ce=0.2608 align_maxdiff=5.48e-06
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b16k_t108g0.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b16k --tok-budget 16384`
 
