@@ -113,20 +113,51 @@ def weights_fingerprint(run):
 
 
 @torch.no_grad()
-def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
-    """按事件一次前向、gather 各边界位置 logits,还原成与 rows 同序的张量。"""
+def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS,
+                 overlong="left"):
+    """按事件一次前向、gather 各边界位置 logits,还原成与 rows 同序的张量。
+
+    `overlong`(spec 16.2)三选一:
+    - "left":现状——全文左截到 `max_len`,窗口外边界(`read_position`
+      返回 -1)记零 logits,`n_oow` 只是诊断计数,不剔除任何行。
+    - "skip":窗口外边界不进 `excluded_idx`(不进任何分母),计
+      `n_skipped_bounds`(与 `n_oow` 同一批边界,只是这次会被剔除)。
+    - "drop-event":事件全文 token 数(`share_data.n_full_tokens`,ctool
+      自己的『先按 label 过滤、取最后一行』规则——这里的 `rows` 已经是
+      `main()` 按 `label in label2id` 过滤过的,所以直接用『最后一行 text』
+      就是同一条规则)大于 `max_len` 的事件整个跳过分词/前向,该事件全部
+      边界记零 logits 并进 `excluded_idx`,计 `n_dropped_events`/
+      `n_dropped_bounds`。这种事件的全文没有被截断过,幸存事件因此不会再
+      触发 `read_position` 的窗口外分支,`n_oow` 恒为 0。
+
+    -> (out, excluded_idx, counts):`out` 形状不变(`len(rows)` 行,剔除的
+    行是零 logits);`excluded_idx` 是剔除行的下标列表(`left` 下空列表);
+    `counts` = dict(n_oow, n_skipped_bounds, n_dropped_events,
+    n_dropped_bounds)。
+    """
+    if overlong not in ("left", "skip", "drop-event"):
+        raise ValueError(
+            f"score_causal: overlong 只支持 left/skip/drop-event,"
+            f"拿到 {overlong!r}")
     ev = defaultdict(list)
     for i, r in enumerate(rows):
         ev[r["event"]].append((r["sent_idx"], i, r))
     events = []
+    excluded_idx = []
+    n_dropped_events = n_dropped_bounds = 0
     for k, items in ev.items():
         items.sort(key=lambda x: x[0])
         full = items[-1][2]["text"]
+        if overlong == "drop-event" and share_data.n_full_tokens(tok, full) > max_len:
+            n_dropped_events += 1
+            n_dropped_bounds += len(items)
+            excluded_idx.extend(i for _, i, _ in items)
+            continue
         events.append((full, [(len(r["text"]), i) for _, i, r in items]))
 
     n_lab = head.out_features
     out = torch.zeros(len(rows), n_lab)
-    n_oow = 0                                    # 左截窗口外的边界数
+    n_oow = n_skipped_bounds = 0                 # 左截窗口外的边界数
     heartbeat.emit(0, len(events), "item")
     for s in range(0, len(events), bs):
         chunk = events[s:s + bs]
@@ -146,6 +177,9 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
                 j = share_data.read_position(offsets_i, full, b, keep)
                 if j < 0:
                     n_oow += 1
+                    if overlong == "skip":
+                        n_skipped_bounds += 1
+                        excluded_idx.append(ri)
                     continue
                 cols.append(j)
                 idxs.append(ri)
@@ -157,7 +191,10 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
             heartbeat.emit(s, len(events), "item")
     print(f"边界总数 {len(rows)},左截窗口外(全零 logits,永不触发) {n_oow}",
           flush=True)
-    return out
+    counts = dict(n_oow=n_oow, n_skipped_bounds=n_skipped_bounds,
+                 n_dropped_events=n_dropped_events,
+                 n_dropped_bounds=n_dropped_bounds)
+    return out, sorted(excluded_idx), counts
 
 
 def token_cost(tok, rows):
@@ -284,8 +321,18 @@ def main():
                     help="每堆截前 N 行(分钟级冒烟口子);截断的 logits_*.pt 与"
                          " REPLAY_REPORT 照常落盘,所以只许对名字带 smoke 的"
                          " --run 目录用")
+    ap.add_argument("--overlong", default="left",
+                    choices=["left", "skip", "drop-event"],
+                    help="事件全文/提示超长的三种处理(spec 16.2);只对"
+                         " --head causal 生效,默认 left(行为与加这个开关"
+                         " 之前逐字节不变)")
     args = ap.parse_args()
     run = Path(args.run)
+    if args.head == "mbert" and args.overlong != "left":
+        raise SystemExit(
+            f"--overlong {args.overlong!r} 只对 --head causal 生效——"
+            "mbert 头(ModernBERT 序列分类)每次前向只吃单行前缀,没有"
+            "『事件全文超长』或『左截窗口外边界』这两个概念,只支持 left。")
     if args.limit and "smoke" not in run.name:
         raise SystemExit(
             f"--limit 只许对名字带 smoke 的 --run 目录用(现在是 {run.name}):"
@@ -369,6 +416,8 @@ def main():
             attn_implementation="sdpa").to(dev)
 
     splits = {}
+    overlong_counts_test = dict(n_oow=0, n_skipped_bounds=0,
+                                n_dropped_events=0, n_dropped_bounds=0)
     for sp in split_names:
         raw_rows = load_rows(data / f"{sp}.jsonl")
         if ro_set is not None:
@@ -393,6 +442,14 @@ def main():
                     "--adopt-logits-fingerprint 认领补档(要求权重 mtime "
                     "不比 logits 新)。")
             m = json.loads(lmeta.read_text())
+            cached_mode = m.get("overlong_mode", "left")
+            if cached_mode != args.overlong:
+                raise SystemExit(
+                    f"{lmeta} 记的 overlong_mode={cached_mode!r} 与本次 "
+                    f"--overlong={args.overlong!r} 不同——两种模式的缓存"
+                    "行数可能碰巧相同却内容不同(静默失败点 #33),拒绝互相"
+                    "冒充。去掉 --cached-logits 重算,或换回 "
+                    f"--overlong {cached_mode}。")
             now_fp = weights_fingerprint(run)
             if not now_fp:
                 print(f"⚠️ {run}/best 已无权重文件,logits 指纹无从核验——"
@@ -405,17 +462,37 @@ def main():
             logits = torch.load(lp)
             assert len(logits) == len(rows), \
                 f"{sp}: 缓存 logits {len(logits)} 行 != 数据 {len(rows)} 行,--data 与当次评测不同源"
+            excluded_idx = m.get("excluded_idx", [])
+            sc_counts = dict(
+                n_oow=m.get("n_oow", 0),
+                n_skipped_bounds=m.get("n_skipped_bounds", 0),
+                n_dropped_events=m.get("n_dropped_events", 0),
+                n_dropped_bounds=m.get("n_dropped_bounds", 0))
         elif args.head == "causal":
-            logits = score_causal(model.backbone, model.head, tok, rows,
-                                  dev, max_len)
+            logits, excluded_idx, sc_counts = score_causal(
+                model.backbone, model.head, tok, rows, dev, max_len,
+                overlong=args.overlong)
             torch.save(logits, lp)
             lmeta.write_text(json.dumps(
-                {"weights": weights_fingerprint(run), "rows": len(rows)}))
+                {"weights": weights_fingerprint(run), "rows": len(rows),
+                 "overlong_mode": args.overlong, "excluded_idx": excluded_idx,
+                 **sc_counts}))
         else:
             logits = score(model, tok, rows, dev)
+            excluded_idx, sc_counts = [], dict(
+                n_oow=0, n_skipped_bounds=0, n_dropped_events=0,
+                n_dropped_bounds=0)
             torch.save(logits, lp)
             lmeta.write_text(json.dumps(
-                {"weights": weights_fingerprint(run), "rows": len(rows)}))
+                {"weights": weights_fingerprint(run), "rows": len(rows),
+                 "overlong_mode": "left", "excluded_idx": []}))
+        if sp == "test":
+            overlong_counts_test = sc_counts
+        if excluded_idx:
+            excl = set(excluded_idx)
+            keep_pos = [i for i in range(len(rows)) if i not in excl]
+            rows = [rows[i] for i in keep_pos]
+            logits = logits[torch.tensor(keep_pos, dtype=torch.long)]
         splits[sp] = (rows, logits)
 
     # 1) val(旧口径 calA)拟温度
@@ -525,6 +602,11 @@ def main():
         "depth_bucket_acc_test": depth_acc,
         "prior_baseline_event_acc": round(prior_acc, 4),
         "n_events_test": len(ev_labels),
+        "overlong_mode": args.overlong if args.head == "causal" else "left",
+        "n_skipped_bounds": overlong_counts_test["n_skipped_bounds"],
+        "n_dropped_events": overlong_counts_test["n_dropped_events"],
+        "n_dropped_bounds": overlong_counts_test["n_dropped_bounds"],
+        "n_oow": overlong_counts_test["n_oow"],
         "speculation_economics": {
             "note": ("T4 离线估算;与 T10 fork 对照(在线实测)同量对账。"
                      "save=截断口径 触发率×提前量;overlap=预取口径 仅触发且对"),
@@ -550,7 +632,12 @@ def main():
     title = (f"# 回放评测 — {args.env}(因果探针 {meta.get('base')})"
              if args.head == "causal" else f"# 回放评测 — {args.env}")
     md = [title, f"- 温度 T={T:.3f}",
-          f"- test 事件数 {len(ev_labels)};频率先验基线 {prior_acc:.3f}", ""]
+          f"- test 事件数 {len(ev_labels)};频率先验基线 {prior_acc:.3f}",
+          f"- overlong_mode={rep['overlong_mode']}"
+          f"(n_skipped_bounds={rep['n_skipped_bounds']}, "
+          f"n_dropped_events={rep['n_dropped_events']}, "
+          f"n_dropped_bounds={rep['n_dropped_bounds']}, "
+          f"n_oow={rep['n_oow']})", ""]
     for risk, r in final.items():
         if r:
             md.append(

@@ -63,6 +63,7 @@ from rules import (ALF_CALL, AW_CALL, BFCL_CALL,        # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
 import readonly_map                                     # noqa: E402
+import share_data                                        # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_tool import RISK_TARGETS, THETAS              # noqa: E402
@@ -480,6 +481,11 @@ def main():
                          "只加 self_fire 块,旧字段一个不动")
     ap.add_argument("--fire-bs", type=int, default=0,
                     help="开火打分的批大小(0=沿用 --bs)")
+    ap.add_argument("--overlong", default="left",
+                    choices=["left", "skip", "drop-event"],
+                    help="触发事件全文/提示超长的三种处理(spec 16.2);"
+                         "默认 left(行为与加这个开关之前逐字节不变)。"
+                         "只描述主路径,--self-fire 不受影响")
     args = ap.parse_args()
 
     ctool, cgen = Path(args.ctool_run), Path(args.cgen_run)
@@ -564,12 +570,33 @@ def main():
     for r in rows:
         r["y"] = label2id[r["label"]]
     fired, keys, n_fired, n_ro_excluded = {}, [], 0, 0
+    overlong_counts = dict(n_left_truncated=0, n_skipped_rows=0,
+                          n_dropped_events=0, n_excluded_by_ctool=0)
+    ev_row_idx = defaultdict(list)
+    for i, r in enumerate(rows):
+        ev_row_idx[r["event"]].append(i)
     if old_mode:
         logits = torch.load(ctool / "logits_test.pt", map_location="cpu")
         assert len(rows) == logits.shape[0], (len(rows), logits.shape)
-        fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
 
-        keys = [k for k in dict.fromkeys(r["event"] for r in rows)
+        # ctool 剔除的行不许当触发点候选(spec 16.2 衔接段):提前读
+        # excluded_idx,只在剩下的行里挑触发点——零 logits 过 softmax 是均匀
+        # 分布,只在 θ<=1/n_labels 时才会被 θ 天然挡住,不能靠这个当保险。
+        # 一个事件的候选行全部被剔时没有触发点,不判分,计 n_excluded_by_ctool。
+        ctool_lmeta = ctool / "logits_test.meta.json"
+        excluded_rows = set()
+        if ctool_lmeta.exists():
+            excluded_rows = set(
+                json.loads(ctool_lmeta.read_text()).get("excluded_idx", []))
+        overlong_counts["n_excluded_by_ctool"] = sum(
+            1 for idxs in ev_row_idx.values()
+            if all(i in excluded_rows for i in idxs))
+        cand_idx = [i for i in range(len(rows)) if i not in excluded_rows]
+        cand_rows = [rows[i] for i in cand_idx]
+        cand_probs = torch.softmax(logits[cand_idx] / T, -1)
+        fired = replay_fire(cand_rows, cand_probs, theta, nro_id)
+
+        keys = [k for k in dict.fromkeys(r["event"] for r in cand_rows)
                 if fired[k]["fired"]]
         n_fired = len(keys)
         # readonly 模式:触发了但真值非只读的事件不判分(不进任何分母),单独计数
@@ -578,8 +605,6 @@ def main():
                     if fired[k]["label"] != readonly_map.NON_READONLY]
             n_ro_excluded = len(keys) - len(keep)
             keys = keep
-        if args.limit:
-            keys = keys[:args.limit]
 
     # 2) 生成:CALL_SEP 从训练侧 meta.json 读(不硬编码)
     sep = meta.get("call_sep", FALLBACK_SEP)
@@ -593,6 +618,35 @@ def main():
         cgen / "best",
         dtype=torch.bfloat16 if str(dev).startswith("cuda") else torch.float32
     ).to(dev).eval()
+
+    if old_mode:
+        # --overlong 筛选(分词器加载之后;readonly 排除之后、--limit 之前,
+        # spec 16.2 三步顺序写死)。ctool 剔除已经在挑触发点那一步处理过
+        # (上面的 overlong_counts["n_excluded_by_ctool"]),这里传空集合,
+        # 只做提示长度筛选——keys 里的事件都已经保证至少有一个未被 ctool
+        # 剔除的候选行,select_keys 的剔除分支在这里必然不再命中。
+        keys_rowmap = {k: ev_row_idx[k] for k in keys}
+        prompt_len = {k: len(tok(fired[k]["row"]["text"] + sep,
+                                add_special_tokens=False,
+                                truncation=False)["input_ids"])
+                     for k in keys}
+        n_full = {}
+        if args.overlong == "drop-event":
+            key_set = set(keys)
+            full_texts = share_data.event_full_texts(
+                [r for r in rows if r["event"] in key_set])
+            n_full = {k: share_data.n_full_tokens(tok, full_texts[k])
+                     for k in keys}
+        keys, length_counts = share_data.select_keys(
+            args.overlong, keys_rowmap, n_full, prompt_len, set(),
+            max_len, args.max_new_tokens)
+        assert length_counts["n_excluded_by_ctool"] == 0, (
+            "keys 里的事件理应都至少有一个未被 ctool 剔除的候选行")
+        overlong_counts.update(n_left_truncated=length_counts["n_left_truncated"],
+                              n_skipped_rows=length_counts["n_skipped_rows"],
+                              n_dropped_events=length_counts["n_dropped_events"])
+        if args.limit:
+            keys = keys[:args.limit]
 
     prompts = [fired[k]["row"]["text"] + sep for k in keys]
     gens = generate(model, tok, prompts, dev, args.bs, max_len,
@@ -620,7 +674,11 @@ def main():
         env=args.env, ctool_run=str(ctool), cgen_run=str(cgen),
         risk=args.risk, theta=theta, temperature=T, call_sep=sep,
         max_new_tokens=args.max_new_tokens, limit=args.limit,
-        n_events_test=n_ev)
+        n_events_test=n_ev, overlong_mode=args.overlong,
+        n_left_truncated=overlong_counts["n_left_truncated"],
+        n_skipped_rows=overlong_counts["n_skipped_rows"],
+        n_dropped_events=overlong_counts["n_dropped_events"],
+        n_excluded_by_ctool=overlong_counts["n_excluded_by_ctool"])
     if old_mode:
         out.update(
             n_events_fired=n_fired, n_events_scored=n,
@@ -653,7 +711,12 @@ def main():
     (cgen / "CALLGEN_REPORT.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1))
 
-    md = [f"# 触发时刻调用生成评测 — {args.env}"]
+    md = [f"# 触发时刻调用生成评测 — {args.env}",
+          f"- overlong_mode={out['overlong_mode']}"
+          f"(n_left_truncated={out['n_left_truncated']}, "
+          f"n_skipped_rows={out['n_skipped_rows']}, "
+          f"n_dropped_events={out['n_dropped_events']}, "
+          f"n_excluded_by_ctool={out['n_excluded_by_ctool']})"]
     if not old_mode:
         md += [f"- 分类头 {ctool.name} 在 risk={args.risk} 上无解 θ,"
                "旧模式整块跳过;本文件只有自主开火那一节。"]

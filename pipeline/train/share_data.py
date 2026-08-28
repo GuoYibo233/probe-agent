@@ -68,6 +68,89 @@ def _pad16(n):
     return ((n + 15) // 16) * 16
 
 
+def full_token_ids(tok, full_text):
+    """事件全文分词,唯一算法源(spec 16.2):`load_events` 装 `e["full_ids"]`、
+    三个评测脚本的 `drop-event` 判据都调这个函数或下面的 `n_full_tokens`,
+    分词只有一份真源。`add_special_tokens=False, truncation=False`——不截断,
+    要的是全文真实 token 数。
+    """
+    return tok(full_text, add_special_tokens=False,
+              truncation=False)["input_ids"]
+
+
+def n_full_tokens(tok, full_text):
+    """`full_token_ids` 只要长度时的薄封装(评测端的 `drop-event` 判据只要计数,
+    不需要 `full_ids` 本身)。"""
+    return len(full_token_ids(tok, full_text))
+
+
+def event_full_texts(rows):
+    """按 event 分组,取每组 `sent_idx` 最大那一行的 `text`(spec 16.2)。
+
+    只给评测端的 `--overlong drop-event` 用:不过滤行,不动 `load_events`
+    里 `events_all.append(dict(...))` 那段分组——那段钉着 3.2 节的随机数
+    消耗顺序,这个函数是给评测端另起的一份、跟训练侧的抽样顺序无关。
+
+    `rows`:一批原始行 dict(至少含 `event`、`sent_idx`、`text`)。
+    -> dict[event] -> full_text
+    """
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["event"], []).append(r)
+    return {ev: max(rs, key=lambda r: r["sent_idx"])["text"]
+           for ev, rs in groups.items()}
+
+
+def select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new):
+    """按 `--overlong` 与 ctool 的行剔除筛选一批 key(事件)(spec 16.2)。
+
+    `mode`:"left" / "skip" / "drop-event"。
+    `keys`:`dict[key] -> list[int]`,每个 key 的候选行下标列表——该事件在
+        ctool 的 `rows`/`logits_test.pt` 里对应的全部行下标。这份列表只用来
+        判"ctool 剔除之后这个 key 还有没有候选行",跟 `mode` 的筛选逻辑
+        (下面用 `n_full`/`prompt_len`)彼此独立。
+    `n_full`:`dict[key] -> int`,事件全文 token 数(只有 `mode="drop-event"`
+        时用得到;别的 mode 可以传空字典)。
+    `prompt_len`:`dict[key] -> int`,`L(k)`——提示 token 数(cparam 传两套
+        提示长度的最大值;`left`/`skip`/`drop-event` 三种 mode 都只用这一个
+        数判"提示是否超长")。
+    `excluded_rows`:`set[int]`,ctool 传来的剔除行下标集合(`rows`/`logits`
+        位置,`logits_test.meta.json` 的 `excluded_idx`)。
+    `max_len`、`max_new`:int。
+
+    -> (kept_keys: list[key], counts: dict(n_left_truncated, n_skipped_rows,
+        n_dropped_events, n_excluded_by_ctool))
+
+    四个判据的顺序对每个 key 写死:先看 ctool 剔除(候选行剔光就整个 key
+    不判分,计 `n_excluded_by_ctool`,不再看下面的 mode 判据),再按 `mode`
+    走 `drop-event`(事件全文超长整个丢,计 `n_dropped_events`)或 `skip`
+    (提示超长整行不进,计 `n_skipped_rows`)或都不丢时的『提示仍超长』
+    (`left` 与 `drop-event` 都计 `n_left_truncated`,`skip` 不会走到这里,
+    因为提示超长的行已经在上一步被剔掉)。
+    """
+    if mode not in ("left", "skip", "drop-event"):
+        raise ValueError(
+            f"select_keys: mode 只支持 left/skip/drop-event,拿到 {mode!r}")
+    thresh = max_len - max_new
+    kept = []
+    counts = dict(n_left_truncated=0, n_skipped_rows=0,
+                 n_dropped_events=0, n_excluded_by_ctool=0)
+    for k in keys:
+        if all(i in excluded_rows for i in keys[k]):
+            counts["n_excluded_by_ctool"] += 1
+            continue
+        if mode == "drop-event" and n_full[k] > max_len:
+            counts["n_dropped_events"] += 1
+            continue
+        if prompt_len[k] > thresh:
+            if mode == "skip":
+                counts["n_skipped_rows"] += 1
+                continue
+            counts["n_left_truncated"] += 1
+        kept.append(k)
+    return kept, counts
+
+
 # ---------------------------------------------------------------- 数据与分词
 
 def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
@@ -143,8 +226,7 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
     dropped_events = 0
     events_kept = []
     for e in events_all:
-        full_ids = tok(e["full_text"], add_special_tokens=False,
-                       truncation=False)["input_ids"]
+        full_ids = full_token_ids(tok, e["full_text"])
         if len(full_ids) > max_len:
             dropped_events += 1
             continue

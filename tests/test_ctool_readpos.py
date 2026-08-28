@@ -255,8 +255,10 @@ class TestScoreCausalOutOfWindow(unittest.TestCase):
             dict(event="ev1", sent_idx=0, text=full[:early_cut]),
             dict(event="ev1", sent_idx=1, text=full),   # 最后一行 = 全文,靠尾部保留
         ]
-        out = eval_tool.score_causal(_StubBackbone(), head, self.tok,
-                                     eval_rows, "cpu", max_len, bs=1)
+        out, excluded_idx, counts = eval_tool.score_causal(
+            _StubBackbone(), head, self.tok, eval_rows, "cpu", max_len, bs=1)
+        self.assertEqual(excluded_idx, [])               # left:不剔除任何行
+        self.assertEqual(counts["n_oow"], 1)
         self.assertEqual(out[0, 0].item(), 0.0)          # 窗口外:未被 gather
         self.assertEqual(out[1, 0].item(), 1.0)          # 窗口内:gather 到 bias
 
