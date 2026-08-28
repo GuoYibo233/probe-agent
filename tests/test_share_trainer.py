@@ -221,6 +221,87 @@ class TestRefForwardUsesInstCe(unittest.TestCase):
         self._check_mode("cparam")
 
 
+class TestRunAlignCheckHandlesRefBaselineDriftError(unittest.TestCase):
+    """N1(评审发现):`_ref_forward` 的自检失败(参照基线不可信)要走
+    `run_align_check` 其余所有校验一致的失败上报通道——写 ALIGN_CHECK.json、
+    打印诊断、`sys.exit(2)`——不能是裸 `assert`(会被 `-O`/`PYTHONOPTIMIZE`
+    整体剥除、静默放行),也不能是让异常原样冒出去变成未处理的 traceback
+    (拿不到结构化产物)。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        if not VAL_PATH.exists():
+            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+        if cls.tok.pad_token_id is None:
+            cls.tok.pad_token = cls.tok.eos_token
+        cls.tok.truncation_side = "left"
+        cls.tok.padding_side = "right"
+
+        cls.tmpdir, cls.data_path = _load_five_short_events()
+
+        torch.manual_seed(SEED)
+        cls.model = AutoModelForCausalLM.from_config(_tiny_config(len(cls.tok)))
+        cls.model.eval()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmpdir.cleanup()
+
+    def test_ref_forward_raises_real_exception_not_assert(self):
+        """drift 超容差时抛 `RefBaselineDriftError`——一个真正的异常类,
+        不是裸 `assert`(`-O` 下不会被剥除)。用打过 monkeypatch、逐行都
+        偏移 1.0(远超 1e-6 容差)的 `inst_ce` 制造一个必然超差的场景。"""
+        ds = train_causal_callgen.CallDS(self.data_path, self.tok, limit=0)
+        orig = train_causal_callgen.inst_ce
+
+        def _perturbed(model, enc, labels, dev):
+            return orig(model, enc, labels, dev) + 1.0
+
+        train_causal_callgen.inst_ce = _perturbed
+        try:
+            with torch.no_grad():
+                with self.assertRaises(tcs.RefBaselineDriftError):
+                    tcs._ref_forward("cgen", self.model, self.tok, ds.rows,
+                                     "cpu", 8192, tcs.REF_BATCH)
+        finally:
+            train_causal_callgen.inst_ce = orig
+
+    def test_run_align_check_reports_drift_error_instead_of_crashing(self):
+        """`run_align_check` 捕获 `RefBaselineDriftError` 后按文件里其余
+        所有失败分支同样的模式处理:写 ALIGN_CHECK.json(PASS=False,
+        stage="ref_forward_drift"),再 `sys.exit(2)`——不是让异常原样冒出去。
+        """
+        import argparse
+        orig = tcs._ref_forward
+
+        def _boom(*_a, **_kw):
+            raise tcs.RefBaselineDriftError("测试注入的漂移")
+
+        tcs._ref_forward = _boom
+        try:
+            with tempfile.TemporaryDirectory() as out_dir:
+                args = argparse.Namespace(
+                    data=str(DATA_DIR), out=out_dir, align_events=2,
+                    max_len=8192, align_tol=2e-5, attn_impl="sdpa")
+                with self.assertRaises(SystemExit) as cm:
+                    tcs.run_align_check(self.model, self.tok, args, "cpu",
+                                        "cgen", None)
+                self.assertEqual(cm.exception.code, 2)
+
+                report_path = Path(out_dir) / "ALIGN_CHECK.json"
+                self.assertTrue(report_path.exists(),
+                               "drift 报错没有写出 ALIGN_CHECK.json")
+                report = json.loads(report_path.read_text())
+                self.assertFalse(report["PASS"])
+                self.assertEqual(report["stage"], "ref_forward_drift")
+                self.assertIn("测试注入的漂移", report["error"])
+        finally:
+            tcs._ref_forward = orig
+
+
 class TestBackwardBlockSplitInvariance(unittest.TestCase):
     """(b) 一个逻辑小批拆成 1 块和拆成 3 块的参数梯度逐元素差 <= 1e-6
 

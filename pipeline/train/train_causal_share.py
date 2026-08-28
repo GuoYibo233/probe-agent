@@ -88,6 +88,16 @@ REF_BATCH = 4
 REF_INST_CE_DRIFT_TOL = 1e-6
 
 
+class RefBaselineDriftError(RuntimeError):
+    """`_ref_forward` 的自检失败:本地逐 token 公式聚合出的逐行结果与真正
+    调用 `inst_ce` 的返回值超出 `REF_INST_CE_DRIFT_TOL`,说明参照基线本身
+    不可信。用真异常而不是裸 `assert`,是因为裸 `assert` 在 `-O`/
+    `PYTHONOPTIMIZE` 下会被整体剥除、静默放行——这道检查是本文件里唯一
+    判定『参照基线是否可信』的运行时校验,不能有静默失效的路径。
+    `run_align_check` 捕获这个异常后按文件里其余所有失败分支同样的模式
+    处理:写 `ALIGN_CHECK.json`、打印诊断、`sys.exit(2)`。"""
+
+
 # ---------------------------------------------------------------- 前向形态
 
 def _attn_ctx(dev):
@@ -285,8 +295,11 @@ def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
     `inst_ce` 完全相同的公式(移位预测、只在目标位取 CE)本地算一份逐
     token CE 供 `tok_ce` 用,并在每一批上把这份本地公式聚合出的逐行结果
     与真正调用 `inst_ce` 的返回值断言一致(`REF_INST_CE_DRIFT_TOL`)——
-    不一致就当场 `AssertionError`,不会把一个未经验证的手写公式悄悄当成
-    对齐检查的基准。`bs=4` 是『整批』,`bs=1` 是补齐基线的『单行』(spec:
+    不一致就抛 `RefBaselineDriftError`(真异常,不是裸 `assert`,不会被
+    `-O`/`PYTHONOPTIMIZE` 剥除),由 `run_align_check` 捕获后按文件里其余
+    所有失败分支同样的模式处理(写 `ALIGN_CHECK.json`、打印诊断、
+    `sys.exit(2)`),不会把一个未经验证的手写公式悄悄当成对齐检查的基准。
+    `bs=4` 是『整批』,`bs=1` 是补齐基线的『单行』(spec:
     两者都用旧训练器的口径,只是分批大小不同)。参照路径不套
     EFFICIENT_ATTENTION,用默认内核选择(design-attention.md 7.1 节:『单行
     不补齐』批没有掩码,HF 会跳过建掩码并开 enable_gqa,mem-efficient 不
@@ -317,11 +330,12 @@ def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
 
         row_ce_inst = inst_ce_fn(model, enc, labels, dev).float()
         drift = (row_ce_local - row_ce_inst).abs().max().item()
-        assert drift <= REF_INST_CE_DRIFT_TOL, (
-            f"_ref_forward 本地逐 token 公式聚合出的逐行结果与真正调用 "
-            f"inst_ce 的返回值不一致(max diff {drift} > "
-            f"{REF_INST_CE_DRIFT_TOL},mode={mode}):对齐检查的参照基线"
-            "不可信,先查两套公式的差异再继续。")
+        if drift > REF_INST_CE_DRIFT_TOL:
+            raise RefBaselineDriftError(
+                f"_ref_forward 本地逐 token 公式聚合出的逐行结果与真正调用 "
+                f"inst_ce 的返回值不一致(max diff {drift} > "
+                f"{REF_INST_CE_DRIFT_TOL},mode={mode}):对齐检查的参照基线"
+                "不可信,先查两套公式的差异再继续。")
 
         row_ce.extend(row_ce_inst.tolist())
         tok_ce.extend(ce.tolist())
@@ -441,6 +455,25 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
                     "position_ids 构造,或 tokenizer 版本漂移。", flush=True)
                 sys.exit(2)
             return report
+    except RefBaselineDriftError as e:
+        # `_ref_forward` 的自检失败(参照基线本身不可信):按文件里其余所有
+        # 失败分支同样的模式处理——写 ALIGN_CHECK.json、打印诊断、
+        # sys.exit(2)。三处 `_ref_forward` 调用(REF_BATCH 整批、bs=1 单行
+        # 基线、cuda 上的 bf16 粗筛)共用这一个 except,不管哪一处触发都走
+        # 同一条上报路径。
+        report = dict(PASS=False, stage="ref_forward_drift", error=str(e),
+                      ref_inst_ce_drift_tol=REF_INST_CE_DRIFT_TOL)
+        (out / "ALIGN_CHECK.json").write_text(
+            json.dumps(report, indent=1, ensure_ascii=False))
+        print(json.dumps(report, indent=1), flush=True)
+        print(
+            "对齐检查 FAIL:参照路径自检失败,拒绝开训。\n"
+            f"  {e}\n"
+            "  排查:_ref_forward 里本地逐 token 公式与 inst_ce 的移位/掩码/"
+            "聚合逻辑是否等价;如果两者逻辑本就等价,说明该环境下同一次 "
+            "no_grad 前向存在超出预期的浮点不确定性,需要复核 "
+            "REF_INST_CE_DRIFT_TOL 是否要放宽,而不是默认放行。", flush=True)
+        sys.exit(2)
     finally:
         if tmp_path is not None:
             Path(tmp_path).unlink(missing_ok=True)
