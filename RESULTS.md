@@ -6,7 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `ks828b06_gptoss_ctool_h100mem` | 2026-08-28 13:28 | kvshare-train | `3d2f5ae` | - | running | - | - |
+| `ks828b06_gptoss_ctool_h100mem` | 2026-08-28 13:28 | kvshare-train | `3d2f5ae` | - | ok | peak_mem_used_mib=87179 oom=1 | ctool smoke 在 H100 gpu0 上 max_len 8192 bs 4 accum 2 OOM(进程 92.94 GiB 时再要 154 MiB 失败, nvidia-smi 2 秒采样最后一次 87,179 MiB); 决定 15 退路生效, 改 bs 2 accum 4 复测 |
 | `ks828b06_gptoss_cgen_speed_b16k_es` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | ok | ips_1600=180.39 ips_9600=178.81 ips_19200=176.96 ipswin_0_1600=180.39 ipswin_8000_9600=188.3 ipswin_17600_19200=148.47 peak_mem_gb=60.559 train_s=116.11 wall_s=590.62 val_ce=0.2615 | 同上 tok-budget 16384 + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True(H100 gpu2): 累计 ips 180.4/178.8/177.0, 窗值 180.4/188.3/148.5, 峰值 60.6 GB; 对不开 expandable_segments 无增益(慢 3%) |
 | `ks828b06_gptoss_cgen_speed_b24k` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | ok | ips_1600=152.49 ips_9600=155.25 ips_19200=155.77 ipswin_0_1600=152.49 ipswin_8000_9600=168.59 ipswin_17600_19200=135.16 peak_mem_gb=80.913 probe_fullest_gb=75.054 train_s=131.37 wall_s=621.38 val_ce=0.2604 | 同上 tok-budget 24576(H100 gpu1): 累计 ips 152.5/155.3/155.8, 窗口 152.5/168.6/135.2, 训练峰值 80.9 GB(93.1 GiB 的 87%), 最满块(B=3) 75.1; 比 16384 慢约 18% |
 | `ks828b06_gptoss_cgen_speed_b16k` | 2026-08-28 13:07 | kvshare-train | `10f1d12` | - | ok | ips_1600=185.61 ips_9600=189.48 ips_19200=184.09 ipswin_0_1600=185.61 ipswin_8000_9600=203.84 ipswin_17600_19200=145.26 peak_mem_gb=60.593 probe_longest_gb=31.425 probe_fullest_gb=51.105 train_s=112.34 wall_s=582.94 val_ce=0.2608 align_maxdiff=5.48e-06 | 新 cgen 训练器速度档(450 事件 20,641 行 57 更新, H100 gpu0, tok-budget 16384): 累计 ips 在 1600/9600/19200 行处 185.6/189.5/184.1 对旧 2.76/3.26/3.97; 窗口 185.6/203.8/145.3 对旧 2.77/3.94/6.24; 训练峰值 60.6 GB, 最长事件探针 31.4, 最满块(B=2) 51.1; ALIGN PASS 5.48e-6 |
@@ -80,9 +80,11 @@
 
 ### `ks828b06_gptoss_ctool_h100mem`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:28 → 未收尾
+- **结论**：ctool smoke 在 H100 gpu0 上 max_len 8192 bs 4 accum 2 OOM(进程 92.94 GiB 时再要 154 MiB 失败, nvidia-smi 2 秒采样最后一次 87,179 MiB); 决定 15 退路生效, 改 bs 2 accum 4 复测
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 13:28 → 2026-08-28 13:32
 - **代码**：`3d2f5ae` (分支 main)
 - **机器**：tokyo108 GPU 0
+- **数字**：peak_mem_used_mib=87179 oom=1
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_h100mem_t108g0.log`
 - **命令**：`bash /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_h100mem/memwrap.sh /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_h100mem /home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_h100mem --smoke --force`
 
