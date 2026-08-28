@@ -23,6 +23,7 @@ Spec: `.scratch/kvshare-train/spec.md` 第 11 节，读取位置规则的函数�
 ## Comments
 
 - 2026-08-28 plan-8-28 收账：wave2 实现 0 轮修复过评审，分支 `ticket/2026-08-28-wave2/T02`（base `2216c44`，head `479b887`），合并进 `12c4a2b`。主会话复核：cprobe-env 下五个测试文件 Ran 58 tests OK（含本工单的 `test_ctool_readpos`）；系统 python3 discover `test_ctool_readpos` OK (skipped=1)；两个 mbert 硬门 `eval_tool` / `eval_mbert_call` import ok。报告 `sdd/2026-08-28-wave2/T02-report.md`。实现者 concerns（照录，均未处理）：`collate`/`align_check` 的 `tok()` 里 `max_length=max_len` 在 `truncation=False` 下是摆设并触发一条 HF UserWarning；`build()` 的 `truncation_side="left"` 不再影响行为；`load_events` 的 `open(path)` 没用上下文管理器（改动前就有）；`python3 -m unittest tests.test_ctool_readpos` 非 discover 模式在 mbert-env 下退出码 1 是 unittest 对模块级 SkipTest 的行为，不是回归；`step` 事件的 `lr` 没 round。MAP.md ctool 行文案在报告里，归工单 04。GPU 冒烟归主会话（ks828b06 smoke 档）。
+- 2026-08-28 plan-8-28 冒烟之后：本工单定的默认 `--bs 4 --accum 2` 在 H100 上 8192 训练首批 OOM，按决定 15 的退路改成 `--bs 2 --accum 4`（`8fa95dc`），`--align-tol` 默认 1e-4 改 3e-4（决定 20，`9c3efb1`）；工单 06 给 `step`/`eval` 事件加 `peak_mem_gb`。
 - `git diff` 里 `eval_tool.py` 只有 `score_causal` 的读取位置那一段和 import 变化，左截断 `truncation=True` 保留（spec 11.5）。
 - `MAP.md` 不动（ctool 那一行的新文案「上限 8192 超长事件整条丢弃；一次更新 8 个事件；读取位置读跨切点的空白 token」由工单 04 写，你在报告里给出文案）。
 - 现有的心跳接线（`heartbeat.emit` 第 401、427、458 行）保持原样。

@@ -1,6 +1,6 @@
 # 04 probe-pipeline skill 回写
 
-Status: claimed
+Status: resolved
 Blocked by: 02, 03（并且要等主会话的 GPU 冒烟裁决出来：`--max-len` 与 `--tok-budget` 的定值会在本工单的 Comments 里给出，没有那条 Comment 不许开工——Comment 已在本文末尾）
 Spec: `.scratch/kvshare-train/spec.md` 第 8、13 节；回写规矩 `.claude/skills/probe-pipeline/SKILL.md` Phase E（第 231 到 261 行）与 `references/extending.md` §6
 
@@ -25,3 +25,4 @@ Spec: `.scratch/kvshare-train/spec.md` 第 8、13 节；回写规矩 `.claude/sk
 ## Comments
 
 - 2026-08-28 plan-8-28 冒烟裁决（这条 Comment 就是本工单的开工门）。定值：三个格 `--max-len` 默认 8192 不退档；新训练器 `--tok-budget` 默认 16384（`--eval-tok-budget` 默认 2 倍即 32768）；`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 不采纳；ctool 默认 `--bs 2 --accum 4`（仍 8 个事件一次更新）、`--align-tol` 默认 3e-4。依据（写进 invariants / stage-commands 的时候带上数字和出处 `pipeline/runs/smoke/ks828b06_*` 与 `ops/runs.jsonl`）：速度档 `ks828b06_gptoss_cgen_speed_b16k`（H100，450 事件 20,641 行 57 次更新）累计 ips 在 1,600 / 9,600 / 19,200 行处 185.6 / 189.5 / 184.1 对旧训练器 2.76 / 3.26 / 3.97，窗口值 185.6 / 203.8 / 145.3 对 2.77 / 3.94 / 6.24，训练 step 峰值 60.59 GB（56.4 GiB，对 93.10 GiB 余量 39%），最长事件探针 31.4 GB；`b24k` 慢 15% 且峰值 80.91 GB；`b16k_es` 慢 3% 峰值相同。对齐检查（6 事件 154 行 2,877 token）max_abs_diff 5.48e-6、max_tok_diff 4.29e-5、bf16 均值 8.43e-3。ctool smoke：H200 上对齐 maxdiff_hidden 1.03e-4 在 3e-4 下 PASS、`dropped_events` 1/3 与 plan 第四节 8192 那行相符；H100 上 `--bs 4` 训练第一批 OOM（进程 92.94 GiB），`--bs 2 --accum 4` 跑通、nvidia-smi 最大样本 56,859 MiB。stage-commands.md §3.1 的实测峰值表加一行「ctool 0.6B 全参 8192 × bs 2：56,859 MiB（H100，nvidia-smi 采样）」和「cgen 新训练器 16384 预算：60.59 GB allocated（H100）」。
+- 2026-08-28 plan-8-28 收账：wave4 实现 1 轮修复过评审，分支 `ticket/2026-08-28-wave4/T04`（base `d6aa99d`，head `39da84e`），合并为 `9fc83b7`（五份文件 +57/−14：extending.md §3 换实现先例与 §5 #25 到 #27、gates.md 旧数字、invariants.md 第 45/47/48/53 行、stage-commands.md §3 命令表 / §3.1 峰值表 / 第 213 行 smoke 限额 / §7、MAP.md cgen/cparam/ctool 行与 (共用)(参照) 两行）。实现者判断（主会话复核同意）：工单正文第 2、3 条残留的 `--bs 4 --accum 2` 按本 Comment 与代码（决定 15，`8fa95dc`）统一写成 `--bs 2 --accum 4`；SKILL.md `grep callgen` 零命中不改。遗留 minor N1：报告 §3 的 sha `9601eb0` 不存在，实际 tip `39da84e`。concerns（照录）：§3.1 峰值表把两条单格数据塞进三格同批次形态的表（用 — 占位）；#25 触发条件没有回溯旧代码逐行核对（以 spec 11.3 与工单原文为准）。

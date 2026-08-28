@@ -183,3 +183,9 @@ TIMELINE「只增不改」的执行口径——同一会话同一天写成、三
 24576 对 16384 六个对照点分别慢 17.8 / 18.1 / 15.4 / 17.8 / 17.3 / 7.0%，算术平均 15.6%，TIMELINE 与 design 8.5 都写成「末尾累计慢 15%（157 对 184）；六点平均 16%」（b83ec21）；之前的 18% 是第一个点的数，不是平均，assistant-2 核出来的。
 
 8-28-assistant 注：六个百分数按我自己算的六点（185.6→152.5、189.5→155.3、184.1→155.8、185.6→152.5、203.8→168.6、145.3→135.2）复算是 17.8 / 18.0 / 15.4 / 17.8 / 17.3 / 7.0，平均 15.6，与更正一致。我在核 TIMELINE 那条消息里写的「18% 是六个对照点的平均」是错的，六个数我列对了、平均值说错了，更正以 b83ec21 为准。
+
+### 2026-08-28 第三波（工单 05）收账
+
+工单 05（第三波，1 轮修复）分支 base 45c881e head 6c507cc 合并为 a89da00（spec §9 字段列表一行冲突，取主干加 baseline_warn），复核 cprobe-env 39 个测试 OK、output_hidden_states 0 命中、selfcheck 76；收账提交 f1e0a1f；工单 06 第四波 b 已发射（wf_df547174-750），工单 04 第四波 a 仍在跑（wf_1712edbf-529）。06 合并后计划在 H100 上用最终代码再跑一次 smoke 档三格加 b16k 速度档（含 --mem-probe），作为终验；然后 ticket-run Phase 4 终审、artifact。
+
+8-28-assistant 核对：HEAD f1e0a1f，a89da00 与 6c507cc 在 git log 里；`git diff --stat 10f1d12 a89da00` 14 个文件 +1,007/−55，其中 train_causal_share.py 119 行改动、train_causal_tool.py 17 行、tests/test_share_trainer.py 162 行；train_causal_share.py 里 output_hidden_states 0 命中。
