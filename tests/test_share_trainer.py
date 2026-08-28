@@ -387,9 +387,13 @@ class TestBackwardBlockSplitInvariance(unittest.TestCase):
 
 class TestBlockRowCeUnderLoRA(unittest.TestCase):
     """工单 05 验收第 3 条:`_forward_packed` 改用 `model.model(...)` 的
-    backbone 输出再过 `model.lm_head`(S1)之后,LoRA 包装(`lora_util.wrap`
-    就地注入,调用方原来的 `model` 变量继续用)下一次前向加反向仍要能跑,
-    且只有适配器参数拿到梯度——证明 S1 的取法在 peft 包装下不是偶然能跑。
+    backbone 输出再过 `model.lm_head`(S1)之后,LoRA 包装下一次前向加反向
+    仍要能跑,且只有适配器参数拿到梯度。两个用例分别覆盖 `_base_model_and_head`
+    的两条分支:`test_lora_forward_backward` 走 `lora_util.wrap` 就地注入、
+    调用方原来的 `model` 变量继续用这条实际路径(落进 `else` 分支——
+    `model` 本身不是 PeftModel);`test_get_base_model_branch_forward_backward`
+    走『拿到手的就是 PeftModel 本身』这条更泛的路径(工单 05 复审 F1:
+    `get_base_model()` 分支此前没有任何用例真正执行到)。
 
     peft 装了就跑,没装就 skip。"""
 
@@ -447,6 +451,61 @@ class TestBlockRowCeUnderLoRA(unittest.TestCase):
             all(p.grad is None for _n, p in frozen),
             "非适配器参数不该有梯度(lora_util.wrap 已把它们 requires_grad "
             "设成 False)")
+
+    def test_get_base_model_branch_forward_backward(self):
+        """工单 05 复审 F1:`test_lora_forward_backward` 传给
+        `backward_logical_minibatch` 的 `model` 是 `lora_util.wrap` 就地注入
+        后的原变量,本身不是 PeftModel,所以 `_base_model_and_head` 里
+        `hasattr(model, "get_base_model")` 恒假,`get_base_model()` 那半句
+        代码一次都没被执行到。这里改传 `lora_util.wrap` 的**返回值**
+        (真正的 `PeftModel` 对象)当 `model` 用,逼 `_base_model_and_head`
+        走 `get_base_model()` 分支:先直接核对取到的 backbone/lm_head 就是
+        `get_base_model()` 返回对象上的那两个属性(证明分支本身取值正确),
+        再跑一次真实的前向加反向(证明这条分支下建出来的计算图真的能
+        训——不是只有对象相等这一层保证)。"""
+        import argparse
+        import lora_util
+
+        torch.manual_seed(SEED)
+        model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
+        model.train()
+        lora_args = argparse.Namespace(
+            lora_rank=4, lora_alpha=8, lora_dropout=0.0)
+        wrapped = lora_util.wrap(model, lora_args)  # 真正的 PeftModel,不丢弃
+
+        self.assertTrue(
+            hasattr(wrapped, "get_base_model"),
+            "peft 版本变了,PeftModel 不再有 get_base_model()——"
+            "_base_model_and_head 的分支判据要跟着改")
+        backbone, lm_head = tcs._base_model_and_head(wrapped)
+        base = wrapped.get_base_model()
+        self.assertIs(
+            backbone, base.model,
+            "get_base_model() 分支取到的 backbone 应该就是 "
+            "get_base_model() 返回对象上的 .model")
+        self.assertIs(
+            lm_head, base.lm_head,
+            "get_base_model() 分支取到的 lm_head 应该就是 "
+            "get_base_model() 返回对象上的 .lm_head")
+
+        events, _counts = share_data.load_events(
+            self.data_path, self.tok, mode="cgen", max_len=8192,
+            limit=2, order="shortest")
+        W = sum(row[5] for ev in events for row in ev["rows"])
+
+        tcs.backward_logical_minibatch(
+            wrapped, [events], W, n_g=1, dev="cpu", mask_dtype=torch.float32)
+
+        trainable = [(n, p) for n, p in model.named_parameters()
+                    if p.requires_grad]
+        frozen = [(n, p) for n, p in model.named_parameters()
+                 if not p.requires_grad]
+        self.assertTrue(
+            any(p.grad is not None for _n, p in trainable),
+            "走 get_base_model() 分支时 LoRA 适配器参数一个都没拿到梯度")
+        self.assertTrue(
+            all(p.grad is None for _n, p in frozen),
+            "走 get_base_model() 分支时非适配器参数不该有梯度")
 
 
 class TestMainSmokeCPU(unittest.TestCase):
