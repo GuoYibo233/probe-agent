@@ -6,6 +6,12 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `ks828b06_gptoss_cgen_speed_b16k_es` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | running | - | - |
+| `ks828b06_gptoss_cgen_speed_b24k` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | running | - | - |
+| `ks828b06_gptoss_cgen_speed_b16k` | 2026-08-28 13:07 | kvshare-train | `10f1d12` | - | running | - | - |
+| `ks828b06_gptoss_cparam` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | best_val_ce=1.5926 wall_s=153.39 align_maxdiff=9.3e-06 total_rows=284 | 新训练器 cparam smoke 档(H200 gpu5): 对齐检查 PASS max_abs_diff 9.30e-6, assembly_mismatch 0/0, best_val_ce 1.5926, 153 秒, best/ 落盘 |
+| `ks828b06_gptoss_cgen` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | best_val_ce=1.2938 wall_s=151.49 align_maxdiff=5.48e-06 total_rows=284 | 新训练器 cgen smoke 档(40 训练事件/16 评估事件, H200 gpu4): 对齐检查 PASS max_abs_diff 5.48e-6(tol 2e-5), 5 次更新, 四次评估, best_val_ce 1.2938, 151 秒, best/ 落盘 |
+| `ks828b06_gptoss_ctool` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | running | - | - |
 | `kvshare_gpu_kernel_check` | 2026-08-28 09:16 | kvshare-train | `024b34f` | - | ok | peak_gib_longest_event_bf16_aligned16=26.65 peak_gib_bool_unaligned=31.11 peak_gib_grad_ckpt=6.34 peak_gib_lora=31.18 fp32_row_maxdiff_gpu=4.41e-06 fp32_tok_maxdiff_gpu=3.05e-05 bf16_row_meandiff_gpu=0.00931 bf16_row_maxdiff_gpu=0.0307 | 形态A打包前向在H100 mem-efficient内核上跑通: 最长事件L9381(补到9392) bf16加性掩码峰值26.65GiB(bool掩码31.11); 默认内核落cuDNN(两内核bf16均值差4.8e-3), 训练器显式钉EFFICIENT; 无掩码调用走GQA不进EFFICIENT上下文; 34行505token fp32逐行最大差4.41e-6(基线5.01e-6) bf16均值9.31e-3; grad-ckpt把最长单事件压到6.34GiB, LoRA不省激活; 三次发射(第4步截前缀OOM, 第6步GQA拒收, 第三次九步全过) |
 | `eval_np821l17_gptoss_cparam` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 pred_tool_ok=0.9476 pred_params_all_ok=0.8322 pred_full_call_ok=0.8094 pred_exact_call_ok=0.8067 pred_param_acc=0.7498 gt_params_all_ok=0.8467 gt_param_acc=0.808 noparam_rate=0.387 | np821l17 cparam 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, pred_tool full_call_ok 0.8094/params_all_ok 0.8322, gt_tool params_all_ok 0.8467, H100 约 24 分钟 |
 | `eval_np821l17_gptoss_cgen` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 tool_ok=0.8866 params_all_ok=0.7774 full_call_ok=0.7326 exact_call_ok=0.7316 param_acc=0.6287 noparam_rate=0.387 | np821l17 cgen 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, tool_ok 0.8866, params_all_ok 0.7774, full_call_ok 0.7326, H100 约 23 分钟 |
@@ -70,6 +76,58 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `ks828b06_gptoss_cgen_speed_b16k_es`
+
+- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:08 → 未收尾
+- **代码**：`10f1d12` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b16k_es_t108g2.log`
+- **命令**：`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True /home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b16k_es --tok-budget 16384`
+
+### `ks828b06_gptoss_cgen_speed_b24k`
+
+- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:08 → 未收尾
+- **代码**：`10f1d12` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b24k_t108g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b24k --tok-budget 24576`
+
+### `ks828b06_gptoss_cgen_speed_b16k`
+
+- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 13:07 → 未收尾
+- **代码**：`10f1d12` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b16k_t108g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b16k --tok-budget 16384`
+
+### `ks828b06_gptoss_cparam`
+
+- **结论**：新训练器 cparam smoke 档(H200 gpu5): 对齐检查 PASS max_abs_diff 9.30e-6, assembly_mismatch 0/0, best_val_ce 1.5926, 153 秒, best/ 落盘
+- **方向**：probe_ks828b06 ｜ **状态**：ok ｜ **起止**：2026-08-28 13:06 → 2026-08-28 13:20
+- **代码**：`10f1d12` (分支 main)
+- **机器**：tokyo108 GPU 5
+- **数字**：best_val_ce=1.5926 wall_s=153.39 align_maxdiff=9.3e-06 total_rows=284
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cparam_smoke_t108g5.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cparam_smoke --env appworld --mode cparam --smoke`
+
+### `ks828b06_gptoss_cgen`
+
+- **结论**：新训练器 cgen smoke 档(40 训练事件/16 评估事件, H200 gpu4): 对齐检查 PASS max_abs_diff 5.48e-6(tol 2e-5), 5 次更新, 四次评估, best_val_ce 1.2938, 151 秒, best/ 落盘
+- **方向**：probe_ks828b06 ｜ **状态**：ok ｜ **起止**：2026-08-28 13:06 → 2026-08-28 13:20
+- **代码**：`10f1d12` (分支 main)
+- **机器**：tokyo108 GPU 4
+- **数字**：best_val_ce=1.2938 wall_s=151.49 align_maxdiff=5.48e-06 total_rows=284
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_smoke_t108g4.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_smoke --env appworld --mode cgen --smoke`
+
+### `ks828b06_gptoss_ctool`
+
+- **方向**：probe_ks828b06 ｜ **状态**：running ｜ **起止**：2026-08-28 13:06 → 未收尾
+- **代码**：`10f1d12` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_smoke --env appworld --base qwen --smoke`
 
 ### `kvshare_gpu_kernel_check`
 

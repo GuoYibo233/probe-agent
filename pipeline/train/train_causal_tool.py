@@ -76,7 +76,7 @@ MODELS = {
 }
 SEED = 42          # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在旧数据复现里生效
 FULL_LR = 1e-5     # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
-ALIGN_TOL = 1e-4
+ALIGN_TOL = 3e-4   # 2026-08-28 起(上限 8192):c1/np821 实跑一直传 3e-4;8,167 token 的事件 maxdiff_hidden 1.03e-4 相对差 1.46e-6 被旧默认 1e-4 拦下
 SPOT = 50          # 前缀性质抽查的事件数
 
 
@@ -302,10 +302,10 @@ def main():
     ap.add_argument("--align-only", action="store_true",
                     help="只跑开训前对齐检查即退")
     ap.add_argument("--align-tol", type=float, default=ALIGN_TOL,
-                    help="对齐检查绝对差阈值(默认 1e-4)。长窗口下 fp32 舍入噪声"
-                         "随 token 数与隐状态量级一起涨,绝对差会顶到 1e-4 而"
-                         "相对差仍是 1e-6(纯噪声);此时可放宽,判定依据看"
-                         "reldiff(1e-3 以上=真算错,放宽也没用)")
+                    help="对齐检查绝对差阈值(默认 3e-4,2026-08-28 起;之前 1e-4)。"
+                         "长窗口下 fp32 舍入噪声随 token 数与隐状态量级一起涨,"
+                         "8192 上限的事件绝对差会顶到 1e-4 而相对差仍是 1e-6"
+                         "(纯噪声);判定依据看 reldiff(1e-3 以上=真算错,放宽也没用)")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具模式:标签折叠成 该环境的只读工具 + "

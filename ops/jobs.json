@@ -1,5 +1,88 @@
 {
-  "active": [],
+  "active": [
+    {
+      "name": "ks828b06_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 13:06",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_ks828b06_gptoss_ctool_smoke_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_smoke --env appworld --base qwen --smoke",
+          "launched_at": 1787889985.9324088,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ]
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_speed_b16k",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "kvshare 速度档 S1: tok-budget 16384, 450 events",
+      "started_at": "2026-08-28 13:07",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_ks828b06_gptoss_cgen_speed_b16k_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b16k_t108g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b16k --tok-budget 16384",
+          "launched_at": 1787890041.6856062,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ]
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_speed_b24k",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "kvshare 速度档 S2: tok-budget 24576, 450 events",
+      "started_at": "2026-08-28 13:08",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_ks828b06_gptoss_cgen_speed_b24k_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b24k_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b24k --tok-budget 24576",
+          "launched_at": 1787890081.1442688,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ]
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_speed_b16k_es",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "kvshare 速度档 S3: tok-budget 16384 + expandable_segments, 450 events",
+      "started_at": "2026-08-28 13:08",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_ks828b06_gptoss_cgen_speed_b16k_es_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_speed_b16k_es_t108g2.log",
+          "cmd": "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True /home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_b16k_es --tok-budget 16384",
+          "launched_at": 1787890120.866279,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ]
+    }
+  ],
   "history": [
     {
       "name": "hcap",
@@ -1483,6 +1566,46 @@
         }
       ],
       "finished_at": "2026-08-28 09:36"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 13:06",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_ks828b06_gptoss_cgen_smoke_t108g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_smoke_t108g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_smoke --env appworld --mode cgen --smoke",
+          "launched_at": 1787889988.5909436,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-28 13:20"
+    },
+    {
+      "name": "ks828b06_gptoss_cparam",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 13:06",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_ks828b06_gptoss_cparam_smoke_t108g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cparam_smoke_t108g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cparam_smoke --env appworld --mode cparam --smoke",
+          "launched_at": 1787889991.2164283,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-28 13:20"
     }
   ]
 }
