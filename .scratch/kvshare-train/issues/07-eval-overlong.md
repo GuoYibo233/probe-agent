@@ -14,14 +14,18 @@ Spec: `.scratch/kvshare-train/spec.md` 16.2（判据）、16.9（测试）、16.
 2. `eval_causal_call.py` 与 `eval_causal_param.py` 各加 `--overlong`，`choices=["left", "skip", "drop-event"]`，默认 `left`。三种模式的判据照 spec 16.2 逐条实现：
    - `left`：行为不变，只加计数 `n_left_truncated`（提示 = `text + sep`（cparam 是 `text + param_prompt_tail`，按脚本现有的提示构造），分词不截断数长度，大于 `max_len − max_new` 的行数）。
    - `skip`：提示长度大于 `max_len − max_new` 的行不进 `prompts`、不进 `keys`（也就不进总表、按工具分桶、样本），计数 `n_skipped_rows`。
-   - `drop-event`：对 `keys` 里的每个事件，从 `--data` 的行里取该事件 `sent_idx` 最大那一行的 `text` 当全文，`n_full_tokens` 大于 `meta["max_len"]` 的事件整个从 `keys` 去掉，计数 `n_dropped_events`；剩下的行里提示仍超长的左截并计 `n_left_truncated`。只对 `keys` 里的事件分词（test 集 391,893 行，别对全集分词）。
-   - 报告：JSON 与 MD 都写 `overlong_mode` 和 `n_left_truncated / n_skipped_rows / n_dropped_events` 三个计数（没发生的写 0，键不省略）。ACCEPT 脚本读的现有键一个都不改名。
+   - `drop-event`：对 `keys` 里的每个事件，按 `share_data` 的分组规则（`share_data.py` 第 121 到 131 行：不过滤行，`sent_idx` 最大那一行的 `text`）取全文，`n_full_tokens` 大于 `meta["max_len"]` 的事件整个从 `keys` 去掉，计数 `n_dropped_events`；剩下的行里提示仍超长的左截并计 `n_left_truncated`。只对 `keys` 里的事件分词（test 集 391,893 行，别对全集分词）。
+   - 与 ctool 评测的衔接（spec 16.2「衔接」段）：两个脚本第 569 / 397 行 `assert len(rows) == logits.shape[0]` 按下标对齐 `logits_test.pt`，这个断言保留；读 `logits_test.meta.json`（第 3 条让 eval_tool 写的 `excluded_idx`），非空就把这些下标对应的行从 `keys` 去掉再判分，计数 `n_excluded_by_ctool`（`.meta.json` 没有这个键——旧缓存——按空列表处理）。
+   - 报告：JSON 与 MD 都写 `overlong_mode` 和 `n_left_truncated / n_skipped_rows / n_dropped_events / n_excluded_by_ctool` 四个计数（没发生的写 0，键不省略）。ACCEPT 脚本读的现有键一个都不改名。
 3. `eval_tool.py` 的 `score_causal` 与调用它的主流程加 `--overlong`（同样三个值，默认 `left`）：
    - `left`：不变。
-   - `skip`：窗口外边界（`read_position` 返回 −1 的那些）不进任何分母、不产生触发点——实现上把这些行从 `rows` 里剔除并把剔除下标返回给调用方（或返回一个 mask），调用方在算指标与 REPLAY_REPORT 之前先剔；计数 `n_skipped_bounds`。
-   - `drop-event`：`n_full_tokens(tok, 全文) > max_len` 的事件整个剔除（全部边界），计数 `n_dropped_events`、`n_dropped_bounds`。
-   - `REPLAY_REPORT.json/.md` 写 `overlong_mode` 与三个计数（`n_oow` 照旧保留）。`logits_*.pt` 与 `.meta.json` 的形状要和剔除后的行数一致，下游 cgen 评测按事件键取触发点，不按下标（实现者读 `eval_causal_call.py` 读 REPLAY_REPORT 的那段确认；如果下游按下标对齐 `rows`，就在 `.meta.json` 里写清剔除后的行清单）。
-4. 测试 `tests/test_eval_overlong.py`（spec 16.9 第一条）：真实分词器 `MODELS["qwen"]` 路径不存在就 `skipTest`。手造 3 个事件（一个全文超过很小的 `max_len`、一个提示刚好超过 `max_len − max_new`、一个正常），断言：(a) `n_full_tokens` 对同一段文本与 `load_events` 的 `dropped_events` 判据一致；(b) cgen 的行筛选函数（把第 2 条里的筛选抽成一个纯函数 `select_rows(mode, ...)`，方便测）在三种模式下的计数与留下的行集合；(c) `score_causal` 在三种模式下的计数与剔除集合（小模型可用 `Qwen3Config` 随机初始化一个 2 层的 backbone 加一个线性头，照 `tests/test_share_trainer.py` 的做法）。
+   - `skip`：窗口外边界（`read_position` 返回 −1 的那些）不进任何分母、不产生触发点；计数 `n_skipped_bounds`。
+   - `drop-event`：`n_full_tokens(tok, 全文) > max_len` 的事件整个剔除（全部边界），计数 `n_dropped_events`、`n_dropped_bounds`。这里的「全文」按 ctool 训练器自己的规则（`train_causal_tool.py` 第 93 到 96 行：先按 `label in label2id` 过滤行，再取最后一行的 `text`）——`eval_tool.py` 的 `rows` 本来就是过滤后的，`score_causal` 第 124 行取的 `full` 就是这个；不要改成 share_data 的不过滤规则（spec 16.10 #34 记了两边的差别）。
+   - 形状不变：三种模式下 `logits_*.pt` 都写全行数，剔除的行写零 logits（和现在 `n_oow` 的行一样），`score_causal` 返回 `(out, excluded_idx)`，`excluded_idx` 是剔除行的下标列表（`left` 下空列表）。调用方把 `excluded_idx` 写进 `logits_*.meta.json`（现有键 `weights / rows / adopted` 之外加 `overlong_mode` 与 `excluded_idx`），算指标与 REPLAY_REPORT 之前先按 `excluded_idx` 剔行。下游 cgen / cparam 按下标对齐 `logits_test.pt`（`eval_causal_call.py` 第 569 行硬断言），所以行数不能变。
+   - `--cached-logits` 路径（`eval_tool.py` 第 404 行附近读缓存）：`.meta.json` 的 `overlong_mode` 与本次 `--overlong` 不同（或键不存在而本次不是 `left`）就 `SystemExit` 并写明两种模式；相同就照常，并从 `.meta.json` 读回 `excluded_idx`。
+   - `REPLAY_REPORT.json/.md` 写 `overlong_mode` 与三个计数（`n_oow` 照旧保留）。
+4. 测试 `tests/test_eval_overlong.py`（spec 16.9 第一条）：真实分词器 `MODELS["qwen"]` 路径不存在就 `skipTest`。手造 3 个事件（一个全文超过很小的 `max_len`、一个提示刚好超过 `max_len − max_new`、一个正常），断言：(a) `n_full_tokens` 对同一段文本与 `load_events` 的 `dropped_events` 判据一致；(b) cgen 的行筛选函数（把第 2 条里的筛选抽成一个纯函数 `select_rows(mode, ...)`，方便测）在三种模式下的计数与留下的行集合，以及给定 `excluded_idx` 时的剔除；(c) `score_causal` 在三种模式下返回的 `out` 行数都等于输入行数、`excluded_idx` 与计数各对、被剔除行的 logits 全零（小模型可用 `Qwen3Config` 随机初始化一个 2 层的 backbone 加一个线性头，照 `tests/test_share_trainer.py` 的做法）；(d) `--cached-logits` 的模式校验：手造一个 `.meta.json` 写 `overlong_mode: "skip"`，用 `left` 读它要 `SystemExit`。
+5. 并行落点：工单 08 与 10 同时在改 `share_data.py`（08 改第 205 行的行元组与第 274 行的拆包，10 在文件末尾加 `epoch_minibatches`）；本工单只动 `load_events` 里算 `n_full` 的那几行（第 140 到 152 行附近）和新加的两个函数，新函数放在 `load_events` 之前、`read_position` 之后的位置，不要动别处，合并冲突主会话收账时解。
 
 ## 验收
 

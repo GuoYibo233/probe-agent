@@ -19,14 +19,17 @@ Spec: `.scratch/kvshare-train/spec.md` 16.5（做法与字段）、16.9（测试
    - 探针整段前后保存并恢复随机数状态：`random.getstate()/setstate()`、`torch.get_rng_state()/set_rng_state()`、cuda 上 `torch.cuda.get_rng_state()/set_rng_state()`。目的：带探针与不带探针的 run 训练部分逐位相同（LoRA dropout 的随机流不被探针消耗）。
    - 事件字段统一：`pick, kind, B, L_pad, n_tokens (= B × L_pad), n_rows, n_loss_pos, peak_mem_gb, n_backward, with_optimizer_state, optimizer_state_prebuilt`（`loop_group` 的 `B / L_pad / n_tokens` 写组里最大那块的）；现有字段名 `n_events / packed_len_max` 保留不删（旧解析器读它们）。所有块跑完写一条 `mem_probe_summary`：`pick, worst_gb (= 各块 peak 的最大值), worst_kind`。`start` 事件加 `mem_probe_pick`。
    - 参数不变性：三种模式跑完，所有可训练参数逐位等于探针前（`loop` 模式靠 lr=0；测试里断言）。
-3. 测试（spec 16.9 第四条）：
+   - 读峰值的那一句抽成模块级函数 `_peak_gb(dev)`（cuda 上 `torch.cuda.max_memory_allocated() / 1e9`，其他设备 0.0），探针的每块与 step 日志（第 813 到 817 行）都调它——测试靠 monkeypatch 它来给假峰值。
+   - 参数 `--mem-probe-pick` 紧跟在 `--mem-probe` 之后（工单 08、09 也在参数段加参数，锚点不同）；`start_kw` 里本工单加 `mem_probe_pick` 一个键，放在 `mem_probe` 那个键之后；合并冲突主会话收账时解。
+   - 现有测试要跟着改：`tests/test_share_trainer.py` 第 548 行与第 577 行附近两个探针用例构造的是 `argparse.Namespace(tok_budget=100000, events_per_mb=4)`，`run_mem_probe` 读 `args.mem_probe_pick / args.accum` 会 `AttributeError`，给这两个 Namespace 补 `mem_probe_pick="tokens", accum=2`（保持它们测的是旧路径）。
+3. 测试（spec 16.9 第四条）放新文件 `tests/test_mem_probe_pick.py`（不往现有文件末尾加用例——工单 08、09 并行；小模型与事件的构造 import 现有测试的辅助函数），另加 `tests/test_share_data.py` 末尾一个 `epoch_minibatches` 用例（工单 08 只改那个文件里手造元组的位数，不在末尾加东西）：
    - `tests/test_share_data.py`：`epoch_minibatches` 与「手抄训练循环旧写法」切出来的小批逐个相同（事件名序列相等）。
-   - `tests/test_share_trainer.py`：(a) 手造 5 个小事件（一个行少但每行目标长——损失位最多；一个行多前缀长——token 最多），`cost` 挑到两块不同且 `kind` 各对；(b) 三种模式各跑一次 `run_mem_probe`：`opt.state` 为空、每个 param_group 的 lr 恢复、所有 `.grad` 为 None、参数逐位不变（`loop` 模式也是）、都写了 `mem_probe_summary` 且 `worst_gb` 等于各块最大值；(c) 小模型 `main()` 带 `--mem-probe --mem-probe-pick cost --device cpu` 与不带 `--mem-probe` 各跑一次（同 `--smoke --max-events 6 --log-every 1`），两份 `train_log.jsonl` 的 `step` 事件 `loss` 逐条相同（随机数状态恢复；小模型不挂 LoRA 时 dropout 为 0，这条测试要挂 `--lora` 才有区分度——`lora_util.wrap` 在 CPU 小模型上可用，测试里用 `--lora`）。
+   - `tests/test_mem_probe_pick.py`：(a) 手造 5 个小事件（一个行少但每行目标长——损失位最多；一个行多前缀长——token 最多），`cost` 挑到两块不同且 `kind` 各对；(b) 三种模式各跑一次 `run_mem_probe`：`opt.state` 为空、每个 param_group 的 lr 恢复、所有 `.grad` 为 None、参数逐位不变（`loop` 模式也是）、都写了 `mem_probe_summary`；`worst_gb` 的断言用 `unittest.mock.patch` 把 `train_causal_share._peak_gb` 换成每次调用返回递增值（1.0、2.0、…）的假函数，断言 `worst_gb` 等于各块 `peak_mem_gb` 的最大值且 `worst_kind` 对（CPU 上真值恒 0.0，不 patch 就是 0 == 0，没有区分度）；(c) 小模型 `main()` 带 `--mem-probe --mem-probe-pick cost --device cpu --lora` 与不带 `--mem-probe`（同样 `--lora`）各跑一次（同 `--smoke --max-events 6 --log-every 1`），两份 `train_log.jsonl` 的 `step` 事件 `loss` 逐条相同（随机数状态恢复；小模型不挂 LoRA 时 dropout 为 0 没有区分度，`lora_util.wrap` 在 CPU 小模型上可用）。
 
 ## 验收
 
-- `cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data` 通过。
+- `cprobe-env/bin/python -m unittest tests.test_mem_probe_pick tests.test_share_trainer tests.test_share_data` 通过。
 - `grep -n "epoch_minibatches" pipeline/train/share_data.py pipeline/train/train_causal_share.py` 两个文件都命中，训练循环里不再有自己的 `shuffle`。
-- `grep -n "mem_probe_summary\|get_rng_state" pipeline/train/train_causal_share.py` 命中。
+- `grep -n "mem_probe_summary\|get_rng_state\|def _peak_gb" pipeline/train/train_causal_share.py` 三个都命中。
 - `--mem-probe-pick tokens` 的两条事件与改前字段兼容（旧键都在）。
 - 不改 `run.py`。

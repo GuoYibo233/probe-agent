@@ -10,16 +10,17 @@ Spec: `.scratch/kvshare-train/spec.md` 16.3（做法）、16.9（测试）、16.
 
 ## 要做的
 
-1. `share_data.load_events`（第 205 行）行元组加第 6 位 `dict(tgt=<目标串>, tool=<工具名或 None>)`：`tgt` 是分词前的目标串 `tgt_str`（cgen 是整条调用串，cparam 是参数串——就是现在传给 `tok(...)` 的那个字符串）；`tool` 在 cparam 分支是拼 `tail` 时用的工具名，cgen 分支是 `None`。第 0 到 5 位一个都不动。`pack_event / allowed_mask / batch_mask / worst_blocks` 里凡是按下标读行的地方不需要改，但要通读一遍确认没有 `len(row) == 6` 这种断言。测试里手造行元组的地方全部补上第 6 位。
-2. `train_causal_share.py` 加参数 `--gen-eval`（int，默认 200，0 关闭）与 `--gen-bs`（int，默认 8），加在 `--log-every` 之后。
+1. `share_data.load_events`（第 205 行）行元组加第 6 位 `dict(tgt=<目标串>, tool=<工具名或 None>)`：`tgt` 是分词前的目标串 `tgt_str`（cgen 是整条调用串，cparam 是参数串——就是现在传给 `tok(...)` 的那个字符串）；`tool` 在 cparam 分支是拼 `tail` 时用的工具名，cgen 分支是 `None`。第 0 到 5 位一个都不动。`pack_event` 第 274 行是六个名字的拆包 `_sent_idx, _text, p, seg_ids, seg_lab, _w = row`，7 位元组会 `ValueError`——改成 `_sent_idx, _text, p, seg_ids, seg_lab, _w = row[:6]`。其他按下标读行的地方（`share_data.py` 第 214 到 215 行，`train_causal_share.py` 第 179 / 470 / 789 行）不用改。测试里手造 6 位行元组的地方全部补上第 6 位：`tests/test_share_trainer.py` 第 374 / 437 / 495 行附近，`tests/test_share_data.py` 里的同类构造。
+2. `train_causal_share.py` 加参数 `--gen-eval`（int，默认 200，0 关闭）与 `--gen-bs`（int，默认 8），紧跟在 `--log-every` 之后（工单 09、10 也在同一段加参数，各有各的锚点；`start_kw` 字典里本工单加 `gen_eval / gen_bs` 两个键，放在 `log_every` 那个键之后；合并冲突主会话收账时解）。
 3. 抽样（照 spec 16.3）：`ev_events` 加载完之后，摊平成行列表（事件按加载顺序、行按事件内顺序），只留第 5 位 `w > 0` 的行，`random.Random(SEED).shuffle`，取前 N。存成两个模式各自需要的元组：cgen `(text, None, None, tgt)`，cparam `(text, None, None, tool, tgt)`。
 4. 生成：调 `train_causal_callgen.eval_gen(model, tok, rows, dev, amp, args.max_len, args.gen_bs)` 或 `train_causal_param.eval_gen(...)`（按 `args.mode`），不写新的生成函数；两个旧函数各自处理 `padding_side / use_cache / model.eval() / model.train()`。调用点：每个评估点 `eval_ce` 之后、写 `eval` 事件之前；计时 `gen_s`。生成必须在 `_attn_ctx` 之外——现在 `_attn_ctx` 只包 `_forward_packed`，保持这样，不要为了省事把整个评估段包进去（spec 16.10 #29：无掩码的 `generate` 走 GQA，mem-efficient 内核报 `No available kernel`）。
 5. 日志：`eval` 事件加 `val_exact_call`（cgen）或 `val_exact_params`（cparam）、`gen_n`（实际生成的行数）、`gen_s`（秒，保留 2 位）；`--gen-eval 0` 时三个键都不写。`start` 事件加 `gen_eval`、`gen_bs`。`save_best` 判据仍只看 `val_ce`。`train_s` 不含生成时间（现有训练时钟只包更新，确认不要动）。
-6. 测试（spec 16.9 第二条）：在 `tests/test_share_trainer.py` 现有的小模型 `main()` 用例上加：(a) `--gen-eval 3 --gen-bs 2` 跑通，`eval` 事件有 `val_exact_call`（或 cparam 的 `val_exact_params`）、`gen_n == 3`、`gen_s`；(b) `--gen-eval 0` 时 `eval` 事件没有这三个键；(c) 抽样函数单独测：同一批事件两次抽样结果相同；(d) 守卫测试：读 `train_causal_share.py` 源码，断言 `_attn_ctx(` 的调用只出现在 `_forward_packed` 函数体内（按 `ast` 找 `Call` 节点的父函数，或按行号区间 grep），失败信息写明 spec 16.10 #29。
+6. 评估段的心跳（spec 16.3 倒数第二条）：`eval_ce(model, events, tok_budget, dev, amp, beat=None)` 加可选参数 `beat`（无参可调用），块循环里每 25 个物理块调一次 `beat()`；主流程传 `beat=lambda: heartbeat.emit(gstep, steps, "step")`（`heartbeat.emit` 的签名是 `emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)`，不要传别的关键字），并在调 `eval_gen` 之前与之后各 `heartbeat.emit(gstep, steps, "step")` 一次。原因：全量 val 有 115,211 行，加 200 行生成，这个窗口里现在没有任何心跳，采样器按 5 × 典型心跳间隔判停滞（`ops/verdicts.py` 第 14 行）会误报。
+7. 测试（spec 16.9 第二条）放新文件 `tests/test_share_gen_eval.py`（不往 `test_share_trainer.py` 末尾加用例——工单 09、10 并行，三张往同一文件末尾加必撞；小模型的构造照 `test_share_trainer.py` 现有的辅助函数 import 过来用）：(a) `--gen-eval 3 --gen-bs 2` 跑通，`eval` 事件有 `val_exact_call`（或 cparam 的 `val_exact_params`）、`gen_n == 3`、`gen_s`；(b) `--gen-eval 0` 时 `eval` 事件没有这三个键；(c) 抽样函数单独测：同一批事件两次抽样结果相同；(d) 守卫测试：读 `train_causal_share.py` 源码，断言 `_attn_ctx(` 的调用只出现在 `_forward_packed` 函数体内（按 `ast` 找 `Call` 节点的父函数，或按行号区间 grep），失败信息写明 spec 16.10 #29；(e) `eval_ce` 传一个计数用的 `beat`，手造 ≥ 25 个物理块的事件列表时至少被调一次。
 
 ## 验收
 
-- `cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data` 通过。
+- `cprobe-env/bin/python -m unittest tests.test_share_gen_eval tests.test_share_trainer tests.test_share_data` 通过。
 - `grep -n "gen_eval\|val_exact_" pipeline/train/train_causal_share.py` 命中；`grep -n "def eval_gen" pipeline/train/train_causal_share.py` 零命中（不许复制旧函数）。
 - 小模型 CPU 上 `--smoke --max-events 6 --gen-eval 3 --gen-bs 2 --device cpu` 的 `train_log.jsonl` 里 `eval` 事件带三个新键。
 - 不改 `run.py`、不改旧脚本。
