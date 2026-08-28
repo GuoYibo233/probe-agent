@@ -207,10 +207,16 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 | `--out` | 各格 | 必填,防覆盖旧件 |
 | `--force` | 各格 | **2026-08-02 起(审计 B7)**:不传时,`--out` 下已经有 `train_log.jsonl` 就**直接 SystemExit 拒绝开训**——那个目录训过一次,再训会把两次产物混进同一个 `best/` 且无法归属。正常处置是**换一个 `--out`**;确认要覆盖才加 `--force`。→ 重发某一格前先看目标目录有没有 `train_log.jsonl`,别把这个退出当成脚本坏了 |
 | `--base qwen` | 仅 ctool | **必填**,choices 只有 `qwen` |
-| `--align-tol` | 仅 ctool | 默认 1e-4;长窗口下 fp32 舍入噪声会把绝对差顶到 1e-4,c1 批次统一用 `3e-4`。判是不是真算错看报告里的 reldiff:1e-6 量级=纯噪声,1e-3 以上=真算错,放宽也没用 |
-| `--align-only` | 仅 ctool | 只跑对齐检查即退(0),开训前想单独验就用它 |
+| `--align-tol` | ctool 与 cgen/cparam 都有,判据不同 | ctool:默认 `3e-4`(2026-08-28 起,决定 20;之前默认 1e-4——上限 8192 后长窗口是常态,`ks828b06` smoke 在 8,167 token 的事件上 maxdiff_hidden 1.03e-4、相对差 1.46e-6,被旧默认 1e-4 拦下;c1/np821 批实跑一直显式传 `3e-4`)。判是不是真算错看报告里的 reldiff:1e-6 量级=纯噪声,1e-3 以上=真算错,放宽也没用。cgen/cparam(新训练器):默认 `2e-5`,是 fp32 下逐行 ce 的最大绝对差门槛(逐 token 的最大差门槛写死 `3e-4`,不接受命令行传参),和 ctool 的 `--align-tol` 不是同一套判据、数字不通用(spec §9 末段) |
+| `--align-only` | ctool 与 cgen/cparam 都有 | 只跑对齐检查即退(0),开训前想单独验就用它 |
+| `--align-events` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起) | 默认 `6`,对齐检查从 val 里只抽 `len(full_ids) ≤ 2048` 的事件(控制耗时) |
+| `--mode` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起) | **必填**,`cgen` / `cparam`,决定目标串与拼接尾巴走哪一套;`run.py` 的 `train-cgen`/`train-cparam` 已经在注册表里带好这个旗,手搓才需要自己传 |
+| `--tok-budget` | 仅 cgen/cparam | 默认 `16384`(2026-08-28 冒烟裁决,不采纳 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`),一个物理块允许的「事件数 × 块内最长拼接序列补到 16 的倍数后的长度」上限;单个事件超预算独自成块(允许超预算)。`--eval-tok-budget` 默认 `0` = 2 × 本值,即 `32768`。依据:`ks828b06_gptoss_cgen_speed_b16k`(H100,450 事件 20,641 行 57 次更新)训练 step 峰值 60.59 GB(对 93.10 GiB 余量 39%);`--tok-budget 24576` 峰值 80.91 GB、慢 15%(`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`、`ops/runs.jsonl`) |
+| `--events-per-mb` | 仅 cgen/cparam | 默认 `4`,逻辑小批的事件数,损失的归一化单位 |
+| `--eval-per-epoch` | 仅 cgen/cparam | 默认 `4`,每个 epoch 评估这么多次全量 val(评估点集合 `{ceil(U·k/E): k=1..E}`,`k=E` 那个点是 epoch 末) |
+| `--accum` | ctool 与 cgen/cparam 都有,含义与定值都不同 | cgen/cparam:累积的逻辑小批数,默认 `2`(配 `--events-per-mb 4` = 8 个事件一次更新)。ctool:累积的物理批数,默认 `4`(配 `--bs 2` = 8 个事件一次更新,2026-08-28 起;之前是 `--bs 4 --accum 2`,H100 上 `--bs 4` 训练第一批 OOM——进程 92.94 GiB——才退到现在这档,决定 15;`--bs 2 --accum 4` 跑通,nvidia-smi 最大样本 56,859 MiB,`ops/runs.jsonl` 的 `ks828b06_gptoss_ctool_h100mem_bs2` 记录) |
 | `--base` | ctool/cgen/cparam | 三档 qwen=0.6B / qwen17=1.7B / qwen4=4B(权重都在 NFS models 盘)。ctool 必填(注册表已带 qwen);cgen/cparam 默认 qwen。发射换档走排卡表 extra(`--base qwen17`,argparse 后写的赢) |
-| `--smoke` | 各格 | cgen/cparam(以及停跑的 mtool/mext) = 500 训练 / 200 评估实例,ctool = 200 / 80 事件,均 1 epoch |
+| `--smoke` | 各格 | 停跑的 mtool/mext 与旧逐行脚本(`train-cgen-rows`/`train-cparam-rows`)= 500 训练 / 200 评估实例;ctool = 200 / 80 事件;cgen/cparam **现役训练器**(`train_causal_share.py`,2026-08-28 起)= 40 训练事件 / 16 评估事件,取法是按事件全文 token 数**升序**取前 N 个(train 与 val 同规则,不是随机抽——重跑同一个 `--smoke` 会拿到完全相同的事件集合,和旧口径"随机抽 500/200"不是同一把尺子,数字不可比);均 1 epoch。和 `--max-events` 同给时 N 覆盖 40/16,取法仍是升序;单独给 `--max-events` 才走 `random.Random(SEED)` 随机(照 ctool 口径) |
 | `--env` | 各格 | 默认 appworld,**仅作日志标签**,不影响数据路径 |
 | `--device` | 除 mtool | 默认 cuda |
 | `--readonly-env` | 各格 | choices `appworld/bfcl`,默认不传(**不传 = 字节级旧行为**)。传了即"只读+弃权"口径(ro1 批起):mtool/ctool 真值折叠、词表 = 只读工具(原顺序)+ 末位哨兵 `<NON_READONLY>`;mext/cgen 只在只读事件上训任务,非只读样本仅当开火头负例;cparam 非只读样本整条丢弃(它没有开火头)。真值表在 `pipeline/annotate/readonly/<env>.json`,表外标签超 5% 硬停(`readonly_map.audit`)。产物多一份 `<out>/READONLY.json` |
@@ -219,7 +225,7 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 | `--lora-rank` / `--lora-alpha` / `--lora-dropout` / `--lora-lr` | 同上三格 | 默认 16 / 32 / 0.05 / 2e-4(口径见 invariants §3 的 LoRA 行)。**学习率的优先级**:显式 `--lr` > `--lora-lr`(开 `--lora` 时) > 全参默认 1e-5——三个脚本的 `--lr` 默认值是 `None` 就是为了分得清"没传"和"传了个跟默认一样的值" |
 | `--grad-ckpt` | **ctool/cgen/cparam/mext**(mtool 没有) | OOM 唯一合规处置(invariants §6)。全参与 `--lora` 两种模式都能用。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解。**z1 实测(2026-08-10):gptoss 轨迹的 ctool/cgen 不带 fire-head、默认超参也在 48G A6000 直接 OOM**——当时 cgen 还没有本旗,只能换 H100/H200 大卡(`launch --refire` 换 `--piece` 即可);np821 起三个因果格都有本旗,处置改为先加旗 |
 
-其余全用默认(`--max-len 4096`;mbert 两格 `--bs 8 --accum 4 --lr 2e-5`,因果三格 `--bs 4 --accum 8 --lr 1e-5`,开 `--lora` 时 lr 换 2e-4;一律 `--epochs 3`)。**c1 那 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参;np821 四批同样只动 `--base` / `--lora` / `--grad-ckpt` 三个旗。**
+其余全用默认(mbert 两格仍 `--max-len 4096 --bs 8 --accum 4 --lr 2e-5 --epochs 3`;因果三格 2026-08-28 起换新口径——三格同一个上限 `--max-len 8192`(超长事件整条丢弃,不再截断,三格才不分叉训练事件集):ctool `--bs 2 --accum 4 --lr 1e-5 --epochs 3`,cgen/cparam(新训练器)`--events-per-mb 4 --accum 2 --lr 1e-5 --epochs 1 --tok-budget 16384`,开 `--lora` 时 lr 换 2e-4。**np821 批用的是 `--max-len 4096`、因果三格 `--bs 4 --accum 8`、`--epochs 3`**)。c1 那 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参;np821 四批同样只动 `--base` / `--lora` / `--grad-ckpt` 三个旗;`ks828` 起的新口径见本节新增的参数行与下面 `train_causal_share.py` 的真实命令。
 
 **输出**:
 - mtool → `<out>/best/`(HF 权重 + tokenizer + `label_map.json`)+ `train_log.jsonl`
@@ -229,6 +235,28 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 - cparam → `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
 
 **退出码**:除 ctool 外无显式非 0。**ctool 的对齐检查 FAIL → `sys.exit(2)`**(整段一次前向 vs 逐 token 增量前向,末位置隐状态/logits 必须 max|diff| < tol),`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。
+
+**`train_causal_share.py` 的真实命令**(cgen/cparam 现役训练器,2026-08-28 起;`run.py` 的 `train-cgen`/`train-cparam` 就是拼这一条,`--mode` 由注册表带好):
+
+```bash
+# CPU smoke(工单 03 报告实测跑过,产物 0.6B fp32 best/ 约 2.4 GB,不许写 /tmp 或 home)
+cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
+  --data pipeline/data/nyapass_aw_v1/gptoss --out pipeline/runs/smoke/share_cpu_cgen_smoke \
+  --device cpu --smoke --max-events 6 --log-every 1 --align-events 2 --base qwen --force
+# cparam 同一条命令换 --mode cparam --out .../share_cpu_cparam_smoke
+
+# GPU 冒烟档(launch_probe 自动追加 --smoke;run.py show train-cgen 出的命令形态):
+# /…/cprobe-env/bin/python /…/pipeline/train/train_causal_share.py --mode cgen '<参数...>'
+python3 run.py show train-cgen   # 或 train-cparam;--data/--out 由 launch_probe 拼
+
+# GPU 速度/显存档(spec 第 10 节,tokyo108 H100,不带 --smoke)
+cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
+  --data pipeline/data/nyapass_aw_v1/gptoss \
+  --out pipeline/runs/smoke/ks828b06_gptoss_cgen_speed \
+  --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe \
+  --tok-budget 16384 --base qwen --force
+# 另跑一次 --tok-budget 24576;expandable_segments 开关已实测不采纳(见上面 --tok-budget 行)
+```
 
 ### 3.1 显存实测表(np821 实测:gpt-oss 轨迹 / `--max-len 4096` / `--bs 4 --accum 8`)
 
@@ -240,12 +268,16 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 | 1.7B 全参 + gc | 35.4 | 44.1 | 44.1 | smoke 过得去,**全量装不下**——cgen 全量第一个 backward 就 OOM(gates §3.9) |
 | 1.7B LoRA + gc | 17.3 | 34.7 | 34.7 | 装得下,零 OOM 跑完 |
 | 4B LoRA + gc | 32.1 | 37.6 | 37.6 | 装得下,零 OOM 跑完 |
+| ctool 0.6B 全参,`--max-len 8192 × --bs 2`(ks828,2026-08-28 起新默认) | 56,859 MiB(H100,nvidia-smi 采样) | — | — | 新口径,tokyo108 **H100** 非 48G 卡;`--bs 4` 同条件训练第一批 OOM(进程 92.94 GiB,决定 15,`ops/runs.jsonl` 的 `ks828b06_gptoss_ctool_h100mem_bs2`) |
+| cgen 新训练器(`train_causal_share.py`)`--tok-budget 16384`(ks828) | — | 60.59 GB allocated(H100,`torch.cuda.max_memory_allocated`) | — | 新口径,tokyo108 **H100** 非 48G 卡;`--tok-budget 24576` 峰值 80.91 GB、慢 15%(`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`) |
 
-(单位 GiB,峰值。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。
+(单位 GiB,峰值,末两行单位见各自单元格。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。末两行是 ks828 新口径在 H100 上的实测,和上面 np821/48G 的四行不同轴,不能直接横向比。
 
 ### 3.2 LoRA 批与全参批的关系
 
 `--lora` 不是新格,是**训法轴**:同样三格(ctool/cgen/cparam)、同一份数据、同一套评测脚本,只换底座怎么训。run_id 模板里既没有底座档位段也没有训法段,所以**一个批次只跑一档 `--base` + 一种训法**,档位与训法写进批次前缀(np821 四批 `b06 / b17 / l17 / l4` = 0.6B 全参 / 1.7B 全参 / 1.7B LoRA / 4B LoRA)。发射时 `--base` / `--lora` / `--grad-ckpt` 一律写在**排卡表的 extra 里**(argparse 后写的赢);驱动器**不读**批次配置 `train.batches` 里的 `base`/`mode` 字段——那两个字段只是给人看的标记,排卡表才是真源。
+
+**新口径的批次前缀(2026-08-28 起)是 `ks828` 加档位训法段**,形状同 np821 的 `b06/l17` 那一段,如 `ks828b06`、`ks828l17`,run_id 例如 `ks828b06_gptoss_cgen`;冒烟落 `pipeline/runs/smoke/<run_id>_smoke`。**`np821` 前缀不许再用于新口径(换实现之后)的 run**——两条口径的丢弃规则、上限、更新单位都不同,混着写前缀会让人误以为数字可比(extending §3.4)。
 
 ---
 
@@ -480,3 +512,6 @@ S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             �
 - **多样本轨迹文件名带 `_r<k>` 后缀**(`appworld_<tid>_r0.jsonl`…,2026-08-22 起,`--traj-per-task 1` 时无后缀=旧名):`build.py`/`param_label.py` 的 glob 都吃得下;但 `pipeline/inject/replay_inject.py:399` 与 `pipeline/inject/score_live.py:119` 仍按 `appworld_<unit>.jsonl` 反查,吃多样本批之前要先改兼容(记录在 WORKPLAN 回写清单)。
 - **预设 `default` 与 `gptoss_default` 是两份文件**:`default` 是全线现役口径(harmony/high/温度 1/top_p 1/max_tokens 8192,带 server 节 tokyo108:8103、显存 0.92,`serve_preset.py` 直接发射),`gptoss_default` 是 OpenAI 官方推荐口径(effort medium,server 节 max_model_len 131072)。manifest 的 `gptoss_client_preset` 写错一个字就换了口径,发射前 `MANIFEST.md` 里核一眼预设名。四个采集器省掉 `--base-url`/`--model` 时,端点与模型名取预设 server 节(`default` 就是 `http://tokyo108:8103/v1` 的 `gpt-oss-120b`),所以命令里这两项缺席仍会打到 tokyo108 那台服务。
 - **驱动器 `run.py pipeline` 没有 `--allow-dirty`**:发射步撞上脏树只会 blocked(原因落 `logs/pipeline/<run_family>/state.json`),commit 干净了再敲;退出码 3 只表示本次真的发射了,已发射还没跑完的批次再敲返回 0(waiting,不重发),0 另外还盖住推进一步与全部完成,4=等裁决(a1 切点停点,把 `max_bounds` 写进批次配置再敲),1=门禁失败。状态文件里有 `launched` 发射标记(`--status` 印出来;确认某批已死要重发,先把它那条标记从状态文件里删掉)与 `manifest_sha1`(c1 生成后 manifest 又改过 → c2/c5 blocked,`gen-launch --force` 重生成并更新该字段)。状态文件在 git 忽略区,`--status` 只读不改。
+- **`--mode` 对 `train_causal_share.py` 是必填旗**(2026-08-28 起,cgen/cparam 现役训练器):不传就是 argparse 报错退出,不是猜一个默认格。`run.py` 的 `train-cgen`/`train-cparam` 已经在 `CELLS`/`TASKS` 里把它带好(`["--mode", "cgen"]`/`["--mode", "cparam"]`),手搓命令才需要自己补。
+- **`train-cgen-rows`/`train-cparam-rows` 是参照不是现役**:这两个任务指向旧逐行脚本 `train_causal_callgen.py`/`train_causal_param.py`(4096、左截、3 个 epoch 的旧口径冻结不变),只用于对齐检查与对照,产物不进矩阵,`best/meta.json` 没有 `trainer` 字段;run_id 形状和现役的 `train-cgen`/`train-cparam` 相同,拿去评测会混进矩阵分不出来(extending §5 #26),run_id 不许用现役批次前缀。
+- **`--tok-budget` 超预算的单个事件独自成块**:`chunk_by_budget` 贪心装块时,一个事件自己的拼接序列长度就超过 `--tok-budget`,不会被拒收或截断,而是自己单独占一个物理块(允许这一块超预算)。→ 长事件多的数据集,`peak_mem_gb` 不能只按 `--tok-budget` 估,要看 `--mem-probe` 的 `longest_event` 那条。
