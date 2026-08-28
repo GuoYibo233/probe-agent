@@ -117,7 +117,8 @@ labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
 
 事件与字段（旧字段保留名字，新字段加在后面）：
 
-- `start`：`base, base_path, env, mode, n_train_events, n_train_rows, n_eval_events, n_eval_rows, dropped_events_train, dropped_events_val, dropped_rows_tgt_train, dropped_rows_tgt_val, assembly_mismatch_train/val（cparam）, steps, epochs, smoke, max_len, max_tgt_tok, tok_budget, eval_tok_budget, events_per_mb, accum, eval_per_epoch, log_every, mem_probe, lr, attn_impl, seed, device, readonly_env, lora（条件）, align_pass, align_maxdiff, align_bf16_warn`。
+- `start`：`base, base_path, env, mode, n_train_events, n_train_rows, n_eval_events, n_eval_rows, dropped_events_train, dropped_events_val, dropped_rows_tgt_train, dropped_rows_tgt_val, assembly_mismatch_train/val（cparam）, steps, epochs, smoke, max_len, max_tgt_tok, tok_budget, eval_tok_budget, events_per_mb, accum, eval_per_epoch, log_every, mem_probe, lr, attn_impl, seed, device, readonly_env, lora（条件）, align_pass, align_maxdiff, align_bf16_warn`；第二轮加 `gen_eval, gen_bs, gen_eval_at, align_rule, mem_probe_pick`（16.3 到 16.5）。
+- 第二轮新增事件与字段（第 16 节）：`eval` 加 `val_exact_call / val_exact_params, gen_n, gen_s`（条件）；`step` 加 `grad_norm`；`mem_probe` 的 `kind` 按 `--mem-probe-pick` 取值并加 `pick, n_tokens, n_rows, n_loss_pos`；新增 `mem_probe_summary`（`pick, worst_gb, worst_kind, scope, n_events_considered`）。
 - `step`（每 `--log-every` 次更新一条，默认 50）：`ep, gstep, rows, loss, lr, ips, ips_win, eps, train_s, peak_mem_gb`。`rows` = 本 epoch 到现在处理的累计行数；`loss` = 自上一条 step 以来全部逻辑小批损失的平均，累加器在写完日志时清零（草稿 2.7 对第 13.7 节的修正）；`train_s` = 本 epoch 累计的训练秒数，评估期间时钟暂停（旧训练器的评估在 epoch 之后，第 486 行的 t0 从不含评估时间，新训练器在 epoch 中间评估所以必须扣掉）；`ips` = `rows / train_s`（口径和旧第 516 行一致）；`ips_win` = 自上一条 step 以来的行数 ÷ 这段的训练秒数；`eps` = 累计事件数 ÷ `train_s`；`peak_mem_gb` = `torch.cuda.max_memory_allocated()` 换算 GB，取完重置。
 - `mem_probe`（`--mem-probe` 打开时，训练开始前写两条）：`kind`（`longest_event` / `fullest_block`）, `n_events, packed_len_max, peak_mem_gb`。做法见第 10 节。
 - 心跳（`extending.md` 第 144 行，不接的脚本在监控窗口里永远是 warm-up）：照旧训练器第 71、481、517、554 行——`import heartbeat`（`ops/heartbeat.py`），训练开始前 `heartbeat.emit(0, steps, "step")`，每条 `step` 日志同时 `heartbeat.emit(gstep, steps, "step", loss=...)`，收尾 `heartbeat.emit(gstep, steps, "step", status="done")`。
@@ -154,6 +155,10 @@ labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
 | `--align-only`, `--align-tol` | off, 2e-5 | 第 9 节（fp32 逐行 ce 的最大绝对差） |
 | `--align-events` | 6 | 对齐检查抽的事件数 |
 | `lora_util.add_args(ap)` | | `--lora` 一族 |
+| `--gen-eval`, `--gen-bs`, `--gen-eval-at` | 200, 8, `last` | 第二轮（16.3）：评估时抽 N 行 greedy 生成报 `val_exact_*`，0 关闭；`last` 只在 epoch 末那次评估做 |
+| `--align-rule`, `--align-rel-tol` | `abs`, 1e-5 | 第二轮（16.4）：判定规则 `abs / rel / both` 与相对门槛 |
+| `--align-tok-tol`, `--align-bf16-mean-tol`, `--align-bf16-max-tol`, `--align-baseline-factor` | 3e-4, 2e-2, 1e-1, 3.0 | 第二轮（16.4）：原常量改成参数，默认值不变 |
+| `--mem-probe-pick` | `cost` | 第二轮（16.5）：探针挑块方式 `tokens / cost / loop` |
 
 `launch_probe.py` 第 80 到 89 行发射时拼的是 `[py, script, --data, --out, --env] + base_args (+ --smoke)`，所以：
 
