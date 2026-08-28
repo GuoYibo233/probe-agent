@@ -63,6 +63,7 @@ from rules import (ALF_CALL, AW_CALL, BFCL_CALL,        # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
 import readonly_map                                     # noqa: E402
+import share_data                                        # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_tool import RISK_TARGETS, THETAS              # noqa: E402
@@ -480,6 +481,11 @@ def main():
                          "只加 self_fire 块,旧字段一个不动")
     ap.add_argument("--fire-bs", type=int, default=0,
                     help="开火打分的批大小(0=沿用 --bs)")
+    ap.add_argument("--overlong", default="left",
+                    choices=["left", "skip", "drop-event"],
+                    help="触发事件全文/提示超长的三种处理(spec 16.2);"
+                         "默认 left(行为与加这个开关之前逐字节不变)。"
+                         "只描述主路径,--self-fire 不受影响")
     args = ap.parse_args()
 
     ctool, cgen = Path(args.ctool_run), Path(args.cgen_run)
@@ -564,6 +570,8 @@ def main():
     for r in rows:
         r["y"] = label2id[r["label"]]
     fired, keys, n_fired, n_ro_excluded = {}, [], 0, 0
+    overlong_counts = dict(n_left_truncated=0, n_skipped_rows=0,
+                          n_dropped_events=0, n_excluded_by_ctool=0)
     if old_mode:
         logits = torch.load(ctool / "logits_test.pt", map_location="cpu")
         assert len(rows) == logits.shape[0], (len(rows), logits.shape)
@@ -578,8 +586,6 @@ def main():
                     if fired[k]["label"] != readonly_map.NON_READONLY]
             n_ro_excluded = len(keys) - len(keep)
             keys = keep
-        if args.limit:
-            keys = keys[:args.limit]
 
     # 2) 生成:CALL_SEP 从训练侧 meta.json 读(不硬编码)
     sep = meta.get("call_sep", FALLBACK_SEP)
@@ -593,6 +599,35 @@ def main():
         cgen / "best",
         dtype=torch.bfloat16 if str(dev).startswith("cuda") else torch.float32
     ).to(dev).eval()
+
+    if old_mode:
+        # --overlong 筛选(分词器加载之后;readonly 排除之后、--limit 之前,
+        # spec 16.2 三步顺序写死)
+        ctool_lmeta = ctool / "logits_test.meta.json"
+        excluded_rows = set()
+        if ctool_lmeta.exists():
+            excluded_rows = set(
+                json.loads(ctool_lmeta.read_text()).get("excluded_idx", []))
+        ev_row_idx = defaultdict(list)
+        for i, r in enumerate(rows):
+            ev_row_idx[r["event"]].append(i)
+        keys_rowmap = {k: ev_row_idx[k] for k in keys}
+        prompt_len = {k: len(tok(fired[k]["row"]["text"] + sep,
+                                add_special_tokens=False,
+                                truncation=False)["input_ids"])
+                     for k in keys}
+        n_full = {}
+        if args.overlong == "drop-event":
+            key_set = set(keys)
+            full_texts = share_data.event_full_texts(
+                [r for r in rows if r["event"] in key_set])
+            n_full = {k: share_data.n_full_tokens(tok, full_texts[k])
+                     for k in keys}
+        keys, overlong_counts = share_data.select_keys(
+            args.overlong, keys_rowmap, n_full, prompt_len, excluded_rows,
+            max_len, args.max_new_tokens)
+        if args.limit:
+            keys = keys[:args.limit]
 
     prompts = [fired[k]["row"]["text"] + sep for k in keys]
     gens = generate(model, tok, prompts, dev, args.bs, max_len,
@@ -620,7 +655,11 @@ def main():
         env=args.env, ctool_run=str(ctool), cgen_run=str(cgen),
         risk=args.risk, theta=theta, temperature=T, call_sep=sep,
         max_new_tokens=args.max_new_tokens, limit=args.limit,
-        n_events_test=n_ev)
+        n_events_test=n_ev, overlong_mode=args.overlong,
+        n_left_truncated=overlong_counts["n_left_truncated"],
+        n_skipped_rows=overlong_counts["n_skipped_rows"],
+        n_dropped_events=overlong_counts["n_dropped_events"],
+        n_excluded_by_ctool=overlong_counts["n_excluded_by_ctool"])
     if old_mode:
         out.update(
             n_events_fired=n_fired, n_events_scored=n,
@@ -653,7 +692,12 @@ def main():
     (cgen / "CALLGEN_REPORT.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1))
 
-    md = [f"# 触发时刻调用生成评测 — {args.env}"]
+    md = [f"# 触发时刻调用生成评测 — {args.env}",
+          f"- overlong_mode={out['overlong_mode']}"
+          f"(n_left_truncated={out['n_left_truncated']}, "
+          f"n_skipped_rows={out['n_skipped_rows']}, "
+          f"n_dropped_events={out['n_dropped_events']}, "
+          f"n_excluded_by_ctool={out['n_excluded_by_ctool']})"]
     if not old_mode:
         md += [f"- 分类头 {ctool.name} 在 risk={args.risk} 上无解 θ,"
                "旧模式整块跳过;本文件只有自主开火那一节。"]
