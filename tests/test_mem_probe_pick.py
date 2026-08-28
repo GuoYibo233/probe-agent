@@ -239,6 +239,12 @@ class TestMemProbeRngRestorationViaMain(unittest.TestCase):
                              "(随机数状态在探针前后被恢复)")
 
 
+def _row(event, sent_idx, n_sents, text, label, label_call, w=1.0):
+    """手造一行训练样本(照 `tests/test_eval_overlong.py` 的同名辅助函数)。"""
+    return dict(event=event, sent_idx=sent_idx, n_sents=n_sents, text=text,
+               label=label, label_call=label_call, w=w)
+
+
 class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
     """终审 F2 回归测试:`--mem-probe-pick tokens` 且 `--readonly-env` 打开
     时,`tr_events` 是按 `ro=ro_tr` 装的(非只读的行整行丢掉),不是训练集
@@ -246,13 +252,16 @@ class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
     就是全集』的判据必须同时要求 `args.readonly_env is None`,否则探针会
     拿过滤后的子集当全集用,还照样标 `scope="full"`。
 
-    造一份只有两个事件的小数据集(不用真实的 186K 行现役数据,不加
-    `--smoke`、不给 `--max-events`,恰好触发旧代码判定"tr_events 就是
-    全集"的条件):一个事件的标签是只读词表里判为 readonly 的,另一个是
-    判为非 readonly 的——`--readonly-env appworld` 打开后,非 readonly
-    那个事件的唯一一行被整行丢掉,`tr_events` 只剩 1 个事件,不再是全集。
-    用 `share_data.load_events` 的调用记录直接验证:探针该不该另装一遍
-    全集,靠这一条 `ro=None` 的调用有没有发生来判,不靠训练结果的数字。
+    造一份只有两个事件、每个事件恰好一行的手造小数据集(spec 16.9 前言:
+    新用例一律用手造的小事件,不读现役 `pipeline/data/nyapass_aw_v1/gptoss`
+    ——那份 val 集 810MB/115211 行,整份逐行读一遍要 13 秒;不加 `--smoke`、
+    不给 `--max-events`,恰好触发旧代码判定"tr_events 就是全集"的条件):
+    一个事件的标签是 `readonly_map.load_table("appworld")` 里第一个判为
+    readonly 的标签,另一个是第一个判为非 readonly 的标签——`--readonly-env
+    appworld` 打开后,非 readonly 那个事件的唯一一行被整行丢掉,`tr_events`
+    只剩 1 个事件,不再是全集。用 `share_data.load_events` 的调用记录直接
+    验证:探针该不该另装一遍全集,靠这一条 `ro=None` 的调用有没有发生来判,
+    不靠训练结果的数字。
     """
 
     def test_readonly_env_forces_reload_even_when_limit_zero(self):
@@ -262,40 +271,17 @@ class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
             self.skipTest(f"peft 未安装:{e}")
         if not Path(QWEN_PATH).exists():
             self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
-        if not VAL_PATH.exists():
-            self.skipTest(f"val 集不存在:{DATA_DIR}")
 
         ro_table = readonly_map.load_table("appworld")
+        ro_label = next(k for k, v in ro_table.items() if v["readonly"])
+        nro_label = next(k for k, v in ro_table.items() if not v["readonly"])
 
-        # 从现役 val 集里各挑一个事件:一个标签只读、一个标签非只读(都要
-        # 在真值表里,不能是表外标签)。非只读的事件在这份数据里普遍要
-        # 更多轮才会走到(实测最短的非只读事件也有 6 行、全文 1786 字符,
-        # 比只读事件长得多),所以不卡固定的行数/字符阈值,两类各自取全文
-        # 最短的那个,保证测试速度仍然是秒级。
-        by_event, order = {}, []
-        with open(VAL_PATH) as f:
-            for line in f:
-                r = json.loads(line)
-                ev = r["event"]
-                if ev not in by_event:
-                    by_event[ev] = []
-                    order.append(ev)
-                by_event[ev].append(r)
-        ro_candidates, nro_candidates = [], []
-        for ev in order:
-            rs = sorted(by_event[ev], key=lambda r: r["sent_idx"])
-            v = ro_table.get(rs[0]["label"])
-            if v is None:
-                continue
-            (ro_candidates if v["readonly"] else nro_candidates).append(
-                (len(rs[-1]["text"]), ev))
-        if not ro_candidates or not nro_candidates:
-            self.skipTest("val 集里找不到同时覆盖只读/非只读标签的事件对")
-        ro_event = min(ro_candidates)[1]
-        nro_event = min(nro_candidates)[1]
-
-        rows = (sorted(by_event[ro_event], key=lambda r: r["sent_idx"])
-               + sorted(by_event[nro_event], key=lambda r: r["sent_idx"]))
+        rows = [
+            _row("ev_ro", 0, 1, "Please show the requested listing now.",
+                ro_label, f"{ro_label}()"),
+            _row("ev_nro", 0, 1, "Please submit the final answer now.",
+                nro_label, f"{nro_label}()"),
+        ]
 
         with tempfile.TemporaryDirectory() as data_dir_s, \
                 tempfile.TemporaryDirectory() as model_dir, \
