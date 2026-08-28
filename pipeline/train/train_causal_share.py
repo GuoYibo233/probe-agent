@@ -232,37 +232,70 @@ def eval_ce(model, events, tok_budget, dev, amp):
 # ---------------------------------------------------------------- 显存探针
 
 def run_mem_probe(model, opt, full_events, args, dev, log, amp):
-    """spec 第 10 节:训练开始前踩最坏块量显存(单个最长事件 + 最满块),
-    优化器已经建好(状态就此分配),记完峰值清掉状态、恢复 lr。"""
+    """spec 第 10 节:训练开始前踩真实最坏情况的显存(工单 06)。
+
+    机理(8-28-assistant-2 判读):训练的真峰在 accum=2 的第二个逻辑小批
+    反向期间——此时优化器状态(AdamW 的两份 fp32 状态,来自上一个 step)
+    与第一个逻辑小批留下的梯度都还在。这里复现同样的条件:优化器状态
+    先建好、最满块连做两次前向加反向(中间不清梯度,即梯度累积),第二次
+    反向后读峰值;最长事件那一块紧接着做,状态已建、梯度未清的条件不变,
+    再做一次前向加反向读峰值。最后清优化器状态、恢复 lr、清梯度。
+
+    建状态要点:AdamW 的 `step()` 只给 `.grad is not None` 的参数分配状态,
+    一个从没做过反向的模型全体 `.grad` 都是 None,直接 `zero_grad` 接
+    `step(lr=0)` 建不出任何状态(本仓 `cprobe-env` 的 torch 2.11.0+cu128 上
+    实测过:`opt.state` 事后是空字典 `{}`,零个 key)。根因不是"建状态这
+    一步前面要不要插一次前向反向",而是 `.grad` 需要先有真实形状的张量——
+    AdamW 分配状态只看 `.grad is not None` 与参数的形状/dtype,不看梯度
+    数值,所以直接给每个可训练参数的 `.grad` 赋 `torch.zeros_like(p)` 就
+    够,不必为此另跑一次前向反向。顺序严格按工单字面写:先把每个可训练
+    参数的 `.grad` 置成零张量,`zero_grad(set_to_none=False)` 保留张量、
+    清零数值(此时已经是零,等价于空操作,但按字面留着这一步调用);再用
+    lr=0 的 `opt.step()`,AdamW 才会真正给每个参数分配
+    exp_avg/exp_avg_sq(`optimizer_state_prebuilt`),参数值不动(lr=0);
+    `reset_peak_memory_stats()` 在这之后;然后才对最满块连做两次前向加
+    反向——建状态这一步之前不发生任何前向或反向。
+    """
     mask_dtype = torch.bfloat16 if amp else torch.float32
     longest, fullest = share_data.worst_blocks(
         full_events, args.tok_budget, args.events_per_mb)
-    for kind, grp in (("longest_event", longest), ("fullest_block", fullest)):
-        if not grp:
-            continue
-        if dev.startswith("cuda"):
-            torch.cuda.reset_peak_memory_stats()
+
+    def _fwd_bwd(grp):
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
             ce_per_row, w = block_row_ce(model, grp, dev, mask_dtype)
             loss = (ce_per_row * w).sum() / w.sum().clamp(min=1e-9)
         loss.backward()
-        b = len(grp)
-        l_pad = _l_pad(grp)
-        orig_lrs = [g["lr"] for g in opt.param_groups]
-        for g in opt.param_groups:
-            g["lr"] = 0.0
-        opt.step()
+
+    orig_lrs = [g["lr"] for g in opt.param_groups]
+    for g in opt.param_groups:
+        for p in g["params"]:
+            p.grad = torch.zeros_like(p)       # 建状态用,不来自任何前向反向
+    opt.zero_grad(set_to_none=False)
+    for g in opt.param_groups:
+        g["lr"] = 0.0
+    opt.step()                                 # 优化器状态就此分配,参数不动
+    if dev.startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats()
+
+    for kind, grp, n_backward in (("fullest_block", fullest, 2),
+                                  ("longest_event", longest, 1)):
+        if not grp:
+            continue
+        for _ in range(n_backward):
+            _fwd_bwd(grp)                      # 中间不 zero_grad,梯度累积
         peak = (torch.cuda.max_memory_allocated() / 1e9
                if dev.startswith("cuda") else 0.0)
+        b = len(grp)
+        l_pad = _l_pad(grp)
         log(event="mem_probe", kind=kind, n_events=b, packed_len_max=l_pad,
             peak_mem_gb=round(peak, 3), B=b, L_pad=l_pad,
-            with_optimizer_state=True)
-        opt.state.clear()
-        for g, lr0 in zip(opt.param_groups, orig_lrs):
-            g["lr"] = lr0
-        opt.zero_grad()
-        if dev.startswith("cuda"):
-            torch.cuda.reset_peak_memory_stats()
+            with_optimizer_state=True, n_backward=n_backward,
+            optimizer_state_prebuilt=True)
+
+    opt.state.clear()
+    for g, lr0 in zip(opt.param_groups, orig_lrs):
+        g["lr"] = lr0
+    opt.zero_grad(set_to_none=True)
 
 
 # ---------------------------------------------------------------- 对齐检查

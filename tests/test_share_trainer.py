@@ -23,6 +23,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "pipeline/train"))
@@ -506,6 +507,112 @@ class TestBlockRowCeUnderLoRA(unittest.TestCase):
         self.assertTrue(
             all(p.grad is None for _n, p in frozen),
             "走 get_base_model() 分支时非适配器参数不该有梯度")
+
+
+class TestRunMemProbeCPU(unittest.TestCase):
+    """工单 06:`run_mem_probe` 的 CPU 收尾状态与日志字段——真正的验收判据是
+    H100 实测(改后 `fullest_block.peak_mem_gb` 是否 >= 训练整程 `step` 峰值,
+    工单不做),这里只验 CPU 上能跑通、收尾干净、字段齐全。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        if not VAL_PATH.exists():
+            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+        if cls.tok.pad_token_id is None:
+            cls.tok.pad_token = cls.tok.eos_token
+        cls.tok.truncation_side = "left"
+        cls.tok.padding_side = "right"
+        cls.tmpdir, cls.data_path = _load_five_short_events()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmpdir.cleanup()
+
+    def test_state_cleared_lr_restored_grad_none_after_probe(self):
+        import argparse
+
+        events, _counts = share_data.load_events(
+            self.data_path, self.tok, mode="cgen", max_len=8192, limit=0)
+        self.assertGreaterEqual(len(events), 2,
+                                "要至少 2 个事件才能凑出最满块")
+
+        torch.manual_seed(SEED)
+        model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
+        model.train()
+        orig_lr = 1e-3
+        opt = torch.optim.AdamW(model.parameters(), lr=orig_lr,
+                                weight_decay=0.01)
+        args = argparse.Namespace(tok_budget=100000, events_per_mb=4)
+        logged = []
+
+        def log(**kw):
+            logged.append(kw)
+
+        tcs.run_mem_probe(model, opt, events, args, "cpu", log, amp=False)
+
+        self.assertEqual(len(opt.state), 0, "探针收尾后 opt.state 应该清空")
+        self.assertTrue(
+            all(g["lr"] == orig_lr for g in opt.param_groups),
+            "探针收尾后各 param_group 的 lr 应该恢复原值")
+        self.assertTrue(
+            all(p.grad is None for p in model.parameters()),
+            "探针收尾后所有参数的 .grad 应该是 None")
+
+        kinds = {e["kind"]: e for e in logged if e.get("event") == "mem_probe"}
+        self.assertEqual(set(kinds), {"longest_event", "fullest_block"},
+                         f"应该写两条 mem_probe 事件,实际:{logged}")
+        for kind, n_backward in (("fullest_block", 2), ("longest_event", 1)):
+            e = kinds[kind]
+            self.assertEqual(e["n_backward"], n_backward,
+                             f"{kind} 的 n_backward 应该是 {n_backward}")
+            self.assertTrue(e["optimizer_state_prebuilt"])
+            self.assertTrue(e["with_optimizer_state"])
+            self.assertEqual(e["peak_mem_gb"], 0.0)   # CPU 上允许为 0
+            for key in ("B", "L_pad", "n_events", "packed_len_max"):
+                self.assertIn(key, e, f"{kind} 缺字段 {key}")
+
+    def test_state_built_before_any_forward_backward(self):
+        """F1(工单 06 修复第 2 轮):按工单字面顺序,建状态这一步(先
+        `opt.zero_grad(set_to_none=False)` 接 lr=0 的 `opt.step()`)之前不
+        应该发生任何前向或反向——用一个会记录『调用发生时 `opt.state` 是否
+        还是空字典』的 `block_row_ce` 替身验证:第一次前向反向发生时,
+        `opt.state` 必须已经非空(状态已经建好),不能有任何一次前向反向发生
+        在 `opt.state` 还是空字典的时候。"""
+        import argparse
+
+        events, _counts = share_data.load_events(
+            self.data_path, self.tok, mode="cgen", max_len=8192, limit=0)
+        self.assertGreaterEqual(len(events), 2,
+                                "要至少 2 个事件才能凑出最满块")
+
+        torch.manual_seed(SEED)
+        model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
+        model.train()
+        opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
+        args = argparse.Namespace(tok_budget=100000, events_per_mb=4)
+        logged = []
+
+        def log(**kw):
+            logged.append(kw)
+
+        state_was_empty_at_call = []
+        real_block_row_ce = tcs.block_row_ce
+
+        def spy(*a, **kw):
+            state_was_empty_at_call.append(len(opt.state) == 0)
+            return real_block_row_ce(*a, **kw)
+
+        with patch.object(tcs, "block_row_ce", side_effect=spy):
+            tcs.run_mem_probe(model, opt, events, args, "cpu", log, amp=False)
+
+        self.assertGreater(len(state_was_empty_at_call), 0,
+                           "应该至少发生一次前向反向")
+        self.assertFalse(any(state_was_empty_at_call),
+                         "建状态这一步之前不应该发生任何前向或反向,"
+                         f"实际记录:{state_was_empty_at_call}")
 
 
 class TestMainSmokeCPU(unittest.TestCase):

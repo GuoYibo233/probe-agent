@@ -261,5 +261,22 @@ class TestScoreCausalOutOfWindow(unittest.TestCase):
         self.assertEqual(out[1, 0].item(), 1.0)          # 窗口内:gather 到 bias
 
 
+class TestPeakMemGb(unittest.TestCase):
+    """工单 06 第 3 条:`step`/`eval` 事件加 `peak_mem_gb`,和新训练器
+    `train_causal_share.py` 同口径(cuda 上读 `max_memory_allocated` 并清空
+    峰值统计,CPU 上恒 0.0)。本文件没有能跑到 `step` 事件的 CPU 用例
+    (`main()` 需要 `--base`/`--data` 的真实分词器与数据集,本文件其余用例
+    都是直接调 `collate`/`score_causal` 这一层),按工单第 3 条的退路,只测
+    写这个字段的函数 `_peak_mem_gb` 本身。"""
+
+    def test_cpu_returns_zero(self):
+        self.assertEqual(train_causal_tool._peak_mem_gb("cpu"), 0.0)
+
+    def test_cpu_repeated_calls_stay_zero(self):
+        # CPU 分支不摸 torch.cuda,重复调用不该因为"没 reset"而累积或报错。
+        for _ in range(3):
+            self.assertEqual(train_causal_tool._peak_mem_gb("cpu"), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
