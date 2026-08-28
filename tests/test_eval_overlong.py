@@ -26,7 +26,7 @@ try:
     import torch
     import transformers
     import share_data
-    from transformers import AutoModel, AutoTokenizer
+    from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
 except ImportError as e:                       # 系统 python3 没有 torch
     raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
 
@@ -42,6 +42,12 @@ try:
 except ImportError as e:
     raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
 except SystemExit as e:
+    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+
+try:
+    import eval_causal_call                     # noqa: E402
+    import eval_causal_param                    # noqa: E402
+except ImportError as e:
     raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
 
 QWEN_PATH = train_causal_tool.MODELS["qwen"]
@@ -223,6 +229,226 @@ class TestCparamPromptLenMaxRule(unittest.TestCase):
                     n_left_truncated_by_tag[tag] += 1
         self.assertEqual(n_left_truncated_by_tag,
                          {"gt_tool": 0, "pred_tool": 1})
+
+
+class _IdentityGenerate:
+    """把 `eval_causal_call.generate` / `eval_causal_param.generate` 换成
+    回声:直接把喂进去的 prompt 原样当"生成结果"返回。测的是触发点/候选行
+    怎么挑出来这一段接线,不是模型真会不会写调用——真模型的输出不可控,
+    回声让报告里的 `gen` 字段直接暴露"喂给模型的 prompt 到底含哪一行 text",
+    从而能断言挑中的是重新选出来的那一行,不是被 ctool 剔除的原触发行。
+    """
+
+    def __call__(self, model, tok, prompts, dev, bs, max_len, max_new,
+                tag=None):
+        return list(prompts)
+
+
+class TestCgenCtoolExclusionWiring(unittest.TestCase):
+    """(b 附加 2)`eval_causal_call.py` 端到端接线(F1 的回归测试):ctool
+    剔除的行不许当触发点候选,候选行剔光的事件计入 `n_excluded_by_ctool`
+    且不判分,部分候选行被剔的事件要在剩下的行里重新挑触发点——不是靠"零
+    logits 天然过不了 θ"这个巧合。只手造一个真实分词器 + 随机初始化的两层
+    模型,`generate` 换成回声,不依赖任何现役 run 目录。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+
+    def test_reselect_and_count_excluded(self):
+        torch.manual_seed(20260828)
+        model = AutoModelForCausalLM.from_config(
+            _tiny_causal_config(len(self.tok)))
+        model.eval()
+
+        rows = [
+            _row("ev_reselect", 0, 2, "ROW0 EXCLUDED CONFIDENT TEXT",
+                "apis.a", "apis.a(x=1)"),
+            _row("ev_reselect", 1, 2, "ROW1 SURVIVING TEXT",
+                "apis.a", "apis.a(x=1)"),
+            _row("ev_full_excl", 0, 2, "ROW2 FULL EXCL A",
+                "apis.a", "apis.a(x=2)"),
+            _row("ev_full_excl", 1, 2, "ROW3 FULL EXCL B",
+                "apis.a", "apis.a(x=2)"),
+            _row("ev_normal", 0, 1, "ROW4 NORMAL TEXT",
+                "apis.a", "apis.a(x=3)"),
+        ]
+        for r in rows:
+            r["args_named"] = []
+        # row0(被剔除,logits 故意比 θ 高得多——「剔除的行不许当候选」这条
+        # 不能靠 θ 天然挡住,得靠接线本身挡);row1(存活,conf 略过 θ,event
+        # 该重新挑到这一行);row2/row3(整个事件都被剔除,logits 是 ctool
+        # 真实产出的零 logits,conf=0.5<θ,老接线里这类事件本来就不会
+        # "fired",既不计入已触发也不计入 n_excluded_by_ctool,静默消失——
+        # 这正是 F1 指出的缺口);row4(正常触发,基线对照)。
+        logits = torch.tensor([
+            [10.0, -10.0],
+            [3.0, -3.0],
+            [0.0, 0.0],
+            [0.0, 0.0],
+            [5.0, -5.0],
+        ])
+        excluded_idx = [0, 2, 3]
+        theta = 0.9
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ctool_dir, cgen_dir, data_dir = (root / "ctool", root / "cgen",
+                                             root / "data")
+            (ctool_dir / "best").mkdir(parents=True)
+            (cgen_dir / "best").mkdir(parents=True)
+            data_dir.mkdir()
+
+            _write_jsonl(rows, data_dir / "test.jsonl")
+            (ctool_dir / "best" / "label_map.json").write_text(
+                json.dumps({"apis.a": 0, "apis.b": 1}))
+            (ctool_dir / "best" / "meta.json").write_text(
+                json.dumps({"data": str(data_dir)}))
+            (ctool_dir / "REPLAY_REPORT.json").write_text(json.dumps(
+                {"temperature": 1.0, "chosen_theta": {"0.05": theta}}))
+            torch.save(logits, ctool_dir / "logits_test.pt")
+            (ctool_dir / "logits_test.meta.json").write_text(
+                json.dumps({"excluded_idx": excluded_idx}))
+
+            self.tok.save_pretrained(cgen_dir / "best")
+            model.save_pretrained(cgen_dir / "best")
+            (cgen_dir / "best" / "meta.json").write_text(json.dumps(
+                {"call_sep": "\n[CALL] ", "max_len": 4096,
+                 "data": str(data_dir)}))
+
+            argv = ["eval_causal_call.py", "--env", "appworld",
+                   "--ctool-run", str(ctool_dir), "--cgen-run", str(cgen_dir),
+                   "--data", str(data_dir), "--risk", "0.05",
+                   "--device", "cpu", "--bs", "2", "--overlong", "left"]
+            old_argv = sys.argv
+            old_generate = eval_causal_call.generate
+            try:
+                sys.argv = argv
+                eval_causal_call.generate = _IdentityGenerate()
+                eval_causal_call.main()
+            finally:
+                sys.argv = old_argv
+                eval_causal_call.generate = old_generate
+
+            out = json.loads((cgen_dir / "CALLGEN_REPORT.json").read_text())
+
+        self.assertEqual(out["n_events_test"], 3)
+        self.assertEqual(out["n_events_fired"], 2,
+                         "ev_full_excl 的两行都是零 logits,不该被算作已触发")
+        self.assertEqual(out["n_excluded_by_ctool"], 1)
+        self.assertEqual(out["n_events_scored"], 2)
+
+        by_event = {s["event"]: s for s in out["samples"]}
+        self.assertIn("ev_reselect", by_event)
+        self.assertNotIn("ev_full_excl", by_event)
+        gen = by_event["ev_reselect"]["gen"]
+        self.assertIn("ROW1 SURVIVING TEXT", gen,
+                     "触发点该重新挑到剩下的那一行")
+        self.assertNotIn("ROW0 EXCLUDED CONFIDENT TEXT", gen,
+                         "被 ctool 剔除的行不许当触发点候选,不管它的 logits"
+                         "多自信")
+
+
+class TestCparamCtoolExclusionWiring(unittest.TestCase):
+    """(b 附加 3)`eval_causal_param.py` 端到端接线(F2 的回归测试),与
+    `TestCgenCtoolExclusionWiring` 同构。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+
+    def test_reselect_and_count_excluded(self):
+        torch.manual_seed(20260828)
+        model = AutoModelForCausalLM.from_config(
+            _tiny_causal_config(len(self.tok)))
+        model.eval()
+
+        rows = [
+            _row("ev_reselect", 0, 2, "ROW0 EXCLUDED CONFIDENT TEXT",
+                "apis.a", "apis.a(x=1)"),
+            _row("ev_reselect", 1, 2, "ROW1 SURVIVING TEXT",
+                "apis.a", "apis.a(x=1)"),
+            _row("ev_full_excl", 0, 2, "ROW2 FULL EXCL A",
+                "apis.a", "apis.a(x=2)"),
+            _row("ev_full_excl", 1, 2, "ROW3 FULL EXCL B",
+                "apis.a", "apis.a(x=2)"),
+            _row("ev_normal", 0, 1, "ROW4 NORMAL TEXT",
+                "apis.a", "apis.a(x=3)"),
+        ]
+        for r in rows:
+            r["args_named"] = []
+        logits = torch.tensor([
+            [10.0, -10.0],
+            [3.0, -3.0],
+            [0.0, 0.0],
+            [0.0, 0.0],
+            [5.0, -5.0],
+        ])
+        excluded_idx = [0, 2, 3]
+        theta = 0.9
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ctool_dir, cparam_dir, data_dir = (root / "ctool",
+                                               root / "cparam", root / "data")
+            (ctool_dir / "best").mkdir(parents=True)
+            (cparam_dir / "best").mkdir(parents=True)
+            data_dir.mkdir()
+
+            _write_jsonl(rows, data_dir / "test.jsonl")
+            (ctool_dir / "best" / "label_map.json").write_text(
+                json.dumps({"apis.a": 0, "apis.b": 1}))
+            (ctool_dir / "best" / "meta.json").write_text(
+                json.dumps({"data": str(data_dir)}))
+            (ctool_dir / "REPLAY_REPORT.json").write_text(json.dumps(
+                {"temperature": 1.0, "chosen_theta": {"0.05": theta}}))
+            torch.save(logits, ctool_dir / "logits_test.pt")
+            (ctool_dir / "logits_test.meta.json").write_text(
+                json.dumps({"excluded_idx": excluded_idx}))
+
+            self.tok.save_pretrained(cparam_dir / "best")
+            model.save_pretrained(cparam_dir / "best")
+            (cparam_dir / "best" / "meta.json").write_text(json.dumps(
+                {"call_sep": "\n[CALL] ", "max_len": 4096,
+                 "data": str(data_dir), "param_only": True}))
+
+            argv = ["eval_causal_param.py", "--env", "appworld",
+                   "--ctool-run", str(ctool_dir),
+                   "--cparam-run", str(cparam_dir),
+                   "--data", str(data_dir), "--risk", "0.05",
+                   "--device", "cpu", "--bs", "2", "--overlong", "left"]
+            old_argv = sys.argv
+            old_generate = eval_causal_param.generate
+            try:
+                sys.argv = argv
+                eval_causal_param.generate = _IdentityGenerate()
+                eval_causal_param.main()
+            finally:
+                sys.argv = old_argv
+                eval_causal_param.generate = old_generate
+
+            out = json.loads((cparam_dir / "PARAM_REPORT.json").read_text())
+
+        self.assertEqual(out["n_events_test"], 3)
+        self.assertEqual(out["n_events_fired"], 2,
+                         "ev_full_excl 的两行都是零 logits,不该被算作已触发")
+        self.assertEqual(out["n_excluded_by_ctool"], 1)
+        self.assertEqual(out["n_events_scored"], 2)
+
+        by_event = {s["event"]: s for s in out["gt_tool"]["samples"]}
+        self.assertIn("ev_reselect", by_event)
+        self.assertNotIn("ev_full_excl", by_event)
+        gen = by_event["ev_reselect"]["gen"]
+        self.assertIn("ROW1 SURVIVING TEXT", gen,
+                     "触发点该重新挑到剩下的那一行")
+        self.assertNotIn("ROW0 EXCLUDED CONFIDENT TEXT", gen,
+                         "被 ctool 剔除的行不许当触发点候选,不管它的 logits"
+                         "多自信")
 
 
 class TestScoreCausalOverlong(unittest.TestCase):
