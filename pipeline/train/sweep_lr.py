@@ -134,7 +134,7 @@ def cmd_plan(args):
         quoted = shlex.quote(r["cmd"])
         print(f"python3 run.py launch --cmd {quoted} --run-id {r['run_id']} "
               f"--track {args.track} --outdir {r['outdir']} "
-              f"--piece <host>:<gpu>")
+              f"--piece <host>:<gpus>")
 
     if args.write:
         out = [dict(run_id=r["run_id"], tag=r["tag"], base=r["base"],
@@ -174,6 +174,16 @@ def summarize_run(run_dir):
         eval_rows.append(dict(ep=e.get("ep"), frac=e.get("frac"),
                                val_ce=e.get("val_ce"), val_exact=val_exact))
 
+    # val_exact 不是每个评估点都有(--gen-eval-at last 时只有 epoch 末那条
+    # 有);spec 16.6 取有值的那个评估点的值,标出它的 (ep, frac),多个点有
+    # 值时取最后一个——按 eval_rows 的顺序遍历,每碰到有值的就覆盖,循环
+    # 完留下的就是最后一个有值的点。
+    val_exact_best = val_exact_frac = None
+    for r in eval_rows:
+        if r["val_exact"] is not None:
+            val_exact_best = r["val_exact"]
+            val_exact_frac = f"{r['ep']}.{r['frac']}"
+
     peak_mem_gb = (max(s.get("peak_mem_gb") for s in steps)
                    if steps else None)
     if mem_summary is not None:
@@ -210,7 +220,8 @@ def summarize_run(run_dir):
             start.get("dropped_events_train") if start else None),
         evals=eval_rows, best_val_ce=best_val_ce, best_frac=best_frac,
         _best_ep=best_ep, wall_s=wall_s, peak_mem_gb=peak_mem_gb,
-        worst_gb=worst_gb)
+        worst_gb=worst_gb, val_exact=val_exact_best,
+        val_exact_frac=val_exact_frac)
 
 
 def _expand_runs(patterns):
@@ -243,7 +254,11 @@ def cmd_report(args):
     for r in records:
         groups.setdefault((r["base"], r["lora"]), []).append(r)
     for key in groups:
-        groups[key].sort(key=lambda r: (r["lr"] is None, r["lr"]))
+        # (x is None, x) 在两条都缺 lr 时拿 (True, None) 比 (True, None),
+        # 第二个元素 None < None 抛 TypeError——None 时换一个可比的替身
+        # (0.0),排序结果不看这个替身的值(第一个元素已经把 None 排到最后)。
+        groups[key].sort(
+            key=lambda r: (r["lr"] is None, r["lr"] if r["lr"] is not None else 0.0))
 
     # 动态列:全部 run 出现过的 (ep, frac) 组合,升序。
     combos = sorted({(e["ep"], e["frac"])
@@ -256,7 +271,7 @@ def cmd_report(args):
     lines.append("")
     combo_cols = [f"val_ce@{ep}.{frac}" for ep, frac in combos]
     header = (["run_id", "lr"] + combo_cols +
-              ["best_val_ce", "best_frac", "val_exact(best)",
+              ["best_val_ce", "best_frac", "val_exact(@ep.frac)",
                "peak_mem_gb", "worst_gb", "wall_s", "status"])
     lines.append("| " + " | ".join(header) + " |")
     lines.append("|" + "|".join(["---"] * len(header)) + "|")
@@ -266,21 +281,25 @@ def cmd_report(args):
 
     for key in sorted(groups, key=lambda k: (k[0] or "", k[1])):
         rows = groups[key]
+        # 同上:两条都缺 best_val_ce 时 None 换成可比的替身 0.0,不影响排序
+        # (第一个元素已经把 None 排到最后)。
         best_i = min(range(len(rows)), key=lambda i: (
-            rows[i]["best_val_ce"] is None, rows[i]["best_val_ce"]))
+            rows[i]["best_val_ce"] is None,
+            rows[i]["best_val_ce"] if rows[i]["best_val_ce"] is not None else 0.0))
         for i, r in enumerate(rows):
             by_combo = {(e["ep"], e["frac"]): e["val_ce"] for e in r["evals"]}
-            val_exact_best = None
-            for e in r["evals"]:
-                if e["ep"] == r["_best_ep"] and e["frac"] == r["best_frac"]:
-                    val_exact_best = e["val_exact"]
-                    break
+            # val_exact 取的是"有值的那个评估点"(spec 16.6),不一定是
+            # best_val_ce 所在的评估点——summarize_run 已经按这条规则挑好
+            # 存进 r["val_exact"]/r["val_exact_frac"],这里直接读,不再按
+            # best_ep/best_frac 重新配对。
+            val_exact_cell = ("-" if r["val_exact"] is None else
+                              f"{r['val_exact']}@{r['val_exact_frac']}")
             run_id_cell = ("*" + r["run_id"]) if i == best_i else r["run_id"]
             lr_cell = fmt_lr(r["lr"]) if r["lr"] is not None else "-"
             row = [run_id_cell, lr_cell]
             row += [_fmt(by_combo.get(c)) for c in combos]
             row += [_fmt(r["best_val_ce"]), _fmt(r["best_frac"]),
-                    _fmt(val_exact_best), _fmt(r["peak_mem_gb"]),
+                    val_exact_cell, _fmt(r["peak_mem_gb"]),
                     _fmt(r["worst_gb"]), _fmt(r["wall_s"]), r["status"]]
             lines.append("| " + " | ".join(row) + " |")
 

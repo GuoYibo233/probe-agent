@@ -34,6 +34,7 @@ except ImportError as e:                       # 系统 python3 没有 torch
 try:
     import train_causal_share as tcs           # noqa: E402
     import share_data                          # noqa: E402
+    import readonly_map                        # noqa: E402
 except ImportError as e:                       # 系统 python3 没有 transformers
     raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
 except SystemExit as e:                        # mbert-env 的 transformers<5.14
@@ -236,6 +237,122 @@ class TestMemProbeRngRestorationViaMain(unittest.TestCase):
             self.assertEqual(loss_with_probe, loss_without_probe,
                              "带探针与不带探针的 run 训练部分应该逐位相同"
                              "(随机数状态在探针前后被恢复)")
+
+
+class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
+    """终审 F2 回归测试:`--mem-probe-pick tokens` 且 `--readonly-env` 打开
+    时,`tr_events` 是按 `ro=ro_tr` 装的(非只读的行整行丢掉),不是训练集
+    全集——`(not args.smoke) and args.max_events == 0` 这条『tr_events 本来
+    就是全集』的判据必须同时要求 `args.readonly_env is None`,否则探针会
+    拿过滤后的子集当全集用,还照样标 `scope="full"`。
+
+    造一份只有两个事件的小数据集(不用真实的 186K 行现役数据,不加
+    `--smoke`、不给 `--max-events`,恰好触发旧代码判定"tr_events 就是
+    全集"的条件):一个事件的标签是只读词表里判为 readonly 的,另一个是
+    判为非 readonly 的——`--readonly-env appworld` 打开后,非 readonly
+    那个事件的唯一一行被整行丢掉,`tr_events` 只剩 1 个事件,不再是全集。
+    用 `share_data.load_events` 的调用记录直接验证:探针该不该另装一遍
+    全集,靠这一条 `ro=None` 的调用有没有发生来判,不靠训练结果的数字。
+    """
+
+    def test_readonly_env_forces_reload_even_when_limit_zero(self):
+        try:
+            import peft  # noqa: F401
+        except ImportError as e:
+            self.skipTest(f"peft 未安装:{e}")
+        if not Path(QWEN_PATH).exists():
+            self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
+        if not VAL_PATH.exists():
+            self.skipTest(f"val 集不存在:{DATA_DIR}")
+
+        ro_table = readonly_map.load_table("appworld")
+
+        # 从现役 val 集里各挑一个事件:一个标签只读、一个标签非只读(都要
+        # 在真值表里,不能是表外标签)。非只读的事件在这份数据里普遍要
+        # 更多轮才会走到(实测最短的非只读事件也有 6 行、全文 1786 字符,
+        # 比只读事件长得多),所以不卡固定的行数/字符阈值,两类各自取全文
+        # 最短的那个,保证测试速度仍然是秒级。
+        by_event, order = {}, []
+        with open(VAL_PATH) as f:
+            for line in f:
+                r = json.loads(line)
+                ev = r["event"]
+                if ev not in by_event:
+                    by_event[ev] = []
+                    order.append(ev)
+                by_event[ev].append(r)
+        ro_candidates, nro_candidates = [], []
+        for ev in order:
+            rs = sorted(by_event[ev], key=lambda r: r["sent_idx"])
+            v = ro_table.get(rs[0]["label"])
+            if v is None:
+                continue
+            (ro_candidates if v["readonly"] else nro_candidates).append(
+                (len(rs[-1]["text"]), ev))
+        if not ro_candidates or not nro_candidates:
+            self.skipTest("val 集里找不到同时覆盖只读/非只读标签的事件对")
+        ro_event = min(ro_candidates)[1]
+        nro_event = min(nro_candidates)[1]
+
+        rows = (sorted(by_event[ro_event], key=lambda r: r["sent_idx"])
+               + sorted(by_event[nro_event], key=lambda r: r["sent_idx"]))
+
+        with tempfile.TemporaryDirectory() as data_dir_s, \
+                tempfile.TemporaryDirectory() as model_dir, \
+                tempfile.TemporaryDirectory() as out_root:
+            data_dir = Path(data_dir_s)
+            for split in ("train.jsonl", "val.jsonl"):
+                with open(data_dir / split, "w") as f:
+                    for r in rows:
+                        f.write(json.dumps(r) + "\n")
+
+            tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+            torch.manual_seed(SEED)
+            model = AutoModelForCausalLM.from_config(_tiny_config(len(tok)))
+            model.save_pretrained(model_dir)
+            tok.save_pretrained(model_dir)
+
+            ro_calls = []
+            orig_load_events = share_data.load_events
+
+            def _spy_load_events(*a, **kw):
+                ro_calls.append(kw.get("ro"))
+                return orig_load_events(*a, **kw)
+
+            out = Path(out_root) / "run"
+            # 特意不给 --smoke、不给 --max-events(默认 0):这正是旧代码
+            # `(not args.smoke) and args.max_events == 0` 判定"tr_events
+            # 本来就是全集"的条件,配合 --readonly-env 才会暴露 F2。
+            argv = ["train_causal_share.py", "--mode", "cgen",
+                   "--base", model_dir, "--data", str(data_dir),
+                   "--out", str(out), "--align-events", "2",
+                   "--device", "cpu", "--lora", "--mem-probe",
+                   "--mem-probe-pick", "tokens",
+                   "--readonly-env", "appworld"]
+            old_argv = sys.argv
+            with patch.object(share_data, "load_events",
+                             side_effect=_spy_load_events):
+                sys.argv = argv
+                try:
+                    tcs.main()
+                finally:
+                    sys.argv = old_argv
+
+        # main() 里 --readonly-env 打开时会调 4 次 load_events:对齐检查
+        # (run_align_check 内部另装一份小样本对拍,ro=ro_new)、tr_events
+        # (ro=ro_tr)、ev_events(ro=ro_ev)——这三次都带非 None 的 ro;
+        # `--mem-probe-pick tokens` 且 `--readonly-env` 打开时必须再装一遍
+        # 全集,最后一次调用必须传 ro=None——退回旧逻辑(直接拿 tr_events
+        # 当全集)的话,load_events 只会被调前面那 3 次,不会有第 4 次。
+        self.assertEqual(len(ro_calls), 4,
+                         "readonly_env 打开时 mem-probe-pick=tokens 必须"
+                         "重新装一遍全集(load_events 该被调 4 次:"
+                         "对齐检查/train/val/mem-probe 全集)")
+        self.assertTrue(all(c is not None for c in ro_calls[:-1]),
+                        f"前 3 次调用都该带非 None 的 ro:{ro_calls[:-1]}")
+        self.assertIsNone(ro_calls[-1],
+                         "最后一次(mem-probe 全集重装)必须传 ro=None,"
+                         "不能沿用 readonly 过滤过的 tr_events")
 
 
 if __name__ == "__main__":
