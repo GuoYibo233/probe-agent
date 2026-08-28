@@ -7,8 +7,10 @@
 
 - 输入: <data_out>/{train,val}.jsonl + tool_vocab.json
 - 底座: --base qwen -> Qwen3-0.6B-Base / qwen17 -> 1.7B / qwen4 -> 4B
-- 截断: fast tokenizer 左截 --max-len(保思考尾巴),offset_mapping 指向原字符串;
-  左截丢掉的边界跳过并计数(n_bound_dropped)
+- 上限: --max-len(默认 8192)按事件全文 token 数整条丢弃超长事件(不截断),
+  计数进 start 事件的 dropped_events_train/dropped_events_val;读取位置规则
+  (share_data.read_position)在留下的事件里找不到切点时才计 n_bound_dropped,
+  预期恒为 0
 - 评估: 每轮 val 报 calA_weighted_acc + calA_lastbound_acc(日志字段名照旧不改)
 - 产物: <out>/{ALIGN_CHECK.json, train_log.jsonl, best/}
 - LoRA: `--lora` 只把底座换成 LoRA 训(分类头照常全参),存 best 之前先
@@ -58,6 +60,7 @@ from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warm
 
 import lora_util
 import readonly_map
+import share_data
 
 import sys as _sys
 from pathlib import Path as _Path
@@ -79,8 +82,12 @@ SPOT = 50          # 前缀性质抽查的事件数
 
 # ---------------------------------------------------------------- 数据
 
-def load_events(path, label2id, limit=0, spot=SPOT, ro=None):
-    """按 event 分组:全文 = 最大 sent_idx 样本的 text,边界 = 各样本 len(text)。"""
+def load_events(path, label2id, tok, max_len, limit=0, spot=SPOT, ro=None):
+    """按 event 分组:全文 = 最大 sent_idx 样本的 text,边界 = 各样本 len(text)。
+
+    全文 token 数(`tok(full, add_special_tokens=False)`)超过 `max_len` 的
+    事件整条丢弃(spec 11.1),返回值多带一个丢弃计数。
+    """
     ev = defaultdict(list)
     if ro is None:
         for line in open(path):
@@ -115,10 +122,19 @@ def load_events(path, label2id, limit=0, spot=SPOT, ro=None):
             f"事件 {e['event']} 的样本 text 不互为前缀"
     for e in events:
         e.pop("rows")
+    dropped = 0
+    kept = []
+    for e in events:
+        n_full = len(tok(e["full"], add_special_tokens=False)["input_ids"])
+        if n_full > max_len:
+            dropped += 1
+            continue
+        kept.append(e)
+    events = kept
     if limit:
         rng.shuffle(events)
         events = events[:limit]
-    return events
+    return events, dropped
 
 
 class EventDS(Dataset):
@@ -134,20 +150,17 @@ class EventDS(Dataset):
 
 def collate(batch, tok, max_len):
     """整段一次前向所需的一批事件:返回 enc + 每个监督位置的 (行, 列, y, w, last)。"""
-    enc = tok([e["full"] for e in batch], truncation=True, max_length=max_len,
+    enc = tok([e["full"] for e in batch], truncation=False, max_length=max_len,
               padding=True, return_offsets_mapping=True, return_tensors="pt")
     offs = enc.pop("offset_mapping")
     rows, cols, ys, ws, lasts, dropped = [], [], [], [], [], 0
     for i, e in enumerate(batch):
-        ends = offs[i, :, 1].tolist()
+        full = e["full"]
+        offsets_i = offs[i].tolist()
         keep = int(enc["attention_mask"][i].sum())
         for b, w, last in e["bounds"]:
-            j = -1
-            for t in range(keep - 1, -1, -1):        # 最大的 j: 0 < end <= b
-                if 0 < ends[t] <= b:
-                    j = t
-                    break
-            if j < 0:                                 # 左截把这个边界截没了
+            j = share_data.read_position(offsets_i, full, b, keep)
+            if j < 0:                # 找不到读取位置的切点数(n_bound_dropped),预期 0
                 dropped += 1
                 continue
             rows.append(i)
@@ -206,7 +219,7 @@ def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL):
     model.eval()
     prev_prec = torch.get_float32_matmul_precision()
     torch.set_float32_matmul_precision("highest")   # 禁 TF32,别让降精度冒充算错
-    ids = tok(text, truncation=True, max_length=max_len,
+    ids = tok(text, truncation=False, max_length=max_len,
               return_tensors="pt")["input_ids"].to(dev)
     n = ids.shape[1]
     ones = torch.ones_like(ids)
@@ -271,9 +284,9 @@ def main():
     ap.add_argument("--data", required=True,
                     help="数据目录 <data_out>(含 train/val.jsonl 与 tool_vocab.json)")
     ap.add_argument("--out", required=True, help="产物目录(必填,防覆盖旧件)")
-    ap.add_argument("--max-len", type=int, default=4096)
+    ap.add_argument("--max-len", type=int, default=8192)
     ap.add_argument("--bs", type=int, default=4, help="事件数/批")
-    ap.add_argument("--accum", type=int, default=8)
+    ap.add_argument("--accum", type=int, default=2)
     ap.add_argument("--lr", type=float, default=None,
                     help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
                          "这里显式给了就以显式值为准)")
@@ -331,7 +344,8 @@ def main():
         lim_tr = min(lim_tr, args.max_events) if lim_tr else args.max_events
         lim_ev = min(lim_ev, args.max_events) if lim_ev else args.max_events
     epochs = 1 if args.smoke else args.epochs
-    ev_events = load_events(data / "val.jsonl", label2id, ro=ro_ev)
+    ev_events, dropped_events_val = load_events(
+        data / "val.jsonl", label2id, tok, args.max_len, ro=ro_ev)
     longest = max(ev_events, key=lambda e: len(e["full"]))["full"]
     if lim_ev:
         random.Random(SEED).shuffle(ev_events)
@@ -355,7 +369,8 @@ def main():
     if args.align_only:
         return
 
-    tr_events = load_events(data / "train.jsonl", label2id, lim_tr, ro=ro_tr)
+    tr_events, dropped_events_train = load_events(
+        data / "train.jsonl", label2id, tok, args.max_len, lim_tr, ro=ro_tr)
     if args.readonly_env:
         (out / "READONLY.json").write_text(json.dumps(dict(
             readonly_env=args.readonly_env,
@@ -397,6 +412,8 @@ def main():
         align_pass=rep["PASS"], align_maxdiff_hidden=rep["maxdiff_hidden"],
         align_maxdiff_logits=rep["maxdiff_logits"],
         readonly_env=args.readonly_env,
+        dropped_events_train=dropped_events_train,
+        dropped_events_val=dropped_events_val,
         **(dict(lora=lora_util.meta_block(args, lr)) if args.lora else {}))
     heartbeat.emit(0, steps, "step")
 
@@ -423,7 +440,7 @@ def main():
                     log(event="step", ep=ep, gstep=gstep,
                         loss=round(run / (50 * args.accum), 4),
                         ips=round((i + 1) * args.bs / (time.time() - t0), 2),
-                        n_bound_dropped=ndrop)
+                        n_bound_dropped=ndrop, lr=sch.get_last_lr()[0])
                     heartbeat.emit(gstep, steps, "step",
                                    loss=round(run / (50 * args.accum), 4))
                     run = 0.0
