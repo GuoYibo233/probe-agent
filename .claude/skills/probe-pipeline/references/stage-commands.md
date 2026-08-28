@@ -224,6 +224,11 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 | `--lora` | ctool/cgen/cparam(np821 起) | 底座换 LoRA 训,**分类头/开火头照常全参**;存 `best/` 之前先 `merge_and_unload` 并回底座再 `save_pretrained`,所以 `best/` 与全参训练存的逐项同构、**四个评测脚本零改动装得回**(它们一律 `from_pretrained(best/)`)。`meta.json` 多一个 `lora` 块记超参。不传本旗时脚本自己不碰 peft(peft 的 import 全在 `--lora` 分支里),行为与加这套旗标之前一致。旗标/默认值/target modules 的唯一真源是 `pipeline/train/lora_util.py`(三格共用,别处不许再抄) |
 | `--lora-rank` / `--lora-alpha` / `--lora-dropout` / `--lora-lr` | 同上三格 | 默认 16 / 32 / 0.05 / 2e-4(口径见 invariants §3 的 LoRA 行)。**学习率的优先级**:显式 `--lr` > `--lora-lr`(开 `--lora` 时) > 全参默认 1e-5——三个脚本的 `--lr` 默认值是 `None` 就是为了分得清"没传"和"传了个跟默认一样的值" |
 | `--grad-ckpt` | **ctool/cgen/cparam/mext**(mtool 没有) | OOM 唯一合规处置(invariants §6)。全参与 `--lora` 两种模式都能用。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解。**z1 实测(2026-08-10):gptoss 轨迹的 ctool/cgen 不带 fire-head、默认超参也在 48G A6000 直接 OOM**——当时 cgen 还没有本旗,只能换 H100/H200 大卡(`launch --refire` 换 `--piece` 即可);np821 起三个因果格都有本旗,处置改为先加旗 |
+| `--gen-eval` / `--gen-bs` / `--gen-eval-at` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起,spec 16.3、工单 08) | `--gen-eval N` 训练评估时额外做的生成式评估行数,默认 `200`(0 关闭);`--gen-bs` 生成批大小,默认 `8`;`--gen-eval-at {all,last}` 默认 `last`(只在 `frac==E` 那次评估——epoch 末——做生成),`all` 每个评估点都做。开着时 `eval` 日志多 `val_exact_call`(cgen)/`val_exact_params`(cparam)、`gen_n`、`gen_s` 三个键(`--gen-eval 0` 或非该评估点时不写);选 best 仍只看 `val_ce`(决定 28,不变) |
+| `--align-tok-tol` / `--align-bf16-mean-tol` / `--align-bf16-max-tol` / `--align-baseline-factor` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起) | 原来写死在模块常量里的四个对齐粗筛门槛全部改成参数,默认值就是原常量:分别 `3e-4` / `2e-2` / `1e-1` / `3.0`;模块顶部的同名常量已删,参数默认值是唯一真源 |
+| `--align-rule` / `--align-rel-tol` | ctool 与 cgen/cparam 都有(ctool 只有这两个新增旗,没有上面那四个粗筛门槛) | `--align-rule {abs,rel,both}` 默认 `abs`(现状,逐行/逐 token 绝对差,ctool 是 `max(d_h, d_l) < tol`);`rel` 判相对差——cgen/cparam 是 `rel_max_abs_diff = max_abs_diff / mean(|ce_ref|) ≤ --align-rel-tol`,ctool 是 `reldiff_hidden ≤ tol 且 reldiff_logits ≤ tol`(这两个量 ctool 原来就在算,只是"诊断用不参与判定",现在接进判据);`both` 两条同时成立。`--align-rel-tol` 默认 `1e-5`(两边都是)。`ALIGN_CHECK.json` 都写全 `rule`/`rel_tol` 等新键,已有键不动 |
+| `--mem-probe-pick` | 仅 cgen/cparam,配 `--mem-probe`(spec 16.5,工单 10) | `{tokens,cost,loop}`,默认 `cost`。`tokens`=现状,全集里按 token 数挑最满块加最长事件,状态先建、连做两次反向;`cost`=只在本次 run 抽样出的事件上枚举 epoch 0 全部物理块,按"token 数最大"/"损失位数最大"/"两者各除以全局最大值再求和最大"挑三块(重复的块只跑一次),取三者峰值里最大的;`loop`=对 `cost` 挑出的三块里"损失位最多"那块所在的更新组,原样跑一次更新(lr 置 0 的 `opt.step()`,跑完 `opt.state.clear()`)。三种方式共用"建状态→reset 峰值→跑→读峰值→清状态、恢复 lr、清梯度"骨架,末尾都写一条 `mem_probe_summary`(字段 `pick, worst_gb, worst_kind, scope, n_events_considered`,`loop` 另加 `worst_group_of`);`scope` = `full`(`tokens`,量的是全集)或 `run`(`cost`/`loop`,只量本次 run 抽样出的事件——`--smoke`/`--max-events` 下这个数是小样本,不能拿去排全量的卡,extending §5 #36) |
+| `--overlong` | 三个评测脚本(`eval_causal_call.py`/`eval_causal_param.py`/`eval_tool.py`,spec 16.2,工单 07) | `{left,skip,drop-event}`,默认 `left`。`left`=现状,提示/全文超长照旧左截:cgen/cparam 记 `n_left_truncated`(cparam 按 gt_tool/pred_tool 两套提示的最大长度 `L(k)` 算,另记 `n_left_truncated_by_tag`),ctool 窗口外边界记零 logits、计 `n_oow`;`skip`=超长的样本本身不进任何分母:cgen/cparam 记 `n_skipped_rows`,ctool 记 `n_skipped_bounds`;`drop-event`=事件全文 token 数超过 `max_len` 就整个事件不判分:cgen/cparam 记 `n_dropped_events`(还有 `n_excluded_by_ctool`,记 ctool 剔完候选行后没有触发点候选的事件),ctool 记 `n_dropped_events` 与 `n_dropped_bounds`。只对 `eval_tool.py --head causal` 生效,`--head mbert` 传非 `left` 直接 `SystemExit`(mbert 报告 `overlong_mode` 恒写 `left`)。所有报告都写 `overlong_mode` 与对应计数(没发生的写 0,不省略键);两份报告(ctool 与 cgen/cparam)各记各的 `overlong_mode`,读的人要对着一起看(extending §5 #28) |
 
 其余全用默认(mbert 两格仍 `--max-len 4096 --bs 8 --accum 4 --lr 2e-5 --epochs 3`;因果三格 2026-08-28 起换新口径——三格同一个上限 `--max-len 8192`(超长事件整条丢弃,不再截断,三格才不分叉训练事件集):ctool `--bs 2 --accum 4 --lr 1e-5 --epochs 3`,cgen/cparam(新训练器)`--events-per-mb 4 --accum 2 --lr 1e-5 --epochs 1 --tok-budget 16384`,开 `--lora` 时 lr 换 2e-4。**np821 批用的是 `--max-len 4096`、因果三格 `--bs 4 --accum 8`、`--epochs 3`**)。c1 那 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参;np821 四批同样只动 `--base` / `--lora` / `--grad-ckpt` 三个旗;`ks828` 起的新口径见本节新增的参数行与下面 `train_causal_share.py` 的真实命令。
 
@@ -233,6 +238,9 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 - ctool → `<out>/ALIGN_CHECK.json` + `<out>/best/{HF backbone, tokenizer, head.pt, label_map.json, meta.json}` + `train_log.jsonl`
 - cgen → `<out>/ALIGN_CHECK.json` + `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep`)+ `train_log.jsonl`
 - cparam → `<out>/ALIGN_CHECK.json` + `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
+- `sweep-lr plan --write` → `<写的 json>`(每条 9 个字段);`sweep-lr report --out` → `SWEEP_REPORT.json/.md`(2026-08-28 起,spec 16.6)
+- 各格开 `--mem-probe` 时 `train_log.jsonl` 多写 `mem_probe`(每块/每组一条)与收尾一条 `mem_probe_summary` 事件(2026-08-28 起,spec 16.5,字段见 §3 参数表 `--mem-probe-pick` 行)
+- 三个评测脚本的报告(`REPLAY_REPORT.json`/`CALLGEN_REPORT.json`/`PARAM_REPORT.json`及对应 `.md`)都多写 `overlong_mode` 与对应计数键(2026-08-28 起,spec 16.2,字段见 §3 参数表 `--overlong` 行)
 
 **退出码**:ctool 与 cgen/cparam 的对齐检查 FAIL 都 `sys.exit(2)`,两者判据不同(ctool 比整段前向对逐 token 增量前向的隐状态与 logits,容差 3e-4;cgen/cparam 比逐行 ce 对旧逐行训练器,逐行 2e-5 逐 token 3e-4)。`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。`share_data.load_events` 的两道硬停(装载后 0 行、cparam 剥离失败率超 5%)是 `SystemExit` 非 0。
 
@@ -258,6 +266,19 @@ cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
 # 另跑一次 --tok-budget 24576;expandable_segments 开关已实测不采纳(见上面 --tok-budget 行)
 ```
 
+**学习率扫描(`pipeline/train/sweep_lr.py`,spec 16.6,工单 11;两个子命令都是纯 CPU,注册进 `run.py` 的 `sweep-lr`,GPU 发射仍走 gpu-run)**:
+
+```bash
+# plan:按 GRID 常量(b06/b17/l17/l4 四配置 × 三个学习率锚点)出 12 条命令,落一份 plan.json 备查
+python3 run.py sweep-lr plan --write pipeline/runs/sweep/plan.json
+
+# report:扫完之后收一批 run 目录的 train_log.jsonl 成表
+python3 run.py sweep-lr report --runs pipeline/runs/sweep/ks828* \
+  --out pipeline/runs/sweep
+```
+
+`plan` 打印的 12 行 `python3 run.py launch --cmd ... --run-id ... --track kvshare-lr-sweep --outdir ...` 命令末尾带占位 `--piece <host>:<gpus>`,发射员换成排卡表的实际卡再发;`report` 出 `SWEEP_REPORT.json/.md`,按配置分组、组内按学习率升序,每组 `best_val_ce` 最低那行标 `*`。产物目录 `pipeline/runs/sweep/` 不进矩阵、不进 `summarize_matrix.py`(run_id 是四段 `ks828<tag>_gptoss_cgen_lr<lr>`,比现役训练格的三段 `{批次}_{模型}_{格}` 多一段,见 §3.2)。
+
 ### 3.1 显存实测表(np821 实测:gpt-oss 轨迹 / `--max-len 4096` / `--bs 4 --accum 8`)
 
 挑卡先查这张表,别按模型大小拍脑袋——**装不装得下的分水岭是 `--grad-ckpt` 开没开,不是模型多大**(0.6B 不开 gc 的峰值比 1.7B 开 gc 高一倍)。
@@ -271,13 +292,15 @@ cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
 | ctool 0.6B 全参,`--max-len 8192 × --bs 2`(ks828,2026-08-28 起新默认) | 56,859 MiB(H100,nvidia-smi 采样) | — | — | 新口径,tokyo108 **H100** 非 48G 卡;`--bs 4` 同条件训练第一批 OOM(进程 92.94 GiB,决定 15,`ops/runs.jsonl` 的 `ks828b06_gptoss_ctool_h100mem_bs2`) |
 | cgen 新训练器(`train_causal_share.py`)`--tok-budget 16384`(ks828) | — | 60.59 GB allocated(H100,`torch.cuda.max_memory_allocated`) | — | 新口径,tokyo108 **H100** 非 48G 卡;`--tok-budget 24576` 峰值 80.91 GB、慢 15%(`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`) |
 
-(单位 GiB,峰值,末两行单位见各自单元格。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。末两行是 ks828 新口径在 H100 上的实测,和上面 np821/48G 的四行不同轴,不能直接横向比。③ **cgen/cparam 新训练器的 `--mem-probe` 是下界估计,排卡按「最满块探针 × 1.1」再判余量**:2026-08-28 终验里探针最满块比同预算整程 step 峰值低 7.5%(16384:54.38 对 58.47 GB)与 5.8%(24576:76.47 对 80.91 GB),`ks828b06_gptoss_cgen_final_b16k` / `_final_b24k_probe` 的 `mem_probe` 事件;这 1.1 只盖已分配峰值之间的差,② 的碎片折扣是另一层,两道都要打。
+(单位 GiB,峰值,末两行单位见各自单元格。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。末两行是 ks828 新口径在 H100 上的实测,和上面 np821/48G 的四行不同轴,不能直接横向比。③ **cgen/cparam 新训练器的 `--mem-probe` 是下界估计,排卡按「`mem_probe_summary.worst_gb` × 1.1」再打碎片折**(2026-08-28 起,spec 16.5、工单 10 收账;`--mem-probe-pick` 默认 `cost`,§3 参数表有三种挑法):2026-08-28 终验(旧口径,`tokens` 探针)里探针最满块比同预算整程 step 峰值低 7.5%(16384:54.38 对 58.47 GB)与 5.8%(24576:76.47 对 80.91 GB),`ks828b06_gptoss_cgen_final_b16k` / `_final_b24k_probe` 的 `mem_probe` 事件;这 1.1 只盖已分配峰值之间的差,② 的碎片折扣是另一层,两道都要打。
 
 ### 3.2 LoRA 批与全参批的关系
 
 `--lora` 不是新格,是**训法轴**:同样三格(ctool/cgen/cparam)、同一份数据、同一套评测脚本,只换底座怎么训。run_id 模板里既没有底座档位段也没有训法段,所以**一个批次只跑一档 `--base` + 一种训法**,档位与训法写进批次前缀(np821 四批 `b06 / b17 / l17 / l4` = 0.6B 全参 / 1.7B 全参 / 1.7B LoRA / 4B LoRA)。发射时 `--base` / `--lora` / `--grad-ckpt` 一律写在**排卡表的 extra 里**(argparse 后写的赢);驱动器**不读**批次配置 `train.batches` 里的 `base`/`mode` 字段——那两个字段只是给人看的标记,排卡表才是真源。
 
 **新口径的批次前缀(2026-08-28 起)是 `ks828` 加档位训法段**,形状同 np821 的 `b06/l17` 那一段,如 `ks828b06`、`ks828l17`,run_id 例如 `ks828b06_gptoss_cgen`;冒烟落 `pipeline/runs/smoke/<run_id>_smoke`。**`np821` 前缀不许再用于新口径(换实现之后)的 run**——两条口径的丢弃规则、上限、更新单位都不同,混着写前缀会让人误以为数字可比(extending §3.4)。
+
+**学习率扫描的 run_id 是四段**(`sweep_lr.py`,spec 16.6,工单 11):`ks828<tag>_gptoss_cgen_lr<lr>`(`<tag>` 是 b06/b17/l17/l4,`<lr>` 写成 `1e-5` 这种形状),比现役训练格三段的 `{批次}_{模型}_{格}` 多一段;产物落 `pipeline/runs/sweep/`,**不进矩阵、不进 `summarize_matrix.py`**——它只用来选各配置的学习率,不是要进 MATRIX 表的格。
 
 ---
 
@@ -514,4 +537,4 @@ S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             �
 - **驱动器 `run.py pipeline` 没有 `--allow-dirty`**:发射步撞上脏树只会 blocked(原因落 `logs/pipeline/<run_family>/state.json`),commit 干净了再敲;退出码 3 只表示本次真的发射了,已发射还没跑完的批次再敲返回 0(waiting,不重发),0 另外还盖住推进一步与全部完成,4=等裁决(a1 切点停点,把 `max_bounds` 写进批次配置再敲),1=门禁失败。状态文件里有 `launched` 发射标记(`--status` 印出来;确认某批已死要重发,先把它那条标记从状态文件里删掉)与 `manifest_sha1`(c1 生成后 manifest 又改过 → c2/c5 blocked,`gen-launch --force` 重生成并更新该字段)。状态文件在 git 忽略区,`--status` 只读不改。
 - **`--mode` 对 `train_causal_share.py` 是必填旗**(2026-08-28 起,cgen/cparam 现役训练器):不传就是 argparse 报错退出,不是猜一个默认格。`run.py` 的 `train-cgen`/`train-cparam` 已经在 `CELLS`/`TASKS` 里把它带好(`["--mode", "cgen"]`/`["--mode", "cparam"]`),手搓命令才需要自己补。
 - **`train-cgen-rows`/`train-cparam-rows` 是参照不是现役**:这两个任务指向旧逐行脚本 `train_causal_callgen.py`/`train_causal_param.py`(4096、左截、3 个 epoch 的旧口径冻结不变),只用于对齐检查与对照,产物不进矩阵,`best/meta.json` 没有 `trainer` 字段;run_id 形状和现役的 `train-cgen`/`train-cparam` 相同,拿去评测会混进矩阵分不出来(extending §5 #26),run_id 不许用现役批次前缀。
-- **`--tok-budget` 超预算的单个事件独自成块**:`chunk_by_budget` 贪心装块时,一个事件自己的拼接序列长度就超过 `--tok-budget`,不会被拒收或截断,而是自己单独占一个物理块(允许这一块超预算)。→ 长事件多的数据集,`peak_mem_gb` 不能只按 `--tok-budget` 估,要看 `--mem-probe` 的 `longest_event` 那条。
+- **`--tok-budget` 超预算的单个事件独自成块**:`chunk_by_budget` 贪心装块时,一个事件自己的拼接序列长度就超过 `--tok-budget`,不会被拒收或截断,而是自己单独占一个物理块(允许这一块超预算)。→ 长事件多的数据集,`peak_mem_gb` 不能只按 `--tok-budget` 估,要看 `--mem-probe` 收尾那条 `mem_probe_summary` 的 `worst_gb`(2026-08-28 起,spec 16.5;`scope=full` 时探针在全集里找最满块/最长事件,能代表全量;`scope=run` 时只在本次 run 抽样出的事件里找,`--smoke`/`--max-events` 下这个数是小样本,不能拿去排全量的卡,extending §5 #36)。
