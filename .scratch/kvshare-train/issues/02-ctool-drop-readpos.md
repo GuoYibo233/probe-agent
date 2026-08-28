@@ -1,6 +1,6 @@
 # 02 ctool 的丢弃规则、默认值、读取位置规则、日志
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: `.scratch/kvshare-train/spec.md` 第 11 节，读取位置规则的函数来自工单 01 的 `share_data.read_position`
 

@@ -1,6 +1,6 @@
 # 03 训练器 `pipeline/train/train_causal_share.py` 与注册表
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: `.scratch/kvshare-train/spec.md` 第 4 到 9 节、第 12 节；注意力实现照 `.scratch/kvshare-train/design-attention.md`（已落地），拼接序列与掩码的构造有一份 CPU 验证过的参考实现 `.scratch/kvshare-train/verify/packed_common.py`（只当参考读，代码要按工单 01 的 `share_data` 接口重写，不许直接 import 那个文件）
 

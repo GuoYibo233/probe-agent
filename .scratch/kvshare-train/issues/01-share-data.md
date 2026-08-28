@@ -1,6 +1,6 @@
 # 01 数据与分词模块 `pipeline/train/share_data.py`
 
-Status: claimed
+Status: resolved
 Blocked by: （无）
 Spec: `.scratch/kvshare-train/spec.md` 第 2、3、5（只有装块那一条）、11.3、12 节
 
@@ -22,3 +22,7 @@ Spec: `.scratch/kvshare-train/spec.md` 第 2、3、5（只有装块那一条）�
 - 测试 (a) 覆盖 cgen 和 cparam 两种 mode，各 20 个事件，每一行 `full_ids[:p] + seg_ids == old_ids + tgt_ids`。
 - `read_position` 的用例：全文 `'Spotify."\n\nWe'`、切点在第一个 `\n` 之后 → 返回覆盖 `."\n\n` 的那个 token；全文 `'done. Next'`、切点在空格之后 → 返回 `.` 所在 token（不是 `ĠNext`）；手造 offsets 首个起始位置 > 0 且切点更小 → −1；j = 0 且切点后非空白 → −1；一批两个长度不同的事件 `padding=True`，短事件每个切点的返回值 < keep 并且和单条不 pad 时相同。真实分词器与手造 offsets 各验一次。
 - 不改任何现有文件（`MAP.md` 那一行 `(共用)` 由工单 04 加，你在报告里写好那一行的文案即可）。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave1 实现 1 轮过评审，分支 `ticket/2026-08-28-wave1/T01`（base `2e61f5f`，head `d48c287`），合并为 `c4f900b`。主会话复核：`python3 -m unittest tests.test_share_data` 与 `cprobe-env/bin/python -m unittest tests.test_share_data` 各 Ran 21 tests OK；`mbert-env/bin/python -c "import share_data"` 退出码 0。报告 `sdd/2026-08-28-wave1/T01-report.md`。实现者 concerns（照录）：事件 dict 多带工单没列的 `full_ids`（`pack_event` 拼前缀必需）；全部行被行级丢弃的事件不进最终列表（工单没写，按根因排除）；两道硬停的触发测试超出验收段字面的 (a) 到 (e)；全量 discover 下两个与本工单无关的既有失败 `test_splice_replay`（仓库记忆记过）与 `test_no_env_reads_default_preset`（预设那批的，未深查）。cannotVerify 三条（大规模行为、ro 端到端契约、`batch_mask` 只出 bf16 给 fp32 检查要 `.float()`）都归工单 03 与冒烟。
