@@ -211,10 +211,14 @@ def build(base, n_labels, dev):
 # ---------------------------------------------------------------- 对齐检查
 
 @torch.no_grad()
-def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL):
+def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL,
+                rule="abs", rel_tol=1e-5):
     """整段一次前向 vs 逐 token 增量前向(fp32),末位置隐状态/logits 必须一致。
 
     只用逐 token 模式:分块增量(缓存非空+一次喂多 token)在 LFM2 上有静默算错前科。
+
+    `rule`(spec 9):`abs` = 现状,`max(d_h, d_l) < tol`;`rel` = `reldiff_hidden
+    <= rel_tol` 且 `reldiff_logits <= rel_tol`;`both` = 两条同时成立。
     """
     model.eval()
     prev_prec = torch.get_float32_matmul_precision()
@@ -238,16 +242,28 @@ def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL):
 
     d_h = (h_full - h_inc).abs().max().item()
     d_l = (lg_full - lg_inc).abs().max().item()
-    ok = max(d_h, d_l) < tol
     a_h, a_l = h_full.abs().max().item(), lg_full.abs().max().item()
+    reldiff_hidden = d_h / max(a_h, 1e-9)
+    reldiff_logits = d_l / max(a_l, 1e-9)
+    abs_ok = max(d_h, d_l) < tol
+    rel_ok = reldiff_hidden <= rel_tol and reldiff_logits <= rel_tol
+    if rule == "abs":
+        ok = abs_ok
+    elif rule == "rel":
+        ok = rel_ok
+    else:
+        ok = abs_ok and rel_ok
     rep = dict(base=base, base_path=path, mode="token-by-token", n_tokens=n,
                maxdiff_hidden=d_h, maxdiff_logits=d_l, tol=tol,
                PASS=bool(ok), device=str(dev), dtype="float32",
                transformers=transformers.__version__, torch=torch.__version__,
-               # 诊断用(不参与判定):绝对差受隐状态量级影响,相对差看是否只是 fp32 噪声
+               rule=rule, rel_tol=rel_tol,
+               # 绝对差受隐状态量级影响,相对差看是否只是 fp32 噪声:
+               # `abs` 规则下 absmax_*/reldiff_* 只当诊断参考,`rel`/`both`
+               # 规则用 reldiff_hidden/reldiff_logits 参与判定。
                absmax_hidden=a_h, absmax_logits=a_l,
-               reldiff_hidden=d_h / max(a_h, 1e-9),
-               reldiff_logits=d_l / max(a_l, 1e-9))
+               reldiff_hidden=reldiff_hidden,
+               reldiff_logits=reldiff_logits)
     torch.set_float32_matmul_precision(prev_prec)
     model.train()
     return rep
@@ -323,6 +339,11 @@ def main():
                          "长窗口下 fp32 舍入噪声随 token 数与隐状态量级一起涨,"
                          "8192 上限的事件绝对差会顶到 1e-4 而相对差仍是 1e-6"
                          "(纯噪声);判定依据看 reldiff(1e-3 以上=真算错,放宽也没用)")
+    ap.add_argument("--align-rule", default="abs", choices=["abs", "rel", "both"],
+                    help="对齐判据:abs=绝对差(现状),rel=相对差"
+                         "(reldiff_hidden/reldiff_logits),both=两者同时成立(spec 9)")
+    ap.add_argument("--align-rel-tol", type=float, default=1e-5,
+                    help="对齐检查相对差门槛,配合 --align-rule rel/both(spec 9)")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
                     help="只读工具模式:标签折叠成 该环境的只读工具 + "
@@ -370,15 +391,18 @@ def main():
 
     # ---- 开训必过的门:对齐检查(val 最长事件全文,截到 --max-len) ----------
     rep = align_check(model, tok, longest, args.max_len, dev, args.base, path,
-                      tol=args.align_tol)
+                      tol=args.align_tol, rule=args.align_rule,
+                      rel_tol=args.align_rel_tol)
     (out / "ALIGN_CHECK.json").write_text(json.dumps(rep, indent=1))
     print(json.dumps(rep, indent=1), flush=True)
     if not rep["PASS"]:
         print("对齐检查 FAIL:整段前向与逐 token 增量前向不一致,拒绝开训。\n"
+              f"  规则 --align-rule {rep['rule']}\n"
               f"  hidden max|diff| = {rep['maxdiff_hidden']:.3e}\n"
               f"  logits max|diff| = {rep['maxdiff_logits']:.3e}  (tol {rep['tol']:.1e})\n"
               f"  相对差 hidden {rep['reldiff_hidden']:.2e} / logits "
-              f"{rep['reldiff_logits']:.2e}(1e-6 量级=纯 fp32 噪声、绝对差只是"
+              f"{rep['reldiff_logits']:.2e}  (rel_tol {rep['rel_tol']:.1e};"
+              "1e-6 量级=纯 fp32 噪声、绝对差只是"
               "隐状态量级大;1e-3 以上=真算错)\n"
               "  排查:transformers 版本 / 该架构的缓存实现 / 是否误用分块增量。",
               flush=True)

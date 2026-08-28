@@ -315,7 +315,13 @@ class TestRunAlignCheckHandlesRefBaselineDriftError(unittest.TestCase):
             with tempfile.TemporaryDirectory() as out_dir:
                 args = argparse.Namespace(
                     data=str(DATA_DIR), out=out_dir, align_events=2,
-                    max_len=8192, align_tol=2e-5, attn_impl="sdpa")
+                    max_len=8192, align_tol=2e-5, attn_impl="sdpa",
+                    # 工单 09:run_align_check 从 args 取新增的门槛参数,
+                    # 这个 Namespace 是手造的,不经过 argparse 默认值,
+                    # 补齐新属性(值等于 CLI 默认值)防 AttributeError。
+                    align_tok_tol=3e-4, align_bf16_mean_tol=2e-2,
+                    align_bf16_max_tol=1e-1, align_baseline_factor=3.0,
+                    align_rule="abs", align_rel_tol=1e-5)
                 with self.assertRaises(SystemExit) as cm:
                     tcs.run_align_check(self.model, self.tok, args, "cpu",
                                         "cgen", None)
