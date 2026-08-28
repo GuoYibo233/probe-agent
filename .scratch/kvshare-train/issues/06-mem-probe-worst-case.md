@@ -18,4 +18,5 @@ ks828b06 速度档（H100，`--tok-budget 16384`）：`mem_probe` 最满块（B=
 
 - `cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data` 通过。
 - `grep -n "n_backward" pipeline/train/train_causal_share.py` 命中。
-- 不改 `share_data.py`、不改注册表、不改旧脚本。GPU 上的复测由主会话做（预期 b16k 的 `fullest_block` 从 51.1 GB 升到 60 GB 上下，和训练峰值对上）。
+- 不改 `share_data.py`、不改注册表、不改旧脚本。
+- 真正的验收判据是实测（主会话在 H100 上做，工单不做）：改后 `--mem-probe` 报的 `fullest_block.peak_mem_gb` ≥ 同预算速度档整程 `step` 峰值——`--tok-budget 16384` 对 60.59 GB、`24576` 对 80.91 GB。上面「状态先建好、连做两次反向」是按机理推的改法，不是验收：按机理算探针少算 4.8 + 2.4 = 7.2 GB，而实测差是 9.5（b16k）和 5.9（b24k），两个都对不上 7.2，说明还有别的量；改完探针数仍然低于训练峰值的话，把探针改成「直接按训练循环的写法连做两个逻辑小批（含 accum=2 的真实更新）」再量。
