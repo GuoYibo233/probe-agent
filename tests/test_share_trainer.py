@@ -23,6 +23,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "pipeline/train"))
@@ -572,6 +573,46 @@ class TestRunMemProbeCPU(unittest.TestCase):
             self.assertEqual(e["peak_mem_gb"], 0.0)   # CPU 上允许为 0
             for key in ("B", "L_pad", "n_events", "packed_len_max"):
                 self.assertIn(key, e, f"{kind} 缺字段 {key}")
+
+    def test_state_built_before_any_forward_backward(self):
+        """F1(工单 06 修复第 2 轮):按工单字面顺序,建状态这一步(先
+        `opt.zero_grad(set_to_none=False)` 接 lr=0 的 `opt.step()`)之前不
+        应该发生任何前向或反向——用一个会记录『调用发生时 `opt.state` 是否
+        还是空字典』的 `block_row_ce` 替身验证:第一次前向反向发生时,
+        `opt.state` 必须已经非空(状态已经建好),不能有任何一次前向反向发生
+        在 `opt.state` 还是空字典的时候。"""
+        import argparse
+
+        events, _counts = share_data.load_events(
+            self.data_path, self.tok, mode="cgen", max_len=8192, limit=0)
+        self.assertGreaterEqual(len(events), 2,
+                                "要至少 2 个事件才能凑出最满块")
+
+        torch.manual_seed(SEED)
+        model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
+        model.train()
+        opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
+        args = argparse.Namespace(tok_budget=100000, events_per_mb=4)
+        logged = []
+
+        def log(**kw):
+            logged.append(kw)
+
+        state_was_empty_at_call = []
+        real_block_row_ce = tcs.block_row_ce
+
+        def spy(*a, **kw):
+            state_was_empty_at_call.append(len(opt.state) == 0)
+            return real_block_row_ce(*a, **kw)
+
+        with patch.object(tcs, "block_row_ce", side_effect=spy):
+            tcs.run_mem_probe(model, opt, events, args, "cpu", log, amp=False)
+
+        self.assertGreater(len(state_was_empty_at_call), 0,
+                           "应该至少发生一次前向反向")
+        self.assertFalse(any(state_was_empty_at_call),
+                         "建状态这一步之前不应该发生任何前向或反向,"
+                         f"实际记录:{state_was_empty_at_call}")
 
 
 class TestMainSmokeCPU(unittest.TestCase):

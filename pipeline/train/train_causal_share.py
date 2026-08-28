@@ -243,17 +243,18 @@ def run_mem_probe(model, opt, full_events, args, dev, log, amp):
 
     建状态要点:AdamW 的 `step()` 只给 `.grad is not None` 的参数分配状态,
     一个从没做过反向的模型全体 `.grad` 都是 None,直接 `zero_grad` 接
-    `step(lr=0)` 建不出任何状态。这不是可选的实现偏好,是这一步顺序必须
-    往前挪一次前向反向的技术前提——本仓 `cprobe-env` 的 torch 2.11.0+cu128
-    上按工单原文字面顺序(不做任何前向反向,直接 `zero_grad(set_to_none=False)`
-    接 lr=0 的 `opt.step()`)复现过:`opt.state` 事后是空字典 `{}`,零个
-    key,不是"状态变小"而是完全没建,达不成本函数文档第一句"优化器状态
-    已建"这个结果(2026-08-28 修复轮独立复核,详见 T06-report.md)。所以
-    先拿最满块(拿不到就拿最长事件)做一次不计入测量的前向加反向,把每个
-    可训练参数的 `.grad` 填成真实形状的张量;`zero_grad(set_to_none=False)`
-    把这些梯度清零但保留张量本身(状态创建只看是否为 None,不看数值);
-    这时再用 lr=0 的 `opt.step()`,AdamW 才会真正给每个参数分配
-    exp_avg/exp_avg_sq(`optimizer_state_prebuilt`),且参数值不动(lr=0)。
+    `step(lr=0)` 建不出任何状态(本仓 `cprobe-env` 的 torch 2.11.0+cu128 上
+    实测过:`opt.state` 事后是空字典 `{}`,零个 key)。根因不是"建状态这
+    一步前面要不要插一次前向反向",而是 `.grad` 需要先有真实形状的张量——
+    AdamW 分配状态只看 `.grad is not None` 与参数的形状/dtype,不看梯度
+    数值,所以直接给每个可训练参数的 `.grad` 赋 `torch.zeros_like(p)` 就
+    够,不必为此另跑一次前向反向。顺序严格按工单字面写:先把每个可训练
+    参数的 `.grad` 置成零张量,`zero_grad(set_to_none=False)` 保留张量、
+    清零数值(此时已经是零,等价于空操作,但按字面留着这一步调用);再用
+    lr=0 的 `opt.step()`,AdamW 才会真正给每个参数分配
+    exp_avg/exp_avg_sq(`optimizer_state_prebuilt`),参数值不动(lr=0);
+    `reset_peak_memory_stats()` 在这之后;然后才对最满块连做两次前向加
+    反向——建状态这一步之前不发生任何前向或反向。
     """
     mask_dtype = torch.bfloat16 if amp else torch.float32
     longest, fullest = share_data.worst_blocks(
@@ -266,9 +267,9 @@ def run_mem_probe(model, opt, full_events, args, dev, log, amp):
         loss.backward()
 
     orig_lrs = [g["lr"] for g in opt.param_groups]
-    prime_grp = fullest or longest
-    if prime_grp:
-        _fwd_bwd(prime_grp)                    # 不计入测量,只为填出 .grad
+    for g in opt.param_groups:
+        for p in g["params"]:
+            p.grad = torch.zeros_like(p)       # 建状态用,不来自任何前向反向
     opt.zero_grad(set_to_none=False)
     for g in opt.param_groups:
         g["lr"] = 0.0
