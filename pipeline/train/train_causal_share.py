@@ -232,37 +232,64 @@ def eval_ce(model, events, tok_budget, dev, amp):
 # ---------------------------------------------------------------- 显存探针
 
 def run_mem_probe(model, opt, full_events, args, dev, log, amp):
-    """spec 第 10 节:训练开始前踩最坏块量显存(单个最长事件 + 最满块),
-    优化器已经建好(状态就此分配),记完峰值清掉状态、恢复 lr。"""
+    """spec 第 10 节:训练开始前踩真实最坏情况的显存(工单 06)。
+
+    机理(8-28-assistant-2 判读):训练的真峰在 accum=2 的第二个逻辑小批
+    反向期间——此时优化器状态(AdamW 的两份 fp32 状态,来自上一个 step)
+    与第一个逻辑小批留下的梯度都还在。这里复现同样的条件:优化器状态
+    先建好、最满块连做两次前向加反向(中间不清梯度,即梯度累积),第二次
+    反向后读峰值;最长事件那一块紧接着做,状态已建、梯度未清的条件不变,
+    再做一次前向加反向读峰值。最后清优化器状态、恢复 lr、清梯度。
+
+    建状态要点:AdamW 的 `step()` 只给 `.grad is not None` 的参数分配状态,
+    一个从没做过反向的模型全体 `.grad` 都是 None,直接 `zero_grad` 接
+    `step(lr=0)` 建不出任何状态(空模型上验过)。所以先拿最满块(拿不到就
+    拿最长事件)做一次不计入测量的前向加反向,把每个可训练参数的 `.grad`
+    填成真实形状的张量;`zero_grad(set_to_none=False)` 把这些梯度清零但
+    保留张量本身(状态创建只看是否为 None,不看数值);这时再用 lr=0 的
+    `opt.step()`,AdamW 才会真正给每个参数分配 exp_avg/exp_avg_sq
+    (`optimizer_state_prebuilt`),且参数值不动(lr=0)。
+    """
     mask_dtype = torch.bfloat16 if amp else torch.float32
     longest, fullest = share_data.worst_blocks(
         full_events, args.tok_budget, args.events_per_mb)
-    for kind, grp in (("longest_event", longest), ("fullest_block", fullest)):
-        if not grp:
-            continue
-        if dev.startswith("cuda"):
-            torch.cuda.reset_peak_memory_stats()
+
+    def _fwd_bwd(grp):
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
             ce_per_row, w = block_row_ce(model, grp, dev, mask_dtype)
             loss = (ce_per_row * w).sum() / w.sum().clamp(min=1e-9)
         loss.backward()
-        b = len(grp)
-        l_pad = _l_pad(grp)
-        orig_lrs = [g["lr"] for g in opt.param_groups]
-        for g in opt.param_groups:
-            g["lr"] = 0.0
-        opt.step()
+
+    orig_lrs = [g["lr"] for g in opt.param_groups]
+    prime_grp = fullest or longest
+    if prime_grp:
+        _fwd_bwd(prime_grp)                    # 不计入测量,只为填出 .grad
+    opt.zero_grad(set_to_none=False)
+    for g in opt.param_groups:
+        g["lr"] = 0.0
+    opt.step()                                 # 优化器状态就此分配,参数不动
+    if dev.startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats()
+
+    for kind, grp, n_backward in (("fullest_block", fullest, 2),
+                                  ("longest_event", longest, 1)):
+        if not grp:
+            continue
+        for _ in range(n_backward):
+            _fwd_bwd(grp)                      # 中间不 zero_grad,梯度累积
         peak = (torch.cuda.max_memory_allocated() / 1e9
                if dev.startswith("cuda") else 0.0)
+        b = len(grp)
+        l_pad = _l_pad(grp)
         log(event="mem_probe", kind=kind, n_events=b, packed_len_max=l_pad,
             peak_mem_gb=round(peak, 3), B=b, L_pad=l_pad,
-            with_optimizer_state=True)
-        opt.state.clear()
-        for g, lr0 in zip(opt.param_groups, orig_lrs):
-            g["lr"] = lr0
-        opt.zero_grad()
-        if dev.startswith("cuda"):
-            torch.cuda.reset_peak_memory_stats()
+            with_optimizer_state=True, n_backward=n_backward,
+            optimizer_state_prebuilt=True)
+
+    opt.state.clear()
+    for g, lr0 in zip(opt.param_groups, orig_lrs):
+        g["lr"] = lr0
+    opt.zero_grad(set_to_none=True)
 
 
 # ---------------------------------------------------------------- 对齐检查

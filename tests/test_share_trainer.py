@@ -508,6 +508,72 @@ class TestBlockRowCeUnderLoRA(unittest.TestCase):
             "走 get_base_model() 分支时非适配器参数不该有梯度")
 
 
+class TestRunMemProbeCPU(unittest.TestCase):
+    """工单 06:`run_mem_probe` 的 CPU 收尾状态与日志字段——真正的验收判据是
+    H100 实测(改后 `fullest_block.peak_mem_gb` 是否 >= 训练整程 `step` 峰值,
+    工单不做),这里只验 CPU 上能跑通、收尾干净、字段齐全。"""
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        if not VAL_PATH.exists():
+            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+        if cls.tok.pad_token_id is None:
+            cls.tok.pad_token = cls.tok.eos_token
+        cls.tok.truncation_side = "left"
+        cls.tok.padding_side = "right"
+        cls.tmpdir, cls.data_path = _load_five_short_events()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmpdir.cleanup()
+
+    def test_state_cleared_lr_restored_grad_none_after_probe(self):
+        import argparse
+
+        events, _counts = share_data.load_events(
+            self.data_path, self.tok, mode="cgen", max_len=8192, limit=0)
+        self.assertGreaterEqual(len(events), 2,
+                                "要至少 2 个事件才能凑出最满块")
+
+        torch.manual_seed(SEED)
+        model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
+        model.train()
+        orig_lr = 1e-3
+        opt = torch.optim.AdamW(model.parameters(), lr=orig_lr,
+                                weight_decay=0.01)
+        args = argparse.Namespace(tok_budget=100000, events_per_mb=4)
+        logged = []
+
+        def log(**kw):
+            logged.append(kw)
+
+        tcs.run_mem_probe(model, opt, events, args, "cpu", log, amp=False)
+
+        self.assertEqual(len(opt.state), 0, "探针收尾后 opt.state 应该清空")
+        self.assertTrue(
+            all(g["lr"] == orig_lr for g in opt.param_groups),
+            "探针收尾后各 param_group 的 lr 应该恢复原值")
+        self.assertTrue(
+            all(p.grad is None for p in model.parameters()),
+            "探针收尾后所有参数的 .grad 应该是 None")
+
+        kinds = {e["kind"]: e for e in logged if e.get("event") == "mem_probe"}
+        self.assertEqual(set(kinds), {"longest_event", "fullest_block"},
+                         f"应该写两条 mem_probe 事件,实际:{logged}")
+        for kind, n_backward in (("fullest_block", 2), ("longest_event", 1)):
+            e = kinds[kind]
+            self.assertEqual(e["n_backward"], n_backward,
+                             f"{kind} 的 n_backward 应该是 {n_backward}")
+            self.assertTrue(e["optimizer_state_prebuilt"])
+            self.assertTrue(e["with_optimizer_state"])
+            self.assertEqual(e["peak_mem_gb"], 0.0)   # CPU 上允许为 0
+            for key in ("B", "L_pad", "n_events", "packed_len_max"):
+                self.assertIn(key, e, f"{kind} 缺字段 {key}")
+
+
 class TestMainSmokeCPU(unittest.TestCase):
     """(c) main() 跑 --smoke --max-events 6 --log-every 1 --align-events 2
     --device cpu(--base 一个临时目录,走 build(path=...)),产出
