@@ -125,7 +125,7 @@ def load_events(path, label2id, tok, max_len, limit=0, spot=SPOT, ro=None):
     dropped = 0
     kept = []
     for e in events:
-        n_full = len(tok(e["full"], add_special_tokens=False)["input_ids"])
+        n_full = share_data.n_full_tokens(tok, e["full"])
         if n_full > max_len:
             dropped += 1
             continue
