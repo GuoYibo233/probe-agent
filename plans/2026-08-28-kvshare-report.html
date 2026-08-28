@@ -83,7 +83,7 @@ a{color:var(--accent);}
   <span>终点 <b id="head-final">见「终验」一节</b></span>
   <span>工单 <b>6 张，全部 resolved</b></span>
   <span>自主决定 <b>23 条</b></span>
-  <span>GPU run <b>11 个，全部销号</b></span>
+  <span>GPU run <b id="gpu-count">9 个 run_id，12 次发射，全部销号</b></span>
 </div>
 
 <h2>一句话结果</h2>
@@ -99,14 +99,14 @@ a{color:var(--accent);}
 <ol class="steps">
   <li><b>清场。</b>工作树里另一个会话留下 36 个未提交改动（预设口径统一那批），验过 selfcheck 与 87 个测试后单独提交，让发射前的工作树干净。</li>
   <li><b>分工。</b>两位助手定角色：助手 1 记决定台账、对表 plan 与草稿的数字、审 spec 与工单；助手 2 定注意力前向的形态与内核并在 CPU 上做等价验证，后来判读所有 GPU 数字。两个 sonnet 子任务读代码出接口清单和扩展清单。</li>
-  <li><b>写 spec 与四张工单</b>（<code>.scratch/kvshare-train/</code>）。三轮审查：助手 1 三遍（对表草稿七条与 plan 数字，共 24 条发现），一个 workflow 四个角度加逐条反驳（48 条发现，核实 12 条，确认 8 条），助手 2 对照设计核 spec 第 4、9 节（2 处矛盾 8 处遗漏）。改了三轮。</li>
+  <li><b>写 spec 与四张工单</b>（<code>.scratch/kvshare-train/</code>）。三轮审查：助手 1 三遍（对表草稿七条与 plan 数字，共 35 条发现：13 加 9 加 13），一个 workflow 四个角度加逐条反驳（48 条发现，核实 12 条，确认 8 条），助手 2 对照它自己的设计核 spec 第 4、9 节（2 处矛盾 8 处遗漏，改进了 spec 的措辞，台账时间线有记录）。改了三轮。</li>
   <li><b>GPU 内核验证</b>（H100，三次发射）：第一次在 math 内核校准那一步要分配 101.85 GiB 崩掉，第二次对齐那一步报「没有可用内核」（参照路径没有掩码走了分组查询，省显存内核不接），第三次九步全过。</li>
   <li><b>第一波：</b>工单 01 数据与分词模块，一轮过评审，两个环境各 21 个测试通过。</li>
   <li><b>第二波：</b>工单 02（ctool 丢弃规则、默认值、读取位置规则）零轮修复；工单 03（训练器与注册表）两轮修复。合并后 cprobe-env 下 58 个测试通过，selfcheck 76 个任务就位。</li>
   <li><b>冒烟</b>（H100 三张、H200 三张并行）：三个格的 smoke 档、三个速度档（预算 16384 / 24576 / 16384 加分配器开关）。ctool 在 smoke 档被旧容差拦下一次，改默认值后补射通过；H100 上 ctool 每批 4 个事件 OOM，改每批 2 个后跑通。</li>
   <li><b>第三波：</b>工单 05（助手 2 审查训练器提出的五条建议加工单 03 的两条小问题）一轮过，助手 2 复核全部改到位。</li>
   <li><b>第四波：</b>工单 04 回写 probe-pipeline skill 的五份文件（一轮修复），工单 06 把显存探针改成真实最坏情况并给 ctool 加显存日志字段（结果见「终验」）。</li>
-  <li><b>收尾：</b>TIMELINE 一条（助手 1 核出 3 处数字错误、3 处措辞，同日更正），记忆一条，本汇报。</li>
+  <li><b>收尾：</b>TIMELINE 一条（助手 1 核出 3 处错误：一处数字没有出处、一处量纲混写、一处跨文件口径不一致，另有 3 处措辞，同日更正），记忆一条，本汇报。</li>
 </ol>
 
 <h2>数字</h2>
@@ -119,7 +119,7 @@ a{color:var(--accent);}
 <tr><td>CPU 大事件</td><td>3 个事件 151 行 2,833 token</td><td class="n">2.62e-6</td><td class="n">2.38e-5</td><td class="n">—</td></tr>
 <tr><td>H100 七步验证第 6 步</td><td>同 CPU 的 34 行</td><td class="n">4.41e-6</td><td class="n">3.05e-5</td><td class="n">9.31e-3 / 3.07e-2</td></tr>
 <tr><td>H100 速度档三个 run（相同）</td><td>6 个事件 154 行 2,877 token</td><td class="n">5.48e-6</td><td class="n">4.29e-5</td><td class="n">8.43e-3 / 4.32e-2</td></tr>
-<tr><td>H200 cparam smoke</td><td>抽 2 个事件</td><td class="n">9.30e-6</td><td class="n">4.72e-5</td><td class="n">9.74e-3 / 4.87e-2</td></tr>
+<tr><td>H200 cparam smoke</td><td>6 个事件 154 行 1,916 token（cparam 的目标串短）</td><td class="n">9.30e-6</td><td class="n">4.72e-5</td><td class="n">9.74e-3 / 4.87e-2</td></tr>
 </table></div>
 <p>门槛：逐行 2e-5、逐 token 3e-4（判定），bf16 均值 2e-2、最大 1e-1（只告警）。五组数全部在门槛内。出处：<code>verify/equiv_result*.json</code>、<code>pipeline/runs/smoke/kvshare_gpu_kernel_check/gpu_result.json</code>、各 run 的 <code>ALIGN_CHECK.json</code>。</p>
 
@@ -153,12 +153,12 @@ a{color:var(--accent);}
 <tr><td>cparam（新训练器）</td><td>同上</td><td class="n">9.30e-6 PASS</td><td class="n">5</td><td class="n">val_ce 2.5151 → 1.5926</td><td class="n">153 s</td></tr>
 <tr><td>ctool</td><td>200 / 80 事件</td><td class="n">1.03e-4（容差 3e-4）PASS</td><td class="n">25</td><td class="n">calA_weighted_acc 0.408</td><td class="n">—</td></tr>
 </table></div>
-<p>ctool 第一次发射被代码默认容差 1e-4 拦下（相对差 1.46e-6，脚本自己的判读口径是纯 fp32 噪声），默认改 3e-4（np821 实跑一直传的值）后补射通过。ctool 的 <code>dropped_events</code> train 1 / val 3，与 plan 第四节 8192 那一行逐字相符。</p>
+<p>ctool 第一次发射被代码默认容差 1e-4 拦下（隐状态绝对差 1.03e-4、相对差 1.46e-6；脚本注释写的判读口径是「相对差看是否只是 fp32 噪声，1e-3 以上才是真算错」，train_causal_tool.py 第 232 行附近），默认改 3e-4（np821 实跑一直传的值）后补射通过。ctool 的 <code>dropped_events</code> train 1 / val 3，与 plan 第四节 8192 那一行逐字相符。</p>
 </div>
 
 <div class="reading">
 <div class="eyebrow">下面是我的解读</div>
-<p>速度提升的来源是前缀共享：旧训练器给一个事件的每个切点（平均 45 个）各算一遍前缀，新训练器只算一遍。六个对照点高出 23 到 67 倍，对旧稳态是 16 倍；末尾窗口掉到 145 是那一段事件每行 token 多（按补齐 token 算吞吐 12.9k 对中段 16.9k token/s 同量级），不是尾组更新或评估造成的（助手 2 在 CPU 上复现了同一份抽样验证）。预算 24576 比 16384 慢是因为块更大、pad 更多；16384 又快又稳，定为默认。上限 8192 不用退档：最长事件 31.4 GB，训练峰值余量 39%。ctool 撤掉截断之后每批 4 个 8192 长度的事件确实装不下 H100，每批 2 个累积 4 次保持 8 个事件一次更新，峰值 55.5 GiB；48G 卡装不下 ctool 0.6B 全参不带梯度检查点，排卡时只能上 H100 / H200。按每秒 185 行算，train 集 186,479 行的训练部分约 17 分钟一个 epoch，加上四次全量评估和加载；这个数还没有全量实跑验证。</p>
+<p>速度提升的来源是前缀共享：旧训练器给一个事件的每个切点（平均 45 个）各算一遍前缀，新训练器只算一遍。六个对照点高出 23 到 67 倍，对旧稳态是 16 倍；末尾窗口掉到 145 是那一段事件每行 token 多（按补齐 token 算吞吐 12.9k 对中段 16.9k token/s 同量级），不是尾组更新或评估造成的（助手 2 在 CPU 上复现了同一份抽样验证）。预算 24576 比 16384 慢的原因没有量（16384 那一档的补齐占比在速度档样本上是 28%，24576 那一档没有算）；16384 又快又稳，定为默认。上限 8192 不用退档：最长事件 31.4 GB，训练峰值余量 39%。ctool 撤掉截断之后每批 4 个事件在 8192 上限下训练第一批就装不下 H100（那一批四个事件的长度没有记录），每批 2 个累积 4 次保持 8 个事件一次更新，峰值 55.5 GiB；48G 卡装不下 ctool 0.6B 全参不带梯度检查点，排卡时只能上 H100 / H200。按每秒 185 行算，train 集 186,479 行的训练部分约 17 分钟一个 epoch，加上四次全量评估和加载；这个数还没有全量实跑验证。</p>
 </div>
 
 <h2>23 条自主决定</h2>
@@ -184,7 +184,7 @@ a{color:var(--accent);}
 <dd class="src">train_causal_callgen.py 第 216 到 225 行的 build()。</dd>
 <dt><span class="id">决定 7</span>token 预算默认 16384、逻辑小批 4 个事件、累积 2 次、每 epoch 评估 4 次、冒烟 40 / 16 个事件、对齐检查抽 6 个不超过 2048 token 的事件<span class="pill warn">有一处更正</span></dt>
 <dd class="why">预算 16384 让最长事件独自成块、两个 4,000 token 的事件同块，冒烟量完再改。</dd>
-<dd class="src">更正：原先说「ctool 容差 3e-4 是记错」撤回——代码默认 1e-4，np821 排卡表传 3e-4（ops/np821b06_placement.json 第 9 到 10 行）。</dd>
+<dd class="src">更正：原先说「ctool 容差 3e-4 是记错」撤回，代码默认 1e-4，np821 排卡表传 3e-4（ops/np821b06_placement.json 第 9 到 10 行）。</dd>
 <dt><span class="id">决定 8</span>ctool 日志里「找不到读取位置的切点数」字段保留，预期恒 0；读取位置规则收在一个共用函数里</dt>
 <dd class="why">删字段会让读日志的下游改动面变大；两处各写一份必然漂移。</dd>
 <dd class="src">share_data.read_position；extending.md 第 137 行。</dd>
@@ -257,7 +257,7 @@ a{color:var(--accent);}
 <h2>遗留与已知问题</h2>
 <ul class="plain">
 <li>ctool 读取位置规则让训练与离线评测和「全文一次分词」的 token 边界一致；活跑时模型自己生成的 token 边界可能不同（比如先出 <code>."\n</code> 再出 <code>\n</code>），那是另一个坑，没有解决，回写里明确没有写成「活跑错位已修」。</li>
-<li>评审留下的小问题（都记在各工单的 Comments 里）：工单 05 的新测试与既有 LoRA 测试大段重复；工单 04 报告里一个 commit sha 写错；stage-commands §3.1 的峰值表把两条单格数据塞进三格同批次形态的表。</li>
+<li>评审留下的小问题（都记在各工单的 Comments 里）：工单 05 的新测试与既有 LoRA 测试大段重复（wave3 评审 minor N1，sdd/2026-08-28-wave3/T05-report.md）；工单 04 报告里一个 commit sha 写错（wave4 评审 minor N1）；stage-commands §3.1 的峰值表把两条单格数据塞进三格同批次形态的表（工单 04 实现者 concern）。</li>
 <li>全量测试里 <code>test_splice_replay</code> 那 1 个 error 是仓库记忆里的老毛病；实现者报的 <code>test_no_env_reads_default_preset</code> 失败在 HEAD 上复现不了（助手 1 核过，系统 python3 全量 356 个测试只剩那 1 个 error），与本轮无关。</li>
 <li>速度档的 epoch 末 val_ce 是 450 个事件子集上的数，不能和 np821 比；新口径的全量训练一次都还没跑。</li>
 <li>H100 上 ctool 的显存只有 nvidia-smi 采样，因为它自己不记 <code>peak_mem_gb</code>——工单 06 已加这个字段。</li>
