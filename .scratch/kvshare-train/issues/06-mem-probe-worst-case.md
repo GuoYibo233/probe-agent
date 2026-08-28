@@ -1,6 +1,6 @@
 # 06 `--mem-probe` 改成真实最坏情况（优化器状态已建、最满块连做两次反向）
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 05
 Spec: `.scratch/kvshare-train/spec.md` 第 10 节「最坏块」那一条（本工单同步改它的措辞）；改动只在 `pipeline/train/train_causal_share.py`、`pipeline/train/train_causal_tool.py`（只加日志字段）、`tests/test_share_trainer.py`、`tests/test_ctool_readpos.py` 与 spec 第 10 节那一段。
 

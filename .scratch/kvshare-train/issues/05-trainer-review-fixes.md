@@ -1,6 +1,6 @@
 # 05 训练器审查修正（assistant-2 只读审查的 5 条建议 + 工单 03 的 2 条 minor）
 
-Status: claimed
+Status: resolved
 Blocked by: 03
 Spec: `.scratch/kvshare-train/spec.md` 第 4、9 节；`design-attention.md` 第二、五节。改动只在 `pipeline/train/train_causal_share.py` 与 `tests/test_share_trainer.py`。行号按合并后的 main（`12c4a2b`），实现者以当前文件为准重新定位。
 
@@ -21,3 +21,7 @@ Spec: `.scratch/kvshare-train/spec.md` 第 4、9 节；`design-attention.md` 第
 - `--lora` 路径：`tests/test_share_trainer.py` 里加一个小模型 `--lora` 的一次前向加反向用例（peft 装了就跑，没装就 skip），证明第 1 条的取法在 peft 包装下能跑。
 - `python3 run.py selfcheck` 通过（注册表不动，只是确认没碰坏）。
 - 不改 `share_data.py`、不改旧脚本、不改 spec 除第 6 条那一行。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave3 实现 1 轮修复过评审，分支 `ticket/2026-08-28-wave3/T05`（base `45c881e`，head `6c507cc`），合并为 `a89da00`（spec §9 字段列表那一行与主干冲突，取主干并补 `baseline_warn`）。主会话复核：cprobe-env 下 `test_share_trainer test_share_data test_ctool_readpos` Ran 39 tests OK；`grep -c output_hidden_states` 0；`_ref_forward(..., check_drift=True)` 开关在；selfcheck 76 任务就位。遗留 minors（照录）：F2 报告里 backward 的 grep 命中行数写的 4 实际 6（结论对：206、248 两处 `.backward()` 都不在 autocast 内）；N1 新测试与既有 `test_lora_forward_backward` 大段重复。实现者 concerns（照录）：顺手改了 `run_align_check` 里一条过时注释；worktree 里建了只读软链 `pipeline/data/nyapass_aw_v1`（在 .gitignore 里，随 worktree 删除）；worktree 里 selfcheck 报 16 处缺失是本地虚拟环境目录不在版本控制里，主仓对照 76/4/3 一致。GPU 上 S2/S6 的数值效果由主会话最终冒烟核。
