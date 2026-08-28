@@ -40,7 +40,9 @@ GRID = [
          extra=[]),
     dict(tag="l4", base="qwen4", lora=True,
          lrs=[1e-4, 5e-4, 2e-3], tok_budget=16384, card="H100",
-         extra=["--grad-ckpt"]),
+         # --align-tol 3e-5:4B 的 fp32 逐行对齐差 1.54e-5 离默认 2e-5 只有
+         # 23% 余量,同卡型逐位可复现,放宽给换卡型/换 torch 留余量(决定 36)
+         extra=["--grad-ckpt", "--align-tol", "3e-5"]),
 ]
 
 DEFAULT_DATA = "pipeline/data/nyapass_aw_v1/gptoss"
