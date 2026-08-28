@@ -129,6 +129,33 @@ class TestReport(unittest.TestCase):
         _write_jsonl(d / "train_log.jsonl", events)
         return d
 
+    def _make_run_with_mem_probe_events_only(self, root, run_id, base="qwen",
+                                             lora=False, lr=1e-4):
+        """旧探针只写 `mem_probe` 事件、没有 `mem_probe_summary` 的 run 目录。"""
+        d = root / run_id
+        d.mkdir()
+        start = dict(event="start", base=base, lr=lr, tok_budget=16384,
+                     n_train_events=4126, dropped_events_train=1)
+        if lora:
+            start["lora"] = dict(rank=16)
+        events = [start,
+                  dict(event="eval", ep=0, frac=1, gstep=10,
+                       val_ce=0.8, val_exact_call=0.1),
+                  dict(event="mem_probe", peak_mem_gb=18.3),
+                  dict(event="mem_probe", peak_mem_gb=21.5)]
+        _write_jsonl(d / "train_log.jsonl", events)
+        return d
+
+    def test_worst_gb_falls_back_to_mem_probe_max_without_summary(self):
+        """`mem_probe_summary` 缺失时,`worst_gb` 退化取各 `mem_probe` 事件
+        `peak_mem_gb` 的最大值(工单第 1 条明文要求的兼容旧探针分支)。"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            d = self._make_run_with_mem_probe_events_only(
+                root, "ks828l17_gptoss_cgen_lr1e-4")
+            rec = SL.summarize_run(d)
+            self.assertEqual(rec["worst_gb"], 21.5)
+
     def test_report_two_runs_status_star_and_columns(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
