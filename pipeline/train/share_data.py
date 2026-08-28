@@ -57,6 +57,17 @@ def _lcp(a, b):
     return i
 
 
+def _pad16(n):
+    """把 `n` 向上补到 16 的倍数,和 `batch_mask` 的 `L_pad` 补齐同口径。
+
+    `chunk_by_budget`/`worst_blocks` 的预算判据都要用这个补齐后的长度
+    (spec 第 5 节;工单第 1 条:『chunk_by_budget 的预算判据同样用
+    L_pad』),不是补齐前的 `packed_len`——真实显存/算力看的是 `batch_mask`
+    补齐之后的物理块长度。
+    """
+    return ((n + 15) // 16) * 16
+
+
 # ---------------------------------------------------------------- 数据与分词
 
 def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
@@ -307,9 +318,11 @@ def batch_mask(packed_list, L_pad):
     `pack_event`。
 
     返回 `(input_ids, position_ids, mask, loss_idx)`:
-    - `input_ids`、`position_ids`:`[B, L_pad]` long;pad 位置的 `input_ids`
-      是 `PAD_TOKEN_ID`,`position_ids` 是 0(pad 行只看自己,这两个值不
-      影响任何真实 token 的输出)。
+    - `input_ids`:`[B, L_pad]` long;pad 位置是 `PAD_TOKEN_ID`(pad 行只看
+      自己,这个值不影响任何真实 token 的输出)。
+    - `position_ids`:`[B, L_pad]` long;pad 位置从这一事件最后一个真实
+      位置接着数(spec 第 4 节:『补到 16 的 pad 位也要给 position_ids
+      〔接着数〕』),不是写死 0。
     - `mask`:`[B, 1, L_pad, L_pad]` bf16 加性掩码(可看 0、不可看 -inf);
       pad 作为 query 的行只让 pad 看自己(整行不可看会让 softmax 出 NaN,
       真实 token 看不到 pad)。
@@ -331,6 +344,10 @@ def batch_mask(packed_list, L_pad):
         assert L <= L_pad, f"事件长度 {L} 超过物理块 pad 长度 {L_pad}"
         input_ids[b, :L] = torch.tensor(tokens, dtype=torch.long)
         position_ids[b, :L] = torch.tensor(positions, dtype=torch.long)
+        if L < L_pad:
+            last_pos = positions[-1] if positions else -1
+            position_ids[b, L:] = torch.arange(
+                last_pos + 1, last_pos + 1 + (L_pad - L), dtype=torch.long)
         allowed = _allowed_from_packed(positions, row_index, seg_bounds, L)
         block = torch.full((L_pad, L_pad), float("-inf"), dtype=torch.bfloat16)
         real = torch.zeros((L, L), dtype=torch.bfloat16)
@@ -348,8 +365,10 @@ def batch_mask(packed_list, L_pad):
 def chunk_by_budget(events, tok_budget):
     """spec 第 5 节第二条的贪心装块。
 
-    事件按 `packed_len` 降序,贪心装块:块的『事件数 × 块内最长
-    `packed_len`』<= `tok_budget`;单个事件超预算时独自成块(允许超预算)。
+    事件按 `packed_len` 降序,贪心装块:块的『事件数 × L_pad』<= `tok_budget`
+    (`L_pad` = 块内最长 `packed_len` 补到 16 的倍数,`_pad16`——预算判据
+    和 `batch_mask` 的补齐同口径,不是补齐前的 `packed_len` 本身,spec 第
+    5 节);单个事件超预算时独自成块(允许超预算)。
 
     返回块列表,每块是事件列表(块内顺序 = 装入顺序,即 `packed_len` 降序
     内的先后顺序;block 只定"谁在一起过一次前向",不承诺文件序契约,那条
@@ -362,7 +381,7 @@ def chunk_by_budget(events, tok_budget):
     for e in ordered:
         n = len(current) + 1
         cand_max = current_max if current else e["packed_len"]
-        if n * cand_max <= tok_budget:
+        if n * _pad16(cand_max) <= tok_budget:
             current.append(e)
             current_max = cand_max
         else:
@@ -375,18 +394,44 @@ def chunk_by_budget(events, tok_budget):
     return blocks
 
 
-def worst_blocks(events, tok_budget):
+def worst_blocks(events, tok_budget, events_per_mb):
     """给 `--mem-probe` 用(spec 第 10 节):返回两份事件列表。
 
-    第一份是只含『`packed_len` 最大的单个事件』的列表(长度 1);第二份是
-    `chunk_by_budget` 分出的块里、块内最长 `packed_len` 最大的那一块。
+    第一份是只含『`packed_len` 最大的单个事件』的列表(长度 1)。
+
+    第二份(『最满块』)不借用 `chunk_by_budget`:真实训练时一个逻辑小批
+    只有 `events_per_mb` 个事件(spec 第 5 节),`chunk_by_budget` 只在这
+    `events_per_mb` 个事件上跑装块,块内事件数天然 <= `events_per_mb`;
+    但 `worst_blocks` 是在全量训练集上找最坏块,如果直接对全量事件跑
+    `chunk_by_budget` 再挑"块内最长最大"的那块,块内事件数不受
+    `events_per_mb` 约束,找出来的块在真实训练里可能永远不会出现。所以
+    最满块单独按工单定义的算法搜:`B` 取 2 到 `events_per_mb`,把 events
+    按 `packed_len` 降序排好,对每个 B 用大小为 B 的滑动窗口从最长的一端
+    往下扫,取第一个满足 `B * L_pad <= tok_budget` 的窗口(`L_pad` = 窗口
+    内最长 `packed_len` 补到 16 的倍数,`_pad16`;降序排列下窗口内最长恰好
+    是窗口首元素,窗口往下移这个值只会变小或不变,所以第一个满足条件的
+    窗口就是这个 B 能达到的最大 `B * L_pad`);几个 B 各自的最优窗口里,取
+    `B * L_pad` 最大的那一组。找不到任何满足条件的窗口(事件数不够、或
+    预算太小连 2 个事件都装不下)时,第二份返回空列表。
     """
     if not events:
         return [], []
     longest = max(events, key=lambda e: e["packed_len"])
-    blocks = chunk_by_budget(events, tok_budget)
-    fullest = max(blocks, key=lambda blk: max(e["packed_len"] for e in blk))
-    return [longest], fullest
+    ordered = sorted(events, key=lambda e: e["packed_len"], reverse=True)
+    n_events = len(ordered)
+    best_group = []
+    best_product = -1
+    for b in range(2, events_per_mb + 1):
+        for i in range(n_events - b + 1):
+            window = ordered[i:i + b]
+            l_pad = _pad16(window[0]["packed_len"])
+            product = b * l_pad
+            if product <= tok_budget:
+                if product > best_product:
+                    best_product = product
+                    best_group = window
+                break                       # 降序排列下首个满足即该 B 的最优窗口
+    return [longest], best_group
 
 
 # ---------------------------------------------------------------- 读取位置

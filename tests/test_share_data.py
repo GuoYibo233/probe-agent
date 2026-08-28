@@ -245,20 +245,59 @@ class TestChunkByBudget(unittest.TestCase):
         self.assertEqual(len(giant_block), 1)
         self.assertEqual(len(giant_block[0]), 1)      # 独自成块
 
+    def test_budget_uses_padded_length(self):
+        # 两个事件 packed_len=161:补齐前 2*161=322<=322(会通过),补齐后
+        # L_pad=_pad16(161)=176,2*176=352>322(不通过)——预算判据必须用
+        # L_pad,否则这两个事件会被误装进同一块,真实显存/算力会超预算。
+        events = [self._ev("x", 161), self._ev("y", 161)]
+        blocks = share_data.chunk_by_budget(events, tok_budget=322)
+        self.assertEqual(sorted(len(b) for b in blocks), [1, 1])   # 各自成块
+
     def test_worst_blocks(self):
-        events = [self._ev("a", 90), self._ev("b", 40), self._ev("c", 40),
-                 self._ev("d", 40), self._ev("e", 5)]
-        longest, fullest = share_data.worst_blocks(events, tok_budget=100)
+        # 手算(events_per_mb=3,tok_budget=200):_pad16(100)=112,
+        # _pad16(90)=96,_pad16(30)=_pad16(25)=_pad16(20)=32。
+        # B=2:降序[100,90,30,25,20]的窗口[100,90] L_pad=112,2*112=224>200
+        #   不满足;窗口[90,30] L_pad=96,2*96=192<=200 满足——B=2 最优组
+        #   product=192。
+        # B=3:窗口[100,90,30] L_pad=112,336>200;[90,30,25] L_pad=96,
+        #   288>200;[30,25,20] L_pad=32,3*32=96<=200 满足——B=3 最优组
+        #   product=96。
+        # 192 > 96,所以最满块是 B=2 的 [90,30],不是 packed_len 最大的
+        # 100(跟 90 配对会超预算)。
+        events = [self._ev("a", 100), self._ev("b", 90), self._ev("c", 30),
+                 self._ev("d", 25), self._ev("e", 20)]
+        longest, fullest = share_data.worst_blocks(
+            events, tok_budget=200, events_per_mb=3)
         self.assertEqual(len(longest), 1)
-        self.assertEqual(longest[0]["event"], "a")
+        self.assertEqual(longest[0]["event"], "a")     # packed_len 最大的单个事件
         fullest_names = {e["event"] for e in fullest}
-        # 装块结果里 40/40 那一块(块内最长 40)是"块内最长最大"的那一块
-        # (90 那块只有它自己,块内最长虽然是 90,但块内最长*块大小的比较
-        # 只用来选块,不代表数值上一定比 40 大——这里直接用装块结果核对)。
-        blocks = share_data.chunk_by_budget(events, tok_budget=100)
-        expect = max(blocks, key=lambda blk: max(e["packed_len"] for e in blk))
-        expect_names = {e["event"] for e in expect}
-        self.assertEqual(fullest_names, expect_names)
+        self.assertEqual(fullest_names, {"b", "c"})    # B=2 的最优组,不含 a
+
+        # 对照:如果直接对全量事件跑 chunk_by_budget(它是"把全部事件分成
+        # 互不相交的块"的贪心装块,不是"搜索任意 B 个事件的最坏组合"),再
+        # 取"块内最长最大"的那块,a 自己已经占了一个块(跟 b 配对会超
+        # 200 的预算),取到的最长块反而只是 {a} 这个单事件块——这不是
+        # events_per_mb 个事件真实同批时可能出现的最坏组合,worst_blocks
+        # 不能退化成这个结果,必须是独立搜索得到的 {b, c}。
+        naive_blocks = share_data.chunk_by_budget(events, tok_budget=200)
+        naive_fullest = max(naive_blocks,
+                            key=lambda blk: max(e["packed_len"] for e in blk))
+        naive_fullest_names = {e["event"] for e in naive_fullest}
+        self.assertEqual(naive_fullest_names, {"a"})
+        self.assertNotEqual(fullest_names, naive_fullest_names)
+
+    def test_worst_blocks_no_valid_group_when_budget_too_small(self):
+        # 预算连 2 个最小事件都装不下时,最满块返回空列表。
+        events = [self._ev("a", 100), self._ev("b", 90)]
+        longest, fullest = share_data.worst_blocks(
+            events, tok_budget=64, events_per_mb=4)
+        self.assertEqual(longest[0]["event"], "a")
+        self.assertEqual(fullest, [])
+
+    def test_worst_blocks_empty_events(self):
+        longest, fullest = share_data.worst_blocks([], tok_budget=100, events_per_mb=4)
+        self.assertEqual(longest, [])
+        self.assertEqual(fullest, [])
 
 
 def _toy_event():
@@ -320,6 +359,16 @@ class TestPackAndMask(unittest.TestCase):
         self.assertTrue((input_ids[0, 12:] == share_data.PAD_TOKEN_ID).all())
         self.assertEqual(input_ids[1, :2].tolist(), [50, 51])
         self.assertTrue((input_ids[1, 2:] == share_data.PAD_TOKEN_ID).all())
+
+        # pad 位置的 position_ids 接着数(spec 第 4 节),不是写死 0。
+        # 事件 A 真实位置最后一个是 4(positions[-1],见 test_pack_event),
+        # 12..15 这 4 个 pad 位接着数:5,6,7,8。
+        self.assertEqual(position_ids[0, :12].tolist(),
+                         [0, 1, 2, 1, 2, 3, 3, 4, 5, 2, 3, 4])
+        self.assertEqual(position_ids[0, 12:].tolist(), [5, 6, 7, 8])
+        # 事件 B 真实位置是 [0, 1],2..15 这 14 个 pad 位接着数:2..15。
+        self.assertEqual(position_ids[1, :2].tolist(), [0, 1])
+        self.assertEqual(position_ids[1, 2:].tolist(), list(range(2, 16)))
 
         # 真实 token 看不到 pad(事件 A 的 12 个真实 query,列 12..15 全 -inf)。
         self.assertTrue(torch.isneginf(mask[0, 0, :12, 12:]).all())
