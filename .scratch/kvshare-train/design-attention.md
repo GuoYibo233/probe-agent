@@ -147,6 +147,8 @@ flex 的好处是块稀疏：形态 A 的掩码里，前缀因果去掉一半、
 
 三项附加检查都在第一个事件（3 行）上做，全部在 fp32：形态 B 每行 loss 对旧训练器整批最大差 1.31e-6，前缀输入嵌入梯度最大绝对值 0.599，463 个前缀位置里 462 个梯度非零；形态 A 开梯度检查点（`gradient_checkpointing_enable()`）之后每行 loss 和不开的差 0，反向能跑，嵌入层梯度最大绝对值 4.23；形态 A 套 peft LoRA（`lora_util.py` 的七件套，r 16、alpha 32）之后每行 loss 和底座差 0（B 矩阵初始为零），392 个 LoRA 参数全部拿到梯度，底座参数 0 个有梯度。
 
+补一组大事件（spec 第 9 节把对齐检查改成抽全文 2,048 个 token 以内、行数不限的事件，上面 5 个事件的规模盖不住）：同一个脚本加 `--min-rows 30 --max-rows 64 --max-chars 9000 --dtypes fp32`，种子 42 从 1,008 个候选里抽 3 个，`appworld_6171bbc_3_r0|s5`（42 行，前缀 1,095，打包后 2,145）、`appworld_37a8675_1_r3|s15`（64 行，1,961，3,689）、`appworld_0d8a4ee_2_r1|s1`（45 行，696，1,505），一共 151 行、2,833 个目标 token，只跑 fp32（结果 `equiv_result_long_fp32.json`）。形态 A 对旧训练器整批的每行最大绝对差 2.62e-6（相对 1.8e-6），逐 token 最大 2.38e-5；补齐基线每行 3.10e-6、逐 token 1.72e-5。尾巴长度出现了 4、5、6 三种（6 是分隔串的换行没有和行末并上、反而多分出一个 token 的情形），没有空尾巴。
+
 下面是解读。fp32 下形态 A 对旧训练器的差（每行 2.15e-6）和旧训练器自己补齐与不补齐的差（2.15e-6）完全同量级，逐 token 的 2.77e-5 对 3.24e-5 也是，所以形态 A 的掩码和 position_ids 是对的，剩下的差是 fp32 的累加顺序噪声。bool 掩码和浮点掩码逐位相同，说明 CPU 内核对两种 dtype 走的是同一条算术路径。bf16 下形态 A 对旧训练器的每行差（最大 3.6e-2、平均 8.9e-3）和「旧训练器补齐对不补齐」（3.0e-2、5.3e-3）、「同一形态 bf16 对 fp32」（3.0e-2、8.0e-3）三者同量级，bf16 的舍入本身就有这么大，形态之间的差没有额外贡献。
 
 ## 五、对齐容差分两道：fp32 门禁每行 1e-5，bf16 粗筛每行平均 2e-2
@@ -159,7 +161,7 @@ flex 的好处是块稀疏：形态 A 的掩码里，前缀因果去掉一半、
 
 新训练器的对齐验收分两道。
 
-第一道是正确性门禁，fp32、CPU、`highest` 精度，随机抽 5 个短事件（就用 `cpu_equiv_check.py` 的抽法，每个事件十几秒），形态 A 对旧训练器整批的每行 loss 最大绝对差不超过 1e-5，逐 token 最大绝对差不超过 1e-4。依据：实测每行 2.15e-6、逐 token 2.77e-5，门槛各留约 4 倍余量；掩码或者 position_ids 错一个位置，一行的 loss 会动 1e-2 到 1 的量级，远在门槛之上。把差值和同一次运行里「旧训练器单行对整批」的基线差一起打印，差值超过基线 3 倍就算可疑，即使差值本身还在 1e-5 以内。
+第一道是正确性门禁，fp32、CPU、`highest` 精度，随机抽 5 个短事件（就用 `cpu_equiv_check.py` 的抽法，每个事件十几秒），形态 A 对旧训练器整批的每行 loss 最大绝对差不超过 1e-5，逐 token 最大绝对差不超过 1e-4。依据：5 个短事件实测每行 2.15e-6、逐 token 2.77e-5，3 个大事件（最多 64 行、打包后 3,689）实测每行 2.62e-6、逐 token 2.38e-5，门槛各留约 4 倍余量；掩码或者 position_ids 错一个位置，一行的 loss 会动 1e-2 到 1 的量级，远在门槛之上。把差值和同一次运行里「旧训练器单行对整批」的基线差一起打印，差值超过基线 3 倍就算可疑，即使差值本身还在 1e-5 以内。
 
 第二道是 bf16 粗筛，在 GPU 冒烟之前用真实内核跑一次（`gpu_kernel_check.py` 第 6 步），34 行以上，形态 A 对旧训练器整批的每行 loss 平均绝对差不超过 2e-2、最大绝对差不超过 1e-1。依据：CPU 实测平均 8.9e-3、最大 3.6e-2，bf16 对 fp32 自己的差就有平均 8.0e-3、最大 3.0e-2；GPU 上 mem-efficient 内核的累加顺序和 CPU 不同，门槛留 2 到 3 倍。这道筛只能抓「整段错位」这种把 loss 挪掉 0.1 以上的错，抓不住细微的掩码错，所以不能替代第一道。
 
@@ -184,21 +186,38 @@ CUDA_VISIBLE_DEVICES=0 cprobe-env/bin/python /home/y-guo/.claude/jobs/b39c625e/t
 
 第 2 步的峰值是全 8192 前缀加 45 段的单事件数，物理批按 token 预算放多个短事件的峰值要在冒烟里另量。
 
-## 七、GPU 七步验证的结果（草稿：第一次发射只跑到第 3 步，第 4 步崩了，等补射）
+## 七、GPU 七步验证的结果：形态 A 的前提成立，最长事件在 bf16 补齐掩码下峰值 26.65 GiB
 
-第一次发射在 tokyo108 GPU 0（H100 NVL，93.10 GiB）上跑，命令见产物目录 `pipeline/runs/smoke/kvshare_gpu_kernel_check/RUNMETA.json`（HEAD 024b34f），日志 `logs/new1_kvshare_gpu_kernel_check_t108g0.log`。脚本挑出来的最长事件是 `appworld_6bdbc26_1_r2|s17`：64 行，前缀 8,167 个 token，打包后 L 9,381。
+两次发射都在 tokyo108 GPU 0（H100 NVL，93.10 GiB）上，产物目录 `pipeline/runs/smoke/kvshare_gpu_kernel_check/`（`RUNMETA.json` 记 HEAD 024b34f）。第一次发射（日志 `logs/new1_kvshare_gpu_kernel_check_t108g0.log`）跑到第 3 步，第 4 步崩：脚本把前缀截到 2,048 却没有过滤行，16 行的尾巴各自带着 2,048 之后的整段 prompt，math 内核要分配 101.85 GiB。改脚本后补射（日志 `logs/new1_kvshare_gpu_kernel_check_t108g0.r1.log`，`gpu_result.json` 09:28 落盘），九步都跑完，第 6 步的两遍对齐报错，原因在 7.1 节。JSON 里记的环境：torch 2.11.0+cu128，`priority_order` `[1, 2, 0, 3, 4]`，`float32_matmul_precision` highest，`allow_tf32_matmul` False。脚本挑出来的最长事件是 `appworld_6bdbc26_1_r2|s17`：64 行，前缀 8,167 个 token，打包后 L 9,381，补到 16 的倍数是 9,392。
 
-前三步的事实：
+七步的事实（峰值都是 `torch.cuda.max_memory_allocated`，括号里是比进入每一步之前多出的量；秒数是前向加反向的墙钟，第 2、3 步含 profiler 开销）：
 
-- 第 1 步内核资格：bool 掩码和 bf16 加性掩码两种情况下 `can_use_flash_attention` 都是 False（警告原文 `Flash Attention does not support non-null attn_mask.`），`can_use_efficient_attention` 都是 True，`can_use_cudnn_attention` 都是 True。
-- 第 2 步强制 mem-efficient（bool 掩码，autocast bf16，前向加反向）：`torch.cuda.max_memory_allocated` 31.43 GiB（比进入这一步之前多 28.86 GiB），3.63 秒（含 profiler 开销），profiler 里的内核名是 `fmha_cutlassF_bf16_aligned_64x128_rf_sm80` 和 `fmha_cutlassB_bf16_aligned_128x128_k128_sm80`，也就是 cutlass 的 mem-efficient 前向和反向。每行 loss 平均 3.245。
-- 第 3 步默认选择（同一输入，不套上下文）：峰值 31.47 GiB（多 28.83 GiB），3.99 秒，内核名是 `aten::_scaled_dot_product_cudnn_attention` 加 `cudnn_generated_fort_native_sdpa_sm90_flash_fprop_wgmma_f16` 和对应的 `bprop`，也就是 cuDNN 的注意力。
-- 第 4 步崩了：脚本把前缀截到 2,048 却没有过滤行，16 行的尾巴各自带着 2,048 之后的整段 prompt，拼出来的 L 远超 2,048，math 内核要分配 101.85 GiB。修法在 7.1 节。
+1. 内核资格：bool 掩码和 bf16 加性掩码两种情况下 `can_use_flash_attention` 都是 False，`can_use_efficient_attention` 都是 True，`can_use_cudnn_attention` 都是 True。
+2. 强制 mem-efficient（bool 掩码）：峰值 31.08 GiB（多 28.86 GiB），3.06 秒，内核名 `fmha_cutlassF_bf16_aligned_64x128_rf_sm80` 和 `fmha_cutlassB_bf16_aligned_128x128_k128_sm80`；64 行 loss 平均 3.2452。
+3. 默认选择（同一输入）：峰值 31.11 GiB（多 28.83 GiB），4.5 秒，内核名 `aten::_scaled_dot_product_cudnn_attention` 加 `cudnn_generated_fort_native_sdpa_sm90_flash_fprop_wgmma_f16` 与对应的 `bprop`；64 行 loss 平均 3.2500。
+4. math 内核在短序列上：事件 `appworld_68ee2c9_1_r3|s2`（全文正好 2,048 个 token，64 行里装进 42 行），P 2,048、L 2,552，解析式 28 × 16 × 2,552² × 4 字节 = 10.87 GiB；math 峰值 22.55 GiB（多 20.26 GiB），2.33 秒；同一输入 mem-efficient 峰值 10.38 GiB（多 8.09 GiB），0.14 秒。42 行 loss 平均 math 2.3924、mem-efficient 2.3873。
+5. 掩码四种变体（强制 mem-efficient）：bool 不补齐（L 9,381）31.11 GiB；bf16 加性不补齐 31.20 GiB；bool 补到 9,392 是 31.17 GiB；bf16 加性补到 9,392 是 26.65 GiB（多 24.36 GiB）。四种的 64 行 loss 平均都是 3.2452。
+6. 对齐差值：bf16 和 fp32 两遍都报 `RuntimeError: No available kernel. Aborting execution.`，日志第 15 行 torch 给的拒绝理由原文是 `For dense input, both fused kernels require query, key and value to have the same num_heads. Query.sizes(): [1, 16, 463, 128], Key sizes(): [1, 8, 463, 128], Value sizes(): [1, 8, 463, 128] instead.`，没有拿到数。
+7. `--grad-ckpt`：峰值 6.35 GiB（多 4.07 GiB），1.22 秒；`--lora`（r 16，七件套）：峰值 31.16 GiB（多 28.84 GiB），1.02 秒。
 
-下面是解读。3.1 节「默认优先级会落到 mem-efficient」在 H100 上不成立：登录机上 `_get_sdp_priority_order()` 返回的顺序是 flash、efficient、math、cudnn，而 H100 上默认选择实际落到了 cuDNN，两者不一致的原因没有在代码里追到（torch 的选择逻辑在编译进 .so 的 `sdp_utils.cpp` 里，头文件里没有）。两条内核的峰值只差 0.04 GiB，耗时差 0.36 秒（单次、含 profiler，分不出快慢）。裁决不变：训练代码显式套 `sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])`，理由从「防止退到 math」加上一条「把内核钉死，不随 torch 的默认顺序和 cuDNN 版本漂移」；sdpa 的 docstring 写明 cuDNN 路径可能选到非确定性算法（`this operator may select a nondeterministic algorithm`），mem-efficient 没有这句话。
+下面是解读。
 
-显存对照 3.3 节的估算：3.3 节按每 token 2.42 MB 加 1.2 GB 权重副本估 L 9,381 留住约 23.9 GB，脚本没有建优化器，第 2 步的 28.86 GiB（31.0 GB）里含 fp32 梯度 2.4 GB，剩下 28.6 GB 是激活加瞬时张量，比估的留住量高两成。加上训练时 AdamW 的两份状态 4.8 GB，最长单事件的峰值约 36 GiB，H100 的 93.1 GiB 剩六成；物理块按 token 预算装多个事件的峰值要在冒烟里另量。
+形态 A 的前提成立：mem-efficient 接形态 A 的真实形状（L 9,381、head_dim 128、bf16、4 维掩码），第 2 步的内核名就是 cutlass 的 mem-efficient 前向和反向，四种掩码变体和 `--grad-ckpt`、`--lora` 都在同一个内核上跑通，loss 平均逐位相同。
 
-### 7.1 第 4 步的修法与补射
+默认内核选择在 H100 上落到 cuDNN，不是 3.1 节推的 mem-efficient；`priority_order` 在 GPU 上读出来仍是 flash、efficient、math、cudnn，所以 torch 在选择时对 sm90 另有偏好，选择逻辑在编译进 .so 的 `sdp_utils.cpp` 里，本次没有追。cuDNN 和 mem-efficient 的 64 行 loss 平均差 4.8e-3（3.2500 对 3.2452），是两个 bf16 内核的舍入路径不同。裁决不变并且理由加强：训练与评估都显式套 `sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])`，把内核钉死，不随 torch 默认顺序、cuDNN 版本和显卡型号漂移。
 
-修改只动 `verify/gpu_kernel_check.py` 一个文件：第 4 步只取 `len(prompt) ≤ --math-L` 的行，逐行往里装直到拼接长度超过 1.25 × `--math-L` 就停，装不进两行就跳过并记原因；每一步做完立刻 `json.dump` 一次；每一步包在 try 里，出错记原文并清显存，后面的步照跑；第 6 步加一遍 fp32（autocast 关、`highest` 精度、fp32 掩码）的对齐差值，给 spec 第 9 节在 GPU 上跑的第一道门槛一个真实内核的数。补射之后把第 4 到 7 步的数补进本节。
+掩码定 bf16 加性、L 补到 16 的倍数：比另外三种省 4.5 GiB，和 2.4 节的预测一致（28 层各留一份 9,392² × 2 字节的掩码副本是 4.60 GiB；bool 掩码每层被 `convert_boolean_attn_mask` 转一份，bf16 不补齐每层被 `pad_bias` 复制一份，只有 bf16 补齐的那一份被 28 层共用）。
+
+math 校准：同一输入 math 比 mem-efficient 多 12.17 GiB，解析式给 10.87 GiB，多出的 12% 是前向瞬时张量；64 字节每 L² 每层的系数成立，3.2 节的表照旧（L 9,381 要 147 GiB，任何卡装不下）。
+
+显存余量：最长单事件在 bf16 补齐掩码下峰值 26.65 GiB，脚本里有 fp32 权重和梯度、没有优化器状态，训练时再加 AdamW 两份状态 4.47 GiB 是 31.1 GiB，对 H100 的 93.10 GiB 剩 62 GiB（67%）。多出的 24.36 GiB 折成每 token 2.72 MB（含瞬时），比 3.3 节估的留住量 2.42 MB 高 12%。按每 token 2.72 MB 估物理块：`--tok-budget` 16,384 个 token 的块约 41.5 GiB 激活，加静态 8.9 GiB 约 50 GiB，H100 占 54%；32,768 的块约 92 GiB，H100 装不下。16,384 和 32,768 两个块量的数是估算，spec 第 10 节的 `--mem-probe` 会量到真值。
+
+排卡（48G 卡，RTX 6000 Ada 49,140 MiB = 48.0 GiB）：`--grad-ckpt` 把最长单事件从 31.1 GiB 压到 6.35 GiB，`--lora` 不省激活（31.16 对 31.08）。0.6B 全参不开检查点，最长单事件 31.1 GiB 装得下（余 35%），但 16,384 的块约 50 GiB 装不下，所以 48G 卡上 0.6B 要么开检查点要么把块量压到约 14,000 个 token 以内；1.7B（隐藏维 2048，28 层）的每 token 激活约是 0.6B 的 2 倍，4B（2560，36 层）约 3.2 倍，最长单事件不开检查点分别约 49 GiB 和 78 GiB，48G 卡上两个底座都必须 `--grad-ckpt`，LoRA 不能替代（1.7B、4B 的倍数是按隐藏维乘层数推的，没有实测）。
+
+### 7.1 第 6 步的报错原因，以及训练器要绕的约束
+
+原因：对齐检查的参照路径里有一批是「单行不补齐」，没有 padding，HF 的 `_ignore_causal_mask_sdpa` 跳过建掩码，`use_gqa_in_sdpa` 在掩码为空时返回 True，K、V 保持 8 头不做 `repeat_kv`，直接把 `enable_gqa=True` 传给 sdpa；mem-efficient 内核不支持 GQA（sdpa 的 docstring 原文 `Grouped Query Attention (GQA) is an experimental feature. It currently works only for Flash_attention and math kernel on CUDA tensor`），强制 EFFICIENT 的上下文里 flash 和 cudnn 又被关掉，于是没有内核可用。新路径永远带掩码，`repeat_kv` 到 16 头，不会撞上，第 2、3、5、7 步都在同一个上下文里跑通就是证据。
+
+脚本的修法：`alignment()` 只给新路径套 `sdpa_kernel([EFFICIENT_ATTENTION])`，参照路径用默认选择；第 1 步多问两种资格（fp32 query 加 fp32 掩码；bf16 无掩码且 K/V 8 头）把「mem-efficient 不接 GQA」的约束写进 JSON。等补射出数再补 5.2 节第一道门槛在 GPU 上的依据。
+
+训练器要绕的约束（spec 第 9 节要加一句）：对齐检查的参照路径（旧 `collate` 加 `inst_ce`）不套 `sdpa_kernel([EFFICIENT_ATTENTION])`，用默认内核选择；只有新路径（形态 A，永远带掩码）套。更一般的规则：凡是没有掩码的 sdpa 调用（HF 在 2 维掩码全 True 或者掩码为空的时候会跳过建掩码并开 `enable_gqa`）都不能放进强制 EFFICIENT 的上下文。训练器自己的训练和评估前向都是形态 A，都带掩码，不受影响。

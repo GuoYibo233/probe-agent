@@ -115,19 +115,25 @@ def short_pack(events, tok, math_L):
 
 
 def alignment(model, tok, events, chosen, dev, fp32):
-    """旧训练器逐行前向 vs 形态 A:每行 loss 与逐 token 的差,带补齐基线。fp32=True 时 autocast 关、fp32 掩码。"""
+    """旧训练器逐行前向 vs 形态 A:每行 loss 与逐 token 的差,带补齐基线。fp32=True 时 autocast 关、fp32 掩码。
+
+    参照路径不套 EFFICIENT 上下文:单行不补齐的批没有掩码,HF 走 enable_gqa=True(K/V 保持 8 头不复制),
+    mem-efficient 不支持 GQA,强制 EFFICIENT 会抛 `No available kernel`(补射第一次就是这样错的,日志第 15 行:
+    `both fused kernels require query, key and value to have the same num_heads`)。新路径永远带掩码
+    (repeat_kv 到 16 头),套 EFFICIENT,这正是训练器对齐检查里新路径要走的内核。"""
     olds, singles, news = [], [], []
     olds_t, singles_t, news_t = [], [], []
     ctx = torch.autocast("cuda", dtype=torch.bfloat16, enabled=not fp32)
     mask_dtype = torch.float32 if fp32 else torch.bfloat16
-    with torch.no_grad(), ctx, sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
+    with torch.no_grad(), ctx:
         for e in chosen:
             rr = pc.build_rows(tok, events[e])
             fi = tok(events[e][-1]["text"], add_special_tokens=False)["input_ids"]
             pk_e = pc.build_packed(rr, fi)
-            ce_b, rm_b = pc.forward_old(model, tok, rr, dev, batched=True)
-            ce_s, rm_s = pc.forward_old(model, tok, rr, dev, batched=False)
-            ce_n, rm_n = pc.forward_packed(model, pk_e, dev, "float", mask_dtype)
+            ce_b, rm_b = pc.forward_old(model, tok, rr, dev, batched=True)      # 默认内核选择
+            ce_s, rm_s = pc.forward_old(model, tok, rr, dev, batched=False)     # 默认内核选择
+            with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
+                ce_n, rm_n = pc.forward_packed(model, pk_e, dev, "float", mask_dtype)
             olds.append(rm_b); singles.append(rm_s); news.append(rm_n)
             olds_t.append(ce_b); singles_t.append(ce_s); news_t.append(ce_n)
     cat = torch.cat
@@ -199,17 +205,21 @@ def main():
         v = torch.randn_like(q)
         mask_bool = pk["allow"][None, None].to(dev)
         mask_bf16 = pc.float_mask(pk["allow"], torch.bfloat16)[None, None].to(dev)
+        mask_f32 = pc.float_mask(pk["allow"], torch.float32)[None, None].to(dev)
         elig = {}
-        for mname, m in (("bool", mask_bool), ("bf16_additive", mask_bf16)):
-            params = torch.backends.cuda.SDPAParams(q, k, v, m, 0.0, False, False)
+        for mname, (qq, kk, vv, m) in (("bool", (q, k, v, mask_bool)),
+                                       ("bf16_additive", (q, k, v, mask_bf16)),
+                                       ("fp32_query_fp32_additive", (q.float(), k.float(), v.float(), mask_f32)),
+                                       ("bf16_gqa_no_mask_kv8heads", (q, k[:, :8], v[:, :8], None))):
+            params = torch.backends.cuda.SDPAParams(qq, kk, vv, m, 0.0, m is None, m is None)
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter("always")
                 elig[mname] = dict(
                     flash=torch.backends.cuda.can_use_flash_attention(params, True),
                     efficient=torch.backends.cuda.can_use_efficient_attention(params, True),
                     cudnn=torch.backends.cuda.can_use_cudnn_attention(params, True),
-                    warnings=[str(x.message) for x in w])
-        del q, k, v, mask_bool, mask_bf16
+                    warnings=[str(x.message)[:300] for x in w])
+        del q, k, v, mask_bool, mask_bf16, mask_f32
         torch.cuda.empty_cache()
         return elig
     step("kernel_eligibility", s1)
