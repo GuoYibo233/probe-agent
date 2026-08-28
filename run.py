@@ -315,6 +315,17 @@ TASKS = {
                "--lora-lr 2e-4(显式给 --lr 就以 --lr 为准)",
                "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
+    "sweep-lr": dict(
+        stage="train", py="cprobe", script="pipeline/train/sweep_lr.py",
+        desc="学习率扫描的清单(plan)与收表(report),发射仍走 gpu-run",
+        notes=["两个子命令:`sweep-lr plan [--grid ...] [--write plan.json]`"
+               "按网格常量 `GRID` 生成 12 条 train-cgen 命令与 launch 行;"
+               "`sweep-lr report --runs <路径/glob...> --out <目录>` 收一批"
+               "run 目录的 train_log.jsonl 成 SWEEP_REPORT.json/.md",
+               "`GRID` 常量在 pipeline/train/sweep_lr.py 顶部,四个底座配置"
+               "(b06/b17/l17/l4)各三个学习率锚点,冒烟后可能再改",
+               "本任务只出清单/收表(纯 CPU),不发射;12 个 run 的实际发射"
+               "走 gpu-run,产物目录 pipeline/runs/sweep/ 不进矩阵"]),
 
     # ---- eval 评测 ----
     "eval-tool-mbert": dict(
