@@ -1,6 +1,6 @@
 # 12 第二轮文档回写：skill 三份参考、MAP.md、run.py notes、gates.md
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 07, 08, 09, 10, 11（全部合并进 main 之后才发）
 Spec: `.scratch/kvshare-train/spec.md` 16.7（清单）、16.10（静默失败点 #28 到 #32）。改动只在 `.claude/skills/probe-pipeline/references/stage-commands.md`、`invariants.md`、`extending.md`、`gates.md`、`MAP.md`、`pipeline/eval/ACCEPT_EVAL.md`、`run.py`（只改 `train-cgen / train-cparam / train-ctool / eval-tool-causal / eval-tool-mbert / eval-ccall / eval-cparam` 七条的 `notes` 字符串，不动别的键）。不改任何 `.py` 逻辑、不改测试。
 
@@ -26,3 +26,7 @@ Spec: `.scratch/kvshare-train/spec.md` 16.7（清单）、16.10（静默失败�
 - `grep -n "overlong" .claude/skills/probe-pipeline/references/stage-commands.md MAP.md run.py` 三处命中；`grep -n "#34" .claude/skills/probe-pipeline/references/extending.md` 命中；`grep -n "worst_gb\|runs/sweep" .claude/skills/probe-pipeline/references/stage-commands.md` 两个都命中。
 - 文档里每个参数的默认值与对应脚本 `--help` 一致（评审逐个对）。
 - 不改 `.py` 逻辑、不改测试。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave6 实现 0 轮修复过评审，分支 `ticket/2026-08-28-wave6/T12`（base `ed88ad7`，head `4f10aec`），合并为 `1998522`（无冲突）。评审 minors 两条与实现者两条 concern 主会话在合并后直接改：extending §5 新行的 `#` 前缀去掉、与前 27 行同一格式；#30 的位序说法统一成「从 0 数的第 6 位」；spec 16.10 的 #35、#36 以及工单发射后新加的 #37（grad-ckpt 重算内核）补进 extending §5；invariants / stage-commands 里指向「spec 16.10 #35/#36」的交叉引用保留（内容在 spec 里也在）。另外补两处工单发射后才定的事：stage-commands §3 参数表 `loop` 的说明改成决定 32 的三组规则；§3.1 加读法 ④（479aa4b 之前带 `--mem-probe` 的 run 第一条 step 峰值是探针的数，决定 35）。cannotVerify 两条（各开关的 GPU 运行时行为、#28/#29/#34 的触发条件只静态核对）由第二轮冒烟与 `--overlong` 端到端验证覆盖。
