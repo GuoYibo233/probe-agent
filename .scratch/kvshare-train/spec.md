@@ -77,10 +77,10 @@ seg_lab  = [-100] * len(old_ids[p:]) + tgt_ids
 语义定义在这里，内核选择与实现路径以 `design-attention.md` 为准（2026-08-28 已交付，CPU 等价验证通过，验证脚本与结果收在 `verify/`）。定下来的实现路径（决定 12）：
 
 - 形态 A：一个事件打包成一条序列一次前向；多事件沿批维摆，按 token 预算组批。形态 B（前缀 `use_cache` 再各段接缓存）不用：和 `--grad-ckpt` 互斥、每段 cat 出的 K/V 副本在 8192 事件上约 20 GB。
-- 内核：`attn_implementation="sdpa"`，训练与评估的前向都包在 `torch.nn.attention.sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])` 里；有掩码时 flash 直接拒绝，默认优先级会落到 mem-efficient，但显式限定之后一旦退到 math 就报错退出而不是爆显存（math 内核每层留一份 fp32 的 `(1, 16, L, L)`：L = 9,100 时每层 5.3 GB、28 层 148 GB）。`--attn-impl` 默认 `sdpa`，只接受 `sdpa`（flex_attention 留作冒烟后的优化，不在这一轮）。
-- 掩码：调用方自己造成 bf16 加性掩码（可看 0、不可看 −inf），形状 `[B, 1, L, L]`，每个物理块造一份，L 补到 16 的倍数；不许传 bool 掩码（HF 会每层各转一份，28 × 166 MB ≈ 4.6 GB）。
-- position_ids：显式传张量，每段从 p_k 接着数（`modeling_qwen3.py` 直接吃调用方给的 position_ids）。
-- 损失位：用 `(query 位置, 目标 token id, 行号)` 的下标表从 logits 里取，不用移位 labels；每行 ce 的定义仍是第 4 节末段。
+- 内核：`attn_implementation="sdpa"`；在 cuda 设备上，训练、评估、对齐检查三处前向都包在 `torch.nn.attention.sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])` 里。有掩码时 flash 直接拒绝；H100 上实测 torch 的默认选择落到 cuDNN（`design-attention.md` 第七节：峰值 31.47 对 mem-efficient 的 31.43 GiB），所以要显式钉死 mem-efficient，不随 torch 默认顺序和 cuDNN 版本漂移（sdpa 文档写明 cuDNN 路径可能选非确定性算法）；显式限定之后一旦退到 math 就报错退出而不是爆显存（math 内核每层留一份 fp32 的 `(1, 16, L, L)`：L = 9,100 时每层 5.3 GB、28 层 148 GB）。CPU 上不套这个上下文（会抛 `No viable backend for scaled_dot_product_attention`），CPU 走默认内核。`--attn-impl` 默认 `sdpa`，只接受 `sdpa`（flex_attention 留作冒烟后的优化，不在这一轮）。
+- 掩码：调用方自己造加性掩码（可看 0、不可看 −inf），形状 `[B, 1, L, L]`，每个物理块造一份，L 补到 16 的倍数。掩码 dtype 必须等于 query 进 sdpa 时的 dtype：autocast bf16 下用 bf16，第 9 节的 fp32 对齐检查下用 fp32（fp32 query 配 bf16 掩码会被 torch 拒收：`Expected attn_mask dtype to be bool or float or to match query dtype`；fp32 掩码在 autocast 下会被逐层 cast 出 28 份副本）。不许传 bool 掩码（torch 的 sdpa 每层各转一份 float，`attention.cpp` 的 `convert_boolean_attn_mask`，28 × 166 MB ≈ 4.6 GB）。
+- position_ids：显式传张量，每段从 p_k 接着数（`modeling_qwen3.py` 直接吃调用方给的 position_ids）；补到 16 的 pad 位也要给 position_ids（接着数）。
+- 损失位：用 `(batch 下标, query 位置, 目标 token id, 行号)` 的下标表，先从末层隐状态 gather 出损失位再过 `lm_head`（或者用 `logits_to_keep`），不算全位置 logits（L = 9,100 的全位置 logits 是 2.8 GB bf16，评估块 32,768 个位置就是 10 GB）；每行 ce 的定义仍是第 4 节末段。
 - `--grad-ckpt` 与 `--lora` 在这个形态下都验证过（CPU：梯度检查点下 loss 差 0；peft 下 loss 差 0 且只有适配器参数有梯度）。
 
 一个事件的拼接序列：
@@ -108,7 +108,7 @@ labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
 
 ## 6 评估与最好版本（草稿 2.7）
 
-- `val_ce` 的口径照 `eval_ce`（第 259 到 291 行）：全部 val 行的 `Σ w·ce / Σ w`，用第 4 节的拼接前向算，`torch.no_grad` 加 bf16 autocast，物理块预算 `--eval-tok-budget`（默认 = 2 × `--tok-budget`）。`w_tot <= 0` 硬停照旧。
+- `val_ce` 的口径照 `eval_ce`（第 259 到 291 行）：全部 val 行的 `Σ w·ce / Σ w`，用第 4 节的拼接前向算（同样只在损失位过 `lm_head`），`torch.no_grad` 加 bf16 autocast，物理块预算 `--eval-tok-budget`（默认 = 2 × `--tok-budget`）。`w_tot <= 0` 硬停照旧。
 - 时机：每个 epoch 评 `E = --eval-per-epoch`（默认 4）次，评估点是 `{ceil(U·k/E) : k = 1..E}` 这个集合（U < E 时重复的点合并，只评一次），本 epoch 的更新次数到达其中一个点就评一次全量 val；k = E 的那个点是 epoch 末。
 - 最好版本：`val_ce` 最低的一次，写 `<out>/best/`，布局与旧训练器逐项同构（第 530 到 552 行）：全参 `model.save_pretrained`，LoRA `lora_util.save_merged`；`tok.save_pretrained`；`meta.json` 的旧字段逐字段照旧训练器的写法（`base, base_path, data, max_len, seed, epoch, call_sep, transformers`；`readonly_env` 只在打开时才写这个键——`eval_causal_call.py` 判的是键在不在，不是值；`lora`、`grad_ckpt` 照旧；cparam 的 `param_only: true`），新增 `trainer: "share"`, `frac`（评估点序号 1 到 E）, `gstep`, `tok_budget`, `events_per_mb`, `accum`, `attn_impl`。评测脚本读 `call_sep`、`max_len`、`param_only`、`data`（三方对拍）、`readonly_env`（键在不在）（`eval_causal_call.py` 第 513 到 516、585 到 586 行；`eval_causal_param.py` 第 342 到 345、415 到 416 行）。`max_len` 写 8192 之后两个评测脚本的提示左截长度会从 4,000 变成 8,096（它们用 `max_len − max_new`），这是有意的：评测端不截断和训练端同口径；评测显存在评测排卡时按 8192 估（决定 13）。
 - 不做生成式评估（旧 `val_exact_call` / `val_exact_params` 与 `--gen-bs` 去掉，决定 4）。
@@ -165,13 +165,13 @@ labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
 
 ## 9 对齐检查（内置，照 ctool 的做法）
 
-训练开始前（以及 `--align-only`）：`random.Random(SEED)` 从 val 事件里抽 `--align-events` 个（只抽 `len(full_ids) ≤ 2048` 的事件，控制耗时），在 fp32 下（autocast 关；cuda 上再关 TF32：`torch.backends.cuda.matmul.allow_tf32 = False`、`torch.backends.cudnn.allow_tf32 = False`，检查完恢复）：
+训练开始前（以及 `--align-only`），并且在 `lora_util.wrap` 之前（照 ctool 第 369 到 372 行的顺序；否则 LoRA dropout 0.05 让两条路各自随机）、`model.eval()` 状态下：`random.Random(SEED)` 从 val 事件里抽 `--align-events` 个（只抽 `len(full_ids) ≤ 2048` 的事件，控制耗时），在 fp32 下（autocast 关；掩码 fp32；cuda 上再 `torch.set_float32_matmul_precision("highest")`、`torch.backends.cuda.matmul.allow_tf32 = False`、`torch.backends.cudnn.allow_tf32 = False`，照 ctool 第 208 行，检查完恢复）：
 
 - 进料：把抽中事件的全部原始 jsonl 行按 `(event, sent_idx)` 升序写进一个 `tempfile` 临时 jsonl，同一个临时路径同时喂给 `share_data.load_events`（`limit=0`）和旧脚本的 `CallDS` / `ParamDS`（`limit=0`——旧脚本的 `limit` 是对行打乱后截断，不是选事件；`ro` 两边传同一个）。参照路径只读这个临时文件，不对全量 val 构造 `CallDS`。
 - 新路径：第 4 节的拼接前向，得到每行 ce。
-- 参照路径：import 旧脚本的 `collate`、`inst_ce`，把 `CallDS` / `ParamDS` 的行按旧方式（每行单独 `text + TAIL` 加目标串，`max_len` 传同一个值）过同一个模型，得到每行 ce。
+- 参照路径：import 旧脚本的 `collate`、`inst_ce`，把 `CallDS` / `ParamDS` 的行按旧方式（每行单独 `text + TAIL` 加目标串，`max_len` 传同一个值）过同一个模型，得到每行 ce。旧 `inst_ce` 对整批全部位置算全词表 logits（fp32 下 行数 × L × 151,936 × 4 字节，一个 64 行 2048 token 的事件约 82 GB），所以参照路径按旧训练器的 `--bs 4` 每 4 行一批过；第一道门禁里的基线「单行不补齐对整批补齐」也按 4 行一批定义。
 - 配对按位置：旧脚本的行元组里没有 `event` / `sent_idx`（`train_causal_callgen.py` 第 167 到 168 行、`train_causal_param.py` 第 137 到 138 行），所以两条断言：`len(ds.rows) == 新路径总行数`；逐位 `ds.rows[i][0] == 新路径第 i 行的 text`（元组第 0 位是 `text`）。另外两侧的丢弃计数相等：`CallDS.dropped` 对新路径的 `dropped_rows_tgt`；`ParamDS` 的丢弃与 mismatch 对 `dropped_rows_tgt` / `assembly_mismatch`。任一条不过就 `sys.exit(2)`，不匹配的下标写进 `ALIGN_CHECK.json`。
-- 第一道（判定）：fp32 下逐行 `|ce_new − ce_ref|` 的最大值 ≤ `--align-tol`（默认 1e-5），逐目标 token 的最大差 ≤ 1e-4；同一次运行再算一个基线——参照路径「单行不补齐」对「整批右补齐」的逐行差——新路径的差超过基线 3 倍也算不过。依据：`design-attention.md` 的 CPU 验证，5 个事件 34 行 505 个目标 token，形态 A 对旧训练器的逐行最大差 2.15e-6（相对 8.4e-7）、逐 token 2.77e-5，基线差同为 2.15e-6。
+- 第一道（判定）：fp32 下逐行 `|ce_new − ce_ref|` 的最大值 ≤ `--align-tol`（默认 1e-5），逐目标 token 的最大差 ≤ 1e-4；同一次运行再算一个基线——参照路径「单行不补齐」对「4 行一批右补齐」的逐行差——新路径的差超过基线 3 倍也算不过。依据：`design-attention.md` 的 CPU 验证，5 个事件 34 行 505 个目标 token，形态 A 对旧训练器的逐行最大差 2.15e-6（相对 8.4e-7）、逐 token 2.77e-5，基线差同为 2.15e-6；42 行 L 2,145 的大事件逐行 1.19e-6、逐 token 1.43e-5、基线 5.96e-7。这两个门槛只在 CPU 上量过，GPU fp32 走 mem-efficient 的差值等 GPU 七步验证第 6 步的 `fp32_alignment` 出来后再定（工单 04 的 Comment 会给最终值）。
 - 第二道（只报告并告警，只在 cuda 设备上做；CPU 上旧脚本的 autocast 本来就不开，字段写 null）：同一批行用 bf16 autocast 再跑一遍，逐行平均绝对差 > 2e-2 或最大 > 1e-1 就在 `start` 事件里打 `align_bf16_warn: true`。依据：CPU bf16 下形态 A 对旧训练器逐行最大 3.6e-2、平均 8.9e-3，基线（旧训练器补齐对不补齐）3.0e-2 / 5.3e-3，同量级；这一道只能抓整段错位。
 - 结果写 `<out>/ALIGN_CHECK.json`，键名沿用 ctool 那份的大写 `PASS`（驱动器的 smoke 门禁读的是 `PASS`）：`PASS, n_events, n_rows, n_tgt_tokens, max_abs_diff, max_tok_diff, baseline_max_abs_diff, tol, bf16_mean_abs_diff, bf16_max_abs_diff, attn_impl, mismatch_idx`；不通过 `sys.exit(2)`，`start` 事件带 `align_pass, align_maxdiff, align_bf16_warn`。
 - ctool 的 `--align-tol`（代码默认 1e-4，`train_causal_tool.py` 第 76 行；np821 排卡表传 3e-4，`ops/np821b06_placement.json` 第 9 到 10 行）验的是「整段一次前向对逐 token 增量前向」的末位隐状态与分类头 logits 的 fp32 绝对差，不比较 loss，所以这里不沿用那个数。

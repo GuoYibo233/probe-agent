@@ -63,3 +63,15 @@ ctool 的 n_bound_dropped 字段保留，含义改成「找不到读取位置的
 ## 决定 11
 
 分波改成 01 → {02, 03} → 主会话 GPU 对齐检查与冒烟 → 04；MAP.md 的四处改动全部挪到 04，01/02/03 只在报告里给文案；04 的 Blocked by 加「等冒烟裁决的 Comment」；工单 03 加「另需 design-attention.md 落地」；新训练器接 ops/heartbeat.py 三处（spec §7、工单 03 验收加 grep）；工单 03 的 CPU 冒烟产物改写 pipeline/runs/smoke/share_cpu_<mode>_smoke；spec §3.5 的上界改用 rules.py 的 MAX_BOUNDS = 64；§8 rows 任务 notes 加「产物不进矩阵」；§13 与工单 04 加 extending §5 的 #26、stage-commands 第 213 行 smoke 限额、批次前缀；工单 01 的自相矛盾句改掉。 / 理由：就是你 M3、M4、M5、L1 到 L5、N1 那几条。 / 依据：同你的审查。
+
+## 决定 12
+
+注意力实现按 8-28-assistant-2 的 design-attention.md 定死——形态 A（打包一次前向）加 sdpa mem-efficient 内核，训练/评估/对齐三处前向都显式包 sdpa_kernel([EFFICIENT_ATTENTION])，退到 math 就报错不爆显存；掩码由调用方造成 bf16 加性、每物理块一份、L 补到 16 的倍数；position_ids 显式；损失位用下标表；pad 的 query 行只看自己；flex_attention 留作冒烟后的优化。对齐容差改两道：fp32 逐行 ≤ 1e-5 且逐 token ≤ 1e-4 且不超同次运行基线 3 倍（判定）；bf16 均值 ≤ 2e-2 最大 ≤ 1e-1（只告警，只在 cuda 上做）。 / 理由：CPU 实测形态 A 对旧训练器逐行差 2.15e-6 与基线相同，math 内核 L=9,100 时 28 层留 148 GB。 / 依据：design-attention.md 第二到第五节。
+
+## 决定 13
+
+新训练器 meta.json 的 max_len 写 8192 之后，两个 call 评测脚本的提示左截长度会从 4,000 变成 8,096（它们用 max_len − max_new），这是有意的，评测端和训练端同口径；评测显存按 8192 估。 / 理由：不截断就是这一轮的目标；评测脚本不改。 / 依据：eval_causal_call.py 第 586 行、eval_causal_param.py 第 416 行读 max_len。
+
+## 决定 14
+
+对齐检查的配对改成「抽中事件的原始行按 (event, sent_idx) 升序写临时 jsonl，同一份文件喂 share_data.load_events 和旧 CallDS/ParamDS（limit=0），按位置配对并逐位断言 text 相同、丢弃计数相同」；share_data 模块顶层只许 stdlib 与 torch，旧训练脚本在函数体内延迟 import；read_position 加 keep 参数只扫真实 token，找不到返回 −1，两处调用保留 if j<0 守卫；build() 加 path=None 第二个关键字参数给小模型测试进门；epoch 末尾不满 accum 的一组也更新，U = ceil(M/accum)；评估点集合 {ceil(U·k/E)} 去重；ALIGN_CHECK.json 键名沿用 ctool 的大写 PASS；ctool 也冒烟一次并且退档 6144 时跟着退；ctool 读取位置回写不许写成「活跑错位已修」。 / 理由：workflow 确认的 8 条（C1 到 C8）加未核清单里我认可的那些。 / 依据：train_causal_callgen.py:55-60（版本门）、:167-168（行元组无 event/sent_idx）；eval_tool.py:142（keep）；run.py cmd_list/cmd_show 直接下标 desc。
