@@ -80,10 +80,10 @@ a{color:var(--accent);}
 <p class="lede">gyb 授权「一口气从出工单到部署到验收测试」之后，这一天做了什么、每个自主决定和它的理由、数字与出处，以及还要 gyb 拍板的事。事实在前，解读在后，两者之间有分界。</p>
 <div class="meta">
   <span>起点 <b>bd9a3d5</b></span>
-  <span>终点 <b id="head-final">见「终验」一节</b></span>
+  <span>代码终点 <b id="head-final">234dfad</b>（之后只有台账、文档与本汇报的提交）</span>
   <span>工单 <b>6 张，全部 resolved</b></span>
-  <span>自主决定 <b>23 条</b></span>
-  <span>GPU run <b id="gpu-count">9 个 run_id，12 次发射，全部销号</b></span>
+  <span>自主决定 <b>25 条</b></span>
+  <span>GPU run <b id="gpu-count">13 个 run_id，16 次发射，全部销号</b></span>
 </div>
 
 <h2>一句话结果</h2>
@@ -105,8 +105,9 @@ a{color:var(--accent);}
   <li><b>第二波：</b>工单 02（ctool 丢弃规则、默认值、读取位置规则）零轮修复；工单 03（训练器与注册表）两轮修复。合并后 cprobe-env 下 58 个测试通过，selfcheck 76 个任务就位。</li>
   <li><b>冒烟</b>（H100 三张、H200 三张并行）：三个格的 smoke 档、三个速度档（预算 16384 / 24576 / 16384 加分配器开关）。ctool 在 smoke 档被旧容差拦下一次，改默认值后补射通过；H100 上 ctool 每批 4 个事件 OOM，改每批 2 个后跑通。</li>
   <li><b>第三波：</b>工单 05（助手 2 审查训练器提出的五条建议加工单 03 的两条小问题）一轮过，助手 2 复核全部改到位。</li>
-  <li><b>第四波：</b>工单 04 回写 probe-pipeline skill 的五份文件（一轮修复），工单 06 把显存探针改成真实最坏情况并给 ctool 加显存日志字段（结果见「终验」）。</li>
-  <li><b>收尾：</b>TIMELINE 一条（助手 1 核出 3 处错误：一处数字没有出处、一处量纲混写、一处跨文件口径不一致，另有 3 处措辞，同日更正），记忆一条，本汇报。</li>
+  <li><b>第四波：</b>工单 04 回写 probe-pipeline skill 的五份文件（一轮修复）；工单 06 把显存探针改成「优化器状态先建好、最满块连做两次反向」并给 ctool 加显存日志字段（两轮修复；实现者抓到工单原文的一个技术缺口：所有参数梯度为 None 时优化器不分配状态，先做一次不计入测量的前向反向才建得出来）。助手 2 复核后再补一行「每块各自归零峰值计数器」。</li>
+  <li><b>终审与终验：</b>ticket-run 的整分支终审（opus，起点 2cbce57 终点 e952c37）报 4 条挡合并、16 条观察：1 条在终审看的版本之后已修，2 条文档过时派 sonnet 一次修完并复审，1 条就是终验的探针判据。终验四个 run 在最终代码上跑完（见「终验」）。</li>
+  <li><b>收尾：</b>TIMELINE 一条（助手 1 核出 3 处错误：一处数字没有出处、一处量纲混写、一处跨文件口径不一致，另有 3 处措辞，同日更正），记忆一条，本汇报（助手 1 核出 4 处错误 2 处没依据的判断，已改）。</li>
 </ol>
 
 <h2>数字</h2>
@@ -233,6 +234,12 @@ a{color:var(--accent);}
 <dt><span class="id">决定 23</span>TIMELINE「只增不改」的执行口径：同会话同日写、三十分钟内、没被引用的条目，事实错误在原处更正并在提交信息注明；隔天或被引用后只追加更正段<span class="pill warn">待 gyb 定</span></dt>
 <dd class="why">错误数字留在正文、更正挂在后面，读的人要自己对账。</dd>
 <dd class="src">仓库 CLAUDE.md「TIMELINE 人写，只增不改」；本轮执行了一次（d2a86ff）。</dd>
+<dt><span class="id">决定 24</span>终审的 4 条挡合并 findings 这样处理：探针 longest_event 被污染那条在终审看的版本之后已修（234dfad）；两条文档过时派 sonnet 一次修完并复审；探针实测判据交终验。16 条观察不改，记进遗留</dt>
+<dd class="why">ticket-run Phase 4 的规程；观察都是重复逻辑与口径注记，没有一条会让数字算错。</dd>
+<dd class="src">终审报告；`git diff` 四处文档改动。</dd>
+<dt><span class="id">决定 25</span>工单 06 的实测判据没过，这一轮不再改探针：把它定为带实测偏差的下界估计，排卡时探针数加 10% 再判余量；退路（按真实训练循环连做两个小批）列给 gyb 定<span class="pill warn">待 gyb 定</span></dt>
+<dd class="why">偏差从 9.5 缩到 4.1 GB，两个预算下量级相同（4.1 / 4.4）；再改一轮要再一轮工单加 GPU 复测，而排卡靠加 10% 已经覆盖。</dd>
+<dd class="src">final_b16k 的 mem_probe 与 step 序列（54.38 对 58.47）；b24k_probe 76.47 对上次 80.91。</dd>
 </dl>
 
 <h2>需要 gyb 拍板的事</h2>
@@ -245,13 +252,27 @@ a{color:var(--accent);}
 <li>np821 十二格要不要用新口径重训：新口径和旧数字不可比，TIMELINE 已写「数字只在批内比」。</li>
 <li>决定 4：新训练器的训练日志不再有 val_exact_call / val_exact_params 两个生成式评估数，训练日志的可比性少了一项。</li>
 <li>决定 18 与 20：两处对齐容差都是按实测放宽的自定值，gyb 没有裁决过容差。</li>
-<li>决定 3 与 10：「换实现不算新格」的归类和批次前缀 ks828 的命名是我的自主判断；改归类会牵动 skill 文档，改前缀会牵动九个已登记的 run。</li>
+<li>决定 3 与 10：「换实现不算新格」的归类和批次前缀 ks828 的命名是我的自主判断；改归类会牵动 skill 文档，改前缀会牵动十三个已登记的 run。</li>
+<li>决定 25：显存探针仍低估约 4 GB，要不要再开一张工单改成「跑真实训练循环两个小批」，还是就按加 10% 的口径用。</li>
 </ol>
 </div>
 
 <h2>终验（最终代码上的冒烟）</h2>
-<div id="final-check">
-<p>工单 06 合并后在 H100 上用最终代码再跑一次 smoke 档三格与 b16k 速度档（含改后的显存探针）。这一节等结果落地后补。</p>
+<div class="facts">
+<div class="eyebrow">事实</div>
+<p>四个 run 在最终代码上发射（RUNMETA 记 commit 1414e8e、dirty false；发射员第一次被脏树门禁拦下，原因是我给探针加那一行改动比发射早 11 秒，它一个 session 都没起），全部跑完、零错误：</p>
+<div class="tablewrap"><table>
+<tr><th>run</th><th>卡</th><th class="n">对齐</th><th class="n">结果</th><th class="n">显存</th></tr>
+<tr><td>cgen 速度档，预算 16384，450 事件 20,641 行 57 次更新</td><td>H100 0</td><td class="n">5.48e-6 PASS</td><td class="n">累计 187.2 / 191.9 / 187.6；窗口 187.2 / 206.2 / 156.2；train_s 109.7；val_ce 0.261</td><td class="n">整程 step 峰值 58.47 GB（上次 60.59）；探针最满块 54.38、最长事件 36.47</td></tr>
+<tr><td>cgen 探针档，预算 24576，16 事件</td><td>H100 1</td><td class="n">同上</td><td class="n">—</td><td class="n">探针最满块（B=3）76.47；最长事件 36.49；上次整程峰值 80.91</td></tr>
+<tr><td>cparam smoke，40 / 16 事件</td><td>H100 2</td><td class="n">9.30e-6 PASS（1,916 token）</td><td class="n">val_ce 2.515 → 1.5927，89.7 s</td><td class="n">—</td></tr>
+<tr><td>ctool smoke，200 / 80 事件，bs 2 累积 4</td><td>H200 3</td><td class="n">1.03e-4 PASS（容差 3e-4）</td><td class="n">25 次更新，calA 0.3973，dropped 1 / 3</td><td class="n">自记已分配峰值 47.34 GB</td></tr>
+</table></div>
+<p>四份 ALIGN_CHECK 与上一轮逐位相同。六个速度对照数对旧训练器是 67.8 / 58.9 / 47.3 倍与 67.6 / 52.3 / 25.0 倍（助手 1 独立算，与我一致）。工单 06 的实测判据「探针 ≥ 整程 step 峰值」两档都没过：探针比整程峰值低 4.1 GB（16384）和 4.4 GB（24576），改前是低 9.5 和 5.9。同一批事件同一个种子，这次 19 条 step 的峰值逐条比上次低 2.1 到 3.9 GB，原因没有查。</p>
+</div>
+<div class="reading">
+<div class="eyebrow">下面是我的解读</div>
+<p>最终代码的速度和对齐结果与冒烟一致，六个对照数没有退步。探针改动是有效的（两档各抬高 3.3 与 1.4 GB）但没有追平训练峰值：探针按「token 数最多的块」选，而显存最大的块可能是行数多、损失位多的那一块（损失位的 logits 随目标 token 数涨），这是猜测没有量。决定 25：这一轮不再改探针，把它定为带实测偏差的下界估计，排卡时探针最满块的数加 10% 再判余量（助手 1 算过：两档偏差 7.5% 与 5.8%，54.38 × 1.1 = 59.81 高于 58.47，76.47 × 1.1 = 84.12 高于 80.91；这 10% 只盖已分配峰值之间的差，reserved 碎片的折是另一层，stage-commands 里写成两条分开的规则）；「按真实训练循环连做两个小批」的退路列进需要 gyb 拍板的事。</p>
 </div>
 
 <h2>遗留与已知问题</h2>
@@ -260,7 +281,8 @@ a{color:var(--accent);}
 <li>评审留下的小问题（都记在各工单的 Comments 里）：工单 05 的新测试与既有 LoRA 测试大段重复（wave3 评审 minor N1，sdd/2026-08-28-wave3/T05-report.md）；工单 04 报告里一个 commit sha 写错（wave4 评审 minor N1）；stage-commands §3.1 的峰值表把两条单格数据塞进三格同批次形态的表（工单 04 实现者 concern）。</li>
 <li>全量测试里 <code>test_splice_replay</code> 那 1 个 error 是仓库记忆里的老毛病；实现者报的 <code>test_no_env_reads_default_preset</code> 失败在 HEAD 上复现不了（助手 1 核过，系统 python3 全量 356 个测试只剩那 1 个 error），与本轮无关。</li>
 <li>速度档的 epoch 末 val_ce 是 450 个事件子集上的数，不能和 np821 比；新口径的全量训练一次都还没跑。</li>
-<li>H100 上 ctool 的显存只有 nvidia-smi 采样，因为它自己不记 <code>peak_mem_gb</code>——工单 06 已加这个字段。</li>
+<li>H100 上 ctool 冒烟那两次的显存只有 nvidia-smi 采样（当时它自己不记）；工单 06 之后 ctool 的 step / eval 事件带 <code>peak_mem_gb</code>，终验里第一次自记到 47.34 GB（H200，已分配）。</li>
+<li>终审的 16 条观察里值得记的：「补到 16 的倍数」在 share_data 与训练器各写了一份；「按事件分组取全文」三处各一份；<code>packed_len_max</code> 写的是补齐后的长度；<code>--readonly-env</code> 下 READONLY.json 审计的分母口径与旧脚本不同；驱动器的 smoke 门只查 ctool 的 PASS，cgen/cparam 的对齐门靠训练器自己 exit 2 兜着。</li>
 </ul>
 
 <h2>文件与路径</h2>
@@ -271,7 +293,8 @@ a{color:var(--accent);}
 <div><span>新代码</span><span>pipeline/train/train_causal_share.py、share_data.py；tests/test_share_data.py、test_share_trainer.py、test_ctool_readpos.py</span></div>
 <div><span>改过的旧代码</span><span>pipeline/train/train_causal_tool.py、pipeline/eval/eval_tool.py、train_causal_callgen.py（只加 build() 两个参数）、run.py 注册表</span></div>
 <div><span>回写</span><span>MAP.md；.claude/skills/probe-pipeline/references/{stage-commands,invariants,extending,gates}.md；TIMELINE.md 2026-08-28 条</span></div>
-<div><span>GPU 产物</span><span>pipeline/runs/smoke/kvshare_gpu_kernel_check/、ks828b06_gptoss_{ctool,cgen,cparam}_smoke/、ks828b06_gptoss_cgen_speed_{b16k,b24k,b16k_es}/、ks828b06_gptoss_ctool_h100mem{,_bs2}/；数字在 ops/runs.jsonl</span></div>
+<div><span>GPU 产物</span><span>pipeline/runs/smoke/kvshare_gpu_kernel_check/、ks828b06_gptoss_{ctool,cgen,cparam}_smoke/、ks828b06_gptoss_cgen_speed_{b16k,b24k,b16k_es}/、ks828b06_gptoss_ctool_h100mem{,_bs2}/、ks828b06_gptoss_{cgen_final_b16k,cgen_final_b24k_probe,cparam_final_smoke,ctool_final_smoke}/；数字在 ops/runs.jsonl</span></div>
+<div><span>测试</span><span>系统 python3 discover 358 个用例 1 error（test_splice_replay，老毛病）18 skip；cprobe-env 全量 433 个 OK（13 skip）；selfcheck 76 任务就位</span></div>
 <div><span>记忆</span><span>~/.claude/projects/-home-y-guo-reproduce-new1/memory/kvshare-train-state.md</span></div>
 <div><span>下一步命令</span><span>python3 run.py show train-cgen（看新训练器的发射命令）；全量训练走 gpu-run，批次前缀 ks828b06</span></div>
 </div>

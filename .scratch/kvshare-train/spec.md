@@ -7,7 +7,7 @@ Status: ready-for-agent
 
 这一轮交付一个新的训练程序 `pipeline/train/train_causal_share.py`，服务 cgen 和 cparam 两个格（`--mode cgen|cparam`），做四件事：一个事件的全文只过一遍底座，每个切点的目标段接在共享的前缀后面算损失；不截断任何样本，全文超过上限的事件整条丢弃并计数；上限默认 8192（冒烟后可能退到 6144）；epoch 默认 1。同时 ctool（`train_causal_tool.py` 与 `eval_tool.py`）吃三项改动：丢弃规则、上限默认值、切点读取位置规则，并把更新单位改成 8 个事件。
 
-格名不变（还是 cgen / cparam / ctool），数据不变，四个评测脚本一行不改。按 `extending.md` 第 113 到 121 行的判据，这次是「换实现」不是「加新格」，不走 §3.1 新格清单（决定 3）。
+格名不变（还是 cgen / cparam / ctool），数据不变，四个评测脚本的输入构造与判分一行不改；`eval_tool.py` 只按第 11.3 节换掉读取位置那一段。按 `extending.md` 第 113 到 121 行的判据，这次是「换实现」不是「加新格」，不走 §3.1 新格清单（决定 3）。
 
 范围之外：评测端超长事件的处理、学习率扫描、`--fire-head`（决定 4）、第十四节的六条实验。旧的逐行训练器 `train_causal_callgen.py` 和 `train_causal_param.py` 一行不改，作为对齐参照冻结（决定 3）。
 

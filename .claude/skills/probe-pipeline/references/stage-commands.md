@@ -231,10 +231,10 @@ session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发�
 - mtool → `<out>/best/`(HF 权重 + tokenizer + `label_map.json`)+ `train_log.jsonl`
 - mext → `<out>/best/{model.pt(裸 state_dict,不是 HF 目录), tokenizer, meta.json}` + `train_log.jsonl`
 - ctool → `<out>/ALIGN_CHECK.json` + `<out>/best/{HF backbone, tokenizer, head.pt, label_map.json, meta.json}` + `train_log.jsonl`
-- cgen → `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep`)+ `train_log.jsonl`
-- cparam → `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
+- cgen → `<out>/ALIGN_CHECK.json` + `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep`)+ `train_log.jsonl`
+- cparam → `<out>/ALIGN_CHECK.json` + `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
 
-**退出码**:除 ctool 外无显式非 0。**ctool 的对齐检查 FAIL → `sys.exit(2)`**(整段一次前向 vs 逐 token 增量前向,末位置隐状态/logits 必须 max|diff| < tol),`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。
+**退出码**:ctool 与 cgen/cparam 的对齐检查 FAIL 都 `sys.exit(2)`,两者判据不同(ctool 比整段前向对逐 token 增量前向的隐状态与 logits,容差 3e-4;cgen/cparam 比逐行 ce 对旧逐行训练器,逐行 2e-5 逐 token 3e-4)。`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。`share_data.load_events` 的两道硬停(装载后 0 行、cparam 剥离失败率超 5%)是 `SystemExit` 非 0。
 
 **`train_causal_share.py` 的真实命令**(cgen/cparam 现役训练器,2026-08-28 起;`run.py` 的 `train-cgen`/`train-cparam` 就是拼这一条,`--mode` 由注册表带好):
 
@@ -271,7 +271,7 @@ cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
 | ctool 0.6B 全参,`--max-len 8192 × --bs 2`(ks828,2026-08-28 起新默认) | 56,859 MiB(H100,nvidia-smi 采样) | — | — | 新口径,tokyo108 **H100** 非 48G 卡;`--bs 4` 同条件训练第一批 OOM(进程 92.94 GiB,决定 15,`ops/runs.jsonl` 的 `ks828b06_gptoss_ctool_h100mem_bs2`) |
 | cgen 新训练器(`train_causal_share.py`)`--tok-budget 16384`(ks828) | — | 60.59 GB allocated(H100,`torch.cuda.max_memory_allocated`) | — | 新口径,tokyo108 **H100** 非 48G 卡;`--tok-budget 24576` 峰值 80.91 GB、慢 15%(`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`) |
 
-(单位 GiB,峰值,末两行单位见各自单元格。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。末两行是 ks828 新口径在 H100 上的实测,和上面 np821/48G 的四行不同轴,不能直接横向比。
+(单位 GiB,峰值,末两行单位见各自单元格。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。末两行是 ks828 新口径在 H100 上的实测,和上面 np821/48G 的四行不同轴,不能直接横向比。③ **cgen/cparam 新训练器的 `--mem-probe` 是下界估计,排卡按「最满块探针 × 1.1」再判余量**:2026-08-28 终验里探针最满块比同预算整程 step 峰值低 7.5%(16384:54.38 对 58.47 GB)与 5.8%(24576:76.47 对 80.91 GB),`ks828b06_gptoss_cgen_final_b16k` / `_final_b24k_probe` 的 `mem_probe` 事件;这 1.1 只盖已分配峰值之间的差,② 的碎片折扣是另一层,两道都要打。
 
 ### 3.2 LoRA 批与全参批的关系
 

@@ -122,15 +122,20 @@ commit 里必须把新脚本/新格挂进 run.py 注册表**（训练格表唯�
 换环境时先跑一句 `comm` 对拍三份题单。
 
 ### C2 各格 smoke（占卡，转 gpu-run）
-门禁 **G14**：`CELL_ORDER` 各格跑一次 `--smoke`（现役三格：cgen/cparam 按各脚本
-自己的 `SEED` 常量随机抽 500 训练 / 200 评估**实例**（因果三格 np821 起是 42，
-两个 mbert 格仍 20260729）；ctool 同法随机抽 200 / 80 **事件**；各格都是 1 epoch，
+门禁 **G14**：`CELL_ORDER` 各格跑一次 `--smoke`（cgen/cparam **现役训练器**
+`train_causal_share.py` 的 `--smoke` 按事件全文 token 数升序取前 N 个：40 训练
+事件 / 16 评估**事件**，不依赖 `SEED`，不是随机抽；旧逐行脚本经
+`train-cgen-rows`/`train-cparam-rows` 发射，仍按各脚本自己的 `SEED` 常量随机抽
+500 训练 / 200 评估**实例**（因果三格 np821 起是 42，两个 mbert 格仍 20260729）；
+ctool 同法随机抽 200 / 80 **事件**；各格都是 1 epoch，
 没有步数上限。停跑的 mtool/mext 限额也是 500/200 实例——mext 是**参数实例级**
 不是样本级——留档备查），判据是 `train_log` 有 start 与 done、ckpt 能存能读
 （⚠️ "loss 在降"这一项 smoke 规模下判不了：每 50 个 gstep 才写一条 step 记录，
 smoke 一共才十几个 gstep，见 gates §1 的 G14 行）。
 ctool 另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`
-（cgen/cparam 同骨架但没有这套检查，见 extending §3.4）。
+（cgen/cparam 现役训练器 `train_causal_share.py` 另有自己的一套对齐检查（随机抽
+6 个事件，逐行 loss 对旧逐行训练器，fp32 逐行 ≤ 2e-5、逐 token ≤ 3e-4），有
+`--align-only`，落 `<out>/ALIGN_CHECK.json`，FAIL 同样 `sys.exit(2)`）。
 **smoke 不过不许放量**，一次都不许。
 
 全链各段的小规模入口（采集 `--n`/训练 `--smoke`/评测 `--limit`/注入 `--limit`/

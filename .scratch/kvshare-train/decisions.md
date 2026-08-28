@@ -200,6 +200,30 @@ TIMELINE「只增不改」的执行口径——同一会话同一天写成、三
 
 8-28-assistant 核对：HEAD e952c37，907d143 与 d97ed61 在 log 里；`git diff --stat f1e0a1f d97ed61` 五个文件 +196/−23（train_causal_share.py 73、train_causal_tool.py 20、test_share_trainer.py 107、test_ctool_readpos.py 17、spec.md 2）；train_causal_tool.py 第 258 行 `_peak_mem_gb`、第 461 与 468 行写进 step 与 eval 事件；issues/06 的 Status 是 resolved。终验的验收判据照决定 22：改后探针数不低于同预算整程 step 峰值（b16k 60.59 GB、b24k 80.91 GB）。
 
+### 2026-08-28 终验发射与全量测试（plan-8-28 报）
+
+终验四个 run 在 HEAD 1414e8e 发射（第一次被发射员在脏树门禁拦下——plan-8-28 给探针加 reset_peak_memory_stats 那一行时发射员正在发，改动比发射早 11 秒，发射员一个 session 都没起；改动提交为 234dfad 后 plan-8-28 自己发的）。全量测试：系统 python3 discover 358 个用例 1 error（test_splice_replay，仓库记忆里的老毛病）18 skip；cprobe-env 五个文件 65 个 OK；终审员自己跑 cprobe-env 全量 discover 433 个 OK（13 skip）。
+
+## 决定 24
+
+ticket-run Phase 4 终审（opus，起点 2cbce57 终点 e952c37）报 4 条挡合并、16 条观察。处理：F1（探针 longest_event 被 fullest_block 污染）在终审看的版本之后已按 assistant-2 的复核修掉（234dfad），终验 run 用的是修后代码；F2（SKILL.md §C2 两处过时：smoke 限额与对齐门说法）、F3（stage-commands §3 输出列表缺 ALIGN_CHECK.json、退出码段过时）派 sonnet 一次修完，连同两条观察（spec §1 与 11.3 自相矛盾、extending #25 触发条件的 ≤）一起，之后一次范围限定复审；F4（探针实测判据）就是终验。其余观察（_pad16 与 _l_pad 两份、_peak_mem_gb 两份、事件分组三份、packed_len_max 写的是 L_pad、readonly 审计分母口径不同、driver 的 smoke 门只查 ctool 的 PASS 等）不改，记进汇报的遗留清单。 / 理由：ticket-run Phase 4 的规程；F1 已修；其余是重复逻辑与口径注记，没有一条会让数字算错。 / 依据：终审报告（tasks 输出）、234dfad。
+
+8-28-assistant 核对：git log 顺序是 907d143 → e952c37 → 234dfad → 1414e8e；234dfad 只改 train_causal_share.py 加 4 行（第 278、287 行两处 reset_peak_memory_stats）；runs.jsonl 第 134 到 137 行是四个终验 run 的 start（15:09 到 15:11）。一处要注意：234dfad 的提交信息写的是「终验 run 用的是改前代码，只影响 longest_event 那个数的含义」，和上文「终验 run 用的是修后代码」相反；提交信息是发射被拦之前写的、改不了，以四个 run 目录里 RUNMETA.json 记的 commit 为准：`pipeline/runs/smoke/ks828b06_gptoss_cgen_final_b16k/RUNMETA.json` 记 commit 1414e8ee…、branch main、dirty false，所以终验 run 用的是改后代码，决定 24 的说法对，234dfad 的提交信息错。
+
+终验中途读到的数（15:2x，final_b16k 跑到第 33 次更新，b24k_probe 已 done）：final_b16k 的 mem_probe fullest_block（B=2，L_pad 8192，n_backward 2）54.376 GB、longest_event（L_pad 9,504）36.474 GB；同一个 run 前 11 条 step 的 peak_mem_gb 最大 57.306（第 12 次更新），已经高于探针的 54.376；同样的事件与种子下，上一次速度档 b16k 前 11 条 step 的峰值是 52.0 / 56.0 / 55.6 / 60.04 / 53.8 / 53.0 / 56.2 / 58.0 / 56.0 / 57.2 / 49.4，这次是 49.3 / 52.7 / 52.4 / 57.3 / 51.9 / 50.2 / 52.3 / 54.8 / 53.0 / 54.5 / 46.1，逐条低 2 到 4 GB。b24k_probe 的 fullest_block（B=3）76.471 GB、longest_event 36.488 GB，上一次速度档 b24k 的整程 step 峰值是 80.91。
+
+终验两个 smoke 的数（8-28-assistant 读日志，都已 done）：cparam_final_smoke（H100 gpu2）40 训练事件 / 16 评估事件，5 次更新，对齐 PASS 9.30e-6（ALIGN_CHECK.json：6 个事件 154 行 1,916 目标 token，逐 token 4.72e-5，bf16 均值 9.74e-3 最大 4.87e-2，tol 2e-5），四次评估 val_ce 2.515 → 1.9863 → 1.6994 → 1.5927，step 峰值 12.0 到 15.1 GB，wall_s 89.65，dropped_events 1 / 3；和 H200 上那次 smoke 的 2.5151 → 1.5926 一致。ctool_final_smoke（H200 gpu3，默认 bs 2 accum 4，steps 25）对齐 PASS maxdiff_hidden 1.03e-4（tol 3e-4，n_tokens 8,167），calA_weighted_acc 0.3973 / lastbound 0.4125，eval 事件第一次带 peak_mem_gb 47.337 GB（= 44.1 GiB，torch 已分配），n_bound_dropped 0，dropped_events 1 / 3；对照 H100 bs2 那次 nvidia-smi 的 56,859 MiB（55.5 GiB，含分配器缓存），已分配比卡上占用低 11.4 GiB。
+
+终验 final_b16k 完成（8-28-assistant 读日志算，HEAD 1414e8e，H100 gpu0，450 事件 20,641 行 57 次更新，log_every 3）：累计 ips 在 1,600 / 9,600 / 19,200 行处 187.2 / 191.9 / 187.6（对旧 2.76 / 3.26 / 3.97 是 67.8 / 58.9 / 47.3 倍），窗口 ips 在 0–1,600 / 8,000–9,600 / 17,600–19,200 行是 187.2 / 206.2 / 156.2（对旧 2.77 / 3.94 / 6.24 是 67.6 / 52.3 / 25.0 倍），六点全过；末尾累计 ips 188.17，train_s 109.69，wall_s 585.3，epoch 末 val_ce 0.261（20,034 行子集），对齐 PASS 5.48e-6，dropped_events 1 / 3。显存：19 条 step 的 peak_mem_gb 最大 58.472 GB（第 42 次更新），mem_probe fullest_block 54.376 GB、longest_event 36.474 GB。决定 22 的验收判据「改后探针数不低于同预算整程 step 峰值」在同一个 run 里不成立：探针比整程峰值低 4.1 GB；b24k 只有探针 76.471，对上次速度档整程峰值 80.91 低 4.4 GB。同一批事件、同一个种子下，这次 19 条 step 峰值逐条比上次速度档 b16k 低 2.1 到 3.9 GB（最大值 58.47 对 60.59）。
+
+plan-8-28 报的终验汇总（四个 run 全部 done、零错误、台账已 finish 销号）：final_b16k 六点插值累计 187.23 / 191.91 / 187.63、窗口 187.23 / 206.20 / 156.24，整程 step 峰值 58.472 GB，train_s 109.69，wall_s 585.3，val_ce 0.261；探针 fullest 54.376、longest 36.474；b24k_probe 探针 fullest 76.471、longest 36.488，wall_s 432.5；cparam_final_smoke ALIGN 9.30e-6（1,916 token）、val_ce 1.5927、wall_s 89.65（H100）；ctool_final_smoke（H200）ALIGN 1.03e-4 PASS、自记 peak_mem_gb 47.337 GB、dropped 1/3、calA 0.3973。四份 ALIGN_CHECK 与上一轮逐位相同。8-28-assistant 核对：六点与我独立算的逐点一致（到小数点后一位），其余各数与我上面读的相同。
+
+## 决定 25
+
+工单 06 的实测判据（探针 ≥ 整程 step 峰值）没过：改后探针最满块 54.38 对整程 58.47（低 4.1 GB），b24k 探针 76.47 对上次整程 80.91（低 4.4 GB），改前是低 9.5 / 5.9。这一轮不再改探针：把它定为「带实测偏差的估计」——排卡时探针最满块的数加 10% 再判余量；「按真实训练循环连做两个小批」的退路列进需要 gyb 拍板的事。 / 理由：偏差从 9.5 缩到 4.1 GB，两个预算下偏差量级相同（4.1 / 4.4）；再改一轮要再一轮工单加 GPU 复测，而排卡靠加 10% 已经覆盖；剩余差额的成因等 assistant-2 从 step 序列判读。 / 依据：final_b16k 与 b24k_probe 的 mem_probe 事件、final_b16k 的 step 序列、上次 b16k/b24k 的 step 序列。
+
+8-28-assistant 注：加 10% 对现有两个数够用：54.376 × 1.1 = 59.81 高于 58.47（余 1.3 GB），76.471 × 1.1 = 84.12 高于 80.91（余 3.2 GB）；两个预算的探针偏差是 7.5% 和 5.8%。这个 10% 只盖已分配峰值之间的差，reserved 碎片那一道折（stage-commands.md:244）是另外一层，排卡时两道都要打。
+
 ### 2026-08-28 artifact 草稿核对
 
 plan-8-28 写好 artifact 草稿 `plans/2026-08-28-kvshare-report.html`（HEAD 71dcc2a，终验一节待补），8-28-assistant 按台账逐段核。核过没问题的：一句话结果四个数；对齐表前四行与 gpu_result.json、三个速度档和 cgen smoke 的 ALIGN_CHECK.json（都是 6 个事件 154 行 2,877 token，5.48e-6 / 4.29e-5 / 8.43e-3 / 4.32e-2）一致；速度表四行与我算的插值一致；显存表八行（含 math 内核校准点 L 2,552、实测差 12.17 GiB 对解析式 10.87）；smoke 表的 cgen / cparam 行和 ctool 的 0.408（H200 smoke 的 eval 事件 calA_weighted_acc 0.408、lastbound 0.425）；23 条决定的三行；需要拍板的八件；文件路径。发现的错误与遗漏发给了 plan-8-28：助手 1 三遍的发现数是 35 不是 24（13 + 9 + 13）；「工单 6 张全部 resolved」与「工单 06 已加字段」在 06 仍是 claimed（无合并提交）的时候写早了；「GPU run 11 个」与 runs.jsonl 的 9 个 run_id、logs 的 12 次发射都对不上；cparam smoke 对齐样本是 6 个事件 154 行 1,916 token 不是「抽 2 个事件」；解读段两处没有依据的判断（24576 慢的原因归到 pad 更多、OOM 那批说成四个 8192 长的事件）。invariants.md:45 的 epochs 理由已按核对改掉（8c4d587）。

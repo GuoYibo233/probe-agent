@@ -1653,6 +1653,94 @@
         }
       ],
       "finished_at": "2026-08-28 13:39"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_final_b16k",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 15:09",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_ks828b06_gptoss_cgen_final_b16k_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_final_b16k_t108g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --tok-budget 16384 --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_final_b16k",
+          "launched_at": 1787897376.6887376,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-28 15:23"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_final_b24k_probe",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 15:10",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_ks828b06_gptoss_cgen_final_b24k_probe_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_final_b24k_probe_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --max-events 16 --log-every 1 --eval-per-epoch 1 --mem-probe --tok-budget 24576 --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_final_b24k_probe",
+          "launched_at": 1787897409.5235958,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-28 15:23"
+    },
+    {
+      "name": "ks828b06_gptoss_cparam_final_smoke",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 15:10",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_ks828b06_gptoss_cparam_final_smoke_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cparam_final_smoke_t108g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cparam --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --log-every 1 --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cparam_final_smoke",
+          "launched_at": 1787897442.1566086,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-28 15:23"
+    },
+    {
+      "name": "ks828b06_gptoss_ctool_final_smoke",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 15:11",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_ks828b06_gptoss_ctool_final_smoke_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_final_smoke_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke",
+          "launched_at": 1787897474.82563,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-28 15:23"
     }
   ]
 }

@@ -6,6 +6,10 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `ks828b06_gptoss_ctool_final_smoke` | 2026-08-28 15:11 | kvshare-train | `1414e8e` | - | ok | align_maxdiff_hidden=0.000103 calA_weighted_acc=0.3973 peak_mem_gb=47.337 dropped_events_train=1 dropped_events_val=3 | 终验 ctool smoke(最终代码, H200 gpu3, bs 2 accum 4): ALIGN PASS 1.03e-4(tol 3e-4), 25 次更新, 自记 peak_mem_gb 47.34 GB(allocated), calA 0.3973 smoke 规模, dropped_events 1/3 |
+| `ks828b06_gptoss_cparam_final_smoke` | 2026-08-28 15:10 | kvshare-train | `1414e8e` | - | ok | align_maxdiff=9.3e-06 best_val_ce=1.5927 wall_s=89.65 | 终验 cparam smoke(最终代码, H100 gpu2): ALIGN PASS 9.30e-6(6 事件 154 行 1,916 token), val_ce 2.515→1.5927, 89.7 秒 |
+| `ks828b06_gptoss_cgen_final_b24k_probe` | 2026-08-28 15:10 | kvshare-train | `1414e8e` | - | ok | probe_fullest_gb=76.471 probe_longest_gb=36.488 | 终验探针(tok-budget 24576, 16 事件): 最满块 B=3 探针 76.47 GB 对上次速度档整程峰值 80.91 低 4.4 GB; 最长事件 36.49 |
+| `ks828b06_gptoss_cgen_final_b16k` | 2026-08-28 15:09 | kvshare-train | `1414e8e` | - | ok | ips_1600=187.23 ips_9600=191.91 ips_19200=187.63 ipswin_0_1600=187.23 ipswin_8000_9600=206.2 ipswin_17600_19200=156.24 peak_mem_gb=58.472 probe_fullest_gb=54.376 probe_longest_gb=36.474 train_s=109.69 wall_s=585.3 val_ce=0.261 align_maxdiff=5.48e-06 | 终验(最终代码 1414e8e, H100 gpu0, tok-budget 16384, 450 事件): 累计 ips 187.2/191.9/187.6 对旧 2.76/3.26/3.97, 窗口 187.2/206.2/156.2 对旧 2.77/3.94/6.24; 整程 step 峰值 58.47 GB(改前 60.59); 改后探针最满块 54.38(仍低 4.1 GB) 最长事件 36.47; ALIGN PASS 5.48e-6 |
 | `ks828b06_gptoss_ctool_h100mem_bs2` | 2026-08-28 13:33 | kvshare-train | `7008dff` | - | ok | peak_mem_used_mib=56859 steps=25 calA_weighted_acc=0.394 dropped_events_train=1 dropped_events_val=3 | ctool smoke 在 H100 gpu0 上 max_len 8192 bs 2 accum 4(仍 8 事件一次更新)跑通: nvidia-smi 2 秒采样 165 个样本最大 56,859 MiB(p90 56,855), 25 次更新, 对齐 PASS(3e-4), dropped_events 1/3 与 plan 第四节 8192 行相符; bs 4 在同卡 OOM, 决定 15 退路生效 |
 | `ks828b06_gptoss_ctool_h100mem` | 2026-08-28 13:28 | kvshare-train | `3d2f5ae` | - | ok | peak_mem_used_mib=87179 oom=1 | ctool smoke 在 H100 gpu0 上 max_len 8192 bs 4 accum 2 OOM(进程 92.94 GiB 时再要 154 MiB 失败, nvidia-smi 2 秒采样最后一次 87,179 MiB); 决定 15 退路生效, 改 bs 2 accum 4 复测 |
 | `ks828b06_gptoss_cgen_speed_b16k_es` | 2026-08-28 13:08 | kvshare-train | `10f1d12` | - | ok | ips_1600=180.39 ips_9600=178.81 ips_19200=176.96 ipswin_0_1600=180.39 ipswin_8000_9600=188.3 ipswin_17600_19200=148.47 peak_mem_gb=60.559 train_s=116.11 wall_s=590.62 val_ce=0.2615 | 同上 tok-budget 16384 + PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True(H100 gpu2): 累计 ips 180.4/178.8/177.0, 窗值 180.4/188.3/148.5, 峰值 60.6 GB; 对不开 expandable_segments 无增益(慢 3%) |
@@ -78,6 +82,46 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `ks828b06_gptoss_ctool_final_smoke`
+
+- **结论**：终验 ctool smoke(最终代码, H200 gpu3, bs 2 accum 4): ALIGN PASS 1.03e-4(tol 3e-4), 25 次更新, 自记 peak_mem_gb 47.34 GB(allocated), calA 0.3973 smoke 规模, dropped_events 1/3
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 15:11 → 2026-08-28 15:23
+- **代码**：`1414e8e` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：align_maxdiff_hidden=0.000103 calA_weighted_acc=0.3973 peak_mem_gb=47.337 dropped_events_train=1 dropped_events_val=3
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_final_smoke_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke`
+
+### `ks828b06_gptoss_cparam_final_smoke`
+
+- **结论**：终验 cparam smoke(最终代码, H100 gpu2): ALIGN PASS 9.30e-6(6 事件 154 行 1,916 token), val_ce 2.515→1.5927, 89.7 秒
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 15:10 → 2026-08-28 15:23
+- **代码**：`1414e8e` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **数字**：align_maxdiff=9.3e-06 best_val_ce=1.5927 wall_s=89.65
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cparam_final_smoke_t108g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cparam --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --log-every 1 --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cparam_final_smoke`
+
+### `ks828b06_gptoss_cgen_final_b24k_probe`
+
+- **结论**：终验探针(tok-budget 24576, 16 事件): 最满块 B=3 探针 76.47 GB 对上次速度档整程峰值 80.91 低 4.4 GB; 最长事件 36.49
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 15:10 → 2026-08-28 15:23
+- **代码**：`1414e8e` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **数字**：probe_fullest_gb=76.471 probe_longest_gb=36.488
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_final_b24k_probe_t108g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --max-events 16 --log-every 1 --eval-per-epoch 1 --mem-probe --tok-budget 24576 --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_final_b24k_probe`
+
+### `ks828b06_gptoss_cgen_final_b16k`
+
+- **结论**：终验(最终代码 1414e8e, H100 gpu0, tok-budget 16384, 450 事件): 累计 ips 187.2/191.9/187.6 对旧 2.76/3.26/3.97, 窗口 187.2/206.2/156.2 对旧 2.77/3.94/6.24; 整程 step 峰值 58.47 GB(改前 60.59); 改后探针最满块 54.38(仍低 4.1 GB) 最长事件 36.47; ALIGN PASS 5.48e-6
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 15:09 → 2026-08-28 15:23
+- **代码**：`1414e8e` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：ips_1600=187.23 ips_9600=191.91 ips_19200=187.63 ipswin_0_1600=187.23 ipswin_8000_9600=206.2 ipswin_17600_19200=156.24 peak_mem_gb=58.472 probe_fullest_gb=54.376 probe_longest_gb=36.474 train_s=109.69 wall_s=585.3 val_ce=0.261 align_maxdiff=5.48e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_final_b16k_t108g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe --tok-budget 16384 --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_final_b16k`
 
 ### `ks828b06_gptoss_ctool_h100mem_bs2`
 
