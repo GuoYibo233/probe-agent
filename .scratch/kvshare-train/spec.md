@@ -216,8 +216,8 @@ labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
 
 - 不改 `summarize_matrix.py`、`check_bundle.py`、四个评测脚本的输入构造。
 - 不改旧的逐行训练器（冻结为参照）。
-- 不做学习率扫描、不做生成式评估、不做 `--fire-head`。
-- 不动 `eval_tool.py` 的左截断。
+- 不做 `--fire-head`。（学习率扫描与生成式评估第一轮不做；第二轮按 gyb 裁决做，见第 16 节。）
+- `eval_tool.py` 的左截断第一轮不动；第二轮加 `--overlong` 开关，见 16.2。
 
 ## 15 本次会碰到的静默失败点（`extending.md` §5）
 
@@ -225,3 +225,117 @@ labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
 - #13（跨模型串 run 与 data 只有形状 assert）：不因本次改动变化；`meta.json` 的 `data` 字段照旧写绝对路径。
 - #9 / #14 / #15：格名不变、报告文件名不变，所以不触发；工单 03 的自查项之一是确认 `EVAL_CELLS` 与 `summarize_matrix.py` 一行未动。
 - 新增（第 13 节回写）：#25 ctool 读取位置差一个 token；#26 rows 参照任务的产物混进矩阵；#27 `share_data` 顶层 import 旧训练脚本会让 mbert-env 下的 `eval_tool` / `eval_mbert_call` 在 import 阶段 `SystemExit`（3.3 节）。
+
+## 16 第二轮（2026-08-28 晚，gyb 裁决之后）：四个可切换选项、学习率扫描、文档回写
+
+### 16.1 裁决与对应
+
+gyb 对第一轮汇报里九件待拍板事的原话（`decisions.md` 第二轮一节照录）：「学习率需要扫。flex_attention不用做。其他的都给几种可能，我目前没有人工审核时间，你先选项的代码先实现好，可以通过参数切换，我回头对比一下。实现好之后验证一下，给推荐的配置gpu run去扫学习率了」，另一句「另一个先不做，保留」指减少补齐浪费的装块优化。对应（决定 26、27）：
+
+| 汇报里的第几件 | 内容 | 这一轮怎么做 |
+|---|---|---|
+| 2 | 学习率扫描 | 做。规模定为每个底座配置各扫一组：b06 / b17 / l17 / l4 四个配置 × 三个学习率 = 12 次 run，cgen 格，1 个 epoch，按 `val_ce` 最低选（16.6；决定 27） |
+| 3 | 评测端超长事件 | 三种处理做成 `--overlong {left,skip,drop-event}`（16.2，工单 07） |
+| 4 | flex_attention 与装块优化 | 都不做 |
+| 6 | 训练中的生成式评估 | 做成 `--gen-eval N`，0 关闭（16.3，工单 08） |
+| 7 | 对齐容差 | 全部门槛做成参数，再加相对判据 `--align-rule {abs,rel,both}`（16.4，工单 09） |
+| 9 | 显存探针退路 | 做成 `--mem-probe-pick {tokens,cost,loop}`（16.5，工单 10） |
+| 1、5、8 | TIMELINE 更正口径、np821 重训、归类与命名 | 不是代码，只在汇报里列选项，等 gyb 回头选 |
+
+推荐值（决定 28，扫描发射时用的就是这一套）：`--overlong left`（评测口径不变，扫描不评测）、`--gen-eval 200`、`--align-rule abs`（门槛默认值不变）、`--mem-probe --mem-probe-pick cost`。每个开关的默认值等于推荐值，除了 `--overlong`——它的默认值 `left` 是为了让已有评测命令的行为一个字不变。
+
+### 16.2 评测端超长事件：`--overlong`（工单 07）
+
+三个评测脚本 `pipeline/eval/eval_causal_call.py`、`eval_causal_param.py`、`eval_tool.py` 各加 `--overlong`，choices `left / skip / drop-event`，默认 `left`。「事件全文 token 数」只有一个算法：把 `share_data.load_events` 里算 `n_full`（全文分词不截断、数 token）的那几行抽成 `share_data.n_full_tokens(tok, full_text)`，训练端丢弃判据与评测端 `drop-event` 都调它，`train_causal_tool.load_events` 的丢弃判据也改调它（三处一个真源）。
+
+cgen / cparam 评测（`generate()` 的提示左截长度是 `max_len − max_new`，`eval_causal_call.py` 第 213 到 214 行、`eval_causal_param.py` 第 208 到 209 行）：
+
+- `left`：现状，提示左截。新增计数 `n_left_truncated`（提示 token 数大于 `max_len − max_new` 的行数，分词一次数长度，不截断）。
+- `skip`：提示 token 数大于 `max_len − max_new` 的行不生成、不进任何分母（总表、按工具分桶、样本都不进），计数 `n_skipped_rows`。
+- `drop-event`：事件全文 token 数大于 `max_len`（`meta.json` 里的值）的事件整个不判分，计数 `n_dropped_events`；事件全文 = 数据文件里这个事件 `sent_idx` 最大那一行的 `text`（与 `share_data.load_events` 分组后取全文的规则相同，调同一个分组函数或把它抽出来共用），只对 `keys` 里的事件分词。剩下事件里提示仍大于 `max_len − max_new` 的行左截并计 `n_left_truncated`。
+- `score_fire`（`fire_head` 路径）不动：新训练器不写 `fire_head`，这条路不会走。
+
+ctool 评测（`eval_tool.py` 的 `score_causal`，第 116 到 160 行；全文左截到 `max_len`，窗口外边界记零 logits、计 `n_oow`）：
+
+- `left`：现状。
+- `skip`：窗口外的边界不进任何分母（现状是零 logits 当作永不触发进分母），计数 `n_skipped_bounds`；REPLAY_REPORT 的触发点只从剩余边界算。
+- `drop-event`：全文 token 数大于 `max_len` 的事件整个不进评测（所有边界不进分母、不产生触发点），计数 `n_dropped_events` 与 `n_dropped_bounds`。
+
+所有报告（`REPLAY_REPORT.json/.md`、cgen / cparam 的报告 JSON 与 MD）都写 `overlong_mode` 和上面的计数（没发生的计数写 0，不省略键）。cgen / cparam 的触发点来自 ctool 的 REPLAY_REPORT：ctool 用 `drop-event` 跑过之后，被丢事件的触发点已经不存在，cgen 的 `n_dropped_events` 会是 0——两份报告各记各的 `overlong_mode`，读的人对着看（静默失败点 #28）。
+
+### 16.3 训练中的生成式评估：`--gen-eval`（工单 08）
+
+`train_causal_share.py` 加 `--gen-eval N`（默认 200，0 关闭）和 `--gen-bs`（默认 8，同旧 `train_causal_callgen.py` 第 361 行）。做法照旧训练器（`train_causal_callgen.py` 第 309 到 331、448 到 450、535 到 538 行；`train_causal_param.py` 第 235 到 259、358 到 360、418 到 422 行）：
+
+- 抽样：val 事件加载完之后（丢弃规则之后），把全部行按事件加载顺序摊平，只留 `w > 0` 的行，`random.Random(SEED).shuffle` 后取前 N 行；N 大于行数就全取。
+- 行元组加第 6 位：`gen = dict(tgt=<目标串>, tool=<工具名或 None>)`（`share_data.load_events` 第 205 行的元组从 6 位变 7 位；第 0 到 5 位不动，现有按下标读的代码不受影响；测试里手造行元组的地方都补上第 6 位，静默失败点 #30）。目标串就是分词前的 `tgt_str`；cparam 的工具名就是拼 `tail` 时用的那个。
+- 生成：不写新的生成函数，调旧脚本的 `eval_gen`：cgen 传 `(text, None, None, tgt)` 形状的元组给 `train_causal_callgen.eval_gen`（它自己加 `CALL_SEP`，读第 0 位与第 3 位）；cparam 传 `(text, None, None, tool, tgt)` 给 `train_causal_param.eval_gen`（它读第 0、3、4 位，自己拼 `param_prompt_tail`）。`max_len` 传 `args.max_len`，`bs` 传 `args.gen_bs`，`amp` 同训练。两个旧函数各自管 `padding_side`、`use_cache` 的保存恢复和 `model.eval()/train()`，但它们最后一律 `model.train()`，所以调用点在 `eval_ce` 之后、恢复训练之前调，顺序是 `eval_ce` → `eval_gen` → 写日志。
+- 生成必须在 `_attn_ctx` 之外：`generate` 不带 4D 掩码，HF 走 `enable_gqa=True`，mem-efficient 内核不接 GQA，套在 EFFICIENT 上下文里就是 `No available kernel`（第 9 节记过的报错原文；静默失败点 #29）。`_attn_ctx` 现在只包 `_forward_packed`，工单 08 加一条测试钉住这一点（见 16.9）。
+- 日志：`eval` 事件加 `val_exact_call`（cgen）或 `val_exact_params`（cparam）、`gen_n`（实际生成的行数）、`gen_s`（生成秒数）；`--gen-eval 0` 时这三个键不写。`start` 事件加 `gen_eval`、`gen_bs`。选 best 仍只看 `val_ce`（决定 4 的「只进日志、不选 best」不变）。`train_s` 不含生成时间（训练时钟只包更新，现状已是）。
+- `meta.json` 不变。
+
+### 16.4 对齐容差参数化与相对判据（工单 09）
+
+`train_causal_share.py`：第 9 节的五个门槛全部变成参数，默认值等于现在的常量：`--align-tol 2e-5`（已有）、`--align-tok-tol 3e-4`、`--align-bf16-mean-tol 2e-2`、`--align-bf16-max-tol 1e-1`、`--align-baseline-factor 3.0`；模块顶部的 `TOK_DIFF_TOL / BF16_MEAN_TOL / BF16_MAX_TOL` 常量删掉，只留参数默认值一处（一物一源）。新增 `--align-rule {abs,rel,both}`（默认 `abs`）与 `--align-rel-tol`（默认 1e-5）：
+
+- `abs`：现状——逐行最大绝对差 ≤ `--align-tol` 且逐 token 最大绝对差 ≤ `--align-tok-tol`。
+- `rel`：`rel_max_abs_diff ≤ --align-rel-tol`，其中 `rel_max_abs_diff = max_abs_diff / ref_scale`，`ref_scale = max(|ce_ref|)`（参照路径逐行 ce 绝对值的最大值）。
+- `both`：`abs` 与 `rel` 同时成立。
+
+不管用哪条规则，`ALIGN_CHECK.json` 都写全：`rule, tol, tok_tol, rel_tol, ref_scale, rel_max_abs_diff, bf16_mean_tol, bf16_max_tol, baseline_factor`，已有键不动——gyb 回头比较用的就是这些数，不必重跑。依据：GPU 七步验证第 6 步的逐行绝对差 4.41e-6 对 ce 量级约 2.5 是相对 2e-6 上下，1e-5 留 5 倍；终验 cgen 5.48e-6、cparam 9.30e-6。
+
+`train_causal_tool.py` 同样加 `--align-rule` 与 `--align-rel-tol`（默认 1e-5），相对量 `rel_maxdiff_hidden = maxdiff_hidden / hidden_scale`，`hidden_scale = max(|h_full|)`（整段前向末位隐状态绝对值的最大值），ALIGN_CHECK.json 写 `rule, rel_tol, hidden_scale, rel_maxdiff_hidden`。依据：终验 ctool `maxdiff_hidden` 1.03e-4，冒烟时算过相对 1.46e-6（决定 20）。
+
+### 16.5 显存探针的三种挑块方式：`--mem-probe-pick`（工单 10）
+
+`--mem-probe-pick {tokens,cost,loop}`，默认 `cost`。先做一个重构：训练循环里「epoch 的事件顺序与逻辑小批切法」（第 761 到 764 行：`random.Random(SEED + ep).shuffle` 再按 `events_per_mb` 切）抽成 `share_data.epoch_minibatches(events, seed, ep, events_per_mb)`，训练循环与 `cost` / `loop` 探针都调它，测试断言两边逐个相同（探针踩的块必须是训练真会遇到的块）。
+
+- `tokens`：现状（第 10 节：全集里按 token 数挑最满块加最长事件，状态先建、连做两次反向）。
+- `cost`（8-28-assistant-2 在 `design-attention.md` 8.6 节的判读：峰值 = 每 token 约 2.7 MB 加每损失位约 1.8 MB，探针只按 token 挑会漏第二项）：枚举本次 run epoch 0 的全部物理块（`epoch_minibatches` 之后每个逻辑小批过 `chunk_by_budget`），挑两块——token 数（`B × L_pad`）最大的一块、损失位数（目标 token 总数，即行元组第 4 位里非 −100 的个数之和）最大的一块（同一块就只跑一次）——各在「状态已建、连做两次前向加反向」的条件下量峰值。不带系数、不做加权，两块取大者。
+- `loop`：找到含损失位最多那一块的更新组（连续 `accum` 个逻辑小批），照训练循环原样跑一次更新：每个逻辑小批 `chunk_by_budget` 后 `backward_logical_minibatch`，然后 `clip_grad_norm_`、lr 置 0 的 `opt.step()`（AdamW 在 lr=0 时参数不变：更新量与解耦权重衰减因子都乘 lr），读峰值，`opt.zero_grad()`。调度器不动。
+- 三种方式共用一个「建状态 → reset 峰值 → 跑 → 读峰值 → 清状态、恢复 lr、清梯度」的骨架（现在 `run_mem_probe` 的那段），只换挑块和跑法。探针前后保存并恢复 CPU 与 CUDA 的随机数状态（`torch.get_rng_state / cuda.get_rng_state` 与 `random.getstate`），带探针与不带探针的 run 训练部分逐位相同（LoRA dropout 的随机流不被探针消耗，静默失败点 #31）。
+- 日志：每块一条 `mem_probe` 事件，`kind` 取 `fullest_block / longest_event`（tokens）、`max_tokens_block / max_losspos_block`（cost）、`loop_group`（loop），字段统一为 `pick, B, L_pad, n_tokens (= B × L_pad), n_rows, n_loss_pos, peak_mem_gb, n_backward, with_optimizer_state, optimizer_state_prebuilt`（`loop_group` 的 `B / L_pad` 写组里最大的那块，另加 `n_blocks, n_events`）。最后一条 `mem_probe_summary`：`pick, worst_gb, worst_kind`。`start` 事件加 `mem_probe_pick`。排卡规则（`stage-commands.md` §3.1 ③）改成看 `worst_gb`。
+- `cost` 与 `loop` 用的是本次 run 的 `tr_events`（`--max-events` 抽样之后），不是全集；`tokens` 保持加载全集。
+
+### 16.6 学习率扫描：驱动与报表（工单 11；发射由主会话走 gpu-run）
+
+新脚本 `pipeline/train/sweep_lr.py`，两个子命令，注册进 `run.py` 的 `TASKS` 为 `sweep-lr`（CPU 任务，解释器 `PY["cprobe"]`，`gpu=False`；`desc / stage="train" / notes` 齐全）：
+
+- `plan`：按网格常量 `GRID` 生成 run 清单。四个配置：`b06`（`--base qwen`，全参）、`b17`（`--base qwen17`，全参）、`l17`（`--base qwen17 --lora`）、`l4`（`--base qwen4 --lora`）；每个配置三个学习率（初值：全参 `1e-5, 2e-5, 5e-5`，LoRA `1e-4, 2e-4, 5e-4`，8-28-assistant-2 的网格建议到了之后改常量）、`tok_budget`、`card`（卡的种类，给发射员看）、`extra`（如 `--grad-ckpt`）。run_id = `ks828<tag>_gptoss_cgen_lr<lr>`，`<lr>` 用 `1e-5` 这种写法（`f"{lr:.0e}"` 再把指数里的前导零去掉），产物 `pipeline/runs/sweep/<run_id>`。每个 run 的命令 = `<cprobe python> pipeline/train/train_causal_share.py --mode cgen --base <base> --env appworld --data <data> --out <out> --lr <lr> --tok-budget <tb> --epochs 1 --eval-per-epoch 4 --mem-probe [--lora] <extra>`，推荐值都是默认值所以不写。`plan --write <plan.json>` 落一份 JSON（每条 `run_id, cmd, outdir, card, tag, lr`），同时打印一张 Markdown 表和 12 行 `python3 run.py launch --cmd '<cmd>' --run-id <run_id> --track kvshare-lr-sweep --outdir <outdir>`（发射员补 host / gpu）。`--data` 默认 `pipeline/data/nyapass_aw_v1/gptoss`，`--out-root` 默认 `pipeline/runs/sweep`，`--grid <json>` 覆盖常量。
+- `report --runs <目录或 glob，可多个> --out <目录>`：逐个读 `train_log.jsonl`：`start`（`base, lora, lr, tok_budget, n_train_events, dropped_events_train`）、每条 `eval`（`frac, val_ce, val_exact_call`）、`done`（`best_val_ce, best_frac, wall_s`）、`step` 里 `peak_mem_gb` 的最大值、`mem_probe_summary.worst_gb`。写 `SWEEP_REPORT.json` 与 `SWEEP_REPORT.md`：按配置分组、组内按学习率升序，列 `run_id, lr, val_ce@1/4, @2/4, @3/4, @4/4, best_val_ce, best_frac, val_exact_call(best 那一点), peak_mem_gb, worst_gb, wall_s, status`（没有 `done` 的写 `running` 并给最后一条 eval），每组 `best_val_ce` 最低的一行标 `*`。只摆数，不写结论。
+
+### 16.7 文档回写（工单 12，代码工单合并之后）
+
+- `stage-commands.md` §3：参数表加 `--overlong`（三个评测脚本）、`--gen-eval / --gen-bs`、`--align-rule / --align-rel-tol / --align-tok-tol / --align-bf16-*-tol / --align-baseline-factor`、`--mem-probe-pick`；`sweep-lr` 任务的用法；§3.1 ③ 排卡规则改成 `mem_probe_summary.worst_gb × 1.1`；§3 输出清单加 `SWEEP_REPORT.*` 与报告里的 `overlong_mode` 计数。
+- `invariants.md`：cgen / cparam 训练默认带生成式评估 200 行（决定 28）；探针默认 `cost`；评测默认 `left`。
+- `extending.md` §5：#28 到 #32（16.10）；§3「换实现先例」补一句第二轮的开关。
+- `MAP.md`：`sweep_lr.py` 新行；三个评测脚本行补 `--overlong`；`train_causal_share.py` 行补三个开关。
+- `run.py` 三个训练任务的 `notes` 补新参数（`sweep-lr` 的注册在工单 11）。
+- `gates.md`：smoke 门只读 `ALIGN_CHECK.json` 的 `PASS`，规则名进 JSON 不影响门；写一句。
+
+### 16.8 扫描发射（主会话，gpu-run）
+
+12 个 run 的排卡与 `tok_budget` 按 8-28-assistant-2 的第九节给（决定 30），发射前 `python3 run.py sweep-lr plan --write <plan.json>` 出清单，逐条 `run.py launch --cmd ... --run-id ... --track kvshare-lr-sweep --outdir ...`，发射前 commit，三处登记，半小时一次检查；每个 run 的 `mem_probe_summary.worst_gb × 1.1` 超过卡容量就换卡或降 `tok_budget` 重发。收官：`run.py sweep-lr report`、`record finish`、`gpu-jobs finish`、TIMELINE、汇报。
+
+### 16.9 测试（CPU）
+
+- 工单 07 `tests/test_eval_overlong.py`：真实分词器（没有就 skip）手造 3 个事件（一个全文超过一个很小的 `max_len`、一个提示刚好超过 `max_len − max_new`、一个正常），对 `score_causal` 与 cgen 的行筛选分别断言三种模式下的计数与进分母的行集合；`n_full_tokens` 与 `load_events` 的 `dropped_events` 判据一致。
+- 工单 08 `tests/test_share_trainer.py` 加：(a) 小模型 CPU 上 `--gen-eval 3 --gen-bs 2` 跑通，`eval` 事件有 `val_exact_call / gen_n / gen_s`；`--gen-eval 0` 时没有这三个键；(b) 抽样是定种子的（两次抽同一批行）；(c) 一条守卫测试：`train_causal_share.py` 源码里 `_attn_ctx(` 的调用点只在 `_forward_packed` 内（用 `ast` 或按行 grep 断言），防止后来有人把生成也包进去。
+- 工单 09：`ALIGN_CHECK.json` 有全部新键；`--align-rule rel` 与 `both` 在小模型上的判定与 `abs` 一致（差是 0 量级时三种都过）；把 `--align-rel-tol 0` 时 `rel` 规则必须判失败（`sys.exit(2)`）。ctool 同样。
+- 工单 10：`epoch_minibatches` 与训练循环切出来的小批逐个相同；`cost` 在手造事件上挑到 token 最多和损失位最多的两块（两块不同）；`loop` 跑完 `opt.state` 空、lr 恢复、`.grad` 全 None、参数逐位不变；带与不带 `--mem-probe` 的两次小模型训练 `train_log.jsonl` 的 `loss` 逐条相同（随机数状态恢复）；三种模式都写 `mem_probe_summary`。
+- 工单 11 `tests/test_sweep_lr.py`：`plan` 出 12 个不重复的 run_id、每条命令含正确的 `--lr` 与 `--lora` 有无；`report` 在手造的两个日志目录（一个有 `done`、一个没有）上出表并标 `*`。
+- 全量：`cprobe-env/bin/python -m unittest discover -s tests` 通过（已知 1 error 是 `test_splice_replay`，仓库记忆里的老毛病）；`python3 run.py selfcheck` 通过。
+
+### 16.10 静默失败点（回写 `extending.md` §5）
+
+- #28：cgen / cparam 评测的 `drop-event` 计数依赖 ctool 评测用的是哪种 `overlong_mode`（ctool 已丢的事件在 cgen 里数不到），两份报告各记各的 `overlong_mode`。
+- #29：生成（`model.generate`）不能套在 `_attn_ctx` 里——无掩码走 GQA，mem-efficient 报 `No available kernel`。
+- #30：`share_data` 行元组第 6 位是 `gen` 字典，手造行元组必须带全 7 位。
+- #31：探针会消耗随机数流（LoRA dropout），不恢复随机数状态则带探针与不带探针的 run 不逐位相同。
+- #32：`loop` 探针 lr=0 的 `opt.step()` 仍写 AdamW 的 `exp_avg / exp_avg_sq` 与 `step` 计数，探针后必须 `opt.state.clear()`。
+
+### 16.11 这一轮不做的事
+
+- flex_attention；减少补齐浪费的装块（gyb：「另一个先不做，保留」）。
+- np821 十二格重训；决定 23 的口径写进 CLAUDE.md；「换实现」归类与 ks828 命名的改动——三件只在汇报里列选项。
+- cparam 与 ctool 的学习率扫描：cgen 扫出来的值按模式（全参 / LoRA）写成默认值，cparam 沿用（草稿 2.3「同一模式里的尺寸沿用」）；要不要单独扫列进汇报。
