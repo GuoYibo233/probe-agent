@@ -1631,6 +1631,28 @@
         }
       ],
       "finished_at": "2026-08-28 13:32"
+    },
+    {
+      "name": "ks828b06_gptoss_ctool_h100mem_bs2",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 13:33",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_ks828b06_gptoss_ctool_h100mem_bs2_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_h100mem_bs2_t108g0.log",
+          "cmd": "bash /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_h100mem_bs2/memwrap.sh /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_h100mem_bs2 /home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --base qwen --env appworld --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_h100mem_bs2 --smoke --force --bs 2 --accum 4",
+          "launched_at": 1787891586.1609237,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-28 13:39"
     }
   ]
 }

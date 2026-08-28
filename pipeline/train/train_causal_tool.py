@@ -285,8 +285,11 @@ def main():
                     help="数据目录 <data_out>(含 train/val.jsonl 与 tool_vocab.json)")
     ap.add_argument("--out", required=True, help="产物目录(必填,防覆盖旧件)")
     ap.add_argument("--max-len", type=int, default=8192)
-    ap.add_argument("--bs", type=int, default=4, help="事件数/批")
-    ap.add_argument("--accum", type=int, default=2)
+    ap.add_argument("--bs", type=int, default=2,
+                    help="事件数/批(2026-08-28 起默认 2:上限 8192 后 bs 4 在 H100 训练"
+                         "第一批就 OOM,bs 2 峰值 56,859 MiB;np821 是 4096 × bs 4)")
+    ap.add_argument("--accum", type=int, default=4,
+                    help="梯度累积批数(默认 4,与 --bs 2 合成 8 个事件一次更新)")
     ap.add_argument("--lr", type=float, default=None,
                     help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
                          "这里显式给了就以显式值为准)")

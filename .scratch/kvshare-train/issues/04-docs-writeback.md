@@ -21,3 +21,7 @@ Spec: `.scratch/kvshare-train/spec.md` 第 8、13 节；回写规矩 `.claude/sk
 - 不新增门禁编号（这次没有新门禁）。
 - 不改 `TIMELINE.md`（主会话写）。
 - 报告里列出每一处改动的文件与行号。
+
+## Comments
+
+- 2026-08-28 plan-8-28 冒烟裁决（这条 Comment 就是本工单的开工门）。定值：三个格 `--max-len` 默认 8192 不退档；新训练器 `--tok-budget` 默认 16384（`--eval-tok-budget` 默认 2 倍即 32768）；`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 不采纳；ctool 默认 `--bs 2 --accum 4`（仍 8 个事件一次更新）、`--align-tol` 默认 3e-4。依据（写进 invariants / stage-commands 的时候带上数字和出处 `pipeline/runs/smoke/ks828b06_*` 与 `ops/runs.jsonl`）：速度档 `ks828b06_gptoss_cgen_speed_b16k`（H100，450 事件 20,641 行 57 次更新）累计 ips 在 1,600 / 9,600 / 19,200 行处 185.6 / 189.5 / 184.1 对旧训练器 2.76 / 3.26 / 3.97，窗口值 185.6 / 203.8 / 145.3 对 2.77 / 3.94 / 6.24，训练 step 峰值 60.59 GB（56.4 GiB，对 93.10 GiB 余量 39%），最长事件探针 31.4 GB；`b24k` 慢 15% 且峰值 80.91 GB；`b16k_es` 慢 3% 峰值相同。对齐检查（6 事件 154 行 2,877 token）max_abs_diff 5.48e-6、max_tok_diff 4.29e-5、bf16 均值 8.43e-3。ctool smoke：H200 上对齐 maxdiff_hidden 1.03e-4 在 3e-4 下 PASS、`dropped_events` 1/3 与 plan 第四节 8192 那行相符；H100 上 `--bs 4` 训练第一批 OOM（进程 92.94 GiB），`--bs 2 --accum 4` 跑通、nvidia-smi 最大样本 56,859 MiB。stage-commands.md §3.1 的实测峰值表加一行「ctool 0.6B 全参 8192 × bs 2：56,859 MiB（H100，nvidia-smi 采样）」和「cgen 新训练器 16384 预算：60.59 GB allocated（H100）」。

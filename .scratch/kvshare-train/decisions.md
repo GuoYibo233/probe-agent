@@ -153,3 +153,9 @@ plan-8-28 采纳的口径：60.59 GB = 56.4 GiB 余量 39.4%，b24k 75.4 GiB 余
 8-28-assistant 注：决定 22 的机理是判读不是实测。按它的算法探针少算 4.8 + 2.4 = 7.2 GB，而观察到的差是 b16k 9.5 GB（60.59 − 51.11）、b24k 5.9 GB（80.91 − 75.05），两个都对不上 7.2；工单 06 的验收应当写成「改后探针数 ≥ 同预算速度档整程 step 峰值」这种实测判据，不能以机理成立为验收。
 
 （ctool 的 bs/accum 定值还差 H100 上的显存数：H200 上 smoke PASS 但没记显存，plan-8-28 已在 H100 gpu0 补一个带 nvidia-smi 采样的 ctool smoke，run_id ks828b06_gptoss_ctool_h100mem，2 秒采一次 memory.used。）
+
+### 2026-08-28 ctool H100 显存补测（plan-8-28 报）
+
+ks828b06_gptoss_ctool_h100mem（gpu0，max_len 8192，bs 4 accum 2，smoke 200/80 事件）对齐 PASS、start 已写，训练第一批前向就 OOM：进程占 92.94 GiB 时再要 154 MiB 失败（logs/new1_ks828b06_gptoss_ctool_h100mem_t108g0.log 第 89 行），nvidia-smi 2 秒采样 115 个样本最后一次 87,179 MiB（p50 13,037、p90 72,023）。对 stage-commands.md:238 那句「4096 × bs 4 峰值 60.2 GiB」：8192 × bs 4 超过 93.1 GiB，翻倍那句成立。决定 15 的退路生效：ctool 默认改 --bs 2 --accum 4（仍 8 个事件一次更新），复测 ks828b06_gptoss_ctool_h100mem_bs2 在 gpu0 跑。
+
+8-28-assistant 核对（读同一份日志）：OOM 原文「Tried to allocate 154.00 MiB … this process has 92.94 GiB memory in use. Of the allocated memory 77.61 GiB is allocated by PyTorch, and 14.58 GiB is reserved」，也就是碎片 14.58 GiB（np821 那次是 8.63 GiB，stage-commands.md:244）；对齐块 maxdiff_hidden 1.03e-4、tol 0.0003、PASS true（决定 20 的新默认已生效）；start 事件 n_train 200、n_eval 80、steps 25、dropped_events_train 1、dropped_events_val 3——这两个丢弃数和 plan 第四节 8192 那一行（train 丢 1 个事件、val 丢 3 个）逐字相符，是 ctool 丢弃规则的第一次实跑验证。nvidia-smi 最后一个样本 87,179 MiB 低于 OOM 时刻的 92.94 GiB，2 秒采样没有踩到峰值。
