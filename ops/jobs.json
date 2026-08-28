@@ -2027,6 +2027,336 @@
         }
       ],
       "finished_at": "2026-08-29 00:18"
+    },
+    {
+      "name": "ks828b06_ovl2048_left_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 01:13",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_ks828b06_ovl2048_left_ctool_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl2048_left_ctool_t107g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048 --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --env appworld --limit 200 --overlong left",
+          "launched_at": 1787933628.4603763,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:18"
+    },
+    {
+      "name": "ks828b06_ovl2048_skip_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 01:18",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_ks828b06_ovl2048_skip_ctool_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl2048_skip_ctool_t107g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048 --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --env appworld --limit 200 --overlong skip",
+          "launched_at": 1787933923.9164164,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:19"
+    },
+    {
+      "name": "ks828b06_ovl2048_dropevent_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 01:20",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "3",
+          "session": "new1_ks828b06_ovl2048_dropevent_ctool_t107g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl2048_dropevent_ctool_t107g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048 --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --env appworld --limit 200 --overlong drop-event",
+          "launched_at": 1787934008.9089665,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:20"
+    },
+    {
+      "name": "ks828b17_gptoss_cgen_lr1e-5",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:28",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_ks828b17_gptoss_cgen_lr1e-5_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr1e-5_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr1e-5 --lr 1e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe",
+          "launched_at": 1787930934.4631271,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:30"
+    },
+    {
+      "name": "ks828b17_gptoss_cgen_lr5e-5",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:29",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_ks828b17_gptoss_cgen_lr5e-5_t108g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr5e-5_t108g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr5e-5 --lr 5e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe",
+          "launched_at": 1787930967.1018455,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:30"
+    },
+    {
+      "name": "ks828b17_gptoss_cgen_lr2e-4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:29",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_ks828b17_gptoss_cgen_lr2e-4_t108g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr2e-4_t108g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr2e-4 --lr 2e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe",
+          "launched_at": 1787930999.7534182,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:30"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_lr1e-5",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:30",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_gptoss_cgen_lr1e-5_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr1e-5_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr1e-5 --lr 1e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt",
+          "launched_at": 1787931033.259468,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:47"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_lr5e-5",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:31",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "1",
+          "session": "new1_ks828b06_gptoss_cgen_lr5e-5_t107g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr5e-5_t107g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr5e-5 --lr 5e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt",
+          "launched_at": 1787931066.245257,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:47"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_lr2e-4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:31",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "2",
+          "session": "new1_ks828b06_gptoss_cgen_lr2e-4_t107g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr2e-4_t107g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr2e-4 --lr 2e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt",
+          "launched_at": 1787931098.9367714,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 01:47"
+    },
+    {
+      "name": "ks828l17_gptoss_cgen_lr1e-4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 01:32",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_ks828l17_gptoss_cgen_lr1e-4_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l17_gptoss_cgen_lr1e-4_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l17_gptoss_cgen_lr1e-4 --lr 1e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora",
+          "launched_at": 1787934746.9019508,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 02:37"
+    },
+    {
+      "name": "ks828l17_gptoss_cgen_lr5e-4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 01:32",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "4",
+          "session": "new1_ks828l17_gptoss_cgen_lr5e-4_t108g4",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l17_gptoss_cgen_lr5e-4_t108g4.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l17_gptoss_cgen_lr5e-4 --lr 5e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora",
+          "launched_at": 1787934779.658796,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 02:37"
+    },
+    {
+      "name": "ks828l17_gptoss_cgen_lr2e-3",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 01:33",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "5",
+          "session": "new1_ks828l17_gptoss_cgen_lr2e-3_t108g5",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l17_gptoss_cgen_lr2e-3_t108g5.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l17_gptoss_cgen_lr2e-3 --lr 2e-3 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora",
+          "launched_at": 1787934812.1157312,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 02:37"
+    },
+    {
+      "name": "ks828l4_gptoss_cgen_lr1e-4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:27",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_ks828l4_gptoss_cgen_lr1e-4_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_lr1e-4_t108g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen4 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l4_gptoss_cgen_lr1e-4 --lr 1e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora --grad-ckpt --align-tol 3e-5",
+          "launched_at": 1787930824.6768458,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 02:44"
+    },
+    {
+      "name": "ks828l4_gptoss_cgen_lr5e-4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:27",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_ks828l4_gptoss_cgen_lr5e-4_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_lr5e-4_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen4 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l4_gptoss_cgen_lr5e-4 --lr 5e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora --grad-ckpt --align-tol 3e-5",
+          "launched_at": 1787930869.2941067,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 02:44"
+    },
+    {
+      "name": "ks828l4_gptoss_cgen_lr2e-3",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 00:28",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "2",
+          "session": "new1_ks828l4_gptoss_cgen_lr2e-3_t108g2",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_lr2e-3_t108g2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen4 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l4_gptoss_cgen_lr2e-3 --lr 2e-3 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora --grad-ckpt --align-tol 3e-5",
+          "launched_at": 1787930901.834752,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 02:44"
     }
   ]
 }

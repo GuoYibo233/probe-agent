@@ -6,6 +6,21 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `ks828l17_gptoss_cgen_lr2e-3` | 2026-08-29 01:33 | kvshare-lr-sweep | `ac36171` | - | ok | best_val_ce=0.2138 best_frac=4 val_exact_call=0.54 worst_gb=81.654 step_peak_gb=81.655 wall_s=2991.0 align_max_abs_diff=9.06e-06 | l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828l17_gptoss_cgen_lr5e-4` | 2026-08-29 01:32 | kvshare-lr-sweep | `ac36171` | - | ok | best_val_ce=0.1647 best_frac=4 val_exact_call=0.63 worst_gb=81.654 step_peak_gb=81.655 wall_s=2883.83 align_max_abs_diff=9.06e-06 | l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828l17_gptoss_cgen_lr1e-4` | 2026-08-29 01:32 | kvshare-lr-sweep | `ac36171` | - | ok | best_val_ce=0.1826 best_frac=4 val_exact_call=0.585 worst_gb=81.654 step_peak_gb=81.655 wall_s=3077.89 align_max_abs_diff=9.06e-06 | l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828b06_ovl2048_dropevent_ctool` | 2026-08-29 01:20 | kvshare-train | `9351e16` | - | ok | overlong_mode=drop-event n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 | ml2048 固定件 --limit 200 drop-event 档: REPLAY_REPORT 四个计数全 0(该报告的计数取自 test 堆), n_events_test=7, chosen_theta 两档均 null; logits_val.meta.json 的 n_dropped_events=1、n_dropped_bounds=64、n_oow=0, excluded_idx 长 64(下标 81-144), 日志里 val 堆事件数由 left/skip 的 5 降到 4; logits_test.meta.json 四个计数全 0 且 excluded_idx 为空 |
+| `ks828b06_ovl2048_skip_ctool` | 2026-08-29 01:18 | kvshare-train | `9351e16` | - | ok | overlong_mode=skip n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 | ml2048 固定件 --limit 200 skip 档: REPLAY_REPORT 四个计数全 0(该报告的计数取自 test 堆), n_events_test=7, chosen_theta 两档均 null; logits_val.meta.json 的 n_oow=41 且 n_skipped_bounds=41, excluded_idx 长 41(下标 81-121), logits_test.meta.json 四个计数全 0 且 excluded_idx 为空 |
+| `ks828b06_ovl2048_left_ctool` | 2026-08-29 01:13 | kvshare-train | `9351e16` | - | ok | overlong_mode=left n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 | ml2048 固定件 --limit 200 left 档: REPLAY_REPORT 四个计数全 0, n_events_test=7, chosen_theta 两档均 null; logits_val.meta.json 的 n_oow=41, logits_test.meta.json 的 n_oow=0, 两份 excluded_idx 均为空表 |
+| `ks828b06_gptoss_cgen_lr2e-4` | 2026-08-29 00:31 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.247 best_frac=4 val_exact_call=0.49 worst_gb=22.005 step_peak_gb=22.427 wall_s=3617.85 align_max_abs_diff=5.007e-06 | b06 cgen 学习率扫描 1 epoch(Ada, 全参+检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828b06_gptoss_cgen_lr5e-5` | 2026-08-29 00:31 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.1857 best_frac=4 val_exact_call=0.615 worst_gb=22.005 step_peak_gb=22.427 wall_s=3678.88 align_max_abs_diff=5.007e-06 | b06 cgen 学习率扫描 1 epoch(Ada, 全参+检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828b06_gptoss_cgen_lr1e-5` | 2026-08-29 00:30 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.173 best_frac=4 val_exact_call=0.63 worst_gb=22.005 step_peak_gb=22.427 wall_s=3654.8 align_max_abs_diff=5.007e-06 | b06 cgen 学习率扫描 1 epoch(Ada, 全参+检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828b17_gptoss_cgen_lr2e-4` | 2026-08-29 00:29 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.2269 best_frac=4 val_exact_call=0.54 worst_gb=102.29 step_peak_gb=102.336 align_max_abs_diff=9.06e-06 wall_s=2830.43 | b17 cgen 学习率扫描 1 epoch(H200, 不开检查点, cost 探针): best_val_ce 0.2269 在 epoch 末, val_exact_call 0.54, 探针 102.29 对整程 step 峰值 102.336 |
+| `ks828b17_gptoss_cgen_lr5e-5` | 2026-08-29 00:29 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.175 best_frac=4 val_exact_call=0.595 worst_gb=102.29 step_peak_gb=102.336 align_max_abs_diff=9.06e-06 wall_s=2820.75 | b17 cgen 学习率扫描 1 epoch(H200, 不开检查点, cost 探针): best_val_ce 0.175 在 epoch 末, val_exact_call 0.595, 探针 102.29 对整程 step 峰值 102.336 |
+| `ks828b17_gptoss_cgen_lr1e-5` | 2026-08-29 00:28 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.1636 best_frac=4 val_exact_call=0.65 worst_gb=102.29 step_peak_gb=102.336 align_max_abs_diff=9.06e-06 wall_s=2789.38 | b17 cgen 学习率扫描 1 epoch(H200, 不开检查点, cost 探针): best_val_ce 0.1636 在 epoch 末, val_exact_call 0.65, 探针 102.29 对整程 step 峰值 102.336 |
+| `ks828l4_gptoss_cgen_lr2e-3` | 2026-08-29 00:28 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.651 best_frac=4 val_exact_call=0.335 worst_gb=32.964 step_peak_gb=33.088 wall_s=7211.81 align_max_abs_diff=1.5378e-05 | l4 cgen 学习率扫描 1 epoch(H100, LoRA+检查点, cost 探针, --align-tol 3e-5): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828l4_gptoss_cgen_lr5e-4` | 2026-08-29 00:27 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.1547 best_frac=4 val_exact_call=0.655 worst_gb=32.964 step_peak_gb=33.088 wall_s=7284.76 align_max_abs_diff=1.5378e-05 | l4 cgen 学习率扫描 1 epoch(H100, LoRA+检查点, cost 探针, --align-tol 3e-5): 数字见 metrics, 最好点在 epoch 末 |
+| `ks828l4_gptoss_cgen_lr1e-4` | 2026-08-29 00:27 | kvshare-lr-sweep | `0f5adb8` | - | ok | best_val_ce=0.1671 best_frac=4 val_exact_call=0.63 worst_gb=32.964 step_peak_gb=33.088 wall_s=7081.17 align_max_abs_diff=1.5378e-05 | l4 cgen 学习率扫描 1 epoch(H100, LoRA+检查点, cost 探针, --align-tol 3e-5): 数字见 metrics, 最好点在 epoch 末 |
 | `ks828b06_ovl_dropevent_ccall` | 2026-08-29 00:17 | kvshare-train | `7c47c76` | - | ok | overlong_mode=drop-event n_left_truncated=0 n_skipped_rows=0 n_dropped_events=133 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.86 | overlong=drop-event 的 ccall 评测跑完(ctool=np821b06 全量, cgen 替身, --limit 200): overlong_mode=drop-event, n_dropped_events=133(全文超 4096 token 的触发事件), 其余计数 0, n_events_scored=200, full_call_ok=0.86(left/skip 轮为 0.855) |
 | `ks828b06_ovl_skip_ccall` | 2026-08-29 00:15 | kvshare-train | `7c47c76` | - | ok | overlong_mode=skip n_left_truncated=0 n_skipped_rows=56 n_dropped_events=0 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.855 | overlong=skip 的 ccall 评测跑完(ctool=np821b06 全量, cgen 替身, --limit 200): overlong_mode=skip, n_skipped_rows=56(与 left 轮的 n_left_truncated 同为 56), 主指标与 left 轮逐位相同 full_call_ok=0.855 |
 | `ks828b06_ovl_left_ccall` | 2026-08-29 00:13 | kvshare-train | `5559c07` | - | ok | overlong_mode=left n_left_truncated=56 n_skipped_rows=0 n_dropped_events=0 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.855 | overlong=left 的 ccall 评测跑完(ctool=np821b06 全量, cgen=np821b06 权重软链替身, --limit 200): overlong_mode=left, n_left_truncated=56, 其余三个计数 0, n_events_scored=200, full_call_ok=0.855 |
@@ -95,6 +110,156 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `ks828l17_gptoss_cgen_lr2e-3`
+
+- **结论**：l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 01:33 → 2026-08-29 02:37
+- **代码**：`ac36171` (分支 main)
+- **机器**：tokyo108 GPU 5
+- **数字**：best_val_ce=0.2138 best_frac=4 val_exact_call=0.54 worst_gb=81.654 step_peak_gb=81.655 wall_s=2991.0 align_max_abs_diff=9.06e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l17_gptoss_cgen_lr2e-3_t108g5.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l17_gptoss_cgen_lr2e-3 --lr 2e-3 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora`
+
+### `ks828l17_gptoss_cgen_lr5e-4`
+
+- **结论**：l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 01:32 → 2026-08-29 02:37
+- **代码**：`ac36171` (分支 main)
+- **机器**：tokyo108 GPU 4
+- **数字**：best_val_ce=0.1647 best_frac=4 val_exact_call=0.63 worst_gb=81.654 step_peak_gb=81.655 wall_s=2883.83 align_max_abs_diff=9.06e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l17_gptoss_cgen_lr5e-4_t108g4.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l17_gptoss_cgen_lr5e-4 --lr 5e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora`
+
+### `ks828l17_gptoss_cgen_lr1e-4`
+
+- **结论**：l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 01:32 → 2026-08-29 02:37
+- **代码**：`ac36171` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：best_val_ce=0.1826 best_frac=4 val_exact_call=0.585 worst_gb=81.654 step_peak_gb=81.655 wall_s=3077.89 align_max_abs_diff=9.06e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l17_gptoss_cgen_lr1e-4_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l17_gptoss_cgen_lr1e-4 --lr 1e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora`
+
+### `ks828b06_ovl2048_dropevent_ctool`
+
+- **结论**：ml2048 固定件 --limit 200 drop-event 档: REPLAY_REPORT 四个计数全 0(该报告的计数取自 test 堆), n_events_test=7, chosen_theta 两档均 null; logits_val.meta.json 的 n_dropped_events=1、n_dropped_bounds=64、n_oow=0, excluded_idx 长 64(下标 81-144), 日志里 val 堆事件数由 left/skip 的 5 降到 4; logits_test.meta.json 四个计数全 0 且 excluded_idx 为空
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 01:20 → 2026-08-29 01:20
+- **代码**：`9351e16` (分支 main)
+- **机器**：tokyo107 GPU 3
+- **数字**：overlong_mode=drop-event n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl2048_dropevent_ctool_t107g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048 --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --env appworld --limit 200 --overlong drop-event`
+
+### `ks828b06_ovl2048_skip_ctool`
+
+- **结论**：ml2048 固定件 --limit 200 skip 档: REPLAY_REPORT 四个计数全 0(该报告的计数取自 test 堆), n_events_test=7, chosen_theta 两档均 null; logits_val.meta.json 的 n_oow=41 且 n_skipped_bounds=41, excluded_idx 长 41(下标 81-121), logits_test.meta.json 四个计数全 0 且 excluded_idx 为空
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 01:18 → 2026-08-29 01:19
+- **代码**：`9351e16` (分支 main)
+- **机器**：tokyo107 GPU 3
+- **数字**：overlong_mode=skip n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl2048_skip_ctool_t107g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048 --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --env appworld --limit 200 --overlong skip`
+
+### `ks828b06_ovl2048_left_ctool`
+
+- **结论**：ml2048 固定件 --limit 200 left 档: REPLAY_REPORT 四个计数全 0, n_events_test=7, chosen_theta 两档均 null; logits_val.meta.json 的 n_oow=41, logits_test.meta.json 的 n_oow=0, 两份 excluded_idx 均为空表
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 01:13 → 2026-08-29 01:17
+- **代码**：`9351e16` (分支 main)
+- **机器**：tokyo107 GPU 3
+- **数字**：overlong_mode=left n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl2048_left_ctool_t107g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048 --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --env appworld --limit 200 --overlong left`
+
+### `ks828b06_gptoss_cgen_lr2e-4`
+
+- **结论**：b06 cgen 学习率扫描 1 epoch(Ada, 全参+检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:31 → 2026-08-29 01:47
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo107 GPU 2
+- **数字**：best_val_ce=0.247 best_frac=4 val_exact_call=0.49 worst_gb=22.005 step_peak_gb=22.427 wall_s=3617.85 align_max_abs_diff=5.007e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr2e-4_t107g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr2e-4 --lr 2e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt`
+
+### `ks828b06_gptoss_cgen_lr5e-5`
+
+- **结论**：b06 cgen 学习率扫描 1 epoch(Ada, 全参+检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:31 → 2026-08-29 01:47
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo107 GPU 1
+- **数字**：best_val_ce=0.1857 best_frac=4 val_exact_call=0.615 worst_gb=22.005 step_peak_gb=22.427 wall_s=3678.88 align_max_abs_diff=5.007e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr5e-5_t107g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr5e-5 --lr 5e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt`
+
+### `ks828b06_gptoss_cgen_lr1e-5`
+
+- **结论**：b06 cgen 学习率扫描 1 epoch(Ada, 全参+检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:30 → 2026-08-29 01:47
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：best_val_ce=0.173 best_frac=4 val_exact_call=0.63 worst_gb=22.005 step_peak_gb=22.427 wall_s=3654.8 align_max_abs_diff=5.007e-06
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr1e-5_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr1e-5 --lr 1e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt`
+
+### `ks828b17_gptoss_cgen_lr2e-4`
+
+- **结论**：b17 cgen 学习率扫描 1 epoch(H200, 不开检查点, cost 探针): best_val_ce 0.2269 在 epoch 末, val_exact_call 0.54, 探针 102.29 对整程 step 峰值 102.336
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:29 → 2026-08-29 01:30
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo108 GPU 5
+- **数字**：best_val_ce=0.2269 best_frac=4 val_exact_call=0.54 worst_gb=102.29 step_peak_gb=102.336 align_max_abs_diff=9.06e-06 wall_s=2830.43
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr2e-4_t108g5.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr2e-4 --lr 2e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe`
+
+### `ks828b17_gptoss_cgen_lr5e-5`
+
+- **结论**：b17 cgen 学习率扫描 1 epoch(H200, 不开检查点, cost 探针): best_val_ce 0.175 在 epoch 末, val_exact_call 0.595, 探针 102.29 对整程 step 峰值 102.336
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:29 → 2026-08-29 01:30
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo108 GPU 4
+- **数字**：best_val_ce=0.175 best_frac=4 val_exact_call=0.595 worst_gb=102.29 step_peak_gb=102.336 align_max_abs_diff=9.06e-06 wall_s=2820.75
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr5e-5_t108g4.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr5e-5 --lr 5e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe`
+
+### `ks828b17_gptoss_cgen_lr1e-5`
+
+- **结论**：b17 cgen 学习率扫描 1 epoch(H200, 不开检查点, cost 探针): best_val_ce 0.1636 在 epoch 末, val_exact_call 0.65, 探针 102.29 对整程 step 峰值 102.336
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:28 → 2026-08-29 01:30
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：best_val_ce=0.1636 best_frac=4 val_exact_call=0.65 worst_gb=102.29 step_peak_gb=102.336 align_max_abs_diff=9.06e-06 wall_s=2789.38
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr1e-5_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr1e-5 --lr 1e-5 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe`
+
+### `ks828l4_gptoss_cgen_lr2e-3`
+
+- **结论**：l4 cgen 学习率扫描 1 epoch(H100, LoRA+检查点, cost 探针, --align-tol 3e-5): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:28 → 2026-08-29 02:44
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo108 GPU 2
+- **数字**：best_val_ce=0.651 best_frac=4 val_exact_call=0.335 worst_gb=32.964 step_peak_gb=33.088 wall_s=7211.81 align_max_abs_diff=1.5378e-05
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_lr2e-3_t108g2.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen4 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l4_gptoss_cgen_lr2e-3 --lr 2e-3 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora --grad-ckpt --align-tol 3e-5`
+
+### `ks828l4_gptoss_cgen_lr5e-4`
+
+- **结论**：l4 cgen 学习率扫描 1 epoch(H100, LoRA+检查点, cost 探针, --align-tol 3e-5): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:27 → 2026-08-29 02:44
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo108 GPU 1
+- **数字**：best_val_ce=0.1547 best_frac=4 val_exact_call=0.655 worst_gb=32.964 step_peak_gb=33.088 wall_s=7284.76 align_max_abs_diff=1.5378e-05
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_lr5e-4_t108g1.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen4 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l4_gptoss_cgen_lr5e-4 --lr 5e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora --grad-ckpt --align-tol 3e-5`
+
+### `ks828l4_gptoss_cgen_lr1e-4`
+
+- **结论**：l4 cgen 学习率扫描 1 epoch(H100, LoRA+检查点, cost 探针, --align-tol 3e-5): 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 00:27 → 2026-08-29 02:44
+- **代码**：`0f5adb8` (分支 main)
+- **机器**：tokyo108 GPU 0
+- **数字**：best_val_ce=0.1671 best_frac=4 val_exact_call=0.63 worst_gb=32.964 step_peak_gb=33.088 wall_s=7081.17 align_max_abs_diff=1.5378e-05
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_lr1e-4_t108g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen4 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828l4_gptoss_cgen_lr1e-4 --lr 1e-4 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --lora --grad-ckpt --align-tol 3e-5`
 
 ### `ks828b06_ovl_dropevent_ccall`
 
