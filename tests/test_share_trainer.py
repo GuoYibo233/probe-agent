@@ -551,7 +551,8 @@ class TestRunMemProbeCPU(unittest.TestCase):
         orig_lr = 1e-3
         opt = torch.optim.AdamW(model.parameters(), lr=orig_lr,
                                 weight_decay=0.01)
-        args = argparse.Namespace(tok_budget=100000, events_per_mb=4)
+        args = argparse.Namespace(tok_budget=100000, events_per_mb=4,
+                                  mem_probe_pick="tokens", accum=2)
         logged = []
 
         def log(**kw):
@@ -598,7 +599,8 @@ class TestRunMemProbeCPU(unittest.TestCase):
         model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
         model.train()
         opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.01)
-        args = argparse.Namespace(tok_budget=100000, events_per_mb=4)
+        args = argparse.Namespace(tok_budget=100000, events_per_mb=4,
+                                  mem_probe_pick="tokens", accum=2)
         logged = []
 
         def log(**kw):

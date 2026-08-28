@@ -450,6 +450,20 @@ def batch_mask(packed_list, L_pad):
     return input_ids, position_ids, mask, loss_idx
 
 
+def epoch_minibatches(events, seed, ep, events_per_mb):
+    """一个 epoch 的事件顺序与逻辑小批切法(spec 16.5,工单 10):训练循环与
+    `cost`/`loop` 显存探针唯一共用的真源——探针踩的块必须是训练真会遇到
+    的块。`events` 本身不被修改(先 `list(events)` 复制一份再打乱)。
+
+    `random.Random(seed + ep).shuffle` 打乱后按 `events_per_mb` 个一组切成
+    逻辑小批,和旧写法(训练循环原来自己做的这两步)逐个相同。
+    """
+    epoch_events = list(events)
+    random.Random(seed + ep).shuffle(epoch_events)
+    return [epoch_events[i:i + events_per_mb]
+           for i in range(0, len(epoch_events), events_per_mb)]
+
+
 def chunk_by_budget(events, tok_budget):
     """spec 第 5 节第二条的贪心装块。
 

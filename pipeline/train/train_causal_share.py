@@ -255,52 +255,83 @@ def sample_gen_eval_rows(events, mode, seed, n):
 
 # ---------------------------------------------------------------- 显存探针
 
-def run_mem_probe(model, opt, full_events, args, dev, log, amp):
-    """spec 第 10 节:训练开始前踩真实最坏情况的显存(工单 06)。
+def _peak_gb(dev):
+    """读峰值(spec 16.5,工单 10):cuda 上 `max_memory_allocated() / 1e9`,
+    其他设备 0.0。探针的每块与 step 日志都调这一个函数(唯一真源);测试靠
+    monkeypatch 它来给假峰值(CPU 上真值恒 0,没有区分度)。"""
+    if dev.startswith("cuda"):
+        return torch.cuda.max_memory_allocated() / 1e9
+    return 0.0
 
-    机理(8-28-assistant-2 判读):训练的真峰在 accum=2 的第二个逻辑小批
-    反向期间——此时优化器状态(AdamW 的两份 fp32 状态,来自上一个 step)
-    与第一个逻辑小批留下的梯度都还在。这里复现同样的条件:优化器状态
-    先建好、最满块连做两次前向加反向(中间不清梯度,即梯度累积),第二次
-    反向后读峰值;最长事件那一块紧接着做,状态已建、梯度未清的条件不变,
-    再做一次前向加反向读峰值。最后清优化器状态、恢复 lr、清梯度。
 
-    建状态要点:AdamW 的 `step()` 只给 `.grad is not None` 的参数分配状态,
-    一个从没做过反向的模型全体 `.grad` 都是 None,直接 `zero_grad` 接
-    `step(lr=0)` 建不出任何状态(本仓 `cprobe-env` 的 torch 2.11.0+cu128 上
-    实测过:`opt.state` 事后是空字典 `{}`,零个 key)。根因不是"建状态这
-    一步前面要不要插一次前向反向",而是 `.grad` 需要先有真实形状的张量——
-    AdamW 分配状态只看 `.grad is not None` 与参数的形状/dtype,不看梯度
-    数值,所以直接给每个可训练参数的 `.grad` 赋 `torch.zeros_like(p)` 就
-    够,不必为此另跑一次前向反向。顺序严格按工单字面写:先把每个可训练
-    参数的 `.grad` 置成零张量,`zero_grad(set_to_none=False)` 保留张量、
-    清零数值(此时已经是零,等价于空操作,但按字面留着这一步调用);再用
-    lr=0 的 `opt.step()`,AdamW 才会真正给每个参数分配
-    exp_avg/exp_avg_sq(`optimizer_state_prebuilt`),参数值不动(lr=0);
-    `reset_peak_memory_stats()` 在这之后;然后才对最满块连做两次前向加
-    反向——建状态这一步之前不发生任何前向或反向。
+def _block_stats(events):
+    """一个物理块(事件列表)的总行数与总损失位数(spec 16.5 的 mem_probe
+    字段:损失位数 = 块内全部行的 `seg_lab`〔行元组第 4 位〕里 `!= -100`
+    的个数之和)。"""
+    n_rows = sum(len(ev["rows"]) for ev in events)
+    n_loss_pos = sum(1 for ev in events for row in ev["rows"]
+                     for v in row[4] if v != -100)
+    return n_rows, n_loss_pos
+
+
+def _fwd_bwd_block(model, grp, dev, mask_dtype, amp):
+    """一个物理块的一次前向加反向(探针三种挑块方式共用,梯度不清零)。"""
+    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+        ce_per_row, w = block_row_ce(model, grp, dev, mask_dtype)
+        loss = (ce_per_row * w).sum() / w.sum().clamp(min=1e-9)
+    loss.backward()
+
+
+def _enum_run_blocks(tr_events, args):
+    """本次 run epoch 0 的逻辑小批与每个逻辑小批的物理块(spec 16.5:`cost`/
+    `loop` 探针共用同一条枚举路径——`share_data.epoch_minibatches` 后每个
+    逻辑小批过 `chunk_by_budget`,和训练循环走的是同一条路,探针踩的块
+    必须是训练真会遇到的块)。返回 `(minibatches, mb_blocks)`:
+    `mb_blocks[i]` 是 `minibatches[i]` 切出来的物理块列表。"""
+    minibatches = share_data.epoch_minibatches(
+        tr_events, train_causal_callgen.SEED, 0, args.events_per_mb)
+    mb_blocks = [share_data.chunk_by_budget(mb, args.tok_budget)
+                for mb in minibatches]
+    return minibatches, mb_blocks
+
+
+def _pick_cost_blocks(blocks):
+    """`cost` 挑块方式的三块挑选(spec 16.5;design-attention.md 9.2/9.5):
+    (i) token 数(`B x L_pad`)最大的块,并列时取损失位多的;
+    (ii) 损失位数最大的块,并列时取 token 多的;
+    (iii) `n_tokens / 全部块最大 n_tokens + n_loss_pos / 全部块最大
+    n_loss_pos` 最大的块。不带系数(design-attention.md 9.5:五套系数下
+    三块里的最大值和线性模型的最大值完全相同)。返回
+    `[(kind, block), ...]`,`block` 是 `blocks` 里的原始对象(用来判断
+    "重复的块只跑一次"时按对象同一性比较)。
     """
-    mask_dtype = torch.bfloat16 if amp else torch.float32
+    stats = []
+    for blk in blocks:
+        n_tok = len(blk) * _l_pad(blk)
+        _n_rows, n_loss_pos = _block_stats(blk)
+        stats.append((n_tok, n_loss_pos))
+    max_n_tok = max(s[0] for s in stats)
+    max_n_loss_pos = max(s[1] for s in stats)
+
+    def _cost(i):
+        return stats[i][0] / max_n_tok + stats[i][1] / max_n_loss_pos
+
+    i_tokens = max(range(len(blocks)), key=lambda i: (stats[i][0], stats[i][1]))
+    i_losspos = max(range(len(blocks)), key=lambda i: (stats[i][1], stats[i][0]))
+    i_cost = max(range(len(blocks)), key=_cost)
+    return [("max_tokens_block", blocks[i_tokens]),
+            ("max_losspos_block", blocks[i_losspos]),
+            ("max_cost_block", blocks[i_cost])]
+
+
+def _mem_probe_tokens(model, full_events, args, dev, log, amp, mask_dtype):
+    """`tokens` 挑块方式(spec 16.5,现状):全集里按 token 数挑最满块加最长
+    事件,状态先建、连做两次反向。`worst_blocks` 的挑法见 `share_data.py`。
+    """
     longest, fullest = share_data.worst_blocks(
         full_events, args.tok_budget, args.events_per_mb)
-
-    def _fwd_bwd(grp):
-        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            ce_per_row, w = block_row_ce(model, grp, dev, mask_dtype)
-            loss = (ce_per_row * w).sum() / w.sum().clamp(min=1e-9)
-        loss.backward()
-
-    orig_lrs = [g["lr"] for g in opt.param_groups]
-    for g in opt.param_groups:
-        for p in g["params"]:
-            p.grad = torch.zeros_like(p)       # 建状态用,不来自任何前向反向
-    opt.zero_grad(set_to_none=False)
-    for g in opt.param_groups:
-        g["lr"] = 0.0
-    opt.step()                                 # 优化器状态就此分配,参数不动
-    if dev.startswith("cuda"):
-        torch.cuda.reset_peak_memory_stats()
-
+    n_considered = len(full_events)
+    worst_gb, worst_kind = 0.0, None
     for kind, grp, n_backward in (("fullest_block", fullest, 2),
                                   ("longest_event", longest, 1)):
         if not grp:
@@ -310,20 +341,180 @@ def run_mem_probe(model, opt, full_events, args, dev, log, amp):
             # 否则第二块记的是两块的最大值(assistant-2 复核 907d143 提出)
             torch.cuda.reset_peak_memory_stats()
         for _ in range(n_backward):
-            _fwd_bwd(grp)                      # 中间不 zero_grad,梯度累积
-        peak = (torch.cuda.max_memory_allocated() / 1e9
-               if dev.startswith("cuda") else 0.0)
+            _fwd_bwd_block(model, grp, dev, mask_dtype, amp)  # 中间不 zero_grad,梯度累积
+        peak = round(_peak_gb(dev), 3)
         b = len(grp)
         l_pad = _l_pad(grp)
-        log(event="mem_probe", kind=kind, n_events=b, packed_len_max=l_pad,
-            peak_mem_gb=round(peak, 3), B=b, L_pad=l_pad,
+        n_rows, n_loss_pos = _block_stats(grp)
+        log(event="mem_probe", pick="tokens", kind=kind, n_events=b,
+            packed_len_max=l_pad, peak_mem_gb=peak, B=b, L_pad=l_pad,
+            n_tokens=b * l_pad, n_rows=n_rows, n_loss_pos=n_loss_pos,
             with_optimizer_state=True, n_backward=n_backward,
             optimizer_state_prebuilt=True)
+        if peak > worst_gb:
+            worst_gb, worst_kind = peak, kind
+    log(event="mem_probe_summary", pick="tokens", worst_gb=worst_gb,
+        worst_kind=worst_kind, scope="full", n_events_considered=n_considered)
 
-    opt.state.clear()
-    for g, lr0 in zip(opt.param_groups, orig_lrs):
-        g["lr"] = lr0
-    opt.zero_grad(set_to_none=True)
+
+def _mem_probe_cost(model, tr_events, args, dev, log, amp, mask_dtype):
+    """`cost` 挑块方式(spec 16.5,默认):本次 run epoch 0 的全部物理块里挑
+    三块(`_pick_cost_blocks`),各在"状态已建、连做两次前向加反向、中间
+    不清梯度"的条件下量峰值;重复的块只跑一次,重复的事件照写,另加
+    `same_as` 指到真正跑过的那个 kind。"""
+    _minibatches, mb_blocks = _enum_run_blocks(tr_events, args)
+    blocks = [blk for blks in mb_blocks for blk in blks]
+    n_considered = len(tr_events)
+    picks = _pick_cost_blocks(blocks)
+
+    seen = {}                          # id(block) -> (kind, peak)
+    worst_gb, worst_kind = 0.0, None
+    for kind, grp in picks:
+        b = len(grp)
+        l_pad = _l_pad(grp)
+        n_rows, n_loss_pos = _block_stats(grp)
+        key = id(grp)
+        if key in seen:
+            same_kind, peak = seen[key]
+            log(event="mem_probe", pick="cost", kind=kind, B=b, L_pad=l_pad,
+                n_tokens=b * l_pad, n_rows=n_rows, n_loss_pos=n_loss_pos,
+                peak_mem_gb=peak, n_backward=2, with_optimizer_state=True,
+                optimizer_state_prebuilt=True, n_events=b, packed_len_max=l_pad,
+                same_as=same_kind)
+        else:
+            if dev.startswith("cuda"):
+                torch.cuda.reset_peak_memory_stats()
+            for _ in range(2):
+                _fwd_bwd_block(model, grp, dev, mask_dtype, amp)
+            peak = round(_peak_gb(dev), 3)
+            seen[key] = (kind, peak)
+            log(event="mem_probe", pick="cost", kind=kind, B=b, L_pad=l_pad,
+                n_tokens=b * l_pad, n_rows=n_rows, n_loss_pos=n_loss_pos,
+                peak_mem_gb=peak, n_backward=2, with_optimizer_state=True,
+                optimizer_state_prebuilt=True, n_events=b, packed_len_max=l_pad)
+        if peak > worst_gb:
+            worst_gb, worst_kind = peak, kind
+    log(event="mem_probe_summary", pick="cost", worst_gb=worst_gb,
+        worst_kind=worst_kind, scope="run", n_events_considered=n_considered)
+
+
+def _mem_probe_loop(model, opt, tr_events, args, dev, log, amp, mask_dtype):
+    """`loop` 挑块方式(spec 16.5):找到含损失位最多那一块的更新组(连续
+    `accum` 个逻辑小批,`n_g` 与训练循环同规则:末组不足 `accum` 时按实际
+    个数),照训练循环原样跑一次更新(`backward_logical_minibatch` 逐个逻辑
+    小批、`clip_grad_norm_`、lr 置 0 的 `opt.step()`),读峰值。调度器 `sch`
+    不动。"""
+    minibatches, mb_blocks = _enum_run_blocks(tr_events, args)
+    n_considered = len(tr_events)
+
+    best_mb_idx, best_loss_pos = 0, -1
+    for mb_idx, blocks in enumerate(mb_blocks):
+        for blk in blocks:
+            _n_rows, n_loss_pos = _block_stats(blk)
+            if n_loss_pos > best_loss_pos:
+                best_loss_pos = n_loss_pos
+                best_mb_idx = mb_idx
+
+    M_ep = len(minibatches)
+    accum = args.accum
+    group_start = (best_mb_idx // accum) * accum
+    group_end = min(group_start + accum, M_ep)
+    group_mb_idx = list(range(group_start, group_end))
+    n_g = len(group_mb_idx)
+
+    n_backward_total = 0
+    sum_rows = sum_loss_pos = total_events = 0
+    max_n_tokens = max_b = max_l_pad = 0
+    max_block_n_loss_pos = 0
+    for mb_idx in group_mb_idx:
+        mb_events = minibatches[mb_idx]
+        total_events += len(mb_events)
+        W = sum(row[5] for ev in mb_events for row in ev["rows"])
+        blocks = mb_blocks[mb_idx]
+        backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp)
+        for blk in blocks:
+            n_backward_total += 1
+            n_rows, n_loss_pos = _block_stats(blk)
+            sum_rows += n_rows
+            sum_loss_pos += n_loss_pos
+            max_block_n_loss_pos = max(max_block_n_loss_pos, n_loss_pos)
+            b = len(blk)
+            l_pad = _l_pad(blk)
+            n_tok = b * l_pad
+            if n_tok > max_n_tokens:
+                max_n_tokens, max_b, max_l_pad = n_tok, b, l_pad
+
+    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+    opt.step()                         # lr 已经是 0(骨架建状态那步置的)
+    peak = round(_peak_gb(dev), 3)
+
+    log(event="mem_probe", pick="loop", kind="loop_group", B=max_b,
+        L_pad=max_l_pad, n_tokens=max_n_tokens, n_rows=sum_rows,
+        n_loss_pos=sum_loss_pos, peak_mem_gb=peak, n_backward=n_backward_total,
+        with_optimizer_state=True, optimizer_state_prebuilt=True,
+        n_events=total_events, packed_len_max=max_l_pad,
+        n_blocks=n_backward_total, max_block_n_loss_pos=max_block_n_loss_pos)
+    log(event="mem_probe_summary", pick="loop", worst_gb=peak,
+        worst_kind="loop_group", scope="run", n_events_considered=n_considered)
+
+
+def run_mem_probe(model, opt, tr_events, args, dev, log, amp, full_events=None):
+    """spec 第 10/16.5 节:训练开始前踩真实最坏情况的显存(工单 06、10)。
+
+    骨架(建优化器状态 -> reset 峰值 -> 按 `--mem-probe-pick` 跑 -> 清状态、
+    恢复 lr、清梯度)加三种挑块跑法。`full_events` 只在 `tokens` 下用到,
+    不给就退回用 `tr_events`(main() 在 `--max-events 0` 且不带 `--smoke`
+    时就是这样复用,tr_events 本来就是全集)。
+
+    建状态要点(工单 06):AdamW 的 `step()` 只给 `.grad is not None` 的参数
+    分配状态,一个从没做过反向的模型全体 `.grad` 都是 None,直接
+    `zero_grad` 接 `step(lr=0)` 建不出任何状态(本仓 `cprobe-env` 的 torch
+    2.11.0+cu128 上实测过:`opt.state` 事后是空字典 `{}`,零个 key)。根因
+    不是"建状态这一步前面要不要插一次前向反向",而是 `.grad` 需要先有
+    真实形状的张量——AdamW 分配状态只看 `.grad is not None` 与参数的
+    形状/dtype,不看梯度数值,所以直接给每个可训练参数的 `.grad` 赋
+    `torch.zeros_like(p)` 就够,不必为此另跑一次前向反向。
+
+    随机数状态(spec 16.5,静默失败点 #31):探针的前向会消耗 CUDA/CPU
+    随机数流(LoRA dropout),不恢复的话带探针与不带探针的 run 训练部分
+    就不逐位相同——整段前后保存并恢复 `random`/`torch`/`torch.cuda` 三处
+    随机数状态。
+    """
+    if full_events is None:
+        full_events = tr_events
+    mask_dtype = torch.bfloat16 if amp else torch.float32
+
+    py_state = random.getstate()
+    torch_state = torch.get_rng_state()
+    cuda_state = torch.cuda.get_rng_state() if dev.startswith("cuda") else None
+    try:
+        orig_lrs = [g["lr"] for g in opt.param_groups]
+        for g in opt.param_groups:
+            for p in g["params"]:
+                p.grad = torch.zeros_like(p)   # 建状态用,不来自任何前向反向
+        opt.zero_grad(set_to_none=False)
+        for g in opt.param_groups:
+            g["lr"] = 0.0
+        opt.step()                             # 优化器状态就此分配,参数不动
+        if dev.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats()
+
+        if args.mem_probe_pick == "tokens":
+            _mem_probe_tokens(model, full_events, args, dev, log, amp, mask_dtype)
+        elif args.mem_probe_pick == "cost":
+            _mem_probe_cost(model, tr_events, args, dev, log, amp, mask_dtype)
+        else:
+            _mem_probe_loop(model, opt, tr_events, args, dev, log, amp, mask_dtype)
+
+        opt.state.clear()                      # #32:lr=0 的 step 仍写状态,清掉
+        for g, lr0 in zip(opt.param_groups, orig_lrs):
+            g["lr"] = lr0
+        opt.zero_grad(set_to_none=True)
+    finally:
+        random.setstate(py_state)
+        torch.set_rng_state(torch_state)
+        if cuda_state is not None:
+            torch.cuda.set_rng_state(cuda_state)
 
 
 # ---------------------------------------------------------------- 对齐检查
@@ -677,6 +868,9 @@ def main():
                          "all=每个评估点都做")
     ap.add_argument("--mem-probe", action="store_true",
                     help="训练前踩最坏块量显存(spec 10)")
+    ap.add_argument("--mem-probe-pick", default="cost",
+                    choices=["tokens", "cost", "loop"],
+                    help="显存探针挑块方式(spec 16.5,工单 10)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--grad-ckpt", action="store_true",
                     help="底座开梯度检查点省显存,同旧")
@@ -821,7 +1015,8 @@ def main():
         eval_tok_budget=eval_tok_budget, events_per_mb=args.events_per_mb,
         accum=args.accum, eval_per_epoch=args.eval_per_epoch,
         log_every=args.log_every, gen_eval=args.gen_eval, gen_bs=args.gen_bs,
-        gen_eval_at=args.gen_eval_at, mem_probe=args.mem_probe, lr=lr,
+        gen_eval_at=args.gen_eval_at, mem_probe=args.mem_probe,
+        mem_probe_pick=args.mem_probe_pick, lr=lr,
         attn_impl=args.attn_impl, seed=SEED, device=dev,
         readonly_env=args.readonly_env, align_pass=align_rep["PASS"],
         align_maxdiff=align_rep["max_abs_diff"],
@@ -837,9 +1032,16 @@ def main():
 
     training_t0 = time.time()
     if args.mem_probe:
-        full_tr_events, _full_counts = share_data.load_events(
-            data / "train.jsonl", tok, args.mode, args.max_len, ro=None, limit=0)
-        run_mem_probe(model, opt, full_tr_events, args, dev, log, amp)
+        full_tr_events = None
+        if args.mem_probe_pick == "tokens":
+            if (not args.smoke) and args.max_events == 0:
+                full_tr_events = tr_events     # limit=0 时 tr_events 本来就是全集
+            else:
+                full_tr_events, _full_counts = share_data.load_events(
+                    data / "train.jsonl", tok, args.mode, args.max_len,
+                    ro=None, limit=0)
+        run_mem_probe(model, opt, tr_events, args, dev, log, amp,
+                     full_events=full_tr_events)
         del full_tr_events
 
     best = float("inf")
@@ -847,10 +1049,8 @@ def main():
     gstep = 0
     total_rows = 0
     for ep in range(epochs):
-        epoch_events = list(tr_events)
-        random.Random(SEED + ep).shuffle(epoch_events)
-        minibatches = [epoch_events[i:i + args.events_per_mb]
-                      for i in range(0, len(epoch_events), args.events_per_mb)]
+        minibatches = share_data.epoch_minibatches(
+            tr_events, SEED, ep, args.events_per_mb)
         M_ep = len(minibatches)
         E = args.eval_per_epoch
         # 评估点 -> frac:k 从 1 到 E 顺序算,同一个点被多个 k 命中时后面的 k
@@ -884,7 +1084,7 @@ def main():
                 epoch_rows += mb_rows
                 epoch_events_n += len(mb_events)
                 total_rows += mb_rows
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             sch.step()
             opt.zero_grad()
@@ -899,15 +1099,13 @@ def main():
                 d_s = epoch_train_s - last_log_train_s
                 ips_win = round(d_rows / max(d_s, 1e-9), 2)
                 eps = round(epoch_events_n / max(epoch_train_s, 1e-9), 2)
+                peak_mem_gb = round(_peak_gb(dev), 3)
                 if dev.startswith("cuda"):
-                    peak_mem_gb = round(torch.cuda.max_memory_allocated() / 1e9, 3)
                     torch.cuda.reset_peak_memory_stats()
-                else:
-                    peak_mem_gb = 0.0
                 log(event="step", ep=ep, gstep=gstep, rows=epoch_rows,
                     loss=loss_val, lr=sch.get_last_lr()[0], ips=ips,
                     ips_win=ips_win, eps=eps, train_s=round(epoch_train_s, 2),
-                    peak_mem_gb=peak_mem_gb)
+                    peak_mem_gb=peak_mem_gb, grad_norm=round(float(total_norm), 4))
                 heartbeat.emit(gstep, steps, "step", loss=loss_val)
                 run_loss_sum = run_mb_count = 0
                 last_log_rows, last_log_train_s = epoch_rows, epoch_train_s
