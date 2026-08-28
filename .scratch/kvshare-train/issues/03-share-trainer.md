@@ -1,6 +1,6 @@
 # 03 训练器 `pipeline/train/train_causal_share.py` 与注册表
 
-Status: claimed
+Status: resolved
 Blocked by: 01
 Spec: `.scratch/kvshare-train/spec.md` 第 4 到 9 节、第 12 节；注意力实现照 `.scratch/kvshare-train/design-attention.md`（已落地），拼接序列与掩码的构造有一份 CPU 验证过的参考实现 `.scratch/kvshare-train/verify/packed_common.py`（只当参考读，代码要按工单 01 的 `share_data` 接口重写，不许直接 import 那个文件）
 
@@ -23,3 +23,7 @@ Spec: `.scratch/kvshare-train/spec.md` 第 4 到 9 节、第 12 节；注意力�
 - 旧脚本除 `build()` 的两个关键字参数外零改动（`git diff --stat` 里 `train_causal_callgen.py` 只有那一处，`train_causal_param.py` 无改动）。
 - `EVAL_CELLS`、`summarize_matrix.py`、四个评测脚本无改动。
 - GPU 上的对齐检查与冒烟不在本工单：把准备好的命令写进报告即可。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave2 实现 2 轮修复过评审，分支 `ticket/2026-08-28-wave2/T03`（base `2216c44`，head `312038d`），合并为 `12c4a2b`（`train_causal_share.py` 788 行、`tests/test_share_trainer.py` 424 行、`run.py` +57/−?、`train_causal_callgen.py` 的 `build()` 加两个关键字参数）。主会话复核：`python3 run.py selfcheck` 76 任务全部就位；`python3 -c "import ops.launch_probe"` ok；`python3 run.py show train-cgen` / `train-cparam` 出的命令含 `train_causal_share.py --mode`；cprobe-env 下 `test_share_trainer test_ctool_readpos test_share_data test_cparam_assembly test_lora_merge` Ran 58 tests OK；`grep -c heartbeat.emit` 3、`grep -c sdpa_kernel` 3。遗留 minors（照录）：F2 `ALIGN_CHECK.json` 多写一个 spec 列表之外的 `bf16_warn` 诊断键；N2 `TestRefForwardUsesInstCe` 只测了一致路径、没测断言分支会触发。实现者 concerns（照录）：对齐候选抽样 `_align_candidates` 没复用 `load_events`（避免为抽 6 个候选对全量 val 逐行分词）；参照路径逐 token CE 在 `_ref_forward` 手算（`inst_ce` 只回行均值），运行时断言手算行均值与 `inst_ce` 一致（`REF_INST_CE_DRIFT_TOL`）——交 8-28-assistant-2 对照 design 复核；`--mem-probe` 与 cuda 分支没在 GPU 跑过；`--mem-probe` 全量加载不带 `--readonly-env` 过滤（ro=None）；`done.wall_s` 含 `--mem-probe` 耗时；新建工作树里 `.gitignore` 的 `*-env/` 规则不匹配软链（临时软链已删、未进 commit）。cannotVerify 两条（cuda 行为、selfcheck 真跑）主会话已跑或交 GPU 冒烟。

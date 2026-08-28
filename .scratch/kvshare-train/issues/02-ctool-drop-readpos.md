@@ -1,6 +1,6 @@
 # 02 ctool 的丢弃规则、默认值、读取位置规则、日志
 
-Status: claimed
+Status: resolved
 Blocked by: 01
 Spec: `.scratch/kvshare-train/spec.md` 第 11 节，读取位置规则的函数来自工单 01 的 `share_data.read_position`
 
@@ -19,6 +19,10 @@ Spec: `.scratch/kvshare-train/spec.md` 第 11 节，读取位置规则的函数�
 - `python3 -m unittest tests.test_ctool_readpos` 通过（两个环境都过；测试 import 训练脚本要照 `tests/test_cparam_assembly.py` 第 21 到 29 行兜 `SystemExit` 成 skip）。
 - `cprobe-env/bin/python -m py_compile pipeline/train/train_causal_tool.py pipeline/eval/eval_tool.py` 通过。
 - 硬门（`py_compile` 抓不到 import 期退出，必须真 import，不许 try/skip 兜住）：`mbert-env/bin/python -c "import sys; sys.path.insert(0,'pipeline/eval'); import eval_tool; print('ok')"` 打印 ok；`mbert-env/bin/python -c "import sys; sys.path.insert(0,'pipeline/eval'); import eval_mbert_call; print('ok')"` 打印 ok。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave2 实现 0 轮修复过评审，分支 `ticket/2026-08-28-wave2/T02`（base `2216c44`，head `479b887`），合并进 `12c4a2b`。主会话复核：cprobe-env 下五个测试文件 Ran 58 tests OK（含本工单的 `test_ctool_readpos`）；系统 python3 discover `test_ctool_readpos` OK (skipped=1)；两个 mbert 硬门 `eval_tool` / `eval_mbert_call` import ok。报告 `sdd/2026-08-28-wave2/T02-report.md`。实现者 concerns（照录，均未处理）：`collate`/`align_check` 的 `tok()` 里 `max_length=max_len` 在 `truncation=False` 下是摆设并触发一条 HF UserWarning；`build()` 的 `truncation_side="left"` 不再影响行为；`load_events` 的 `open(path)` 没用上下文管理器（改动前就有）；`python3 -m unittest tests.test_ctool_readpos` 非 discover 模式在 mbert-env 下退出码 1 是 unittest 对模块级 SkipTest 的行为，不是回归；`step` 事件的 `lr` 没 round。MAP.md ctool 行文案在报告里，归工单 04。GPU 冒烟归主会话（ks828b06 smoke 档）。
 - `git diff` 里 `eval_tool.py` 只有 `score_causal` 的读取位置那一段和 import 变化，左截断 `truncation=True` 保留（spec 11.5）。
 - `MAP.md` 不动（ctool 那一行的新文案「上限 8192 超长事件整条丢弃；一次更新 8 个事件；读取位置读跨切点的空白 token」由工单 04 写，你在报告里给出文案）。
 - 现有的心跳接线（`heartbeat.emit` 第 401、427、458 行）保持原样。
