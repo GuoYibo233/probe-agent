@@ -81,11 +81,11 @@ CPU 上 bool 掩码和 0 / -inf 的浮点掩码算出来的 loss 逐位相同（
 
 裁决：用形态 A。形态 A 和 ctool 的整段一次前向只差一张掩码和一份 position_ids，梯度检查点、LoRA、按 token 预算沿批维组批都直接可用，CPU 上三样都验证过。形态 B 只留作对照实现，不上训练。
 
-## 三、内核会落到 mem-efficient，math 内核在 8192 上装不下
+## 三、内核显式钉在 mem-efficient，math 内核在 8192 上装不下
 
-### 3.1 形态 A 在 GPU 上按优先级落到 mem-efficient
+### 3.1 形态 A 在 GPU 上要显式钉 mem-efficient（默认顺序在 H100 上落到 cuDNN，见第七节）
 
-按第一节的事实推：掩码非空，flash 直接拒绝；优先级下一个是 mem-efficient，mem-efficient 接 4 维掩码（bool 或者浮点），head_dim 128、bf16、dropout 0、掩码不带梯度、批和头两维为 1，都在允许范围里；只要 mem-efficient 的资格检查通过，就轮不到 math。cudnn 排在 math 后面，默认情况下碰不到。推断的每一条都要在 GPU 上用 `torch.backends.cuda.can_use_efficient_attention(SDPAParams(q, k, v, mask, 0.0, False, False), debug=True)` 对真实形状问一遍，再用 profiler 看内核名（第六节第 1 到 3 步，脚本 `gpu_kernel_check.py`）。
+按第一节的事实推：掩码非空，flash 直接拒绝；优先级下一个是 mem-efficient，mem-efficient 接 4 维掩码（bool 或者浮点），head_dim 128、bf16、dropout 0、掩码不带梯度、批和头两维为 1，都在允许范围里；只要 mem-efficient 的资格检查通过，就轮不到 math。cudnn 排在 math 后面，默认情况下碰不到。第七节的 GPU 实测推翻了默认选择这一半：H100 上默认选择落到了 cuDNN，mem-efficient 只有显式钉才会用上。推断的每一条都要在 GPU 上用 `torch.backends.cuda.can_use_efficient_attention(SDPAParams(q, k, v, mask, 0.0, False, False), debug=True)` 对真实形状问一遍，再用 profiler 看内核名（第六节第 1 到 3 步，脚本 `gpu_kernel_check.py`）。
 
 训练代码里推荐把前向和反向包在 `with torch.nn.attention.sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):` 里。这样 mem-efficient 不能用的时候 torch 直接报错，而不是悄悄退到 math 然后在 8192 的事件上爆显存。
 
@@ -153,9 +153,9 @@ flex 的好处是块稀疏：形态 A 的掩码里，前缀因果去掉一半、
 
 ## 五、对齐容差分两道：fp32 门禁每行 2e-5，bf16 粗筛每行平均 2e-2
 
-### 5.1 ctool 的 `--align-tol` 验的是缓存增量前向和整段前向是同一个函数
+### 5.1 ctool 的 `--align-tol` 验证的是缓存增量前向和整段前向是同一个函数
 
-`train_causal_tool.py` 第 200 到 240 行 `align_check`：取 val 集全文最长的一个事件（第 335 行），截断到 `--max-len`，fp32、`torch.set_float32_matmul_precision("highest")`（第 208 行，关 TF32），算两遍底座前向：整段一次前向，和逐 token 增量前向（每次喂 1 个 token 带 `past_key_values`，第 218 到 222 行），比较末位置的隐状态和分类头 logits 的最大绝对差（第 226 到 228 行），两个差都小于 `tol` 才 PASS，否则 `sys.exit(2)` 拒绝开训（第 345 到 354 行）。默认 `ALIGN_TOL = 1e-4`（第 76 行）。`3e-4` 是 c1 批次按 T8 先例放宽的值（`.claude/skills/probe-pipeline/references/invariants.md` 第 97 行：三个 ctool 的 hidden maxdiff 8.39e-5 到 1.68e-4、相对差 2.3e-6 到 3.3e-6，判为 fp32 噪声，记在 TIMELINE 2026-07-31 c1 条），np821 四个 ctool 的 `align_maxdiff_hidden` 是 9.78e-5 到 2.37e-4（`RESULTS.md` 第 23 到 32 行）。`--align-tol` 验的是「缓存增量前向和整段前向是同一个函数」，量的是 4096 个 token 之后隐状态的绝对差，全程 fp32，和 bf16 训练无关，也不比较 loss。
+`train_causal_tool.py` 第 200 到 240 行 `align_check`：取 val 集全文最长的一个事件（第 335 行），截断到 `--max-len`，fp32、`torch.set_float32_matmul_precision("highest")`（第 208 行，关 TF32），算两遍底座前向：整段一次前向，和逐 token 增量前向（每次喂 1 个 token 带 `past_key_values`，第 218 到 222 行），比较末位置的隐状态和分类头 logits 的最大绝对差（第 226 到 228 行），两个差都小于 `tol` 才 PASS，否则 `sys.exit(2)` 拒绝开训（第 345 到 354 行）。默认 `ALIGN_TOL = 1e-4`（第 76 行）。`3e-4` 是 c1 批次按 T8 先例放宽的值（`.claude/skills/probe-pipeline/references/invariants.md` 第 97 行：三个 ctool 的 hidden maxdiff 8.39e-5 到 1.68e-4、相对差 2.3e-6 到 3.3e-6，判为 fp32 噪声，记在 TIMELINE 2026-07-31 c1 条），np821 四个 ctool 的 `align_maxdiff_hidden` 是 9.78e-5 到 2.37e-4（`RESULTS.md` 第 23 到 32 行）。`--align-tol` 验证的是「缓存增量前向和整段前向是同一个函数」，量的是 4096 个 token 之后隐状态的绝对差，全程 fp32，和 bf16 训练无关，也不比较 loss。
 
 ### 5.2 正确性门禁在 fp32 上定，bf16 只做粗筛
 

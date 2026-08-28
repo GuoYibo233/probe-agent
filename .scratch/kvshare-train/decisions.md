@@ -93,3 +93,7 @@ ctool 冒烟在 H100 上 `--bs 4 --accum 2` 爆显存或峰值超过 84 GiB（�
 最长事件（L 9,381 补到 9,392）bf16 加性掩码补 16 的峰值 26.65 GiB，另外三种掩码变体 31.11 到 31.20 GiB，四种 row_loss_mean 逐位相同 3.2452；不套上下文时默认内核是 cuDNN；`--grad-ckpt` 把最长单事件峰值从 31.1 压到 6.35 GiB，`--lora` 不省激活（31.16）。第三次补射正在跑第 6 步的 bf16/fp32 对齐差。
 
 8-28-assistant 核对（读 `pipeline/runs/smoke/kvshare_gpu_kernel_check/gpu_result.json`，文件时间 2026-08-28 09:35:47，steps_done 九步齐、errors 空）：mask_variants 的 bf16_aligned16 峰值 26.65 GiB，bool_unaligned 31.11、bf16_unaligned 31.20、bool_aligned16 31.17，四种 row_loss_mean 都是 3.2452，与上文一致；default_selection（cuDNN）峰值 31.11、row_loss_mean 3.2500，比四种 EFFICIENT 变体的 3.2452 高 4.8e-3；grad_ckpt 峰值 6.34 GiB（上文写 6.35），lora 31.18 GiB（上文写 31.16），以文件为准。第 6 步结果：fp32（5 个事件 34 行 505 个目标 token）新路径对旧训练器整批的逐行最大差 4.41e-6、逐 token 最大差 3.05e-5，同次基线（旧单行对旧整批）5.01e-6 / 6.91e-5；bf16 autocast 逐行最大 3.07e-2、平均 9.31e-3，基线 3.03e-2 / 8.83e-3，逐 token 最大 0.232 对基线 0.183。
+
+## 决定 18
+
+对齐检查 fp32 第一道门槛由逐行 1e-5 / 逐 token 1e-4 改成逐行 2e-5（--align-tol 默认）/ 逐 token 3e-4；bf16 第二道 2e-2 / 1e-1 不动。 / 理由：H100 mem-efficient 上同一批 34 行的 fp32 逐行最大差 4.41e-6 是 CPU 2.15e-6 的 2 倍，正式检查抽 6 个事件约 380 行 7,000 token 比验证多 10 倍、最大值随样本数涨（CPU 34 行到 151 行时 2.15e-6 到 2.62e-6），按 4.41e-6 × 1.3 估约 6e-6，1e-5 只剩 1.7 倍余量会误拦开训；2e-5 留 3 倍，离掩码错位的真错 1e-2 仍差 500 倍；逐 token 的 GPU 基线 6.91e-5 已贴近 1e-4。基线偏大是因为参照路径的单行批没有掩码走 math 内核，和整批的 mem-efficient 不同内核，所以基线只当告警。 / 依据：8-28-assistant-2 对 gpu_result.json 第 6 步的判读，design-attention.md 第七节终稿与 5.2；HEAD 368f3b1。grad_ckpt 6.34、lora 31.18 按文件为准，台账 record finish 已经按 6.34 / 31.18 记（runs.jsonl 里 kvshare_gpu_kernel_check 的 finish 条目）。
