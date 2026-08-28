@@ -12,6 +12,7 @@ mbert-env(transformers 4.57.6)下 `load_events` 用到的两个旧训练脚本�
 `skipTest`(不影响其余用例)。
 """
 import json
+import random as _random
 import sys
 import tempfile
 import unittest
@@ -478,6 +479,34 @@ class TestReadPosition(unittest.TestCase):
                 offsets_batch, short_text, cut, keep_batch)
             self.assertEqual(j_batch, j_solo)
             self.assertLess(j_batch, keep_batch)
+
+
+class TestEpochMinibatches(unittest.TestCase):
+    """工单 10(spec 16.5、16.9):`epoch_minibatches` 与"手抄训练循环旧写法"
+    (改前 train_causal_share.py 第 761 到 764 行)切出来的小批逐个相同
+    (事件名序列相等)——探针踩的块必须是训练真会遇到的块。"""
+
+    def test_matches_old_inline_shuffle(self):
+        events = [dict(event=f"ev{i}") for i in range(23)]
+        seed, ep, events_per_mb = 42, 1, 4
+
+        old_events = list(events)                  # 手抄的旧写法
+        _random.Random(seed + ep).shuffle(old_events)
+        old_minibatches = [old_events[i:i + events_per_mb]
+                           for i in range(0, len(old_events), events_per_mb)]
+
+        new_minibatches = share_data.epoch_minibatches(
+            events, seed, ep, events_per_mb)
+
+        self.assertEqual(
+            [[e["event"] for e in mb] for mb in new_minibatches],
+            [[e["event"] for e in mb] for mb in old_minibatches])
+
+    def test_does_not_mutate_input(self):
+        events = [dict(event=f"ev{i}") for i in range(9)]
+        order_before = [e["event"] for e in events]
+        share_data.epoch_minibatches(events, 42, 0, 4)
+        self.assertEqual([e["event"] for e in events], order_before)
 
 
 if __name__ == "__main__":
