@@ -534,12 +534,15 @@ def run_mem_probe(model, opt, tr_events, args, dev, log, amp, full_events=None):
             _mem_probe_cost(model, tr_events, args, dev, log, amp, mask_dtype)
         else:
             _mem_probe_loop(model, opt, tr_events, args, dev, log, amp, mask_dtype)
-
+    finally:
+        # 三种挑块跑法本身就是在踩最坏情况的显存,探针跑挂(OOM 等)不能让
+        # opt.state/lr/.grad 停在探针中途的脏状态——收尾三步跟随机数状态
+        # 一起搬进 finally,不管探针是正常跑完还是抛异常都要执行。顺序:
+        # 清状态、恢复 lr、清梯度,然后恢复随机数(spec 16.9 O4)。
         opt.state.clear()                      # #32:lr=0 的 step 仍写状态,清掉
         for g, lr0 in zip(opt.param_groups, orig_lrs):
             g["lr"] = lr0
         opt.zero_grad(set_to_none=True)
-    finally:
         random.setstate(py_state)
         torch.set_rng_state(torch_state)
         if cuda_state is not None:
@@ -1063,7 +1066,12 @@ def main():
     if args.mem_probe:
         full_tr_events = None
         if args.mem_probe_pick == "tokens":
-            if (not args.smoke) and args.max_events == 0:
+            # readonly_env 打开时 tr_events 是按 ro=ro_tr 装的,非只读的行
+            # 已经整行丢掉,不是训练集全集——这个分支必须把 readonly_env
+            # 关闭也算进"tr_events 本来就是全集"的判据里,否则探针量的
+            # 是过滤后的子集却仍标 scope="full"。
+            if args.readonly_env is None and (not args.smoke) \
+                    and args.max_events == 0:
                 full_tr_events = tr_events     # limit=0 时 tr_events 本来就是全集
             else:
                 full_tr_events, _full_counts = share_data.load_events(

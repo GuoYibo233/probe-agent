@@ -73,7 +73,7 @@ class TestPlan(unittest.TestCase):
                             if l.startswith("python3 run.py launch")]
             self.assertEqual(len(launch_lines), 12)
             for l in launch_lines:
-                self.assertIn("--piece <host>:<gpu>", l)
+                self.assertIn("--piece <host>:<gpus>", l)
 
             written = json.loads(write_path.read_text())
             self.assertEqual(len(written), 12)
@@ -155,6 +155,45 @@ class TestReport(unittest.TestCase):
                 root, "ks828l17_gptoss_cgen_lr1e-4")
             rec = SL.summarize_run(d)
             self.assertEqual(rec["worst_gb"], 21.5)
+
+    def test_val_exact_takes_last_available_point_not_best_frac(self):
+        """终审 O2 回归测试(spec 16.6):`--gen-eval-at last` 下只有 epoch 末
+        那个评估点算 `val_exact_call`,数值上最好的 `best_val_ce` 却可能落在
+        更早的一个点上——`val_exact` 该取"有值的那个评估点"(这里是 frac=2),
+        不是 `best_frac` 所在的那个点(frac=1,没有 `val_exact_call`);列名
+        与单元格按 `val_exact(@ep.frac)` / `0.42@0.2` 的写法。"""
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            d = root / "ks828l4_gptoss_cgen_lr2e-3"
+            d.mkdir()
+            events = [
+                dict(event="start", base="qwen4", lr=2e-3, tok_budget=16384,
+                     n_train_events=100, dropped_events_train=0),
+                # frac=1:数值上最好的一点,--gen-eval-at last 下没有 val_exact_call。
+                dict(event="eval", ep=0, frac=1, gstep=10, val_ce=0.30),
+                # frac=2:epoch 末,val_ce 比 frac=1 差,但只有这一点算了 val_exact。
+                dict(event="eval", ep=0, frac=2, gstep=20, val_ce=0.40,
+                     val_exact_call=0.42),
+                dict(event="done", best_val_ce=0.30, best_ep=0, best_frac=1,
+                     total_rows=100, wall_s=10.0),
+            ]
+            _write_jsonl(d / "train_log.jsonl", events)
+
+            rec = SL.summarize_run(d)
+            self.assertEqual(rec["best_val_ce"], 0.30)
+            self.assertEqual(rec["best_frac"], 1)
+            self.assertEqual(rec["val_exact"], 0.42)
+            self.assertEqual(rec["val_exact_frac"], "0.2")
+
+            out_dir = root / "report"
+            rc = SL.main(["report", "--runs", str(d), "--out", str(out_dir)])
+            self.assertEqual(rc, 0)
+            data = json.loads((out_dir / "SWEEP_REPORT.json").read_text())
+            self.assertEqual(data[0]["val_exact"], 0.42)
+            self.assertEqual(data[0]["val_exact_frac"], "0.2")
+            md = (out_dir / "SWEEP_REPORT.md").read_text()
+            self.assertIn("val_exact(@ep.frac)", md)
+            self.assertIn("0.42@0.2", md)
 
     def test_report_two_runs_status_star_and_columns(self):
         with tempfile.TemporaryDirectory() as td:

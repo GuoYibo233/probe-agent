@@ -451,6 +451,108 @@ class TestCparamCtoolExclusionWiring(unittest.TestCase):
                          "多自信")
 
 
+class TestCgenDropEventFullTextUsesRawRows(unittest.TestCase):
+    """终审 F1 回归测试:`--overlong drop-event` 取事件全文要用 share_data
+    的规则(不按 ctool 词表过滤行,取 `sent_idx` 最大那行的 `text`),不能
+    套用 ctool 过滤后的 `rows`。手造一个事件:`sent_idx` 最大的那一行标签
+    不在 ctool 词表里(会被 `label in label2id` 过滤掉),只有算上这一行的
+    全文才会超过 `max_len`——套错口径(用过滤后的 `rows`)会漏看这一行,
+    误判成没超长;改对之后(用 `raw_rows`)才会正确地把整个事件丢掉。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+
+    def test_event_with_out_of_vocab_last_row_gets_dropped(self):
+        torch.manual_seed(20260829)
+        model = AutoModelForCausalLM.from_config(
+            _tiny_causal_config(len(self.tok)))
+        model.eval()
+
+        short_text_a = "Please handle this quick request now."
+        short_text_b = "This is a different short event text."
+        max_len = len(self.tok(short_text_a,
+                              add_special_tokens=False)["input_ids"]) + 20
+        # 只有把 sent_idx=1 这一行(标签不在词表里)的全文算进去,事件全文
+        # 才会超过 max_len;词表过滤后剩下的 sent_idx=0 全文远低于 max_len。
+        long_full_text = _grow_until(self.tok, "word", max_len + 20)
+
+        rows = [
+            # ev_drop 的触发点(sent_idx=0,标签在词表里,会被判为 fired):
+            # 全文本身不长,套错口径时事件全文就等于这一行,判不出超长。
+            _row("ev_drop", 0, 2, short_text_a, "apis.a", "apis.a(x=1)"),
+            # sent_idx 最大的一行,标签不在 ctool 词表里,会被
+            # `label in label2id` 整行过滤掉——但 share_data 的规则要求
+            # 全文口径必须看到这一行。
+            _row("ev_drop", 1, 2, long_full_text, "apis.zzz", "apis.zzz(x=1)"),
+            # 基线对照:正常短事件,drop-event 下不该被丢。
+            _row("ev_keep", 0, 1, short_text_b, "apis.a", "apis.a(x=2)"),
+        ]
+        for r in rows:
+            r["args_named"] = []
+        # 过滤后只剩 ev_drop 的 sent_idx=0 与 ev_keep 的 sent_idx=0 两行,
+        # 顺序与 raw_rows 里的先后一致;两行都给高置信度让它们都能触发。
+        logits = torch.tensor([
+            [10.0, -10.0],
+            [10.0, -10.0],
+        ])
+        theta = 0.9
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            ctool_dir, cgen_dir, data_dir = (root / "ctool", root / "cgen",
+                                             root / "data")
+            (ctool_dir / "best").mkdir(parents=True)
+            (cgen_dir / "best").mkdir(parents=True)
+            data_dir.mkdir()
+
+            _write_jsonl(rows, data_dir / "test.jsonl")
+            (ctool_dir / "best" / "label_map.json").write_text(
+                json.dumps({"apis.a": 0, "apis.b": 1}))
+            (ctool_dir / "best" / "meta.json").write_text(
+                json.dumps({"data": str(data_dir)}))
+            (ctool_dir / "REPLAY_REPORT.json").write_text(json.dumps(
+                {"temperature": 1.0, "chosen_theta": {"0.05": theta}}))
+            torch.save(logits, ctool_dir / "logits_test.pt")
+
+            self.tok.save_pretrained(cgen_dir / "best")
+            model.save_pretrained(cgen_dir / "best")
+            (cgen_dir / "best" / "meta.json").write_text(json.dumps(
+                {"call_sep": "\n[CALL] ", "max_len": max_len,
+                 "data": str(data_dir)}))
+
+            argv = ["eval_causal_call.py", "--env", "appworld",
+                   "--ctool-run", str(ctool_dir), "--cgen-run", str(cgen_dir),
+                   "--data", str(data_dir), "--risk", "0.05",
+                   "--device", "cpu", "--bs", "2", "--overlong", "drop-event",
+                   "--max-new-tokens", "0"]
+            old_argv = sys.argv
+            old_generate = eval_causal_call.generate
+            try:
+                sys.argv = argv
+                eval_causal_call.generate = _IdentityGenerate()
+                eval_causal_call.main()
+            finally:
+                sys.argv = old_argv
+                eval_causal_call.generate = old_generate
+
+            out = json.loads((cgen_dir / "CALLGEN_REPORT.json").read_text())
+
+        self.assertEqual(out["n_dropped_events"], 1)
+        self.assertEqual(out["n_events_fired"], 2,
+                         "两个事件的触发行都给了高置信度,该都触发")
+        self.assertEqual(out["n_events_scored"], 1,
+                         "ev_drop 该被 drop-event 丢掉,只剩 ev_keep 判分")
+        by_event = {s["event"]: s for s in out["samples"]}
+        self.assertNotIn("ev_drop", by_event,
+                         "sent_idx 最大那行(标签不在词表里)的全文超长,"
+                         "事件该被丢——套错口径(过滤后的 rows)会漏看这一行")
+        self.assertIn("ev_keep", by_event)
+
+
 class TestScoreCausalOverlong(unittest.TestCase):
     """(c) `eval_tool.score_causal` 三种模式下 `out` 行数都等于输入行数、
     `excluded_idx` 与计数各对、被剔除行的 logits 全零。小模型:

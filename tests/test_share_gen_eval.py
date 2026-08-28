@@ -235,12 +235,13 @@ class TestSampleGenEvalRowsDeterministic(unittest.TestCase):
 
 
 class TestAttnCtxOnlyInForwardPacked(unittest.TestCase):
-    """(d) 守卫测试(spec 16.10 #29):`_attn_ctx(...)` 的调用点只能在
-    `_forward_packed` 内——无掩码的 `generate` 走 GQA,mem-efficient 内核
-    报 `No available kernel`,后来有人把生成也包进 `_attn_ctx` 就会撞上
-    这条。用 `ast` 找 `_attn_ctx` 的 `Call` 节点,断言父函数只有
-    `_forward_packed`(`def _attn_ctx` 那一行本身是 `FunctionDef`,不是
-    `Call`,不算调用)。"""
+    """(d) 守卫测试(spec 16.10 #29):`_attn_ctx(...)` 的调用点只许落在
+    前向 `_forward_packed` 与反向 `backward_logical_minibatch` /
+    `_fwd_bwd_block` 三处,生成路径永远不许——无掩码的 `generate` 走 GQA,
+    mem-efficient 内核报 `No available kernel`,后来有人把生成也包进
+    `_attn_ctx` 就会撞上这条。用 `ast` 找 `_attn_ctx` 的 `Call` 节点,断言
+    父函数只落在这三个里(`def _attn_ctx` 那一行本身是 `FunctionDef`,
+    不是 `Call`,不算调用)。"""
 
     def test_attn_ctx_called_only_inside_forward_packed(self):
         # 允许的调用点:前向一处,反向两处(--grad-ckpt 的重算发生在

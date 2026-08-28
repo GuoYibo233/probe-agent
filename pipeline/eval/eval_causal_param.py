@@ -472,8 +472,11 @@ def main():
     n_full = {}
     if args.overlong == "drop-event":
         key_set = set(keys)
+        # spec 16.2: 全文取 share_data 的规则(不按 ctool 词表过滤行,取
+        # sent_idx 最大那行的 text)——传 raw_rows 而不是过滤后的 rows,
+        # 否则等于套用了 ctool 的过滤口径。
         full_texts = share_data.event_full_texts(
-            [r for r in rows if r["event"] in key_set])
+            [r for r in raw_rows if r["event"] in key_set])
         n_full = {k: share_data.n_full_tokens(tok, full_texts[k]) for k in keys}
     keys, length_counts = share_data.select_keys(
         args.overlong, keys_rowmap, n_full, prompt_len, set(),
