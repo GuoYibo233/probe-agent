@@ -73,11 +73,12 @@ ul.plain li{margin:.35rem 0;}
 a{color:var(--accent);}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+h2.part{margin-top:3.5rem;padding-top:1.5rem;border-top:2px solid var(--line);}
 </style>
 <main>
-<div class="eyebrow">2026-08-28 · plan-8-28 会话 · reproduce/new1</div>
+<div class="eyebrow">2026-08-28 到 29 · plan-8-28 会话 · reproduce/new1 · 两轮</div>
 <h1>ks828 缓存复用训练器</h1>
-<p class="lede">gyb 授权「一口气从出工单到部署到验收测试」之后，这一天做了什么、每个自主决定和它的理由、数字与出处，以及还要 gyb 拍板的事。事实在前，解读在后，两者之间有分界。</p>
+<p class="lede">两轮。第一轮（8 月 28 日白天）：gyb 授权「一口气从出工单到部署到验收测试」，做出新训练器并终验，留下九件待拍板的事。第二轮（28 日晚到 29 日凌晨）：gyb 裁决之后把四件做成参数可切换的选项、验证、扫了学习率。第二轮写在前面，第一轮原文在后面。事实在前，解读在后，两者之间有分界。</p>
 <div class="meta">
   <span>起点 <b>bd9a3d5</b></span>
   <span>代码终点 <b id="head-final">234dfad</b>（之后只有台账、文档与本汇报的提交）</span>
@@ -85,6 +86,165 @@ a{color:var(--accent);}
   <span>自主决定 <b>25 条</b></span>
   <span>GPU run <b id="gpu-count">13 个 run_id，16 次发射，全部销号</b></span>
 </div>
+
+<h2 id="r2">第二轮：gyb 裁决之后（2026-08-28 晚到 29 日凌晨）</h2>
+<p class="lede">gyb 的裁决原话：「学习率需要扫。flex_attention不用做。其他的都给几种可能，我目前没有人工审核时间，你先选项的代码先实现好，可以通过参数切换，我回头对比一下。实现好之后验证一下，给推荐的配置gpu run去扫学习率了」，另一句「另一个先不做，保留」指减少补齐浪费的装块。下面按同一套格式：一句话结果、做了什么、数字（事实）、解读、决定、给 gyb 回头比较的清单、遗留、文件。</p>
+<div class="meta">
+  <span>起点 <b>7668166</b></span>
+  <span>代码终点 <b>b3875a7</b>（之后只有台账与本汇报）</span>
+  <span>工单 <b>07 到 12 共 6 张，全部 resolved</b></span>
+  <span>自主决定 <b>26 到 39 共 14 条</b></span>
+  <span>GPU run <b>冒烟 7 个、评测验证 9 个、扫描 12 个，全部销号</b></span>
+</div>
+
+<h2>一句话结果</h2>
+<div class="summary">
+  <div><div class="k">学习率扫描（cgen，1 个 epoch，val_ce 最低的档）</div><div class="v">全参 1e-5，LoRA 5e-4</div><div class="s">四个底座配置各三档，12 个 run 全部跑完</div></div>
+  <div><div class="k">显存探针 cost 模式对整程 step 峰值</div><div class="v">−0.05 到 −1.9%</div><div class="s">b17 102.29 对 102.336 GB；b06 22.005 对 22.427；l4 32.964 对 33.088；l17 81.654 对 81.655</div></div>
+  <div><div class="k">四个可切换开关</div><div class="v">全部落地</div><div class="s">--overlong（3 值）、--gen-eval/--gen-eval-at、--align-rule/--align-rel-tol、--mem-probe-pick（3 值）</div></div>
+  <div><div class="k">全量单测 / 终审</div><div class="v">479 OK</div><div class="s">终审 3 条挡合并已修并复审；13 skip、0 error</div></div>
+</div>
+<p>推荐配置（决定 28，扫描用的就是它）：<code>--overlong left</code>、<code>--gen-eval 200 --gen-eval-at last</code>、<code>--align-rule abs</code>（门槛不变）、<code>--mem-probe --mem-probe-pick cost</code>。四个开关的默认值都等于推荐值，不传就是这一套。代码里的学习率默认值这一轮没有改（决定 31），扫描结果只进报表和本汇报。</p>
+
+<h2>做了什么（按顺序）</h2>
+<ol class="steps">
+  <li><b>裁决落成 spec 第 16 节与六张工单</b>（<code>.scratch/kvshare-train/spec.md</code> 16.1 到 16.11，<code>issues/07</code> 到 <code>12</code>）。审了三轮：助手 1 三遍（15 加 6 加 9 条），一个四视角 opus workflow（12 个 agent，整理后 20 条待改，含两条已确认的真问题：算全文 token 数的函数只返回计数而训练端要序列本身、cparam 评测有两套提示要定超长判据），助手 2 对照它自己的第九节核转述数字。三次修订都提交。</li>
+  <li><b>wave5：五张代码工单并行</b>（07 评测端超长、08 生成式评估、09 容差参数、10 探针挑块、11 扫描驱动）。修复轮数 1 / 0 / 0 / 0 / 1；合并时只在训练器的 <code>start_kw</code> 字典撞了一处（两张工单各加自己的键），手解。合并后 selfcheck 77 个任务、四个新测试文件 30 个用例。</li>
+  <li><b>收账补丁两条</b>：<code>loop</code> 探针按决定 32 改成对 <code>cost</code> 三块各跑一组取大者（工单发射后助手 2 核出只跑一组会低约 6%）；三种模式的 <code>worst_kind</code> 在峰值并列时取第一块。</li>
+  <li><b>wave6：工单 12 文档回写</b>零轮修复；合并后统一了 extending §5 新行的编号格式、补 #35 到 #37，stage-commands 加两条读法。</li>
+  <li><b>GPU 冒烟七个</b>（H100 三张、H200 两张）：b17 与 l17 用 <code>tokens</code> 探针给排卡实测；b06 两个验 <code>cost</code> 与 <code>loop</code>；l4 在探针第一次反向崩 <code>CheckpointError</code>（梯度检查点的重算发生在反向里，内核上下文只包了前向），把 <code>.backward()</code> 也套进内核上下文（决定 34）后重发 l4 与 b06 开检查点两个，零 Traceback。</li>
+  <li><b>验证</b>：最终代码全量单测 479 OK；ticket-run 终审（opus，07907db 到 caf29de）报 3 条挡合并 8 条观察，sonnet 在独立工作树一次修完 3 加 4 条，范围限定复审 6 条通过、1 条（新用例整份读现役 val 集）再修一次并合并。</li>
+  <li><b><code>--overlong</code> 端到端</b>：冒烟产物上三种模式各跑 ctool 评测（接线验证，计数全 0——200 行里没有超过 8192 token 的），cgen 评测冒烟产物喂不进（calB 只 5 个事件选不出 θ；带 <code>--limit</code> 的 ctool 只写 200 行 logits 而 cgen 按全量下标硬断言），发射员改用 np821b06 全量 ctool 产物（max_len 4096）配 cgen 权重软链替身，三个分支都走到；再造一份把副本 <code>meta.json</code> 的 max_len 改成 2048 的固定件（决定 37）跑三个 ctool 模式，val 堆上 skip 剔 41 个边界、drop-event 丢 1 个事件 64 个边界。</li>
+  <li><b>学习率扫描 12 个 run</b>：第一阶段 9 个（l4 三条 H100、b17 三条 H200、b06 三条 Ada 开检查点）在终审修复合并前按 0f5adb8 发（决定 39，修复不在训练路径上），b17 收完 H200 接 l17 三条。助手 2 每半小时读日志出显存偏差与曲线事实表。</li>
+  <li><b>收尾</b>：12 个 run 记数字销号，<code>sweep-lr report</code> 出表，TIMELINE 一条，记忆更新，本汇报。</li>
+</ol>
+
+<h2>数字</h2>
+<div class="facts">
+<div class="eyebrow">事实</div>
+<p><b>学习率扫描</b>（cgen 格，train 4,126 个事件 186,415 行，val 115,019 行，每 epoch 4 个评估点，epoch 末另做 200 行 greedy 生成报 <code>val_exact_call</code>；来源 <code>pipeline/runs/sweep/&lt;run_id&gt;/train_log.jsonl</code>，表由 <code>python3 run.py sweep-lr report</code> 生成；<code>*</code> 是同配置三档里 val_ce 最低的）：</p>
+<div class="tablewrap"><table>
+<tr><th>run</th><th class="n">lr</th><th class="n">val_ce@¼</th><th class="n">@½</th><th class="n">@¾</th><th class="n">@末</th><th class="n">best</th><th class="n">val_exact_call（末）</th><th class="n">整程峰值 GB</th><th class="n">探针 GB</th><th class="n">wall s</th></tr>
+<tr><td>*ks828b06_gptoss_cgen_lr1e-5（0.6B 全参，Ada 开检查点）</td><td class="n">1e-5</td><td class="n">0.2358</td><td class="n">0.2080</td><td class="n">0.1844</td><td class="n">0.1730</td><td class="n">0.1730</td><td class="n">0.63</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3654.8</td></tr>
+<tr><td>ks828b06_gptoss_cgen_lr5e-5</td><td class="n">5e-5</td><td class="n">0.2988</td><td class="n">0.2316</td><td class="n">0.2122</td><td class="n">0.1857</td><td class="n">0.1857</td><td class="n">0.615</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3678.9</td></tr>
+<tr><td>ks828b06_gptoss_cgen_lr2e-4</td><td class="n">2e-4</td><td class="n">0.4921</td><td class="n">0.3555</td><td class="n">0.2999</td><td class="n">0.2470</td><td class="n">0.2470</td><td class="n">0.49</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3617.9</td></tr>
+<tr><td>*ks828b17_gptoss_cgen_lr1e-5（1.7B 全参，H200 不开）</td><td class="n">1e-5</td><td class="n">0.2161</td><td class="n">0.1880</td><td class="n">0.1737</td><td class="n">0.1636</td><td class="n">0.1636</td><td class="n">0.65</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2789.4</td></tr>
+<tr><td>ks828b17_gptoss_cgen_lr5e-5</td><td class="n">5e-5</td><td class="n">0.2815</td><td class="n">0.2198</td><td class="n">0.1972</td><td class="n">0.1750</td><td class="n">0.1750</td><td class="n">0.595</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2820.8</td></tr>
+<tr><td>ks828b17_gptoss_cgen_lr2e-4</td><td class="n">2e-4</td><td class="n">0.4505</td><td class="n">0.3229</td><td class="n">0.2935</td><td class="n">0.2269</td><td class="n">0.2269</td><td class="n">0.54</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2830.4</td></tr>
+<tr><td>ks828l17_gptoss_cgen_lr1e-4（1.7B LoRA，H200 不开）</td><td class="n">1e-4</td><td class="n">0.2384</td><td class="n">0.2145</td><td class="n">0.1928</td><td class="n">0.1826</td><td class="n">0.1826</td><td class="n">0.585</td><td class="n">81.655</td><td class="n">81.654</td><td class="n">3077.9</td></tr>
+<tr><td>*ks828l17_gptoss_cgen_lr5e-4</td><td class="n">5e-4</td><td class="n">0.2325</td><td class="n">0.1963</td><td class="n">0.1814</td><td class="n">0.1647</td><td class="n">0.1647</td><td class="n">0.63</td><td class="n">81.655</td><td class="n">81.654</td><td class="n">2883.8</td></tr>
+<tr><td>ks828l17_gptoss_cgen_lr2e-3</td><td class="n">2e-3</td><td class="n">0.4343</td><td class="n">0.4036</td><td class="n">0.2770</td><td class="n">0.2138</td><td class="n">0.2138</td><td class="n">0.54</td><td class="n">81.655</td><td class="n">81.654</td><td class="n">2991.0</td></tr>
+<tr><td>ks828l4_gptoss_cgen_lr1e-4（4B LoRA，H100 开检查点）</td><td class="n">1e-4</td><td class="n">0.2198</td><td class="n">0.1979</td><td class="n">0.1769</td><td class="n">0.1671</td><td class="n">0.1671</td><td class="n">0.63</td><td class="n">33.088</td><td class="n">32.964</td><td class="n">7081.2</td></tr>
+<tr><td>*ks828l4_gptoss_cgen_lr5e-4</td><td class="n">5e-4</td><td class="n">0.2137</td><td class="n">0.1944</td><td class="n">0.1750</td><td class="n">0.1547</td><td class="n">0.1547</td><td class="n">0.655</td><td class="n">33.088</td><td class="n">32.964</td><td class="n">7284.8</td></tr>
+<tr><td>ks828l4_gptoss_cgen_lr2e-3</td><td class="n">2e-3</td><td class="n">2.6527</td><td class="n">0.9333</td><td class="n">0.7557</td><td class="n">0.6510</td><td class="n">0.6510</td><td class="n">0.335</td><td class="n">33.088</td><td class="n">32.964</td><td class="n">7211.8</td></tr>
+</table></div>
+<p>12 个 run 的最好点都在 epoch 末（第 4 个评估点），四个评估点的 val_ce 没有一处比前一点上升。训练部分的秒数与速度（末条 step 的 <code>train_s</code> 与 <code>ips</code>）：b06 三个 2332 到 2351 秒、78.3 到 78.9 行每秒（Ada，开检查点）；b17 1205 到 1237 秒、148.9 到 152.8（H200）；l17 1319 到 1360 秒、135.3 到 139.6（H200）；l4 3885 到 3992 秒、46.1 到 47.4（H100，开检查点）。整程墙钟里训练之外的部分（装载、对齐检查、探针、四次全量评估、epoch 末生成、存最好版本）：b06 约 22 分钟、b17 约 26、l17 约 26 到 29、l4 约 52 到 57。l4 lr2e-3 的 step 日志：loss（每 10 次更新的平均）第 30 次 0.4978，第 70 次 4.2674，第 130 次 3.4479，第 250 次 1.0461，末条 0.5433；grad_norm 最大 77.70 在第 110 次；同卡的 lr5e-4 与 lr1e-4 从第 30 次起 loss 在 0.15 到 0.36 之间。l17 lr2e-3 的 grad_norm 最大 32.30 在第 220 次，末条 1.01。九个全参与 LoRA 低两档的 run 里 grad_norm 超过各自中位 5 倍的只有第 10 次（b17 lr2e-4 是第 30 次）那一条。对齐检查：b06 三个 5.007e-6（Ada），b17 与 l17 六个 9.06e-6，l4 三个 1.5378e-5。生成 200 行的秒数（epoch 末一次）：b06 55 到 67，b17 270 到 292，l17 257 到 306，l4 216 到 342。补扫（决定 40）：两个全参配置的最低点都在网格下端，b06 与 b17 各加 lr2e-6 一个 run（<code>ks828b06_gptoss_cgen_lr2e-6</code>、<code>ks828b17_gptoss_cgen_lr2e-6</code>），跑完补进这张表<span id="r2-ext-note"></span>。</p>
+<p><b>冒烟七个</b>（<code>--smoke</code> 40 / 16 个事件，来源各 run 目录与 <code>verify/smoke_check.py</code>）：</p>
+<div class="tablewrap"><table>
+<tr><th>run</th><th>卡 / 配置</th><th class="n">对齐 fp32 逐行</th><th class="n">探针（模式）GB</th><th class="n">预期 GB（design 9.x）</th><th class="n">生成 81 行 s</th><th class="n">wall s</th></tr>
+<tr><td>ks828b17_gptoss_cgen_smoke</td><td>H200，1.7B 全参不开检查点，tokens</td><td class="n">9.06e-6</td><td class="n">98.25（最满块）</td><td class="n">94.8（+3.6%）</td><td class="n">86.4</td><td class="n">818.8</td></tr>
+<tr><td>ks828l17_gptoss_cgen_smoke</td><td>H200，1.7B LoRA 不开，tokens</td><td class="n">9.06e-6</td><td class="n">77.62</td><td class="n">74.5（+4.2%）</td><td class="n">90.5</td><td class="n">877.7</td></tr>
+<tr><td>ks828l4_gptoss_cgen_smoke</td><td>H100，4B LoRA 开检查点，tokens</td><td class="n">1.54e-5</td><td class="n">崩：CheckpointError</td><td class="n">—</td><td class="n">—</td><td class="n">—</td></tr>
+<tr><td>ks828l4_gptoss_cgen_smoke2（修复后）</td><td>同上</td><td class="n">1.5378e-5（逐位相同）</td><td class="n">28.82</td><td class="n">38.1（−24%，9.9 重推后 −0.0%）</td><td class="n">35.7</td><td class="n">1003.4</td></tr>
+<tr><td>ks828b06_gptoss_cgen_smoke2</td><td>H100，0.6B 全参，cost 三块</td><td class="n">5.48e-6</td><td class="n">15.35 / 15.25 / 15.25</td><td class="n">15.4 / 15.3 / 15.3</td><td class="n">70.6</td><td class="n">158.8</td></tr>
+<tr><td>ks828b06_gptoss_cgen_smoke3</td><td>H100，0.6B 全参，loop 两组</td><td class="n">5.48e-6</td><td class="n">15.22 / 15.06</td><td class="n">15.7 / 15.8</td><td class="n">68.4</td><td class="n">168.8</td></tr>
+<tr><td>ks828b06_gptoss_cgen_smoke4</td><td>H100，0.6B 全参开检查点，tokens</td><td class="n">5.4836e-6</td><td class="n">15.84</td><td class="n">17.9（−11.5%，9.9 重推后 +0.2%）</td><td class="n">69.4</td><td class="n">663.3</td></tr>
+</table></div>
+<p>b06 的两个 smoke（cost 与 loop）四个评估点的 val_ce 与 val_exact_call 逐位相同（1.2917 / 0.1728）；开检查点的 smoke4 同样逐位相同。对齐差按卡型：b06 在 H100 上六个 run 全是 5.4836e-6，在 Ada 上扫描的三个 run 全是 5.007e-6；b17 与 l17 在两张 H200 上同为 9.0599e-6；l4 两次都是 1.5378e-5（容差 2e-5，扫描的 l4 显式传 3e-5，决定 36）。</p>
+<p><b><code>--overlong</code> 三种模式的对照</b>（来源 <code>/home/y-guo/.claude/jobs/b39c625e/tmp/ovl/</code> 与 <code>ovl_ml2048/</code> 里的报告副本；<code>--limit 200</code>）：</p>
+<div class="tablewrap"><table>
+<tr><th>评测</th><th>产物</th><th>模式</th><th class="n">n_left_truncated</th><th class="n">n_skipped</th><th class="n">n_dropped_events</th><th class="n">判分事件数</th><th class="n">full_call_ok</th></tr>
+<tr><td>cgen（eval_causal_call）</td><td>np821b06 全量 ctool（max_len 4096，θ 0.975）配 np821b06 cgen 权重</td><td>left</td><td class="n">56</td><td class="n">0</td><td class="n">0</td><td class="n">200</td><td class="n">0.855</td></tr>
+<tr><td></td><td></td><td>skip</td><td class="n">0</td><td class="n">56 行</td><td class="n">0</td><td class="n">200</td><td class="n">0.855</td></tr>
+<tr><td></td><td></td><td>drop-event</td><td class="n">0</td><td class="n">0</td><td class="n">133</td><td class="n">200</td><td class="n">0.86</td></tr>
+<tr><td>ctool（eval_tool，固定件 max_len 2048）</td><td>ks828b06 ctool 冒烟副本，val 堆 200 行</td><td>left</td><td class="n">窗口外 41</td><td class="n">0</td><td class="n">0</td><td class="n">5 个事件</td><td class="n">—</td></tr>
+<tr><td></td><td></td><td>skip</td><td class="n">—</td><td class="n">41 个边界</td><td class="n">0</td><td class="n">5</td><td class="n">—</td></tr>
+<tr><td></td><td></td><td>drop-event</td><td class="n">—</td><td class="n">0</td><td class="n">1（64 个边界）</td><td class="n">4</td><td class="n">—</td></tr>
+</table></div>
+<p>cgen 三行的 200 个判分事件不是同一批：<code>--limit</code> 在筛选之后取（spec 16.2 的顺序），skip 去掉 56 行、drop-event 去掉 133 个事件之后各取前 200。left 与 skip 的三个主指标相同（tool_ok 0.91、params_all_ok 0.905、full_call_ok 0.855），<code>n_param_instances</code> 203 对 201。ctool 固定件三份 REPLAY_REPORT 里四个计数都是 0——报告只记 test 堆，test 堆 200 行在 2048 下也没有窗口外边界，非零数在 <code>logits_val.meta.json</code>；三份报告除模式外只有 <code>temperature</code>（1.201 / 1.2014 / 1.2456）和 θ 扫描每档的 n（5 对 4）不同。冒烟产物上的 ctool 三轮（max_len 8192）计数全 0、除 <code>overlong_mode</code> 外逐键相同。</p>
+<p><b>生成式评估的代价</b>（<code>--gen-eval 200 --gen-eval-at last</code>，epoch 末一次；来源各 run 的 eval 事件 <code>gen_s</code>）：b17 三个 run 270 / 273 / 292 秒，b06 60 / 67 / 55，l17 283 / 306 / 257，l4 342 / 314 / 216（按 lr 从低到高）。</p>
+</div>
+<div class="reading">
+<div class="eyebrow">下面是我的解读</div>
+<p>学习率：两个全参配置都是网格最低档 1e-5 最好，而且四个评估点一路在降、末点也没有平掉，最好点落在网格边上——按助手 2 的规则，全参要往低的方向再扫一档（5e-6 或 2e-6）才知道最低点在哪；两个 LoRA 配置都是中间档 5e-4 最好，两边各高 0.017 到 0.018（l17）和 0.012 / 0.50（l4），最高档 2e-3 在 4B 上第 60 到 130 次更新之间 loss 冲到 2.3 到 4.3 后只回到 0.65。val_exact_call 的排序在四个配置里都和 val_ce 的排序一致。这一轮只有 1 个 epoch、学习率线性降到 0，epoch 数变了排序会不会变没有数据。代码默认值（全参 1e-5、LoRA 2e-4）和扫描的最好档：全参正好是默认值，LoRA 的最好档比默认值高 2.5 倍。</p>
+<p>探针：<code>cost</code> 模式挑出的块就是整程峰值那一块（b17 差 0.05 GB，其余差 1.5 到 1.9%），助手 2 的显存模型（固定项加每 token 加每损失位）四个配置都在 ±2% 内；<code>tokens</code> 模式在 b17 上低 4 GB（98.25 对 102.34），因为它只按 token 数挑块、漏了损失位那一项。<code>loop</code> 在冒烟规模上和 <code>cost</code> 差 0.13 GB，全量上没有跑，助手 2 的判断是它给不出 <code>cost</code> 给不出的数。</p>
+<p>对齐容差：三个底座的 fp32 逐行差 5.48e-6 / 9.06e-6 / 1.54e-5 随层数与累加长度单调涨（助手 2 按 层数 × sqrt(中间维) 算是 1 / 1.41 / 2.29），同卡型逐位可复现，换卡型会动（b06 在 Ada 上 5.007e-6）；4B 离默认 2e-5 只有 23% 余量。这是给第七件（容差是自定值）的新事实。</p>
+</div>
+
+<h2>决定 26 到 39</h2>
+<p>格式同第一轮，完整台账在 <code>decisions.md</code>「第二轮」一节（助手 1 记）。</p>
+<dl class="ledger">
+<dt><span class="id">决定 26</span>九件待拍板事按 gyb 原话分成三类：学习率扫描做；flex_attention 与装块优化不做；评测端超长、生成式评估、容差、探针退路做成参数可切换；TIMELINE 口径、np821 重训、归类与命名三件不是代码，只列选项</dt>
+<dd class="why">gyb 原话「其他的都给几种可能……可以通过参数切换」。</dd><dd class="src">decisions.md 第二轮一节。</dd>
+<dt><span class="id">决定 27</span>扫描规模取每个底座配置各扫一组：四个配置 × 三档 = 12 次，cgen 格，1 个 epoch</dt>
+<dd class="why">草稿 2.3 的升级条件是「一个 epoch 只要几小时」，实测 b06 约 45 分钟到 1 小时、l4 约 1.5 小时，集群当时全空。</dd><dd class="src">spec 16.1；扫描 12 个 run 的 wall_s。</dd>
+<dt><span class="id">决定 28</span>推荐值：--overlong left、--gen-eval 200 --gen-eval-at last、--align-rule abs、--mem-probe-pick cost；默认值等于推荐值</dt>
+<dd class="why">评测口径不变、生成只在 epoch 末（与旧训练器每 epoch 一次同口径，四次都做把 run 拉长两到三成）、门槛不变、cost 探针实测最准。</dd><dd class="src">spec 16.1；助手 2 第九节 9.6。</dd>
+<dt><span class="id">决定 29</span>学习率网格：全参 {1e-5, 5e-5, 2e-4}，LoRA 逐点乘 10 {1e-4, 5e-4, 2e-3}，四个底座按训法各一套不按底座改</dt>
+<dd class="why">三个锚点是旧值 1e-5、平方根规则 3.4e-5、总位移相等 1.8e-4，相差 18 倍，跨度从最小版的 5 倍放到 20 倍，下端留旧值当对照。</dd><dd class="src">design-attention.md 9.7（助手 2）。</dd>
+<dt><span class="id">决定 30</span>排卡：l4 开检查点上 H100 三张，b17 不开上 H200 三张收完接 l17 不开，b06 开检查点上 Ada 三张，预算都 16384</dt>
+<dd class="why">显存模型「固定项 + 每 token + 每损失位」乘 1.1 后：b17 112.5（H100 装不下）、l17 90.0（H100 只余 10%）、l4 37.0、b06 24.3；两轮冒烟后维持。</dd><dd class="src">design 9.4、9.8、9.9；冒烟与扫描实测峰值。</dd>
+<dt><span class="id">决定 31</span>扫描结果只进报表，代码里的学习率默认值这一轮不改；cparam 与 ctool 不单独扫</dt>
+<dd class="why">默认值是 invariants 锁的口径，改了新老数字不可比，要动 invariants、换批次前缀、补 TIMELINE，由 gyb 看完对比再定。</dd><dd class="src">终审 locked-decisions 视角；spec 16.11。</dd>
+<dt><span class="id">决定 32</span>loop 探针对 cost 三块各跑一组取大者，不只跑损失位最多那块所在的组</dt>
+<dd class="why">助手 2 核：epoch 0 的真峰块在第 490 组、损失位最多的块在第 475 组，只跑后者在不开检查点的配置上低约 6%。</dd><dd class="src">design 9.5；19d92e9。</dd>
+<dt><span class="id">决定 33</span>ticket-run 写「合并起冲突就停下报告用户」，这次两张工单在同一个字典各加自己的键，我自己解了</dt>
+<dd class="why">gyb「中途你先自己做决定」；冲突是纯加行，不是两张工单不独立。</dd><dd class="src">12b998c。</dd>
+<dt><span class="id">决定 34</span>训练器的 .backward() 也套进内核上下文，守卫测试允许的调用点改成前向一处加反向两处</dt>
+<dd class="why">梯度检查点的重算发生在反向里，只包前向时重算走 cuDNN，保存的张量元数据对不上（l4 冒烟实测崩）；上下文只影响前向里的内核选择，不开检查点时套与不套结果相同。</dd><dd class="src">b5cee8d；design 9.8 的证据（torch 的 meta 注册）；l4 smoke2 零 Traceback。</dd>
+<dt><span class="id">决定 35</span>探针返回后归零峰值计数器</dt>
+<dd class="why">助手 1 核出五个冒烟的第一条 step 峰值全等于探针最后一块的数。此提交之前的 run（含扫描的 12 个）读训练峰值要从第二条 step 起。</dd><dd class="src">479aa4b；stage-commands 读法④。</dd>
+<dt><span class="id">决定 36</span>l4 在网格里显式带 --align-tol 3e-5，其余三个配置不动</dt>
+<dd class="why">4B 的差 1.54e-5 离 2e-5 只 23% 余量；同卡型逐位可复现，放宽是给换卡型或换 torch 留的，3e-5 离真错 1e-2 仍差 300 倍。</dd><dd class="src">design 9.8；8f69002。</dd>
+<dt><span class="id">决定 37</span>造一份 max_len 改成 2048 的评测固定件（副本，权重软链）验 ctool 剔除分支；只跑 ctool 三个模式</dt>
+<dd class="why">冒烟产物上 200 行没有超过 8192 token 的，剔除分支走不到；cgen 那侧冒烟产物选不出 θ，且 cgen 三个分支已在 np821 的 4096 产物上走到。</dd><dd class="src">pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke_ml2048/；ovl2048 三个 run。</dd>
+<dt><span class="id">决定 38</span>接受发射员在 --overlong 验证里的两处偏离：cgen 评测改用 np821b06 全量产物加替身目录；三个 ctool 先跑完再跑三个 cgen</dt>
+<dd class="why">冒烟组合两个硬阻塞跑不动；顺序偏差在零剔除的那批上不影响结果。</dd><dd class="src">发射员回执；ovl 六个 run 的台账。</dd>
+<dt><span class="id">决定 39</span>扫描第一阶段在终审三条修复合并前发（0f5adb8），修复由 sonnet 在独立工作树做</dt>
+<dd class="why">三条都不在扫描的运行路径上（扫描不评测、不开 readonly），等修复要多空转半小时 GPU；独立工作树让主树保持干净、发射门禁不受影响。</dd><dd class="src">终审报告；12 个 run 的 RUNMETA（0f5adb8 / ac36171）。</dd>
+<dt><span class="id">决定 40</span>两个全参配置往网格下端再补一档 lr2e-6（各一个 run），LoRA 不补</dt>
+<dd class="why">决定 29 写的规则「最好点落在边上就往那边再加一档」；b06 与 b17 的最低点都是 1e-5 且末点仍在降，LoRA 的最低点在中间档；两个 run 各约一小时，集群空着。</dd><dd class="src">SWEEP_REPORT 12 行；助手 2 9.7。</dd>
+</dl>
+
+<h2>给 gyb 回头比较的清单</h2>
+<div class="ask">
+<ol>
+<li><b>学习率</b>：扫描表在上面，代码默认值没改（全参 1e-5、LoRA 2e-4）。可选：(a) 按训法把最低档写成新默认值（动 <code>FULL_LR</code> 与 <code>lora_util.DEFAULT_LR</code>、invariants、换批次前缀、补 TIMELINE）；(b) 默认值不动，每批发射时显式传 <code>--lr</code>；(c) 在最低档两侧再扫一档细化后再定。最低档落在网格边上的配置，助手 2 的建议是往那边再加一档。</li>
+<li><b>评测端超长</b>：<code>--overlong left|skip|drop-event</code>，三个评测脚本都有，默认 left（现状）。比较用的两份对照表在上面；重跑任一模式的命令：<code>python3 run.py show eval-ccall</code> 加 <code>--overlong &lt;mode&gt;</code>。矩阵只收 left（静默点 #35）。</li>
+<li><b>训练中的生成式评估</b>：<code>--gen-eval N --gen-eval-at last|all</code>，默认 200 / last。代价：200 行一次 b17 约 270 到 292 秒，b06 约 55 到 67 秒（Ada），l17 约 257 到 306 秒，l4 约 216 到 342 秒；四次都做每个 run 多两到三成。</li>
+<li><b>对齐容差</b>：五个门槛都成了参数（<code>--align-tol 2e-5、--align-tok-tol 3e-4、--align-bf16-mean-tol 2e-2、--align-bf16-max-tol 1e-1、--align-baseline-factor 3</code>），另有 <code>--align-rule abs|rel|both</code> 与 <code>--align-rel-tol 1e-5</code>；<code>ALIGN_CHECK.json</code> 不管用哪条规则都写全相对量，不用重跑就能比。新事实：差随底座单调涨、4B 只剩 23% 余量、换卡型会动。ctool 同样加了 <code>--align-rule</code>，判的是已有的 <code>reldiff_hidden / reldiff_logits</code>。</li>
+<li><b>显存探针</b>：<code>--mem-probe-pick tokens|cost|loop</code>，默认 cost。实测 cost 对整程峰值差 0.05 GB 到 1.9%，tokens 低 4%（b17）；排卡规则改成 <code>mem_probe_summary.worst_gb × 1.1</code> 再打碎片折，LoRA 配置另核「固定项 + fp32 底座」。</li>
+<li><b>决定 23 的 TIMELINE 更正口径</b>（第一件，不是代码）：(a) 写进 CLAUDE.md 当规矩；(b) 严格只增不改，错误只追加更正段；(c) 保持现状（同会话同日三十分钟内、未被引用的条目原处改并在提交信息里写「同日更正」）。</li>
+<li><b>np821 十二格要不要按新口径重训</b>（第五件）：(a) 学习率定了之后 12 格重训（cgen 每格 1 到 1.5 小时，ctool / cparam 更短）；(b) 不重训，np821 当旧口径基线，新口径只从 ks828 起；(c) 只重训 cgen 四格。</li>
+<li><b>「换实现」归类与 ks828 命名</b>（第八件）：(a) 维持；(b) 当新格走 §3.1 清单（skill 文档要改）；(c) 改前缀（已登记 30 多个 run 的 run_id 要跟着动）。</li>
+<li><b>ctool 与 cparam 要不要单独扫学习率</b>：这一轮没扫（决定 31）；cparam 与 cgen 同一个训练器同一套默认值。</li>
+</ol>
+</div>
+
+<h2>遗留与已知问题（第二轮）</h2>
+<ul>
+<li>REPLAY_REPORT 的 <code>overlong_mode</code> 与四个计数只记 test 堆，val 堆的剔除数只在 <code>logits_val.meta.json</code>（固定件上 41 / 64 就在那里）；报告应加 <code>*_val</code> 计数。</li>
+<li>带 <code>--limit</code> 的 ctool 评测产物喂不进 cgen 评测（行数硬断言），冒烟规模的 cgen 评测只能配全量 ctool 产物；cgen 三个模式的对照因此跑在 np821b06 的 4096 产物上，判分的 200 个事件三行不是同一批。</li>
+<li>479aa4b 之前的 run 第一条 step 的 <code>peak_mem_gb</code> 是探针的数（扫描 12 个 run 都是），读训练峰值从第二条起。</li>
+<li>eval_tool 的 drop-event 判据分词 <code>add_special_tokens=False</code>，实际喂模型那次是 True；Qwen3 分词器不加特殊 token，现在无差。mbert 分支写的 meta 少四个计数键；<code>n_left_truncated_by_tag</code> 在 <code>--limit</code> 之前统计。</li>
+<li><code>tests/test_mem_probe_pick.py</code> 里工单 10 的两个类仍读现役 val 集（违反 16.9 前言，收账没抓到）；<code>test_align_rules</code> 的 <code>baseline_warn=True</code> 分支没被数据走到；eval_causal_call 的 <code>ev_row_idx</code> 在 <code>--self-fire</code> 下是死计算。</li>
+<li>发射员在验证里建了替身目录 <code>pipeline/runs/smoke/ovl_ccall_np821b06_cgen/</code>（只有 best 软链与报告）；<code>ks828b06_gptoss_ctool_final_smoke/</code> 与固定件目录里现存的是 drop-event 那轮的报告与 logits，各轮副本在 job tmp 目录。</li>
+<li>sweep-lr report 的 <code>status</code> 只分 done / running，崩掉的 run 显示 running。</li>
+</ul>
+
+<h2>文件与路径（第二轮）</h2>
+<div class="paths">
+<div><span>spec 与工单</span><span>.scratch/kvshare-train/spec.md 第 16 节；issues/07 到 12；sdd/2026-08-28-wave5、wave6</span></div>
+<div><span>决定台账</span><span>.scratch/kvshare-train/decisions.md「第二轮」（助手 1 记，决定 26 到 39）</span></div>
+<div><span>设计与判读</span><span>.scratch/kvshare-train/design-attention.md 第 9 节（9.1 到 9.9，助手 2）；verify/smoke_check.py、sweep_watch.py、enum_blocks.py</span></div>
+<div><span>新代码</span><span>pipeline/train/sweep_lr.py（run.py 任务 sweep-lr）；share_data.py 新函数 full_token_ids / n_full_tokens / event_full_texts / select_keys / epoch_minibatches；train_causal_share.py 三个开关与探针；三个评测脚本的 --overlong；tests/test_eval_overlong.py、test_share_gen_eval.py、test_align_rules.py、test_mem_probe_pick.py、test_sweep_lr.py</span></div>
+<div><span>回写</span><span>MAP.md；stage-commands（§3 参数表、§3.1 读法③④⑤、§3.2、§7）、invariants、extending（§3、§3.4、§5 #28 到 #37）、gates；ACCEPT_EVAL.md；run.py 七条 notes；TIMELINE.md 2026-08-29 条</span></div>
+<div><span>GPU 产物</span><span>pipeline/runs/sweep/ks828{b06,b17,l17,l4}_gptoss_cgen_lr*/（12 个，含 SWEEP_REPORT.*）；pipeline/runs/smoke/ks828{b17,l17,l4}_gptoss_cgen_smoke{,2}/、ks828b06_gptoss_cgen_smoke{2,3,4}/、ks828b06_gptoss_ctool_final_smoke_ml2048/；数字在 ops/runs.jsonl</span></div>
+<div><span>评测对照副本</span><span>/home/y-guo/.claude/jobs/b39c625e/tmp/ovl/&lt;mode&gt;/{ctool,ccall}/、ovl_ml2048/&lt;mode&gt;/（job 目录删掉就没了，要留就搬进仓库）</span></div>
+<div><span>下一步命令</span><span>python3 run.py sweep-lr report --runs 'pipeline/runs/sweep/ks828*' --out pipeline/runs/sweep（重出表）；python3 run.py show train-cgen（看开关）</span></div>
+</div>
+
+<h2 class="part">以下是第一轮汇报（2026-08-28 白天，原文未改）</h2>
 
 <h2>一句话结果</h2>
 <div class="summary">

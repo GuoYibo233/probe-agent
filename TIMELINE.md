@@ -10,6 +10,24 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-29 gyb 裁决后的第二轮：四个待拍板项做成参数可切换（默认值即推荐值），cgen 学习率扫了 12 个 run，代码默认学习率不改
+
+gyb 2026-08-28 晚对第一轮汇报里九件待拍板事的裁决原话：「学习率需要扫。flex_attention不用做。其他的都给几种可能，我目前没有人工审核时间，你先选项的代码先实现好，可以通过参数切换，我回头对比一下。实现好之后验证一下，给推荐的配置gpu run去扫学习率了」；「另一个先不做，保留」指减少补齐浪费的装块。
+
+改了什么（spec `.scratch/kvshare-train/spec.md` 第 16 节，工单 07 到 12，代码终点 b3875a7）：
+- 三个评测脚本加 `--overlong {left,skip,drop-event}`，默认 `left` 是现状；`logits_*.pt` 三种模式都写全行数，剔除下标记在 `.meta.json`，cgen / cparam 读它剔候选行。
+- 新训练器加回生成式评估 `--gen-eval 200 --gen-eval-at last`（只在 epoch 末做，与旧训练器每 epoch 一次同口径），`eval` 事件有 `val_exact_call / val_exact_params`；评估段加心跳。
+- 对齐检查的五个门槛全部变成参数（默认值不变），加 `--align-rule {abs,rel,both}` 与 `--align-rel-tol 1e-5`，`ALIGN_CHECK.json` 不管规则都写全相对量；ctool 同样加 `--align-rule`。
+- 显存探针加 `--mem-probe-pick {tokens,cost,loop}`，默认 `cost`（枚举本次 run epoch 0 的物理块挑三块：token 最多、损失位最多、归一化和最大）；探针返回后归零峰值计数器；`.backward()` 套进内核上下文（grad-ckpt 的重算在反向里，只包前向会崩 `CheckpointError`）。
+- `run.py` 加 `sweep-lr`（`plan` 出清单、`report` 收表），产物 `pipeline/runs/sweep/`，run_id 四段 `ks828<tag>_gptoss_cgen_lr<lr>`，不进矩阵。
+- flex_attention 与装块优化不做；np821 重训、TIMELINE 更正口径、换实现归类三件不是代码，选项列在汇报里。
+
+学习率扫描（决定 27、29、30：cgen 格，四个底座配置 × 三档，1 个 epoch，每 epoch 4 个评估点，网格全参 {1e-5, 5e-5, 2e-4}、LoRA {1e-4, 5e-4, 2e-3}；排卡 l4 开检查点 H100、b17 不开 H200 收完接 l17、b06 开检查点 Ada，预算都 16384；12 个 run 全部 done，数字在 `pipeline/runs/sweep/SWEEP_REPORT.md` 与 `ops/runs.jsonl`）。epoch 末 val_ce：b06 0.1730 / 0.1857 / 0.2470，b17 0.1636 / 0.1750 / 0.2269，l17 0.1826 / 0.1647 / 0.2138，l4 0.1671 / 0.1547 / 0.6510（各按 lr 从低到高）。四个配置最低的档：全参 1e-5（两个配置都是网格最低档、末点仍在降），LoRA 5e-4。epoch 末 200 行 greedy 生成 val_exact_call 的排序与 val_ce 一致。整程 step 峰值对 `cost` 探针：b17 102.336 对 102.29 GB，b06 22.427 对 22.005，l17 81.655 对 81.654，l4 33.088 对 32.964。
+
+为什么默认值不改（决定 31）：学习率默认值是 `invariants.md` 锁的口径，改了新老数字不可比，要动 invariants、换批次前缀；gyb 说回头对比，所以扫描结果只进报表和汇报，改不改由 gyb 定。全参的最好档落在网格边上，助手 2 的规则是往那边再扫一档。
+
+其他这一轮定下的事实：fp32 逐行对齐差随底座单调涨（0.6B 5.48e-6、1.7B 9.06e-6、4B 1.54e-5），同卡型逐位可复现、换卡型会动（0.6B 在 Ada 上 5.007e-6）；4B 在网格里显式带 `--align-tol 3e-5`（决定 36）。`--overlong` 三种模式在 np821b06 的 4096 产物上（`--limit 200`）分别左截 56 行、剔 56 行、丢 133 个事件；冒烟产物的 8192 上限下 200 行里没有超长事件，计数全 0。决定 26 到 39 与理由在 `.scratch/kvshare-train/decisions.md` 第二轮一节，汇报在 `plans/2026-08-28-kvshare-report.html` 第二轮部分。
+
 ## 2026-08-28 训练口径换成缓存复用训练器：上限 8192 超长整条丢弃、8 个事件一次更新、cgen/cparam 1 个 epoch，批次前缀 ks828
 
 - 触发：np821 十二格复盘（`plans/2026-08-28-plan.md` 第 12 到 14 节）。cgen / cparam
