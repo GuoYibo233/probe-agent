@@ -97,3 +97,11 @@ ctool 冒烟在 H100 上 `--bs 4 --accum 2` 爆显存或峰值超过 84 GiB（�
 ## 决定 18
 
 对齐检查 fp32 第一道门槛由逐行 1e-5 / 逐 token 1e-4 改成逐行 2e-5（--align-tol 默认）/ 逐 token 3e-4；bf16 第二道 2e-2 / 1e-1 不动。 / 理由：H100 mem-efficient 上同一批 34 行的 fp32 逐行最大差 4.41e-6 是 CPU 2.15e-6 的 2 倍，正式检查抽 6 个事件约 380 行 7,000 token 比验证多 10 倍、最大值随样本数涨（CPU 34 行到 151 行时 2.15e-6 到 2.62e-6），按 4.41e-6 × 1.3 估约 6e-6，1e-5 只剩 1.7 倍余量会误拦开训；2e-5 留 3 倍，离掩码错位的真错 1e-2 仍差 500 倍；逐 token 的 GPU 基线 6.91e-5 已贴近 1e-4。基线偏大是因为参照路径的单行批没有掩码走 math 内核，和整批的 mem-efficient 不同内核，所以基线只当告警。 / 依据：8-28-assistant-2 对 gpu_result.json 第 6 步的判读，design-attention.md 第七节终稿与 5.2；HEAD 368f3b1。grad_ckpt 6.34、lora 31.18 按文件为准，台账 record finish 已经按 6.34 / 31.18 记（runs.jsonl 里 kvshare_gpu_kernel_check 的 finish 条目）。
+
+## 进度时间线（不是决定，plan-8-28 报的事实按收到顺序记）
+
+### 2026-08-28 第一波（工单 01）收账
+
+工单 01 一轮过评审，分支 ticket/2026-08-28-wave1/T01（base 2e61f5f，head d48c287）合并为 c4f900b；两环境 test_share_data 各 21 个测试 OK，mbert-env import share_data 退出码 0；share_data.py 465 行、tests/test_share_data.py 484 行，顶层 import 只有 json/random/sys/pathlib/torch。工单 01 记 resolved，工单 02/03 claimed（2216c44），第二波 workflow 已发射（wf_378f118f-079）。实现者报的两个与本轮无关的既有测试失败：test_splice_replay（仓库记忆记过）、test_no_env_reads_default_preset（预设那批，未深查）。
+
+8-28-assistant 核对（HEAD 2216c44，登录机干净 shell，2026-08-28 09:5x）：`tests/test_preset.py:460` 的 `test_no_env_reads_default_preset` 单跑在系统 python3（3.10.12）和 cprobe-env 下都 OK；整个 `tests.test_preset` 两环境各 39 个测试 OK；系统 python3 全量 discover 356 个测试，1 个 error（`test_splice_replay` 的 import，仓库记忆里那条），16 个 skip，没有失败。这条测试的前提是环境变量 `NEW1_PRESET_JSON` 缺席（`tests/test_preset.py:455-460`），测试文件最后一次改动是 bd9a3d5（预设那批，早于第一波的 base 2e61f5f），第一波只新增了 share_data.py 和 tests/test_share_data.py。实现者那边失败的具体输出我没有看到。
