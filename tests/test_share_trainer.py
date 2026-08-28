@@ -18,6 +18,7 @@ mbert-env(transformers 4.57.6)下 `import train_causal_share` 会 `SystemExit`,
 """
 import json
 import random as _random
+import re
 import sys
 import tempfile
 import unittest
@@ -251,9 +252,11 @@ class TestRunAlignCheckHandlesRefBaselineDriftError(unittest.TestCase):
         cls.tmpdir.cleanup()
 
     def test_ref_forward_raises_real_exception_not_assert(self):
-        """drift 超容差时抛 `RefBaselineDriftError`——一个真正的异常类,
-        不是裸 `assert`(`-O` 下不会被剥除)。用打过 monkeypatch、逐行都
-        偏移 1.0(远超 1e-6 容差)的 `inst_ce` 制造一个必然超差的场景。"""
+        """check_drift=True(默认)时,drift 超容差要抛 `RefBaselineDriftError`
+        ——一个真正的异常类,不是裸 `assert`(`-O` 下不会被剥除),错误信息
+        里要带漂移数值,不用复现就知道差了多少(工单 05 第 7 条 N2)。用打过
+        monkeypatch、逐行都偏移 1.0(远超 1e-6 容差)的 `inst_ce` 制造一个
+        必然超差的场景。"""
         ds = train_causal_callgen.CallDS(self.data_path, self.tok, limit=0)
         orig = train_causal_callgen.inst_ce
 
@@ -263,9 +266,35 @@ class TestRunAlignCheckHandlesRefBaselineDriftError(unittest.TestCase):
         train_causal_callgen.inst_ce = _perturbed
         try:
             with torch.no_grad():
-                with self.assertRaises(tcs.RefBaselineDriftError):
+                with self.assertRaises(tcs.RefBaselineDriftError) as cm:
                     tcs._ref_forward("cgen", self.model, self.tok, ds.rows,
-                                     "cpu", 8192, tcs.REF_BATCH)
+                                     "cpu", 8192, tcs.REF_BATCH,
+                                     check_drift=True)
+            msg = str(cm.exception)
+            m = re.search(r"max diff ([0-9.eE+-]+)", msg)
+            self.assertIsNotNone(m, f"错误信息没带漂移数值:{msg}")
+            self.assertGreater(float(m.group(1)), tcs.REF_INST_CE_DRIFT_TOL)
+        finally:
+            train_causal_callgen.inst_ce = orig
+
+    def test_ref_forward_check_drift_false_does_not_raise(self):
+        """同一个必然超差的 monkeypatch,`check_drift=False` 时不抛(工单
+        05 S2:bf16 粗筛那一遍关掉这道自检,它只用 `row_ce`)。返回值仍然
+        是 `inst_ce` 的真实输出(偏移过的),不是本地公式的替代值。"""
+        ds = train_causal_callgen.CallDS(self.data_path, self.tok, limit=0)
+        orig = train_causal_callgen.inst_ce
+
+        def _perturbed(model, enc, labels, dev):
+            return orig(model, enc, labels, dev) + 1.0
+
+        train_causal_callgen.inst_ce = _perturbed
+        try:
+            with torch.no_grad():
+                row_ce, tok_ce = tcs._ref_forward(
+                    "cgen", self.model, self.tok, ds.rows, "cpu", 8192,
+                    tcs.REF_BATCH, check_drift=False)
+            self.assertTrue(row_ce)
+            self.assertTrue(tok_ce)
         finally:
             train_causal_callgen.inst_ce = orig
 
@@ -354,6 +383,70 @@ class TestBackwardBlockSplitInvariance(unittest.TestCase):
             if diff > 1e-6:
                 bad.append((k, diff))
         self.assertEqual(bad, [], f"这些参数 1 块/3 块的梯度对不上:{bad[:5]}")
+
+
+class TestBlockRowCeUnderLoRA(unittest.TestCase):
+    """工单 05 验收第 3 条:`_forward_packed` 改用 `model.model(...)` 的
+    backbone 输出再过 `model.lm_head`(S1)之后,LoRA 包装(`lora_util.wrap`
+    就地注入,调用方原来的 `model` 变量继续用)下一次前向加反向仍要能跑,
+    且只有适配器参数拿到梯度——证明 S1 的取法在 peft 包装下不是偶然能跑。
+
+    peft 装了就跑,没装就 skip。"""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import peft  # noqa: F401
+        except ImportError as e:
+            raise unittest.SkipTest(f"peft 未安装:{e}")
+        if not Path(QWEN_PATH).exists():
+            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+        if not VAL_PATH.exists():
+            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+        cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
+        if cls.tok.pad_token_id is None:
+            cls.tok.pad_token = cls.tok.eos_token
+        cls.tok.truncation_side = "left"
+        cls.tok.padding_side = "right"
+        cls.tmpdir, cls.data_path = _load_five_short_events()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmpdir.cleanup()
+
+    def test_lora_forward_backward(self):
+        import argparse
+        import lora_util
+
+        torch.manual_seed(SEED)
+        model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
+        model.train()
+        lora_args = argparse.Namespace(
+            lora_rank=4, lora_alpha=8, lora_dropout=0.0)
+        lora_util.wrap(model, lora_args)  # 就地注入,原变量 model 继续用
+
+        events, _counts = share_data.load_events(
+            self.data_path, self.tok, mode="cgen", max_len=8192,
+            limit=2, order="shortest")
+        self.assertEqual(len(events), 2)
+        W = sum(row[5] for ev in events for row in ev["rows"])
+
+        tcs.backward_logical_minibatch(
+            model, [events], W, n_g=1, dev="cpu", mask_dtype=torch.float32)
+
+        trainable = [(n, p) for n, p in model.named_parameters()
+                    if p.requires_grad]
+        frozen = [(n, p) for n, p in model.named_parameters()
+                 if not p.requires_grad]
+        self.assertTrue(trainable, "LoRA 包装后没有任何可训练参数")
+        self.assertTrue(
+            any(p.grad is not None for _n, p in trainable),
+            "LoRA 适配器参数一个都没拿到梯度——S1 的 model.model()/"
+            "model.lm_head 取法在 peft 包装下没建起图")
+        self.assertTrue(
+            all(p.grad is None for _n, p in frozen),
+            "非适配器参数不该有梯度(lora_util.wrap 已把它们 requires_grad "
+            "设成 False)")
 
 
 class TestMainSmokeCPU(unittest.TestCase):

@@ -23,7 +23,8 @@
   `model.eval()` 下,fp32 关 TF32,抽 `--align-events` 个 val 短事件,同一份
   临时 jsonl 喂新路径(`share_data.load_events`)与参照路径(旧 `collate` +
   真正调用的 `inst_ce` 得到逐行 ce;逐 token 门槛需要的中间量另用同一套
-  公式本地算,每批都断言与 `inst_ce` 的返回值一致),按位置配对逐行/逐
+  公式本地算,fp32 门禁那两遍每批都断言与 `inst_ce` 的返回值一致,bf16
+  粗筛那一遍关掉这道自检,工单 05 S2),按位置配对逐行/逐
   token 比较。参照路径不套 EFFICIENT_ATTENTION(它的『单行不补齐』批没有
   掩码,HF 会走 `enable_gqa`,mem-efficient 不支持 GQA,强制内核会报错——
   只有永远带掩码的新路径套这个上下文)。
@@ -115,9 +116,23 @@ def _l_pad(events):
     return ((longest + 15) // 16) * 16
 
 
+def _base_model_and_head(model):
+    """`model.model` 与 `model.lm_head` 的取法,兼容 peft 的包装对象(工单
+    05 S1)。`lora_util.wrap` 是就地注入——调用方原来的 hf_model 变量本身
+    在包装之后还是原始模型,直接有 `.model`/`.lm_head`;这里额外兼容『拿到
+    手的就是 PeftModel 本身』的调用方式,`get_base_model()` 拆到底座上原始
+    的 backbone / lm_head(peft 只替换了七件套 nn.Linear,不改这层结构)。"""
+    base = model.get_base_model() if hasattr(model, "get_base_model") else model
+    return base.model, base.lm_head
+
+
 def _forward_packed(model, events, dev, mask_dtype):
-    """一个物理块(`events`)的前向:先从末层隐状态按损失位 gather,再过
-    `lm_head`(spec 第 4 节),不算全位置 logits。
+    """一个物理块(`events`)的前向:调 `model.model(...)` 直接拿 backbone 的
+    `last_hidden_state`(旧写法是让上层 `ForCausalLM.forward` 把每一层的
+    隐状态都吐出来、再取元组最后一个——那条路靠 HF 往元组末尾追加末层的
+    约定,并且 `--grad-ckpt` 下会把 28 层的隐状态全记下来,16k token 的块
+    约 1.9 GB),按损失位 gather 出来再过 `model.lm_head`(spec 第 4 节),
+    不算全位置 logits(工单 05 S1)。
 
     返回 `(tok_ce [n_tgt] 张量(on dev), global_row [n_tgt] list, n_rows_total
     int)`——`global_row[i]` 是 `tok_ce[i]` 对应的目标 token 在这个物理块里的
@@ -129,11 +144,11 @@ def _forward_packed(model, events, dev, mask_dtype):
     input_ids = input_ids.to(dev)
     position_ids = position_ids.to(dev)
     mask = mask.to(dev).to(dtype=mask_dtype)
+    backbone, lm_head = _base_model_and_head(model)
     with _attn_ctx(dev):
-        out = model(input_ids=input_ids, attention_mask=mask,
-                    position_ids=position_ids, use_cache=False,
-                    output_hidden_states=True)
-    h = out.hidden_states[-1]
+        out = backbone(input_ids=input_ids, attention_mask=mask,
+                       position_ids=position_ids, use_cache=False)
+    h = out.last_hidden_state
     bidx = torch.tensor([x[0] for x in loss_idx], device=dev)
     qidx = torch.tensor([x[1] for x in loss_idx], device=dev)
     ys = torch.tensor([x[2] for x in loss_idx], device=dev)
@@ -143,7 +158,7 @@ def _forward_packed(model, events, dev, mask_dtype):
         acc += len(ev["rows"])
     global_row = [offsets[b] + x[3] for b, x in zip(bidx.tolist(), loss_idx)]
     hp = h[bidx, qidx].float()
-    logits = model.lm_head(hp).float()
+    logits = lm_head(hp).float()
     ce = F.cross_entropy(logits, ys, reduction="none")
     return ce, global_row, acc
 
@@ -166,10 +181,15 @@ def block_row_ce(model, events, dev, mask_dtype):
     return ce_per_row, w
 
 
-def backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype):
+def backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp=False):
     """一个逻辑小批的反向(spec 第 5 节):`blocks` 是已经按 token 预算切好的
     物理块列表(每块是事件列表)。`W` 是整个逻辑小批的行权重和(不是单个物理
     块自己的),`n_g` 是这一组(--accum 个逻辑小批)里实际的逻辑小批数。
+
+    `torch.autocast` 只包前向(`block_row_ce`),`.backward()` 在外面(照旧
+    训练器 `train_causal_callgen.py` 第 489 到 505 行的形状,工单 05 S3)——
+    反向按前向留下的 dtype 走,不受调用时是否处在 autocast 上下文里影响,
+    把 `.backward()` 也套进 autocast 没有意义。
 
     m 个物理块的梯度之和等于把整个逻辑小批一次算完的梯度——这条性质与
     `blocks` 具体怎么切无关,只要 `W` 与 `n_g` 不变(测试 12(b) 验的就是这条)。
@@ -180,7 +200,8 @@ def backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype):
     total = 0.0
     n_rows = 0
     for blk in blocks:
-        ce_per_row, w = block_row_ce(model, blk, dev, mask_dtype)
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+            ce_per_row, w = block_row_ce(model, blk, dev, mask_dtype)
         loss_c = (ce_per_row * w).sum() / W
         (loss_c / n_g).backward()
         total += loss_c.item()
@@ -246,11 +267,15 @@ def run_mem_probe(model, opt, full_events, args, dev, log, amp):
 
 # ---------------------------------------------------------------- 对齐检查
 
-def _align_candidates(path, tok, seed, n):
-    """spec 第 9 节:随机抽 `n` 个只有全文 token 数 <= `ALIGN_LEN_FILTER` 的
-    val 事件。独立于 `share_data.load_events` 的行级流水线(只做按 event 分组
-    + 全文分词),避免为了抽样跑一遍全量行级分词——`--smoke` 时那笔开销与
-    抽样目的不成比例。"""
+def _align_candidates(path, tok, seed, n, max_len):
+    """spec 第 9 节:随机抽 `n` 个只有全文 token 数 <= `min(ALIGN_LEN_FILTER,
+    max_len)` 的 val 事件——上限还要卡 `--max-len`,否则 `--max-len < 2048`
+    时新路径(`share_data.load_events` 按 `--max-len` 丢整条事件)比参照路径
+    (`CallDS`/`ParamDS` 不按这个上限丢)多丢几个抽中的事件,两条路径的总行
+    数就对不上,第 9 节的配对断言直接 `exit(2)`(工单 05 S5)。独立于
+    `share_data.load_events` 的行级流水线(只做按 event 分组 + 全文分词),
+    避免为了抽样跑一遍全量行级分词——`--smoke` 时那笔开销与抽样目的不成
+    比例。"""
     groups, order = {}, []
     for line in open(path):
         r = json.loads(line)
@@ -259,13 +284,14 @@ def _align_candidates(path, tok, seed, n):
             groups[ev] = []
             order.append(ev)
         groups[ev].append(r)
+    len_filter = min(ALIGN_LEN_FILTER, max_len)
     cands = []
     for ev in order:
         rs = sorted(groups[ev], key=lambda r: r["sent_idx"])
         full_text = rs[-1]["text"]
         n_full = len(tok(full_text, add_special_tokens=False,
                          truncation=False)["input_ids"])
-        if n_full <= ALIGN_LEN_FILTER:
+        if n_full <= len_filter:
             cands.append(rs)
     rng = random.Random(seed)
     return rng.sample(cands, min(n, len(cands)))
@@ -284,7 +310,7 @@ def _write_align_tmpfile(picked):
     return path
 
 
-def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
+def _ref_forward(mode, model, tok, rows, dev, max_len, bs, check_drift=True):
     """参照路径:旧 `collate`,`bs` 行一批右 padding,过同一个模型。
 
     每行 ce 直接来自调用旧脚本的 `inst_ce`(`train_causal_callgen.py`/
@@ -305,6 +331,13 @@ def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
     不补齐』批没有掩码,HF 会跳过建掩码并开 enable_gqa,mem-efficient 不
     支持 GQA,强制内核会报错)。
 
+    `check_drift`(工单 05 S2):True(默认)时做上面这道自检——fp32 的两遍
+    调用(REF_BATCH 整批、bs=1 单行基线)都留着,容差 `REF_INST_CE_DRIFT_TOL`,
+    同一次 no_grad 前向理论上该一致;bf16 粗筛那一遍传 False 关掉自检——
+    bf16 下比的是两次独立前向的 bf16 结果,GPU 内核只要抖过这个为 fp32 定
+    的量级就会误报 `RefBaselineDriftError` 挡住开训,而 bf16 粗筛本来就
+    只用 `row_ce`(`inst_ce_fn` 的返回值),不需要这道自检。
+
     返回 `(row_ce list, tok_ce list)`,行序/token 序 = `rows` 的输入顺序。
     """
     collate_fn = (train_causal_callgen.collate if mode == "cgen"
@@ -324,18 +357,24 @@ def _ref_forward(mode, model, tok, rows, dev, max_len, bs):
         ce = F.cross_entropy(lg[m], tg[m], reduction="none")
         b = tg.size(0)
         rid = torch.arange(b, device=dev).unsqueeze(1).expand_as(tg)[m]
-        ssum = torch.zeros(b, device=dev).index_add(0, rid, ce)
-        cnt = torch.zeros(b, device=dev).index_add(0, rid, torch.ones_like(ce))
-        row_ce_local = ssum / cnt.clamp(min=1)
+        # `out`/`lg` 是这一批 [B, L, V] fp32 全位置 logits(约 5.1 GB),后面
+        # 只用得到已经从它们抽出来的 `ce`/`rid`;调 `inst_ce_fn`(它自己会
+        # 再算一遍前向)之前先释放,不然两份都活着瞬时约 10 GB(工单 05 S6)。
+        del out, lg
+        if check_drift:
+            ssum = torch.zeros(b, device=dev).index_add(0, rid, ce)
+            cnt = torch.zeros(b, device=dev).index_add(0, rid, torch.ones_like(ce))
+            row_ce_local = ssum / cnt.clamp(min=1)
 
         row_ce_inst = inst_ce_fn(model, enc, labels, dev).float()
-        drift = (row_ce_local - row_ce_inst).abs().max().item()
-        if drift > REF_INST_CE_DRIFT_TOL:
-            raise RefBaselineDriftError(
-                f"_ref_forward 本地逐 token 公式聚合出的逐行结果与真正调用 "
-                f"inst_ce 的返回值不一致(max diff {drift} > "
-                f"{REF_INST_CE_DRIFT_TOL},mode={mode}):对齐检查的参照基线"
-                "不可信,先查两套公式的差异再继续。")
+        if check_drift:
+            drift = (row_ce_local - row_ce_inst).abs().max().item()
+            if drift > REF_INST_CE_DRIFT_TOL:
+                raise RefBaselineDriftError(
+                    f"_ref_forward 本地逐 token 公式聚合出的逐行结果与真正调用 "
+                    f"inst_ce 的返回值不一致(max diff {drift} > "
+                    f"{REF_INST_CE_DRIFT_TOL},mode={mode}):对齐检查的参照基线"
+                    "不可信,先查两套公式的差异再继续。")
 
         row_ce.extend(row_ce_inst.tolist())
         tok_ce.extend(ce.tolist())
@@ -373,7 +412,8 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
     tmp_path = None
     try:
         picked = _align_candidates(data / "val.jsonl", tok,
-                                   train_causal_callgen.SEED, args.align_events)
+                                   train_causal_callgen.SEED, args.align_events,
+                                   args.max_len)
         tmp_path = _write_align_tmpfile(picked)
 
         ro_new = (dict(set=ro_set, labels=[], kept=0, dropped=0)
@@ -427,20 +467,25 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
                     row_new_bf16, _ = _new_forward(new_events, model, dev,
                                                    torch.bfloat16)
                     row_ref_bf16, _ = _ref_forward(mode, model, tok, ds.rows,
-                                                   dev, args.max_len, REF_BATCH)
+                                                   dev, args.max_len, REF_BATCH,
+                                                   check_drift=False)
                 diffs = [abs(a - b) for a, b in zip(row_new_bf16, row_ref_bf16)]
                 bf16_mean = sum(diffs) / max(len(diffs), 1)
                 bf16_max = max(diffs, default=0.0)
                 bf16_warn = bool(bf16_mean > BF16_MEAN_TOL
                                  or bf16_max > BF16_MAX_TOL)
 
+            # `bf16_warn` 不在 spec 第 9 节的落盘字段列表里(`align_bf16_warn`
+            # 已经在 `start` 事件里报过一次),所以不写进 ALIGN_CHECK.json;
+            # 只在函数返回值里额外带一份给 main() 记 `start` 事件用
+            # (工单 05 F2/工单 03 minor)。
             report = dict(
                 PASS=bool(pass_ok), n_events=len(new_events), n_rows=n_rows,
                 n_tgt_tokens=n_tgt, max_abs_diff=row_diff, max_tok_diff=tok_diff,
                 baseline_max_abs_diff=baseline_diff, tol=args.align_tol,
                 bf16_mean_abs_diff=bf16_mean, bf16_max_abs_diff=bf16_max,
                 attn_impl=args.attn_impl, mismatch_idx=mismatch_idx,
-                baseline_warn=bool(baseline_warn), bf16_warn=bf16_warn)
+                baseline_warn=bool(baseline_warn))
             (out / "ALIGN_CHECK.json").write_text(
                 json.dumps(report, indent=1, ensure_ascii=False))
             print(json.dumps(report, indent=1), flush=True)
@@ -454,13 +499,14 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
                     f"{mismatch_ok}\n  排查:share_data 的公共前缀/掩码/"
                     "position_ids 构造,或 tokenizer 版本漂移。", flush=True)
                 sys.exit(2)
-            return report
+            return dict(report, bf16_warn=bf16_warn)
     except RefBaselineDriftError as e:
         # `_ref_forward` 的自检失败(参照基线本身不可信):按文件里其余所有
         # 失败分支同样的模式处理——写 ALIGN_CHECK.json、打印诊断、
-        # sys.exit(2)。三处 `_ref_forward` 调用(REF_BATCH 整批、bs=1 单行
-        # 基线、cuda 上的 bf16 粗筛)共用这一个 except,不管哪一处触发都走
-        # 同一条上报路径。
+        # sys.exit(2)。两处仍带 `check_drift=True` 的 `_ref_forward` 调用
+        # (REF_BATCH 整批、bs=1 单行基线,都是 fp32)共用这一个 except——
+        # cuda 上的 bf16 粗筛那一处传了 `check_drift=False`(工单 05 S2),
+        # 不会触发这条异常。
         report = dict(PASS=False, stage="ref_forward_drift", error=str(e),
                       ref_inst_ce_drift_tol=REF_INST_CE_DRIFT_TOL)
         (out / "ALIGN_CHECK.json").write_text(
@@ -705,9 +751,8 @@ def main():
             for mb_events in group:
                 W = sum(row[5] for ev in mb_events for row in ev["rows"])
                 blocks = share_data.chunk_by_budget(mb_events, args.tok_budget)
-                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-                    mb_loss, mb_rows = backward_logical_minibatch(
-                        model, blocks, W, n_g, dev, mask_dtype)
+                mb_loss, mb_rows = backward_logical_minibatch(
+                    model, blocks, W, n_g, dev, mask_dtype, amp)
                 run_loss_sum += mb_loss
                 run_mb_count += 1
                 epoch_rows += mb_rows
