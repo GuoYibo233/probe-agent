@@ -213,19 +213,29 @@ def collate(batch, tok, max_len):
 
 # ---------------------------------------------------------------- 模型
 
-def build(dev, base="qwen"):
-    """tokenizer 构造照抄 train_causal_probe.build():pad=eos / 左截 / 右 pad。"""
-    path = MODELS[base]
-    tok = AutoTokenizer.from_pretrained(path)
+def build(dev, base="qwen", attn_impl=None, path=None):
+    """tokenizer 构造照抄 train_causal_probe.build():pad=eos / 左截 / 右 pad。
+
+    工单 `.scratch/kvshare-train/issues/03-share-trainer.md`(spec 3.4,决定 6)
+    加的两个关键字参数,都是 None 时与改动前逐字节相同:
+    - `attn_impl`:非 None 时传给 `from_pretrained` 的 `attn_implementation`
+      (新训练器 `train_causal_share.py` 用来钉 `sdpa`)。
+    - `path`:非 None 时直接从这个目录装模型与 tokenizer,不查 `MODELS[base]`
+      (给新训练器第 12 节的小模型测试用)。
+    """
+    model_path = MODELS[base] if path is None else path
+    tok = AutoTokenizer.from_pretrained(model_path)
     if tok.pad_token_id is None:                      # 照抄 check_causal_candidates
         tok.pad_token = tok.eos_token
     tok.truncation_side = "left"                      # 保思考尾巴
     tok.padding_side = "right"                        # 目标段都在真实 token 上
     torch.manual_seed(SEED)
-    model = AutoModelForCausalLM.from_pretrained(path, dtype=torch.float32)
+    extra = {} if attn_impl is None else dict(attn_implementation=attn_impl)
+    model = AutoModelForCausalLM.from_pretrained(model_path, dtype=torch.float32,
+                                                 **extra)
     if model.config.get_text_config().pad_token_id is None:
         model.config.get_text_config().pad_token_id = tok.pad_token_id
-    return tok, model.to(dev), path
+    return tok, model.to(dev), model_path
 
 
 def inst_ce(model, enc, labels, dev, fire=None, plast=None):
