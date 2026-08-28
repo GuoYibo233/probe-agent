@@ -42,6 +42,7 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
 import readonly_map                                    # noqa: E402
+import share_data                                       # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat                                       # noqa: E402
@@ -137,16 +138,12 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS):
         h = backbone(input_ids=enc["input_ids"],
                      attention_mask=enc["attention_mask"],
                      use_cache=False).last_hidden_state
-        for bi, (_full, bounds) in enumerate(chunk):
-            ends = offs[bi, :, 1].tolist()
+        for bi, (full, bounds) in enumerate(chunk):
+            offsets_i = offs[bi].tolist()
             keep = int(enc["attention_mask"][bi].sum())
             cols, idxs = [], []
             for b, ri in bounds:
-                j = -1
-                for t in range(keep - 1, -1, -1):        # 最大的 j: 0 < end <= b
-                    if 0 < ends[t] <= b:
-                        j = t
-                        break
+                j = share_data.read_position(offsets_i, full, b, keep)
                 if j < 0:
                     n_oow += 1
                     continue
