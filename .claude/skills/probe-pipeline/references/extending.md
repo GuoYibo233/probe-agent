@@ -120,6 +120,8 @@ target modules,别处不许再抄一份(同构表必漂移,而那种漂移是静
 `save_pretrained`,`best/` 与全参训练存的逐项同构,四个评测脚本零改动装得回;
 ③ **新轴写进 run_id 的批次前缀而不是格名**(§3.4 的 run_id 那条)。新格才往下走 §3.1。
 
+**"换实现"也不走 §3.1,先例是 2026-08-28 的 `train_causal_share.py`**:格名(还是 cgen/cparam)、数据、四个评测脚本一字不改,只换训练脚本本身(旧逐行前向换成一个事件一次前向、共享前缀)。判据和"新训法轴"一样看**格/数据/评测有没有变**——变的只是"用什么脚本训出这个格",不是"多训了一种法子"或"加了一个新格",所以也不登记 `CELLS` / `EVAL_CELLS` / `summarize_matrix` 三张表(只需要把已登记的 `CELLS`/`TASKS` 条目**指向新脚本**,不是新增一行);旧脚本冻结为对齐参照,经专门的 `<格>-rows` 任务发射,产物不进矩阵(见 §5 #26)。
+
 ### 3.1 必改清单
 
 | 文件:行 | 改什么 | 漏改的后果 | 改动量 |
@@ -162,7 +164,7 @@ target modules,别处不许再抄一份(同构表必漂移,而那种漂移是静
 
 - **独立格 vs 依赖格**:mtool/ctool 只吃数据集,互不依赖;mext/cgen 要吃**同模型工具格**的触发点(`eval_mbert_call.py:140`、`eval_causal_call.py:229` 的 `replay_fire`)。新格只要是"在触发点上评",就必须排在工具格之后,顺序照 stage-commands §4.1。
 - **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 `train_log` 有 start 与 done + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。("loss 在降"这一项 smoke 规模上判不了,新格照抄"每 50 gstep 写一条 `event=step`"的写法就会同样判不了,见 gates §1 的 G14 行。)
-- **run_id 没有底座档位段,也没有训法段**(`{batch}_{model}_{cell}`):同一格换 `--base` 档或换训法重训会撞 rid,两次产物无法归属。约定**一个训练批次只跑一档底座 + 一种训法**,两者都写进批次前缀(p1 线的 p1b06/p1b17/p1b4;np821 线的 np821b06/np821b17/np821l17/np821l4,`b`=全参、`l`=LoRA),换档换训法一律在排卡表 extra 里写 `--base <档>` / `--lora`(2026-08-21 定档位,np821 加训法轴)。**驱动器不读批次配置里的 `base`/`mode` 字段**,排卡表 extra 才是真源。
+- **run_id 没有底座档位段,也没有训法段**(`{batch}_{model}_{cell}`):同一格换 `--base` 档或换训法重训会撞 rid,两次产物无法归属。约定**一个训练批次只跑一档底座 + 一种训法**,两者都写进批次前缀(p1 线的 p1b06/p1b17/p1b4;np821 线的 np821b06/np821b17/np821l17/np821l4,`b`=全参、`l`=LoRA),换档换训法一律在排卡表 extra 里写 `--base <档>` / `--lora`(2026-08-21 定档位,np821 加训法轴)。**驱动器不读批次配置里的 `base`/`mode` 字段**,排卡表 extra 才是真源。**"换实现"同理写进批次前缀**(§3 开头的先例):2026-08-28 起的新口径(丢弃规则、上限、更新单位都变了)前缀是 `ks828` 加档位训法段,如 `ks828b06`、`ks828l17`;`np821` 前缀不许再用于新口径的 run,两条口径的数字不可比(stage-commands §3.2)。
 - **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_probe.py:67` 的 `rid = f"{batch}_{model}_{cell}"`、`summarize_matrix.py:75` 的 `rid = f"{args.prefix}_{m}_{c}"`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_probe.py:66` 的 `CELLS[cell]`、`summarize_matrix.py:22` 的 `REPORT_OF`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_probe.py:112`(smoke 档)/`:123`(full 档)拼的 session 名人读歧义。建议单段小写。
 - **显存按"开不开 `--grad-ckpt`"估,不按模型大小估**:np821 实测 0.6B 全参**不带** gc 的峰值(60–77 GiB)比 1.7B 全参**带** gc(35–44 GiB)高一倍,LoRA + gc 又低一档(17–38 GiB)。四档形态的实测峰值表在 `stage-commands.md §3.1`,挑卡前查它;两次踩坑的经过见 `gates.md §3.9`(smoke 过了全量仍 OOM)与 `§3.10`(0.6B 全参在 48G 上三格全 OOM)。
 
@@ -286,6 +288,9 @@ target modules,别处不许再抄一份(同构表必漂移,而那种漂移是静
 | 22 | `eval_mbert_call.py:274`(`pick_theta`,`eval_causal_call.py` 同款) | 拿 `self_fire.theta_sweep_val` 扫描表对着 risk 找"达标行"来判有没有解 | 选 θ_fire 的真实约束是 `fire_acc ≥ 1-risk`(开火**精度**),而扫描表里的 `wrong_fire_rate` 是按**全事件**归一的另一个数——后者 ≤ risk 时该档照样可能 null。ro1 批实测:bf_q36_mext 在 θ=0.95 处 wrong_fire_rate 0.09 ≤ 0.1 但 fire_acc 只有 0.78,0.1 档判 null 是**正确行为**;不知道这条的人会把它当 bug 去"修",一修就换了契约 |
 | 23 | `pipeline/driver.py` 的 `step_e2_call` / `step_m1_matrix`(按函数名 grep) | 手发了评测(`launch-eval`)、报告还没落地时敲 `run.py pipeline`;或某批 call 档报告没齐就先出了那批矩阵 | 两条都退 0、都不报警。① `e2_call` 的判据只有"报告文件在不在"加"它自己的发射标记在不在",**不查台账里在飞的 eval 任务**——手发的那批两样都不满足,于是**再发一遍**,两个进程写同一份报告;② `m1_matrix` 见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**,所以报告没齐时出的那张带 PENDING 的早产表会**永久留着**,后面再敲驱动器也不重出,读表的人拿到的是缺格的旧数。防线:**G23**(敲驱动器前确认手发的评测不在飞)与 **G24**(出矩阵前确认该批报告齐) |
 | 24 | `pipeline/driver.py` 的 `step_t2_full`(docstring 里写着这个场景) | 对**部分完成**的批再敲 t2_full(比如删了 `launched` 标记想补一格) | 它重发整张排卡表,已完成的格撞训练脚本的"同 out 已有 `train_log.jsonl`"守卫秒退,**但登记在守卫之前就做了**:那个早跑完的 run 被补一条假 RUNMETA、run_id 被塞回台账 active,而 `launch_probe` 发没发都退 0。台账多个不会自己消失的僵尸条目,追溯链里多一条没跑过的命令。补一格的正确做法见 `stage-commands.md §3`(只含那一格的临时排卡表) |
+| 25 | `train_causal_tool.py` 的 `collate` 与 `eval_tool.py` 的 `score_causal`(2026-08-28 前的读取位置循环:`for t in range(keep-1, -1, -1): if 0 < ends[t] <= b`) | 切点前的 token 跨过切点(token 起始位置 < 切点 ≤ 结束位置)并且切点之后紧跟的字符是空白 | 约 6.3% 的切点读到句尾标点前一个词的隐状态(草稿 4.4 实测)。训练侧 `collate` 与离线评测侧 `score_causal` 用的是同一段旧循环,两边内部一致,数字不报错也不互相矛盾,肉眼看不出偏差。2026-08-28 起两处都改走 `share_data.read_position`,读取位置和全文一次分词的边界一致——**这只修了训练/离线评测这一段,不许写成"活跑错位已修"**:活跑时模型自己生成的 token 边界和离线全文分词的边界可能不同(比如活跑先出 `."\n` 再出 `\n`,离线合成一个 `."\n\n`),那是分词边界的另一个坑,这一轮没有解决(spec 11.3 末段) |
+| 26 | `run.py` 的 `train-cgen-rows` / `train-cparam-rows`(指向冻结的旧逐行脚本 `train_causal_callgen.py` / `train_causal_param.py`) | 拿这两个任务发射出的 run 目录去评测、进矩阵 | 走的是旧口径(`--max-len 4096`、逐行左截、3 个 epoch),产物 `best/meta.json` 没有 `trainer` 字段,run_id 形状和现役 `train-cgen`/`train-cparam` 相同(`<批次>_<model>_cgen` / `<批次>_<model>_cparam`);评测脚本与 `summarize_matrix.py` 都不检查 `trainer` 字段,混进矩阵之后**分不出这一行数字来自哪个训练器**——8192、不截断、1 epoch 的现役口径和 4096、左截、3 epoch 的参照口径会被当成同一批数字 |
+| 27 | `pipeline/train/share_data.py` | 在 mbert-env(transformers 4.57.6)下 import `share_data`,而它的模块顶层直接 import 了 `train_causal_callgen` / `train_causal_param`(这两个旧脚本模块层有版本门) | `eval_tool.py` / `eval_mbert_call.py` 在 import 阶段直接 `SystemExit`,表现是"`eval-tool-mbert` 开跑即死",容易被误判成"解释器用错了?"——实际是 `share_data` 把旧脚本的版本门带进了 mbert-env。根因修复(工单 01 已按此实现):`share_data` 模块顶层只留 stdlib + torch,对这两个旧脚本以及 `rules.MAX_BOUNDS` 的 import 全部延迟到 `load_events` 函数体内 |
 
 ---
 
