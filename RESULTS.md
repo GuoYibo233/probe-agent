@@ -6,6 +6,11 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `ks828b06_ovl_dropevent_ccall` | 2026-08-29 00:17 | kvshare-train | `7c47c76` | - | ok | overlong_mode=drop-event n_left_truncated=0 n_skipped_rows=0 n_dropped_events=133 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.86 | overlong=drop-event 的 ccall 评测跑完(ctool=np821b06 全量, cgen 替身, --limit 200): overlong_mode=drop-event, n_dropped_events=133(全文超 4096 token 的触发事件), 其余计数 0, n_events_scored=200, full_call_ok=0.86(left/skip 轮为 0.855) |
+| `ks828b06_ovl_skip_ccall` | 2026-08-29 00:15 | kvshare-train | `7c47c76` | - | ok | overlong_mode=skip n_left_truncated=0 n_skipped_rows=56 n_dropped_events=0 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.855 | overlong=skip 的 ccall 评测跑完(ctool=np821b06 全量, cgen 替身, --limit 200): overlong_mode=skip, n_skipped_rows=56(与 left 轮的 n_left_truncated 同为 56), 主指标与 left 轮逐位相同 full_call_ok=0.855 |
+| `ks828b06_ovl_left_ccall` | 2026-08-29 00:13 | kvshare-train | `5559c07` | - | ok | overlong_mode=left n_left_truncated=56 n_skipped_rows=0 n_dropped_events=0 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.855 | overlong=left 的 ccall 评测跑完(ctool=np821b06 全量, cgen=np821b06 权重软链替身, --limit 200): overlong_mode=left, n_left_truncated=56, 其余三个计数 0, n_events_scored=200, full_call_ok=0.855 |
+| `ks828b06_ovl_dropevent_ctool` | 2026-08-29 00:09 | kvshare-train | `89455fe` | - | ok | overlong_mode=drop-event n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7 | overlong=drop-event 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=drop-event, 四个计数全 0(前 200 行无超 8192 token 的事件), n_events_test=7 |
+| `ks828b06_ovl_skip_ctool` | 2026-08-29 00:06 | kvshare-train | `e658f56` | - | ok | overlong_mode=skip n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7 | overlong=skip 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=skip, 四个计数全 0, n_events_test=7, 与 left 轮的 temperature/prior/probe_cost 逐位相同 |
 | `ks828b06_ovl_left_ctool` | 2026-08-28 23:59 | kvshare-train | `caf29de` | - | ok | overlong_mode=left n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7 | overlong=left 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=left, 四个计数全 0, n_events_test=7, chosen_theta 两档均 null |
 | `ks828b06_gptoss_cgen_smoke4` | 2026-08-28 23:42 | kvshare-train | `5abd3a0` | - | ok | align_max_abs_diff=5.4836e-06 worst_gb_tokens=15.836 step_peak_gb=13.849 best_val_ce=1.2917 val_exact_call=0.1728 gen_s=69.36 wall_s=663.31 | b06 cgen smoke4(H100, 全参+grad-ckpt, 探针 tokens): 对齐 PASS, 探针最满块 15.84 GB(预期 17.9, -11.5%), val_ce/val_exact_call 与不开检查点的 smoke2 逐位相同 |
 | `ks828l4_gptoss_cgen_smoke2` | 2026-08-28 23:41 | kvshare-train | `5abd3a0` | - | ok | align_max_abs_diff=1.5378e-05 worst_gb_tokens=28.822 step_peak_gb=33.185 best_val_ce=0.7443 val_exact_call=0.1975 gen_s=35.66 wall_s=1003.39 | l4 cgen smoke2(H100, LoRA+grad-ckpt, 探针 tokens, 修复 b5cee8d 之后): 零 Traceback, 对齐 PASS 1.5378e-5(与崩掉那次逐位相同), 探针最满块 28.82 GB(预期 38.1, -24%), step 峰值 33.2(含 save_merged 的 fp32 副本), 生成 81 行 35.7 s |
@@ -90,6 +95,56 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `ks828b06_ovl_dropevent_ccall`
+
+- **结论**：overlong=drop-event 的 ccall 评测跑完(ctool=np821b06 全量, cgen 替身, --limit 200): overlong_mode=drop-event, n_dropped_events=133(全文超 4096 token 的触发事件), 其余计数 0, n_events_scored=200, full_call_ok=0.86(left/skip 轮为 0.855)
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 00:17 → 2026-08-29 00:18
+- **代码**：`7c47c76` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：overlong_mode=drop-event n_left_truncated=0 n_skipped_rows=0 n_dropped_events=133 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.86
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_dropevent_ccall_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ovl_ccall_np821b06_cgen --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong drop-event --limit 200`
+
+### `ks828b06_ovl_skip_ccall`
+
+- **结论**：overlong=skip 的 ccall 评测跑完(ctool=np821b06 全量, cgen 替身, --limit 200): overlong_mode=skip, n_skipped_rows=56(与 left 轮的 n_left_truncated 同为 56), 主指标与 left 轮逐位相同 full_call_ok=0.855
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 00:15 → 2026-08-29 00:16
+- **代码**：`7c47c76` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：overlong_mode=skip n_left_truncated=0 n_skipped_rows=56 n_dropped_events=0 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.855
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_skip_ccall_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ovl_ccall_np821b06_cgen --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong skip --limit 200`
+
+### `ks828b06_ovl_left_ccall`
+
+- **结论**：overlong=left 的 ccall 评测跑完(ctool=np821b06 全量, cgen=np821b06 权重软链替身, --limit 200): overlong_mode=left, n_left_truncated=56, 其余三个计数 0, n_events_scored=200, full_call_ok=0.855
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 00:13 → 2026-08-29 00:14
+- **代码**：`5559c07` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：overlong_mode=left n_left_truncated=56 n_skipped_rows=0 n_dropped_events=0 n_excluded_by_ctool=0 n_events_scored=200 full_call_ok=0.855
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_left_ccall_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ovl_ccall_np821b06_cgen --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong left --limit 200`
+
+### `ks828b06_ovl_dropevent_ctool`
+
+- **结论**：overlong=drop-event 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=drop-event, 四个计数全 0(前 200 行无超 8192 token 的事件), n_events_test=7
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 00:09 → 2026-08-29 00:10
+- **代码**：`89455fe` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：overlong_mode=drop-event n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_dropevent_ctool_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong drop-event --limit 200`
+
+### `ks828b06_ovl_skip_ctool`
+
+- **结论**：overlong=skip 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=skip, 四个计数全 0, n_events_test=7, 与 left 轮的 temperature/prior/probe_cost 逐位相同
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-29 00:06 → 2026-08-29 00:08
+- **代码**：`e658f56` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：overlong_mode=skip n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_skip_ctool_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong skip --limit 200`
 
 ### `ks828b06_ovl_left_ctool`
 

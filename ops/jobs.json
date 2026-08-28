@@ -1917,6 +1917,116 @@
         }
       ],
       "finished_at": "2026-08-29 00:06"
+    },
+    {
+      "name": "ks828b06_ovl_skip_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "overlong 开关端到端验证: ctool skip",
+      "started_at": "2026-08-29 00:06",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_ovl_skip_ctool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_skip_ctool_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong skip --limit 200",
+          "launched_at": 1787929611.1043868,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:08"
+    },
+    {
+      "name": "ks828b06_ovl_dropevent_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "overlong 开关端到端验证: ctool drop-event",
+      "started_at": "2026-08-29 00:09",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_ovl_dropevent_ctool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_dropevent_ctool_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong drop-event --limit 200",
+          "launched_at": 1787929749.428499,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:10"
+    },
+    {
+      "name": "ks828b06_ovl_left_ccall",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "overlong 开关端到端验证 ccall left(b06 冒烟 ctool 无 theta, 改用 np821b06 全量 ctool+cgen, 报告写进 best 软链的替身目录, 不碰 np821 原产物)",
+      "started_at": "2026-08-29 00:13",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_ovl_left_ccall_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_left_ccall_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ovl_ccall_np821b06_cgen --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong left --limit 200",
+          "launched_at": 1787930005.0942154,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:14"
+    },
+    {
+      "name": "ks828b06_ovl_skip_ccall",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "overlong 开关端到端验证 ccall skip(np821b06 ctool+cgen 替身)",
+      "started_at": "2026-08-29 00:15",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_ovl_skip_ccall_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_skip_ccall_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ovl_ccall_np821b06_cgen --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong skip --limit 200",
+          "launched_at": 1787930147.0956426,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:16"
+    },
+    {
+      "name": "ks828b06_ovl_dropevent_ccall",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "overlong 开关端到端验证 ccall drop-event(np821b06 ctool+cgen 替身)",
+      "started_at": "2026-08-29 00:17",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_ovl_dropevent_ccall_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_dropevent_ccall_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_causal_call.py --env appworld --ctool-run /home/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ovl_ccall_np821b06_cgen --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong drop-event --limit 200",
+          "launched_at": 1787930253.4478054,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:18"
     }
   ]
 }
