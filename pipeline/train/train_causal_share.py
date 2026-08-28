@@ -73,12 +73,6 @@ import heartbeat
 
 # spec 第 9 节:只抽全文 token 数不超过这个上限的事件做对齐检查(控制耗时)。
 ALIGN_LEN_FILTER = 2048
-# spec 第 9 节:逐目标 token 的最大差门槛,固定值,不是命令行参数
-# (只有逐行门槛 --align-tol 可调)。
-TOK_DIFF_TOL = 3e-4
-# spec 第 9 节第二道(bf16 粗筛)的两个固定门槛。
-BF16_MEAN_TOL = 2e-2
-BF16_MAX_TOL = 1e-1
 # 参照路径『整批』的行数,照旧训练器的 --bs 4(spec 第 9 节)。
 REF_BATCH = 4
 # `_ref_forward` 本地逐 token 公式聚合出的逐行结果,与真正调用 `inst_ce`
@@ -493,9 +487,27 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
             baseline_diff = max((abs(a - b) for a, b in
                                 zip(row_ref_solo, row_ref)), default=0.0)
             hard_ok = (not mismatch_idx) and drop_ok and mismatch_ok
-            pass_ok = (hard_ok and row_diff <= args.align_tol
-                      and tok_diff <= TOK_DIFF_TOL)
-            baseline_warn = row_diff > max(3 * baseline_diff, 1e-6)
+            abs_ok = (row_diff <= args.align_tol
+                     and tok_diff <= args.align_tok_tol)
+            # spec 9:相对判据用参照路径逐行 ce 绝对值的『整体一个平均数』当
+            # 分母,不是逐行各除各的 ce——ce 接近 0 的行会让逐行相对差发散。
+            ref_scale = (sum(abs(x) for x in row_ref) / len(row_ref)
+                        if row_ref else 0.0)
+            if ref_scale == 0:
+                rel_max_abs_diff = None
+                rel_ok = False
+            else:
+                rel_max_abs_diff = row_diff / ref_scale
+                rel_ok = rel_max_abs_diff <= args.align_rel_tol
+            if args.align_rule == "abs":
+                rule_ok = abs_ok
+            elif args.align_rule == "rel":
+                rule_ok = rel_ok
+            else:
+                rule_ok = abs_ok and rel_ok
+            pass_ok = hard_ok and rule_ok
+            baseline_warn = row_diff > max(
+                args.align_baseline_factor * baseline_diff, 1e-6)
 
             bf16_mean = bf16_max = None
             bf16_warn = False
@@ -509,8 +521,8 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
                 diffs = [abs(a - b) for a, b in zip(row_new_bf16, row_ref_bf16)]
                 bf16_mean = sum(diffs) / max(len(diffs), 1)
                 bf16_max = max(diffs, default=0.0)
-                bf16_warn = bool(bf16_mean > BF16_MEAN_TOL
-                                 or bf16_max > BF16_MAX_TOL)
+                bf16_warn = bool(bf16_mean > args.align_bf16_mean_tol
+                                 or bf16_max > args.align_bf16_max_tol)
 
             # `bf16_warn` 不在 spec 第 9 节的落盘字段列表里(`align_bf16_warn`
             # 已经在 `start` 事件里报过一次),所以不写进 ALIGN_CHECK.json;
@@ -522,19 +534,39 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
                 baseline_max_abs_diff=baseline_diff, tol=args.align_tol,
                 bf16_mean_abs_diff=bf16_mean, bf16_max_abs_diff=bf16_max,
                 attn_impl=args.attn_impl, mismatch_idx=mismatch_idx,
-                baseline_warn=bool(baseline_warn))
+                baseline_warn=bool(baseline_warn),
+                rule=args.align_rule, tok_tol=args.align_tok_tol,
+                rel_tol=args.align_rel_tol, ref_scale=ref_scale,
+                rel_max_abs_diff=rel_max_abs_diff,
+                bf16_mean_tol=args.align_bf16_mean_tol,
+                bf16_max_tol=args.align_bf16_max_tol,
+                baseline_factor=args.align_baseline_factor)
             (out / "ALIGN_CHECK.json").write_text(
                 json.dumps(report, indent=1, ensure_ascii=False))
             print(json.dumps(report, indent=1), flush=True)
             if not report["PASS"]:
-                print(
-                    "对齐检查 FAIL:形态 A 与旧训练器逐行 loss 不一致,拒绝开训。\n"
+                msg_lines = [
+                    "对齐检查 FAIL:形态 A 与旧训练器逐行 loss 不一致,拒绝开训。",
+                    f"  规则 --align-rule {args.align_rule}",
                     f"  逐行最大差 {row_diff:.3e}(tol {args.align_tol:.1e}),"
-                    f"逐 token 最大差 {tok_diff:.3e}(tol {TOK_DIFF_TOL:.1e})\n"
+                    f"逐 token 最大差 {tok_diff:.3e}(tol {args.align_tok_tol:.1e})",
+                ]
+                if args.align_rule in ("rel", "both"):
+                    if ref_scale == 0:
+                        msg_lines.append(
+                            "  ref_scale 为 0(参照路径逐行 ce 绝对值均值为 0),"
+                            "rel_max_abs_diff 记为 null,rel 规则判失败。")
+                    else:
+                        msg_lines.append(
+                            f"  相对差 {rel_max_abs_diff:.3e}"
+                            f"(rel_tol {args.align_rel_tol:.1e}),"
+                            f"ref_scale={ref_scale:.3e}")
+                msg_lines.append(
                     f"  行数/丢弃计数是否一致: mismatch_idx={mismatch_idx[:5]}, "
                     f"dropped_rows_tgt_ok={drop_ok}, assembly_mismatch_ok="
                     f"{mismatch_ok}\n  排查:share_data 的公共前缀/掩码/"
-                    "position_ids 构造,或 tokenizer 版本漂移。", flush=True)
+                    "position_ids 构造,或 tokenizer 版本漂移。")
+                print("\n".join(msg_lines), flush=True)
                 sys.exit(2)
             return dict(report, bf16_warn=bf16_warn)
     except RefBaselineDriftError as e:
@@ -545,7 +577,8 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
         # cuda 上的 bf16 粗筛那一处传了 `check_drift=False`(工单 05 S2),
         # 不会触发这条异常。
         report = dict(PASS=False, stage="ref_forward_drift", error=str(e),
-                      ref_inst_ce_drift_tol=REF_INST_CE_DRIFT_TOL)
+                      ref_inst_ce_drift_tol=REF_INST_CE_DRIFT_TOL,
+                      rule=args.align_rule, rel_tol=args.align_rel_tol)
         (out / "ALIGN_CHECK.json").write_text(
             json.dumps(report, indent=1, ensure_ascii=False))
         print(json.dumps(report, indent=1), flush=True)
@@ -623,6 +656,20 @@ def main():
                     help="对齐检查逐行 ce 最大绝对差门槛(spec 9)")
     ap.add_argument("--align-events", type=int, default=6,
                     help="对齐检查抽的 val 事件数(spec 9)")
+    ap.add_argument("--align-tok-tol", type=float, default=3e-4,
+                    help="对齐检查逐 token ce 最大绝对差门槛(spec 9)")
+    ap.add_argument("--align-bf16-mean-tol", type=float, default=2e-2,
+                    help="对齐检查 bf16 粗筛平均绝对差门槛(spec 9)")
+    ap.add_argument("--align-bf16-max-tol", type=float, default=1e-1,
+                    help="对齐检查 bf16 粗筛最大绝对差门槛(spec 9)")
+    ap.add_argument("--align-baseline-factor", type=float, default=3.0,
+                    help="基线告警倍数:逐行最大差超过基线自身差(单行补齐"
+                         "基线与整批的差)的这个倍数就告警(spec 9)")
+    ap.add_argument("--align-rule", default="abs", choices=["abs", "rel", "both"],
+                    help="对齐判据:abs=逐行/逐token 绝对差(现状),"
+                         "rel=相对差,both=两者同时成立(spec 9)")
+    ap.add_argument("--align-rel-tol", type=float, default=1e-5,
+                    help="对齐检查相对差门槛,配合 --align-rule rel/both(spec 9)")
     lora_util.add_args(ap)
     args = ap.parse_args()
     lr = lora_util.resolve_lr(args, train_causal_callgen.FULL_LR)
@@ -737,7 +784,8 @@ def main():
         attn_impl=args.attn_impl, seed=SEED, device=dev,
         readonly_env=args.readonly_env, align_pass=align_rep["PASS"],
         align_maxdiff=align_rep["max_abs_diff"],
-        align_bf16_warn=bool(align_rep["bf16_warn"]))
+        align_bf16_warn=bool(align_rep["bf16_warn"]),
+        align_rule=args.align_rule)
     if args.mode == "cparam":
         start_kw["assembly_mismatch_train"] = tr_counts["assembly_mismatch"]
         start_kw["assembly_mismatch_val"] = ev_counts["assembly_mismatch"]
