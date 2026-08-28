@@ -105,3 +105,13 @@ ctool 冒烟在 H100 上 `--bs 4 --accum 2` 爆显存或峰值超过 84 GiB（�
 工单 01 一轮过评审，分支 ticket/2026-08-28-wave1/T01（base 2e61f5f，head d48c287）合并为 c4f900b；两环境 test_share_data 各 21 个测试 OK，mbert-env import share_data 退出码 0；share_data.py 465 行、tests/test_share_data.py 484 行，顶层 import 只有 json/random/sys/pathlib/torch。工单 01 记 resolved，工单 02/03 claimed（2216c44），第二波 workflow 已发射（wf_378f118f-079）。实现者报的两个与本轮无关的既有测试失败：test_splice_replay（仓库记忆记过）、test_no_env_reads_default_preset（预设那批，未深查）。
 
 8-28-assistant 核对（HEAD 2216c44，登录机干净 shell，2026-08-28 09:5x）：`tests/test_preset.py:460` 的 `test_no_env_reads_default_preset` 单跑在系统 python3（3.10.12）和 cprobe-env 下都 OK；整个 `tests.test_preset` 两环境各 39 个测试 OK；系统 python3 全量 discover 356 个测试，1 个 error（`test_splice_replay` 的 import，仓库记忆里那条），16 个 skip，没有失败。这条测试的前提是环境变量 `NEW1_PRESET_JSON` 缺席（`tests/test_preset.py:455-460`），测试文件最后一次改动是 bd9a3d5（预设那批，早于第一波的 base 2e61f5f），第一波只新增了 share_data.py 和 tests/test_share_data.py。实现者那边失败的具体输出我没有看到。
+
+### 2026-08-28 第二波（工单 02、03）收账
+
+第二波 T02（0 轮修复，479b887）与 T03（2 轮修复，312038d）合并为 12c4a2b，收账提交 10f1d12。复核数字：selfcheck 76 任务就位；cprobe-env 下 test_share_trainer / test_ctool_readpos / test_share_data / test_cparam_assembly / test_lora_merge 共 Ran 58 tests OK（232 秒）；mbert-env import eval_tool / eval_mbert_call 都 ok；train_causal_share.py 788 行，heartbeat.emit 与 sdpa_kernel 各 3 处；diff 2216c44..12c4a2b 七个文件 +1,583/−39。T03 遗留两条 minor（ALIGN_CHECK.json 多一个 bf16_warn 诊断键；断言分支没测到），实现者的手算逐 token CE 已交 assistant-2 复核。GPU 阶段正在发射：ks828b06 smoke 档三格上 H200 3/4/5；速度档三个 run（b16k / b24k / b16k_es）上 H100 0/1/2，run_id ks828b06_gptoss_cgen_speed_*。
+
+8-28-assistant 核对（13:05）：HEAD 10f1d12；`git diff --stat 2216c44 12c4a2b` 七个文件 +1,583/−39（eval_tool.py 11、train_causal_callgen.py 22、train_causal_share.py 788、train_causal_tool.py 55、run.py 57、tests/test_ctool_readpos.py 265、tests/test_share_trainer.py 424）；train_causal_share.py 788 行，heartbeat.emit 3 处、sdpa_kernel 3 处。`run.py gpu-jobs watch` 在 13:04:50 的采样里台账为空（六个 GPU run 那时还没登记，或按冒烟规矩不登记）。
+
+## 决定 19
+
+8-28-assistant-2 对训练器的只读审查（无「必须改」、7 条建议）按这样处理——S1（末层隐状态改用 model.model(...).last_hidden_state 过 lm_head，不用 output_hidden_states）、S2（bf16 粗筛那遍关掉参照路径的漂移自检，fp32 保留）、S3（backward 移出 autocast）、S5（对齐候选长度筛取 min(2048, max_len)）、S6（参照路径先释放 logits 再调 inst_ce）加工单 03 的两条 minor（F2 去掉 ALIGN_CHECK.json 多出的 bf16_warn 键；N2 补断言分支测试）合成工单 05，第三波 workflow 已发射（45c881e）；S4（每个事件在主线程造 [L,L] 掩码约 0.1 到 0.3 秒一次更新，估算没量）等速度档的 ips 出来再定；S7（--mem-probe 全集用 ro=None，偏保守）不改。已经在发射的六个 GPU run 不撤：S2 若触发会在开训前几分钟 exit(2)，损失小；不触发则数字有效（S1/S3/S5/S6 都不改数值）。 / 理由：审查没有必须改项，先让冒烟出数；修正走工单保留评审记录。 / 依据：assistant-2 的审查（行号按 12c4a2b 的 train_causal_share.py：S1 133-136、S2 429-430 与 331-338、S3 708-710、S5 268、S6 319-331）。
