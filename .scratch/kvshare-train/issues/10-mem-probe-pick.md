@@ -1,6 +1,6 @@
 # 10 显存探针三种挑块方式：`--mem-probe-pick {tokens,cost,loop}`（默认 `cost`），探针前后恢复随机数状态
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: （无）
 Spec: `.scratch/kvshare-train/spec.md` 16.5（做法与字段）、16.9（测试）、16.10 #31 #32；机理依据 `.scratch/kvshare-train/design-attention.md` 8.6 节。改动只在 `pipeline/train/train_causal_share.py`（`run_mem_probe` 第 234 到 302 行、训练循环第 760 到 764 行、参数在 `--mem-probe` 之后加）、`pipeline/train/share_data.py`（加 `epoch_minibatches`）、`tests/test_share_trainer.py`、`tests/test_share_data.py`。不改 `run.py`、不改文档。
 
@@ -35,3 +35,7 @@ Spec: `.scratch/kvshare-train/spec.md` 16.5（做法与字段）、16.9（测试
 - `grep -n "mem_probe_summary\|get_rng_state\|def _peak_gb" pipeline/train/train_causal_share.py` 三个都命中。
 - `--mem-probe-pick tokens` 的两条事件与改前字段兼容（旧键都在）。
 - 不改 `run.py`。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave5 实现 0 轮修复过评审，分支 `ticket/2026-08-28-wave5/T10`（base `07907db`，head `e272ffd`），合并为 `12b998c`，`train_causal_share.py` 的 `start_kw` 一处冲突手解（08 的 `gen_*` 三个键与 10 的 `mem_probe_pick` 都留）。收账补丁（决定 32，spec 16.5 在工单发射后改的）由主会话在合并后直接改代码：`_mem_probe_loop` 改成对 `_pick_cost_blocks` 挑出的三块各找所在更新组、同组只跑一次、每组一条 `mem_probe`（加 `group_of`、`group_idx`）、`mem_probe_summary` 取大者（加 `worst_group_of`）；每组之间 `reset_peak_memory_stats` 与 `zero_grad(set_to_none=True)`。实现者 concern「峰值全为 0.0（CPU 真值）时 `worst_kind` 停在 None」一并修：三种模式的比较改成 `worst_kind is None or peak > worst_gb`（并列取第一块）。另两条 concern 记录不改：(c) 端到端 smoke 用例里 6 个事件太少、cost 三块落在同一块（`same_as` 链路走到，三块互不相同由 (a) 手造数据覆盖）；worktree 里到 NFS 的两个软链是实现者临时补建的。cannotVerify：`_peak_gb` 的 cuda 分支与 cost/loop 在真实 GPU 上的数值要等 16.8 的冒烟。补丁后 `tests.test_mem_probe_pick` 等四个新文件 30 个用例 OK。新测试 `tests/test_mem_probe_pick.py`。

@@ -1,6 +1,6 @@
 # 07 评测端超长事件的三种处理：三个评测脚本加 `--overlong {left,skip,drop-event}`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: （无；第二轮起点 HEAD 7668166 之后）
 Spec: `.scratch/kvshare-train/spec.md` 16.2（判据）、16.9（测试）、16.10 #28。改动只在 `pipeline/train/share_data.py`（抽一个函数）、`pipeline/train/train_causal_tool.py`（改调那个函数）、`pipeline/eval/eval_causal_call.py`、`pipeline/eval/eval_causal_param.py`、`pipeline/eval/eval_tool.py`、新测试 `tests/test_eval_overlong.py`。不改 `train_causal_share.py`、不改 `run.py`、不改 skill 文档（文档归工单 12）。
 
@@ -37,3 +37,7 @@ Spec: `.scratch/kvshare-train/spec.md` 16.2（判据）、16.9（测试）、16.
 - 三个评测脚本 `--help` 都列出 `--overlong`，默认 `left`。
 - 不加 `--overlong` 时三个脚本的行为与改前逐字段相同（报告只多了 `overlong_mode` 与计数键）。
 - `python3 run.py selfcheck` 通过（不改注册表也要跑一遍）。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave5 实现 1 轮修复过评审，分支 `ticket/2026-08-28-wave5/T07`（base `07907db`，head `eadb3f8`），合并为 `df14ccd`（无冲突）。评审 minors 两条：F4 `score_causal` 返回值从二元组改成三元组 `(out, excluded_idx, counts)`（多出的 `counts` 带 `n_oow / n_skipped_bounds / n_dropped_events / n_dropped_bounds` 进报告，主会话接受）；N1 `ev_row_idx` 的构建在 `--self-fire` 下成了不被使用的死计算（O(len(rows))，不影响输出，记遗留）。实现者的五条裁决主会话全部接受：`select_keys` 的 `keys` 参数是 `dict[key] -> list[候选行下标]`，只判「候选行是否全部被 ctool 剔除」，触发点在剔除候选行之后由主流程从剩余行里算（`eval_causal_call.py` 第 587 到 594 行 `cand_idx`，符合 spec 16.2 衔接段）；`.meta.json` 多写四个计数；REPLAY_REPORT 的 `overlong_mode` 与计数固定取 test 堆；`--overlong` 对 val 堆（拟温度、扫 θ）同样生效；改了 `tests/test_ctool_readpos.py` 两处调用点。收账补丁清单第 1 条（tokenizer 与 `max_len` 提前到 `--limit` 之前）核过：主路径 `excluded_rows` 在第 587 行、tokenizer 第 612 行、`select_keys` 第 640 行、`--limit` 第 648 行，顺序对；第 420 行的 `--limit` 是 fire_head 旧路径，不在范围内。

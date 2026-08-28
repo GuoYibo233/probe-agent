@@ -1,6 +1,6 @@
 # 08 新训练器加回生成式评估：`--gen-eval N`（默认 200）与 `--gen-bs`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: （无）
 Spec: `.scratch/kvshare-train/spec.md` 16.3（做法）、16.9（测试）、16.10 #29 #30。改动只在 `pipeline/train/train_causal_share.py`、`pipeline/train/share_data.py`（行元组加第 6 位）、`tests/test_share_trainer.py`、`tests/test_share_data.py`（手造行元组补第 6 位）。不改旧脚本、不改 `run.py`、不改文档。
 
@@ -24,3 +24,7 @@ Spec: `.scratch/kvshare-train/spec.md` 16.3（做法）、16.9（测试）、16.
 - `grep -n "gen_eval\|val_exact_" pipeline/train/train_causal_share.py` 命中；`grep -n "def eval_gen" pipeline/train/train_causal_share.py` 零命中（不许复制旧函数）。
 - 小模型 CPU 上 `--smoke --max-events 6 --gen-eval 3 --gen-bs 2 --device cpu` 的 `train_log.jsonl` 里 `eval` 事件带三个新键。
 - 不改 `run.py`、不改旧脚本。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave5 实现 0 轮修复过评审，分支 `ticket/2026-08-28-wave5/T08`（base `07907db`，head `b8a31f2`），合并为 `3d17e3f`（无冲突）。实现者的一条 concern：工单第 2 条写 `start_kw` 加两个键、第 5 条写三个键（加 `gen_eval_at`），按第 5 条实现了三个键——与 spec 16.3（321d8bd 之后）一致，主会话接受。新测试 `tests/test_share_gen_eval.py`。

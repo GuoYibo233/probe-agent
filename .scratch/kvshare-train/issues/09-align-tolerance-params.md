@@ -1,6 +1,6 @@
 # 09 对齐检查的门槛全部参数化，加相对判据 `--align-rule {abs,rel,both}`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: （无）
 Spec: `.scratch/kvshare-train/spec.md` 16.4（判据与键名）、16.9（测试）。改动只在 `pipeline/train/train_causal_share.py`（对齐检查段，第 78 到 90 行的常量与第 434 到 570 行的 `run_align_check`、参数在 `--align-events` 之后加）、`pipeline/train/train_causal_tool.py`（对齐检查函数与参数）、`tests/test_share_trainer.py`、`tests/test_ctool_readpos.py`。不改 `share_data.py`、不改 `run.py`、不改文档。
 
@@ -26,3 +26,7 @@ Spec: `.scratch/kvshare-train/spec.md` 16.4（判据与键名）、16.9（测试
 - `grep -n "TOK_DIFF_TOL\|BF16_MEAN_TOL\|BF16_MAX_TOL" pipeline/train/train_causal_share.py` 零命中。
 - `grep -n "rel_max_abs_diff" pipeline/train/train_causal_share.py` 命中；`grep -n "hidden_scale\|rel_maxdiff_hidden" pipeline/train/train_causal_tool.py` 零命中（不许起第二个名）。
 - 不传新参数时两个脚本的判定与改前相同（默认值就是原常量）。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave5 实现 0 轮修复过评审，分支 `ticket/2026-08-28-wave5/T09`（base `07907db`，head `ebbf4e2`），合并为 `d1642bb`（无冲突）。实现者 concern：`test_baseline_factor_zero` 在小模型 fp32 CPU 上两条路径逐行 ce 的差恰好是 0.0，`--align-baseline-factor 0` 时 `baseline_warn` 实测 False，用例按工单指示退而断言 `baseline_factor` 键忠实记录传入值；`baseline_warn=True` 的分支代码在但没被这批数据执行到。主会话接受（工单里预留的退路）。评审 cannotVerify：验收测试按实现者贴的两轮输出采信（第二轮软链 net 盘数据后 0 skip），主会话在合并后用 cprobe-env 重跑 `tests.test_align_rules` OK。新测试 `tests/test_align_rules.py`。

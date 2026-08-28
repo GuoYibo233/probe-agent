@@ -1,6 +1,6 @@
 # 11 学习率扫描的驱动与报表：`pipeline/train/sweep_lr.py`（`plan` / `report`），注册为 `sweep-lr`
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: （无）
 Spec: `.scratch/kvshare-train/spec.md` 16.6（两个子命令）、16.8（发射由主会话做，本工单不发射）、16.9（测试）。改动只在新文件 `pipeline/train/sweep_lr.py`、`run.py`（`TASKS` 加一条 `sweep-lr`）、新测试 `tests/test_sweep_lr.py`。不改训练器、不改文档（`MAP.md` 那一行归工单 12）。
 
@@ -22,3 +22,7 @@ gyb 裁决学习率要扫。规模（决定 27）：四个底座配置 × 三个
 - `python3 run.py selfcheck` 通过，任务数从 76 变 77。
 - `python3 run.py sweep-lr plan` 打印 12 行 `run.py launch` 命令；`python3 run.py sweep-lr plan --write /tmp/x.json` 落 JSON。
 - 不改训练器、不改文档。
+
+## Comments
+
+- 2026-08-28 plan-8-28 收账：wave5 实现 1 轮修复过评审，分支 `ticket/2026-08-28-wave5/T11`（base `073382c`，head `e0677fc`），合并为 `0ce99d4`（无冲突）。评审 cannotVerify 三条：`--write` JSON 字段工单是 9 个、spec 16.6 原文 6 个——spec 已改成 9 个（工单的写法）；`report` 对 `val_exact_*` 的解析要等工单 08 的真实日志联调——主会话在冒烟后跑一次 `sweep-lr report` 核；`tests.test_sweep_lr` 评审用系统 python3 跑的（6/6），主会话合并后用 cprobe-env 重跑 OK。实现者 concern：`report` 输出层的键名 `ep / frac / val_ce / val_exact` 是实现者自定，工单 12 按代码写文档。`python3 run.py selfcheck` 77 个任务；`python3 run.py sweep-lr plan` 出 12 行带 `--piece` 占位的命令（已核对）。
