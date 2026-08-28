@@ -351,7 +351,7 @@ def _mem_probe_tokens(model, full_events, args, dev, log, amp, mask_dtype):
             n_tokens=b * l_pad, n_rows=n_rows, n_loss_pos=n_loss_pos,
             with_optimizer_state=True, n_backward=n_backward,
             optimizer_state_prebuilt=True)
-        if peak > worst_gb:
+        if worst_kind is None or peak > worst_gb:   # 峰值并列(CPU 全 0)取第一块
             worst_gb, worst_kind = peak, kind
     log(event="mem_probe_summary", pick="tokens", worst_gb=worst_gb,
         worst_kind=worst_kind, scope="full", n_events_considered=n_considered)
@@ -392,70 +392,88 @@ def _mem_probe_cost(model, tr_events, args, dev, log, amp, mask_dtype):
                 n_tokens=b * l_pad, n_rows=n_rows, n_loss_pos=n_loss_pos,
                 peak_mem_gb=peak, n_backward=2, with_optimizer_state=True,
                 optimizer_state_prebuilt=True, n_events=b, packed_len_max=l_pad)
-        if peak > worst_gb:
+        if worst_kind is None or peak > worst_gb:   # 峰值并列(CPU 全 0)取第一块
             worst_gb, worst_kind = peak, kind
     log(event="mem_probe_summary", pick="cost", worst_gb=worst_gb,
         worst_kind=worst_kind, scope="run", n_events_considered=n_considered)
 
 
 def _mem_probe_loop(model, opt, tr_events, args, dev, log, amp, mask_dtype):
-    """`loop` 挑块方式(spec 16.5):找到含损失位最多那一块的更新组(连续
-    `accum` 个逻辑小批,`n_g` 与训练循环同规则:末组不足 `accum` 时按实际
-    个数),照训练循环原样跑一次更新(`backward_logical_minibatch` 逐个逻辑
-    小批、`clip_grad_norm_`、lr 置 0 的 `opt.step()`),读峰值。调度器 `sch`
-    不动。"""
+    """`loop` 挑块方式(spec 16.5,决定 32):对 `cost` 挑出的三块各找到它所在
+    的更新组(连续 `accum` 个逻辑小批,`n_g` 与训练循环同规则:末组不足
+    `accum` 时按实际个数),每组照训练循环原样跑一次更新
+    (`backward_logical_minibatch` 逐个逻辑小批、`clip_grad_norm_`、lr 置 0 的
+    `opt.step()`),读峰值,取三组的大者;同一组只跑一次。调度器 `sch` 不动。
+
+    只跑「含损失位最多块的那一组」不够(design-attention.md 第九节,
+    8-28-assistant-2 核):epoch 0 的真峰块在第 490 组、损失位最多的块在第
+    475 组,不开检查点的配置上只跑后者比真峰低约 6%。"""
     minibatches, mb_blocks = _enum_run_blocks(tr_events, args)
     n_considered = len(tr_events)
-
-    best_mb_idx, best_loss_pos = 0, -1
-    for mb_idx, blocks in enumerate(mb_blocks):
-        for blk in blocks:
-            _n_rows, n_loss_pos = _block_stats(blk)
-            if n_loss_pos > best_loss_pos:
-                best_loss_pos = n_loss_pos
-                best_mb_idx = mb_idx
-
     M_ep = len(minibatches)
     accum = args.accum
-    group_start = (best_mb_idx // accum) * accum
-    group_end = min(group_start + accum, M_ep)
-    group_mb_idx = list(range(group_start, group_end))
-    n_g = len(group_mb_idx)
 
-    n_backward_total = 0
-    sum_rows = sum_loss_pos = total_events = 0
-    max_n_tokens = max_b = max_l_pad = 0
-    max_block_n_loss_pos = 0
-    for mb_idx in group_mb_idx:
-        mb_events = minibatches[mb_idx]
-        total_events += len(mb_events)
-        W = sum(row[5] for ev in mb_events for row in ev["rows"])
-        blocks = mb_blocks[mb_idx]
-        backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp)
+    # 块 -> 逻辑小批下标(按对象同一性,_pick_cost_blocks 返回的是原对象)
+    mb_of_block = {}
+    all_blocks = []
+    for mb_idx, blocks in enumerate(mb_blocks):
         for blk in blocks:
-            n_backward_total += 1
-            n_rows, n_loss_pos = _block_stats(blk)
-            sum_rows += n_rows
-            sum_loss_pos += n_loss_pos
-            max_block_n_loss_pos = max(max_block_n_loss_pos, n_loss_pos)
-            b = len(blk)
-            l_pad = _l_pad(blk)
-            n_tok = b * l_pad
-            if n_tok > max_n_tokens:
-                max_n_tokens, max_b, max_l_pad = n_tok, b, l_pad
+            mb_of_block[id(blk)] = mb_idx
+            all_blocks.append(blk)
+    # 组 -> 这一组是为哪几块跑的(kind 列表,顺序照 cost 三块的顺序)
+    groups = {}
+    for kind, blk in _pick_cost_blocks(all_blocks):
+        group_start = (mb_of_block[id(blk)] // accum) * accum
+        groups.setdefault(group_start, []).append(kind)
 
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    opt.step()                         # lr 已经是 0(骨架建状态那步置的)
-    peak = round(_peak_gb(dev), 3)
+    worst_gb, worst_kind, worst_group_of = 0.0, None, None
+    for gi, (group_start, kinds) in enumerate(sorted(groups.items())):
+        if dev.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats()   # 每组各自归零峰值计数器
+        group_end = min(group_start + accum, M_ep)
+        group_mb_idx = list(range(group_start, group_end))
+        n_g = len(group_mb_idx)
 
-    log(event="mem_probe", pick="loop", kind="loop_group", B=max_b,
-        L_pad=max_l_pad, n_tokens=max_n_tokens, n_rows=sum_rows,
-        n_loss_pos=sum_loss_pos, peak_mem_gb=peak, n_backward=n_backward_total,
-        with_optimizer_state=True, optimizer_state_prebuilt=True,
-        n_events=total_events, packed_len_max=max_l_pad,
-        n_blocks=n_backward_total, max_block_n_loss_pos=max_block_n_loss_pos)
-    log(event="mem_probe_summary", pick="loop", worst_gb=peak,
-        worst_kind="loop_group", scope="run", n_events_considered=n_considered)
+        n_backward_total = 0
+        sum_rows = sum_loss_pos = total_events = 0
+        max_n_tokens = max_b = max_l_pad = 0
+        max_block_n_loss_pos = 0
+        for mb_idx in group_mb_idx:
+            mb_events = minibatches[mb_idx]
+            total_events += len(mb_events)
+            W = sum(row[5] for ev in mb_events for row in ev["rows"])
+            blocks = mb_blocks[mb_idx]
+            backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp)
+            for blk in blocks:
+                n_backward_total += 1
+                n_rows, n_loss_pos = _block_stats(blk)
+                sum_rows += n_rows
+                sum_loss_pos += n_loss_pos
+                max_block_n_loss_pos = max(max_block_n_loss_pos, n_loss_pos)
+                b = len(blk)
+                l_pad = _l_pad(blk)
+                n_tok = b * l_pad
+                if n_tok > max_n_tokens:
+                    max_n_tokens, max_b, max_l_pad = n_tok, b, l_pad
+
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        opt.step()                     # lr 已经是 0(骨架建状态那步置的)
+        peak = round(_peak_gb(dev), 3)
+        opt.zero_grad(set_to_none=True)  # 下一组从"状态已建、梯度未生"开始
+        group_of = "+".join(kinds)
+
+        log(event="mem_probe", pick="loop", kind="loop_group", group_of=group_of,
+            group_idx=group_start // accum, B=max_b,
+            L_pad=max_l_pad, n_tokens=max_n_tokens, n_rows=sum_rows,
+            n_loss_pos=sum_loss_pos, peak_mem_gb=peak, n_backward=n_backward_total,
+            with_optimizer_state=True, optimizer_state_prebuilt=True,
+            n_events=total_events, packed_len_max=max_l_pad,
+            n_blocks=n_backward_total, max_block_n_loss_pos=max_block_n_loss_pos)
+        if worst_kind is None or peak > worst_gb:
+            worst_gb, worst_kind, worst_group_of = peak, "loop_group", group_of
+    log(event="mem_probe_summary", pick="loop", worst_gb=worst_gb,
+        worst_kind=worst_kind, worst_group_of=worst_group_of, scope="run",
+        n_events_considered=n_considered)
 
 
 def run_mem_probe(model, opt, tr_events, args, dev, log, amp, full_events=None):
