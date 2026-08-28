@@ -10,6 +10,49 @@
 > 旧阶段（2026-07 ~ 2026-08-02，隐藏状态探针投机执行工具调用线）的全部历史
 > 在 git 快照 commit `b1f5b9c` 及更早提交里，本文件不再回溯。
 
+## 2026-08-28 训练口径换成缓存复用训练器：上限 8192 超长整条丢弃、8 个事件一次更新、cgen/cparam 1 个 epoch，批次前缀 ks828
+
+- 触发：np821 十二格复盘（`plans/2026-08-28-plan.md` 第 12 到 14 节）。cgen / cparam
+  的逐行训练器把一个事件的每个切点当一条独立样本重算前缀，1.7B LoRA 一格在 Ada 上
+  要 98 小时；8 个 cgen / cparam run 的 val_ce 全在 epoch 0 最低，4 个 ctool run 三个
+  epoch 一路升；4096 的左截断在 train 上砍掉 6% 的前缀 token。
+- 决定（gyb，2026-08-28 第五轮逐步讨论，裁决原文在
+  `plans/2026-08-28-kvshare-draft.md` 第二节）：一个事件的全文只过一遍底座，每个切点的
+  目标段接在共享前缀后面算损失（`plans/2026-08-28-plan.md` 第 10.2 节思路一）；不再
+  截断任何样本，全文超上限的事件整条丢弃并计数，上限候选 8192 冒烟定；一次更新 8 个
+  事件（4 个事件一个逻辑小批 × 累积 2），三个格同口径；cgen / cparam 1 个 epoch、每
+  四分之一 epoch 评一次全量 val_ce，ctool 照旧 3 个 epoch；分词按公共前缀规则（每行照
+  旧办法分词，和全文 token 的最长公共前缀共享，尾巴加分隔串加目标串是目标段），新旧
+  训练器每行 token 序列逐位相同；ctool 的切点读取位置改成读跨过切点的空白 token；
+  学习率默认值不动，扫描留到冒烟之后。
+- 落地（当日，plan-8-28 会话按 gyb 授权自主实施，22 条自主决定编号记在
+  `.scratch/kvshare-train/decisions.md`，spec 与六张工单在同目录）：新训练器
+  `pipeline/train/train_causal_share.py`（`--mode cgen|cparam`）与数据模块
+  `pipeline/train/share_data.py`；`run.py` 的 `CELLS` / `TASKS` 里 cgen、cparam 两格改
+  指新脚本，旧的逐行训练器冻结为对齐参照，另挂 `train-cgen-rows` / `train-cparam-rows`
+  （产物不进矩阵）；注意力走 sdpa 的 mem-efficient 内核并显式钉死（有掩码时 flash
+  拒收、math 内核 L 9,100 要 148 GB、H100 默认落 cuDNN）；ctool 撤掉截断、读取位置
+  规则收在 `share_data.read_position`。默认值：三个格 `--max-len 8192`；新训练器
+  `--tok-budget 16384`；ctool `--bs 2 --accum 4`、`--align-tol 3e-4`（之前 1e-4，
+  np821 实跑一直传 3e-4）。新口径的 run 用批次前缀 `ks828`（`ks828b06` 这样的形状）。
+- 依据（数字在 `ops/runs.jsonl`，产物在 `pipeline/runs/smoke/ks828b06_*`）：对齐检查
+  fp32 逐行 loss 最大差 5.48e-6（6 个事件 154 行 2,877 个目标 token，容差 2e-5；
+  H200 上 cgen / cparam 的 smoke 各 5.48e-6 / 9.30e-6）；速度档
+  `ks828b06_gptoss_cgen_speed_b16k`（H100，450 个事件 20,641 行）累计每秒行数在
+  1,600 / 9,600 / 19,200 行处 185.6 / 189.5 / 184.1，对旧训练器同机同行数的
+  2.76 / 3.26 / 3.97（`np821b06_gptoss_cgen`），对旧稳态 10.6 到 11.6 是 16 倍；
+  训练显存峰值 60.59 GB（56.4 GiB，H100 93.10 GiB 余量 39%），最长事件 31.4 GB；预算
+  24576 慢 15% 且峰值 80.9 GB，expandable_segments 慢 3% 无增益。ctool：8192 × bs 4
+  在 H100 训练首批 OOM（进程 92.94 GiB），bs 2 峰值 56,859 MiB（nvidia-smi 采样）；
+  8192 上限丢弃 train 1 个事件、val 3 个，与 plan 第四节的统计表逐字相符。
+- 与旧记录的关系：np821 十二格是 4096 左截 / 32 个事件一次更新 / 3 个 epoch 的口径，
+  数字只在批内比；新口径的模型另起批次前缀。ctool 读取位置规则的改动让训练与离线
+  评测的位置和「全文一次分词」一致，活跑生成的 token 边界和离线分词可能不同，那是
+  另一个坑，没有解决。
+- 挂起（没有裁决）：评测端超长事件的处理（现在评测脚本从 `meta.json` 读 8192 当
+  左截长度）；学习率扫描；flex_attention；补齐浪费 28% 的装块优化；`--mem-probe`
+  探针低估真峰 6 到 10 GB 的修正（工单 06）。
+
 ## 2026-08-28 生成口径全线只有一套：预设 default（温度 1.0），活跑与对照同口径
 
 - 触发：np821 12 格评测收官（`plans/2026-08-26-np821-results.md`）之后，gyb 要把
