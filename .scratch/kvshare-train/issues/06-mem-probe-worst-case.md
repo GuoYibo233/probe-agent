@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Blocked by: 05
-Spec: `.scratch/kvshare-train/spec.md` 第 10 节「最坏块」那一条（本工单同步改它的措辞）；改动只在 `pipeline/train/train_causal_share.py`、`tests/test_share_trainer.py` 与 spec 第 10 节那一段。
+Spec: `.scratch/kvshare-train/spec.md` 第 10 节「最坏块」那一条（本工单同步改它的措辞）；改动只在 `pipeline/train/train_causal_share.py`、`pipeline/train/train_causal_tool.py`（只加日志字段）、`tests/test_share_trainer.py`、`tests/test_ctool_readpos.py` 与 spec 第 10 节那一段。
 
 ## 背景（实测）
 
@@ -12,7 +12,8 @@ ks828b06 速度档（H100，`--tok-budget 16384`）：`mem_probe` 最满块（B=
 
 1. `run_mem_probe`（`train_causal_share.py` 第 220 到 245 行附近）改成：先 `opt.zero_grad(set_to_none=False)` 并做一次 lr 置 0 的 `opt.step()` 把优化器状态建好（`torch.cuda.reset_peak_memory_stats()` 在这之后）；然后对最满块连做两次「前向 + 反向」，中间不 `zero_grad`（梯度累积）；第二次反向之后读 `max_memory_allocated` 作为 `fullest_block` 的 `peak_mem_gb`；最长事件那一块同样在状态已建、梯度未清的条件下做一次前向加反向再读峰值；最后 `opt.state.clear()`、恢复 lr、`opt.zero_grad(set_to_none=True)`。`mem_probe` 事件字段加 `n_backward`（1 或 2）与 `optimizer_state_prebuilt: true`。
 2. spec 第 10 节「最坏块」那一条的做法改成上面这段（只改那一条）。
-3. `tests/test_share_trainer.py` 加一个小模型 CPU 用例：调用 `run_mem_probe` 后 `opt.state` 为空、各 param_group 的 lr 恢复原值、所有参数的 `.grad` 为 None，并且返回/记录的两条 `mem_probe` 事件字段齐全（CPU 上 `peak_mem_gb` 允许为 0）。
+3. `pipeline/train/train_causal_tool.py` 的 `step` 与 `eval` 事件加 `peak_mem_gb`（cuda 上 `torch.cuda.max_memory_allocated() / 1e9`，取完 `reset_peak_memory_stats()`；CPU 上写 0.0），和新训练器同口径。理由：这一轮 ctool 的显存只能靠外部 nvidia-smi 采样，因为它自己不记。`tests/test_ctool_readpos.py` 里补一条断言 `step` 事件含这个键（CPU 上跑到 step 的现有用例如果没有，就只测写日志的那个函数）。
+4. `tests/test_share_trainer.py` 加一个小模型 CPU 用例：调用 `run_mem_probe` 后 `opt.state` 为空、各 param_group 的 lr 恢复原值、所有参数的 `.grad` 为 None，并且返回/记录的两条 `mem_probe` 事件字段齐全（CPU 上 `peak_mem_gb` 允许为 0）。
 
 ## 验收
 
