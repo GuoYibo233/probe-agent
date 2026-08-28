@@ -94,12 +94,12 @@ h2.part{margin-top:3.5rem;padding-top:1.5rem;border-top:2px solid var(--line);}
   <span>代码终点 <b>b3875a7</b>（之后只有台账与本汇报）</span>
   <span>工单 <b>07 到 12 共 6 张，全部 resolved</b></span>
   <span>自主决定 <b>26 到 40 共 15 条</b></span>
-  <span>GPU run <b>冒烟 7 个、评测验证 9 个、扫描 12 个，全部销号</b></span>
+  <span>GPU run <b>冒烟 7 个、评测验证 9 个、扫描 14 个，全部销号</b></span>
 </div>
 
 <h2>一句话结果</h2>
 <div class="summary">
-  <div><div class="k">学习率扫描（cgen，1 个 epoch，val_ce 最低的档）</div><div class="v">全参 1e-5，LoRA 5e-4</div><div class="s">四个底座配置各三档，12 个 run 全部跑完</div></div>
+  <div><div class="k">学习率扫描（cgen，1 个 epoch，val_ce 最低的档）</div><div class="v">全参 1e-5，LoRA 5e-4</div><div class="s">四个底座配置各三档加全参补扫一档，14 个 run 全部跑完；四个最低点两侧都有更高的数</div></div>
   <div><div class="k">显存探针 cost 模式对整程 step 峰值</div><div class="v">差 0.001 到 0.42 GB</div><div class="s">l17 81.654 对 81.655；b17 102.29 对 102.336；l4 32.964 对 33.088；b06 22.005 对 22.427（0.001% 到 1.9%）</div></div>
   <div><div class="k">四个可切换开关</div><div class="v">全部落地</div><div class="s">--overlong（3 值）、--gen-eval/--gen-eval-at、--align-rule/--align-rel-tol、--mem-probe-pick（3 值）</div></div>
   <div><div class="k">全量单测 / 终审</div><div class="v">479 OK</div><div class="s">cprobe-env 全量 discover，13 skip、0 error（系统 python 那套恒剩 test_splice_replay 1 error，老毛病）；终审 3 条挡合并已修并复审</div></div>
@@ -125,9 +125,11 @@ h2.part{margin-top:3.5rem;padding-top:1.5rem;border-top:2px solid var(--line);}
 <p><b>学习率扫描</b>（cgen 格，train 4,126 个事件 186,415 行，val 115,019 行，每 epoch 4 个评估点，epoch 末另做 200 行 greedy 生成报 <code>val_exact_call</code>；来源 <code>pipeline/runs/sweep/&lt;run_id&gt;/train_log.jsonl</code>，表由 <code>python3 run.py sweep-lr report</code> 生成；<code>*</code> 是同配置三档里 val_ce 最低的）：</p>
 <div class="tablewrap"><table>
 <tr><th>run</th><th class="n">lr</th><th class="n">val_ce@¼</th><th class="n">@½</th><th class="n">@¾</th><th class="n">@末</th><th class="n">best</th><th class="n">val_exact_call（末）</th><th class="n">整程峰值 GB</th><th class="n">探针 GB</th><th class="n">wall s</th></tr>
+<tr><td>ks828b06_gptoss_cgen_lr2e-6（0.6B 全参，Ada 开检查点；决定 40 补扫）</td><td class="n">2e-6</td><td class="n">0.2859</td><td class="n">0.2367</td><td class="n">0.2237</td><td class="n">0.2157</td><td class="n">0.2157</td><td class="n">0.545</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3494.7</td></tr>
 <tr><td>*ks828b06_gptoss_cgen_lr1e-5（0.6B 全参，Ada 开检查点）</td><td class="n">1e-5</td><td class="n">0.2358</td><td class="n">0.2080</td><td class="n">0.1844</td><td class="n">0.1730</td><td class="n">0.1730</td><td class="n">0.63</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3654.8</td></tr>
 <tr><td>ks828b06_gptoss_cgen_lr5e-5</td><td class="n">5e-5</td><td class="n">0.2988</td><td class="n">0.2316</td><td class="n">0.2122</td><td class="n">0.1857</td><td class="n">0.1857</td><td class="n">0.615</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3678.9</td></tr>
 <tr><td>ks828b06_gptoss_cgen_lr2e-4</td><td class="n">2e-4</td><td class="n">0.4921</td><td class="n">0.3555</td><td class="n">0.2999</td><td class="n">0.2470</td><td class="n">0.2470</td><td class="n">0.49</td><td class="n">22.427</td><td class="n">22.005</td><td class="n">3617.9</td></tr>
+<tr><td>ks828b17_gptoss_cgen_lr2e-6（1.7B 全参，H200 不开；决定 40 补扫）</td><td class="n">2e-6</td><td class="n">0.2644</td><td class="n">0.2249</td><td class="n">0.2149</td><td class="n">0.2046</td><td class="n">0.2046</td><td class="n">0.55</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2299.3</td></tr>
 <tr><td>*ks828b17_gptoss_cgen_lr1e-5（1.7B 全参，H200 不开）</td><td class="n">1e-5</td><td class="n">0.2161</td><td class="n">0.1880</td><td class="n">0.1737</td><td class="n">0.1636</td><td class="n">0.1636</td><td class="n">0.65</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2789.4</td></tr>
 <tr><td>ks828b17_gptoss_cgen_lr5e-5</td><td class="n">5e-5</td><td class="n">0.2815</td><td class="n">0.2198</td><td class="n">0.1972</td><td class="n">0.1750</td><td class="n">0.1750</td><td class="n">0.595</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2820.8</td></tr>
 <tr><td>ks828b17_gptoss_cgen_lr2e-4</td><td class="n">2e-4</td><td class="n">0.4505</td><td class="n">0.3229</td><td class="n">0.2935</td><td class="n">0.2269</td><td class="n">0.2269</td><td class="n">0.54</td><td class="n">102.336</td><td class="n">102.29</td><td class="n">2830.4</td></tr>
@@ -138,7 +140,7 @@ h2.part{margin-top:3.5rem;padding-top:1.5rem;border-top:2px solid var(--line);}
 <tr><td>*ks828l4_gptoss_cgen_lr5e-4</td><td class="n">5e-4</td><td class="n">0.2137</td><td class="n">0.1944</td><td class="n">0.1750</td><td class="n">0.1547</td><td class="n">0.1547</td><td class="n">0.655</td><td class="n">33.088</td><td class="n">32.964</td><td class="n">7284.8</td></tr>
 <tr><td>ks828l4_gptoss_cgen_lr2e-3</td><td class="n">2e-3</td><td class="n">2.6527</td><td class="n">0.9333</td><td class="n">0.7557</td><td class="n">0.6510</td><td class="n">0.6510</td><td class="n">0.335</td><td class="n">33.088</td><td class="n">32.964</td><td class="n">7211.8</td></tr>
 </table></div>
-<p>12 个 run 的最好点都在 epoch 末（第 4 个评估点），四个评估点的 val_ce 没有一处比前一点上升。训练部分的秒数与速度（末条 step 的 <code>train_s</code> 与 <code>ips</code>）：b06 三个 2332 到 2351 秒、78.3 到 78.9 行每秒（Ada，开检查点）；b17 1205 到 1237 秒、148.9 到 152.8（H200）；l17 1319 到 1360 秒、135.3 到 139.6（H200）；l4 3885 到 3992 秒、46.1 到 47.4（H100，开检查点）。整程墙钟里训练之外的部分（装载、对齐检查、探针、四次全量评估、epoch 末生成、存最好版本）：b06 约 22 分钟、b17 约 26、l17 约 26 到 29、l4 约 52 到 57。l4 lr2e-3 的 step 日志：loss（每 10 次更新的平均）第 30 次 0.4978，第 70 次 4.2674，第 130 次 3.4479，第 250 次 1.0461，末条 0.5433；grad_norm 最大 77.70 在第 110 次；同卡的 lr5e-4 与 lr1e-4 从第 30 次起 loss 在 0.12 到 0.36 之间。l17 lr2e-3 的 grad_norm 最大 32.30 在第 220 次，末条 0.88。六个全参 run 各有一条 grad_norm 超过各自中位 5 倍（第 10 次那一条；b17 lr2e-4 是第 30 次），LoRA 低两档的四个 run（l17 与 l4 的 1e-4、5e-4）一条都没有。对齐检查：b06 三个 5.007e-6（Ada），b17 与 l17 六个 9.06e-6，l4 三个 1.5378e-5。生成 200 行的秒数（epoch 末一次）：b06 55 到 67，b17 270 到 292，l17 257 到 306，l4 216 到 342。补扫（决定 40）：两个全参配置的最低点都在网格下端，b06 与 b17 各加 lr2e-6 一个 run（<code>ks828b06_gptoss_cgen_lr2e-6</code>、<code>ks828b17_gptoss_cgen_lr2e-6</code>），跑完补进这张表<span id="r2-ext-note"></span>。</p>
+<p>12 个 run 的最好点都在 epoch 末（第 4 个评估点），四个评估点的 val_ce 没有一处比前一点上升。训练部分的秒数与速度（末条 step 的 <code>train_s</code> 与 <code>ips</code>）：b06 三个 2332 到 2351 秒、78.3 到 78.9 行每秒（Ada，开检查点）；b17 1205 到 1237 秒、148.9 到 152.8（H200）；l17 1319 到 1360 秒、135.3 到 139.6（H200）；l4 3885 到 3992 秒、46.1 到 47.4（H100，开检查点）。整程墙钟里训练之外的部分（装载、对齐检查、探针、四次全量评估、epoch 末生成、存最好版本）：b06 约 22 分钟、b17 约 26、l17 约 26 到 29、l4 约 52 到 57。l4 lr2e-3 的 step 日志：loss（每 10 次更新的平均）第 30 次 0.4978，第 70 次 4.2674，第 130 次 3.4479，第 250 次 1.0461，末条 0.5433；grad_norm 最大 77.70 在第 110 次；同卡的 lr5e-4 与 lr1e-4 从第 30 次起 loss 在 0.12 到 0.36 之间。l17 lr2e-3 的 grad_norm 最大 32.30 在第 220 次，末条 0.88。六个全参 run 各有一条 grad_norm 超过各自中位 5 倍（第 10 次那一条；b17 lr2e-4 是第 30 次），LoRA 低两档的四个 run（l17 与 l4 的 1e-4、5e-4）一条都没有。对齐检查：b06 三个 5.007e-6（Ada），b17 与 l17 六个 9.06e-6，l4 三个 1.5378e-5。生成 200 行的秒数（epoch 末一次）：b06 55 到 67，b17 270 到 292，l17 257 到 306，l4 216 到 342。补扫（决定 40）：两个全参配置的最低点都在网格下端，b06 与 b17 各加 lr2e-6 一个 run，epoch 末 val_ce 0.2157（b06）与 0.2046（b17），都高于各自 1e-5 的 0.1730 与 0.1636；表里已含这两行，14 个 run。</p>
 <p><b>冒烟七个</b>（<code>--smoke</code> 40 / 16 个事件，来源各 run 目录与 <code>verify/smoke_check.py</code>）：</p>
 <div class="tablewrap"><table>
 <tr><th>run</th><th>卡 / 配置</th><th class="n">对齐 fp32 逐行</th><th class="n">探针（模式）GB</th><th class="n">预期 GB（design 9.x）</th><th class="n">生成 81 行 s</th><th class="n">wall s</th></tr>
@@ -166,7 +168,7 @@ h2.part{margin-top:3.5rem;padding-top:1.5rem;border-top:2px solid var(--line);}
 </div>
 <div class="reading">
 <div class="eyebrow">下面是我的解读</div>
-<p>学习率：两个全参配置都是网格最低档 1e-5 最好，而且四个评估点一路在降、末两点仍在降（b06 差 0.011、b17 差 0.010），最好点落在网格边上——按助手 2 的规则，全参要往低的方向再扫一档才知道最低点在哪（决定 40 补的 2e-6 两个 run 就是这一档）；两个 LoRA 配置都是中间档 5e-4 最好，两边各高 0.018 / 0.049（l17）和 0.012 / 0.50（l4），最高档 2e-3 在 4B 上第 60 到 130 次更新之间 loss 升到 2.3 到 4.3 后只回到 0.65。val_exact_call 的排序在四个配置里都和 val_ce 的排序一致。这一轮只有 1 个 epoch、学习率线性降到 0，epoch 数变了排序会不会变没有数据。代码默认值（全参 1e-5、LoRA 2e-4）和扫描的最好档：全参正好是默认值，LoRA 的最好档比默认值高 2.5 倍。</p>
+<p>学习率：两个全参配置都是网格最低档 1e-5 最好，而且四个评估点一路在降、末两点仍在降（b06 差 0.011、b17 差 0.010），最好点落在网格边上——按助手 2 的规则往低补了一档 2e-6（决定 40），两个配置的 2e-6 都比 1e-5 高（b06 0.2157 对 0.1730，b17 0.2046 对 0.1636），所以全参的最低点是 1e-5、两侧都有数；两个 LoRA 配置都是中间档 5e-4 最好，两边各高 0.018 / 0.049（l17）和 0.012 / 0.50（l4），最高档 2e-3 在 4B 上第 60 到 130 次更新之间 loss 升到 2.3 到 4.3 后只回到 0.65。val_exact_call 的排序在四个配置里都和 val_ce 的排序一致。这一轮只有 1 个 epoch、学习率线性降到 0，epoch 数变了排序会不会变没有数据。代码默认值（全参 1e-5、LoRA 2e-4）和扫描的最好档：全参正好是默认值，LoRA 的最好档比默认值高 2.5 倍。</p>
 <p>探针：<code>cost</code> 模式的探针数与整程峰值差 0.001 到 0.42 GB（l17 0.001、b17 0.046、l4 0.124、b06 0.422；峰值那一步落在哪一块日志里没有记，「挑到的就是峰值块」是推断），助手 2 的显存模型（固定项加每 token 加每损失位）四个配置都在 ±2% 内；<code>tokens</code> 模式在 b17 上低 4 GB（98.25 对 102.34），因为它只按 token 数挑块、漏了损失位那一项。<code>loop</code> 在冒烟规模上和 <code>cost</code> 差 0.13 GB，全量上没有跑，助手 2 的判断是它给不出 <code>cost</code> 给不出的数。</p>
 <p>对齐容差：三个底座的 fp32 逐行差 5.48e-6 / 9.06e-6 / 1.54e-5 随层数与累加长度单调涨（助手 2 按 层数 × sqrt(中间维) 算是 1 / 1.41 / 2.29），同卡型逐位可复现，换卡型会动（b06 在 Ada 上 5.007e-6）；4B 离默认 2e-5 只有 23% 余量。这是给第七件（容差是自定值）的新事实。</p>
 </div>
@@ -209,7 +211,7 @@ h2.part{margin-top:3.5rem;padding-top:1.5rem;border-top:2px solid var(--line);}
 <h2>给 gyb 回头比较的清单</h2>
 <div class="ask">
 <ol>
-<li><b>学习率</b>：扫描表在上面，代码默认值没改（全参 1e-5、LoRA 2e-4）。可选：(a) 按训法把最低档写成新默认值（动 <code>FULL_LR</code> 与 <code>lora_util.DEFAULT_LR</code>、invariants、换批次前缀、补 TIMELINE）；(b) 默认值不动，每批发射时显式传 <code>--lr</code>；(c) 在最低档两侧再扫一档细化后再定。最低档落在网格边上的配置，助手 2 的建议是往那边再加一档。</li>
+<li><b>学习率</b>：扫描表在上面，代码默认值没改（全参 1e-5、LoRA 2e-4）。可选：(a) 按训法把最低档写成新默认值（动 <code>FULL_LR</code> 与 <code>lora_util.DEFAULT_LR</code>、invariants、换批次前缀、补 TIMELINE）；(b) 默认值不动，每批发射时显式传 <code>--lr</code>；(c) 在最低档两侧再扫更细的档后再定。补扫 2e-6 之后四个配置的最低档两侧都有更高的数（全参 2e-6 / 5e-5，LoRA 1e-4 / 2e-3），相邻档之间的比值是 4 到 5 倍。</li>
 <li><b>评测端超长</b>：<code>--overlong left|skip|drop-event</code>，三个评测脚本都有，默认 left（现状）。比较用的两份对照表在上面；重跑任一模式的命令：<code>python3 run.py show eval-ccall</code> 加 <code>--overlong &lt;mode&gt;</code>。矩阵只收 left（静默点 #35）。</li>
 <li><b>训练中的生成式评估</b>：<code>--gen-eval N --gen-eval-at last|all</code>，默认 200 / last。代价：200 行一次 b17 约 270 到 292 秒，b06 约 55 到 67 秒（Ada），l17 约 257 到 306 秒，l4 约 216 到 342 秒；四次都做每个 run 多两到三成。</li>
 <li><b>对齐容差</b>：五个门槛都成了参数（<code>--align-tol 2e-5、--align-tok-tol 3e-4、--align-bf16-mean-tol 2e-2、--align-bf16-max-tol 1e-1、--align-baseline-factor 3</code>），另有 <code>--align-rule abs|rel|both</code> 与 <code>--align-rel-tol 1e-5</code>；<code>ALIGN_CHECK.json</code> 不管用哪条规则都写全相对量，不用重跑就能比。新事实：差随底座单调涨、4B 只剩 23% 余量、换卡型会动。ctool 同样加了 <code>--align-rule</code>，判的是已有的 <code>reldiff_hidden / reldiff_logits</code>。</li>
