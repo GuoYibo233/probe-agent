@@ -6,8 +6,9 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `ks828b06_gptoss_cgen_smoke4` | 2026-08-28 23:42 | kvshare-train | `5abd3a0` | - | running | - | - |
-| `ks828l4_gptoss_cgen_smoke2` | 2026-08-28 23:41 | kvshare-train | `5abd3a0` | - | running | - | - |
+| `ks828b06_ovl_left_ctool` | 2026-08-28 23:59 | kvshare-train | `caf29de` | - | ok | overlong_mode=left n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7 | overlong=left 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=left, 四个计数全 0, n_events_test=7, chosen_theta 两档均 null |
+| `ks828b06_gptoss_cgen_smoke4` | 2026-08-28 23:42 | kvshare-train | `5abd3a0` | - | ok | align_max_abs_diff=5.4836e-06 worst_gb_tokens=15.836 step_peak_gb=13.849 best_val_ce=1.2917 val_exact_call=0.1728 gen_s=69.36 wall_s=663.31 | b06 cgen smoke4(H100, 全参+grad-ckpt, 探针 tokens): 对齐 PASS, 探针最满块 15.84 GB(预期 17.9, -11.5%), val_ce/val_exact_call 与不开检查点的 smoke2 逐位相同 |
+| `ks828l4_gptoss_cgen_smoke2` | 2026-08-28 23:41 | kvshare-train | `5abd3a0` | - | ok | align_max_abs_diff=1.5378e-05 worst_gb_tokens=28.822 step_peak_gb=33.185 best_val_ce=0.7443 val_exact_call=0.1975 gen_s=35.66 wall_s=1003.39 | l4 cgen smoke2(H100, LoRA+grad-ckpt, 探针 tokens, 修复 b5cee8d 之后): 零 Traceback, 对齐 PASS 1.5378e-5(与崩掉那次逐位相同), 探针最满块 28.82 GB(预期 38.1, -24%), step 峰值 33.2(含 save_merged 的 fp32 副本), 生成 81 行 35.7 s |
 | `ks828b06_gptoss_cgen_smoke3` | 2026-08-28 23:15 | kvshare-train | `35fd401` | - | ok | align_max_abs_diff=5.48e-06 worst_gb_loop=15.219 best_val_ce=1.2917 val_exact_call=0.1728 gen_s=68.4 wall_s=168.8 | b06 cgen smoke3(H100, 探针 loop 两组): 对齐 PASS, loop worst 15.22 GB(worst_group_of max_losspos_block+max_cost_block), 与 smoke2 的 val_ce/val_exact_call 逐位相同 |
 | `ks828b06_gptoss_cgen_smoke2` | 2026-08-28 23:14 | kvshare-train | `35fd401` | - | ok | align_max_abs_diff=5.48e-06 worst_gb_cost=15.345 best_val_ce=1.2917 val_exact_call=0.1728 gen_s=70.6 wall_s=158.8 | b06 cgen smoke2(H100, 探针 cost 三块): 对齐 PASS, cost worst 15.35 GB(max_tokens_block, scope=run 40 事件), 生成评估 81 行 70.6 s |
 | `ks828l4_gptoss_cgen_smoke` | 2026-08-28 23:13 | kvshare-train | `35fd401` | - | fail | align_max_abs_diff=1.54e-05 crashed=1 | 同一 run 的补记: status 改 fail(上一条 finish 误记 ok); 探针第一次反向 CheckpointError, 修复 b5cee8d |
@@ -90,19 +91,33 @@
 
 ## 逐条详情
 
+### `ks828b06_ovl_left_ctool`
+
+- **结论**：overlong=left 的 ctool 评测跑完(b06 冒烟产物, --limit 200): REPLAY_REPORT overlong_mode=left, 四个计数全 0, n_events_test=7, chosen_theta 两档均 null
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 23:59 → 2026-08-29 00:02
+- **代码**：`caf29de` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：overlong_mode=left n_oow=0 n_skipped_bounds=0 n_dropped_events=0 n_dropped_bounds=0 n_events_test=7
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_left_ctool_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong left --limit 200`
+
 ### `ks828b06_gptoss_cgen_smoke4`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 23:42 → 未收尾
+- **结论**：b06 cgen smoke4(H100, 全参+grad-ckpt, 探针 tokens): 对齐 PASS, 探针最满块 15.84 GB(预期 17.9, -11.5%), val_ce/val_exact_call 与不开检查点的 smoke2 逐位相同
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 23:42 → 2026-08-29 00:06
 - **代码**：`5abd3a0` (分支 main)
 - **机器**：tokyo108 GPU 1
+- **数字**：align_max_abs_diff=5.4836e-06 worst_gb_tokens=15.836 step_peak_gb=13.849 best_val_ce=1.2917 val_exact_call=0.1728 gen_s=69.36 wall_s=663.31
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_smoke4_t108g1.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --mem-probe --mem-probe-pick tokens --gen-eval 200 --log-every 1 --base qwen --grad-ckpt --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_smoke4`
 
 ### `ks828l4_gptoss_cgen_smoke2`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 23:41 → 未收尾
+- **结论**：l4 cgen smoke2(H100, LoRA+grad-ckpt, 探针 tokens, 修复 b5cee8d 之后): 零 Traceback, 对齐 PASS 1.5378e-5(与崩掉那次逐位相同), 探针最满块 28.82 GB(预期 38.1, -24%), step 峰值 33.2(含 save_merged 的 fp32 副本), 生成 81 行 35.7 s
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 23:41 → 2026-08-29 00:06
 - **代码**：`5abd3a0` (分支 main)
 - **机器**：tokyo108 GPU 0
+- **数字**：align_max_abs_diff=1.5378e-05 worst_gb_tokens=28.822 step_peak_gb=33.185 best_val_ce=0.7443 val_exact_call=0.1975 gen_s=35.66 wall_s=1003.39
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_smoke2_t108g0.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --mem-probe --mem-probe-pick tokens --gen-eval 200 --log-every 1 --base qwen4 --lora --grad-ckpt --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828l4_gptoss_cgen_smoke2`
 

@@ -1851,6 +1851,72 @@
         }
       ],
       "finished_at": "2026-08-28 23:40"
+    },
+    {
+      "name": "ks828b06_ovl_left_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "overlong 开关端到端验证: ctool left",
+      "started_at": "2026-08-28 23:59",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_ovl_left_ctool_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_ovl_left_ctool_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/eval/eval_tool.py --head causal --env appworld --run /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_final_smoke --data /home/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --overlong left --limit 200",
+          "launched_at": 1787929171.522939,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:02"
+    },
+    {
+      "name": "ks828l4_gptoss_cgen_smoke2",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "l4 grad-ckpt 反向内核修复后重测冒烟(b5cee8d)",
+      "started_at": "2026-08-28 23:41",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_ks828l4_gptoss_cgen_smoke2_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828l4_gptoss_cgen_smoke2_t108g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --mem-probe --mem-probe-pick tokens --gen-eval 200 --log-every 1 --base qwen4 --lora --grad-ckpt --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828l4_gptoss_cgen_smoke2",
+          "launched_at": 1787928108.9409015,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:06"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_smoke4",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "b06 开 grad-ckpt 的探针数, 给 Ada 排卡用(b5cee8d)",
+      "started_at": "2026-08-28 23:42",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_ks828b06_gptoss_cgen_smoke4_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_smoke4_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --smoke --mem-probe --mem-probe-pick tokens --gen-eval 200 --log-every 1 --base qwen --grad-ckpt --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_cgen_smoke4",
+          "launched_at": 1787928152.8580818,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 00:06"
     }
   ]
 }
