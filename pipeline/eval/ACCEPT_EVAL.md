@@ -9,6 +9,10 @@ chosen_theta / test_frozen 三块，全文件相同；`.md` 也逐字节相同�
 零 GPU：两次都走 `--cached-logits`，只读旧 `logits_*.pt` 做 CPU 后处理，
 mbert 侧 12 秒跑完。
 
+## 0. 第二轮更正（2026-08-28，不改动上面的历史结论）
+
+本文档记的是 2026-07-31 代码状态下的验收结果，当时的判据是"逐字节相同"。第二轮（工单 07，spec 16.2）起 `eval_tool.py` 的 `REPLAY_REPORT.json` 无论 `--overlong` 传哪个值都会多写 `overlong_mode` 与四个计数键（`n_oow` / `n_skipped_bounds` / `n_dropped_events` / `n_dropped_bounds`，没发生的写 0）；cgen / cparam 的报告同样多写 `overlong_mode` 与各自那套计数。现在再跑本文①②两条命令，报告不会再与旧产物逐字节相同——**新判据是"除这几个新键外，其余现有键不变"**，不再要求整份文件字节级相同。
+
 ## 1. 验收命令
 
 入口是仓库根 `run.py`：`eval-tool-mbert` / `eval-tool-causal` 两条任务对应同一个

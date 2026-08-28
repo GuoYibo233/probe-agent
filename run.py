@@ -244,6 +244,8 @@ TASKS = {
         notes=["--base 三档:qwen=Qwen3-0.6B-Base / qwen17=1.7B / qwen4=4B;"
                "注册表固定带 --base qwen,发射时用排卡表 extra 再传一次覆盖",
                "开训对齐门禁 FAIL 退 2(reldiff 1e-6 量级=噪声,1e-3 以上=真错)",
+               "2026-08-28 起 --align-rule {abs,rel,both} 默认 abs,rel 判 "
+               "reldiff_hidden/reldiff_logits 都 <= --align-rel-tol(默认 1e-5)",
                "--lora 只训底座适配器(分类头照常全参),存 best 之前 "
                "merge_and_unload 并回底座——best/ 与全参存的逐项同构,"
                "eval-tool-causal 零改动就装得回来;"
@@ -266,6 +268,13 @@ TASKS = {
                "一次 opt.step(),不再是 --bs 行/次",
                "开训前内置对齐检查(--align-only 只跑它):fp32 下与旧逐行"
                "训练器 train_causal_callgen.py 逐行 loss 比对,不过 sys.exit(2)",
+               "2026-08-28 起 --gen-eval N(默认 200,0 关闭)配 --gen-eval-at "
+               "{all,last}(默认 last)在评估时额外做生成式评估,只进日志不选 best",
+               "2026-08-28 起 --align-rule {abs,rel,both} 默认 abs,rel/both 判 "
+               "rel_max_abs_diff <= --align-rel-tol(默认 1e-5),四个粗筛门槛"
+               "(--align-tok-tol 等)也都改成了参数,默认值等于第一轮的常量",
+               "2026-08-28 起 --mem-probe-pick {tokens,cost,loop} 默认 cost,"
+               "配 --mem-probe 用,收尾写一条 mem_probe_summary(worst_gb 等)",
                "--lora 只训底座适配器,存 best 之前 "
                "merge_and_unload 并回底座——best/ 与全参存的逐项同构,"
                "eval-ccall 零改动就装得回来;"
@@ -282,6 +291,13 @@ TASKS = {
                "打包前向,只是 --mode 不同(spec 见 train-cgen 条目)",
                "--base 三档 qwen/qwen17/qwen4,默认 qwen;也接受模型目录路径",
                "没有 --fire-head:触发永远由 ctool 做",
+               "2026-08-28 起 --gen-eval N(默认 200,0 关闭)配 --gen-eval-at "
+               "{all,last}(默认 last)在评估时额外做生成式评估,只进日志不选 best",
+               "2026-08-28 起 --align-rule {abs,rel,both} 默认 abs,rel/both 判 "
+               "rel_max_abs_diff <= --align-rel-tol(默认 1e-5),四个粗筛门槛"
+               "(--align-tok-tol 等)也都改成了参数,默认值等于第一轮的常量",
+               "2026-08-28 起 --mem-probe-pick {tokens,cost,loop} 默认 cost,"
+               "配 --mem-probe 用,收尾写一条 mem_probe_summary(worst_gb 等)",
                "--lora 只训底座适配器,存 best 之前 merge_and_unload 并回底座"
                "——best/ 与全参存的逐项同构,eval-cparam 零改动就装得回来;"
                "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
@@ -334,13 +350,18 @@ TASKS = {
         desc="工具名评测 mbert 头(必给 --env --run --data)",
         notes=["logits 永远写 --run,报告跟 --report-dir;是两个 call 评测的前置",
                "冒烟: --limit N 每堆截前 N 行;只许对名字带 smoke 的 --run 用"
-               "(截断的 logits/REPLAY_REPORT 会写进 --run,真 run 不许沾)"]),
+               "(截断的 logits/REPLAY_REPORT 会写进 --run,真 run 不许沾)",
+               "mbert 头只支持 --overlong left,传 skip/drop-event 直接 SystemExit"
+               "(2026-08-28 起;--overlong 只对 --head causal 生效)"]),
     "eval-tool-causal": dict(
         stage="eval", py="cprobe", script="pipeline/eval/eval_tool.py",
         gpu=True, args=["--head", "causal"],
         desc="工具名评测 causal 头(同上,解释器不同)",
         notes=["同一脚本两解释器按 --head 分岔,注册表拆成两条任务",
-               "冒烟: --limit N(同 eval-tool-mbert,只许 smoke 目录)"]),
+               "冒烟: --limit N(同 eval-tool-mbert,只许 smoke 目录)",
+               "2026-08-28 起 --overlong {left,skip,drop-event} 默认 left,"
+               "三种模式下 logits_*.pt 都写全行数,剔除行的下标记进 .meta.json "
+               "的 excluded_idx;--cached-logits 撞上不同 overlong_mode 会硬停"]),
     "eval-mcall": dict(
         stage="eval", py="mbert", script="pipeline/eval/eval_mbert_call.py",
         gpu=True, desc="mbert 整条调用评测(必给 --env --run --data --extractor)",
@@ -349,7 +370,9 @@ TASKS = {
     "eval-ccall": dict(
         stage="eval", py="cprobe", script="pipeline/eval/eval_causal_call.py",
         gpu=True, desc="causal 整条调用评测(必给 --env --ctool-run --cgen-run --data)",
-        notes=["必须等 eval-tool-causal 跑完;--env 传错静默毁数字"]),
+        notes=["必须等 eval-tool-causal 跑完;--env 传错静默毁数字",
+               "2026-08-28 起 --overlong {left,skip,drop-event} 默认 left,"
+               "三种模式下进分母的行集合不同,矩阵只收 left 的评测结果"]),
     "eval-cparam": dict(
         stage="eval", py="cprobe", script="pipeline/eval/eval_causal_param.py",
         gpu=True,
@@ -357,7 +380,9 @@ TASKS = {
         notes=["必须等 eval-tool-causal 跑完;--env 传错静默毁数字",
                "报告 PARAM_REPORT.{json,md} 写进 --cparam-run,两块:"
                "gt_tool(喂真值工具名)与 pred_tool(喂分类头 argmax)",
-               "矩阵只取 pred_tool 块——那是系统乙的真实口径"]),
+               "矩阵只取 pred_tool 块——那是系统乙的真实口径",
+               "2026-08-28 起 --overlong {left,skip,drop-event} 默认 left,"
+               "三种模式下进分母的行集合不同,矩阵只收 left 的评测结果"]),
     "matrix": dict(
         stage="eval", py="sys", script="pipeline/eval/summarize_matrix.py",
         desc="矩阵汇总(必给 --runs-dir --out)",
