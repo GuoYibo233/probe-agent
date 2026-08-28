@@ -183,3 +183,22 @@ CUDA_VISIBLE_DEVICES=0 cprobe-env/bin/python /home/y-guo/.claude/jobs/b39c625e/t
 7. `--grad-ckpt` 和 `--lora` 各跑一次 8192 事件的峰值，给 1.7B 和 4B 在 48G 卡上的排卡用。
 
 第 2 步的峰值是全 8192 前缀加 45 段的单事件数，物理批按 token 预算放多个短事件的峰值要在冒烟里另量。
+
+## 七、GPU 七步验证的结果（草稿：第一次发射只跑到第 3 步，第 4 步崩了，等补射）
+
+第一次发射在 tokyo108 GPU 0（H100 NVL，93.10 GiB）上跑，命令见产物目录 `pipeline/runs/smoke/kvshare_gpu_kernel_check/RUNMETA.json`（HEAD 024b34f），日志 `logs/new1_kvshare_gpu_kernel_check_t108g0.log`。脚本挑出来的最长事件是 `appworld_6bdbc26_1_r2|s17`：64 行，前缀 8,167 个 token，打包后 L 9,381。
+
+前三步的事实：
+
+- 第 1 步内核资格：bool 掩码和 bf16 加性掩码两种情况下 `can_use_flash_attention` 都是 False（警告原文 `Flash Attention does not support non-null attn_mask.`），`can_use_efficient_attention` 都是 True，`can_use_cudnn_attention` 都是 True。
+- 第 2 步强制 mem-efficient（bool 掩码，autocast bf16，前向加反向）：`torch.cuda.max_memory_allocated` 31.43 GiB（比进入这一步之前多 28.86 GiB），3.63 秒（含 profiler 开销），profiler 里的内核名是 `fmha_cutlassF_bf16_aligned_64x128_rf_sm80` 和 `fmha_cutlassB_bf16_aligned_128x128_k128_sm80`，也就是 cutlass 的 mem-efficient 前向和反向。每行 loss 平均 3.245。
+- 第 3 步默认选择（同一输入，不套上下文）：峰值 31.47 GiB（多 28.83 GiB），3.99 秒，内核名是 `aten::_scaled_dot_product_cudnn_attention` 加 `cudnn_generated_fort_native_sdpa_sm90_flash_fprop_wgmma_f16` 和对应的 `bprop`，也就是 cuDNN 的注意力。
+- 第 4 步崩了：脚本把前缀截到 2,048 却没有过滤行，16 行的尾巴各自带着 2,048 之后的整段 prompt，拼出来的 L 远超 2,048，math 内核要分配 101.85 GiB。修法在 7.1 节。
+
+下面是解读。3.1 节「默认优先级会落到 mem-efficient」在 H100 上不成立：登录机上 `_get_sdp_priority_order()` 返回的顺序是 flash、efficient、math、cudnn，而 H100 上默认选择实际落到了 cuDNN，两者不一致的原因没有在代码里追到（torch 的选择逻辑在编译进 .so 的 `sdp_utils.cpp` 里，头文件里没有）。两条内核的峰值只差 0.04 GiB，耗时差 0.36 秒（单次、含 profiler，分不出快慢）。裁决不变：训练代码显式套 `sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])`，理由从「防止退到 math」加上一条「把内核钉死，不随 torch 的默认顺序和 cuDNN 版本漂移」；sdpa 的 docstring 写明 cuDNN 路径可能选到非确定性算法（`this operator may select a nondeterministic algorithm`），mem-efficient 没有这句话。
+
+显存对照 3.3 节的估算：3.3 节按每 token 2.42 MB 加 1.2 GB 权重副本估 L 9,381 留住约 23.9 GB，脚本没有建优化器，第 2 步的 28.86 GiB（31.0 GB）里含 fp32 梯度 2.4 GB，剩下 28.6 GB 是激活加瞬时张量，比估的留住量高两成。加上训练时 AdamW 的两份状态 4.8 GB，最长单事件的峰值约 36 GiB，H100 的 93.1 GiB 剩六成；物理块按 token 预算装多个事件的峰值要在冒烟里另量。
+
+### 7.1 第 4 步的修法与补射
+
+修改只动 `verify/gpu_kernel_check.py` 一个文件：第 4 步只取 `len(prompt) ≤ --math-L` 的行，逐行往里装直到拼接长度超过 1.25 × `--math-L` 就停，装不进两行就跳过并记原因；每一步做完立刻 `json.dump` 一次；每一步包在 try 里，出错记原文并清显存，后面的步照跑；第 6 步加一遍 fp32（autocast 关、`highest` 精度、fp32 掩码）的对齐差值，给 spec 第 9 节在 GPU 上跑的第一道门槛一个真实内核的数。补射之后把第 4 到 7 步的数补进本节。
