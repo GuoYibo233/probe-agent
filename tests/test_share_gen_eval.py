@@ -20,7 +20,6 @@ mbert-env(transformers 4.57.6)下同样兜住照样 skip(照
 """
 import ast
 import json
-import random as _random
 import sys
 import tempfile
 import unittest
