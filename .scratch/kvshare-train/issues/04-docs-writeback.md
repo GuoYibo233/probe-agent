@@ -1,7 +1,7 @@
 # 04 probe-pipeline skill 回写
 
-Status: ready-for-agent
-Blocked by: 02, 03（并且要等主会话的 GPU 冒烟裁决出来：`--max-len` 与 `--tok-budget` 的定值会在本工单的 Comments 里给出，没有那条 Comment 不许开工）
+Status: claimed
+Blocked by: 02, 03（并且要等主会话的 GPU 冒烟裁决出来：`--max-len` 与 `--tok-budget` 的定值会在本工单的 Comments 里给出，没有那条 Comment 不许开工——Comment 已在本文末尾）
 Spec: `.scratch/kvshare-train/spec.md` 第 8、13 节；回写规矩 `.claude/skills/probe-pipeline/SKILL.md` Phase E（第 231 到 261 行）与 `references/extending.md` §6
 
 ## 要做的
