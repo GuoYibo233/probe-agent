@@ -75,3 +75,21 @@ ctool 的 n_bound_dropped 字段保留，含义改成「找不到读取位置的
 ## 决定 14
 
 对齐检查的配对改成「抽中事件的原始行按 (event, sent_idx) 升序写临时 jsonl，同一份文件喂 share_data.load_events 和旧 CallDS/ParamDS（limit=0），按位置配对并逐位断言 text 相同、丢弃计数相同」；share_data 模块顶层只许 stdlib 与 torch，旧训练脚本在函数体内延迟 import；read_position 加 keep 参数只扫真实 token，找不到返回 −1，两处调用保留 if j<0 守卫；build() 加 path=None 第二个关键字参数给小模型测试进门；epoch 末尾不满 accum 的一组也更新，U = ceil(M/accum)；评估点集合 {ceil(U·k/E)} 去重；ALIGN_CHECK.json 键名沿用 ctool 的大写 PASS；ctool 也冒烟一次并且退档 6144 时跟着退；ctool 读取位置回写不许写成「活跑错位已修」。 / 理由：workflow 确认的 8 条（C1 到 C8）加未核清单里我认可的那些。 / 依据：train_causal_callgen.py:55-60（版本门）、:167-168（行元组无 event/sent_idx）；eval_tool.py:142（keep）；run.py cmd_list/cmd_show 直接下标 desc。
+
+## 决定 15
+
+ctool 冒烟在 H100 上 `--bs 4 --accum 2` 爆显存或峰值超过 84 GiB（余量不足 10%），默认值改 `--bs 2 --accum 4`（仍是 8 个事件一次更新），再不行 `--grad-ckpt` 进排卡表 extra 不改默认值。 / 理由：stage-commands.md:238 实测 4096 × bs 4 时 ctool 峰值 60.2 GiB，上限翻到 8192 且撤掉截断最多翻倍，超过 H100 的 93.6 GiB；草稿 2.2 锁的是更新单位不是 bs。 / 依据：8-28-assistant 第三遍审查 S3。
+
+## 决定 16
+
+`--mem-probe` 的峰值含优化器状态（探针反向之后 lr 置 0 做一次 opt.step 分配 AdamW 状态再清掉）；最满块按「B 取 2 到 events_per_mb，B × L_pad ≤ 预算的最长组合里取乘积最大」定义；对齐检查的基线超 max(3 × 基线, 1e-6) 只告警不判定；尾组更新除数用实际小批数 n_g；速度对照用累计 rows / train_s 线性插值。 / 理由：8-28-assistant 第三遍审查 P1、S2、S4、S5、S9。 / 依据：AdamW 状态 0.6B 4.8 GB、1.7B 13.6 GB 比 10% 裁决线大；GPU 关 TF32 后基线可能为 0。
+
+## 决定 17
+
+`--tok-budget` 速度档候选改成 16384 与 24576（不再试 32768）；对齐检查的参照路径（旧 collate + inst_ce）不套 sdpa_kernel([EFFICIENT]) 上下文，只有新路径套。 / 理由：GPU 七步验证——形态 A 每 token 约 2.72 MB，32,768 的块约 92 GiB 装不下 H100 93.10 GiB；参照路径单行不补齐没有掩码，HF 开 enable_gqa 走 8 头 K/V，mem-efficient 不支持 GQA 报 No available kernel。 / 依据：design-attention.md 第七节；gpu_result.json（pipeline/runs/smoke/kvshare_gpu_kernel_check/）。
+
+### 决定 17 附：GPU 七步验证的三个事实（plan-8-28 提供，来源 tokyo108 GPU 0 H100 NVL 93.10 GiB）
+
+最长事件（L 9,381 补到 9,392）bf16 加性掩码补 16 的峰值 26.65 GiB，另外三种掩码变体 31.11 到 31.20 GiB，四种 row_loss_mean 逐位相同 3.2452；不套上下文时默认内核是 cuDNN；`--grad-ckpt` 把最长单事件峰值从 31.1 压到 6.35 GiB，`--lora` 不省激活（31.16）。第三次补射正在跑第 6 步的 bf16/fp32 对齐差。
+
+8-28-assistant 核对（读 `pipeline/runs/smoke/kvshare_gpu_kernel_check/gpu_result.json`，文件时间 2026-08-28 09:35:47，steps_done 九步齐、errors 空）：mask_variants 的 bf16_aligned16 峰值 26.65 GiB，bool_unaligned 31.11、bf16_unaligned 31.20、bool_aligned16 31.17，四种 row_loss_mean 都是 3.2452，与上文一致；default_selection（cuDNN）峰值 31.11、row_loss_mean 3.2500，比四种 EFFICIENT 变体的 3.2452 高 4.8e-3；grad_ckpt 峰值 6.34 GiB（上文写 6.35），lora 31.18 GiB（上文写 31.16），以文件为准。第 6 步结果：fp32（5 个事件 34 行 505 个目标 token）新路径对旧训练器整批的逐行最大差 4.41e-6、逐 token 最大差 3.05e-5，同次基线（旧单行对旧整批）5.01e-6 / 6.91e-5；bf16 autocast 逐行最大 3.07e-2、平均 9.31e-3，基线 3.03e-2 / 8.83e-3，逐 token 最大 0.232 对基线 0.183。

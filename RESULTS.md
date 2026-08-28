@@ -6,7 +6,7 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
-| `kvshare_gpu_kernel_check` | 2026-08-28 09:16 | kvshare-train | `024b34f` | - | running | - | - |
+| `kvshare_gpu_kernel_check` | 2026-08-28 09:16 | kvshare-train | `024b34f` | - | ok | peak_gib_longest_event_bf16_aligned16=26.65 peak_gib_bool_unaligned=31.11 peak_gib_grad_ckpt=6.34 peak_gib_lora=31.18 fp32_row_maxdiff_gpu=4.41e-06 fp32_tok_maxdiff_gpu=3.05e-05 bf16_row_meandiff_gpu=0.00931 bf16_row_maxdiff_gpu=0.0307 | 形态A打包前向在H100 mem-efficient内核上跑通: 最长事件L9381(补到9392) bf16加性掩码峰值26.65GiB(bool掩码31.11); 默认内核落cuDNN(两内核bf16均值差4.8e-3), 训练器显式钉EFFICIENT; 无掩码调用走GQA不进EFFICIENT上下文; 34行505token fp32逐行最大差4.41e-6(基线5.01e-6) bf16均值9.31e-3; grad-ckpt把最长单事件压到6.34GiB, LoRA不省激活; 三次发射(第4步截前缀OOM, 第6步GQA拒收, 第三次九步全过) |
 | `eval_np821l17_gptoss_cparam` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 pred_tool_ok=0.9476 pred_params_all_ok=0.8322 pred_full_call_ok=0.8094 pred_exact_call_ok=0.8067 pred_param_acc=0.7498 gt_params_all_ok=0.8467 gt_param_acc=0.808 noparam_rate=0.387 | np821l17 cparam 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, pred_tool full_call_ok 0.8094/params_all_ok 0.8322, gt_tool params_all_ok 0.8467, H100 约 24 分钟 |
 | `eval_np821l17_gptoss_cgen` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 tool_ok=0.8866 params_all_ok=0.7774 full_call_ok=0.7326 exact_call_ok=0.7316 param_acc=0.6287 noparam_rate=0.387 | np821l17 cgen 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, tool_ok 0.8866, params_all_ok 0.7774, full_call_ok 0.7326, H100 约 23 分钟 |
 | `eval_np821l4_gptoss_cparam` | 2026-08-26 04:47 | eval_np821l4 | `15c90e8` | - | ok | risk=0.05 theta=0.975 n_scored=2192 parse_fail=0 pred_tool_ok=0.9599 pred_params_all_ok=0.8828 pred_full_call_ok=0.8654 pred_exact_call_ok=0.8645 pred_param_acc=0.8251 gt_params_all_ok=0.8969 gt_param_acc=0.8794 noparam_rate=0.3828 | np821l4 cparam 评测(risk 0.05, θ 0.975): 2192 触发事件, parse_fail 0, pred_tool full_call_ok 0.8654/params_all_ok 0.8828, gt_tool params_all_ok 0.8969, H200 约 24 分钟 |
@@ -73,9 +73,11 @@
 
 ### `kvshare_gpu_kernel_check`
 
-- **方向**：kvshare-train ｜ **状态**：running ｜ **起止**：2026-08-28 09:16 → 未收尾
+- **结论**：形态A打包前向在H100 mem-efficient内核上跑通: 最长事件L9381(补到9392) bf16加性掩码峰值26.65GiB(bool掩码31.11); 默认内核落cuDNN(两内核bf16均值差4.8e-3), 训练器显式钉EFFICIENT; 无掩码调用走GQA不进EFFICIENT上下文; 34行505token fp32逐行最大差4.41e-6(基线5.01e-6) bf16均值9.31e-3; grad-ckpt把最长单事件压到6.34GiB, LoRA不省激活; 三次发射(第4步截前缀OOM, 第6步GQA拒收, 第三次九步全过)
+- **方向**：kvshare-train ｜ **状态**：ok ｜ **起止**：2026-08-28 09:16 → 2026-08-28 09:36
 - **代码**：`024b34f` (分支 main)
 - **机器**：tokyo108 GPU 0
+- **数字**：peak_gib_longest_event_bf16_aligned16=26.65 peak_gib_bool_unaligned=31.11 peak_gib_grad_ckpt=6.34 peak_gib_lora=31.18 fp32_row_maxdiff_gpu=4.41e-06 fp32_tok_maxdiff_gpu=3.05e-05 bf16_row_meandiff_gpu=0.00931 bf16_row_maxdiff_gpu=0.0307
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_kvshare_gpu_kernel_check_t108g0.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/.scratch/kvshare-train/verify/gpu_kernel_check.py --max-len 8192 --math-L 2048 --grad-ckpt --lora --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/kvshare_gpu_kernel_check/gpu_result.json`
 

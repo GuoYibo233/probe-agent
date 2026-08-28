@@ -1,27 +1,5 @@
 {
-  "active": [
-    {
-      "name": "kvshare_gpu_kernel_check",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": "形态A GPU 内核/显存/bf16 对齐一次性验证(七步,读 val 集与 Qwen3-0.6B-Base,写 gpu_result.json)",
-      "started_at": "2026-08-28 09:16",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "0",
-          "session": "new1_kvshare_gpu_kernel_check_t108g0",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_kvshare_gpu_kernel_check_t108g0.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/.scratch/kvshare-train/verify/gpu_kernel_check.py --max-len 8192 --math-L 2048 --grad-ckpt --lora --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/kvshare_gpu_kernel_check/gpu_result.json",
-          "launched_at": 1787876185.4475718,
-          "kind": "batch",
-          "stall_line": null,
-          "escalate_line": null,
-          "task": null,
-          "port": null
-        }
-      ]
-    }
-  ],
+  "active": [],
   "history": [
     {
       "name": "hcap",
@@ -1483,6 +1461,28 @@
         }
       ],
       "finished_at": "2026-08-26 15:20"
+    },
+    {
+      "name": "kvshare_gpu_kernel_check",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "形态A GPU 内核/显存/bf16 对齐一次性验证(七步,读 val 集与 Qwen3-0.6B-Base,写 gpu_result.json)",
+      "started_at": "2026-08-28 09:16",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_kvshare_gpu_kernel_check_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_kvshare_gpu_kernel_check_t108g0.r2.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/.scratch/kvshare-train/verify/gpu_kernel_check.py --max-len 8192 --math-L 2048 --grad-ckpt --lora --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/smoke/kvshare_gpu_kernel_check/gpu_result.json",
+          "launched_at": 1787877281.8557503,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-28 09:36"
     }
   ]
 }
