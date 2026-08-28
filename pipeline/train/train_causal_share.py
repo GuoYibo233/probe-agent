@@ -281,6 +281,10 @@ def run_mem_probe(model, opt, full_events, args, dev, log, amp):
                                   ("longest_event", longest, 1)):
         if not grp:
             continue
+        if dev.startswith("cuda"):
+            # 每块各自归零峰值计数器(归到当前已分配:权重 + 梯度 + 状态,三样照留),
+            # 否则第二块记的是两块的最大值(assistant-2 复核 907d143 提出)
+            torch.cuda.reset_peak_memory_stats()
         for _ in range(n_backward):
             _fwd_bwd(grp)                      # 中间不 zero_grad,梯度累积
         peak = (torch.cuda.max_memory_allocated() / 1e9
