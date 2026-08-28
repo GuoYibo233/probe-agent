@@ -72,8 +72,10 @@ CELLS = {
     "mext":  (PY["mbert"], str(ROOT / "pipeline/train/train_mbert_extract.py"), []),
     "ctool": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_tool.py"),
               ["--base", "qwen"]),
-    "cgen":  (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_callgen.py"), []),
-    "cparam": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_param.py"), []),
+    "cgen":  (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_share.py"),
+              ["--mode", "cgen"]),
+    "cparam": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_share.py"),
+              ["--mode", "cparam"]),
 }
 # 默认 smoke 顺序,允许是 CELLS 的子集:ModernBERT 线(mtool/mext)2026-08-21 起
 # 停跑(plans/2026-08-21-new-probe-training.md 第一条总体决定),两格仍留在
@@ -250,10 +252,21 @@ TASKS = {
                "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-cgen": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_callgen.py",
-        gpu=True, desc="因果整条调用生成头(必给 --data --out)",
-        notes=["--base 三档 qwen/qwen17/qwen4,默认 qwen(=0.6B,与旧口径一致)",
-               "--lora 只训底座适配器(开火头照常全参),存 best 之前 "
+        stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
+        gpu=True, args=["--mode", "cgen"],
+        desc="因果整条调用生成头,缓存复用打包前向(必给 --data --out)",
+        notes=["kvshare-train 换实现(.scratch/kvshare-train/spec.md):一个事件"
+               "全文一次前向,行不再各自重复分词/重复前向;格名、数据、"
+               "四个评测脚本不变",
+               "--base 三档 qwen/qwen17/qwen4,默认 qwen(=0.6B,与旧口径一致);"
+               "也接受一个模型目录路径,走 build(path=...)",
+               "--max-len 默认 8192(事件全文 token 上限,超过整条事件丢弃,"
+               "不是逐行截断);--tok-budget 默认 16384 控物理块显存",
+               "更新单位 = --events-per-mb(默认 4)x --accum(默认 2) = 8 个事件"
+               "一次 opt.step(),不再是 --bs 行/次",
+               "开训前内置对齐检查(--align-only 只跑它):fp32 下与旧逐行"
+               "训练器 train_causal_callgen.py 逐行 loss 比对,不过 sys.exit(2)",
+               "--lora 只训底座适配器,存 best 之前 "
                "merge_and_unload 并回底座——best/ 与全参存的逐项同构,"
                "eval-ccall 零改动就装得回来;"
                "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
@@ -261,9 +274,39 @@ TASKS = {
                "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
                "同 out 二次训练默认拒绝,--force 逃生"]),
     "train-cparam": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_param.py",
-        gpu=True, desc="因果参数生成头(给定工具名只写参数;必给 --data --out)",
+        stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
+        gpu=True, args=["--mode", "cparam"],
+        desc="因果参数生成头,缓存复用打包前向(给定工具名只写参数;必给 --data --out)",
         notes=["输入串 = text + \\n[CALL] + 工具名 + 左括号,目标 = 括号里那截 + 右括号",
+               "kvshare-train 换实现,与 train-cgen 同一个脚本、同一套"
+               "打包前向,只是 --mode 不同(spec 见 train-cgen 条目)",
+               "--base 三档 qwen/qwen17/qwen4,默认 qwen;也接受模型目录路径",
+               "没有 --fire-head:触发永远由 ctool 做",
+               "--lora 只训底座适配器,存 best 之前 merge_and_unload 并回底座"
+               "——best/ 与全参存的逐项同构,eval-cparam 零改动就装得回来;"
+               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
+               "--lora-lr 2e-4(显式给 --lr 就以 --lr 为准)",
+               "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
+               "同 out 二次训练默认拒绝,--force 逃生"]),
+    "train-cgen-rows": dict(
+        stage="train", py="cprobe", script="pipeline/train/train_causal_callgen.py",
+        gpu=True, desc="因果整条调用生成头,旧逐行训练器(参照/对照用)",
+        notes=["逐行参照实现,只用于对齐检查与对照;产物不进矩阵,run_id "
+               "不许用现役批次前缀(kvshare-train 决定 3,冻结为对齐参照)",
+               "--base 三档 qwen/qwen17/qwen4,默认 qwen(=0.6B,与旧口径一致)",
+               "--lora 只训底座适配器(开火头照常全参),存 best 之前 "
+               "merge_and_unload 并回底座——best/ 与全参存的逐项同构,"
+               "eval-ccall 零改动就装得回来;"
+               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
+               "--lora-lr 2e-4(显式给 --lr 就以 --lr 为准)",
+               "--grad-ckpt 省显存,全参与 --lora 都能用(4B 上 48G 卡要靠它)",
+               "同 out 二次训练默认拒绝,--force 逃生"]),
+    "train-cparam-rows": dict(
+        stage="train", py="cprobe", script="pipeline/train/train_causal_param.py",
+        gpu=True, desc="因果参数生成头,旧逐行训练器(参照/对照用)",
+        notes=["逐行参照实现,只用于对齐检查与对照;产物不进矩阵,run_id "
+               "不许用现役批次前缀(kvshare-train 决定 3,冻结为对齐参照)",
+               "输入串 = text + \\n[CALL] + 工具名 + 左括号,目标 = 括号里那截 + 右括号",
                "--base 三档 qwen/qwen17/qwen4,默认 qwen",
                "没有 --fire-head:触发永远由 ctool 做",
                "--lora 只训底座适配器,存 best 之前 merge_and_unload 并回底座"
