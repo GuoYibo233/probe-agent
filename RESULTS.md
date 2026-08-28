@@ -11,7 +11,7 @@
 | `ks828b06_gptoss_cgen_speed_b16k` | 2026-08-28 13:07 | kvshare-train | `10f1d12` | - | ok | ips_1600=185.61 ips_9600=189.48 ips_19200=184.09 ipswin_0_1600=185.61 ipswin_8000_9600=203.84 ipswin_17600_19200=145.26 peak_mem_gb=60.593 probe_longest_gb=31.425 probe_fullest_gb=51.105 train_s=112.34 wall_s=582.94 val_ce=0.2608 align_maxdiff=5.48e-06 | 新 cgen 训练器速度档(450 事件 20,641 行 57 更新, H100 gpu0, tok-budget 16384): 累计 ips 在 1600/9600/19200 行处 185.6/189.5/184.1 对旧 2.76/3.26/3.97; 窗口 185.6/203.8/145.3 对旧 2.77/3.94/6.24; 训练峰值 60.6 GB, 最长事件探针 31.4, 最满块(B=2) 51.1; ALIGN PASS 5.48e-6 |
 | `ks828b06_gptoss_cparam` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | best_val_ce=1.5926 wall_s=153.39 align_maxdiff=9.3e-06 total_rows=284 | 新训练器 cparam smoke 档(H200 gpu5): 对齐检查 PASS max_abs_diff 9.30e-6, assembly_mismatch 0/0, best_val_ce 1.5926, 153 秒, best/ 落盘 |
 | `ks828b06_gptoss_cgen` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | best_val_ce=1.2938 wall_s=151.49 align_maxdiff=5.48e-06 total_rows=284 | 新训练器 cgen smoke 档(40 训练事件/16 评估事件, H200 gpu4): 对齐检查 PASS max_abs_diff 5.48e-6(tol 2e-5), 5 次更新, 四次评估, best_val_ce 1.2938, 151 秒, best/ 落盘 |
-| `ks828b06_gptoss_ctool` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | running | - | - |
+| `ks828b06_gptoss_ctool` | 2026-08-28 13:06 | probe_ks828b06 | `10f1d12` | - | ok | align_maxdiff_hidden=0.000103 calA_weighted_acc=0.408 steps=25 n_bound_dropped=0 | ctool smoke 档(200/80 事件, H200 gpu3, max_len 8192, bs 4 accum 2): 首发被旧默认 --align-tol 1e-4 拦下(maxdiff_hidden 1.03e-4 rel 1.46e-6), 默认改 3e-4 后补射 PASS, 25 次更新跑完, n_bound_dropped 0, calA_weighted_acc 0.408(smoke 规模); 显存未记录, H100 上另量 |
 | `kvshare_gpu_kernel_check` | 2026-08-28 09:16 | kvshare-train | `024b34f` | - | ok | peak_gib_longest_event_bf16_aligned16=26.65 peak_gib_bool_unaligned=31.11 peak_gib_grad_ckpt=6.34 peak_gib_lora=31.18 fp32_row_maxdiff_gpu=4.41e-06 fp32_tok_maxdiff_gpu=3.05e-05 bf16_row_meandiff_gpu=0.00931 bf16_row_maxdiff_gpu=0.0307 | 形态A打包前向在H100 mem-efficient内核上跑通: 最长事件L9381(补到9392) bf16加性掩码峰值26.65GiB(bool掩码31.11); 默认内核落cuDNN(两内核bf16均值差4.8e-3), 训练器显式钉EFFICIENT; 无掩码调用走GQA不进EFFICIENT上下文; 34行505token fp32逐行最大差4.41e-6(基线5.01e-6) bf16均值9.31e-3; grad-ckpt把最长单事件压到6.34GiB, LoRA不省激活; 三次发射(第4步截前缀OOM, 第6步GQA拒收, 第三次九步全过) |
 | `eval_np821l17_gptoss_cparam` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 pred_tool_ok=0.9476 pred_params_all_ok=0.8322 pred_full_call_ok=0.8094 pred_exact_call_ok=0.8067 pred_param_acc=0.7498 gt_params_all_ok=0.8467 gt_param_acc=0.808 noparam_rate=0.387 | np821l17 cparam 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, pred_tool full_call_ok 0.8094/params_all_ok 0.8322, gt_tool params_all_ok 0.8467, H100 约 24 分钟 |
 | `eval_np821l17_gptoss_cgen` | 2026-08-26 14:52 | eval_np821l17 | `fad9abe` | - | ok | risk=0.05 theta=0.95 n_scored=2902 parse_fail=0 tool_ok=0.8866 params_all_ok=0.7774 full_call_ok=0.7326 exact_call_ok=0.7316 param_acc=0.6287 noparam_rate=0.387 | np821l17 cgen 评测(risk 0.05, θ 0.95): 2902 触发事件, parse_fail 0, tool_ok 0.8866, params_all_ok 0.7774, full_call_ok 0.7326, H100 约 23 分钟 |
@@ -129,9 +129,11 @@
 
 ### `ks828b06_gptoss_ctool`
 
-- **方向**：probe_ks828b06 ｜ **状态**：running ｜ **起止**：2026-08-28 13:06 → 未收尾
+- **结论**：ctool smoke 档(200/80 事件, H200 gpu3, max_len 8192, bs 4 accum 2): 首发被旧默认 --align-tol 1e-4 拦下(maxdiff_hidden 1.03e-4 rel 1.46e-6), 默认改 3e-4 后补射 PASS, 25 次更新跑完, n_bound_dropped 0, calA_weighted_acc 0.408(smoke 规模); 显存未记录, H100 上另量
+- **方向**：probe_ks828b06 ｜ **状态**：ok ｜ **起止**：2026-08-28 13:06 → 2026-08-28 13:26
 - **代码**：`10f1d12` (分支 main)
 - **机器**：tokyo108 GPU 3
+- **数字**：align_maxdiff_hidden=0.000103 calA_weighted_acc=0.408 steps=25 n_bound_dropped=0
 - **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.log`
 - **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_smoke --env appworld --base qwen --smoke`
 

@@ -1,25 +1,5 @@
 {
-  "active": [
-    {
-      "name": "ks828b06_gptoss_ctool",
-      "workdir": "/home/y-guo/reproduce/new1",
-      "note": null,
-      "started_at": "2026-08-28 13:06",
-      "pieces": [
-        {
-          "host": "tokyo108",
-          "gpus": "3",
-          "session": "new1_ks828b06_gptoss_ctool_smoke_t108g3",
-          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.r1.log",
-          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_smoke --env appworld --base qwen --smoke",
-          "launched_at": 1787890875.0672226,
-          "kind": "train",
-          "stall_line": null,
-          "escalate_line": null
-        }
-      ]
-    }
-  ],
+  "active": [],
   "history": [
     {
       "name": "hcap",
@@ -1609,6 +1589,26 @@
         }
       ],
       "finished_at": "2026-08-28 13:22"
+    },
+    {
+      "name": "ks828b06_gptoss_ctool",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-28 13:06",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_ks828b06_gptoss_ctool_smoke_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.r1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_tool.py --data pipeline/data/nyapass_aw_v1/gptoss --out /home/y-guo/reproduce/new1/pipeline/runs/smoke/ks828b06_gptoss_ctool_smoke --env appworld --base qwen --smoke",
+          "launched_at": 1787890875.0672226,
+          "kind": "train",
+          "stall_line": null,
+          "escalate_line": null
+        }
+      ],
+      "finished_at": "2026-08-28 13:26"
     }
   ]
 }

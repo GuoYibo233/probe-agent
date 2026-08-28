@@ -115,3 +115,29 @@ ctool 冒烟在 H100 上 `--bs 4 --accum 2` 爆显存或峰值超过 84 GiB（�
 ## 决定 19
 
 8-28-assistant-2 对训练器的只读审查（无「必须改」、7 条建议）按这样处理——S1（末层隐状态改用 model.model(...).last_hidden_state 过 lm_head，不用 output_hidden_states）、S2（bf16 粗筛那遍关掉参照路径的漂移自检，fp32 保留）、S3（backward 移出 autocast）、S5（对齐候选长度筛取 min(2048, max_len)）、S6（参照路径先释放 logits 再调 inst_ce）加工单 03 的两条 minor（F2 去掉 ALIGN_CHECK.json 多出的 bf16_warn 键；N2 补断言分支测试）合成工单 05，第三波 workflow 已发射（45c881e）；S4（每个事件在主线程造 [L,L] 掩码约 0.1 到 0.3 秒一次更新，估算没量）等速度档的 ips 出来再定；S7（--mem-probe 全集用 ro=None，偏保守）不改。已经在发射的六个 GPU run 不撤：S2 若触发会在开训前几分钟 exit(2)，损失小；不触发则数字有效（S1/S3/S5/S6 都不改数值）。 / 理由：审查没有必须改项，先让冒烟出数；修正走工单保留评审记录。 / 依据：assistant-2 的审查（行号按 12c4a2b 的 train_causal_share.py：S1 133-136、S2 429-430 与 331-338、S3 708-710、S5 268、S6 319-331）。
+
+## 决定 20
+
+train_causal_tool.py 的 ALIGN_TOL 默认值 1e-4 改 3e-4（只改常量与 help 文案，判定逻辑不动；文档回写进工单 04：stage-commands.md:210 与 MAP.md:92）。 / 理由：ks828b06 smoke 档的 ctool 在 8,167 token 的最长 val 事件上 maxdiff_hidden 1.03e-4、reldiff_hidden 1.46e-6（纯 fp32 噪声，脚本自己的判读口径）被 1e-4 拦下退出；上限 8192 后长窗口是常态；c1 与 np821 实跑一直传 3e-4（stage-commands.md:210 记过这个坑）。 / 依据：logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.log 尾部的 ALIGN_CHECK 块；ops/np821b06_placement.json:9-10。ctool smoke 已用新默认补射。
+
+### 2026-08-28 冒烟首批事实（plan-8-28 报）
+
+cgen smoke（H200 gpu4）151 秒跑完，ALIGN PASS max_abs_diff 5.48e-6，best_val_ce 1.2938；cparam smoke 153 秒，9.30e-6，1.5926；两个都 record finish 并销号。速度档三个 run 的 ALIGN_CHECK 逐字相同：6 个事件 154 行 2,877 目标 token，max_abs_diff 5.48e-6、max_tok_diff 4.29e-5、基线 1.08e-5、bf16 均值 8.43e-3 最大 4.32e-2，tol 2e-5，PASS。mem_probe（含优化器状态）：最长事件 L_pad 9,504 峰值 31.43 GB；最满块 b16k 是 B=2 L_pad 8192 峰值 51.11 GB，b24k 是 B=3 L_pad 8192 峰值 75.05 GB。
+
+8-28-assistant 核对与计算（读三份 `pipeline/runs/smoke/ks828b06_gptoss_cgen_speed_{b16k,b16k_es,b24k}/train_log.jsonl`，三个 run 都已有 done 事件；ctool smoke 日志 `logs/new1_ks828b06_gptoss_ctool_smoke_t108g3.log` 里 n_tokens 8167、maxdiff_hidden 1.03e-4、tol 1e-4、PASS false、reldiff_hidden 1.46e-6，与决定 20 所述一致）。三个 run 都是 450 个训练事件 20,641 行、57 次更新、log_every 3、对齐 max_abs_diff 5.48e-6；`peak_mem_gb` 是 `torch.cuda.max_memory_allocated() / 1e9`（train_causal_share.py:234、:732），单位是十进制 GB，只含已分配、不含 reserved 碎片。对照点按 spec §10 算法：累计值用 step 事件的 (rows, train_s) 夹住对照行数线性插值，窗口值用夹住窗口两端的插值做差商。
+
+| run | 累计 ips @1,600 / 9,600 / 19,200 行（旧 2.76 / 3.26 / 3.97） | 窗口 ips @0–1,600 / 8,000–9,600 / 17,600–19,200（旧 2.77 / 3.94 / 6.24） | step 峰值最大 GB（GiB） | 最满块 mem_probe GB | 训练 112–131 s 之外的 wall_s |
+|---|---|---|---|---|---|
+| b16k（预算 16384） | 185.6 / 189.5 / 184.1 | 185.6 / 203.8 / 145.3 | 60.59（56.4） | 51.11 | 582.9 |
+| b16k_es（同上 + expandable_segments） | 180.4 / 178.8 / 177.0 | 180.4 / 188.3 / 148.5 | 60.56（56.4） | 51.10 | 590.6 |
+| b24k（预算 24576） | 152.5 / 155.3 / 155.8 | 152.5 / 168.6 / 135.2 | 80.91（75.4） | 75.05 | 621.4 |
+
+六个对照点三个 run 全部高于旧训练器，倍数最低的是 17,600–19,200 行窗口对 6.24（b16k 23.3 倍，b24k 21.7 倍）。对 H100 93.10 GiB（torch 报的总量）按 GiB 算余量：b16k 39.4%，b24k 19.1%；按 max_memory_allocated 算，不含 reserved。两种预算下训练中的 step 峰值都高于 mem_probe 最满块的数（b16k 60.59 对 51.11，b24k 80.91 对 75.05）。expandable_segments 那个 run 的最终累计 ips 177.77 对不开的 183.73，峰值相同。三个 run 的 epoch 末 val_ce（450 个 val 事件 20,034 行）0.2608 / 0.2615 / 0.2604。
+
+plan-8-28 采纳的口径：60.59 GB = 56.4 GiB 余量 39.4%，b24k 75.4 GiB 余量 19.1%；24576 慢 15%（184 对 157）。
+
+### nvidia-smi 的三条单次样本（不是峰值；plan-8-28 报，发射员 2026-08-28 13:17 JST 一次 nvidia-smi）
+
+采样器历史（monitor/history/<job>.jsonl）只记进度判定不记显存，reserved 的数只有这一次样本：GPU0（b16k，训练中第 12 次更新附近）memory.used 55,683 MiB（54.4 GiB）；GPU1（b24k，mem_probe 阶段）92,689 MiB（90.5 GiB），是 95,830 的 96.7%；GPU2（b16k_es，起步）14,483 MiB（14.1 GiB）。b16k 整程的 reserved 峰值没有记录，汇报按「allocated 56.4 GiB，一次训练中样本 54.4 GiB reserved」写，不写整程 reserved 峰值。
+
+8-28-assistant 注：b24k 那条样本落在 mem_probe 最满块阶段，那一刻 allocated 峰值 75.05 GB = 69.9 GiB，reserved 90.5 GiB，两者差约 20 GiB，卡上只剩 3.3%；这是单次样本，不能外推成 b16k 的 reserved 峰值。b16k 那条 54.4 GiB reserved 低于同一窗口 step 事件记的 allocated 峰值 60.04 GB = 55.9 GiB，说明样本没有落在峰值时刻。
