@@ -6,6 +6,8 @@
 
 | run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |
 |---|---|---|---|---|---|---|---|
+| `ks828b17_gptoss_cgen_lr2e-6` | 2026-08-29 02:50 | kvshare-lr-sweep | `bf66af7` | - | ok | best_val_ce=0.2046 best_frac=4 val_exact_call=0.55 worst_gb=102.29 step_peak_gb=102.336 wall_s=2299.26 | 补扫(决定 40): 全参网格往低一档 lr2e-6, 1 epoch cgen; 数字见 metrics, 最好点在 epoch 末 |
+| `ks828b06_gptoss_cgen_lr2e-6` | 2026-08-29 02:49 | kvshare-lr-sweep | `bf66af7` | - | ok | best_val_ce=0.2157 best_frac=4 val_exact_call=0.545 worst_gb=22.005 step_peak_gb=22.427 wall_s=3494.66 | 补扫(决定 40): 全参网格往低一档 lr2e-6, 1 epoch cgen; 数字见 metrics, 最好点在 epoch 末 |
 | `ks828l17_gptoss_cgen_lr2e-3` | 2026-08-29 01:33 | kvshare-lr-sweep | `ac36171` | - | ok | best_val_ce=0.2138 best_frac=4 val_exact_call=0.54 worst_gb=81.654 step_peak_gb=81.655 wall_s=2991.0 align_max_abs_diff=9.06e-06 | l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
 | `ks828l17_gptoss_cgen_lr5e-4` | 2026-08-29 01:32 | kvshare-lr-sweep | `ac36171` | - | ok | best_val_ce=0.1647 best_frac=4 val_exact_call=0.63 worst_gb=81.654 step_peak_gb=81.655 wall_s=2883.83 align_max_abs_diff=9.06e-06 | l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
 | `ks828l17_gptoss_cgen_lr1e-4` | 2026-08-29 01:32 | kvshare-lr-sweep | `ac36171` | - | ok | best_val_ce=0.1826 best_frac=4 val_exact_call=0.585 worst_gb=81.654 step_peak_gb=81.655 wall_s=3077.89 align_max_abs_diff=9.06e-06 | l17 cgen 学习率扫描 1 epoch(H200, LoRA 不开检查点, cost 探针): 数字见 metrics, 最好点在 epoch 末 |
@@ -110,6 +112,26 @@
 | `hcap` | 2026-08-06 19:29 | learn/vllm | `364242b` | gpt-oss-120b | ok | steps=13 completed=1 out_tokens_total=39088 steps_hit_max_tokens=3 toolcall_out_tokens=484 harmony_vs_chat_out_tokens=136 | 客户端自拼 harmony 走 /v1/completions 与 chat 路端到端等价(同一组消息 prompt/输出 token 数与 reasoning/content 逐字相同);抓到 13 步真实逐 token 流,其中 3 步撞 8192 上限 |
 
 ## 逐条详情
+
+### `ks828b17_gptoss_cgen_lr2e-6`
+
+- **结论**：补扫(决定 40): 全参网格往低一档 lr2e-6, 1 epoch cgen; 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 02:50 → 2026-08-29 04:03
+- **代码**：`bf66af7` (分支 main)
+- **机器**：tokyo108 GPU 3
+- **数字**：best_val_ce=0.2046 best_frac=4 val_exact_call=0.55 worst_gb=102.29 step_peak_gb=102.336 wall_s=2299.26
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr2e-6_t108g3.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr2e-6 --lr 2e-6 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe`
+
+### `ks828b06_gptoss_cgen_lr2e-6`
+
+- **结论**：补扫(决定 40): 全参网格往低一档 lr2e-6, 1 epoch cgen; 数字见 metrics, 最好点在 epoch 末
+- **方向**：kvshare-lr-sweep ｜ **状态**：ok ｜ **起止**：2026-08-29 02:49 → 2026-08-29 04:03
+- **代码**：`bf66af7` (分支 main)
+- **机器**：tokyo107 GPU 0
+- **数字**：best_val_ce=0.2157 best_frac=4 val_exact_call=0.545 worst_gb=22.005 step_peak_gb=22.427 wall_s=3494.66
+- **日志**：`/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr2e-6_t107g0.log`
+- **命令**：`/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr2e-6 --lr 2e-6 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt`
 
 ### `ks828l17_gptoss_cgen_lr2e-3`
 

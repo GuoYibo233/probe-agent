@@ -2357,6 +2357,50 @@
         }
       ],
       "finished_at": "2026-08-29 02:44"
+    },
+    {
+      "name": "ks828b06_gptoss_cgen_lr2e-6",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 02:49",
+      "pieces": [
+        {
+          "host": "tokyo107",
+          "gpus": "0",
+          "session": "new1_ks828b06_gptoss_cgen_lr2e-6_t107g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b06_gptoss_cgen_lr2e-6_t107g0.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b06_gptoss_cgen_lr2e-6 --lr 2e-6 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe --grad-ckpt",
+          "launched_at": 1787939396.2546527,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 04:03"
+    },
+    {
+      "name": "ks828b17_gptoss_cgen_lr2e-6",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": null,
+      "started_at": "2026-08-29 02:50",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "3",
+          "session": "new1_ks828b17_gptoss_cgen_lr2e-6_t108g3",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_ks828b17_gptoss_cgen_lr2e-6_t108g3.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/train/train_causal_share.py --mode cgen --base qwen17 --env appworld --data /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/data/nyapass_aw_v1/gptoss --out /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/sweep/ks828b17_gptoss_cgen_lr2e-6 --lr 2e-6 --tok-budget 16384 --epochs 1 --eval-per-epoch 4 --log-every 10 --mem-probe",
+          "launched_at": 1787939441.1590443,
+          "kind": "batch",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": null
+        }
+      ],
+      "finished_at": "2026-08-29 04:03"
     }
   ]
 }
