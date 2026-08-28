@@ -243,6 +243,12 @@ class TestAttnCtxOnlyInForwardPacked(unittest.TestCase):
     `Call`,不算调用)。"""
 
     def test_attn_ctx_called_only_inside_forward_packed(self):
+        # 允许的调用点:前向一处,反向两处(--grad-ckpt 的重算发生在
+        # .backward() 里,必须与前向同一内核,spec 16.10 #37);生成路径
+        # (main 的评估段、eval_gen)永远不许出现在这个集合里。
+        ALLOWED_ATTN_CTX_CALLERS = {"_forward_packed",
+                                    "backward_logical_minibatch",
+                                    "_fwd_bwd_block"}
         src_path = ROOT / "pipeline/train/train_causal_share.py"
         tree = ast.parse(src_path.read_text())
 
@@ -261,7 +267,7 @@ class TestAttnCtxOnlyInForwardPacked(unittest.TestCase):
                 name = func.id if isinstance(func, ast.Name) else None
                 if name == "_attn_ctx":
                     caller = self.stack[-1] if self.stack else None
-                    if caller != "_forward_packed":
+                    if caller not in ALLOWED_ATTN_CTX_CALLERS:
                         self.offenders.append((caller, node.lineno))
                 self.generic_visit(node)
 
@@ -269,9 +275,10 @@ class TestAttnCtxOnlyInForwardPacked(unittest.TestCase):
         v.visit(tree)
         self.assertEqual(
             v.offenders, [],
-            "spec 16.10 #29:_attn_ctx(...) 只能在 _forward_packed 内调用——"
-            "无掩码的 model.generate 走 enable_gqa,mem-efficient 内核报 "
-            f"No available kernel。发现调用点在别的函数里:{v.offenders}")
+            "spec 16.10 #29:_attn_ctx(...) 只能在前向(_forward_packed)与反向"
+            "(backward_logical_minibatch / _fwd_bwd_block,#37:检查点重算要同一"
+            "内核)里调用——无掩码的 model.generate 走 enable_gqa,mem-efficient "
+            f"内核报 No available kernel。发现调用点在别的函数里:{v.offenders}")
 
 
 class TestEvalCeBeat(unittest.TestCase):

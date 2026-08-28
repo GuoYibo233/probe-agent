@@ -190,6 +190,15 @@ def backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp=False
 
     返回 `(logical_minibatch_loss, n_rows)`:前者是这个逻辑小批的标量 loss
     (供 step 日志的『loss』累加),后者是它的总行数。
+
+    `.backward()` 套在 `_attn_ctx` 里(静默失败点 #37):`--grad-ckpt` 打开时
+    每层的前向在反向阶段重算一遍,重算发生在 `.backward()` 内部;前向是在
+    `_forward_packed` 的 EFFICIENT 上下文里跑的,重算若落在上下文之外就走
+    默认内核选择,保存的张量元数据对不上,torch 报
+    `CheckpointError: Recomputed values ... have different metadata`(l4 冒烟
+    `ks828l4_gptoss_cgen_smoke` 2026-08-28 实测:[2,32,8192,8192] 对
+    [2,1,8192,8192]、cpu 对 cuda)。内核上下文只影响前向里的内核选择,不开
+    检查点时套与不套结果相同。
     """
     total = 0.0
     n_rows = 0
@@ -197,7 +206,8 @@ def backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp=False
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
             ce_per_row, w = block_row_ce(model, blk, dev, mask_dtype)
         loss_c = (ce_per_row * w).sum() / W
-        (loss_c / n_g).backward()
+        with _attn_ctx(dev):               # 检查点重算与前向同一内核(#37)
+            (loss_c / n_g).backward()
         total += loss_c.item()
         n_rows += ce_per_row.numel()
     return total, n_rows
@@ -279,7 +289,8 @@ def _fwd_bwd_block(model, grp, dev, mask_dtype, amp):
     with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
         ce_per_row, w = block_row_ce(model, grp, dev, mask_dtype)
         loss = (ce_per_row * w).sum() / w.sum().clamp(min=1e-9)
-    loss.backward()
+    with _attn_ctx(dev):                   # 检查点重算与前向同一内核(#37)
+        loss.backward()
 
 
 def _enum_run_blocks(tr_events, args):
