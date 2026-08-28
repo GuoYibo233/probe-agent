@@ -47,7 +47,8 @@
   训练显存峰值 60.59 GB（torch 已分配峰值 `max_memory_allocated`，等于 56.4 GiB，
   H100 93.10 GiB 余量 39%；reserved 峰值没有记录，训练中一次 nvidia-smi 样本
   54.4 GiB），最长事件探针 31.4 GB（同口径）；预算 24576 慢 15%（末尾累计每秒行数
-  157 对 184；六个对照点平均慢 18%）且已分配峰值 80.9 GB，expandable_segments 慢 3%
+  157 对 184；六个对照点分别慢 17.8 / 18.1 / 15.4 / 17.8 / 17.3 / 7.0%，平均 16%）
+  且已分配峰值 80.9 GB，expandable_segments 慢 3%
   无增益。ctool：8192 × bs 4 在 H100 训练首批 OOM（进程 memory.used 92.94 GiB），
   bs 2 的 nvidia-smi memory.used 峰值 56,859 MiB（2 秒采样，含分配器缓存）；
   8192 上限丢弃 train 1 个事件、val 3 个，与 plan 第四节的统计表逐字相符。

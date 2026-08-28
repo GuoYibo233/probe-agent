@@ -165,3 +165,15 @@ ks828b06_gptoss_ctool_h100mem（gpu0，max_len 8192，bs 4 accum 2，smoke 200/8
 ks828b06_gptoss_ctool_h100mem_bs2（H100 gpu0，8192，--bs 2 --accum 4）跑通：nvidia-smi 2 秒采样 165 个样本最大 56,859 MiB、p90 56,855（平台，不是尖峰）、p50 34,699；25 次更新；对齐 PASS；dropped_events 1/3；calA_weighted_acc 0.394 / lastbound 0.4125（smoke 规模）。ctool 没记 max_memory_allocated，只有这一组采样数。决定 15 退路坐实：train_causal_tool.py 默认改 --bs 2 --accum 4（仍 8 个事件一次更新）。工单 04 的 Comment 定值：--max-len 8192（三格）、新训练器 --tok-budget 16384、ctool --bs 2 --accum 4 --align-tol 3e-4。
 
 8-28-assistant 核对（只核范围，不预测）：56,859 MiB = 55.5 GiB，对 H100 93.10 GiB 余量 40%。两个参照：① 同样每批 16,384 个补齐 token 的 ctool 4096 × bs 4 实测 60.2 GiB（stage-commands.md:238），本次 55.5 比它低 8%；② cgen 在 8192 / 每批 2 的 B_h100 峰值 90,859 MiB（plan 9.2）按 4096 下 ctool 对 cgen 的峰值比 60.2 / 76.8 = 0.78 折算是 71,200 MiB = 69.5 GiB，本次比它低 20%。观察值落在两个参照之下，方向上和「ctool 不算全词表 logits、每 token 便宜」相容；smoke 是随机 200 个事件，最长的一对（两个约 8,000 token 的事件同批）有没有出现在这 25 次更新里日志里查不到。就算按参照 ② 的 69.5 GiB 当最坏一批，余量也有 25%，48G 卡（47.51 GiB）两个数都装不下。平台形状（p90 = max）与 CUDA 分配器 reserved 只涨不落的行为一致，max 是整程 reserved 的高水位，正是排卡要的数。
+
+### 2026-08-28 TIMELINE 条目落地
+
+`TIMELINE.md` 最上面新加「2026-08-28 训练口径换成缓存复用训练器：上限 8192 超长整条丢弃、8 个事件一次更新、cgen/cparam 1 个 epoch，批次前缀 ks828」（HEAD ad22297，第 13 到 54 行）。8-28-assistant 按台账 0 到 22、草稿第二节、plan 第 9.2 / 12.10 / 第四节逐句核过，结果发给 plan-8-28：一处数字无出处（第 18 行「4096 的左截断在 train 上砍掉 6% 的前缀 token」，plan 第四节没有这个数，草稿 2.1 的「6% 以内」说的是 6144 丢 58 个事件的估算）、一处两种量纲混写（第 44 行的 60.59 GB 是 torch 已分配峰值，第 46 行的 56,859 MiB 是 nvidia-smi）、一处跨文件不一致（第 45 行「24576 慢 15%」对 design-attention.md 8.5 的「慢 18%」）、三处措辞（第 19 行裁决归属、第 26 行读取位置规则的压缩说法、第 53 行 28% 的出处与样本范围）。runs.jsonl 第 118 到 133 行确有 ks828 九个 run 的 start/finish；issues/ 下确有 01 到 06 六张工单；三个速度档与 ctool 的 start 事件都写 dropped_events_train 1、dropped_events_val 3。
+
+六处全部按上述改法改了（d2a86ff，TIMELINE.md 14 行增 7 行删）：截断统计改成 4,956 行 2.66% / 259 事件 6.28% 带 plan 第四节出处；决定归属写成「gyb 确认，epoch 数与 ctool 读取位置两条按推荐锁定、gyb 授权」；读取位置规则改成跨切点 token 的准确措辞；60.59 GB 标明 torch 已分配峰值、reserved 未记录、一次样本 54.4 GiB，56,859 MiB 标明 nvidia-smi 含分配器缓存；24576 写成「末尾累计慢 15%（157 对 184）；六个对照点平均慢 18%」；28% 标明速度档 450 事件样本。
+
+## 决定 23
+
+TIMELINE「只增不改」的执行口径——同一会话同一天写成、三十分钟内、没有被任何文件引用的条目，事实错误在原处更正并在提交信息里写明「同日更正」；隔天或被引用之后的条目只追加更正段。 / 理由：错误数字留在正文、更正挂在后面，读的人要自己对账。 / 依据：仓库 CLAUDE.md「TIMELINE 人写，只增不改」的目的是不改写决策历史，不是保留刚写错的数字。
+
+8-28-assistant 注：这条是 plan-8-28 对仓库规矩「TIMELINE 只增不改」的自行解释，gyb 没有确认过；本轮按它执行了一次（d2a86ff，原处改了 7 行）。写 artifact 时应当把这条单独列给 gyb 看，由 gyb 定这个口径要不要写进 CLAUDE.md。

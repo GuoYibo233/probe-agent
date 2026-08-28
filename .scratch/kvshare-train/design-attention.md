@@ -261,13 +261,13 @@ math 校准：同一输入 math 比 mem-efficient 多 12.17 GiB，解析式给 1
 
 三个速度档和 cgen 冒烟档的 `ALIGN_CHECK.json` 相同（同一批 6 个 val 事件、154 行、2,877 个目标 token）：逐行最大差 5.48e-6（门槛 2e-5），逐 token 最大差 4.29e-5（门槛 3e-4），补齐基线 1.08e-5（3 倍 3.2e-5 没有触发告警），bf16 逐行平均 8.43e-3（门槛 2e-2）、最大 4.32e-2（门槛 1e-1），全部 PASS。cparam 冒烟档：同 6 个事件 154 行、1,916 个目标 token，逐行 9.30e-6、逐 token 4.72e-5、基线 1.00e-5，bf16 平均 9.74e-3、最大 4.87e-2，PASS。
 
-三格冒烟档（plan-8-28 的发射记录：H200 的 3、4、5 号卡）：cgen 40 个训练事件 284 行、16 个评估事件 81 行、`dropped_events` 训练 1 个、val 3 个、5 次更新、4 次评估 `val_ce` 1.7044 → 1.4554 → 1.3344 → 1.2938，`wall_s` 151.5；cparam 同样的事件数与行数，`val_ce` 2.5151 → 1.9831 → 1.7027 → 1.5926，`wall_s` 153.4；ctool（`ks828b06_gptoss_ctool_smoke`，工单 02 改过丢弃规则与上限 8192）对齐检查逐 token 模式 8,167 个 token，`maxdiff_hidden` 1.03e-4、`maxdiff_logits` 1.36e-5，容差 3e-4 PASS，相对差 1.46e-6 / 1.87e-6，200 个训练事件 80 个评估事件 25 次更新，`dropped_events` 训练 1 个、val 3 个，`n_bound_dropped` 0，`calA_weighted_acc` 0.408、`calA_lastbound_acc` 0.425（冒烟规模，不作数）。H100 上 ctool 的 reserved 峰值（`ks828b06_gptoss_ctool_h100mem`，nvidia-smi 2 秒采样）还在量，出来补在这里。
+三格冒烟档（plan-8-28 的发射记录：H200 的 3、4、5 号卡）：cgen 40 个训练事件 284 行、16 个评估事件 81 行、`dropped_events` 训练 1 个、val 3 个、5 次更新、4 次评估 `val_ce` 1.7044 → 1.4554 → 1.3344 → 1.2938，`wall_s` 151.5；cparam 同样的事件数与行数，`val_ce` 2.5151 → 1.9831 → 1.7027 → 1.5926，`wall_s` 153.4；ctool（`ks828b06_gptoss_ctool_smoke`，工单 02 改过丢弃规则与上限 8192）对齐检查逐 token 模式 8,167 个 token，`maxdiff_hidden` 1.03e-4、`maxdiff_logits` 1.36e-5，容差 3e-4 PASS，相对差 1.46e-6 / 1.87e-6，200 个训练事件 80 个评估事件 25 次更新，`dropped_events` 训练 1 个、val 3 个，`n_bound_dropped` 0，`calA_weighted_acc` 0.408、`calA_lastbound_acc` 0.425（冒烟规模，不作数）。ctool 在 H100（tokyo108 gpu0，93.10 GiB）上的显存两次发射（产物 `ks828b06_gptoss_ctool_h100mem` 与 `ks828b06_gptoss_ctool_h100mem_bs2`，都是 `--smoke` 200 个训练事件、上限 8192，外面包一层 `memwrap.sh` 每 2 秒记一次 nvidia-smi 的 `memory.used`）：第一次用当时的默认值 `--bs 4 --accum 2`，对齐检查过了之后训练第一批前向在 `F.linear` 里 OOM，报错原文 `Tried to allocate 154.00 MiB. GPU 0 has a total capacity of 93.10 GiB of which 146.88 MiB is free. Including non-PyTorch memory, this process has 92.94 GiB memory in use. Of the allocated memory 77.61 GiB is allocated by PyTorch, and 14.58 GiB is reserved by PyTorch but unallocated.`，nvidia-smi 115 个样本的最大值 87,179 MiB（2 秒一次，没有采到崩溃那一刻的峰）；第二次改 `--bs 2 --accum 4`（HEAD 7008dff）跑通，165 个样本最大 56,859 MiB（90 分位 56,855，中位 34,699），25 次更新，对齐 PASS（同上 1.03e-4），`dropped_events` 训练 1 个、val 3 个，`n_bound_dropped` 0，`calA_weighted_acc` 0.394、`calA_lastbound_acc` 0.4125（冒烟规模，不作数）。ctool 的默认值随之改成 `--bs 2 --accum 4`（决定 15 的退路，一次更新仍是 8 个事件）。
 
 ### 8.5 判读与裁决（决定 21 已采纳）
 
 上限 `--max-len` 留 8192：最长事件的探针 31.4 GB，b16k 训练里的峰值 56.4 GiB 对 93.10 GiB 余量 39%，b24k 的 75.4 GiB 也还有 19%，都在 10% 的裁决线上面。
 
-预算 `--tok-budget` 定 16,384：b24k 比 b16k 慢 18%（六个数都低），峰值高 20 GB，而且探针低估真峰（下一段），b24k 碰上两个最满块同组会顶到 85 到 90 GB，余量掉到 10% 线附近；b16k 又快又稳。
+预算 `--tok-budget` 定 16,384：b24k 比 b16k 末尾累计每秒行数慢 15%（最后一条 step 的 `ips` 157.1 对 183.7），六个对照点分别慢 17.8 / 18.1 / 15.4 / 17.8 / 17.3 / 7.0%，平均慢 16%；峰值高 20 GB，而且探针低估真峰（下一段），b24k 碰上两个最满块同组会顶到 85 到 90 GB，余量掉到 10% 线附近；b16k 又快又稳。
 
 `expandable_segments` 不开：b16k_es 比 b16k 慢 3%，峰值相同，57 次更新里看不到收益；整 epoch 会不会晚期碎片化没有测，全量训练遇到 OOM 再回头试。
 
@@ -276,5 +276,7 @@ S4（掩码在主线程上构造）不做：各窗口按补齐 token 算的吞�
 探针为什么比训练峰值低 9.5 GB（b16k 51.1 对 60.6 GB）：探针的峰值是两个时刻取大，反向期间是「权重 2.4 GB 加激活加正在生成的梯度」，反向期间优化器状态还没有分配（第一次 `opt.step()` 才建）；`opt.step()` 之后是「权重加梯度加状态 = 9.6 GB」，但激活已经释放。训练的真峰在一组里第二个逻辑小批的反向期间，那一段时间里优化器状态 4.8 GB 和第一个小批的梯度 2.4 GB 都在，7.2 GB 就是差额的大头，剩下约 2.3 GB 是块形状差异。探针的改法（工单 06）：先 `zero_grad(set_to_none=False)` 加一次 lr 置 0 的 `opt.step()` 把状态建好，再把最满块连做两次前向反向、中间不 `zero_grad`（accum 为 2 的时候两个最满块同组是真实会出现的最坏情况），第二次反向后读取峰值，再 `opt.state.clear()`。预期 b16k 约 60 GB。
 
 末尾窗口的 145 行每秒不是尾组或评估造成的：`train_s` 不含评估，评估在第 57 次更新之后；8.3 节的复现说明第 51、54 两个窗口正好落在每行 token 最多的一段（87.6 和 94.9 个），按 token 算的吞吐和别的窗口同一量级，长序列略低是注意力 L² 的份额变大。三个 run 窗口形状一模一样也说明是数据决定的。
+
+ctool 在 H100 上按 `--bs 2 --accum 4` 走：`--bs 4` 在 8192 上限下第一批就 OOM，崩溃时 PyTorch 已分配 77.61 GiB 加 14.58 GiB 预留未用，也就是碎片把 93.10 GiB 吃满；`--bs 2` 的 nvidia-smi 峰值 56,859 MiB（55.5 GiB，含分配器缓存）对 93.10 GiB 余量 40%。8.4 节的 ctool 数是冒烟规模的 200 个事件，全量训练的批里会出现更长的事件组合，`--bs 2` 的余量要在全量的第一个 epoch 里再看一眼 nvidia-smi。
 
 整 epoch 的训练时间按 b16k 的 185 行每秒估：train 集 186,479 行约 1,008 秒，加上四次评估、对齐检查和 `--mem-probe` 的全集加载（这三项在冒烟里没有单独计时，`wall_s` 减 `train_s` 是 471 秒，其中一次 20,034 行的评估）。
