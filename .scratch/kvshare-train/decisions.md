@@ -189,3 +189,13 @@ TIMELINE「只增不改」的执行口径——同一会话同一天写成、三
 工单 05（第三波，1 轮修复）分支 base 45c881e head 6c507cc 合并为 a89da00（spec §9 字段列表一行冲突，取主干加 baseline_warn），复核 cprobe-env 39 个测试 OK、output_hidden_states 0 命中、selfcheck 76；收账提交 f1e0a1f；工单 06 第四波 b 已发射（wf_df547174-750），工单 04 第四波 a 仍在跑（wf_1712edbf-529）。06 合并后计划在 H100 上用最终代码再跑一次 smoke 档三格加 b16k 速度档（含 --mem-probe），作为终验；然后 ticket-run Phase 4 终审、artifact。
 
 8-28-assistant 核对：HEAD f1e0a1f，a89da00 与 6c507cc 在 git log 里；`git diff --stat 10f1d12 a89da00` 14 个文件 +1,007/−55，其中 train_causal_share.py 119 行改动、train_causal_tool.py 17 行、tests/test_share_trainer.py 162 行；train_causal_share.py 里 output_hidden_states 0 命中。
+
+### 2026-08-28 第四波 a（工单 04）收账
+
+工单 04（第四波 a，1 轮修复）分支 base d6aa99d head 39da84e 合并为 9fc83b7，五份文件 +57/−14（extending.md §3 换实现先例与 §5 #25 到 #27、gates.md、invariants.md 第 45/47/48/53 行、stage-commands.md §3/§3.1/第 213 行/§7、MAP.md 五行），收账提交在其后（d38d8a1）。实现者把工单正文残留的 ctool `--bs 4 --accum 2` 按 Comment 统一成 `--bs 2 --accum 4`，plan-8-28 复核同意。剩工单 06（第四波 b，在跑）、终验冒烟、终审、artifact。
+
+### 2026-08-28 artifact 草稿核对
+
+plan-8-28 写好 artifact 草稿 `plans/2026-08-28-kvshare-report.html`（HEAD 71dcc2a，终验一节待补），8-28-assistant 按台账逐段核。核过没问题的：一句话结果四个数；对齐表前四行与 gpu_result.json、三个速度档和 cgen smoke 的 ALIGN_CHECK.json（都是 6 个事件 154 行 2,877 token，5.48e-6 / 4.29e-5 / 8.43e-3 / 4.32e-2）一致；速度表四行与我算的插值一致；显存表八行（含 math 内核校准点 L 2,552、实测差 12.17 GiB 对解析式 10.87）；smoke 表的 cgen / cparam 行和 ctool 的 0.408（H200 smoke 的 eval 事件 calA_weighted_acc 0.408、lastbound 0.425）；23 条决定的三行；需要拍板的八件；文件路径。发现的错误与遗漏发给了 plan-8-28：助手 1 三遍的发现数是 35 不是 24（13 + 9 + 13）；「工单 6 张全部 resolved」与「工单 06 已加字段」在 06 仍是 claimed（无合并提交）的时候写早了；「GPU run 11 个」与 runs.jsonl 的 9 个 run_id、logs 的 12 次发射都对不上；cparam smoke 对齐样本是 6 个事件 154 行 1,916 token 不是「抽 2 个事件」；解读段两处没有依据的判断（24576 慢的原因归到 pad 更多、OOM 那批说成四个 8192 长的事件）。invariants.md:45 的 epochs 理由已按核对改掉（8c4d587）。
+
+8-28-assistant 核对：`git diff --stat d6aa99d 39da84e` 五个文件 +57/−14 对（extending 7、gates 2、invariants 9、stage-commands 45、MAP 8）；extending.md §5 第 291 到 293 行是 #25 到 #27；invariants.md:47 写「默认 8192 不退档（2026-08-28 冒烟裁决）」、:53 smoke 行已分 ctool 与 cgen/cparam；gates.md G14 那行改了 smoke 说明；MAP.md:95 是（参照）行、:98 是 share_data 的（共用）行；两份 skill 文档里 `--bs 4 --accum 2` 只剩在工单 02/04 的 Comments 里当历史。一处要补改：invariants.md:45 给 cgen/cparam `--epochs` 改 1 附的理由「每个事件全文只过一遍底座，不用像旧逐行训练器那样多轮吃同一份切点」不是裁决的理由，草稿 2.5 的理由是 plan 12.7 的 8 个 cgen/cparam run 的 val_ce 全在 epoch 0 最低（新训练器每个 epoch 同样把每个切点过一遍，只是前缀共享）。
