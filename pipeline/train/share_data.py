@@ -95,7 +95,9 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
     返回 `(events, counts)`:
     - `events`:列表,每个事件是 `dict(event, n_full, packed_len,
       prefix_len, full_ids, rows)`,`rows` = `[(sent_idx, text, p, seg_ids,
-      seg_lab, w), ...]`。事件顺序 = 文件里首次出现的顺序;行顺序 =
+      seg_lab, w, gen), ...]`(第 6 位 `gen` = `dict(tgt=<目标串>,
+      tool=<工具名或 None>)`,给 `train_causal_share.py` 的 `--gen-eval`
+      生成式评估用,spec 16.3、工单 08)。事件顺序 = 文件里首次出现的顺序;行顺序 =
       `sent_idx` 升序 —— 这两条保序是契约,对齐检查靠它按位置配对。
       `full_ids`(事件全文分词结果)与 `packed_len`/`prefix_len`(拼接
       序列长度、公共前缀上界 P = max_k p_k)是给 `pack_event` 用的。
@@ -178,7 +180,9 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
                 ro["kept"] += 1
             if mode == "cgen":
                 tail = cgen_mod.CALL_SEP
-                tgt_ids = tok(r["label_call"],
+                tgt_str = r["label_call"]
+                tool = None
+                tgt_ids = tok(tgt_str,
                              add_special_tokens=False)["input_ids"]
                 tgt_ids = tgt_ids + [tok.eos_token_id]
             else:
@@ -187,6 +191,7 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
                 if tgt_str is None:
                     assembly_mismatch += 1
                     continue
+                tool = r["label"]
                 tgt_ids = tok(tgt_str, add_special_tokens=False)["input_ids"]
                 tgt_ids = tgt_ids + [tok.eos_token_id]
             if len(tgt_ids) > MAX_TGT_TOK:
@@ -202,8 +207,9 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
                 "全文延续撞车了,查 tokenizer 版本。")
             seg_ids = tail_ids + tgt_ids
             seg_lab = [-100] * len(tail_ids) + tgt_ids
+            gen = dict(tgt=tgt_str, tool=tool)
             rows.append((r["sent_idx"], r["text"], p, seg_ids, seg_lab,
-                        float(r["w"])))
+                        float(r["w"]), gen))
             n_rows += 1
         if not rows:
             # 这个事件的全部行都在行级丢弃(readonly/tgt 过长/mismatch)里
@@ -271,7 +277,7 @@ def pack_event(ev):
     row_index = [-1] * P
     seg_bounds = []
     for k, row in enumerate(ev["rows"]):
-        _sent_idx, _text, p, seg_ids, seg_lab, _w = row
+        _sent_idx, _text, p, seg_ids, seg_lab, _w = row[:6]
         start = len(tokens)
         tokens.extend(seg_ids)
         positions.extend(range(p, p + len(seg_ids)))

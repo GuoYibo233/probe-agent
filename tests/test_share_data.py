@@ -111,7 +111,7 @@ class TestPrefixRule(unittest.TestCase):
             full_text = raw_rows[max(raw_rows)]["text"]
             full_ids_ground = self.tok(full_text, add_special_tokens=False,
                                        truncation=False)["input_ids"]
-            for sent_idx, text, p, seg_ids, seg_lab, w in ev["rows"]:
+            for sent_idx, text, p, seg_ids, seg_lab, w, _gen in ev["rows"]:
                 r = raw_rows[sent_idx]
                 self.assertEqual(text, r["text"])
                 if mode == "cgen":
@@ -303,10 +303,11 @@ class TestChunkByBudget(unittest.TestCase):
 def _toy_event():
     """手造 3 行小事件(spec 12 (d)):P=3,full_ids 只用到前 3 个。"""
     full_ids = [10, 11, 12, 13, 14]
+    gen = dict(tgt="", tool=None)
     rows = [
-        (0, "a",   1, [20, 21, 22], [-100, -100, 22], 1.0),
-        (1, "ab",  3, [30, 31, 32], [-100, 31, 32],   1.0),
-        (2, "abc", 2, [40, 41, 42], [-100, -100, 42], 1.0),
+        (0, "a",   1, [20, 21, 22], [-100, -100, 22], 1.0, gen),
+        (1, "ab",  3, [30, 31, 32], [-100, 31, 32],   1.0, gen),
+        (2, "abc", 2, [40, 41, 42], [-100, -100, 42], 1.0, gen),
     ]
     prefix_len = max(row[2] for row in rows)
     packed_len = prefix_len + sum(len(row[3]) for row in rows)
@@ -345,7 +346,8 @@ class TestPackAndMask(unittest.TestCase):
         ev_a = _toy_event()
         # 事件 B:单行,P=0(无前缀),seg_ids=[50,51],labels=[-100,51]。
         ev_b = dict(event="tiny", n_full=1, packed_len=2, prefix_len=0,
-                   full_ids=[], rows=[(0, "x", 0, [50, 51], [-100, 51], 1.0)])
+                   full_ids=[], rows=[(0, "x", 0, [50, 51], [-100, 51], 1.0,
+                                       dict(tgt="", tool=None))])
         packed = [share_data.pack_event(ev_a), share_data.pack_event(ev_b)]
         L_pad = 16
         input_ids, position_ids, mask, loss_idx = share_data.batch_mask(packed, L_pad)
