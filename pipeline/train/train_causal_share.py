@@ -210,23 +210,53 @@ def backward_logical_minibatch(model, blocks, W, n_g, dev, mask_dtype, amp=False
 
 
 @torch.no_grad()
-def eval_ce(model, events, tok_budget, dev, amp):
-    """val 全量加权 masked-CE(与训练损失同口径,spec 第 6 节)。"""
+def eval_ce(model, events, tok_budget, dev, amp, beat=None):
+    """val 全量加权 masked-CE(与训练损失同口径,spec 第 6 节)。
+
+    `beat`(工单 08,spec 16.3 倒数第二条):可选的无参回调,块循环里每 25
+    个物理块调一次——全量 val(115,211 行)加生成式评估的窗口里现在没有
+    任何心跳,采样器按 5 x 典型心跳间隔判停滞会误报,`beat` 让调用方
+    (main 的 `heartbeat.emit`)在这个窗口里刷新时间戳。`beat=None` 时
+    跳过,不影响现有调用点。
+    """
     model.eval()
     mask_dtype = torch.bfloat16 if amp else torch.float32
     blocks = share_data.chunk_by_budget(events, tok_budget)
     s = w_tot = 0.0
     with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-        for blk in blocks:
+        for i, blk in enumerate(blocks):
             ce_per_row, w = block_row_ce(model, blk, dev, mask_dtype)
             s += (ce_per_row.float() * w).sum().item()
             w_tot += w.sum().item()
+            if beat is not None and (i + 1) % 25 == 0:
+                beat()
     model.train()
     if w_tot <= 0:
         raise SystemExit(
             "val 一个目标位都没有(加权分母 w_tot=0)——继续算会得到 val_ce=0.0,"
             "每个 epoch 都当 best 存,run 看起来完美。数据或过滤口径有问题,硬停。")
     return s / w_tot
+
+
+def sample_gen_eval_rows(events, mode, seed, n):
+    """`--gen-eval` 的抽样(工单 08,spec 16.3):`events`(`share_data.
+    load_events` 的返回值,通常是 val 集)按事件加载顺序、行按事件内
+    `sent_idx` 顺序摊平成行列表(不过滤——share_data 的行全部有目标),
+    `random.Random(seed).shuffle` 后取前 `n` 行(`n` 大于行数就全取)。
+
+    定种子的纯函数:同一份 `events` 两次调用结果相同(spec 16.9 (b))。
+
+    返回值按 `mode` 打包成两个旧脚本 `eval_gen` 要的元组形状(`tgt`/`tool`
+    来自行元组第 6 位的 `gen` 字典,`share_data.load_events` 第 205 行):
+    cgen `(text, None, None, tgt)`,cparam `(text, None, None, tool, tgt)`。
+    """
+    flat = [row for ev in events for row in ev["rows"]]
+    rng = random.Random(seed)
+    rng.shuffle(flat)
+    picked = flat[:n] if n > 0 else []
+    if mode == "cgen":
+        return [(row[1], None, None, row[6]["tgt"]) for row in picked]
+    return [(row[1], None, None, row[6]["tool"], row[6]["tgt"]) for row in picked]
 
 
 # ---------------------------------------------------------------- 显存探针
@@ -605,6 +635,13 @@ def main():
                          "和 --smoke 同给时 N 覆盖 40/16、取法仍是升序")
     ap.add_argument("--log-every", type=int, default=50,
                     help="每几次更新写一条 step 日志")
+    ap.add_argument("--gen-eval", type=int, default=200,
+                    help="生成式评估抽的 val 行数,0 关闭(spec 16.3,工单 08)")
+    ap.add_argument("--gen-bs", type=int, default=8,
+                    help="生成式评估的批大小")
+    ap.add_argument("--gen-eval-at", default="last", choices=["all", "last"],
+                    help="last(默认)=只在 frac==E(epoch 末)那次评估做生成,"
+                         "all=每个评估点都做")
     ap.add_argument("--mem-probe", action="store_true",
                     help="训练前踩最坏块量显存(spec 10)")
     ap.add_argument("--device", default="cuda")
@@ -686,6 +723,9 @@ def main():
         data / "val.jsonl", tok, args.mode, args.max_len, ro=ro_ev,
         limit=n_ev, order=order)
 
+    gen_rows = (sample_gen_eval_rows(ev_events, args.mode, SEED, args.gen_eval)
+               if args.gen_eval > 0 else [])
+
     if args.readonly_env:
         au_tr = readonly_map.audit(ro_tr["labels"], ro_table,
                                    where=f"share/{args.mode}/train")
@@ -733,7 +773,8 @@ def main():
         max_tgt_tok=max_tgt_tok, tok_budget=args.tok_budget,
         eval_tok_budget=eval_tok_budget, events_per_mb=args.events_per_mb,
         accum=args.accum, eval_per_epoch=args.eval_per_epoch,
-        log_every=args.log_every, mem_probe=args.mem_probe, lr=lr,
+        log_every=args.log_every, gen_eval=args.gen_eval, gen_bs=args.gen_bs,
+        gen_eval_at=args.gen_eval_at, mem_probe=args.mem_probe, lr=lr,
         attn_impl=args.attn_impl, seed=SEED, device=dev,
         readonly_env=args.readonly_env, align_pass=align_rep["PASS"],
         align_maxdiff=align_rep["max_abs_diff"],
@@ -825,9 +866,26 @@ def main():
 
             if u in eval_points:
                 frac = eval_points[u]
-                vce = eval_ce(model, ev_events, eval_tok_budget, dev, amp)
-                log(event="eval", ep=ep, frac=frac, gstep=gstep,
-                    val_ce=round(vce, 4), n_eval_rows=ev_counts["n_rows"])
+                vce = eval_ce(model, ev_events, eval_tok_budget, dev, amp,
+                              beat=lambda: heartbeat.emit(gstep, steps, "step"))
+                eval_kw = dict(event="eval", ep=ep, frac=frac, gstep=gstep,
+                              val_ce=round(vce, 4), n_eval_rows=ev_counts["n_rows"])
+                do_gen = (args.gen_eval > 0
+                         and (args.gen_eval_at == "all" or frac == E))
+                if do_gen:
+                    heartbeat.emit(gstep, steps, "step")
+                    gen_t0 = time.time()
+                    gen_fn = (train_causal_callgen.eval_gen if args.mode == "cgen"
+                             else train_causal_param.eval_gen)
+                    vex = gen_fn(model, tok, gen_rows, dev, amp, args.max_len,
+                                args.gen_bs)
+                    heartbeat.emit(gstep, steps, "step")
+                    exact_key = ("val_exact_call" if args.mode == "cgen"
+                                else "val_exact_params")
+                    eval_kw[exact_key] = round(vex, 4)
+                    eval_kw["gen_n"] = len(gen_rows)
+                    eval_kw["gen_s"] = round(time.time() - gen_t0, 2)
+                log(**eval_kw)
                 if vce < best:
                     best = vce
                     best_ep, best_frac = ep, frac
