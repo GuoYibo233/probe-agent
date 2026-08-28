@@ -17,8 +17,8 @@ Spec: `.scratch/kvshare-train/spec.md` 16.4（判据与键名）、16.9（测试
    - 不过仍 `sys.exit(2)`，失败信息里写出用的规则和对应的数。
 2. `train_causal_tool.py`：加 `--align-rule`（同三个值，默认 `abs`）与 `--align-rel-tol`（默认 1e-5）。相对量已经在算，不起新名字：`align_check` 第 243 到 250 行的 `absmax_hidden`、`reldiff_hidden = d_h / max(absmax_hidden, 1e-9)`、`absmax_logits`、`reldiff_logits`（注释写「诊断用，不参与判定」）。判定：`abs` = 现状 `max(d_h, d_l) < tol`（第 241 行）；`rel` = `reldiff_hidden ≤ align_rel_tol` 且 `reldiff_logits ≤ align_rel_tol`；`both` = 两条同时。ALIGN_CHECK.json 只加 `rule, rel_tol` 两个键（相对量本来就在）。把那句「不参与判定」的注释改成说明 `rel` 规则用它们。
 3. 测试（spec 16.9 第三条）放新文件 `tests/test_align_rules.py`（不往 `test_share_trainer.py` / `test_ctool_readpos.py` 末尾加用例——工单 08、10 并行改那两个文件；小模型的构造 import 现有测试文件里的辅助函数）：
-   - 新训练器：小模型 CPU 上 `--align-only` 跑三种规则，`ALIGN_CHECK.json` 都有全部新键，三种 `PASS` 都为真（fp32 CPU 差是 1e-6 量级）；`--align-rule rel --align-rel-tol 0` 退出码 2；`--align-baseline-factor 0` 时 `baseline_warn` 为真（`max(0 × 基线, 1e-6)` 仍是 1e-6，差大于 1e-6 才告警——如果小模型上差小于 1e-6，改成断言 `baseline_factor` 键的值等于传入值即可，测试里写明原因）。
-   - ctool：对齐检查函数在小模型上三种规则都过，`reldiff_hidden / reldiff_logits / rule / rel_tol` 在 JSON 里；`--align-rel-tol 0` 判失败。
+   - 新训练器：小模型 CPU 上 `--align-only` 跑三种规则，`ALIGN_CHECK.json` 都有全部新键，三种 `PASS` 都为真（fp32 CPU 差是 1e-6 量级）；`--align-rule rel --align-rel-tol -1` 退出码 2（用负数不用 0：差恰好是 0.0 时 `≤ 0` 会偶发通过）；`run_align_check` 第二条失败出口（参照基线自检失败时写的最小报告）也要带 `rule / rel_tol` 两个键；`tests/test_share_trainer.py` 里现有 drift 用例构造的 `argparse.Namespace` 缺新属性（`align_tok_tol` 等）的，补上默认值；`--align-baseline-factor 0` 时 `baseline_warn` 为真（`max(0 × 基线, 1e-6)` 仍是 1e-6，差大于 1e-6 才告警——如果小模型上差小于 1e-6，改成断言 `baseline_factor` 键的值等于传入值即可，测试里写明原因）。
+   - ctool：`CausalProbe.build()` 只认 `MODELS[base]`、没有 `path=` 口子（`train_causal_tool.py` 第 177 到 184 行），所以照 `tests/test_share_trainer.py` 第 59 与 625 到 632 行的做法建 `Qwen3Config` 临时模型目录，直接构造 `CausalProbe(<目录>, n_labels)` 调 `align_check`（不走 `main()`），三种规则都过，返回的报告里有 `reldiff_hidden / reldiff_logits / rule / rel_tol`；`rel_tol = -1` 判失败。不读现役数据目录。
 
 ## 验收
 
