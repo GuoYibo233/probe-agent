@@ -572,12 +572,31 @@ def main():
     fired, keys, n_fired, n_ro_excluded = {}, [], 0, 0
     overlong_counts = dict(n_left_truncated=0, n_skipped_rows=0,
                           n_dropped_events=0, n_excluded_by_ctool=0)
+    ev_row_idx = defaultdict(list)
+    for i, r in enumerate(rows):
+        ev_row_idx[r["event"]].append(i)
     if old_mode:
         logits = torch.load(ctool / "logits_test.pt", map_location="cpu")
         assert len(rows) == logits.shape[0], (len(rows), logits.shape)
-        fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
 
-        keys = [k for k in dict.fromkeys(r["event"] for r in rows)
+        # ctool 剔除的行不许当触发点候选(spec 16.2 衔接段):提前读
+        # excluded_idx,只在剩下的行里挑触发点——零 logits 过 softmax 是均匀
+        # 分布,只在 θ<=1/n_labels 时才会被 θ 天然挡住,不能靠这个当保险。
+        # 一个事件的候选行全部被剔时没有触发点,不判分,计 n_excluded_by_ctool。
+        ctool_lmeta = ctool / "logits_test.meta.json"
+        excluded_rows = set()
+        if ctool_lmeta.exists():
+            excluded_rows = set(
+                json.loads(ctool_lmeta.read_text()).get("excluded_idx", []))
+        overlong_counts["n_excluded_by_ctool"] = sum(
+            1 for idxs in ev_row_idx.values()
+            if all(i in excluded_rows for i in idxs))
+        cand_idx = [i for i in range(len(rows)) if i not in excluded_rows]
+        cand_rows = [rows[i] for i in cand_idx]
+        cand_probs = torch.softmax(logits[cand_idx] / T, -1)
+        fired = replay_fire(cand_rows, cand_probs, theta, nro_id)
+
+        keys = [k for k in dict.fromkeys(r["event"] for r in cand_rows)
                 if fired[k]["fired"]]
         n_fired = len(keys)
         # readonly 模式:触发了但真值非只读的事件不判分(不进任何分母),单独计数
@@ -602,15 +621,10 @@ def main():
 
     if old_mode:
         # --overlong 筛选(分词器加载之后;readonly 排除之后、--limit 之前,
-        # spec 16.2 三步顺序写死)
-        ctool_lmeta = ctool / "logits_test.meta.json"
-        excluded_rows = set()
-        if ctool_lmeta.exists():
-            excluded_rows = set(
-                json.loads(ctool_lmeta.read_text()).get("excluded_idx", []))
-        ev_row_idx = defaultdict(list)
-        for i, r in enumerate(rows):
-            ev_row_idx[r["event"]].append(i)
+        # spec 16.2 三步顺序写死)。ctool 剔除已经在挑触发点那一步处理过
+        # (上面的 overlong_counts["n_excluded_by_ctool"]),这里传空集合,
+        # 只做提示长度筛选——keys 里的事件都已经保证至少有一个未被 ctool
+        # 剔除的候选行,select_keys 的剔除分支在这里必然不再命中。
         keys_rowmap = {k: ev_row_idx[k] for k in keys}
         prompt_len = {k: len(tok(fired[k]["row"]["text"] + sep,
                                 add_special_tokens=False,
@@ -623,9 +637,14 @@ def main():
                 [r for r in rows if r["event"] in key_set])
             n_full = {k: share_data.n_full_tokens(tok, full_texts[k])
                      for k in keys}
-        keys, overlong_counts = share_data.select_keys(
-            args.overlong, keys_rowmap, n_full, prompt_len, excluded_rows,
+        keys, length_counts = share_data.select_keys(
+            args.overlong, keys_rowmap, n_full, prompt_len, set(),
             max_len, args.max_new_tokens)
+        assert length_counts["n_excluded_by_ctool"] == 0, (
+            "keys 里的事件理应都至少有一个未被 ctool 剔除的候选行")
+        overlong_counts.update(n_left_truncated=length_counts["n_left_truncated"],
+                              n_skipped_rows=length_counts["n_skipped_rows"],
+                              n_dropped_events=length_counts["n_dropped_events"])
         if args.limit:
             keys = keys[:args.limit]
 
