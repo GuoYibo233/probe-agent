@@ -1,0 +1,219 @@
+# spec: 缓存复用训练器（kvshare-train）
+
+Status: ready-for-agent
+日期: 2026-08-28。裁决来源是 `plans/2026-08-28-kvshare-draft.md` 第二节的七条（gyb 确认或授权按推荐锁定）；实施期间由 plan-8-28 会话自主拍板的决定编号记在同目录 `decisions.md`，本文引用时写「决定 N」。注意力前向的内核选择与验证结果在同目录 `design-attention.md`（8-28-assistant-2 交付）。
+
+## 1 目标与范围
+
+这一轮交付一个新的训练程序 `pipeline/train/train_causal_share.py`，服务 cgen 和 cparam 两个格（`--mode cgen|cparam`），做四件事：一个事件的全文只过一遍底座，每个切点的目标段接在共享的前缀后面算损失；不截断任何样本，全文超过上限的事件整条丢弃并计数；上限默认 8192（冒烟后可能退到 6144）；epoch 默认 1。同时 ctool（`train_causal_tool.py` 与 `eval_tool.py`）吃三项改动：丢弃规则、上限默认值、切点读取位置规则，并把更新单位改成 8 个事件。
+
+格名不变（还是 cgen / cparam / ctool），数据不变，四个评测脚本一行不改。按 `extending.md` 第 113 到 121 行的判据，这次是「换实现」不是「加新格」，不走 §3.1 新格清单（决定 3）。
+
+范围之外：评测端超长事件的处理、学习率扫描、`--fire-head`（决定 4）、第十四节的六条实验。旧的逐行训练器 `train_causal_callgen.py` 和 `train_causal_param.py` 一行不改，作为对齐参照冻结（决定 3）。
+
+成功的样子：第 9 节的对齐检查通过（fp32 逐行 loss 最大绝对差 ≤ 1e-5，依据是 `design-attention.md` 的 CPU 实测 2.15e-6）；H100 上新训练器按相同累计行数比的每秒行数高于旧训练器，两套对照各自配对（决定 9，数字都来自 `pipeline/runs/np821b06_gptoss_cgen/train_log.jsonl` ep 0，tokyo108 H100，2026-08-28 由 8-28-assistant-1 复核）：累计值 `ips`（本 epoch 累计行数 ÷ 训练秒数）在 1,600 / 9,600 / 19,200 行处对 2.76 / 3.26 / 3.97；窗口值 `ips_win` 在 0 到 1,600 / 8,000 到 9,600 / 17,600 到 19,200 行这三个窗口对 2.77 / 3.94 / 6.24（`plans/2026-08-28-plan.md` 第 12.10 节的三个数是窗口值；第 9.2 节 A_h100 的 2.75 是 1,600 行处的累计值）。六个数都要高；显存峰值按第 10 节的最坏块量，余量 10% 以上。
+
+## 2 名字（全文只用这些词）
+
+- 事件：train.jsonl 里 `event` 字段相同的一组行。事件全文 = 这组行里 `sent_idx` 最大那一行的 `text`。
+- 行：jsonl 的一条记录，也是一个训练实例。行文本 = 这一行的 `text`，是事件全文的前缀。
+- 切点：行文本的字符长度 `len(text)`。
+- 前缀 token：事件全文分词得到的 token 序列 `full_ids`。
+- 旧序列：旧训练器给一行构造的 prompt token 序列 `old_ids`（第 3.4 节）。
+- 目标串 token：`tgt_ids`（第 3.3 节）。
+- 公共前缀长度 p：`old_ids` 与 `full_ids` 的最长公共前缀的 token 数。
+- 目标段：`old_ids[p:] + tgt_ids`。
+- 拼接序列：一个事件的「前缀 token（截到最大 p）+ 全部目标段按行顺序拼接」。
+- 逻辑小批：4 个事件的全部行，损失的归一化单位。
+- 物理块：一个逻辑小批按 token 预算切出的一次前向所含的事件。
+- 更新：一次 `opt.step()`；一次更新 = `--accum` 个逻辑小批，默认 2，即 8 个事件。
+- 上限 `--max-len`：事件全文 token 数的上限，超过就整条丢弃。
+- token 预算 `--tok-budget`：一个物理块允许的「事件数 × 块内最长拼接序列长度」上限。
+
+## 3 数据与分词
+
+### 3.1 输入
+
+`<data>/train.jsonl` 与 `<data>/val.jsonl`，字段照旧训练器：`event`、`sent_idx`、`n_sents`、`text`、`label`、`label_call`、`w`。现役数据 `pipeline/data/nyapass_aw_v1/gptoss/`：train 186,479 行 4,127 个事件，val 115,211 行 2,556 个事件，`w` 全部是 1.0（2026-08-28 清点）。
+
+### 3.2 事件分组与前缀性质
+
+按 `event` 分组，按 `sent_idx` 排序，事件全文取最后一行的 `text`。前缀性质检查照 `train_causal_tool.py` 第 112 到 115 行：`random.Random(SEED)` 抽 50 个事件断言每一行的 `text` 都是全文的前缀。SEED = 42。
+
+### 3.3 行的取舍与目标串（照抄旧训练器，不许另写一套）
+
+- cgen：目标串 = `tok(label_call, add_special_tokens=False) + [eos]`（`train_causal_callgen.py` 第 162 到 163 行）；`len(tgt_ids) > MAX_TGT_TOK`（160）的行丢弃并计数 `dropped_rows_tgt`（第 164 到 166 行）。`--readonly-env` 打开时非只读的行整条丢弃，计数照 `readonly_map` 的口径（第 133 到 142 行）。
+- cparam：prompt 尾巴 = `param_prompt_tail(label)` = `CALL_SEP + label + "("`；目标串 = `param_target(label, label_call) + [eos]`，`param_target` 返回 None 的行丢弃并计数 `assembly_mismatch`（`train_causal_param.py` 第 89 到 106 行、第 129 到 136 行）。
+- 每一行都是实例，没有别的筛选。
+- 实现方式：`share_data.py` 直接 `import` 两个旧脚本的常量和函数（`CALL_SEP`、`MAX_TGT_TOK`、`param_prompt_tail`、`param_target`、`MODELS`、`SEED`），不许复制粘贴一份。旧脚本有 `__main__` 守卫，import 安全。
+
+### 3.4 公共前缀规则（草稿 2.4，gyb 已锁）
+
+对每一行：
+
+```
+old_ids  = tok(text + TAIL, add_special_tokens=False)     # TAIL: cgen 是 CALL_SEP，cparam 是 param_prompt_tail(label)
+full_ids = tok(full_text, add_special_tokens=False)
+p        = LCP(old_ids, full_ids)                          # 逐 token 比到第一个不同处
+seg_ids  = old_ids[p:] + tgt_ids
+seg_lab  = [-100] * len(old_ids[p:]) + tgt_ids
+```
+
+断言 `len(old_ids[p:]) >= 1`（分隔串的 `[`、`CALL`、`]`、`Ġ` 四个 token 不会出现在全文延续里，实测尾巴多出的 token 数只有 −1、0、1 三种，草稿 4.3）。这条规则使新训练器每一行的 token 序列和旧训练器逐 token 相同。
+
+`add_special_tokens` 的取值、pad/eos/截断方向的 tokenizer 设置，照 `train_causal_callgen.py` 的 `build()` 第 216 到 223 行；新训练器直接调用旧脚本的 `build()` 拿 tokenizer 和模型（决定 6），需要额外的 `attn_implementation` 参数时给 `build()` 加一个带默认值的关键字参数，默认值保持旧行为。
+
+### 3.5 丢弃规则（草稿 2.1，gyb 已锁；决定 5）
+
+- 事件级：`len(full_ids) > max_len` 的事件整条丢弃，计数 `dropped_events`（train / val 各一个数，写进 `start` 事件）。判据只看事件全文的 token 数，不看拼接序列长度（拼接序列由 token 预算兜底）。`plans/2026-08-28-plan.md` 第四节的表：8192 时 train 丢 1 个事件，6144 丢 58 个。
+- 行级：3.3 的两条照旧。
+- 没有任何截断：`tok(...)` 一律 `truncation=False`。加载完数据后断言「最长的拼接序列长度 ≤ `max_len + MAX_BOUNDS × (MAX_TGT_TOK + 8)`」，`MAX_BOUNDS` 从 `pipeline/annotate/rules.py` import（现值 64，每个事件的行数上限；平均行数 45.2 只是均值，1,930 个事件顶到 64 行，`plans/2026-08-28-plan.md` 第 12.3 节），断言不成立就报错退出（防 tokenizer 版本漂移把尾巴撑长）。
+
+## 4 前向形态
+
+语义定义在这里，内核选择与实现路径以 `design-attention.md` 为准（2026-08-28 已交付，CPU 等价验证通过，验证脚本与结果收在 `verify/`）。定下来的实现路径（决定 12）：
+
+- 形态 A：一个事件打包成一条序列一次前向；多事件沿批维摆，按 token 预算组批。形态 B（前缀 `use_cache` 再各段接缓存）不用：和 `--grad-ckpt` 互斥、每段 cat 出的 K/V 副本在 8192 事件上约 20 GB。
+- 内核：`attn_implementation="sdpa"`，训练与评估的前向都包在 `torch.nn.attention.sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])` 里；有掩码时 flash 直接拒绝，默认优先级会落到 mem-efficient，但显式限定之后一旦退到 math 就报错退出而不是爆显存（math 内核每层留一份 fp32 的 `(1, 16, L, L)`：L = 9,100 时每层 5.3 GB、28 层 148 GB）。`--attn-impl` 默认 `sdpa`，只接受 `sdpa`（flex_attention 留作冒烟后的优化，不在这一轮）。
+- 掩码：调用方自己造成 bf16 加性掩码（可看 0、不可看 −inf），形状 `[B, 1, L, L]`，每个物理块造一份，L 补到 16 的倍数；不许传 bool 掩码（HF 会每层各转一份，28 × 166 MB ≈ 4.6 GB）。
+- position_ids：显式传张量，每段从 p_k 接着数（`modeling_qwen3.py` 直接吃调用方给的 position_ids）。
+- 损失位：用 `(query 位置, 目标 token id, 行号)` 的下标表从 logits 里取，不用移位 labels；每行 ce 的定义仍是第 4 节末段。
+- `--grad-ckpt` 与 `--lora` 在这个形态下都验证过（CPU：梯度检查点下 loss 差 0；peft 下 loss 差 0 且只有适配器参数有梯度）。
+
+一个事件的拼接序列：
+
+```
+tokens    = full_ids[:P] + seg_1 + seg_2 + ... + seg_K        # P = max_k p_k，K = 事件的行数
+positions = [0..P-1] + [p_1, p_1+1, ...] + [p_2, p_2+1, ...] + ...
+labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
+```
+
+注意力允许关系（True = 可看）：前缀内部因果；第 k 段的第 i 个 token 可看前缀的前 p_k 个位置和本段的前 i+1 个 token；段与段之间互不可见；前缀看不到任何目标段。物理块内多个事件走 batch 维，右侧 pad，pad 位置不可见也不算损失。
+
+每行 loss：按 `inst_ce`（`train_causal_callgen.py` 第 231 到 248 行）的口径，本段目标 token 位置上的交叉熵求平均（logits 在位置 t 预测位置 t+1 的 token，只算 `label != -100` 的位置，分母是本行目标 token 数）。第一个目标 token 由本段最后一个 prompt token 预测，这个 token 在本段内（3.4 的断言保证）。
+
+## 5 损失与更新单位（草稿 2.2，gyb 已锁）
+
+- 逻辑小批 = 4 个事件（`--events-per-mb` 默认 4）的全部行 R。`W = Σ_{r∈R} w_r`。
+- 逻辑小批按 token 预算拆成物理块 C_1..C_m：事件按拼接序列长度降序，贪心装块，块的「事件数 × 块内最长长度」≤ `--tok-budget`；单个事件超预算时独自成块（允许超预算）。
+- 每个物理块：`loss_C = Σ_{r∈C} w_r · ce_r / W`，`(loss_C / accum).backward()`。m 个块的梯度之和等于整个逻辑小批一次算完的梯度，也等于旧训练器 `loss = (ce·w).sum()/w.sum()` 再 `(loss/accum).backward()`（第 494 到 505 行）。
+- 每 `--accum`（默认 2）个逻辑小批：`clip_grad_norm_(1.0)` → `opt.step()` → `sch.step()` → `opt.zero_grad()`。
+- 优化器与调度器照旧：`AdamW(weight_decay=0.01)`，`get_linear_schedule_with_warmup(opt, int(steps*0.05), steps)`，`steps = ceil(n_events / (events_per_mb · accum)) · epochs`。
+- 事件顺序：每个 epoch 用 `random.Random(SEED + ep)` 打乱事件列表，按顺序每 4 个一个逻辑小批（最后一个可以不满）。
+- 学习率默认值不动：全参 `FULL_LR = 1e-5`，LoRA 走 `lora_util.resolve_lr`（默认 2e-4）。`--lora`、`--grad-ckpt` 的接线照旧训练器（`lora_util.wrap / prepare_grad_ckpt / opt_params / save_merged / meta_block`）。
+- `--epochs` 默认 1。
+
+## 6 评估与最好版本（草稿 2.7）
+
+- `val_ce` 的口径照 `eval_ce`（第 259 到 291 行）：全部 val 行的 `Σ w·ce / Σ w`，用第 4 节的拼接前向算，`torch.no_grad` 加 bf16 autocast，物理块预算 `--eval-tok-budget`（默认 = 2 × `--tok-budget`）。`w_tot <= 0` 硬停照旧。
+- 时机：每个 epoch 评 4 次，在更新次数到达 `ceil(U·k/4)`（k = 1..4，U = 每 epoch 的更新数）的时候各评一次全量 val；第 4 次就是 epoch 末。
+- 最好版本：`val_ce` 最低的一次，写 `<out>/best/`，布局与旧训练器逐项同构（第 530 到 552 行）：全参 `model.save_pretrained`，LoRA `lora_util.save_merged`；`tok.save_pretrained`；`meta.json` 含旧字段 `base, base_path, data, max_len, seed, epoch, call_sep, transformers`、条件字段 `readonly_env, lora, grad_ckpt`、cparam 的 `param_only: true`，新增 `trainer: "share"`, `frac`（评估点在 epoch 里的序号 1 到 4）, `gstep`, `tok_budget`, `events_per_mb`, `accum`, `attn_impl`。评测脚本只读 `call_sep`、`max_len`、`param_only`（`eval_causal_call.py` 第 513 到 516、585 到 586 行；`eval_causal_param.py` 第 342 到 345、415 到 416 行）。
+- 不做生成式评估（旧 `val_exact_call` / `val_exact_params` 与 `--gen-bs` 去掉，决定 4）。
+
+## 7 日志 `<out>/train_log.jsonl`
+
+事件与字段（旧字段保留名字，新字段加在后面）：
+
+- `start`：`base, base_path, env, mode, n_train_events, n_train_rows, n_eval_events, n_eval_rows, dropped_events_train, dropped_events_val, dropped_rows_tgt_train, dropped_rows_tgt_val, assembly_mismatch_train/val（cparam）, steps, epochs, smoke, max_len, max_tgt_tok, tok_budget, eval_tok_budget, events_per_mb, accum, lr, attn_impl, seed, device, readonly_env, lora（条件）`。
+- `step`（每 `--log-every` 次更新一条，默认 50）：`ep, gstep, rows, loss, lr, ips, ips_win, eps, train_s, peak_mem_gb`。`rows` = 本 epoch 到现在处理的累计行数；`loss` = 自上一条 step 以来全部逻辑小批损失的平均，累加器在写完日志时清零（草稿 2.7 对第 13.7 节的修正）；`train_s` = 本 epoch 累计的训练秒数，评估期间时钟暂停（旧训练器的评估在 epoch 之后，第 486 行的 t0 从不含评估时间，新训练器在 epoch 中间评估所以必须扣掉）；`ips` = `rows / train_s`（口径和旧第 516 行一致）；`ips_win` = 自上一条 step 以来的行数 ÷ 这段的训练秒数；`eps` = 累计事件数 ÷ `train_s`；`peak_mem_gb` = `torch.cuda.max_memory_allocated()` 换算 GB，取完重置。
+- `mem_probe`（`--mem-probe` 打开时，训练开始前写两条）：`kind`（`longest_event` / `fullest_block`）, `n_events, packed_len_max, peak_mem_gb`。做法见第 10 节。
+- 心跳（`extending.md` 第 144 行，不接的脚本在监控窗口里永远是 warm-up）：照旧训练器第 71、481、517、554 行——`import heartbeat`（`ops/heartbeat.py`），训练开始前 `heartbeat.emit(0, steps, "step")`，每条 `step` 日志同时 `heartbeat.emit(gstep, steps, "step", loss=...)`，收尾 `heartbeat.emit(gstep, steps, "step", status="done")`。
+- `eval`：`ep, frac, gstep, val_ce, n_eval_rows`。
+- `save_best`：`ep, frac, gstep, val_ce`。
+- `done`：`best_val_ce, best_ep, best_frac, total_rows, wall_s`。驱动器只认 `done` 事件是否存在（`pipeline/driver.py` 第 772、810 行）。
+- `<out>/train_log.jsonl` 已存在时拒绝二次训练，`--force` 放行（照旧 第 380 到 383 行）。
+
+## 8 命令行与注册表
+
+脚本 `pipeline/train/train_causal_share.py`。参数：
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--mode` | 必填，`cgen` / `cparam` | 目标串与尾巴的构造走哪一套 |
+| `--base` | `qwen` | `qwen / qwen17 / qwen4`，路径表复用旧脚本的 `MODELS` |
+| `--env` | `appworld` | 日志标签 |
+| `--data`, `--out` | 必填 | 同旧 |
+| `--max-len` | 8192 | 事件全文 token 上限（3.5） |
+| `--tok-budget` | 16384 | 物理块预算（决定 7；冒烟后可能改） |
+| `--eval-tok-budget` | 0 = 2 × tok-budget | 评估物理块预算 |
+| `--events-per-mb` | 4 | 逻辑小批事件数 |
+| `--accum` | 2 | 累积的逻辑小批数 |
+| `--lr` | None | 同旧，走 `lora_util.resolve_lr` |
+| `--epochs` | 1 | |
+| `--eval-per-epoch` | 4 | 每 epoch 评估次数 |
+| `--smoke` | off | 40 个训练事件 / 16 个评估事件 / 1 epoch；取法是按事件全文 token 数升序取前 N 个（train 与 val 同规则） |
+| `--max-events` | 0 | 调试限事件数；单独给的时候 `random.Random(SEED)` 打乱后取前 N 个（照 ctool）；和 `--smoke` 同时给的时候 N 覆盖 40 / 16，取法仍是升序 |
+| `--log-every` | 50 | 每几次更新写一条 `step` |
+| `--mem-probe` | off | 训练前踩最坏块量显存（第 10 节） |
+| `--device` | cuda | |
+| `--grad-ckpt`, `--readonly-env`, `--force` | 同旧 | |
+| `--attn-impl` | `sdpa` | 注意力实现路径，这一轮只有 `sdpa`（第 4 节） |
+| `--align-only`, `--align-tol` | off, 1e-5 | 第 9 节（fp32 逐行 ce 的最大绝对差） |
+| `--align-events` | 6 | 对齐检查抽的事件数 |
+| `lora_util.add_args(ap)` | | `--lora` 一族 |
+
+`launch_probe.py` 第 80 到 89 行发射时拼的是 `[py, script, --data, --out, --env] + base_args (+ --smoke)`，所以：
+
+- `run.py` 的 `CELLS`：`"cgen": (PY["cprobe"], ".../train_causal_share.py", ["--mode", "cgen"])`，`"cparam": (..., ["--mode", "cparam"])`；`CELL_ORDER` 不变。
+- `run.py` 的 `TASKS`：`train-cgen` / `train-cparam` 改指新脚本并带 `--mode`；新增 `train-cgen-rows` / `train-cparam-rows` 指向旧脚本（`stage="train", py="cprobe", gpu=True`），notes 写「逐行参照实现，只用于对齐检查与对照；产物不进矩阵，run_id 不许用现役批次前缀」。
+- `EVAL_CELLS` 不变。`python3 run.py selfcheck` 通过；另外 `python3 -c "import ops.launch_probe"` 必须成功（`run.py` 第 1045 到 1138 行的 `cmd_selfcheck` 只遍历 `TASKS`、`RECIPES`、`EVAL_CELLS` 和 `configs/`，不查 `CELLS` 本体；`CELLS` 的消费方是 `ops/launch_probe.py` 第 80 行，`extending.md` 第 6 到 13 行）。
+- `MAP.md` 第 88 行那张表的改动全部放工单 04（三张工单同时改同一张表会合并冲突）：cgen、cparam 两行的程序列改成新脚本，关键设定列写新口径；新增一行 `(参照)` 给两个旧脚本；新增一行 `(共用)` 给 `share_data.py`；ctool 行补新口径。
+- 批次前缀（`extending.md` 第 165 行：一个训练批次只跑一档底座加一种训法，两者写进批次前缀）：新口径的批次前缀是 `ks828` 加档位训法段，如 `ks828b06`、`ks828l17`，run_id `ks828b06_gptoss_cgen`；冒烟落 `pipeline/runs/smoke/<run_id>_smoke`（决定 10）。np821 前缀不许再用于新口径的 run。
+
+## 9 对齐检查（内置，照 ctool 的做法）
+
+训练开始前（以及 `--align-only`）：`random.Random(SEED)` 从 val 事件里抽 `--align-events` 个（只抽 `len(full_ids) ≤ 2048` 的事件，控制耗时），在 fp32（autocast 关）下：
+
+- 新路径：第 4 节的拼接前向，得到每行 ce。
+- 参照路径：直接 import 旧脚本的 `CallDS` / `ParamDS`、`collate`、`inst_ce`，把同一批行按旧方式（每行单独构造 `text + TAIL` 加目标串，`max_len` 传同一个值）过同一个模型，得到每行 ce。
+- 行集合必须完全相同（`(event, sent_idx)` 的集合相等，含被丢弃的行也一致）。
+- 第一道（判定）：fp32 下逐行 `|ce_new − ce_ref|` 的最大值 ≤ `--align-tol`（默认 1e-5），逐目标 token 的最大差 ≤ 1e-4；同一次运行再算一个基线——参照路径「单行不补齐」对「整批右补齐」的逐行差——新路径的差超过基线 3 倍也算不过。依据：`design-attention.md` 的 CPU 验证，5 个事件 34 行 505 个目标 token，形态 A 对旧训练器的逐行最大差 2.15e-6（相对 8.4e-7）、逐 token 2.77e-5，基线差同为 2.15e-6。
+- 第二道（只报告并告警）：同一批行用 bf16 autocast 再跑一遍，逐行平均绝对差 > 2e-2 或最大 > 1e-1 就在 `start` 事件里打 `align_bf16_warn: true`。依据：CPU bf16 下形态 A 对旧训练器逐行最大 3.6e-2、平均 8.9e-3，基线（旧训练器补齐对不补齐）3.0e-2 / 5.3e-3，同量级；这一道只能抓整段错位。
+- 结果写 `<out>/ALIGN_CHECK.json`（`n_events, n_rows, n_tgt_tokens, max_abs_diff, max_tok_diff, baseline_max_abs_diff, tol, pass, bf16_mean_abs_diff, bf16_max_abs_diff, attn_impl`），不通过 `sys.exit(2)`，`start` 事件带 `align_pass, align_maxdiff, align_bf16_warn`。
+- ctool 的 `--align-tol`（代码默认 1e-4，`train_causal_tool.py` 第 76 行；np821 排卡表传 3e-4，`ops/np821b06_placement.json` 第 9 到 10 行）验的是「整段一次前向对逐 token 增量前向」的末位隐状态与分类头 logits 的 fp32 绝对差，不比较 loss，所以这里不沿用那个数。
+
+## 10 冒烟（主会话走 gpu-run，工单不做）
+
+两类跑法分开：
+
+- 冒烟档：`launch_probe` 的 smoke 档自动追加 `--smoke`（`ops/launch_probe.py` 第 88 到 89 行），run_id `ks828b06_gptoss_cgen_smoke`，只验「能跑、能存、日志齐、对齐检查过」。
+- 速度与显存档：不带 `--smoke`，像 `plans/2026-08-28-plan.md` 第 9.1 节的六个 bslen 冒烟那样手发（走 gpu-run，登记规矩照冒烟），产物 `pipeline/runs/smoke/ks828b06_gptoss_cgen_speed`。参数：`--max-events 450`（随机取，约 20,000 行，盖住 19,200 行那个对照点）、`--log-every 3`（每 3 次更新 24 个事件约 1,100 行一条 step，三个对照点都有记录）、`--eval-per-epoch 1`（epoch 中间不评估，`train_s` 照样扣评估时间）、`--mem-probe`，tokyo108 H100。对照第 1 节的六个数：`ips` 用 `rows` 插值到 1,600 / 9,600 / 19,200 行，`ips_win` 取盖住 0 到 1,600 / 8,000 到 9,600 / 17,600 到 19,200 行的窗口，不按更新次数比（tokyo108 的爬升段，第 12.10 节）。`--tok-budget` 取 16384 与 32768 各跑一次；`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 作为开关一起量。
+- 最坏块（`stage-commands.md` 第 244 行记过的坑：随机样本踩不到最长序列，峰值由块内最长序列决定）：`--mem-probe` 打开时训练器先把 train 全集加载完（丢弃规则之后、`--max-events` 抽样之前），取拼接序列最长的那个事件独自成块、以及按 `--tok-budget` 贪心能装下的拼接序列最长的组合，各做一次前向加反向（梯度随后清零、不走优化器），写两条 `mem_probe` 事件，然后再抽样开训。
+- 裁决：最坏块的 `peak_mem_gb` 对 H100 的 95,830 MiB 余量不足 10% 就把 `--max-len` 默认改 6144（重跑一次最坏块确认）。冒烟的裁决（`--max-len`、`--tok-budget` 定值）出来之后才发工单 04，`invariants.md` 写的是定值。
+
+## 11 ctool 的改动（`train_causal_tool.py` 与 `eval_tool.py`）
+
+1. 丢弃规则：`load_events` 之后（或在其中）对每个事件算 `len(tok(full, add_special_tokens=False))`，超过 `max_len` 的事件整条丢弃，计数 `dropped_events`（train / val 各一个，进 `start` 事件）。`collate` 与 `align_check` 里的 `truncation=True` 改成 `truncation=False`。`n_bound_dropped` 字段保留，含义改成「找不到读取位置的切点数」，预期恒为 0。
+2. 默认值：`--max-len` 8192；`--accum` 2（`--bs` 仍是 4，一次更新 8 个事件，草稿 2.2）；`--epochs` 仍是 3（草稿 2.5）。
+3. 读取位置规则（草稿 2.6）：对切点 b，取 j = 起始位置 < b 的最后一个 token（也就是覆盖字符 b−1 的 token）。`end_j ≤ b` 时读 j；`end_j > b` 并且 `full[b:end_j]` 全是空白时读 j；否则读 j−1。两处同一条规则：`collate` 第 140 到 158 行、`eval_tool.py` 的 `score_causal` 第 128 到 153 行（`align_check` 第 201 到 243 行只比整段前向与逐 token 增量前向的末位隐状态和 logits，没有切点循环，不改）。规则实现收在一个函数里（放 `share_data.py`，两处 import），不许各写一份。
+4. `step` 事件加 `lr` 字段；`loss` 改成「自上一条 step 以来全部小批损失的平均」，累加器写日志时清零。
+5. `eval_tool.py` 的左截断照旧不动（评测端超长处理是挂起项）。
+
+## 12 测试（CPU 可跑，`python3 -m unittest`）
+
+- `tests/test_share_data.py`：(a) 公共前缀规则——真实 Qwen3-0.6B-Base 分词器（路径在 `MODELS["qwen"]`，不存在就 `skipTest`），val 集抽 20 个事件，断言每一行 `full_ids[:p] + seg_ids == old_ids + tgt_ids`；(b) 丢弃规则计数；(c) 物理块贪心装块的预算与「超预算独自成块」；(d) 掩码与 position_ids 的构造在一个手造的 3 行小事件上逐位断言；(e) 读取位置规则在 `Spotify."\n` + `\nWe`（读跨切点 token）和 `. ` + `Next`（退回前一个 token）两个例子上断言。
+- `tests/test_share_trainer.py`：用 `Qwen3Config(hidden_size=64, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2, intermediate_size=128, vocab_size=<真实分词器词表大小>)` 随机初始化，CPU fp32：(a) 拼接前向的每行 ce 与旧路径（import 旧脚本的 `collate` + `inst_ce`）逐行差 ≤ 1e-5；(b) 一个逻辑小批拆成 1 块和拆成 3 块的参数梯度逐元素差 ≤ 1e-6；(c) `--smoke --device cpu` 在 6 个事件上跑通并产出 `best/meta.json`、`train_log.jsonl` 的五种事件。
+- `tests/test_ctool_readpos.py`：读取位置规则与丢弃计数。
+- 现有 `tests/test_cparam_assembly.py`、`tests/test_lora_merge.py` 照常通过。
+
+## 13 文档回写（工单 04，主会话补 TIMELINE）
+
+- `MAP.md` 训练表（第 8 节，四处改动全在工单 04）。
+- `.claude/skills/probe-pipeline/references/stage-commands.md` §3 训练命令与参数表、第 213 行的 smoke 限额行（新训练器 40 个训练事件 / 16 个评估事件）、§3.4 或对应位置补批次前缀 `ks828`、§7 接口陷阱（新脚本的 `--mode` 必填、`--tok-budget`、`train-*-rows` 是参照）。
+- `references/invariants.md` 对应节：上限（冒烟定值）、丢弃规则、更新单位 8 个事件、cgen/cparam 1 个 epoch、`--tok-budget` 定值。
+- `references/extending.md` §5 静默表加两行：#25 ctool 读取位置在 6.3% 的切点读的是句尾标点前一个词（草稿 4.4），症状是数字内部一致、活跑开火位置差一个 token；#26 `train-cgen-rows` / `train-cparam-rows` 走旧脚本（4096、左截、3 个 epoch），产物 `meta.json` 没有 `trainer` 字段，run_id 形状和现役相同，拿去评测会混进矩阵分不出来。§3 开头的「新格 / 新训法轴」判据加一句「换实现」的先例，§3.4 补一句新口径写进批次前缀。
+- `TIMELINE.md`：主会话写（草稿第三节第 1 步，加批次前缀 `ks828` 和冒烟定下的上限）。
+
+## 14 不做的事
+
+- 不改 `summarize_matrix.py`、`check_bundle.py`、四个评测脚本的输入构造。
+- 不改旧的逐行训练器（冻结为参照）。
+- 不做学习率扫描、不做生成式评估、不做 `--fire-head`。
+- 不动 `eval_tool.py` 的左截断。
+
+## 15 本次会碰到的静默失败点（`extending.md` §5）
+
+- #11（`--env` 传错只污染标签）：新脚本沿用，`launch_probe` 传的 `--env` 照旧。
+- #13（跨模型串 run 与 data 只有形状 assert）：不因本次改动变化；`meta.json` 的 `data` 字段照旧写绝对路径。
+- #9 / #14 / #15：格名不变、报告文件名不变，所以不触发；工单 03 的自查项之一是确认 `EVAL_CELLS` 与 `summarize_matrix.py` 一行未动。
+- 新增（第 13 节回写）：#25 ctool 读取位置差一个 token；#26 rows 参照任务的产物混进矩阵。

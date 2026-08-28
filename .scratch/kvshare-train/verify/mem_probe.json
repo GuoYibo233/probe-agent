@@ -1,0 +1,344 @@
+{
+ "measurements": [
+  {
+   "L": 1024,
+   "backend": "FLASH_ATTENTION",
+   "bf16": true,
+   "n_saved": 1054,
+   "lxl_bytes": 891289600,
+   "lxl_count": 311,
+   "lxl_examples": [
+    [
+     [
+      1,
+      1,
+      1024,
+      1024
+     ],
+     "torch.bfloat16"
+    ],
+    [
+     [
+      1,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1024,
+      1024
+     ],
+     "torch.bfloat16"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 30.357142857142858,
+   "other_bytes": 2856734980,
+   "other_bytes_per_token": 2789780.25390625,
+   "fwd_s": 7.2,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 1024,
+   "backend": "MATH",
+   "bf16": true,
+   "n_saved": 1053,
+   "lxl_bytes": 2768240640,
+   "lxl_count": 338,
+   "lxl_examples": [
+    [
+     [
+      1,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1,
+      16,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1024,
+      1024
+     ],
+     "torch.bfloat16"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 94.28571428571429,
+   "other_bytes": 3207221508,
+   "other_bytes_per_token": 3132052.25390625,
+   "fwd_s": 7.4,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 1024,
+   "backend": "FLASH_ATTENTION",
+   "bf16": false,
+   "n_saved": 970,
+   "lxl_bytes": 952107008,
+   "lxl_count": 227,
+   "lxl_examples": [
+    [
+     [
+      1,
+      1,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 32.42857142857143,
+   "other_bytes": 5282074884,
+   "other_bytes_per_token": 5158276.25390625,
+   "fwd_s": 1.4,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 1024,
+   "backend": "MATH",
+   "bf16": false,
+   "n_saved": 969,
+   "lxl_bytes": 2826960896,
+   "lxl_count": 254,
+   "lxl_examples": [
+    [
+     [
+      1,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1,
+      16,
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      1024,
+      1024
+     ],
+     "torch.float32"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 96.28571428571429,
+   "other_bytes": 5280239876,
+   "other_bytes_per_token": 5156484.25390625,
+   "fwd_s": 1.7,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 2048,
+   "backend": "FLASH_ATTENTION",
+   "bf16": true,
+   "n_saved": 1054,
+   "lxl_bytes": 8388608,
+   "lxl_count": 1,
+   "lxl_examples": [
+    [
+     [
+      1,
+      1,
+      2048,
+      2048
+     ],
+     "torch.bfloat16"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 0.07142857142857142,
+   "other_bytes": 6226444548,
+   "other_bytes_per_token": 3040256.126953125,
+   "fwd_s": 14.3,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 2048,
+   "backend": "MATH",
+   "bf16": true,
+   "n_saved": 1053,
+   "lxl_bytes": 7751073792,
+   "lxl_count": 56,
+   "lxl_examples": [
+    [
+     [
+      1,
+      16,
+      2048,
+      2048
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      2048,
+      2048
+     ],
+     "torch.bfloat16"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 66.0,
+   "other_bytes": 6692536580,
+   "other_bytes_per_token": 3267840.126953125,
+   "fwd_s": 17.5,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 2048,
+   "backend": "FLASH_ATTENTION",
+   "bf16": false,
+   "n_saved": 970,
+   "lxl_bytes": 16777216,
+   "lxl_count": 1,
+   "lxl_examples": [
+    [
+     [
+      1,
+      1,
+      2048,
+      2048
+     ],
+     "torch.float32"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 0.14285714285714285,
+   "other_bytes": 10002350340,
+   "other_bytes_per_token": 4883960.126953125,
+   "fwd_s": 3.5,
+   "bwd_s": 0.0
+  },
+  {
+   "L": 2048,
+   "backend": "MATH",
+   "bf16": false,
+   "n_saved": 969,
+   "lxl_bytes": 7985954816,
+   "lxl_count": 56,
+   "lxl_examples": [
+    [
+     [
+      1,
+      16,
+      2048,
+      2048
+     ],
+     "torch.float32"
+    ],
+    [
+     [
+      2048,
+      2048
+     ],
+     "torch.float32"
+    ]
+   ],
+   "lxl_bytes_per_layer_per_L2": 68.0,
+   "other_bytes": 9528918276,
+   "other_bytes_per_token": 4652792.126953125,
+   "fwd_s": 6.6,
+   "bwd_s": 0.0
+  }
+ ],
+ "extrapolation": {
+  "FLASH_ATTENTION_bf16_L8192": {
+   "lxl_GB": 0.13,
+   "other_GB": 24.91,
+   "math_analytic_GB": 120.26,
+   "logits_all_positions_bf16_GB": 2.49
+  },
+  "FLASH_ATTENTION_bf16_L9100": {
+   "lxl_GB": 0.17,
+   "other_GB": 27.67,
+   "math_analytic_GB": 148.4,
+   "logits_all_positions_bf16_GB": 2.77
+  },
+  "FLASH_ATTENTION_bf16_L10000": {
+   "lxl_GB": 0.2,
+   "other_GB": 30.4,
+   "math_analytic_GB": 179.2,
+   "logits_all_positions_bf16_GB": 3.04
+  },
+  "MATH_bf16_L8192": {
+   "lxl_GB": 124.02,
+   "other_GB": 26.77,
+   "math_analytic_GB": 120.26,
+   "logits_all_positions_bf16_GB": 2.49
+  },
+  "MATH_bf16_L9100": {
+   "lxl_GB": 153.03,
+   "other_GB": 29.74,
+   "math_analytic_GB": 148.4,
+   "logits_all_positions_bf16_GB": 2.77
+  },
+  "MATH_bf16_L10000": {
+   "lxl_GB": 184.8,
+   "other_GB": 32.68,
+   "math_analytic_GB": 179.2,
+   "logits_all_positions_bf16_GB": 3.04
+  },
+  "FLASH_ATTENTION_fp32_L8192": {
+   "lxl_GB": 0.27,
+   "other_GB": 40.01,
+   "math_analytic_GB": 120.26,
+   "logits_all_positions_bf16_GB": 2.49
+  },
+  "FLASH_ATTENTION_fp32_L9100": {
+   "lxl_GB": 0.33,
+   "other_GB": 44.44,
+   "math_analytic_GB": 148.4,
+   "logits_all_positions_bf16_GB": 2.77
+  },
+  "FLASH_ATTENTION_fp32_L10000": {
+   "lxl_GB": 0.4,
+   "other_GB": 48.84,
+   "math_analytic_GB": 179.2,
+   "logits_all_positions_bf16_GB": 3.04
+  },
+  "MATH_fp32_L8192": {
+   "lxl_GB": 127.78,
+   "other_GB": 38.12,
+   "math_analytic_GB": 120.26,
+   "logits_all_positions_bf16_GB": 2.49
+  },
+  "MATH_fp32_L9100": {
+   "lxl_GB": 157.67,
+   "other_GB": 42.34,
+   "math_analytic_GB": 148.4,
+   "logits_all_positions_bf16_GB": 2.77
+  },
+  "MATH_fp32_L10000": {
+   "lxl_GB": 190.4,
+   "other_GB": 46.53,
+   "math_analytic_GB": 179.2,
+   "logits_all_positions_bf16_GB": 3.04
+  }
+ }
+}
