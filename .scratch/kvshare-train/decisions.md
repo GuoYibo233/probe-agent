@@ -194,6 +194,12 @@ TIMELINE「只增不改」的执行口径——同一会话同一天写成、三
 
 工单 04（第四波 a，1 轮修复）分支 base d6aa99d head 39da84e 合并为 9fc83b7，五份文件 +57/−14（extending.md §3 换实现先例与 §5 #25 到 #27、gates.md、invariants.md 第 45/47/48/53 行、stage-commands.md §3/§3.1/第 213 行/§7、MAP.md 五行），收账提交在其后（d38d8a1）。实现者把工单正文残留的 ctool `--bs 4 --accum 2` 按 Comment 统一成 `--bs 2 --accum 4`，plan-8-28 复核同意。剩工单 06（第四波 b，在跑）、终验冒烟、终审、artifact。
 
+### 2026-08-28 第四波 b（工单 06）收账
+
+工单 06（第四波 b，2 轮修复）分支 base f1e0a1f head d97ed61 合并为 907d143，收账 e952c37；复核 cprobe-env 三个测试文件 OK、selfcheck 76、n_backward 与 ctool peak_mem_gb 都在。实现者抓到工单原文的技术缺口：全体 .grad 为 None 时 opt.step() 不分配 AdamW 状态，所以建状态前先做一次不计入测量的前向反向（小张量实测状态从空变成含 exp_avg/exp_avg_sq）。六张工单全部 resolved。终验四个 run 正在发射（HEAD e952c37）：ks828b06_gptoss_cgen_final_b16k（450 事件全速度档带探针，H100 0）、ks828b06_gptoss_cgen_final_b24k_probe（只跑探针，H100 1）、ks828b06_gptoss_cparam_final_smoke（H100 2）、ks828b06_gptoss_ctool_final_smoke（H200 3）。artifact 草稿里 P1 到 P3 三处等终验数一起改。
+
+8-28-assistant 核对：HEAD e952c37，907d143 与 d97ed61 在 log 里；`git diff --stat f1e0a1f d97ed61` 五个文件 +196/−23（train_causal_share.py 73、train_causal_tool.py 20、test_share_trainer.py 107、test_ctool_readpos.py 17、spec.md 2）；train_causal_tool.py 第 258 行 `_peak_mem_gb`、第 461 与 468 行写进 step 与 eval 事件；issues/06 的 Status 是 resolved。终验的验收判据照决定 22：改后探针数不低于同预算整程 step 峰值（b16k 60.59 GB、b24k 80.91 GB）。
+
 ### 2026-08-28 artifact 草稿核对
 
 plan-8-28 写好 artifact 草稿 `plans/2026-08-28-kvshare-report.html`（HEAD 71dcc2a，终验一节待补），8-28-assistant 按台账逐段核。核过没问题的：一句话结果四个数；对齐表前四行与 gpu_result.json、三个速度档和 cgen smoke 的 ALIGN_CHECK.json（都是 6 个事件 154 行 2,877 token，5.48e-6 / 4.29e-5 / 8.43e-3 / 4.32e-2）一致；速度表四行与我算的插值一致；显存表八行（含 math 内核校准点 L 2,552、实测差 12.17 GiB 对解析式 10.87）；smoke 表的 cgen / cparam 行和 ctool 的 0.408（H200 smoke 的 eval 事件 calA_weighted_acc 0.408、lastbound 0.425）；23 条决定的三行；需要拍板的八件；文件路径。发现的错误与遗漏发给了 plan-8-28：助手 1 三遍的发现数是 35 不是 24（13 + 9 + 13）；「工单 6 张全部 resolved」与「工单 06 已加字段」在 06 仍是 claimed（无合并提交）的时候写早了；「GPU run 11 个」与 runs.jsonl 的 9 个 run_id、logs 的 12 次发射都对不上；cparam smoke 对齐样本是 6 个事件 154 行 1,916 token 不是「抽 2 个事件」；解读段两处没有依据的判断（24576 慢的原因归到 pad 更多、OOM 那批说成四个 8192 长的事件）。invariants.md:45 的 epochs 理由已按核对改掉（8c4d587）。
