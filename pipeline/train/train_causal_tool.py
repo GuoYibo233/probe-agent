@@ -253,6 +253,20 @@ def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL):
     return rep
 
 
+# ---------------------------------------------------------------- 显存
+
+def _peak_mem_gb(dev):
+    """`step`/`eval` 事件的显存字段(工单 06):cuda 上读
+    `max_memory_allocated`(GB,四舍五入到 1e-3)并清空峰值统计,和新训练器
+    `train_causal_share.py` 的 step 日志同口径;CPU 上恒 0.0(这一轮 ctool
+    的显存只能靠外部 nvidia-smi 采样,因为它自己不记)。"""
+    if dev.startswith("cuda"):
+        peak = round(torch.cuda.max_memory_allocated() / 1e9, 3)
+        torch.cuda.reset_peak_memory_stats()
+        return peak
+    return 0.0
+
+
 # ---------------------------------------------------------------- 评估
 
 @torch.no_grad()
@@ -443,13 +457,15 @@ def main():
                     log(event="step", ep=ep, gstep=gstep,
                         loss=round(run / (50 * args.accum), 4),
                         ips=round((i + 1) * args.bs / (time.time() - t0), 2),
-                        n_bound_dropped=ndrop, lr=sch.get_last_lr()[0])
+                        n_bound_dropped=ndrop, lr=sch.get_last_lr()[0],
+                        peak_mem_gb=_peak_mem_gb(dev))
                     heartbeat.emit(gstep, steps, "step",
                                    loss=round(run / (50 * args.accum), 4))
                     run = 0.0
         wacc, lacc = evaluate(model, ev_dl, dev, amp)
         log(event="eval", ep=ep, calA_weighted_acc=round(wacc, 4),
-            calA_lastbound_acc=round(lacc, 4), n_bound_dropped=ndrop)
+            calA_lastbound_acc=round(lacc, 4), n_bound_dropped=ndrop,
+            peak_mem_gb=_peak_mem_gb(dev))
         if wacc > best:
             best = wacc
             (out / "best").mkdir(parents=True, exist_ok=True)
