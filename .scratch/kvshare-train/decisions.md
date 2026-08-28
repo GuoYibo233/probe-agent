@@ -141,3 +141,15 @@ plan-8-28 采纳的口径：60.59 GB = 56.4 GiB 余量 39.4%，b24k 75.4 GiB 余
 采样器历史（monitor/history/<job>.jsonl）只记进度判定不记显存，reserved 的数只有这一次样本：GPU0（b16k，训练中第 12 次更新附近）memory.used 55,683 MiB（54.4 GiB）；GPU1（b24k，mem_probe 阶段）92,689 MiB（90.5 GiB），是 95,830 的 96.7%；GPU2（b16k_es，起步）14,483 MiB（14.1 GiB）。b16k 整程的 reserved 峰值没有记录，汇报按「allocated 56.4 GiB，一次训练中样本 54.4 GiB reserved」写，不写整程 reserved 峰值。
 
 8-28-assistant 注：b24k 那条样本落在 mem_probe 最满块阶段，那一刻 allocated 峰值 75.05 GB = 69.9 GiB，reserved 90.5 GiB，两者差约 20 GiB，卡上只剩 3.3%；这是单次样本，不能外推成 b16k 的 reserved 峰值。b16k 那条 54.4 GiB reserved 低于同一窗口 step 事件记的 allocated 峰值 60.04 GB = 55.9 GiB，说明样本没有落在峰值时刻。
+
+## 决定 21（冒烟裁决）
+
+`--max-len` 默认保持 8192；`--tok-budget` 默认 16384；`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 不采纳；S4（掩码构造挪出主线程）不做；三个格同一个上限 8192。 / 理由：最长事件探针 31.4 GB，b16k 训练 step 峰值 60.59 GB = 56.4 GiB 对 93.10 GiB 余量 39%；b24k 慢 15%（157 对 184）且峰值 75.4 GiB 只余 19%、探针阶段单次 nvidia-smi 样本 90.5 GiB reserved 只余 3.3%；b16k_es 慢 3% 峰值相同；六个对照数全部高出旧训练器 23 到 67 倍，对旧稳态 10.6 到 11.6 行每秒是 16 倍；末尾窗口 145 是那段事件每行 token 多（按补齐 token 算吞吐 12.9k 对中段 16.9k token/s 同量级），不是尾组或评估。 / 依据：三份 train_log.jsonl；assistant-2 的复核脚本 verify/speed_judge.py；assistant-1 独立插值一致。
+
+## 决定 22
+
+`--mem-probe` 探针低估真峰（b16k 51.1 对 60.6，b24k 75.1 对 80.9）的机理是探针在优化器状态未建、梯度已清的条件下量，而训练真峰在第二个逻辑小批反向期间（状态 4.8 GB 加上一小批梯度 2.4 GB 都在）；开工单 06 把探针改成「状态先建好、最满块连做两次反向不清梯度、第二次反向后读峰值」，Blocked by 05，第四波和工单 04 一起跑。这一轮的裁决用训练 step 峰值而不是探针数（spec §10 已写明）。 / 理由：assistant-2 的判读；探针的用途就是替全量训练预估峰值，低估 10 GB 会让 48G 卡的排卡判错。 / 依据：同上。
+
+8-28-assistant 注：决定 22 的机理是判读不是实测。按它的算法探针少算 4.8 + 2.4 = 7.2 GB，而观察到的差是 b16k 9.5 GB（60.59 − 51.11）、b24k 5.9 GB（80.91 − 75.05），两个都对不上 7.2；工单 06 的验收应当写成「改后探针数 ≥ 同预算速度档整程 step 峰值」这种实测判据，不能以机理成立为验收。
+
+（ctool 的 bs/accum 定值还差 H100 上的显存数：H200 上 smoke PASS 但没记显存，plan-8-28 已在 H100 gpu0 补一个带 nvidia-smi 采样的 ctool smoke，run_id ks828b06_gptoss_ctool_h100mem，2 秒采一次 memory.used。）
