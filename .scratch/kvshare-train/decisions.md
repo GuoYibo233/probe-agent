@@ -255,3 +255,17 @@ plan-8-28 写好 artifact 草稿 `plans/2026-08-28-kvshare-report.html`（HEAD 7
 plan-8-28 对九件事的对应安排（原文照录）：第二件学习率扫描做；第四件 flex_attention 不做、装块优化不做；第三件评测端超长、第六件生成式评估字段、第七件容差、第九件探针退路四件各做成命令行参数可切换的几个选项，默认值我定一个推荐值；第一、五、八件不是代码，只在报告里写选项，等 gyb 回头选。做法沿用上一轮：spec 加第 16 节、工单 07 到 12、ticket-run workflow（sonnet/opus）、收账、终验、然后 gpu-run 发学习率扫描。 / 理由与依据：这条消息没有单列理由与依据行；九件的编号按封口段列的顺序，安排逐件对应上面 gyb 的原话。
 
 8-28-assistant 注：汇报里第二件问的是学习率扫描的规模（最小版还是每个底座各扫），gyb 原话只说「学习率需要扫」和「给推荐的配置 gpu run 去扫学习率」，规模没有定，决定 26 也没有定，这一项到 spec §16 写的时候要有一个明确的定值或者一个待定标记。
+
+### 决定 27（写在 spec §16.1，提交 485081e；plan-8-28 没有另发消息，以下照抄 spec 原文）
+
+学习率扫描：「做。规模定为每个底座配置各扫一组：b06 / b17 / l17 / l4 四个配置 × 三个学习率 = 12 次 run，cgen 格，1 个 epoch，按 `val_ce` 最低选（16.6；决定 27）」。 / 理由与依据：spec §16.1 没有单列；网格初值（全参 1e-5 / 2e-5 / 5e-5，LoRA 1e-4 / 2e-4 / 5e-4）来自草稿 2.3，spec §16.6 写明「8-28-assistant-2 的网格建议到了之后改常量」。
+
+### 决定 28（写在 spec §16.1 末尾，提交 485081e；照抄 spec 原文）
+
+「推荐值（决定 28，扫描发射时用的就是这一套）：`--overlong left`（评测口径不变，扫描不评测）、`--gen-eval 200`、`--align-rule abs`（门槛默认值不变）、`--mem-probe --mem-probe-pick cost`。每个开关的默认值等于推荐值，除了 `--overlong`——它的默认值 `left` 是为了让已有评测命令的行为一个字不变。」 / 理由与依据：spec §16.1 没有单列。
+
+8-28-assistant 注：决定 29（学习率网格）与决定 30（排卡与 `tok_budget`）plan-8-28 说要等 assistant-2 的 design-attention 第九节，此刻（485081e）还没有编号内容；这一节的 spec 与工单 07 到 12 的审查发现记在下面的时间线里。
+
+### 第二轮时间线
+
+**2026-08-28 晚，spec §16 与工单 07 到 12 第一遍审查（8-28-assistant，对 485081e）。** 六张工单引用的行号逐个对过当前代码，全部对得上（`eval_causal_call.py` 214 / 590，`eval_causal_param.py` 209 / 420，`eval_tool.py` 116 到 160，`train_causal_callgen.py` 309 到 331 / 361 / 449 / 536 到 538，`train_causal_param.py` 235 到 258 / 359 / 420 到 422，`share_data.py` 205，`train_causal_share.py` 78 到 81 / 234 到 302 / 434 到 570 / 761 到 764，`design-attention.md` 8.6 的 B=3、L_pad 5,344、4,736、2.7 MB、1.8 MB、58.5，test 集 391,893 行，`run.py launch` 的 `--cmd / --run-id / --track / --outdir` 都在 `ops/launch_cmd.py:52`）。发现 15 条发给 plan-8-28，最重的四条：cgen / cparam 评测按下标对齐 ctool 的 `logits_test.pt` 并硬断言行数相等（`eval_causal_call.py:569`、`eval_causal_param.py:397`），ctool 评测一开 `skip` / `drop-event` 下游就断言退出，spec 16.2 末段「cgen 的 n_dropped_events 会是 0」的前提不成立；`share_data.pack_event` 第 274 行是六个名字的拆包，行元组加第 7 位会 ValueError，spec 16.3「按下标读的代码不受影响」不覆盖这一处；工单 08 / 09 / 10 同一波并行改 `train_causal_share.py` 的 `main()` 参数与 `start_kw`（724 到 746 行）和 `tests/test_share_trainer.py` 末尾，07 / 08 / 10 同时改 `share_data.py`，合并会冲突；ctool 的 `align_check` 已经有 `absmax_hidden` / `reldiff_hidden`（`train_causal_tool.py:243-250`，决定 20 引的就是 `reldiff_hidden 1.46e-6`），spec 16.4 再加 `hidden_scale` / `rel_maxdiff_hidden` 是一物两名。其余：16.4 的依据「ce 量级约 2.5」在 gpu_result.json 里没有（文件里是 `row_loss_mean` 2.1379、逐行 `max_rel` 3.10e-6，1e-5 对 3.1e-6 是 3.2 倍不是 5 倍）；16.8 对 b17 / l17 / l4 三个从没在新训练器上跑过的配置没有 smoke 步；16.6 的发射命令没带 `--log-every`（默认 50，b06 一个 epoch 约 57 次更新）；ctool 的「全文」取的是按 label2id 过滤后的最大 sent_idx 行（`train_causal_tool.py:93-96`），share_data 不过滤；扫描 run_id 多一段 `_lr1e-5`，extending §3.4:167 的三段形状要在工单 12 补写；16.11 引草稿 2.3「尺寸沿用」给 cparam 沿用当依据是错引；16.1 末句「除了 --overlong」自相矛盾；工单 10 没点名两个现有测试的 `Namespace(tok_budget, events_per_mb)` 要补字段；16.5 与工单 10 对旧字段保留不一致；`gpu=False` 不是注册表现有 CPU 条目的写法；生成评估拉长无心跳窗口。
