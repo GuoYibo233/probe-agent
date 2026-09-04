@@ -25,7 +25,7 @@
 
 钩子挂在设置这一层，不挂在插件这一层，依据是 06 第 102 行记的第 8 条实测结论：「仓库 settings 级和插件级钩子文件对 subagent 生效，输入带 `agent_type`、`agent_id`，`session_id` 与父会话相同」。这次的记录再次看到了同样的三个字段。
 
-这次没测的：几个小时的长跑（原计划 40 分钟那次在 740 秒被中断，见 3.5，重跑缩成 1200 秒）、真正的 rl（还没写）、`launched_by=workflow` 的派活、沙盒不是 git 仓库。另外两处只在一种形状上测过：注入（2.5）和链式命令补测用的子会话类型都是 `--agents` 命令行给的，没有用插件 `agents/<role>.md` 定义的类型跑过一次注入，「插件定义的子会话 agent_type 带前缀」（第四节末尾）和「注入对带 agent_type 的调用生效」是两次不同的运行各自测出来的；2.4 里 rl 读到的状态文件是沙盒的 SessionStart 钩子写的，真正的登记钩子还没写。退出对话框的第三个选项「Stay」没有选过。
+这次没测的：几个小时的长跑（原计划 40 分钟那次在 740 秒被中断，见 3.5，重跑缩成 1200 秒）、真正的 rl（还没写）、`launched_by=workflow` 的派活、沙盒不是 git 仓库。另外一处只在一种形状上测过：2.4 里 rl 读到的状态文件是沙盒的 SessionStart 钩子写的，真正的登记钩子还没写。注入对插件 `agents/<role>.md` 定义的子会话类型也补测过一次（2.5 末尾，08:26 那次）。退出对话框的第三个选项「Stay」没有选过。
 
 ## 二、第 5 条的实测事实
 
@@ -87,6 +87,16 @@ export RL_HOOK_AGENT_TYPE='deploy'; export RL_HOOK_AGENT_ID='aa7e53254a4da1ab7';
 ```
 
 两次 rl 记录（tag chaine-a，cwd 是 bin；tag chaine-b，cwd 是 verify0）的 RL_HOOK_AGENT_TYPE 都是 `deploy`、RL_HOOK_AGENT_ID 都是 `aa7e53254a4da1ab7`，和钩子输入里的 agent_id 一致；第三个命令 python3 打印出 `['RL_HOOK_AGENT_ID', 'RL_HOOK_AGENT_TYPE']`。
+
+上面几次的子会话类型都是 `--agents` 命令行给的。评审 2026-09-05 建议再用插件定义的类型跑一次，把「注入对插件定义的子会话也生效、注入的值是带前缀的全名」收成实测。做法：rlmini 加一份 `agents/deploy.md`（tools 给 Bash 和 Read），打印模式会话（会话 id `b8a1282f…`，2026-09-05 08:26）派 `rlmini:deploy` 子会话运行链式命令 `bin/rl whoami --tag plug-inject-a ; cd bin && ./rl whoami --tag plug-inject-b`，钩子仍是 settings5c.json 的 export 形式。钩子记录原文：
+
+```
+SubagentStart 2026-09-05T08:26:21 {"agent_id": "a4794fd9dabff2f27", "agent_type": "rlmini:deploy"}
+inject2 2026-09-05T08:26:28 agent_type=rlmini:deploy | rewrote to: export RL_HOOK_AGENT_TYPE='rlmini:deploy'; export RL_HOOK_AGENT_ID='a4794fd9dabff2f27'; bin/rl whoami --tag plug-inject-a ; cd bin && ./rl whoami --tag plug-inject-b
+SubagentStop 2026-09-05T08:27:11 {"agent_id": "a4794fd9dabff2f27", "agent_type": "rlmini:deploy"}
+```
+
+两次 rl 记录（tag plug-inject-a，cwd 是 verify0；tag plug-inject-b，cwd 是 bin）的 RL_HOOK_AGENT_TYPE 都是 `rlmini:deploy`、RL_HOOK_AGENT_ID 都是 `a4794fd9dabff2f27`。注入的值就是钩子输入里带插件前缀的全名，rl 那一侧按底座 2026-09-05 定的写法取最后一个冒号后面的名字。第一次尝试（01:07，会话 id `d3e901ac…`）子会话刚启动就被 API 的 429（`You've hit your session limit · resets 4:10am`）终止，那次只有 SubagentStart 一条记录，没有 Bash 调用。
 
 ### 2.6 另外看到的两件事：交互会话里有多出来的 SubagentStop，被杀掉的子会话没有 SubagentStop
 
