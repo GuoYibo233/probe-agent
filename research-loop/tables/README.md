@@ -107,6 +107,11 @@ listed in `_pending`, so the final merge pass can grep for it.
     `rl decision show` returns `{"id", "book", "versions": [rows]}`; `rl decision stale`
     returns a list of `{"handoff", "holder", "decision", "cited", "latest"}`.
 
+18. **Extra `--json` keys of the run and ql commands** (construction conventions, like
+    12 and 17): `run finish` adds `anomaly_issue` (the issue id it opened, or null);
+    `ql close` adds `removed` (worktree and branch removed); `ql open --from` adds
+    `from` (the transferred order id).
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;
