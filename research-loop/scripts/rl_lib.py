@@ -738,6 +738,17 @@ def result(row: dict, ledger: str, extra: dict | None = None) -> dict:
     return out
 
 
+SKELETON_KEYS = ("version", "status", "ts", "actor", "session_id", "schema_version", "force_reason", "via", "agent_id")
+VERSION_ONLY_KEYS = ("adopted", "quote")  # 04 L29: adopted belongs to the start version only; quote to the version it was said on
+
+
+def copy_content(row: dict) -> dict:
+    """The content of `row` for the next version: skeleton keys and version-only keys
+    dropped (03 L11: a change is one more complete row). One copy rule for every
+    module (reviewer note on 71c7c1b)."""
+    return {k: v for k, v in row.items() if k not in SKELETON_KEYS and k not in VERSION_ONLY_KEYS}
+
+
 def owner_of(order: dict) -> str:
     """Owner is from_role (04 L19). A quick-lane supplement is written with actor deploy,
     from_role gyb (the owner) and to_role deploy (who did the work), so 04 L19, 07 L96 and
