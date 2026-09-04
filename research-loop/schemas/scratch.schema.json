@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "research-loop/schemas/scratch.schema.json",
+  "title": "scratch row (quick lane only)",
+  "description": "Only the quick lane writes it: open, numbers, close (03 L196). Field table 03 L198-209 with the 07 L70 ruling on open-version fields (sync-inbox Q41(a)). Head and tail versions are validated, middle versions only check the skeleton and ql_tag (03 L211).",
+  "allOf": [{"$ref": "_skeleton.schema.json"}],
+  "type": "object",
+  "properties": {
+    "ql_tag": {"type": "string", "pattern": "^ql-[0-9]{8}-[0-9]{2,}$", "description": "primary key, assigned by rl inside the lock (03 L200; 07 L27)"},
+    "status": {"type": "string", "enum": ["open", "merged", "dropped"], "description": "middle versions that append numbers keep status open; no fourth state (03 L196, L211)"},
+    "actor": {"type": "string", "enum": ["deploy", "analysis", "gyb"], "description": "deploy or analysis (03 L196); gyb by principle 1"},
+    "role": {"type": "string", "enum": ["deploy", "analysis"], "description": "03 L201"},
+    "worktree": {"type": "string", "description": "deploy open version: required (03 L202)"},
+    "dir": {"type": "string", "description": "analysis open version: required, analysis/scratch/<ql_tag>/ (03 L203)"},
+    "base_commit": {"type": "string", "description": "deploy open version: required; not set for analysis (03 L204; 07 L70)"},
+    "branch": {"type": "string", "description": "deploy open version: required; not set for analysis (03 L205; 07 L70)"},
+    "note": {"type": "string", "description": "middle versions, free (03 L206)"},
+    "metrics": {"type": "object", "additionalProperties": {"type": "number"}, "description": "middle versions, free (03 L207)"},
+    "handoff_id": {"type": "string", "pattern": "^ho-[0-9]{4,}$", "description": "merged version: required; the supplement is opened first, then ql close --merged --handoff ID; the two point at each other; merged exists only for deploy (03 L208)"},
+    "reason": {"type": "string", "minLength": 1, "description": "dropped version: required (03 L209)"}
+  },
+  "required": ["ql_tag", "status", "role"],
+  "x-conditions": [
+    {"if": {"status": "open", "version": 1, "role": "deploy"}, "then_required": ["worktree", "base_commit", "branch"], "source": "03 L202-205; 07 L70; sync-inbox Q41(a)"},
+    {"if": {"status": "open", "version": 1, "role": "analysis"}, "then_required": ["dir"], "source": "03 L203; 07 L70"},
+    {"if": {"status": "open", "version_gt": 1}, "then": "only the skeleton and ql_tag are checked", "source": "03 L211"},
+    {"if": {"status": "merged"}, "then_required": ["handoff_id"], "source": "03 L208"},
+    {"if": {"status": "merged"}, "then": "role must be deploy", "source": "03 L208; 07 L86"},
+    {"if": {"status": "dropped"}, "then_required": ["reason"], "source": "03 L209"}
+  ],
+  "x-source": "03 L194-213; 07 L62-77"
+}

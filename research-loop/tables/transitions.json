@@ -19,7 +19,7 @@
       "who_can_write": ["from_role"],
       "preconditions": [
         {"id": "open.work_order_has_refs_and_explanation", "text": "work_order has decision_refs (at least one) and explanation", "source": "04 L61; 04 L32, L34"},
-        {"id": "open.work_order_has_track", "text": "work_order has track (direction name filled by idea at open)", "source": "sync-inbox Q45(a)(f) L329-330; construction reading: required at open (tables/README.md)"},
+        {"id": "open.work_order_has_track", "text": "work_order has track (direction name filled by idea at open)", "source": "sync-inbox Q45(a)(f) L329-330; proxy decision D-10 (04 L43 and 11 L76: a launch order copies track from its parent, so the work order must carry it)"},
         {"id": "open.launch_order_first_attempt", "text": "launch_order has parent_id and a first attempt with command, workdir, track, config; run_id is assigned by rl as <ho-id>-a<attempt>; decision_refs, batch and track are copied from the parent", "source": "04 L61; 04 L43; 04 L26, L32; sync-inbox Q45(f)"},
         {"id": "open.analysis_order_has_eval_refs", "text": "analysis_order has evaluation_refs (each may still be proposed)", "source": "04 L61; 04 L33"}
       ],

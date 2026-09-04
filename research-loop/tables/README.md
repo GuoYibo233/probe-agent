@@ -47,11 +47,13 @@ keep the part numbers, PENDING markers keep the form used by the build guide.
    override it with `RL_SESSION_ID`. Whether the hook input's `session_id` equals
    this variable is verify item 1 (30 L13); marked `PENDING(verify item 1)` in code.
 
-## Readings that go beyond the letter of a part (for gyb to confirm)
+## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
-- `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open);
-  a `launch_order` copies it into `attempts[0].track`.
+- `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;
+  proxy decision D-10); a `launch_order` copies it into `attempts[0].track`.
 - The feedback `id` has no shape in 03 L145 (it only says "feedback id"); the schema uses `fb-NNNN`
-  by analogy with `iss-NNNN` and marks it `PENDING(part 03 L145)`.
+  by analogy with `iss-NNNN` (proxy decision D-11).
 - `grants` stays a named ledger with no schema and no commands (proxy decision
   D-01, `PENDING(issue 43c)`).
+- `commands.json`, `exit_codes.json` and `config_defaults.json` are containers the parts did not
+  name; their content is transcription (proxy decision D-12).

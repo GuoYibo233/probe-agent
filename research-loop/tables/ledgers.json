@@ -55,7 +55,7 @@
       "file": "loop/feedback.jsonl",
       "key": "id",
       "id_pattern": "^fb-[0-9]{4,}$",
-      "id_pattern_pending": "PENDING(part 03 L145): 03 only says 'feedback id'; fb-NNNN is a construction reading by analogy with iss-NNNN.",
+      "id_pattern_source": "proxy decision D-11 (03 L145 only says 'feedback id'; fb-NNNN by analogy with iss-NNNN).",
       "status_values": ["proposed", "accepted", "rejected"],
       "schema": "schemas/feedback.schema.json",
       "_source": "03 L54; 03 L141"
