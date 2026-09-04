@@ -60,7 +60,16 @@ listed in `_pending`, so the final merge pass can grep for it.
    versions" from "middle versions that append numbers"; the schemas tell the opening
    version from a middle one by `version == 1`. Same reading for the quick-lane
    supplement's `ql_tag` (04 L31).
-9. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
+9. **Where `rl` comes from.** The plugin's SessionStart hook appends
+   `export PATH="$CLAUDE_PLUGIN_ROOT/bin:$PATH"` to the file named by `CLAUDE_ENV_FILE`
+   (Claude Code hooks reference, https://code.claude.com/docs/en/hooks, SessionStart
+   section on `CLAUDE_ENV_FILE`; verified in `plans/2026-09-05-research-loop-verify.md`
+   2.5 that only SessionStart hooks see that variable), so every later Bash call of the
+   session and of its subagents (same environment, verify.md 2.4) can type bare `rl`.
+   Skills therefore write bare `rl ...`; if the hook is not installed the fallback is the
+   full path `${CLAUDE_PLUGIN_ROOT}/bin/rl` (proxy decision D-21). `rl init` writes no
+   alias and touches neither host code nor `.claude/` (08 L13).
+10. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
    `artifact_root`, 06 L203) is descriptive only: the hook lets every path outside the
    repo through (06 L13), so the hook never consults it.
 
