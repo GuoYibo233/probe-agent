@@ -360,8 +360,8 @@
 - 事项：2026-09-05 施工骨架版（`plans/2026-09-04-research-loop-work-guide.md`）时，冻结三份没写的两处由统筹按 gyb 2026-09-04 的代裁授权定了，记在 `plans/2026-09-04-research-loop-proxy-decisions.md`；代码按代裁写，正文等最后一期，gyb 可逐条否。
 - 裁决原文：（代裁，gyb 待审；依据写在 D-10、D-11 的理由栏）
 - 要改的地方：
-  48. 冻结后待议：（a）`03:145` feedback 行格式 `id` 一栏「反馈编号」补形状「形如 `fb-0001`」（D-11，照 `iss-0031` 类推）；（b）`04` handoffs 字段表 `work_order` 顶层 `track` 一栏（问题 45(a)(f) 加的）标「开单时必填」，转移表「（新建）→ todo」行 `work_order` 的前提加 `track`（D-10，依据 `04:43` 发射单第一次尝试 `track` 必填、`11:76` 发射单从父单抄）；（c）`03:196` scratch 段「actor 是 deploy 或 analysis」补「gyb 在裸终端或 `--as-gyb` 写照收（`01:65`、`03:27`）」（D-16）；（d）`05:65` `rl handoff start ID [--batch B]` 签名旁补「带 `--batch` 时 ID 只用来定位 batch（必须属于 B），同 batch 全部 todo 的发射单一起置 in_progress、holder 同一会话；host 和 gpus 怎么分仍等 `21` 留给 gyb 第 6 条」（D-22）。
-- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-10、D-11、D-16、D-22 之后定）
+  48. 冻结后待议：（a）`03:145` feedback 行格式 `id` 一栏「反馈编号」补形状「形如 `fb-0001`」（D-11，照 `iss-0031` 类推）；（b）`04` handoffs 字段表 `work_order` 顶层 `track` 一栏（问题 45(a)(f) 加的）标「开单时必填」，转移表「（新建）→ todo」行 `work_order` 的前提加 `track`（D-10，依据 `04:43` 发射单第一次尝试 `track` 必填、`11:76` 发射单从父单抄）；（c）`03:196` scratch 段「actor 是 deploy 或 analysis」补「gyb 在裸终端或 `--as-gyb` 写照收（`01:65`、`03:27`）」（D-16）；（d）`05:65` `rl handoff start ID [--batch B]` 签名旁补「带 `--batch` 时 ID 只用来定位 batch（必须属于 B），同 batch 全部 todo 的发射单一起置 in_progress、holder 同一会话；host 和 gpus 怎么分仍等 `21` 留给 gyb 第 6 条」（D-22）；（e）`03:15`「closed 会话再写拒收」补半句「`rl session start` 除外：重新加载角色的登记写的是同一个 `session_id` 的下一版 open，别的写命令照旧按最新版查」（D-28；`04:152` 同句）。
+- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-10、D-11、D-16、D-22、D-28 之后定）
 
 ## 2026-09-05 来自 施工统筹会话 关于 待验证第 5 条测完后子会话身份的代裁动到冻结三份的几处（冻结后待议）
 - 事项：验证助手 2026-09-05 在沙盒测完待验证第 5 条（结果在 `plans/2026-09-05-research-loop-verify.md`），统筹按验证助手和底座助手的推荐代裁成 D-15（`plans/2026-09-04-research-loop-proxy-decisions.md`）；问题 39(a2) 的「等待验证第 5 条」到此有结论。代码按 D-15 写，正文等最后一期，gyb 可逐条否。

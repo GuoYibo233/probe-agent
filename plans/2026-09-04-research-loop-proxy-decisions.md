@@ -241,4 +241,12 @@
 - 落点：`research-loop/scripts/rl_cmds/decision.py` retire 分支；`research-loop/tables/README.md` 惯例；测试 3 补一例。
 - 审查：
 
+### D-28 `rl session start` 豁免「closed 会话再写拒收」，登记是同一个 session_id 的下一版 open（评审助手提，统筹按推荐裁）
+
+- 问题：03 第 15 行和 04 第 152 行给被销号会话的唯一出路是「重新加载角色登记」，可是重载之后 `session_id` 不变（同一个 Claude 会话），登记钩子敲的 `rl session start` 是一条写命令，rl 看到 sessions 最新版是 closed 就退出码 3（03 的「closed 会话再写拒收」，sync-inbox 问题 5），出路走不通。底座代码标了 `PENDING(part 03 L15)`。
+- 决定：`rl session start` 这一条命令豁免「closed 会话再写拒收」：它就是登记本身，写的是同一个 `session_id` 的下一版 open（version 加一）；别的写命令照旧按最新版查。
+- 理由：03 第 15 行那条校验的目的是拦「被销号的会话继续干活」，登记不是干活；不豁免的话 03 与 04 自己写的出路就是死路。
+- 落点：`research-loop/scripts/rl_lib.py`（validate_row 或者 check_writer_alive 加一个例外）；测试 7 补一例「end 之后 start 能过、再写账能过」；sync-inbox 问题 48 加 (e) 给 03 第 15 行。
+- 审查：
+
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
