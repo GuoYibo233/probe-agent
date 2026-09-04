@@ -311,6 +311,7 @@
   43. 冻结后待议：（a）`05` doctor 十九项里「决定来源指向 notes/ 但 grants 查不到 `read:notes`」一项删；（b）`05` `rl status --group-by line` 改「跨根的单在每条相关线里都出现」；（c）`05` `rl grant` 子命令与 `03` grants 账的存废（permission 第一版只有 `read:notes` 一种，机制砍掉后账里没有内容）请统筹按定义处问 gyb；（d）`03` `line` 字段语义改「`decision_refs` 可分属不同根决定，跨根的单在每条相关线的视图里都出现」；（e）`04` 转移表 `done_pending_review`→`accepted` 行「验收人是 owner」补备注「`dispatch=manual` 的单默认 gyb 自己验收，`fyi` 照发」。
   （统筹补扫 2026-08-21 rl-hub-v6：(a) 的连带还有两处——`05` `rl init` 签名行里「问一次要不要给 idea 发 `read:notes`」那半句、`05` 接口一节「`read:notes` 的申请走法」一行，同属获准机制砍掉，最后一期一起删。）
   - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(d) 的 `line` 是 handoffs 字段，定义处是 `04`（`03` 里没有这个字段），落点从 `03` 改 `04`——`04` 字段表 `line` 的语义句照 (d) 的内容改。
+  - 补记 2026-09-05（rl-hub-v6）：(c) 的存废施工期按代裁 D-01 留位不建立——账本清单保留 grants 行标 `PENDING(issue 43c)`，不写 schema、不写 `rl grant` 子命令、相关测试用例跳过（`plans/2026-09-04-research-loop-proxy-decisions.md`）；存废本身仍等最后一期 gyb 裁，本段状态不变。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `10` 定稿为准）
 
 ## 2026-08-21 来自 rl-part-11 关于 11-role-deploy.md
@@ -335,6 +336,7 @@
 - 裁决原文：（待 gyb；`11` 那条的原话是「开场话把单子内容全抄一遍」，裁的场景是 deploy 派 run）
 - 要改的地方：
   46. 若推广到所有派活通道：`20`、`22` 各补一句「派活开场提示全抄单子内容」，`10` 的交代句同步；若只限 deploy 派 run：维持现状（`21` 裁决记录与 `12` 已落）。
+- 补记 2026-09-05（rl-hub-v6）：施工期代裁 D-02 按推荐取了「推广到所有派活通道」，已落进插件施工步 6 的说明书（`plans/2026-09-04-research-loop-proxy-decisions.md`，gyb 待审）；gyb 审 D-02 就是答这道题，认可后分册侧照 46 的清单落，状态先不动。
 - 状态：等 gyb
 
 ## 2026-08-21 来自 rl-part-13 关于 13-role-analysis.md
