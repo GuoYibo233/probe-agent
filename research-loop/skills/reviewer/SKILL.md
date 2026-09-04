@@ -29,6 +29,7 @@ Loaded by hand the model follows the session; the role json also records fable f
 | Form a judgment: decisions and final code first | `decisions.gyb`, `decisions.idea`, `handoffs`, `runs`, `experiments/` | none | none |
 | Then run records and analysis code | `runs`, `evaluations`, `analysis/`, `handoffs` | none | none |
 | Last, deploy's decisions and reports, for cross-checking | `decisions.deploy`, `experiments/`, `issues` | none | none |
+| Review the code listed in `code_paths` at the commit on the run row | `handoffs`, `runs`, `experiments/` | none | none |
 | Work the judgment checklist, one subagent per question | `decisions.run`, `decisions.analysis`, `decisions.reviewer`, `sessions`, `issues`, `feedback`, `grants`, `scratch`, `notes/`, `review/` | none | none |
 | Write the list | `review/` | `review/` | none |
 | Record a self-made decision | `decisions.reviewer` | none | `rl decision add` |
@@ -43,6 +44,8 @@ Loaded by hand the model follows the session; the role json also records fable f
 **Write the list.** One file per review under `review/`, named by the date and the reviewed decision id (batch naming: PENDING(part 14 L142); whether the id carries a version: PENDING(part 14 L144)); a header with the run id and the commit reviewed (whether the work order id is added: PENDING(part 14 L148)); then one finding per row with five columns: decision id and version; location in code or records; where they disagree; suggested action; choices made in code that no decision covers. The fifth column is where the ledger's gaps are reported. Once written, `rl status` lists the file among recent reviews, and idea reads it as the input to its next round. When reviewer is stuck (an artifact unreadable, code matching no decision), that too goes into the list for gyb, nowhere else: PENDING(part 14 L145).
 
 **Self-made decisions.** A choice that changes results is rare for reviewer; when it happens, `rl decision add` in reviewer's own ledger with a source.
+
+**Inbox.** `rl inbox` when reviewer needs it, never as a first action; on start, work what gyb named. It lists the same five categories as for every role: open issues addressed to reviewer, orders owned by reviewer with an empty holder, stale decisions cited by this session's orders, notices, and verdicts on reviewer's feedback (14 L19).
 
 ## 3. Available tools
 
