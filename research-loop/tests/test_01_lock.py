@@ -74,7 +74,7 @@ class LockAndNumbering(unittest.TestCase):
         self.sb.rl_ok("issue", "open", "--to", "gyb", "--kind", "request", "--text", "a")
         # seed the ledger with a high number the way an old repo would carry it
         with open(self.sb.loop / "issues.jsonl", "a") as fh:
-            fh.write('{"id": "iss-9999", "version": 1, "status": "open", "ts": "2026-01-01T00:00:00+0000", '
+            fh.write('{"id": "iss-9999", "version": 1, "status": "open", "ts": "2026-01-01T00:00:00+00:00", '
                      '"actor": "gyb", "session_id": "cli", "schema_version": 1, "assignee": "gyb", '
                      '"kind": "request", "text": "old"}\n')
         r = self.sb.rl_ok("issue", "open", "--to", "gyb", "--kind", "request", "--text", "b", "--json")
