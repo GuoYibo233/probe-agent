@@ -117,3 +117,45 @@
 - 理由：官方文档的限制绕不过；「一会话一角色」本来就是纪律不是门禁（06 第 106 行），description 收窄是把误触发压到最低的办法；入口 skill 关得掉就关。待验证第 4 条的正案已经是 `rl init` 查调用者状态文件（2026-08-17 裁），这条决定不动它。
 - 落点：`research-loop/skills/research-loop/SKILL.md` 头部；`research-loop/skills/<role>/SKILL.md` 头部与正文第一段。验证助手补测两条文档事实：agent 的 `skills:` 引同插件 skill 用裸名还是 `research-loop:idea`；带 `disable-model-invocation` 的 skill 确实预载不了。
 - 审查：
+- 补记 2026-09-05：验证助手沙盒实测，`skills:` 写裸名和带插件前缀都预载得上；带 `disable-model-invocation: true` 的 skill 两种写法都预载不上（debug 日志报 Warning: Skill 'gate' specified in frontmatter was not found）。D-13 的依据成立。
+
+### D-14 问题 45(b) 里 run 回 withdrawn issue 那一支标待裁，不改 run 的角色 json
+
+- 问题：对照单核手指出三处对不上：sync-inbox 问题 45(b) 要求收回时 holder（含接发射单的 run）把代码位置和半截产物路径回进那条 `withdrawn` issue；03 第 92 行写通知类 issue 的 assignee 能回能关；06 第 204 行给 run 的 issues 写权只有 open，钩子和入账校验会拦 run 的 reply。deploy 和 analysis 的写权没有这个缺口。
+- 决定：run 的角色 json 照 06 逐字抄不改；45(b) 的 run 那一支在 `research-loop/skills/run/SKILL.md` 和 rl 的 withdraw 提示里标 `PENDING(issue 50)`；deploy、analysis 两支照 settled 落。sync-inbox 立问题 50 等 gyb 裁 run 的 issues 写权要不要加 reply、close。
+- 理由：改角色 json 的一栏是改 06 的定稿裁决（角色 json 内容 2026-08-18 gyb 裁），不在代裁范围；缺口只影响 run 一支，标待裁不挡别的。
+- 落点：`plans/2026-09-05-research-loop-debt-map.md` 第四节；sync-inbox 问题 50。
+- 审查：
+
+### D-15 子会话写账的身份判定与登记（待验证第 5 条测完；验证助手、底座助手各提推荐，统筹按推荐裁）
+
+- 问题：06 第 118 行留的缺口：子会话的 `session_id` 与母会话相同、不写状态文件，rl 按状态文件读到的是母会话的角色，账上会记成母会话的角色接了单。验证助手 2026-09-05 沙盒实测：SubagentStart、SubagentStop 都触发并带 `agent_id`、`agent_type`，`session_id` 与母会话相同；子会话结束时 SessionEnd 不触发；子会话的 Bash 环境与母会话逐字相同，环境文件那条路不通；PreToolUse(Bash) 钩子能用 updatedInput 往命令前注入环境变量，两个并发子会话各拿到自己的类型和编号；母会话结束时被杀掉的子会话没有 SubagentStop、只有母会话的 SessionEnd。
+- 决定：（1）rl 判 actor 的顺序：先看写权钩子注入的 `RL_AGENT_TYPE` 和 `RL_AGENT_ID`（钩子在 `agent_type` 非空时用 updatedInput 注入），类型名按钩子同一张映射表对应角色（06 第 96 行：认识的按角色，不认识的按最严），不认识的类型 rl 拒写、退出码 3 并提示；没有注入变量才按状态文件；都没有是裸终端 gyb（01 第 69 行的判据）。（2）九本账公共骨架加可选栏 `agent_id`，子会话写的行填、顶层会话写的行不填；`session_id` 照记母会话的。（3）子会话在 sessions 账另落一行开始版：`session_id` 记母会话的，`agent_id` 存钩子输入的编号，`role` 按 `agent_type`，`launched_by` 记 subagent；同一个 `session_id` 下 `agent_id` 不同的行是不同的版本链，rl 查「这个会话最新版是不是 closed」按（`session_id`，`agent_id` 或空）配对查，母会话的链不被子会话的 closed 版盖住。（4）销号：SubagentStop 钩子按 `agent_id` 关子会话那一行，并把该子会话开干的单交回（release 行 actor 记子会话的角色，`via` 记 subagent_stop）；母会话 SessionEnd 钩子把本 `session_id` 名下所有开干的单一起交回（含被杀的子会话的，因为它们没有 SubagentStop），再关还开着的子会话行，最后落母会话的 closed 版（03 第 15 行的写序）。（5）待验证第 9 条母会话结束那一半：三种结束方式子会话都被杀，30 的失败备案照旧成立，落法按 verify.md 记录。
+- 理由：钩子那一层已经裁定按 `agent_type` 判角色（06 第 96 行），把同一个判定经注入变量交给 rl，两层看到同一个身份，又不违反「子会话不写状态文件」（06 第 118 行）；可选栏不动既有必填；另落一行让「谁真写的、谁起了谁」在账上查得出（06 第 157 行的事后追查靠这个）；版本链按（`session_id`，`agent_id`）配对是为了不让子会话的 closed 版把母会话锁死（03 的「closed 会话再写拒收」那条）。底座的备选（不加栏、只靠 `launched_by`）分不开同一母会话下的两个子会话。
+- 落点：`research-loop/hooks/`（写权钩子注入、SubagentStop 钩子、SessionEnd 钩子）；`research-loop/scripts/rl_lib.py` actor 判定与版本链查法；`research-loop/schemas/_skeleton.schema.json`（`agent_id`）、`sessions.schema.json`；测试 9 的用例；sync-inbox 问题 49 记冻结正文的落点（03 骨架与 sessions 字段表、04 第四六七节、05 actor 判定句）；对照单 39(a2) 的标记改 `proxy D-15`。
+- 审查：
+
+### D-16 gyb 在裸终端或 `--as-gyb` 写杂账（scratch）照收（评审助手提，统筹按推荐裁）
+
+- 问题：03 第 196 行 scratch 段只写 actor 是 deploy 或 analysis，runs 那本明写 gyb 例外而杂账没写；底座的 scratch schema 把 gyb 加进了 actor 枚举，评审问收不收。
+- 决定：收。`scratch.schema.json` 的 actor 枚举含 gyb，加来源注（01 第 65 行、03 第 27 行）；sync-inbox 问题 48 加 (c) 给 03 第 196 行补一句。
+- 理由：01 第 65 行 gyb 在任何终端都能行使自己的权，03 第 27 行 gyb 豁免「谁能调」；03 第 196 行那句描述常态、不是排他清单。底座助手同一时间提了同一题（场景是 gyb 替死掉的 deploy 会话关张），同此裁。
+- 落点：`research-loop/schemas/scratch.schema.json`；sync-inbox 问题 48(c)。
+- 审查：
+
+### D-17 测试 13 的施工约定：说明书里的名字写在反引号里、按反引号提取；词表第一栏当第五类定义处（评审助手提，统筹按推荐裁）
+
+- 问题：06 第 258 到 260 行只说测试 13 查三样，没说机器怎么从说明书正文里把 rl 命令、账名、状态、目录、词表词提取出来，也只列了四类定义处。文本助手在 `common/SPEC-TEMPLATE.md` 第 30 到 31 行和 `tests/test_skill_refs.py` 里定了：一律写在反引号里，测试按反引号提取；`common/GLOSSARY.md` 第一栏当第五类定义处。7d9bcc6 和 4974a8a 建立在这上面，没有出处。
+- 决定：认。两处加来源标注 `proxy D-17`。
+- 理由：机器检查要有一个可提取的边界，反引号是 markdown 现成的；词表当定义处让「名字定义在哪」有唯一落点。gyb 2026-09-04 裁的分层真源是机器能查的归代码和表，这条约定属于那一层。
+- 落点：`research-loop/common/SPEC-TEMPLATE.md` 第 30 到 31 行；`research-loop/tests/test_skill_refs.py` 头注。
+- 审查：
+
+### D-18 `agents/reviewer.md` 保留 Write 和 Edit，改禁 NotebookEdit 和 Skill（文本助手提，统筹按推荐裁）
+
+- 问题：08 第 90 行举的收窄工具面的例子是「reviewer 直接禁 Write 和 Edit」，可是 reviewer 的唯一产出是 `review/` 下的清单文件（14 第 73 到 75 行），06 给 reviewer 的 writes 也是 `review/`。照例子禁掉，reviewer 当子会话时写不出清单，只剩钩子解析不出的 Bash 写法，那正是 rule-08 禁的。
+- 决定：`agents/reviewer.md` 保留 Write 和 Edit（写权的闸在钩子，钩子把它们限在 `review/`），改禁 NotebookEdit 和 Skill。注释标 `proxy D-18`，不用 PENDING。
+- 理由：08 第 90 行那句是「比如」举的例子，reviewer 能写什么的定义处是 06 的角色 json；工具面只是收窄，写权的闸本来就在钩子（06 第 13 行）。禁 Skill 是防子会话里再加载别的角色 skill（一会话一角色，09 第 53 行）。
+- 落点：`research-loop/agents/reviewer.md`。
+- 审查：
+- 附：agents/ 里 `skills:` 预载写带插件前缀的 `research-loop:<role>`，验证助手实测裸名和带前缀都预载得上（D-13 补记），注释不标 PENDING，写「verified 2026-09-05, see plans/2026-09-05-research-loop-verify.md」。

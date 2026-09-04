@@ -358,5 +358,19 @@
 - 事项：2026-09-05 施工骨架版（`plans/2026-09-04-research-loop-work-guide.md`）时，冻结三份没写的两处由统筹按 gyb 2026-09-04 的代裁授权定了，记在 `plans/2026-09-04-research-loop-proxy-decisions.md`；代码按代裁写，正文等最后一期，gyb 可逐条否。
 - 裁决原文：（代裁，gyb 待审；依据写在 D-10、D-11 的理由栏）
 - 要改的地方：
-  48. 冻结后待议：（a）`03:145` feedback 行格式 `id` 一栏「反馈编号」补形状「形如 `fb-0001`」（D-11，照 `iss-0031` 类推）；（b）`04` handoffs 字段表 `work_order` 顶层 `track` 一栏（问题 45(a)(f) 加的）标「开单时必填」，转移表「（新建）→ todo」行 `work_order` 的前提加 `track`（D-10，依据 `04:43` 发射单第一次尝试 `track` 必填、`11:76` 发射单从父单抄）。
-- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-10、D-11 之后定）
+  48. 冻结后待议：（a）`03:145` feedback 行格式 `id` 一栏「反馈编号」补形状「形如 `fb-0001`」（D-11，照 `iss-0031` 类推）；（b）`04` handoffs 字段表 `work_order` 顶层 `track` 一栏（问题 45(a)(f) 加的）标「开单时必填」，转移表「（新建）→ todo」行 `work_order` 的前提加 `track`（D-10，依据 `04:43` 发射单第一次尝试 `track` 必填、`11:76` 发射单从父单抄）；（c）`03:196` scratch 段「actor 是 deploy 或 analysis」补「gyb 在裸终端或 `--as-gyb` 写照收（`01:65`、`03:27`）」（D-16）。
+- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-10、D-11、D-16 之后定）
+
+## 2026-09-05 来自 施工统筹会话 关于 待验证第 5 条测完后子会话身份的代裁动到冻结三份的几处（冻结后待议）
+- 事项：验证助手 2026-09-05 在沙盒测完待验证第 5 条（结果在 `plans/2026-09-05-research-loop-verify.md`），统筹按验证助手和底座助手的推荐代裁成 D-15（`plans/2026-09-04-research-loop-proxy-decisions.md`）；问题 39(a2) 的「等待验证第 5 条」到此有结论。代码按 D-15 写，正文等最后一期，gyb 可逐条否。
+- 裁决原文：（代裁，gyb 待审；实测事实和依据写在 D-15）
+- 要改的地方：
+  49. 冻结后待议：（a）`03` 九本账公共骨架加可选栏 `agent_id`（子会话写的行填）；`03` sessions 字段表加 `agent_id` 一栏，`launched_by` 取值含 subagent，补一句「同一 `session_id` 下 `agent_id` 不同的行是不同的版本链，『closed 会话再写拒收』按（`session_id`，`agent_id` 或空）配对查」；（b）`04` 第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句改成 D-15 的（3）；`04` 第六节销号钩子补 SubagentStop 按 `agent_id` 关行并交回该子会话开干的单、SessionEnd 交回本 `session_id` 名下全部（含被杀的子会话的）再关子会话行最后落母会话 closed 版；`04` 第七节 `rl session` 一族对应改；（c）`05:13` 到 `05:25` actor 判定那段改成 D-15 的（1）：先看钩子注入的 `RL_AGENT_TYPE`、`RL_AGENT_ID`，再看状态文件，都没有是裸终端 gyb；不认识的类型拒写退出码 3。
+- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-15 之后定）
+
+## 2026-09-05 来自 施工统筹会话 关于 run 回 withdrawn issue 的写权缺口（等 gyb）
+- 事项：对照单核手核问题 45(b) 时发现三处对不上：45(b) 要 holder（含接发射单的 run）把代码位置和半截产物路径回进那条 `withdrawn` issue；`03:92` 写通知类 issue 的 assignee 能回能关；`06:204` 给 run 的 issues 写权只有 open。改角色 json 一栏是改 `06` 的定稿裁决，统筹不代裁（D-14），run 那一支代码里标 `PENDING(issue 50)`。
+- 裁决原文：（待 gyb）
+- 要改的地方：
+  50. 若给 run 加 issues 的 reply、close（限自己是 assignee 的通知类 issue）：`06` run 那份 json 的 `ledger_writes` 加，`12` 的 json 副本同步，`research-loop/tables/roles/run.json` 跟着改、`rules_version` 加一；若不加：45(b) 对 run 改成「run 把位置写进发射单最新一次尝试的 `progress_note`」或别的 run 有写权的地方，由 gyb 定。
+- 状态：等 gyb
