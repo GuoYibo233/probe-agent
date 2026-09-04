@@ -635,3 +635,90 @@ def role_from_agent_type(agent_type: str | None) -> str | None:
         return None
     name = agent_type.rsplit(":", 1)[-1]
     return name if name in ROLES else None
+
+
+# ---------------------------------------------------------------- shared write pipeline (interface for rl_cmds)
+
+def parse_args(args: list[str], multi: tuple[str, ...] = (), flags: tuple[str, ...] = ()) -> tuple[list[str], dict]:
+    """Small option parser for handlers: `--name value` pairs; names in `multi` collect a
+    list; names in `flags` are booleans; everything else is positional (03 L224: a wrong
+    argument is exit 5 usage)."""
+    positional: list[str] = []
+    opts: dict = {}
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("--"):
+            name = a[2:]
+            if "=" in name:
+                name, value = name.split("=", 1)
+            elif name in flags:
+                opts[name] = True
+                i += 1
+                continue
+            else:
+                if i + 1 >= len(args):
+                    raise RLError("usage", f"--{name} needs a value")
+                value = args[i + 1]
+                i += 1
+            if name in multi:
+                opts.setdefault(name, []).append(value)
+            else:
+                opts[name] = value
+        else:
+            positional.append(a)
+        i += 1
+    return positional, opts
+
+
+def context(ctx: dict) -> tuple[Path, Actor, bool, str | None]:
+    """(repo, actor, force, force_reason) for a handler; runs the actor and --force
+    rules (01 L63-90)."""
+    repo = find_repo_root()
+    opts = ctx["opts"]
+    actor = resolve_actor(repo, as_gyb=opts.get("as_gyb", False), quote=opts.get("quote"))
+    force = bool(opts.get("force"))
+    check_force(actor, force, opts.get("reason"))
+    return repo, actor, force, (opts.get("reason") if force else None)
+
+
+def write_row(repo: Path, ledger: str, fields: dict, actor: Actor, command: str, *, status: str,
+              version: int, book: str | None = None, force: bool = False, force_reason: str | None = None,
+              via: str | None = None) -> dict:
+    """Build skeleton + fields, validate (writer alive, who-can-call, shape, status-bound
+    required unless gyb --force), append. The caller holds the Lock and has assigned ids
+    inside it (03 L19)."""
+    row = skeleton(actor, status, version, force_reason=force_reason, via=via)
+    row.update(fields)
+    if actor.quote and "quote" not in row and actor.is_gyb and not actor.bare_terminal:
+        row["quote"] = actor.quote  # 01 L70: --as-gyb rows carry the quote
+    validate_row(repo, ledger, row, actor, command, book=book, force=force)
+    append_row(repo, ledger, row, book)
+    return row
+
+
+def next_version_of(repo: Path, ledger: str, key_value: str, book: str | None = None) -> tuple[dict | None, int]:
+    """(latest row or None, next version number) for one key (03 L11, L36)."""
+    rows = read_rows(repo, ledger, book) if ledger != "decisions" or book else read_decisions(repo)
+    key = key_field(ledger)
+    best = None
+    for r in rows:
+        if r.get(key) == key_value and (best is None or r["version"] > best["version"]):
+            best = r
+    return best, (best["version"] + 1 if best else 1)
+
+
+def result(row: dict, ledger: str, extra: dict | None = None) -> dict:
+    """--json result: at least the row key and version (tests/helpers.py)."""
+    out = {key_field(ledger): row[key_field(ledger)], "version": row["version"], "status": row["status"]}
+    if extra:
+        out.update(extra)
+    return out
+
+
+def owner_of(order: dict) -> str:
+    """Owner is from_role, except a quick-lane supplement whose owner is gyb although
+    from_role is deploy (04 L19, L49; 07 L116; debt map 41(d))."""
+    if order.get("quick_lane") and order.get("from_role") == "deploy" and order.get("ql_tag"):
+        return "gyb"
+    return order.get("from_role", "gyb")

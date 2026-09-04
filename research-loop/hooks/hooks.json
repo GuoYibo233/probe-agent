@@ -1,0 +1,57 @@
+{
+  "description": "research-loop plugin hooks: write permission (06 L37-98), session registration and deregistration (06 L108-120), subagent identity injection (proxy decision D-15), PATH for rl (proxy decision D-21). One plugin-level file, the script decides the role itself (06 L102, L124).",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "session-start"], "timeout": 10}
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "write"], "timeout": 10}
+        ]
+      },
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "skill"], "timeout": 20}
+        ]
+      }
+    ],
+    "UserPromptExpansion": [
+      {
+        "matcher": "^(research-loop:)?(idea|deploy|run|analysis|reviewer)$",
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "skill"], "timeout": 20}
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "^research-loop:(idea|deploy|run|analysis|reviewer)$",
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "subagent-start"], "timeout": 20}
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "^research-loop:(idea|deploy|run|analysis|reviewer)$",
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "subagent-stop"], "timeout": 30}
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {"type": "command", "command": "python3", "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/rl_hook.py", "session-end"], "timeout": 30}
+        ]
+      }
+    ]
+  }
+}

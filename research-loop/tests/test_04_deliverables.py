@@ -174,6 +174,14 @@ class TestAnalysisOrderDeliverables(unittest.TestCase):
         sb.rl_ok("eval", "approve", eval_id, "--quote", "gyb: looks right", session=None)
         self.assertEqual(sb.latest("evaluations", eval_id)["status"], "approved")
 
+        # notebook missing again, evaluation now approved: isolates the output_paths check
+        # (04 L68) from the evaluation-approval check above, since the eval-approved case
+        # alone must not be enough to pass done.
+        before = sb.count("handoffs")
+        r = sb.rl("handoff", "done", ao_id, session=analysis)
+        self.assertEqual(r.rc, 2)
+        self.assertEqual(sb.count("handoffs"), before)
+
         sb.rl_ok("handoff", "done", ao_id, "--notebook", "analysis/ao1/nb.ipynb", session=analysis)
         row = sb.latest("handoffs", ao_id)
         self.assertEqual(row["status"], "done_pending_review")
@@ -253,6 +261,13 @@ class TestQuickLaneCloseOrdering(unittest.TestCase):
         ho_row = sb.latest("handoffs", ho_id)
         self.assertEqual(ho_row["ql_tag"], ql)  # 04 L31: the two point at each other
 
+        # 30 L62: the scratch row must be open, not merged, for a supplement open; once
+        # this ql_tag is merged a second supplement against it is refused.
+        before_h = sb.count("handoffs")
+        r2 = _open_quick_lane_supplement(sb, deploy, ql, tag="y")
+        self.assertEqual(r2.rc, 2)
+        self.assertEqual(sb.count("handoffs"), before_h)
+
     def test_supplement_open_refused_when_scratch_row_is_not_open(self):
         sb = self.sb
         deploy = _deploy(sb)
@@ -291,7 +306,7 @@ class TestQlTagField(unittest.TestCase):
 
 class TestHandoffDoneUsage(unittest.TestCase):
     """`rl handoff done` has no --actual-seconds flag: actual_seconds only ever comes from
-    `rl run finish` (30 L62; 04 L43 'handoff done 不带 --actual-seconds'; exit 5 usage)."""
+    `rl run finish` (30 L62; 04 L43: handoff done takes no --actual-seconds; exit 5 usage)."""
 
     def setUp(self):
         self.sb = Sandbox.create()
