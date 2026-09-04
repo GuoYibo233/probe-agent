@@ -109,3 +109,11 @@
 - 理由：gyb 2026-09-04 裁的分层真源是「机器能查的归代码和表」；三份表的内容是搬运，容器是新的。评审对 5c56edf 查「只搬运不发明」，查出发明的内容由底座改。
 - 落点：`research-loop/tables/`。
 - 审查：
+
+### D-13 入口 skill 关掉模型自动调用，五份角色 skill 不关、靠 description 只写一个触发条件（文本助手提，统筹按推荐裁）
+
+- 问题：五份角色 skill 要同时满足两件事：gyb 手敲 `/research-loop:idea` 加载，和 `agents/idea.md` 用 `skills:` 预载。文本助手让查文档的子会话核实过官方文档：带 `disable-model-invocation: true` 的 skill 不能被 agent 的 `skills:` 预载（预载和模型可调用是同一个集合），没有字段能做到「只预载、不让主会话的模型自动触发」。08 第 108 行待验证第 4 条的候选机制（skill 头部声明禁止模型调用）对角色 skill 走不通；入口 skill 只要 gyb 手敲、不被预载。
+- 决定：入口 skill 加 `disable-model-invocation: true`；五份角色 skill 不加，description 只写「Use when gyb has assigned this session the <role> role」这一个触发条件，正文第一段写清 gyb 没点名就停。
+- 理由：官方文档的限制绕不过；「一会话一角色」本来就是纪律不是门禁（06 第 106 行），description 收窄是把误触发压到最低的办法；入口 skill 关得掉就关。待验证第 4 条的正案已经是 `rl init` 查调用者状态文件（2026-08-17 裁），这条决定不动它。
+- 落点：`research-loop/skills/research-loop/SKILL.md` 头部；`research-loop/skills/<role>/SKILL.md` 头部与正文第一段。验证助手补测两条文档事实：agent 的 `skills:` 引同插件 skill 用裸名还是 `research-loop:idea`；带 `disable-model-invocation` 的 skill 确实预载不了。
+- 审查：
