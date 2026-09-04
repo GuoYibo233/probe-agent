@@ -22,7 +22,7 @@ Moving old code into `experiments/` means moving the files, not registering a po
 
 Both are host-side settings the plugin cannot change for itself; gyb sets them after `rl init`, in the same pass as the host CLAUDE.md lines of 08 section 7.9.
 
-1. The session-end hook runs under a default budget of 1.5 seconds that a plugin cannot raise. Set `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` in the host environment to a larger value. The plugin's hook already starts `rl session end` detached from that budget, so this is insurance, not the mechanism (proxy decision D-26).
+1. Optional, insurance only. The session-end hook runs under a default budget of 1.5 seconds that a plugin cannot raise; the plugin's hook starts `rl session end` detached from that budget, and the deregistration lands whether or not the variable is set (plans/2026-09-05-research-loop-verify.md section 7.5). Setting `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` in the host environment to a larger value only widens the margin (proxy decision D-26 and its addendum).
 2. Once the write hook has injected a subagent's identity, every Bash command that subagent runs begins with `export`. Host permission rules written on a command prefix, such as an allow rule for the host's own task runner, no longer match inside subagents; those commands fall to a prompt or to the auto-mode classifier instead. Whether to add rules that match the exported form is gyb's call (proxy decision D-15, addendum).
 
 ## Which role next
