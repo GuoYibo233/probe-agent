@@ -23,7 +23,7 @@
     {"if": {"status": "open"}, "then_required": ["started_at"], "source": "03 L185"},
     {"if": {"status": "closed"}, "then_required": ["ended_at", "end_reason", "released_handoffs"], "source": "03 L188-190"},
     {"rule": "last_activity is not stored; queries compute it as the max ts over the nine ledgers for this session_id, including the sessions ledger itself", "source": "03 L186, L192"},
-    {"rule": "amend version: status and every other field copied from the latest version, only model changes; allowed on closed sessions; writer is gyb or that role's own live session", "source": "03 L176; sync-inbox Q18 L490 of part 03 decision record; Q30 L108"},
+    {"rule": "amend version: status and every other field copied from the latest version, only model changes; allowed on closed sessions; writer is gyb or that role's own live session", "source": "03 L176; 03 L490 (decision record for Q18); sync-inbox Q30 L108"},
     {"rule": "a subagent shares the parent's session_id and writes no state file; whether it gets its own sessions row is verify item 5", "source": "06 L112, L118; 30 L17"}
   ],
   "x-pending": ["PENDING(part 30 L17): subagent identity and registration", "PENDING(issue 41e): the host gpu-runner is not registered in sessions"],

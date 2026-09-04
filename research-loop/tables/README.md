@@ -1,4 +1,4 @@
-# tables/ — machine-readable copies of the design parts
+# tables/ - machine-readable copies of the design parts
 
 Every file in this directory is a transcription of a table that already exists in
 `plans/research-loop-parts/` (the design parts). Nothing here is invented: each
