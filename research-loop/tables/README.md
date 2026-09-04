@@ -49,7 +49,11 @@ listed in `_pending`, so the final merge pass can grep for it.
    `RL_COMMON_DIR` points at a sandbox copy of `common/` (tests); `RL_AGENT_TYPE` and
    `RL_AGENT_ID` are injected by the write hook into a subagent's Bash commands so `rl`
    can tell a subagent from its parent session (verify item 5, 2026-09-05).
-8. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
+8. **Opening version = version 1.** 03 L211 separates "the open, merged and dropped
+   versions" from "middle versions that append numbers"; the schemas tell the opening
+   version from a middle one by `version == 1`. Same reading for the quick-lane
+   supplement's `ql_tag` (04 L31).
+9. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
    `artifact_root`, 06 L203) is descriptive only: the hook lets every path outside the
    repo through (06 L13), so the hook never consults it.
 

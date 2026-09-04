@@ -31,7 +31,7 @@
     {"if": {"op": "merge"}, "then_required": ["merged_from"], "source": "02 L28, L77"},
     {"if": {"op": "retire"}, "then": "status must be retired and text is the reason", "source": "02 L76, L79"},
     {"if": {"actor": "gyb", "session_id_not": "cli"}, "then_required": ["quote"], "source": "01 L70; 02 L27"},
-    {"if": {"book": "gyb"}, "then": "session_id must be cli (the gyb book only takes rows opened from a bare terminal)", "source": "02 L11; 01 L94"}
+    {"if": {"book": "gyb", "op": "add"}, "then": "session_id must be cli: the gyb book only holds decisions opened from a bare terminal and their later versions; a later version may come from a role session with --as-gyb --quote and keeps that session_id", "source": "02 L11; sync-inbox Q34(e) L171"}
   ],
   "x-source": "02 L15-30, L32-48, L109-113"
 }

@@ -8,7 +8,7 @@
   "properties": {
     "ql_tag": {"type": "string", "pattern": "^ql-[0-9]{8}-[0-9]{2,}$", "description": "primary key, assigned by rl inside the lock (03 L200; 07 L27)"},
     "status": {"type": "string", "enum": ["open", "merged", "dropped"], "description": "middle versions that append numbers keep status open; no fourth state (03 L196, L211)"},
-    "actor": {"type": "string", "enum": ["deploy", "analysis", "gyb"], "description": "deploy or analysis (03 L196); gyb by principle 1"},
+    "actor": {"type": "string", "enum": ["deploy", "analysis"], "description": "deploy or analysis (03 L196; 07 L66); unlike runs (03 L100) the parts give scratch no gyb exception"},
     "role": {"type": "string", "enum": ["deploy", "analysis"], "description": "03 L201"},
     "worktree": {"type": "string", "description": "deploy open version: required (03 L202)"},
     "dir": {"type": "string", "description": "analysis open version: required, analysis/scratch/<ql_tag>/ (03 L203)"},
@@ -21,12 +21,13 @@
   },
   "required": ["ql_tag", "status", "role"],
   "x-conditions": [
-    {"if": {"status": "open", "version": 1, "role": "deploy"}, "then_required": ["worktree", "base_commit", "branch"], "source": "03 L202-205; 07 L70; sync-inbox Q41(a)"},
+    {"if": {"status": "open", "version": 1, "role": "deploy"}, "then_required": ["worktree", "base_commit", "branch"], "source": "03 L202-205; 07 L70; sync-inbox Q41(a) L294; version 1 = the opening version is a construction reading, tables/README.md convention 8"},
     {"if": {"status": "open", "version": 1, "role": "analysis"}, "then_required": ["dir"], "source": "03 L203; 07 L70"},
     {"if": {"status": "open", "version_gt": 1}, "then": "only the skeleton and ql_tag are checked", "source": "03 L211"},
     {"if": {"status": "merged"}, "then_required": ["handoff_id"], "source": "03 L208"},
     {"if": {"status": "merged"}, "then": "role must be deploy", "source": "03 L208; 07 L86"},
     {"if": {"status": "dropped"}, "then_required": ["reason"], "source": "03 L209"}
   ],
+  "x-pending": ["PENDING(part 03 L196): whether gyb may write scratch rows (principle 1 exemption is only spelled out for runs, 03 L100)"],
   "x-source": "03 L194-213; 07 L62-77"
 }

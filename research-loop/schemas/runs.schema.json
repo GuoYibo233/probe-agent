@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "research-loop/schemas/runs.schema.json",
   "title": "runs row",
-  "description": "One schema, three statuses (03 L100): launched at launch, finished at the end, adopted when a run session takes over a launched, unfinished run; a relink version keeps the latest status and only changes handoff_id (03 L100; sync-inbox Q31). Field table 03 L102-120.",
+  "description": "One schema, three statuses (03 L100): launched at launch, finished at the end, adopted when a run session takes over a launched, unfinished run; a relink version keeps the latest status and only changes handoff_id (03 L100; sync-inbox Q31 L112). Field table 03 L102-120.",
   "allOf": [{"$ref": "_skeleton.schema.json"}],
   "type": "object",
   "properties": {
@@ -20,7 +20,7 @@
     "watch_cmd": {"type": "string", "description": "launched: required (03 L113)"},
     "started_at": {"type": "string", "format": "date-time", "description": "launched: required; filled by rl (03 L114; 05 L73)"},
     "config": {"type": "object", "properties": {"model": {}, "params": {}, "dataset": {}, "split": {}}, "required": ["model", "params", "dataset", "split"], "description": "launched: required, copied from the launch order (03 L115)"},
-    "finished_at": {"type": "string", "format": "date-time", "description": "finished: required; filled by rl (03 L116)"},
+    "finished_at": {"type": "string", "format": "date-time", "description": "finished: required (03 L116); filled by rl (05 L73)"},
     "exit_status": {"type": "string", "enum": ["ok", "failed", "killed"], "description": "finished: required (03 L117)"},
     "actual_seconds": {"type": "number", "description": "finished: required; rl computes it from the two timestamps and copies it into the launch order's latest attempt (03 L118)"},
     "metrics": {"type": "object", "additionalProperties": {"type": "number"}, "description": "required when exit_status is ok; keys are metric names, values numbers (03 L119)"},

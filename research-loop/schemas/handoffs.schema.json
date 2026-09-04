@@ -42,7 +42,7 @@
     "adopted": {"type": "boolean", "description": "optional on the start version; true when adopting a launched, unfinished run (04 L29)"},
     "quick_lane": {"type": "boolean", "description": "04 L30"},
     "ql_tag": {"type": ["string", "null"], "description": "required on a quick-lane supplement, points at the scratch row it merges back; empty otherwise (04 L31)"},
-    "track": {"type": "string", "description": "direction name on a work_order, filled by idea at open; a launch_order carries it inside attempts[].track (sync-inbox Q45(a)(f))"},
+    "track": {"type": "string", "description": "direction name on a work_order, filled by idea at open (required at open per proxy decision D-10); a launch_order carries it inside attempts[].track (sync-inbox Q45(a)(f) L329-330)"},
     "decision_refs": {"type": "array", "items": {"$ref": "#/definitions/ref"}, "description": "work_order: at least one; launch_order copies from the parent at open (04 L32)"},
     "evaluation_refs": {"type": "array", "items": {"$ref": "#/definitions/ref"}, "description": "analysis_order; items may be proposed at open, each must be approved to enter done_pending_review (04 L33)"},
     "explanation": {"type": "string", "description": "work_order required; quick-lane supplement written by deploy and quoting gyb (04 L34)"},
@@ -62,8 +62,8 @@
     {"if": {"status_in": ["rejected", "withdrawn"]}, "then_required": ["reason"], "source": "04 L40"},
     {"if": {"status": "stuck"}, "then_required": ["issue_id"], "source": "04 L41"},
     {"if": {"work_type": "launch_order"}, "then_required": ["parent_id", "attempts"], "source": "04 L24, L38"},
-    {"if": {"work_type": "work_order"}, "then_required": ["decision_refs", "explanation", "track"], "source": "04 L32, L34; sync-inbox Q45(a)"},
-    {"if": {"quick_lane": true, "transferred": false}, "then_required": ["ql_tag"], "source": "04 L31"},
+    {"if": {"work_type": "work_order"}, "then_required": ["decision_refs", "explanation", "track"], "source": "04 L32, L34; sync-inbox Q45(a) L329; track required at open per proxy decision D-10"},
+    {"if": {"quick_lane": true, "version": 1}, "then_required": ["ql_tag"], "source": "04 L31 (a quick-lane supplement is quick_lane from its first version); PENDING(issue 41f): whether an order transferred by ql open --from carries ql_tag is not ruled"},
     {"rule": "transition-bound requirements (report_paths, code_paths, output_paths, approved refs, run finished ok) live in tables/transitions.json preconditions", "source": "03 L17; 04 L53"}
   ],
   "x-pending": [
