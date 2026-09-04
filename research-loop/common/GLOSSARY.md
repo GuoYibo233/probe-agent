@@ -2,7 +2,7 @@
 
 <!-- Source: build plan 2026-08-16 section 2 (plans/2026-08-16-research-loop-build-plan.md L27-L53), carried into 09 L14. The third column is the draft gyb has not walked through yet: PENDING(part 09 L19). -->
 
-Every thing in this system has one name, the one in the first column, and that name is used in code, ledgers, skills and conversation alike. The second column says what the thing is. The third column says what it is not, because most confusion in the two simulation rounds came from a name being read as its neighbour.
+Every thing in this system has one name, the one in the first column, and that name is used in code, ledgers, skills and conversation alike. The second column says what the thing is. The third column says what it is not.
 
 ## Roles and actors
 
@@ -16,7 +16,7 @@ Every thing in this system has one name, the one in the first column, and that n
 | `gyb` | The person. The superuser: no permission check applies, every ledger row can carry gyb as actor. | Not a role; gyb has no role json and no skill. |
 | actor | Who a ledger row is written as: one of the five roles or `gyb`. | Not the session; a role session can write a row whose actor is `gyb` with `--as-gyb --quote`. |
 | session | One loaded role in one terminal, registered in the sessions ledger. | Not the person typing; `rl` decides identity by session only (principle-01). |
-| `cli` | The session name a bare terminal writes under; its actor is always `gyb`. | Not a role session; `--as-gyb` is neither needed nor accepted there. |
+| `cli` | The session name a bare terminal writes under; its actor is always `gyb`. | Not a role session; `--as-gyb` is not needed there. |
 
 ## The nine ledgers
 
@@ -25,7 +25,7 @@ Every thing in this system has one name, the one in the first column, and that n
 | `decisions` | The decision ledger, one file per actor: `loop/decisions.<actor>.jsonl`, six files for five roles plus gyb. | Not one shared file; the file is chosen by who decided. |
 | `issues` | The issue ledger, `loop/issues.jsonl`: problems reported from one role to another. | Not a task list; an issue asks someone to answer, it does not assign work. |
 | `handoffs` | The handoff ledger, `loop/handoffs.jsonl`: orders passed between roles. | Not a chat; every change to an order is a new version with a status. |
-| `runs` | The runs ledger, `loop/runs.jsonl`: numbers from experiments, written only by run's scripts. | Not written by hand, ever (rule-03). |
+| `runs` | The runs ledger, `loop/runs.jsonl`: numbers from experiments, written only by run's scripts, gyb excepted. | Not typed in by a role from a log read by eye (rule-03). |
 | `grants` | The grants ledger, `loop/grants.jsonl`: permissions gyb hands out. | Not writable by any role; only gyb writes it. Schema reserved: PENDING(issue 43c). |
 | `feedback` | The feedback ledger, `loop/feedback.jsonl`: proposed changes to the shared rules and templates. | Not a place to change a rule; the rule changes only after gyb accepts. |
 | `evaluations` | The evaluations ledger, `loop/evaluations.jsonl`: metrics and figures gyb agreed to see. | Not results; it holds what may be computed, not what was computed. |
@@ -113,7 +113,7 @@ Every thing in this system has one name, the one in the first column, and that n
 | `analysis_artifact_root` | The root directory for analysis artifacts, outside the repository. | Not `analysis/` inside the repository. |
 | `research-loop.json` | The per-repository configuration file: roots, thresholds. | Not the plugin's own manifest. |
 | `bin/rl` | The command entry point; every ledger write and every ledger query goes through it. | Not a library to import from role code. |
-| `--as-gyb` | The flag that writes a row as gyb from a role session; always with `--quote`. | Not accepted from `cli`, where the actor is gyb already. |
+| `--as-gyb` | The flag that writes a row as gyb from a role session; always with `--quote`. | Not needed from `cli`, where the actor is gyb already. |
 | `--quote` | gyb's own words from the moment, kept for reviewer. | Not a paraphrase. |
 | `--force --reason` | gyb's override of a data validation failure; the reason is written into the row. | Not a permission override; gyb never needs one. |
 | `rules_version` | The integer on the first line of `common/GLOBAL-RULES.md`; sessions record the value they loaded. | Not a plugin version. |
