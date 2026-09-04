@@ -294,6 +294,7 @@
 - 要改的地方：
   41. 冻结后待议：（a）`03` scratch 表 `open` 版必填改「deploy 填 `worktree`、`base_commit`、`branch`；analysis 只填 `dir`」；（b）`04` 转移表快车道「（新建）→ done_pending_review」行前提加「`code_paths` 非空」；（c）`04` 转移表补两行——「`todo` 的单 `rl ql open --from` 标 `quick_lane`、离开待干不占 holder」「`quick_lane` 标记的单出口追加一版直达 `done_pending_review`（前提同快车道新建行）／放弃退回 `todo` 去标记」；（d）`04`「owner 就是开单角色」通则加例外「快车道补单开单动作 deploy、owner 记 gyb」；（e）`04` sessions 账补「宿主 gpu-runner 不登记 sessions 账」；（f）`05` `rl ql close` 补「`--merged` 和 `--dropped` 都删工作树与同名分支」、`rl ql open --from` 补「单子标 `quick_lane` 并离开待干」、转进单出口那一步的子命令名归 `05` 定；（g）`05:236` 接口「公共规矩八条」改九条（rule-09 修必销案，2026-08-21 立）。
   - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(h) `05` `rl status` 段 9／`--group-by line` 那里补「没关的快车道不归线，单独列一堆」（`07` 定稿，`01` 已落，`05:163`/`05:166` 当时漏攒）；(i) (d) 那条评审核对 `04` 现文可能已有同义句，落地时先核对、已有就只核不加；(j) (f) 里「转进单出口那一步的子命令名归 `05` 定」读作「最后一期改 `05` 时由 gyb 定」——冻结规矩不给 rl-part-05 派活。
+  - 统筹补扫 2026-09-05（施工代裁 D-24）：(k) (d) 那条落进 `04` 时补单行的三栏写法定为 actor 记 deploy、`from_role` 记 gyb（owner）、`to_role` 记 deploy（谁干活），依据 `04:19` owner 从 `from_role` 推、`07:116` 定稿；gyb 审 D-24 之后定。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `07` 定稿为准）
 
 ## 2026-08-21 来自 rl-part-10 关于 10-role-idea.md

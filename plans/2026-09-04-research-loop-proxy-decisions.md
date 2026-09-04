@@ -204,4 +204,12 @@
 - 理由：600 秒上限是宿主行为，插件改不了；失败备案（被杀就等下一个 run 认领）照旧成立，但是没有销号钩子的那种死法要 reclaim 兜，说明书里写明比让人撞上强。
 - 落点：`research-loop/skills/idea/SKILL.md`、`skills/deploy/SKILL.md`（派活段）、`skills/reviewer/SKILL.md`（按清单起 sonnet 子会话那段，14 第 95 行）；`skills/research-loop/SKILL.md`；30 第 21 行状态栏。
 - 审查：
+### D-24 快车道补单的行：actor 记 deploy、`from_role` 记 gyb、`to_role` 记 deploy（评审助手提，统筹按推荐裁）
+
+- 问题：04 第 19 行「`from_role` 就是 owner，可以是 `gyb`」，07 第 96 行「`from_role` 和 `to_role` 都是 deploy」，07 第 116 行定稿「开单动作由 deploy 做，owner 记 gyb」；handoffs 没有单独的 owner 字段，owner 从 `from_role` 推。三句同时成立只有一种写法。底座测试 test_02 第 83 到 86 行那处标了 UNDECIDED。
+- 决定：补单行 actor 记 deploy（谁写的），`from_role` 记 gyb（owner），`to_role` 记 deploy（谁干活）。`transitions.json` 的 owner_definition 和 open_quick_lane 行注明，来源标注 proxy decision D-24；test_02 那处按此写。
+- 理由：07 第 116 行是 07 定稿时对第 96 行那句的裁定（「设计文档『`from_role` 和 `to_role` 都是 deploy』」那句在 116 行里被点名改），04 第 19 行 owner 从 `from_role` 推是定义处；三句里后裁的赢。
+- 落点：`research-loop/tables/transitions.json`；`research-loop/tests/test_02_transitions.py`；sync-inbox 问题 41 段加统筹补扫 (k)。
+- 审查：
+
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
