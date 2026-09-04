@@ -92,6 +92,12 @@ listed in `_pending`, so the final merge pass can grep for it.
     can tell section membership without parsing text; adding keys is allowed by 05 L123
     ("add fields, never remove").
 
+15. **`--reason` is parsed once.** bin/rl strips the five global flags (`--json`,
+    `--as-gyb`, `--quote`, `--force`, `--reason`) before dispatch; handlers whose
+    signature also has `--reason` (`handoff reject/withdraw`, `ql close --dropped`,
+    `session end`) read it from the global options, so one `--reason` serves both the
+    command and a `--force` on the same call.
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;

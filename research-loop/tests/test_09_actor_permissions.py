@@ -216,6 +216,25 @@ class ForceAndCompleteness(unittest.TestCase):
         self.assertEqual(self.sb.count("handoffs"), 1)  # only the open version
 
 
+class ForceKeepsShape(unittest.TestCase):
+    """03 L27; 01 L90; 04 L55: --force bypasses only the completeness checks; the row must
+    still fit the ledger (types, enums, patterns)."""
+
+    def setUp(self):
+        self.sb = Sandbox.create()
+
+    def tearDown(self):
+        self.sb.destroy()
+
+    def test_gyb_force_with_a_value_outside_the_enum_is_still_refused(self):
+        before = self.sb.count("issues")
+        r = self.sb.rl("issue", "open", "--to", "gyb", "--kind", "not-a-kind", "--text", "x",
+                       "--force", "--reason", "testing the boundary")
+        self.assertEqual(r.rc, 2, str(r))
+        self.assertEqual(r.kind, "validation")
+        self.assertEqual(self.sb.count("issues"), before)
+
+
 class InitInRoleSession(unittest.TestCase):
     def setUp(self):
         self.sb = Sandbox.create()
