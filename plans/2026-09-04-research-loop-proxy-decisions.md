@@ -85,3 +85,27 @@
 - 理由：00 第 321 行是已裁，README 在 08 第四节的插件本体目录表里；待裁标记的用处是最后一期按 `PENDING(` 这个字面扫描，英文形式一样扫得到，并且不让插件本体里夹中文。评审推荐标记保留中文形式，统筹改成英文形式，差别只在标记内部的写法，扫描字面不变。
 - 落点：`research-loop/README.md`；`plans/2026-09-05-research-loop-fork-protocol.md`；`plans/2026-09-04-research-loop-work-guide.md` 第七节；四个助手各收一条消息。
 - 审查：
+
+### D-10 工单（work_order）开单时 `track` 必填（底座助手提，统筹裁）
+
+- 问题：sync-inbox 问题 45(a)(f) 只写「`work_order` 加顶层 `track`（idea 开单填）」，没写必填还是可选。底座写 handoffs 的 schema 要定。
+- 决定：`work_order` 开单时 `track` 必填。
+- 理由：04 第 43 行写发射单开单时第一次尝试的 `track` 必填，11 第 76 行写发射单的 `track`「从父单抄」，所以没有 `track` 的工单下面永远开不出发射单；在工单开单这一步就要，缺口在源头拦住。每张工单都属于一条研究方向，方向名对工单没有例外。
+- 落点：`research-loop/schemas/handoffs.schema.json`、`research-loop/tables/transitions.json` 新建行的前提；sync-inbox 问题 48(b) 记最后一期要落进 04 字段表。
+- 审查：
+
+### D-11 feedback 账的编号形状定为 `fb-NNNN`（底座助手提，统筹裁）
+
+- 问题：03 第 145 行只写「反馈编号」，没有形状；别的账都有（`iss-0031`、`grant-0003`、`eval-0004`、`ho-0013`）。schema 和编号分配要一个形状。
+- 决定：`fb-NNNN`，序号从 1 起、四位起步、按数值排序，和 03 第 21 行的编号总规矩一致。代码里的来源标注写 `proxy D-11`，不标 PENDING。
+- 理由：照别的账的形状类推是唯一不发明的做法；03 的空白由最后一期补进正文。
+- 落点：`research-loop/schemas/feedback.schema.json`、`research-loop/scripts/rl_lib.py` 编号分配；sync-inbox 问题 48(a)。
+- 审查：
+
+### D-12 `tables/` 允许多三份表：命令表、退出码表、配置默认值表
+
+- 问题：08 第四节和 30 步 3 给 `tables/` 列的是四样（账本清单、转移表、角色 json、gyb use case 表）。底座在 5c56edf 里另加了 `tables/commands.json`（05 的命令表）、`tables/exit_codes.json`（03 的退出码六个）、`tables/config_defaults.json`（08 第三节阈值默认值表），每行带来源。
+- 决定：允许。三份都是设计里已有的表搬成机器读的形式，代码从表读、不在代码里复写一份：`bin/rl` 的子命令分发读命令表（测试 13 查「子命令在定义处存在」也对这份表查），`rl_lib` 的退出码读退出码表，`rl init` 的默认配置读配置默认值表。
+- 理由：gyb 2026-09-04 裁的分层真源是「机器能查的归代码和表」；三份表的内容是搬运，容器是新的。评审对 5c56edf 查「只搬运不发明」，查出发明的内容由底座改。
+- 落点：`research-loop/tables/`。
+- 审查：
