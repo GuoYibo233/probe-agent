@@ -2,7 +2,8 @@
 
 Source: 06 L252-L262 (the three checks, ruled 2026-08-18), 09 L27-L29 (no copies of common/ text), proxy
 decision D-08 (the two discipline sentences every role skill carries are exempt from checks 2 and 3;
-sources 06 L29 and 09 L53), SPEC-TEMPLATE.md "Token convention" (backticks mark the tokens this test reads).
+sources 06 L29 and 09 L53), proxy decision D-17 (backticks mark the tokens this test reads, and common/GLOSSARY.md's
+first column is a definition site next to the four kinds 06 L260 lists), SPEC-TEMPLATE.md "Token convention".
 
 Check 1  every `rl` write command a skill names is in that role json's ledger_writes; query commands are free.
 Check 2  every ledger name and every directory a skill names is in that role json's reads (or writes for directories).

@@ -48,6 +48,8 @@ Started by deploy as a subagent from a launch order, or by gyb loading this skil
 
 **Interrupt.** Crash: `rl run finish RUN_ID --exit failed` (the host finish command is called as well), then the `crash` issue and `rl handoff stuck`. Withdrawn or reclaimed with kill: `rl run finish RUN_ID --exit killed` plus the wrap-up (kill, release the GPU, the configured host abort command, skipped when unset); the order's status is not changed by run, the withdrawal or reclaim already changed it. `actual_seconds` is recorded whatever the exit status.
 
+**Withdrawn while holding.** The half-finished artifact directory under `artifact_root` stays in place for gyb to decide. Answering the `withdrawn` notice with its path, as deploy and analysis do, needs an issue reply that run's ledger writes do not include: PENDING(issue 50).
+
 **Session end.** The hook releases orders this session holds back to `todo` with an `orphaned` notice to the owner. A launch order whose latest attempt is `launched` and not `finished` keeps its process running for the next run session to adopt; hours of waiting happen only in tmux.
 
 **Self-made decisions.** Rare, for example why a particular GPU was chosen: `rl decision add` in run's own ledger. Where run reads its own decisions back: PENDING(part 12 L178).

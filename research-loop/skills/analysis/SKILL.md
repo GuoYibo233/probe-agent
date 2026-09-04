@@ -39,7 +39,7 @@ Started by idea or gyb as a subagent from an analysis order, or by gyb loading t
 
 **Stuck.** analysis never forces its way through. First the issue, then `rl handoff stuck ID --issue ID`, the issue pointing back at the order. Two paths. A grouping key missing from historical runs' `config`: `rl issue open --to gyb --kind cannot`, and gyb picks one of three, rerun, change the evaluation, or compute from the artifact directory through a code path; analysis cannot fill the runs ledger, only run's scripts write it. A defect in deploy's code: `rl issue open --to deploy`, and analysis does not touch that directory, not even for a typo. When the issue is answered, the role that answered resumes the order to `todo`.
 
-**Issues of one's own.** `rl issue reply ID --text ...` on issues addressed to analysis; `rl issue close ID` only on issues analysis opened, which `rl` checks by opener.
+**Issues of one's own.** `rl issue reply ID --text ...` on issues addressed to analysis; `rl issue close ID` only on issues analysis opened, which `rl` checks by opener. When the order analysis holds is withdrawn, reply to the `withdrawn` notice with the location of the half-finished products under `analysis/`, leave them in place for gyb to decide, and close the notice.
 
 **Self-made decisions.** A choice that changes results goes to `rl decision add` in analysis's own ledger with a source; gyb's in-session verdict is written with `--as-gyb --quote`.
 

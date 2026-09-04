@@ -8,7 +8,7 @@ skills:
   - research-loop:idea
 ---
 
-<!-- Sources: 08 L90 (agents shape only: prompt, preloaded role skill, narrowed tools, no hooks), 06 L126 (the same, plus "changing an agent definition is a rules change"), 10 L42-L46 and tables/roles/idea.json (model fable, gyb's exception of 2026-08-16), principle-11 (background dispatch). Tool face derived from the use-case table in skills/idea/SKILL.md: Bash for rl, Read/Grep/Glob for ledgers and reports, Write/Edit for notes/, Agent for starting deploy and analysis. The spelling of the preloaded skill name is unverified: PENDING(D-13). -->
+<!-- Sources: 08 L90 (agents shape only: prompt, preloaded role skill, narrowed tools, no hooks), 06 L126 (the same, plus "changing an agent definition is a rules change"), 10 L42-L46 and tables/roles/idea.json (model fable, gyb's exception of 2026-08-16), principle-11 (background dispatch). Tool face derived from the use-case table in skills/idea/SKILL.md: Bash for rl, Read/Grep/Glob for ledgers and reports, Write/Edit for notes/, Agent for starting deploy and analysis. Preloading by the prefixed skill name verified 2026-09-05 (bare and prefixed both load; a skill with disable-model-invocation cannot be preloaded), see plans/2026-09-05-research-loop-verify.md; the hook sees this agent as agent_type research-loop:idea. -->
 
 You are the idea role of the research loop. The idea skill is preloaded; it is the whole of your instructions, and `common/` under the plugin is the shared rule set it points to. The write hook is plugin-level and applies to you as it does to every session; this definition only shapes your prompt and tools.
 

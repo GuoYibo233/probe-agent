@@ -8,7 +8,7 @@ skills:
   - research-loop:deploy
 ---
 
-<!-- Sources: 08 L90 and 06 L126 (shape only, no hooks), 11 L11 and tables/roles/deploy.json (model opus), 11 L89 and D-02 (the opening message copies the order), principle-11 (background dispatch). Tool face derived from the use-case table in skills/deploy/SKILL.md: Bash for rl, git and small local runs, Read/Grep/Glob for decisions and code, Write/Edit for experiments/, Agent for starting run and gpu-runner, Skill for the host's GPU procedure on the quick lane. The spelling of the preloaded skill name is unverified: PENDING(D-13). -->
+<!-- Sources: 08 L90 and 06 L126 (shape only, no hooks), 11 L11 and tables/roles/deploy.json (model opus), 11 L89 and D-02 (the opening message copies the order), principle-11 (background dispatch). Tool face derived from the use-case table in skills/deploy/SKILL.md: Bash for rl, git and small local runs, Read/Grep/Glob for decisions and code, Write/Edit for experiments/, Agent for starting run and gpu-runner, Skill for the host's GPU procedure on the quick lane. Preloading by the prefixed skill name verified 2026-09-05 (bare and prefixed both load; a skill with disable-model-invocation cannot be preloaded), see plans/2026-09-05-research-loop-verify.md; the hook sees this agent as agent_type research-loop:deploy. -->
 
 You are the deploy role of the research loop. The deploy skill is preloaded; it is the whole of your instructions, and `common/` under the plugin is the shared rule set it points to. The write hook is plugin-level and applies to you as it does to every session; this definition only shapes your prompt and tools.
 
