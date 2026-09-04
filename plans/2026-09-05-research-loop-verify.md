@@ -1,6 +1,6 @@
-# 2026-09-05 待验证第 5 条、第 9 条和两条补充项的实测记录（施工步 0，验证助手会话）
+# 2026-09-05 待验证第 5 条、第 9 条和三条补充项的实测记录（施工步 0，验证助手会话）
 
-写给 gyb、统筹会话、底座会话和评审会话。这份记录只装 2026-09-05 凌晨在真会话沙盒里测出来的事实，加上末尾一节单独写的解读和建议。测的是 30 分册待验证清单的第 5 条（子会话结束的时候 SessionEnd 和 SubagentStop 触不触发、会话 id 是不是同一个、子会话里敲 rl 算谁）和第 9 条（后台子会话在母会话活着的时候能不能长跑并回通知、母会话结束的时候后台子会话会不会被杀掉），另加统筹 2026-09-05 转来的两条补充项（agents 定义的 skills 字段写裸名还是带插件前缀才预载得上；带 disable-model-invocation 的 skill 能不能被预载）。顺带测到的第 1 条和第 10 条只记结果，不算正式裁决。
+写给 gyb、统筹会话、底座会话和评审会话。这份记录只装 2026-09-05 凌晨在真会话沙盒里测出来的事实，加上末尾一节单独写的解读和建议。测的是 30 分册待验证清单的第 5 条（子会话结束的时候 SessionEnd 和 SubagentStop 触不触发、会话 id 是不是同一个、子会话里敲 rl 算谁）和第 9 条（后台子会话在母会话活着的时候能不能长跑并回通知、母会话结束的时候后台子会话会不会被杀掉），另加统筹 2026-09-05 转来的三条补充项（agents 定义的 skills 字段写裸名还是带插件前缀才预载得上；带 disable-model-invocation 的 skill 能不能被预载；插件级钩子把插件的 bin 目录写进 PATH 之后能不能直接敲 rl）。顺带测到的第 1 条和第 10 条只记结果，不算正式裁决。
 
 几个下文反复用的词。子会话：一个会话用 Agent 工具启动出来的下级会话，Claude Code 官方叫 subagent。钩子：Claude Code 在会话开始、结束、工具调用前后自动运行的脚本，钩子收到的输入是一段 JSON。状态文件：设计里由登记钩子写在 `loop/.sessions/<session_id>.json` 的那份小文件，rl 靠状态文件判断当前会话是什么角色。心跳文件：沙盒里长跑脚本每 10 秒追加一行时间戳的文件，用来判断脚本什么时候还活着。打印模式：`claude -p` 这种给一句话、跑完就退出的会话。
 
@@ -21,11 +21,11 @@
 | `bin/longjob.sh <秒数> <名字>` | 长跑脚本，每 10 秒往 `hb/<名字>.log` 追加一行心跳 |
 | `bin/mark.sh` | 往 `marks.log` 追加一行时间戳，母会话收到子会话完成通知的时候调用 |
 | `run_p.sh`、`run_9b.sh`、`run_9b_bg.sh`、`watch9a.sh` | 起打印模式会话、起 tmux 交互会话并结束母会话、盯长跑的脚本 |
-| `plugtest/rlmini/` | 补充两条用的最小插件：两个 skill（idea 普通、gate 带 `disable-model-invocation: true`），四个 agent 定义（skills 字段分别写 `idea`、`rlmini:idea`、`gate`、`rlmini:gate`） |
+| `plugtest/rlmini/` | 补充三条用的最小插件：两个 skill（idea 普通、gate 带 `disable-model-invocation: true`），四个 agent 定义（skills 字段分别写 `idea`、`rlmini:idea`、`gate`、`rlmini:gate`），一条插件级 SessionStart 钩子（`hooks/hooks.json` 加 `hooks/pathexport.py`）和一个只打印一行的 `bin/rl` |
 
 钩子挂在设置这一层，不挂在插件这一层，依据是 06 第 102 行记的第 8 条实测结论：「仓库 settings 级和插件级钩子文件对 subagent 生效，输入带 `agent_type`、`agent_id`，`session_id` 与父会话相同」。这次的记录再次看到了同样的三个字段。
 
-这次没测的：几个小时的长跑（原计划 40 分钟那次在 740 秒被中断，见 3.5，重跑缩成 1200 秒）、真正的 rl（还没写）、`launched_by=workflow` 的派活、沙盒不是 git 仓库。
+这次没测的：几个小时的长跑（原计划 40 分钟那次在 740 秒被中断，见 3.5，重跑缩成 1200 秒）、真正的 rl（还没写）、`launched_by=workflow` 的派活、沙盒不是 git 仓库。另外两处只在一种形状上测过：注入（2.5）和链式命令补测用的子会话类型都是 `--agents` 命令行给的，没有用插件 `agents/<role>.md` 定义的类型跑过一次注入，「插件定义的子会话 agent_type 带前缀」（第四节末尾）和「注入对带 agent_type 的调用生效」是两次不同的运行各自测出来的；2.4 里 rl 读到的状态文件是沙盒的 SessionStart 钩子写的，真正的登记钩子还没写。退出对话框的第三个选项「Stay」没有选过。
 
 ## 二、第 5 条的实测事实
 
@@ -201,7 +201,7 @@ stream-json 的顺序：Agent 调用、task_started、SPAWNED、子会话的 Bas
 
 沙盒设置里 Bash 默认超时是 3600000 毫秒。9b-1 的 150 秒、9a 的 740 秒都没有撞到超时。子会话运行长跑命令的时候，stream-json 里看到 Bash 调用本身被当成一个后台任务（task_started 加 task_notification 之后才有 TOOL_RESULT），交互会话的退出对话框里也把长跑的 shell 单独列成一项。
 
-## 四、补充两条的实测事实
+## 四、补充三条的实测事实
 
 最小插件 rlmini 用 `claude -p --plugin-dir ./rlmini --debug` 加载，母会话在一个回复里启动四个插件 agent，各问一句「What is the marker word?」。四个 agent 定义只给 Read 一个工具，没有 Skill 工具，所以回得出标记词只能是预载进来的。
 
@@ -255,7 +255,7 @@ RL-ON-PATH 2026-09-05T00:53:41+09:00 tag=child-i sid=0b6182eb-3cd8-4372-ad20-49d
 
 第 5 条，销号那一半：子会话正常结束靠 SubagentStop；母会话结束的时候子会话被杀掉，没有 SubagentStop，只有母会话的 SessionEnd（三种结束方式都是）。所以 SessionEnd 上的销号必须把这个会话 id 名下所有 holder 的单子一起交回，包括子会话认领的。挪到后台再退出那种情况会话换了 id，原会话的 SessionEnd 触发、新会话按新 id 活着，状态文件按旧 id 写的就对不上了，这一点建议 04 记一句。第 2.6 节里 agent_type 为空串的 SubagentStop，按 06 第 102 行「不认识的按最严判」处理，销号脚本收到没登记过的 agent_id 直接跳过就行。
 
-第 9 条，母会话活着那一半，主案成立：交互会话 9a-2 的后台子会话跑满 1200 秒，母会话收到完成通知并按开场话运行了标记命令；打印模式 9b-1 在 150 秒上同样完整走了一轮。几个小时这次没测，1200 秒和 9a 的 740 秒都没有碰到任何超时。打印模式有一个 600 秒的等待上限（3.7），要让 -p 母会话等更久要设 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0，这一点 launched_by 是 workflow 或者 -p 的派活要写进说明书。打印模式的母会话会自己等后台子会话跑完再退出（3.1），交互会话在屏幕上显示「Waiting for 1 background agent to finish」。母会话结束那一半：三种结束方式子会话都被杀掉，「挪到后台」保住的是会话不是子会话。30 第 21 行的失败备案照旧成立：GPU 在 tmux、单子在账上、下一个 run 会话认领，多出来的只是待认领的单子。另外 /exit 会弹对话框而不是直接退，这一点值得写进 run 角色的说明书，让 run 会话知道选「留下」才能保住子会话。
+第 9 条，母会话活着那一半，主案成立：交互会话 9a-2 的后台子会话跑满 1200 秒，母会话收到完成通知并按开场话运行了标记命令；打印模式 9b-1 在 150 秒上同样完整走了一轮。几个小时这次没测，1200 秒和 9a 的 740 秒都没有碰到任何超时。打印模式有一个 600 秒的等待上限（3.7），要让 -p 母会话等更久要设 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0，这一点 launched_by 是 workflow 或者 -p 的派活要写进说明书。打印模式的母会话会自己等后台子会话跑完再退出（3.1），交互会话在屏幕上显示「Waiting for 1 background agent to finish」。母会话结束那一半：三种结束方式子会话都被杀掉，「挪到后台」保住的是会话不是子会话。30 第 21 行的失败备案照旧成立：GPU 在 tmux、单子在账上、下一个 run 会话认领，多出来的只是待认领的单子。另外 /exit 会弹对话框而不是直接退，这一点值得写进 run 角色的说明书；对话框自己写着「The following will stop when you exit」，所以选「留下」应该能保住子会话，这个选项这次没有选过，是推断不是实测。被 -p 的 600 秒上限终止的会话（3.7）SubagentStop 和 SessionEnd 都没触发，子会话手上的单子只能靠 rl status 段 7 和 rl reclaim 兜底，这是评审 2026-09-05 点出来要写进第五节的。
 
 补充三条。D-21 站得住：插件级 SessionStart 钩子往 CLAUDE_ENV_FILE 写一行 export PATH 之后，同一会话的母会话和后台子会话在打印模式和交互模式下都能直接敲到插件的 rl，四次都找到了插件 bin 目录下的那份。D-13 站得住：agents 定义的 skills 字段写裸名和带插件前缀都预载得上，带 `disable-model-invocation: true` 的 skill 两种写法都预载不上，debug 日志报「was not found」。入口 skill 关模型调用之后就不能被任何 agent 定义预载，角色 skill 不能关。
 
