@@ -491,16 +491,25 @@ def merged_schema(ledger: str) -> dict:
     return merged
 
 
-def validate_shape(ledger: str, row: dict) -> None:
-    """Types, enums, patterns and unconditional required fields (schemas/*.schema.json)."""
+def validate_shape(ledger: str, row: dict, skip_required: bool = False) -> None:
+    """Types, enums, patterns and unconditional required fields (schemas/*.schema.json).
+    skip_required=True (gyb --force --reason, 03 L27) keeps the type, enum and pattern
+    checks and drops only the required lists, so a forced row still fits the ledger."""
+    schema = merged_schema(ledger)
+    if skip_required:
+        schema = {k: v for k, v in schema.items() if k != "required"}
+        props = {}
+        for name, prop in schema.get("properties", {}).items():
+            props[name] = {k: v for k, v in prop.items() if k not in ("required", "minItems")} if isinstance(prop, dict) else prop
+        schema["properties"] = props
     try:
         import jsonschema  # system python has 3.2.0; the hook runs with the same interpreter
     except ImportError:  # pragma: no cover - fall back to the required-field check only
-        missing = [k for k in merged_schema(ledger)["required"] if k not in row]
+        missing = [k for k in schema.get("required", []) if k not in row]
         if missing:
             raise RLError("validation", f"{ledger} row is missing {', '.join(missing)}")
         return
-    validator = jsonschema.Draft7Validator(merged_schema(ledger))
+    validator = jsonschema.Draft7Validator(schema)
     errors = sorted(validator.iter_errors(row), key=lambda e: list(e.path))
     if errors:
         e = errors[0]
@@ -562,10 +571,11 @@ def validate_row(repo: Path, ledger: str, row: dict, actor: Actor, command: str,
     completeness checks (shape and required-by-status), never the first two."""
     check_writer_alive(repo, actor)
     check_who_can_call(actor, command)
-    if force:
-        return  # 03 L27; 01 L90: gyb's --force --reason writes past the completeness checks
-    validate_shape(ledger, row)
-    check_conditions(ledger, row, book)
+    # 03 L27; 01 L90: gyb's --force --reason bypasses the completeness checks (required
+    # fields, existence) but never the shape: types, enums and patterns still hold.
+    validate_shape(ledger, row, skip_required=force)
+    if not force:
+        check_conditions(ledger, row, book)
 
 
 # ---------------------------------------------------------------- transition table
