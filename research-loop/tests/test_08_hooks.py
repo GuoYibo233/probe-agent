@@ -209,7 +209,9 @@ class WritePermission(unittest.TestCase):
         chained commands still see the variables; the parent's calls are untouched."""
         rc, out, err = self._bash("cd experiments && rl handoff start ho-0001",
                                   agent_type="research-loop:deploy", agent_id="a12345")
-        self.assertEqual(decision(out), "allow", f"{out} {err}")
+        # D-25: updatedInput only, no permissionDecision (the permission flow stays the user's)
+        self.assertIsNone(decision(out), f"{out} {err}")
+        self.assertNotIn("permissionDecision", out["hookSpecificOutput"])
         cmd = out["hookSpecificOutput"]["updatedInput"]["command"]
         self.assertTrue(cmd.startswith("export RL_AGENT_TYPE='research-loop:deploy'; export RL_AGENT_ID='a12345'; "), cmd)
         self.assertTrue(cmd.endswith("cd experiments && rl handoff start ho-0001"))

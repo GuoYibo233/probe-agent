@@ -273,9 +273,10 @@ def hook_write(inp: dict) -> int:
                     f"export RL_AGENT_ID={sq(agent_id)}; {command}")
         new_input = dict(tool_input)
         new_input["command"] = injected
-        emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "allow",
-                                     "permissionDecisionReason": "research-loop: subagent identity injected (D-15)",
-                                     "updatedInput": new_input}})
+        # No permissionDecision: with updatedInput alone Claude Code only rewrites the
+        # input and the permission flow stays the user's (hooks reference 2.1.260;
+        # 06 L13 only authorises the two blocks; proxy decision D-25).
+        emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": new_input}})
     return 0
 
 

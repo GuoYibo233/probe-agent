@@ -82,6 +82,11 @@ listed in `_pending`, so the final merge pass can grep for it.
     `{"id", "holder"}` for the open orders citing an older version (02 L87 says they are
     printed; the key name is a construction convention).
 
+13. **Injection changes permission matching.** After the D-15 injection a subagent's
+    Bash command starts with `export ...;`, and Claude Code matches permission rules
+    against the rewritten command (hooks reference), so prefix-style allow rules written
+    for bare commands no longer match inside subagents.
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;
