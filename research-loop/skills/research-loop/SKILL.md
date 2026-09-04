@@ -26,4 +26,4 @@ Moving old code into `experiments/` means moving the files, not registering a po
 4. A quick look without a decision or a report: gyb names the quick lane in the deploy or analysis session; everything else takes the normal path.
 5. Periodic tidying, on gyb's own schedule since there is no reminder: `rl status`, then `rl reclaim` to list, `rl reclaim --apply` to release, pull orders up owner by owner, then `rl doctor`.
 
-A role is loaded by typing `/research-loop:` followed by the role name in a terminal, one role per session.
+A role is loaded by typing `/research-loop:` followed by the role name in a terminal, one role per session. A session that dispatched a subagent stays open until the subagent returns (exit dialog: stay); a dispatching session started in print mode or by a workflow carries `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`, or it stops waiting after 600 seconds and the order is left for `rl reclaim` (proxy decision D-23).
