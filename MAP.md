@@ -188,7 +188,7 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 
 | 程序 | 干什么 | 怎么用 |
 |---|---|---|
-| `research-loop/` 整目录 | 研究循环 plugin 本体（三层 + 监察面 + 账本机制）：五个 skill、inspector agent、九个脚本、fallback 假铁轨、从 `research-loop/tables/` 生成的 schemas/。设计稿在 `.scratch/research-loop/spec.md`，工单在同目录 `issues/` | 入口 `python3 research-loop/scripts/ledger.py <子命令>`；自测 `python3 research-loop/tests/run_all.py`。**不是 run.py 注册表任务**，不挂 TASKS；new1 挂接（写仓库根 research-loop.json）是后续单独一步 |
+| `research-loop/` 整目录 | 研究循环插件 v2 本体（2026-09-05 施工步 1 起重建；旧 0.1.0 整体退役，留在 commit b63519b 之前的历史里）：入口 skill 加五个角色 skill、五份 agent 定义、九本账的表和 schema、`bin/rl` 入账与查询、插件级钩子、发射看门狗。设计真源 `plans/research-loop-parts/`，施工步骤在 30 分册第三节，目录表在 `research-loop/README.md` | 入口 `research-loop/bin/rl <子命令>`（施工步 3 起）；自测 `python3 research-loop/tests/run_all.py`。**不是 run.py 注册表任务**，不挂 TASKS；new1 挂接（`rl init`）是施工步 7 |
 
 ---
 
