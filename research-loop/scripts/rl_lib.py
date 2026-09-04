@@ -572,7 +572,11 @@ def validate_row(repo: Path, ledger: str, row: dict, actor: Actor, command: str,
     """Order of checks (03 L15, L27; 05 L21): writer session alive -> who can call ->
     shape -> required-by-status. `force` (gyb only, checked by check_force) skips the
     completeness checks (shape and required-by-status), never the first two."""
-    check_writer_alive(repo, actor)
+    if command != "session start":
+        # proxy decision D-28: `session start` is the way back after a session was closed
+        # (03 L15 "reload the role"), so it alone is exempt from the closed-session refusal
+        # and writes the next open version of the same chain.
+        check_writer_alive(repo, actor)
     if not internal:
         # internal=True: rows rl writes on its own behalf (session end's release rows,
         # notices, session amend's own who rule, 03 L176), where the ledger_writes table

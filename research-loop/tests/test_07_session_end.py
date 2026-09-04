@@ -237,6 +237,23 @@ class SessionEndReleasesOrders(unittest.TestCase):
         self.assertEqual(row["end_reason"], "hook")
         self.assertEqual(row["released_handoffs"], [wo])
 
+    def test_session_start_after_end_reopens_the_same_chain(self):
+        """Proxy decision D-28 (03 L15: the way out of a closed session is reloading the
+        role): `rl session start` for a closed session_id passes and writes the next
+        open version of the same chain; later writes from that session pass again."""
+        deploy = self.sb.role_session("deploy", session_id="sess-reload")
+        self.sb.rl_ok("session", "end", session=deploy, caller="hook")
+        self.assertEqual(self.sb.latest("sessions", deploy)["status"], "closed")
+        r = self.sb.rl("session", "start", "--role", "deploy", "--model", "m", "--launched-by", "manual",
+                       session=deploy, caller="hook")
+        self.assertEqual(r.rc, 0, str(r))
+        row = self.sb.latest("sessions", deploy)
+        self.assertEqual(row["status"], "open")
+        self.assertGreater(row["version"], 1)
+        dec = make_decision(self.sb)
+        wo = open_work_order(self.sb, None, dec)
+        self.sb.rl_ok("handoff", "start", wo, session=deploy)  # a write after the reload passes
+
     def test_batch_start_takes_every_todo_launch_order_of_the_batch(self):
         """Proxy decision D-22 (04 L98, L122): `rl handoff start ID --batch B` starts every
         todo launch_order whose batch is B (ID only locates the batch and must belong to
