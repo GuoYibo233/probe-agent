@@ -281,9 +281,11 @@ def hook_write(inp: dict) -> int:
 
 
 def skill_role(inp: dict) -> str | None:
-    """Which role skill is being loaded. PreToolUse(Skill) tool_input field names are not
-    documented (hooks reference, PreToolUse input tables); UserPromptExpansion carries
-    command_name. Both spellings `research-loop:<role>` and `<role>` are accepted."""
+    """Which role skill is being loaded. PreToolUse(Skill) tool_input carries `skill` and
+    `args`; UserPromptExpansion carries command_name as the prefixed full name
+    `research-loop:<role>` (plans/2026-09-05-research-loop-verify.md 7.1). The other
+    candidates stay as fallbacks; both spellings `research-loop:<role>` and `<role>` are
+    accepted."""
     ti = inp.get("tool_input") or {}
     candidates = [ti.get("skill"), ti.get("name"), ti.get("skill_name"), ti.get("command"),
                   inp.get("command_name"), inp.get("skill_name")]
