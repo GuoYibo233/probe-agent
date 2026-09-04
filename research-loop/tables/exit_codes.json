@@ -1,0 +1,24 @@
+{
+  "_source": "03 L215-228 (definition), copied verbatim in 05 L104-119",
+  "codes": [
+    {"code": 0, "kind": null, "meaning": "success", "carries": "nothing"},
+    {"code": 1, "kind": "internal", "meaning": "rl internal error", "carries": "first stderr line is the fixed reason kind"},
+    {"code": 2, "kind": "validation", "meaning": "validation refused", "carries": "reason on stderr, including what to do next"},
+    {"code": 3, "kind": "forbidden", "meaning": "role has no right (includes a role using --force, a closed session writing again; --as-gyb --force cannot override)", "carries": "reason on stderr plus the 'open an issue to whom' command"},
+    {"code": 4, "kind": "lock_timeout", "meaning": "file lock wait timed out (waits lock.timeout_seconds, default 10, from the research-loop.json threshold table)", "carries": "nothing"},
+    {"code": 5, "kind": "usage", "meaning": "usage error (wrong argument, unknown id)", "carries": "reason on stderr plus the correct usage or the id that was not found"}
+  ],
+  "rules": [
+    {"text": "On every non-zero exit the first stderr line is the fixed reason kind; with --json the same value goes into error.kind.", "_source": "03 L226; sync-inbox Q25"},
+    {"text": "Transitions outside the table are refused with exit 2, also for gyb with --force (--force only bypasses integrity preconditions).", "_source": "03 L228; 05 L119"},
+    {"text": "handoff start with a non-empty holder is exit 2 and lists the current holder; --as-gyb without --quote in a role session is exit 2; rl init inside a role session is exit 3.", "_source": "05 L119"},
+    {"text": "Every sub-command supports --json.", "_source": "03 L228; 05 L121"}
+  ],
+  "json_shapes": {
+    "status_row_min_keys": ["id", "work_type", "owner", "holder", "holder_alive", "status", "age_hours", "line", "decision_refs", "batch", "log_path", "watch_cmd"],
+    "inbox": "an object with five keys matching the five inbox items, each an array of raw ledger rows",
+    "doctor": "an array; each element has item, ids, fix_cmd, push_to",
+    "reclaim": "an array; each element has kind (session|handoff|ql), id, idle_hours, action",
+    "_source": "05 L121-123"
+  }
+}

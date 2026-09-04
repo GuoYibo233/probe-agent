@@ -1,0 +1,256 @@
+{
+  "_source": "04 L45-80 (states, holder invariant, the table); rows added or changed by sync-inbox Q41(b)(c) L294, Q43(e) L311, Q45(a)(f) L329-330; 07 L105-114 (quick-lane rows)",
+  "_conventions": "who_can_write: list of actors or role-relative names (from_role, to_role, owner, holder, session_end_hook, reclaim); gyb is exempt from this column (header rule 1). preconditions: {id, text, source}; the id names the check rl_lib implements. to == from means a content-only append (04 L80).",
+  "states": ["todo", "in_progress", "stuck", "done_pending_review", "accepted", "rejected", "withdrawn"],
+  "terminal_states": ["accepted", "withdrawn"],
+  "work_types": ["work_order", "analysis_order", "launch_order"],
+  "dispatch_values": ["auto", "manual", "none"],
+  "header_rules": [
+    {"id": "gyb_exempt_who", "text": "gyb is exempt from the who_can_write column.", "_source": "04 L57"},
+    {"id": "preconditions_bind_gyb", "text": "The preconditions column is integrity validation and applies to gyb; gyb bypasses it with --force --reason, which is recorded; --force cannot bypass a transition that is not in the table (exit 2 even for gyb; to force a status change use withdraw then reopen).", "_source": "04 L55, L57; 01 L90"},
+    {"id": "holder_invariant", "text": "holder is non-empty if and only if status is in_progress: entering in_progress writes holder; every exit from in_progress clears holder and copies it into last_holder; start requires an empty holder; session end only checks in_progress orders.", "_source": "04 L51"},
+    {"id": "stuck_untouched", "text": "stuck orders are not touched by session end or reclaim (holder already empty); only resume after the issue is answered brings them back to todo.", "_source": "04 L78"},
+    {"id": "owner_definition", "text": "owner is from_role and is a role, not a session; quick-lane supplements and gyb-opened orders record owner gyb; the quick-lane supplement is opened by deploy with owner recorded as gyb.", "_source": "04 L49; 07 L116; sync-inbox Q41(d)"}
+  ],
+  "rows": [
+    {
+      "id": "open",
+      "from": null, "to": "todo",
+      "who_can_write": ["from_role"],
+      "preconditions": [
+        {"id": "open.work_order_has_refs_and_explanation", "text": "work_order has decision_refs (at least one) and explanation", "source": "04 L61; 04 L32, L34"},
+        {"id": "open.work_order_has_track", "text": "work_order has track (direction name filled by idea at open)", "source": "sync-inbox Q45(a)(f) L329-330; construction reading: required at open (tables/README.md)"},
+        {"id": "open.launch_order_first_attempt", "text": "launch_order has parent_id and a first attempt with command, workdir, track, config; run_id is assigned by rl as <ho-id>-a<attempt>; decision_refs, batch and track are copied from the parent", "source": "04 L61; 04 L43; 04 L26, L32; sync-inbox Q45(f)"},
+        {"id": "open.analysis_order_has_eval_refs", "text": "analysis_order has evaluation_refs (each may still be proposed)", "source": "04 L61; 04 L33"}
+      ],
+      "then_who_pulls": "dispatch=auto: the owner starts a background subagent; manual: waits for gyb; none: nothing",
+      "subcommand": "handoff open",
+      "_source": "04 L61",
+      "_pending": ["PENDING(part 22 L113): whether an analysis_order needs decision_refs (and so a line).", "PENDING(part 22 L114): whether an analysis_order needs explanation.", "PENDING(part 20 L128): whether a plain work_order fills parent_id.", "PENDING(part 22 L116): who starts the subagent for a gyb-opened analysis_order with dispatch=auto."]
+    },
+    {
+      "id": "open_quick_lane",
+      "from": null, "to": "done_pending_review",
+      "who_can_write": ["deploy"],
+      "who_note": "quick-lane supplement; owner recorded as gyb",
+      "preconditions": [
+        {"id": "ql.flag_true", "text": "quick_lane is true", "source": "04 L62"},
+        {"id": "ql.report_method_exists", "text": "report_paths.method exists", "source": "04 L62"},
+        {"id": "ql.explanation_nonempty", "text": "explanation is non-empty", "source": "04 L62"},
+        {"id": "ql.code_paths_nonempty", "text": "code_paths is non-empty", "source": "sync-inbox Q41(b) L294; 07 L101, L109"},
+        {"id": "ql.scratch_row_open", "text": "the scratch row named by ql_tag has status open (the supplement is opened first, then `rl ql close --merged --handoff ID` closes the scratch row; the two point at each other)", "source": "04 L62; 07 L88"}
+      ],
+      "then_who_pulls": "nobody (waits for gyb's acceptance; only gyb can accept)",
+      "subcommand": "handoff open --quick-lane",
+      "_source": "04 L62; 07 L109"
+    },
+    {
+      "id": "start",
+      "from": "todo", "to": "in_progress",
+      "who_can_write": ["to_role"],
+      "preconditions": [
+        {"id": "start.session_role_is_to_role", "text": "the writing session's role equals to_role", "source": "04 L63"},
+        {"id": "start.holder_empty", "text": "holder is empty; otherwise exit 2 and the current holder is listed", "source": "04 L63; 05 L119"},
+        {"id": "start.adopt_if_launched_unfinished", "text": "for a launch_order whose latest attempt has a launched run row without a finished version this start is an adoption: this version writes adopted: true and rl also appends an adopted version to that runs row", "source": "04 L63; 03 L100"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff start [--batch B]",
+      "_source": "04 L63"
+    },
+    {
+      "id": "amend_todo_stuck",
+      "from": ["todo", "stuck"], "to": "same",
+      "who_can_write": ["owner", "to_role"],
+      "preconditions": [
+        {"id": "amend.content_only_todo_stuck", "text": "content only, status unchanged: a launch_order appends one attempt (new run_id assigned per attempt); a work_order adds report_paths or code_paths; an analysis_order adds evaluation_refs; references in decision_refs / evaluation_refs may be swapped (doctor fix for dangling references)", "source": "04 L64; 04 L80; 21 L179"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff amend",
+      "_source": "04 L64",
+      "_note": "04 writes the to column as todo (content append) while the precondition says status unchanged; read as 'same status' per 04 L80 (20 L129 flags the wording)."
+    },
+    {
+      "id": "estimate",
+      "from": "in_progress", "to": "same",
+      "who_can_write": ["holder"],
+      "who_note": "holder, and the role is run",
+      "preconditions": [
+        {"id": "estimate.content_only", "text": "only the latest attempt's step_table and estimated_seconds change; status unchanged", "source": "04 L65"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff estimate",
+      "_source": "04 L65; sync-inbox Q7"
+    },
+    {
+      "id": "stuck",
+      "from": "in_progress", "to": "stuck",
+      "who_can_write": ["holder"],
+      "preconditions": [
+        {"id": "stuck.issue_links_back", "text": "issue_id points at an existing issue whose handoff_id points back at this order", "source": "04 L66"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff stuck",
+      "_source": "04 L66"
+    },
+    {
+      "id": "resume",
+      "from": "stuck", "to": "todo",
+      "who_can_write": ["issue_answerer", "owner"],
+      "who_note": "the role that answered the issue, or the owner",
+      "preconditions": [
+        {"id": "resume.issue_answered", "text": "the linked issue has status answered", "source": "04 L67"}
+      ],
+      "then_who_pulls": "owner",
+      "subcommand": "handoff resume",
+      "_source": "04 L67",
+      "_pending": ["PENDING(part 24 L89): analysis has no handoff resume in ledger_writes, so by the letter it cannot resume its own analysis order."]
+    },
+    {
+      "id": "done",
+      "from": "in_progress", "to": "done_pending_review",
+      "who_can_write": ["holder"],
+      "preconditions": [
+        {"id": "done.work_order_deliverables", "text": "work_order: report_paths.method and report_paths.detail exist and code_paths is non-empty", "source": "04 L68; 04 L35-36"},
+        {"id": "done.launch_order_ok_finished", "text": "launch_order: the latest attempt's run row has a finished version with exit_status ok", "source": "04 L68"},
+        {"id": "done.analysis_order_outputs_and_approved", "text": "analysis_order: output_paths exist and every evaluation_refs item is approved", "source": "04 L68; 04 L33, L37"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff done",
+      "_source": "04 L68",
+      "_pending": ["PENDING(part 22 L117): whether output_paths hold repo paths or analysis_artifact_root paths, and how two notebooks are recorded."]
+    },
+    {
+      "id": "amend_done_pending_review",
+      "from": "done_pending_review", "to": "same",
+      "who_can_write": ["owner", "to_role"],
+      "preconditions": [
+        {"id": "amend.content_only_dpr", "text": "add or change paths in report_paths, output_paths, code_paths, swap references in decision_refs / evaluation_refs; status unchanged (doctor fix)", "source": "04 L69"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff amend",
+      "_source": "04 L69"
+    },
+    {
+      "id": "accept",
+      "from": "done_pending_review", "to": "accepted",
+      "who_can_write": ["owner"],
+      "who_note": "quick-lane supplement: only gyb; dispatch=manual orders: gyb accepts by default (sync-inbox Q43(e))",
+      "preconditions": [],
+      "side_effects": [
+        {"id": "accept.fyi_if_gyb_overrides", "text": "when gyb accepts over the owner, rl opens an fyi issue to the owner", "source": "04 L70; 04 L114"},
+        {"id": "accept.close_answered_issues", "text": "rl closes the answered issues linked to this order", "source": "04 L70; 03 L92"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff accept",
+      "_source": "04 L70; sync-inbox Q43(e) L311"
+    },
+    {
+      "id": "reject",
+      "from": "done_pending_review", "to": "rejected",
+      "who_can_write": ["owner"],
+      "preconditions": [
+        {"id": "reject.reason_nonempty", "text": "reason is non-empty", "source": "04 L71"}
+      ],
+      "side_effects": [
+        {"id": "reject.fyi_if_gyb_overrides", "text": "when gyb rejects over the owner, rl opens an fyi issue to the owner", "source": "04 L71; 04 L114"}
+      ],
+      "then_who_pulls": "owner",
+      "subcommand": "handoff reject",
+      "_source": "04 L71"
+    },
+    {
+      "id": "release_rejected",
+      "from": "rejected", "to": "todo",
+      "who_can_write": ["owner", "reclaim"],
+      "preconditions": [],
+      "then_who_pulls": "owner",
+      "subcommand": "handoff release",
+      "_source": "04 L72; 04 L39 (no progress_note required)"
+    },
+    {
+      "id": "restart_rejected",
+      "from": "rejected", "to": "in_progress",
+      "who_can_write": ["to_role"],
+      "preconditions": [
+        {"id": "start.session_role_is_to_role", "text": "the writing session's role equals to_role (the original session is still alive and continues)", "source": "04 L73"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff start",
+      "_source": "04 L73"
+    },
+    {
+      "id": "withdraw",
+      "from": ["todo", "in_progress", "stuck", "done_pending_review", "rejected"], "to": "withdrawn",
+      "who_can_write": ["owner"],
+      "preconditions": [
+        {"id": "withdraw.reason_nonempty", "text": "reason is non-empty", "source": "04 L74"},
+        {"id": "withdraw.quote_if_role_session", "text": "a withdrawal issued from a role session also needs quote", "source": "04 L74; 04 L40"}
+      ],
+      "side_effects": [
+        {"id": "withdraw.notify_if_in_progress", "text": "withdrawing from in_progress opens a withdrawn notification to the holder's role and to the owner; other statuses do not notify", "source": "04 L74; 04 L194"},
+        {"id": "withdraw.cascade", "text": "--cascade also withdraws, on the owner's behalf, the orders whose parent_id points at this one; the downstream rows record the initiator as actor", "source": "04 L74"},
+        {"id": "withdraw.holder_reports_partial_work", "text": "the holder reports the code location and the half-finished artifact directory into that withdrawn issue; nothing is moved, gyb decides", "source": "sync-inbox Q45(b) L329 (discipline for the holder, not a check)"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "handoff withdraw",
+      "_source": "04 L74"
+    },
+    {
+      "id": "release_in_progress",
+      "from": "in_progress", "to": "todo",
+      "who_can_write": ["session_end_hook", "reclaim", "owner"],
+      "preconditions": [
+        {"id": "release.progress_note_nonempty", "text": "progress_note is non-empty (the hook and reclaim fill it automatically)", "source": "04 L75; 04 L39"}
+      ],
+      "side_effects": [
+        {"id": "release.no_kill_if_launched", "text": "a launch_order whose latest attempt has a launched run row without a finished version does not get its process killed (the next run adopts it); reclaim kills only with --kill", "source": "04 L75"},
+        {"id": "release.orphaned_notice", "text": "rl opens an orphaned notification to the owner", "source": "04 L75; 04 L195"},
+        {"id": "release.actor_via", "text": "the hook's version records the session's role as actor and via=session_end; reclaim's version records actor gyb and via=reclaim", "source": "04 L75"}
+      ],
+      "then_who_pulls": "owner, following the order's original dispatch (auto starts another subagent); with no live owner session it goes to rl status 'waiting for gyb to start'",
+      "subcommand": "handoff release",
+      "_source": "04 L75"
+    },
+    {
+      "id": "reissue",
+      "from": ["todo", "in_progress", "stuck", "done_pending_review", "rejected"], "to": "withdrawn+new todo",
+      "who_can_write": ["owner"],
+      "preconditions": [
+        {"id": "reissue.decision_ref_given", "text": "--decision ID@V names the new decision version", "source": "04 L76"}
+      ],
+      "side_effects": [
+        {"id": "reissue.withdraw_old_cascade", "text": "rl withdraws the old order (cascading)", "source": "04 L76"},
+        {"id": "reissue.open_new", "text": "rl opens a new order that starts at todo, inherits explanation, parent_id and batch, and sets supersedes to the old id", "source": "04 L76; 02 L91"},
+        {"id": "reissue.notify_holders", "text": "rl notifies every holder", "source": "04 L76"}
+      ],
+      "then_who_pulls": "same as open",
+      "subcommand": "handoff reissue",
+      "_source": "04 L76",
+      "_pending": ["PENDING(part 20 L130): whether report_paths and code_paths are inherited."]
+    },
+    {
+      "id": "ql_transfer_in",
+      "from": "todo", "to": "same",
+      "who_can_write": ["deploy"],
+      "preconditions": [
+        {"id": "ql.transfer_marks_quick_lane", "text": "the todo order is marked quick_lane and leaves the todo queue: nobody is dispatched to it and it takes no holder", "source": "07 L31; sync-inbox Q41(c) L294"}
+      ],
+      "then_who_pulls": "nobody",
+      "subcommand": "ql open --from",
+      "_source": "sync-inbox Q41(c) L294; 07 L31, L114"
+    },
+    {
+      "id": "ql_transfer_exit",
+      "from": "todo", "to": ["done_pending_review", "todo"],
+      "who_can_write": ["deploy"],
+      "who_note": "applies only to an order marked quick_lane by ql_transfer_in",
+      "preconditions": [
+        {"id": "ql.exit_same_as_open_quick_lane", "text": "merge-back exit appends a version straight to done_pending_review with the same preconditions as open_quick_lane (method report, code_paths, explanation, scratch row open and pointing back); abandonment appends a version back to todo with quick_lane cleared (or gyb withdraws); existing decision references stay", "source": "07 L114; sync-inbox Q41(c) L294"}
+      ],
+      "then_who_pulls": "nobody (gyb accepts the merge-back)",
+      "subcommand": "PENDING(issue 41f)",
+      "_source": "sync-inbox Q41(c)(f) L294-295; 07 L114",
+      "_pending": ["PENDING(issue 41f): sub-command name for this exit is for gyb to set at the final merge."]
+    }
+  ]
+}

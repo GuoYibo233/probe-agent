@@ -1,0 +1,37 @@
+{
+  "role": "analysis",
+  "reads": ["runs", "evaluations", "handoffs", "issues", "feedback", "scratch", "decisions.idea", "decisions.gyb", "analysis/"],
+  "writes": ["analysis/"],
+  "ledger_writes": {
+    "evaluations": ["eval propose", "eval update"],
+    "handoffs": ["handoff start", "handoff done", "handoff stuck"],
+    "issues": ["issue open", "issue reply", "issue close"],
+    "scratch": "*",
+    "decisions.analysis": "*",
+    "feedback": ["feedback add"]
+  },
+  "dispatches_to": [],
+  "model": {
+    "as_subagent": "opus",
+    "manual": "inherit",
+    "note": "manual=inherit means follow the current session (06 L160)."
+  },
+  "notes": [
+    "scratch: only the rows of its own ql_tag, only in the quick lane (06 L222).",
+    "issue close is limited to issues it opened itself (06 L218, L222; 03 L92: close belongs to the opening actor or gyb).",
+    "scratch '*' expands to ql open, ql close and scratch add; the analysis quick lane has no merge-back, so only `ql close --dropped` applies (07 L86).",
+    "13 has no use case table; the json copy plus the notes under it is the source (sync-inbox L342)."
+  ],
+  "_sources": {
+    "reads": "06 L216 (scratch added by the 2026-08-21 review fix, sync-inbox L341)",
+    "writes": "06 L217",
+    "ledger_writes": "06 L218 (issues close added by the 2026-08-21 review fix)",
+    "dispatches_to": "06 L219",
+    "model": "06 L220; 06 L245"
+  },
+  "_pending": [
+    "PENDING(part 24 L92): the analysis-to-deploy channel needs analysis to read experiment code, but reads has no experiments/; reads is discipline, so reading is allowed, the column just does not list it.",
+    "PENDING(part 24 L89): analysis has no handoff resume although the stuck->todo row allows 'the role that answered the issue'; kept as 06 wrote it.",
+    "PENDING(part 22 L119): whether analysis ledger_writes should include handoff amend."
+  ]
+}

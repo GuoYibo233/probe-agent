@@ -1,0 +1,57 @@
+# tables/ — machine-readable copies of the design parts
+
+Every file in this directory is a transcription of a table that already exists in
+`plans/research-loop-parts/` (the design parts). Nothing here is invented: each
+field carries a `_source` (or the file carries a `_sources` map) pointing at the
+part and line it was copied from, written as `06 L178` (part 06, line 178) or
+`sync-inbox Q41(c) L294` (sync-inbox question 41 item c, line 294). Anything the
+parts have not ruled is marked `PENDING(issue NN)` / `PENDING(part 22 L113)` and
+listed in `_pending`, so the final merge pass can grep for it.
+
+Language: the plugin body is English (00 L321, gyb 2026-08-18). Source citations
+keep the part numbers, PENDING markers keep the form used by the build guide.
+
+## Files
+
+| file | copied from | used by |
+|---|---|---|
+| `ledgers.json` | 03 L45-57 (nine ledgers), 03 L9 / 08 L18 (plain files), 39(c) | `rl_lib` paths, test 13 ledger names |
+| `roles/<role>.json` | 06 L172-234 (five role tables), 06 L236-250 (model column) | write hook (`writes`), ledger validation (`ledger_writes`), test 13 (`reads`, `ledger_writes`) |
+| `commands.json` | 05 L31-96 (command table), 05 L98-102 (query/write split) | `rl_lib.COMMANDS`, `bin/rl` dispatch, test 13 command existence |
+| `transitions.json` | 04 L53-78 (the transition table), plus Q41(b)(c), Q43(e), Q45 | ledger validation of handoffs, test 2 |
+| `gyb-usecases.json` | 01 L98-114 | `rl status` sections, list filters (step 4) |
+| `exit_codes.json` | 03 L215-228 | every `rl` exit |
+| `config_defaults.json` | 08 L38-79 (keys and thresholds), 07 L132-139 | `rl init`, thresholds read by `rl_lib` |
+
+## Construction conventions (not rulings; each one is a code shape chosen to carry a ruling)
+
+1. **Command names** are the `rl` sub-command spelled as it is typed, without the
+   `rl` prefix: `handoff open`, `decision add`, `trace`, `status`. Flag-only write
+   forms of `doctor` are listed literally: `doctor --ack`, `doctor --unack`,
+   `doctor --list-acks`.
+2. **`ledger_writes`** in a role file is an object keyed by ledger name. The value
+   is either the string `"*"` (every write command whose `ledger` in
+   `commands.json` is that ledger) or a list of full command names. `decisions`
+   is keyed per book (`decisions.idea`), matching 06's wording "decisions.idea, all".
+3. **`reads`** follows 06 L164: a ledger is written by its English name
+   (`decisions.<role>` for decision books), a directory as a repo-relative path
+   with a trailing slash, a file as a repo-relative path.
+4. **Preconditions** in `transitions.json` are `{id, text, source}` objects. The
+   `id` names the check that `rl_lib` implements; the `text` is an English
+   rendering of the part's sentence; the `source` points back to the sentence.
+5. **Row keys.** The skeleton field `id` is named `run_id` in runs, `ql_tag` in
+   scratch and `session_id` in sessions (03 L35, L104, L180, L200); `ledgers.json`
+   records the key name per ledger.
+6. **Session identity.** `rl` reads its own session id from the environment
+   variable `CLAUDE_CODE_SESSION_ID` (present in this session's Bash), and tests
+   override it with `RL_SESSION_ID`. Whether the hook input's `session_id` equals
+   this variable is verify item 1 (30 L13); marked `PENDING(verify item 1)` in code.
+
+## Readings that go beyond the letter of a part (for gyb to confirm)
+
+- `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open);
+  a `launch_order` copies it into `attempts[0].track`.
+- The feedback `id` has no shape in 03 L145 (it only says "feedback id"); the schema uses `fb-NNNN`
+  by analogy with `iss-NNNN` and marks it `PENDING(part 03 L145)`.
+- `grants` stays a named ledger with no schema and no commands (proxy decision
+  D-01, `PENDING(issue 43c)`).

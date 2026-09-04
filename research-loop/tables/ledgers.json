@@ -1,0 +1,107 @@
+{
+  "_source": "03 L45-57 (names and files), 03 L35 (key names), 03 L9 and 08 L18 and sync-inbox Q35(e) L194 (plain files), sync-inbox Q39(c) L252 (paths pinned)",
+  "_note": "Ledger files live under loop/ and their names are pinned; the config has no per-ledger path key (08 L18, gyb 2026-08-18 ruled the paths pinned).",
+  "dir": "loop",
+  "ledgers": [
+    {
+      "name": "decisions",
+      "file": "loop/decisions.<actor>.jsonl",
+      "books": ["idea", "deploy", "run", "analysis", "reviewer", "gyb"],
+      "key": "id",
+      "id_pattern": "^dec-(idea|deploy|run|analysis|reviewer|gyb)-[0-9]{4,}$",
+      "status_values": ["active", "retired"],
+      "schema": "schemas/decisions.schema.json",
+      "_source": "03 L49; 02 L9-13 (six books by id prefix); 02 L24 (status)"
+    },
+    {
+      "name": "issues",
+      "file": "loop/issues.jsonl",
+      "key": "id",
+      "id_pattern": "^iss-[0-9]{4,}$",
+      "status_values": ["open", "answered", "closed"],
+      "schema": "schemas/issues.schema.json",
+      "_source": "03 L50; 03 L65"
+    },
+    {
+      "name": "handoffs",
+      "file": "loop/handoffs.jsonl",
+      "key": "id",
+      "id_pattern": "^ho-[0-9]{4,}$",
+      "status_values": ["todo", "in_progress", "stuck", "done_pending_review", "accepted", "rejected", "withdrawn"],
+      "schema": "schemas/handoffs.schema.json",
+      "_source": "03 L51; 04 L17; 04 L47"
+    },
+    {
+      "name": "runs",
+      "file": "loop/runs.jsonl",
+      "key": "run_id",
+      "id_pattern": "^ho-[0-9]{4,}-a[0-9]+$",
+      "status_values": ["launched", "finished", "adopted"],
+      "schema": "schemas/runs.schema.json",
+      "_source": "03 L52; 03 L100; 03 L104"
+    },
+    {
+      "name": "grants",
+      "file": "loop/grants.jsonl",
+      "key": "id",
+      "id_pattern": "^grant-[0-9]{4,}$",
+      "status_values": ["active", "revoked"],
+      "schema": null,
+      "pending": "PENDING(issue 43c): the ledger is kept as a name only; no schema, no `rl grant` commands, grant test cases skipped (proxy decision D-01).",
+      "_source": "03 L53; 03 L126-137; sync-inbox Q43(c) L311"
+    },
+    {
+      "name": "feedback",
+      "file": "loop/feedback.jsonl",
+      "key": "id",
+      "id_pattern": "^fb-[0-9]{4,}$",
+      "id_pattern_pending": "PENDING(part 03 L145): 03 only says 'feedback id'; fb-NNNN is a construction reading by analogy with iss-NNNN.",
+      "status_values": ["proposed", "accepted", "rejected"],
+      "schema": "schemas/feedback.schema.json",
+      "_source": "03 L54; 03 L141"
+    },
+    {
+      "name": "evaluations",
+      "file": "loop/evaluations.jsonl",
+      "key": "id",
+      "id_pattern": "^eval-[0-9]{4,}$",
+      "status_values": ["proposed", "approved", "rejected", "retired"],
+      "schema": "schemas/evaluations.schema.json",
+      "_source": "03 L55; 03 L156; 03 L160"
+    },
+    {
+      "name": "sessions",
+      "file": "loop/sessions.jsonl",
+      "key": "session_id",
+      "id_pattern": null,
+      "status_values": ["open", "closed"],
+      "schema": "schemas/sessions.schema.json",
+      "_source": "03 L56; 03 L176; 03 L180"
+    },
+    {
+      "name": "scratch",
+      "file": "loop/scratch.jsonl",
+      "key": "ql_tag",
+      "id_pattern": "^ql-[0-9]{8}-[0-9]{2,}$",
+      "status_values": ["open", "merged", "dropped"],
+      "schema": "schemas/scratch.schema.json",
+      "_source": "03 L57; 03 L196; 03 L200; 07 L27"
+    }
+  ],
+  "plain_files": [
+    {"path": "loop/.lock", "what": "global file lock; not a ledger; not dirty for the host launch gate", "_source": "03 L9, L19"},
+    {"path": "loop/.doctor-acks.jsonl", "what": "doctor ack records; created by the first `doctor --ack`, not by `rl init`; not a ledger", "_source": "03 L9; 05 L217; 08 L18"},
+    {"path": "loop/.sessions/", "what": "session state files `<session_id>.json` written by the plugin hook; ignored by git via a line `rl init` adds to .gitignore", "_source": "06 L118; 08 L18; sync-inbox Q35(e) L194"}
+  ],
+  "rules": [
+    {"id": "append_only", "text": "Every change is a new version row; default queries return only the latest version per key.", "_source": "03 L11"},
+    {"id": "status_drives_required", "text": "Whether a field is required depends on the status of that version, never on a global rule.", "_source": "03 L13"},
+    {"id": "writer_session_alive", "text": "A write whose session_id has a latest sessions row with status closed is refused with exit 3; --force and --as-gyb --force cannot override; the only way out is to reload a role.", "_source": "03 L15"},
+    {"id": "preconditions_at_delivery", "text": "Preconditions are checked at delivery, not at open; open only checks that the row describes itself.", "_source": "03 L17"},
+    {"id": "one_lock", "text": "Scan, number assignment and append happen inside one global lock loop/.lock; ql_tag and run_id are assigned inside the lock; batch is caller free text.", "_source": "03 L19"},
+    {"id": "numbering", "text": "Sequence numbers start at 1; four digits is the minimum width, not a cap; sorting is numeric; a number once issued is never reissued.", "_source": "03 L21"},
+    {"id": "cross_ledger_order", "text": "Cross-ledger writes are ordered: first write the issue to get its id, then the handoff row that references it.", "_source": "03 L23"},
+    {"id": "readable_if_writable", "text": "Every ledger has both write and query commands; queries are open to everyone.", "_source": "03 L25"},
+    {"id": "gyb_exemption_scope", "text": "gyb skips only who-can-call and the table's who-can-write; required fields, path existence and reference existence still apply; --force --reason records force_reason; a role using --force is refused with exit 3; --as-gyb --quote --force --reason counts as gyb.", "_source": "03 L27; 01 L80-90"}
+  ]
+}

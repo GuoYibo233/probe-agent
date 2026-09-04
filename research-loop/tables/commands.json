@@ -1,0 +1,93 @@
+{
+  "_source": "05 L31-96 (command table), 05 L98-102 (query/write split), 05 L119 (doctor --ack/--unack are writes)",
+  "_conventions": "name = sub-command as typed without the `rl` prefix; kind = write | query | admin; who = who-can-call column of 05, gyb exempt from who except where noted; ledger = which ledger the command writes or mainly reads (null for cross-ledger queries).",
+  "query_kinds": ["show", "list", "trace", "status", "inbox", "stale", "doctor"],
+  "commands": [
+    {"name": "init", "group": "init", "ledger": null, "kind": "admin", "who": "gyb, bare terminal only; refused with exit 3 inside a role session", "signature": "rl init", "_source": "05 L39; 08 L9-13",
+     "notes": ["Rerun has no side effects: existing things untouched, missing ones added, prints two columns 'existed, skipped' / 'created' (08 L11; sync-inbox Q39(b)).", "Asks gyb the repo-bound config keys one by one; does not touch host code or the repo's .claude/ (08 L13, L36).", "The read:notes question is gone with the grant mechanism (sync-inbox Q43(a) L312; 08 L36)."]},
+
+    {"name": "session start", "group": "session", "ledger": "sessions", "kind": "write", "who": "hook, gyb", "signature": "rl session start --role R [--model M] [--launched-by manual|subagent|workflow]", "_source": "05 L40; 04 L151, L158", "notes": ["rules_version is read by rl from the first line of common/GLOBAL-RULES.md (05 L40; sync-inbox Q37(g))."]},
+    {"name": "session end", "group": "session", "ledger": "sessions", "kind": "write", "who": "hook, gyb", "signature": "rl session end [--session ID] [--reason]", "_source": "05 L40; 04 L152, L158"},
+    {"name": "session focus", "group": "session", "ledger": "sessions", "kind": "write", "who": "reviewer", "signature": "rl session focus --decision ID", "_source": "05 L40; 04 L154, L158"},
+    {"name": "session amend", "group": "session", "ledger": "sessions", "kind": "write", "who": "gyb or that role's own live session", "signature": "rl session amend ID --model M", "_source": "05 L40; 04 L153, L158; sync-inbox Q30"},
+    {"name": "session show", "group": "session", "ledger": "sessions", "kind": "query", "who": "anyone", "signature": "rl session show ID", "_source": "05 L40; 04 L155"},
+    {"name": "session list", "group": "session", "ledger": "sessions", "kind": "query", "who": "anyone", "signature": "rl session list [--alive] [--role R]", "_source": "05 L40; 04 L156"},
+    {"name": "inbox", "group": "inbox", "ledger": null, "kind": "query", "who": "anyone; roles call it when they need it, not on start; run does not use it", "signature": "rl inbox [--json]", "_source": "05 L41; 05 L131-143"},
+
+    {"name": "decision add", "group": "decision", "ledger": "decisions", "kind": "write", "who": "five roles, gyb", "signature": "rl decision add --text --source K:V ... [--quote ...]", "_source": "05 L47; 02 L109"},
+    {"name": "decision update", "group": "decision", "ledger": "decisions", "kind": "write", "who": "same actor", "signature": "rl decision update ID --text [--source ...] [--quote ...]", "_source": "05 L48; 02 L110"},
+    {"name": "decision confirm", "group": "decision", "ledger": "decisions", "kind": "write", "who": "same actor", "signature": "rl decision confirm ID --source ...", "_source": "05 L48; 02 L111"},
+    {"name": "decision retire", "group": "decision", "ledger": "decisions", "kind": "write", "who": "same actor", "signature": "rl decision retire ID --text [--source ...]", "_source": "05 L49; 02 L112; sync-inbox Q37(a) L231", "pending": "PENDING(issue 37a): the reason flag name --text is the hub's analogy with update; gyb reviews it at the final merge."},
+    {"name": "decision merge", "group": "decision", "ledger": "decisions", "kind": "write", "who": "same actor", "signature": "rl decision merge ID1 ID2 ... --text --root ID [--source ...]", "_source": "05 L49; 02 L113"},
+    {"name": "decision show", "group": "decision", "ledger": "decisions", "kind": "query", "who": "anyone", "signature": "rl decision show ID [--version V] [--history] [--with-runs]", "_source": "05 L50; 02 L114"},
+    {"name": "decision list", "group": "decision", "ledger": "decisions", "kind": "query", "who": "anyone", "signature": "rl decision list [--actor A] [--line L]", "_source": "05 L50; 02 L115"},
+    {"name": "decision stale", "group": "decision", "ledger": "decisions", "kind": "query", "who": "anyone", "signature": "rl decision stale [--handoff ID] [--all]", "_source": "05 L51; 02 L116"},
+    {"name": "trace", "group": "trace", "ledger": null, "kind": "query", "who": "anyone", "signature": "rl trace <dec-|ho-|run_id|iss-|eval->", "_source": "05 L52; 05 L145-147"},
+
+    {"name": "issue open", "group": "issue", "ledger": "issues", "kind": "write", "who": "per role ledger_writes", "signature": "rl issue open --to R --kind K [--stage S] --text [--handoff ID] [--log-tail FILE|--log-text -]", "_source": "05 L58; 03 L67-92", "notes": ["--to gyb no longer triggers a desktop notification; the issue shows in rl status section 2 (sync-inbox Q40(d) L287)."]},
+    {"name": "issue reassign", "group": "issue", "ledger": "issues", "kind": "write", "who": "per role ledger_writes", "signature": "rl issue reassign ID --to R", "_source": "05 L58"},
+    {"name": "issue reply", "group": "issue", "ledger": "issues", "kind": "write", "who": "per role ledger_writes; only the assignee or gyb (03 L92)", "signature": "rl issue reply ID --text", "_source": "05 L58; 03 L92"},
+    {"name": "issue close", "group": "issue", "ledger": "issues", "kind": "write", "who": "per role ledger_writes; only the opening actor or gyb, plus the assignee for notification kinds (03 L92)", "signature": "rl issue close ID", "_source": "05 L58; 03 L92"},
+    {"name": "issue link", "group": "issue", "ledger": "issues", "kind": "write", "who": "per role ledger_writes (doctor fix, item 3)", "signature": "rl issue link ID --handoff ID", "_source": "05 L58; 05 L197"},
+    {"name": "issue show", "group": "issue", "ledger": "issues", "kind": "query", "who": "anyone", "signature": "rl issue show ID", "_source": "05 L58"},
+    {"name": "issue list", "group": "issue", "ledger": "issues", "kind": "query", "who": "anyone", "signature": "rl issue list [--open] [--to R] [--kind K]", "_source": "05 L58"},
+
+    {"name": "handoff open", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "owner; quick-lane supplement: deploy calls it, owner recorded as gyb", "signature": "rl handoff open --type T --to R [--parent ID] [--decision ID@V ...] [--explain ...] [--eval ID@V ...] [--track T] [--command ... --workdir ... --config k=v ...] [--batch B] [--manual|--no-dispatch] [--quick-lane --report-method P --ql QL]", "_source": "05 L64; sync-inbox Q45(c) L329", "notes": ["--track: a work_order takes the direction name; a launch_order copies it from the parent into attempts[0].track, so the launch-order-side flag may be omitted (sync-inbox Q45(c)(f))."]},
+    {"name": "handoff start", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (to_role)", "signature": "rl handoff start ID [--batch B]", "_source": "05 L65; 04 L63"},
+    {"name": "handoff amend", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (owner, to_role)", "signature": "rl handoff amend ID [--command ... --workdir ... --track ... --config ...] [--report-method P --report-detail P --code-path P ...] [--notebook P --figure P ...] [--decision ID@V ...] [--eval ID@V ...]", "_source": "05 L65; 04 L64, L69"},
+    {"name": "handoff stuck", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (holder)", "signature": "rl handoff stuck ID --issue ID", "_source": "05 L65; 04 L66"},
+    {"name": "handoff resume", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (role that answered the issue, owner)", "signature": "rl handoff resume ID", "_source": "05 L65; 04 L67"},
+    {"name": "handoff done", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (holder)", "signature": "rl handoff done ID [--notebook P --figure P ...]", "_source": "05 L65; 04 L68"},
+    {"name": "handoff accept", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (owner; quick-lane supplement only gyb)", "signature": "rl handoff accept ID", "_source": "05 L65; 04 L70"},
+    {"name": "handoff reject", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (owner)", "signature": "rl handoff reject ID --reason", "_source": "05 L65; 04 L71"},
+    {"name": "handoff withdraw", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (owner)", "signature": "rl handoff withdraw ID --reason [--quote] [--cascade]", "_source": "05 L65; 04 L74"},
+    {"name": "handoff release", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (session-end hook, reclaim, owner)", "signature": "rl handoff release ID [--note ...]", "_source": "05 L65; 04 L72, L75", "notes": ["--note is required for in_progress->todo, not for rejected->todo (05 L65; 04 L39)."]},
+    {"name": "handoff reissue", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "per transition table (owner)", "signature": "rl handoff reissue ID --decision ID@V", "_source": "05 L65; 04 L76"},
+    {"name": "handoff estimate", "group": "handoff", "ledger": "handoffs", "kind": "write", "who": "run (holder)", "signature": "rl handoff estimate ID --step NAME --kind gpu|cpu --smoke-seconds S --scale F | rl handoff estimate ID --copy-from ID2 [--scale F]", "_source": "05 L66; 04 L65"},
+    {"name": "handoff show", "group": "handoff", "ledger": "handoffs", "kind": "query", "who": "anyone", "signature": "rl handoff show ID", "_source": "05 L67"},
+    {"name": "handoff list", "group": "handoff", "ledger": "handoffs", "kind": "query", "who": "anyone", "signature": "rl handoff list [--status S] [--owner R] [--holder SESSION] [--to R] [--batch B] [--decision ID] [--line L]", "_source": "05 L67"},
+
+    {"name": "run add", "group": "run", "ledger": "runs", "kind": "write", "who": "run, gyb", "signature": "rl run add --handoff ID --attempt N --commit ... --host ... --gpus ... --log ... --tmux ... --watch-cmd ...", "_source": "05 L73; 03 L100-122", "notes": ["command, config and run_id are copied from the launch order; started_at is filled by rl (05 L73)."]},
+    {"name": "run finish", "group": "run", "ledger": "runs", "kind": "write", "who": "run, gyb", "signature": "rl run finish RUN_ID --exit ok|failed|killed [--metric k=v ...] [--data-path P]", "_source": "05 L73; 03 L116-124", "notes": ["Computes actual_seconds from the two timestamps, copies it into the launch order's latest attempt, runs the anomaly check in-process, and calls the host finish command template (05 L73; 04 L43; 08 L74-75)."]},
+    {"name": "run relink", "group": "run", "ledger": "runs", "kind": "write", "who": "run, gyb (doctor fix, item 6)", "signature": "rl run relink RUN_ID --handoff ID", "_source": "05 L73; 03 L100; sync-inbox Q31"},
+    {"name": "run show", "group": "run", "ledger": "runs", "kind": "query", "who": "anyone", "signature": "rl run show RUN_ID", "_source": "05 L73"},
+    {"name": "run list", "group": "run", "ledger": "runs", "kind": "query", "who": "anyone", "signature": "rl run list [--handoff ID] [--decision ID] [--batch B] [--line L] [--all]", "_source": "05 L73; 03 L124"},
+
+    {"name": "feedback add", "group": "feedback", "ledger": "feedback", "kind": "write", "who": "anyone (five roles, gyb)", "signature": "rl feedback add --target ... --text", "_source": "05 L80; 03 L141"},
+    {"name": "feedback accept", "group": "feedback", "ledger": "feedback", "kind": "write", "who": "gyb", "signature": "rl feedback accept ID --applied-to FILE ... --text ...", "_source": "05 L80; 03 L148-152; sync-inbox Q37(b)", "notes": ["Checks every applied_to path exists, bumps rules_version and writes it back to the first line of common/GLOBAL-RULES.md, lists live sessions with their rules_version, prints the to-do (05 L80; 09 L59)."]},
+    {"name": "feedback reject", "group": "feedback", "ledger": "feedback", "kind": "write", "who": "gyb", "signature": "rl feedback reject ID --text", "_source": "05 L80; 03 L148"},
+    {"name": "feedback show", "group": "feedback", "ledger": "feedback", "kind": "query", "who": "anyone", "signature": "rl feedback show ID", "_source": "05 L80"},
+    {"name": "feedback list", "group": "feedback", "ledger": "feedback", "kind": "query", "who": "anyone", "signature": "rl feedback list", "_source": "05 L80"},
+
+    {"name": "eval propose", "group": "eval", "ledger": "evaluations", "kind": "write", "who": "analysis", "signature": "rl eval propose --kind metric|figure --name ... --definition ... [--metrics-key K | --code-path P] [--group-by ... --x ... --y ... --uses ID ...] --applies-to ...", "_source": "05 L81; 03 L156-172"},
+    {"name": "eval update", "group": "eval", "ledger": "evaluations", "kind": "write", "who": "analysis", "signature": "rl eval update ID ...", "_source": "05 L81; 03 L156", "notes": ["An approved evaluation that is updated goes back to proposed (03 L156)."]},
+    {"name": "eval approve", "group": "eval", "ledger": "evaluations", "kind": "write", "who": "gyb", "signature": "rl eval approve ID ... --quote", "_source": "05 L81; 03 L172"},
+    {"name": "eval reject", "group": "eval", "ledger": "evaluations", "kind": "write", "who": "gyb", "signature": "rl eval reject ID --reason", "_source": "05 L81; 03 L171"},
+    {"name": "eval retire", "group": "eval", "ledger": "evaluations", "kind": "write", "who": "gyb", "signature": "rl eval retire ID", "_source": "05 L81; 30 L148"},
+    {"name": "eval show", "group": "eval", "ledger": "evaluations", "kind": "query", "who": "anyone", "signature": "rl eval show ID", "_source": "05 L81"},
+    {"name": "eval list", "group": "eval", "ledger": "evaluations", "kind": "query", "who": "anyone", "signature": "rl eval list [--status S]", "_source": "05 L81"},
+
+    {"name": "ql open", "group": "ql", "ledger": "scratch", "kind": "write", "who": "deploy, analysis", "signature": "rl ql open [--role deploy|analysis] [--from ho-ID]", "_source": "05 L87; 07 L23-31", "notes": ["Assigns ql_tag inside the lock, creates the worktree (deploy) or analysis/scratch/<ql_tag>/ (analysis), writes the scratch open row (07 L25-29).", "--from marks a todo work order quick_lane and takes it out of the todo queue without a holder (07 L31; sync-inbox Q41(f))."]},
+    {"name": "ql close", "group": "ql", "ledger": "scratch", "kind": "write", "who": "--merged deploy only; --dropped deploy or analysis", "signature": "rl ql close QL --merged --handoff ID | --dropped --reason", "_source": "05 L87; 07 L83-92", "notes": ["Both paths delete the worktree and the branch of the same name (07 L92; sync-inbox Q41(f)).", "--merged requires ID to be a quick_lane supplement whose ql_tag equals QL (05 L87)."]},
+    {"name": "scratch add", "group": "scratch", "ledger": "scratch", "kind": "write", "who": "deploy, analysis", "signature": "rl scratch add QL [--note ...] [--metric k=v]", "_source": "05 L87; 07 L39"},
+    {"name": "scratch list", "group": "scratch", "ledger": "scratch", "kind": "query", "who": "anyone", "signature": "rl scratch list [--status S]", "_source": "05 L87; 07 L77"},
+    {"name": "scratch show", "group": "scratch", "ledger": "scratch", "kind": "query", "who": "anyone", "signature": "rl scratch show QL", "_source": "05 L87; 07 L77"},
+
+    {"name": "status", "group": "status", "ledger": null, "kind": "query", "who": "anyone", "signature": "rl status [--line L] [--group-by line|batch] [--json]", "_source": "05 L93; 05 L149-170; 01 L116-135"},
+    {"name": "reclaim", "group": "reclaim", "ledger": null, "kind": "write", "who": "gyb", "signature": "rl reclaim [--session-older-than H] [--handoff-older-than H] [--only ID ...] [--skip ID ...] [--kill] [--apply]", "_source": "05 L94; 04 L162-186", "notes": ["Without --apply it only lists (a query in effect); with --apply it writes with actor gyb and via=reclaim (04 L176-184)."]},
+    {"name": "doctor", "group": "doctor", "ledger": null, "kind": "query", "who": "anyone; roles look only, fixes go to the owner or gyb", "signature": "rl doctor [--json]", "_source": "05 L95; 05 L189-221"},
+    {"name": "doctor --ack", "group": "doctor", "ledger": null, "kind": "write", "who": "gyb", "signature": "rl doctor --ack ITEM ID", "_source": "05 L95; 05 L217"},
+    {"name": "doctor --unack", "group": "doctor", "ledger": null, "kind": "write", "who": "gyb", "signature": "rl doctor --unack ITEM ID", "_source": "05 L95; 05 L217"},
+    {"name": "doctor --list-acks", "group": "doctor", "ledger": null, "kind": "query", "who": "anyone", "signature": "rl doctor --list-acks", "_source": "05 L95; 05 L217"}
+  ],
+  "pending_commands": [
+    {"name": "grant add", "signature": "rl grant add --to R --permission P --text ... [--expires ...] [--issue ID]", "pending": "PENDING(issue 43c): grants ledger kept as a name only, no commands (D-01)", "_source": "05 L79"},
+    {"name": "grant revoke", "signature": "rl grant revoke ID", "pending": "PENDING(issue 43c)", "_source": "05 L79; sync-inbox Q37(c)"},
+    {"name": "grant list", "signature": "rl grant list", "pending": "PENDING(issue 43c)", "_source": "05 L79"},
+    {"name": "grant show", "signature": "rl grant show ID", "pending": "PENDING(issue 43c)", "_source": "05 L79"},
+    {"name": "<quick-lane exit of a transferred order>", "signature": null, "pending": "PENDING(issue 41f): the sub-command that appends the exit version (direct to done_pending_review, or back to todo unmarking quick_lane) for an order transferred by `ql open --from` has no name yet (07 L114).", "_source": "sync-inbox Q41(c)(f) L294-295"}
+  ],
+  "removed_commands": [
+    {"name": "notify", "why": "Desktop notifications are not built in this version; rl status is the only outlet (01 L137-141; sync-inbox Q40(a) L286).", "_source": "05 L96; 05 L223-225"}
+  ]
+}

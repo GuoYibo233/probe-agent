@@ -1,0 +1,33 @@
+{
+  "role": "idea",
+  "reads": [
+    "decisions.idea", "decisions.deploy", "decisions.run", "decisions.analysis", "decisions.reviewer", "decisions.gyb",
+    "issues", "handoffs", "runs", "grants", "feedback", "evaluations", "sessions", "scratch",
+    "notes/", "analysis/", "experiments/", "review/"
+  ],
+  "writes": ["notes/"],
+  "ledger_writes": {
+    "decisions.idea": "*",
+    "handoffs": ["handoff open", "handoff accept", "handoff reject", "handoff withdraw", "handoff release", "handoff reissue", "handoff resume", "handoff amend"],
+    "issues": ["issue open", "issue reply", "issue reassign", "issue close"],
+    "feedback": ["feedback add"]
+  },
+  "dispatches_to": ["deploy", "analysis"],
+  "model": {
+    "as_subagent": "fable",
+    "manual": "inherit",
+    "note": "fable is the exception gyb named on 2026-08-16 (06 L242, L248); manual=inherit means follow the current session, the sessions ledger records the resolved model name or unknown (06 L160)."
+  },
+  "notes": [
+    "experiments/ is read only for the deployment report directory (06 L184).",
+    "dispatches_to is discipline, not machine-checked (06 L157)."
+  ],
+  "_sources": {
+    "reads": "06 L178",
+    "writes": "06 L179 (gyb 2026-08-18: was 'no directory')",
+    "ledger_writes": "06 L180",
+    "dispatches_to": "06 L181",
+    "model": "06 L182; 06 L240-246"
+  },
+  "_pending": []
+}
