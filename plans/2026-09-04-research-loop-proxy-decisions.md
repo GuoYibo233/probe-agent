@@ -178,6 +178,7 @@
 - 理由：机制上旧会话的销号已经把单子交回了，账是对的；新会话没有角色是「一会话一角色」纪律的正常情形，重新加载就好。做机制（把状态文件跟着新 id 走）要钩子认出新旧 id 的关系，官方没有这个信号。
 - 落点：sync-inbox 问题 49(d)；`research-loop/skills/<role>/SKILL.md` 限制条件栏。
 - 审查：
+- 补记 2026-09-05（文本助手提）：verify.md 3.2 节实测退出对话框选「退出并停掉」和「挪到后台」都会杀掉正在跑的子会话，只有「留下」保得住。D-20 那句加半句「the other two choices kill any dispatched subagent (verify.md 3.2)」，五份一字相同。
 
 ### D-21 `rl` 进 PATH 的办法：SessionStart 钩子往 CLAUDE_ENV_FILE 写一行 PATH，没装钩子走插件根全路径（底座助手的步 4 设计，评审助手要求记号，统筹裁）
 
@@ -194,4 +195,12 @@
 - 决定：后者。带 `--batch B` 时，ID 用来定位 batch（ID 必须属于 B，不属于退出码 5），rl 把 batch 为 B、状态 todo 的全部 `launch_order` 一起置 in_progress，每张各追加一版 start、holder 都记本会话；销号时整批交回（04 第 122 行已这么写）。不带 `--batch` 只接 ID 那一张。同一 batch 里 N 张单的 host 和 gpus 怎么分仍没裁，代码标 `PENDING(part 21 L181)`。
 - 理由：和 04 第 98 行「一次接下整个 batch」字面一致；备选（只接一张、逐张 start）让那句落空。签名里 ID 显得多余是 05 冻结正文的事，最后一期改 05 时可以把 ID 改成可省。
 - 落点：`research-loop/scripts/rl_lib.py`、`research-loop/bin/rl`（handoff start）；`research-loop/tables/commands.json` 那一行的 notes；测试 7 补一条整批 start 的用例；sync-inbox 问题 48(d) 给 05 第 65 行。
+- 审查：
+
+### D-23 派活的会话要活到子会话回来，打印模式的派活会话要带 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`（待验证第 9 条测完，统筹裁）
+
+- 问题：验证记录第三节：母会话活着时后台子会话跑满 1200 秒并回通知；母会话三种结束方式子会话都被杀；打印模式（`-p`）的母会话默认只等后台子会话 600 秒，到点终止，被终止的子会话和母会话都没有触发销号钩子（标准错误原文在 3.7 节）；带 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` 时等了 728 秒、子会话跑完、通知到、SessionEnd 触发。
+- 决定：不做机制，写纪律两句：派活的会话（idea 派 deploy、idea 派 analysis、deploy 派 run）在子会话回来之前不退出，`/exit` 选留下（与 D-20 同一句）；用打印模式或者 workflow 起的派活会话要带 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`，否则 600 秒到点连销号钩子都不触发、单子要靠 reclaim 收。落点是三份派活角色 SKILL.md 的派活段和入口 skill 的领路，来源标注 verify.md 3.5、3.7 加 proxy decision D-23。30 待验证第 9 条状态栏同步。
+- 理由：600 秒上限是宿主行为，插件改不了；失败备案（被杀就等下一个 run 认领）照旧成立，但是没有销号钩子的那种死法要 reclaim 兜，说明书里写明比让人撞上强。
+- 落点：`research-loop/skills/idea/SKILL.md`、`skills/deploy/SKILL.md`、`skills/analysis/SKILL.md`（派活段）；`skills/research-loop/SKILL.md`；30 第 21 行状态栏。
 - 审查：
