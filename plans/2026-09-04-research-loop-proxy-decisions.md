@@ -225,6 +225,7 @@
 - D-15 补记 2026-09-05（同一次核实）：文档原句「Claude Code evaluates permission rules … against the input your hook returns, not the input Claude sent」——注入之后命令以 `export` 开头，宿主里按命令前缀写的 allow 规则（`Bash(python3 run.py:*)` 这类）对子会话不再命中，落到询问或者 auto 模式的分类器。插件不做机制，写进 `tables/README.md` 惯例和入口 skill 给宿主的说明；要不要在宿主 settings 里另写规则由 gyb 定。
 - D-15 补记 2026-09-05（验证助手真会话实测，default 权限模式、宿主规则 `Bash(rl *)`）：母会话敲 `rl status` 命中规则不弹框；`research-loop:run` 子会话敲同一条被改写成 `export RL_AGENT_TYPE='research-loop:run'; export RL_AGENT_ID='…'; rl status` 之后母会话弹出审批框，「don't ask again」生成的规则前缀绑着这一个 agent_id、对下一个子会话无用。auto 模式待测。这一条统筹不代裁，列进给 gyb 的待裁清单：宿主另写 `Bash(export RL_AGENT_TYPE=*)` 一类规则（等于放行子会话在仓库里的全部 Bash），还是换一种不改命令开头的注入办法。
 - 评审助手 2026-09-05 补的备选（给 gyb 选，统筹不代推荐）：钩子只改写命令里的 `rl` 调用本身，把身份当参数传——`rl status` 改成 `rl --agent-type research-loop:run --agent-id <id> status`，`cd x && rl status` 改成 `cd x && rl --agent-type … status`；rl 判 actor 先看这两个参数、再看环境变量、再看状态文件。好处：命令前缀不变，宿主的 `Bash(rl *)` 规则照样命中，宿主别的命令一个字不改、原有规则全部有效；每条 rl 调用都带身份，链式命令也不怕。代价：钩子要按命令位置识别 `rl` 这个词（行首、`&&`、`;`、`|` 之后），`bin/rl`、`./rl` 也要认，写在字符串里的 `rl` 不能动；脚本内部再调 `rl`（python 里 subprocess 之类）拿不到参数、会落回状态文件记成母会话的角色——这一点是 export 形式的长处（环境变量传给子进程）；实测要补一轮。不选的那条，D-15 的注入写法照旧。
+- 补记 2026-09-05（verify.md 7.3、7.6）：default 模式下子会话每条改写后的 Bash 弹审批框、「don't ask again」绑 agent_id；auto 模式下分类器全程放行、不弹框。new1 现在是 auto 模式，现状能用；default 模式的宿主要么另写规则要么选上一条「只改写 rl 本身」的备选。这条待裁不挡今天的骨架版。
 
 ### D-26 SessionEnd 钩子只有 1.5 秒预算：销号命令脱离后台跑，宿主再设环境变量抬预算（评审助手提，统筹按推荐裁）
 
@@ -233,6 +234,7 @@
 - 理由：(a) 让机制在默认环境下也尽量跑完，(b) 是宿主侧的保险；两条都不改账的写序（03 第 15 行）。
 - 落点：`research-loop/hooks/`（SessionEnd 条目和脚本）；`research-loop/skills/research-loop/SKILL.md`（给宿主的说明）；`research-loop/tables/README.md` 惯例；verify.md 补时长。
 - 审查：
+- 补记 2026-09-05（验证助手真会话实测 verify.md 7.5）：(a) 落地后 SessionEnd 与 closed 版同一秒落账、状态文件删掉；(b) 的宿主变量设成 10000 对照一列一模一样。(b) 改成「保险、非必需」，入口 skill 给宿主的那一句改成「可选」，别让 gyb 以为不设就丢销号。
 
 ### D-27 废除决定的理由不是 `--force` 能越过的完整性项：`rl decision retire` 无论谁、带不带 `--force` 都要 `--text`（评审助手提，统筹按推荐裁）
 
@@ -257,5 +259,14 @@
 - 理由：两个 holder 会让销号和 reclaim 都算不清（04 第 51 行的不变量就是为这个立的）；表头三句里不变量是单独一句，不在「前提栏对 gyb 生效、可 force」那一句里。
 - 落点：`research-loop/tables/transitions.json`；`research-loop/scripts/rl_lib.py`；`research-loop/tables/README.md`；测试 2 或 7 补一例 gyb `--force` start 撞非空 holder 退出码 2。
 - 审查：
+
+### D-30 角色会话在 Bash 里不 cd，路径一律从仓库根写（验证助手真会话实测后提，统筹裁）
+
+- 问题：verify.md 7.4 节：Bash 工具的工作目录会因为模型自己 cd 而漂移，之后相对路径按新的 cwd 判定；一次本该放行的 `experiments/` 追加，因为前一步 cd 进了 `loop/`，被钩子按 `loop/experiments/` 拒了。钩子拒得对（那条命令真会写到 loop/ 下面），违背的是模型的本意。
+- 决定：不改钩子（06 第 13 行：钩子按研究仓库内的相对路径判、自己 realpath，行为正确）。五份角色 SKILL.md 的限制条件栏各加一句「Bash 里不 cd，路径从仓库根写」，五份一字相同，来源标注 verify.md 7.4 加 proxy decision D-30。
+- 理由：漂移是宿主行为，钩子改成按仓库根解析会让真写到 loop/ 下面的命令放行，反而开洞；纪律一句话就堵住。
+- 落点：`research-loop/skills/<role>/SKILL.md` 限制条件栏。
+- 审查：
+- 附（同一轮实测）：D-26 的宿主变量 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` 这轮没用上——setsid 脱离之后 SessionEnd 与 closed 版同一秒落账，设不设变量结果一样，当保险留着不算必需；注入后的权限流程 auto 模式分类器放行、全程无框（verify.md 7.6），default 模式弹框（7.3），gyb 的会话是 auto。
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
