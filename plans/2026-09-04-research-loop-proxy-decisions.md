@@ -232,4 +232,12 @@
 - 落点：`research-loop/hooks/`（SessionEnd 条目和脚本）；`research-loop/skills/research-loop/SKILL.md`（给宿主的说明）；`research-loop/tables/README.md` 惯例；verify.md 补时长。
 - 审查：
 
+### D-27 废除决定的理由不是 `--force` 能越过的完整性项：`rl decision retire` 无论谁、带不带 `--force` 都要 `--text`（评审助手提，统筹按推荐裁）
+
+- 问题：02 第 79 行「废除必须带理由，谁废都要（gyb 也要），理由记进这一版决定行」（09 第 51 行同，2026-08-18 gyb 裁）；03 第 27 行的通则让 gyb `--force --reason` 越过必填字段。实测 gyb 带 `--force` 不带 `--text` 能写出没有理由的废除版。
+- 决定：`rl decision retire` 的理由（`--text`，问题 36 裁的：理由就是废除版的正文）对谁都必填，`--force` 越不过；缺了退出码 5（用法错）。
+- 理由：02 第 79 行是 gyb 对废除这一种动作专门裁的，比 03 第 27 行的通则具体，后裁的赢（00 原则 8）。
+- 落点：`research-loop/scripts/rl_cmds/decision.py` retire 分支；`research-loop/tables/README.md` 惯例；测试 3 补一例。
+- 审查：
+
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
