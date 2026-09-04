@@ -6,13 +6,13 @@
 
 | 会话（ListAgents 里的名字） | 做哪几步 | 只写这些路径 | 等谁 |
 |---|---|---|---|
-| 统筹：`research-loop directory structure [37c253]` | 步 1 清空建树；步 A 对照单；30 分册的三处过时句；代裁记录、任务清单、收尾汇报 | `plans/` 下的所有文件、`MAP.md` | 不等人 |
+| 统筹：`research-loop directory structure [37c253]` | 步 1 清空建树；步 A 对照单；30 分册的三处过时句；代裁记录、任务清单、收尾汇报 | `plans/` 下的所有文件、`MAP.md`、`research-loop/README.md`、`research-loop/.claude-plugin/plugin.json` | 不等人 |
 | 底座：`research-loop directory structure ⑂ 你是底座 [06c460]` | 步 3a 表和 schema、步 3b 实现、步 4 交流机制 | `research-loop/` 下的 tables、schemas、scripts、bin、hooks、monitors、tests（`tests/test_skill_refs.py` 除外） | 转移表和受欠账影响的 schema 等统筹的对照单；身份判定的子会话分支等验证对待验证第 5 条的结论；别的先做 |
 | 文本：`research-loop directory structure ⑂ 你是文本 [5b85b0]` | 步 5 母版底稿、步 6 五份 SKILL.md、五份 agent 定义、入口 skill、测试 13、压力场景 | `research-loop/` 下的 common、skills、agents、`tests/test_skill_refs.py` | 测试 13 和压力场景等底座落地；母版和说明书草稿不等 |
 | 验证：`research-loop directory structure ⑂ 你是验证 [ef8a8d]` | 步 0 的待验证第 5、9 条；底座的钩子落地之后在真会话里触发一次 deny 和一次销号 | 沙盒放自己的临时目录；结果写新文件 `plans/2026-09-05-research-loop-verify.md` | 第一件事不等人；第二件事等底座步 4 的 commit |
-| 评审：`research-loop directory structure ⑂ 你是评审 [ae6513]` | 盯底座、文本、统筹的每个 commit，查五样：只搬运不发明（每条逻辑指回分册号和行号）、冻结三份没动、待裁标记的格式、只 add 了自己的路径、检查器先于被检查物；回报发给作者和统筹 | 不写仓库里任何文件 | 等 commit 出现 |
+| 评审：`research-loop directory structure ⑂ 你是评审 [ae6513]` | 盯底座、文本、验证、统筹的每个 commit（验证的 verify.md 查每条结论有没有实测记录撑着），查五样：只搬运不发明（每条逻辑指回分册号和行号）、冻结三份没动、待裁标记的格式、只 add 了自己的路径、检查器先于被检查物；回报发给作者和统筹 | 不写仓库里任何文件 | 等 commit 出现 |
 
-角色说明书里指向的角色 json 文件名固定为 `research-loop/tables/roles/<role>.json`，五个 role 是 idea、deploy、run、analysis、reviewer；子命令名以底座落地的 `bin/rl` 为准，文本会话看 git log 和文件，不发消息问内容。
+插件本体（`research-loop/` 下一切）一律英文，来源标注写 `06 L178`，待裁标记写 `PENDING(issue 43c)` 或者 `PENDING(part 22 L113)`（代裁 D-09）。角色说明书里指向的角色 json 文件名固定为 `research-loop/tables/roles/<role>.json`，五个 role 是 idea、deploy、run、analysis、reviewer；子命令名以底座落地的 `bin/rl` 为准，文本会话看 git log 和文件，不发消息问内容。
 
 ## 二、git 五条，每个会话都守
 
@@ -32,7 +32,7 @@
 ## 四、会话之间的依赖，谁给谁什么
 
 - 统筹给底座：步 1 的 commit 哈希；步 A 的对照单文件路径。
-- 验证给底座和统筹：待验证第 5 条和第 9 条的结论（消息加 `plans/2026-09-05-research-loop-verify.md`）。
+- 验证给底座、统筹和评审：待验证第 5 条和第 9 条的结论（消息加 `plans/2026-09-05-research-loop-verify.md` 的 commit 哈希）。
 - 底座给文本、验证、评审：步 3a、3b、4 各自的 commit 哈希。文本要 3a 的 json 文件名和 4 的子命令名，验证要 4 的钩子。
 - 文本给评审、统筹：步 5、6 各自的 commit 哈希。
 - 评审给作者和统筹：每个 commit 的回报。
