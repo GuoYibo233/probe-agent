@@ -175,6 +175,16 @@ class DecisionSources(unittest.TestCase):
 
     # ---- retire (02 L76, L79, L112) ----------------------------------------------------
 
+    def test_retire_without_text_is_refused_even_for_gyb_with_force(self):
+        """Proxy decision D-27 (02 L79 over 03 L27): the reason is owed by everyone, gyb
+        too; --force --reason does not get past it; exit 5 usage (03 L224)."""
+        dec = make_decision(self.sb)
+        before = self.sb.count("decisions", book="gyb")
+        r = self.sb.rl("decision", "retire", dec, "--force", "--reason", "forcing")
+        self.assertEqual(r.rc, 5, str(r))
+        self.assertEqual(r.kind, "usage")
+        self.assertEqual(self.sb.count("decisions", book="gyb"), before)
+
     def test_retire_requires_text(self):
         # 02 L76: "必须带理由（谁废都要，gyb 也要）"; the reason is the version's `text`
         # (decisions.schema.json requires "text", minLength 1 - same content-validation

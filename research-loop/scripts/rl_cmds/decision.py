@@ -44,14 +44,15 @@ def _write_row(repo, ledger, fields, actor, command, *, status, version, book=No
                             book=book, force=force, force_reason=force_reason)
 
 
-def _parse_source(repo, spec: str) -> dict:
+def _parse_source(repo, spec: str, force: bool = False) -> dict:
     """One `--source K:V` argument into one sources item (02 L36-42).
 
     `file:PATH[#anchor]` - the path must exist under the repo, the anchor is deliberately
     not checked (02 L42); `run:RUN_ID` - the run_id must be in the runs ledger (02 L42);
     `decision:ID@V` - an older decision's id and version, which must exist (01 L88 lists
-    "引用存在" among the integrity checks; 05 L196 doctor item 2 scans decisions' sources
-    for dangling references).
+    reference existence among the integrity checks; 05 L196 doctor item 2 scans decisions'
+    sources for dangling references). With force=True (gyb --force --reason, 03 L27;
+    01 L90) the existence checks are skipped and only the K:V shape is checked.
     """
     kind, sep, rest = (spec or "").partition(":")
     if not sep or not rest:
@@ -59,7 +60,7 @@ def _parse_source(repo, spec: str) -> dict:
                              "write file:PATH[#anchor], run:RUN_ID or decision:ID@V (02 L36-40)")
     if kind == "file":
         path, _, anchor = rest.partition("#")
-        if not path or not (repo / path).exists():
+        if not path or (not force and not (repo / path).exists()):
             raise rl_lib.RLError("validation", f"source file {path!r} does not exist in the repo",
                                  "a file source is any path inside the repo and must exist (02 L42)")
         item = {"kind": "file", "path": path}
@@ -68,7 +69,7 @@ def _parse_source(repo, spec: str) -> dict:
         return item
     if kind == "run":
         known = {r["run_id"] for r in rl_lib.read_rows(repo, "runs")}
-        if rest not in known:
+        if not force and rest not in known:
             raise rl_lib.RLError("validation", f"run {rest} is not in the runs ledger",
                                  "a run source must point at a run_id that exists (02 L42)")
         return {"kind": "run", "run_id": rest}
@@ -80,7 +81,7 @@ def _parse_source(repo, spec: str) -> dict:
         version = int(raw)
         _book_of(dec_id)
         rows = rl_lib.read_rows(repo, "decisions", _book_of(dec_id))
-        if not any(r["id"] == dec_id and r["version"] == version for r in rows):
+        if not force and not any(r["id"] == dec_id and r["version"] == version for r in rows):
             raise rl_lib.RLError("validation", f"decision {dec_id} has no version {version}",
                                  "a decision source names an existing id and version (01 L88)")
         return {"kind": "decision", "id": dec_id, "version": version}
@@ -88,8 +89,8 @@ def _parse_source(repo, spec: str) -> dict:
                          "the three kinds are decision, file and run (02 L36-40)")
 
 
-def _parse_sources(repo, specs) -> list:
-    return [_parse_source(repo, s) for s in specs]
+def _parse_sources(repo, specs, force: bool = False) -> list:
+    return [_parse_source(repo, s, force) for s in specs]
 
 
 def _require_sources(sources, force):
@@ -171,7 +172,7 @@ def cmd_add(args, ctx):
     assigned inside that book, and the row lands in that book's file."""
     _pos, opts = rl_lib.parse_args(args, multi=("source",))
     repo, actor, force, reason = rl_lib.context(ctx)
-    sources = _parse_sources(repo, opts.get("source") or [])
+    sources = _parse_sources(repo, opts.get("source") or [], force=bool(ctx["opts"].get("force")))
     _require_sources(sources, force)
     book = rl_lib.role_book(actor)  # 02 L11: the session decides the book, not the actor
     with rl_lib.Lock(repo):  # 03 L19: scan, assign and append under one lock
@@ -200,7 +201,7 @@ def _revise(args, ctx, op: str, command: str):
     book = _book_of(dec_id)  # 02 L13: the book is the id's prefix, not the caller's role
     repo, actor, force, reason = rl_lib.context(ctx)
     _check_same_actor(actor, book, command)
-    given = _parse_sources(repo, opts.get("source") or [])
+    given = _parse_sources(repo, opts.get("source") or [], force=bool(ctx["opts"].get("force")))
     with rl_lib.Lock(repo):  # 03 L19
         prev, version = rl_lib.next_version_of(repo, "decisions", dec_id, book)
         if prev is None:
@@ -218,6 +219,12 @@ def _revise(args, ctx, op: str, command: str):
             fields["sources"] = sources
         if op == "retire":
             status = "retired"  # 02 L76: retiring is one more version marked retired
+            # proxy decision D-27 (02 L79 is more specific than 03 L27 and later): the
+            # reason is owed by everyone, gyb too, and --force does not get past it;
+            # a missing reason is a usage error (03 L224)
+            if not opts.get("text"):
+                raise rl_lib.RLError("usage", "decision retire needs --text <reason>",
+                                     "the reason is the retire version's text (02 L79; D-27)")
             # 02 L79: the reason is the text of this version; a version without it is
             # refused by the schema's required `text` (same class as the empty-source
             # refusal). PENDING(issue 37a): the flag name --text is the one on record in
@@ -273,7 +280,7 @@ def cmd_merge(args, ctx):
     repo, actor, force, reason = rl_lib.context(ctx)
     for mid in merged:
         _check_same_actor(actor, _book_of(mid), "decision merge")
-    given = _parse_sources(repo, opts.get("source") or [])
+    given = _parse_sources(repo, opts.get("source") or [], force=bool(ctx["opts"].get("force")))
     book = rl_lib.role_book(actor)  # 02 L11: the new decision opens in the caller's book
     with rl_lib.Lock(repo):  # 03 L19
         heads = {}
@@ -393,7 +400,7 @@ def cmd_show(args, ctx):
     else:
         chosen = [versions[-1]]  # 02 L52: a read takes the latest version by default
     payload = {"id": dec_id, "book": book, "versions": chosen}
-    lines = [f"v{r['version']} {r['op']} {r['status']} {r['actor']} {r['text']}" for r in chosen]
+    lines = [f"v{r['version']} {r['op']} {r['status']} {r['actor']} {r.get('text', '')}" for r in chosen]
     if opts.get("with-runs"):
         payload["with_runs"] = _with_runs(repo, dec_id)
         for group in payload["with_runs"]:

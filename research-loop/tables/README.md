@@ -98,6 +98,10 @@ listed in `_pending`, so the final merge pass can grep for it.
     `session end`) read it from the global options, so one `--reason` serves both the
     command and a `--force` on the same call.
 
+16. **`--force` never removes the retire reason.** `rl decision retire` needs `--text`
+    from everyone, gyb with `--force --reason` included; a missing reason is exit 5
+    (02 L79 over 03 L27; proxy decision D-27).
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;

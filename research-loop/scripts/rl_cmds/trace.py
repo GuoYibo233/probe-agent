@@ -58,11 +58,8 @@ def _decisions_of(order_ids: list, orders: dict, decisions: list) -> list:
     out = []
     for order_id in order_ids:
         for ref in orders[order_id].get("decision_refs") or []:
-            rows = [r for r in decisions if r["id"] == ref["id"] and r["version"] == ref["version"]]
             node = {"ledger": "decisions", "id": ref["id"], "version": ref["version"]}
-            if rows and node not in out:
-                out.append(node)
-            elif not rows and node not in out:
+            if node not in out:
                 out.append(node)  # a dangling ref is still part of the chain, doctor item 2 reports it
     return out
 
@@ -139,12 +136,11 @@ def cmd_main(args, ctx):
             if any(ref["id"] == ident for ref in orders[order_id].get("decision_refs") or []):
                 for node in _from_order(order_id, orders, runs_by_order, decisions):
                     _extend(chain, node)
-        if not chain:
-            # PENDING(part 05 L147): the part names the chain from the run end and does not
-            # say what a `dec-` id with no order citing it prints. Narrowest reading: the
-            # decision's own versions, which is the far end of the chain either way.
-            for row in sorted(versions, key=lambda r: r["version"]):
-                _extend(chain, _node("decisions", row))
+        # 05 L147: the chain ends at the decision's versions, all of them, whether or not
+        # an order cites each one (reviewer fix on 529b8ef). PENDING(part 05 L147) only
+        # for the reading that a decision nobody cites prints just its own versions.
+        for row in sorted(versions, key=lambda r: r["version"]):
+            _extend(chain, _node("decisions", row))
     else:
         raise rl_lib.RLError("usage", f"{ident!r} is not an id rl trace takes",
                              "it takes dec-, ho-, a run_id, iss- and eval- (05 L147)")
