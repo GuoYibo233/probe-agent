@@ -222,7 +222,8 @@
 - 审查：
 - 补记 2026-09-05（评审助手核官方 hooks 文档加本机 2.1.260 二进制）：（2）的写法定为注入时只返回 `updatedInput`、不带 `permissionDecision`——二进制的执行路径是「有 updatedInput 且没有 permissionDecision 时只改输入」，权限决定回到正常流程；"ask" 比正常更严（文档原句「A hook's "ask" also forces a permission prompt in auto mode」），不用。后果一条记进 D-15 补记。
 - D-15 补记 2026-09-05（同一次核实）：文档原句「Claude Code evaluates permission rules … against the input your hook returns, not the input Claude sent」——注入之后命令以 `export` 开头，宿主里按命令前缀写的 allow 规则（`Bash(python3 run.py:*)` 这类）对子会话不再命中，落到询问或者 auto 模式的分类器。插件不做机制，写进 `tables/README.md` 惯例和入口 skill 给宿主的说明；要不要在宿主 settings 里另写规则由 gyb 定。
-- D-15 补记 2026-09-05（验证助手真会话实测，default 权限模式、宿主规则 `Bash(rl *)`）：母会话敲 `rl status` 命中规则不弹框；`research-loop:run` 子会话敲同一条被改写成 `export RL_AGENT_TYPE='research-loop:run'; export RL_AGENT_ID='…'; rl status` 之后母会话弹出审批框，「don't ask again」生成的规则前缀绑着这一个 agent_id、对下一个子会话无用。auto 模式待测。这一条统筹不代裁，列进给 gyb 的待裁清单：宿主另写 `Bash(export RL_AGENT_TYPE=*)` 一类规则（等于放行子会话在仓库里的全部 Bash），还是换一种不改命令开头的注入办法（现在没有已知写法）。
+- D-15 补记 2026-09-05（验证助手真会话实测，default 权限模式、宿主规则 `Bash(rl *)`）：母会话敲 `rl status` 命中规则不弹框；`research-loop:run` 子会话敲同一条被改写成 `export RL_AGENT_TYPE='research-loop:run'; export RL_AGENT_ID='…'; rl status` 之后母会话弹出审批框，「don't ask again」生成的规则前缀绑着这一个 agent_id、对下一个子会话无用。auto 模式待测。这一条统筹不代裁，列进给 gyb 的待裁清单：宿主另写 `Bash(export RL_AGENT_TYPE=*)` 一类规则（等于放行子会话在仓库里的全部 Bash），还是换一种不改命令开头的注入办法。
+- 评审助手 2026-09-05 补的备选（给 gyb 选，统筹不代推荐）：钩子只改写命令里的 `rl` 调用本身，把身份当参数传——`rl status` 改成 `rl --agent-type research-loop:run --agent-id <id> status`，`cd x && rl status` 改成 `cd x && rl --agent-type … status`；rl 判 actor 先看这两个参数、再看环境变量、再看状态文件。好处：命令前缀不变，宿主的 `Bash(rl *)` 规则照样命中，宿主别的命令一个字不改、原有规则全部有效；每条 rl 调用都带身份，链式命令也不怕。代价：钩子要按命令位置识别 `rl` 这个词（行首、`&&`、`;`、`|` 之后），`bin/rl`、`./rl` 也要认，写在字符串里的 `rl` 不能动；脚本内部再调 `rl`（python 里 subprocess 之类）拿不到参数、会落回状态文件记成母会话的角色——这一点是 export 形式的长处（环境变量传给子进程）；实测要补一轮。不选的那条，D-15 的注入写法照旧。
 
 ### D-26 SessionEnd 钩子只有 1.5 秒预算：销号命令脱离后台跑，宿主再设环境变量抬预算（评审助手提，统筹按推荐裁）
 
