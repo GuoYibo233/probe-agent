@@ -202,5 +202,6 @@
 - 问题：验证记录第三节：母会话活着时后台子会话跑满 1200 秒并回通知；母会话三种结束方式子会话都被杀；打印模式（`-p`）的母会话默认只等后台子会话 600 秒，到点终止，被终止的子会话和母会话都没有触发销号钩子（标准错误原文在 3.7 节）；带 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0` 时等了 728 秒、子会话跑完、通知到、SessionEnd 触发。
 - 决定：不做机制，写纪律两句：派活的会话（idea 派 deploy、idea 派 analysis、deploy 派 run）在子会话回来之前不退出，`/exit` 选留下（与 D-20 同一句）；用打印模式或者 workflow 起的派活会话要带 `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0`，否则 600 秒到点连销号钩子都不触发、单子要靠 reclaim 收。落点是三份派活角色 SKILL.md 的派活段和入口 skill 的领路，来源标注 verify.md 3.5、3.7 加 proxy decision D-23。30 待验证第 9 条状态栏同步。
 - 理由：600 秒上限是宿主行为，插件改不了；失败备案（被杀就等下一个 run 认领）照旧成立，但是没有销号钩子的那种死法要 reclaim 兜，说明书里写明比让人撞上强。
-- 落点：`research-loop/skills/idea/SKILL.md`、`skills/deploy/SKILL.md`、`skills/analysis/SKILL.md`（派活段）；`skills/research-loop/SKILL.md`；30 第 21 行状态栏。
+- 落点：`research-loop/skills/idea/SKILL.md`、`skills/deploy/SKILL.md`（派活段）、`skills/reviewer/SKILL.md`（按清单起 sonnet 子会话那段，14 第 95 行）；`skills/research-loop/SKILL.md`；30 第 21 行状态栏。
 - 审查：
+- 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
