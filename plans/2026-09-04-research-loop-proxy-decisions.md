@@ -185,3 +185,12 @@
 - 理由：五份说明书里 `rl` 命令的写法（裸名）和 `rl init` 之后的第一步都取决于这一条，属于机器能查的那一层，要有一处成文；官方机制比让每个角色自己改 PATH 稳。
 - 落点：`research-loop/tables/README.md`；`research-loop/skills/research-loop/SKILL.md`；`research-loop/hooks/hooks.json` 的 SessionStart 条目；verify.md 补一条。
 - 审查：
+- 补记 2026-09-05：验证助手沙盒实测通（-p 和交互两种模式，母会话和后台子会话都能裸敲 `rl`；环境文件在 `~/.claude/session-env/<session_id>/`），记录随 verify.md 第二个 commit。
+
+### D-22 `rl handoff start ID --batch B` 一次接下同 batch 全部待干的发射单（底座助手提，统筹按推荐裁）
+
+- 问题：04 第 98 行写一个 run 会话「用 `rl handoff start --batch` 一次接下整个 batch」，05 第 65 行的签名是 `rl handoff start ID [--batch B]` 只收一个 ID；21 分册「留给 gyb」第 6 条明写「是不是一次把 N 张单都置 in_progress 且 holder 都记同一个会话，表里只有单张单的那一行」没裁。
+- 决定：后者。带 `--batch B` 时，ID 用来定位 batch（ID 必须属于 B，不属于退出码 5），rl 把 batch 为 B、状态 todo 的全部 `launch_order` 一起置 in_progress，每张各追加一版 start、holder 都记本会话；销号时整批交回（04 第 122 行已这么写）。不带 `--batch` 只接 ID 那一张。同一 batch 里 N 张单的 host 和 gpus 怎么分仍没裁，代码标 `PENDING(part 21 L181)`。
+- 理由：和 04 第 98 行「一次接下整个 batch」字面一致；备选（只接一张、逐张 start）让那句落空。签名里 ID 显得多余是 05 冻结正文的事，最后一期改 05 时可以把 ID 改成可省。
+- 落点：`research-loop/scripts/rl_lib.py`、`research-loop/bin/rl`（handoff start）；`research-loop/tables/commands.json` 那一行的 notes；测试 7 补一条整批 start 的用例；sync-inbox 问题 48(d) 给 05 第 65 行。
+- 审查：
