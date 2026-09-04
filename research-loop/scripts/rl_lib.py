@@ -559,12 +559,13 @@ def validate_row(repo: Path, ledger: str, row: dict, actor: Actor, command: str,
                  book: str | None = None, force: bool = False) -> None:
     """Order of checks (03 L15, L27; 05 L21): writer session alive -> who can call ->
     shape -> required-by-status. `force` (gyb only, checked by check_force) skips the
-    required-by-status step, never the first two."""
+    completeness checks (shape and required-by-status), never the first two."""
     check_writer_alive(repo, actor)
     check_who_can_call(actor, command)
+    if force:
+        return  # 03 L27; 01 L90: gyb's --force --reason writes past the completeness checks
     validate_shape(ledger, row)
-    if not force:
-        check_conditions(ledger, row, book)
+    check_conditions(ledger, row, book)
 
 
 # ---------------------------------------------------------------- transition table
