@@ -229,7 +229,9 @@ class TestQuickLaneAcceptance(unittest.TestCase):
         ho_id = r0.json["id"]
         before = sb.count("handoffs")
         r = sb.rl("handoff", "accept", ho_id, session=deploy)  # deploy is not gyb
-        self.assertEqual(r.rc, 2)
+        # who_can_write is the permission layer: exit 3 forbidden (04 L70; 03 L27, L222)
+        self.assertEqual(r.rc, 3, str(r))
+        self.assertEqual(r.kind, "forbidden")
         self.assertEqual(sb.count("handoffs"), before)
         sb.rl_ok("handoff", "accept", ho_id, session=None)  # bare terminal = gyb
         row = sb.latest("handoffs", ho_id)

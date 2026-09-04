@@ -427,7 +427,9 @@ def main(argv: list[str]) -> int:
     try:
         inp = read_input()
         return HANDLERS[argv[0]](inp)
-    except Exception as err:  # noqa: BLE001 - a broken hook must not block the session
+    except Exception as err:  # noqa: BLE001
+        # proxy decision D-25: a broken hook lets the call through, prints one stderr
+        # line and injects no identity.
         print(f"research-loop hook error: {type(err).__name__}: {err}", file=sys.stderr)
         return 0
 

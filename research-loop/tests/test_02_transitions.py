@@ -80,10 +80,10 @@ class TestLegalTransitions(unittest.TestCase):
         self.assertEqual(row["status"], "done_pending_review")
         self.assertTrue(row["quick_lane"])
         self.assertEqual(row["ql_tag"], ql)
-        # from_role literal value not asserted: 04 L19 (from_role is defined as the owner) and 04 L49
-        # / transitions.json header rule owner_definition read as from_role == gyb here,
-        # while 07 L116 (2026-08-21 ruling) says from_role stays deploy and only the
-        # abstract "owner" is carved out as gyb. The parts disagree; see UNDECIDED.
+        # proxy decision D-24 (04 L19; 07 L96, L116): the supplement row is written with
+        # actor deploy, from_role gyb (the owner) and to_role deploy (who did the work).
+        self.assertEqual(row["actor"], "deploy")
+        self.assertEqual(row["from_role"], "gyb")
         self.assertEqual(row["to_role"], "deploy")
         self.assertIsNone(row["holder"])
 

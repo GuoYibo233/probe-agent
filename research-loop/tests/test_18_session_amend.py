@@ -57,10 +57,9 @@ class SessionAmend(unittest.TestCase):
         self.assertEqual(row["status"], "closed")
 
     def test_amend_other_field_refused(self):
-        """30 L175: amend of any field other than model is refused (05 L40: 'amend
-        只许改 model'). Whether the CLI rejects an unrecognized flag (exit 5 usage) or
-        a recognized-but-disallowed field (exit 2 validation) is left open by the parts
-        read for this test; either counts as refused."""
+        """30 L175: amend of any field other than model is refused (05 L40: amend
+        changes model only). PENDING(part 30 L175): whether the refusal is exit 5 usage
+        (unknown flag) or exit 2 validation is not ruled; either counts as refused."""
         deploy = self.sb.role_session("deploy")
 
         r = self.sb.rl("session", "amend", deploy, "--role", "run", session=deploy)

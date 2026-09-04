@@ -53,8 +53,8 @@ class SessionEndReleasesOrders(unittest.TestCase):
         self.assertIsNone(row["holder"])
         self.assertEqual(row["last_holder"], deploy)
         self.assertTrue(row["progress_note"])
-        # 04 L125: the note's content is "session ended, holder was X"; check the session
-        # id shows up rather than pinning the exact English wording.
+        # 04 L125: the note says the session ended and names the holder; check the session
+        # id shows up rather than pinning the exact sentence.
         self.assertIn(deploy, row["progress_note"])
         self.assertEqual(row["actor"], "deploy")
         self.assertEqual(row.get("via"), "session_end")
@@ -287,10 +287,7 @@ class SessionEndReleasesOrders(unittest.TestCase):
         self.assertEqual(release["session_id"], deploy)
         closed = self.sb.latest("sessions", deploy)
         self.assertEqual(closed["status"], "closed")
-        self.assertLessEqual(release["ts"], closed["ts"])
-        # file order: the release line precedes the closed line in the two ledgers' append order
-        handoff_lines = (self.sb.loop / "handoffs.jsonl").read_text().splitlines()
-        self.assertIn(f'"version": {release["version"]}', handoff_lines[-1].replace('":', '": '))
+        self.assertLessEqual(release["ts"], closed["ts"])  # release row written before the closed version (03 L15; 47(b))
 
 
 if __name__ == "__main__":

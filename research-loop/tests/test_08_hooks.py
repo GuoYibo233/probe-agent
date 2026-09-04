@@ -219,6 +219,18 @@ class WritePermission(unittest.TestCase):
         rc, out, err = self._bash("rl handoff start ho-0001")
         self.assertIsNone(out)
 
+    def test_hook_error_lets_the_call_through_with_a_stderr_line(self):
+        """Proxy decision D-25: a broken hook input (here: malformed JSON) lets the call
+        through (no decision on stdout, exit 0), prints one line
+        `research-loop hook error: <reason>` on stderr, and injects no identity."""
+        env = {k: v for k, v in os.environ.items() if not k.startswith("RL_")}
+        env["CLAUDE_PLUGIN_ROOT"] = str(PLUGIN_ROOT)
+        proc = subprocess.run([sys.executable, str(HOOK), "write"], input="{not json", cwd=self.sb.root,
+                              env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout.strip(), "")
+        self.assertIn("research-loop hook error:", proc.stderr)
+
     def test_outside_a_research_repo_the_hook_is_inert(self):
         """08 L17: no research-loop.json upwards means nothing to guard."""
         payload = {"cwd": "/tmp", "tool_name": "Write", "tool_input": {"file_path": "/tmp/loop/x.jsonl"}}
