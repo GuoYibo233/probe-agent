@@ -194,8 +194,8 @@ class DecisionSources(unittest.TestCase):
         # --text, the name currently on record in tables/commands.json.
         dec = make_decision(self.sb)
         r = self.sb.rl("decision", "retire", dec)
-        self.assertEqual(r.rc, 2, str(r))
-        self.assertEqual(r.kind, "validation")
+        self.assertEqual(r.rc, 5, str(r))  # proxy decision D-27: a missing reason is a usage error (03 L224)
+        self.assertEqual(r.kind, "usage")
         self.assertEqual(self.sb.latest("decisions", dec)["version"], 1)
 
     def test_retire_text_is_the_reason_and_bumps_status(self):
