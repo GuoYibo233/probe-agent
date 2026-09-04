@@ -717,8 +717,7 @@ def result(row: dict, ledger: str, extra: dict | None = None) -> dict:
 
 
 def owner_of(order: dict) -> str:
-    """Owner is from_role, except a quick-lane supplement whose owner is gyb although
-    from_role is deploy (04 L19, L49; 07 L116; debt map 41(d))."""
-    if order.get("quick_lane") and order.get("from_role") == "deploy" and order.get("ql_tag"):
-        return "gyb"
+    """Owner is from_role (04 L19). A quick-lane supplement is written with actor deploy,
+    from_role gyb (the owner) and to_role deploy (who did the work), so 04 L19, 07 L96 and
+    07 L116 hold at once (proxy decision D-24)."""
     return order.get("from_role", "gyb")

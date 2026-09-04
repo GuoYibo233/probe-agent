@@ -74,6 +74,14 @@ listed in `_pending`, so the final merge pass can grep for it.
    `artifact_root`, 06 L203) is descriptive only: the hook lets every path outside the
    repo through (06 L13), so the hook never consults it.
 
+11. **Bash write targets the hook reads.** 06 L70 names redirections, `tee`, `sed -i`,
+    `mv`/`cp`; the hook also reads the targets of `install`, `rsync`, `touch`, `mkdir`,
+    `rm`, `truncate`, `dd` (stricter, same two blocked kinds). Anything else is
+    discipline (06 L29).
+12. **`--json` of `decision update/retire/merge`** carries `affected`: a list of
+    `{"id", "holder"}` for the open orders citing an older version (02 L87 says they are
+    printed; the key name is a construction convention).
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;

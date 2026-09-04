@@ -10,7 +10,7 @@
     {"id": "preconditions_bind_gyb", "text": "The preconditions column is integrity validation and applies to gyb; gyb bypasses it with --force --reason, which is recorded; --force cannot bypass a transition that is not in the table (exit 2 even for gyb; to force a status change use withdraw then reopen).", "_source": "04 L55, L57; 01 L90"},
     {"id": "holder_invariant", "text": "holder is non-empty if and only if status is in_progress: entering in_progress writes holder; every exit from in_progress clears holder and copies it into last_holder; start requires an empty holder; session end only checks in_progress orders.", "_source": "04 L51"},
     {"id": "stuck_untouched", "text": "stuck orders are not touched by session end or reclaim (holder already empty); only resume after the issue is answered brings them back to todo.", "_source": "04 L78"},
-    {"id": "owner_definition", "text": "owner is from_role and is a role, not a session; quick-lane supplements and gyb-opened orders record owner gyb; the quick-lane supplement is opened by deploy with owner recorded as gyb.", "_source": "04 L49; 07 L116; sync-inbox Q41(d)"}
+    {"id": "owner_definition", "text": "owner is from_role and is a role, not a session; quick-lane supplements and gyb-opened orders record owner gyb; the quick-lane supplement row is written with actor deploy, from_role gyb and to_role deploy.", "_source": "04 L19, L49; 07 L96, L116; sync-inbox Q41(d); proxy decision D-24"}
   ],
   "rows": [
     {
@@ -32,7 +32,7 @@
       "id": "open_quick_lane",
       "from": null, "to": "done_pending_review",
       "who_can_write": ["deploy"],
-      "who_note": "quick-lane supplement; owner recorded as gyb",
+      "who_note": "quick-lane supplement: actor deploy, from_role gyb (owner), to_role deploy (proxy decision D-24)",
       "preconditions": [
         {"id": "ql.flag_true", "text": "quick_lane is true", "source": "04 L62"},
         {"id": "ql.report_method_exists", "text": "report_paths.method exists", "source": "04 L62"},
