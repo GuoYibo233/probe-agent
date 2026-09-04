@@ -127,6 +127,7 @@
 - 理由：改角色 json 的一栏是改 06 的定稿裁决（角色 json 内容 2026-08-18 gyb 裁），不在代裁范围；缺口只影响 run 一支，标待裁不挡别的。
 - 落点：`plans/2026-09-05-research-loop-debt-map.md` 第四节；sync-inbox 问题 50。
 - 审查：
+- 补记 2026-09-05（底座 3b 实现者报）：同一个缺口的第二处——05 第 197 行 doctor 第 3 项的修法 `rl issue link` 推给把单子转成 stuck 的角色，发射单那种角色是 run，06 第 204 行 run 的 issues 写权只有 open。同 D-14 处置：06 不动，doctor 第 3 项推人那一支标 `PENDING(issue 50)`，sync-inbox 问题 50 加 (b) 一并等 gyb（给 run 加 link、reply、close，或者第 3 项对发射单改推 owner）。
 
 ### D-15 子会话写账的身份判定与登记（待验证第 5 条测完；验证助手、底座助手各提推荐，统筹按推荐裁）
 

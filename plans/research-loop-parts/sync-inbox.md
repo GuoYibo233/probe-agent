@@ -375,4 +375,5 @@
 - 裁决原文：（待 gyb）
 - 要改的地方：
   50. 若给 run 加 issues 的 reply、close（限自己是 assignee 的通知类 issue）：`06` run 那份 json 的 `ledger_writes` 加，`12` 的 json 副本同步，`research-loop/tables/roles/run.json` 跟着改、`rules_version` 加一；若不加：45(b) 对 run 改成「run 把位置写进发射单最新一次尝试的 `progress_note`」或别的 run 有写权的地方，由 gyb 定。
+  - 统筹补扫 2026-09-05（底座 3b 实现者报，同一个缺口的第二处）：(b) `05:197` doctor 第 3 项「`stuck` 单子没有 issue」的修法 `rl issue link ID --handoff ID` 推给「把单子转成 `stuck` 的角色」，发射单那种角色是 run，而 `06:204` run 的 issues 写权只有 open，run 永远做不了这条修法。两条路一起等 gyb：给 run 加 issues 的 link（连同 (a) 的 reply、close 一并裁），或者第 3 项对发射单改推 owner（deploy）。代码按 `06` 原样不动，doctor 第 3 项的推人那一支标 `PENDING(issue 50)`。
 - 状态：等 gyb
