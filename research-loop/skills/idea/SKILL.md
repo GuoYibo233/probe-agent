@@ -76,6 +76,7 @@ Reads, writes, ledger write commands and dispatch targets for this role are in `
 - `experiments/` is read only for deployment reports; `analysis/` for delivered notebooks and figures; `review/` for reviewer's lists.
 - Writes the hook cannot see (a script writing files internally, `python -c`, heredocs, any Bash command whose target path the hook cannot parse) never go into the four role directories or `loop/`; to write there use Write/Edit or a Bash form the hook can see, and ledgers only ever go through `rl`.
 - One session loads one role. To switch roles, open another session. The machine does not enforce this; what happens on a second load in the same session is undefined and has no fallback.
+- In the exit dialog choose to stay, never to move the session to the background: a moved session gets a new id with no role state, and the old id's session end has already released its orders; after a move, load the role again and continue (proxy decision D-20; plans/2026-09-05-research-loop-verify.md section 3.4).
 - Follow `common/`.
 
 ## 5. Output style
