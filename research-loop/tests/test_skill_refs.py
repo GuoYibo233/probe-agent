@@ -6,9 +6,10 @@ sources 06 L29 and 09 L53), SPEC-TEMPLATE.md "Token convention" (backticks mark 
 
 Check 1  every `rl` write command a skill names is in that role json's ledger_writes; query commands are free.
 Check 2  every ledger name and every directory a skill names is in that role json's reads (or writes for directories).
-Check 3  every command, ledger, status, directory or term a skill names exists at its definition site
-         (tables/commands.json, tables/ledgers.json, tables/transitions.json, schemas/*.schema.json, the role
-         jsons, common/GLOSSARY.md); and no sentence of common/ is copied into a skill, except the two sentences.
+Check 3  every command, ledger, status, directory, flag, path or term a skill names exists at its definition site
+         (tables/commands.json with its signatures, tables/ledgers.json, tables/transitions.json,
+         schemas/*.schema.json, the role jsons, common/GLOSSARY.md, the plugin's own tree); and no sentence of
+         common/ is copied into a skill, except the two sentences. Host files are never checked on disk.
 
 The test fails, never skips, when a table, schema, json or skill is missing: an absent definition site means
 the check cannot run, and a check that cannot run is red.
@@ -165,6 +166,8 @@ def allowed_write(name, ledger, role_json):
 
 
 def classify(token):
+    if token == "rl":
+        return "entry"
     if token.startswith("rl "):
         return "command"
     if token.endswith("/"):
@@ -183,9 +186,14 @@ def check_role(role, commands, flags, ledgers, statuses, transition_tokens, glos
     reads = set(role_json["reads"])
     writes_dirs = {w for w in role_json.get("writes", []) if w.endswith("/")}
     directories = {"loop/"}
+    read_files = set()
     for other in ROLES:
         other_json = load_role(other)
-        directories.update(x for x in other_json["reads"] + other_json.get("writes", []) if x.endswith("/"))
+        for entry in other_json["reads"] + other_json.get("writes", []):
+            if entry.endswith("/"):
+                directories.add(entry)
+            elif "/" in entry or "." in entry:
+                read_files.add(entry)
     body = skill_body(role)
     errors = []
     for token in BACKTICK.findall(body):
@@ -198,16 +206,29 @@ def check_role(role, commands, flags, ledgers, statuses, transition_tokens, glos
             if commands[name]["kind"] == "write" and not allowed_write(name, commands[name]["ledger"], role_json):
                 errors.append(f"write command not in ledger_writes: `{name}`")
         elif kind == "directory":
+            if (PLUGIN / token).is_dir():
+                continue
             if token not in directories:
                 errors.append(f"unknown directory: `{token}`")
             elif token not in reads and token not in writes_dirs:
                 errors.append(f"directory not in reads or writes: `{token}`")
         elif kind == "flag":
-            if token not in flags and token not in glossary:
-                errors.append(f"unknown flag: `{token}`")
+            if token in glossary:
+                continue
+            for word in token.split():
+                if word.startswith("--") and word not in flags and word not in glossary:
+                    errors.append(f"unknown flag: `{word}` in `{token}`")
         elif kind == "path":
-            if not ((REPO / token).exists() or (PLUGIN / token).exists()):
-                errors.append(f"path does not exist: `{token}`")
+            # Definition sites for a path: the glossary, a role json's reads/writes, or the plugin's own tree.
+            # Files of the host repository are never checked on disk: their existence depends on host state.
+            plugin_relative = token[len("research-loop/"):] if token.startswith("research-loop/") else token
+            if token in glossary or (PLUGIN / plugin_relative).exists():
+                continue
+            if token in read_files:
+                if token not in reads:
+                    errors.append(f"file not in reads: `{token}`")
+            else:
+                errors.append(f"path defined nowhere: `{token}`")
         elif kind == "word":
             if token in ledgers:
                 if token not in reads:

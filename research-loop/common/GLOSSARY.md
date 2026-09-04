@@ -90,6 +90,10 @@ Every thing in this system has one name, the one in the first column, and that n
 | `not_mine` | Issue kind: the order belongs to another role. | Not a capability problem. |
 | `denied` | Issue kind: the hook blocked a write; the hook's message names the issue to open. | Not a permission request; that is `request`. |
 | `failed` | Issue kind: an attempt failed, with `stage` set to `smoke`, `launch` or `crash`. | Not an anomaly in results; the run did not complete. |
+| `stage` | On a `failed` issue: which step failed. | Not a handoff status. |
+| `smoke` | Stage value: the smoke run before launch failed. | Not the launch itself. |
+| `launch` | Stage value: the launch command failed. | Not a crash after a successful launch. |
+| `crash` | Stage value: the job died after launching. | Not a wrong result; a completed run with odd numbers is `anomaly`. |
 | `anomaly` | Issue kind: the run completed but the result looks wrong. | Not a failure. |
 | `request` | Issue kind: asking for something (a grant, a file, a decision). | Not a report of a problem. |
 | `withdrawn` (issue) | Notice kind: the order you held was withdrawn. | Not something to answer; it is a notification. |
