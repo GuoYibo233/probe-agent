@@ -42,13 +42,17 @@ listed in `_pending`, so the final merge pass can grep for it.
 6. **Session identity.** `rl` reads its own session id from the environment
    variable `CLAUDE_CODE_SESSION_ID` (present in this session's Bash), and tests
    override it with `RL_SESSION_ID`. Whether the hook input's `session_id` equals
-   this variable is verify item 1; marked `PENDING(part 30 L13)` in code.
+   this variable was verify item 1, closed on 2026-09-05: the two are equal
+   (`plans/2026-09-05-research-loop-verify.md` section 2.7).
 7. **Environment variables `rl` reads** (names fixed here so hook, tests and library agree):
    `RL_SESSION_ID` overrides the session id (tests); `RL_CALLER=hook` marks the plugin
    hook's own calls to `session start` / `session end` (who column "hook, gyb", 05 L40);
    `RL_COMMON_DIR` points at a sandbox copy of `common/` (tests); `RL_AGENT_TYPE` and
    `RL_AGENT_ID` are injected by the write hook into a subagent's Bash commands so `rl`
-   can tell a subagent from its parent session (verify item 5, proxy decision D-15). The
+   can tell a subagent from its parent session (verify item 5, proxy decision D-15;
+   `plans/2026-09-05-research-loop-verify.md` sections 2.4-2.5 and 4: `agent_type` is
+   `research-loop:<role>` from the plugin's agents/, bare `<role>` from `--agents`, both
+   accepted). The
    injection is `export RL_AGENT_TYPE='<type>'; export RL_AGENT_ID='<id>'; <command>`
    (shell-escaped), never a prefix assignment, so chained commands (`cd x && rl ...`)
    still see the variables (D-15 addendum).
