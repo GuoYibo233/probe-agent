@@ -262,16 +262,16 @@ class SessionEndReleasesOrders(unittest.TestCase):
             self.assertEqual(self.sb.latest("handoffs", lo)["status"], "todo")
         self.assertEqual(sorted(self.sb.latest("sessions", run)["released_handoffs"]), sorted([lo1, lo2]))
 
-    def test_state_file_deleted_after_session_end(self):
-        """Debt map 35(c) (sync-inbox Q35(c) L194; 06 L120): the deregistration hook
-        deletes this session's state file loop/.sessions/<session_id>.json as its last
-        step, also for a session that held no in_progress order."""
+    def test_session_end_closes_a_session_that_held_nothing(self):
+        """Debt map 35(c) (sync-inbox Q35(c) L194; 06 L120): a session that held no
+        in_progress order is closed too; the hook then deletes its state file (test 8)."""
         deploy = self.sb.role_session("deploy")
         state = self.sb.loop / ".sessions" / f"{deploy}.json"
         self.assertTrue(state.exists())
         self.sb.rl_ok("session", "end", session=deploy, caller="hook")
-        self.assertFalse(state.exists())
         self.assertEqual(self.sb.latest("sessions", deploy)["status"], "closed")
+        # the file itself is removed by the deregistration hook after `rl session end`
+        # (06 L120; hooks/rl_hook.py session-end), covered by test 8; rl only closes the row.
 
     def test_release_rows_are_written_before_the_closed_version(self):
         """Debt map 47(b) (03 L15; sync-inbox Q47(b) L348): session end first releases

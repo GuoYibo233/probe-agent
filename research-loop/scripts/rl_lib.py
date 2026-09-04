@@ -483,6 +483,7 @@ def merged_schema(ledger: str) -> dict:
     skel = _load_json(SCHEMAS_DIR / "_skeleton.schema.json")
     merged = dict(schema)
     merged.pop("allOf", None)
+    merged.pop("$id", None)  # a repo-relative $id makes jsonschema 3.2.0 resolve internal refs as URLs
     props = dict(skel["properties"])
     props.update(schema.get("properties", {}))
     merged["properties"] = props
@@ -557,7 +558,9 @@ def check_conditions(ledger: str, row: dict, book: str | None = None) -> None:
             continue
         if not _condition_holds(cond["if"], row, book):
             continue
-        missing = [k for k in cond["then_required"] if row.get(k) in (None, "", [], {})]
+        # a present empty list (released_handoffs: []) is a value; "at least one" rules
+        # live in the schema (minItems) or the transition preconditions (04 L32)
+        missing = [k for k in cond["then_required"] if row.get(k) in (None, "")]
         if missing:
             raise RLError("validation",
                           f"{ledger} row with {cond['if']} needs {', '.join(missing)} ({cond.get('source', '')})",
@@ -565,12 +568,16 @@ def check_conditions(ledger: str, row: dict, book: str | None = None) -> None:
 
 
 def validate_row(repo: Path, ledger: str, row: dict, actor: Actor, command: str,
-                 book: str | None = None, force: bool = False) -> None:
+                 book: str | None = None, force: bool = False, internal: bool = False) -> None:
     """Order of checks (03 L15, L27; 05 L21): writer session alive -> who can call ->
     shape -> required-by-status. `force` (gyb only, checked by check_force) skips the
     completeness checks (shape and required-by-status), never the first two."""
     check_writer_alive(repo, actor)
-    check_who_can_call(actor, command)
+    if not internal:
+        # internal=True: rows rl writes on its own behalf (session end's release rows,
+        # notices, session amend's own who rule, 03 L176), where the ledger_writes table
+        # does not apply
+        check_who_can_call(actor, command)
     # 03 L27; 01 L90: gyb's --force --reason bypasses the completeness checks (required
     # fields, existence) but never the shape: types, enums and patterns still hold.
     validate_shape(ledger, row, skip_required=force)
@@ -695,7 +702,7 @@ def context(ctx: dict) -> tuple[Path, Actor, bool, str | None]:
 
 def write_row(repo: Path, ledger: str, fields: dict, actor: Actor, command: str, *, status: str,
               version: int, book: str | None = None, force: bool = False, force_reason: str | None = None,
-              via: str | None = None) -> dict:
+              via: str | None = None, internal: bool = False) -> dict:
     """Build skeleton + fields, validate (writer alive, who-can-call, shape, status-bound
     required unless gyb --force), append. The caller holds the Lock and has assigned ids
     inside it (03 L19)."""
@@ -703,18 +710,18 @@ def write_row(repo: Path, ledger: str, fields: dict, actor: Actor, command: str,
     row.update(fields)
     if actor.quote and "quote" not in row and actor.is_gyb and not actor.bare_terminal:
         row["quote"] = actor.quote  # 01 L70: --as-gyb rows carry the quote
-    validate_row(repo, ledger, row, actor, command, book=book, force=force)
+    validate_row(repo, ledger, row, actor, command, book=book, force=force, internal=internal)
     append_row(repo, ledger, row, book)
     return row
 
 
 def next_version_of(repo: Path, ledger: str, key_value: str, book: str | None = None) -> tuple[dict | None, int]:
-    """(latest row or None, next version number) for one key (03 L11, L36)."""
+    """(latest row or None, next version number) for one key (03 L11, L36). For sessions
+    pass session_key(session_id, agent_id) (proxy decision D-15)."""
     rows = read_rows(repo, ledger, book) if ledger != "decisions" or book else read_decisions(repo)
-    key = key_field(ledger)
     best = None
     for r in rows:
-        if r.get(key) == key_value and (best is None or r["version"] > best["version"]):
+        if row_key(ledger, r) == key_value and (best is None or r["version"] > best["version"]):
             best = r
     return best, (best["version"] + 1 if best else 1)
 

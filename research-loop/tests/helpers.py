@@ -181,11 +181,18 @@ class Sandbox:
                 out.extend(json.loads(l) for l in f.read_text().splitlines() if l.strip())
         return out
 
-    def latest(self, ledger: str, key_value: str, book: str | None = None) -> dict | None:
+    def latest(self, ledger: str, key_value: str, book: str | None = None, agent_id: str | None = None) -> dict | None:
+        """Latest version of one key. sessions rows chain per (session_id, agent_id):
+        without agent_id only the top-level chain (rows without agent_id) is read
+        (proxy decision D-15)."""
         key = {"runs": "run_id", "scratch": "ql_tag", "sessions": "session_id"}.get(ledger, "id")
         best = None
         for row in self.rows(ledger, book):
-            if row.get(key) == key_value and (best is None or row["version"] > best["version"]):
+            if row.get(key) != key_value:
+                continue
+            if ledger == "sessions" and row.get("agent_id") != agent_id:
+                continue
+            if best is None or row["version"] > best["version"]:
                 best = row
         return best
 
