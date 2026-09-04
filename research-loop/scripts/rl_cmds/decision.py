@@ -37,74 +37,11 @@ def _book_of(decision_id: str) -> str:
     return m.group(1)
 
 
-def _write_row(repo, ledger, fields, actor, command, *, status, version, book=None,
-               force=False, force_reason=None):
-    """rl_lib.write_row, with the one force rule rl_lib does not carry yet.
-
-    03 L27 and 01 L90: gyb's exemption stops at the permission layer, and the completeness
-    checks (required fields, path existence, reference existence) are exactly what
-    `--force --reason` writes past, with the reason recorded in force_reason. Two checks
-    stay in force: the closed-session refusal (03 L15) and who-can-call. rl_lib's
-    validate_row only skips the status-bound required check when force is set, so the
-    shape check is skipped here instead (rl_lib change wanted).
-    """
-    if not force:
-        return rl_lib.write_row(repo, ledger, fields, actor, command, status=status,
-                                version=version, book=book)
-    row = rl_lib.skeleton(actor, status, version, force_reason=force_reason)
-    row.update(fields)
-    if actor.quote and "quote" not in row and actor.is_gyb and not actor.bare_terminal:
-        row["quote"] = actor.quote  # 01 L70: --as-gyb rows carry gyb's words
-    rl_lib.check_writer_alive(repo, actor)  # 03 L15: --force never gets past this
-    rl_lib.check_who_can_call(actor, command)
-    rl_lib.append_row(repo, ledger, row, book)
-    return row
-
-
-# ---------------------------------------------------------------- sources (02 L32-48)
-
-def _parse_source(repo, spec: str) -> dict:
-    """One `--source K:V` argument into one sources item (02 L36-42).
-
-    `file:PATH[#anchor]` - the path must exist under the repo, the anchor is deliberately
-    not checked (02 L42); `run:RUN_ID` - the run_id must be in the runs ledger (02 L42);
-    `decision:ID@V` - an older decision's id and version, which must exist (01 L88 lists
-    "引用存在" among the integrity checks; 05 L196 doctor item 2 scans decisions' sources
-    for dangling references).
-    """
-    kind, sep, rest = (spec or "").partition(":")
-    if not sep or not rest:
-        raise rl_lib.RLError("usage", f"--source {spec!r} is not K:V",
-                             "write file:PATH[#anchor], run:RUN_ID or decision:ID@V (02 L36-40)")
-    if kind == "file":
-        path, _, anchor = rest.partition("#")
-        if not path or not (repo / path).exists():
-            raise rl_lib.RLError("validation", f"source file {path!r} does not exist in the repo",
-                                 "a file source is any path inside the repo and must exist (02 L42)")
-        item = {"kind": "file", "path": path}
-        if anchor:
-            item["anchor"] = anchor  # 02 L42: the anchor is a hint, rl does not validate it
-        return item
-    if kind == "run":
-        known = {r["run_id"] for r in rl_lib.read_rows(repo, "runs")}
-        if rest not in known:
-            raise rl_lib.RLError("validation", f"run {rest} is not in the runs ledger",
-                                 "a run source must point at a run_id that exists (02 L42)")
-        return {"kind": "run", "run_id": rest}
-    if kind == "decision":
-        dec_id, at, raw = rest.rpartition("@")
-        if not at or not raw.isdigit():
-            raise rl_lib.RLError("usage", f"--source decision:{rest} needs a version",
-                                 "write decision:dec-idea-0007@2 (02 L38)")
-        version = int(raw)
-        _book_of(dec_id)
-        rows = rl_lib.read_rows(repo, "decisions", _book_of(dec_id))
-        if not any(r["id"] == dec_id and r["version"] == version for r in rows):
-            raise rl_lib.RLError("validation", f"decision {dec_id} has no version {version}",
-                                 "a decision source names an existing id and version (01 L88)")
-        return {"kind": "decision", "id": dec_id, "version": version}
-    raise rl_lib.RLError("usage", f"unknown source kind {kind!r}",
-                         "the three kinds are decision, file and run (02 L36-40)")
+def _write_row(repo, ledger, fields, actor, command, *, status, version, book=None, force=False, force_reason=None):
+    """Thin wrapper over rl_lib.write_row; --force handling lives in rl_lib.validate_row
+    (03 L27; 01 L90: required lists dropped, shape kept; reviewer fix on 529b8ef)."""
+    return rl_lib.write_row(repo, ledger, fields, actor, command, status=status, version=version,
+                            book=book, force=force, force_reason=force_reason)
 
 
 def _parse_sources(repo, specs) -> list:

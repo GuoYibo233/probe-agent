@@ -140,7 +140,7 @@ class TestWithdrawNoticeRecipientCloses(unittest.TestCase):
 class TestWithdrawnNoticeTextPending(unittest.TestCase):
     """PENDING: the withdrawn notice's own literal text is not ruled anywhere -- only
     its intended content is (the holder reports the code location and the half-finished
-    artifact directory into that withdrawn issue, sync-inbox Q45(b) L329); the
+    artifact directory into that withdrawn issue, sync-inbox Q45(b)); the
     transitions table marks this side effect explicitly as 'discipline for the holder,
     not a check' rl performs, so there is no machine-checkable behaviour to assert. The
     debt map for this exact point (plans/2026-09-05-research-loop-debt-map.md L555) also
@@ -156,7 +156,7 @@ class TestWithdrawnNoticeTextPending(unittest.TestCase):
 
     def test_withdrawn_notice_tells_holder_to_report_location_and_artifact_dir(self):
         self.skipTest(
-            "PENDING(sync-inbox Q45(b) L329 / issue 50): no literal wording is ruled for "
+            "PENDING(issue 50): no literal wording is ruled for "
             "the withdrawn notice's text field, only its intended content; whether rl "
             "bakes that instruction into the notice text is undecided, and the run-holder "
             "branch is additionally blocked on issue 50 (run's issues reply/close "

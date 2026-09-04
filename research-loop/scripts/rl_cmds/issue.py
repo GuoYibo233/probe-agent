@@ -28,26 +28,10 @@ def _out(ctx, payload, text):
 
 
 def _write_row(repo, fields, actor, command, *, status, version, force=False, force_reason=None):
-    """rl_lib.write_row, with the one force rule rl_lib does not carry yet.
-
-    03 L27 and 01 L90: gyb's exemption stops at the permission layer, and the completeness
-    checks (required fields, path existence, reference existence) are what `--force
-    --reason` writes past, with the reason recorded in force_reason. Two checks stay in
-    force: the closed-session refusal (03 L15) and who-can-call. rl_lib's validate_row only
-    skips the status-bound required check when force is set, so the shape check is skipped
-    here instead (rl_lib change wanted).
-    """
-    if not force:
-        return rl_lib.write_row(repo, "issues", fields, actor, command, status=status,
-                                version=version)
-    row = rl_lib.skeleton(actor, status, version, force_reason=force_reason)
-    row.update(fields)
-    if actor.quote and "quote" not in row and actor.is_gyb and not actor.bare_terminal:
-        row["quote"] = actor.quote  # 01 L70: --as-gyb rows carry gyb's words
-    rl_lib.check_writer_alive(repo, actor)  # 03 L15: --force never gets past this
-    rl_lib.check_who_can_call(actor, command)
-    rl_lib.append_row(repo, "issues", row)
-    return row
+    """Thin wrapper over rl_lib.write_row; --force handling lives in rl_lib.validate_row
+    (03 L27; 01 L90: required lists dropped, shape kept; reviewer fix on 529b8ef)."""
+    return rl_lib.write_row(repo, "issues", fields, actor, command, status=status, version=version,
+                            force=force, force_reason=force_reason)
 
 
 def _carry(previous: dict) -> dict:

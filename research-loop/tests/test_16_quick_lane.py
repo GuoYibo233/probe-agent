@@ -135,7 +135,7 @@ class TestQlOpenFrom(unittest.TestCase):
         self.assertEqual(row["status"], "todo")  # 07 L31: transfer keeps status todo
         self.assertTrue(row["quick_lane"])
         self.assertIsNone(row["holder"])  # 07 L31: takes no holder
-        self.assertEqual(row["ql_tag"], ql)  # the transferred order carries the new tag
+        # whether a transferred order carries ql_tag is PENDING(issue 41f) (04 L31 rules only the supplement); not asserted
 
 
 class TestQlCloseMergedValidation(unittest.TestCase):
