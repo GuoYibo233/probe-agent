@@ -53,6 +53,36 @@ class TestDebtMapAdditions(unittest.TestCase):
         self.assertEqual(self.sb.latest("handoffs", ho)["status"], "accepted")
         self.assertEqual([i for i in self.sb.rows("issues") if i["kind"] == "fyi"], [])
 
+    def test_start_with_nonempty_holder_refused_even_for_gyb_with_force(self):
+        """Proxy decision D-29 (04 L51, L57 rule 3): the holder invariant is not a
+        precondition; gyb --force --reason does not get past it; exit 2, no new row."""
+        sb = self.sb
+        idea = sb.role_session("idea")
+        dec = make_decision(sb, session=idea)
+        ho = open_work_order(sb, idea, dec)
+        deploy = sb.role_session("deploy")
+        sb.rl_ok("handoff", "start", ho, session=deploy)
+        before = sb.count("handoffs")
+        r = sb.rl("handoff", "start", ho, "--force", "--reason", "taking over")  # bare terminal = gyb
+        self.assertEqual(r.rc, 2, str(r))
+        self.assertEqual(r.kind, "validation")
+        self.assertEqual(sb.count("handoffs"), before)
+
+    def test_quick_lane_supplement_needs_track(self):
+        """Proxy decision D-10 addendum (11 L122): a supplement is a work order and needs
+        --track like any other; without it exit 2 and no row."""
+        sb = self.sb
+        deploy = sb.role_session("deploy")
+        ql = sb.rl_ok("ql", "open", "--role", "deploy", "--json", session=deploy).json["ql_tag"]
+        sb.write_file(f"experiments/{ql}/method.md")
+        sb.write_file(f"experiments/{ql}/x.py")
+        before = sb.count("handoffs")
+        r = sb.rl("handoff", "open", "--type", "work_order", "--to", "deploy", "--quick-lane",
+                  "--report-method", f"experiments/{ql}/method.md", "--ql", ql, "--explain", "gyb said tune it",
+                  "--code-path", f"experiments/{ql}/x.py", session=deploy)
+        self.assertEqual(r.rc, 2, str(r))
+        self.assertEqual(sb.count("handoffs"), before)
+
     def test_work_order_open_without_track_refused(self):
         """Debt map 45(a) (sync-inbox Q45(a)(f) L329-330; proxy decision D-10): a
         work_order opened without --track is refused with exit 2 and no row."""

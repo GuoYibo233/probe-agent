@@ -112,6 +112,11 @@ listed in `_pending`, so the final merge pass can grep for it.
     `ql close` adds `removed` (worktree and branch removed); `ql open --from` adds
     `from` (the transferred order id).
 
+19. **The holder invariant is not a precondition.** `handoff start` on an order whose
+    holder is non-empty is exit 2 for everyone, gyb with `--force --reason` included
+    (04 L51, L57 rule 3; proxy decision D-29). A quick-lane supplement needs `track`
+    like any work order (proxy decision D-10 addendum; 11 L122).
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;

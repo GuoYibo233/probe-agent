@@ -35,6 +35,7 @@
       "who_note": "quick-lane supplement: actor deploy, from_role gyb (owner), to_role deploy (proxy decision D-24)",
       "preconditions": [
         {"id": "ql.flag_true", "text": "quick_lane is true", "source": "04 L62"},
+        {"id": "open.work_order_has_track", "text": "the supplement is a work_order and needs track too, the direction of the experiment being tuned (11 L122)", "source": "proxy decision D-10 addendum"},
         {"id": "ql.report_method_exists", "text": "report_paths.method exists", "source": "04 L62"},
         {"id": "ql.explanation_nonempty", "text": "explanation is non-empty", "source": "04 L62"},
         {"id": "ql.code_paths_nonempty", "text": "code_paths is non-empty", "source": "sync-inbox Q41(b) L294; 07 L101, L109"},
@@ -50,7 +51,7 @@
       "who_can_write": ["to_role"],
       "preconditions": [
         {"id": "start.session_role_is_to_role", "text": "the writing session's role equals to_role", "source": "04 L63"},
-        {"id": "start.holder_empty", "text": "holder is empty; otherwise exit 2 and the current holder is listed", "source": "04 L63; 05 L119"},
+        {"id": "start.holder_empty", "text": "holder is empty; otherwise exit 2 and the current holder is listed; this is header rule 3 (the holder invariant), not a precondition, so gyb --force cannot pass it", "source": "04 L63; 05 L119; 04 L51, L57 rule 3; proxy decision D-29"},
         {"id": "start.adopt_if_launched_unfinished", "text": "for a launch_order whose latest attempt has a launched run row without a finished version this start is an adoption: this version writes adopted: true and rl also appends an adopted version to that runs row", "source": "04 L63; 03 L100"}
       ],
       "then_who_pulls": "nobody",
