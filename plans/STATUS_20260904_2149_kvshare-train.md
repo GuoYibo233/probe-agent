@@ -368,7 +368,7 @@ drop-event 那一行丢的 1 个事件有 64 个切点，所以丢弃切点是 6
 
 - `ops/runs.jsonl`（每个 run 的 start 与 finish 记录）：从 8 月 28 日 09:16 起 43 个 run_id、44 条 finish（l4 第一次冒烟两条），全部记了数字；`RESULTS.md`（`ops/record.py` 从 runs.jsonl 渲染的数字表，不手改）已渲染。`ops/jobs.json`（任务台账）的 `active`（正在跑的）为空，`history`（跑完销号的，销号是从 active 挪到 history）110 条。
 - `TIMELINE.md`（决策记录，人写、只增不改）：2026-08-28 生成口径、2026-08-28 训练口径、2026-08-29 第二轮，一共三条。`WORKPLAN.md`（当前计划，人写、会被覆盖）正文停在「np821 执行块还没开始」（执行块是 WORKPLAN 里一段要做的事），np821 8 月 26 日收官和缓存复用训练器 8 月 28 到 29 日两轮都没有写进去，按 CLAUDE.md 的规矩（WORKPLAN 由人写）由 gyb 改。
-- 汇报网页 `plans/2026-08-28-kvshare-report.html`（两轮汇报都收在这一个文件里，第二轮排在前面），网页地址 https://claude.ai/code/artifact/0bbbe221-da05-4fcc-951f-8b2c04f2ef84 。决定台账两轮各封口一次；Claude 的跨会话记忆文件 `kvshare-train-state.md`（Claude 自己写给下次会话看的笔记）8 月 28 日更新。
+- 汇报网页 `plans/2026-08-28-kvshare-report.html`（两轮汇报都收在这一个文件里，第二轮排在前面），网页地址 https://claude.ai/code/artifact/0bbbe221-da05-4fcc-951f-8b2c04f2ef84 。决定台账两轮各封口一次；Claude 的跨会话记忆文件 `kvshare-train-state.md`（Claude 自己写给下次会话看的笔记）8 月 28 日更新，9 月 4 日加了这份文档的位置。这份文档本身的网页版是 `plans/STATUS_kvshare-train.html`（由 `.claude/skills/exp-status/md2html.py` 从 markdown 转出来、逐字符校验过），网页地址 https://claude.ai/code/artifact/3277bf49-6ee6-4445-b401-da98a1ccf30f 。
 - 判读工具 `.scratch/kvshare-train/verify/`：`smoke_check.py`（单个 run 对显存模型的预期与偏差）、`sweep_watch.py`（扫描 run 的显存偏差，以及每个 run 四个评估点的验证集交叉熵和 loss 的事实表）、`enum_blocks.py`（CPU 复现第一个 epoch 的全部物理块）。
 
 ### 5.5 未决与遗留
