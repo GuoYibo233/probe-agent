@@ -102,6 +102,11 @@ listed in `_pending`, so the final merge pass can grep for it.
     from everyone, gyb with `--force --reason` included; a missing reason is exit 5
     (02 L79 over 03 L27; proxy decision D-27).
 
+17. **Query `--json` shapes the parts do not fix** (construction conventions, like 12):
+    `rl trace` returns a list of `{"ledger", "id", "version"}` in chain order;
+    `rl decision show` returns `{"id", "book", "versions": [rows]}`; `rl decision stale`
+    returns a list of `{"handoff", "holder", "decision", "cited", "latest"}`.
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;
