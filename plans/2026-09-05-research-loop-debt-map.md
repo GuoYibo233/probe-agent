@@ -11,14 +11,14 @@
 | 34 | 5 | 0 | `research-loop/bin/rl`、`research-loop/common/GLOSSARY.md`、`research-loop/schemas/decisions.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/tables/ledgers.json`、`research-loop/tests/` |
 | 35 | 7 | 0 | `research-loop/bin/rl`、`research-loop/hooks/`、`research-loop/scripts/rl_lib.py`、`research-loop/skills/<role>/SKILL.md`、`research-loop/tables/ledgers.json`、`research-loop/tables/roles/<role>.json`、`research-loop/tests/` |
 | 37 | 8 | 4 | `research-loop/bin/rl`、`research-loop/common/GLOBAL-RULES.md`、`research-loop/common/REVIEW-CHECKLIST.md`、`research-loop/schemas/decisions.schema.json`、`research-loop/schemas/feedback.schema.json`、`research-loop/schemas/sessions.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/tables/ledgers.json`、`research-loop/tests/` |
-| 39 | 7 | 1 | `research-loop/agents/<role>.md`、`research-loop/bin/rl`、`research-loop/hooks/`、`research-loop/schemas/sessions.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/skills/<role>/SKILL.md`、`research-loop/skills/research-loop/SKILL.md`、`research-loop/tables/config_defaults.json`、`research-loop/tables/ledgers.json`、`research-loop/tables/transitions.json`、`research-loop/tests/` |
+| 39 | 7 | 0（(a2) 由 D-15 代裁） | `research-loop/agents/<role>.md`、`research-loop/bin/rl`、`research-loop/hooks/`、`research-loop/schemas/sessions.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/skills/<role>/SKILL.md`、`research-loop/skills/research-loop/SKILL.md`、`research-loop/tables/config_defaults.json`、`research-loop/tables/ledgers.json`、`research-loop/tables/transitions.json`、`research-loop/tests/` |
 | 40 | 7 | 0 | `research-loop/bin/rl`、`research-loop/scripts/rl_lib.py`、`research-loop/tables/gyb-usecases.json` |
 | 41 | 13 | 1 | `research-loop/bin/rl`、`research-loop/common/GLOBAL-RULES.md`、`research-loop/schemas/scratch.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/skills/deploy/SKILL.md`、`research-loop/tables/commands.json`、`research-loop/tables/transitions.json`、`research-loop/tests/` |
 | 43 | 7 | 1 | `research-loop/bin/rl`、`research-loop/schemas/handoffs.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/tables/ledgers.json`、`research-loop/tables/transitions.json`、`research-loop/tests/` |
 | 45 | 4 | 0 | `research-loop/bin/rl`、`research-loop/schemas/handoffs.schema.json`、`research-loop/scripts/rl_lib.py`、`research-loop/skills/analysis/SKILL.md`、`research-loop/skills/deploy/SKILL.md`、`research-loop/skills/run/SKILL.md`、`research-loop/tables/commands.json`、`research-loop/tables/transitions.json`、`research-loop/tests/` |
 | 47 | 6 | 0 | `research-loop/bin/rl`、`research-loop/hooks/`、`research-loop/scripts/rl_lib.py`、`research-loop/tables/roles/analysis.json`、`research-loop/tables/roles/reviewer.json`、`research-loop/tests/` |
 
-子项共 64 条，其中 pending 7 条。
+子项共 64 条，其中 pending 6 条（读手汇总时是 7 条，39(a2) 随后由 D-15 代裁）。
 
 ## 二、按落点文件反查：写这个文件的时候要看哪些子项
 
@@ -244,7 +244,7 @@
 - 原冻结句：`04-handoffs-and-sessions.md` L96「外部原因（上下文满、进程被杀、终端没了）就照单子的 `dispatch` 走，`auto` 的当场再起一个 subagent 接」
 - 备注：裁决原文见 sync-inbox L250「gyb 2026-08-18 对 08「定死吧」「A A A」「剩下的建议我确认」」；agents/ 层五份角色 agent 定义由 08 第四节 L90 立，06 L126 写「派活一律用这五个类型起 subagent」，问题 38-2（sync-inbox L245-246）已裁它改动走母版流程。装 agent 类型定义的文件 research-loop/agents/<role>.md 在落点清单里（统筹 2026-09-05 补进清单），列为第一个落点。
 
-### 39(a2) 状态 pending，标记 `PENDING(verify 5)`
+### 39(a2) 状态 settled（2026-09-05 待验证第 5 条测完，代裁 D-15；代码里的来源标注写 `proxy decision D-15`，原读手记的是 pending、标记 verify 5）
 
 - 代码落点：`research-loop/hooks/`（登记钩子（session registration hook）：subagent 加载角色 skill 时登不登记一行 sessions、`session_id` 填父会话号还是另立标识；钩子输入里的 `agent_id`/`agent_type` 怎么用。标 PENDING(verify 5)）；`research-loop/schemas/sessions.schema.json`（`session_id` 栏的语义：父子会话同号时主键怎么算，要不要另加一栏区分 subagent；`launched_by` 取值 `subagent` 那一档（04 L140）要不要保留。标 PENDING(verify 5)）；`research-loop/scripts/rl_lib.py`（actor 判定的子会话分支（状态文件读到父会话的角色对不对、要不要另立信号）；工作指南第 92 行写明这一分支等第 5 条）；`research-loop/tests/`（测试 7（销号，30 L76-86）与测试 8（钩子，30 L88-92）：subagent 登记与销号的用例等第 5 条测完才写得成）
 - 新口径：sync-inbox L252: 第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句——subagent 的 `session_id` 与父会话相同、钩子输入多 `agent_id`/`agent_type`、状态文件不写，subagent 算不算一次 sessions 行、`session_id` 记什么，等待验证第 5 条测完再定

@@ -135,6 +135,7 @@
 - 理由：钩子那一层已经裁定按 `agent_type` 判角色（06 第 96 行），把同一个判定经注入变量交给 rl，两层看到同一个身份，又不违反「子会话不写状态文件」（06 第 118 行）；可选栏不动既有必填；另落一行让「谁真写的、谁起了谁」在账上查得出（06 第 157 行的事后追查靠这个）；版本链按（`session_id`，`agent_id`）配对是为了不让子会话的 closed 版把母会话锁死（03 的「closed 会话再写拒收」那条）。底座的备选（不加栏、只靠 `launched_by`）分不开同一母会话下的两个子会话。
 - 落点：`research-loop/hooks/`（写权钩子注入、SubagentStop 钩子、SessionEnd 钩子）；`research-loop/scripts/rl_lib.py` actor 判定与版本链查法；`research-loop/schemas/_skeleton.schema.json`（`agent_id`）、`sessions.schema.json`；测试 9 的用例；sync-inbox 问题 49 记冻结正文的落点（03 骨架与 sessions 字段表、04 第四六七节、05 actor 判定句）；对照单 39(a2) 的标记改 `proxy D-15`。
 - 审查：
+- 补记 2026-09-05（评审助手指出的技术风险，写死注入写法）：钩子往 Bash 命令前注入不能写成 `RL_AGENT_TYPE=deploy RL_AGENT_ID=x <原命令>`，shell 的前置赋值只作用到紧跟的第一个命令，原命令是 `cd repo && rl handoff start ...` 或者 `python3 x.py; rl ...` 这种链式写法时 rl 拿不到变量、会判成母会话的角色。写法定为 `export RL_AGENT_TYPE='<type>'; export RL_AGENT_ID='<id>'; <原命令>`，值经 shell 转义；验证助手的沙盒用例补一条链式命令（cd 加 && 加 rl）才算测过。D-15 的事实依据是 `plans/2026-09-05-research-loop-verify.md`，验证助手要先把已测完的部分提交，最后一种情况跑完再补。
 
 ### D-16 gyb 在裸终端或 `--as-gyb` 写杂账（scratch）照收（评审助手提，统筹按推荐裁）
 
@@ -160,3 +161,11 @@
 - 落点：`research-loop/agents/reviewer.md`。
 - 审查：
 - 附：agents/ 里 `skills:` 预载写带插件前缀的 `research-loop:<role>`，验证助手实测裸名和带前缀都预载得上（D-13 补记），注释不标 PENDING，写「verified 2026-09-05, see plans/2026-09-05-research-loop-verify.md」。
+
+### D-19 压力场景的文件放 `research-loop/tests/scenarios/<role>/`，运行结果的汇总放 plans/（文本助手提，统筹裁）
+
+- 问题：施工指南第五节步 6 要求每份角色 SKILL.md 配两三个压力场景（先不带 skill 运行一遍当对照，再带 skill 运行），08 第四节的插件树没有这一层，文本助手问场景文件放 `tests/scenarios/` 还是 plans/。
+- 决定：场景提示词放 `research-loop/tests/scenarios/<role>/<name>.md`（英文，插件本体的一部分，08 的 `tests/` 行装得下，不加新的顶层目录）；每轮运行的对照结果（子会话在哪里违规、用什么理由开脱、带 skill 之后照不照做）汇总写 `plans/2026-09-05-research-loop-pressure-scenarios.md`（中文），原始对话记录留在会话的临时目录不进仓库。
+- 理由：场景是说明书的测试，归 `tests/`；运行记录大、带模型输出，按工程规矩大产物不进 git，只留汇总。
+- 落点：`research-loop/tests/scenarios/`；`plans/2026-09-05-research-loop-pressure-scenarios.md`。
+- 审查：
