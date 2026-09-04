@@ -87,6 +87,11 @@ listed in `_pending`, so the final merge pass can grep for it.
     against the rewritten command (hooks reference), so prefix-style allow rules written
     for bare commands no longer match inside subagents.
 
+14. **Extra keys on `rl status --json` rows.** Beyond the twelve keys of 01 L135 a row may
+    carry `stale_holder` (true when the row is listed in section 7) so scripts and tests
+    can tell section membership without parsing text; adding keys is allowed by 05 L123
+    ("add fields, never remove").
+
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 
 - `track` on a `work_order` is required at open (sync-inbox Q45(a)(f): filled by idea at open;
