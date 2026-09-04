@@ -636,8 +636,9 @@ def check_who_can_write(trow: dict, actor: Actor, order: dict | None, env: dict 
             ok = True
         elif who == "to_role" and order is not None and order.get("to_role") == role:
             ok = True
-        elif who == "holder" and order is not None and order.get("holder") == actor.session_id:
-            ok = True
+        elif (who == "holder" and order is not None and order.get("holder") == actor.session_id
+              and (order.get("agent_id") or None) == (actor.agent_id or None)):
+            ok = True  # proxy decision D-15 addendum: holder pairs (session_id, agent_id or empty)
         elif who == "session_end_hook" and env.get(ENV_CALLER) == "hook":
             ok = True
         elif who == "issue_answerer" and issue_answerer_role == role:
