@@ -94,6 +94,7 @@
 - 理由：04 第 43 行写发射单开单时第一次尝试的 `track` 必填，11 第 76 行写发射单的 `track`「从父单抄」，所以没有 `track` 的工单下面永远开不出发射单；在工单开单这一步就要，缺口在源头拦住。每张工单都属于一条研究方向，方向名对工单没有例外。
 - 落点：`research-loop/schemas/handoffs.schema.json`、`research-loop/tables/transitions.json` 新建行的前提；sync-inbox 问题 48(b) 记最后一期要落进 04 字段表。
 - 审查：
+- 补记 2026-09-05（评审助手核 handoff.py）：快车道补单也是 `work_order`（04 第 62 行），`track` 同样必填、不设例外；值按 11 第 122 行是被微调的那个实验的方向名。`_open_quick_lane` 不再跳过这一项。
 
 ### D-11 feedback 账的编号形状定为 `fb-NNNN`（底座助手提，统筹裁）
 
@@ -247,6 +248,14 @@
 - 决定：`rl session start` 这一条命令豁免「closed 会话再写拒收」：它就是登记本身，写的是同一个 `session_id` 的下一版 open（version 加一）；别的写命令照旧按最新版查。
 - 理由：03 第 15 行那条校验的目的是拦「被销号的会话继续干活」，登记不是干活；不豁免的话 03 与 04 自己写的出路就是死路。
 - 落点：`research-loop/scripts/rl_lib.py`（validate_row 或者 check_writer_alive 加一个例外）；测试 7 补一例「end 之后 start 能过、再写账能过」；sync-inbox 问题 48 加 (e) 给 03 第 15 行。
+- 审查：
+
+### D-29 start 时「holder 为空」是不变量，gyb `--force` 越不过（评审助手提，统筹按推荐裁）
+
+- 问题：04 第 57 行说前提栏 gyb 能 `--force` 越过；04 第 51 行和表头规矩 3 把「开干只能从空 holder 进」定成 holder 不变量；`transitions.json` 把它放在 preconditions 里，按前提读就能被 force。
+- 决定：按不变量读，不可 force：start 时 holder 非空一律拒收，gyb 带 `--force` 也一样。`transitions.json` 的 start 行 holder_empty 那一项注「header rule 3，不可 force」，README 惯例一句。
+- 理由：两个 holder 会让销号和 reclaim 都算不清（04 第 51 行的不变量就是为这个立的）；表头三句里不变量是单独一句，不在「前提栏对 gyb 生效、可 force」那一句里。
+- 落点：`research-loop/tables/transitions.json`；`research-loop/scripts/rl_lib.py`；`research-loop/tables/README.md`；测试 2 或 7 补一例 gyb `--force` start 撞非空 holder 退出码 2。
 - 审查：
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
