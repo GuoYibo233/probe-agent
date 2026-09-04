@@ -133,7 +133,7 @@
 
 原文：沙盒仓库 `rl init` 建树，模拟 idea 开单、deploy 接单写代码写报告提验收、idea 打回、单子回 `todo`、deploy 再接、idea 验收，全程只经 rl，最后 `rl doctor` 零报告；第二条：deploy 开发射单、run 接单 smoke 失败 stuck、deploy amend 一次尝试 resume、run 再接 ok、`rl trace` 从 run_id 打回决定。
 
-要加的：`rl init` 在裸终端跑（`08` 第一节）；第一条里打回之后走 `rejected` 到 `todo` 的 `handoff release`，再 `handoff start`（`04` 第三节）；第二条里 amend 追加的那次尝试分不分新 run_id 还没裁（`21` 留给 gyb 第 4 条），用例先按「新尝试新 run_id」写，标出等裁。
+要加的：`rl init` 在裸终端跑（`08` 第一节）；第一条里打回之后走 `rejected` 到 `todo` 的 `handoff release`，再 `handoff start`（`04` 第三节）；第二条里 amend 追加的那次尝试分新 run_id，rl 按 `<ho-id>-a<attempt>` 分配（已裁：`04` 字段表；`21` 留给 gyb 第 4 条 2026-08-18 标已裁，本处 2026-09-05 施工会话对齐），用例按此写。
 
 ### 测试 13：`tests/test_skill_refs.py`
 
@@ -193,10 +193,10 @@
 | 0 验证 | 第一节 11 条的结果写进 `plans/2026-08-1x-research-loop-verify.md`，每条写实测结果和选了主案还是备案；备案影响正文的当场改设计文档，删掉另一案 | 11 条都有结论 | 无 | 主会话亲自做，要真会话 |
 | 1 清空 | `git rm -r research-loop/`，只留空目录（含 `agents/`，不建 `workflows/`）和 `.claude-plugin/plugin.json` 新写一份；`agents/` 五份角色 agent 定义随步 6 的 SKILL.md 一起交（2026-08-18 `08` 定稿裁） | 目录里只有 plugin.json 和空目录 | 无 | 主会话 |
 | 2 架构文档 | 不做（2026-08-18 gyb 裁，`00` 定稿：定稿的拆分文档 `plans/research-loop-parts/` 本身就是架构说明，`research-loop/ARCHITECTURE.md` 不写），编号保留，步 3 的依赖改成步 0、1 | 无 | 无 | 无 |
-| 3 共同底座 | `tables/ledgers.json`、`tables/transitions.json`、`tables/roles/*.json`、`tables/gyb-usecases.json`、`schemas/*.schema.json`、`scripts/rl_lib.py`（锁、编号、追加、校验、actor 判定）、`bin/rl` 骨架，测试 1 到 7、9、10、14、17、18、20 | `tests/run_all.py` 全绿 | 步 0、1（步 2 不做） | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
+| 3 共同底座 | `tables/ledgers.json`（抄 `03` 账本清单）、`tables/transitions.json`（抄 `04` 第三节转移表）、`tables/roles/*.json`（抄 `06` 五份角色 json 与模型表）、`tables/gyb-usecases.json`（抄 `01` 第三节 use case 表）、`schemas/*.schema.json`（抄 `03` 七本账行格式、`02` decisions 行格式、`04` 第一节 handoffs 字段表）、`scripts/rl_lib.py`（锁、编号、追加、校验、退出码抄 `03`；actor 判定抄 `01`、`05`）、`bin/rl` 骨架（抄 `05` 命令表），测试 1 到 7、9、10、14、17、18、20；每栏的分册号加行号见 `plans/2026-09-04-research-loop-work-guide.md` 第四节组件表「定义处」一列（来源列 2026-09-05 施工会话补） | `tests/run_all.py` 全绿 | 步 0、1（步 2 不做） | 工单化，走 ticket-run，实现者 sonnet、评审 opus |
 | 4 交流机制 | `hooks/`（写权钩子、登记销号钩子）、`rl status`、`rl inbox`、`rl trace`、`rl reclaim`、`rl doctor`（`rl notify` 2026-08-21 随桌面通知裁掉）、`monitors/`（看门狗）、快车道命令，测试 8、11、15、16、19 | 全绿；在真会话里手动触发一次 deny 和一次销号 | 步 3 | 工单化同上；真会话验证主会话做 |
 | 5 公共母版 | `common/GLOBAL-RULES.md`（公共规矩九条加十一条原则，带 rules_version 和 rule-NN/principle-NN 编号）、`common/GLOSSARY.md`（词表加「它不是什么」）、`common/SPEC-TEMPLATE.md`（五栏）、`common/READING.md`（读法栏原话）、`common/REVIEW-CHECKLIST.md`（判断类检查的问题清单，文件名 2026-08-18 `09` 定稿裁；reviewer 派 sonnet subagent 按它逐题查，2026-08-17 裁；查出的只写 `review/` 清单不开 issue、起 subagent 逐题查不算派活，sync-inbox 问题 6、33 已裁） | gyb 逐条过 | 步 3 | 主会话写，底稿给 gyb 过，过了就是正式版 |
-| 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（头部带钩子声明，正文有 use case 表，只引用母版不抄），run 的照 `12`，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图在 `08` 第五节） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
+| 6 五个 SKILL.md | `skills/idea/`、`skills/deploy/`、`skills/run/`、`skills/analysis/`、`skills/reviewer/` 各一份 SKILL.md（头部不声明钩子——2026-08-18 gyb 裁，`08` 第四节 `skills/` 行、`06` 第 102 行，本处 2026-09-05 施工会话对齐；正文有 use case 表，只引用母版不抄），run 的照 `12`，入口 `skills/research-loop/SKILL.md` 只干 init、迁移提醒、领路（路线图在 `08` 第五节） | 测试 13 全绿 | 步 4、5 | gyb 开三个终端并行，每个终端加载 `claude --plugin-dir ./research-loop`，一个终端一到两个角色 |
 | 7 最小一条路 | 在临时沙盒仓库 `rl init`（裸终端）→ 加载 idea 写一条决定开一张工单 → 加载 deploy 接单写代码写报告提验收 → 回 idea 打回 → deploy 再接 → idea 验收 → `rl doctor` 零报告；再走一遍测试 12 的第二条（发射单 smoke 失败到 trace）；然后在 new1 跑 `rl init`，gyb 改 new1 CLAUDE.md 的 GPU 那一行；施工者改 `run.py` 门禁的脏树白名单加 `loop/*.jsonl`、`loop/.lock`，按 new1 自己的规矩走、`selfcheck` 过、gyb 验收（2026-08-18 `08` 定稿裁：`rl init` 不碰宿主代码，`08` 第七节 7.2、7.9） | 沙盒全程只经 rl；new1 的 `loop/` 长出来、CLAUDE.md 只多一节；`run.py` 白名单加了两项且 `selfcheck` 过 | 步 6 | 主会话，真会话 |
 | 8 总验收 | gyb 定五个任务，每个角色两个 agent 一个加载 skill 一个不加载各做一遍，产出摆一起 | gyb 自己看：每看完一对产出说一句「过 / 不过」加一句原因，记进 `00` 裁决记录，五对都过才算过（2026-08-18 gyb 裁，`00` 定稿） | 步 7 | gyb 定任务，主会话派 agent（模型按 `00` 第三节裁决 3 的表：idea、reviewer 用 fable，deploy、run、analysis 用 opus） |
 
@@ -224,7 +224,7 @@
 
 1. doctor 十九项只有第 3 项（经测试 6）和第 19 项（经测试 18）有对应的测试用例，其余十七项各造一条脏账、跑修法命令、再扫零报告，第十节没有这一条测试。
 2. 测试 5 里「口径引用同样查过版」由哪条命令出（`22` 留给 gyb 第 3 条），没裁之前这一句写不成用例。
-3. 测试 12 第二条里 amend 追加的那次尝试分不分新 run_id（`21` 留给 gyb 第 4 条），用例只能先按一种写。
+3. 测试 12 第二条里 amend 追加的那次尝试分不分新 run_id（`21` 留给 gyb 第 4 条），用例只能先按一种写。（已裁：`04` 字段表，rl 按 `<ho-id>-a<attempt>` 分配，`21` 第 179 行 2026-08-18 标已裁；本处 2026-09-05 施工会话补注，原文照抄不删。）
 4. 测试 13 按 `reads` 栏查「每个读的目录都在 reads 里」，五份 json 里 reads 的写法不统一（`06` 留给 gyb 第 8 条），按哪种形式查没裁。（06 已于 2026-08-18 定稿裁定，见 06 裁决记录。）
 5. （2026-08-18 已裁，`08` 定稿：建 `agents/`，步 1 建空目录；不建 `workflows/`。）待验证第 8 条的备案「workflow 里的 `agentType` 指向 `agents/<role>.md`」要求插件树多一层 `workflows/` 或 `agents/`，`08` 第四节的目录清单里没有（`08` 留给 gyb 第 10 条），第 0 步测出走备案的时候步 1 建的空目录要不要多这一层没写。
 6. 待验证第 9 条只测 deploy 起 run 这一层，idea 起 deploy、deploy 再起 run 的两层嵌套没测（第二轮 run-crash-midway 第 10 条、new-idea 第 4 条报过）；原则 11 之后是后台派活、不再同步嵌套等，这一条要不要补测两层各自的后台行为没写。
@@ -355,3 +355,4 @@
 - 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md` 裁决记录 2026-08-18 问题八）：测试 13 原文段落和「源文档没写清的」第 4 条两处「06 留给 gyb 第 8 条（reads 栏五份 json 写法不统一）还没裁」的说法标已裁——06 已于 2026-08-18 定稿裁定 reads 栏两种写法，测试 13 段改「已统一、已裁」，「没写清」第 4 条原文照抄不删，句后加括号补注已裁。
 - 2026-08-21 评审修复（gyb 授权，定义处 `03-ledgers.md` 第 240 行「账本的总规矩」「退出码」两节；HANDOFF 四点五节 2026-08-21 已把锁挂回 03 行）：测试 1（撞号）和测试 20（`lock.timeout_seconds`）两处把锁与写序、退出码的定义处指向从 `05` 改指 `03`——`03` 是定义处，`05`「锁与写序」「退出码与 --json」两处只是照抄。
 - 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md` 裁决记录 2026-08-21「会话状态文件」一节补注）：待验证第 5 条状态栏末尾补一句——subagent 场景 rl 判 actor 的口子（状态文件读到父会话的角色对不对、要不要另立信号）连带挂在这条上一起测，测完由 `04` 定，`06` 2026-08-21 补注同此。
+- 2026-09-05 施工会话（gyb 2026-09-04 代裁授权，记录在 `plans/2026-09-04-research-loop-proxy-decisions.md` D-05；三处都是把已有裁决传播进本份，不是新裁决）：步 6 交付栏「头部带钩子声明」改成「头部不声明钩子」（`08` 第四节 `skills/` 行、`06` 第 102 行，2026-08-18 gyb 裁）；测试 12「要加的」与「没写清」第 3 条里 amend 新尝试 run_id「还没裁」改已裁（`21` 第 179 行：`04` 字段表，rl 按 `<ho-id>-a<attempt>` 分配；「没写清」原文照抄不删、句后补注）；步 3 交付栏每样补抄自哪份，行号指向施工指南第四节组件表。
