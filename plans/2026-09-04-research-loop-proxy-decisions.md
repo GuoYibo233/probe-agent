@@ -136,6 +136,7 @@
 - 落点：`research-loop/hooks/`（写权钩子注入、SubagentStop 钩子、SessionEnd 钩子）；`research-loop/scripts/rl_lib.py` actor 判定与版本链查法；`research-loop/schemas/_skeleton.schema.json`（`agent_id`）、`sessions.schema.json`；测试 9 的用例；sync-inbox 问题 49 记冻结正文的落点（03 骨架与 sessions 字段表、04 第四六七节、05 actor 判定句）；对照单 39(a2) 的标记改 `proxy D-15`。
 - 审查：
 - 补记 2026-09-05（评审助手指出的技术风险，写死注入写法）：钩子往 Bash 命令前注入不能写成 `RL_AGENT_TYPE=deploy RL_AGENT_ID=x <原命令>`，shell 的前置赋值只作用到紧跟的第一个命令，原命令是 `cd repo && rl handoff start ...` 或者 `python3 x.py; rl ...` 这种链式写法时 rl 拿不到变量、会判成母会话的角色。写法定为 `export RL_AGENT_TYPE='<type>'; export RL_AGENT_ID='<id>'; <原命令>`，值经 shell 转义；验证助手的沙盒用例补一条链式命令（cd 加 && 加 rl）才算测过。D-15 的事实依据是 `plans/2026-09-05-research-loop-verify.md`，验证助手要先把已测完的部分提交，最后一种情况跑完再补。
+- 补记 2026-09-05（评审助手指出 holder 分不开两个子会话）：handoffs 的 `holder` 仍记 `session_id`（04 第 21 行），不加字段、不改语义；单子 start 那一版的骨架可选栏 `agent_id` 填子会话的编号；转移表「谁能写」里查 holder、SubagentStop 找该子会话开干的单、SessionEnd 找本会话名下的单，都按（`session_id`，`agent_id` 或空）配对。sync-inbox 问题 49(b) 的 04 落点加这半句。
 
 ### D-16 gyb 在裸终端或 `--as-gyb` 写杂账（scratch）照收（评审助手提，统筹按推荐裁）
 
