@@ -398,7 +398,7 @@ def hook_session_end(inp: dict) -> int:
         # Plugin SessionEnd hooks get a 1.5 s budget that hooks.json cannot raise (hooks
         # reference, SessionEnd), so the deregistration runs detached (setsid) and this
         # hook returns at once; the state file is deleted by that background step after
-        # `rl session end` finished (reviewer recommendation 2026-09-05, awaiting D-NN).
+        # `rl session end` finished (proxy decision D-26).
         log = state.with_suffix(".end.log")
         script = (f"{shlex.quote(sys.executable)} {shlex.quote(str(RL))} session end --reason hook; "
                   f"rm -f {shlex.quote(str(state))}")
