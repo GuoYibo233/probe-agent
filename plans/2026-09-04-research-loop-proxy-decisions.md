@@ -177,3 +177,11 @@
 - 理由：机制上旧会话的销号已经把单子交回了，账是对的；新会话没有角色是「一会话一角色」纪律的正常情形，重新加载就好。做机制（把状态文件跟着新 id 走）要钩子认出新旧 id 的关系，官方没有这个信号。
 - 落点：sync-inbox 问题 49(d)；`research-loop/skills/<role>/SKILL.md` 限制条件栏。
 - 审查：
+
+### D-21 `rl` 进 PATH 的办法：SessionStart 钩子往 CLAUDE_ENV_FILE 写一行 PATH，没装钩子走插件根全路径（底座助手的步 4 设计，评审助手要求记号，统筹裁）
+
+- 问题：05 的命令表全部写成裸名 `rl ...`，08 第四节只说命令入口是 `bin/rl`，分册没写 `rl` 怎么进 PATH。底座在步 4 设计成：插件级 SessionStart 钩子往 Claude Code 提供的 CLAUDE_ENV_FILE 写一行 `export PATH="<插件根>/bin:$PATH"`，此后这个会话的每次 Bash 都有 `rl`；钩子没装（裸终端、旧版本）时入口 skill 提示走 `<插件根>/bin/rl` 全路径。文本的入口 skill f2e2a61 已经按这个写，评审指出没有出处。
+- 决定：认这个办法。三处落点：`tables/README.md` 惯例加一条写清机制和依据（Claude Code 钩子文档里 SessionStart 钩子写 CLAUDE_ENV_FILE 的那一节，底座补链接）；入口 skill 那句的标记从 `PENDING(part 08 L104)` 改成来源标注 `proxy decision D-21`；验证助手在沙盒补测一条「插件级 SessionStart 钩子写 CLAUDE_ENV_FILE 之后同一会话的 Bash 能直接敲 `rl`、子会话里也能」，测不通就回到全路径写法并改 D-21。
+- 理由：五份说明书里 `rl` 命令的写法（裸名）和 `rl init` 之后的第一步都取决于这一条，属于机器能查的那一层，要有一处成文；官方机制比让每个角色自己改 PATH 稳。
+- 落点：`research-loop/tables/README.md`；`research-loop/skills/research-loop/SKILL.md`；`research-loop/hooks/hooks.json` 的 SessionStart 条目；verify.md 补一条。
+- 审查：
