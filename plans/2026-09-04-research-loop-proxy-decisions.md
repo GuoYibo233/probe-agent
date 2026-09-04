@@ -219,5 +219,15 @@
 - 理由：写权钩子是唯一硬拦的一层，出错的处置要成文；替用户批准工具调用超出 06 给钩子的授权，是权限层的事，不能顺手做。
 - 落点：`research-loop/hooks/rl_hook.py` 头注与实现；`research-loop/tables/README.md` 惯例；测试 8 补出错放行的用例。
 - 审查：
+- 补记 2026-09-05（评审助手核官方 hooks 文档加本机 2.1.260 二进制）：（2）的写法定为注入时只返回 `updatedInput`、不带 `permissionDecision`——二进制的执行路径是「有 updatedInput 且没有 permissionDecision 时只改输入」，权限决定回到正常流程；"ask" 比正常更严（文档原句「A hook's "ask" also forces a permission prompt in auto mode」），不用。后果一条记进 D-15 补记。
+- D-15 补记 2026-09-05（同一次核实）：文档原句「Claude Code evaluates permission rules … against the input your hook returns, not the input Claude sent」——注入之后命令以 `export` 开头，宿主里按命令前缀写的 allow 规则（`Bash(python3 run.py:*)` 这类）对子会话不再命中，落到询问或者 auto 模式的分类器。插件不做机制，写进 `tables/README.md` 惯例和入口 skill 给宿主的说明；要不要在宿主 settings 里另写规则由 gyb 定。
+
+### D-26 SessionEnd 钩子只有 1.5 秒预算：销号命令脱离后台跑，宿主再设环境变量抬预算（评审助手提，统筹按推荐裁）
+
+- 问题：文档原句「SessionEnd hooks have a default timeout of 1.5 seconds … Timeouts set on plugin-provided hooks don't raise the budget. To override the budget explicitly, set the CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS environment variable」。底座 hooks.json 给 SessionEnd 写的 timeout 30 抬不高预算；销号钩子起 python、拿锁、写几行账大概率超 1.5 秒被切断。SubagentStop 没有这种预算（默认 600 秒）。
+- 决定：两条都做。（a）SessionEnd 钩子里把 `rl session end` 用 setsid 脱离到后台跑、钩子立刻返回，靠 doctor 和 reclaim 兜底（04 第 129 行已有两道兜底）；（b）入口 skill 让宿主在 CLAUDE.md 或者环境里设 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`，作为保险。验证助手在真会话里量一次销号钩子的时长。
+- 理由：(a) 让机制在默认环境下也尽量跑完，(b) 是宿主侧的保险；两条都不改账的写序（03 第 15 行）。
+- 落点：`research-loop/hooks/`（SessionEnd 条目和脚本）；`research-loop/skills/research-loop/SKILL.md`（给宿主的说明）；`research-loop/tables/README.md` 惯例；verify.md 补时长。
+- 审查：
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
