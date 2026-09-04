@@ -439,8 +439,9 @@ def _open_quick_lane(repo, actor, ctx, ho_id, opts, code_paths, decision_refs, f
         "last_holder": None,
         "parent_id": None,     # 07 L122: a quick-lane supplement's parent_id is empty
         "batch": None,
-        # PENDING(no part): a supplement is never dispatched to anybody, it waits for gyb
-        # (04 L62 "之后谁拉起: 无"), so dispatch is written as none; the schema requires the field.
+        # PENDING(part 04 L62): the supplement's dispatch value is not ruled. That row's
+        # "who pulls next" column is empty (nobody is dispatched, it waits for gyb), so
+        # dispatch is written as none; the schema requires the field to be there.
         "dispatch": "none",
         "quick_lane": True,    # 04 L30, L62
         "ql_tag": ql_tag,      # 04 L31
@@ -485,9 +486,7 @@ def cmd_start(args, ctx):
                        and r["status"] == "todo"]
             targets.sort(key=lambda r: r["id"])
         started = [_start_one(repo, actor, ctx, t, force, force_reason) for t in targets]
-    named = next((r for r in started if r["id"] == ho_id), started[0] if started else None)
-    if named is None:  # --batch with the named order already out of todo
-        named = _order(repo, ho_id)
+        named = _order(repo, ho_id)  # the named order's own latest version, batch form included
     return rl_lib.result(named, LEDGER, {"started": [r["id"] for r in started]})
 
 
@@ -643,7 +642,8 @@ def cmd_estimate(args, ctx):
         steps = list(attempt.get("step_table") or [])
 
         if opts.get("copy-from"):
-            # 05 L66 / 12 L52: "同 batch 的其余单子用 --copy-from 复制，按规模系数复制".
+            # 05 L66 / 12 L52: the other orders of one batch copy the measured step table
+            # with --copy-from and rescale it, so only one order is smoke-timed.
             # Narrowest reading: copy the source's latest attempt step by step, keeping step,
             # kind and smoke_seconds, and replacing scale_factor with --scale when given.
             source = _order(repo, opts["copy-from"])
@@ -735,7 +735,8 @@ def cmd_resume(args, ctx):
         iss_id = order.get("issue_id")
         versions = [r for r in rl_lib.read_rows(repo, "issues") if r.get("id") == iss_id]
         answered = [r for r in versions if r["status"] == "answered"]
-        # 04 L67 who column: "回了 issue 的那个角色" is the actor of the answered version.
+        # 04 L67 who column: "the role that answered the issue" is the actor of the
+        # issue version whose status is answered.
         answerer = max(answered, key=lambda r: r["version"])["actor"] if answered else None
         rl_lib.check_who_can_write(trow, actor, order,
                                    issue_answerer_role=answerer if answerer in rl_lib.ROLES else None)
