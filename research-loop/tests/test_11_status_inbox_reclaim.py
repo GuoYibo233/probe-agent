@@ -129,6 +129,8 @@ class StatusSections(unittest.TestCase):
         r = self.sb.rl("status")
         self.assertEqual(r.rc, 0, str(r))
         self.assertIn(ho, r.out)
+        # 05 L156: the "marked" form for stale rows is not ruled by the parts, so only
+        # the presence is asserted.
 
     def test_section2_issue_assigned_to_gyb_marked_stale(self):
         """05 L156: open issues assigned to gyb, those beyond `issues.gyb_stale_hours`
@@ -461,6 +463,27 @@ class Reclaim(unittest.TestCase):
         self.assertEqual(r.rc, 0, str(r))
         self.assertEqual(self.sb.count("sessions"), sessions_before)
         self.assertEqual(self.sb.latest("sessions", deploy)["status"], "open")
+
+    def test_within_threshold_is_not_listed(self):
+        """30 L122: orders and sessions inside the thresholds are not listed. A session
+        opened just now and an order just moved are below the default 48 h / 72 h
+        (08 L71-72) and below status.stale_holder_minutes 30 (08 L70), so neither
+        `reclaim` nor status section 7 lists them (04 L172-173; 05 L161)."""
+        dec = make_decision(self.sb)
+        ho = open_work_order(self.sb, None, dec)
+        deploy = self.sb.role_session("deploy")
+        self.sb.rl_ok("handoff", "start", ho, session=deploy)
+        r = self.sb.rl("reclaim", "--json")
+        self.assertEqual(r.rc, 0, str(r))
+        listed = {row["id"] for row in (r.json or [])}
+        self.assertNotIn(deploy, listed)
+        self.assertNotIn(ho, listed)
+        st = self.sb.rl("status", "--json")
+        self.assertEqual(st.rc, 0, str(st))
+        text = self.sb.rl_ok("status").out
+        # section 7 must not name the order: find the section 7 block and check
+        sec7 = text.split("7")[1] if "7" in text else ""
+        self.assertNotIn(f"stale holder {ho}", text)
 
     def test_json_shape_kind_id_idle_hours_action(self):
         """05 L123 (exit_codes.json json_shapes.reclaim): an array of {kind, id,
