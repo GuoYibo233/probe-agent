@@ -11,6 +11,7 @@
     "role": {"type": "string", "enum": ["idea", "deploy", "run", "analysis", "reviewer"], "description": "03 L181"},
     "model": {"type": "string", "minLength": 1, "description": "taken by the hook from the hook input; unknown when absent (03 L182); doctor item 19 reports unknown, fix is session amend"},
     "launched_by": {"type": "string", "enum": ["manual", "subagent", "workflow"], "description": "03 L183"},
+    "agent_id": {"type": "string", "minLength": 1, "description": "subagent rows: the hook input agent_id; a subagent gets its own open/closed chain under the parent's session_id, keyed by (session_id, agent_id) (proxy decision D-15)"},
     "rules_version": {"type": "integer", "minimum": 1, "description": "read from the first line of common/GLOBAL-RULES.md at start (03 L184; sync-inbox Q37(g))"},
     "started_at": {"type": "string", "format": "date-time", "description": "open: required (03 L185)"},
     "focus": {"type": "string", "description": "reviewer: the decision id under review, optional (03 L187)"},
@@ -22,10 +23,11 @@
   "x-conditions": [
     {"if": {"status": "open"}, "then_required": ["started_at"], "source": "03 L185"},
     {"if": {"status": "closed"}, "then_required": ["ended_at", "end_reason", "released_handoffs"], "source": "03 L188-190"},
+    {"if": {"launched_by": "subagent"}, "then_required": ["agent_id"], "source": "proxy decision D-15"},
     {"rule": "last_activity is not stored; queries compute it as the max ts over the nine ledgers for this session_id, including the sessions ledger itself", "source": "03 L186, L192"},
     {"rule": "amend version: status and every other field copied from the latest version, only model changes; allowed on closed sessions; writer is gyb or that role's own live session", "source": "03 L176; 03 L490 (decision record for Q18); sync-inbox Q30 L108"},
-    {"rule": "a subagent shares the parent's session_id and writes no state file; whether it gets its own sessions row is verify item 5", "source": "06 L112, L118; 30 L17"}
+    {"rule": "a subagent shares the parent's session_id and writes no state file; it gets its own open version (role from agent_type, launched_by subagent, agent_id) and its own closed version at SubagentStop; the closed-session refusal (03 L15) pairs (session_id, agent_id or empty) so a closed subagent never locks its parent; SessionEnd releases every order held under the session_id, closes the still-open subagent rows, then writes the parent's closed version", "source": "06 L112, L118; proxy decision D-15 (verify item 5)"}
   ],
-  "x-pending": ["PENDING(part 30 L17): subagent identity and registration", "PENDING(issue 41e): the host gpu-runner is not registered in sessions"],
+  "x-pending": ["PENDING(issue 41e): the host gpu-runner is not registered in sessions"],
   "x-source": "03 L174-192"
 }

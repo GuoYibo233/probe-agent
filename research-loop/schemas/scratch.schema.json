@@ -8,7 +8,7 @@
   "properties": {
     "ql_tag": {"type": "string", "pattern": "^ql-[0-9]{8}-[0-9]{2,}$", "description": "primary key, assigned by rl inside the lock (03 L200; 07 L27)"},
     "status": {"type": "string", "enum": ["open", "merged", "dropped"], "description": "middle versions that append numbers keep status open; no fourth state (03 L196, L211)"},
-    "actor": {"type": "string", "enum": ["deploy", "analysis"], "description": "deploy or analysis (03 L196; 07 L66); unlike runs (03 L100) the parts give scratch no gyb exception"},
+    "actor": {"type": "string", "enum": ["deploy", "analysis", "gyb"], "description": "deploy or analysis (03 L196; 07 L66); gyb from a bare terminal or with --as-gyb is accepted as the superuser (01 L65; 03 L27; proxy decision D-16)"},
     "role": {"type": "string", "enum": ["deploy", "analysis"], "description": "03 L201"},
     "worktree": {"type": "string", "description": "deploy open version: required (03 L202)"},
     "dir": {"type": "string", "description": "analysis open version: required, analysis/scratch/<ql_tag>/ (03 L203)"},
@@ -28,6 +28,5 @@
     {"if": {"status": "merged"}, "then": "role must be deploy", "source": "03 L208; 07 L86"},
     {"if": {"status": "dropped"}, "then_required": ["reason"], "source": "03 L209"}
   ],
-  "x-pending": ["PENDING(part 03 L196): whether gyb may write scratch rows (principle 1 exemption is only spelled out for runs, 03 L100)"],
   "x-source": "03 L194-213; 07 L62-77"
 }

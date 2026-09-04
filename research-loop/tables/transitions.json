@@ -205,7 +205,7 @@
       "side_effects": [
         {"id": "release.no_kill_if_launched", "text": "a launch_order whose latest attempt has a launched run row without a finished version does not get its process killed (the next run adopts it); reclaim kills only with --kill", "source": "04 L75"},
         {"id": "release.orphaned_notice", "text": "rl opens an orphaned notification to the owner", "source": "04 L75; 04 L195"},
-        {"id": "release.actor_via", "text": "the hook's version records the session's role as actor and via=session_end; reclaim's version records actor gyb and via=reclaim", "source": "04 L75"}
+        {"id": "release.actor_via", "text": "the hook's version records the session's role as actor and via=session_end (via=subagent_stop when SubagentStop releases a subagent's orders, proxy decision D-15); reclaim's version records actor gyb and via=reclaim", "source": "04 L75; proxy decision D-15"}
       ],
       "then_who_pulls": "owner, following the order's original dispatch (auto starts another subagent); with no live owner session it goes to rl status 'waiting for gyb to start'",
       "subcommand": "handoff release",

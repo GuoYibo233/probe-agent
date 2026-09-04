@@ -102,6 +102,7 @@
     {"id": "numbering", "text": "Sequence numbers start at 1; four digits is the minimum width, not a cap; sorting is numeric; a number once issued is never reissued.", "_source": "03 L21"},
     {"id": "cross_ledger_order", "text": "Cross-ledger writes are ordered: first write the issue to get its id, then the handoff row that references it.", "_source": "03 L23"},
     {"id": "readable_if_writable", "text": "Every ledger has both write and query commands; queries are open to everyone.", "_source": "03 L25"},
+    {"id": "subagent_rows", "text": "A subagent writes with the parent's session_id plus its own agent_id (optional skeleton field); it has its own sessions chain keyed by (session_id, agent_id); rl resolves the actor from the hook-injected RL_AGENT_TYPE before the state file.", "_source": "proxy decision D-15 (verify item 5, 2026-09-05)"},
     {"id": "gyb_exemption_scope", "text": "gyb skips only who-can-call and the table's who-can-write; required fields, path existence and reference existence still apply; --force --reason records force_reason; a role using --force is refused with exit 3; --as-gyb --quote --force --reason counts as gyb.", "_source": "03 L27; 01 L80-90"}
   ]
 }
