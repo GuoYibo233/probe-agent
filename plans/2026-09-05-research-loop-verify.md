@@ -1,6 +1,6 @@
 # 2026-09-05 待验证第 5 条、第 9 条和三条补充项的实测记录（施工步 0，验证助手会话）
 
-写给 gyb、统筹会话、底座会话和评审会话。这份记录只装 2026-09-05 凌晨在真会话沙盒里测出来的事实，加上末尾一节单独写的解读和建议。测的是 30 分册待验证清单的第 5 条（子会话结束的时候 SessionEnd 和 SubagentStop 触不触发、会话 id 是不是同一个、子会话里敲 rl 算谁）和第 9 条（后台子会话在母会话活着的时候能不能长跑并回通知、母会话结束的时候后台子会话会不会被杀掉），另加统筹 2026-09-05 转来的三条补充项（agents 定义的 skills 字段写裸名还是带插件前缀才预载得上；带 disable-model-invocation 的 skill 能不能被预载；插件级钩子把插件的 bin 目录写进 PATH 之后能不能直接敲 rl）。顺带测到的第 1 条和第 10 条只记结果，不算正式裁决。
+写给 gyb、统筹会话、底座会话和评审会话。这份记录只装 2026-09-05 凌晨在真会话沙盒里测出来的事实，加上末尾一节单独写的解读和建议。测的是 30 分册待验证清单的第 5 条（子会话结束的时候 SessionEnd 和 SubagentStop 触不触发、会话 id 是不是同一个、子会话里敲 rl 算谁）和第 9 条（后台子会话在母会话活着的时候能不能长跑并回通知、母会话结束的时候后台子会话会不会被杀掉），另加统筹 2026-09-05 转来的三条补充项（agents 定义的 skills 字段写裸名还是带插件前缀才预载得上；带 disable-model-invocation 的 skill 能不能被预载；插件级钩子把插件的 bin 目录写进 PATH 之后能不能直接敲 rl）。顺带测到的第 1 条和第 10 条只记结果，不算正式裁决。第七节是同一天上午做的施工步 4 真会话验收（写权 deny、注册、销号、注入之后的权限流程），用的是底座落地的插件级钩子。
 
 几个下文反复用的词。子会话：一个会话用 Agent 工具启动出来的下级会话，Claude Code 官方叫 subagent。钩子：Claude Code 在会话开始、结束、工具调用前后自动运行的脚本，钩子收到的输入是一段 JSON。状态文件：设计里由登记钩子写在 `loop/.sessions/<session_id>.json` 的那份小文件，rl 靠状态文件判断当前会话是什么角色。心跳文件：沙盒里长跑脚本每 10 秒追加一行时间戳的文件，用来判断脚本什么时候还活着。打印模式：`claude -p` 这种给一句话、跑完就退出的会话。
 
@@ -267,9 +267,143 @@ RL-ON-PATH 2026-09-05T00:53:41+09:00 tag=child-i sid=0b6182eb-3cd8-4372-ad20-49d
 
 第 9 条，母会话活着那一半，主案成立：交互会话 9a-2 的后台子会话跑满 1200 秒，母会话收到完成通知并按开场话运行了标记命令；打印模式 9b-1 在 150 秒上同样完整走了一轮。几个小时这次没测，1200 秒和 9a 的 740 秒都没有碰到任何超时。打印模式有一个 600 秒的等待上限（3.7），要让 -p 母会话等更久要设 CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0，这一点 launched_by 是 workflow 或者 -p 的派活要写进说明书。打印模式的母会话会自己等后台子会话跑完再退出（3.1），交互会话在屏幕上显示「Waiting for 1 background agent to finish」。母会话结束那一半：三种结束方式子会话都被杀掉，「挪到后台」保住的是会话不是子会话。30 第 21 行的失败备案照旧成立：GPU 在 tmux、单子在账上、下一个 run 会话认领，多出来的只是待认领的单子。另外 /exit 会弹对话框而不是直接退，这一点值得写进 run 角色的说明书；对话框自己写着「The following will stop when you exit」，所以选「留下」应该能保住子会话，这个选项这次没有选过，是推断不是实测。被 -p 的 600 秒上限终止的会话（3.7）SubagentStop 和 SessionEnd 都没触发，子会话手上的单子只能靠 rl status 段 7 和 rl reclaim 兜底，这是评审 2026-09-05 点出来要写进第五节的。
 
+步 4 真会话验收（第七节）的解读。写权钩子按设计拦住了两类写（别的角色的目录、直接写 loop/），回话三样齐全，放行了自己目录的写；注册在敲角色的一秒内落状态文件、四秒内落 open 版；销号在 /exit 的同一秒落 closed 版并删状态文件，setsid 脱离的写法在 1.5 秒预算下和抬高预算下表现一样，D-26 那条「宿主要设 CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS」在这一轮没有用上，可以留着当保险但不是必需。三件要写进说明书或者待裁的事：一是 Bash 工具的工作目录会因为模型自己 `cd` 而漂移，之后相对路径的判定跟着漂（7.4），角色说明书里要写「Bash 里不 cd，路径从仓库根写」；二是注入之后子会话每条 Bash 在 default 模式下都要人按一次审批、「don't ask again」绑着单个 agent_id（7.3），auto 模式下分类器放行（7.6），gyb 的会话都是 auto，所以这条对 gyb 自己开的会话不碍事，对别人用 default 模式的会话要么另写一条 `Bash(export RL_AGENT_TYPE=*)` 之类的宿主规则、要么换注入办法，这一条统筹已列进待裁清单；三是 run 子会话拿到不像发射单的开场话会先斟酌 50 到 85 秒，测试和真派活的开场话都要按单子格式给。
+
 补充三条。D-21 站得住：插件级 SessionStart 钩子往 CLAUDE_ENV_FILE 写一行 export PATH 之后，同一会话的母会话和后台子会话在打印模式和交互模式下都能直接敲到插件的 rl，四次都找到了插件 bin 目录下的那份。D-13 站得住：agents 定义的 skills 字段写裸名和带插件前缀都预载得上，带 `disable-model-invocation: true` 的 skill 两种写法都预载不上，debug 日志报「was not found」。入口 skill 关模型调用之后就不能被任何 agent 定义预载，角色 skill 不能关。
 
 第 1 条和第 10 条顺带的结果：`CLAUDE_CODE_SESSION_ID` 能当会话 id 用；model 字段交互会话有、打印模式没有，所以「取不到记 unknown」那条兜底要留着。
+
+## 七、步 4 真会话验收（2026-09-05 上午，插件快照 HEAD 8628f4d）
+
+这一节测的是底座落地的插件级钩子（`research-loop/hooks/hooks.json` 加 `hooks/rl_hook.py`）在真会话里的行为：注册、写权 deny、销号、注入之后的权限流程。插件按 `git archive HEAD` 打的快照放在沙盒目录 `plug-8628f4d/research-loop/`，用 `--plugin-dir` 装载；同时装第二个只记日志的插件 `rllog/`（钩子事件 SessionStart、SessionEnd、SubagentStart、SubagentStop、UserPromptExpansion、PreToolUse、PostToolUse，只把输入 JSON 追加到 `hooklog2.jsonl`，不做任何决定），两个都是插件级钩子，不用 `--settings` 挂钩子（评审 2026-09-05 提醒：settings 级钩子的 timeout 会把 SessionEnd 的预算抬高，插件级抬不高，混用测出来的时长不算数）。宿主仓库是手搭的（`rl init` 归步 7，HEAD 上还没有）：沙盒目录 `host/`，按 08 第一节放 `research-loop.json`（键按 tables/config_defaults.json，launcher 四个模板留空）、`loop/` 下九本空账（decisions 按六个 actor 各一份文件）、`loop/.sessions/`、experiments/ analysis/ review/ notes/ 四个目录，`git init` 提交一次。
+
+这个快照上 `rl session start`、`rl session end`、`rl session list`、`rl inbox` 都还是「not implemented: build step 3b fills scripts/rl_cmds/」（bin/rl 的原话），所以 sessions 账落不落 open 版和 closed 版这次测不了，只能测钩子这一层：状态文件写没写、删没删、钩子触没触发、deny 的回话、销号脚本跑没跑。session 一族落地之后要再跑一次。
+
+### 7.1 打印模式：`/research-loop:deploy` 触发 UserPromptExpansion，command_name 是带前缀的全名，状态文件写了又在会话结束时删了
+
+`claude -p "/research-loop:deploy"`（会话 id `7639c03f…`，08:32）。记日志插件收到的 UserPromptExpansion 输入原文（去掉 session_id、cwd、transcript_path）：
+
+```
+UserPromptExpansion 08:32:16.170 {"prompt_id": "0b67e1f2-3e9b-4027-a82c-c9dd3d15c138", "expansion_type": "slash_command", "command_name": "research-loop:deploy", "command_args": "", "command_source": "plugin", "prompt": "/research-loop:deploy"}
+```
+
+会话结束之后 `loop/.sessions/` 里只剩 `7639c03f-….end.log`，内容是：
+
+```
+internal
+not implemented: rl session end
+build step 3b fills scripts/rl_cmds/
+```
+
+这个 `.end.log` 只有销号钩子在状态文件存在的时候才会写（rl_hook.py 第 396 到 407 行），所以状态文件在会话期间是存在的，由 UserPromptExpansion 那条钩子写的，销号那条钩子起的后台脚本先运行 `rl session end`（失败，未实现）再删掉了状态文件。会话里模型运行 `which rl` 的结果是 `…/plug-8628f4d/research-loop/bin/rl`，环境文件 `~/.claude/session-env/7639c03f-…/sessionstart-hook-1.sh` 里那一行是 `export PATH="/home/y-guo/.claude/jobs/1a0406df/tmp/verify0/plug-8628f4d/research-loop/bin:$PATH"`，D-21 那条钩子在真插件上生效。SessionEnd 记日志钩子的时间 08:33:11.937，`.end.log` 的修改时间 08:33，`rl session end` 那一步立刻失败所以量不出销号本身的时长。
+
+### 7.2 交互会话：加载角色 1 秒内写状态文件，写别人的目录被拒且回话三样齐全，写自己的目录放行，/exit 之后销号脚本 35 毫秒内起来
+
+tmux 交互会话（会话 id `26f35ffd…`，08:33 到 08:39，`--permission-mode acceptEdits`，Bash、Write 等工具在 allowedTools 里），run_t1.sh 按顺序敲五句。
+
+加载角色：08:33:42 敲 `/research-loop:deploy`，记日志插件 08:33:42.158 收到 UserPromptExpansion（command_name `research-loop:deploy`），08:33:43 `loop/.sessions/` 里已经有状态文件和模型缓存文件，状态文件原文：
+
+```
+{"session_id": "26f35ffd-ddb2-4e5f-8ae1-f01e5d783023", "role": "deploy", "model": "claude-sonnet-5", "launched_by": "manual", "started_at": "2026-09-05T08:33:42+0900"}
+```
+
+模型名来自 SessionStart 钩子按输入里的 model 字段写的缓存（记日志插件的 SessionStart 输入里 `"model": "claude-sonnet-5"`）。`rl session start` 在这个快照上未实现，登记钩子只落了状态文件。
+
+写别人的目录：敲「用 Write 工具往 analysis/probe.md 写一个 probe」，屏幕原文：
+
+```
+● Write(analysis/probe.md)
+  ⎿  Error: research-loop: you are a deploy session; Write to analysis/probe.md was denied because analysis/ belongs to analysis
+     (06 L45-48). Open an issue to the owner: rl issue open --to analysis --kind denied --handoff <your-order-id> --text "deploy
+     needs a change in analysis/probe.md"
+```
+
+回话里三样都在：角色（a deploy session）、原因（analysis/ belongs to analysis）、开 issue 的命令（rl issue open --to analysis --kind denied …）。记日志插件只有这次 Write 的 PreToolUse（08:35:37.828），没有 PostToolUse，文件没有生成。
+
+写自己的目录：敲「往 experiments/probe.md 写 probe」，Write 放行，屏幕原文 `⎿  Wrote 1 line to experiments/probe.md`，记日志插件有 PreToolUse 08:35:45.055 和 PostToolUse 08:38:49.540。这两条相差 3 分钟：会话记录文件里 Write 的 tool_use 在 08:35:45、tool_result 在 08:38:49，中间没有任何记录，tool_result 落下的那一秒正好是脚本敲下一句（第三句，往 loop/ 重定向）并按回车的时刻。也就是说这次 Write 被一个不进记录文件的对话框挡住了 3 分钟，脚本的回车把对话框按掉了，第三句的正文被对话框吃掉、没有进入会话（会话记录里没有这句）。是什么对话框这一轮没抓到屏幕，7.4 的补跑带了屏幕抓取。
+
+`rl status`：敲「运行 rl status」，Bash 直接运行（rl 在 PATH 上，D-21 那条钩子生效），结果是 `internal / not implemented: rl status / build step 3b fills scripts/rl_cmds/`。
+
+销号：08:39:05 敲 `/exit`，记日志插件的 SessionEnd 08:39:06.372（reason `prompt_input_exit`），`.end.log` 的修改时间 08:39:06.407，也就是销号钩子起的后台脚本在 SessionEnd 之后 35 毫秒内运行了 `rl session end`（失败，未实现）并删掉了状态文件；08:39:07 tmux 会话消失，之后 12 秒内 `loop/.sessions/` 里只剩 `.end.log`，sessions 账 0 行。钩子本身在 1.5 秒预算内返回，这一点从会话 1 秒内正常退出看得出来；`rl session end` 真正要多久，等 session 一族实现之后再量。会话记录文件里没有 SessionEnd 钩子的时长记录（只有 Stop 钩子有 stop_hook_summary）。
+
+另外每一轮回复结束都有一条 `agent_type` 为空串的 SubagentStop（08:35:28、08:35:41、08:38:53、08:39:05），和第 2.6 节说的一样；这一轮看到输入框里出现了模型建议的下一句（「hook test five: run rl handoff open --help」，没有发出去），这两件事时间上对得上，来源这次仍然没查。
+
+### 7.3 注入只返回 updatedInput 之后，子会话的 Bash 走正常权限流程：宿主按前缀写的放行规则不命中，母会话屏幕上弹出审批框
+
+tmux 交互会话（会话 id `a9e1cd10…`，08:39 到 08:43），`--permission-mode default`，用 `--settings` 传进宿主放行规则 `Bash(rl *)`、`Bash(python3 *)`、`Agent`（这里的 settings 只装规则，不装钩子）。母会话先自己敲 `rl status`：记日志插件 08:40:09.871 收到 PreToolUse，命令 `rl status`，没有弹框，结果 `internal`。然后母会话派 `research-loop:run` 子会话（插件 agents/run.md 定义的，模型 opus，`background: true`）运行同一条 `rl status`。子会话 08:40:21 启动，08:41:11 起先想了 50 秒（子会话记录原文「I'll consult the advisor before acting, since this message asks me to bypass the run role's defined protocol…」），08:41:58 发出 Bash 调用，记日志插件的 PreToolUse 里 tool_input.command 是原命令 `rl status`。母会话屏幕随即出现的对话框原文：
+
+```
+ Bash command · from the research-loop:run agent
+ Tip: auto mode handles these prompts for you — choose "switch to auto mode" below
+   │ export RL_AGENT_TYPE='research-loop:run'; export RL_AGENT_ID='a04565e16f36c3163'; rl status
+   Check research-loop status
+ This command requires approval
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. Yes, and don't ask again for export RL_AGENT_TYPE='research-loop:run' and export RL_AGENT_ID='a04565e16f36c3163' commands in /home/y-guo/.claude/jobs/1a0406df/tmp/verify0/host
+   3. Yes, and switch to auto mode · auto mode handles these prompts for you
+   4. No
+```
+
+对话框里的命令已经是插件钩子改写之后的 export 形式，`RL_AGENT_ID` 和 SubagentStart 给这个子会话的 agent_id（`a04565e16f36c3163`）一致。三点事实：同一条 `rl status` 母会话敲不弹框、子会话敲弹框，差别只在钩子改写之后命令以 export 开头、`Bash(rl *)` 不再命中；对话框在母会话的屏幕上，标着来自哪个 agent；第 2 项「don't ask again」生成的规则前缀是 `export RL_AGENT_TYPE='research-loop:run' and export RL_AGENT_ID='a04565e16f36c3163'`，绑着这一个子会话的 agent_id，对下一个子会话没有用。这一轮没有测 auto 模式（对话框第 3 项写着 auto 模式会代答这类提示）；子会话被批准之后的执行没有看到（脚本随后退出并停掉了任务），注入之后命令能正常执行这一点已经在第 2.5 节的打印模式里测过。另外脚本敲 `/exit` 的时候子会话还在等审批，退出对话框（3.2 节那种）把审批框盖住了，选「留下」之后审批框才露出来。
+
+### 7.4 补跑：往 loop/ 重定向被拒、Write review/ 被拒，另外看到 Bash 工具的工作目录漂移会改变相对路径的判定
+
+tmux 交互会话（会话 id `ed41ee61…`，08:44 到 08:47，插件快照 8628f4d，run_t1b.sh，每 3 秒抓一次屏幕）。08:44:14 敲 `/research-loop:deploy`，状态文件写出；模型在加载角色之后自己探索仓库，08:45:50 运行了一条 `cd /home/y-guo/.claude/jobs/1a0406df/tmp/verify0/host/loop && for f in …` 的 Bash 命令。Bash 工具的工作目录在两次调用之间是保持的，从这条命令起这个会话后面所有 Bash 调用的 cwd 都是 `host/loop`（记日志插件里三次 PreToolUse 的 cwd 字段），屏幕状态栏也显示目录是 loop。
+
+第三句（往 loop/ 重定向）：08:46:53 Bash `echo probe > loop/handoffs.jsonl`，cwd 是 host/loop，回话原文：
+
+```
+research-loop: you are a deploy session; Bash to loop/loop/handoffs.jsonl was denied because loop/ holds the nine ledgers and is written only through rl (03 L9; 06 L52). Use the rl write command for that ledger instead (rl handoff ..., rl issue ..., rl decision ..., see tables/commands.json).
+```
+
+路径 `loop/loop/handoffs.jsonl` 是钩子把相对路径折到当时的 cwd（host/loop）上得出的，和 shell 真正会写的位置一致（06 第 56 行：相对路径折到会话 cwd 上）。直接写 loop/ 的回话按 06 第 98 行给的是 rl 写命令的提示，不给开 issue 的命令，和设计一致。
+
+第五句（往 experiments/ 追加，本来应该放行）：08:47:03 Bash `echo probe >> experiments/notes.txt`，cwd 仍是 host/loop，被拒，回话原文里的路径是 `loop/experiments/notes.txt`。这次拒绝对 shell 真正会写的位置来说是对的（cwd 在 loop/ 下面，相对路径 experiments/notes.txt 落在 loop/experiments/），但是对模型的本意（写 experiments/）来说是误拦。原因不在钩子，在 Bash 工具的工作目录漂移：模型探索时 `cd` 进了 loop/，之后所有相对路径都变了意思。这一点值得写进角色说明书（Bash 里不要 `cd`，或者一律用仓库根起的路径），也说明钩子回话里带折算后的路径是有用的，读的人能从 `loop/experiments/notes.txt` 看出目录漂了。
+
+第六句：Write `review/probe.md`（绝对路径），被拒，回话三样齐：
+
+```
+research-loop: you are a deploy session; Write to review/probe.md was denied because review/ belongs to reviewer (06 L45-48). Open an issue to the owner: rl issue open --to reviewer --kind denied --handoff <your-order-id> --text "deploy needs a change in review/probe.md"
+```
+
+这一轮四步里都没有出现任何对话框（每 3 秒的屏幕抓取里没有「Do you want」「Enter to confirm」），7.2 节那次挡了 3 分钟的对话框这次没有重现，是什么框仍然没有查出来。08:47:39 敲 `/exit`，1 秒后 tmux 会话消失，`loop/.sessions/` 里只剩 `.end.log`（后面排队的下一轮脚本把目录清空了，所以这次的 `.end.log` 内容没留下）。
+
+### 7.5 session 一族落地之后（快照 fa1adb6）：注册 4 秒内落 open 版，/exit 之后 1 秒内落 closed 版，设不设预算变量没有差别
+
+HEAD 走到 fa1adb6（含 2e53d0d 的 session 一族）之后重新打快照 `plug-fa1adb6/`。先在裸终端里核一次：手搭宿主树里 `rl session start --role deploy --model sonnet --launched-by manual`（环境变量 RL_CALLER=hook）落一行 open 版，`rl session end --reason hook` 落一行 closed 版并打印 `released_handoffs: (none)`，end 这一步墙钟 100 毫秒；没有状态文件的时候 rl 把 session_id 记成 `cli`、actor 记成 `gyb`（03 的裸终端规矩）。`rl init` 在 fa1adb6 上仍然抛「rl init is built in step 7」（init.py 只建了角色会话那道门），所以宿主树仍是手搭的。
+
+真会话两次（run_t1c.sh，tmux，`--permission-mode acceptEdits`），第二次多带环境变量 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS=10000`：
+
+| | 默认（会话 `6df57aa4…`） | 带预算变量（会话 `a1fac456…`） |
+|---|---|---|
+| 敲 `/research-loop:deploy` | 08:47:44 | 08:49:07 |
+| 状态文件出现 | 08:47:45 | 08:49:08 |
+| sessions 账 open 版的 ts | 08:47:44 | 08:49:08 |
+| 记日志插件的 SessionEnd | 08:48:59.849 | 08:51:21.347 |
+| `.end.log` 的修改时间 | 08:48:59.957 | 08:51:21.450 |
+| closed 版的 ended_at | 08:48:59 | 08:51:21 |
+| /exit 之后 1 秒探测 | 账 2 行、状态文件只剩 `.end.log` | 同 |
+
+open 版原文（默认那次）：
+
+```
+{"actor": "deploy", "launched_by": "manual", "model": "claude-sonnet-5", "role": "deploy", "rules_version": 1, "schema_version": 1, "session_id": "6df57aa4-712a-4268-a85a-98191b65eacd", "started_at": "2026-09-05T08:47:44+0900", "status": "open", "ts": "2026-09-05T08:47:44+0900", "version": 1}
+```
+
+closed 版原文（默认那次）：
+
+```
+{"actor": "deploy", "end_reason": "hook", "ended_at": "2026-09-05T08:48:59+0900", "launched_by": "manual", "model": "claude-sonnet-5", "released_handoffs": [], "role": "deploy", "rules_version": 1, "schema_version": 1, "session_id": "6df57aa4-712a-4268-a85a-98191b65eacd", "started_at": "2026-09-05T08:47:44+0900", "status": "closed", "ts": "2026-09-05T08:48:59+0900", "version": 2}
+```
+
+两次 `.end.log` 都是空的（`rl session end` 没有报错），SessionEnd 到 `.end.log` 出现相差 108 毫秒和 103 毫秒，closed 版在 SessionEnd 的同一秒落账，tmux 会话在 /exit 之后 1 秒消失。销号钩子把 `rl session end` 用 setsid 脱到后台这一招（D-26）在两种预算下都在 1 秒内把 closed 版落了账，预算变量没有改变任何一列。这一轮没有开干的单子，released_handoffs 为空，「交回单子」那一段没有测到。
+
+### 7.6 auto 模式：同一条改写后的命令由分类器放行，不弹框
+
+tmux 交互会话（会话 id `f9e8d852…`，08:52 到 08:55，`--permission-mode auto`，宿主规则同 7.3，快照 fa1adb6，run_t3b.sh）。母会话自己敲 `rl status` 直接运行；`research-loop:run` 子会话 08:52:54 启动，08:54:19 发出 Bash `rl status`（记日志插件的 PreToolUse，agent_type `research-loop:run`），钩子改写成 export 形式之后 08:54:21 就有了工具结果（子会话记录原文 `Exit code 1 internal not implemented: rl status build step 3b fills scripts/rl_cmds/`），母会话屏幕上全程没有出现任何审批框（每 3 秒抓一次屏幕，只有「Waiting for 1 background agent to finish」和之后的「Agent … finished · 1m 44s」），母会话最后回复 `RESULT-PARENT: Exit code 1` 和 `RESULT-CHILD: Exit code 1`。所以在 auto 模式下，以 export 开头的改写命令由分类器放行，default 模式下（7.3）要人按一次审批。这一轮 opus 的 run 子会话从启动到发出命令用了 85 秒，和 7.3 那次的 50 秒一样是在斟酌「这不是发射单要不要做」。
+
+第一次 auto 模式的尝试（会话 `4893718e…`，08:51:27）因为脚本把开场话里的字样当成了结果、8 秒就退出了，没有数据，只记一笔。
 
 ## 六、原始记录的位置
 
@@ -281,3 +415,4 @@ RL-ON-PATH 2026-09-05T00:53:41+09:00 tag=child-i sid=0b6182eb-3cd8-4372-ad20-49d
 - 交互会话的过程记录：沙盒目录 `out/9b-nine-b2.log`、`out/9b-nine-b3.log`、`out/9b-nine-b4.log`。
 - 会话记录文件：`~/.claude/projects/-home-y-guo--claude-jobs-1a0406df-tmp-verify0/`，子会话的记录在各会话目录的 `subagents/` 下。
 - 插件测试：沙盒目录 `plugtest/out/plug1.jsonl`、`plugtest/out/plug1.err`，debug 日志 `~/.claude/debug/e8f8ab81-e149-493b-bbc8-e222d4ca6d74.txt`。
+- 步 4 真会话验收：插件快照 `plug-8628f4d/`、`plug-fa1adb6/`（`git archive HEAD research-loop` 解出来的）；手搭宿主树 `host/`；记日志插件 `rllog/`，记录在 `hooklog2.jsonl`；各轮的过程记录 `out/upe-p.jsonl`、`out/t1-default.log`、`out/t1b-a.log`、`out/t1c-default.log`、`out/t1c-timeout10s.log`、`out/t3-default.log`、`out/t3b-auto.log`、`out/t3b-auto2.log`；会话记录文件在 `~/.claude/projects/-home-y-guo--claude-jobs-1a0406df-tmp-verify0-host/`。
