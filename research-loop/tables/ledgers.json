@@ -6,6 +6,7 @@
     {
       "name": "decisions",
       "file": "loop/decisions.<actor>.jsonl",
+      "file_note": "<actor> is the role name in the id prefix (dec-idea-0007 lives in decisions.idea.jsonl), not the writer of the row; the writer is the actor field (02 L11, L13; debt map 34(d))",
       "books": ["idea", "deploy", "run", "analysis", "reviewer", "gyb"],
       "key": "id",
       "id_pattern": "^dec-(idea|deploy|run|analysis|reviewer|gyb)-[0-9]{4,}$",
@@ -47,7 +48,7 @@
       "id_pattern": "^grant-[0-9]{4,}$",
       "status_values": ["active", "revoked"],
       "schema": null,
-      "pending": "PENDING(issue 43c): the ledger is kept as a name only; no schema, no `rl grant` commands, grant test cases skipped (proxy decision D-01).",
+      "pending": "PENDING(issue 43c): the ledger is kept as a name only; no schema, no `rl grant` commands, grant test cases skipped (proxy decision D-01). Rulings that would land here once the ledger is kept (debt map 37(c)(e)(g2)): `rl grant revoke` lists the grantee's live sessions and their load times for gyb to pick which to close, never closes them itself; reading after the revoke instant counts as a violation that the reviewer checks by timestamp; closing a picked session goes through `rl session end --session ID` (09 L133; sync-inbox Q37(c)(e)(g2) L231).",
       "_source": "03 L53; 03 L126-137; sync-inbox Q43(c) L311"
     },
     {
@@ -57,6 +58,7 @@
       "id_pattern": "^fb-[0-9]{4,}$",
       "id_pattern_source": "proxy decision D-11 (03 L145 only says 'feedback id'; fb-NNNN by analogy with iss-NNNN).",
       "status_values": ["proposed", "accepted", "rejected"],
+      "status_note": "accepted and rejected are terminal; to propose again open a new row (09 L73; sync-inbox Q37(f) L231)",
       "schema": "schemas/feedback.schema.json",
       "_source": "03 L54; 03 L141"
     },

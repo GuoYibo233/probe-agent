@@ -16,7 +16,7 @@
   ],
   "status_sections": [
     {"n": 1, "text": "orders not in a terminal state (owner, holder and whether alive, status, age, line; launch orders with log_path and watch_cmd)"},
-    {"n": 2, "text": "open issues assigned to gyb (those beyond issues.gyb_stale_hours marked)"},
+    {"n": 2, "text": "open issues assigned to gyb (those beyond issues.gyb_stale_hours marked); this section is the only outlet for an issue assigned to gyb, opened or reassigned: no desktop notification (01 L139; sync-inbox Q40(c)(d) L286-287)"},
     {"n": 3, "text": "evaluations waiting for approval"},
     {"n": 4, "text": "orders waiting for acceptance"},
     {"n": 5, "text": "waiting for gyb to start: todo orders whose owner has no live session, dispatch=manual orders"},

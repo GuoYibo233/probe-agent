@@ -48,7 +48,10 @@ listed in `_pending`, so the final merge pass can grep for it.
    hook's own calls to `session start` / `session end` (who column "hook, gyb", 05 L40);
    `RL_COMMON_DIR` points at a sandbox copy of `common/` (tests); `RL_AGENT_TYPE` and
    `RL_AGENT_ID` are injected by the write hook into a subagent's Bash commands so `rl`
-   can tell a subagent from its parent session (verify item 5, 2026-09-05).
+   can tell a subagent from its parent session (verify item 5, proxy decision D-15). The
+   injection is `export RL_AGENT_TYPE='<type>'; export RL_AGENT_ID='<id>'; <command>`
+   (shell-escaped), never a prefix assignment, so chained commands (`cd x && rl ...`)
+   still see the variables (D-15 addendum).
 8. **Opening version = version 1.** 03 L211 separates "the open, merged and dropped
    versions" from "middle versions that append numbers"; the schemas tell the opening
    version from a middle one by `version == 1`. Same reading for the quick-lane

@@ -37,7 +37,7 @@
     "parent_id": {"type": ["string", "null"], "pattern": "^ho-[0-9]{4,}$", "description": "launch_order: required, points at the work order; analysis_order: optional; quick-lane supplement: empty (04 L24)"},
     "supersedes": {"type": ["string", "null"], "pattern": "^ho-[0-9]{4,}$", "description": "set by reissue on the new order (04 L25, L76)"},
     "batch": {"type": ["string", "null"], "description": "caller free text; a launch_order copies it from the parent; rl does not assign it (04 L26)"},
-    "line": {"type": ["string", "null"], "description": "computed by rl from the root_id of the first decision_refs item (04 L27); PENDING(issue 43d): refs may belong to several roots and the order then appears in every related line view (query layer)"},
+    "line": {"type": ["string", "null"], "description": "computed by rl from the root_id of the first decision_refs item (04 L27); decision_refs may span several root decisions and the order then appears in every related line view (sync-inbox Q43(b)(d) L311-313); PENDING(part 04 L27): whether line is stored as one value or a list"},
     "dispatch": {"type": "string", "enum": ["auto", "manual", "none"], "description": "04 L28, L84-88"},
     "adopted": {"type": "boolean", "description": "optional on the start version; true when adopting a launched, unfinished run (04 L29)"},
     "quick_lane": {"type": "boolean", "description": "04 L30"},

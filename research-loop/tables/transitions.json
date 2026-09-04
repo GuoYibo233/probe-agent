@@ -23,7 +23,7 @@
         {"id": "open.launch_order_first_attempt", "text": "launch_order has parent_id and a first attempt with command, workdir, track, config; run_id is assigned by rl as <ho-id>-a<attempt>; decision_refs, batch and track are copied from the parent", "source": "04 L61; 04 L43; 04 L26, L32; sync-inbox Q45(f)"},
         {"id": "open.analysis_order_has_eval_refs", "text": "analysis_order has evaluation_refs (each may still be proposed)", "source": "04 L61; 04 L33"}
       ],
-      "then_who_pulls": "dispatch=auto: the owner starts a background subagent; manual: waits for gyb; none: nothing",
+      "then_who_pulls": "dispatch=auto: the owner starts a background subagent with the plugin role agent type (agents/<role>.md, not general-purpose; 06 L126, sync-inbox Q39(a) L252); manual: waits for gyb; none: nothing",
       "subcommand": "handoff open",
       "_source": "04 L61",
       "_pending": ["PENDING(part 22 L113): whether an analysis_order needs decision_refs (and so a line).", "PENDING(part 22 L114): whether an analysis_order needs explanation.", "PENDING(part 20 L128): whether a plain work_order fills parent_id.", "PENDING(part 22 L116): who starts the subagent for a gyb-opened analysis_order with dispatch=auto."]
@@ -207,7 +207,7 @@
         {"id": "release.orphaned_notice", "text": "rl opens an orphaned notification to the owner", "source": "04 L75; 04 L195"},
         {"id": "release.actor_via", "text": "the hook's version records the session's role as actor and via=session_end (via=subagent_stop when SubagentStop releases a subagent's orders, proxy decision D-15); reclaim's version records actor gyb and via=reclaim", "source": "04 L75; proxy decision D-15"}
       ],
-      "then_who_pulls": "owner, following the order's original dispatch (auto starts another subagent); with no live owner session it goes to rl status 'waiting for gyb to start'",
+      "then_who_pulls": "owner, following the order's original dispatch (auto starts another subagent with the plugin role agent type, sync-inbox Q39(a) L252); with no live owner session it goes to rl status 'waiting for gyb to start'",
       "subcommand": "handoff release",
       "_source": "04 L75"
     },

@@ -7,7 +7,7 @@
   "type": "object",
   "properties": {
     "id": {"type": "string", "pattern": "^fb-[0-9]{4,}$", "description": "fb-NNNN per proxy decision D-11 (03 L145 only says 'feedback id')"},
-    "status": {"type": "string", "enum": ["proposed", "accepted", "rejected"], "description": "03 L141; rejected is terminal, propose again as a new row (sync-inbox Q37(f) L231)"},
+    "status": {"type": "string", "enum": ["proposed", "accepted", "rejected"], "description": "03 L141; accepted and rejected are terminal, the same row takes no further version, propose again as a new row (09 L73; sync-inbox Q37(f) L231)"},
     "target": {"type": "string", "minLength": 1, "description": "a file path, or a prefixed number rule-06 / principle-06; for one row of a table give the file path and name the row in text (03 L146; sync-inbox Q37(f) L231)"},
     "text": {"type": "string", "minLength": 1, "description": "03 L147"},
     "verdict_text": {"type": "string", "minLength": 1, "description": "required on both accepted and rejected: what was adopted, or why not (03 L148)"},
