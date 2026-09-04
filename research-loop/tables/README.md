@@ -4,7 +4,8 @@ Every file in this directory is a transcription of a table that already exists i
 `plans/research-loop-parts/` (the design parts). Nothing here is invented: each
 field carries a `_source` (or the file carries a `_sources` map) pointing at the
 part and line it was copied from, written as `06 L178` (part 06, line 178) or
-`sync-inbox Q41(c) L294` (sync-inbox question 41 item c, line 294). Anything the
+`sync-inbox Q41(c) L294` (sync-inbox question 41 item c, line 294; sync-inbox line
+numbers are as of commit b7bec26, the question and item letters are the stable part). Anything the
 parts have not ruled is marked `PENDING(issue NN)` / `PENDING(part 22 L113)` and
 listed in `_pending`, so the final merge pass can grep for it.
 
