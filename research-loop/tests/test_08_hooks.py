@@ -312,6 +312,11 @@ class RegistrationHooks(unittest.TestCase):
         self.assertTrue(state.exists())
         rc, out, err = run_hook(self.sb, "session-end", {"hook_event_name": "SessionEnd", "reason": "other"})
         self.assertEqual(rc, 0, err)
+        # the deregistration runs detached because of the 1.5 s SessionEnd budget: poll
+        import time
+        deadline = time.time() + 20
+        while time.time() < deadline and state.exists():
+            time.sleep(0.2)
         self.assertEqual(self.sb.latest("sessions", "sess-top")["status"], "closed")
         self.assertFalse(state.exists())
 

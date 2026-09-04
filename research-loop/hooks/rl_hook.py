@@ -395,13 +395,16 @@ def hook_session_end(inp: dict) -> int:
         return 0
     state = state_path(repo, sid)
     if state.is_file():
-        proc = run_rl(["session", "end", "--reason", "hook"], repo, rl_env(sid), timeout=20)
-        if proc.returncode != 0:
-            print(f"research-loop: session end failed ({proc.stderr.strip()})", file=sys.stderr)
-        try:
-            state.unlink()
-        except OSError:
-            pass
+        # Plugin SessionEnd hooks get a 1.5 s budget that hooks.json cannot raise (hooks
+        # reference, SessionEnd), so the deregistration runs detached (setsid) and this
+        # hook returns at once; the state file is deleted by that background step after
+        # `rl session end` finished (reviewer recommendation 2026-09-05, awaiting D-NN).
+        log = state.with_suffix(".end.log")
+        script = (f"{shlex.quote(sys.executable)} {shlex.quote(str(RL))} session end --reason hook; "
+                  f"rm -f {shlex.quote(str(state))}")
+        with open(log, "ab") as fh:
+            subprocess.Popen(["/bin/sh", "-c", script], cwd=str(repo), env=rl_env(sid),
+                             stdout=fh, stderr=fh, start_new_session=True)
     cache = state.with_suffix(".model")
     if cache.is_file():
         try:
