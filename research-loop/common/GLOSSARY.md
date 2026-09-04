@@ -74,7 +74,7 @@ Every thing in this system has one name, the one in the first column, and that n
 | `file` (source kind) | A source that points at a path inside the repository, optionally with a `#anchor`. | Not an external link. |
 | `run` (source kind) | A source that points at a run id in the runs ledger. | Not a launch order. |
 | `root_id` | The root decision of a decision's tree; two parallel research lines are separated by it. | Not the parent decision. |
-| `stale` | A reference on an order or a decision whose recorded version is lower than the latest non-confirm version of the decision it cites (10 L110). | Not retired; the cited decision still exists, and the order keeps working at the version it cited until gyb withdraws or reissues it. |
+| `stale` | A reference on an order or a decision whose recorded version is lower than the latest non-confirm version of the decision it cites (02 L85; 10 L110). | Not retired; the cited decision still exists, and the order keeps working at the version it cited until gyb withdraws or reissues it. |
 | `retired` | A decision or evaluation taken out of force with a reason. | Not deleted; the rows stay in the ledger. |
 | `metric` | Evaluation kind: a number to compute. | Not a figure. |
 | `figure` | Evaluation kind: a plot to draw, with its grouping and axes. | Not a metric. |
