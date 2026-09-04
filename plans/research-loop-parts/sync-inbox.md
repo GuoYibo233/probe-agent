@@ -251,6 +251,7 @@
 - 要改的地方：
   39. 冻结后待议：（a）`04` `dispatch=auto` 起 subagent 时用插件的角色 agent 类型（`agents/<role>.md`），不用 general-purpose；第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句——subagent 的 `session_id` 与父会话相同、钩子输入多 `agent_id`/`agent_type`、状态文件不写，subagent 算不算一次 sessions 行、`session_id` 记什么，等待验证第 5 条测完再定；（b）`05` `rl init` 一行补「重跑无副作用；逐项问配置；不动宿主代码和仓库 `.claude/`」；`rl run finish` 一节补「中断收尾里宿主销号调 `launcher.abort_cmd`，留空跳过」；doctor「两本 runs 账对账」按 `host_ledgers` 里 `kind: runs` 找宿主账；接口一节 `08` 那条键清单加 `launcher.abort_cmd`、`repo_run`、`host_ledgers`；（c）`03` 词表九个文件名旁注「位置钉死，配置里没有账路径（2026-08-18 gyb 裁，`08` 第一节）」。
   - 统筹补扫 2026-08-21（评审修复，gyb 授权）：(a) 后半（subagent 算不算一次 sessions 行、`session_id` 记什么）依赖待验证第 5 条，最后一期时还没测完就明记挂起，别硬落。
+  - 补记 2026-09-05（rl-hub-v6）：待验证第 5 条 2026-09-05 已实测（`plans/2026-09-05-research-loop-verify.md`），(a) 后半的挂起解除——结论按代裁 D-15 落，具体改法在问题 49 那一段，最后一期处理本段时和 49 一起落、别落两遍。
 - 状态：等最后一期（gyb 2026-08-18：冻结三份先不改，攒到全部 part 定稿之后一起裁；此前以 `08` 定稿为准）
 
 ## 2026-08-21 04:00 来自 rl-part-01 关于 01-gyb.md
