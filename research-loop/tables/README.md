@@ -43,7 +43,13 @@ listed in `_pending`, so the final merge pass can grep for it.
    variable `CLAUDE_CODE_SESSION_ID` (present in this session's Bash), and tests
    override it with `RL_SESSION_ID`. Whether the hook input's `session_id` equals
    this variable is verify item 1; marked `PENDING(part 30 L13)` in code.
-7. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
+7. **Environment variables `rl` reads** (names fixed here so hook, tests and library agree):
+   `RL_SESSION_ID` overrides the session id (tests); `RL_CALLER=hook` marks the plugin
+   hook's own calls to `session start` / `session end` (who column "hook, gyb", 05 L40);
+   `RL_COMMON_DIR` points at a sandbox copy of `common/` (tests); `RL_AGENT_TYPE` and
+   `RL_AGENT_ID` are injected by the write hook into a subagent's Bash commands so `rl`
+   can tell a subagent from its parent session (verify item 5, 2026-09-05).
+8. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
    `artifact_root`, 06 L203) is descriptive only: the hook lets every path outside the
    repo through (06 L13), so the hook never consults it.
 

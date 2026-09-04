@@ -7,7 +7,7 @@ CLI contract is unmet, not that an internal function moved.
 
 Session simulation. `rl` learns its own session from RL_SESSION_ID (test seam) or
 CLAUDE_CODE_SESSION_ID, and the session's role from loop/.sessions/<session_id>.json
-(06 L118). A bare terminal is the absence of both (01 L69). Because these tests run
+(06 L118). A bare terminal is the absence of a state file (01 L69). Because these tests run
 inside a Claude Code session, CLAUDE_CODE_SESSION_ID is scrubbed from every child
 environment; only RL_SESSION_ID decides. `RL_CALLER=hook` marks the calls the plugin
 hook makes (`session start`, `session end`; who column "hook, gyb", 05 L40).
