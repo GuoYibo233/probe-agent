@@ -1,8 +1,7 @@
 {
   "role": "run",
   "reads": ["handoffs", "issues", "runs", "feedback", "experiments/", "ops/gpu_state.md"],
-  "writes": [],
-  "writes_outside_repo": ["artifact_root"],
+  "writes": ["artifact_root"],
   "ledger_writes": {
     "runs": "*",
     "handoffs": ["handoff start", "handoff estimate", "handoff done", "handoff stuck"],
@@ -17,7 +16,7 @@
     "note": "opus since gyb's 2026-08-16 evening re-ruling; the earlier sonnet sentence is void (06 L250). manual=inherit means follow the current session (06 L160)."
   },
   "notes": [
-    "writes is the artifact root, which is outside the repo, so the hook does not judge it (06 L203).",
+    "artifact_root (the config key) is outside the repo, so the hook does not judge it (06 L203; 06 L13; tables/README.md convention 7).",
     "handoffs: reads only its own launch_order; issues: reads only those assigned to it (06 L208).",
     "run does not check the inbox; it only attends to its own launch order (06 L210, gyb 2026-08-17, sync-inbox Q28).",
     "decisions.run add is for rare self-decisions such as the reason for a GPU choice (06 L204)."

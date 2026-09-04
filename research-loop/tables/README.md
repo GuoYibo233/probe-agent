@@ -8,9 +8,6 @@ part and line it was copied from, written as `06 L178` (part 06, line 178) or
 parts have not ruled is marked `PENDING(issue NN)` / `PENDING(part 22 L113)` and
 listed in `_pending`, so the final merge pass can grep for it.
 
-Language: the plugin body is English (00 L321, gyb 2026-08-18). Source citations
-keep the part numbers, PENDING markers keep the form used by the build guide.
-
 ## Files
 
 | file | copied from | used by |
@@ -45,7 +42,10 @@ keep the part numbers, PENDING markers keep the form used by the build guide.
 6. **Session identity.** `rl` reads its own session id from the environment
    variable `CLAUDE_CODE_SESSION_ID` (present in this session's Bash), and tests
    override it with `RL_SESSION_ID`. Whether the hook input's `session_id` equals
-   this variable is verify item 1 (30 L13); marked `PENDING(verify item 1)` in code.
+   this variable is verify item 1; marked `PENDING(part 30 L13)` in code.
+7. **`writes` outside the repo.** A `writes` entry that is not a repo path (run's
+   `artifact_root`, 06 L203) is descriptive only: the hook lets every path outside the
+   repo through (06 L13), so the hook never consults it.
 
 ## Readings that go beyond the letter of a part (ruled by proxy decisions D-10, D-11, D-12; gyb reviews the record)
 

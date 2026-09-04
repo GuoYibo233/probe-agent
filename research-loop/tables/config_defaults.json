@@ -33,6 +33,6 @@
     {"key": "quick_lane.worktree_root", "default": "<repo>/../<repo-name>-ql/", "used": "where quick-lane worktrees are created; branch and directory both named by ql_tag", "_source": "08 L78; 07 L136"}
   ],
   "removed_keys": [
-    {"key": "notify.reminder_days", "why": "periodic reminders are not built in this version (01 L145-147; sync-inbox Q40)", "_source": "08 L262 via sync-inbox L262"}
+    {"key": "notify.reminder_days", "why": "periodic reminders are not built in this version (01 L145-147; sync-inbox Q40)", "_source": "sync-inbox L262; removed from the 08 threshold table"}
   ]
 }

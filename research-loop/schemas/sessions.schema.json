@@ -26,6 +26,6 @@
     {"rule": "amend version: status and every other field copied from the latest version, only model changes; allowed on closed sessions; writer is gyb or that role's own live session", "source": "03 L176; sync-inbox Q18, Q30"},
     {"rule": "a subagent shares the parent's session_id and writes no state file; whether it gets its own sessions row is verify item 5", "source": "06 L112, L118; 30 L17"}
   ],
-  "x-pending": ["PENDING(verify item 5): subagent identity and registration", "PENDING(issue 41e): the host gpu-runner is not registered in sessions"],
+  "x-pending": ["PENDING(part 30 L17): subagent identity and registration", "PENDING(issue 41e): the host gpu-runner is not registered in sessions"],
   "x-source": "03 L174-192"
 }
