@@ -365,8 +365,8 @@
 - 事项：验证助手 2026-09-05 在沙盒测完待验证第 5 条（结果在 `plans/2026-09-05-research-loop-verify.md`），统筹按验证助手和底座助手的推荐代裁成 D-15（`plans/2026-09-04-research-loop-proxy-decisions.md`）；问题 39(a2) 的「等待验证第 5 条」到此有结论。代码按 D-15 写，正文等最后一期，gyb 可逐条否。
 - 裁决原文：（代裁，gyb 待审；实测事实和依据写在 D-15）
 - 要改的地方：
-  49. 冻结后待议：（a）`03` 九本账公共骨架加可选栏 `agent_id`（子会话写的行填）；`03` sessions 字段表加 `agent_id` 一栏，`launched_by` 取值含 subagent，补一句「同一 `session_id` 下 `agent_id` 不同的行是不同的版本链，『closed 会话再写拒收』按（`session_id`，`agent_id` 或空）配对查」；（b）`04` 第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句改成 D-15 的（3）；`04` 第六节销号钩子补 SubagentStop 按 `agent_id` 关行并交回该子会话开干的单、SessionEnd 交回本 `session_id` 名下全部（含被杀的子会话的）再关子会话行最后落母会话 closed 版；`04` 第七节 `rl session` 一族对应改；（c）`05:13` 到 `05:25` actor 判定那段改成 D-15 的（1）：先看钩子注入的 `RL_AGENT_TYPE`、`RL_AGENT_ID`，再看状态文件，都没有是裸终端 gyb；不认识的类型拒写退出码 3。
-- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-15 之后定）
+  49. 冻结后待议：（a）`03` 九本账公共骨架加可选栏 `agent_id`（子会话写的行填）；`03` sessions 字段表加 `agent_id` 一栏，`launched_by` 取值含 subagent，补一句「同一 `session_id` 下 `agent_id` 不同的行是不同的版本链，『closed 会话再写拒收』按（`session_id`，`agent_id` 或空）配对查」；（b）`04` 第四节「subagent 加载角色 skill 那一刻和普通 session 一样登记进 sessions 账」那句改成 D-15 的（3）；`04` 第六节销号钩子补 SubagentStop 按 `agent_id` 关行并交回该子会话开干的单、SessionEnd 交回本 `session_id` 名下全部（含被杀的子会话的）再关子会话行最后落母会话 closed 版；`04` 第七节 `rl session` 一族对应改；（c）`05:13` 到 `05:25` actor 判定那段改成 D-15 的（1）：先看钩子注入的 `RL_AGENT_TYPE`、`RL_AGENT_ID`，再看状态文件，都没有是裸终端 gyb；不认识的类型拒写退出码 3；（d）`04` 会话生命周期一节加一句「交互会话 `/exit` 选『挪到后台』等于旧会话销号（旧 id 的 SessionEnd 已交回名下的单子）、新 id 是裸会话，要继续干活得重新加载角色」（D-20，实测在 `plans/2026-09-05-research-loop-verify.md` 3.4 节）。
+- 状态：等最后一期（代裁 2026-09-05，gyb 审 D-15、D-20 之后定）
 
 ## 2026-09-05 来自 施工统筹会话 关于 run 回 withdrawn issue 的写权缺口（等 gyb）
 - 事项：对照单核手核问题 45(b) 时发现三处对不上：45(b) 要 holder（含接发射单的 run）把代码位置和半截产物路径回进那条 `withdrawn` issue；`03:92` 写通知类 issue 的 assignee 能回能关；`06:204` 给 run 的 issues 写权只有 open。改角色 json 一栏是改 `06` 的定稿裁决，统筹不代裁（D-14），run 那一支代码里标 `PENDING(issue 50)`。
