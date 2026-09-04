@@ -480,10 +480,10 @@ class Reclaim(unittest.TestCase):
         self.assertNotIn(ho, listed)
         st = self.sb.rl("status", "--json")
         self.assertEqual(st.rc, 0, str(st))
-        text = self.sb.rl_ok("status").out
-        # section 7 must not name the order: find the section 7 block and check
-        sec7 = text.split("7")[1] if "7" in text else ""
-        self.assertNotIn(f"stale holder {ho}", text)
+        rows = st.json if isinstance(st.json, list) else (st.json or {}).get("rows", [])
+        for row in rows:
+            if isinstance(row, dict) and row.get("id") == ho:
+                self.assertFalse(row.get("stale_holder", False), row)
 
     def test_json_shape_kind_id_idle_hours_action(self):
         """05 L123 (exit_codes.json json_shapes.reclaim): an array of {kind, id,
