@@ -317,6 +317,14 @@
 - 落点：`research-loop/scripts/rl_cmds/run.py`（finish）；测试 10 或 12 补一例两次尝试各自比。
 - 审查：
 
+### D-37 九本账的 `show` 加 `--history` 打印全部版本；reviewer 从 runs 的 launched 版读 commit（文本助手带 skill 的 reviewer 臂报，统筹裁）
+
+- 问题：commit 只在 runs 的 launched 那一版上，`rl run show` 和 `rl run list` 只回最新版且没有选版本的旗子，reviewer 经 rl 读不到 commit，只能翻 git 历史猜。另外账上没有字段把 commit 和会话连起来，`common/REVIEW-CHECKLIST.md` 的 D2（rule-08 事后查谁写了什么）从账上定不了。
+- 决定：（1）九本账的 `rl <账> show ID` 加 `--history` 旗子，打印该主键的全部版本（按 version 升序），默认仍回最新版；reviewer 用 `rl run show <run_id> --history` 读 launched 版的 commit。不改 03 的行格式。（2）REVIEW-CHECKLIST 的 D2 标 `PENDING(issue 51)`；sync-inbox 立问题 51 等 gyb：要不要在账上记 commit 和会话的关联（runs 收尾版抄 commit，或者 sessions 行记 commit 区间），不记就把 D2 改成查 git 作者时间与 sessions 账的活跃区间。
+- 理由：只增不改的账本身就存着每一版，缺的只是查询的口子（03 总规矩「能写就能查」）；改行格式是动冻结正文。
+- 落点：`research-loop/scripts/rl_lib.py`、各 `show` 子命令；`research-loop/tables/commands.json`；`research-loop/common/REVIEW-CHECKLIST.md` D2；`skills/reviewer/SKILL.md` 读序里读 commit 那句；sync-inbox 问题 48(j) 给 05 的 show 签名、问题 51。
+- 审查：
+
 - 附（同一轮实测）：D-26 的宿主变量 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` 这轮没用上——setsid 脱离之后 SessionEnd 与 closed 版同一秒落账，设不设变量结果一样，当保险留着不算必需；注入后的权限流程 auto 模式分类器放行、全程无框（verify.md 7.6），default 模式弹框（7.3），gyb 的会话是 auto。
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
