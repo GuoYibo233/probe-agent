@@ -15,16 +15,11 @@ SCRATCH_STATUSES = ("open", "merged", "dropped")  # 03 L196: three, no fourth st
 # skeleton fields and the version-only ones (04 L29), so every module copies the same way.
 
 
-def opts_of(args, ctx, *, value=(), flags=(), multi=()):
-    """rl_lib.parse_args with a strict whitelist: an option this sub-command does not have
-    is a usage error, exit 5 (03 L224: a wrong argument is exit 5 usage)."""
-    positional, opts = rl_lib.parse_args(args, multi=multi, flags=flags)
-    known = set(value) | set(flags) | set(multi)
-    for name in opts:
-        if name not in known:
-            raise rl_lib.RLError("usage", f"`rl {ctx['command']}` has no --{name} option",
-                                 "known options: " + (", ".join("--" + n for n in sorted(known)) or "(none)"))
-    return positional, opts
+def opts_of(args, ctx, *, flags=(), multi=()):
+    """rl_lib.parse_args with the sub-command's option list from tables/commands.json: an
+    option the signature does not carry is a usage error, exit 5 (03 L224)."""
+    return rl_lib.parse_args(args, multi=multi, flags=flags,
+                             allowed=rl_lib.allowed_options(ctx["command"]))
 
 
 def one_tag(positional, ctx) -> str:
@@ -82,7 +77,7 @@ def cmd_add(args, ctx):
     every row (schemas/scratch.schema.json required).
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = opts_of(args, ctx, value=("note",), multi=("metric",))
+    positional, opts = opts_of(args, ctx, multi=("metric",))
     ql_tag = one_tag(positional, ctx)
     metrics = metrics_of(opts.get("metric", []))
     with rl_lib.Lock(repo):  # 03 L19
@@ -104,7 +99,7 @@ def cmd_list(args, ctx):
     """rl scratch list [--status S] (05 L87; 07 L77): the latest version of every quick
     lane, filtered by status."""
     repo = rl_lib.find_repo_root()
-    _, opts = opts_of(args, ctx, value=("status",))
+    _, opts = opts_of(args, ctx)
     wanted = opts.get("status")
     if wanted is not None and wanted not in SCRATCH_STATUSES:
         raise rl_lib.RLError("usage", f"--status takes {', '.join(SCRATCH_STATUSES)}, not {wanted!r}")

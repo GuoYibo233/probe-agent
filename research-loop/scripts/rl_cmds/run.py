@@ -21,18 +21,13 @@ HOST_TEMPLATE_BY_EXIT = {"ok": "launcher.finish_cmd", "failed": "launcher.finish
                          "killed": "launcher.abort_cmd"}
 
 
-def _opts(args, ctx, *, value=(), flags=(), multi=()):
-    """rl_lib.parse_args plus a strict option whitelist: an option this sub-command does
-    not have is a usage error, exit 5 (03 L224: a wrong argument). `started_at` / `finished_at` are
-    filled by rl, so `--started-at` / `--finished-at` land here and are refused (05 L73;
-    30 L117)."""
-    positional, opts = rl_lib.parse_args(args, multi=multi, flags=flags)
-    known = set(value) | set(flags) | set(multi)
-    for name in opts:
-        if name not in known:
-            raise rl_lib.RLError("usage", f"`rl {ctx['command']}` has no --{name} option",
-                                 "known options: " + (", ".join("--" + n for n in sorted(known)) or "(none)"))
-    return positional, opts
+def _opts(args, ctx, *, flags=(), multi=()):
+    """rl_lib.parse_args with the sub-command's option list from tables/commands.json: an
+    option the signature does not carry is a usage error, exit 5 (03 L224). `started_at`
+    and `finished_at` are filled by rl and are not in the `rl run add` / `rl run finish`
+    signatures (05 L73), so `--started-at` / `--finished-at` are refused here (30 L117)."""
+    return rl_lib.parse_args(args, multi=multi, flags=flags,
+                             allowed=rl_lib.allowed_options(ctx["command"]))
 
 
 def _one_id(positional, ctx, what: str) -> str:
@@ -97,8 +92,7 @@ def cmd_add(args, ctx):
     rl (05 L73; 12 L70). The version is launched (03 L107-115).
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    _, opts = _opts(args, ctx, value=("handoff", "attempt", "commit", "host", "gpus",
-                                      "log", "tmux", "watch-cmd"))
+    _, opts = _opts(args, ctx)
     # --handoff and --attempt are what rl needs to find the attempt it copies from, so a
     # missing one is a usage error (03 L224: a wrong argument); the ledger fields
     # (commit, host, ...) go into the row and are refused by the required-by-status check
@@ -153,7 +147,7 @@ def cmd_finish(args, ctx):
     template for this exit status (08 L50-51, L55; 12 L119, L125, L127, L129).
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _opts(args, ctx, value=("exit", "data-path"), multi=("metric",))
+    positional, opts = _opts(args, ctx, multi=("metric",))
     run_id = _one_id(positional, ctx, "run_id")
     exit_status = opts.get("exit")
     if exit_status not in EXIT_VALUES:
@@ -204,6 +198,7 @@ def cmd_finish(args, ctx):
         # with internal=True because rl writes it on its own behalf, not as a handoffs
         # command the run role calls.
         order = _latest_order(repo, row.get("handoff_id", ""))
+        target = None  # the attempt this run belongs to, used again by the anomaly check
         if order is not None and order.get("attempts"):
             order_fields = rl_lib.copy_content(order)  # 04 L29: adopted stays on its own version
             attempts = [dict(a) for a in order_fields["attempts"]]
@@ -226,13 +221,18 @@ def cmd_finish(args, ctx):
             if any(value == extreme for extreme in extremes):
                 reasons.append(f"metric {key}={value:g} landed on {value:g}, "
                                f"one of anomaly.metric_extremes {extremes}")
-        estimated = 0
-        if order is not None and order.get("attempts"):
-            estimated = order["attempts"][-1].get("estimated_seconds") or 0
+        # 08 L75 compares the real duration with the estimate of "the latest attempt";
+        # 04 L43 says estimated_seconds sums the step table of one attempt. Read together
+        # (reviewer ruling 2026-09-05), the estimate is the one on the attempt this run
+        # belongs to -- the same item actual_seconds just landed on, not the last item in
+        # the list, which an amend may have added while this run was still going. An
+        # attempt nobody ran `rl handoff estimate` on has no estimated_seconds, and then
+        # there is nothing to compare against, so the duration warning is skipped.
+        estimated = (target or {}).get("estimated_seconds") or 0
         factor = cfg["anomaly.duration_factor"]
         if estimated > 0 and actual_seconds > factor * estimated:
             reasons.append(f"actual_seconds {actual_seconds:g} is more than {factor} times the "
-                           f"estimated {estimated:g} seconds of the latest attempt")
+                           f"estimated {estimated:g} seconds of attempt {row.get('attempt')}")
         if reasons:
             # 12 L94, L105: one issue on the spot, kind anomaly, to gyb; 12 L107: it carries
             # handoff_id and its actor is the writer (run).
@@ -293,7 +293,7 @@ def cmd_relink(args, ctx):
     latest version and changes only handoff_id.
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _opts(args, ctx, value=("handoff",))
+    positional, opts = _opts(args, ctx)
     run_id = _one_id(positional, ctx, "run_id")
     new_handoff = opts.get("handoff")
     if not new_handoff:
@@ -353,7 +353,7 @@ def cmd_list(args, ctx):
     at, because the runs row carries none of them (05 L73).
     """
     repo = rl_lib.find_repo_root()
-    _, opts = _opts(args, ctx, value=("handoff", "decision", "batch", "line"), flags=("all",))
+    _, opts = _opts(args, ctx, flags=("all",))
     runs = list(rl_lib.latest(rl_lib.read_rows(repo, "runs"), "runs").values())
     orders = rl_lib.latest(rl_lib.read_rows(repo, "handoffs"), "handoffs")
 

@@ -53,7 +53,7 @@ def cmd_open(args, ctx):
     scratch schema actor enum).
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    _, opts = opts_of(args, ctx, value=("role", "from"))
+    _, opts = opts_of(args, ctx)
     role = opts.get("role") or actor.role_session
     if role is None:
         raise rl_lib.RLError("usage", "rl ql open needs --role deploy|analysis from a bare terminal",
@@ -151,7 +151,7 @@ def cmd_close(args, ctx):
     args (bin/rl split_global_flags).
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = opts_of(args, ctx, value=("handoff",), flags=("merged", "dropped"))
+    positional, opts = opts_of(args, ctx, flags=("merged", "dropped"))
     ql_tag = one_tag(positional, ctx)
     merged = bool(opts.get("merged"))
     dropped = bool(opts.get("dropped"))
