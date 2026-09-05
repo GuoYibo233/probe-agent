@@ -34,17 +34,18 @@ _CONFIG_KEYS = ("model", "params", "dataset", "split")  # 04 L43
 
 # ---------------------------------------------------------------- small helpers
 
-def _parse(args, single=(), multi=(), flags=()):
-    """rl_lib.parse_args plus the rule that an option this sub-command does not have is a
-    usage error (03 L221: exit 5 for a wrong argument). This is what refuses
-    `rl handoff done --actual-seconds` (04 L43; 30 L62)."""
-    positional, opts = rl_lib.parse_args(args, multi=tuple(multi), flags=tuple(flags))
-    known = set(single) | set(multi) | set(flags)
-    for name in opts:
-        if name not in known:
-            raise rl_lib.RLError("usage", f"unknown option --{name}",
-                                 "known options: " + ", ".join("--" + n for n in sorted(known)))
-    return positional, opts
+def _parse(args, command, multi=(), flags=(), extra_allowed=()):
+    """rl_lib.parse_args with the option names this sub-command takes, read off its
+    signature in tables/commands.json (03 L224: an option the command does not have is a
+    usage error). This is what refuses `rl handoff done --actual-seconds` (04 L43; 30 L62).
+
+    `extra_allowed` covers one gap: 05 L64's `handoff open` signature predates the 2026-08-21
+    ruling that a quick-lane supplement must list its code paths (07 L101; sync-inbox Q41(b);
+    transitions.json precondition ql.code_paths_nonempty), so --code-path is accepted here
+    although the signature does not name it. Listed in the build report as a table wish.
+    """
+    allowed = rl_lib.allowed_options(command) | set(extra_allowed)
+    return rl_lib.parse_args(args, multi=tuple(multi), flags=tuple(flags), allowed=allowed)
 
 
 def _one_id(positional, what="ID"):
@@ -275,11 +276,10 @@ def cmd_open(args, ctx):
     (04 L61, L62; 05 L64; 07 L109)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
     positional, opts = _parse(
-        args,
-        single=("type", "to", "parent", "explain", "track", "command", "workdir", "batch",
-                "report-method", "ql"),
+        args, ctx["command"],
         multi=("decision", "eval", "config", "code-path"),
-        flags=("manual", "no-dispatch", "quick-lane"))
+        flags=("manual", "no-dispatch", "quick-lane"),
+        extra_allowed=("code-path",))
     if positional:
         raise rl_lib.RLError("usage", f"rl handoff open takes no positional argument, got {positional[0]!r}")
 
@@ -492,7 +492,7 @@ def cmd_start(args, ctx):
     """todo -> in_progress (04 L63) and rejected -> in_progress (04 L73); with --batch, every
     todo launch_order of that batch at once (proxy decision D-22)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, single=("batch",))
+    positional, opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
     batch = opts.get("batch")
 
@@ -573,8 +573,7 @@ def cmd_amend(args, ctx):
     status unchanged, holder unchanged."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
     positional, opts = _parse(
-        args,
-        single=("command", "workdir", "track", "report-method", "report-detail", "notebook"),
+        args, ctx["command"],
         multi=("config", "code-path", "figure", "decision", "eval"))
     ho_id = _one_id(positional)
 
@@ -623,17 +622,20 @@ def cmd_amend(args, ctx):
             if missing:
                 raise rl_lib.RLError("validation", f"evaluation {', '.join(missing)} does not exist")
             fields["evaluation_refs"] = refs
-        if opts.get("command"):
+        attempt_flags = any(opts.get(k) for k in ("command", "workdir", "track", "config"))
+        if order.get("work_type") == "launch_order" and trow["id"] == "amend_todo_stuck":
+            # 04 L64: an amend of a launch_order appends one attempt. proxy decision D-31:
+            # it does so with or without --command, because one run is one attempt
+            # (principle 10); without --command the previous attempt's command, workdir,
+            # track and config are copied and only the run_id is new.
             _append_attempt(order, fields, opts)
-        elif opts.get("workdir") or opts.get("track") or opts.get("config"):
-            # 21 L179 rules the "change the command after a code fix, append an attempt"
-            # case. PENDING(part 04 L64): whether these three flags may edit an attempt
-            # already on the row instead of appending one; they are refused on their own
-            # rather than silently rewriting history.
+        elif attempt_flags:
+            # 04 L69: the done_pending_review amend row changes paths and references only, and
+            # no other work type has attempts, so the four attempt flags have nothing to act on.
             raise rl_lib.RLError("usage",
-                                 "--workdir/--track/--config only describe the attempt that "
-                                 "--command appends (21 L179)",
-                                 "add --command, or amend the paths instead")
+                                 "--command/--workdir/--track/--config describe an attempt, "
+                                 "which only a launch_order at todo or stuck has (04 L64, L69)",
+                                 "amend the paths or the references instead")
 
         row = _append(repo, LEDGER, fields, actor, ctx["command"], status=order["status"],
                       version=order["version"] + 1, force=force, force_reason=force_reason,
@@ -642,14 +644,18 @@ def cmd_amend(args, ctx):
 
 
 def _append_attempt(order, fields, opts):
-    """04 L64 / 21 L179: a launch_order amend with --command appends one attempt; the new
-    run_id is `<ho-id>-a<n>`. Everything the flags do not name is copied from the previous
-    attempt (21 L179 changes the command after a code fix, nothing else)."""
-    if order.get("work_type") != "launch_order":
-        raise rl_lib.RLError("validation", f"{order['id']} is a {order.get('work_type')}: "
-                                           "--command appends an attempt on a launch_order only (04 L64)")
+    """04 L64: a launch_order amend appends one attempt, run_id `<ho-id>-a<n>` (04 L43).
+
+    With --command the new attempt runs the fixed command (21 L179). Without it, proxy
+    decision D-31: the previous attempt's command, workdir, track and config are copied, so
+    a re-run of the same command is its own attempt (principle 10, one run is one attempt).
+    """
     attempts = list(fields.get("attempts") or [])
     previous = attempts[-1] if attempts else {}
+    command = opts.get("command") or previous.get("command")
+    if not command:
+        raise rl_lib.RLError("validation", f"{order['id']} has no attempt to copy: "
+                                           "give --command for the first one (04 L43)")
     config = dict(previous.get("config") or {})
     for item in opts.get("config") or []:
         key, sep, value = item.partition("=")
@@ -659,7 +665,7 @@ def _append_attempt(order, fields, opts):
     number = len(attempts) + 1
     attempts.append({
         "attempt": number,
-        "command": opts["command"],
+        "command": command,
         "args": None,  # PENDING(part 21 L180)
         "workdir": opts.get("workdir") or previous.get("workdir"),
         "track": opts.get("track") or previous.get("track"),
@@ -675,7 +681,7 @@ def cmd_estimate(args, ctx):
     """in_progress -> same, holder writes: append one step_table row to the latest attempt
     and re-total that attempt's estimated_seconds (04 L43, L65; 12 L52)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, single=("step", "kind", "smoke-seconds", "scale", "copy-from"))
+    positional, opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
 
     with rl_lib.Lock(repo):
@@ -738,7 +744,7 @@ def _step(name, kind, smoke_seconds, scale_factor):
 def cmd_stuck(args, ctx):
     """in_progress -> stuck, holder writes; the issue must exist and point back (04 L66)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, single=("issue",))
+    positional, opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
     iss_id = opts.get("issue")
     if not iss_id:
@@ -777,7 +783,7 @@ def cmd_resume(args, ctx):
     """stuck -> todo, written by the role that answered the issue or by the owner; the
     linked issue must be answered (04 L67)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, _opts = _parse(args)
+    positional, _opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
 
     with rl_lib.Lock(repo):
@@ -812,10 +818,19 @@ def cmd_resume(args, ctx):
 
 def cmd_done(args, ctx):
     """in_progress -> done_pending_review, holder writes; the deliverables of the work type
-    must be there (04 L68 with 04 L35-37). `--actual-seconds` does not exist here: it only
-    comes from `rl run finish` (04 L43; 30 L62), so it is refused as a usage error."""
+    must be there (04 L68 with 04 L35-37).
+
+    proxy decision D-32: the deliverable paths may come on this same call, a work_order's
+    with --report-method / --report-detail / --code-path and an analysis_order's with
+    --notebook / --figure. They are merged over whatever an earlier amend set and then
+    checked for existence, so handing in the work is one command and no new transition row
+    is needed; in_progress still takes no amend (04 L64, L69).
+
+    `--actual-seconds` does not exist here: it only comes from `rl run finish` (04 L43;
+    30 L62), so it is refused as a usage error.
+    """
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, single=("notebook",), multi=("figure",))
+    positional, opts = _parse(args, ctx["command"], multi=("figure", "code-path"))
     ho_id = _one_id(positional)
 
     with rl_lib.Lock(repo):
@@ -824,6 +839,8 @@ def cmd_done(args, ctx):
         trow = rl_lib.find_transition("handoff done", order["status"])
         rl_lib.check_who_can_write(trow, actor, order)
         fields = _carry(order)
+        # proxy decision D-32: the paths given here are merged over what amend already set,
+        # then checked below by the same 04 L68 preconditions.
         if opts.get("notebook") or opts.get("figure"):
             outputs = dict(fields.get("output_paths") or {})
             if opts.get("notebook"):
@@ -831,6 +848,19 @@ def cmd_done(args, ctx):
             if opts.get("figure"):
                 outputs["figures"] = list(opts["figure"])
             fields["output_paths"] = outputs
+        if opts.get("report-method") or opts.get("report-detail"):
+            report = dict(fields.get("report_paths") or {})
+            if opts.get("report-method"):
+                report["method"] = opts["report-method"]
+            if opts.get("report-detail"):
+                report["detail"] = opts["report-detail"]
+            fields["report_paths"] = report
+        if opts.get("code-path"):
+            paths = list(fields.get("code_paths") or [])
+            for p in opts["code-path"]:
+                if p not in paths:
+                    paths.append(p)
+            fields["code_paths"] = paths
 
         pre = _Preconditions(trow, force)
         work_type = order.get("work_type")
@@ -889,7 +919,7 @@ def cmd_accept(args, ctx):
     accepted by gyb himself by default (sync-inbox Q43(e)), which needs no code: gyb is
     exempt from the who column (04 L57)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, _opts = _parse(args)
+    positional, _opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
 
     with rl_lib.Lock(repo):
@@ -910,7 +940,7 @@ def cmd_accept(args, ctx):
 def cmd_reject(args, ctx):
     """done_pending_review -> rejected, the owner writes, reason required (04 L71)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, _opts = _parse(args)
+    positional, _opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
     reason = ctx["opts"].get("reason")  # --reason is a global flag (bin/rl)
 
@@ -1017,7 +1047,7 @@ def release_held_orders(repo, actor, *, via, command, extra_note=None):
 def cmd_release(args, ctx):
     """rejected -> todo (04 L72) or in_progress -> todo (04 L75)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, single=("note",))
+    positional, opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
 
     with rl_lib.Lock(repo):
@@ -1080,7 +1110,7 @@ def _children_of(repo, ho_id):
 def cmd_withdraw(args, ctx):
     """any non-terminal -> withdrawn, the owner writes (04 L74)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, flags=("cascade",))
+    positional, opts = _parse(args, ctx["command"], flags=("cascade",))
     ho_id = _one_id(positional)
     reason = ctx["opts"].get("reason")   # global flag
     quote = ctx["opts"].get("quote")     # global flag
@@ -1116,7 +1146,7 @@ def cmd_reissue(args, ctx):
     """any non-terminal -> the old order withdrawn (cascading) plus a new todo order that
     supersedes it (04 L76; 02 L91)."""
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    positional, opts = _parse(args, multi=("decision",))
+    positional, opts = _parse(args, ctx["command"], multi=("decision",))
     ho_id = _one_id(positional)
     refs = _refs(opts.get("decision"), "decision")
 
@@ -1192,7 +1222,7 @@ def cmd_reissue(args, ctx):
 def cmd_show(args, ctx):
     """05 L67: anyone may read (03 L25: reads are not permissioned)."""
     repo = rl_lib.find_repo_root()
-    positional, _opts = _parse(args)
+    positional, _opts = _parse(args, ctx["command"])
     ho_id = _one_id(positional)
     row = _order(repo, ho_id)
     if ctx["opts"]["json"]:
@@ -1203,8 +1233,7 @@ def cmd_show(args, ctx):
 def cmd_list(args, ctx):
     """05 L67: the latest version per id, filtered."""
     repo = rl_lib.find_repo_root()
-    positional, opts = _parse(args, single=("status", "owner", "holder", "to", "batch",
-                                            "decision", "line"))
+    positional, opts = _parse(args, ctx["command"])
     if positional:
         raise rl_lib.RLError("usage", f"rl handoff list takes no positional argument, got {positional[0]!r}")
     rows = sorted(rl_lib.latest(rl_lib.read_rows(repo, LEDGER), LEDGER).values(),
