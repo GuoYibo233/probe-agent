@@ -267,6 +267,22 @@
 - 理由：漂移是宿主行为，钩子改成按仓库根解析会让真写到 loop/ 下面的命令放行，反而开洞；纪律一句话就堵住。
 - 落点：`research-loop/skills/<role>/SKILL.md` 限制条件栏。
 - 审查：
+### D-31 命令不变也算新一次尝试：`rl handoff amend` 允许不带 `--command` 只追加一版尝试，新尝试抄上一次的命令、目录、方向、config（文本助手压力场景提，统筹裁）
+
+- 问题：压力场景里 deploy 修完只改了代码、发射命令不变，说明书没写要不要 `rl handoff amend` 出新一次尝试；`rl run add --attempt N` 的 N 从哪来也没写。
+- 决定：命令不变也是新一次尝试（04 第 43 行：一张发射单可以跑几次，每一次是单子上的一个 attempt，这条是原则 10）。`rl handoff amend ID` 不带 `--command` 时抄上一次尝试的 `command`、`workdir`、`track`、`config` 追加一版，`run_id` 按 `<ho-id>-a<attempt>` 分配；run 接单时从单子最新一次尝试读 attempt 序号，`rl run add --attempt N` 的 N 就是它。
+- 理由：原则 10 的单位是「跑一次」不是「换命令」；不出新尝试就没有新 run_id，产物目录和 runs 账会撞。
+- 落点：`research-loop/scripts/rl_cmds/handoff.py`（amend）；`skills/deploy/SKILL.md` 修 smoke 那段；测试 12 第二条用例。
+- 审查：
+
+### D-32 `rl handoff done` 收交付物路径参数，in_progress 上不开 amend（文本助手压力场景提，统筹裁）
+
+- 问题：04 第 64 行 amend（内容追加）只在 todo 或 stuck 上允许，第 68 行 in_progress 到 done_pending_review 要求 `work_order` 的 `report_paths` 和 `code_paths` 齐；底座实现的 `done` 只收 `--notebook`、`--figure`，deploy 没有地方填报告路径，压力场景里的对照臂为了填路径绕了「开 issue、标 stuck、amend」一圈。05 第 65 行的签名是 `rl handoff done ID [--notebook P --figure P ...]`，末尾的省略号没展开。
+- 决定：`rl handoff done` 收交付物路径：`work_order` 用 `--report-method P --report-detail P --code-path P`（可多个），`analysis_order` 用 `--notebook P --figure P`，写进 done 那一版并按 04 第 68 行校验存在；转移表不加行，in_progress 上仍不开 amend。参数名照 05 第 199 行 doctor 第 5 项修法里已有的旗子名。
+- 理由：04 的转移表把「交活时路径齐」定成 done 那一行的前提，参数跟着那条命令走最直接；加一行 in_progress 内容追加是改冻结的转移表。
+- 落点：`research-loop/scripts/rl_cmds/handoff.py`（done）；`research-loop/tables/commands.json` done 行签名；`skills/deploy/SKILL.md`、`skills/analysis/SKILL.md` 交活段；sync-inbox 问题 48 加 (f) 给 05 第 65 行展开省略号。
+- 审查：
+
 - 附（同一轮实测）：D-26 的宿主变量 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` 这轮没用上——setsid 脱离之后 SessionEnd 与 closed 版同一秒落账，设不设变量结果一样，当保险留着不算必需；注入后的权限流程 auto 模式分类器放行、全程无框（verify.md 7.6），default 模式弹框（7.3），gyb 的会话是 auto。
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
