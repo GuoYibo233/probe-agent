@@ -59,6 +59,31 @@ class TestWorkOrderDeliverables(unittest.TestCase):
     def tearDown(self):
         self.sb.destroy()
 
+    def test_done_with_paths_given_on_done_passes(self):
+        """Proxy decision D-32 (04 L68; flag names 05 L199): the deliverable paths may be
+        given on `handoff done` itself; they are checked for existence and written into
+        the done version as report_paths {method, detail} and code_paths [..]."""
+        sb = self.sb
+        idea, ho_id = _new_work_order(sb)
+        deploy = _deploy(sb)
+        sb.write_file("experiments/d32/method.md", "# method\n")
+        sb.write_file("experiments/d32/detail.md", "# detail\n")
+        sb.write_file("experiments/d32/x.py", "x\n")
+        sb.rl_ok("handoff", "start", ho_id, session=deploy)
+        sb.rl_ok("handoff", "done", ho_id, "--report-method", "experiments/d32/method.md",
+                 "--report-detail", "experiments/d32/detail.md", "--code-path", "experiments/d32/x.py",
+                 session=deploy)
+        row = sb.latest("handoffs", ho_id)
+        self.assertEqual(row["status"], "done_pending_review")
+        self.assertEqual(row["report_paths"], {"method": "experiments/d32/method.md", "detail": "experiments/d32/detail.md"})
+        self.assertEqual(row["code_paths"], ["experiments/d32/x.py"])
+        # a path that does not exist is still refused (04 L68)
+        idea2, ho2 = _new_work_order(sb)
+        sb.rl_ok("handoff", "start", ho2, session=deploy)
+        r = sb.rl("handoff", "done", ho2, "--report-method", "experiments/none/method.md",
+                  "--report-detail", "experiments/d32/detail.md", "--code-path", "experiments/d32/x.py", session=deploy)
+        self.assertEqual(r.rc, 2, str(r))
+
     def test_missing_method_refused(self):
         sb = self.sb
         idea, ho_id = _new_work_order(sb)
