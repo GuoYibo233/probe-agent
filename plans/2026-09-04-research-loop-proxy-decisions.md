@@ -319,8 +319,16 @@
 
 ### D-37 九本账的 `show` 加 `--history` 打印全部版本；reviewer 从 runs 的 launched 版读 commit（文本助手带 skill 的 reviewer 臂报，统筹裁）
 
-- 问题：commit 只在 runs 的 launched 那一版上，`rl run show` 和 `rl run list` 只回最新版且没有选版本的旗子，reviewer 经 rl 读不到 commit，只能翻 git 历史猜。另外账上没有字段把 commit 和会话连起来，`common/REVIEW-CHECKLIST.md` 的 D2（rule-08 事后查谁写了什么）从账上定不了。
-- 决定：（1）九本账的 `rl <账> show ID` 加 `--history` 旗子，打印该主键的全部版本（按 version 升序），默认仍回最新版；reviewer 用 `rl run show <run_id> --history` 读 launched 版的 commit。不改 03 的行格式。（2）REVIEW-CHECKLIST 的 D2 标 `PENDING(issue 51)`；sync-inbox 立问题 51 等 gyb：要不要在账上记 commit 和会话的关联（runs 收尾版抄 commit，或者 sessions 行记 commit 区间），不记就把 D2 改成查 git 作者时间与 sessions 账的活跃区间。
+- 问题：commit 只在 runs 的 launched 那一版上，`rl run show` 和 `rl run list` 只回最新版且没有选版本的旗子，reviewer 经 rl 读不到 commit，只能翻 git 历史猜。另外 runs 行把 commit 和发射它的 run 会话连着，没有字段连到写这个 commit 的会话（deploy），`common/REVIEW-CHECKLIST.md` 的 D2（rule-08 事后查谁写了什么）从账上定不了。
+- 决定：（1）九本账的 `rl <账> show ID` 加 `--history` 旗子，打印该主键的全部版本（按 version 升序），默认仍回最新版；reviewer 用 `rl run show <run_id> --history` 读 launched 版的 commit。不改 03 的行格式。（2）REVIEW-CHECKLIST 的 D2 标 `PENDING(issue 51)`；sync-inbox 立问题 51 等 gyb：要不要在账上记写 commit 的会话（runs 行或 sessions 行记写 commit 的会话），不记就把 D2 改成查 git 作者时间与 sessions 账的活跃区间。
+
+### D-38 通知类 issue（withdrawn、orphaned、fyi）只由 rl 在触发点开，角色手开退出码 2（评审助手提，统筹按推荐裁）
+
+- 问题：压力场景里 deploy 臂手开一条 kind=fyi 给 gyb 说配置里两个键训练器不读。03 第 90 行 fyi 的定义是「gyb 越过 owner 处理了你的单子，通知类」，04 第九节三种通知是 rl 在触发点开的；rl 没拒，因为 issue.py 不按角色限 kind，角色能不能手开通知类三种 kind 分册没写。
+- 决定：三种通知类 kind 只由 rl 自己开（销号交回、收回、gyb 越过 owner 三个触发点），角色和 gyb 手敲 `rl issue open --kind withdrawn|orphaned|fyi` 退出码 2；说明书不另写句子。角色要告诉 gyb 的事用别的 kind（03 第 90 行的九种里按事由挑）。
+- 理由：三种 kind 的语义都是「rl 替系统发的通知」，手开会让收件人按通知去做本来不存在的动作；03 第 90 行的定义足够，机器拦一层比写纪律省。
+- 落点：`research-loop/scripts/rl_cmds/issue.py`；测试 15 补一例；sync-inbox 问题 48(k) 给 03 第 90 行补「只由 rl 开」。
+- 审查：
 - 理由：只增不改的账本身就存着每一版，缺的只是查询的口子（03 总规矩「能写就能查」）；改行格式是动冻结正文。
 - 落点：`research-loop/scripts/rl_lib.py`、各 `show` 子命令；`research-loop/tables/commands.json`；`research-loop/common/REVIEW-CHECKLIST.md` D2；`skills/reviewer/SKILL.md` 读序里读 commit 那句；sync-inbox 问题 48(j) 给 05 的 show 签名、问题 51。
 - 审查：
