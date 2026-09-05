@@ -105,7 +105,7 @@ gyb 要硬写就加 `--force --reason`，rl 照写并把 reason 记进账行的 
 | 批 | 等批的口径、等裁的 feedback | status 段 3、段 8；`eval approve ID... --quote`、`feedback accept` |
 | 回问题单 | 派给我的、还开着的 issue（超过 `issues.gyb_stale_hours` 没动的标出） | status 段 2；`issue reply`、`issue close`（2026-08-21 gyb 裁加这一行） |
 | 验收 | 等验收的单子（含快车道补单）、报告路径 | status 段 4；`handoff accept/reject` |
-| 拉起 | owner 没有活会话的待干单、gyb 手动接的单 | status 段 5，每行附「加载哪个角色」的命令 |
+| 拉起 | owner 没有活会话的待干单、gyb 手动接的单 | status 段 5（施工期代裁 D-35：只列 `todo` 状态的单，gyb 待审），每行附「加载哪个角色」的命令 |
 | 看进度 | 在跑的实验到哪了、日志和监控命令 | status 段 1 的发射单行带 `log_path`、`watch_cmd`、按 batch 汇一段 |
 | 查一个数从哪来 | run 到发射单到工单到决定 | `rl trace <任何编号>` |
 | 收回、改版重派 | 引旧版的活单和它们的 holder、过版的单子和 retired 决定名下的活单 | status 段 6；`decision update/retire` 当场打印；`handoff withdraw/reissue`（段 6 归这一行是 2026-08-21 gyb 裁） |
@@ -500,6 +500,7 @@ gyb 越过 owner 处理别人的单子时，rl 给 owner 开一条 kind 是 `fyi
 - 2026-08-21 来自 `10-role-idea.md` 定稿（`96459b4`，rl-hub-v6 传；gyb 原话「砍掉，默认能读」「不用申请」）：第一节第 1 件事里 idea 读 `notes/` 的获准段改成不用获准、只留纪律一句；第 3 件事「写 grants」补第一版空置、存废等最后一期（sync-inbox 问题 43）；接口一节 `rl init` 那一问删。use case 表查无「批 `read:notes`」行，无从删。对回原则 2。
 - 2026-08-21 评审修复（gyb 授权，定义处 `06-hooks-and-permissions.md`）：钩子口径由两工具改成三工具——第二节豁免表那一行由「钩子（Write/Edit 的目录限制）」改成「钩子（Write/Edit/Bash 写目标的目录限制）」，接口一节「钩子挂在哪两个工具」改成「钩子挂 Write、Edit、Bash 三个工具，Bash 解析命令里的重定向、`tee`、`sed -i`、`mv`/`cp` 的写目标，解析不出目标路径的写法钩子不看、归纪律」，与 `06` 定稿第 13 行同口径。对回原则 2。
 - 2026-08-21 评审修复（gyb 授权，定义处 `08-trees-init-and-host.md`、`09-common-and-feedback.md`、`30-build-steps-verify-tests.md`）：正文的「待同步」标注和文末「要同步到别处的」清单的「已同步」标注打架，逐处核实目标文件后对齐——第一节阈值表下那句、第六节两处（阈值键、入口 skill 领路）指 `08` 的三处「待同步」改「已同步 2026-08-21」（`08` 阈值表已无 `notify.reminder_days`、领路第 5 条已改成 gyb 自己定期开工）；接口一节待验证第 6、7 条那句指 `30` 的「待同步」改「已同步 2026-08-21」（`30` 第 18、19 行已标「已销 2026-08-21」）；接口一节 issues 那句按文末拆开写成 `09` 已同步 2026-08-21（`09` 第 115 行已改成「进 `rl status` 段 2」）、写了两遍的 `03` 并进 sync-inbox 问题 40 等最后一期（`03` 第 92 行仍写「触发桌面通知」，冻结不改）。对回原则 8。
+- 2026-09-05 施工期代裁 D-35（`plans/2026-09-04-research-loop-proxy-decisions.md`，gyb 待审；rl-hub-v6 记）：`rl status` 段 5 只列 `todo` 状态的单——use case 表「拉起」行第三栏加旁注，正文句不改；gyb 认可 D-35 后旁注转正、`05:159` 同句等最后一期（sync-inbox 问题 48(i)）。对回原则 6。
 
 ## 要同步到别处的
 
