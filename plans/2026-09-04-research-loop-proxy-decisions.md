@@ -309,6 +309,14 @@
 - 落点：`research-loop/scripts/rl_cmds/status.py`；sync-inbox 问题 48(i) 给 05 第 159 行；01 第 108 行由 rl-hub-v6 补注。
 - 审查：
 
+### D-36 `rl run finish` 的反常时长和 run 自己那一次尝试的估时比，没估时就跳过（评审助手提，统筹按推荐裁）
+
+- 问题：08 第 75 行「实际耗时超过预计 3 倍」的「预计」指哪一次尝试的估时没写；04 第 43 行 `estimated_seconds` 只加总一次尝试的步骤表。D-31 之后 amend 会在 run 跑着的时候往 `attempts` 尾追加新尝试，拿列表最后一项比就比错对象。底座 f3e848a 已按「和自己那一次尝试比」写，注释写的是「reviewer ruling」。
+- 决定：反常时长用 runs 行的 `attempt` 序号找发射单上同一次尝试的 `estimated_seconds` 比；那一次没估时（`step_table` 空）就跳过反常判断。代码注释改成引 proxy decision D-36。
+- 理由：04 第 43 行估时按尝试记，比较也按尝试对；评审不是裁决来源。
+- 落点：`research-loop/scripts/rl_cmds/run.py`（finish）；测试 10 或 12 补一例两次尝试各自比。
+- 审查：
+
 - 附（同一轮实测）：D-26 的宿主变量 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` 这轮没用上——setsid 脱离之后 SessionEnd 与 closed 版同一秒落账，设不设变量结果一样，当保险留着不算必需；注入后的权限流程 auto 模式分类器放行、全程无框（verify.md 7.6），default 模式弹框（7.3），gyb 的会话是 auto。
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
