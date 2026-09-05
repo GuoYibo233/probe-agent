@@ -96,7 +96,10 @@ listed in `_pending`, so the final merge pass can grep for it.
     `--as-gyb`, `--quote`, `--force`, `--reason`) before dispatch; handlers whose
     signature also has `--reason` (`handoff reject/withdraw`, `ql close --dropped`,
     `session end`) read it from the global options, so one `--reason` serves both the
-    command and a `--force` on the same call.
+    command and a `--force` on the same call. `session end` names its end reason with
+    the dedicated `--end-reason hook|manual|reclaim` (05 L40 writes `[--reason]`); the
+    global `--reason` still works as an alias when `--force` is absent. The plugin hook
+    calls `rl session end --end-reason hook`.
 
 16. **`--force` never removes the retire reason.** `rl decision retire` needs `--text`
     from everyone, gyb with `--force --reason` included; a missing reason is exit 5

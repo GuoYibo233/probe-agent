@@ -380,7 +380,7 @@ def hook_subagent_stop(inp: dict) -> int:
     sid, aid = inp.get("session_id"), inp.get("agent_id")
     if repo is None or role is None or not sid or not aid:
         return 0
-    proc = run_rl(["session", "end", "--reason", "hook"], repo, rl_env(sid, inp.get("agent_type"), aid))
+    proc = run_rl(["session", "end", "--end-reason", "hook"], repo, rl_env(sid, inp.get("agent_type"), aid))
     if proc.returncode != 0:
         print(f"research-loop: subagent session end failed ({proc.stderr.strip()})", file=sys.stderr)
     return 0
@@ -402,7 +402,7 @@ def hook_session_end(inp: dict) -> int:
         # hook returns at once; the state file is deleted by that background step after
         # `rl session end` finished (proxy decision D-26).
         log = state.with_suffix(".end.log")
-        script = (f"{shlex.quote(sys.executable)} {shlex.quote(str(RL))} session end --reason hook; "
+        script = (f"{shlex.quote(sys.executable)} {shlex.quote(str(RL))} session end --end-reason hook; "
                   f"rm -f {shlex.quote(str(state))}")
         with open(log, "ab") as fh:
             subprocess.Popen(["/bin/sh", "-c", script], cwd=str(repo), env=rl_env(sid),
