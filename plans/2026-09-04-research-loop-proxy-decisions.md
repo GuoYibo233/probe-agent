@@ -297,7 +297,7 @@
 
 - 问题：05 第 206 行无例外；04 第 195 行每次 release 都开 orphaned 通知，不排除的话每张交回的单都会被第 12 项报到收件人去 close。
 - 决定：第 12 项不算 withdrawn、orphaned、fyi 三种通知类 issue。
-- 理由：第 12 项的 push_to 是「开 issue 的角色」，通知类是 rl 自己开的行，字面读法推不出收件人；通知类 issue 本来就不要求关。
+- 理由：第 12 项的 push_to 是「开 issue 的角色」，通知类是 rl 自己开的行，字面读法推不出收件人；通知类 issue 由收件人做完事后自己关（05 第 138 行），不是 doctor 追的问题。
 - 落点：`research-loop/scripts/rl_cmds/doctor.py`；测试 19 或 11 补一例；sync-inbox 问题 48(h) 给 05 第 206 行。
 - 审查：
 
