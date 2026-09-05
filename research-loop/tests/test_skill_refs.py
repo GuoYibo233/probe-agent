@@ -32,6 +32,7 @@ EXEMPT_SENTENCES = [
     "what happens on a second load in the same session is undefined and has no fallback.",
 ]
 
+GLOBAL_FLAGS = {"--json", "--as-gyb", "--quote", "--force", "--reason"}
 BACKTICK = re.compile(r"`([^`\n]+)`")
 SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 MIN_COPY_LEN = 50
@@ -52,11 +53,13 @@ def _read_text(path):
 def load_commands():
     """name -> {ledger, kind}; pending_commands do not exist (grants are PENDING(issue 43c))."""
     table = _load_json("tables/commands.json")
-    commands = {c["name"]: {"ledger": c["ledger"], "kind": c["kind"]} for c in table["commands"]}
-    assert commands, "tables/commands.json lists no commands"
+    commands = {}
     flags = set()
     for c in table["commands"]:
-        flags.update(re.findall(r"--[a-z][a-z0-9-]*", c.get("signature", "")))
+        own = set(re.findall(r"--[a-z][a-z0-9-]*", c.get("signature", "")))
+        commands[c["name"]] = {"ledger": c["ledger"], "kind": c["kind"], "flags": own}
+        flags.update(own)
+    assert commands, "tables/commands.json lists no commands"
     return commands, flags
 
 
@@ -206,6 +209,11 @@ def check_role(role, commands, flags, ledgers, statuses, transition_tokens, glos
                 continue
             if commands[name]["kind"] == "write" and not allowed_write(name, commands[name]["ledger"], role_json):
                 errors.append(f"write command not in ledger_writes: `{name}`")
+            # A flag written on a command must be in that command's own signature; the five global
+            # flags (--json, --as-gyb, --quote, --force, --reason; tables/README.md convention 15) are free.
+            for word in token.split():
+                if word.startswith("--") and word not in commands[name]["flags"] and word not in GLOBAL_FLAGS:
+                    errors.append(f"flag not in the signature of `{name}`: `{word}`")
         elif kind == "directory":
             if (PLUGIN / token).is_dir():
                 continue
