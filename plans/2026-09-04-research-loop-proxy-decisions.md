@@ -85,6 +85,7 @@
 - 理由：00 第 321 行是已裁，README 在 08 第四节的插件本体目录表里；待裁标记的用处是最后一期按 `PENDING(` 这个字面扫描，英文形式一样扫得到，并且不让插件本体里夹中文。评审推荐标记保留中文形式，统筹改成英文形式，差别只在标记内部的写法，扫描字面不变。
 - 落点：`research-loop/README.md`；`plans/2026-09-05-research-loop-fork-protocol.md`；`plans/2026-09-04-research-loop-work-guide.md` 第七节；四个助手各收一条消息。
 - 审查：
+- 补记 2026-09-05（评审助手核步 4 代码后，统筹定形式细则）：两种形式允许子项字母和行号区间——`PENDING(issue 41f)`、`PENDING(issue 43c)`、`PENDING(part 04 L176-182)` 都合规；`PENDING(sync-inbox Q35(a) L194)` 这种要改成 `PENDING(issue 35a)`；代码里用「listed as undecided in the build report」一类句子代替标记的不合规，一律改成指向来源的 `PENDING(...)`，没有 build report 这份文件。
 - 补记 2026-09-05（评审助手提议加第三种形式 `PENDING(proxy D-NN)`，统筹不加）：等统筹代裁的那几分钟里，标记用指回分册条目或者问题号的原有两种形式（拿不准的事总能指回一处分册或者 sync-inbox 段），裁了之后换成来源标注 `proxy decision D-NN`、不再 PENDING。理由是编号在裁的时候才发，助手裁前猜号会撞（efa5b5f 的 `PENDING(D-14)` 指的是后来记成 D-18 的事）；两种形式保证最后一期扫到的每个 `PENDING(` 都指向一处设计文字。
 
 ### D-10 工单（work_order）开单时 `track` 必填（底座助手提，统筹裁）
@@ -196,6 +197,7 @@
 - 问题：04 第 98 行写一个 run 会话「用 `rl handoff start --batch` 一次接下整个 batch」，05 第 65 行的签名是 `rl handoff start ID [--batch B]` 只收一个 ID；21 分册「留给 gyb」第 6 条明写「是不是一次把 N 张单都置 in_progress 且 holder 都记同一个会话，表里只有单张单的那一行」没裁。
 - 决定：后者。带 `--batch B` 时，ID 用来定位 batch（ID 必须属于 B，不属于退出码 5），rl 把 batch 为 B、状态 todo 的全部 `launch_order` 一起置 in_progress，每张各追加一版 start、holder 都记本会话；销号时整批交回（04 第 122 行已这么写）。不带 `--batch` 只接 ID 那一张。同一 batch 里 N 张单的 host 和 gpus 怎么分仍没裁，代码标 `PENDING(part 21 L181)`。
 - 理由：和 04 第 98 行「一次接下整个 batch」字面一致；备选（只接一张、逐张 start）让那句落空。签名里 ID 显得多余是 05 冻结正文的事，最后一期改 05 时可以把 ID 改成可省。
+- 附注 2026-09-05（评审助手提）：整批 start 是「先全查再全写、一张不过整批不落」，依据 03 第 19 行整条命令一把锁、30 第 39 到 41 行拒写不留行；代码引 proxy decision D-22。
 - 落点：`research-loop/scripts/rl_lib.py`、`research-loop/bin/rl`（handoff start）；`research-loop/tables/commands.json` 那一行的 notes；测试 7 补一条整批 start 的用例；sync-inbox 问题 48(d) 给 05 第 65 行。
 - 审查：
 
