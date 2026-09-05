@@ -82,10 +82,12 @@ def _to_done_pending_review(sb, tag="dpr"):
     sb.write_file(f"experiments/{tag}-{ho}-method.md", "# method\n")
     sb.write_file(f"experiments/{tag}-{ho}-detail.md", "# detail\n")
     sb.write_file(f"experiments/{tag}-{ho}-code.py", "# code\n")
-    sb.rl_ok("handoff", "start", ho, session=deploy)
+    # amend is a todo/stuck or done_pending_review row, not an in_progress one (04 L64,
+    # L69, L80): fill the paths before start, as test_04 does
     sb.rl_ok("handoff", "amend", ho, "--report-method", f"experiments/{tag}-{ho}-method.md",
              "--report-detail", f"experiments/{tag}-{ho}-detail.md",
              "--code-path", f"experiments/{tag}-{ho}-code.py", session=deploy)
+    sb.rl_ok("handoff", "start", ho, session=deploy)
     sb.rl_ok("handoff", "done", ho, session=deploy)
     return ho
 
