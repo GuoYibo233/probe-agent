@@ -46,6 +46,16 @@ def _approved_metric_ids(repo: Path) -> set:
     return {r["id"] for r in latest.values() if r["status"] == "approved" and r["kind"] == "metric"}
 
 
+def _check_uses_exist(repo: Path, row: dict) -> None:
+    """03 L170: `uses` names which metric criteria the figure uses, so each entry must be an
+    evaluation id that exists; 01 L88: reference existence binds gyb too."""
+    known = {r["id"] for r in rl_lib.read_rows(repo, "evaluations")}
+    missing = [u for u in (row.get("uses") or []) if u not in known]
+    if missing:
+        raise rl_lib.RLError("validation", f"--uses names criteria that do not exist: {', '.join(missing)}",
+                             "propose the metric criterion first, or fix the id (03 L170)")
+
+
 def _check_domain(repo: Path, row: dict) -> None:
     """03 L167-169: group_by, x and y take a runs top-level field name, `config.<key>`, or
     the id of an approved metric criterion; anything else is refused."""
@@ -68,9 +78,10 @@ def _check_domain(repo: Path, row: dict) -> None:
 
 
 def _check_kind_shape(repo: Path, row: dict) -> None:
-    """The two kind-bound rules rl checks itself (the schema's x-conditions carry the rest):
-    a metric row has exactly one of metrics_key / code_path (03 L165-166); a figure row's
-    group_by / x / y stay inside their domain (03 L167-169)."""
+    """The kind-bound rules rl checks itself (the schema's x-conditions carry the rest): a
+    metric row has exactly one of metrics_key / code_path (03 L165-166); a figure row's
+    `uses` entries exist (03 L170) and its group_by / x / y stay inside their domain
+    (03 L167-169)."""
     if row.get("kind") == "metric":
         given = [k for k in ("metrics_key", "code_path") if row.get(k)]
         if len(given) != 1:
@@ -78,6 +89,7 @@ def _check_kind_shape(repo: Path, row: dict) -> None:
                                  f"a metric criterion takes exactly one of --metrics-key / --code-path, got {len(given)}",
                                  "give one of them (03 L165-166)")
     if row.get("kind") == "figure":
+        _check_uses_exist(repo, row)
         _check_domain(repo, row)
 
 

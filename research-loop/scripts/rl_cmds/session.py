@@ -5,21 +5,16 @@ carries the part and line it transcribes (`03 L15`) or the proxy decision it fol
 (`proxy decision D-15`). Nothing here is invented; what the parts have not ruled is
 marked `PENDING(...)` and listed in the build report.
 
-Three shapes that differ from the plain `rl_lib.write_row` pipeline, each with its reason:
+Every row goes through `rl_lib.write_row`. Two of its switches carry rules of this group:
 
-1. `session end` writes rows on the closing session's behalf (04 L120: the deregistration
-   hook does four things per held order). The who-can-call gate belongs to `rl session
-   end` itself (05 L40, "hook, gyb") and is taken once at the top; the release rows and
-   the chain's closed row are then appended with `_append(check_call=False)`, because
-   `rl_lib.check_who_can_call` would measure them against the role's `ledger_writes`
-   (tables/roles/run.json has no `handoff release`, so a run session could not hand its
-   own orders back).
-2. The status-bound required check here counts a present empty list as present, because
-   `released_handoffs` is required on the closed version (03 L190) and is `[]` for a
-   session that held nothing, while `rl_lib.check_conditions` reads `[]` as missing.
-3. `session amend` has its own who rule (gyb or that role's own session, 03 L176; 04
-   L153) and is allowed on a closed session, so it skips both `rl_lib.check_who_can_call`
-   and `rl_lib.check_writer_alive`.
+- `internal=True` for the rows rl writes on its own behalf: `session end`'s release rows
+  and orphaned notices (04 L120: the deregistration hook does four things per held order),
+  and `session amend`, whose who rule is "gyb or that role's own session" (03 L176; 04
+  L153) instead of the role's `ledger_writes`. The who-can-call gate of `rl session end`
+  itself is taken once at the top of the command (05 L40, "hook, gyb").
+- `session start` is exempt from the closed-session refusal and writes the next open
+  version of the same chain (proxy decision D-28; 03 L15: reloading the role is the way
+  back), which `rl_lib.validate_row` carries.
 
 Deleting `loop/.sessions/<session_id>.json` is the hook's last step (06 L120;
 sync-inbox Q35(c)), not rl's; `hooks/rl_hook.py` does it after calling this command.
@@ -47,75 +42,6 @@ END_REASONS = ("hook", "manual", "reclaim")  # 03 L189
 def _carry(row: dict) -> dict:
     """The content fields of a row, without the skeleton (03 L31-43)."""
     return {k: v for k, v in row.items() if k not in SKELETON_KEYS}
-
-
-def _check_required_by_status(ledger: str, row: dict) -> None:
-    """03 L13: a field is required by the status of this version. Same x-conditions table
-    as `rl_lib.check_conditions`, with one difference: a present empty list counts as
-    present, so the closed version of a session that held no order may carry
-    `released_handoffs: []` (03 L190)."""
-    schema = rl_lib.load_schema(ledger) or {}
-    for cond in schema.get("x-conditions", []):
-        if "if" not in cond or "then_required" not in cond:
-            continue
-        if not rl_lib._condition_holds(cond["if"], row, None):
-            continue
-        missing = [k for k in cond["then_required"] if row.get(k) is None or row.get(k) == ""]
-        if missing:
-            raise rl_lib.RLError("validation",
-                                 f"{ledger} row with {cond['if']} needs {', '.join(missing)} "
-                                 f"({cond.get('source', '')})",
-                                 "add the missing field(s) (03 L13)")
-
-
-_SHAPE_CACHE: dict = {}
-
-
-def _validate_shape(ledger: str, row: dict) -> None:
-    """`rl_lib.validate_shape` with the schema's `$id` dropped before the validator is built.
-
-    handoffs.schema.json (the ledger `session end` writes its release rows into) is the
-    only ledger schema with internal `$ref`s. Its `$id` is a repo-relative path, so
-    jsonschema 3.2.0 joins the fragment onto that path, gets
-    `research-loop/schemas/research-loop/schemas/...` and tries to fetch it as a URL, which
-    raises RefResolutionError. Dropping `$id` leaves an empty base URI and
-    `#/definitions/...` resolves in-document. The fix belongs in `rl_lib.merged_schema`;
-    see "rl_lib changes wanted" in the build report (scripts/rl_cmds/handoff.py carries
-    the same private helper for the same reason)."""
-    if ledger not in _SHAPE_CACHE:
-        schema = dict(rl_lib.merged_schema(ledger))
-        schema.pop("$id", None)
-        _SHAPE_CACHE[ledger] = schema
-    try:
-        import jsonschema
-    except ImportError:  # pragma: no cover - rl_lib's own fallback covers this case
-        rl_lib.validate_shape(ledger, row)
-        return
-    validator = jsonschema.Draft7Validator(_SHAPE_CACHE[ledger])
-    errors = sorted(validator.iter_errors(row), key=lambda e: list(e.path))
-    if errors:
-        err = errors[0]
-        where = "/".join(str(p) for p in err.path) or "(row)"
-        raise rl_lib.RLError("validation", f"{ledger} row rejected at {where}: {err.message}",
-                             f"fix the field and retry (schemas/{ledger}.schema.json)")
-
-
-def _append(repo: Path, ledger: str, fields: dict, actor: rl_lib.Actor, command: str, *,
-            status: str, version: int, via: str | None = None,
-            check_alive: bool = True, check_call: bool = True) -> dict:
-    """`rl_lib.write_row`'s pipeline with the two gates switchable, see the module docstring.
-    Order of checks is 03 L15, L27: writer alive -> who can call -> shape -> required by
-    status. The caller holds the lock (03 L19)."""
-    row = rl_lib.skeleton(actor, status, version, via=via)
-    row.update(fields)
-    if check_alive:
-        rl_lib.check_writer_alive(repo, actor)
-    if check_call:
-        rl_lib.check_who_can_call(actor, command)
-    _validate_shape(ledger, row)
-    _check_required_by_status(ledger, row)
-    rl_lib.append_row(repo, ledger, row)
-    return row
 
 
 def _chains(repo: Path) -> dict:
@@ -199,17 +125,16 @@ def cmd_start(args: list[str], ctx: dict):
     rules_version = rl_lib.rules_version()
     with rl_lib.Lock(repo):  # 03 L19
         previous = _chain(repo, actor.session_id, actor.agent_id)
-        # Opening version is version 1 (tables/README.md construction 8); a chain that
-        # already has versions continues its numbering.
-        # PENDING(part 03 L15): a closed chain registering again is refused by the
-        # writer-alive check inside write_row, so reloading a role under the same session
-        # id after `session end --session ID` is refused; 04 L152 says the way out is to
-        # reload the role but does not say whether `session start` itself is exempt.
+        # Opening version is version 1 (tables/README.md construction 8). A chain that
+        # already has versions continues its numbering: after a close that is the reload
+        # (proxy decision D-28, the one command exempt from the closed-session refusal);
+        # PENDING(part 06 L106): a second role load in a still-open session is not defined
+        # by the machine, so this appends another open version of the same chain.
         version = previous["version"] + 1 if previous else 1
         fields = {"role": role, "model": model, "launched_by": launched_by,
                   "rules_version": rules_version, "started_at": rl_lib.now_iso()}  # 03 L185
         row = rl_lib.write_row(repo, "sessions", fields, actor, ctx["command"],
-                               status="open", version=version)
+                               status="open", version=version, force=force, force_reason=force_reason)
     if ctx["opts"]["json"]:
         return rl_lib.result(row, "sessions", {"role": role, "rules_version": rules_version})
     return _line(row)
@@ -226,7 +151,12 @@ def _wip_branch(repo: Path, ho_id: str) -> tuple[str | None, str | None]:
     branch name goes into the progress note. Returns (branch, note-about-failure).
 
     Done without `git stash`: branch off the current HEAD, commit experiments/, go back.
-    Any git step that fails leaves the working tree alone and is reported."""
+    Any git step that fails leaves the working tree alone and is reported.
+
+    PENDING(part 04 L127): 04 names one branch per released order, but a session has one
+    working tree, so the dirty changes go onto the branch named after the first order this
+    session end releases and every other released order's progress note points at that same
+    branch; `_release_chain` does that bookkeeping."""
     status = _git(repo, "status", "--porcelain", "--", "experiments")
     if status.returncode != 0 or not status.stdout.strip():
         return None, None
@@ -249,15 +179,18 @@ def _wip_branch(repo: Path, ho_id: str) -> tuple[str | None, str | None]:
 
 
 def _held_orders(repo: Path, session_id: str, agent_id: str | None, any_agent: bool) -> list[dict]:
-    """The orders this chain holds: latest version in_progress, holder is this session,
-    and the agent_id-or-empty pairs with the chain's (proxy decision D-15 addendum).
-    `any_agent` is the `--session ID` case: gyb closing another session takes every agent
-    id of that session."""
+    """The orders to hand back: latest version in_progress and holder is this session
+    (04 L51: session end only looks at in_progress orders).
+
+    `any_agent` is the top-level case (proxy decision D-15 (4)): a SessionEnd hands back
+    everything held under its session_id, the orders of subagents killed with it included,
+    because those subagents get no SubagentStop. A SubagentStop takes only its own chain,
+    paired by (session_id, agent_id or empty) (D-15 addendum)."""
     latest = rl_lib.latest(rl_lib.read_rows(repo, "handoffs"), "handoffs")
     out = []
     for row in latest.values():
         if row["status"] != "in_progress" or row.get("holder") != session_id:
-            continue  # 04 L51: session end only looks at in_progress orders
+            continue
         if not any_agent and (row.get("agent_id") or "") != (agent_id or ""):
             continue
         out.append(row)
@@ -266,7 +199,7 @@ def _held_orders(repo: Path, session_id: str, agent_id: str | None, any_agent: b
 
 
 def _release_chain(repo: Path, chain: dict, actor: rl_lib.Actor, via: str, any_agent: bool,
-                   issue_ids: list[str]) -> tuple[list[str], list[str]]:
+                   issue_ids: list[str], wip: dict) -> tuple[list[str], list[str]]:
     """The four things 04 L120-127 does for every order the chain holds: hand it back to
     todo, write the progress note, open an orphaned issue to the owner, branch the dirty
     experiments/ tree. Returns (released ids, notes about git failures)."""
@@ -278,19 +211,25 @@ def _release_chain(repo: Path, chain: dict, actor: rl_lib.Actor, via: str, any_a
         # 04 L75 release.no_kill_if_launched: a launch_order whose latest attempt has a
         # launched run row without a finished version is handed back untouched, no process
         # is killed; the next run adopts it. So there is nothing to do here but release.
-        branch, note = _wip_branch(repo, order["id"])
-        if note:
-            notes.append(f"{order['id']}: {note}")
+        if not wip["tried"]:
+            wip["tried"] = True  # one working tree, one branch: see _wip_branch
+            wip["branch"], note = _wip_branch(repo, order["id"])
+            if note:
+                notes.append(f"{order['id']}: {note}")
+                wip["note"] = note
         progress_note = f"session ended, holder was {session_id}"  # 04 L125
-        if branch:
-            progress_note += f"; dirty experiments/ changes are on branch {branch}"  # 04 L127
-        elif note:
-            progress_note += f"; {note}"
+        if wip["branch"]:
+            progress_note += f"; dirty experiments/ changes are on branch {wip['branch']}"  # 04 L127
+        elif wip["note"]:
+            progress_note += f"; {wip['note']}"
         fields = _carry(order)
         fields.update({"holder": None, "last_holder": session_id, "progress_note": progress_note})
         # 04 L51 holder invariant: leaving in_progress clears holder into last_holder.
-        _append(repo, "handoffs", fields, actor, "handoff release",
-                status="todo", version=order["version"] + 1, via=via, check_call=False)
+        # internal=True: rl writes this row for the session, not the role calling
+        # `rl handoff release` (04 L120; transitions.json release_in_progress lists
+        # session_end_hook under who_can_write).
+        rl_lib.write_row(repo, "handoffs", fields, actor, "handoff release",
+                         status="todo", version=order["version"] + 1, via=via, internal=True)
         # 04 L75 release.orphaned_notice; 04 L195: the notice goes to the owner, and
         # handoff_id is required on an orphaned issue (03 L75).
         issue_id = rl_lib.next_number(issue_ids, "iss")
@@ -299,13 +238,18 @@ def _release_chain(repo: Path, chain: dict, actor: rl_lib.Actor, via: str, any_a
                          {"id": issue_id, "assignee": rl_lib.owner_of(order), "kind": "orphaned",
                           "handoff_id": order["id"],
                           "text": f"holder session {session_id} ended; {order['id']} went back to todo"},
-                         actor, "issue open", status="open", version=1, via=via)
+                         actor, "issue open", status="open", version=1, via=via, internal=True)
         released.append(order["id"])
     return released, notes
 
 
 def cmd_end(args: list[str], ctx: dict):
-    """`rl session end [--session ID] [--reason hook|manual|reclaim]` (05 L40; 04 L152).
+    """`rl session end [--session ID] [--end-reason hook|manual|reclaim]` (05 L40; 04 L152).
+
+    05 L40 writes the flag as `--reason`, but `--reason` is one of bin/rl's global flags and
+    carries gyb's `--force --reason` sentence, so the end reason has its own option
+    `--end-reason`; `--reason` is still read as its alias while `--force` is absent, which
+    is how the plugin hook calls it (`rl session end --reason hook`).
 
     Order of writes (03 L15; debt map 47(b)): first hand back every held order (those
     release rows carry this session's id and pass the writer-alive check because the
@@ -314,11 +258,11 @@ def cmd_end(args: list[str], ctx: dict):
     positional, opts = rl_lib.parse_args(args)
     if positional:
         raise rl_lib.RLError("usage", f"rl session end takes no positional argument: {positional[0]!r}",
-                             "usage: rl session end [--session ID] [--reason hook|manual|reclaim]")
-    unknown = set(opts) - {"session"}
+                             "usage: rl session end [--session ID] [--end-reason hook|manual|reclaim]")
+    unknown = set(opts) - {"session", "end-reason"}
     if unknown:
         raise rl_lib.RLError("usage", f"unknown flag(s) for rl session end: {', '.join(sorted(unknown))}",
-                             "usage: rl session end [--session ID] [--reason hook|manual|reclaim]")
+                             "usage: rl session end [--session ID] [--end-reason hook|manual|reclaim]")
     repo, actor, force, force_reason = rl_lib.context(ctx)
     # 05 L40: `session start` and `session end` are the hook's or gyb's. This is the one
     # who-can-call gate of the command; it is taken before anything is written, so a
@@ -326,28 +270,44 @@ def cmd_end(args: list[str], ctx: dict):
     rl_lib.check_who_can_call(actor, ctx["command"])
     target = opts.get("session") or actor.session_id
     other = target != actor.session_id
-    # 04 L152: gyb closing another session is not stopped and the session is not checked
-    # for being alive (rl sees ledgers, not processes); end_reason is manual.
-    # Default reason: hook when the plugin hook is the caller (05 L40, RL_CALLER=hook),
-    # manual otherwise, and manual whenever gyb closes another session (04 L152).
-    default_reason = "manual" if other or os.environ.get(rl_lib.ENV_CALLER) != "hook" else "hook"
-    reason = ctx["opts"]["reason"] or default_reason
-    if reason not in END_REASONS:
-        raise rl_lib.RLError("usage", f"--reason must be one of {', '.join(END_REASONS)}, not {reason!r}",
-                             "usage: rl session end [--reason hook|manual|reclaim] (03 L189)")
+    if other and not actor.is_gyb:
+        # 04 L152: closing another session is gyb's, and gyb alone may do it without
+        # checking whether that session is alive.
+        raise rl_lib.RLError("forbidden", "`rl session end --session ID` closes another session and is gyb's",
+                             "ask gyb: " + rl_lib.issue_command_for_gyb(f"please close session {target}"))
+    if other:
+        # 04 L152: gyb closing another session is not stopped and the session is not checked
+        # for being alive (rl sees ledgers, not processes); end_reason is manual.
+        end_reason = "manual"
+    else:
+        end_reason = opts.get("end-reason")
+        if end_reason is None and not force:
+            end_reason = ctx["opts"]["reason"]  # 05 L40 spells the flag --reason
+        if end_reason is None:
+            # hook when the plugin hook is the caller (05 L40, RL_CALLER=hook), else manual.
+            end_reason = "hook" if os.environ.get(rl_lib.ENV_CALLER) == "hook" else "manual"
+    if end_reason not in END_REASONS:
+        raise rl_lib.RLError("usage", f"--end-reason must be one of {', '.join(END_REASONS)}, not {end_reason!r}",
+                             "usage: rl session end [--end-reason hook|manual|reclaim] (03 L189)")
     # via: the hook's release rows record via=session_end; a SubagentStop release records
     # via=subagent_stop (05 L27-29; proxy decision D-15 (4)).
     via = "subagent_stop" if actor.agent_id else "session_end"
+    # proxy decision D-15 (4): a SessionEnd hands back everything under its session_id and
+    # then closes the subagent chains still open; a SubagentStop takes its own chain only.
+    any_agent = not actor.agent_id
     with rl_lib.Lock(repo):  # 03 L19
         issue_ids = [r["id"] for r in rl_lib.read_rows(repo, "issues")]
         own = _chain(repo, target, actor.agent_id if not other else None)
         if own is None:
             raise rl_lib.RLError("usage", f"no sessions row for {target}", "check `rl session list`")
         if own["status"] == "closed":
-            raise rl_lib.RLError("validation", f"session {target} is already closed",
-                                 "a session is closed once (03 L176: two versions, open and closed)")
+            # 03 L15: a closed session is closed; 03 L222: exit 3 says what to do next.
+            raise rl_lib.RLError("forbidden", f"session {target} has been closed already",
+                                 "reload the role to register a new session (03 L15); "
+                                 "`rl session list` shows which chains are open")
         notes: list[str] = []
-        # 1. hand back the orders this chain holds (04 L120-127). Every row this command
+        wip = {"tried": False, "branch": None, "note": None}
+        # 1. hand back the orders this session holds (04 L120-127). Every row this command
         # writes for a chain carries that chain's role as actor and that chain's session id
         # (04 L118: the hook writes on the role's behalf; 05 L27-29: a session-end release
         # records the session's role).
@@ -355,40 +315,35 @@ def cmd_end(args: list[str], ctx: dict):
         # session is not ruled; the chain's role is used, which keeps the open and closed
         # versions of one chain in one hand.
         own_actor = rl_lib.Actor(own["role"], own["role"], target, agent_id=own.get("agent_id"))
-        released, git_notes = _release_chain(repo, own, own_actor, via, any_agent=other, issue_ids=issue_ids)
+        released, git_notes = _release_chain(repo, own, own_actor, via, any_agent, issue_ids, wip)
         notes += git_notes
         # 2. proxy decision D-15 (4): a top-level session end also closes the subagent
         # chains that are still open (a subagent killed with its parent gets no
-        # SubagentStop) and hands back what they hold.
-        # PENDING(proxy decision D-15): the decision's step (4) says the parent hands back
-        # every order under its session_id, while the addendum pairs holder lookups by
-        # (session_id, agent_id or empty). Both are met here by releasing each chain's
-        # orders while that chain is closed, so a killed subagent's orders still go back;
-        # the ids land in that subagent's released_handoffs, not the parent's.
+        # SubagentStop); their orders are already in step 1's list, so these rows record
+        # an empty released_handoffs (03 L190).
         sub_closed = []
         if not actor.agent_id:
             for chain in _open_chains_of(repo, target):
                 if not chain.get("agent_id"):
                     continue
                 sub_actor = rl_lib.Actor(chain["role"], chain["role"], target, agent_id=chain["agent_id"])
-                sub_released, sub_notes = _release_chain(repo, chain, sub_actor, via, any_agent=False,
-                                                         issue_ids=issue_ids)
-                notes += sub_notes
                 sub_fields = _carry(chain)
                 sub_fields.update({"session_id": target, "agent_id": chain["agent_id"],
-                                   "ended_at": rl_lib.now_iso(), "end_reason": reason,
-                                   "released_handoffs": sub_released})
-                _append(repo, "sessions", sub_fields, sub_actor, ctx["command"],
-                        status="closed", version=chain["version"] + 1, check_call=False)
+                                   "ended_at": rl_lib.now_iso(), "end_reason": end_reason,
+                                   "released_handoffs": []})
+                rl_lib.write_row(repo, "sessions", sub_fields, sub_actor, ctx["command"],
+                                 status="closed", version=chain["version"] + 1, internal=True,
+                                 force=force, force_reason=force_reason)
                 sub_closed.append(chain["agent_id"])
         # 3. the closed version last (03 L15; 03 L188-190).
         fields = _carry(own)
-        fields.update({"session_id": target, "ended_at": rl_lib.now_iso(), "end_reason": reason,
+        fields.update({"session_id": target, "ended_at": rl_lib.now_iso(), "end_reason": end_reason,
                        "released_handoffs": released})
         if own.get("agent_id"):
             fields["agent_id"] = own["agent_id"]
-        row = _append(repo, "sessions", fields, own_actor, ctx["command"],
-                      status="closed", version=own["version"] + 1, check_call=False)
+        row = rl_lib.write_row(repo, "sessions", fields, own_actor, ctx["command"],
+                               status="closed", version=own["version"] + 1, internal=True,
+                               force=force, force_reason=force_reason)
     if ctx["opts"]["json"]:
         return rl_lib.result(row, "sessions", {"released_handoffs": released,
                                                "closed_subagents": sub_closed, "notes": notes})
@@ -440,10 +395,11 @@ def cmd_amend(args: list[str], ctx: dict):
         fields.update({"session_id": target, "model": opts["model"]})
         if latest.get("agent_id"):
             fields["agent_id"] = latest["agent_id"]
-        # check_alive off: 03 L176 says a closed session can still be amended; check_call
-        # off: the who rule above replaces the ledger_writes table for this command.
-        row = _append(repo, "sessions", fields, actor, ctx["command"], status=latest["status"],
-                      version=latest["version"] + 1, check_alive=False, check_call=False)
+        # internal=True: the who rule above replaces the ledger_writes table for this
+        # command (03 L176), which no role file carries.
+        row = rl_lib.write_row(repo, "sessions", fields, actor, ctx["command"], status=latest["status"],
+                               version=latest["version"] + 1, internal=True,
+                               force=force, force_reason=force_reason)
     if ctx["opts"]["json"]:
         return rl_lib.result(row, "sessions", {"model": row["model"]})
     return _line(row)
@@ -467,10 +423,10 @@ def cmd_focus(args: list[str], ctx: dict):
         raise rl_lib.RLError("usage", "rl session focus needs --decision ID", "usage: rl session focus --decision ID")
     repo, actor, force, force_reason = rl_lib.context(ctx)
     with rl_lib.Lock(repo):  # 03 L19
-        # 01 L84: reference existence is an integrity check and binds gyb too.
-        if not any(r.get("id") == decision_id for r in rl_lib.read_decisions(repo)):
+        # 01 L88: reference existence is an integrity check and binds gyb too.
+        if not force and not any(r.get("id") == decision_id for r in rl_lib.read_decisions(repo)):
             raise rl_lib.RLError("validation", f"no decision {decision_id}",
-                                 "check `rl decision list` (01 L84: references must exist)")
+                                 "check `rl decision list` (01 L88: references must exist)")
         latest = _chain(repo, actor.session_id, actor.agent_id)
         if latest is None:
             raise rl_lib.RLError("usage", f"no sessions row for {actor.session_id}",
@@ -480,7 +436,8 @@ def cmd_focus(args: list[str], ctx: dict):
         if latest.get("agent_id"):
             fields["agent_id"] = latest["agent_id"]
         row = rl_lib.write_row(repo, "sessions", fields, actor, ctx["command"],
-                               status=latest["status"], version=latest["version"] + 1)
+                               status=latest["status"], version=latest["version"] + 1,
+                               force=force, force_reason=force_reason)
     if ctx["opts"]["json"]:
         return rl_lib.result(row, "sessions", {"focus": decision_id})
     return _line(row)

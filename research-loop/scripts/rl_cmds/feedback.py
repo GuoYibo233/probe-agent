@@ -1,31 +1,28 @@
-"""`rl feedback ...`: the feedback ledger (03 L139-152; 09 L57-95; 05 L80).
+"""`rl feedback ...`: the feedback ledger (03 L139-152; 09 L69-93; 05 L80).
 
-Anyone proposes, only gyb rules, everyone reads (03 L141). Five sub-commands (09 L83-91):
+Anyone proposes, only gyb rules, everyone reads (03 L141). Five sub-commands (09 L81-85):
 add, accept, reject, show, list. Every rule carries the part and line it transcribes.
 
-`accept` does four things (09 L93): check every applied_to path exists, add one to the
+`accept` does four things (09 L87): check every applied_to path exists, add one to the
 `rules_version` line of common/GLOBAL-RULES.md and write it back, list the still-live
 sessions with their rules_version, print a to-do. The rules line is the single source of
-truth (09 L57-59); `rl_lib.rules_version()` reads it and honours RL_COMMON_DIR, so the
+truth (09 L59); `rl_lib.rules_version()` reads it and honours RL_COMMON_DIR, so the
 write-back goes to the same file.
 """
 
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 
 import rl_lib
 
-# 03 L146; 09 L73: target is a file path, or a prefixed number rule-06 / principle-06.
-NUMBERED_TARGET = re.compile(r"^(rule|principle)-\d+$")
 TERMINAL = ("accepted", "rejected")  # 09 L73: both are terminal, propose again as a new row
 
 
 def _common_dir() -> Path:
     """The master rules directory: the sandbox copy when RL_COMMON_DIR is set (tests
-    seam, tables/README.md 7), else the plugin's common/ (09 L57)."""
+    seam, tables/README.md 7), else the plugin's common/ (09 L59)."""
     return Path(os.environ.get(rl_lib.ENV_COMMON_DIR) or rl_lib.COMMON_DIR)
 
 
@@ -42,7 +39,7 @@ def _bump_rules_version(after: int) -> None:
 
 
 def _live_sessions(repo: Path) -> list[dict]:
-    """09 L59: accept lists the sessions that are still alive with their rules_version, so
+    """09 L65: accept lists the sessions that are still alive with their rules_version, so
     gyb can pick which to close. Alive = the latest version of the chain is open (03 L176)."""
     rows = [r for r in rl_lib.latest(rl_lib.read_rows(repo, "sessions"), "sessions").values()
             if r["status"] == "open"]
@@ -51,13 +48,13 @@ def _live_sessions(repo: Path) -> list[dict]:
 
 
 def _todo(fb_id: str, after: int) -> list[str]:
-    """09 L93: the to-do says which places still need editing, whether to close sessions,
-    and that the master change is its own commit plus a test run (09 L95: the commit
+    """09 L87: the to-do says which places still need editing, whether to close sessions,
+    and that the master change is its own commit plus a test run (09 L89: the commit
     prefix is `research-loop rules:`)."""
     return [
         f"to-do 1: edit the places {fb_id} names that are not edited yet (the master text is changed by hand, rl only moved the rules_version line to {after}).",
-        "to-do 2: decide which of the live sessions above to close; closing one is `rl session end --session ID` (09 L59).",
-        "to-do 3: commit the master change on its own with the prefix `research-loop rules:` and run tests/run_all.py (09 L95).",
+        "to-do 2: decide which of the live sessions above to close; closing one is `rl session end --session ID` (09 L65).",
+        "to-do 3: commit the master change on its own with the prefix `research-loop rules:` and run tests/run_all.py (09 L89).",
     ]
 
 
@@ -78,7 +75,7 @@ def _line(row: dict) -> str:
 # ---------------------------------------------------------------- add
 
 def cmd_add(args: list[str], ctx: dict):
-    """`rl feedback add --target ... --text ...` (05 L80; 09 L85): anyone proposes."""
+    """`rl feedback add --target ... --text ...` (05 L80; 09 L81): anyone proposes."""
     positional, opts = rl_lib.parse_args(args)
     if positional:
         raise rl_lib.RLError("usage", f"rl feedback add takes no positional argument: {positional[0]!r}",
@@ -92,12 +89,10 @@ def cmd_add(args: list[str], ctx: dict):
         raise rl_lib.RLError("usage", "rl feedback add needs --target and --text",
                              "usage: rl feedback add --target T --text X")
     repo, actor, force, force_reason = rl_lib.context(ctx)
-    # 03 L146; 09 L73: the two shapes a target may take. A table row is given as the
-    # table's file path with the row named in the text.
-    if not NUMBERED_TARGET.match(target) and not (repo / target).exists():
-        raise rl_lib.RLError("validation",
-                             f"--target {target!r} is neither an existing repo path nor a number like rule-06",
-                             "give the path of the file you want changed, or rule-NN / principle-NN (03 L146)")
+    # 03 L146; 09 L73 fix the two shapes a target may take and nothing else: a file path,
+    # or a prefixed number like rule-06. A table row is given as the table's file path with
+    # the row named in the text. rl checks that a path exists only for applied_to on the
+    # accepted version (03 L149), so nothing is checked here.
     with rl_lib.Lock(repo):  # 03 L19: scan, number, append inside one lock
         ids = [r["id"] for r in rl_lib.read_rows(repo, "feedback")]
         fb_id = rl_lib.next_number(ids, "fb")  # fb-NNNN, proxy decision D-11
@@ -112,7 +107,7 @@ def cmd_add(args: list[str], ctx: dict):
 # ---------------------------------------------------------------- accept
 
 def cmd_accept(args: list[str], ctx: dict):
-    """`rl feedback accept ID --applied-to FILE ... --text V` (05 L80; 09 L87, L93): gyb
+    """`rl feedback accept ID --applied-to FILE ... --text V` (05 L80; 09 L82, L87): gyb
     rules; verdict_text and at least one existing applied_to path are required
     (03 L148-149, L152)."""
     positional, opts = rl_lib.parse_args(args, multi=("applied-to",))
@@ -135,7 +130,7 @@ def cmd_accept(args: list[str], ctx: dict):
                                  f"{fb_id} is {latest['status']}, which is terminal; it takes no further version",
                                  "propose again with `rl feedback add`, saying in the text which row it follows (09 L73)")
         # 03 L149, L152: rl checks every applied_to path exists. Integrity checks bind gyb
-        # too (01 L84), so this runs before the row is written.
+        # too (01 L88), so this runs before the row is written.
         missing = [p for p in applied_to if not (repo / p).exists()]
         if missing and not force:
             raise rl_lib.RLError("validation", f"applied_to path(s) do not exist: {', '.join(missing)}",
@@ -171,7 +166,7 @@ def cmd_accept(args: list[str], ctx: dict):
 # ---------------------------------------------------------------- reject
 
 def cmd_reject(args: list[str], ctx: dict):
-    """`rl feedback reject ID --text V` (05 L80; 09 L89): gyb rules; verdict_text says why
+    """`rl feedback reject ID --text V` (05 L80; 09 L83): gyb rules; verdict_text says why
     it was not adopted (03 L148)."""
     positional, opts = rl_lib.parse_args(args)
     if len(positional) != 1:
@@ -219,19 +214,17 @@ def cmd_show(args: list[str], ctx: dict):
 
 
 def cmd_list(args: list[str], ctx: dict):
-    """`rl feedback list` (05 L80): the latest version of every row (03 L11)."""
+    """`rl feedback list` (05 L80; 09 L85): the latest version of every row (03 L11)."""
     positional, opts = rl_lib.parse_args(args)
     if positional:
         raise rl_lib.RLError("usage", f"rl feedback list takes no positional argument: {positional[0]!r}",
                              "usage: rl feedback list")
-    unknown = set(opts) - {"status"}
-    if unknown:
-        raise rl_lib.RLError("usage", f"unknown flag(s) for rl feedback list: {', '.join(sorted(unknown))}",
+    if opts:
+        # 05 L80; 09 L85: `rl feedback list` takes no flag.
+        raise rl_lib.RLError("usage", f"rl feedback list takes no flag: {', '.join(sorted(opts))}",
                              "usage: rl feedback list")
     repo = rl_lib.find_repo_root()
     rows = list(rl_lib.latest(rl_lib.read_rows(repo, "feedback"), "feedback").values())
-    if opts.get("status"):
-        rows = [r for r in rows if r["status"] == opts["status"]]
     rows.sort(key=lambda r: r["id"])
     if ctx["opts"]["json"]:
         return {"feedback": rows}
