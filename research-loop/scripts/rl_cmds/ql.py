@@ -13,8 +13,7 @@ import time
 from pathlib import Path
 
 import rl_lib
-from rl_cmds.run import append_handoffs_version
-from rl_cmds.scratch import copy_fields, latest_row, one_tag, opts_of, require_open, rows_of
+from rl_cmds.scratch import latest_row, one_tag, opts_of, require_open, rows_of
 
 QL_ROLES = ("deploy", "analysis")  # 05 L87; 03 L201
 
@@ -74,6 +73,12 @@ def cmd_open(args, ctx):
             order = rl_lib.latest(rl_lib.read_rows(repo, "handoffs"), "handoffs").get(from_id)
             if order is None:
                 raise rl_lib.RLError("usage", f"no handoff {from_id}")
+            if order.get("work_type") != "work_order":
+                # 07 L31: --from takes "a todo work order" into the quick lane; a
+                # launch_order or an analysis_order is not one of them.
+                raise rl_lib.RLError("validation",
+                                     f"{from_id} is a {order.get('work_type')}, not a work_order",
+                                     "`rl ql open --from` takes a todo work order (07 L31)")
             trow = rl_lib.find_transition("ql open --from", order["status"])
             rl_lib.check_who_can_write(trow, actor, order)
         tags = [r["ql_tag"] for r in rl_lib.read_rows(repo, "scratch")]
@@ -105,16 +110,22 @@ def cmd_open(args, ctx):
             # version marking it quick_lane, and from then on it is out of the todo queue:
             # nobody is dispatched to it and it takes no holder (transitions.json
             # ql_transfer_in, sync-inbox Q41(c)). The status does not change.
-            order_fields = copy_fields(order)
+            order_fields = rl_lib.copy_content(order)  # 04 L29: adopted stays on its own version
             order_fields["quick_lane"] = True
-            # PENDING(issue 41f): whether a transferred order also carries ql_tag is not
-            # ruled (handoffs schema x-conditions), so rl leaves that field as it was.
+            # PENDING(issue 41f): the sub-command that takes a transferred order back out
+            # (straight to done_pending_review on merge-back, or back to todo with the
+            # quick_lane mark cleared) has no name yet (07 L114; transitions.json
+            # ql_transfer_exit), so until 41f is ruled a transferred order can neither
+            # leave the quick lane nor be closed with `rl ql close --merged`: that path
+            # needs a supplement whose ql_tag is this lane, and rl sets no ql_tag here
+            # (whether a transferred order carries one is part of the same question).
             _, ho_version = rl_lib.next_version_of(repo, "handoffs", from_id)
-            # The shape check needs the handoffs schema's internal refs to resolve; see
-            # rl_cmds.run.append_handoffs_version.
-            append_handoffs_version(repo, order_fields, actor, ctx["command"],
-                                    status=order["status"], version=ho_version,
-                                    force=force, force_reason=force_reason)
+            # The command stays `ql open`: the who-can-call check reads the scratch ledger
+            # this command writes (05 L87), and who may mark this order is the transition
+            # table's who_can_write, checked above.
+            rl_lib.write_row(repo, "handoffs", order_fields, actor, ctx["command"],
+                             status=order["status"], version=ho_version,
+                             force=force, force_reason=force_reason)
             transferred = from_id
 
     if ctx["opts"]["json"]:
@@ -151,7 +162,9 @@ def cmd_close(args, ctx):
         # 07 L86; 05 L87: merging back is deploy's alone; gyb is exempt (01 L65).
         raise rl_lib.RLError("forbidden",
                              f"`rl ql close --merged` is deploy's, not {actor.role_session}'s",
-                             "the analysis quick lane closes with --dropped (07 L86)")
+                             "the analysis quick lane closes with --dropped (07 L86); or ask gyb: "
+                             + rl_lib.issue_command_for_gyb(
+                                 f"{actor.role_session} needs to merge quick lane {ql_tag} back"))
     _guard_write(repo, actor, ctx["command"])
 
     with rl_lib.Lock(repo):  # 03 L19

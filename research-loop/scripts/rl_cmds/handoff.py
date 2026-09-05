@@ -28,14 +28,6 @@ import rl_lib
 
 LEDGER = "handoffs"
 
-# 03 L31-43: the skeleton is rebuilt for every version; everything else on the latest row
-# is content that carries forward unchanged (03 L11: a change is a new version, not an edit).
-_SKELETON_KEYS = ("version", "status", "ts", "actor", "session_id", "schema_version",
-                  "force_reason", "via", "agent_id")
-# adopted lives on the start version only (04 L29) and quote on the withdraw version only
-# (04 L40), so neither carries forward.
-_VERSION_ONLY_KEYS = ("adopted", "quote")
-
 _WORK_TYPES = ("work_order", "analysis_order", "launch_order")
 _CONFIG_KEYS = ("model", "params", "dataset", "split")  # 04 L43
 
@@ -72,9 +64,10 @@ def _order(repo, ho_id):
 
 
 def _carry(order):
-    """The content fields of the latest version, ready for the next one (03 L11)."""
-    drop = set(_SKELETON_KEYS) | set(_VERSION_ONLY_KEYS)
-    return {k: v for k, v in order.items() if k not in drop}
+    """The content fields of the latest version, ready for the next one (03 L11).
+    One copy rule for every module: rl_lib.copy_content drops the skeleton keys and the
+    version-only keys (adopted, 04 L29; quote, 04 L40)."""
+    return rl_lib.copy_content(order)
 
 
 def _refs(values, kind):
@@ -105,7 +98,7 @@ def _exists(repo, path):
 
 
 def _append(repo, ledger, fields, actor, command, *, status, version, force=False,
-            force_reason=None, via=None, skip_conditions=False):
+            force_reason=None, via=None, skip_conditions=False, internal=False):
     """One ledger row.
 
     Without `skip_conditions` this is exactly rl_lib.write_row. With it the row is built the
@@ -116,17 +109,24 @@ def _append(repo, ledger, fields, actor, command, *, status, version, force=Fals
     `work_type == work_order -> decision_refs, explanation, track` x-condition would refuse
     it. The supplement's own precondition list is checked in cmd_open instead. This is not
     force: nothing is written to force_reason and gyb's --force stays a separate flag.
+
+    `internal=True` marks a row rl writes on its own behalf (the notices of 04 L188-200, the
+    adopted runs version of 03 L100, the release rows the session-end hook writes) and skips
+    who-can-call, because the ledger_writes table describes what a role may type, not what rl
+    does for it (05 L40; 06 L156).
     """
     if not skip_conditions:
         return rl_lib.write_row(repo, ledger, fields, actor, command, status=status,
-                                version=version, force=force, force_reason=force_reason, via=via)
+                                version=version, force=force, force_reason=force_reason, via=via,
+                                internal=internal)
     row = rl_lib.skeleton(actor, status, version, force_reason=force_reason, via=via)
     row.update(fields)
     if actor.quote and "quote" not in row and actor.is_gyb and not actor.bare_terminal:
         row["quote"] = actor.quote  # 01 L70: --as-gyb rows carry gyb's words
-    rl_lib.check_writer_alive(repo, actor)     # 03 L15
-    rl_lib.check_who_can_call(actor, command)  # 06 L156
-    rl_lib.validate_shape(ledger, row)         # schemas/handoffs.schema.json
+    rl_lib.check_writer_alive(repo, actor)                        # 03 L15
+    if not internal:
+        rl_lib.check_who_can_call(actor, command)                 # 06 L156
+    rl_lib.validate_shape(ledger, row, skip_required=force)       # 03 L27: force skips required
     rl_lib.append_row(repo, ledger, row)
     return row
 
@@ -211,23 +211,37 @@ def _adoptable_run(repo, order):
     return max(versions, key=lambda v: v["version"])
 
 
-def _role_of_session(repo, session_id):
-    """The role of a session, read from the sessions ledger (04 L74: the withdrawn notice
-    goes to the holder's role)."""
-    best = None
-    for row in rl_lib.read_rows(repo, "sessions"):
-        if row.get("session_id") == session_id and (best is None or row["version"] > best["version"]):
-            best = row
-    return best.get("role") if best else None
+def _holder_key(order):
+    """The holder of an order as the pair rl_lib.check_who_can_write compares (proxy
+    decision D-15 addendum): a subagent shares its parent's session_id, so a session and its
+    subagent are told apart by agent_id, never by session_id alone."""
+    if not order.get("holder"):
+        return None
+    return rl_lib.session_key(order["holder"], order.get("agent_id") or None)
+
+
+def _actor_key(actor):
+    return rl_lib.session_key(actor.session_id, actor.agent_id or None)
+
+
+def _role_of_session(repo, session_id, agent_id=None):
+    """The role of the session that holds an order (04 L74: the withdrawn notice goes to the
+    holder's role). The sessions ledger is chained on (session_id, agent_id or empty), so a
+    subagent's own row is found only with its agent_id (proxy decision D-15 addendum)."""
+    rows = rl_lib.latest(rl_lib.read_rows(repo, "sessions"), "sessions")
+    row = rows.get(rl_lib.session_key(session_id, agent_id or None))
+    return row.get("role") if row else None
 
 
 def _notice(repo, actor, command, kind, assignee, text, ho_id):
     """rl's own notification issues: fyi, orphaned, withdrawn (04 L188-200; 03 L75 makes
     handoff_id required on withdrawn and orphaned). Numbering is next_number over the
-    existing issue ids inside the caller's lock (03 L19, L21)."""
+    existing issue ids inside the caller's lock (03 L19, L21). These are rl's rows, not the
+    writing role's, so they go in with internal=True (04 L190: rl opens them)."""
     iss_id = rl_lib.next_number([r["id"] for r in rl_lib.read_rows(repo, "issues")], "iss")
     fields = {"id": iss_id, "assignee": assignee, "kind": kind, "text": text, "handoff_id": ho_id}
-    return rl_lib.write_row(repo, "issues", fields, actor, command, status="open", version=1)
+    return rl_lib.write_row(repo, "issues", fields, actor, command, status="open", version=1,
+                            internal=True)
 
 
 def _close_answered_issues(repo, actor, command, ho_id):
@@ -236,9 +250,10 @@ def _close_answered_issues(repo, actor, command, ho_id):
     for iss in _issue_rows(repo, ho_id):
         if iss.get("status") != "answered":
             continue
-        fields = {k: v for k, v in iss.items() if k not in _SKELETON_KEYS}
+        fields = rl_lib.copy_content(iss)
+        # 04 L70: rl closes them as a side effect of accept, so the row is rl's own.
         rl_lib.write_row(repo, "issues", fields, actor, command, status="closed",
-                         version=iss["version"] + 1)
+                         version=iss["version"] + 1, internal=True)
         closed.append(iss["id"])
     return closed
 
@@ -294,7 +309,10 @@ def cmd_open(args, ctx):
         trow = rl_lib.find_transition("handoff open", None)
         rl_lib.check_who_can_write(trow, actor, None)
 
-        # 04 L19: from_role is the owner; a role session opens as its role, everyone else as gyb.
+        # 04 L19: from_role is the owner; a role session opens as its role, everyone else as
+        # gyb. PENDING(part 04 L49): a role session writing --as-gyb records from_role = the
+        # role and actor = gyb, so the owner stays the role that typed it; 04 L49 names gyb
+        # as the owner of "orders gyb opened" without saying which of the two decides.
         fields = {
             "id": ho_id,
             "work_type": work_type,
@@ -321,6 +339,10 @@ def cmd_open(args, ctx):
         if work_type == "work_order":
             # 04 L61 with 04 L32, L34; track is proxy decision D-10 (sync-inbox Q45(a)(f)).
             fields["decision_refs"] = decision_refs
+            # 04 L32: a work_order carries at least one decision reference. An empty list is
+            # a present value for check_conditions, so the count is checked here.
+            pre.check("open.work_order_has_refs_and_explanation", len(decision_refs) >= 1,
+                      "a work_order needs at least one --decision ID@V")
             if opts.get("explain"):
                 fields["explanation"] = opts["explain"]
             if opts.get("track"):
@@ -425,6 +447,11 @@ def _open_quick_lane(repo, actor, ctx, ho_id, opts, code_paths, decision_refs, f
               "a quick-lane supplement needs --explain quoting gyb's words (04 L34)")
     pre.check("ql.code_paths_nonempty", bool(code_paths),
               "a quick-lane supplement needs at least one --code-path (sync-inbox Q41(b); 07 L101)")
+    # proxy decision D-10 addendum: a supplement is a work order and needs --track like any
+    # other; the value is the direction of the experiment being tuned (11 L122). Only
+    # decision_refs is exempt for a supplement (04 L62 and 07 L98-107 list four requirements).
+    pre.check("open.work_order_has_track", bool(opts.get("track")),
+              "a quick-lane supplement needs --track T, the direction it belongs to")
     pre.check("ql.scratch_row_open", scratch is not None and scratch.get("status") == "open",
               f"the scratch row {ql_tag!r} is not open "
               "(open the supplement first, then `rl ql close --merged --handoff ID`, 07 L88)")
@@ -485,43 +512,57 @@ def cmd_start(args, ctx):
                        if r.get("work_type") == "launch_order" and r.get("batch") == batch
                        and r["status"] == "todo"]
             targets.sort(key=lambda r: r["id"])
-        started = [_start_one(repo, actor, ctx, t, force, force_reason) for t in targets]
+        # proxy decision D-22 leaves open what happens when one order of a batch cannot be
+        # started. Read here as all-or-nothing: every target is checked before any row is
+        # written, so a batch never lands half started (03 L19 puts the whole command in one
+        # lock, and a refused write leaves no row, 30 L39-41). Noted in the build report.
+        plans = [_start_checks(repo, actor, order) for order in targets]
+        started = [_start_write(repo, actor, ctx, plan, force, force_reason) for plan in plans]
         named = _order(repo, ho_id)  # the named order's own latest version, batch form included
     return rl_lib.result(named, LEDGER, {"started": [r["id"] for r in started]})
 
 
-def _start_one(repo, actor, ctx, order, force, force_reason):
+def _start_checks(repo, actor, order):
+    """Everything `start` refuses on, with nothing written yet. Returns the plan
+    (order, transition row, run row to adopt or None)."""
     # 04 L63 preconditions column, read with 30 L39: a wrong role hits the preconditions
     # column here, so it is exit 2, not exit 3. gyb is exempt from the who column (04 L57)
     # and this precondition is that column written twice.
-    trow_hint = "04 L63"
     if not actor.is_gyb and actor.role_session != order.get("to_role"):
         raise rl_lib.RLError("validation",
                              f"{order['id']} is addressed to {order.get('to_role')}, not to "
-                             f"{actor.role_session} (precondition start.session_role_is_to_role, {trow_hint})",
+                             f"{actor.role_session} (precondition start.session_role_is_to_role, 04 L63)",
                              "let the addressed role start it, or ask gyb")
-    # 04 L63; 05 L119: a non-empty holder is exit 2 and the current holder is listed.
+    # 04 L51 and 04 L57 rule 3 (proxy decision D-29): a non-empty holder is the header
+    # invariant, not a precondition, so this refusal binds everyone and --force cannot pass
+    # it; exit 2, listing the current holder (05 L119).
     if order.get("holder"):
         raise rl_lib.RLError("validation",
                              f"{order['id']} is already held by session {order['holder']} "
-                             f"(precondition start.holder_empty, {trow_hint})",
+                             "(holder invariant, 04 L51; proxy decision D-29)",
                              f"ask that session to finish or release it: rl handoff release {order['id']} --note \"...\"")
     trow = rl_lib.find_transition("handoff start", order["status"])
     rl_lib.check_who_can_write(trow, actor, order)
+    # Adoption belongs to the todo -> in_progress row alone (04 L63). The rejected ->
+    # in_progress row (04 L73) is the original session carrying on, so it never adopts.
+    adopt_run = _adoptable_run(repo, order) if trow["id"] == "start" else None
+    return order, trow, adopt_run
 
+
+def _start_write(repo, actor, ctx, plan, force, force_reason):
+    order, _trow, adopt_run = plan
     fields = _carry(order)
     fields["holder"] = actor.session_id      # 04 L51: entering in_progress writes holder
-    adopt_run = _adoptable_run(repo, order)
     if adopt_run is not None:
         fields["adopted"] = True             # 04 L63
     row = _append(repo, LEDGER, fields, actor, ctx["command"], status="in_progress",
                   version=order["version"] + 1, force=force, force_reason=force_reason)
     if adopt_run is not None:
         # 03 L100: rl appends an adopted version to that runs row, recording the new
-        # holder's session_id and ts in the skeleton fields, no extra field.
-        run_fields = {k: v for k, v in adopt_run.items() if k not in _SKELETON_KEYS}
-        rl_lib.write_row(repo, "runs", run_fields, actor, ctx["command"], status="adopted",
-                         version=adopt_run["version"] + 1)
+        # holder's session_id and ts in the skeleton fields, no extra field. rl writes it,
+        # not the role, so it goes in with internal=True.
+        rl_lib.write_row(repo, "runs", rl_lib.copy_content(adopt_run), actor, ctx["command"],
+                         status="adopted", version=adopt_run["version"] + 1, internal=True)
     return row
 
 
@@ -574,13 +615,21 @@ def cmd_amend(args, ctx):
             fields["decision_refs"] = refs
             fields["line"] = _line_of(repo, refs)  # 04 L27
         if opts.get("eval"):
-            fields["evaluation_refs"] = _refs(opts["eval"], "eval")
+            # 04 L64 swaps evaluation_refs the same way --decision swaps decision_refs, and
+            # 01 L88 keeps every reference pointing at a row that exists.
+            refs = _refs(opts["eval"], "eval")
+            evaluations = rl_lib.latest(rl_lib.read_rows(repo, "evaluations"), "evaluations")
+            missing = [r["id"] for r in refs if r["id"] not in evaluations]
+            if missing:
+                raise rl_lib.RLError("validation", f"evaluation {', '.join(missing)} does not exist")
+            fields["evaluation_refs"] = refs
         if opts.get("command"):
             _append_attempt(order, fields, opts)
         elif opts.get("workdir") or opts.get("track") or opts.get("config"):
-            # PENDING(part 21 L179): --workdir/--track/--config describe the appended attempt;
-            # 21 L179 only rules the "change the command, append an attempt" case, so they are
-            # refused on their own rather than silently editing an attempt already on the row.
+            # 21 L179 rules the "change the command after a code fix, append an attempt"
+            # case. PENDING(part 04 L64): whether these three flags may edit an attempt
+            # already on the row instead of appending one; they are refused on their own
+            # rather than silently rewriting history.
             raise rl_lib.RLError("usage",
                                  "--workdir/--track/--config only describe the attempt that "
                                  "--command appends (21 L179)",
@@ -642,10 +691,11 @@ def cmd_estimate(args, ctx):
         steps = list(attempt.get("step_table") or [])
 
         if opts.get("copy-from"):
-            # 05 L66 / 12 L52: the other orders of one batch copy the measured step table
-            # with --copy-from and rescale it, so only one order is smoke-timed.
-            # Narrowest reading: copy the source's latest attempt step by step, keeping step,
-            # kind and smoke_seconds, and replacing scale_factor with --scale when given.
+            # 05 L66 / 12 L27: only one order of a batch is smoke-timed; the others copy that
+            # step table with --copy-from and rescale it. Reading of 12 L50 (the step table's
+            # shape and the estimated_seconds formula): copy the source's latest attempt step
+            # by step, keep step, kind and smoke_seconds, and replace scale_factor with
+            # --scale when given, so estimated_seconds stays smoke_seconds * scale_factor.
             source = _order(repo, opts["copy-from"])
             source_attempt = _latest_attempt(source)
             source_steps = list((source_attempt or {}).get("step_table") or [])
@@ -701,6 +751,8 @@ def cmd_stuck(args, ctx):
         rl_lib.check_who_can_write(trow, actor, order)
         issue = rl_lib.latest(rl_lib.read_rows(repo, "issues"), "issues").get(iss_id)
         if issue is None:
+            # 03 L224: an id nobody has is a usage error (exit 5). An issue that does exist
+            # but does not point back is the precondition below, exit 2, which gyb can force.
             raise rl_lib.RLError("usage", f"no such issue: {iss_id}",
                                  "open one first: rl issue open --to R --kind cannot --text \"...\" "
                                  f"--handoff {ho_id}")
@@ -893,14 +945,14 @@ def _release_via(env=None):
 
 
 def release_order(repo, actor, ctx_command, order, *, note=None, via=None, force=False,
-                  force_reason=None, validate_who=True):
+                  force_reason=None, validate_who=True, internal=False):
     """One release version, `rejected -> todo` (04 L72) or `in_progress -> todo` (04 L75).
 
     Public so `rl session end` and `rl reclaim` write exactly this row instead of building
-    their own. The caller holds rl_lib.Lock (03 L19). `ctx_command` is the command name the
-    write is validated under: `session end` when the hook is closing a session, so a role
-    without `handoff release` in its ledger_writes (roles/run.json) is not refused for a row
-    the hook writes for it (05 L40; 06 L156).
+    their own. The caller holds rl_lib.Lock (03 L19). `internal=True` is the hook's and
+    reclaim's case: rl writes the row for the session, so who-can-call does not apply and a
+    role without `handoff release` in its ledger_writes (roles/run.json) still hands its
+    orders back (05 L40; 06 L156).
     """
     trow = rl_lib.find_transition("handoff release", order["status"])
     if validate_who:
@@ -921,7 +973,7 @@ def release_order(repo, actor, ctx_command, order, *, note=None, via=None, force
     fields["holder"] = None
     row = _append(repo, LEDGER, fields, actor, ctx_command, status="todo",
                   version=order["version"] + 1, force=force, force_reason=force_reason, via=via,
-                  skip_conditions=_is_supplement(order))
+                  skip_conditions=_is_supplement(order), internal=internal)
     if was_in_progress:
         # 04 L75, L195: rl opens an orphaned notice to the owner. Nothing is killed here: a
         # launch_order with a launched, unfinished run keeps running for the next run session
@@ -941,8 +993,12 @@ def release_held_orders(repo, actor, *, via, command, extra_note=None):
     caller records in the closed session row's released_handoffs (04 L122).
     """
     rows = rl_lib.latest(rl_lib.read_rows(repo, LEDGER), LEDGER)
+    # The holder is the pair (session_id, agent_id or empty), proxy decision D-15 addendum:
+    # a subagent shares its parent's session_id, so a parent's session end must not sweep a
+    # subagent's orders and SubagentStop releases only its own chain's.
+    mine = _actor_key(actor)
     held = sorted([r for r in rows.values()
-                   if r["status"] == "in_progress" and r.get("holder") == actor.session_id],
+                   if r["status"] == "in_progress" and _holder_key(r) == mine],
                   key=lambda r: r["id"])
     released = []
     for order in held:
@@ -952,7 +1008,8 @@ def release_held_orders(repo, actor, *, via, command, extra_note=None):
             addition = extra_note(order["id"])
             if addition:
                 note = f"{note}; {addition}"
-        release_order(repo, actor, command, order, note=note, via=via, validate_who=False)
+        release_order(repo, actor, command, order, note=note, via=via, validate_who=False,
+                      internal=True)
         released.append(order["id"])
     return released
 
@@ -992,13 +1049,16 @@ def _withdraw_one(repo, actor, ctx_command, order, reason, quote, force, force_r
                   skip_conditions=_is_supplement(order))
     if was_in_progress:
         # 04 L74, L194: a withdrawal from in_progress notifies the holder's role and the
-        # owner; other statuses do not notify. sync-inbox Q45(b): the text tells the holder
-        # to report where the code and the half-finished artifact directory are.
-        # PENDING(issue 50): what happens to a launched run of a withdrawn launch_order.
+        # owner; other statuses do not notify. A run still going on a withdrawn launch order
+        # is doctor item 8's job, not this notice's: kill it by its watch_cmd, then
+        # `rl run finish --exit killed` (05 L207).
+        # sync-inbox Q45(b): the text tells the holder to report where the code and the
+        # half-finished artifact directory are. PENDING(issue 50): what that report contains
+        # when the holder is run rather than deploy (proxy decision D-14).
         text = (f"{order['id']} was withdrawn: {reason}. Report the code location and the "
                 "half-finished artifact directory into this issue; nothing is moved, gyb decides.")
         recipients = []
-        holder_role = _role_of_session(repo, holder) if holder else None
+        holder_role = _role_of_session(repo, holder, order.get("agent_id")) if holder else None
         if holder_role:
             recipients.append(holder_role)
         owner = rl_lib.owner_of(order)
@@ -1112,10 +1172,16 @@ def cmd_reissue(args, ctx):
                 fields[key] = order[key]
         if order.get("work_type") == "launch_order":
             # PENDING(part 04 L76): attempts are not in the inherited list, but the schema
-            # requires them on a launch_order; they are copied with the run_id renumbered onto
-            # the new order (04 L43: run_id is <ho-id>-a<attempt>).
-            fields["attempts"] = [dict(a, run_id=f"{new_id}-a{a['attempt']}")
-                                  for a in order.get("attempts") or []]
+            # requires them on a launch_order. Copied as the instructions of the attempt
+            # (command, args, workdir, track, config) with the run_id renumbered onto the new
+            # order (04 L43: run_id is <ho-id>-a<attempt>). The measurements are left behind:
+            # step_table and estimated_seconds come from a smoke run of the old order, and
+            # actual_seconds is rl's own value copied from the runs finish version (04 L43),
+            # which the new order has not got.
+            fields["attempts"] = [
+                {k: v for k, v in dict(a, run_id=f"{new_id}-a{a['attempt']}").items()
+                 if k not in ("step_table", "estimated_seconds", "actual_seconds")}
+                for a in order.get("attempts") or []]
         new_row = _append(repo, LEDGER, fields, actor, ctx["command"], status="todo", version=1,
                           force=force, force_reason=force_reason)
     return rl_lib.result(new_row, LEDGER, {"supersedes": ho_id})

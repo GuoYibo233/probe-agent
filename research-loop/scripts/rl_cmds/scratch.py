@@ -9,16 +9,10 @@ from __future__ import annotations
 
 import rl_lib
 
-# 03 L29-43 plus proxy decision D-15, and the quote write_row adds for --as-gyb (01 L70):
-# a version that copies an older row drops all of them and gets its own.
-SKELETON_KEYS = ("version", "status", "ts", "actor", "session_id", "schema_version",
-                 "force_reason", "via", "agent_id", "quote")
-
 SCRATCH_STATUSES = ("open", "merged", "dropped")  # 03 L196: three, no fourth state
 
-
-def copy_fields(row: dict) -> dict:
-    return {k: v for k, v in row.items() if k not in SKELETON_KEYS}
+# A version that copies an older row goes through rl_lib.copy_content: it drops the
+# skeleton fields and the version-only ones (04 L29), so every module copies the same way.
 
 
 def opts_of(args, ctx, *, value=(), flags=(), multi=()):

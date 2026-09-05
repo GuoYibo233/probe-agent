@@ -12,18 +12,13 @@ import subprocess
 
 import rl_lib
 
-# The skeleton fields rl fills on every row (03 L29-43 plus proxy decision D-15) and the
-# quote rl_lib.write_row adds for --as-gyb rows (01 L70). A version that copies an older
-# row must drop all of them so the new row carries its own writer, not the old one's.
-SKELETON_KEYS = ("version", "status", "ts", "actor", "session_id", "schema_version",
-                 "force_reason", "via", "agent_id", "quote")
-
 EXIT_VALUES = ("ok", "failed", "killed")  # 03 L117
 
-
-def _copy_fields(row: dict) -> dict:
-    """The content of a row without the skeleton (used by the copy versions, 03 L100)."""
-    return {k: v for k, v in row.items() if k not in SKELETON_KEYS}
+# Which host command template each exit status calls (08 L50-51; 12 L125, L127, L129):
+# ok and failed both call the host finish command; killed calls the abort template on the
+# "deregister on the host" step of the interruption sequence.
+HOST_TEMPLATE_BY_EXIT = {"ok": "launcher.finish_cmd", "failed": "launcher.finish_cmd",
+                         "killed": "launcher.abort_cmd"}
 
 
 def _opts(args, ctx, *, value=(), flags=(), multi=()):
@@ -91,58 +86,6 @@ def _latest_order(repo, ho_id: str) -> dict | None:
     return rl_lib.latest(rl_lib.read_rows(repo, "handoffs"), "handoffs").get(ho_id)
 
 
-_HANDOFFS_SHAPE: dict = {}
-
-
-def _validate_handoffs_shape(row: dict) -> None:
-    """rl_lib.validate_shape for handoffs, with the schema's `$id` dropped first.
-
-    handoffs.schema.json is the only ledger schema with internal `$ref`s
-    (`#/definitions/ref`, `#/definitions/attempt`) and its `$id` is a repo-relative path,
-    so jsonschema 3.2.0 joins the fragment onto that path, gets
-    `research-loop/schemas/research-loop/schemas/handoffs.schema.json` and tries to fetch
-    it as a URL: every handoffs write raises RefResolutionError. Dropping `$id` leaves an
-    empty base URI and `#/definitions/...` resolves inside the document. The real fix is in
-    rl_lib.merged_schema; see "rl_lib changes wanted" in the build report.
-    """
-    if not _HANDOFFS_SHAPE:
-        schema = dict(rl_lib.merged_schema("handoffs"))
-        schema.pop("$id", None)
-        _HANDOFFS_SHAPE.update(schema)
-    try:
-        import jsonschema
-    except ImportError:  # pragma: no cover - rl_lib's own required-field fallback covers it
-        rl_lib.validate_shape("handoffs", row)
-        return
-    errors = sorted(jsonschema.Draft7Validator(_HANDOFFS_SHAPE).iter_errors(row),
-                    key=lambda e: list(e.path))
-    if errors:
-        err = errors[0]
-        where = "/".join(str(p) for p in err.path) or "(row)"
-        raise rl_lib.RLError("validation", f"handoffs row rejected at {where}: {err.message}",
-                             "fix the field and retry (schemas/handoffs.schema.json)")
-
-
-def append_handoffs_version(repo, fields: dict, actor, command: str, *, status: str, version: int,
-                            force: bool = False, force_reason: str | None = None) -> dict:
-    """One handoffs version, through rl_lib.write_row's pipeline (03 L15, L27; 05 L21):
-    writer session alive, who-can-call, shape, required-by-status, append. The only change
-    is the shape step (see _validate_handoffs_shape). Used by `rl run finish` (04 L43) and
-    by `rl ql open --from` (07 L31); both copy the latest row and keep its status, so
-    neither is a transition."""
-    row = rl_lib.skeleton(actor, status, version, force_reason=force_reason)
-    row.update(fields)
-    if actor.quote and "quote" not in row and actor.is_gyb and not actor.bare_terminal:
-        row["quote"] = actor.quote  # 01 L70: --as-gyb rows carry gyb's words
-    rl_lib.check_writer_alive(repo, actor)     # 03 L15
-    rl_lib.check_who_can_call(actor, command)  # 06 L156
-    _validate_handoffs_shape(row)
-    if not force:
-        rl_lib.check_conditions("handoffs", row)  # 03 L13
-    rl_lib.append_row(repo, "handoffs", row)
-    return row
-
-
 # ---------------------------------------------------------------- write commands
 
 def cmd_add(args, ctx):
@@ -205,9 +148,9 @@ def cmd_finish(args, ctx):
     """rl run finish RUN_ID --exit ok|failed|killed [--metric k=v ...] [--data-path P]
     (05 L73; 03 L116-120; 12 L72, L119).
 
-    One command, four things: the finished version, actual_seconds copied into the launch
-    order's latest attempt (04 L43), the anomaly check (08 L74-75; 12 L94) and the host
-    finish command (08 L50, L55; 12 L119).
+    One command, four things: the finished version, actual_seconds copied onto the launch
+    order's attempt (04 L43), the anomaly check (08 L74-75; 12 L94) and the host command
+    template for this exit status (08 L50-51, L55; 12 L119, L125, L127, L129).
     """
     repo, actor, force, force_reason = rl_lib.context(ctx)
     positional, opts = _opts(args, ctx, value=("exit", "data-path"), multi=("metric",))
@@ -255,21 +198,26 @@ def cmd_finish(args, ctx):
         row = rl_lib.write_row(repo, "runs", fields, actor, ctx["command"], status="finished",
                                version=version, force=force, force_reason=force_reason)
 
-        # 04 L43: rl copies actual_seconds into the launch order's latest attempt; nobody
+        # 04 L43: rl copies actual_seconds onto the launch order's attempt; a person never
         # types it. The version copies the latest handoffs row and keeps its status, so it
-        # is not a transition (the transition table is untouched, 04 L53). The command name
-        # stays `run finish` on purpose: this write is rl's own side effect of run finish,
-        # not a handoffs command the run role calls (04 L43 "由 rl ... 抄、人不填").
+        # is not a transition (the transition table is untouched, 04 L53), and it goes in
+        # with internal=True because rl writes it on its own behalf, not as a handoffs
+        # command the run role calls.
         order = _latest_order(repo, row.get("handoff_id", ""))
         if order is not None and order.get("attempts"):
-            order_fields = _copy_fields(order)
+            order_fields = rl_lib.copy_content(order)  # 04 L29: adopted stays on its own version
             attempts = [dict(a) for a in order_fields["attempts"]]
-            attempts[-1]["actual_seconds"] = actual_seconds
-            order_fields["attempts"] = attempts
-            _, ho_version = rl_lib.next_version_of(repo, "handoffs", order["id"])
-            append_handoffs_version(repo, order_fields, actor, ctx["command"],
-                                    status=order["status"], version=ho_version,
-                                    force=force, force_reason=force_reason)
+            # 03 L118: the number goes onto the attempt this run belongs to, found by the
+            # run row's attempt number. `rl handoff amend` may have appended attempt 2
+            # while attempt 1 was still running, so the last attempt is not always this one.
+            target = next((a for a in attempts if a.get("attempt") == row.get("attempt")), None)
+            if target is not None:
+                target["actual_seconds"] = actual_seconds
+                order_fields["attempts"] = attempts
+                _, ho_version = rl_lib.next_version_of(repo, "handoffs", order["id"])
+                rl_lib.write_row(repo, "handoffs", order_fields, actor, ctx["command"],
+                                 status=order["status"], version=ho_version,
+                                 force=force, force_reason=force_reason, internal=True)
 
         # 08 L74-75; 12 L94: the anomaly check runs in this same process at finish time.
         reasons = []
@@ -300,12 +248,15 @@ def cmd_finish(args, ctx):
             anomaly_id = iss_id
             notes.append(f"anomaly issue {iss_id} opened to gyb: {text}")
 
-    # 08 L50, L55; 12 L119: the host finish command template, skipped when empty. It runs
-    # after the lock is released, so a slow host command cannot make every other session
-    # time out on loop/.lock (03 L223).
+    # The host command template for this exit status, skipped when empty (08 L55). ok and
+    # failed call launcher.finish_cmd (12 L119, L125, L129: "ok and failed both call the
+    # host finish command"); killed calls launcher.abort_cmd, the "deregister on the host"
+    # step of the interruption sequence (08 L51; 12 L127). It runs after the lock is
+    # released, so a slow host command cannot make every other session time out on
+    # loop/.lock (03 L223).
     # PENDING(part 08 L50): the parts do not say what arguments the template receives, so
     # rl runs it exactly as written.
-    host_note = _run_host_finish(repo, cfg)
+    host_note = _run_host_template(repo, cfg, HOST_TEMPLATE_BY_EXIT[exit_status])
     if host_note:
         notes.append(host_note)
 
@@ -318,21 +269,21 @@ def cmd_finish(args, ctx):
     return "\n".join(lines)
 
 
-def _run_host_finish(repo, cfg) -> str:
-    """launcher.finish_cmd: run it, report the outcome in text mode, never fail on it
-    (08 L50, L55: an empty template means the host has no such step and rl skips it
-    without an error)."""
-    template = (cfg.get("launcher.finish_cmd") or "").strip()
+def _run_host_template(repo, cfg, key: str) -> str:
+    """Run one launcher.* template, report the outcome in text mode, never fail on it
+    (08 L55: an empty template means the host has no such step, so rl skips it without an
+    error and never substitutes a command of its own; 12 L127 says the same for abort)."""
+    template = (cfg.get(key) or "").strip()
     if not template:
         return ""
     try:
         proc = subprocess.run(template, shell=True, cwd=str(repo), capture_output=True, text=True)
     except OSError as err:  # pragma: no cover - the host command is not rl's to fix
-        return f"launcher.finish_cmd {template!r} could not run: {err}"
+        return f"{key} {template!r} could not run: {err}"
     if proc.returncode != 0:
-        return (f"launcher.finish_cmd {template!r} exited {proc.returncode}: "
+        return (f"{key} {template!r} exited {proc.returncode}: "
                 f"{(proc.stderr or proc.stdout).strip().splitlines()[-1] if (proc.stderr or proc.stdout).strip() else ''}")
-    return f"launcher.finish_cmd {template!r} ran"
+    return f"{key} {template!r} ran"
 
 
 def cmd_relink(args, ctx):
@@ -354,7 +305,7 @@ def cmd_relink(args, ctx):
         if _latest_order(repo, new_handoff) is None:
             raise rl_lib.RLError("usage", f"no handoff {new_handoff}")  # 03 L224: unknown id
         latest = max(versions, key=lambda r: r["version"])
-        fields = _copy_fields(latest)
+        fields = rl_lib.copy_content(latest)
         fields["handoff_id"] = new_handoff
         row = rl_lib.write_row(repo, "runs", fields, actor, ctx["command"],
                                status=latest["status"], version=latest["version"] + 1,
