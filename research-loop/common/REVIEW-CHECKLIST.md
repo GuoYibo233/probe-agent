@@ -26,7 +26,7 @@ The baseline is the set of decision rows whose actor is `gyb` or `idea`, whereve
 
 ## D. Traces the machine cannot judge
 - D1. Do rows written with `--as-gyb` carry a quote that reads as gyb's own words from that moment, not a paraphrase? (principle-01.)
-- D2. Do the writes in git history match the sessions ledger: every commit inside a role directory by a session that held that role at that time? (rule-08.)
+- D2. Do the writes in git history match the sessions ledger: every commit inside a role directory by a session that held that role at that time? (rule-08.) Nothing on the ledgers joins a commit to a session yet, so this check has no ledger-side anchor: PENDING(issue 51).
 - D3. Was every issue that a fix answered replied to and closed? (rule-09.)
 
 ## Reading order for every question
