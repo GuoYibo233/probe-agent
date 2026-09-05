@@ -570,6 +570,26 @@ class Reclaim(unittest.TestCase):
         self.assertIsNone(ho_row["holder"])
         self.assertTrue(ho_row["progress_note"])
 
+    def test_idle_session_release_with_kill_aborts_its_launched_run(self):
+        """04 L178 through the in_progress -> todo row (04 L75): a launch order handed
+        back because its holder session went idle keeps its process by default and is
+        aborted (runs finished version exit_status killed) when reclaim carries --kill."""
+        dec = make_decision(self.sb)
+        wo = open_work_order(self.sb, None, dec)
+        lo = open_launch_order(self.sb, None, wo)
+        run = self.sb.role_session("run")
+        self.sb.rl_ok("handoff", "start", lo, session=run)
+        self.sb.rl_ok("run", "add", "--handoff", lo, "--attempt", "1", "--commit", "c", "--host", "h",
+                      "--gpus", "0", "--log", "/tmp/l", "--tmux", "t", "--watch-cmd", "w", session=run)
+        self.sb.set_config("reclaim.session_idle_hours", 0)
+        # the order itself is not past reclaim.handoff_idle_hours (default 72 h)
+        r = self.sb.rl("reclaim", "--apply", "--kill")
+        self.assertEqual(r.rc, 0, str(r))
+        self.assertEqual(self.sb.latest("handoffs", lo)["status"], "todo")
+        run_row = self.sb.latest("runs", f"{lo}-a1")
+        self.assertEqual(run_row["status"], "finished")
+        self.assertEqual(run_row["exit_status"], "killed")
+
     def test_kill_flag_finishes_the_run_as_killed(self):
         """04 L179: --kill triggers the abort path -- process kill, GPU free, host
         deregister, runs falls to a finished version with exit_status killed."""

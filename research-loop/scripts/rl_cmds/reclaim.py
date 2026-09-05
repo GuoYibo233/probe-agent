@@ -300,19 +300,17 @@ def _apply(repo: Path, cfg: dict, actor: rl_lib.Actor, candidates: list, kill: b
     orders writes a fresh todo version whose ts is now, and that version must not then be
     read as an idle order."""
     handled: set = set()
-    # 04 L178 releases a session's orders; 04 L179 is a rule about an *order* that is itself
-    # idle, and `--kill` belongs to that rule. So an order released only because its holder
-    # went quiet keeps its process (release.no_kill_if_launched, 04 L75), and `--kill` bites
-    # only where the order is also past the handoff threshold. Listed as undecided in the
-    # build report: 04 L178 does not say what --kill does to a session's orders.
-    killable = {c["id"] for c in candidates
-                if c["kind"] == "handoff" and c.get("_group") == "in_progress_launch"}
+    # 04 L178 releases an idle session's orders through the in_progress -> todo row, and
+    # that row's precondition (04 L75; transitions.json release.no_kill_if_launched) says
+    # it in one sentence: a launch order with a launched, unfinished run keeps its process
+    # unless reclaim carries --kill, in which case the abort sequence runs first. No extra
+    # "the order itself is idle" condition (reviewer ruling on 635499d, 2026-09-05).
     for cand in [c for c in candidates if c["kind"] == "session"]:
         released = []
         for ho_id in cand["_held"]:
             # 04 L178 with 04 L39: the note reclaim fills in automatically.
             done = _release(repo, actor, ho_id, f"reclaimed: holder {cand['id']} idle", cfg,
-                            kill and ho_id in killable, notes)
+                            kill, notes)
             if done:
                 released.append(done)
                 handled.add(done)
