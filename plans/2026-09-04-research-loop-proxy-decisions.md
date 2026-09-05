@@ -285,6 +285,30 @@
 - 落点：`research-loop/scripts/rl_cmds/handoff.py`（done）；`research-loop/tables/commands.json` done 行签名；`skills/deploy/SKILL.md`、`skills/analysis/SKILL.md` 交活段；sync-inbox 问题 48 加 (f) 给 05 第 65 行展开省略号。
 - 审查：
 
+### D-33 inbox 第 2 项「owner 是本角色而 holder 为空的单子」的状态集合定为 todo、stuck、rejected、done_pending_review（评审助手提，统筹按推荐裁）
+
+- 问题：05 第 136 行的字面按 04 第 51 行的不变量等于全部非 in_progress 的单，连 accepted、withdrawn 都列；底座收窄成只 todo 且没标记。
+- 决定：非终态且无 holder 的四种：todo、stuck、rejected、done_pending_review。accepted、withdrawn 是终态不列。
+- 理由：收件箱列的是 owner 还要动手的单子，终态的单 owner 没有动作；只列 todo 会漏掉要验收（done_pending_review）和要改派（stuck、rejected）的。
+- 落点：`research-loop/scripts/rl_cmds/inbox.py`；测试 11 补一例；sync-inbox 问题 48(g) 给 05 第 136 行。
+- 审查：
+
+### D-34 doctor 第 12 项「单子回了 todo 而关联 issue 还 open」不算通知类 issue（评审助手提，统筹按推荐裁）
+
+- 问题：05 第 206 行无例外；04 第 195 行每次 release 都开 orphaned 通知，不排除的话每张交回的单都会被第 12 项报到收件人去 close。
+- 决定：第 12 项不算 withdrawn、orphaned、fyi 三种通知类 issue。
+- 理由：第 12 项的 push_to 是「开 issue 的角色」，通知类是 rl 自己开的行，字面读法推不出收件人；通知类 issue 本来就不要求关。
+- 落点：`research-loop/scripts/rl_cmds/doctor.py`；测试 19 或 11 补一例；sync-inbox 问题 48(h) 给 05 第 206 行。
+- 审查：
+
+### D-35 status 段 5（dispatch=manual 等 gyb 拉起）只列 todo 的单（评审助手提，统筹裁）
+
+- 问题：05 第 159 行和 01 第 108 行后半句都没限状态；底座限成 todo 且没标记。
+- 决定：只列 todo。
+- 理由：段 5 是等 gyb 拉起的清单，manual 的单一旦被接（in_progress）或者干完就不再等拉起。
+- 落点：`research-loop/scripts/rl_cmds/status.py`；sync-inbox 问题 48(i) 给 05 第 159 行；01 第 108 行由 rl-hub-v6 补注。
+- 审查：
+
 - 附（同一轮实测）：D-26 的宿主变量 `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS` 这轮没用上——setsid 脱离之后 SessionEnd 与 closed 版同一秒落账，设不设变量结果一样，当保险留着不算必需；注入后的权限流程 auto 模式分类器放行、全程无框（verify.md 7.6），default 模式弹框（7.3），gyb 的会话是 auto。
 
 - 更正 2026-09-05（文本助手指出）：统筹原来把 analysis 写进落点是错的，analysis 的 `dispatches_to` 为空（06 第 218 行）、说明书里没有派活段；reviewer 按清单起 sonnet 子会话，打印模式起的 reviewer 会话同样受 600 秒上限，所以落点是 idea、deploy、reviewer 三份。「留下」保得住子会话是推断不是实测（verify.md 第一节「没测的」），说明书里写成纪律、不写成已验证。
