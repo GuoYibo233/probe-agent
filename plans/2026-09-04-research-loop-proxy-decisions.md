@@ -272,7 +272,7 @@
 - 问题：压力场景里 deploy 修完只改了代码、发射命令不变，说明书没写要不要 `rl handoff amend` 出新一次尝试；`rl run add --attempt N` 的 N 从哪来也没写。
 - 决定：命令不变也是新一次尝试（04 第 43 行：一张发射单可以跑几次，每一次是单子上的一个 attempt，这条是原则 10）。`rl handoff amend ID` 不带 `--command` 时抄上一次尝试的 `command`、`workdir`、`track`、`config` 追加一版，`run_id` 按 `<ho-id>-a<attempt>` 分配；run 接单时从单子最新一次尝试读 attempt 序号，`rl run add --attempt N` 的 N 就是它。
 - 理由：原则 10 的单位是「跑一次」不是「换命令」；不出新尝试就没有新 run_id，产物目录和 runs 账会撞。
-- 落点：`research-loop/scripts/rl_cmds/handoff.py`（amend）；`skills/deploy/SKILL.md` 修 smoke 那段；测试 12 第二条用例。
+- 落点：`research-loop/scripts/rl_cmds/handoff.py`（amend）；`skills/deploy/SKILL.md` 修 smoke 那段；`skills/run/SKILL.md` 接单段补「`--attempt N` 的 N 从单子最新一次尝试读」（评审 2026-09-05 指出落点漏了 run）；测试 12 第二条用例。
 - 审查：
 
 ### D-32 `rl handoff done` 收交付物路径参数，in_progress 上不开 amend（文本助手压力场景提，统筹裁）
