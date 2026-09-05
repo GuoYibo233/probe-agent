@@ -18,6 +18,10 @@ import rl_lib
 # 05 L138: the three notification kinds item 4 lists (03 L92 names the same three).
 NOTIFICATION_KINDS = ("withdrawn", "orphaned", "fyi")
 
+# proxy decision D-33: item 2 lists the owner's orders in these four states (non-terminal,
+# 04 L47) and with no holder (04 L51).
+INBOX_ITEM2_STATES = ("todo", "stuck", "rejected", "done_pending_review")
+
 # 03 L141: a verdict on feedback is the accepted or the rejected version.
 VERDICT_STATUSES = ("accepted", "rejected")
 
@@ -44,7 +48,7 @@ def collect(repo: Path, role: str | None, session_id: str) -> dict:
     A bare terminal has no role, so items 1, 2, 4 and 5 (all keyed on the role) are empty
     and item 3 is empty too, since a bare terminal holds no order (04 L21: holder is a
     session id and gyb's terminal never takes one). Narrowest reading of 05 L131 "the
-    role's inbox"; listed as undecided in the build report.
+    role's inbox"; PENDING(part 05 L131).
     """
     issues = rl_lib.latest(rl_lib.read_rows(repo, "issues"), "issues")
     orders = rl_lib.latest(rl_lib.read_rows(repo, "handoffs"), "handoffs")
@@ -55,12 +59,12 @@ def collect(repo: Path, role: str | None, session_id: str) -> dict:
     item1 = [issues[i] for i in sorted(issues)
              if issues[i]["status"] == "open" and issues[i].get("assignee") == role]
 
-    # 2. orders owned by this role with an empty holder (05 L136). The holder invariant
-    #    (04 L51) makes "holder empty" the same set as "not in_progress"; todo is the state
-    #    the owner has to act on, and 04 L200 calls this "owner is this role and there is no
-    #    holder".
+    # 2. orders owned by this role with an empty holder (05 L136; 04 L200). The holder
+    #    invariant (04 L51) makes "holder empty" the same set as "not in_progress"; proxy
+    #    decision D-33 narrows it to the non-terminal states: todo, stuck, rejected and
+    #    done_pending_review (accepted and withdrawn are terminal, 04 L47).
     item2 = [orders[o] for o in sorted(orders)
-             if rl_lib.owner_of(orders[o]) == role and orders[o]["status"] == "todo"
+             if rl_lib.owner_of(orders[o]) == role and orders[o]["status"] in INBOX_ITEM2_STATES
              and not orders[o].get("holder")]
 
     # 3. past-version decisions cited by the orders THIS SESSION holds (05 L137 with the

@@ -223,7 +223,7 @@ def cmd_finish(args, ctx):
                                f"one of anomaly.metric_extremes {extremes}")
         # 08 L75 compares the real duration with the estimate of "the latest attempt";
         # 04 L43 says estimated_seconds sums the step table of one attempt. Read together
-        # (reviewer ruling 2026-09-05), the estimate is the one on the attempt this run
+        # (proxy decision D-36), the estimate is the one on the attempt this run
         # belongs to -- the same item actual_seconds just landed on, not the last item in
         # the list, which an amend may have added while this run was still going. An
         # attempt nobody ran `rl handoff estimate` on has no estimated_seconds, and then

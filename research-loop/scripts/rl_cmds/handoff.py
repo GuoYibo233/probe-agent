@@ -2,7 +2,8 @@
 
 Every rule below is transcribed from a design part or a proxy decision and carries the
 citation next to it (`04 L63`, `proxy decision D-22`). Behaviour the parts have not ruled
-is marked `PENDING(...)` and is written the narrowest way a test needs.
+is marked `PENDING(part NN LNN)` or `PENDING(issue NN)` and is written the narrowest way a
+test needs.
 
 Shape of every handler (03 L19 puts scan/assign/append in one lock):
 
@@ -34,17 +35,14 @@ _CONFIG_KEYS = ("model", "params", "dataset", "split")  # 04 L43
 
 # ---------------------------------------------------------------- small helpers
 
-def _parse(args, command, multi=(), flags=(), extra_allowed=()):
+def _parse(args, command, multi=(), flags=()):
     """rl_lib.parse_args with the option names this sub-command takes, read off its
     signature in tables/commands.json (03 L224: an option the command does not have is a
     usage error). This is what refuses `rl handoff done --actual-seconds` (04 L43; 30 L62).
-
-    `extra_allowed` covers one gap: 05 L64's `handoff open` signature predates the 2026-08-21
-    ruling that a quick-lane supplement must list its code paths (07 L101; sync-inbox Q41(b);
-    transitions.json precondition ql.code_paths_nonempty), so --code-path is accepted here
-    although the signature does not name it. Listed in the build report as a table wish.
+    The `handoff open` signature in commands.json carries --code-path because a quick-lane
+    supplement must list its code paths (07 L101; sync-inbox Q41(b)).
     """
-    allowed = rl_lib.allowed_options(command) | set(extra_allowed)
+    allowed = rl_lib.allowed_options(command)
     return rl_lib.parse_args(args, multi=tuple(multi), flags=tuple(flags), allowed=allowed)
 
 
@@ -278,8 +276,7 @@ def cmd_open(args, ctx):
     positional, opts = _parse(
         args, ctx["command"],
         multi=("decision", "eval", "config", "code-path"),
-        flags=("manual", "no-dispatch", "quick-lane"),
-        extra_allowed=("code-path",))
+        flags=("manual", "no-dispatch", "quick-lane"))
     if positional:
         raise rl_lib.RLError("usage", f"rl handoff open takes no positional argument, got {positional[0]!r}")
 
@@ -512,10 +509,10 @@ def cmd_start(args, ctx):
                        if r.get("work_type") == "launch_order" and r.get("batch") == batch
                        and r["status"] == "todo"]
             targets.sort(key=lambda r: r["id"])
-        # proxy decision D-22 leaves open what happens when one order of a batch cannot be
-        # started. Read here as all-or-nothing: every target is checked before any row is
-        # written, so a batch never lands half started (03 L19 puts the whole command in one
-        # lock, and a refused write leaves no row, 30 L39-41). Noted in the build report.
+        # proxy decision D-22 (addendum of 2026-09-05): a batch start is all-or-nothing;
+        # every target is checked before any row is written, so one refused order leaves
+        # the whole batch untouched (03 L19 puts the whole command in one lock, and a
+        # refused write leaves no row, 30 L39-41).
         plans = [_start_checks(repo, actor, order) for order in targets]
         started = [_start_write(repo, actor, ctx, plan, force, force_reason) for plan in plans]
         named = _order(repo, ho_id)  # the named order's own latest version, batch form included

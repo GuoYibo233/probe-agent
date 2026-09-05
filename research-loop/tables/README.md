@@ -87,10 +87,11 @@ listed in `_pending`, so the final merge pass can grep for it.
     against the rewritten command (hooks reference), so prefix-style allow rules written
     for bare commands no longer match inside subagents.
 
-14. **Extra keys on `rl status --json` rows.** Beyond the twelve keys of 01 L135 a row may
-    carry `stale_holder` (true when the row is listed in section 7) so scripts and tests
-    can tell section membership without parsing text; adding keys is allowed by 05 L123
-    ("add fields, never remove").
+14. **Extra keys on `rl status --json` rows.** Beyond the twelve keys of 01 L135 a row
+    carries three more: `stale_holder` (true when the row is listed in section 7),
+    `sections` (the section numbers the row appears in) and `dispatch` (the order's
+    dispatch value), so scripts and tests can tell section membership without parsing
+    text; adding keys is allowed by 05 L123 ("add fields, never remove").
 
 15. **`--reason` is parsed once.** bin/rl strips the five global flags (`--json`,
     `--as-gyb`, `--quote`, `--force`, `--reason`) before dispatch; handlers whose

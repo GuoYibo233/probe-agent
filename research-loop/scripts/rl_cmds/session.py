@@ -3,7 +3,7 @@
 Six sub-commands (04 L149-156): start, end, amend, focus, show, list. Every rule below
 carries the part and line it transcribes (`03 L15`) or the proxy decision it follows
 (`proxy decision D-15`). Nothing here is invented; what the parts have not ruled is
-marked `PENDING(...)` and listed in the build report.
+marked `PENDING(part NN LNN)` or `PENDING(issue NN)`.
 
 Every row goes through `rl_lib.write_row`. Two of its switches carry rules of this group:
 

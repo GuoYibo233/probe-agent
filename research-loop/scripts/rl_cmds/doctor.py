@@ -43,7 +43,7 @@ STATE_FILE_STALE_HOURS = 24.0
 
 # hooks/rl_hook.py L318, L347, L402-408: besides `<sid>.json` the hook leaves `<sid>.model`
 # (the model cache) and `<sid>.end.log` (the background delete's log) behind.
-# PENDING(sync-inbox Q35(a) L194): the ruling names only the state file; the two side files
+# PENDING(issue 35a): the ruling names only the state file; the two side files
 # are read as part of the same leftover.
 STATE_SIDE_SUFFIXES = (".model", ".end.log")
 
@@ -180,16 +180,25 @@ class Ledgers:
 
 
 def role_or_gyb(role: str | None, ledgers: Ledgers) -> str:
-    """The "…；无活会话则 gyb" half of the push-to column (05 L197, L200, L201, L207)."""
+    """The "…；无活会话则 gyb" half of the push-to column. Only items 6, 7 and 13 carry it
+    (05 L200, L201, L207); every other item's push-to is the role the column names, with
+    no fallback (reviewer report on step 4, 2026-09-05)."""
     if role in rl_lib.ROLES and role in ledgers.open_session_roles():
         return role
     return "gyb"
 
 
+def _or_gyb(role: str | None) -> str:
+    """Item 2's "查不出的 gyb" (05 L196): a row whose owner cannot be read is pushed to gyb;
+    an owner that can be read is pushed to as written, live session or not."""
+    return role if role else "gyb"
+
+
 # ---------------------------------------------------------------- the scan
 
 def scan(repo: Path, cfg: dict | None = None, ledgers: Ledgers | None = None) -> list[dict]:
-    """The twenty scan items of 05 L193-213 plus sync-inbox Q35(a); acked pairs are
+    """The nineteen scan items of 05 L193-213 (item 16 is deleted, sync-inbox 43(a); its
+    number stays empty) plus sync-inbox Q35(a); acked pairs are
     dropped (05 L217). Returns the finding list, sorted by item then id."""
     cfg = cfg or rl_lib.load_config(repo)
     led = ledgers or Ledgers(repo)
@@ -231,7 +240,7 @@ def scan(repo: Path, cfg: dict | None = None, ledgers: Ledgers | None = None) ->
 
 def _item1_duplicate_ids(led: Ledgers, add) -> None:
     """05 L195 item 1: clashing numbers, report only; list each clashing row's ts, actor and
-    session_id. Two rows of one key with the same version are the clash 03 L21 warns about
+    session_id. Two rows of one key with the same version are the clash 03 L19 warns about
     (an ordinary new version is a bigger number, not a repeat)."""
     for ledger, rows in led.all.items():
         seen: dict = {}
@@ -271,18 +280,18 @@ def _item2_dangling_refs(repo: Path, led: Ledgers, add) -> None:
             # 05 L196: a handoffs row is repointed with `rl handoff amend`; the pusher is the
             # order's owner.
             add(2, ho_id, f"rl handoff amend {ho_id} --decision ID@V (or --eval ID@V)",
-                role_or_gyb(rl_lib.owner_of(order), led), "; ".join(bad))
+                _or_gyb(rl_lib.owner_of(order)), "; ".join(bad))
 
     for iss_id, issue in sorted(issues.items()):
         if issue.get("handoff_id") and issue["handoff_id"] not in handoffs:
             # 05 L196: other ledgers are report-only; the pusher is the role that opened it.
-            add(2, iss_id, "", role_or_gyb(led.opener("issues", iss_id), led),
+            add(2, iss_id, "", _or_gyb(led.opener("issues", iss_id)),
                 f"issues handoff_id -> {issue['handoff_id']}")
 
     for eval_id, row in sorted(evaluations.items()):
         missing = [u for u in row.get("uses") or [] if u not in evaluations]
         if missing:
-            add(2, eval_id, "", role_or_gyb(row.get("actor"), led),
+            add(2, eval_id, "", _or_gyb(row.get("actor")),
                 "evaluations uses -> " + ", ".join(missing))
 
     for dec_id, row in sorted(decisions.items()):
@@ -299,7 +308,7 @@ def _item2_dangling_refs(repo: Path, led: Ledgers, add) -> None:
             if other not in decisions:
                 bad.append(f"merged_from -> {other}")
         if bad:
-            add(2, dec_id, "", role_or_gyb(row.get("actor"), led), "; ".join(bad))
+            add(2, dec_id, "", _or_gyb(row.get("actor")), "; ".join(bad))
 
 
 def _item3_stuck_without_issue(led: Ledgers, add) -> None:
@@ -321,7 +330,7 @@ def _item3_stuck_without_issue(led: Ledgers, add) -> None:
         # and the parts do not say who takes it instead. The column is transcribed as
         # written and the owner fallback below is the only escape.
         push_to = setter if setter in rl_lib.ROLES and setter in led.open_session_roles() \
-            else role_or_gyb(rl_lib.owner_of(order), led)
+            else rl_lib.owner_of(order)  # 05 L197: two levels, the owner is the last
         named = order.get("issue_id") or "ISS_ID"
         add(3, ho_id, f"rl issue link {named} --handoff {ho_id}", push_to,
             f"stuck since v{stuck_version['version'] if stuck_version else '?'}; no issue links "
@@ -339,7 +348,7 @@ def _item4_blocked_issue_without_order(led: Ledgers, add) -> None:
         add(4, iss_id,
             f"rl handoff stuck ID --issue {iss_id} (the order really is stuck) "
             f"or rl issue close {iss_id} (the order has moved on)",
-            role_or_gyb(led.opener("issues", iss_id), led),
+            led.opener("issues", iss_id),  # 05 L198: the role that opened it, no fallback
             f"kind {issue.get('kind')}, no order points back")
 
 
@@ -369,7 +378,7 @@ def _item5_missing_deliverables(repo: Path, led: Ledgers, add) -> None:
         deliverer = done_version["actor"] if done_version else None
         add(5, ho_id,
             "rl handoff amend " + ho_id + " " + " ".join(f"{f} P" for f, _ in missing),
-            role_or_gyb(deliverer, led),
+            deliverer,  # 05 L199: the actor of the done version, no fallback
             "missing: " + ", ".join(p for _, p in missing))
 
 
@@ -432,7 +441,7 @@ def _item8_runs_on_withdrawn_orders(led: Ledgers, add) -> None:
         withdrawn = led.version_where("handoffs", ho_id, "withdrawn")
         add(8, run_id,
             f"kill the process with the order's watch_cmd, then rl run finish {run_id} --exit killed",
-            role_or_gyb(withdrawn["actor"] if withdrawn else None, led),
+            withdrawn["actor"] if withdrawn else order["actor"],  # 05 L202, no fallback
             f"order {ho_id} was withdrawn while this run was still open")
 
 
@@ -450,7 +459,7 @@ def _item9_accepted_quick_lane_without_launch(led: Ledgers, add) -> None:
         add(9, ho_id,
             f"rl handoff open --type launch_order --parent {ho_id} ... (or rl doctor --ack 9 {ho_id} "
             f"when no formal rerun is needed)",
-            role_or_gyb(rl_lib.owner_of(order), led), "accepted quick-lane order, no launch order")
+            rl_lib.owner_of(order), "accepted quick-lane order, no launch order")  # 05 L203
 
 
 def _item10_approved_metric_key_missing(led: Ledgers, add) -> None:
@@ -481,17 +490,17 @@ def _item11_answered_not_closed(led: Ledgers, cfg: dict, reference, add) -> None
         add(11, iss_id,
             f"rl issue close {iss_id} (if the answer did not help, close it and open a new issue "
             f"quoting {iss_id})",
-            role_or_gyb(led.opener("issues", iss_id), led),
+            led.opener("issues", iss_id),  # 05 L205: the role that opened it, no fallback
             f"answered {idle / 24.0:.1f} days ago and still open")
 
 
 def _item12_todo_with_open_issue(led: Ledgers, add) -> None:
     """05 L206 item 12: an order back at todo whose linked issue is still open.
 
-    The three notification kinds are left out: 04 L190 says withdrawn, orphaned and fyi are
-    notices, "not problems", and every release writes one, so counting them would report
-    every order the session-end hook or reclaim ever handed back. Listed as undecided in
-    the build report."""
+    The three notification kinds are left out (proxy decision D-34): 04 L190 says withdrawn,
+    orphaned and fyi are notices, "not problems", and every release writes one (04 L195),
+    so counting them would report every order the session-end hook or reclaim ever handed
+    back."""
     for ho_id, order in sorted(led.latest["handoffs"].items()):
         if order["status"] != "todo":
             continue
@@ -501,7 +510,7 @@ def _item12_todo_with_open_issue(led: Ledgers, add) -> None:
         if not linked:
             continue
         add(12, ho_id, "rl issue close " + " ".join(sorted(i["id"] for i in linked)),
-            role_or_gyb(led.opener("issues", sorted(i["id"] for i in linked)[0]), led),
+            led.opener("issues", sorted(i["id"] for i in linked)[0]),  # 05 L206, no fallback
             "back at todo with " + ", ".join(sorted(i["id"] for i in linked)) + " still open")
 
 
@@ -521,7 +530,8 @@ def _item13_holder_not_in_open_session(led: Ledgers, add) -> None:
 
 def _item14_open_session_gone_quiet(led: Ledgers, cfg: dict, reference, add) -> None:
     """05 L208 item 14: a session with no closed version that has written nothing past the
-    threshold (reclaim.session_idle_hours, 08 L71)."""
+    threshold. PENDING(part 05 L208): the row names no threshold key (05 L215 pins keys
+    only for items 7 and 11), so reclaim.session_idle_hours (08 L71) is used."""
     threshold = float(cfg["reclaim.session_idle_hours"])
     for row in sorted(led.latest["sessions"].values(), key=lambda r: r["session_id"]):
         if row["status"] != "open":
@@ -544,7 +554,7 @@ def _item15_retired_decision_live_orders(led: Ledgers, add) -> None:
         if not cited:
             continue
         add(15, ho_id, f"rl handoff withdraw {ho_id} --reason ... --cascade",
-            role_or_gyb(rl_lib.owner_of(order), led),
+            rl_lib.owner_of(order),  # 05 L209: the order's owner, no fallback
             "cites retired " + ", ".join(cited))
 
 

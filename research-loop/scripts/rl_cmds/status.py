@@ -14,9 +14,10 @@ order (issues, evaluations, feedback, review checklists, sessions, quick lanes, 
 findings), because 05 L123 lets later fields be added and section 9's quick lanes have to
 be readable from `--json` too. Construction convention, PENDING(part 05 L121).
 
-Two extra keys ride on each order row (tables/README.md convention 14; 05 L123 "later
-fields are only added"): `stale_holder`, true when section 7 lists the order, and
-`sections`, the section numbers the order appears in.
+Three extra keys ride on each order row (tables/README.md convention 14; 05 L123 "later
+fields are only added"): `stale_holder`, true when section 7 lists the order,
+`sections`, the section numbers the order appears in, and `dispatch`, the order's
+dispatch value.
 """
 
 from __future__ import annotations
@@ -158,9 +159,9 @@ def build(repo: Path, cfg: dict | None = None, line: str | None = None) -> dict:
             mark(ho_id, 4)
 
     # Section 5 (05 L159; 01 L108): todo orders whose owner role has no open session, and
-    # orders gyb takes by hand. "dispatch=manual" is read together with the todo half: the
-    # section is the "waiting for gyb to start" list, so an order already in progress is not
-    # waiting for anybody. Listed as undecided in the build report.
+    # orders gyb takes by hand. "dispatch=manual" is read together with the todo half
+    # (proxy decision D-35): the section is the "waiting for gyb to start" list, so a
+    # manual order already in progress is not waiting for anybody.
     open_roles = led.open_session_roles()
     section5 = []
     for ho_id, row in rows.items():
@@ -264,8 +265,10 @@ def build(repo: Path, cfg: dict | None = None, line: str | None = None) -> dict:
 
 def _days_since_last_reclaim(led: doctor.Ledgers, reference) -> float | None:
     """05 L166; 01 L120: the first line is how many days it has been since the last reclaim.
-    A reclaim leaves rows marked `via=reclaim` (04 L178, L181; _skeleton.schema.json), so the
-    last reclaim is the newest such ts; never run is None."""
+    PENDING(part 01 L120): the parts do not say where that date is read from. A reclaim
+    leaves rows marked `via=reclaim` (04 L178, L181; _skeleton.schema.json), so the last
+    reclaim is read as the newest such ts; a reclaim --apply that wrote no row does not
+    count, and never run is None."""
     best = None
     for rows in led.all.values():
         for row in rows:
@@ -294,7 +297,9 @@ def _order_line(row: dict) -> str:
 
 
 def _grouped(rows: list, group_by: str | None) -> list:
-    """05 L166: the whole listing can be grouped by line or by batch."""
+    """05 L166: the whole listing can be grouped by line or by batch. Each row lands in
+    the one bucket of its own `line` value. PENDING(issue 43): sync-inbox 43(b) asks gyb
+    whether a cross-root order appears under every related line."""
     if not group_by:
         return [(None, rows)]
     key = "line" if group_by == "line" else "batch"

@@ -184,6 +184,20 @@ class StatusSections(unittest.TestCase):
         self.assertEqual(r.rc, 0, str(r))
         self.assertIn(ho, r.out)
 
+    def test_section5_manual_order_in_progress_is_not_listed(self):
+        """Proxy decision D-35 (05 L159; 01 L108): section 5 is the waiting-for-gyb list,
+        so a dispatch=manual order someone has already started is not in it."""
+        dec = make_decision(self.sb)
+        ho = open_work_order(self.sb, None, dec, extra=("--manual",))
+        deploy = self.sb.role_session("deploy")
+        self.sb.rl_ok("handoff", "start", ho, session=deploy)
+        r = self.sb.rl("status", "--json")
+        self.assertEqual(r.rc, 0, str(r))
+        row = _find_row(r.json, ho)
+        self.assertIsNotNone(row, f"no row with id {ho} in {r.json!r}")
+        self.assertEqual(row["dispatch"], "manual")
+        self.assertNotIn(5, row["sections"])
+
     def test_section6_stale_order(self):
         """05 L160 section 6: a stale order -- a work order citing v1, decision
         updated to v2 (same fixture used for `rl decision stale` in test_05_stale.py;
@@ -367,6 +381,30 @@ class Inbox(unittest.TestCase):
         self.assertEqual(r.rc, 0, str(r))
         self.assertIn(ho, json.dumps(r.json))
 
+    def test_item2_lists_a_done_pending_review_order_the_role_owns(self):
+        """Proxy decision D-33 (05 L136; 04 L47, L51): item 2 covers the four non-terminal
+        states with no holder, so an order the role owns that came back done_pending_review
+        is listed, and an accepted one is not."""
+        idea = self.sb.role_session("idea")
+        dec = make_decision(self.sb, session=idea)
+        ho = open_work_order(self.sb, idea, dec)
+        deploy = self.sb.role_session("deploy")
+        self.sb.write_file("experiments/d33/method.md")
+        self.sb.write_file("experiments/d33/detail.md")
+        self.sb.write_file("experiments/d33/x.py")
+        self.sb.rl_ok("handoff", "amend", ho, "--report-method", "experiments/d33/method.md",
+                      "--report-detail", "experiments/d33/detail.md",
+                      "--code-path", "experiments/d33/x.py", session=deploy)
+        self.sb.rl_ok("handoff", "start", ho, session=deploy)
+        self.sb.rl_ok("handoff", "done", ho, session=deploy)
+        r = self.sb.rl("inbox", "--json", session=idea)
+        self.assertEqual(r.rc, 0, str(r))
+        self.assertIn(ho, [o["id"] for o in r.json["orders_without_holder"]])
+        self.sb.rl_ok("handoff", "accept", ho, session=idea)
+        r = self.sb.rl("inbox", "--json", session=idea)
+        self.assertEqual(r.rc, 0, str(r))
+        self.assertNotIn(ho, [o["id"] for o in r.json["orders_without_holder"]])
+
     def test_item3_stale_decisions_only_for_orders_this_session_holds(self):
         """05 L137, L143 (2026-08-17 gyb ruling): item 3 lists only past-version
         decisions cited by orders THIS SESSION holds, not everything the role owns.
@@ -519,6 +557,23 @@ class Reclaim(unittest.TestCase):
         ids_skip = {x["id"] for x in r_skip.json}
         self.assertNotIn(d1, ids_skip)
         self.assertIn(d2, ids_skip)
+
+    def test_skip_order_leaves_its_idle_holder_session_alone(self):
+        """PENDING(part 04 L166) reading: --skip ORDER on an idle session that holds that
+        order keeps the session out of the run too, because closing it while it still holds
+        the order would break 04 L51. Session open, order in_progress, nothing written."""
+        self.sb.set_config("reclaim.session_idle_hours", 0)
+        dec = make_decision(self.sb)
+        ho = open_work_order(self.sb, None, dec)
+        deploy = self.sb.role_session("deploy")
+        self.sb.rl_ok("handoff", "start", ho, session=deploy)
+        before = (self.sb.count("handoffs"), self.sb.count("sessions"))
+
+        self.sb.rl_ok("reclaim", "--skip", ho, "--apply")
+
+        self.assertEqual(self.sb.latest("sessions", deploy)["status"], "open")
+        self.assertEqual(self.sb.latest("handoffs", ho)["status"], "in_progress")
+        self.assertEqual((self.sb.count("handoffs"), self.sb.count("sessions")), before)
 
     def test_apply_closes_idle_session_and_releases_its_orders(self):
         """04 L178: an idle session is closed with end_reason reclaim, and its

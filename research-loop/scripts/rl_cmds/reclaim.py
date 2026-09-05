@@ -25,14 +25,14 @@ idle_hours, action}`; `kind` is session, handoff or ql.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import rl_lib
 from rl_cmds import doctor
+from rl_cmds import run as run_cmds
 from rl_cmds.handoff import release_order
 
-# 05 L163 / skills/research-loop/SKILL.md L36: a role is loaded by typing this.
+# 01 L108 (the status section 9 row at 05 L163 repeats it): a role is loaded by typing this.
 LOAD_CMD = "/research-loop:{role}"
 
 _TERMINAL = tuple(rl_lib.TRANSITIONS["terminal_states"])  # accepted, withdrawn (04 L47)
@@ -138,6 +138,20 @@ def _action_for(order: dict, kill: bool) -> str:
     return f"listed only; the owner starts it again, `rl handoff start {ho_id}`"
 
 
+def _last_status_change_ts(versions: list) -> str | None:
+    """The ts of the first version in the latest run of equal statuses: the moment the
+    order last changed status (04 L173 "没转移" counts transfers, and an amend is not one)."""
+    if not versions:
+        return None
+    current = versions[-1].get("status")
+    ts = versions[-1].get("ts")
+    for version in reversed(versions):
+        if version.get("status") != current:
+            break
+        ts = version.get("ts")
+    return ts
+
+
 def _candidates(repo: Path, led: doctor.Ledgers, cfg: dict, session_hours: float,
                 handoff_hours: float, ql_days: float, kill: bool, reference) -> list[dict]:
     """Everything past its threshold: sessions, orders and quick lanes (04 L176; 07 L128).
@@ -163,7 +177,11 @@ def _candidates(repo: Path, led: doctor.Ledgers, cfg: dict, session_hours: float
     for ho_id, order in sorted(led.latest["handoffs"].items()):
         if order["status"] in _TERMINAL:
             continue
-        idle = doctor.hours_since(order.get("ts"), reference)
+        # 04 L173 counts from the last transfer, and an amend (04 L64, L69) is a new version
+        # but not a transfer, so the clock starts at the first version of the current
+        # status run, not at the latest version's ts.
+        idle = doctor.hours_since(_last_status_change_ts(led.versions("handoffs", ho_id)),
+                                  reference)
         if idle is None or idle < handoff_hours:
             continue
         out.append({"kind": "handoff", "id": ho_id, "idle_hours": idle,
@@ -203,25 +221,22 @@ def _adoptable_run(repo: Path, order: dict) -> dict | None:
 
 
 def _abort(repo: Path, cfg: dict, actor: rl_lib.Actor, order: dict, notes: list) -> str | None:
-    """04 L179; 12 L136: `--kill` goes through the interrupt sequence - kill the process,
-    free the GPU, deregister on the host, land a killed version in runs. rl owns the last
-    two: the host step is the `launcher.abort_cmd` template (08 L51; an empty template means
-    the host has no such step and rl skips it, 08 L55), and the runs version is written
-    here. Killing the process and freeing the card are the host command's business; rl has
-    no handle on a remote process (03 L9: rl only writes ledgers)."""
+    """04 L179; 12 L136: `--kill` goes through the four-step interrupt sequence - kill the
+    process, free the GPU, deregister on the host, land a killed version in runs. Two of
+    the four are assigned by the parts: 12 L127 and 08 L51 give the host deregistration to
+    the `launcher.abort_cmd` template (an empty template means the host has no such step
+    and rl skips it, 08 L55), and the runs version is written here. PENDING(part 04 L179):
+    no part assigns the first two steps (kill the process, free the card) to any command,
+    so rl runs only the template and the runs write; 03 L9 (the nine ledgers change only
+    through bin/rl) is about the ledgers, not about processes.
+    PENDING(part 08 L50): the template runs exactly as written, no arguments (the same
+    reading as run.py's _run_host_template, which is reused here)."""
     run = _adoptable_run(repo, order)
     if run is None:
         return None
-    template = (cfg.get("launcher.abort_cmd") or "").strip()
-    if template:
-        try:
-            proc = subprocess.run(template, shell=True, cwd=str(repo), capture_output=True, text=True)
-            if proc.returncode != 0:
-                notes.append(f"launcher.abort_cmd {template!r} exited {proc.returncode}")
-            else:
-                notes.append(f"launcher.abort_cmd {template!r} ran")
-        except OSError as err:  # pragma: no cover - the host command is not rl's to fix
-            notes.append(f"launcher.abort_cmd {template!r} could not run: {err}")
+    host_note = run_cmds._run_host_template(repo, cfg, "launcher.abort_cmd")
+    if host_note:
+        notes.append(host_note)
     finished_at = rl_lib.now_iso()
     started = run.get("started_at")
     actual = 0.0
@@ -303,8 +318,8 @@ def _apply(repo: Path, cfg: dict, actor: rl_lib.Actor, candidates: list, kill: b
     # 04 L178 releases an idle session's orders through the in_progress -> todo row, and
     # that row's precondition (04 L75; transitions.json release.no_kill_if_launched) says
     # it in one sentence: a launch order with a launched, unfinished run keeps its process
-    # unless reclaim carries --kill, in which case the abort sequence runs first. No extra
-    # "the order itself is idle" condition (reviewer ruling on 635499d, 2026-09-05).
+    # unless reclaim carries --kill, in which case the abort sequence runs first. 04 L75
+    # names no "the order itself is idle" condition, so there is none here.
     for cand in [c for c in candidates if c["kind"] == "session"]:
         released = []
         for ho_id in cand["_held"]:
@@ -423,7 +438,12 @@ def cmd_main(args, ctx):
         if only:
             candidates = [c for c in candidates if c["id"] in only]
         if skip:
-            candidates = [c for c in candidates if c["id"] not in skip]
+            # PENDING(part 04 L166): the parts give the flag's shape, not what --skip ORDER
+            # means for an idle session that holds that order. Closing the session while it
+            # still holds the order would break 04 L51 (holder non-empty only while
+            # in_progress, and only a live session holds), so the session is left alone too.
+            candidates = [c for c in candidates
+                          if c["id"] not in skip and not (skip & set(c.get("_held") or []))]
         if apply_it:
             _apply(repo, cfg, actor, candidates, kill, notes)
         waiting = _waiting_by_owner(repo) if apply_it else {}

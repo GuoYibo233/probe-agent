@@ -180,5 +180,51 @@ class DoctorItem6DanglingHandoff(unittest.TestCase):
         self.assertFalse(acks_path.exists())
 
 
+class DoctorItem12BackAtTodo(unittest.TestCase):
+    """05 L206 (item 12) with proxy decision D-34: the notification issues rl opens on a
+    release (04 L195: orphaned; 04 L190: notices, not problems) do not count as the "linked
+    issue still open" of item 12."""
+
+    def setUp(self):
+        self.sb = Sandbox.create()
+
+    def tearDown(self):
+        self.sb.destroy()
+
+    def test_released_order_with_only_its_orphaned_notice_is_not_reported(self):
+        dec = make_decision(self.sb)
+        ho = open_work_order(self.sb, None, dec)
+        deploy = self.sb.role_session("deploy")
+        self.sb.rl_ok("handoff", "start", ho, session=deploy)
+        self.sb.rl_ok("handoff", "release", ho, "--note", "handing back")  # owner gyb, 04 L75
+        self.assertEqual(self.sb.latest("handoffs", ho)["status"], "todo")
+        notices = [i for i in self.sb.rows("issues")
+                   if i.get("handoff_id") == ho and i["status"] == "open"]
+        self.assertTrue(notices, "the release wrote no open notice issue (04 L195)")
+        self.assertTrue(all(i["kind"] in ("orphaned", "withdrawn", "fyi") for i in notices))
+
+        r = self.sb.rl("doctor", "--json")
+
+        self.assertEqual(r.rc, 0, str(r))
+        self.assertEqual([x for x in r.json if x["item"] == 12 and ho in x["ids"]], [])
+
+    def test_released_order_with_a_real_open_issue_is_reported_to_the_opener(self):
+        dec = make_decision(self.sb)
+        ho = open_work_order(self.sb, None, dec)
+        deploy = self.sb.role_session("deploy")
+        self.sb.rl_ok("handoff", "start", ho, session=deploy)
+        analysis = self.sb.role_session("analysis")
+        self.sb.rl_ok("issue", "open", "--to", "deploy", "--kind", "request", "--handoff", ho,
+                      "--text", "please add the plot", session=analysis)
+        self.sb.rl_ok("handoff", "release", ho, "--note", "handing back")  # owner gyb, 04 L75
+
+        r = self.sb.rl("doctor", "--json")
+
+        self.assertEqual(r.rc, 0, str(r))
+        item12 = [x for x in r.json if x["item"] == 12 and ho in x["ids"]]
+        self.assertEqual(len(item12), 1, str(r))
+        self.assertEqual(item12[0]["push_to"], "analysis")
+
+
 if __name__ == "__main__":
     unittest.main()
