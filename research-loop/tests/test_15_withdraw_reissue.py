@@ -309,5 +309,32 @@ class TestFyiOnGybOverride(unittest.TestCase):
         self.assertTrue(ids)
 
 
+class TestNotificationKindsOnlyByRl(unittest.TestCase):
+    """Proxy decision D-38 (04 L188-200; 03 L90): withdrawn, orphaned and fyi are opened
+    only by rl at their trigger points; a hand-typed `rl issue open --kind` with one of
+    them is exit 2 for a role session and for gyb alike, and no row lands."""
+
+    def setUp(self):
+        self.sb = Sandbox.create()
+
+    def tearDown(self):
+        self.sb.destroy()
+
+    def test_hand_opened_notification_kind_is_refused_for_role_and_gyb(self):
+        sb = self.sb
+        deploy = sb.role_session("deploy")
+        before = sb.count("issues")
+        for kind in ("fyi", "orphaned", "withdrawn"):
+            for session in (deploy, None):
+                r = sb.rl("issue", "open", "--to", "gyb", "--kind", kind, "--text", "by hand",
+                          session=session)
+                self.assertEqual(r.rc, 2, str(r))
+                self.assertEqual(r.kind, "validation")
+        self.assertEqual(sb.count("issues"), before)
+        r = sb.rl("issue", "open", "--to", "gyb", "--kind", "request", "--text", "a real one",
+                  session=deploy)
+        self.assertEqual(r.rc, 0, str(r))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -94,6 +94,14 @@ def cmd_open(args, ctx):
         fields["assignee"] = opts["to"]  # 03 L70: the assignee is a role or gyb
     if opts.get("kind") is not None:
         fields["kind"] = opts["kind"]  # 03 L71, L78-90: one of nine kinds
+        if opts["kind"] in NOTIFICATION_KINDS:
+            # proxy decision D-38 (04 L188-200; 03 L90): the three notification kinds are
+            # opened only by rl at their trigger points (handoff._notice); a hand-typed
+            # `rl issue open --kind fyi|orphaned|withdrawn` is refused for everyone, gyb too.
+            raise rl_lib.RLError(
+                "validation",
+                f"kind {opts['kind']} is a notification rl opens by itself (04 L188-200; "
+                f"proxy decision D-38); pick one of the other kinds")
     if opts.get("stage") is not None:
         fields["stage"] = opts["stage"]  # 03 L72: required when kind is failed
     if opts.get("text") is not None:
