@@ -86,7 +86,7 @@ def cmd_open(args, ctx):
     """05 L58: open an issue. Who may call it follows the role's ledger_writes (checked by
     rl_lib.check_who_can_call); which fields the kind demands follows the schema's
     x-conditions (03 L72, L75), applied by rl_lib.check_conditions."""
-    _pos, opts = rl_lib.parse_args(args)
+    _pos, opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     repo, actor, force, reason = rl_lib.context(ctx)
     log_tail = _log_tail(opts)
     fields = {}
@@ -113,7 +113,7 @@ def cmd_open(args, ctx):
 
 def cmd_reassign(args, ctx):
     """03 L92: reassigning is one more version with a new assignee."""
-    pos, opts = rl_lib.parse_args(args)
+    pos, opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl issue reassign needs an issue id")
     issue_id = pos[0]
@@ -132,7 +132,7 @@ def cmd_reassign(args, ctx):
 def cmd_reply(args, ctx):
     """03 L92: only the assignee or gyb writes the reply; 03 L74: a version whose status is
     answered carries the reply text."""
-    pos, opts = rl_lib.parse_args(args)
+    pos, opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl issue reply needs an issue id")
     issue_id = pos[0]
@@ -157,7 +157,7 @@ def cmd_close(args, ctx):
     """03 L92: only the actor who opened the issue or gyb closes it; for the three
     notification kinds (withdrawn, orphaned, fyi) the assignee closes it too, because the
     inbox only reads and the addressee closes the notice when done."""
-    pos, _opts = rl_lib.parse_args(args)
+    pos, _opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl issue close needs an issue id")
     issue_id = pos[0]
@@ -184,7 +184,7 @@ def cmd_close(args, ctx):
 def cmd_link(args, ctx):
     """05 L58, L197: `rl issue link ID --handoff ID` is doctor item 3's fix; it appends one
     more version that adds handoff_id and leaves everything else as it was."""
-    pos, opts = rl_lib.parse_args(args)
+    pos, opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl issue link needs an issue id")
     issue_id = pos[0]
@@ -206,7 +206,7 @@ def cmd_link(args, ctx):
 
 def cmd_show(args, ctx):
     """05 L58: show one issue. 03 L25: reading is open to everyone."""
-    pos, _opts = rl_lib.parse_args(args)
+    pos, _opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl issue show needs an issue id")
     issue_id = pos[0]
@@ -225,7 +225,7 @@ def cmd_show(args, ctx):
 
 def cmd_list(args, ctx):
     """05 L58: `rl issue list [--open] [--to R] [--kind K]`."""
-    _pos, opts = rl_lib.parse_args(args, flags=("open",))
+    _pos, opts = rl_lib.parse_args(args, flags=("open",), allowed=rl_lib.allowed_options(ctx["command"]))
     repo, _actor, _force, _reason = rl_lib.context(ctx)
     rows = rl_lib.latest(rl_lib.read_rows(repo, "issues"), "issues")
     out = []

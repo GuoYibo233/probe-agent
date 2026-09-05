@@ -170,7 +170,7 @@ def cmd_add(args, ctx):
     """02 L109: a new decision; the prefix comes from the session (a role session uses the
     role's prefix, --as-gyb included; a bare terminal uses gyb), the sequence number is
     assigned inside that book, and the row lands in that book's file."""
-    _pos, opts = rl_lib.parse_args(args, multi=("source",))
+    _pos, opts = rl_lib.parse_args(args, multi=("source",), allowed=rl_lib.allowed_options(ctx["command"]))
     repo, actor, force, reason = rl_lib.context(ctx)
     sources = _parse_sources(repo, opts.get("source") or [], force=bool(ctx["opts"].get("force")))
     _require_sources(sources, force)
@@ -194,7 +194,7 @@ def cmd_add(args, ctx):
 def _revise(args, ctx, op: str, command: str):
     """The body shared by update, confirm and retire: one new version of one decision
     (02 L52: the id does not change, the version goes up by one)."""
-    pos, opts = rl_lib.parse_args(args, multi=("source",))
+    pos, opts = rl_lib.parse_args(args, multi=("source",), allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", f"rl {command} needs a decision id")
     dec_id = pos[0]
@@ -273,7 +273,7 @@ def cmd_merge(args, ctx):
     """02 L113: a new decision with a new id; the merged ids go into sources and
     merged_from automatically; each merged decision gets one more version marked retired
     whose own root_id does not move (02 L23, L66, L77)."""
-    pos, opts = rl_lib.parse_args(args, multi=("source",))
+    pos, opts = rl_lib.parse_args(args, multi=("source",), allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl decision merge needs the decision ids to merge")
     merged = list(pos)
@@ -378,7 +378,7 @@ def _with_runs(repo, dec_id: str) -> list:
 def cmd_show(args, ctx):
     """02 L114: the latest version by default; --version picks one, --history gives them
     all, --with-runs adds the orders and runs hanging off this decision."""
-    pos, opts = rl_lib.parse_args(args, flags=("history", "with-runs"))
+    pos, opts = rl_lib.parse_args(args, flags=("history", "with-runs"), allowed=rl_lib.allowed_options(ctx["command"]))
     if not pos:
         raise rl_lib.RLError("usage", "rl decision show needs a decision id")
     dec_id = pos[0]
@@ -414,7 +414,7 @@ def cmd_show(args, ctx):
 def cmd_list(args, ctx):
     """02 L115: list decisions; --actor filters by who wrote the latest version, --line by
     the research line, which is the root decision id (02 L66)."""
-    _pos, opts = rl_lib.parse_args(args)
+    _pos, opts = rl_lib.parse_args(args, allowed=rl_lib.allowed_options(ctx["command"]))
     repo, _actor, _force, _reason = rl_lib.context(ctx)
     rows = rl_lib.latest(rl_lib.read_decisions(repo), "decisions")
     out = []
@@ -434,7 +434,7 @@ def cmd_stale(args, ctx):
     """02 L89, L116: the staleness check. Default lists only what the current session's own
     orders cite, --handoff ID only that order's citations, --all the whole ledger. It is a
     query command, so anyone may call it (02 L118)."""
-    _pos, opts = rl_lib.parse_args(args, flags=("all",))
+    _pos, opts = rl_lib.parse_args(args, flags=("all",), allowed=rl_lib.allowed_options(ctx["command"]))
     repo, actor, _force, _reason = rl_lib.context(ctx)
     latest_revision = _latest_revisions(repo)
     orders = rl_lib.latest(rl_lib.read_rows(repo, "handoffs"), "handoffs")

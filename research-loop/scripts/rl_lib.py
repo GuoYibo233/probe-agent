@@ -662,10 +662,25 @@ def role_from_agent_type(agent_type: str | None) -> str | None:
 
 # ---------------------------------------------------------------- shared write pipeline (interface for rl_cmds)
 
-def parse_args(args: list[str], multi: tuple[str, ...] = (), flags: tuple[str, ...] = ()) -> tuple[list[str], dict]:
+_SIG_OPTION_RE = re.compile(r"--([a-z][a-z0-9-]*)")
+GLOBAL_OPTIONS = ("json", "as-gyb", "quote", "force", "reason")
+
+
+def allowed_options(command: str) -> set[str]:
+    """The option names a sub-command takes, read off its signature in
+    tables/commands.json, plus the global flags (03 L224: an option the command does not
+    have is a usage error; pressure-scenario finding 2026-09-05)."""
+    spec = COMMANDS.get(command)
+    names = set(_SIG_OPTION_RE.findall(spec["signature"])) if spec else set()
+    return names | set(GLOBAL_OPTIONS)
+
+
+def parse_args(args: list[str], multi: tuple[str, ...] = (), flags: tuple[str, ...] = (),
+               allowed: set[str] | None = None) -> tuple[list[str], dict]:
     """Small option parser for handlers: `--name value` pairs; names in `multi` collect a
     list; names in `flags` are booleans; everything else is positional (03 L224: a wrong
-    argument is exit 5 usage)."""
+    argument is exit 5 usage). With `allowed` (see allowed_options) an option outside the
+    set is refused with exit 5 instead of being written into the row."""
     positional: list[str] = []
     opts: dict = {}
     i = 0
@@ -675,6 +690,11 @@ def parse_args(args: list[str], multi: tuple[str, ...] = (), flags: tuple[str, .
             name = a[2:]
             if "=" in name:
                 name, value = name.split("=", 1)
+            if allowed is not None and name not in allowed:
+                raise RLError("usage", f"unknown option --{name}",
+                              "options of this sub-command: " + ", ".join("--" + n for n in sorted(allowed - set(GLOBAL_OPTIONS))))
+            if "=" in a[2:]:
+                pass
             elif name in flags:
                 opts[name] = True
                 i += 1
