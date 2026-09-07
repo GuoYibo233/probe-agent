@@ -1,0 +1,75 @@
+{
+  // 训练器的 debugger 演示,说明在 demo/README.md。
+  // 三个配置都不碰显卡:CUDA_VISIBLE_DEVICES 置空、--device cpu,
+  // 模型与数据是 demo/prepare.py 造的假件(先跑一次第三个配置,或者
+  // `python3 run.py demo-prep`)。被调试的是真训练器
+  // pipeline/train/train_causal_share.py,没有改过一个字。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "demo: train cgen on CPU (tiny model)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/pipeline/train/train_causal_share.py",
+      "python": "${workspaceFolder}/cprobe-env/bin/python",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      // false = F11 可以一路踩进 transformers 的 Qwen3 前向;只想看工程代码就改成 true
+      "justMyCode": false,
+      "env": { "CUDA_VISIBLE_DEVICES": "" },
+      "args": [
+        "--mode", "cgen",
+        "--base", "demo/tiny_qwen3",
+        "--data", "demo/data",
+        "--out", "demo/runs/cgen",
+        "--device", "cpu",
+        "--epochs", "2",
+        "--eval-per-epoch", "2",
+        "--log-every", "1",
+        "--tok-budget", "768",
+        "--gen-eval", "4",
+        "--gen-bs", "2",
+        "--align-events", "3",
+        // 训练器拒绝在已有 train_log.jsonl 的 --out 里再训;演示要反复跑,所以放行
+        "--force"
+      ]
+    },
+    {
+      "name": "demo: train cparam on CPU (tiny model)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/pipeline/train/train_causal_share.py",
+      "python": "${workspaceFolder}/cprobe-env/bin/python",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": { "CUDA_VISIBLE_DEVICES": "" },
+      "args": [
+        "--mode", "cparam",
+        "--base", "demo/tiny_qwen3",
+        "--data", "demo/data",
+        "--out", "demo/runs/cparam",
+        "--device", "cpu",
+        "--epochs", "2",
+        "--eval-per-epoch", "2",
+        "--log-every", "1",
+        "--tok-budget", "768",
+        "--gen-eval", "4",
+        "--gen-bs", "2",
+        "--align-events", "3",
+        "--force"
+      ]
+    },
+    {
+      "name": "demo: prepare fixtures (data + tiny model)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/demo/prepare.py",
+      "python": "${workspaceFolder}/cprobe-env/bin/python",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": { "CUDA_VISIBLE_DEVICES": "" }
+    }
+  ]
+}

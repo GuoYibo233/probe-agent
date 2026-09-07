@@ -342,6 +342,27 @@ TASKS = {
                "(b06/b17/l17/l4)各三个学习率锚点,冒烟后可能再改",
                "本任务只出清单/收表(纯 CPU),不发射;12 个 run 的实际发射"
                "走 gpu-run,产物目录 pipeline/runs/sweep/ 不进矩阵"]),
+    "demo-prep": dict(
+        stage="train", py="cprobe", script="demo/prepare.py",
+        env={"CUDA_VISIBLE_DEVICES": ""},
+        desc="debugger 演示假件:合成小数据 demo/data + 两层小 Qwen3 "
+             "demo/tiny_qwen3(纯 CPU,十秒)",
+        notes=["只碰一次 NFS(拷真 Qwen3-0.6B-Base 的分词器进 demo/tiny_qwen3),"
+               "之后 demo-train 与 .vscode/launch.json 都不碰 NFS、不碰显卡",
+               "数据随种子确定,demo/data/*.jsonl 进库;模型目录与 demo/runs/ 不进库",
+               "在哪下断点看 demo/README.md;进 debugger 用 .vscode/launch.json"]),
+    "demo-train": dict(
+        stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
+        env={"CUDA_VISIBLE_DEVICES": ""},
+        args=["--base", "demo/tiny_qwen3", "--data", "demo/data",
+              "--device", "cpu", "--epochs", "2", "--eval-per-epoch", "2",
+              "--log-every", "1", "--tok-budget", "768", "--gen-eval", "4",
+              "--gen-bs", "2", "--align-events", "3"],
+        desc="不进 debugger 的时候在 CPU 上把演示训练整程跑一遍"
+             "(必给 --mode cgen|cparam 与 --out)",
+        notes=["与 .vscode/launch.json 同一组参数;同一个 --out 第二次跑要 --force",
+               "被跑的是真训练器 train_causal_share.py,只是模型与数据换成假件",
+               "产物 demo/runs/<mode>/ 不进库、不进矩阵、不记账(不是实验)"]),
 
     # ---- eval 评测 ----
     "eval-tool-mbert": dict(

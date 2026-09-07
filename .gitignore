@@ -42,6 +42,11 @@ pipeline/runs
 # ── 回放执行缓存（exec_calls 的结果缓存，纯产物）
 pipeline/inject/exec_cache/
 
+# ── debugger 演示的假件（demo/prepare.py 一条命令重造）：小模型目录与训练产物不进库；
+#    demo/data/*.jsonl 很小、随种子确定，进库，方便不跑脚本也能在编辑器里读样本
+demo/tiny_qwen3/
+demo/runs/
+
 # ── 台账锁文件（gpu_jobs.py mutate_reg 的 flock 载体）
 ops/*.lock
 
