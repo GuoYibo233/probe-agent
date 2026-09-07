@@ -347,10 +347,11 @@ TASKS = {
         env={"CUDA_VISIBLE_DEVICES": ""},
         desc="debugger 演示假件:合成小数据 demo/data + 两层小 Qwen3 "
              "demo/tiny_qwen3(纯 CPU,十秒)",
-        notes=["只碰一次 NFS(拷真 Qwen3-0.6B-Base 的分词器进 demo/tiny_qwen3),"
-               "之后 demo-train 与 .vscode/launch.json 都不碰 NFS、不碰显卡",
-               "数据随种子确定,demo/data/*.jsonl 进库;模型目录与 demo/runs/ 不进库",
-               "在哪下断点看 demo/README.md;进 debugger 用 .vscode/launch.json"]),
+        notes=["分词器从真 Qwen3-0.6B-Base 拷贝;demo/tiny_qwen3 与 demo/runs 由本"
+               "任务做成指向 net 盘镜像目录的软链(铁律:大产物落 net,同 pipeline/runs)",
+               "数据随种子确定,demo/data/*.jsonl 进库;两个软链不进库",
+               "在哪下断点看 demo/README.md;进 debugger 用 .vscode/launch.json,"
+               "两个训练配置与 demo-train 都不碰显卡"]),
     "demo-train": dict(
         stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
         env={"CUDA_VISIBLE_DEVICES": ""},

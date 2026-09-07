@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
-"""demo/prepare.py —— 给 debugger 演示造两样假件:一份很小的数据集,一个很小的模型。
+"""demo/prepare.py —— 给 debugger 演示构建两样假件:一份很小的数据集,一个很小的模型。
 
 真正要看的训练代码是 pipeline/train/train_causal_share.py(cgen / cparam 两格
 共用的缓存复用训练器),那个文件一个字都不改。训练器本来就留了两扇门:
-`--base <模型目录>` 走 build(path=...) 装任意目录里的模型,`--device cpu`
+`--base <模型目录>` 走 build(path=...) 加载任意目录里的模型,`--device cpu`
 不碰显卡。本脚本只负责把这两扇门后面的东西换成 CPU 上几秒钟就能跑完的假件:
 
 1. demo/data/{train,val}.jsonl:合成的 AppWorld 风格标注样本。字段与
    pipeline/annotate/build.py 产出的真数据逐个相同(text / label / w / depth /
    sent_idx / n_sents / event / traj / unit / model / step / label_call /
    args_named)。切点用 rules.boundaries,题干用 rules.assemble,调用串用
-   build.make_call,三个都是真流水线的同一份函数;只有轨迹内容是编的。
+   build.make_call,三个都是真流水线的同一份函数;只有轨迹内容是编写的。
 2. demo/tiny_qwen3/:随机初始化的两层 Qwen3(hidden 64),结构与真底座同族,
-   分词器是真 Qwen3-0.6B-Base 的分词器(从 NFS 拷一份进来,之后训练不再碰
-   NFS)。词表大小取 len(tok):真分词器分出来的 token id 最高到十五万,
-   词表开小了 embedding 会越界。
+   分词器是真 Qwen3-0.6B-Base 的分词器(从 NFS 拷贝一份进来)。词表大小取
+   len(tok):真分词器分出来的 token id 最高到十五万,词表开小了 embedding
+   会越界。
 
-跑完之后脚本自己用 share_data.load_events 把两份数据各按 cgen / cparam 装一遍,
-把每个事件的全文 token 数、拼接长度、行数印出来,再按 --tok-budget 印一下一个
-逻辑小批会切成几个物理块——训练循环里最值得下断点的地方就是这几层。
+大产物按 CLAUDE.md 的铁律直接写 net 盘:本脚本先把 demo/tiny_qwen3 与
+demo/runs 做成指向 net 盘镜像目录(--net-root)下同名目录的软链,与
+pipeline/data、pipeline/runs 同一个做法,home 里只留代码、数据 jsonl 与软链。
+
+跑完之后脚本自己用 share_data.load_events 把两份数据各按 cgen / cparam 加载
+一遍,把每个事件的全文 token 数、拼接长度、行数打印出来,再按 --tok-budget
+打印一下 epoch 0 的每个逻辑小批会切成几个物理块:训练循环里最值得下断点的
+地方就是这几层。
 
 用法:
   CUDA_VISIBLE_DEVICES= cprobe-env/bin/python demo/prepare.py
@@ -38,6 +43,27 @@ import rules                                   # noqa: E402  切点 / 题干的�
 from build import make_call                    # noqa: E402  调用串的唯一真源
 
 DEFAULT_SEED = 20260907
+# net 盘镜像目录(CLAUDE.md:大产物落 /net/.../reproduce/new1/ 下镜像本目录结构)
+NET_DEMO = Path("/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/demo")
+# 这两个目录是大产物(小模型 54 MB,每次训练产物约 55 MB),做成软链落 net 盘
+NET_LINKED = ("tiny_qwen3", "runs")
+
+
+def link_to_net(name, net_root):
+    """demo/<name> 做成指向 net_root/<name> 的软链。已经是软链就只保证目标目录
+    存在;是实体目录就硬停,不替用户搬东西(里面的内容都能重新构建)。"""
+    link = ROOT / "demo" / name
+    target = net_root / name
+    if link.is_symlink():
+        link.resolve().mkdir(parents=True, exist_ok=True)
+        return link, link.resolve()
+    if link.exists():
+        raise SystemExit(
+            f"{link} 是实体目录,不是软链。按 CLAUDE.md 铁律大产物要落 net 盘:"
+            f"先把这个目录删掉或者挪走(内容都能用本脚本重新构建),再跑本脚本。")
+    target.mkdir(parents=True, exist_ok=True)
+    link.symlink_to(target)
+    return link, target
 
 # ---------------------------------------------------------------- 编轨迹用的素材
 # 工具名与保名参数都照 AppWorld 的样子编;参数 value 不带引号,与真数据一致
@@ -243,11 +269,17 @@ def main():
                     help="自检时按这个预算印装块结果(与 launch.json 里的值一致)")
     ap.add_argument("--events-per-mb", type=int, default=4)
     ap.add_argument("--skip-model", action="store_true",
-                    help="只重造数据,不动 demo/tiny_qwen3")
+                    help="只重新构建数据,不动 demo/tiny_qwen3")
+    ap.add_argument("--net-root", default=str(NET_DEMO),
+                    help="demo/tiny_qwen3 与 demo/runs 软链指向的 net 盘目录")
     args = ap.parse_args()
 
     data_dir = Path(args.out_data)
     model_dir = Path(args.out_model)
+
+    for name in NET_LINKED:
+        link, target = link_to_net(name, Path(args.net_root))
+        print(f"[net] {link.relative_to(ROOT)} -> {target}")
 
     written = write_data(data_dir, args.seed, args.n_train, args.n_val)
     for split, (n_ev, n_rows) in written.items():
