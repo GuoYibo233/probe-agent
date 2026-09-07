@@ -94,7 +94,6 @@
   home 里只留代码、笔记和软链接。
 - 环境一律 uv 管理。
 - 模型权重下载到 `/net/tokyo100-10g/data/str01_01/y-guo/models`，不放 /home。
-- 动手前先取得同意；一个请求只做那一件事。
 
 ## Agent skills
 
