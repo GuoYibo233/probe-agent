@@ -51,7 +51,7 @@ build.sh 用 latexmk（会自动跑 bibtex 和补趟数），不手搓 pdflatex 
 
 - 要写数字：先查 `RESULTS.md` / `ops/runs.jsonl` 拿 run_id 和数值，表格加 source 注释。
 - 做表优先走已有产物；表格式样按 FORMATTING.md §7（booktabs、灰度可读、caption 规范）。
-- 引用文献：先核实（paper-verifier / 亲自抓 abstract——记忆铁律 always-fetch-the-abstract），
+- 引用文献：先核实（paper-verifier / 亲自抓 abstract——记忆铁律 literature-judgment），
   bib 条目尽量带 DOI（FORMATTING.md §6）。
 
 ## 4. 投稿前体检（deadline 前必跑）
