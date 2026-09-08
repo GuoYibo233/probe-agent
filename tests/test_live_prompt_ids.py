@@ -1,10 +1,12 @@
-"""live_appworld.gen_step 发给 vLLM 的 prompt 形态测试(纯 CPU,假服务)。
+"""Shape test for the prompt live_appworld.gen_step sends to vLLM (pure CPU, fake service).
 
-2026-08-18 起 prompt 是 token id 列表:不出手的步 = /render 给的 prefix_ids
-原样;v6(ident3)开火重发 = prefix_ids + 模型自己生成的 id[:k](head = 盖住句尾
-标点的最短 id 前缀,/decode 逐个核出来)+ /encode(NOTE)。这里用假的
-http_json / open_stream 把这些断言钉死,顺带钉住 /health 缺 render/decode
-字段就拒跑,以及流文本落后于 id 时 head 仍然找对。
+Since 2026-08-18 the prompt is a list of token ids: a step where the probe does not
+fire = the prefix_ids given by /render, unchanged; a v6 (ident3) fire-and-resend =
+prefix_ids + the model's own generated id[:k] (head = the shortest id prefix covering
+the sentence-ending punctuation, verified id by id via /decode) + /encode (NOTE). Fake
+http_json / open_stream pin down these assertions here, and along the way pin down that
+/health refuses to run if it lacks render/decode fields, and that head still finds the
+right spot when the streamed text lags behind the ids.
     python3 -m unittest tests.test_live_prompt_ids -v
 """
 
@@ -20,22 +22,22 @@ sys.path.insert(0, str(ROOT / "pipeline" / "annotate"))
 
 import live_appworld as L                                       # noqa: E402
 
-PREFIX = [200006, 17360, 200008, 3575, 200007, 200006, 173781]  # 随便一串
+PREFIX = [200006, 17360, 200008, 3575, 200007, 200006, 173781]  # An arbitrary string
 THINK = ("<|channel|>analysis<|message|>We need to inspect the profile first. "
          "Then we log in to spotify. Then we list playlists.")
 FINAL = "<|end|><|start|>assistant<|channel|>final<|message|>```python\nprint(1)\n```"
 HEAD2 = ("<|channel|>analysis<|message|>We need to inspect the profile first. "
-         "Then we log in to spotify.")          # 第 2 个句尾切口处的 head 文本
+         "Then we log in to spotify.")          # head text at the 2nd sentence-ending cut
 
 
 def fake_encode(text):
-    # 假分词:一字一 id(可逆:100000 + 码位),只要能验"前缀 + 编码"这个形态
+    # Fake tokenizer: one character one id (reversible: 100000 + code point), just enough to verify the "prefix + encoding" shape
     return [100000 + ord(c) for c in text]
 
 
 def words(text):
-    """假的"模型 token":按空格前分词(' Then' 这种带前导空格的词一个 token),
-    每个 token 一个流块。"""
+    """Fake "model tokens": tokenized on spaces before the word (a word with a leading
+    space like ' Then' is one token), one stream chunk per token."""
     out, cur = [], ""
     for ch in text:
         if ch == " " and cur:
@@ -48,15 +50,18 @@ def words(text):
 
 
 def word_id(w):
-    # 不能用内置 hash():字符串 hash 每个进程加随机盐,两个词偶尔撞出同一个
-    # id,decoder 的反查表就串词,find_head 随机报不一致(2026-08-20 抓到的
-    # 老毛病:改造前的代码连跑八遍挂四遍)。crc32 确定性,过一次永远过。
+    # Can't use the built-in hash(): string hash gets a random salt per process, so two
+    # words occasionally collide on the same id, the decoder's reverse lookup table then
+    # mixes up words, and find_head reports inconsistencies at random (an old bug caught on
+    # 2026-08-20: the code before the fix failed 4 out of 8 consecutive runs). crc32 is
+    # deterministic; pass once, pass forever.
     return 3000 + (zlib.crc32(w.encode()) % 100000)
 
 
 class FakeStream:
-    """按 pieces 逐块吐 (文本, ids);记录 payload;close 计数。
-    pieces 里的元素是 str(id 由 word_id 决定,同一词同一 id)或 (str, ids)。"""
+    """Emit (text, ids) chunk by chunk according to pieces; record the payload; count
+    close calls. Elements in pieces are either str (id determined by word_id, same
+    word same id) or (str, ids)."""
     calls = []
 
     def __init__(self, base_url, payload, timeout, script):
@@ -93,15 +98,15 @@ def mk_args(**kw):
     a = Args(base_url="http://vllm", probe_url="http://probe", model="m",
              timeout=5, no_probe=False, max_inject_per_step=1,
              fire_nth_cut=0, nofill=False,
-             # gen-preset(2026-08-20):这三个字段挂在 args 上,由 --preset
-             # 展开而来;这里照预设 default 的值填(温度 1.0)
+             # gen-preset (2026-08-20): these three fields hang off args, expanded from --preset;
+             # here they are filled with the values of the `default` preset (temperature 1.0)
              max_step_tokens=8192, temperature=1.0, stop=["<|return|>"])
     a.__dict__.update(kw)
     return a
 
 
 def decoder(all_words):
-    """假 /decode:按 id 反查词(测试里的词各不相同)。"""
+    """Fake /decode: reverse-look-up the word by id (words in the test are all distinct)."""
     table = {word_id(w): w for w in all_words}
     return lambda ids: "".join(table[i] if i < 100000 else chr(i - 100000)
                                for i in ids)
@@ -127,9 +132,9 @@ class TestPureHelpers(unittest.TestCase):
 
     def test_sent_starts_stable_as_whitespace_arrives(self):
         base = "x" * 30 + " We need this. "
-        s1 = L.sent_starts(base)                 # ". " 已到
-        s2 = L.sent_starts(base + "\n")          # 又来一个换行
-        self.assertEqual(s1, s2)                 # 同一个句尾还是同一个切口
+        s1 = L.sent_starts(base)                 # ". " has arrived
+        s2 = L.sent_starts(base + "\n")          # Another newline arrives
+        self.assertEqual(s1, s2)                 # Same sentence end, still the same cut
         self.assertEqual(L.sent_cuts(base) != L.sent_cuts(base + "\n"), True)
         self.assertEqual(s1, [len("x" * 30 + " We need this.")])
 
@@ -138,17 +143,17 @@ class TestPureHelpers(unittest.TestCase):
         dec = lambda ids: "".join(toks[i] for i in ids)
         ids = list(range(len(toks)))
         raw = "".join(toks)
-        pos_a = len("<|channel|>a.")            # 'a.' 之后
+        pos_a = len("<|channel|>a.")            # After 'a.'
         self.assertEqual(L.find_head(ids, raw, pos_a, 5, dec), (2, "<|channel|>a."))
         self.assertEqual(L.find_head(ids, raw, pos_a, 1, dec), (2, "<|channel|>a."))
-        pos_b = len("<|channel|>a. b.")         # 'b.' 之后,后面是独立的 "\n\n" token
-        self.assertEqual(L.find_head(ids, raw, pos_b, 4, dec)[0], 3)   # 不带 "\n\n"
-        pos_c = len("<|channel|>a. b.\n\nc.")   # 'c.' 之后,"c.\n\n" 是一个 token
+        pos_b = len("<|channel|>a. b.")         # After 'b.', followed by a separate "\n\n" token
+        self.assertEqual(L.find_head(ids, raw, pos_b, 4, dec)[0], 3)   # Without "\n\n"
+        pos_c = len("<|channel|>a. b.\n\nc.")   # After 'c.', "c.\n\n" is one token
         self.assertEqual(L.find_head(ids, raw, pos_c, 2, dec),
-                         (5, "<|channel|>a. b.\n\nc.\n\n"))       # 连着 "\n\n"
-        # 流文本落后于 id 也没关系(raw 只到 'b.'):
+                         (5, "<|channel|>a. b.\n\nc.\n\n"))       # With "\n\n" attached
+        # It's fine if the streamed text lags behind the ids (raw only reaches 'b.'):
         self.assertEqual(L.find_head(ids, raw[:pos_b], pos_b, 6, dec)[0], 3)
-        # 文本与 id 对不上要抛
+        # Must raise when text and ids don't line up
         with self.assertRaises(RuntimeError):
             L.find_head(ids, "<|channel|>zz. b.", pos_b, 3, dec)
 
@@ -173,13 +178,13 @@ class TestPromptIds(unittest.TestCase):
                 return dict(ids=fake_encode(payload["text"]))
             if extra and url.endswith(extra[0]):
                 return extra[1](payload)
-            self.fail(f"不该打 {url}")
+            self.fail(f"should not hit {url}")
         return http
 
     def test_no_probe_prompt_is_prefix_ids_verbatim(self):
         script = words(THINK) + [FINAL]
         L.open_stream = lambda b, p, t, retries=3: FakeStream(b, p, t, script)
-        L.http_json = lambda url, payload, **k: self.fail(f"no probe 不该打 {url}")
+        L.http_json = lambda url, payload, **k: self.fail(f"no probe should not hit {url}")
         think, content, usage, discard, n_inj, gen_ids, cons = L.gen_step(
             mk_args(no_probe=True), PREFIX, "task", [], None, "t0", False,
             self.log, 0)
@@ -195,8 +200,8 @@ class TestPromptIds(unittest.TestCase):
         self.assertEqual(usage["gen_tok"], len(script))
 
     def test_probe_fire_resends_prefix_plus_own_ids_plus_note(self):
-        # 第一枪:逐词吐思考,第二句结束时探针开火;第二枪:续写到 final
-        first = words(THINK)          # 最后一句 "Then we list playlists." 是溢出
+        # First shot: emit thinking word by word, the probe fires at the end of the second sentence; second shot: continue writing to final
+        first = words(THINK)          # The last sentence "Then we list playlists." is overflow
         second = words(" Continue.") + [FINAL]
         scripts = iter([first, second])
         L.open_stream = lambda b, p, t, retries=3: FakeStream(b, p, t, next(scripts))
@@ -226,36 +231,37 @@ class TestPromptIds(unittest.TestCase):
         self.assertEqual(FakeStream.calls[0]["prompt"], PREFIX)
         p2 = FakeStream.calls[1]["prompt"]
         spec = next(r for r in self.logged if r["type"] == "spec")
-        head_ids = [word_id(w) for w in words(HEAD2)]   # 止于 "spotify."
+        head_ids = [word_id(w) for w in words(HEAD2)]   # Stops at "spotify."
         self.assertEqual(spec["head_tok"], len(head_ids))
         self.assertFalse(spec["head_ends_ws"])
-        self.assertTrue(spec["note"].startswith("\n[SYSTEM NOTE"))  # head 无尾空白
+        self.assertTrue(spec["note"].startswith("\n[SYSTEM NOTE"))  # head has no trailing whitespace
         self.assertEqual(p2, PREFIX + head_ids + fake_encode(spec["note"]))
-        # 第二枪的预算按留下的 id 算
+        # The second shot's budget is computed from the remaining ids
         self.assertEqual(FakeStream.calls[1]["max_tokens"],
                          L.MAX_STEP_TOKENS - len(p2) + len(PREFIX))
         self.assertEqual(spec["overflow_ids"],
                          [word_id(w) for w in words(" Then we list playlists.")])
         self.assertIn("SYSTEM NOTE", think)
-        self.assertNotIn("Then we list playlists", think)   # 切口后溢出丢弃
+        self.assertNotIn("Then we list playlists", think)   # Overflow after the cut is discarded
         self.assertIn("print(1)", content)
         self.assertEqual(discard["tokens"], 4)
         res = next(r for r in self.logged if r["type"] == "resume")
         self.assertEqual(res["overflow_tok"], 4)
         self.assertFalse(res["identical"])
-        # gen_ids = head + note ids + 第二枪的 id;收官核对时假 decode 不认 note
-        # 的假 id 会 KeyError——所以这里只验 gen_ids 形态
+        # gen_ids = head + note ids + the second shot's ids; the fake decode doesn't recognize
+        # note's fake ids at the wrap-up check and would KeyError -- so only gen_ids's shape is
+        # verified here
         self.assertEqual(gen_ids, head_ids + fake_encode(spec["note"])
                          + [word_id(w) for w in second])
 
     def test_nth_cut_nofill_resends_prefix_plus_own_ids_only(self):
         first = words(THINK)
         overflow = words(" Then we list playlists.")
-        second = overflow + [FINAL]          # 重发续写与被丢弃的逐位相同
+        second = overflow + [FINAL]          # The resent continuation matches the discarded one bit for bit
         scripts = iter([first, second])
         L.open_stream = lambda b, p, t, retries=3: FakeStream(b, p, t, next(scripts))
         L.http_json = self._http(first + second)
-        L.speculate = lambda *a: self.fail("nofill 不该投机执行")
+        L.speculate = lambda *a: self.fail("nofill should not speculate")
         think, content, usage, discard, n_inj, gen_ids, cons = L.gen_step(
             mk_args(fire_nth_cut=2, nofill=True), PREFIX, "task", [], None,
             "t0", False, self.log, 0)
@@ -263,24 +269,25 @@ class TestPromptIds(unittest.TestCase):
         spec = next(r for r in self.logged if r["type"] == "spec")
         self.assertTrue(spec["nofill"])
         self.assertIsNone(spec["gen_call"])
-        self.assertIsNone(spec["exec_out"])       # score_live 要的键都在,值 None
+        self.assertIsNone(spec["exec_out"])       # All keys score_live needs are present, values are None
         self.assertEqual(spec["note"], "")
         head_ids = [word_id(w) for w in words(HEAD2)]
         self.assertEqual(FakeStream.calls[1]["prompt"], PREFIX + head_ids)
         self.assertNotIn("SYSTEM NOTE", think)
-        self.assertIn("Then we list playlists", think)   # 续写又写出来了
+        self.assertIn("Then we list playlists", think)   # The continuation is written out again
         res = next(r for r in self.logged if r["type"] == "resume")
         self.assertTrue(res["identical"])
         self.assertEqual(res["match_len"], len(overflow))
         self.assertEqual(gen_ids, head_ids + [word_id(w) for w in second])
         self.assertEqual(usage["req"], 2)
-        # gen_tok(billed)= 第一枪全部(含溢出)+ 第二枪
+        # gen_tok(billed) = all of the first shot (including overflow) + the second shot
         self.assertEqual(usage["gen_tok"], len(first) + len(second))
-        self.assertTrue(cons)                     # 收官核对:decode(gen_ids)==raw
+        self.assertTrue(cons)                     # Wrap-up check: decode(gen_ids)==raw
 
     def test_lagging_text_head_found_by_decode(self):
-        # vLLM 有 stop 串时文本比 id 落后(压着 len(stop)-1 字符);这里让文本
-        # 落后 2 个 token:块 i 交出 id(w_i) 与 w_{i-2} 的文本,尾部再把文本吐完
+        # When vLLM has a stop string, text lags behind ids (held back by len(stop)-1
+        # characters); here the text is made to lag by 2 tokens: chunk i hands over id(w_i)
+        # together with w_{i-2}'s text, and the tail emits the remaining text at the end
         first = words(THINK)
         lag = 2
         script = []
@@ -308,14 +315,14 @@ class TestPromptIds(unittest.TestCase):
         self.assertEqual(FakeStream.calls[1]["prompt"], PREFIX + head_ids)
         spec = next(r for r in self.logged if r["type"] == "spec")
         self.assertEqual(spec["head_tok"], len(head_ids))
-        # 开火时 id 已经比文本多 2 个:溢出里含文本里还没出现的 " Then"," we"
+        # At fire time the ids are already 2 ahead of the text: the overflow contains " Then", " we" which haven't appeared in the text yet
         self.assertEqual(spec["overflow_ids"][:2], [word_id(" Then"), word_id(" we")])
         self.assertLessEqual(n_dec["n"], 8)
         self.assertIn("Then we list playlists", think)
         self.assertTrue(cons)
 
     def test_multi_token_chunk_same_head(self):
-        # 生产端快过消费端时几个 token 并成一块:head 与逐 token 到达时相同
+        # When the producer is faster than the consumer, several tokens merge into one chunk: head is the same as when tokens arrive one by one
         first = words(THINK)
         merged = []
         i = 0
@@ -355,8 +362,8 @@ class TestPromptIds(unittest.TestCase):
 
 class TestHealthGate(unittest.TestCase):
     def test_old_server_rejected(self):
-        self.assertIn("旧版", L.probe_cfg_problem(dict(theta=0.9, temperature=1.8)))
-        self.assertIn("旧版", L.probe_cfg_problem(dict(render="jinja_text")))
+        self.assertIn("old probe_server", L.probe_cfg_problem(dict(theta=0.9, temperature=1.8)))
+        self.assertIn("old probe_server", L.probe_cfg_problem(dict(render="jinja_text")))
 
     def test_new_server_accepted(self):
         self.assertIsNone(L.probe_cfg_problem(dict(theta=0.9, render="harmony_ids")))

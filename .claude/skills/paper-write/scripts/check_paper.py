@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
-"""论文体检器：结构完整性 + 数字溯源 + 投稿前物理检查。全部软告警，不拦截。
+"""Paper checkup tool: structural completeness + number traceability + pre-submission
+physical checks. All soft warnings, nothing blocks.
 
-用法:
-    python check_paper.py main.tex                     # 结构检查
-    python check_paper.py main.tex --anon              # + 匿名化检查（审稿版）
-    python check_paper.py main.tex --page-limit 8      # + 页数对照（需已编译出 PDF）
+Usage:
+    python check_paper.py main.tex                     # structure check
+    python check_paper.py main.tex --anon              # + anonymization check (review version)
+    python check_paper.py main.tex --page-limit 8      # + page count check (needs a compiled PDF)
 
-检查项:
-  结构  : \\begin/\\end 配对、\\ref->\\label、\\cite->bib key、\\includegraphics 文件存在
-  卫生  : TODO/FIXME/TBD/XXX 残留（注释行除外）
-  溯源  : 含数字的 table 环境缺 "% source: run_id=..." 注释 -> 告警（项目铁律：数字可追 run_id）
-  匿名  : \\author 真名、GitHub/机构 URL、Acknowledgments 节、self-citation 措辞
-  物理  : pdfinfo 页数 vs 限制、pdffonts 字体嵌入（有 PDF 才查）
+Checks:
+  structure    : \\begin/\\end pairing, \\ref->\\label, \\cite->bib key, \\includegraphics file exists
+  hygiene      : TODO/FIXME/TBD/XXX left over (comment lines excluded)
+  traceability : a table environment with numbers but no "% source: run_id=..." comment
+                 -> warning (project hard rule: every number must trace to a run_id)
+  anonymity    : \\author real name, GitHub/institution URL, Acknowledgments section,
+                 self-citation wording
+  physical     : pdfinfo page count vs limit, pdffonts font embedding (checked only if a PDF exists)
 
-退出码: 0 无告警；1 有告警（软性，供脚本串联，不代表必须停下）。
+Exit code: 0 no warnings; 1 has warnings (soft, for chaining scripts; does not mean it
+must stop).
 """
 
 import argparse
@@ -30,14 +34,15 @@ def warn(cat: str, msg: str) -> None:
 
 
 def strip_comments(text: str) -> str:
-    # 去掉 % 注释（保留 \% 转义）；verbatim/lstlisting 里的示例代码不参与任何检查
+    # strip % comments (keep the \% escape); example code inside verbatim/lstlisting is
+    # excluded from every check
     text = re.sub(r"\\begin\{(verbatim\*?|lstlisting)\}.*?\\end\{\1\}", "", text, flags=re.DOTALL)
     text = re.sub(r"\\verb(.)((?!\1).)*\1", "", text)
     return re.sub(r"(?<!\\)%.*$", "", text, flags=re.MULTILINE)
 
 
 def gather_tex(main: Path) -> dict[Path, str]:
-    """收集主文件及其 \\input/\\include 的所有 .tex，返回 {路径: 原文}。"""
+    """Collect all .tex files reachable from the main file via \\input/\\include, return {path: source text}."""
     files: dict[Path, str] = {}
     queue = [main]
     while queue:
@@ -74,11 +79,11 @@ def check_labels_refs(body: str) -> None:
     for m in re.finditer(r"\\(?:ref|eqref|pageref|autoref|cref|Cref)\{([^}]+)\}", body):
         refs.update(k.strip() for k in m.group(1).split(","))
     for k in sorted(refs - labels):
-        warn("ref", f"\\ref{{{k}}} 无对应 \\label")
+        warn("ref", f"\\ref{{{k}}} has no matching \\label")
 
 
 def bib_keys(main: Path, body: str) -> set[str] | None:
-    """找 \\bibliography{...} 指向的 .bib，解析全部条目 key。找不到返回 None。"""
+    """Find the .bib file that \\bibliography{...} points to and parse all entry keys. Return None if not found."""
     keys: set[str] = set()
     found = False
     for m in re.finditer(r"\\(?:bibliography|addbibresource)\{([^}]+)\}", body):
@@ -97,13 +102,13 @@ def bib_keys(main: Path, body: str) -> set[str] | None:
 def check_cites(main: Path, body: str) -> None:
     keys = bib_keys(main, body)
     if keys is None:
-        warn("cite", "未找到 .bib 文件，跳过 cite 检查")
+        warn("cite", "no .bib file found, skipping cite check")
         return
     cites: set[str] = set()
     for m in re.finditer(r"\\[cC]ite[a-zA-Z]*(?:\[[^\]]*\])*\{([^}]+)\}", body):
         cites.update(k.strip() for k in m.group(1).split(","))
     for k in sorted(cites - keys):
-        warn("cite", f"\\cite{{{k}}} 在 .bib 中不存在")
+        warn("cite", f"\\cite{{{k}}} not found in .bib")
 
 
 def check_graphics(main: Path, body: str) -> None:
@@ -115,13 +120,13 @@ def check_graphics(main: Path, body: str) -> None:
         name = m.group(1)
         if any((d / (name + e)).exists() for d in gpaths for e in exts):
             continue
-        # TEXMF 树里的图（如 mwe 的 example-image-*）用 kpsewhich 兜底
+        # for figures inside the TEXMF tree (e.g. mwe's example-image-*), fall back to kpsewhich
         in_texmf = any(
             subprocess.run(["kpsewhich", name + e], capture_output=True, text=True).stdout.strip()
             for e in exts if e
         )
         if not in_texmf:
-            warn("figure", f"\\includegraphics{{{name}}} 文件不存在")
+            warn("figure", f"\\includegraphics{{{name}}} file does not exist")
 
 
 def check_todos(files: dict[Path, str]) -> None:
@@ -134,7 +139,7 @@ def check_todos(files: dict[Path, str]) -> None:
 
 
 def check_provenance(files: dict[Path, str]) -> None:
-    """table 环境含数字但整块无 'source: run_id' 注释 -> 告警。"""
+    """A table environment that contains numbers but has no 'source: run_id' comment anywhere in the block -> warning."""
     for path, text in files.items():
         for m in re.finditer(r"\\begin\{table\*?\}.*?\\end\{table\*?\}", text, re.DOTALL):
             block = m.group(0)
@@ -142,20 +147,20 @@ def check_provenance(files: dict[Path, str]) -> None:
             has_source = bool(re.search(r"%.*source:.*run_id", block))
             if has_numbers and not has_source:
                 line = text[: m.start()].count("\n") + 1
-                warn("provenance", f"{path.name}:{line}: table 含数字但无 '% source: run_id=...' 注释")
+                warn("provenance", f"{path.name}:{line}: table has numbers but no '% source: run_id=...' comment")
 
 
 ANON_PATTERNS = [
-    (r"github\.com/(?!anonymous)[\w-]+", "GitHub 链接"),
-    (r"our (?:previous|prior|earlier) (?:work|paper|study)", "self-citation 措辞"),
-    (r"\\section\*?\{Acknowledg", "Acknowledgments 节（审稿版必须删）"),
+    (r"github\.com/(?!anonymous)[\w-]+", "GitHub link"),
+    (r"our (?:previous|prior|earlier) (?:work|paper|study)", "self-citation wording"),
+    (r"\\section\*?\{Acknowledg", "Acknowledgments section (must be removed in the review version)"),
 ]
 
 
 def check_anon(body: str) -> None:
     m = re.search(r"\\author\{(.{0,120})", body, re.DOTALL)
     if m and not re.search(r"anonymous", m.group(1), re.IGNORECASE):
-        warn("anon", f"\\author 疑似真名: {m.group(1)[:60].strip()!r}")
+        warn("anon", f"\\author looks like a real name: {m.group(1)[:60].strip()!r}")
     for pat, desc in ANON_PATTERNS:
         hit = re.search(pat, body, re.IGNORECASE)
         if hit:
@@ -165,34 +170,34 @@ def check_anon(body: str) -> None:
 def check_pdf(main: Path, page_limit: int | None) -> None:
     pdf = main.with_suffix(".pdf")
     if not pdf.exists():
-        warn("pdf", f"{pdf.name} 不存在，先编译再做物理检查")
+        warn("pdf", f"{pdf.name} does not exist; compile first, then run the physical check")
         return
     info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True).stdout
     m = re.search(r"Pages:\s+(\d+)", info)
     if m:
         pages = int(m.group(1))
-        note = f"（限制 {page_limit}，正文页数需人工确认——references/appendix 不计入）" if page_limit else ""
-        print(f"  PDF 总页数: {pages} {note}")
+        note = f"(limit {page_limit}, body page count needs manual confirmation -- references/appendix do not count)" if page_limit else ""
+        print(f"  PDF total pages: {pages} {note}")
         if page_limit and pages > page_limit:
-            warn("pdf", f"总页数 {pages} 超过 {page_limit}——若正文部分也超限即 desk reject")
+            warn("pdf", f"total pages {pages} exceeds {page_limit} -- if the body section also exceeds it, that is a desk reject")
     fonts = subprocess.run(["pdffonts", str(pdf)], capture_output=True, text=True).stdout
     for line in fonts.splitlines()[2:]:
         cols = line.split()
-        if len(cols) >= 5 and cols[-5] == "no":  # emb 列
-            warn("pdf", f"字体未嵌入: {line[:60]}")
+        if len(cols) >= 5 and cols[-5] == "no":  # the emb column
+            warn("pdf", f"font not embedded: {line[:60]}")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("tex")
-    ap.add_argument("--anon", action="store_true", help="匿名化检查（审稿版）")
+    ap.add_argument("--anon", action="store_true", help="anonymization check (review version)")
     ap.add_argument("--page-limit", type=int, default=None)
     args = ap.parse_args()
 
     main_tex = Path(args.tex).resolve()
     files = gather_tex(main_tex)
     body = strip_comments("\n".join(files.values()))
-    print(f"检查 {main_tex.name}（含 {len(files)} 个 tex 文件）")
+    print(f"checking {main_tex.name} (contains {len(files)} tex files)")
 
     check_env_pairing(files)
     check_labels_refs(body)
@@ -205,11 +210,11 @@ def main() -> None:
     check_pdf(main_tex, args.page_limit)
 
     if WARNINGS:
-        print(f"\n告警 {len(WARNINGS)} 条（软告警，逐条人工判断）:")
+        print(f"\n{len(WARNINGS)} warnings (soft warnings, judge each one by hand):")
         for w in WARNINGS:
             print(f"  {w}")
         sys.exit(1)
-    print("全部检查通过")
+    print("all checks passed")
     sys.exit(0)
 
 

@@ -1,31 +1,31 @@
-"""回放评测(新流水线 eval 段):val 拟温度 + 扫阈值 → test 冻结一次。
+"""Replay eval (new pipeline eval stage): fit temperature on val + sweep threshold on val → freeze once on test.
 
-源 = envs/bert/eval_replay.py(逐字照抄),加上 envs/bert/eval_replay_causal.py 的
-因果打分路径。改动只有规格 §6.1 列的四处:
+Source = envs/bert/eval_replay.py (copied verbatim), plus the causal scoring path from envs/bert/eval_replay_causal.py.
+The only changes are the four listed in spec §6.1:
 
-1. 堆名 ("calA","calB","test") → ("val","test"):温度在 val 拟、θ 也在 val 扫
-   (§2.5),test 冻结不变;报告字段名 theta_sweep_calB 等【保持旧名不改】。
-2. `--data` 直接指 <data_out>(不再拼 env 子目录)、`--run` 必填,都无默认值。
-3. `--head causal`:模型加载 = CausalProbe(pipeline/train/train_causal_tool.py)
-   的 backbone + head.pt;打分按事件整段一次前向、在每个边界位取 logits
-   (【照抄 eval_replay_causal.py 的 score_causal】)。cached-logits 路径不变。
-4. `--legacy-splits`:读旧的 calA/calB/test 并完全按旧逻辑跑(温度 calA、θ calB),
-   `--data` 语义退回 <data>/<env>——只为 §6.5 验收用。
+1. Split names ("calA","calB","test") → ("val","test"): temperature is fit on val, θ is also swept on val
+   (§2.5), test freeze is unchanged; report field names such as theta_sweep_calB [keep the old names unchanged].
+2. `--data` points directly to <data_out> (no longer appends an env subdirectory), `--run` is now required, neither has a default.
+3. `--head causal`: model loading = CausalProbe's (pipeline/train/train_causal_tool.py) backbone + head.pt;
+   scoring runs one forward pass over the whole event and takes logits at each boundary position
+   ([copied verbatim from eval_replay_causal.py's score_causal]). The cached-logits path is unchanged.
+4. `--legacy-splits`: reads the old calA/calB/test and runs entirely under the old logic (temperature on calA, θ on calB),
+   `--data`'s meaning falls back to <data>/<env> -- for §6.5 acceptance only.
 
-另加两个不改口径的开关(见 ACCEPT_EVAL.md 的偏离记录):
-`--report-dir`(报告写别处,验收时不碰旧文件)、`--device`。
+Two more switches that do not change the logic (see the deviation record in ACCEPT_EVAL.md):
+`--report-dir` (write the report elsewhere, so acceptance runs do not touch the old files), `--device`.
 
-ro1 批次加的第三个开关 `--readonly-env {appworld,bfcl}`(默认关,关=行为逐字节不变):
-打开后真值标签在装载处统一过 readonly_map.collapse()(非只读工具折叠成弃权类
-<NON_READONLY>),触发条件收窄成"conf>=θ 且 argmax 不是弃权类",并新增顶层
-readonly_stats。旧字段名与公式一个不改。label_map.json 里有没有弃权哨兵
-与本开关必须同时成立,单向缺失硬停(防串味双向保险丝)。
+The third switch added by the ro1 batch, `--readonly-env {appworld,bfcl}` (off by default, off = behavior byte-for-byte unchanged):
+when on, ground-truth labels uniformly pass through readonly_map.collapse() at load time (non-read-only tools collapse into the abstain class
+<NON_READONLY>), the trigger condition narrows to "conf>=θ and argmax is not the abstain class", and a new top-level
+readonly_stats is added. Old field names and formulas are unchanged. Whether label_map.json has an abstain sentinel
+and whether this switch is on must hold together; either one alone hard-stops (anti-crosstalk two-way fuse).
 
-用法:
-  # 新流水线(mbert 分类头)
+Usage:
+  # new pipeline (mbert classification head)
   mbert-env/bin/python pipeline/eval/eval_tool.py --env appworld \\
     --run pipeline/runs/c1_q35_mtool --data pipeline/data/aw_official_v1/q35
-  # 新流水线(因果探针)
+  # new pipeline (causal probe)
   cprobe-env/bin/python pipeline/eval/eval_tool.py --env appworld --head causal \\
     --run pipeline/runs/c1_q35_ctool --data pipeline/data/aw_official_v1/q35
 """
@@ -49,9 +49,9 @@ import heartbeat                                       # noqa: E402
 
 SEED = 20260729
 THETAS = [round(0.5 + 0.025 * i, 3) for i in range(20)]  # 0.5 .. 0.975
-RISK_TARGETS = [0.10, 0.05]        # 触发错误率约束(=精度 0.90/0.95)
+RISK_TARGETS = [0.10, 0.05]        # trigger error-rate constraint (= precision 0.90/0.95)
 BOOT = 1000
-EVAL_BS = 4                        # 因果打分:事件数/批
+EVAL_BS = 4                        # causal scoring: events per batch
 
 
 def load_rows(path):
@@ -60,7 +60,7 @@ def load_rows(path):
 
 @torch.no_grad()
 def score(model, tok, rows, dev, bs=16, max_len=4096):
-    """返回每行的 logits(np 数组顺序与 rows 一致)。"""
+    """Returns logits for each row (np array order matches rows)."""
     out = []
     model.eval()
     heartbeat.emit(0, len(rows), "item")
@@ -76,11 +76,11 @@ def score(model, tok, rows, dev, bs=16, max_len=4096):
     return torch.cat(out)
 
 
-# ---------------------------------------------------------------- 因果打分
+# ---------------------------------------------------------------- causal scoring
 
 def load_causal(run, n_labels, dev):
-    """【照抄 train_causal_tool.CausalProbe 的加载方式】backbone 从 best/ 读、
-    head 从 best/head.pt 读;cuda 上把 backbone 转 bf16(与旧 eval 同)。"""
+    """[copied verbatim from train_causal_tool.CausalProbe's loading method] backbone is read from best/,
+    head is read from best/head.pt; on cuda, cast the backbone to bf16 (same as the old eval)."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "train"))
     from train_causal_tool import CausalProbe          # noqa: E402
     model = CausalProbe(run / "best", n_labels)
@@ -92,10 +92,11 @@ def load_causal(run, n_labels, dev):
 
 
 def weights_fingerprint(run):
-    """best/ 下权重文件指纹:大小 + 首尾各 64KB 的 sha1。logits 缓存必须钉在
-    产它的权重上——行数相同不代表权重相同,同目录二次训练会让旧 logits 冒充
-    新权重的结果(审计 B9)。不用 mtime:正常拷贝/恢复不该作废缓存。
-    没有权重文件时返回 {}(权重被清理的旧 run,交调用方定夺)。"""
+    """Fingerprint of the weight files under best/: size + sha1 of the first and last 64KB. The logits cache must be pinned to
+    the weights that produced it -- matching row counts do not mean matching weights, a second round of training in the same
+    directory would let stale logits masquerade as the new weights' results (audit B9). Do not use mtime: a normal copy/restore
+    should not invalidate the cache.
+    Returns {} when there are no weight files (an old run whose weights were cleaned up -- left to the caller to decide)."""
     import hashlib
     fps = {}
     for name in ("model.safetensors", "pytorch_model.bin", "model.pt", "head.pt"):
@@ -115,30 +116,29 @@ def weights_fingerprint(run):
 @torch.no_grad()
 def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS,
                  overlong="left"):
-    """按事件一次前向、gather 各边界位置 logits,还原成与 rows 同序的张量。
+    """One forward pass per event, gather logits at each boundary position, and restore them into a tensor in the same order as rows.
 
-    `overlong`(spec 16.2)三选一:
-    - "left":现状——全文左截到 `max_len`,窗口外边界(`read_position`
-      返回 -1)记零 logits,`n_oow` 只是诊断计数,不剔除任何行。
-    - "skip":窗口外边界不进 `excluded_idx`(不进任何分母),计
-      `n_skipped_bounds`(与 `n_oow` 同一批边界,只是这次会被剔除)。
-    - "drop-event":事件全文 token 数(`share_data.n_full_tokens`,ctool
-      自己的『先按 label 过滤、取最后一行』规则——这里的 `rows` 已经是
-      `main()` 按 `label in label2id` 过滤过的,所以直接用『最后一行 text』
-      就是同一条规则)大于 `max_len` 的事件整个跳过分词/前向,该事件全部
-      边界记零 logits 并进 `excluded_idx`,计 `n_dropped_events`/
-      `n_dropped_bounds`。这种事件的全文没有被截断过,幸存事件因此不会再
-      触发 `read_position` 的窗口外分支,`n_oow` 恒为 0。
+    `overlong` (spec 16.2), pick one of three:
+    - "left": current behavior -- left-truncate the whole text to `max_len`, boundaries outside the window (`read_position`
+      returns -1) get zero logits, `n_oow` is only a diagnostic count and does not exclude any row.
+    - "skip": boundaries outside the window do not go into `excluded_idx` (not in any denominator), counted as
+      `n_skipped_bounds` (the same batch of boundaries as `n_oow`, just excluded this time).
+    - "drop-event": events whose full-text token count (`share_data.n_full_tokens`, ctool's own rule of
+      "filter by label first, take the last row" -- here `rows` has already been filtered by `main()` on
+      `label in label2id`, so using "last row's text" directly is the same rule) exceeds `max_len` skip
+      tokenization/forward pass entirely; all boundaries of that event get zero logits and go into `excluded_idx`,
+      counted as `n_dropped_events`/`n_dropped_bounds`. The full text of these events was never truncated, so
+      surviving events no longer trigger `read_position`'s out-of-window branch, and `n_oow` is always 0.
 
-    -> (out, excluded_idx, counts):`out` 形状不变(`len(rows)` 行,剔除的
-    行是零 logits);`excluded_idx` 是剔除行的下标列表(`left` 下空列表);
+    -> (out, excluded_idx, counts): `out`'s shape is unchanged (`len(rows)` rows, excluded
+    rows have zero logits); `excluded_idx` is the list of indices of excluded rows (empty list under `left`);
     `counts` = dict(n_oow, n_skipped_bounds, n_dropped_events,
-    n_dropped_bounds)。
+    n_dropped_bounds).
     """
     if overlong not in ("left", "skip", "drop-event"):
         raise ValueError(
-            f"score_causal: overlong 只支持 left/skip/drop-event,"
-            f"拿到 {overlong!r}")
+            f"score_causal: overlong only supports left/skip/drop-event,"
+            f"got {overlong!r}")
     ev = defaultdict(list)
     for i, r in enumerate(rows):
         ev[r["event"]].append((r["sent_idx"], i, r))
@@ -157,7 +157,7 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS,
 
     n_lab = head.out_features
     out = torch.zeros(len(rows), n_lab)
-    n_oow = n_skipped_bounds = 0                 # 左截窗口外的边界数
+    n_oow = n_skipped_bounds = 0                 # number of boundaries outside the left-truncation window
     heartbeat.emit(0, len(events), "item")
     for s in range(0, len(events), bs):
         chunk = events[s:s + bs]
@@ -189,7 +189,7 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS,
         if (s // bs) % 25 == 0:
             print(f"scored {s}/{len(events)} events", flush=True)
             heartbeat.emit(s, len(events), "item")
-    print(f"边界总数 {len(rows)},左截窗口外(全零 logits,永不触发) {n_oow}",
+    print(f"total boundaries {len(rows)}, left-truncated outside the window (all-zero logits, never fires) {n_oow}",
           flush=True)
     counts = dict(n_oow=n_oow, n_skipped_bounds=n_skipped_bounds,
                  n_dropped_events=n_dropped_events,
@@ -198,7 +198,7 @@ def score_causal(backbone, head, tok, rows, dev, max_len, bs=EVAL_BS,
 
 
 def token_cost(tok, rows):
-    """(bert_tokens, causal_tokens):每行前缀 vs 每事件全文,不计 max_len 截断。"""
+    """(bert_tokens, causal_tokens): per-row prefix vs. per-event full text, not counting max_len truncation."""
     bert = sum(len(x) for x in tok([r["text"] for r in rows])["input_ids"])
     ev = {}
     for r in rows:
@@ -208,7 +208,7 @@ def token_cost(tok, rows):
     return bert, causal
 
 
-# ---------------------------------------------------------------- 后处理
+# ---------------------------------------------------------------- post-processing
 
 def fit_temperature(logits, labels):
     logT = torch.zeros(1, requires_grad=True)
@@ -225,11 +225,11 @@ def fit_temperature(logits, labels):
 
 
 def replay(rows, probs, theta, nro_id=None):
-    """rows+probs 同序。返回每事件 dict(fired, ok, depth, conf)。
+    """rows and probs are in the same order. Returns per-event dict(fired, ok, depth, conf).
 
-    nro_id=None 是旧口径(legacy):首个 conf>=θ 的边界即触发。
-    nro_id 给了弃权类 id(readonly 模式)时触发条件收窄成
-    "conf>=θ 且 argmax != nro_id"——预测弃权类永不触发。
+    nro_id=None is the legacy convention: the first boundary with conf>=θ triggers.
+    When nro_id is given an abstain-class id (readonly mode), the trigger condition narrows to
+    "conf>=θ and argmax != nro_id" -- predicting the abstain class never triggers.
     """
     ev = defaultdict(list)
     for r, p in zip(rows, probs):
@@ -261,11 +261,13 @@ def agg(recs):
 
 
 def economics(recs):
-    """投机经济换算(T4,离线估算;字段口径与 T10 fork 对照的在线实测对齐,日后并排对账):
-    - exp_token_saving_ratio: 截断口径,每事件期望省下的思考 token 比例
-      = Σ触发事件(1-depth) / 全事件数 ≡ 触发率×提前量(对错都省,错的代价记在错误投机率)
-    - exp_overlap_ratio: 预取口径,期望重叠延迟比例;只有触发且预测正确的事件
-      贡献重叠窗口(错误预取不省延迟但也无害)
+    """Speculation-economics conversion (T4, offline estimate; field convention aligned with the T10 fork-comparison online measurement,
+    for side-by-side reconciliation later):
+    - exp_token_saving_ratio: truncation convention, expected fraction of thinking tokens saved per event
+      = Σ triggered-events(1-depth) / total events ≡ trigger rate × lead amount (saved whether right or wrong; the cost of being wrong is
+      recorded in the wrong-speculation rate)
+    - exp_overlap_ratio: prefetch convention, expected overlapping-latency fraction; only events that triggered and predicted correctly
+      contribute an overlap window (a wrong prefetch does not save latency, but is also harmless)
     """
     n = max(len(recs), 1)
     save = sum(1 - r["depth"] for r in recs if r["fired"]) / n
@@ -298,54 +300,54 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True,
                     choices=["tales", "appworld", "bfcl", "alfworld"])
-    ap.add_argument("--run", required=True, help="训练产物目录(必填)")
+    ap.add_argument("--run", required=True, help="training output directory (required)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>;--legacy-splits 下语义退回 <data>/<env>")
+                    help="data directory <data_out>; under --legacy-splits, semantics fall back to <data>/<env>")
     ap.add_argument("--head", default="mbert", choices=["mbert", "causal"],
-                    help="mbert=序列分类头;causal=因果探针(backbone+head.pt)")
+                    help="mbert=sequence classification head; causal=causal probe (backbone+head.pt)")
     ap.add_argument("--legacy-splits", action="store_true",
-                    help="读旧的 calA/calB/test 并按旧逻辑跑(温度 calA、θ calB),验收专用")
+                    help="read the old calA/calB/test and run with the old logic (temperature from calA, θ from calB); for acceptance checks only")
     ap.add_argument("--report-dir", default=None,
-                    help="报告输出目录(默认 = --run;验收时指向别处以免覆盖旧件)")
+                    help="report output directory (default = --run; point it elsewhere during acceptance checks to avoid overwriting old outputs)")
     ap.add_argument("--cached-logits", action="store_true",
-                    help="读 run 目录已存的 logits_*.pt,跳过模型推理(纯 CPU 后处理)")
+                    help="read the logits_*.pt already saved in the run directory, skip model inference (pure CPU post-processing)")
     ap.add_argument("--adopt-logits-fingerprint", action="store_true",
-                    help="给指纹机制之前产的 logits 补档后退出:仅当权重 mtime"
-                         " 不比 logits 新时把当前权重认领为其来源(审计 B9)")
+                    help="backfill logits produced before the fingerprint mechanism existed, then exit: only claim the current weights"
+                         " as their source when the weight's mtime isn't newer than the logits' (audit B9)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具+弃权类模式(默认关);打开后真值折叠、"
-                         "触发条件加\"argmax 不是弃权类\",并出 readonly_stats")
+                    help="readonly-tool + abstention-class mode (off by default); once on, ground truth is folded,"
+                         "the fire condition adds \"argmax is not the abstention class\", and readonly_stats is output")
     ap.add_argument("--limit", type=int, default=0,
-                    help="每堆截前 N 行(分钟级冒烟口子);截断的 logits_*.pt 与"
-                         " REPLAY_REPORT 照常落盘,所以只许对名字带 smoke 的"
-                         " --run 目录用")
+                    help="truncate each pile to the first N rows (a minute-scale smoke-test hook); the truncated logits_*.pt and"
+                         " REPLAY_REPORT are still written to disk as usual, so this may only be used on --run"
+                         " directories whose name includes smoke")
     ap.add_argument("--overlong", default="left",
                     choices=["left", "skip", "drop-event"],
-                    help="事件全文/提示超长的三种处理(spec 16.2);只对"
-                         " --head causal 生效,默认 left(行为与加这个开关"
-                         " 之前逐字节不变)")
+                    help="three ways to handle an overlong full event text / prompt (spec 16.2); only takes effect for"
+                         " --head causal, default left (behavior is byte-for-byte unchanged from"
+                         " before this flag was added)")
     args = ap.parse_args()
     run = Path(args.run)
     if args.head == "mbert" and args.overlong != "left":
         raise SystemExit(
-            f"--overlong {args.overlong!r} 只对 --head causal 生效——"
-            "mbert 头(ModernBERT 序列分类)每次前向只吃单行前缀,没有"
-            "『事件全文超长』或『左截窗口外边界』这两个概念,只支持 left。")
+            f"--overlong {args.overlong!r} only takes effect for --head causal --"
+            "the mbert head (ModernBERT sequence classification) only takes a single-line prefix per forward pass; it has no concept of"
+            "'overlong full event text' or 'boundary left-truncated outside the window', it only supports left.")
     if args.limit and "smoke" not in run.name:
         raise SystemExit(
-            f"--limit 只许对名字带 smoke 的 --run 目录用(现在是 {run.name}):"
-            "截断的 logits_*.pt 和 REPLAY_REPORT.json 会写进 --run,下游 call "
-            "评测按这里的 θ/logits 走,真 run 会被静默污染。要小样评真权重,"
-            "先把 run 目录拷一份带 smoke 的名字再跑。")
+            f"--limit may only be used on --run directories whose name includes smoke (currently {run.name}):"
+            "the truncated logits_*.pt and REPLAY_REPORT.json get written into --run, and downstream call "
+            "evaluation follows the θ/logits here, silently contaminating the real run. To do a small-sample eval of the real weights,"
+            "first copy the run directory to a name that includes smoke, then run it.")
     data = Path(args.data) / args.env if args.legacy_splits else Path(args.data)
     rep_dir = Path(args.report_dir) if args.report_dir else run
     rep_dir.mkdir(parents=True, exist_ok=True)
     dev = args.device
     rng = random.Random(SEED)
 
-    # 堆名映射(§2.5):新口径两堆,温度与 θ 都在 val 上定;旧口径三堆照旧
+    # split-name mapping (§2.5): new convention has two splits, both temperature and θ are set on val; old convention's three splits unchanged
     if args.legacy_splits:
         split_names = ("calA", "calB", "test")
         fit_sp, sweep_sp = "calA", "calB"
@@ -354,11 +356,11 @@ def main():
         fit_sp, sweep_sp = "val", "val"
 
     if args.adopt_logits_fingerprint:
-        # 指纹机制之前产的 logits 补档:只有全部权重文件都不比 logits 新,
-        # 才能证明"当前权重就是产这些 logits 的权重"(审计 B9 补档路径)
+        # logits produced before the fingerprint mechanism existed, backfilled: only if none of the weight files are newer than the logits
+        # can we prove "the current weights are the weights that produced these logits" (audit B9 backfill path)
         fp = weights_fingerprint(run)
         if not fp:
-            raise SystemExit(f"{run}/best 无权重文件,没东西可认领")
+            raise SystemExit(f"{run}/best has no weight file, nothing to claim")
         wt_mtime = max((Path(run) / "best" / n).stat().st_mtime for n in fp)
         n_done = 0
         for sp in split_names:
@@ -367,28 +369,28 @@ def main():
                 continue
             if wt_mtime > lp.stat().st_mtime:
                 raise SystemExit(
-                    f"权重比 {lp.name} 新——无法证明 logits 出自当前权重,"
-                    "拒绝认领;去掉 --cached-logits 重算。")
+                    f"weights are newer than {lp.name} -- can't prove the logits came from the current weights,"
+                    "refusing to claim them; drop --cached-logits and recompute.")
             logits = torch.load(lp)
             (run / f"logits_{sp}.meta.json").write_text(json.dumps(
                 {"weights": fp, "rows": len(logits), "adopted": True}))
             n_done += 1
-        print(f"已认领 {n_done} 份 logits 指纹({run});"
-              "现在可以用 --cached-logits 了")
+        print(f"claimed {n_done} logits fingerprints ({run});"
+              "--cached-logits can be used now")
         return
 
     label2id = json.loads((run / "best" / "label_map.json").read_text())
 
-    # 防串味双向保险丝:label_map 里有弃权哨兵 ⇔ 必须传 --readonly-env
+    # anti-crosstalk two-way fuse: label_map has an abstain sentinel ⇔ --readonly-env must be passed
     has_sentinel = readonly_map.NON_READONLY in label2id
     if has_sentinel != bool(args.readonly_env):
         raise SystemExit(
-            f"readonly 保险丝不匹配:{run / 'best' / 'label_map.json'} "
-            f"{'含' if has_sentinel else '不含'}弃权哨兵 "
-            f"{readonly_map.NON_READONLY!r};而 --readonly-env "
-            f"{'传了 ' + str(args.readonly_env) if args.readonly_env else '没传'}。"
-            "两者必须同时成立或同时不成立——readonly 模式训的 run 只能带 "
-            "--readonly-env 评,旧口径 run 只能不带。")
+            f"readonly fuse mismatch: {run / 'best' / 'label_map.json'} "
+            f"{'has' if has_sentinel else 'has no'} abstention sentinel "
+            f"{readonly_map.NON_READONLY!r}; but --readonly-env "
+            f"{'was given ' + str(args.readonly_env) if args.readonly_env else 'was not given'}."
+            "Both conditions must hold together or fail together -- a run trained in readonly mode can only be "
+            "evaluated with --readonly-env; a run under the old settings can only be evaluated without it.")
     ro_table = ro_set = nro_id = None
     if args.readonly_env:
         ro_table = readonly_map.load_table(args.readonly_env)
@@ -397,8 +399,8 @@ def main():
 
     meta = {}
     if args.head == "causal":
-        # 【照抄 eval_replay_causal.py】tokenizer 无条件加载(探测成本要用它计数),
-        # --cached-logits 只跳过模型本身
+        # [copied verbatim from eval_replay_causal.py] the tokenizer is loaded unconditionally (it's needed to count probing cost),
+        # --cached-logits only skips the model itself
         meta = json.loads((run / "best" / "meta.json").read_text())
         max_len = meta.get("max_len", 4096)
         tok = AutoTokenizer.from_pretrained(run / "best")
@@ -421,7 +423,7 @@ def main():
     for sp in split_names:
         raw_rows = load_rows(data / f"{sp}.jsonl")
         if ro_set is not None:
-            # 真值折叠放在装载处:之后温度拟合/θ 扫描/回放/先验基线全用折叠后标签
+            # ground-truth collapsing happens at load time: temperature fitting/θ sweeping/replay/prior baseline all use the collapsed labels afterward
             readonly_map.audit([r["label"] for r in raw_rows], ro_table,
                                f"eval_tool {sp}")
             for r in raw_rows:
@@ -436,32 +438,32 @@ def main():
         if args.cached_logits:
             if not lmeta.exists():
                 raise SystemExit(
-                    f"{lp} 没有配套指纹 {lmeta.name}——旧缓存无从判断出自哪份"
-                    "权重(审计 B9)。两条路:去掉 --cached-logits 重算一次"
-                    "(自动补指纹);或权重确认没动过时用 "
-                    "--adopt-logits-fingerprint 认领补档(要求权重 mtime "
-                    "不比 logits 新)。")
+                    f"{lp} has no matching fingerprint {lmeta.name} -- the old cache gives no way to tell which "
+                    "weights it came from (audit B9). Two options: drop --cached-logits and "
+                    "recompute once (this fills in the fingerprint automatically); or, if the "
+                    "weights are confirmed unchanged, use --adopt-logits-fingerprint to claim/backfill "
+                    "the record (requires the weights' mtime to be no newer than the logits).")
             m = json.loads(lmeta.read_text())
             cached_mode = m.get("overlong_mode", "left")
             if cached_mode != args.overlong:
                 raise SystemExit(
-                    f"{lmeta} 记的 overlong_mode={cached_mode!r} 与本次 "
-                    f"--overlong={args.overlong!r} 不同——两种模式的缓存"
-                    "行数可能碰巧相同却内容不同(静默失败点 #33),拒绝互相"
-                    "冒充。去掉 --cached-logits 重算,或换回 "
-                    f"--overlong {cached_mode}。")
+                    f"{lmeta} recorded overlong_mode={cached_mode!r}, which differs from this run's "
+                    f"--overlong={args.overlong!r} -- caches from the two modes can happen to have "
+                    "the same row count but different content (silent-failure point #33); refusing "
+                    "to let one pass for the other. Drop --cached-logits and recompute, or switch back to "
+                    f"--overlong {cached_mode}.")
             now_fp = weights_fingerprint(run)
             if not now_fp:
-                print(f"⚠️ {run}/best 已无权重文件,logits 指纹无从核验——"
-                      f"按 {lmeta.name} 记载的来源采信", flush=True)
+                print(f"⚠️ {run}/best no longer has a weights file, logits fingerprint cannot be verified -- "
+                      f"trusting the source recorded in {lmeta.name}", flush=True)
             elif m.get("weights") != now_fp:
                 raise SystemExit(
-                    f"{lp} 的权重指纹对不上:缓存出自 {m.get('weights')},"
-                    f"现在是 {now_fp}——权重被重训/覆盖过,拒绝拿旧 logits "
-                    "冒充新权重的结果;去掉 --cached-logits 重算。")
+                    f"{lp}'s weights fingerprint does not match: the cache came from {m.get('weights')}, "
+                    f"now it is {now_fp} -- the weights have been retrained/overwritten; refusing to let old logits "
+                    "pass for new-weights results. Drop --cached-logits and recompute.")
             logits = torch.load(lp)
             assert len(logits) == len(rows), \
-                f"{sp}: 缓存 logits {len(logits)} 行 != 数据 {len(rows)} 行,--data 与当次评测不同源"
+                f"{sp}: cached logits has {len(logits)} rows != data has {len(rows)} rows, --data does not match this eval's source"
             excluded_idx = m.get("excluded_idx", [])
             sc_counts = dict(
                 n_oow=m.get("n_oow", 0),
@@ -495,11 +497,11 @@ def main():
             logits = logits[torch.tensor(keep_pos, dtype=torch.long)]
         splits[sp] = (rows, logits)
 
-    # 1) val(旧口径 calA)拟温度
+    # 1) fit temperature on val (old convention: calA)
     rows_a, lg_a = splits[fit_sp]
     T = fit_temperature(lg_a, torch.tensor([r["y"] for r in rows_a]))
 
-    # 2) val(旧口径 calB)回放扫 θ
+    # 2) sweep θ by replay on val (old convention: calB)
     rows_b, lg_b = splits[sweep_sp]
     probs_b = torch.softmax(lg_b / T, -1)
     sweep = []
@@ -515,7 +517,7 @@ def main():
         chosen[risk] = (max(ok, key=lambda x: x[1]["coverage"])[0]
                         if ok else None)
 
-    # 3) test 冻结:只跑选定 θ
+    # 3) freeze on test: only run the selected θ
     rows_t, lg_t = splits["test"]
     probs_t = torch.softmax(lg_t / T, -1)
     final = {}
@@ -529,7 +531,7 @@ def main():
         final[risk] = dict(theta=th, **agg(recs), ci=bootstrap(recs, rng))
         econ_test[str(risk)] = dict(theta=th, **economics(recs))
 
-    # stop-time 校准(test,取风险 0.05 的 θ;无则 0.8)
+    # stop-time calibration (test, take the θ at risk 0.05; 0.8 if none)
     th0 = chosen.get(0.05) or 0.8
     fired = [r for r in replay(rows_t, probs_t, th0, nro_id).values()
              if r["fired"]]
@@ -542,7 +544,7 @@ def main():
                      acc=round(sum(x["ok"] for x in v) / len(v), 3))
                 for b, v in sorted(bins.items())}
 
-    # 深度十桶样本级 acc(诊断)+ 先验基线
+    # depth-decile sample-level acc (diagnostic) + prior baseline
     pred_t = probs_t.argmax(-1)
     dep = defaultdict(lambda: [0, 0])
     for r, p in zip(rows_t, pred_t):
@@ -553,9 +555,9 @@ def main():
                  for b, (c, n) in sorted(dep.items())}
     vocab = json.loads((data / "tool_vocab.json").read_text())
     if ro_set is not None:
-        # 词表也按同一张真值表折叠再取最高频:标签在装载处折叠过(见上),
-        # 先验必须在同一标签空间里比——不折叠时最高频工具是非只读的话
-        # (bfcl 的 startEngine),先验恒 0,基线被压出假优势
+        # the vocabulary is also collapsed by the same ground-truth table before taking the most frequent one: labels were collapsed
+        # at load time (see above), the prior must be compared in the same label space -- if uncollapsed and the most frequent tool
+        # is non-read-only (bfcl's startEngine), the prior is always 0, and the baseline gets squeezed into a fake advantage
         cnt = defaultdict(int)
         for k, v in vocab.items():
             cnt[readonly_map.collapse(k, ro_set)] += v
@@ -565,8 +567,8 @@ def main():
     prior_acc = (sum(1 for v in ev_labels.values() if v == prior_tool)
                  / max(len(ev_labels), 1))
 
-    # readonly 模式专有统计(旧字段一个不动;先验基线按折叠后标签空间重算,
-    # 不许沿用旧数——DATA.md §7.2)
+    # stats specific to readonly mode (not a single old field changed; the prior baseline is recomputed in the collapsed
+    # label space -- reusing the old numbers is not allowed -- DATA.md §7.2)
     ro_stats = None
     if args.readonly_env:
         ro_stats = {"readonly_env": args.readonly_env,
@@ -608,8 +610,8 @@ def main():
         "n_dropped_bounds": overlong_counts_test["n_dropped_bounds"],
         "n_oow": overlong_counts_test["n_oow"],
         "speculation_economics": {
-            "note": ("T4 离线估算;与 T10 fork 对照(在线实测)同量对账。"
-                     "save=截断口径 触发率×提前量;overlap=预取口径 仅触发且对"),
+            "note": ("T4 offline estimate; reconciles with the T10 fork control (live measurement) at the same scale. "
+                     "save = truncation setting: trigger rate × lead time; overlap = prefetch setting: only fire-and-correct cases"),
             "calB_sweep": econ_sweep,
             "test_frozen": econ_test,
         },
@@ -617,9 +619,9 @@ def main():
     if ro_stats is not None:
         rep["readonly_stats"] = ro_stats
     if args.limit:
-        # 冒烟戳:带这个字段的报告是截断跑,数字不作数
+        # smoke stamp: a report carrying this field is from a truncated run, the numbers do not count
         rep["limit"] = args.limit
-    # 因果探针专有的两个诊断字段(【照抄 eval_replay_causal.py】,旧字段一个不动)
+    # two diagnostic fields specific to the causal probe ([copied verbatim from eval_replay_causal.py], not a single old field changed)
     if args.head == "causal":
         bert_tok, causal_tok = token_cost(tok, rows_t)
         rep["probe_backbone"] = meta.get("base")
@@ -629,10 +631,10 @@ def main():
     (rep_dir / "REPLAY_REPORT.json").write_text(
         json.dumps(rep, ensure_ascii=False, indent=1))
 
-    title = (f"# 回放评测 — {args.env}(因果探针 {meta.get('base')})"
-             if args.head == "causal" else f"# 回放评测 — {args.env}")
-    md = [title, f"- 温度 T={T:.3f}",
-          f"- test 事件数 {len(ev_labels)};频率先验基线 {prior_acc:.3f}",
+    title = (f"# replay eval — {args.env}(causal probe {meta.get('base')})"
+             if args.head == "causal" else f"# replay eval — {args.env}")
+    md = [title, f"- temperature T={T:.3f}",
+          f"- test event count {len(ev_labels)}; frequency prior baseline {prior_acc:.3f}",
           f"- overlong_mode={rep['overlong_mode']}"
           f"(n_skipped_bounds={rep['n_skipped_bounds']}, "
           f"n_dropped_events={rep['n_dropped_events']}, "
@@ -641,36 +643,36 @@ def main():
     for risk, r in final.items():
         if r:
             md.append(
-                f"- **风险≤{risk}** θ={r['theta']}: coverage "
-                f"{r['coverage']} (CI {r['ci']['coverage']}), 触发精度 "
+                f"- **risk≤{risk}** θ={r['theta']}: coverage "
+                f"{r['coverage']} (CI {r['ci']['coverage']}), trigger accuracy "
                 f"{r['trig_acc']} (CI {r['ci']['trig_acc']}), earliness "
                 f"{r['earliness']} (CI {r['ci']['earliness']}), "
-                f"错误投机率 {r['wrong_spec']}")
+                f"wrong-speculation rate {r['wrong_spec']}")
         else:
-            md.append(f"- 风险≤{risk}: calB 上无满足约束的 θ")
-    md += ["", "## 深度桶 acc(样本级,诊断)",
-           json.dumps(depth_acc), "", "## stop-time 校准(首次触发点)",
+            md.append(f"- risk≤{risk}: no θ on calB satisfies the constraint")
+    md += ["", "## depth-bucket acc (sample-level, diagnostic)",
+           json.dumps(depth_acc), "", "## stop-time calibration (first fire point)",
            json.dumps(stoptime, ensure_ascii=False)]
-    md += ["", "## 投机经济换算(T4 离线估算,口径对齐 T10 fork 对照)",
-           "| 口径 | θ | 期望省 token 比例(截断) | 期望重叠延迟比例(预取) |",
+    md += ["", "## speculation economics conversion (T4 offline estimate, settings aligned with the T10 fork control)",
+           "| setting | θ | expected token-saving ratio (truncation) | expected overlap-delay ratio (prefetch) |",
            "|---|---|---|---|"]
     for risk, e in econ_test.items():
         if e:
-            md.append(f"| test 风险≤{risk} | {e['theta']} | "
+            md.append(f"| test risk≤{risk} | {e['theta']} | "
                       f"{e['exp_token_saving_ratio']} | {e['exp_overlap_ratio']} |")
         else:
-            md.append(f"| test 风险≤{risk} | - | - | - |")
-    md += ["", "calB 全 θ 档:", "| θ | 省 token | 重叠延迟 |", "|---|---|---|"]
+            md.append(f"| test risk≤{risk} | - | - | - |")
+    md += ["", "calB, all θ settings:", "| θ | token saved | overlap delay |", "|---|---|---|"]
     md += [f"| {th} | {e['exp_token_saving_ratio']} | {e['exp_overlap_ratio']} |"
            for th, e in econ_sweep]
     if ro_stats is not None:
-        md += ["", f"## 只读模式(--readonly-env {args.readonly_env})",
-               f"- 真值表 {ro_stats['table']};弃权类 "
-               f"{readonly_map.NON_READONLY}(标签 id {nro_id});"
-               f"触发条件加\"argmax 不是弃权类\"",
-               f"- 下表 θ={th0}(风险≤0.05 的 θ,无解时 0.8)",
-               "| 堆 | 事件数 | 其中真值只读 | 只读事件覆盖率 |"
-               " 非只读事件误触发率 | 折叠后先验基线 |",
+        md += ["", f"## readonly mode (--readonly-env {args.readonly_env})",
+               f"- ground-truth table {ro_stats['table']}; abstention class "
+               f"{readonly_map.NON_READONLY} (label id {nro_id}); "
+               f"trigger condition adds \"argmax is not the abstention class\"",
+               f"- the table below uses θ={th0} (the θ for risk≤0.05, or 0.8 if there is no solution)",
+               "| pile | event count | of which ground-truth readonly | readonly-event coverage |"
+               " non-readonly-event false-trigger rate | collapsed prior baseline |",
                "|---|---|---|---|---|---|"]
         for name in (sweep_sp, "test"):
             s = ro_stats[name]
@@ -679,14 +681,14 @@ def main():
                       f" {s['prior_baseline_collapsed']} |")
     if "probe_cost_test" in rep:
         pc = rep["probe_cost_test"]
-        md += ["", "## 探测成本(test,探完全部轨迹的 token 计算量)",
-               f"- ModernBERT 口径 bert_tokens={pc['bert_tokens']}"
-               "(每个句子边界重读一遍前缀)",
-               f"- 因果口径 causal_tokens={pc['causal_tokens']}"
-               "(每个事件整段读一遍)",
+        md += ["", "## probing cost (test, token compute for probing the whole trajectory)",
+               f"- ModernBERT setting bert_tokens={pc['bert_tokens']} "
+               "(rereads the prefix once at every sentence boundary)",
+               f"- causal setting causal_tokens={pc['causal_tokens']} "
+               "(reads the whole segment once per event)",
                f"- ratio={pc['ratio']}x",
-               f"- 口径:两边都用 {rep.get('probe_backbone')} 底座的 tokenizer 计数,"
-               "不计 max_len 截断;只算探针读进去的 token,不含 agent 自身生成。"]
+               f"- setting: both sides count with the tokenizer of the {rep.get('probe_backbone')} backbone, "
+               "not counting max_len truncation; counts only the tokens the probe reads in, excludes tokens the agent itself generates."]
     (rep_dir / "REPLAY_REPORT.md").write_text("\n".join(md) + "\n")
     heartbeat.emit(len(rows_t), len(rows_t), "item", status="done")
     print(json.dumps(rep["test_frozen"], indent=1))

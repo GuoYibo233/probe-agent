@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""md2html.py — 把一份 markdown 转成一页 HTML，纯确定性。
+"""md2html.py -- convert a markdown file into one HTML page, purely deterministic.
 
-用法：
+Usage:
     python3 md2html.py <input.md> <output.html>
 
-只用 Python 标准库。同样的输入永远得到同样的输出。
-脚本只搬运字符：不改写、不润色、不省略正文，也不往页面里加 markdown 里没有的可见文字。
-页面里的可见文字，和 markdown 剥掉标记符号之后的文字，删掉全部空白之后逐字符相同
-（用 verify_text.py 校验）。
+Uses only the Python standard library. The same input always produces the same output.
+The script only moves characters: it does not rewrite, polish, or drop body text, and it
+never adds visible text to the page that is not in the markdown.
+The visible text on the page and the markdown's body text, after stripping markup, are
+character-for-character identical once all whitespace is removed
+(verified by verify_text.py).
 
-认识的块：一到六级标题、段落、有序列表、无序列表、GFM 表格（首行表头 + 第二行 |---|）、
-三个反引号的代码围栏、水平线 ---。
-认识的行内：**加粗**、反引号行内代码、裸 URL（https:// 或 http:// 开头）、HTML 特殊字符转义。
+Recognized blocks: heading levels 1 to 6, paragraphs, ordered lists, unordered lists, GFM
+tables (header row + second-row |---|), triple-backtick code fences, horizontal rule ---.
+Recognized inline: **bold**, backtick inline code, bare URLs (starting with https:// or
+http://), HTML special-character escaping.
 """
 
 import html
@@ -21,9 +24,11 @@ import sys
 
 PAGE_TITLE = "缓存复用训练器现状"
 
-# 折叠块的开头标签：段落以这三个之一加全角冒号开头，就折进 <details>。
+# Collapse-block opening tags: a paragraph starting with one of these three plus a
+# full-width colon gets folded into <details>.
 FOLD_LABELS = ("怎么做的", "为什么这么设计才算数", "看一条真的")
-# 折叠块的收尾标签：段落以这三个之一开头，折叠块就到此为止。
+# Collapse-block closing tags: a paragraph starting with one of these three ends the
+# collapse block.
 STOP_PREFIXES = ("实验结果", "值得注意", "索引")
 
 FENCE = "```"
@@ -243,7 +248,7 @@ details.fold[open]>summary{border-bottom:1px solid var(--rule);}
 .fold-body{padding:.15em .95em .5em;}
 .fold-body>:first-child{margin-top:.85em;}
 .fold-body>:last-child{margin-bottom:.6em;}
-/* 折叠块正文的头一段以全角冒号开头（标签搬进了 summary），让冒号挂到左边空白里 */
+/* The first paragraph of the fold-block body starts with a full-width colon (the label moved into summary); let the colon hang into the left-hand blank space. */
 .fold-body>p:first-child{text-indent:-.5em;}
 
 .note{cursor:pointer;}
@@ -328,9 +333,10 @@ JS = """
 """
 
 
-# ---------------------------------------------------------------- 行内渲染
+# ---------------------------------------------------------------- inline rendering
 
-# 数字：整数、千分位、小数、科学计数、百分号；后面紧跟全角括号才算注释。
+# Numbers: integers, thousands separators, decimals, scientific notation, percent signs;
+# only counts as an annotation when immediately followed by full-width parentheses.
 NUM_NOTE_RE = re.compile(
     r"(?P<num>[0-9][0-9,]*(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?%?)"
     r"（(?P<body>[^（）]*)）"
@@ -342,10 +348,11 @@ SLOT_RE = re.compile(r"\x00(\d+)\x00")
 
 
 def render_inline(text, notes=True):
-    """把一段行内文本渲染成 HTML。
+    """Render a chunk of inline text to HTML.
 
-    先把要变成标签的地方换成占位符，整段转义之后再把占位符换回标签，
-    这样正文里的 < > & " 一定被转义，标签一定不会被转义。
+    First replace the spots that become tags with placeholders, escape the whole chunk,
+    then swap the placeholders back for tags. This way < > & " in the body text are
+    always escaped, and tags are never escaped.
     """
     slots = []
 
@@ -386,12 +393,12 @@ def render_inline(text, notes=True):
             return '<span class="note" role="button" tabindex="0"><span class="note-body">'
         if kind == "nclose":
             return "</span></span>"
-        raise AssertionError("未知的占位符类型：%r" % (kind,))
+        raise AssertionError("unknown placeholder type: %r" % (kind,))
 
     return SLOT_RE.sub(restore, out)
 
 
-# ---------------------------------------------------------------- 块解析
+# ---------------------------------------------------------------- block parsing
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 HR_RE = re.compile(r"^-{3,}$")
@@ -414,7 +421,7 @@ def is_delim_row(cells):
 
 
 def starts_block(s):
-    """这一行是不是另一种块的开头（用来给段落收尾）。"""
+    """Whether this line is the start of a different kind of block (used to end a paragraph)."""
     if s == "":
         return True
     if s.startswith(FENCE) or s.startswith("|"):
@@ -427,7 +434,7 @@ def starts_block(s):
 
 
 def join_para(lines):
-    """把段落的多行接起来：两边都是 ASCII 才补一个空格，中文之间不补。"""
+    """Join a paragraph's multiple lines: insert a space only when both sides are ASCII, not between Chinese characters."""
     out = ""
     for piece in lines:
         if out and out[-1].isascii() and piece[:1].isascii():
@@ -447,7 +454,7 @@ def parse_blocks(lines):
             while i < n and not lines[i].strip().startswith(FENCE):
                 body.append(lines[i])
                 i += 1
-            i += 1  # 收尾的围栏行
+            i += 1  # the closing fence line
             blocks.append({"kind": "code", "lines": body})
             continue
         if s == "":
@@ -497,11 +504,11 @@ def parse_blocks(lines):
     return blocks
 
 
-# ---------------------------------------------------------------- 折叠分组
+# ---------------------------------------------------------------- collapse grouping
 
 
 def fold_label(text):
-    """段落以「标签：」开头就返回这个标签，否则返回空字符串。"""
+    """If the paragraph starts with "tag:", return that tag; otherwise return an empty string."""
     for label in FOLD_LABELS:
         if text.startswith(label + "："):
             return label
@@ -513,7 +520,7 @@ def is_stop_para(text):
 
 
 def group_folds(blocks):
-    """把 ### 小节里以三个标签之一开头的段落，连同后面紧跟的块折进 details。"""
+    """Fold a paragraph in a ### section that starts with one of the three tags, along with the block right after it, into details."""
     out = []
     i, n = 0, len(blocks)
     in_h3 = False
@@ -527,7 +534,7 @@ def group_folds(blocks):
         label = fold_label(b["text"]) if b["kind"] == "para" else ""
         if in_h3 and label:
             head = dict(b)
-            head["text"] = b["text"][len(label):]  # 标签只留在 summary 里
+            head["text"] = b["text"][len(label):]  # the tag stays only in summary
             group = [head]
             i += 1
             while i < n:
@@ -547,7 +554,7 @@ def group_folds(blocks):
     return out
 
 
-# ---------------------------------------------------------------- 块渲染
+# ---------------------------------------------------------------- block rendering
 
 
 def render_block(b, indent=""):
@@ -601,11 +608,11 @@ def render_block(b, indent=""):
         )
     if k == "hr":
         return '%s<div class="band"></div>' % indent
-    raise AssertionError("未知的块类型：%r" % (k,))
+    raise AssertionError("unknown block type: %r" % (k,))
 
 
 def render_document(blocks):
-    """第一条水平线之前是上半，从水平线起到文末是下半，下半包进一个容器。"""
+    """Everything before the first horizontal rule is the top half; from the rule to the end of the text is the bottom half, and the bottom half is wrapped in one container."""
     split = None
     for idx, b in enumerate(blocks):
         if b["kind"] == "hr":
@@ -634,7 +641,7 @@ def render_document(blocks):
 
 def main(argv):
     if len(argv) != 3:
-        sys.stderr.write("用法：python3 md2html.py <input.md> <output.html>\n")
+        sys.stderr.write("usage: python3 md2html.py <input.md> <output.html>\n")
         return 2
     with open(argv[1], "r", encoding="utf-8") as fh:
         src = fh.read()

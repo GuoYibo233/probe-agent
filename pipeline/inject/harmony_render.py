@@ -1,24 +1,34 @@
-"""把 chat 消息列表渲染成 gpt-oss 的 harmony prompt **token id**,与 vLLM chat 端点
-逐 token 相同。
+"""Render a chat message list into gpt-oss harmony prompt **token ids**,
+token for token identical to the vLLM chat endpoint.
 
-为什么不再走 jinja 模板出文本(rebuild.build_prefix)、再让 /v1/completions 分词:
-2026-08-18 排查 chat baseline 与 no probe 的差异,发现 jinja 文本路在两个边角上
-与 chat 端点不一致——(1) content 为空的 assistant 轮,chat 端点整条丢掉,jinja
-照渲染 `<|start|>assistant<|channel|>final<|message|><|end|>`;(2) content 里
-的字面 `<|end|>` `<|channel|>` 等标记,chat 端点当普通文本编码,completions
-端点的分词器把它们收成真正的特殊 token id。两条都让 no probe 的 prompt 从
-那一步起永久偏离 chat baseline。改成直接出 token id 就把两条一起消掉,还顺带
-去掉三样补丁(剥 developer 段尾 `\\n\\n` 的正则、占位符换回原文、日期正则替换)。
+Why not go through the jinja template to text (rebuild.build_prefix) and
+then let /v1/completions tokenize it: on 2026-08-18, while investigating the
+difference between the chat baseline and no probe, found the jinja text path
+disagrees with the chat endpoint at two edge cases -- (1) for an assistant
+turn with empty content, the chat endpoint drops the whole turn, but jinja
+still renders `<|start|>assistant<|channel|>final<|message|><|end|>`; (2)
+literal markers like `<|end|>` `<|channel|>` inside content are encoded as
+plain text by the chat endpoint, but the completions endpoint's tokenizer
+turns them into real special token ids. Both cases make the no-probe prompt
+permanently diverge from the chat baseline from that step onward. Emitting
+token ids directly eliminates both cases at once, and along the way also
+removes three patches (the regex that strips the trailing `\\n\\n` of the
+developer segment, swapping placeholders back to the original text, and the
+date regex substitution).
 
-【照抄 vLLM 0.26.0】renderers/online_renderer.py:_make_request_with_harmony 走的
-三步:entrypoints/openai/parser/harmony_utils.py 的 extract_instructions_from_messages
-→ build_harmony_preamble → parse_chat_inputs_to_harmony_messages → render_for_completion。
-本文件只依赖 openai_harmony(cprobe-env 已装,pydantic 2),不 import vllm。
-逐 token 相等由 tests/test_harmony_render.py 用 vLLM 自己的函数当裁判验(在
-envs/vllm-env 下跑)。
+[Copied from vLLM 0.26.0] The three steps that
+renderers/online_renderer.py:_make_request_with_harmony goes through:
+entrypoints/openai/parser/harmony_utils.py's
+extract_instructions_from_messages → build_harmony_preamble →
+parse_chat_inputs_to_harmony_messages → render_for_completion. This file
+only depends on openai_harmony (already installed in cprobe-env, pydantic
+2), it does not import vllm. Token-for-token equality is verified by
+tests/test_harmony_render.py using vLLM's own function as the judge (run
+under envs/vllm-env).
 
-只支持我们的消息形态:system/user/assistant 三种 role、content 是 str 或 None,
-没有 tool_calls / reasoning / 多模态。带了就 raise,不静默走别的分支。
+Only supports our message shape: the three roles system/user/assistant,
+content is str or None, no tool_calls / reasoning / multimodal. If present,
+raise -- never silently fall through to another branch.
 """
 
 from openai_harmony import (Conversation, DeveloperContent, HarmonyEncodingName,
@@ -26,7 +36,7 @@ from openai_harmony import (Conversation, DeveloperContent, HarmonyEncodingName,
                             Role, SystemContent, TextContent,
                             load_harmony_encoding)
 
-# 与 vLLM harmony_utils.REASONING_EFFORT 同一张表
+# Same table as vLLM harmony_utils.REASONING_EFFORT
 EFFORT = {"high": ReasoningEffort.HIGH,
           "medium": ReasoningEffort.MEDIUM,
           "low": ReasoningEffort.LOW}
@@ -44,38 +54,43 @@ def encoding():
 
 
 def _text(content):
-    """vLLM flatten_input_text_content 在我们形态下的等价:str 原样,None 归 None。"""
+    """Equivalent of vLLM flatten_input_text_content for our shape: str stays as-is, None maps to None."""
     if content is None or isinstance(content, str):
         return content
-    raise ValueError(f"只支持 str content,拿到 {type(content).__name__}")
+    raise ValueError(f"only str content is supported, got {type(content).__name__}")
 
 
 def to_harmony_messages(messages, effort="high", start_date=None):
-    """chat messages -> openai_harmony Message 列表(不渲染)。
+    """chat messages -> list of openai_harmony Message (does not render).
 
-    与 vLLM 逐条对应:
-    - 打头的 system/developer 消息剥出来当 instructions,进 developer 消息
-      (VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS 缺省 False 的分支);
-      instructions 为空串或 None 就不出 developer 消息(build_harmony_preamble
-      的 `if developer_instructions or tools`)。
-    - system 消息:model identity 默认、reasoning effort 按表、日期钉 start_date。
-    - assistant:content 非空才出一条 final 消息;空串/None 整条丢
-      (parse_chat_input_to_harmony_message 末尾 `if role == "assistant" and
-      contents and contents[0].text`)。
-    - user:content 原样(空串也出一条)。
-    - 中途的 system/developer:出一条 developer 消息(get_system_or_developer_message)。
+    Matches vLLM item for item:
+    - The leading system/developer messages are stripped out as
+      instructions and go into a developer message (the branch where
+      VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS defaults to False); if
+      instructions is an empty string or None, no developer message is
+      emitted (build_harmony_preamble's `if developer_instructions or
+      tools`).
+    - system message: model identity default, reasoning effort per table,
+      date pinned to start_date.
+    - assistant: only emits a final message when content is non-empty;
+      empty string/None drops the whole turn (the end of
+      parse_chat_input_to_harmony_message, `if role == "assistant" and
+      contents and contents[0].text`).
+    - user: content as-is (an empty string still emits one).
+    - system/developer in the middle: emits one developer message
+      (get_system_or_developer_message).
     """
     if effort not in EFFORT:
-        raise ValueError(f"reasoning effort 只认 {sorted(EFFORT)},拿到 {effort!r}")
+        raise ValueError(f"reasoning effort only recognizes {sorted(EFFORT)}, got {effort!r}")
     if start_date is None:
-        raise ValueError("start_date 必传:日期不钉死,渲染就随运行当天漂")
+        raise ValueError("start_date is required: if the date is not pinned, rendering drifts with whatever day it runs")
     msgs = list(messages)
     for m in msgs:
         for bad in ("tool_calls", "reasoning", "thinking"):
             if m.get(bad):
-                raise ValueError(f"消息带 {bad},本渲染器不支持(vLLM 会走别的分支)")
+                raise ValueError(f"message carries {bad}, this renderer does not support it (vLLM takes a different branch for this)")
         if m.get("role") not in ROLE:
-            raise ValueError(f"未知 role {m.get('role')!r}")
+            raise ValueError(f"unknown role {m.get('role')!r}")
 
     instructions = None
     if msgs and msgs[0]["role"] in ("system", "developer"):
@@ -109,9 +124,10 @@ def to_harmony_messages(messages, effort="high", start_date=None):
 
 
 def render_ids(messages, effort="high", start_date=None):
-    """chat messages -> prompt token id 列表,止于 <|start|>assistant。
-    与 vLLM render_for_completion 同款调用(auto_drop_analysis=False;我们的
-    消息里没有 analysis,vLLM 前置的 auto_drop_analysis_messages 是空操作)。"""
+    """chat messages -> prompt token id list, ending at <|start|>assistant.
+    Same call as vLLM render_for_completion (auto_drop_analysis=False; our
+    messages have no analysis, so vLLM's leading auto_drop_analysis_messages
+    is a no-op)."""
     conv = Conversation.from_messages(
         to_harmony_messages(messages, effort=effort, start_date=start_date))
     return list(encoding().render_conversation_for_completion(
@@ -120,5 +136,5 @@ def render_ids(messages, effort="high", start_date=None):
 
 
 def decode(ids):
-    """token id -> 文本(特殊标记原样),给日志与人眼核对用。"""
+    """token id -> text (special markers kept as-is), for logs and manual eyeball checking."""
     return encoding().decode(list(ids))

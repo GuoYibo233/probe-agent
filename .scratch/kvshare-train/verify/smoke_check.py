@@ -1,45 +1,60 @@
 #!/usr/bin/env python3
-"""kvshare 第二轮冒烟与扫描 run 的判读表(只读,不进注册表;纯 stdlib,系统 python3 可跑)。
+"""Readout table for kvshare's second round of smoke tests and sweep runs (read-only,
+not in the registry; pure stdlib, runs under the system python3).
 
-用法:
+Usage:
   python3 .scratch/kvshare-train/verify/smoke_check.py <run_dir> [<run_dir> ...] \
       [--dev-threshold 15] [--json <out.json>]
 
-每个 run_dir 读 train_log.jsonl(start / mem_probe / mem_probe_summary / eval / step / done 事件,
-字段名按 spec 16.3 到 16.5)与 ALIGN_CHECK.json,输出:
-  1. 一张汇总表:run_id、配置(b06/b17/l17/l4,从 start 的 base 与 lora 推)、检查点(best/meta.json
-     的 grad_ckpt,没有就按排卡计划假定并标 "假定")、align PASS 与 max_abs_diff、探针 pick/scope、
-     worst_gb(worst_kind)、worst 那一块的预期值与偏差、step 峰值最大值、wall_s。
-  2. 每个 run 的明细:每条 mem_probe 事件的 kind、B、L_pad、n_tokens、n_loss_pos、peak、预期、偏差;
-     每条 eval 事件的 frac、val_ce、val_exact_call(cparam 是 val_exact_params)、gen_n、gen_s。
+For each run_dir, reads train_log.jsonl (start / mem_probe / mem_probe_summary / eval /
+step / done events, field names per spec 16.3 to 16.5) and ALIGN_CHECK.json, and outputs:
+  1. A summary table: run_id, config (b06/b17/l17/l4, inferred from start's base and
+     lora), checkpoint (grad_ckpt from best/meta.json, or, if absent, assumed from the
+     card-scheduling plan and marked "assumed"), align PASS and max_abs_diff, probe
+     pick/scope, worst_gb (worst_kind), the expected value and deviation for the worst
+     block, the max step peak, wall_s.
+  2. Per-run detail: each mem_probe event's kind, B, L_pad, n_tokens, n_loss_pos, peak,
+     expected, deviation; each eval event's frac, val_ce, val_exact_call (val_exact_params
+     for cparam), gen_n, gen_s.
 
-预期值的算法(design-attention.md 9.1,单位 GB):
-  预期 = 固定项 + 每 token 系数 × n_tokens / 1000 + 1.8 × n_loss_pos / 1000
-固定项与系数按配置和检查点取(9.1 表);n_tokens / n_loss_pos 取探针事件里记的值,旧格式的事件
-(只有 B、L_pad)按 B × L_pad 与默认损失位(fullest_block 1,984、longest_event 1,344)补。tokens 探针
-默认块(16,384 个 token、1,984 个损失位)代进去:b17 不开检查点 98.1、l17 不开 77.7、l4 开 28.8、
-b06 开 15.8(四个配置都已按 2026-08-28 到 29 的冒烟校准,design 9.8 与 9.9)。偏差 = (实测 − 预期) / 预期,
-绝对值超过 --dev-threshold(默认 15%)的行打 "!!" 标记。
+Algorithm for the expected value (design-attention.md 9.1, unit GB):
+  expected = fixed term + per-token coefficient × n_tokens / 1000 + 1.8 × n_loss_pos / 1000
+The fixed term and coefficient are taken by config and checkpoint (table 9.1); n_tokens /
+n_loss_pos are taken from the values recorded on the probe event, and old-format events
+(only B, L_pad) are filled in using B × L_pad and the default loss-position counts
+(fullest_block 1,984, longest_event 1,344). Plugging in the tokens probe's default block
+(16,384 tokens, 1,984 loss positions): b17 without checkpointing 98.1, l17 without
+checkpointing 77.7, l4 with checkpointing 28.8, b06 with checkpointing 15.8 (all four
+configs are calibrated from the 2026-08-28 to 29 smoke tests, design 9.8 and 9.9).
+Deviation = (measured - expected) / expected; rows whose absolute value exceeds
+--dev-threshold (default 15%) get an "!!" marker.
 """
 import argparse
 import json
 import sys
 from pathlib import Path
 
-# 9.1 的显存模型(GB),按配置给 (不开检查点, 开检查点) 两个值。固定项:不开检查点含 fp32 权重、
-# bf16 副本、梯度、AdamW 状态或 LoRA 四份;开检查点时 LoRA 的 bf16 副本不常驻(design 9.9:l4 两点
-# 拟合 16.25,对 24.66 少的正是副本 8.04),全参少约 0.6。实测校准的:b06 两档、b17/l17 不开检查点
-# (design 9.8)、l4 开检查点(9.9);其余是推算值:b17 开检查点 30.4、l17 开检查点 7.16(10.60 减副本
-# 3.44)、l4 不开检查点 24.66。
+# The 9.1 GPU-memory model (GB), giving two values per config: (without checkpointing,
+# with checkpointing). Fixed term: without checkpointing it holds fp32 weights, the bf16
+# copy, gradients, and either AdamW state or the four LoRA pieces; with checkpointing,
+# LoRA's bf16 copy is not resident (design 9.9: l4's two-point fit gives 16.25, and the
+# 8.04 missing from 24.66 is exactly that copy), full-parameter is about 0.6 less.
+# Measured and calibrated: b06 both tiers, b17/l17 without checkpointing (design 9.8),
+# l4 with checkpointing (9.9); the rest are estimated: b17 with checkpointing 30.4, l17
+# with checkpointing 7.16 (10.60 minus the 3.44 copy), l4 without checkpointing 24.66.
 FIXED_GB = {"b06": (10.86, 10.27), "b17": (30.97, 30.4), "l17": (10.60, 7.16), "l4": (24.66, 16.25)}
-MB_PER_TOKEN = {  # (不开检查点, 开检查点)
-    # 实测校准:b06 不开 2.44(8.6/9.1)、开 0.12(9.9);1.7B 不开 3.88(9.8);l4 开 0.55(9.9)。
-    # 推算值:1.7B 开检查点 0.38、4B 不开检查点 7.32(两个底座峰值时刻不同,不能用倍率互推)
+MB_PER_TOKEN = {  # (without checkpointing, with checkpointing)
+    # Measured and calibrated: b06 without checkpointing 2.44 (8.6/9.1), with checkpointing
+    # 0.12 (9.9); 1.7B without checkpointing 3.88 (9.8); l4 with checkpointing 0.55 (9.9).
+    # Estimated: 1.7B with checkpointing 0.38, 4B without checkpointing 7.32 (the two base
+    # models peak at different moments, so a ratio cannot convert one to the other).
     "b06": (2.44, 0.12), "b17": (3.88, 0.38), "l17": (3.88, 0.38), "l4": (7.32, 0.55)}
 MB_PER_LOSS_POS = 1.8
-# 排卡计划(决定 30)里各配置是否开检查点;meta.json 没有 grad_ckpt 的时候用这个假定
+# whether each config has checkpointing on, from the card-scheduling plan (decision 30);
+# used as the assumption when meta.json has no grad_ckpt
 PLANNED_GC = {"b06": True, "b17": False, "l17": False, "l4": True}
-# 旧格式探针事件(没有 n_loss_pos)的默认损失位数:全集最满块与最长事件(9.2、8.6)
+# default loss-position counts for old-format probe events (no n_loss_pos): the fullest
+# block and the longest event over the full set (9.2, 8.6)
 DEFAULT_LOSS_POS = {"fullest_block": 1984, "longest_event": 1344}
 TAG_BY_BASE = {"qwen": "b06", "qwen17": "b17", "qwen4": "b4"}
 
@@ -64,20 +79,20 @@ def load_log(path):
 
 
 def config_tag(start):
-    """从 start 事件推配置名:base 决定底座,lora 键在不在决定训法。"""
+    """Infer the config name from the start event: base decides the base model, and whether the lora key is present decides the training method."""
     if not start:
         return "?"
     base = start.get("base", "?")
     tag = TAG_BY_BASE.get(base)
     if tag is None:
-        tag = Path(str(base)).name or "?"        # --base 传的是目录(测试用小模型)
+        tag = Path(str(base)).name or "?"        # --base was passed a directory (a small test model)
     if "lora" in start:
         tag = "l" + tag[1:] if tag.startswith("b") else "l:" + tag
     return tag
 
 
 def grad_ckpt_of(run_dir, tag):
-    """best/meta.json 的 grad_ckpt 是唯一记录检查点开关的地方;没有就按排卡计划假定。"""
+    """best/meta.json's grad_ckpt is the only place the checkpoint switch is recorded; if absent, assume it from the card-scheduling plan."""
     meta = run_dir / "best" / "meta.json"
     if meta.exists():
         try:
@@ -86,8 +101,8 @@ def grad_ckpt_of(run_dir, tag):
         except (OSError, ValueError):
             pass
     if tag in PLANNED_GC:
-        return PLANNED_GC[tag], "假定"
-    return None, "缺"
+        return PLANNED_GC[tag], "assumed"
+    return None, "missing"
 
 
 def expected_gb(tag, gc, n_tokens, n_loss_pos):
@@ -99,7 +114,7 @@ def expected_gb(tag, gc, n_tokens, n_loss_pos):
 
 
 def probe_numbers(m):
-    """一条 mem_probe 事件的 (n_tokens, n_loss_pos);旧格式按 B × L_pad 与默认损失位补。"""
+    """(n_tokens, n_loss_pos) for one mem_probe event; old-format events are filled in using B × L_pad and the default loss-position count."""
     b = m.get("B", m.get("n_events"))
     l_pad = m.get("L_pad", m.get("packed_len_max"))
     n_tokens = m.get("n_tokens")
@@ -113,19 +128,19 @@ def probe_numbers(m):
 
 def fmt(v, nd=2):
     if v is None:
-        return "缺"
+        return "missing"
     if isinstance(v, float):
         return f"{v:.{nd}f}"
     return str(v)
 
 
 def fmt_sci(v):
-    return "缺" if v is None else f"{v:.2e}"
+    return "missing" if v is None else f"{v:.2e}"
 
 
 def dev_str(measured, expected, threshold):
     if measured is None or expected is None or expected <= 0:
-        return "缺", False
+        return "missing", False
     d = (measured - expected) / expected * 100
     flag = abs(d) > threshold
     return f"{d:+.1f}%" + (" !!" if flag else ""), flag
@@ -143,7 +158,7 @@ def analyze(run_dir, threshold):
     else:
         out["align"] = None
     if not log_p.exists():
-        out["error"] = "train_log.jsonl 缺"
+        out["error"] = "train_log.jsonl missing"
         return out
     ev = load_log(log_p)
     st = ev["start"] or {}
@@ -174,7 +189,7 @@ def analyze(run_dir, threshold):
                               n_events_considered=summ.get("n_events_considered"), source="summary")
     elif probes:
         w = max((p for p in probes if p["peak_gb"] is not None), key=lambda p: p["peak_gb"], default=None)
-        out["summary"] = (dict(pick=st.get("mem_probe_pick", "tokens(旧格式)"), worst_gb=w["peak_gb"],
+        out["summary"] = (dict(pick=st.get("mem_probe_pick", "tokens (old format)"), worst_gb=w["peak_gb"],
                                worst_kind=w["kind"], scope="full?", n_events_considered=None,
                                source="max(mem_probe)") if w else None)
     else:
@@ -208,8 +223,8 @@ def analyze(run_dir, threshold):
 
 
 def render(rows):
-    head = ("| run_id | 配置 | 检查点 | align PASS / max_abs_diff | pick / scope | worst_gb (kind) "
-            "| 预期 GB | 偏差 | worst×1.1 | step 峰值 GB | eval 次数 / best val_ce | wall_s |")
+    head = ("| run_id | config | checkpoint | align PASS / max_abs_diff | pick / scope | worst_gb (kind) "
+            "| expected GB | deviation | worst×1.1 | step peak GB | eval count / best val_ce | wall_s |")
     print(head)
     print("|" + "---|" * 12)
     for r in rows:
@@ -217,29 +232,29 @@ def render(rows):
             print(f"| {r['run_id']} | | | | | | | | | | | {r['error']} |")
             continue
         al = r.get("align")
-        al_s = "缺" if al is None else f"{al.get('PASS')} / {fmt_sci(al.get('max_abs_diff'))}"
+        al_s = "missing" if al is None else f"{al.get('PASS')} / {fmt_sci(al.get('max_abs_diff'))}"
         gc = r.get("grad_ckpt")
-        gc_s = ("缺" if gc is None else ("开" if gc else "关")) + (
-            f"({r['grad_ckpt_source']})" if r.get("grad_ckpt_source") == "假定" else "")
+        gc_s = ("missing" if gc is None else ("on" if gc else "off")) + (
+            f"({r['grad_ckpt_source']})" if r.get("grad_ckpt_source") == "assumed" else "")
         s = r.get("summary")
         if s:
             pick_s = f"{s.get('pick')} / {s.get('scope')}"
             worst_s = f"{fmt(s.get('worst_gb'))} ({s.get('worst_kind')})"
             exp_s, dev_s, x11 = fmt(s.get("expected_gb"), 1), s.get("dev"), fmt(s.get("x1_1"), 1)
         else:
-            pick_s = worst_s = exp_s = dev_s = x11 = "缺"
+            pick_s = worst_s = exp_s = dev_s = x11 = "missing"
         ev_s = f"{len(r['evals'])} / {fmt(r.get('best_val_ce'), 4)}"
         print(f"| {r['run_id']} | {r['tag']} | {gc_s} | {al_s} | {pick_s} | {worst_s} | {exp_s} | {dev_s} "
               f"| {x11} | {fmt(r.get('step_peak_gb'))} | {ev_s} | {fmt(r.get('wall_s'), 1)}"
-              f"{'' if r.get('done') else '(未 done)'} |")
+              f"{'' if r.get('done') else '(not done)'} |")
     for r in rows:
         if r.get("error"):
             continue
         print()
-        print(f"== {r['run_id']}  配置 {r['tag']}  mode {r.get('mode')}  lr {r.get('lr')}  "
+        print(f"== {r['run_id']}  config {r['tag']}  mode {r.get('mode')}  lr {r.get('lr')}  "
               f"tok_budget {r.get('tok_budget')}  smoke {r.get('smoke')}  n_train_events {r.get('n_train_events')}  "
               f"gen_eval {r.get('gen_eval')}  mem_probe_pick {r.get('mem_probe_pick')}  "
-              f"检查点来源 {r.get('grad_ckpt_source')}")
+              f"checkpoint source {r.get('grad_ckpt_source')}")
         al = r.get("align")
         if al:
             print(f"   align: PASS={al.get('PASS')} max_abs_diff={fmt_sci(al.get('max_abs_diff'))} "
@@ -248,18 +263,18 @@ def render(rows):
         for p in r["probes"]:
             print(f"   mem_probe {p['kind']:>18s}: B={p['B']} L_pad={p['L_pad']} n_tokens={p['n_tokens']} "
                   f"n_rows={p['n_rows']} n_loss_pos={p['n_loss_pos']} n_backward={p['n_backward']} "
-                  f"peak={fmt(p['peak_gb'])} 预期={fmt(p['expected_gb'], 1)} 偏差={p['dev']}")
+                  f"peak={fmt(p['peak_gb'])} expected={fmt(p['expected_gb'], 1)} dev={p['dev']}")
         s = r.get("summary")
         if s:
             print(f"   summary({s.get('source')}): pick={s.get('pick')} scope={s.get('scope')} "
                   f"worst={fmt(s.get('worst_gb'))} ({s.get('worst_kind')}) "
-                  f"n_events_considered={s.get('n_events_considered')} 预期={fmt(s.get('expected_gb'), 1)} "
-                  f"偏差={s.get('dev')} worst×1.1={fmt(s.get('x1_1'), 1)}")
+                  f"n_events_considered={s.get('n_events_considered')} expected={fmt(s.get('expected_gb'), 1)} "
+                  f"dev={s.get('dev')} worst×1.1={fmt(s.get('x1_1'), 1)}")
         for e in r["evals"]:
             print(f"   eval ep={e['ep']} frac={e['frac']} gstep={e['gstep']}: val_ce={fmt(e['val_ce'], 4)} "
                   f"val_exact={fmt(e['val_exact'], 4)} gen_n={e['gen_n']} gen_s={fmt(e['gen_s'], 1)} "
                   f"n_eval_rows={e['n_eval_rows']}")
-        print(f"   step: {r['n_steps_logged']} 条, 峰值最大 {fmt(r.get('step_peak_gb'))} GB, 末条 ips {r.get('last_ips')}; "
+        print(f"   step: {r['n_steps_logged']} entries, peak max {fmt(r.get('step_peak_gb'))} GB, last entry ips {r.get('last_ips')}; "
               f"done={r.get('done')} best_val_ce={fmt(r.get('best_val_ce'), 4)} best_frac={r.get('best_frac')} "
               f"wall_s={fmt(r.get('wall_s'), 1)}")
 
@@ -267,17 +282,17 @@ def render(rows):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run_dirs", nargs="+")
-    ap.add_argument("--dev-threshold", type=float, default=15.0, help="偏差百分比超过就打 !! 标记")
-    ap.add_argument("--json", default=None, help="把全部字段另存成 JSON")
+    ap.add_argument("--dev-threshold", type=float, default=15.0, help="flag with !! when the deviation percentage exceeds this")
+    ap.add_argument("--json", default=None, help="save all fields separately as JSON")
     args = ap.parse_args()
     rows = [analyze(d, args.dev_threshold) for d in args.run_dirs]
     render(rows)
     if args.json:
         Path(args.json).write_text(json.dumps(rows, indent=1, ensure_ascii=False))
-        print(f"\nJSON 写到 {args.json}")
+        print(f"\nJSON written to {args.json}")
     flagged = [r["run_id"] for r in rows if r.get("summary") and r["summary"].get("flag")]
     if flagged:
-        print(f"\n偏差超过 ±{args.dev_threshold:g}% 的 run: {', '.join(flagged)}")
+        print(f"\nRuns with deviation exceeding ±{args.dev_threshold:g}%: {', '.join(flagged)}")
     return 0
 
 

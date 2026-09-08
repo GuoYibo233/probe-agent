@@ -1,31 +1,31 @@
 #!/bin/bash
-# live 活跑一臂的 12 分片发射(tmux 里整段跑;每分片一个进程一个世界)。
-# 用法: live_arm_job.sh probe|noprobe run_name
-#   run_name 必填(v2 重跑=live_aw_gptoss_v2)。防呆:v1 目录 live_aw_gptoss
-#   已收官,若默认落回去会静默空跑(--resume 全跳)还打印 DONE,像跑完了一样。
-# 教训:上一版把 `cd && p0 & p1 &` 直接拼串,&& 只绑到第一个后台任务,
-# 其余 11 片在错误 cwd 下秒死——所以固化成脚本,cd 在所有分片之前。
+# Launch 12 pieces for one live-run arm (run the whole thing in tmux; one process, one world, per piece).
+# Usage: live_arm_job.sh probe|noprobe run_name
+#   run_name is required (v2 rerun = live_aw_gptoss_v2). Foolproofing: the v1 directory live_aw_gptoss
+#   is already wrapped up; falling back to it by default would silently run empty (--resume skips everything) and still print DONE, looking like it finished.
+# Lesson: the previous version chained `cd && p0 & p1 &` directly; && only binds to the first background job,
+# so the other 11 pieces died instantly in the wrong cwd -- so this was hardened into a script, with cd before all pieces.
 set -u
 ARM="$1"
-RUN="${2:?run_name 必填,如 live_aw_gptoss_v2 (v1 目录不许再指)}"
+RUN="${2:?run_name is required, e.g. live_aw_gptoss_v2 (must not point at the v1 dir)}"
 ROOT=/home/y-guo/reproduce/new1
 LOG=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs
 cd "$ROOT"
-# effort 臂打专属 H200 副本与探针二号(8791,新 /render 才认 effort 字段;
-# 老 8790 会静默丢掉 effort 按 high 渲——绝不能把 effort 臂指过去)
+# effort arms use a dedicated H200 replica and probe #2 (8791; only the new /render recognizes the effort field;
+# the old 8790 silently drops effort and renders at high -- effort arms must never point at it)
 case "$ARM" in
   probe)       EXTRA="";                        PORTS=(8114 8115 8116); PROBE=8790 ;;
   noprobe)     EXTRA="--no-probe";              PORTS=(8114 8115 8116); PROBE=8790 ;;
   noprobe_low) EXTRA="--no-probe --effort low"; PORTS=(8117);           PROBE=8791 ;;
   noprobe_med) EXTRA="--no-probe --effort medium"; PORTS=(8118);        PROBE=8791 ;;
   probe_low)   EXTRA="--effort low";            PORTS=(8117);           PROBE=8792 ;;
-  # ^ noprobe_low 168/168 收官后其专属副本 8117 空出,probe_low 切过去,
-  #   与 probe_med(8119)各占一张 H200(2026-08-02 03:3x 切换,--resume 续跑)
+  # ^ after noprobe_low wrapped up at 168/168, its dedicated replica 8117 freed up, so probe_low switched to it,
+  #   each taking one H200 alongside probe_med (8119) (switched 2026-08-02 03:3x, continued via --resume)
   probe_med)   EXTRA="--effort medium";         PORTS=(8118 8119);      PROBE=8792 ;;
-  # ^ noprobe_med 收官后 8118 空出,拨给落后的 probe_med 双副本分流(03:5x)
+  # ^ after noprobe_med wrapped up, 8118 freed up and was given to the lagging probe_med as a second replica to split load (03:5x)
   *) echo "unknown arm: $ARM"; exit 1 ;;
 esac
-# 动态领题:清票根,没写 final 的题全部重新开抢(claim() 的约定)
+# Dynamic task claiming: clear the claim root, all tasks without a final get re-claimed (the claim() convention)
 OUT="pipeline/inject/runs/$RUN/$ARM"
 rm -rf "$OUT/.claims"
 for s in $(seq 0 11); do

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""矩阵汇总(规格 §6.4,纯标准库):把一批 run 的报告收成一张表(模型 × 格)。
+"""Matrix summary (spec §6.4, pure standard library): collect a batch of run reports into one table (model × cell).
 
-读每个 run 目录:
-- mtool / ctool: `REPLAY_REPORT.json` → 风险 0.05 档的 theta / coverage /
-  trig_acc / earliness / wrong_spec,外加 n_events_test 与 prior_baseline_event_acc
-- mext: `EXTRACT_REPORT.json` → overall 的 params_all_ok / full_call_ok
+Reads each run directory:
+- mtool / ctool: `REPLAY_REPORT.json` → theta / coverage / trig_acc / earliness / wrong_spec at the risk-0.05 tier,
+  plus n_events_test and prior_baseline_event_acc
+- mext: `EXTRACT_REPORT.json` → overall's params_all_ok / full_call_ok
 - cgen: `CALLGEN_REPORT.json` → params_all_ok / full_call_ok
-- cparam: `PARAM_REPORT.json` 的 **pred_tool 块** → theta / params_all_ok /
-  full_call_ok / n_events_scored(pred_tool = 工具名喂分类头预测,即系统乙的
-  真实口径;同报告里的 gt_tool 块喂真值工具名,不进矩阵)
+- cparam: the **pred_tool block** of `PARAM_REPORT.json` → theta / params_all_ok /
+  full_call_ok / n_events_scored (pred_tool = tool name predicted by feeding the classification head, i.e. system B's
+  real-world convention; the gt_tool block in the same report feeds the ground-truth tool name and does not go into the matrix)
 
-报告文件缺席的格标 `PENDING`(不报错,方便边跑边看)。
+Cells whose report file is missing are marked `PENDING` (not an error, so you can check while runs are still going).
 
-用法:
+Usage:
   python3 pipeline/eval/summarize_matrix.py \\
     --runs-dir pipeline/runs --out pipeline/runs/MATRIX_REPORT.md
 """
@@ -33,7 +33,7 @@ def fmt(v):
 
 
 def read_cell(run_dir, cell, risk):
-    """-> (status, row_dict)。status ∈ {"OK","PENDING"}。"""
+    """-> (status, row_dict). status ∈ {"OK","PENDING"}."""
     p = run_dir / REPORT_OF[cell]
     if not p.exists():
         return "PENDING", {}
@@ -57,11 +57,11 @@ def read_cell(run_dir, cell, risk):
                           full_call_ok=ov.get("full_call_ok"),
                           n_events_scored=rep.get("n_events_scored"))
     if cell == "cparam":
-        # PARAM_REPORT 有两块:gt_tool(喂真值工具名)与 pred_tool(喂分类头
-        # argmax)。矩阵一律取 pred_tool——那是系统乙(ctool + cparam)的真实
-        # 口径;gt_tool 只留在报告里给人对照。必须显式分支:落进下面那条 else
-        # 会按顶层键取 params_all_ok/full_call_ok,而顶层根本没有这两个键,
-        # rep.get() 全 None → 整行 "-" 但状态列还写 OK(extending §5 #15)。
+        # PARAM_REPORT has two blocks: gt_tool (fed the ground-truth tool name) and pred_tool (fed the classification head's
+        # argmax). The matrix always takes pred_tool -- that is system B's (ctool + cparam) real-world
+        # convention; gt_tool is only kept in the report for human comparison. This must branch explicitly: falling into the else
+        # branch below would take params_all_ok/full_call_ok from the top-level keys, but the top level has neither key,
+        # so rep.get() is all None → the whole row is "-" but the status column still says OK (extending §5 #15).
         pt = rep.get("pred_tool") or {}
         return "OK", dict(theta=pt.get("theta"),
                           params_all_ok=pt.get("params_all_ok"),
@@ -76,11 +76,11 @@ def read_cell(run_dir, cell, risk):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs-dir", required=True,
-                    help="12 个 run 目录的父目录(pipeline/runs)")
-    ap.add_argument("--out", required=True, help="输出 MATRIX_REPORT.md 路径")
-    ap.add_argument("--prefix", default="c1", help="run_id 前缀(c1_<model>_<cell>)")
+                    help="parent dir of the 12 run dirs (pipeline/runs)")
+    ap.add_argument("--out", required=True, help="output path for MATRIX_REPORT.md")
+    ap.add_argument("--prefix", default="c1", help="run_id prefix (c1_<model>_<cell>)")
     ap.add_argument("--models", nargs="+", default=["q35", "q36", "gptoss"])
-    ap.add_argument("--risk", default=RISK, help="读哪一档风险(默认 0.05)")
+    ap.add_argument("--risk", default=RISK, help="which risk tier to read (default 0.05)")
     args = ap.parse_args()
 
     root = Path(args.runs_dir)
@@ -93,12 +93,12 @@ def main():
             if c in ("mtool", "ctool") and st == "OK" and m not in per_model:
                 per_model[m] = (d.get("n_events_test"), d.get("prior"))
 
-    md = ["# 矩阵汇总",
-          f"- run 目录 {root};run_id 前缀 {args.prefix};风险档 {args.risk};"
-          "缺报告的格标 PENDING",
-          f"- 模型 {' / '.join(args.models)};格 {' / '.join(CELLS)}",
+    md = ["# matrix summary",
+          f"- run dir {root}; run_id prefix {args.prefix}; risk tier {args.risk}; "
+          "cells with no report are marked PENDING",
+          f"- models {' / '.join(args.models)}; cells {' / '.join(CELLS)}",
           "",
-          "| 模型 | 格 | run_id | 状态 | θ | coverage | trig_acc | earliness |"
+          "| model | cell | run_id | status | θ | coverage | trig_acc | earliness |"
           " wrong_spec | params_all_ok | full_call_ok |",
           "|---|---|---|---|---|---|---|---|---|---|---|"]
     for m, c, rid, st, d in rows:
@@ -111,22 +111,23 @@ def main():
             f"{fmt(d.get('earliness'))} | {fmt(d.get('wrong_spec'))} | "
             f"{fmt(d.get('params_all_ok'))} | {fmt(d.get('full_call_ok'))} |")
 
-    md += ["", "## 每模型的 test 规模与先验基线(取 tool 格报告)",
-           "| 模型 | test 事件数 | 频率先验基线 |", "|---|---|---|"]
+    md += ["", "## per-model test scale and prior baseline (from the tool-cell reports)",
+           "| model | test event count | frequency prior baseline |", "|---|---|---|"]
     for m in args.models:
         n, pr = per_model.get(m, (None, None))
         md.append(f"| {m} | {fmt(n)} | {fmt(pr)} |")
-    md += ["", "口径:tool 格(mtool/ctool)四列来自 REPLAY_REPORT 的 "
-           f"test_frozen[\"{args.risk}\"];参数格(mext/cgen/cparam)两列来自 "
-           "EXTRACT_REPORT.overall / CALLGEN_REPORT / PARAM_REPORT.pred_tool,"
-           "都是同一风险档触发点上的数。cparam 取 pred_tool 块(工具名喂分类头"
-           "预测);同报告里喂真值工具名的 gt_tool 块不进本表。"]
+    md += ["", "settings: the four columns for the tool cells (mtool/ctool) come from REPLAY_REPORT's "
+           f"test_frozen[\"{args.risk}\"]; the two columns for the param cells (mext/cgen/cparam) come from "
+           "EXTRACT_REPORT.overall / CALLGEN_REPORT / PARAM_REPORT.pred_tool, "
+           "all numbers at the same risk tier's fire point. cparam takes the pred_tool block (tool name fed "
+           "to the classification head for prediction); the gt_tool block in the same report, which feeds "
+           "the ground-truth tool name, is not included in this table."]
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(md) + "\n")
     n_ok = sum(1 for *_x, st, _d in rows if st == "OK")
-    print(f"{out}: {n_ok}/{len(rows)} 格有报告")
+    print(f"{out}: {n_ok}/{len(rows)} cells have a report")
     print("\n".join(md))
 
 

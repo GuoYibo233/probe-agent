@@ -1,26 +1,34 @@
-"""塞法回放:探针开火时把预取结果**怎么拼回去**,哪种让模型少想、直接往下走。
-计划:plans/archive/2026-08-18-splice-replay.md(臂、切口、指标、裁决点 D1–D12 都在那)。
+"""Splice-method replay: when the probe fires, **how the prefetched result gets spliced
+back in** -- which method makes the model think less and just move on.
+Plan: plans/archive/2026-08-18-splice-replay.md (arms, cuts, metrics, and decision
+points D1-D12 are all there).
 
-上帝视角:拿 chat baseline 轨迹,每步在思考的四个比例位置切开,把该步代码块的
-真实执行输出按十种塞法拼进去,让 gpt-oss-120b 续写一步。只量单步行为,不判
-预测对错、不跑到底、不 evaluate。探针权重已删,这条线不需要探针。
+God's-eye view: take a chat baseline trajectory, cut it at four proportional
+positions in the thinking for each step, splice the step's code block's real
+execution output in using ten splice methods, and have gpt-oss-120b continue writing
+for one step. This measures single-step behavior only -- it does not judge whether
+the prediction is right, does not run to completion, and does not evaluate. The probe
+weights have been deleted; this line does not need a probe.
 
-三段,各自落盘(cprobe-env 跑;只依赖 openai_harmony + 标准库):
-  events  轨迹 -> events.jsonl(每事件:CALL/CODE/RESULT/四个切口/基线 token)
-  run     每事件 x 切口 x 臂 发 /v1/completions(prompt 为 token id)-> raw.jsonl
-  score   解析 -> per_row.jsonl + SPLICE_REPORT.{json,md}
+Three stages, each writing its own output to disk (run under cprobe-env; depends only
+on openai_harmony + the standard library):
+  events  trajectory -> events.jsonl (per event: CALL/CODE/RESULT/four cuts/baseline tokens)
+  run     event x cut x arm sends /v1/completions (prompt is token ids) -> raw.jsonl
+  score   parse -> per_row.jsonl + SPLICE_REPORT.{json,md}
 
   cprobe-env/bin/python pipeline/inject/splice_replay.py events \\
-      --traj-root <chat 轨迹目录> --out <run 目录>
+      --traj-root <chat trajectory dir> --out <run dir>
   cprobe-env/bin/python pipeline/inject/splice_replay.py run \\
-      --run-dir <run 目录> --base-url http://tokyo108:8103/v1 --model gpt-oss-120b \\
+      --run-dir <run dir> --base-url http://tokyo108:8103/v1 --model gpt-oss-120b \\
       [--arms ...] [--dry-run] [--limit N]
-  cprobe-env/bin/python pipeline/inject/splice_replay.py score --run-dir <run 目录>
+  cprobe-env/bin/python pipeline/inject/splice_replay.py score --run-dir <run dir>
 
-prompt 全部是 token id:前缀 = harmony_render.render_ids(chat 端点同款);文本臂
-接 encode(<|channel|>analysis<|message|> + head + 拼接串);p3k/p4 整段由
-openai_harmony 渲染(不手拼字节)。encode 用 harmony 自带的 o200k_harmony,与
-gpt-oss HF 分词器同表(2026-08-18 实测同一串 id 逐个相同)。
+The prompt is entirely token ids: the prefix = harmony_render.render_ids (same as the
+chat endpoint); text arms follow with encode(<|channel|>analysis<|message|> + head +
+splice string); p3k/p4 have the whole segment rendered by openai_harmony (bytes are
+never hand-assembled). encode uses harmony's own o200k_harmony, the same vocabulary as
+the gpt-oss HF tokenizer (verified 2026-08-18: the same string produces identical ids
+one by one).
 """
 
 import argparse
@@ -49,16 +57,18 @@ from live_appworld import parse_step, sent_cuts                 # noqa: E402
 
 A_OPEN = "<|channel|>analysis<|message|>"
 CALL_MARK = "<|call|>"
-CALL_ID = 200012                # <|call|> 的 token id:模型 generation_config 的 eos 之一,
-                                # vLLM 默认并进 stop_token_ids,停在它上面时 stop_reason 是
-                                # 这个 int(不是字符串),所有臂都会在这停(D11)
+CALL_ID = 200012                # <|call|>'s token id: one of the model's generation_config eos ids,
+                                # vLLM folds it into stop_token_ids by default; when generation stops on it,
+                                # stop_reason is this int (not a string), and every arm stops here (D11)
 FRACS = [0.66, 0.75, 0.80, 1.00]
-MAX_STEP_TOKENS = 8192          # 采集时整步上限(envs/collect/common.py:48)
+MAX_STEP_TOKENS = 8192          # whole-step cap at collection time (envs/collect/common.py:48)
 
-# 措辞(轴二)。n0 沿用 replay_inject.NOTE_TMPL 的方括号形(现状锚,塞那条调用
-# CALL——12/52 个事件代码块不是裸 print(CALL),RESULT 是整块 stdout,这句对它们
-# 不完全真,报告按 code_is_print_call 分层看);n1/n2 塞代码块原文 CODE,句句为真
-# (D3'/D13);n2 抄的是模型每轮看到的 user 消息形态
+# Wording (axis two). n0 follows the bracket form of replay_inject.NOTE_TMPL (the
+# status-quo anchor, splices in the call CALL -- for 12/52 events the code block isn't
+# a bare print(CALL), RESULT is the whole stdout block, so this wording isn't fully
+# accurate for them; the report breaks it down by code_is_print_call); n1/n2 splice in
+# the code block's original text CODE, which is accurate for every one of them
+# (D3'/D13); n2 copies the form of the user message the model sees each turn
 def note_body(kind, call, code, result):
     if kind == "n0":
         return f"[SYSTEM NOTE: prefetched {call} = {result}]"
@@ -71,8 +81,9 @@ def note_body(kind, call, code, result):
     raise ValueError(kind)
 
 
-# 臂表:(位置, 措辞, 是否加 PERMIT)。位置 p1=思考内续写 p2=塞完强切正文
-# p3k=伪造整轮留思考 p4=harmony 原生 python 工具
+# Arm table: (position, wording, whether PERMIT is added). Positions: p1=continue
+# writing inside thinking p2=splice then force-cut to the body
+# p3k=fake a whole turn that keeps thinking p4=harmony's native python tool
 ARMS = {
     "nofill": ("p1", None, False),
     "p1_n0": ("p1", "n0", False),
@@ -93,32 +104,37 @@ def enc(text):
 
 
 def enc_plain(text):
-    """编码**不该含控制标记**的文本(head / NOTE / RESULT / CODE)。文本里若混进
-    字面 <|end|> 之类,allowed_special="all" 会把它收成真特殊 token 静默毁掉
-    prompt(harmony_render 文件头写的那种事故),这里直接拒绝。"""
+    """Encode text that **must not contain control markers** (head / NOTE / RESULT / CODE).
+    If a literal <|end|> or similar sneaks into the text, allowed_special="all" would
+    turn it into a real special token and silently wreck the prompt (the kind of
+    accident described at the top of harmony_render), so this rejects it outright."""
     ids = enc(text)
     e = H.encoding()
     bad = [i for i in ids if e.is_special_token(i)]
     if bad:
-        raise ValueError(f"文本里有字面控制标记 {[H.decode([i]) for i in bad]},"
-                         "拼进 prompt 会变成真特殊 token")
+        raise ValueError(f"the text has literal control markers {[H.decode([i]) for i in bad]},"
+                         "splicing into the prompt would turn them into real special tokens")
     return ids
 
 
 def sep_for(head):
-    """缝修法(D5/D5'):head 以空白结尾(66/75/80 切口都是,句尾空白之后)就不加
-    前导换行,NOTE 直接接在空白后——`.\\n\\n`+`\\n[` 会合并成 `.\\n\\n\\n` 把模型自己
-    的最后一个 token 换掉;`. `+`\\n[` 虽保住 `.` 却多出一个 ` \\n` 怪 token;
-    `.\\n\\n`+`[S` 与 `. `+`[S`(inline)都干净、`.` 原样。只有 head 无尾空白
-    (100% 切口)才加 `\\n` 另起一行。"""
+    """Seam-mending method (D5/D5'): if head ends in whitespace (true of the 66/75/80
+    cuts, after the sentence-final whitespace), don't add a leading newline; splice
+    NOTE directly after the whitespace -- `.\\n\\n`+`\\n[` would merge into `.\\n\\n\\n`
+    and replace the model's own last token; `. `+`\\n[` keeps the `.` but adds an
+    extra ` \\n` oddball token; `.\\n\\n`+`[S` and `. `+`[S` (inline) are both clean,
+    `.` stays as-is. Only add `\\n` to start a new line when head has no trailing
+    whitespace (the 100% cut)."""
     return "" if head[-1:].isspace() else "\n"
 
 
 # ---------------------------------------------------------------- events
 
 def cut_points(think, fracs=FRACS):
-    """比例 -> 切口。<1 的比例取该比例字符位之前最近的句尾(sent_cuts 同款);
-    1.0 取全文末尾。同一切口的比例合并。返回 [(cut, [fracs])],按 cut 升序。"""
+    """Fraction -> cut. For a fraction < 1, take the nearest sentence end before that
+    character position (same as sent_cuts); 1.0 takes the end of the whole text.
+    Fractions landing on the same cut are merged. Returns [(cut, [fracs])], sorted by
+    cut ascending."""
     cuts = sent_cuts(think)
     got = {}
     for f in fracs:
@@ -128,7 +144,7 @@ def cut_points(think, fracs=FRACS):
             pos = int(round(len(think) * f))
             cand = [c for c in cuts if c <= pos]
             if not cand:
-                continue                    # 该比例之前没有合法句尾:这个比例没有事件
+                continue                    # no valid sentence end before this fraction: this fraction has no event
             c = cand[-1]
         got.setdefault(c, []).append(f)
     return sorted(got.items())
@@ -157,7 +173,7 @@ def cmd_events(a):
                 continue
             code = m.group(1).strip()
             if len(CALL_START.findall(code)) != 1:
-                stat["not_one_call"] += 1        # D1:多调用块 / 无调用块都不取
+                stat["not_one_call"] += 1        # D1: skip both multi-call blocks and no-call blocks
                 continue
             think = (g.get("reasoning") or "").strip()
             if len(think) < MIN_THINK:
@@ -165,7 +181,7 @@ def cmd_events(a):
                 continue
             call, _ = complete_call(code)
             if call is None:
-                stat["not_one_call"] += 1      # 括号配不平,当抽不出那条调用
+                stat["not_one_call"] += 1      # parens don't balance, treat the call as unextractable
                 continue
             msgs = R.build_messages(meta, gens, envs, st)
             key = hashlib.sha1(json.dumps([msgs, think]).encode()).hexdigest()
@@ -173,15 +189,16 @@ def cmd_events(a):
                 stat["dup"] += 1
                 continue
             seen.add(key)
-            cps = cut_points(think, fracs)      # 1.0 在 fracs 里就一定非空
+            cps = cut_points(think, fracs)      # if 1.0 is in fracs it's guaranteed non-empty
             nxt = gens.get(st + 1)
             nm = CODE_RE.search((nxt or {}).get("content") or "")
             nt = CALL_START.search(nm.group(1)) if nm else None
             next_call = complete_call(nm.group(1))[0] if nm else None
             cm = CALL_START.match(call)
             base = (g.get("usage") or {}).get("out")
-            # D12:采集时该步顶到 max_tokens=8192 的,基线 out 是被截的数,
-            # 省 token 的账对它不公平,标出来,score 里分开看
+            # D12: for steps that hit max_tokens=8192 at collection time, the baseline out count
+            # is truncated, so the token-savings accounting is unfair to them; flag them and look
+            # at them separately in score
             capped = base is not None and base >= MAX_STEP_TOKENS
             stat["baseline_capped"] += int(capped)
             stat["code_is_print_call"] += int(code == f"print({call})")
@@ -193,7 +210,7 @@ def cmd_events(a):
                 baseline_out_tok=base, baseline_capped=capped,
                 next_tool=(f"apis.{nt.group(1)}.{nt.group(2)}" if nt else None),
                 next_call=next_call,
-                # n0 的措辞对"裸 print(CALL)"之外的块不完全真;报告按这个分层
+                # n0's wording isn't fully accurate for blocks other than a bare "print(CALL)"; the report breaks this down
                 code_is_print_call=(code == f"print({call})"),
                 cuts=[dict(cut=c, fracs=fs) for c, fs in cps]))
             stat["kept"] += 1
@@ -211,7 +228,7 @@ def cmd_events(a):
 # ---------------------------------------------------------------- prompt
 
 def prefix_messages(ev, permit=False):
-    """该步之前的 chat 消息(照 run_appworld 拼法)。permit 在 system 末尾加预告句。"""
+    """The chat messages before this step (assembled the way run_appworld does it). permit adds a heads-up sentence at the end of system."""
     meta, gens, envs, _ = R.load_traj(Path(ev["traj_path"]))
     msgs = R.build_messages(meta, gens, envs, ev["step"])
     if permit:
@@ -221,9 +238,11 @@ def prefix_messages(ev, permit=False):
 
 
 def build_prompt(arm, ev, head, msgs, content):
-    """返回 (prompt_ids, prefix_len, splice_text)。
-    prefix_len = 前缀(止于 <|start|>assistant)的 token 数,之后的都算本轮的字节;
-    splice_text = 拼进去、但不是模型自己写的那截(记账 + 人眼核对)。"""
+    """Returns (prompt_ids, prefix_len, splice_text).
+    prefix_len = the token count of the prefix (ending at <|start|>assistant); everything
+    after counts as this turn's bytes;
+    splice_text = the spliced-in segment that the model did not write itself (for
+    accounting + eyeballing)."""
     where, kind, _ = ARMS[arm]
     prefix = H.render_ids(msgs, effort="high", start_date=R.COLLECT_DATE)
     if where == "p1":
@@ -232,22 +251,24 @@ def build_prompt(arm, ev, head, msgs, content):
         else:
             splice = sep_for(head) + note_body(kind, ev["call"], ev["code"],
                                                ev["result"]) + "\n"
-        # 控制标记与正文分开编码(特殊 token 本来就是分词边界,分开编与整串编
-        # 逐 id 相同),正文走 enc_plain 拒字面控制标记
+        # Control markers and body text are encoded separately (special tokens are already
+        # tokenizer boundaries, so encoding separately gives identical ids to encoding the
+        # whole string at once); the body text goes through enc_plain, which rejects literal
+        # control markers
         return prefix + enc(A_OPEN) + enc_plain(head + splice), len(prefix), splice
     if where == "p2":
         note = sep_for(head) + note_body(kind, ev["call"], ev["code"], ev["result"])
         splice = note + SWITCH
         return (prefix + enc(A_OPEN) + enc_plain(head + note) + enc(SWITCH),
                 len(prefix), splice)
-    # 结构臂:整段交 openai_harmony 渲染
+    # structural arms: hand the whole segment to openai_harmony to render
     from openai_harmony import (Author, Conversation, Message,
                                 RenderConversationConfig, Role, SystemContent,
                                 ReasoningEffort, ToolNamespaceConfig)
     hm = H.to_harmony_messages(msgs, effort="high", start_date=R.COLLECT_DATE)
-    body = head.rstrip()                    # D6:analysis 以模型自己的字收尾再 <|end|>
+    body = head.rstrip()                    # D6: analysis ends with the model's own text, then <|end|>
     for t in (body, content, ev["code"], ev["result"]):
-        enc_plain(t)                        # 同一道门:字面控制标记直接拒
+        enc_plain(t)                        # same gate: reject literal control markers outright
     cfg = RenderConversationConfig(auto_drop_analysis=False)
 
     def render(ms):
@@ -261,7 +282,7 @@ def build_prompt(arm, ev, head, msgs, content):
                Message.from_role_and_content(
                    Role.USER, f"Execution output:\n{ev['result']}")]
     elif where == "p4":
-        # D7:system 里声明 python 工具(训练格式的一部分)
+        # D7: declare the python tool in system (part of the training format)
         sysc = (SystemContent.new()
                 .with_reasoning_effort(ReasoningEffort.HIGH)
                 .with_conversation_start_date(R.COLLECT_DATE)
@@ -277,15 +298,16 @@ def build_prompt(arm, ev, head, msgs, content):
     else:
         raise ValueError(arm)
     n_added = 3
-    # 前缀 = 本臂自己的"到该步之前的历史"渲染(p4 的 system 多了工具声明,
-    # 所以不能拿文本臂的 prefix 长度充数);它渲染出来止于 <|start|>assistant,
-    # 正好是全串的前缀,断言钉死
+    # prefix = this arm's own rendering of "history up to before this step" (p4's system
+    # has an extra tool declaration, so the text arm's prefix length can't stand in for
+    # it); it renders out ending at <|start|>assistant, which is exactly the prefix of
+    # the whole string -- pin it down with an assert
     own_prefix = render(hm[:-n_added])
     ids = render(hm)
     if ids[:len(own_prefix)] != own_prefix:
-        raise RuntimeError(f"{arm}: 结构臂前缀不是全串前缀,渲染器行为变了")
+        raise RuntimeError(f"{arm}: the structure arm's prefix is not a prefix of the full string, the renderer's behavior changed")
     if where == "p3k" and own_prefix != prefix:
-        raise RuntimeError("p3k 前缀应与 chat 渲染逐 token 同")
+        raise RuntimeError("p3k's prefix should be token-for-token identical to the chat render")
     return ids, len(own_prefix), H.decode(ids[len(own_prefix):])
 
 
@@ -300,7 +322,7 @@ def post_json(url, payload, timeout, retries=4):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError:
-            raise                            # 400 之类不重试,原样往外抛
+            raise                            # don't retry on things like 400, re-raise as-is
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             if att == retries - 1:
                 raise
@@ -310,22 +332,22 @@ def post_json(url, payload, timeout, retries=4):
 
 def cmd_run(a):
     d = Path(a.run_dir)
-    # 采样键出自预设 client 节(--preset 缺省 default);temperature 只有这一个来源
+    # sampling keys come from the preset's client section (--preset defaults to default); temperature has this one source only
     root = str(HERE.parents[1])
     if root not in sys.path:
         sys.path.append(root)
     from preset_loader import load_preset, require_temperature   # noqa: E402
     pre = load_preset(a.preset)
     a.temperature = require_temperature(pre["client"]["temperature"], pre["_name"])
-    R.check_system_verbatim()               # run/score 也重建 prompt,同样回源核对
-    H.encoding()                            # 线程池之前先把编码器装好(懒加载不线程安全)
+    R.check_system_verbatim()               # run/score also rebuild the prompt, and verify against the source the same way
+    H.encoding()                            # get the encoder loaded before the thread pool starts (lazy loading isn't thread-safe)
     evs = [json.loads(l) for l in open(d / "events.jsonl")]
     if a.limit:
         evs = evs[:a.limit]
     arms = [x.strip() for x in a.arms.split(",") if x.strip()]
     bad = [x for x in arms if x not in ARMS]
     if bad:
-        raise SystemExit(f"未知 arm:{bad};可选 {ARMS_ALL}")
+        raise SystemExit(f"unknown arm: {bad}; options {ARMS_ALL}")
     rp = d / f"raw{a.tag}.jsonl"
     done = set()
     if rp.exists() and not a.dry_run:
@@ -337,8 +359,8 @@ def cmd_run(a):
                 pass
     todo = [(ev, c, arm) for ev in evs for c in ev["cuts"] for arm in arms
             if (ev["event"], c["cut"], arm) not in done]
-    print(f"事件 {len(evs)} 切口 {sum(len(e['cuts']) for e in evs)} x 臂 {arms}"
-          f";已有 {len(done)},待跑 {len(todo)},并发 {a.concurrency}", flush=True)
+    print(f"events {len(evs)} cuts {sum(len(e['cuts']) for e in evs)} x arms {arms}"
+          f"; already have {len(done)}, still to run {len(todo)}, concurrency {a.concurrency}", flush=True)
     if a.dry_run:
         todo = todo[:a.limit or 12]
 
@@ -364,11 +386,12 @@ def cmd_run(a):
                    prompt_tok=len(ids), prefix_tok=plen, head_tok=head_tok,
                    splice_tok=len(ids) - plen - head_tok, splice=splice)
         if a.dry_run:
-            # 只看缝:head 末尾 30 个 token 起到 prompt 末尾,再截 1200 字符
+            # only look at the seam: from 30 tokens before the end of head to the end of the prompt, then truncate to 1200 characters
             rec["prompt_tail"] = H.decode(ids[max(0, plen + head_tok - 30):])[:1200]
             return rec
-        # D11:<|call|> 已在模型 generation_config 的 eos 里,vLLM 默认对所有臂
-        # 都停(stop_reason=200012);这里再挂字符串停止符只是保险
+        # D11: <|call|> is already in the model's generation_config eos list, and vLLM stops
+        # every arm on it by default (stop_reason=200012); adding a string stop sequence here
+        # is just a safety net
         stop = list(DEFAULT_STOP) + [CALL_MARK]
         t0 = time.time()
         r = post_json(a.base_url.rstrip("/") + "/completions", dict(
@@ -410,16 +433,17 @@ def cmd_run(a):
                           f"ETA {left/60:.1f} min", flush=True)
     if sink:
         sink.close()
-        print(f"完成 {stat['n']}/{len(todo)};失败 {stat['fail']} -> {rp}")
+        print(f"finished {stat['n']}/{len(todo)}; failed {stat['fail']} -> {rp}")
     else:
-        print(f"dry-run 打印 {stat['n']} 条,没落盘")
+        print(f"dry-run printed {stat['n']} entries, wrote nothing to disk")
 
 
 # ---------------------------------------------------------------- score
 
-# 议论注入本身。"the note" 单独会误中 simple_note / "the notes app",所以只认
-# 带动词的搭配;"already ran" 单列(n1 措辞自带这三个词,nofill 里也可能自然出现,
-# 两边一起看)
+# discussing the injection itself. "the note" alone would false-hit on simple_note /
+# "the notes app", so only recognize it paired with a verb; "already ran" is listed
+# separately (n1's wording itself contains these three words, and they can also occur
+# naturally in nofill, look at both sides together)
 MENTION_RE = re.compile(
     r"system note|prefetch|the note says|note above|according to the note|"
     r"per the note|given the note|from the note", re.I)
@@ -428,38 +452,44 @@ STR_LIT_RE = re.compile(r"""(?:"([^"\\\n]{3,})"|'([^'\\\n]{3,})')""")
 
 
 def analyze(arm, splice, text):
-    """把拼接串 + 续写还原成整轮 assistant 文本,切成 (thinking, content)。
-    p1/nofill:整轮 = A_OPEN + head + splice + text(head 不在这里,只切 text 也
-    行——通道头在 splice 前面已经写在 prompt 里,text 从 analysis 内部开始);
-    p2:text 从 final 内部开始;p3k/p4:text 从 <|start|>assistant 之后开始。"""
+    """Reconstruct the splice string + continuation back into the full assistant turn text,
+    split into (thinking, content).
+    p1/nofill: the full turn = A_OPEN + head + splice + text (head isn't here; slicing
+    just text also works -- the channel header is already written into the prompt
+    before splice, and text starts inside analysis);
+    p2: text starts inside final; p3k/p4: text starts after <|start|>assistant."""
     where = ARMS[arm][0]
     if where == "p1":
-        return parse_step(A_OPEN + text)      # 头补回去,parse_step 认得
+        return parse_step(A_OPEN + text)      # add the header back, parse_step recognizes it
     if where == "p2":
-        think, content = parse_step(A_OPEN + splice + text)   # splice 末尾是 SWITCH
+        think, content = parse_step(A_OPEN + splice + text)   # splice ends with SWITCH
         note = splice[:-len(SWITCH)].strip()
         t = think.lstrip()
-        if note and t.startswith(note):       # 拼进去的 NOTE 不算模型"又想了"
+        if note and t.startswith(note):       # the spliced-in NOTE doesn't count as the model "thinking more"
             think = t[len(note):]
         return think, content
-    # p3k/p4:模型自己发起的 python 调用段(to=python … <|call|>)不是"想",剔掉再切;
-    # 它单独由 python_call_code 抽出来当动作
+    # p3k/p4: a python call segment the model initiates itself (to=python ... <|call|>)
+    # doesn't count as "thinking"; strip it out before slicing.
+    # it's extracted separately by python_call_code and counted as an action
     return parse_step(PY_CALL_RE.sub("", text))
 
 
-# 模型自己写的 python 调用段。实测(smoke)它写的是
+# A python call segment the model writes itself. Observed (smoke test), it writes
 # `<|start|>assistant<|channel|>analysis to=python code<|message|>CODE<|call|>`
-# (收件人在通道后、还带 " code"),harmony 库渲染的是 `<|start|>assistant to=python
-# <|channel|>analysis<|message|>`;两种都认:从 " to=python" 起吞到 <|call|>/文末,
-# 连带紧挨着的 <|start|>assistant / <|channel|>analysis 头
+# (the recipient comes after the channel, with an extra " code"), while the harmony
+# library renders `<|start|>assistant to=python
+# <|channel|>analysis<|message|>`; recognize both: consume from " to=python" through
+# <|call|>/end of text, including the adjacent <|start|>assistant / <|channel|>analysis
+# headers
 PY_CALL_RE = re.compile(
     r"(?:<\|start\|>assistant)?(?:<\|channel\|>analysis)? to=python.*?<\|message\|>"
     r".*?(?:<\|call\|>|$)", re.S)
 
 
 def python_call_code(text):
-    """模型自己发起的 python 调用(analysis 通道、收件人 python):`to=python` 之后
-    第一个 <|message|> 到 <|call|>/文末的那段代码;没有就 None。"""
+    """A python call the model initiates itself (analysis channel, recipient python): the
+    code from the first <|message|> after `to=python` through <|call|>/end of text;
+    None if there isn't one."""
     i = text.find(" to=python")
     if i < 0:
         return None
@@ -471,7 +501,7 @@ def python_call_code(text):
 
 
 def stopped_on_call(o):
-    """这条续写是不是停在 <|call|> 上(vLLM 记 int 200012;字符串停止符命中时记字符串)。"""
+    """Whether this continuation stopped on <|call|> (vLLM records the int 200012; a string stop sequence hit is recorded as a string)."""
     return o.get("stop_reason") in (CALL_ID, CALL_MARK)
 
 
@@ -494,7 +524,7 @@ def cmd_score(a):
     raw = {}
     for l in open(d / f"raw{a.tag}.jsonl"):
         o = json.loads(l)
-        raw[(o["event"], o["cut"], o["arm"])] = o        # 后写覆盖先写
+        raw[(o["event"], o["cut"], o["arm"])] = o        # later writes override earlier ones
     cache = {}
 
     def pre_text(ev, cut):
@@ -513,8 +543,9 @@ def cmd_score(a):
         think, content = analyze(arm, o["splice"], o["text"])
         m = CODE_RE.search(content)
         py_code = python_call_code(o["text"])
-        # 模型这一步的"动作":正文代码块;没有正文、但自己发了 python 调用
-        # (p4 的自然续写就是这样,harmony 把它放 analysis 通道)也算动作
+        # the model's "action" for this step: the body code block; if there's no body but it
+        # fires off a python call on its own (this is how p4's natural continuation works,
+        # harmony puts it in the analysis channel), that also counts as an action
         if m:
             code, action = m.group(1), "final_code"
         elif py_code is not None:
@@ -526,14 +557,14 @@ def cmd_score(a):
         pre = pre_text(ev, cut)
         lits = {x or y for x, y in STR_LIT_RE.findall(code)}
         used = sorted(s for s in lits if s in ev["result"] and s not in pre)
-        # 结构:p2 之后又开 analysis;任何臂停在 <|call|> 上(模型想叫工具)
+        # structure: opening analysis again after p2; any arm stopping on <|call|> (the model wants to call a tool)
         reopen = ("<|channel|>analysis" in o["text"]) if ARMS[arm][0] == "p2" \
             else None
         on_call = stopped_on_call(o)
         base = ev.get("baseline_out_tok")
-        own_tok = o["head_tok"] + o["gen_tok"]      # 模型自己写的(拼接串不算)
+        own_tok = o["head_tok"] + o["gen_tok"]      # written by the model itself (the splice string doesn't count)
         wire_tok = o["prompt_tok"] - o["prefix_tok"] + o["gen_tok"]
-        # 有动作才进 repeated/next_hit/advanced 的分母
+        # only events with an action enter the denominator for repeated/next_hit/advanced
         rep_tool = (tool == ev["call_tool"]) if tool else None
         rep_call = (norm_call(call_out) == norm_call(ev["call"])) if call_out else None
         nxt_tool = (tool == ev["next_tool"]) if tool and ev["next_tool"] else None
@@ -561,9 +592,11 @@ def cmd_score(a):
             python_call=(py_code is not None),
             think_chars_after=len(think.strip()), content_chars=len(content),
             finish_reason=o.get("finish_reason"), stop_reason=o.get("stop_reason")))
-    # 同事件同切口的 nofill 当参照:own_tok 差(拼接串不算)——比 baseline 更贴,
-    # baseline 的 usage.out 里 commentary 段与消息头的账对不齐(体检线会有几个
-    # token 的常数偏移,别当管线错)
+    # use nofill from the same event and same cut as the reference: the own_tok
+    # difference (the splice string doesn't count) -- this is a tighter fit than
+    # baseline, whose usage.out doesn't reconcile the commentary segment against the
+    # message header accounting (the sanity-check line will show a constant offset of a
+    # few tokens, don't treat that as a pipeline bug)
     nof = {(r["event"], r["cut"]): r["own_tok"] for r in rows if r["arm"] == "nofill"}
     for r in rows:
         n = nof.get((r["event"], r["cut"]))
@@ -617,7 +650,7 @@ def cmd_score(a):
                by_arm={k: agg(v) for k, v in by_arm.items()},
                by_arm_uncapped={k: agg([r for r in v if not r["baseline_capped"]])
                                 for k, v in by_arm.items()},
-               # n0 措辞只对裸 print(CALL) 的块句句为真,分层看
+               # n0's wording is only accurate for bare print(CALL) blocks, look at it broken down
                by_arm_print_call={k: agg([r for r in v if r["code_is_print_call"]])
                                   for k, v in by_arm.items()},
                by_arm_not_print_call={k: agg([r for r in v if not r["code_is_print_call"]])
@@ -663,8 +696,8 @@ def main():
     r.add_argument("--base-url", default="http://tokyo108:8103/v1")
     r.add_argument("--model", default="gpt-oss-120b")
     r.add_argument("--preset", default="default",
-                   help="configs/presets/<名>.json 的一套生成设置;"
-                        "续写的 temperature 从这份预设的 client 节读")
+                   help="a set of generation settings from configs/presets/<name>.json;"
+                        "the continuation's temperature is read from this preset's client section")
     r.add_argument("--arms", default=",".join(ARMS_ALL))
     r.add_argument("--max-tokens", type=int, default=MAX_STEP_TOKENS)   # D8
     r.add_argument("--concurrency", type=int, default=16)

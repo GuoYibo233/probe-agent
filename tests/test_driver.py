@@ -1,10 +1,14 @@
-"""pipeline/driver.py 的状态机边界测试(设计稿 §7 的七条)。
+"""Boundary tests for pipeline/driver.py's state machine (the seven items in design draft section 7).
 
-驱动器自己不碰真机器:探测与子进程全在 `driver.Probes` 的注入点上,这里把它们
-换成假函数,拿一棵临时目录树当仓库根,把整条状态机干跑一遍——初始态推进、
-脏树拒绝发射、smoke 判据、a1 停点、G6 完整性、状态文件拒绝覆盖、--status 只读。
+The driver itself never touches real machines: probing and subprocesses all go
+through the injection points on `driver.Probes`; here they're swapped for fake
+functions, a temporary directory tree stands in as the repo root, and the whole
+state machine is run through dry -- initial-state advancement, dirty-tree
+launch rejection, smoke criteria, the a1 stopping point, G6 completeness,
+state-file overwrite rejection, --status being read-only.
 
-假件里要造 id 一律用 zlib.crc32(repo 既有约定,不用内置 hash())。
+Fakes always build ids with zlib.crc32 (the repo's existing convention, not the
+built-in hash()).
 """
 import io
 import json
@@ -27,7 +31,7 @@ def fake_tid(i):
 
 
 def write_traj(path, tid, seed, steps=5, final=True):
-    """一条假轨迹:首行 meta(带 gen_settings.seed),末行 final。"""
+    """A fake trajectory: first line is meta (with gen_settings.seed), last line is final."""
     lines = [json.dumps({"env": "appworld", "task_id": tid,
                          "model": "gpt-oss-120b", "instruction": "x",
                          "preset": "default",
@@ -42,8 +46,9 @@ def write_traj(path, tid, seed, steps=5, final=True):
 
 
 class DriverCase(unittest.TestCase):
-    """一棵临时目录树当仓库根:ROOT / LOG_ROOT / RUNS_DIR / SERVE_LOG_DIR 四个
-    模块常量都指过去,真仓库一个字节都不碰。"""
+    """A temporary directory tree stands in as the repo root: the four module
+    constants ROOT / LOG_ROOT / RUNS_DIR / SERVE_LOG_DIR all point there; the real
+    repo isn't touched by a single byte."""
 
     n_units = 3
     k = 4
@@ -66,13 +71,13 @@ class DriverCase(unittest.TestCase):
         d.mkdir(parents=True)
         for i, sp in enumerate(SPLITS):
             f = d / f"{sp}.txt"
-            f.write_text(self.tids[i])          # 一堆一题,题单无末尾换行
+            f.write_text(self.tids[i])          # one task per batch, task list has no trailing newline
             self.split_files[sp] = str(f)
         self.data_out = self.root / "data" / "nyapass_aw_v1" / "gptoss"
         self.cfg_path = self.write_cfg()
         self.manifest_path = self.write_manifest()
 
-    # ---- 假配置 ----
+    # ---- fake config ----
 
     def write_cfg(self, **over):
         cfg = {"run_family": "nyapass_aw_v1", "env": "appworld",
@@ -108,7 +113,7 @@ class DriverCase(unittest.TestCase):
         p.write_text(json.dumps(mf, ensure_ascii=False))
         return p
 
-    # ---- 假件 ----
+    # ---- fakes ----
 
     def make_gen_files(self):
         d = self.root / "envs" / "runs" / "nyapass"
@@ -121,11 +126,12 @@ class DriverCase(unittest.TestCase):
         return D.load_cfg(self.cfg_path)
 
     def probes(self, **kw):
-        """全部注入点先钉成"会当场炸"的默认值,用例只放开自己要用的那几个——
-        忘了注入就会炸出来,而不是悄悄走真探测。"""
+        """All injection points are first pinned to defaults that "blow up on the spot";
+        the test case only opens up the few it actually needs -- forgetting to inject
+        blows up loudly instead of silently falling through to real probing."""
         def boom(name):
             def _f(*a, **k):
-                raise AssertionError(f"用例没注入 {name},却被调用了")
+                raise AssertionError(f"test case did not inject {name}, yet it was called")
             return _f
         base = {n: boom(n) for n in
                 ("git_dirty", "probe_free", "has_session", "local_host",
@@ -165,7 +171,7 @@ class TestStepTable(DriverCase):
 
 
 class TestCollectHead(DriverCase):
-    """设计稿 §7 测试项 1/2:c1 完成 -> c2 脏树 blocked -> 干净树发射退 3。"""
+    """Design draft section 7, test items 1/2: c1 completes -> c2 dirty tree blocked -> clean-tree launch exits 3."""
 
     def test_c1_done_then_c2_blocked_on_dirty_tree(self):
         self.make_gen_files()
@@ -179,7 +185,7 @@ class TestCollectHead(DriverCase):
         with patch.object(D, "git_dirty", lambda: [" M pipeline/driver.py"]):
             code, out = self.run_main("--config", str(self.cfg_path))
         self.assertEqual(code, 1)
-        st = self.read_state()          # 落盘且可重读
+        st = self.read_state()          # written to disk and re-readable
         self.assertEqual(st["step"], "c2_servers")
         self.assertEqual(st["status"], "blocked")
         self.assertIn("commit", st["reason"])
@@ -207,8 +213,9 @@ class TestCollectHead(DriverCase):
         self.assertEqual(calls[0][1], str(D.run_dir(cfg)))
 
     def test_c2_skips_probe_when_sessions_already_up(self):
-        """session 存在性必须排在探卡前:服务起来后自己占卡,顺序反了会把
-        已经发射好的批次永远挡在 blocked 上。"""
+        """Session existence must be checked before probing cards: once the service is
+        up it occupies the card itself; getting the order backwards would leave an
+        already-launched batch stuck on blocked forever."""
         cfg = self.cfg()
         pr = self.probes(git_dirty=lambda: [],
                          has_session=lambda h, s: True)
@@ -220,17 +227,19 @@ class TestCollectHead(DriverCase):
         cfg = self.cfg()
         pr = self.probes(git_dirty=lambda: [],
                          has_session=lambda h, s: False,
-                         probe_free=lambda h, g: (False, "占用中: 12345, 8MiB"))
+                         probe_free=lambda h, g: (False, "busy: 12345, 8MiB"))
         ev, code = D.step_c2_servers(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
         self.assertIn("G2", ev["event"])
-        self.assertIn("占用中", ev["detail"])
+        self.assertIn("busy", ev["detail"])
 
 
 class TestServerHealth(DriverCase):
-    """c3_health:日志见 startup complete 才算健康。日志里还没有那句话时,按
-    tmux session 死活分叉——session 还在算 warm-up 继续等,探不到就 blocked,
-    不跟 warm-up 挤同一个出口无限等(评审 C8)。"""
+    """c3_health: only counts as healthy once the log shows startup complete. When
+    the log doesn't have that line yet, branch on whether the tmux session is
+    alive -- session still alive counts as warm-up and keeps waiting, session
+    gone means blocked; it doesn't share the same exit with warm-up and wait
+    forever (review C8)."""
 
     def servers(self):
         return json.loads(self.manifest_path.read_text())["servers"]
@@ -239,8 +248,8 @@ class TestServerHealth(DriverCase):
         s = self.servers()[idx]
         p = D.SERVE_LOG_DIR / f"{s['session']}.log"
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(f"INFO 起了\n{D.HEALTH_MARK}\n" if healthy
-                     else "INFO 正在装权重\n")
+        p.write_text(f"INFO started\n{D.HEALTH_MARK}\n" if healthy
+                     else "INFO loading weights\n")
         return s
 
     def test_c3_advances_when_every_instance_is_green(self):
@@ -260,7 +269,7 @@ class TestServerHealth(DriverCase):
         self.assertEqual(code, 0)
         self.assertEqual(ev["status"], "ready")
         self.assertFalse(ev["advance"])
-        self.assertIn("warm-up", ev["detail"])
+        self.assertIn("warming up and wait", ev["detail"])
 
     def test_c3_blocked_when_the_session_is_gone(self):
         s = self.write_serve_log(0, healthy=False)
@@ -269,9 +278,9 @@ class TestServerHealth(DriverCase):
                          http_get=lambda u, **k: (True, "{}"))
         ev, code = D.step_c3_health(self.cfg(), D.fresh_state(self.cfg()), pr)
         self.assertEqual(code, 1)
-        self.assertIn("探不到", ev["event"])
-        self.assertIn(s["session"], ev["detail"])          # 死的是哪个
-        self.assertIn(f"{s['session']}.log", ev["detail"])  # 去哪读日志
+        self.assertIn("session cannot be found", ev["event"])
+        self.assertIn(s["session"], ev["detail"])          # which one died
+        self.assertIn(f"{s['session']}.log", ev["detail"])  # where to read the log
         self.assertIn("launch_servers.py", ev["detail"])
 
     def test_c3_waits_when_only_the_http_probe_is_silent(self):
@@ -285,11 +294,12 @@ class TestServerHealth(DriverCase):
 
 
 class TestManifestHash(DriverCase):
-    """评审 C9:三件发射物是照哪一份 manifest 生成的,真正去跑它们的 c2/c5
-    要对得上——manifest 改了卡号却忘了 --force 重生成,当场拦住。"""
+    """Review C9: which manifest the three launch artifacts were generated from
+    must match the c2/c5 that actually run them -- if the manifest's card number
+    changed but --force regeneration was forgotten, catch it on the spot."""
 
     def primed(self):
-        """c1 认领已有生成物,顺手把 manifest 的 sha1 记进状态。"""
+        """c1 claims existing outputs, and while at it records the manifest's sha1 into the state."""
         self.make_gen_files()
         cfg = self.cfg()
         st = D.fresh_state(cfg)
@@ -331,7 +341,7 @@ class TestManifestHash(DriverCase):
 
     def test_c2_backfills_a_missing_hash_instead_of_blocking(self):
         cfg = self.cfg()
-        st = D.fresh_state(cfg)             # 老状态文件里没有这个键
+        st = D.fresh_state(cfg)             # the old state file doesn't have this key
         self.assertNotIn("manifest_sha1", st)
         pr = self.probes(git_dirty=lambda: [], has_session=lambda h, s: True)
         ev, code = D.step_c2_servers(cfg, st, pr)
@@ -360,7 +370,7 @@ class TestManifestHash(DriverCase):
 
 
 class TestSmokeGate(DriverCase):
-    """设计稿 §7 测试项 3:c4 的 G4 判据。"""
+    """Design draft section 7, test item 3: c4's G4 criterion."""
 
     def write_smoke(self, cfg, seeds=None, n=None, final=True):
         d = D.smoke_dir(cfg)
@@ -384,7 +394,7 @@ class TestSmokeGate(DriverCase):
         pr = self.probes(run_cmd=lambda *a, **k: (0, ""))
         ev, code = D.step_c4_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("3 个轨迹文件", ev["detail"])
+        self.assertIn("3 trajectory files", ev["detail"])
 
     def test_c4_blocked_when_seed_is_wrong(self):
         cfg = self.cfg()
@@ -401,26 +411,28 @@ class TestSmokeGate(DriverCase):
         pr = self.probes(run_cmd=lambda *a, **k: (0, ""))
         ev, code = D.step_c4_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("末行不是 type=final", ev["detail"])
+        self.assertIn("last line is not type=final", ev["detail"])
 
     def test_c4_blocked_when_the_seed_table_is_short(self):
-        """种子表比 K 短:给那条准备好的 blocked,不许抛 IndexError(评审 C10)。
-        场景是上一轮用完整种子表跑出了 4 个文件,人手改配置时漏掉两个种子。"""
+        """Seed table shorter than K: return blocked for that entry that's ready, must
+        not raise IndexError (review C10). The scenario is a previous round that
+        produced 4 files with a full seed table, and a manual config edit dropped two
+        seeds."""
         self.write_cfg(collect={"manifest": "manifest.json",
                                 "run_id": "nyapass", "seeds": [42, 67]})
         cfg = self.cfg()
         self.write_smoke(cfg, seeds=[42, 67, 4267, 6742])
         ev, code = D.step_c4_smoke(cfg, D.fresh_state(cfg), self.probes())
         self.assertEqual(code, 1)
-        self.assertIn("种子表", ev["event"])
-        self.assertIn("2 个", ev["detail"])
+        self.assertIn("seed table", ev["event"])
+        self.assertIn("2", ev["detail"])
 
     def test_smoke_traj_check_does_not_index_past_the_seed_table(self):
         cfg = self.cfg()
         d = self.write_smoke(cfg)
         ok, why = D.smoke_traj_check(d, self.k, [42, 67], "appworld")
         self.assertFalse(ok)
-        self.assertIn("种子表", why)
+        self.assertIn("seed table", why)
 
     def test_c4_command_carries_multisample_flags(self):
         cfg = self.cfg()
@@ -444,7 +456,7 @@ class TestSmokeGate(DriverCase):
 
 
 class TestCollectDone(DriverCase):
-    """设计稿 §7 测试项 5:c6 的 G6/G7。"""
+    """Design draft section 7, test item 5: c6's G6/G7."""
 
     def fill_outdir(self, cfg, n_units=None, k=None):
         d = D.outdir_of(cfg)
@@ -485,7 +497,7 @@ class TestCollectDone(DriverCase):
                          has_session=lambda h, s: False)
         ev, code = D.step_c6_done(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("8 个轨迹文件", ev["detail"])
+        self.assertIn("8 trajectory files", ev["detail"])
         self.assertIn("--resume", ev["detail"])
 
     def test_c6_waits_while_clients_alive(self):
@@ -496,7 +508,7 @@ class TestCollectDone(DriverCase):
         ev, code = D.step_c6_done(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 0)
         self.assertFalse(ev["advance"])
-        self.assertIn("还活着", ev["detail"])
+        self.assertIn("still alive", ev["detail"])
 
     def test_c6_blocked_when_gpu_memory_not_free(self):
         cfg = self.cfg()
@@ -517,11 +529,11 @@ class TestCollectDone(DriverCase):
                          gpu_used_mb=lambda h, g: None)
         ev, code = D.step_c6_done(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("探不动", ev["detail"])
+        self.assertIn("GPU memory cannot be probed", ev["detail"])
 
 
 class TestAnnotateStop(DriverCase):
-    """设计稿 §7 测试项 4:a1 的 max_bounds 停点。"""
+    """Design draft section 7, test item 4: a1's max_bounds stopping point."""
 
     def test_a1_awaits_decision_without_max_bounds(self):
         cfg = self.cfg()
@@ -552,7 +564,7 @@ class TestAnnotateStop(DriverCase):
 
 
 class TestStateFile(DriverCase):
-    """设计稿 §7 测试项 6/7:状态文件拒绝覆盖 + --status 只读。"""
+    """Design draft section 7, test items 6/7: state-file overwrite rejection + --status read-only."""
 
     def prime(self):
         self.make_gen_files()
@@ -563,11 +575,11 @@ class TestStateFile(DriverCase):
 
     def test_refuses_corrupt_state(self):
         p = self.prime()
-        p.write_text("{ 这不是 json")
+        p.write_text("{ this isn't json")
         with self.assertRaises(SystemExit) as cm:
             self.run_main("--config", str(self.cfg_path))
-        self.assertIn("读不动", str(cm.exception))
-        self.assertEqual(p.read_text(), "{ 这不是 json")   # 没被覆盖
+        self.assertIn("cannot read state file", str(cm.exception))
+        self.assertEqual(p.read_text(), "{ this isn't json")   # wasn't overwritten
 
     def test_refuses_state_with_unknown_step(self):
         p = self.prime()
@@ -576,16 +588,16 @@ class TestStateFile(DriverCase):
         p.write_text(json.dumps(st))
         with self.assertRaises(SystemExit) as cm:
             self.run_main("--config", str(self.cfg_path))
-        self.assertIn("步骤名不认识", str(cm.exception))
+        self.assertIn("unrecognized step name", str(cm.exception))
 
     def test_refuses_state_of_another_batch(self):
-        """批次身份换了(照 run.py recipe 的 params 一致性先例):拒绝覆盖。"""
+        """The batch identity changed (following run.py recipe's params-consistency precedent): reject the overwrite."""
         p = self.prime()
         before = p.read_text()
         self.write_cfg(model_full="gpt-oss-20b")
         with self.assertRaises(SystemExit) as cm:
             self.run_main("--config", str(self.cfg_path))
-        self.assertIn("拒绝覆盖", str(cm.exception))
+        self.assertIn("refusing to overwrite", str(cm.exception))
         self.assertEqual(p.read_text(), before)
 
     def test_status_is_read_only(self):
@@ -598,14 +610,14 @@ class TestStateFile(DriverCase):
         self.assertIn("nyapass_aw_v1", out)
 
     def test_status_shows_launch_markers(self):
-        """标记是人要动的东西(死掉的批次得靠人删),--status 就得印出来。"""
+        """Marks something that needs a human to act on it (a dead batch has to be deleted by a human), so --status must print it."""
         p = self.prime()
         st = json.loads(p.read_text())
         D.mark_launched(st, D.launch_key("t2_full", "np821b06"), "full")
         p.write_text(json.dumps(st, ensure_ascii=False))
         code, out = self.run_main("--config", str(self.cfg_path), "--status")
         self.assertEqual(code, 0)
-        self.assertIn("发射标记", out)
+        self.assertIn("launch marker", out)
         self.assertIn("t2_full:np821b06", out)
 
     def test_status_on_fresh_run_writes_nothing(self):
@@ -623,7 +635,7 @@ class TestStateFile(DriverCase):
     def test_unknown_flag_is_refused(self):
         with self.assertRaises(SystemExit) as cm:
             self.run_main("--config", str(self.cfg_path), "--force")
-        self.assertIn("不认识的参数", str(cm.exception))
+        self.assertIn("unrecognized argument", str(cm.exception))
 
 
 class TestGenStep(DriverCase):
@@ -660,15 +672,16 @@ class TestHelpers(DriverCase):
                          ["new1_nyapass_gptr_s0", "new1_nyapass_gptr_s1"])
 
     def test_pct_matches_the_build_report_definition(self):
-        """驱动器印的 p50/p90/p99 与 ANNOTATE_REPORT 存档的必须是同一个数:
-        两边都用下标式 floor(评审 C4;原来 driver 是 ceil 最近秩,q*n 是整数时
-        与 build 差一格)。"""
+        """The p50/p90/p99 the driver prints and the ones archived in ANNOTATE_REPORT
+        must be the same numbers: both sides use index-style floor (review C4; the
+        driver used to do ceil-nearest-rank, which was off by one slot from build
+        when q*n is an integer)."""
         s = list(range(1, 101))
         self.assertEqual(D.pct(s, 0.5), 51)
         self.assertEqual(D.pct(s, 0.9), 91)
         self.assertEqual(D.pct(s, 0.99), 100)
 
-        def q(vals, p):        # pipeline/annotate/build.py:468 的 q(),逐字抄
+        def q(vals, p):        # q() from pipeline/annotate/build.py:468, copied verbatim
             return vals[min(len(vals) - 1, int(len(vals) * p))]
 
         for n in (1, 2, 3, 7, 10, 20, 100, 137, 1000):
@@ -682,7 +695,7 @@ class TestHelpers(DriverCase):
         head = "a" * (1 << 20) + mark[:5]
         p.write_text(head + mark[5:] + "\nrest\n")
         self.assertTrue(D.file_contains(p, mark))
-        self.assertFalse(D.file_contains(p, "没有这句话"))
+        self.assertFalse(D.file_contains(p, "this sentence isn't there"))
 
     def test_placement_paths_are_per_batch(self):
         cfg = self.cfg()
@@ -692,8 +705,9 @@ class TestHelpers(DriverCase):
                         .endswith("ops/np821b06_eval_tool_placement.json"))
 
     def test_run_dir_honors_manifest_envs_root(self):
-        # gen_launch 尊重 manifest 的 envs_root 覆盖,驱动器的完成判据必须
-        # 找同一个位置(空转验收 2026-08-22 抓到的真 bug:曾写死 ROOT/envs)
+        # gen_launch honors the manifest's envs_root override, the driver's completion
+        # criterion must look in the same place (a real bug caught by the 2026-08-22
+        # dry-run acceptance check: it used to hardcode ROOT/envs)
         other = self.root / "elsewhere"
         mf = json.loads(self.manifest_path.read_text())
         mf["envs_root"] = str(other)
@@ -717,12 +731,12 @@ class TestHelpers(DriverCase):
         (run / "REPLAY_REPORT.json").write_text(
             json.dumps({"chosen_theta": {"0.05": None, "0.1": 0.9}}))
         self.assertFalse(D.theta_all_null(run))
-        (run / "REPLAY_REPORT.json").write_text("坏文件")
+        (run / "REPLAY_REPORT.json").write_text("bad file")
         self.assertFalse(D.theta_all_null(run))
 
 
 class TestClientLaunch(DriverCase):
-    """c5:发射客户端分片 + G16 三处登记(已登记的跳过)。"""
+    """c5: launches client pieces + G16 the three registrations (already-registered ones are skipped)."""
 
     def test_c5_fires_and_registers_three_places(self):
         cfg = self.cfg()
@@ -760,9 +774,9 @@ class TestClientLaunch(DriverCase):
                          run_cmd=lambda a, **k: (seen.append([str(x) for x in a])
                                                  or (0, "")))
         ev, code = D.step_c5_clients(cfg, D.fresh_state(cfg), pr)
-        self.assertEqual(code, 0)             # 没发射就不是 3
+        self.assertEqual(code, 0)             # not 3 if nothing was launched
         self.assertTrue(ev["advance"])
-        # 只剩 RUNMETA 那一条(append 不覆盖,重复补一条是既定行为)
+        # only the RUNMETA entry remains (append doesn't overwrite; adding a duplicate entry is expected behavior)
         self.assertEqual(len(seen), 1)
         self.assertIn("runmeta", seen[0])
 
@@ -775,7 +789,7 @@ class TestClientLaunch(DriverCase):
 
 
 class TestAnnotateBuildGates(DriverCase):
-    """a2/a3:产物齐不齐 + G9 题单 + 逐字节重建对比。"""
+    """a2/a3: whether the outputs are complete + G9 task list + byte-for-byte rebuild comparison."""
 
     def make_artifacts(self):
         out = self.data_out
@@ -811,7 +825,7 @@ class TestAnnotateBuildGates(DriverCase):
         pr = self.probes(run_cmd=lambda a, **k: (0, ""))
         ev, code = D.step_a2_build(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("产物不齐", ev["event"])
+        self.assertIn("the artifacts are incomplete", ev["event"])
 
     def test_a3_passes_when_rebuild_is_byte_identical(self):
         self.make_artifacts()
@@ -828,7 +842,7 @@ class TestAnnotateBuildGates(DriverCase):
         cfg = self.cfg()
 
         def fake_run(argv, cwd=None, log=None, env=None):
-            (self.data_out / "train.jsonl").write_text("重建出来不一样\n")
+            (self.data_out / "train.jsonl").write_text("rebuilt result differs\n")
             return 0, ""
 
         ev, code = D.step_a3_gates(cfg, D.fresh_state(cfg),
@@ -836,7 +850,7 @@ class TestAnnotateBuildGates(DriverCase):
         self.assertEqual(code, 1)
         self.assertIn("train.jsonl", ev["detail"])
         ref = self.data_out.parent / f"{self.data_out.name}_rebuild_ref"
-        self.assertTrue(ref.is_dir())          # 证据留着
+        self.assertTrue(ref.is_dir())          # keep the evidence
         self.assertEqual((ref / "train.jsonl").read_text(),
                          "content of train.jsonl\n")
 
@@ -846,7 +860,7 @@ class TestAnnotateBuildGates(DriverCase):
         cfg = self.cfg()
         ev, code = D.step_a3_gates(cfg, D.fresh_state(cfg), self.probes())
         self.assertEqual(code, 1)
-        self.assertIn("备份还在", ev["event"])
+        self.assertIn("the backup from the last rebuild comparison is still there", ev["event"])
 
     def test_a3_blocked_when_a_task_id_is_in_two_splits(self):
         self.make_artifacts()
@@ -854,7 +868,7 @@ class TestAnnotateBuildGates(DriverCase):
         cfg = self.cfg()
         ev, code = D.step_a3_gates(cfg, D.fresh_state(cfg), self.probes())
         self.assertEqual(code, 1)
-        self.assertIn("同时在", ev["detail"])
+        self.assertIn("is in both train and val piles", ev["detail"])
 
     def test_a3_blocked_when_qa_sample_is_missing(self):
         self.make_artifacts()
@@ -866,8 +880,10 @@ class TestAnnotateBuildGates(DriverCase):
 
 
 class TestLaterStages(DriverCase):
-    """t1..m1 的转移逻辑(判据用假产物,发射用假 run_cmd)。这几步真跑在执行块,
-    这里钉的是"判据不过就 blocked、不放行"和"一次调用只发一批"。"""
+    """The transition logic for t1..m1 (criteria use fake outputs, launching uses a
+    fake run_cmd). These steps actually run in the execution block; what's pinned
+    down here is "blocked and no green light when the criteria aren't met" and
+    "one call launches only one batch"."""
 
     batch = "np821b06"
     cells = ("ctool", "cgen", "cparam")
@@ -877,9 +893,11 @@ class TestLaterStages(DriverCase):
 
     def write_train_log(self, d, losses, done=False, align=None,
                         start=True, best=False):
-        """一份假 train_log.jsonl。`losses` 给几个数就写几条 event=step 记录——
-        真跑起来每 50 个优化步才写一条,smoke 只跑 6~16 步,所以现实里的 smoke
-        日志通常是零条(评审 C6),这里的条数就照"实际落盘几条"造。"""
+        """A fake train_log.jsonl. However many numbers `losses` is given, that many
+        event=step records get written -- in a real run one gets written only every
+        50 optimizer steps, and smoke only runs 6-16 steps, so in reality the smoke
+        log usually has zero of them (review C6); the count here is built to match
+        "however many actually get written to disk"."""
         d.mkdir(parents=True, exist_ok=True)
         rows = [{"event": "start", "steps": len(losses)}] if start else []
         rows += [{"event": "step", "ep": 0, "gstep": i + 1, "loss": x}
@@ -898,8 +916,8 @@ class TestLaterStages(DriverCase):
         return D.RUNS_DIR / "smoke" / f"{self.rid(cell)}_smoke"
 
     def make_smokes(self, ok=True, losses=None, **over):
-        """三格 smoke 的假产物。缺省 = 一次跑通的样子:start + done + best/,
-        ctool 另有 ALIGN_CHECK PASS。"""
+        """Fake outputs for the three-cell smoke test. Default = what one clean run
+        looks like: start + done + best/, ctool additionally has ALIGN_CHECK PASS."""
         for c in self.cells:
             opts = dict(done=True, best=True,
                         align=True if c == "ctool" else None)
@@ -934,27 +952,28 @@ class TestLaterStages(DriverCase):
         self.make_smokes(ok=False)
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("loss 没降", ev["detail"])
+        self.assertIn("loss did not drop", ev["detail"])
         self.make_smokes(ok=True)
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 0)
         self.assertTrue(ev["advance"])
 
     def test_t1_passes_with_zero_step_records(self):
-        """现实里的 smoke 日志一条 event=step 都没有(每 50 个优化步才写一条,
-        smoke 只跑 6~16 步):start + done + best/ 齐就算过,detail 里记一句
-        loss 序列太短没判(评审 C6)。"""
+        """In reality the smoke log has zero event=step entries (one gets written only
+        every 50 optimizer steps, and smoke only runs 6-16 steps): start + done +
+        best/ all being present counts as passing, and detail records a line saying
+        the loss sequence was too short to judge (review C6)."""
         cfg = self.cfg()
         self.make_smokes(losses=[])
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg),
                                    self.probes(git_dirty=lambda: []))
         self.assertEqual(code, 0, ev["detail"])
         self.assertTrue(ev["advance"])
-        self.assertIn("太短", ev["detail"])
-        self.assertIn("0 条 event=step", ev["detail"])
+        self.assertIn("too short", ev["detail"])
+        self.assertIn("only 0 event=step records", ev["detail"])
 
     def test_t1_blocked_when_done_is_missing(self):
-        """跑完 = train_log 里有 event=done。缺 done 一律不许放行。"""
+        """Done = train_log has an event=done entry. Missing done never gets a green light."""
         cfg = self.cfg()
         self.make_smokes(losses=[], done=False)
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg),
@@ -968,7 +987,7 @@ class TestLaterStages(DriverCase):
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg),
                                    self.probes(git_dirty=lambda: []))
         self.assertEqual(code, 1)
-        self.assertIn("best 不在", ev["detail"])
+        self.assertIn("does not exist", ev["detail"])
 
     def test_t1_blocked_when_start_is_missing(self):
         cfg = self.cfg()
@@ -989,21 +1008,21 @@ class TestLaterStages(DriverCase):
         self.assertIn("PASS=False", ev["detail"])
 
     def test_t1_loss_check_only_engages_from_two_step_records(self):
-        """一条记录:不判降没降,过。两条且没降:拦。"""
+        """One record: don't judge whether it dropped, pass. Two records and it didn't drop: block."""
         cfg = self.cfg()
         pr = self.probes(git_dirty=lambda: [])
         self.make_smokes(losses=[9.9])
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 0, ev["detail"])
-        self.assertIn("1 条 event=step", ev["detail"])
+        self.assertIn("only 1 event=step records", ev["detail"])
         self.make_smokes(losses=[1.0, 2.0])
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 1)
-        self.assertIn("loss 没降", ev["detail"])
+        self.assertIn("loss did not drop", ev["detail"])
         self.make_smokes(losses=[2.0, 1.5, 1.0])
         ev, code = D.step_t1_smoke(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 0, ev["detail"])
-        self.assertNotIn("太短", ev["detail"])
+        self.assertNotIn("too short", ev["detail"])
 
     def test_t1_blocked_on_dirty_tree_before_anything_else(self):
         cfg = self.cfg()
@@ -1022,7 +1041,7 @@ class TestLaterStages(DriverCase):
                                                  or (0, "")))
         ev, code = D.step_t2_full(cfg, D.fresh_state(cfg), pr)
         self.assertEqual(code, 3)
-        self.assertFalse(ev["advance"])       # 指针不动,等跑完再敲
+        self.assertFalse(ev["advance"])       # pointer doesn't move, check again once it's done
         self.assertIn("launch-probe", seen[0])
         self.assertIn("full", seen[0])
 
@@ -1045,10 +1064,10 @@ class TestLaterStages(DriverCase):
         self.make_full_runs(done=False)
         pr = self.probes(git_dirty=lambda: [])
         ev, code = D.step_t2_full(cfg, D.fresh_state(cfg), pr)
-        self.assertEqual(code, 1)             # 没排卡表 -> blocked,不是放行
+        self.assertEqual(code, 1)             # no card schedule -> blocked, not a green light
         self.assertIn("_placement.json", ev["detail"])
 
-    # ---- 发射标记(评审 C2/C7):同一批只发一次,发过就只等不重发 ----
+    # ---- launch marker (review C2/C7): the same batch launches only once, once launched it only waits and doesn't relaunch ----
 
     def test_t2_marks_the_launch_and_never_relaunches_the_same_batch(self):
         cfg = self.cfg()
@@ -1062,13 +1081,14 @@ class TestLaterStages(DriverCase):
         self.assertEqual(code, 3)
         self.assertEqual(len(seen), 1)
         self.assertIn(D.launch_key("t2_full", self.batch), st["launched"])
-        # 第二次敲:判据还没满足、标记在 -> 等待退 0,launcher 一次都不许再调
-        # (self.probes() 的 run_cmd 是"被调用就炸"的假件)
+        # Second check: criteria still not met, marker present -> wait, exit 0,
+        # launcher must not be called again even once (self.probes()'s run_cmd is a
+        # fake that blows up if called)
         ev, code = D.step_t2_full(cfg, st, self.probes(git_dirty=lambda: []))
         self.assertEqual(code, 0)
         self.assertEqual(ev["status"], "ready")
         self.assertFalse(ev["advance"])
-        self.assertIn("不重发", ev["event"])      # 不是"本次已发射"那句假账
+        self.assertIn("not relaunching this time", ev["event"])      # not the fake "already launched this time" line
         self.assertIn("gpu-jobs", ev["detail"])
         self.assertEqual(len(seen), 1)
 
@@ -1106,7 +1126,7 @@ class TestLaterStages(DriverCase):
         self.assertFalse(ev["advance"])
         self.assertIn("gpu-jobs", ev["detail"])
         self.assertEqual(len(seen), 1)
-        # 报告出来了就照推进,标记在不在都不管
+        # once the report is out, advance regardless, marker present or not doesn't matter
         d = D.RUNS_DIR / self.rid("ctool")
         d.mkdir(parents=True, exist_ok=True)
         (d / "REPLAY_REPORT.json").write_text(
@@ -1256,15 +1276,15 @@ class TestLaterStages(DriverCase):
         ev, code = D.step_m1_matrix(cfg, D.fresh_state(cfg),
                                     self.probes(run_cmd=fake_run))
         self.assertEqual(code, 0)
-        self.assertEqual(len(seen), 2)        # 一批 x 两个风险档
+        self.assertEqual(len(seen), 2)        # one batch x two risk profiles
         risks = sorted(a[a.index("--risk") + 1] for a in seen)
         self.assertEqual(risks, ["0.05", "0.1"])
         ev, code = D.step_m1_matrix(cfg, D.fresh_state(cfg), self.probes())
-        self.assertEqual(code, 0)             # 产物在了就不再跑
+        self.assertEqual(code, 0)             # once the output exists, don't run again
 
 
 class TestRealConfigs(unittest.TestCase):
-    """入库的两份配置本身:字段齐、路径存在、端口/种子对得上。"""
+    """The two checked-in configs themselves: fields are complete, paths exist, ports/seeds line up."""
 
     def test_np821_config_loads(self):
         cfg = D.load_cfg(REPO / "pipeline" / "configs" / "np821_gptoss.json")
@@ -1272,8 +1292,9 @@ class TestRealConfigs(unittest.TestCase):
         self.assertEqual(cfg["weight_mode"], "uniform")
         self.assertEqual(cfg["trajs_per_unit"], 4)
         self.assertEqual(cfg["collect"]["seeds"], [42, 67, 4267, 6742])
-        # a1 停点 2026-08-22 已裁(裁决 2):留 64 也必须显式写进配置,驱动器
-        # 从此按这个值造数据;缺了它 a1 会再次停下等裁决。
+        # The a1 stopping point was ruled on 2026-08-22 (ruling 2): keeping 64 must
+        # also be written explicitly into the config, and from now on the driver builds
+        # data by this value; without it a1 will stop again waiting for a ruling.
         self.assertEqual(cfg["max_bounds"], 64)
         for p in cfg["official_split_files"].values():
             self.assertTrue(Path(p).is_file(), p)
@@ -1294,7 +1315,7 @@ class TestRealConfigs(unittest.TestCase):
         shards = [p for c in mf["clients"] for p in c["shard_ports"]]
         self.assertEqual(len(shards), 12)
         self.assertEqual(sorted(set(shards)), sorted(ports))
-        for p in ports:                          # 四端口各三片,铺匀
+        for p in ports:                          # three pieces per port across four ports, spread evenly
             self.assertEqual(shards.count(p), 3)
         for c in mf["clients"]:
             self.assertEqual(len(c["shard_ports"]), c["num_shards"])

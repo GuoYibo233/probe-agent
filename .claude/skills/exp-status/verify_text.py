@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""verify_text.py — 校验 HTML 的可见文字和 markdown 的正文逐字符相同。
+"""verify_text.py -- check that the HTML's visible text and the markdown's body text are
+character-for-character identical.
 
-用法：
+Usage:
     python3 verify_text.py <input.md> <output.html>
 
-HTML 这边：丢掉 <style>、<script>、<title> 的内容和注释，剥掉全部标签，还原 HTML 实体。
-markdown 这边：去掉行首的 #、表格的竖线和 |---| 分隔行、代码围栏的 ``` 行本身、
-列表的 - 或 1. 前缀、加粗的 **、行内代码的反引号、水平线 ---（代码围栏里面一个字不动）。
-两边都删掉全部空白字符之后逐字符比对。
+HTML side: drop the contents and comments of <style>, <script>, <title>, strip all tags,
+and unescape HTML entities.
+Markdown side: strip the leading # of headings, the table's pipe characters and the
+|---| separator row, the ``` fence lines themselves, the - or 1. list prefixes, the **
+of bold text, the backticks of inline code, and the --- horizontal rule (leave code
+fence contents untouched).
+Compare the two sides character by character after removing all whitespace from both.
 
-一致就打印「逐字符一致」并以 0 退出；不一致就用 difflib 打印差异块并以 1 退出。
+If they match, print "character-for-character match" and exit 0; if not, print the diff
+blocks with difflib and exit 1.
 """
 
 import difflib
@@ -52,16 +57,16 @@ def md_text(src):
         stripped = line.strip()
         if FENCE_RE.match(line):
             in_fence = not in_fence
-            continue  # 围栏行本身不算正文
+            continue  # the fence line itself does not count as body text
         if in_fence:
-            out.append(line)  # 代码块内容原样保留
+            out.append(line)  # keep code block contents as-is
             continue
         if HR_RE.match(stripped):
             continue
         if stripped.startswith("|"):
             cells = [c.strip() for c in stripped.strip("|").split("|")]
             if cells and all(DELIM_CELL_RE.match(c) for c in cells):
-                continue  # |---| 分隔行
+                continue  # the |---| separator row
             line = stripped.replace("|", " ")
         elif HEADING_RE.match(line):
             line = HEADING_RE.sub("", line)
@@ -78,26 +83,26 @@ def show(label, s, lo, hi):
     head = s[max(0, lo - CONTEXT):lo]
     body = s[lo:hi]
     tail = s[hi:hi + CONTEXT]
-    print("  %s [%d:%d] %s《%s》%s" % (label, lo, hi, head, body, tail))
+    print("  %s [%d:%d] %s<<%s>>%s" % (label, lo, hi, head, body, tail))
 
 
 def main(argv):
     if len(argv) != 3:
-        sys.stderr.write("用法：python3 verify_text.py <input.md> <output.html>\n")
+        sys.stderr.write("usage: python3 verify_text.py <input.md> <output.html>\n")
         return 2
     with open(argv[1], "r", encoding="utf-8") as fh:
         md = md_text(fh.read())
     with open(argv[2], "r", encoding="utf-8") as fh:
         ht = html_text(fh.read())
 
-    print("markdown 正文字符数：%d" % len(md))
-    print("HTML 可见文字字符数：%d" % len(ht))
+    print("markdown body character count: %d" % len(md))
+    print("HTML visible text character count: %d" % len(ht))
 
     if md == ht:
-        print("逐字符一致")
+        print("identical character-for-character")
         return 0
 
-    print("不一致，差异块如下（《》里是差的那一段）：")
+    print("not identical, diff blocks below (the differing part is inside <<...>>):")
     matcher = difflib.SequenceMatcher(None, md, ht, autojunk=False)
     shown = 0
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -105,9 +110,9 @@ def main(argv):
             continue
         shown += 1
         if shown > MAX_BLOCKS:
-            print("  ……还有更多差异块，先改前面的。")
+            print("  ... more diff blocks remain, fix the earlier ones first.")
             break
-        print("差异 %d：%s" % (shown, tag))
+        print("diff %d: %s" % (shown, tag))
         show("markdown", md, i1, i2)
         show("HTML    ", ht, j1, j2)
     return 1

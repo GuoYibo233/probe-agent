@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""把 gpt_oss_chat handler 装进 bfcl venv 并注册模型,幂等可重跑。
+"""Install the gpt_oss_chat handler into the bfcl venv and register the model; idempotent,
+safe to rerun.
 
-1. 拷 gpt_oss_chat.py -> venv 的 model_handler/local_inference/
-2. model_config.py 末尾追加 "openai/gpt-oss-120b" 注册块(带标记,重跑跳过)
+1. Copy gpt_oss_chat.py -> venv's model_handler/local_inference/
+2. Append an "openai/gpt-oss-120b" registration block at the end of model_config.py (marked,
+   so reruns skip it)
 """
 import shutil
 from pathlib import Path

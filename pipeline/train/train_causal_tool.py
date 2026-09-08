@@ -1,40 +1,52 @@
-"""因果探针训练(新流水线 ctool 格):因果语言模型底座 + 线性分类头。
+"""Causal probe training (new pipeline ctool cell): causal language model base + linear classification head.
 
-与 ModernBERT 探针(train_mbert_tool.py)的本质区别:ModernBERT 每个句子边界重编码
-整段前缀(成本随思考长度平方涨),这里按**事件**组织——一个事件的各样本 text
-互为前缀,全文 = 最大 sent_idx 样本的 text,第 i 个边界的字符位置 = len(第 i 个
-样本的 text);整段一次前向,每个边界位置放一份分类监督(权重 = 样本自带 w)。
+The essential difference from the ModernBERT probe (train_mbert_tool.py): ModernBERT
+re-encodes the whole prefix at every sentence boundary (cost grows quadratically with
+thinking length); here it is organized by **event** -- the samples' text within one event
+are prefixes of each other, the full text = the text of the sample with the largest
+sent_idx, and the character position of the i-th boundary = len(the i-th sample's text);
+one forward pass over the whole sequence, with one classification supervision placed at
+each boundary position (weight = the sample's own w).
 
-- 输入: <data_out>/{train,val}.jsonl + tool_vocab.json
-- 底座: --base qwen -> Qwen3-0.6B-Base / qwen17 -> 1.7B / qwen4 -> 4B
-- 上限: --max-len(默认 8192)按事件全文 token 数整条丢弃超长事件(不截断),
-  计数进 start 事件的 dropped_events_train/dropped_events_val;读取位置规则
-  (share_data.read_position)在留下的事件里找不到切点时才计 n_bound_dropped,
-  预期恒为 0
-- 评估: 每轮 val 报 calA_weighted_acc + calA_lastbound_acc(日志字段名照旧不改)
-- 产物: <out>/{ALIGN_CHECK.json, train_log.jsonl, best/}
-- LoRA: `--lora` 只把底座换成 LoRA 训(分类头照常全参),存 best 之前先
-  merge_and_unload 把适配器并回底座,所以 best/ 的文件与全参存的逐项同构、
-  eval_tool.py 零改动就装得回来;meta.json 多一个 "lora" 块记超参。
-  不传 --lora 时脚本自己不碰 peft(peft 的 import 全在 --lora 分支里),
-  行为与加这套旗标之前一致;详见 lora_util.py 的说明。
+- Input: <data_out>/{train,val}.jsonl + tool_vocab.json
+- Base: --base qwen -> Qwen3-0.6B-Base / qwen17 -> 1.7B / qwen4 -> 4B
+- Cap: --max-len (default 8192) drops overlong events whole by event full-text token
+  count (no truncation), counted into the start event's
+  dropped_events_train/dropped_events_val; the read-position rule
+  (share_data.read_position) only counts n_bound_dropped when it cannot find a cut point
+  among the remaining events, expected to always be 0
+- Eval: each val round reports calA_weighted_acc + calA_lastbound_acc (log field names
+  kept unchanged)
+- Outputs: <out>/{ALIGN_CHECK.json, train_log.jsonl, best/}
+- LoRA: `--lora` only swaps the base to train with LoRA (the classification head still
+  trains full-parameter); before saving best, merge_and_unload merges the adapter back
+  into the base first, so best/'s files are item-for-item identical in structure to a
+  full-parameter save, and eval_tool.py can load it back with zero changes; meta.json
+  gets one extra "lora" block recording the hyperparameters.
+  When --lora is not passed, the script never touches peft (all peft imports live in the
+  --lora branch), and behavior is identical to before this flag set was added; see
+  lora_util.py for details.
 
-**开训前对齐检查是铁律**(--align-only 只跑它):同一段真实文本,整段一次前向 vs
-逐 token 增量前向(带 past_key_values),末位置隐状态与分类头 logits 必须
-max|diff| < 1e-4 才许训。前科:LFM2 混合架构(conv+attention)在 transformers
-5.14.1 下"缓存非空 + 一次喂多 token"(分块增量)会静默算错——见
-check_causal_candidates.py 的结论,判定为整段一次前向或逐 token 增量可用、
-**禁分块**。本脚本训练与评估只用整段一次前向,增量前向仅出现在这份对齐检查里,
-所以两个底座都在安全区内。
+**The alignment check before training starts is a hard rule** (--align-only only runs
+this): for the same real text, one forward pass over the whole sequence vs. token-by-token
+incremental forward passes (with past_key_values), the last-position hidden state and
+classification-head logits must have max|diff| < 1e-4 before training is allowed. Prior
+incident: under transformers 5.14.1, the LFM2 hybrid architecture (conv+attention)
+silently computes wrong results under "non-empty cache + feeding multiple tokens at once"
+(chunked incremental) -- see check_causal_candidates.py's conclusion, which rules that
+only a single whole-sequence forward pass or token-by-token incremental forward pass is
+usable, **chunking is forbidden**. This script's training and evaluation only use a
+single whole-sequence forward pass; incremental forward passes appear only in this
+alignment check, so both bases are in the safe zone.
 
-用法:
-  # 只过对齐检查
+Usage:
+  # alignment check only
   cprobe-env/bin/python pipeline/train/train_causal_tool.py --base qwen \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_ctool --align-only
-  # 冒烟
+  # smoke test
   cprobe-env/bin/python pipeline/train/train_causal_tool.py --base qwen \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_ctool --smoke
-  # 全量
+  # full run
   cprobe-env/bin/python pipeline/train/train_causal_tool.py --base qwen \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_ctool
 """
@@ -52,9 +64,9 @@ import torch
 import transformers
 _TV = tuple(int(x) for x in transformers.__version__.split(".")[:2])
 if _TV < (5, 14):
-    raise SystemExit(f"cprobe 线要 transformers>=5.14,当前 "
-                     f"{transformers.__version__}——解释器用错了?"
-                     "一律从 run.py 的任务进(train-ctool/train-cgen)。")
+    raise SystemExit(f"the cprobe line requires transformers>=5.14, currently "
+                     f"{transformers.__version__} -- wrong interpreter? "
+                     "Always enter through run.py's tasks (train-ctool/train-cgen).")
 from torch.utils.data import DataLoader, Dataset
 from transformers import AutoModel, AutoTokenizer, get_linear_schedule_with_warmup
 
@@ -68,25 +80,27 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat
 
 
-# 底座三档(2026-08-21 起因果线从单档扩成三档,目的是横向比三个规模)
+# three base-model tiers (from 2026-08-21, the causal line expanded from one tier to three, to compare three sizes side by side)
 MODELS = {
     "qwen":   "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
     "qwen17": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base",
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
-SEED = 42          # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在旧数据复现里生效
-FULL_LR = 1e-5     # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
-ALIGN_TOL = 3e-4   # 2026-08-28 起(上限 8192):c1/np821 实跑一直传 3e-4;8,167 token 的事件 maxdiff_hidden 1.03e-4 相对差 1.46e-6 被旧默认 1e-4 拦下
-SPOT = 50          # 前缀性质抽查的事件数
+SEED = 42          # from np821 on, switched to the first of the seed family (42/67/4267/6742); the old value 20260729 only applies when reproducing old data
+FULL_LR = 1e-5     # learning rate for full-parameter fine-tuning (the --lr default when --lora is not passed)
+ALIGN_TOL = 3e-4   # from 2026-08-28 (cap 8192): c1/np821 real runs always pass 3e-4; an 8,167-token event with maxdiff_hidden 1.03e-4 (relative diff 1.46e-6) was blocked by the old default 1e-4
+SPOT = 50          # number of events for the prefix-property spot check
 
 
-# ---------------------------------------------------------------- 数据
+# ---------------------------------------------------------------- data
 
 def load_events(path, label2id, tok, max_len, limit=0, spot=SPOT, ro=None):
-    """按 event 分组:全文 = 最大 sent_idx 样本的 text,边界 = 各样本 len(text)。
+    """Group by event: full text = the text of the sample with the largest sent_idx,
+    boundaries = each sample's len(text).
 
-    全文 token 数(`tok(full, add_special_tokens=False)`)超过 `max_len` 的
-    事件整条丢弃(spec 11.1),返回值多带一个丢弃计数。
+    Events whose full-text token count (`tok(full, add_special_tokens=False)`) exceeds
+    `max_len` are dropped whole (spec 11.1); the return value carries an extra drop
+    count.
     """
     ev = defaultdict(list)
     if ro is None:
@@ -94,7 +108,7 @@ def load_events(path, label2id, tok, max_len, limit=0, spot=SPOT, ro=None):
             r = json.loads(line)
             if r["label"] in label2id:
                 ev[r["event"]].append(r)
-    else:                                      # --readonly-env:先清点后折叠
+    else:                                      # --readonly-env: count first, then fold
         rows = [json.loads(line) for line in open(path)]
         ro["info"] = readonly_map.audit(
             [r["label"] for r in rows], ro["table"], where=ro["where"])
@@ -103,8 +117,8 @@ def load_events(path, label2id, tok, max_len, limit=0, spot=SPOT, ro=None):
         bad = sorted({r["label"] for r in rows} - set(label2id))
         if bad:
             raise SystemExit(
-                f"readonly: {ro['where']} 折叠后仍有 {len(bad)} 个标签不在"
-                f"折叠词表里(如 {bad[:5]})——tool_vocab.json 与数据对不上,硬停。")
+                f"readonly: {ro['where']} still has {len(bad)} labels not in the"
+                f" folded vocab after folding (e.g. {bad[:5]}) -- tool_vocab.json does not match the data, hard stop.")
         for r in rows:
             ev[r["event"]].append(r)
     events = []
@@ -117,9 +131,9 @@ def load_events(path, label2id, tok, max_len, limit=0, spot=SPOT, ro=None):
                      r["sent_idx"] == r["n_sents"] - 1) for r in rs]))
     events.sort(key=lambda e: e["event"])
     rng = random.Random(SEED)
-    for e in rng.sample(events, min(spot, len(events))):   # 前缀性质抽查
+    for e in rng.sample(events, min(spot, len(events))):   # prefix-property spot check
         assert all(e["full"].startswith(r["text"]) for r in e["rows"]), \
-            f"事件 {e['event']} 的样本 text 不互为前缀"
+            f"sample text for event {e['event']} are not mutual prefixes"
     for e in events:
         e.pop("rows")
     dropped = 0
@@ -149,7 +163,7 @@ class EventDS(Dataset):
 
 
 def collate(batch, tok, max_len):
-    """整段一次前向所需的一批事件:返回 enc + 每个监督位置的 (行, 列, y, w, last)。"""
+    """A batch of events for a single whole-sequence forward pass: returns enc + each supervision position's (row, col, y, w, last)."""
     enc = tok([e["full"] for e in batch], truncation=False, max_length=max_len,
               padding=True, return_offsets_mapping=True, return_tensors="pt")
     offs = enc.pop("offset_mapping")
@@ -160,7 +174,7 @@ def collate(batch, tok, max_len):
         keep = int(enc["attention_mask"][i].sum())
         for b, w, last in e["bounds"]:
             j = share_data.read_position(offsets_i, full, b, keep)
-            if j < 0:                # 找不到读取位置的切点数(n_bound_dropped),预期 0
+            if j < 0:                # count of cut points where the read position cannot be found (n_bound_dropped), expected 0
                 dropped += 1
                 continue
             rows.append(i)
@@ -172,10 +186,10 @@ def collate(batch, tok, max_len):
             torch.tensor(ws, dtype=torch.float), torch.tensor(lasts), dropped)
 
 
-# ---------------------------------------------------------------- 模型
+# ---------------------------------------------------------------- model
 
 class CausalProbe(torch.nn.Module):
-    """因果语言模型底座 + nn.Linear 分类头(取各监督 token 位的末层隐状态)。"""
+    """Causal language model base + nn.Linear classification head (takes the last-layer hidden state at each supervision token position)."""
 
     def __init__(self, path, n_labels):
         super().__init__()
@@ -197,10 +211,10 @@ class CausalProbe(torch.nn.Module):
 def build(base, n_labels, dev):
     path = MODELS[base]
     tok = AutoTokenizer.from_pretrained(path)
-    if tok.pad_token_id is None:                      # 照抄 check_causal_candidates
+    if tok.pad_token_id is None:                      # copied verbatim from check_causal_candidates
         tok.pad_token = tok.eos_token
-    tok.truncation_side = "left"                      # 保思考尾巴
-    tok.padding_side = "right"                        # 监督位都在真实 token 上
+    tok.truncation_side = "left"                      # keep the tail of the thinking text
+    tok.padding_side = "right"                        # all supervision positions are on real tokens
     torch.manual_seed(SEED)
     model = CausalProbe(path, n_labels)
     if model.backbone.config.get_text_config().pad_token_id is None:
@@ -208,21 +222,24 @@ def build(base, n_labels, dev):
     return tok, model.to(dev), path
 
 
-# ---------------------------------------------------------------- 对齐检查
+# ---------------------------------------------------------------- alignment check
 
 @torch.no_grad()
 def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL,
                 rule="abs", rel_tol=1e-5):
-    """整段一次前向 vs 逐 token 增量前向(fp32),末位置隐状态/logits 必须一致。
+    """One whole-sequence forward pass vs. token-by-token incremental forward passes (fp32);
+    the last-position hidden state/logits must match.
 
-    只用逐 token 模式:分块增量(缓存非空+一次喂多 token)在 LFM2 上有静默算错前科。
+    Only use token-by-token mode: chunked incremental (non-empty cache + feeding multiple
+    tokens at once) has a prior incident of silently computing wrong results on LFM2.
 
-    `rule`(spec 9):`abs` = 现状,`max(d_h, d_l) < tol`;`rel` = `reldiff_hidden
-    <= rel_tol` 且 `reldiff_logits <= rel_tol`;`both` = 两条同时成立。
+    `rule` (spec 9): `abs` = the current default, `max(d_h, d_l) < tol`; `rel` =
+    `reldiff_hidden <= rel_tol` and `reldiff_logits <= rel_tol`; `both` = both hold at
+    once.
     """
     model.eval()
     prev_prec = torch.get_float32_matmul_precision()
-    torch.set_float32_matmul_precision("highest")   # 禁 TF32,别让降精度冒充算错
+    torch.set_float32_matmul_precision("highest")   # disable TF32, do not let reduced precision masquerade as a computation error
     ids = tok(text, truncation=False, max_length=max_len,
               return_tensors="pt")["input_ids"].to(dev)
     n = ids.shape[1]
@@ -258,9 +275,10 @@ def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL,
                PASS=bool(ok), device=str(dev), dtype="float32",
                transformers=transformers.__version__, torch=torch.__version__,
                rule=rule, rel_tol=rel_tol,
-               # 绝对差受隐状态量级影响,相对差看是否只是 fp32 噪声:
-               # `abs` 规则下 absmax_*/reldiff_* 只当诊断参考,`rel`/`both`
-               # 规则用 reldiff_hidden/reldiff_logits 参与判定。
+               # The absolute difference is affected by the hidden-state magnitude; the relative
+               # difference shows whether it is just fp32 noise: under the `abs` rule,
+               # absmax_*/reldiff_* are only diagnostic reference; the `rel`/`both` rules use
+               # reldiff_hidden/reldiff_logits in the decision.
                absmax_hidden=a_h, absmax_logits=a_l,
                reldiff_hidden=reldiff_hidden,
                reldiff_logits=reldiff_logits)
@@ -269,13 +287,14 @@ def align_check(model, tok, text, max_len, dev, base, path, tol=ALIGN_TOL,
     return rep
 
 
-# ---------------------------------------------------------------- 显存
+# ---------------------------------------------------------------- GPU memory
 
 def _peak_mem_gb(dev):
-    """`step`/`eval` 事件的显存字段(工单 06):cuda 上读
-    `max_memory_allocated`(GB,四舍五入到 1e-3)并清空峰值统计,和新训练器
-    `train_causal_share.py` 的 step 日志同口径;CPU 上恒 0.0(这一轮 ctool
-    的显存只能靠外部 nvidia-smi 采样,因为它自己不记)。"""
+    """GPU memory field for `step`/`eval` events (ticket 06): on cuda, read
+    `max_memory_allocated` (GB, rounded to 1e-3) and reset the peak-memory stats, using
+    the same convention as the new trainer `train_causal_share.py`'s step log; always 0.0
+    on CPU (this round of ctool's GPU memory can only be sampled externally via
+    nvidia-smi, since it does not record it itself)."""
     if dev.startswith("cuda"):
         peak = round(torch.cuda.max_memory_allocated() / 1e9, 3)
         torch.cuda.reset_peak_memory_stats()
@@ -283,7 +302,7 @@ def _peak_mem_gb(dev):
     return 0.0
 
 
-# ---------------------------------------------------------------- 评估
+# ---------------------------------------------------------------- eval
 
 @torch.no_grad()
 def evaluate(model, loader, dev, amp):
@@ -302,7 +321,7 @@ def evaluate(model, loader, dev, amp):
     return wc / max(ws, 1e-9), lc / max(ln, 1)
 
 
-# ---------------------------------------------------------------- 主流程
+# ---------------------------------------------------------------- main flow
 
 def main():
     ap = argparse.ArgumentParser()
@@ -310,46 +329,46 @@ def main():
                     help="qwen=Qwen3-0.6B-Base")
     ap.add_argument("--env", default="appworld",
                     choices=["tales", "appworld", "bfcl", "alfworld"],
-                    help="仅作日志标签(数据路径已由 --data 直接给定)")
+                    help="log label only (the data path is given directly by --data)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>(含 train/val.jsonl 与 tool_vocab.json)")
-    ap.add_argument("--out", required=True, help="产物目录(必填,防覆盖旧件)")
+                    help="data dir <data_out> (contains train/val.jsonl and tool_vocab.json)")
+    ap.add_argument("--out", required=True, help="output dir (required; guards against overwriting old outputs)")
     ap.add_argument("--max-len", type=int, default=8192)
     ap.add_argument("--bs", type=int, default=2,
-                    help="事件数/批(2026-08-28 起默认 2:上限 8192 后 bs 4 在 H100 训练"
-                         "第一批就 OOM,bs 2 峰值 56,859 MiB;np821 是 4096 × bs 4)")
+                    help="events per batch (default 2 since 2026-08-28: after the cap went to 8192, bs 4 on H100 training"
+                         "OOMs on the very first batch; bs 2 peaks at 56,859 MiB; np821 uses 4096 x bs 4)")
     ap.add_argument("--accum", type=int, default=4,
-                    help="梯度累积批数(默认 4,与 --bs 2 合成 8 个事件一次更新)")
+                    help="gradient accumulation batch count (default 4; combined with --bs 2 gives 8 events per update)")
     ap.add_argument("--lr", type=float, default=None,
-                    help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
-                         "这里显式给了就以显式值为准)")
+                    help=f"learning rate (default {FULL_LR}; switches to --lora-lr by default when --lora is on,"
+                         "an explicit value given here takes precedence)")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
-                    help="200 训练事件/80 评估事件/1 epoch,验证管线")
+                    help="200 training events/80 eval events/1 epoch, for pipeline verification")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--grad-ckpt", action="store_true",
-                    help="底座开梯度检查点省显存(全参与 --lora 两种模式都能用;"
-                         "同时关 use_cache,LoRA 下另保证输入 require_grad)")
+                    help="turn on gradient checkpointing in the base model to save GPU memory (works in both full-parameter and --lora modes;"
+                         "also turns off use_cache, and under LoRA additionally ensures input requires_grad)")
     ap.add_argument("--max-events", type=int, default=0,
-                    help="调试用:再限事件数(0=不限)")
+                    help="for debugging: further cap the event count (0 = unlimited)")
     ap.add_argument("--align-only", action="store_true",
-                    help="只跑开训前对齐检查即退")
+                    help="run only the pre-training alignment check, then exit")
     ap.add_argument("--align-tol", type=float, default=ALIGN_TOL,
-                    help="对齐检查绝对差阈值(默认 3e-4,2026-08-28 起;之前 1e-4)。"
-                         "长窗口下 fp32 舍入噪声随 token 数与隐状态量级一起涨,"
-                         "8192 上限的事件绝对差会顶到 1e-4 而相对差仍是 1e-6"
-                         "(纯噪声);判定依据看 reldiff(1e-3 以上=真算错,放宽也没用)")
+                    help="alignment check absolute-difference threshold (default 3e-4 since 2026-08-28; was 1e-4 before)."
+                         "Under long windows, fp32 rounding noise grows with token count and hidden-state magnitude together,"
+                         "so an event at the 8192 cap can push the absolute difference to 1e-4 while the relative difference stays at 1e-6"
+                         "(pure noise); judge by reldiff instead (above 1e-3 = a real bug, loosening this won't help)")
     ap.add_argument("--align-rule", default="abs", choices=["abs", "rel", "both"],
-                    help="对齐判据:abs=绝对差(现状),rel=相对差"
-                         "(reldiff_hidden/reldiff_logits),both=两者同时成立(spec 9)")
+                    help="alignment criterion: abs = absolute difference (current default), rel = relative difference"
+                         "(reldiff_hidden/reldiff_logits), both = both must hold (spec 9)")
     ap.add_argument("--align-rel-tol", type=float, default=1e-5,
-                    help="对齐检查相对差门槛,配合 --align-rule rel/both(spec 9)")
+                    help="alignment check relative-difference threshold, used with --align-rule rel/both (spec 9)")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具模式:标签折叠成 该环境的只读工具 + "
-                         f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
+                    help="read-only tool mode: fold labels into this environment's read-only tools plus the "
+                         f"{readonly_map.NON_READONLY} abstain class (off by default = the old settings)")
     ap.add_argument("--force", action="store_true",
-                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+                    help="allow training again in an --out dir that was already trained in (refused by default to keep outputs apart)")
     lora_util.add_args(ap)
     args = ap.parse_args()
     lr = lora_util.resolve_lr(args, FULL_LR)
@@ -360,15 +379,15 @@ def main():
     out = Path(args.out)
     if (out / "train_log.jsonl").exists() and not args.force:
         raise SystemExit(
-            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
-            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
+            f"{out} already has a train_log.jsonl -- this dir has already been trained once; training again would mix"
+            " both runs' outputs into the same best/ with no way to tell them apart (audit B7). Use a different --out, or confirm the overwrite and pass --force.")
     out.mkdir(parents=True, exist_ok=True)
     dev = args.device
     amp = dev.startswith("cuda")
 
     vocab = json.loads((data / "tool_vocab.json").read_text())
     ro_tr = ro_ev = None
-    if args.readonly_env:                      # 词表 = 原序只读工具 + 末尾哨兵
+    if args.readonly_env:                      # vocab = original-order read-only tools + trailing sentinel
         ro_set = readonly_map.load_readonly_set(args.readonly_env)
         ro_table = readonly_map.load_table(args.readonly_env)
         vocab = [t for t in vocab if t in ro_set] + [readonly_map.NON_READONLY]
@@ -389,22 +408,22 @@ def main():
         random.Random(SEED).shuffle(ev_events)
         ev_events = ev_events[:lim_ev]
 
-    # ---- 开训必过的门:对齐检查(val 最长事件全文,截到 --max-len) ----------
+    # ---- mandatory gate before training starts: alignment check (val's longest event full text, truncated to --max-len) ----------
     rep = align_check(model, tok, longest, args.max_len, dev, args.base, path,
                       tol=args.align_tol, rule=args.align_rule,
                       rel_tol=args.align_rel_tol)
     (out / "ALIGN_CHECK.json").write_text(json.dumps(rep, indent=1))
     print(json.dumps(rep, indent=1), flush=True)
     if not rep["PASS"]:
-        print("对齐检查 FAIL:整段前向与逐 token 增量前向不一致,拒绝开训。\n"
-              f"  规则 --align-rule {rep['rule']}\n"
+        print("Alignment check FAIL: full-sequence forward and per-token incremental forward disagree, refusing to start training.\n"
+              f"  rule --align-rule {rep['rule']}\n"
               f"  hidden max|diff| = {rep['maxdiff_hidden']:.3e}\n"
               f"  logits max|diff| = {rep['maxdiff_logits']:.3e}  (tol {rep['tol']:.1e})\n"
-              f"  相对差 hidden {rep['reldiff_hidden']:.2e} / logits "
+              f"  relative difference hidden {rep['reldiff_hidden']:.2e} / logits "
               f"{rep['reldiff_logits']:.2e}  (rel_tol {rep['rel_tol']:.1e};"
-              "1e-6 量级=纯 fp32 噪声、绝对差只是"
-              "隐状态量级大;1e-3 以上=真算错)\n"
-              "  排查:transformers 版本 / 该架构的缓存实现 / 是否误用分块增量。",
+              " around 1e-6 = pure fp32 noise, the absolute difference is just"
+              " large hidden-state magnitude; above 1e-3 = a real bug)\n"
+              "  Debug: transformers version / this architecture's cache implementation / whether chunked incremental was misused.",
               flush=True)
         sys.exit(2)
     if args.align_only:
@@ -422,9 +441,11 @@ def main():
         EventDS(ds), batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
     tr_dl, ev_dl = mk(tr_events, True), mk(ev_events, False)
-    # LoRA 只包底座:分类头照常全参训练(头是新初始化的,没有可低秩化的旧权重),
-    # 头的参数与适配器一起进优化器。包装动作放在对齐检查之后,ALIGN_CHECK.json
-    # 与全参跑逐字段可比。
+    # LoRA only wraps the base: the classification head still trains full-parameter (the
+    # head is freshly initialized, there are no old weights to low-rank), and the head's
+    # parameters go into the optimizer together with the adapter. The wrapping happens after
+    # the alignment check, so ALIGN_CHECK.json is comparable field-by-field with a
+    # full-parameter run.
     lora_wrap = lora_util.wrap(model.backbone, args) if args.lora else None
     if args.grad_ckpt:
         model.backbone.gradient_checkpointing_enable()
@@ -496,7 +517,7 @@ def main():
             if lora_wrap is None:
                 model.backbone.save_pretrained(out / "best")
             else:
-                # 适配器并回底座再落盘:best/ 与全参存的逐项同构,评测端零改动
+                # merge the adapter back into the base before saving: best/ is item-for-item identical in structure to a full-parameter save, zero changes needed on the eval side
                 lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             torch.save(model.head.state_dict(), out / "best" / "head.pt")

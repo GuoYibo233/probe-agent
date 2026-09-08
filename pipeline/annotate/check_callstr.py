@@ -1,49 +1,75 @@
 #!/usr/bin/env python3
-"""annotate 后置门禁:真值调用串能否被 eval 侧原样切回来 + 五道结构性硬核对(纯 CPU)。
+"""annotate post-hoc gate: can the ground-truth call string be parsed back exactly by the
+eval side, plus five structural hard checks (pure CPU).
 
-要回答什么问题:build.py 写进每条样本的真值 `label_call`(手拼的 `tool(k=v, k=v)`),
-拿 eval 侧的 `eval_causal_call.parse_call` 去切,能不能一字不差地切回 `args_named`?
-切不回来的那部分,就是 `params_all_ok` 这个指标**永远拿不到的分**——生成侧写得再对
-也判错,因为真值本身在 eval 的切法下不自洽。
+What question this answers: build.py writes each sample's ground truth `label_call`
+(hand-assembled `tool(k=v, k=v)`); can the eval side's `eval_causal_call.parse_call` parse
+it back to `args_named` exactly? Whatever part cannot be parsed back is score that the
+`params_all_ok` metric **can never get** -- the generation side is judged wrong no matter
+how correct it is, because the ground truth itself is not self-consistent under eval's
+parsing.
 
-为什么必须有这一步:`build.make_call` 是 `", ".join(f"{k}={v}")` 手拼、不加引号,而
-eval 侧 `split_named_raw` 按**顶层逗号**切参数。参数值里带逗号就切散了。实测例:
+Why this step is necessary: `build.make_call` hand-assembles with
+`", ".join(f"{k}={v}")`, unquoted, while the eval side's `split_named_raw` splits
+arguments on **top-level commas**. A comma inside an argument value gets split apart.
+Measured example:
     echo(content=Finally, in that file, Write my last question in it., file_name=79.pdf)
-被切成 content=Finally / pos0=in that file / pos1=Write my last question in it. /
-file_name=79.pdf。rules.py 里 ALFWorld 有 ALF_BAD_CHARS 逗号闸门专门拦这个,
-appworld / bfcl 都没有。本脚本**只量不修**:appworld 的 c1_* 十二格数字已经按"无闸门"
-的口径上账,给 bfcl 单独加闸门就不是一把尺子了。
+gets split into content=Finally / pos0=in that file / pos1=Write my last question in
+it. / file_name=79.pdf. In rules.py, ALFWorld has an ALF_BAD_CHARS comma gate built
+specifically to block this; neither appworld nor bfcl has one. This script **only
+measures, does not fix**: appworld's twelve c1_* cells are already booked under the
+"no gate" convention, so adding a gate for bfcl alone would no longer be one consistent
+ruler.
 
-顺带把五道结构性门禁一起做了(全部 sys.exit 硬拦,写在这里是因为它们都要在
-build.py + param_label.py 跑完之后、拿成品数据集才能验):
-  门禁 A 每行 model 字段 == cfg.model_full。防跨模型串味(extending.md §5 #13:
-         唯一防线是 eval 侧 len(rows)==logits.shape[0] 的形状 assert,不能当保障)。
-  门禁 B (event, sent_idx) 全局唯一,且一个 unit 在本模型下只对应一个 traj。
-         这是 traj_runs 写错的照妖镜:把 traj_runs 写成父目录 envs/runs 时,
-         build.py:101 的 runs.glob("bfcl_*") 会命中 21 题的 smoke 批次
-         envs/runs/bfcl_q35/,它的 traj 名与 full_v1/bfcl_q35 逐字相同,
-         同一批 event key 会重复进库、退 0、无告警,只是样本数悄悄涨。
-  门禁 C traj_runs 的每一项都必须是"run 目录"本身,不能是 run 目录的父目录。
-         判据:该项下**直接**有 bfcl_<模型> 子目录,且 `*/bfcl_<模型>` 不再命中
-         任何目录(命中就说明它是父目录)。这是门禁 B 的上游拦截。
-  门禁 D 每行的 unit 必须落在它所在堆的题单文件里(题单归属全量核对,不抽样)。
-  门禁 E ANNOTATE_REPORT.md 的文案不许撒谎:SPLIT_REPORT.json 说
-         official_split_exists=false 时,报告里不许出现"官方题单"。
+While at it, this also runs five structural gates together (all hard-stop via
+sys.exit; they live here because they can only be verified after build.py +
+param_label.py have finished and the finished dataset is in hand):
+  Gate A every row's model field == cfg.model_full. Guards against cross-model
+         contamination (extending.md §5 #13: the eval side's shape assert
+         len(rows)==logits.shape[0] is the only line of defense, and it cannot be
+         relied on as a guarantee).
+  Gate B (event, sent_idx) is globally unique, and a unit maps to exactly one traj
+         under a given model. This exposes a mis-written traj_runs: when traj_runs
+         is written as the parent directory envs/runs, build.py:101's
+         runs.glob("bfcl_*") hits the 21-task smoke batch envs/runs/bfcl_q35/,
+         whose traj name is character-identical to full_v1/bfcl_q35, so the same
+         batch of event keys enters the store twice, silently, with no warning --
+         only the sample count quietly grows.
+  Gate C every entry of traj_runs must be the run directory itself, not its parent
+         directory. Test: the entry has a bfcl_<model> subdirectory **directly**
+         under it, and `*/bfcl_<model>` no longer matches any directory (a match
+         means it is a parent directory). This is the upstream interception for
+         gate B.
+  Gate D every row's unit must fall within the task-list file of the pile it
+         belongs to (full check of task-list membership, no sampling).
+  Gate E ANNOTATE_REPORT.md's wording must not lie: when SPLIT_REPORT.json says
+         official_split_exists=false, the report must not say "official task list".
 
-报告里另外逐条列出四类**已知偏差**(不硬拦,但必须可见,不然没人知道数字为什么难看):
-  偏差 1 真值调用串回读损失(上面那件事),按事件/参数两级给数。
-  偏差 2 题单一致但实现实例有缺口:三个模型共用一份题单,某些 unit 的轨迹一个
-         可用事件都没出(思考 <40 字符或调用解析不出),逐条列出缺哪些。
-         现行门禁 G10「三模型 unit 集合完全相同」在 bfcl 上必然不成立。
-  偏差 3 test 堆里出现、train 堆里没出现过的工具:这类在 label2id 里(词表按全堆
-         统计),不会被 eval_tool.py 丢掉,而是必然判错 = 不可达的精度上限。
-  偏差 4 test 堆事件数偏薄的告警:事件太少时 risk 档的 θ 可能全 null,
-         eval_causal_call 直接 SystemExit 退 1(先例 c1_q35_mext)。
+The report separately lists four kinds of **known deviations** (not hard-blocked,
+but must be visible, otherwise no one knows why the numbers look bad):
+  Deviation 1 loss from parsing the ground-truth call string back (the thing above),
+              given at both the event and parameter level.
+  Deviation 2 the task list is consistent but the realized instances have gaps:
+              three models share one task list, and some units' trajectories
+              produce not a single usable event (thinking <40 characters, or the
+              call cannot be parsed), listed one by one. The current gate G10
+              ("the three models' unit sets are exactly the same") necessarily
+              fails to hold on bfcl.
+  Deviation 3 tools that appear in the test pile but never in the train pile: these
+              are in label2id (the vocabulary is counted over the whole pile), so
+              eval_tool.py does not drop them -- they are necessarily judged wrong,
+              an unreachable ceiling on accuracy.
+  Deviation 4 a warning for a thin test pile (too few events): when there are too
+              few events, the risk tier's θ can end up all null, and
+              eval_causal_call exits directly via SystemExit 1 (precedent:
+              c1_q35_mext).
 
-已知偏差(本脚本自己的):回读检查比的是"eval 切法 vs annotate 拼串",不检查生成侧;
-`parse_call` 只看**第一个**匹配到的调用,与 build/param_label 的 first_call_* 同源。
+Known deviation (of this script itself): the read-back check compares "eval's
+parsing vs. annotate's assembled string", it does not check the generation side;
+`parse_call` looks only at the **first** matched call, the same source as
+build/param_label's first_call_*.
 
-用法: python3 pipeline/annotate/check_callstr.py --config pipeline/configs/bfcl_q35.json
+Usage: python3 pipeline/annotate/check_callstr.py --config pipeline/configs/bfcl_q35.json
 """
 import argparse
 import json
@@ -53,87 +79,102 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# 纯 CPU 脚本,但 eval_causal_call 内部 import torch。显式关掉可见显卡,
-# 保证本脚本在任何情况下都碰不到 GPU。
+# Pure CPU script, but eval_causal_call imports torch internally. Explicitly hide all
+# visible GPUs, so this script never touches a GPU under any circumstances.
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "eval"))
 from rules import MODEL_OF, SEED                       # noqa: E402
-# eval_causal_call 的 import 延后到 main() 里真正用到 norm/parse_call 的地方
-# (偏差 1 回读检查)才做:它模块级 import torch,提前到这里会让整个文件在没装
-# torch 的环境下连 import 都做不到,门禁 B 的 K 条判据/§8b 补强判据这些纯逻辑
-# 就没法脱离 cprobe-env 单测(见 tests/test_check_callstr.py)。延迟不改变任何
-# 输出字节:torch 什么时候被拉起来对 stdout/报告文件没有影响。
+# eval_causal_call's import is deferred to the place in main() where norm/parse_call
+# are actually used (the deviation-1 read-back check): it imports torch at module
+# level, so importing it earlier would make the whole file fail to import in an
+# environment without torch installed, and pure-logic pieces like gate B's K-item
+# test / the §8b reinforcing test could no longer be unit-tested outside cprobe-env
+# (see tests/test_check_callstr.py). The delay changes no output bytes: when torch
+# gets pulled in has no effect on stdout or the report file.
 
 SPLITS = ("train", "val", "test")
-THIN_TEST_EVENTS = 200      # test 事件数低于此值就报"θ 可能全 null"的风险
-MAX_LIST = 12               # 报告里逐条列举的上限(超出只报数)
-EXAMPLES = 5                # 回读失败的样例条数
+THIN_TEST_EVENTS = 200      # below this many test events, report the risk that "θ may end up all null"
+MAX_LIST = 12               # the cap for listing items one by one in the report (beyond this, just report the count)
+EXAMPLES = 5                # number of read-back failure examples
 
 
 def read_unit_list(path):
-    """【照抄 build.py:read_unit_list】题单每行一个 unit,去空行。"""
+    """[COPIED from build.py:read_unit_list] task list has one unit per line, empty lines dropped."""
     return [ln.strip() for ln in Path(path).read_text().split("\n")
             if ln.strip()]
 
 
 def gate_c(traj_runs, env):
-    """门禁 C:traj_runs 的每一项必须是 run 目录本身,不是它的父目录。"""
+    """Gate C: every entry of traj_runs must be the run directory itself, not its parent directory."""
     if env != "bfcl":
-        # 别的环境走 jsonl_events 的 glob("<env>_*/<env>_*.jsonl"),层级不同,
-        # 这道门禁的判据不适用,直接跳过(不假装检查过)。
-        return f"门禁 C 跳过(env={env} 不用 runs.glob 那条路径)"
+        # Other environments go through jsonl_events' glob("<env>_*/<env>_*.jsonl"), a
+        # different directory depth, so this gate's test does not apply -- skip it outright
+        # (do not pretend it was checked).
+        return f"gate C skipped (env={env} doesn't use the runs.glob path)"
     for r in traj_runs:
         p = Path(r)
         if not p.is_dir():
-            sys.exit(f"[门禁 C] traj_runs 目录不存在: {p}")
+            sys.exit(f"[gate C] traj_runs directory does not exist: {p}")
         direct = [d for d in p.glob("bfcl_*")
                   if d.is_dir() and MODEL_OF.get(d.name.rsplit("_", 1)[1])]
         nested = [d for d in p.glob("*/bfcl_*")
                   if d.is_dir() and MODEL_OF.get(d.name.rsplit("_", 1)[1])]
         if nested:
             sys.exit(
-                f"[门禁 C] traj_runs 项 {p} 看着是 run 目录的**父目录**:"
-                f"它下面还有 {len(nested)} 个嵌套的 run 目录"
-                f"(例 {nested[0]})。写父目录会让 build.py:101 的"
-                f" runs.glob('bfcl_*') 只扫到平级的 smoke 批次、"
-                f"或把 smoke 批次与全量批次重复并进来。请写到 run 目录一级。")
+                f"[gate C] traj_runs entry {p} looks like the **parent directory** of the run directory: "
+                f"underneath it there are {len(nested)} nested run directories "
+                f"(e.g. {nested[0]}). Pointing at the parent directory will make build.py:101's"
+                f" runs.glob('bfcl_*') only scan sibling smoke batches, "
+                f"or pull the smoke batch and the full-run batch in as duplicates. Point it at the run-directory level instead.")
         if not direct:
-            sys.exit(f"[门禁 C] traj_runs 项 {p} 下没有任何 bfcl_<模型> 子目录")
-    return f"门禁 C {len(traj_runs)} 项 traj_runs 均为 run 目录本身 ✓"
+            sys.exit(f"[gate C] traj_runs entry {p} has no bfcl_<model> subdirectory at all")
+    return f"gate C: all {len(traj_runs)} traj_runs entries are run directories themselves ✓"
 
 
 def parse_sample_idx(traj):
-    """从 traj 字符串(形如 "<batch>/<stem>")的 stem 尾部解析多样本采集的采样
-    序号 `_r<k>`。解析不出(老式无后缀文件名)返回 None。"""
+    """Parse the multi-sample-collection sample index `_r<k>` off the tail of the stem
+    in a traj string (shaped like "<batch>/<stem>"). Returns None when it cannot be
+    parsed (old-style filename with no suffix)."""
     stem = traj.rsplit("/", 1)[-1]
     m = re.search(r"_r(\d+)$", stem)
     return int(m.group(1)) if m else None
 
 
 def gate_b_unit_traj(rows_by_split, K):
-    """门禁 B 第二半:unit -> traj 判据(K 条判据,plans §4 + §8b 补强判据)。
+    """Gate B, second half: the unit -> traj test (K-item test, plans §4 + the §8b
+    reinforcing test).
 
-    刻意写成不 import eval_causal_call/torch 的纯函数,好让它能脱离 cprobe-env
-    单独单测(见 tests/test_check_callstr.py);第一半的样本键唯一判据
-    ((event, sent_idx) 全局唯一,main() 里 138-143 行区域)不在这个函数里,
-    维持原地不动。
+    Deliberately written as a pure function that does not import eval_causal_call/
+    torch, so it can be unit-tested on its own outside cprobe-env (see
+    tests/test_check_callstr.py); the first half -- the sample-key uniqueness test
+    ((event, sent_idx) globally unique, around lines 138-143 in main()) -- stays
+    put and is not in this function.
 
-    K = cfg.get("trajs_per_unit", 1)。K==1 时判据与文案与旧版逐字节一致
-    (旧配置重跑 CALLSTR_CHECK.md 必须逐字节一致);K>1 时:
-      - 每个 unit 必须恰好对应 K 条互异 traj;
-      - §8b 补强判据 1:显式再核验一次 K 条 traj 互异(重复扫描产生同名 traj
-        理论上已被样本键唯一判据拦下,这里的 set 聚合本就天然去重,再显式断言
-        一次是防御性判据,报错文案与「条数不对」分开,便于区分症状);
-      - §8b 补强判据 2:K 条 traj 文件名尾部的采样序号解析出来后必须恰好是
-        {0..K-1} 各一个;解析不出(文件名不带 _r<k> 后缀)单独报错。
+    K = cfg.get("trajs_per_unit", 1). When K==1, the test and its wording are
+    byte-identical to the old version (rerunning an old config's CALLSTR_CHECK.md
+    must be byte-identical); when K>1:
+      - each unit must map to exactly K mutually distinct traj;
+      - §8b reinforcing test 1: explicitly re-verify once more that the K traj are
+        mutually distinct (a repeated scan producing a same-named traj is already
+        supposed to be caught by the sample-key uniqueness test, and the set
+        aggregation here naturally deduplicates anyway, so this explicit assertion
+        is a defensive test, with its error text kept separate from "wrong count"
+        so the two symptoms can be told apart);
+      - §8b reinforcing test 2: once the sampling index parsed off the tail of the
+        K traj filenames is collected, it must be exactly {0..K-1}, one each;
+        failure to parse it (filename lacks the _r<k> suffix) is reported as its
+        own separate error.
 
-    rows_by_split: {split: [row, ...]},row 至少带 "unit"/"traj" 两个键。
-    返回 (ok, msg):
-      ok=True  时 msg 是成功文案(不含 "门禁 B 样本键..." 前缀,调用方自己拼)。
-      ok=False 时 msg 是失败文案(不含 "[门禁 B] " 前缀,调用方自己拼再 sys.exit)。
+    rows_by_split: {split: [row, ...]}, each row carries at least the "unit"/"traj"
+    keys.
+    Returns (ok, msg):
+      when ok=True, msg is the success text (without the "gate B sample key..."
+      prefix; the caller assembles that itself).
+      when ok=False, msg is the failure text (without the "[gate B] " prefix; the
+      caller assembles that itself, then calls sys.exit).
     """
     u2t = {}
     for sp in SPLITS:
@@ -141,29 +182,30 @@ def gate_b_unit_traj(rows_by_split, K):
             u2t.setdefault(r["unit"], set()).add(r["traj"])
 
     if K == 1:
-        # 旧口径原样保留:len(t) > 1 即死,判据与文案逐字节不变。
+        # Old convention kept as-is: len(t) > 1 is fatal, the test and its wording are byte-identical.
         multi = {u: sorted(t) for u, t in u2t.items() if len(t) > 1}
         if multi:
-            return False, (f"{len(multi)} 个 unit 对应多个 traj,"
-                           f"例 {list(multi.items())[:2]};同一模型下一个任务实例只应有一条轨迹")
-        return True, f"{len(u2t)} 个 unit 各对一条 traj ✓"
+            return False, (f"{len(multi)} units map to multiple trajs, "
+                           f"e.g. {list(multi.items())[:2]}; under the same model, one task instance should have only one trajectory")
+        return True, f"{len(u2t)} units each map to one traj ✓"
 
-    # K > 1:每个 unit 必须恰好 K 条 traj。例子里带 (实际条数, traj 列表),
-    # 与 K 一并摆出来,别让人还得数 traj 列表的长度才知道差多少。
+    # K > 1: each unit must have exactly K traj. The example carries (actual count,
+    # traj list) laid out alongside K, so no one has to count the traj list's length
+    # themselves to see how far off it is.
     bad_count = {u: (len(t), sorted(t)) for u, t in u2t.items()
                 if len(t) != K}
     if bad_count:
         ex = list(bad_count.items())[:2]
-        return False, (f"{len(bad_count)} 个 unit 的 traj 条数不是 "
-                       f"trajs_per_unit={K},例(unit, (实际条数, traj)) {ex}")
+        return False, (f"{len(bad_count)} units have a traj count that isn't "
+                       f"trajs_per_unit={K}, e.g. (unit, (actual count, traj)) {ex}")
 
-    # §8b 补强判据 1:显式再断言一次 K 条 traj 互异。
+    # §8b reinforcing test 1: explicitly assert once more that the K traj are mutually distinct.
     dup_units = [u for u, t in u2t.items() if len(t) != len(set(t))]
     if dup_units:
-        return False, (f"{len(dup_units)} 个 unit 的 traj 出现重复字符串,"
-                       f"例 {dup_units[:3]};多半是 traj_runs 把同一批轨迹扫了两遍")
+        return False, (f"{len(dup_units)} units have duplicate traj strings, "
+                       f"e.g. {dup_units[:3]}; most likely traj_runs scanned the same batch of trajectories twice")
 
-    # §8b 补强判据 2:采样序号必须恰好是 {0..K-1} 各一个。
+    # §8b reinforcing test 2: the sampling indices must be exactly {0..K-1}, one each.
     unparsed, idx_of = [], {}
     for u, t in u2t.items():
         idxs = []
@@ -175,23 +217,23 @@ def gate_b_unit_traj(rows_by_split, K):
                 idxs.append(k)
         idx_of[u] = idxs
     if unparsed:
-        return False, (f"{len(unparsed)} 条 traj 文件名不带采样序号(stem 尾部"
-                       f"解析不出 _r<k>),例 {unparsed[:3]};trajs_per_unit="
-                       f"{K} > 1 时每条 traj 文件名都必须带 _r0.._r{K - 1} "
-                       f"的采样序号后缀")
+        return False, (f"{len(unparsed)} traj filenames carry no sampling index (the stem's tail "
+                       f"doesn't parse out _r<k>), e.g. {unparsed[:3]}; when trajs_per_unit="
+                       f"{K} > 1, every traj filename must carry a _r0.._r{K - 1} "
+                       f"sampling-index suffix")
     bad_idx = {u: sorted(idxs) for u, idxs in idx_of.items()
               if sorted(idxs) != list(range(K))}
     if bad_idx:
         ex = list(bad_idx.items())[:2]
-        return False, (f"{len(bad_idx)} 个 unit 的采样序号不是 "
-                       f"{{0..{K - 1}}} 各一个,例 {ex}")
+        return False, (f"{len(bad_idx)} units' sampling indices are not "
+                       f"exactly one each of {{0..{K - 1}}}, e.g. {ex}")
 
-    return True, f"{len(u2t)} 个 unit 各对恰好 {K} 条 traj ✓"
+    return True, f"{len(u2t)} units each map to exactly {K} trajs ✓"
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="实验配置 json(§2.3)")
+    ap.add_argument("--config", required=True, help="experiment config json (§2.3)")
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text())
     env = cfg["env"]
@@ -200,10 +242,10 @@ def main():
     seed = cfg.get("seed", SEED)
     gates = []
 
-    # ---------- 门禁 C(先做:它是 B 的上游拦截) ----------
+    # ---------- gate C (run first: it is the upstream interception for B) ----------
     gates.append(gate_c(cfg["traj_runs"], env))
 
-    # ---------- 读题单 ----------
+    # ---------- read the task list ----------
     lists = {n: set(read_unit_list(cfg["official_split_files"][n]))
              for n in SPLITS}
 
@@ -211,64 +253,65 @@ def main():
     for sp in SPLITS:
         p = data / f"{sp}.jsonl"
         if not p.is_file():
-            sys.exit(f"数据集不存在: {p}(先跑 build.py)")
+            sys.exit(f"dataset does not exist: {p} (run build.py first)")
         rows[sp] = [json.loads(l) for l in open(p)]
 
-    # ---------- 门禁 A:一模型一数据集 ----------
+    # ---------- gate A: one model, one dataset ----------
     bad_model = Counter(r["model"] for sp in SPLITS for r in rows[sp]
                         if r["model"] != model_full)
     if bad_model:
-        sys.exit(f"[门禁 A] 数据集里混进了别的模型: {dict(bad_model)}"
+        sys.exit(f"[gate A] another model got mixed into the dataset: {dict(bad_model)} "
                  f"(cfg.model_full={model_full})")
-    gates.append(f"门禁 A 全部 {sum(len(rows[s]) for s in SPLITS)} 行 "
+    gates.append(f"gate A: all {sum(len(rows[s]) for s in SPLITS)} rows have "
                  f"model=={model_full} ✓")
 
-    # ---------- 门禁 B:样本键唯一 + unit 只对一个 traj ----------
+    # ---------- gate B: sample key unique + unit maps to only one traj ----------
     keyc = Counter((r["event"], r["sent_idx"]) for sp in SPLITS
                    for r in rows[sp])
     dupk = [k for k, c in keyc.items() if c > 1]
     if dupk:
-        sys.exit(f"[门禁 B] (event, sent_idx) 重复 {len(dupk)} 个,"
-                 f"例 {dupk[:3]};多半是 traj_runs 把同一批轨迹扫了两遍")
+        sys.exit(f"[gate B] (event, sent_idx) duplicated {len(dupk)} times, "
+                 f"e.g. {dupk[:3]}; most likely traj_runs scanned the same batch of trajectories twice")
     K = cfg.get("trajs_per_unit", 1)
     gate_ok, gate_msg = gate_b_unit_traj(rows, K)
     if not gate_ok:
-        sys.exit(f"[门禁 B] {gate_msg}")
-    gates.append(f"门禁 B 样本键 {len(keyc)} 个全唯一;{gate_msg}")
+        sys.exit(f"[gate B] {gate_msg}")
+    gates.append(f"gate B: all {len(keyc)} sample keys are unique; {gate_msg}")
 
-    # ---------- 门禁 D:题单归属全量核对 ----------
+    # ---------- gate D: full check of task-list membership ----------
     wrong = []
     for sp in SPLITS:
         for r in rows[sp]:
             if r["unit"] not in lists[sp]:
                 wrong.append((sp, r["unit"]))
     if wrong:
-        sys.exit(f"[门禁 D] {len(wrong)} 行的 unit 不在本堆题单里,例 {wrong[:3]}")
-    gates.append("门禁 D 题单归属全量核对(非抽样)✓")
+        sys.exit(f"[gate D] {len(wrong)} rows have a unit not in this pile's task list, e.g. {wrong[:3]}")
+    gates.append("gate D: task-list ownership checked in full (not sampled) ✓")
 
-    # ---------- 门禁 E:报告文案不许撒谎 ----------
+    # ---------- gate E: the report wording must not lie ----------
     sp_report = Path(cfg["official_split_files"]["train"]).parent \
         / "SPLIT_REPORT.json"
     if sp_report.is_file():
         meta = json.loads(sp_report.read_text())
         rp = data / "ANNOTATE_REPORT.md"
         txt = rp.read_text() if rp.is_file() else ""
-        if meta.get("official_split_exists") is False and "官方题单" in txt:
+        if meta.get("official_split_exists") is False and "official task list" in txt:
             sys.exit(
-                f"[门禁 E] {sp_report} 写着本环境没有官方分区,"
-                f"但 {rp} 的文案里还印着「官方题单」。"
-                f"请在 config 里写 split_desc 说明真实切法(build.py 从该字段取文案)。")
-        gates.append(f"门禁 E 报告文案与 SPLIT_REPORT 一致 ✓"
+                f"[gate E] {sp_report} says this environment has no official partition, "
+                f"but {rp}'s report text still prints 'official task list'. "
+                f"Write split_desc in the config to state the real split method (build.py takes the text from that field).")
+        gates.append(f"gate E: report text matches SPLIT_REPORT ✓"
                      f"(official_split_exists="
                      f"{meta.get('official_split_exists')})")
     else:
-        gates.append(f"门禁 E 跳过(没找到 {sp_report})")
+        gates.append(f"gate E skipped (couldn't find {sp_report})")
 
-    # ---------- 偏差 1:真值调用串回读 ----------
-    # 到这里才 import(见文件头注释:eval_causal_call 拉 torch,延后到真正用到
-    # 的地方,好让门禁 A-E 与结构性判据能在没装 torch 的环境下跑/单测)。
+    # ---------- deviation 1: read back the ground-truth call string ----------
+    # Import happens only here (see the file-header comment: eval_causal_call pulls in
+    # torch, deferred to where it is actually used, so gates A-E and the structural
+    # tests can run/be unit-tested in an environment without torch installed).
     from eval_causal_call import norm, parse_call
-    # 一个事件里所有样本共享同一条 label_call,按事件去重后逐条切。
+    # All samples within one event share the same label_call; deduplicate by event, then parse one by one.
     ev_call, ev_split = {}, {}
     for sp in SPLITS:
         for r in rows[sp]:
@@ -294,101 +337,101 @@ def main():
         else:
             bad_par.append((evk, call, named, got))
             per_split_bad[ev_split[evk]] += 1
-            # 逐参数记功:键值都对上的才算回读成功
+            # Score per parameter: read-back counts as successful only when both key and value match.
             gset = {(a["key"], a["value"]) for a in got}
             par_ok += sum(1 for a in named
                           if (a["key"], a["value"]) in gset)
 
-    # ---------- 偏差 2:题单缺口 ----------
+    # ---------- deviation 2: task-list gaps ----------
     gap = {sp: sorted(lists[sp] - {r["unit"] for r in rows[sp]})
            for sp in SPLITS}
 
-    # ---------- 偏差 3:test 有 / train 无的工具 ----------
+    # ---------- deviation 3: tools present in test / absent from train ----------
     tools = {sp: Counter(r["label"] for r in rows[sp]) for sp in SPLITS}
     unseen = sorted(set(tools["test"]) - set(tools["train"]))
     unseen_ev = {t: len({r["event"] for r in rows["test"] if r["label"] == t})
                  for t in unseen}
 
-    # ---------- 偏差 4:test 堆厚度 ----------
+    # ---------- deviation 4: test pile thickness ----------
     test_ev = len({r["event"] for r in rows["test"]})
 
-    md = [f"# {cfg['run_family']} / {cfg['model_short']} 真值调用串回读检查"
+    md = [f"# {cfg['run_family']} / {cfg['model_short']} ground-truth call-string round-trip check "
           f"(check_callstr.py)\n",
           f"- SEED={seed} env={env} model={model_full}",
           f"- config={args.config} data={data}",
-          "- 口径:对每个事件的 label_call 调 "
-          "`eval_causal_call.parse_call`,再把 `(key, norm(value))` 与该事件的 "
-          "`args_named` 逐位比;全等才算回读成功。\n",
-          "## 结构性门禁"]
+          "- settings: call `eval_causal_call.parse_call` on each event's label_call, "
+          "then compare `(key, norm(value))` position by position against the event's "
+          "`args_named`; the round trip succeeds only if every one matches.\n",
+          "## structural gates"]
     md += [f"- {g}" for g in gates]
     md += [
-        "\n## 偏差 1:真值调用串回读",
-        f"- 事件 {n_ev};回读成功 {ok}(**{ok/max(n_ev,1):.4f}**),"
-        f"失败 {len(bad_par)}(**{len(bad_par)/max(n_ev,1):.4f}**)",
-        f"- 失败按 split: {dict(per_split_bad) or '{}'}",
-        f"- 工具名切不回来的事件: {bad_tool}",
-        f"- 参数实例 {par_tot};回读成功 {par_ok}"
+        "\n## deviation 1: ground-truth call-string round trip",
+        f"- events {n_ev}; round trip succeeded {ok} (**{ok/max(n_ev,1):.4f}**), "
+        f"failed {len(bad_par)} (**{len(bad_par)/max(n_ev,1):.4f}**)",
+        f"- failures by split: {dict(per_split_bad) or '{}'}",
+        f"- events whose tool name can't be cut back out: {bad_tool}",
+        f"- arg instances {par_tot}; round trip succeeded {par_ok} "
         f"(**{par_ok/max(par_tot,1):.4f}**)",
-        f"- 参数值里含逗号的实例: {comma_val}"
-        f"({comma_val/max(par_tot,1):.4f})← 这是失败的主因",
-        f"- **结论:params_all_ok / full_call_ok 的天花板是 "
-        f"{ok/max(n_ev,1):.4f}**,生成侧写得再对也拿不到剩下那部分。"
-        f"不修口径的理由见文件头。",
+        f"- instances whose arg value contains a comma: {comma_val} "
+        f"({comma_val/max(par_tot,1):.4f})← this is the main cause of failure",
+        f"- **conclusion: the ceiling for params_all_ok / full_call_ok is "
+        f"{ok/max(n_ev,1):.4f}**, no matter how correctly the generation side writes it, it still can't reach the rest. "
+        f"The reason we don't fix the settings is in the file header.",
         "",
-        f"### 失败样例(前 {EXAMPLES} 条)",
+        f"### failure examples (first {EXAMPLES})",
     ]
     for evk, call, named, got in bad_par[:EXAMPLES]:
         md += [f"- `{evk}`",
                f"  - label_call: `{call}`",
-               f"  - annotate 侧真值: `{named}`",
-               f"  - eval 侧切回来: `{got}`"]
+               f"  - ground truth on the annotate side: `{named}`",
+               f"  - cut back out on the eval side: `{got}`"]
     if not bad_par:
-        md.append("(无)")
+        md.append("(none)")
 
-    md += ["\n## 偏差 2:题单一致但实现实例有缺口",
-           "三个模型共用同一份题单;某个 unit 的轨迹若一个可用事件都没出"
-           "(思考 <40 字符 或 调用正则解析不出),该 unit 就不进本模型的数据集。"
-           "所以现行门禁 G10「三模型 unit 集合完全相同」在 bfcl 上不成立,"
-           "跨模型只是**近似**同题。"]
+    md += ["\n## deviation 2: task lists match, but implemented instances have gaps",
+           "The three models share the same task list; if a unit's trajectory doesn't produce a single usable event "
+           "(thinking <40 characters, or the call regex can't parse it out), that unit doesn't enter this model's dataset. "
+           "So the current gate G10 'unit sets are identical across the three models' doesn't hold on bfcl, "
+           "across models it's only an **approximate** match on the same task."]
     for sp in SPLITS:
         g = gap[sp]
         shown = ", ".join(g[:MAX_LIST]) + (" ..." if len(g) > MAX_LIST else "")
-        md.append(f"- {sp}: 题单 {len(lists[sp])} 题 -> 实现 "
-                  f"{len({r['unit'] for r in rows[sp]})} 题;缺 {len(g)} 题"
+        md.append(f"- {sp}: task list {len(lists[sp])} tasks -> realized "
+                  f"{len({r['unit'] for r in rows[sp]})} tasks; missing {len(g)} tasks"
                   + (f": {shown}" if g else ""))
 
-    md += ["\n## 偏差 3:test 出现而 train 未出现的工具",
-           "这类工具在 label2id 里(tool_vocab.json 按全堆统计),"
-           "不会被 eval_tool.py 丢掉,而是**必然判错** = 不可达的精度上限。",
-           f"- {len(unseen)} 类: {unseen_ev if unseen else '(无)'}",
-           f"- 词表规模: train {len(tools['train'])} / val {len(tools['val'])}"
-           f" / test {len(tools['test'])} 类"]
+    md += ["\n## Deviation 3: tools that appear in test but not in train",
+           "These tools are in label2id (tool_vocab.json is tallied over the whole pile), "
+           "eval_tool.py will not drop them; it is **always scored wrong** = an unreachable accuracy ceiling.",
+           f"- {len(unseen)} kinds: {unseen_ev if unseen else '(none)'}",
+           f"- vocab size: train {len(tools['train'])} / val {len(tools['val'])}"
+           f" / test {len(tools['test'])} kinds"]
 
-    md += ["\n## 偏差 4:test 堆厚度",
-           f"- test 事件 {test_ev} / 实例 "
+    md += ["\n## Deviation 4: test pile thickness",
+           f"- test events {test_ev} / instances "
            f"{len({r['unit'] for r in rows['test']})}"
-           f" / 样本 {len(rows['test'])}"]
+           f" / samples {len(rows['test'])}"]
     if test_ev < THIN_TEST_EVENTS:
-        md.append(f"- ⚠ test 事件数 {test_ev} < {THIN_TEST_EVENTS}:"
-                  f"bootstrap 置信区间会很宽,且低 risk 档(0.05)很可能没有触发点、"
-                  f"θ 全 null 导致 eval_causal_call 直接 SystemExit 退 1"
-                  f"(先例 c1_q35_mext)。交接时必须点明。")
+        md.append(f"- ⚠ test event count {test_ev} < {THIN_TEST_EVENTS}: "
+                  f"the bootstrap confidence interval will be wide, and the low-risk tier (0.05) is quite likely to have no fire point, "
+                  f"with θ all null causing eval_causal_call to SystemExit with code 1 directly "
+                  f"(precedent: c1_q35_mext). Must be called out at handoff.")
     else:
-        md.append(f"- test 事件数 {test_ev} ≥ {THIN_TEST_EVENTS},厚度正常")
+        md.append(f"- test event count {test_ev} ≥ {THIN_TEST_EVENTS}, thickness normal")
 
     if sp_report.is_file():
         meta = json.loads(sp_report.read_text())
-        md += ["\n## 题单真源",
-               f"- 唯一真源 = 入库的 txt:{sp_report.parent}",
+        md += ["\n## Task list source of truth",
+               f"- sole source of truth = the committed txt: {sp_report.parent}",
                f"- {meta.get('truth_source', '')}",
-               f"- 推导源 md5: {meta.get('md5', {})}"]
+               f"- derivation source md5: {meta.get('md5', {})}"]
 
     (data / "CALLSTR_CHECK.md").write_text("\n".join(md) + "\n")
     for g in gates:
         print(f"[gate] {g}")
-    print(f"{env}/{cfg['model_short']}: 回读 {ok}/{n_ev} "
-          f"({ok/max(n_ev,1):.4f}) 参数 {par_ok}/{par_tot} "
-          f"含逗号 {comma_val};题单缺口 "
+    print(f"{env}/{cfg['model_short']}: read-back {ok}/{n_ev} "
+          f"({ok/max(n_ev,1):.4f}) args {par_ok}/{par_tot} "
+          f"contains comma {comma_val}; task list gap "
           f"{ {sp: len(gap[sp]) for sp in SPLITS} }")
     print(f"done -> {data / 'CALLSTR_CHECK.md'}")
 

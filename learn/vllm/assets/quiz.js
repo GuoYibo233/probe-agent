@@ -1,16 +1,16 @@
-/* 共用测验组件。用法（HTML 里不写任何 JS）：
+/* Shared quiz component. Usage (no JS needed in the HTML):
  *
  *   <div class="quiz" data-answer="b">
- *     <p class="q">题干</p>
+ *     <p class="q">question stem</p>
  *     <div class="opts">
- *       <button data-k="a">选项一</button>
- *       <button data-k="b">选项二</button>
+ *       <button data-k="a">option one</button>
+ *       <button data-k="b">option two</button>
  *     </div>
- *     <p class="fb" data-k="a">选 a 时给的反馈</p>
- *     <p class="fb" data-k="b">选 b 时给的反馈</p>
+ *     <p class="fb" data-k="a">feedback shown when a is picked</p>
+ *     <p class="fb" data-k="b">feedback shown when b is picked</p>
  *   </div>
  *
- * 反馈立刻出，答完锁定。页面底部若有 <p class="score"> 会自动计分。
+ * Feedback appears immediately and locks once answered. If the page has a <p class="score"> at the bottom, it's scored automatically.
  */
 (function () {
   function init() {
@@ -20,7 +20,7 @@
 
     function paint() {
       if (!board) return;
-      board.textContent = '已答 ' + done + '/' + quizzes.length + '，答对 ' + right;
+      board.textContent = 'Answered ' + done + '/' + quizzes.length + ', correct ' + right;
     }
     paint();
 

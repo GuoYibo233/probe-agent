@@ -1,22 +1,26 @@
-"""tests/test_share_gen_eval.py —— spec `.scratch/kvshare-train/spec.md` 第
-16.9 节工单 08 的 (a)(b)(c)(d)(e),对应工单
-`.scratch/kvshare-train/issues/08-gen-eval.md`。
+"""tests/test_share_gen_eval.py -- (a)(b)(c)(d)(e) of ticket 08 in spec
+`.scratch/kvshare-train/spec.md` section 16.9, corresponding to ticket
+`.scratch/kvshare-train/issues/08-gen-eval.md`.
 
-不往 `tests/test_share_trainer.py` 末尾加(工单 09、10 并行,三张往同一文件
-末尾加用例必撞),小模型的构造照该文件现有的 `_tiny_config` 辅助函数
-import 过来用。spec 16.9 前言:新用例一律用手造的小事件与随机初始化的小
-模型,不读 `pipeline/data/nyapass_aw_v1/gptoss` 这种现役大目录(一个用例
-读一遍 val 就是十几分钟)——本文件全部用手造 jsonl,真实分词器只用来分词。
+Not appended to the end of `tests/test_share_trainer.py` (tickets 09 and 10 run in
+parallel, and three tickets appending cases to the same file's end would collide);
+the small-model construction is imported from that file's existing `_tiny_config`
+helper function. Preface to spec 16.9: new test cases always use hand-built small
+events and a randomly initialized small model, never read a live large directory
+like `pipeline/data/nyapass_aw_v1/gptoss` (one case reading through val once takes
+over ten minutes) -- this file uses hand-built jsonl throughout, the real tokenizer
+is used only for tokenizing.
 
-跑法(要 cprobe-env,`import train_causal_share` 顶层有 transformers>=5.14
-版本门):
+How to run (needs cprobe-env, `import train_causal_share` has a top-level
+transformers>=5.14 version gate):
   cprobe-env/bin/python -m unittest tests.test_share_gen_eval -v
-系统 python3 跑全量 discover 时本模块整体 skip(没有 torch),不算失败;
-mbert-env(transformers 4.57.6)下同样兜住照样 skip(照
-`tests/test_cparam_assembly.py` 第 21 到 29 行、`tests/test_share_trainer.py`
-的做法)。
+When system python3 runs the full discover, this module is skipped entirely (no
+torch), which does not count as a failure; under mbert-env (transformers 4.57.6),
+it is caught and skipped the same way (following `tests/test_cparam_assembly.py`
+lines 21 to 29 and `tests/test_share_trainer.py`'s approach).
 
-真实 Qwen3-0.6B-Base 分词器路径不存在时,涉及它的用例 `skipTest`。
+When the real Qwen3-0.6B-Base tokenizer path does not exist, the test cases that
+touch it call `skipTest`.
 """
 import ast
 import json
@@ -32,29 +36,30 @@ try:
     import torch
     import transformers
     from transformers import AutoModelForCausalLM, AutoTokenizer
-except ImportError as e:                       # 系统 python3 没有 torch
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # System python3 has no torch
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 try:
     import train_causal_share as tcs           # noqa: E402
     import train_causal_callgen                # noqa: E402
     import train_causal_param                  # noqa: E402
     import share_data                          # noqa: E402
-except ImportError as e:                       # 系统 python3 没有 transformers
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
-except SystemExit as e:                        # mbert-env 的 transformers<5.14
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # System python3 has no transformers
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
+except SystemExit as e:                        # mbert-env's transformers<5.14
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 from tests.test_share_trainer import _tiny_config  # noqa: E402
 
 QWEN_PATH = train_causal_callgen.MODELS["qwen"]
-SEED = 20260729          # 测试假件自己的固定种子,同 tests/test_share_trainer.py
+SEED = 20260729          # The test fixture's own fixed seed, same as tests/test_share_trainer.py
 
 
 def _mk_row(event, i, n_sents=1, sent_idx=0):
-    """一个独立小事件的单行:label/label_call 互相匹配,cgen/cparam 两种
-    mode 都能干净装载(cparam 的 `param_target` 不会剥离失败)。照
-    `tests/test_share_data.py` 的 `_row`/`_clean_rows` 同一种构造方式。"""
+    """A single row of one independent small event: label/label_call match each other,
+    and it loads cleanly under both cgen/cparam modes (cparam's `param_target` does
+    not fail to strip). Built the same way as `tests/test_share_data.py`'s
+    `_row`/`_clean_rows`."""
     label = f"apis.pad{i}.call"
     text = f"Please handle synthetic request number {i} right now completely."
     return dict(event=event, sent_idx=sent_idx, n_sents=n_sents, text=text,
@@ -68,8 +73,9 @@ def _write_jsonl(rows, path):
 
 
 def _make_data_dir(n_train, n_eval):
-    """手造 `n_train` 个训练事件 + `n_eval` 个 val 事件的数据目录(各事件
-    独立、各一行),写进一个临时目录的 train.jsonl / val.jsonl。"""
+    """Hand-build a data directory of `n_train` training events + `n_eval` val events
+    (each event independent, one row each), written into train.jsonl / val.jsonl
+    in a temporary directory."""
     tmpdir = tempfile.TemporaryDirectory()
     data_dir = Path(tmpdir.name)
     train_rows = [_mk_row(f"tr{i}", i) for i in range(n_train)]
@@ -90,21 +96,22 @@ def _make_model_dir(tok):
 
 
 class TestGenEvalEndToEnd(unittest.TestCase):
-    """(a) `--gen-eval 3 --gen-bs 2 --gen-eval-at all --eval-per-epoch 2`
-    跑通,每条 `eval` 事件都有生成式评估的三个键、`gen_n == 3`;换
-    `--gen-eval-at last` 时只有 `frac == 2` 那条有。(b) `--gen-eval 0` 时
-    `eval` 事件没有这三个键。
+    """(a) `--gen-eval 3 --gen-bs 2 --gen-eval-at all --eval-per-epoch 2` runs through,
+    every `eval` event has the three generative-evaluation keys, `gen_n == 3`; with
+    `--gen-eval-at last`, only the entry with `frac == 2` has them. (b) With
+    `--gen-eval 0`, `eval` events do not have these three keys.
 
-    12 个训练事件(`--events-per-mb` 默认 4、`--accum` 默认 2)给出
-    M=ceil(12/4)=3、U=ceil(3/2)=2,`--eval-per-epoch 2` 下 eval_points 是
-    `{1: 1, 2: 2}`——两个评估点、两个不同的 frac,才分得出 all/last 的差别。
-    6 个 val 事件(各一行)够 `--gen-eval 3` 抽样。
+    12 training events (`--events-per-mb` default 4, `--accum` default 2) give
+    M=ceil(12/4)=3, U=ceil(3/2)=2, and under `--eval-per-epoch 2`, eval_points is
+    `{1: 1, 2: 2}` -- two evaluation points with two different fracs, which is what
+    separates the all/last difference. 6 val events (one row each) are enough for
+    `--gen-eval 3` to sample from.
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def _run(self, mode, extra_argv, out_name):
@@ -141,11 +148,11 @@ class TestGenEvalEndToEnd(unittest.TestCase):
                                   "--gen-eval-at", "all"], "run_all")
         evals = self._eval_events(events)
         self.assertEqual({e["frac"] for e in evals}, {1, 2},
-                         f"应该有 frac=1、frac=2 两个评估点:{evals}")
+                         f"should have two eval points, frac=1 and frac=2: {evals}")
         for e in evals:
-            self.assertIn(exact_key, e, f"缺 {exact_key}:{e}")
-            self.assertEqual(e["gen_n"], 3, f"gen_n 应该是 3:{e}")
-            self.assertIn("gen_s", e, f"缺 gen_s:{e}")
+            self.assertIn(exact_key, e, f"missing {exact_key}: {e}")
+            self.assertEqual(e["gen_n"], 3, f"gen_n should be 3: {e}")
+            self.assertIn("gen_s", e, f"missing gen_s: {e}")
 
     def _check_mode_last(self, mode):
         exact_key = "val_exact_call" if mode == "cgen" else "val_exact_params"
@@ -155,13 +162,13 @@ class TestGenEvalEndToEnd(unittest.TestCase):
         self.assertEqual({e["frac"] for e in evals}, {1, 2})
         by_frac = {e["frac"]: e for e in evals}
         self.assertNotIn(exact_key, by_frac[1],
-                         f"gen-eval-at last 下 frac=1(非 epoch 末)不该有 "
-                         f"{exact_key}:{by_frac[1]}")
+                         f"under gen-eval-at last, frac=1 (not epoch end) should not have "
+                         f"{exact_key}: {by_frac[1]}")
         self.assertNotIn("gen_n", by_frac[1])
         self.assertNotIn("gen_s", by_frac[1])
         self.assertIn(exact_key, by_frac[2],
-                      f"gen-eval-at last 下 frac=2(epoch 末)应该有 "
-                      f"{exact_key}:{by_frac[2]}")
+                      f"under gen-eval-at last, frac=2 (epoch end) should have "
+                      f"{exact_key}: {by_frac[2]}")
         self.assertEqual(by_frac[2]["gen_n"], 3)
         self.assertIn("gen_s", by_frac[2])
 
@@ -171,7 +178,7 @@ class TestGenEvalEndToEnd(unittest.TestCase):
         evals = self._eval_events(events)
         self.assertTrue(evals)
         for e in evals:
-            self.assertNotIn(exact_key, e, f"--gen-eval 0 时不该有 {exact_key}:{e}")
+            self.assertNotIn(exact_key, e, f"--gen-eval 0 should not have {exact_key}: {e}")
             self.assertNotIn("gen_n", e)
             self.assertNotIn("gen_s", e)
 
@@ -195,12 +202,12 @@ class TestGenEvalEndToEnd(unittest.TestCase):
 
 
 class TestSampleGenEvalRowsDeterministic(unittest.TestCase):
-    """(c) 抽样函数单独测:同一批事件两次抽样结果相同。"""
+    """(c) The sampling function tested on its own: two samples on the same batch of events give the same result."""
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def _events(self, mode):
@@ -235,18 +242,20 @@ class TestSampleGenEvalRowsDeterministic(unittest.TestCase):
 
 
 class TestAttnCtxOnlyInForwardPacked(unittest.TestCase):
-    """(d) 守卫测试(spec 16.10 #29):`_attn_ctx(...)` 的调用点只许落在
-    前向 `_forward_packed` 与反向 `backward_logical_minibatch` /
-    `_fwd_bwd_block` 三处,生成路径永远不许——无掩码的 `generate` 走 GQA,
-    mem-efficient 内核报 `No available kernel`,后来有人把生成也包进
-    `_attn_ctx` 就会撞上这条。用 `ast` 找 `_attn_ctx` 的 `Call` 节点,断言
-    父函数只落在这三个里(`def _attn_ctx` 那一行本身是 `FunctionDef`,
-    不是 `Call`,不算调用)。"""
+    """(d) Guard test (spec 16.10 #29): call sites for `_attn_ctx(...)` are only allowed
+    to fall in three places -- the forward `_forward_packed`, and the backward
+    `backward_logical_minibatch` / `_fwd_bwd_block` -- never in the generation path:
+    unmasked `generate` goes through GQA, and the mem-efficient kernel reports
+    `No available kernel`; if someone later wraps generation into `_attn_ctx` too,
+    this test catches it. Use `ast` to find `_attn_ctx`'s `Call` nodes and assert
+    the enclosing function is only one of these three (the line `def _attn_ctx`
+    itself is a `FunctionDef`, not a `Call`, and does not count as a call)."""
 
     def test_attn_ctx_called_only_inside_forward_packed(self):
-        # 允许的调用点:前向一处,反向两处(--grad-ckpt 的重算发生在
-        # .backward() 里,必须与前向同一内核,spec 16.10 #37);生成路径
-        # (main 的评估段、eval_gen)永远不许出现在这个集合里。
+        # Allowed call sites: one in the forward, two in the backward (--grad-ckpt's
+        # recomputation happens inside .backward(), and must use the same kernel as the
+        # forward, spec 16.10 #37); the generation path (main's evaluation section,
+        # eval_gen) must never appear in this set.
         ALLOWED_ATTN_CTX_CALLERS = {"_forward_packed",
                                     "backward_logical_minibatch",
                                     "_fwd_bwd_block"}
@@ -276,24 +285,25 @@ class TestAttnCtxOnlyInForwardPacked(unittest.TestCase):
         v.visit(tree)
         self.assertEqual(
             v.offenders, [],
-            "spec 16.10 #29:_attn_ctx(...) 只能在前向(_forward_packed)与反向"
-            "(backward_logical_minibatch / _fwd_bwd_block,#37:检查点重算要同一"
-            "内核)里调用——无掩码的 model.generate 走 enable_gqa,mem-efficient "
-            f"内核报 No available kernel。发现调用点在别的函数里:{v.offenders}")
+            "spec 16.10 #29: _attn_ctx(...) can only be called in the forward (_forward_packed) and backward "
+            "(backward_logical_minibatch / _fwd_bwd_block, #37: checkpoint recompute must use the same "
+            "kernel) -- unmasked model.generate goes through enable_gqa, the mem-efficient "
+            f"kernel reports No available kernel. Found a call site outside those functions: {v.offenders}")
 
 
 class TestEvalCeBeat(unittest.TestCase):
-    """(e) `eval_ce` 的 `beat` 回调在块数 >= 25 时至少被调一次。
+    """(e) `eval_ce`'s `beat` callback is called at least once when the block count >= 25.
 
-    30 个独立的单行小事件,`tok_budget` 卡到刚好只能放下一个事件(一个
-    事件的补齐长度是 16 的倍数、两个事件的补齐长度之和必然 > 该预算),
-    每个事件独自成一个物理块,给出 30 个物理块。
+    30 independent single-row small events, with `tok_budget` set exactly tight
+    enough to fit only one event (one event's padded length is a multiple of 16, and
+    the sum of two events' padded lengths necessarily exceeds this budget), so each
+    event becomes its own physical block, giving 30 physical blocks.
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def test_beat_called_when_at_least_25_blocks(self):
@@ -307,10 +317,11 @@ class TestEvalCeBeat(unittest.TestCase):
             torch.manual_seed(SEED)
             model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
             model.eval()
-            # tok_budget = 全部事件里补齐长度最小的那个:任何一对事件的
-            # cand_max 都不会小于这个值,2 * pad16(cand_max) 必然 > tok_budget
-            # ——不管这 30 个事件的 packed_len 具体怎么分布,两两都装不进
-            # 同一块,保证每个事件独自成一个物理块(30 块)。
+            # tok_budget = the smallest padded length among all events: no pair of events'
+            # cand_max can be smaller than this value, so 2 * pad16(cand_max) necessarily
+            # exceeds tok_budget -- no matter how these 30 events' packed_len is distributed,
+            # no two of them fit into the same block, guaranteeing each event becomes its own
+            # physical block (30 blocks).
             pads = [((ev["packed_len"] + 15) // 16) * 16 for ev in events]
             tok_budget = min(pads)
 
@@ -319,13 +330,13 @@ class TestEvalCeBeat(unittest.TestCase):
                 tcs.eval_ce(model, events, tok_budget, "cpu", amp=False,
                            beat=lambda: calls.append(1))
             self.assertGreaterEqual(len(calls), 1,
-                                    "块数 >= 25 时 beat 应该至少被调一次")
+                                    "when block count >= 25, beat should be called at least once")
         finally:
             data_tmp.cleanup()
             model_tmp.cleanup()
 
     def test_beat_none_does_not_crash(self):
-        """`beat=None`(默认)不影响现有调用点——不传时不出错。"""
+        """`beat=None` (the default) does not affect existing call sites -- no error when it is not passed."""
         data_tmp, data_dir = _make_data_dir(n_train=1, n_eval=3)
         try:
             events, _counts = share_data.load_events(

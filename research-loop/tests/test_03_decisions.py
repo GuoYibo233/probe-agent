@@ -50,7 +50,7 @@ class DecisionSources(unittest.TestCase):
     # ---- source list must be non-empty (02 L42) --------------------------------------
 
     def test_empty_source_list_refused(self):
-        # 02 L42: "空列表入账脚本拒收"; 30 L52.
+        # 02 L42: "the ledger script refuses an empty list"; 30 L52.
         r = self.sb.rl("decision", "add", "--text", "no sources at all")
         self.assertEqual(r.rc, 2, str(r))
         self.assertEqual(r.kind, "validation")
@@ -90,7 +90,8 @@ class DecisionSources(unittest.TestCase):
         self.assertEqual(self.sb.count("decisions", book="gyb"), 0)
 
     def test_file_source_with_anchor_is_accepted_anchor_not_checked(self):
-        # 02 L42: "锚点本身不校验" - any anchor text passes as long as the path exists.
+        # 02 L42: "the anchor itself is not validated" - any anchor text passes as long as the
+        # path exists.
         self.sb.write_file("notes/anchored.md", "# heading\ntext\n")
         r = self.sb.rl("decision", "add", "--text", "t", "--source", "file:notes/anchored.md#heading-that-does-not-exist",
                        "--json")
@@ -99,19 +100,19 @@ class DecisionSources(unittest.TestCase):
         self.assertEqual(row["sources"], [{"kind": "file", "path": "notes/anchored.md", "anchor": "heading-that-does-not-exist"}])
 
     def test_file_source_may_point_at_review_dir(self):
-        # 02 L42 (2026-08-18 gyb 裁): "review/ 里的清单... 都算"; 30 L57.
+        # 02 L42 (2026-08-18 gyb ruled): "checklists under review/ ... all count"; 30 L57.
         self.sb.write_file("review/checklist.md", "# checklist\n")
         r = self.sb.rl("decision", "add", "--text", "t", "--source", "file:review/checklist.md", "--json")
         self.assertEqual(r.rc, 0, str(r))
 
     def test_file_source_may_point_at_experiments_dir(self):
-        # 02 L42: "experiments/ 里的部署报告... 都算"; 30 L57.
+        # 02 L42: "deployment reports under experiments/ ... all count"; 30 L57.
         self.sb.write_file("experiments/deploy-report.md", "# report\n")
         r = self.sb.rl("decision", "add", "--text", "t", "--source", "file:experiments/deploy-report.md", "--json")
         self.assertEqual(r.rc, 0, str(r))
 
     def test_run_source_unknown_run_id_refused(self):
-        # 02 L42: "run 类的 run_id 不在 runs 账里拒收".
+        # 02 L42: "a run-type run_id not in the runs ledger is refused".
         r = self.sb.rl("decision", "add", "--text", "t", "--source", "run:ho-9999-a1")
         self.assertEqual(r.rc, 2, str(r))
         self.assertEqual(r.kind, "validation")
@@ -129,7 +130,8 @@ class DecisionSources(unittest.TestCase):
         self.assertEqual(v2["sources"], v1["sources"])
 
     def test_update_prints_open_orders_citing_old_version(self):
-        # 02 L87, L110: "写完那一刻，rl 当场列出引着旧版而没到终态的单子和它们的 holder".
+        # 02 L87, L110: "the moment the write finishes, rl immediately lists the orders that
+        # cite an old version and have not reached a terminal status, plus their holders".
         # Structured shape from the task conventions: --json carries the ids under "affected".
         dec = make_decision(self.sb)
         ho = open_work_order(self.sb, None, dec)
@@ -154,7 +156,7 @@ class DecisionSources(unittest.TestCase):
         self.assertIn({"kind": "file", "path": "notes/confirm-evidence.md"}, v2["sources"])
 
     def test_confirm_does_not_print_affected_orders(self):
-        # 02 L87: "rl decision confirm 不打印：确认继续没有东西要复核".
+        # 02 L87: "rl decision confirm prints nothing: confirm proceeds with nothing to review".
         dec = make_decision(self.sb)
         open_work_order(self.sb, None, dec)  # an open order citing v1, to make sure there WOULD be something to print
         self.sb.write_file("notes/confirm-evidence.md", "# still holds\n")
@@ -163,7 +165,8 @@ class DecisionSources(unittest.TestCase):
         self.assertNotIn("affected", r.json)
 
     def test_confirm_does_not_make_a_citing_order_stale(self):
-        # 02 L60, L85: confirm "不算改版，不触发过版"; 30 L56.
+        # 02 L60, L85: confirm "does not count as a version change, does not trigger staleness";
+        # 30 L56.
         dec = make_decision(self.sb)
         ho = open_work_order(self.sb, None, dec)
         self.sb.write_file("notes/confirm-evidence.md", "# still holds\n")
@@ -186,9 +189,9 @@ class DecisionSources(unittest.TestCase):
         self.assertEqual(self.sb.count("decisions", book="gyb"), before)
 
     def test_retire_requires_text(self):
-        # 02 L76: "必须带理由（谁废都要，gyb 也要）"; the reason is the version's `text`
-        # (decisions.schema.json requires "text", minLength 1 - same content-validation
-        # class as the empty-sources refusal above).
+        # 02 L76: "must carry a reason (whoever retires it, gyb included)"; the reason is the
+        # version's `text` (decisions.schema.json requires "text", minLength 1 - same
+        # content-validation class as the empty-sources refusal above).
         # PENDING(issue 37a) (see the commands.json "decision retire" pending note): the exact flag
         # name for the reason is still open for review at the final merge; this test uses
         # --text, the name currently on record in tables/commands.json.
@@ -236,13 +239,13 @@ class DecisionSources(unittest.TestCase):
         self.assertEqual(new["op"], "merge")
         self.assertEqual(set(new["merged_from"]), {dec_a, dec_b})
         self.assertEqual(new["root_id"], dec_a)
-        # 02 L77: "sources 自动含全部被合并的旧决定".
+        # 02 L77: "sources automatically includes all the old decisions being merged".
         self.assertIn({"kind": "decision", "id": dec_a, "version": 1}, new["sources"])
         self.assertIn({"kind": "decision", "id": dec_b, "version": 1}, new["sources"])
 
     def test_merge_retires_old_decisions_keeping_their_own_root_id(self):
-        # 02 L23, L66: "被合并的旧决定的废除版根照旧不动"; root taken by --root is only
-        # for the NEW merged decision, not for the retired old ones.
+        # 02 L23, L66: "the retire version's root of each merged old decision stays as before";
+        # root taken by --root is only for the NEW merged decision, not for the retired old ones.
         dec_a, dec_b = self._two_decisions()
         r = self.sb.rl("decision", "merge", dec_a, dec_b, "--text", "unified approach", "--root", dec_a, "--json")
         self.assertEqual(r.rc, 0, str(r))

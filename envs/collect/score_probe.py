@@ -1,8 +1,9 @@
-"""给截断探针的盲测预测评分。
+"""Score blind-test predictions for the truncation probe.
 
-用法: python score_probe.py <domain> <pred.json>
-domain ∈ tales/appworld/bfcl。gold 从 runs/probe_v0/gold_<domain>.json 读。
-按截断档位(25/50/75)分桶报: 名称命中率 / 完全命中率,再按置信度分桶。
+Usage: python score_probe.py <domain> <pred.json>
+domain ∈ tales/appworld/bfcl. gold is read from runs/probe_v0/gold_<domain>.json.
+Report, bucketed by truncation level (25/50/75): name hit rate / exact hit rate, then
+bucketed by confidence.
 """
 
 import json
@@ -61,10 +62,10 @@ def main():
     for frac in sorted(buckets, key=int):
         b = buckets[frac]
         n = b["n"]
-        print(f"@{frac}%: n={n}  首调用名命中 {b['name']/n:.2f}  "
-              f"全序列名命中 {b['names_all']/n:.2f}  完全一致 {b['exact']/n:.2f}")
+        print(f"@{frac}%: n={n}  first-call name hit {b['name']/n:.2f}  "
+              f"full-sequence name hit {b['names_all']/n:.2f}  exact match {b['exact']/n:.2f}")
         for cv, (cn, ch) in sorted(b["conf"].items()):
-            print(f"    conf={cv}: n={cn} 名命中 {ch/cn:.2f}")
+            print(f"    conf={cv}: n={cn} name hit {ch/cn:.2f}")
 
 
 if __name__ == "__main__":

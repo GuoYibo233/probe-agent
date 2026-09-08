@@ -1,19 +1,19 @@
 #!/bin/bash
-# ident3(2026-08-18):三臂逐 token 同、5 题 x 每题 10 遍。一臂一进程,遍内 5 题
-# 串行、遍间串行(计划 plans/archive/2026-08-18-ident3.md §3)。三臂各起一份并行跑。
-# 用法: ident3_job.sh chat|noprobe|nofill <root> [reps=10] [n_tasks=5] [vllm_port=8114] [probe_url=http://localhost:8795]
-#   root = 产物根目录(NFS),每臂每遍一个子目录 <root>/<arm>/rep<r>/
-#   chat 臂的 outdir 名必须以 appworld_gptoss 收尾(采集器约定)
-# 开跑前先过 ident3_gate.py:chat 端点的 prompt_token_ids 必须与 /render 逐 id 相等
-# (vLLM 日期钉、return_token_ids 生效),不过就整臂拒跑。
+# ident3 (2026-08-18): three arms match token-for-token, 5 tasks x 10 reps each. One process per arm, the 5 tasks within a rep
+# run serially, and reps run serially too (plan plans/archive/2026-08-18-ident3.md §3). The three arms each launch one copy and run in parallel.
+# Usage: ident3_job.sh chat|noprobe|nofill <root> [reps=10] [n_tasks=5] [vllm_port=8114] [probe_url=http://localhost:8795]
+#   root = output root directory (NFS); one subdirectory per arm per rep, <root>/<arm>/rep<r>/
+#   the chat arm's outdir name must end in appworld_gptoss (collector convention)
+# Before running, pass ident3_gate.py: the chat endpoint's prompt_token_ids must equal /render's, id for id
+# (vLLM date pin, return_token_ids in effect); if it doesn't pass, the whole arm is refused.
 set -u -o pipefail
-ARM="${1:?arm 必填: chat|noprobe|nofill}"
-ROOTDIR="${2:?root 必填(NFS 产物根目录)}"
+ARM="${1:?arm is required: chat|noprobe|nofill}"
+ROOTDIR="${2:?root is required (NFS output root dir)}"
 REPS="${3:-10}"
 NTASK="${4:-5}"
 PORT="${5:-8114}"
 PROBE="${6:-http://localhost:8795}"
-FIRE_NTH="${IDENT3_FIRE_NTH:-5}"      # 伪触发:第几个句尾切口开火(计划 E1)
+FIRE_NTH="${IDENT3_FIRE_NTH:-5}"      # pseudo-trigger: which sentence-ending cut number to fire at (plan E1)
 NEW1=/home/y-guo/reproduce/new1
 cd "$NEW1"
 BASE="http://tokyo108:$PORT/v1"

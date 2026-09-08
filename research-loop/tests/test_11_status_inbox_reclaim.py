@@ -26,7 +26,7 @@ Added by 30 L126-130:
     `stuck` order only gets its linked issue reassigned to the owner, its own status is
     untouched (04 section 8; transitions.json `release_rejected`, `stuck_untouched`).
   - the minimal `--json` shapes of `rl inbox`, `rl doctor`, `rl reclaim` are defined in
-    05-rl-cli.md "退出码与 --json" / exit_codes.json json_shapes.
+    05-rl-cli.md "exit codes and --json" / exit_codes.json json_shapes.
   - run does not call inbox (05 L141, sync-inbox issue 28): no fixture in this file
     gives a `run` session an inbox item.
 
@@ -35,8 +35,8 @@ sections L149-170, reclaim L172-187, doctor L189-221); 04-handoffs-and-sessions.
 L162-186 (reclaim rules), L188-194 (three notifications), and transitions.json rows
 `release_in_progress`, `release_rejected`, `stuck`, `reject` (who_can_write includes
 `reclaim`; `release_in_progress` needs a non-empty `progress_note`, auto-filled by
-reclaim); 01-gyb.md L116-135 (status sections and --json keys, restated from 05, "两边
-要一字不差").
+reclaim); 01-gyb.md L116-135 (status sections and --json keys, restated from 05, "the two
+sides must match word for word").
 
 `line` field container shape and whether it is stored as one value or a list is left
 open by handoffs.schema.json ("PENDING(part 04 L27)"); `rl status --json`'s top-level

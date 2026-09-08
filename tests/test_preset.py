@@ -1,10 +1,14 @@
-"""预设线的验收测试(改造 spec 在 .scratch/gen-preset/spec.md)。
+"""Acceptance tests for the preset line (the redesign spec is at .scratch/gen-preset/spec.md).
 
-现役预设三份:`default` 是全线唯一的生成口径,每个入口的 `--preset` 缺省就是它;
-`gptoss_default` 是 OpenAI 官方推荐口径;`gptoss_bfcl_high` 是 BFCL 线的口径。
-这里钉四件事:预设与模型表本身合格;`default` 的 client 节与 server 节逐项对得上;
-每个入口的 `--preset` 缺省是 `default`;预设 client 节的采样键写了就进请求体。
-温度这个键只有预设文件一个来源,所以下面的断言全部回读预设文件的值。
+Three presets are active: `default` is the one generation setting for the whole
+line, and every entry's `--preset` defaults to it; `gptoss_default` is OpenAI's
+official recommended setting; `gptoss_bfcl_high` is the BFCL line's setting.
+This pins down four things: the presets and the model table are themselves valid;
+`default`'s client section and server section match item by item; every entry's
+`--preset` defaults to `default`; a sampling key written in a preset's client
+section flows into the request body.
+Temperature has exactly one source, the preset file, so every assertion below
+reads back the value from the preset file.
 """
 import ast
 import json
@@ -24,8 +28,9 @@ from model_registry import resolve  # noqa: E402
 
 APPWORLD_PY = ROOT / "envs/appworld/venv/bin/python"
 
-# 每个吃 --preset 的入口。缺省值直接从源码里读:采集器与 splice_replay 各自
-# 要专用 venv 才 import 得动,读源码这条路在任何机器上都走得通。
+# Every entry that takes --preset. Defaults are read straight from the source: the
+# collector and splice_replay each need a dedicated venv to import, so reading the
+# source works on any machine.
 PRESET_ENTRYPOINTS = [
     "envs/collect/run_appworld.py",
     "envs/collect/run_alfworld.py",
@@ -39,9 +44,10 @@ PRESET_ENTRYPOINTS = [
 
 
 def _preset_arg_defaults(rel_path):
-    """源码里每一处 `--preset` argparse 参数的 default,按出现顺序成表。
-    一个文件里有几个子命令就有几处(replay_inject 的 run 是其中一处),
-    整表一起断言,以后长出第二处也照样钉住。"""
+    """Table every `--preset` argparse default in the source, in the order they appear.
+    A file with N subcommands has N entries (replay_inject's run is one of them);
+    the whole table is asserted together, so a second occurrence added later is
+    still pinned down."""
     tree = ast.parse((ROOT / rel_path).read_text())
     out = []
     for node in ast.walk(tree):
@@ -58,7 +64,7 @@ INJECT_DIR = ROOT / "pipeline/inject"
 
 
 def _import_inject(name):
-    """live_appworld/replay_inject 互相 import 同目录模块,得走 sys.path。"""
+    """live_appworld/replay_inject import same-directory modules from each other, so this goes through sys.path."""
     if str(INJECT_DIR) not in sys.path:
         sys.path.insert(0, str(INJECT_DIR))
     import importlib
@@ -67,7 +73,7 @@ def _import_inject(name):
 
 class TestModelsJson(unittest.TestCase):
     def test_resolve_unchanged_after_migration(self):
-        # 搬进 configs/models.json 前后,resolve 的结果一个字都不许变
+        # Before and after moving into configs/models.json, the resolve result must not change by a single character
         self.assertEqual(
             resolve("gpt-oss-120b"),
             "/net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b")
@@ -92,11 +98,11 @@ class TestPresetsValidate(unittest.TestCase):
 
     def test_unknown_key_rejected(self):
         p = {"model": "gpt-oss-120b", "client": {"tempreature": 0.5}}
-        self.assertTrue(any("未知键" in e for e in PL.validate(p)))
+        self.assertTrue(any("unknown key" in e for e in PL.validate(p)))
 
     def test_unknown_model_rejected(self):
         p = {"model": "no-such-model"}
-        self.assertTrue(any("不在 models.json" in e for e in PL.validate(p)))
+        self.assertTrue(any("not in models.json" in e for e in PL.validate(p)))
 
 
 class TestMergePrecedence(unittest.TestCase):
@@ -123,27 +129,28 @@ class TestMergePrecedence(unittest.TestCase):
         self.assertIsNone(out["reasoning_effort"])
 
     def test_preset_null_falls_through(self):
-        # 预设里的 null = 不指定,要落到 fallback,不是覆盖成 None
+        # null in a preset means unspecified, so it falls back -- it must not overwrite to None
         out = PL.merge_client({"max_tokens": None}, {"max_tokens": None},
                               {"max_tokens": 8192})
         self.assertEqual(out["max_tokens"], 8192)
 
     def test_cli_beats_preset_on_sampling_key(self):
-        # 各入口把 temperature 挂在 cli 一侧:命令行显式给了就压过预设
+        # Every entry attaches temperature on the cli side: an explicit command-line value overrides the preset
         pre = PL.load_preset("default")["client"]
         out = PL.merge_client({"temperature": 0.25}, pre, {})
         self.assertEqual(out["temperature"], 0.25)
 
 
 class TestDefaultPreset(unittest.TestCase):
-    """`default` 是现役唯一口径:client 节的采样档 + server 节的服务参数,
-    两节都在这里逐项钉住(server 节抄 envs/runs/nyapass/launch_servers.py)。"""
+    """`default` is the only active setting: the client section's sampling profile plus
+    the server section's serving parameters -- both sections are pinned down here
+    item by item (the server section is copied from envs/runs/nyapass/launch_servers.py)."""
 
     def test_loads_and_validates(self):
-        # load_preset 内部就调 validate,不合格会抛;这里再对原始 json(不带
-        # load_preset 事后加的 _name/_path)显式校验一遍,与
-        # TestPresetsValidate.test_all_presets_pass 同一种查法
-        PL.load_preset("default")   # 不抛 = 过校验
+        # load_preset already calls validate internally and raises on failure; here we
+        # explicitly validate the raw json again (without the _name/_path load_preset
+        # adds afterward), the same check as TestPresetsValidate.test_all_presets_pass
+        PL.load_preset("default")   # No raise means validation passes
         raw = json.loads((PL.PRESET_DIR / "default.json").read_text())
         self.assertEqual(PL.validate(raw), [])
 
@@ -172,13 +179,13 @@ class TestDefaultPreset(unittest.TestCase):
                          "http://tokyo108:8103/v1")
 
     def test_merge_client_takes_preset_temperature(self):
-        # CLI 未显式给的时候,温度取预设 client 节写的那个值
+        # When the CLI does not give an explicit value, temperature takes the value written in the preset's client section
         pre = PL.load_preset("default")
         out = PL.merge_client({"temperature": None}, pre["client"], {})
         self.assertEqual(out["temperature"], pre["client"]["temperature"])
 
     def test_gen_launch_default_preset_name(self):
-        # manifest 没写 gptoss_client_preset 时,发射清单生成器用的预设名
+        # The preset name the launch-manifest generator uses when gptoss_client_preset is absent from the manifest
         gl_dir = str(ROOT / "pipeline/collect")
         if gl_dir not in sys.path:
             sys.path.insert(0, gl_dir)
@@ -187,7 +194,7 @@ class TestDefaultPreset(unittest.TestCase):
 
 
 class TestRequireTemperature(unittest.TestCase):
-    """生成入口的温度检查:温度是个数就放行,预设写 null 就当场停下。"""
+    """Temperature check for the generation entry: a numeric temperature passes, a preset with null stops it on the spot."""
 
     def test_number_passes_through(self):
         pre = PL.load_preset("default")
@@ -196,7 +203,7 @@ class TestRequireTemperature(unittest.TestCase):
             1.0)
 
     def test_null_temperature_stops(self):
-        # gptoss_bfcl_high 的温度跟着 BFCL 自己那一档走,拿它跑生成入口要报错
+        # gptoss_bfcl_high's temperature follows BFCL's own setting, so running the generation entry with it must error
         pre = PL.load_preset("gptoss_bfcl_high")
         with self.assertRaises(SystemExit) as cm:
             PL.require_temperature(pre["client"]["temperature"],
@@ -205,27 +212,27 @@ class TestRequireTemperature(unittest.TestCase):
 
 
 class TestEntrypointPresetDefault(unittest.TestCase):
-    """每个吃 --preset 的入口,argparse 缺省都是 default。"""
+    """For every entry that takes --preset, the argparse default is default."""
 
     def test_every_entrypoint_defaults_to_default(self):
         for rel in PRESET_ENTRYPOINTS:
             defaults = _preset_arg_defaults(rel)
-            self.assertTrue(defaults, f"{rel} 里要有带 default 的 --preset 参数")
+            self.assertTrue(defaults, f"{rel} should have a --preset argument with a default")
             self.assertEqual(defaults, ["default"] * len(defaults), rel)
 
 
 class TestBfclPresetFields(unittest.TestCase):
-    """gptoss_bfcl_high 的 client 节:BFCL 线的口径。"""
+    """gptoss_bfcl_high's client section: the BFCL line's setting."""
 
     def test_bfcl_high(self):
         c = PL.load_preset("gptoss_bfcl_high")["client"]
-        # temperature=None:BFCL 线沿用 BFCL 自带的那一档
+        # temperature=None: the BFCL line keeps using BFCL's own built-in setting
         self.assertEqual((c["api"], c["reasoning_effort"], c["temperature"],
                           c["max_tokens"]), ("chat", "high", None, 16384))
 
 
 class TestServeCmdFromDefault(unittest.TestCase):
-    """serve_preset 用 default 的 server 节拼 vllm serve 命令。"""
+    """serve_preset assembles the vllm serve command from default's server section."""
 
     def test_cmd_carries_server_node_values(self):
         import serve_preset as SP
@@ -244,13 +251,13 @@ class TestServeCmdFromDefault(unittest.TestCase):
 
     def test_preset_without_server_refuses(self):
         import serve_preset as SP
-        pre = PL.load_preset("gptoss_bfcl_high")   # 这份没有 server 节
+        pre = PL.load_preset("gptoss_bfcl_high")   # This one has no server section
         with self.assertRaises(SystemExit):
             SP.build(pre, gpu=0)
 
 
 class TestEntrypointsCompile(unittest.TestCase):
-    """改过的入口全部能编译(语法层;import 层的等价见下一个类)。"""
+    """Every changed entry compiles (syntax level; import-level equivalence is in the next class)."""
 
     FILES = [
         "preset_loader.py", "model_registry.py", "serve_preset.py", "run.py",
@@ -268,10 +275,11 @@ class TestEntrypointsCompile(unittest.TestCase):
             py_compile.compile(str(ROOT / f), doraise=True)
 
 
-@unittest.skipUnless(APPWORLD_PY.exists(), "appworld venv 不在这台机器上")
+@unittest.skipUnless(APPWORLD_PY.exists(), "appworld venv is not on this machine")
 class TestCollectorSettings(unittest.TestCase):
-    """采集器口径:settings_from_args 不传 --preset 就落在 default 上,
-    预设 client 节的采样键流进产出(在 appworld venv 里跑,common 要 openai)。
+    """Collector setting: when settings_from_args is not given --preset, it falls back to
+    default, and the sampling keys in the preset's client section flow into the output
+    (this runs in the appworld venv, where common needs openai).
     """
 
     CODE = r"""
@@ -281,17 +289,17 @@ sys.path.insert(0, "{collect}")
 from common import settings_from_args
 
 def S(**kw):
-    base = dict(preset=None, api=None, reasoning_effort=None, start_date=None,
-                model=None, base_url=None)
-    base.update(kw)
-    return settings_from_args(Namespace(**base))
+        base = dict(preset=None, api=None, reasoning_effort=None, start_date=None,
+                                model=None, base_url=None)
+        base.update(kw)
+        return settings_from_args(Namespace(**base))
 
-a = S()                                      # 不传 --preset
+a = S()                                      # do not pass --preset
 b = S(preset="gptoss_default",
-      model="gpt-oss-120b", base_url="http://tokyo108:8103/v1")
-c = S(preset="default", reasoning_effort="low")   # CLI 压过预设
+            model="gpt-oss-120b", base_url="http://tokyo108:8103/v1")
+c = S(preset="default", reasoning_effort="low")   # CLI overrides the preset
 print(json.dumps([a, [b["temperature"], b["top_p"], b["seed"]],
-                  c["reasoning_effort"]]))
+                                    c["reasoning_effort"]]))
 """
 
     def test_no_preset_lands_on_default(self):
@@ -307,24 +315,26 @@ print(json.dumps([a, [b["temperature"], b["top_p"], b["seed"]],
         self.assertEqual(a["reasoning_effort"], "high")
         self.assertEqual(a["max_tokens"], 8192)
         self.assertEqual(a["start_date"], "2026-08-06")
-        # default 带 server 节:端点与模型名省得掉
+        # default carries a server section: the endpoint and model name can be omitted
         self.assertEqual(a["base_url"], "http://tokyo108:8103/v1")
         self.assertEqual(a["model"], "gpt-oss-120b")
-        # gptoss_default 的 temperature/top_p 要流到产出,seed 留 null
+        # gptoss_default's temperature/top_p must flow into the output, seed stays null
         self.assertEqual(b_sample, [1.0, 1.0, None])
-        self.assertEqual(c_effort, "low")       # CLI 压过预设
+        self.assertEqual(c_effort, "low")       # CLI overrides the preset
 
 
 class TestSamplingForwarding(unittest.TestCase):
-    """采样键写进预设就进请求体(2026-08-21 对齐)。此前 top_p/seed 只有采集线
-    转发——活跑/回放的合并兜底里没有这两个键,预设写了也静默不生效。
-    兜底表覆盖下面这几个键;temperature 由 --preset(缺省 default)在合并的
-    cli 一侧给出,值只出自预设文件。"""
+    """A sampling key written into a preset flows into the request body (aligned 2026-08-21).
+    Before this, only the collection line forwarded top_p/seed -- the merge fallback for
+    live runs/replay did not have these two keys, so writing them into a preset had no
+    effect, silently. The fallback table covers the keys below; temperature is given on
+    the cli side of the merge by --preset (default: default), with its value coming only
+    from the preset file."""
 
     SAMPLING_KEYS = {"top_p", "max_tokens", "stop", "seed"}
 
     def test_live_fb_covers_sampling_keys(self):
-        # merge_client 只处理 cli∪fallbacks 里的键:兜底缺一个键 = 那个键失效
+        # merge_client only handles keys in cli∪fallbacks: a key missing from the fallback means that key does not take effect
         la = _import_inject("live_appworld")
         self.assertEqual(self.SAMPLING_KEYS - set(la.PRESET_FB), set())
 
@@ -370,7 +380,7 @@ class TestSamplingForwarding(unittest.TestCase):
 
 
 class TestPresetSweep(unittest.TestCase):
-    """preset-sweep:参数网格 -> 一批合格预设文件,名字即口径。"""
+    """preset-sweep: a parameter grid -> a batch of valid preset files, the name is the setting."""
 
     def test_expand_cartesian_order(self):
         import sweep_preset as SW
@@ -392,11 +402,11 @@ class TestPresetSweep(unittest.TestCase):
     def test_parse_grid_rejects_bad_input(self):
         import sweep_preset as SW
         with self.assertRaises(SystemExit):
-            SW.parse_grid("api=chat")            # 非采样键
+            SW.parse_grid("api=chat")            # Not a sampling key
         with self.assertRaises(SystemExit):
-            SW.parse_grid("temperature=abc")     # 转不成数
+            SW.parse_grid("temperature=abc")     # Cannot convert to a number
         with self.assertRaises(SystemExit):
-            SW.parse_grid("temperature")         # 没有 =
+            SW.parse_grid("temperature")         # No =
 
     def test_main_writes_valid_presets_and_refuses_overwrite(self):
         import sweep_preset as SW
@@ -414,8 +424,8 @@ class TestPresetSweep(unittest.TestCase):
             p0 = json.loads(files[0].read_text())
             self.assertEqual((p0["client"]["temperature"],
                               p0["client"]["top_p"]), (0.2, 0.9))
-            self.assertEqual(p0["model"], "gpt-oss-120b")  # base 的其余照抄
-            with self.assertRaises(SystemExit):   # 同名拒绝覆盖
+            self.assertEqual(p0["model"], "gpt-oss-120b")  # Copy the rest of base as is
+            with self.assertRaises(SystemExit):   # Reject overwriting a same-named entry
                 SW.main(["--base", "gptoss_default",
                          "--grid", "temperature=0.2,0.7",
                          "--grid", "top_p=0.9", "--out-dir", td])
@@ -437,8 +447,9 @@ class TestPresetSweep(unittest.TestCase):
 
 
 class TestBfclHandlerPreset(unittest.TestCase):
-    """BFCL handler 在仓库环境 import 不了(要 BFCL venv 的 bfcl_eval),
-    只 exec NEW1_PRESET_PREFIX_END 以上的预设读取段——那一段纯标准库。"""
+    """The BFCL handler cannot be imported in the repo environment (it needs bfcl_eval
+    from the BFCL venv), so only exec the preset-reading section above
+    NEW1_PRESET_PREFIX_END -- that section is pure standard library."""
 
     SRC = (ROOT / "envs/collect/bfcl_gptoss/gpt_oss_chat.py").read_text()
 
@@ -458,7 +469,7 @@ class TestBfclHandlerPreset(unittest.TestCase):
                 os.environ["NEW1_PRESET_JSON"] = old
 
     def test_no_env_reads_default_preset(self):
-        # 环境变量缺席时读仓库根的 configs/presets/default.json
+        # When the environment variable is absent, read configs/presets/default.json at the repo root
         c = PL.load_preset("default")["client"]
         ns = self.run_prefix(None)
         self.assertEqual(ns["_PRESET_PATH"],

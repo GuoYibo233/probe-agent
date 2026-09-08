@@ -1,22 +1,40 @@
 #!/usr/bin/env python
-"""GPU 上验证形态 A 的内核选择、显存峰值与对齐差值(给主会话跑;本脚本只读模型与 val 集,不写仓库)。
+"""Verify form A's kernel selection, peak GPU memory, and alignment difference on GPU
+(run from the main session; this script only reads the model and val set, and writes
+nothing to the repo).
 
-七步,每一步做完立刻把 --out 的 JSON 整个重写一次(崩了也留下前面的数);每一步包在 try 里,
-出错就把错误原文记进 JSON、清显存、接着跑下一步,不许整个脚本崩掉。
+Seven steps; after each step finishes, immediately rewrite the whole --out JSON (so a
+crash still leaves the earlier numbers). Each step is wrapped in try: on error, record
+the original error text into the JSON, clear GPU memory, and move on to the next step --
+the whole script must never crash.
   1 kernel_eligibility  torch.backends.cuda.can_use_{flash,efficient,cudnn}_attention(SDPAParams, debug=True)
-                        对形态 A 真实形状的 q/k/v(bf16,[1,16,L,128])+ bool 掩码 / bf16 加性掩码各问一遍
-  2 forced_efficient    sdpa_kernel([EFFICIENT_ATTENTION]) 下整模型前向+反向(autocast bf16):峰值显存、耗时、profiler 里的内核名
-  3 default_selection   不套上下文的同一前向:profiler 内核名和第 2 步比(第一次发射实测 H100 默认落到 cuDNN)
-  4 math_at_short_L     sdpa_kernel([MATH]) 在短序列上跑:只取 prompt ≤ --math-L 的行,前缀截到 --math-L,
-                        逐行装到拼接长度 L ≤ 1.25 × --math-L 为止;装不进两行就跳过并记原因。峰值对照解析式 28×16×L²×4 字节
-  5 mask_variants       bool 掩码 / bf16 加性掩码 × L 补到 16 的倍数 / 不补:各自的峰值显存(mem-efficient 的掩码预处理会不会复制)
-  6 alignment           随机 5 个短事件:旧训练器逐行前向 vs 形态 A,每行 loss 与逐 token 差值,bf16 autocast 与 fp32(autocast 关、
-                        highest 精度、fp32 掩码)各一遍,同一次运行里带「旧训练器单行 vs 整批补齐」的基线差
-  7 optional            --grad-ckpt / --lora:形态 A 在这两个开关下的峰值显存
+                        asks once each for form A's real-shape q/k/v (bf16, [1,16,L,128])
+                        with a bool mask and with a bf16 additive mask
+  2 forced_efficient    sdpa_kernel([EFFICIENT_ATTENTION]) forward+backward on the whole
+                        model (autocast bf16): peak GPU memory, wall time, kernel name
+                        from the profiler
+  3 default_selection   the same forward pass with no context manager: compare the
+                        profiler's kernel name against step 2 (first launch measured H100
+                        defaulting to cuDNN)
+  4 math_at_short_L     run sdpa_kernel([MATH]) on short sequences: take only rows whose
+                        prompt ≤ --math-L, crop the prefix to --math-L, pack rows one by
+                        one until the concatenated length L ≤ 1.25 × --math-L; skip and
+                        record the reason if even two rows do not fit. Compare the peak
+                        against the closed form 28×16×L²×4 bytes
+  5 mask_variants       bool mask / bf16 additive mask × L padded to a multiple of 16 /
+                        not padded: peak GPU memory for each combination (whether
+                        mem-efficient's mask preprocessing makes a copy)
+  6 alignment           5 random short events: old trainer's per-row forward pass vs
+                        form A, per-row loss and per-token difference, one pass each with
+                        bf16 autocast and fp32 (autocast off, highest precision, fp32
+                        mask); the same run also carries the baseline difference between
+                        "old trainer single row" and "packed whole batch"
+  7 optional            --grad-ckpt / --lora: form A's peak GPU memory under these two
+                        switches
 
-用法(仓库根,cprobe-env,单卡):
+Usage (repo root, cprobe-env, single card):
   CUDA_VISIBLE_DEVICES=0 cprobe-env/bin/python .scratch/kvshare-train/verify/gpu_kernel_check.py \
-      --max-len 8192 --math-L 2048 --grad-ckpt --lora --out <产物目录>/gpu_result.json
+      --max-len 8192 --math-L 2048 --grad-ckpt --lora --out <output dir>/gpu_result.json
 """
 import argparse
 import json
@@ -51,7 +69,7 @@ def kernel_names(prof):
 
 
 def run_model(model, pk, dev, mask_kind, mask_dtype=torch.bfloat16, backends=None, do_profile=False):
-    """整模型前向加反向(autocast bf16),返回峰值显存、耗时、内核名。"""
+    """Forward plus backward pass on the whole model (autocast bf16); returns peak GPU memory, wall time, and kernel name."""
     torch.cuda.synchronize()
     torch.cuda.reset_peak_memory_stats()
     base = torch.cuda.memory_allocated()
@@ -79,7 +97,7 @@ def run_model(model, pk, dev, mask_kind, mask_dtype=torch.bfloat16, backends=Non
 
 
 def pad_to_16(pk):
-    """把打包序列补到 16 的倍数:pad 位不进 loss 位表,掩码行只让 pad 自己看自己(避免全 False 行)。"""
+    """Pad the packed sequence to a multiple of 16: pad positions are excluded from the loss-position table, and a pad row's mask only lets it see itself (to avoid an all-False row)."""
     L = pk["L"]
     Lp = (L + 15) // 16 * 16
     if Lp == L:
@@ -93,12 +111,16 @@ def pad_to_16(pk):
 
 
 def short_pack(events, tok, math_L):
-    """第 4 步的短序列:另挑「全文 token ≤ math_L 的最长事件」(前缀本身装得进,每行尾巴正常),
-    按 sent_idx 顺序逐行装到拼接长度 L 超过 1.25 × math_L 为止;装不进两行就返回原因。
-    (最长事件本身不能用:它的 64 行 prompt 全都超过 2048,截前缀会把整段 prompt 塞进尾巴,第一次发射就是这样崩的。)"""
+    """Short sequence for step 4: pick instead "the longest event whose full-text token
+    count is ≤ math_L" (the prefix itself fits, and every row's tail is normal), pack
+    rows one by one in sent_idx order until the concatenated length L exceeds 1.25 ×
+    math_L; return the reason if even two rows do not fit.
+    (The single longest event cannot be used: all 64 of its prompt rows exceed 2048, so
+    cropping the prefix stuffs the whole prompt into the tail -- that is exactly how the
+    first launch crashed.)"""
     ek, n_full = pc.longest_event_within(events, tok, math_L)
     if ek is None:
-        return None, f"没有全文 token ≤ {math_L} 的事件", None
+        return None, f"no event with full-text tokens ≤ {math_L}", None
     rs = events[ek]
     rows = pc.build_rows(tok, rs)
     full_ids = tok(rs[-1]["text"], add_special_tokens=False)["input_ids"]
@@ -109,18 +131,23 @@ def short_pack(events, tok, math_L):
             break
         keep.append(r)
     if len(keep) < 2:
-        return None, f"事件 {ek}(全文 {n_full} 个 token)装不进两行就超过 1.25 × {math_L}", None
+        return None, f"event {ek} (full text {n_full} tokens) does not fit into two rows: exceeds 1.25 × {math_L}", None
     pk = pc.build_packed(keep, full_ids)
     return pk, None, dict(event=ek, n_full=n_full, n_rows=len(keep), n_rows_total=len(rows))
 
 
 def alignment(model, tok, events, chosen, dev, fp32):
-    """旧训练器逐行前向 vs 形态 A:每行 loss 与逐 token 的差,带补齐基线。fp32=True 时 autocast 关、fp32 掩码。
+    """Old trainer's per-row forward pass vs form A: per-row loss and per-token difference,
+    with the padding baseline. When fp32=True, autocast is off and the mask is fp32.
 
-    参照路径不套 EFFICIENT 上下文:单行不补齐的批没有掩码,HF 走 enable_gqa=True(K/V 保持 8 头不复制),
-    mem-efficient 不支持 GQA,强制 EFFICIENT 会抛 `No available kernel`(补射第一次就是这样错的,日志第 15 行:
-    `both fused kernels require query, key and value to have the same num_heads`)。新路径永远带掩码
-    (repeat_kv 到 16 头),套 EFFICIENT,这正是训练器对齐检查里新路径要走的内核。"""
+    The reference path does not use the EFFICIENT context manager: a single-row,
+    unpadded batch has no mask, so HF takes the enable_gqa=True path (K/V stay at 8
+    heads, not repeated); mem-efficient does not support GQA, so forcing EFFICIENT
+    raises `No available kernel` (this is exactly the error on the first refire, log
+    line 15: `both fused kernels require query, key and value to have the same
+    num_heads`). The new path always carries a mask (repeat_kv up to 16 heads) and uses
+    EFFICIENT -- this is exactly the kernel the new path takes in the trainer's
+    alignment check."""
     olds, singles, news = [], [], []
     olds_t, singles_t, news_t = [], [], []
     ctx = torch.autocast("cuda", dtype=torch.bfloat16, enabled=not fp32)
@@ -130,8 +157,8 @@ def alignment(model, tok, events, chosen, dev, fp32):
             rr = pc.build_rows(tok, events[e])
             fi = tok(events[e][-1]["text"], add_special_tokens=False)["input_ids"]
             pk_e = pc.build_packed(rr, fi)
-            ce_b, rm_b = pc.forward_old(model, tok, rr, dev, batched=True)      # 默认内核选择
-            ce_s, rm_s = pc.forward_old(model, tok, rr, dev, batched=False)     # 默认内核选择
+            ce_b, rm_b = pc.forward_old(model, tok, rr, dev, batched=True)      # default kernel selection
+            ce_s, rm_s = pc.forward_old(model, tok, rr, dev, batched=False)     # default kernel selection
             with sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION]):
                 ce_n, rm_n = pc.forward_packed(model, pk_e, dev, "float", mask_dtype)
             olds.append(rm_b); singles.append(rm_s); news.append(rm_n)
@@ -175,7 +202,7 @@ def main():
         json.dump(R, open(args.out, "w"), indent=1, ensure_ascii=False)
 
     def step(name, fn):
-        """跑一步:成功就记结果,失败就记错误原文,两种情况都立刻落盘。"""
+        """Run one step: record the result on success, record the original error text on failure; write to disk immediately either way."""
         try:
             R[name] = fn()
             print(name, json.dumps(R[name], ensure_ascii=False)[:2000], flush=True)
@@ -187,7 +214,7 @@ def main():
         R["steps_done"].append(name)
         dump()
 
-    # 最长事件(全文 token ≤ max_len)的打包序列
+    # the packed sequence of the longest event (full-text tokens ≤ max_len)
     ek, n_full = pc.longest_event_within(events, tok, args.max_len)
     rs = events[ek]
     rows = pc.build_rows(tok, rs)
@@ -197,7 +224,7 @@ def main():
     print("longest event", R["longest_event"], flush=True)
     dump()
 
-    # 1 内核资格
+    # 1 kernel eligibility
     def s1():
         L = pk["L"]
         q = torch.randn(1, N_HEADS, L, HEAD_DIM, device=dev, dtype=torch.bfloat16)
@@ -224,12 +251,12 @@ def main():
         return elig
     step("kernel_eligibility", s1)
 
-    # 2, 3 强制 efficient / 默认
+    # 2, 3 forced efficient / default
     step("forced_efficient", lambda: run_model(model, pk, dev, "bool",
                                                backends=[SDPBackend.EFFICIENT_ATTENTION], do_profile=True))
     step("default_selection", lambda: run_model(model, pk, dev, "bool", backends=None, do_profile=True))
 
-    # 4 math 在短 L(只取 prompt 装得进 math_L 的行,L ≤ 1.25 × math_L,否则跳过)
+    # 4 math at short L (only rows whose prompt fits math_L, L ≤ 1.25 × math_L, else skip)
     def s4():
         pk_short, why, picked = short_pack(events, tok, args.math_L)
         if pk_short is None:
@@ -243,7 +270,7 @@ def main():
         return info
     step("math_at_short_L", s4)
 
-    # 5 掩码变体(全长,强制 efficient)
+    # 5 mask variants (full length, forced efficient)
     def s5():
         pk16 = pad_to_16(pk)
         return dict(
@@ -254,7 +281,7 @@ def main():
             L_padded=pk16["L"])
     step("mask_variants", s5)
 
-    # 6 对齐差值(短事件):bf16 autocast 一遍,fp32 一遍
+    # 6 alignment difference (short events): one pass bf16 autocast, one pass fp32
     chosen, _ = pc.pick_events(events, args.n_events, 8, 4000, args.seed)
     step("bf16_alignment", lambda: alignment(model, tok, events, chosen, dev, fp32=False))
 
@@ -270,7 +297,7 @@ def main():
             torch.backends.cuda.matmul.allow_tf32 = prev_tf32
     step("fp32_alignment", s6b)
 
-    # 7 可选
+    # 7 optional
     if args.grad_ckpt:
         def s7a():
             model.gradient_checkpointing_enable()

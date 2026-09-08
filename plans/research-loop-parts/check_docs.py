@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""plans/research-loop-parts/ 的机器检查。
+"""Machine checks for plans/research-loop-parts/.
 
-在仓库根跑：python3 plans/research-loop-parts/check_docs.py
-只用标准库，只读文件，一处都不改。有错项时退出码 1，全过退出码 0。
-警告不影响退出码。
+Run from the repo root: python3 plans/research-loop-parts/check_docs.py
+Uses only the standard library, only reads files, changes nothing. Exit code 1 if
+anything fails, 0 if everything passes. Warnings do not affect the exit code.
 
-六项检查：
-  1. sync-inbox.md 的问题编号有没有重号，当前最大编号是几
-  2. HANDOFF.md 里有没有把下一个问题编号写死的句子
-  3. 全目录 .md 里有没有工具调用的标记残留
-  4. 冻结三份对各自冻结 commit 的 diff 有没有越过「## 要同步到别处的」标题
-  5. 非冻结份里已裁口径的字样残留（白名单见 check_docs_whitelist.txt）
-  6. 22 份 part 的三个固定标题齐不齐
+Six checks:
+  1. Whether sync-inbox.md's issue numbers have duplicates, and what the current max is
+  2. Whether HANDOFF.md has a sentence that hardcodes the next issue number
+  3. Whether any .md file across the tree has a leftover tool-call marker
+  4. Whether the diff of each of the three frozen parts against its own frozen commit
+     goes past the "## To sync elsewhere" heading
+  5. Whether any non-frozen part still has wording from a cut scope (whitelist in
+     check_docs_whitelist.txt)
+  6. Whether all 22 parts have their three fixed headings
 """
 
 import os
@@ -22,7 +24,7 @@ import sys
 DIR = os.path.dirname(os.path.abspath(__file__))
 WHITELIST_FILE = os.path.join(DIR, "check_docs_whitelist.txt")
 
-# 三份冻结的 part 和各自的冻结 commit
+# The three frozen parts and each one's frozen commit
 FROZEN = [
     ("03-ledgers.md", "884ac0b"),
     ("04-handoffs-and-sessions.md", "9b78d7c"),
@@ -32,17 +34,17 @@ FROZEN_NAMES = {name for name, _ in FROZEN}
 
 SYNC_HEADING = "## 要同步到别处的"
 
-# 不是 part 的三份
+# The three that are not parts
 NON_PART = {"HANDOFF.md", "README.md", "sync-inbox.md"}
 
-# 每份 part 定稿要有的三个标题
+# The three headings each finalized part must have
 PART_HEADINGS = [
     "和别的 part 的接口",
     "源文档没写清的",
     "第二轮模拟里归到这一份的摩擦",
 ]
 
-# 已裁口径的字样
+# Wording from a cut scope
 RETIRED_WORDS = [
     "公共规矩八条",
     "公共母版八条",
@@ -52,12 +54,12 @@ RETIRED_WORDS = [
     "read:notes",
 ]
 
-# 工具调用残留标记（行首，允许前面有空白）
+# Leftover tool-call marker (start of line, leading whitespace allowed)
 RESIDUE_RE = re.compile(r"^\s*(</content>|</invoke>|<content>|<invoke)")
 
 
 def repo_root():
-    """仓库根：先问 git，问不出来就按目录结构推。"""
+    """Repo root: ask git first; if that fails, infer from the directory structure."""
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -107,48 +109,49 @@ class Result:
 
     def report(self):
         if self.errors:
-            head = "错 %d 项" % len(self.errors)
+            head = "%d errors" % len(self.errors)
         elif self.warnings:
-            head = "警告 %d 项" % len(self.warnings)
+            head = "%d warnings" % len(self.warnings)
         else:
-            head = "过"
+            head = "pass"
         print("[%s] %s" % (head, self.title))
         for m in self.infos:
             print("    · %s" % m)
         for m in self.errors:
-            print("    错  %s" % m)
+            print("    ERR  %s" % m)
         for m in self.warnings:
-            print("    警  %s" % m)
+            print("    WARN %s" % m)
         print("")
 
 
-# ---------------------------------------------------------------- 检查 1
+# ---------------------------------------------------------------- check 1
 
 def check_numbers():
-    """sync-inbox.md 的问题编号：重号报错，打印当前最大编号。
+    """Issue numbers in sync-inbox.md: report an error on duplicates, print the current max.
 
-    定义处有两种写法：
-      - 顶格的「- 问题 N：」或「- 问题 N（…）：」
-      - 缩进的「  N. 」列表，且这个列表不是从 1 起（从 1 起的是「要改的地方」清单，
-        那是本段内部的条目号，不是全局问题号）
+    A definition site has two forms:
+      - Column-0 "- Issue N:" or "- Issue N (...):"
+      - An indented "  N. " list, where the list does not start from 1 (a list starting
+        from 1 is a "things to change" list, which is a within-section item number, not
+        a global issue number)
     """
-    r = Result("检查 1：sync-inbox.md 问题编号")
+    r = Result("Check 1: sync-inbox.md issue numbers")
     path = os.path.join(DIR, "sync-inbox.md")
     if not os.path.exists(path):
-        r.error("找不到 sync-inbox.md")
+        r.error("sync-inbox.md not found")
         return r
     lines = read_lines(path)
 
-    defs = []  # (编号, 行号, 写法)
+    defs = []  # (number, line number, form)
 
-    # 顶格的「- 问题 N：」/「- 问题 N（」；「- 问题 1 附带」「- 问题 30 已落」这类后续行不算定义处
+    # Column-0 "- Issue N:" / "- Issue N (" -- follow-up lines like "- Issue 1 also carries" or "- Issue 30 already landed" do not count as a definition site
     top_re = re.compile(r"^- 问题 (\d+)(?=[：（])")
     for i, line in enumerate(lines, 1):
         m = top_re.match(line)
         if m:
-            defs.append((int(m.group(1)), i, "问题 N"))
+            defs.append((int(m.group(1)), i, "issue N"))
 
-    # 缩进的编号列表，按「一段连续的缩进编号行」分组
+    # Indented numbered lists, grouped by "a contiguous run of indented numbered lines"
     item_re = re.compile(r"^  (\d+)\. ")
     blocks = []
     cur = []
@@ -163,12 +166,12 @@ def check_numbers():
         blocks.append(cur)
     for block in blocks:
         if block[0][0] == 1:
-            continue  # 从 1 起的是段内条目号，跳过
+            continue  # a list starting from 1 is a within-section item number, skip it
         for num, i in block:
             defs.append((num, i, "  N. "))
 
     if not defs:
-        r.error("一个问题编号定义处都没扫到，正则和文件对不上了")
+        r.error("found zero issue-number definition sites; the regex no longer matches the file")
         return r
 
     seen = {}
@@ -177,28 +180,28 @@ def check_numbers():
     for num in sorted(seen):
         places = seen[num]
         if len(places) > 1:
-            r.error("问题 %d 重号，定义处在第 %s 行" % (
-                num, "、".join(str(p[0]) for p in places)))
+            r.error("issue %d is duplicated, defined at line %s" % (
+                num, ",".join(str(p[0]) for p in places)))
 
     nums = sorted(seen)
-    r.info("扫到 %d 个问题编号定义处，当前最大编号是 %d" % (len(defs), nums[-1]))
+    r.info("found %d issue-number definition sites, current max number is %d" % (len(defs), nums[-1]))
     gaps = [n for n in range(1, nums[-1] + 1) if n not in seen]
     if gaps:
-        r.info("1 到 %d 之间没有定义处的编号：%s" % (
-            nums[-1], "、".join(str(n) for n in gaps)))
+        r.info("numbers between 1 and %d with no definition site: %s" % (
+            nums[-1], ",".join(str(n) for n in gaps)))
     else:
-        r.info("1 到 %d 连续，没有缺号" % nums[-1])
+        r.info("1 through %d are contiguous, no missing numbers" % nums[-1])
     return r
 
 
-# ---------------------------------------------------------------- 检查 2
+# ---------------------------------------------------------------- check 2
 
 def check_handoff_hardcoded_number():
-    """HANDOFF.md 里不许把下一个问题编号写死。"""
-    r = Result("检查 2：HANDOFF.md 有没有把下一个问题编号写死")
+    """HANDOFF.md must not hardcode the next issue number."""
+    r = Result("Check 2: whether HANDOFF.md hardcodes the next issue number")
     path = os.path.join(DIR, "HANDOFF.md")
     if not os.path.exists(path):
-        r.error("找不到 HANDOFF.md")
+        r.error("HANDOFF.md not found")
         return r
     pats = [
         ("下一个新问题编号", re.compile(r"下一个新问题编号")),
@@ -207,17 +210,17 @@ def check_handoff_hardcoded_number():
     for i, line in enumerate(read_lines(path), 1):
         for name, pat in pats:
             if pat.search(line):
-                r.error("第 %d 行有「%s」：%s" % (i, name, line.strip()[:120]))
+                r.error("line %d has '%s': %s" % (i, name, line.strip()[:120]))
     if not r.errors:
-        r.info("没有写死的编号句；真源是 sync-inbox.md 里现有的最大编号")
+        r.info("no hardcoded number sentence; the real source is the current max number in sync-inbox.md")
     return r
 
 
-# ---------------------------------------------------------------- 检查 3
+# ---------------------------------------------------------------- check 3
 
 def check_tool_residue():
-    """全目录 .md 扫工具调用的标记残留。"""
-    r = Result("检查 3：工具调用标记残留")
+    """Scan every .md file in the tree for leftover tool-call markers."""
+    r = Result("Check 3: leftover tool-call markers")
     count = 0
     for fn in md_files():
         for i, line in enumerate(read_lines(os.path.join(DIR, fn)), 1):
@@ -225,11 +228,11 @@ def check_tool_residue():
                 r.error("%s:%d %s" % (fn, i, line.strip()))
                 count += 1
     if not count:
-        r.info("%d 份 .md 里一个残留标记都没有" % len(md_files()))
+        r.info("zero leftover markers across %d .md files" % len(md_files()))
     return r
 
 
-# ---------------------------------------------------------------- 检查 4
+# ---------------------------------------------------------------- check 4
 
 def git_show(commit, relpath):
     out = subprocess.run(
@@ -262,33 +265,33 @@ HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 def check_frozen():
-    """冻结三份：只许「## 要同步到别处的」标题之后的行有改动。"""
-    r = Result("检查 4：冻结三份的改动有没有越过「%s」" % SYNC_HEADING)
+    """The three frozen parts: only lines after the "## To sync elsewhere" heading may change."""
+    r = Result("Check 4: whether changes to the three frozen files cross '%s'" % SYNC_HEADING)
     for fn, commit in FROZEN:
         path = os.path.join(DIR, fn)
         relpath = os.path.relpath(path, ROOT)
         if not os.path.exists(path):
-            r.error("%s：文件不在了" % fn)
+            r.error("%s: file is gone" % fn)
             continue
 
         new_lines = read_lines(path)
         new_head = heading_line(new_lines)
         if new_head is None:
-            r.error("%s：工作树这一版找不到「%s」标题" % (fn, SYNC_HEADING))
+            r.error("%s: heading '%s' not found in this working-tree version" % (fn, SYNC_HEADING))
             continue
 
         old_lines, err = git_show(commit, relpath)
         if old_lines is None:
-            r.error("%s：git show %s 失败（%s）" % (fn, commit, err))
+            r.error("%s: git show %s failed (%s)" % (fn, commit, err))
             continue
         old_head = heading_line(old_lines)
         if old_head is None:
-            r.error("%s：冻结版 %s 里找不到「%s」标题" % (fn, commit, SYNC_HEADING))
+            r.error("%s: heading '%s' not found in frozen version %s" % (fn, commit, SYNC_HEADING))
             continue
 
         diff, err = git_diff(commit, relpath)
         if diff is None:
-            r.error("%s：git diff %s 失败（%s）" % (fn, commit, err))
+            r.error("%s: git diff %s failed (%s)" % (fn, commit, err))
             continue
 
         hunks = 0
@@ -313,24 +316,24 @@ def check_frozen():
                         bad_new.append(ln)
 
         if bad_old:
-            r.error("%s：冻结版（%s）标题之前第 %s 行被动过" % (
-                fn, commit, "、".join(str(x) for x in bad_old[:20])))
+            r.error("%s: line %s before the heading was touched in the frozen version (%s)" % (
+                fn, commit, ",".join(str(x) for x in bad_old[:20])))
         if bad_new:
-            r.error("%s：工作树标题之前第 %s 行有改动" % (
-                fn, "、".join(str(x) for x in bad_new[:20])))
+            r.error("%s: line %s before the heading has changes in the working tree" % (
+                fn, ",".join(str(x) for x in bad_new[:20])))
         if not bad_old and not bad_new:
-            r.info("%s 对 %s：%d 处改动全在标题（第 %d 行）之后" % (
+            r.info("%s vs %s: all %d changes are after the heading (line %d)" % (
                 fn, commit, hunks, new_head))
     return r
 
 
-# ---------------------------------------------------------------- 检查 5
+# ---------------------------------------------------------------- check 5
 
 def load_whitelist():
-    """白名单：一行一条，格式 文件名:匹配片段。# 开头是注释。"""
+    """Whitelist: one entry per line, format filename:matched fragment. Lines starting with # are comments."""
     wl = {}
     if not os.path.exists(WHITELIST_FILE):
-        return wl, "找不到 %s" % os.path.basename(WHITELIST_FILE)
+        return wl, "%s not found" % os.path.basename(WHITELIST_FILE)
     for raw in read_lines(WHITELIST_FILE):
         line = raw.rstrip()
         if not line.strip() or line.lstrip().startswith("#"):
@@ -346,8 +349,8 @@ def load_whitelist():
 
 
 def check_retired_words():
-    """非冻结份里已裁口径的字样残留；命中白名单的不算。警告，不算错。"""
-    r = Result("检查 5：已裁口径的字样残留（非冻结份）")
+    """Leftover wording from a cut scope in non-frozen parts; a whitelist hit does not count. Warning, not an error."""
+    r = Result("Check 5: leftover wording from settings already cut (non-frozen files)")
     wl, err = load_whitelist()
     if err:
         r.error(err)
@@ -368,26 +371,26 @@ def check_retired_words():
                     used.add((fn, f))
                 continue
             hits += 1
-            r.warn("%s:%d 有「%s」：%s" % (
-                fn, i, "、".join(words), line.strip()[:110]))
+            r.warn("%s:%d has '%s': %s" % (
+                fn, i, ",".join(words), line.strip()[:110]))
     total = sum(len(v) for v in wl.values())
-    r.info("白名单 %d 条，命中 %d 条" % (total, len(used)))
+    r.info("allowlist has %d entries, %d matched" % (total, len(used)))
     stale = [(fn, f) for fn, fs in wl.items() for f in fs if (fn, f) not in used]
     for fn, f in stale:
-        r.info("白名单过期条目（文件里已经没有这一行了）：%s:%s" % (fn, f[:60]))
+        r.info("stale allowlist entry (this line is no longer in the file): %s:%s" % (fn, f[:60]))
     if not hits:
-        r.info("白名单之外没有残留")
+        r.info("no leftovers outside the allowlist")
     return r
 
 
-# ---------------------------------------------------------------- 检查 6
+# ---------------------------------------------------------------- check 6
 
 def check_part_headings():
-    """22 份 part 各自要有三个固定标题；缺的报警告。"""
-    r = Result("检查 6：22 份 part 的三个固定标题")
+    """Each of the 22 parts must have its three fixed headings; report a warning for any missing."""
+    r = Result("Check 6: the three fixed headings across the 22 parts")
     parts = part_files()
     if len(parts) != 22:
-        r.warn("part 份数是 %d，不是 22：%s" % (len(parts), "、".join(parts)))
+        r.warn("part count is %d, not 22: %s" % (len(parts), ",".join(parts)))
     for fn in parts:
         text = "\n".join(read_lines(os.path.join(DIR, fn)))
         missing = [
@@ -395,17 +398,17 @@ def check_part_headings():
             if not re.search(r"^#{1,6} .*" + re.escape(h), text, re.M)
         ]
         if missing:
-            r.warn("%s 缺标题：%s" % (fn, "、".join(missing)))
+            r.warn("%s missing headings: %s" % (fn, ",".join(missing)))
     if not r.warnings:
-        r.info("%d 份 part 三个标题都齐" % len(parts))
+        r.info("all three headings present across %d parts" % len(parts))
     return r
 
 
 # ----------------------------------------------------------------- main
 
 def main():
-    print("检查目录：%s" % DIR)
-    print("仓库根：%s" % ROOT)
+    print("check dir: %s" % DIR)
+    print("repo root: %s" % ROOT)
     print("")
     results = [
         check_numbers(),
@@ -419,7 +422,7 @@ def main():
         r.report()
     errs = sum(len(r.errors) for r in results)
     warns = sum(len(r.warnings) for r in results)
-    print("合计：错 %d 项，警告 %d 项" % (errs, warns))
+    print("total: %d errors, %d warnings" % (errs, warns))
     return 1 if errs else 0
 
 

@@ -1,12 +1,12 @@
 #!/bin/bash
-# w0 复现诊断双臂(2026-08-02,排查活跑 noprobe 17.3% vs w0 28.6% 的系统性来源):
-#   chat    = w0 原采集脚本(run_appworld.py --api chat)今天原样重跑 168 题。
-#             复现 ~28.6% => 活跑驱动有真实口径差;也只有 ~17% => w0 不可复现。
-#   np1shot = 活跑驱动 noprobe 单发版(--tail-tokens 8192,每步一枪,无分段缝)。
-#             对齐 chat => v2 的缺口来自分段续写/65k 上下文;仍 ~17% => 驱动别处有毒。
-# 用法: awdiag_job.sh chat|np1shot   (tmux 里整段跑)
-# 服务前提:tokyo108 8103/8106/8107 三个 gpt-oss **native 131k(无 --max-model-len,
-#          与 w0 采集时 launch_vllm_w0.py 同款)**;tokyo105:8790 探针(/render 用)。
+# w0 recheck diagnostic, two arms (2026-08-02, tracking down the systematic source of live-run noprobe 17.3% vs w0 28.6%):
+#   chat    = today's unmodified rerun of w0's original collection script (run_appworld.py --api chat) on 168 tasks.
+#             reproducing ~28.6% => the live-run driver has a real settings gap; only ~17% => w0 doesn't reproduce.
+#   np1shot = live-run driver's noprobe single-shot version (--tail-tokens 8192, one shot per step, no segment seam).
+#             matching chat => the v2 gap comes from segmented continuation / 65k context; still ~17% => something else in the driver is broken.
+# Usage: awdiag_job.sh chat|np1shot   (run the whole thing in tmux)
+# Serving prerequisite: tokyo108 8103/8106/8107, three gpt-oss instances **native 131k (no --max-model-len,
+#          same as launch_vllm_w0.py used for the w0 collection)**; tokyo105:8790 probe (used by /render).
 set -u
 ARM="$1"
 ROOT=/home/y-guo/reproduce/new1
@@ -31,7 +31,7 @@ case "$ARM" in
   np1shot)
     OUT=$NFS/pipeline/inject/runs/aw_pathdiag/np1shot
     mkdir -p "$OUT"
-    # 动态领题:清票根,没写 final 的题全部重新开抢(claim() 的约定)
+    # Dynamic task claiming: clear the claim root, all tasks without a final get re-claimed (the claim() convention)
     rm -rf "$OUT/.claims"
     for s in $(seq 0 5); do
       port=${PORTS[$((s % 3))]}
@@ -43,8 +43,8 @@ case "$ARM" in
         > "$LOG/new1_awdiag_np1shot_s${s}.log" 2>&1 &
     done ;;
   np1shot_fp)
-    # 修复后解析 + 每步一枪(无分段缝):与 v3 noprobe 只差 tail 8192,
-    # 隔离"1024 分段缝"对残余 answer 乱塞(v3np 22 题纯冤死)的贡献。
+    # After the parse fix, one shot per step (no segment seam): differs from v3 noprobe only by tail 8192,
+    # isolating the contribution of the "1024 segment seam" to junk stuffed into the residual answer (22 tasks wrongly killed in v3np).
     OUT=$NFS/pipeline/inject/runs/aw_pathdiag/np1shot_fixedparser
     mkdir -p "$OUT"
     rm -rf "$OUT/.claims"

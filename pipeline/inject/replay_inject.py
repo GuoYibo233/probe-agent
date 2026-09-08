@@ -1,77 +1,121 @@
-"""文本层注入的离线回放实验(appworld / gpt-oss)。
+"""Offline replay experiment for text-layer injection (appworld / gpt-oss).
 
-要回答的问题:探针在思考段中途判定"接下来要调这个工具"的那一刻,把该工具的
-结果直接拼进思考流,模型能不能少写一大段、还照样发出正确的调用。
+Question to answer: at the moment the probe decides mid-thinking, "the next call
+is this tool," splice that tool's result directly into the thinking stream --
+can the model write much less and still emit the correct call?
 
-四段式,分开跑,各自落盘(exec 与 merge-exec 只有 miss_policy=execute 才需要):
-  plan   算触发点 + 生成预测调用 + 决定注入内容 -> plan.jsonl
-         (要 GPU,但只用 0.6B 的参数产线;探针触发点直接读已落盘的 logits)
-  exec   把 appworld 环境重放到该步、真执行预测出的调用 -> exec_calls.jsonl
-         (纯 CPU,不占卡;**在 exec_calls.py 里,只能用
-          envs/appworld/venv/bin/python 跑** —— cprobe-env 里 import appworld
-          是 ModuleNotFoundError,实测)
-  merge-exec  plan.jsonl + exec_calls.jsonl 左连接 -> plan_exec.jsonl
-         (纯 CPU;之后的 run/score 都吃 plan_exec.jsonl)
-  run    重建 prompt、发 vLLM completions 续写 -> raw.jsonl
-         (要 gpt-oss-120b 服务,单卡 H200)
-  score  解析、算 token 账与调用一致率 -> INJECT_REPORT.{json,md}
-         (纯 CPU)
+Four stages, run separately, each writing its own output (exec and merge-exec
+are needed only when miss_policy=execute):
+  plan   compute the trigger point + generate the predicted call + decide the
+         injection content -> plan.jsonl
+         (needs GPU, but only the 0.6B parameter pipeline; the probe's trigger
+          point reads logits already written to disk)
+  exec   replay the appworld environment to that step, actually execute the
+         predicted call -> exec_calls.jsonl
+         (pure CPU, no GPU used; **inside exec_calls.py, run it only with
+          envs/appworld/venv/bin/python** -- in cprobe-env, `import appworld`
+          raises ModuleNotFoundError, verified)
+  merge-exec  left join plan.jsonl + exec_calls.jsonl -> plan_exec.jsonl
+         (pure CPU; the run/score stages after this consume plan_exec.jsonl)
+  run    rebuild the prompt, send vLLM completions to continue writing ->
+         raw.jsonl
+         (needs the gpt-oss-120b service, a single H200 card)
+  score  parse, compute the token accounting and call agreement rate ->
+         INJECT_REPORT.{json,md}
+         (pure CPU)
 
-八个 arm(run 阶段用 --arms 选,可只跑一部分;默认仍是 nofill,inject):
-  baseline     不跑。直接用原轨迹的数字(模型当时自己写完了整步),
-               省 token 的**主对照**就是它
-  nofill       从截断点续写但不注入。管线体检线:它应当≈baseline,对不上
-               说明重建或采样口径有问题,这批数字就都不可信
-  inject       从截断点续写并注入工具结果([SYSTEM NOTE] 模板)
-  inject_stop  注入之后紧跟通道切换字节,掐掉"收到结果还要重新盘一遍"
-  skel_bare    思考段里拼围栏 + 骨架(工具名由探针钉死,大模型只写参数)
-  skel_a       骨架前加一句 "Thus code:" 再开围栏
-  skel_b       散文式骨架("So we will do: "),不开围栏
-  skel_switch  通道切换 + 围栏 + 骨架,骨架直接落在正文段
-  switch_only  只切通道、不给骨架,大模型自写整条 —— 正确率锚点
+Eight arms (select with --arms at the run stage, can run just a subset; the
+default is still nofill,inject):
+  baseline     not run. Uses the original trajectory's numbers directly (the
+               model wrote out the whole step itself at the time); it is the
+               **main control** for token savings
+  nofill       continue writing from the cut point without injecting anything.
+               Pipeline health check: it should be ~= baseline; if it does not
+               match, the rebuild or sampling convention has a problem and this
+               whole batch of numbers is untrustworthy
+  inject       continue writing from the cut point and inject the tool result
+               ([SYSTEM NOTE] template)
+  inject_stop  right after the injection, append the channel-switch bytes,
+               cutting off "re-mulling the result after receiving it"
+  skel_bare    splice a fence + skeleton into the thinking segment (the tool
+               name is fixed by the probe, the model writes only the arguments)
+  skel_a       add the line "Thus code:" before the skeleton, then open the fence
+  skel_b       prose-style skeleton ("So we will do: "), no fence opened
+  skel_switch  channel switch + fence + skeleton, with the skeleton placed
+               directly in the final segment
+  switch_only  switch the channel only, no skeleton given, the model writes the
+               whole call itself -- the accuracy anchor
 
-"预测的调用与实际不符时怎么办"是 --miss-policy,三个值:
-  skip       不注入,该事件只记账(零环境依赖,最快出第一条曲线)
-  oracle     不管预测对错,一律注入真实调用的真实结果(上帝视角,量注入
-             机制本身的上限;预测准确率的影响被剥离出去)
-  execute    起 appworld 把环境重放到该步(逐步核对录下的 result)、把去引号的
-             预测调用补回引号、在真环境里执行,**不管成功还是报错都原样注入**
-             (真·无脑全注入)。猜错的代价这才进账 —— skip 档那 372 个猜错
-             直接跳过、正确率轴偏乐观的问题就没了。
-             `--exec-scope all`(默认)连 hit 事件也一起执行,口径统一;
-             `--exec-scope miss` 只执行猜错的,hit 事件仍走 traj_hit。
+"What to do when the predicted call does not match the actual one" is
+--miss-policy, with three values:
+  skip       do not inject; just record the event in the accounting (zero
+             environment dependency, fastest way to get the first curve)
+  oracle     regardless of whether the prediction is right or wrong, always
+             inject the real result of the real call (god's-eye view; measures
+             the upper bound of the injection mechanism itself, with the effect
+             of prediction accuracy stripped out)
+  execute    start appworld, replay the environment to that step (checking the
+             recorded result step by step), add the quotes back to the
+             unquoted predicted call, and execute it in the real environment;
+             **inject it as-is whether it succeeds or errors**
+             (true no-holds-barred inject-everything). This is where the cost
+             of a wrong guess finally gets counted -- the 372 wrong guesses
+             that the skip setting just skips, and the accuracy axis being
+             over-optimistic, is no longer a problem.
+             `--exec-scope all` (default) also executes hit events, keeping
+             the accounting consistent; `--exec-scope miss` executes only the
+             wrong guesses, hit events still go through traj_hit.
 
-**execute 档量到的是"单步调用一致率 + 猜错时注入真实报错",不是 appworld 的
-任务级成绩(Test 分数)。** 本文件一个事件只续写一步,不跑到底、不调
-`world.evaluate()`。任务级那条轴需要另建 in-loop rollout(run_appworld.py 的
-循环里挂探针、触发就注入、走完整题再 evaluate),不在本文件范围内。
-报告里把 execute 档写成"任务级正确率"就是虚报。
+**What the execute setting measures is "single-step call agreement rate +
+injecting the real error when the guess is wrong," not appworld's task-level
+score (the Test score).** This file continues writing only one step per event;
+it does not run to completion and does not call `world.evaluate()`. The
+task-level axis needs a separate in-loop rollout (hook the probe into
+run_appworld.py's loop, inject when it fires, run the whole task to completion
+and evaluate) -- that is out of scope for this file. Writing the execute
+setting's numbers up as "task-level accuracy" in a report is misreporting.
 
-口径与已知偏差(报告里都要带上,别静默):
-- 省 token 的主对照是**原轨迹**该步的 out token(盘上现成:模型当时从截断点
-  一路写到发出调用实际花了多少),nofill 只当管线体检线 —— 从 cut 处重新
-  tokenize 再续写无法逐字重现原始 token 流,两条线要一起看。
-  这个口径盖在 INJECT_REPORT 的 `saved_baseline` 键上,读 per_event 求和的下游
-  (sweep_theta curve)必须先认戳。旧报告(saved_tok 相对 nofill)重跑 score 会
-  被挡下,要换口径得整条 θ 曲线一起重跑并显式加 `--rebaseline`。
-- 注入的 result 是该步整个代码块的 stdout,而探针预测的是代码块里第一个
-  api 调用(build.py:70-72 的 label 口径)。一个代码块含多个调用时,注入的
-  内容比"那一个调用的返回"更多。第一版接受这个偏差,report 里单列该比例。
-  execute 档**修掉**了这条(注入内容变成"那一条调用的返回"),代价是 hit 事件
-  与已跑完的 skip/oracle 六点曲线不再逐字可比 —— 所以 score 段按
-  inject_source 分桶,不许把 traj_hit 与 exec_pred 混成一条均值。
-- execute 档的注入内容依赖 requote 这个**启发式**(gen_call 的参数值被 annotate
-  剥了引号,rules.py:133),补错就是给探针记假账。逐参数的分支落在 arg_modes 里,
-  分支计数进报告;验收线见 exec_calls.py --selfcheck。
-- execute 档的前缀重放保真度**逐步核对**轨迹里录下的 result,漂了的事件标
-  prefix_verbatim=False,报告里单列 —— 不核对就等于拿一个错的状态去执行预测
-  调用、再把结果当真账报出来。
-- 续写的采样键与采集来自同一份预设(--preset,缺省 default);
-  但服务端批处理下的数值抖动仍可能让 nofill 与 baseline 不逐字相同。
-- 少数步的历史里混有字面 harmony 标记,重新 tokenize 与采集时差几个 token
-  (rebuild.py 顶部注释),plan 阶段标记为 literal_harmony。
+Conventions and known biases (all must be carried in the report, do not omit
+them silently):
+- The main control for token savings is the **original trajectory's** out
+  tokens for that step (already on disk: how many tokens the model actually
+  spent writing from the cut point to the call at the time); nofill is only a
+  pipeline health check -- re-tokenizing from the cut point and continuing
+  cannot reproduce the original token stream verbatim, so the two lines must be
+  read together.
+  This convention is stamped on the INJECT_REPORT's `saved_baseline` key; any
+  downstream code that sums per_event (sweep_theta curve) must check this
+  stamp first. Re-running score on an old report (where saved_tok was relative
+  to nofill) is blocked; changing the convention requires re-running the whole
+  θ curve together with `--rebaseline` explicitly added.
+- The injected result is the stdout of the entire code block for that step,
+  while the probe predicts the first api call in the code block (the label
+  convention at build.py:70-72). When a code block contains multiple calls,
+  the injected content is more than "that one call's return value." The first
+  version accepts this bias and lists the proportion separately in the report.
+  The execute setting **fixes** this (the injected content becomes "that one
+  call's return value"), at the cost that hit events are no longer verbatim
+  comparable with the already-completed skip/oracle six-point curve -- so the
+  score stage buckets by inject_source, and traj_hit must not be mixed with
+  exec_pred into a single average.
+- The execute setting's injected content depends on the **heuristic** requote
+  (gen_call's argument values have their quotes stripped by annotate,
+  rules.py:133); adding them back wrong means crediting the probe with a false
+  account. The per-argument branches land in arg_modes, and the branch counts
+  go into the report; see exec_calls.py --selfcheck for the acceptance check.
+- The execute setting **checks step by step** the prefix-replay fidelity
+  against the result recorded in the trajectory; events that drift are marked
+  prefix_verbatim=False and listed separately in the report -- skipping this
+  check would mean executing the predicted call against a wrong state and then
+  reporting the result as if it were real.
+- The sampling keys for continuation come from the same preset as collection
+  (--preset, default is default); but numerical jitter under server-side
+  batching can still keep nofill and baseline from matching verbatim.
+- A few steps have literal harmony markers mixed into their history, so
+  re-tokenizing differs from collection by a few tokens (see the comment at
+  the top of rebuild.py); the plan stage tags these as literal_harmony.
 
-用法:
+Usage:
   cprobe-env/bin/python pipeline/inject/replay_inject.py plan \\
       --ctool-run pipeline/runs/c1_gptoss_ctool \\
       --cgen-run  pipeline/runs/c1_gptoss_cgen \\
@@ -80,24 +124,28 @@
       --out       pipeline/inject/runs/aw_gptoss_r10 \\
       --risk 0.1 --miss-policy skip
 
-  θ 扫描曲线(2026-08-01 用户已批的六点格)用 --theta 直接钉阈值,盖过 --risk 反查:
+  For the θ sweep curve (the six-point grid the user approved on 2026-08-01),
+  pin the threshold directly with --theta, overriding the --risk lookup:
       ... plan --theta 0.80 --out pipeline/inject/runs/aw_gptoss_th080 ...
-  一个 θ 一个 run 目录,plan/run/score 各自独立落盘;驱动壳见 sweep_theta.py
+  One θ, one run directory; plan/run/score each write their own output
+  independently; see sweep_theta.py for the driver shell.
 
   cprobe-env/bin/python pipeline/inject/replay_inject.py run \\
       --plan pipeline/inject/runs/aw_gptoss_r10/plan.jsonl \\
       --base-url http://tokyo108:8103/v1 --model gpt-oss-120b \\
       --arms nofill,inject
 
-  骨架/转场臂要 plan 里存过 pred_label(探针预测的工具名),形态表由
-  build_form_table.py 产,缺了就一律 print 形:
+  The skeleton/transition arms need pred_label (the probe's predicted tool
+  name) already stored in plan; the form table is produced by
+  build_form_table.py, and if it is missing everything defaults to print form:
       ... run --arms skel_bare,skel_a,skel_b,skel_switch,switch_only \\
           --form-table pipeline/inject/form_table.json
 
   cprobe-env/bin/python pipeline/inject/replay_inject.py score \\
       --run-dir pipeline/inject/runs/aw_gptoss_r10
 
-  # execute 档:plan 之后先跑 exec 段(纯 CPU,另一个解释器),再 merge,再 run
+  # execute setting: after plan, first run the exec stage (pure CPU, a
+  # different interpreter), then merge, then run
   envs/appworld/venv/bin/python pipeline/inject/exec_calls.py \\
       --plan  pipeline/inject/runs/aw_gptoss_exec/plan.jsonl \\
       --out   pipeline/inject/runs/aw_gptoss_exec/exec_calls.jsonl \\
@@ -129,25 +177,34 @@ sys.path.insert(0, str(HERE.parent / "annotate"))
 
 import rebuild as R                                          # noqa: E402
 from rules import AW_CALL, boundaries                        # noqa: E402
-# exec_calls.py 的模块层只有标准库 + rules,cprobe-env 里 import 得动
-# (appworld 是在它 main() 里 chdir 之后才 import 的)。这里只借 error_kind:
-# 错误分类的唯一真源在那边,merge-exec 拿 exec_out 重算,不信缓存里的旧标签
+# exec_calls.py's module level uses only the standard library + rules, so it can
+# be imported in cprobe-env (appworld is imported only after chdir inside its
+# main()). Here we only borrow error_kind: the single source of truth for error
+# classification lives over there; merge-exec recomputes it from exec_out and
+# does not trust the old label in the cache
 from exec_calls import err_tail, error_kind, is_bare_print    # noqa: E402
-# 完整调用的截取(括号配平 + 围栏闭合)只有一份实现,extract_completed.py 共用
+# There is only one implementation of extracting a complete call (balanced
+# parentheses + closed fence), shared with extract_completed.py
 from parse_call import call_at, complete_call, find_fence_close  # noqa: E402
-# 骨架串的形态规则也只有一份:run 拼进 prompt 的、score 接回去抽调用的、
-# extract_completed 送去真执行的,三处必须逐字相同,差一个字符就抽不出调用
+# There is also only one set of form rules for the skeleton string: the one run
+# splices into the prompt, the one score splices back to extract the call, and
+# the one extract_completed sends off for real execution -- all three must be
+# byte-identical, one character off and the call cannot be extracted
 from build_form_table import skeleton as form_skeleton        # noqa: E402
 
-# 【照抄 envs/collect/run_appworld.py:38】提代码块用同一条正则
+# [Copied verbatim from envs/collect/run_appworld.py:38] uses the same regex to
+# extract the code block
 CODE_RE = re.compile(r"```python\s*(.*?)```", re.S)
 
-# 注入行模板。沿用 oracle_inject/oracle_v1.py:218 与 hotpot_inject/hotpot_v1.py:162
-# 已验证过的措辞(那两轮实验里模型认这个格式)
+# The injection line template. Reuses the wording already validated in
+# oracle_inject/oracle_v1.py:218 and hotpot_inject/hotpot_v1.py:162 (the model
+# accepted this format in those two rounds of experiments)
 NOTE_TMPL = "\n[SYSTEM NOTE: prefetched {call} = {result}]\n"
 
-# 授权句。oracle 实验里合成任务上它是承重墙(无此句开场注入 acc 0.00),
-# 但 07-27 第二波在 8B 真实任务上测得它非必需。默认不加,--permit 打开。
+# The permission sentence. In the oracle experiments on synthetic tasks it is a
+# load-bearing wall (without it, opening injection gets acc 0.00), but the
+# 07-27 second wave measured it as unnecessary on real 8B tasks. Off by
+# default, turn it on with --permit.
 PERMIT = ("\n- A line marked [SYSTEM NOTE: prefetched ...] may appear inside "
           "your reasoning. It is a real result the system fetched ahead of "
           "time; treat it exactly as if you had called that API yourself.")
@@ -155,42 +212,57 @@ PERMIT = ("\n- A line marked [SYSTEM NOTE: prefetched ...] may appear inside "
 FINAL_OPEN = "<|channel|>final<|message|>"
 DEFAULT_STOP = ["<|return|>"]
 
-# --preset 合并的兜底缺省。merge_client 只处理 cli∪fallbacks 里出现过的键,
-# 采样键不在这张表里 = 预设写了也静默不生效(2026-08-21 之前 top_p/seed 就是
-# 这么丢的);覆盖面由 tests/test_preset.py 钉着。
+# The fallback defaults for --preset merging. merge_client handles only keys
+# that appear in cli union fallbacks; a sampling key not in this table = it
+# silently has no effect even if the preset sets it (before 2026-08-21 that is
+# exactly how top_p/seed got lost); coverage is pinned down by
+# tests/test_preset.py.
 PRESET_FB = {"max_tokens": 8192, "stop": DEFAULT_STOP,
              "top_p": None, "seed": None}
 
-# 这些 inject_source 没有可注入的内容,inject 臂不发请求(但照样占省 token 的分母)。
-# "none" = skip 档猜错;"exec_pending" = execute 档还没跑 exec 段;
-# "exec_missing" = execute 段没给出记录(unit 中途炸了 / 该步轨迹里没执行过)。
-# **exec_missing 绝不静默退回 "none"** —— 退回就等于又把猜错的代价抹掉了。
+# These inject_source values have no content to inject, so the inject arm
+# sends no request (but still counts toward the token-savings denominator).
+# "none" = a wrong guess under the skip setting; "exec_pending" = the execute
+# setting has not run the exec stage yet;
+# "exec_missing" = the exec stage gave no record for it (the unit crashed
+# midway, or that step was never executed in the trajectory).
+# **exec_missing must never silently fall back to "none"** -- falling back
+# would erase the cost of the wrong guess all over again.
 NO_INJECT = {"none", "exec_pending", "exec_missing"}
 
-# 骨架/转场臂拼进去的字节。SWITCH 是模型原生的思考->正文通道切换串,
-# FENCE_OPEN 是正文段代码块的开头,两串都逐字偷自采集到的轨迹
+# The bytes the skeleton/transition arms splice in. SWITCH is the model's
+# native thinking->final channel-switch string, FENCE_OPEN is the start of a
+# code block in the final segment; both strings are copied verbatim from a
+# collected trajectory
 SWITCH = "<|end|><|start|>assistant<|channel|>final<|message|>"
 FENCE_OPEN = "```python\n"
 
-# 续写从 final 通道**内**开始的臂:prompt 末尾已经把通道切过去了,text 里
-# 不会再出现 FINAL_OPEN,score 段直接 split_channels 会得 final="" 全灭
+# Arms whose continuation starts **inside** the final channel: the prompt
+# already switched the channel at its end, so FINAL_OPEN will not appear
+# again in text; running split_channels directly at the score stage would get
+# final="" for everything
 ARMS_FINAL = {"inject_stop", "skel_switch", "switch_only"}
-# 骨架臂:工具名由探针预测钉死,大模型只写参数
+# Skeleton arms: the tool name is fixed by the probe's prediction, the model
+# writes only the arguments
 ARMS_SKEL = {"skel_bare", "skel_a", "skel_b", "skel_switch"}
 ARMS_ALL = ["nofill", "inject", "inject_stop", "skel_bare", "skel_a",
             "skel_b", "skel_switch", "switch_only"]
 
-# 省 token 的主对照,盖在 INJECT_REPORT 上的口径戳。老报告没这个键,那时的
-# saved_tok 是"nofill 减本臂";本版是"原轨迹减本臂"。列名一个没变、含义换了,
-# 所以读 per_event 的下游必须先认这个戳再求和(见 check_saved_baseline)
+# The main control for token savings, stamped as a convention marker on
+# INJECT_REPORT. Old reports don't have this key; back then saved_tok was
+# "nofill minus this arm," this version is "original trajectory minus this
+# arm." The column name is unchanged but the meaning has changed, so any
+# downstream code reading per_event must check this stamp before summing (see
+# check_saved_baseline)
 SAVED_BASELINE = "traj"
 
 
 def config_path_for(plan_path):
-    """plan 文件名 -> 同目录里对应的 config 名。
+    """plan filename -> the corresponding config name in the same directory.
 
-    plan.jsonl -> plan_config.json;plan_exec.jsonl -> plan_exec_config.json。
-    execute 档换了 plan 文件却还读 plan_config.json,permit 口径与统计就都错了。
+    plan.jsonl -> plan_config.json; plan_exec.jsonl -> plan_exec_config.json.
+    If the execute setting switches the plan file but still reads
+    plan_config.json, the permit convention and the statistics are both wrong.
     """
     p = Path(plan_path)
     return p.parent / (p.stem + "_config.json")
@@ -199,7 +271,7 @@ def config_path_for(plan_path):
 # ---------------------------------------------------------------- plan
 
 def replay_fire(rows, probs, theta):
-    """【照抄 pipeline/eval/eval_causal_call.py:54-71】每事件首次过 θ 的样本行。"""
+    """[Copied verbatim from pipeline/eval/eval_causal_call.py:54-71] the sample row for each event's first time crossing θ."""
     ev = defaultdict(list)
     for r, p in zip(rows, probs):
         ev[r["event"]].append((r["sent_idx"], r, p))
@@ -211,8 +283,10 @@ def replay_fire(rows, probs, theta):
         for _, r, p in items:
             conf, pred = float(p.max()), int(p.argmax())
             if conf >= theta:
-                # pred 必须存下来:骨架臂拼的是探针预测的工具名,只记对错
-                # 不记名字的话下游就只能拿真值去拼,整条曲线变上帝视角
+                # pred must be stored: the skeleton arms splice in the probe's predicted tool
+                # name, only recording right/wrong is not enough --
+                # without the name, downstream code can only splice using the true label,
+                # turning the whole curve into a god's-eye view
                 rec.update(fired=True, ok=(pred == r["y"]), conf=conf,
                            pred=pred, sent_idx=r["sent_idx"], row=r)
                 break
@@ -221,12 +295,17 @@ def replay_fire(rows, probs, theta):
 
 
 def external_fire(rows, probs, path):
-    """外部判定文件替代 θ 判定,返回与 replay_fire 同形的表。
+    """An external verdict file replaces the θ verdict, returning a table shaped
+    the same as replay_fire.
 
-    JSONL 每行一个事件:{"event":..., "fire": bool, "sent_idx": int|null},
-    sent_idx 给 null 就取该事件首句。给了这个文件,θ 完全不参与判定;
-    conf 照旧算(ctool softmax 在该句上的 max),只为对账留个数。
-    用户在训的产阈值模型训好后直接产这个文件接进来,管线不改。
+    JSONL, one event per line: {"event":..., "fire": bool, "sent_idx": int|null},
+    sent_idx given as null takes that event's first sentence. Once this file
+    is given, θ plays no part in the verdict at all; conf is still computed as
+    usual (the max of ctool softmax on that sentence), kept only as a number
+    for reconciliation.
+    Once the threshold-producing model the user is currently training
+    finishes training, it produces this file directly and this plugs straight
+    in, no pipeline change needed.
     """
     dec = {}
     for l in open(path):
@@ -250,8 +329,9 @@ def external_fire(rows, probs, path):
             pick = (items[0] if want is None
                     else next((it for it in items if it[0] == want), None))
             if pick is None:
-                # 判定文件点了一个数据集里没有的句子:算不触发并计数,
-                # 静默丢掉就等于偷偷改了触发集大小
+                # The verdict file points at a sentence that is not in the dataset: count it
+                # as not firing, and count it separately -- silently dropping it would
+                # quietly change the size of the trigger set
                 n_oob += 1
             else:
                 _, r, p = pick
@@ -259,20 +339,24 @@ def external_fire(rows, probs, path):
                 rec.update(fired=True, ok=(pred == r["y"]), conf=conf,
                            pred=pred, sent_idx=r["sent_idx"], row=r)
         out[k] = rec
-    print(f"外部判定 {path}:{len(dec)} 条,事件没被判定 {n_unknown},"
-          f"点到不存在的句子 {n_oob}", flush=True)
+    print(f"external verdict {path}: {len(dec)} entries, events not verdicted {n_unknown},"
+          f"pointing to nonexistent sentences {n_oob}", flush=True)
     return out
 
 
 def gen_calls(cgen_dir, texts, device, bs, max_new):
-    """跑参数产线,在触发点前缀上 greedy 写出整条调用。
+    """Run the argument-generation pipeline, greedy-writing the whole call on top
+    of the trigger-point prefix.
 
-    【照抄 eval_causal_call.py:171-192 的 generate()】——同样的 left padding、
-    同样截到首行、同样从 meta.json 读 call_sep,保证与 CALLGEN_REPORT 可对账。
+    [Copied verbatim from generate() in eval_causal_call.py:171-192] -- same
+    left padding, same truncation to the first line, same reading of call_sep
+    from meta.json, keeping it reconcilable with CALLGEN_REPORT.
 
-    返回 (calls, min_ps)。min_ps 是每条调用里**最弱那个 token 的概率**,给
-    cgen 自触发用(整条最弱概率过阈值才算敢发)。生成时不留概率,事后只能
-    整批重跑才拿得到,所以在这里顺手取。
+    Returns (calls, min_ps). min_ps is **the probability of the weakest
+    token** in each call, used for cgen self-triggering (only dares to fire
+    when the whole call's weakest probability clears the threshold).
+    Generation does not keep the probabilities; getting them afterward would
+    need a full batch rerun, so they are grabbed here in passing.
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -289,10 +373,11 @@ def gen_calls(cgen_dir, texts, device, bs, max_new):
     prompts = [t + sep for t in texts]
     out, min_ps, prev = [], [], tok.padding_side
     tok.padding_side = "left"
-    # 这两个 id 上就停:eos 是真写完了,pad 是 generate 给已结束的序列补的位
+    # Stop at these two ids: eos means it actually finished writing, pad is the
+    # padding generate adds to sequences that have already ended
     stop_ids = {i for i in (tok.eos_token_id, tok.pad_token_id)
                 if isinstance(i, int)}
-    nl = {}                              # token id -> 解出来带不带换行
+    nl = {}                              # token id -> whether the decoded text has a newline
 
     def has_nl(tid):
         if tid not in nl:
@@ -310,8 +395,9 @@ def gen_calls(cgen_dir, texts, device, bs, max_new):
                                return_dict_in_generate=True,
                                output_scores=True)
             new = g.sequences[:, enc["input_ids"].shape[1]:]
-            # left padding 下每行的生成段都从同一列开始,所以 scores[t] 对上的
-            # 就是 new[:, t] —— 换成右 padding 每行起点不同,这里必错位
+            # Under left padding, every row's generated segment starts at the same
+            # column, so scores[t] lines up with new[:, t] -- switch to right padding and
+            # each row starts at a different column, this would definitely misalign
             cols = [torch.softmax(s.float(), -1).gather(
                         1, new[:, t:t + 1]).squeeze(1)
                     for t, s in enumerate(g.scores)]
@@ -322,15 +408,16 @@ def gen_calls(cgen_dir, texts, device, bs, max_new):
                 mp = None
                 for t in range(0 if ps is None else ps.shape[1]):
                     tid = int(new[b, t])
-                    if tid in stop_ids:      # eos 及其后的补位都不算
+                    if tid in stop_ids:      # eos and the padding after it don't count
                         break
                     p = float(ps[b, t])
                     mp = p if mp is None else min(mp, p)
-                    # 首行到此为止,与上面 split("\n")[0] 对齐。带换行的那个
-                    # token 算进去:它常常是 `)\n` 这种,漏掉就漏了尾括号一步
+                    # The first line stops here, aligned with split("\n")[0] above. The token
+                    # that carries the newline counts in: it is often something like `)\n`, and
+                    # missing it means missing the trailing parenthesis
                     if has_nl(tid):
                         break
-                min_ps.append(mp)            # 一个 token 都没生成就记 None
+                min_ps.append(mp)            # Record None if not a single token was generated
             print(f"  gen {min(i + bs, len(prompts))}/{len(prompts)}",
                   flush=True)
     tok.padding_side = prev
@@ -340,7 +427,7 @@ def gen_calls(cgen_dir, texts, device, bs, max_new):
 
 
 def first_api_call(code):
-    """代码块里第一个 apis.x.y 调用的工具名。找不到返回 None。"""
+    """The tool name of the first apis.x.y call in the code block. Returns None if not found."""
     m = AW_CALL.search(code or "")
     return f"apis.{m.group(1)}.{m.group(2)}" if m else None
 
@@ -355,9 +442,12 @@ def cmd_plan(a):
 
     rep = json.loads((ctool / "REPLAY_REPORT.json").read_text())
     T = rep["temperature"]
-    # θ 三种来源:外部判定文件(给了就完全接管,θ 不参与)、风险档反查(原口径,
-    # 与 eval 的 chosen_theta 一致)、--theta 直接给(θ 扫描曲线用)。温度标定 T
-    # 与风险档无关,几种来源都用同一个 T,所以曲线上各点只差判定阈值,可直接横向比。
+    # θ has three sources: an external verdict file (once given, it takes over
+    # completely, θ plays no part), a lookup from the risk setting (the original
+    # convention, consistent with eval's chosen_theta), or --theta given directly
+    # (used for the θ sweep curve). Temperature calibration T is independent of
+    # the risk setting; all sources use the same T, so the points on the curve
+    # differ only in the verdict threshold and can be compared directly side by side.
     if a.decision_file:
         theta, theta_source = None, f"external:{a.decision_file}"
     elif a.theta is not None:
@@ -365,12 +455,13 @@ def cmd_plan(a):
     else:
         theta = rep["chosen_theta"].get(str(a.risk))
         if theta is None:
-            raise SystemExit(f"θ 里没有 risk={a.risk}:{rep['chosen_theta']}")
+            raise SystemExit(f"no risk={a.risk} in θ: {rep['chosen_theta']}")
         theta_source = f"risk={a.risk}"
 
-    # 行过滤必须与 eval 侧逐行一致,否则与 logits_test.pt 不同序
+    # The row filtering must match the eval side line for line, otherwise it is
+    # out of order with logits_test.pt
     label2id = json.loads((ctool / "best" / "label_map.json").read_text())
-    id2label = {v: k for k, v in label2id.items()}   # 反查:预测 id -> 工具名
+    id2label = {v: k for k, v in label2id.items()}   # Reverse lookup: predicted id -> tool name
     rows = [r for r in (json.loads(l) for l in open(data / "test.jsonl"))
             if r["label"] in label2id]
     for r in rows:
@@ -384,12 +475,12 @@ def cmd_plan(a):
     keys = [k for k in dict.fromkeys(r["event"] for r in rows)
             if fired[k]["fired"]]
     n_events = len({r["event"] for r in rows})
-    print(f"事件 {n_events} 触发 {len(keys)} (θ={theta} 来源 {theta_source} "
+    print(f"events {n_events} fired {len(keys)} (θ={theta} source {theta_source} "
           f"T={T:.4f} risk={a.risk})", flush=True)
     if a.limit:
         keys = keys[:a.limit]
 
-    print(f"参数产线生成 {len(keys)} 条调用 ...", flush=True)
+    print(f"the args pipeline generated {len(keys)} calls ...", flush=True)
     calls, min_ps = gen_calls(cgen, [fired[k]["row"]["text"] for k in keys],
                               a.device, a.bs, a.max_new_tokens)
 
@@ -413,7 +504,8 @@ def cmd_plan(a):
             drop["sent_idx_oob"] += 1
             continue
         cut = b[row["sent_idx"]]
-        # 自检:重算出来的前缀必须与数据集里探针吃的那一段逐字相同
+        # Self-check: the recomputed prefix must be byte-identical to the segment the
+        # probe consumed in the dataset
         ds_think = row["text"].split("[THINKING]\n", 1)[-1]
         if think[:cut] != ds_think:
             drop["prefix_mismatch"] += 1
@@ -430,15 +522,17 @@ def cmd_plan(a):
         if a.miss_policy == "oracle":
             inj_call, inj_res, src = truth_call, result, "traj_oracle"
         elif a.miss_policy == "execute" and (not hit or a.exec_scope == "all"):
-            # 注入内容还不知道 —— 要等 exec 段真去环境里执行一遍。
-            # plan 段跑在 GPU 上(cgen 产线),这里绝不能 import appworld
+            # The injection content is not known yet -- it needs the exec stage to
+            # actually execute it in the environment first.
+            # The plan stage runs on the GPU (the cgen pipeline); import appworld must
+            # never happen here
             inj_call, inj_res, src = gen_call, None, "exec_pending"
         elif hit:
             inj_call, inj_res, src = gen_call, result, "traj_hit"
         elif a.miss_policy == "skip":
             inj_call, inj_res, src = None, None, "none"
-        else:                                    # 到不了:上面三条已穷举
-            raise AssertionError(f"miss_policy={a.miss_policy} 没有分支")
+        else:                                    # Unreachable: the three cases above are exhaustive
+            raise AssertionError(f"miss_policy={a.miss_policy} has no branch")
 
         action = envs[st].get("action") or ""
         rec = dict(
@@ -446,8 +540,9 @@ def cmd_plan(a):
             sent_idx=row["sent_idx"], depth=row["depth"], cut=cut,
             think_len=len(think), conf=fired[k].get("conf"),
             label=row["label"], label_call=truth_call, gen_call=gen_call,
-            # 探针预测的工具名。骨架臂拼的是它,**不是 label**(真值只留着算
-            # name_hit),拿 label 去拼整条曲线就成了上帝视角
+            # The tool name the probe predicted. The skeleton arms splice this in, **not
+            # label** (the true label is kept only to compute name_hit); splicing in
+            # label would turn the whole curve into a god's-eye view
             pred_id=fired[k].get("pred"),
             pred_label=id2label.get(fired[k].get("pred")),
             gen_min_p=gen_min_p,
@@ -460,9 +555,10 @@ def cmd_plan(a):
             literal_harmony=R.has_literal_harmony(msgs),
             traj_path=str(tp))
         if a.miss_policy == "execute":
-            # 只在 execute 档加这几个字段:skip/oracle 的 plan.jsonl 必须保持
-            # 逐字节不变(它们已有实战产出,变了就毁掉六点曲线的可比性)
-            rec.update(traj_result=result,      # 录下的整块 stdout,给验收线用
+            # Add these fields only under the execute setting: skip/oracle's plan.jsonl
+            # must stay byte-for-byte unchanged (they already have real production
+            # output; changing it would wreck the comparability of the six-point curve)
+            rec.update(traj_result=result,      # The whole block of recorded stdout, for the acceptance line to use
                        exec_code=None, arg_modes=None, exec_ok=None)
         plan.append(rec)
 
@@ -484,7 +580,8 @@ def cmd_plan(a):
                n_multicall=sum(1 for p in plan if p["n_calls_in_block"] > 1),
                n_literal=sum(1 for p in plan if p["literal_harmony"]))
     if a.miss_policy == "execute":
-        # 同上:只在 execute 档加,skip/oracle 的 plan_config.json 逐字节不变
+        # Same as above: add only under the execute setting, skip/oracle's
+        # plan_config.json stays byte-for-byte unchanged
         cfg.update(exec_scope=a.exec_scope,
                    n_exec_pending=sum(1 for p in plan
                                       if p["inject_source"] == "exec_pending"))
@@ -496,11 +593,12 @@ def cmd_plan(a):
 # ----------------------------------------------------------- merge-exec
 
 def expand_exec(spec):
-    """把 --exec 的规格展开成实际文件表。
+    """Expand the --exec spec into an actual file list.
 
-    exec_calls.py 分片时会自动把 `exec_calls.jsonl` 写成 `exec_calls.s0.jsonl`,
-    所以这里先按原名找,找不到就按 `<stem>*<suffix>` 收分片 —— 少收一片就等于
-    白白多出一批 exec_missing。
+    When exec_calls.py shards, it automatically writes `exec_calls.jsonl` as
+    `exec_calls.s0.jsonl`, so this looks for the original name first, and if
+    not found, collects pieces by `<stem>*<suffix>` -- missing even one piece
+    means an extra batch of exec_missing for nothing.
     """
     import glob
     out = []
@@ -512,23 +610,25 @@ def expand_exec(spec):
             p = Path(tok)
             hits = sorted(glob.glob(str(p.parent / (p.stem + "*" + p.suffix))))
         if not hits:
-            raise SystemExit(f"找不到 exec 产物:{tok}")
+            raise SystemExit(f"cannot find exec outputs: {tok}")
         out += hits
     return out
 
 
 def cmd_merge_exec(a):
-    """plan.jsonl + exec_calls.jsonl 左连接 -> plan_exec.jsonl。
+    """Left join plan.jsonl + exec_calls.jsonl -> plan_exec.jsonl.
 
-    exec 记录缺失的事件标 exec_missing 并单独计数,**绝不静默退回 "none"**
-    —— 退回就等于又把探针猜错的代价抹掉了,而这正是 execute 档要修的病。
+    Events with missing exec records are tagged exec_missing and counted
+    separately, **never silently falling back to "none"** -- falling back
+    would erase the cost of the probe's wrong guess all over again, and that
+    is exactly the problem the execute setting is meant to fix.
     """
     plan_p = Path(a.plan)
     out_dir = plan_p.parent
     cfg = json.loads(config_path_for(plan_p).read_text())
     if cfg.get("miss_policy") != "execute":
-        raise SystemExit(f"{plan_p} 的 miss_policy={cfg.get('miss_policy')},"
-                         "不是 execute 档,没有 exec 段可合")
+        raise SystemExit(f"{plan_p} has miss_policy={cfg.get('miss_policy')},"
+                         "not execute mode, no exec section to merge")
     plan = [json.loads(l) for l in open(plan_p)]
 
     files = expand_exec(a.exec)
@@ -537,10 +637,10 @@ def cmd_merge_exec(a):
         for l in open(fp):
             try:
                 o = json.loads(l)
-            except Exception:                # 半行(进程被杀)直接丢
+            except Exception:                # A half line (process was killed) is dropped outright
                 continue
-            ex[o["event"]] = o               # 后写的覆盖先写的
-    print(f"exec 产物 {len(files)} 个文件 {len(ex)} 条:"
+            ex[o["event"]] = o               # Whatever is written later overwrites whatever was written earlier
+    print(f"exec outputs {len(files)} files {len(ex)} entries:"
           + ", ".join(Path(f).name for f in files), flush=True)
 
     n = defaultdict(int)
@@ -549,14 +649,15 @@ def cmd_merge_exec(a):
     for p in plan:
         r = dict(p)
         if p["inject_source"] != "exec_pending":
-            # exec-scope=miss 下的 hit 事件(traj_hit)、oracle、skip 的 none:
-            # 一个字节都不动,原样过
+            # hit events under exec-scope=miss (traj_hit), oracle, and skip's none:
+            # not a single byte is touched, they pass through as-is
             n[p["inject_source"]] += 1
             rows.append(r)
             continue
         e = ex.get(p["event"])
-        # 错误分类拿 exec_out 现算,不信 exec 记录里那个字段:缓存可能是旧规则
-        # 写的,直接抄就把旧标签静默带进报告
+        # Error classification is computed fresh from exec_out; the field in the exec
+        # record is not trusted -- the cache may have been written under old rules,
+        # and copying it directly would silently carry the old label into the report
         ek = error_kind(e.get("exec_out")) if e else None
         if e is None or e.get("exec_out") is None:
             r["inject_result"], r["inject_source"] = None, "exec_missing"
@@ -570,8 +671,9 @@ def cmd_merge_exec(a):
             r["inject_source"] = "exec_pred" if ek is None else "exec_error"
             n[r["inject_source"]] += 1
         if e is not None:
-            # 三条比对也现算(用 plan 自己的 traj_result / baseline_action),
-            # 同样不抄 exec 记录里那份 —— 缓存可能是上一版比法写的
+            # The three comparisons are also computed fresh (using plan's own
+            # traj_result / baseline_action); likewise not copied from the exec record --
+            # the cache may have been written by a previous version's comparison method
             eo, tr = e.get("exec_out"), p.get("traj_result")
             r.update(exec_code=e.get("exec_code"),
                      arg_modes=e.get("arg_modes"), exec_ok=(ek is None),
@@ -597,9 +699,12 @@ def cmd_merge_exec(a):
     fired_exec = [r for r in rows if r["inject_source"] in
                   ("exec_pred", "exec_error")]
     verb = [r for r in fired_exec if r.get("matched_traj_result") is not None]
-    # 验收线只收"三条同时成立"的事件:预测与真实一致、代码块只含一个调用、
-    # 且那个代码块就是一句干净的 print(调用)。缺一条两边就不可比,收进来只会
-    # 报假警(详见 exec_calls.py 的 BARE_PRINT / err_tail 注释)
+    # The acceptance line accepts only events where all three conditions hold:
+    # the prediction matches the truth, the code block contains only one call,
+    # and that code block is a single clean print(call). Missing any one
+    # condition makes the two sides incomparable, and including it would only
+    # raise a false alarm (see the BARE_PRINT / err_tail comments in
+    # exec_calls.py for details)
     acc = [r for r in fired_exec
            if r.get("full_call_ok") and r.get("n_calls_in_block") == 1
            and r.get("traj_bare_print")]
@@ -619,8 +724,9 @@ def cmd_merge_exec(a):
         arg_modes=dict(modes), error_kind=dict(ekind),
         n_drift=sum(1 for r in fired_exec
                     if r.get("prefix_verbatim") is False),
-        # 验收线:hit + 单调用 + 代码块是一句干净的 print(调用),
-        # 执行输出与录下的 result 对得上(逐字,或报错时报错消息一致)
+        # Acceptance line: hit + single call + the code block is a single clean
+        # print(call), and the execution output matches the recorded result
+        # (verbatim, or the error message matches when it errors)
         acceptance_matched=len(acc_ok), acceptance_n=len(acc),
         acceptance_exact=sum(1 for r in acc if r.get("matched_traj_result")),
         acceptance_excluded_mixed=len(mixed),
@@ -631,34 +737,41 @@ def cmd_merge_exec(a):
         json.dumps(out, ensure_ascii=False, indent=1))
     print(json.dumps(out, ensure_ascii=False, indent=1))
     if n["exec_missing"]:
-        print(f"\n注意:{n['exec_missing']} 个事件没有 exec 记录,标为 "
-              f"exec_missing、inject 臂不发请求,但照样占省 token 的分母。"
-              f"原因分布 {dict(miss_why)}")
+        print(f"\nnote: {n['exec_missing']} events have no exec record, marked "
+              f"exec_missing, the inject arm sends no request for them, but they still count in the"
+              f"saved-token denominator. reason distribution {dict(miss_why)}")
 
 
 # ---------------------------------------------------------------- run
 
 def load_form_table(path):
-    """工具名 -> 骨架形态(build_form_table.py 从原生轨迹统计出来的)。
+    """Tool name -> skeleton form (tallied by build_form_table.py from native
+    trajectories).
 
-    文件不在就返回空表、骨架一律走 print 形,并且只告警一次 —— 少一张统计表
-    不该让骨架实验跑不起来,但也不能静默地当成"所有工具都是 print 形"。
+    If the file is missing, return an empty table, default every skeleton to
+    print form, and warn only once -- missing one statistics table should not
+    stop the skeleton experiment from running, but it also must not silently
+    be treated as "every tool is print form."
     """
     p = Path(path)
     if not p.exists():
-        print(f"注意:form_table 不存在({p}),骨架一律用 print 形;"
-              "要按工具分流赋值形先跑 build_form_table.py", flush=True)
+        print(f"note: form_table does not exist ({p}), the skeleton always uses print form;"
+              "to use assignment form split by tool, run build_form_table.py first", flush=True)
         return {}
     return json.loads(p.read_text())
 
 
 def skeleton(p, form_table):
-    """一条 plan 记录的骨架串。没有预测工具名就返回 None。
+    """The skeleton string for one plan record. Returns None if there is no
+    predicted tool name.
 
-    拼的是**探针预测的 pred_label,绝不能用真值 label** —— 拿真值去拼,整条
-    曲线就成了上帝视角。
-    形态分流(赋值形 `var = apis.x.y` 还是 `print(apis.x.y`)与"一律不带尾左
-    括号"那条分词器铁律都在 build_form_table.skeleton 里,这里只取值、兜空。
+    What gets spliced in is **the probe's predicted pred_label, never the
+    true label** -- splicing in the true label would turn the whole curve
+    into a god's-eye view.
+    The form split (assignment form `var = apis.x.y` versus `print(apis.x.y`)
+    and the tokenizer hard rule of "never a trailing opening parenthesis"
+    both live in build_form_table.skeleton; here we only look up the value
+    and fall back on empty.
     """
     name = p.get("pred_label")
     if not name:
@@ -667,17 +780,19 @@ def skeleton(p, form_table):
 
 
 def build_splice(arm, p, form_table):
-    """按 arm 拼"接在思考段 head 后面的那一截"。
+    """Build, per arm, "the piece that follows the thinking segment's head."
 
-    返回 None 表示这条事件这个臂拼不出来(骨架臂没有 pred_label),
-    正常路径下已经被 todo 过滤挡掉了。
+    Returns None to mean this arm cannot be built for this event (a skeleton
+    arm with no pred_label); under the normal path this has already been
+    filtered out by todo.
     """
     if arm == "nofill":
         return ""
     if arm in ("inject", "inject_stop"):
         note = NOTE_TMPL.format(call=p["inject_call"],
                                 result=p["inject_result"])
-        # inject_stop 多一串通道切换:把"收到结果还要重新盘一遍"直接掐掉
+        # inject_stop adds an extra channel-switch string: cut off "re-mulling the
+        # result after receiving it" outright
         return note + SWITCH if arm == "inject_stop" else note
     if arm == "switch_only":
         return SWITCH
@@ -692,15 +807,18 @@ def build_splice(arm, p, form_table):
         return "\nSo we will do: " + sk
     if arm == "skel_switch":
         return SWITCH + FENCE_OPEN + sk
-    raise SystemExit(f"未知 arm:{arm}(可选 {','.join(ARMS_ALL)})")
+    raise SystemExit(f"unknown arm: {arm} (options: {','.join(ARMS_ALL)})")
 
 
 def spliced_tail(arm, p, form_table):
-    """续写之前就喂进去、但不落在 raw 的 text 里的那一截(围栏 + 骨架)。
+    """The piece (fence + skeleton) that is fed in before continuation but does
+    not land in raw's text.
 
-    score 段抽调用必须把它接回 text 前面:`apis.` 的起点在 prompt 里,text
-    只剩参数,不接回去解析器根本找不到调用起点。骨架臂里 bare/a/b 的骨架
-    落在 analysis 段,switch 的落在 final 段。
+    The score stage must splice it back in front of text to extract the call:
+    `apis.`'s start is in the prompt, text has only the arguments left, and
+    without splicing it back the parser cannot find the call's start at all.
+    Among the skeleton arms, bare/a/b's skeleton lands in the analysis
+    segment, switch's lands in the final segment.
     """
     if arm not in ARMS_SKEL:
         return ""
@@ -711,8 +829,10 @@ def spliced_tail(arm, p, form_table):
 
 
 def sample_extras(a):
-    """top_p/seed 只在显式给了的时候进请求体(envs/collect/common.py 的
-    Chat._sample_extras 同款口径):不给时请求体与加这两个键之前逐字节一致。"""
+    """top_p/seed enter the request body only when given explicitly (the same
+    convention as Chat._sample_extras in envs/collect/common.py): when not
+    given, the request body is byte-identical to before these two keys were
+    added."""
     d = {}
     if getattr(a, "top_p", None) is not None:
         d["top_p"] = a.top_p
@@ -722,8 +842,9 @@ def sample_extras(a):
 
 
 def gen_payload(a, prompt):
-    """塞法回放主生成请求的请求体。预设 client 节的采样键(temperature/
-    top_p/max_tokens/stop/seed)全在这一处落地,tests/test_preset.py 钉着。"""
+    """How the replay's main generation request body is packed. The sampling
+    keys in the preset's client section (temperature/top_p/max_tokens/stop/
+    seed) all land here, pinned down by tests/test_preset.py."""
     return dict(model=a.model, prompt=prompt, max_tokens=a.max_tokens,
                 temperature=a.temperature, stop=a.stop,
                 skip_special_tokens=False, **sample_extras(a))
@@ -750,8 +871,10 @@ def cmd_run(a):
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from transformers import AutoTokenizer
 
-    # --preset 合并(CLI 显式值 > 预设 client 节 > 原缺省),展开值挂回 a;
-    # --preset 缺省 default,temperature 这个键只从预设文件来
+    # --preset merge (explicit CLI value > preset client section > original
+    # default), the expanded value is hung back onto a;
+    # --preset defaults to default, the temperature key comes only from the
+    # preset file
     root = str(HERE.parents[1])
     if root not in sys.path:
         sys.path.append(root)
@@ -770,8 +893,10 @@ def cmd_run(a):
 
     plan_path = Path(a.plan)
     out_dir = plan_path.parent
-    # config 跟着 plan 文件名走:plan_exec.jsonl 配 plan_exec_config.json。
-    # 硬读 plan_config.json 会在 execute 档拿错 permit 口径与统计
+    # The config follows the plan filename: plan_exec.jsonl pairs with
+    # plan_exec_config.json.
+    # Hard-reading plan_config.json would get the wrong permit convention and
+    # statistics under the execute setting
     cfg = json.loads(config_path_for(plan_path).read_text())
     plan = [json.loads(l) for l in open(plan_path)]
     if a.limit:
@@ -779,20 +904,20 @@ def cmd_run(a):
     pend = sum(1 for p in plan if p["inject_source"] == "exec_pending")
     if pend:
         raise SystemExit(
-            f"{plan_path} 里有 {pend} 个事件还是 exec_pending(注入内容为空)。"
-            "execute 档的依赖顺序是 plan -> exec_calls.py -> merge-exec -> run,"
-            "先把 exec 段跑完再来")
+            f"{plan_path} has {pend} events still exec_pending (injection content is empty)."
+            "execute mode's dependency order is plan -> exec_calls.py -> merge-exec -> run,"
+            "finish the exec section first")
     arms = [x.strip() for x in a.arms.split(",") if x.strip()]
     bad = [x for x in arms if x not in ARMS_ALL]
     if bad:
-        raise SystemExit(f"未知 arm:{','.join(bad)};可选 {','.join(ARMS_ALL)}")
+        raise SystemExit(f"unknown arm: {','.join(bad)}; options: {','.join(ARMS_ALL)}")
     form_table = load_form_table(a.form_table)
     tok = AutoTokenizer.from_pretrained(a.tokenizer)
     add_permit = bool(a.permit or cfg.get("permit"))
 
     rp = out_dir / f"raw{a.tag}.jsonl"
     done = set()
-    if rp.exists():                              # 断点续跑
+    if rp.exists():                              # Resume from a checkpoint
         for l in open(rp):
             try:
                 o = json.loads(l)
@@ -801,21 +926,21 @@ def cmd_run(a):
                 pass
 
     def wanted(p, arm):
-        """这个臂在这条事件上有没有料可拼。缺料的不发请求,但照样占分母。"""
+        """Whether this arm has material to splice for this event. If material is missing, no request is sent, but it still counts toward the denominator."""
         if arm in ("inject", "inject_stop"):
-            return p["inject_source"] not in NO_INJECT   # 没内容可注入
+            return p["inject_source"] not in NO_INJECT   # No content to inject
         if arm in ARMS_SKEL:
-            return bool(p.get("pred_label"))             # 骨架钉不出工具名
+            return bool(p.get("pred_label"))             # The skeleton cannot pin down a tool name
         return True
 
     todo = [(p, arm) for p in plan for arm in arms
             if (p["event"], arm) not in done and wanted(p, arm)]
     if (any(x in ARMS_SKEL for x in arms)
             and not any(p.get("pred_label") for p in plan)):
-        print("注意:这份 plan 里一条 pred_label 都没有(旧版 plan 段不存探针"
-              "预测的工具名),骨架臂会被整批过滤 —— 先重跑 plan", flush=True)
-    print(f"计划 {len(plan)} 条 x {arms};已有 {len(done)} 条,待跑 "
-          f"{len(todo)} 条,并发 {a.concurrency}", flush=True)
+        print("note: this plan has not a single pred_label (an old-version plan section does not store the"
+              "probe's predicted tool name), the skeleton arm will be filtered out entirely -- rerun plan first", flush=True)
+    print(f"plan {len(plan)} entries x {arms}; already have {len(done)}, still to run "
+          f"{len(todo)}, concurrency {a.concurrency}", flush=True)
 
     sink = open(rp, "a")
     lock, cache, clock = threading.Lock(), {}, threading.Lock()
@@ -884,13 +1009,13 @@ def cmd_run(a):
                           f"{rate:.2f} req/s ETA {left/60:.1f} min",
                           flush=True)
     sink.close()
-    print(f"完成 {stat['n']}/{len(todo)};失败 {stat['fail']} -> {rp}")
+    print(f"finished {stat['n']}/{len(todo)}; failed {stat['fail']} -> {rp}")
 
 
 # ---------------------------------------------------------------- score
 
 def split_channels(text):
-    """把续写切成 (analysis 剩余, final 内容)。"""
+    """Split the continuation into (analysis remainder, final content)."""
     if FINAL_OPEN in text:
         head, tail = text.split(FINAL_OPEN, 1)
         return head, tail
@@ -898,13 +1023,19 @@ def split_channels(text):
 
 
 def check_saved_baseline(d, tag, rebaseline):
-    """覆盖旧报告之前先比一次省 token 的口径,两种口径不许在同一批目录里换班。
+    """Before overwriting an old report, compare the token-savings convention
+    once; the two conventions must not swap within the same batch directory.
 
-    saved_tok 从"相对 nofill"换成"相对原轨迹"之后,per_event 的列名一个没改,
-    数值换了含义。下游 sweep_theta 的 curve 子命令把各 θ 目录的 per_event 直接
-    求和成一条曲线,只重跑其中一个 θ 的 score,曲线就变成一半旧口径一半新口径
-    ——表面上看不出来,列名与历史行完全一样。所以这里挡一道:目录里躺着的报告
-    口径与本版不同就停,真要换得把同一条曲线上的全部 θ 点一起重跑。
+    After saved_tok changed from "relative to nofill" to "relative to the
+    original trajectory," the per_event column name did not change at all,
+    but its meaning did. Downstream, sweep_theta's curve subcommand sums
+    per_event directly across each θ directory into one curve; rerunning
+    score for just one θ turns the curve into half old convention and half
+    new convention -- invisible on the surface, since the column name and the
+    historical rows look exactly the same. So this blocks it here: if the
+    report sitting in the directory uses a different convention from this
+    version, stop; to actually switch conventions, every θ point on the same
+    curve must be rerun together.
     """
     rep = d / f"INJECT_REPORT{tag}.json"
     if not rep.exists():
@@ -912,37 +1043,40 @@ def check_saved_baseline(d, tag, rebaseline):
     try:
         old = json.loads(rep.read_text()).get("saved_baseline")
     except (ValueError, OSError):
-        return                      # 旧报告本身坏了,照常覆盖
+        return                      # The old report itself is broken, overwrite as usual
     if old == SAVED_BASELINE:
         return
     if rebaseline:
-        print(f"[口径切换] {rep.name}:saved_baseline {old!r} -> "
-              f"{SAVED_BASELINE!r}。同一条 θ 曲线上的其余点也要重跑 score,"
-              "否则 sweep_theta curve 会把两种口径的 saved_tok 求和到一起")
+        print(f"[settings switch] {rep.name}: saved_baseline {old!r} -> "
+              f"{SAVED_BASELINE!r}. the other points on the same θ curve must also rerun score,"
+              "otherwise sweep_theta curve will sum saved_tok from two different settings together")
         return
     raise SystemExit(
-        f"{rep} 是 saved_baseline={old!r} 的旧报告(saved_tok = nofill 的 out "
-        f"token 减本臂),本版写的是 {SAVED_BASELINE!r}(saved_tok = 原轨迹该步的 "
-        "out token 减本臂)。两者列名相同、含义不同:只重跑这一个目录,拿它装出来的 "
-        "θ 曲线就是两种口径求和,报表上分辨不出来。确认要换口径、并且会把同一条"
-        "曲线的全部 θ 点都重跑一遍,再加 --rebaseline。")
+        f"{rep} is an old report with saved_baseline={old!r} (saved_tok = nofill's out "
+        f"token minus this arm), this version writes {SAVED_BASELINE!r} (saved_tok = the original trajectory's "
+        "out token at that step minus this arm). the two columns share a name but differ in meaning: rerunning just "
+        "this one dir would sum two settings into one θ curve, and the report cannot tell them apart. confirm "
+        "you want to switch settings and will rerun the whole curve's θ points, then add --rebaseline.")
 
 
 def cmd_score(a):
     d = Path(a.run_dir)
-    # 先挡口径,再干几分钟的解析活:换口径这件事要在覆盖发生之前就拦下来
+    # Check the convention first, then do the several minutes of parsing work: a
+    # convention change must be caught before the overwrite happens
     check_saved_baseline(d, a.tag, a.rebaseline)
     plan_p = d / a.plan_file
     cfg = json.loads(config_path_for(plan_p).read_text())
     is_exec = cfg.get("miss_policy") == "execute"
-    # 骨架臂的骨架串本身不在 raw 里,要按同一张形态表重新拼一遍才能抽调用;
-    # run 与 score 之间换了 form_table,这里重建出来的骨架就对不上了
+    # The skeleton arm's skeleton string itself is not in raw; it must be
+    # re-spliced using the same form table before a call can be extracted.
+    # If form_table changed between run and score, the skeleton rebuilt here will
+    # not match
     form_table = load_form_table(a.form_table)
     plan = {json.loads(l)["event"]: json.loads(l) for l in open(plan_p)}
     raw = defaultdict(dict)
     for l in open(d / f"raw{a.tag}.jsonl"):
         o = json.loads(l)
-        raw[o["event"]][o["arm"]] = o          # 后写的覆盖先写的
+        raw[o["event"]][o["arm"]] = o          # Whatever is written later overwrites whatever was written earlier
 
     per, by_arm = [], defaultdict(list)
     for ev, arms in raw.items():
@@ -954,38 +1088,45 @@ def cmd_score(a):
         for arm, o in arms.items():
             tail = spliced_tail(arm, p, form_table)
             if arm in ARMS_SKEL and o.get("note_chars") is not None:
-                # run 与 score 之间换了形态表(重跑 build_form_table、assign_share
-                # 跨过 0.5、或忘了传同一张表),这里重建的骨架就不是当初喂进去的
-                # 那串,skeleton_done / call_out / post_think 会整体静默偏移。
-                # raw 里存着当初拼进去那截的字符数,拿它对一下当场就能发现
+                # If the form table changed between run and score (build_form_table was
+                # rerun, assign_share crossed 0.5, or the same table was not passed along),
+                # the skeleton rebuilt here is no longer the string originally fed in, and
+                # skeleton_done / call_out / post_think shift silently across the board.
+                # raw stores the character count of the piece that was originally spliced
+                # in; checking against it catches this on the spot
                 sp = build_splice(arm, p, form_table)
                 if sp is None or len(sp) != o["note_chars"]:
                     raise SystemExit(
-                        f"form_table 对不上:{ev} {arm} run 时拼进去 "
-                        f"{o['note_chars']} 字符,照 {a.form_table} 重建出 "
-                        f"{len(sp) if sp is not None else 0} 字符 —— "
-                        "score 必须用 run 时的同一张表")
+                        f"form_table mismatch: {ev} {arm} spliced in "
+                        f"{o['note_chars']} characters at run time, rebuilding from {a.form_table} gives "
+                        f"{len(sp) if sp is not None else 0} characters -- "
+                        "score must use the same table used at run time")
             if arm in ARMS_FINAL:
-                # 这些臂的续写从 final 通道**内**开始:text 里根本不会再出现
-                # FINAL_OPEN,拿 split_channels 去切会得 final="" 一片全灭。
-                # analysis 剩余记空,final = 拼进去的那一截 + 续写
+                # These arms' continuation starts **inside** the final channel: FINAL_OPEN
+                # will never appear in text at all, running split_channels on it gets
+                # final="" and wipes everything out.
+                # Record the analysis remainder as empty, final = the spliced-in piece +
+                # continuation
                 rest, final = "", tail + o["text"]
             else:
                 rest, final = split_channels(o["text"])
-                rest = tail + rest      # 骨架在 analysis 里,接回去才找得到起点
+                rest = tail + rest      # The skeleton is in analysis, splice it back to find the start
             m = CODE_RE.search(final)
             code = m.group(1) if m else ""
             tool = first_api_call(code)
             sk_call, skel_done, tool_rw, post_think = None, None, None, None
             if arm in ARMS_FINAL:
-                post_think = 0          # 已经在正文段里,没有"补完后又想"这一段
+                post_think = 0          # Already in the final segment: no "rethink after filling in" step
             if arm in ARMS_SKEL:
-                # 骨架所在的那一段:bare/a/b 在 analysis,switch 在 final。
-                # 补完与否、补完后还想多久,都从这一段量。
-                # 调用起点是**已知位置**:tail 的末尾就是 pred_label 本身。骨架
-                # 按铁律不带尾左括号,不锚这个位置的话,模型另起一行自己写的那条
-                # 会被当成"骨架补完了"(实测:模型写 "Wait, that is wrong." 再自己
-                # 换个工具,skeleton_done 照样报 True),这条设置的头号指标就废了
+                # The segment where the skeleton lives: bare/a/b are in analysis, switch is in final.
+                # Whether it completes, and how long it keeps thinking after completing, are both
+                # measured from this segment.
+                # The call's starting point is a **known position**: the end of tail is pred_label
+                # itself. Per the hard rule, the skeleton carries no trailing open-parenthesis; without
+                # anchoring this position, a line the model writes on its own on a new line gets
+                # treated as "the skeleton completed" (observed: the model writes "Wait, that is
+                # wrong." then switches to a different tool on its own, and skeleton_done still
+                # reports True), which wrecks this setting's headline metric.
                 seg = final if arm == "skel_switch" else rest
                 pred = p.get("pred_label") or ""
                 sk_call, sk_end = (call_at(seg, len(tail) - len(pred))
@@ -995,29 +1136,37 @@ def cmd_score(a):
                        if sk_call is not None and fenced else None)
                 skel_done = sk_call is not None and (fin is not None
                                                      or not fenced)
-                # 没进正文段(骨架臂常常不转场)时 tool 是 None:那是"没写正文",
-                # 不是"没改写",记 None 让它不进分母,否则改写率被稀释成偏低
+                # When it never enters the body segment (the skeleton arm often doesn't transition),
+                # tool is None: that means "no body was written," not "no rewrite happened." Recording
+                # None keeps it out of the denominator, otherwise the rewrite rate gets diluted low.
                 tool_rw = (tool != p.get("pred_label")) if tool else None
                 if arm not in ARMS_FINAL and sk_call is not None:
-                    # 骨架补完点(有围栏就算到围栏闭合)到转场之间又想了多少字符;
-                    # 没转场的话 rest 就是整段续写,一路量到末尾
+                    # How many characters it keeps thinking between the skeleton-completion point (counted
+                    # to the fence close if there is a fence) and the transition; if there's no transition,
+                    # rest is the whole continuation, measured all the way to the end.
                     end = fin if fin is not None else sk_end
                     post_think = len(rest) - end
-            # 完整调用:骨架臂取骨架处补完的那条(工具名钉死之后模型自己写的
-            # 参数,也正是 extract_completed.py 送去真执行的那条),抽不到再退
-            # 回正文段;其余臂只看正文段。两边口径必须一致,否则对不了账。
-            # 注意 tool_rewritten=True 的事件上抽的仍是骨架处那条,而模型在正文
-            # 段已经换了工具 —— 那个子集送去真执行,量的是模型自己放弃的调用,
-            # 出数时要按 tool_rewritten 分开读(md 报告的口径行里写了)
+            # Full call: for the skeleton arm, take the one completed at the skeleton (the args
+            # the model writes itself once the tool name is pinned down -- also the one
+            # extract_completed.py sends off for real execution); fall back to the body segment
+            # if it can't be extracted. Other arms only look at the body segment. Both sides
+            # must use the same accounting, or the numbers won't reconcile.
+            # Note that on events with tool_rewritten=True, what gets extracted is still the one
+            # at the skeleton, even though the model has switched tools in the body segment --
+            # that subset is sent for real execution, measuring calls the model abandoned on its
+            # own. Read the numbers split by tool_rewritten (the accounting notes are in the md
+            # report).
             call_out = (sk_call if sk_call is not None
                         else complete_call(final)[0])
             out_tok = o["head_tok"] + o["gen_tok"]
             base = p.get("baseline_out_tok")
-            # 主对照是 baseline(原轨迹):模型当时从这一步自己写到发出调用实际
-            # 花了多少 out token,盘上现成。nofill 降级为管线体检线 —— 它与本臂
-            # 的 prompt 构造方式完全相同(同样重建、同样在 cut 处截断、同样重新
-            # tokenize),只差拼进去那一截,所以 nofill≈baseline 才说明重建与
-            # 采样口径没跑偏,这批数字才放行。
+            # The primary comparison is baseline (the original trajectory): how many out tokens
+            # the model actually spent writing this step through to the call, taken straight from
+            # the record. nofill is downgraded to a pipeline sanity check -- it's built with
+            # exactly the same prompt construction as this arm (same reconstruction, same
+            # truncation at the cut, same re-tokenizing), differing only in the spliced-in
+            # segment. So nofill approx baseline is what shows the reconstruction and sampling
+            # accounting haven't drifted, which is what clears this batch of numbers to ship.
             rec = dict(
                 event=ev, arm=arm, depth=p["depth"], conf=p["conf"],
                 inject_source=p["inject_source"],
@@ -1036,16 +1185,18 @@ def cmd_score(a):
                 has_code=bool(m), tool_out=tool, call_out=call_out,
                 skeleton_done=skel_done, tool_rewritten=tool_rw,
                 post_think_chars=post_think,
-                # 注入成功的样子是"跳过被注入的那个调用、直接干下一件事",
-                # 所以 repeated 高才是坏事(模型无视了注入)。
-                # 注意 appworld 把调用嵌在 python 里、结果常要赋值给变量再用,
-                # 所以重调一次未必等于无视注入,两个指标要一起看。
+                # A successful injection looks like "skip the injected call and move straight to the
+                # next thing," so a high repeated rate is the bad outcome (the model ignored the
+                # injection).
+                # Note that appworld embeds calls inside python, and the result often has to be
+                # assigned to a variable before use, so calling it again once doesn't necessarily
+                # mean the injection was ignored -- look at both metrics together.
                 repeated_injected=(tool == p["label"]),
                 advanced=(tool is not None and tool != p["label"]),
                 same_as_baseline_step=(tool == p["baseline_tool"]),
                 finish_reason=o["finish_reason"])
             if is_exec:
-                # 只在 execute 档加:skip/oracle 的 per_event.jsonl 逐字节不变
+                # Add only in the execute cell: per_event.jsonl for skip/oracle stays byte-for-byte unchanged
                 rec.update(
                     exec_ok=p.get("exec_ok"),
                     matched_traj_result=p.get("matched_traj_result"),
@@ -1083,7 +1234,8 @@ def cmd_score(a):
                                         for r in rs) / n, 4),
             advanced=round(sum(r["advanced"] for r in rs) / n, 4),
             baseline_drift_median=dr[len(dr) // 2] if dr else None,
-            # 体检线:nofill 与本臂的差,只看管线有没有跑偏,不当收益
+            # Sanity check: the gap between nofill and this arm only shows whether the pipeline
+            # has drifted, it is not counted as a gain
             nofill_delta_median=nd[len(nd) // 2] if nd else None,
             skeleton_done=round(sum(sd) / len(sd), 4) if sd else None,
             tool_rewritten=round(sum(tw) / len(tw), 4) if tw else None,
@@ -1091,14 +1243,16 @@ def cmd_score(a):
             truncated=round(sum(r["finish_reason"] == "length"
                                 for r in rs) / n, 4))
 
-    # 按触发深度分桶:免费拿到"注入位置 vs 收益"曲线,看死区在不在
+    # Bucket by trigger depth: this gets an "injection position vs. gain" curve for free, to check whether there's a dead zone
     buckets = defaultdict(lambda: defaultdict(list))
     for r in per:
         buckets[min(int(r["depth"] * 5), 4)][r["arm"]].append(r)
 
-    # saved_tok 的主对照写进报告:老报告没这个键,读的人(和下游算曲线的
-    # sweep_theta)才分得清手上这份 per_event 是"相对原轨迹"还是老的
-    # "相对 nofill" —— 两种口径的 saved_tok 混进同一个比值就是算错
+    # Write saved_tok's primary comparison into the report: older reports don't have this
+    # key, so readers (and sweep_theta downstream computing the curve) can tell whether
+    # the per_event in hand is "relative to the original trajectory" or the old
+    # "relative to nofill" -- mixing the two saved_tok conventions into the same ratio
+    # is a miscalculation
     out = dict(run_dir=str(d), config=cfg, saved_baseline=SAVED_BASELINE,
                by_arm={k: agg(v) for k, v in by_arm.items()},
                by_depth={f"{b*0.2:.1f}-{(b+1)*0.2:.1f}":
@@ -1109,8 +1263,10 @@ def cmd_score(a):
                            for k, v in by_arm.items()},
                    "miss": {k: agg([r for r in v if not r["full_call_ok"]])
                             for k, v in by_arm.items()}})
-    # 骨架臂的猜错桶是 name_hit(探针预测的工具名对不对),不是 full_call_ok:
-    # 骨架只钉工具名,参数是大模型现写的,拿整条调用的对错分桶分错了东西
+    # The skeleton arm's wrong-guess bucket is name_hit (whether the probe's predicted
+    # tool name is correct), not full_call_ok: the skeleton only pins the tool name, the
+    # args are written fresh by the large model, so bucketing by whether the whole call
+    # is correct buckets the wrong thing
     skel = {k: v for k, v in by_arm.items() if k in ARMS_SKEL}
     if skel:
         out["by_name_hit"] = {
@@ -1119,9 +1275,11 @@ def cmd_score(a):
             "miss": {k: agg([r for r in v if not r["name_hit"]])
                      for k, v in skel.items()}}
     if is_exec:
-        # execute 档必须按注入来源分桶:exec_pred 注入的是"那一条调用的返回",
-        # traj_hit 注入的是"整块 stdout",99/1061 个多调用块上这俩不是一回事。
-        # 混成一条均值就是把两种口径搅在一起,报出来的省 token 说明不了什么。
+        # The execute cell must be bucketed by injection source: what exec_pred injects is
+        # "that one call's return value," what traj_hit injects is "the whole stdout block" --
+        # on the 99/1061 multi-call blocks these are not the same thing.
+        # Averaging them into one number mixes the two conventions together, and the reported
+        # token savings won't mean anything.
         src_of = {}
         for r in per:
             src_of.setdefault(r["inject_source"], []).append(r)
@@ -1132,14 +1290,14 @@ def cmd_score(a):
         pl = list(plan.values())
         fired_exec = [p for p in pl if p["inject_source"] in
                       ("exec_pred", "exec_error")]
-        # 验收线的三条门槛见 merge-exec 里的注释:缺一条两边不可比
+        # See the comment in merge-exec for the acceptance line's three thresholds: missing any one makes the two sides incomparable
         acc = [p for p in fired_exec
                if p.get("full_call_ok") and p.get("n_calls_in_block") == 1
                and p.get("traj_bare_print")]
         vb = [p for p in fired_exec
               if p.get("matched_traj_result") is not None]
         out["exec"] = dict(
-            note="正确率是单步调用一致率,不是 appworld 任务级成绩",
+            note="the accuracy is the single-step call consistency rate, not appworld task-level score",
             exec_scope=cfg.get("exec_scope"),
             n_exec_pred=sum(1 for p in pl
                             if p["inject_source"] == "exec_pred"),
@@ -1151,7 +1309,7 @@ def cmd_score(a):
                                        if p["inject_source"] == "exec_error")
                                    / len(fired_exec), 4)
                              if fired_exec else None),
-            # 验收线:hit + 单调用 + 代码块是一句干净的 print(调用)
+            # Acceptance line: hit + single call + the code block is one clean print(call)
             acceptance_matched=sum(1 for p in acc
                                    if p.get("matched_traj_result")
                                    or p.get("matched_traj_error")),
@@ -1177,21 +1335,21 @@ def cmd_score(a):
         for r in per:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
-    L = [f"# 注入回放报告 {d.name}", "",
-         f"- 口径 risk={cfg['risk']} θ={cfg['theta']} "
+    L = [f"# Injection replay report {d.name}", "",
+         f"- settings risk={cfg['risk']} θ={cfg['theta']} "
          f"miss_policy={cfg['miss_policy']} permit={cfg.get('permit')}",
-         f"- 事件 {cfg['n_events_test']} 触发 {cfg['n_fired']} "
-         f"入计划 {cfg['n_planned']} 可注入 {cfg['n_inject']}", "",
-         "> 省 token 的**主对照是原轨迹**:saved_tok = 原轨迹该步的 out token",
-         "> 减本臂的 out token(原轨迹那个数是模型当时自己从这里写到发出调用",
-         "> 实际花掉的,盘上现成)。",
-         "> **nofill 只是管线体检线**:nofill体检 = nofill 的 out token 减本臂的,",
-         "> 用来看重建与采样口径有没有跑偏(nofill≈原轨迹才放行整批数字),不当收益。",
-         "> repeated_injected = 续写又调了一遍被注入的工具(越低越说明采纳了注入),",
-         "> 但 appworld 把调用嵌在 python 里、结果常要赋值给变量,重调未必等于无视。",
-         "", "## 按 arm", "",
-         "| arm | n | 省token均值 | 省token中位 | 省比例 | 省为正 | 出token均值 "
-         "| 出代码块 | 重调被注入的 | 推进 | nofill体检中位 | 撞长度上限 |",
+         f"- events {cfg['n_events_test']} fired {cfg['n_fired']} "
+         f"entered plan {cfg['n_planned']} injectable {cfg['n_inject']}", "",
+         "> the **main comparison for saved tokens is the original trajectory**: saved_tok = the original trajectory's out token at that step",
+         "> minus this arm's out token (the original trajectory's number is how many the model itself wrote from here to issuing the call at the time",
+         "> actually spent, already available on disk).",
+         "> **nofill is only a pipeline health-check line**: nofill health-check = nofill's out token minus this arm's,",
+         "> used to check whether rebuild and sampling settings have drifted (only nofill ≈ original trajectory greenlights the whole batch of numbers), not counted as a gain.",
+         "> repeated_injected = the continuation called the injected tool again (lower means the injection was adopted more),",
+         "> but appworld embeds calls inside python, and the result often needs to be assigned to a variable, so calling again does not necessarily mean the injection was ignored.",
+         "", "## By arm", "",
+         "| arm | n | saved-token mean | saved-token median | save ratio | save positive | out-token mean "
+         "| emits code block | recalls injected | advances | nofill health-check median | hits length cap |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for k, v in out["by_arm"].items():
         L.append(f"| {k} | {v['n']} | {v['saved_tok_mean']} | "
@@ -1200,27 +1358,27 @@ def cmd_score(a):
                  f"{v['has_code']} | {v['repeated_injected']} | "
                  f"{v['advanced']} | {v['nofill_delta_median']} | "
                  f"{v['truncated']} |")
-    L += ["", "## 按触发深度分桶(死区诊断)", "",
-          "| depth | arm | n | 省token均值 | 重调被注入的 | 推进 |",
+    L += ["", "## Bucketed by fire depth (dead-zone diagnosis)", "",
+          "| depth | arm | n | saved-token mean | recalls injected | advances |",
           "|---|---|---|---|---|---|"]
     for b, arms in out["by_depth"].items():
         for k, v in arms.items():
             L.append(f"| {b} | {k} | {v['n']} | {v['saved_tok_mean']} | "
                      f"{v['repeated_injected']} | {v['advanced']} |")
     if "by_name_hit" in out:
-        L += ["", "## 骨架臂(工具名由探针钉死,大模型只写参数)", "",
-              "> 骨架补完 = 模型**接着骨架那个位置**把调用写完(括号配平,拼了围栏"
-              "的还要围栏闭合);另起一行自己写一条不算补完。",
-              "> 工具名被改写 = 模型在正文段换了个工具,分母只算写出了正文调用的"
-              "事件(没转场的记 None,要跟出代码块那一列一起读)。",
-              "> 补完后又想 = 骨架补完点到转场之间的字符数。",
-              "> name_hit = 探针预测的工具名与原轨迹一致;猜错桶就是这条设置要付的代价。",
-              "> **call_out(送去真执行的那条)一律取骨架处补完的那条**:工具名被"
-              "改写的那部分事件上,执行的是模型自己已经放弃的调用,那个子集的执行"
-              "正确率不能当这条设置的成绩读。",
+        L += ["", "## Skeleton arm (the tool name is pinned by the probe, the large model only writes the args)", "",
+              "> skeleton completion = the model **continuing from the skeleton position** to finish writing the call (parentheses balanced, and if a fence"
+              "was spliced in, the fence closed too); writing one on a new line on its own does not count as completion.",
+              "> tool name rewritten = the model switched to a different tool in the body section, the denominator only counts events that wrote out a body"
+              "call (ones with no transition are recorded as None, read together with the emits-code-block column).",
+              "> reconsidered after completion = the number of characters between the skeleton completion point and the transition.",
+              "> name_hit = the probe's predicted tool name matches the original trajectory; the wrong-guess bucket is the cost this setting pays.",
+              "> **call_out (the one sent to real execution) always takes the one completed at the skeleton "
+              "position**: for events whose tool name was rewritten, what gets executed is a call the model itself "
+              "had already abandoned, so that subset's execution accuracy cannot be read as this setting's score.",
               "",
-              "| arm | n | 骨架补完 | 工具名被改写 | 补完后又想(中位字符) | "
-              "猜对 n | 猜对省token中位 | 猜错 n | 猜错省token中位 |",
+              "| arm | n | skeleton completion | tool name rewritten | reconsidered after completion (median chars) | "
+              "correct-guess n | correct-guess saved-token median | wrong-guess n | wrong-guess saved-token median |",
               "|---|---|---|---|---|---|---|---|---|"]
         for k in out["by_name_hit"]["hit"]:
             v = out["by_arm"][k]
@@ -1232,32 +1390,32 @@ def cmd_score(a):
                      f"{ms.get('n', 0)} | {ms.get('saved_tok_median')} |")
     if is_exec:
         e = out["exec"]
-        L.insert(4, "> ⚠️ **execute 档:这里的正确率是单步调用一致率,不是 "
-                    "appworld 任务级成绩。** 一个事件只续写一步、不跑到底、"
-                    "不调 world.evaluate()。任务级那条轴要另建 in-loop rollout。")
-        L += ["", "## execute 档口径", "",
-              f"- exec_scope = {e['exec_scope']};真执行 "
-              f"{e['n_exec_pred'] + e['n_exec_error']} 个事件,其中报错 "
-              f"{e['n_exec_error']} 个(报错率 {e['exec_error_rate']}),"
-              f"没拿到执行记录 {e['n_exec_missing']} 个",
-              f"- **验收线**:预测与真实一致、代码块只含 1 个调用、且该代码块就是"
-              f"一句干净的 print(调用) —— 这类事件里执行输出与轨迹录下的 result "
-              f"对得上 {e['acceptance_matched']}/{e['acceptance_n']}"
-              f"(其中逐字相同 {e['acceptance_exact']},其余是调用本身报错、"
-              f"报错消息一致但 traceback 回显的引号风格不同)。另有 "
-              f"{e['acceptance_excluded_mixed']} 个 hit+单调用事件因为代码块不是"
-              f"一句干净的 print 而两边不可比,没算进验收线",
-              f"- 全部真执行事件里输出与录下的 result 逐字相同的比例 "
-              f"{e['matched_traj_result']}(多调用块本来就不该相同,这里只作参考)",
-              f"- 前缀重放漂了的事件 {e['n_drift']}(拿错状态执行的,报告里不能"
-              f"当真账)",
-              f"- 补引号的分支计数 {e['arg_modes']}",
-              f"- 执行报错的种类 {e['error_kind']}", "",
-              "> 猜错的代价在这一档才进账:预测调用报错时,报错文本原样注入,"
-              "用的还是同一个 [SYSTEM NOTE: prefetched ...] 模板(与 hit 事件可比)。",
-              "", "### 按注入来源分桶(**不许混成一条均值**)", "",
-              "| 来源 | arm | n | 省token均值 | 省token中位 | 省比例 | "
-              "出token均值 | 出代码块 | 重调被注入的 | 推进 |",
+        L.insert(4, "> ⚠️ **execute mode: the accuracy here is the single-step call consistency rate, not "
+                    "appworld task-level score.** an event only continues one step, does not run to completion,"
+                    "and does not call world.evaluate(). the task-level axis needs a separate in-loop rollout.")
+        L += ["", "## Execute mode settings", "",
+              f"- exec_scope = {e['exec_scope']}; actually executed "
+              f"{e['n_exec_pred'] + e['n_exec_error']} events, of which errored "
+              f"{e['n_exec_error']} (error rate {e['exec_error_rate']}),"
+              f"no execution record obtained for {e['n_exec_missing']}",
+              f"- **acceptance line**: prediction matches ground truth, the code block contains only 1 call, and "
+              f"that code block is a clean print(call) -- for these events, execution output matches the result "
+              f"recorded in the trajectory {e['acceptance_matched']}/{e['acceptance_n']}"
+              f"(of which character-for-character identical {e['acceptance_exact']}, the rest are cases where "
+              f"the call itself errored, the error message matched but the traceback's echoed quote style differed). "
+              f"another {e['acceptance_excluded_mixed']} hit+single-call events could not be compared because the "
+              f"code block was not a clean print, and were not counted into the acceptance line",
+              f"- proportion of all actually-executed events whose output is character-for-character identical to "
+              f"the recorded result {e['matched_traj_result']} (multi-call blocks are not expected to match anyway, this is for reference only)",
+              f"- events where prefix replay drifted {e['n_drift']} (executed against the wrong state, cannot be "
+              f"taken at face value in the report)",
+              f"- branch counts for quote-patching {e['arg_modes']}",
+              f"- kinds of execution errors {e['error_kind']}", "",
+              "> the cost of a wrong guess is only booked in this mode: when the predicted call errors, the "
+              "error text is injected verbatim, using the same [SYSTEM NOTE: prefetched ...] template (comparable to hit events).",
+              "", "### Bucketed by injection source (**must not be mixed into one mean**)", "",
+              "| source | arm | n | saved-token mean | saved-token median | save ratio | "
+              "out-token mean | emits code block | recalls injected | advances |",
               "|---|---|---|---|---|---|---|---|---|---|"]
         for s, arms in out["by_inject_source"].items():
             for k, v in arms.items():
@@ -1283,17 +1441,17 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--risk", type=float, default=0.1)
     p.add_argument("--theta", type=float, default=None,
-                   help="直接钉 θ,盖过 --risk 的反查(θ 扫描曲线用)")
+                   help="pin θ directly, overriding --risk's reverse lookup (used for θ sweep curves)")
     p.add_argument("--decision-file", default=None,
-                   help="外部逐事件判定 JSONL:{event, fire, sent_idx},给了就"
-                        "完全替代 θ 判定(产阈值模型的接口),conf 照旧算")
+                   help="external per-event verdict JSONL: {event, fire, sent_idx}; if given, it "
+                        "fully replaces the θ verdict (the interface for threshold-model production), conf is still computed as usual")
     p.add_argument("--miss-policy", default="skip",
                    choices=["skip", "oracle", "execute"])
     p.add_argument("--exec-scope", default="all", choices=["all", "miss"],
-                   help="只在 miss_policy=execute 生效。all=连 hit 事件也真执行"
-                        "(口径统一,顺手修掉多调用块那条偏差);"
-                        "miss=只执行猜错的,hit 仍走 traj_hit(与旧曲线可比)")
-    p.add_argument("--permit", action="store_true", help="system 里加授权句")
+                   help="only takes effect when miss_policy=execute. all = actually execute hit events too "
+                        "(unifies settings, and fixes the multi-call-block bias along the way);"
+                        "miss = only execute the wrong guesses, hit still goes through traj_hit (comparable to the old curve)")
+    p.add_argument("--permit", action="store_true", help="add an authorization sentence to system")
     p.add_argument("--device", default="cuda")
     p.add_argument("--bs", type=int, default=8)
     p.add_argument("--max-new-tokens", type=int, default=96)
@@ -1304,8 +1462,8 @@ def main():
                        help="plan.jsonl + exec_calls.jsonl -> plan_exec.jsonl")
     p.add_argument("--plan", required=True)
     p.add_argument("--exec", required=True,
-                   help="exec_calls.py 的产物;分片会自动收 <stem>*<suffix>,"
-                        "也接受逗号分隔的多个文件")
+                   help="exec_calls.py's outputs; pieces are automatically collected as <stem>*<suffix>,"
+                        "comma-separated multiple files are also accepted")
     p.set_defaults(fn=cmd_merge_exec)
 
     p = sub.add_parser("run")
@@ -1315,43 +1473,44 @@ def main():
     p.add_argument("--tokenizer", default="/net/tokyo100-10g/data/str01_01/"
                                           "y-guo/models/gpt-oss-120b")
     p.add_argument("--arms", default="nofill,inject",
-                   help="可选 " + ",".join(ARMS_ALL))
+                   help="optional " + ",".join(ARMS_ALL))
     p.add_argument("--form-table", default=str(HERE / "form_table.json"),
-                   help="build_form_table.py 的产物,决定骨架是 print 形还是"
-                        "赋值形;文件不在就一律 print 形")
+                   help="build_form_table.py's output, decides whether the skeleton is print form or"
+                        "assignment form; if the file is absent, always use print form")
     p.add_argument("--preset", default="default",
-                   help="configs/presets/<名>.json 的一套生成设置"
+                   help="a set of generation settings from configs/presets/<name>.json"
                         "(temperature/top_p/max_tokens/stop/seed);"
-                        "缺省 default;命令行显式给的压过预设值")
-    # 采集时 max_tokens=8192(envs/collect/common.py 的 Chat 缺省)。设小了 nofill
-    # 会被截断,与 baseline 不可比 —— 单步 baseline_out_tok 实测有到 5681 的
+                        "default is default; explicit command-line values override the preset")
+    # max_tokens=8192 at collection time (the Chat default in envs/collect/common.py). Set
+    # it too low and nofill gets truncated, making it incomparable with baseline -- some
+    # single steps have been observed with baseline_out_tok up to 5681
     p.add_argument("--max-tokens", type=int, default=None,
-                   help="缺省 8192(预设也没给时)")
+                   help="default 8192 (when the preset gives none either)")
     p.add_argument("--dry-run", action="store_true",
-                   help="只拼 prompt 落盘,不发请求(验证拼接,不占服务)")
+                   help="only splice the prompt and write it to disk, do not send requests (verifies splicing without occupying the service)")
     p.add_argument("--timeout", type=int, default=600)
     p.add_argument("--limit", type=int, default=0)
     p.add_argument("--tag", default="")
     p.add_argument("--permit", action="store_true")
     p.add_argument("--concurrency", type=int, default=16)
     p.add_argument("--no-pin-date", action="store_true",
-                   help="不把 Current date 钉回采集日(默认钉,保证逐字重建)")
+                   help="do not pin Current date back to the collection day (pinned by default, to guarantee character-for-character rebuild)")
     p.add_argument("--assume-date", action="store_true",
-                   help="承认重建日期与采集日期不同,继续跑")
+                   help="accept that the rebuild date differs from the collection date, and keep running")
     p.set_defaults(fn=cmd_run)
 
     p = sub.add_parser("score")
     p.add_argument("--run-dir", required=True)
     p.add_argument("--plan-file", default="plan.jsonl",
-                   help="execute 档用 plan_exec.jsonl(config 名跟着它推)")
+                   help="execute mode uses plan_exec.jsonl (the config name is derived from it)")
     p.add_argument("--form-table", default=str(HERE / "form_table.json"),
-                   help="必须与 run 时用的是同一张表:骨架串不落在 raw 里,"
-                        "抽调用要照它重新拼一遍")
+                   help="must be the same table used at run time: the skeleton string is not stored in raw,"
+                        "extracting the call has to splice it again from this table")
     p.add_argument("--tag", default="")
     p.add_argument("--rebaseline", action="store_true",
-                   help="允许把旧口径(saved_tok 相对 nofill)的报告覆盖成新口径"
-                        "(相对原轨迹)。只重跑一个 θ 点会让 sweep_theta curve "
-                        "两种口径求和,加这个开关就是承诺整条曲线一起重跑")
+                   help="allow overwriting a report under the old settings (saved_tok relative to nofill) with the new"
+                        "settings (relative to the original trajectory). rerunning just one θ point would make "
+                        "sweep_theta curve sum the two settings together; adding this switch is a commitment to rerun the entire curve together")
     p.set_defaults(fn=cmd_score)
 
     a = ap.parse_args()

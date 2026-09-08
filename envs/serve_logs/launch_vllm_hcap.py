@@ -1,16 +1,18 @@
-"""hcap(harmony 逐 token 抓取)的服务发射器:tokyo108 一张 H100 一个 gpt-oss-120b。
+"""Service launcher for hcap (per-token harmony capture): one gpt-oss-120b on one H100 on tokyo108.
 
-配置照抄 launch_vllm_awdiag.py 那一版(2026-08-02 跑通过的口径):
-不给 --max-model-len,让 vLLM 用模型 native 131072;只加
---gpu-memory-utilization 0.92。环境变量同样照抄,一个字不改——
-这次要验的是客户端自拼 harmony 能不能走通,服务侧不引入新变量。
+Configuration copied from the launch_vllm_awdiag.py version (the convention that worked on
+2026-08-02): do not pass --max-model-len, let vLLM use the model's native 131072; only add
+--gpu-memory-utilization 0.92. Environment variables copied the same way, not a single
+character changed -- what this run needs to verify is whether the client's own harmony
+assembly works end to end, so the service side must not introduce new variables.
 
   gpt-oss-120b -> H100 GPU 2, port 8113
 
-GPU 2 是 2026-08-06 实探唯一空着的 H100(0/1/3/4 是 zhou-y 的)。
-端口避开 8103/8106/8107 那三个历史约定,免得跟别人的残留撞。
+GPU 2 was the only H100 found free in the 2026-08-06 live check (0/1/3/4 belong to zhou-y).
+The port avoids the three historically reserved 8103/8106/8107, to avoid colliding with
+anyone else's leftovers.
 
-用法: python3 launch_vllm_hcap.py
+Usage: python3 launch_vllm_hcap.py
 """
 import shlex
 import subprocess

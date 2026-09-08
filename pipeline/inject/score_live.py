@@ -1,28 +1,37 @@
-"""活跑注入线打分器(cprobe-env,纯 CPU)。设计书:plans/2026-08-01-live-inject-design.md
+"""Live-run injection line scorer (cprobe-env, CPU only). Design doc: plans/2026-08-01-live-inject-design.md
 
-输入:
-  --live-dir   live_appworld.py 的输出目录(live_*.jsonl)
-  --base-root  对照 = 已采轨迹目录(envs/runs/w0_aw_official/appworld_gptoss),
-               只取活跑侧出现过的 task_id,按题配对
-输出:LIVE_REPORT.{json,md} 写进 --live-dir
+Input:
+  --live-dir   live_appworld.py's output directory (live_*.jsonl)
+  --base-root  comparison = the already-collected trajectory directory
+               (envs/runs/w0_aw_official/appworld_gptoss), take only the task_ids
+               that appear on the live-run side, paired by task
+Output: LIVE_REPORT.{json,md} written into --live-dir
 
-口径(设计书 §1;两处不可比要带上:对照批次的服务条件与日期行都与活跑不同):
-- 任务成败:活跑 final.eval 的结构化 dict;对照 final.eval 是 str,
-  ast.literal_eval 解;两边都以 success 字段为准,解不出算 unknown 单列。
-- token 账两条:billed = 分段生成的 completion token 全部(含触发后丢弃的
-  溢出);kept = billed - 溢出 token 估算。溢出只记了字符数,token 估算用
-  gpt-oss tokenizer 现算注入前被丢弃文本不可行(原文没存),所以 kept 只报
-  字符口径,billed 是 token 口径的唯一真账。对照的每步 out token 取
-  usage.out(服务端记的 completion_tokens)。
-- 出手事后账(评测时不可知、打分时才算):预测调用与该步真发出代码块首条
-  完整调用的一致性(工具级/整条级;整条级用 parse_call 括号配平提取,别拿
-  "apis. 到块尾"整段比——print 壳和多语句会让全对的预测也判不一致)、
-  注入后该步是否又调了同一工具(重调)。
-- task_error 单列:live_appworld 对单题临时故障(服务重启/网络抖动)补的
-  final(abort=task_error:*, steps=-1)不是真实成败,只计 n_task_error,
-  不进 live_success 的分母。
+Conventions (design doc §1; flag two points of incomparability: the comparison batch's
+service conditions and date both differ from the live run):
+- Task success/failure: on the live run, final.eval is a structured dict; on the
+  comparison, final.eval is a str, parsed with ast.literal_eval. Both sides go by the
+  success field; anything that fails to parse is counted separately as unknown.
+- Two token accounts: billed = all completion tokens generated across segments
+  (including overflow discarded after a trigger); kept = billed - estimated overflow
+  tokens. Overflow is only recorded as a character count -- estimating tokens with the
+  gpt-oss tokenizer on the text discarded before injection isn't feasible (the
+  original text isn't stored), so kept is reported only on a character basis; billed
+  is the sole true account on a token basis. For the comparison side, each step's out
+  token count is taken from usage.out (the completion_tokens the server recorded).
+- After-the-fact firing account (unknowable at eval time, computed only at scoring
+  time): consistency between the predicted call and the first complete call in the
+  code block actually emitted at that step (tool-level / whole-call level; whole-call
+  level extracts with parse_call's paren balancing, don't compare the whole "apis. to
+  end of block" span -- print wrappers and multi-statement blocks would mark even a
+  fully correct prediction as inconsistent), and whether that step called the same
+  tool again after injection (re-call).
+- task_error listed separately: the final that live_appworld backfills for a
+  per-task transient failure (service restart / network jitter)
+  (abort=task_error:*, steps=-1) is not a real success/failure outcome; it's only
+  counted in n_task_error and does not enter live_success's denominator.
 
-用法:
+Usage:
   cprobe-env/bin/python pipeline/inject/score_live.py \\
       --live-dir pipeline/inject/runs/live_smoke \\
       --base-root envs/runs/w0_aw_official/appworld_gptoss
@@ -51,8 +60,10 @@ def first_call(code):
 
 
 def norm_call(s):
-    """比整条调用用:去空白差异(gen_call 是去引号规范串,真代码带引号,
-    整条级一致性只在'去引号后逐字相同'时判真——与回放 full_call_ok 同口径)。"""
+    """Used for whole-call comparison: strips whitespace differences (gen_call is a
+    quote-stripped canonical string, real code has quotes; whole-call consistency is
+    judged true only when 'byte-identical after stripping quotes' -- same convention
+    as full_call_ok in replay)."""
     return re.sub(r"\s+", "", (s or "").replace('"', "").replace("'", ""))
 
 
@@ -68,8 +79,9 @@ def success_of(ev):
                 return bool(d["success"])
         except Exception:
             pass
-        # 对照轨迹的 eval 是被截断过的 str(实测 w0 168 条里 135 条
-        # literal_eval 失败);success 键在串首,正则兜底(summarize_full 同口径)。
+        # The comparison trajectory's eval is a truncated str (observed: 135 of 168 w0
+        # entries fail literal_eval); the success key is at the start of the string, regex
+        # is the fallback (same convention as summarize_full).
         m = re.search(r"'success': (True|False)", ev)
         if m:
             return m.group(1) == "True"
@@ -78,8 +90,9 @@ def success_of(ev):
 
 def read_live(path):
     recs = [json.loads(l) for l in open(path)]
-    # 单题在建世界阶段就炸时,文件里只有兜底的 task_error final,没有 meta 行
-    # ——meta 用 None 顶住,调用方从文件名兜出 task_id。
+    # When a single task crashes during world setup, the file only has the fallback
+    # task_error final, with no meta line -- meta is held up with None, and the caller
+    # recovers task_id from the filename.
     meta = recs[0] if recs and recs[0].get("type") == "meta" else None
     gens = [r for r in recs if r.get("type") == "gen"]
     envs = {r["step"]: r for r in recs if r.get("type") == "env"}
@@ -107,7 +120,7 @@ def main():
     for f in sorted(glob.glob(str(live_dir / "live_*.jsonl"))):
         meta, gens, envs, specs, final = read_live(f)
         tid = ((meta or {}).get("task_id")
-               or Path(f).stem[len("live_"):])       # 文件名 live_<task_id>.jsonl
+               or Path(f).stem[len("live_"):])       # filename live_<task_id>.jsonl
         if final is None:
             rows.append(dict(task=tid, arm=(meta or {}).get("arm"),
                              unfinished=True))
@@ -181,18 +194,18 @@ def main():
         dict(summary=summary, tasks=rows, specs=spec_rows),
         ensure_ascii=False, indent=1))
 
-    md = ["# 活跑注入线报告", "",
-          "对照批次的服务条件与 harmony 日期行都与活跑不同(设计书 §1),",
-          "token 总量对比要带这条保留;billed 含触发后丢弃的溢出。",
-          "n_task_error 是临时故障(abort=task_error)的题数,这些题没进",
-          "live_success 的分母;重跑前删掉对应 live_*.jsonl 才会重试。", "",
-          "| 指标 | 值 |", "|---|---|"]
+    md = ["# Live-run injection line report", "",
+          "the control batch's service conditions and harmony date line both differ from the live run (design doc §1),",
+          "the total-token comparison must carry this caveat; billed includes overflow discarded after firing.",
+          "n_task_error is the number of tasks with a transient failure (abort=task_error); these tasks are not included in",
+          "live_success's denominator; delete the corresponding live_*.jsonl before rerunning for it to be retried.", "",
+          "| metric | value |", "|---|---|"]
     if errs:
-        md.insert(6, "task_error 题: " + ", ".join(r["task"] for r in errs))
+        md.insert(6, "task_error tasks: " + ", ".join(r["task"] for r in errs))
     for k, v in summary.items():
         md.append(f"| {k} | {v} |")
-    md += ["", "| task | arm | 成败 | 对照成败 | 步数 | 出手 | billed tok |"
-              " 对照 out tok |", "|---|---|---|---|---|---|---|---|"]
+    md += ["", "| task | arm | outcome | control outcome | steps | fired | billed tok |"
+              " control out tok |", "|---|---|---|---|---|---|---|---|"]
     for r in done:
         md.append(f"| {r['task']} | {r['arm']} | {r['success']} | "
                   f"{r['base_success']} | {r['steps']} | {r['n_inject']} | "

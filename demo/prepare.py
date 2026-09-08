@@ -1,33 +1,38 @@
 #!/usr/bin/env python3
-"""demo/prepare.py —— 给 debugger 演示构建两样假件:一份很小的数据集,一个很小的模型。
+"""demo/prepare.py -- builds two fake artifacts for the debugger demo: a very small dataset and
+a very small model.
 
-真正要看的训练代码是 pipeline/train/train_causal_share.py(cgen / cparam 两格
-共用的缓存复用训练器),那个文件一个字都不改。训练器本来就留了两扇门:
-`--base <模型目录>` 走 build(path=...) 加载任意目录里的模型,`--device cpu`
-不碰显卡。本脚本只负责把这两扇门后面的东西换成 CPU 上几秒钟就能跑完的假件:
+The training code that actually matters is pipeline/train/train_causal_share.py (the
+cache-reuse trainer shared by the cgen / cparam cells); that file is not touched at all. The
+trainer already leaves two doors open: `--base <model dir>` goes through build(path=...) to
+load a model from any directory, and `--device cpu` skips the GPU. This script's only job is to
+swap in fakes behind those two doors that finish in a few seconds on CPU:
 
-1. demo/data/{train,val}.jsonl:合成的 AppWorld 风格标注样本。字段与
-   pipeline/annotate/build.py 产出的真数据逐个相同(text / label / w / depth /
-   sent_idx / n_sents / event / traj / unit / model / step / label_call /
-   args_named)。切点用 rules.boundaries,题干用 rules.assemble,调用串用
-   build.make_call,三个都是真流水线的同一份函数;只有轨迹内容是编写的。
-2. demo/tiny_qwen3/:随机初始化的两层 Qwen3(hidden 64),结构与真底座同族,
-   分词器是真 Qwen3-0.6B-Base 的分词器(从 NFS 拷贝一份进来)。词表大小取
-   len(tok):真分词器分出来的 token id 最高到十五万,词表开小了 embedding
-   会越界。
+1. demo/data/{train,val}.jsonl: synthetic AppWorld-style annotated samples. The fields match
+   the real data produced by pipeline/annotate/build.py field for field (text / label / w /
+   depth / sent_idx / n_sents / event / traj / unit / model / step / label_call /
+   args_named). Cuts use rules.boundaries, the prompt uses rules.assemble, and the call string
+   uses build.make_call -- all three are the same functions as the real pipeline; only the
+   trajectory content is made up.
+2. demo/tiny_qwen3/: a randomly-initialized 2-layer Qwen3 (hidden 64), structurally the same
+   family as the real base model. The tokenizer is the real Qwen3-0.6B-Base tokenizer (copied
+   in from NFS). The vocab size is set to len(tok): the real tokenizer produces token ids up to
+   150,000, and a smaller vocab would make the embedding index out of range.
 
-大产物按 CLAUDE.md 的铁律直接写 net 盘:本脚本先把 demo/tiny_qwen3 与
-demo/runs 做成指向 net 盘镜像目录(--net-root)下同名目录的软链,与
-pipeline/data、pipeline/runs 同一个做法,home 里只留代码、数据 jsonl 与软链。
+Per the CLAUDE.md hard rule, large outputs go straight to the net drive: this script first
+turns demo/tiny_qwen3 and demo/runs into symlinks pointing at the same-named directories under
+the net-drive mirror directory (--net-root), the same approach used for pipeline/data and
+pipeline/runs -- home keeps only the code, the data jsonl files, and the symlinks.
 
-跑完之后脚本自己用 share_data.load_events 把两份数据各按 cgen / cparam 加载
-一遍,把每个事件的全文 token 数、拼接长度、行数打印出来,再按 --tok-budget
-打印一下 epoch 0 的每个逻辑小批会切成几个物理块:训练循环里最值得下断点的
-地方就是这几层。
+After it finishes, the script loads both datasets itself with share_data.load_events, once
+each for cgen / cparam, and prints each event's full-text token count, concatenated length, and
+line count; it then prints, per --tok-budget, how many physical chunks each logical epoch-0
+minibatch splits into -- these are the layers most worth setting a breakpoint in during the
+training loop.
 
-用法:
+Usage:
   CUDA_VISIBLE_DEVICES= cprobe-env/bin/python demo/prepare.py
-  python3 run.py demo-prep            # 同一件事,走注册表
+  python3 run.py demo-prep            # same thing, through the registry
 """
 import argparse
 import json
@@ -39,19 +44,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "pipeline/annotate"))
 sys.path.insert(0, str(ROOT / "pipeline/train"))
 
-import rules                                   # noqa: E402  切点 / 题干的唯一真源
-from build import make_call                    # noqa: E402  调用串的唯一真源
+import rules                                   # noqa: E402  sole source of truth for cuts / prompts
+from build import make_call                    # noqa: E402  sole source of truth for the call string
 
 DEFAULT_SEED = 20260907
-# net 盘镜像目录(CLAUDE.md:大产物落 /net/.../reproduce/new1/ 下镜像本目录结构)
+# net-drive mirror directory (CLAUDE.md: large outputs go under /net/.../reproduce/new1/,
+# mirroring this directory's structure)
 NET_DEMO = Path("/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/demo")
-# 这两个目录是大产物(小模型 54 MB,每次训练产物约 55 MB),做成软链落 net 盘
+# these two directories are large outputs (the small model is 54 MB, each training run's
+# output is about 55 MB) -- turn them into symlinks onto the net drive
 NET_LINKED = ("tiny_qwen3", "runs")
 
 
 def link_to_net(name, net_root):
-    """demo/<name> 做成指向 net_root/<name> 的软链。已经是软链就只保证目标目录
-    存在;是实体目录就硬停,不替用户搬东西(里面的内容都能重新构建)。"""
+    """Turn demo/<name> into a symlink pointing at net_root/<name>. If it is already a symlink,
+    just make sure the target directory exists; if it is a real directory, hard-stop instead of
+    moving things for the user (everything inside it can be rebuilt anyway)."""
     link = ROOT / "demo" / name
     target = net_root / name
     if link.is_symlink():
@@ -59,16 +67,17 @@ def link_to_net(name, net_root):
         return link, link.resolve()
     if link.exists():
         raise SystemExit(
-            f"{link} 是实体目录,不是软链。按 CLAUDE.md 铁律大产物要落 net 盘:"
-            f"先把这个目录删掉或者挪走(内容都能用本脚本重新构建),再跑本脚本。")
+            f"{link} is a real directory, not a symlink. Per the CLAUDE.md hard rule, large outputs must go to the net drive:"
+            f"first delete or move this directory (its contents can all be rebuilt by this script), then rerun this script.")
     target.mkdir(parents=True, exist_ok=True)
     link.symlink_to(target)
     return link, target
 
-# ---------------------------------------------------------------- 编轨迹用的素材
-# 工具名与保名参数都照 AppWorld 的样子编;参数 value 不带引号,与真数据一致
-# (真数据里 `args_named` 是 [{'key': 'app_name', 'value': 'phone'}] 这种形状,
-# make_call 拼出来就是 `apis.api_docs.show_api_descriptions(app_name=phone)`)。
+# ---------------------------------------------------------------- material for composing trajectories
+# Tool names and argument names are made up in the style of AppWorld; argument values carry no
+# quotes, matching the real data (in the real data, `args_named` has the shape
+# [{'key': 'app_name', 'value': 'phone'}], and make_call assembles it into
+# `apis.api_docs.show_api_descriptions(app_name=phone)`).
 TOOLS = [
     ("apis.api_docs.show_app_descriptions", []),
     ("apis.api_docs.show_api_descriptions", [("app_name", "phone")]),
@@ -113,8 +122,9 @@ HISTORY_ROUNDS = [
      "'555-0136'}]"),
 ]
 
-# 思考句的模板。{task} / {app} / {tool} 三个槽位由 rng 填。第一句照真数据的
-# 样子转述任务,最后一句点名要调的工具;中间从池子里抽。
+# Templates for thinking sentences. The three slots {task} / {app} / {tool} are filled by rng.
+# The first sentence restates the task the way the real data does, the last sentence names the
+# tool to call, and the middle ones are drawn from a pool.
 FIRST_SENTENCE = "The user asks: \"Task from supervisor: {task}\""
 LAST_SENTENCE = "So the next call is {tool}."
 MIDDLE_SENTENCES = [
@@ -133,7 +143,8 @@ MIDDLE_SENTENCES = [
 
 
 def _synth_event(rng, idx, n_sents):
-    """编一个事件:一条任务、零到两轮历史、一段 n_sents 句的思考、一个工具。"""
+    """Compose one event: one task, zero to two turns of history, an n_sents-sentence thinking
+    passage, and one tool."""
     task = rng.choice(TASKS)
     tool, named = rng.choice(TOOLS)
     app = tool.split(".")[1]
@@ -143,8 +154,9 @@ def _synth_event(rng, idx, n_sents):
     sents = ([FIRST_SENTENCE.format(task=task)]
              + [s.format(app=app) for s in middle]
              + [LAST_SENTENCE.format(tool=tool)])
-    # 第一句后面换行(真数据里任务转述句后面就是换行),其余句子空格相接;
-    # rules.SENT_RE 两种分隔都认,切出来的行数 = 句数。
+    # A newline follows the first sentence (in the real data a newline follows the task-restating
+    # sentence too); the remaining sentences are joined with spaces. rules.SENT_RE recognizes both
+    # separators, so the number of lines after cutting equals the number of sentences.
     think = sents[0] + "\n" + " ".join(sents[1:])
     unit = f"demo{idx:02d}_1"
     traj = f"appworld_demo/appworld_{unit}_r0"
@@ -154,8 +166,9 @@ def _synth_event(rng, idx, n_sents):
 
 
 def make_rows(events):
-    """事件 -> 样本行。逐字段照 pipeline/annotate/build.py 的 make_samples
-    (w = 1/m,m 是这个事件的切点数;depth 是切点在思考全文里的位置比例)。"""
+    """Event -> sample row. Field for field, following make_samples in pipeline/annotate/build.py
+    (w = 1/m, where m is this event's number of cuts; depth is the cut's position ratio within
+    the full thinking text)."""
     rows = []
     for ev in events:
         pts = rules.boundaries(ev["think"])
@@ -196,7 +209,8 @@ def write_data(out_dir, seed, n_train, n_val):
 
 
 def write_model(out_dir, tok_src, seed):
-    """两层 Qwen3 随机初始化 + 真分词器,存成 from_pretrained 能直接装的目录。"""
+    """A randomly-initialized 2-layer Qwen3 plus the real tokenizer, saved as a directory that
+    from_pretrained can load directly."""
     import torch
     import transformers
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -207,8 +221,8 @@ def write_model(out_dir, tok_src, seed):
         val = getattr(tok, name)
         if val is not None:
             special[name] = val
-    # 结构照 tests/test_share_trainer.py 的 _tiny_config;tie_word_embeddings
-    # 改成 True,与真底座 Qwen3-0.6B-Base 的 config.json 一致。
+    # Structure follows _tiny_config in tests/test_share_trainer.py; tie_word_embeddings is
+    # changed to True, matching the real base model's Qwen3-0.6B-Base config.json.
     cfg = transformers.Qwen3Config(
         hidden_size=64, intermediate_size=128, num_hidden_layers=2,
         num_attention_heads=4, num_key_value_heads=2, head_dim=16,
@@ -224,8 +238,9 @@ def write_model(out_dir, tok_src, seed):
 
 
 def self_check(data_dir, model_dir, tok_budget, events_per_mb):
-    """用训练器真正会走的函数把假件装一遍:build(path=...) 装模型,
-    share_data.load_events 装数据,chunk_by_budget 看装块。"""
+    """Load the fakes once through the functions the trainer actually calls: build(path=...) loads
+    the model, share_data.load_events loads the data, and chunk_by_budget checks the
+    chunking."""
     import share_data
     import train_causal_callgen
 
@@ -261,17 +276,17 @@ def main():
     ap.add_argument("--out-data", default=str(ROOT / "demo/data"))
     ap.add_argument("--out-model", default=str(ROOT / "demo/tiny_qwen3"))
     ap.add_argument("--tok-src", default=None,
-                    help="真分词器所在目录,缺省 train_causal_callgen.MODELS['qwen']")
+                    help="dir where the real tokenizer lives, default train_causal_callgen.MODELS['qwen']")
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
     ap.add_argument("--n-train", type=int, default=12)
     ap.add_argument("--n-val", type=int, default=6)
     ap.add_argument("--tok-budget", type=int, default=768,
-                    help="自检时按这个预算印装块结果(与 launch.json 里的值一致)")
+                    help="print packing-block results at this budget during self-check (matches the value in launch.json)")
     ap.add_argument("--events-per-mb", type=int, default=4)
     ap.add_argument("--skip-model", action="store_true",
-                    help="只重新构建数据,不动 demo/tiny_qwen3")
+                    help="rebuild data only, don't touch demo/tiny_qwen3")
     ap.add_argument("--net-root", default=str(NET_DEMO),
-                    help="demo/tiny_qwen3 与 demo/runs 软链指向的 net 盘目录")
+                    help="the net-drive dir that demo/tiny_qwen3 and demo/runs symlinks point to")
     args = ap.parse_args()
 
     data_dir = Path(args.out_data)
@@ -286,13 +301,13 @@ def main():
         print(f"[data] {data_dir / (split + '.jsonl')}: {n_ev} events, {n_rows} rows")
 
     if args.skip_model:
-        print("[model] --skip-model: demo/tiny_qwen3 未动")
+        print("[model] --skip-model: demo/tiny_qwen3 untouched")
     else:
         import train_causal_callgen
         tok_src = args.tok_src or train_causal_callgen.MODELS["qwen"]
         if not Path(tok_src).exists():
-            raise SystemExit(f"分词器目录不存在:{tok_src}(NFS 没挂?或者用 "
-                             "--tok-src 指一个别的 Qwen3 目录)")
+            raise SystemExit(f"tokenizer dir doesn't exist: {tok_src} (NFS not mounted? or use "
+                             "--tok-src to point at a different Qwen3 dir)")
         n_params, vocab = write_model(model_dir, tok_src, args.seed)
         print(f"[model] {model_dir}: {n_params} params, vocab {vocab}, "
               f"tokenizer copied from {tok_src}")

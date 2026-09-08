@@ -1,20 +1,21 @@
-"""统计每个工具在真实轨迹里的调用形态,给拼回实验的骨架用。规格:
+"""Tally each tool's call form in real trajectories, for use by the splice-back skeleton. Spec:
 plans/2026-08-01-splice-impl-spec.md §D2
 
-骨架臂(skel_*)要在思考里塞一句 `print(apis.venmo.login` 这样的半截调用,
-让大模型接着写参数。塞什么壳子不能拍脑袋:gpt-oss 写 `show_app_descriptions`
-这种查文档的调用惯用 `print(...)` 包住,写 `login` 这种要拿返回值的惯用
-`token = apis...` 赋值。壳子选错,模型第一步就得先把我们写的那行推翻。
+The skeleton arm (skel_*) needs to plant a half-finished call like `print(apis.venmo.login` in the thinking, letting the
+large model continue writing the parameters. What shell to plant cannot be guessed by feel: gpt-oss customarily wraps a
+documentation-lookup call like `show_app_descriptions` in `print(...)`, while a call like `login` that needs the return
+value is customarily assigned with `token = apis...`. Pick the wrong shell and the model's first step has to undo the line
+we planted.
 
-所以先把两批已采轨迹(full_v1 + full_v2_topup 的 appworld_gptoss)里每步 final
-代码块的首条调用扒出来,按工具聚合成 {tool: {n, print_share, assign_share,
-top_var}},运行时查表决定壳子:assign_share >= 0.5 用赋值形(变量名取 top_var),
-否则用 print 形,表里没见过的工具兜底 print。
+So first pull out the first call of each step's final code block from the two already-collected trajectory batches
+(full_v1 + full_v2_topup's appworld_gptoss), aggregate them by tool into {tool: {n, print_share, assign_share, top_var}},
+and look up the table at run time to decide the shell: assign_share >= 0.5 uses the assign form (variable name taken from
+top_var), otherwise use the print form; tools not seen in the table fall back to print.
 
-**只读 full_v1 / full_v2_topup,绝不碰 w0_aw_official**——那是留给活跑的 test 集,
-从它身上统计形态等于把答案先看一遍。
+**Read only full_v1 / full_v2_topup, never touch w0_aw_official** -- that is the test set reserved for the live run,
+tallying its call forms would mean peeking at the answer beforehand.
 
-用法:python pipeline/inject/build_form_table.py
+Usage: python pipeline/inject/build_form_table.py
 """
 
 import argparse
@@ -25,29 +26,29 @@ from pathlib import Path
 
 PROJ_ROOT = Path(__file__).resolve().parents[2]
 
-# 【照抄 envs/collect/run_appworld.py:38】提代码块用同一条正则
+# [copied verbatim from envs/collect/run_appworld.py:38] use the same regex to pull out code blocks
 CODE_RE = re.compile(r"```python\s*(.*?)```", re.S)
-# 【照抄 pipeline/annotate/rules.py:55】工具名口径只有一份
+# [copied verbatim from pipeline/annotate/rules.py:55] there is only one convention for tool names
 AW_CALL = re.compile(r"apis\.(\w+)\.(\w+)\(")
-# 赋值形:整行左边只有一个变量名和一个等号(`x ==` 这种比较不算)
+# assign form: the left side of the line has exactly one variable name and one equals sign (a comparison like `x ==` does not count)
 ASSIGN_RE = re.compile(r"^\s*(\w+)\s*=$")
 
-# 训练/统计用的两批轨迹,相对工程根。w0 test 集不在这里,也不许加进来
+# the two trajectory batches used for training/tallying, relative to the project root. The w0 test set is not here, and must not be added
 DEFAULT_ROOTS = ("envs/runs/full_v1/appworld_gptoss",
                  "envs/runs/full_v2_topup/appworld_gptoss")
 DEFAULT_OUT = "pipeline/inject/form_table.json"
 
 
 def call_form(code):
-    """一段代码里首条 apis 调用的形态。返回 (tool, form, var) 或 None。
+    """The form of the first apis call in a piece of code. Returns (tool, form, var) or None.
 
-    form 取五种之一:
-      assign      `x = apis...`            —— 拿返回值再用
-      print       `print(apis...`          —— 直接看输出
-      print_multi `print("x:", apis...`    —— 也是 print 包裹,但壳子带别的参数
-      bare        行首就是 apis...          —— 裸调用
-      other       其余(嵌在 if / for / 别的调用里)
-    只有 assign 会带 var。
+    form is one of five:
+      assign      `x = apis...`            -- take the return value and use it later
+      print       `print(apis...`          -- look at the output directly
+      print_multi `print("x:", apis...`    -- also wrapped in print, but the shell carries other arguments
+      bare        the line starts directly with apis...    -- bare call
+      other       everything else (nested inside if / for / another call)
+    Only assign carries var.
     """
     m = AW_CALL.search(code or "")
     if m is None:
@@ -68,7 +69,7 @@ def call_form(code):
 
 
 def scan(roots):
-    """扫轨迹目录,返回 (per_tool 形态计数, per_tool 变量名计数, 文件/记录统计)。"""
+    """Scan the trajectory directory, return (per-tool form counts, per-tool variable-name counts, file/record stats)."""
     forms = defaultdict(Counter)
     vars_ = defaultdict(Counter)
     stat = Counter()
@@ -102,7 +103,7 @@ def scan(roots):
 
 
 def build(forms, vars_):
-    """形态计数 -> form_table.json 的内容。"""
+    """Form counts -> the content of form_table.json."""
     table = {}
     for tool, c in sorted(forms.items()):
         n = sum(c.values())
@@ -116,7 +117,7 @@ def build(forms, vars_):
 
 
 def load_table(path=None):
-    """读 form_table.json;文件不在就返回空表(骨架全走 print 兜底)。"""
+    """Read form_table.json; if the file is missing, return an empty table (skeleton falls back to print for everything)."""
     p = Path(path or (PROJ_ROOT / DEFAULT_OUT))
     if not p.exists():
         return {}
@@ -124,12 +125,14 @@ def load_table(path=None):
 
 
 def skeleton(pred_label, table):
-    """骨架串:查表决定 print 壳还是赋值壳。
+    """Skeleton string: table lookup decides whether it's a print shell or an assign shell.
 
-    **一律不带尾左括号**——分词器实测(规格 §前置事实):`print(apis.venmo.login(`
-    的尾左括号在真实续写里会和参数名融成 `(username` 一个 token,前缀必分叉;
-    砍到 `print(apis.venmo.login` 则 6/6 严格前缀吻合。
-    传进来的必须是 pred_label(探针预测),绝不许是 label(真值)。
+    **Never include a trailing open-parenthesis** -- tokenizer test (spec section
+    "prerequisite facts"): the trailing open-parenthesis of `print(apis.venmo.login(`
+    fuses with the argument name into a single token `(username` in real continuations,
+    so the prefix necessarily diverges; cut to `print(apis.venmo.login` and you get a
+    strict 6/6 prefix match.
+    The input here must be pred_label (probe prediction), never label (ground truth).
     """
     e = table.get(pred_label) or {}
     if e.get("assign_share", 0.0) >= 0.5 and e.get("top_var"):
@@ -140,21 +143,21 @@ def skeleton(pred_label, table):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--roots", nargs="+", default=None,
-                    help=f"轨迹目录(默认 {' '.join(DEFAULT_ROOTS)},"
-                         "相对工程根)。w0 test 集不许进来")
+                    help=f"trajectory dir (default {' '.join(DEFAULT_ROOTS)}, "
+                         "relative to the project root). The w0 test set must not be included")
     ap.add_argument("--out", default=None,
-                    help=f"输出 json(默认 {DEFAULT_OUT})")
+                    help=f"output json (default {DEFAULT_OUT})")
     ap.add_argument("--top", type=int, default=15,
-                    help="摘要里打印几个高频工具")
+                    help="how many high-frequency tools to print in the summary")
     a = ap.parse_args()
 
     roots = [Path(r) if Path(r).is_absolute() else PROJ_ROOT / r
              for r in (a.roots or DEFAULT_ROOTS)]
     for r in roots:
         if "w0_" in str(r):
-            raise SystemExit(f"{r} 是 test 集,形态表不许从它统计")
+            raise SystemExit(f"{r} is a test set, the form table must not be built from it")
         if not r.is_dir():
-            raise SystemExit(f"轨迹目录不在:{r}")
+            raise SystemExit(f"trajectory dir does not exist: {r}")
 
     forms, vars_, stat = scan(roots)
     table = build(forms, vars_)
@@ -168,12 +171,12 @@ def main():
                           n_calls=sum(e["n"] for e in table.values()),
                           n_assign_form=len(n_assign),
                           scan=dict(stat)), ensure_ascii=False, indent=1))
-    print("\nassign 形的工具(骨架写 `var = apis...`):")
+    print("\nassign-form tools (skeleton writes `var = apis...`):")
     for t in sorted(n_assign, key=lambda x: -table[x]["n"]):
         e = table[t]
         print(f"  {t:52s} n={e['n']:5d} assign={e['assign_share']:.2f} "
               f"var={e['top_var']}")
-    print(f"\n高频工具 top{a.top}(骨架样例):")
+    print(f"\ntop{a.top} high-frequency tools (skeleton samples):")
     for t, e in sorted(table.items(), key=lambda kv: -kv[1]["n"])[:a.top]:
         print(f"  {t:52s} n={e['n']:5d} print={e['print_share']:.2f} "
               f"assign={e['assign_share']:.2f} -> {skeleton(t, table)!r}")

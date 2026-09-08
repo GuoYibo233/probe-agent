@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""RUNMETA.json 落盘器:把产物目录钉回代码版本(审计 B6)。
+"""RUNMETA.json writer: pins the output dir back to the code version (audit B6).
 
-每次发射往 <outdir>/RUNMETA.json 的 launches 列表 append 一条:
-时间 / 机器 / kind / 实际命令 / commit / branch / dirty + 脏文件清单。
-append 不覆盖——同一目录被二次发射会留下两条记录,产物归属不再靠猜。
+Every launch appends one entry to the launches list in <outdir>/RUNMETA.json:
+timestamp / host / kind / actual command / commit / branch / dirty + list of dirty files.
+Append, never overwrite -- launching into the same dir twice leaves two records, so
+output ownership no longer has to be guessed.
 
-调用方:
-  ops/launch_probe.py、ops/launch_eval.py 发射成功后自动写;
-  gpu-run skill 手搓发射时补一条: python3 run.py runmeta <outdir> --cmd '<命令>'
+Callers:
+  ops/launch_probe.py and ops/launch_eval.py write automatically after a successful
+  launch;
+  gpu-run skill's hand-rolled launches add one manually:
+  python3 run.py runmeta <outdir> --cmd '<command>'
 """
 import json
 import os
@@ -19,15 +22,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# 台账与锁不算脏(与 run.py 的 LEDGER_PATHS、ops/record.py 三处同步维护):
-# 它们是发射的副产品,不影响任何产物
+# The job ledger and lock files do not count as dirty (kept in sync across three
+# spots with run.py's LEDGER_PATHS and ops/record.py): they are a byproduct of the
+# launch itself and do not affect any outputs
 LEDGER_PATHS = ("ops/jobs.json", "ops/runs.jsonl", "RESULTS.md",
                 "ops/jobs.json.lock")
 
 
 def git_info():
-    """fail-closed:git 探不到就明说 probe_failed 并按脏处理,不许装干净。
-    porcelain 输出不整体 strip——首行前导空格是状态码的一部分。"""
+    """fail-closed: if git probing fails, say probe_failed explicitly and treat it as
+    dirty, no pretending it's clean.
+    Do not strip porcelain output as a whole -- the leading whitespace on the first
+    line is part of the status code."""
     def g(*a, raw=False):
         r = subprocess.run(["git", "-C", str(ROOT)] + list(a),
                            capture_output=True, text=True, timeout=10)
@@ -47,8 +53,9 @@ def git_info():
 
 
 def append_runmeta(outdir, cmd, kind="launch", extra=None):
-    """往 outdir/RUNMETA.json 追加一条发射记录,返回文件路径。
-    旧文件坏了(不是 {"launches": [...]} 形状)就改名留档,绝不让记账炸掉发射。"""
+    """Append one launch record to outdir/RUNMETA.json, return the file path.
+    If the old file is broken (not shaped like {"launches": [...]}), rename it to
+    keep an archive -- never let record-keeping blow up the launch."""
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     p = out / "RUNMETA.json"
@@ -80,11 +87,11 @@ def append_runmeta(outdir, cmd, kind="launch", extra=None):
 def main():
     import argparse
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("outdir", help="产物目录(不存在会建)")
-    ap.add_argument("--cmd", required=True, help="实际执行的完整命令")
+    ap.add_argument("outdir", help="output dir (created if missing)")
+    ap.add_argument("--cmd", required=True, help="the full command actually executed")
     ap.add_argument("--kind", default="launch",
-                    help="记录类别(发射器用 train/eval_tool/eval_call)")
-    ap.add_argument("--note", default=None, help="一句话备注")
+                    help="record category (launchers use train/eval_tool/eval_call)")
+    ap.add_argument("--note", default=None, help="one-line note")
     a = ap.parse_args()
     extra = {"note": a.note} if a.note else None
     p = append_runmeta(a.outdir, a.cmd, kind=a.kind, extra=extra)
@@ -92,11 +99,11 @@ def main():
     last = doc["launches"][-1]
     warn = ""
     if last.get("git_probe_failed"):
-        warn = "  ⚠️ git 探测失败,代码版本未知"
+        warn = "  ⚠️ git probe failed, code version unknown"
     elif last.get("dirty"):
-        warn = (f"  ⚠️ 工作树脏({last.get('dirty_count', '?')} 文件,台账不计),"
-                "commit 追不回真实代码")
-    print(f"RUNMETA 已追加: {p}  (第 {len(doc['launches'])} 条,"
+        warn = (f"  ⚠️ working tree dirty ({last.get('dirty_count', '?')} files, not counted in the ledger), "
+                "the commit can't recover the real code")
+    print(f"RUNMETA appended: {p}  (entry {len(doc['launches'])}, "
           f"commit {last['commit'][:9] or '?'}){warn}")
 
 

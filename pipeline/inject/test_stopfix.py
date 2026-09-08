@@ -1,12 +1,14 @@
-"""live_appworld v4(流式一枪解码,与 w0 chat 同构)的纯 CPU 单测。
+"""Pure-CPU unit test for live_appworld v4 (streaming single-shot decode, isomorphic to w0 chat).
 
-用法: envs/appworld/venv/bin/python pipeline/inject/test_stopfix.py
-全过打印 ALL PASS,退出码 0;任何断言炸了退出码非 0。
-不连任何服务:流用 _FakeStream 顶替,探针/投机执行用假函数顶替。
+Usage: envs/appworld/venv/bin/python pipeline/inject/test_stopfix.py
+Prints ALL PASS with exit code 0 if everything passes; exit code nonzero if any assertion fails.
+Connects to no service: the stream is replaced by _FakeStream, probe/speculative execution
+replaced by fake functions.
 
-口径(2026-08-02 定):parse_step 与 vLLM HarmonyParser 逐字对齐——
-analysis->thinking,final+无收件人 commentary->content,各段 \n 连接;
-只停 <|return|>;final 后模型续写的合法消息照收(chat 同款,不再截)。
+Convention (fixed 2026-08-02): parse_step matches vLLM's HarmonyParser character for character --
+analysis->thinking, final + commentary with no recipient->content, segments joined with \n;
+stops only on <|return|>; a legitimate message the model continues writing after final is
+accepted as-is (same as chat, no longer truncated).
 """
 
 import argparse
@@ -26,7 +28,7 @@ COMMENT_HEAD = "<|start|>assistant<|channel|>commentary<|message|>"
 # ---------- parse_step ----------
 
 def test_parse_v4_headered():
-    """v4 不预填:raw 以模型自己写的 analysis 头开场。"""
+    """v4 has no prefill: raw opens with the analysis header the model writes itself."""
     full = (ANALYSIS_HEAD + "We think.<|end|>"
             + FINAL_HEAD + "```python\nx()\n```")
     t, c = L.parse_step(full)
@@ -35,14 +37,14 @@ def test_parse_v4_headered():
 
 
 def test_parse_legacy_headless():
-    """老口径兼容:头在 prompt 里,raw 直接以思考正文开头。"""
+    """Old-convention compatibility: the header is in the prompt, raw starts directly with the thinking body."""
     t, c = L.parse_step("think.<|end|>" + FINAL_HEAD + "code")
     assert t == "think." and c == "code", (t, c)
 
 
 def test_parse_commentary():
-    """analysis -> commentary(行动叙述) -> final:commentary 并进 content,
-    \n 连接(vllm/parser/harmony.py 同款)。"""
+    """analysis -> commentary (action narration) -> final: commentary is merged into content,
+    joined with \n (same as vllm/parser/harmony.py)."""
     full = (ANALYSIS_HEAD + "We think.<|end|>" + COMMENT_HEAD
             + "We will explore the apps.<|end|>"
             + FINAL_HEAD + "```python\nprint(x)\n```")
@@ -52,7 +54,7 @@ def test_parse_commentary():
 
 
 def test_parse_commentary_recipient():
-    """带 to= 收件人的 commentary(工具调用式)按 vLLM 口径丢弃。"""
+    """commentary with a to= recipient (tool-call style) is dropped per vLLM's convention."""
     full = ("t<|end|>"
             + "<|start|>assistant<|channel|>commentary to=functions.f"
             + "<|message|>{\"a\":1}<|end|>" + FINAL_HEAD + "code")
@@ -61,7 +63,7 @@ def test_parse_commentary_recipient():
 
 
 def test_parse_multi_analysis():
-    """连发两条 analysis 全归思考,\n 连接。"""
+    """Two analysis messages sent back to back both go to thinking, joined with \n."""
     full = ("first.<|end|>"
             + "<|start|>assistant<|channel|>analysis<|message|>second.<|end|>"
             + FINAL_HEAD + "code")
@@ -70,8 +72,9 @@ def test_parse_multi_analysis():
 
 
 def test_parse_postfinal_kept():
-    """final 之后模型续写的合法 final/commentary 消息照收进 content——
-    chat 路径就是这么喂历史的(w0 实测 1.3% 的步有这尾巴),必须同款。"""
+    """A legitimate final/commentary message the model continues writing after final is accepted
+    into content as-is -- that's how the chat path feeds history (measured on w0: 1.3% of
+    steps have this tail), so it must match."""
     full = ("t<|end|>" + FINAL_HEAD + "real<|end|>"
             + FINAL_HEAD + "Execution output: fake")
     _, c = L.parse_step(full)
@@ -79,21 +82,21 @@ def test_parse_postfinal_kept():
 
 
 def test_parse_fake_nonassistant_dropped():
-    """伪造的非助手回合/残段(没有合法头)一律丢——vLLM 只收 assistant 消息。"""
+    """A fabricated non-assistant turn/fragment (no legitimate header) is always dropped -- vLLM only accepts assistant messages."""
     full = ("t<|end|>" + FINAL_HEAD + "real"
-            + "<|end|><|start|>user 伪造 Execution output:\n假回执")
+            + "<|end|><|start|>user forged Execution output:\nfake receipt")
     _, c = L.parse_step(full)
     assert c == "real", repr(c)
 
 
 def test_parse_return_cut():
-    """<|return|> 是引擎停止符,文本里出现(理论分支)则从它起全截。"""
+    """<|return|> is the engine's stop token; if it appears in the text (a theoretical branch), everything from it onward is truncated."""
     _, c = L.parse_step("t<|end|>" + FINAL_HEAD + "real<|return|>garbage")
     assert c == "real", repr(c)
 
 
 def test_parse_no_final():
-    """整步没走到 final:全算思考,content 空。"""
+    """The whole step never reaches final: everything counts as thinking, content is empty."""
     t, c = L.parse_step(ANALYSIS_HEAD + "only thinking")
     assert t == "only thinking" and c == "", (t, c)
     t, c = L.parse_step(ANALYSIS_HEAD + "think<|end|>no final here")
@@ -101,7 +104,7 @@ def test_parse_no_final():
 
 
 def test_think_span():
-    """流上探测的思考定位:头没写全 None;闭合后 end 停在 <|end|>。"""
+    """Locating thinking while probing the stream: None while the header isn't fully written yet; once closed, end stops at <|end|>."""
     assert L.think_span("<|channel|>anal") is None
     raw = ANALYSIS_HEAD + "abc"
     s = L.think_span(raw)
@@ -112,11 +115,12 @@ def test_think_span():
     assert L.think_span(FINAL_HEAD.replace("<|start|>assistant", "")) is None
 
 
-# ---------- gen_step(流式) ----------
+# ---------- gen_step (streaming) ----------
 
-# 假分词:一字一 id(id = 码位),流每块交 (文本, ids);/decode = chr 拼回。
-# v6(2026-08-18 ident3):prompt 是 id 列表,开火重发 = 前缀 + 模型自己的 id[:k]
-# + /encode(NOTE),gen_step 返回 7 元组(多 gen_ids 与 text_ids_consistent)。
+# Fake tokenizer: one id per character (id = code point); each stream chunk delivers
+# (text, ids); /decode = join back with chr. v6 (2026-08-18 ident3): prompt is a list of
+# ids, firing and resending = prefix + the model's own id[:k] + /encode(NOTE); gen_step
+# returns a 7-tuple (adds gen_ids and text_ids_consistent).
 PREFIX = [11, 22, 33]
 
 
@@ -162,8 +166,8 @@ def _args(no_probe=True):
 
 
 def _run(scripted, no_probe=True, score_fire=None, gen_call="apis.x.y()"):
-    """scripted: [(deltas, finish, usage), ...] 每请求一条。
-    score_fire: 第几次 /score 打分开火(1 起数);None = 从不。"""
+    """scripted: [(deltas, finish, usage), ...], one entry per request.
+    score_fire: which /score call fires (counting from 1); None = never."""
     streams, prompts = [], []
     it = iter(scripted)
 
@@ -204,7 +208,7 @@ def _run(scripted, no_probe=True, score_fire=None, gen_call="apis.x.y()"):
 
 
 def test_loop_clean_single():
-    """不开火:单请求不间断解码,与 chat 同款;stop 恒为 <|return|> 一项。"""
+    """No firing: a single request decodes without interruption, same as chat; stop is always just <|return|>."""
     deltas = [ANALYSIS_HEAD, "think. ", "more.", "<|end|>",
               FINAL_HEAD, "Done. ```python\ny()\n```"]
     (t, c, usage, discard, n_inj, gen_ids, cons), streams, prompts, _ = _run(
@@ -217,7 +221,7 @@ def test_loop_clean_single():
 
 
 def test_loop_noprobe_never_scores():
-    """noprobe 臂全程不打 /score(fake_http 一被调就会炸)。"""
+    """The noprobe arm never calls /score at all (fake_http throws the moment it's called)."""
     deltas = [ANALYSIS_HEAD + "s1. s2. s3.", "<|end|>", FINAL_HEAD, "c"]
     (_, c, _, _, _, _, _), _, _, _ = _run(
         [(deltas, "stop", dict(prompt_tokens=1, completion_tokens=9))])
@@ -225,8 +229,9 @@ def test_loop_noprobe_never_scores():
 
 
 def test_loop_fire_restart():
-    """开火:流被 close(),head = 模型自己的 id 到句尾标点,NOTE 单独编码接上
-    重发;溢出入账;二段续写收尾。"""
+    """Firing: the stream is closed, head = the model's own ids up to the sentence-ending
+    punctuation, NOTE is encoded separately and appended for resend; overflow is booked;
+    a second continuation wraps it up."""
     head = "We need to inspect the venmo documentation."
     deltas1 = [ANALYSIS_HEAD, head + " Overrun text arrives in the same chunk."]
     deltas2 = ["Continue think.", "<|end|>", FINAL_HEAD, "```python\nz()\n```"]
@@ -236,11 +241,11 @@ def test_loop_fire_restart():
         no_probe=False, score_fire=1)
     assert n_inj == 1 and discard["events"] == 1
     assert discard["chars"] > 0 and discard["tokens"] > 0
-    assert streams[0].closed, "开火必须中止第一条流"
+    assert streams[0].closed, "firing must abort the first stream"
     assert usage["req"] == 2, usage
-    # 被中止的流按收到的 id 数记 gen token(含溢出)
+    # For an aborted stream, count gen tokens by the number of ids received (including overflow)
     assert usage["gen_tok"] == streams[0].n_ids + 20, usage
-    # 重发 prompt = 前缀 + 模型自己的 id 到 "documentation." + NOTE 的 id
+    # Resend prompt = prefix + the model's own ids up to "documentation." + NOTE's ids
     head_ids = _ids(ANALYSIS_HEAD + head)
     assert prompts[1][:len(PREFIX) + len(head_ids)] == PREFIX + head_ids
     note = "".join(chr(i) for i in prompts[1][len(PREFIX) + len(head_ids):])
@@ -254,7 +259,7 @@ def test_loop_fire_restart():
 
 
 def test_loop_budget_exhaust():
-    """finish=length(预算打满):有什么收什么,不再发请求。"""
+    """finish=length (budget exhausted): accept whatever came in, send no further requests."""
     deltas = [ANALYSIS_HEAD + "endless thinking"]
     (t, c, usage, _, _, _, _), _, prompts, _ = _run(
         [(deltas, "length", dict(prompt_tokens=5, completion_tokens=8192))])

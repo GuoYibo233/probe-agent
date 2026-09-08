@@ -1,23 +1,30 @@
 #!/usr/bin/env python3
-"""发射公共件：探卡（fail-closed）+ tmux 发射模板 + 三处登记一口气。
+"""Launch shared components: card probing (fail-closed) + the tmux launch template +
+all three registrations in one go.
 
-三样能力供 `run.py launch`（工单 09）与两个排卡发射器（工单 11）共用：
-  - `probe_free(host, gpus)`：发射前实探目标卡，有计算进程或探测本身失败都算
-    非 FREE——fail-closed，宁可挡好卡也不许把任务撞进已占用的卡。
-  - `local_host()` / `has_session()` / `tmux_launch()`：与 `ops/launch_probe.py`
-    原来的 `has_session`/`launch` 同一套 ssh/tmux 逻辑，搬来给多处共用；
-    `LOCAL` 从「模块级常量」改成「按需算的函数」，方便测试里 monkeypatch。
-  - `register_all(...)`：一次发射要登记的三个地方——产物目录的 `RUNMETA.json`、
-    GPU 台账 `ops/jobs.json`、实验记录 `ops/runs.jsonl`（经 `ops/record.py start`
-    子进程）——收进一次调用，顺序固定为 RUNMETA→台账→记录。RUNMETA 排最前：
-    发射已经真实发生，产物钉代码这一步必须先落盘，后面台账/记录拒绝（重复
-    run_id 之类）也不能把它丢掉；RUNMETA 写失败只打 WARN，台账/记录任何一步
-    失败都不吞掉，原样往外抛。RUNMETA 只在这里写一次（唯一写手）——调用方不再
-    各自先写一条，否则一份产物目录里同一次发射会出现两条记录（2026-08-26
-    np821 批实录）。
+Three capabilities shared by `run.py launch` (ticket 09) and the two card-scheduling
+launchers (ticket 11):
+  - `probe_free(host, gpus)`: probes the target card live before launch; a compute
+    process present, or the probe itself failing, both count as non-FREE -- fail-closed,
+    better to block a good card than let a task collide with one already in use.
+  - `local_host()` / `has_session()` / `tmux_launch()`: the same ssh/tmux logic that used
+    to be `ops/launch_probe.py`'s own `has_session`/`launch`, moved here to be shared
+    across multiple call sites; `LOCAL` changed from a "module-level constant" to a
+    "computed-on-demand function", to make it easier to monkeypatch in tests.
+  - `register_all(...)`: the three places a launch must register -- the output dir's
+    `RUNMETA.json`, the GPU ledger `ops/jobs.json`, and the experiment record
+    `ops/runs.jsonl` (via an `ops/record.py start` subprocess) -- folded into one call,
+    in a fixed order: RUNMETA→ledger→record. RUNMETA comes first: the launch has
+    already really happened, so pinning the outputs to the code must be written to disk
+    first, and a later rejection by the ledger/record (e.g. a duplicate run_id) must not
+    be able to drop it. A RUNMETA write failure only logs a WARN; any failure in the
+    ledger/record steps is not swallowed and is raised as-is. RUNMETA is written only
+    once, here (the sole writer) -- callers no longer each write one first, otherwise a
+    single launch would end up with two records in one output dir (2026-08-26 np821
+    batch, observed in practice).
 
-这一文件本身不改变任何现有发射器的行为（`launch_probe.py`/`launch_eval.py`
-接进来是工单 11 的事）。
+This file by itself does not change the behavior of any existing launcher (wiring
+`launch_probe.py`/`launch_eval.py` into it is ticket 11's job).
 """
 import shlex
 import subprocess
@@ -35,76 +42,86 @@ ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}
 
 
 def local_host():
-    """当前机器的规范化 host 名（经 ALIAS 折算成集群里认得的名字）。
-    按需现算而不是模块级常量，方便测试 monkeypatch，也不再让每次
-    `import launch_common` 都白跑一次 `hostname` 子进程。"""
+    """The current machine's normalized host name (converted through ALIAS into the name
+    the cluster recognizes). Computed on demand rather than as a module-level constant,
+    to make it easier to monkeypatch in tests, and so every `import launch_common`
+    no longer wastes a `hostname` subprocess call."""
     h = subprocess.run(["hostname"], capture_output=True, text=True).stdout.strip()
     return ALIAS.get(h, h)
 
 
 def has_session(host, s):
-    """目标 host 上是否有名为 s 的 tmux session（本机走 bash -c，远程走 ssh）。"""
+    """Whether the target host has a tmux session named s (local goes through bash -c, remote goes through ssh)."""
     cmd = f"tmux has-session -t {shlex.quote(s)}"
     argv = ["bash", "-c", cmd] if host == local_host() else ["ssh", "-n", host, cmd]
     return subprocess.run(argv, capture_output=True, text=True).returncode == 0
 
 
 def tmux_launch(host, sess, inner_cmd):
-    """在 host 上起一个 tmux session 跑 inner_cmd。不做「已存在就跳过」的判断——
-    发不发、跳不跳是调用方（launch_cmd / launch_probe / launch_eval）的业务，
-    这里只管把命令真正发出去。"""
+    """Starts a tmux session on host to run inner_cmd. Does not check "skip if it already
+    exists" -- whether to launch or skip is the caller's business (launch_cmd /
+    launch_probe / launch_eval); this function's only job is to actually send out the
+    command."""
     tmux = f"tmux new-session -d -s {shlex.quote(sess)} {shlex.quote(inner_cmd)}"
     argv = ["bash", "-c", tmux] if host == local_host() else ["ssh", "-n", host, tmux]
     subprocess.run(argv, check=True)
 
 
 def probe_free(host, gpus):
-    """fail-closed 探卡：`ssh <host> nvidia-smi --query-compute-apps=... -i <gpus>`。
-    stdout 有内容（有计算进程）→ 非 FREE；ssh 本身失败/超时/非零退出 → 也算非
-    FREE（探不清楚不能当空卡用）；stdout 为空 → FREE。
-    返回 (ok: bool, why: str)。"""
+    """fail-closed card probe: `ssh <host> nvidia-smi --query-compute-apps=... -i <gpus>`.
+    stdout has content (a compute process is present) -> non-FREE; ssh itself
+    fails/times out/exits nonzero -> also non-FREE (an unclear probe can't be treated
+    as a free card); stdout is empty -> FREE.
+    Returns (ok: bool, why: str)."""
     cmd = ["ssh", host, "nvidia-smi", "--query-compute-apps=pid,used_memory",
            "--format=csv,noheader", "-i", str(gpus)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
     except (subprocess.TimeoutExpired, OSError) as e:
-        return False, f"探测失败: {e}"
+        return False, f"probe failed: {e}"
     if r.returncode != 0:
         err = (r.stderr or "").strip() or f"rc={r.returncode}"
-        return False, f"探测失败: {err}"
+        return False, f"probe failed: {err}"
     out = r.stdout.strip()
     if out:
-        return False, f"占用中: {out.splitlines()[0]}"
+        return False, f"busy: {out.splitlines()[0]}"
     return True, ""
 
 
 def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
                   outdir=None, monitor=None, runmeta_kind="launch",
                   runmeta_extra=None):
-    """三处登记一口气,顺序固定:①RUNMETA ②台账 ③实验记录。RUNMETA 写失败只
-    WARN;台账/记录任何一步失败就地中止(不吞异常)。
+    """All three registrations in one go, in a fixed order: (1) RUNMETA (2) ledger
+    (3) experiment record. A RUNMETA write failure only WARNs; a failure at any step
+    of the ledger/record aborts on the spot (the exception is not swallowed).
 
-    ①RUNMETA:给了 outdir 就往 `outdir/RUNMETA.json` 追加一条(kind 用
-    `runmeta_kind`,`runmeta_extra` 里的字段——session/gpu/log/排卡表之类——
-    原样并进这条记录);排在最前面是因为发射已经真实发生,产物钉代码不能被
-    后面的台账/记录拒绝(重复 run_id)连带丢掉。没给 outdir 就打一行 WARN,
-    不当错误——`run.py launch` 跑产物目录事后才定的任务就是这种情形。
-    这里是 RUNMETA 的唯一写手:排卡发射器(launch_probe/launch_eval)把自己
-    的 outdir/kind/extra 传进来,不再各自先写一条。
+    (1) RUNMETA: if outdir is given, appends one entry to `outdir/RUNMETA.json` (kind
+    uses `runmeta_kind`; the fields in `runmeta_extra` -- session/gpu/log/the card
+    schedule table, etc. -- are merged into this entry as-is); it comes first because
+    the launch has already really happened, and pinning the outputs to the code must
+    not be dropped along with a later rejection by the ledger/record (e.g. a duplicate
+    run_id). If outdir is not given, a WARN line is printed, not treated as an error --
+    this is the case for tasks where `run.py launch` decides the output dir only after
+    the fact. This is RUNMETA's sole writer: the card-scheduling launchers
+    (launch_probe/launch_eval) pass in their own outdir/kind/extra rather than each
+    writing one first themselves.
 
-    ②台账:直接把 pieces(每个已经是 rich piece——host/gpus/session/log/cmd/
-    launched_at/kind/stall_line/escalate_line/task)append 成一个 job；job 级字段
-    `monitor`(给了才写,采样器缺省会退到 verdicts.DEFAULTS)与 `note`。piece 只存
-    `task`(任务名,补射时反查 `TASKS[task]["env"]` 用),不存 env 实际键值——
-    env 可能带密钥,原值只活在发射当次的进程局部变量里,不落进这份 git 追踪
-    的台账文件(finding N1,2026-08-08)。
-    重复 run_id(台账里已有同名 job)拒绝——护栏,不是障碍。
+    (2) Ledger: pieces (each already a rich piece -- host/gpus/session/log/cmd/
+    launched_at/kind/stall_line/escalate_line/task) are appended directly as one job;
+    job-level fields `monitor` (written only if given, the sampler otherwise falls back
+    to verdicts.DEFAULTS) and `note`. A piece stores only `task` (the task name, used to
+    look up `TASKS[task]["env"]` on refire), not env's actual key-value pairs -- env may
+    carry secrets, so the original value lives only in the process-local variables of
+    that launch and never lands in this git-tracked ledger file (finding N1, 2026-08-08).
+    A duplicate run_id (a job of the same name already in the ledger) is rejected --
+    a guardrail, not an obstacle.
 
-    ③实验记录:`ops/record.py start` 起子进程(隔离它自己的 sys.exit);多分片
-    的 host/gpus/log 逗号拼成一个展示串;rc != 0 原样透出并中止(不捕获
-    stdout/stderr,record.py 自己的报错直接打到终端)。
+    (3) Experiment record: starts `ops/record.py start` as a subprocess (isolating its
+    own sys.exit); for multiple pieces, host/gpus/log are joined with commas into one
+    display string; rc != 0 is passed through as-is and aborts (stdout/stderr are not
+    captured, record.py's own error goes straight to the terminal).
 
-    返回登记回执文本(三行,每步一行)。"""
+    Returns the registration receipt text (three lines, one per step)."""
     lines = []
     if outdir:
         try:
@@ -112,17 +129,17 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
                                        extra=runmeta_extra)
             lines.append(f"RUNMETA: {p}")
         except Exception as e:
-            warn = f"WARN RUNMETA 没写上({outdir}): {e}"
+            warn = f"WARN RUNMETA not written ({outdir}): {e}"
             print(warn, file=sys.stderr)
             lines.append(warn)
     else:
-        warn = "WARN 没给 --outdir，RUNMETA 没写"
+        warn = "WARN no --outdir given, RUNMETA not written"
         print(warn)
         lines.append(warn)
 
     def _add(reg):
         if any(j["name"] == run_id for j in reg["active"]):
-            sys.exit(f"run_id {run_id} 已在台账里，换一个或先 finish 它")
+            sys.exit(f"run_id {run_id} already in the job ledger, use a different one or finish it first")
         job = {"name": run_id, "workdir": workdir, "note": note,
                "started_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                "pieces": pieces}
@@ -130,7 +147,7 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
             job["monitor"] = monitor
         reg["active"].append(job)
     gpu_jobs.mutate_reg(_add)
-    lines.append(f"台账: 已登记 {run_id}（{len(pieces)} 个分片）")
+    lines.append(f"job ledger: registered {run_id} ({len(pieces)} pieces)")
 
     hosts = ",".join(p["host"] for p in pieces)
     gpus = ",".join(p["gpus"] for p in pieces)
@@ -141,6 +158,6 @@ def register_all(run_id, workdir, pieces, track, cmd_display, note=None,
          "--host", hosts, "--gpu", gpus, "--log", logs])
     if r.returncode != 0:
         sys.exit(r.returncode)
-    lines.append(f"记录: run_id={run_id} track={track}")
+    lines.append(f"record: run_id={run_id} track={track}")
 
     return "\n".join(lines)

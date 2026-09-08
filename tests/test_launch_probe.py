@@ -1,7 +1,9 @@
-"""launch_probe.launch_and_register 的边界测试(工单 11)：一格发射从
-「已删掉的本地 has_session/launch」改成「import 公共件 + FREE 实探 + 自动
-登记」之后，四种路径都要被测到——session 已存在 / 目标卡非 FREE / 正常发射
-成功登记 / 登记失败(重复 run_id 等)只 WARN 不中断循环。"""
+"""Boundary tests for launch_probe.launch_and_register (ticket 11): after a single
+cell's launch changed from "local has_session/launch, now removed" to "import the
+shared module + a live FREE probe + automatic registration", all four paths must be
+tested -- session already exists / target card is not FREE / normal launch with
+successful registration / registration failure (e.g. duplicate run_id) only WARNs
+without breaking the loop."""
 import sys
 import time
 import unittest
@@ -28,7 +30,7 @@ class TestLaunchAndRegister(unittest.TestCase):
 
     @patch("launch_probe.register_all")
     @patch("launch_probe.tmux_launch")
-    @patch("launch_probe.probe_free", return_value=(False, "占用中: 12345"))
+    @patch("launch_probe.probe_free", return_value=(False, "busy: 12345"))
     @patch("launch_probe.has_session", return_value=False)
     def test_skips_when_gpu_not_free(self, mhas, mfree, mtmux, mreg):
         ok = LP.launch_and_register("tokyo106", "0", "sess1", "python3 x.py",
@@ -37,7 +39,7 @@ class TestLaunchAndRegister(unittest.TestCase):
         mtmux.assert_not_called()
         mreg.assert_not_called()
 
-    @patch("launch_probe.register_all", return_value="登记回执")
+    @patch("launch_probe.register_all", return_value="registration receipt")
     @patch("launch_probe.tmux_launch")
     @patch("launch_probe.probe_free", return_value=(True, ""))
     @patch("launch_probe.has_session", return_value=False)
@@ -55,8 +57,9 @@ class TestLaunchAndRegister(unittest.TestCase):
         run_id, workdir, pieces, track, cmd_display = args[:5]
         self.assertEqual(run_id, "rid1")
         self.assertEqual(track, "probe_c2")
-        # RUNMETA 由 register_all 写(唯一写手):产物目录、kind 与要并进记录的
-        # 字段都从这里传过去,发射器自己不再另写一条。
+        # RUNMETA is written by register_all (the sole writer): the output dir, kind, and the
+        # fields to merge into the record are all passed through here; the launcher itself no
+        # longer writes a separate entry.
         self.assertEqual(kwargs.get("outdir"), "/tmp/out")
         self.assertEqual(kwargs.get("runmeta_kind"), "train")
         extra = kwargs.get("runmeta_extra")
@@ -78,14 +81,15 @@ class TestLaunchAndRegister(unittest.TestCase):
         self.assertIsNone(piece["stall_line"])
         self.assertIsNone(piece["escalate_line"])
 
-    @patch("launch_probe.register_all", side_effect=SystemExit("run_id 已在台账里"))
+    @patch("launch_probe.register_all", side_effect=SystemExit("run_id already in the job ledger"))
     @patch("launch_probe.tmux_launch")
     @patch("launch_probe.probe_free", return_value=(True, ""))
     @patch("launch_probe.has_session", return_value=False)
     def test_register_failure_warns_but_launch_still_reported(
             self, mhas, mfree, mtmux, mreg):
-        # 发射本身(tmux_launch)已经真实发生了；登记失败(比如重复 run_id)
-        # 只 WARN，不能让异常往外抛炸掉调用方的循环。
+        # The launch itself (tmux_launch) has already really happened; a registration failure
+        # (e.g. a duplicate run_id) only WARNs -- it must not let an exception propagate out and
+        # blow up the caller's loop.
         ok = LP.launch_and_register("tokyo106", "0", "sess1", "python3 x.py",
                                      "/tmp/sess1.log", "/tmp/out", "rid1", "c2")
         self.assertTrue(ok)

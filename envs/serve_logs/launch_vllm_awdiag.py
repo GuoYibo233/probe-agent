@@ -1,20 +1,23 @@
-"""w0 复现诊断批(aw_pathdiag)的服务发射器:tokyo108 三张 H100 各一个 gpt-oss-120b。
+"""Service launcher for the w0-reproduction diagnostic batch (aw_pathdiag): one gpt-oss-120b
+on each of three H100s on tokyo108.
 
-**关键口径:不给 --max-model-len**,让 vLLM 用模型 native 131072——
-这是复刻 w0 采集时 launch_vllm_w0.py 里 gpt-oss 两条 JOBS 的原样配置
-(那两条只有 --gpu-memory-utilization 0.92)。65536 就是发错了,本批诊断
-要查的正是"分段续写/65k 上下文"这条嫌疑链,服务侧不能先把它焊死。
+**Key convention: do not pass --max-model-len**, let vLLM use the model's native 131072 --
+this reproduces the exact configuration of the two gpt-oss JOBS entries in launch_vllm_w0.py
+from the w0 collection (those two entries only had --gpu-memory-utilization 0.92). 65536 was
+simply a mistake; this diagnostic batch exists precisely to check the "chunked continuation /
+65k context" suspect chain, so the service side must not weld that shut in advance.
 
-  gpt-oss-120b -> H100 GPU 0, port 8103   (副本 A)
-  gpt-oss-120b -> H100 GPU 1, port 8106   (副本 B)
-  gpt-oss-120b -> H100 GPU 2, port 8107   (副本 C)
+  gpt-oss-120b -> H100 GPU 0, port 8103   (replica A)
+  gpt-oss-120b -> H100 GPU 1, port 8106   (replica B)
+  gpt-oss-120b -> H100 GPU 2, port 8107   (replica C)
 
-环境变量照抄 launch_vllm_w0.py(cuda-compat/FLASHINFER/PCI_BUS_ID),另加
-launch_vllm_splice.py 的缓存重定向(VLLM_CACHE_ROOT/TRITON_CACHE_DIR 进 /net
-——/home 有 NFS 服务端配额,写满会连死 vllm)。缓存路径不改模型行为。
+Environment variables copied from launch_vllm_w0.py (cuda-compat/FLASHINFER/PCI_BUS_ID), plus
+the cache redirection from launch_vllm_splice.py (VLLM_CACHE_ROOT/TRITON_CACHE_DIR into /net
+-- /home has an NFS server-side quota, and filling it can kill vllm too). The cache path does
+not change model behavior.
 
-客户端两臂见 awdiag_job.sh(PORTS=8103/8106/8107)。
-用法: python3 launch_vllm_awdiag.py
+The two client arms are in awdiag_job.sh (PORTS=8103/8106/8107).
+Usage: python3 launch_vllm_awdiag.py
 """
 import shlex
 import subprocess
@@ -27,7 +30,7 @@ YMODELS = "/net/tokyo100-10g/data/str01_01/y-guo/models"
 CACHE_ROOT = "/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache"
 LOGDIR = f"{CACHE_ROOT}/logs"
 
-# 无 --max-model-len:native 131072
+# No --max-model-len: native 131072
 GPTOSS_FLAGS = "--gpu-memory-utilization 0.92"
 
 JOBS = [

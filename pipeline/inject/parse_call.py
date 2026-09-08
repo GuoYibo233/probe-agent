@@ -1,43 +1,47 @@
-"""从续写文本里切出一条完整的 apis 调用(纯标准库)。规格:
+"""Cuts one complete apis call out of continuation text (standard library only). Spec:
 plans/2026-08-01-splice-impl-spec.md §D1
 
-拼回实验里"模型有没有把调用写完"这件事没法用正则判——参数里带括号、带引号、
-带转义的调用一抓一大把(`print(apis.phone.send_message(message="Hi :) (really)"))`),
-正则只会在第一个 `)` 上收手。所以这里手写一遍括号配平:引号(单双、三引号)内的
-括号不算数,反斜杠转义跳过下一个字符,`#` 之后到行尾算注释。
+Whether the model finished writing the call, for the splice-back experiment, can't be judged with a
+regex -- calls with parentheses, quotes, and escapes in the arguments are everywhere
+(`print(apis.phone.send_message(message="Hi :) (really)"))`), and a regex only stops at the first `)`.
+So this hand-writes bracket matching instead: parentheses inside quotes (single, double, triple) don't
+count, a backslash escape skips the next character, and everything from `#` to end of line counts as
+a comment.
 
-被 replay_inject.py(score 段 C2)与 extract_completed.py 共同 import,
-所以这个文件只许依赖标准库:cprobe-env 与将来任何裸 python 都得 import 得动。
+Imported by both replay_inject.py (score section C2) and extract_completed.py, so this file may only
+depend on the standard library: cprobe-env and any future bare python must be able to import it.
 
-自测:python pipeline/inject/parse_call.py
+Self-test: python pipeline/inject/parse_call.py
 """
 
 import re
 
-# 调用起点。与 pipeline/annotate/rules.py 的 AW_CALL 逐字相同——工具名口径只有
-# 一份,这里另写一条正则只是为了不依赖那个包,写法必须一致
+# call start. Character-for-character identical to AW_CALL in pipeline/annotate/rules.py -- there is
+# only one convention for tool names; writing a separate regex here is only to avoid depending on that
+# package, and the pattern must stay in sync
 CALL_START = re.compile(r"apis\.(\w+)\.(\w+)\(")
 
 FENCE = "```"
 
 
 def complete_call(text, start=0):
-    """从 start 起找首条 apis 调用,括号配平到闭合。
+    """Finds the first apis call starting from start, matching parentheses through to close.
 
-    返回 (call_str, end_idx):call_str 是从 `apis.` 到配平右括号的裸调用串,
-    end_idx 是右括号的**后一位**(可直接当下一次搜索的 start)。
-    找不到调用起点、或到文末都没配平,返回 (None, None)。
+    Returns (call_str, end_idx): call_str is the bare call string from `apis.` through the matched
+    closing parenthesis, end_idx is the position **right after** the closing parenthesis (usable
+    directly as the start of the next search).
+    Returns (None, None) if no call start is found, or if it never balances by end of text.
     """
     s = text or ""
     m = CALL_START.search(s, start)
     if m is None:
         return None, None
-    i, depth, quote = m.end() - 1, 0, None      # i 停在那个左括号上
+    i, depth, quote = m.end() - 1, 0, None      # i stops on that opening parenthesis
     while i < len(s):
         c = s[i]
-        if quote is not None:                   # 字符串里:只找收尾引号
+        if quote is not None:                   # inside a string: only look for the closing quote
             if c == "\\":
-                i += 2                          # 转义吃掉下一个字符
+                i += 2                          # an escape consumes the next character
                 continue
             if s.startswith(quote, i):
                 i += len(quote)
@@ -45,11 +49,11 @@ def complete_call(text, start=0):
                 continue
             i += 1
             continue
-        if c in "\"'":                          # 进字符串,三引号优先匹配
+        if c in "\"'":                          # entering a string, triple quotes match first
             quote = c * 3 if s.startswith(c * 3, i) else c
             i += len(quote)
             continue
-        if c == "#":                            # 注释吃到行尾
+        if c == "#":                            # a comment consumes to end of line
             nl = s.find("\n", i)
             if nl < 0:
                 return None, None
@@ -66,14 +70,17 @@ def complete_call(text, start=0):
 
 
 def call_at(text, pos):
-    """text 的 pos 位置上**正好起头**的那条完整调用;那里不是调用起点就返回
-    (None, None)。
+    """The complete call that starts **exactly** at position pos in text; returns (None, None) if that
+    position is not a call start.
 
-    骨架臂要的是这个:骨架把 `apis.x.y` 钉死在已知位置上(拼进 prompt 那截的
-    末尾就是工具名本身),模型接着写参数才算补完。按铁律骨架不带尾左括号,而
-    CALL_START 要 `apis.x.y(` 才匹配 —— 模型不接着写 `(` 而是另起一行自己写
-    一条调用时,complete_call 会一路搜到模型那条,于是骨架报成补完了、抽出来
-    的也是模型自己那条。锚住位置才分得清"补完骨架"和"推翻骨架另写"。
+    This is what the skeleton arm needs: the skeleton pins `apis.x.y` at a known position (the tail of
+    the text spliced into the prompt is the tool name itself), and only counts as completed once the
+    model goes on to write the arguments. Under the hard rule, the skeleton carries no trailing opening
+    parenthesis, while CALL_START only matches `apis.x.y(` -- if the model doesn't continue with `(` but
+    instead starts a new line and writes its own call, complete_call would search all the way to that
+    call, reporting the skeleton as completed and extracting the model's own call instead. Anchoring to
+    the position is what separates "completed the skeleton" from "threw out the skeleton and wrote its
+    own".
     """
     call, end = complete_call(text, pos)
     if call is None or end - len(call) != pos:
@@ -82,10 +89,12 @@ def call_at(text, pos):
 
 
 def find_fence_close(text, start=0):
-    """从 start 起找收尾围栏 ```,返回它的**后一位**;没有返回 None。
+    """Finds the closing fence ``` starting from start, returns the position **right after** it; returns
+    None if there isn't one.
 
-    只认三个反引号本身,不管开栏——调用方负责把 start 放在开栏之后
-    (拼回实验里开栏 ```python 是我们自己塞进 prompt 的,不在续写里)。
+    Only recognizes the three backticks themselves, not the opening fence -- the caller is responsible
+    for placing start after the opening fence (in the splice-back experiment the opening fence
+    ```python is something we insert into the prompt ourselves, it is not part of the continuation).
     """
     j = (text or "").find(FENCE, start)
     return None if j < 0 else j + len(FENCE)
@@ -93,61 +102,62 @@ def find_fence_close(text, start=0):
 
 if __name__ == "__main__":
     cases = [
-        # (文本, 期望 call_str)
+        # (text, expected call_str)
         ("print(apis.venmo.login(username='a'))",
          "apis.venmo.login(username='a')"),
-        # 引号内的括号不算数
+        # parentheses inside quotes don't count
         ('apis.phone.send_message(message="hi :) (really)")',
          'apis.phone.send_message(message="hi :) (really)")'),
-        # 反斜杠转义的引号不收尾
+        # a backslash-escaped quote does not close the string
         (r'apis.file_system.write(text="say \") here")',
          r'apis.file_system.write(text="say \") here")'),
-        # 嵌套调用
+        # nested call
         ("x = apis.a.b(c=apis.d.e(f=1), g=2)\nprint(x)",
          "apis.a.b(c=apis.d.e(f=1), g=2)"),
-        # 三引号里的括号
+        # parentheses inside triple quotes
         ('apis.a.b(t="""a ) b""", u=1)', 'apis.a.b(t="""a ) b""", u=1)'),
-        # 注释里的右括号不收手
+        # a closing parenthesis inside a comment does not stop it
         ("apis.a.b(\n  x=1,  # )))\n  y=2)",
          "apis.a.b(\n  x=1,  # )))\n  y=2)"),
-        # 未闭合
+        # unclosed
         ("print(apis.venmo.login(username='a'", None),
-        # 骨架被截断在左括号之前(拼回实验的骨架形态)
+        # skeleton truncated before the opening parenthesis (the skeleton's shape in the splice-back experiment)
         ("print(apis.venmo.login", None),
-        # 根本没有调用
+        # no call at all
         ("just some thinking text", None),
     ]
     for txt, want in cases:
         got, end = complete_call(txt)
-        assert got == want, f"complete_call({txt!r}) -> {got!r} 期望 {want!r}"
+        assert got == want, f"complete_call({txt!r}) -> {got!r} expected {want!r}"
         if want is None:
             assert end is None, (txt, end)
         else:
             assert txt[end - len(want):end] == want, (txt, end)
 
-    # start 偏移:跳过第一条,拿第二条
+    # start offset: skip the first one, take the second
     two = "apis.a.b()\nprint(apis.c.d(x=1))"
     first, e1 = complete_call(two)
     assert first == "apis.a.b()", first
     second, _ = complete_call(two, e1)
     assert second == "apis.c.d(x=1)", second
 
-    # 锚位:骨架 `print(apis.venmo.login` 的工具名起点在第 6 位
+    # anchor position: for the skeleton `print(apis.venmo.login`, the tool name starts at position 6
     sk = "print(apis.venmo.login"
     pos = len(sk) - len("apis.venmo.login")
     ok = sk + "(username='a'))\n```\n"
     assert call_at(ok, pos)[0] == "apis.venmo.login(username='a')"
-    # 模型不补参数、另起一行自己写一条:那不叫骨架补完
+    # the model doesn't fill in the arguments and instead starts a new line writing its own call: that
+    # doesn't count as completing the skeleton
     bad = sk + "\nWait, wrong.\nprint(apis.api_docs.show_api_doc('venmo'))"
     assert complete_call(bad)[0] == "apis.api_docs.show_api_doc('venmo')"
     assert call_at(bad, pos) == (None, None)
-    # 骨架处没配平也不算补完
+    # not balanced at the skeleton position doesn't count as completed either
     assert call_at(sk + "(username='a'", pos) == (None, None)
 
-    # 围栏
+    # fence
     assert find_fence_close("code```\ntail") == 7
     assert find_fence_close("no fence here") is None
     assert find_fence_close("```a```", 3) == 7
 
-    print("parse_call 自测通过:%d 条 complete_call + 偏移 + 锚位 3 条 + 围栏 3 条"
+    print("parse_call selftest passed: %d complete_call cases + offset + 3 anchor-position cases + 3 fence cases"
           % len(cases))

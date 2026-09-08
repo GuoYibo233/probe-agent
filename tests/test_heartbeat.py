@@ -17,7 +17,7 @@ class TestHeartbeat(unittest.TestCase):
         for k in ("done", "total", "unit", "ts"):
             self.assertIn(k, rec)
         self.assertEqual(rec["done"], 3)
-        self.assertNotIn("tok_in", rec)          # 选填不给就不出现
+        self.assertNotIn("tok_in", rec)          # Optional; omitted means it doesn't appear
 
     def test_emit_optional_fields(self):
         buf = io.StringIO()
@@ -36,7 +36,7 @@ class TestHeartbeat(unittest.TestCase):
     def test_parse_rejects_garbage(self):
         self.assertIsNone(heartbeat.parse("task=1 SKIP (done)"))
         self.assertIsNone(heartbeat.parse("@hb not-json"))
-        self.assertIsNone(heartbeat.parse('@hb {"done": 1}'))  # 缺必填
+        self.assertIsNone(heartbeat.parse('@hb {"done": 1}'))  # Missing a required field
 
 
 if __name__ == "__main__":

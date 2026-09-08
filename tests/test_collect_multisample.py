@@ -1,15 +1,19 @@
-"""每题多条轨迹的采集口径(np821 施工稿 §2)。
+"""Collection convention for multiple trajectories per task (np821 draft, section 2).
 
-三块:
-1. run_appworld 的纯函数——文件名、种子表、resume 判据、轨迹 meta、
-   AppWorld 的 experiment_name。不起真环境,只单测这几个函数。
-2. 种子逐条派发:第 k 条轨迹的 Chat 拿第 k 个种子,种子既进请求体
-   (_sample_extras)也进轨迹 meta 的 gen_settings。
-3. gen_launch 的两个可选字段 traj_per_task / seed_family——带字段时旗标
-   拼进客户端脚本,不带字段的老 manifest 生成物与加字段之前逐字节一致。
+Three parts:
+1. Pure functions of run_appworld -- filenames, seed table, resume criteria,
+   trajectory meta, AppWorld's experiment_name. Doesn't start a real environment,
+   only unit-tests these functions.
+2. Seeds dispatched one by one: the Chat for the k-th trajectory gets the k-th
+   seed, and the seed goes into both the request body (_sample_extras) and the
+   trajectory meta's gen_settings.
+3. gen_launch's two optional fields traj_per_task / seed_family -- when present
+   the flags get spliced into the client script; without them, the old manifest
+   output stays byte-identical to before the fields were added.
 
-采集器在 appworld venv 里跑,本机 python3 没有 openai:先塞一个只占位的
-假 openai 再按路径装载(common.py 只在 Chat.__init__ 里用 OpenAI())。
+The collector runs inside the appworld venv; the local python3 doesn't have
+openai: stub in a placeholder fake openai first, then load by path
+(common.py only uses OpenAI() inside Chat.__init__).
 """
 import contextlib
 import importlib.util
@@ -36,7 +40,7 @@ def _load(path, name):
 def _load_run_appworld():
     try:
         import openai  # noqa: F401
-    except ModuleNotFoundError:   # 本机 python3 没有,塞个只占位的
+    except ModuleNotFoundError:   # local python3 doesn't have it, stub in a placeholder
         fake = types.ModuleType("openai")
         fake.OpenAI = lambda **kw: types.SimpleNamespace(**kw)
         sys.modules["openai"] = fake
@@ -52,7 +56,7 @@ GL = _load(ROOT / "pipeline/collect/gen_launch.py", "gen_launch")
 SEEDS = [42, 67, 4267, 6742]
 FAMILY = "42,67,4267,6742"
 
-# chat_of 只读这几个键;不依赖任何预设文件,免得与别的工单抢 configs/
+# chat_of only reads these keys; doesn't depend on any preset file, to avoid contending for configs/ with other tickets
 EFF = {"base_url": "http://tokyo108:8103/v1", "model": "gpt-oss-120b",
        "api": "harmony", "temperature": 1.0, "top_p": 1.0, "max_tokens": 8192,
        "seed": None, "reasoning_effort": "high", "start_date": "2026-08-06",
@@ -63,7 +67,7 @@ META_LINE = '{"type": "meta", "task_id": "t1"}\n'
 
 
 class TestTrajPath(unittest.TestCase):
-    """N == 1 的文件名一字不改;N > 1 才带采样序号。"""
+    """The filename for N == 1 doesn't change at all; only N > 1 carries a sample index."""
 
     def test_single_keeps_legacy_name(self):
         p = RA.traj_path(Path("/out"), "82e2fac_1", 0, 1)
@@ -112,7 +116,7 @@ class TestResolveSeeds(unittest.TestCase):
         for spec in ("42,67", "42,67,4267,6742,1"):
             with self.assertRaises(SystemExit) as cm:
                 RA.resolve_seeds(spec, 4)
-            self.assertIn("对不上", str(cm.exception))
+            self.assertIn("doesn't match", str(cm.exception))
 
     def test_non_integer_rejected(self):
         with self.assertRaises(SystemExit):
@@ -124,7 +128,7 @@ class TestResolveSeeds(unittest.TestCase):
 
 
 class TestResumeGranularity(unittest.TestCase):
-    """resume 按 (题, 采样序号) 逐条判,不是按题整体判。"""
+    """resume is judged per (task, sample index) pair, not per task as a whole."""
 
     def skip_set(self, outdir, ids, n):
         return {(tid, k) for tid in ids for k in range(n)
@@ -133,7 +137,7 @@ class TestResumeGranularity(unittest.TestCase):
     def test_two_of_four_done(self):
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
-            # t1 的 r0/r2 写完,r1 只有 meta,r3 根本没落盘
+            # t1's r0/r2 are fully written, r1 has only meta, r3 was never written to disk at all
             (d / "appworld_t1_r0.jsonl").write_text(META_LINE + FINAL_LINE)
             (d / "appworld_t1_r1.jsonl").write_text(META_LINE)
             (d / "appworld_t1_r2.jsonl").write_text(META_LINE + FINAL_LINE)
@@ -141,7 +145,7 @@ class TestResumeGranularity(unittest.TestCase):
                              {("t1", 0), ("t1", 2)})
 
     def test_legacy_file_does_not_count_for_multi(self):
-        # 老批次的 appworld_t1.jsonl 不该让多样本的四条都算完成
+        # An old batch's appworld_t1.jsonl shouldn't make all four multi-sample entries count as done
         with tempfile.TemporaryDirectory() as td:
             d = Path(td)
             (d / "appworld_t1.jsonl").write_text(META_LINE + FINAL_LINE)
@@ -154,7 +158,7 @@ class TestResumeGranularity(unittest.TestCase):
 
 
 class TestSeedDispatch(unittest.TestCase):
-    """chats[k].seed == seeds[k],且种子进请求体与轨迹 meta。"""
+    """chats[k].seed == seeds[k], and the seed goes into both the request body and the trajectory meta."""
 
     def chats(self, seeds):
         return [RA.chat_of({**EFF, "seed": s}) for s in seeds]
@@ -234,7 +238,7 @@ FILES = ("launch_servers.py", "launch_clients.sh", "MANIFEST.md")
 
 
 def write_manifest(td, **extra):
-    cfg = json.loads(json.dumps(BASE_MANIFEST))   # 深拷贝,别改到模板
+    cfg = json.loads(json.dumps(BASE_MANIFEST))   # deep copy, don't mutate the template
     cfg.update(extra)
     p = Path(td) / "manifest.json"
     p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
@@ -242,7 +246,7 @@ def write_manifest(td, **extra):
 
 
 def generate(manifest, outdir):
-    """--dry-run 干跑一次,返回三个生成物的文本。"""
+    """--dry-run does one dry run, returning the text of the three generated outputs."""
     argv = ["gen_launch.py", "--config", str(manifest), "--dry-run",
             "--out-override", str(outdir)]
     with mock.patch.object(sys, "argv", argv), \
@@ -263,7 +267,7 @@ class TestGenLaunchMultiSample(unittest.TestCase):
         sh = out["launch_clients.sh"]
         self.assertIn(f'MULTI="--traj-per-task 4 --seeds {FAMILY}"', sh)
         self.assertIn("--resume $MULTI", sh)
-        # 四实例:服务表四条 JOBS,train 四个分片各打一个端口
+        # Four instances: four JOBS entries in the service table, four train pieces each opening their own port
         self.assertEqual(out["launch_servers.py"].count('    (2, "'), 1)
         self.assertEqual(len([ln for ln in out["launch_servers.py"].splitlines()
                               if ln.startswith("    (")]), 4)
@@ -274,7 +278,7 @@ class TestGenLaunchMultiSample(unittest.TestCase):
 
     def test_manifest_md_line(self):
         out = self.gen(traj_per_task=4, seed_family=SEEDS)
-        self.assertIn(f"每题 4 条轨迹:所有分片额外 `--traj-per-task 4 "
+        self.assertIn(f"4 trajectories per task: all pieces additionally get `--traj-per-task 4 "
                       f"--seeds {FAMILY}`", out["MANIFEST.md"])
         self.assertIn("appworld_<task_id>_r<k>.jsonl", out["MANIFEST.md"])
 
@@ -286,12 +290,13 @@ class TestGenLaunchMultiSample(unittest.TestCase):
             self.assertNotIn("MULTI", text, name)
 
     def test_old_manifest_p1_untouched(self):
-        """在库的老 manifest 生成物里一个新旗标都不许冒出来。
+        """No new flag is allowed to show up in the old manifest output already checked into the repo.
 
-        底本是 pipeline/collect/manifest_p1.json(那一批的历史清单,原样留档)。
-        p1 当时钉的是那一批自己的预设名;现役预设是 default,所以这里把顶层的
-        gptoss_client_preset 换成 default 再干跑,测的仍是"清单里没有多样本
-        字段 = 生成物里没有多样本旗标"这件事。
+        The reference is pipeline/collect/manifest_p1.json (that batch's historical
+        listing, kept on file as-is). p1 back then pinned that batch's own preset name;
+        the current preset is default, so here the top-level gptoss_client_preset is
+        swapped to default before doing the dry run -- still testing "no multi-sample
+        field in the manifest = no multi-sample flag in the output."
         """
         mf = json.loads(
             (ROOT / "pipeline/collect/manifest_p1.json").read_text())
@@ -306,7 +311,7 @@ class TestGenLaunchMultiSample(unittest.TestCase):
             self.assertIn("      --resume\"", out["launch_clients.sh"])
 
     def test_with_minus_added_tokens_equals_without(self):
-        """等价性钉子:带字段的生成物剥掉新增 token 后,与不带字段的逐字节相等。"""
+        """Equivalence pin: strip the newly added tokens from the output that has the fields, and it's byte-identical to the output without the fields."""
         with_f = self.gen(traj_per_task=4, seed_family=SEEDS)
         without = self.gen()
         self.assertEqual(with_f["launch_servers.py"],
@@ -315,9 +320,9 @@ class TestGenLaunchMultiSample(unittest.TestCase):
             .replace(f'MULTI="--traj-per-task 4 --seeds {FAMILY}"\n', "", 1) \
             .replace(" $MULTI", "", 1)
         self.assertEqual(sh, without["launch_clients.sh"])
-        added = (f"每题 4 条轨迹:所有分片额外 `--traj-per-task 4 "
-                 f"--seeds {FAMILY}`,第 k 条用第 k 个种子,"
-                 f"轨迹落 `appworld_<task_id>_r<k>.jsonl`。\n")
+        added = (f"4 trajectories per task: all pieces additionally get `--traj-per-task 4 "
+                 f"--seeds {FAMILY}`, the k-th trajectory uses the k-th seed,"
+                 f"trajectories land at `appworld_<task_id>_r<k>.jsonl`.\n")
         md = with_f["MANIFEST.md"].replace(added, "", 1)
         self.assertEqual(md, without["MANIFEST.md"])
 
@@ -333,22 +338,22 @@ class TestGenLaunchValidation(unittest.TestCase):
             return err.getvalue()
 
     def test_only_traj_per_task(self):
-        self.assertIn("要么都给要么都不给", self.bad(traj_per_task=4))
+        self.assertIn("must both be given or both omitted", self.bad(traj_per_task=4))
 
     def test_only_seed_family(self):
-        self.assertIn("要么都给要么都不给", self.bad(seed_family=SEEDS))
+        self.assertIn("must both be given or both omitted", self.bad(seed_family=SEEDS))
 
     def test_length_mismatch(self):
-        self.assertIn("对不上", self.bad(traj_per_task=4,
+        self.assertIn("does not match", self.bad(traj_per_task=4,
                                          seed_family=[42, 67]))
 
     def test_bad_types(self):
-        self.assertIn("整数", self.bad(traj_per_task="4", seed_family=SEEDS))
-        self.assertIn("整数列表", self.bad(traj_per_task=1, seed_family=["42"]))
+        self.assertIn("integer", self.bad(traj_per_task="4", seed_family=SEEDS))
+        self.assertIn("list of integers", self.bad(traj_per_task=1, seed_family=["42"]))
         self.assertIn(">= 1", self.bad(traj_per_task=0, seed_family=[]))
 
     def test_non_appworld_env_refused(self):
-        # alfworld 的采集器没有这两个旗标,拼进去只会在发射时炸
+        # alfworld's collector doesn't have these two flags; splicing them in will just blow up at launch time
         msg = self.bad(env="alfworld", traj_per_task=4, seed_family=SEEDS)
         self.assertIn("appworld", msg)
 

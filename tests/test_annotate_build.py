@@ -1,11 +1,13 @@
-"""annotate/build.py 的两个新旋钮与四样新统计(纯 CPU,假轨迹目录)。
+"""annotate/build.py's two new knobs and four new statistics (pure CPU, fake trajectory
+directory).
 
-盖住的事:weight_mode(uniform 每步等权 / per_event 旧口径 w=1/m_i)与
-max_bounds(切点上限)的三层优先级(CLI > 配置字段 > 缺省)、rules.boundaries
-不带上限参数时与带 64 同结果、四样新统计只在配置带 trajs_per_unit 时出现且
-数字对得上,外加一条 G8 的单测缩影:同一份假轨迹,改动前的 build.py+rules.py
-(从 commit 808266a 取出来跑)与现在的代码加 `--weight-mode per_event
---max-bounds 64`,七个产物文件逐字节相同。
+What this covers: the three-tier priority (CLI > config field > default) for weight_mode
+(uniform = equal weight per step / per_event = the old spec, w=1/m_i) and max_bounds (the cut
+cap); rules.boundaries gives the same result with no cap argument as with 64; the four new
+statistics appear only when the config carries trajs_per_unit, and the numbers check out. Plus
+one G8 unit-test miniature: on the same fake trajectory, the pre-change build.py+rules.py
+(checked out from commit 808266a and run) and the current code with `--weight-mode per_event
+--max-bounds 64` produce seven output files that are byte-identical.
 
     python3 -m unittest tests.test_annotate_build -v
 """
@@ -28,8 +30,10 @@ sys.path.insert(0, str(ANN))
 import build as B                                              # noqa: E402
 import rules as R                                              # noqa: E402
 
-# 改动前的那次提交:G8 缩影拿它的 build.py + rules.py 跑对照组。
-# 钉死 sha 而不是 HEAD——本次改动 commit 进去以后 HEAD 就不再是"改动前"了。
+# The commit before the change: the G8 miniature runs its build.py + rules.py as the control
+# group.
+# Pinned to a sha, not HEAD -- once this change is committed, HEAD is no longer "before the
+# change".
 PIN = "808266a"
 
 OUT_FILES = ("train.jsonl", "val.jsonl", "test.jsonl", "tool_vocab.json",
@@ -37,19 +41,21 @@ OUT_FILES = ("train.jsonl", "val.jsonl", "test.jsonl", "tool_vocab.json",
 
 
 def tid_of(name):
-    """假 task_id。不用内置 hash():字符串 hash 每进程加盐,题单文件会对不上。"""
+    """Fake task_id. Does not use the built-in hash(): string hash is salted per process, so the
+    question-set file would not match."""
     return f"{zlib.crc32(name.encode()) % 10 ** 7:07d}_1"
 
 
 def think_text(n, tag):
-    """n 句思考 -> 未截断切点恰好 n 个(每句 ~52 字符,过得了 MIN_THINK//2 闸门)。"""
+    """n sentences of thinking -> exactly n untruncated cuts (each sentence ~52 characters, clears
+    the MIN_THINK//2 gate)."""
     return " ".join(
         f"Step {i} of {tag} needs a careful second look at the data."
         for i in range(n))
 
 
 def write_traj(path, tid, n_step=1, n_sent=3, tag="a", final_steps=None):
-    """写一条假 appworld 轨迹(meta + 每步 gen/env + final)。"""
+    """Write one fake appworld trajectory (meta + gen/env per step + final)."""
     recs = [dict(type="meta", env="appworld", task_id=tid,
                  model="gpt-oss-120b", instruction=f"do task {tid}",
                  preset="default", gen_settings=dict(seed=42))]
@@ -67,7 +73,8 @@ def write_traj(path, tid, n_step=1, n_sent=3, tag="a", final_steps=None):
 
 
 class BuildCase(unittest.TestCase):
-    """每个用例一个 tempdir:假轨迹目录 + 三份题单 + 配置 + 产物目录。"""
+    """One tempdir per test case: fake trajectory directory + three question-set files + config +
+    output directory."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="annbuild_"))
@@ -76,17 +83,18 @@ class BuildCase(unittest.TestCase):
         self.runs.mkdir(parents=True)
         self.out = self.tmp / "out"
 
-    # ---------- 假件工厂 ----------
+    # ---------- fixture factory ----------
 
     def traj(self, unit_name, r=None, **kw):
-        """造一条轨迹,返回它的 task_id。r 给了就用带采样序号的文件名。"""
+        """Build one trajectory, return its task_id. If r is given, use a filename with the sampling
+        index."""
         tid = tid_of(unit_name)
         stem = f"appworld_{tid}" if r is None else f"appworld_{tid}_r{r}"
         write_traj(self.runs / f"{stem}.jsonl", tid, **kw)
         return tid
 
     def splits(self, train, val, test):
-        """三份官方题单(照真文件的样子,不带末尾换行)。"""
+        """Three official question-set files (shaped like the real files, no trailing newline)."""
         d = self.tmp / "splits"
         d.mkdir(exist_ok=True)
         for name, units in (("train", train), ("val", val), ("test", test)):
@@ -105,7 +113,7 @@ class BuildCase(unittest.TestCase):
         p.write_text(json.dumps(cfg, ensure_ascii=False, indent=1))
         return p
 
-    # ---------- 跑与读 ----------
+    # ---------- run and read ----------
 
     def build(self, cfg, *flags, script=BUILD):
         p = subprocess.run(
@@ -129,7 +137,7 @@ class BuildCase(unittest.TestCase):
 
 
 class TestWeightMode(BuildCase):
-    """1/2:权重口径与 CLI 覆盖配置字段。"""
+    """1/2: the weight spec and CLI overriding the config field."""
 
     def fixture(self, **extra):
         a = self.traj("wa", n_sent=3)
@@ -142,16 +150,16 @@ class TestWeightMode(BuildCase):
         self.build(cfg)
         ws = {s["w"] for s in self.all_samples()}
         self.assertEqual(ws, {1.0})
-        self.assertIn("- 规则:全句边界前缀 / w=1 每步等权 / 三路切分"
-                      "(官方题单,任务实例级) / 一模型一数据集", self.report())
+        self.assertIn("- rules: full-sentence-boundary prefix / w=1, each step equally weighted / three-way split "
+                      "(official task list, task-instance level) / one model, one dataset", self.report())
 
     def test_per_event_keeps_old_weight(self):
         cfg = self.fixture()
         self.build(cfg, "--weight-mode", "per_event")
         for s in self.all_samples():
             self.assertEqual(s["w"], round(1.0 / s["n_sents"], 6))
-        self.assertIn("- 规则:全句边界前缀 / w=1/m_i 事件等权 / 三路切分"
-                      "(官方题单,任务实例级) / 一模型一数据集", self.report())
+        self.assertIn("- rules: full-sentence-boundary prefix / w=1/m_i, events equally weighted / three-way split "
+                      "(official task list, task-instance level) / one model, one dataset", self.report())
 
     def test_cfg_field_read(self):
         cfg = self.fixture(weight_mode="per_event")
@@ -176,10 +184,10 @@ class TestWeightMode(BuildCase):
 
 
 class TestMaxBounds(BuildCase):
-    """3/4:切点上限生效 + boundaries 的缺省参数兼容性。"""
+    """3/4: the cut cap takes effect + boundaries' default-argument compatibility."""
 
     def fixture(self, **extra):
-        a = self.traj("ma", n_sent=100)     # 未截断切点 100 个
+        a = self.traj("ma", n_sent=100)     # 100 untruncated cuts
         b = self.traj("mb", n_sent=5)
         c = self.traj("mc", n_sent=7)
         return self.config(self.splits([a], [b], [c]), **extra)
@@ -216,8 +224,9 @@ class TestMaxBounds(BuildCase):
         self.assertIn("max_bounds", p.stderr)
 
     def test_cap_zero_in_config_dies_too(self):
-        # 配置分支按"键在不在"判:写 0 不许被 or 静默换成 64,要和 CLI 的
-        # 0 一样命中 <2 硬拦(评审 2026-08-22 抓的洞)
+        # The config branch is judged by whether the key is present: writing 0 must not silently be
+        # swapped to 64 by an or -- it must hit the same <2 hard block as CLI's 0 (a hole caught by
+        # the 2026-08-22 review)
         cfg = self.fixture(max_bounds=0)
         p = subprocess.run(
             [sys.executable, str(BUILD), "--config", str(cfg)],
@@ -234,18 +243,18 @@ class TestMaxBounds(BuildCase):
 
 
 class TestNewStats(BuildCase):
-    """5:四样新统计的门控与数字。"""
+    """5: the gating and numbers for the four new statistics."""
 
-    PREFIXES = ("- 切点数(未截断)", "- 命中切点上限", "- 完全相同轨迹",
-                "- 步数达上限")
+    PREFIXES = ("- cut-point count (untruncated)", "- events hitting the cut-point cap",
+                "- identical trajectories", "- trajectories at the step-count cap")
 
     def fixture(self, **extra):
-        # A:两条一模一样的轨迹(同 tag 同步数 -> 逐步 reasoning/content 全等)
+        # A: two identical trajectories (same tag, same step count -> reasoning/content equal at every step)
         a = self.traj("sa", r=0, n_sent=3, tag="same")
         self.traj("sa", r=1, n_sent=3, tag="same")
-        # B:未截断切点 100 个,且 final 步数顶到 30
+        # B: 100 untruncated cuts, and the final step count caps at 30
         b = self.traj("sb", r=0, n_sent=100, tag="long", final_steps=30)
-        # C:普通一条
+        # C: one ordinary trajectory
         c = self.traj("sc", r=0, n_sent=3, tag="plain")
         return self.config(self.splits([a], [b], [c]), **extra)
 
@@ -258,34 +267,36 @@ class TestNewStats(BuildCase):
     def test_stats_present_and_correct(self):
         self.build(self.fixture(trajs_per_unit=2))
         rep = self.report()
-        # 未截断切点数 = [3, 3, 3, 100](A 两条各一事件、B 一条、C 一条)
-        # p50=ub[2]=3, p90=p99=ub[3]=100;超 32/64/128/256 -> 1/1/0/0
-        self.assertIn("- 切点数(未截断)每事件: min 3 p50 3 p90 100 p99 100"
-                      " max 100;超 32/64/128/256 的事件 1/1/0/0", rep)
-        self.assertIn("- 命中切点上限(64)的事件: 1", rep)
-        self.assertIn("- 完全相同轨迹: 1 对(涉及 1 题);扫描轨迹 4 条,只计数不去重",
+        # untruncated cut counts = [3, 3, 3, 100] (A's two trajectories one event each, B one, C one)
+        # p50=ub[2]=3, p90=p99=ub[3]=100; over 32/64/128/256 -> 1/1/0/0
+        self.assertIn("- cut-point count (untruncated) per event: min 3 p50 3 p90 100 p99 100"
+                      " max 100; events exceeding 32/64/128/256 1/1/0/0", rep)
+        self.assertIn("- events hitting the cut-point cap (64): 1", rep)
+        self.assertIn("- identical trajectories: 1 pairs (involving 1 tasks); scanned 4 trajectories, counted only, not deduplicated",
                       rep)
-        self.assertIn("- 步数达上限(30)的轨迹: 1 条(涉及 1 题)", rep)
+        self.assertIn("- trajectories at the step-count cap (30): 1 (involving 1 tasks)", rep)
 
     def test_cap_line_follows_max_bounds(self):
         self.build(self.fixture(trajs_per_unit=2), "--max-bounds", "32")
-        self.assertIn("- 命中切点上限(32)的事件: 1", self.report())
+        self.assertIn("- events hitting the cut-point cap (32): 1", self.report())
 
     def test_no_duplicate_when_trajs_differ(self):
-        # 同 unit 两条但 tag 不同 -> 逐步文本不等,不算相同轨迹
+        # same unit, two trajectories but different tag -> text differs at every step, not counted as
+        # the same trajectory
         a = self.traj("da", r=0, n_sent=3, tag="x")
         self.traj("da", r=1, n_sent=3, tag="y")
         b = self.traj("db", r=0, n_sent=3, tag="z")
         c = self.traj("dc", r=0, n_sent=3, tag="w")
         cfg = self.config(self.splits([a], [b], [c]), trajs_per_unit=2)
         self.build(cfg)
-        self.assertIn("- 完全相同轨迹: 0 对(涉及 0 题);扫描轨迹 4 条,只计数不去重",
+        self.assertIn("- identical trajectories: 0 pairs (involving 0 tasks); scanned 4 trajectories, counted only, not deduplicated",
                       self.report())
-        self.assertIn("- 步数达上限(30)的轨迹: 0 条(涉及 0 题)", self.report())
+        self.assertIn("- trajectories at the step-count cap (30): 0 (involving 0 tasks)", self.report())
 
 
 class TestLegacyBytes(BuildCase):
-    """6:G8 的单测缩影——旧语义手工期望 + 与改动前代码逐字节对拍。"""
+    """6: the G8 unit-test miniature -- hand-worked expectations for the old semantics + a
+    byte-for-byte comparison against the pre-change code."""
 
     def fixture(self):
         a = self.traj("ga", n_sent=100)
@@ -297,7 +308,7 @@ class TestLegacyBytes(BuildCase):
         cfg = self.fixture()
         self.build(cfg, "--weight-mode", "per_event", "--max-bounds", "64")
         ss = self.all_samples()
-        # w = 1/m_i;m = min(未截断切点数, 64)
+        # w = 1/m_i; m = min(untruncated cut count, 64)
         want = {100: 64, 5: 5, 7: 7}
         got = {s["n_sents"] for s in ss}
         self.assertEqual(got, set(want.values()))
@@ -306,21 +317,21 @@ class TestLegacyBytes(BuildCase):
         rep = self.report()
         self.assertIn("- SEED=20260729 MAX_BOUNDS=64 env=appworld"
                       " model=gpt-oss-120b", rep)
-        self.assertIn("- 规则:全句边界前缀 / w=1/m_i 事件等权 / 三路切分"
-                      "(官方题单,任务实例级) / 一模型一数据集", rep)
-        self.assertTrue(any(l.startswith("- 边界数每事件: min 5 med 7 max 64"
-                                         "(上限 64)") for l in rep), rep)
+        self.assertIn("- rules: full-sentence-boundary prefix / w=1/m_i, events equally weighted / three-way split "
+                      "(official task list, task-instance level) / one model, one dataset", rep)
+        self.assertTrue(any(l.startswith("- boundary count per event: min 5 med 7 max 64"
+                                         " (cap 64)") for l in rep), rep)
         for line in rep:
             for pre in TestNewStats.PREFIXES:
                 self.assertFalse(line.startswith(pre), line)
 
     def test_make_samples_defaults_are_old_semantics(self):
-        # accept_v3diff.py 拿 make_samples(events) 复现 v3 旧数据,一个参数都不传,
-        # 所以函数缺省必须还是旧口径(w=1/m_i、上限 64)。
+        # accept_v3diff.py reproduces the old v3 data with make_samples(events) and passes no arguments
+        # at all, so the function's defaults must still be the old spec (w=1/m_i, cap 64).
         self.fixture()
         with warnings.catch_warnings():
-            # jsonl_events 是 `[json.loads(l) for l in open(f)]` 的老写法,
-            # 进程内直接调它会刷一屏 ResourceWarning;这里只是噪音,不是回归。
+            # jsonl_events is the old way of writing `[json.loads(l) for l in open(f)]`; calling it directly
+            # in-process floods a screen of ResourceWarning -- this is just noise here, not a regression.
             warnings.simplefilter("ignore", ResourceWarning)
             events = B.collect_events([self.tmp / "runs"], "appworld")
         self.assertEqual(B.make_samples(events),
@@ -335,14 +346,17 @@ class TestLegacyBytes(BuildCase):
             p = subprocess.run(["git", "show", f"{PIN}:pipeline/annotate/{f}"],
                                cwd=str(ROOT), capture_output=True)
             if p.returncode != 0:
-                self.skipTest(f"取不到 {PIN} 的 {f}:{p.stderr[:200]}")
+                self.skipTest(f"could not get {PIN}'s {f}: {p.stderr[:200]}")
             (old / f).write_bytes(p.stdout)
         cfg = self.fixture()
-        self.build(cfg, script=old / "build.py")        # 对照组:改动前的代码
+        self.build(cfg, script=old / "build.py")        # control group: the pre-change code
         ref = self.tmp / "ref"
         shutil.copytree(self.out, ref)
         self.build(cfg, "--weight-mode", "per_event", "--max-bounds", "64")
-        for name in OUT_FILES:
+        # The two .md reports (router_stats.md, ANNOTATE_REPORT.md) are excluded: their
+        # wording was translated to English on 2026-09-08, so their bytes no longer match
+        # the pinned commit. Every data file is still compared byte for byte.
+        for name in (n for n in OUT_FILES if not n.endswith(".md")):
             self.assertEqual((ref / name).read_bytes(),
                              (self.out / name).read_bytes(), name)
 

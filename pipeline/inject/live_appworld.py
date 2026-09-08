@@ -1,51 +1,59 @@
-"""活跑注入线驱动器(appworld venv,纯 CPU)。方法规范:METHOD.md(旧设计书已随 08-02 清场删除)
+"""Live-run injection-line driver (appworld venv, pure CPU). Method spec: METHOD.md (the old design doc was removed in the 08-02 cleanup)
 
-回答的问题:探针实时出手、把预测调用的真实执行返回注进思考,**整道题**还做不做
-得对、省不省 token。这是回放线(单步续写)给不出的任务级成绩,2026-08-01 用户
-拍板立项。评测全程不判预测对错:出手就执行、返回什么注什么(报错也注)。
+Question this answers: does the probe firing in real time, injecting the predicted call's real execution
+result into the thinking, still get **the whole task** right, and does it save tokens? This is the
+task-level score that the replay line (single-step continuation) cannot give; the user approved it
+2026-08-01. The eval never judges whether the prediction was correct: firing means executing, and
+whatever comes back gets injected (errors too).
 
-一步之内(设计书 §2):
-  1. 消息历史照采集脚本拼(SYSTEM 从 rebuild 取,启动时回源核对);
-  2. harmony 前缀问探针服务要(/render 出 token id,与 chat 端点渲染逐 token
-     相同;appworld venv 没有 transformers/openai_harmony);
-  3. 分段生成:每段 --chunk-tokens 个 token,采样键来自预设,stop=<|return|>;
-  4. 每个新句子级切口把 assemble(task, hist, thinking[:cut]) 发 /score,
-     首过 θ 触发(切口查满 MAX_BOUNDS 个就歇手,口径差见设计书 §4.2);
-  5. 触发:/gen 出整条调用 -> 正身世界 save_state -> requote -> 执行 ->
-     截 4000 -> load_state 回档 -> _set_datetime() 重冻 -> 时间守卫断言
-     (【照抄 exec_calls.replay_unit】,finally 兜底)-> NOTE 拼在切口处,
-     切口后的溢出文本丢弃(丢弃量记账)-> 继续分段生成;
-  6. <|end|> 出现后停止探测,段长放大到 --tail-tokens 跑完该步;final 通道
-     取代码块,正身世界执行,喂回输出,进下一步。默认每步最多注一次。
+Within one step (design doc §2):
+  1. Message history assembled the same way as the collection script (SYSTEM comes from rebuild, checked
+     against the source at startup);
+  2. The harmony prefix comes from the probe service (/render produces token ids, token-for-token
+     identical to the chat endpoint's rendering; the appworld venv has no transformers/openai_harmony);
+  3. Segmented generation: --chunk-tokens tokens per segment, sampling keys from the preset,
+     stop=<|return|>;
+  4. Each new sentence-level cut sends assemble(task, hist, thinking[:cut]) to /score,
+     fires on the first crossing of θ (stops once MAX_BOUNDS cuts have been checked; see design doc
+     §4.2 for the difference in criteria);
+  5. On fire: /gen produces the whole call -> live world save_state -> requote -> execute ->
+     truncate to 4000 -> load_state to restore -> _set_datetime() to refreeze -> time-guard assertion
+     ([copied from exec_calls.replay_unit], with a finally fallback) -> NOTE spliced in at the cut,
+     overflow text after the cut discarded (the discarded amount is recorded) -> continue segmented
+     generation;
+  6. Probing stops once <|end|> appears; the segment length is enlarged to --tail-tokens to finish the
+     step; the final channel takes the code block, executes it in the live world, feeds the output back,
+     and moves to the next step. Injects at most once per step by default.
 
-进程与环境(设计书 §3):
-  **本文件与 exec_calls.py 是整条流水线仅有的两个 import appworld 的地方**,
-  只能用 envs/appworld/venv/bin/python 跑;一个进程一个世界(AppWorld 的
-  close_all 会弄坏并存实例),并发靠 --num-shards 多进程。
+Process and environment (design doc §3):
+  **This file and exec_calls.py are the only two places in the whole pipeline that import appworld**,
+  and can only run with envs/appworld/venv/bin/python; one process holds one world (AppWorld's
+  close_all corrupts coexisting instances), so concurrency is via --num-shards multiple processes.
 
-落盘:每题一个 live_{task_id}.jsonl,记录类型:
-  meta  任务与全部口径(θ/T/服务端点/chunk 尺寸/探针配置回显)
-  gen   每步聚合:thinking/content/逐段 usage 累加/丢弃溢出的字符与 token 数
-  spec  每次出手:切口、置信度、预测调用、requote 分支、执行返回(截 4000)、
-        错误种类、注入行全文;v6 加 head_tok/dropped_chars/overflow_ids
-  resume 每次重发续写收尾:新 id 与被丢弃 id 的 match_len/identical(v6)
-  env   每步真代码与执行输出(与采集侧同款)
-  final steps/completed/eval(结构化 dict,不存 str——打分要读它)
+On disk: one live_{task_id}.jsonl per task, record types:
+  meta  the task and all settings (θ/T/service endpoint/chunk size/probe config echoed back)
+  gen   per-step aggregate: thinking/content/per-segment usage accumulated/discarded overflow chars and token count
+  spec  each fire: cut, confidence, predicted call, requote branch, execution result (truncated to 4000),
+        error kind, full injected line; v6 adds head_tok/dropped_chars/overflow_ids
+  resume each resend-continuation wrap-up: match_len/identical between the new ids and the discarded ids (v6)
+  env   the real code and execution output for each step (same format as the collection side)
+  final steps/completed/eval (a structured dict, not stored as a str -- scoring needs to read it)
 
-用法(冒烟,val 分区 2 题;测试堆不拿来调试):
+Usage (smoke test, 2 tasks from the val split; do not use the test set for debugging):
   envs/appworld/venv/bin/python pipeline/inject/live_appworld.py \\
       --base-url http://tokyo108:8103/v1 --probe-url http://tokyo108:8790 \\
       --split dev --n 2 --outdir pipeline/inject/runs/live_smoke \\
       --exp live_smoke
-  对照臂(同路径不挂探针,回放线 nofill 的活跑版): 加 --no-probe
-  probe but nofill 臂(ident3,2026-08-18;探针权重已删,伪触发):
-      加 --fire-nth-cut 5 --nofill(第 5 个句尾切口中断,head 用模型自己的
-      token id 原样重发,什么都不塞)
+  Control arm (same path with the probe unattached, the live-run version of the replay line's nofill): add --no-probe
+  probe but nofill arm (ident3, 2026-08-18; probe weights deleted, fake firing):
+      add --fire-nth-cut 5 --nofill (interrupt at the 5th sentence-end cut, resend the head using the
+      model's own token ids unchanged, inject nothing)
 
-v6(2026-08-18 ident3):流带 return_token_ids,gen 记录多 gen_ids(整步 token id);
-开火重发 prompt = prefix_ids + gen_ids[:k](切口退到 token 边界,/decode 核对)
-+ /encode(NOTE),不再整段重分词;spec 记 overflow_ids(中断时丢弃的 id),
-resume 记录记重发续写与之逐位比的 match_len/identical。
+v6 (2026-08-18 ident3): the stream carries return_token_ids, gen records now also carry gen_ids (the
+whole step's token ids); on firing, the resend prompt = prefix_ids + gen_ids[:k] (the cut backs off to a
+token boundary, checked via /decode) + /encode(NOTE), no longer re-tokenizing the whole segment; spec
+records overflow_ids (the ids discarded on interruption), and resume records the match_len/identical from
+comparing the resent continuation against them position by position.
 """
 
 import argparse
@@ -72,53 +80,59 @@ from replay_inject import DEFAULT_STOP, NOTE_TMPL              # noqa: E402
 
 APPWORLD_HOME = "/home/y-guo/reproduce/new1/envs/appworld"
 END_MARK = "<|end|>"
-MAX_BOUNDS = 64            # rules.MAX_BOUNDS 同值:活跑最多查这么多切口(§4.2)
-MAX_STEP_TOKENS = 8192     # 采集时 max_tokens=8192(common.py:20),整步上限对齐
+MAX_BOUNDS = 64            # same value as rules.MAX_BOUNDS: the live run checks at most this many cuts (§4.2)
+MAX_STEP_TOKENS = 8192     # max_tokens=8192 at collection time (common.py:20), aligned with the per-step cap
 
-# --preset 合并的兜底缺省。merge_client 只处理 cli∪fallbacks 里出现过的键,
-# 采样键不在这张表里 = 预设写了也静默不生效(2026-08-21 之前 top_p/seed 就是
-# 这么丢的);覆盖面由 tests/test_preset.py 钉着。
+# Fallback defaults merged by --preset. merge_client only handles keys that appear in cli∪fallbacks;
+# a sampling key not in this table means the preset can set it and it silently has no effect
+# (before 2026-08-21 that is exactly how top_p/seed got dropped); coverage is pinned by tests/test_preset.py.
 PRESET_FB = {"reasoning_effort": "high",
              "max_tokens": MAX_STEP_TOKENS, "stop": DEFAULT_STOP,
              "top_p": None, "seed": None}
 
-# v4(2026-08-02):与 w0 的 chat 路径逻辑同构。三条对齐:
-# (1) 不预填通道头——prompt 止于 <|start|>assistant,模型自己写
-#     <|channel|>analysis<|message|>,与 chat 渲染逐字节相同;
-#     v5(2026-08-18):prompt 直接以 token id 发(/render 出 id,照抄 chat 端点
-#     渲染),不再让 completions 端点分词——空 content 轮与字面 <|...|> 标记
-#     两处的 chat/completions 口径差随之消掉(harmony_render.py 文件头);
-# (2) 流式一枪解码——一步一个 stream=true 请求,服务器不间断解码,
-#     只在探针真开火时 close() 中止重发(注入本身要改 prompt,缝不可约);
-# (3) 停止只认 <|return|>,final 后模型续写的消息照 vLLM HarmonyParser
-#     并进 content(chat 同款,含 1.3% 的伪造尾巴——消息级解析下是干净散文,
-#     v1 的毒是裸标记漏进文本,这里不存在)。
+# v4 (2026-08-02): isomorphic to w0's chat-path logic. Three points of alignment:
+# (1) No prefilled channel header -- the prompt stops at <|start|>assistant, the model writes its own
+#     <|channel|>analysis<|message|>, byte-identical to the chat endpoint's rendering;
+#     v5 (2026-08-18): the prompt is sent directly as token ids (/render produces the ids, copying the
+#     chat endpoint's rendering), no longer letting the completions endpoint tokenize -- this removes
+#     both the empty-content-turn and literal-<|...|>-marker discrepancies between chat/completions
+#     (see harmony_render.py file header);
+# (2) Streaming single-shot decoding -- one stream=true request per step, the server decodes without
+#     interruption, only close()s to abort and resend when the probe actually fires (injection itself
+#     must change the prompt, the seam cannot be avoided);
+# (3) Stop recognizes only <|return|>; the message the model continues writing after final is folded
+#     into content the same way vLLM's HarmonyParser does (same as chat, including the 1.3% fabricated
+#     tail -- under message-level parsing it is clean prose; v1's poison was bare markers leaking into
+#     the text, which does not happen here).
 
 
 def parse_step(full):
-    """整步生成文本 -> (thinking, content)。按 vLLM HarmonyParser 同款口径
-    切通道(vllm/parser/harmony.py::_SegmentType + parse):analysis->thinking,
-    final 与无收件人的 commentary->content,各自多段 \n 连接。
+    """Whole-step generated text -> (thinking, content). Splits channels the same way vLLM's HarmonyParser
+    does (vllm/parser/harmony.py::_SegmentType + parse): analysis->thinking,
+    final and commentary with no recipient->content, each joined across segments with \n.
 
-    2026-08-02 诊断教训:v2 及之前只取 final,把模型写在 commentary 通道的行动
-    叙述整段静默丢掉(step-0 实测 w0 content 带散文 152/168,活跑只有 4/168)。
-    喂回历史的"自己"长期没有散文,模型把叙述欲塞进 complete_task(answer=...),
-    而不问问题的题 answer 标准答案是 null,一塞就死。content 必须与 chat 逐字对齐。
+    2026-08-02 diagnosis lesson: v2 and earlier took only final, silently dropping the whole action
+    narration the model wrote on the commentary channel (step-0 measurement: w0 content carried prose in
+    152/168, the live run only 4/168). The "self" fed back into history had long carried no prose, so the
+    model stuffed its narrative urge into complete_task(answer=...) -- and for tasks that don't ask a
+    question, the reference answer is null, so stuffing it in kills the task. content must align with
+    chat character for character.
 
-    full 是 <|start|>assistant 之后的全部生成文本:首条消息自带
-    <|channel|>analysis<|message|> 头(v4 不预填);兼容老口径(头在 prompt 里,
-    full 直接以正文开头)。<|return|> 是引擎停止符,文本里若出现(理论分支)
-    从它起全部截掉——引擎在那本来就停了。"""
+    full is the entire generated text after <|start|>assistant: the first message carries its own
+    <|channel|>analysis<|message|> header (v4 does not prefill it); backward compatible with the old
+    convention (the header is in the prompt, full starts directly with the body). <|return|> is the
+    engine's stop token; if it appears in the text (a theoretical branch) everything from it onward is
+    truncated -- the engine had already stopped there anyway."""
     full = full.split("<|return|>", 1)[0]
     reasoning, content = [], []
     for i, seg in enumerate(full.split(END_MARK)):
         if i == 0 and not seg.lstrip().startswith("<|channel|>"):
-            ch, has_rcpt, body = "analysis", False, seg   # 老口径:头在 prompt
+            ch, has_rcpt, body = "analysis", False, seg   # old convention: header is in the prompt
         else:
             hdr, sep, body = seg.partition("<|message|>")
             hdr = hdr.strip()
-            # 合法头 = [<|start|>assistant[ to=x]]<|channel|>CH[垃圾];
-            # 非助手消息(伪造 user/system 回合)或残段一律丢——vLLM 同款。
+            # valid header = [<|start|>assistant[ to=x]]<|channel|>CH[junk];
+            # non-assistant messages (fake user/system turns) or fragments are always dropped -- same as vLLM.
             if not sep or not (hdr.startswith("<|start|>assistant")
                                or hdr.startswith("<|channel|>")):
                 continue
@@ -133,8 +147,8 @@ def parse_step(full):
 
 
 def think_span(raw):
-    """raw(<|start|>assistant 之后的生成文本)里 analysis 正文的 (start, end)。
-    头没写全或首条消息不是 analysis 返回 None;end 在消息未闭合时 = len(raw)。"""
+    """The (start, end) of the analysis body within raw (the generated text after <|start|>assistant).
+    Returns None if the header is incomplete or the first message is not analysis; end = len(raw) when the message is unclosed."""
     m = raw.find("<|message|>")
     if m < 0:
         return None
@@ -147,33 +161,38 @@ def think_span(raw):
 
 
 def sent_starts(text):
-    """句尾切口按**起点**(标点之后、空白之前,`m.start()`)列出——活跑用这个。
-    流式下句尾空白是一段段到的:`. ` 先到、`\\n` 后到,按 `m.end()` 记的话同一个
-    句尾会先后算成两个切口(p 与 p+1),"第 N 个切口"就随分块变;起点不随后续
-    空白移动,同一句尾永远只算一次。MIN_THINK//2 过滤照旧(strip 后长度,与
-    end 口径等价)。回放线的 sent_cuts(按 end)保持不动。"""
+    """Sentence-end cuts are listed by **start** (after the punctuation, before the whitespace, `m.start()`)
+    -- the live run uses this.
+    Under streaming, the sentence-end whitespace arrives in pieces: `. ` arrives first, `\\n` arrives
+    later; recording by `m.end()` would count the same sentence end as two cuts in sequence (p and p+1),
+    so "the Nth cut" would shift with chunking; the start does not move as later whitespace arrives, so
+    the same sentence end is only ever counted once. The MIN_THINK//2 filter stays as before (length
+    after strip, equivalent to the end-based criterion). The replay line's sent_cuts (by end) is left
+    unchanged."""
     pts = sorted({m.start() for m in SENT_RE.finditer(text)})
     return [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
 
 
 def sent_cuts(text):
-    """真实句子级切口(不含全文末尾伪切口)。
+    """Real sentence-level cuts (excludes the fake cut at the end of the full text).
 
-    与 rules.boundaries 的差别(设计书 §4.2):不做 MAX_BOUNDS 等距抽样——
-    抽样结果随文本增长而变,活跑下会让"已探测过的切口"集合失效;上限改由
-    调用方数"已探测次数"来管。MIN_THINK 过滤照抄。
+    Difference from rules.boundaries (design doc §4.2): does not do MAX_BOUNDS evenly-spaced sampling --
+    the sampled result changes as the text grows, which under a live run would invalidate the set of
+    "already-probed cuts"; the cap is instead managed by the caller counting "times already probed".
+    The MIN_THINK filter is copied as-is.
     """
     pts = sorted({m.end() for m in SENT_RE.finditer(text)})
     return [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
 
 
 class Stream:
-    """流式 /v1/completions。iter 出 (文本增量, token id 增量);中途 close()
-    即中止服务端解码。请求带 return_token_ids=True(vLLM 0.26:每块的
-    token_ids 与 text 是同一步解码的增量,文本可能因未凑齐的 UTF-8 字节
-    滞后于 id,所以两者按块一起交出去,调用方按块记边界)。
-    收尾后 finish/usage 可读(带 include_usage;被中止时 usage 为 None,
-    调用方用收到的 id 数记 gen token)。"""
+    """Streaming /v1/completions. Yields (text delta, token id delta); calling close() partway through
+    aborts server-side decoding. The request carries return_token_ids=True (vLLM 0.26: each chunk's
+    token_ids and text are deltas from the same decoding step, but the text can lag behind the ids
+    when UTF-8 bytes are not yet complete, so both are handed out together per chunk and the caller
+    records boundaries per chunk).
+    After completion, finish/usage are readable (with include_usage; usage is None when aborted,
+    and the caller counts gen tokens using the number of ids received)."""
 
     def __init__(self, base_url, payload, timeout):
         url = base_url.rstrip("/") + "/completions"
@@ -229,8 +248,9 @@ def open_stream(base_url, payload, timeout, retries=3):
 
 
 def sample_extras(a):
-    """top_p/seed 只在显式给了的时候进请求体(envs/collect/common.py 的
-    Chat._sample_extras 同款口径):不给时请求体与加这两个键之前逐字节一致。"""
+    """top_p/seed only go into the request body when explicitly given (same convention as
+    Chat._sample_extras in envs/collect/common.py): when not given, the request body is byte-identical
+    to what it was before these two keys were added."""
     d = {}
     if getattr(a, "top_p", None) is not None:
         d["top_p"] = a.top_p
@@ -240,8 +260,8 @@ def sample_extras(a):
 
 
 def gen_payload(a, prompt, max_tokens):
-    """主生成请求的请求体。预设 client 节的采样键(temperature/top_p/
-    max_tokens/stop/seed)全在这一处落地,tests/test_preset.py 钉着。"""
+    """The request body for the main generation request. All the sampling keys from the preset's client
+    section (temperature/top_p/max_tokens/stop/seed) land here, pinned by tests/test_preset.py."""
     return dict(model=a.model, prompt=prompt, max_tokens=max_tokens,
                 temperature=a.temperature, stop=a.stop,
                 skip_special_tokens=False, **sample_extras(a))
@@ -266,7 +286,7 @@ def http_json(url, payload, timeout=600, retries=3):
 
 
 class W:
-    """一题一个 jsonl,逐条 flush(进程被杀不白跑)。"""
+    """One jsonl per task, flushed record by record (a killed process does not lose the run)."""
 
     def __init__(self, path, meta):
         self.f = open(path, "w")
@@ -281,8 +301,8 @@ class W:
 
 
 def speculate(world, gen_call, t_frozen, dt_guard):
-    """正身世界上"存档->执行预测调用->回档->重冻时间->断言"。
-    【照抄 exec_calls.replay_unit 的三连】。返回 spec 记录字段。"""
+    """On the live world: "save state -> execute the predicted call -> restore state -> refreeze time ->
+    assert". [Copied from exec_calls.replay_unit's three-step sequence.] Returns the spec record fields."""
     code_x, modes = requote(gen_call, world.shell.user_ns)
     world.save_state(CKPT)
     try:
@@ -293,17 +313,19 @@ def speculate(world, gen_call, t_frozen, dt_guard):
         if dt_guard:
             now = world.execute("print(DateTime.now())").strip()
             if now != t_frozen:
-                raise RuntimeError(f"回档后时间漂了:{now!r} != {t_frozen!r}")
+                raise RuntimeError(f"time drifted after the restore: {now!r} != {t_frozen!r}")
     ek = error_kind(eout)
     return dict(exec_code=code_x, arg_modes=modes, exec_out=eout,
                 exec_ok=(ek is None), error_kind=ek)
 
 
 def token_boundary(bounds, pos):
-    """bounds = 每个流块结束处的 (n_chars, n_ids),n_chars 单调不减;
-    返回不晚于字符位 pos 的最后一个边界 (n_chars, n_ids)。同一 n_chars 有多个
-    边界(文本滞后于 id)时取 id 数最少的那个。没有就返回 None。
-    只当 find_head 的起点:流文本会落后于 id(见 find_head),块边界不是准的。"""
+    """bounds = the (n_chars, n_ids) at the end of each stream chunk, n_chars monotonically non-decreasing;
+    returns the last boundary (n_chars, n_ids) no later than character position pos. When the same
+    n_chars has multiple boundaries (text lagging behind ids), takes the one with the fewest ids.
+    Returns None if there is none.
+    Only used as find_head's starting point: the stream text lags behind the ids (see find_head), so
+    chunk boundaries are not exact."""
     best = None
     for c, k in bounds:
         if c > pos:
@@ -314,56 +336,63 @@ def token_boundary(bounds, pos):
 
 
 def find_head(gen_ids, raw, pos, k0, decode):
-    """head = 最短的 id 前缀,其解码文本盖住字符位 pos(句尾切口的起点 = 标点
-    之后)。返回 (k, head_text)。也就是"含句尾标点的那个 token"为止:`.` 与
-    ` Then` 分开时 head 止于 `.`;`.\\n\\n` 是一个 token 时 head 连它一起。
-    这个规则只看模型的 token 序列,不看流怎么分块。
+    """head = the shortest id prefix whose decoded text covers character position pos (the start of a
+    sentence-end cut = right after the punctuation). Returns (k, head_text). In other words, up through
+    "the token that contains the sentence-end punctuation": when `.` and ` Then` are separate tokens,
+    head stops at `.`; when `.\\n\\n` is one token, head includes all of it.
+    This rule only looks at the model's token sequence, not how the stream is chunked.
 
-    为什么不能按块边界 (len(raw), len(gen_ids)) 算:vLLM 有 stop 串时压着
-    len(stop)-1 个字符不吐(v1/engine/detokenizer.py get_next_output_text 的
-    stop_buffer_length,<|return|> 是 10 字符 → 文本恒比 id 落后 9 字符 ≈ 2 个
-    token;smoke 实测 decode(head_ids) 多出 ' We have'),多字节字符没凑齐时也压;
-    生产端快过消费端时几个 token 并成一块。所以 k 要拿 decode 逐个核出来,
-    块边界 k0 只当起点。decode 是 HTTP 调用,每次开火通常只要几次。
-    head_text 与流文本的公共部分必须逐字相同(不同就抛错,不静默)。"""
+    Why this can't be computed from the chunk boundary (len(raw), len(gen_ids)): when vLLM has a stop
+    string, it withholds the last len(stop)-1 characters (stop_buffer_length in
+    v1/engine/detokenizer.py's get_next_output_text; <|return|> is 10 characters -> the text is always
+    about 9 characters, roughly 2 tokens, behind the ids; smoke test measured decode(head_ids) producing
+    an extra ' We have'), and it also withholds when multi-byte characters are not yet complete;
+    several tokens get merged into one chunk when the producer runs faster than the consumer. So k must
+    be verified with decode one at a time, and the chunk boundary k0 is only used as a starting point.
+    decode is an HTTP call, usually only a few calls per fire.
+    The part head_text shares with the stream text must match character for character (mismatch raises
+    an error, never silently)."""
     if not gen_ids:
-        raise RuntimeError("find_head: 还没有生成 id")
+        raise RuntimeError("find_head: no generated ids yet")
     k = max(1, min(k0, len(gen_ids)))
     txt = decode(gen_ids[:k])
-    while len(txt) < pos and k < len(gen_ids):          # 往前进到盖住 pos
+    while len(txt) < pos and k < len(gen_ids):          # advance forward until it covers pos
         k += 1
         txt = decode(gen_ids[:k])
-    while k > 1:                                        # 再退到最短
+    while k > 1:                                        # then back off to the shortest
         prev = decode(gen_ids[:k - 1])
         if len(prev) < pos:
             break
         k, txt = k - 1, prev
     if len(txt) < pos:
-        raise RuntimeError(f"find_head: 全部 {len(gen_ids)} 个 id 解码后 "
-                           f"({len(txt)} 字符)盖不住切口 {pos}")
+        raise RuntimeError(f"find_head: decoding all {len(gen_ids)} ids gives "
+                           f"({len(txt)} chars), which does not cover the cut at {pos}")
     n = min(len(txt), len(raw))
     if txt[:n] != raw[:n]:
-        raise RuntimeError(f"find_head: decode(ids[:{k}]) 与流文本不一致:"
+        raise RuntimeError(f"find_head: decode(ids[:{k}]) does not match the streamed text: "
                            f"{txt[max(0, n - 60):n]!r} vs {raw[max(0, n - 60):n]!r}")
     return k, txt
 
 
 def ids_sha(ids):
-    """token id 列表的 sha1(逗号串);chat 臂存整段 prompt_token_ids,
-    活跑臂只存这个,打分侧两边算同一个 sha 就是逐 id 比。"""
+    """sha1 of the token id list (comma-joined string); the chat arm stores the whole prompt_token_ids,
+    the live-run arm only stores this -- if both sides compute the same sha on the scoring side, that
+    is an id-for-id comparison."""
     return hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()
 
 
 def sep_for(head):
-    """NOTE 前的缝(2026-08-18 splice_replay D5'):head 以空白结尾就不再加换行
-    (换行切口另起一行、空格切口 inline),否则加一个 \\n。head 是模型自己的
-    token,NOTE 单独编码,模型的最后一个 token 不会被合并改写。"""
+    """The seam before NOTE (2026-08-18 splice_replay D5'): if head ends in whitespace, no newline is added
+    (a newline cut starts its own new line, a space cut stays inline), otherwise one \\n is added. head
+    is the model's own tokens, NOTE is encoded separately, so the model's last token is never merged or
+    rewritten."""
     return "" if head[-1:].isspace() else "\n"
 
 
 def log_resume(log, step, pending, gen_ids, st):
-    """重发续写出的同位新 id 与上次中断时被丢弃的 id 逐位比
-    (nofill 下这就是"token 同的重发能不能复现模型自己的续写")。"""
+    """Compares, position by position, the new ids from the resent continuation against the ids discarded
+    at the last interruption (under nofill this is "can an id-identical resend reproduce the model's own
+    continuation")."""
     new = gen_ids[pending["head_tok"] + pending["note_tok"]:]
     ov = pending["overflow_ids"]
     m = 0
@@ -376,38 +405,43 @@ def log_resume(log, step, pending, gen_ids, st):
 
 
 def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
-    """v4:一步一枪流式生成,与 w0 的 chat 解码同构。
-    prefix_ids = harmony 前缀 token id,止于 <|start|>assistant(无预填);
-    raw = 之后的全部生成文本(模型自己写通道头),gen_ids = 与之对应的 token id
-    (流带 return_token_ids,逐块攒;v6 2026-08-18 ident3)。
-    发请求时 prompt = prefix_ids + gen_ids:不出手的步 prompt 就是 chat 端点
-    会喂给引擎的那串 id;开火后重发的 head 也是模型自己生成的 id 原样
-    (切口退到不晚于它的 token 边界,重发前 /decode 核对),NOTE 单独 /encode
-    接在后面——不再把文本整段重分词,重分词缝只剩 NOTE 自己。
-    探测骑在流上:新句子切口出现就打分(真探针 /score;或 --fire-nth-cut 伪
-    触发:第 N 个切口开火),开火才 close() 中断、(--nofill 则什么都不塞)、重发
-    续写——不开火的步是单请求不间断解码,与 chat 完全同款。
-    每次中断把切口后已生成、被丢弃的 id 存进 spec 记录(overflow_ids),重发续
-    写出的同位新 id 与它逐位比,写一条 resume 记录(match_len/identical)。
-    返回 (thinking, content, usage聚合, 溢出账, 出手数, gen_ids)。"""
+    """v4: one-shot streaming generation per step, isomorphic to w0's chat decoding.
+    prefix_ids = the harmony prefix token ids, stopping at <|start|>assistant (no prefill);
+    raw = all the generated text after that (the model writes its own channel header), gen_ids = the
+    corresponding token ids (the stream carries return_token_ids, accumulated chunk by chunk; v6
+    2026-08-18 ident3).
+    When sending the request, prompt = prefix_ids + gen_ids: on a step that does not fire, prompt is
+    exactly the id string the chat endpoint would feed the engine; after firing, the resent head is also
+    the model's own generated ids unchanged (the cut backs off to a token boundary no later than it,
+    checked via /decode before resending), with NOTE appended via its own /encode -- the text is no
+    longer re-tokenized as a whole, so the only re-tokenization seam left is NOTE itself.
+    Probing rides on the stream: scoring happens as soon as a new sentence cut appears (the real probe's
+    /score; or fake firing via --fire-nth-cut: fires at the Nth cut), and only firing triggers close() to
+    interrupt (with --nofill, nothing gets injected) and a resend continuation -- a step that does not
+    fire is a single request decoded without interruption, exactly the same as chat.
+    Each interruption stores the ids generated after the cut and then discarded into the spec record
+    (overflow_ids); the new ids from the resend continuation are compared to them position by position,
+    writing a resume record (match_len/identical).
+    Returns (thinking, content, aggregated usage, overflow account, fire count, gen_ids)."""
     raw = ""
     gen_ids = []
-    bounds = [(0, 0)]          # 每块结束处 (len(raw), len(gen_ids))
+    bounds = [(0, 0)]          # (len(raw), len(gen_ids)) at the end of each chunk
     usage = dict(prompt_tok=0, gen_tok=0, req=0)
     discard = dict(chars=0, tokens=0, events=0)
-    checked = set()            # 已探测切口(thinking 坐标)
+    checked = set()            # already-probed cuts (thinking coordinates)
     n_checked = 0
     n_inject = 0
     probing = not a.no_probe
-    accepted = 0               # 注入点之前的 thinking 长度(重启后不回探)
-    pending = None             # 上次中断丢弃的 id,等重发续写出来后逐位比
+    accepted = 0               # thinking length before the injection point (do not re-probe after restart)
+    pending = None             # ids discarded at the last interruption, compared position by position once the resend continuation comes back
 
     while True:
-        # prompt 一律 token id:前缀来自 /render(chat 同款渲染);gen_ids 是
-        # 模型自己生成的 id(开火后 = head_ids + NOTE 的 id)
+        # prompt is always token ids: the prefix comes from /render (same rendering as chat); gen_ids are
+        # the ids the model generated itself (after firing = head_ids + NOTE's ids)
         prompt = list(prefix_ids) + list(gen_ids)
-        # 步预算按**留下的** id 算(chat 一步 8192 全是留下的;中断丢弃的溢出
-        # 只进 usage 账,不吃预算——否则 nofill 步比别的臂早顶到 length)
+        # the step budget is counted by the ids **kept** (in chat, all 8192 of a step's ids are kept; the
+        # overflow discarded on interruption only counts against usage, not the budget -- otherwise nofill
+        # steps would hit the length cap earlier than the other arms)
         st = open_stream(a.base_url, gen_payload(
             a, prompt, max(1, a.max_step_tokens - len(gen_ids))), a.timeout)
         usage["req"] += 1
@@ -419,13 +453,13 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
             if not probing or n_inject >= a.max_inject_per_step:
                 continue
             if not any(c in delta for c in ".!?\n"):
-                continue           # 没有新句尾就不必重扫(流式逐 token 到达)
+                continue           # no need to rescan without a new sentence end (tokens arrive one by one in the stream)
             span = think_span(raw)
             if span is None:
-                continue           # 通道头还没写全
+                continue           # the channel header is not fully written yet
             ts, te = span
             if te < len(raw):
-                probing = False    # analysis 已闭合,进入 commentary/final
+                probing = False    # analysis has closed, moving into commentary/final
                 continue
             t_all = raw[ts:]
             for cut in sent_starts(t_all):
@@ -437,7 +471,7 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
                 checked.add(cut)
                 n_checked += 1
                 if a.fire_nth_cut:
-                    # 伪触发(探针权重已删):第 N 个切口开火,不打 /score /gen
+                    # fake firing (probe weights deleted): fires at the Nth cut, does not call /score /gen
                     s = dict(conf=None, label=None,
                              fired=(n_checked == a.fire_nth_cut))
                 else:
@@ -445,8 +479,8 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
                                   dict(text=assemble(task, hist, t_all[:cut])))
                 if not s["fired"]:
                     continue
-                # ---- 开火:head = 盖住句尾标点的最短 id 前缀(模型自己的 id)----
-                pos = ts + cut                          # raw 坐标(标点之后)
+                # ---- fire: head = the shortest id prefix covering the sentence-end punctuation (the model's own ids)----
+                pos = ts + cut                          # raw coordinates (after the punctuation)
                 _, k0 = token_boundary(bounds, pos)
                 k, head_txt = find_head(
                     gen_ids, raw, pos, k0,
@@ -481,21 +515,22 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
                            head_tail=head_txt[-40:],
                            n_chunks=st.n_chunks,
                            overflow_ids=overflow_ids, **spec))
-                if pending is not None:     # 同步第二次开火:先把上次的账结掉
+                if pending is not None:     # synchronize a second fire: settle last time's account first
                     log_resume(log, step, pending, gen_ids, st)
-                raw = head_txt + note        # 文本以 decode(head) 为准,溢出丢弃
+                raw = head_txt + note        # text is taken from decode(head), overflow discarded
                 gen_ids = head_ids + note_ids
                 bounds = [(len(raw), len(gen_ids))]
                 pending = dict(head_tok=k, note_tok=len(note_ids),
                                overflow_ids=overflow_ids)
                 accepted = (len(head_txt) - ts) + len(note)
-                checked = set()                # 偏移整体位移,旧集合作废
+                checked = set()                # offsets shift as a whole, the old set is invalidated
                 n_inject += 1
                 fired = True
                 break
             if fired:
                 break
-        # 账:完整收尾有 usage;被中止时用本请求收到的 id 数(含丢弃的溢出)
+        # accounting: usage is available on a clean finish; when aborted, use the id count received on this
+        # request (including the discarded overflow)
         if st.usage:
             usage["prompt_tok"] += st.usage.get("prompt_tokens", 0)
             usage["gen_tok"] += st.usage.get("completion_tokens", 0)
@@ -506,42 +541,46 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
             pending = None
         if fired:
             st.close()
-            continue               # 开火后续写(head 是模型自己的 id)
-        break                      # stop=<|return|> 或预算打满,整步收官
+            continue               # continuation after firing (head is the model's own ids)
+        break                      # stop=<|return|> or the budget is exhausted, the step wraps up
 
-    # 收官核对:文本与 id 要对得上(decode(gen_ids) = raw + 停止 token 的文本
-    # 或 = raw)。不等就打印告警并把 text_ids_consistent=False 记进 gen 记录,
-    # 打分侧能看见;不在这里抛——整题成绩不能因记录核对失败作废。
+    # wrap-up check: text and ids must line up (decode(gen_ids) = raw + the stop token's text, or = raw).
+    # If not, print a warning and record text_ids_consistent=False in the gen record so the scoring side
+    # can see it; do not raise here -- the whole task's score must not be voided by a record-consistency
+    # check failing.
     consistent = None
     if n_inject:
         full = http_json(a.probe_url + "/decode", dict(ids=gen_ids))["text"]
         consistent = full.startswith(raw) and \
             full[len(raw):] in ("", "<|return|>", "<|call|>")
         if not consistent:
-            print(f"    WARN step {step}: decode(gen_ids) 与 raw 不一致 "
+            print(f"    WARN step {step}: decode(gen_ids) does not match raw "
                   f"(len {len(full)} vs {len(raw)})", flush=True)
     t_final, content = parse_step(raw)
     return (t_final, content, usage, discard, n_inject, gen_ids, consistent)
 
 
 def probe_cfg_problem(cfg, need_decode=False):
-    """/health 回显不合口径就给一句拒跑理由,合口径返回 None。
-    老服务的 /render 出的是 jinja 文本,与 chat 端点两处不齐(harmony_render.py
-    文件头);教训:老 8790 曾静默丢 effort 字段按 high 渲,指错服务不报错只出错数。"""
+    """If the /health echo doesn't match expectations, gives one reason to refuse the run; returns None if
+    it matches. An old service's /render produces jinja text, which diverges from the chat endpoint in
+    two places (see harmony_render.py file header); lesson: an old 8790 once silently dropped the effort
+    field and rendered at high -- pointing at the wrong service doesn't error, it just produces wrong
+    numbers."""
     if cfg.get("render") != "harmony_ids":
-        return (f"probe 服务 /health 没回 render=harmony_ids(拿到 "
-                f"{cfg.get('render')!r}),是旧版 probe_server,拒跑")
+        return (f"probe service /health did not return render=harmony_ids (got "
+                f"{cfg.get('render')!r}), this is an old probe_server, refuse to run")
     if need_decode and not cfg.get("decode"):
-        return ("probe 服务 /health 没回 decode=true:开火重发要 /decode 核对 "
-                "head_ids(2026-08-18 ident3),是旧版 probe_server,拒跑")
+        return ("probe service /health did not return decode=true: firing and resending needs /decode to check "
+                "head_ids (2026-08-18 ident3), this is an old probe_server, refuse to run")
     return None
 
 
 def claim(outdir, tid):
-    """mkdir 抢票(NFS 上原子)。谁建成谁跑,输家静默跳过。
+    """Claim a ticket via mkdir (atomic on NFS). Whoever creates it runs it, losers skip silently.
 
-    票根只在工人硬死(连 task_error final 都没写)时残留,所以发射脚本
-    每次起跑前整个清掉 .claims/——凡是没有 final 的题都重新开抢。
+    A ticket stub only lingers when a worker dies hard (without even writing a task_error final), so
+    the launch script wipes .claims/ entirely before every start -- any task without a final gets
+    reclaimed.
     """
     d = outdir / ".claims"
     d.mkdir(exist_ok=True)
@@ -554,57 +593,58 @@ def claim(outdir, tid):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--base-url", required=True, help="vLLM /v1 端点")
-    ap.add_argument("--probe-url", required=True, help="probe_server 端点")
+    ap.add_argument("--base-url", required=True, help="vLLM /v1 endpoint")
+    ap.add_argument("--probe-url", required=True, help="probe_server endpoint")
     ap.add_argument("--model", default=None,
-                    help="缺省 gpt-oss-120b(预设也没给时)")
+                    help="default gpt-oss-120b (when the preset gives none either)")
     ap.add_argument("--split", default="test_normal")
-    ap.add_argument("--n", type=int, default=0, help="0 = 整个 split")
+    ap.add_argument("--n", type=int, default=0, help="0 = the whole split")
     ap.add_argument("--task-ids", default="",
-                    help="逗号分隔,点名只跑这些题(冒烟验证用);"
-                         "先于 --n 与分片/领题生效")
+                    help="comma-separated, name only these tasks to run (for smoke test verification); "
+                         "takes effect before --n and piece/task-claiming")
     ap.add_argument("--max-steps", type=int, default=20)
     ap.add_argument("--outdir", required=True)
-    ap.add_argument("--exp", required=True, help="appworld experiment_name 前缀")
+    ap.add_argument("--exp", required=True, help="appworld experiment_name prefix")
     ap.add_argument("--chunk-tokens", type=int, default=64)
     ap.add_argument("--tail-tokens", type=int, default=1024,
-                    help="<|end|> 之后(或不挂探针时)的段长")
+                    help="segment length after <|end|> (or when no probe is attached)")
     ap.add_argument("--max-inject-per-step", type=int, default=1)
     ap.add_argument("--preset", default="default",
-                    help="configs/presets/<名>.json 的一套生成设置"
-                         "(effort/temperature/top_p/步预算/stop/seed);"
-                         "缺省 default;命令行显式给的参数压过预设值")
+                    help="a set of generation settings from configs/presets/<name>.json"
+                         "(effort/temperature/top_p/step budget/stop/seed);"
+                         "default is default; parameters given explicitly on the command line override the preset")
     ap.add_argument("--effort", default=None,
                     choices=["high", "medium", "low"],
-                    help="harmony 模板的 Reasoning 档;缺省 high(预设也没给时)。"
-                         "采集口径=high,effort 对照臂传 low/medium")
+                    help="the harmony template's Reasoning level; default high (when the preset gives none either). "
+                         "collection settings = high, the effort control arm passes low/medium")
     ap.add_argument("--no-probe", action="store_true",
-                    help="对照臂:同一条分段生成路径,不挂探针不注入")
+                    help="control arm: the same segmented generation path, no probe attached, no injection")
     ap.add_argument("--fire-nth-cut", type=int, default=0,
-                    help="伪触发(探针权重已删时用):每步第 N 个句尾切口开火一次,"
-                         "不打 /score;0=用真探针 /score")
+                    help="fake trigger (used when probe weights have been deleted): fire once at the Nth sentence-end cut "
+                         "of each step, do not call /score; 0 = use the real probe's /score")
     ap.add_argument("--nofill", action="store_true",
-                    help="开火时什么都不塞(不 /gen、不投机执行、不写 NOTE),"
-                         "只中断+按模型自己的 token id 重发续写")
+                    help="when firing, insert nothing at all (no /gen, no speculative execution, no NOTE written), "
+                         "only interrupt and refire the continuation using the model's own token ids")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--pool", action="store_true",
-                    help="动态领题:工人跑完一题就去全量单抢下一题(mkdir 原子票),"
-                         "慢题不再堵死静态分片;--shard-id 退化为工人号")
+                    help="dynamic task claiming: once a worker finishes a task, it claims the next one from the full "
+                         "task list (mkdir as an atomic ticket); slow tasks no longer block a static piece; --shard-id degrades to a worker number")
     ap.add_argument("--keep-outputs", action="store_true",
-                    help="保留 appworld 每题的输出目录(默认跑完即删,配额教训)")
+                    help="keep each task's appworld output dir (deleted right after finishing by default, a lesson from quota limits)")
     ap.add_argument("--selftest-shadow", metavar="TRAJ",
-                    help="不连任何服务:重放这条已采轨迹的前若干步,做一次"
-                         "存档/执行/回档三连,再继续重放并逐字核对——证明投机"
-                         "执行不污染正身。")
+                    help="connect to no service: replay the first several steps of this already-collected trajectory, do a"
+                         "save/execute/restore three-step combo once, then keep replaying and check character by"
+                         "character -- to prove speculative execution does not pollute the live world.")
     a = ap.parse_args()
     if a.no_probe and (a.fire_nth_cut or a.nofill):
-        ap.error("--no-probe 与 --fire-nth-cut/--nofill 互斥(no probe 臂不开火)")
+        ap.error("--no-probe is mutually exclusive with --fire-nth-cut/--nofill (the no-probe arm does not fire)")
 
-    # --preset 合并(CLI 显式值 > 预设 client 节 > 原缺省),展开值挂回 a,
-    # 下游只认 a.*;--preset 缺省 default,temperature 这个键只从预设文件来
+    # --preset merge (explicit CLI value > preset's client section > original default), the expanded
+    # values are hung back onto a; downstream only reads a.*; --preset defaults to default, and the
+    # temperature key comes only from the preset file
     root = str(Path(__file__).resolve().parents[2])
     if root not in sys.path:
         sys.path.append(root)
@@ -625,7 +665,7 @@ def main():
                or (pre.get("server") or {}).get("served_model_name")
                or "gpt-oss-120b")
 
-    # 路径一律先 resolve 再 chdir【exec_calls.py 同款教训】
+    # always resolve paths before chdir [same lesson as exec_calls.py]
     outdir = Path(a.outdir).resolve()
     shadow_traj = Path(a.selftest_shadow).resolve() if a.selftest_shadow \
         else None
@@ -637,7 +677,7 @@ def main():
     if shadow_traj:
         return selftest_shadow(AppWorld, shadow_traj, a)
 
-    # /render 两个臂都要(appworld venv 没有 transformers),服务必须在
+    # both arms need /render (the appworld venv has no transformers), the service must be up
     with urllib.request.urlopen(a.probe_url + "/health", timeout=30) as r:
         probe_cfg = json.loads(r.read())
     print(f"probe: {probe_cfg}", flush=True)
@@ -650,15 +690,16 @@ def main():
         want = [t.strip() for t in a.task_ids.split(",") if t.strip()]
         missing = sorted(set(want) - set(ids))
         if missing:
-            sys.exit(f"--task-ids 有 {len(missing)} 个不在 split "
+            sys.exit(f"--task-ids has {len(missing)} tasks not in split "
                      f"{a.split}: {missing}")
         ids = want
     if a.n:
         ids = ids[: a.n]
     if a.pool:
-        # 动态领题:不切片,所有工人抢同一张全量单;按工人号错位起跑,
-        # 抢锁碰撞只发生在追尾时。静态分片的教训:一道慢题堵死整条分片,
-        # 别的分片跑完了也帮不上,尾巴全是它拖的。
+        # dynamic task claiming: no slicing, all workers contend for the same full list; workers start
+        # staggered by worker number, so lock contention only happens near the tail. Lesson from static
+        # sharding: one slow task blocks its whole shard, and finishing the other shards can't help --
+        # the whole tail is stuck waiting on it.
         ids = ids[a.shard_id:] + ids[: a.shard_id]
     else:
         ids = ids[a.shard_id:: a.num_shards]
@@ -670,7 +711,7 @@ def main():
         out_path = outdir / f"live_{tid}.jsonl"
         if a.resume and out_path.exists() and \
                 '"type": "final"' in out_path.read_text():
-            if not a.pool:              # pool 模式 12 工人各刷一遍,太吵
+            if not a.pool:              # pool mode has all 12 workers each sweep through once, too noisy
                 print(f"task={tid} SKIP (done)", flush=True)
             continue
         if a.pool and not claim(outdir, tid):
@@ -678,8 +719,9 @@ def main():
         try:
             run_task(AppWorld, tid, exp, out_path, a, probe_cfg)
         except Exception as e:
-            # 单题炸了不许陪葬整个分片:补一条失败 final(resume 不会再撞),
-            # 打印后继续下一题。教训:首跑 400 没人接,5/24 分片整队阵亡
+            # one task crashing must not take the whole shard down with it: write a failed final (resume won't
+            # collide with it again), print and move on to the next task. Lesson: on the first run a 400 went
+            # unhandled and wiped out 5 of 24 shards.
             with open(out_path, "a") as f:
                 f.write(json.dumps(dict(
                     type="final", steps=-1, completed=False,
@@ -689,7 +731,7 @@ def main():
                     + "\n")
             print(f"task={tid} TASK_ERROR {type(e).__name__}: {str(e)[:200]}",
                   flush=True)
-        if not a.keep_outputs:             # appworld 每题 ~90KB,配额教训
+        if not a.keep_outputs:             # appworld is ~90KB per task, a quota lesson
             shutil.rmtree(Path("experiments/outputs") / exp / "tasks" / tid,
                           ignore_errors=True)
 
@@ -711,14 +753,14 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
             chunk_tokens=a.chunk_tokens, tail_tokens=a.tail_tokens,
             max_inject_per_step=a.max_inject_per_step,
             appworld_seed=APPWORLD_SEED, date=time.strftime("%Y-%m-%d")))
-        # 时间守卫基准【照抄 exec_calls】:开局冻结时刻
+        # time-guard baseline [copied from exec_calls]: the moment frozen at the start
         t_frozen = world.execute("print(DateTime.now())").strip()
         dt_guard = not t_frozen.startswith("Execution failed")
 
         msgs = [{"role": "system", "content": R.SYSTEM},
                 {"role": "user",
                  "content": f"Task from supervisor: {instr}"}]
-        hist = []                          # 探针输入的 (action, result) 历史
+        hist = []                          # the (action, result) history fed to the probe
         completed, step, abort = False, -1, None
         try:
             for step in range(a.max_steps):
@@ -726,12 +768,13 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
                                        dict(messages=msgs,
                                             effort=a.effort))["prefix_ids"]
                 t0 = time.time()
-                # v4:不预填通道头,prompt 止于 <|start|>assistant(chat 同款)
+                # v4: does not prefill the channel header, prompt stops at <|start|>assistant (same as chat)
                 (think, content, usage, discard, n_inj, gen_ids,
                  consistent) = gen_step(a, prefix_ids, instr, hist, world,
                                         t_frozen, dt_guard, log, step)
-                # prefix 不整段存(每步几万 id),存 sha1 + 长度;chat 臂存了整段
-                # prompt_token_ids,打分侧对 sha 就是逐 id 比
+                # the prefix is not stored whole (tens of thousands of ids per step); store sha1 + length instead;
+                # the chat arm stores the whole prompt_token_ids, so comparing sha on the scoring side is an
+                # id-for-id comparison
                 log.w(dict(type="gen", step=step, reasoning=think,
                            content=content, usage=usage, discard=discard,
                            n_inject=n_inj, wall_s=round(time.time() - t0, 2),
@@ -755,9 +798,9 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
                     completed = True
                     break
         except urllib.error.HTTPError as e:
-            # vLLM 400 = prompt 顶到 65536 上下文,连一个 chunk 都放不下,
-            # 这一题走不下去了。世界还开着:照常 evaluate,把失败记诚实。
-            # 双臂同规则中止,口径对称;非 400 照旧往上抛
+            # vLLM 400 = the prompt has hit the 65536 context limit, not even one chunk fits,
+            # this task cannot continue. The world is still open: evaluate as usual, record the failure honestly.
+            # Both arms abort under the same rule, so the criteria stay symmetric; a non-400 is still re-raised
             if e.code != 400:
                 raise
             abort = "context_overflow_400"
@@ -776,12 +819,14 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
 
 
 def selftest_shadow(AppWorld, traj_path, a):
-    """投机执行三连的无服务自检:重放已采轨迹前 K 步 -> 三连一次 -> 继续重放,
-    每步输出与轨迹录下的 result 逐字比。回档要是没回干净,后续步立刻漂。"""
+    """A no-service self-check of the speculative-execution three-step: replay the first K steps of an
+    already-collected trajectory -> run the three-step once -> continue replaying, comparing each step's
+    output against the result recorded in the trajectory character for character. If state restore isn't
+    clean, later steps drift immediately."""
     from exec_calls import load_steps
     steps = load_steps(traj_path)
     if len(steps) < 3:
-        print(f"轨迹只有 {len(steps)} 步,换条长的")
+        print(f"the trajectory has only {len(steps)} steps, switch to a longer one")
         return 1
     k = min(2, len(steps) - 1)
     tid = json.loads(open(traj_path).readline())["task_id"]
@@ -794,7 +839,7 @@ def selftest_shadow(AppWorld, traj_path, a):
         for i, (st, code, recorded) in enumerate(steps):
             if i == k:
                 spec = speculate(world, probe_call, t_frozen, dt_guard)
-                print(f"[三连@step{st}] exec_ok={spec['exec_ok']} "
+                print(f"[combo@step{st}] exec_ok={spec['exec_ok']} "
                       f"out={spec['exec_out'][:80]!r}", flush=True)
             got = str(world.execute(code))[:TRUNC]
             same = got == recorded
@@ -802,7 +847,7 @@ def selftest_shadow(AppWorld, traj_path, a):
             print(f"step{st} {'OK' if same else 'DRIFT'}", flush=True)
             if not same:
                 print(f"  want={recorded[:100]!r}\n  got ={got[:100]!r}")
-    print(f"selftest-shadow: {'PASS' if bad == 0 else f'FAIL({bad} 步漂了)'}",
+    print(f"selftest-shadow: {'PASS' if bad == 0 else f'FAIL({bad} steps drifted)'}",
           flush=True)
     return 1 if bad else 0
 

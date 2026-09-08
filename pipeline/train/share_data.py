@@ -1,18 +1,19 @@
-"""share_data.py —— cgen / cparam 共用的纯 CPU 数据与分词模块。
+"""share_data.py -- the pure-CPU data and tokenization module shared by cgen / cparam.
 
-给谁用:
-- `train_causal_share.py`(工单 03,新训练器,cgen/cparam 两格共用)
-- `train_causal_tool.py` / `pipeline/eval/eval_tool.py`(工单 02,只用
-  `read_position` 一个函数;`eval_tool.py` 要在 mbert-env 下 import 本模块)
+Used by:
+- `train_causal_share.py` (ticket 03, the new trainer, shared by the cgen/cparam cells)
+- `train_causal_tool.py` / `pipeline/eval/eval_tool.py` (ticket 02, uses only the
+  `read_position` function; `eval_tool.py` must import this module under mbert-env)
 
-模块顶层只许 stdlib 与 torch:两个旧训练器(`train_causal_callgen.py`、
-`train_causal_param.py`)模块层有 transformers >= 5.14 的版本门,mbert-env
-(transformers 4.57.6)下顶层 import 会 `raise SystemExit`,而 `eval_tool.py`
-在 mbert-env 下也要 import 本模块拿 `read_position`。所以对两个旧脚本
-(以及 `pipeline/annotate/rules.py`,同一条纪律)的 import 一律延迟到
-`load_events` 函数体内,`read_position` 不碰任何训练脚本。
+The module top level allows only stdlib and torch: the two old trainers
+(`train_causal_callgen.py`, `train_causal_param.py`) have a transformers >= 5.14 version
+gate at module level, and a top-level import under mbert-env (transformers 4.57.6) would
+`raise SystemExit`, while `eval_tool.py` also needs to import this module under mbert-env
+to get `read_position`. So imports of the two old scripts (and of `pipeline/annotate/rules.py`,
+under the same rule) are always deferred to inside the `load_events` function body;
+`read_position` never touches any training script.
 
-规则来源:`.scratch/kvshare-train/spec.md` 第 2、3、4、5、11.3 节。
+Rule source: `.scratch/kvshare-train/spec.md` sections 2, 3, 4, 5, 11.3.
 """
 import json
 import random
@@ -23,18 +24,21 @@ import torch
 
 _HERE = Path(__file__).resolve().parent
 
-# 右 pad 用的占位 token id。pad 行只在 batch_mask 里当 query 看自己(spec
-# 第 4 节:整行不可看会让 softmax 出 NaN),从不参与损失、也不会被任何真实
-# token 看到,所以这个 id 具体取什么值不影响任何真实输出,0 对任何词表都合法。
+# The placeholder token id used for right padding. A pad row only sees itself as a query
+# in batch_mask (spec section 4: a row that can see nothing at all makes softmax produce
+# NaN); it never takes part in the loss and is never seen by any real token, so the exact
+# value of this id doesn't affect any real output -- 0 is valid for any vocabulary.
 PAD_TOKEN_ID = 0
 
 
 def _lazy_imports():
-    """延迟 import 两个旧训练脚本的常量/函数,以及 `rules.MAX_BOUNDS`。
+    """Deferred import of the two old training scripts' constants/functions, plus
+    `rules.MAX_BOUNDS`.
 
-    两个旧脚本模块顶层有 transformers >= 5.14 的版本门,mbert-env 下顶层
-    import 会 `SystemExit`;这个函数只在真正要用它们的地方(`load_events`)
-    调用,不在 `share_data.py` 模块顶层碰它们(spec 3.3)。
+    The two old scripts have a transformers >= 5.14 version gate at module level, and a
+    top-level import under mbert-env would `SystemExit`; this function is called only where
+    they're actually needed (`load_events`), never touching them at `share_data.py`'s module
+    top level (spec 3.3).
     """
     train_dir = str(_HERE)
     if train_dir not in sys.path:
@@ -49,7 +53,7 @@ def _lazy_imports():
 
 
 def _lcp(a, b):
-    """`a`、`b` 的最长公共前缀长度(逐 token 比到第一个不同处)。"""
+    """The longest common prefix length of `a` and `b` (compared token by token up to the first difference)."""
     n = min(len(a), len(b))
     i = 0
     while i < n and a[i] == b[i]:
@@ -58,40 +62,45 @@ def _lcp(a, b):
 
 
 def _pad16(n):
-    """把 `n` 向上补到 16 的倍数,和 `batch_mask` 的 `L_pad` 补齐同口径。
+    """Round `n` up to a multiple of 16, matching the same convention as `batch_mask`'s `L_pad`
+    padding.
 
-    `chunk_by_budget`/`worst_blocks` 的预算判据都要用这个补齐后的长度
-    (spec 第 5 节;工单第 1 条:『chunk_by_budget 的预算判据同样用
-    L_pad』),不是补齐前的 `packed_len`——真实显存/算力看的是 `batch_mask`
-    补齐之后的物理块长度。
+    The budget criteria for `chunk_by_budget`/`worst_blocks` must both use this padded
+    length (spec section 5; ticket item 1: "chunk_by_budget's budget criterion also uses
+    L_pad"), not the pre-padding `packed_len` -- real GPU memory/compute is determined by
+    the physical block length after `batch_mask`'s padding.
     """
     return ((n + 15) // 16) * 16
 
 
 def full_token_ids(tok, full_text):
-    """事件全文分词,唯一算法源(spec 16.2):`load_events` 装 `e["full_ids"]`、
-    三个评测脚本的 `drop-event` 判据都调这个函数或下面的 `n_full_tokens`,
-    分词只有一份真源。`add_special_tokens=False, truncation=False`——不截断,
-    要的是全文真实 token 数。
+    """Tokenize the event's full text, the single algorithm source (spec 16.2): `load_events`
+    fills `e["full_ids"]`, and the `drop-event` criterion in all three eval scripts calls
+    this function or `n_full_tokens` below -- tokenization has exactly one source of truth.
+    `add_special_tokens=False, truncation=False` -- no truncation, what's wanted is the
+    real full-text token count.
     """
     return tok(full_text, add_special_tokens=False,
               truncation=False)["input_ids"]
 
 
 def n_full_tokens(tok, full_text):
-    """`full_token_ids` 只要长度时的薄封装(评测端的 `drop-event` 判据只要计数,
-    不需要 `full_ids` 本身)。"""
+    """A thin wrapper around `full_token_ids` for when only the length is needed (the eval
+    side's `drop-event` criterion only needs the count, not `full_ids` itself)."""
     return len(full_token_ids(tok, full_text))
 
 
 def event_full_texts(rows):
-    """按 event 分组,取每组 `sent_idx` 最大那一行的 `text`(spec 16.2)。
+    """Group by event, take the `text` of the row with the largest `sent_idx` in each group
+    (spec 16.2).
 
-    只给评测端的 `--overlong drop-event` 用:不过滤行,不动 `load_events`
-    里 `events_all.append(dict(...))` 那段分组——那段钉着 3.2 节的随机数
-    消耗顺序,这个函数是给评测端另起的一份、跟训练侧的抽样顺序无关。
+    Used only by the eval side's `--overlong drop-event`: it does not filter rows, and does
+    not touch the grouping in `events_all.append(dict(...))` inside `load_events` -- that
+    grouping is pinned to the random-number consumption order in section 3.2. This function
+    is a separate one written for the eval side, unrelated to the training side's sampling
+    order.
 
-    `rows`:一批原始行 dict(至少含 `event`、`sent_idx`、`text`)。
+    `rows`: a batch of raw row dicts (containing at least `event`, `sent_idx`, `text`).
     -> dict[event] -> full_text
     """
     groups = {}
@@ -102,35 +111,39 @@ def event_full_texts(rows):
 
 
 def select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new):
-    """按 `--overlong` 与 ctool 的行剔除筛选一批 key(事件)(spec 16.2)。
+    """Filter a batch of keys (events) by `--overlong` and ctool's row exclusions (spec 16.2).
 
-    `mode`:"left" / "skip" / "drop-event"。
-    `keys`:`dict[key] -> list[int]`,每个 key 的候选行下标列表——该事件在
-        ctool 的 `rows`/`logits_test.pt` 里对应的全部行下标。这份列表只用来
-        判"ctool 剔除之后这个 key 还有没有候选行",跟 `mode` 的筛选逻辑
-        (下面用 `n_full`/`prompt_len`)彼此独立。
-    `n_full`:`dict[key] -> int`,事件全文 token 数(只有 `mode="drop-event"`
-        时用得到;别的 mode 可以传空字典)。
-    `prompt_len`:`dict[key] -> int`,`L(k)`——提示 token 数(cparam 传两套
-        提示长度的最大值;`left`/`skip`/`drop-event` 三种 mode 都只用这一个
-        数判"提示是否超长")。
-    `excluded_rows`:`set[int]`,ctool 传来的剔除行下标集合(`rows`/`logits`
-        位置,`logits_test.meta.json` 的 `excluded_idx`)。
-    `max_len`、`max_new`:int。
+    `mode`: "left" / "skip" / "drop-event".
+    `keys`: `dict[key] -> list[int]`, the list of candidate row indices for each key --
+        all the row indices that event corresponds to in ctool's `rows`/`logits_test.pt`.
+        This list is used only to decide "does this key still have any candidate rows
+        after ctool's exclusion," independent of `mode`'s filtering logic (which uses
+        `n_full`/`prompt_len` below).
+    `n_full`: `dict[key] -> int`, the event's full-text token count (only needed when
+        `mode="drop-event"`; other modes can pass an empty dict).
+    `prompt_len`: `dict[key] -> int`, `L(k)` -- the prompt token count (cparam passes the
+        max of its two prompt lengths; all three modes `left`/`skip`/`drop-event` use only
+        this one number to decide "is the prompt too long").
+    `excluded_rows`: `set[int]`, the set of excluded row indices from ctool (`rows`/`logits`
+        positions, `logits_test.meta.json`'s `excluded_idx`).
+    `max_len`, `max_new`: int.
 
     -> (kept_keys: list[key], counts: dict(n_left_truncated, n_skipped_rows,
         n_dropped_events, n_excluded_by_ctool))
 
-    四个判据的顺序对每个 key 写死:先看 ctool 剔除(候选行剔光就整个 key
-    不判分,计 `n_excluded_by_ctool`,不再看下面的 mode 判据),再按 `mode`
-    走 `drop-event`(事件全文超长整个丢,计 `n_dropped_events`)或 `skip`
-    (提示超长整行不进,计 `n_skipped_rows`)或都不丢时的『提示仍超长』
-    (`left` 与 `drop-event` 都计 `n_left_truncated`,`skip` 不会走到这里,
-    因为提示超长的行已经在上一步被剔掉)。
+    The order of the four criteria is fixed for every key: first check ctool's exclusion
+    (if all candidate rows are excluded, the whole key gets no score, counted as
+    `n_excluded_by_ctool`, and the mode criteria below are not checked); then follow `mode`
+    into `drop-event` (the whole event is dropped if its full text is too long, counted as
+    `n_dropped_events`) or `skip` (the whole row is skipped if the prompt is too long,
+    counted as `n_skipped_rows`) or, when neither drops it, "the prompt is still too long"
+    (both `left` and `drop-event` count this as `n_left_truncated`; `skip` never reaches
+    this case, because rows with an overlong prompt were already excluded in the step
+    above).
     """
     if mode not in ("left", "skip", "drop-event"):
         raise ValueError(
-            f"select_keys: mode 只支持 left/skip/drop-event,拿到 {mode!r}")
+            f"select_keys: mode only supports left/skip/drop-event, got {mode!r}")
     thresh = max_len - max_new
     kept = []
     counts = dict(n_left_truncated=0, n_skipped_rows=0,
@@ -151,56 +164,64 @@ def select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new)
     return kept, counts
 
 
-# ---------------------------------------------------------------- 数据与分词
+# ---------------------------------------------------------------- data and tokenization
 
 def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
-    """装载一个 split(`train.jsonl` 或 `val.jsonl`),按 spec 3.2~3.5。
+    """Load one split (`train.jsonl` or `val.jsonl`), per spec 3.2-3.5.
 
-    各步顺序写死(随机数发生器的消耗顺序决定抽样结果,spec 3.2):
-    分组 -> 前缀性质抽查(对丢弃之前的全部事件)-> 每个事件全文分词得到
-    `n_full`,按丢弃规则丢事件级超长事件 -> 按 `limit`/`order` 取子集 ->
-    只对留下的事件做逐行分词与行级丢弃。
+    The step order is fixed (the RNG's consumption order determines the sampling
+    result, spec 3.2): group -> spot-check prefix properties (over all events
+    before dropping) -> tokenize each event's full text to get `n_full`, drop
+    event-level overlong events per the drop rule -> take a subset by
+    `limit`/`order` -> tokenize line by line and apply row-level drops only on
+    the events that remain.
 
-    `mode` = "cgen":目标串 = `tok(label_call) + [eos]`,尾巴 = `CALL_SEP`。
-    `mode` = "cparam":目标串 = `param_target(label, label_call) + [eos]`,
-    尾巴 = `param_prompt_tail(label)`,`param_target` 返回 None 的行整条
-    丢弃并计 `assembly_mismatch`。
+    `mode` = "cgen": target string = `tok(label_call) + [eos]`, tail = `CALL_SEP`.
+    `mode` = "cparam": target string = `param_target(label, label_call) + [eos]`,
+    tail = `param_prompt_tail(label)`; rows where `param_target` returns None are
+    dropped whole and counted as `assembly_mismatch`.
 
-    `ro` 非 None 时(`--readonly-env`)非只读的行整条丢弃,计数记在 `ro`
-    里(`ro` = dict(set=.., labels=[], kept=0, dropped=0),口径照
-    `CallDS`/`ParamDS` 的 readonly 分支)。
+    When `ro` is not None (`--readonly-env`), rows that are not read-only are
+    dropped whole, counted in `ro` (`ro` = dict(set=.., labels=[], kept=0,
+    dropped=0), same accounting as the readonly branch of `CallDS`/`ParamDS`).
 
-    `limit > 0` 时按 `order` 从丢弃超长事件之后的事件里取前 `limit` 个:
-    "random" 用一个新建的 `random.Random(SEED)` 打乱后取前 limit 个;
-    "shortest" 按 `n_full` 升序取前 limit 个。取完之后按文件里首次出现的
-    顺序重新排列(返回顺序的保序契约不因取子集的方式而改变)。
+    When `limit > 0`, take the first `limit` events by `order` from the events
+    left after dropping overlong events: "random" shuffles with a freshly
+    constructed `random.Random(SEED)` and takes the first limit; "shortest" takes
+    the first limit by ascending `n_full`. After taking the subset, restore the
+    order to each event's first appearance in the file (the order-preservation
+    contract on the return value does not change with how the subset is taken).
 
-    返回 `(events, counts)`:
-    - `events`:列表,每个事件是 `dict(event, n_full, packed_len,
-      prefix_len, full_ids, rows)`,`rows` = `[(sent_idx, text, p, seg_ids,
-      seg_lab, w, gen), ...]`(第 6 位 `gen` = `dict(tgt=<目标串>,
-      tool=<工具名或 None>)`,给 `train_causal_share.py` 的 `--gen-eval`
-      生成式评估用,spec 16.3、工单 08)。事件顺序 = 文件里首次出现的顺序;行顺序 =
-      `sent_idx` 升序 —— 这两条保序是契约,对齐检查靠它按位置配对。
-      `full_ids`(事件全文分词结果)与 `packed_len`/`prefix_len`(拼接
-      序列长度、公共前缀上界 P = max_k p_k)是给 `pack_event` 用的。
-    - `counts`:`dict(dropped_events, dropped_rows_tgt, assembly_mismatch,
-      n_rows)`。
+    Returns `(events, counts)`:
+    - `events`: a list, each event is `dict(event, n_full, packed_len,
+      prefix_len, full_ids, rows)`, `rows` = `[(sent_idx, text, p, seg_ids,
+      seg_lab, w, gen), ...]` (position 6 `gen` = `dict(tgt=<target string>,
+      tool=<tool name or None>)`, for `train_causal_share.py`'s `--gen-eval`
+      generative evaluation, spec 16.3, ticket 08). Event order = first
+      appearance in the file; row order = ascending `sent_idx` -- these two
+      order-preservation guarantees are a contract; the alignment check relies
+      on them to pair by position.
+      `full_ids` (the event's full-text tokenization) and
+      `packed_len`/`prefix_len` (packed sequence length, common-prefix upper
+      bound P = max_k p_k) are for `pack_event` to use.
+    - `counts`: `dict(dropped_events, dropped_rows_tgt, assembly_mismatch,
+      n_rows)`.
 
-    两道硬停(照 `train_causal_param.py` 第 337~353 行搬):这个 split 装载
-    后 0 行就退出;`mode="cparam"` 时剥离失败率(`assembly_mismatch` 占比)
-    超过 `train_causal_param.ASSEMBLY_MISMATCH_LIMIT` 也退出。
+    Two hard stops (ported from `train_causal_param.py` lines 337-353): exit if
+    this split loads 0 rows; when `mode="cparam"`, also exit if the stripping
+    failure rate (`assembly_mismatch` share) exceeds
+    `train_causal_param.ASSEMBLY_MISMATCH_LIMIT`.
     """
     if mode not in ("cgen", "cparam"):
-        raise ValueError(f"load_events: mode 只支持 cgen/cparam,拿到 {mode!r}")
+        raise ValueError(f"load_events: mode only supports cgen/cparam, got {mode!r}")
     if order not in ("random", "shortest"):
-        raise ValueError(f"load_events: order 只支持 random/shortest,拿到 {order!r}")
+        raise ValueError(f"load_events: order only supports random/shortest, got {order!r}")
 
     cgen_mod, cparam_mod, MAX_BOUNDS = _lazy_imports()
-    SEED = cgen_mod.SEED               # cgen/cparam 的 SEED 值相同(42)
+    SEED = cgen_mod.SEED               # cgen/cparam use the same SEED value (42)
     MAX_TGT_TOK = cgen_mod.MAX_TGT_TOK if mode == "cgen" else cparam_mod.MAX_TGT_TOK
 
-    # ---- 分组:事件顺序 = 文件里首次出现的顺序,组内按 sent_idx 升序 ----
+    # ---- group: event order = first appearance in the file, within a group ascending sent_idx ----
     groups = {}
     order_list = []
     for line in open(path):
@@ -216,15 +237,16 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
         events_all.append(dict(event=ev_id, orig_idx=idx,
                                full_text=rs[-1]["text"], rows_raw=rs))
 
-    # ---- 前缀性质抽查(对丢弃之前的全部事件,SEED 固定) ----
+    # ---- spot-check prefix properties (over all events before dropping, SEED fixed) ----
     rng_spot = random.Random(SEED)
     for e in rng_spot.sample(events_all, min(50, len(events_all))):
         assert all(e["full_text"].startswith(r["text"]) for r in e["rows_raw"]), \
-            f"事件 {e['event']} 的样本 text 不互为前缀"
+            f"event {e['event']}'s sample texts are not mutual prefixes"
 
-    # ---- 每个事件全文分词得到 n_full,按丢弃规则丢事件级超长事件 ----
-    # 判据只看事件全文的 token 数,不看拼接序列长度(拼接序列由 token 预算
-    # 兜底)。
+    # ---- tokenize each event's full text to get n_full, drop event-level overlong events per the drop rule ----
+    # The criterion only looks at the token count of the event's full text, not the
+    # packed sequence length (the packed sequence is bounded by the token budget as
+    # a fallback).
     dropped_events = 0
     events_kept = []
     for e in events_all:
@@ -236,7 +258,7 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
         e["n_full"] = len(full_ids)
         events_kept.append(e)
 
-    # ---- 按 limit/order 取子集,取完恢复文件序 ----
+    # ---- take a subset by limit/order, then restore file order ----
     if limit and limit > 0:
         if order == "random":
             rng = random.Random(SEED)
@@ -246,7 +268,7 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
             events_kept = sorted(events_kept, key=lambda e: e["n_full"])[:limit]
         events_kept.sort(key=lambda e: e["orig_idx"])
 
-    # ---- 只对留下的事件做逐行分词与行级丢弃 ----
+    # ---- tokenize line by line and apply row-level drops only on the events that remain ----
     dropped_rows_tgt = 0
     assembly_mismatch = 0
     n_rows = 0
@@ -284,9 +306,9 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
             p = _lcp(old_ids, e["full_ids"])
             tail_ids = old_ids[p:]
             assert len(tail_ids) >= 1, (
-                f"事件 {e['event']} sent_idx={r['sent_idx']}: 公共前缀 p={p} "
-                f"吃掉了整条尾巴(len(old_ids)={len(old_ids)})——分隔串跟"
-                "全文延续撞车了,查 tokenizer 版本。")
+                f"event {e['event']} sent_idx={r['sent_idx']}: common prefix p={p} "
+                f"consumed the entire tail (len(old_ids)={len(old_ids)}) -- the separator string collided "
+                "with the full-text continuation, check the tokenizer version.")
             seg_ids = tail_ids + tgt_ids
             seg_lab = [-100] * len(tail_ids) + tgt_ids
             gen = dict(tgt=tgt_str, tool=tool)
@@ -294,10 +316,11 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
                         float(r["w"]), gen))
             n_rows += 1
         if not rows:
-            # 这个事件的全部行都在行级丢弃(readonly/tgt 过长/mismatch)里
-            # 丢光了,事件本身没有任何训练信号,不进返回列表——它的行已经
-            # 分别记进 dropped_rows_tgt/assembly_mismatch/ro 里了,这里不用
-            # 再单独计数(dropped_events 专属"事件全文过长"那一条判据)。
+            # All rows of this event were dropped by the row-level drops (readonly/tgt too
+            # long/mismatch); the event itself carries no training signal, so it does not go
+            # into the return list -- its rows are already counted separately in
+            # dropped_rows_tgt/assembly_mismatch/ro, so there is no need to count it again
+            # here (dropped_events is reserved for the "event full text too long" criterion).
             continue
         prefix_len = max(row[2] for row in rows)
         packed_len = prefix_len + sum(len(row[3]) for row in rows)
@@ -305,39 +328,39 @@ def load_events(path, tok, mode, max_len, ro=None, limit=0, order="random"):
                            packed_len=packed_len, prefix_len=prefix_len,
                            full_ids=e["full_ids"], rows=rows))
 
-    # ---- 两道硬停(照 train_causal_param.py 第 337~353 行搬) ----
+    # ---- two hard stops (ported from train_causal_param.py lines 337-353) ----
     if n_rows == 0:
         raise SystemExit(
-            f"{path} 装载后是 0 行(dropped_events={dropped_events}, "
+            f"{path} loaded to 0 rows (dropped_events={dropped_events}, "
             f"dropped_rows_tgt={dropped_rows_tgt}, "
-            f"assembly_mismatch={assembly_mismatch})——"
-            "选 best 的指标没有分母,硬停。")
+            f"assembly_mismatch={assembly_mismatch}) -- "
+            "the metric for picking best has no denominator, hard stop.")
     if mode == "cparam":
         tot = n_rows + assembly_mismatch
         limit_frac = cparam_mod.ASSEMBLY_MISMATCH_LIMIT
         if tot and assembly_mismatch / tot > limit_frac:
             raise SystemExit(
-                f"{path} 的剥离失败率 {assembly_mismatch}/{tot} = "
-                f"{assembly_mismatch / tot:.3f} 超过 {limit_frac}——"
-                "上游拼串口径漂移,硬停。")
+                f"{path}'s strip failure rate {assembly_mismatch}/{tot} = "
+                f"{assembly_mismatch / tot:.3f} exceeds {limit_frac} -- "
+                "upstream string-assembly settings drifted, hard stop.")
 
-    # ---- 拼接长度上界断言(防 tokenizer 版本漂移把尾巴撑长) ----
+    # ---- packed-length upper-bound assertion (guards against tokenizer version drift stretching the tail) ----
     worst = max((e["packed_len"] for e in events), default=0)
     bound = max_len + MAX_BOUNDS * (MAX_TGT_TOK + 8)
     assert worst <= bound, (
-        f"最长拼接序列 {worst} 超过上界 {bound}"
+        f"longest concatenated sequence {worst} exceeds the upper bound {bound}"
         f"(max_len={max_len}, MAX_BOUNDS={MAX_BOUNDS}, MAX_TGT_TOK={MAX_TGT_TOK})"
-        "——tokenizer 版本漂移把尾巴撑长了,硬停。")
+        " -- tokenizer version drift stretched the tail longer, hard stop.")
 
     counts = dict(dropped_events=dropped_events, dropped_rows_tgt=dropped_rows_tgt,
                  assembly_mismatch=assembly_mismatch, n_rows=n_rows)
     return events, counts
 
 
-# ---------------------------------------------------------------- 前向形态
+# ---------------------------------------------------------------- forward shape
 
 def pack_event(ev):
-    """一个事件的拼接序列(spec 第 4 节):
+    """The packed sequence for one event (spec section 4):
 
     ```
     tokens    = full_ids[:P] + seg_1 + seg_2 + ... + seg_K   # P = max_k p_k
@@ -345,12 +368,13 @@ def pack_event(ev):
     labels    = [-100]*P + seg_lab_1 + ... + seg_lab_K
     ```
 
-    返回 `(tokens, positions, labels, row_index, seg_bounds)`,均为
-    python list(torch 化留给 `batch_mask`,因为那里才定 batch 维与 pad
-    长度):
-    - `row_index[i]`:token i 属于第几行(`ev["rows"]` 的下标,0-based),
-      前缀是 -1。
-    - `seg_bounds[k]`:第 k 行的段在 `tokens` 里的 `[start, end)` 半开区间。
+    Returns `(tokens, positions, labels, row_index, seg_bounds)`, all as plain
+    python lists (torch conversion is left to `batch_mask`, since that is where
+    the batch dimension and pad length get fixed):
+    - `row_index[i]`: which row (index into `ev["rows"]`, 0-based) token i
+      belongs to; the prefix is -1.
+    - `seg_bounds[k]`: the `[start, end)` half-open range of row k's segment in
+      `tokens`.
     """
     P = ev["prefix_len"]
     tokens = list(ev["full_ids"][:P])
@@ -370,18 +394,19 @@ def pack_event(ev):
 
 
 def _allowed_from_packed(positions, row_index, seg_bounds, L):
-    """`allowed_mask`/`batch_mask` 共用的核心:[L, L] bool 张量(True=可看)。
+    """The core shared by `allowed_mask`/`batch_mask`: a [L, L] bool tensor (True = can attend).
 
-    注意力允许关系(spec 第 4 节):前缀内部因果;第 k 段的第 i 个 token 可看
-    前缀的前 p_k 个位置和本段的前 i+1 个 token;段与段之间互不可见;前缀
-    看不到任何目标段。
+    Attention allowance rule (spec section 4): causal within the prefix; the i-th
+    token of segment k can attend to the first p_k positions of the prefix and
+    the first i+1 tokens of its own segment; segments cannot attend to each
+    other; the prefix cannot attend to any target segment.
     """
     row_t = torch.tensor(row_index, dtype=torch.long)
     idx = torch.arange(L)
     is_prefix = row_t < 0
     causal = idx.unsqueeze(0) <= idx.unsqueeze(1)          # [i, j] = (j <= i)
 
-    qp = torch.zeros(L, dtype=torch.long)                  # 每个目标段位置的 p_k
+    qp = torch.zeros(L, dtype=torch.long)                  # p_k for each target segment position
     for start, end in seg_bounds:
         qp[start:end] = positions[start]
 
@@ -394,33 +419,37 @@ def _allowed_from_packed(positions, row_index, seg_bounds, L):
 
 
 def allowed_mask(ev):
-    """一个事件 `[L, L]` 的 bool 张量(True = 可看),按 spec 第 4 节。"""
+    """A `[L, L]` bool tensor for one event (True = can attend), per spec section 4."""
     tokens, positions, labels, row_index, seg_bounds = pack_event(ev)
     return _allowed_from_packed(positions, row_index, seg_bounds, len(tokens))
 
 
 def batch_mask(packed_list, L_pad):
-    """把一个物理块的若干 `pack_event` 结果右 pad 到 `L_pad`(16 的倍数)。
+    """Right-pad several `pack_event` results from one physical block to `L_pad` (a multiple of 16).
 
-    `packed_list`:`[pack_event(ev), ...]`,调用方已经对块内每个事件跑过
-    `pack_event`。
+    `packed_list`: `[pack_event(ev), ...]`, the caller has already run
+    `pack_event` on every event in the block.
 
-    返回 `(input_ids, position_ids, mask, loss_idx)`:
-    - `input_ids`:`[B, L_pad]` long;pad 位置是 `PAD_TOKEN_ID`(pad 行只看
-      自己,这个值不影响任何真实 token 的输出)。
-    - `position_ids`:`[B, L_pad]` long;pad 位置从这一事件最后一个真实
-      位置接着数(spec 第 4 节:『补到 16 的 pad 位也要给 position_ids
-      〔接着数〕』),不是写死 0。
-    - `mask`:`[B, 1, L_pad, L_pad]` bf16 加性掩码(可看 0、不可看 -inf);
-      pad 作为 query 的行只让 pad 看自己(整行不可看会让 softmax 出 NaN,
-      真实 token 看不到 pad)。
-    - `loss_idx`:`[(batch_idx, qpos, target_id, row_idx), ...]`。用
-      `labels` 数组本身取值(不移位 labels):`labels[t] != -100` 的目标
-      token 由 logits 在位置 `t-1` 算出,所以 query 位置是 `t-1`、目标 id
-      是 `labels[t]`、行号是 `row_index[t]`。pad 位置不产生任何 `loss_idx`
-      条目(pad 不会出现在 `labels` 里)。
+    Returns `(input_ids, position_ids, mask, loss_idx)`:
+    - `input_ids`: `[B, L_pad]` long; pad positions hold `PAD_TOKEN_ID` (a pad row
+      only attends to itself, so this value does not affect the output of any
+      real token).
+    - `position_ids`: `[B, L_pad]` long; pad positions continue counting from
+      this event's last real position (spec section 4: "the pad positions
+      padded up to 16 must also get position_ids [that keep counting]"), not a
+      hardcoded 0.
+    - `mask`: `[B, 1, L_pad, L_pad]` bf16 additive mask (0 = can attend, -inf =
+      cannot); a pad row as query only lets the pad attend to itself (a row
+      that cannot attend to anything makes softmax produce NaN; real tokens
+      cannot attend to pad).
+    - `loss_idx`: `[(batch_idx, qpos, target_id, row_idx), ...]`. Values are
+      read from the `labels` array itself (labels are not shifted): the target
+      token where `labels[t] != -100` is produced by the logits at position
+      `t-1`, so the query position is `t-1`, the target id is `labels[t]`, and
+      the row number is `row_index[t]`. Pad positions produce no `loss_idx`
+      entries at all (pad never appears in `labels`).
     """
-    assert L_pad % 16 == 0, f"L_pad 必须是 16 的倍数,拿到 {L_pad}"
+    assert L_pad % 16 == 0, f"L_pad must be a multiple of 16, got {L_pad}"
     B = len(packed_list)
     input_ids = torch.full((B, L_pad), PAD_TOKEN_ID, dtype=torch.long)
     position_ids = torch.zeros((B, L_pad), dtype=torch.long)
@@ -429,7 +458,7 @@ def batch_mask(packed_list, L_pad):
     for b, packed in enumerate(packed_list):
         tokens, positions, labels, row_index, seg_bounds = packed
         L = len(tokens)
-        assert L <= L_pad, f"事件长度 {L} 超过物理块 pad 长度 {L_pad}"
+        assert L <= L_pad, f"event length {L} exceeds the physical block pad length {L_pad}"
         input_ids[b, :L] = torch.tensor(tokens, dtype=torch.long)
         position_ids[b, :L] = torch.tensor(positions, dtype=torch.long)
         if L < L_pad:
@@ -441,7 +470,7 @@ def batch_mask(packed_list, L_pad):
         real = torch.zeros((L, L), dtype=torch.bfloat16)
         real.masked_fill_(~allowed, float("-inf"))
         block[:L, :L] = real
-        for i in range(L, L_pad):                          # pad 作为 query 只看自己
+        for i in range(L, L_pad):                          # a pad row as query only attends to itself
             block[i, i] = 0.0
         mask[b, 0] = block
         for t in range(1, L):
@@ -451,12 +480,15 @@ def batch_mask(packed_list, L_pad):
 
 
 def epoch_minibatches(events, seed, ep, events_per_mb):
-    """一个 epoch 的事件顺序与逻辑小批切法(spec 16.5,工单 10):训练循环与
-    `cost`/`loop` 显存探针唯一共用的真源——探针踩的块必须是训练真会遇到
-    的块。`events` 本身不被修改(先 `list(events)` 复制一份再打乱)。
+    """Event order and logical-microbatch splitting for one epoch (spec 16.5, ticket
+    10): the single source shared by the training loop and the `cost`/`loop` GPU
+    memory probes -- the blocks the probe hits must be blocks the training loop
+    will actually encounter. `events` itself is not mutated (a `list(events)`
+    copy is made first, then shuffled).
 
-    `random.Random(seed + ep).shuffle` 打乱后按 `events_per_mb` 个一组切成
-    逻辑小批,和旧写法(训练循环原来自己做的这两步)逐个相同。
+    Shuffle with `random.Random(seed + ep).shuffle`, then split into logical
+    microbatches of `events_per_mb` each, identical step by step to the old code
+    (these two steps used to be done by the training loop itself).
     """
     epoch_events = list(events)
     random.Random(seed + ep).shuffle(epoch_events)
@@ -465,16 +497,20 @@ def epoch_minibatches(events, seed, ep, events_per_mb):
 
 
 def chunk_by_budget(events, tok_budget):
-    """spec 第 5 节第二条的贪心装块。
+    """Greedy block packing per spec section 5, item 2.
 
-    事件按 `packed_len` 降序,贪心装块:块的『事件数 × L_pad』<= `tok_budget`
-    (`L_pad` = 块内最长 `packed_len` 补到 16 的倍数,`_pad16`——预算判据
-    和 `batch_mask` 的补齐同口径,不是补齐前的 `packed_len` 本身,spec 第
-    5 节);单个事件超预算时独自成块(允许超预算)。
+    Sort events by descending `packed_len`, then pack greedily: a block's "event
+    count x L_pad" <= `tok_budget` (`L_pad` = the block's longest `packed_len`
+    padded up to a multiple of 16, `_pad16` -- the budget criterion uses the
+    same accounting as `batch_mask`'s padding, not the raw `packed_len` before
+    padding, spec section 5); when a single event exceeds the budget it becomes
+    its own block (over-budget is allowed).
 
-    返回块列表,每块是事件列表(块内顺序 = 装入顺序,即 `packed_len` 降序
-    内的先后顺序;block 只定"谁在一起过一次前向",不承诺文件序契约,那条
-    契约只属于 `load_events` 的返回值)。
+    Returns a list of blocks, each block a list of events (order within a block
+    = insertion order, i.e. the order within the descending-`packed_len` sort; a
+    block only fixes "which events go through one forward pass together" -- it
+    makes no promise about the file-order contract, that contract belongs only
+    to `load_events`'s return value).
     """
     ordered = sorted(events, key=lambda e: e["packed_len"], reverse=True)
     blocks = []
@@ -497,24 +533,30 @@ def chunk_by_budget(events, tok_budget):
 
 
 def worst_blocks(events, tok_budget, events_per_mb):
-    """给 `--mem-probe` 用(spec 第 10 节):返回两份事件列表。
+    """For `--mem-probe` to use (spec section 10): returns two event lists.
 
-    第一份是只含『`packed_len` 最大的单个事件』的列表(长度 1)。
+    The first holds only the single event with the largest `packed_len` (length 1).
 
-    第二份(『最满块』)不借用 `chunk_by_budget`:真实训练时一个逻辑小批
-    只有 `events_per_mb` 个事件(spec 第 5 节),`chunk_by_budget` 只在这
-    `events_per_mb` 个事件上跑装块,块内事件数天然 <= `events_per_mb`;
-    但 `worst_blocks` 是在全量训练集上找最坏块,如果直接对全量事件跑
-    `chunk_by_budget` 再挑"块内最长最大"的那块,块内事件数不受
-    `events_per_mb` 约束,找出来的块在真实训练里可能永远不会出现。所以
-    最满块单独按工单定义的算法搜:`B` 取 2 到 `events_per_mb`,把 events
-    按 `packed_len` 降序排好,对每个 B 用大小为 B 的滑动窗口从最长的一端
-    往下扫,取第一个满足 `B * L_pad <= tok_budget` 的窗口(`L_pad` = 窗口
-    内最长 `packed_len` 补到 16 的倍数,`_pad16`;降序排列下窗口内最长恰好
-    是窗口首元素,窗口往下移这个值只会变小或不变,所以第一个满足条件的
-    窗口就是这个 B 能达到的最大 `B * L_pad`);几个 B 各自的最优窗口里,取
-    `B * L_pad` 最大的那一组。找不到任何满足条件的窗口(事件数不够、或
-    预算太小连 2 个事件都装不下)时,第二份返回空列表。
+    The second (the "fullest block") does not borrow `chunk_by_budget`: in real
+    training a logical microbatch has only `events_per_mb` events (spec section
+    5), and `chunk_by_budget` only packs blocks over those `events_per_mb`
+    events, so a block's event count is naturally <= `events_per_mb`; but
+    `worst_blocks` looks for the worst block over the whole training set, and
+    running `chunk_by_budget` directly over all events and then picking the
+    block with the "largest longest-event" would let a block's event count
+    exceed `events_per_mb`, so the block found might never occur in real
+    training. So the fullest block is searched separately with the algorithm
+    defined in the ticket: for `B` from 2 to `events_per_mb`, sort events by
+    descending `packed_len`, and for each B slide a window of size B down from
+    the longest end, taking the first window that satisfies `B * L_pad <=
+    tok_budget` (`L_pad` = the window's longest `packed_len` padded up to a
+    multiple of 16, `_pad16`; under descending order the window's longest is
+    exactly its first element, and this value can only shrink or stay the same
+    as the window moves down, so the first window that satisfies the condition
+    is the largest `B * L_pad` this B can reach); among the optimal windows for
+    each B, take the group with the largest `B * L_pad`. When no window
+    satisfies the condition (not enough events, or the budget too small to fit
+    even 2 events), the second list comes back empty.
     """
     if not events:
         return [], []
@@ -532,23 +574,25 @@ def worst_blocks(events, tok_budget, events_per_mb):
                 if product > best_product:
                     best_product = product
                     best_group = window
-                break                       # 降序排列下首个满足即该 B 的最优窗口
+                break                       # under descending order, the first window that satisfies it is the optimal window for this B
     return [longest], best_group
 
 
-# ---------------------------------------------------------------- 读取位置
+# ---------------------------------------------------------------- read position
 
 def read_position(offsets, full_text, cut, keep):
-    """spec 11.3 的读取位置规则。
+    """The read-position rule from spec 11.3.
 
-    `offsets`:tokenizer 的 `offset_mapping`(每项 `(start, end)` 字符偏移
-    半开区间);`full_text`:全文;`cut`:切点的字符位置;`keep`:这一行
-    `attention_mask` 的和(真实 token 数,只在 `offsets[:keep]` 里找)。
+    `offsets`: the tokenizer's `offset_mapping` (each item a `(start, end)`
+    half-open character-offset range); `full_text`: the full text; `cut`: the
+    character position of the cut point; `keep`: the sum of this row's
+    `attention_mask` (the real token count, look only within `offsets[:keep]`).
 
-    `j` = 起始位置 < `cut` 的最后一个真实 token(覆盖字符 `cut-1` 的那个
-    token)。`end_j <= cut` 时读 `j`;`end_j > cut` 且 `full_text[cut:end_j]`
-    全是空白时也读 `j`;否则读 `j-1`。两种情况返回 -1(找不到):没有任何
-    真实 token 的起始位置 < `cut`;要退回 `j-1` 而 `j = 0`。
+    `j` = the last real token whose start position < `cut` (the token that
+    covers character `cut-1`). Read `j` when `end_j <= cut`; also read `j` when
+    `end_j > cut` and `full_text[cut:end_j]` is all whitespace; otherwise read
+    `j-1`. Two cases return -1 (not found): no real token has a start position <
+    `cut`; or falling back to `j-1` while `j = 0`.
     """
     j = -1
     for t in range(keep - 1, -1, -1):

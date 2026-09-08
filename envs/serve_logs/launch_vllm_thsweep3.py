@@ -1,21 +1,24 @@
-"""θ 扫描 run 段的第三批 gpt-oss-120b 服务：补两张 H200 上死掉的副本。
+"""Third batch of gpt-oss-120b services for the run segment of the θ sweep: replaces the two
+replicas that died on the two H200s.
 
-为什么要这一批：2026-08-01 04:41-05:15 之间，/home/y-guo 的写入连续抛
-`OSError: [Errno 122] Disk quota exceeded`，把第一批的两个服务打死了——
-副本 B(GPU 4, 8112) 的日志停在半句上没有任何报错（`vllm ... | tee log` 的
-tee 写不进 NFS 就退出，vllm 随后死于 EPIPE），副本 C(GPU 5, 8113) 留下了
-完整证据：EngineCore 在 `os.makedirs('/home/y-guo/.cache/vllm/torch_compile_cache/
-.../inductor_cache')` 上拿到 Errno 122，引擎 fatal，之后所有请求 500，进程退出。
-两张 H200 因此空转。
+Why this batch is needed: between 2026-08-01 04:41-05:15, writes to /home/y-guo repeatedly
+raised `OSError: [Errno 122] Disk quota exceeded`, which killed the two services in the first
+batch -- replica B's (GPU 4, 8112) log stopped mid-sentence with no error at all (the tee in
+`vllm ... | tee log` exits once it cannot write to NFS, and vllm then dies with EPIPE), while
+replica C (GPU 5, 8113) left complete evidence: EngineCore hit Errno 122 on
+`os.makedirs('/home/y-guo/.cache/vllm/torch_compile_cache/.../inductor_cache')`, the engine
+went fatal, every subsequent request got 500, and the process exited. The two H200s sat idle
+as a result.
 
-这一批用**新的会话名与端口**（不复用 8112/8113），免得日志和台账里新旧混淆：
+This batch uses **a new session name and new ports** (not reusing 8112/8113), to avoid mixing
+up old and new in the logs and the job ledger:
 
-  gpt-oss-120b -> H200 GPU 4, port 8117   (副本 G)
-  gpt-oss-120b -> H200 GPU 5, port 8118   (副本 H)
+  gpt-oss-120b -> H200 GPU 4, port 8117   (replica G)
+  gpt-oss-120b -> H200 GPU 5, port 8118   (replica H)
 
-参数与第一批、第二批**逐字一致**（模型路径 / served-model-name /
-max-model-len 65536 / gpu-memory-utilization 0.92 / 三个环境变量），
-六个 θ 点的服务侧口径才齐。
+Parameters are **identical, verbatim, to the first and second batches** (model path /
+served-model-name / max-model-len 65536 / gpu-memory-utilization 0.92 / the three environment
+variables), so the service-side convention is consistent across all six θ points.
 """
 import shlex
 import subprocess

@@ -1,36 +1,36 @@
-"""触发时刻抽取评测(新流水线 mext 格):回放定出触发点,在该前缀上抽参数,
-报完整调用正确率。
+"""Trigger-time extraction eval (new pipeline mext cell): replay determines the threshold, extract parameters on that prefix,
+and report full-call accuracy.
 
-源 = envs/bert/eval_extract.py(逐字照抄)+ envs/bert/param_tiers.py 的
-parse/tier_of/THRESH(一起搬进本文件,不再单开模块)。改动只有规格 §6.2 列的:
-`--data`/`--params` 指新目录(<data_out> 直接含 test.jsonl、参数默认
-<data_out>/params)、堆名 calA→val(本脚本只用 test 堆,故只体现在参数目录口径上)、
-抽取头函数改从 pipeline/train/train_mbert_extract.py import。其余全部照抄:
-触发点取自 --run(mtool)的 REPLAY_REPORT 温度 + chosen_theta、在触发前缀上跑
-抽取头、宽松/严格/整调用三档、三档分层(读 <data_out>/router_stats.md)。
+Source = envs/bert/eval_extract.py (copied verbatim) plus the parse/tier_of/THRESH from envs/bert/param_tiers.py
+(moved into this file together, no separate module anymore). The only changes are the ones listed in spec §6.2:
+`--data`/`--params` point to the new directory (<data_out> directly contains test.jsonl, and params defaults to
+<data_out>/params), the split name calA → val (this script only uses the test split, so this only shows up in the params-directory convention),
+and the extraction-head function is now imported from pipeline/train/train_mbert_extract.py. Everything else is copied verbatim:
+the threshold comes from --run (mtool)'s REPLAY_REPORT temperature + chosen_theta, the extraction head runs on the prefix up to the trigger,
+the loose/strict/full-call three tiers, and the three-tier breakdown (reads <data_out>/router_stats.md).
 
-ro1 批次加 `--readonly-env {appworld,bfcl}`(默认关,关=行为逐字节不变):打开后
-真值标签在装载处过 readonly_map.collapse()、触发条件加"argmax 不是弃权类";
-参数指标只在"触发了且真值为只读工具"的事件上算,触发但真值非只读的事件不进
-params_all_ok / full_call_ok 分母,单独计进新增键 readonly_excluded。
-已有字段名与三档判分一个不动。label_map.json 的弃权哨兵与本开关双向互为条件。
+The ro1 batch adds `--readonly-env {appworld,bfcl}` (off by default; off = behavior byte-for-byte unchanged). When on,
+ground-truth labels pass through readonly_map.collapse() at load time, and the trigger condition adds "argmax is not the abstain class";
+parameter metrics are computed only on events where "it triggered and the ground truth is a read-only tool" -- events that triggered but whose
+ground truth is non-read-only do not go into the params_all_ok / full_call_ok denominators, and are counted separately into the new key readonly_excluded.
+Existing field names and the three-tier scoring are unchanged. The abstain sentinel in label_map.json and this flag each require the other.
 
-自主开火评测 `--self-fire`(默认关;不动任何旧字段,只加一个 self_fire 块):
-给带开火头训练的 mext run 用——开火时刻不再从 mtool 的报告拿 θ,而是让抽取头
-自己的开火头决定。
-- 开火分数:每个边界上把**纯 text**(不带 [FIND] 后缀)喂进 encoder,取 [CLS] 位
-  过开火头,sigmoid 成开火概率(与训练侧取位一致)
-- 开火条件 = 开火概率≥θ_fire **且** 同边界的 mtool argmax 不是弃权哨兵
-  (argmax 是弃权就当没开火,继续往后扫)
-- θ_fire 在 **val** 上扫(沿用 eval_tool 的 THETAS 网格与 RISK_TARGETS 机制),
-  风险用标签算:错误开火 = 开火了但真值 not-ready
-  (ready = 真值工具只读 且 该边界上所有参数 found)
-- test 冻结一次:在开火点上照原有三档判分抽参数;工具身份取同边界 mtool argmax,
-  所以整调用正确 = 参数全对(宽松) 且 argmax == 折叠后真值
-- 需要 --readonly-env、一个 fire_head=true 的 mext run,以及 mtool run 目录下
-  已存的 logits_val.pt / logits_test.pt(eval_tool 跑过就有)
+Self-fire eval `--self-fire` (off by default; does not touch any old fields, only adds a self_fire block):
+for mext runs trained with a fire head -- the fire moment no longer comes from mtool's report's θ, but is decided by the extraction
+head's own fire head.
+- Fire score: at each boundary, feed **plain text** (without the [FIND] suffix) into the encoder, take the [CLS] position
+  through the fire head, sigmoid into a fire probability (same position convention as the training side)
+- Fire condition = fire probability ≥ θ_fire **and** the mtool argmax at the same boundary is not the abstain sentinel
+  (if argmax is abstain, treat it as not fired, and keep scanning forward)
+- θ_fire is swept on **val** (using eval_tool's THETAS grid and RISK_TARGETS mechanism),
+  risk is computed from labels: a wrong fire = fired but the ground truth is not-ready
+  (ready = ground-truth tool is read-only and all parameters at that boundary are found)
+- test is frozen once: at the fire point, extract parameters using the original three-tier scoring; tool identity is taken from the mtool
+  argmax at the same boundary, so a fully correct call = all parameters correct (loose) and argmax == the collapsed ground truth
+- requires --readonly-env, an mext run with fire_head=true, and the logits_val.pt / logits_test.pt already saved
+  in the mtool run directory (present if eval_tool has been run)
 
-用法:
+Usage:
   mbert-env/bin/python pipeline/eval/eval_mbert_call.py --env appworld \\
     --run pipeline/runs/c1_q35_mtool --extractor pipeline/runs/c1_q35_mext \\
     --data pipeline/data/aw_official_v1/q35
@@ -56,13 +56,13 @@ from eval_tool import RISK_TARGETS, THETAS               # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat                                          # noqa: E402
 
-TIERS = ("无参", "选择", "自由")
-SPORK_ANCHOR = 0.076        # 竞品 SPORK 参数起步正确率
-PILOT_ANCHOR = 0.338        # 先行试点:提前 25 token 时字面串已出现比例
-THRESH = 0.90               # 【照抄 param_tiers.py】选择/自由档的逐字命中率分界
+TIERS = ("no-arg", "choice", "free")
+SPORK_ANCHOR = 0.076        # competitor SPORK's baseline parameter accuracy
+PILOT_ANCHOR = 0.338        # pilot check: fraction of cases where the literal string already appears 25 tokens early
+THRESH = 0.90               # [copied verbatim from param_tiers.py] exact-match hit-rate cutoff between the choice/free tiers
 
 
-# ---------- 三档档位表(【照抄 param_tiers.py】) ----------
+# ---------- three-tier table ([copied verbatim from param_tiers.py]) ----------
 
 def parse(md_text):
     rows = []
@@ -76,8 +76,8 @@ def parse(md_text):
 
 def tier_of(hit):
     if hit is None:
-        return "无参"
-    return "选择" if hit >= THRESH else "自由"
+        return "no-arg"
+    return "choice" if hit >= THRESH else "free"
 
 
 def load_rows(path):
@@ -85,10 +85,10 @@ def load_rows(path):
 
 
 def replay_fire(rows, probs, theta, nro_id=None):
-    """与 eval_tool.replay 同逻辑,额外返回触发的 sent_idx 与行。
+    """Same logic as eval_tool.replay, additionally returns the sent_idx and line where it triggered.
 
-    nro_id=None 是旧口径;给了弃权类 id(readonly 模式)时触发条件收窄成
-    "conf>=θ 且 argmax != nro_id",与 eval_tool.replay 完全同源。
+    nro_id=None is the legacy convention; when given an abstain-class id (readonly mode), the trigger condition narrows to
+    "conf>=θ and argmax != nro_id", exactly the same as eval_tool.replay.
     """
     ev = defaultdict(list)
     for r, p in zip(rows, probs):
@@ -110,7 +110,7 @@ def replay_fire(rows, probs, theta, nro_id=None):
 
 @torch.no_grad()
 def run_extractor(model, tok, meta, items, dev, bs):
-    """items=[(str,value,gs,ge,found)] -> [(loose_ok, strict_ok, pred_ans)]。"""
+    """items=[(str,value,gs,ge,found)] -> [(loose_ok, strict_ok, pred_ans)]."""
     out = []
     heartbeat.emit(0, len(items), "item")
     for i in range(0, len(items), bs):
@@ -137,13 +137,13 @@ def rate(num, den):
     return round(num / den, 4) if den else None
 
 
-# ---------- 抽取判分(从 main 里原样搬出来的一段,口径未动) ----------
+# ---------- extraction scoring (moved verbatim out of main, logic unchanged) ----------
 
 def extract_points(keys, fired, pmap, model, tok, meta, dev, bs):
-    """在给定的触发/开火点上抽参数并逐事件汇总。
+    """Extract parameters at the given trigger/fire point and aggregate per event.
 
-    参数正确 = 真值 found 时区间对 / 真值抽不到时答抽不到——【口径逐字不动】。
-    返回 (per_ev, 计数 dict)。
+    Parameter correct = when ground truth is found, the span matches / when ground truth cannot be extracted, the answer says it cannot be extracted -- [logic unchanged, verbatim].
+    Returns (per_ev, a counts dict).
     """
     items, index = [], []
     for k in keys:
@@ -170,14 +170,14 @@ def extract_points(keys, fired, pmap, model, tok, meta, dev, bs):
     return per_ev, c
 
 
-# ------------------------------------------------------------ 自主开火
+# ------------------------------------------------------------ self-fire
 
 def load_ready(data, params, split, ro_set, label2id):
-    """读一堆样本、折叠标签、算开火真值 ready,并按 label2id 过滤保持与
-    logits_<split>.pt 同序(过滤逻辑与 eval_tool 逐行一致)。
+    """Read a batch of samples, collapse labels, compute the fire ground truth ready, and filter by label2id to keep
+    the same order as logits_<split>.pt (filtering logic matches eval_tool line for line).
 
-    ready = 真值工具在只读集合里 且 该样本所有参数 found=true(零参数空真);
-    params 里 join 不到的按 not-ready 处理并计数。
+    ready = ground-truth tool is in the read-only set and all parameters of the sample have found=true (vacuously true with zero parameters);
+    samples that fail to join in params are treated as not-ready and counted.
     """
     pmap = {}
     for p in load_rows(params / f"{split}.jsonl"):
@@ -203,9 +203,9 @@ def load_ready(data, params, split, ro_set, label2id):
     st["frac_readonly"] = round(st["n_readonly"] / n, 6)
     st["frac_join_miss"] = round(st["n_join_miss"] / n, 6)
     if st["frac_join_miss"] > 0.01:
-        print(f"[self-fire] 警告:{split} 有 {st['n_join_miss']}/{st['n']} "
-              f"({st['frac_join_miss']:.1%}) 个样本在 params 里 join 不到,"
-              f"已按 not-ready 处理", flush=True)
+        print(f"[self-fire] warning: {split} has {st['n_join_miss']}/{st['n']} "
+              f"({st['frac_join_miss']:.1%}) samples that can't be joined against params,"
+              f"already treated as not-ready", flush=True)
     rows = [r for r in raw if r["label"] in label2id]
     for r in rows:
         r["y"] = label2id[r["label"]]
@@ -215,7 +215,7 @@ def load_ready(data, params, split, ro_set, label2id):
 
 @torch.no_grad()
 def score_fire(model, tok, rows, dev, bs, max_len):
-    """每个边界的开火概率:纯 text 进 encoder,取 [CLS] 位过开火头。"""
+    """Fire probability at each boundary: plain text goes into the encoder, the [CLS] position goes through the fire head."""
     out = torch.zeros(len(rows))
     for i in range(0, len(rows), bs):
         chunk = [r["text"] for r in rows[i:i + bs]]
@@ -230,10 +230,10 @@ def score_fire(model, tok, rows, dev, bs, max_len):
 
 
 def replay_fire_head(rows, probs, theta, gate):
-    """开火头版回放:每事件取首个"开火概率≥θ 且 gate 为真"的边界。
+    """Fire-head version of replay: for each event, take the first boundary where "fire probability ≥ θ and gate is true".
 
-    gate[i] = 该边界的 mtool argmax 不是弃权哨兵;argmax 是弃权就当没开火,
-    继续往后扫(与 replay_fire 里"argmax != nro_id"同一条规矩)。
+    gate[i] = the mtool argmax at that boundary is not the abstain sentinel; if argmax is abstain, treat it as not fired,
+    and keep scanning forward (the same rule as "argmax != nro_id" in replay_fire).
     """
     ev = defaultdict(list)
     for i, (r, p) in enumerate(zip(rows, probs)):
@@ -254,7 +254,7 @@ def replay_fire_head(rows, probs, theta, gate):
 
 
 class Gate:
-    """mtool argmax 门:gate[i] = argmax 不是弃权哨兵;gate.pred[i] = argmax。"""
+    """mtool argmax gate: gate[i] = argmax is not the abstain sentinel; gate.pred[i] = argmax."""
 
     def __init__(self, logits, nro_id):
         self.pred = logits.argmax(-1).tolist()
@@ -265,7 +265,7 @@ class Gate:
 
 
 def agg_fire(recs):
-    """开火头的覆盖率 / 正确率 / 错误开火率,公式与 eval_tool.agg 同构。"""
+    """Fire head's coverage / accuracy / wrong-fire rate, formulas isomorphic to eval_tool.agg."""
     n = len(recs)
     fired = [r for r in recs if r["fired"]]
     return dict(n=n, n_fired=len(fired),
@@ -277,7 +277,7 @@ def agg_fire(recs):
 
 
 def pick_theta(sweep):
-    """【与 eval_tool 选 θ 同机制】风险约束下取覆盖率最大的那档。"""
+    """[same mechanism as eval_tool's θ selection] take the tier with maximum coverage under the risk constraint."""
     chosen = {}
     for risk in RISK_TARGETS:
         ok = [(th, a) for th, a in sweep
@@ -289,11 +289,11 @@ def pick_theta(sweep):
 
 def self_fire_block(args, run, ext, data, params, model, tok, meta,
                     label2id, ro_set, nro_id):
-    """θ_fire 在 val 上扫 → test 冻结一次 → 开火点上抽参数判分。"""
+    """Sweep θ_fire on val → freeze once on test → extract and score parameters at the fire point."""
     if not meta.get("fire_head"):
         raise SystemExit(
-            f"--self-fire 要求 mext run 是带开火头训的:{ext/'best'/'meta.json'} "
-            "里没有 \"fire_head\": true。请用 train_mbert_extract.py --fire-head 训。")
+            f"--self-fire requires the mext run to be trained with a fire head:{ext/'best'/'meta.json'} "
+            "doesn't have \"fire_head\": true. Train with train_mbert_extract.py --fire-head.")
     bs = args.fire_bs or args.bs
     max_len = meta["max_len"]
     blocks = {}
@@ -301,13 +301,13 @@ def self_fire_block(args, run, ext, data, params, model, tok, meta,
         f = run / f"logits_{sp}.pt"
         if not f.exists():
             raise SystemExit(
-                f"--self-fire 要用同边界的 mtool argmax 定工具身份,缺 {f}。"
-                "先在同一个 mtool run 上跑一遍 eval_tool.py(它会存 logits_*.pt)。")
+                f"--self-fire needs the same-boundary mtool argmax to determine tool identity, missing {f}."
+                "First run eval_tool.py on the same mtool run (it saves logits_*.pt).")
         rows, pmap, st = load_ready(data, params, sp, ro_set, label2id)
         lg = torch.load(f, map_location="cpu")
         if len(rows) != lg.shape[0]:
-            raise SystemExit(f"{f} 有 {lg.shape[0]} 行,{sp} 过滤后 {len(rows)} 行"
-                             "——数据与缓存 logits 不同源")
+            raise SystemExit(f"{f} has {lg.shape[0]} rows, {sp} has {len(rows)} rows after filtering"
+                             "-- data and cached logits don't come from the same source")
         blocks[sp] = (rows, pmap, st, Gate(lg, nro_id))
 
     val_rows, _vp, val_st, val_gate = blocks["val"]
@@ -323,8 +323,8 @@ def self_fire_block(args, run, ext, data, params, model, tok, meta,
                 theta_sweep_val=[dict(theta=th, **a) for th, a in sweep],
                 ready_stats=dict(val=val_st, test=test_st))
     if th_fire is None:
-        print(f"[self-fire] val 上 20 档 θ 都压不到风险≤{args.risk};"
-              f"chosen={chosen},本块只出扫描表。", flush=True)
+        print(f"[self-fire] none of the 20 θ tiers on val push risk down to ≤{args.risk};"
+              f"chosen={chosen}, this block only outputs the sweep table.", flush=True)
         return dict(base, val=None, test=None, scored=None, on_ready=None)
 
     pt = score_fire(model, tok, test_rows, args.device, bs, max_len)
@@ -363,27 +363,27 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", required=True,
                     choices=["tales", "appworld", "bfcl", "alfworld"])
-    ap.add_argument("--run", required=True, help="分类头 run 目录(mtool)")
+    ap.add_argument("--run", required=True, help="classification head run directory (mtool)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>(直接含 test.jsonl / router_stats.md)")
+                    help="data directory <data_out> (directly contains test.jsonl / router_stats.md)")
     ap.add_argument("--params", default=None,
-                    help="参数区间标签目录(默认 <data>/params)")
-    ap.add_argument("--extractor", required=True, help="抽取头 run 目录(mext)")
+                    help="parameter-span label directory (default <data>/params)")
+    ap.add_argument("--extractor", required=True, help="extraction head run directory (mext)")
     ap.add_argument("--risk", type=float, default=0.05)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--bs", type=int, default=8)
-    ap.add_argument("--limit", type=int, default=0, help="截前 N 事件(冒烟)")
+    ap.add_argument("--limit", type=int, default=0, help="truncate to the first N events (smoke test)")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具+弃权类模式(默认关);打开后真值折叠、"
-                         "触发条件加\"argmax 不是弃权类\",且只给真值为只读"
-                         "工具的触发事件算参数指标")
+                    help="readonly-tool + abstention-class mode (off by default); once on, ground truth is folded,"
+                         "the fire condition adds \"argmax is not the abstention class\", and parameter metrics are computed only for"
+                         "fired events whose ground truth is a readonly tool")
     ap.add_argument("--self-fire", action="store_true",
-                    help="自主开火评测:θ_fire 在 val 上扫、test 冻结一次,"
-                         "开火时刻由抽取头自己的开火头定,不用 mtool 的 θ。"
-                         "只加 self_fire 块,旧字段一个不动")
+                    help="autonomous-fire evaluation: θ_fire is swept on val and frozen once for test,"
+                         "the fire moment is decided by the extraction head's own fire head, not by mtool's θ."
+                         "only adds a self_fire block; none of the old fields are touched")
     ap.add_argument("--fire-bs", type=int, default=0,
-                    help="开火打分的批大小(0=沿用 --bs)")
+                    help="batch size for fire scoring (0 = follow --bs)")
     args = ap.parse_args()
 
     run, ext = Path(args.run), Path(args.extractor)
@@ -392,34 +392,34 @@ def main():
 
     if args.self_fire and not args.readonly_env:
         raise SystemExit(
-            "--self-fire 必须与 --readonly-env 同时传:开火真值 ready 的定义"
-            "依赖该环境的只读真值表。")
+            "--self-fire must be passed together with --readonly-env: the definition of fire ground-truth ready"
+            "depends on that environment's readonly ground-truth table.")
 
     rep_cls = json.loads((run / "REPLAY_REPORT.json").read_text())
     T = rep_cls["temperature"]
     theta = rep_cls["chosen_theta"].get(str(args.risk))
     if theta is None:
         if not args.self_fire:
-            raise SystemExit(f"分类头报告里没有 risk={args.risk} 的 θ:"
+            raise SystemExit(f"no θ for risk={args.risk} in the classification head's report:"
                              f"{rep_cls['chosen_theta']}")
-        print(f"[self-fire] 分类头报告里没有 risk={args.risk} 的 θ"
-              f"({rep_cls['chosen_theta']}),旧模式整块跳过,只出 self_fire。",
+        print(f"[self-fire] no θ for risk={args.risk} in the classification head's report"
+              f"({rep_cls['chosen_theta']}); the whole old-mode block is skipped, only self_fire is output.",
               flush=True)
     old_mode = theta is not None
 
-    # 1) 触发点:过滤逻辑与 eval_tool 逐行一致,保证与 logits_test.pt 同序
+    # 1) threshold: filtering logic matches eval_tool line for line, guaranteeing the same order as logits_test.pt
     label2id = json.loads((run / "best" / "label_map.json").read_text())
 
-    # 防串味双向保险丝:label_map 里有弃权哨兵 ⇔ 必须传 --readonly-env
+    # anti-crosstalk two-way fuse: label_map has an abstain sentinel ⇔ --readonly-env must be passed
     has_sentinel = readonly_map.NON_READONLY in label2id
     if has_sentinel != bool(args.readonly_env):
         raise SystemExit(
-            f"readonly 保险丝不匹配:{run / 'best' / 'label_map.json'} "
-            f"{'含' if has_sentinel else '不含'}弃权哨兵 "
-            f"{readonly_map.NON_READONLY!r};而 --readonly-env "
-            f"{'传了 ' + str(args.readonly_env) if args.readonly_env else '没传'}。"
-            "两者必须同时成立或同时不成立——readonly 模式训的 run 只能带 "
-            "--readonly-env 评,旧口径 run 只能不带。")
+            f"readonly fuse mismatch:{run / 'best' / 'label_map.json'} "
+            f"{'has' if has_sentinel else 'lacks'} abstention sentinel "
+            f"{readonly_map.NON_READONLY!r}; while --readonly-env "
+            f"{'passed ' + str(args.readonly_env) if args.readonly_env else 'not passed'}."
+            "Both must hold together or fail together -- a run trained in readonly mode can only be "
+            "evaluated with --readonly-env; a run trained under the old settings can only be evaluated without it.")
     ro_set = nro_id = None
     if args.readonly_env:
         ro_set = readonly_map.load_readonly_set(args.readonly_env)
@@ -441,7 +441,7 @@ def main():
         assert len(rows) == logits.shape[0], (len(rows), logits.shape)
         fired = replay_fire(rows, torch.softmax(logits / T, -1), theta, nro_id)
 
-    # 2) 参数真值:params 里同一 (event, sent_idx) 那一行
+    # 2) parameter ground truth: the row in params with the same (event, sent_idx)
     pmap = {}
     for p in load_rows(params / "test.jsonl"):
         pmap[(p["event"], p["sent_idx"])] = p["params"]
@@ -449,7 +449,7 @@ def main():
     if old_mode:
         keys = [k for k in dict.fromkeys(r["event"] for r in rows)
                 if fired[k]["fired"]]
-        # readonly 模式:触发了但真值非只读的事件不算参数指标(不进任何分母),单独计数
+        # readonly mode: events that triggered but whose ground truth is non-read-only are excluded from parameter metrics (not in any denominator), counted separately
         if ro_set is not None:
             keep = [k for k in keys
                     if fired[k]["label"] != readonly_map.NON_READONLY]
@@ -460,7 +460,7 @@ def main():
 
     model, tok, meta = load_extractor(ext, args.device)
 
-    # 3) 逐事件汇总。参数正确 = 真值 found 时区间对 / 真值抽不到时答抽不到
+    # 3) aggregate per event. Parameter correct = when ground truth is found, the span matches / when ground truth cannot be extracted, the answer says it cannot be extracted
     per_ev, cnts = extract_points(keys, fired, pmap, model, tok, meta,
                                   args.device, args.bs)
     n_par, n_loose = cnts["n_par"], cnts["n_loose"]
@@ -483,8 +483,8 @@ def main():
         b["present"] += pe["present"]
 
     for k in keys:
-        add(buck["整体"], k)
-        add(buck[tiers.get(fired[k]["label"], "自由")], k)
+        add(buck["overall"], k)
+        add(buck[tiers.get(fired[k]["label"], "free")], k)
 
     def fmt(b):
         return dict(n=b["n"], noparam_events=b["noparam"],
@@ -506,14 +506,14 @@ def main():
             param_acc_loose=rate(n_loose, n_par),
             param_acc_strict=rate(n_strict, n_par),
             by_tier={t: fmt(buck[t]) for t in TIERS if t in buck},
-            overall=fmt(buck["整体"]),
+            overall=fmt(buck["overall"]),
             anchors=dict(spork_param_acc=SPORK_ANCHOR,
                          pilot_value_present_at_25tok=PILOT_ANCHOR))
     if ro_set is not None:
         out["readonly_env"] = args.readonly_env
         out["readonly_excluded"] = n_ro_excluded
 
-    # ---------------- 自主开火(--self-fire):θ_fire 在 val 上扫,test 冻结一次
+    # ---------------- self-fire (--self-fire): sweep θ_fire on val, freeze once on test
     sf = None
     if args.self_fire:
         sf = self_fire_block(args, run, ext, data, params, model, tok, meta,
@@ -522,24 +522,24 @@ def main():
     (ext / "EXTRACT_REPORT.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=1))
 
-    md = [f"# 触发时刻抽取评测 — {args.env}"]
+    md = [f"# Extraction evaluation at the fire moment -- {args.env}"]
     if not old_mode:
-        md += [f"- 分类头 {run.name} 在 risk={args.risk} 上无解 θ,"
-               "旧模式整块跳过;本文件只有自主开火那一节。"]
+        md += [f"- classification head {run.name} has no θ solution at risk={args.risk},"
+               "the whole old-mode block is skipped; this file has only the autonomous-fire section."]
     md += ([
-          f"- 分类头 {run.name} / 抽取头 {ext.name};风险≤{args.risk} → θ={theta}"
-          f"(温度 T={T})",
-          f"- test 事件 {n_ev},触发 {out['n_events_fired']},"
-          f"本次计入 {len(keys)}" + (f"(--limit {args.limit})"
+          f"- classification head {run.name} / extraction head {ext.name}; risk≤{args.risk} → θ={theta}"
+          f"(temperature T={T})",
+          f"- test events {n_ev}, fired {out['n_events_fired']},"
+          f"{len(keys)} counted this time" + (f"(--limit {args.limit})"
                                      if args.limit else ""),
-          f"- 参数实例 {n_par};参数级正确率 宽松 {out['param_acc_loose']} / "
-          f"严格 {out['param_acc_strict']};触发时值已出现 "
+          f"- parameter instances {n_par}; parameter-level accuracy loose {out['param_acc_loose']} / "
+          f"strict {out['param_acc_strict']}; value already present at fire time "
           f"{out['param_present_rate']}",
           "",
-          "| 档位 | 事件数 | 其中无参 | 值已全出现 | 参数全对率 |"
-          " 参数全对(严格) | 完整调用正确率 |",
+          "| tier | events | of which no-arg | values already present | all-params-correct rate |"
+          " all params correct (strict) | full-call accuracy |",
           "|---|---|---|---|---|---|---|"] if old_mode else [])
-    for t in (list(TIERS) + ["整体"]) if old_mode else []:
+    for t in (list(TIERS) + ["overall"]) if old_mode else []:
         if t not in buck:
             continue
         f = fmt(buck[t])
@@ -547,64 +547,64 @@ def main():
                   f"{f['params_all_present']} | {f['params_all_ok']} | "
                   f"{f['params_all_ok_strict']} | {f['full_call_ok']} |")
     md += ["",
-           "## 锚点与已知风险",
-           f"- 竞品 SPORK 参数起步正确率 {SPORK_ANCHOR:.1%};"
-           "本表末列的完整调用正确率是同一件事的口径。",
-           "- 已知风险:早触发点参数常未出现——先行试点提前 25 token 时"
-           f"字面串仅 {PILOT_ANCHOR:.1%} 已出现。这部分真值记为抽不到,"
-           "抽取头答对抽不到也算参数正确,所以参数全对率可以高于"
-           "值已全出现率;但真能在触发时刻组出完整调用去投机的,"
-           "只有值已全出现那一列,它才是投机覆盖面的天花板。",
-           "- 判对口径:宽松=预测字符区间覆盖真值且多出的只有空白/标点。"
-           "BPE 把前导空格与引号并进 token,严格逐字会系统性低估——"
-           "金标 token 跨度自身的严格通过率只有 "
+           "## Anchors and known risks",
+           f"- the competing system SPORK's starting parameter accuracy is {SPORK_ANCHOR:.1%};"
+           "the full-call accuracy in this table's last column is the same measure.",
+           "- known risk: parameters at early fire points often haven't appeared yet -- in an earlier pilot, firing 25 tokens ahead,"
+           f"the literal string had appeared only {PILOT_ANCHOR:.1%} of the time. This part of the ground truth is recorded as not extractable,"
+           "the extraction head getting 'not extractable' right also counts as the parameter being correct, so the all-params-correct rate can be higher than"
+           "the values-already-present rate; but the only thing that reflects what can truly be assembled into a full call to speculate on at fire time,"
+           "is the values-already-present column -- that is the ceiling on speculation coverage.",
+           "- correctness criterion: loose = the predicted character span covers the ground truth and the only extra characters are whitespace/punctuation."
+           "BPE merges the leading space and the quote into one token, so strict exact match systematically underestimates --"
+           "the gold-standard token span's own strict pass rate is only "
            "tales 0.066 / bfcl 0.642 / appworld 0.659,"
-           "宽松口径下则是 0.997/0.997/0.991。严格列仅供对照。"]
+           "and under the loose settings it's 0.997/0.997/0.991. The strict column is for reference only."]
     if ro_set is not None and old_mode:
-        md += ["", f"## 只读模式(--readonly-env {args.readonly_env})",
-               f"- 弃权类 {readonly_map.NON_READONLY}(标签 id {nro_id});"
-               "触发条件加\"argmax 不是弃权类\",真值标签已折叠",
-               f"- 触发但真值非只读、因而不进任何参数分母的事件:"
+        md += ["", f"## Readonly mode (--readonly-env {args.readonly_env})",
+               f"- abstention class {readonly_map.NON_READONLY} (label id {nro_id});"
+               "the fire condition adds \"argmax is not the abstention class\"; ground-truth labels have been folded",
+               f"- events that fire but whose ground truth isn't readonly, and therefore don't enter any parameter denominator:"
                f"{n_ro_excluded}(readonly_excluded);"
-               f"本表各列的分母是余下的 {len(keys)} 个真值只读触发事件"]
+               f"the denominator for every column in this table is the remaining {len(keys)} ground-truth-readonly fired events"]
     if sf is not None and sf["test"] is None:
-        md += ["", f"## 自主开火(--self-fire,风险≤{args.risk})",
-               f"- val 上 20 档 θ 都压不到风险≤{args.risk}"
-               f"(chosen={sf['chosen_theta_fire']}),test 没考,"
-               "只留 self_fire.theta_sweep_val 那张扫描表。"]
+        md += ["", f"## Autonomous fire (--self-fire, risk≤{args.risk})",
+               f"- none of the 20 θ tiers on val push risk down to ≤{args.risk}"
+               f"(chosen={sf['chosen_theta_fire']}); test wasn't evaluated,"
+               "only the self_fire.theta_sweep_val sweep table is kept."]
     elif sf is not None:
         a = sf["test"]
-        md += ["", f"## 自主开火(--self-fire,风险≤{args.risk})",
-               f"- θ_fire 在 val 上扫出 {sf['theta_fire']}"
-               f"(val 覆盖率 {sf['val']['coverage']} / "
-               f"开火正确率 {sf['val']['fire_acc']});test 冻结一次",
-               "- 开火条件 = 开火头概率≥θ_fire 且同边界 mtool argmax 不是弃权类;"
-               "开火真值 ready = 工具只读 且 该边界上参数全部 found",
-               f"- test 事件 {a['n']},开火 {a['n_fired']},"
-               f"覆盖率 {a['coverage']},开火正确率 {a['fire_acc']},"
-               f"错误开火率 {a['wrong_fire_rate']}",
-               f"- 参数实例 {sf['scored']['n_param_instances']};参数级正确率 "
-               f"宽松 {sf['scored']['param_acc_loose']} / "
-               f"严格 {sf['scored']['param_acc_strict']}",
+        md += ["", f"## Autonomous fire (--self-fire, risk≤{args.risk})",
+               f"- θ_fire was swept to {sf['theta_fire']} on val"
+               f"(val coverage {sf['val']['coverage']} / "
+               f"fire accuracy {sf['val']['fire_acc']}); test frozen once",
+               "- fire condition = fire head probability ≥ θ_fire AND the same-boundary mtool argmax is not the abstention class;"
+               "fire ground-truth ready = the tool is readonly AND every parameter at that boundary is found",
+               f"- test events {a['n']}, fired {a['n_fired']},"
+               f"coverage {a['coverage']}, fire accuracy {a['fire_acc']},"
+               f"wrong-fire rate {a['wrong_fire_rate']}",
+               f"- parameter instances {sf['scored']['n_param_instances']}; parameter-level accuracy "
+               f"loose {sf['scored']['param_acc_loose']} / "
+               f"strict {sf['scored']['param_acc_strict']}",
                "",
-               "| 指标(分母=开火点) | 全部开火点 | 其中真值 ready 的 |",
+               "| metric (denominator = fire points) | all fire points | of which ground-truth ready |",
                "|---|---|---|",
-               f"| 事件数 | {sf['scored']['n']} | {sf['on_ready']['n']} |",
-               f"| 其中无参 | {sf['scored']['noparam_events']} | "
+               f"| number of events | {sf['scored']['n']} | {sf['on_ready']['n']} |",
+               f"| of which no-arg | {sf['scored']['noparam_events']} | "
                f"{sf['on_ready']['noparam_events']} |",
-               f"| 值已全出现 | {sf['scored']['params_all_present']} | "
+               f"| values already present | {sf['scored']['params_all_present']} | "
                f"{sf['on_ready']['params_all_present']} |",
-               f"| 参数全对率 | {sf['scored']['params_all_ok']} | "
+               f"| all-params-correct rate | {sf['scored']['params_all_ok']} | "
                f"{sf['on_ready']['params_all_ok']} |",
-               f"| 参数全对(严格) | {sf['scored']['params_all_ok_strict']} | "
+               f"| all params correct (strict) | {sf['scored']['params_all_ok_strict']} | "
                f"{sf['on_ready']['params_all_ok_strict']} |",
-               f"| 完整调用正确率 | {sf['scored']['full_call_ok']} | "
+               f"| full-call accuracy | {sf['scored']['full_call_ok']} | "
                f"{sf['on_ready']['full_call_ok']} |",
                "",
-               "- 左列不剔除任何开火点:错误开火那些事件的工具身份必然对不上"
-               "(mtool argmax 不是弃权类,真值却是),所以天然判错——"
-               "这一列才是\"让探针自己决定何时发射\"的真成绩。",
-               "- 右列只看真值 ready 的开火点,用来和上面那张旧模式的表对照读。"]
+               "- the left column doesn't exclude any fire point: for the events with a wrong fire, the tool identity necessarily doesn't match"
+               "(mtool argmax isn't the abstention class, but the ground truth is), so it's naturally scored wrong --"
+               "this column is the real score for \"letting the probe decide for itself when to fire\".",
+               "- the right column only looks at fire points where the ground truth is ready, for reading side by side with the old-mode table above."]
     (ext / "EXTRACT_REPORT.md").write_text("\n".join(md) + "\n")
     heartbeat.emit(cnts["n_par"], cnts["n_par"], "item", status="done")
     if old_mode:

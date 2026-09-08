@@ -1,16 +1,19 @@
-"""tests/test_eval_overlong.py —— spec `.scratch/kvshare-train/spec.md`
-16.9 第一条,对应工单 `.scratch/kvshare-train/issues/07-eval-overlong.md`。
+"""tests/test_eval_overlong.py -- spec `.scratch/kvshare-train/spec.md` 16.9
+item 1, corresponding to ticket `.scratch/kvshare-train/issues/07-eval-overlong.md`.
 
-跑法(share_data.py/eval_tool.py 顶层都要 torch,`train_causal_tool` 顶层有
-transformers>=5.14 版本门,所以整份要 cprobe-env):
+How to run (share_data.py/eval_tool.py both need torch at the top level,
+`train_causal_tool` has a transformers>=5.14 version gate at the top level, so
+the whole file needs cprobe-env):
   cprobe-env/bin/python -m unittest tests.test_eval_overlong -v
-系统 python3 跑全量 discover 时本模块整体 skip(没有 torch),不算失败;
-mbert-env(transformers 4.57.6)下 import train_causal_tool/eval_tool 会
-SystemExit(顶层的 transformers>=5.14 版本门),一并兜住照样 skip(照
-tests/test_ctool_readpos.py 的写法)。
+When system python3 runs the full discover, this module is skipped entirely (no
+torch), which doesn't count as a failure; under mbert-env (transformers 4.57.6)
+importing train_causal_tool/eval_tool raises SystemExit (the top-level
+transformers>=5.14 version gate), which is also caught and skipped the same way
+(following the pattern in tests/test_ctool_readpos.py).
 
-真实 Qwen3-0.6B-Base 分词器路径不存在时,涉及它的用例 skipTest。全部用例
-手造小事件/小模型,不读 pipeline/data/ 下的现役数据目录。
+When the real Qwen3-0.6B-Base tokenizer path doesn't exist, the test cases that
+touch it call skipTest. All test cases hand-build small events/small models and
+don't read the live data directory under pipeline/data/.
 """
 import json
 import sys
@@ -27,28 +30,28 @@ try:
     import transformers
     import share_data
     from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer
-except ImportError as e:                       # 系统 python3 没有 torch
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # system python3 doesn't have torch
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 try:
     import train_causal_tool                    # noqa: E402
-except ImportError as e:                        # 系统 python3 没有 transformers
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
-except SystemExit as e:                         # mbert-env 的 transformers<5.14
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                        # system python3 doesn't have transformers
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
+except SystemExit as e:                         # mbert-env's transformers<5.14
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 try:
     import eval_tool                            # noqa: E402
 except ImportError as e:
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 except SystemExit as e:
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 try:
     import eval_causal_call                     # noqa: E402
     import eval_causal_param                    # noqa: E402
 except ImportError as e:
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 QWEN_PATH = train_causal_tool.MODELS["qwen"]
 
@@ -65,7 +68,7 @@ def _write_jsonl(rows, path):
 
 
 def _grow_until(tok, base, min_tokens):
-    """把 `base` 重复拼接,直到 token 数 > `min_tokens`(照 test_share_data.py)。"""
+    """Repeatedly concatenate `base` until the token count > `min_tokens` (following test_share_data.py)."""
     s = base
     while len(tok(s, add_special_tokens=False)["input_ids"]) <= min_tokens:
         s = s + " " + base
@@ -73,8 +76,8 @@ def _grow_until(tok, base, min_tokens):
 
 
 def _tiny_causal_config(vocab_size):
-    """两层 Qwen3,规模小到 CPU 秒级(照 tests/test_share_trainer.py 的
-    `_tiny_config`)。"""
+    """A two-layer Qwen3, scaled down to CPU-second speed (following
+    `_tiny_config` from tests/test_share_trainer.py)."""
     return transformers.Qwen3Config(
         hidden_size=64, intermediate_size=128, num_hidden_layers=2,
         num_attention_heads=4, num_key_value_heads=2, head_dim=16,
@@ -83,13 +86,13 @@ def _tiny_causal_config(vocab_size):
 
 
 class TestNFullTokensMatchesLoadEvents(unittest.TestCase):
-    """(a) `n_full_tokens`/`full_token_ids` 与 `load_events` 的
-    `dropped_events` 判据用同一个数,一致。"""
+    """(a) `n_full_tokens`/`full_token_ids` use the same number as `load_events`'s
+    `dropped_events` criterion, consistent."""
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def test_matches_load_events_drop(self):
@@ -115,34 +118,36 @@ class TestNFullTokensMatchesLoadEvents(unittest.TestCase):
         self.assertIn("ev_normal", kept)
         self.assertNotIn("ev_long", kept)
 
-        # 同一段文本上,n_full_tokens 的丢弃判据与 load_events 的一致
+        # On the same span of text, n_full_tokens's drop criterion is consistent with load_events's
         self.assertGreater(share_data.n_full_tokens(self.tok, long_full_text),
                            max_len)
         self.assertLessEqual(
             share_data.n_full_tokens(self.tok, short_text), max_len)
-        # full_token_ids 与 n_full_tokens 是同一次分词的两个产物
+        # full_token_ids and n_full_tokens are two outputs of the same tokenization pass
         self.assertEqual(
             len(share_data.full_token_ids(self.tok, long_full_text)),
             share_data.n_full_tokens(self.tok, long_full_text))
 
 
 class TestSelectKeys(unittest.TestCase):
-    """(b) `share_data.select_keys` 三种模式的计数与留下的 key 集合,以及
-    给定 `excluded_rows` 时的剔除(部分行被剔的事件留下、全部候选行被剔的
-    事件去掉并计入 `n_excluded_by_ctool`)。不需要真实分词器/模型——纯手造
-    的 dict 输入。
+    """(b) The counts and the set of keys kept for `share_data.select_keys`'s
+    three modes, plus the exclusion behavior when `excluded_rows` is given (an
+    event with some rows excluded is kept, an event with all candidate rows
+    excluded is dropped and counted into `n_excluded_by_ctool`). Doesn't need a
+    real tokenizer/model -- purely hand-built dict input.
     """
 
     def setUp(self):
-        # e1/e2/e4 的提示长度不超阈值;e3 超阈值(left/drop-event 里被左截
-        # 计数,skip 里整行被剔);e2 的事件全文超 max_len(drop-event 专属);
-        # e4 只有部分候选行被 ctool 剔除(留下);e5 唯一的候选行被 ctool
-        # 剔光(整个 key 去掉,计 n_excluded_by_ctool)。
+        # e1/e2/e4's prompt length doesn't exceed the threshold; e3 exceeds it (counted
+        # as left-truncated in left/drop-event, excluded entirely in skip); e2's event
+        # full text exceeds max_len (drop-event only); e4 has only some candidate rows
+        # excluded by ctool (kept); e5's only candidate row is entirely excluded by
+        # ctool (the whole key is dropped, counted into n_excluded_by_ctool).
         self.keys = {"e1": [0, 1], "e2": [2, 3], "e3": [4],
                     "e4": [5, 6], "e5": [7]}
         self.n_full = {"e1": 100, "e2": 5000, "e3": 50, "e4": 10, "e5": 10}
         self.prompt_len = {"e1": 30, "e2": 30, "e3": 90, "e4": 10, "e5": 10}
-        self.excluded_rows = {5, 7}     # e4 剔一行留一行;e5 唯一候选行被剔
+        self.excluded_rows = {5, 7}     # e4 excludes one row and keeps one; e5's only candidate row is excluded
         self.max_len = 100
         self.max_new = 20               # thresh = 80
 
@@ -180,16 +185,18 @@ class TestSelectKeys(unittest.TestCase):
 
 
 class TestCparamPromptLenMaxRule(unittest.TestCase):
-    """(b 附加)cparam 用例:一个 key 的真值/预测工具名提示 token 数不同,
-    只有 pred_tool 那套超过 `max_len - max_new`。`L(k)` 取两套的最大值
-    (`eval_causal_param.py` main() 里内联的同一段算法,这里直接照抄那段
-    算法验证,不跑整份需要模型 run 目录的 main())。
+    """(b addendum) cparam test case: a key's true-label/predicted-tool prompt
+    token counts differ, only the pred_tool one exceeds `max_len - max_new`.
+    `L(k)` takes the max of the two (the same inline algorithm from
+    `eval_causal_param.py`'s main(); here it's copied verbatim to verify that
+    algorithm, without running the whole main() that needs a model run
+    directory).
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def test_max_of_two_tags(self):
@@ -197,7 +204,7 @@ class TestCparamPromptLenMaxRule(unittest.TestCase):
         len_gt = len(self.tok(gt_text, add_special_tokens=False,
                              truncation=False)["input_ids"])
         max_len = len_gt + 5
-        max_new = 0                      # thresh = max_len,简化算术
+        max_new = 0                      # thresh = max_len, simplifies the arithmetic
         pred_text = _grow_until(self.tok, "word", max_len)
         len_pred = len(self.tok(pred_text, add_special_tokens=False,
                                truncation=False)["input_ids"])
@@ -208,14 +215,14 @@ class TestCparamPromptLenMaxRule(unittest.TestCase):
         prompt_len = {"k1": max(len_gt, len_pred)}
         excluded_rows = set()
 
-        # skip:两套提示的最大值超阈值,整个 key 被剔(最大值规则)
+        # skip: the max of the two prompts exceeds the threshold, the whole key is excluded (max-value rule)
         kept, counts = share_data.select_keys(
             "skip", keys, {}, prompt_len, excluded_rows, max_len, max_new)
         self.assertEqual(kept, [])
         self.assertEqual(counts["n_skipped_rows"], 1)
 
-        # left:key 留下,同时按 eval_causal_param.py 内联的算法逐 tag 计
-        # n_left_truncated_by_tag
+        # left: the key is kept, and n_left_truncated_by_tag is counted per tag
+        # following the algorithm inlined in eval_causal_param.py
         kept, counts = share_data.select_keys(
             "left", keys, {}, prompt_len, excluded_rows, max_len, max_new)
         self.assertEqual(kept, ["k1"])
@@ -232,11 +239,14 @@ class TestCparamPromptLenMaxRule(unittest.TestCase):
 
 
 class _IdentityGenerate:
-    """把 `eval_causal_call.generate` / `eval_causal_param.generate` 换成
-    回声:直接把喂进去的 prompt 原样当"生成结果"返回。测的是触发点/候选行
-    怎么挑出来这一段接线,不是模型真会不会写调用——真模型的输出不可控,
-    回声让报告里的 `gen` 字段直接暴露"喂给模型的 prompt 到底含哪一行 text",
-    从而能断言挑中的是重新选出来的那一行,不是被 ctool 剔除的原触发行。
+    """Swap `eval_causal_call.generate` / `eval_causal_param.generate` for an
+    echo: return the prompt fed in, as-is, as the "generation result". What's
+    tested is the wiring for how the trigger point/candidate row gets picked,
+    not whether the model actually writes the call -- a real model's output is
+    uncontrollable, and the echo makes the `gen` field in the report directly
+    expose "exactly which line of text the prompt fed to the model contains",
+    so it becomes possible to assert that the row picked is the one re-selected,
+    not the original trigger row that ctool excluded.
     """
 
     def __call__(self, model, tok, prompts, dev, bs, max_len, max_new,
@@ -245,17 +255,21 @@ class _IdentityGenerate:
 
 
 class TestCgenCtoolExclusionWiring(unittest.TestCase):
-    """(b 附加 2)`eval_causal_call.py` 端到端接线(F1 的回归测试):ctool
-    剔除的行不许当触发点候选,候选行剔光的事件计入 `n_excluded_by_ctool`
-    且不判分,部分候选行被剔的事件要在剩下的行里重新挑触发点——不是靠"零
-    logits 天然过不了 θ"这个巧合。只手造一个真实分词器 + 随机初始化的两层
-    模型,`generate` 换成回声,不依赖任何现役 run 目录。
+    """(b addendum 2) End-to-end wiring test for `eval_causal_call.py` (F1's
+    regression test): a row excluded by ctool must not be a trigger-point
+    candidate, an event whose candidate rows are all excluded is counted into
+    `n_excluded_by_ctool` and not scored, and an event with only some
+    candidate rows excluded must re-pick the trigger point among the remaining
+    rows -- not by relying on the coincidence that "zero logits naturally fail
+    to clear θ". Only hand-builds one real tokenizer plus a randomly
+    initialized two-layer model, `generate` is swapped for an echo, no
+    dependency on any live run directory.
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def test_reselect_and_count_excluded(self):
@@ -278,12 +292,14 @@ class TestCgenCtoolExclusionWiring(unittest.TestCase):
         ]
         for r in rows:
             r["args_named"] = []
-        # row0(被剔除,logits 故意比 θ 高得多——「剔除的行不许当候选」这条
-        # 不能靠 θ 天然挡住,得靠接线本身挡);row1(存活,conf 略过 θ,event
-        # 该重新挑到这一行);row2/row3(整个事件都被剔除,logits 是 ctool
-        # 真实产出的零 logits,conf=0.5<θ,老接线里这类事件本来就不会
-        # "fired",既不计入已触发也不计入 n_excluded_by_ctool,静默消失——
-        # 这正是 F1 指出的缺口);row4(正常触发,基线对照)。
+        # row0 (excluded, logits deliberately set much higher than θ -- the rule "an
+        # excluded row must not be a candidate" can't rely on θ naturally blocking it,
+        # the wiring itself must block it); row1 (survives, conf just clears θ, the
+        # event should re-pick this row); row2/row3 (the whole event is excluded,
+        # logits are the real zero logits ctool produces, conf=0.5<θ, under the old
+        # wiring events like this would never "fire" anyway, counted into neither
+        # already-triggered nor n_excluded_by_ctool, vanishing silently -- this is
+        # exactly the gap F1 points out); row4 (normal trigger, baseline control).
         logits = torch.tensor([
             [10.0, -10.0],
             [3.0, -3.0],
@@ -337,7 +353,7 @@ class TestCgenCtoolExclusionWiring(unittest.TestCase):
 
         self.assertEqual(out["n_events_test"], 3)
         self.assertEqual(out["n_events_fired"], 2,
-                         "ev_full_excl 的两行都是零 logits,不该被算作已触发")
+                         "both rows of ev_full_excl are zero logits, should not count as fired")
         self.assertEqual(out["n_excluded_by_ctool"], 1)
         self.assertEqual(out["n_events_scored"], 2)
 
@@ -346,20 +362,20 @@ class TestCgenCtoolExclusionWiring(unittest.TestCase):
         self.assertNotIn("ev_full_excl", by_event)
         gen = by_event["ev_reselect"]["gen"]
         self.assertIn("ROW1 SURVIVING TEXT", gen,
-                     "触发点该重新挑到剩下的那一行")
+                     "the fire point should be re-picked to the remaining row")
         self.assertNotIn("ROW0 EXCLUDED CONFIDENT TEXT", gen,
-                         "被 ctool 剔除的行不许当触发点候选,不管它的 logits"
-                         "多自信")
+                         "rows dropped by ctool must not be fire-point candidates, no matter how confident "
+                         "their logits are")
 
 
 class TestCparamCtoolExclusionWiring(unittest.TestCase):
-    """(b 附加 3)`eval_causal_param.py` 端到端接线(F2 的回归测试),与
-    `TestCgenCtoolExclusionWiring` 同构。"""
+    """(b addendum 3) End-to-end wiring test for `eval_causal_param.py` (F2's
+    regression test), isomorphic to `TestCgenCtoolExclusionWiring`."""
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def test_reselect_and_count_excluded(self):
@@ -436,7 +452,7 @@ class TestCparamCtoolExclusionWiring(unittest.TestCase):
 
         self.assertEqual(out["n_events_test"], 3)
         self.assertEqual(out["n_events_fired"], 2,
-                         "ev_full_excl 的两行都是零 logits,不该被算作已触发")
+                         "both rows of ev_full_excl are zero logits, should not count as fired")
         self.assertEqual(out["n_excluded_by_ctool"], 1)
         self.assertEqual(out["n_events_scored"], 2)
 
@@ -445,25 +461,28 @@ class TestCparamCtoolExclusionWiring(unittest.TestCase):
         self.assertNotIn("ev_full_excl", by_event)
         gen = by_event["ev_reselect"]["gen"]
         self.assertIn("ROW1 SURVIVING TEXT", gen,
-                     "触发点该重新挑到剩下的那一行")
+                     "the fire point should be re-picked to the remaining row")
         self.assertNotIn("ROW0 EXCLUDED CONFIDENT TEXT", gen,
-                         "被 ctool 剔除的行不许当触发点候选,不管它的 logits"
-                         "多自信")
+                         "rows dropped by ctool must not be fire-point candidates, no matter how confident "
+                         "their logits are")
 
 
 class TestCgenDropEventFullTextUsesRawRows(unittest.TestCase):
-    """终审 F1 回归测试:`--overlong drop-event` 取事件全文要用 share_data
-    的规则(不按 ctool 词表过滤行,取 `sent_idx` 最大那行的 `text`),不能
-    套用 ctool 过滤后的 `rows`。手造一个事件:`sent_idx` 最大的那一行标签
-    不在 ctool 词表里(会被 `label in label2id` 过滤掉),只有算上这一行的
-    全文才会超过 `max_len`——套错口径(用过滤后的 `rows`)会漏看这一行,
-    误判成没超长;改对之后(用 `raw_rows`)才会正确地把整个事件丢掉。
+    """Final-review F1 regression test: when `--overlong drop-event` takes the
+    event's full text, it must use share_data's rule (don't filter rows by the
+    ctool vocabulary, take the `text` of the row with the largest `sent_idx`),
+    not the ctool-filtered `rows`. Hand-builds one event: the row with the
+    largest `sent_idx` has a label not in the ctool vocabulary (it would get
+    filtered out by `label in label2id`), and only counting this row's full
+    text pushes it over `max_len` -- using the wrong convention (the filtered
+    `rows`) misses this row and wrongly judges it as not overlong; fixed
+    correctly (using `raw_rows`) it correctly drops the whole event.
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def test_event_with_out_of_vocab_last_row_gets_dropped(self):
@@ -476,25 +495,29 @@ class TestCgenDropEventFullTextUsesRawRows(unittest.TestCase):
         short_text_b = "This is a different short event text."
         max_len = len(self.tok(short_text_a,
                               add_special_tokens=False)["input_ids"]) + 20
-        # 只有把 sent_idx=1 这一行(标签不在词表里)的全文算进去,事件全文
-        # 才会超过 max_len;词表过滤后剩下的 sent_idx=0 全文远低于 max_len。
+        # Only by counting in the full text of the sent_idx=1 row (label not in the
+        # vocabulary) does the event's full text exceed max_len; after vocabulary
+        # filtering, the remaining sent_idx=0 full text is far below max_len.
         long_full_text = _grow_until(self.tok, "word", max_len + 20)
 
         rows = [
-            # ev_drop 的触发点(sent_idx=0,标签在词表里,会被判为 fired):
-            # 全文本身不长,套错口径时事件全文就等于这一行,判不出超长。
+            # ev_drop's trigger point (sent_idx=0, label in the vocabulary, will be
+            # judged fired): the full text itself isn't long, and with the wrong
+            # convention the event's full text equals just this row, so overlong can't be
+            # detected.
             _row("ev_drop", 0, 2, short_text_a, "apis.a", "apis.a(x=1)"),
-            # sent_idx 最大的一行,标签不在 ctool 词表里,会被
-            # `label in label2id` 整行过滤掉——但 share_data 的规则要求
-            # 全文口径必须看到这一行。
+            # The row with the largest sent_idx has a label not in the ctool vocabulary,
+            # so `label in label2id` filters the whole row out -- but share_data's rule
+            # requires the full-text convention to see this row.
             _row("ev_drop", 1, 2, long_full_text, "apis.zzz", "apis.zzz(x=1)"),
-            # 基线对照:正常短事件,drop-event 下不该被丢。
+            # baseline control: a normal short event, shouldn't be dropped under drop-event.
             _row("ev_keep", 0, 1, short_text_b, "apis.a", "apis.a(x=2)"),
         ]
         for r in rows:
             r["args_named"] = []
-        # 过滤后只剩 ev_drop 的 sent_idx=0 与 ev_keep 的 sent_idx=0 两行,
-        # 顺序与 raw_rows 里的先后一致;两行都给高置信度让它们都能触发。
+        # After filtering only two rows remain, ev_drop's sent_idx=0 and ev_keep's
+        # sent_idx=0, in the same order as in raw_rows; both rows are given high
+        # confidence so both can fire.
         logits = torch.tensor([
             [10.0, -10.0],
             [10.0, -10.0],
@@ -543,27 +566,27 @@ class TestCgenDropEventFullTextUsesRawRows(unittest.TestCase):
 
         self.assertEqual(out["n_dropped_events"], 1)
         self.assertEqual(out["n_events_fired"], 2,
-                         "两个事件的触发行都给了高置信度,该都触发")
+                         "both events' fire rows got high confidence, both should fire")
         self.assertEqual(out["n_events_scored"], 1,
-                         "ev_drop 该被 drop-event 丢掉,只剩 ev_keep 判分")
+                         "ev_drop should be dropped by drop-event, leaving only ev_keep to be scored")
         by_event = {s["event"]: s for s in out["samples"]}
         self.assertNotIn("ev_drop", by_event,
-                         "sent_idx 最大那行(标签不在词表里)的全文超长,"
-                         "事件该被丢——套错口径(过滤后的 rows)会漏看这一行")
+                         "the row with the largest sent_idx (label not in vocab) has overlong full text, "
+                         "the event should be dropped -- using the wrong settings (filtered rows) would miss this row")
         self.assertIn("ev_keep", by_event)
 
 
 class TestScoreCausalOverlong(unittest.TestCase):
-    """(c) `eval_tool.score_causal` 三种模式下 `out` 行数都等于输入行数、
-    `excluded_idx` 与计数各对、被剔除行的 logits 全零。小模型:
-    `Qwen3Config` 随机初始化的两层 backbone + 一个线性头(照
-    `tests/test_share_trainer.py` 的做法)。
+    """(c) Under all three modes of `eval_tool.score_causal`, `out` has the same row count
+    as the input, `excluded_idx` and the counts match, and excluded rows have all-zero
+    logits. Small model: a two-layer backbone from a randomly initialized `Qwen3Config`
+    + one linear head (following `tests/test_share_trainer.py`'s approach).
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
         if cls.tok.pad_token_id is None:
             cls.tok.pad_token = cls.tok.eos_token
@@ -577,12 +600,13 @@ class TestScoreCausalOverlong(unittest.TestCase):
         cls.head.weight.data.zero_()
         cls.head.bias.data = torch.tensor([1.0, 2.0, 3.0])
 
-        # ev1:early 段被左截掉之后落在窗口外(row0 的边界在 early 里),
-        # tail 段(row1 = 整段全文)保留在窗口内;full 的 token 数超过
-        # max_len,drop-event 下整个事件被丢。ev2:短事件,始终在窗口内。
-        # early/late/max_len/early_cut 的构造照抄
-        # tests/test_ctool_readpos.py 的 TestScoreCausalOutOfWindow,已验证
-        # 能稳定触发左截窗口外。
+        # ev1: after the early segment is left-truncated it falls outside the window (row0's
+        # boundary is inside early), the tail segment (row1 = the full text) stays inside the
+        # window; full's token count exceeds max_len, so under drop-event the whole event gets
+        # dropped. ev2: a short event, always inside the window.
+        # The early/late/max_len/early_cut construction is copied from
+        # tests/test_ctool_readpos.py's TestScoreCausalOutOfWindow, already verified to
+        # reliably trigger left-truncation-out-of-window.
         early = "zero one two three four five six seven eight nine ten. "
         late = ("eleven twelve thirteen fourteen fifteen sixteen seventeen "
                "eighteen nineteen twenty twenty-one twenty-two twenty-three "
@@ -592,8 +616,8 @@ class TestScoreCausalOverlong(unittest.TestCase):
         n_full_total = len(
             cls.tok(cls.full, add_special_tokens=False)["input_ids"])
         cls.max_len = n_late
-        assert cls.max_len < n_full_total, "构造不满足会左截的前提"
-        cls.early_cut = 3                       # 落在 early 里,左截后必定窗口外
+        assert cls.max_len < n_full_total, "construction does not meet the precondition for left truncation"
+        cls.early_cut = 3                       # Falls inside early; after left-truncation it is definitely outside the window
 
         cls.short_text = "a short normal event that fits easily"
         assert share_data.n_full_tokens(cls.tok, cls.short_text) < cls.max_len
@@ -614,7 +638,7 @@ class TestScoreCausalOverlong(unittest.TestCase):
         self.assertEqual(counts["n_skipped_bounds"], 0)
         self.assertEqual(counts["n_dropped_events"], 0)
         self.assertEqual(counts["n_dropped_bounds"], 0)
-        self.assertEqual(out[0].abs().sum().item(), 0.0)   # 窗口外:零 logits
+        self.assertEqual(out[0].abs().sum().item(), 0.0)   # Outside the window: zero logits
         self.assertTrue(torch.equal(out[1], self.head.bias.detach()))
         self.assertTrue(torch.equal(out[2], self.head.bias.detach()))
 
@@ -627,7 +651,7 @@ class TestScoreCausalOverlong(unittest.TestCase):
         self.assertEqual(counts["n_skipped_bounds"], 1)
         self.assertGreaterEqual(counts["n_oow"], 1)
         self.assertEqual(counts["n_dropped_events"], 0)
-        self.assertEqual(out[0].abs().sum().item(), 0.0)   # 剔除:零 logits
+        self.assertEqual(out[0].abs().sum().item(), 0.0)   # Excluded: zero logits
         self.assertTrue(torch.equal(out[2], self.head.bias.detach()))
 
     def test_drop_event(self):
@@ -652,16 +676,16 @@ class TestScoreCausalOverlong(unittest.TestCase):
 
 
 class TestCachedLogitsOverlongModeGuard(unittest.TestCase):
-    """(d) `--cached-logits` 路径:缓存的 `overlong_mode` 与本次 `--overlong`
-    不同就 `SystemExit`。causal 头下 `--cached-logits` 不加载模型权重,只需要
-    tokenizer(真实 Qwen)、`label_map.json`、`meta.json`、两堆手造 jsonl 与
-    手造的 `logits_*.pt`/`.meta.json`。
+    """(d) `--cached-logits` path: if the cached `overlong_mode` differs from this run's
+    `--overlong`, raise `SystemExit`. Under the causal head, `--cached-logits` does not
+    load model weights; it only needs the tokenizer (real Qwen), `label_map.json`,
+    `meta.json`, two sets of hand-built jsonl, and hand-built `logits_*.pt`/`.meta.json`.
     """
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
 
     def test_mode_mismatch_hard_stops(self):
         tok = AutoTokenizer.from_pretrained(QWEN_PATH)
@@ -708,9 +732,9 @@ class TestCachedLogitsOverlongModeGuard(unittest.TestCase):
 
 
 class TestMbertOverlongGuard(unittest.TestCase):
-    """(e) `--head mbert` 传非 `left` 的 `--overlong` 必须 `SystemExit`——
-    这条检查在参数解析之后、任何文件访问之前,--run/--data 给不存在的路径
-    也能测。"""
+    """(e) Passing `--head mbert` with a `--overlong` value other than `left` must raise
+    `SystemExit` -- this check happens after argument parsing but before any file access,
+    so it can be tested even with `--run`/`--data` pointing at paths that don't exist."""
 
     def test_mbert_rejects_non_left(self):
         argv = ["eval_tool.py", "--env", "appworld", "--run", "/no/such/run",

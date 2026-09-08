@@ -1,23 +1,25 @@
-/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
-   build_artifact.py 发布时把它内联进去——两处永远同一套。
+/* Shared styles for the new1 vLLM course. Pages under lessons/ and reference/ all link this one file;
+   build_artifact.py inlines it at publish time -- the two stay in sync.
 
-   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
-   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
-   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+   Design direction: treat the whole page as "reading a log". A cool grey-blue ground, terminal-INFO
+   cyan as the primary color, and amber to flag numbers called out in the log. Headings use sans-serif,
+   body text serif, and data monospace -- three distinct roles.
+   Chinese can't be embedded as a font (CJK font files are too large and CSP blocks the CDN), so it all
+   falls back to the system font family. */
 
-/* ---------- 令牌：浅色 ---------- */
+/* ---------- tokens: light ---------- */
 
 :root {
-  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
-  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ground:      #f6f7f9;   /* cool grey-blue paper */
+  --ground-sunk: #eceff3;   /* sunken block: logs, table headers */
   --ink:         #151922;
   --ink-soft:    #4c5563;
   --ink-faint:   #7b8595;
   --rule:        #d7dce3;
   --rule-soft:   #e6eaef;
-  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent:      #0f6b74;   /* cyan: links, emphasis, structural lines */
   --accent-wash: #e2eef0;
-  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag:        #8a5a00;   /* amber: numbers called out in the log */
   --flag-wash:   #f7ecd6;
   --ok:          #1f6b45;
   --ok-wash:     #e3f0e8;
@@ -36,7 +38,7 @@
             "Liberation Mono", monospace;
 }
 
-/* ---------- 令牌：深色 ---------- */
+/* ---------- tokens: dark ---------- */
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -58,7 +60,7 @@
   }
 }
 
-/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+/* The reader's theme toggle must override the system preference, in both directions */
 :root[data-theme="dark"] {
   --ground:      #14171c;
   --ground-sunk: #1b1f26;
@@ -95,7 +97,7 @@
   --bad-wash:    #f6e4e4;
 }
 
-/* ---------- 骨架 ---------- */
+/* ---------- skeleton ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -104,7 +106,7 @@ html { background: var(--ground); }
 body {
   margin: 0;
   padding: 3.2rem 1.4rem 6rem;
-  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  background: var(--ground);     /* the shell injects a light body background; must be explicitly overridden */
   color: var(--ink);
   font-family: var(--f-body);
   font-size: 17px;
@@ -121,7 +123,7 @@ body {
   gap: 1.15rem;
 }
 
-/* ---------- 标题 ---------- */
+/* ---------- headings ---------- */
 
 .kicker {
   font-family: var(--f-mono);
@@ -177,7 +179,7 @@ h3 .where {
 
 p { margin: 0; }
 
-/* ---------- 代码与日志 ---------- */
+/* ---------- code and logs ---------- */
 
 code {
   font-family: var(--f-mono);
@@ -209,7 +211,7 @@ pre mark {
   border-radius: 2px;
 }
 
-/* 日志摘录：左边挂它在文件里的真实行号 */
+/* Log excerpt: the left side carries its real line number in the file */
 .logline {
   display: grid;
   grid-template-columns: var(--rail) 1fr;
@@ -233,7 +235,7 @@ pre mark {
   .logline .addr { text-align: left; padding-top: 0; }
 }
 
-/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+/* ---------- that division: the one place on the page that breaks the rules ---------- */
 
 .eq {
   background: var(--accent-wash);
@@ -268,7 +270,7 @@ pre mark {
   margin: 0 auto;
 }
 
-/* ---------- 表格 ---------- */
+/* ---------- tables ---------- */
 
 .tbl-scroll { overflow-x: auto; }
 
@@ -301,7 +303,7 @@ td.key { color: var(--flag); font-weight: 700; }
 
 tbody tr:hover td { background: var(--accent-wash); }
 
-/* ---------- 提示 ---------- */
+/* ---------- notes ---------- */
 
 .note {
   border-left: 3px solid var(--flag);
@@ -321,7 +323,7 @@ tbody tr:hover td { background: var(--accent-wash); }
   margin: -.5rem 0 0;
 }
 
-/* ---------- 测验 ---------- */
+/* ---------- quiz ---------- */
 
 .quiz {
   border: 1px solid var(--rule);
@@ -384,7 +386,7 @@ tbody tr:hover td { background: var(--accent-wash); }
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 清单与页脚 ---------- */
+/* ---------- checklist and footer ---------- */
 
 ol.tasklist { margin: 0; padding-left: 1.2rem; }
 ol.tasklist > li { margin-bottom: .7rem; }
@@ -410,7 +412,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   * { transition: none !important; animation: none !important; }
 }
 
-/* ---------- 打印 ---------- */
+/* ---------- print ---------- */
 
 @media print {
   :root {

@@ -66,7 +66,7 @@ class TestReadLatest(unittest.TestCase):
         self.assertLess(age_s, 5.0)
 
     def test_stale_file_reports_large_age(self):
-        old = time.time() - 3600  # 一小时前，远超 5 分钟新鲜度门槛
+        old = time.time() - 3600  # One hour ago, far past the 5-minute freshness threshold
         (self.mon / "latest.json").write_text(
             json.dumps(_fresh_latest(old)))
         latest, age_s = gpu_jobs.read_latest()
@@ -80,7 +80,7 @@ class TestReadLatest(unittest.TestCase):
         self.assertIsNone(age_s)
 
     def test_sampled_at_wrong_type_returns_none_none(self):
-        # 合法 JSON，但 sampled_at 是字符串——不该抛 TypeError(F1 复核)
+        # Valid JSON, but sampled_at is a string -- should not raise TypeError (F1 review)
         (self.mon / "latest.json").write_text(
             json.dumps({"sampled_at": "x", "rows": []}))
         latest, age_s = gpu_jobs.read_latest()
@@ -88,15 +88,15 @@ class TestReadLatest(unittest.TestCase):
         self.assertIsNone(age_s)
 
     def test_top_level_not_dict_returns_none_none(self):
-        # 合法 JSON，但顶层是数组不是 dict——不该抛 AttributeError(F1 复核)
+        # Valid JSON, but the top level is an array, not a dict -- should not raise AttributeError (F1 review)
         (self.mon / "latest.json").write_text(json.dumps([]))
         latest, age_s = gpu_jobs.read_latest()
         self.assertIsNone(latest)
         self.assertIsNone(age_s)
 
     def test_missing_sampled_at_field_returns_latest_and_none_age(self):
-        # sampled_at 字段整个缺失(不是类型错，是没有)——latest 原样透传，
-        # age_s=None，调用方走过期分支
+        # The sampled_at field is entirely missing (not a type error, just absent) -- latest
+        # passes through unchanged, age_s=None, the caller takes the stale branch
         (self.mon / "latest.json").write_text(json.dumps({"rows": []}))
         latest, age_s = gpu_jobs.read_latest()
         self.assertIsNotNone(latest)
@@ -109,19 +109,19 @@ class TestFmtTableV2(unittest.TestCase):
         latest = _fresh_latest(now)
         table = gpu_jobs.fmt_table_v2(latest["rows"], latest["sampled_at"])
         stamp = time.strftime("%H:%M:%S", time.localtime(now))
-        self.assertIn(f"最后采样 {stamp}", table)
-        self.assertIn("判定", table)          # 判定列标题
-        self.assertIn(verdicts.V_OK, table)    # 判定值
+        self.assertIn(f"last sample {stamp}", table)
+        self.assertIn("verdict", table)          # Verdict column header
+        self.assertIn(verdicts.V_OK, table)    # Verdict value
         self.assertIn(verdicts.V_DEAD, table)
-        self.assertIn("3/10 (30.0%) task", table)   # 进度
-        self.assertIn("72/h", table)            # 速率:0.02/s * 3600 = 72/h
-        self.assertIn("1.2M/340k", table)       # token 缩写
+        self.assertIn("3/10 (30.0%) task", table)   # Progress
+        self.assertIn("72/h", table)            # Rate: 0.02/s * 3600 = 72/h
+        self.assertIn("1.2M/340k", table)       # token abbreviation
         self.assertIn("01:02", table)           # ETA:3725s -> 01:02
 
     def test_empty_rows_still_shows_header_and_placeholder(self):
         table = gpu_jobs.fmt_table_v2([], sampled_at=1234567890.0)
-        self.assertIn("最后采样", table)
-        self.assertIn("台账为空", table)
+        self.assertIn("last sample", table)
+        self.assertIn("job ledger is empty", table)
 
     def test_all_done_job_gets_finish_tip(self):
         rows = [
@@ -132,7 +132,7 @@ class TestFmtTableV2(unittest.TestCase):
              "eta_s": None, "log": "/tmp/z.log"},
         ]
         table = gpu_jobs.fmt_table_v2(rows)
-        self.assertIn("该收尾了", table)
+        self.assertIn("time to finish", table)
         self.assertIn("python3 run.py gpu-jobs finish z", table)
 
     def test_dead_row_gets_look_at_log_tip(self):
@@ -144,7 +144,7 @@ class TestFmtTableV2(unittest.TestCase):
              "eta_s": None, "log": "/tmp/w.log"},
         ]
         table = gpu_jobs.fmt_table_v2(rows)
-        self.assertIn("看日志", table)
+        self.assertIn("check the log", table)
         self.assertIn("/tmp/w.log", table)
 
 
@@ -192,7 +192,7 @@ class TestCmdJson(unittest.TestCase):
             json.dumps(_fresh_latest(old)))
         out = self._run_cmd_json()
         self.assertTrue(out["sampler_stale"])
-        self.assertEqual(out["rows"], [])  # collect() 老路,台账为空
+        self.assertEqual(out["rows"], [])  # collect()'s old path, empty job ledger
 
 
 class TestCmdStatus(unittest.TestCase):
@@ -220,8 +220,8 @@ class TestCmdStatus(unittest.TestCase):
 
     def test_no_sampler_running_warns_and_falls_back(self):
         out = self._run_cmd_status()
-        self.assertIn("采样器不在跑(最后采样 无),现场实探一次", out)
-        self.assertIn("台账为空", out)
+        self.assertIn("sampler is not running (last sample none), probing live once", out)
+        self.assertIn("job ledger is empty", out)
 
     def test_fresh_latest_renders_new_table(self):
         now = time.time()
@@ -229,16 +229,17 @@ class TestCmdStatus(unittest.TestCase):
         self.mon.mkdir(parents=True, exist_ok=True)
         (self.mon / "latest.json").write_text(json.dumps(latest))
         out = self._run_cmd_status()
-        self.assertNotIn("现场实探一次", out)
-        self.assertIn("最后采样", out)
-        self.assertIn("判定", out)
-        self.assertIn("stray_session", out)  # extras 照旧渲染
+        self.assertNotIn("do a live probe once", out)
+        self.assertIn("last sample", out)
+        self.assertIn("verdict", out)
+        self.assertIn("stray_session", out)  # extras render as before
 
 
 class TestCmdRegister(unittest.TestCase):
-    """C2(final-review,2026-08-09):手工补录路径也要能登记服务分片——
-    没有 --kind/--port 时行为不变(默认 batch,没有 port 字段);给了就落
-    进 piece,采样器的 probe_port 判定链路才接得上。"""
+    """C2 (final-review, 2026-08-09): the manual backfill-registration path must also be
+    able to register a service piece -- without --kind/--port, behavior is unchanged
+    (defaults to batch, no port field); given, it lands in the piece, so the sampler's
+    probe_port verdict chain can connect."""
 
     def setUp(self):
         self.td = tempfile.TemporaryDirectory()

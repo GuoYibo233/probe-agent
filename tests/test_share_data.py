@@ -1,15 +1,18 @@
-"""tests/test_share_data.py —— spec `.scratch/kvshare-train/spec.md` 第 12
-节的 (a) 到 (e),对应工单 `.scratch/kvshare-train/issues/01-share-data.md`。
+"""tests/test_share_data.py -- spec `.scratch/kvshare-train/spec.md` section 12
+(a) through (e), corresponding to ticket `.scratch/kvshare-train/issues/01-share-data.md`.
 
-跑法(share_data.py 顶层 import torch,所以要 cprobe-env):
+How to run (share_data.py imports torch at the top level, so it needs cprobe-env):
   cprobe-env/bin/python -m unittest tests.test_share_data -v
-系统 python3 跑全量 discover 时本模块整体 skip(没有 torch),不算失败;
-mbert-env(transformers 4.57.6)下 `load_events` 用到的两个旧训练脚本会
-`SystemExit`(顶层的 transformers>=5.14 版本门),一并兜住照样 skip——
-`read_position` 单独的硬门检查见工单验收,不进这份 unittest。
+When system python3 runs the full discover, this module is skipped entirely (no
+torch), which does not count as a failure; under mbert-env (transformers 4.57.6),
+the two legacy training scripts that `load_events` uses raise `SystemExit` (the
+top-level transformers>=5.14 version gate), and this is caught the same way and
+skipped -- the `read_position` standalone hard-gate check belongs to the ticket
+acceptance check, not to this unittest.
 
-真实 Qwen3-0.6B-Base 分词器路径不存在、或 val 集不存在时,涉及它们的用例
-`skipTest`(不影响其余用例)。
+When the real Qwen3-0.6B-Base tokenizer path does not exist, or the val set does
+not exist, the test cases that touch them call `skipTest` (this does not affect
+the rest of the cases).
 """
 import json
 import random as _random
@@ -24,8 +27,8 @@ sys.path.insert(0, str(ROOT / "pipeline/train"))
 try:
     import torch
     import share_data
-except ImportError as e:                       # 系统 python3 没有 torch
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # System python3 has no torch
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 try:
     from train_causal_callgen import (CALL_SEP, MAX_TGT_TOK, MODELS,  # noqa: E402
@@ -33,10 +36,10 @@ try:
     from train_causal_param import (ASSEMBLY_MISMATCH_LIMIT,          # noqa: E402
                                     param_prompt_tail, param_target)
     from transformers import AutoTokenizer                            # noqa: E402
-except ImportError as e:                       # 系统 python3 没有 transformers
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
-except SystemExit as e:                        # mbert-env 的 transformers<5.14
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # System python3 has no transformers
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
+except SystemExit as e:                        # mbert-env's transformers<5.14
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 QWEN_PATH = MODELS["qwen"]
 VAL_PATH = ROOT / "pipeline/data/nyapass_aw_v1/gptoss/val.jsonl"
@@ -54,10 +57,10 @@ def _row(event, sent_idx, n_sents, text, label, label_call, w=1.0):
 
 
 def _grow_until(tok, base, min_tokens):
-    """把 `base` 重复拼接,直到 `tok(...)` 的 token 数 > `min_tokens`。
+    """Repeatedly concatenate `base` until the token count from `tok(...)` exceeds `min_tokens`.
 
-    用真实分词器的实测结果驱动,不猜 BPE 合并行为(测试假件要跟着
-    tokenizer 走,不跟着我们对它的猜测走)。
+    Driven by the tokenizer's actual measured results, not a guess at BPE merge
+    behavior (the test fixture must follow the tokenizer, not our guess about it).
     """
     s = base
     while len(tok(s, add_special_tokens=False)["input_ids"]) <= min_tokens:
@@ -66,18 +69,19 @@ def _grow_until(tok, base, min_tokens):
 
 
 class TestPrefixRule(unittest.TestCase):
-    """(a) 公共前缀规则:真实分词器,val 集抽 20 个事件,cgen 与 cparam 两种 mode。"""
+    """(a) Common-prefix rule: the real tokenizer, 20 events sampled from the val set, both cgen and cparam modes."""
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         if not VAL_PATH.exists():
-            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+            raise unittest.SkipTest(f"val set does not exist: {VAL_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
-        # 抽 20 个事件,写进临时 jsonl(照 spec 第 9 节对齐检查的进料方式,
-        # 避免对全量 val 分词——那是 --mem-probe 才做的事)。
+        # Sample 20 events and write them into a temporary jsonl (following spec section 9's
+        # alignment-check feed method, to avoid tokenizing the entire val set -- that is
+        # something only --mem-probe does).
         raw_by_event = {}
         order = []
         with open(VAL_PATH) as f:
@@ -142,16 +146,16 @@ class TestPrefixRule(unittest.TestCase):
 
 
 class TestDropCounts(unittest.TestCase):
-    """(b) 丢弃规则计数:事件级 max_len、行级 tgt 长度、cparam 剥离失败。"""
+    """(b) Drop-rule counts: event-level max_len, row-level tgt length, cparam strip failure."""
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
 
     def _clean_rows(self, n, prefix):
-        """`n` 个互不相干的短事件,各一行,label/label_call 互相匹配。"""
+        """`n` mutually unrelated short events, one row each, label/label_call matching each other."""
         rows = []
         for i in range(n):
             label = f"apis.pad{prefix}{i}.call"
@@ -168,7 +172,7 @@ class TestDropCounts(unittest.TestCase):
         long_label_call = _grow_until(
             self.tok, "apis.echo(text='abcdefgh12345678')", MAX_TGT_TOK)
 
-        rows = self._clean_rows(30, "a")           # 稀释 cparam 的剥离失败率
+        rows = self._clean_rows(30, "a")           # Dilute cparam's strip-failure rate
         rows += [
             _row("ev_small", 0, 1, short_text,
                 "apis.spotify.login", "apis.spotify.login(username=x, password=y)"),
@@ -188,7 +192,7 @@ class TestDropCounts(unittest.TestCase):
             self.assertEqual(counts["dropped_events"], 1)
             self.assertEqual(counts["dropped_rows_tgt"], 1)
             self.assertEqual(counts["assembly_mismatch"], 0)
-            # ev_small + ev_mismatch(cgen 不检查前缀匹配) + 30 个稀释事件
+            # ev_small + ev_mismatch (cgen does not check prefix match) + 30 dilution events
             self.assertEqual(counts["n_rows"], 32)
             kept_events = {e["event"] for e in events}
             self.assertNotIn("ev_long_full", kept_events)
@@ -199,7 +203,7 @@ class TestDropCounts(unittest.TestCase):
             self.assertEqual(counts["dropped_events"], 1)
             self.assertEqual(counts["dropped_rows_tgt"], 1)
             self.assertEqual(counts["assembly_mismatch"], 1)
-            # ev_small + 30 个稀释事件(ev_mismatch 被剥离失败丢弃)
+            # ev_small + 30 dilution events (ev_mismatch is dropped by the strip failure)
             self.assertEqual(counts["n_rows"], 31)
 
     def test_hard_stop_zero_rows(self):
@@ -220,7 +224,7 @@ class TestDropCounts(unittest.TestCase):
 
 
 class TestChunkByBudget(unittest.TestCase):
-    """(c) 物理块贪心装块的预算与『超预算独自成块』。"""
+    """(c) The budget for greedy physical-block packing and "an over-budget event becomes its own block"."""
 
     @staticmethod
     def _ev(name, packed_len):
@@ -244,42 +248,45 @@ class TestChunkByBudget(unittest.TestCase):
         blocks = share_data.chunk_by_budget(events, tok_budget=100)
         giant_block = [b for b in blocks if any(e["event"] == "giant" for e in b)]
         self.assertEqual(len(giant_block), 1)
-        self.assertEqual(len(giant_block[0]), 1)      # 独自成块
+        self.assertEqual(len(giant_block[0]), 1)      # Becomes its own block
 
     def test_budget_uses_padded_length(self):
-        # 两个事件 packed_len=161:补齐前 2*161=322<=322(会通过),补齐后
-        # L_pad=_pad16(161)=176,2*176=352>322(不通过)——预算判据必须用
-        # L_pad,否则这两个事件会被误装进同一块,真实显存/算力会超预算。
+        # Two events with packed_len=161: before padding, 2*161=322<=322 (would pass); after
+        # padding, L_pad=_pad16(161)=176, 2*176=352>322 (fails) -- the budget criterion must
+        # use L_pad, otherwise these two events would be wrongly packed into the same block,
+        # and real GPU memory/compute would exceed budget.
         events = [self._ev("x", 161), self._ev("y", 161)]
         blocks = share_data.chunk_by_budget(events, tok_budget=322)
-        self.assertEqual(sorted(len(b) for b in blocks), [1, 1])   # 各自成块
+        self.assertEqual(sorted(len(b) for b in blocks), [1, 1])   # Each becomes its own block
 
     def test_worst_blocks(self):
-        # 手算(events_per_mb=3,tok_budget=200):_pad16(100)=112,
-        # _pad16(90)=96,_pad16(30)=_pad16(25)=_pad16(20)=32。
-        # B=2:降序[100,90,30,25,20]的窗口[100,90] L_pad=112,2*112=224>200
-        #   不满足;窗口[90,30] L_pad=96,2*96=192<=200 满足——B=2 最优组
-        #   product=192。
-        # B=3:窗口[100,90,30] L_pad=112,336>200;[90,30,25] L_pad=96,
-        #   288>200;[30,25,20] L_pad=32,3*32=96<=200 满足——B=3 最优组
-        #   product=96。
-        # 192 > 96,所以最满块是 B=2 的 [90,30],不是 packed_len 最大的
-        # 100(跟 90 配对会超预算)。
+        # Hand-computed (events_per_mb=3, tok_budget=200): _pad16(100)=112,
+        # _pad16(90)=96, _pad16(30)=_pad16(25)=_pad16(20)=32.
+        # B=2: for descending [100,90,30,25,20], window [100,90] has L_pad=112, 2*112=224>200,
+        #   not satisfied; window [90,30] has L_pad=96, 2*96=192<=200, satisfied -- B=2's best
+        #   group has product=192.
+        # B=3: window [100,90,30] has L_pad=112, 336>200; [90,30,25] has L_pad=96,
+        #   288>200; [30,25,20] has L_pad=32, 3*32=96<=200, satisfied -- B=3's best
+        #   group has product=96.
+        # 192 > 96, so the fullest block is B=2's [90,30], not the one with the largest
+        # packed_len, 100 (pairing with 90 would exceed budget).
         events = [self._ev("a", 100), self._ev("b", 90), self._ev("c", 30),
                  self._ev("d", 25), self._ev("e", 20)]
         longest, fullest = share_data.worst_blocks(
             events, tok_budget=200, events_per_mb=3)
         self.assertEqual(len(longest), 1)
-        self.assertEqual(longest[0]["event"], "a")     # packed_len 最大的单个事件
+        self.assertEqual(longest[0]["event"], "a")     # The single event with the largest packed_len
         fullest_names = {e["event"] for e in fullest}
-        self.assertEqual(fullest_names, {"b", "c"})    # B=2 的最优组,不含 a
+        self.assertEqual(fullest_names, {"b", "c"})    # B=2's best group, not including a
 
-        # 对照:如果直接对全量事件跑 chunk_by_budget(它是"把全部事件分成
-        # 互不相交的块"的贪心装块,不是"搜索任意 B 个事件的最坏组合"),再
-        # 取"块内最长最大"的那块,a 自己已经占了一个块(跟 b 配对会超
-        # 200 的预算),取到的最长块反而只是 {a} 这个单事件块——这不是
-        # events_per_mb 个事件真实同批时可能出现的最坏组合,worst_blocks
-        # 不能退化成这个结果,必须是独立搜索得到的 {b, c}。
+        # For comparison: if you run chunk_by_budget directly on the full set of events (it
+        # is greedy packing that "splits all events into disjoint blocks", not "search for
+        # the worst combination of any B events"), and then take the block that is
+        # "longest within the block", a already occupies its own block (pairing with b
+        # would exceed the 200 budget), so the longest block you get is actually just the
+        # single-event block {a} -- this is not the worst combination that can occur when
+        # events_per_mb events are truly batched together, worst_blocks must not degenerate
+        # to this result, it must be the independently searched {b, c}.
         naive_blocks = share_data.chunk_by_budget(events, tok_budget=200)
         naive_fullest = max(naive_blocks,
                             key=lambda blk: max(e["packed_len"] for e in blk))
@@ -288,7 +295,7 @@ class TestChunkByBudget(unittest.TestCase):
         self.assertNotEqual(fullest_names, naive_fullest_names)
 
     def test_worst_blocks_no_valid_group_when_budget_too_small(self):
-        # 预算连 2 个最小事件都装不下时,最满块返回空列表。
+        # When the budget cannot even fit the 2 smallest events, the fullest block returns an empty list.
         events = [self._ev("a", 100), self._ev("b", 90)]
         longest, fullest = share_data.worst_blocks(
             events, tok_budget=64, events_per_mb=4)
@@ -302,7 +309,7 @@ class TestChunkByBudget(unittest.TestCase):
 
 
 def _toy_event():
-    """手造 3 行小事件(spec 12 (d)):P=3,full_ids 只用到前 3 个。"""
+    """A hand-built 3-row small event (spec 12 (d)): P=3, full_ids uses only the first 3."""
     full_ids = [10, 11, 12, 13, 14]
     gen = dict(tgt="", tool=None)
     rows = [
@@ -317,7 +324,7 @@ def _toy_event():
 
 
 class TestPackAndMask(unittest.TestCase):
-    """(d) 掩码与 position_ids 的构造,在手造的 3 行小事件上逐位断言。"""
+    """(d) Mask and position_ids construction, asserted position by position on the hand-built 3-row small event."""
 
     def test_pack_event(self):
         ev = _toy_event()
@@ -334,18 +341,18 @@ class TestPackAndMask(unittest.TestCase):
         allowed = share_data.allowed_mask(ev)
         self.assertEqual(tuple(allowed.shape), (12, 12))
         expect = {
-            0: {0}, 1: {0, 1}, 2: {0, 1, 2},           # 前缀内部因果
-            3: {0, 3}, 4: {0, 3, 4}, 5: {0, 3, 4, 5},  # 行0:p=1
-            6: {0, 1, 2, 6}, 7: {0, 1, 2, 6, 7}, 8: {0, 1, 2, 6, 7, 8},  # 行1:p=3
-            9: {0, 1, 9}, 10: {0, 1, 9, 10}, 11: {0, 1, 9, 10, 11},      # 行2:p=2
+            0: {0}, 1: {0, 1}, 2: {0, 1, 2},           # Causal within the prefix
+            3: {0, 3}, 4: {0, 3, 4}, 5: {0, 3, 4, 5},  # Row 0: p=1
+            6: {0, 1, 2, 6}, 7: {0, 1, 2, 6, 7}, 8: {0, 1, 2, 6, 7, 8},  # Row 1: p=3
+            9: {0, 1, 9}, 10: {0, 1, 9, 10}, 11: {0, 1, 9, 10, 11},      # Row 2: p=2
         }
         for i in range(12):
             got = {j for j in range(12) if bool(allowed[i, j])}
-            self.assertEqual(got, expect[i], f"query 位置 {i}")
+            self.assertEqual(got, expect[i], f"query position {i}")
 
     def test_batch_mask(self):
         ev_a = _toy_event()
-        # 事件 B:单行,P=0(无前缀),seg_ids=[50,51],labels=[-100,51]。
+        # Event B: single row, P=0 (no prefix), seg_ids=[50,51], labels=[-100,51].
         ev_b = dict(event="tiny", n_full=1, packed_len=2, prefix_len=0,
                    full_ids=[], rows=[(0, "x", 0, [50, 51], [-100, 51], 1.0,
                                        dict(tgt="", tool=None))])
@@ -363,19 +370,19 @@ class TestPackAndMask(unittest.TestCase):
         self.assertEqual(input_ids[1, :2].tolist(), [50, 51])
         self.assertTrue((input_ids[1, 2:] == share_data.PAD_TOKEN_ID).all())
 
-        # pad 位置的 position_ids 接着数(spec 第 4 节),不是写死 0。
-        # 事件 A 真实位置最后一个是 4(positions[-1],见 test_pack_event),
-        # 12..15 这 4 个 pad 位接着数:5,6,7,8。
+        # position_ids at pad positions keep counting up (spec section 4), not hardcoded to 0.
+        # Event A's last real position is 4 (positions[-1], see test_pack_event), and the
+        # 4 pad positions 12..15 keep counting: 5, 6, 7, 8.
         self.assertEqual(position_ids[0, :12].tolist(),
                          [0, 1, 2, 1, 2, 3, 3, 4, 5, 2, 3, 4])
         self.assertEqual(position_ids[0, 12:].tolist(), [5, 6, 7, 8])
-        # 事件 B 真实位置是 [0, 1],2..15 这 14 个 pad 位接着数:2..15。
+        # Event B's real positions are [0, 1], and the 14 pad positions 2..15 keep counting: 2..15.
         self.assertEqual(position_ids[1, :2].tolist(), [0, 1])
         self.assertEqual(position_ids[1, 2:].tolist(), list(range(2, 16)))
 
-        # 真实 token 看不到 pad(事件 A 的 12 个真实 query,列 12..15 全 -inf)。
+        # Real tokens cannot see pad (event A's 12 real queries, columns 12..15 are all -inf).
         self.assertTrue(torch.isneginf(mask[0, 0, :12, 12:]).all())
-        # pad 作为 query 只看自己。
+        # A pad token, as a query, sees only itself.
         for i in range(12, 16):
             row = mask[0, 0, i]
             self.assertEqual(float(row[i]), 0.0)
@@ -387,7 +394,7 @@ class TestPackAndMask(unittest.TestCase):
             others = torch.cat([row[:i], row[i + 1:]])
             self.assertTrue(torch.isneginf(others).all())
 
-        # 事件 B 的真实区域([0:2,0:2])是纯因果(P=0,无前缀可看)。
+        # Event B's real region ([0:2,0:2]) is purely causal (P=0, no prefix to see).
         self.assertEqual(float(mask[1, 0, 0, 0]), 0.0)
         self.assertTrue(torch.isneginf(mask[1, 0, 0, 1:2]))
         self.assertEqual(float(mask[1, 0, 1, 0]), 0.0)
@@ -401,10 +408,10 @@ class TestPackAndMask(unittest.TestCase):
 
 
 class TestReadPosition(unittest.TestCase):
-    """(e) 读取位置规则:手造 offsets 与真实分词器各一次。"""
+    """(e) Read-position rule: once with hand-built offsets, once with the real tokenizer."""
 
     def test_manual_read_across_cut(self):
-        # 手造版本的 case1(见下方真实分词器用例的注释)。
+        # case1 of the hand-built version (see the comment on the real-tokenizer case below).
         offsets = [(0, 2), (2, 7), (7, 11), (11, 13)]
         full_text = 'Spotify."\n\nWe'
         self.assertEqual(share_data.read_position(offsets, full_text, 10, 4), 2)
@@ -422,38 +429,38 @@ class TestReadPosition(unittest.TestCase):
     def test_manual_j_zero_backoff(self):
         offsets = [(0, 5), (5, 8)]
         full_text = "hello world"
-        # cut=3:唯一起始位置 < 3 的真实 token 是 j=0;end_j=5>3,
-        # full_text[3:5]='lo' 非空白 -> 要退回 j-1,而 j=0 -> -1。
+        # cut=3: the only real token with a start position < 3 is j=0; end_j=5>3, and
+        # full_text[3:5]='lo' is non-whitespace -> must fall back to j-1, and j=0 -> -1.
         self.assertEqual(share_data.read_position(offsets, full_text, 3, 2), -1)
 
     def test_real_tokenizer_read_across_cut(self):
         if not Path(QWEN_PATH).exists():
-            self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
+            self.skipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         tok = AutoTokenizer.from_pretrained(QWEN_PATH)
         full_text = 'Spotify."\n\nWe'
         enc = tok(full_text, add_special_tokens=False, return_offsets_mapping=True)
         offsets = enc["offset_mapping"]
         keep = len(offsets)
-        # 切点在第一个 '\n' 之后:S0 p1 o2 t3 i4 f5 y6 .7 "8 \n9 \n10 W11 e12
+        # The cut point is after the first '\n': S0 p1 o2 t3 i4 f5 y6 .7 "8 \n9 \n10 W11 e12
         cut = 10
         j = share_data.read_position(offsets, full_text, cut, keep)
-        self.assertEqual(offsets[j], (7, 11))          # 覆盖 '."\n\n' 的 token
+        self.assertEqual(offsets[j], (7, 11))          # Covers the token for '."\n\n'
 
     def test_real_tokenizer_read_backoff(self):
         if not Path(QWEN_PATH).exists():
-            self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
+            self.skipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         tok = AutoTokenizer.from_pretrained(QWEN_PATH)
         full_text = "done. Next"
         enc = tok(full_text, add_special_tokens=False, return_offsets_mapping=True)
         offsets = enc["offset_mapping"]
         keep = len(offsets)
-        cut = 6                                        # "done. " 之后
+        cut = 6                                        # After "done. "
         j = share_data.read_position(offsets, full_text, cut, keep)
-        self.assertEqual(offsets[j], (4, 5))            # '.' 所在 token,不是 ' Next'
+        self.assertEqual(offsets[j], (4, 5))            # The token containing '.', not ' Next'
 
     def test_real_tokenizer_batched_padding_matches_standalone(self):
         if not Path(QWEN_PATH).exists():
-            self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
+            self.skipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         tok = AutoTokenizer.from_pretrained(QWEN_PATH)
         tok.padding_side = "right"
         if tok.pad_token_id is None:
@@ -484,15 +491,17 @@ class TestReadPosition(unittest.TestCase):
 
 
 class TestEpochMinibatches(unittest.TestCase):
-    """工单 10(spec 16.5、16.9):`epoch_minibatches` 与"手抄训练循环旧写法"
-    (改前 train_causal_share.py 第 761 到 764 行)切出来的小批逐个相同
-    (事件名序列相等)——探针踩的块必须是训练真会遇到的块。"""
+    """Ticket 10 (spec 16.5, 16.9): the minibatches that `epoch_minibatches` cuts out
+    match, one by one, the ones cut out by "the old hand-copied training loop"
+    (train_causal_share.py lines 761 to 764 before the change) (equal event-name
+    sequences) -- the blocks the probe steps on must be blocks training will
+    actually encounter."""
 
     def test_matches_old_inline_shuffle(self):
         events = [dict(event=f"ev{i}") for i in range(23)]
         seed, ep, events_per_mb = 42, 1, 4
 
-        old_events = list(events)                  # 手抄的旧写法
+        old_events = list(events)                  # The old hand-copied version
         _random.Random(seed + ep).shuffle(old_events)
         old_minibatches = [old_events[i:i + events_per_mb]
                            for i in range(0, len(old_events), events_per_mb)]

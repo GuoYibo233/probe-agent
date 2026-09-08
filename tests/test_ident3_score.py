@@ -1,4 +1,4 @@
-"""ident3_score 的比对口径测试(纯 CPU)。
+"""Comparison-criteria test for ident3_score (pure CPU).
     python3 -m unittest tests.test_ident3_score -v
 """
 

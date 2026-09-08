@@ -1,16 +1,18 @@
-"""ModernBERT 工具种类头训练(新流水线 mtool 格,一模型一 run)。
+"""ModernBERT tool-type head training (new pipeline mtool cell, one model per run).
 
-- 输入: <data_out>/{train,val}.jsonl + tool_vocab.json
-- 损失: 加权交叉熵,权重 = 样本自带 w(=1/m_i,事件内等权)
-- 截断: tokenizer 左截 4096(保思考尾巴)
-- 评估: 每轮在 val 上报 加权样本 acc + 事件末边界 acc(full-thinking);
-  日志字段名沿用 calA_* 旧名(下游脚本按名读)
-- 产物: <out>/best/(最优权重+tokenizer+label_map.json)+ train_log.jsonl
+- Input: <data_out>/{train,val}.jsonl + tool_vocab.json
+- Loss: weighted cross-entropy, weight = the sample's own w (=1/m_i, equal weight within
+  an event)
+- Truncation: tokenizer left-truncates to 4096 (keeps the tail of the thinking)
+- Eval: each epoch reports on val the weighted sample acc + the event-final-boundary acc
+  (full-thinking); log field names keep the old calA_* names (downstream scripts read by
+  name)
+- Outputs: <out>/best/ (best weights + tokenizer + label_map.json) + train_log.jsonl
 
-用法(smoke):
+Usage (smoke):
   mbert-env/bin/python pipeline/train/train_mbert_tool.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_mtool --smoke
-全量:
+Full run:
   mbert-env/bin/python pipeline/train/train_mbert_tool.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_mtool
 """
@@ -25,12 +27,12 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Dataset
 import transformers
-# 双环境铁律(run.py PY 表):mbert 线钉 transformers==4.57.6,跑错解释器
-# 的行为漂移是静默的,这里直接拒绝
+# Two-env hard rule (run.py PY table): the mbert line pins transformers==4.57.6; running
+# under the wrong interpreter drifts silently, so this rejects it outright
 if transformers.__version__ != "4.57.6":
-    raise SystemExit(f"mbert 线钉 transformers==4.57.6,当前 "
-                     f"{transformers.__version__}——解释器用错了?"
-                     "一律从 run.py 的任务进(train-mtool/train-mext)。")
+    raise SystemExit(f"the mbert line pins transformers==4.57.6, currently "
+                     f"{transformers.__version__} -- wrong interpreter? "
+                     "Always enter through run.py's tasks (train-mtool/train-mext).")
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer,
                           get_linear_schedule_with_warmup)
 
@@ -52,7 +54,7 @@ class JsonlDS(Dataset):
         if ro is None:
             rows = [r for r in map(json.loads, open(path))
                     if r["label"] in label2id]
-        else:                                  # --readonly-env:先清点后折叠
+        else:                                  # --readonly-env: inventory first, then collapse
             rows = list(map(json.loads, open(path)))
             ro["info"] = readonly_map.audit(
                 [r["label"] for r in rows], ro["table"], where=ro["where"])
@@ -61,8 +63,8 @@ class JsonlDS(Dataset):
             bad = sorted({r["label"] for r in rows} - set(label2id))
             if bad:
                 raise SystemExit(
-                    f"readonly: {ro['where']} 折叠后仍有 {len(bad)} 个标签不在"
-                    f"折叠词表里(如 {bad[:5]})——tool_vocab.json 与数据对不上,硬停。")
+                    f"readonly: {ro['where']} still has {len(bad)} labels not in the"
+                    f" folded vocab after folding (e.g. {bad[:5]}) -- tool_vocab.json does not match the data, hard stop.")
             rows = [r for r in rows if r["label"] in label2id]
         self.rows = apply_mode(rows, mode)
         if limit:
@@ -109,26 +111,26 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", default="appworld",
                     choices=["tales", "appworld", "bfcl", "alfworld"],
-                    help="仅作日志标签(数据路径已由 --data 直接给定)")
+                    help="log label only (the data path is given directly by --data)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>(含 train/val.jsonl 与 tool_vocab.json)")
-    ap.add_argument("--out", required=True, help="产物目录(必填,防覆盖旧件)")
+                    help="data dir <data_out> (contains train/val.jsonl and tool_vocab.json)")
+    ap.add_argument("--out", required=True, help="output dir (required; guards against overwriting old outputs)")
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=8)
     ap.add_argument("--accum", type=int, default=4)
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
-                    help="500 训练样本/200 评估样本/1 epoch,验证管线")
+                    help="500 training samples/200 eval samples/1 epoch, for pipeline verification")
     ap.add_argument("--input-mode", default="full",
                     choices=["full", "no-think", "no-hist"],
-                    help="T5 消融:切 [THINKING] 或 [HISTORY] 段")
+                    help="T5 ablation: cut the [THINKING] or [HISTORY] segment")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具模式:标签折叠成 该环境的只读工具 + "
-                         f"{readonly_map.NON_READONLY} 弃权类(默认关=旧口径)")
+                    help="read-only tool mode: fold labels into this environment's read-only tools plus the "
+                         f"{readonly_map.NON_READONLY} abstain class (off by default = the old settings)")
     ap.add_argument("--force", action="store_true",
-                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+                    help="allow training again in an --out dir that was already trained in (refused by default to keep outputs apart)")
     args = ap.parse_args()
 
     torch.manual_seed(SEED)
@@ -137,14 +139,14 @@ def main():
     out = Path(args.out)
     if (out / "train_log.jsonl").exists() and not args.force:
         raise SystemExit(
-            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
-            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
+            f"{out} already has a train_log.jsonl -- this dir has already been trained once; training again would mix"
+            " both runs' outputs into the same best/ with no way to tell them apart (audit B7). Use a different --out, or confirm the overwrite and pass --force.")
     out.mkdir(parents=True, exist_ok=True)
     dev = "cuda"
 
     vocab = json.loads((data / "tool_vocab.json").read_text())
     ro_tr = ro_ev = None
-    if args.readonly_env:                      # 词表 = 原序只读工具 + 末尾哨兵
+    if args.readonly_env:                      # vocab = read-only tools in original order + trailing sentinel
         ro_set = readonly_map.load_readonly_set(args.readonly_env)
         ro_table = readonly_map.load_table(args.readonly_env)
         vocab = [t for t in vocab if t in ro_set] + [readonly_map.NON_READONLY]
@@ -152,7 +154,7 @@ def main():
         ro_ev = dict(set=ro_set, table=ro_table, where="mtool/val")
     label2id = {k: i for i, k in enumerate(vocab)}
     tok = AutoTokenizer.from_pretrained(MODEL)
-    tok.truncation_side = "left"          # 保思考尾巴
+    tok.truncation_side = "left"          # keep the tail of the thinking
     model = AutoModelForSequenceClassification.from_pretrained(
         MODEL, num_labels=len(label2id),
         attn_implementation="sdpa")

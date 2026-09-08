@@ -9,8 +9,9 @@ session calling `--ack` is exit 3; `.doctor-acks.jsonl` is not one of the nine l
 and `rl init` does not create it -- the first `--ack` does.
 
 Sourced from 05-rl-cli.md L189-221 (doctor's nineteen items table L193-213, item 6 row
-L200: "runs 行 handoff_id 为空、悬空或不是 launch_order | rl run relink RUN_ID --handoff
-ID；...用 rl doctor --ack 6 RUN_ID | run；无活会话则 gyb"; ack rules L217); exit_codes.json
+L200: "runs row handoff_id is empty, dangling, or not a launch_order | rl run relink
+RUN_ID --handoff ID; ...use rl doctor --ack 6 RUN_ID | run; no live session then gyb";
+ack rules L217); exit_codes.json
 json_shapes.doctor ("an array; each element has item, ids, fix_cmd, push_to");
 ledgers.json plain_files (`loop/.doctor-acks.jsonl`: "doctor ack records; created by the
 first `doctor --ack`, not by `rl init`; not a ledger") and 08 L18 (same point, tables/
@@ -31,7 +32,7 @@ claim rl would write it that way.
 
 The exact field that distinguishes an "unack" row from an "ack" row in
 `loop/.doctor-acks.jsonl` is not named anywhere in the parts (05 L217 only says
-`--unack` "追加一行 unack" / appends an unack row); the unack test below only asserts
+`--unack` "appends a line, unack" / appends an unack row); the unack test below only asserts
 the observable facts the parts do state -- a new line is appended, it names the same
 item/id pair, and doctor reports the finding again afterward -- without guessing the
 discriminator field's name.

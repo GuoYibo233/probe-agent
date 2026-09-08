@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""心跳:长程任务脚本向采样器上报进度的唯一通道(设计文档 §2)。
+"""Heartbeat: the sole channel long-running task scripts use to report progress to the
+sampler (design doc §2).
 
-一行 = 前缀 "@hb " + 一个 JSON。必填 done/total/unit/ts,选填
-tok_in/tok_out(累计值)/loss/status("done"=正常收尾)。
-进主循环先 emit(0, total, unit) 一条——那是"模型加载完了"的标志。
-只用标准库:任何 venv 都要能 import 本文件。
+One line = prefix "@hb " + one JSON object. done/total/unit/ts are required; optional:
+tok_in/tok_out (cumulative values)/loss/status ("done" = normal finish).
+Emit one emit(0, total, unit) before entering the main loop -- that's the signal that
+"the model has finished loading".
+Standard library only: any venv must be able to import this file.
 """
 import json
 import sys
@@ -32,7 +34,7 @@ def emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None,
 
 
 def parse(line):
-    """心跳行 -> dict;不是合法心跳行返回 None(监控端只认这个入口)。"""
+    """Heartbeat line -> dict; returns None if not a valid heartbeat line (the monitoring side only recognizes this entry point)."""
     line = line.strip()
     if not line.startswith(PREFIX):
         return None

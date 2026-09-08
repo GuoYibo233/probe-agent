@@ -1,15 +1,21 @@
-"""cparam 格的拼串单测:训练侧的目标串推导 + 评测侧的重组与解析。
+"""String-assembly unit tests for the cparam cell: target-string derivation on the
+training side + reassembly and parsing on the eval side.
 
-训练侧:`param_target` 是 cparam 格唯一的拼串规则,拼错了训练目标就整体偏一格,
-而且不报错。评测侧:eval_causal_param 拿 given + "(" + 生成串 重组后判分,
-重组必须是 param_target 的逆运算,解析(parse_call/split_named_raw)的口径
-在这里钉死——包括"括号配平不认引号"这条既有判分口径(记录现状,不改判分)。
+Training side: `param_target` is the cparam cell's only string-assembly rule; get
+it wrong and the training target shifts by a whole slot, with no error raised.
+Eval side: eval_causal_param scores by reassembling given + "(" + the generated
+string; the reassembly must be the inverse of param_target, and the convention
+for parsing (parse_call/split_named_raw) is pinned down here -- including the
+existing scoring convention that "bracket balancing doesn't recognize quotes"
+(recorded as-is, scoring unchanged).
 
-跑法(train_causal_param 顶上 import torch/transformers,所以要 cprobe-env):
+How to run (train_causal_param imports torch/transformers at the top, so it
+needs cprobe-env):
   cprobe-env/bin/python -m unittest tests.test_cparam_assembly -v
-系统 python3 跑全量 discover 时本模块整体 skip(没有 torch),不算失败;
-mbert-env(transformers 4.57.6)下 train_causal_param 抛 SystemExit 不是
-ImportError,一并兜住照样 skip。
+When system python3 runs the full discover, this module is skipped entirely (no
+torch), which doesn't count as a failure; under mbert-env (transformers 4.57.6)
+train_causal_param raises SystemExit rather than ImportError, which is also
+caught and skipped the same way.
 """
 import sys
 import unittest
@@ -23,10 +29,10 @@ try:
                                     param_target)
     from train_causal_callgen import CALL_SEP as CGEN_CALL_SEP    # noqa: E402
     import eval_causal_param as ecp                               # noqa: E402
-except ImportError as e:                      # 系统 python3 没有 torch
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
-except SystemExit as e:                       # mbert-env 的 transformers<5.14
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                      # system python3 doesn't have torch
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
+except SystemExit as e:                       # mbert-env's transformers<5.14
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 sys.path.insert(0, str(ROOT / "pipeline/annotate"))
 from build import make_call  # noqa: E402
@@ -43,17 +49,17 @@ class TestParamTarget(unittest.TestCase):
         self.assertEqual(param_target(label, "apis.phone.logout()"), ")")
 
     def test_prefix_mismatch_returns_none(self):
-        # 工具名对不上(数据串味 / 上游改了拼串规则)
+        # Tool name doesn't match (data contamination / upstream changed the assembly rule)
         self.assertIsNone(param_target("apis.spotify.login",
                                        "apis.spotify.logout(a=1)"))
-        # 少了左括号
+        # missing the left parenthesis
         self.assertIsNone(param_target("apis.spotify.login",
                                        "apis.spotify.login"))
-        # 工具名是真值的前缀但不是同一个名字(startswith 的经典陷阱)
+        # The tool name is a prefix of the true value but not the same name (the classic startswith trap)
         self.assertIsNone(param_target("send", "send_email(to=a)"))
 
     def test_roundtrip_against_make_call(self):
-        """唯一拼串真源是 build.make_call:工具名 + "(" + 目标 == label_call。"""
+        """The single source of truth for string assembly is build.make_call: tool name + "(" + target == label_call."""
         cases = [
             ("apis.spotify.login",
              [dict(key="username", value="x"), dict(key="password", value="y")]),
@@ -75,12 +81,13 @@ class TestParamTarget(unittest.TestCase):
 
 
 class TestEvalSideReassembly(unittest.TestCase):
-    """评测侧重组与训练侧剥离的两文件契约,加评测侧解析的真打用例。"""
+    """The two-file contract between eval-side reassembly and training-side stripping, plus real-world eval-side parsing test cases."""
 
     def test_reassembly_contract(self):
-        """契约:given + "(" + gen == label_call 当且仅当
-        gen == param_target(label, label_call)。评测侧 score_points 的重组串
-        (eval_causal_param.py)与训练侧的目标剥离必须互为逆运算。"""
+        """Contract: given + "(" + gen == label_call if and only if
+        gen == param_target(label, label_call). The eval-side score_points
+        reassembly string (eval_causal_param.py) and the training-side target
+        stripping must be inverse operations of each other."""
         cases = [
             ("apis.spotify.login",
              [dict(key="username", value="x"), dict(key="password", value="y")]),
@@ -91,15 +98,16 @@ class TestEvalSideReassembly(unittest.TestCase):
         for tool, named in cases:
             call = make_call(tool, named)
             tgt = param_target(tool, call)
-            # 正向:gen 恰是 param_target 时,重组串逐字回到 label_call
+            # Forward: when gen is exactly param_target, the reassembled string returns to label_call byte-for-byte
             self.assertEqual(tool + "(" + tgt, call)
-            # 反向:gen 偏离 param_target 一个字,重组串就不再等于 label_call
+            # Reverse: when gen deviates from param_target by one character, the reassembled string no longer equals label_call
             for wrong in (tgt + " ", "x" + tgt, tgt[:-1]):
                 self.assertNotEqual(tool + "(" + wrong, call)
 
     def test_value_with_comma_quote_paren(self):
-        """真打评测侧解析:值里带逗号/引号/嵌套括号,引号保护逗号与括号,
-        切出的键值对必须一个不错(值保留未归一化原串)。"""
+        """Real-world eval-side parsing: values contain commas/quotes/nested parentheses,
+        quotes protect commas and parentheses, the key-value pairs cut out must be
+        exactly right, not one wrong (values keep the un-normalized original string)."""
         full = ('apis.gmail.send_email(to=a@b.c, '
                 'body="hi, there (really)", subject=\'x, y\')')
         tool, raw = ecp.parse_call(full, "appworld")
@@ -109,9 +117,11 @@ class TestEvalSideReassembly(unittest.TestCase):
                                ("subject", "'x, y'")])
 
     def test_quote_blind_paren_balance_is_existing_convention(self):
-        """记录现状,不改判分:parse_call 找整调用右边界的括号配平不认引号
-        (cgen 既有判分口径)。值里出现裸右括号时,截断发生在引号内那个
-        右括号上,后半段整个丢掉。"""
+        """Recorded as-is, scoring unchanged: parse_call's bracket balancing when finding
+        the whole call's right boundary doesn't recognize quotes (cgen's existing
+        scoring convention). When a bare right parenthesis appears inside a value,
+        truncation happens at that in-quote right parenthesis, and the whole back half
+        is dropped."""
         tool, raw = ecp.parse_call('apis.gmail.send(body="a ) b")', "appworld")
         self.assertEqual(tool, "apis.gmail.send")
         self.assertEqual(raw, [("body", '"a')])
@@ -119,7 +129,7 @@ class TestEvalSideReassembly(unittest.TestCase):
 
 class TestSeparatorConstants(unittest.TestCase):
     def test_three_separator_constants_agree(self):
-        """三个分隔符常量互相对拍:任何一份单独改动都会静默改拼串口径。"""
+        """The three delimiter constants cross-check each other: changing any one alone silently changes the string-assembly convention."""
         self.assertEqual(CALL_SEP, CGEN_CALL_SEP)
         self.assertEqual(CALL_SEP, ecp.FALLBACK_SEP)
 

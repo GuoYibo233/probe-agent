@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""采样器:长程任务的常驻监控进程(设计文档 §3-§5)。
-每轮:读台账 → tail 日志抓心跳(NFS 本地读) → ssh 探存活 → verdicts.judge
-→ append 采样历史 + 原子写 latest.json/state.json。
-本文件只做 IO 和攒状态,判定口径全在 ops/verdicts.py。stdlib only。
-用法: sampler.py [--once] [--interval 60] [--port 8377](网页 Task 7 加)
+"""Sampler: the long-running monitoring process for long jobs (design doc §3-§5).
+Each round: read the job ledger -> tail logs for heartbeats (local NFS read) -> ssh
+to probe liveness -> verdicts.judge -> append to sample history + atomically write
+latest.json/state.json.
+This file only does IO and accumulates state; the verdict logic all lives in
+ops/verdicts.py. stdlib only.
+Usage: sampler.py [--once] [--interval 60] [--port 8377] (the web page, added in Task 7)
 """
 import argparse
 import html
@@ -28,15 +30,16 @@ import verdicts  # noqa: E402
 from gpu_jobs import live_sessions, DEFAULT_HOSTS  # noqa: E402
 import gpu_jobs  # noqa: E402
 
-# 本地副本,不直接复用 gpu_jobs.load_reg——那个函数体里读的是
-# gpu_jobs 模块自己的全局 REG_PATH,单测靠 monkeypatch
-# `sampler.REG_PATH` 把台账指到 tmp 目录,只有这里自己读这个名字才生效。
+# A local copy, not reusing gpu_jobs.load_reg directly -- that function reads
+# gpu_jobs module's own global REG_PATH, and unit tests monkeypatch
+# `sampler.REG_PATH` to point the job ledger at a tmp dir; that only takes effect
+# if this file reads that name itself.
 REG_PATH = gpu_jobs.REG_PATH
 
 
 def load_reg():
-    """台账读入口——读的是本模块的 REG_PATH(默认与 gpu_jobs.REG_PATH
-    同一个文件),单测把它指到 tmp 目录。"""
+    """Job ledger read entry point -- reads this module's own REG_PATH (by default the
+    same file as gpu_jobs.REG_PATH); unit tests point it at a tmp dir."""
     if not os.path.exists(REG_PATH):
         return {"active": [], "history": []}
     with open(REG_PATH) as f:
@@ -47,19 +50,23 @@ MONITOR_DIR = Path(os.environ.get(
     "NEW1_MONITOR_DIR",
     "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor"))
 
-# state.json 里 recent_beats 的截断长度——和判定引擎"典型心跳间隔"用的
-# 窗口(typical_beats)对齐,超出这个窗口的心跳对判定已经没有意义
+# Truncation length for recent_beats in state.json -- aligned with the view
+# (typical_beats) the verdict engine uses for "typical heartbeat interval";
+# heartbeats beyond this view no longer matter for the verdict
 _BEATS_CAP = verdicts.DEFAULTS["typical_beats"]
 
-# 连续这么多轮探测失败(设计文档 §4)只在 row 上亮红,不触发事故——
-# 分不清死活就不动手,fail-closed 一以贯之
+# This many consecutive probe failures (design doc §4) only turns the row red, it
+# does not trigger an incident -- when you can't tell alive from dead, don't act;
+# fail-closed throughout
 _PROBE_FAIL_ROUNDS_RED = 10
 
 
 def read_beats(log_path, max_bytes=262144):
-    """日志尾 max_bytes 字节里的所有心跳行(升序)。tqdm 的 \\r 先换 \\n。
-    文件不存在/读不了返回空列表——采样是常驻循环,单个分片的日志问题
-    不许把整轮采样弄炸。"""
+    """All heartbeat lines (ascending order) within the last max_bytes bytes of the log
+    tail. tqdm's \\r is converted to \\n first.
+    Returns an empty list if the file doesn't exist / can't be read -- sampling is
+    a long-running loop, and one piece's log trouble must not blow up the whole
+    round of sampling."""
     try:
         with open(log_path, "rb") as f:
             f.seek(0, 2)
@@ -77,10 +84,12 @@ def read_beats(log_path, max_bytes=262144):
     return beats
 
 
-# vLLM 吞吐行(工单 13/实施计划 Task 15):2026-08-08 从真实日志核实的格式,
-# 源于 vllm 0.26.0 `vllm/v1/metrics/loggers.py:263-313`。默认每 10 秒一条,
-# 引擎空闲时降级成 debug 不打印——断流不代表停摆,判定不看这行,只用来
-# 出 token 速率显示位。原文样例(逐字节核对过):
+# vLLM throughput line (ticket 13 / implementation plan Task 15): format verified
+# against a real log on 2026-08-08, sourced from vllm 0.26.0
+# `vllm/v1/metrics/loggers.py:263-313`. One line every 10 seconds by default,
+# downgraded to debug and not printed when the engine is idle -- a gap in the
+# stream doesn't mean it stalled; the verdict doesn't look at this line, it's only
+# used to show the token rate. Sample of the original text (checked byte for byte):
 #   Engine 000: Avg prompt throughput: 785.1 tokens/s, Avg generation
 #   throughput: 671.8 tokens/s, Running: 4 reqs, Waiting: 0 reqs, ...
 VLLM_STATS_RE = re.compile(
@@ -90,9 +99,10 @@ VLLM_STATS_RE = re.compile(
 
 
 def parse_vllm_stats(text):
-    """vLLM 吞吐行 -> {"prompt_tok_s","gen_tok_s","running"};无匹配 None。
-    `text` 可以是多行,命中多条时取最后一条(最新一次采样)。只做速率显示,
-    不进判定(判定是 probe_port,见 verdicts._judge_service)。"""
+    """vLLM throughput line -> {"prompt_tok_s","gen_tok_s","running"}; None if no match.
+    `text` can be multiple lines; if several lines match, take the last one (the
+    most recent sample). Used only to display the rate, it does not feed into the
+    verdict (the verdict is probe_port, see verdicts._judge_service)."""
     matches = list(VLLM_STATS_RE.finditer(text))
     if not matches:
         return None
@@ -102,9 +112,10 @@ def parse_vllm_stats(text):
 
 
 def read_vllm_stats(log_path, max_bytes=8192):
-    """服务分片日志尾 max_bytes 字节里最新一条吞吐行(工单 13)。日志读不了
-    或这一轮没有吞吐行(引擎空闲降级 debug)都返回 None——调用方决定是否
-    沿用上一轮的显示值,这里不猜。"""
+    """The latest throughput line within the last max_bytes bytes of a service piece's
+    log tail (ticket 13). Returns None if the log can't be read or this round has
+    no throughput line (engine idle, downgraded to debug) -- the caller decides
+    whether to keep last round's displayed value; this function doesn't guess."""
     try:
         with open(log_path, "rb") as f:
             f.seek(0, 2)
@@ -117,8 +128,8 @@ def read_vllm_stats(log_path, max_bytes=8192):
 
 
 def atomic_write(path, obj):
-    """tmp + os.replace,与 run.py save_state 同款——半写文件永远不会被
-    出口读到。"""
+    """tmp + os.replace, same pattern as run.py save_state -- a half-written file is
+    never read by the exit point."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -127,7 +138,7 @@ def atomic_write(path, obj):
 
 
 def append_jsonl(path, lines):
-    """采样历史一个任务一个文件,逐轮追加(每行一个采样点)。"""
+    """Sample history is one file per job, appended round by round (one sample point per line)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a") as f:
@@ -136,8 +147,9 @@ def append_jsonl(path, lines):
 
 
 def load_state():
-    """state.json 不在/坏了 -> {}(采样器无状态重启后从这里恢复,
-    读不到就当从零开始,不许把常驻进程弄死)。"""
+    """state.json missing/broken -> {} (the sampler restores from here after a
+    stateless restart; if it can't be read, treat it as starting from scratch --
+    must not let the long-running process die)."""
     p = MONITOR_DIR / "state.json"
     try:
         return json.loads(p.read_text())
@@ -146,8 +158,8 @@ def load_state():
 
 
 def read_incidents_tail(n=20):
-    """incidents.jsonl 的最后 n 行(Task 14 才会真的写这个文件;
-    文件还不存在时返回空列表——不是错误)。"""
+    """The last n lines of incidents.jsonl (this file is only actually written starting
+    at Task 14; returns an empty list if it doesn't exist yet -- not an error)."""
     p = MONITOR_DIR / "incidents.jsonl"
     try:
         lines = p.read_text().splitlines()
@@ -162,31 +174,33 @@ def read_incidents_tail(n=20):
     return out
 
 
-INCIDENT_PROMPT = """你是 new1 工程的事故 agent,只干"把实验办好"一件事,不写给人看的报告。
-事故: 任务 {job} 分片 {idx}(session {session},host {host},GPU {gpus})判定 {verdict}。
-日志: {log}
-先看现场: tail -c 8192 '{log}' | tr '\\r' '\\n' | tail -40
-台账 json: cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs json
-规则(不许越线):
+INCIDENT_PROMPT = """You are the incident agent for the new1 project. You do exactly one thing -- "get the experiment sorted" -- and you do not write reports for humans to read.
+Incident: job {job} piece {idx} (session {session}, host {host}, GPU {gpus}) verdict {verdict}.
+Log: {log}
+First look at the scene: tail -c 8192 '{log}' | tr '\\r' '\\n' | tail -40
+Job ledger json: cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs json
+Rules (do not cross the line):
 - {refire_clause}
-- 判定是 疑似卡死: 只读日志定位原因,禁止 kill 任何 session、禁止改任何文件。
-- 只碰这一个分片,别的任务一概不动。
-- 结束时输出一行: DONE <你做了什么,15 字内>。
+- If the verdict is suspected stall: only read the log to locate the cause; do not kill any session, do not modify any file.
+- Touch only this one piece; leave every other job alone.
+- When done, print one line: DONE <what you did, within 15 characters>.
 """
 
 _REFIRE_ALLOWED_CLAUSE = (
-    "判定是 已挂: 读日志定位死因后补射一次: "
-    "`python3 run.py launch --refire {job} --idx {idx}`;"
-    "原卡被占(命令会报错)时 `python3 run.py gpu-jobs free` 挑空卡后加 "
-    "`--piece <host>:<gpus>` 重试一次")
-_REFIRE_DENIED_CLAUSE = "这个分片补射额度已用完: 只验尸,不许再发射任何东西"
+    "If the verdict is dead: read the log to locate the cause of death, then refire once: "
+    "`python3 run.py launch --refire {job} --idx {idx}`; "
+    "if the original card is occupied (the command will error), pick a free card with `python3 run.py gpu-jobs free`, then add "
+    "`--piece <host>:<gpus>` and retry once")
+_REFIRE_DENIED_CLAUSE = "This piece has used up its refire quota: autopsy only, do not launch anything else"
 
 
 def should_trigger(row, ps):
-    """事故触发的纯函数规则(设计 §5,工单 12):`row["escalated"]` 为真,
-    且 `ps["incident_open"]` 为空才触发——同一次事故只拉一次 agent。
-    `allow_refire` = 判定是 已挂 且这个分片位还没补射过
-    (`ps["refires"] == 0`)。返回 (是否触发, 是否许补射)。"""
+    """Pure-function rule for incident triggering (design §5, ticket 12): triggers only
+    when `row["escalated"]` is true and `ps["incident_open"]` is empty -- the same
+    incident spawns an agent only once.
+    `allow_refire` = the verdict is dead and this piece slot has not been refired
+    yet (`ps["refires"] == 0`). Returns (whether it triggers, whether refire is
+    allowed)."""
     if not row.get("escalated"):
         return False, False
     if ps.get("incident_open"):
@@ -197,7 +211,7 @@ def should_trigger(row, ps):
 
 
 def build_incident_prompt(row, allow_refire):
-    """row + 补射许可 -> 事故 agent 的提示词(纯函数,工单 12)。"""
+    """row + refire permission -> the incident agent's prompt (pure function, ticket 12)."""
     if allow_refire:
         refire_clause = _REFIRE_ALLOWED_CLAUSE.format(
             job=row["job"], idx=row["idx"])
@@ -210,20 +224,24 @@ def build_incident_prompt(row, allow_refire):
 
 
 def spawn_agent(prompt, out_path):
-    """拉一个无头事故 agent(设计 §5,工单 12,用户 2026-08-08 授权):
-    detach 的 claude 子进程,模型钉 opus,stdout/stderr 全进 out_path。
-    Popen 不 wait——采样循环不许被验尸挡住。返回 Popen 对象(测试用)。
+    """Spawn a headless incident agent (design §5, ticket 12, authorized by the user on
+    2026-08-08): a detached claude subprocess, model pinned to opus, stdout/stderr
+    all go to out_path. Popen does not wait -- the sampling loop must not be
+    blocked by an autopsy. Returns the Popen object (for tests).
 
-    环境开关 `NEW1_NO_SPAWN`(final-review C1,2026-08-09):非空时不建子
-    进程,只往 out_path 写一行占位并返回 None——单测的结构性兜底,mock
-    掉本函数是第一道防线,这个开关是万一漏 mock 时不让真进程跑起来的
-    第二道。
+    Environment switch `NEW1_NO_SPAWN` (final-review C1, 2026-08-09): when
+    non-empty, does not create a subprocess, only writes one placeholder line to
+    out_path and returns None -- a structural fallback for unit tests; mocking this
+    function is the first line of defense, and this switch is the second, to keep a
+    real process from running in case a mock is missed.
 
-    `claude` 解析成绝对路径(`shutil.which`)才发射(final-review C3):
-    crontab 起的常驻采样器 PATH 往往没继承登录 shell 的配置,解析不到就
-    没法确认发射的是不是对的可执行文件——找不到直接 raise,交给调用方
-    (`maybe_trigger_incidents`)接住记进事故记录,不悄悄用裸 "claude"
-    字符串赌 PATH 里有它。"""
+    Only launches once `claude` resolves to an absolute path (`shutil.which`)
+    (final-review C3): the long-running sampler started by crontab often doesn't
+    inherit the login shell's config, its PATH, so if resolution fails there's no
+    way to confirm the launched binary is the right one -- raise directly when it's
+    not found, and let the caller (`maybe_trigger_incidents`) catch it and record it
+    into the incident record, instead of silently betting a bare "claude" string
+    happens to be on PATH."""
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if os.environ.get("NEW1_NO_SPAWN"):
@@ -233,8 +251,8 @@ def spawn_agent(prompt, out_path):
     claude_bin = shutil.which("claude")
     if claude_bin is None:
         raise RuntimeError(
-            "claude 在 PATH 里解析不到(spawn_agent 需要绝对路径;"
-            "crontab 环境常见坑:PATH 没继承登录 shell 配置)")
+            "claude cannot be resolved in PATH (spawn_agent needs an absolute path; "
+            "a common crontab-environment pitfall: PATH doesn't inherit the login shell config)")
     with open(out_path, "ab") as f:
         return subprocess.Popen(
             [claude_bin, "-p", prompt, "--model", "opus",
@@ -244,10 +262,12 @@ def spawn_agent(prompt, out_path):
 
 
 def maybe_trigger_incidents(rows, st):
-    """逐分片查 should_trigger,命中就:事故记录 append 进 incidents.jsonl
-    → spawn_agent → ps["incident_open"] = 事故编号(防重复的关键位)。
-    调用方必须在本函数之后才落盘 state.json,否则 incident_open 只活在
-    内存里,常驻循环下一轮会对同一事故再拉一个 agent。"""
+    """Check should_trigger piece by piece; on a hit: append the incident record to
+    incidents.jsonl -> spawn_agent -> ps["incident_open"] = the incident number (the
+    key field that prevents duplicates).
+    The caller must persist state.json only after this function runs, otherwise
+    incident_open only lives in memory, and the next round of the long-running loop
+    will spawn another agent for the same incident."""
     for row in rows:
         ps = st.get(piece_key(row["job"], row["idx"]))
         if not ps:
@@ -265,10 +285,12 @@ def maybe_trigger_incidents(rows, st):
             "verdict": row["verdict"], "log": row.get("log"),
             "allow_refire": allow_refire, "out": str(out_path),
         }
-        # spawn 失败(常见:PATH 里没有 claude)不许把异常抛穿 sample_once——
-        # 常驻循环靠 main() 的 try/except 兜底不假,但一次 spawn 失败不该
-        # 连累这一轮其余分片的采样和落盘。失败原样记进事故记录,
-        # incident_open 照样置位——同一事故不会因为 spawn 失败就每轮重试。
+        # A spawn failure (usually: no claude on PATH) must not let the exception escape
+        # sample_once -- the long-running loop does have main()'s try/except as a
+        # fallback, but one spawn failure should not drag down this round's sampling and
+        # persistence for the other pieces. Record the failure as-is into the incident
+        # record, and set incident_open all the same -- the same incident won't retry
+        # every round just because spawn failed.
         try:
             spawn_agent(build_incident_prompt(row, allow_refire), out_path)
         except Exception as e:
@@ -282,9 +304,10 @@ def piece_key(job_name, idx):
 
 
 def _piece_launched_at(piece, job):
-    """分片没有 launched_at(手工 register 的旧格式)就退回 job 的
-    started_at,再没有就当 now——宽松处理,登录机和发射机都是 NTP 机器,
-    分钟级误差可接受。"""
+    """If the piece has no launched_at (old format from manual register), fall back to
+    the job's started_at; if that's missing too, use now -- a lenient handling,
+    since both the login machine and the launch machine are NTP-synced, minute-
+    level error is acceptable."""
     la = piece.get("launched_at")
     if la is not None:
         return float(la)
@@ -298,9 +321,9 @@ def _piece_launched_at(piece, job):
 
 
 def probe_port(host, port, timeout=3):
-    """服务类分片的端口探测:HTTP GET http://host:port/health,
-    连接被拒/超时/任何异常 -> False。vLLM 的 /health 返回 200
-    (工单 13 核对后如有出入改这里)。"""
+    """Port probe for a service-type piece: HTTP GET http://host:port/health,
+    connection refused / timeout / any exception -> False. vLLM's /health returns
+    200 (ticket 13 checked this; update here if it turns out different)."""
     try:
         with urllib.request.urlopen(
                 f"http://{host}:{port}/health", timeout=timeout) as r:
@@ -334,19 +357,25 @@ def _new_piece_state(launched_at, refires=0):
 
 def update_piece_state(st, job, idx, piece, beats, alive, now_mono,
                         vllm_stats=None):
-    """攒一个分片的累计状态(设计 §3):
-    - launched_at 变了(补射) -> 整段状态重开,refires += 1
-    - beats 里比 last_done/last_ts 新的条目 append 进 recent_beats(截
-      ≤ typical_beats 条),并刷新 last_new_beat_mono = now_mono
-    - first_beat 只在第一次见到心跳时记
-    - alive: None(探测失败) -> alive_last 沿用,probe_fail_rounds += 1;
-      True/False -> 直取,probe_fail_rounds = 0
-    - 服务类:port_ok 由 probe_port() 出,port_ever_ok/port_fail_rounds
-      同理攒;`vllm_stats` 是调用方(sample_once)传进来的这一轮吞吐行解析
-      结果(工单 13),只做速率显示,不进判定——这一轮没有吞吐行(引擎空闲
-      降级 debug,读不到日志)时 vllm_stats=None,沿用上一轮的显示值,不
-      因为断流就把速率显示闪回空白(spec:"空闲不打吞吐行不算停摆")
-    返回值是这个分片的状态字典(已经就地挂在 st 里,st 由调用方落盘)。
+    """Accumulate one piece's running state (design §3):
+    - if launched_at changed (a refire) -> the whole state segment restarts,
+      refires += 1
+    - entries in beats newer than last_done/last_ts get appended into recent_beats
+      (capped at <= typical_beats entries), and last_new_beat_mono = now_mono is
+      refreshed
+    - first_beat is recorded only the first time a heartbeat is seen
+    - alive: None (probe failed) -> keep alive_last, probe_fail_rounds += 1;
+      True/False -> take it directly, probe_fail_rounds = 0
+    - service type: port_ok comes from probe_port(); port_ever_ok/port_fail_rounds
+      accumulate the same way; `vllm_stats` is this round's parsed throughput-line
+      result passed in by the caller (sample_once) (ticket 13), used only to
+      display the rate, not fed into the verdict -- when this round has no
+      throughput line (engine idle, downgraded to debug, log unreadable),
+      vllm_stats=None, and last round's displayed value is kept instead of
+      flashing the rate display blank just because the stream paused (spec: "no
+      throughput line while idle does not count as a stall")
+    Return value is this piece's state dict (already attached in place on st; st is
+    persisted by the caller).
     """
     key = piece_key(job["name"], idx)
     launched_at = _piece_launched_at(piece, job)
@@ -360,14 +389,14 @@ def update_piece_state(st, job, idx, piece, beats, alive, now_mono,
     else:
         ps = prev
 
-    # 存活
+    # alive
     if alive is None:
         ps["probe_fail_rounds"] = ps.get("probe_fail_rounds", 0) + 1
     else:
         ps["alive_last"] = alive
         ps["probe_fail_rounds"] = 0
 
-    # 心跳去重与累计
+    # heartbeat dedup and accumulation
     last_key = None
     if ps["recent_beats"]:
         lb = ps["recent_beats"][-1]
@@ -394,7 +423,8 @@ def update_piece_state(st, job, idx, piece, beats, alive, now_mono,
     if len(ps["recent_beats"]) > _BEATS_CAP:
         ps["recent_beats"] = ps["recent_beats"][-_BEATS_CAP:]
 
-    # 服务类:端口探测 + 吞吐行显示(工单 13,判定只用 port_ok,不用 vllm_stats)
+    # service type: port probe + throughput-line display (ticket 13, the verdict uses
+    # only port_ok, not vllm_stats)
     if piece.get("kind") == "service":
         port = piece.get("port")
         port_ok = probe_port(piece["host"], port) if port else False
@@ -411,9 +441,9 @@ def update_piece_state(st, job, idx, piece, beats, alive, now_mono,
 
 
 def build_row(job, idx, piece, ps, now_mono, now_wall):
-    """状态 -> 出口 row:调 verdicts.stall_line_s(override=piece 里的
-    stall_line) / rates / judge,算 progress_pct 和 eta_s(近期速率没值
-    退回平均;都没值 None)。"""
+    """State -> exit-point row: calls verdicts.stall_line_s (override=the stall_line in
+    the piece) / rates / judge, computes progress_pct and eta_s (falls back to the
+    average when the recent rate has no value; None if neither has a value)."""
     kind = piece.get("kind", "batch")
     beat_ts = [b["ts"] for b in ps.get("recent_beats", [])]
     stall_s = verdicts.stall_line_s(beat_ts, override=piece.get("stall_line"))
@@ -456,8 +486,9 @@ def build_row(job, idx, piece, ps, now_mono, now_wall):
     eta_s = None
     if done is not None and total is not None:
         remaining = total - done
-        # 近期速率没值(None)才退回平均;近期速率恰好是 0(真的停了)不能
-        # 被 truthy 判断当成"没值"悄悄换成平均速率
+        # Only fall back to the average when the recent rate has no value (None); a recent
+        # rate of exactly 0 (genuinely stopped) must not be quietly swapped for the average
+        # rate by a truthy check that mistakes it for "no value"
         rate_for_eta = recent_rate if recent_rate is not None else avg_rate
         if remaining >= 0 and rate_for_eta:
             eta_s = remaining / rate_for_eta
@@ -465,9 +496,12 @@ def build_row(job, idx, piece, ps, now_mono, now_wall):
     last_beat = ps["recent_beats"][-1] if ps.get("recent_beats") else {}
     probe_fail_rounds = ps.get("probe_fail_rounds", 0)
 
-    # 服务类的 tok_in/tok_out 显示位复用心跳协议的同名字段位置,但语义换成
-    # 吞吐速率(tokens/s)而不是累计计数——服务分片不产生心跳,last_beat
-    # 永远是空 dict,这里改从 vllm_stats 取(工单 13:吞吐行只做显示,不进判定)
+    # For service type, the tok_in/tok_out display fields reuse the same field
+    # positions as the heartbeat protocol, but the meaning changes to throughput rate
+    # (tokens/s) instead of a cumulative count -- service pieces produce no heartbeats,
+    # last_beat is always an empty dict, so this takes the value from vllm_stats
+    # instead (ticket 13: the throughput line is only for display, it does not feed
+    # into the verdict)
     if kind == "service":
         vs = ps.get("vllm_stats") or {}
         tok_in, tok_out = vs.get("prompt_tok_s"), vs.get("gen_tok_s")
@@ -501,8 +535,9 @@ def sample_once():
         for idx, piece in enumerate(job["pieces"]):
             sess_set = live.get(piece["host"])
             alive = None if sess_set is None else (piece["session"] in sess_set)
-            # 服务分片(工单 13):不走心跳解析,日志走 read_vllm_stats 只取
-            # 吞吐行做显示;判定单独由 update_piece_state 里的 probe_port 定。
+            # service piece (ticket 13): skips heartbeat parsing, the log goes through
+            # read_vllm_stats which only takes the throughput line for display; the verdict is
+            # decided separately by probe_port inside update_piece_state.
             if piece.get("kind") == "service":
                 beats, vllm_stats = [], read_vllm_stats(piece["log"])
             else:
@@ -525,11 +560,12 @@ def sample_once():
         if unreg:
             extras[h] = unreg
 
-    # 事故触发之后立刻落盘 state.json(final-review C3,2026-08-09):
-    # incident_open 必须跟着这轮状态一起持久化,否则常驻循环下一轮
-    # load_state() 读到旧状态,同一事故重复拉 agent。history/latest 的落盘
-    # 挪到 state.json 之后——history 写失败(比如 NFS 抖动)不许连累
-    # incident_open 也跟着丢:state.json 已经先落地了。
+    # Persist state.json immediately after an incident triggers (final-review C3,
+    # 2026-08-09): incident_open must be persisted together with this round's state,
+    # otherwise the next round of the long-running loop's load_state() reads the old
+    # state and spawns another agent for the same incident. Persisting history/latest
+    # is moved to after state.json -- a history write failure (e.g. NFS jitter) must
+    # not drag incident_open down with it: state.json has already landed.
     maybe_trigger_incidents(rows, st)
     atomic_write(MONITOR_DIR / "state.json", st)
     latest = {"sampled_at": now_wall, "rows": rows, "extras": extras,
@@ -541,8 +577,9 @@ def sample_once():
 
 
 def _load_latest_from(monitor_dir):
-    """网页出口读落盘文件,不碰采样线程的内存(设计 §3)——latest.json
-    不在/坏了返回 None,调用方渲染"无采样"占位,不许报错。"""
+    """The web exit point reads the file on disk, it does not touch the sampling
+    thread's memory (design §3) -- returns None if latest.json is missing/broken,
+    the caller renders a "no sample" placeholder, must not error."""
     p = Path(monitor_dir) / "latest.json"
     try:
         return json.loads(p.read_text())
@@ -551,10 +588,12 @@ def _load_latest_from(monitor_dir):
 
 
 def render_html(latest):
-    """采样结果(latest.json 的内容,或 None) -> 任务表网页,纯函数不做
-    IO。表列:JOB/分片/HOST/GPU/判定/进度/速率/token/ETA/SESSION。
-    30 秒 <meta refresh>;过期亮红的阈值 = sample_interval_s * 3,从
-    verdicts.DEFAULTS 生成进页面,不另抄一个数(工单 06 验收要求)。"""
+    """Sample result (the content of latest.json, or None) -> the job table web page,
+    a pure function that does no IO. Table columns: JOB/PIECE/HOST/GPU/VERDICT/
+    PROGRESS/RATE/token/ETA/SESSION.
+    30-second <meta refresh>; the threshold for turning stale rows red =
+    sample_interval_s * 3, generated into the page from verdicts.DEFAULTS, no
+    separate copy of the number (ticket 06 acceptance requirement)."""
     stale_after_s = verdicts.DEFAULTS["sample_interval_s"] * 3
 
     def esc(x):
@@ -574,7 +613,7 @@ def render_html(latest):
         return f"{h:02d}:{m:02d}"
 
     if latest is None:
-        body = "<p>无采样:latest.json 不在或读不了,采样器可能没起。</p>"
+        body = "<p>No samples: latest.json is missing or unreadable, the sampler may not be running.</p>"
         sampled_at_js = "null"
         stamp = "-"
     else:
@@ -600,7 +639,7 @@ def render_html(latest):
                     eta=fmt_eta(r.get("eta_s")),
                     sess=esc(r.get("session"))))
         rows_body = ("\n".join(row_lines) if row_lines else
-                     "<tr><td colspan=10>当前没有登记在跑的任务</td></tr>")
+                     "<tr><td colspan=10>No jobs currently registered as running</td></tr>")
 
         incident_lines = []
         for inc in latest.get("incidents_tail", []):
@@ -613,7 +652,7 @@ def render_html(latest):
                     idx=esc(inc.get("idx")), verdict=esc(inc.get("verdict")),
                     note=esc(inc.get("note"))))
         incidents_body = ("\n".join(incident_lines) if incident_lines else
-                          "<li>没有事故记录</li>")
+                          "<li>No incident records</li>")
 
         extras_lines = []
         for h_name, sessions in latest.get("extras", {}).items():
@@ -621,55 +660,55 @@ def render_html(latest):
                 "<li>{h}: {s}</li>".format(
                     h=esc(h_name), s=esc(", ".join(sessions))))
         extras_body = ("\n".join(extras_lines) if extras_lines else
-                        "<li>没有台账外 session</li>")
+                        "<li>No sessions outside the job ledger</li>")
 
         body = f"""
-<h2>任务表</h2>
+<h2>Job table</h2>
 <table border="1" cellspacing="0" cellpadding="4">
-<tr><th>JOB</th><th>分片</th><th>HOST</th><th>GPU</th><th>判定</th>
-<th>进度</th><th>速率</th><th>token</th><th>ETA</th><th>SESSION</th></tr>
+<tr><th>JOB</th><th>PIECE</th><th>HOST</th><th>GPU</th><th>VERDICT</th>
+<th>PROGRESS</th><th>RATE</th><th>token</th><th>ETA</th><th>SESSION</th></tr>
 {rows_body}
 </table>
-<h2>事故记录</h2>
+<h2>Incident records</h2>
 <ul>{incidents_body}</ul>
-<h2>台账外 session</h2>
+<h2>Sessions outside the job ledger</h2>
 <ul>{extras_body}</ul>
 """
 
     return f"""<!doctype html>
 <html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="30">
-<title>new1 长程任务监控</title>
+<title>new1 job monitor</title>
 <style>
-  body {{ font-family: sans-serif; }}
-  #banner {{ padding: 6px 10px; margin-bottom: 10px; background: #eee; }}
-  #banner.stale {{ background: #f88; color: #300; font-weight: bold; }}
-  table {{ border-collapse: collapse; }}
-  th, td {{ padding: 4px 8px; }}
+    body {{ font-family: sans-serif; }}
+    #banner {{ padding: 6px 10px; margin-bottom: 10px; background: #eee; }}
+    #banner.stale {{ background: #f88; color: #300; font-weight: bold; }}
+    table {{ border-collapse: collapse; }}
+    th, td {{ padding: 4px 8px; }}
 </style>
 </head>
 <body>
-<div id="banner">最后采样 {esc(stamp)}</div>
+<div id="banner">last sampled {esc(stamp)}</div>
 {body}
 <script>
 (function () {{
-  var sampledAt = {sampled_at_js};
-  var staleAfterS = {stale_after_s};
-  function tick() {{
-    var banner = document.getElementById("banner");
-    if (sampledAt === null) {{
-      banner.classList.add("stale");
-      return;
+    var sampledAt = {sampled_at_js};
+    var staleAfterS = {stale_after_s};
+    function tick() {{
+        var banner = document.getElementById("banner");
+        if (sampledAt === null) {{
+            banner.classList.add("stale");
+            return;
+        }}
+        var ageS = (Date.now() / 1000) - sampledAt;
+        if (ageS > staleAfterS) {{
+            banner.classList.add("stale");
+        }} else {{
+            banner.classList.remove("stale");
+        }}
     }}
-    var ageS = (Date.now() / 1000) - sampledAt;
-    if (ageS > staleAfterS) {{
-      banner.classList.add("stale");
-    }} else {{
-      banner.classList.remove("stale");
-    }}
-  }}
-  tick();
-  setInterval(tick, 5000);
+    tick();
+    setInterval(tick, 5000);
 }})();
 </script>
 </body></html>
@@ -677,12 +716,13 @@ def render_html(latest):
 
 
 class _WebHandler(http.server.BaseHTTPRequestHandler):
-    """monitor_dir 由 WebServer 用子类动态挂上去(类属性,handler 每次
-    请求都是新实例,没法走 __init__ 传参)。"""
+    """monitor_dir is attached dynamically by WebServer via a subclass (a class
+    attribute, since the handler is a new instance on every request, so it can't
+    take a param through __init__)."""
     monitor_dir = None
 
     def log_message(self, fmt, *args):
-        pass  # 访问日志没必要污染采样器的 stderr
+        pass  # no need to pollute the sampler's stderr with access logs
 
     def do_GET(self):
         latest = _load_latest_from(self.monitor_dir)
@@ -706,9 +746,11 @@ class _WebHandler(http.server.BaseHTTPRequestHandler):
 
 
 class WebServer:
-    """采样器网页出口(工单 06):独立线程,do_GET 每次现读 monitor_dir/
-    latest.json,不碰采样线程的内存——采样那边 ssh 卡住不影响出页
-    (设计 §3)。/ 出任务表网页,/json 出 latest.json 原文。"""
+    """Sampler's web exit point (ticket 06): a separate thread, do_GET reads
+    monitor_dir/latest.json fresh every time, it does not touch the sampling
+    thread's memory -- an ssh hang on the sampling side does not affect serving
+    the page (design §3). / serves the job table page, /json serves the raw
+    latest.json content."""
 
     def __init__(self, port, monitor_dir):
         handler = type("_BoundHandler", (_WebHandler,),
@@ -735,11 +777,11 @@ class WebServer:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--once", action="store_true",
-                    help="采一轮就退(冒烟用)")
+                    help="sample one round then exit (for smoke tests)")
     ap.add_argument("--interval", type=float,
                     default=verdicts.DEFAULTS["sample_interval_s"])
     ap.add_argument("--port", type=int, default=8377,
-                    help="网页/json 出口端口(工单 06)")
+                    help="web/json export port (ticket 06)")
     a = ap.parse_args()
     web = None
     if not a.once:
@@ -750,7 +792,7 @@ def main():
         t0 = time.monotonic()
         try:
             sample_once()
-        except Exception as e:  # 单轮失败不许弄死常驻进程
+        except Exception as e:  # a single round's failure must not kill the long-running process
             print(f"[sampler] round failed: {e}", file=sys.stderr, flush=True)
         if a.once:
             break

@@ -16,7 +16,8 @@ import rl_lib
 _ID_RE = re.compile(r"^dec-(idea|deploy|run|analysis|reviewer|gyb)-[0-9]{4,}$")
 
 # 04 L47 through tables/transitions.json: accepted and withdrawn are the terminal states,
-# so an order in either of them is not one of the "没到终态的单子" of 02 L87.
+# so an order in either of them is not one of the "orders that have not reached a
+# terminal status" of 02 L87.
 _TERMINAL = tuple(rl_lib.TRANSITIONS["terminal_states"])
 
 
@@ -103,8 +104,8 @@ def _require_sources(sources, force):
 
 
 def _add_sources(previous: list, extra: list) -> list:
-    """02 L75: confirm 「正文不变，只加来源」 - narrowest reading, the previous sources
-    plus the new ones, each item kept once."""
+    """02 L75: confirm "the body text does not change, only sources are added" - narrowest
+    reading, the previous sources plus the new ones, each item kept once."""
     out = list(previous)
     for item in extra:
         if item not in out:
@@ -115,7 +116,7 @@ def _add_sources(previous: list, extra: list) -> list:
 # ---------------------------------------------------------------- who may append a version
 
 def _check_same_actor(actor, book: str, command: str) -> None:
-    """02 L81: 「谁能调」 for update, confirm, retire and merge is the same actor; a
+    """02 L81: "who may call it" for update, confirm, retire and merge is the same actor; a
     cross-role change to somebody else's decision is a new decision in the caller's own
     book instead (02 L58). gyb is exempt from this class of check (02 L81; 01 L65)."""
     if actor.is_gyb or actor.role_session == book:
@@ -317,10 +318,10 @@ def cmd_merge(args, ctx):
             retired = {"id": mid, "op": "retire", "root_id": prev["root_id"]}
             if prev.get("sources"):
                 retired["sources"] = list(prev["sources"])  # 02 L48: sources inherit
-            # PENDING(part 02 L77): 02 L77 says only "旧的各追加一版标 retired、根不动"; it
-            # rules neither the text nor the op of that version. Narrowest reading: the
-            # reason for retiring is the merge, so the merge's own text is the reason
-            # (02 L79: a retire version's text is its reason) and op is retire.
+            # PENDING(part 02 L77): 02 L77 says only "each old one gets an appended version marked
+            # retired, the root does not move"; it rules neither the text nor the op of that version.
+            # Narrowest reading: the reason for retiring is the merge, so the merge's own text is the
+            # reason (02 L79: a retire version's text is its reason) and op is retire.
             if opts.get("text") is not None:
                 retired["text"] = opts["text"]
             _write_row(repo, "decisions", retired, actor, "decision merge", status="retired",
@@ -444,9 +445,9 @@ def cmd_stale(args, ctx):
             raise rl_lib.RLError("usage", f"unknown handoff {wanted}")
         selected = [wanted]
     elif opts.get("all"):
-        # PENDING(part 02 L89): "--all 全库" does not say whether finished orders count.
-        # Narrowest reading: the same set 02 L87 prints, the orders that have not reached a
-        # terminal status, which is also what rl status section 6 shows (05 L155, L160).
+        # PENDING(part 02 L89): "--all the whole ledger" does not say whether finished orders
+        # count. Narrowest reading: the same set 02 L87 prints, the orders that have not reached
+        # a terminal status, which is also what rl status section 6 shows (05 L155, L160).
         selected = [o for o in sorted(orders) if orders[o]["status"] not in _TERMINAL]
     else:
         # 02 L89 with 05 L143: the default is the orders held by this session.

@@ -1,6 +1,6 @@
-/* 逐 token 步进器。数据由 build_token_walk.py 嵌在 #twdata 里，
-   每个 token 已经带好了 {id, s, ch, rcp, b}——频道判定在转换器那边做完，
-   这里只负责一个一个放出来，不重算规则。 */
+/* Token-by-token stepper. Data is embedded in #twdata by build_token_walk.py,
+   each token already carries {id, s, ch, rcp, b} -- channel classification is done on the converter side,
+   this file is only responsible for releasing them one at a time, it doesn't recompute the rules. */
 
 (function () {
   var host = document.getElementById('tw');
@@ -11,37 +11,37 @@
   var LANES = DATA.steps.concat([DATA.toolcall]);
 
   var BUCKET = {
-    reasoning: '思考 analysis',
-    content: '正文 final',
-    tool: '工具 commentary to=',
-    drop: '丢掉',
-    frame: '结构标记'
+    reasoning: 'thinking analysis',
+    content: 'body final',
+    tool: 'tool commentary to=',
+    drop: 'dropped',
+    frame: 'structural markers'
   };
 
-  var cur = 0;   // 第几条 lane
-  var i = 0;     // 已放出多少个 token
+  var cur = 0;   // which lane number
+  var i = 0;     // how many tokens have been released so far
 
   host.innerHTML =
     '<div class="tw">' +
-      '<div class="tw-steps" role="group" aria-label="选一步"></div>' +
+      '<div class="tw-steps" role="group" aria-label="select a step"></div>' +
       '<div class="tw-bar">' +
         '<span>token <b class="pos">0</b> / <span class="tot">0</span></span>' +
-        '<span>提示词 <b class="np">0</b> 个 token</span>' +
-        '<span>频道 <b class="chan">—</b></span>' +
-        '<span>收件人 <b class="rcp">—</b></span>' +
+        '<span>prompt <b class="np">0</b> tokens</span>' +
+        '<span>channel <b class="chan">—</b></span>' +
+        '<span>recipient <b class="rcp">—</b></span>' +
       '</div>' +
       '<div class="tw-cur"><span class="id">—</span>' +
         '<span class="piece"></span><span class="dest"></span></div>' +
       '<div class="tw-stream" tabindex="0" aria-live="off"></div>' +
       '<div class="tw-buckets"></div>' +
       '<div class="tw-ctl">' +
-        '<button class="primary" data-a="one">下一个 token</button>' +
-        '<button data-a="turn">下一个转折点</button>' +
-        '<button data-a="end">跑到底</button>' +
-        '<button data-a="reset">回开头</button>' +
+        '<button class="primary" data-a="one">next token</button>' +
+        '<button data-a="turn">next turning point</button>' +
+        '<button data-a="end">run to end</button>' +
+        '<button data-a="reset">back to start</button>' +
       '</div>' +
-      '<p class="tw-hint">键盘：→ 或空格前进一个 token，Shift+→ 跳到下一个转折点。' +
-      '转折点 = 频道切换或收尾标记。</p>' +
+      '<p class="tw-hint">Keyboard: → or space advances one token, Shift+→ jumps to the next turning point. ' +
+      'Turning point = a channel switch or a closing marker.</p>' +
       '<div class="tw-tail"></div>' +
     '</div>';
 
@@ -52,7 +52,7 @@
 
   LANES.forEach(function (lane, n) {
     var b = document.createElement('button');
-    b.textContent = lane.step === 'tool' ? '工具调用单发' : ('第 ' + lane.step + ' 步');
+    b.textContent = lane.step === 'tool' ? 'single tool call' : ('step ' + lane.step);
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', function () { cur = n; i = 0; render(true); });
     elSteps.appendChild(b);
@@ -61,7 +61,7 @@
   function lane() { return LANES[cur]; }
 
   function isTurn(n) {
-    // 转折点：这个 token 的频道/收件人跟上一个不一样，或者它是收尾标记
+    // Turning point: this token's channel/recipient differs from the previous one, or it's a closing marker
     var t = lane().tokens[n];
     if (!t) return false;
     if (/^<\|(end|return|call)\|>$/.test(t.s)) return true;
@@ -123,7 +123,7 @@
     ['reasoning', 'content', 'tool', 'drop', 'frame'].forEach(function (k4) {
       var d = document.createElement('div');
       d.className = 'k-' + k4;
-      d.innerHTML = '<b>' + (count[k4] || 0) + '</b>' + BUCKET[k4] + ' · 字符';
+      d.innerHTML = '<b>' + (count[k4] || 0) + '</b>' + BUCKET[k4] + ' · characters';
       elBuckets.appendChild(d);
     });
 
@@ -137,28 +137,28 @@
   function renderTail(L, done) {
     var h = '';
     if (L.step === 'tool') {
-      h += '<p>这一条是单独发的：题目与工具定义取自 2026-08-02 那次 ToolHop ' +
-           '记录的第 0 条，工具有 ' + L.tool_names.length + ' 个（' +
-           esc(L.tool_names.join('、')) + '）。' +
-           'AppWorld 那条链的提示词里没有 tools，所以走不出工具调用这条频道。</p>';
+      h += '<p>This one is a standalone send: the question and tool definitions come from the 2026-08-02 ToolHop ' +
+           'record, entry 0; there are ' + L.tool_names.length + ' tools (' +
+           esc(L.tool_names.join(', ')) + ').' +
+           'AppWorld\'s prompt chain has no tools, so it never reaches the tool-call channel.</p>';
     }
-    h += '<p>提示词最后 260 个字符（生成从这里接着往下写）：</p><pre>' +
+    h += '<p>Last 260 characters of the prompt (generation continues from here):</p><pre>' +
          esc(L.prompt_tail) + '</pre>';
     if (done) {
-      h += '<p>这一步停在 <code>finish_reason=' + esc(String(L.finish)) +
-           '</code>，<code>stop_reason=' + esc(String(L.stop)) + '</code>，' +
-           '用了 ' + L.usage.out + ' 个输出 token。';
+      h += '<p>This step stopped at <code>finish_reason=' + esc(String(L.finish)) +
+           '</code>, <code>stop_reason=' + esc(String(L.stop)) + '</code>, ' +
+           'using ' + L.usage.out + ' output tokens.';
       if (L.stop === null) {
-        h += ' stop_reason 是 null，因为停它的是模型自带的 eos（' +
-             '<code>&lt;|return|&gt;</code>），不是我们传的停止词。';
+        h += ' stop_reason is null because it was stopped by the model\'s own built-in eos (' +
+             '<code>&lt;|return|&gt;</code>), not a stop word we passed.';
       }
       h += '</p>';
       if (L.action) {
-        h += '<p>从正文里抠出来、真的丢进 AppWorld 执行的代码：</p><pre>' +
+        h += '<p>The code pulled out of the body text and actually run in AppWorld:</p><pre>' +
              esc(L.action) + '</pre>';
       }
       if (L.env) {
-        h += '<p>环境返回（下一步的 user 消息就是它）：</p><pre>' +
+        h += '<p>Environment\'s response (this becomes the next step\'s user message):</p><pre>' +
              esc(L.env) + '</pre>';
       }
     }

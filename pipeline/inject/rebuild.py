@@ -1,41 +1,54 @@
-"""从原始 appworld 轨迹逐字重建 gpt-oss 当时看到的 harmony prompt。
+"""Rebuilds, character for character, the harmony prompt gpt-oss saw at the time, from
+the raw appworld trajectory.
 
-为什么需要它:注入实验要在思考段中途截断、塞入工具结果、再让 vLLM 续写。
-vLLM 的 chat 端点做不到这件事——它的模板永远只在末尾吐 `<|start|>assistant`,
-且拒绝回灌带 `<|channel|>` 的历史消息(chat_template.jinja 会 raise)。所以必须
-走 completions 端点,自己把 prompt 拼到"思考写到一半"那个位置。
+Why it's needed: the injection experiment has to cut off mid-way through a thinking
+segment, splice in a tool result, and then let vLLM continue generating. The vLLM chat
+endpoint can't do this -- its template only ever emits `<|start|>assistant` at the end,
+and it refuses to accept history messages containing `<|channel|>` fed back in
+(chat_template.jinja raises). So it has to go through the completions endpoint, and
+assemble the prompt itself up to the point where "the thinking is half-written."
 
-2026-08-18 起活跑线不再用本文件的 build_prefix(jinja 文本路):/render 改走
-harmony_render.render_ids 直接出 token id,与 chat 端点逐 token 相同(jinja 文本
-路在"空 content 的 assistant 轮"与"content 里字面 <|...|> 标记"两处与 chat 端点
-不一致,见 harmony_render.py 文件头)。build_prefix 仍供离线回放线
-(replay_inject / acceptance / verify_traj)使用,那边的口径不动。
+Since 2026-08-18 the live-run line no longer uses this file's build_prefix (the jinja
+text path): /render now goes through harmony_render.render_ids, which emits token ids
+directly and is identical token-for-token to the chat endpoint (the jinja text path
+disagreed with the chat endpoint in two places -- "assistant turns with empty content"
+and "literal <|...|> markers in the content," see the header of harmony_render.py).
+build_prefix still serves the offline replay line (replay_inject / acceptance /
+verify_traj); that side's convention is unchanged.
 
-口径来源(改任何一条都会让重建串与采集时不一致):
-- SYSTEM / NO_CODE_MSG / 历史拼法: envs/collect/run_appworld.py:19-38, 103-132
-- 采集参数 reasoning_effort=high: envs/runs/w0_aw_official/launch_clients.sh
-- harmony 模板: 模型目录下 chat_template.jinja,由 apply_chat_template 套
-- 环境返回在采集时已截到 4000 字符并原样写进日志,所以日志里的 result 与模型
-  当时看到的逐字相同(run_appworld.py:125-129)
+Source of the convention (changing any one of these makes the rebuilt string disagree
+with what was collected):
+- SYSTEM / NO_CODE_MSG / history assembly: envs/collect/run_appworld.py:19-38, 103-132
+- collection parameter reasoning_effort=high: envs/runs/w0_aw_official/launch_clients.sh
+- harmony template: chat_template.jinja under the model directory, applied via
+  apply_chat_template
+- the environment's return value was already truncated to 4000 characters at collection
+  time and written into the log as-is, so the result in the log is character-for-character
+  the same as what the model saw at the time (run_appworld.py:125-129)
 
-两道自检(都不需要 GPU):
-- check_system_verbatim(): 回源文件比对 SYSTEM 常量,漂了就报错
-- verify_traj(): 用日志里的 usage.in(服务端记的 prompt_tokens)对账重建后的
-  token 数,逐步比
+Two self-checks (neither needs a GPU):
+- check_system_verbatim(): compares the SYSTEM constant against the source file, errors
+  out if it has drifted
+- verify_traj(): checks the rebuilt token count against usage.in in the log (the
+  server-recorded prompt_tokens), step by step
 
-已知的两处不确定(verify_traj 会把它们分类计数,不要静默吞掉):
-- Current date: 模板调 strftime_now 取当天日期,轨迹里没记。w0 这批采于
-  2026-07-31,所以只在同一天重建才对得上;assert_date() 负责拦住跨日重建。
-- 少数步的 assistant content 里混进了字面的 `<|...|>` 标记(模型自己吐出来的),
-  重新 tokenize 时会被收成特殊 token,与服务端当时按普通文本算的不一致。
-  has_literal_harmony() 负责把这些步标出来。
+Two known sources of uncertainty (verify_traj counts and classifies them, does not
+silently swallow them):
+- Current date: the template calls strftime_now to get the current date, which the
+  trajectory doesn't record. The w0 batch was collected on 2026-07-31, so a rebuild only
+  lines up if it's run on the same day; assert_date() is responsible for blocking a
+  cross-day rebuild.
+- In a small number of steps, literal `<|...|>` markers got mixed into the assistant
+  content (the model wrote them out itself); re-tokenizing collects them as special
+  tokens, which disagrees with how the server counted them as plain text at the time.
+  has_literal_harmony() is responsible for flagging these steps.
 """
 
 import json
 import re
 from pathlib import Path
 
-# 【照抄 envs/collect/run_appworld.py:19-38】check_system_verbatim() 保证不漂移
+# [Mirrors envs/collect/run_appworld.py:19-38] check_system_verbatim() guarantees no drift
 SYSTEM = """You are an autonomous agent operating a phone-like environment \
 on behalf of your supervisor.
 
@@ -57,52 +70,57 @@ access_token=token to that app's other APIs.
 - When the task is fully done, call apis.supervisor.complete_task() \
 (pass answer=... if the task asks a question)."""
 
-# 【照抄 run_appworld.py:120-122】没写代码块那一步,发给模型的是这一句,
-# 而日志里写的是 result="NO_CODE_BLOCK"——两者不同,重放时必须换回来
+# [Mirrors run_appworld.py:120-122] for the step where no code block was written, this is
+# the sentence sent to the model, while the log records result="NO_CODE_BLOCK" -- the two
+# are different, and replay has to swap it back
 NO_CODE_MSG = ("No ```python``` block found. Reply with "
                "exactly one python code block.")
 NO_CODE_MARK = "NO_CODE_BLOCK"
 
-# 采集时 gpt-oss 走 chat 端点 + reasoning_effort=high
+# At collection time gpt-oss went through the chat endpoint with reasoning_effort=high
 REASONING_EFFORT = "high"
 
-# harmony 里 analysis 通道的开头。apply_chat_template(add_generation_prompt=True)
-# 只吐到 `<|start|>assistant` 为止,通道标记由模型自己生成,所以要我们手动接上
+# The start of the analysis channel in harmony. apply_chat_template(add_generation_prompt=True)
+# only emits up to `<|start|>assistant`; the channel marker is generated by the model
+# itself, so we have to append it by hand
 ANALYSIS_OPEN = "<|channel|>analysis<|message|>"
 
-# w0_aw_official 这批的采集日期(文件 mtime 全落在 2026-07-31 06:02~08:14)
+# The collection date for the w0_aw_official batch (file mtimes all fall between
+# 2026-07-31 06:02 and 08:14)
 COLLECT_DATE = "2026-07-31"
 
 _SRC = Path(__file__).resolve().parents[2] / "envs/collect/run_appworld.py"
 _SYS_RE = re.compile(r'^SYSTEM = """(.*?)"""$', re.S | re.M)
 _LITERAL_HARMONY = re.compile(r"<\|[a-z_]+\|>")
-# 只有这两个完整串会让 chat_template.jinja:263-265 抛异常;单个 <|...|> 不会。
-# has_literal_harmony() 比这宽得多(它标的是"token 数可能对不上"的步)。
+# Only these two complete strings make chat_template.jinja:263-265 raise; a lone
+# <|...|> does not.
+# has_literal_harmony() is far broader than this (it flags steps where the token count
+# might not match).
 _GUARD_STRS = ("<|channel|>analysis<|message|>", "<|channel|>final<|message|>")
 
 
 def needs_guard_bypass(msgs):
-    """这组 messages 是否会撞上模板的 <|channel|> 检查。"""
+    """Whether this set of messages would trip the template's <|channel|> check."""
     return any(m.get("role") == "assistant"
                and any(g in (m.get("content") or "") for g in _GUARD_STRS)
                for m in msgs)
 
 
 def check_system_verbatim(src=_SRC):
-    """回源文件比对 SYSTEM 常量。采集脚本改了这里而本文件没跟着改 -> 报错。"""
+    """Compares the SYSTEM constant against the source file. If the collection script changed here and this file didn't follow -> raises an error."""
     m = _SYS_RE.search(Path(src).read_text())
     if not m:
-        raise RuntimeError(f"在 {src} 里找不到 SYSTEM 字面量")
+        raise RuntimeError(f"cannot find the SYSTEM literal in {src}")
     want = m.group(1).replace("\\\n", "")
     if want != SYSTEM:
         raise RuntimeError(
-            f"SYSTEM 与采集脚本不一致,重建出来的 prompt 不是模型当时看到的。\n"
-            f"源文件 {src} 长度={len(want)},本文件长度={len(SYSTEM)}")
+            f"SYSTEM does not match the collection script; the rebuilt prompt is not what the model saw at the time.\n"
+            f"source file {src} length={len(want)}, this file length={len(SYSTEM)}")
     return True
 
 
 def load_traj(path):
-    """读一条轨迹 -> (meta, gens, envs, final)。gens/envs 按 step 建索引。"""
+    """Reads one trajectory -> (meta, gens, envs, final). gens/envs are indexed by step."""
     recs = [json.loads(l) for l in open(path)]
     meta = recs[0]
     gens = {r["step"]: r for r in recs if r.get("type") == "gen"}
@@ -112,13 +130,15 @@ def load_traj(path):
 
 
 def build_messages(meta, gens, envs, step):
-    """重建模型在第 step 步发请求时的 messages(不含该步自己的输出)。
+    """Rebuilds the messages the model had in its request at step `step` (not including that
+    step's own output).
 
-    【照抄 run_appworld.py:103-132】:
-    - 首两条 = system + "Task from supervisor: {instruction}"
-    - 每轮追加 assistant(只放 content,思考不回灌) + user(执行输出)
-    - 没有代码块的那一轮,user 换成 NO_CODE_MSG
-    历史是全量累积,不截断轮数。
+    [Mirrors run_appworld.py:103-132]:
+    - the first two entries are system + "Task from supervisor: {instruction}"
+    - each round appends assistant (content only, thinking is not fed back) + user
+      (execution output)
+    - for a round with no code block, user is replaced with NO_CODE_MSG
+    History accumulates in full; the number of turns is never truncated.
     """
     msgs = [{"role": "system", "content": SYSTEM},
             {"role": "user",
@@ -127,8 +147,9 @@ def build_messages(meta, gens, envs, step):
         g, e = gens[j], envs.get(j)
         msgs.append({"role": "assistant", "content": g.get("content") or ""})
         if e is None:
-            # 轨迹在这一步断了(采集中途挂掉),后面的重建无意义
-            raise ValueError(f"step {j} 缺 env 记录,无法重建 step {step}")
+            # The trajectory broke off at this step (collection crashed partway through);
+            # rebuilding beyond this point is meaningless
+            raise ValueError(f"step {j} is missing the env record, cannot rebuild step {step}")
         if e.get("action") is None or e.get("result") == NO_CODE_MARK:
             msgs.append({"role": "user", "content": NO_CODE_MSG})
         else:
@@ -138,17 +159,21 @@ def build_messages(meta, gens, envs, step):
 
 
 def build_prefix(tok, msgs, effort=REASONING_EFFORT, pin_date=COLLECT_DATE):
-    """套 harmony 模板,返回到 `<|start|>assistant` 为止的 prompt 串。
+    """Applies the harmony template and returns the prompt string up to `<|start|>assistant`.
 
-    pin_date:模板第 202 行调 strftime_now 把**运行当天**的日期写进 prompt,
-    所以跨日重建会静默产生与采集时不同的串。把它钉回采集日,重建才是逐字的。
-    传 None 关掉(那就得靠 assert_date 拦)。
+    pin_date: line 202 of the template calls strftime_now to write **the day it's run**
+    into the prompt, so a cross-day rebuild silently produces a string different from
+    what was collected. Pinning it back to the collection day makes the rebuild
+    character-for-character. Pass None to turn this off (then it's assert_date's job to
+    catch it).
 
-    占位符那一段:模板 263-265 行发现 assistant 的 content 里含完整的
-    `<|channel|>analysis<|message|>` / `<|channel|>final<|message|>` 就 raise。
-    但采集时 vLLM 服务端是原样渲染的——模型当时确实看到了那些字面标记
-    (模型自己把控制标记当文本吐了出来)。所以这里拿占位符绕过检查、渲染完再
-    换回原文,保证重建串与采集时逐字一致,而不是去改内容。
+    The placeholder part: lines 263-265 of the template raise if the assistant's content
+    contains a complete `<|channel|>analysis<|message|>` or `<|channel|>final<|message|>`.
+    But at collection time the vLLM server rendered it as-is -- the model really did see
+    those literal markers (the model itself emitted the control markers as text). So this
+    uses a placeholder to get past the check, then swaps the original text back in after
+    rendering, keeping the rebuilt string character-for-character identical to what was
+    collected, rather than altering the content.
     """
     subs, safe = {}, []
     for i, m in enumerate(msgs):
@@ -164,50 +189,53 @@ def build_prefix(tok, msgs, effort=REASONING_EFFORT, pin_date=COLLECT_DATE):
                                 reasoning_effort=effort)
     for k, v in subs.items():
         if k not in s:
-            raise RuntimeError(f"占位符 {k!r} 渲染后不见了,换回原文会失败")
+            raise RuntimeError(f"placeholder {k!r} disappeared after rendering, swapping back to the original text will fail")
         s = s.replace(k, v)
     if pin_date:
         s, n = re.subn(r"(Current date: )\d{4}-\d{2}-\d{2}",
                        lambda m: m.group(1) + pin_date, s, count=1)
         if not n:
-            raise RuntimeError("模板里没有 Current date 行,钉日期失败")
-    # jinja 模板在 developer 正文后、<|end|> 前多塞一个 "\n\n"(模板 248 行,
-    # 无 tools 分支);chat 端点的 harmony 渲染器与采集时的手拼串都没有它
-    # (hcap 已验两者逐字相同)。只剥 developer 段末尾这一处,否则 /render 出的
-    # prompt 与 chat 基线差 2 字符,解码从第 0 步就分叉(z1 冒烟实测)。
+            raise RuntimeError("the template has no Current date line, pinning the date failed")
+    # The jinja template inserts an extra "\n\n" after the developer body and before <|end|>
+    # (template line 248, no-tools branch); neither the chat endpoint's harmony renderer nor
+    # the hand-assembled string at collection time has it (hcap has verified the two are
+    # character-for-character identical). Strip only this one spot at the end of the
+    # developer segment, otherwise the prompt from /render differs from the chat baseline by
+    # 2 characters, and decoding diverges starting from step 0 (verified in the z1 smoke test).
     s = re.sub(r"(<\|start\|>developer<\|message\|>(?:(?!<\|end\|>).)*?)\n\n(<\|end\|>)",
                r"\1\2", s, count=1, flags=re.S)
     return s
 
 
 def assert_date(prefix, expect=COLLECT_DATE):
-    """模板把当天日期写死进 prompt。跨日重建会静默产生不同的串,这里拦住。"""
+    """The template hardcodes the current date into the prompt. A cross-day rebuild silently produces a different string; this blocks that."""
     m = re.search(r"Current date: (\d{4}-\d{2}-\d{2})", prefix)
     if not m:
-        raise RuntimeError("重建串里找不到 Current date 行,模板可能变了")
+        raise RuntimeError("cannot find the Current date line in the rebuilt string, the template may have changed")
     if m.group(1) != expect:
         raise RuntimeError(
-            f"重建日期 {m.group(1)} != 采集日期 {expect}。harmony 模板用的是"
-            f"运行当天的日期,跨日重建的 prompt 与采集时不一致。"
-            f"要么改天跑,要么显式传 --assume-date 承认这处偏差。")
+            f"rebuilt date {m.group(1)} != collection date {expect}. the harmony template uses "
+            f"the date of the day it runs, so a prompt rebuilt on a different day does not match collection time."
+            f"either run it on the right day, or pass --assume-date explicitly to accept this discrepancy.")
     return True
 
 
 def has_literal_harmony(msgs):
-    """messages 里是否混进了字面 harmony 标记(会让 token 数对不上)。"""
+    """Whether literal harmony markers got mixed into messages (would make the token count not match)."""
     return any(_LITERAL_HARMONY.search(m["content"] or "") for m in msgs)
 
 
 def thinking_prefix(tok, prefix, think_cut, effort=REASONING_EFFORT):
-    """拼到"思考写到一半"的完整 completions prompt。"""
+    """The full completions prompt, assembled up to the point where 'the thinking is half-written.'"""
     return prefix + ANALYSIS_OPEN + think_cut
 
 
 def verify_traj(tok, path, max_steps=None):
-    """用日志里的 usage.in 对账重建后的 token 数,返回逐步结果。
+    """Checks the rebuilt token count against usage.in in the log, returns step-by-step results.
 
-    usage.in 是服务端记的 prompt_tokens(envs/collect/common.py:88),是唯一
-    能校验"重建串是否就是模型当时看到的串"的外部尺子。
+    usage.in is the prompt_tokens recorded by the server (envs/collect/common.py:88), the
+    only external yardstick that can verify "whether the rebuilt string is really what the
+    model saw at the time."
     """
     meta, gens, envs, _ = load_traj(path)
     out = []

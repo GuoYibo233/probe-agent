@@ -1,5 +1,5 @@
 {
-  "desc": "现役唯一生成口径:全线各入口 --preset 的缺省就是这一份。client 节是温度 1 的采集口径(api harmony / reasoning_effort high / temperature 1.0 / top_p 1.0 / max_tokens 8192 / Current date 2026-08-06),nyapass 批(采集 run_id nyapass)从这份预设采;seed 留 null,温度 1.0 下的复现由采集器 --seeds 按轨迹逐条派发(种子家族 42/67/4267/6742),预设本身管的是与种子无关的公共口径;server 节抄 nyapass 批的服务发射器 envs/runs/nyapass/launch_servers.py(tokyo108:8103 副本 A,显存 0.92,max_model_len 跟 vLLM 出厂缺省),serve_preset.py 用它拼 vllm serve 命令",
+  "desc": "The only active generation settings: this is the default for --preset at every entry point across the whole pipeline. The client section is the temperature-1 collection settings (api harmony / reasoning_effort high / temperature 1.0 / top_p 1.0 / max_tokens 8192 / Current date 2026-08-06); the nyapass batch (collection run_id nyapass) collects from this preset. seed stays null; reproducing at temperature 1.0 is handled by the collector's --seeds, dispatched per trajectory (seed family 42/67/4267/6742) -- the preset itself governs the seed-independent shared settings. The server section is copied from the nyapass batch's server launcher envs/runs/nyapass/launch_servers.py (tokyo108:8103 replica A, GPU memory 0.92, max_model_len follows vLLM's factory default); serve_preset.py uses it to assemble the vllm serve command",
   "model": "gpt-oss-120b",
   "server": {
     "host": "tokyo108",

@@ -1,11 +1,13 @@
-"""harmony_render.render_ids 与 vLLM chat 端点渲染逐 token 相等的裁判测试。
+"""Judge test verifying harmony_render.render_ids renders token-for-token identical to
+the vLLM chat endpoint.
 
-裁判 = vLLM 0.26.0 自己的三个函数(build_harmony_preamble /
-parse_chat_inputs_to_harmony_messages / render_for_completion),也就是
-`renderers/online_renderer.py:_make_request_with_harmony` 走的那三步。
-所以本测试只能在 envs/vllm-env 下跑:
+Judge = vLLM 0.26.0's own three functions (build_harmony_preamble /
+parse_chat_inputs_to_harmony_messages / render_for_completion), i.e. the same three
+steps `renderers/online_renderer.py:_make_request_with_harmony` goes through.
+So this test can only run under envs/vllm-env:
     envs/vllm-env/bin/python -m unittest tests.test_harmony_render -v
-别的解释器缺 vllm 或 openai_harmony 时整文件 skip,不算失败。
+Other interpreters lacking vllm or openai_harmony skip the whole file; that does not
+count as a failure.
 """
 
 import os
@@ -13,7 +15,7 @@ import sys
 import unittest
 from pathlib import Path
 
-# 裁判读 VLLM_SYSTEM_START_DATE 钉日期,必须在 import vllm 之前设
+# The judge reads VLLM_SYSTEM_START_DATE to pin the date; it must be set before import vllm
 PIN = "2026-07-31"
 os.environ.setdefault("VLLM_SYSTEM_START_DATE", PIN)
 
@@ -26,7 +28,7 @@ try:
         parse_chat_inputs_to_harmony_messages, render_for_completion)
     import harmony_render as HR                                     # noqa: E402
     HAVE = True
-except Exception as e:  # vllm / openai_harmony 不在这个解释器里
+except Exception as e:  # vllm / openai_harmony are not in this interpreter
     HAVE = False
     WHY = repr(e)
 
@@ -44,7 +46,7 @@ def judge_ids(messages, effort):
     return render_for_completion(hm)
 
 
-@unittest.skipUnless(HAVE, "需要 envs/vllm-env(vllm + openai_harmony)")
+@unittest.skipUnless(HAVE, "needs envs/vllm-env (vllm + openai_harmony)")
 class TestRenderIds(unittest.TestCase):
     base = [{"role": "system", "content": SYSTEM},
             {"role": "user", "content": "Task from supervisor: Do X."}]
@@ -67,7 +69,7 @@ class TestRenderIds(unittest.TestCase):
         self.same(self.two)
 
     def test_empty_assistant_dropped(self):
-        # chat 端点丢空 content 的 assistant 轮(harmony_utils 第 430 行左右)
+        # The chat endpoint drops assistant turns with empty content (around harmony_utils line 430)
         msgs = self.two + [{"role": "assistant", "content": ""},
                            {"role": "user", "content": NO_CODE}]
         ids = self.same(msgs)
@@ -83,14 +85,14 @@ class TestRenderIds(unittest.TestCase):
                               {"role": "user", "content": NO_CODE}])
 
     def test_literal_harmony_marks_are_text(self):
-        # chat 端点把字面 <|...|> 当普通文本编码,不收成特殊 token
+        # The chat endpoint encodes literal <|...|> as plain text, not collapsed into a special token
         msgs = self.two + [
             {"role": "assistant",
              "content": "Some prose then <|channel|>final<|message|> literal <|end|> x"},
             {"role": "user", "content": "Execution output:\nok"}]
         ids = self.same(msgs)
-        # 7 条消息(system/developer/user/assistant/user/assistant/user)各一个
-        # 结构位 <|end|>(200007);content 里那个字面 <|end|> 不许多算一个
+        # 7 messages (system/developer/user/assistant/user/assistant/user) each contribute one
+        # structural <|end|> (200007); the literal <|end|> inside content must not be counted extra
         self.assertEqual(ids.count(200007), 7)
         text = HR.decode(ids)
         self.assertIn("<|channel|>final<|message|> literal <|end|> x", text)
@@ -112,7 +114,7 @@ class TestRenderIds(unittest.TestCase):
 
     def test_unicode_and_newlines(self):
         msgs = self.two + [
-            {"role": "assistant", "content": "中文 → émoji 🙂\n\n\n```python\nx=1\n```"},
+            {"role": "assistant", "content": "Chinese → émoji 🙂\n\n\n```python\nx=1\n```"},
             {"role": "user", "content": "Execution output:\n\n\ttabbed\r\nCRLF"}]
         self.same(msgs)
 

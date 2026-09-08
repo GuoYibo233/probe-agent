@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""tmux launcher for Phase C probe training —— 批次无关的泛化版。
+"""tmux launcher for Phase C probe training -- a batch-agnostic generalized version.
 
-取代 `ops/launch_c1.py`(它把批次前缀 `c1_`、数据集 `aw_official_v1`、
-smoke 的模型 `q35` 三处写死,每加一个批次就得复制一份)。
+Replaces `ops/launch_c1.py` (it hardcodes the batch prefix `c1_`, the dataset
+`aw_official_v1`, and the smoke model `q35` in three places; every new batch meant
+copying the whole file).
 
-用法:
-  # 默认顺序 smoke(一个模型,一格一张卡;格与张数看 run.py 的 CELL_ORDER,
-  # 2026-08-21 起是 ctool/cgen/cparam 三格)
+Usage:
+  # default sequential smoke (one model, one card per cell; cells and count follow
+  # run.py's CELL_ORDER, three cells ctool/cgen/cparam as of 2026-08-21)
   launch_probe.py smoke --batch c2 --data-root pipeline/data/alf_official_v1 \
       --env alfworld --model q36 --host tokyo107 --gpus 0,1,2
 
-  # 全量(排卡表驱动)
+  # full run (driven by the card-scheduling table)
   launch_probe.py full --batch c2 --data-root pipeline/data/alf_official_v1 \
       --env alfworld --placement ops/c2_placement.json
 
-排卡表是一个 json 数组,一格一条:
+The card-scheduling table is a json array, one entry per cell:
   [{"model": "q36", "cell": "mtool", "host": "tokyo107", "gpu": 0,
     "extra": ["--align-tol", "3e-4"]}, ...]
 
-run_id = <batch>_<model>_<cell>,四处一致(数据目录名 / tmux session / 台账 name /
-commit message),见 CLAUDE.md「记录」一节。
+run_id = <batch>_<model>_<cell>, consistent across the four spots (data dir name /
+tmux session / job ledger name / commit message), see the "Recording" section of
+CLAUDE.md.
 """
 import argparse
 import json
@@ -31,29 +33,34 @@ from pathlib import Path
 WD = Path(__file__).resolve().parent.parent
 LOGD = WD / "logs"
 
-# 格 -> (解释器, 训练脚本, 该格固定要带的参数)。
-# 唯一真源在仓库根 run.py 的 CELLS(2026-08-02 起),这里只 import 不再另抄一份
-# ——两张同构表必漂移,而那种漂移是静默的。双环境铁律也记在 run.py 里。
+# cell -> (interpreter, training script, fixed args for that cell).
+# The single source of truth is CELLS in the repo root's run.py (since 2026-08-02);
+# this file only imports it, no longer keeps its own copy -- two isomorphic tables
+# always drift, and that drift is silent. The dual-environment hard rule is also
+# recorded in run.py.
 sys.path.insert(0, str(WD))
 from run import CELLS, CELL_ORDER  # noqa: E402
 sys.path.insert(0, str(WD / "ops"))
-# has_session/tmux_launch 原来是本地函数,现在改 import 公共件(工单 11,
-# 先扩后收的收这一步——探卡/登记也从这里一并接进来)。
+# has_session/tmux_launch used to be local functions, now imported from the shared
+# module (ticket 11, the consolidation step after the earlier expansion -- probing
+# the card / registering are also wired in from here now).
 from launch_common import has_session, tmux_launch, probe_free, register_all  # noqa: E402
 
 
 def launch_and_register(host, gpu, sess, cmd, log, out, rid, batch, placement=""):
-    """一格的完整发射:探卡(fail-closed)→session 存在性检查→tmux 发射→RUNMETA→
-    台账/记录登记。session 已存在或目标卡非 FREE 都算跳过,不发射也不登记。
-    登记(台账/record.py)失败只 WARN 不中断——发射已经真实发生了,不能因为
-    登记这一步(比如重复 run_id)把已经跑起来的任务藏起来不让 alive check 看见。
-    返回 True 表示真的发出去了(供 main() 的 alive check 用)。"""
+    """Full launch for one cell: probe the card (fail-closed) -> session existence check
+    -> tmux launch -> RUNMETA -> job ledger / record registration. Skip (no launch,
+    no registration) if the session already exists or the target card is not FREE.
+    A registration failure (job ledger / record.py) only WARNs, it does not abort --
+    the launch has already really happened, and this registration step (e.g. a
+    duplicate run_id) must not hide an already-running job from the alive check.
+    Returns True to mean it was actually launched (used by main()'s alive check)."""
     if has_session(host, sess):
         print(f"SKIP (exists): {sess}")
         return False
     ok, why = probe_free(host, str(gpu))
     if not ok:
-        print(f"SKIP (非 FREE): {sess}  {host} gpu{gpu}  {why}")
+        print(f"SKIP (not FREE): {sess}  {host} gpu{gpu}  {why}")
         return False
     inner = f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd} 2>&1 | tee {log}"
     tmux_launch(host, sess, inner)
@@ -61,8 +68,9 @@ def launch_and_register(host, gpu, sess, cmd, log, out, rid, batch, placement=""
     piece = {"host": host, "gpus": str(gpu), "session": sess, "log": str(log),
               "cmd": cmd, "launched_at": time.time(), "kind": "train",
               "stall_line": None, "escalate_line": None}
-    # 产物钉代码(审计 B6)由 register_all 的第一步写进 out/RUNMETA.json——
-    # 它是唯一写手,这里只把 kind 与要并进记录的字段传过去。
+    # Pinning outputs to the code (audit B6) is written into out/RUNMETA.json by the
+    # first step of register_all -- it is the sole writer; this only passes along the
+    # kind and the fields to merge into the record.
     try:
         receipt = register_all(rid, str(WD), [piece], f"probe_{batch}", cmd,
                                outdir=out, runmeta_kind="train",
@@ -72,7 +80,7 @@ def launch_and_register(host, gpu, sess, cmd, log, out, rid, batch, placement=""
                                               "placement": placement or ""})
         print(receipt)
     except SystemExit as e:
-        print(f"WARN 登记失败({rid}): {e}")
+        print(f"WARN registration failed ({rid}): {e}")
     return True
 
 
@@ -81,7 +89,7 @@ def build(batch, data_root, env, model, cell, smoke, extra=None):
     rid = f"{batch}_{model}_{cell}"
     data = Path(data_root) / model
     if not data.is_dir():
-        sys.exit(f"数据目录不存在: {data}")
+        sys.exit(f"data dir does not exist: {data}")
     out = WD / ("pipeline/runs/smoke/" + rid + "_smoke" if smoke else "pipeline/runs/" + rid)
     args = [py, str(script), "--data", str(data), "--out", str(out), "--env", env]
     args += base_args
@@ -95,20 +103,20 @@ def build(batch, data_root, env, model, cell, smoke, extra=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["smoke", "full"])
-    ap.add_argument("--batch", required=True, help="run_id 前缀,如 c2")
-    ap.add_argument("--data-root", required=True, help="数据集版本目录(其下一模型一子目录)")
+    ap.add_argument("--batch", required=True, help="run_id prefix, e.g. c2")
+    ap.add_argument("--data-root", required=True, help="dataset version dir (one subdirectory per model underneath)")
     ap.add_argument("--env", required=True,
                     choices=["appworld", "alfworld", "bfcl", "tales"])
-    ap.add_argument("--model", help="smoke 模式:拿哪个模型的数据跑四格")
-    ap.add_argument("--host", default="tokyo107", help="smoke 模式:跑在哪台")
+    ap.add_argument("--model", help="smoke mode: which model's data to run the four cells with")
+    ap.add_argument("--host", default="tokyo107", help="smoke mode: which host to run on")
     ap.add_argument("--gpus", default="0,1,2",
-                    help="smoke 模式:一格一张卡,张数必须等于 run.py 的 "
-                         "CELL_ORDER 长度(现在是 ctool/cgen/cparam 三张)")
-    ap.add_argument("--placement", help="full 模式:排卡表 json")
+                    help="smoke mode: one card per cell, the count must equal run.py's "
+                         "CELL_ORDER length (currently three: ctool/cgen/cparam)")
+    ap.add_argument("--placement", help="full mode: card-scheduling table json")
     ap.add_argument("--force", action="store_true",
-                    help="透传训练脚本的 --force:同 out 目录重训(B7 守卫逃生,"
-                         "smoke 重跑必用——smoke 目录名是确定性推出的)")
-    ap.add_argument("--dry-run", action="store_true", help="只打印不发射")
+                    help="pass through to the training script's --force: retrain in the same out dir (B7 guard escape hatch, "
+                         "mandatory for smoke reruns -- the smoke dir name is derived deterministically)")
+    ap.add_argument("--dry-run", action="store_true", help="print only, do not launch")
     args = ap.parse_args()
     force = ["--force"] if args.force else []
 
@@ -117,10 +125,10 @@ def main():
 
     if args.mode == "smoke":
         if not args.model:
-            sys.exit("smoke 模式要 --model")
+            sys.exit("smoke mode needs --model")
         gpus = [g.strip() for g in args.gpus.split(",")]
         if len(gpus) != len(CELL_ORDER):
-            sys.exit(f"--gpus 要给 {len(CELL_ORDER)} 张卡,给了 {len(gpus)}")
+            sys.exit(f"--gpus needs {len(CELL_ORDER)} cards, got {len(gpus)}")
         for cell, gpu in zip(CELL_ORDER, gpus):
             rid, cmd, out = build(args.batch, args.data_root, args.env,
                                   args.model, cell, True, force or None)
@@ -129,7 +137,7 @@ def main():
             plan.append((args.host, gpu, sess, cmd, f"{LOGD}/{sess}.log", out, rid))
     else:
         if not args.placement:
-            sys.exit("full 模式要 --placement")
+            sys.exit("full mode needs --placement")
         for p in json.load(open(args.placement)):
             rid, cmd, out = build(args.batch, args.data_root, args.env,
                                   p["model"], p["cell"], False,
@@ -142,7 +150,7 @@ def main():
     if args.dry_run:
         for host, gpu, sess, cmd, log, out, rid in plan:
             print(f"[dry-run] {host} gpu{gpu} {sess}\n    {cmd}")
-        print(f"\n共 {len(plan)} 格(dry-run,未发射)")
+        print(f"\n{len(plan)} cells total (dry-run, not launched)")
         return
 
     for host, gpu, sess, cmd, log, out, rid in plan:

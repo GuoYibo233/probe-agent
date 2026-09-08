@@ -1,17 +1,17 @@
-"""tests/test_mem_probe_pick.py —— spec `.scratch/kvshare-train/spec.md`
-16.5、16.9,对应工单 `.scratch/kvshare-train/issues/10-mem-probe-pick.md`。
+"""tests/test_mem_probe_pick.py -- spec `.scratch/kvshare-train/spec.md` 16.5, 16.9,
+corresponding to ticket `.scratch/kvshare-train/issues/10-mem-probe-pick.md`.
 
-跑法(要 cprobe-env,`import train_causal_share` 顶层有 transformers>=5.14
-版本门):
+How to run it (needs cprobe-env; `import train_causal_share`'s top level has a
+transformers>=5.14 version gate):
   cprobe-env/bin/python -m unittest tests.test_mem_probe_pick -v
-系统 python3 跑全量 discover 时本模块整体 skip(没有 torch),不算失败;
-mbert-env(transformers 4.57.6)下同样 skip(照 tests/test_share_trainer.py
-的做法)。
+When the system python3 runs the full discover, this module skips entirely (no torch);
+that does not count as a failure; under mbert-env (transformers 4.57.6) it likewise
+skips (following `tests/test_share_trainer.py`'s approach).
 
-小模型与事件的构造复用 `tests/test_share_trainer.py` 的辅助函数
-(`_tiny_config`、`_load_five_short_events`、`QWEN_PATH` 等),不在这里
-另抄一份;真实 Qwen3-0.6B-Base 分词器路径、现役数据不存在时涉及它们的
-用例 `skipTest`。
+The small model and event construction reuse `tests/test_share_trainer.py`'s helper
+functions (`_tiny_config`, `_load_five_short_events`, `QWEN_PATH`, etc.); they are not
+copied again here; cases involving them call `skipTest` when the real Qwen3-0.6B-Base
+tokenizer path or the live data does not exist.
 """
 import argparse
 import json
@@ -28,19 +28,19 @@ sys.path.insert(0, str(ROOT / "tests"))
 try:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-except ImportError as e:                       # 系统 python3 没有 torch
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # The system python3 lacks torch
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
 try:
     import train_causal_share as tcs           # noqa: E402
     import share_data                          # noqa: E402
     import readonly_map                        # noqa: E402
-except ImportError as e:                       # 系统 python3 没有 transformers
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
-except SystemExit as e:                        # mbert-env 的 transformers<5.14
-    raise unittest.SkipTest(f"要 cprobe-env 解释器:{e}")
+except ImportError as e:                       # The system python3 lacks transformers
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
+except SystemExit as e:                        # mbert-env's transformers<5.14
+    raise unittest.SkipTest(f"needs the cprobe-env interpreter: {e}")
 
-import test_share_trainer as tst               # noqa: E402:复用小模型/事件辅助函数
+import test_share_trainer as tst               # noqa: E402: reuses the small-model/event helper functions
 
 QWEN_PATH = tst.QWEN_PATH
 DATA_DIR = tst.DATA_DIR
@@ -52,11 +52,13 @@ _load_five_short_events = tst._load_five_short_events
 
 
 def _mk_block(packed_len, loss_counts):
-    """单事件物理块(纯挑块逻辑测试用):`_pick_cost_blocks` 只读一个块的
-    `packed_len`(经 `_l_pad` 补齐)与每行 `row[4]`(`seg_lab`)里非 -100 的
-    个数,不需要真实 `full_ids`/`seg_ids`,所以 `packed_len` 直接给定,
-    `seg_lab` 直接写成全 1(全部当损失位)。`loss_counts` 是这个事件每一行
-    的损失位数,行数 = len(loss_counts)。返回单事件物理块(事件列表,长度 1)。
+    """A single-event physical block (for pure block-picking logic tests): `_pick_cost_blocks`
+    only reads a block's `packed_len` (padded via `_l_pad`) and, for each row, the count
+    of entries in `row[4]` (`seg_lab`) that are not -100; it doesn't need real
+    `full_ids`/`seg_ids`, so `packed_len` is given directly and `seg_lab` is written as
+    all 1s (all loss positions). `loss_counts` is this event's loss-position count per
+    row, row count = len(loss_counts). Returns a single-event physical block (an event
+    list of length 1).
     """
     rows = [(i, f"r{i}", 0, [], [1] * n, 1.0) for i, n in enumerate(loss_counts)]
     return [dict(event=f"ev_{packed_len}_{sum(loss_counts)}",
@@ -64,15 +66,16 @@ def _mk_block(packed_len, loss_counts):
 
 
 class TestPickCostBlocks(unittest.TestCase):
-    """(a) 工单 10 spec 16.5/16.9:手造 6 个小事件(块),`cost` 挑块的三条
-    规则——token 最多(并列时取损失位多的)、损失位最多(与前者不同)、按
-    `n_tok/max_n_tok + n_loss_pos/max_n_loss_pos` 算出来的第三块。"""
+    """(a) Ticket 10 spec 16.5/16.9: hand-build 6 small events (blocks), `cost`'s three
+    block-picking rules -- most tokens (ties broken by more loss positions), most loss
+    positions (different block from the former), and the third block computed from
+    `n_tok/max_n_tok + n_loss_pos/max_n_loss_pos`."""
 
     def test_tiebreak_and_third_block(self):
-        blk_losspos_max = _mk_block(64, [60])          # 一行,目标长:损失位最多
-        blk_tokens_tie_low = _mk_block(320, [2] * 8)    # 行多前缀长:token 并列(损失位少)
-        blk_tokens_tie_high = _mk_block(320, [5] * 8)   # 同 token 数,损失位更多
-        blk_cost_max = _mk_block(288, [11] * 5)         # 综合分最高
+        blk_losspos_max = _mk_block(64, [60])          # One row, long target: most loss positions
+        blk_tokens_tie_low = _mk_block(320, [2] * 8)    # Many rows, long prefix: tied on tokens (fewer loss positions)
+        blk_tokens_tie_high = _mk_block(320, [5] * 8)   # Same token count, more loss positions
+        blk_cost_max = _mk_block(288, [11] * 5)         # Highest combined score
         blk_filler1 = _mk_block(48, [5])
         blk_filler2 = _mk_block(32, [3])
 
@@ -83,7 +86,7 @@ class TestPickCostBlocks(unittest.TestCase):
         self.assertEqual(set(picks),
                          {"max_tokens_block", "max_losspos_block", "max_cost_block"})
         self.assertIs(picks["max_tokens_block"], blk_tokens_tie_high,
-                      "token 数并列时应该取损失位多的那块")
+                      "when token counts tie, should take the block with more loss positions")
         self.assertIs(picks["max_losspos_block"], blk_losspos_max)
         self.assertIsNot(picks["max_tokens_block"], picks["max_losspos_block"])
         self.assertIs(picks["max_cost_block"], blk_cost_max)
@@ -92,17 +95,18 @@ class TestPickCostBlocks(unittest.TestCase):
 
 
 class TestRunMemProbeThreeModes(unittest.TestCase):
-    """(b) 三种模式各跑一次 `run_mem_probe`:`opt.state` 为空、lr 恢复、
-    `.grad` 全 None、参数逐位不变(`loop` 模式也是)、都写了
-    `mem_probe_summary`。`worst_gb`/`worst_kind` 用 monkeypatch 的
-    `_peak_gb`(每次调用返回递增假值)来验证有区分度(CPU 上真值恒 0)。"""
+    """(b) Run `run_mem_probe` once for each of the three modes: `opt.state` is empty, lr
+    is restored, `.grad` is all None, parameters are unchanged item-for-item (`loop`
+    mode too), and `mem_probe_summary` is always written. `worst_gb`/`worst_kind` are
+    verified for having discrimination using a monkeypatched `_peak_gb` (returns an
+    increasing fake value on each call; the real value on CPU is always 0)."""
 
     @classmethod
     def setUpClass(cls):
         if not Path(QWEN_PATH).exists():
-            raise unittest.SkipTest(f"分词器路径不存在:{QWEN_PATH}")
+            raise unittest.SkipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         if not VAL_PATH.exists():
-            raise unittest.SkipTest(f"val 集不存在:{VAL_PATH}")
+            raise unittest.SkipTest(f"val set does not exist: {VAL_PATH}")
         cls.tok = AutoTokenizer.from_pretrained(QWEN_PATH)
         if cls.tok.pad_token_id is None:
             cls.tok.pad_token = cls.tok.eos_token
@@ -118,7 +122,7 @@ class TestRunMemProbeThreeModes(unittest.TestCase):
         events, _counts = share_data.load_events(
             self.data_path, self.tok, mode="cgen", max_len=8192, limit=0)
         self.assertGreaterEqual(len(events), 2,
-                                "要至少 2 个事件才能凑出多个物理块")
+                                "need at least 2 events to make up multiple physical blocks")
 
         torch.manual_seed(SEED)
         model = AutoModelForCausalLM.from_config(_tiny_config(len(self.tok)))
@@ -145,22 +149,22 @@ class TestRunMemProbeThreeModes(unittest.TestCase):
             tcs.run_mem_probe(model, opt, events, args, "cpu", log, amp=False)
 
         self.assertEqual(len(opt.state), 0,
-                         f"{pick}:探针收尾后 opt.state 应该清空")
+                         f"{pick}: opt.state should be empty after the probe finishes")
         self.assertTrue(
             all(g["lr"] == orig_lr for g in opt.param_groups),
-            f"{pick}:探针收尾后各 param_group 的 lr 应该恢复原值")
+            f"{pick}: each param_group's lr should be restored to its original value after the probe finishes")
         self.assertTrue(
             all(p.grad is None for p in model.parameters()),
-            f"{pick}:探针收尾后所有参数的 .grad 应该是 None")
+            f"{pick}: every parameter's .grad should be None after the probe finishes")
         for p0, p1 in zip(params_before, model.parameters()):
             self.assertTrue(torch.equal(p0, p1),
-                            f"{pick}:参数在探针前后逐位不变")
+                            f"{pick}: parameters are bit-for-bit unchanged before and after the probe")
 
         mem_events = [e for e in logged if e.get("event") == "mem_probe"]
         summaries = [e for e in logged if e.get("event") == "mem_probe_summary"]
-        self.assertTrue(mem_events, f"{pick}:应该至少写一条 mem_probe 事件")
+        self.assertTrue(mem_events, f"{pick}: should write at least one mem_probe event")
         self.assertEqual(len(summaries), 1,
-                         f"{pick}:应该恰好写一条 mem_probe_summary")
+                         f"{pick}: should write exactly one mem_probe_summary")
         summary = summaries[0]
         self.assertEqual(summary["pick"], pick)
 
@@ -168,9 +172,9 @@ class TestRunMemProbeThreeModes(unittest.TestCase):
         max_kind = next(e["kind"] for e in mem_events
                         if e["peak_mem_gb"] == max_peak)
         self.assertEqual(summary["worst_gb"], max_peak,
-                         f"{pick}:worst_gb 应该等于各块 peak_mem_gb 的最大值")
+                         f"{pick}: worst_gb should equal the max of each block's peak_mem_gb")
         self.assertEqual(summary["worst_kind"], max_kind,
-                         f"{pick}:worst_kind 应该对上 peak 最大的那个 kind")
+                         f"{pick}: worst_kind should match the kind with the largest peak")
 
     def test_tokens(self):
         self._run_mode("tokens")
@@ -183,22 +187,23 @@ class TestRunMemProbeThreeModes(unittest.TestCase):
 
 
 class TestMemProbeRngRestorationViaMain(unittest.TestCase):
-    """(c) 小模型 `main()` 带 `--mem-probe --mem-probe-pick cost --device
-    cpu --lora` 与不带 `--mem-probe`(同样 `--lora`)各跑一次(同 `--smoke
-    --max-events 6 --log-every 1`),两份 `train_log.jsonl` 的 `step` 事件
-    `loss` 逐条相同——随机数状态在探针前后被恢复(spec 16.5,静默失败点
-    #31),LoRA dropout 的随机流不受影响(小模型不挂 LoRA 时 dropout 为 0,
-    没有区分度)。"""
+    """(c) Run the small model's `main()` once with `--mem-probe --mem-probe-pick cost
+    --device cpu --lora` and once without `--mem-probe` (still `--lora`) (both with
+    `--smoke --max-events 6 --log-every 1`); the `loss` values of the `step` events in
+    the two `train_log.jsonl` files match entry for entry -- the random-number state is
+    restored around the probe (spec 16.5, silent-failure point #31), and LoRA dropout's
+    random stream is unaffected (dropout is 0 when the small model doesn't carry LoRA,
+    so there's no discrimination there)."""
 
     def test_loss_identical_with_and_without_mem_probe(self):
         try:
             import peft  # noqa: F401
         except ImportError as e:
-            self.skipTest(f"peft 未安装:{e}")
+            self.skipTest(f"peft not installed: {e}")
         if not Path(QWEN_PATH).exists():
-            self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
+            self.skipTest(f"tokenizer path does not exist: {QWEN_PATH}")
         if not TRAIN_PATH.exists() or not VAL_PATH.exists():
-            self.skipTest(f"现役数据不存在:{DATA_DIR}")
+            self.skipTest(f"live data does not exist: {DATA_DIR}")
 
         tok = AutoTokenizer.from_pretrained(QWEN_PATH)
         vocab_size = len(tok)
@@ -233,44 +238,47 @@ class TestMemProbeRngRestorationViaMain(unittest.TestCase):
                 "with_probe", ["--mem-probe", "--mem-probe-pick", "cost"])
             loss_without_probe = _run("without_probe", [])
 
-            self.assertTrue(loss_with_probe, "没有任何 step 事件")
+            self.assertTrue(loss_with_probe, "no step events at all")
             self.assertEqual(loss_with_probe, loss_without_probe,
-                             "带探针与不带探针的 run 训练部分应该逐位相同"
-                             "(随机数状态在探针前后被恢复)")
+                             "the training part of a run with and without the probe should be bit-for-bit identical "
+                             "(the random-number state is restored before and after the probe)")
 
 
 def _row(event, sent_idx, n_sents, text, label, label_call, w=1.0):
-    """手造一行训练样本(照 `tests/test_eval_overlong.py` 的同名辅助函数)。"""
+    """Hand-build one training-sample row (following the same-named helper function in `tests/test_eval_overlong.py`)."""
     return dict(event=event, sent_idx=sent_idx, n_sents=n_sents, text=text,
                label=label, label_call=label_call, w=w)
 
 
 class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
-    """终审 F2 回归测试:`--mem-probe-pick tokens` 且 `--readonly-env` 打开
-    时,`tr_events` 是按 `ro=ro_tr` 装的(非只读的行整行丢掉),不是训练集
-    全集——`(not args.smoke) and args.max_events == 0` 这条『tr_events 本来
-    就是全集』的判据必须同时要求 `args.readonly_env is None`,否则探针会
-    拿过滤后的子集当全集用,还照样标 `scope="full"`。
+    """Final-review F2 regression test: when `--mem-probe-pick tokens` and
+    `--readonly-env` are both on, `tr_events` is loaded with `ro=ro_tr` (non-read-only
+    rows dropped whole-row), not the full training set -- the criterion
+    `(not args.smoke) and args.max_events == 0` for "tr_events is already the full set"
+    must also require `args.readonly_env is None`, otherwise the probe would treat the
+    filtered subset as the full set while still tagging it `scope="full"`.
 
-    造一份只有两个事件、每个事件恰好一行的手造小数据集(spec 16.9 前言:
-    新用例一律用手造的小事件,不读现役 `pipeline/data/nyapass_aw_v1/gptoss`
-    ——那份 val 集 810MB/115211 行,整份逐行读一遍要 13 秒;不加 `--smoke`、
-    不给 `--max-events`,恰好触发旧代码判定"tr_events 就是全集"的条件):
-    一个事件的标签是 `readonly_map.load_table("appworld")` 里第一个判为
-    readonly 的标签,另一个是第一个判为非 readonly 的标签——`--readonly-env
-    appworld` 打开后,非 readonly 那个事件的唯一一行被整行丢掉,`tr_events`
-    只剩 1 个事件,不再是全集。用 `share_data.load_events` 的调用记录直接
-    验证:探针该不该另装一遍全集,靠这一条 `ro=None` 的调用有没有发生来判,
-    不靠训练结果的数字。
+    Build a hand-made small dataset with only two events, each exactly one row (spec
+    16.9's preamble: new cases always use hand-built small events, and do not read the
+    live `pipeline/data/nyapass_aw_v1/gptoss` -- that val set is 810MB/115211 rows, and
+    reading through the whole thing row by row takes 13 seconds; not passing `--smoke`
+    and not giving `--max-events` is exactly what triggers the old code's condition for
+    judging "tr_events is already the full set"): one event's label is the first label
+    that `readonly_map.load_table("appworld")` judges read-only, the other is the first
+    label it judges not read-only -- once `--readonly-env appworld` is on, the non-read-
+    only event's only row is dropped whole-row, `tr_events` is left with only 1 event,
+    no longer the full set. Verify this directly with `share_data.load_events`'s call
+    record: whether the probe should load the full set separately is judged by whether
+    this one `ro=None` call happened, not by the numbers in the training result.
     """
 
     def test_readonly_env_forces_reload_even_when_limit_zero(self):
         try:
             import peft  # noqa: F401
         except ImportError as e:
-            self.skipTest(f"peft 未安装:{e}")
+            self.skipTest(f"peft not installed: {e}")
         if not Path(QWEN_PATH).exists():
-            self.skipTest(f"分词器路径不存在:{QWEN_PATH}")
+            self.skipTest(f"tokenizer path does not exist: {QWEN_PATH}")
 
         ro_table = readonly_map.load_table("appworld")
         ro_label = next(k for k, v in ro_table.items() if v["readonly"])
@@ -306,9 +314,10 @@ class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
                 return orig_load_events(*a, **kw)
 
             out = Path(out_root) / "run"
-            # 特意不给 --smoke、不给 --max-events(默认 0):这正是旧代码
-            # `(not args.smoke) and args.max_events == 0` 判定"tr_events
-            # 本来就是全集"的条件,配合 --readonly-env 才会暴露 F2。
+            # Deliberately not passing --smoke, not passing --max-events (default 0): this is
+            # exactly the old code's condition `(not args.smoke) and args.max_events == 0` for
+            # judging "tr_events is already the full set", and it only exposes F2 combined with
+            # --readonly-env.
             argv = ["train_causal_share.py", "--mode", "cgen",
                    "--base", model_dir, "--data", str(data_dir),
                    "--out", str(out), "--align-events", "2",
@@ -324,21 +333,22 @@ class TestMemProbePickTokensReadonlyEnvReloadsFull(unittest.TestCase):
                 finally:
                     sys.argv = old_argv
 
-        # main() 里 --readonly-env 打开时会调 4 次 load_events:对齐检查
-        # (run_align_check 内部另装一份小样本对拍,ro=ro_new)、tr_events
-        # (ro=ro_tr)、ev_events(ro=ro_ev)——这三次都带非 None 的 ro;
-        # `--mem-probe-pick tokens` 且 `--readonly-env` 打开时必须再装一遍
-        # 全集,最后一次调用必须传 ro=None——退回旧逻辑(直接拿 tr_events
-        # 当全集)的话,load_events 只会被调前面那 3 次,不会有第 4 次。
+        # In main(), when --readonly-env is on, load_events is called 4 times: the alignment
+        # check (run_align_check loads a separate small sample to cross-check internally,
+        # ro=ro_new), tr_events (ro=ro_tr), ev_events (ro=ro_ev) -- these three all carry
+        # a non-None ro; when `--mem-probe-pick tokens` and `--readonly-env` are both on,
+        # it must load the full set once more, and this last call must pass ro=None --
+        # falling back to the old logic (taking tr_events directly as the full set) means
+        # load_events would only be called those first 3 times, never a 4th.
         self.assertEqual(len(ro_calls), 4,
-                         "readonly_env 打开时 mem-probe-pick=tokens 必须"
-                         "重新装一遍全集(load_events 该被调 4 次:"
-                         "对齐检查/train/val/mem-probe 全集)")
+                         "when readonly_env is on, mem-probe-pick=tokens must "
+                         "reload the full set again (load_events should be called 4 times: "
+                         "alignment check/train/val/mem-probe full set)")
         self.assertTrue(all(c is not None for c in ro_calls[:-1]),
-                        f"前 3 次调用都该带非 None 的 ro:{ro_calls[:-1]}")
+                        f"the first 3 calls should all carry a non-None ro: {ro_calls[:-1]}")
         self.assertIsNone(ro_calls[-1],
-                         "最后一次(mem-probe 全集重装)必须传 ro=None,"
-                         "不能沿用 readonly 过滤过的 tr_events")
+                         "the last call (reloading the mem-probe full set) must pass ro=None, "
+                         "must not reuse tr_events filtered by readonly")
 
 
 if __name__ == "__main__":

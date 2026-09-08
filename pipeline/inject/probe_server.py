@@ -1,46 +1,59 @@
-"""活跑注入线的探针服务(cprobe-env,GPU)。方法规范:METHOD.md(旧设计书已随 08-02 清场删除)
+"""Probe service for the live-run injection line (cprobe-env, GPU). Method spec: METHOD.md
+(the old design doc was removed in the 08-02 cleanup).
 
-驱动器(live_appworld.py)跑在 appworld venv 里,没有 torch/transformers,
-所以三件"模型侧"的事都收进本服务,HTTP JSON 交接:
+The driver (live_appworld.py) runs inside the appworld venv, which has no
+torch/transformers, so all three "model-side" jobs are folded into this service,
+handed off over HTTP JSON:
 
-  POST /score  {"text": 探针输入}          -> {"conf","label","fired"}
-               置信度 = softmax(logits/T).max(),T 在启动时从 ctool 的
-               REPLAY_REPORT.json 读定,θ 由 --theta 必传;fired = conf >= theta
-  POST /gen    {"text": 触发点的探针输入}  -> {"call": 整条预测调用}
-               【照抄 replay_inject.gen_calls 的口径】text + call_sep 后
-               greedy 续写,截到首行
+  POST /score  {"text": probe input}          -> {"conf","label","fired"}
+               confidence = softmax(logits/T).max(); T is read at startup from ctool's
+               REPLAY_REPORT.json and fixed there; theta is required via --theta;
+               fired = conf >= theta
+  POST /gen    {"text": probe input at the threshold}  -> {"call": the full predicted call}
+               [mirrors replay_inject.gen_calls's convention] after text + call_sep,
+               continue generation greedily and cut it to the first line
   POST /render {"messages":[...],"effort":?} -> {"prefix_ids":[token id...],
-               "n_tokens", "prefix": 解码文本(只给人眼看)}
-               harmony_render.render_ids:照抄 vLLM chat 端点的渲染,直接出
-               token id,与 chat baseline 逐 token 相同(2026-08-18 起;之前走
-               jinja 出文本再由 completions 分词,空 content 轮与字面 <|...|>
-               标记两处与 chat 不一致,见 harmony_render.py 文件头)。日期钉
-               COLLECT_DATE(vLLM 侧配套钉法见 METHOD.md §6-④)
-  POST /encode {"text": 生成文本}          -> {"ids":[...]}
-               gpt-oss HF 分词器 encode(add_special_tokens=False)。2026-08-18
-               (ident3)起注入后重发的 head 直接用模型生成的 token id,/encode
-               只给 NOTE 单独编码:prompt = prefix_ids + head_ids + encode(NOTE)
+               "n_tokens", "prefix": decoded text (for human eyes only)}
+               harmony_render.render_ids: mirrors the vLLM chat endpoint's rendering,
+               emits token ids directly, identical token-for-token to the chat baseline
+               (since 2026-08-18; before that it went through jinja to text and was
+               then tokenized by completions, which disagreed with chat in two places --
+               empty-content turns and literal <|...|> markers, see the header of
+               harmony_render.py). Date pinned to COLLECT_DATE (matching pin method on
+               the vLLM side: METHOD.md section 6-4)
+  POST /encode {"text": generated text}          -> {"ids":[...]}
+               gpt-oss HF tokenizer's encode(add_special_tokens=False). Since 2026-08-18
+               (ident3), the head resent after injection uses the model-generated token
+               ids directly; /encode is only used to encode NOTE on its own:
+               prompt = prefix_ids + head_ids + encode(NOTE)
   POST /decode {"ids":[...]}                -> {"text": ...}
-               HF 分词器 decode(skip_special_tokens=False),驱动器重发前核对
-               decode(head_ids) == 流里收到的文本前缀
-  GET  /health                             -> 启动配置回显(θ/T/模型路径/
-               render 口径等)。驱动器开跑前核 render == "harmony_ids",
-               防止指到老服务
+               HF tokenizer's decode(skip_special_tokens=False); the driver checks
+               decode(head_ids) == the text prefix received in the stream before it resends
+  GET  /health                             -> echoes back the startup config (theta/T/model
+               path/render convention, etc). The driver checks render == "harmony_ids"
+               before it starts running, to guard against pointing at a stale service
 
-探针前向口径(设计书 §4.1,与训练/回放的已知差别):
-  训练与回放评测按事件整段一次前向、在各边界 token 位取 logits
-  (eval_tool.score_causal);活跑看不见未来,只能"逐前缀前向、取最后一个真实
-  token 位的 logits"。因果注意力下两者数学等价,残差只剩前缀边界处的分词效应。
-  --selftest 用存好的 logits_test.pt 逐事件量化这条差别(见下)。
+Probe forward-pass convention (design doc section 4.1; known difference from
+training/replay):
+  Training and replay evaluation run one forward pass over the whole event and take
+  logits at each boundary token position (eval_tool.score_causal); the live run can't
+  see the future, so it can only do "forward pass per prefix, take the logits at the
+  last real token position." Under causal attention the two are mathematically
+  equivalent; the only residual is a tokenization effect at the prefix boundary.
+  --selftest uses the saved logits_test.pt to quantify this difference event by event
+  (see below).
 
-单线程 HTTP 即可:驱动器是串行的,一次只有一个请求在飞。
+Single-threaded HTTP is enough: the driver is serial, only one request is in flight
+at a time.
 
-用法:
-  # 服务(GPU;两个 0.6B 探针 bf16 约 3GB)。--theta 必传,不给就拒跑(METHOD.md 轴4)
+Usage:
+  # serve (GPU; two 0.6B probes in bf16, about 3GB). --theta is required, refuses to
+  # run without it (METHOD.md axis 4)
   cprobe-env/bin/python pipeline/inject/probe_server.py serve \\
       --theta 0.925 --port 8790 --device cuda:0
 
-  # 自检(纯 CPU 也能跑,float32;抽 N 个测试堆事件对账触发行为)
+  # selftest (runs on plain CPU too, float32; samples N test-stack events and checks
+  # firing behavior)
   cprobe-env/bin/python pipeline/inject/probe_server.py selftest \\
       --theta 0.925 --events 3 --device cpu
 """
@@ -64,15 +77,16 @@ sys.path.insert(0, str(HERE.parent / "annotate"))
 import harmony_render as HR                                   # noqa: E402
 import rebuild as R                                           # noqa: E402
 
-# 默认路径全部取自 θ=0.925 那次注入回放的 plan_config.json —— 活跑线评的
-# 就是同一对探针,换探针必须显式传参
+# All default paths come from the plan_config.json of that theta=0.925 injection replay --
+# the live-run line evaluates that exact same pair of probes; swapping probes requires
+# passing the args explicitly
 CTOOL = PROJ / "pipeline/runs/c1_gptoss_ctool"
 CGEN = PROJ / "pipeline/runs/c1_gptoss_cgen"
 GPTOSS_TOK = "/net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b"
 
 
 def load_ctool(run, dev):
-    """【照抄 eval_tool.load_causal】backbone 从 best/ 读、head 从 best/head.pt 读。"""
+    """[Mirrors eval_tool.load_causal] loads the backbone from best/ and the head from best/head.pt."""
     from train_causal_tool import CausalProbe                 # noqa: E402
     meta = json.loads((run / "best" / "meta.json").read_text())
     label2id = json.loads((run / "best" / "label_map.json").read_text())
@@ -85,17 +99,18 @@ def load_ctool(run, dev):
     model = model.to(dev).eval()
     tok = AutoTokenizer.from_pretrained(run / "best")
     if tok.truncation_side != "left":
-        # 训练侧显式 left(train_causal_tool.build);保存的 tokenizer 丢了这条
-        # 就会静默右截、砍掉思考尾巴 —— 宁可在这里改回来并喊一声
+        # The training side sets this explicitly to left (train_causal_tool.build); if the saved
+        # tokenizer loses this setting it will silently right-truncate and cut off the tail of
+        # the thinking -- better to fix it back here and raise a warning
         print(f"[warn] ctool tokenizer truncation_side="
-              f"{tok.truncation_side},改回 left", flush=True)
+              f"{tok.truncation_side}, changing back to left", flush=True)
         tok.truncation_side = "left"
     rep = json.loads((run / "REPLAY_REPORT.json").read_text())
     return model, tok, meta, id2label, rep["temperature"]
 
 
 def load_cgen(run, dev):
-    """【照抄 replay_inject.gen_calls 的加载】,常驻不卸载。"""
+    """[Mirrors replay_inject.gen_calls's loading], stays resident, never unloaded."""
     meta = json.loads((run / "best" / "meta.json").read_text())
     tok = AutoTokenizer.from_pretrained(run / "best")
     if tok.pad_token_id is None:
@@ -117,9 +132,10 @@ class Probe:
         self.render_only = render_only
         self.oss_tok = AutoTokenizer.from_pretrained(tokenizer_path)
         if render_only:
-            # 只开 /render /encode /health:no probe 臂与 chat baseline 对比时
-            # 用不着探针(2026-08-18 加;此时 c1_gptoss_* 探针已随 08-02 清场
-            # 删除,尚未重训)。/score /gen 打过来一律 503,不静默装作有探针
+            # Only open /render /encode /health: comparing the no-probe arm against the chat baseline
+            # needs no probe (added 2026-08-18; at this point the c1_gptoss_* probes had already
+            # been deleted in the 08-02 cleanup and not yet retrained). Any call to /score /gen gets
+            # a flat 503, never silently pretends a probe is there
             self.ct = self.cg = None
             self.ct_meta = dict(n_labels=None, max_len=None)
             self.T = None
@@ -132,7 +148,7 @@ class Probe:
 
     def _need_probes(self, what):
         if self.render_only:
-            raise RuntimeError(f"{what}: 服务以 --render-only 启动,没有装探针")
+            raise RuntimeError(f"{what}: the service was started with --render-only, no probe installed")
 
     @torch.no_grad()
     def score(self, text):
@@ -167,10 +183,13 @@ class Probe:
         return dict(call=txt.split("\n")[0].strip())
 
     def render(self, messages, effort=None):
-        # effort 不传 = 采集口径(high);effort 对照臂传 low/medium
-        # 日期钉 COLLECT_DATE(2026-08-02 改):活跑与 w0 的框架对齐排查发现
-        # 当天日期是相对采集口径的无谓扰动,解码下会放大成轨迹分叉;
-        # 回放线一直钉采集日,活跑从 v2 起同口径。
+        # effort not passed = the collection convention (high); the effort-control arm passes
+        # low/medium
+        # date pinned to COLLECT_DATE (changed 2026-08-02): the live-run vs w0 framework
+        # alignment investigation found that the current date is a needless perturbation
+        # relative to the collection convention, which decoding amplifies into trajectory
+        # divergence; the replay line has always pinned the collection day, and the live run
+        # has used the same convention since v2
         ids = HR.render_ids(messages, effort=effort or R.REASONING_EFFORT,
                             start_date=R.COLLECT_DATE)
         return dict(prefix_ids=ids, n_tokens=len(ids), prefix=HR.decode(ids))
@@ -179,9 +198,10 @@ class Probe:
         return dict(ids=self.oss_tok.encode(text, add_special_tokens=False))
 
     def decode(self, ids):
-        # 2026-08-18(ident3):驱动器按 token 边界切 head 之后拿这个核对
-        # decode(head_ids) == 流里收到的文本前缀,不等就拒绝重发。
-        # skip_special_tokens=False:<|channel|> 等是模型真写的 token
+        # 2026-08-18 (ident3): after the driver cuts the head at a token boundary, it uses this
+        # to check decode(head_ids) == the text prefix received in the stream, and refuses to
+        # resend if they don't match.
+        # skip_special_tokens=False: <|channel|> and the like are tokens the model actually wrote
         return dict(text=self.oss_tok.decode(ids, skip_special_tokens=False))
 
     def config(self):
@@ -197,13 +217,13 @@ class Probe:
 
 def serve(a):
     if a.theta is None and not a.render_only:
-        sys.exit("--theta 必传(METHOD.md 轴4:θ 永远手动);只开渲染用 --render-only")
+        sys.exit("--theta is required (METHOD.md axis 4: θ is always manual); use --render-only for render-only mode")
     probe = Probe(a.ctool_run, a.cgen_run, a.tokenizer, a.theta, a.device,
                   render_only=a.render_only)
     print(f"probe ready: {json.dumps(probe.config())}", flush=True)
 
     class H(BaseHTTPRequestHandler):
-        def log_message(self, *args):                 # 静音默认访问日志
+        def log_message(self, *args):                 # Silence the default access log
             pass
 
         def _reply(self, obj, code=200):
@@ -240,7 +260,7 @@ def serve(a):
                     return
                 out["wall_s"] = round(time.time() - t0, 4)
                 self._reply(out)
-            except Exception as e:                     # 驱动器要看到错误原文
+            except Exception as e:                     # The driver needs to see the original error text
                 self._reply(dict(error=f"{type(e).__name__}: {e}"), 500)
 
     print(f"listening on :{a.port}", flush=True)
@@ -248,18 +268,23 @@ def serve(a):
 
 
 def selftest(a):
-    """拿存好的测试堆对账活跑口径(设计书 §4.1),不需要 GPU 也不需要服务。
+    """Checks the live-run convention against the saved test stack (design doc section 4.1);
+    needs neither a GPU nor the service.
 
-    对每个抽中的事件:把它全部边界前缀逐条走 /score 同款前向,与
-    logits_test.pt 里整段前向的 logits 比:
-      - 触发行为一致性:首过 θ 的边界序号是否相同(这是唯一影响实验的量)
-      - 置信度最大绝对差(数值参考)
-    再对触发前缀走 /gen 同款生成,与 θ=0.925 回放 plan.jsonl 里的 gen_call 比。
-    退出码:触发边界全一致 = 0,有不一致 = 1(数值差只打印不判死——bf16/float32
-    与分词边界效应本来就允许小差)。
+    For each sampled event: run every one of its boundary prefixes through the same
+    forward pass as /score, and compare against the logits from the whole-event forward
+    pass in logits_test.pt:
+      - firing-behavior consistency: is the boundary index of the first theta crossing
+        the same (this is the only quantity that affects the experiment)
+      - max absolute difference in confidence (for reference only)
+    Then run the firing prefix through the same generation as /gen, and compare against
+    the gen_call in the theta=0.925 replay's plan.jsonl.
+    Exit code: 0 if all firing boundaries agree, 1 if any disagree (a numeric difference
+    is only printed, not treated as failure -- bf16/float32 and tokenization-boundary
+    effects are expected to cause small differences).
     """
     if a.theta is None:
-        sys.exit("--theta 必传(对账 θ=0.925 那次回放就传 0.925)")
+        sys.exit("--theta is required (to cross-check the replay where θ=0.925, pass 0.925)")
     probe = Probe(a.ctool_run, a.cgen_run, a.tokenizer, a.theta, a.device)
     data = PROJ / "pipeline/data/aw_official_v1/gptoss"
     label2id = json.loads(
@@ -304,7 +329,7 @@ def selftest(a):
             line += (f" gen_call{'==' if g['call'] == plan[k]['gen_call'] else '!='}"
                      f"plan({plan[k]['gen_call'][:60]!r})")
         print(line, flush=True)
-    print(f"selftest: {len(keys) - bad}/{len(keys)} 事件触发行为一致", flush=True)
+    print(f"selftest: {len(keys) - bad}/{len(keys)} events have consistent firing behavior", flush=True)
     sys.exit(1 if bad else 0)
 
 
@@ -317,14 +342,14 @@ def main():
         p.add_argument("--cgen-run", default=str(CGEN))
         p.add_argument("--tokenizer", default=GPTOSS_TOK)
         p.add_argument("--theta", type=float, default=None,
-                       help="触发阈值,必传(METHOD.md 轴4:θ 永远手动,不给就拒跑)")
+                       help="fire threshold, required (METHOD.md axis 4: θ is always manual, refuse to run if not given)")
         p.add_argument("--device", default="cuda:0")
         p.set_defaults(fn=fn)
     sub.choices["serve"].add_argument("--port", type=int, default=8790)
     sub.choices["serve"].add_argument(
         "--render-only", action="store_true",
-        help="不装探针,只开 /render /encode /health(CPU 就够;no probe 臂 vs "
-             "chat baseline 对比用)。/score /gen 返回 500")
+        help="do not install a probe, only enable /render /encode /health (CPU is enough; for comparing the "
+             "no-probe arm vs chat baseline). /score /gen return 500")
     sub.choices["selftest"].add_argument("--events", type=int, default=3)
     a = ap.parse_args()
     a.fn(a)

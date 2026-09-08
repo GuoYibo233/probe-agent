@@ -1,5 +1,5 @@
 {
-  "desc": "BFCL 线:与 gpt_oss_chat.py 旧写死值等价(max_tokens 16384,effort high);temperature 不指定,沿用 BFCL 自己的档;服务另起,无 server 节",
+  "desc": "BFCL line: equivalent to the old hardcoded values in gpt_oss_chat.py (max_tokens 16384, effort high); temperature is unspecified, following BFCL's own settings; the server is started separately, no server section here",
   "model": "gpt-oss-120b",
   "client": {
     "api": "chat",

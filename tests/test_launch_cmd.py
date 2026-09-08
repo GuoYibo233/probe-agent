@@ -34,7 +34,7 @@ class TestParseLaunchArgv(unittest.TestCase):
         self.assertEqual(p["pieces"], ["tokyo106:0", "tokyo106:1"])
         self.assertTrue(p["dry_run"])
         self.assertTrue(p["allow_dirty"])
-        # `--` 之后的旗标(含同名 --outdir)原样进 extra,不进 launch 自己的 outdir
+        # Flags after `--` (including a same-named --outdir) pass through into extra as-is, not into launch's own outdir
         self.assertIsNone(p["outdir"])
         self.assertEqual(p["extra"],
                          ["--base-url", "http://x/v1", "--outdir", "/tmp/x"])
@@ -51,8 +51,9 @@ class TestParseLaunchArgv(unittest.TestCase):
 
 
 class TestBuildPieces(unittest.TestCase):
-    """分片注入(工单 09 验收项):两分片注 0/1、非 shardable 多分片拒绝、
-    同机同卡两分片拒绝、--cmd 模式命令原样。"""
+    """Piece injection (ticket 09 acceptance item): two pieces inject 0/1, multiple pieces
+    on a non-shardable task are rejected, two pieces on the same machine and same card
+    are rejected, --cmd mode leaves the command unchanged."""
 
     def test_shardable_two_pieces_get_shard_flags(self):
         t = fake_task(shardable=True)
@@ -65,7 +66,7 @@ class TestBuildPieces(unittest.TestCase):
         self.assertIn("--shard-id 1 --num-shards 2", pieces[1]["cmd"])
 
     def test_non_shardable_rejects_multi_piece(self):
-        t = fake_task()  # 没标 shardable
+        t = fake_task()  # Not marked shardable
         p = LCC.parse_launch_argv(
             ["faketask", "--run-id", "trun", "--track", "smoke",
              "--piece", "tokyo106:0", "--piece", "tokyo106:1"])
@@ -81,7 +82,7 @@ class TestBuildPieces(unittest.TestCase):
             LCC.build_pieces(p, t)
 
     def test_overlapping_multi_gpu_pieces_rejected(self):
-        # tokyo106:0,1 与 tokyo106:1,2 字符串不同,但都要占 gpu1,应当拒绝
+        # tokyo106:0,1 and tokyo106:1,2 are different strings, but both would occupy gpu1, so should be rejected
         t = fake_task(shardable=True)
         p = LCC.parse_launch_argv(
             ["faketask", "--run-id", "trun", "--track", "smoke",
@@ -90,7 +91,7 @@ class TestBuildPieces(unittest.TestCase):
             LCC.build_pieces(p, t)
 
     def test_disjoint_multi_gpu_pieces_same_host_allowed(self):
-        # 同机不重叠的卡应当放行
+        # Non-overlapping cards on the same machine should be allowed
         t = fake_task(shardable=True)
         p = LCC.parse_launch_argv(
             ["faketask", "--run-id", "trun", "--track", "smoke",
@@ -153,8 +154,8 @@ class TestVerifyAlive(unittest.TestCase):
 
 
 class TestCmdLaunchDryRun(unittest.TestCase):
-    """dry-run 冒烟(工单 09 验收项):两分片打出两条带分片编号的完整命令,
-    登记函数没被调。"""
+    """dry-run smoke test (ticket 09 acceptance item): two pieces print two complete
+    commands carrying piece numbers, and the register function is not called."""
 
     @patch("launch_cmd.LC.register_all")
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
@@ -210,8 +211,9 @@ class TestCmdLaunchValidation(unittest.TestCase):
 
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
     def test_service_without_port_rejected(self, _gd):
-        """C2(final-review):没有 --port,rich piece 就没有 port 字段,
-        采样器的端口判定链路断掉——发射前直接拒绝,不许发出去再无声卡死。"""
+        """C2 (final-review): without --port, the rich piece has no port field, and the
+        sampler's port-verdict chain breaks -- reject before launch outright; never let
+        it go out and then silently stall."""
         with patch.dict(LCC.TASKS, {"faketask": fake_task()}):
             with self.assertRaises(SystemExit) as cm:
                 LCC.cmd_launch(["faketask", "--run-id", "r", "--track", "t",
@@ -221,10 +223,10 @@ class TestCmdLaunchValidation(unittest.TestCase):
 
 
 class TestCmdLaunchFullFlow(unittest.TestCase):
-    """探卡拒绝 / 验活失败不登记 / 成功登记三条主干路径。"""
+    """Three trunk paths: card-probe rejection / liveness-check failure not registered / successful registration."""
 
     @patch("launch_cmd.LC.register_all")
-    @patch("launch_cmd.LC.probe_free", return_value=(False, "占用中: 12345, 2048 MiB"))
+    @patch("launch_cmd.LC.probe_free", return_value=(False, "busy: 12345, 2048 MiB"))
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
     def test_non_free_piece_rejects_all_and_no_register(self, _gd, _pf, mreg):
         with patch.dict(LCC.TASKS, {"faketask": fake_task()}):
@@ -251,7 +253,7 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
         mtmux.assert_called_once()
         mreg.assert_not_called()
 
-    @patch("launch_cmd.LC.register_all", return_value="登记回执")
+    @patch("launch_cmd.LC.register_all", return_value="registration receipt")
     @patch("launch_cmd.LC.tmux_launch")
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=True)
@@ -262,7 +264,7 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
             with patch.object(LCC, "verify_alive", return_value=(True, [])):
                 rc = LCC.cmd_launch(
                     ["faketask", "--run-id", "r5", "--track", "smoke",
-                     "--note", "测试", "--piece", "tokyo106:0"])
+                     "--note", "test", "--piece", "tokyo106:0"])
         self.assertEqual(rc, 0)
         mreg.assert_called_once()
         args, kwargs = mreg.call_args
@@ -275,18 +277,19 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
             self.assertIn(key, pieces[0])
         self.assertEqual(pieces[0]["kind"], "batch")
         self.assertEqual(pieces[0]["task"], "faketask")
-        self.assertEqual(kwargs.get("note"), "测试")
+        self.assertEqual(kwargs.get("note"), "test")
 
-    @patch("launch_cmd.LC.register_all", return_value="登记回执")
+    @patch("launch_cmd.LC.register_all", return_value="registration receipt")
     @patch("launch_cmd.LC.tmux_launch")
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=True)
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
     def test_service_with_port_registers_service_kind_and_port(
             self, _gd, _hs, _pf, mtmux, mreg):
-        """C2(final-review):--service --port 走完整流程,登记进台账的 rich
-        piece 带 port(int) 且 kind=="service"——采样器 probe_port 判定链路
-        接上,不再永远卡在 warm-up。"""
+        """C2 (final-review): --service --port goes through the full flow; the rich piece
+        registered in the job ledger carries port (int) and kind=="service" -- the
+        sampler's probe_port verdict chain connects, no longer stuck forever in
+        warm-up."""
         with patch.dict(LCC.TASKS, {"faketask": fake_task()}):
             with patch.object(LCC, "verify_alive", return_value=(True, [])):
                 rc = LCC.cmd_launch(
@@ -299,16 +302,18 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
         self.assertEqual(pieces[0]["kind"], "service")
         self.assertEqual(pieces[0]["port"], 8103)
 
-    @patch("launch_cmd.LC.register_all", return_value="登记回执")
+    @patch("launch_cmd.LC.register_all", return_value="registration receipt")
     @patch("launch_cmd.LC.tmux_launch")
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=True)
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
     def test_success_does_not_persist_raw_env_values(
             self, _gd, _hs, _pf, mtmux, mreg):
-        """N1 回归:任务定义了非空 env(可能带密钥)时,登记进台账的 rich
-        piece 不能原样带着 env 的实际键值——只许存 task 名,env 值只留在
-        本次发射的局部变量/inner 命令里,不进 git 追踪的 ops/jobs.json。"""
+        """N1 regression: when a task defines a non-empty env (possibly holding secrets), the
+        rich piece registered in the job ledger must not carry env's actual key-value
+        pairs as-is -- only the task name may be stored; the env values stay only in
+        this launch's local variables/inner command, never entering the git-tracked
+        ops/jobs.json."""
         with patch.dict(LCC.TASKS, {"sekrit": fake_task(
                 env={"HF_TOKEN": "shh-do-not-commit-me"})}):
             with patch.object(LCC, "verify_alive", return_value=(True, [])):
@@ -317,7 +322,7 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
                      "--piece", "tokyo106:0"])
         self.assertEqual(rc, 0)
         _host, _sess, inner = mtmux.call_args[0]
-        self.assertIn("HF_TOKEN=shh-do-not-commit-me", inner)  # 发射本身照常带 env
+        self.assertIn("HF_TOKEN=shh-do-not-commit-me", inner)  # The launch itself still carries env as usual
 
         args, _kwargs = mreg.call_args
         pieces = args[2]
@@ -328,8 +333,9 @@ class TestCmdLaunchFullFlow(unittest.TestCase):
 
 
 class TestCmdRefire(unittest.TestCase):
-    """补射(工单 10 验收项):活 session 拒绝,非 FREE 拒绝,成功路径台账分片
-    的 log/launched_at 更新且 cmd/session 不变、没有第二个任务出现。"""
+    """Refire (ticket 10 acceptance item): a live session is rejected, a non-FREE card is
+    rejected, and on the success path the job ledger piece's log/launched_at are
+    updated while cmd/session stay unchanged and no second job appears."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix="launch_cmd_refire_")
@@ -359,7 +365,7 @@ class TestCmdRefire(unittest.TestCase):
         self.assertEqual(reg["active"][0]["pieces"][0]["launched_at"], 1000.0)
 
     @patch("launch_cmd.gate_dirty", side_effect=lambda extra, honor_dry=True: extra)
-    @patch("launch_cmd.LC.probe_free", return_value=(False, "占用中: 1, 1 MiB"))
+    @patch("launch_cmd.LC.probe_free", return_value=(False, "busy: 1, 1 MiB"))
     @patch("launch_cmd.LC.has_session", return_value=False)
     def test_non_free_rejected(self, _hs, _pf, _gd):
         with self.assertRaises(SystemExit):
@@ -381,12 +387,12 @@ class TestCmdRefire(unittest.TestCase):
         self.assertIn("python3 foo.py --x 1", inner)
 
         reg = gpu_jobs.load_reg()
-        self.assertEqual(len(reg["active"]), 1)  # 补射不是新任务,没有第二个 job
+        self.assertEqual(len(reg["active"]), 1)  # A refire is not a new task; no second job appears
         job = reg["active"][0]
         self.assertEqual(job["name"], "rrun")
         piece = job["pieces"][0]
-        self.assertEqual(piece["cmd"], "python3 foo.py --x 1")  # 命令不变
-        self.assertEqual(piece["session"], "new1_rrun_t106g0")  # session 名不变
+        self.assertEqual(piece["cmd"], "python3 foo.py --x 1")  # Command unchanged
+        self.assertEqual(piece["session"], "new1_rrun_t106g0")  # Session name unchanged
         self.assertNotEqual(piece["log"], "/tmp/wd/logs/new1_rrun_t106g0.log")
         self.assertGreater(piece["launched_at"], 1000.0)
 
@@ -395,10 +401,11 @@ class TestCmdRefire(unittest.TestCase):
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=False)
     def test_env_prefix_restored(self, _hs, _pf, _gd, mtmux):
-        """F1 回归,N1 修复后的形态:台账 piece 不存 env 实际键值(finding N1,
-        env 写进 git 追踪的 jobs.json 有泄露风险),只存 task 名;补射要用这个
-        task 名反查*当前* TASKS[task]["env"] 现算现传,原样恢复进 tmux inner
-        命令,不能悄悄丢掉。"""
+        """F1 regression, the shape after the N1 fix: the ledger piece does not store env's
+        actual key-value pairs (finding N1: writing env into the git-tracked jobs.json
+        risks leaking it), only the task name; a refire must use this task name to look
+        up the *current* TASKS[task]["env"], compute it fresh, pass it through, and
+        restore it as-is into the tmux inner command -- it must not be silently dropped."""
         gpu_jobs.mutate_reg(lambda reg: reg["active"].append({
             "name": "erun", "workdir": "/tmp/wd", "note": None,
             "started_at": "2026-08-08 00:00",
@@ -424,8 +431,8 @@ class TestCmdRefire(unittest.TestCase):
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=False)
     def test_missing_task_field_defaults_empty_env(self, _hs, _pf, _gd, mtmux):
-        """旧台账(本次修复前登记)的 piece 没有 task 字段,补射不能因此报错——
-        反查落空当空 dict 处理。"""
+        """A piece in an old ledger (registered before this fix) has no task field; a refire
+        must not error over this -- treat a failed lookup as an empty dict."""
         rc = LCC.cmd_launch(["--refire", "rrun", "--idx", "0"])
         self.assertEqual(rc, 0)
         _host, _sess, inner = mtmux.call_args[0]
@@ -436,8 +443,9 @@ class TestCmdRefire(unittest.TestCase):
     @patch("launch_cmd.LC.probe_free", return_value=(True, ""))
     @patch("launch_cmd.LC.has_session", return_value=False)
     def test_unknown_task_field_defaults_empty_env(self, _hs, _pf, _gd, mtmux):
-        """台账存的 task 名不在当前 TASKS 里(任务后来被下线),补射不能因此
-        报错——反查落空当空 dict 处理,cmd 仍原样重发。"""
+        """The task name stored in the ledger is not in the current TASKS (the task was later
+        retired); a refire must not error over this either -- treat a failed lookup as
+        an empty dict, and cmd is still refired unchanged."""
         gpu_jobs.mutate_reg(lambda reg: reg["active"].append({
             "name": "grun", "workdir": "/tmp/wd", "note": None,
             "started_at": "2026-08-08 00:00",

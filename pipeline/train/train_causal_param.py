@@ -1,42 +1,51 @@
-"""因果参数生成训练(新流水线 cparam 格):Qwen3-Base 微调成"给定工具名写参数"。
+"""Causal parameter-generation training (the new pipeline's cparam cell): fine-tunes
+Qwen3-Base into "write parameters given a tool name".
 
-与 cgen(train_causal_callgen.py)的分工:cgen 把工具名和参数一次写完,cparam
-把工具名当输入的一部分**喂进去**,模型只写左括号后面那一截。规格见
-`plans/archive/2026-08-21-new-probe-training.md` 的第三种。
+Division of labor with cgen (train_causal_callgen.py): cgen writes the tool name and the
+parameters in one shot; cparam **feeds** the tool name in as part of the input, and the model
+only writes the part after the opening parenthesis. See the third variant in
+`plans/archive/2026-08-21-new-probe-training.md`.
 
-- 输入: <data_out>/{train,val}.jsonl,每行取 text / label / label_call / w 四个字段;
-  一条样本 = 一条训练实例
-- 拼串: 输入串 = text + CALL_SEP("\\n[CALL] ") + label + "(" ,
-  目标串 = label_call 剥掉前缀 `label + "("` 之后的剩余部分 + eos
-  (剩余部分含收尾右括号:`apis.spotify.login(username=x, password=y)` ->
-  输入尾巴 `…[CALL] apis.spotify.login(`、目标 `username=x, password=y)`;
-  无参调用的目标就是 `)`)
-- 目标真源: 拼串的唯一真源是 build.py 的 make_call,所以目标一律从 label_call
-  按前缀剥离得到,**不从 args_named 重拼**(重拼 = 第二份拼串规则,必漂移)。
-  `label_call.startswith(label + "(")` 不成立的行整条丢弃并计数
-  (字段 assembly_mismatch,进 start 日志)
-- 防左截吃目标: 与 cgen 同款——先 tokenize 目标(不截断),超 MAX_TGT_TOK 的实例
-  整条丢弃并计数;再按 max_length = --max-len - len(tgt_ids) 左截输入串,
-  拼接后 labels 把 prompt 段掩成 -100(批内右 padding,pad 位同样 -100)
-- 损失: 逐实例目标段 mean CE(ce_i),批损失 = Σ(w_i·ce_i)/Σw_i
-- 评估: 每轮 val 全量加权 masked-CE(val_ce,选 best 的唯一依据,越低越好)+
-  定种子抽 GEN_N 条 greedy 生成报 val_exact_params(目标段整串命中,只进日志、
-  不选 best;对齐 cgen 的 val_exact_call 口径)
-- 产物: <out>/best/(HF 权重 + tokenizer + meta.json)+ train_log.jsonl
-- LoRA: `--lora` 把底座换成 LoRA 训,存 best 之前先 merge_and_unload 把适配器
-  并回底座,所以 best/ 的文件与全参存的逐项同构、eval_causal_param.py 零改动
-  就装得回来;meta.json 多一个 "lora" 块记超参。不传 --lora 时脚本自己不碰
-  peft(peft 的 import 全在 --lora 分支里),行为与加这套旗标之前一致;
-  详见 lora_util.py 的说明。
+- Input: <data_out>/{train,val}.jsonl, taking four fields per line: text / label / label_call / w;
+  one sample = one training instance
+- Concatenation: input string = text + CALL_SEP("\\n[CALL] ") + label + "(" ,
+  target string = the remainder of label_call after stripping the prefix `label + "("`
+  + eos
+  (the remainder includes the closing parenthesis: `apis.spotify.login(username=x, password=y)` ->
+  input tail `…[CALL] apis.spotify.login(`, target `username=x, password=y)`;
+  for a call with no parameters the target is just `)`)
+- Source of truth for the target: the single source of truth for the concatenation is build.py's
+  make_call, so the target is always derived from label_call by stripping the prefix, **never
+  reassembled from args_named** (reassembling would create a second concatenation rule, which
+  will always drift). Rows where `label_call.startswith(label + "(")` does not hold are dropped
+  entirely and counted
+  (field assembly_mismatch, goes into the start log)
+- Guarding against left-truncation eating the target: same as cgen -- tokenize the target first
+  (no truncation); instances exceeding MAX_TGT_TOK are dropped entirely and counted; then
+  left-truncate the input string to max_length = --max-len - len(tgt_ids), and after
+  concatenation, labels mask the prompt segment to -100 (right padding within the batch, pad
+  positions are also -100)
+- Loss: per-instance mean CE over the target segment (ce_i), batch loss = Σ(w_i·ce_i)/Σw_i
+- Eval: full-val weighted masked-CE every epoch (val_ce, the sole criterion for choosing best,
+  lower is better) + fixed-seed sample of GEN_N greedy generations reporting val_exact_params
+  (whole-target-segment hit, logged only, not used for best; matches cgen's val_exact_call
+  accounting)
+- Outputs: <out>/best/ (HF weights + tokenizer + meta.json) + train_log.jsonl
+- LoRA: `--lora` swaps the backbone for LoRA training; before saving best, merge_and_unload runs
+  first to merge the adapter back into the backbone, so the files in best/ are item-for-item
+  isomorphic with a full-parameter save and eval_causal_param.py can load it back with zero
+  changes; meta.json gets an extra "lora" block recording the hyperparameters. When --lora is
+  not passed, the script never touches peft (all peft imports are inside the --lora branch), and
+  behavior matches before this flag set was added; see lora_util.py for details.
 
-没有开火头:两套系统对比里触发永远由 ctool 做(规格「使用的时候」节),所以
-cgen 那套 `--fire-head` 机制在本格里整套不存在。
+No fire head: in the two-system comparison, firing is always decided by ctool (spec section
+"at use time"), so cgen's `--fire-head` mechanism does not exist at all in this cell.
 
-用法:
-  # 冒烟(500 训练实例/200 评估实例/1 epoch)
+Usage:
+  # smoke test (500 training instances / 200 eval instances / 1 epoch)
   cprobe-env/bin/python pipeline/train/train_causal_param.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c2_q35_cparam --smoke
-  # 全量,换 1.7B 底座
+  # full run, swap to the 1.7B backbone
   cprobe-env/bin/python pipeline/train/train_causal_param.py --base qwen17 \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c2_q35_cparam
 """
@@ -53,9 +62,9 @@ import torch.nn.functional as F
 import transformers
 _TV = tuple(int(x) for x in transformers.__version__.split(".")[:2])
 if _TV < (5, 14):
-    raise SystemExit(f"cprobe 线要 transformers>=5.14,当前 "
-                     f"{transformers.__version__}——解释器用错了?"
-                     "一律从 run.py 的任务进(train-ctool/train-cgen/train-cparam)。")
+    raise SystemExit(f"cprobe line requires transformers>=5.14, current "
+                     f"{transformers.__version__} -- wrong interpreter?"
+                     "always go through run.py's tasks (train-ctool/train-cgen/train-cparam).")
 from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           get_linear_schedule_with_warmup)
@@ -69,36 +78,41 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat
 
 
-# 底座三档(2026-08-21 起因果线从单档扩成三档,样式与 train_causal_tool.MODELS 同)
+# Three backbone tiers (since 2026-08-21 the causal line expanded from one tier to three tiers,
+# styled the same as train_causal_tool.MODELS)
 MODELS = {
     "qwen":   "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
     "qwen17": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base",
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
-SEED = 42                  # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在旧数据复现里生效
-FULL_LR = 1e-5             # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
-ASSEMBLY_MISMATCH_LIMIT = 0.05   # 剥离失败率硬停线,对齐 readonly_map.UNKNOWN_HARD_LIMIT
+SEED = 42                  # since np821, switched to the first of the seed family (42/67/4267/6742); the old value 20260729 only applies when reproducing old data
+FULL_LR = 1e-5             # learning rate for full fine-tuning (the --lr default when --lora is not passed)
+ASSEMBLY_MISMATCH_LIMIT = 0.05   # hard-stop threshold for the strip-failure rate, matching readonly_map.UNKNOWN_HARD_LIMIT
 CALL_SEP = "\n[CALL] "
-MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃
-MAX_GEN_TOK = 96           # 评估生成的 max_new_tokens
-GEN_N = 200                # 每轮抽多少条做 greedy 生成
+MAX_TGT_TOK = 160          # token cap for the target string; instances over this are dropped entirely
+MAX_GEN_TOK = 96           # max_new_tokens for eval generation
+GEN_N = 200                # how many rows to sample per epoch for greedy generation
 
 
-# ---------------------------------------------------------------- 拼串
+# ---------------------------------------------------------------- concatenation
 
 def param_prompt_tail(label):
-    """输入串接在 text 后面的那一截:分隔串 + 工具名 + 左括号。"""
+    """The part of the input string appended after text: separator string + tool name + opening
+    parenthesis."""
     return CALL_SEP + label + "("
 
 
 def param_target(label, label_call):
-    """(label, label_call) -> 目标串(不含 eos);前缀对不上返回 None。
+    """(label, label_call) -> target string (without eos); returns None when the prefix doesn't
+    match.
 
-    唯一拼串真源是 `pipeline/annotate/build.py` 的 make_call:
-    label_call = f"{tool}({inner})"。所以目标 = label_call 剥掉 `label + "("`
-    之后的整段,收尾右括号留在目标里(无参事件的目标就是 `)`)。
-    返回 None 的行由调用方整条丢弃并计入 assembly_mismatch——静默按别的规则
-    重拼会造出第二份拼串真源,而那种漂移不报错。
+    The single source of truth for the concatenation is `pipeline/annotate/build.py`'s
+    make_call: label_call = f"{tool}({inner})". So target = the whole span of label_call after
+    stripping `label + "("`, with the closing parenthesis kept in the target (for a
+    no-argument event the target is just `)`).
+    Rows that return None are dropped entirely by the caller and counted under
+    assembly_mismatch -- silently reassembling under a different rule would create a second
+    source of truth for the concatenation, and that kind of drift raises no error.
     """
     pre = label + "("
     if not label_call.startswith(pre):
@@ -106,13 +120,15 @@ def param_target(label, label_call):
     return label_call[len(pre):]
 
 
-# ---------------------------------------------------------------- 数据
+# ---------------------------------------------------------------- data
 
 class ParamDS(Dataset):
-    """一条样本一条实例;构造时先 tokenize 目标串,过长的整条丢弃并计数。
+    """One sample = one instance; the target string is tokenized first during construction, and
+    anything too long is dropped entirely and counted.
 
-    行结构固定六元组 (text, tgt_ids, w, label, tgt_str, label_call)。
-    ro 非 None(--readonly-env)时非只读样本整条丢掉,计数记在 ro 里。
+    Each row is a fixed 6-tuple (text, tgt_ids, w, label, tgt_str, label_call).
+    When ro is not None (--readonly-env), non-read-only samples are dropped entirely, counted
+    in ro.
     """
 
     def __init__(self, path, tok, limit=0, max_tgt=MAX_TGT_TOK, ro=None):
@@ -120,7 +136,7 @@ class ParamDS(Dataset):
         eos = tok.eos_token_id
         for line in open(path):
             r = json.loads(line)
-            if ro is not None:                 # 非只读样本整条丢掉(计数在 ro 里)
+            if ro is not None:                 # non-read-only samples are dropped entirely (counted in ro)
                 ro["labels"].append(r["label"])
                 if r["label"] not in ro["set"]:
                     ro["dropped"] += 1
@@ -136,7 +152,7 @@ class ParamDS(Dataset):
                 continue
             self.rows.append((r["text"], tgt, float(r["w"]), r["label"],
                               tgt_str, r["label_call"]))
-        self.kept = len(self.rows)     # 截 limit 之前的保留数(算剥离失败率用)
+        self.kept = len(self.rows)     # count kept before applying limit (used to compute the strip-failure rate)
         if limit:
             rng = random.Random(SEED)
             rng.shuffle(self.rows)
@@ -150,11 +166,11 @@ class ParamDS(Dataset):
 
 
 def collate(batch, tok, max_len):
-    """左截输入 + 右 padding;labels 掩掉 prompt 段与 pad 位。
+    """Left-truncate the input + right-pad; labels mask out the prompt segment and pad positions.
 
-    prompt = text + CALL_SEP + label + "(" —— 工具名与左括号属于**输入**,
-    左截只会吃掉 text 的头部(tokenizer 的 truncation_side 是 left),
-    工具名与左括号永远保得住。
+    prompt = text + CALL_SEP + label + "(" -- the tool name and the opening parenthesis belong
+    to the **input**; left truncation only ever eats into the head of text (the tokenizer's
+    truncation_side is left), so the tool name and opening parenthesis are always preserved.
     """
     ids, labs, ws = [], [], []
     for text, tgt, w, label, _tgt_str, _call in batch:
@@ -177,16 +193,17 @@ def collate(batch, tok, max_len):
             torch.tensor(ws, dtype=torch.float))
 
 
-# ---------------------------------------------------------------- 模型
+# ---------------------------------------------------------------- model
 
 def build(base, dev):
-    """tokenizer 构造照抄 train_causal_callgen.build():pad=eos / 左截 / 右 pad。"""
+    """tokenizer construction is copied from train_causal_callgen.build(): pad=eos / left
+    truncation / right padding."""
     path = MODELS[base]
     tok = AutoTokenizer.from_pretrained(path)
-    if tok.pad_token_id is None:                      # 照抄 check_causal_candidates
+    if tok.pad_token_id is None:                      # copied from check_causal_candidates
         tok.pad_token = tok.eos_token
-    tok.truncation_side = "left"                      # 保思考尾巴
-    tok.padding_side = "right"                        # 目标段都在真实 token 上
+    tok.truncation_side = "left"                      # preserve the thinking tail
+    tok.padding_side = "right"                        # the target segment is always on real tokens
     torch.manual_seed(SEED)
     model = AutoModelForCausalLM.from_pretrained(path, dtype=torch.float32)
     if model.config.get_text_config().pad_token_id is None:
@@ -195,13 +212,13 @@ def build(base, dev):
 
 
 def inst_ce(model, enc, labels, dev):
-    """逐实例目标段 mean CE。返回 [B] 的 float32 张量。"""
+    """Per-instance mean CE over the target segment. Returns a [B] float32 tensor."""
     out = model(input_ids=enc["input_ids"], attention_mask=enc["attention_mask"],
                 use_cache=False)
-    lg = out.logits[:, :-1]                           # 预测下一 token
+    lg = out.logits[:, :-1]                           # predict the next token
     tg = labels[:, 1:].to(dev)
     m = tg != -100
-    ce = F.cross_entropy(lg[m].float(), tg[m], reduction="none")  # 只取目标位
+    ce = F.cross_entropy(lg[m].float(), tg[m], reduction="none")  # take only the target positions
     b = tg.size(0)
     inst = torch.arange(b, device=dev).unsqueeze(1).expand_as(tg)[m]
     ssum = torch.zeros(b, device=dev, dtype=torch.float32)
@@ -209,11 +226,11 @@ def inst_ce(model, enc, labels, dev):
     return ssum / m.sum(1).clamp(min=1).float()
 
 
-# ---------------------------------------------------------------- 评估
+# ---------------------------------------------------------------- eval
 
 @torch.no_grad()
 def eval_ce(model, loader, dev, amp):
-    """val 全量加权 masked-CE(与训练损失同口径)。"""
+    """Full-val weighted masked-CE (same accounting as the training loss)."""
     model.eval()
     s = w_tot = 0.0
     for enc, labels, w in loader:
@@ -226,17 +243,18 @@ def eval_ce(model, loader, dev, amp):
     model.train()
     if w_tot <= 0:
         raise SystemExit(
-            "val 一个目标位都没有(加权分母 w_tot=0)——继续算会得到 val_ce=0.0,"
-            "每个 epoch 都当 best 存,run 看起来完美。数据或过滤口径有问题,硬停。")
+            "val has not a single target position (weighted denominator w_tot=0) -- continuing would give val_ce=0.0, "
+            "saved as best every epoch, making the run look perfect. Something is wrong with the data or filter settings, hard stop.")
     return s / w_tot
 
 
 @torch.no_grad()
 def eval_gen(model, tok, rows, dev, amp, max_len, bs):
-    """定种子抽样的 greedy 生成:目标段整串命中率(遇 \\n 或 eos 停)。"""
+    """Fixed-seed sampled greedy generation: whole-target-segment hit rate (stops at \\n or
+    eos)."""
     model.eval()
     prev_side, prev_cache = tok.padding_side, model.config.use_cache
-    tok.padding_side = "left"                         # 生成必须左 padding
+    tok.padding_side = "left"                         # generation requires left padding
     model.config.use_cache = True
     hit = 0
     for i in range(0, len(rows), bs):
@@ -259,39 +277,39 @@ def eval_gen(model, tok, rows, dev, amp, max_len, bs):
     return hit / max(len(rows), 1)
 
 
-# ---------------------------------------------------------------- 主流程
+# ---------------------------------------------------------------- main flow
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="qwen", choices=sorted(MODELS),
-                    help="底座三档:qwen=0.6B(默认)/qwen17=1.7B/qwen4=4B")
+                    help="base model, three tiers: qwen=0.6B (default)/qwen17=1.7B/qwen4=4B")
     ap.add_argument("--env", default="appworld",
                     choices=["tales", "appworld", "bfcl", "alfworld"],
-                    help="仅作日志标签(数据路径已由 --data 直接给定)")
+                    help="log label only (the data path is given directly by --data)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>(含 train/val.jsonl)")
-    ap.add_argument("--out", required=True, help="产物目录(必填,防覆盖旧件)")
+                    help="data dir <data_out> (contains train/val.jsonl)")
+    ap.add_argument("--out", required=True, help="output dir (required; guards against overwriting old outputs)")
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=4)
     ap.add_argument("--accum", type=int, default=8)
     ap.add_argument("--lr", type=float, default=None,
-                    help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
-                         "这里显式给了就以显式值为准)")
+                    help=f"learning rate (default {FULL_LR}; when --lora is on it defaults to --lora-lr instead, "
+                         "if given explicitly here that value takes precedence)")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
-                    help="500 训练实例/200 评估实例/1 epoch,验证管线")
+                    help="500 training instances/200 eval instances/1 epoch, for verifying the pipeline")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--grad-ckpt", action="store_true",
-                    help="底座开梯度检查点省显存(全参与 --lora 两种模式都能用;"
-                         "同时关 use_cache,LoRA 下另保证输入 require_grad)")
-    ap.add_argument("--gen-bs", type=int, default=8, help="生成评估的批大小")
+                    help="turn on gradient checkpointing on the base model to save GPU memory (works in both full-parameter and --lora modes; "
+                         "also turns off use_cache, and under LoRA additionally ensures the input requires grad)")
+    ap.add_argument("--gen-bs", type=int, default=8, help="batch size for generation eval")
     ap.add_argument("--max-inst", type=int, default=0,
-                    help="调试用:再限实例数(0=不限)")
+                    help="for debugging: further cap the instance count (0 = no cap)")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
+                    help="readonly-tool mode: train only on samples whose ground truth is a readonly tool (off by default = old settings)")
     ap.add_argument("--force", action="store_true",
-                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+                    help="allow training again in an --out dir that was already trained in (refused by default to keep outputs apart)")
     lora_util.add_args(ap)
     args = ap.parse_args()
     lr = lora_util.resolve_lr(args, FULL_LR)
@@ -302,8 +320,8 @@ def main():
     out = Path(args.out)
     if (out / "train_log.jsonl").exists() and not args.force:
         raise SystemExit(
-            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
-            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
+            f"{out} already has a train_log.jsonl -- this directory has been trained once, training again would mix "
+            "both runs' outputs into the same best/ with no way to attribute them (audit B7). Use a different --out, or confirm the overwrite and add --force.")
     out.mkdir(parents=True, exist_ok=True)
     dev = args.device
     amp = dev.startswith("cuda")
@@ -334,23 +352,26 @@ def main():
             dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"]))
         (out / "READONLY.json").write_text(json.dumps(
             ro_out, ensure_ascii=False, indent=1))
-    # 保险丝:val 装载后 0 行硬停。空 val 不会在训练里崩(SequentialSampler 不拦空),
-    # 只会让 val_ce 恒 0、每个 epoch 都存 best,run 看起来完美。
+    # Fuse: hard-stop if val loads 0 rows. An empty val will not crash training (SequentialSampler
+    # does not block on empty), it will just make val_ce always 0, save best every epoch, and make
+    # the run look perfect.
     if not len(ev):
         raise SystemExit(
-            f"{data / 'val.jsonl'} 装载后 val 是 0 行"
+            f"{data / 'val.jsonl'} loaded to 0 val rows"
             f"(dropped={ev.dropped}, assembly_mismatch={ev.mismatch}"
             + (f", readonly_dropped={ro_ev['dropped']}" if ro_ev else "")
-            + ")——选 best 的指标没有分母,硬停。")
-    # 保险丝:剥离失败率超限硬停。label 与 label_call 前缀对不上通常是上游拼串
-    # 口径变了,继续训会静默吞样本;5% 对齐 readonly_map.UNKNOWN_HARD_LIMIT 先例。
+            + ") -- the metric for picking best has no denominator, hard stop.")
+    # Fuse: hard-stop if the strip-failure rate exceeds the limit. A mismatch between label and
+    # label_call's prefix usually means the upstream concatenation convention changed; continuing
+    # to train would silently swallow samples; the 5% threshold matches the
+    # readonly_map.UNKNOWN_HARD_LIMIT precedent.
     for split, ds in (("train", tr), ("val", ev)):
         tot = ds.kept + ds.mismatch
         if tot and ds.mismatch / tot > ASSEMBLY_MISMATCH_LIMIT:
             raise SystemExit(
-                f"{split} 的剥离失败率 {ds.mismatch}/{tot} = "
-                f"{ds.mismatch / tot:.3f} 超过 {ASSEMBLY_MISMATCH_LIMIT}——"
-                "上游拼串口径漂移,硬停。")
+                f"{split}'s strip failure rate {ds.mismatch}/{tot} = "
+                f"{ds.mismatch / tot:.3f} exceeds {ASSEMBLY_MISMATCH_LIMIT} -- "
+                "upstream string-assembly settings drifted, hard stop.")
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
@@ -359,7 +380,8 @@ def main():
     random.Random(SEED).shuffle(gen_rows)
     gen_rows = gen_rows[:GEN_N]
 
-    # LoRA:就地把底座换成 LoRA 训。本格没有额外的头,进优化器的就只有适配器。
+    # LoRA: swap the backbone in place for LoRA training. This cell has no extra head; only the
+    # adapter goes into the optimizer.
     lora_wrap = lora_util.wrap(model, args) if args.lora else None
     if args.grad_ckpt:
         model.gradient_checkpointing_enable()
@@ -426,7 +448,8 @@ def main():
             if lora_wrap is None:
                 model.save_pretrained(out / "best")
             else:
-                # 适配器并回底座再落盘:best/ 与全参存的逐项同构,评测端零改动
+                # Merge the adapter back into the backbone before saving: best/ is item-for-item isomorphic with
+                # a full-parameter save, zero changes needed on the eval side
                 lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             meta = dict(

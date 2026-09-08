@@ -1,6 +1,6 @@
 """rl trace: the whole chain behind one id (05 L145-147).
 
-05 L147: `rl trace <编号>` takes five kinds of id - `dec-`, `ho-`, a run_id, `iss-` and
+05 L147: `rl trace <id>` takes five kinds of id - `dec-`, `ho-`, a run_id, `iss-` and
 `eval-` - and one command prints the chain from the run through the launch order and the
 work order to the decision versions. It walks the two handoffs fields that carry the
 chain, `parent_id` and `decision_refs`. It is a query command, so anyone may call it

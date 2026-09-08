@@ -13,10 +13,11 @@ sys.path.insert(0, str(ROOT / "ops"))
 import gpu_jobs  # noqa: E402
 import launch_common as LC  # noqa: E402
 
-# `launch_common.subprocess` 就是全局 `subprocess` 模块本身(不是它的副本)，
-# patch("launch_common.subprocess.run") 等价于全局 patch subprocess.run——
-# 这会连带打到 runmeta.append_runmeta 内部真实的 git 探测调用。留一份未被
-# patch 污染的真身,涉及 RUNMETA 的测试里对非 record.py 的调用原样放行。
+# `launch_common.subprocess` is the global `subprocess` module itself (not a copy of
+# it); patch("launch_common.subprocess.run") is equivalent to globally patching
+# subprocess.run -- this also hits the real git-probe call inside
+# runmeta.append_runmeta. Keep one unpatched real copy, and let calls other than
+# record.py pass through unchanged in tests that involve RUNMETA.
 _REAL_RUN = subprocess.run
 
 
@@ -27,7 +28,7 @@ def _fake_record_call(argv, *a, **kw):
 
 
 def _fake_record_fail(argv, *a, **kw):
-    """record.py 拒绝(rc=1),其余调用(RUNMETA 里的 git 探测)原样放行。"""
+    """record.py rejects (rc=1); other calls (the git probe inside RUNMETA) pass through unchanged."""
     if any("record.py" in str(x) for x in argv):
         return MagicMock(returncode=1)
     return _REAL_RUN(argv, *a, **kw)
@@ -76,7 +77,7 @@ class TestLocalAndSession(unittest.TestCase):
 
 
 class TestProbeFree(unittest.TestCase):
-    """探卡：空卡 / 占用中 / 探测超时三种输入对应三种返回（工单验收项）。"""
+    """Probing a card: three inputs -- free / occupied / probe timeout -- map to three returns (ticket acceptance item)."""
 
     @patch("launch_common.subprocess.run")
     def test_free_when_stdout_empty(self, mrun):
@@ -92,7 +93,7 @@ class TestProbeFree(unittest.TestCase):
             stdout="12345, 2048 MiB\n67890, 1024 MiB\n", stderr="")
         ok, why = LC.probe_free("tokyo106", "0")
         self.assertFalse(ok)
-        self.assertIn("占用中", why)
+        self.assertIn("busy", why)
         self.assertIn("12345", why)
 
     @patch("launch_common.subprocess.run")
@@ -100,7 +101,7 @@ class TestProbeFree(unittest.TestCase):
         mrun.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
         ok, why = LC.probe_free("tokyo106", "0")
         self.assertFalse(ok)
-        self.assertIn("探测失败", why)
+        self.assertIn("probe failed", why)
 
     @patch("launch_common.subprocess.run")
     def test_probe_fails_on_nonzero_rc(self, mrun):
@@ -108,11 +109,11 @@ class TestProbeFree(unittest.TestCase):
                                        stderr="ssh: connect refused")
         ok, why = LC.probe_free("tokyo106", "0")
         self.assertFalse(ok)
-        self.assertIn("探测失败", why)
+        self.assertIn("probe failed", why)
 
 
 class TestRegisterAll(unittest.TestCase):
-    """登记：台账里出现 rich 分片全字段，重复 run_id 第二次调用被拒绝（工单验收项）。"""
+    """Registration: the rich piece appears in the ledger with all fields; a second call with a duplicate run_id is rejected (ticket acceptance item)."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp(prefix="launch_common_test_")
@@ -128,14 +129,14 @@ class TestRegisterAll(unittest.TestCase):
         mrun.return_value = MagicMock(returncode=0)
         pieces = [rich_piece()]
         receipt = LC.register_all("trun_rich", "/tmp/wd", pieces, "smoke",
-                                   "python3 foo.py --x 1", note="测试用",
+                                   "python3 foo.py --x 1", note="for testing",
                                    monitor={"warmup_s": 1800})
         self.assertIsInstance(receipt, str)
         reg = gpu_jobs.load_reg()
         self.assertEqual(len(reg["active"]), 1)
         job = reg["active"][0]
         self.assertEqual(job["name"], "trun_rich")
-        self.assertEqual(job["note"], "测试用")
+        self.assertEqual(job["note"], "for testing")
         self.assertEqual(job["monitor"], {"warmup_s": 1800})
         p = job["pieces"][0]
         for key in ("host", "gpus", "session", "log", "cmd", "launched_at",
@@ -188,9 +189,10 @@ class TestRegisterAll(unittest.TestCase):
 
     @patch("launch_common.subprocess.run", side_effect=_fake_record_fail)
     def test_runmeta_written_even_when_record_refuses(self, mrun):
-        # RUNMETA 排在三处登记的最前面:发射已经真实发生,产物钉代码先落盘,
-        # 后面 record.py 拒绝(重复 run_id 之类)也不能把它连带丢掉
-        # (2026-08-26 np821 b17_cgen 重发实录)。
+        # RUNMETA comes first among the three registrations: the launch has already really
+        # happened, so pinning the outputs to the code lands first -- even if record.py later
+        # rejects (e.g. a duplicate run_id), that must not drag RUNMETA down with it
+        # (from the 2026-08-26 np821 b17_cgen refire incident).
         outdir = os.path.join(self.tmpdir, "out_recfail")
         pieces = [rich_piece()]
         with self.assertRaises(SystemExit):
@@ -200,8 +202,8 @@ class TestRegisterAll(unittest.TestCase):
 
     @patch("launch_common.subprocess.run", side_effect=_fake_record_call)
     def test_runmeta_kind_and_extra_land_in_entry(self, mrun):
-        # 排卡发射器把自己的 kind(train / eval_tool / eval_call)与
-        # session/gpu/log 这类字段交给 register_all 写,register_all 是唯一写手。
+        # The card-scheduling launcher hands its own kind (train / eval_tool / eval_call) and
+        # fields like session/gpu/log to register_all to write; register_all is the sole writer.
         import json
         outdir = os.path.join(self.tmpdir, "out_kind")
         pieces = [rich_piece()]

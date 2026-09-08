@@ -1,18 +1,27 @@
-"""轨迹 -> 三环境各自的 BERT 种类头数据集(v2 终稿,覆盖旧四刀版)。
+"""Trajectories -> BERT-classification-head datasets for each of the three environments (v2
+final, superseding the old four-cut version).
 
-终稿规则(2026-07-29 与用户+导师意见逐条敲定,WORKPLAN C2-2t):
-- 一道题 = 一个前缀:永远从思考第一个字开始,尾巴停在句子边界(代码只停整行)
-- **全边界**:每事件切出全部句子边界(上限 64,均匀抽、永保末尾),
-  训练损失用 w=1/m_i 事件内等权 —— 与部署"每个句边界都被调用"分布一致
-- 标签 = 该步真实调用的工具名,全自动零人工;**一环境一数据集**(不合训)
-- 切分单位 = **任务实例**(AppWorld task_id / TALES seed / BFCL entry id):
-  同一实例在不同生成模型下的轨迹同进同出,防姊妹泄漏
-- 四路切分 train/calA/calB/test = 70/10/10/10(calA 拟温度,calB 回放扫阈值,
-  test 冻结后只跑一次);calB/test 天然含全边界,可直接回放
-- 种子固定,重跑逐样本一致;顺产路由统计表 + 频率先验基线
+Final rules (settled point by point with the user and the advisor on 2026-07-29, WORKPLAN
+C2-2t):
+- One question = one prefix: always starts at the first character of the thinking, and the
+  tail stops at a sentence boundary (code stops only at full lines)
+- **All boundaries**: every event is cut at all its sentence boundaries (capped at 64, sampled
+  evenly, always keeping the last one); training loss uses w=1/m_i, equal weight within an
+  event -- matching the deployed distribution where "every sentence boundary gets called"
+- Label = the tool actually called at that step, fully automatic with zero manual work; **one
+  dataset per environment** (not trained jointly)
+- Split unit = **task instance** (AppWorld task_id / TALES seed / BFCL entry id): the same
+  instance's trajectories across different generating models move in and out together, to
+  prevent sibling leakage
+- Four-way split train/calA/calB/test = 70/10/10/10 (calA fits the temperature, calB sweeps
+  the threshold in replay, test is frozen and run only once); calB/test naturally include all
+  boundaries and can be replayed directly
+- Seed is fixed, reruns are sample-for-sample identical; it produces a routing statistics
+  table plus a frequency-prior baseline as a byproduct
 
-用法: python3 build_dataset.py [--runs DIR ...] [--out DIR]
-默认 runs=full_v1,可追加 --runs .../full_v2_topup 后重跑(确定性重建)。
+Usage: python3 build_dataset.py [--runs DIR ...] [--out DIR]
+Default runs=full_v1; you can append --runs .../full_v2_topup and rerun (deterministic
+rebuild).
 """
 
 import argparse
@@ -26,18 +35,19 @@ from pathlib import Path
 
 SEED = 20260729
 BASE = Path("/home/y-guo/reproduce/new1/envs")
-MAX_BOUNDS = 64       # 每事件边界上限(gpt-oss 超长思考防爆)
-MIN_THINK = 40        # 字符;再短的思考没有可切性
-HIST_ROUNDS = 3       # 题干里保留最近几轮工具历史
-RESULT_CAP = 400      # 每条环境返回在题干里的字符上限
+MAX_BOUNDS = 64       # per-event boundary cap (guards against gpt-oss's overlong thinking blowing up)
+MIN_THINK = 40        # characters; shorter thinking has nothing left to cut
+HIST_ROUNDS = 3       # number of recent tool-history turns kept in the prompt
+RESULT_CAP = 400      # character cap per environment return inside the prompt
 MODEL_OF = {"q35": "qwen3.5-27b", "q36": "qwen3.6-27b", "gptoss": "gpt-oss-120b"}
 
-# 句子边界:换行,或 .!? 后跟空白(小数点/apis.x.y 的点后无空白,天然排除)
+# sentence boundary: a newline, or .!? followed by whitespace (a decimal point or the dot in
+# apis.x.y has no following whitespace, so it's naturally excluded)
 SENT_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 
 def boundaries(text):
-    """全部合法切点(字符偏移,前缀=text[:i]),含全文末尾,上限 MAX_BOUNDS。"""
+    """All legal cut points (character offsets, prefix=text[:i]), including the end of the full text, capped at MAX_BOUNDS."""
     pts = sorted({m.end() for m in SENT_RE.finditer(text)} | {len(text)})
     pts = [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
     if not pts:
@@ -65,7 +75,7 @@ def assemble(task, history, think_prefix):
     return "\n".join(lines)
 
 
-# ---------- 参数抽取(路由统计用) ----------
+# ---------- argument extraction (for routing statistics) ----------
 
 AW_CALL = re.compile(r"apis\.(\w+)\.(\w+)\(")
 BFCL_CALL = re.compile(r"(\w+)\(")
@@ -116,14 +126,14 @@ def first_call_args(code, name_re):
     return []
 
 
-# ---------- 三环境:轨迹 -> 事件 ----------
-# 事件 = dict(env, model, unit, traj, step, task, hist, think, tool, args)
+# ---------- three environments: trajectory -> event ----------
+# event = dict(env, model, unit, traj, step, task, hist, think, tool, args)
 
 def jsonl_events(runs, pattern, env):
     for f in sorted(glob.glob(str(runs / pattern))):
         batch = Path(f).parent.name           # e.g. appworld_q36
         model = MODEL_OF.get(batch.rsplit("_", 1)[1])
-        if model is None:                     # 评分/日志等非模型目录
+        if model is None:                     # non-model directories such as scoring/logs
             continue
         recs = [json.loads(l) for l in open(f)]
         meta = recs[0]
@@ -150,7 +160,7 @@ def jsonl_events(runs, pattern, env):
                                think=think,
                                tool=f"apis.{m.group(1)}.{m.group(2)}",
                                args=first_call_args(action, AW_CALL) or [])
-            else:  # tales:标签 = 命令首词(动词)
+            else:  # tales: label = first word of the command (the verb)
                 verb = action.split()[0].lower() if action.split() else ""
                 if verb and len(think) >= MIN_THINK:
                     rest = action.split()[1:]
@@ -164,7 +174,7 @@ def jsonl_events(runs, pattern, env):
 def bfcl_events(runs):
     for d in sorted(runs.glob("bfcl_*")):
         model = MODEL_OF.get(d.name.rsplit("_", 1)[1])
-        if model is None:                     # 评分/日志等非模型目录
+        if model is None:                     # non-model directories such as scoring/logs
             continue
         seen = set()
         for f in sorted(glob.glob(str(d / "**" / "*multi_turn*result.json"),
@@ -211,12 +221,12 @@ def bfcl_events(runs):
                         hist[-1] = (a, c)
 
 
-# ---------- 主流程 ----------
+# ---------- main flow ----------
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", action="append",
-                    default=None, help="轨迹目录,可多次;默认 full_v1")
+                    default=None, help="trajectory dir, repeatable; default full_v1")
     ap.add_argument("--out", default=str(BASE / "bert_data" / "v2"))
     args = ap.parse_args()
     runs_dirs = [Path(r) for r in (args.runs or [BASE / "runs" / "full_v1"])]
@@ -232,20 +242,20 @@ def main():
         for ev in bfcl_events(runs):
             by_env["bfcl"].append(ev)
 
-    report = [f"# bert_data v2 出厂报告\n\n- SEED={SEED} MAX_BOUNDS={MAX_BOUNDS}"
+    report = [f"# bert_data v2 release report\n\n- SEED={SEED} MAX_BOUNDS={MAX_BOUNDS}"
               f" runs={[str(r) for r in runs_dirs]}",
-              "- 规则:全句边界前缀 / w=1/m_i 事件等权 / 任务实例级四路切分"
-              " / 一环境一数据集\n"]
+              "- rules: full-sentence boundary prefix / events equally weighted at w=1/m_i / four-way split at the task-instance level"
+              " / one dataset per environment\n"]
 
     for env in ("appworld", "tales", "bfcl"):
         events = by_env[env]
         if not events:
-            report.append(f"\n## {env}\n- 无事件,跳过")
+            report.append(f"\n## {env}\n- no events, skip")
             continue
         out = out_root / env
         out.mkdir(parents=True, exist_ok=True)
 
-        # 任务实例级切分(同实例跨模型同进同出)
+        # task-instance-level split (same instance moves in and out together across models)
         units = sorted({ev["unit"] for ev in events})
         rng.shuffle(units)
         n = len(units)
@@ -254,7 +264,7 @@ def main():
                     else "calB" if i < c3 else "test")
                 for i, u in enumerate(units)}
 
-        # 造题(全边界 + 等权)
+        # build questions (all boundaries + equal weight)
         samples = []
         for ev in events:
             pts = boundaries(ev["think"])
@@ -270,12 +280,13 @@ def main():
                     traj=ev["traj"], unit=ev["unit"], model=ev["model"],
                     step=ev["step"]))
 
-        # 自检 1:前缀=原文切片(抽 200 逐题断言)
+        # self-check 1: prefix = a slice of the original text (sample 200 and assert per question)
         ev_think = {f"{e['traj']}|s{e['step']}": e["think"] for e in events}
         for s in rng.sample(samples, min(200, len(samples))):
             think = s["text"].split("[THINKING]\n", 1)[1]
             assert ev_think[s["event"]].startswith(think), s["event"]
-        # 自检 2:unit 不跨 split(结构性保证,再显式验一遍)
+        # self-check 2: a unit never crosses splits (structurally guaranteed, verify explicitly again
+        # anyway)
         seen_u = {}
         for s in samples:
             assert seen_u.setdefault(s["unit"], part[s["unit"]]) \
@@ -293,7 +304,7 @@ def main():
         (out / "tool_vocab.json").write_text(json.dumps(
             dict(vocab.most_common()), ensure_ascii=False, indent=1))
 
-        # 路由统计表
+        # routing statistics table
         rt = defaultdict(lambda: dict(n=0, nargs=[], alen=[], hit=0, argn=0))
         for ev in events:
             r = rt[ev["tool"]]
@@ -309,8 +320,8 @@ def main():
                 if a in ctx:
                     r["hit"] += 1
         with open(out / "router_stats.md", "w") as f:
-            f.write(f"# 路由统计表 — {env}(参数头裁决书)\n\n"
-                    "| 工具 | 事件数 | 参数数中位 | 逐字命中率 | 参数长中位 |\n"
+            f.write(f"# routing statistics table — {env} (the args-head ruling)\n\n"
+                    "| tool | event count | median arg count | exact-match hit rate | median arg length |\n"
                     "|---|---|---|---|---|\n")
             for k in sorted(rt, key=lambda k: -rt[k]["n"]):
                 r = rt[k]
@@ -320,14 +331,14 @@ def main():
                         f"{int(statistics.median(r['nargs']))} "
                         f"| {hitrate} | {alen} |\n")
 
-        # QA 抽查
+        # QA spot check
         with open(out / "qa_sample.txt", "w") as f:
             for i, s in enumerate(rng.sample(samples, min(20, len(samples)))):
                 f.write(f"{'='*70}\n[QA {i}] label={s['label']} "
                         f"depth={s['depth']} sent {s['sent_idx']+1}/"
                         f"{s['n_sents']} traj={s['traj']}\n{s['text']}\n\n")
 
-        # 报告
+        # report
         bl = [e_m for e_m in (len(boundaries(e["think"])) for e in events)]
         dep = Counter(min(9, int(s["depth"] * 10)) for s in samples)
         lens = sorted(len(s["text"]) for s in samples)
@@ -338,23 +349,23 @@ def main():
         trajs = {e["traj"] for e in events}
         report += [
             f"\n## {env}",
-            f"- 轨迹 {len(trajs)} / 任务实例 {len(units)} / 事件 {len(events)}"
-            f" / 样本 {len(samples)}",
-            f"- 边界数每事件: min {min(bl)} med {sorted(bl)[len(bl)//2]}"
-            f" max {max(bl)}(上限 {MAX_BOUNDS})",
-            "- 切分(任务实例级): " + " / ".join(
-                f"{sp} {len({s['unit'] for s in splits[sp]})}实例·"
-                f"{len({s['event'] for s in splits[sp]})}事件·"
-                f"{len(splits[sp])}样本"
+            f"- trajectories {len(trajs)} / task instances {len(units)} / events {len(events)}"
+            f" / samples {len(samples)}",
+            f"- boundary count per event: min {min(bl)} med {sorted(bl)[len(bl)//2]}"
+            f" max {max(bl)} (cap {MAX_BOUNDS})",
+            "- split (task-instance level): " + " / ".join(
+                f"{sp} {len({s['unit'] for s in splits[sp]})} instances·"
+                f"{len({s['event'] for s in splits[sp]})} events·"
+                f"{len(splits[sp])} samples"
                 for sp in ("train", "calA", "calB", "test")),
-            f"- 工具词表 {len(vocab)} 类;top5 {vocab.most_common(5)}",
-            f"- 长尾(出现<5次): {sum(1 for c in vocab.values() if c < 5)} 类",
-            f"- 深度十桶样本数: {[dep.get(i, 0) for i in range(10)]}",
-            f"- 题干长度 p50={lens[len(lens)//2]}"
-            f" p90={lens[int(len(lens)*.9)]} max={lens[-1]} 字符"
-            "(超 4096 token 由训练脚本左截)",
-            f"- 频率先验基线(test 事件级,猜 {prior_tool}): {prior_acc:.3f}",
-            "- 自检: 前缀断言 200/200 ✓;实例不跨 split ✓",
+            f"- tool vocab {len(vocab)} classes; top5 {vocab.most_common(5)}",
+            f"- long tail (appears <5 times): {sum(1 for c in vocab.values() if c < 5)} classes",
+            f"- sample counts across 10 depth buckets: {[dep.get(i, 0) for i in range(10)]}",
+            f"- prompt length p50={lens[len(lens)//2]}"
+            f" p90={lens[int(len(lens)*.9)]} max={lens[-1]} characters"
+            " (over 4096 tokens gets left-truncated by the training script)",
+            f"- frequency-prior baseline (test event level, guessing {prior_tool}): {prior_acc:.3f}",
+            "- self-check: prefix assertion 200/200 ✓; instances don't cross splits ✓",
         ]
         print(f"{env}: events={len(events)} samples={len(samples)} "
               f"vocab={len(vocab)}")

@@ -1,7 +1,7 @@
-"""tests/test_sweep_lr.py —— 工单 `.scratch/kvshare-train/issues/11-sweep-lr.md`,
-对应 spec `.scratch/kvshare-train/spec.md` 16.6(plan/report 两个子命令)与
-16.9(工单 11 测试点)。纯 CPU,不 import torch,手造小 `train_log.jsonl`,
-不读现役大数据目录。
+"""tests/test_sweep_lr.py -- ticket `.scratch/kvshare-train/issues/11-sweep-lr.md`,
+corresponding to spec `.scratch/kvshare-train/spec.md` 16.6 (the plan/report
+subcommands) and 16.9 (ticket 11 test points). Pure CPU, does not import torch,
+hand-builds a small `train_log.jsonl`, does not read the live large data directory.
 """
 import json
 import sys
@@ -131,7 +131,7 @@ class TestReport(unittest.TestCase):
 
     def _make_run_with_mem_probe_events_only(self, root, run_id, base="qwen",
                                              lora=False, lr=1e-4):
-        """旧探针只写 `mem_probe` 事件、没有 `mem_probe_summary` 的 run 目录。"""
+        """A run directory from an old probe that only writes `mem_probe` events and has no `mem_probe_summary`."""
         d = root / run_id
         d.mkdir()
         start = dict(event="start", base=base, lr=lr, tok_budget=16384,
@@ -147,8 +147,9 @@ class TestReport(unittest.TestCase):
         return d
 
     def test_worst_gb_falls_back_to_mem_probe_max_without_summary(self):
-        """`mem_probe_summary` 缺失时,`worst_gb` 退化取各 `mem_probe` 事件
-        `peak_mem_gb` 的最大值(工单第 1 条明文要求的兼容旧探针分支)。"""
+        """When `mem_probe_summary` is missing, `worst_gb` falls back to the max of
+        `peak_mem_gb` across the `mem_probe` events (the old-probe compatibility
+        branch explicitly required by ticket item 1)."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             d = self._make_run_with_mem_probe_events_only(
@@ -157,11 +158,13 @@ class TestReport(unittest.TestCase):
             self.assertEqual(rec["worst_gb"], 21.5)
 
     def test_val_exact_takes_last_available_point_not_best_frac(self):
-        """终审 O2 回归测试(spec 16.6):`--gen-eval-at last` 下只有 epoch 末
-        那个评估点算 `val_exact_call`,数值上最好的 `best_val_ce` 却可能落在
-        更早的一个点上——`val_exact` 该取"有值的那个评估点"(这里是 frac=2),
-        不是 `best_frac` 所在的那个点(frac=1,没有 `val_exact_call`);列名
-        与单元格按 `val_exact(@ep.frac)` / `0.42@0.2` 的写法。"""
+        """Final-review O2 regression test (spec 16.6): under `--gen-eval-at last`,
+        only the evaluation point at epoch end counts `val_exact_call`, but the
+        numerically best `best_val_ce` may fall at an earlier point -- `val_exact`
+        should take "the evaluation point that has a value" (here frac=2), not
+        the point where `best_frac` is (frac=1, which has no `val_exact_call`);
+        the column name and cell follow the `val_exact(@ep.frac)` / `0.42@0.2`
+        format."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             d = root / "ks828l4_gptoss_cgen_lr2e-3"
@@ -169,9 +172,9 @@ class TestReport(unittest.TestCase):
             events = [
                 dict(event="start", base="qwen4", lr=2e-3, tok_budget=16384,
                      n_train_events=100, dropped_events_train=0),
-                # frac=1:数值上最好的一点,--gen-eval-at last 下没有 val_exact_call。
+                # frac=1: numerically the best point, has no val_exact_call under --gen-eval-at last.
                 dict(event="eval", ep=0, frac=1, gstep=10, val_ce=0.30),
-                # frac=2:epoch 末,val_ce 比 frac=1 差,但只有这一点算了 val_exact。
+                # frac=2: end of epoch, val_ce is worse than frac=1, but only this point has val_exact counted.
                 dict(event="eval", ep=0, frac=2, gstep=20, val_ce=0.40,
                      val_exact_call=0.42),
                 dict(event="done", best_val_ce=0.30, best_ep=0, best_frac=1,
@@ -215,16 +218,16 @@ class TestReport(unittest.TestCase):
                 by_id["ks828b06_gptoss_cgen_lr1e-5"]["status"], "done")
             self.assertEqual(
                 by_id["ks828b06_gptoss_cgen_lr5e-5"]["status"], "running")
-            # running 行的 best 是目前为止最低的 eval(唯一一条,0.8)。
+            # the running row's best is the lowest eval so far (the only one, 0.8).
             self.assertEqual(
                 by_id["ks828b06_gptoss_cgen_lr5e-5"]["best_val_ce"], 0.8)
 
             md = (out_dir / "SWEEP_REPORT.md").read_text()
-            # done 那条 best_val_ce=0.5 比 running 那条的 0.8 低,标 *。
+            # the done row's best_val_ce=0.5 is lower than the running row's 0.8, marked with *.
             self.assertIn("*ks828b06_gptoss_cgen_lr1e-5", md)
             self.assertNotIn("*ks828b06_gptoss_cgen_lr5e-5", md)
-            # (ep,frac) 组合并集:done 跑 4 个点(0,1)..(0,4),running 跑 (0,1),
-            # 并集大小 4。
+            # (ep,frac) combination union: done ran 4 points (0,1)..(0,4), running ran (0,1),
+            # union size is 4.
             combo_cols = [l for l in md.splitlines()
                           if l.startswith("| run_id |")][0]
             val_ce_cols = [c for c in combo_cols.split("|")

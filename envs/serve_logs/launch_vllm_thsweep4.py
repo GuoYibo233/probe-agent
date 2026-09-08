@@ -1,19 +1,22 @@
-"""θ 扫描 run 段服务补位发射器：重启 8112 / 8113 两个副本。
+"""Replacement launcher for the run-segment θ-sweep services: restarts the two replicas on
+8112 / 8113.
 
-与 launch_vllm_thsweep.py 逐字同参（同模型、同 --served-model-name、
---max-model-len 65536、--gpu-memory-utilization 0.92、同三个环境变量），
-只改两件让上一轮死掉的事：
+Same parameters verbatim as launch_vllm_thsweep.py (same model, same --served-model-name,
+--max-model-len 65536, --gpu-memory-utilization 0.92, the same three environment variables),
+changing only the two things that killed the previous round:
 
-1. **编译缓存挪出 /home**。/home/y-guo 有 NFS 服务端配额（df 看不出来），
-   上一轮 8112/8113 就是死在往 ~/.cache/vllm 写 torch 编译缓存时写满。
-   VLLM_CACHE_ROOT 指到 /net（44T 空闲），TRITON_CACHE_DIR 一并挪走
-   （triton 自己的 JIT 缓存默认在 ~/.triton，同样吃 /home 配额）。
-   H200 那份旧缓存已被写坏，本轮必然触发一次完整重编译，5-10 分钟。
-2. **日志不走 `| tee`**。tee 写不进 /home 就退出，vllm 随即死于 EPIPE ——
-   上一轮的连带死因。改成 shell 重定向，日志也放 /net。
+1. **Compile cache moved out of /home**. /home/y-guo has an NFS server-side quota (df does
+   not show it), and in the previous round 8112/8113 died exactly from filling it up while
+   writing the torch compile cache to ~/.cache/vllm. VLLM_CACHE_ROOT now points to /net
+   (44T free), and TRITON_CACHE_DIR moves along with it (triton's own JIT cache defaults to
+   ~/.triton, which eats the /home quota the same way). The old cache on the H200s has
+   already been corrupted, so this round is bound to trigger one full recompile, 5-10 minutes.
+2. **Logs no longer go through `| tee`**. tee exits once it cannot write to /home, and vllm
+   then dies with EPIPE right after -- the associated cause of death in the previous round.
+   Changed to shell redirection instead, with logs also going to /net.
 
-  gpt-oss-120b -> H200 GPU 4, port 8112   (副本 B2)
-  gpt-oss-120b -> H200 GPU 5, port 8113   (副本 C2)
+  gpt-oss-120b -> H200 GPU 4, port 8112   (replica B2)
+  gpt-oss-120b -> H200 GPU 5, port 8113   (replica C2)
 """
 import shlex
 import subprocess

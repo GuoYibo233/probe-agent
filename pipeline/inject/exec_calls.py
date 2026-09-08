@@ -1,75 +1,106 @@
-"""miss_policy=execute 的 exec 段:把探针预测出的调用放回 appworld 真环境里执行。
+"""The exec stage for miss_policy=execute: puts the call predicted by the probe back
+into the real appworld environment and executes it.
 
-要回答的问题:skip 档在探针猜错时直接不注入,于是"猜错的代价"从账上消失了
-(1061 个出手事件里 372 个猜错被跳过,正确率轴偏乐观)。execute 档要让每一次
-出手都真的落地:把该题的环境重放到那一步,执行预测出的那条调用,**不管返回的是
-真结果还是报错,都原样注入**。猜错的代价这才进账。
+The question this answers: the skip variant simply skips injection whenever the probe
+guesses wrong, so "the cost of a wrong guess" disappears from the ledger (of 1061 fire
+events, 372 wrong guesses were skipped, biasing the accuracy axis optimistic). The
+execute variant makes every fire actually land: replay that task's environment to that
+step, execute the predicted call, and **inject it as-is regardless of whether the
+return is a real result or an error**. Only then does the cost of a wrong guess get
+recorded.
 
-做法(每个 unit 一个 AppWorld 实例,按 step 升序前进):
-  1. 到达目标 step 之前,先把该 step 上的事件处理掉——此时环境状态正是模型
-     当时写那段思考时面对的状态;
-  2. `save_state` 存档 → 执行"补回引号后的预测调用" → `load_state` 回档 →
-     `_set_datetime()` 重新冻时间 → 断言冻结时刻没漂;
-  3. 执行该 step 录下的真代码,把输出与轨迹里录下的 result 逐字比,
-     不一致就把该 unit 之后的事件标 prefix_verbatim=False(见已知偏差①)。
+Method (one AppWorld instance per unit, advancing in ascending step order):
+  1. Before reaching the target step, process the events at that step first -- at this
+     point the environment state is exactly the state the model faced when it wrote
+     that thinking text;
+  2. `save_state` to checkpoint -> execute the "requoted predicted call" -> `load_state`
+     to restore -> `_set_datetime()` to re-freeze time -> assert the frozen moment did
+     not drift;
+  3. Execute the real code recorded for that step, compare the output against the
+     result recorded in the trajectory character by character; on mismatch, mark the
+     events after that unit as prefix_verbatim=False (see known bias 1).
 
-**这个文件是整条流水线里唯一 import appworld 的地方**,只能用
-`envs/appworld/venv/bin/python` 跑;cprobe-env 里 `import appworld` 是
-ModuleNotFoundError(实测)。所以 exec 段做成独立文件 + 独立解释器 + jsonl 交接:
-plan.jsonl(cprobe-env 产)→ 本文件 → exec_calls.jsonl →
-`replay_inject.py merge-exec`(cprobe-env)→ plan_exec.jsonl。
-纯 CPU,不占卡。
+**This file is the only place in the whole pipeline that imports appworld**, so it can
+only run with `envs/appworld/venv/bin/python`; `import appworld` in cprobe-env raises
+ModuleNotFoundError (measured). So the exec stage is a standalone file with its own
+interpreter, handed off via jsonl: plan.jsonl (produced by cprobe-env) -> this file ->
+exec_calls.jsonl -> `replay_inject.py merge-exec` (cprobe-env) -> plan_exec.jsonl.
+Pure CPU, no GPU card used.
 
-边界(execute 档做不到的那部分,别在报告里写成别的):
-- **execute 档不产出 appworld 任务级成绩。** 本文件一个事件只执行"那一条预测
-  调用",不让模型继续走完整题、也不调 `world.evaluate()`。所以它量到的是
-  **单步调用一致率 + 猜错时注入的真实报错**,不是 appworld 的 Test 分数。
-  真正的任务级那条轴需要 in-loop rollout(run_appworld.py 的循环里挂探针、
-  触发就注入、走完整题再 evaluate),那是另一批采集,不在本文件范围内。
+Boundaries (what the execute variant cannot do -- don't misrepresent this in the
+report):
+- **The execute variant does not produce an appworld task-level score.** For one
+  event, this file only executes "that one predicted call"; it does not let the model
+  keep going through the whole task, nor does it call `world.evaluate()`. So what it
+  measures is **single-step call consistency + the real error injected on a wrong
+  guess**, not appworld's Test score. The real task-level axis needs an in-loop
+  rollout (attach the probe inside run_appworld.py's loop, inject on fire, run the
+  whole task, then evaluate) -- that is a separate collection run, outside the scope
+  of this file.
 
-已知偏差(报告里都要带上,别静默):
-① 前缀重放的保真度只在 3 条轨迹 28 步上实测过 100%(2026-08-01)。带随机性的
-   api、时间相关的 api、4000 字符截断处的边界都可能漂。所以每一步都拿录下的
-   result 逐字核对,漂了的事件标 prefix_verbatim=False / drift_step=<步号>,
-   报告里单列——不核对就等于拿一个错的状态去执行预测调用再把结果当真账报。
-② 注入内容依赖 requote 这个**启发式**:plan.jsonl 里的 gen_call 是 annotate 侧
-   去掉引号的规范化串(annotate/rules.py:133 的 strip("\"'")),
-   长这样 `apis.api_docs.show_api_doc(app_name=venmo, api_name=search_users)`,
-   直接执行全是 NameError。补引号的分支逐参数落进 arg_modes,报告里给分支计数。
-   `{app_name, api_name}` 强制成字符串这条是**经验硬编码**(appworld api_docs
-   的这两个参数永远是字符串),换环境/换工具族会静默走错分支——所以要有验收线。
-   **验收线只收三条同时成立的事件**:预测与真实一致(full_call_ok)、代码块只含
-   1 个调用、且该代码块就是一句干净的 `print(调用)`(整行注释不算)。这三条里
-   缺一条,"单独执行那条调用的输出"与"录下的整块 stdout"根本不可比,收进来只会
-   给自己报假警——实测两种假警:①代码块是
-   `print("passwords:", apis.supervisor.show_account_passwords())`,单调用没错,
-   但录下的 stdout 多个前缀、还走 python repr 而不是 appworld 那个转 json 的
-   print;②调用本身报错时 traceback 会回显源码,引号风格不同就逐字不等
-   (轨迹里是 app_name="spotify",requote 补的是 'spotify')——所以报错的情况
-   比 err_tail(),只比异常行之后的消息。
-   实测(2026-08-01):前 4 个 unit 上 17/17;13 个 unit 80 个事件上 53/53
-   (逐字 52 + 报错消息一致 1),排除 1 个不可比的。
-⑥ 全量 1061 个事件里,hit+单调用的有 664 个,其中 643 个是干净 print
-   ——验收线的分母就是这 643 个,另外 21 个不可比、单列不算。
-③ execute 档把注入内容从"整块 stdout"换成"那一条调用的返回"。这其实修掉了
-   replay_inject.py 文件头列的那条多调用偏差(99/1061 个事件的代码块含多个
-   调用),代价是 hit 事件与已跑完的 skip/oracle 六点曲线不再逐字可比。
-   所以 score 段必须按 inject_source 分桶,不许混成一条均值。
-④ 缓存键里带 REQUOTE_VERSION:改了 requote 的规则必须把这个常量 +1,
-   否则旧缓存会被静默复用。
-⑤ 一个进程只能有一个活着的 AppWorld:`initialize()` 与 `load_state()` 都调
-   `AppWorld.close_all()`(environment.py:368/751),它会停掉所有时间冻结器、
-   清 DB 缓存、关掉 ApiCollection——第二个实例会把第一个静默弄坏。
-   所以并发只能靠多进程 + 各自 experiment_name,不能在一个进程里开两个世界。
+Known biases (always include these in the report, never silently drop them):
+1. Prefix-replay fidelity has only been measured at 100% on 3 trajectories, 28 steps
+   (2026-08-01). APIs with randomness, time-dependent APIs, and the boundary at the
+   4000-character truncation point can all drift. So every step is checked against the
+   recorded result character by character; drifted events are marked
+   prefix_verbatim=False / drift_step=<step number> and listed separately in the
+   report -- skipping this check means executing the predicted call against a wrong
+   state and then reporting the result as if it were real.
+2. The injected content depends on requote, a **heuristic**: the gen_call in
+   plan.jsonl is the annotate side's dequoted normalized string (strip("\"'") in
+   annotate/rules.py:133), looking like
+   `apis.api_docs.show_api_doc(app_name=venmo, api_name=search_users)`, which raises a
+   NameError if executed directly. The branch that adds quotes back falls into
+   arg_modes per argument, and the report counts the branches. Forcing
+   `{app_name, api_name}` to strings is an **empirically hardcoded rule** (these two
+   arguments of appworld's api_docs are always strings); switching environment or
+   tool family will silently take the wrong branch -- hence the need for an
+   acceptance line.
+   **The acceptance line only accepts events where three conditions hold at once**:
+   the prediction matches the ground truth (full_call_ok), the code block contains
+   exactly 1 call, and that code block is a single clean `print(call)` statement (a
+   full-line comment does not count). Missing any one of these three, "the output of
+   executing that call alone" and "the whole stdout block recorded" are simply not
+   comparable, and including them only produces false alarms against yourself -- two
+   false alarms measured in practice: (1) a code block is
+   `print("passwords:", apis.supervisor.show_account_passwords())`, a single call
+   with nothing wrong, but the recorded stdout has extra prefixes and goes through
+   Python's repr instead of appworld's json-converting print; (2) when the call
+   itself errors, the traceback echoes back the source code, and differing quote
+   styles make it not match character for character (the trajectory has
+   app_name="spotify", requote fills in 'spotify') -- so for error cases, compare via
+   err_tail(), only the message after the exception line.
+   Measured (2026-08-01): 17/17 on the first 4 units; 53/53 on 80 events across 13
+   units (52 exact matches + 1 matching error message), excluding 1 that was not
+   comparable.
+6. Of the full 1061 events, 664 are hit + single-call, of which 643 are clean prints
+   -- the acceptance line's denominator is those 643; the other 21 are not comparable
+   and are listed separately, not counted.
+3. The execute variant changes the injected content from "the whole stdout block" to
+   "that one call's return value." This actually fixes the multi-call bias listed at
+   the top of replay_inject.py (99/1061 events have code blocks with multiple calls),
+   at the cost that hit events are no longer character-for-character comparable with
+   the already-run skip/oracle six-point curve. So the score stage must bucket by
+   inject_source, never mix them into a single average.
+4. The cache key carries REQUOTE_VERSION: changing any requote rule requires
+   incrementing this constant, or the old cache will be silently reused.
+5. A process can only have one live AppWorld: both `initialize()` and `load_state()`
+   call `AppWorld.close_all()` (environment.py:368/751), which stops all time
+   freezers, clears the DB cache, and closes the ApiCollection -- a second instance
+   would silently break the first. So concurrency can only be done via multiple
+   processes, each with its own experiment_name; you cannot open two worlds in one
+   process.
 
-用法:
-  # smoke(4 个 unit,约 1 分钟,纯 CPU;绿的标准见 --selfcheck 的退出码)
+Usage:
+  # smoke test (4 units, about 1 minute, pure CPU; see the --selfcheck exit code for
+  # the green bar)
   envs/appworld/venv/bin/python pipeline/inject/exec_calls.py \\
       --plan pipeline/inject/runs/aw_gptoss_r10/plan.jsonl \\
       --out  /tmp/exec_smoke.jsonl --cache /tmp/exec_cache_smoke.jsonl \\
       --exp  smoke_execprobe --limit-units 4 --selfcheck
 
-  # 全量:4 分片,每片一个进程(纯 CPU,可与别的 θ 点的 run 段并行)
+  # full run: 4 shards, one process per shard (pure CPU, can run in parallel with the
+  # run stage of other θ points)
   for i in 0 1 2 3; do envs/appworld/venv/bin/python \\
       pipeline/inject/exec_calls.py \\
       --plan pipeline/inject/runs/aw_gptoss_th0925/plan.jsonl \\
@@ -96,56 +127,70 @@ sys.path.insert(0, str(HERE.parent / "annotate"))
 
 from rules import AW_CALL, first_call_named            # noqa: E402
 
-# appworld 的 path_store 要求进程 cwd 是这个目录(run_appworld.py:63 同)
+# appworld's path_store requires the process cwd to be this directory (same as run_appworld.py:63)
 APPWORLD_HOME = "/home/y-guo/reproduce/new1/envs/appworld"
 
-# 采集时 world.execute 的输出截到 4000 字符再落盘
-# 【照抄 envs/collect/run_appworld.py:105】。不截就让注入内容的长度分布与
-# traj_hit 不可比,省 token 那条轴会静默偏移。
+# During collection, world.execute output is truncated to 4000 characters before being
+# written [copied from envs/collect/run_appworld.py:105]. Without truncating, the
+# length distribution of the injected content would not be comparable to traj_hit, and
+# the token-savings axis would drift silently.
 TRUNC = 4000
 
-# 随机种子:AppWorld 的默认值就是 100(environment.py:97),采集时没显式传。
-# 工程铁律是种子写进代码并落进报告,所以这里显式钉死并写进 meta。
+# Random seed: AppWorld's default is 100 (environment.py:97), and it was not passed
+# explicitly during collection. The project hard rule is that the seed must be written
+# into the code and into the report, so it is pinned explicitly here and written into meta.
 APPWORLD_SEED = 100
 
-# 回档用的存档名。固定一个名字反复覆盖(_save_state 是 delete_if_exists=True)
+# The checkpoint name used for restoring. A fixed name is overwritten repeatedly (_save_state has delete_if_exists=True)
 CKPT = "probe"
 
-# requote 规则版本。**改了下面 requote() 的任何一条分支就必须 +1**,
-# 否则缓存键不变、旧结果被静默复用(已知偏差④)
+# requote rule version. **Incrementing this is required whenever any branch of
+# requote() below changes**, otherwise the cache key stays the same and old results
+# get silently reused (known bias 4)
 REQUOTE_VERSION = 1
 
 IDENT = re.compile(r"^[A-Za-z_]\w*$")
 POSKEY = re.compile(r"^pos\d+$")
 
-# appworld 的 api_docs 这两个参数永远是字符串。经验硬编码,见已知偏差②
+# These two arguments of appworld's api_docs are always strings. Empirically hardcoded, see known bias 2
 ALWAYS_STR = {"app_name", "api_name"}
 
 
 # ------------------------------------------------------------- requote
 
 def requote(call, user_ns):
-    """把去引号的预测调用串补成可执行 python。返回 (代码, 每个参数走了哪条分支)。
+    """Turn the dequoted predicted call string into executable python. Returns (code,
+    which branch each argument took).
 
-    分支顺序(逐参数,顺序不能换):
-      unparsable_raw  整串连 `apis.<app>.<api>(` 都凑不出来(全量 1061 条里有 2 条,
-                      形如 `apis.login(...)`)。**原样丢进环境让它报错并计数,
-                      不许 skip** —— skip 掉就又把探针猜错的代价抹掉了,
-                      而这正是 execute 档要修的病。
-      forced_str      键在 ALWAYS_STR 里,强制 repr 成字符串(全量 1454/1475)
-      literal         ast.literal_eval 认得(数字/True/None/列表,全量 1 个)
-      shell_var       是标识符且前缀重放后 shell 里真有这个变量
-                      (接住 `access_token=access_token` 这类真变量引用)
-      quoted          其余一律 repr 成字符串(全量 20 个里剩下的)
-    参数顺序照 first_call_named 的出现顺序,不排序。
+    Branch order (per argument, order must not change):
+      unparsable_raw  the whole string cannot even be assembled into
+                      `apis.<app>.<api>(` (2 out of the full 1061, shaped like
+                      `apis.login(...)`). **Drop it into the environment as-is and let
+                      it error and get counted, never skip it** -- skipping it would
+                      erase the cost of the probe's wrong guess again, and that is
+                      exactly the flaw the execute variant is meant to fix.
+      forced_str      the key is in ALWAYS_STR, force repr into a string (1454/1475 of
+                      the full set)
+      literal         ast.literal_eval recognizes it (numbers/True/None/lists, 1 in
+                      the full set)
+      shell_var       it is an identifier and that variable genuinely exists in the
+                      shell after prefix replay (catches real variable references like
+                      `access_token=access_token`)
+      quoted          everything else, repr into a string (the remaining 20 in the
+                      full set)
+    Argument order follows the order first_call_named produces them in, not sorted.
 
-    **shell_var 这条分支本质上是有歧义的**,而且歧义在真实数据里就有:
-    全量 1061 条里非 api_docs 的 20 个参数值,既有 `password=phone_password`
-    (确实该当变量看)也有 `password=b4GXZH6`、`password=_7JMKRg`(是字面口令,
-    却也符合标识符长相)。`v in user_ns` 这个条件把后者挡住了——口令串不会正好
-    是个变量名——但只要哪次真撞上(比如模型给某个变量取名叫 `email`,而探针预测
-    的又是字面值 `email`),就会静默走错分支。所以每个参数的分支都落进 arg_modes,
-    报告里给计数;真要抓,看 hit 单调用事件的 matched_traj_result 那条验收线。
+    **The shell_var branch is inherently ambiguous**, and the ambiguity shows up in
+    real data: of the 20 non-api_docs argument values in the full 1061, some are
+    `password=phone_password` (genuinely a variable reference) and some are
+    `password=b4GXZH6`, `password=_7JMKRg` (literal passwords that happen to look like
+    identifiers too). The condition `v in user_ns` blocks the latter -- a password
+    string will not happen to also be a variable name -- but the moment a real
+    collision occurs (say, the model names a variable `email`, and the probe also
+    predicts the literal value `email`), it silently takes the wrong branch. So every
+    argument's branch is recorded into arg_modes and counted in the report; to
+    actually catch this, look at the matched_traj_result acceptance line on hit
+    single-call events.
     """
     m = AW_CALL.search(call or "")
     if not m:
@@ -154,12 +199,12 @@ def requote(call, user_ns):
     named = first_call_named(call, AW_CALL) or []
     parts, modes = [], []
     for k, v in named:
-        pos = bool(POSKEY.match(k))          # 位置参数(全量 0 个,防御性保留)
+        pos = bool(POSKEY.match(k))          # positional argument (0 in the full set, kept defensively)
         if k in ALWAYS_STR:
             val, mode = repr(v), "forced_str"
         else:
             try:
-                ast.literal_eval(v)          # 数字 / True / None / 列表 / 字典
+                ast.literal_eval(v)          # number / True / None / list / dict
                 val, mode = v, "literal"
             except Exception:
                 if IDENT.match(v) and v in user_ns:
@@ -171,23 +216,29 @@ def requote(call, user_ns):
     return f"print({tool}({', '.join(parts)}))", modes
 
 
-# 该步录下的代码是不是"就一句 print(某个 apis 调用)"。只有这种步的 stdout
-# 才与"单独执行那条调用"可比 —— 实测有事件的代码块是
+# Whether the code recorded at this step is "exactly one print(some apis call)"
+# statement. Only steps like this have stdout comparable to "executing that call
+# alone" -- an event was measured with a code block of
 # `print("passwords:", apis.supervisor.show_account_passwords())`,
-# 单调用没错,但录下的 stdout 多个前缀、而且走的是 python repr 而非 appworld
-# 那个会转 json 的 print,拿它当验收线就是自己给自己报假警
-# 故意不加 re.S:带 . 跨行会把 `print(apis.a.b())\nprint(apis.c.d())` 也认成
-# 一句(末尾那个 `)` 匹配到第二句上去),踩过。多行的单调用块一律判成"不干净",
-# 宁可保守地把它排除在验收线之外
+# a single call with nothing wrong, but the recorded stdout has extra prefixes and
+# goes through Python's repr instead of appworld's json-converting print; using it as
+# an acceptance line would produce a false alarm against yourself
+# Deliberately not adding re.S: with `.` matching across lines,
+# `print(apis.a.b())\nprint(apis.c.d())` would also get recognized as one statement
+# (the trailing `)` matches into the second statement) -- hit this before. A
+# multi-line single-call block is always judged "not clean"; better to conservatively
+# exclude it from the acceptance line
 BARE_PRINT = re.compile(r"print\(\s*apis\.\w+\.\w+\([^\n]*\)\s*\)")
 
 
 def is_bare_print(code):
-    """该步录下的代码是不是"就一句 print(某个 apis 调用)"(整行注释不算)。
+    """Whether the code recorded at this step is "exactly one print(some apis call)"
+    statement (a full-line comment does not count).
 
-    注释与空行不产生任何 stdout,所以带一行 `# 说明` 的代码块照样与"单独执行
-    那条调用"可比。不剔注释就会把全量 664 个 hit+单调用事件里的 167 个误判成
-    不可比(实测:497 -> 664),白白砍掉验收线的分母。
+    Comments and blank lines produce no stdout, so a code block with a `# note` line
+    is still comparable to "executing that call alone." Not stripping comments would
+    wrongly judge 167 of the full 664 hit+single-call events as not comparable
+    (measured: 497 -> 664), needlessly shrinking the acceptance line's denominator.
     """
     body = [ln for ln in (code or "").splitlines()
             if ln.strip() and not ln.strip().startswith("#")]
@@ -195,12 +246,16 @@ def is_bare_print(code):
 
 
 def err_tail(out):
-    """报错文本里去掉"回显源码"那几行,只留异常行及其后面的消息。不是报错返回 None。
+    """Strip the "echoed source code" lines from the error text, keeping only the
+    exception line and the message after it. Returns None if it is not an error.
 
-    为什么要这个:appworld 的报错文本把出错的**源码行**原样回显进 traceback,
-    所以"探针预测的调用"与"当时真执行的调用"哪怕语义完全一样,只要引号风格不同
-    (轨迹里是 app_name="spotify",requote 补的是 app_name='spotify'),
-    逐字比就会不一致。实测踩到过这一条。比异常行之后的消息才是比"错得一样不一样"。
+    Why this is needed: appworld's error text echoes the **source line** that errored
+    verbatim into the traceback, so even when "the call the probe predicted" and "the
+    call actually executed at the time" are semantically identical, a
+    character-for-character comparison fails whenever the quote style differs (the
+    trajectory has app_name="spotify", requote fills in app_name='spotify'). Hit this
+    in practice. Comparing the message after the exception line is what actually
+    compares "whether the error is the same."
     """
     if out is None or not out.startswith("Execution failed"):
         return None
@@ -212,16 +267,20 @@ def err_tail(out):
 
 
 def error_kind(out):
-    """从 execute 的返回里认出错误种类。不是报错返回 None。
+    """Identify the error kind from execute's return value. Returns None if it is not an
+    error.
 
-    这个函数是**唯一真源**:merge-exec 会拿 exec_out 重算一遍,不信缓存里那个
-    字段 —— 否则改了分类规则,旧缓存里的旧标签会静默留在报告里。
+    This function is the **single source of truth**: merge-exec recomputes it from
+    exec_out and does not trust the field already in the cache -- otherwise, changing
+    the classification rule would leave old labels from the old cache silently
+    sitting in the report.
 
-    http_4xx 单独拎出来是因为 appworld 把"api 名字不存在""参数不对"都变成
-    422 之类的状态码(实测:探针猜出 `apis.api_docs.show_api_doc(
-    app_name='spotify', api_name='add_tracks_to_playlist')`,拿回
-    `Exception: Response status code is 422: {"message":"No APIs with name ...`)。
-    笼统记一个 Exception 就看不出探针到底错在哪。
+    http_4xx is pulled out on its own because appworld turns both "API name does not
+    exist" and "wrong argument" into status codes like 422 (measured: the probe
+    guessed `apis.api_docs.show_api_doc(app_name='spotify',
+    api_name='add_tracks_to_playlist')` and got back
+    `Exception: Response status code is 422: {"message":"No APIs with name ...`).
+    Recording a generic Exception would hide exactly what the probe got wrong.
     """
     if out is None or not out.startswith("Execution failed"):
         return None
@@ -232,10 +291,11 @@ def error_kind(out):
     m = re.search(r"Response status code is (\d+)", out)
     if m:
         return f"http_{m.group(1)}"
-    # python traceback 的最后一行是 `ExcName: msg`,但 msg 可能自带换行
-    # (上面那个 422 的 json 就占了最后一行),所以从后往前找第一个 `名字:`。
-    # 注意别写成"名字必须以 Error/Exception 结尾"——裸的 `Exception:` 只有 9 个
-    # 字符,会被"前缀 + 后缀"的正则漏掉(踩过)
+    # The last line of a python traceback is `ExcName: msg`, but msg can contain its own
+    # newlines (the 422 json above takes up the last line), so search backward for the
+    # first `Name:`. Careful not to write this as "name must end in Error/Exception" --
+    # the bare `Exception:` is only 9 characters and a "prefix + suffix" regex would miss
+    # it (hit this before)
     for line in reversed([x.strip() for x in out.splitlines() if x.strip()]):
         m = re.match(r"^([A-Za-z_][\w.]*)\s*:", line)
         if m:
@@ -246,11 +306,13 @@ def error_kind(out):
 # ------------------------------------------------------------- traj / cache
 
 def load_steps(traj_path):
-    """轨迹里真正被执行过的步:[(step, 当时执行的代码, 当时录下的 result)]。
+    """The steps in the trajectory that were actually executed: [(step, the code executed
+    at the time, the result recorded at the time)].
 
-    直接取 env 记录的 action —— 它就是采集时传给 world.execute 的那个字符串
-    (envs/collect/run_appworld.py:104-106),比拿 gen 的 content 再用 CODE_RE
-    重抽一遍少一个环节。action is None 的步(NO_CODE_BLOCK)没执行过,跳过。
+    Takes the action recorded by env directly -- it is exactly the string passed to
+    world.execute during collection (envs/collect/run_appworld.py:104-106), one step
+    fewer than taking gen's content and re-extracting it with CODE_RE. Steps where
+    action is None (NO_CODE_BLOCK) were not executed, skip them.
     """
     envs = {}
     with open(traj_path) as f:
@@ -263,22 +325,28 @@ def load_steps(traj_path):
 
 
 def prefix_sigs(steps):
-    """每个 step 之前**真正执行过的代码**的累积指纹,给缓存键当轨迹身份用。
+    """The cumulative fingerprint of the **code actually executed before each step**,
+    used as the trajectory identity in the cache key.
 
-    为什么非有不可:appworld 的 unit 名在三个模型(gptoss/q35/q36)之间完全相同
-    (`envs/runs/w0_aw_official/` 下三份、同名 unit 文件),但各自轨迹在同一个 unit
-    上执行的代码不同,世界状态就不同。缓存键若只有 unit+step,换一批轨迹跑
-    execute 会**静默**复用别人世界的执行结果;更糟的是命中缓存时前缀重放整段
-    不跑,`prefix_verbatim` 直接抄缓存里的 True —— 既污染注入内容,又同时关掉
-    唯一能发现污染的那个哨兵,报告里的 n_drift 会是个假 0。
-    (实测复现过:把 plan 的 traj_path 从 appworld_gptoss 换成 appworld_q35,
-    再用 gptoss 建的缓存跑,8/8 全部命中、一个世界都没建、exec_out 逐字相同。)
+    Why this is necessary: appworld's unit names are identical across the three
+    models (gptoss/q35/q36) (three copies under `envs/runs/w0_aw_official/`,
+    same-named unit files), but each trajectory executes different code on the same
+    unit, so the world state differs. If the cache key only had unit+step, running
+    execute on a different batch of trajectories would **silently** reuse another
+    world's execution results; worse, on a cache hit the whole prefix replay is
+    skipped and `prefix_verbatim` is copied straight from the cache as True -- this
+    both contaminates the injected content and disables the only sentinel that could
+    catch the contamination, so n_drift in the report would be a false 0.
+    (Reproduced in practice: switch the plan's traj_path from appworld_gptoss to
+    appworld_q35, then run against a cache built from gptoss -- 8/8 all hit, not a
+    single world built, exec_out identical character for character.)
 
-    世界状态由"这一步之前执行了什么"决定,所以指纹取前缀而非整条轨迹。
+    World state is determined by "what was executed before this step," so the
+    fingerprint takes the prefix, not the whole trajectory.
     """
     out, h = {}, hashlib.sha1()
     for st, action, _ in steps:
-        out[st] = h.hexdigest()[:16]         # 该 step **之前**的前缀
+        out[st] = h.hexdigest()[:16]         # the prefix **before** this step
         h.update(f"{st}\x00{action}\x00".encode())
     return out
 
@@ -289,15 +357,16 @@ def cache_key(unit, step, gen_call, psig):
 
 
 def cache_files(cache_path):
-    """同一个 cache 主名下的所有分片文件。
+    """All shard files under the same cache stem name.
 
-    每个分片进程写自己的 `<stem>.s<id>.jsonl`(>4KB 的行用 O_APPEND 并发写会
-    交错,所以不共享同一个文件),读的时候把兄弟文件全读进来 —— 六个 θ 点之间
-    绝大部分预测调用因此能直接命中缓存(状态与 θ 无关)。
+    Each shard process writes its own `<stem>.s<id>.jsonl` (concurrent O_APPEND writes
+    of lines over 4KB interleave, so they cannot share one file); reading pulls in all
+    sibling files -- this lets most predicted calls hit the cache directly across the
+    six θ points (state is independent of θ).
 
-    匹配必须精确到 `<stem>.jsonl` 与 `<stem>.s<N>.jsonl` 两种形状——原来的
-    前缀 glob(`<stem>*`)会把 `<stem>_v2.s0.jsonl`、`<stem>2.jsonl` 这类
-    别的批次的缓存静默吞进来(审计 B8)。
+    Matching must be exact to the two shapes `<stem>.jsonl` and `<stem>.s<N>.jsonl` --
+    the original prefix glob (`<stem>*`) would silently swallow caches from other
+    batches like `<stem>_v2.s0.jsonl`, `<stem>2.jsonl` (audit B8).
     """
     p = Path(cache_path)
     if not p.parent.is_dir():
@@ -308,17 +377,20 @@ def cache_files(cache_path):
 
 def _reqver_write(p, h):
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_name(p.name + ".tmp")          # 四分片并发跑,写档要原子
+    tmp = p.with_name(p.name + ".tmp")          # four shards run concurrently, the write must be atomic
     tmp.write_text(json.dumps({"requote_version": REQUOTE_VERSION,
                                "src_sha1": h}))
     os.replace(tmp, p)
 
 
 def check_requote_version(cache_main):
-    """机械守卫(审计 B8):requote()/cache_key() 的**可执行结构**变了但
-    REQUOTE_VERSION 没 +1 就拒绝跑——键不变会静默复用旧口径的结果。
-    注释/docstring 改动不算(先过 ast 归一化再取哈希)。
-    档案存 <主名>.reqver.json,首跑自动建档;+1 后自动换档(旧键自然失效)。"""
+    """Mechanical guard (audit B8): refuse to run if the **executable structure** of
+    requote()/cache_key() changed but REQUOTE_VERSION was not incremented -- an
+    unchanged key would silently reuse results computed under the old convention.
+    Comment/docstring changes do not count (normalized through ast before hashing).
+    The record is stored at <stem>.reqver.json, created automatically on first run;
+    incrementing switches to a new record automatically (the old key naturally
+    expires)."""
     import ast
     import inspect
     src = inspect.getsource(requote) + inspect.getsource(cache_key)
@@ -335,18 +407,18 @@ def check_requote_version(cache_main):
         try:
             old = json.loads(p.read_text())
         except Exception:
-            sys.exit(f"缓存版本档案损坏: {p}——人工确认后删掉重跑"
-                     "(会按当前源码重建档案),别当成没档案静默放行。")
+            sys.exit(f"cache version record is corrupted: {p} -- confirm by hand, delete it, and rerun "
+                     "(this rebuilds the record from the current source); do not treat this as no record and silently let it pass.")
         if old.get("src_sha1") == h:
             if old.get("requote_version") != REQUOTE_VERSION:
-                _reqver_write(p, h)     # 只 +1 没改源码:档案跟上常量
+                _reqver_write(p, h)     # only incremented, source unchanged: the record catches up to the constant
             return
         if old.get("requote_version") == REQUOTE_VERSION:
             sys.exit(
-                f"requote()/cache_key() 的源码变了,但 REQUOTE_VERSION 还是 "
-                f"{REQUOTE_VERSION}——缓存键不变,旧结果会被静默复用。"
-                f"确认是逻辑变更就把 REQUOTE_VERSION +1 再跑;"
-                f"档案: {p}")
+                f"the source of requote()/cache_key() has changed, but REQUOTE_VERSION is still "
+                f"{REQUOTE_VERSION} -- the cache key stays the same, old results get silently reused. "
+                f"If this is confirmed to be a logic change, bump REQUOTE_VERSION by 1 and rerun; "
+                f"record: {p}")
     _reqver_write(p, h)
 
 
@@ -357,42 +429,50 @@ def load_cache(cache_path):
             for line in f:
                 try:
                     o = json.loads(line)
-                except Exception:            # 半行(进程被杀)直接丢
+                except Exception:            # a half-written line (process killed) is simply dropped
                     continue
                 if o.get("key"):
                     cache[o["key"]] = o
     return cache
 
 
-# ------------------------------------------------------------- 一个 unit
+# ------------------------------------------------------------- one unit
 
 def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                 stats, out, probe=True):
-    """把一个 unit 重放到各事件所在的 step 并执行预测调用,记录追加进 out。
+    """Replay one unit to the step of each event and execute the predicted call,
+    appending records to out.
 
-    落盘分工:执行结果**当场**写进 cache_sink(进程被杀也不白跑),事件记录追加
-    进调用方给的 out 列表、由调用方统一写文件 —— 函数内不碰文件,免得漏写某条
-    路径(比如整 unit 命中缓存那条);out 由调用方持有,所以 unit 中途炸了
-    已经做完的事件也还在,不会白跑。
+    Division of write responsibility: execution results are written into cache_sink
+    **on the spot** (nothing is wasted if the process gets killed); event records are
+    appended to the out list the caller provides, and the caller writes the file --
+    the function itself never touches a file, to avoid missing some path (e.g. the
+    one where the whole unit hits the cache); out is owned by the caller, so if a
+    unit blows up partway through, the events already done are still there and are
+    not wasted.
 
-    probe=False 是"干净重放"模式:一个探测调用都不插,只逐步核对录下的 result。
-    --selfcheck 在漂了的 unit 上用它给漂移定责(是重放本身不保真,还是探测调用
-    写了库没回干净)。
+    probe=False is "clean replay" mode: no probe call is inserted at all, it only
+    checks the recorded result step by step. --selfcheck uses this on drifted units
+    to assign blame for the drift (is the replay itself not faithful, or did a probe
+    call write to the DB and fail to restore it cleanly).
     """
     steps = load_steps(traj_path)
     have = {st for st, _, _ in steps}
-    # 这两张表让"比对录下的 result"这件事不依赖是否真去执行了(整 unit 命中
-    # 缓存那条路径也要能算),所以在建世界之前先备好
+    # These two tables let "comparing against the recorded result" not depend on whether
+    # execution actually happened (the path where the whole unit hits the cache must also
+    # be able to compute it), so prepare them before building the world
     rec_of = {st: r for st, _, r in steps}
-    psig = prefix_sigs(steps)                # 缓存键里的轨迹身份,见 prefix_sigs
+    psig = prefix_sigs(steps)                # the trajectory identity in the cache key, see prefix_sigs
     bare_of = {st: is_bare_print(c) for st, c, _ in steps}
     by_step = {}
     for r in rows:
         by_step.setdefault(r["step"], []).append(r)
 
     def compare(eout, st):
-        """把"执行返回"与"轨迹里录下的 result"比三种:逐字 / 只比报错消息 /
-        该步录下的代码是不是一句干净的 print(调用)。"""
+        """Compare "the execution return value" against "the result recorded in the
+        trajectory" three ways: character for character / error message only /
+        whether the code recorded at this step is a single clean print(call)
+        statement."""
         recorded = rec_of.get(st)
         return dict(matched_traj_result=(eout == recorded),
                     matched_traj_error=(
@@ -401,10 +481,10 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                         else err_tail(eout) == err_tail(recorded)),
                     traj_bare_print=bare_of.get(st))
 
-    # 该 step 之前的步都得先执行到位;最后一个需要的 step 上的真代码不用再执行
+    # every step before this one must already be executed; the real code at the last needed step does not need re-executing
     last_needed = max(by_step) if by_step else -1
     missing = [r for r in rows if r["step"] not in have]
-    for r in missing:                        # 轨迹里这步没执行过(NO_CODE_BLOCK)
+    for r in missing:                        # this step was never executed in the trajectory (NO_CODE_BLOCK)
         out.append(dict(event=r["event"], unit=unit, step=r["step"],
                         gen_call=r["gen_call"], exec_code=None, arg_modes=None,
                         exec_out=None, exec_ok=None,
@@ -419,7 +499,7 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
     if not todo:
         return out
 
-    # 全部命中缓存 -> 连世界都不用建(θ 之间补跑主要靠这条)
+    # everything hits the cache -> don't even need to build the world (this is what makes re-running across θ points cheap)
     hits = {r["event"]: cache.get(cache_key(unit, r["step"], r["gen_call"],
                                             psig[r["step"]]))
             for r in todo}
@@ -431,8 +511,9 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                      gen_call=r["gen_call"], cache_hit=True, wall_s=0.0,
                      dt_guard=None, full_call_ok=r.get("full_call_ok"),
                      n_calls_in_block=r.get("n_calls_in_block"),
-                     # 三个比对字段现算,不抄缓存里那份:老缓存可能是上一版
-                     # 比法写的,抄过来就把旧口径静默带进报告
+                     # Compute the three comparison fields fresh, do not copy them from the cache: the old
+                     # cache may have been written under the previous comparison method, copying it would
+                     # silently carry the old convention into the report
                      **compare(c.get("exec_out"), r["step"]))
             out.append(c)
             stats["cache_hit"] += 1
@@ -443,9 +524,11 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
     world = AppWorld(task_id=unit, experiment_name=exp,
                      random_seed=APPWORLD_SEED)
     try:
-        # 时间守卫的基准:单元开局的冻结时刻。load_state 只做 _load_state +
-        # _execute_preamble,不重新冻时间(environment.py:748-754),所以回档后
-        # 必须显式 _set_datetime() 再核一遍——不核就可能拿真实时间去执行调用。
+        # The baseline for the time guard: the frozen moment at the unit's start. load_state
+        # only does _load_state + _execute_preamble and does not re-freeze time
+        # (environment.py:748-754), so after restoring a checkpoint you must explicitly call
+        # _set_datetime() again and re-check -- skipping this check risks executing the call
+        # against real time.
         t_frozen = world.execute("print(DateTime.now())").strip()
         dt_guard = not t_frozen.startswith("Execution failed")
         if dt_guard:
@@ -473,9 +556,11 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                     code_x, modes = requote(r["gen_call"], world.shell.user_ns)
                     last_event_of_unit = (st == last_needed and
                                           i == len(by_step[st]) - 1)
-                    # 存档 -> 执行 -> 回档,三连必须成对:漏回档不会报错,
-                    # 但同 unit 后面所有事件的状态被静默污染(risk 2)。
-                    # 所以 finally 兜底,并且回档后重新冻时间 + 断言。
+                    # checkpoint -> execute -> restore, all three must happen together: skipping the
+                    # restore does not raise an error, but silently contaminates the state for every
+                    # later event in the same unit (risk 2).
+                    # So `finally` is the fallback, and after restoring, time is re-frozen and asserted
+                    # again.
                     world.save_state(CKPT)
                     try:
                         eout = str(world.execute(code_x))[:TRUNC]
@@ -488,7 +573,7 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                                     "print(DateTime.now())").strip()
                                 if now != t_frozen:
                                     raise RuntimeError(
-                                        f"回档后时间漂了:{now!r} != "
+                                        f"time drifted after the restore: {now!r} != "
                                         f"{t_frozen!r} ({unit} s{st})")
                     ek = error_kind(eout)
                     rec = dict(exec_code=code_x, arg_modes=modes,
@@ -506,13 +591,14 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
                            wall_s=round(time.time() - t0, 3),
                            full_call_ok=r.get("full_call_ok"),
                            n_calls_in_block=r.get("n_calls_in_block"))
-                # prefix_verbatim / drift_step 反映"走到该事件时前缀有没有漂",
-                # 缓存里那份是首次执行时的值,这里以本次重放为准
+                # prefix_verbatim / drift_step reflect "whether the prefix had drifted by the time
+                # this event was reached"; the value in the cache is from the first execution, this
+                # replay's value takes precedence here
                 rec["prefix_verbatim"], rec["drift_step"] = verbatim, drift_at
                 out.append(rec)
                 stats["exec_ok" if rec.get("exec_ok") else "exec_err"] += 1
 
-            if st == last_needed:            # 到目标步就停,本步真代码不用执行
+            if st == last_needed:            # stop once the target step is reached, no need to execute the real code for this step
                 break
             got = str(world.execute(code))[:TRUNC]
             clean_outs.append((st, got))
@@ -528,33 +614,38 @@ def replay_unit(AppWorld, unit, rows, traj_path, exp, cache, cache_sink,
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--plan", required=True, help="plan.jsonl(execute 或 skip 档都行)")
-    ap.add_argument("--out", required=True, help="exec_calls.jsonl;分片会自动加 .s<id>")
+    ap.add_argument("--plan", required=True, help="plan.jsonl (either the execute or skip version works)")
+    ap.add_argument("--out", required=True, help="exec_calls.jsonl; sharding appends .s<id> automatically")
     ap.add_argument("--cache", required=True,
-                    help="跨 θ 复用的执行缓存(append-only jsonl,分片各写一份)")
-    ap.add_argument("--exp", required=True, help="appworld experiment_name 前缀")
+                    help="execution cache reused across θ values (append-only jsonl, each shard writes its own copy)")
+    ap.add_argument("--exp", required=True, help="prefix for the appworld experiment_name")
     ap.add_argument("--num-shards", type=int, default=1)
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--limit-units", type=int, default=0)
     ap.add_argument("--keep-outputs", action="store_true",
-                   help="不删每个 unit 跑完后的 appworld 输出目录(默认删)。"
-                        "appworld 每个 unit 留 ~90KB 的 dbs/checkpoints/logs,"
-                        "而 /home 是有配额的共享盘(2026-08-01 实测过一次"
-                        "Disk quota exceeded)—— 跑完就删,把占用压到一个 unit")
+                   help="do not delete each unit's appworld output dir after it finishes (deleted by default). "
+                        "Each appworld unit leaves ~90KB of dbs/checkpoints/logs, "
+                        "and /home is a shared disk with a quota (hit "
+                        "Disk quota exceeded once on 2026-08-01) -- delete right after it finishes, to keep usage down to one unit's worth")
     ap.add_argument("--selfcheck", action="store_true",
-                    help="只在 hit 且单调用的事件上算 MATCH/DIFF/EXEC_ERR,"
-                         "有 DIFF 或有 unit 漂了就非零退出")
+                    help="compute MATCH/DIFF/EXEC_ERR only on hit, single-call events; "
+                         "exit non-zero if there is any DIFF or any unit drifted")
     a = ap.parse_args()
 
-    # 路径一律先 resolve 再 chdir:先 chdir 后解析相对路径 = 静默找不到文件
+    # Always resolve paths before chdir: chdir first, then resolving a relative
+    # path silently fails to find the file
     plan_p = Path(a.plan).resolve()
     out_p = Path(a.out).resolve()
-    # 缓存的读写路径必须分开:**写**只写自己那一片(>4KB 的行并发 O_APPEND 会
-    # 交错),**读**要读主名下所有兄弟分片。原来两者共用一个变量,加完 .s<id>
-    # 后缀再拿去 glob,只能匹配到自己那片 —— 跨分片、跨 θ 的缓存复用从来没生效过
-    # (而"θ 之间补跑靠缓存"正是 execute 档铺六个点的唯一省时机制)。
+    # Cache read and write paths must stay separate: **write** only writes its own
+    # piece (lines over 4KB interleave under concurrent O_APPEND); **read** must
+    # read every sibling piece under the main name. The two used to share one
+    # variable -- after appending the .s<id> suffix and globbing with it, only
+    # that piece could ever match, so cache reuse across pieces and across theta
+    # (θ) never actually worked (and "backfilling between theta points via the
+    # cache" is the only time-saving mechanism for laying out six points in the
+    # execute cell).
     cache_main = Path(a.cache).resolve()
-    if a.num_shards > 1:                     # 一片一个文件,免得并发写交错
+    if a.num_shards > 1:                     # One file per piece, to avoid interleaving under concurrent writes
         out_p = out_p.with_name(f"{out_p.stem}.s{a.shard_id}{out_p.suffix}")
     cache_p = cache_main.with_name(
         f"{cache_main.stem}.s{a.shard_id}{cache_main.suffix}")
@@ -564,33 +655,36 @@ def main():
     plan = [json.loads(l) for l in open(plan_p)]
     by_unit = {}
     for p in plan:
-        # plan 里的 traj_path 是**相对工程根**的(replay_inject.py 从根目录跑),
-        # 而本文件要 chdir 到 envs/appworld —— 所以必须在 chdir 之前就锚回根目录。
-        # 这条踩过:不锚就是 FileNotFoundError,整批 unit 全废
+        # traj_path in the plan is **relative to the project root** (replay_inject.py
+        # runs from the root), but this file needs to chdir into envs/appworld -- so
+        # it must anchor back to the root before the chdir.
+        # Hit this before: without anchoring it's FileNotFoundError and the whole
+        # batch of units is ruined
         tp = Path(p["traj_path"])
         p["traj_path"] = str(tp if tp.is_absolute() else
                              (PROJ_ROOT / tp).resolve())
         by_unit.setdefault(p["unit"], []).append(p)
-    # 分片按 unit 切,同一 unit 的事件必须落在同一个进程(共用一个世界)
-    # 【照抄 envs/collect/run_appworld.py:69】的切法
+    # Pieces are split by unit; events of the same unit must land in the same
+    # process (they share one world)
+    # [Copied from envs/collect/run_appworld.py:69]'s splitting method
     units = sorted(by_unit)
     if a.limit_units:
         units = units[:a.limit_units]
     units = units[a.shard_id::a.num_shards]
     exp = a.exp if a.num_shards == 1 else f"{a.exp}_s{a.shard_id}"
 
-    done = set()                             # 断点续跑
+    done = set()                             # Resume from a checkpoint
     if out_p.exists():
         for l in open(out_p):
             try:
                 done.add(json.loads(l)["event"])
             except Exception:
                 pass
-    check_requote_version(cache_main)        # 逻辑变了没 +1 版本号 -> 拒绝跑
-    cache = load_cache(cache_main)           # 读主名 -> 兄弟分片全进来
+    check_requote_version(cache_main)        # Logic changed without bumping the version number -> refuse to run
+    cache = load_cache(cache_main)           # Read the main name -> all sibling pieces come in
     print(f"shard {a.shard_id}/{a.num_shards}: {len(units)} units "
           f"{sum(len(by_unit[u]) for u in units)} events exp={exp} "
-          f"已有 {len(done)} 条 缓存 {len(cache)} 条 seed={APPWORLD_SEED}",
+          f"{len(done)} already present, {len(cache)} cached, seed={APPWORLD_SEED}",
           flush=True)
 
     os.chdir(APPWORLD_HOME)
@@ -609,21 +703,23 @@ def main():
             replay_unit(AppWorld, u, rows, rows[0]["traj_path"], exp,
                         cache, csink, stats, got)
         except Exception as e:
-            # unit 中途炸掉:已做完的事件照样落盘(got 是我们持有的),
-            # 剩下的事件在 exec_calls.jsonl 里就是缺的 —— merge-exec 会把它们
-            # 标成 exec_missing 并单独计数,绝不静默退回"没注入"
+            # If a unit crashes partway through: events already done are still flushed to
+            # disk (got is what we hold), and the remaining events are simply missing from
+            # exec_calls.jsonl -- merge-exec marks them exec_missing and counts them
+            # separately, it never silently falls back to "no injection"
             unit_err.append(dict(unit=u, error=f"{type(e).__name__}: {e}",
                                  done=len(got), want=len(rows)))
             stats["unit_error"] += 1
             print(f"  UNIT FAIL {u}: {type(e).__name__}: {e} "
-                  f"(已完成 {len(got)}/{len(rows)})", flush=True)
+                  f"(done {len(got)}/{len(rows)})", flush=True)
         recs += got
-        for r in got:                        # 事件记录只在这里落盘,一条不漏
+        for r in got:                        # Event records are flushed to disk only here, none are dropped
             sink.write(json.dumps(r, ensure_ascii=False) + "\n")
         sink.flush()
         if not a.keep_outputs:
-            # 这个 unit 的世界已经关了,它的 dbs/checkpoints/logs 没人再读。
-            # 留着就是 168 × 90KB 堆在配额盘上,还挡住下一个 θ 点
+            # This unit's world is already closed; nobody reads its dbs/checkpoints/logs
+            # again. Keeping them is 168 x 90KB piling up on the quota-limited disk, and
+            # it also blocks the next theta point
             shutil.rmtree(Path(APPWORLD_HOME) / "experiments" / "outputs" /
                           exp / "tasks" / u, ignore_errors=True)
         print(f"  [{i + 1}/{len(units)}] {u} {len(rows)} ev "
@@ -648,29 +744,36 @@ def main():
         Path(str(out_p) + ".meta.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=1))
     except OSError as e:
-        # 事件记录已经逐条 flush 过了,这里炸掉不丢结果;但要说清是磁盘问题,
-        # 别让人以为是逻辑错。/home 是有配额的共享盘,实测踩过 Errno 122
-        print(f"meta 写不下去({e})—— 事件记录已落盘 {out_p},"
-              f"腾出空间后重跑会命中缓存,几秒钟就完", flush=True)
+        # Event records are already flushed one by one, so a crash here doesn't lose
+        # results; but make it clear this is a disk problem, not a logic bug. /home is
+        # a shared disk with a quota, and Errno 122 has actually been hit here
+        print(f"cannot write meta ({e}) -- event records are already on disk at {out_p}, "
+              f"a rerun after freeing space will hit the cache and finish in seconds", flush=True)
         raise
     print(json.dumps(meta, ensure_ascii=False, indent=1), flush=True)
 
     if not a.selfcheck:
         return 0
 
-    # ---- 验收线:预测的调用与真实一致(hit)、代码块只含 1 个调用、而且那个
-    #      代码块就是一句干净的 print(调用) —— 这三条同时成立时,"单独执行这条
-    #      调用"的输出才应当与轨迹里录下的 result 对得上。三条里缺一条就说明
-    #      两边根本不可比,算进验收线只会给自己报假警(实测两种假警:
-    #      ① 代码块是 print("passwords:", apis...) ,录下的 stdout 多个前缀;
-    #      ② 调用本身报错时 traceback 回显源码,引号风格不同就逐字不等)。
+    # ---- Acceptance line: the predicted call matches the real one (hit), the
+    #      code block contains exactly 1 call, and that code block is a clean
+    #      one-line print(call) -- only when all three hold should the output of
+    #      "executing this call alone" match the result recorded in the
+    #      trajectory. Missing any one of the three means the two sides are not
+    #      comparable at all, and folding it into the acceptance line only
+    #      produces a false alarm for itself (two kinds of false alarm actually
+    #      hit:
+    #      (1) the code block is print("passwords:", apis...), so the recorded
+    #      stdout carries extra prefixes;
+    #      (2) when the call itself errors, the traceback echoes the source, and
+    #      differing quote styles make it not match character for character).
     n_match = n_match_err = n_diff = n_err = n_skip = 0
     for r in recs:
         if not (r.get("full_call_ok") and r.get("n_calls_in_block") == 1):
             continue
         if not r.get("traj_bare_print"):
             n_skip += 1
-            tag = "SKIP_MIX"          # 录下的代码块不是一句干净的 print(调用)
+            tag = "SKIP_MIX"          # The recorded code block is not a clean print(call) one-liner
         elif r.get("exec_out") is None:
             n_err += 1
             tag = "NO_EXEC"
@@ -678,7 +781,7 @@ def main():
             n_match += 1
             tag = "MATCH"
         elif r.get("matched_traj_error"):
-            n_match_err += 1          # 报错消息一致,只差 traceback 里回显的引号
+            n_match_err += 1          # Error messages match, differing only in quotes echoed in the traceback
             tag = "MATCH_ERR"
         elif not r["exec_ok"]:
             n_err += 1
@@ -691,14 +794,16 @@ def main():
               f"| out={str(r.get('exec_out'))[:58]!r}", flush=True)
     bad_pv = [r["unit"] for r in recs if r.get("prefix_verbatim") is False]
     bad_dt = [r["unit"] for r in recs if r.get("dt_guard") is False]
-    print(f"\nselfcheck: hit+单调用+干净print 的事件 MATCH {n_match} "
+    print(f"\nselfcheck: hit, single-call, clean-print events MATCH {n_match} "
           f"MATCH_ERR {n_match_err} DIFF {n_diff} EXEC_ERR/NO_EXEC {n_err}"
-          f"(另有 {n_skip} 个 hit+单调用事件因为代码块不是一句干净的 print "
-          f"而不可比,不算进验收线);前缀漂了的 unit {sorted(set(bad_pv))};"
-          f"时间守卫失效的 unit {sorted(set(bad_dt))};unit 级失败 {unit_err}")
+          f"(there are also {n_skip} hit, single-call events not comparable because the code block "
+          f"is not a single clean print statement; not counted toward the acceptance line); prefix-drifted unit {sorted(set(bad_pv))};"
+          f"units where the time guard failed {sorted(set(bad_dt))};unit-level failures {unit_err}")
 
-    # 漂了就给漂移定责:干净重放(一个探测都不插)也漂 = 重放本身不保真;
-    # 只有带探测才漂 = 探测调用写了库、回档没回干净(risk 2)
+    # If it drifts, pin down the cause: if a clean replay (with no probe inserted
+    # at all) also drifts, the replay itself is not faithful; if it drifts only
+    # with a probe inserted, the probe call wrote to the database and the
+    # checkpoint rollback was not clean (risk 2)
     for u in sorted(set(bad_pv)):
         rows = by_unit[u]
         try:
@@ -706,12 +811,12 @@ def main():
                                 exp + "_clean", {}, open(os.devnull, "w"),
                                 Counter(), [], probe=False)
         except Exception as e:
-            print(f"  定责失败 {u}: {type(e).__name__}: {e}")
+            print(f"  fault attribution failed for {u}: {type(e).__name__}: {e}")
             continue
         rec = {st: r for st, _, r in load_steps(rows[0]["traj_path"])}
         bad = [st for st, got in clean if got != rec.get(st)]
-        print(f"  {u} 干净重放也漂的步: {bad} "
-              f"({'重放不保真' if bad else '疑似探测调用没回干净'})")
+        print(f"  {u} steps that drift even under a clean replay: {bad} "
+              f"({'the replay itself is not faithful' if bad else 'suspected that the probe call did not clean up'})")
         if not a.keep_outputs:
             shutil.rmtree(Path(APPWORLD_HOME) / "experiments" / "outputs" /
                           (exp + "_clean"), ignore_errors=True)

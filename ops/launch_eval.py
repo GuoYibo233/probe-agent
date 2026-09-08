@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
-"""tmux launcher for Phase C4 eval —— 批次无关。
+"""tmux launcher for Phase C4 eval -- batch-agnostic.
 
-流水线一直缺这一环:训练有 `ops/launch_probe.py`,评测却一直靠手搓 ssh+tmux。
-本脚本把 SKILL.md Phase C4 的依赖顺序固化下来:
+The pipeline has always been missing this piece: training has `ops/launch_probe.py`,
+but eval has always relied on hand-rolled ssh+tmux. This script hardcodes the
+dependency order from SKILL.md Phase C4:
 
-    tool 档(mtool/ctool) ── 出 REPLAY_REPORT.json + logits_test.pt
-                 ↓ 提供温度与触发点 theta
-    call 档(mext 吃同模型 mtool 的、cgen 吃同模型 ctool 的)
+    tool cells (mtool/ctool) ── produce REPLAY_REPORT.json + logits_test.pt
+                 ↓ supply the temperature and the firing threshold theta
+    call cells (mext eats the same model's mtool, cgen eats the same model's ctool)
 
-用法:
-  # 先发工具格(互不依赖,一把并行)
+Usage:
+  # Launch the tool cells first (independent of each other, all in parallel)
   launch_eval.py tool --batch c2 --data-root pipeline/data/alf_official_v1 \
       --env alfworld --placement ops/c2_eval_tool_placement.json
 
-  # 工具格出报告后再发参数格
+  # Launch the call cells after the tool cells produce their reports
   launch_eval.py call --batch c2 --data-root pipeline/data/alf_official_v1 \
       --env alfworld --placement ops/c2_eval_call_placement.json
 
-排卡表一格一条:
+The card schedule table has one entry per cell:
   [{"model": "q36", "cell": "mtool", "host": "tokyo106", "gpu": 0,
     "extra": ["--risk", "0.1"]}, ...]
 
-`cell` 在 tool 档取 mtool/ctool,在 call 档取 mext/cgen/cparam(写头的名字,
-脚本自己换算成它依赖的工具格路径)。两档各认哪些格由 run.py 的 EVAL_CELLS 定
-(dep=None 的进 tool 档、有 dep 的进 call 档),发哪几格只看 --placement 排卡表
-——表里没写的格一律不发。session 名 = eval_<batch>_<model>_<cell>。
+`cell` takes mtool/ctool in the tool phase, and mext/cgen/cparam in the call phase
+(named for the head that produced it; the script itself resolves this to the
+tool-cell path it depends on). Which cells belong to which phase is defined by
+run.py's EVAL_CELLS (dep=None goes into the tool phase, having a dep goes into the
+call phase); which cells actually get launched depends only on the --placement card
+schedule table -- any cell not listed in the table is never launched. Session name
+= eval_<batch>_<model>_<cell>.
 """
 import argparse
 import json
@@ -36,14 +40,17 @@ from pathlib import Path
 WD = Path(__file__).resolve().parent.parent
 LOGD = WD / "logs"
 
-# 评测格唯一真源在仓库根 run.py 的 EVAL_CELLS(2026-08-02 审计 C14 起),
-# 这里只 import——解释器/脚本/固定参数全从对应 TASKS 条目取,不再另抄一份。
-# 双环境铁律(mbert 头走 mbert-env,causal 头走 cprobe-env)也记在 run.py 里。
+# The single source of truth for eval cells is EVAL_CELLS in the repo root's run.py
+# (since audit C14, 2026-08-02); this file only imports it -- the interpreter/script/
+# fixed args are all taken from the corresponding TASKS entry, not copied again here.
+# The two-environment hard rule (the mbert head runs in mbert-env, the causal head
+# runs in cprobe-env) is also recorded in run.py.
 sys.path.insert(0, str(WD))
 from run import EVAL_CELLS, PY, TASKS  # noqa: E402
 sys.path.insert(0, str(WD / "ops"))
-# has_session/tmux_launch 原来是本地函数,现在改 import 公共件(工单 11,
-# 先扩后收的收这一步——探卡/登记也从这里一并接进来)。
+# has_session/tmux_launch used to be local functions; now they import the shared
+# component instead (ticket 11, the consolidation step of "expand first, then
+# consolidate" -- card probing/registration are wired in from here too).
 from launch_common import has_session, tmux_launch, probe_free, register_all  # noqa: E402
 
 TOOL_KEYS = [c for c, (_, dep) in EVAL_CELLS.items() if dep is None]
@@ -51,7 +58,7 @@ CALL_KEYS = [c for c, (_, dep) in EVAL_CELLS.items() if dep is not None]
 
 
 def cell_cmd_parts(cell):
-    """格 -> (解释器, 脚本绝对路径, 固定参数, 依赖格|None),全部取自 run.py。"""
+    """cell -> (interpreter, absolute script path, fixed args, dependency cell|None), all taken from run.py."""
     task_name, dep = EVAL_CELLS[cell]
     t = TASKS[task_name]
     return (t.get("prog") or PY[t["py"]], str(WD / t["script"]),
@@ -60,30 +67,36 @@ def cell_cmd_parts(cell):
 
 def launch_and_register(host, gpu, sess, cmd, log, meta_dir, stage, batch,
                         placement=""):
-    """一格的完整发射:探卡(fail-closed)→session 存在性检查→tmux 发射→RUNMETA→
-    台账/记录登记。session 已存在或目标卡非 FREE 都算跳过,不发射也不登记。
-    登记(台账/record.py)失败只 WARN 不中断——发射已经真实发生了,不能因为
-    登记这一步(比如重复 run_id)把已经跑起来的任务藏起来不让 alive check 看见。
-    返回 True 表示真的发出去了(供 main() 的 alive check 用)。"""
+    """Complete launch of one cell: card probe (fail-closed)→session-existence check→
+    tmux launch→RUNMETA→ledger/record registration. Both an already-existing
+    session and a target card that is not FREE count as a skip, with neither launch
+    nor registration happening. A registration (ledger/record.py) failure only WARNs
+    and does not abort -- the launch has already really happened, and this step (e.g.
+    a duplicate run_id) must not hide an already-running task from the alive check.
+    Returns True to mean it was really sent out (used by main()'s alive check)."""
     if has_session(host, sess):
         print(f"SKIP (exists): {sess}")
         return False
     ok, why = probe_free(host, str(gpu))
     if not ok:
-        print(f"SKIP (非 FREE): {sess}  {host} gpu{gpu}  {why}")
+        print(f"SKIP (not FREE): {sess}  {host} gpu{gpu}  {why}")
         return False
     inner = f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd} 2>&1 | tee {log}"
     tmux_launch(host, sess, inner)
     print(f"LAUNCHED {sess}  ({host} gpu{gpu})  log={log}")
-    # 产物钉代码(审计 B6)由 register_all 的第一步写进 meta_dir/RUNMETA.json——
-    # 它是唯一写手,这里只把 kind 与要并进记录的字段传过去。
-    # rid 用完整 sess(含 eval_ 前缀),不能去掉前缀——去掉前缀后就等于
-    # launch_probe.build() 给同一格训练 job 用的 rid(`{batch}_{model}_{cell}`),
-    # 而训练 job 的销号(gpu_jobs finish)按 SKILL.md Phase D 排在评测(Phase C4)
-    # 之后,标准跑法下训练 job 此时还在台账 active 里,会撞 register_all 的重复
-    # run_id 检查(F1 复核)。带前缀的 rid 在结构上不可能等于任何训练 rid
-    # (`"eval_" + x == x` 无解),历史台账里也确有 `eval_c2_q36_mtool` 这个
-    # 带前缀的 job name 先例(见 ops/gpu_jobs.py cmd_finish 的审计注释)。
+    # Pinning outputs to code (audit B6) is written into meta_dir/RUNMETA.json by
+    # register_all's first step -- it's the sole writer; this only passes through kind
+    # and the fields to merge into the record.
+    # rid uses the full sess (including the eval_ prefix); the prefix can't be dropped --
+    # dropping it would make it equal to the rid launch_probe.build() uses for the
+    # training job of the same cell (`{batch}_{model}_{cell}`), and the training job's
+    # deregistration (gpu_jobs finish) comes after eval (Phase C4) per SKILL.md Phase D,
+    # so under the standard workflow the training job is still active in the ledger at
+    # this point and would collide with register_all's duplicate run_id check (F1 review).
+    # A prefixed rid can never structurally equal any training rid (`"eval_" + x == x` has
+    # no solution), and the historical ledger does have a precedent for exactly this kind
+    # of prefixed job name, `eval_c2_q36_mtool` (see the audit comment in
+    # ops/gpu_jobs.py cmd_finish).
     rid = sess
     piece = {"host": host, "gpus": str(gpu), "session": sess, "log": str(log),
               "cmd": cmd, "launched_at": time.time(), "kind": f"eval_{stage}",
@@ -97,7 +110,7 @@ def launch_and_register(host, gpu, sess, cmd, log, meta_dir, stage, batch,
                                               "placement": placement or ""})
         print(receipt)
     except SystemExit as e:
-        print(f"WARN 登记失败({rid}): {e}")
+        print(f"WARN registration failed ({rid}): {e}")
     return True
 
 
@@ -105,35 +118,39 @@ def build(stage, batch, data_root, env, model, cell, extra=None):
     runs = WD / "pipeline/runs"
     data = WD / data_root / model
     if not data.is_dir():
-        sys.exit(f"数据目录不存在: {data}")
+        sys.exit(f"data dir does not exist: {data}")
 
     if stage == "tool":
         if cell not in TOOL_KEYS:
-            sys.exit(f"tool 档的 cell 只能是 {TOOL_KEYS},给了 {cell}")
+            sys.exit(f"a tool-profile cell can only be {TOOL_KEYS}, got {cell}")
         py, script, fixed, _ = cell_cmd_parts(cell)
         run = runs / f"{batch}_{model}_{cell}"
-        # 看 best/ 不看目录本身:RUNMETA 落盘会把空目录建出来,目录存在
-        # 早已不等于训练出过东西(审计复核)
+        # Check best/, not the directory itself: writing RUNMETA creates the directory as a
+        # side effect, so a directory existing no longer implies training actually produced
+        # anything (audit review)
         if not (run / "best").is_dir():
-            sys.exit(f"训练产物不存在: {run}/best")
+            sys.exit(f"training output does not exist: {run}/best")
         args = [py, script, "--env", env,
                 "--run", str(run), "--data", str(data)] + fixed
         meta_dir = run
     else:
         if cell not in CALL_KEYS:
-            sys.exit(f"call 档的 cell 只能是 {CALL_KEYS},给了 {cell}")
+            sys.exit(f"a call-profile cell can only be {CALL_KEYS}, got {cell}")
         py, script, fixed, dep = cell_cmd_parts(cell)
         head_run = runs / f"{batch}_{model}_{cell}"
         dep_run = runs / f"{batch}_{model}_{dep}"
-        # 依赖顺序硬检查:工具格没出报告就拒绝发射(SKILL.md Phase C4 铁律)
+        # Hard check on dependency order: refuse to launch if the tool cell hasn't produced
+        # its report yet (SKILL.md Phase C4 hard rule)
         rep = dep_run / "REPLAY_REPORT.json"
         if not rep.is_file():
-            sys.exit(f"依赖未就绪: {rep} 不存在——先把 {batch}_{model}_{dep} 评完")
+            sys.exit(f"dependency not ready: {rep} does not exist -- finish evaluating {batch}_{model}_{dep} first")
         if not (head_run / "best").is_dir():
-            sys.exit(f"训练产物不存在: {head_run}/best")
-        # 三个 call 脚本的参数形状各不相同,这是发射器自己的知识(脚本 argparse 定的)。
-        # 新加参数格必须在这里显式加一条:落进 else 会把头 run 传成 --cgen-run,
-        # 而 eval_causal_param.py 根本没有这个参数,argparse 当场拒(响,但错在发射器)。
+            sys.exit(f"training output does not exist: {head_run}/best")
+        # The three call scripts each take a different argument shape; this is the launcher's
+        # own knowledge (fixed by each script's argparse). Adding a new call cell must add an
+        # explicit line here: falling through to else would pass the head run as --cgen-run,
+        # but eval_causal_param.py has no such argument at all, so argparse rejects it
+        # immediately (loud, but the fault is the launcher's).
         if cell == "mext":
             args = [py, script, "--env", env, "--run", str(dep_run),
                     "--extractor", str(head_run), "--data", str(data)] + fixed
@@ -154,13 +171,13 @@ def build(stage, batch, data_root, env, model, cell, extra=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=["tool", "call"],
-                    help="tool=工具格(先跑) / call=参数格(吃工具格的触发点)")
-    ap.add_argument("--batch", required=True, help="run_id 前缀,如 c2")
-    ap.add_argument("--data-root", required=True, help="数据集版本目录")
+                    help="tool=tool cell (run first) / call=parameter cell (consumes the tool cell's threshold)")
+    ap.add_argument("--batch", required=True, help="run_id prefix, e.g. c2")
+    ap.add_argument("--data-root", required=True, help="dataset version dir")
     ap.add_argument("--env", required=True,
                     choices=["appworld", "alfworld", "bfcl", "tales"])
-    ap.add_argument("--placement", required=True, help="排卡表 json")
-    ap.add_argument("--dry-run", action="store_true", help="只打印不发射")
+    ap.add_argument("--placement", required=True, help="card-scheduling table json")
+    ap.add_argument("--dry-run", action="store_true", help="print only, do not launch")
     args = ap.parse_args()
 
     LOGD.mkdir(exist_ok=True)
@@ -175,7 +192,7 @@ def main():
     if args.dry_run:
         for host, gpu, sess, cmd, log, meta_dir in plan:
             print(f"[dry-run] {host} gpu{gpu} {sess}\n    {cmd}")
-        print(f"\n共 {len(plan)} 格(dry-run,未发射)")
+        print(f"\n{len(plan)} cells total (dry-run, not launched)")
         return
 
     for host, gpu, sess, cmd, log, meta_dir in plan:

@@ -1,12 +1,15 @@
-"""T5 消融输入模式:full / no-think / no-hist 的样本切割(单一事实源)。
+"""T5 ablation input modes: sample slicing for full / no-think / no-hist (single source of truth).
 
-- full     原样
-- no-think 切掉 [THINKING] 段(含标记);同事件样本合并为一条,w 归一为 1
-- no-hist  切掉 [HISTORY] 段(含标记),Task 行与 [THINKING] 段保留;其余字段不动
+- full     as is
+- no-think cuts the [THINKING] segment (including its marker); samples from the same event are
+           merged into one, w normalized to 1
+- no-hist  cuts the [HISTORY] segment (including its marker), keeps the Task line and the
+           [THINKING] segment; other fields untouched
 
-train_probe.py 与 eval_replay_mode.py 都 import 本模块,保证训练评测切法逐字一致。
+Both train_probe.py and eval_replay_mode.py import this module, to keep the training and eval
+slicing character for character identical.
 
-肉眼核对(验收件,打印同一事件三种模式各一条):
+Eyeball check (acceptance artifact, prints one entry per mode for the same event):
   python3 envs/bert/input_modes.py --data envs/bert_data/v3 --env bfcl --split test
 """
 
@@ -20,16 +23,16 @@ T_MARK = "\n[THINKING]\n"
 def cut(text, mode):
     ih = text.find(H_MARK)
     it = text.find(T_MARK, ih + 1)
-    assert ih >= 0 and it >= 0, "样本缺 [HISTORY]/[THINKING] 标记"
+    assert ih >= 0 and it >= 0, "sample is missing the [HISTORY]/[THINKING] marker"
     if mode == "no-think":
-        return text[:it]                    # Task + [HISTORY] 段
+        return text[:it]                    # Task + [HISTORY] segment
     if mode == "no-hist":
-        return text[:ih] + text[it:]        # Task 行 + [THINKING] 段
+        return text[:ih] + text[it:]        # Task line + [THINKING] segment
     return text
 
 
 def apply_mode(rows, mode):
-    """rows: 数据集 jsonl 行(dict)列表。返回新列表,不改原行。"""
+    """rows: a list of dataset jsonl rows (dicts). Returns a new list, does not modify the original rows."""
     if mode == "full":
         return rows
     if mode == "no-hist":
@@ -39,7 +42,7 @@ def apply_mode(rows, mode):
             r["text"] = cut(r["text"], mode)
             out.append(r)
         return out
-    if mode == "no-think":                  # 同事件文本全同,取首条,权重归一
+    if mode == "no-think":                  # Same text within an event; keep the first row, normalize the weight
         seen = {}
         for r in rows:
             if r["event"] in seen:
@@ -55,15 +58,16 @@ def apply_mode(rows, mode):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="envs/bert_data/v3")
-    # 这一处原本没有 choices(全流水线八个 --env 里唯一的静默口):
-    # 传错环境名不会被 argparse 拦,只会在 :62 拼出一条不存在的路径。
+    # This spot originally had no choices (the only silent gap among the pipeline's eight
+    # --env options): passing a wrong environment name isn't caught by argparse, it just
+    # builds a nonexistent path at :62.
     ap.add_argument("--env", default="bfcl",
                     choices=["tales", "appworld", "bfcl", "alfworld"])
     ap.add_argument("--split", default="test")
     args = ap.parse_args()
     rows = [json.loads(l)
             for l in open(f"{args.data}/{args.env}/{args.split}.jsonl")]
-    # 挑一个有历史、多边界的事件,三种模式对照才有信息量
+    # Pick an event with history and multiple boundaries, so comparing the three modes is informative
     pick = next(r for r in rows
                 if r["sent_idx"] == 1 and "(start)" not in
                 r["text"].split(T_MARK)[0])
@@ -71,7 +75,7 @@ def main():
         r = apply_mode([pick], mode)[0]
         print(f"\n{'='*70}\n[{mode}] event={r['event']} w={r['w']} "
               f"sent {r['sent_idx']+1}/{r['n_sents']}\n{'-'*70}\n{r['text']}")
-    # 自检:no-think 合并数 = 事件数;no-hist 行数不变
+    # Self-check: no-think's merged count = event count; no-hist's row count is unchanged
     ev = len({r["event"] for r in rows})
     assert len(apply_mode(rows, "no-think")) == ev
     assert len(apply_mode(rows, "no-hist")) == len(rows)
@@ -79,8 +83,8 @@ def main():
     assert all(T_MARK not in r["text"] for r in nt)
     nh = apply_mode(rows, "no-hist")
     assert all(H_MARK not in r["text"] and T_MARK in r["text"] for r in nh)
-    print(f"\n自检: {args.env}/{args.split} 事件 {ev} / 样本 {len(rows)};"
-          f" no-think 合并 {len(nt)} 条 ✓; no-hist 保行数且无 [HISTORY] ✓")
+    print(f"\nself-check: {args.env}/{args.split} events {ev} / samples {len(rows)};"
+          f" no-think merged {len(nt)} rows ✓; no-hist kept row count with no [HISTORY] ✓")
 
 
 if __name__ == "__main__":

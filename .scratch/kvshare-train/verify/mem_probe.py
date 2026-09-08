@@ -1,12 +1,16 @@
 #!/usr/bin/env python
-"""形态 A 反向传播要保存多少激活:CPU 上用 saved_tensors_hooks 逐个记下自动求导保存的张量(按存储去重),
-分成「L×L 类」(最后两维都等于序列长)和「其他类」,分别给出每层每 L² 的字节系数和每 token 的字节数,
-再外推到 8192 前缀 + 45 段目标(L≈9,100)和 L=10,000。
+"""How many activations form A's backward pass needs to save: on CPU, use
+saved_tensors_hooks to record every tensor autograd saves, one by one (deduplicated by
+storage). Split into "L×L class" (last two dims both equal the sequence length) and
+"other class", give the bytes-per-L² coefficient per layer and the bytes-per-token for
+each, then extrapolate to an 8192 prefix + 45 target segments (L≈9,100) and L=10,000.
 
-内核:MATH(= GPU 上退到 math 的情形)与 FLASH_ATTENTION(CPU 版 flash,不实体化 L×L×头数,充当 GPU 上
-mem-efficient 的替身来量「非注意力」那部分的激活)。精度:fp32 与 bf16 autocast(训练器的口径)。
+Kernels: MATH (= the case where GPU falls back to math) and FLASH_ATTENTION (CPU-side
+flash, does not materialize L×L×heads, stands in for GPU mem-efficient to measure the
+"non-attention" share of activations). Precision: fp32 and bf16 autocast (the trainer's
+convention).
 
-用法:cprobe-env/bin/python mem_probe.py --L 1024 2048 --out mem_probe.json
+Usage: cprobe-env/bin/python mem_probe.py --L 1024 2048 --out mem_probe.json
 """
 import argparse
 import json
@@ -25,7 +29,7 @@ VOCAB = 151936
 
 
 def synth_packed(L, n_seg=8, seg_len=20, seed=0):
-    """随机 token 的打包序列:前缀 P = L - n_seg*seg_len,段的 p 均匀散在前缀里。"""
+    """Packed sequence of random tokens: prefix P = L - n_seg*seg_len, the segments' p values spread evenly across the prefix."""
     g = torch.Generator().manual_seed(seed)
     P = L - n_seg * seg_len
     full = torch.randint(100, 150000, (P,), generator=g).tolist()
@@ -58,7 +62,9 @@ def measure(model, pk, dev, backend, bf16, run_backward=False):
     other = [(k, v) for k, v in saved.items() if (k, v) not in lxl]
     lxl_storage = sum(k[1] for k, _ in lxl)
     other_storage = sum(k[1] for k, _ in other)
-    # 反向不必跑:保存张量的钩子在前向里就已经调完;CPU 上 bf16 反向 GEMM 是单线程慢路径,一跑就是十几分钟
+    # no need to run the backward pass: the tensor-saving hooks already fire during the
+    # forward pass; on CPU, bf16 backward GEMM is a single-threaded slow path that takes
+    # ten-plus minutes per run
     t_bwd = 0.0
     if run_backward:
         t0 = time.time()
@@ -78,7 +84,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--L", type=int, nargs="+", default=[1024, 2048])
     ap.add_argument("--threads", type=int, default=32)
-    ap.add_argument("--backward", action="store_true", help="也跑反向(CPU bf16 反向很慢,默认不跑)")
+    ap.add_argument("--backward", action="store_true", help="also run backward (CPU bf16 backward is very slow, off by default)")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     torch.set_num_threads(args.threads)
@@ -94,7 +100,8 @@ def main():
                 r = measure(model, pk, dev, backend, bf16, args.backward)
                 print(json.dumps(r), flush=True)
                 res.append(r)
-    # 外推:L×L 类 = 系数 × 28 × L²;其他类 = 每 token 字节 × L(取最大 L 的实测系数)
+    # extrapolation: L×L class = coefficient × 28 × L²; other class = bytes per token × L
+    # (using the coefficient measured at the largest L)
     ext = {}
     for bf16 in (True, False):
         for backend in ("FLASH_ATTENTION", "MATH"):

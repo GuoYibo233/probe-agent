@@ -3,17 +3,19 @@
 Original (30 L72): simulate the issue write succeeding and the handoff write failing;
 `rl doctor` reports the corresponding item and gives the `issue link` fix.
 
-Changed by 05-rl-cli.md doctor table (30 L74, 2026-08-17 裁): the item is now numbered
-(item 3, "`stuck` 单子没有 issue"), the fix command is `rl issue link ID --handoff ID`, and
-"who it gets pushed to" is the role that set the order to `stuck`.
+Changed by 05-rl-cli.md doctor table (30 L74, 2026-08-17 ruled): the item is now numbered
+(item 3, "a `stuck` order with no issue"), the fix command is `rl issue link ID --handoff
+ID`, and "who it gets pushed to" is the role that set the order to `stuck`.
 
-03 L23: "跨两本账的写入定死写序：先写 issue 拿到编号，再写单子那一行引它。中间崩了顶多多一条
-没人引的 issue，`rl doctor` 扫得出来。" The two ledger writes for marking something stuck are
-(1) the issue and (2) the handoff's `stuck` transition, which cites the issue by id and is
-itself gated by the precondition that the issue points back (04-handoffs-and-sessions.md
-L89, `stuck.issue_links_back`). Simulating write (2) failing/never happening, without
-`--force`, is exactly this test's setup: an issue exists, but the order it was meant for
-never actually became `stuck` because the issue does not (yet) point back at it.
+03 L23: "The write order across the two ledgers is fixed: write the issue first to get
+its number, then write the order's row citing it. If it crashes in between, at worst
+there is one extra issue nobody cites, which `rl doctor` can scan out." The two ledger
+writes for marking something stuck are (1) the issue and (2) the handoff's `stuck`
+transition, which cites the issue by id and is itself gated by the precondition that the
+issue points back (04-handoffs-and-sessions.md L89, `stuck.issue_links_back`). Simulating
+write (2) failing/never happening, without `--force`, is exactly this test's setup: an
+issue exists, but the order it was meant for never actually became `stuck` because the
+issue does not (yet) point back at it.
 """
 
 import json
@@ -43,8 +45,9 @@ class CrossLedgerOrder(unittest.TestCase):
         return sid, ho, r_issue.json["id"]
 
     def test_stuck_with_an_issue_that_does_not_point_back_is_exit_2(self):
-        # 04-handoffs-and-sessions.md L89: "issue_id 点指向一个存在的 issue，且这个 issue 的
-        # handoff_id 指回这张单"; the freshly-opened issue here has no handoff_id at all.
+        # 04-handoffs-and-sessions.md L89: "issue_id points to an issue that exists, and that
+        # issue's handoff_id points back to this order"; the freshly-opened issue here has no
+        # handoff_id at all.
         sid, ho, iss = self._open_order_and_orphan_issue()
         r = self.sb.rl("handoff", "stuck", ho, "--issue", iss, session=sid)
         self.assertEqual(r.rc, 2, str(r))
@@ -88,9 +91,9 @@ class CrossLedgerOrder(unittest.TestCase):
 
 
 class Step4Commands(unittest.TestCase):
-    """`rl doctor` is a step-4 deliverable (30 L197 step table, row '4 交流机制'); step 3
-    has no scripts/rl_cmds handler for it, so this stays red - by design - until step 4
-    lands."""
+    """`rl doctor` is a step-4 deliverable (30 L197 step table, row '4 communication
+    mechanism'); step 3 has no scripts/rl_cmds handler for it, so this stays red - by
+    design - until step 4 lands."""
 
     def setUp(self):
         self.sb = Sandbox.create()
@@ -99,8 +102,9 @@ class Step4Commands(unittest.TestCase):
         self.sb.destroy()
 
     def test_doctor_reports_stuck_order_without_issue_pushed_to_the_role_that_set_stuck(self):
-        # 05-rl-cli.md L197, doctor item 3: scan "`stuck` 单子没有 issue"; fix
-        # `rl issue link ID --handoff ID`; pushed to "把单子转成 stuck 的角色".
+        # 05-rl-cli.md L197, doctor item 3: scan "a `stuck` order with no issue"; fix
+        # `rl issue link ID --handoff ID`; pushed to "the role that turned the order into
+        # stuck".
         #
         # Reaching a `stuck` order whose issue does not point back requires bypassing the
         # stuck.issue_links_back precondition; 03-ledgers.md L27 and

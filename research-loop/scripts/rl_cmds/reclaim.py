@@ -140,7 +140,8 @@ def _action_for(order: dict, kill: bool) -> str:
 
 def _last_status_change_ts(versions: list) -> str | None:
     """The ts of the first version in the latest run of equal statuses: the moment the
-    order last changed status (04 L173 "没转移" counts transfers, and an amend is not one)."""
+    order last changed status (04 L173 "not transferred" counts transfers, and an amend
+    is not one)."""
     if not versions:
         return None
     current = versions[-1].get("status")

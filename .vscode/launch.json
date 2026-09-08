@@ -1,9 +1,9 @@
 {
-  // 训练器的 debugger 演示,说明在 demo/README.md。
-  // 三个配置都不碰显卡:CUDA_VISIBLE_DEVICES 置空、--device cpu,
-  // 模型与数据是 demo/prepare.py 造的假件(先跑一次第三个配置,或者
-  // `python3 run.py demo-prep`)。被调试的是真训练器
-  // pipeline/train/train_causal_share.py,没有改过一个字。
+  // CPU debugger demo for the trainer; see demo/README.md.
+  // None of the three configs touch the GPU: CUDA_VISIBLE_DEVICES is empty, --device cpu,
+  // the model and data are fixtures built by demo/prepare.py (run the third config once first, or
+  // `python3 run.py demo-prep`). The trainer being debugged is the real one,
+  // pipeline/train/train_causal_share.py, not changed by a single character.
   "version": "0.2.0",
   "configurations": [
     {
@@ -14,7 +14,7 @@
       "python": "${workspaceFolder}/cprobe-env/bin/python",
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
-      // false = F11 可以一路踩进 transformers 的 Qwen3 前向;只想看工程代码就改成 true
+      // false = F11 can step all the way into transformers' Qwen3 forward pass; set to true if you only want to see the engineering code
       "justMyCode": false,
       "env": { "CUDA_VISIBLE_DEVICES": "" },
       "args": [
@@ -30,7 +30,7 @@
         "--gen-eval", "4",
         "--gen-bs", "2",
         "--align-events", "3",
-        // 训练器拒绝在已有 train_log.jsonl 的 --out 里再训;演示要反复跑,所以放行
+        // The trainer refuses to train again into an --out that already has train_log.jsonl; the demo needs to run repeatedly, so this allows it
         "--force"
       ]
     },

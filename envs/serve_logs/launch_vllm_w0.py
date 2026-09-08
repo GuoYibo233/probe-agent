@@ -1,14 +1,16 @@
-"""w0_aw_official 采集批次的服务发射器:三模型各双副本,tokyo108 六卡拉满。
+"""Service launcher for the w0_aw_official collection batch: two replicas each for three
+models, all six cards on tokyo108 in use.
 
-  qwen3.5-27b   -> H200 GPU 3, port 8101   (副本 A)
-  qwen3.5-27b   -> H100 GPU 2, port 8102   (副本 B, --max-num-seqs 512)
-  qwen3.6-27b   -> H100 GPU 0, port 8104   (副本 A, --max-num-seqs 512)
-  qwen3.6-27b   -> H100 GPU 1, port 8105   (副本 B, --max-num-seqs 512)
-  gpt-oss-120b  -> H200 GPU 4, port 8103   (副本 A)
-  gpt-oss-120b  -> H200 GPU 5, port 8106   (副本 B)
+  qwen3.5-27b   -> H200 GPU 3, port 8101   (replica A)
+  qwen3.5-27b   -> H100 GPU 2, port 8102   (replica B, --max-num-seqs 512)
+  qwen3.6-27b   -> H100 GPU 0, port 8104   (replica A, --max-num-seqs 512)
+  qwen3.6-27b   -> H100 GPU 1, port 8105   (replica B, --max-num-seqs 512)
+  gpt-oss-120b  -> H200 GPU 4, port 8103   (replica A)
+  gpt-oss-120b  -> H200 GPU 5, port 8106   (replica B)
 
-坑:H100(95G)上跑 Qwen 必须 --max-num-seqs 512(Mamba cache 只够 612 块,默认 1024 会崩)。
-用法: python3 launch_vllm_w0.py
+Pitfall: running Qwen on an H100 (95G) requires --max-num-seqs 512 (Mamba cache is only
+enough for 612 blocks; the default 1024 crashes).
+Usage: python3 launch_vllm_w0.py
 """
 import shlex
 import subprocess

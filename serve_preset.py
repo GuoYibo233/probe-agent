@@ -1,14 +1,18 @@
-"""通用 vLLM 发射器:读 configs/presets/<名>.json 的 server 节起一个服务。
+"""General-purpose vLLM launcher: reads the server section of configs/presets/<name>.json and
+starts one service.
 
-与手写的 envs/serve_logs/launch_vllm_*.py 同构(ssh + tmux + tee 日志),
-区别是模型路径经 model_registry.resolve() 解析、启动参数和环境变量全部
-来自预设文件,发射时把预设全文抄一份到日志目录(<session>.preset.json),
-回头查"这台服务当时是什么设置"不用翻 shell 历史。
+Structurally the same as the handwritten envs/serve_logs/launch_vllm_*.py (ssh + tmux + tee
+logging); the difference is the model path is resolved via model_registry.resolve(), and the
+startup args and environment variables all come from the preset file. At launch time the full
+preset is copied into the log directory (<session>.preset.json), so checking "what were this
+service's settings at the time" later does not require digging through shell history.
 
-用法(发射本身走 gpu-run skill,这里只拼命令和起 tmux):
+Usage (the launch itself goes through the gpu-run skill; this only assembles the command and
+starts tmux):
   python3 serve_preset.py --preset default --gpu 5
   python3 serve_preset.py --preset default --gpu 5 --dry-run
-GPU 卡号故意不进预设:挑卡是发射时按实探空卡定的,跟着 gpu-run 走。
+The GPU card number is deliberately kept out of the preset: picking a card is decided at launch
+time by a live check of free cards, following gpu-run.
 """
 
 import argparse
@@ -26,11 +30,11 @@ VLLM = "/home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm"
 
 
 def build(preset, gpu, host=None, port=None, session=None):
-    """预设 + 覆盖项 -> (host, session, ssh 整条命令, 服务命令串)。"""
+    """preset + overrides -> (host, session, the full ssh command, the service command string)."""
     srv = preset.get("server")
     if not srv:
-        raise SystemExit(f"预设 {preset['_name']} 没有 server 节,发射不了;"
-                         "带 server 节的预设才能起服务")
+        raise SystemExit(f"preset {preset['_name']} has no server section, cannot launch; "
+                         "only a preset with a server section can start a service")
     host = host or srv["host"]
     port = port or srv["port"]
     session = session or f"new1_vllm_{host}_{preset['_name']}"
@@ -55,14 +59,14 @@ def build(preset, gpu, host=None, port=None, session=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--preset", required=True,
-                    help="configs/presets/ 下的文件名(不带 .json)")
-    ap.add_argument("--gpu", required=True, help="CUDA_VISIBLE_DEVICES 的值")
-    ap.add_argument("--host", default=None, help="覆盖预设 server.host")
-    ap.add_argument("--port", type=int, default=None, help="覆盖预设 server.port")
+                    help="file name under configs/presets/ (without .json)")
+    ap.add_argument("--gpu", required=True, help="value of CUDA_VISIBLE_DEVICES")
+    ap.add_argument("--host", default=None, help="override the preset's server.host")
+    ap.add_argument("--port", type=int, default=None, help="override the preset's server.port")
     ap.add_argument("--session", default=None,
-                    help="tmux 会话名,缺省 new1_vllm_<host>_<预设名>")
+                    help="tmux session name, default new1_vllm_<host>_<preset name>")
     ap.add_argument("--dry-run", action="store_true",
-                    help="只打印 ssh+tmux 命令,不执行、不抄预设")
+                    help="print the ssh+tmux command only, do not execute or copy the preset")
     a = ap.parse_args()
 
     preset = load_preset(a.preset)

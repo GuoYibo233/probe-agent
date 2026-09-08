@@ -1,16 +1,20 @@
-"""annotate 段验收:新代码的事件抽取+造样本与 v3 旧数据逐字节对比。
+"""annotate-stage acceptance check: compares the new code's event extraction +
+sample construction against the old v3 data byte for byte.
 
-做什么:用 build.py 的抽取函数(jsonl_events/bfcl_events)与造样本函数
-(make_samples)跑 v3 当年的输入(full_v1 + full_v2_topup,**不过滤模型**、
-不用官方题单切分),与 envs/bert_data/v3/<env>/{train,calA,calB,test}.jsonl
-四堆合并后按主键 (event, sent_idx) 对比。切分法不同,所以不比堆归属;
-新字段 label_call/args_named 不比。
+What it does: runs build.py's extraction functions (jsonl_events/bfcl_events) and
+the sample-construction function (make_samples) on the same inputs v3 used at the
+time (full_v1 + full_v2_topup, **without filtering by model**, without the
+official task-list split), and compares against the four piles
+envs/bert_data/v3/<env>/{train,calA,calB,test}.jsonl merged together, keyed on
+(event, sent_idx). The split method differs, so pile membership is not compared;
+the new fields label_call/args_named are not compared either.
 
-输入(只读): envs/runs/full_v1、envs/runs/full_v2_topup、envs/bert_data/v3
-输出: pipeline/annotate/ACCEPT_V3DIFF.md(两边条数 + 逐字段不一致计数,须全 0)
-退出码: 全 0 -> 0;有任何不一致 -> 1
+Input (read-only): envs/runs/full_v1, envs/runs/full_v2_topup, envs/bert_data/v3
+Output: pipeline/annotate/ACCEPT_V3DIFF.md (counts on both sides + per-field
+mismatch counts, must all be 0)
+Exit code: all 0 -> 0; any mismatch -> 1
 
-用法: python3 accept_v3diff.py
+Usage: python3 accept_v3diff.py
 """
 
 import json
@@ -39,7 +43,7 @@ def new_samples(env):
         elif env == "bfcl":
             events.extend(bfcl_events(runs))
         else:
-            raise SystemExit(f"未知环境: {env}")
+            raise SystemExit(f"unknown environment: {env}")
     return events, make_samples(events)
 
 
@@ -63,9 +67,11 @@ def compare(env):
     events, new = new_samples(env)
     old = old_samples(env)
 
-    # 输入漂移:v3 建库之后才落地的采集目录(实测 bfcl_gptoss 是 v3 建完
-    # 3 小时后才采完的),旧数据里根本没有,不该算成抄写走样。
-    # 判据不写死目录名:旧数据里没出现过的采集目录整批剔除,并在报告里点名。
+    # Input drift: collection dirs that landed only after v3's database was built
+    # (measured: bfcl_gptoss finished collecting 3 hours after v3 was built), simply
+    # don't exist in the old data, and should not count as a copy going wrong.
+    # The criterion doesn't hardcode dir names: collection dirs that never appeared in
+    # the old data are excluded as a whole batch, and named in the report.
     old_batches = {r["traj"].split("/")[0] for r in old}
     drift = defaultdict(int)
     kept = []
@@ -106,15 +112,15 @@ def compare(env):
 
 def main():
     results = [compare(env) for env in ("bfcl", "appworld")]
-    md = ["# ACCEPT_V3DIFF — annotate 段与 v3 旧数据一致性验收\n",
-          "口径:新代码(rules.py + build.py 的 jsonl_events/bfcl_events/"
-          "make_samples)跑 v3 当年输入(full_v1 + full_v2_topup,不过滤模型、"
-          "不切分),与 envs/bert_data/v3/<env> 四堆合并按 (event, sent_idx) "
-          "对比;比 " + "/".join(FIELDS) + " 九字段,新字段不比。\n",
-          "一处口径补丁:v3 建库(2026-07-30 00:38)之后才采完的采集目录"
-          "(bfcl_gptoss,03:48 落地)旧数据里根本没有,整批剔除后再比,"
-          "剔除清单逐环境列在下表。判据不写死目录名,取自旧数据自己的"
-          "采集目录集合。\n"]
+    md = ["# ACCEPT_V3DIFF -- annotate segment vs v3 old-data consistency acceptance check\n",
+          "settings: the new code (rules.py + build.py's jsonl_events/bfcl_events/"
+          "make_samples) run on v3's original-year input (full_v1 + full_v2_topup, no model filtering, "
+          "no splitting), merged with the four piles from envs/bert_data/v3/<env>, matched by (event, sent_idx) "
+          "for comparison; compare " + "/".join(FIELDS) + " nine fields; new fields aren't compared.\n",
+          "one settings patch: collection directories that only finished collecting after v3's database build (2026-07-30 00:38) "
+          "(bfcl_gptoss, landed 03:48) don't exist in the old data at all; exclude the whole batch before comparing, "
+          "the exclusion list is listed per environment in the table below. The criterion doesn't hardcode directory names; it's taken from the old data's own "
+          "set of collection directories.\n"]
     ok = True
     for r in results:
         n_bad = sum(r["bad"].values())
@@ -125,39 +131,39 @@ def main():
         md += [
             f"\n## {r['env']} — {'PASS' if passed else 'FAIL'}",
             "",
-            "| 项 | 值 |",
+            "| item | value |",
             "|---|---|",
-            f"| 新代码事件数(含漂移目录) | {r['n_events']} |",
-            f"| 新代码样本数(剔除漂移目录后) | {r['n_new']} |",
-            f"| 剔除的漂移采集目录 | {r['drift'] or '无'} |",
-            f"| v3 旧样本数(四堆合并) | {r['n_old']} |",
-            f"| 逐条比对数 | {r['n_cmp']} |",
-            f"| 主键只在新侧 | {r['only_new']} |",
-            f"| 主键只在旧侧 | {r['only_old']} |",
-            f"| 新侧重复主键(超出首条) | {r['dup_new']} |",
-            f"| 旧侧重复主键(超出首条) | {r['dup_old']} |",
-            f"| 同主键条数不等 | {r['mult_mismatch']} |",
+            f"| new-code event count (including drift dirs) | {r['n_events']} |",
+            f"| new-code sample count (after excluding drift dirs) | {r['n_new']} |",
+            f"| excluded drift collection dirs | {r['drift'] or 'none'} |",
+            f"| v3 old sample count (four piles merged) | {r['n_old']} |",
+            f"| row-by-row comparisons | {r['n_cmp']} |",
+            f"| primary key only on the new side | {r['only_new']} |",
+            f"| primary key only on the old side | {r['only_old']} |",
+            f"| duplicate primary keys on the new side (beyond the first) | {r['dup_new']} |",
+            f"| duplicate primary keys on the old side (beyond the first) | {r['dup_old']} |",
+            f"| same primary key, mismatched row counts | {r['mult_mismatch']} |",
             "",
-            "逐字段不一致计数:",
+            "per-field mismatch counts:",
             "",
-            "| 字段 | " + " | ".join(FIELDS) + " |",
+            "| field | " + " | ".join(FIELDS) + " |",
             "|---|" + "---|" * len(FIELDS),
-            "| 不一致 | " + " | ".join(str(r["bad"][f]) for f in FIELDS)
+            "| mismatched | " + " | ".join(str(r["bad"][f]) for f in FIELDS)
             + " |",
         ]
         if r["examples"]:
-            md += ["", "首个不一致样例:"]
+            md += ["", "first mismatch example:"]
             for f, (k, a, b) in sorted(r["examples"].items()):
-                md += [f"- `{f}` @ {k}: 新={a} 旧={b}"]
+                md += [f"- `{f}` @ {k}: new={a} old={b}"]
         if r["only_new_ex"] or r["only_old_ex"]:
-            md += ["", f"- 只在新侧样例: {r['only_new_ex']}",
-                   f"- 只在旧侧样例: {r['only_old_ex']}"]
+            md += ["", f"- example present only on the new side: {r['only_new_ex']}",
+                   f"- example present only on the old side: {r['only_old_ex']}"]
         print(f"{r['env']}: new={r['n_new']} old={r['n_old']} "
               f"cmp={r['n_cmp']} field_mismatch={n_bad} "
               f"only_new={r['only_new']} only_old={r['only_old']} "
               f"-> {'PASS' if passed else 'FAIL'}", flush=True)
 
-    md += ["", f"\n## 总判定: {'PASS(全 0)' if ok else 'FAIL'}"]
+    md += ["", f"\n## overall verdict: {'PASS (all zero)' if ok else 'FAIL'}"]
     OUT.write_text("\n".join(md) + "\n")
     print("done ->", OUT)
     return 0 if ok else 1

@@ -1,5 +1,13 @@
 # new1 工程规则
 
+## 代码里一律写英语（2026-09-08 用户明令）
+
+代码文件（.py / .sh / .js / .css / .gitignore / 配置里的注释）里的注释、docstring、
+运行时字符串（报错、exit 消息、argparse help、日志行、报告标题）一律用英语写；
+新写的代码同样照办，中文只允许出现在计划文档里。2026-09-08 已把全仓代码文件
+的中文整体翻成英语，术语对照以 `CONTEXT.md` 词汇表里括号内的英文为准
+（probe / cut / fire / inject / launch / heartbeat / sampler / verdict / piece / refire）。
+
 ## GPU 任务：唯一入口是 gpu-run skill
 
 任何要用显卡跑的程序（训练/推理/探针/vLLM，不分大小）一律走

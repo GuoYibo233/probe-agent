@@ -1,22 +1,22 @@
 export const meta = {
   name: 'ticket-wave',
-  description: '一波无相互依赖的工单并行执行：每张在自己的 git 工作树分支上走实现-评审-修复循环（上限5轮），返回逐工单分支与结果，分支合并由主会话收账时做',
+  description: 'Parallel execution of a wave of tickets with no mutual dependencies: each ticket runs an implement-review-fix loop (capped at 5 rounds) on its own git worktree branch, returns per-ticket branches and results; branch merging happens when the main session does settlement',
 }
 
-// args 契约（全部必填）：
-//   repo: 仓库根绝对路径
-//   feature: 功能名（.scratch/<feature>/）
-//   wave: 波名（如 20260808-wave1），用于分支名与工作树目录名
-//   promptDir: 角色规程目录绝对路径
-//   reportDir: 本波报告目录绝对路径（主会话已建好）
+// args contract (all required):
+//   repo: absolute path to the repo root
+//   feature: feature name (.scratch/<feature>/)
+//   wave: wave name (e.g. 20260808-wave1), used in the branch name and worktree directory name
+//   promptDir: absolute path to the role-protocol directory
+//   reportDir: absolute path to this wave's report directory (already created by the main session)
 //   tickets: [{ id: '01', path: '.scratch/<feature>/issues/01-xxx.md' }, ...]
 //
-// 并行设计：工单之间并行（parallel），一张工单内部严格串行
-// （实现 → 评审 → 修复轮），改动全部落在 ticket/<wave>/T<id> 分支上，
-// 工作树建在仓库旁边的 <repo>-wt/ 下，agent 用完即删。主仓工作树谁都不碰。
+// Parallel design: tickets run in parallel (parallel); within one ticket everything is strictly serial
+// (implement -> review -> fix rounds); all changes land on the ticket/<wave>/T<id> branch,
+// the worktree is built under <repo>-wt/ next to the repo, and the agent deletes it when done. Nobody touches the main repo's worktree.
 //
-// 模型写死：实现/评审/修复1-3轮 sonnet，修复4-5轮 opus。
-// 不许省略 model —— 省略会继承主会话的 Fable，撞 subagent 禁 Fable 硬规则。
+// Model is hardcoded: sonnet for implement/review/fix rounds 1-3, opus for fix rounds 4-5.
+// Never omit model -- omitting it inherits the main session's Fable, which hits the subagent-no-Fable hard rule.
 const M = { impl: 'sonnet', review: 'sonnet', escalate: 'opus' }
 const MAX_ROUNDS = 5
 
@@ -37,11 +37,11 @@ const IMPL_SCHEMA = {
   required: ['status'],
   properties: {
     status: { enum: ['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED'] },
-    base: { type: 'string', description: '分支起点 sha（建工作树前的主仓 HEAD）' },
-    head: { type: 'string', description: '分支最后一个 commit 的 sha；没 commit 就等于 base' },
-    testSummary: { type: 'string', description: '跑了什么测试命令、结果一行' },
+    base: { type: 'string', description: 'branch start sha (the main repo HEAD before creating the worktree)' },
+    head: { type: 'string', description: 'sha of the branch\'s last commit; equals base if there is no commit' },
+    testSummary: { type: 'string', description: 'what test command ran, one line of results' },
     concerns: { type: 'array', items: { type: 'string' } },
-    reason: { type: 'string', description: 'NEEDS_CONTEXT/BLOCKED 时：缺什么、卡在哪' },
+    reason: { type: 'string', description: 'for NEEDS_CONTEXT/BLOCKED: what is missing, where it is stuck' },
   },
 }
 
@@ -59,7 +59,7 @@ const FIX_SCHEMA = {
   required: ['head', 'testEvidence'],
   properties: {
     head: { type: 'string' },
-    testEvidence: { type: 'string', description: '覆盖被改代码的测试：命令 + 结果' },
+    testEvidence: { type: 'string', description: 'tests covering the changed code: command + result' },
     notes: { type: 'string' },
   },
 }
@@ -84,7 +84,7 @@ const REREVIEW_SCHEMA = {
   },
 }
 
-// 有的运行时把 args 以 JSON 字符串送达（对象属性静默变 undefined），这里先归一化
+// Some runtimes deliver args as a JSON string (object properties silently become undefined); normalize it here first
 const A = typeof args === 'string' ? JSON.parse(args) : args
 
 const P = A.promptDir
@@ -92,54 +92,54 @@ const branchOf = t => `ticket/${A.wave}/T${t.id}`
 const wtPath = (t, suffix) => `${A.repo}-wt/${A.wave}-T${t.id}${suffix}`
 
 const implPrompt = (t, report) =>
-  `先读实现者规程 ${P}/implementer.md 并严格照做。\n` +
-  `本单任务：工单文件 ${A.repo}/${t.path}，它是唯一需求源，先读它；` +
-  `它引用 spec 的段落再去读 .scratch/${A.feature}/spec.md 对应节。\n` +
-  `工作树协议（并行执行，必须照办）：在 ${A.repo} 里先 git rev-parse HEAD 记为 base，` +
-  `然后 git worktree add ${wtPath(t, '')} -b ${branchOf(t)} 建出你自己的工作树和分支，` +
-  `所有改动、测试、commit 只发生在这个工作树里；主仓工作树一个文件都不许动。` +
-  `工作树只用 Bash 里的 git 命令建和进（后续命令带工作树绝对路径或 git -C），` +
-  `禁止调用 EnterWorktree 工具——从 subagent 调它会吊死不返回（wave3、wave9 各挂过一次）。` +
-  `收尾把工作树里的东西 commit 干净后 git worktree remove ${wtPath(t, '')}，分支留着。\n` +
-  `完整报告写到 ${report}（主仓里的绝对路径，直接写）。commit 消息前缀 T${t.id}:。\n` +
-  `返回结构化字段（status/base/head/testSummary/concerns/reason）。`
+  `Read the implementer protocol at ${P}/implementer.md first and follow it strictly.\n` +
+  `This ticket's task: the ticket file is ${A.repo}/${t.path}, the sole source of requirements -- read it first; ` +
+  `for any spec section it references, read the matching section of .scratch/${A.feature}/spec.md.\n` +
+  `Worktree protocol (parallel execution, mandatory): in ${A.repo}, first run git rev-parse HEAD and record it as base, ` +
+  `then run git worktree add ${wtPath(t, '')} -b ${branchOf(t)} to create your own worktree and branch, ` +
+  `all changes, tests, and commits happen only in this worktree; do not touch a single file in the main repo's worktree. ` +
+  `Create and enter the worktree only with git commands in Bash (later commands carry the worktree's absolute path or use git -C); ` +
+  `calling the EnterWorktree tool is forbidden -- calling it from a subagent hangs and never returns (it happened once each in wave3 and wave9). ` +
+  `At the end, commit everything in the worktree cleanly, then run git worktree remove ${wtPath(t, '')}; keep the branch.\n` +
+  `Write the full report to ${report} (an absolute path in the main repo; write it there directly). Prefix commit messages with T${t.id}:.\n` +
+  `Return the structured fields (status/base/head/testSummary/concerns/reason).`
 
 const reviewPrompt = (t, report, base, head) =>
-  `先读评审规程 ${P}/reviewer.md 并严格照做。\n` +
-  `仓库根：${A.repo}。被审工单：${A.repo}/${t.path}；实现者报告：${report}。\n` +
-  `diff 在分支 ${branchOf(t)} 上，范围 ${base}..${head}——工作树共享对象库，` +
-  `直接在主仓用 git log --oneline / git diff --stat / git diff -U10 取，不要建工作树，只读不改。\n` +
-  `双裁决：spec 合规逐条对照工单要求，缺口记 critical finding；代码质量另查。\n` +
-  `finding 的 id 用 F1、F2 顺序编号。返回 findings 与 cannotVerify 两个清单。`
+  `Read the review protocol at ${P}/reviewer.md first and follow it strictly.\n` +
+  `Repo root: ${A.repo}. Ticket under review: ${A.repo}/${t.path}; implementer's report: ${report}.\n` +
+  `The diff is on branch ${branchOf(t)}, range ${base}..${head} -- worktrees share the object store, ` +
+  `so get it directly in the main repo with git log --oneline / git diff --stat / git diff -U10; do not create a worktree, read only, make no changes.\n` +
+  `Two-part ruling: check spec compliance item by item against the ticket's requirements and record any gap as a critical finding; check code quality separately.\n` +
+  `Number finding ids sequentially as F1, F2, .... Return two lists: findings and cannotVerify.`
 
 const fixPrompt = (t, report, open, round) =>
-  `先读实现者规程 ${P}/implementer.md。这是工单 T${t.id} 的修复第 ${round} 轮：` +
-  `此前的实现者已做过这张工单，你现在接手。\n` +
-  `工单：${A.repo}/${t.path}。先读 ${report} 了解已经做了什么、试过什么。\n` +
-  `工作树协议：在 ${A.repo} 里 git worktree add ${wtPath(t, `-fix${round}`)} ${branchOf(t)} ` +
-  `把已有分支检出到你自己的工作树；如果报 already checked out，说明上一轮的工作树没删干净，` +
-  `先 git worktree prune，还不行就对那个残留路径 git worktree remove --force 再重试。` +
-  `所有改动只发生在这个工作树里，修完 commit 到分支（前缀 T${t.id}:），` +
-  `然后 git worktree remove ${wtPath(t, `-fix${round}`)}。` +
-  `工作树只用 Bash 里的 git 命令操作，禁止调用 EnterWorktree 工具（会吊死不返回）。\n` +
-  `未决 findings（逐条修掉，不许扩大范围重构）：\n${JSON.stringify(open, null, 2)}\n` +
-  `修完重跑覆盖被改代码的测试，把修复报告（含每条 finding 怎么修的、测试命令与输出）` +
-  `追加到 ${report}。返回 head 与 testEvidence。`
+  `Read the implementer protocol at ${P}/implementer.md first. This is fix round ${round} for ticket T${t.id}: ` +
+  `an earlier implementer already worked this ticket, and you are taking over now.\n` +
+  `Ticket: ${A.repo}/${t.path}. Read ${report} first to see what has already been done and tried.\n` +
+  `Worktree protocol: in ${A.repo} run git worktree add ${wtPath(t, `-fix${round}`)} ${branchOf(t)} ` +
+  `to check the existing branch out into your own worktree; if it reports already checked out, the previous round's worktree was not cleaned up, ` +
+  `so run git worktree prune first, and if that does not fix it, run git worktree remove --force on that leftover path and retry. ` +
+  `All changes happen only in this worktree; once the fix is done, commit it to the branch (prefix T${t.id}:), ` +
+  `then run git worktree remove ${wtPath(t, `-fix${round}`)}. ` +
+  `Operate the worktree only with git commands in Bash; calling the EnterWorktree tool is forbidden (it hangs and never returns).\n` +
+  `Open findings (fix each one; do not refactor beyond scope):\n${JSON.stringify(open, null, 2)}\n` +
+  `Once the fix is done, rerun the tests covering the changed code, and append the fix report (how each finding was fixed, test commands and output) ` +
+  `to ${report}. Return head and testEvidence.`
 
 const reReviewPrompt = (t, report, open, fixBase, head) =>
-  `先读复审规程 ${P}/re-reviewer.md 并严格照做。\n` +
-  `仓库根：${A.repo}。工单：${A.repo}/${t.path}；报告（含修复记录）：${report}。\n` +
-  `修复 diff 在分支 ${branchOf(t)} 上，范围 ${fixBase}..${head}，在主仓直接取，只读不改。只做两件事：` +
-  `对下列 findings 逐条判 ADDRESSED/NOT_ADDRESSED，另把修复 diff 本身引入的新问题记 newFindings。\n` +
-  `待判 findings：\n${JSON.stringify(open, null, 2)}\n` +
-  `newFindings 的 id 自取，保证不与待判清单里的 id 重复即可。`
+  `Read the re-review protocol at ${P}/re-reviewer.md first and follow it strictly.\n` +
+  `Repo root: ${A.repo}. Ticket: ${A.repo}/${t.path}; report (with the fix record): ${report}.\n` +
+  `The fix diff is on branch ${branchOf(t)}, range ${fixBase}..${head}; get it directly in the main repo, read only, make no changes. Do exactly two things: ` +
+  `judge each of the following findings ADDRESSED or NOT_ADDRESSED, and record any new problem introduced by the fix diff itself as newFindings.\n` +
+  `Findings awaiting judgment:\n${JSON.stringify(open, null, 2)}\n` +
+  `Pick ids for newFindings yourself, just make sure they do not repeat ids already in the pending list.`
 
 async function runTicket(t) {
   const ph = `T${t.id}`
   const report = `${A.reportDir}/T${t.id}-report.md`
   const branch = branchOf(t)
 
-  log(`T${t.id} 实现开始（分支 ${branch}）`)
+  log(`T${t.id} implementation started (branch ${branch})`)
   const impl = await agent(implPrompt(t, report), {
     label: `impl:T${t.id}`, phase: ph, model: M.impl, schema: IMPL_SCHEMA,
   })
@@ -163,7 +163,7 @@ async function runTicket(t) {
   while (open.length && round < MAX_ROUNDS) {
     round++
     const model = round >= 4 ? M.escalate : M.impl
-    log(`T${t.id} 修复第 ${round} 轮，未决 ${open.length} 条`)
+    log(`T${t.id} fix round ${round}, ${open.length} open findings`)
     const fix = await agent(fixPrompt(t, report, open, round), {
       label: `fix${round}:T${t.id}`, phase: ph, model, schema: FIX_SCHEMA,
     })
@@ -182,7 +182,7 @@ async function runTicket(t) {
   }
 
   const status = open.length ? 'CAP_TRIPPED' : 'DONE'
-  log(`T${t.id} 结束：${status}，修复 ${round} 轮`)
+  log(`T${t.id} finished: ${status}, ${round} fix rounds`)
   return {
     id: t.id,
     status,
@@ -196,7 +196,7 @@ async function runTicket(t) {
   }
 }
 
-// 工单之间并行；parallel 把抛异常的 thunk 归成 null，这里补回工单身份
+// Tickets run in parallel; parallel turns a throwing thunk into null, so restore the ticket identity here
 const raw = await parallel(A.tickets.map(t => () => runTicket(t)))
 const results = raw.map((r, i) => r || { id: A.tickets[i].id, status: 'AGENT_LOST', branch: branchOf(A.tickets[i]) })
 

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""new1 GPU 任务台账 + 监控 CLI（零依赖，标准库）。
+"""new1 GPU job ledger + monitoring CLI (zero dependencies, standard library only).
 
-用法:
-  gpu_jobs.py                    # 我的任务快照表（进度/速率/ETA/存活）
-  gpu_jobs.py watch [SEC]        # 自动刷新，默认每 30 秒
-  gpu_jobs.py free               # 全集群空卡表（转调 gpu_status.sh）
+Usage:
+  gpu_jobs.py                    # snapshot table of my jobs (progress/rate/ETA/alive)
+  gpu_jobs.py watch [SEC]        # auto-refresh, every 30 seconds by default
+  gpu_jobs.py free               # cluster-wide free-card table (delegates to gpu_status.sh)
   gpu_jobs.py register --name N --workdir W [--note TEXT] \
               --piece host:gpus:session:logpath [--piece ...] \
-              [--kind batch|service] [--port 端口]  # 手工补录服务分片用
-  gpu_jobs.py finish NAME        # 收尾销号（session 还活着会拒绝;--force 强销）
-  gpu_jobs.py json               # 机器可读输出（给 agent 用）
+              [--kind batch|service] [--port PORT]  # for manually backfilling service pieces
+  gpu_jobs.py finish NAME        # finish and deregister (refuses if the session is still alive; --force to force it)
+  gpu_jobs.py json               # machine-readable output (for agents)
 
-台账: ops/jobs.json  {"active":[...], "history":[...]}
-日志在 NFS 上，本地直接读；只有 tmux 存活检查走 ssh（每 host 一次）。
+Ledger: ops/jobs.json  {"active":[...], "history":[...]}
+Logs live on NFS and are read directly; only the tmux liveness check goes over ssh (once per host).
 """
 import fcntl
 import json
@@ -31,15 +31,17 @@ GPU_STATUS_SH = os.path.join(
     os.path.dirname(ROOT), ".claude", "skills", "gpu-run", "scripts", "gpu_status.sh"
 )
 
-# 采样历史(latest.json,采样器 ops/sampler.py 落盘)——终端出口(status/
-# watch/json)新鲜时直接读它渲染，过期退回下面的现场实探老路(collect())。
-# free/register/finish 永远现场实探，不读这份文件(spec §终端出口读采样历史)。
+# Sample history (latest.json, written to disk by the sampler ops/sampler.py) -- the
+# terminal exits (status/watch/json) read and render it directly when fresh, and fall
+# back to the old live-probe path below (collect()) when it is stale.
+# free/register/finish always live-probe and never read this file (spec section
+# "terminal exits read sample history").
 MONITOR_DIR = os.environ.get(
     "NEW1_MONITOR_DIR",
     "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor")
-FRESH_S = 300.0  # 新鲜度门槛:最后采样时刻 5 分钟内才信(工单 07)
+FRESH_S = 300.0  # Freshness threshold: trust it only within 5 minutes of the last sample time (ticket 07)
 
-# tqdm 行（\r 已换成 \n 后）: " 42%|####  | 42/100 [00:31<00:43,  1.35it/s]"
+# tqdm line (after \r has been replaced with \n): " 42%|####  | 42/100 [00:31<00:43,  1.35it/s]"
 TQDM_RE = re.compile(
     r"(\d+)/(\d+)\s*\[([0-9:]+)<([0-9:?,]+),\s*([0-9.]+)\s*(it/s|s/it)"
 )
@@ -60,8 +62,9 @@ def save_reg(reg):
 
 
 def mutate_reg(fn):
-    """register/finish 的读改写要在一把锁里做——并发的两次 load→save 会互相
-    覆盖丢更新(审计 E23)。fn(reg) 就地改,返回值原样透传。"""
+    """register/finish's read-modify-write must happen inside one lock -- two concurrent
+    load→save cycles clobber each other and lose updates (audit E23). fn(reg) mutates
+    the registry in place; the return value passes through unchanged."""
     with open(REG_PATH + ".lock", "w") as lf:
         fcntl.flock(lf, fcntl.LOCK_EX)
         reg = load_reg()
@@ -71,10 +74,12 @@ def mutate_reg(fn):
 
 
 def live_sessions(hosts):
-    """每台 host 一次 ssh，返回 {host: set(存活的 tmux session 名)}。
-    ssh 非零退出（解析失败/拒连/host key 变更）也算探测失败记 None——
-    空 stdout 与"真的没有 session"必须能区分，否则销号门禁会被放行。
-    tmux 没在跑时 `tmux ls` 也退非零，所以命令里兜一个 true。"""
+    """One ssh call per host, returns {host: set(names of live tmux sessions)}.
+    A nonzero ssh exit (parse failure/connection refused/host key changed) also counts
+    as a probe failure and is recorded as None -- empty stdout and "genuinely no session"
+    must be distinguishable, otherwise the deregistration gate would let it through.
+    When tmux is not running, `tmux ls` also exits nonzero, so the command has a
+    fallback `true` built in."""
     out = {}
     for h in sorted(hosts):
         try:
@@ -85,12 +90,12 @@ def live_sessions(hosts):
             )
             out[h] = set(r.stdout.split()) if r.returncode == 0 else None
         except Exception:
-            out[h] = None  # 探测失败，区别于"无 session"
+            out[h] = None  # Probe failure, distinct from "no session"
     return out
 
 
 def parse_log(path):
-    """读日志尾部，取最后一条 tqdm 行。返回 dict 或 None。"""
+    """Read the tail of the log and take the last tqdm line. Returns a dict or None."""
     try:
         with open(path, "rb") as f:
             f.seek(0, 2)
@@ -102,7 +107,7 @@ def parse_log(path):
     lines = tail.replace("\r", "\n")
     matches = TQDM_RE.findall(lines)
     if not matches:
-        # 没有 tqdm，返回最后一行非空文本方便判断卡在哪
+        # No tqdm: return the last non-empty line of text, to help tell where it is stuck
         last = [l for l in lines.splitlines() if l.strip()]
         return {"raw": last[-1][:80]} if last else None
     n, total, elapsed, remain, rate, unit = matches[-1]
@@ -113,14 +118,16 @@ def parse_log(path):
     }
 
 
-# 反向核对要扫的固定机器清单(与 ops/gpu_state.md 对齐)——台账为空时
-# 恰恰是最容易漏登记的时候,不能只探台账里已有的 host
+# Reverse-check against the fixed list of machines to scan (aligned with ops/gpu_state.md)
+# -- an empty ledger is exactly when registration is most likely to be missed, so we
+# can't only probe the hosts already in the ledger
 DEFAULT_HOSTS = ("tokyo105", "tokyo106", "tokyo107", "tokyo108")
 
 
 def collect(with_extras=False):
-    """汇总所有 active job 的状态。with_extras=True 时附带反向核对:
-    实际在跑但台账里没有的 session(固定机器清单全扫)。"""
+    """Aggregate the status of all active jobs. When with_extras=True, also include a
+    reverse check: sessions that are actually running but missing from the ledger
+    (a full scan of the fixed machine list)."""
     reg = load_reg()
     hosts = {p["host"] for j in reg["active"] for p in j["pieces"]}
     if with_extras:
@@ -172,7 +179,7 @@ def collect(with_extras=False):
 
 def fmt_table(rows):
     if not rows:
-        return "台账为空——当前没有登记中的任务。发射走 gpu-run skill 会自动登记。"
+        return "The job ledger is empty -- no jobs currently registered. Launching via the gpu-run skill registers automatically."
     cols = ["job", "host", "gpus", "state", "progress", "rate", "eta", "session"]
     head = {"job": "JOB", "host": "HOST", "gpus": "GPU", "state": "STATE",
             "progress": "PROGRESS", "rate": "RATE", "eta": "ETA",
@@ -185,7 +192,7 @@ def fmt_table(rows):
     dead = [r for r in rows if r["state"] == "EXIT"]
     if dead:
         out.append("")
-        out.append("EXIT = session 已退出但进度未到 100%%，看日志: %s" % dead[0]["log"])
+        out.append("EXIT = the session has exited but progress has not reached 100%%, check the log: %s" % dead[0]["log"])
     by_job = {}
     for r in rows:
         by_job.setdefault(r["job"], []).append(r["state"])
@@ -196,21 +203,23 @@ def fmt_table(rows):
     if all_done or part_done:
         out.append("")
     for j in all_done:
-        out.append(f"DONE = 全部分片进度 100% 且 session 已退——该收尾了: "
+        out.append(f"DONE = all pieces at 100% progress and the session has exited -- time to finish: "
                    f"python3 run.py gpu-jobs finish {j}")
     for j in part_done:
-        out.append(f"{j}: 部分分片已完成,其余还在跑——先别 finish")
+        out.append(f"{j}: some pieces are done, the rest are still running -- do not finish yet")
     return "\n".join(out)
 
 
 def read_latest():
-    """采样历史出口:读 MONITOR_DIR/latest.json。返回 (latest_dict|None,
-    age_s|None)——文件不在/读不了/JSON 语法坏了/顶层不是 dict/sampled_at
-    字段类型不对，都返回 (None, None)，退回现场实探老路，不让 status/
-    watch/json 三个出口在畸形但语法合法的 latest.json 上崩溃。latest
-    没有 sampled_at 字段（不该发生，但别炸）返回 age_s=None、latest 原样
-    透传。age_s 用调用时的挂钟算，与 latest["sampled_at"]（采样器落盘时
-    的挂钟）同机比较，不跨机比钟。"""
+    """Sample-history exit: reads MONITOR_DIR/latest.json. Returns (latest_dict|None,
+    age_s|None) -- if the file is missing/unreadable/has bad JSON syntax/the top level
+    isn't a dict/the sampled_at field has the wrong type, all return (None, None) and
+    fall back to the old live-probe path, so the three terminal exits status/watch/json
+    don't crash on a malformed but syntactically valid latest.json. If latest has no
+    sampled_at field (shouldn't happen, but don't blow up), returns age_s=None with
+    latest passed through unchanged. age_s is computed against the wall clock at call
+    time, compared with latest["sampled_at"] (the wall clock when the sampler wrote it)
+    on the same machine -- never compare clocks across machines."""
     p = os.path.join(MONITOR_DIR, "latest.json")
     try:
         with open(p) as f:
@@ -232,12 +241,12 @@ def read_latest():
 
 
 def _stale_warning(latest):
-    """终端出口过期时打的警告行，措辞是工单 07 给定的原文。"""
+    """The warning line printed when a terminal exit is stale; the wording is the exact text given by ticket 07."""
     if latest and latest.get("sampled_at"):
         stamp = datetime.fromtimestamp(latest["sampled_at"]).strftime("%H:%M:%S")
     else:
-        stamp = "无"
-    return f"采样器不在跑(最后采样 {stamp}),现场实探一次"
+        stamp = "none"
+    return f"sampler is not running (last sample {stamp}), probing live once"
 
 
 def _fmt_progress_v2(r):
@@ -251,9 +260,10 @@ def _fmt_progress_v2(r):
 
 
 def _fmt_rate_v2(r):
-    """recent_rate 没值 -> "-"；有值时按数量级挑单位：>=1/s 本身就够读，
-    保留 /s；小于 1/s（批任务常见，比如几十秒一个 task）乘 3600 换算成
-    /h 更好读。"""
+    """recent_rate with no value -> "-"; when it has a value, pick the unit by order of
+    magnitude: >=1/s is already readable as is, keep /s; below 1/s (common for batch
+    jobs, e.g. one task every few tens of seconds), multiply by 3600 to convert to
+    /h, which reads better."""
     rate = r.get("recent_rate")
     if rate is None:
         return "-"
@@ -289,19 +299,19 @@ def _fmt_eta_v2(r):
 
 
 def fmt_table_v2(rows, sampled_at=None):
-    """采样历史新鲜时的渲染路径(工单 07)。列: JOB/HOST/GPU/判定/
-    PROGRESS/RATE/TOK/ETA/SESSION。sampled_at 给了就加一行表头
-    `最后采样 HH:MM:SS`。已完成/已挂两种判定仍保留收尾/看日志提示行，
-    措辞沿用 fmt_table()。"""
+    """Render path used when the sample history is fresh (ticket 07). Columns: JOB/HOST/GPU/
+    VERDICT/PROGRESS/RATE/TOK/ETA/SESSION. If sampled_at is given, add a header line
+    `Last sampled HH:MM:SS`. The done/dead verdicts still keep the wrap-up/check-the-log
+    hint lines, with wording carried over from fmt_table()."""
     out = []
     if sampled_at is not None:
         stamp = datetime.fromtimestamp(sampled_at).strftime("%H:%M:%S")
-        out.append(f"最后采样 {stamp}")
+        out.append(f"last sample {stamp}")
     if not rows:
-        out.append("台账为空——当前没有登记中的任务。发射走 gpu-run skill 会自动登记。")
+        out.append("The job ledger is empty -- no jobs currently registered. Launching via the gpu-run skill registers automatically.")
         return "\n".join(out)
     cols = ["job", "host", "gpus", "verdict", "progress", "rate", "tok", "eta", "session"]
-    head = {"job": "JOB", "host": "HOST", "gpus": "GPU", "verdict": "判定",
+    head = {"job": "JOB", "host": "HOST", "gpus": "GPU", "verdict": "verdict",
             "progress": "PROGRESS", "rate": "RATE", "tok": "TOK",
             "eta": "ETA", "session": "SESSION"}
     disp = []
@@ -327,20 +337,22 @@ def fmt_table_v2(rows, sampled_at=None):
     if all_done or dead:
         out.append("")
     for j in all_done:
-        out.append(f"{verdicts.V_DONE} = 全部分片判定已完成——该收尾了: "
+        out.append(f"{verdicts.V_DONE} = every piece's verdict is done -- time to finish: "
                    f"python3 run.py gpu-jobs finish {j}")
     if dead:
-        out.append(f"{verdicts.V_DEAD} = session 没了，进度未到 100%，看日志: "
+        out.append(f"{verdicts.V_DEAD} = the session is gone, progress has not reached 100%, check the log: "
                    f"{dead[0].get('log')}")
     return "\n".join(out)
 
 
 def _print_table_from_latest_or_fallback():
-    """status/watch 两个终端出口共用的新鲜度判断:latest.json 新鲜就渲染
-    快照(fmt_table_v2)，过期/读不到/畸形就打警告退回现场实探老路
-    (collect + fmt_table)。抽出来是因为这段判断两处出口原样各写一遍，
-    新鲜度门槛或渲染选择逻辑改动容易漏改一处(工单 07 复核 F2)。返回
-    extras(台账外 tmux session)供调用方接着打印。"""
+    """Freshness check shared by the two terminal exits status/watch: render the snapshot
+    (fmt_table_v2) if latest.json is fresh; print a warning and fall back to the old
+    live-probe path (collect + fmt_table) if it is stale/unreadable/malformed. Pulled
+    out into its own function because this check used to be written once, identically,
+    in each of the two terminal exits -- easy to miss updating one place when the
+    freshness threshold or the render-selection logic changes (ticket 07 review F2).
+    Returns extras (tmux sessions outside the ledger) for the caller to print next."""
     latest, age_s = read_latest()
     if latest is not None and age_s is not None and age_s <= FRESH_S:
         print(fmt_table_v2(latest.get("rows", []), latest.get("sampled_at")))
@@ -354,7 +366,7 @@ def _print_table_from_latest_or_fallback():
 def cmd_status():
     extras = _print_table_from_latest_or_fallback()
     if extras:
-        print("\n台账外 tmux session(实际在跑但没登记——漏 register?别的对话在用?):")
+        print("\ntmux sessions outside the job ledger (actually running but not registered -- missed register? another conversation using it?):")
         for h, ss in sorted(extras.items()):
             print(f"  {h}: {', '.join(ss)}")
 
@@ -362,10 +374,10 @@ def cmd_status():
 def cmd_watch(sec):
     while True:
         sys.stdout.write("\x1b[2J\x1b[H")
-        print(f"new1 GPU jobs  @ {datetime.now().strftime('%H:%M:%S')}  (每 {sec}s 刷新, Ctrl-C 退出)\n")
+        print(f"new1 GPU jobs  @ {datetime.now().strftime('%H:%M:%S')}  (refreshes every {sec}s, Ctrl-C to exit)\n")
         extras = _print_table_from_latest_or_fallback()
         if extras:
-            print("\n台账外 tmux session:")
+            print("\ntmux sessions outside the job ledger:")
             for h, ss in sorted(extras.items()):
                 print(f"  {h}: {', '.join(ss)}")
         time.sleep(sec)
@@ -376,13 +388,15 @@ def cmd_free():
 
 
 def cmd_register(argv):
-    """`--kind`/`--port`(C2,final-review 2026-08-09):手工补录路径原来只会
-    落 host/gpus/session/log 四元组，没有 kind/port 就等于永远登记成
-    batch——服务分片（比如手起的 vLLM，没走 `run.py launch --service`）
-    补录进台账后，采样器的 `probe_port` 判定链路照样断掉。`--kind` 默认
-    `batch`（不给就和以前行为一致）；`--port` 只在给了才写进 piece，两个
-    旗标应用到这次调用里的全部 `--piece`（手工补录一般一次只补一个分片，
-    不为这条 legacy 路径单独做「每个 piece 各自 kind/port」的精细化）。"""
+    """`--kind`/`--port` (C2, final-review 2026-08-09): the manual-registration path used to
+    only write the host/gpus/session/log quadruple; without kind/port it always
+    registered as batch -- for a service piece (e.g. a manually started vLLM that
+    didn't go through `run.py launch --service`), registering it into the ledger this
+    way still leaves the sampler's `probe_port` verdict chain broken. `--kind` defaults
+    to `batch` (unchanged behavior if not given); `--port` is written into the piece
+    only if given. Both flags apply to every `--piece` in this call (manual
+    registration is usually one piece at a time, so this legacy path doesn't get the
+    fine-grained treatment of "kind/port per piece")."""
     name = workdir = note = None
     kind = "batch"
     port = None
@@ -404,7 +418,7 @@ def cmd_register(argv):
         elif a == "--port":
             port = int(next(it))
     if not name or not pieces:
-        sys.exit("register 需要 --name 和至少一个 --piece host:gpus:session:log")
+        sys.exit("register needs --name and at least one --piece host:gpus:session:log")
     for piece in pieces:
         piece["kind"] = kind
         if port is not None:
@@ -412,69 +426,72 @@ def cmd_register(argv):
 
     def _add(reg):
         if any(j["name"] == name for j in reg["active"]):
-            sys.exit(f"任务名 {name} 已在台账里，换个名字或先 finish 它")
+            sys.exit(f"job name {name} already in the job ledger, use a different name or finish it first")
         reg["active"].append({
             "name": name, "workdir": workdir, "note": note,
             "started_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
             "pieces": pieces,
         })
     mutate_reg(_add)
-    print(f"已登记 {name}: {len(pieces)} 个分片")
+    print(f"registered {name}: {len(pieces)} pieces")
 
 
 def cmd_finish(name):
-    # 防提前销号(审计实例 eval_c2_q36_mtool 16:52 被销号,实际跑到 18:17):
-    # 探测在锁外做(ssh 最长 12s/host,不该把台账锁住);fail-closed——
-    # 探测失败(None)按"可能还活着"拒绝,确认要销带 --force
+    # Guards against premature deregistration (audit case: eval_c2_q36_mtool was
+    # deregistered at 16:52, but actually ran until 18:17): the probe runs outside the
+    # lock (ssh takes up to 12s/host, shouldn't hold the ledger lock); fail-closed --
+    # a probe failure (None) is treated as "may still be alive" and rejected; confirm
+    # a deregistration with --force
     reg0 = load_reg()
     hit0 = [j for j in reg0["active"] if j["name"] == name]
     if not hit0:
-        sys.exit(f"台账里没有 {name}")
+        sys.exit(f"{name} is not in the job ledger")
     hosts = {p["host"] for p in hit0[0]["pieces"]}
     live = live_sessions(hosts)
     dead_probe = sorted(h for h in hosts if live.get(h) is None)
     if dead_probe:
-        sys.exit(f"{name} 的 host 探测失败: {', '.join(dead_probe)}——"
-                 f"分不清 session 死活,按活处理拒绝销号;"
-                 f"确认要强行销号: finish {name} --force")
+        sys.exit(f"{name}'s host probe failed: {', '.join(dead_probe)} -- "
+                 f"cannot tell whether the session is alive or dead, treating it as alive and refusing to deregister; "
+                 f"to force deregistration: finish {name} --force")
     alive = [p["session"] for p in hit0[0]["pieces"]
              if p["session"] in live[p["host"]]]
     if alive:
-        sys.exit(f"{name} 还有 {len(alive)} 个 session 活着: "
-                 f"{', '.join(alive)}——跑完再 finish;"
-                 f"确认要强行销号: finish {name} --force")
+        sys.exit(f"{name} still has {len(alive)} sessions alive: "
+                 f"{', '.join(alive)} -- finish once they are done; "
+                 f"to force deregistration: finish {name} --force")
 
     def _move(reg):
         hit = [j for j in reg["active"] if j["name"] == name]
         if not hit:
-            sys.exit(f"台账里没有 {name}(刚被并发销号?)")
+            sys.exit(f"{name} is not in the job ledger (just deregistered concurrently?)")
         job = hit[0]
         job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
         reg["active"] = [j for j in reg["active"] if j["name"] != name]
         reg["history"].append(job)
     mutate_reg(_move)
-    print(f"{name} 已销号（移入 history）")
+    print(f"{name} deregistered (moved to history)")
 
 
 def cmd_finish_force(name):
     def _move(reg):
         hit = [j for j in reg["active"] if j["name"] == name]
         if not hit:
-            sys.exit(f"台账里没有 {name}")
+            sys.exit(f"{name} is not in the job ledger")
         job = hit[0]
         job["finished_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
         job["force_finished"] = True
         reg["active"] = [j for j in reg["active"] if j["name"] != name]
         reg["history"].append(job)
     mutate_reg(_move)
-    print(f"{name} 已强行销号（移入 history,标记 force_finished）")
+    print(f"{name} force-deregistered (moved to history, marked force_finished)")
 
 
 def cmd_json():
-    """json 出口(工单 07):新鲜时原样吐 latest.json；过期退回 collect()
-    老路，外加 sampler_stale=true 标记给 agent 识别。老路的 rows 换个
-    外壳装进 "rows" 键——裸列表加不了字段，latest.json 本来就是这个
-    键名，两条路径的调用方看到的结构对得上。"""
+    """json exit (ticket 07): dumps latest.json as-is when fresh; falls back to the old
+    collect() path when stale, with a sampler_stale=true flag added for agents to
+    detect. The old path's rows get wrapped in a "rows" key -- a bare list can't
+    carry extra fields, latest.json already used this key name, so callers on both
+    paths see a matching structure."""
     latest, age_s = read_latest()
     if latest is not None and age_s is not None and age_s <= FRESH_S:
         print(json.dumps(latest, indent=2, ensure_ascii=False))
@@ -497,7 +514,7 @@ def main():
         rest = args[1:]
         names = [a for a in rest if not a.startswith("--")]
         if not names:
-            sys.exit("finish 需要任务名: finish NAME [--force]")
+            sys.exit("finish needs a job name: finish NAME [--force]")
         if "--force" in rest:
             cmd_finish_force(names[0])
         else:

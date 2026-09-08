@@ -37,7 +37,8 @@ BLOCKED_ISSUE_KINDS = ("cannot", "failed", "denied")
 
 _TERMINAL = tuple(rl_lib.TRANSITIONS["terminal_states"])  # accepted, withdrawn (04 L47)
 
-# sync-inbox Q35(a) L194: "超过一天没动" - a state file untouched for more than one day.
+# sync-inbox Q35(a) L194: "untouched for more than a day" - a state file untouched for
+# more than one day.
 # PENDING(part 08 L57): the threshold table has no key for it, so it is not configurable.
 STATE_FILE_STALE_HOURS = 24.0
 
@@ -180,17 +181,18 @@ class Ledgers:
 
 
 def role_or_gyb(role: str | None, ledgers: Ledgers) -> str:
-    """The "…；无活会话则 gyb" half of the push-to column. Only items 6, 7 and 13 carry it
-    (05 L200, L201, L207); every other item's push-to is the role the column names, with
-    no fallback (reviewer report on step 4, 2026-09-05)."""
+    """The "...; if there is no live session, gyb" half of the push-to column. Only items 6,
+    7 and 13 carry it (05 L200, L201, L207); every other item's push-to is the role the
+    column names, with no fallback (reviewer report on step 4, 2026-09-05)."""
     if role in rl_lib.ROLES and role in ledgers.open_session_roles():
         return role
     return "gyb"
 
 
 def _or_gyb(role: str | None) -> str:
-    """Item 2's "查不出的 gyb" (05 L196): a row whose owner cannot be read is pushed to gyb;
-    an owner that can be read is pushed to as written, live session or not."""
+    """Item 2's "unreadable goes to gyb" (05 L196): a row whose owner cannot be read is
+    pushed to gyb; an owner that can be read is pushed to as written, live session or
+    not."""
     return role if role else "gyb"
 
 

@@ -1,21 +1,23 @@
-"""configs/ 的读取器,纯标准库(采集 venv 装不进 pydantic 2,教训在
-envs/collect/common.py 文件头)。
+"""Reader for configs/, pure standard library (the collection venv cannot install
+pydantic 2; the lesson is at the top of envs/collect/common.py).
 
-configs/models.json  是唯一模型地址映射,model_registry.py 从这里读;
-configs/presets/*.json 一份文件一套生成设置:model 别名 + server 节
-(vLLM 启动参数,serve_preset.py 吃) + client 节(采样参数,各入口吃)。
-两节都可省;client 节里 null = 不指定,落到调用方原有缺省。
-temperature 只从 client 节来;预设把它写成 null 时,生成入口经
-require_temperature 当场停下并点名是哪份预设(BFCL handler 例外,
-null 时用 BFCL 自带的那一档)。
+configs/models.json is the single model-address mapping; model_registry.py reads from
+here. configs/presets/*.json: one file is one set of generation settings: a model alias +
+a server section (vLLM launch args, consumed by serve_preset.py) + a client section
+(sampling params, consumed by each entry point). Both sections are optional; in the
+client section, null = not specified, falls through to the caller's own default.
+temperature comes only from the client section; when a preset writes it as null, the
+generation entry point stops right there via require_temperature and names which preset
+(the BFCL handler is an exception: when null, it uses BFCL's own default tier).
 
-入口脚本的用法(三层优先级 CLI 显式值 > 预设值 > 原有缺省):
+Usage from an entry-point script (three-tier priority: explicit CLI value > preset value >
+original default):
 
     from preset_loader import load_preset, merge_client
-    pre = load_preset(args.preset)                      # 各入口 argparse 缺省 "default"
-    eff = merge_client({"api": args.api, ...},          # None = 用户没显式给
+    pre = load_preset(args.preset)                      # each entry point's argparse default is "default"
+    eff = merge_client({"api": args.api, ...},          # None = user did not give it explicitly
                        pre.get("client"),
-                       {"api": "raw", ...})             # 原有缺省
+                       {"api": "raw", ...})             # original default
 """
 
 import json
@@ -25,7 +27,7 @@ ROOT = Path(__file__).resolve().parent
 MODELS_JSON = ROOT / "configs" / "models.json"
 PRESET_DIR = ROOT / "configs" / "presets"
 
-# client 节的合法键 -> 期望类型(None 永远合法)
+# valid keys of the client section -> expected type (None is always valid)
 CLIENT_KEYS = {
     "api": str,
     "reasoning_effort": str,
@@ -37,7 +39,7 @@ CLIENT_KEYS = {
     "seed": int,
 }
 
-# server 节的合法键 -> 期望类型
+# valid keys of the server section -> expected type
 SERVER_KEYS = {
     "host": str,
     "port": int,
@@ -52,7 +54,7 @@ TOP_KEYS = {"desc", "model", "server", "client"}
 
 
 def load_models():
-    """返回 {"models": {别名: {"path","note"}}, "aliases": {短名: 别名}}。"""
+    """Returns {"models": {alias: {"path","note"}}, "aliases": {short name: alias}}."""
     d = json.loads(MODELS_JSON.read_text())
     return {"models": d["models"], "aliases": d.get("aliases", {})}
 
@@ -64,57 +66,59 @@ def list_presets():
 def _check_node(name, node, keys, errs):
     for k, v in node.items():
         if k not in keys:
-            errs.append(f"{name} 节有未知键 {k!r}(合法键: {sorted(keys)})")
+            errs.append(f"{name} section has unknown key {k!r} (valid keys: {sorted(keys)})")
         elif v is not None and not isinstance(v, keys[k]):
-            errs.append(f"{name}.{k} 类型不对: {type(v).__name__}({v!r})")
+            errs.append(f"{name}.{k} has the wrong type: {type(v).__name__}({v!r})")
     if name == "server" and node.get("env") is not None:
         for ek, ev in node["env"].items():
             if not isinstance(ek, str) or not isinstance(ev, str):
-                errs.append(f"server.env 的键值都必须是字符串: {ek!r}={ev!r}")
+                errs.append(f"server.env keys and values must all be strings: {ek!r}={ev!r}")
 
 
 def validate(preset, models=None):
-    """返回问题清单(空 = 合格)。models 不传就现读 models.json。"""
+    """Returns the list of problems (empty = passes). If models is not given, reads models.json fresh."""
     errs = []
     unknown = set(preset) - TOP_KEYS
     if unknown:
-        errs.append(f"顶层有未知键 {sorted(unknown)}(合法键: {sorted(TOP_KEYS)})")
+        errs.append(f"top level has unknown keys {sorted(unknown)} (valid keys: {sorted(TOP_KEYS)})")
     if "model" not in preset:
-        errs.append("缺顶层 model(models.json 里的别名)")
+        errs.append("missing top-level model (an alias from models.json)")
     else:
         m = models or load_models()
         key = m["aliases"].get(preset["model"], preset["model"])
         if key not in m["models"]:
-            errs.append(f"model 别名 {preset['model']!r} 不在 models.json 里")
+            errs.append(f"model alias {preset['model']!r} is not in models.json")
     if "client" in preset:
         _check_node("client", preset["client"], CLIENT_KEYS, errs)
     if "server" in preset:
         _check_node("server", preset["server"], SERVER_KEYS, errs)
         for need in ("host", "port", "served_model_name"):
             if preset["server"].get(need) is None:
-                errs.append(f"server 节缺 {need}(发射器拼不出命令)")
+                errs.append(f"server section is missing {need} (the launcher can't assemble the command)")
     return errs
 
 
 def load_preset(name):
-    """按名字读一份预设并校验;名字就是 configs/presets/ 下的文件名去掉 .json。"""
+    """Reads and validates a preset by name; the name is the filename under configs/presets/ minus .json."""
     path = PRESET_DIR / f"{name}.json"
     if not path.exists():
         raise FileNotFoundError(
-            f"预设 {name!r} 不存在;现有预设: {list_presets()}")
+            f"preset {name!r} does not exist; existing presets: {list_presets()}")
     preset = json.loads(path.read_text())
     errs = validate(preset)
     if errs:
-        raise ValueError(f"预设 {name} 不合格:\n" + "\n".join(errs))
+        raise ValueError(f"preset {name} is invalid:\n" + "\n".join(errs))
     preset["_name"] = name
     preset["_path"] = str(path)
     return preset
 
 
 def merge_client(cli, client_node, fallbacks):
-    """逐键合并:CLI 显式值(非 None) > 预设值(非 null) > fallbacks 里的原缺省。
-    三处都没有的键落 None。只处理 cli 与 fallbacks 里出现过的键——
-    预设里多出来的键(比如采集器用不上的 stop)不会被硬塞给调用方。
+    """Merges key by key: explicit CLI value (non-None) > preset value (non-null) > the
+    original default in fallbacks. A key absent from all three ends up None. Only
+    processes keys that appear in cli and fallbacks -- an extra key present only in the
+    preset (e.g. stop, which the collector has no use for) is never forced onto the
+    caller.
     """
     node = client_node or {}
     out = {}
@@ -129,20 +133,22 @@ def merge_client(cli, client_node, fallbacks):
 
 
 def require_temperature(value, preset_name):
-    """生成入口的温度检查:合并完的 temperature 必须是个数,是数就原样返回。
-    温度只有预设 client 节一个来源,所以预设把它写成 null 的时候(比如 BFCL
-    那份,温度跟着 BFCL 自己那一档走)这里当场停下,报清楚是哪一份预设。
+    """Temperature check for a generation entry point: the merged temperature must be a
+    number; if it is, return it unchanged. temperature has only one source, the preset's
+    client section, so when a preset writes it as null (e.g. the BFCL one, where
+    temperature follows BFCL's own tier) this stops right here and reports clearly which
+    preset it is.
     """
     if isinstance(value, (int, float)):
         return value
     raise SystemExit(
-        f"预设 {preset_name} 的 client.temperature 是 null;"
-        f"生成入口的温度只从预设读,请换一份写了 temperature 的预设"
-        f"(现有: {list_presets()})")
+        f"preset {preset_name}'s client.temperature is null;"
+        f"generation entry points read temperature only from the preset, use a preset that sets temperature"
+        f"(existing: {list_presets()})")
 
 
 def base_url_of(preset):
-    """server 节拼 /v1 端点;没有 server 节返回 None。"""
+    """Assembles the /v1 endpoint from the server section; returns None if there is no server section."""
     srv = preset.get("server")
     if not srv:
         return None

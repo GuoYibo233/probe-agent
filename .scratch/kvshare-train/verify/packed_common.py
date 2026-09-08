@@ -1,15 +1,20 @@
-"""三个验证脚本共用的构造代码:选事件、按旧训练器分词、造打包序列(形态 A)。
+"""Construction code shared by the three verification scripts: pick events, tokenize the
+way the old trainer does, and build the packed sequence (form A).
 
-形态 A(打包一次前向):
-    序列 = 事件全文 token(P 个) + 段1 + ... + 段K
-    段k  = 旧训练器该行 prompt token 里公共前缀 p_k 之后的尾巴 + 目标串 token(含 eos)
-    掩码 = 前缀内因果;段k 的 query 只看前缀前 p_k 位 + 自己段内因果(bool,True=可看)
-    position_ids = 前缀 0..P-1;段k 从 p_k 接着数
-    loss 位 = 预测每个目标 token 的 logits 位置(尾巴为空时首个目标 token 由前缀第 p_k-1 位预测)
+Form A (packed into one forward pass):
+    sequence = event's full-text tokens (P of them) + segment 1 + ... + segment K
+    segment k = the tail of that row's prompt tokens after the common prefix p_k in the
+                old trainer, plus the target-string tokens (including eos)
+    mask = causal within the prefix; segment k's query sees only the first p_k prefix
+           positions plus its own within-segment causal mask (bool, True = visible)
+    position_ids = prefix 0..P-1; segment k continues counting from p_k
+    loss positions = the logits position that predicts each target token (when the tail
+                     is empty, the first target token is predicted by prefix position p_k-1)
 
-旧训练器口径(train_causal_callgen.py collate + inst_ce):
-    每行 = tok(text + SEP) + tok(label_call) + [eos],右 padding 成一批,labels 掩掉 prompt 与 pad,
-    只在目标位取 CE,每行 loss = 目标 token 的 CE 平均。
+Old trainer's convention (train_causal_callgen.py collate + inst_ce):
+    each row = tok(text + SEP) + tok(label_call) + [eos], right-padded into a batch,
+    labels mask out the prompt and pad, CE is taken only at target positions, and each
+    row's loss = the mean CE over its target tokens.
 """
 import json
 import random
@@ -50,12 +55,12 @@ def pick_events(events, n, max_rows, max_chars, seed, min_rows=2):
 
 
 def longest_event_within(events, tok, max_tokens):
-    """全文 token 数 ≤ max_tokens 的事件里最长的一个(GPU 峰值用)。"""
+    """The longest event among those whose full-text token count is ≤ max_tokens (used for the GPU peak)."""
     best, best_n = None, -1
     for k in sorted(events):
         rs = events[k]
         full = rs[-1]["text"]
-        if len(full) > max_tokens * 6:          # 粗筛:一个 token 至少 1 字符,先按字符砍掉明显超长的
+        if len(full) > max_tokens * 6:          # coarse filter: a token is at least 1 character; first cut obviously overlong entries by character count
             continue
         n = len(tok(full, add_special_tokens=False)["input_ids"])
         if best_n < n <= max_tokens:
@@ -72,20 +77,20 @@ def lcp(a, b):
 
 
 def build_rows(tok, rs):
-    """旧训练器每行的 prompt/tgt token(不截断:验证只选短事件)。"""
+    """Each row's prompt/tgt tokens as the old trainer produces them (no truncation: verification only picks short events)."""
     eos = tok.eos_token_id
     rows = []
     for r in rs:
         prompt = tok(r["text"] + SEP, add_special_tokens=False)["input_ids"]
         tgt = tok(r["label_call"], add_special_tokens=False)["input_ids"] + [eos]
-        assert len(tgt) <= MAX_TGT_TOK, "目标串超 MAX_TGT_TOK,旧训练器会丢弃这一行"
+        assert len(tgt) <= MAX_TGT_TOK, "target string exceeds MAX_TGT_TOK, the old trainer drops this row"
         rows.append(dict(sent_idx=r["sent_idx"], prompt=prompt, tgt=tgt,
                          call=r["label_call"], w=float(r["w"])))
     return rows
 
 
 def build_packed(rows, full_ids):
-    """形态 A 的序列、position_ids、bool 掩码、loss 位(qpos -> 目标 token)。"""
+    """Form A's sequence, position_ids, bool mask, and loss positions (qpos -> target token)."""
     P = len(full_ids)
     seq = list(full_ids)
     pos = list(range(P))
@@ -111,7 +116,7 @@ def build_packed(rows, full_ids):
     for i, (r, s) in enumerate(zip(rows, segs)):
         for t, y in enumerate(r["tgt"]):
             if t == 0 and s["n_tail"] == 0:
-                j = s["p"] - 1                      # 尾巴为空:首个目标 token 由前缀第 p-1 位预测
+                j = s["p"] - 1                      # empty tail: the first target token is predicted by prefix position p-1
             else:
                 j = s["start"] + s["n_tail"] + t - 1
             qpos.append(j)
@@ -122,7 +127,7 @@ def build_packed(rows, full_ids):
 
 
 def float_mask(allow, dtype):
-    """bool 掩码 -> 加性掩码(0 / -inf),给 sdpa 的浮点掩码路径。"""
+    """bool mask -> additive mask (0 / -inf), for sdpa's floating-point mask path."""
     return torch.zeros(allow.shape, dtype=dtype).masked_fill(~allow, float("-inf"))
 
 
@@ -135,7 +140,7 @@ def per_row_mean(ce, row_id, n_rows):
 
 
 def forward_packed(model, pk, dev, mask_kind="bool", mask_dtype=torch.float32):
-    """形态 A 前向,返回 (每目标 token 的 CE [n_tgt], 每行 mean CE [K])。"""
+    """Form A's forward pass; returns (per-target-token CE [n_tgt], per-row mean CE [K])."""
     L = pk["L"]
     if mask_kind == "bool":
         mask = pk["allow"][None, None].to(dev)
@@ -155,10 +160,13 @@ def forward_packed(model, pk, dev, mask_kind="bool", mask_dtype=torch.float32):
 
 
 def forward_old(model, tok, rows, dev, batched=True):
-    """旧训练器口径:右 padding 一批(batched=True)或每行单独一批(batched=False)。
+    """Old trainer's convention: right-pad into one batch (batched=True) or one row per
+    batch (batched=False).
 
-    与 inst_ce 同一套下标:logits 第 j 位预测第 j+1 个 token;只在目标位算 CE。
-    用 logits_to_keep 只算需要的位置(lm_head 是逐位置线性层,取子集不改数值)。
+    Same indexing as inst_ce: logits position j predicts token j+1; CE is computed only
+    at target positions.
+    Use logits_to_keep to compute only the needed positions (lm_head is a per-position
+    linear layer, so taking a subset does not change the values).
     """
     groups = [rows] if batched else [[r] for r in rows]
     ces, rows_mean = [], []

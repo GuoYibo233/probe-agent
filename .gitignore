@@ -1,15 +1,15 @@
-# new1 版本控制边界
+# new1 version control boundary
 #
-# 原则：代码 / 笔记 / 统计数字 进库；虚拟环境 / 第三方仓库 / 实验原始数据 不进库。
-# 原始数据靠 NFS 路径 + 各批次的 .md 出厂报告追溯，不靠 git。
+# Principle: code / notes / statistics go into the repo; virtual envs / third-party repos / raw experiment data do not.
+# Raw data is tracked via NFS paths and each batch's .md release report, not via git.
 
-# ── 虚拟环境（uv 管理，用 uv.lock 复原）
+# ── Virtual envs (managed by uv, restored via uv.lock)
 *-env/
 .venv/
 **/.venv/
 envs/cuda-compat-13.0/
 
-# ── 第三方仓库与 benchmark 套件（各自带 .git，用 clone 复原）
+# ── Third-party repos and benchmark suites (each has its own .git, restored via clone)
 paper/acl-style-files/
 related_work/
 jacobian-lens/
@@ -18,19 +18,19 @@ envs/appworld/
 envs/tales/
 envs/bfcl/
 
-# ── envs/alfworld/ 是我们自建的（不是第三方 clone），只忽略三样：
-#    venv（332M，uv.lock 复原）/ data（软链到 fig1_pilot 的 2.1G 数据）/ logs。
-#    splits/ 是自己生成的题单，ALFWorld 官方不提供清单文件，必须入库才可复现。
+# ── envs/alfworld/ is built by us (not a third-party clone); only three things are ignored:
+#    venv (332M, restored via uv.lock) / data (symlink to fig1_pilot's 2.1G data) / logs.
+#    splits/ is a self-generated task list; ALFWorld upstream doesn't provide a manifest file, so it must be in the repo to reproduce.
 envs/alfworld/venv/
 envs/alfworld/data
 envs/alfworld/logs/
 
-# ── 大体积原始数据
+# ── Large raw data
 fig1_pilot/alfworld_data/
 traj_pipeline/data/
 
-# ── 已搬 NFS 的目录软链（git 不穿软链，带尾斜杠或 /** 的规则匹配不到链本体，
-#    必须裸名；目录将来变回实体也照样命中）
+# ── Symlinks to directories moved to NFS (git doesn't follow symlinks; rules with a trailing slash or /** don't match the link itself,
+#    must use the bare name; still matches if the directory later becomes a real directory again)
 envs/bert_runs
 fig1_pilot/alfworld_data
 envs/toolhop
@@ -39,19 +39,19 @@ envs/stabletoolbench
 pipeline/data
 pipeline/runs
 
-# ── 回放执行缓存（exec_calls 的结果缓存，纯产物）
+# ── Replay execution cache (result cache for exec_calls, pure output)
 pipeline/inject/exec_cache/
 
-# ── debugger 演示的假件（demo/prepare.py 一条命令重新构建）：小模型目录与训练产物
-#    是 prepare.py 做的、指向 net 盘的软链，按上面"已搬 NFS 的目录软链"的规矩用裸名；
-#    demo/data/*.jsonl 很小、随种子确定，进库，方便不跑脚本也能在编辑器里读样本
+# ── Fixtures for the debugger demo (rebuilt with one command, demo/prepare.py): the tiny model dir and training outputs
+#    are symlinks made by prepare.py pointing at the net drive; per the "symlinks to directories moved to NFS" rule above, use the bare name;
+#    demo/data/*.jsonl is small and seed-deterministic; it's in the repo so samples can be read in the editor without running the script
 demo/tiny_qwen3
 demo/runs
 
-# ── 台账锁文件（gpu_jobs.py mutate_reg 的 flock 载体）
+# ── Ledger lock files (flock carrier for gpu_jobs.py's mutate_reg)
 ops/*.lock
 
-# ── 实验产物目录：只保留 .md 报告，其余（轨迹 / 权重 / 中间文件）不入库
+# ── Experiment output dirs: only .md reports are kept; the rest (trajectories / weights / intermediate files) are not in the repo
 envs/runs/**
 !envs/runs/**/
 !envs/runs/**/*.md
@@ -68,10 +68,10 @@ envs/bert_runs/**
 !*/results/**/
 !*/results/**/*.md
 
-# ── 发射副产品:serve_preset.py 抄到日志目录的预设快照(正本在 configs/presets/)
+# ── Launch by-product: preset snapshot that serve_preset.py copies into the log dir (the source of truth is in configs/presets/)
 envs/serve_logs/*.preset.json
 
-# ── 日志与权重
+# ── Logs and weights
 logs/
 *.log
 *.out
@@ -83,7 +83,7 @@ logs/
 *.npy
 *.npz
 
-# ── LaTeX 编译中间产物（论文成品 PDF 也不入库，tex 源是唯一权威）
+# ── LaTeX build intermediates (the final paper PDF isn't in the repo either; the tex source is the sole authority)
 *.aux
 *.bbl
 *.blg
@@ -92,16 +92,16 @@ logs/
 *.synctex.gz
 *.toc
 
-# ── Python 杂物
+# ── Python miscellany
 __pycache__/
 *.py[cod]
 *.egg-info/
 .ipynb_checkpoints/
 
-# ── 本地设置（.claude/skills 与 agents 是工程资产，要入库）
+# ── Local settings (.claude/skills and agents are engineering assets, must be in the repo)
 .claude/settings.local.json
 
-# ── C3 任务对数据本体（种子 20260729 可逐字节重生成，stats.json 统计进库）
+# ── C3 task-pair data itself (byte-for-byte reproducible from seed 20260729; stats.json statistics are in the repo)
 benchmark_design/*.jsonl
 
 pipeline/data/**
@@ -110,8 +110,8 @@ pipeline/data/**
 pipeline/runs/**
 !pipeline/runs/**/
 !pipeline/runs/**/*.md
-# 注入回放的落盘(plan.jsonl/raw.jsonl 是原始轨迹级数据,单个 run 十几 MB);
-# 只放 md 报告与 plan_config.json 进库,后者是口径记录、几百字节
+# On-disk injection replay output (plan.jsonl/raw.jsonl is raw trajectory-level data, tens of MB per run);
+# only the md report and plan_config.json go into the repo; the latter is a settings record, a few hundred bytes
 pipeline/inject/runs/**
 !pipeline/inject/runs/**/
 !pipeline/inject/runs/**/*.md

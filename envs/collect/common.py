@@ -1,5 +1,6 @@
-"""统一轨迹落盘。每条轨迹一个 JSONL,逐步四样东西全录:
-模型输入(增量)、模型原始输出(reasoning 一字不删)、动作、环境原始返回。
+"""Unified trajectory storage. One JSONL per trajectory, recording four things at every step:
+the model input (incremental), the model's raw output (reasoning kept verbatim), the action,
+and the environment's raw return.
 """
 
 import json
@@ -11,10 +12,12 @@ from pathlib import Path
 
 from openai import OpenAI
 
-# harmony 的 system 消息模板。vLLM 服务端用 openai_harmony 生成同一段文字,
-# 这里手拼是因为 openai_harmony 依赖 pydantic 2,装进 envs/appworld/venv 会
-# 顶掉 appworld 需要的 pydantic 1.10.26(实测直接 import 就断)。
-# 手拼版已被官方渲染器逐字节验过(2026-08-06,813 字符/174 token 全等)。
+# The harmony system-message template. The vLLM server generates the same text with
+# openai_harmony; it is hand-assembled here because openai_harmony depends on pydantic 2, and
+# installing it into envs/appworld/venv would displace the pydantic 1.10.26 that appworld
+# needs (tested: importing it directly breaks). The hand-assembled version has been verified
+# byte-for-byte against the official renderer (2026-08-06, 813 characters / 174 tokens, exact
+# match).
 HARMONY_SYSTEM = (
     "You are ChatGPT, a large language model trained by OpenAI.\n"
     "Knowledge cutoff: 2024-06\n"
@@ -26,7 +29,7 @@ HARMONY_SYSTEM = (
     "Channel must be included for every message."
 )
 
-# 一条 harmony 消息的头:<|channel|>频道 [to=收件人] [<|constrain|>类型] <|message|>
+# The header of one harmony message: <|channel|>channel [to=recipient] [<|constrain|>type] <|message|>
 HARMONY_HEAD = re.compile(
     r"<\|channel\|>(?P<channel>[^\s<]+)"
     r"(?:\s+to=(?P<recipient>[^\s<]+))?"
@@ -35,18 +38,22 @@ HARMONY_HEAD = re.compile(
 
 
 class Chat:
-    """默认(api='raw')走 /v1/completions,Qwen 聊天模板自己拼(显式 <think>
-    开头),原始输出自己按 </think> 切 — 思考段不经服务端 parser,零丢失。
-    api='chat' 走 /v1/chat/completions,思考取 message.reasoning —
-    给 gpt-oss(harmony 格式,服务端 openai_gptoss 解析器)用;
-    reasoning_effort 仅该模式生效。
-    api='harmony' 也走 /v1/completions,但 harmony 提示词自己拼、原始输出
-    自己按频道切(skip_special_tokens=False + return_token_ids=True) —
-    服务端 HarmonyParser 完全不参与,落在 IGNORE 档的段落不会被静默丢掉,
-    生成的 token id 原样存进轨迹。当天日期由客户端钉死,跨天重跑前缀不变。
-    历史 assistant 轮只回填 content(与官方模板一致,思考不进上下文)。
-    temperature 由调用方必传,值出自预设 client 节(settings_from_args 合并,
-    缺省预设 default = 温度 1.0)——这个键只有预设一个来源。
+    """Default (api='raw') goes through /v1/completions; the Qwen chat template is assembled by
+    hand (explicit <think> opening), and the raw output is cut by hand at </think> -- the
+    thinking segment never goes through the server-side parser, so nothing is lost.
+    api='chat' goes through /v1/chat/completions; the thinking is taken from message.reasoning
+    -- used for gpt-oss (harmony format, server-side openai_gptoss parser); reasoning_effort
+    takes effect only in this mode.
+    api='harmony' also goes through /v1/completions, but the harmony prompt is assembled by
+    hand and the raw output is cut by hand along channels (skip_special_tokens=False +
+    return_token_ids=True) -- the server-side HarmonyParser plays no part at all, so segments
+    that fall into the IGNORE tier are not silently dropped, and the generated token ids are
+    stored into the trajectory as-is. The date is pinned by the client, so the prefix stays the
+    same across reruns on a different day. Past assistant turns only backfill content (matching
+    the official template: thinking does not go back into context).
+    temperature must be passed by the caller; its value comes from the preset's client section
+    (merged by settings_from_args; the default preset default = temperature 1.0) -- the preset
+    is this key's only source.
     """
 
     def __init__(self, base_url, model, temperature, max_tokens=8192,
@@ -60,14 +67,17 @@ class Chat:
         self.api = api
         self.reasoning_effort = reasoning_effort
         self.start_date = start_date
-        # top_p/seed 缺省 None = 不进请求体,行为与加参数前逐字节一致;
-        # 只有预设或调用方显式给了才发(temperature>0 的采样口径要 seed 可复现)
+        # top_p/seed default to None = do not go into the request body, so behavior is byte-for-byte
+        # identical to before these parameters were added; they are only sent when the preset or the
+        # caller gives them explicitly (the sampling convention for temperature>0 needs seed to be
+        # reproducible)
         self.top_p = top_p
         self.seed = seed
 
     def settings(self):
-        """本次采集的生成设置,进轨迹 meta 用——没有这份,回头说不清一批
-        轨迹是哪套设置跑出来的(2026-08-20 之前的轨迹 meta 只有 model)。"""
+        """This collection run's generation settings, for the trajectory meta -- without this, there
+        is no way to later tell which settings a batch of trajectories was run with (before
+        2026-08-20, trajectory meta held only model)."""
         return {"api": self.api, "model": self.model,
                 "temperature": self.temperature, "top_p": self.top_p,
                 "max_tokens": self.max_tokens, "seed": self.seed,
@@ -75,7 +85,7 @@ class Chat:
                 "start_date": self.start_date if self.api == "harmony" else None}
 
     def _sample_extras(self):
-        """top_p/seed 只在显式给了的时候进请求体。"""
+        """top_p/seed only go into the request body when given explicitly."""
         d = {}
         if self.top_p is not None:
             d["top_p"] = self.top_p
@@ -92,8 +102,9 @@ class Chat:
         return "".join(parts)
 
     def build_harmony_prompt(self, messages):
-        """打头的 system 消息按官方口径落进 developer,其余原样搬。
-        尾巴留一个光秃秃的 <|start|>assistant,频道由模型自己选。
+        """The leading system message goes into developer per the official convention; the rest is
+        carried over as-is. The tail leaves a bare <|start|>assistant, with the channel left
+        for the model to choose.
         """
         parts = []
         rest = list(messages)
@@ -119,12 +130,13 @@ class Chat:
 
     @staticmethod
     def split_harmony(raw):
-        """把带特殊标记的原始输出按频道切成段。不丢任何一段 —
-        频道认不出来的照样进 segments,只是不进 reasoning/content。
+        """Cut the raw output carrying special tokens into segments by channel. No segment is dropped
+        -- one whose channel is unrecognized still goes into segments, just not into
+        reasoning/content.
         """
         segs = []
         pos = 0
-        # 生成从 <|start|>assistant 之后接着,所以第一段的头就是 <|channel|>
+        # generation continues right after <|start|>assistant, so the first segment's head is <|channel|>
         while True:
             m = HARMONY_HEAD.search(raw, pos)
             if not m:
@@ -153,15 +165,16 @@ class Chat:
         return segs, reasoning, content
 
     def __call__(self, messages, tries=4):
-        """服务端 500 会整条分片带走 — gpt-oss 的 harmony parser 在思考特别长时
-        会吐 'unexpected tokens remaining in message header'。退避重试,
-        重试完仍失败才抛,让调用方决定弃轨迹还是弃整批。
+        """A server-side 500 takes the whole shard down with it -- gpt-oss's harmony parser throws
+        'unexpected tokens remaining in message header' when the thinking runs especially long.
+        Back off and retry; only raise once retries are exhausted and it still fails, leaving
+        it to the caller to decide whether to drop the trajectory or drop the whole batch.
         """
         last = None
         for i in range(tries):
             try:
                 return self._once(messages)
-            except Exception as e:  # 连接错误 / 5xx / 解析失败一律重试
+            except Exception as e:  # connection errors / 5xx / parse failures all get retried
                 last = e
                 if i < tries - 1:
                     time.sleep(2 ** i)
@@ -179,7 +192,7 @@ class Chat:
             stop=["<|im_end|>"], **self._sample_extras())
         raw = r.choices[0].text
         reasoning, sep, content = raw.partition("</think>")
-        if not sep:  # 思考超长被截断:全部算思考,内容为空
+        if not sep:  # thinking truncated for being too long: count it all as thinking, with empty content
             reasoning, content = raw, ""
         return {
             "reasoning": reasoning.strip("\n"),
@@ -191,9 +204,9 @@ class Chat:
 
     def _chat(self, messages):
         t0 = time.time()
-        # return_token_ids(2026-08-18 ident3):vLLM 把 prompt 与生成的 token id
-        # 一并交回(openai 客户端 extra=allow,字段留在 choice/response 上),
-        # 只多存两个字段,行为不变——三臂逐 token 比对要它
+        # return_token_ids (2026-08-18 ident3): vLLM hands back the prompt and generated token ids
+        # together (openai client extra=allow, the fields stay on choice/response); this only stores
+        # two extra fields and changes no behavior -- the three-arm token-by-token comparison needs it
         extra = {"return_token_ids": True}
         if self.reasoning_effort:
             extra["reasoning_effort"] = self.reasoning_effort
@@ -218,8 +231,9 @@ class Chat:
         }
 
     def _harmony(self, messages):
-        """不走 openai 客户端 — 它的响应模型不认 vLLM 加的 token_ids /
-        prompt_token_ids,走 stdlib 直接收 JSON,一个字段都不丢。
+        """Skip the openai client -- its response model does not recognize the token_ids /
+        prompt_token_ids that vLLM adds; go through stdlib and receive the JSON directly, so no
+        field is dropped.
         """
         t0 = time.time()
         prompt = self.build_harmony_prompt(messages)
@@ -228,9 +242,9 @@ class Chat:
             "prompt": prompt,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
-            "add_special_tokens": False,   # harmony 串自带 <|start|>,别再加
-            "skip_special_tokens": False,  # 默认 True 会把频道标记抹掉
-            "return_token_ids": True,      # 服务端把真实生成的 id 交回来
+            "add_special_tokens": False,   # the harmony string already carries <|start|>, don't add another
+            "skip_special_tokens": False,  # default True would strip out the channel markers
+            "return_token_ids": True,      # the server hands back the actually generated ids
             **self._sample_extras(),
         }).encode()
         req = urllib.request.Request(
@@ -262,13 +276,15 @@ DEFAULT_PRESET = "default"
 
 
 def settings_from_args(args, fallbacks=None):
-    """四个采集器共用的设置合并。--preset 指 configs/presets/<名>.json,
-    优先级三层:命令行显式值 > 预设 client 节里的非 null 值 > 原有缺省。
-    返回一个字典,装 base_url、model、preset 名和 Chat 的全部生成参数。
-    --preset 缺省 DEFAULT_PRESET,所以每次采集都落在一份具名预设上;
-    temperature 的唯一来源是预设 client 节,合并时挂在 cli 一侧。
-    预设带 server 节时 --base-url/--model 可省:端点按 host:port 拼,
-    模型名取 served_model_name。
+    """Settings merge shared by the four collectors. --preset points at
+    configs/presets/<name>.json. Three priority tiers: an explicit command-line value > a
+    non-null value in the preset's client section > the original default. Returns a dict
+    holding base_url, model, the preset name, and all of Chat's generation parameters.
+    --preset defaults to DEFAULT_PRESET, so every collection run lands on a named preset;
+    temperature's only source is the preset's client section, attached on the cli side when
+    merging.
+    When the preset carries a server section, --base-url/--model can be omitted: the endpoint
+    is assembled from host:port, and the model name is taken from served_model_name.
     """
     root = Path(__file__).resolve().parents[2]
     if str(root) not in sys.path:
@@ -280,15 +296,18 @@ def settings_from_args(args, fallbacks=None):
           "top_p": None, "max_tokens": 8192, "seed": None,
           "start_date": "2026-08-06"}
     fb.update(fallbacks or {})
-    # seed 故意不进这个元组(2026-08-21 多样本改造时的裁决):run_tau2.py:879
-    # 的 --seed 是 tau2 环境/用户模拟器的种子,缺省是 rules.SEED 这个非 None
-    # 常量,跟着 cli 合并进来就会把 seed 塞进请求体与轨迹 meta 的 gen_settings,
-    # 老口径产物立刻变样。预设 client 节里写的 seed 本来就走 fallbacks 那一路
-    # 生效(fb 里有 "seed" 键),多样本采集的逐条种子由 run_appworld.py 直接
-    # 覆盖 eff["seed"],两条路都不需要这里认 --seed。
-    # temperature 进这个元组:采集器的温度全部来自预设 client 节(cli 一侧取到
-    # None,合并时落预设值);哪天长出 --temperature 旗标,显式值按同一条优先级
-    # 压过预设。
+    # seed is deliberately left out of this tuple (the ruling from the 2026-08-21 multi-sample
+    # rework): run_tau2.py:879's --seed is the tau2 environment / user-simulator seed, defaulting
+    # to the non-None constant rules.SEED; merging it in through cli would stuff seed into the
+    # request body and the trajectory meta's gen_settings, immediately changing outputs under the
+    # old convention. The seed written in the preset's client section already takes effect through
+    # the fallbacks path (fb has a "seed" key), and multi-sample collection's per-trajectory seed
+    # is set directly by run_appworld.py overwriting eff["seed"] -- neither path needs --seed
+    # recognized here.
+    # temperature does go into this tuple: collectors' temperature comes entirely from the
+    # preset's client section (the cli side gets None, and the preset value lands on merge);
+    # whenever a --temperature flag is added, an explicit value will beat the preset under the
+    # same priority order.
     cli = {k: getattr(args, k, None)
            for k in ("api", "reasoning_effort", "start_date", "temperature")}
     eff = merge_client(cli, pre.get("client"), fb)
@@ -299,13 +318,13 @@ def settings_from_args(args, fallbacks=None):
     eff["preset"] = pre["_name"]
     for need in ("base_url", "model"):
         if not eff[need]:
-            raise SystemExit(f"缺 --{need.replace('_', '-')}"
-                             "(预设没带 server 节时必给)")
+            raise SystemExit(f"missing --{need.replace('_', '-')}"
+                             " (required when the preset has no server section)")
     return eff
 
 
 def chat_of(eff):
-    """settings_from_args 的结果 -> Chat。"""
+    """The result of settings_from_args -> Chat."""
     return Chat(eff["base_url"], eff["model"], api=eff["api"],
                 temperature=eff["temperature"], max_tokens=eff["max_tokens"],
                 reasoning_effort=eff["reasoning_effort"],

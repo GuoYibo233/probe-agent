@@ -1,10 +1,10 @@
-"""bfcl_gptoss 补采批次的服务发射器:gpt-oss-120b 单副本。
+"""Service launcher for the bfcl_gptoss top-up collection batch: a single gpt-oss-120b replica.
 
   gpt-oss-120b -> tokyo108 H100 GPU 0, port 8103
 
-与 launch_vllm_topup.py 的差异:不设 --served-model-name——BFCL 客户端把
---local-model-path 的路径当模型名发请求,不设名字时 vLLM 的模型 id 就是
-路径本身,两边天然对上。
+Difference from launch_vllm_topup.py: --served-model-name is not set -- the BFCL client
+sends requests using the --local-model-path path as the model name, and when no name is
+set vLLM's model id is the path itself, so the two sides line up naturally.
 """
 import shlex
 import subprocess

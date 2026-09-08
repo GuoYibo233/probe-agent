@@ -1,10 +1,12 @@
-"""事故触发(工单 12,实施计划 Task 14)——纯函数部分。
+"""Incident triggering (ticket 12, implementation plan Task 14) -- the pure-function part.
 
-测试缝(spec `Testing Decisions`):"事故触发的规则收在纯函数里单测"——
-should_trigger 压满四种情形,build_incident_prompt 检查内容字样。
+Test seam (spec `Testing Decisions`): "the incident-trigger rules are unit-tested inside
+pure functions" -- should_trigger covers all four cases, build_incident_prompt checks
+the content wording.
 
-`spawn_agent`/`maybe_trigger_incidents` 的实装与这两个函数的集成测试
-本轮未完成(见工单报告"自查发现与存疑"一节)——不在本文件范围内。
+The implementation of `spawn_agent`/`maybe_trigger_incidents` and the integration tests
+for these two functions were not finished this round (see the ticket report's "self-check
+findings and open questions" section) -- out of scope for this file.
 """
 import pathlib
 import sys
@@ -69,13 +71,14 @@ class TestBuildIncidentPrompt(unittest.TestCase):
         prompt = sampler.build_incident_prompt(row, allow_refire=False)
         self.assertIn("/tmp/x.log", prompt)
         self.assertIn("python3 run.py gpu-jobs json", prompt)
-        self.assertIn("只验尸,不许再发射任何东西", prompt)
+        self.assertIn("autopsy only, do not launch anything else", prompt)
         self.assertNotIn("--refire x --idx 0", prompt)
 
 
 class TestMaybeTriggerIncidents(unittest.TestCase):
-    """触发闭环:mock 掉 spawn_agent(不拉真进程),查事故记录、
-    incident_open 置位、二次调用不重触发。落盘用临时 MONITOR_DIR。"""
+    """The trigger closed loop: mock out spawn_agent (no real process spawned), check the
+    incident record, incident_open gets set, a second call does not re-trigger. Writes
+    to disk under a temporary MONITOR_DIR."""
 
     def setUp(self):
         import tempfile
@@ -123,7 +126,7 @@ class TestMaybeTriggerIncidents(unittest.TestCase):
 
 
 class TestSpawnAgentArgs(unittest.TestCase):
-    """spawn_agent 的子进程参数:mock Popen,断言无头旗标组合与重定向。"""
+    """spawn_agent's subprocess arguments: mock Popen, assert the headless flag combination and redirection."""
 
     def test_popen_args(self):
         import os
@@ -136,8 +139,9 @@ class TestSpawnAgentArgs(unittest.TestCase):
 
         old = sampler.subprocess.Popen
         sampler.subprocess.Popen = FakePopen
-        # tests/__init__ 全局设了 NEW1_NO_SPAWN(C1 兜底开关),这里要测的
-        # 正是"真发射时的参数",临时摘掉,测完还原
+        # tests/__init__ sets NEW1_NO_SPAWN globally (the C1 fallback switch); what this test
+        # needs is exactly "the arguments at real launch time", so remove it temporarily and
+        # restore it after the test
         saved_env = os.environ.pop("NEW1_NO_SPAWN", None)
         try:
             with tempfile.TemporaryDirectory() as d:
@@ -147,7 +151,7 @@ class TestSpawnAgentArgs(unittest.TestCase):
             if saved_env is not None:
                 os.environ["NEW1_NO_SPAWN"] = saved_env
         argv, kw = calls[0]
-        # C3 起 argv[0] 是 shutil.which 解析出的绝对路径,不再是裸字符串
+        # From C3 onward, argv[0] is the absolute path resolved by shutil.which, no longer a bare string
         self.assertTrue(argv[0].endswith("claude"), argv[0])
         self.assertEqual(argv[1:3], ["-p", "PROMPT"])
         model_i = argv.index("--model")

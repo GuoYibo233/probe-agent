@@ -1,7 +1,8 @@
-"""从三个域的轨迹里抽截断探针用例。
+"""Extract truncated probe cases from trajectories across the three domains.
 
-每个用例 = 上下文(任务+最近环境返回) + 思考前缀(按 25%/50%/75% 截断)。
-盲文件(cases_*.json)不含答案;gold 单独存 gold_*.json,只给主对话评分用。
+Each case = context (task + most recent environment return) + a thinking prefix (truncated at
+25%/50%/75%). The blind files (cases_*.json) carry no answers; gold is stored separately in
+gold_*.json, for the main conversation to score only.
 """
 
 import json
@@ -74,7 +75,8 @@ def bfcl_cases():
          "BFCL_v4_multi_turn_base_result.json")
     for line in open(f):
         e = json.loads(line)
-        # inference_log: 轮内是消息 dict 列表(role/content),夹杂状态项
+        # inference_log: within a turn is a list of message dicts (role/content), interspersed with
+        # status entries
         last_user = ""
         k = 0
         def visit(o):

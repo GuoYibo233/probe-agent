@@ -1,34 +1,36 @@
 #!/usr/bin/env python3
-"""new1 实验记录 CLI（零依赖，标准库）。
+"""new1 experiment record CLI (zero dependencies, standard library only).
 
-三层记录体系的中间层：统计数字。
-  方向层  TIMELINE.md   人手写，只增不改（一条 = 一次方向决策）
-  数字层  ops/runs.jsonl → RESULTS.md   本脚本维护
-  数据层  NFS 上的原始轨迹/权重，不进 git，靠 run_id 目录名 + report.md 追溯
+The middle layer of the three-layer record system: the numbers.
+  direction   TIMELINE.md   human-written, append-only (one line = one direction decision)
+  numbers     ops/runs.jsonl -> RESULTS.md   maintained by this script
+  data        raw trajectories/weights on NFS, not in git, traced via run_id dir name + report.md
 
-用法:
-  record.py start --name NAME --track TRACK [选项]   # 发射后立刻记
-  record.py start --run-id ID --track TRACK [选项]
-      --cmd "..."          实际执行的命令行
-      --host h --gpu 0,1   跑在哪
-      --model M --seed N   模型与随机种子
-      --param k=v          可重复，实验参数
-      --data PATH          原始数据落盘位置
-      --log PATH           日志路径（账 ↔ 日志互相能跳）
-      --note TEXT          一句话说明这次想验证什么
-  record.py finish RUN_ID [选项]                     # 收尾时补数字
+Usage:
+  record.py start --name NAME --track TRACK [options]   # record right after launch
+  record.py start --run-id ID --track TRACK [options]
+      --cmd "..."          the actual command line executed
+      --host h --gpu 0,1   where it runs
+      --model M --seed N   model and random seed
+      --param k=v          repeatable, experiment parameters
+      --data PATH          where the raw data lands
+      --log PATH           log path (record and log can jump to each other)
+      --note TEXT          one sentence on what this run is meant to verify
+  record.py finish RUN_ID [options]                     # fill in the numbers at wrap-up
       --status ok|fail|killed
-      --metric k=v         可重复，关键数字
-      --data PATH          最终数据位置（覆盖 start 时的）
-      --conclusion TEXT    一句话结论
-  record.py render      # 重新渲染 RESULTS.md（start/finish 会自动调用）
-  record.py list        # 一行一个 run
-  record.py show RUN_ID # 单个 run 的全部字段
+      --metric k=v         repeatable, key numbers
+      --data PATH          final data location (overrides the one from start)
+      --conclusion TEXT    one-sentence conclusion
+  record.py render      # re-render RESULTS.md (start/finish call this automatically)
+  record.py list        # one line per run
+  record.py show RUN_ID # all fields of a single run
 
-runs.jsonl 是 append-only 事件流，永不改写既有行——这样 git diff 永远是纯新增，
-历史不可能被悄悄篡改。RESULTS.md 是它的渲染产物，可随时重建。
-run_id 是贯穿全局的主键：原始数据目录名 / tmux session 名 / 台账 name /
-commit message 里都用它，四个地方能互相跳。
+runs.jsonl is an append-only event stream, existing lines are never rewritten -- so
+git diff is always pure addition, and history can never be silently tampered with.
+RESULTS.md is its rendered output, rebuildable at any time.
+run_id is the primary key running through everything: it is used in the raw data
+dir name / tmux session name / job ledger name / commit message, and the four
+places can jump to each other through it.
 """
 import json
 import os
@@ -46,17 +48,21 @@ def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-# 台账与锁不算脏(与 run.py 的 LEDGER_PATHS、ops/runmeta.py 三处同步维护):
-# 它们是记录本身的副产品,不影响任何产物
+# The job ledger and lock files do not count as dirty (kept in sync across three
+# spots with run.py's LEDGER_PATHS and ops/runmeta.py): they are a byproduct of the
+# recording itself and do not affect any outputs
 LEDGER_PATHS = ("ops/jobs.json", "ops/runs.jsonl", "RESULTS.md",
                 "ops/jobs.json.lock")
 
 
 def git_state():
-    """当前代码版本。dirty=True 意味着这条记录的 commit 追不回真实代码。
-    fail-closed:git 探不到就明标 git_probe_failed 并按脏处理——静默记成
-    干净树会让坏记录比脏树还漂亮(审计 A4)。
-    porcelain 不整体 strip:首行前导空格是状态码的一部分。"""
+    """Current code version. dirty=True means this record's commit cannot be traced back
+    to the real code.
+    fail-closed: if git probing fails, mark git_probe_failed explicitly and treat it
+    as dirty -- silently recording it as a clean tree would make a bad record look
+    better than a dirty tree (audit A4).
+    Do not strip porcelain output as a whole: the leading whitespace on the first
+    line is part of the status code."""
     def g(*a, raw=False):
         r = subprocess.run(["git", "-C", ROOT] + list(a),
                            capture_output=True, text=True, timeout=10)
@@ -81,7 +87,7 @@ def append(ev):
 
 
 def load():
-    """把事件流折叠成 {run_id: 合并记录}，保持首次出现的顺序。"""
+    """Fold the event stream into {run_id: merged record}, preserving first-occurrence order."""
     runs = {}
     if not os.path.exists(RUNS_PATH):
         return runs
@@ -118,7 +124,7 @@ def kv(pairs):
     out = {}
     for p in pairs:
         if "=" not in p:
-            sys.exit(f"参数要写成 k=v，收到: {p}")
+            sys.exit(f"params must be written as k=v, got: {p}")
         k, v = p.split("=", 1)
         try:
             v = float(v) if ("." in v or "e" in v.lower()) else int(v)
@@ -137,23 +143,23 @@ def fmt_metrics(m):
 def render():
     runs = load()
     lines = [
-        "# RESULTS — 实验统计数字总表",
+        "# RESULTS -- master table of experiment statistics",
         "",
-        "> 本文件由 `python3 run.py record render` 自动生成，**不要手改**。",
-        "> 数据源是 append-only 的 `ops/runs.jsonl`；改数字请补一条 finish 事件。",
-        "> 方向决策的来龙去脉看 [TIMELINE.md](TIMELINE.md)，原始数据不在 git 里。",
+        "> This file is auto-generated by `python3 run.py record render`, **do not edit by hand**.",
+        "> The data source is the append-only `ops/runs.jsonl`; to change a number, add a finish event.",
+        "> For the background behind direction decisions, see [TIMELINE.md](TIMELINE.md); raw data is not in git.",
         "",
     ]
     if not runs:
-        lines += ["（还没有记录。发射实验时走 gpu-run skill 会自动写入。）", ""]
+        lines += ["(No records yet. Launching experiments via the gpu-run skill writes them automatically.)", ""]
     else:
         lines += [
-            "| run_id | 日期 | 方向 | commit | 模型 | 状态 | 关键数字 | 结论 |",
+            "| run_id | Date | Direction | commit | Model | Status | Key numbers | Conclusion |",
             "|---|---|---|---|---|---|---|---|",
         ]
         for r in reversed(list(runs.values())):
             if r.get("git_probe_failed"):
-                c = "?"                # 探测失败 ≠ 已知脏树,别渲染成 -+dirty
+                c = "?"                # probe failure is not the same as a known dirty tree, don't render it as -+dirty
             else:
                 c = r.get("commit", "-")
                 if r.get("dirty"):
@@ -164,45 +170,45 @@ def render():
                 fmt_metrics(r.get("metrics")),
                 (r.get("conclusion") or "-").replace("|", "/"),
             ))
-        lines += ["", "## 逐条详情", ""]
+        lines += ["", "## Per-run detail", ""]
         for r in reversed(list(runs.values())):
             lines.append(f"### `{r['run_id']}`")
             lines.append("")
             if r.get("note"):
-                lines.append(f"- **想验证什么**：{r['note']}")
+                lines.append(f"- **What this tests**: {r['note']}")
             if r.get("conclusion"):
-                lines.append(f"- **结论**：{r['conclusion']}")
-            lines.append("- **方向**：{} ｜ **状态**：{} ｜ **起止**：{} → {}".format(
+                lines.append(f"- **Conclusion**: {r['conclusion']}")
+            lines.append("- **Direction**: {} | **Status**: {} | **Start/end**: {} → {}".format(
                 r.get("track", "-"), r.get("status", "-"),
-                r.get("started_at", "-"), r.get("finished_at", "未收尾")))
+                r.get("started_at", "-"), r.get("finished_at", "not finished")))
             if r.get("git_probe_failed"):
-                lines.append("- **代码**：⚠️ 记录时 git 探测失败，代码版本未知"
-                             + ("（{}）".format(r["git_probe_error"])
+                lines.append("- **Code**: ⚠️ git probe failed at record time, code version unknown"
+                             + ("({})".format(r["git_probe_error"])
                                 if r.get("git_probe_error") else ""))
             else:
                 nd = r.get("dirty_count") or len(r.get("dirty_files") or [])
-                lines.append("- **代码**：`{}`{} (分支 {})".format(
+                lines.append("- **Code**: `{}`{} (branch {})".format(
                     r.get("commit", "-"),
-                    ("  ⚠️ 发射时工作树是脏的（{} 文件），这个 commit "
-                     "追不回真实代码".format(nd or "?"))
+                    ("  ⚠️ the working tree was dirty at launch time ({} files), this commit "
+                     "cannot trace back to the real code".format(nd or "?"))
                     if r.get("dirty") else "",
                     r.get("branch", "-")))
             if r.get("host"):
-                lines.append("- **机器**：{} GPU {}".format(
+                lines.append("- **Machine**: {} GPU {}".format(
                     r["host"], r.get("gpu", "-")))
             if r.get("model") or r.get("seed") is not None:
-                lines.append("- **模型 / 种子**：{} / {}".format(
+                lines.append("- **Model / seed**: {} / {}".format(
                     r.get("model", "-"), r.get("seed", "-")))
             if r.get("params"):
-                lines.append("- **参数**：{}".format(fmt_metrics(r["params"])))
+                lines.append("- **Params**: {}".format(fmt_metrics(r["params"])))
             if r.get("metrics"):
-                lines.append("- **数字**：{}".format(fmt_metrics(r["metrics"])))
+                lines.append("- **Numbers**: {}".format(fmt_metrics(r["metrics"])))
             if r.get("data"):
-                lines.append(f"- **原始数据**：`{r['data']}`（不在 git 里）")
+                lines.append(f"- **Raw data**: `{r['data']}` (not in git)")
             if r.get("log"):
-                lines.append(f"- **日志**：`{r['log']}`")
+                lines.append(f"- **Log**: `{r['log']}`")
             if r.get("cmd"):
-                lines.append(f"- **命令**：`{r['cmd']}`")
+                lines.append(f"- **Command**: `{r['cmd']}`")
             lines.append("")
     with open(RESULTS_PATH, "w") as f:
         f.write("\n".join(lines))
@@ -227,25 +233,26 @@ def cmd_start(argv):
         elif a == "--param":
             params.append(next(it))
         else:
-            sys.exit(f"未知参数 {a}\n\n{__doc__}")
+            sys.exit(f"unknown argument {a}\n\n{__doc__}")
     if not ev.get("run_id"):
         if not name:
-            sys.exit("start 需要 --run-id 或 --name")
+            sys.exit("start needs --run-id or --name")
         ev["run_id"] = datetime.now().strftime("%Y%m%d_%H%M_") + name
     if not ev.get("track"):
-        sys.exit("start 需要 --track（这个实验服务于哪个方向，跟 TIMELINE.md 对齐）")
+        sys.exit("start needs --track (which direction this experiment serves, align with TIMELINE.md)")
     if ev["run_id"] in load():
-        sys.exit(f"run_id {ev['run_id']} 已存在，换一个")
+        sys.exit(f"run_id {ev['run_id']} already exists, use a different one")
     ev["params"] = kv(params)
     ev.update(git_state())
-    # 脏树补丁在 append/render **之前**取:否则 diff 里混进本条记录自己刚写的
-    # 台账改动,与事件里的 dirty_files 快照不是同一时刻(审计复核)
+    # Capture the dirty-tree diff **before** append/render: otherwise the diff would
+    # pick up the job-ledger change this very record just wrote, which would not be
+    # the same moment as the dirty_files snapshot stored in the event (audit review)
     if ev.get("dirty") and not ev.get("git_probe_failed"):
         d = ev.get("data")
         if not d:
-            print("⚠️ 脏树且没给 --data,补丁没处存——这条记录只有脏文件清单")
+            print("⚠️ dirty tree with no --data given, nowhere to save the patch -- this record only has the dirty-file list")
         elif not os.path.isdir(d):
-            print(f"⚠️ 脏树补丁没存: --data 目录还不存在({d})")
+            print(f"⚠️ dirty-tree patch not saved: --data dir does not exist yet ({d})")
         else:
             try:
                 r = subprocess.run(["git", "-C", ROOT, "diff", "HEAD"],
@@ -254,24 +261,24 @@ def cmd_start(argv):
                     pf = os.path.join(d, f"dirty_{ev['run_id']}.patch")
                     with open(pf, "w") as f:
                         f.write(r.stdout)
-                    print(f"已存脏树补丁: {pf}（未跟踪的新文件不在补丁里,"
-                          "清单看本条记录的 dirty_files）")
+                    print(f"saved dirty-tree patch: {pf} (untracked new files are not in the patch, "
+                          "see this record's dirty_files for the list)")
             except Exception as e:
-                print(f"⚠️ 脏树补丁没存上: {e}")
+                print(f"⚠️ dirty-tree patch failed to save: {e}")
     append(ev)
     render()
     if ev.get("git_probe_failed"):
-        print(f"已记录 start: {ev['run_id']}  ⚠️ git 探测失败,代码版本未知")
+        print(f"recorded start: {ev['run_id']}  ⚠️ git probe failed, code version unknown")
     else:
-        print(f"已记录 start: {ev['run_id']}  (commit {ev['commit']}"
-              f"{'，⚠️ 工作树是脏的：先 commit 再发射，否则追溯断链' if ev['dirty'] else ''})")
-    print(f"收尾时: python3 run.py record finish {ev['run_id']} "
+        print(f"recorded start: {ev['run_id']}  (commit {ev['commit']}"
+              f"{', ⚠️ the working tree is dirty: commit before launching, otherwise the trace chain breaks' if ev['dirty'] else ''})")
+    print(f"at finish time: python3 run.py record finish {ev['run_id']} "
           f"--metric k=v --conclusion \"...\"")
 
 
 def cmd_finish(argv):
     if not argv or argv[0].startswith("--"):
-        sys.exit("finish 需要 RUN_ID")
+        sys.exit("finish needs RUN_ID")
     ev = {"ev": "finish", "t": now(), "run_id": argv[0], "status": "ok"}
     metrics = []
     it = iter(argv[1:])
@@ -281,21 +288,21 @@ def cmd_finish(argv):
         elif a == "--metric":
             metrics.append(next(it))
         else:
-            sys.exit(f"未知参数 {a}\n\n{__doc__}")
+            sys.exit(f"unknown argument {a}\n\n{__doc__}")
     runs = load()
     if ev["run_id"] not in runs:
-        sys.exit(f"没有 run_id {ev['run_id']}——先 record.py start，或查 record.py list")
+        sys.exit(f"no run_id {ev['run_id']} -- run record.py start first, or check record.py list")
     ev["metrics"] = kv(metrics)
     append(ev)
     render()
-    print(f"已记录 finish: {ev['run_id']}  {fmt_metrics(ev['metrics'])}")
-    print("数字改变了 WORKPLAN 里的判断？追加一条 TIMELINE.md 并 commit。")
+    print(f"recorded finish: {ev['run_id']}  {fmt_metrics(ev['metrics'])}")
+    print("Did the numbers change a judgment in WORKPLAN? Append an entry to TIMELINE.md and commit.")
 
 
 def cmd_list():
     runs = load()
     if not runs:
-        print("还没有记录。")
+        print("No records yet.")
         return
     for r in runs.values():
         print("{:<28} {:<12} {:<8} {}".format(
@@ -306,7 +313,7 @@ def cmd_list():
 def cmd_show(rid):
     runs = load()
     if rid not in runs:
-        sys.exit(f"没有 run_id {rid}")
+        sys.exit(f"no run_id {rid}")
     print(json.dumps(runs[rid], indent=2, ensure_ascii=False))
 
 
@@ -319,7 +326,7 @@ def main():
     elif args[0] == "finish":
         cmd_finish(args[1:])
     elif args[0] == "render":
-        print(f"RESULTS.md 已重建（{render()} 条记录）")
+        print(f"RESULTS.md rebuilt ({render()} records)")
     elif args[0] == "list":
         cmd_list()
     elif args[0] == "show":

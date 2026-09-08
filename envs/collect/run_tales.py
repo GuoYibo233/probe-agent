@@ -1,6 +1,6 @@
-"""TALES(TextWorld-Express)驱动:ReAct 文本循环,进出全录。
+"""TALES (TextWorld-Express) driver: ReAct text loop, records every input and output in full.
 
-用法:
+Usage:
   python run_tales.py --base-url http://HOST:8101/v1 --model qwen3.5-27b \
       --game cookingworld --seeds 7,8 --outdir ../runs/smoke_q35
 """
@@ -35,21 +35,21 @@ ACT_RE = re.compile(r"ACTION:\s*(.+)")
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--preset", default="default",
-                    help="configs/presets/<名>.json 的一套生成设置;"
-                         "缺省 default;命令行显式给的参数压过预设值")
-    ap.add_argument("--base-url", help="预设带 server 节时可省")
-    ap.add_argument("--model", help="预设带 server 节时可省")
+                    help="a set of generation settings from configs/presets/<name>.json;"
+                         " default: default; args explicitly given on the command line override preset values")
+    ap.add_argument("--base-url", help="can be omitted when the preset has a server section")
+    ap.add_argument("--model", help="can be omitted when the preset has a server section")
     ap.add_argument("--game", default="cookingworld")
     ap.add_argument("--seeds", default="7,8")
     ap.add_argument("--max-steps", type=int, default=25)
     ap.add_argument("--outdir", required=True)
     ap.add_argument("--api", default=None, choices=["raw", "chat"],
-                    help="缺省 raw(预设也没给时)")
+                    help="default raw (when the preset gives none either)")
     ap.add_argument("--reasoning-effort", default=None)
     ap.add_argument("--game-params", default=None,
-                    help="覆盖 TWX 默认难度参数串,如 'numLocations=5, ...'")
+                    help="override the TWX default difficulty param string, e.g. 'numLocations=5, ...'")
     ap.add_argument("--resume", action="store_true",
-                    help="跳过 outdir 里已跑完的 seed")
+                    help="skip seeds already finished in outdir")
     args = ap.parse_args()
 
     import tales.textworld_express as twx

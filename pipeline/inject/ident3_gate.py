@@ -1,14 +1,21 @@
-"""ident3 发射前门禁(stdlib,CPU):证明 chat 端点与 /render 对同一组消息渲出
-**逐 id 相同**的 prompt,再放三臂开跑。
+"""ident3 pre-launch gate (stdlib, CPU): prove that the chat endpoint and
+/render render **id-for-id identical** prompts for the same set of messages,
+then allow the three arms to start.
 
-查的是两件事,任一不过就退出非零、作业脚本据此拒跑:
-1. vLLM 服务的日期钉(VLLM_SYSTEM_START_DATE)与 /render 的 COLLECT_DATE 一致
-   ——vLLM 没钉就用今天(harmony_utils.get_system_message 退回 datetime.now()),
-   chat 臂会在每题第 0 步就与另两臂分叉,而三臂各自都能跑完,报告里看不出原因。
-2. chat 端点回 prompt_token_ids(return_token_ids 生效)且与 /render 逐 id 相等
-   ——这是"三臂逐 token 同"的前提,发射前钉一次。
+Checks two things; if either fails, exit non-zero and the job script
+refuses to run based on that:
+1. vLLM service's date pin (VLLM_SYSTEM_START_DATE) matches /render's
+   COLLECT_DATE -- if vLLM isn't pinned it falls back to today
+   (harmony_utils.get_system_message falls back to datetime.now()), and the
+   chat arm would diverge from the other two arms right at step 0 of every
+   question, while all three arms would still run to completion, with no
+   visible cause in the report.
+2. The chat endpoint returns prompt_token_ids (return_token_ids in effect)
+   and they are id-for-id equal to /render's -- this is the precondition
+   for "the three arms are token-for-token identical," pinned once before
+   launch.
 
-用法:
+Usage:
   python3 pipeline/inject/ident3_gate.py --base-url http://tokyo108:8114/v1 \\
       --probe-url http://localhost:8795 [--model gpt-oss-120b] [--effort high]
 """
@@ -41,10 +48,11 @@ def main():
     ap.add_argument("--model", default="gpt-oss-120b")
     ap.add_argument("--effort", default="high")
     ap.add_argument("--preset", default="default",
-                    help="configs/presets/<名>.json 的一套生成设置;"
-                         "门禁请求的 temperature 从这份预设的 client 节读")
+                    help="a set of generation settings from configs/presets/<name>.json; "
+                         "the gate request's temperature is read from this preset's client section")
     a = ap.parse_args()
-    # 采样键出自预设 client 节;temperature 只有这一个来源
+    # Sampling keys come from the preset's client section; temperature has only
+    # this one source
     root = str(HERE.parents[1])
     if root not in sys.path:
         sys.path.append(root)
@@ -64,12 +72,12 @@ def main():
                      reasoning_effort=a.effort))
     pids = chat.get("prompt_token_ids")
     if pids is None:
-        print("GATE FAIL: chat 端点没回 prompt_token_ids(return_token_ids 没生效?)")
+        print("GATE FAIL: chat endpoint did not return prompt_token_ids (return_token_ids not taking effect?)")
         return 2
     rid = ren["prefix_ids"]
     if pids == rid:
         print(f"GATE OK: chat prompt_token_ids == /render prefix_ids "
-              f"({len(rid)} ids;日期钉 {ren.get('n_tokens')} tokens, "
+              f"({len(rid)} ids; date pinned for {ren.get('n_tokens')} tokens, "
               f"render start_date={R.COLLECT_DATE})")
         return 0
     n = min(len(pids), len(rid))
@@ -79,8 +87,8 @@ def main():
     dec2 = post(a.probe_url.rstrip("/") + "/decode",
                 dict(ids=rid[max(0, i - 12): i + 12]))["text"]
     print(f"GATE FAIL: chat prompt ids ({len(pids)}) != /render ({len(rid)}),"
-          f" 首个不等位 {i}\n  chat  : {dec!r}\n  render: {dec2!r}\n"
-          f"  多半是 vLLM 没钉 VLLM_SYSTEM_START_DATE={R.COLLECT_DATE}")
+          f" first mismatched position {i}\n  chat  : {dec!r}\n  render: {dec2!r}\n"
+          f"  most likely vLLM did not pin VLLM_SYSTEM_START_DATE={R.COLLECT_DATE}")
     return 1
 
 

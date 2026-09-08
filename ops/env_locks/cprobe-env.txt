@@ -1,5 +1,5 @@
-# frozen 2026-08-02 by audit E26; 2026-08-18 加 openai-harmony==0.0.8(+pydantic 2 及其依赖),给 probe_server /render 出 token id 用
-# 双环境铁律: mbert 线钉 transformers==4.57.6 / cprobe 线 >=5.14
+# frozen 2026-08-02 by audit E26; 2026-08-18 added openai-harmony==0.0.8 (+pydantic 2 and its deps) so probe_server /render can emit token ids
+# two-environment hard rule: the mbert line pins transformers==4.57.6 / the cprobe line needs >=5.14
 accelerate==1.14.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3

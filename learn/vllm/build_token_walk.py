@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""把 hcap 抓到的原始 token 流转成"点一下前进一个 token"的课页。
+"""Turn the raw token stream captured by hcap into a "click to advance one token" lesson page.
 
-**确定性转换器**:唯一真源是 NFS 上的原始记录(run_id=hcap),页面每次由它
-现生成。手改产物 = 下次重跑被覆盖。
+**Deterministic converter**: the single source of truth is the raw record on NFS (run_id=hcap),
+and the page is generated fresh from it every time. Hand-editing the output means it gets
+overwritten on the next rerun.
 
-它做的事:
-  1. 读轨迹 jsonl(--api harmony 录的,带 out_token_ids)与工具调用单发 json
-  2. 用 harmony 编码器把每个 token id 解成它自己的那一小段字符串
-  3. 按 vllm/parser/harmony.py:46-56 的同一套规则,逐 token 标出
-     当前频道 / 收件人 / 这个 token 的去向(思考/正文/丢掉/结构)
-  4. 把这些嵌进 HTML,配 assets/tokenwalk.{css,js} 做逐 token 步进
+What it does:
+  1. Read the trajectory jsonl (recorded with --api harmony, carries out_token_ids) and the
+     single-shot tool-call json
+  2. Use the harmony encoder to decode each token id into its own little string
+  3. Following the exact same rules as vllm/parser/harmony.py:46-56, mark each token's current
+     channel / recipient / destination (thinking / body / dropped / structure)
+  4. Embed these into the HTML, paired with assets/tokenwalk.{css,js} for per-token stepping
 
-第 3 步那套规则在这里重写了一遍(JS 里不跑真解析器),所以它必须和
-vllm 那份逐条对上——改 vllm 版本时要回头核这一段。
+The rule set from step 3 is rewritten here (no real parser runs in JS), so it must match the
+vllm version line for line -- when the vllm version changes, come back and check this section.
 
-要在 envs/vllm-env 里跑(需要 openai_harmony 解码 token id)。
-用法:
-  python3 run.py build-token-walk --traj <轨迹jsonl> --toolcall <json> --out <页面html>
+Must be run inside envs/vllm-env (needs openai_harmony to decode token ids).
+Usage:
+  python3 run.py build-token-walk --traj <trajectory jsonl> --toolcall <json> --out <page html>
 """
 
 import argparse
@@ -40,7 +42,7 @@ def die(msg, code=2):
 
 
 def bucket_of(channel, recipient):
-    """vllm/parser/harmony.py:46-56 的规则,逐条照搬。"""
+    """Rules from vllm/parser/harmony.py:46-56, copied one for one."""
     if recipient:
         return "tool"
     if channel == "analysis":
@@ -51,7 +53,7 @@ def bucket_of(channel, recipient):
 
 
 def segments_of(text):
-    """扫出每段消息体的字符区间。头部与收尾标记不属于任何消息体。"""
+    """Scan out the character range of each message body. Header and closing markers belong to no message body."""
     segs = []
     pos = 0
     while True:
@@ -76,7 +78,7 @@ def segments_of(text):
 
 
 def walk(token_ids, enc):
-    """每个 token 一条记录:id、它自己那段字符串、所在频道、去向。"""
+    """One record per token: id, its own string, the channel it is in, and its destination."""
     pieces = [enc.decode([tid]) for tid in token_ids]
     text = "".join(pieces)
     segs = segments_of(text)
@@ -103,8 +105,8 @@ def load_traj(path, enc, max_steps):
             meta = r
         elif r["type"] == "gen":
             if not r.get("out_token_ids"):
-                die(f"第 {r['step']} 步没有 out_token_ids —— 这条轨迹不是 "
-                    "--api harmony 录的,换一条")
+                die(f"step {r['step']} has no out_token_ids -- this trajectory was not recorded with "
+                    "--api harmony, use a different one")
             toks, text, segs = walk(r["out_token_ids"], enc)
             steps.append({
                 "step": r["step"], "tokens": toks, "text": text,
@@ -148,7 +150,7 @@ PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>逐 token 看一个真实任务被处理</title>
+<title>Watch a real task get processed, token by token</title>
 <link rel="stylesheet" href="../assets/lesson.css">
 <link rel="stylesheet" href="../assets/tokenwalk.css">
 </head>
@@ -156,59 +158,59 @@ PAGE = """<!doctype html>
 <div class="wrap wide">
 
 <p class="kicker">Reference · vLLM 0.26.0 · run_id hcap</p>
-<h1>逐 token 看一个真实任务被处理</h1>
-<p class="standfirst">下面每一个 token 都是 2026-08-06 从 tokyo108 那台 gpt-oss-120b 上现抓的：客户端自己拼 harmony 提示词走 <code>/v1/completions</code>，带 <code>return_token_ids</code>，服务端把真实生成的 token id 原样交回来。点「下一个 token」，看它一个一个落进哪个桶。</p>
+<h1>Watch a real task get processed, token by token</h1>
+<p class="standfirst">Every token below was captured live on 2026-08-06 from the gpt-oss-120b instance on tokyo108: the client assembles the harmony prompt itself and calls <code>/v1/completions</code> with <code>return_token_ids</code>, and the server hands back the token ids it actually generated, unchanged. Click "next token" to watch each one land in its bucket.</p>
 
 <div class="note">
-<p><strong>题目</strong>：{QUESTION}<br>
-AppWorld <code>test_normal</code> 任务 <code>{TASK_ID}</code>，一共走了 {N_STEPS} 步。{FINAL_NOTE}</p>
+<p><strong>Task</strong>: {QUESTION}<br>
+AppWorld <code>test_normal</code> task <code>{TASK_ID}</code>, took {N_STEPS} steps total. {FINAL_NOTE}</p>
 </div>
 
 <div id="tw"></div>
 
-<h2>这台机器上真实发生的事</h2>
+<h2>What actually happened on this machine</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>项</th><th>值</th></tr></thead>
+<thead><tr><th>Item</th><th>Value</th></tr></thead>
 <tbody>
 {FACTS}
 </tbody>
 </table>
 </div>
 
-<p class="src">原始记录在 <code>{TRAJ}</code>，工具调用单发在 <code>{TOOLCALL}</code>。服务端配置见 <code>{SRVLOG}</code>。本页由 <code>learn/vllm/build_token_walk.py</code> 从这些文件现生成，手改会被下次重跑覆盖。</p>
+<p class="src">The raw record is at <code>{TRAJ}</code>, the standalone tool call is at <code>{TOOLCALL}</code>. Server config is at <code>{SRVLOG}</code>. This page is generated live from these files by <code>learn/vllm/build_token_walk.py</code>; manual edits get overwritten on the next rerun.</p>
 
-<h2>抓这批数据时撞见的两件事</h2>
+<h2>Two things noticed while collecting this batch</h2>
 
-<h3>一、自己拼和让 vLLM 拼，结果一模一样</h3>
+<h3>1. Assemble it yourself or let vLLM assemble it -- the results are identical</h3>
 
-<p>拿第 2 步开跑前那一组消息，同一台服务、同一个时刻，两条路各发一次：</p>
+<p>Take the message set right before step 2 starts, on the same server at the same moment, and send it once down each of two paths:</p>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>路径</th><th>prompt token</th><th>输出 token</th><th>reasoning</th><th>content</th></tr></thead>
+<thead><tr><th>Path</th><th>prompt token</th><th>output token</th><th>reasoning</th><th>content</th></tr></thead>
 <tbody>
-<tr><td class="key">自拼 harmony 走 /v1/completions</td><td>1457</td><td>136</td><td>349 字</td><td>120 字</td></tr>
-<tr><td class="key">交 messages 走 /v1/chat/completions</td><td>1457</td><td>136</td><td>349 字</td><td>120 字</td></tr>
+<tr><td class="key">Self-assembled harmony via /v1/completions</td><td>1457</td><td>136</td><td>349 chars</td><td>120 chars</td></tr>
+<tr><td class="key">Handing off messages via /v1/chat/completions</td><td>1457</td><td>136</td><td>349 chars</td><td>120 chars</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>content 的前 120 个字符也逐字相同。四项全等，说明手拼那份 harmony 串和服务端 <code>openai_harmony</code> 渲出来的是同一串——之前只有"逐字节比对渲染结果"这一条代码层证据，这次是端到端跑出来的。</p>
+<p>The first 120 characters of content are also identical, character by character. All four figures match, showing the hand-assembled harmony string is the same string the server's <code>openai_harmony</code> renders -- before this, the only evidence was code-level, 'byte-by-byte comparison of the rendered output'; this time it is from an end-to-end run.</p>
 
-<h3>二、同一个 prompt、temperature 0，两次跑出来不一样长</h3>
+<h3>2. Same prompt, temperature 0, two runs come out different lengths</h3>
 
-<p>采集时第 2 步撞了 <code>max_tokens</code> 上限：8192 个输出 token，401 段消息，模型在一次生成里自己编环境返回、一轮接一轮往下写，始终没吐 <code>&lt;|return|&gt;</code>。上面那张对照表里同一个 prompt（prompt token 同为 1457）重发一次，只有 136 个输出 token 就正常收尾了。</p>
+<p>During collection, step 2 hit the <code>max_tokens</code> ceiling: 8192 output tokens, 401 message segments -- the model made up environment responses on its own within a single generation, writing round after round, and never emitted <code>&lt;|return|&gt;</code>. Resending the same prompt from the comparison table above (prompt tokens likewise 1457) once, it finished normally after only 136 output tokens.</p>
 
-<p>第 6 步和第 8 步也是 8192 撞顶，形态一样。这条轨迹一共 13 步、输出 token 合计 39088，其中三步占了 24576。</p>
+<p>Steps 6 and 8 also hit the 8192 ceiling, same pattern. This trajectory has 13 steps total, 39088 output tokens combined, of which three steps account for 24576.</p>
 
 <div class="note">
-<p><strong>这两个数只是观测。</strong>为什么同一个 prompt 在 temperature 0 下会跑出两种长度，本页不给解释——没查到证据之前不写机制。</p>
+<p><strong>These two numbers are only an observation.</strong> This page gives no explanation for why the same prompt at temperature 0 produces two different lengths -- no mechanism gets written until there is evidence for it.</p>
 </div>
 
 <div class="foot">
-<p><a class="local" href="../reference/prompt-assembly.html">← 速查卡：prompt 是怎么拼出来的</a></p>
+<p><a class="local" href="../reference/prompt-assembly.html">← Quick reference: how the prompt gets assembled</a></p>
 </div>
 
 </div>
@@ -221,12 +223,12 @@ AppWorld <code>test_normal</code> 任务 <code>{TASK_ID}</code>，一共走了 {
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--traj", required=True, help="--api harmony 录的轨迹 jsonl")
-    ap.add_argument("--toolcall", required=True, help="工具调用单发 json")
-    ap.add_argument("--out", required=True, help="课页 html 输出路径")
+    ap.add_argument("--traj", required=True, help="trajectory jsonl recorded with --api harmony")
+    ap.add_argument("--toolcall", required=True, help="standalone tool-call json")
+    ap.add_argument("--out", required=True, help="lesson page html output path")
     ap.add_argument("--srvlog", default="/net/tokyo100-10g/data/str01_01/"
                     "y-guo/vllm_cache/logs/new1_hcap_srv.log")
-    ap.add_argument("--max-steps", type=int, default=0, help="0 = 全要")
+    ap.add_argument("--max-steps", type=int, default=0, help="0 = take all")
     a = ap.parse_args()
 
     from openai_harmony import HarmonyEncodingName, load_harmony_encoding
@@ -234,28 +236,28 @@ def main():
 
     meta, steps = load_traj(a.traj, enc, a.max_steps)
     if not steps:
-        die(f"{a.traj} 里一个 gen 记录都没有")
+        die(f"{a.traj} does not have a single gen record")
     tc = load_toolcall(a.toolcall, enc)
 
     data = {"meta": meta, "steps": steps, "toolcall": tc}
     fin = meta.get("final", {})
     n_tok = sum(len(s["tokens"]) for s in steps)
     facts = [
-        ("模型", "gpt-oss-120b (mxfp4)，tokyo108 GPU 2 (H100 95G)，端口 8113"),
-        ("采样", "temperature 0.0，reasoning effort high，max_tokens 8192"),
-        ("提示词", "客户端自拼，Current date 钉死 2026-08-06"),
-        ("请求参数", "add_special_tokens=false，skip_special_tokens=false，"
+        ("Model", "gpt-oss-120b (mxfp4), tokyo108 GPU 2 (H100 95G), port 8113"),
+        ("Sampling", "temperature 0.0, reasoning effort high, max_tokens 8192"),
+        ("Prompt", "client self-assembled, Current date pinned to 2026-08-06"),
+        ("Request params", "add_special_tokens=false, skip_special_tokens=false, "
                  "return_token_ids=true"),
-        ("这条轨迹", f"{len(steps)} 步，输出 token 合计 {n_tok}，"
-                 f"任务完成={fin.get('completed')}"),
-        ("工具调用单发", f"另抓一条带函数工具的生成，输出 {len(tc['tokens'])} 个 token，"
-                   f"停在 id {tc['stop']}"),
+        ("This trajectory", f"{len(steps)} steps, output tokens total {n_tok}, "
+                 f"task completed={fin.get('completed')}"),
+        ("Standalone tool call", f"separately captured a generation with function tools, output {len(tc['tokens'])} tokens, "
+                   f"stopped at id {tc['stop']}"),
     ]
     body = PAGE.format(
         QUESTION=html.escape(meta.get("instruction", "")),
         TASK_ID=html.escape(meta.get("task_id", "")),
         N_STEPS=len(steps),
-        FINAL_NOTE=("这一版没做完就停了，页面照录不改。"
+        FINAL_NOTE=("This version stopped before finishing; the page records it as-is, unedited."
                     if not fin.get("completed") else ""),
         FACTS="\n".join(f"<tr><td class=\"key\">{html.escape(k)}</td>"
                         f"<td>{html.escape(v)}</td></tr>" for k, v in facts),
@@ -265,8 +267,8 @@ def main():
 
     out = Path(a.out).resolve()
     out.write_text(body, encoding="utf-8")
-    print(f"build_token_walk: {len(steps)} 步 / {n_tok} token "
-          f"+ 工具单发 {len(tc['tokens'])} token -> {out}")
+    print(f"build_token_walk: {len(steps)} steps / {n_tok} token "
+          f"+ tool standalone {len(tc['tokens'])} token -> {out}")
 
 
 if __name__ == "__main__":

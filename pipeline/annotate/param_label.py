@@ -1,19 +1,24 @@
-"""抽取头标签:每事件每参数,在每个样本 text 里定位参数值子串(纯 CPU)。
+"""Extraction-head labels: for every event and every parameter, locate the parameter
+value substring within each sample's text (pure CPU).
 
-源 = envs/bert/param_label.py,逻辑一字不改,只改输入输出路径与堆名:
-- 输入:--config 指的实验配置 json,读 <data_out>/{train,val,test}.jsonl
-- 输出:<data_out>/params/{train,val,test}.jsonl + PARAM_LABEL_REPORT.md
+Source = envs/bert/param_label.py, logic unchanged word for word, only the input/
+output paths and pile names changed:
+- Input: --config points at the experiment config json, reads
+  <data_out>/{train,val,test}.jsonl
+- Output: <data_out>/params/{train,val,test}.jsonl + PARAM_LABEL_REPORT.md
   + CHECK_50.md
 
-口径(照旧):
-- 事件重抽:复用切分规则的正则/过滤/事件 key,但**保参数名**
-  (kwarg 取名字,位置参数取 pos0/pos1/...;tales 参数名固定 arg);
-  值的归一化与 build 完全一致(strip 后 strip("\\"'"));空值跳过
-- 参数 key = f"{tool}.{参数名}"
-- 定位:在样本自己的 text 里取**最靠末尾一次**出现(str.rfind),记 [start,end);
-  找不到记 found=false(=抽不到,抽取头要学会输出它)
+Convention (unchanged):
+- Event re-extraction: reuses the split rules' regex/filtering/event key, but
+  **keeps the parameter names** (a kwarg takes its own name; a positional argument
+  takes pos0/pos1/...; tales' parameter name is fixed as arg); value normalization
+  is exactly the same as build (strip, then strip("\\"'")); empty values are skipped
+- Parameter key = f"{tool}.{parameter name}"
+- Locating: take the **last** occurrence in the sample's own text (str.rfind),
+  record [start,end); when not found, record found=false (= cannot locate it, the
+  extraction head has to learn to output this)
 
-用法: python3 param_label.py --config pipeline/configs/aw_q35.json
+Usage: python3 param_label.py --config pipeline/configs/aw_q35.json
 """
 
 import argparse
@@ -30,15 +35,17 @@ from rules import (AW_CALL, BFCL_CALL, MIN_THINK, MODEL_OF,  # noqa: E402
 
 SPLITS = ("train", "val", "test")
 
-# alfworld:模板切不动的动作计数。切分本身与 build.py 共用 rules.alf_split
-# 这一份实现,所以两侧口径不可能漂移(:202 的 assert tool == r["label"] 才有意义)。
+# alfworld: count of actions the templates cannot parse. The split itself shares
+# the same rules.alf_split implementation with build.py, so the two sides'
+# conventions cannot drift apart (which is what makes the assert tool ==
+# r["label"] at :202 meaningful).
 ALF_DROP = Counter()
-CTX = 80          # CHECK_50 上下文字符数
-KEEP_OK = 60      # 蓄水池:已定位样例
-KEEP_NG = 20      # 蓄水池:抽不到样例
+CTX = 80          # CHECK_50 context character count
+KEEP_OK = 60      # reservoir: located examples
+KEEP_NG = 20      # reservoir: examples that could not be located
 
 
-# ---------- 轨迹 -> (事件 key, 工具, 参数表) ----------
+# ---------- trajectory -> (event key, tool, parameter table) ----------
 
 def jsonl_events(runs, pattern, env):
     for f in sorted(glob.glob(str(runs / pattern))):
@@ -65,7 +72,7 @@ def jsonl_events(runs, pattern, env):
                            mkparams(tool,
                                     first_call_named(action, AW_CALL) or []))
             elif env == "alfworld":
-                # 与 build.jsonl_events 的 alfworld 分支同一个 alf_split 调用
+                # same alf_split call as build.jsonl_events' alfworld branch
                 tool, named, why = alf_split(action)
                 if why:
                     ALF_DROP[why] += 1
@@ -85,7 +92,7 @@ def bfcl_events(runs):
         if MODEL_OF.get(d.name.rsplit("_", 1)[1]) is None:
             continue
         seen = set()
-        # sorted:递归 glob 无序+按 id 去重会让重跑事件数漂移
+        # sorted: recursive glob is unordered, and dedup-by-id would make the event count drift across reruns
         for f in sorted(glob.glob(str(d / "**" / "*multi_turn*result.json"),
                                   recursive=True)):
             for line in open(f):
@@ -134,7 +141,7 @@ def collect_events(runs_dirs, env):
         elif env == "bfcl":
             it = bfcl_events(runs)
         else:
-            raise SystemExit(f"未知环境: {env}")
+            raise SystemExit(f"unknown env: {env}")
         for key, tool, params in it:
             if key in evmap:
                 dup += 1
@@ -143,7 +150,7 @@ def collect_events(runs_dirs, env):
     return evmap, dup
 
 
-# ---------- 蓄水池抽样(定长,种子固定) ----------
+# ---------- reservoir sampling (fixed length, fixed seed) ----------
 
 class Pool:
     def __init__(self, cap, rng):
@@ -159,11 +166,11 @@ class Pool:
                 self.buf[j] = item
 
 
-# ---------- 主流程 ----------
+# ---------- main flow ----------
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="实验配置 json(§2.3)")
+    ap.add_argument("--config", required=True, help="experiment config json (§2.3)")
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text())
     env = cfg["env"]
@@ -178,18 +185,18 @@ def main():
     print(f"re-extracted {env}: {len(evmap)} events (dup skipped {dup})",
           flush=True)
 
-    report = [f"# {cfg['run_family']}/{cfg['model_short']} 参数定位报告"
+    report = [f"# {cfg['run_family']}/{cfg['model_short']} parameter localization report"
               "(param_label.py)\n",
               f"- SEED={seed} runs={[str(r) for r in runs_dirs]}",
               f"- data={data_root} out={out}",
-              "- 定位口径:样本自身 text 内 str.rfind(最靠末尾一次出现);"
-              "找不到 = 抽不到(found=false)",
-              "- 参数 key = 工具名.参数名(kwarg 取名,位置参数 pos0/1/...,"
-              "tales 固定 arg);空值跳过\n"]
+              "- localization basis: str.rfind within the sample's own text (the occurrence closest to the end); "
+              "not found = extraction failed (found=false)",
+              "- param key = tool_name.param_name (kwarg uses its name, positional args pos0/1/...,"
+              "tales fixed arg); empty values are skipped\n"]
 
     pool_ok, pool_ng = Pool(KEEP_OK, rng), Pool(KEEP_NG, rng)
     v3_events = set()
-    miss_ev = Counter()          # 数据里有、重抽无
+    miss_ev = Counter()          # present in the data, absent from the re-extraction
     n_rows = Counter()
     n_par = Counter()
     n_found = Counter()
@@ -197,8 +204,8 @@ def main():
     dep_hit = [0] * 10
     last_tot = last_hit = 0
     n_assert = 0
-    n_short = 0      # 已定位且值 ≤3 字符(rfind 易撞巧合子串)
-    n_inthink = 0    # 已定位且落在 [THINKING] 段内(非抄题干/历史)
+    n_short = 0      # located, and the value is <=3 characters (rfind easily hits a coincidental substring)
+    n_inthink = 0    # located, and falls within the [THINKING] segment (not copied from the prompt/history)
     noparam_ev = set()
 
     for sp in SPLITS:
@@ -253,16 +260,16 @@ def main():
     tot_found = sum(n_found.values())
     report += [
         f"\n## {env} — {cfg['model_short']}",
-        f"- 重抽事件 {len(evmap)} / 数据集事件 {len(v3_events)};"
-        f"数据集有而重抽缺 {sum(miss_ev.values())} 样本"
-        f"(按 split {dict(miss_ev)});重抽有而数据集无 {extra} 事件",
-        f"- 无参事件 {len(noparam_ev)}"
+        f"- re-drawn events {len(evmap)} / dataset events {len(v3_events)};"
+        f"in dataset but missing from re-draw {sum(miss_ev.values())} samples"
+        f"(by split {dict(miss_ev)}); in re-draw but missing from dataset {extra} events",
+        f"- param-less events {len(noparam_ev)}"
         f"({len(noparam_ev)/max(len(v3_events),1):.1%})",
-        f"- 样本行 {sum(n_rows.values())} / 参数实例 {tot_par} / "
-        f"已定位 {tot_found}(**总定位率 {tot_found/max(tot_par,1):.3f}**)",
-        f"- 区间断言 text[start:end]==value: {n_assert}/{n_assert} ✓",
+        f"- sample rows {sum(n_rows.values())} / param instances {tot_par} / "
+        f"localized {tot_found}(**overall localization rate {tot_found/max(tot_par,1):.3f}**)",
+        f"- span assertion text[start:end]==value: {n_assert}/{n_assert} ✓",
         "",
-        "| split | 样本行 | 参数实例 | 定位率 |",
+        "| split | sample rows | param instances | localization rate |",
         "|---|---|---|---|",
     ]
     for sp in SPLITS:
@@ -270,50 +277,50 @@ def main():
                       f"{n_found[sp]/max(n_par[sp],1):.3f} |")
     report += [
         "",
-        "深度十桶定位率(0.0=思考刚开头,0.9=思考末尾):",
+        "localization rate across ten depth buckets (0.0 = start of thinking, 0.9 = end of thinking):",
         "",
-        "| 桶 | " + " | ".join(f"{i/10:.1f}" for i in range(10)) + " |",
+        "| bucket | " + " | ".join(f"{i/10:.1f}" for i in range(10)) + " |",
         "|---|" + "---|" * 10,
-        "| 定位率 | " + " | ".join(
+        "| localization rate | " + " | ".join(
             f"{dep_hit[i]/dep_tot[i]:.3f}" if dep_tot[i] else "-"
             for i in range(10)) + " |",
-        "| 参数实例 | " + " | ".join(str(dep_tot[i])
+        "| param instances | " + " | ".join(str(dep_tot[i])
                                      for i in range(10)) + " |",
         "",
-        f"- 末边界(整段思考读完)定位率 {last_hit/max(last_tot,1):.3f}"
+        f"- end-boundary (whole thinking text read through) localization rate {last_hit/max(last_tot,1):.3f}"
         f"({last_hit}/{last_tot})",
-        f"- 已定位里落在 [THINKING] 段内的占 "
-        f"{n_inthink/max(tot_found,1):.3f}(其余抄自题干/历史)",
-        f"- 已定位里值 ≤3 字符的占 {n_short/max(tot_found,1):.3f}"
-        "(短值 rfind 可能撞上巧合子串,标签噪声上界)",
+        f"- share of localized ones that fall within the [THINKING] segment "
+        f"{n_inthink/max(tot_found,1):.3f}(the rest is copied from the prompt/history)",
+        f"- share of localized ones with a value ≤3 characters long {n_short/max(tot_found,1):.3f}"
+        "(a short-value rfind may hit a coincidental substring; upper bound on label noise)",
     ]
     if env == "alfworld":
-        # 与 ANNOTATE_REPORT 的同名行必须逐字相等——不等就说明两侧切分漂了
+        # must equal the same-named line in ANNOTATE_REPORT byte for byte -- a mismatch means the two sides' splits have drifted apart
         report.append(
-            f"- 模板切不动而丢弃的步: {sum(ALF_DROP.values())} "
+            f"- steps dropped because the template could not be cut: {sum(ALF_DROP.values())} "
             f"({dict(sorted(ALF_DROP.items()))})")
-        print(f"alfworld 切不动丢弃: {sum(ALF_DROP.values())} "
+        print(f"alfworld dropped for uncuttable: {sum(ALF_DROP.values())} "
               f"{dict(sorted(ALF_DROP.items()))}", flush=True)
     print(f"{env}: params={tot_par} found_rate="
           f"{tot_found/max(tot_par,1):.3f}", flush=True)
 
     report += [
-        "\n## 对照锚点与已知噪声",
-        "- 先行试点:提前 25 token 时参数字面串仅 33.8% 已出现;"
-        "本表深度桶给出全景版本(桶越靠左=触发越早=定位率越低),"
-        "口径差别在于本表在整条 text(题干+历史+思考前缀)里找,"
-        "试点只看思考,故本表最左桶显著高于 33.8%。",
-        "- 竞品 SPORK 参数起步正确率 7.6%(抽取头正确率的下限锚)。",
-        "- 噪声:短值(如 `20`/`token`)的 rfind 可能撞上巧合子串,"
-        "CHECK_50 已见实例;占比见上文 ≤3 字符行,"
-        "抽取头评测按同一口径打分,故该噪声对训练/评测一致,不产生偏袒。",
+        "\n## Reference anchors and known noise",
+        "- Preliminary pilot: at 25 tokens ahead, only 33.8% of param literal strings had already appeared;"
+        "this table's depth buckets give the full-picture version (the further left the bucket, the earlier the fire, the lower the localization rate),"
+        "the difference in basis is that this table searches the whole text (prompt + history + thinking prefix),"
+        "while the pilot looked only at thinking, so this table's leftmost bucket is well above 33.8%.",
+        "- Competing method SPORK's starting param accuracy is 7.6% (the lower-bound anchor for extraction-head accuracy).",
+        "- Noise: rfind on a short value (like `20`/`token`) may hit a coincidental substring,"
+        "CHECK_50 has already seen instances of this; the share is in the ≤3-character line above,"
+        "the extraction-head eval scores by the same basis, so this noise is consistent between train and eval and creates no bias.",
     ]
     (out / "PARAM_LABEL_REPORT.md").write_text("\n".join(report) + "\n")
 
     # ---------- CHECK_50 ----------
-    md = [f"# CHECK_50 — 参数定位人工核对件(SEED={seed})\n",
-          "定位区间用【】标出,前后各 80 字符上下文;逐条核对"
-          "【】里是不是该参数该有的值。\n"]
+    md = [f"# CHECK_50 — param localization manual-check file (SEED={seed})\n",
+          "the localized span is marked with [], with 80 characters of context on each side; check line by line"
+          "whether the value inside [] is what this param should have.\n"]
     i = 0
     for (e, k, v, s, en, text) in pool_ok.buf[:50]:
         i += 1
@@ -321,17 +328,17 @@ def main():
         body = text[s:en].replace("\n", "⏎")
         tail = text[en:en + CTX].replace("\n", "⏎")
         md += [f"### [{i}] {e} — `{k}`",
-               f"- value: `{v}`  区间 [{s},{en})",
-               f"```\n...{head}【{body}】{tail}...\n```"]
-    md += ["\n## 抽不到(found=false)案例 — 核对是否确实未出现\n"]
+               f"- value: `{v}`  span [{s},{en})",
+               f"```\n...{head}[{body}]{tail}...\n```"]
+    md += ["\n## Extraction-failed (found=false) cases — check whether it truly did not appear\n"]
     j = 0
     for (e, k, v, tail) in pool_ng.buf[:10]:
         j += 1
         md += [f"### [NG{j}] {e} — `{k}`",
                f"- value: `{v}`",
-               f"- text 末 120 字符:\n```\n{tail}\n```"]
+               f"- last 120 characters of text:\n```\n{tail}\n```"]
     (out / "CHECK_50.md").write_text("\n".join(md) + "\n")
-    print(f"done -> {out}(CHECK_50: {i} 定位 / {j} 抽不到)")
+    print(f"done -> {out}(CHECK_50: {i} localized / {j} extraction failed)")
 
 
 if __name__ == "__main__":

@@ -1,12 +1,12 @@
 #!/bin/bash
-# live v3 双臂发射(2026-08-02):commentary 修复(937b3a2)后的正式重跑。
-# 与 v2 的三处不同:parse_step 对齐 vLLM HarmonyParser(commentary 进 content);
-# vLLM 无 --max-model-len(native 131k,与 w0 采集同款,端口 8103/8106/8107);
-# 其余口径(chunk 64/tail 1024/θ=0.925/effort high/max-steps 30)与 v2 逐字同。
-# 用法: live_v3_job.sh probe|noprobe run_name   (run_name=live_aw_gptoss_v3)
+# live v3 two-arm launch (2026-08-02): the official rerun after the commentary fix (937b3a2).
+# Three differences from v2: parse_step matches vLLM's HarmonyParser (commentary goes into content);
+# vLLM has no --max-model-len (native 131k, same as the w0 collection, ports 8103/8106/8107);
+# the remaining settings (chunk 64/tail 1024/θ=0.925/effort high/max-steps 30) are identical to v2.
+# Usage: live_v3_job.sh probe|noprobe run_name   (run_name=live_aw_gptoss_v3)
 set -u
 ARM="$1"
-RUN="${2:?run_name 必填,如 live_aw_gptoss_v3 (v1/v2 目录不许再指)}"
+RUN="${2:?run_name is required, e.g. live_aw_gptoss_v3 (must not point at the v1/v2 dirs)}"
 ROOT=/home/y-guo/reproduce/new1
 LOG=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs
 cd "$ROOT"
@@ -17,7 +17,7 @@ case "$ARM" in
 esac
 PORTS=(8103 8106 8107)
 OUT="pipeline/inject/runs/$RUN/$ARM"
-# 动态领题:清票根,没写 final 的题全部重新开抢(claim() 的约定)
+# Dynamic task claiming: clear the claim root, all tasks without a final get re-claimed (the claim() convention)
 rm -rf "$OUT/.claims"
 for s in $(seq 0 11); do
   port=${PORTS[$((s % 3))]}

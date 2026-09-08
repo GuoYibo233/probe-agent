@@ -1,28 +1,33 @@
-"""gpt-oss-120b 的 BFCL 提示词模式 handler,走 chat.completions。
+"""BFCL prompt-mode handler for gpt-oss-120b, going through chat.completions.
 
-v1 不采 bfcl 的 gpt-oss 轨迹,原因是 harmony 提示词模板没法在 completions
-端点手工拼(qwen handler 的做法)。解法:改走 chat 端点,模板由 vLLM 服务端套,
-思考取 message.reasoning(与 collect/common.py 的 chat 模式同一字段链)。
-函数协议不变:函数说明写在系统提示词里,模型以文本回调用,decode 侧沿用
-BFCL 默认提示词协议——与 qwen 批次的轨迹格式保持一致。
+v1 does not collect gpt-oss trajectories for bfcl, because the harmony prompt template cannot
+be hand-assembled at the completions endpoint (the way the qwen handler does it). Fix: switch
+to the chat endpoint, let the vLLM server apply the template, and take the thinking from
+message.reasoning (the same field chain as the chat mode in collect/common.py). The function
+protocol is unchanged: function descriptions go in the system prompt, the model calls back in
+text, and the decode side keeps the BFCL default prompt protocol -- matching the trajectory
+format used for the qwen batches.
 
-安装:install_patch.py 把本文件拷进 venv 的 local_inference/ 并在
-model_config.py 末尾注册 "openai/gpt-oss-120b"。
+Install: install_patch.py copies this file into the venv's local_inference/ and registers
+"openai/gpt-oss-120b" at the end of model_config.py.
 
-生成设置全部来自一份预设文件的 client 节(max_tokens / reasoning_effort /
-temperature / top_p / seed,取其中非 null 的):环境变量 NEW1_PRESET_JSON 指一份
-configs/presets/*.json 的绝对路径,环境变量缺席时读仓库根下的
-configs/presets/default.json,也就是全线现役的那一份口径。
-预设把某个键留 null 时该键落 BFCL 自带的值(temperature)或下面的写死缺省。
-用环境变量不用 --preset 的原因:本文件被拷进 BFCL 的 venv,没有自己的命令行,
-也够不到仓库根的 preset_loader;仓库根因此写成绝对路径。
+All generation settings come from the client section of one preset file (max_tokens /
+reasoning_effort / temperature / top_p / seed, taking whichever of these are non-null): the
+environment variable NEW1_PRESET_JSON points to the absolute path of a
+configs/presets/*.json file; when the environment variable is absent, it reads
+configs/presets/default.json at the repo root, which is the setting currently active across
+the board. When the preset leaves a key null, that key falls back to BFCL's built-in value
+(temperature) or the hardcoded default below. This uses an environment variable instead of
+--preset because this file gets copied into BFCL's venv, has no command line of its own, and
+cannot reach the repo root's preset_loader; hence the repo root is written as an absolute path.
 """
 import json
 import os
 import time
 from typing import Any
 
-# 仓库根写死绝对路径:本文件的运行位置在 BFCL 的 venv 里,__file__ 够不回仓库
+# The repo root is hardcoded as an absolute path: this file runs from inside BFCL's venv, so
+# __file__ cannot reach back to the repo
 _REPO_ROOT = "/home/y-guo/reproduce/new1"
 _DEFAULT_PRESET = os.path.join(_REPO_ROOT, "configs", "presets", "default.json")
 
@@ -38,8 +43,9 @@ _SEED = _CLIENT.get("seed")
 
 
 def _sample_kwargs():
-    """top_p/seed 只在预设显式给了的时候进请求(envs/collect/common.py 的
-    Chat._sample_extras 同款口径):不给时请求与加这两个键之前逐字节一致。"""
+    """top_p/seed only go into the request when the preset gives them explicitly (the same rule as
+    Chat._sample_extras in envs/collect/common.py): when absent, the request is byte-for-byte
+    identical to before these two keys were added."""
     d = {}
     if _TOP_P is not None:
         d["top_p"] = _TOP_P
@@ -48,8 +54,8 @@ def _sample_kwargs():
     return d
 
 
-# NEW1_PRESET_PREFIX_END —— tests/test_preset.py 只 exec 这行以上的源码
-# (预设读取纯标准库);这行以下的 import 需要 BFCL venv。
+# NEW1_PRESET_PREFIX_END -- tests/test_preset.py execs only the source above this line
+# (preset reading is pure stdlib); the imports below this line need the BFCL venv.
 from bfcl_eval.model_handler.local_inference.base_oss_handler import OSSHandler
 from overrides import override
 
@@ -58,15 +64,16 @@ class GptOssChatHandler(OSSHandler):
 
     @override
     def _format_prompt(self, messages, function):
-        raise NotImplementedError("chat 模式由服务端套模板,不手工拼提示词")
+        raise NotImplementedError("chat mode has the server apply the template, don't hand-assemble the prompt")
 
     def _to_chat_messages(self, messages):
-        """把 BFCL 的消息列表转成 chat 端点能收的形态。
+        """Convert BFCL's message list into a shape the chat endpoint can accept.
 
-        role=tool 的消息(chat 端点没有配套 tool_calls 会被拒收)折叠成
-        user 消息里的 <tool_response> 块,连续多条并进同一条 user——
-        与 qwen 模板处理工具返回的方式对齐。assistant 消息只传 content,
-        不回传思考(gpt-oss 约定历史轮思考不进上下文)。
+        role=tool messages (rejected by the chat endpoint without a matching tool_calls) are
+        folded into a <tool_response> block inside a user message; consecutive ones are merged
+        into the same user turn -- aligned with how the qwen template handles tool returns.
+        assistant messages pass only content, without the thinking (gpt-oss's convention is
+        that past turns' thinking does not go back into context).
         """
         chat = []
         for m in messages:

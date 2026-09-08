@@ -1,11 +1,11 @@
-/* 逐 token 步进器的样式。只被 lessons/0006-* 那一页链，
-   其余课页不受影响。配色全部复用 lesson.css 的令牌，
-   四个桶各占一个已有颜色，不新造色板：
-     思考(analysis)   = 青 --accent
-     正文(final/无收件人的 commentary) = 绿 --ok
-     工具(commentary to=…)            = 琥珀 --flag
-     丢掉(其余频道)                    = 红 --bad
-     结构(频道头与收尾标记)            = 灰 --ink-faint */
+/* Styles for the token-by-token stepper. Only linked by the lessons/0006-* page,
+   no other lesson pages are affected. Colors all reuse lesson.css's tokens,
+   the four buckets each take an existing color, no new palette:
+     thinking (analysis)                                 = cyan --accent
+     body text (final / commentary with no recipient)     = green --ok
+     tool (commentary to=...)                             = amber --flag
+     dropped (remaining channels)                         = red --bad
+     structure (channel header and closing markers)       = grey --ink-faint */
 
 .wrap.wide { max-width: 48rem; }
 
@@ -19,7 +19,7 @@
   background: var(--ground);
 }
 
-/* ---------- 步骤选择 ---------- */
+/* ---------- step selection ---------- */
 
 .tw-steps { display: flex; flex-wrap: wrap; gap: .35rem; }
 
@@ -43,7 +43,7 @@
 
 .tw-steps button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* ---------- 状态条 ---------- */
+/* ---------- status bar ---------- */
 
 .tw-bar {
   display: flex;
@@ -59,7 +59,7 @@
 
 .tw-bar b { color: var(--ink); font-weight: 700; }
 
-/* ---------- 当前 token ---------- */
+/* ---------- current token ---------- */
 
 .tw-cur {
   display: flex;
@@ -97,7 +97,7 @@
 
 .tw-cur .dest { margin-left: auto; font-size: .74rem; color: var(--ink-soft); }
 
-/* ---------- 文字流 ---------- */
+/* ---------- text stream ---------- */
 
 .tw-stream {
   font-family: var(--f-mono);
@@ -115,7 +115,7 @@
 }
 
 .tw-stream:empty::before {
-  content: "还没生成任何 token。点下面那个按钮。";
+  content: "No tokens generated yet. Click the button below.";
   color: var(--ink-faint);
   font-family: var(--f-body);
 }
@@ -138,7 +138,7 @@
   border-radius: 2px;
 }
 
-/* ---------- 四个桶 ---------- */
+/* ---------- four buckets ---------- */
 
 .tw-buckets {
   display: grid;
@@ -165,7 +165,7 @@
 .tw-buckets .k-drop      { border-left-color: var(--bad); }
 .tw-buckets .k-frame     { border-left-color: var(--ink-faint); }
 
-/* ---------- 控制 ---------- */
+/* ---------- controls ---------- */
 
 .tw-ctl { display: flex; flex-wrap: wrap; gap: .4rem; }
 
@@ -194,7 +194,7 @@
 
 .tw-hint { font-size: .74rem; color: var(--ink-faint); }
 
-/* ---------- 这一步的收尾 ---------- */
+/* ---------- wrap-up for this step ---------- */
 
 .tw-tail {
   font-size: .78rem;

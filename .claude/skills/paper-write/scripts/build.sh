@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 编译门禁：latexmk 全链路编译（自动处理 bibtex 与多趟），失败时提取错误上下文。
-# 用法: build.sh <main.tex>
-# 退出码: 0 编译成功；1 失败（错误摘要已打印）
+# Build gate: full latexmk pipeline (handles bibtex and multiple passes automatically), extracts error context on failure.
+# Usage: build.sh <main.tex>
+# Exit code: 0 compile succeeded; 1 failed (error summary already printed)
 set -u
 
 TEX="${1:?usage: build.sh <main.tex>}"
@@ -16,7 +16,7 @@ RC=$?
 
 if [ $RC -ne 0 ]; then
     echo "== COMPILE FAILED =="
-    # -file-line-error 格式: ./file.tex:LINE: message；外加 "! " 开头的经典错误
+    # -file-line-error format: ./file.tex:LINE: message; plus classic errors starting with "! "
     grep -nE "^(\./)?[^ :]+\.tex:[0-9]+:|^! " "$LOG" | head -20
     echo "-- context --"
     awk '/^!|\.tex:[0-9]+:/{c=4} c&&c--' "$LOG" | head -40

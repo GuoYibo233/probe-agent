@@ -1,16 +1,18 @@
-"""θ 扫描注入实验 run 段专用的 gpt-oss-120b 服务发射器：三副本。
+"""Service launcher for gpt-oss-120b dedicated to the run segment of the θ-sweep injection
+experiment: three replicas.
 
-独立于 c2_alfworld 采集用的那三个服务（占 tokyo108 GPU 0/1/2、端口
-8101/8102/8103），所以端口挪到 8111/8112/8113、卡挪到三张 H200，两批任务
-互不抢占。
+Independent from the three services used for c2_alfworld collection (which occupy tokyo108
+GPU 0/1/2, ports 8101/8102/8103), so the ports move to 8111/8112/8113 and the cards move to
+three H200s; the two batches of jobs do not preempt each other.
 
-  gpt-oss-120b -> H200 GPU 3, port 8111   (副本 A)
-  gpt-oss-120b -> H200 GPU 4, port 8112   (副本 B)
-  gpt-oss-120b -> H200 GPU 5, port 8113   (副本 C)
+  gpt-oss-120b -> H200 GPU 3, port 8111   (replica A)
+  gpt-oss-120b -> H200 GPU 4, port 8112   (replica B)
+  gpt-oss-120b -> H200 GPU 5, port 8113   (replica C)
 
-max-model-len 钉 65536：注入回放的续写 --max-tokens 8192，prompt 还带整段
-历史轨迹，默认短上下文会截断报错。模型 config 的 max_position_embeddings
-是 131072，65536 在范围内。
+max-model-len is pinned to 65536: the injection-replay continuation has --max-tokens 8192,
+and the prompt also carries the whole trajectory history, so the default short context would
+truncate and error out. The model config's max_position_embeddings is 131072, and 65536 is
+within range.
 """
 import shlex
 import subprocess

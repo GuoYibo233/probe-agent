@@ -8,11 +8,11 @@ directly with session_id cli; bare terminal `rl grant add` passes, a role sessio
 missing a required field is refused, with `--force --reason` it passes and the row has
 force_reason.
 
-Changed by 30 L98 (2026-08-17, sync-inbox Q27, gyb: "3 不是，可以替我写"): a role
-session's `--as-gyb --quote` grant add now also passes -- but per proxy decision D-01
-(issue 43c) the grants ledger is kept as a name only with no `rl grant` commands at all
-(commands.json pending_commands; ledgers.json grants.pending), so every grant case here
-is skipped rather than transcribed as a real assertion.
+Changed by 30 L98 (2026-08-17, sync-inbox Q27, gyb: "3 is wrong, it can write in my
+place"): a role session's `--as-gyb --quote` grant add now also passes -- but per proxy
+decision D-01 (issue 43c) the grants ledger is kept as a name only with no `rl grant`
+commands at all (commands.json pending_commands; ledgers.json grants.pending), so every
+grant case here is skipped rather than transcribed as a real assertion.
 
 Added by 30 L100-106:
   - a role with --force is exit 3 with the "open an issue to gyb" command on stderr; a
@@ -51,7 +51,7 @@ class EvalApproveActor(unittest.TestCase):
 
     def test_as_gyb_eval_approve_requires_quote(self):
         """30 L96: in an analysis session `rl eval approve --as-gyb` without --quote is
-        exit 2 (01 L70; 05 L15, L119: '--as-gyb 缺 --quote 退出码 2')."""
+        exit 2 (01 L70; 05 L15, L119: '--as-gyb missing --quote is exit code 2')."""
         analysis = self.sb.role_session("analysis")
         eval_id = self._propose_eval(analysis)
         before = self.sb.count("evaluations")
@@ -135,7 +135,7 @@ class RunAddActor(unittest.TestCase):
         self.assertEqual(self.sb.count("runs"), 0)
 
     def test_run_add_gyb_passes(self):
-        """30 L96: gyb calling `rl run add` passes (03 L100: 'actor 是 run 或 gyb')."""
+        """30 L96: gyb calling `rl run add` passes (03 L100: 'actor is run or gyb')."""
         dec = make_decision(self.sb)
         wo = open_work_order(self.sb, None, dec)
         lo = open_launch_order(self.sb, None, wo)
@@ -175,8 +175,9 @@ class ForceAndCompleteness(unittest.TestCase):
 
     def test_role_force_forbidden_with_open_issue_command(self):
         """30 L102: a role with --force is exit 3 with the 'open an issue to gyb'
-        command on stderr (03-ledgers.md: 'actor 是角色的命令带 --force 一律拒收，
-        退出码 3，附「开 issue 给 gyb」的命令'; rl_lib.issue_command_for_gyb)."""
+        command on stderr (03-ledgers.md: 'a command whose actor is a role, with --force
+        is always refused, exit code 3, with the "open an issue to gyb" command
+        attached'; rl_lib.issue_command_for_gyb)."""
         deploy = self.sb.role_session("deploy")
         self.sb.write_file("notes/seed.md", "# seed\n")
 
@@ -268,7 +269,7 @@ class ExitCodesAndJson(unittest.TestCase):
         self.assertEqual(r.kind, "usage")
 
     def test_exit5_usage_bad_argument_value(self):
-        """30 L104: exit 5 for a bad argument (03 L221: 'usage error ... 参数写错').
+        """30 L104: exit 5 for a bad argument (03 L221: 'usage error ... wrong argument').
         --exit takes only ok|failed|killed (03 L117)."""
         r = self.sb.rl("run", "finish", "ho-0001-a1", "--exit", "bogus")
         self.assertEqual(r.rc, 5)

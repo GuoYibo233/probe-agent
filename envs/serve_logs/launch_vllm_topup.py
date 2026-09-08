@@ -1,11 +1,12 @@
-"""full_v2_topup 补采批次的服务发射器:两模型各双副本,q3.5 不参与。
+"""Service launcher for the full_v2_topup top-up collection batch: two replicas each for
+two models, q3.5 does not take part.
 
-  qwen3.6-27b   -> H200 GPU 3, port 8104   (主副本,沿用老端口)
-  qwen3.6-27b   -> H100 GPU 0, port 8105   (副本 B)
-  gpt-oss-120b  -> H200 GPU 4, port 8103   (主副本,沿用老端口)
-  gpt-oss-120b  -> H200 GPU 5, port 8106   (副本 B)
+  qwen3.6-27b   -> H200 GPU 3, port 8104   (main replica, keeps the old port)
+  qwen3.6-27b   -> H100 GPU 0, port 8105   (replica B)
+  gpt-oss-120b  -> H200 GPU 4, port 8103   (main replica, keeps the old port)
+  gpt-oss-120b  -> H200 GPU 5, port 8106   (replica B)
 
-tokyo108 GPU1/2 被他人占用,不碰。
+tokyo108 GPU1/2 are occupied by someone else; leave them alone.
 """
 import shlex
 import subprocess
@@ -26,7 +27,8 @@ JOBS = [
     (3, "new1_srv_q36_t108g3",
      f"{VLLM} serve {ZMODELS}/Qwen3.6-27B --served-model-name qwen3.6-27b "
      f"--port 8104 --host 0.0.0.0 {QWEN_FLAGS}"),
-    # H100 95G: Qwen3.6 的 Mamba cache 只够 612 块,默认 max_num_seqs=1024 会崩
+    # H100 95G: Qwen3.6's Mamba cache is only enough for 612 blocks; the default max_num_seqs=1024
+    # crashes
     (0, "new1_srv_q36b_t108g0",
      f"{VLLM} serve {ZMODELS}/Qwen3.6-27B --served-model-name qwen3.6-27b "
      f"--port 8105 --host 0.0.0.0 {QWEN_FLAGS} --max-num-seqs 512"),

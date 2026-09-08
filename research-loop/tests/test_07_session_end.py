@@ -134,8 +134,8 @@ class SessionEndReleasesOrders(unittest.TestCase):
 
     def test_session_end_with_session_flag_does_not_check_liveness(self):
         """30 L84: `--session ID` closes another session without checking whether it is
-        alive, end_reason is recorded as manual (04 L152: 'rl 看不见进程，只看得见账，
-        照样销号，end_reason 记 manual'; 01 L27-29)."""
+        alive, end_reason is recorded as manual (04 L152: 'rl cannot see the process, only
+        the ledger; it deregisters anyway, end_reason recorded as manual'; 01 L27-29)."""
         deploy = self.sb.role_session("deploy")
 
         r = self.sb.rl_ok("session", "end", "--session", deploy)  # gyb, bare terminal
@@ -147,7 +147,7 @@ class SessionEndReleasesOrders(unittest.TestCase):
     def test_closed_session_write_refused(self):
         """30 L84: a closed session writing again is refused with exit 3 forbidden, and
         the message tells it to reload the role (03 L15: 'reload a role'; 04 L152-153:
-        提示「会话已被销号，重新加载角色登记」)."""
+        the message: "session already deregistered, reload the role to register")."""
         deploy = self.sb.role_session("deploy")
         self.sb.rl_ok("session", "end", session=deploy, caller="hook")
         self.sb.write_file("notes/seed.md", "# seed\n")
@@ -181,8 +181,8 @@ class SessionEndReleasesOrders(unittest.TestCase):
 
     def test_dirty_experiments_get_wip_branch(self):
         """30 L83: experiments/ dirty changes go to a wip/<ho-id> branch, named in
-        progress_note (04 L127: '4. experiments/ 里的脏改动打一个 wip/<ho-id> 分支，
-        分支名记进说明')."""
+        progress_note (04 L127: '4. dirty changes under experiments/ go into a
+        wip/<ho-id> branch, the branch name recorded in progress_note')."""
         dec = make_decision(self.sb)
         ho = open_work_order(self.sb, None, dec)
         deploy = self.sb.role_session("deploy")

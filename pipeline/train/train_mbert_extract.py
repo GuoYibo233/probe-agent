@@ -1,34 +1,45 @@
-"""抽取头训练(新流水线 mext 格):ModernBERT 底座 + 起止指针头 + 可答头。
+"""Extraction-head training (new pipeline mext cell): ModernBERT base + start/end pointer head + answerable head.
 
-- 输入: <data_out>/{train,val}.jsonl(文本) 与 <data_out>/params/同名文件
-  (参数区间标签),按 event+sent_idx 连接
-- 实例 = (样本 × 参数);查询拼在**末尾**:text + "\\n[FIND] " + 工具名.参数名
-  (tokenizer 左截 4096,保思考尾巴与查询;字符区间不受后缀影响)
-- 字符区间 -> token 区间取**最小覆盖 token 跨度**(offset_mapping);
-  被左截切掉的 span 训练时按"抽不到"计并计数
-- 损失 = 可答 BCE + found 实例的 start/end CE,均按样本权重 w 加权
-- 判对口径两套(BPE 会把前导空格/引号并进 token,严格逐字会低估):
-    宽松(主口径) 预测字符区间覆盖真值且多出来的字符只有空白/标点
-    严格(对照)   预测区间解码文本逐字 == 真值
-- 每轮 val 报: 可答准确率 / span 命中(宽松·严格) / 参数级总正确率,按 w 加权;
-  日志与 meta 字段名沿用 calA_* 旧名(下游脚本按名读)
-- 产物: <out>/best/(model.pt + tokenizer + meta.json)+ train_log.jsonl
+- Input: <data_out>/{train,val}.jsonl (text) and <data_out>/params/ files of the same name
+  (parameter span labels), joined by event+sent_idx
+- Instance = (sample x parameter); the query is appended at the **end**: text + "\\n[FIND] " + tool_name.param_name
+  (tokenizer left-truncates to 4096, keeping the tail of the thinking text and the query;
+  the character span is not affected by the suffix)
+- Character span -> token span takes the **minimum covering token span** (offset_mapping);
+  a span cut off by left truncation is counted as training "not extractable"
+- Loss = answerable BCE + found instances' start/end CE, both weighted by the sample weight w
+- Two sets of correctness criteria (BPE merges leading spaces/quotes into tokens, so
+  strict character-by-character comparison underestimates):
+    loose (primary)   the predicted character span covers ground truth, and any extra characters are only whitespace/punctuation
+    strict (control)  the predicted span's decoded text matches ground truth character-for-character
+- Each val round reports: answerable accuracy / span hit (loose x strict) / parameter-level
+  overall accuracy, weighted by w; log and meta field names keep the old calA_* names
+  (downstream scripts read by name)
+- Outputs: <out>/best/(model.pt + tokenizer + meta.json) + train_log.jsonl
 
-开火头(`--fire-head`,必须与 --readonly-env 同传;默认不传 = 行为与旧版一致):
-- 同一个 encoder 上再挂一个样本级二分类头([CLS] 位隐状态 -> Linear -> 1),
-  学"此刻该不该发射投机"。开火标签
-  ready = 标签在该环境只读集合里 且 该样本所有参数 found=true
-  (零参数事件 found 条件空真;params 文件里 join 不到的样本记 not-ready 并计数)
-- 开火头走**独立的样本级数据流**:输入是纯 text(不带 [FIND] 后缀,与线上开火时
-  能拿到的输入一致),一条样本一条实例,所以不存在"同一样本按参数数重复计权";
-  非只读样本不再整条丢弃,而是回到这条流里当负例(它们不产 span 实例,
-  因而对原任务零梯度)
-- 损失 = 原 span/可答损失 + λ·开火 BCE(λ=1),两条流各自成批、各自按 w 加权
-- best 的选择指标不变(val 参数正确率,只读样本上算);开火头权重随 model.pt
-  一起存(裸 state_dict 加两个键),meta.json 加 "fire_head": true;
-  val 的开火 acc@0.5 与正负例数进 train_log 的 eval 事件
+Fire head (`--fire-head`, must be passed together with --readonly-env; default not
+passed = same behavior as the old version):
+- Attach one more sample-level binary classification head on the same encoder ([CLS]
+  position hidden state -> Linear -> 1), learning "should this fire speculation right
+  now". Fire label
+  ready = the label is in that environment's read-only set AND all of the sample's
+  parameters have found=true
+  (a zero-parameter event's found condition is vacuously true; samples that cannot be
+  joined in the params file are recorded as not-ready and counted)
+- The fire head runs on an **independent sample-level data flow**: the input is plain
+  text (without the [FIND] suffix, matching what live firing actually sees as input), one
+  sample = one instance, so there is no "the same sample re-weighted by its parameter
+  count"; non-read-only samples are no longer dropped whole, instead they go back into
+  this flow as negative examples (they produce no span instances, so they contribute zero
+  gradient to the original task)
+- Loss = original span/answerable loss + λ * fire BCE (λ=1), the two flows each form
+  their own batches and are each weighted by w
+- The metric for picking best is unchanged (val parameter accuracy, computed on read-only
+  samples); the fire head's weights are saved along with model.pt (the bare state_dict
+  plus two extra keys), meta.json gets an added "fire_head": true; val's fire acc@0.5 and
+  the positive/negative counts go into train_log's eval event
 
-用法(smoke):
+Usage (smoke):
   mbert-env/bin/python pipeline/train/train_mbert_extract.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_mext --smoke
 """
@@ -46,12 +57,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 import transformers
-# 双环境铁律(run.py PY 表):mbert 线钉 transformers==4.57.6,跑错解释器
-# 的行为漂移是静默的,这里直接拒绝
+# dual-environment hard rule (run.py's PY table): the mbert line is pinned to
+# transformers==4.57.6; behavior drift from running the wrong interpreter is silent, so
+# reject it outright here
 if transformers.__version__ != "4.57.6":
-    raise SystemExit(f"mbert 线钉 transformers==4.57.6,当前 "
-                     f"{transformers.__version__}——解释器用错了?"
-                     "一律从 run.py 的任务进(train-mtool/train-mext)。")
+    raise SystemExit(f"the mbert line pins transformers==4.57.6, currently "
+                     f"{transformers.__version__} -- wrong interpreter? "
+                     "Always enter through run.py's tasks (train-mtool/train-mext).")
 from transformers import (AutoTokenizer, ModernBertModel,
                           get_linear_schedule_with_warmup)
 
@@ -66,7 +78,7 @@ import heartbeat
 MODEL = "/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base"
 SEED = 20260729
 FIND = "\n[FIND] "
-MAX_SPAN_TOK = 64          # 解码时起止最大跨度
+MAX_SPAN_TOK = 64          # max start/end span at decode time
 
 
 class Extractor(nn.Module):
@@ -78,8 +90,9 @@ class Extractor(nn.Module):
         h = self.base.config.hidden_size
         self.span = nn.Linear(h, 2)
         self.ans = nn.Linear(h, 1)
-        # 开火头只在 --fire-head 下建,且**建在 span/ans 之后**:
-        # 这样默认关时随机数流与旧版逐位一致(span/ans 的初始化不受影响)。
+        # The fire head is only built under --fire-head, and it is **built after span/ans**:
+        # this way, when it is off by default, the random-number stream matches the old version
+        # bit-for-bit (span/ans's initialization is unaffected).
         self.fire = nn.Linear(h, 1) if fire else None
 
     def forward(self, enc, last_idx):
@@ -90,18 +103,21 @@ class Extractor(nn.Module):
         return s, e, a
 
     def fire_logit(self, enc):
-        """开火头:纯样本文本的 [CLS] 位(左截后 CLS 仍在 0 号位)-> 标量 logit。"""
+        """Fire head: plain sample text's [CLS] position (still at index 0 after left truncation) -> a scalar logit."""
         hs = self.base(**enc).last_hidden_state
         return self.fire(hs[:, 0]).squeeze(-1)
 
 
-# ---------- 数据:样本文本 × params 区间 ----------
+# ---------- data: sample text x params span ----------
 
 def join_rows(data, params, split, limit=0, ro=None):
-    """流式并归(两文件同序,params 是样本堆的子序列)-> (texts, instances)。
+    """Streaming merge (the two files share the same order, params is a subsequence of the
+    sample stack) -> (texts, instances).
 
-    ro 非 None 时(--readonly-env):只留真值为只读工具的样本,其余(含表外)丢弃并计数;
-    清点用的标签在丢弃前收齐,audit 由调用方在返回后跑。
+    When ro is not None (--readonly-env): keep only samples whose ground truth is a
+    read-only tool; the rest (including out-of-vocabulary ones) are dropped and counted;
+    the labels used for the tally are collected before dropping, and the audit is run by
+    the caller after the return.
     """
     texts, inst = [], []
     fp = open(params / f"{split}.jsonl")
@@ -116,7 +132,7 @@ def join_rows(data, params, split, limit=0, ro=None):
         pr = fp.readline()
         if not p["params"]:
             continue
-        if ro is not None:                     # 非只读样本整条丢掉(计数在 ro 里)
+        if ro is not None:                     # non-read-only samples are dropped whole (counted in ro)
             ro["labels"].append(r["label"])
             if r["label"] not in ro["set"]:
                 ro["dropped"] += 1
@@ -136,12 +152,15 @@ def join_rows(data, params, split, limit=0, ro=None):
 
 
 def fire_rows(data, params, split, ro_set, limit=0):
-    """开火头的样本级数据流(--fire-head 专用):主数据每行一条,不做只读过滤。
+    """Sample-level data stream for the fire head (--fire-head only): one line per sample
+    in the main data, no read-only filtering.
 
-    ready = 标签在只读集合里 且 该样本所有参数 found=true;
-    零参数事件 found 条件空真;params 里 join 不到的样本按 not-ready 处理并计数
-    (其中 args_named 非空的另计——那才是真正可疑的那一类)。
-    返回 (rows=[(text, ready, w)], stats)。
+    ready = the label is in the read-only set and every arg of the sample has found=true;
+    for zero-arg events the found condition is vacuously true; samples that fail to join
+    in params are treated as not-ready and counted
+    (samples with non-empty args_named are counted separately -- those are the truly
+    suspicious ones).
+    Returns (rows=[(text, ready, w)], stats).
     """
     pmap = {}
     for line in open(params / f"{split}.jsonl"):
@@ -171,19 +190,19 @@ def fire_rows(data, params, split, ro_set, limit=0):
     st["frac_readonly"] = round(st["n_readonly"] / n, 6)
     st["frac_join_miss"] = round(st["n_join_miss"] / n, 6)
     if st["frac_join_miss"] > 0.01:
-        print(f"[fire-head] 警告:{split} 有 {st['n_join_miss']}/{st['n']} "
-              f"({st['frac_join_miss']:.1%}) 个样本在 params 文件里 join 不到,"
-              f"已全部按 not-ready 处理(其中 args_named 非空 "
-              f"{st['n_join_miss_with_args']} 条)", flush=True)
+        print(f"[fire-head] warning: {split} has {st['n_join_miss']}/{st['n']} "
+              f"({st['frac_join_miss']:.1%}) samples that don't join in the params file,"
+              f" all treated as not-ready (of which args_named is non-empty for "
+              f"{st['n_join_miss_with_args']})", flush=True)
     if limit:
-        rng = random.Random(SEED)          # 独立 RNG,不动全局随机流
+        rng = random.Random(SEED)          # Independent RNG, does not touch the global random stream
         rng.shuffle(rows)
         rows = rows[:limit]
     return rows, st
 
 
 class FireDS(Dataset):
-    """开火头数据集:一条样本一条实例(不按参数展开,天然不重复计权)。"""
+    """Fire-head dataset: one instance per sample (not expanded per arg, so no duplicate weighting by nature)."""
 
     def __init__(self, rows):
         self.rows = rows
@@ -216,10 +235,10 @@ class InstDS(Dataset):
 
 
 def char2tok(offs, start, end):
-    """字符区间 -> 最小覆盖 token 跨度;越界/被截返回 (-1,-1)。"""
+    """Character span -> minimal covering token span; returns (-1, -1) if out of range or truncated."""
     st = en = -1
     for i, (a, b) in enumerate(offs):
-        if b <= a:                       # 特殊 token / padding
+        if b <= a:                       # special tokens / padding
             continue
         if a <= start < b:
             st = i
@@ -229,7 +248,7 @@ def char2tok(offs, start, end):
 
 
 def span_ok(full, c0, c1, gs, ge):
-    """宽松判对:预测字符区间覆盖真值,且多出的字符只有空白/标点。"""
+    """Lenient correctness check: the predicted character span covers the ground truth, and any extra characters are only whitespace/punctuation."""
     if c0 < 0 or c0 > gs or c1 < ge:
         return False
     pad = full[c0:gs] + full[ge:c1]
@@ -242,11 +261,11 @@ def collate(batch, tok, max_len):
               return_offsets_mapping=True, return_tensors="pt")
     offs = enc.pop("offset_mapping")
     valid = (offs[:, :, 1] > offs[:, :, 0]) & (enc["attention_mask"] > 0)
-    last = valid.float().cumsum(1).argmax(1)          # 末个真 token
+    last = valid.float().cumsum(1).argmax(1)          # last real token
     n = len(batch)
     st = torch.zeros(n, dtype=torch.long)
     en = torch.zeros(n, dtype=torch.long)
-    ok = torch.zeros(n, dtype=torch.bool)             # 可答(且未被左截切掉)
+    ok = torch.zeros(n, dtype=torch.bool)             # answerable (and not cut off by left truncation)
     cut = 0
     for i in range(n):
         if not founds[i]:
@@ -263,7 +282,7 @@ def collate(batch, tok, max_len):
 
 
 def decode(s_lg, e_lg, valid, offs):
-    """向量化解码:返回每条的预测字符区间 (c0, c1)。"""
+    """Vectorized decoding: returns the predicted character span (c0, c1) for each item."""
     neg = torch.finfo(s_lg.dtype).min
     s_lg = s_lg.masked_fill(~valid, neg)
     e_lg = e_lg.masked_fill(~valid, neg)
@@ -312,7 +331,7 @@ def evaluate(model, loader, dev, amp):
 
 @torch.no_grad()
 def evaluate_fire(model, loader, dev, amp):
-    """val 开火头:acc@0.5(按 w 加权,阈值 0.5 <=> logit>0)与正负例数(未加权)。"""
+    """val fire head: acc@0.5 (weighted by w, threshold 0.5 <=> logit>0) and positive/negative counts (unweighted)."""
     model.eval()
     hit = w_tot = 0.0
     n_pos = n_neg = 0
@@ -331,10 +350,11 @@ def evaluate_fire(model, loader, dev, amp):
 
 
 def load_extractor(run, device="cuda"):
-    """eval_mbert_call 复用:返回 (model, tok, meta)。
+    """Reused from eval_mbert_call: returns (model, tok, meta).
 
-    meta 里有 "fire_head": true 的 run 才建开火头——裸 state_dict 是严格加载,
-    建多了或建少了都会在这里报 missing/unexpected key,正好当保险丝。
+    Only builds the fire head for a run whose meta has "fire_head": true -- the bare
+    state_dict is loaded strictly, so building too many or too few heads reports a
+    missing/unexpected key right here, which works as a fuse.
     """
     run = Path(run)
     meta = json.loads((run / "best" / "meta.json").read_text())
@@ -350,11 +370,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--env", default="appworld",
                     choices=["tales", "appworld", "bfcl", "alfworld"],
-                    help="仅作日志标签(数据路径已由 --data 直接给定)")
+                    help="log label only (the data path is given directly by --data)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>(含 train/val.jsonl)")
+                    help="data dir <data_out> (contains train/val.jsonl)")
     ap.add_argument("--params", default=None,
-                    help="参数区间标签目录(默认 <data>/params)")
+                    help="arg-span label dir (default <data>/params)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=8)
@@ -362,27 +382,27 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
-                    help="500 训练实例/200 评估实例/1 epoch,验证管线")
+                    help="500 training instances/200 eval instances/1 epoch, for pipeline verification")
     ap.add_argument("--max-inst", type=int, default=0,
-                    help="再压实例数(CPU 调试用,0=不限)")
+                    help="cap the instance count further (for CPU debugging, 0 = unlimited)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
+                    help="read-only tool mode: train only on samples whose ground truth is a read-only tool (off by default = the old settings)")
     ap.add_argument("--grad-ckpt", action="store_true",
-                    help="梯度检查点:数学中性,只换显存(fire 双前向在长序列档会顶爆 48G 卡)")
+                    help="gradient checkpointing: mathematically neutral, only trades for GPU memory (fire's dual forward pass can blow past a 48G card at long-sequence settings)")
     ap.add_argument("--fire-head", action="store_true",
-                    help="再学一个样本级开火头(此刻该不该发射投机);"
-                         "必须与 --readonly-env 同传,默认关=行为不变")
+                    help="additionally train a sample-level fire head (should we speculate right now);"
+                         "must be passed together with --readonly-env, off by default = behavior unchanged")
     ap.add_argument("--force", action="store_true",
-                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+                    help="allow training again in an --out dir that was already trained in (refused by default to keep outputs apart)")
     args = ap.parse_args()
 
     if args.fire_head and not args.readonly_env:
         raise SystemExit(
-            "--fire-head 必须与 --readonly-env 同时传:开火标签 ready 的定义"
-            "依赖该环境的只读真值表(ready = 只读 且 参数全 found),"
-            "没有环境就算不出标签。")
+            "--fire-head must be passed together with --readonly-env: the definition of the fire"
+            " label ready depends on that environment's read-only ground-truth table (ready = read-only and all args found),"
+            " with no environment the label can't be computed.")
 
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -391,8 +411,8 @@ def main():
     out = Path(args.out)
     if (out / "train_log.jsonl").exists() and not args.force:
         raise SystemExit(
-            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
-            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
+            f"{out} already has a train_log.jsonl -- this dir has already been trained once; training again would mix"
+            " both runs' outputs into the same best/ with no way to tell them apart (audit B7). Use a different --out, or confirm the overwrite and pass --force.")
     out.mkdir(parents=True, exist_ok=True)
     dev = args.device
     amp = ((lambda: torch.autocast("cuda", dtype=torch.bfloat16))
@@ -421,7 +441,7 @@ def main():
     fire_st = {}
     fire_tr = fire_ev = None
     if args.fire_head:
-        # 开火头的样本级流:非只读样本在这里当负例回到数据流,不进 span 实例
+        # Fire-head sample-level stream: non-read-only samples come back into the data stream as negatives here, and do not become span instances
         ftr, fire_st["train"] = fire_rows(data, params, "train", ro_set, lim_tr)
         fev, fire_st["val"] = fire_rows(data, params, "val", ro_set, lim_ev)
         fire_tr, fire_ev = FireDS(ftr), FireDS(fev)
@@ -449,7 +469,7 @@ def main():
             collate_fn=lambda b: fire_collate(b, tok, args.max_len))
         fire_tr_dl, fire_ev_dl = mkf(fire_tr, True), mkf(fire_ev, False)
 
-        def cycle(dl):                     # 开火流与 span 流长度不同,循环取
+        def cycle(dl):                     # fire stream and span stream differ in length, cycle through
             while True:
                 for x in dl:
                     yield x
@@ -502,7 +522,7 @@ def main():
                 ls = torch.zeros((), device=dev)
             loss = la + ls
             if args.fire_head:
-                # 开火头独立成批:输入是纯 text,标签 ready,按 w 加权,λ=1
+                # Fire head forms its own batch: input is plain text, label is ready, weighted by w, lambda=1
                 fb = next(fire_it)
                 fenc = {k: v.to(dev) for k, v in fb["enc"].items()}
                 with amp():

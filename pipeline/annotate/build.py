@@ -1,27 +1,34 @@
-"""轨迹 -> 单模型单环境的样本数据集(新流水线 annotate 段主构建器)。
+"""Trajectory -> single-model single-environment sample dataset (the new
+pipeline's main annotate-stage builder).
 
-源 = envs/collect/build_dataset.py,规则一字不改(全句边界前缀 / 事件内等权
-/ 标签 = 该步真实调用的工具名),只改五处:
-① 按 config.model_full 过滤事件(一模型一套数据);
-② 切分不 shuffle,读官方题单文件定 train/val/test(unit 不在题单 -> 报错退出);
-③④ 输出堆名 train/val/test,输出目录 = config.data_out;
-⑤ 报告名 ANNOTATE_REPORT.md。
-样本 dict 另追加两字段:label_call(规范化完整调用串)、args_named(保名参数表)。
+Source = envs/collect/build_dataset.py, the rules are unchanged word for word
+(full-sentence-boundary prefix / equal weight within an event / label = the tool
+name actually called at that step); only five things change:
+(1) filter events by config.model_full (one model, one set of data);
+(2) split without shuffling, read the official task-list file to decide
+train/val/test (a unit not in the task list -> error out);
+(3)(4) output pile names train/val/test, output dir = config.data_out;
+(5) report name ANNOTATE_REPORT.md.
+The sample dict also gets two extra fields: label_call (the normalized full call
+string), args_named (the named-args table).
 
-两个旋钮(2026-08-21,np821 批):
-- weight_mode:uniform(缺省)= 每步等权 w=1;per_event = 旧口径 w=1/m_i,
-  只给 G8 复现验收线用。
-- max_bounds:每事件切点上限,缺省 64,透传 rules.boundaries 的抽稀。
-两者都是 CLI > 配置字段 > 缺省;旧配置不写这两个字段又不给旗标时,除了权重
-口径本身,一切照旧。
+Two knobs (2026-08-21, the np821 batch):
+- weight_mode: uniform (default) = equal weight w=1 per step; per_event = the old
+  convention w=1/m_i, kept only for the G8 reproduction acceptance line.
+- max_bounds: the cap on cut points per event, default 64, passed through to
+  rules.boundaries' thinning.
+Both follow CLI > config field > default; when an old config doesn't set these two
+fields and no flag is given, everything stays as before except the weighting
+convention itself.
 
-输入: --config 指向的实验配置 json(schema 见 plans/2026-07-31-pipeline-engineering.md §2.3)
-输出: <data_out>/{train,val,test}.jsonl tool_vocab.json router_stats.md
+Input: the experiment config json pointed to by --config (schema in
+plans/2026-07-31-pipeline-engineering.md §2.3)
+Output: <data_out>/{train,val,test}.jsonl tool_vocab.json router_stats.md
       qa_sample.txt ANNOTATE_REPORT.md
 
-用法: python3 build.py --config pipeline/configs/aw_q35.json
+Usage: python3 build.py --config pipeline/configs/aw_q35.json
       python3 build.py --config pipeline/configs/p1_gptoss.json \\
-              --weight-mode per_event --max-bounds 64      # G8 复现
+              --weight-mode per_event --max-bounds 64      # G8 reproduction
 """
 
 import argparse
@@ -41,19 +48,21 @@ from rules import (ALF_TEMPLATES, AW_CALL, BFCL_CALL,  # noqa: E402
 
 SPLITS = ("train", "val", "test")
 
-# alfworld:模板切不动的动作计数(不静默丢,报告里逐项印出来)。
-# 键 = rules.alf_split 的落空原因;param_label.py 有一份同口径的副本。
+# alfworld: counts of actions the template can't cut (not silently dropped, printed
+# item by item in the report).
+# key = the reason rules.alf_split came up empty; param_label.py has a copy using
+# the same convention.
 ALF_DROP = Counter()
 
 
-# ---------- 轨迹 -> 事件(【照抄】build_dataset.py,只多带一个保名参数表) ----------
-# 事件 = dict(env, model, unit, traj, step, task, hist, think, tool, args, named)
+# ---------- trajectory -> event (copied verbatim from build_dataset.py, only adds one named-args table) ----------
+# event = dict(env, model, unit, traj, step, task, hist, think, tool, args, named)
 
 def jsonl_events(runs, pattern, env):
     for f in sorted(glob.glob(str(runs / pattern))):
         batch = Path(f).parent.name           # e.g. appworld_q36
         model = MODEL_OF.get(batch.rsplit("_", 1)[1])
-        if model is None:                     # 评分/日志等非模型目录
+        if model is None:                     # non-model dirs like scoring/logs
             continue
         recs = [json.loads(l) for l in open(f)]
         meta = recs[0]
@@ -82,8 +91,10 @@ def jsonl_events(runs, pattern, env):
                                args=first_call_args(action, AW_CALL) or [],
                                named=first_call_named(action, AW_CALL) or [])
             elif env == "alfworld":
-                # 模板细分口径:官方 13 条动作模板最长前缀匹配,介词位切具名参数。
-                # 切不动 -> 整步丢弃 + 计数(绝不退回下面 else 的动词切法)。
+                # Template fine-grained convention: longest-prefix match against the 13 official
+                # action templates, cut named args at the preposition position.
+                # If it can't be cut -> drop the whole step + count it (never fall back to the
+                # verb-based cut in the else branch below).
                 tool, named, why = alf_split(action)
                 if why:
                     ALF_DROP[why] += 1
@@ -93,7 +104,7 @@ def jsonl_events(runs, pattern, env):
                                think=think, tool=tool,
                                args=[v for _k, v in named],
                                named=list(named))
-            else:  # tales:标签 = 命令首词(动词)
+            else:  # tales: label = the first word of the command (the verb)
                 verb = action.split()[0].lower() if action.split() else ""
                 if verb and len(think) >= MIN_THINK:
                     rest = action.split()[1:]
@@ -109,7 +120,7 @@ def jsonl_events(runs, pattern, env):
 def bfcl_events(runs):
     for d in sorted(runs.glob("bfcl_*")):
         model = MODEL_OF.get(d.name.rsplit("_", 1)[1])
-        if model is None:                     # 评分/日志等非模型目录
+        if model is None:                     # non-model dirs like scoring/logs
             continue
         seen = set()
         for f in sorted(glob.glob(str(d / "**" / "*multi_turn*result.json"),
@@ -159,7 +170,7 @@ def bfcl_events(runs):
 
 
 def collect_events(runs_dirs, env):
-    """按环境把多个 runs 目录的事件拼起来(顺序 = runs 目录顺序)。"""
+    """Concatenate events from multiple runs directories per environment (order = runs directory order)."""
     events = []
     for runs in runs_dirs:
         if env == "appworld":
@@ -171,30 +182,30 @@ def collect_events(runs_dirs, env):
         elif env == "bfcl":
             it = bfcl_events(runs)
         else:
-            raise SystemExit(f"未知环境: {env}")
+            raise SystemExit(f"unknown environment: {env}")
         events.extend(it)
     return events
 
 
-# ---------- 新增两字段(§3.3) ----------
+# ---------- two new fields added (§3.3) ----------
 
 def norm_named(named):
-    """保名参数表 -> [{"key","value"}],按调用里出现顺序,空值跳过。"""
+    """Named-parameter table -> [{"key","value"}], in call order, empty values skipped."""
     return [dict(key=k, value=v) for k, v in named if v]
 
 
 def make_call(tool, args_named):
-    """label_call = tool(k=v, k=v);无参数时 tool()。"""
+    """label_call = tool(k=v, k=v); tool() when there are no arguments."""
     inner = ", ".join(f"{a['key']}={a['value']}" for a in args_named)
     return f"{tool}({inner})"
 
 
-# ---------- 造题(全边界 + 等权,【照抄】,dict 追加两字段) ----------
+# ---------- build samples (all boundaries + equal weight, [COPIED], dict gets two extra fields) ----------
 
 def make_samples(events, weight_mode="per_event", max_bounds=MAX_BOUNDS):
-    """事件 -> 样本。两个参数的缺省 = 改动前的语义(w=1/m_i、上限 64),
-    所以老调用方(accept_v3diff.py 拿它复现 v3 数据)一个字不用改;
-    main() 一律显式传生效值。"""
+    """Event -> sample. The two parameters' defaults = the pre-change semantics (w=1/m_i, cap 64),
+    so old callers (accept_v3diff.py uses this to reproduce v3 data) need no change at all;
+    main() always passes the effective values explicitly."""
     samples = []
     for ev in events:
         pts = boundaries(ev["think"], max_bounds)
@@ -217,14 +228,16 @@ def make_samples(events, weight_mode="per_event", max_bounds=MAX_BOUNDS):
     return samples
 
 
-# ---------- 多样本批次的独立扫描(2026-08-21;不碰事件流) ----------
+# ---------- independent scan for multi-sample batches (2026-08-21; does not touch the event stream) ----------
 #
-# 这两样统计问的是"原始轨迹本身长什么样",事件流答不了:相同轨迹要比逐步
-# 原文(事件流只留过滤后的 think),步数上限要读 final 记录(事件流根本不带)。
-# 所以再读一遍文件,读法(目录过滤、unit 口径)与 jsonl_events 保持同一套。
+# These two stats ask what the raw trajectory itself looks like, which the event stream cannot
+# answer: comparing identical trajectories needs the step-by-step original text (the event
+# stream keeps only the filtered think), and the step cap needs the final record (the event
+# stream does not carry it at all). So the files are read again, using the same reading rules
+# (directory filtering, unit convention) as jsonl_events.
 
-# 采集侧每题步数上限,按环境来(gen_launch.py ENV_TABLE 的 --max-steps:
-# appworld 30、alfworld 50);表里没有的环境统计记"不适用"。
+# The per-task step cap on the collection side, by environment (gen_launch.py ENV_TABLE's
+# --max-steps: appworld 30, alfworld 50); environments not in the table are recorded as "n/a".
 STEP_CAP = {"appworld": 30, "alfworld": 50}
 
 TRAJ_PATTERNS = {"appworld": "appworld_*/appworld_*.jsonl",
@@ -233,7 +246,7 @@ TRAJ_PATTERNS = {"appworld": "appworld_*/appworld_*.jsonl",
 
 
 def traj_files(runs_dirs, env, model_full):
-    """本批要扫的原始轨迹文件清单;bfcl 没有逐步轨迹文件 -> None。"""
+    """List of raw trajectory files to scan for this batch; bfcl has no step-by-step trajectory file -> None."""
     pattern = TRAJ_PATTERNS.get(env)
     if pattern is None:
         return None
@@ -242,18 +255,21 @@ def traj_files(runs_dirs, env, model_full):
         for f in sorted(glob.glob(str(runs / pattern))):
             batch = Path(f).parent.name       # e.g. appworld_gptoss
             if MODEL_OF.get(batch.rsplit("_", 1)[1]) != model_full:
-                continue                      # 别的模型/非模型目录
+                continue                      # other model / non-model directories
             out.append(f)
     return out
 
 
 def scan_raw_trajs(files, env):
-    """-> dict(n_traj, dup_pairs, dup_units, cap_trajs, cap_units)。
+    """-> dict(n_traj, dup_pairs, dup_units, cap_trajs, cap_units).
 
-    dup:同 unit 内逐步 (reasoning, content) 序列完全相等的轨迹**对**数
-        (三条全同算 3 对),只计数不去重;dup_units = 出过重复的题数。
-    cap:final 记录 steps >= 该环境步数上限 的轨迹条数与涉及题数;
-        环境不在 STEP_CAP 表里时 cap 记 None(报告印"不适用")。
+    dup: the number of trajectory **pairs** within the same unit whose step-by-step
+        (reasoning, content) sequences are exactly equal (three identical trajectories
+        count as 3 pairs), counted without deduplication; dup_units = the number of
+        tasks that had any duplicate.
+    cap: the number of trajectories, and the number of tasks involved, whose final
+        record has steps >= that environment's step cap; when the environment is not
+        in the STEP_CAP table, cap is recorded as None (the report prints "n/a").
     """
     cap = STEP_CAP.get(env)
     by_unit = defaultdict(list)
@@ -282,16 +298,16 @@ def scan_raw_trajs(files, env):
                 cap_units=len(cap_units))
 
 
-# ---------- 官方题单切分(改动②) ----------
+# ---------- official task-list split (change 2) ----------
 
 def read_unit_list(path):
-    """官方题单:每行一个 task_id(文件无末尾换行,按行 split 后去空行)。"""
+    """Official task list: one task_id per line (file has no trailing newline; split by line then drop empty lines)."""
     txt = Path(path).read_text()
     return [ln.strip() for ln in txt.split("\n") if ln.strip()]
 
 
 def official_split(cfg):
-    """-> (part: unit->堆名, lists: 堆名->该题单的 unit 集合)"""
+    """-> (part: unit->pile name, lists: pile name->that task list's unit set)"""
     files = cfg["official_split_files"]
     lists, part = {}, {}
     for name in SPLITS:
@@ -302,16 +318,16 @@ def official_split(cfg):
     return part, lists
 
 
-# ---------- 主流程 ----------
+# ---------- main flow ----------
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", required=True, help="实验配置 json(§2.3)")
+    ap.add_argument("--config", required=True, help="experiment config json (§2.3)")
     ap.add_argument("--weight-mode", choices=("uniform", "per_event"),
                     default=None,
-                    help="样本权重口径;缺省读配置的 weight_mode,再缺省 uniform")
+                    help="sample weighting settings; defaults to the config's weight_mode, then to uniform")
     ap.add_argument("--max-bounds", type=int, default=None,
-                    help="每事件切点上限;缺省读配置的 max_bounds,再缺省 64")
+                    help="per-event cut-point cap; defaults to the config's max_bounds, then to 64")
     args = ap.parse_args()
     cfg = json.loads(Path(args.config).read_text())
     env = cfg["env"]
@@ -320,9 +336,11 @@ def main():
     out = Path(cfg["data_out"])
     seed = cfg.get("seed", SEED)
     rng = random.Random(seed)
-    # 生效值:CLI > 配置字段 > 缺省。缺省是新口径(每步等权),旧口径要显式点名。
-    # 配置分支按"键在不在"判,不按真值判:写 0 这类非法值要落到下面的硬拦,
-    # 不许被 or 静默换成缺省(评审 2026-08-22 抓的洞)。
+    # Effective value: CLI > config field > default. The default is the new convention (equal
+    # weight per step); the old convention must be named explicitly.
+    # The config branch is decided by "is the key present", not by truthiness: writing an
+    # invalid value like 0 must fall through to the hard stop below, and must not be silently
+    # swapped for the default by `or` (a hole caught in the 2026-08-22 review).
     cfg_wm = cfg.get("weight_mode")
     weight_mode = (args.weight_mode if args.weight_mode is not None
                    else "uniform" if cfg_wm is None else cfg_wm)
@@ -330,37 +348,37 @@ def main():
     max_bounds = (args.max_bounds if args.max_bounds is not None
                   else MAX_BOUNDS if cfg_mb is None else cfg_mb)
     if weight_mode not in ("uniform", "per_event"):
-        raise SystemExit(f"未知 weight_mode: {weight_mode}"
-                         "(只认 uniform/per_event)")
+        raise SystemExit(f"unknown weight_mode: {weight_mode} "
+                         "(only uniform/per_event are recognized)")
     if max_bounds < 2:
-        # 上限 1 会让 rules.boundaries 的抽稀步长除以零,不许静默炸在半路。
-        raise SystemExit(f"max_bounds 至少 2(给的是 {max_bounds})")
+        # A cap of 1 would make rules.boundaries' thinning stride divide by zero; it must not blow up silently partway through.
+        raise SystemExit(f"max_bounds must be at least 2 (got {max_bounds})")
 
     events = collect_events(runs_dirs, env)
     n_all = len(events)
-    # 改动①:一模型一套数据
+    # Change 1: one model, one dataset
     events = [ev for ev in events if ev["model"] == model_full]
     if not events:
-        raise SystemExit(f"没有 model={model_full} 的事件(共扫到 {n_all} 事件)")
+        raise SystemExit(f"no events for model={model_full} (scanned {n_all} events total)")
     out.mkdir(parents=True, exist_ok=True)
 
-    # 改动②:官方题单切分,不 shuffle;unit 不在任何题单 -> 报错退出
+    # Change 2: official task-list split, no shuffle; a unit not in any task list -> error and exit
     part, lists = official_split(cfg)
     units = sorted({ev["unit"] for ev in events})
     missing = [u for u in units if u not in part]
     if missing:
         raise SystemExit(
-            f"{len(missing)} 个 unit 不在任何官方题单里,拒绝静默丢弃: "
+            f"{len(missing)} units are not in any official task list; refusing to silently drop them: "
             f"{missing[:10]}{' ...' if len(missing) > 10 else ''}")
 
     samples = make_samples(events, weight_mode, max_bounds)
 
-    # 自检 1:前缀=原文切片(抽 200 逐题断言)
+    # Self-check 1: prefix = original-text slice (sample 200, assert per task)
     ev_think = {f"{e['traj']}|s{e['step']}": e["think"] for e in events}
     for s in rng.sample(samples, min(200, len(samples))):
         think = s["text"].split("[THINKING]\n", 1)[1]
         assert ev_think[s["event"]].startswith(think), s["event"]
-    # 自检 2:unit 不跨 split(结构性保证,再显式验一遍)
+    # Self-check 2: a unit does not cross splits (structurally guaranteed, verified explicitly again)
     seen_u = {}
     for s in samples:
         assert seen_u.setdefault(s["unit"], part[s["unit"]]) \
@@ -374,7 +392,7 @@ def main():
             for s in splits[name]:
                 f.write(json.dumps(s, ensure_ascii=False) + "\n")
 
-    # 自检 3(新增):每堆抽 20 个 unit,断言确实在对应官方题单文件里
+    # Self-check 3 (new): draw 20 units per pile, assert they are actually in the corresponding official task-list file
     check3 = []
     for name in SPLITS:
         us = sorted({s["unit"] for s in splits[name]})
@@ -387,7 +405,7 @@ def main():
     (out / "tool_vocab.json").write_text(json.dumps(
         dict(vocab.most_common()), ensure_ascii=False, indent=1))
 
-    # 路由统计表
+    # routing statistics table
     rt = defaultdict(lambda: dict(n=0, nargs=[], alen=[], hit=0, argn=0))
     for ev in events:
         r = rt[ev["tool"]]
@@ -403,8 +421,8 @@ def main():
             if a in ctx:
                 r["hit"] += 1
     with open(out / "router_stats.md", "w") as f:
-        f.write(f"# 路由统计表 — {env}(参数头裁决书)\n\n"
-                "| 工具 | 事件数 | 参数数中位 | 逐字命中率 | 参数长中位 |\n"
+        f.write(f"# routing stats table -- {env} (arg-head ruling)\n\n"
+                "| tool | events | median arg count | exact-match hit rate | median arg length |\n"
                 "|---|---|---|---|---|\n")
         for k in sorted(rt, key=lambda k: -rt[k]["n"]):
             r = rt[k]
@@ -414,14 +432,14 @@ def main():
                     f"{int(statistics.median(r['nargs']))} "
                     f"| {hitrate} | {alen} |\n")
 
-    # QA 抽查
+    # QA spot check
     with open(out / "qa_sample.txt", "w") as f:
         for i, s in enumerate(rng.sample(samples, min(20, len(samples)))):
             f.write(f"{'='*70}\n[QA {i}] label={s['label']} "
                     f"depth={s['depth']} sent {s['sent_idx']+1}/"
                     f"{s['n_sents']} traj={s['traj']}\n{s['text']}\n\n")
 
-    # 报告
+    # report
     bl = [e_m for e_m in (len(boundaries(e["think"], max_bounds))
                           for e in events)]
     dep = Counter(min(9, int(s["depth"] * 10)) for s in samples)
@@ -431,86 +449,91 @@ def main():
     prior_acc = (sum(1 for v in test_events.values() if v == prior_tool)
                  / max(1, len(test_events)))
     trajs = {e["traj"] for e in events}
-    # 切分口径的文案。只影响报告里两行**文字**,不进任何样本字段,所以
-    # 数据字节与改动前逐字节相同(已实测:aw_official_v1/q35 三堆 cmp 零差异)。
-    # 默认值保持改动前的说法,appworld/alfworld 的 config 不必写。
-    # bfcl 必须写:BFCL 没有官方分区,照打"官方题单"就是数字对、文案撒谎
-    # (extending.md §5 静默点 #18),check_callstr.py 会硬拦这种撒谎。
-    split_desc = cfg.get("split_desc", "官方题单,任务实例级")
-    # 权重口径文案:per_event 一字不动(G8 复现要它逐字节对上),uniform 换说法。
-    w_desc = "w=1/m_i 事件等权" if weight_mode == "per_event" else "w=1 每步等权"
+    # Wording for the split convention. It only affects two lines of **text** in the report, it
+    # does not go into any sample field, so the data bytes are byte-identical to before the change
+    # (verified: aw_official_v1/q35, three piles, zero cmp diff).
+    # The default keeps the pre-change wording; appworld/alfworld configs need not write it.
+    # bfcl must write it: BFCL has no official partition, so stamping "official task list" anyway
+    # would make the numbers right but the wording a lie (extending.md §5 silent-failure point #18);
+    # check_callstr.py hard-blocks this kind of lying.
+    split_desc = cfg.get("split_desc", "official task list, task-instance level")
+    # Wording for the weighting convention: per_event stays word-for-word (G8 reproduction needs it byte-identical), uniform gets different wording.
+    w_desc = "w=1/m_i, events equally weighted" if weight_mode == "per_event" else "w=1, each step equally weighted"
     report = [
-        f"# {cfg['run_family']} / {cfg['model_short']} annotate 出厂报告\n",
+        f"# {cfg['run_family']} / {cfg['model_short']} annotate release report\n",
         f"- SEED={seed} MAX_BOUNDS={max_bounds} env={env}"
         f" model={model_full}",
         f"- runs={[str(r) for r in runs_dirs]}",
         f"- config={args.config} out={out}",
-        f"- 规则:全句边界前缀 / {w_desc} / 三路切分"
-        f"({split_desc}) / 一模型一数据集\n",
+        f"- rules: full-sentence-boundary prefix / {w_desc} / three-way split "
+        f"({split_desc}) / one model, one dataset\n",
         f"## {env} — {cfg['model_short']}",
-        f"- 轨迹 {len(trajs)} / 任务实例 {len(units)} / 事件 {len(events)}"
-        f" / 样本 {len(samples)}(全模型事件 {n_all},过滤后留 {len(events)})",
-        f"- 边界数每事件: min {min(bl)} med {sorted(bl)[len(bl)//2]}"
-        f" max {max(bl)}(上限 {max_bounds})",
-        f"- 切分({split_desc}): " + " / ".join(
-            f"{sp} {len({s['unit'] for s in splits[sp]})}实例·"
-            f"{len({s['event'] for s in splits[sp]})}事件·"
-            f"{len(splits[sp])}样本"
+        f"- trajectories {len(trajs)} / task instances {len(units)} / events {len(events)}"
+        f" / samples {len(samples)} (all-model events {n_all}, {len(events)} left after filtering)",
+        f"- boundary count per event: min {min(bl)} med {sorted(bl)[len(bl)//2]}"
+        f" max {max(bl)} (cap {max_bounds})",
+        f"- split ({split_desc}): " + " / ".join(
+            f"{sp} {len({s['unit'] for s in splits[sp]})} instances·"
+            f"{len({s['event'] for s in splits[sp]})} events·"
+            f"{len(splits[sp])} samples"
             for sp in SPLITS),
-        f"- 工具词表 {len(vocab)} 类;top5 {vocab.most_common(5)}",
-        f"- 长尾(出现<5次): {sum(1 for c in vocab.values() if c < 5)} 类",
-        f"- 深度十桶样本数: {[dep.get(i, 0) for i in range(10)]}",
-        f"- 题干长度 p50={lens[len(lens)//2]}"
-        f" p90={lens[int(len(lens)*.9)]} max={lens[-1]} 字符"
-        "(超 4096 token 由训练脚本左截)",
-        f"- 频率先验基线(test 事件级,猜 {prior_tool}): {prior_acc:.3f}",
-        "- 自检: 前缀断言 200/200 ✓;实例不跨 split ✓;"
-        "题单归属抽查 " + " ".join(check3) + " ✓",
+        f"- tool vocabulary {len(vocab)} classes; top5 {vocab.most_common(5)}",
+        f"- long tail (appears <5 times): {sum(1 for c in vocab.values() if c < 5)} classes",
+        f"- sample counts across 10 depth buckets: {[dep.get(i, 0) for i in range(10)]}",
+        f"- task-text length p50={lens[len(lens)//2]}"
+        f" p90={lens[int(len(lens)*.9)]} max={lens[-1]} characters "
+        "(beyond 4096 tokens, left-truncated by the training script)",
+        f"- frequency-prior baseline (test, event-level, guessing {prior_tool}): {prior_acc:.3f}",
+        "- self-check: prefix assertion 200/200 ✓; instances don't cross splits ✓; "
+        "task-list ownership spot check " + " ".join(check3) + " ✓",
     ]
     if "trajs_per_unit" in cfg:
-        # 多样本批次(每题多条轨迹)才出这四行:切点上限该不该抬要看未截断的
-        # 切点分布,同题多条轨迹会不会撞成一模一样、有几条顶到步数上限,
-        # 都是温度 1 多采样特有的问题。旧配置没这个键 -> 报告行集与改动前一致。
-        # 全程不抽样、不用 rng。
+        # These four lines appear only for multi-sample batches (multiple trajectories per task):
+        # whether the cut-point cap should be raised depends on the untruncated cut-point
+        # distribution; whether multiple trajectories for the same task collide into identical
+        # ones, and how many hit the step cap, are problems specific to temperature-1
+        # multi-sampling. Old configs lack this key -> the set of report lines matches before
+        # the change. No sampling anywhere in this, and no rng used.
         ub = sorted(len(boundaries(e["think"], 10**9)) for e in events)
 
         def q(p):
             return ub[min(len(ub) - 1, int(len(ub) * p))]
 
         report.append(
-            f"- 切点数(未截断)每事件: min {ub[0]} p50 {q(.5)} p90 {q(.9)}"
-            f" p99 {q(.99)} max {ub[-1]};超 32/64/128/256 的事件 "
+            f"- cut-point count (untruncated) per event: min {ub[0]} p50 {q(.5)} p90 {q(.9)}"
+            f" p99 {q(.99)} max {ub[-1]}; events exceeding 32/64/128/256 "
             + "/".join(str(sum(1 for n in ub if n > t))
                        for t in (32, 64, 128, 256)))
-        report.append(f"- 命中切点上限({max_bounds})的事件: "
+        report.append(f"- events hitting the cut-point cap ({max_bounds}): "
                       f"{sum(1 for n in ub if n > max_bounds)}")
         files = traj_files(runs_dirs, env, model_full)
         if files is None:
-            report.append("- 完全相同轨迹 / 步数达上限: "
-                          f"不适用({env} 没有逐步轨迹文件)")
+            report.append("- identical trajectories / step count at cap: "
+                          f"not applicable ({env} has no step-by-step trajectory file)")
         else:
             raw = scan_raw_trajs(files, env)
-            report.append(f"- 完全相同轨迹: {raw['dup_pairs']} 对"
-                          f"(涉及 {raw['dup_units']} 题);"
-                          f"扫描轨迹 {raw['n_traj']} 条,只计数不去重")
+            report.append(f"- identical trajectories: {raw['dup_pairs']} pairs "
+                          f"(involving {raw['dup_units']} tasks); "
+                          f"scanned {raw['n_traj']} trajectories, counted only, not deduplicated")
             if raw["cap"] is None:
-                report.append(f"- 步数达上限的轨迹: 不适用"
-                              f"({env} 不在 STEP_CAP 表里)")
+                report.append(f"- trajectories at the step-count cap: not applicable "
+                              f"({env} is not in the STEP_CAP table)")
             else:
-                report.append(f"- 步数达上限({raw['cap']})的轨迹: "
-                              f"{raw['cap_trajs']} 条"
-                              f"(涉及 {raw['cap_units']} 题)")
+                report.append(f"- trajectories at the step-count cap ({raw['cap']}): "
+                              f"{raw['cap_trajs']} "
+                              f"(involving {raw['cap_units']} tasks)")
     if env == "alfworld":
-        # 模板切不动的动作:整步丢弃,但必须可观测。
-        # no_template 占比高 = 提示词发的是老语法(put X in Y)或多余的自然语言,
-        # 不是模型菜——这一行同时是语法断代的报警器。
+        # Actions the templates cannot parse: drop the whole step, but it must be observable.
+        # A high no_template share means the prompt is sending the old syntax (put X in Y) or
+        # extraneous natural language, not that the model is bad -- this line doubles as an
+        # alarm for a syntax version mismatch.
         report.append(
-            f"- 模板切不动而丢弃的步: {sum(ALF_DROP.values())} "
-            f"({dict(sorted(ALF_DROP.items()))});"
-            f"官方模板 {len(ALF_TEMPLATES)} 条,工具词表应 ≤{len(ALF_TEMPLATES)} 类")
+            f"- steps dropped because no template could cut them: {sum(ALF_DROP.values())} "
+            f"({dict(sorted(ALF_DROP.items()))}); "
+            f"official templates {len(ALF_TEMPLATES)}, tool vocabulary should be ≤{len(ALF_TEMPLATES)} classes")
     (out / "ANNOTATE_REPORT.md").write_text("\n".join(report) + "\n")
     if env == "alfworld":
-        print(f"alfworld 切不动丢弃: {sum(ALF_DROP.values())} "
+        print(f"alfworld dropped, uncuttable: {sum(ALF_DROP.values())} "
               f"{dict(sorted(ALF_DROP.items()))}")
     print(f"{env}/{cfg['model_short']}: events={len(events)} "
           f"samples={len(samples)} vocab={len(vocab)}")

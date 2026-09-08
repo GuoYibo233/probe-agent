@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""spec_lint: 机械校验 spec.md 散文与 tables/ 数据表的一致性。
+"""spec_lint: mechanically checks that spec.md's prose is consistent with the data
+tables in tables/.
 
-设计依据（2026-08-13 用户重构令）：封闭清单只在 tables/ 成文一次，
-散文引用不复述。本脚本抓的病：
-  E1 表间不一致（表自己坏了）
-  E2 散文里出现与表冲突的旧枚举（"两处成文一处漂移"——15 轮复审的头号缺陷类）
-  E3 散文里重新长出封闭清单（路由表、管道枚举链）
-  E4 rows.json 受管块不够生成 schema（缺 required/properties/primary_key、
-     required 越界、$enum 指向不存在的枚举、$ref_to 指向不存在的账、
-     jsonl 账行型缺 schema_version）——§0.5 第 5 条"从表生成"的静态前提
-  W1 散文里的 snake_case 反引号词不在任何表的词汇表里（疑似发明了新字段）
+Design rationale (2026-08-13 user refactor order): closed enumerations are written out
+once, in tables/ only; prose references must not restate them. Defects this script
+catches:
+  E1 tables inconsistent with each other (a table is broken on its own)
+  E2 prose contains an old enumeration that conflicts with a table ("written in two
+     places, drifted in one" -- the top defect class across 15 rounds of review)
+  E3 prose re-grows a closed enumeration (a routing table, a pipeline enum chain)
+  E4 rows.json's managed block lacks enough to generate a schema (missing
+     required/properties/primary_key, required out of bounds, $enum pointing to a
+     nonexistent enum, $ref_to pointing to a nonexistent ledger, a jsonl ledger row
+     type missing schema_version) -- the static precondition for section 0.5 item 5,
+     "generated from the table"
+  W1 a snake_case backtick word in the prose is not in any table's vocabulary
+     (suspected invented field)
 
-定位：设计稿静态一致性检查。生成物（schemas/ 与 owners 默认表）与表的
-一致性不归本脚本——那是实施期产物，归 ledger.py gen-schemas --check。
+Scope: static consistency check on the design draft. Consistency between generated
+artifacts (schemas/ and the owners default table) and the tables is not this script's
+job -- that belongs to the implementation-time artifact, ledger.py gen-schemas --check.
 
-exit 0 = 干净（警告不拦）；exit 1 = 有 error。
+exit 0 = clean (warnings do not block); exit 1 = has errors.
 """
 import json
 import re
@@ -23,13 +30,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 SPEC = ROOT / "spec.md"
-# 表自 2026-08-13 实施起随 plugin 本体住仓库根 research-loop/tables/（§0.5 第 5 条
-# "spec 与实现共用一个真源"的落地），spec_lint 指向同一份。
+# Tables have lived at repo-root research-loop/tables/ alongside the plugin itself since the
+# 2026-08-13 rollout (the landing of §0.5 rule 5, "spec and implementation share one source of
+# truth"); spec_lint points at that same copy.
 TABLES = ROOT.parent.parent / "research-loop" / "tables"
 
-# 散文里合法出现、但不属于任何表的 snake_case 词（W1 白名单）
+# snake_case words that legitimately appear in prose but do not belong to any table (W1
+# allowlist)
 ALLOW = {
-    "research_loop",  # research-loop.json 的变体切词
+    "research_loop",  # word-splitting variants of research-loop.json
     "audit_merge",
     "spec_lint", "spec_version",
     "principle_id", "item_id", "run_id", "batch_id", "blocked_id", "decision_id",
@@ -59,7 +68,7 @@ def load_tables():
         try:
             tabs[f.stem] = json.loads(f.read_text())
         except json.JSONDecodeError as e:
-            fail(f"E1 {f.name}: JSON 解析失败: {e}")
+            fail(f"E1 {f.name}: JSON parse failed: {e}")
     return tabs
 
 
@@ -80,7 +89,7 @@ def fail(msg):
 
 
 def collect_vocab(tabs):
-    """表里出现过的一切键名/字段名/枚举值/哨兵值 → 词汇表。"""
+    """Every key name / field name / enum value / sentinel value that ever appears in a table -> vocabulary."""
     vocab = set(ALLOW)
 
     def walk(node):
@@ -100,7 +109,7 @@ def collect_vocab(tabs):
 
 
 def collect_enums(tabs):
-    """rows.json enums + writes.json 的取值域 → {enum名: frozenset(值)}。"""
+    """rows.json enums + the value domains from writes.json -> {enum name: frozenset(values)}."""
     enums = {}
     for name, values in tabs.get("rows", {}).get("enums", {}).items():
         enums[name] = frozenset(values)
@@ -114,32 +123,34 @@ def collect_enums(tabs):
 def check_tables(tabs):
     for need in ("ledgers", "rows", "writes", "config", "routes"):
         if need not in tabs:
-            err(f"E1 缺表 tables/{need}.json")
+            err(f"E1 missing table tables/{need}.json")
     if ERRORS:
         return
     led = tabs["ledgers"]["ledgers"]
     owner_domain = set(tabs["writes"]["owner_values"])
     for name, spec in led.items():
         if spec["owner"] not in owner_domain:
-            err(f"E1 ledgers.json {name}.owner={spec['owner']} 不在 writes.json owner_values")
+            err(f"E1 ledgers.json {name}.owner={spec['owner']} not in writes.json owner_values")
         if spec.get("cap") is not None and spec["format"] != "jsonl":
-            err(f"E1 ledgers.json {name}: 非 jsonl 账不许设 cap")
+            err(f"E1 ledgers.json {name}: a non-jsonl ledger must not set cap")
     if led.get("runs", {}).get("cap") is not None:
-        err("E1 ledgers.json runs.cap 只许 null")
+        err("E1 ledgers.json runs.cap must be null only")
     for name, spec in tabs["ledgers"].get("optional_ledgers", {}).items():
         if spec["owner"] not in owner_domain:
-            err(f"E1 ledgers.json optional {name}.owner 不在 owner_values")
-    # form2 白名单账必须存在
+            err(f"E1 ledgers.json optional {name}.owner not in owner_values")
+    # the form2 allowlist ledger must exist
     for acct in tabs["writes"]["write_forms"]["form2_inplace_whitelist"]:
         if acct.startswith("_"):
             continue
         if acct not in led:
-            err(f"E1 writes.json 就地更新白名单指向不存在的账 {acct}")
+            err(f"E1 writes.json in-place update whitelist points to a nonexistent ledger {acct}")
     check_generatable(tabs)
 
 
-# E4: rows.json 受管块必须够生成 schema（§0.5 第 5 条的静态前提）。
-# 块名 → 对应账名（schema_version 要求只对 format=jsonl 的账生效）。
+# E4: the managed block in rows.json must be enough to generate the schema (the static
+# precondition of §0.5 rule 5).
+# block name -> corresponding ledger name (the schema_version requirement applies only to
+# ledgers with format=jsonl).
 GEN_BLOCKS = {
     "story_row": "story", "decisions_row": "decisions", "blocked_row": "blocked",
     "feedback_rows.suggestion": "feedback", "feedback_rows.review": "feedback",
@@ -166,45 +177,45 @@ def check_generatable(tabs):
             if node is None:
                 break
         if node is None:
-            err(f"E4 rows.json 缺受管块 {bname}")
+            err(f"E4 rows.json missing managed block {bname}")
             continue
         missing = [k for k in ("required", "properties", "primary_key")
                    if k not in node]
         if missing:
-            err(f"E4 {bname} 缺 {'/'.join(missing)}")
+            err(f"E4 {bname} missing {'/'.join(missing)}")
             continue
         props = set(node["properties"])
         for r in node["required"]:
             if r not in props:
-                err(f"E4 {bname} required 字段 {r} 不在 properties")
+                err(f"E4 {bname} required field {r} not in properties")
         for k in node["primary_key"]:
             if k not in props:
-                err(f"E4 {bname} primary_key 字段 {k} 不在 properties")
+                err(f"E4 {bname} primary_key field {k} not in properties")
         for fname, prop in node["properties"].items():
             if not isinstance(prop, dict):
-                err(f"E4 {bname}.{fname} 不是方言字段对象")
+                err(f"E4 {bname}.{fname} is not a dialect field object")
                 continue
             for d in field_defs(prop):
                 if "$enum" in d and d["$enum"] not in enums:
-                    err(f"E4 {bname}.{fname} $enum={d['$enum']} 不在 rows.enums")
+                    err(f"E4 {bname}.{fname} $enum={d['$enum']} not in rows.enums")
                 for ref in ([d["$ref_to"]] if isinstance(d.get("$ref_to"), str)
                             else d.get("$ref_to") or []):
                     if ref.split(".")[0] not in led:
-                        err(f"E4 {bname}.{fname} $ref_to={ref} 账名不在 ledgers.json")
+                        err(f"E4 {bname}.{fname} $ref_to={ref} ledger name not in ledgers.json")
         for cond in node.get("conditional", []):
             whens = cond.get("when")
             whens = whens if isinstance(whens, list) else [whens]
             for w in whens:
                 if not isinstance(w, dict) or w.get("op") not in ("eq", "neq", "in"):
-                    err(f"E4 {bname} conditional 的 op 非法: {w}")
+                    err(f"E4 {bname} conditional's op is invalid: {w}")
                 elif w.get("field") not in props:
-                    err(f"E4 {bname} conditional 引用不存在的字段 {w.get('field')}")
+                    err(f"E4 {bname} conditional references a nonexistent field {w.get('field')}")
             for k in cond.get("require", []) + cond.get("allow_null", []):
                 if k not in props:
-                    err(f"E4 {bname} conditional 目标字段 {k} 不在 properties")
+                    err(f"E4 {bname} conditional target field {k} not in properties")
         if led.get(acct, {}).get("format") == "jsonl" \
                 and "schema_version" not in node["required"]:
-            err(f"E4 {bname} 对应 jsonl 账 {acct}，required 必含 schema_version")
+            err(f"E4 {bname} corresponding jsonl ledger {acct}, required must include schema_version")
 
 
 def strip_fences(text):
@@ -219,31 +230,31 @@ def check_prose(tabs):
     enums = collect_enums(tabs)
     vocab = collect_vocab(tabs)
 
-    # E3: 路由表不许在散文里复述
+    # E3: the routing table must not be restated in prose
     for i, ln in enumerate(lines, 1):
         if re.search(r"\|\s*用户说\s*\|", ln):
-            err(f"E3 spec.md:{i} 路由表复述（唯一真源是 tables/routes.json）")
+            err(f"E3 spec.md:{i} routing table restated (the single source of truth is tables/routes.json)")
 
-    # E2: 管道枚举链与表内枚举冲突
+    # E2: pipeline enum chain conflicts with the enum inside the table
     chain_re = re.compile(r"(?:[\w【】一-鿿-]+\|){2,}[\w【】一-鿿-]+")
     for i, ln in enumerate(lines, 1):
-        if ln.lstrip().startswith("|"):  # md 表格行不算枚举链
+        if ln.lstrip().startswith("|"):  # md table rows do not count as an enum chain
             continue
         for m in chain_re.finditer(ln):
             members = set(m.group(0).split("|"))
             if any(members <= evals for evals in enums.values()):
-                continue  # 完整落在某个表枚举里 = 合法引用
+                continue  # falling entirely inside a table's enum = a legitimate reference
             for ename, evals in enums.items():
                 if len(members & evals) >= 2 and not members <= evals:
-                    err(f"E2 spec.md:{i} 枚举链 `{m.group(0)}` 与 {ename} 冲突"
-                        f"（多出 {sorted(members - evals)}）")
+                    err(f"E2 spec.md:{i} enum chain `{m.group(0)}` conflicts with {ename}"
+                        f" (extra {sorted(members - evals)})")
                     break
             else:
                 if len(members) >= 4:
-                    warn(f"W2 spec.md:{i} 四元以上枚举链 `{m.group(0)}` 不对应任何表枚举"
-                         "——封闭清单应进 tables/")
+                    warn(f"W2 spec.md:{i} enum chain with 4+ members `{m.group(0)}` doesn't correspond to any table enum"
+                         " -- a closed list belongs in tables/")
 
-    # W1: 反引号里的 snake_case 生词
+    # W1: unrecognized snake_case words inside backticks
     for i, ln in enumerate(lines, 1):
         for m in re.finditer(r"`([a-z][a-z0-9_.]{3,})`", ln):
             tok = m.group(1)
@@ -251,7 +262,7 @@ def check_prose(tabs):
             if all(p in vocab or not re.fullmatch(r"[a-z][a-z0-9_]+", p)
                    for p in parts):
                 continue
-            warn(f"W1 spec.md:{i} `{tok}` 不在任何表的词汇表里（发明了新字段？）")
+            warn(f"W1 spec.md:{i} `{tok}` isn't in any table's vocabulary (invented a new field?)")
 
 
 def main():

@@ -1,10 +1,11 @@
 import os
 
-# 事故 agent 结构性兜底(final-review C1,2026-08-09):sampler.spawn_agent()
-# 拉起来的是真实付费 opus 子进程,任何测试文件都不许无意间真的触发它。
-# 各测试文件里 mock 掉 spawn_agent 是第一道防线;这个环境变量是第二道——
-# `tests` 是一个包,`python3 -m unittest tests.test_x` 一定会先执行这个
-# __init__.py,所以在这里设一次就覆盖整个包下的所有测试文件,不必每个
-# 文件各自记得设。sampler.spawn_agent() 见到这个变量非空就只写占位行,
-# 不建子进程。
+# Structural fallback for the incident agent (final-review C1, 2026-08-09): what
+# sampler.spawn_agent() spins up is a real, paid opus subprocess, and no test file is allowed to
+# trigger it by accident. Mocking out spawn_agent in each test file is the first line of
+# defense; this environment variable is the second -- `tests` is a package, and
+# `python3 -m unittest tests.test_x` always executes this __init__.py first, so setting it once
+# here covers every test file in the whole package, and no individual file needs to remember to
+# set it. When sampler.spawn_agent() sees this variable non-empty, it only writes a placeholder
+# line and does not spawn a subprocess.
 os.environ.setdefault("NEW1_NO_SPAWN", "1")

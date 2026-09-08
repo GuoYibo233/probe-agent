@@ -1,8 +1,8 @@
 #!/bin/bash
-# 停止符修复的 14 题确诊冒烟(noprobe;交接书 §3.2)。tmux 里整段跑。
-# 14 题 = w0 全对、v1 活跑全错、逐题验尸确诊死于停止符漏洞的题。
-# 验收线: (a) content 零伪造 "Execution output:" 零 <|start|>;
-#         (b) 成功 >= 7/14,否则停下重新归因。
+# Diagnostic smoke test on 14 tasks for the stop-token fix (noprobe; handoff doc §3.2). Run the whole thing in tmux.
+# The 14 tasks = tasks w0 got fully right, v1 live run got fully wrong, and per-task autopsy confirmed died from the stop-token bug.
+# Acceptance line: (a) zero fabricated "Execution output:" in content, zero <|start|>;
+#         (b) success >= 7/14, otherwise stop and re-diagnose the cause.
 set -u
 ROOT=/home/y-guo/reproduce/new1
 LOG=/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs
@@ -10,7 +10,7 @@ TASKS="024c982_2,0a9d82a_2,0d01c76_1,13547f5_3,31dc501_1,3b8fb7a_3,522e5e5_2,59f
 OUT="pipeline/inject/runs/live_smoke_stopfix"
 PORTS=(8114 8115 8116)
 cd "$ROOT"
-# 动态领题:清票根,没写 final 的题全部重新开抢(claim() 的约定)
+# Dynamic task claiming: clear the claim root, all tasks without a final get re-claimed (the claim() convention)
 rm -rf "$OUT/.claims"
 for s in $(seq 0 5); do
   port=${PORTS[$((s % 3))]}

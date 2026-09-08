@@ -1,7 +1,9 @@
-"""拼回八臂 run 段客户端发射器:tokyo108 上起三个自排序客户端(无 GPU)。
+"""Client launcher for the run segment of the eight-arm splice-back: starts three
+self-sequencing clients on tokyo108 (no GPU).
 
-客户端自己等 PLAN_OK + 服务健康(见 splice_client.py),所以可以和服务、
-plan 重跑同时发射,不用人肉排序。日志与服务同放 /net(避 /home 配额)。
+The clients wait for PLAN_OK + service health themselves (see splice_client.py), so they
+can be launched at the same time as the service and the plan rerun, with no manual
+sequencing needed. Logs go to /net along with the service (to avoid the /home quota).
 """
 import shlex
 import subprocess

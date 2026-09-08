@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-"""在 CPU 上复现学习率扫描 run 的 epoch 0 全部物理块(全量 train, 种子 42, 预算 16384,
-逻辑小批 4 个事件, accum 2), 以及 val 全集在评估预算 32768 下的块; 输出块的统计,
-给 design-attention 第九节的显存/时间估算用. 只读数据, 不碰 GPU."""
+"""Reproduce on CPU all the epoch-0 physical blocks of the learning-rate sweep run (full
+train, seed 42, budget 16384, logical minibatch of 4 events, accum 2), plus the blocks
+of the full val set under an eval budget of 32768; output block statistics for the
+GPU-memory/time estimate in design-attention section 9. Read-only, touches no GPU."""
 import json
 import math
 import random
@@ -77,7 +78,8 @@ def main():
             by_cost[name] = [dict(t, cost_gb=round(a * t["tokens"] / 1e3 + b * t["loss"] / 1e3, 2))
                              for t in top]
         hist_B = Counter(b["B"] for b in blocks)
-        # 每个更新组里 token 最多的块与损失位最多的块(loop 模式挑组用)
+        # the block with the most tokens and the block with the most loss positions in each
+        # update group (used by loop mode to pick a group)
         groups = {}
         for b in blocks:
             g = groups.setdefault(b["group"], dict(tokens=0, loss=0, blocks=0))

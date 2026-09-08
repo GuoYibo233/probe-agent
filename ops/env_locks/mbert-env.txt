@@ -1,5 +1,5 @@
 # frozen 2026-08-02 by audit E26
-# 双环境铁律: mbert 线钉 transformers==4.57.6 / cprobe 线 >=5.14
+# two-environment hard rule: the mbert line pins transformers==4.57.6 / the cprobe line needs >=5.14
 accelerate==1.14.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.3

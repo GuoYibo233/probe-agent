@@ -1,32 +1,39 @@
-"""切分规则常量与函数(【照抄】旧代码,新流水线的唯一真源)。
+"""Split-rule constants and functions ([COPIED] from old code, the single source of
+truth for the new pipeline).
 
-- 前七项常量 + SENT_RE + boundaries/clip/assemble/split_args/first_call_args
-  + AW_CALL/BFCL_CALL:原样复制自 envs/collect/build_dataset.py
-- split_args_named/first_call_named/mkparams:原样复制自 envs/bert/param_label.py
+- The first seven constants + SENT_RE + boundaries/clip/assemble/split_args/
+  first_call_args + AW_CALL/BFCL_CALL: copied as-is from
+  envs/collect/build_dataset.py
+- split_args_named/first_call_named/mkparams: copied as-is from
+  envs/bert/param_label.py
 
-输入输出:本文件只放纯函数与常量,不读写任何文件。
-用法示例: from rules import boundaries, assemble, AW_CALL
+Input/output: this file holds only pure functions and constants, it reads and
+writes no files.
+Usage example: from rules import boundaries, assemble, AW_CALL
 """
 
 import re
 
-SEED = 42             # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在
-                      # 旧配置显式写的 seed 字段里生效(cfg.get("seed", SEED) 压过本值)
-MAX_BOUNDS = 64       # 每事件边界上限(gpt-oss 超长思考防爆)
-MIN_THINK = 40        # 字符;再短的思考没有可切性
-HIST_ROUNDS = 3       # 题干里保留最近几轮工具历史
-RESULT_CAP = 400      # 每条环境返回在题干里的字符上限
+SEED = 42             # starting at np821, switch to the first entry of the seed family (42/67/4267/6742); the old value 20260729 only
+                      # takes effect when an old config explicitly writes the seed field (cfg.get("seed", SEED) overrides this value)
+MAX_BOUNDS = 64       # per-event boundary cap (guards against gpt-oss's excessively long thinking blowing up)
+MIN_THINK = 40        # characters; thinking shorter than this has no cuttable points
+HIST_ROUNDS = 3       # number of recent tool-history rounds kept in the prompt
+RESULT_CAP = 400      # character cap per environment return within the prompt
 MODEL_OF = {"q35": "qwen3.5-27b", "q36": "qwen3.6-27b", "gptoss": "gpt-oss-120b"}
 
-# 句子边界:换行,或 .!? 后跟空白(小数点/apis.x.y 的点后无空白,天然排除)
+# sentence boundary: a newline, or .!? followed by whitespace (a decimal point or the dot in apis.x.y has no following whitespace, so it is naturally excluded)
 SENT_RE = re.compile(r"(?<=[.!?])\s+|\n")
 
 
 def boundaries(text, max_bounds=MAX_BOUNDS):
-    """全部合法切点(字符偏移,前缀=text[:i]),含全文末尾,上限 max_bounds。
+    """All legal cut points (character offset, prefix=text[:i]), including the end of
+    the full text, capped at max_bounds.
 
-    上限缺省 = MAX_BOUNDS(64),不传就与改动前逐字节一致;调用方要别的上限
-    (批次配置的 max_bounds、或统计未截断切点数时的 10**9)显式传。
+    The cap defaults to MAX_BOUNDS(64); leaving it unpassed matches the pre-change
+    behavior byte for byte. A caller that wants a different cap (a batch config's
+    max_bounds, or 10**9 when counting untruncated cut points) must pass it
+    explicitly.
     """
     pts = sorted({m.end() for m in SENT_RE.finditer(text)} | {len(text)})
     pts = [p for p in pts if len(text[:p].strip()) >= MIN_THINK // 2]
@@ -55,7 +62,7 @@ def assemble(task, history, think_prefix):
     return "\n".join(lines)
 
 
-# ---------- 参数抽取(路由统计用) ----------
+# ---------- parameter extraction (for routing statistics) ----------
 
 AW_CALL = re.compile(r"apis\.(\w+)\.(\w+)\(")
 BFCL_CALL = re.compile(r"(\w+)\(")
@@ -106,7 +113,7 @@ def first_call_args(code, name_re):
     return []
 
 
-# ---------- 保名版参数解析(与 split_args 同切法) ----------
+# ---------- name-preserving parameter parsing (same splitting method as split_args) ----------
 
 def split_args_named(argstr):
     vals, buf, depth, q = [], "", 0, None
@@ -158,7 +165,7 @@ def first_call_named(code, name_re):
 
 
 def mkparams(tool, named):
-    """(名,值) -> [(key,value)],空值跳过,同 key 保留首次。"""
+    """(name, value) -> [(key,value)], empty values skipped, the first occurrence is kept for a repeated key."""
     out, seen = [], set()
     for name, val in named:
         if not val:
@@ -171,20 +178,27 @@ def mkparams(tool, named):
     return out
 
 
-# ---------- ALFWorld:自然语言动作 -> 工具名 + 具名参数(c2 批次,模板细分口径) ----------
+# ---------- ALFWorld: natural-language action -> tool name + named parameters (c2 batch, template-level convention) ----------
 #
-# 唯一真源 = 本机 alfworld==0.4.2 装出来的动作语法文件
+# Single source of truth = the action-grammar file installed locally by
+#   alfworld==0.4.2:
 #   fig1_pilot/fig1-env/lib/python3.12/site-packages/alfworld/data/alfred.twl2
-# 下表逐条对应该文件的 `template :: "..."` 行(行号写在注释里),共 13 条。
-# 该文件里另有 8 行 template 不进本表,理由分三类:
-#   - 重复:191/196/201/206 都是 `take {o} from {r}`,211/221 都是 `move {o} to {r}`,
-#           236/241 都是 `examine {x}` —— 同一个表层模板的多个 action 定义
-#   - movable-receptacle 变体:216 `put {o} into {outero}`、226 `put {outero} in {r}`
-#           —— ALFWorld 自己会排除这类任务,故排除
-#   - 元命令:425 `help` —— 不是环境动作,它的 feedback 文本反过来正好把这 13 条逐条列了一遍
+# The table below corresponds line by line to that file's `template :: "..."` lines
+# (line numbers noted in the comments), 13 entries in all.
+# The file has 8 more template lines that do not go into this table, for three
+# kinds of reasons:
+#   - duplicates: 191/196/201/206 are all `take {o} from {r}`, 211/221 are both
+#           `move {o} to {r}`, 236/241 are both `examine {x}` -- multiple action
+#           definitions for the same surface template
+#   - movable-receptacle variants: 216 `put {o} into {outero}`, 226
+#           `put {outero} in {r}` -- ALFWorld itself excludes this class of task,
+#           so they are excluded here too
+#   - meta-command: 425 `help` -- not an environment action; its feedback text, as
+#           it happens, lists exactly these 13 entries one by one
 #
-# 参数键名口径:介词位取介词本身(to/from/with),前置宾语位取 obj;
-# 全部匹配 `\w+`,满足 rules.split_args_named 对键的要求。
+# Parameter key-naming convention: a prepositional slot takes the preposition
+# itself (to/from/with), a fronted-object slot takes obj; all match `\w+`, which
+# satisfies rules.split_args_named's requirement on keys.
 
 ALF_TEMPLATES = (
     ("go to {to}", 176),                    # action GotoLocation
@@ -202,61 +216,74 @@ ALF_TEMPLATES = (
     ("look", 329),                          # action look
 )
 
-# 参数值里绝不允许出现的字符。逗号是硬要求:eval_causal_call.split_named_raw
-# 按顶层逗号切参数,而 annotate 侧手拼 label_call 时不切,值里带逗号 = 静默扣分。
-# 括号/引号同理会让 parse_call 的括号配平与 split_args_named 的去引号走偏。
+# Characters never allowed to appear in a parameter value. The comma is a hard
+# requirement: eval_causal_call.split_named_raw splits arguments on top-level
+# commas, while the annotate side does not split when hand-assembling label_call,
+# so a comma in a value means a silent point loss.
+# Parentheses/quotes are the same: they throw off parse_call's paren balancing and
+# split_args_named's quote stripping.
 ALF_BAD_CHARS = ",()[]{}\"'"
 
-# 参数值的形状闸门:ALFWorld 的实体名一律是「单个纯字母类型名 + 空格 + 序号」
-# (mug 1 / countertop 3 / sinkbasin 1 / bathtubbasin 1)——ALFRED 的物体类型是
-# CamelCase 单词,textworld 小写后拼上序号。实测 fig1_pilot 全部 17510 条动作里的
-# 146 个不同实体值 100% 是这个形状。
-# 它拦的是**逗号闸门拦不住的那类污染**:模板尾槽是贪婪的 `(.+)`,所以
-# `go to countertop 1 and take mug 1` 会匹配上 `go to {to}`,值变成
-# "countertop 1 and take mug 1" —— 一条环境根本不接受的动作,却会静默变成
-# 一条合法真值。`go to countertop 1.` 的尾点同理。这类一律落到兜底并被计数。
+# Value-shape gate for parameters: an ALFWorld entity name is always "a single
+# pure-letter type name + space + index" (mug 1 / countertop 3 / sinkbasin 1 /
+# bathtubbasin 1) -- ALFRED's object types are CamelCase words, which textworld
+# lowercases and appends an index to. Measured: all 146 distinct entity values
+# across fig1_pilot's full 17510 actions are 100% this shape.
+# What this catches is **the class of contamination the comma gate cannot catch**:
+# a template's tail slot is the greedy `(.+)`, so
+# `go to countertop 1 and take mug 1` matches `go to {to}` and the value becomes
+# "countertop 1 and take mug 1" -- an action the environment would never accept,
+# turned silently into a legal ground truth. A trailing period as in
+# `go to countertop 1.` has the same problem. All of this falls through to the
+# fallback and gets counted.
 ALF_VALUE_RE = re.compile(r"[A-Za-z]+ \d+")
 
 
 def _alf_compile(tpl):
-    """`"take {obj} from {from}"` -> (工具名, [键...], 前导字面量, 编译好的正则)。"""
-    parts = re.split(r"\{(\w+)\}", tpl)     # 偶下标=字面量,奇下标=参数名
+    """`"take {obj} from {from}"` -> (tool name, [key...], leading literal, compiled regex)."""
+    parts = re.split(r"\{(\w+)\}", tpl)     # even index = literal, odd index = parameter name
     keys = parts[1::2]
     pat = ""
     for i, p in enumerate(parts):
         if i % 2 == 0:
             pat += re.escape(p)
-        else:                               # 末个槽贪婪,其余非贪婪(最短优先)
+        else:                               # the last slot is greedy, the rest are non-greedy (shortest match first)
             pat += "(.+)" if i == len(parts) - 2 else "(.+?)"
     return (parts[0].split()[0], keys, parts[0],
             re.compile("^" + pat + "$", re.IGNORECASE))
 
 
-# 最长前缀优先:按前导字面量长度降序(`go to ` 必须排在任何 `go ` 之前)。
-# sorted 稳定,同长度保持上表声明顺序。
+# Longest-prefix-first: sorted by leading-literal length descending (`go to ` must
+# come before any `go `).
+# sorted is stable, so entries of the same length keep the table's declaration order above.
 ALF_RULES = sorted((_alf_compile(t) for t, _ln in ALF_TEMPLATES),
                    key=lambda r: -len(r[2]))
 ALF_TOOLS = tuple(dict.fromkeys(r[0] for r in ALF_RULES))
 
-# 生成侧解析用:只认这 13 个工具名开头的调用,与上表同源(不另立第二份名单)。
+# For parsing on the generation side: only recognizes calls that start with one of these 13 tool names, drawn from the same source as the table above (no separate second list).
 ALF_CALL = re.compile(
     r"\b(" + "|".join(sorted(ALF_TOOLS, key=len, reverse=True)) + r")\s*\(")
 
 
 def alf_split(action):
-    """ALFWorld 动作原文 -> (tool, [(键,值)], 落空原因)。
+    """ALFWorld action text -> (tool, [(key,value)], reason for failure).
 
-    切得动时 reason=None;切不动时返回 (None, [], 原因),**调用方必须计数**,
-    绝不能静默换成别的口径(否则就退回被否掉的"首词=工具名"catch-all 切法)。
+    reason=None when it parses; when it does not parse, returns (None, [], reason),
+    and the **caller must count this** -- it must never be silently swapped for a
+    different convention (otherwise this regresses to the rejected "first word =
+    tool name" catch-all parsing).
 
-    原因三种:
-      no_template  没有任何官方模板匹配(模型发了个不在 13 条模板里的串)
-      empty_value  匹配上但某个槽是空白
-      bad_char     值里含 ALF_BAD_CHARS(逗号/括号/引号)——留着会静默扣分
-      odd_shape    值不是「类型名 + 空格 + 序号」(见 ALF_VALUE_RE),
-                   多半是贪婪尾槽吞进了残句或标点
+    Three kinds of reason:
+      no_template  no official template matched at all (the model sent a string
+                   not among the 13 templates)
+      empty_value  matched, but some slot is blank
+      bad_char     the value contains ALF_BAD_CHARS (comma/parenthesis/quote) --
+                   leaving it in would silently cost points
+      odd_shape    the value is not "type name + space + index" (see
+                   ALF_VALUE_RE), most often the greedy tail slot swallowing a
+                   sentence fragment or punctuation
     """
-    act = " ".join(str(action).split())      # 只做空白归一,不改大小写、不去标点
+    act = " ".join(str(action).split())      # only normalizes whitespace, does not change case and does not strip punctuation
     if not act:
         return None, [], "no_template"
     for tool, keys, _lead, rx in ALF_RULES:

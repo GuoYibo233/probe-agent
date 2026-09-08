@@ -22,7 +22,7 @@ class TestWebServer(unittest.TestCase):
             "rows": [
                 {"job": "x", "idx": 0, "host": "tokyo106", "gpus": "0",
                  "session": "new1_x_t106g0", "kind": "batch",
-                 "verdict": "健康", "escalated": False,
+                 "verdict": "healthy", "escalated": False,
                  "done": 3, "total": 10, "unit": "task",
                  "progress_pct": 30.0, "avg_rate": 0.01,
                  "recent_rate": 0.02, "tok_in": 100, "tok_out": 20,
@@ -31,7 +31,7 @@ class TestWebServer(unittest.TestCase):
                  "refires": 0},
                 {"job": "y", "idx": 0, "host": "tokyo107", "gpus": "1",
                  "session": "new1_y_t107g1", "kind": "batch",
-                 "verdict": "已挂", "escalated": False,
+                 "verdict": "dead", "escalated": False,
                  "done": None, "total": None, "unit": None,
                  "progress_pct": None, "avg_rate": None,
                  "recent_rate": None, "tok_in": None, "tok_out": None,
@@ -42,7 +42,7 @@ class TestWebServer(unittest.TestCase):
             "extras": {"tokyo108": ["stray_session"]},
             "incidents_tail": [
                 {"t": self.now - 3600, "job": "z", "idx": 0,
-                 "verdict": "已挂", "note": "验尸:进程不在"},
+                 "verdict": "dead", "note": "autopsy: process not present"},
             ],
         }
         (self.monitor_dir / "latest.json").write_text(
@@ -75,21 +75,22 @@ class TestWebServer(unittest.TestCase):
     def test_root_returns_200_with_task_table(self):
         status, body = self._get("/")
         self.assertEqual(status, 200)
-        self.assertIn("x", body)          # 任务名
-        self.assertIn("健康", body)        # 判定
-        self.assertIn("已挂", body)
-        # 最后采样时刻的文本(HH:MM:SS 格式的钟点)出现在正文里
+        self.assertIn("x", body)          # Job name
+        self.assertIn("healthy", body)        # Verdict
+        self.assertIn("dead", body)
+        # The text of the last sample time (a clock time in HH:MM:SS format) appears in the body
         stamp = time.strftime("%H:%M:%S", time.localtime(self.now))
         self.assertIn(stamp, body)
 
     def test_root_renders_incidents_and_extras(self):
         status, body = self._get("/")
-        self.assertIn("验尸:进程不在", body)
+        self.assertIn("autopsy: process not present", body)
         self.assertIn("stray_session", body)
 
     def test_stale_threshold_from_verdicts_defaults(self):
-        # 过期亮红的阈值 = sample_interval_s * 3,从判定引擎 DEFAULTS 生成
-        # 进页面,不另抄一个数——正文里应该能看到这个算出来的数值。
+        # The stale-turns-red threshold = sample_interval_s * 3, generated from the verdict
+        # engine's DEFAULTS into the page, not copied as a separate number -- the body
+        # should show this computed value.
         status, body = self._get("/")
         expected = verdicts.DEFAULTS["sample_interval_s"] * 3
         self.assertIn(str(int(expected)), body)
@@ -98,7 +99,7 @@ class TestWebServer(unittest.TestCase):
         (self.monitor_dir / "latest.json").unlink()
         status, body = self._get("/")
         self.assertEqual(status, 200)
-        self.assertIn("无采样", body)
+        self.assertIn("No samples", body)
 
 
 if __name__ == "__main__":

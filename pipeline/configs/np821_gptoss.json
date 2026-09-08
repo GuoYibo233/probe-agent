@@ -3,8 +3,8 @@
   "env": "appworld",
   "model_short": "gptoss",
   "model_full": "gpt-oss-120b",
-  "_source": "plans/2026-08-21-np821-plan.md(温度 1 / 每题 4 条 / 每步等权的第一批)",
-  "_note": "max_bounds=64 是 2026-08-22 a1_stats 停点的裁决(Claude 按 gyb 授权自主裁决,依据见 TIMELINE 当日条):未截断分布 p50 60/p90 246/max 842,留 64 训练堆 186479 条=p1 的 4.02 倍恰合预算。",
+  "_source": "plans/2026-08-21-np821-plan.md (the first batch: temperature 1 / 4 trajectories per task / equal weight per step)",
+  "_note": "max_bounds=64 is the 2026-08-22 a1_stats cutoff ruling (Claude decided autonomously under gyb's authorization; see the TIMELINE entry for that day for the basis): the untruncated distribution is p50 60 / p90 246 / max 842; keeping 64 leaves the training pile at 186479 examples = 4.02x p1, exactly fitting the budget.",
   "max_bounds": 64,
   "traj_runs": [
     "/home/y-guo/reproduce/new1/envs/runs/nyapass"
@@ -33,6 +33,6 @@
       "np821l4": {"base": "qwen4", "mode": "lora"}
     },
     "placement": "ops/np821_placement.json",
-    "_placement": "这里给的是基名。真排卡表一批一份,照 p1 的命名法放在同目录:ops/<批次>_placement.json(训练)、ops/<批次>_eval_tool_placement.json 与 ops/<批次>_eval_call_placement.json(评测两档)。驱动器按批次名找,找不到就 blocked,不猜。"
+    "_placement": "This gives the base name only. The real card placement table is one per batch, named after p1's convention and placed in the same directory: ops/<batch>_placement.json (training), ops/<batch>_eval_tool_placement.json and ops/<batch>_eval_call_placement.json (the two eval tiers). The driver looks it up by batch name; if not found, it goes blocked rather than guessing."
   }
 }

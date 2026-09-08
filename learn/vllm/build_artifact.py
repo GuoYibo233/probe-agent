@@ -1,23 +1,28 @@
 #!/usr/bin/env python3
-"""把一节课渲染成可发布的 artifact 单文件。
+"""Render one lesson into a single publishable artifact file.
 
-为什么需要它:artifact 的外壳自己提供 `<!doctype html><head>…</head><body>`,
-而且 CSP 挡掉一切外部请求——课页链的 `../assets/lesson.css` 与 `../assets/quiz.js`
-在发布后取不到。所以发布版必须是内联好的、没有文档外壳的片段。
+Why this is needed: the artifact shell itself provides `<!doctype html><head>...</head><body>`,
+and CSP blocks every external request -- the lesson page's links to `../assets/lesson.css` and
+`../assets/quiz.js` cannot be fetched once published. So the published version must be a
+self-contained fragment with everything inlined and no document shell.
 
-这是**确定性转换器**:课页与共用件是唯一真源,发布版每次由它现生成,
-两处内容不会分叉。手改产物 = 下次重跑被覆盖。
+This is a **deterministic converter**: the lesson page and the shared files are the single
+source of truth, and the published version is generated fresh from them every time, so the
+two never diverge. Hand-editing the output means it gets overwritten on the next rerun.
 
-它做四件事,不做第五件(不改任何一个字的正文):
-  1. 去掉 doctype / html / head / body 外壳,只留 <title> 与正文
-  2. <link rel=stylesheet> -> 内联 <style>;<script src> -> 内联 <script>
-  3. <a class="local"> -> <span class="local">(本地文件在发布页里链不到,降级成纯文本)
-  4. 出口自检:doctype / body 标签 / 相对路径 / 外链资源,有一个就退 2
+It does four things, and not a fifth (it never changes a single character of the body text):
+  1. Strip the doctype / html / head / body shell, keep only <title> and the body
+  2. <link rel=stylesheet> -> inline <style>; <script src> -> inline <script>
+  3. <a class="local"> -> <span class="local"> (local files cannot be linked to from the
+     published page, so it degrades to plain text)
+  4. Exit self-check: doctype / body tag / relative paths / external-linked resources --
+     exit 2 if even one is found
 
-用法:
+Usage:
   python3 run.py build-lesson-artifact --lesson learn/vllm/lessons/0001-*.html
-  # 产物默认写到同目录的 <名>.artifact.html;--out 可改
-  # --check 只校验已有产物是否与源同步(不写文件),不同步退 3
+  # By default the output is written to <name>.artifact.html in the same directory; --out changes it
+  # --check only verifies whether an existing output is in sync with the source (writes no file);
+  # exits 3 if out of sync
 """
 
 import argparse
@@ -33,13 +38,13 @@ BODY_RE = re.compile(r'<body[^>]*>(.*)</body>', re.I | re.S)
 LOCAL_A_RE = re.compile(r'<a class="local" href="[^"]*">(.*?)</a>', re.I | re.S)
 
 BAD_OUT = [
-    ('<!doctype', 'doctype 没去掉'),
-    ('<html', 'html 标签没去掉'),
-    ('<head', 'head 标签没去掉'),
-    ('<body', 'body 标签没去掉'),
-    ('href="../', '还有相对路径链接'),
-    ('src="../', '还有相对路径资源'),
-    ('rel="stylesheet"', '还有外链样式表'),
+    ('<!doctype', 'doctype not stripped'),
+    ('<html', 'html tag not stripped'),
+    ('<head', 'head tag not stripped'),
+    ('<body', 'body tag not stripped'),
+    ('href="../', 'still has relative-path links'),
+    ('src="../', 'still has relative-path resources'),
+    ('rel="stylesheet"', 'still has an external stylesheet link'),
 ]
 
 
@@ -54,38 +59,38 @@ def render(lesson: Path) -> str:
 
     m = TITLE_RE.search(src)
     if not m:
-        die(f"{lesson} 里没有 <title>,artifact 靠它取名")
+        die(f"{lesson} has no <title>, the artifact's name depends on it")
     title = m.group(1).strip()
 
     m = BODY_RE.search(src)
     if not m:
-        die(f"{lesson} 里没有 <body>…</body>")
+        die(f"{lesson} has no <body>...</body>")
     body = m.group(1)
 
     def resolve(rel, kind):
         p = (base / rel).resolve()
         if not p.exists():
-            die(f"{kind}不存在:{p}")
+            die(f"{kind} does not exist: {p}")
         return p
 
     head = src[: src.lower().find("<body")]
-    css = [resolve(HREF_RE.search(mo.group(0)).group(1), "样式表")
+    css = [resolve(HREF_RE.search(mo.group(0)).group(1), "stylesheet")
            for mo in LINK_RE.finditer(head)]
 
-    js = [resolve(mo.group(1), "脚本") for mo in SCRIPT_RE.finditer(body)]
-    body = SCRIPT_RE.sub("", body)                                  # 摘掉外链脚本标签
-    body = LOCAL_A_RE.sub(r'<span class="local">\1</span>', body)   # 本地链接降级
+    js = [resolve(mo.group(1), "script") for mo in SCRIPT_RE.finditer(body)]
+    body = SCRIPT_RE.sub("", body)                                  # Strip the external-linked script tag
+    body = LOCAL_A_RE.sub(r'<span class="local">\1</span>', body)   # Downgrade the local link
 
     if not css:
-        die("一个样式表都没内联进来,发布出去会是裸 HTML")
+        die("not a single stylesheet got inlined, publishing this would ship bare HTML")
 
     out = [f"<title>{title}</title>", ""]
     for p in css:
-        out += [f"<!-- 内联自 {p.name}(唯一真源,勿在此处改) -->",
+        out += [f"<!-- inlined from {p.name} (single source of truth, do not edit here) -->",
                 "<style>", p.read_text(encoding="utf-8").rstrip(), "</style>", ""]
     out += [body.strip(), ""]
     for p in js:
-        out += [f"<!-- 内联自 {p.name} -->",
+        out += [f"<!-- inlined from {p.name} -->",
                 "<script>", p.read_text(encoding="utf-8").rstrip(), "</script>"]
     return "\n".join(out) + "\n"
 
@@ -94,20 +99,20 @@ def selfcheck(text: str):
     low = text.lower()
     bad = [why for needle, why in BAD_OUT if needle in low]
     if bad:
-        die("产物自检没过:" + ";".join(bad))
+        die("artifact self-check failed:" + ";".join(bad))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--lesson", required=True, help="课页 html(唯一真源)")
-    ap.add_argument("--out", default=None, help="产物路径,默认 <名>.artifact.html")
+    ap.add_argument("--lesson", required=True, help="lesson page html (single source of truth)")
+    ap.add_argument("--out", default=None, help="artifact output path, defaults to <name>.artifact.html")
     ap.add_argument("--check", action="store_true",
-                    help="只校验已有产物是否与源同步,不写文件")
+                    help="only check whether the existing artifact is in sync with the source, write no files")
     a = ap.parse_args()
 
     lesson = Path(a.lesson).resolve()
     if not lesson.exists():
-        die(f"课页不存在:{lesson}")
+        die(f"lesson page does not exist: {lesson}")
     out = Path(a.out).resolve() if a.out else \
         lesson.parent / (lesson.stem + ".artifact.html")
 
@@ -116,14 +121,14 @@ def main():
 
     if a.check:
         if not out.exists():
-            die(f"产物还不存在:{out}", 3)
+            die(f"artifact does not exist yet: {out}", 3)
         if out.read_text(encoding="utf-8") != text:
-            die(f"产物与源不同步,重跑 build-lesson-artifact:{out}", 3)
-        print(f"build_artifact: 同步 {out}")
+            die(f"artifact out of sync with source, rerun build-lesson-artifact: {out}", 3)
+        print(f"build_artifact: synced {out}")
         return
 
     out.write_text(text, encoding="utf-8")
-    print(f"build_artifact: {lesson.name} + {len(text.splitlines())} 行内联 -> {out}")
+    print(f"build_artifact: {lesson.name} + {len(text.splitlines())} lines inlined -> {out}")
 
 
 if __name__ == "__main__":

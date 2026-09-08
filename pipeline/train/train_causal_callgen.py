@@ -1,44 +1,61 @@
-"""因果调用生成训练(新流水线 cgen 格):Qwen3-0.6B-Base 微调成"看题干写整条调用"。
+"""Causal call-generation training (new pipeline, cgen cell): fine-tunes Qwen3-0.6B-Base to "read the prompt and write out the whole call".
 
-与 ctool(train_causal_tool.py)的分工:ctool 只出工具种类,cgen 直接把
-工具名 + 全部参数一次写出来(`apis.spotify.login(username=x, password=y)`)。
+Division of labor with ctool (train_causal_tool.py): ctool only outputs the tool
+kind, cgen writes the tool name plus all parameters in one shot
+(`apis.spotify.login(username=x, password=y)`).
 
-- 输入: <data_out>/{train,val}.jsonl,每行取 text / label_call / w 三个字段;
-  一条样本 = 一条训练实例
-- 底座: --base qwen -> Qwen3-0.6B-Base(默认)/ qwen17 -> 1.7B / qwen4 -> 4B
-- 拼串: 输入串 = text + CALL_SEP("\\n[CALL] "),目标串 = label_call + eos
-- 防左截吃目标: 先 tokenize 目标得 tgt_ids(不截断),超 MAX_TGT_TOK 的实例整条
-  丢弃并计数;再按 max_length = --max-len - len(tgt_ids) 左截输入串,拼接后
-  labels 把 prompt 段掩成 -100(批内右 padding,pad 位同样 -100)
-- 损失: 逐实例目标段 mean CE(ce_i),批损失 = Σ(w_i·ce_i)/Σw_i
-- 评估: 每轮 val 全量加权 masked-CE(val_ce,选 best 的唯一依据,越低越好)+
-  定种子抽 GEN_N 条 greedy 生成报 val_exact_call(只进日志,不选 best)
-- 产物: <out>/best/(HF 权重 + tokenizer + meta.json)+ train_log.jsonl
-- LoRA: `--lora` 把底座换成 LoRA 训(开火头如果有,照常全参),存 best 之前先
-  merge_and_unload 把适配器并回底座,所以 best/ 的文件与全参存的逐项同构、
-  eval_causal_call.py 零改动就装得回来;meta.json 多一个 "lora" 块记超参。
-  不传 --lora 时脚本自己不碰 peft(peft 的 import 全在 --lora 分支里),
-  行为与加这套旗标之前一致;详见 lora_util.py 的说明。
+- Input: <data_out>/{train,val}.jsonl, each line takes the three fields text /
+  label_call / w; one sample = one training instance
+- Backbone: --base qwen -> Qwen3-0.6B-Base (default) / qwen17 -> 1.7B / qwen4 -> 4B
+- Concatenation: input string = text + CALL_SEP("\\n[CALL] "), target string = label_call + eos
+- Guard against left truncation eating the target: tokenize the target first to
+  get tgt_ids (no truncation); instances over MAX_TGT_TOK are dropped whole and
+  counted; then left-truncate the input string to max_length = --max-len -
+  len(tgt_ids), and after concatenation labels mask the prompt segment to -100
+  (right padding within the batch, pad positions also -100)
+- Loss: per-instance target-segment mean CE (ce_i), batch loss = Σ(w_i·ce_i)/Σw_i
+- Evaluation: every epoch, val's full weighted masked-CE (val_ce, the sole
+  criterion for picking best, lower is better) + a fixed-seed draw of GEN_N
+  greedy generations reported as val_exact_call (logged only, not used to pick best)
+- Outputs: <out>/best/ (HF weights + tokenizer + meta.json) + train_log.jsonl
+- LoRA: `--lora` swaps the backbone for LoRA training (the fire head, if present,
+  still trains full-parameter as usual); before saving best it first runs
+  merge_and_unload to fold the adapter back into the backbone, so best/'s files
+  are structurally identical item by item to a full-parameter save, and it
+  loads back into eval_causal_call.py with zero changes; meta.json gets one
+  extra "lora" block recording the hyperparameters. When --lora is not passed,
+  the script never touches peft (all peft imports live in the --lora branch),
+  and behavior matches before this set of flags was added; see lora_util.py for
+  details.
 
-开火头(`--fire-head`,必须与 --readonly-env 同传;默认不传 = 行为与旧版一致):
-- backbone 末层隐状态 -> Linear(h,1) 的样本级二分类头,学"此刻该不该发射投机"。
-  取的位置是**prompt 末位**(labels 里最后一个 -100 的位置,即 CALL_SEP 的最后一个
-  token):这一位的隐状态只看得见 text+CALL_SEP,与线上开火时能拿到的输入一致;
-  取整串末位会把目标调用串本身喂进开火头,直接泄题。
-- 开火标签 ready = 标签在只读集合里 且 该样本所有参数 found=true
-  (零参数事件 found 条件空真;params 里 join 不到的按 not-ready 并计数)
-- 非只读样本不再整条丢弃,而是当开火头负例回到数据流:它们的 LM labels 全 -100,
-  不产生 LM 梯度,也不进 val_ce 的分子分母
-- 损失 = 原 masked-CE + λ·开火 BCE(λ=1);批内全是非只读样本时 LM 项分母为零,
-  整项跳过(不出 NaN)
-- best 的选择指标不变(val masked-CE,只在只读样本上算);开火头存
-  best/fire_head.pt,meta.json 加 "fire_head": true
+Fire head (`--fire-head`, must be passed together with --readonly-env; the
+default, not passing it, matches the old version's behavior):
+- A sample-level binary classification head, backbone's last-layer hidden state
+  -> Linear(h,1), that learns "should this fire speculation right now". The
+  position it reads is **the prompt's last position** (the last -100 position
+  in labels, i.e. the last token of CALL_SEP): the hidden state at this
+  position can only see text+CALL_SEP, matching what is available when firing
+  live; reading the last position of the whole string would feed the target
+  call string itself into the fire head, leaking the answer directly.
+- Fire label ready = the label is in the read-only set AND every parameter of
+  this sample has found=true
+  (a zero-parameter event has an empty-true found condition; a param that
+  cannot be joined in params counts as not-ready and is counted)
+- Non-read-only samples are no longer dropped whole; instead they go back into
+  the data stream as fire-head negatives: their LM labels are all -100,
+  they produce no LM gradient, and do not enter val_ce's numerator or denominator
+- Loss = the original masked-CE + lambda * fire BCE (lambda=1); when a batch is
+  entirely non-read-only samples, the LM term's denominator is zero,
+  and that whole term is skipped (no NaN)
+- The criterion for picking best is unchanged (val masked-CE, computed only on
+  read-only samples); the fire head is saved to
+  best/fire_head.pt, and meta.json gets "fire_head": true added
 
-用法:
-  # 冒烟(500 训练实例/200 评估实例/1 epoch)
+Usage:
+  # smoke (500 training instances / 200 eval instances / 1 epoch)
   cprobe-env/bin/python pipeline/train/train_causal_callgen.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_cgen --smoke
-  # 全量
+  # full run
   cprobe-env/bin/python pipeline/train/train_causal_callgen.py \
     --data pipeline/data/aw_official_v1/q35 --out pipeline/runs/c1_q35_cgen
 """
@@ -55,9 +72,9 @@ import torch.nn.functional as F
 import transformers
 _TV = tuple(int(x) for x in transformers.__version__.split(".")[:2])
 if _TV < (5, 14):
-    raise SystemExit(f"cprobe 线要 transformers>=5.14,当前 "
-                     f"{transformers.__version__}——解释器用错了?"
-                     "一律从 run.py 的任务进(train-ctool/train-cgen)。")
+    raise SystemExit(f"cprobe line requires transformers>=5.14, current "
+                     f"{transformers.__version__} -- wrong interpreter?"
+                     "always go through run.py's tasks (train-ctool/train-cgen).")
 from torch.utils.data import DataLoader, Dataset
 from transformers import (AutoModelForCausalLM, AutoTokenizer,
                           get_linear_schedule_with_warmup)
@@ -71,25 +88,27 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat
 
 
-# 底座三档(2026-08-21 起因果线从单档扩成三档,样式与 train_causal_tool.MODELS 同)。
-# --base 默认 qwen,不传时的行为与加这张表之前逐字节相同。
+# Three backbone tiers (since 2026-08-21 the causal line expanded from one tier to
+# three, same style as train_causal_tool.MODELS).
+# --base defaults to qwen; behavior when not passed is byte-identical to before
+# this table was added.
 MODELS = {
     "qwen":   "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base",
     "qwen17": "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base",
     "qwen4":  "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base",
 }
-SEED = 42                  # np821 起换种子家族(42/67/4267/6742)首位;旧值 20260729 只在旧数据复现里生效
-FULL_LR = 1e-5             # 全参微调的学习率(不传 --lora 时的 --lr 默认值)
+SEED = 42                  # since np821, switched to the seed family (42/67/4267/6742)'s first value; old value 20260729 only applies when reproducing old data
+FULL_LR = 1e-5             # learning rate for full-parameter fine-tuning (the --lr default when --lora is not passed)
 CALL_SEP = "\n[CALL] "
-MAX_TGT_TOK = 160          # 目标串 token 上限,超了整条实例丢弃
-MAX_GEN_TOK = 96           # 评估生成的 max_new_tokens
-GEN_N = 200                # 每轮抽多少条做 greedy 生成
+MAX_TGT_TOK = 160          # target-string token cap; instances over this are dropped whole
+MAX_GEN_TOK = 96           # max_new_tokens for eval generation
+GEN_N = 200                # how many to draw each epoch for greedy generation
 
 
-# ---------------------------------------------------------------- 数据
+# ---------------------------------------------------------------- data
 
 def fire_pmap(params, split):
-    """{(event, sent_idx): params} —— 开火标签要用的 found 信息。"""
+    """{(event, sent_idx): params} -- the found information the fire label needs."""
     pmap = {}
     for line in open(params / f"{split}.jsonl"):
         p = json.loads(line)
@@ -108,20 +127,23 @@ def fire_finish(st, where):
     st["frac_readonly"] = round(st["n_readonly"] / n, 6)
     st["frac_join_miss"] = round(st["n_join_miss"] / n, 6)
     if st["frac_join_miss"] > 0.01:
-        print(f"[fire-head] 警告:{where} 有 {st['n_join_miss']}/{st['n']} "
-              f"({st['frac_join_miss']:.1%}) 个样本在 params 文件里 join 不到,"
-              f"已全部按 not-ready 处理(其中 args_named 非空 "
-              f"{st['n_join_miss_with_args']} 条)", flush=True)
+        print(f"[fire-head] warning: {where} has {st['n_join_miss']}/{st['n']} "
+              f"({st['frac_join_miss']:.1%}) samples that can't be joined in the params file, "
+              f"all treated as not-ready (of which args_named is non-empty for "
+              f"{st['n_join_miss_with_args']} of them)", flush=True)
     return st
 
 
 class CallDS(Dataset):
-    """一条样本一条实例;构造时先 tokenize 目标串,过长的整条丢弃并计数。
+    """One sample is one instance; construction tokenizes the target string first,
+overlong ones are dropped whole and counted.
 
-    fire 非 None(--fire-head)时行数变两类:只读样本照旧(有 LM 目标),
-    非只读样本只当开火头负例(tgt 空、has_lm=False,LM labels 全 -100)。
-    行结构固定六元组 (text, tgt, w, label_call, ready, has_lm);
-    默认关时 ready 恒 0.0、has_lm 恒 True,取值口径与旧版逐位相同。
+    When fire is not None (--fire-head), rows split into two kinds: read-only
+    samples stay as before (they have an LM target); non-read-only samples only
+    serve as fire-head negatives (tgt empty, has_lm=False, LM labels all -100).
+    Row structure is a fixed six-tuple (text, tgt, w, label_call, ready, has_lm);
+    with the default off, ready is always 0.0 and has_lm is always True,
+    matching the old version's values bit for bit.
     """
 
     def __init__(self, path, tok, limit=0, max_tgt=MAX_TGT_TOK, ro=None,
@@ -131,7 +153,7 @@ class CallDS(Dataset):
         for line in open(path):
             r = json.loads(line)
             is_ro = True
-            if ro is not None:                 # 非只读样本整条丢掉(计数在 ro 里)
+            if ro is not None:                 # non-read-only samples are dropped whole (counted in ro)
                 ro["labels"].append(r["label"])
                 is_ro = r["label"] in ro["set"]
                 if not is_ro:
@@ -155,7 +177,7 @@ class CallDS(Dataset):
                     ready = float(is_ro and all(q["found"] for q in ps))
                 st["n_ready"] += int(ready)
                 if not is_ro:
-                    # 只当开火头负例:不给 LM 目标,也不受 max_tgt 丢弃影响
+                    # only serves as a fire-head negative: no LM target given, and not subject to the max_tgt drop
                     self.rows.append((r["text"], [], float(r["w"]),
                                       r["label_call"], ready, False))
                     continue
@@ -179,10 +201,12 @@ class CallDS(Dataset):
 
 
 def collate(batch, tok, max_len):
-    """左截输入 + 右 padding;labels 掩掉 prompt 段与 pad 位。
+    """Left-truncate the input + right-pad; labels mask out the prompt segment and pad positions.
 
-    另返回 ready(开火标签)、lm(该行进不进 LM 损失)、plast(prompt 末位下标,
-    开火头就在这一位取隐状态)。默认关时 ready 全 0、lm 全 1,不影响任何数值。
+    Also returns ready (the fire label), lm (whether this row enters the LM
+    loss), and plast (the prompt's last-position index, where the fire head
+    reads its hidden state). With the default off, ready is all 0 and lm is
+    all 1, and no numeric value is affected.
     """
     ids, labs, ws, ready, lm, plast = [], [], [], [], [], []
     for text, tgt, w, _call, rdy, has_lm in batch:
@@ -211,24 +235,27 @@ def collate(batch, tok, max_len):
             torch.tensor(plast, dtype=torch.long))
 
 
-# ---------------------------------------------------------------- 模型
+# ---------------------------------------------------------------- model
 
 def build(dev, base="qwen", attn_impl=None, path=None):
-    """tokenizer 构造照抄 train_causal_probe.build():pad=eos / 左截 / 右 pad。
+    """Tokenizer construction copies train_causal_probe.build() verbatim: pad=eos / left-truncate / right-pad.
 
-    工单 `.scratch/kvshare-train/issues/03-share-trainer.md`(spec 3.4,决定 6)
-    加的两个关键字参数,都是 None 时与改动前逐字节相同:
-    - `attn_impl`:非 None 时传给 `from_pretrained` 的 `attn_implementation`
-      (新训练器 `train_causal_share.py` 用来钉 `sdpa`)。
-    - `path`:非 None 时直接从这个目录装模型与 tokenizer,不查 `MODELS[base]`
-      (给新训练器第 12 节的小模型测试用)。
+    Two keyword arguments added by ticket
+    `.scratch/kvshare-train/issues/03-share-trainer.md` (spec 3.4, decision 6);
+    when both are None, behavior is byte-identical to before this change:
+    - `attn_impl`: when not None, passed to `from_pretrained` as
+      `attn_implementation` (the new trainer `train_causal_share.py` uses this
+      to pin `sdpa`).
+    - `path`: when not None, load the model and tokenizer directly from this
+      directory, skipping the `MODELS[base]` lookup (used by the new trainer's
+      section 12 small-model tests).
     """
     model_path = MODELS[base] if path is None else path
     tok = AutoTokenizer.from_pretrained(model_path)
-    if tok.pad_token_id is None:                      # 照抄 check_causal_candidates
+    if tok.pad_token_id is None:                      # copied verbatim from check_causal_candidates
         tok.pad_token = tok.eos_token
-    tok.truncation_side = "left"                      # 保思考尾巴
-    tok.padding_side = "right"                        # 目标段都在真实 token 上
+    tok.truncation_side = "left"                      # keep the thinking tail
+    tok.padding_side = "right"                        # the target segment sits entirely on real tokens
     torch.manual_seed(SEED)
     extra = {} if attn_impl is None else dict(attn_implementation=attn_impl)
     model = AutoModelForCausalLM.from_pretrained(model_path, dtype=torch.float32,
@@ -239,18 +266,19 @@ def build(dev, base="qwen", attn_impl=None, path=None):
 
 
 def inst_ce(model, enc, labels, dev, fire=None, plast=None):
-    """逐实例目标段 mean CE。返回 [B] 的 float32 张量。
+    """Per-instance mean CE over the target segment. Returns a [B] float32 tensor.
 
-    fire 非 None 时多要一份末层隐状态,在 plast(prompt 末位)上过开火头,
-    返回 (ce, fire_logit)。fire=None 的路径与旧版逐字节相同。
+    When fire is not None, also take an extra copy of the last-layer hidden state and run it
+    through the fire head at plast (the last position of the prompt), returning
+    (ce, fire_logit). The fire=None path is identical, byte for byte, to the old version.
     """
     kw = {} if fire is None else dict(output_hidden_states=True)
     out = model(input_ids=enc["input_ids"], attention_mask=enc["attention_mask"],
                 use_cache=False, **kw)
-    lg = out.logits[:, :-1]                           # 预测下一 token
+    lg = out.logits[:, :-1]                           # predict the next token
     tg = labels[:, 1:].to(dev)
     m = tg != -100
-    ce = F.cross_entropy(lg[m].float(), tg[m], reduction="none")  # 只取目标位
+    ce = F.cross_entropy(lg[m].float(), tg[m], reduction="none")  # take only the target positions
     b = tg.size(0)
     inst = torch.arange(b, device=dev).unsqueeze(1).expand_as(tg)[m]
     ssum = torch.zeros(b, device=dev, dtype=torch.float32)
@@ -263,14 +291,16 @@ def inst_ce(model, enc, labels, dev, fire=None, plast=None):
     return ice, fire(hp.float()).squeeze(-1)
 
 
-# ---------------------------------------------------------------- 评估
+# ---------------------------------------------------------------- eval
 
 @torch.no_grad()
 def eval_ce(model, loader, dev, amp, fire=None):
-    """val 全量加权 masked-CE(与训练损失同口径)。
+    """Full-val weighted masked-CE (same accounting as the training loss).
 
-    fire 非 None 时:CE 的分子分母都只算有 LM 目标的行(=只读样本),口径与
-    --readonly-env 单开时相同;顺带回一份开火头 acc@0.5(按 w 加权)与正负例数。
+    When fire is not None: both the numerator and denominator of the CE only count rows with
+    an LM target (= read-only samples), matching the accounting when --readonly-env is on by
+    itself; also returns fire-head acc@0.5 (weighted by w) and the positive/negative example
+    counts.
     """
     model.eval()
     s = w_tot = 0.0
@@ -296,8 +326,8 @@ def eval_ce(model, loader, dev, amp, fire=None):
     model.train()
     if w_tot <= 0:
         raise SystemExit(
-            "val 一个 LM 目标位都没有(加权分母 w_tot=0)——继续算会得到 val_ce=0.0,"
-            "每个 epoch 都当 best 存,run 看起来完美。数据或过滤口径有问题,硬停。")
+            "val has not a single LM target position (weighted denominator w_tot=0) -- continuing would give val_ce=0.0, "
+            "saved as best every epoch, making the run look perfect. Something is wrong with the data or filter settings, hard stop.")
     vce = s / w_tot
     if fire is None:
         return vce
@@ -307,10 +337,10 @@ def eval_ce(model, loader, dev, amp, fire=None):
 
 @torch.no_grad()
 def eval_gen(model, tok, rows, dev, amp, max_len, bs):
-    """定种子抽样的 greedy 生成:整串命中率(遇 \\n 或 eos 停)。"""
+    """Fixed-seed sampled greedy generation: whole-string hit rate (stops at \\n or eos)."""
     model.eval()
     prev_side, prev_cache = tok.padding_side, model.config.use_cache
-    tok.padding_side = "left"                         # 生成必须左 padding
+    tok.padding_side = "left"                         # generation requires left padding
     model.config.use_cache = True
     hit = 0
     for i in range(0, len(rows), bs):
@@ -332,55 +362,55 @@ def eval_gen(model, tok, rows, dev, amp, max_len, bs):
     return hit / max(len(rows), 1)
 
 
-# ---------------------------------------------------------------- 主流程
+# ---------------------------------------------------------------- main flow
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="qwen", choices=sorted(MODELS),
-                    help="底座三档:qwen=0.6B(默认,与旧行为一致)/"
+                    help="base model, three tiers: qwen=0.6B (default, same as old behavior)/"
                          "qwen17=1.7B/qwen4=4B")
     ap.add_argument("--env", default="appworld",
                     choices=["tales", "appworld", "bfcl", "alfworld"],
-                    help="仅作日志标签(数据路径已由 --data 直接给定)")
+                    help="log label only (the data path is given directly by --data)")
     ap.add_argument("--data", required=True,
-                    help="数据目录 <data_out>(含 train/val.jsonl)")
-    ap.add_argument("--out", required=True, help="产物目录(必填,防覆盖旧件)")
+                    help="data dir <data_out> (contains train/val.jsonl)")
+    ap.add_argument("--out", required=True, help="output dir (required; guards against overwriting old outputs)")
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--bs", type=int, default=4)
     ap.add_argument("--accum", type=int, default=8)
     ap.add_argument("--lr", type=float, default=None,
-                    help=f"学习率(默认 {FULL_LR};开 --lora 时默认换成 --lora-lr,"
-                         "这里显式给了就以显式值为准)")
+                    help=f"learning rate (default {FULL_LR}; when --lora is on it defaults to --lora-lr instead, "
+                         "if given explicitly here that value takes precedence)")
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--smoke", action="store_true",
-                    help="500 训练实例/200 评估实例/1 epoch,验证管线")
+                    help="500 training instances/200 eval instances/1 epoch, for verifying the pipeline")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--grad-ckpt", action="store_true",
-                    help="底座开梯度检查点省显存(全参与 --lora 两种模式都能用;"
-                         "同时关 use_cache,LoRA 下另保证输入 require_grad)")
-    ap.add_argument("--gen-bs", type=int, default=8, help="生成评估的批大小")
+                    help="turn on gradient checkpointing on the base model to save GPU memory (works in both full-parameter and --lora modes; "
+                         "also turns off use_cache, and under LoRA additionally ensures the input requires grad)")
+    ap.add_argument("--gen-bs", type=int, default=8, help="batch size for generation eval")
     ap.add_argument("--max-inst", type=int, default=0,
-                    help="调试用:再限实例数(0=不限)")
+                    help="for debugging: further cap the instance count (0 = no cap)")
     ap.add_argument("--readonly-env", default=None,
                     choices=list(readonly_map.READONLY_ENVS),
-                    help="只读工具模式:只用真值为只读工具的样本训练(默认关=旧口径)")
+                    help="readonly-tool mode: train only on samples whose ground truth is a readonly tool (off by default = old settings)")
     ap.add_argument("--params", default=None,
-                    help="参数区间标签目录(默认 <data>/params);只有 "
-                         "--fire-head 用得上——开火标签要读 found")
+                    help="directory for parameter-range labels (default <data>/params); only used "
+                         "by --fire-head -- the fire label needs to read found")
     ap.add_argument("--fire-head", action="store_true",
-                    help="再学一个样本级开火头(此刻该不该发射投机);"
-                         "必须与 --readonly-env 同传,默认关=行为不变")
+                    help="also learn a sample-level fire head (should speculation fire right now); "
+                         "must be passed together with --readonly-env, off by default = behavior unchanged")
     ap.add_argument("--force", action="store_true",
-                    help="允许在已训过的 --out 目录再次训练(默认拒绝防产物混淆)")
+                    help="allow training again in an --out dir that was already trained in (refused by default to keep outputs apart)")
     lora_util.add_args(ap)
     args = ap.parse_args()
     lr = lora_util.resolve_lr(args, FULL_LR)
 
     if args.fire_head and not args.readonly_env:
         raise SystemExit(
-            "--fire-head 必须与 --readonly-env 同时传:开火标签 ready 的定义"
-            "依赖该环境的只读真值表(ready = 只读 且 参数全 found),"
-            "没有环境就算不出标签。")
+            "--fire-head must be passed together with --readonly-env: the definition of a ready fire label "
+            "depends on that environment's readonly ground-truth table (ready = readonly and all params found), "
+            "without an environment the label can't be computed.")
 
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -389,8 +419,8 @@ def main():
     out = Path(args.out)
     if (out / "train_log.jsonl").exists() and not args.force:
         raise SystemExit(
-            f"{out} 已有 train_log.jsonl——这个目录训过一次,再训会把两次产物"
-            "混进同一个 best/ 且无法归属(审计 B7)。换 --out,或确认覆盖后加 --force。")
+            f"{out} already has a train_log.jsonl -- this directory has been trained once, training again would mix "
+            "both runs' outputs into the same best/ with no way to attribute them (audit B7). Use a different --out, or confirm the overwrite and add --force.")
     out.mkdir(parents=True, exist_ok=True)
     dev = args.device
     amp = dev.startswith("cuda")
@@ -428,29 +458,33 @@ def main():
             kept=dict(train=ro_tr["kept"], val=ro_ev["kept"]),
             dropped=dict(train=ro_tr["dropped"], val=ro_ev["dropped"]))
         if args.fire_head:
-            # dropped 在开火模式下含义变了:不再是"丢出数据集",而是"不进 LM 损失"
-            ro_out["dropped_semantics"] = "fire-head 模式下 = 只当开火头负例,不进 LM 损失"
+            # In fire mode, "dropped" changes meaning: it no longer means "dropped from the dataset", it
+            # means "excluded from the LM loss"
+            ro_out["dropped_semantics"] = "in fire-head mode = counts only as a negative for the fire head, not into the LM loss"
             ro_out["fire_head"] = fire_st
         (out / "READONLY.json").write_text(json.dumps(
             ro_out, ensure_ascii=False, indent=1))
-    # 保险丝:val 装载后 0 行硬停。空 val 不会在训练里崩(SequentialSampler 不拦空),
-    # 只会让 val_ce 恒 0、每个 epoch 都存 best,run 看起来完美。
+    # Fuse: hard-stop if val loads 0 rows. An empty val will not crash training (SequentialSampler
+    # does not block on empty), it will just make val_ce always 0, save best every epoch, and make
+    # the run look perfect.
     if not len(ev):
         raise SystemExit(
-            f"{data / 'val.jsonl'} 装载后 val 是 0 行(dropped={ev.dropped}"
+            f"{data / 'val.jsonl'} loaded to 0 val rows (dropped={ev.dropped}"
             + (f", readonly_dropped={ro_ev['dropped']}" if ro_ev else "")
-            + ")——选 best 的指标没有分母,硬停。")
+            + ") -- the metric for picking best has no denominator, hard stop.")
     mk = lambda ds, sh: DataLoader(
         ds, batch_size=args.bs, shuffle=sh, num_workers=2,
         collate_fn=lambda b: collate(b, tok, args.max_len))
     tr_dl, ev_dl = mk(tr, True), mk(ev, False)
-    # 生成评估只在有 LM 目标的行上做(=只读样本),与 --readonly-env 单开时同源
+    # Generation eval only runs on rows with an LM target (= read-only samples), the same source as
+    # when --readonly-env is on by itself
     gen_rows = [r for r in ev.rows if r[5]]
     random.Random(SEED).shuffle(gen_rows)
     gen_rows = gen_rows[:GEN_N]
 
-    # LoRA:就地把底座换成 LoRA 训。开火头(如果有)是新初始化的线性头,照常
-    # 全参训练,与适配器一起进优化器。
+    # LoRA: swap the backbone in place for LoRA training. The fire head (if present) is a newly
+    # initialized linear head, trained fully as usual, going into the optimizer along with the
+    # adapter.
     lora_wrap = lora_util.wrap(model, args) if args.lora else None
     if args.grad_ckpt:
         model.gradient_checkpointing_enable()
@@ -462,7 +496,7 @@ def main():
     fire = None
     if args.fire_head:
         h = model.config.get_text_config().hidden_size
-        fire = torch.nn.Linear(h, 1).to(dev)          # 建在 backbone 之后
+        fire = torch.nn.Linear(h, 1).to(dev)          # built after the backbone
     bcef = torch.nn.BCEWithLogitsLoss(reduction="none")
     steps = math.ceil(len(tr_dl) / args.accum) * epochs
     pars = (lora_util.opt_params(model.parameters(), args.lora)
@@ -505,9 +539,10 @@ def main():
             if fire is None:
                 loss = (ce.float() * wd).sum() / wd.sum()
             else:
-                wl = wd * lm.to(dev)          # 只读样本才进 LM 项
+                wl = wd * lm.to(dev)          # only read-only samples enter the LM term
                 ws = wl.sum()
-                # 批内全是非只读样本:LM 项分母为零,整项跳过(不是除零)
+                # The whole batch is non-read-only samples: the LM term's denominator is zero, so skip the
+                # whole term (not a divide-by-zero)
                 loss = ((ce.float() * wl).sum() / ws if float(ws) > 0
                         else torch.zeros((), device=dev))
                 loss = loss + ((bcef(flg.float(), ready.to(dev)) * wd).sum()
@@ -542,7 +577,8 @@ def main():
             if lora_wrap is None:
                 model.save_pretrained(out / "best")
             else:
-                # 适配器并回底座再落盘:best/ 与全参存的逐项同构,评测端零改动
+                # Merge the adapter back into the backbone before saving: best/ is item-for-item isomorphic with
+                # a full-parameter save, zero changes needed on the eval side
                 lora_util.save_merged(lora_wrap, out / "best", dev)
             tok.save_pretrained(out / "best")
             meta = dict(

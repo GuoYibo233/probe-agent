@@ -1,21 +1,27 @@
-"""θ 扫描曲线的 plan 段发射壳（五个 θ 点，tokyo106 五张 A6000 各一个）。
+"""Launch shell for the plan cell of the theta sweep curve (five theta
+points, tokyo106 five A6000 cards, one each).
 
-结构照抄 envs/serve_logs/launch_vllm_trio.py：一个 JOBS 表 + tmux 起会话 +
-"会话已存在就 SKIP"的保护。plan 段只吃 0.6B 参数产线，单卡 48G 富余得多，
-所以一张卡一个 θ、五个并行。
+Structure copied from envs/serve_logs/launch_vllm_trio.py: one JOBS table +
+tmux session start + "SKIP if the session already exists" protection. The
+plan cell only consumes the 0.6B parameter production line; a single card
+has much more than 48G to spare, so it's one card per theta, five in
+parallel.
 
-曲线的硬约束：五个点只允许差 --theta 一个变量，别的参数（ctool/cgen/data/
-traj-root/miss-policy）从 COMMON 里来，改只能改一处。
+Hard constraint of the curve: the five points may only differ in the single
+variable --theta; the other parameters (ctool/cgen/data/traj-root/miss-policy)
+come from COMMON, so a change can only be made in one place.
 
-  发射五个全量点：  python3 pipeline/inject/launch_plan_sweep.py
-  只发 smoke（θ=0.80，--limit 4，tokyo106 g0）： ... launch_plan_sweep.py --smoke
-  execute 档（另一组 run 目录，目录名自动加 _exec）：
+  Launch all five full points:  python3 pipeline/inject/launch_plan_sweep.py
+  Launch smoke only (theta=0.80, --limit 4, tokyo106 g0): ... launch_plan_sweep.py --smoke
+  execute cell (a separate set of run directories, with _exec auto-appended to the directory name):
       python3 pipeline/inject/launch_plan_sweep.py --miss-policy execute --only th0925
-  execute 档的 plan 段跑完后还有两段纯 CPU 前置才能进 run：
-      exec_calls.py（envs/appworld/venv 解释器，真执行）→ replay_inject.py merge-exec
+  After the execute cell's plan segment finishes, two more pure-CPU steps must run before entering run:
+      exec_calls.py (envs/appworld/venv interpreter, actually executes) → replay_inject.py merge-exec
 
-tokyo106 驱动只到 CUDA 12.2（ops/gpu_state.md 坑 1），上这台机器前先用 smoke
-实测一次 cu128 轮子能不能起——smoke 就是兼容性测试与 --theta 生效测试合一。
+tokyo106's driver only goes up to CUDA 12.2 (ops/gpu_state.md pitfall 1);
+before using this machine, actually test with smoke whether the cu128 wheel
+can even start -- smoke doubles as both a compatibility test and a
+--theta-takes-effect test.
 """
 import argparse
 import shlex
@@ -26,9 +32,12 @@ ROOT = "/home/y-guo/reproduce/new1"
 PY = f"{ROOT}/cprobe-env/bin/python"
 LOGDIR = f"{ROOT}/pipeline/inject/logs"
 
-# 曲线的硬约束在这里落地:所有点共用同一串参数,改只能改这一处。
-# --miss-policy 不写死在这里 —— 它是命令行参数(--miss-policy),因为 execute
-# 档要另铺一组 run 目录,而写死成 skip 就只能改代码才能发 execute 那一组
+# The curve's hard constraint lands here: all points share one string of
+# parameters, and a change can only be made here.
+# --miss-policy is not hardcoded here -- it's a command-line argument
+# (--miss-policy), because the execute cell needs a separate set of run
+# directories, and hardcoding it to skip would mean code has to change just
+# to launch the execute set
 COMMON = (
     "--ctool-run pipeline/runs/c1_gptoss_ctool "
     "--cgen-run  pipeline/runs/c1_gptoss_cgen "
@@ -36,9 +45,10 @@ COMMON = (
     "--traj-root envs/runs/w0_aw_official/appworld_gptoss"
 )
 
-# (gpu, theta, run_id)。th0925 是第六点:与历史 run aw_gptoss_r10 同 θ,重新生成
-# 一份 plan(不复用旧产物),run 段跑专用服务 + concurrency 16,用来量 serving
-# 条件对 token 计数的扰动。
+# (gpu, theta, run_id). th0925 is the sixth point: same theta as the
+# historical run aw_gptoss_r10, regenerates a plan (does not reuse the old
+# outputs), and the run segment runs a dedicated service + concurrency 16,
+# used to measure the perturbation serving conditions have on token counts.
 POINTS = [
     (0, "0.50", "aw_gptoss_th050"),
     (1, "0.70", "aw_gptoss_th070"),
@@ -74,15 +84,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--only", default="",
-                    help="只发这些点(逗号分隔的 tag,如 th0925)。留空=全发。"
-                         "已跑完的点会话已经消失,SKIP 保护挡不住,补发单点必须用它")
+                    help="launch only these points (comma-separated tags, e.g. th0925). Leave empty = launch all. "
+                         "For a point that already finished, its session is gone -- the SKIP guard cannot catch it, so refiring a single point must use this flag")
     ap.add_argument("--miss-policy", default="skip",
                     choices=["skip", "oracle", "execute"],
-                    help="预测与真实不符时怎么办。execute 档的 run 目录名会加 "
-                         "_exec 后缀,别把两个口径的 plan 写进同一个目录 —— "
-                         "一条曲线只允许一个 miss_policy")
+                    help="what to do when the prediction does not match the ground truth. The execute version's run dir name gets "
+                         "an _exec suffix; do not write plans from the two settings into the same dir -- "
+                         "one curve allows only one miss_policy")
     ap.add_argument("--suffix", default="",
-                    help="run 目录后缀。留空时 execute 档自动用 _exec")
+                    help="run dir suffix. When left empty, the execute version automatically uses _exec")
     a = ap.parse_args()
     suf = a.suffix or ("_exec" if a.miss_policy == "execute" else "")
 

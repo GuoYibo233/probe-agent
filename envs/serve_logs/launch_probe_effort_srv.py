@@ -1,12 +1,14 @@
-"""probe×effort 两臂(probe_low/probe_med)的专属服务发射器。
+"""Dedicated service launcher for the two probe x effort arms (probe_low/probe_med).
 
-与 launch_vllm_splice.py 逐字同参,只换卡与端口;探针三号照抄探针二号的
-绝对路径发射法(相对路径已经栽过三次)。两臂共用这一对服务:
+Same parameters verbatim as launch_vllm_splice.py, only the card and port change; probe
+three copies probe two's absolute-path launch method (the relative-path version has already
+failed three times). The two arms share this pair of services:
 
-  gpt-oss-120b -> tokyo108 H200 GPU 4, port 8119  (副本 f)
-  probe_server -> tokyo105 A6000 GPU 2, port 8792 (探针三号,新 /render 认 effort)
+  gpt-oss-120b -> tokyo108 H200 GPU 4, port 8119  (replica f)
+  probe_server -> tokyo105 A6000 GPU 2, port 8792 (probe three, the new /render recognizes effort)
 
-老 8790 会静默丢 effort 字段按 high 渲染——effort 臂绝不能指过去。
+The old 8790 silently drops the effort field and renders as high -- the effort arm must
+never point there.
 """
 import shlex
 import subprocess

@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
-"""判定引擎:纯函数,零 IO(设计文档 §4)。采样器喂状态进来,拿判定出去。
-六格判定按固定优先级判,命中即停:已完成→已挂→疑似卡死→warm-up 中→变慢→健康。
-时钟纪律:跨机不比钟——beat_age_s/since_launch_s 由采样器用自己的钟算好喂进来,
-心跳 ts 只在 rates() 里同机做差。所有常数收在 DEFAULTS,别处不许硬编码。
+"""Verdict engine: pure functions, zero IO (design doc §4). The sampler feeds in
+state, gets a verdict out.
+The six-way verdict is judged in a fixed priority order, stop at first hit: done ->
+dead -> suspected stall -> warming up -> slowed -> healthy.
+Clock discipline: never compare clocks across machines -- beat_age_s/since_launch_s
+are computed by the sampler with its own clock and fed in; heartbeat ts is only
+diffed on the same machine, inside rates(). All constants live in DEFAULTS, no
+hardcoding anywhere else.
 """
 from statistics import median
 
-V_DONE, V_DEAD, V_STALL = "已完成", "已挂", "疑似卡死"
-V_WARMUP, V_SLOW, V_OK = "warm-up 中", "变慢", "健康"
+V_DONE, V_DEAD, V_STALL = "done", "dead", "suspected stall"
+V_WARMUP, V_SLOW, V_OK = "warming up", "slowed", "healthy"
 
 DEFAULTS = dict(
-    sample_interval_s=60.0,   # 采样器一轮的间隔
-    stall_mult=5.0,           # 判定线 = 5 × 典型心跳间隔
-    stall_floor_samples=3,    # 判定线下限 = 3 轮采样(采样粒度以下分不清停没停)
-    escalate_mult=3.0,        # 升级线 = 判定线 × 3
-    warmup_line_s=1800.0,     # warm-up 上限,默认 30 分钟
-    recent_beats=10,          # 近期速率窗口:最近 ≤10 条心跳
-    typical_beats=20,         # 典型心跳间隔:最近 ≤20 个间隔的中位数
-    min_intervals=3,          # 攒够 3 个间隔才用自适应判定线
-    slow_ratio=0.5,           # 变慢 = 近期速率 < 平均 × 0.5
-    port_fail_rounds=3,       # 服务:连续 3 轮端口不应答 = 疑似卡死
+    sample_interval_s=60.0,   # interval of one sampler round
+    stall_mult=5.0,           # verdict line = 5 x typical heartbeat interval
+    stall_floor_samples=3,    # verdict line floor = 3 sampling rounds (below this granularity, stopped vs not is indistinguishable)
+    escalate_mult=3.0,        # escalation line = verdict line x 3
+    warmup_line_s=1800.0,     # warm-up cap, 30 minutes by default
+    recent_beats=10,          # recent-rate view: last <=10 heartbeats
+    typical_beats=20,         # typical heartbeat interval: median of the last <=20 intervals
+    min_intervals=3,          # use the adaptive verdict line only once 3 intervals have accumulated
+    slow_ratio=0.5,           # slowed = recent rate < average x 0.5
+    port_fail_rounds=3,       # service: 3 consecutive rounds of no port response = suspected stall
 )
 
 
 def typical_gap_s(beat_ts, cfg=DEFAULTS):
-    """最近 ≤typical_beats 个心跳间隔的中位数;间隔不足 min_intervals 个返回 None。"""
+    """Median of the last <=typical_beats heartbeat intervals; returns None if fewer than min_intervals intervals."""
     ts = list(beat_ts)[-(cfg["typical_beats"] + 1):]
     gaps = [b - a for a, b in zip(ts, ts[1:]) if b >= a]
     if len(gaps) < cfg["min_intervals"]:
@@ -33,8 +37,9 @@ def typical_gap_s(beat_ts, cfg=DEFAULTS):
 
 
 def stall_line_s(beat_ts, cfg=DEFAULTS, override=None):
-    """判定线(秒)。override=发射时的 --stall-line;样本不足返回 None
-    (调用方用 warm-up 上限顶着,长 task/长 step 开局不误报)。"""
+    """Verdict line (seconds). override=the --stall-line given at launch; returns None
+    when there aren't enough samples (the caller falls back to the warm-up cap, so
+    a long task/long step at the start doesn't get falsely flagged)."""
     if override is not None:
         return float(override)
     gap = typical_gap_s(beat_ts, cfg)
@@ -45,9 +50,11 @@ def stall_line_s(beat_ts, cfg=DEFAULTS, override=None):
 
 
 def rates(first_beat, recent_beats, cfg=DEFAULTS):
-    """(平均速率, 近期速率),单位 done/秒;算不出的为 None。
-    first_beat: 首条心跳 {'ts','done'}(采样器累计状态里存的,不依赖日志尾)。
-    recent_beats: 最近 ≤typical_beats 条心跳(升序)。分母全在心跳时间轴上。"""
+    """(average rate, recent rate), in done/second; None where it can't be computed.
+    first_beat: the first heartbeat {'ts','done'} (stored in the sampler's
+    accumulated state, not dependent on the log tail).
+    recent_beats: the last <=typical_beats heartbeats (ascending). All denominators
+    are on the heartbeat timeline."""
     if not first_beat or not recent_beats:
         return None, None
     last = recent_beats[-1]
@@ -82,8 +89,10 @@ def _judge_service(p, cfg):
 
 
 def judge(p, cfg=DEFAULTS):
-    """一个分片一轮恰好一格。返回 (判定, 是否达升级线)。
-    已完成、变慢对服务类不适用(设计 §4 末尾),服务走 _judge_service。"""
+    """Exactly one cell per piece per round. Returns (verdict, whether the escalation
+    line is reached).
+    done and slowed do not apply to the service type (design §4, end of section),
+    services go through _judge_service."""
     if p["kind"] == "service":
         return _judge_service(p, cfg)
     done, total = p.get("done"), p.get("total")

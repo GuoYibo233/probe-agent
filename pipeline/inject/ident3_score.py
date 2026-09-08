@@ -1,23 +1,32 @@
-"""ident3 打分(纯 CPU,stdlib):三臂(chat / noprobe / nofill)x 5 题 x 10 遍,
-逐 token 比对,出 IDENT3_REPORT.{json,md}。计划:plans/archive/2026-08-18-ident3.md §4。
+"""ident3 scoring (pure CPU, stdlib): three arms (chat / noprobe / nofill) x
+5 questions x 10 reps, compared token by token, produces
+IDENT3_REPORT.{json,md}. Plan: plans/archive/2026-08-18-ident3.md §4.
 
-输入目录结构(ident3_job.sh 落的):
+Input directory structure (laid down by ident3_job.sh):
   <root>/chat/rep<r>/appworld_gptoss/appworld_<tid>.jsonl   (run_appworld --api chat)
   <root>/noprobe/rep<r>/live_<tid>.jsonl                    (live_appworld --no-probe)
   <root>/nofill/rep<r>/live_<tid>.jsonl                     (live_appworld --fire-nth-cut N --nofill)
 
-每次跑抽成同一形态:每步的生成 token id 列表(chat 取 out_token_ids,live 取
-gen_ids)、每步 prompt token 数、成败、步数、总生成 token。比对口径:
-- 两次跑"逐 token 同"= 每步 id 序列全等且步数相同;首个分叉 = 第一个 id 不等的
-  步 + 步内首个不等的位;分叉前累计相同 token 数 = shared_tok。
-- 尾部的 <|return|>(200002)在比对前剥掉:chat 与 completions 对停止 token 是否
-  计入 token_ids 的口径可能不同,这层差不算分叉(报告里单列各臂末 id 的分布)。
-- 配对分同臂对(chat-chat / noprobe-noprobe / nofill-nofill)与跨臂对
-  (chat-noprobe / chat-nofill / noprobe-nofill);同臂对与跨臂对的分叉分布一样
-  = 臂间没有可言的差别。
-- 只报事实,不解读。
+Each run is extracted into the same shape: the per-step generated token id
+list (out_token_ids for chat, gen_ids for live), per-step prompt token
+count, success/failure, step count, total generated tokens. Comparison
+convention:
+- Two runs are "token-for-token identical" = the per-step id sequences are
+  all equal and the step counts match; first divergence = the first step
+  with an unequal id + the first unequal position within that step;
+  cumulative matching token count before the divergence = shared_tok.
+- The trailing <|return|> (200002) is stripped before comparison: chat and
+  completions may differ in whether the stop token counts into token_ids,
+  and this layer of difference does not count as divergence (the report
+  lists the end-id distribution of each arm separately).
+- Pairs are split into same-arm pairs (chat-chat / noprobe-noprobe /
+  nofill-nofill) and cross-arm pairs (chat-noprobe / chat-nofill /
+  noprobe-nofill); if the divergence distribution of same-arm pairs and
+  cross-arm pairs is the same, there is no meaningful difference between
+  arms.
+- Report facts only, no interpretation.
 
-用法:
+Usage:
   python3 pipeline/inject/ident3_score.py --root /net/.../pipeline/inject/runs/ident3_v1
 """
 
@@ -47,8 +56,9 @@ def _success(ev):
 
 
 def ids_sha(ids):
-    """与 live_appworld.ids_sha 同一算法(逗号串 sha1);chat 存整段 prompt id,
-    活跑存 sha,两边算同一个 sha 就是逐 id 比。"""
+    """Same algorithm as live_appworld.ids_sha (sha1 of the comma-joined string);
+    chat stores the whole prompt id sequence, live run stores the sha, and
+    computing the same sha on both sides is the id-for-id comparison."""
     return hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()
 
 
@@ -59,7 +69,7 @@ def load_run(path, arm):
             try:
                 recs.append(json.loads(line))
             except json.JSONDecodeError:
-                bad_lines += 1            # 进程被杀留下的半行,数着,不炸
+                bad_lines += 1            # A half-line left behind by a killed process, count it, don't crash
     gens = [r for r in recs if r.get("type") == "gen"]
     fin = next((r for r in recs if r.get("type") == "final"), None)
     specs = [r for r in recs if r.get("type") == "spec"]
@@ -85,9 +95,11 @@ def load_run(path, arm):
         completed=fin.get("completed") if fin else None,
         abort=abort,
         success=_success(fin.get("eval")) if fin else None,
-        # 任一臂只要 abort 非空(live 的 task_error:*、chat 的 stepN:Err:*、
-        # 上下文撞顶、没有 final)都不进成败与配对——两臂口径对齐,不让一次
-        # 服务端故障顶着"短轨迹"进配对
+        # If any arm has a non-empty abort (live's task_error:*, chat's stepN:Err:*,
+        # context hitting the ceiling, no final) it does not enter success/failure
+        # or pairing -- keeping the two arms' conventions aligned, so a single
+        # server-side fault doesn't sneak into pairing disguised as a "short
+        # trajectory"
         excluded=bool(abort),
         n_gen=len(gens), ids=steps_ids, prompt_tok=prompt_tok,
         prompt_sha=prompt_sha,
@@ -122,9 +134,12 @@ def strip_tail(ids):
 
 
 def compare(a, b):
-    """两次跑逐 token 比。返回 dict(identical, div_step, div_tok, shared_tok)。
-    div_step=None 表示全同(含步数相同)。步数不同但公共步全同:div_step=公共步数,
-    div_tok=0。某步 id 缺失(旧格式)按不可比记 None。"""
+    """Compare two runs token by token. Returns
+    dict(identical, div_step, div_tok, shared_tok).
+    div_step=None means fully identical (including matching step counts).
+    If step counts differ but the shared steps are all identical:
+    div_step=number of shared steps, div_tok=0. If a step's id is missing
+    (old format), record it as not comparable, None."""
     shared = 0
     n = min(len(a["ids"]), len(b["ids"]))
     for s in range(n):
@@ -157,7 +172,7 @@ def q(xs):
 
 
 def cell(x):
-    """markdown 表格单元格:去掉会破表的竖线与换行,截长。"""
+    """markdown table cell: strip the pipes and newlines that would break the table, truncate if long."""
     return str(x).replace("|", "/").replace("\n", " ")[:80]
 
 
@@ -171,12 +186,12 @@ def main():
                prompt_check={}, last_ids={}, excluded=[])
     md = [f"# IDENT3 report — {root.name}", ""]
 
-    # ---- 1. 每题每臂 ----
-    md += ["## 1. 每题每臂(10 遍)", "",
-           "gen_tok 两列:billed = 服务端记的全部生成 token(nofill 含中断丢弃的溢出与"
-           "重发续写);kept = billed − 丢弃溢出(chat/noprobe 两者相同)。"
-           "excluded = abort 非空(task_error / stepN 错误 / 上下文撞顶 / 无 final),"
-           "不进成败与配对。", "",
+    # ---- 1. Per question, per arm ----
+    md += ["## 1. per task, per arm (10 runs)", "",
+           "gen_tok has two columns: billed = the total generated tokens the server recorded (for nofill "
+           "this includes the discarded overflow from the interruption plus the resumed continuation); "
+           "kept = billed - discarded overflow (the same for chat/noprobe). excluded = abort is non-empty "
+           "(task_error / a stepN error / hit the context limit / no final), not counted toward success or pairing.", "",
            "| task | arm | n | excluded | success | steps min/med/max | "
            "gen_tok billed med | gen_tok kept med | distinct traj | inconsistent |",
            "|---|---|---|---|---|---|---|---|---|---|"]
@@ -216,11 +231,11 @@ def main():
                       f"{distinct}/{len(with_ids)} | {row['inconsistent']} |")
     md.append("")
     if rep["excluded"]:
-        md += ["被排除的跑:", ""] + [
+        md += ["excluded runs:", ""] + [
             f"- {e['tid']} {e['arm']}: {cell(e['abort'])}" for e in rep["excluded"]
         ] + [""]
 
-    # ---- 2. 配对逐 token 比 ----
+    # ---- 2. Pairwise token-by-token comparison ----
     pair_stats = defaultdict(list)
     for tid in sorted(runs):
         allr = [(arm, r, run) for arm in ARMS
@@ -232,7 +247,7 @@ def main():
             c.update(tid=tid, a=f"{a1}:r{r1}", b=f"{a2}:r{r2}", kind=kind)
             pair_stats[kind].append(c)
             rep["pair_list"].append(c)
-    md += ["## 2. 两两配对逐 token 比(同题、去掉 excluded 的跑)", "",
+    md += ["## 2. pairwise token-by-token comparison (same task, excluded runs removed)", "",
            "| pair kind | n pairs | identical | comparable | div step 0 | "
            "div_step med | div_tok med | shared_tok med | shared_tok min |",
            "|---|---|---|---|---|---|---|---|---|"]
@@ -254,10 +269,10 @@ def main():
                   f"{(row['shared_tok'] or {}).get('med')} | "
                   f"{(row['shared_tok'] or {}).get('min')} |")
     md.append("")
-    md += ["同臂对 = chat-chat / noprobe-noprobe / nofill-nofill;其余为跨臂对。"
-           "div_tok = 分叉步内首个不等的 token 位。", ""]
-    # 按题的配对细表
-    md += ["### 2b. 按题:每种配对的 identical / n", ""]
+    md += ["same-arm pairs = chat-chat / noprobe-noprobe / nofill-nofill; the rest are cross-arm pairs. "
+           "div_tok = the first mismatched token position within the diverging step.", ""]
+    # Detailed pairing table by question
+    md += ["### 2b. by task: identical / n for each pair kind", ""]
     kinds = sorted(pair_stats)
     md += ["| task | " + " | ".join(kinds) + " |", "|---|" + "---|" * len(kinds)]
     for tid in sorted(runs):
@@ -268,7 +283,7 @@ def main():
         md.append(f"| {tid} | " + " | ".join(cells) + " |")
     md.append("")
 
-    # ---- 3. 跨臂 prompt id 核对(分叉前的步 + 分叉步):按 sha 逐 id 比 ----
+    # ---- 3. Cross-arm prompt id check (steps before divergence + the divergence step): id-for-id compare by sha ----
     n_eq = n_tot = n_len_eq = 0
     mism = []
     for kind, cs in pair_stats.items():
@@ -283,7 +298,8 @@ def main():
             upto = c["div_step"] if c["div_step"] is not None else min(
                 len(x["prompt_sha"]), len(y["prompt_sha"]))
             for s in range(min(upto + 1, len(x["prompt_sha"]), len(y["prompt_sha"]))):
-                # 分叉步本身的 prompt 也应相同(prompt 是分叉之前的历史)
+                # The prompt at the divergence step itself should also match (the prompt is
+                # the history before the divergence)
                 if x["prompt_sha"][s] is None or y["prompt_sha"][s] is None:
                     continue
                 n_tot += 1
@@ -295,21 +311,21 @@ def main():
                                      len_a=x["prompt_tok"][s], len_b=y["prompt_tok"][s]))
     rep["prompt_check"] = dict(n=n_tot, sha_equal=n_eq, len_equal=n_len_eq,
                                mismatches=mism)
-    md += ["## 3. 跨臂 prompt id 核对(分叉前的步 + 分叉步;sha1 逐 id 比)", "",
-           f"- sha 相等 {n_eq} / {n_tot};长度相等 {n_len_eq} / {n_tot}"
-           f"(应为全等;不等就是管线问题,前 20 条见 JSON prompt_check.mismatches)", ""]
+    md += ["## 3. cross-arm prompt id check (steps before the divergence plus the diverging step; sha1 id-by-id comparison)", "",
+           f"- sha equal {n_eq} / {n_tot}; length equal {n_len_eq} / {n_tot}"
+           f" (should all be equal; unequal means a pipeline problem, see the first 20 in JSON prompt_check.mismatches)", ""]
 
-    # ---- 4. 各臂每步末 id ----
+    # ---- 4. Each arm's end id per step ----
     for arm in ARMS:
         cnt = Counter()
         for tid in runs:
             for run in runs[tid].get(arm, {}).values():
                 cnt.update(run["last_ids"])
         rep["last_ids"][arm] = {str(k): v for k, v in cnt.most_common(5)}
-    md += ["## 4. 各臂每步生成 id 序列的末 id(top-5)", "",
+    md += ["## 4. last id of each arm's per-step generated id sequence (top-5)", "",
            json.dumps(rep["last_ids"]), ""]
 
-    # ---- 5. nofill 专属 ----
+    # ---- 5. nofill only ----
     specs, resumes, n_steps, n_fired = [], [], 0, 0
     for tid in runs:
         for run in runs[tid].get("nofill", {}).values():
@@ -334,14 +350,14 @@ def main():
                                   for r in resumes if r["overflow_tok"]]),
                    finish=dict(Counter(str(r.get("finish")) for r in resumes)))
         rep["nofill"] = row
-        md += ["## 5. nofill:中断-重发账", "",
-               f"- 步数 {n_steps},开火 {n_fired}(fire_rate {row['fire_rate']})",
-               f"- head 以空白结尾 {row['head_ends_ws']};head_tok {row['head_tok']};"
+        md += ["## 5. nofill: interruption-resend ledger", "",
+               f"- step count {n_steps}, fired {n_fired} (fire_rate {row['fire_rate']})",
+               f"- head ends in whitespace {row['head_ends_ws']}; head_tok {row['head_tok']}; "
                f"head_chars {row['head_chars']}",
-               f"- 重发续写 vs 被丢弃的溢出:n={len(resumes)},逐位全同 "
-               f"{row['identical']}({row['identical_rate']}),match_len {row['match_len']},"
-               f"match_len=0 的 {row['match_len_zero']},overflow_tok {row['overflow_tok']},"
-               f"match_ratio {row['match_ratio']};重发续写 finish {row['finish']}", ""]
+               f"- resumed continuation vs discarded overflow: n={len(resumes)}, identical at every position "
+               f"{row['identical']} ({row['identical_rate']}), match_len {row['match_len']}, "
+               f"count with match_len=0 {row['match_len_zero']}, overflow_tok {row['overflow_tok']}, "
+               f"match_ratio {row['match_ratio']}; resumed continuation finish {row['finish']}", ""]
 
     (root / "IDENT3_REPORT.json").write_text(json.dumps(rep, ensure_ascii=False,
                                                         indent=1, default=str))

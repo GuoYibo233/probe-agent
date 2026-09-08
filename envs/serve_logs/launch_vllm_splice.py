@@ -1,10 +1,12 @@
-"""拼回八臂 run 段服务发射器:tokyo108 三张空 H100 各起一个 gpt-oss-120b。
+"""Service launcher for the run segment of the eight-arm splice-back: one gpt-oss-120b on
+each of three free H100s on tokyo108.
 
-与 launch_vllm_thsweep4.py 逐字同参(同模型、同 --served-model-name、
---max-model-len 65536、--gpu-memory-utilization 0.92、同三个环境变量、
-编译缓存与日志都走 /net —— /home 有 NFS 服务端配额,写满会连死 vllm),
-只换卡与端口。2026-08-10 起比 thsweep4 多设一个 VLLM_SYSTEM_START_DATE
-(钉服务端 prompt 日期,METHOD.md §6-④):
+Same parameters verbatim as launch_vllm_thsweep4.py (same model, same --served-model-name,
+--max-model-len 65536, --gpu-memory-utilization 0.92, the same three environment variables,
+compile cache and logs both go to /net -- /home has an NFS server-side quota, and filling it
+can kill vllm too), only the card and port change. Since 2026-08-10 it also sets one more
+variable than thsweep4, VLLM_SYSTEM_START_DATE (pins the service-side prompt date,
+METHOD.md §6-④):
 
   gpt-oss-120b -> H100 GPU 0, port 8114   (shard s0: nofill,skel_switch)
   gpt-oss-120b -> H100 GPU 1, port 8115   (shard s1: inject,inject_stop,
@@ -24,8 +26,9 @@ LOGDIR = f"{CACHE_ROOT}/logs"
 
 GPTOSS_FLAGS = "--max-model-len 65536 --gpu-memory-utilization 0.92"
 
-# 同设前提(METHOD.md §2.1/§6-④):chat 基线的 prompt 日期由服务端生成,
-# 活跑前缀由 /render 钉 rebuild.COLLECT_DATE;两边要可比,服务端也钉同一天。
+# Same-settings premise (METHOD.md §2.1/§6-④): the chat baseline's prompt date is generated
+# by the service side; the live-run prefix is pinned by /render to rebuild.COLLECT_DATE; for
+# the two sides to be comparable, the service side must also be pinned to the same day.
 SYSTEM_START_DATE = "2026-07-31"   # = pipeline/inject/rebuild.py COLLECT_DATE
 
 JOBS = [

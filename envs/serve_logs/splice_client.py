@@ -1,17 +1,20 @@
-"""拼回八臂 run 段客户端(一个分片一个进程,tmux 里跑)。
+"""Client for the run segment of the eight-arm splice-back (one process per piece, run in tmux).
 
-自排序:先等两个条件都满足 —— ①run 目录里出现 PLAN_OK(plan 重跑完、
-主对话人工核过 pred_label/gen_min_p 之后 touch 的放行标记,光有
-plan_config.json 不算,防止拿着坏 plan 烧八臂);②本分片的 vLLM 副本
-/v1/models 返回 200。然后先发 12 条 smoke,确认真拿到续写才放全量。
+Self-sequencing: first wait for both conditions to hold -- ①PLAN_OK appears in the run
+directory (a go-ahead marker touched after the plan rerun finishes and the main session has
+manually checked pred_label/gen_min_p; plan_config.json alone does not count, to prevent
+burning the eight arms on a bad plan); ②this piece's vLLM replica returns 200 on /v1/models.
+Then it sends 12 smoke requests first, and only opens up to full volume once it actually gets
+continuations back.
 
-分片按预期生成量配平(nofill/inject 全长续写最重,switch/stop 系直进
-正文段最轻,skel_bare/a/b 骨架后还会想居中):
+Pieces are balanced by expected generation volume (nofill/inject full-length continuation is
+heaviest, switch/stop entering the body text directly is lightest, and skel_bare/a/b want to
+sit in the middle after the skeleton):
   s0 -> 8114: nofill,skel_switch
   s1 -> 8115: inject,inject_stop,switch_only,skel_b
   s2 -> 8116: skel_bare,skel_a
-各分片 --tag .sN 各写各的 raw,收尾 cat 成 raw.jsonl 再 score;
-断点续跑键 (event, arm) 在各自 tag 文件内自洽。
+Each piece writes its own raw file under --tag .sN; at wrap-up they are cat'ed together into
+raw.jsonl before scoring; the resume key (event, arm) is self-consistent within each tag file.
 """
 import argparse
 import json
@@ -61,8 +64,8 @@ def main():
               "--model", "gpt-oss-120b",
               "--arms", arms, "--concurrency", "16"]
 
-    # smoke:头 12 条 plan 记录,每个臂都该发得出真请求;拿不到一条续写就
-    # 停在这里,绝不放量
+    # smoke: the first 12 plan records; every arm should be able to send a real request; if it
+    # cannot get even one continuation back, stop right here -- never open up the volume
     smoke_tag = f".smoke{a.shard}"
     r = subprocess.run(common + ["--limit", "12", "--tag", smoke_tag],
                        cwd=ROOT)
@@ -72,7 +75,7 @@ def main():
     if r.returncode != 0 or n_ok == 0:
         print(f"SMOKE_FAIL rc={r.returncode} ok={n_ok}", flush=True)
         sys.exit(1)
-    print(f"SMOKE_OK {n_ok} 条,放量", flush=True)
+    print(f"SMOKE_OK {n_ok} items, ramp up", flush=True)
     sp.unlink()
 
     r = subprocess.run(common + ["--tag", f".s{a.shard}"], cwd=ROOT)

@@ -1,6 +1,7 @@
-"""splice_replay 的 prompt 形态测试(纯 CPU,真分词器 = openai_harmony 自带)。
-钉四件事:切口落点(66/75/80/100 与合并)、缝修法 sep、每臂 prompt 尾部的字节、
-score 的解析/指标在边界样本上不翻车。
+"""Prompt-shape tests for splice_replay (pure CPU, real tokenizer = openai_harmony's own).
+Pins down four things: where cuts land (66/75/80/100 and merging), the seam-repair
+method sep, the trailing bytes of each arm's prompt, and that score parsing/metrics
+don't break on boundary samples.
     cprobe-env/bin/python -m unittest tests.test_splice_replay -v
 """
 
@@ -28,20 +29,21 @@ CONTENT = "```python\nprint(apis.spotify.login(username=\"a\", password=\"b\"))\
 
 class TestCuts(unittest.TestCase):
     def test_fracs_land_on_sentence_ends_and_merge(self):
-        # 10 句,每句 "Sentence k. " 12 字符 -> 120 字符;66%=79 -> 之前最近句尾 72(第 6 句尾)
+        # 10 sentences, each "Sentence k. " is 12 chars -> 120 chars; 66%=79 -> nearest
+        # prior sentence end at 72 (end of sentence 6)
         think = " ".join(f"Sentence {k}." for k in range(10))
         cps = S.cut_points(think, [0.66, 0.75, 0.80, 1.0])
         cuts = dict(cps)
-        self.assertEqual(cps[-1], (len(think), [1.0]))       # 100% = 全文末尾
+        self.assertEqual(cps[-1], (len(think), [1.0]))       # 100% = end of the full text
         for c, fs in cps[:-1]:
-            self.assertTrue(think[c - 1].isspace())          # 句尾在空白之后
+            self.assertTrue(think[c - 1].isspace())          # sentence end comes after whitespace
             self.assertTrue(think[:c].rstrip().endswith("."))
-        self.assertEqual(sum(len(fs) for fs in cuts.values()), 4)   # 四个比例都落了
+        self.assertEqual(sum(len(fs) for fs in cuts.values()), 4)   # all four ratios landed
 
     def test_short_think_merges_all_into_end(self):
         think = "Only one sentence here that is long enough to pass the filter."
         cps = S.cut_points(think, [0.66, 0.75, 0.80, 1.0])
-        self.assertEqual(cps, [(len(think), [1.0])])          # 没有句尾:66/75/80 没事件
+        self.assertEqual(cps, [(len(think), [1.0])])          # no sentence end: 66/75/80 have no event
 
     def test_sep(self):
         self.assertEqual(S.sep_for("docs.\n\n"), "")
@@ -74,14 +76,14 @@ class TestPromptBytes(unittest.TestCase):
         self.assertTrue(txt.endswith("We think.\n\n[SYSTEM NOTE: prefetched apis.spotify.login("
                                      "username=\"a\", password=\"b\") = {'access_token': 'TOK123'}]\n"))
         toks = [H.decode([i]) for i in ids[-40:]]
-        self.assertIn(".\n\n", toks)                          # 模型自己的 .\n\n 保住
-        self.assertEqual(toks[toks.index(".\n\n") + 1], "[S")  # 后面直接接 NOTE
+        self.assertIn(".\n\n", toks)                          # the model's own .\n\n is kept
+        self.assertEqual(toks[toks.index(".\n\n") + 1], "[S")  # NOTE follows directly after
         self.assertNotIn(".\n\n\n", toks)
         ids, _, _, txt = self.tail("p1_n0", "We think. ")
         self.assertTrue(txt.endswith("We think. [SYSTEM NOTE: prefetched"
                                      " apis.spotify.login(username=\"a\", password=\"b\") = {'access_token': 'TOK123'}]\n"))
         toks = [H.decode([i]) for i in ids[-40:]]
-        self.assertEqual(toks[toks.index(".") + 1], " [")   # `.` 原样,NOTE inline 接上
+        self.assertEqual(toks[toks.index(".") + 1], " [")   # `.` stays as is, NOTE attaches inline
         ids, _, _, txt = self.tail("p1_n1", "We think.")
         self.assertTrue(txt.endswith("We think.\nI already ran:\nprint(apis.spotify.login(username=\"a\", "
                                      "password=\"b\"))\nand got:\n{'access_token': 'TOK123'}\n"))
@@ -120,7 +122,7 @@ class TestPromptBytes(unittest.TestCase):
             "<|start|>assistant to=python<|channel|>analysis<|message|>" + EV["code"] + "<|call|>"
             "<|start|>python to=assistant<|channel|>analysis<|message|>{'access_token': 'TOK123'}<|end|>"
             "<|start|>assistant"))
-        # developer 段与 chat 前缀一致(只有 system 段变了)
+        # developer segment matches the chat prefix (only the system segment changed)
         dev = "<|start|>developer<|message|># Instructions\n\n" + R.SYSTEM
         self.assertIn(dev, txt)
 
@@ -133,14 +135,14 @@ class TestPromptBytes(unittest.TestCase):
         self.assertTrue(sp3.startswith("<|channel|>analysis<|message|>We think.<|end|>"))
 
     def test_encode_matches_render_for_analysis_head(self):
-        # 文本臂用 encode(A_OPEN+head) 接前缀;与 harmony 渲染 analysis 消息的字节一致
+        # the text arm uses encode(A_OPEN+head) appended to the prefix; matches the bytes of harmony's rendered analysis message
         from openai_harmony import Conversation, Message, RenderConversationConfig, Role
         hm = H.to_harmony_messages(MSGS, effort="high", start_date=R.COLLECT_DATE)
         hm.append(Message.from_role_and_content(Role.ASSISTANT, "We think.").with_channel("analysis"))
         rendered = list(H.encoding().render_conversation_for_completion(
             Conversation.from_messages(hm), Role.ASSISTANT,
             config=RenderConversationConfig(auto_drop_analysis=False)))
-        # 渲染会补 <|end|><|start|>assistant;去掉那截应等于 prefix + enc(A_OPEN+head)
+        # rendering appends <|end|><|start|>assistant; stripping that off should equal prefix + enc(A_OPEN+head)
         mine = self.prefix + S.enc(S.A_OPEN + "We think.")
         self.assertEqual(rendered[:len(mine)], mine)
         self.assertEqual(H.decode(rendered[len(mine):]), "<|end|><|start|>assistant")
@@ -162,14 +164,14 @@ class TestScoreParse(unittest.TestCase):
         self.assertIn("print(3)", content)
 
     def test_p4_python_call_is_an_action(self):
-        # p4 的自然续写:再叫一次 python(analysis 通道、to=python),停在 <|call|>
+        # p4's natural continuation: calls python again (analysis channel, to=python), stops at <|call|>
         t = " to=python<|channel|>analysis<|message|>print(apis.spotify.show_playlists(access_token=\"TOK\"))"
         think, content = S.analyze("p4", "", t)
-        self.assertEqual(content, "")                       # 正文没有
+        self.assertEqual(content, "")                       # not present in the body
         self.assertIn("show_playlists", S.python_call_code(t))
         self.assertEqual(S.first_tool(S.python_call_code(t)), "apis.spotify.show_playlists")
         self.assertIsNone(S.python_call_code("no tool here"))
-        # 模型实际写法(smoke 实测):收件人在通道后、带 " code"
+        # the model's actual usage (verified in smoke test): recipient comes after the channel, with " code"
         t2 = ("<|channel|>analysis<|message|>We need phone APIs.\n\n<|end|><|start|>assistant"
               "<|channel|>analysis to=python code<|message|>print(apis.api_docs.show_api_descriptions(app_name=\"phone\"))")
         think, content = S.analyze("p4", "", t2)
@@ -183,7 +185,7 @@ class TestScoreParse(unittest.TestCase):
         with self.assertRaises(ValueError):
             S.enc_plain("text with <|end|> inside")
         self.assertEqual(S.enc_plain("plain. text"), S.enc("plain. text"))
-        # 分开编 == 整串编
+        # encoding separately == encoding as one string
         self.assertEqual(S.enc(S.A_OPEN) + S.enc_plain("We think.\n\n[NOTE]") + S.enc(S.SWITCH),
                          S.enc(S.A_OPEN + "We think.\n\n[NOTE]" + S.SWITCH))
 

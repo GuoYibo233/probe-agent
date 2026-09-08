@@ -10,7 +10,7 @@ model is unknown', fix `rl session amend ID --model M').
 
 Sourced from 03-ledgers.md L176 (sessions section) and 04-handoffs-and-sessions.md L153,
 L158 (rl session sub-commands and who can call them); both copies are meant to read
-one-for-one (04's interface section: "两边要一字不差").
+one-for-one (04's interface section: "the two sides must match word for word").
 """
 
 import unittest
@@ -28,7 +28,8 @@ class SessionAmend(unittest.TestCase):
     def test_amend_open_session_model_only(self):
         """30 L175: amend an open session's model appends a version with only model
         changed; status and other fields copied from the latest version
-        (03 L176: 'amend 版的 status 与其他栏照抄最新版、只换 model')."""
+        (03 L176: 'the amend version copies status and the other fields from the
+        latest version, only model changes')."""
         deploy = self.sb.role_session("deploy", model="model-a")
         before = self.sb.latest("sessions", deploy)
 
@@ -45,8 +46,9 @@ class SessionAmend(unittest.TestCase):
 
     def test_amend_closed_session_does_not_trip_liveness_refusal(self):
         """30 L175: amend also works on a closed session, without tripping the
-        'closed session writing again' refusal (03 L176, sync-inbox Q18, Q30: 'closed
-        的会话也能 amend，不触"被销号会话再写账拒收"那条')."""
+        'closed session writing again' refusal (03 L176, sync-inbox Q18, Q30: 'a closed
+        session can also amend, without tripping the "a closed session writing again is
+        refused" clause')."""
         deploy = self.sb.role_session("deploy", model="model-a")
         self.sb.rl_ok("session", "end", session=deploy, caller="hook")
 
@@ -85,8 +87,8 @@ class SessionAmend(unittest.TestCase):
         self.assertEqual(self.sb.latest("sessions", deploy)["model"], "model-y")
 
     def test_amend_who_other_role_session_forbidden(self):
-        """30 L175: another role's session calling amend is exit 3 (04 L158: 'amend
-        gyb 或该角色活会话')."""
+        """30 L175: another role's session calling amend is exit 3 (04 L158: 'amend:
+        gyb or that role's own live session')."""
         deploy = self.sb.role_session("deploy")
         run = self.sb.role_session("run")
 
@@ -112,7 +114,7 @@ class Step4Commands(unittest.TestCase):
 
     def test_doctor_item_19_clears_after_amend(self):
         """30 L175: doctor item 19 no longer reports after amend
-        (05 L191-213: item 19 is 'sessions 行 model 是 unknown', fix `rl session amend
+        (05 L191-213: item 19 is 'sessions row model is unknown', fix `rl session amend
         ID --model M`; --json shape is an array of {item, ids, fix_cmd, push_to},
         05 L123)."""
         deploy = self.sb.role_session("deploy", model="unknown")

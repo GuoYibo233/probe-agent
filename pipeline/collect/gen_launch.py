@@ -1,32 +1,42 @@
-"""采集批次的发射清单生成器(施工规格书 §7)。
+"""Launch manifest generator for a collection batch (construction spec §7).
 
-吃一份 manifest json(服务表 + 分片表),吐三个文件到 `envs/runs/<run_id>/`:
+Consumes one manifest json (server table + piece table), and spits out three
+files into `envs/runs/<run_id>/`:
 
-  launch_servers.py   照 envs/serve_logs/launch_vllm_topup.py 的模板:
-                      ssh + tmux 起 vLLM,环境变量三件套一字不差
-                      (LD_LIBRARY_PATH / VLLM_USE_FLASHINFER_SAMPLER=0 /
-                       CUDA_DEVICE_ORDER=PCI_BUS_ID)
-  launch_clients.sh   照 envs/runs/full_v2_topup/launch_clients.sh 的 tm()/aw() 结构
-  MANIFEST.md         人读的服务表 + 分片表
+  launch_servers.py   follows the template in envs/serve_logs/launch_vllm_topup.py:
+                       ssh + tmux to start vLLM, with the three environment
+                       variables matching exactly
+                       (LD_LIBRARY_PATH / VLLM_USE_FLASHINFER_SAMPLER=0 /
+                        CUDA_DEVICE_ORDER=PCI_BUS_ID)
+  launch_clients.sh   follows the tm()/aw() structure of
+                       envs/runs/full_v2_topup/launch_clients.sh
+  MANIFEST.md         human-readable server table + piece table
 
-本脚本**只生成不执行**:不 ssh、不 tmux、不碰显卡。真正发射由 gpu-run 流程按
-执行手册 §3 走。模型权重路径与旗标是查表写死的(表见执行手册 §3.2)。
+This script **only generates, never executes**: no ssh, no tmux, does not touch
+any GPU. The actual launch goes through the gpu-run flow per the runbook §3.
+Model weight paths and flags are looked up from a fixed table (see runbook
+§3.2).
 
-manifest schema(见 pipeline/collect/manifest_w0.json):
+manifest schema (see pipeline/collect/manifest_w0.json):
   run_id      str
   servers[]   {host, gpu, model_key, port, session, extra_flags, card?}
   clients[]   {tag, model_key, split, num_shards, shard_ports[], outdir, exp}
-              shard_ports[k] = 第 k 个分片打哪个端口(长度必须 == num_shards)
-  可选:env(采集环境,appworld|alfworld,默认 appworld;决定采集器/venv/步数上限
-        与 outdir 前缀)、envs_root(默认 /home/y-guo/reproduce/new1/envs)、
-        client_session_prefix(默认由 run_id 前两段拼出,w0_aw_official -> new1_w0aw)、
-        traj_per_task + seed_family(每题几条轨迹 + 逐条种子表,要么都给要么都不给,
-        长度必须相等;不给 = 每题一条,生成物与加这两个字段之前逐字节一致)
+              shard_ports[k] = which port the k-th piece hits (length must == num_shards)
+  Optional: env (collection environment, appworld|alfworld, default appworld;
+        determines the collector/venv/step cap and the outdir prefix),
+        envs_root (default /home/y-guo/reproduce/new1/envs),
+        client_session_prefix (default built from run_id's first two segments,
+        w0_aw_official -> new1_w0aw),
+        traj_per_task + seed_family (how many trajectories per item + the
+        per-item seed table; give both or neither, lengths must match; not
+        given = one trajectory per item, and the output is byte-identical to
+        before these two fields were added)
 
-用法:
-  # 正式生成(写 envs/runs/<run_id>/,已存在同名文件时拒绝覆盖,除非 --force)
+Usage:
+  # real generation (writes envs/runs/<run_id>/; refuses to overwrite an
+  # existing file of the same name unless --force)
   python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_w0.json
-  # 试生成(只写别处,绝不碰 envs/)
+  # dry generation (writes only elsewhere, never touches envs/)
   python3 pipeline/collect/gen_launch.py --config pipeline/collect/manifest_w0.json \
       --dry-run --out-override /tmp/genlaunch_test/
 """
@@ -37,7 +47,7 @@ import os
 import sys
 from pathlib import Path
 
-# ----------------------------------------------------------------- 查表(写死)
+# ----------------------------------------------------------------- lookup table (fixed)
 
 REPO = "/home/y-guo/reproduce/new1"
 ENVS_ROOT = f"{REPO}/envs"
@@ -46,7 +56,7 @@ VLLM_BIN = f"{REPO}/envs/vllm-env/bin/vllm"
 ZMODELS = "/net/tokyo100-10g/data/str01_01/zhou-y/models"
 YMODELS = "/net/tokyo100-10g/data/str01_01/y-guo/models"
 
-# 执行手册 §3.2 的模型表:权重目录 / served-model-name / 旗标家族
+# Runbook §3.2's model table: weights directory / served-model-name / flag family
 MODEL_TABLE = {
     "q35": dict(served="qwen3.5-27b", const="ZMODELS", weights="Qwen3.5-27B",
                 family="qwen"),
@@ -56,23 +66,25 @@ MODEL_TABLE = {
                    weights="gpt-oss-120b", family="gptoss"),
 }
 
-# Qwen 通用旗标(生成文件里以 QWEN_FLAGS 常量出现,与模板一字不差)
+# Qwen common flags (appears in the generated file as the QWEN_FLAGS constant, matching the template exactly)
 QWEN_FLAGS_SRC = ('    "--reasoning-parser deepseek_r1 --max-model-len 65536 "\n'
                   '    "--gpu-memory-utilization 0.92 "\n'
                   '    "--enable-auto-tool-choice --tool-call-parser qwen3_coder"\n')
-# gpt-oss 不带 Qwen 旗标,只要显存占比
+# gpt-oss carries no Qwen flags, only the GPU memory fraction
 GPTOSS_SERVE_FLAGS = "--gpu-memory-utilization 0.92"
-# gpt-oss 客户端追加旗标:一个 --preset 带全套生成设置(configs/presets/<名>.json)。
-# 预设名来自 manifest 顶层可选字段 "gptoss_client_preset";字段缺席时用下面这个
-# 缺省 default,也就是全线现役的那一份口径(harmony / effort high / 温度 1.0 /
-# top_p 1.0 / max_tokens 8192 / Current date 2026-08-06),tests/test_preset.py 钉着。
+# gpt-oss client appends flags: one --preset carries the whole generation setting
+# (configs/presets/<name>.json). The preset name comes from the manifest's top-level
+# optional field "gptoss_client_preset"; when the field is absent, use the default
+# below, which is the one setting currently active project-wide (harmony / effort
+# high / temperature 1.0 / top_p 1.0 / max_tokens 8192 / Current date 2026-08-06);
+# tests/test_preset.py pins this down.
 GPTOSS_CLIENT_PRESET_DEFAULT = "default"
 
-# 采集器统一参数(执行手册 §3.4)
+# Collector's uniform parameters (runbook §3.4)
 CLIENT_COMMON = "--n 0 --max-steps 30"
 
-# 环境表:manifest 顶层可选字段 "env" 选一行,缺省 appworld(老 manifest 行为不变)。
-# 每行说明该环境用哪个 venv、哪个采集器、生成的 shell 函数叫什么、统一参数是什么。
+# Environment table: the manifest's top-level optional field "env" selects one row, default appworld (old manifest behavior unchanged).
+# Each row states which venv that environment uses, which collector, what the generated shell function is called, and what the uniform parameters are.
 ENV_TABLE = {
     "appworld": dict(venv="appworld", runner="run_appworld.py", fn="aw",
                      common=CLIENT_COMMON),
@@ -90,7 +102,7 @@ def die(msg):
 
 
 def is_int(v):
-    """json 里的 true 是 bool,而 bool 是 int 的子类——校验整数字段得排掉它。"""
+    """true in json is bool, and bool is a subclass of int -- validating integer fields must exclude it."""
     return isinstance(v, int) and not isinstance(v, bool)
 
 
@@ -100,77 +112,78 @@ def load_manifest(path):
     cfg = json.loads(Path(path).read_text())
     for key in ("run_id", "servers", "clients"):
         if key not in cfg:
-            die(f"manifest 缺字段 {key}")
+            die(f"manifest missing field {key}")
     run_id = cfg["run_id"]
     warns = []
 
     env = cfg.get("env", DEFAULT_ENV)
     if env not in ENV_TABLE:
-        die(f"未知 env {env}(表里只有 {sorted(ENV_TABLE)})")
+        die(f"unknown env {env}(the table only has {sorted(ENV_TABLE)})")
     cfg["env"] = env
 
     preset = cfg.get("gptoss_client_preset", GPTOSS_CLIENT_PRESET_DEFAULT)
     pf = Path(REPO) / "configs" / "presets" / f"{preset}.json"
     if not pf.exists():
-        die(f"gptoss_client_preset {preset!r} 没有对应预设文件:{pf}")
+        die(f"gptoss_client_preset {preset!r} has no matching preset file:{pf}")
     cfg["gptoss_client_preset"] = preset
 
-    # 多样本口径(2026-08-21 np821 起):两个字段成对出现才算数,一个都不给
-    # 就是老口径每题一条。校验放在生成之前,免得把不成对的字段拼进发射脚本。
+    # Multi-sample rule (since 2026-08-21, np821): the two fields only count if they
+    # appear as a pair; giving neither means the old rule of one trajectory per item.
+    # Validation runs before generation, so unpaired fields never get spliced into the launch script.
     n_traj, family = cfg.get("traj_per_task"), cfg.get("seed_family")
     if (n_traj is None) != (family is None):
-        die("traj_per_task 与 seed_family 要么都给要么都不给"
-            f"(现在 traj_per_task={n_traj!r} / seed_family={family!r})")
+        die("traj_per_task and seed_family must both be given or both omitted"
+            f"(currently traj_per_task={n_traj!r} / seed_family={family!r})")
     if n_traj is not None:
         if not is_int(n_traj) or n_traj < 1:
-            die(f"traj_per_task 必须是 >= 1 的整数,现在是 {n_traj!r}")
+            die(f"traj_per_task must be an integer >= 1, currently {n_traj!r}")
         if not isinstance(family, list) or not family or \
                 not all(is_int(s) for s in family):
-            die(f"seed_family 必须是非空整数列表,现在是 {family!r}")
+            die(f"seed_family must be a non-empty list of integers, currently {family!r}")
         if len(family) != n_traj:
-            die(f"seed_family 有 {len(family)} 个种子,与 traj_per_task "
-                f"{n_traj} 对不上")
+            die(f"seed_family has {len(family)} seeds, which does not match traj_per_task "
+                f"{n_traj}")
         if env != "appworld":
-            die(f"traj_per_task/seed_family 目前只有 appworld 的采集器认"
-                f"(run_appworld.py 的 --traj-per-task/--seeds);本 manifest "
-                f"的 env 是 {env}")
+            die(f"traj_per_task/seed_family are currently only recognized by the appworld collector"
+                f"(run_appworld.py's --traj-per-task/--seeds); this manifest "
+                f"env is {env}")
 
     hosts = {s["host"] for s in cfg["servers"]}
     if len(hosts) != 1:
-        die("所有服务实例必须在同一台机器上(模板里 HOST 是单个常量);"
-            f"本 manifest 出现 {sorted(hosts)}。要跨机请先改模板结构。")
+        die("all service instances must be on the same machine (HOST is a single constant in the template);"
+            f"this manifest has {sorted(hosts)}. To go cross-machine, change the template structure first.")
 
     seen_port, seen_sess, seen_gpu = {}, set(), set()
     for s in cfg["servers"]:
         if s["model_key"] not in MODEL_TABLE:
-            die(f"未知 model_key {s['model_key']}(表里只有 {sorted(MODEL_TABLE)})")
+            die(f"unknown model_key {s['model_key']}(the table only has {sorted(MODEL_TABLE)})")
         if s["port"] in seen_port:
-            die(f"端口 {s['port']} 被两个实例复用")
+            die(f"port {s['port']} is reused by two instances")
         seen_port[s["port"]] = s
         if s["session"] in seen_sess:
-            die(f"session 名重复:{s['session']}")
+            die(f"duplicate session name:{s['session']}")
         seen_sess.add(s["session"])
         if (s["host"], s["gpu"]) in seen_gpu:
-            die(f"同一张卡被排了两次:{s['host']} GPU {s['gpu']}")
+            die(f"the same card was scheduled twice:{s['host']} GPU {s['gpu']}")
         seen_gpu.add((s["host"], s["gpu"]))
 
     for c in cfg["clients"]:
         if c["model_key"] not in MODEL_TABLE:
-            die(f"未知 model_key {c['model_key']}")
+            die(f"unknown model_key {c['model_key']}")
         if len(c["shard_ports"]) != c["num_shards"]:
-            die(f"分片 {c['tag']}: shard_ports 长度 {len(c['shard_ports'])} "
+            die(f"piece {c['tag']}: shard_ports length {len(c['shard_ports'])} "
                 f"!= num_shards {c['num_shards']}")
         for p in c["shard_ports"]:
             if p not in seen_port:
-                die(f"分片 {c['tag']} 指向端口 {p},但服务表里没有这个端口")
+                die(f"piece {c['tag']} points to port {p}, but the service table has no such port")
             if seen_port[p]["model_key"] != c["model_key"]:
-                die(f"分片 {c['tag']}(model={c['model_key']})指向端口 {p},"
-                    f"那是 {seen_port[p]['model_key']} 的实例")
-        # outdir 强制标准名:下游事件抽取按目录名尾巴认模型,别的名字会被静默跳过
+                die(f"piece {c['tag']}(model={c['model_key']}) points to port {p},"
+                    f"which is an instance of {seen_port[p]['model_key']}")
+        # outdir is forced to a standard name: downstream event extraction identifies the model by the directory-name suffix, any other name gets silently skipped
         std = f"{env}_{c['model_key']}"
         if c.get("outdir") and c["outdir"] != std:
-            warns.append(f"分片 {c['tag']} 的 outdir {c['outdir']!r} 不是标准名,"
-                         f"已强制改为 {std!r}")
+            warns.append(f"piece {c['tag']}'s outdir {c['outdir']!r} is not the standard name,"
+                         f"forced to {std!r}")
         c["outdir"] = std
 
     cfg["envs_root"] = cfg.get("envs_root", ENVS_ROOT)
@@ -182,8 +195,9 @@ def load_manifest(path):
 
 
 def multi_flags(cfg):
-    """多样本采集追加给采集器的旗标串;manifest 没写那两个字段就是空串,
-    调用方据此原样吐老口径的生成物。"""
+    """Flag string appended to the collector for multi-sample collection; when the manifest
+    doesn't set those two fields it is an empty string, and the caller uses this to emit
+    the old-rule output unchanged."""
     n_traj = cfg.get("traj_per_task")
     if n_traj is None:
         return ""
@@ -192,7 +206,7 @@ def multi_flags(cfg):
 
 
 def replica_map(servers):
-    """同一模型的第几个副本 -> A/B/C…(只用于注释和 MANIFEST)。"""
+    """Which replica number of the same model -> A/B/C... (used only for comments and MANIFEST)."""
     seen, out = {}, {}
     for s in servers:
         k = s["model_key"]
@@ -202,7 +216,7 @@ def replica_map(servers):
     return out
 
 
-# ----------------------------------------------------------------- 服务端
+# ----------------------------------------------------------------- server side
 
 SERVER_MAIN = '''
 
@@ -232,7 +246,7 @@ if __name__ == "__main__":
 
 
 def serve_flags(server):
-    """该实例的完整旗标串(生成文件里的 f-string 片段)。"""
+    """The full flag string for this instance (an f-string fragment in the generated file)."""
     fam = MODEL_TABLE[server["model_key"]]["family"]
     base = "{QWEN_FLAGS}" if fam == "qwen" else GPTOSS_SERVE_FLAGS
     extra = (server.get("extra_flags") or "").strip()
@@ -243,9 +257,9 @@ def gen_servers(cfg):
     host = cfg["servers"][0]["host"]
     rep = replica_map(cfg["servers"])
     n_models = len({s["model_key"] for s in cfg["servers"]})
-    lines = [f'"""{cfg["run_id"]} 采集批次的服务发射器:{n_models} 模型 '
-             f'{len(cfg["servers"])} 实例,占 {host} {len(cfg["servers"])} 卡'
-             f'(gen_launch.py 生成,勿手改)。',
+    lines = [f'"""{cfg["run_id"]} collection batch service launcher: {n_models} models '
+             f'{len(cfg["servers"])} instances, occupying {host} {len(cfg["servers"])} cards'
+             f'(generated by gen_launch.py, do not hand-edit).',
              ""]
     for s in cfg["servers"]:
         m = MODEL_TABLE[s["model_key"]]
@@ -253,11 +267,11 @@ def gen_servers(cfg):
         note = (s.get("extra_flags") or "").strip()
         note = f", {note}" if note else ""
         lines.append(f'  {m["served"]:<13s} -> {card} GPU {s["gpu"]}, '
-                     f'port {s["port"]}   (副本 {rep[s["session"]]}{note})')
+                     f'port {s["port"]}   (replica {rep[s["session"]]}{note})')
     lines += ["",
-              "坑:H100(95G)上跑 Qwen 必须 --max-num-seqs 512"
-              "(Mamba cache 只够 612 块,默认 1024 会崩)。",
-              f"用法: python3 {Path('launch_servers.py').name}",
+              "gotcha: running Qwen on H100(95G) requires --max-num-seqs 512"
+              "(the Mamba cache only holds 612 blocks; the default 1024 will crash).",
+              f"usage: python3 {Path('launch_servers.py').name}",
               '"""',
               "import shlex",
               "import subprocess",
@@ -283,7 +297,7 @@ def gen_servers(cfg):
     return "\n".join(lines) + SERVER_MAIN
 
 
-# ----------------------------------------------------------------- 客户端
+# ----------------------------------------------------------------- client side
 
 CLIENT_TM = '''tm() { # session cmd
   tmux has-session -t "$1" 2>/dev/null && { echo "SKIP $1"; return; }
@@ -302,20 +316,20 @@ def gen_clients(cfg):
         by_model.setdefault(c["model_key"], []).append(c)
 
     out = ["#!/bin/bash",
-           f"# {cfg['run_id']} 客户端发射器(gen_launch.py 生成,勿手改)。"
-           "幂等:--resume 自动跳过已完成题。"]
+           f"# {cfg['run_id']} client launcher(generated by gen_launch.py, do not hand-edit)."
+           "Idempotent: --resume automatically skips completed tasks."]
     for key, cs in by_model.items():
         m = MODEL_TABLE[key]
         ports = sorted({p for c in cs for p in c["shard_ports"]})
-        desc = ", ".join(f"{c['split']} {c['num_shards']} 分片" for c in cs)
+        desc = ", ".join(f"{c['split']} {c['num_shards']} pieces" for c in cs)
         out.append(f"# {m['served']}({'/'.join(str(p) for p in ports)}): {desc}")
     multi = multi_flags(cfg)
-    out += ["# 每个分片一个本机 tmux session,日志在 logs/。",
+    out += ["# each piece is one local tmux session; logs are in logs/.",
             f"E={cfg['envs_root']}",
             f"F=$E/runs/{cfg['run_id']}",
             "mkdir -p $F/logs",
             f'GPTOSS_EXTRA="--preset {cfg["gptoss_client_preset"]}"']
-    if multi:   # 每题多条轨迹:整个环境的分片一视同仁,所以搁在函数体里
+    if multi:   # multiple trajectories per item: treats every piece of the environment the same way, so it lives inside the function body
         out.append(f'MULTI="{multi}"')
     out += ["",
             CLIENT_TM,
@@ -332,7 +346,7 @@ def gen_clients(cfg):
     for c in cfg["clients"]:
         m = MODEL_TABLE[c["model_key"]]
         extra = '"$GPTOSS_EXTRA"' if m["family"] == "gptoss" else '""'
-        out.append(f"# ---- {m['served']}: {c['split']} {c['num_shards']} 分片 ----")
+        out.append(f"# ---- {m['served']}: {c['split']} {c['num_shards']} pieces ----")
         for sid, port in enumerate(c["shard_ports"]):
             url = f"http://{port2host[port]}:{port}/v1"
             out.append(f"{e['fn']} {c['tag']} {m['served']} {url} {extra} "
@@ -353,26 +367,26 @@ def gen_manifest_md(cfg):
     prefix = cfg["client_session_prefix"]
     multi = multi_flags(cfg)
     n_shards = sum(c["num_shards"] for c in cfg["clients"])
-    L = [f"# 发射清单 — {cfg['run_id']}", "",
-         f"gen_launch.py 生成(勿手改)。服务 {len(cfg['servers'])} 实例 / "
-         f"客户端 {n_shards} 分片。", "",
-         "## 服务表", "",
-         "| host | GPU idx | 卡 | 模型 | served-model-name | 端口 | 追加旗标 | session | 日志 |",
+    L = [f"# Launch manifest — {cfg['run_id']}", "",
+         f"generated by gen_launch.py(do not hand-edit). {len(cfg['servers'])} service instances / "
+         f"{n_shards} client pieces.", "",
+         "## Service table", "",
+         "| host | GPU idx | card | model | served-model-name | port | extra flags | session | log |",
          "|---|---|---|---|---|---|---|---|---|"]
     for s in cfg["servers"]:
         m = MODEL_TABLE[s["model_key"]]
         extra = (s.get("extra_flags") or "").strip() or "—"
         L.append(f"| {s['host']} | {s['gpu']} | {s.get('card', '—')} | "
-                 f"{s['model_key']}(副本 {rep[s['session']]}) | {m['served']} | "
+                 f"{s['model_key']}(replica {rep[s['session']]}) | {m['served']} | "
                  f"{s['port']} | {extra} | `{s['session']}` | "
                  f"`{SERVE_LOG_DIR}/{s['session']}.log` |")
     L += ["",
-          "Qwen 通用旗标:`--reasoning-parser deepseek_r1 --max-model-len 65536 "
+          "Qwen shared flags:`--reasoning-parser deepseek_r1 --max-model-len 65536 "
           "--gpu-memory-utilization 0.92 --enable-auto-tool-choice "
           "--tool-call-parser qwen3_coder`;",
-          f"gpt-oss 不带 Qwen 旗标,只要 `{GPTOSS_SERVE_FLAGS}`。", "",
-          "## 分片表", "",
-          "| tag | 模型 | split | num-shards | shard-id → 端口 | outdir | exp | session |",
+          f"gpt-oss does not carry Qwen flags, it only needs `{GPTOSS_SERVE_FLAGS}`.", "",
+          "## Piece table", "",
+          "| tag | model | split | num-shards | shard-id → port | outdir | exp | session |",
           "|---|---|---|---|---|---|---|---|"]
     for c in cfg["clients"]:
         m = MODEL_TABLE[c["model_key"]]
@@ -381,36 +395,36 @@ def gen_manifest_md(cfg):
                  f"{mapping} | `$F/{c['outdir']}` | {c['exp']} | "
                  f"`{prefix}_{c['tag']}_s<k>` |")
     L += ["",
-          f"`$F` = `{cfg['envs_root']}/runs/{cfg['run_id']}`,日志 `$F/logs/<session>.log`。",
-          f"客户端统一参数 `{e['common']} --resume`;"
-          f"gpt-oss 分片额外 `--preset {cfg['gptoss_client_preset']}`。"]
+          f"`$F` = `{cfg['envs_root']}/runs/{cfg['run_id']}`, log `$F/logs/<session>.log`.",
+          f"client shared args `{e['common']} --resume`;"
+          f"gpt-oss pieces additionally get `--preset {cfg['gptoss_client_preset']}`."]
     if multi:
-        L.append(f"每题 {cfg['traj_per_task']} 条轨迹:所有分片额外 "
-                 f"`{multi}`,第 k 条用第 k 个种子,"
-                 f"轨迹落 `appworld_<task_id>_r<k>.jsonl`。")
-    L += [f"outdir 一律 `{cfg['env']}_<model_key>` 标准名"
-          "(下游事件抽取按目录名尾巴认模型)。",
-          "", "## 发射顺序", "",
-          f"1. `python3 launch_servers.py`({len(cfg['servers'])} 实例起齐,日志出现 "
-          "\"Application startup complete\" 且 `curl -s http://<host>:<port>/v1/models` 有返回)",
-          "2. smoke:每模型 1 题(执行手册 §3.3)",
+        L.append(f"{cfg['traj_per_task']} trajectories per task: all pieces additionally get "
+                 f"`{multi}`, the k-th trajectory uses the k-th seed,"
+                 f"trajectories land at `appworld_<task_id>_r<k>.jsonl`.")
+    L += [f"outdir must always use the standard name `{cfg['env']}_<model_key>`"
+          "(downstream event extraction identifies the model from the directory name's suffix).",
+          "", "## Launch order", "",
+          f"1. `python3 launch_servers.py`({len(cfg['servers'])} instances all up, log shows "
+          "\"Application startup complete\" and `curl -s http://<host>:<port>/v1/models` responds)",
+          "2. smoke: 1 task per model (see runbook §3.3)",
           "3. `bash launch_clients.sh`",
-          "4. 双登记:`ops/gpu_jobs.py register` + `ops/record.py start`",
+          "4. dual registration: `ops/gpu_jobs.py register` + `ops/record.py start`",
           ""]
     return "\n".join(L)
 
 
-# ----------------------------------------------------------------- 主流程
+# ----------------------------------------------------------------- main flow
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", required=True, help="manifest json")
     ap.add_argument("--dry-run", action="store_true",
-                    help="试生成:只写 --out-override 指定的目录,绝不碰 envs/")
+                    help="trial generation: write only to the --out-override directory, never touch envs/")
     ap.add_argument("--out-override", default=None,
-                    help="改写到别的目录(--dry-run 时必填)")
+                    help="rewrite to a different directory (required when --dry-run is set)")
     ap.add_argument("--force", action="store_true",
-                    help="允许覆盖目标目录里已有的同名文件")
+                    help="allow overwriting existing same-name files in the target directory")
     args = ap.parse_args()
 
     cfg, warns = load_manifest(args.config)
@@ -418,7 +432,7 @@ def main():
         print("gen_launch: WARN:", w)
 
     if args.dry_run and not args.out_override:
-        die("--dry-run 必须配 --out-override(防止误写现役采集目录)")
+        die("--dry-run must be paired with --out-override (prevents accidentally writing to a live collection directory)")
     outdir = Path(args.out_override) if args.out_override else \
         Path(cfg["envs_root"]) / "runs" / cfg["run_id"]
     outdir.mkdir(parents=True, exist_ok=True)
@@ -428,7 +442,7 @@ def main():
              "MANIFEST.md": gen_manifest_md(cfg)}
     exist = [n for n in files if (outdir / n).exists()]
     if exist and not args.force:
-        die(f"{outdir} 下已有 {exist},拒绝覆盖(要覆盖加 --force)")
+        die(f"{outdir} already has {exist}, refusing to overwrite (add --force to overwrite)")
 
     for name, text in files.items():
         p = outdir / name
@@ -436,9 +450,9 @@ def main():
         if name.endswith(".sh"):
             os.chmod(p, 0o775)
         print("wrote", p)
-    print(f"gen_launch: {len(cfg['servers'])} 服务实例 / "
-          f"{sum(c['num_shards'] for c in cfg['clients'])} 分片"
-          f"{' (dry-run)' if args.dry_run else ''};只生成不执行。")
+    print(f"gen_launch: {len(cfg['servers'])} server instances / "
+          f"{sum(c['num_shards'] for c in cfg['clients'])} pieces"
+          f"{' (dry-run)' if args.dry_run else ''}; generates only, does not execute.")
 
 
 if __name__ == "__main__":
