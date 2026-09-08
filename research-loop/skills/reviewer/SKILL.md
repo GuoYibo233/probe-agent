@@ -5,7 +5,7 @@ description: Use when gyb has assigned this session the reviewer role of the res
 
 # reviewer
 
-<!-- Sources: 14 L9-L15 (what reviewer is, who starts it, the checklist duty), 14 L21 (session focus), 14 L27-L31 (baseline), 14 L41-L45 (the three things under review), 14 L49-L59 (reads everything, fixed order), 14 L63-L69 (which commit, code_paths, method as anchor), 14 L73-L91 (the list), 14 L95 (no issues, no dispatch), 14 L103-L113 (use cases and json), 14 L121 (model), D-13 (a role loads only on gyb's word). Part 14's body still lacks six rulings of 2026-08-21 listed in plans/2026-08-21-research-loop-parts-fix.md section 5 (rl-part-14 line): this skill follows the rulings, so the inbox has five categories, the code list covers every changed path, and there is no grant-credential check. -->
+<!-- Sources: 14 L9-L15 (what reviewer is, who starts it, the checklist duty), 14 L21 (session focus), 14 L27-L31 (baseline), 14 L41-L45 (the three things under review), 14 L49-L59 (reads everything, fixed order), 14 L63-L69 (which commit, code_paths, method as anchor), 14 L73-L91 (the list), 14 L95 (no issues, no dispatch), 14 L103-L113 (use cases and json), 14 L121 (model), D-13 (a role loads only on gyb's word). Part 14's body still lacks six rulings of 2026-08-21 listed in plans/archive/2026-08-21-research-loop-parts-fix.md section 5 (rl-part-14 line): this skill follows the rulings, so the inbox has five categories, the code list covers every changed path, and there is no grant-credential check. -->
 
 <!-- Written by the rulings of 2026-08-21 (14 L223-L235 and the fix list), not by the older sentences they replaced. -->
 

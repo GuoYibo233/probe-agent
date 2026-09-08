@@ -78,7 +78,7 @@ CELLS = {
               ["--mode", "cparam"]),
 }
 # 默认 smoke 顺序,允许是 CELLS 的子集:ModernBERT 线(mtool/mext)2026-08-21 起
-# 停跑(plans/2026-08-21-new-probe-training.md 第一条总体决定),两格仍留在
+# 停跑(plans/archive/2026-08-21-new-probe-training.md 第一条总体决定),两格仍留在
 # CELLS 里可以单发,只是不进默认 smoke 顺序。ops/launch_probe.py 的 smoke 档
 # 按这张表一格一卡分配,--gpus 的张数必须等于本元组长度。
 CELL_ORDER = ("ctool", "cgen", "cparam")
@@ -472,7 +472,7 @@ TASKS = {
     "parse-call-selftest": dict(
         stage="inject", py="cprobe", script="pipeline/inject/parse_call.py",
         desc="括号配平提取器自测(无参数;也是 run.py 的冒烟件)"),
-    # ---- splice 塞法回放(上帝视角,不要探针;计划 plans/2026-08-18-splice-replay.md)----
+    # ---- splice 塞法回放(上帝视角,不要探针;计划 plans/archive/2026-08-18-splice-replay.md)----
     "splice-replay-events": dict(
         stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
         args=["events"],
@@ -530,7 +530,7 @@ TASKS = {
         notes=["端口 8114-8116 与探针 tokyo105:8790 写死,换机器改文件",
                "run_name 必填(如 live_aw_gptoss_v2)=runs/ 下输出目录,"
                "防呆:漏传曾经会静默空跑 v1 目录再假报 DONE"]),
-    # ---- ident3 三臂逐 token 同(计划 plans/2026-08-18-ident3.md)----
+    # ---- ident3 三臂逐 token 同(计划 plans/archive/2026-08-18-ident3.md)----
     "ident3-job": dict(
         stage="live", py="bash", script="envs/serve_logs/ident3_job.sh",
         handoff=True,

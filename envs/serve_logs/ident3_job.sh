@@ -1,6 +1,6 @@
 #!/bin/bash
 # ident3(2026-08-18):三臂逐 token 同、5 题 x 每题 10 遍。一臂一进程,遍内 5 题
-# 串行、遍间串行(计划 plans/2026-08-18-ident3.md §3)。三臂各起一份并行跑。
+# 串行、遍间串行(计划 plans/archive/2026-08-18-ident3.md §3)。三臂各起一份并行跑。
 # 用法: ident3_job.sh chat|noprobe|nofill <root> [reps=10] [n_tasks=5] [vllm_port=8114] [probe_url=http://localhost:8795]
 #   root = 产物根目录(NFS),每臂每遍一个子目录 <root>/<arm>/rep<r>/
 #   chat 臂的 outdir 名必须以 appworld_gptoss 收尾(采集器约定)

@@ -100,4 +100,4 @@ C 跳过（appworld 不走 runs.glob 路径）、E 跳过（无 SPLIT_REPORT.jso
 七个数据文件与全部报告逐字节 cmp 一致。
 
 **口径备注**：与 aw_official_v1 的数字不可比（effort 档不同，见
-`plans/2026-08-21-p1-collection-plan.md` 生成设置一节），只作数量级参照。
+`plans/archive/2026-08-21-p1-collection-plan.md` 生成设置一节），只作数量级参照。

@@ -77,7 +77,7 @@ CPU 上 bool 掩码和 0 / -inf 的浮点掩码算出来的 loss 逐位相同（
 
 形态 B 是：前缀 `use_cache=True` 过一遍拿到 `DynamicCache`，各行按 `p_k` 从大到小排，每行先 `cache.crop(p_k)` 再把目标段作为一条新输入接着算，position_ids 从 `p_k` 接着数。CPU 实测（第四节的 form_b 项）：3 行的 loss 和旧训练器最大差 1.3e-6，loss 反向之后前缀输入嵌入的梯度非空，463 个前缀位置里 462 个梯度非零（唯一为零的是前缀最后一个 token，没有任何目标段看前缀最后一个 token，前缀最后一个 token 也不在 loss 位里）。所以形态 B 在 transformers 5.14.1 里能带梯度。LoRA 下同样能用：peft 只换 nn.Linear，不碰 forward 的参数。
 
-形态 B 的两个硬伤是从代码读出来的。第一，`modeling_layers.py` 第 82 到 84 行让梯度检查点和 `use_cache` 互斥，1.7B 和 4B 在 48G 卡上靠 `--grad-ckpt` 才装得下（`plans/2026-08-22-np821-exec-worklog.md` 的经验），形态 B 等于关掉了 `--grad-ckpt`。第二，`DynamicLayer.update` 每次都 `torch.cat` 出一份新的 K、V 张量，cat 出来的 K、V 张量会被所在段的注意力反向保存，所以 45 段各自留一份 `p_k` 长的 K、V 副本：按平均 `p_k` 4,000、8 个 KV 头、head_dim 128、bf16、K 和 V 两份、28 层算，一个 8192 的事件要留 45 × 4,000 × 8 × 128 × 2 × 2 × 28 字节约 20 GB，形态 A 保存的 K、V 只有整条序列的一份（repeat_kv 之后 16 头），9,100 × 16 × 128 × 2 × 2 × 28 字节约 2.1 GB。把 45 段合成一个 padded batch 接缓存会更糟：缓存要沿批维扩成 45 份再 cat，每层 45 × 8 × 8,300 × 128 × 2 × 2 字节约 1.5 GB，28 层约 43 GB。
+形态 B 的两个硬伤是从代码读出来的。第一，`modeling_layers.py` 第 82 到 84 行让梯度检查点和 `use_cache` 互斥，1.7B 和 4B 在 48G 卡上靠 `--grad-ckpt` 才装得下（`plans/archive/2026-08-22-np821-exec-worklog.md` 的经验），形态 B 等于关掉了 `--grad-ckpt`。第二，`DynamicLayer.update` 每次都 `torch.cat` 出一份新的 K、V 张量，cat 出来的 K、V 张量会被所在段的注意力反向保存，所以 45 段各自留一份 `p_k` 长的 K、V 副本：按平均 `p_k` 4,000、8 个 KV 头、head_dim 128、bf16、K 和 V 两份、28 层算，一个 8192 的事件要留 45 × 4,000 × 8 × 128 × 2 × 2 × 28 字节约 20 GB，形态 A 保存的 K、V 只有整条序列的一份（repeat_kv 之后 16 头），9,100 × 16 × 128 × 2 × 2 × 28 字节约 2.1 GB。把 45 段合成一个 padded batch 接缓存会更糟：缓存要沿批维扩成 45 份再 cat，每层 45 × 8 × 8,300 × 128 × 2 × 2 字节约 1.5 GB，28 层约 43 GB。
 
 裁决：用形态 A。形态 A 和 ctool 的整段一次前向只差一张掩码和一份 position_ids，梯度检查点、LoRA、按 token 预算沿批维组批都直接可用，CPU 上三样都验证过。形态 B 只留作对照实现，不上训练。
 

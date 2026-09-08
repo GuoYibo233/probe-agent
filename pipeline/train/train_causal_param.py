@@ -2,7 +2,7 @@
 
 与 cgen(train_causal_callgen.py)的分工:cgen 把工具名和参数一次写完,cparam
 把工具名当输入的一部分**喂进去**,模型只写左括号后面那一截。规格见
-`plans/2026-08-21-new-probe-training.md` 的第三种。
+`plans/archive/2026-08-21-new-probe-training.md` 的第三种。
 
 - 输入: <data_out>/{train,val}.jsonl,每行取 text / label / label_call / w 四个字段;
   一条样本 = 一条训练实例

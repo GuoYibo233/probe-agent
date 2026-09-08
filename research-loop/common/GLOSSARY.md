@@ -1,6 +1,6 @@
 # Glossary: one name per thing, in every ledger, skill and conversation
 
-<!-- Source: build plan 2026-08-16 section 2 (plans/2026-08-16-research-loop-build-plan.md L27-L53), carried into 09 L14. The third column is the draft gyb has not walked through yet: PENDING(part 09 L19). -->
+<!-- Source: build plan 2026-08-16 section 2 (plans/archive/2026-08-16-research-loop-build-plan.md L27-L53), carried into 09 L14. The third column is the draft gyb has not walked through yet: PENDING(part 09 L19). -->
 
 Every thing in this system has one name, the one in the first column, and that name is used in code, ledgers, skills and conversation alike. The second column says what the thing is. The third column says what it is not.
 

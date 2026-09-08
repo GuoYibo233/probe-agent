@@ -1,5 +1,5 @@
 """ident3 打分(纯 CPU,stdlib):三臂(chat / noprobe / nofill)x 5 题 x 10 遍,
-逐 token 比对,出 IDENT3_REPORT.{json,md}。计划:plans/2026-08-18-ident3.md §4。
+逐 token 比对,出 IDENT3_REPORT.{json,md}。计划:plans/archive/2026-08-18-ident3.md §4。
 
 输入目录结构(ident3_job.sh 落的):
   <root>/chat/rep<r>/appworld_gptoss/appworld_<tid>.jsonl   (run_appworld --api chat)
