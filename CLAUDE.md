@@ -8,9 +8,8 @@ report titles), plan documents, and new ledger entries. Terminology follows the
 English terms in parentheses in the `CONTEXT.md` glossary
 (probe / cut / fire / inject / launch / heartbeat / sampler / verdict / piece / refire).
 Chinese documents already on disk stay as they are; translate one only when the
-user names it. Three scripts parse Chinese documents through Chinese pattern
-strings on purpose (exp-status `md2html.py`, research-loop `check_docs.py` and
-`spec_lint.py`); leave those strings alone.
+user names it. One script parses Chinese documents through Chinese pattern
+strings on purpose (exp-status `md2html.py`); leave those strings alone.
 
 ## GPU 任务：唯一入口是 gpu-run skill
 

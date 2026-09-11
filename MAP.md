@@ -186,14 +186,6 @@ install_patch.py）。发射类一律 `python3 run.py show <task>` 出命令、g
 
 ---
 
-## 3.5 research-loop plugin（`research-loop/`，机器级通用件）
-
-| 程序 | 干什么 | 怎么用 |
-|---|---|---|
-| `research-loop/` 整目录 | 研究循环插件 v2 本体（2026-09-05 施工步 1 起重建；旧 0.1.0 整体退役，留在 commit b63519b 之前的历史里）：入口 skill 加五个角色 skill、五份 agent 定义、九本账的表和 schema、`bin/rl` 入账与查询、插件级钩子、发射看门狗。设计真源 `plans/research-loop-parts/`，施工步骤在 30 分册第三节，目录表在 `research-loop/README.md` | 入口 `research-loop/bin/rl <子命令>`（施工步 3 起）；自测 `python3 research-loop/tests/run_all.py`。**不是 run.py 注册表任务**，不挂 TASKS；new1 挂接（`rl init`）是施工步 7 |
-
----
-
 ## 4. 环境与权重
 
 **训练两环境（uv 建，⚠️ 均未装 pip，版本读自 dist-info）：**

@@ -1,5 +1,0 @@
-{
-  "name": "research-loop",
-  "version": "2.0.0",
-  "description": "Research-loop process plugin v2: five role skills (idea, deploy, run, analysis, reviewer) that coordinate only through nine append-only ledgers under loop/, written via bin/rl; plugin-level hooks block writes into other roles' directories and direct writes to loop/. Design source: plans/research-loop-parts/ (parts 00 to 30)."
-}

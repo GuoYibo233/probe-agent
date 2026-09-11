@@ -14,6 +14,25 @@
 > `plans/archive/TIMELINE-2026-08-02-to-2026-08-18.md`；gyb 明说"查远古记忆"
 > 或者点名那份文件的时候才去读。
 
+## 2026-09-12 research-loop split out into its own repository
+
+- Decision (user): research-loop leaves new1 entirely and becomes the standalone
+  project `/home/y-guo/research-loop` (git-initialized, first commit `b9bb7d3`).
+  Moved: the plugin tree `research-loop/`, the design source
+  `plans/research-loop-parts/` (frozen-part checks re-pinned to the new repo's
+  initial commit), the seven live plan documents
+  `plans/2026-09-04/05-research-loop-*.md`, the ten research-loop items in
+  `plans/archive/`, and `.scratch/research-loop/`. The project memory moved to
+  the new working directory's key. Test suite green in the new location
+  (unittest, exit 0) and the parts checks pass there (0 errors).
+- History stays here: everything up to new1 commit `c030702` is the pre-split
+  record; the new repository starts fresh and names this repository as its
+  ancestor in the initial commit message.
+- new1 keeps zero research-loop content. MAP.md section 3.5 and the CLAUDE.md
+  mention of research-loop's Chinese-parsing scripts went with the move;
+  construction step 7 of the old plan (`rl init` hooking research-loop into
+  new1) is obsolete in its old form and gets re-scoped on the research-loop side.
+
 ## 2026-09-12 远古记忆立规：2026-08-20 之前的记录全部归档，默认不读
 
 - 决定（gyb）：2026-08-20 之前的记录全部归档，归档区 `plans/archive/` 定名
