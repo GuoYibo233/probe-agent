@@ -22,8 +22,8 @@
   `plans/research-loop-parts/` (frozen-part checks re-pinned to the new repo's
   initial commit), the seven live plan documents
   `plans/2026-09-04/05-research-loop-*.md`, the ten research-loop items in
-  `plans/archive/`, and `.scratch/research-loop/`. The project memory moved to
-  the new working directory's key. Test suite green in the new location
+  `plans/archive/`, `.scratch/research-loop/`, and `review/` (spec review and
+  advisor notes). The project memory moved to the new working directory's key. Test suite green in the new location
   (unittest, exit 0) and the parts checks pass there (0 errors).
 - History stays here: everything up to new1 commit `c030702` is the pre-split
   record; the new repository starts fresh and names this repository as its
