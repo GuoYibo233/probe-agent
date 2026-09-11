@@ -11,8 +11,14 @@
 research-loop 的 GLOSSARY 与 reviewer skill、pipeline 里的注释、`.scratch/kvshare-train/`）
 已经改成新路径。
 
+2026-09-12 起这个目录定名"远古记忆"（gyb 裁决）：gyb 明说"查远古记忆"或者
+点名某份归档文件的时候才读，其余时候不读、不引用、不拿来回答问题，
+规则写在仓库根 `CLAUDE.md`。同日把 `TIMELINE.md` 里 2026-08-02 到 2026-08-18
+的 7 条条目逐字搬进 `TIMELINE-2026-08-02-to-2026-08-18.md`。
+
 | 文件 | 归哪条线 | 为什么归档 |
 |---|---|---|
+| `TIMELINE-2026-08-02-to-2026-08-18.md` | TIMELINE 远古条目 | 2026-09-12 gyb 裁决 2026-08-20 之前的记录全部归档，7 条条目从 `TIMELINE.md` 逐字搬来（diff 校验过逐字节相同） |
 | `2026-08-10-z1-plan.md`、`2026-08-10-z1-smoke-report.md` | z1 注入冒烟 | 冒烟已完成，结论录在 METHOD.md 的 R3 行 |
 | `2026-08-16-research-loop-build-plan.md`、`2026-08-16-research-loop-next-steps.md` | research-loop v1 | 两份源文档已经拆成 `plans/research-loop-parts/` 的 22 份 part，part 里的行号引用指向这两份 |
 | `2026-08-16-research-loop-plan-critiques.md`、`2026-08-16-research-loop-simulation-round1.md`、`-round2.md`、`2026-08-17-research-loop-usage-scenarios.md` | research-loop v1 | 审读意见与模拟原始结果，已经裁进 part 00 |
