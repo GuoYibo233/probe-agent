@@ -1,12 +1,16 @@
 # new1 工程规则
 
-## 代码里一律写英语（2026-09-08 用户明令）
+## Everything written into this repo is English (user order, 2026-09-12)
 
-代码文件（.py / .sh / .js / .css / .gitignore / 配置里的注释）里的注释、docstring、
-运行时字符串（报错、exit 消息、argparse help、日志行、报告标题）一律用英语写；
-新写的代码同样照办，中文只允许出现在计划文档里。2026-09-08 已把全仓代码文件
-的中文整体翻成英语，术语对照以 `CONTEXT.md` 词汇表里括号内的英文为准
-（probe / cut / fire / inject / launch / heartbeat / sampler / verdict / piece / refire）。
+Every file and every new addition is written in English: code, comments,
+docstrings, runtime strings (errors, exit messages, argparse help, log lines,
+report titles), plan documents, and new ledger entries. Terminology follows the
+English terms in parentheses in the `CONTEXT.md` glossary
+(probe / cut / fire / inject / launch / heartbeat / sampler / verdict / piece / refire).
+Chinese documents already on disk stay as they are; translate one only when the
+user names it. Three scripts parse Chinese documents through Chinese pattern
+strings on purpose (exp-status `md2html.py`, research-loop `check_docs.py` and
+`spec_lint.py`); leave those strings alone.
 
 ## GPU 任务：唯一入口是 gpu-run skill
 
