@@ -1,519 +1,1099 @@
 # new1 renewal: design
 
-Date: 2026-09-13. Status: draft for gyb's review. Nothing in the tree changes
-until this document is approved.
+Date: 2026-09-13, fourth draft. Status: for gyb's review. Nothing in the tree
+changes until this document is approved.
+
+Sections 1 to 5 are the design and are written for a reader who has never
+opened the repo. Sections 6 to 9 are the engineering detail for the person
+doing the migration. Section 10 lists the open decisions.
 
 ## 1. Purpose
 
-Make the repo fast to extend and easy to read. The test cases gyb named:
-add a model, change generation settings, add a method, add an evaluation
-method, add a dataset, draw figures, and try several similar variants of one
-step side by side. Every one of those must be a config edit or one new file
-plus one table row.
+Make the repo fast to extend and easy to read. The things gyb wants to do
+without reading code:
+
+- add a model, change generation settings, add a method, add an evaluation
+  method, add a dataset, draw figures;
+- try several similar variants of one step side by side;
+- archive a method that did not work, so the attempt and its result stay
+  findable;
+- find the settings that produced any output file, find settings by
+  condition, write notes next to the settings, and refer to a run by name
+  when talking to an agent.
+
+Each of those is a settings file, or one new file plus one table row.
 
 Decisions gyb has taken (2026-09-12 and 2026-09-13):
 
-- Dead code is deleted on a branch. Old files come back from git history when
-  needed. No archive directory.
-- One settings JSON per batch holds every parameter, so a run needs no long
-  command line. Every ledger entry links the output directory and that JSON.
-- Outputs of finished work live only on NFS, and the ledger is the index that
-  finds them.
-- No hand-written code map. A README explains the repo. The rules for running
-  code stay.
-- Every place where a choice is made inside the pipeline becomes a named axis
-  with a table of variants, and an experiment lists which variants it runs as
-  arms.
+- Dead code is deleted on a branch. Old files come back from git history.
+  No archive directory for code.
+- One settings file per run of a step, holding every parameter of that
+  step, so a run needs no long command line. Every ledger entry links the
+  output directory and the settings file.
+- Outputs live only on NFS. The ledger is the index that finds them.
+- The hand-written code map is abandoned. A README explains the repo. The
+  rules for running code stay.
+- Every place where a choice is made inside a step is a named axis with a
+  table of variants; a settings file lists which variants it runs as arms.
+- Folder and settings names say what the thing is. Codes like np821 are not
+  used for new work.
+- The root documents (METHOD, DATA, WORKPLAN, TIMELINE, RESULTS) keep their
+  content; gyb re-roles them by hand after the renewal.
+- CUDA is the default device.
 
-Not in scope: changing any research method, any output format on NFS, or the
-ledger file formats.
+Not in scope: changing any research method or any output file format on
+NFS. The ledger stays append-only; it gains new event kinds and fields, and
+no existing line is rewritten.
 
-## 2. Evidence base
+## 2. What the repo does, in five steps
 
-A 16-agent review on 2026-09-12 (eight subsystem readers, three architects,
-two judges, three critics) produced the facts below. Line counts are from
-`git ls-files` on commit 6bde35b.
+The research question: a small probe model reads the agent model's thinking
+while it is being written and predicts the tool call the agent is about to
+make. The system then makes that call early and injects its result back into
+the thinking, so the agent does not wait for it. Everything in the repo
+serves five steps, and the target tree has one directory per step.
 
-| Fact | Value |
+| Step | What happens | Input | Output on NFS | GPU |
+|---|---|---|---|---|
+| 1 sample | the agent model runs an environment's tasks; every step of thinking, tool call, and result is saved as a trajectory | a model, an environment, generation settings | trajectories | yes |
+| 2 dataset | trajectories are cut into training examples: a prefix of the thinking paired with the call that followed; split into train, val, test piles | a sample run | a dataset | no |
+| 3 train | a probe of one method is trained on a dataset | a dataset, a method, a backbone | a trained probe | yes |
+| 4 eval | a trained probe is scored offline: does it predict the right tool and call, and at which confidence threshold does it fire with an acceptable false-fire rate | a trained probe | reports inside the probe's directory | yes |
+| 5 inject | the agent runs tasks live with the probe firing and injecting results; task success is scored against a no-probe baseline | trained probes, a model, an environment | live runs and scores | yes |
+
+Three shared resources serve every step: **models** (which weights exist and
+how to serve one on a card), **environments** (the benchmark clones, each with
+an adapter that speaks its API), and the **cluster** tools (launch a step on a
+GPU, watch it, record it in the ledger).
+
+### 2.1 Words used in this document
+
+| Word | Meaning here |
 |---|---|
-| Tracked files | 456 |
-| Python lines outside tests | 32.7k |
-| Registry tasks | 83; about 20 belong to the two lines that ran in September |
-| Places that declare which models exist | 7 |
-| Places that declare which cells exist | 7 |
-| Files that define one batch | 5, across three directories, plus 22 card tables |
-| Files touched to add an agent model today | 6 or 7; three fail silently |
-| Files touched to add a cell today | about 10; four are registry tables |
-
-The two live lines are the AppWorld probe chain (collect, annotate, train,
-eval, matrix, driven by `pipeline/driver.py`) and the live injection run
-(`pipeline/inject/live_appworld.py` with the injection-format axis committed
-on 2026-09-12 as abccabd).
+| agent model | the large model that runs tasks (gpt-oss-120b today) |
+| backbone | the small pretrained model a probe is fine-tuned from; keys `qwen06`, `qwen17`, `qwen4` for Qwen3 0.6B, 1.7B, 4B |
+| method | one kind of probe: **ctool** predicts the tool name; **cgen** writes the whole call; **cparam** writes only the arguments given the tool name |
+| tuning | how much of the backbone is updated: `full` updates every weight, `lora` trains small adapter matrices and merges them at the end |
+| trajectory | one task run of the agent model: thinking, calls, results, step by step |
+| split | a named task list of the environment; AppWorld has `train`, `dev`, `test_normal`, `test_challenge`. The dataset step maps them to its three piles train, val, test |
+| cut point | a sentence boundary inside the thinking where a training example is sliced; **max cuts** caps how many per step (64 today) |
+| example, event | one cut point with the call that followed; the unit the trainer counts |
+| threshold, theta | the probe fires when its confidence exceeds a threshold, called theta in the code; eval fits the value at which the false-fire rate stays under a **risk target** (5 and 10 percent today); the live run takes theta as a number written by hand (METHOD.md axis 4) |
+| injection format | where the fetched result is written back: **p1** inside the thinking, **p2** after the thinking closes; **e1** explains the mechanism inline, **e2** explains it once in the system prompt; **note** is the old inline form |
+| harmony | gpt-oss's prompt format with channels; the repo renders it token for token like the server does. The `api` of a generation file is `harmony`, `chat`, or `raw` |
+| generation settings | temperature, top_p, max tokens, reasoning effort, the pinned date; today called a preset |
+| arm | one complete run inside a settings file that lists several variants |
+| piece | one process of a run that handles a slice of a task list; pieces have their own logs and, for GPU processes, their own cards |
+| role | what a process is for: `server` (vLLM), `probe` (the probe service), `client` (a task runner), `train`, `eval` |
+| heartbeat, verdict, refire | a progress line a script writes to its log; the monitor's judgment of a piece (alive, stalled, dead, done); relaunching a dead piece with its recorded command |
+| gpu-run | the reviewed launch procedure every GPU job goes through: check free cards, smoke, commit, `run.py launch`, monitor, wrap up. A skill in .claude/skills |
+| smoke | a small run of the same settings that proves the wiring before the real run |
+| dirty tree | uncommitted changes in git; launches from a dirty tree are refused so a recorded commit matches the code that ran |
+| read-only tool | a tool call that is safe to execute early because it changes nothing; a feature that lets the probe fire only on those, built but never launched |
+| alignment gate | a check run before training that the fast packed trainer computes the same loss as the slow row-by-row reference |
+| selfcheck | `run.py selfcheck`: verifies every registry row, settings file, model key, and script path resolves |
+| track | one phrase naming the research thread a run serves; the ledger requires it |
+| interpreter | which venv runs a script; `cprobe` is `cprobe-env`, the venv of the probe steps |
+| acceptance check | after a server starts, a request that proves it answers correctly (reasoning and content present, a tools request accepted) |
+| the debugger | stepping through the trainer line by line in VS Code; `demo/` holds fixtures small enough for that |
+| ledger | `runs.jsonl`: one event per run start and finish; RESULTS.md is rendered from it |
+| gyb | the repo owner |
 
 ## 3. Target tree
 
+Everything under `pipeline/` moves up one level. File names stay where they
+already say what the file does; cryptic names change. Every module name is
+unique across the tree, because scripts put several sibling directories on
+one import path. The two ledger files keep their home in `ops/` until the
+last commit of the migration (section 9), because other sessions write them.
+
 ```
 new1/
-  README.md            the repo on one page: what it measures, the two live
-                       lines, how to run each stage, this tree, the glossary
-  CLAUDE.md            the rules for running code (section 9) and the ledger
-                       roles; about 60 lines
-  TRAPS.md             measured silent-failure rows for code that still exists
-  METHOD.md  DATA.md  WORKPLAN.md  TIMELINE.md  RESULTS.md   unchanged roles
+  README.md         one page: the five steps, this tree with one line per
+                    file, how to run a step, the glossary of 2.1
+  CLAUDE.md         the rules for running code (section 8), about 60 lines
+  TRAPS.md          measured silent failures in code that still exists
+  METHOD.md  DATA.md  WORKPLAN.md  TIMELINE.md  RESULTS.md
+                    kept as they are; gyb re-roles them afterward
 
-  run.py               front door: dispatch, dirty-tree gate, selfcheck, launch
-  tasks.py             registry data only: interpreters, CELLS, TASKS
-  models.json          agents (weights, served name, serve flags) and probe
-                       backbones (weights, aliases)
-  presets/             generation settings, one json per setting
+  run.py            front door. `run.py <step> <setting>` runs a CPU step
+                    here; `run.py launch <step> <setting>` fires a GPU
+                    step; `run.py chain <setting>` runs the upstream steps
+                    a setting needs; `run.py find`, `run.py where`,
+                    `run.py note`, `run.py selfcheck`
+  registry.py       the tables: STEPS, METHODS, interpreters (today the
+                    tables inside run.py)
+  settings_loader.py  reads and validates a settings file; stdlib only,
+                    because four venvs import it (today preset_loader.py
+                    plus model_registry.py)
 
-  exp/                 one directory per batch
-    np821/exp.json       the finished AppWorld probe batch
-    fmt/exp.json         the live injection-format experiment
+  settings/         one file per run of a step; the record of every attempt
+    generation/       temp1_high.json      named generation settings (4.6)
+    sample/           appworld_gptoss_temp1_4traj.json
+    dataset/          appworld_gptoss_temp1_maxcut64.json
+    train/            probes_on_maxcut64.json
+    eval/             eval_probes_on_maxcut64.json
+    inject/           format_where_result_goes.json
 
-  core/                imported by every stage
-    rules.py             cut constants, sentence boundaries, call parsing,
-                         one block per environment
-    preset.py            load a preset, merge cli > preset > default, resolve
-                         a model key to a path (preset_loader + model_registry)
-    heartbeat.py         the progress protocol, stdlib only
+  models/
+    table.json        per agent model: weights, served name, serve flags,
+                      env, max model length, tokenizer, acceptance checks;
+                      per backbone: weights
+    serve.py          start a vLLM server for a model on a card and run its
+                      acceptance checks (today serve_preset.py plus three
+                      scripts under envs/serve_logs)
 
-  collect/             run_appworld.py  common.py  gen_launch.py
-  annotate/            build.py  param_label.py  check_callstr.py  readonly/
-  train/               common.py  share_data.py  train_causal_tool.py
-                       train_causal_share.py  rowwise_ref.py  lora_util.py
-                       readonly_map.py  verify/
-  eval/                eval_tool.py  eval_call.py  matrix.py
-  live/                probe_server.py  live_appworld.py  inject_format.py
-                       world.py  harmony_render.py  rebuild.py  parse_call.py
-                       score_live.py  ident3_gate.py  check_bundle.py  jobs/
-  figures/             common.py plus one script per figure
-  serve.py             the one vLLM launcher: preset server block -> ssh + tmux
-  driver.py            the resumable state machine over the whole chain
+  sample/           step 1 (today pipeline/collect and envs/collect)
+    run_appworld.py   the AppWorld adapter: runs tasks, writes trajectories
+    chat.py           the chat client and the trajectory log (today common.py)
+    gen_launch.py     a sample setting -> server and client launch scripts
+    runs -> NFS       symlink to the trajectory root (today envs/runs)
 
-  ops/                 launch.py  monitor.py  record.py  runmeta.py
-                       gpu_status.sh  jobs.json  runs.jsonl  gpu_state.md
-                       env_locks/
-  demo/                the CPU debugger walkthrough of the live trainer
-  tests/               one test file per module it pins
-  plans/               live plan and status documents, plus archive/
-  docs/agents/         ticket conventions used by ticket-run
-  .claude/skills/      gpu-run (shortened), exp-status, ticket-run
-  .claude/agents/      gpu-runner, env-runner, job-monitor
-  envs/                third-party clones and venvs; zero tracked files
+  dataset/          step 2 (today pipeline/annotate)
+    build.py          trajectories -> train/val/test examples and reports
+    param_label.py    argument-span labels for the cparam method
+    check_callstr.py  gates on the built dataset: call strings read back,
+                      model purity, no unit in two piles
+    rules.py          cut points, sentence boundaries, call parsing, one
+                      block per environment
+    readonly/         the read-only tool labels (which calls are safe)
+    data -> NFS       symlink to the dataset root (today pipeline/data)
+
+  train/            step 3
+    trainer_base.py   shared trainer spine: version gate, the argument
+                      block, seed, logging, backbone lookup (new; today
+                      copied into each trainer)
+    share_data.py     builds the packed batches: which examples share a
+                      prefix, the masks, the token budget, where the probe
+                      reads
+    train_causal_tool.py    trains ctool
+    train_causal_share.py   trains cgen and cparam with the packed forward
+                            pass (the cache-reuse trainer)
+    rowwise_cgen.py   the slow row-by-row reference for cgen that the
+                      alignment gate compares against (today
+                      train_causal_callgen.py)
+    rowwise_cparam.py the same for cparam (today train_causal_param.py)
+    lora_util.py      LoRA: flags, target modules, merge and save
+    readonly_map.py   loads dataset/readonly for the read-only feature
+    verify/           the two kernel and memory checks that produced
+                      RESULTS rows (today .scratch/kvshare-train/verify)
+    runs -> NFS       symlink to the probe run root (today pipeline/runs)
+
+  eval/             step 4; reports land inside the probe's run directory
+    eval_tool.py      ctool: fits the threshold on val, freezes it on test
+    eval_call.py      cgen and cparam (today eval_causal_call.py plus
+                      eval_causal_param.py; --mode picks)
+    matrix.py         backbone x method table (today summarize_matrix.py)
+
+  inject/           step 5 (today pipeline/inject; the offline replay line
+                    is deleted, so "inject" now means the live run)
+    live_appworld.py  the live run: probe fires, result spliced, task resumes
+    probe_server.py   the GPU service that scores prefixes and generates
+                      calls for the probe
+    inject_format.py  the injection-format table (five rows today)
+    world.py          AppWorld save, execute, rollback primitives (new;
+                      harvested from exec_calls.py)
+    harmony_render.py message list -> gpt-oss prompt tokens, identical to
+                      the server's own rendering
+    rebuild.py        rebuilds the exact prompt of a recorded trajectory
+                      and checks the system prompt is verbatim
+    parse_call.py     extracts a call from generated text, stdlib only
+    score_live.py     a live run -> LIVE_REPORT
+    ident3_gate.py    pre-launch check that the server's prompt tokens equal
+                      the repo's rendering (catches an unpinned date)
+    check_bundle.py   loads a trained probe in a fresh process to prove the
+                      saved weights are complete
+    live_arm_job.sh   one arm of a live run inside tmux (today under
+                      envs/serve_logs)
+    runs -> NFS       symlink to the live run root (today no link in the
+                      tree; the NFS directory pipeline/inject/runs exists)
+
+  figures/          one plain script per figure, run by hand; each names
+                    the run ids it reads (new)
+    figlib.py         style, one color per backbone and per method, and a
+                      loader from run ids to a table
+
+  chain.py          runs the upstream steps a setting needs, in order,
+                    resumable (today pipeline/driver.py)
+
+  cluster/          launch a step on a GPU, watch it (today ops/)
+    launch.py         probe free cards, start tmux sessions, register in
+                      three places, refire a dead piece (today launch_cmd,
+                      launch_common, launch_probe, launch_eval)
+    monitor.py        tails heartbeats, judges each piece, serves the
+                      terminal table and the web page (today sampler,
+                      verdicts, gpu_jobs)
+    heartbeat.py      the progress protocol, stdlib only (unchanged)
+    gpu_state.md      cluster facts: hosts, aliases, drivers, card quirks
+    env_locks/        what is installed in each venv, one lock per venv
+
+  ops/              the ledger home (unchanged until the final commit,
+                    then it moves into cluster/)
+    record.py         writes the ledger and renders RESULTS.md
+    runmeta.py        writes commit and command into an output directory
+    runs.jsonl        the run ledger
+    jobs.json         the job ledger: what is on which card right now
+
+  logs/             untracked; one log per tmux session, the chain's state
+  cprobe-env/       the venv the probe steps run in (unchanged position)
+  envs/             third-party benchmark clones and venvs, nothing tracked;
+                    envs/runs stays as the trajectory root the generated
+                    launchers write to
+  demo/             fixtures and a walkthrough for stepping through the
+                    cache-reuse trainer on CPU in the debugger
+  tests/            automated checks; each file pins one module's behavior
+                    with small fixtures and fails when an edit changes it
+  plans/            plan and status documents, plus archive/ (ancient memory)
+  docs/agents/      ticket conventions used by ticket-run
+  .claude/skills/   gpu-run (shortened; its card probe script stays here),
+                    exp-status, ticket-run
+  .claude/agents/   gpu-runner, env-runner, job-monitor
 ```
 
-Everything under `pipeline/` moves up one level, and `pipeline/inject` becomes
-`live/`. NFS paths do not move: the symlinks `pipeline/data`, `pipeline/runs`
-and `envs/runs` become `data`, `runs` and `envs/runs`, pointing at the same
-NFS directories.
+Answers to the comments on the first draft:
 
-## 4. The mechanism
+- `serve.py` belongs to models, not environments: it starts the agent
+  model's server, which steps 1 and 5 both need. Environment adapters live
+  in `sample/`, one per environment, because sampling is where an
+  environment's API is spoken. An adapter is never named after the package
+  it imports, because Python would then import the script instead of the
+  package.
+- `driver.py` becomes `chain.py`: it runs the steps a setting depends on,
+  in order, and resumes after a stop. It is orchestration, not an
+  environment.
+- `ops/` becomes `cluster/`: the tools that put a step on a GPU and watch
+  it. Nothing research-specific lives there. The ledger files stay under
+  `ops/` until the end of the migration and then move too.
+- `tests/` are automated checks. Each file exercises one module with small
+  fixtures and fails when the module's behavior changes. They run before
+  every commit of the migration.
+- `live/` is now `inject/`, with a plain description above.
 
-### 4.1 models.json
+## 4. Settings files
+
+This is the center of the design. Every run of every step starts from one
+JSON file under `settings/<step>/<name>.json`.
+
+### 4.1 The identity rule
+
+- The settings name is the run id, the output directory name, and the
+  ledger key. Names are unique across all steps and against the run
+  directories already present under each output root; selfcheck enforces
+  both. This binds every run launched after the migration.
+- A settings file written for a run that already exists (the np821 and p1
+  batches, section 9 phase 1) carries a `legacy` block mapping each of its
+  runs to the existing run id and output directory, for example
+  `{"qwen06_full_ctool": {"run_id": "np821b06_gptoss_ctool", "outdir": "pipeline/runs/np821b06_gptoss_ctool"}}`.
+  Such a file is a provenance record: it is never launched, and `where`,
+  `find`, and `chain` read the legacy block instead of deriving the run id
+  from the name. selfcheck requires the block on any file whose name is not
+  a directory under its root while its runs are in the ledger.
+- A settings file that lists arms produces one run per arm. That run's id is
+  `<name>__<arm>` and its output directory is `<root>/<name>__<arm>/`. An
+  arm name contains no `__`.
+- A run with several processes has one piece per process. tmux session
+  names are `<run id>_<role><index>`, for example
+  `appworld_gptoss_temp1_4traj_server2` and `..._client7`. The run ledger
+  has one row per run; the job ledger has one entry per piece with its host
+  and card.
+- The launcher creates the output directory exclusively and refuses to
+  launch when it already exists, so a new name can never write into an old
+  run.
+- A settings file is frozen when its run starts: the runner copies it into
+  the output directory as `settings.json` with every value resolved, the
+  generation file inlined under `generation`, and the derived fields filled
+  in. Only `notes` and `archived` in the source file change afterward; the
+  frozen copy is never edited.
+- The runner is `run.py launch` for a GPU step and `run.py <step>` for the
+  CPU step. Both do the same work: validate, create the output directory
+  exclusively, freeze the settings, translate fields to flags, write the
+  ledger start row, run, write the finish row. `launch` adds the card
+  probe and the tmux sessions.
+- Running the same settings again is a new settings file with a new name
+  (copy and rename). A dead piece of a running job is refired by the
+  monitor's existing mechanism; a run that stopped as a whole is not
+  resumed, it is rerun under a new name.
+
+### 4.2 Two kinds of fields
+
+A settings file has launcher fields and script parameters.
+
+**Launcher fields** are defined by the per-step tables in 4.5. The common
+ones:
+
+| Field | Meaning and shape |
+|---|---|
+| `step` | one of sample, dataset, train, eval, inject |
+| `name` | equals the file name without extension |
+| `track` | one phrase: which research thread this run serves |
+| `source` | the upstream runs this one consumes, by name; the per-step table says whether it is one name, a list, or a map from role to name |
+| `cards` | a list of records `{"role": ..., "host": ..., "gpu": ...}`, plus `"arm"` when the record belongs to one arm; one record per process that needs a card; the launcher refuses a process with no matching record |
+| `arms` | a map from arm name to overrides of any field; each arm is one complete run |
+| `smoke` | true makes every script run on its small subset; the name must end in `_smoke` |
+| `archived` | true when the human has given up on the attempt (4.10); default false. Per-run progress (planned, running, done, failed) lives in the ledger |
+| `notes` | free text: why this exists, what happened, remarks on the numbers |
+| `legacy` | only on a file written for runs that already exist (4.1) |
+
+**Derived fields** are filled in by the loader and appear only in the frozen
+copy: `env` and `model` come from the sample setting at the top of the
+`source` chain, so a train, eval, or inject setting never restates them.
+
+**Script parameters** sit under `params`. A key is a flag of the script
+without the leading dashes (`--events-per-mb` becomes `events_per_mb`); a
+list value is joined with commas for a flag that takes one string. A key not
+written takes the script's default, and the frozen copy records the
+resolved value. When a step runs more than one program, `params` is keyed
+by role: `client` and `probe` for inject, `client` for sample, one key per
+method for eval; a train arm carries its own `params`. Each block is checked
+against the script that role or method runs.
+
+The check works without importing the scripts: each STEPS and METHODS row
+in `registry.py` lists the flags its script accepts, and one test per script
+runs inside that script's own venv and diffs the list against the live
+argument parser. The loader rejects a key the list does not contain and a
+missing required key, so a typo fails at load time and not thirty hours
+later.
+
+Launcher fields that the runner translates into flags, so the settings
+file can use plain words: `backbone` becomes `--base`, `tuning: lora`
+becomes `--lora`, `pieces` becomes `--num-shards` plus one `--shard-id` per
+piece, `probe_on: false` becomes `--no-probe`. The dataset builder is driven
+by a config file rather than flags, so for step 2 the runner writes that
+config from the settings fields (the mapping is under step 2 in 4.5).
+
+Numbers live in the ledger only. `run.py record finish` writes them there,
+and `run.py find` shows them next to the settings. `notes` is free text
+where gyb may write anything, including numbers as remarks; the ledger stays
+the authoritative copy.
+
+### 4.3 Where outputs go
+
+Each step has one output root on NFS, reached through one symlink in the
+step's directory. NFS is `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1`.
+The roots are today's roots; nothing on NFS moves, and old and new runs
+share the same directories.
+
+| Step | Output directory | Symlink |
+|---|---|---|
+| sample | `<nfs>/envs/runs/<run id>/<env>_<model>/` | `sample/runs` |
+| dataset | `<nfs>/pipeline/data/<run id>/<model>/` | `dataset/data` |
+| train | `<nfs>/pipeline/runs/<run id>/` | `train/runs` |
+| eval | reports into the train run directory it scores; its own frozen settings and RUNMETA under `<train run dir>/eval/<eval run id>/` | (same root) |
+| inject | `<nfs>/pipeline/inject/runs/<run id>/` | `inject/runs` |
+| matrix | `<nfs>/pipeline/runs/MATRIX_<eval name>_r<risk>.md`, owned by the eval settings file that produced it | `train/runs` |
+
+The inner level of sample and dataset directories is fixed by today's
+readers: the dataset builder recognizes the model from the `<env>_<model>`
+suffix, and every dataset consumer joins `<model>` onto the dataset root.
+Both facts get a row in TRAPS.md.
+
+Eval reports keep today's file names in the train run directory, because
+the call evals, the probe service, and the matrix read them there. A later
+eval of the same arm overwrites the reports; both eval rows stay in the
+ledger, and `run.py where` on a report path answers with the latest one.
+
+Every run directory made after the migration holds `settings.json` (the
+frozen copy) and `RUNMETA.json` (commit, command, dirty list). Runs made
+before the migration keep their directories; phase 3 appends one `outdir`
+event per old run id to the ledger, so `run.py where` and `run.py find`
+cover them without rewriting a line. The source differs per step: RUNMETA
+files on NFS for train, eval, and inject runs; the generated launcher
+directory for sample runs; the batch config plus the build report for the
+two datasets, which have no RUNMETA.
+
+### 4.4 The ledger and the three commands
+
+A run's ledger rows carry: run id, step, track, settings path, output
+directory, commit, host, card, start, finish, status (planned, running,
+done, failed), and the numbers. Rows written before the migration say `ok`
+or `fail`; the readers map those to done and failed. The job ledger carries one entry per piece
+with its host, card, tmux session, and log.
+
+`run.py where <path>` prints the settings file and the ledger row that
+produced a path, for any path under a run directory:
+
+```
+$ run.py where train/runs/probes_on_maxcut64__qwen06_full_cgen/best
+settings/train/probes_on_maxcut64.json   arm qwen06_full_cgen
+run id  probes_on_maxcut64__qwen06_full_cgen   status done
+start   2026-09-20 14:02   finish 2026-09-21 08:10   commit 3f1c2a9
+source  dataset appworld_gptoss_temp1_maxcut64
+numbers best_val 0.71
+```
+
+`run.py find` lists runs by condition, across steps and arms, with status,
+numbers, and output directory. Nested fields use dots. For a run that has
+not started, `find` reads the source file and follows the generation
+reference; for a started run it reads the frozen copy.
+
+```
+$ run.py find --step train --where method=cgen --where backbone=qwen06
+$ run.py find --where archived=true
+$ run.py find --step sample --where generation.temperature=1.0
+```
+
+`run.py note <run id or settings name> "<text>"` appends a dated line to
+`notes` in the source settings file. The frozen copy is never edited;
+`find` shows notes from the source file.
+
+Referring to a run when talking to an agent is saying its run id.
+
+### 4.5 Each step's settings
+
+The examples describe today's real batch. Values not shown take the script
+defaults.
+
+**Step 1, sample.**
+
+| Field | Required | Shape |
+|---|---|---|
+| `env`, `model` | yes | keys into the environment adapters and the models table |
+| `generation` | yes | the name of a file under `settings/generation/` |
+| `servers` | yes | list of `{host, gpu, card, port, flags?}`; one vLLM instance each; `flags` is appended to the model's serve flags |
+| `clients` | yes | list of `{split, pieces, ports, exp}`; one task runner per split; `pieces` splits its task list into that many processes, each bound to one port in `ports`; every port must name a declared server; `exp` is the experiment name the environment itself requires |
+| `params` | no | keyed by role; `client` holds flags of `sample/run_appworld.py`: `traj_per_task`, `seeds`, `max_steps`, ... |
+
+`cards` is derived from `servers`; clients need no card.
 
 ```json
-{
-  "agents": {
-    "gptoss": {"full": "gpt-oss-120b",
-               "weights": "/net/.../models/gpt-oss-120b",
-               "served": "gpt-oss-120b",
-               "serve_flags": "--gpu-memory-utilization 0.92",
-               "note": "own replica, accepted 2026-07-28"}
-  },
-  "backbones": {
-    "qwen":   {"weights": "/net/.../models/Qwen3-0.6B-Base", "note": "..."},
-    "qwen17": {"weights": "/net/.../models/Qwen3-1.7B-Base", "note": "..."},
-    "qwen4":  {"weights": "/net/.../models/Qwen3-4B-Base",   "note": "..."}
-  }
-}
+{"step": "sample", "name": "appworld_gptoss_temp1_4traj",
+ "track": "probe training data at temperature 1",
+ "env": "appworld", "model": "gptoss", "generation": "temp1_high",
+ "servers": [{"host": "tokyo108", "gpu": 2, "card": "H100", "port": 8103},
+             {"host": "tokyo108", "gpu": 3, "card": "H100", "port": 8106},
+             {"host": "tokyo108", "gpu": 4, "card": "H200", "port": 8107},
+             {"host": "tokyo108", "gpu": 5, "card": "H200", "port": 8108}],
+ "clients": [{"split": "train",       "pieces": 4, "ports": [8103, 8106, 8107, 8108], "exp": "gptr"},
+             {"split": "dev",         "pieces": 2, "ports": [8103, 8106], "exp": "gpdv"},
+             {"split": "test_normal", "pieces": 6, "ports": [8103, 8106, 8107, 8108, 8103, 8106], "exp": "gptn"}],
+ "params": {"client": {"traj_per_task": 4, "seeds": [42, 67, 4267, 6742]}},
+ "notes": "first temperature-1 batch: 4 trajectories per task, equal weight per step (2026-08-21 ruling); 315 tasks, 1260 trajectories",
+ "legacy": {"": {"run_id": "nyapass", "outdir": "envs/runs/nyapass/appworld_gptoss"}}}
 ```
 
-The agent key is the collection directory suffix and the matrix column name.
-`serve_flags` is a string per model, not a family enum, so a model whose flags
-match nothing existing needs no new branch. The backbone keys keep today's
-`--base` values, so no existing run command changes meaning. Today the two
-backbones in use, Qwen3-1.7B-Base and Qwen3-4B-Base, are in no table at all;
-they live in three identical dicts inside the trainers.
+**Step 2, dataset.** Runs on CPU; no `cards`. The builder reads a config
+file, so the runner writes that config from the settings: `env` and
+`model` from the source chain, the source runs' trajectory directories,
+the output directory of 4.3, `split_files`, `max_cuts`, `seed`, the
+sample's `traj_per_task`, and the run name as the builder's family key.
 
-Readers: `annotate/build.py` (directory suffix to full name),
-`collect/gen_launch.py` (weights and serve flags), `train/common.py`
-(backbone lookup), `eval/matrix.py` (the model list comes from exp.json).
-
-### 4.2 presets/
-
-Unchanged in role. One JSON per generation setting with a `client` block and
-a `server` block. `--preset` defaults to `default` everywhere. Two changes:
-
-- `collect/gen_launch.py` reads the server block instead of its own constants,
-  so a collection batch's memory fraction and max model length are a preset
-  edit. Per-server facts (host, card, port, card type, extra flags) stay in
-  exp.json because they differ per instance.
-- `CUDA_DEVICE_ORDER=PCI_BUS_ID` moves into every preset's `server.env` and
-  the injection in `serve_preset.py:50` goes, so the variable that decides
-  which physical card an index means on tokyo108 has one source.
-
-The merge order cli > preset > default and the deliberate filter in
-`merge_client` stay as they are. A preset key that no consumer reads is
-reported by selfcheck as a warning instead of being silently dropped.
-
-### 4.3 exp/<batch>/exp.json
-
-One file per batch. Every stage takes `--exp <batch>` and reads the rest.
+| Field | Required | Shape |
+|---|---|---|
+| `source` | yes | one sample run id or a list of them |
+| `split_files` | yes | `{train, val, test}` to the task-list files of the piles |
+| `max_cuts` | yes | integer; today 64 |
+| `seed` | yes | integer |
+| `params` | no | flags of `dataset/build.py`: `weight_mode` (uniform or per_event) |
 
 ```json
-{
-  "batch": "np821",
-  "env": "appworld",
-  "model": "gptoss",
-  "preset": "default",
-  "data": {
-    "max_bounds": 64,
-    "split_mode": "official",
-    "official_split_files": {"train": "...", "val": "...", "test": "..."},
-    "seed": 42, "weight_mode": "uniform", "trajs_per_unit": 4,
-    "note": "max_bounds=64 is the 2026-08-22 ruling; see TIMELINE"
-  },
-  "collect": {
-    "run_id": "nyapass",
-    "seeds": [42, 67, 4267, 6742],
-    "traj_per_task": 4,
-    "servers": [{"host": "tokyo108", "gpu": 2, "card": "H100", "port": 8103,
-                 "extra_flags": ""}],
-    "clients": [{"tag": "gptr", "split": "train", "num_shards": 4,
-                 "shard_ports": [8103, 8106, 8107, 8108], "exp": "np821gptr"}]
-  },
-  "arms": {
-    "np821b06": {"cells": ["ctool", "cgen", "cparam"],
-                 "base": "qwen", "mode": "full",
-                 "extra": {"ctool": ["--align-tol", "3e-4"]},
-                 "cards": {"train":     {"ctool": ["tokyo108", 0], "cgen": ["tokyo108", 1], "cparam": ["tokyo108", 2]},
-                           "eval_tool": {"ctool": ["tokyo108", 0]},
-                           "eval_call": {"cgen": ["tokyo108", 1], "cparam": ["tokyo108", 2]}}}
-  }
-}
+{"step": "dataset", "name": "appworld_gptoss_temp1_maxcut64",
+ "track": "probe training data at temperature 1",
+ "source": "appworld_gptoss_temp1_4traj",
+ "split_files": {"train": "envs/appworld/data/datasets/train.txt",
+                 "val":   "envs/appworld/data/datasets/dev.txt",
+                 "test":  "envs/appworld/data/datasets/test_normal.txt"},
+ "max_cuts": 64, "seed": 42,
+ "params": {"weight_mode": "uniform"},
+ "notes": "max_cuts 64: the untruncated distribution is p50 60 / p90 246 / max 842; 64 keeps 186479 examples (2026-08-22 ruling)",
+ "legacy": {"": {"run_id": "nyapass_aw_v1", "outdir": "pipeline/data/nyapass_aw_v1/gptoss"}}}
 ```
 
-Derived, never written: the data output directory
-(`<nfs>/data/<batch>/<model>`), the run directory of each arm and cell
-(`<nfs>/runs/<arm>_<model>_<cell>`), tmux session names, the collector's
-output directory (`<env>_<model>`). Written, never derived: the client
-experiment names and the card types, because the review showed they cannot be
-rebuilt from the run id.
+**Step 3, train.**
 
-The 22 card tables under `ops/` fold into the `cards` field. The per-arm flags
-that today live only in the card tables (`--align-tol 3e-4`) move into
-`extra`, so the first merged launch does not drop them.
+| Field | Required | Shape |
+|---|---|---|
+| `source` | yes | one dataset run id |
+| `method` | yes, top level or per arm | a METHODS key |
+| `backbone` | yes, top level or per arm | a backbones key of the models table |
+| `tuning` | yes, top level or per arm | `full` or `lora` |
+| `cards` | yes | one record per arm (or one record for a file without arms) |
+| `params` | no | flags of the arm's trainer: for ctool `bs`, `accum`, `lr`, `epochs`, `max_len`, `grad_ckpt`, `align_tol`, ...; for cgen and cparam `events_per_mb`, `accum`, `lr`, `epochs`, `max_len`, `tok_budget`, `grad_ckpt`, ... |
 
-A live experiment uses the same file with a `live` block instead of `arms`:
+"Required" means present after the arm's overrides are applied; a field may
+sit at the top level, in the arm, or be split between them. Every arm is
+listed explicitly; there is no cross-product shorthand. The example shows
+six of the twelve arms today's batch ran (three methods on four
+backbone-and-tuning pairs: qwen06 full, qwen17 full, qwen17 lora, qwen4
+lora); the legacy block maps each arm to its existing run.
 
 ```json
-{"batch": "fmt", "env": "appworld", "model": "gptoss", "preset": "default",
- "probe": {"ctool_run": "np821b06_gptoss_ctool", "cgen_run": "np821b06_gptoss_cgen", "theta": 0.9},
- "live": {"arms": {"note": {"format": "note"}, "p1e1": {"format": "p1_e1"},
-                   "noprobe": {"format": "note", "no_probe": true}},
-          "tasks": "dev", "pieces": 12}}
+{"step": "train", "name": "probes_on_maxcut64",
+ "track": "first probes on the temperature-1 data",
+ "source": "appworld_gptoss_temp1_maxcut64",
+ "params": {"max_len": 8192, "accum": 1, "epochs": 1},
+ "arms": {
+   "qwen06_full_ctool":  {"method": "ctool", "backbone": "qwen06", "tuning": "full",
+                          "params": {"bs": 8, "lr": 1e-5, "align_tol": 3e-4}},
+   "qwen06_full_cgen":   {"method": "cgen",  "backbone": "qwen06", "tuning": "full",
+                          "params": {"events_per_mb": 8, "lr": 1e-5}},
+   "qwen17_full_ctool":  {"method": "ctool", "backbone": "qwen17", "tuning": "full",
+                          "params": {"bs": 8, "lr": 1e-5, "grad_ckpt": true}},
+   "qwen17_full_cgen":   {"method": "cgen",  "backbone": "qwen17", "tuning": "full",
+                          "params": {"events_per_mb": 8, "lr": 1e-5, "grad_ckpt": true}},
+   "qwen17_lora_ctool":  {"method": "ctool", "backbone": "qwen17", "tuning": "lora",
+                          "params": {"bs": 8, "lr": 5e-4}},
+   "qwen17_lora_cgen":   {"method": "cgen",  "backbone": "qwen17", "tuning": "lora",
+                          "params": {"events_per_mb": 8, "lr": 5e-4}}
+ },
+ "cards": [{"arm": "qwen06_full_ctool", "role": "train", "host": "tokyo108", "gpu": 0},
+           {"arm": "qwen06_full_cgen",  "role": "train", "host": "tokyo108", "gpu": 1},
+           {"arm": "qwen17_full_ctool", "role": "train", "host": "tokyo108", "gpu": 2},
+           {"arm": "qwen17_full_cgen",  "role": "train", "host": "tokyo108", "gpu": 3},
+           {"arm": "qwen17_lora_ctool", "role": "train", "host": "tokyo106", "gpu": 0},
+           {"arm": "qwen17_lora_cgen",  "role": "train", "host": "tokyo106", "gpu": 1}],
+ "notes": "",
+ "legacy": {"qwen06_full_ctool": {"run_id": "np821b06_gptoss_ctool", "outdir": "pipeline/runs/np821b06_gptoss_ctool"},
+            "qwen06_full_cgen":  {"run_id": "np821b06_gptoss_cgen",  "outdir": "pipeline/runs/np821b06_gptoss_cgen"}}}
 ```
 
-### 4.4 The CELLS table
+Run ids: `probes_on_maxcut64__qwen06_full_cgen` and so on for a file
+launched after the migration. The top-level `params` are defaults; an arm
+overrides any field.
 
-One row per cell in `tasks.py`, carrying everything about it:
+**Step 4, eval.**
+
+| Field | Required | Shape |
+|---|---|---|
+| `source` | yes | one train settings name; every arm of it is evaluated |
+| `risk_targets` | yes | list of allowed false-fire rates; eval_tool fits one threshold per entry, largest first; the call evals use the first entry |
+| `cards` | yes | one record per arm |
+| `params` | no | keyed by method; each block holds flags of that method's eval script: `ctool` takes `overlong`, ...; `cgen` and `cparam` take `bs`, `max_new_tokens`, ... |
+
+For each arm, the METHODS row of its method says which eval script runs and
+which other arm it needs: cgen and cparam need the ctool arm whose
+`backbone` and `tuning` fields equal their own; the runner finds it by
+those two fields, not by name, and refuses an arm without a partner.
+
+```json
+{"step": "eval", "name": "eval_probes_on_maxcut64",
+ "track": "first probes on the temperature-1 data",
+ "source": "probes_on_maxcut64",
+ "risk_targets": [0.10, 0.05],
+ "cards": [{"arm": "qwen06_full_ctool", "role": "eval", "host": "tokyo108", "gpu": 0},
+           {"arm": "qwen06_full_cgen",  "role": "eval", "host": "tokyo108", "gpu": 0},
+           {"arm": "qwen17_full_ctool", "role": "eval", "host": "tokyo108", "gpu": 1},
+           {"arm": "qwen17_full_cgen",  "role": "eval", "host": "tokyo108", "gpu": 1},
+           {"arm": "qwen17_lora_ctool", "role": "eval", "host": "tokyo106", "gpu": 0},
+           {"arm": "qwen17_lora_cgen",  "role": "eval", "host": "tokyo106", "gpu": 0}],
+ "notes": ""}
+```
+
+Run ids: `eval_probes_on_maxcut64__qwen06_full_cgen` and so on. Two arms on
+one card run in sequence. When every arm is done, `run.py matrix <eval
+setting>` writes the matrix of 4.3.
+
+**Step 5, inject.**
+
+| Field | Required | Shape |
+|---|---|---|
+| `env`, `model`, `generation` | yes | as in step 1 |
+| `servers` | yes | as in step 1: the vLLM instances, `{host, gpu, card, port, flags?}` |
+| `probe` | yes | `{host, gpu, port, tool, call, theta}`: where the probe service runs, the two train run ids it loads, and the threshold as a number written by hand (the eval report shows the fitted value; copying it here is the human step METHOD.md axis 4 requires) |
+| `split`, `exp` | yes | the environment's task list, and the experiment name the environment requires |
+| `pieces` | yes | client processes per arm, spread over the servers' ports in turn |
+| `arms` | usually | overrides; `format` and `probe_on` are the axes that vary today |
+| `params` | no | keyed by role: `client` holds flags of `inject/live_appworld.py` (`n`, `max_steps`, `max_inject_per_step`, `chunk_tokens`, ...); `probe` holds flags of `inject/probe_server.py` (`device`, `events`, ...) |
+
+`cards` is derived from `servers` and `probe`; clients need no card.
+
+```json
+{"step": "inject", "name": "format_where_result_goes",
+ "track": "injection format axis",
+ "env": "appworld", "model": "gptoss", "generation": "temp1_high",
+ "servers": [{"host": "tokyo108", "gpu": 0, "card": "H100", "port": 8114},
+             {"host": "tokyo108", "gpu": 1, "card": "H100", "port": 8115}],
+ "probe": {"host": "tokyo105", "gpu": 0, "port": 8790,
+           "tool": "probes_on_maxcut64__qwen06_full_ctool",
+           "call": "probes_on_maxcut64__qwen06_full_cgen",
+           "theta": 0.9},
+ "split": "dev", "exp": "fmt", "pieces": 12,
+ "params": {"client": {"max_inject_per_step": 1}},
+ "arms": {"inside_thinking": {"format": "p1_e1"},
+          "after_thinking":  {"format": "p2_e1"},
+          "old_note":        {"format": "note"},
+          "no_probe":        {"format": "note", "probe_on": false}},
+ "notes": "does the result help more inside the thinking or after it closes; no_probe is the baseline with the same machinery and no firing"}
+```
+
+Run ids: `format_where_result_goes__inside_thinking` and so on. The servers
+and the probe service are shared by the arms and start once; the clients
+are per arm.
+
+### 4.6 Generation settings and the three-way split
+
+`settings/generation/<name>.json` is not a run settings file. It holds what
+the agent model generates with, and its required fields are `name`, `api`,
+`temperature`, `top_p`, `max_tokens`, `reasoning_effort`, `start_date`.
+Its names are their own namespace.
+
+```json
+{"name": "temp1_high",
+ "api": "harmony", "reasoning_effort": "high", "temperature": 1.0, "top_p": 1.0,
+ "max_tokens": 8192, "start_date": "2026-08-06",
+ "notes": "the temperature-1 setting every batch since 2026-08-21 uses"}
+```
+
+A sample or inject setting names it, so two runs that share generation
+settings share the file and its name. This is today's preset with a new
+home. The trajectory metadata keeps its `preset` key, filled with this name.
+
+The rule for where a server fact lives: if it changes when you swap the
+model, it is in `models/table.json` (weights, served name, serve flags,
+environment variables, max model length, tokenizer); if it changes when you
+swap the card, it is in the settings file (host, gpu, card type, port, and
+extra flags for that instance); if it changes what the model generates, it
+is in the generation file.
+
+### 4.7 Arms and axes
+
+An arm is one complete run. The file's top-level values are the defaults
+and each arm overrides some of them, any field at all. An axis is a field
+whose legal values come from one table in one module:
+
+| Axis | Field | Values today | Where the table is |
+|---|---|---|---|
+| injection format | `format` | note, p1_e1, p1_e2, p2_e1, p2_e2 | `inject/inject_format.py` |
+| probe on or off | `probe_on` | true, false | the live driver's `--no-probe` switch |
+| method | `method` | ctool, cgen, cparam | `registry.py` METHODS |
+| backbone | `backbone` | qwen06, qwen17, qwen4 | `models/table.json` |
+| tuning | `tuning` | full, lora | `train/lora_util.py`; a switch plus LoRA's own flags |
+| example weighting | `params.weight_mode` | uniform, per_event | `dataset/build.py` |
+| request format | `api` of a generation file | harmony, chat, raw | `sample/chat.py` |
+| generation | `generation` | the files under `settings/generation/` | |
+
+Adding a variant to a table axis is one row. The scripts build their
+argparse choices from the table, so nothing else knows the row exists; the
+backbone axis also accepts a weights path, for a one-off trial. A variant is
+never an `if` on a name spread across scripts. Fields with a fixed value set
+that are not axes: `env` (one adapter per value), `role`, the ledger's
+progress status.
+
+### 4.8 The METHODS table
+
+A probe method is a row in `registry.py`:
 
 ```python
-CELLS = {
-  "ctool":  dict(py="cprobe", train="train/train_causal_tool.py", train_args=[],
-                 evals=[dict(script="eval/eval_tool.py", args=["--head", "causal"], dep=None,
-                             report="REPLAY_REPORT.json", cols=["theta", "acc_test"])],
-                 smoke=True),
-  "cgen":   dict(py="cprobe", train="train/train_causal_share.py", train_args=["--mode", "cgen"],
-                 evals=[dict(script="eval/eval_call.py", args=["--mode", "cgen"], dep="ctool",
-                             report="CALLGEN_REPORT.json", cols=["full_call_ok"])],
-                 smoke=True),
-  "cparam": dict(py="cprobe", train="train/train_causal_share.py", train_args=["--mode", "cparam"],
-                 evals=[dict(script="eval/eval_call.py", args=["--mode", "cparam"], dep="ctool",
-                             report="PARAM_REPORT.json", cols=["params_all_ok"])],
-                 smoke=True),
+METHODS = {
+  "ctool": dict(
+      interp="cprobe", train="train/train_causal_tool.py", train_args=[],
+      evals=[dict(script="eval/eval_tool.py", args=["--head", "causal"],
+                  run_flag="--run", needs=None,
+                  report="REPLAY_REPORT.json",
+                  cols={"theta":    ["test_frozen", "$risk", "theta"],
+                        "fire_acc": ["test_frozen", "$risk", "trig_acc"]})]),
+  "cgen": dict(
+      interp="cprobe", train="train/train_causal_share.py", train_args=["--mode", "cgen"],
+      evals=[dict(script="eval/eval_call.py", args=["--mode", "cgen"],
+                  run_flag="--cgen-run", needs=("ctool", "--ctool-run"),
+                  report="CALLGEN_REPORT.json",
+                  cols={"full_call_ok": ["full_call_ok"]})]),
+  "cparam": dict(
+      interp="cprobe", train="train/train_causal_share.py", train_args=["--mode", "cparam"],
+      evals=[dict(script="eval/eval_call.py", args=["--mode", "cparam"],
+                  run_flag="--cparam-run", needs=("ctool", "--ctool-run"),
+                  report="PARAM_REPORT.json",
+                  cols={"params_all_ok": ["pred_tool", "params_all_ok"]})]),
 }
 ```
 
-This one table replaces `CELLS`, `CELL_ORDER`, `EVAL_CELLS`, the per-cell
-`train-` and `eval-` task entries, the argument-shape branch in
-`ops/launch_eval.py:151-162`, and the three private copies inside
-`summarize_matrix.py`. `evals` is a list so a cell can carry several
-evaluation methods. The launcher, the driver, the matrix, and
-`check_bundle.py` all read this table. Task entries for training and eval are
-generated from it at import time; hand-written prose notes stay on the row.
+One row says which interpreter and script train the method, how to
+evaluate it (several evaluations allowed), which other method's run it
+needs and by which flag, which report file the numbers land in, and the
+path to each number the matrix shows. `$risk` is replaced by each value of
+the eval setting's `risk_targets`, giving one column per value, named
+`theta@0.05`, `theta@0.1`. The launcher passes `backbone` as `--base` to
+every trainer. The full column set of each row is copied from today's
+reports during phase 3; the paths shown here were checked against them.
+The report file names are historical and stay for compatibility. `run.py matrix <eval setting>` enumerates the arms of the train settings
+file the eval names, reads each arm's reports, and writes the matrix file
+of 4.3; the old mode that scans a directory by run-id prefix stays for
+runs made before the migration. Today this fact is spread over four tables
+in run.py, a branch in the eval launcher, and three places in the matrix
+script.
 
-### 4.5 Axis tables
+### 4.9 The models table
 
-Every place where one step can be done in more than one way is an axis: a
-name, one table in one module, and a value in exp.json that picks rows.
+```json
+{"agents": {
+   "gptoss": {"full": "gpt-oss-120b", "weights": "/net/.../models/gpt-oss-120b",
+              "served": "gpt-oss-120b", "tokenizer": null,
+              "serve": {"flags": "--gpu-memory-utilization 0.92", "max_model_len": null,
+                        "env": {"LD_LIBRARY_PATH": "envs/cuda-compat-13.0",
+                                "VLLM_USE_FLASHINFER_SAMPLER": "0",
+                                "CUDA_DEVICE_ORDER": "PCI_BUS_ID"},
+                        "checks": ["reasoning_and_content", "tools_request"]},
+              "note": "own replica, accepted 2026-07-28"},
+   "q35": {"full": "qwen3.5-27b", "weights": "/net/.../zhou-y/models/Qwen3.5-27B",
+           "served": "qwen3.5-27b",
+           "serve": {"flags": "--reasoning-parser deepseek_r1 --max-model-len 65536 --gpu-memory-utilization 0.92 --enable-auto-tool-choice --tool-call-parser qwen3_coder",
+                     "env": {"CUDA_DEVICE_ORDER": "PCI_BUS_ID"},
+                     "checks": ["reasoning_and_content", "tools_request"]},
+           "note": "old line; datasets on NFS"}},
+ "backbones": {
+   "qwen06": {"weights": "/net/.../models/Qwen3-0.6B-Base"},
+   "qwen17": {"weights": "/net/.../models/Qwen3-1.7B-Base"},
+   "qwen4":  {"weights": "/net/.../models/Qwen3-4B-Base"}}}
+```
 
-| Axis | Table | Picked by |
-|---|---|---|
-| injection format | `live/inject_format.py` FORMATS (exists today) | `live.arms[*].format` |
-| trigger threshold | a number | `probe.theta` |
-| training axis (LoRA) | `train/lora_util.py` | `arms[*].mode` |
-| cell | `tasks.py` CELLS | `arms[*].cells` |
-| model | `models.json` | `model`, `arms[*].base` |
-| generation setting | `presets/` | `preset` |
+One table, read by the sample launcher, the trainer spine, the matrix, the
+probe service (tokenizer), and the server launcher. `checks` lists which
+acceptance checks `serve.py` runs after start; the three scripts under
+`envs/serve_logs` become entries of one check table. The old agent models
+stay as rows so the datasets built from them on NFS can still be rebuilt.
+Today the model list is written in seven places, and the 1.7B and 4B
+backbones are in the trainers' own dicts but not in the model file.
 
-Rule: a variant is a table row or a config value, never an `if` on a name
-spread across scripts. A script that offers a choice builds its argparse
-choices from the table.
+### 4.10 Archiving a method that did not work
 
-### 4.6 The ledger links every run to its output and its settings
+Set `archived` to true in its settings files and write the reason in
+`notes`. Delete its METHODS row and scripts; git history keeps them. Add one
+TIMELINE entry. The settings files stay: selfcheck checks an archived file
+for shape only and does not resolve its method or scripts, so
+`run.py find --where archived=true` lists every attempt that failed, with
+why, and the ledger still holds its numbers. The settings directory is the
+archive of what was tried.
 
-`ops/launch.py` registers a run in three places, as today, and the start
-record in `ops/runs.jsonl` gains four fields: `out` (the output directory on
-NFS), `exp` (the path of the exp.json used), `arm`, and `model`. The launcher
-copies the exp.json into the output directory next to `RUNMETA.json`. Finding
-a result is one grep of the run id in the ledger; the record names the
-directory and the settings. Today launcher-driven runs never pass the output
-directory to the record, so no dirty launch has ever saved its patch. This
-fix lands in the first commit.
+### 4.11 Running a chain, and smoke runs
 
-### 4.7 figures/
+`run.py chain eval_probes_on_maxcut64` follows `source` upward (eval to
+train to dataset to sample) and works through the steps whose runs are not
+done. It runs the CPU step itself, stops after the cut statistics so gyb can
+rule on `max_cuts`, and at each GPU step prints the launch command and stops;
+the launch goes through gpu-run, and the chain resumes afterward. A full
+chain from sample to eval has three GPU stops. An inject setting is chained
+through the train runs named in `probe`.
 
-New. `figures/common.py` holds the style, one color per model and per cell,
-and a loader that turns report JSONs in run directories into one table.
-Each figure is one script that reads only the ledger and report JSONs, never
-raw trajectories, and writes a PDF into `<nfs>/figures/`. Each figure has one
-row in `tasks.py`. Whether any venv has matplotlib is unverified; if none
-does, one entry in `ops/env_locks`.
+A smoke run is a settings file whose name ends in `_smoke` and has
+`"smoke": true`. The STEPS table in `registry.py` maps that flag to each
+script's own switch (`--smoke` on the trainers, `--limit` on the evals,
+`--n` on the task runners). The smoke file for a real setting is a copy with
+the suffix, so the wiring proof and the real run are findable side by side.
 
 ## 5. The scenarios in the target tree
 
-| Scenario | Steps | Files |
+| Scenario | What you do | Files |
 |---|---|---|
-| Add an agent model | one entry in models.json; copy an exp directory and edit model key and server rows | 2 |
-| Add a probe backbone | one entry in models.json | 1 |
-| Change generation settings | copy a preset, edit values, pass its name, put it in the run id | 1 |
-| Add a training method | one trainer importing train/common.py; one CELLS row; one card row in exp.json | 3 |
-| Add an evaluation method | one script under eval/ writing a report JSON; one entry in the cell's `evals` list | 2 |
-| New dataset, same environment | one exp directory; one DATA.md version entry | 1 + 1 |
-| New environment | one collector; one block in core/rules.py; one exp directory; the clone under envs/ | 3 |
-| New figure | one script under figures/; one tasks.py row | 1 + 1 |
-| Try several variants of one step | rows in the axis table; arms in exp.json | 1 + 1 |
+| Add an agent model of a known family | one entry in models/table.json; one sample setting | 2 |
+| Add an agent model of a new family | the two above, plus its acceptance checks in models/serve.py and, when its prompt format is not harmony, a renderer next to harmony_render.py | 2 + code |
+| Add a probe backbone | one entry in models/table.json | 1 |
+| Change generation settings | one file under settings/generation; name it in a sample or inject setting | 1 |
+| Add a training method | one trainer importing trainer_base.py; one METHODS row; an arm or a train setting | 3 |
+| Add an evaluation method | one script under eval/ writing a report; one entry in the method's evals list | 2 |
+| New dataset, same environment | one dataset setting, plus a sample setting if new trajectories | 1 or 2 |
+| Sample a new environment | one adapter under sample/; one block in dataset/rules.py; one sample setting; the clone under envs/ (untracked) | 3 |
+| Run a new environment live | the above plus its world primitives next to inject/world.py and its live driver | code |
+| New figure | one script under figures/ | 1 |
+| Try variants side by side | rows in the axis table if new; arms in one setting | 1 |
+| Run the steps up to the next GPU launch, resume after it | `run.py chain <setting>` | 0 |
+| Archive a failed method | `archived` and notes in its settings; delete its row and scripts; one TIMELINE entry | 0 new |
+| Find what produced an output | `run.py where <path>` | 0 |
 
-## 6. What is deleted
+## 6. What is deleted and what is merged
 
-All to git history. The commit that deletes each group names it in the
-message, and one TIMELINE entry (section 10, phase 5) carries the rename
-table.
+Deleted, all to git history. Each group is one commit whose message names
+it. The rename table is appendix A.
 
-- The ModernBERT line: `pipeline/train/train_mbert_tool.py`,
-  `train_mbert_extract.py`, `input_modes.py`, `pipeline/eval/eval_mbert_call.py`,
-  the mbert branch of `eval_tool.py`, `mbert-env`'s registry interpreter, the
-  five m-line task entries, `tests/test_lora_merge.py`'s mbert cases.
-- The offline injection line: `pipeline/inject/replay_inject.py`,
-  `splice_replay.py`, `sweep_theta.py`, `launch_plan_sweep.py`,
-  `extract_completed.py`, `build_form_table.py`, `form_table.json`,
-  `acceptance.py`, `ident3_score.py`, `test_stopfix.py`, `THETA_CURVE.*`,
-  `exec_cache/`, the offline half of `exec_calls.py`, the splice and ident3
-  task entries and the two splice recipes, `tests/test_splice_replay.py`.
-- Environments that never ran a batch: `envs/collect/run_tau2.py`,
-  `run_tales.py`, `run_alfworld.py`, `build_dataset.py`,
-  `extract_probe_cases.py`, `score_probe.py`, `summarize_full.py`, the four
-  split generators under `pipeline/collect/`, `envs/alfworld/splits/`,
-  `envs/collect/bfcl_gptoss/`, the nine dead configs under
-  `pipeline/configs/`, the manifests w0, c2 and p1, the tau2, tales, bfcl,
-  toolhop and StableToolBench task entries, the ALFWorld block of `rules.py`
-  once `eval_call.py` no longer imports it.
-- One-off launchers: the 16 `envs/serve_logs/launch_*.py`, the three job
-  shells there, `ops/ro1_launch/`, `envs/serve_logs`' three acceptance scripts
-  (one parameterized check replaces them).
-- Registry ceremony: the recipe engine and `RECIPES` (about 294 lines), the
-  `status` and `recipes` subcommands, the legacy live-probe renderer in
-  `gpu_jobs.py`, the incident auto-spawn half of `sampler.py` and
-  `tests/test_incidents.py` (no agent has been spawned since 2026-08-10 while
-  the record kept logging escalations).
-- Documents: `MAP.md`, `CONTEXT.md` (live terms move into README),
-  `.scratch/` except `kvshare-train/verify/` (two of its scripts produced
-  RESULTS rows and move to `train/verify/` with registry rows), `talks/`,
-  `learn/`, `docs/plans/`, `docs/design/`, the `probe-pipeline`, `handoff` and
-  `paper-write` skills, the `deploy-scout` and `paper-verifier` agents,
-  `pipeline/annotate/accept_v3diff.py` and its report, `readonly/gen_tables.py`,
-  `pipeline/eval/ACCEPT_EVAL.md` and the two `accept_bfcl_v3*` directories.
-- The 22 card tables under `ops/` (folded into exp.json), `sweep_lr.py`
-  (its report lives in RESULTS), `demo/` stays.
+- The ModernBERT probe line: `train_mbert_tool.py`, `train_mbert_extract.py`,
+  `input_modes.py`, `eval_mbert_call.py`, the mbert branch of `eval_tool.py`,
+  `mbert-env`, its five task entries, its test cases.
+- The offline injection line: `replay_inject.py`, `splice_replay.py`,
+  `sweep_theta.py`, `launch_plan_sweep.py`, `extract_completed.py`,
+  `build_form_table.py`, `form_table.json`, `acceptance.py`,
+  `ident3_score.py`, `test_stopfix.py`, `THETA_CURVE.*`, `exec_cache/`, the
+  offline half of `exec_calls.py`, the splice and ident3 task entries and
+  recipes, `tests/test_splice_replay.py`, the `splice_plan_job.sh`,
+  `ident3_job.sh`, `awdiag_job.sh`, `live_smoke_job.sh`, `live_v3_job.sh` and
+  `run_gptoss.sh` shells.
+- Environments that never ran a batch: the tau2, tales, alfworld adapters,
+  `build_dataset.py`, `extract_probe_cases.py`, `score_probe.py`,
+  `summarize_full.py`, the four split generators, `envs/alfworld/splits/`,
+  `envs/collect/bfcl_gptoss/`, the eight dead configs under
+  `pipeline/configs/` (every one except np821 and p1), the manifests w0 and
+  c2, the tau2, tales, bfcl, toolhop, StableToolBench task entries, the
+  ALFWorld block of `rules.py` once `eval_call.py` no longer imports it.
+- One-off server launchers: every `envs/serve_logs/launch_*.py`; the three
+  acceptance scripts there (the check table in `models/serve.py` replaces
+  them).
+- Registry ceremony: the recipe engine and `RECIPES`, the `status` and
+  `recipes` subcommands, the legacy live-probe renderer in `gpu_jobs.py`, the
+  incident auto-spawn half of `sampler.py` and `tests/test_incidents.py`.
+- Documents: `MAP.md`, `CONTEXT.md` (its live terms are section 2.1 and go
+  into README), `.scratch/` except `kvshare-train/verify/`, `talks/`,
+  `learn/`, `docs/plans/`, `docs/design/`, the probe-pipeline, handoff and
+  paper-write skills (the extension checklists of probe-pipeline become the
+  one-line scenarios of section 5 in README; its split-name dependency
+  notes go to TRAPS.md), the deploy-scout and paper-verifier agents,
+  `accept_v3diff.py` and its report, `readonly/gen_tables.py`,
+  `ACCEPT_EVAL.md`, the two `accept_bfcl_v3*` directories, `sweep_lr.py`,
+  `sweep_preset.py`.
+- In phase 3, after their settings files exist: the 22 card tables under
+  `ops/`, `pipeline/configs/np821_gptoss.json`, `p1_gptoss.json`,
+  `manifest_np821.json`, `manifest_p1.json`, `configs/presets/`,
+  `configs/models.json`.
 
-## 7. What is merged
+The p1 batch is a real AppWorld batch (a dataset, twelve probe runs, two
+matrices on NFS); its settings files are written in phase 1 next to np821's
+so its provenance survives.
+
+Merged:
 
 | Today | Target |
 |---|---|
-| configs/models.json, gen_launch MODEL_TABLE, rules MODEL_OF, matrix --models default, three trainer MODELS dicts | models.json |
-| CELLS, CELL_ORDER, EVAL_CELLS, per-cell task entries, launch_eval's branch, matrix's three copies | one CELLS row per cell |
-| pipeline/configs/<batch>.json, manifest_<batch>.json, ops/<batch>*_placement.json | exp/<batch>/exp.json |
-| train_causal_callgen.py, train_causal_param.py | train/rowwise_ref.py --mode (kept because train_causal_share.py imports both and the alignment gate compares against them) |
-| eval_causal_call.py, eval_causal_param.py | eval/eval_call.py --mode, same report names |
-| version gate, heartbeat shim, --env block, --force guard, SEED, backbone lookup (copied into each trainer) | train/common.py |
-| ops/launch_cmd.py, launch_common.py, launch_probe.py, launch_eval.py | ops/launch.py |
-| ops/sampler.py, verdicts.py, gpu_jobs.py | ops/monitor.py |
-| model_registry.py, preset_loader.py, sweep_preset.py | core/preset.py, with the grid generator as its `sweep` subcommand |
-| serve_preset.py, three acceptance scripts | serve.py plus one acceptance check that exits non-zero |
-| pipeline/collect, envs/collect | collect/ |
-| exec_calls.py's world primitives, replay_inject's harmony constants | live/world.py |
-| extending.md section 5, MAP.md section 5, run.py pitfall notes | TRAPS.md, rows about code that still exists |
-| CLAUDE.md's how-to-run half, MAP.md overview and smoke table, CONTEXT.md glossary | README.md |
+| configs/models.json, gen_launch MODEL_TABLE and its family flag strings, rules MODEL_OF, matrix --models default, three trainer MODELS dicts | models/table.json |
+| CELLS, CELL_ORDER, EVAL_CELLS, per-cell task entries, launch_eval's branch, the matrix's three copies | registry.py METHODS |
+| pipeline/configs/<batch>.json, manifest_<batch>.json, ops/<batch>*_placement.json | settings/<step>/<name>.json |
+| configs/presets/*.json | settings/generation/<name>.json (client block) and models/table.json (server block) |
+| eval_causal_call.py, eval_causal_param.py | eval/eval_call.py, same report names |
+| the blocks copied into each trainer (version gate, heartbeat shim, args, force guard, seed, backbone lookup) | train/trainer_base.py |
+| ops/launch_cmd.py, launch_common.py, launch_probe.py, launch_eval.py | cluster/launch.py |
+| ops/sampler.py, verdicts.py, gpu_jobs.py | cluster/monitor.py |
+| model_registry.py, preset_loader.py (its merge order and the temperature-required check, whose two callers are repointed) | settings_loader.py at the root, stdlib only |
+| serve_preset.py, three acceptance scripts | models/serve.py with a check table |
+| pipeline/collect, envs/collect | sample/ |
+| exec_calls.py's world primitives (including the deferred `load_steps`), replay_inject's harmony constants | inject/world.py |
+| extending.md section 5, MAP.md section 5, run.py pitfall notes | TRAPS.md |
+| CLAUDE.md's how-to-run half, MAP.md overview, CONTEXT.md glossary, extending.md's checklists | README.md |
 
-## 8. What stays because it is load-bearing
+Not merged: `train_causal_callgen.py` and `train_causal_param.py` define the
+same fourteen names with different bodies and every caller picks one by
+module; they are renamed to `rowwise_cgen.py` and `rowwise_cparam.py` and
+kept as two modules.
 
-The review flagged these as things that look removable and are not.
+## 7. What stays, and what breaks if it goes
 
-- The dirty-tree gate with its `LEDGER_PATHS` exemption and the
-  `honor_dry=False` asymmetry on the two printing paths.
-- `register_all`'s fixed order and its rule that a RUNMETA failure warns
-  while a ledger failure aborts.
-- `gpu_jobs.cmd_finish`'s fail-closed alive probe.
-- `verdicts.DEFAULTS` as the only home for thresholds.
-- `ops/heartbeat.py` stdlib-only, so every venv can import it.
-- The `train_log.jsonl` event names and `best/` layout, including the old
-  field names; the driver, the monitor, and the sweep reader parse them.
-- The alignment gates in both trainers and `rowwise_ref.py` as their
-  reference.
-- `share_data.py`'s stdlib-plus-torch top level and lazy imports.
-- `eval_tool.py`'s weight fingerprint in the logits meta, its `--limit`
-  smoke gate, and the old report field names.
-- The readonly fuse in eval and `readonly_map.py`; the feature is unused but
-  ten modules import it, and removing it is a separate decision.
-- `harmony_render.py`, `rebuild.py`'s SYSTEM and `check_system_verbatim`,
-  `probe_server.py`'s render-only mode, `ident3_gate.py`, the `note` entry of
-  `inject_format.py` byte for byte, `MAX_BOUNDS = 64`.
-- `gen_launch.py`'s forced output directory name and the manifest preset
-  check; `run_appworld.py`'s single-sample file naming and the experiment
-  name suffix.
-- The driver's launch markers, manifest hash gate, a1_stats stop, and its
-  refusal of `--allow-dirty`.
-- `build.py`'s three self-checks and hard exit on an unowned unit;
-  `param_label.py`'s assert that the two extraction copies agree.
-- `preset_loader.require_temperature` and the null-temperature preset.
-- `ops/env_locks/`, `ops/gpu_state.md`, the banner-to-stderr rule.
+The review flagged these as things that look removable and are not. Each is
+written as "X stays because removing it breaks Y". Finer implementation
+details of the same kind go into TRAPS.md during phase 5.
 
-## 9. Rules
+- The dirty-tree gate stays because a recorded commit is worth nothing when
+  the tree that ran was different. Its exemption for the ledger files stays
+  because the launcher writes the ledger, and without the exemption the
+  second launch of a session is blocked by the first.
+- The launcher's three registrations happen in a fixed order, and a failed
+  ledger write aborts the launch, because a run that is on a card but not in
+  the ledger is invisible to the monitor and to `run.py where`.
+- The finish command checks that the job is really gone before it
+  deregisters, because a job was once deregistered while still running for
+  another hour and a half.
+- `heartbeat.py` and `settings_loader.py` use only the standard library,
+  because four different venvs import them and none has the same packages.
+- The training log's event names and the `best/` layout stay, because the
+  chain, the monitor, the sweep reader, and the eval scripts parse them.
+- The alignment gate and the two row-wise reference modules stay, because
+  they are the only proof that the fast packed trainer computes the same
+  loss as the plain one.
+- The eval scripts fingerprint the probe weights into their cached logits,
+  because re-scoring old logits against retrained weights would give wrong
+  numbers with no error.
+- `harmony_render.py`, the verbatim system prompt check, and `ident3_gate.py`
+  stay, because the whole comparison between a probe arm and its baseline
+  rests on the repo rendering the prompt token for token as the server does.
+- The `note` row of the format table stays byte for byte, because every
+  live run before 2026-09-12 used it and scoring old runs reads it.
+- `max_cuts` at 64 is a ruling recorded in TIMELINE, not a constant to tune.
+- The sample launcher forces the inner output directory name to
+  `<env>_<model>`, because the dataset builder recognizes the model from
+  that suffix and skips a directory it cannot recognize without an error.
+- The chain refuses `--allow-dirty`, stops after the cut statistics for a
+  human ruling, and hashes its source setting, because an edited setting
+  with a stale generated launcher once pointed at the wrong card.
 
-These go into CLAUDE.md and are the whole of it, together with the ledger
-table and the running-code rules that stay (GPU work through gpu-run, launch
-through run.py, commit before launch, big outputs on NFS, no guessing about
-results, English on disk).
+## 8. Rules
 
-1. Each fact is written in one place, and every other place imports it.
-2. One batch keeps all of its settings in one exp.json, and every stage reads
-   that file.
-3. A new cell is one CELLS row plus the scripts the row names, in the same
-   commit.
-4. A variant is a table row or a config value, never a branch on a name.
-5. Every ledger record names the run id, the output directory, and the
-   exp.json, and the run id is identical in the output directory, the tmux
-   session, the ledger, and the commit message.
-6. A file that no live line imports is deleted; git history keeps it.
-7. Every tracked file is reachable from tasks.py, from an exp.json, or from a
-   test, and selfcheck enforces it.
-8. A measured trap gets one row in TRAPS.md. A decision that changes the plan
-   gets one entry in TIMELINE.md.
+These go into CLAUDE.md, together with the running-code rules that stay:
+GPU work through gpu-run, every task through run.py, commit before launch,
+big outputs on NFS, no guessing about results, English on disk.
 
-## 10. Migration
+1. Every run of a step starts from one settings file, and the file's name is
+   the run id, the output directory, and the ledger key.
+2. A settings file is frozen when its run starts; only the archive mark and
+   the notes change afterward. Running it again is a new file with a new
+   name.
+3. Each fact is written in one place, and every other place imports it.
+4. A variant is a table row or a settings value, never a branch on a name.
+5. A new method is one METHODS row plus the scripts the row names, in the
+   same commit.
+6. A file that no step imports is deleted; git history keeps it.
+7. Every tracked file is reachable from registry.py, from a settings file,
+   or from a test, and selfcheck enforces it.
+8. A measured trap gets one row in TRAPS.md. A decision that changes the
+   plan gets one entry in TIMELINE.md.
 
-Branch `renew` off main after phase 0. One commit per phase, each ending with
-`python3 run.py selfcheck` and the full unittest run green. Three things keep
-working throughout: the np821 chain stays re-runnable through the driver, the
-cache-reuse trainer keeps training cgen and cparam, and the injection-format
-live run stays launchable and scorable. No NFS path moves.
+## 9. Migration
+
+Branch `renew` in a separate worktree, since other sessions share the main
+tree. One commit per phase, each ending with `python3 run.py selfcheck` and
+the full unittest run green. Three things keep working throughout and the
+heading of each phase says which of them its gate exercises: the AppWorld
+chain (C), the cache-reuse trainer (T), and the injection-format live run
+(L). No NFS path moves. The ledger code and files (`ops/record.py`,
+`ops/runmeta.py`, `runs.jsonl`, `jobs.json`, the locks, and the three
+literal copies of the ledger path prefix) stay under `ops/` until the last
+commit of phase 6, after the final merge from main, because other sessions
+keep writing them.
+
+Appendix A is the rename table; every phase greps against it.
 
 ### Phase 0: clear the desk (on main, before the branch)
 
-- gyb commits the trainer edit in `train_causal_share.py`. It rejects any
-  device that is not CUDA, while `demo-train` runs with `--device cpu`; gyb
-  decides whether the demo keeps a CPU path.
-- The two fmt_smoke jobs finish and are deregistered. The nine runs in the
-  ledger with a start and no finish are closed once by hand.
+- gyb's trainer edit lands with the device rule of section 10 item 1.
+- The two fmt_smoke jobs finish and are deregistered. The nine ledger rows
+  with a start and no finish (fmt_smoke_probe, fmt_smoke_srv, ident3_v1_srv,
+  and the six p1 LoRA cgen and cparam runs) are closed once by hand.
 - The two recipe state files under `logs/recipe/` are the only record of
-  which commit built each live dataset. Copy each into its dataset directory
-  on NFS as `BUILD_PROVENANCE.json` before the recipe engine goes.
+  which commit built each live dataset; copy each into its dataset directory
+  on NFS as `BUILD_PROVENANCE.json`.
+- The launcher passes the output directory to the ledger at start, so a
+  dirty launch saves its patch. Two lines; before anything else.
+- Create the missing symlink to the live run root on NFS
+  (`pipeline/inject/runs`) after checking nothing under that path sits in
+  home.
 
-### Phase 1: deletions, with the harvest first
+### Phase 1: settings files first, then deletions (gate: C)
 
+- Write `settings/generation/temp1_high.json` and `temp0_high.json`, the
+  five settings files of section 4.5, and the sample, dataset, train and
+  eval settings of the p1 batch, by hand from today's configs, manifests,
+  card tables, and presets, while those inputs still exist. Write
+  `settings_loader.py`.
 - Harvest before deleting: `APPWORLD_SEED`, `TRUNC`, `CKPT`, `requote`,
   `error_kind`, and the deferred `load_steps` from `exec_calls.py`;
   `DEFAULT_STOP` and the harmony markers from `replay_inject.py`; into
-  `live/world.py`. Repoint `live_appworld.py`. Find deferred imports by
-  grepping every `import` line in the file, not only the module top.
-- Delete the groups in section 6. In the same commit: prune
-  `tests/test_preset.py`'s entry-point list to the survivors, delete the test
-  classes of deleted modules, flip `eval_tool.py`'s `--head` default to
-  causal, shrink the `--env` choices lists to the environments that exist,
-  remove `recipe` and `status` from CLAUDE.md, rewrite the DATA.md
-  provenance sentences that name the recipe.
-- Gate: selfcheck, unittest with zero errors (the one known error was the
-  splice test, now deleted), `run.py show pipeline` prints.
+  `inject/world.py`. Repoint `live_appworld.py`. Find deferred imports by
+  grepping every `import` line, not only the module top.
+- Delete the groups of section 6 except the last one. In the same commit:
+  inline the three annotate-chain steps into the chain's build step (the
+  chain calls the recipe engine today); prune the entry-point list in
+  `tests/test_preset.py` to the survivors; delete the tests of deleted
+  modules; flip `eval_tool.py`'s `--head` default to causal; shrink the
+  `--env` choices to the environments that exist; remove `recipe` and
+  `status` from CLAUDE.md; rewrite the DATA.md sentences that name the
+  recipe.
+- Gate: selfcheck, unittest with zero errors, `run.py show pipeline` prints,
+  and the chain's dataset build on the existing sample run into a scratch
+  directory byte-compared against the dataset on NFS.
 
-### Phase 2: reshape directories, no logic
+### Phase 2: reshape directories, no logic (gate: C, T, L)
 
-- `git mv` `pipeline/{collect,annotate,train,eval}` up one level,
-  `pipeline/inject` to `live/`, the surviving `envs/collect` files into
-  `collect/`, the surviving skills' shell script into `ops/`.
-- Fix the `sys.path.insert` lines that count parent directories, and the
-  three symlinks.
-- Gate: selfcheck, unittest, `demo-prep` and `demo-train` on CPU, and
-  `ann-build` on np821 into a scratch directory byte-compared against the
-  dataset on NFS.
+- `git mv` into the tree of section 3 using appendix A, except the ledger
+  code and files. Files that appendix A merges many-to-one move under their
+  own names into the target directory here (`cluster/launch_cmd.py`,
+  `eval/eval_causal_call.py`, and so on) and collapse in phase 4. In the
+  same commit: rewrite the 52 script paths in run.py's tables; every
+  `parents[N]` count and every literal directory name in a moved file,
+  including `gpu_jobs.py`'s path to the card probe script and the two
+  cwd-relative literals in `train/verify/`; the 26 test files that carry
+  `pipeline/` or `ops/` path literals or import the renamed row-wise
+  modules; `demo/prepare.py`'s imports of the row-wise module; the three
+  program paths in `.vscode/launch.json` and the path in `demo/README.md`;
+  the eleven `.gitignore` rules keyed to old paths; recreate the symlinks
+  with `ln -s` at their new positions (`sample/runs`, `dataset/data`,
+  `train/runs`, `inject/runs`; `envs/runs` stays for the generated
+  launchers) and add their bare names to `.gitignore`; regenerate the
+  client launcher on NFS for the existing sample run because it hardcodes
+  the adapter's path.
+- Gate: selfcheck, unittest, the demo on CPU, the dataset build
+  byte-compared again, `rebuild.check_system_verbatim()` on a recorded
+  trajectory, and one `live_appworld --selftest-shadow`.
 
-### Phase 3: the tables
+### Phase 3: tables and the ledger (gate: C, L)
 
-- `models.json` with agents and backbones; `exp/np821/exp.json` and
-  `exp/fmt/exp.json` written by hand from today's files; the CELLS row;
-  `matrix.py` reading the table and the exp; `gen_launch.py` reading the
-  preset's server block; `CUDA_DEVICE_ORDER` into the presets; the ledger
-  fields of section 4.6.
-- Gate: the driver's own byte-for-byte rebuild check on np821
-  (`driver.py:1237-1257` does this comparison); regenerate
-  `MATRIX_np821b06_r*.md` and diff; regenerate the nyapass server launcher
-  and diff against the one on NFS; dry-run the launcher for each of the 111
-  finished jobs in `ops/jobs.json` history and diff the command strings.
+- `models/table.json` with agents and backbones, and the backbone key
+  rename (`qwen` to `qwen06`) applied to its consumers listed in appendix
+  A; `registry.py` METHODS and STEPS with the report key paths copied from
+  today's reports; the matrix reading the table; the sample launcher
+  reading server facts from the model table and generation from the
+  settings; `eval_tool.py` gains a `--risk-targets` flag replacing its
+  constant and sorts the values largest first, so the report key order
+  stays as today; the loader derives `env` and `model` from the source
+  chain; `dataset/build.py`'s config reader takes the config the runner
+  writes; the STEPS and METHODS rows gain their accepted-flag lists with
+  one per-venv test each; the ledger fields of 4.4 and the `outdir` events
+  for old runs, appended from the per-step sources of 4.3; `run.py find`,
+  `run.py where`, `run.py
+  note`; selfcheck rewritten to validate settings files instead of presets;
+  `tests/test_preset.py` rewritten against `settings_loader.py`.
+- Then delete the last group of section 6.
+- Gate: the chain's own byte-for-byte rebuild check on the existing dataset;
+  regenerate the matrix files that exist on NFS through the old
+  directory-scan mode and diff the value columns only (the header is
+  already English since 6bde35b, the two ModernBERT rows are gone, and the
+  run ids are the old ones); regenerate all three sample artifacts (`launch_servers.py`, `launch_clients.sh`,
+  `MANIFEST.md`) and diff, with the expected line changes listed up front;
+  dry-run the launcher for the four job-ledger pieces that carry a task name
+  and compare argument shapes; `run.py where` on one old and one new output
+  directory; `ident3_gate` against a running server.
 
-### Phase 4: the file merges
+Refire of a job launched before the migration is not supported; relaunch it
+from its settings file. The old ledger command strings are an archive.
 
-- `train/common.py`, then `rowwise_ref.py`, `eval_call.py`, `ops/launch.py`,
-  `ops/monitor.py`, `core/preset.py`, `serve.py`.
-- Gate per merge: its tests; `--align-only` for cgen and cparam on np821
-  data; re-score np821b06 cgen and cparam with `--cached-logits` and diff
-  both reports byte for byte; one smoke launch that lands three ledger
-  entries; `demo/README.md` and `WALKTHROUGH.md` repointed at the renamed
-  module.
+### Phase 4: the file merges (gate: T, and C for eval)
 
-### Phase 5: live/, documents, skills
+- `train/trainer_base.py`, then `eval_call.py`, `cluster/launch.py`,
+  `cluster/monitor.py`, `models/serve.py`. The row-wise modules are renamed
+  only.
+- Gate per merge: its tests; `--align-only` for cgen and cparam on the
+  existing dataset; re-score the existing ctool run with cached logits and
+  diff its report byte for byte; re-score the existing cgen and cparam runs
+  on a fixed 50-event subset through gpu-run and diff; one smoke launch
+  from a `_smoke` settings file that lands three ledger entries; the demo
+  walkthrough's fifteen stops repointed at the lines they moved to.
+
+### Phase 5: inject, documents, skills (gate: L)
 
 - `probe_server.py`'s default run paths become required arguments.
   `README.md`, `CLAUDE.md`, `TRAPS.md` written; `MAP.md` and `CONTEXT.md`
   deleted; the gpu-run skill cut to the steps a command cannot do.
-- One TIMELINE entry with a rename table: old path, new path, first commit
-  where the new path applies. It covers the 35 ledger commands and the 39
-  RUNMETA files on NFS that name old paths. Entries before the renewal keep
-  naming the old tree; TIMELINE is append-only.
-- Gate: `git grep` for every deleted path and command name returns nothing
-  outside TIMELINE and RESULTS.
+- One TIMELINE entry carrying appendix A and the list of deleted lines.
+  Entries before the renewal keep naming the old tree.
+- Gate: `git grep` for every old path and every old module name in appendix
+  A returns nothing in tracked `*.py`, `*.sh`, `.vscode/*.json`,
+  `demo/*.md`, `.claude/`, `CLAUDE.md`, `README.md`, `registry.py`, except
+  the ledger rows of appendix A, which move in phase 6; one live arm
+  launched from the inject settings file and scored.
 
-### Phase 6: prove the chain
+### Phase 6: prove the chain (gate: C, T, L)
 
-- One 20-task batch end to end through the driver on the new tree, collect
-  through matrix, plus one live arm through `live_appworld.py`. Check that the
-  run id appears identically in the NFS output directory, the tmux session,
-  the ledger, and the commit message. Then merge `renew` into main.
+- One 20-task sample through `run.py chain` on the new tree, sample through
+  matrix, from `_smoke` settings files, plus one inject arm. Check that the
+  run id is one path segment of the NFS output directory, the leading
+  segment of every tmux session name, and the ledger key, and that the
+  commit message carries the settings name. Merge main into `renew`, move
+  the ledger code and files into `cluster/` with their path literals, run
+  the phase 5 grep without its exemption, merge `renew` into main.
 
-## 11. Open items for gyb
+## 10. Open items for gyb
 
 Each has a default. Silence means the default.
 
-1. The trainer edit's CUDA-only guard versus the CPU demo. Default: the
-   guard allows `cpu` when the data directory is the demo fixture.
-2. Auto-finishing a run on the monitor's done verdict. Default: not adopted;
-   finish stays a manual command.
-3. The readonly feature (303 branch lines, never launched). Default: kept
-   this round, listed in WORKPLAN for a later decision.
-4. `talks/` and `learn/`. Default: deleted from the repo per the trust-git
-   decision; they are in history.
+1. The device rule. Your uncommitted trainer edit rejects every device that
+   is not CUDA, and the CPU demo and the debugger walkthrough pass cpu.
+   Default: the flag defaults to cuda, accepts cpu only when written
+   explicitly, and rejects anything else. This changes your edit, so it is
+   your call.
+2. Auto-finishing a run on the monitor's done verdict. Default: not
+   adopted; finish stays a manual command.
+3. The read-only feature: should the probe be allowed to fire only on calls
+   that are safe to run early? The feature exists, ten modules import it,
+   and it was never launched. Default: kept this round, listed in WORKPLAN.
+4. `talks/` and `learn/`. Default: deleted from the repo; git history keeps
+   them.
+5. The names of the settings files for today's lines. Default: the names in
+   section 4.5 for np821 and fmt; `appworld_gptoss_temp0` and
+   `appworld_gptoss_temp0_dataset` for the p1 batch (temperature 0, one
+   trajectory per task). These files carry legacy blocks pointing at the
+   existing run ids (nyapass, nyapass_aw_v1, np821b06_gptoss_ctool, p1,
+   aw_p1_v1, and so on), so the old directories and ledger rows stay as
+   they are.
+6. The old agent models q35 and q36. Default: they stay as rows in the
+   models table so their datasets on NFS can be rebuilt.
+7. The firing threshold in an inject setting. METHOD.md axis 4 says theta
+   is always written by hand. Default: kept; the eval report shows the
+   fitted value and you copy it. The alternative is a reference to the eval
+   run and a risk target, which would be a TIMELINE entry changing the
+   method rule.
 
-## 12. Expected result
+## 11. Expected result
 
 | Item | Today | Target |
 |---|---|---|
@@ -521,8 +1101,53 @@ Each has a default. Silence means the default.
 | Python outside tests | 32.7k lines | about 19k |
 | Tests | 9.5k lines | about 8.5k |
 | Markdown | 24.5k lines | about 5k |
-| Registry tasks | 83 | about 40 |
-| run.py | 1,309 lines | about 350, tables in tasks.py |
+| Registry rows | 83 tasks | five steps, three methods, about 12 tools |
+| run.py | 1,309 lines | about 350, tables in registry.py |
 | Places declaring models | 7 | 1 |
-| Places declaring cells | 7 | 1 |
-| Files per batch | 5 plus card tables | 1 |
+| Places declaring methods | 7 | 1 |
+| Files per family of runs | 5 plus card tables | 1 per step |
+
+## Appendix A: rename table
+
+Paths:
+
+| Old path | New path |
+|---|---|
+| pipeline/collect/gen_launch.py | sample/gen_launch.py |
+| envs/collect/run_appworld.py | sample/run_appworld.py |
+| envs/collect/common.py | sample/chat.py |
+| pipeline/annotate/build.py, param_label.py, check_callstr.py, rules.py, readonly/ | dataset/ (same names) |
+| pipeline/train/* | train/* (same names, except the two below) |
+| pipeline/train/train_causal_callgen.py | train/rowwise_cgen.py |
+| pipeline/train/train_causal_param.py | train/rowwise_cparam.py |
+| .scratch/kvshare-train/verify/ | train/verify/ |
+| pipeline/eval/eval_tool.py | eval/eval_tool.py |
+| pipeline/eval/eval_causal_call.py + eval_causal_param.py | eval/eval_call.py |
+| pipeline/eval/summarize_matrix.py | eval/matrix.py |
+| pipeline/inject/* (surviving files) | inject/* (same names) |
+| envs/serve_logs/live_arm_job.sh | inject/live_arm_job.sh |
+| pipeline/driver.py | chain.py |
+| serve_preset.py | models/serve.py |
+| configs/models.json | models/table.json |
+| configs/presets/<name>.json | settings/generation/<name>.json |
+| pipeline/configs/{np821,p1}_gptoss.json + pipeline/collect/manifest_{np821,p1}.json + ops/{np821,p1}*_placement.json | settings/{sample,dataset,train,eval}/... |
+| preset_loader.py + model_registry.py | settings_loader.py |
+| ops/launch_cmd.py + launch_common.py + launch_probe.py + launch_eval.py | cluster/launch.py |
+| ops/sampler.py + verdicts.py + gpu_jobs.py | cluster/monitor.py |
+| ops/heartbeat.py, gpu_state.md, env_locks/ | cluster/ (same names) |
+| ops/record.py, runmeta.py, runs.jsonl, jobs.json, *.lock | cluster/ (same names; last commit of phase 6) |
+| pipeline/data (symlink, untracked) | dataset/data |
+| pipeline/runs (symlink, untracked) | train/runs |
+| (none today) | inject/runs -> NFS pipeline/inject/runs |
+| envs/runs (symlink, untracked) | sample/runs, and envs/runs kept |
+
+Module and key names:
+
+| Old name | New name | Consumers to rewrite |
+|---|---|---|
+| `train_causal_callgen` (module) | `rowwise_cgen` | train_causal_share.py (five call sites), tests/test_share_trainer.py, tests/test_cparam_assembly.py, tests/test_share_gen_eval.py, demo/prepare.py, demo/WALKTHROUGH.md |
+| `train_causal_param` (module) | `rowwise_cparam` | same files |
+| `pipeline/train/train_causal_share.py` (path) | `train/train_causal_share.py` | `.vscode/launch.json` (three program paths), `demo/README.md`, `demo/WALKTHROUGH.md` |
+| the batch config keys `official_split_files`, `max_bounds`, `run_family`, `model_short`, `trajs_per_unit` | written by the runner from the dataset settings (4.5 step 2) | `dataset/build.py`'s config reader, `chain.py` |
+| backbone key `qwen` | `qwen06` | the three trainer dicts (deleted), train_causal_share.py:1029, tests/test_share_trainer.py:51, tests/test_share_gen_eval.py:54, demo/prepare.py, the card tables (deleted) |
+| `--max-bounds` (config key `max_bounds`) | settings field `max_cuts`, written into the builder's config by the runner | chain.py, dataset/build.py's config reader |
