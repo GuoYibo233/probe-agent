@@ -40,6 +40,14 @@ Decisions gyb has taken (2026-09-12 and 2026-09-13):
 - The root documents (METHOD, DATA, WORKPLAN, TIMELINE, RESULTS) keep their
   content; gyb re-roles them by hand after the renewal.
 - CUDA is the default device.
+- Model weights live on NFS in the existing models directory; the repo
+  holds only the table that names them, and that table is a settings file.
+- Steps 1 and 5 share one driver: the live run is the sampler with a probe
+  attached (2026-09-13).
+- Sample counts and repeats are settings values, never copies of a file:
+  sample and inject give one seed per trajectory inside one run; dataset
+  and train give one seed per run, and a list of seeds makes one run per
+  value. A run that failed is relaunched under its own id.
 
 Not in scope: changing any research method or any output file format on
 NFS. The ledger stays append-only; it gains new event kinds and fields, and
@@ -59,7 +67,7 @@ serves five steps, and the target tree has one directory per step.
 | 2 dataset | trajectories are cut into training examples: a prefix of the thinking paired with the call that followed; split into train, val, test piles | a sample run | a dataset | no |
 | 3 train | a probe of one method is trained on a dataset | a dataset, a method, a backbone | a trained probe | yes |
 | 4 eval | a trained probe is scored offline: does it predict the right tool and call, and at which confidence threshold does it fire with an acceptable false-fire rate | a trained probe | reports inside the probe's directory | yes |
-| 5 inject | the agent runs tasks live with the probe firing and injecting results; task success is scored against a no-probe baseline | trained probes, a model, an environment | live runs and scores | yes |
+| 5 inject | the driver of step 1 runs tasks live with a probe attached: the probe fires, the call runs early, its result is injected; task success is scored against a no-probe baseline | trained probes, a model, an environment | live runs and scores | yes |
 
 Three shared resources serve every step: **models** (which weights exist and
 how to serve one on a card), **environments** (the benchmark clones, each with
@@ -127,7 +135,11 @@ new1/
                     because four venvs import it (today preset_loader.py
                     plus model_registry.py)
 
-  settings/         one file per run of a step; the record of every attempt
+  settings/         every hand-written input: the model table, the named
+                    generation settings, and one file per run of a step
+    models.json       per agent model: weights on NFS, served name, serve
+                      flags, env, max model length, tokenizer, acceptance
+                      checks; per backbone: weights (4.9)
     generation/       temp1_high.json      named generation settings (4.6)
     sample/           appworld_gptoss_temp1_4traj.json
     dataset/          appworld_gptoss_temp1_maxcut64.json
@@ -135,17 +147,22 @@ new1/
     eval/             eval_probes_on_maxcut64.json
     inject/           format_where_result_goes.json
 
-  models/
-    table.json        per agent model: weights, served name, serve flags,
-                      env, max model length, tokenizer, acceptance checks;
-                      per backbone: weights
+  sample/           steps 1 and 5 run the agent here (today pipeline/collect,
+                    envs/collect, and the live driver under pipeline/inject)
+    run_appworld.py   the AppWorld driver: runs tasks, writes trajectories;
+                      with a probe attached it is the live run of step 5
+                      (today run_appworld.py plus live_appworld.py)
+    chat.py           the request rows of the api axis (4.7): chat, harmony,
+                      raw; the harmony row streams in chunks and is where a
+                      probe attaches (today common.py plus the stream half
+                      of live_appworld.py)
+    harmony_render.py message list -> gpt-oss prompt tokens, identical to
+                      the server's own rendering; the one renderer (today
+                      this file under inject plus a second template in
+                      common.py)
     serve.py          start a vLLM server for a model on a card and run its
                       acceptance checks (today serve_preset.py plus three
                       scripts under envs/serve_logs)
-
-  sample/           step 1 (today pipeline/collect and envs/collect)
-    run_appworld.py   the AppWorld adapter: runs tasks, writes trajectories
-    chat.py           the chat client and the trajectory log (today common.py)
     gen_launch.py     a sample setting -> server and client launch scripts
     runs -> NFS       symlink to the trajectory root (today envs/runs)
 
@@ -185,16 +202,14 @@ new1/
                       eval_causal_param.py; --mode picks)
     matrix.py         backbone x method table (today summarize_matrix.py)
 
-  inject/           step 5 (today pipeline/inject; the offline replay line
-                    is deleted, so "inject" now means the live run)
-    live_appworld.py  the live run: probe fires, result spliced, task resumes
+  inject/           step 5, the probe side (today pipeline/inject; the
+                    offline replay line is deleted, so "inject" now means
+                    the live run; the driver is sample/run_appworld.py)
     probe_server.py   the GPU service that scores prefixes and generates
                       calls for the probe
     inject_format.py  the injection-format table (five rows today)
     world.py          AppWorld save, execute, rollback primitives (new;
                       harvested from exec_calls.py)
-    harmony_render.py message list -> gpt-oss prompt tokens, identical to
-                      the server's own rendering
     rebuild.py        rebuilds the exact prompt of a recorded trajectory
                       and checks the system prompt is verbatim
     parse_call.py     extracts a call from generated text, stdlib only
@@ -203,8 +218,6 @@ new1/
                       the repo's rendering (catches an unpinned date)
     check_bundle.py   loads a trained probe in a fresh process to prove the
                       saved weights are complete
-    live_arm_job.sh   one arm of a live run inside tmux (today under
-                      envs/serve_logs)
     runs -> NFS       symlink to the live run root (today no link in the
                       tree; the NFS directory pipeline/inject/runs exists)
 
@@ -252,12 +265,19 @@ new1/
 
 Answers to the comments on the first draft:
 
-- `serve.py` belongs to models, not environments: it starts the agent
-  model's server, which steps 1 and 5 both need. Environment adapters live
-  in `sample/`, one per environment, because sampling is where an
+- There is no `models/` directory in the repo: weights live on NFS under
+  `/net/.../y-guo/models`, the table that names them is a settings file,
+  and `serve.py` sits in `sample/` because starting the agent model's
+  server is the first thing steps 1 and 5 do. Environment adapters live in
+  `sample/`, one per environment, because sampling is where an
   environment's API is spoken. An adapter is never named after the package
   it imports, because Python would then import the script instead of the
   package.
+- The live run is not a second program. Both drivers already write the
+  same four record kinds per task (meta, gen, env, final); the live one
+  adds the injection fields to gen. So `sample/run_appworld.py` is the one
+  task loop, the probe is an attachment to its streaming request row, and
+  `inject/` holds the probe side only.
 - `driver.py` becomes `chain.py`: it runs the steps a setting depends on,
   in order, and resumes after a stop. It is orchestration, not an
   environment.
@@ -267,8 +287,6 @@ Answers to the comments on the first draft:
 - `tests/` are automated checks. Each file exercises one module with small
   fixtures and fails when the module's behavior changes. They run before
   every commit of the migration.
-- `live/` is now `inject/`, with a plain description above.
-
 ## 4. Settings files
 
 This is the center of the design. Every run of every step starts from one
@@ -298,7 +316,10 @@ JSON file under `settings/<step>/<name>.json`.
   and card.
 - The launcher creates the output directory exclusively and refuses to
   launch when it already exists, so a new name can never write into an old
-  run.
+  run. The one exception is a relaunch: when the ledger says the run at
+  that id failed, the launcher moves the old directory to
+  `<run id>.failed<N>`, appends an `outdir` event to the failed row, and
+  starts the same id again. Both rows stay in the ledger.
 - A settings file is frozen when its run starts: the runner copies it into
   the output directory as `settings.json` with every value resolved, the
   generation file inlined under `generation`, and the derived fields filled
@@ -309,10 +330,15 @@ JSON file under `settings/<step>/<name>.json`.
   exclusively, freeze the settings, translate fields to flags, write the
   ledger start row, run, write the finish row. `launch` adds the card
   probe and the tmux sessions.
-- Running the same settings again is a new settings file with a new name
-  (copy and rename). A dead piece of a running job is refired by the
-  monitor's existing mechanism; a run that stopped as a whole is not
-  resumed, it is rerun under a new name.
+- Running the same settings again for another result is another seed, not
+  another file (`seed` in 4.2; `traj_per_task` and `seeds` in 4.5). A
+  dataset or train setting whose `seed` is a list produces one run per
+  value: the loader expands the list into arms named `<arm>_s<seed>`, or
+  `s<seed>` for a file without arms, before anything else reads the file,
+  so every later rule sees ordinary arms. The frozen copy of each run
+  holds its one seed and the name of the arm it repeats. A dead piece of a
+  running job is refired by the monitor's existing mechanism; a run that
+  stopped as a whole is relaunched under its own id as above.
 
 ### 4.2 Two kinds of fields
 
@@ -330,6 +356,7 @@ ones:
 | `cards` | a list of records `{"role": ..., "host": ..., "gpu": ...}`, plus `"arm"` when the record belongs to one arm; one record per process that needs a card; the launcher refuses a process with no matching record |
 | `arms` | a map from arm name to overrides of any field; each arm is one complete run |
 | `smoke` | true makes every script run on its small subset; the name must end in `_smoke` |
+| `seed` | dataset and train: an integer, or a list that makes one run per value (4.1); sample and inject take one seed per trajectory under `params` instead |
 | `archived` | true when the human has given up on the attempt (4.10); default false. Per-run progress (planned, running, done, failed) lives in the ledger |
 | `notes` | free text: why this exists, what happened, remarks on the numbers |
 | `legacy` | only on a file written for runs that already exist (4.1) |
@@ -432,6 +459,10 @@ $ run.py find --where archived=true
 $ run.py find --step sample --where generation.temperature=1.0
 ```
 
+Runs that repeat one arm with several seeds are one group to `find` and to
+`run.py matrix`: both print, per arm, the number of seeds and the mean and
+spread of each number, with the single runs listed below the group.
+
 `run.py note <run id or settings name> "<text>"` appends a dated line to
 `notes` in the source settings file. The frozen copy is never edited;
 `find` shows notes from the source file.
@@ -455,6 +486,11 @@ defaults.
 
 `cards` is derived from `servers`; clients need no card.
 
+`traj_per_task` with `seeds` says how many trajectories each task gets and
+the seed of each one, so a bigger sample or a repeated one is a longer seed
+list in the same run. Trajectories sampled later go into a second sample
+setting, and the dataset setting lists both as `source`.
+
 ```json
 {"step": "sample", "name": "appworld_gptoss_temp1_4traj",
  "track": "probe training data at temperature 1",
@@ -475,14 +511,16 @@ defaults.
 file, so the runner writes that config from the settings: `env` and
 `model` from the source chain, the source runs' trajectory directories,
 the output directory of 4.3, `split_files`, `max_cuts`, `seed`, the
-sample's `traj_per_task`, and the run name as the builder's family key.
+trajectories per task (the sample's `traj_per_task`, or the smaller value
+below), and the run name as the builder's family key.
 
 | Field | Required | Shape |
 |---|---|---|
 | `source` | yes | one sample run id or a list of them |
 | `split_files` | yes | `{train, val, test}` to the task-list files of the piles |
 | `max_cuts` | yes | integer; today 64 |
-| `seed` | yes | integer |
+| `seed` | yes | integer, or a list for one run per value (4.1) |
+| `traj_per_task` | no | use only the first k trajectories of each task, in seed order; default: every trajectory the source holds. New: one builder flag (section 10 item 8) |
 | `params` | no | flags of `dataset/build.py`: `weight_mode` (uniform or per_event) |
 
 ```json
@@ -506,7 +544,8 @@ sample's `traj_per_task`, and the run name as the builder's family key.
 | `method` | yes, top level or per arm | a METHODS key |
 | `backbone` | yes, top level or per arm | a backbones key of the models table |
 | `tuning` | yes, top level or per arm | `full` or `lora` |
-| `cards` | yes | one record per arm (or one record for a file without arms) |
+| `seed` | yes, top level or per arm | integer, or a list for one run per value (4.1); becomes the trainers' `--seed` (today a constant 42 in each trainer; the flag moves into trainer_base.py) |
+| `cards` | yes | one record per arm (or one record for a file without arms); the runs of a seed list share their arm's card and run in sequence, unless a record names the seed too |
 | `params` | no | flags of the arm's trainer: for ctool `bs`, `accum`, `lr`, `epochs`, `max_len`, `grad_ckpt`, `align_tol`, ...; for cgen and cparam `events_per_mb`, `accum`, `lr`, `epochs`, `max_len`, `tok_budget`, `grad_ckpt`, ... |
 
 "Required" means present after the arm's overrides are applied; a field may
@@ -520,6 +559,7 @@ lora); the legacy block maps each arm to its existing run.
 {"step": "train", "name": "probes_on_maxcut64",
  "track": "first probes on the temperature-1 data",
  "source": "appworld_gptoss_temp1_maxcut64",
+ "seed": 42,
  "params": {"max_len": 8192, "accum": 1, "epochs": 1},
  "arms": {
    "qwen06_full_ctool":  {"method": "ctool", "backbone": "qwen06", "tuning": "full",
@@ -548,7 +588,11 @@ lora); the legacy block maps each arm to its existing run.
 
 Run ids: `probes_on_maxcut64__qwen06_full_cgen` and so on for a file
 launched after the migration. The top-level `params` are defaults; an arm
-overrides any field.
+overrides any field. To repeat one arm three times, give that arm
+`"seed": [42, 67, 4267]`: the runs are
+`probes_on_maxcut64__qwen06_full_cgen_s42` and so on, the other arms keep
+the top-level seed, and the matrix shows the arm once with its mean and
+spread.
 
 **Step 4, eval.**
 
@@ -592,9 +636,13 @@ setting>` writes the matrix of 4.3.
 | `split`, `exp` | yes | the environment's task list, and the experiment name the environment requires |
 | `pieces` | yes | client processes per arm, spread over the servers' ports in turn |
 | `arms` | usually | overrides; `format` and `probe_on` are the axes that vary today |
-| `params` | no | keyed by role: `client` holds flags of `inject/live_appworld.py` (`n`, `max_steps`, `max_inject_per_step`, `chunk_tokens`, ...); `probe` holds flags of `inject/probe_server.py` (`device`, `events`, ...) |
+| `params` | no | keyed by role: `client` holds flags of `sample/run_appworld.py`, the same driver as step 1 (`traj_per_task`, `seeds`, `max_steps`, and the probe flags `max_inject_per_step`, `chunk_tokens`, ...); `probe` holds flags of `inject/probe_server.py` (`device`, `events`, ...) |
 
-`cards` is derived from `servers` and `probe`; clients need no card.
+`cards` is derived from `servers` and `probe`; clients need no card. A
+repeat of a live arm is the same thing as in step 1: several trajectories
+per task, one seed each, inside one run; the scorer reports each seed and
+the mean. An arm with `probe_on` false runs the same loop with no scoring
+and no probe service.
 
 ```json
 {"step": "inject", "name": "format_where_result_goes",
@@ -607,7 +655,7 @@ setting>` writes the matrix of 4.3.
            "call": "probes_on_maxcut64__qwen06_full_cgen",
            "theta": 0.9},
  "split": "dev", "exp": "fmt", "pieces": 12,
- "params": {"client": {"max_inject_per_step": 1}},
+ "params": {"client": {"traj_per_task": 3, "seeds": [42, 67, 4267], "max_inject_per_step": 1}},
  "arms": {"inside_thinking": {"format": "p1_e1"},
           "after_thinking":  {"format": "p2_e1"},
           "old_note":        {"format": "note"},
@@ -638,7 +686,7 @@ settings share the file and its name. This is today's preset with a new
 home. The trajectory metadata keeps its `preset` key, filled with this name.
 
 The rule for where a server fact lives: if it changes when you swap the
-model, it is in `models/table.json` (weights, served name, serve flags,
+model, it is in `settings/models.json` (weights, served name, serve flags,
 environment variables, max model length, tokenizer); if it changes when you
 swap the card, it is in the settings file (host, gpu, card type, port, and
 extra flags for that instance); if it changes what the model generates, it
@@ -655,10 +703,10 @@ whose legal values come from one table in one module:
 | injection format | `format` | note, p1_e1, p1_e2, p2_e1, p2_e2 | `inject/inject_format.py` |
 | probe on or off | `probe_on` | true, false | the live driver's `--no-probe` switch |
 | method | `method` | ctool, cgen, cparam | `registry.py` METHODS |
-| backbone | `backbone` | qwen06, qwen17, qwen4 | `models/table.json` |
+| backbone | `backbone` | qwen06, qwen17, qwen4 | `settings/models.json` |
 | tuning | `tuning` | full, lora | `train/lora_util.py`; a switch plus LoRA's own flags |
 | example weighting | `params.weight_mode` | uniform, per_event | `dataset/build.py` |
-| request format | `api` of a generation file | harmony, chat, raw | `sample/chat.py` |
+| request row | `api` of a generation file | `chat` (the server renders, one request per step), `harmony` (the repo renders, streamed in chunks; the only row a probe attaches to), `raw` (a client-side Qwen template) | `sample/chat.py` |
 | generation | `generation` | the files under `settings/generation/` | |
 
 Adding a variant to a table axis is one row. The scripts build their
@@ -773,17 +821,20 @@ the suffix, so the wiring proof and the real run are findable side by side.
 
 | Scenario | What you do | Files |
 |---|---|---|
-| Add an agent model of a known family | one entry in models/table.json; one sample setting | 2 |
-| Add an agent model of a new family | the two above, plus its acceptance checks in models/serve.py and, when its prompt format is not harmony, a renderer next to harmony_render.py | 2 + code |
-| Add a probe backbone | one entry in models/table.json | 1 |
+| Add an agent model of a known family | one entry in settings/models.json; one sample setting | 2 |
+| Add an agent model of a new family | the two above, plus its acceptance checks in sample/serve.py and, when its prompt format is not harmony, a renderer next to harmony_render.py | 2 + code |
+| Add a probe backbone | one entry in settings/models.json | 1 |
 | Change generation settings | one file under settings/generation; name it in a sample or inject setting | 1 |
 | Add a training method | one trainer importing trainer_base.py; one METHODS row; an arm or a train setting | 3 |
 | Add an evaluation method | one script under eval/ writing a report; one entry in the method's evals list | 2 |
 | New dataset, same environment | one dataset setting, plus a sample setting if new trajectories | 1 or 2 |
 | Sample a new environment | one adapter under sample/; one block in dataset/rules.py; one sample setting; the clone under envs/ (untracked) | 3 |
-| Run a new environment live | the above plus its world primitives next to inject/world.py and its live driver | code |
+| Run a new environment live | the above plus its save, execute, and rollback primitives next to inject/world.py; the driver is shared | code |
 | New figure | one script under figures/ | 1 |
 | Try variants side by side | rows in the axis table if new; arms in one setting | 1 |
+| Same settings, more or fewer samples | sample and inject: `traj_per_task` and `seeds` in the setting; a smaller dataset from an existing sample: `traj_per_task` in the dataset setting | 1 |
+| Repeat a run for the spread | sample and inject: more seeds in the one run; dataset and train: a seed list, one run per value; `find` and `matrix` print mean and spread | 1 |
+| Relaunch a failed run | `run.py launch` the same setting again; the failed directory is moved aside and both rows stay in the ledger | 0 |
 | Run the steps up to the next GPU launch, resume after it | `run.py chain <setting>` | 0 |
 | Archive a failed method | `archived` and notes in its settings; delete its row and scripts; one TIMELINE entry | 0 new |
 | Find what produced an output | `run.py where <path>` | 0 |
@@ -812,8 +863,9 @@ it. The rename table is appendix A.
   c2, the tau2, tales, bfcl, toolhop, StableToolBench task entries, the
   ALFWorld block of `rules.py` once `eval_call.py` no longer imports it.
 - One-off server launchers: every `envs/serve_logs/launch_*.py`; the three
-  acceptance scripts there (the check table in `models/serve.py` replaces
-  them).
+  acceptance scripts there (the check table in `sample/serve.py` replaces
+  them); `live_arm_job.sh` (its case table of arms, ports, and probe ports
+  is what arms and cards in a settings file replace).
 - Registry ceremony: the recipe engine and `RECIPES`, the `status` and
   `recipes` subcommands, the legacy live-probe renderer in `gpu_jobs.py`, the
   incident auto-spawn half of `sampler.py` and `tests/test_incidents.py`.
@@ -839,17 +891,19 @@ Merged:
 
 | Today | Target |
 |---|---|
-| configs/models.json, gen_launch MODEL_TABLE and its family flag strings, rules MODEL_OF, matrix --models default, three trainer MODELS dicts | models/table.json |
+| configs/models.json, gen_launch MODEL_TABLE and its family flag strings, rules MODEL_OF, matrix --models default, three trainer MODELS dicts | settings/models.json |
 | CELLS, CELL_ORDER, EVAL_CELLS, per-cell task entries, launch_eval's branch, the matrix's three copies | registry.py METHODS |
 | pipeline/configs/<batch>.json, manifest_<batch>.json, ops/<batch>*_placement.json | settings/<step>/<name>.json |
-| configs/presets/*.json | settings/generation/<name>.json (client block) and models/table.json (server block) |
+| configs/presets/*.json | settings/generation/<name>.json (client block) and settings/models.json (server block) |
 | eval_causal_call.py, eval_causal_param.py | eval/eval_call.py, same report names |
 | the blocks copied into each trainer (version gate, heartbeat shim, args, force guard, seed, backbone lookup) | train/trainer_base.py |
 | ops/launch_cmd.py, launch_common.py, launch_probe.py, launch_eval.py | cluster/launch.py |
 | ops/sampler.py, verdicts.py, gpu_jobs.py | cluster/monitor.py |
 | model_registry.py, preset_loader.py (its merge order and the temperature-required check, whose two callers are repointed) | settings_loader.py at the root, stdlib only |
-| serve_preset.py, three acceptance scripts | models/serve.py with a check table |
+| serve_preset.py, three acceptance scripts | sample/serve.py with a check table |
 | pipeline/collect, envs/collect | sample/ |
+| envs/collect/run_appworld.py, pipeline/inject/live_appworld.py | sample/run_appworld.py: one task loop; the probe hook on the streaming request row is the only addition |
+| common.py's hand-assembled harmony template, pipeline/inject/harmony_render.py | sample/harmony_render.py, the one renderer, checked against the server by ident3_gate |
 | exec_calls.py's world primitives (including the deferred `load_steps`), replay_inject's harmony constants | inject/world.py |
 | extending.md section 5, MAP.md section 5, run.py pitfall notes | TRAPS.md |
 | CLAUDE.md's how-to-run half, MAP.md overview, CONTEXT.md glossary, extending.md's checklists | README.md |
@@ -907,8 +961,9 @@ big outputs on NFS, no guessing about results, English on disk.
 1. Every run of a step starts from one settings file, and the file's name is
    the run id, the output directory, and the ledger key.
 2. A settings file is frozen when its run starts; only the archive mark and
-   the notes change afterward. Running it again is a new file with a new
-   name.
+   the notes change afterward. Running it again for another result is
+   another seed; running it again after a failure is a relaunch of the
+   same run.
 3. Each fact is written in one place, and every other place imports it.
 4. A variant is a table row or a settings value, never a branch on a name.
 5. A new method is one METHODS row plus the scripts the row names, in the
@@ -978,7 +1033,8 @@ Appendix A is the rename table; every phase greps against it.
 - `git mv` into the tree of section 3 using appendix A, except the ledger
   code and files. Files that appendix A merges many-to-one move under their
   own names into the target directory here (`cluster/launch_cmd.py`,
-  `eval/eval_causal_call.py`, and so on) and collapse in phase 4. In the
+  `eval/eval_causal_call.py`, `sample/live_appworld.py`, and so on) and
+  collapse in phase 4. In the
   same commit: rewrite the 52 script paths in run.py's tables; every
   `parents[N]` count and every literal directory name in a moved file,
   including `gpu_jobs.py`'s path to the card probe script and the two
@@ -998,7 +1054,7 @@ Appendix A is the rename table; every phase greps against it.
 
 ### Phase 3: tables and the ledger (gate: C, L)
 
-- `models/table.json` with agents and backbones, and the backbone key
+- `settings/models.json` with agents and backbones, and the backbone key
   rename (`qwen` to `qwen06`) applied to its consumers listed in appendix
   A; `registry.py` METHODS and STEPS with the report key paths copied from
   today's reports; the matrix reading the table; the sample launcher
@@ -1006,13 +1062,16 @@ Appendix A is the rename table; every phase greps against it.
   settings; `eval_tool.py` gains a `--risk-targets` flag replacing its
   constant and sorts the values largest first, so the report key order
   stays as today; the loader derives `env` and `model` from the source
-  chain; `dataset/build.py`'s config reader takes the config the runner
-  writes; the STEPS and METHODS rows gain their accepted-flag lists with
-  one per-venv test each; the ledger fields of 4.4 and the `outdir` events
-  for old runs, appended from the per-step sources of 4.3; `run.py find`,
-  `run.py where`, `run.py
-  note`; selfcheck rewritten to validate settings files instead of presets;
-  `tests/test_preset.py` rewritten against `settings_loader.py`.
+  chain and expands a seed list into arms (4.1); `dataset/build.py`'s
+  config reader takes the config the runner writes and gains the
+  `traj_per_task` subset (section 10 item 8); the launcher's relaunch of a
+  failed run (4.1); the STEPS and METHODS rows gain their accepted-flag
+  lists with one per-venv test each; the ledger fields of 4.4 and the
+  `outdir` events for old runs, appended from the per-step sources of 4.3;
+  `run.py find`, `run.py where`, `run.py note`, with the seed grouping of
+  4.4 in `find` and `matrix`; selfcheck rewritten to validate settings
+  files instead of presets; `tests/test_preset.py` rewritten against
+  `settings_loader.py`.
 - Then delete the last group of section 6.
 - Gate: the chain's own byte-for-byte rebuild check on the existing dataset;
   regenerate the matrix files that exist on NFS through the old
@@ -1027,17 +1086,26 @@ Appendix A is the rename table; every phase greps against it.
 Refire of a job launched before the migration is not supported; relaunch it
 from its settings file. The old ledger command strings are an archive.
 
-### Phase 4: the file merges (gate: T, and C for eval)
+### Phase 4: the file merges (gate: T, C, L)
 
-- `train/trainer_base.py`, then `eval_call.py`, `cluster/launch.py`,
-  `cluster/monitor.py`, `models/serve.py`. The row-wise modules are renamed
-  only.
+- `train/trainer_base.py` (every trainer gains `--seed`, default 42,
+  replacing its constant), then `eval_call.py`, `cluster/launch.py`,
+  `cluster/monitor.py`, `sample/serve.py`. The row-wise modules are renamed
+  only. Last, the driver merge: `sample/run_appworld.py` absorbs
+  `live_appworld.py`, `sample/chat.py` absorbs its streaming client as the
+  harmony row with the probe hook, `sample/harmony_render.py` replaces the
+  template in `chat.py`, and `score_live.py` groups by seed.
 - Gate per merge: its tests; `--align-only` for cgen and cparam on the
   existing dataset; re-score the existing ctool run with cached logits and
   diff its report byte for byte; re-score the existing cgen and cparam runs
   on a fixed 50-event subset through gpu-run and diff; one smoke launch
   from a `_smoke` settings file that lands three ledger entries; the demo
   walkthrough's fifteen stops repointed at the lines they moved to.
+- Gate for the driver merge: five tasks at temperature 0 through the chat
+  row and through the harmony row give the same reasoning and content per
+  step, or the first divergence is explained in TRAPS.md; a no-probe run
+  of the merged driver builds a dataset that passes the dataset gates;
+  `--selftest-shadow` passes; `ident3_gate` against a running server.
 
 ### Phase 5: inject, documents, skills (gate: L)
 
@@ -1092,6 +1160,11 @@ Each has a default. Silence means the default.
    fitted value and you copy it. The alternative is a reference to the eval
    run and a risk target, which would be a TIMELINE entry changing the
    method rule.
+8. A smaller dataset from an existing sample. Today the builder takes every
+   trajectory the source holds, so two sample counts mean two sampling
+   runs. Default: the dataset setting gains `traj_per_task` (the first k
+   trajectories of each task in seed order), about twenty lines in the
+   builder, added in phase 3.
 
 ## 11. Expected result
 
@@ -1105,6 +1178,8 @@ Each has a default. Silence means the default.
 | run.py | 1,309 lines | about 350, tables in registry.py |
 | Places declaring models | 7 | 1 |
 | Places declaring methods | 7 | 1 |
+| Agent drivers | 2 (sampler, live) | 1 |
+| Harmony renderers | 2 | 1 |
 | Files per family of runs | 5 plus card tables | 1 per step |
 
 ## Appendix A: rename table
@@ -1115,6 +1190,8 @@ Paths:
 |---|---|
 | pipeline/collect/gen_launch.py | sample/gen_launch.py |
 | envs/collect/run_appworld.py | sample/run_appworld.py |
+| pipeline/inject/live_appworld.py | sample/live_appworld.py in phase 2, merged into sample/run_appworld.py and sample/chat.py in phase 4 |
+| pipeline/inject/harmony_render.py | sample/harmony_render.py |
 | envs/collect/common.py | sample/chat.py |
 | pipeline/annotate/build.py, param_label.py, check_callstr.py, rules.py, readonly/ | dataset/ (same names) |
 | pipeline/train/* | train/* (same names, except the two below) |
@@ -1124,11 +1201,11 @@ Paths:
 | pipeline/eval/eval_tool.py | eval/eval_tool.py |
 | pipeline/eval/eval_causal_call.py + eval_causal_param.py | eval/eval_call.py |
 | pipeline/eval/summarize_matrix.py | eval/matrix.py |
-| pipeline/inject/* (surviving files) | inject/* (same names) |
-| envs/serve_logs/live_arm_job.sh | inject/live_arm_job.sh |
+| pipeline/inject/* (surviving files) | inject/* (same names), except the two rows above |
+| envs/serve_logs/live_arm_job.sh | deleted (section 6) |
 | pipeline/driver.py | chain.py |
-| serve_preset.py | models/serve.py |
-| configs/models.json | models/table.json |
+| serve_preset.py | sample/serve.py |
+| configs/models.json | settings/models.json |
 | configs/presets/<name>.json | settings/generation/<name>.json |
 | pipeline/configs/{np821,p1}_gptoss.json + pipeline/collect/manifest_{np821,p1}.json + ops/{np821,p1}*_placement.json | settings/{sample,dataset,train,eval}/... |
 | preset_loader.py + model_registry.py | settings_loader.py |
