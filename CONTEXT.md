@@ -100,6 +100,16 @@
 - **正身世界**：被回放到目标步的真环境实例。投机在正身世界上执行，
   执行完回档，世界状态不留痕（2026-08-08 定）。
 
+- **Injection format (format)**: the named way a fired probe's call and result are put back into
+  the token stream — where (placement `p1` inside the open thinking, `p2` after closing the
+  thinking as a message from the sender `prefetch`) and how the mechanism is explained
+  (`e1` inline every time, `e2` once in the system prompt with a `[Prefetch]` marker).
+  Table in `pipeline/inject/inject_format.py`, selected by `--format`; `note` is the
+  pre-2026-09-12 text and the default (decided 2026-09-12).
+- **prefetch sender**: the author name of the message a `p2` format appends after the thinking
+  closes; named `prefetch` and not `python` so the model does not switch into calling the python
+  tool, which the AppWorld harness has no server for (decided 2026-09-12).
+
 ## 待定的词（讨论中，定了搬上面）
 
 （暂无）

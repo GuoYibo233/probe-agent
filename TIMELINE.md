@@ -47,6 +47,29 @@
   2026-08-20 之前的数字行留在原地；`METHOD.md` 与 `CONTEXT.md` 里带
   "2026-08-08 定"这类日期戳的条目是现役规则，不算远古记忆。
 
+## 2026-09-12 Injection format becomes an experiment axis: four arms, whole-task scoring only, p2 relaxes the no-special-token rule
+
+- Trigger: gyb wants to test how a prefetched result is put back into the agent's token stream. The
+  2026-08-18 single-step comparison (ten arms, correct result known in advance) is set aside: "i dont
+  want these old results, abandon these result". Scoring is whole-task success and the token account
+  only: "in test, we never see if a single tool call is right, we only care about the final result".
+- Decisions (gyb, this day): the model always gets an explanation; two placements stay in play,
+  inside the thinking (P1) and after an end-of-thinking token as a message from a sender named
+  prefetch (P2); explanation is crossed with placement (inline every time, E1, or once in the system
+  prompt with a marker inline, E2), giving four arms p1_e1 / p1_e2 / p2_e1 / p2_e2. Execution status is
+  S1-rollback only: the call runs in a saved-then-restored world and the text says it already ran.
+  Commit-and-keep and preview-not-executed are dropped (real side effects on wrong predictions; no
+  round trip saved). P2 writes control markers, so R1 and R2 of `METHOD.md` are relaxed for this
+  experiment only.
+- Implementation (same day): `pipeline/inject/inject_format.py` holds the five formats (`note` keeps
+  the pre-existing text as default) as plain strings; `live_appworld.py --format` selects one; the
+  probe server's `/encode` gains `special` (control markers stay text unless asked for) and echoes
+  `encode_special` in `/health`; `score_live.py` carries `format` into rows and the table. Judge
+  test: the literal P2 tail encodes to exactly the harmony library's rendering of a tool-authored
+  analysis message from sender `prefetch`. `--no-probe --format <e2 arm>` is the control for an e2 arm.
+- Not yet run: the probe server has never been launched with np821 weights; the live arms need a
+  served ctool + cgen pair and a hand-given θ.
+
 ## 2026-09-05 research-loop v2 骨架版一天建成：五会话并行、代裁记录、待验证第 5 和第 9 条有了结论
 
 gyb 2026-09-04 定的三件事是这一轮的方向：今天交「骨架版」（所有组件文件都在、已裁定部分测试绿、未裁定处在代码里标 `PENDING(...)`、母版和说明书是草稿），代码按 sync-inbox 的新裁决写、另列对照单等最后一期核对；点名测待验证第 5 条（子会话写账算谁）和第 9 条（后台子会话寿命）；分层真源（机器能查的归代码和表，纪律归母版和说明书，分册总验收后退成来历）。gyb 原话「全都按照推荐的吧，然后这次我不知道的情况下做出的决定这一块专门开一个记录，遇到要我解决的东西就按照你自己的推荐做掉，我回来在审查」，代裁记录由此建立（`plans/2026-09-04-research-loop-proxy-decisions.md`，D-01 到 D-38）。

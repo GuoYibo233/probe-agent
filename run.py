@@ -521,6 +521,8 @@ TASKS = {
         handoff=True,
         desc="live-run driver (requires vLLM + probe service; requires --base-url --probe-url --outdir --exp)",
         notes=["the no-probe arm (--no-probe) also needs --probe-url (/render lives on the service side)",
+               "--format {note,p1_e1,p1_e2,p2_e1,p2_e2} picks the injection format (inject_format.py, 2026-09-12);"
+               " p2_* formats need a probe_server whose /health echoes encode_special=true",
                "--preset <name> selects a set of generation settings (effort/temperature/step budget/stop),"
                "explicit command-line arguments override the preset",
                "a transient failure writes task_error final; --resume does not retry: to retry, delete that task's live_*.jsonl first",

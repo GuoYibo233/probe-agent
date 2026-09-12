@@ -85,6 +85,16 @@ CGEN = PROJ / "pipeline/runs/c1_gptoss_cgen"
 GPTOSS_TOK = "/net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b"
 
 
+def encode_ids(tok, text, special=False):
+    """Text -> gpt-oss token ids for the driver's resend after a fire (2026-09-12).
+    special=False: control markers such as <|end|> inside the text stay plain text (a `think`
+    format's injected text carries zero special tokens, METHOD.md R2, even when a result
+    happens to contain one). special=True: the markers become their special tokens (an `after`
+    format closes the thinking and appends a prefetch message)."""
+    return tok.encode(text, add_special_tokens=False,
+                      split_special_tokens=(not special))
+
+
 def load_ctool(run, dev):
     """[Mirrors eval_tool.load_causal] loads the backbone from best/ and the head from best/head.pt."""
     from train_causal_tool import CausalProbe                 # noqa: E402
@@ -194,8 +204,8 @@ class Probe:
                             start_date=R.COLLECT_DATE)
         return dict(prefix_ids=ids, n_tokens=len(ids), prefix=HR.decode(ids))
 
-    def encode(self, text):
-        return dict(ids=self.oss_tok.encode(text, add_special_tokens=False))
+    def encode(self, text, special=False):
+        return dict(ids=encode_ids(self.oss_tok, text, special))
 
     def decode(self, ids):
         # 2026-08-18 (ident3): after the driver cuts the head at a token boundary, it uses this
@@ -211,7 +221,7 @@ class Probe:
                     render_only=self.render_only,
                     n_labels=self.ct_meta["n_labels"],
                     max_len=self.max_len, device=str(self.dev),
-                    render="harmony_ids", decode=True,
+                    render="harmony_ids", decode=True, encode_special=True,
                     start_date=R.COLLECT_DATE)
 
 
@@ -252,7 +262,7 @@ def serve(a):
                 elif self.path == "/render":
                     out = probe.render(req["messages"], req.get("effort"))
                 elif self.path == "/encode":
-                    out = probe.encode(req["text"])
+                    out = probe.encode(req["text"], bool(req.get("special", False)))
                 elif self.path == "/decode":
                     out = probe.decode(req["ids"])
                 else:

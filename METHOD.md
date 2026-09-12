@@ -84,7 +84,7 @@ vLLM 侧受控复跑至今没做过（`learn/vllm/lessons/0004` 原话
 | # | 判据 | 状态 |
 |---|---|---|
 | R1 | 注入只落在思考段内部，思考一闭合就停手 | 【现状】满足（`live_appworld.py:273-279`） |
-| R2 | 注入内容本身零特殊 token（纯文本模板） | 【现状】满足（`replay_inject.py:147`） |
+| R2 | 注入内容本身零特殊 token（纯文本模板） | 【现状】满足（`replay_inject.py:147`）。2026-09-12: the `p1` formats are encoded with `special=False`, so a control marker inside a result stays plain text; the `p2` formats write `<|end|>` / `<|start|>` on purpose and are the one sanctioned relaxation of R1 and R2 (axis 5) |
 | R3 | 注入后重发的整串重编码后是合法 harmony 串、与原生成逐 token 对齐；重分词缝（`live_appworld.py:320`）每次机制检查实测 | 【现状】已验（2026-08-10 z1 冒烟：10/10 注入事件服务端分词与 openai_harmony 重编码逐位一致，见 `plans/archive/2026-08-10-z1-smoke-report.md`） |
 | R4 | 请求参数与已验证等价的采集路一致 | 【现状】满足。2026-08-18 起 prompt 以 token id 发，服务端不再分词，`add_special_tokens` 无作用已去掉；`skip_special_tokens=False` 保留（输出切分要看标记） |
 
@@ -120,7 +120,19 @@ mext 区间抽取；骨架臂（工具名钉死、参数模型自写，`replay_i
 执行走"存档→执行→回档→重冻时间"，世界状态不留痕。
 离线三档 miss_policy：skip / oracle / execute（各量各的，口径见
 `replay_inject.py` 文件头）。
-【想法待定】塞什么的新方案另开会话讨论，不进本文档。
+【已定要改】(2026-09-12, gyb) The format is an experiment axis with five named values in
+`pipeline/inject/inject_format.py`, selected by `live_appworld.py --format`
+(default `note` = the template above): placement `p1` appends inside the open thinking,
+`p2` closes the thinking with `<|end|>` and appends a message from a sender named `prefetch`
+on the analysis channel, then `<|start|>assistant`; explanation `e1` is one inline sentence
+per injection, `e2` is one paragraph in the system prompt plus a `[Prefetch]` marker inline.
+The four arms `p1_e1 / p1_e2 / p2_e1 / p2_e2` are compared on whole-task success and the
+token account only; no single-call judgement. Execution status is always
+"ran in a saved-then-restored world, text says already executed" (S1-rollback);
+commit-and-keep and preview-not-executed were dropped on 2026-09-12 (the first has real side
+effects on wrong predictions, the second saves no round trip). The `p2` arms write control
+markers and therefore relax R1 and R2 for this experiment; the `p1` arms keep both.
+`--no-probe --format <e2 arm>` is the control for an e2 arm (same system paragraph, no injection).
 
 **轴6 何时塞**
 【现状】思考的句子切口上、首过线出手、每步最多注一次

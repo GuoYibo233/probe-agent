@@ -97,7 +97,7 @@ class Args(types.SimpleNamespace):
 def mk_args(**kw):
     a = Args(base_url="http://vllm", probe_url="http://probe", model="m",
              timeout=5, no_probe=False, max_inject_per_step=1,
-             fire_nth_cut=0, nofill=False,
+             fire_nth_cut=0, nofill=False, format="note",
              # gen-preset (2026-08-20): these three fields hang off args, expanded from --preset;
              # here they are filled with the values of the `default` preset (temperature 1.0)
              max_step_tokens=8192, temperature=1.0, stop=["<|return|>"])
@@ -360,7 +360,122 @@ class TestPromptIds(unittest.TestCase):
                        [], None, "t0", False, self.log, 0)
 
 
+P2_OPEN = "<|end|><|start|>prefetch to=assistant<|channel|>analysis<|message|>"
+P2_CLOSE = "<|end|><|start|>assistant"
+SECOND_THINK = "<|channel|>analysis<|message|>Now act on it."
+FINAL_AFTER_TOOL = "<|channel|>final<|message|>```python\nprint(1)\n```"
+
+
+class TestFormatArms(unittest.TestCase):
+    """--format picks the injection text and its placement (inject_format.py). The head is the
+    model's own ids in every arm; only the appended text differs."""
+
+    def setUp(self):
+        FakeStream.calls = []
+        self.logged = []
+        self.log = types.SimpleNamespace(w=lambda rec: self.logged.append(rec))
+        self._orig = (L.open_stream, L.http_json, L.speculate)
+        self.encodes = []
+
+    def tearDown(self):
+        L.open_stream, L.http_json, L.speculate = self._orig
+
+    def _fire(self, fmt, second):
+        first = words(THINK)
+        scripts = iter([first, second])
+        L.open_stream = lambda b, p, t, retries=3: FakeStream(b, p, t, next(scripts))
+        n_score = {"n": 0}
+        dec = decoder(first + second)
+
+        def http(url, payload, **k):
+            if url.endswith("/score"):
+                n_score["n"] += 1
+                return dict(conf=0.9, label="x", fired=(n_score["n"] == 2))
+            if url.endswith("/gen"):
+                return dict(call="apis.supervisor.show_profile()")
+            if url.endswith("/encode"):
+                self.encodes.append(payload)
+                return dict(ids=fake_encode(payload["text"]))
+            if url.endswith("/decode"):
+                return dict(text=dec(payload["ids"]))
+            self.fail(url)
+        L.http_json = http
+        L.speculate = lambda world, call, t, g: dict(
+            exec_code=call, arg_modes={}, exec_out="{'ok': 1}", exec_ok=True,
+            error_kind=None)
+        return L.gen_step(mk_args(format=fmt), PREFIX, "task", [], None, "t0",
+                          False, self.log, 0)
+
+    def test_p1_e1_appends_plain_text_after_head(self):
+        think, content, usage, discard, n_inj, gen_ids, cons = self._fire(
+            "p1_e1", words(" Continue.") + [FINAL])
+        self.assertEqual(n_inj, 1)
+        spec = next(r for r in self.logged if r["type"] == "spec")
+        self.assertTrue(spec["note"].startswith("\n[Prefetch: "))
+        self.assertIn("{'ok': 1}", spec["note"])
+        head_ids = [word_id(w) for w in words(HEAD2)]
+        self.assertEqual(FakeStream.calls[1]["prompt"],
+                         PREFIX + head_ids + fake_encode(spec["note"]))
+        self.assertEqual(self.encodes[0].get("special", False), False)
+        self.assertIn("without calling it", think)
+        self.assertIn("print(1)", content)
+
+    def test_p2_e1_closes_thinking_and_resumes_at_assistant_start(self):
+        think, content, usage, discard, n_inj, gen_ids, cons = self._fire(
+            "p2_e1", [FINAL_AFTER_TOOL])
+        self.assertEqual(n_inj, 1)
+        spec = next(r for r in self.logged if r["type"] == "spec")
+        self.assertTrue(spec["note"].startswith(P2_OPEN))
+        self.assertTrue(spec["note"].endswith(P2_CLOSE))
+        head_ids = [word_id(w) for w in words(HEAD2)]
+        self.assertEqual(FakeStream.calls[1]["prompt"],
+                         PREFIX + head_ids + fake_encode(spec["note"]))
+        self.assertTrue(self.encodes[0]["special"])
+        # the prefetch message is not the model's thinking; the model went straight to final
+        self.assertNotIn("without calling it", think)
+        self.assertEqual(think.strip(), "We need to inspect the profile first. Then we log in to spotify.")
+        self.assertIn("print(1)", content)
+        self.assertEqual(len(FakeStream.calls), 2)   # thinking is closed: no second fire
+
+    def test_p2_second_thinking_block_joins_thinking(self):
+        think, content, *_ = self._fire(
+            "p2_e2", words(SECOND_THINK) + ["<|end|><|start|>assistant" + FINAL_AFTER_TOOL])
+        self.assertIn("Now act on it.", think)
+        self.assertNotIn("show_profile() = ", think)
+        self.assertIn("print(1)", content)
+
+
+class TestParseStep(unittest.TestCase):
+    def test_prefetch_segment_is_not_thinking(self):
+        full = ("<|channel|>analysis<|message|>Think one." + P2_OPEN
+                + "the system already ran x and got 1" + P2_CLOSE
+                + "<|channel|>analysis<|message|>Think two."
+                + "<|end|><|start|>assistant<|channel|>final<|message|>done")
+        think, content = L.parse_step(full)
+        self.assertEqual(think, "Think one.\nThink two.")
+        self.assertEqual(content, "done")
+
+
+class TestSystemPrompt(unittest.TestCase):
+    def test_note_and_e1_keep_the_collection_system_prompt(self):
+        self.assertEqual(L.system_prompt("note"), L.R.SYSTEM)
+        self.assertEqual(L.system_prompt("p1_e1"), L.R.SYSTEM)
+
+    def test_e2_appends_the_prefetch_paragraph(self):
+        s = L.system_prompt("p1_e2")
+        self.assertTrue(s.startswith(L.R.SYSTEM))
+        self.assertIn("[Prefetch]", s[len(L.R.SYSTEM):])
+        self.assertEqual(L.system_prompt("p2_e2"), s)
+
+
 class TestHealthGate(unittest.TestCase):
+    def test_special_encode_required_for_p2_formats(self):
+        cfg = dict(render="harmony_ids", decode=True)
+        self.assertIsNone(L.probe_cfg_problem(cfg, need_decode=True, need_special=False))
+        self.assertIn("encode_special", L.probe_cfg_problem(cfg, need_decode=True, need_special=True))
+        self.assertIsNone(L.probe_cfg_problem(dict(cfg, encode_special=True),
+                                              need_decode=True, need_special=True))
+
     def test_old_server_rejected(self):
         self.assertIn("old probe_server", L.probe_cfg_problem(dict(theta=0.9, temperature=1.8)))
         self.assertIn("old probe_server", L.probe_cfg_problem(dict(render="jinja_text")))

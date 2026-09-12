@@ -18,9 +18,10 @@ Within one step (design doc §2):
      §4.2 for the difference in criteria);
   5. On fire: /gen produces the whole call -> live world save_state -> requote -> execute ->
      truncate to 4000 -> load_state to restore -> _set_datetime() to refreeze -> time-guard assertion
-     ([copied from exec_calls.replay_unit], with a finally fallback) -> NOTE spliced in at the cut,
-     overflow text after the cut discarded (the discarded amount is recorded) -> continue segmented
-     generation;
+     ([copied from exec_calls.replay_unit], with a finally fallback) -> the --format text spliced in
+     at the cut (inject_format.py, 2026-09-12: `note`/`p1_*` inside the thinking, `p2_*` close the
+     thinking and append a message from the prefetch sender), overflow text after the cut discarded
+     (the discarded amount is recorded) -> continue segmented generation;
   6. Probing stops once <|end|> appears; the segment length is enlarged to --tail-tokens to finish the
      step; the final channel takes the code block, executes it in the live world, feeds the output back,
      and moves to the next step. Injects at most once per step by default.
@@ -76,7 +77,8 @@ import rebuild as R                                            # noqa: E402
 from rules import MIN_THINK, SENT_RE, assemble                 # noqa: E402
 from exec_calls import (APPWORLD_SEED, TRUNC, CKPT, error_kind,  # noqa: E402
                         requote)
-from replay_inject import DEFAULT_STOP, NOTE_TMPL              # noqa: E402
+from replay_inject import DEFAULT_STOP                         # noqa: E402
+import inject_format as F                                      # noqa: E402
 
 APPWORLD_HOME = "/home/y-guo/reproduce/new1/envs/appworld"
 END_MARK = "<|end|>"
@@ -381,12 +383,14 @@ def ids_sha(ids):
     return hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()
 
 
-def sep_for(head):
-    """The seam before NOTE (2026-08-18 splice_replay D5'): if head ends in whitespace, no newline is added
-    (a newline cut starts its own new line, a space cut stays inline), otherwise one \\n is added. head
-    is the model's own tokens, NOTE is encoded separately, so the model's last token is never merged or
-    rewritten."""
-    return "" if head[-1:].isspace() else "\n"
+sep_for = F.sep_for        # the head seam rule lives in inject_format (single source since 2026-09-12)
+
+
+def system_prompt(fmt):
+    """The system message for a task: the collection SYSTEM, plus the format's paragraph when the
+    format explains the prefetch mechanism there (e2 formats). Present from step 0 and re-rendered
+    every step, so the no-probe control run with the same --format carries the same prompt."""
+    return R.SYSTEM + F.system_extra(fmt)
 
 
 def log_resume(log, step, pending, gen_ids, st):
@@ -496,10 +500,15 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
                     g = http_json(a.probe_url + "/gen",
                                   dict(text=assemble(task, hist, t_all[:cut])))
                     spec = speculate(world, g["call"], t_frozen, dt_guard)
-                    note = sep_for(head_txt) + NOTE_TMPL.lstrip("\n").format(
-                        call=g["call"], result=spec["exec_out"])
+                    note = F.splice_text(a.format, head_txt, g["call"],
+                                         spec["exec_out"])
+                # `after` formats close the thinking and append a prefetch message: their text
+                # carries control markers and is encoded with special=True; `think` formats are
+                # encoded as plain text, so a marker inside a result stays text (R2)
                 note_ids = (http_json(a.probe_url + "/encode",
-                                      dict(text=note))["ids"] if note else [])
+                                      dict(text=note,
+                                           special=F.needs_special(a.format)))["ids"]
+                            if note else [])
                 discard["chars"] += max(0, len(raw) - len(head_txt))
                 discard["tokens"] += len(overflow_ids)
                 discard["events"] += 1
@@ -560,7 +569,7 @@ def gen_step(a, prefix_ids, task, hist, world, t_frozen, dt_guard, log, step):
     return (t_final, content, usage, discard, n_inject, gen_ids, consistent)
 
 
-def probe_cfg_problem(cfg, need_decode=False):
+def probe_cfg_problem(cfg, need_decode=False, need_special=False):
     """If the /health echo doesn't match expectations, gives one reason to refuse the run; returns None if
     it matches. An old service's /render produces jinja text, which diverges from the chat endpoint in
     two places (see harmony_render.py file header); lesson: an old 8790 once silently dropped the effort
@@ -572,6 +581,9 @@ def probe_cfg_problem(cfg, need_decode=False):
     if need_decode and not cfg.get("decode"):
         return ("probe service /health did not return decode=true: firing and resending needs /decode to check "
                 "head_ids (2026-08-18 ident3), this is an old probe_server, refuse to run")
+    if need_special and not cfg.get("encode_special"):
+        return ("probe service /health did not return encode_special=true: an `after` format (p2_*) needs "
+                "/encode to recognise control markers (2026-09-12), this is an old probe_server, refuse to run")
     return None
 
 
@@ -625,6 +637,12 @@ def main():
     ap.add_argument("--nofill", action="store_true",
                     help="when firing, insert nothing at all (no /gen, no speculative execution, no NOTE written), "
                          "only interrupt and refire the continuation using the model's own token ids")
+    ap.add_argument("--format", default="note", choices=sorted(F.FORMATS),
+                    help="injection format (inject_format.py; METHOD.md axis 5): note = the text used "
+                         "before 2026-09-12; p1_* append inside the thinking, p2_* close the thinking and "
+                         "append a message from the prefetch sender; *_e1 explain inline, *_e2 explain once "
+                         "in the system prompt. --no-probe with an *_e2 format carries the same system "
+                         "paragraph and injects nothing (the control for that format)")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--shard-id", type=int, default=0)
     ap.add_argument("--num-shards", type=int, default=1)
@@ -681,7 +699,9 @@ def main():
     with urllib.request.urlopen(a.probe_url + "/health", timeout=30) as r:
         probe_cfg = json.loads(r.read())
     print(f"probe: {probe_cfg}", flush=True)
-    bad = probe_cfg_problem(probe_cfg, need_decode=not a.no_probe)
+    bad = probe_cfg_problem(probe_cfg, need_decode=not a.no_probe,
+                            need_special=(not a.no_probe and not a.nofill
+                                          and F.needs_special(a.format)))
     if bad:
         sys.exit(bad)
 
@@ -745,7 +765,7 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
             arm=("no_probe" if a.no_probe else
                  "probe_nofill" if a.nofill else "probe"),
             fire=(f"nth_cut:{a.fire_nth_cut}" if a.fire_nth_cut else "probe"),
-            nofill=bool(a.nofill), token_exact_resend=True,
+            nofill=bool(a.nofill), token_exact_resend=True, format=a.format,
             effort=a.effort, probe=probe_cfg, preset=a.preset,
             gen_settings=dict(temperature=a.temperature,
                               max_step_tokens=a.max_step_tokens,
@@ -757,7 +777,7 @@ def run_task(AppWorld, tid, exp, out_path, a, probe_cfg):
         t_frozen = world.execute("print(DateTime.now())").strip()
         dt_guard = not t_frozen.startswith("Execution failed")
 
-        msgs = [{"role": "system", "content": R.SYSTEM},
+        msgs = [{"role": "system", "content": system_prompt(a.format)},
                 {"role": "user",
                  "content": f"Task from supervisor: {instr}"}]
         hist = []                          # the (action, result) history fed to the probe

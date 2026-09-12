@@ -121,8 +121,9 @@ def main():
         meta, gens, envs, specs, final = read_live(f)
         tid = ((meta or {}).get("task_id")
                or Path(f).stem[len("live_"):])       # filename live_<task_id>.jsonl
+        fmt = (meta or {}).get("format", "note")   # runs before 2026-09-12 carry no format field
         if final is None:
-            rows.append(dict(task=tid, arm=(meta or {}).get("arm"),
+            rows.append(dict(task=tid, arm=(meta or {}).get("arm"), format=fmt,
                              unfinished=True))
             continue
         billed = sum(g["usage"]["gen_tok"] for g in gens)
@@ -155,7 +156,7 @@ def main():
                 discarded_chars=s["discarded_chars"]))
 
         rows.append(dict(
-            task=tid, arm=(meta or {}).get("arm"),
+            task=tid, arm=(meta or {}).get("arm"), format=fmt,
             success=success_of(final.get("eval")),
             steps=final["steps"], completed=final["completed"],
             task_error=str(final.get("abort") or "").startswith("task_error"),
@@ -176,6 +177,7 @@ def main():
     summary = dict(
         n_tasks=len(rows), n_done=len(done), n_paired=len(paired),
         n_task_error=len(errs),
+        formats=sorted({r["format"] for r in rows}),
         live_success=rate([r["success"] for r in done]),
         base_success=rate([r["base_success"] for r in paired]),
         live_success_paired=rate([r["success"] for r in paired]),
@@ -204,10 +206,10 @@ def main():
         md.insert(6, "task_error tasks: " + ", ".join(r["task"] for r in errs))
     for k, v in summary.items():
         md.append(f"| {k} | {v} |")
-    md += ["", "| task | arm | outcome | control outcome | steps | fired | billed tok |"
-              " control out tok |", "|---|---|---|---|---|---|---|---|"]
+    md += ["", "| task | arm | format | outcome | control outcome | steps | fired | billed tok |"
+              " control out tok |", "|---|---|---|---|---|---|---|---|---|"]
     for r in done:
-        md.append(f"| {r['task']} | {r['arm']} | {r['success']} | "
+        md.append(f"| {r['task']} | {r['arm']} | {r['format']} | {r['success']} | "
                   f"{r['base_success']} | {r['steps']} | {r['n_inject']} | "
                   f"{r['billed_tok']} | {r['base_out_tok']} |")
     (live_dir / "LIVE_REPORT.md").write_text("\n".join(md) + "\n")
