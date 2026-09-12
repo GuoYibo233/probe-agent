@@ -1,261 +1,278 @@
-# T15 报告 — 文档回写：gpu-run skill 与两份方法论
+# T15 report: Documentation write-back for the gpu-run skill and two methodology docs
 
-工单：`.scratch/gpu-monitor-launch/issues/15-docs-gpu-run.md`
-分支：`ticket/20260808-par/T15`（工作树 `/home/y-guo/reproduce/new1-wt/20260808-par-T15`，已删除）
+Ticket: `.scratch/gpu-monitor-launch/issues/15-docs-gpu-run.md`
+Branch: `ticket/20260808-par/T15` (worktree `/home/y-guo/reproduce/new1-wt/20260808-par-T15`, removed)
 base: `86f2b8e2fa5846f4060262989974237ad824d108`
 head: `146a289e3b14de7318dcf719cb4290fe140ab92c`
 
-## 做了什么（对照工单逐条）
+## What was done (against the ticket point by point)
 
-工单验收项三条：
+The ticket's acceptance items, three of them:
 
-- [x] **Phase 4 只剩 commit、launch、交监控入口三步**
-  `.claude/skills/gpu-run/SKILL.md` 的 Phase 4 重写为三个编号步骤：
-  1. commit 代码；
-  2. `python3 run.py launch <task> ... --run-id --track --piece ...`（一条命令，
-     贴出完整用法，说明它按 `ops/launch_cmd.py` 头注释钉死的十步做完探卡→
-     tmux 发射→30 秒验活→台账/记录/RUNMETA 三处登记，手打三条登记命令的段落
-     全删）；
-  3. 交监控入口（`gpu-jobs`/`gpu-jobs watch`/浏览器 `localhost:8377`）。
-  Phase 3（smoke）补一句：也可以先用 `launch --dry-run` 看命令，不发射不登记。
+- [x] **Phase 4 down to just three steps: commit, launch, hand off the monitoring entry point**
+  `.claude/skills/gpu-run/SKILL.md`'s Phase 4 was rewritten into three numbered steps:
+  1. commit the code;
+  2. `python3 run.py launch <task> ... --run-id --track --piece ...` (one command, full
+     usage pasted in, explaining that it does probe → tmux launch → 30-second alive check → ledger/record/RUNMETA
+     three registrations, all fixed down by `ops/launch_cmd.py`'s header comment's ten steps; the whole paragraph about
+     typing three registration commands by hand was deleted);
+  3. hand off the monitoring entry point (`gpu-jobs`/`gpu-jobs watch`/the browser
+     `localhost:8377`).
+  Phase 3 (smoke) got a sentence added: can also use `launch --dry-run` first to see the command, without launching or registering.
 
-- [x] **Phase 5 不再含定时巡检的排程条款**
-  原文里"起服务期 10 分钟粒度、跑批期 15-30 分钟"的排程条款和"ETA 靠两个
-  时间点的 Δitems/Δt 交叉核对"的手工步骤整段删掉，改写成「采样器接管」：
-  判定/升级由 `ops/sampler.py` 常设负责，Claude 只在①用户问起、②事故记录
-  有新内容两种时机才派 `job-monitor`。按工单 Comments 里主会话转记的裁决，
-  **事故 agent 自动验尸补射写成"未上线（暂缓）"**，并交代清楚原因：触发规则
-  纯函数 `should_trigger` 已合并，但真正拉起 agent 的 `maybe_trigger_incidents`
-  读代码确认目前只是 `pass` 占位（2026-08-08 用户裁决暂缓）——没有写成现状。
+- [x] **Phase 5 no longer contains a scheduled-checking cadence clause**
+  The original clause "10-minute granularity while a service is starting up, 15-30 minutes while running a batch"
+  and the manual step "ETA is cross-checked from two time points' Δitems/Δt" were deleted wholesale, rewritten as
+  "sampler takes over": the verdict/escalation is now the permanent responsibility of
+  `ops/sampler.py`, and Claude only dispatches `job-monitor` on two occasions: ① the user asks, ② the incident
+  record has new content. Per the ruling from the ticket's Comments transcribed by the main session,
+  **the incident agent's automatic autopsy-and-refire is written as "not yet live (on hold)"**, with a clear explanation
+  of why: the trigger-rule pure function `should_trigger` has already been merged, but the function that actually
+  pulls up the agent, `maybe_trigger_incidents`, was confirmed by reading the code to currently be just a `pass`
+  placeholder (2026-08-08 user ruling: held). It wasn't written as current state.
 
-- [x] **commit**：`146a289`，见下方 commit 清单。
+- [x] **Commit**: `146a289`, see the commit list below.
 
-工单正文里额外要求的两份方法论改写：
+Two extra methodology rewrites required by the ticket text:
 
-- **`references/launch-methodology.md`**：
-  - Step 4 标题从"Launch in tmux"改成"What `launch` does for you"，正文改成
-    讲清楚 `run.py launch` 替你做了什么（探卡 fail-closed、session/log 命名
-    规则、30 秒验活窗口、三处登记）；原来的 `subprocess`/`tmux new-session`
-    模板保留，但改注为「只有 `--cmd` 逃生口还用得上的参考模板」。
-  - Step 3 标题从"Shard if it pays"改成"Shard via `--piece`, not by hand"，
-    讲清楚多个 `--piece` 会被 `launch` 自动注入 `--shard-id i --num-shards N`、
-    且任务要在注册表标 `shardable: True` 才许多分片；死分片的恢复方式改成
-    `launch --refire`。
-  - Step 2（挑卡规则）原样保留，未改动。
+- **`references/launch-methodology.md`**:
+  - Step 4's title changed from "Launch in tmux" to "What `launch` does for you," the body rewritten to
+    explain clearly what `run.py launch` does for you (fail-closed probing, session/log naming
+    rules, the 30-second alive check window, the three registrations); the original
+    `subprocess`/`tmux new-session` template kept, but annotated as "a reference template only still
+    useful for the `--cmd` escape hatch."
+  - Step 3's title changed from "Shard if it pays" to "Shard via `--piece`, not by hand,"
+    explaining clearly that multiple `--piece` will get `--shard-id i --num-shards N` auto-injected by
+    `launch`, and that a task must be marked `shardable: True` in the registry before it may be given
+    multiple pieces; the way to recover a dead piece was changed to
+    `launch --refire`.
+  - Step 2 (card-picking rules) kept unchanged as-is.
 
-- **`references/monitor-methodology.md`**：
-  - 原来的「Mandatory rules / Standard procedure / Reading tqdm output /
-    Sharded-job caveat」四节（两点测速、tqdm 解析、分片 ETA 修正的手工流程）
-    合并改写成一节「程序职责说明：判定从哪来」：讲清楚这套活现在是
-    `ops/heartbeat.py`+`ops/sampler.py`+`ops/verdicts.py` 的常设职责，附
-    `ops/verdicts.py` 六格判定表（`V_DONE`/`V_DEAD`/`V_STALL`/`V_WARMUP`/
-    `V_SLOW`/`V_OK` 各自的命中条件，摘自 `judge()`）和判定线/升级线两条公式
-    （常数来自 `ops/verdicts.py` `DEFAULTS`，逐项列出默认值）。
-  - 「Decision tree」一节保留，表头从"Condition"改成"判定"，输入从"ETA
-    computed by hand"换成采样器给的 `verdict`/`escalated` 判定值，六行分支
-    对应六格判定。
+- **`references/monitor-methodology.md`**:
+  - The original four sections "Mandatory rules / Standard procedure / Reading tqdm output /
+    Sharded-job caveat" (the manual process of two-point rate measurement, tqdm parsing, sharded ETA correction) were
+    merged and rewritten into one section, "Program responsibility statement: where the verdict comes from": explaining clearly that
+    this work is now the permanent responsibility of `ops/heartbeat.py`+`ops/sampler.py`+`ops/verdicts.py`, with
+    `ops/verdicts.py`'s six-cell verdict table attached (`V_DONE`/`V_DEAD`/`V_STALL`/`V_WARMUP`/
+    `V_SLOW`/`V_OK`'s respective hit conditions, taken from `judge()`) and the two formulas for the
+    stall line/escalate line (the constants come from `ops/verdicts.py` `DEFAULTS`, defaults listed item by item).
+  - The "Decision tree" section was kept, with its header changed from "Condition" to "verdict," and its input
+    changed from "ETA computed by hand" to the `verdict`/`escalated` value given by the sampler, with six
+    branches corresponding to the six verdicts.
 
-## 一处发现并自行修正的问题（未在工单里点名，但直接影响文档准确性）
+## One problem discovered and fixed on my own (not named by the ticket, but directly affects the documentation's accuracy)
 
-写 Phase 4/5 与 monitor-methodology 初稿时，我按工单字面把 `ops/verdicts.py`
-的六格判定描述成"`gpu-jobs`/`gpu-jobs watch`/`gpu-jobs json` 表里已经能看到"。
-读代码核对后发现这是错的：
+While drafting Phase 4/5 and monitor-methodology, I initially followed the ticket's literal wording and described
+`ops/verdicts.py`'s six-cell verdict as "already visible in the `gpu-jobs`/`gpu-jobs watch`/`gpu-jobs json`
+tables." Reading the code to check found this to be wrong:
 
-- `ops/gpu_jobs.py` 的 `collect()` 至今仍是老的 `parse_log()`（正则抓日志尾部
-  tqdm 行），`fmt_table` 的列是 `job/host/gpus/state/progress/rate/eta/session`，
-  没有 `verdict`/`escalated` 列；`json` 子命令也只是 `print(json.dumps(collect()))`，
-  同一套老逻辑。
-- 采样器（`ops/sampler.py`）把判定写进的是它自己的 `MONITOR_DIR/latest.json`，
-  和 `ops/gpu_jobs.py` 读写的 `ops/jobs.json`（台账注册表）是两份互不相通的
-  文件；采样器不写台账。
-- 六格判定目前**只有**采样器自带的网页出口能看到：`http://localhost:8377`
-  （HTML）与 `http://localhost:8377/json`（原文 `latest.json`），这是工单 06
-  已完成的产物。
-- 把 `gpu-jobs`/`watch`/`json` 三个终端出口接读这份采样历史，是工单 07
-  「终端出口改读采样历史」要做的事，我确认它当前状态是 `in_progress`，尚未
-  接线（`.scratch/gpu-monitor-launch/issues/07-terminal-outlet.md`）。
+- `ops/gpu_jobs.py`'s `collect()` is still, to this day, the old `parse_log()` (a regex grabbing the tail
+  of the log's tqdm lines); `fmt_table`'s columns are `job/host/gpus/state/progress/rate/eta/session`,
+  with no `verdict`/`escalated` columns; the `json` subcommand is also just
+  `print(json.dumps(collect()))`, the same old logic.
+- The sampler (`ops/sampler.py`) writes its verdict into its own
+  `MONITOR_DIR/latest.json`, which is a completely separate file from what `ops/gpu_jobs.py` reads and writes,
+  `ops/jobs.json` (the ledger/registry); the sampler doesn't write to the ledger.
+- The six-cell verdict is currently visible **only** through the sampler's own web outlet:
+  `http://localhost:8377` (HTML) and `http://localhost:8377/json` (the raw
+  `latest.json`), a product ticket 06 has already completed.
+- Wiring the three terminal outlets `gpu-jobs`/`watch`/`json` to read this sampling history is
+  what ticket 07, "terminal outlet reads sampling history," is supposed to do; confirmed its current status is
+  `in_progress`, not yet wired (`.scratch/gpu-monitor-launch/issues/07-terminal-outlet.md`).
 
-按 CLAUDE.md「不许猜数据结果/不许把没验证的东西写成现状」的铁律，把三处文档
-改成如实区分「网页已经能看/终端接线中」：
+Per the CLAUDE.md hard rule "no guessing at data results/no writing something unverified into the documentation as current
+state," changed all three places in the documentation to accurately distinguish "already viewable on the web/still being
+wired up in the terminal":
 
-- SKILL.md Phase 4 交监控入口：终端表格描述改回原来准确的
-  "进度/实测速率/ETA/tmux 存活状态"，另起一句说明网页 `localhost:8377`
-  （及 `/json`）已经在展示六格判定，终端三个出口"接读这份采样历史还在推进"。
-- SKILL.md Phase 5：job-monitor 读判定写成"`gpu-jobs json`（终端出口接好之后
-  就是这份判定；接好之前先读网页 `localhost:8377/json`）"，并把"写进
-  `ops/jobs.json`"改成准确的"写进它自己的状态文件"。
-- monitor-methodology.md「程序职责说明」与「Decision tree」两节同步改成
-  同样的准确表述。
+- SKILL.md Phase 4, hand off the monitoring entry point: the terminal table description changed back to the original accurate
+  "progress/measured rate/ETA/tmux alive status," with a sentence added noting that the web
+  `localhost:8377` (and `/json`) already shows the six-cell verdict, and the three terminal
+  outlets "wiring up to read this sampling history is still in progress."
+- SKILL.md Phase 5: job-monitor reading the verdict is written as "`gpu-jobs json` (once the terminal outlet is
+  wired up, this is exactly this data; before it's wired up, read the web `localhost:8377/json` first)," and
+  "written into `ops/jobs.json`" was changed to the accurate "written into its own state file."
+- monitor-methodology.md's "Program responsibility statement" and "Decision tree" sections were both changed to the
+  same accurate wording.
 
-这不是工单点名要求的内容，是我在核对代码时发现的准确性问题，顺手在同一次
-改动里修正，没有另开范围。
+This is not something the ticket required by name, it's an accuracy issue found while checking the code, and was fixed along
+the way in the same change, without opening a separate scope for it.
 
-## 怎么验证的
+## How it was verified
 
-这是纯文档改动，不涉及 `run.py` 注册表，未跑 `selfcheck`（改的三个文件都不
-在测试覆盖范围内——`grep -rl "gpu-run\|SKILL.md\|monitor-methodology\|
-launch-methodology" tests/` 无匹配）。验证手段是逐条读实现代码核对文档陈述：
+This is a pure documentation change, not touching the `run.py` registry; `selfcheck` wasn't run (none of the three changed
+files are within test coverage. `grep -rl "gpu-run\|SKILL.md\|monitor-methodology\|
+launch-methodology" tests/` has no match). The verification method was reading the implementation code line by line
+to check the documentation's statements against it:
 
-- `ops/launch_cmd.py`（十步流程、`parse_launch_argv`、`build_pieces`、
-  `build_inner`、`verify_alive`、`cmd_refire` 的补射语义）
-- `ops/launch_common.py`（`register_all` 三处登记顺序与失败语义）
-- `ops/verdicts.py`（六格判定常量、`judge()`/`_judge_service()` 命中条件、
-  `DEFAULTS` 各常数值、`stall_line_s`/`typical_gap_s` 的公式）
-- `ops/sampler.py`（`MONITOR_DIR` 定位、`maybe_trigger_incidents` 现状为
-  `pass`、`should_trigger`/`build_incident_prompt` 已合并、`WebServer` 的
-  `/`、`/json` 两个路径、`read_incidents_tail` 的落地路径）
-- `ops/gpu_jobs.py`（`collect()`/`fmt_table()`/`cmd_status`/`cmd_watch`/
-  `main()` 的 `json` 分支，确认终端出口尚未接采样历史）
-- `.scratch/gpu-monitor-launch/issues/07-terminal-outlet.md`（核对该工单的
-  实际状态与验收范围）
-- `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 16（工单指定的执行步骤
-  原文）
+- `ops/launch_cmd.py` (the ten-step flow, `parse_launch_argv`, `build_pieces`,
+  `build_inner`, `verify_alive`, `cmd_refire`'s refire semantics)
+- `ops/launch_common.py` (`register_all`'s three-registration order and failure semantics)
+- `ops/verdicts.py` (the six-cell verdict constants, `judge()`/`_judge_service()`'s hit conditions,
+  `DEFAULTS`'s constant values, `stall_line_s`/`typical_gap_s`'s formulas)
+- `ops/sampler.py` (where `MONITOR_DIR` is located, `maybe_trigger_incidents`'s current state being
+  `pass`, `should_trigger`/`build_incident_prompt` already merged, `WebServer`'s
+  `/`, `/json` paths, `read_incidents_tail`'s landing path)
+- `ops/gpu_jobs.py` (`collect()`/`fmt_table()`/`cmd_status`/`cmd_watch`/
+  `main()`'s `json` branch, confirming the terminal outlet has not yet been wired to sampling history)
+- `.scratch/gpu-monitor-launch/issues/07-terminal-outlet.md` (checking that ticket's actual status and
+  acceptance scope)
+- `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 16 (the original text of the execution steps specified by the ticket)
 
-命令层面只跑了 `git diff --stat` / `git diff` 通读一遍改动是否自洽，没有可
-自动化验证文档正确性的测试。
+At the command level, only ran `git diff --stat` / `git diff` to read through the whole change once for self-consistency; there was no
+automated test that could verify the documentation's correctness.
 
-## commit 清单
+## Commit list
 
-- `146a289` — `T15: gpu-run skill 对齐 launch+采样器新流程(Phase4/Phase5 收编,两份方法论改写)`
-  改动文件：`.claude/skills/gpu-run/SKILL.md`、
-  `.claude/skills/gpu-run/references/launch-methodology.md`、
+- `146a289`: `T15: gpu-run skill aligned with launch+sampler's new flow (Phase4/Phase5 folded in, two methodology docs rewritten)`
+  Files changed: `.claude/skills/gpu-run/SKILL.md`,
+  `.claude/skills/gpu-run/references/launch-methodology.md`,
   `.claude/skills/gpu-run/references/monitor-methodology.md`
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-1. **frontmatter description 与固定路径两行做了工单没点名的顺带更新**：
-   `SKILL.md` 顶部 `description:` 字段（原文写"tmux 发射→登记台账→…→定时
-   巡检"）和"固定路径"清单里两条引用行（"tmux 模板"、无口径说明的"测速与
-   ETA 方法论"）与重写后的 Phase 4/5 及两份方法论内容不一致，我顺手改了这
-   两处让全文自洽。工单验收项没有点这两处的名，如果评审认为超出范围可以
-   revert 掉这两小段（对应 diff 里 description 那一行 + 固定路径两行）。
+1. **The frontmatter description and two fixed-path lines got an update along the way, not named by the ticket**:
+   `SKILL.md`'s top `description:` field (originally wrote "tmux launch→register the ledger→…→scheduled
+   checking") and the two reference lines in the "fixed paths" list ("tmux template," and the un-labeled
+   "measurement and ETA methodology") were out of sync with the rewritten Phase 4/5 and the two methodology docs' content,
+   so I updated these two spots along the way to make the whole document self-consistent. The ticket's acceptance items don't name
+   these two spots; if the reviewer thinks this is out of scope, these two small sections can be reverted (in the diff, the
+   description line + the two fixed-path lines).
 
-2. **`launch-methodology.md` 的 Step 5（Verify）/Step 6（Monitor without
-   polling）没有改**：Step 6 里仍留着"ETA claims need ≥60s of tqdm
-   observation (see `monitor-methodology.md`)"这句，是旧手工流程的措辞，和
-   `monitor-methodology.md` 改写后的内容有点对不上。工单原文只点名"tmux 模板
-   一节"和"分片一节"两处要改，Step 5/6 不在列，我按工单字面没动；如果要连带
-   扫掉这处残留，需要额外授权（工单没给，我没自行扩大范围）。
+2. **`launch-methodology.md`'s Step 5 (Verify)/Step 6 (Monitor without
+   polling) were not changed**: Step 6 still has the sentence "ETA claims need ≥60s of tqdm
+   observation (see `monitor-methodology.md`)," which is the wording of the old manual process, and doesn't
+   quite match `monitor-methodology.md`'s rewritten content anymore. The ticket's original text only names "the tmux template
+   section" and "the sharding section" as needing changes; Step 5/6 aren't on that list, so I followed the ticket's
+   literal scope and didn't touch them; if this leftover residue needs sweeping out too, that needs additional authorization
+   (which the ticket didn't give, and I did not expand the scope myself).
 
-3. **`monitor-methodology.md` 的 Gotchas 一节（tail -c/\r 解析、tqdm 过滤、
-   process count）没有改**：这段内容本质上还是"手工读日志"的操作细节，工单
-   点名的是"两点测速/ETA 修正/tqdm 解析三节"，我把这理解为"Mandatory rules
-   + Standard procedure + Reading tqdm output + Sharded-job caveat"四节，
-   Gotchas 不在其中，且我在新写的「程序职责说明」里加了一句"手工流程只在
-   采样查不到时才退回去用"，把 Gotchas 定位成了那条退路的操作细节，所以留
-   着没删。这是我对"三节"范围的裁决，不是工单原文逐字点名，如果理解有偏差
-   需要回头再改。
+3. **`monitor-methodology.md`'s Gotchas section (tail -c/\r parsing, tqdm filtering,
+   process count) was not changed**: this content is essentially still "operational details for reading logs by hand," and the
+   ticket names "the two-point measurement/ETA-correction/tqdm-parsing three sections". I understood this as
+   "Mandatory rules + Standard procedure + Reading tqdm output + Sharded-job caveat," those four sections,
+   with Gotchas not among them, and in the newly written "Program responsibility statement," I added a sentence
+   "the manual process is only a fallback for when sampling can't find the answer," positioning Gotchas as
+   operational detail for that fallback, so it was left unchanged. This is my own ruling on the scope of "three sections,"
+   not something the ticket named verbatim. If my understanding is off, it needs to be revisited.
 
-4. **`--kind` 三个取值（train/eval_tool/eval_call）与 `launch_common.py`
-   实际写的 `kind="launch"` 不一致**：我读 `ops/launch_common.py`
-   `register_all` 时发现它给 RUNMETA 传的固定是 `kind="launch"`，但
-   SKILL.md 原文（我这次改写时原样保留了这句提示）说"手搓补记时 `--kind`
-   要用 `train`/`eval_tool`/`eval_call` 三个词之一"——这是给"手搓 tmux 发射、
-   没走 `launch`"这种旧路径的提示，跟 `launch` 自己写的 `kind="launch"`
-   是两条不同路径，我判断不算矛盾就没动；但这确实是个没人点名过的代码/文档
-   潜在不一致点，记在这里供后续工单（尤其 18 收官自检）核对。
+4. **The three `--kind` values (train/eval_tool/eval_call) don't match what
+   `launch_common.py` actually writes, `kind="launch"`**: reading `ops/launch_common.py`
+   I found that `register_all` fixedly passes `kind="launch"` for RUNMETA, but
+   SKILL.md's original text (which I kept as-is during this rewrite) says "when hand-registering, `--kind`
+   should use one of `train`/`eval_tool`/`eval_call`". This is a tip for "hand-launched via tmux, not
+   through `launch`," a different path from what `launch` itself writes, `kind="launch"`, and I judged
+   this isn't a contradiction so I didn't touch it; but this is indeed a code/documentation inconsistency nobody has
+   named before, noted here for a follow-up ticket (especially ticket 18, wrap-up self-check) to cross-check.
 
 ---
 
-## 修复第 1 轮（2026-08-08）
+## Fix round 1 (2026-08-08)
 
-分支 `ticket/20260808-par/T15` 复用（未新建）；base 不变
-（`86f2b8e2fa5846f4060262989974237ad824d108`），本轮 commit 落在原 head
-`146a289e` 之后。工作树 `/home/y-guo/reproduce/new1-wt/20260808-par-T15-fix1`
-（已按协议删除）。
+Branch `ticket/20260808-par/T15` reused (not newly created); base unchanged
+(`86f2b8e2fa5846f4060262989974237ad824d108`), this round's commit lands after the original head
+`146a289e`. Worktree `/home/y-guo/reproduce/new1-wt/20260808-par-T15-fix1`
+(removed per protocol).
 
-主会话交付的两条 findings：
+Two findings delivered by the main session:
 
-### F1（critical）——事故 agent 措辞用旧口径
+### F1 (critical): Incident-agent wording using the old convention
 
-**问题**：`SKILL.md` Phase 5 与 `monitor-methodology.md` Decision tree 里
-写的"事故 agent 自动验尸补射：未上线（暂缓）"，是工单 15 Comments 第一条
-（旧口径，转记自主会话）的措辞。工单 15 Comments 第二条（同日，明确标注
-"覆盖上一条"）说用户随后授权、`spawn_agent`+`maybe_trigger_incidents` 接线
-已由主会话实装，要求改写成"已接线、未经真实演练"。
+**Problem**: `SKILL.md` Phase 5 and `monitor-methodology.md`'s Decision tree say "the incident
+agent's automatic autopsy-and-refire: not yet live (on hold)," which is the wording of ticket 15's Comments' first
+entry (the old convention, transcribed from the main session). Ticket 15's Comments' second entry (same day, explicitly
+marked "supersedes the previous one") says the user subsequently authorized it, and the
+`spawn_agent`+`maybe_trigger_incidents` wiring has already been implemented by the main session, requiring it to be
+rewritten as "wired up, not yet actually rehearsed."
 
-**核实**：上一轮报告写作时这条 comment 2 尚未挂到工单文件上（报告全文未
-提及），故上一轮按 comment 1 的口径写是当时信息下的合理产物，不是失误。
-本轮先读了工单 15 当前 Comments 确认 comment 2 的原文和"覆盖上一条"标注；
-再读工单 12 Comments 最新一条（同日，`git diff` 主仓未提交改动里的
-`.scratch/gpu-monitor-launch/issues/12-incidents.md`）拿到实装细节的准确
-措辞来源：`spawn_agent`（无头 `claude` 子进程，模型钉 opus，detach 不
-wait，输出进 `monitor/incidents/<事故编号>.out`）+ `maybe_trigger_incidents`
-（命中写 `incidents.jsonl` → 拉 agent → `incident_open` 置位防重复）+
-`sample_once` 里 `state.json` 落盘挪到触发之后（修时序坑），单测新增 4 个，
-"手动演练经用户再次裁决取消：全链只有单测背书，没有真实拉过一次 opus"。
-同时读了工作树里的 `ops/sampler.py`（分支内仍是 `maybe_trigger_incidents`
-的 `pass` 占位——接线代码是主仓未提交改动，没有随 T15 或 T12 分支落地），
-确认这处"已接线"是文档口径层面的授权指令，不是当前这条分支上可运行的代码
-状态；按工单原文"若你已按旧口径写完，主会话收账时会核对并改正"的指示，
-仍照 comment 2 给的措辞改写文档。
+**Verified**: at the time the previous round's report was written, this comment 2 had not yet been posted on the ticket
+file (the report's full text never mentioned it), so writing per comment 1's wording last round was a reasonable
+product of the information available at the time, not a mistake. This round first read ticket 15's current Comments to confirm
+comment 2's original text and the "supersedes the previous one" annotation; then read ticket 12's Comments' latest entry
+(same day, in `.scratch/gpu-monitor-launch/issues/12-incidents.md`, an uncommitted change in the
+main repo per `git diff`) to get the precise wording of the implementation details' source: `spawn_agent`
+(a headless `claude` subprocess, model pinned to opus, detached without wait, output going into
+`monitor/incidents/<incident-id>.out`) + `maybe_trigger_incidents`
+(a hit writes `incidents.jsonl` → pulls up the agent → sets `incident_open` to prevent re-triggering) +
+`sample_once`'s `state.json` write moved to after triggering (fixing the timing pitfall), 4 new unit
+tests, "the manual rehearsal was cancelled per another user ruling: the whole chain is backed only by unit tests,
+no opus has ever really been pulled." Also read the worktree's `ops/sampler.py` (still the
+`maybe_trigger_incidents` `pass` placeholder within this branch. The wiring code is an uncommitted change
+in the main repo, it hadn't landed along with either the T15 or T12 branch), confirming this "wired up" is a
+documentation-level authorization instruction, not the current runnable code state on this branch; per the ticket's original
+instruction "if you've already written it per the old convention, the main session will check and correct it at settlement," this
+round still rewrote the documentation per comment 2's given wording.
 
-**改法**：
-- `SKILL.md` Phase 5（原 126-131 行）：标题句改成"事故 agent 自动验尸补射：
-  已接线、未经真实演练。"，正文改写成交代清楚接线细节（谁在 2026-08-08
-  授权由谁实装、`should_trigger` 命中后先写 `incidents.jsonl` 再 spawn 无头
-  `claude` 子进程、`incident_open` 防重复触发的机制），并保留一句限定
-  "手动演练经用户裁决取消——全链只有单测背书，没有真实拉过一次 agent，
-  第一次真实事故发生时这条链是首跑"，原来"读日志定位死因、能修则 `--refire`
-  补射"的收尾句保留。
-- `monitor-methodology.md` Decision tree 表格 `V_STALL`/`escalated=true` 行：
-  "自动拉事故 agent 补射目前**未上线（暂缓）**"改成"并自动拉起一个无头
-  事故 agent 去处理（**已接线、未经真实演练**）"，其余表述不动。
+**Fix**:
+- `SKILL.md` Phase 5 (originally lines 126-131): the topic sentence changed to "The incident agent's automatic
+  autopsy-and-refire: wired up, not yet actually rehearsed.", the body rewritten to explain clearly the wiring details
+  (who authorized what on 2026-08-08 and who implemented it, `should_trigger` hitting first writes
+  `incidents.jsonl` then spawns a headless `claude` subprocess, the mechanism of `incident_open`
+  preventing re-triggering), keeping a caveat sentence: "the manual rehearsal was cancelled per user ruling.
+  The whole chain is backed only by unit tests, no agent has ever really been pulled, the first real incident is
+  this chain's first live run," and keeping the original wrap-up sentence "read the log to locate the cause of death, refire
+  with `--refire` if it can be fixed."
+- `monitor-methodology.md`'s Decision tree table's `V_STALL`/`escalated=true` row:
+  "automatically pulling up an incident agent to refire is currently **not live (on hold)**" changed to
+  "and automatically pulls up a headless incident agent to handle it (**wired up, not yet actually
+  rehearsed**)," everything else unchanged.
 
-### F2（important）——launch-methodology.md 悬空引用
+### F2 (important): launch-methodology.md dangling reference
 
-**问题**：`launch-methodology.md` Step 6 一行"ETA claims need ≥60s of tqdm
-observation (see `monitor-methodology.md` in this same directory)."是旧手工
-测速流程的措辞，本次改写已经把 `monitor-methodology.md` 的"两点测速/手工
-parse tqdm 行"整套流程删掉，改成"读采样器判定"，这条引用指向的内容已经不
-存在，读者顺着查会找不到对应操作。
+**Problem**: `launch-methodology.md` Step 6's sentence "ETA claims need ≥60s of tqdm
+observation (see `monitor-methodology.md` in this same directory)." is the wording of the old manual
+measurement process; this rewrite has already deleted `monitor-methodology.md`'s whole "two-point
+measurement/manually parse tqdm lines" process, replaced by "read the sampler's verdict"; this reference now
+points at content that no longer exists, and a reader following it would find no corresponding operation.
 
-**核实**：上一轮报告自查项 2 已经点出这处不一致，未处理的理由是"工单原文
-只点名 tmux 模板一节和分片一节，Step 5/6 不在列，没有额外授权不擅自扩大
-范围"。本轮 finding 明确要求按"和本次改写内容明显拧着"处理，属于本次改写
-直接产生的新悬空引用，不是独立的范围外重构，予以修复。
+**Verified**: the previous round's report's self-check item 2 already pointed out this inconsistency, and it was not addressed at the
+time on the grounds that "the ticket's original text only names the tmux-template section and the sharding section, Step 5/6 aren't on that
+list, no extra authorization to expand scope on my own." This round's finding explicitly requires handling it as "clearly at
+odds with this round's rewritten content," which is a new dangling reference directly produced by this round's rewrite, not an
+independent out-of-scope refactor, so it was fixed.
 
-**改法**：把这句改成指向 `monitor-methodology.md` 现有的判定出口表述——
+**Fix**: changed this sentence to point at `monitor-methodology.md`'s existing verdict-outlet wording,
 "ETA claims come from the sampler's verdict, not hand-parsed tqdm: read
 `python3 run.py gpu-jobs json` once the terminal outlet reads sampler
 history, or `http://localhost:8377/json` in the meantime (see
-`monitor-methodology.md` in this same directory)."，与 `monitor-methodology.md`
-「程序职责说明」一节里"读判定优先用 `gpu-jobs json`……接好之前先读网页
-`/json`……不要再手翻日志、手算 tqdm 行"的措辞对齐。
+`monitor-methodology.md` in this same directory).", aligned with `monitor-methodology.md`'s
+"Program responsibility statement" section's wording, "read the verdict preferring `gpu-jobs json`……before
+it's wired up, first read the web `/json`……don't go back to reading logs by hand and hand-computing tqdm lines."
 
-### 怎么验证的
+### How it was verified
 
-纯文档改动（改动文件仍是 `SKILL.md`/`launch-methodology.md`/
-`monitor-methodology.md` 这三个已有文件里的既有措辞，未新增文件、未碰
-`run.py` 注册表），复核了一遍上一轮的测试覆盖结论仍成立：
+A pure documentation change (the changed files are still the same three existing files,
+`SKILL.md`/`launch-methodology.md`/`monitor-methodology.md`'s existing wording, no new file added, the
+`run.py` registry not touched), re-confirmed the previous round's test-coverage conclusion still holds:
 
 ```
 $ grep -rl "gpu-run\|SKILL.md\|monitor-methodology\|launch-methodology" tests/
-（无输出，退出码 1）
+(no output, exit code 1)
 ```
 
-三个文件都不在测试覆盖范围内，未跑 `selfcheck`（未碰注册表）。验证手段是
-读源改动核对措辞：`ops/sampler.py`（`should_trigger`/`build_incident_prompt`/
-`maybe_trigger_incidents`/`spawn_agent` 在这条分支上的实际代码状态，确认
-仍是 `pass` 占位，接线在主仓未提交改动里）、工单 15 Comments 全文、工单 12
-Comments 最新一条全文（措辞原文出处）。另跑 `git diff` 通读改动是否自洽、
-是否只动了 finding 点名的三处。
+None of the three files are within test coverage, `selfcheck` wasn't run (the registry wasn't touched). Verified by reading
+the source and checking the wording: `ops/sampler.py` (`should_trigger`/`build_incident_prompt`/
+`maybe_trigger_incidents`/`spawn_agent`'s actual code state on this branch, confirming it's
+still the `pass` placeholder, the wiring is in an uncommitted change in the main repo), ticket 15's Comments in full, ticket 12's
+Comments' latest entry in full (the source of the original wording). Also ran `git diff` to read through the change for
+self-consistency, and confirmed it only touched the three spots named by the finding.
 
-### commit 清单
+### Commit list
 
-- `b0cd20d` — `T15: 修复第1轮——事故 agent 口径改为已接线未演练，补 launch-methodology 悬空引用`
-  改动文件：`.claude/skills/gpu-run/SKILL.md`、
-  `.claude/skills/gpu-run/references/launch-methodology.md`、
+- `b0cd20d`: `T15: fix round 1, incident-agent wording changed to wired up not yet rehearsed, added launch-methodology's missing dangling reference`
+  Files changed: `.claude/skills/gpu-run/SKILL.md`,
+  `.claude/skills/gpu-run/references/launch-methodology.md`,
   `.claude/skills/gpu-run/references/monitor-methodology.md`
 
 head: `b0cd20d`
 
-### 自查发现与存疑
+### Self-check findings and open questions
 
-- 未新增遗留问题。原报告自查项 1（description/固定路径两行的顺带更新）、
-  项 3（Gotchas 一节未改）、项 4（`--kind` 三个取值与 `kind="launch"` 的
-  潜在不一致）本轮未涉及，维持原状，供后续工单核对。
-- "已接线、未经真实演练"这句口径本身依赖工单 12 Comments 最新一条描述的
-  代码状态；那份代码目前在主仓工作树是未提交改动（`ops/sampler.py`/
-  `tests/test_incidents.py` 等 modified 未 commit），一旦后续以不同方式落地
-  或口径再变，这两处文档措辞需要跟着复核，不是本轮能锁死的终态。
+- No new leftover issues. The original report's self-check item 1 (the opportunistic update to description/fixed-path
+  lines), item 3 (the Gotchas section unchanged), and item 4 (the potential inconsistency between the three
+  `--kind` values and `kind="launch"`) weren't touched this round, kept as-is, left for a follow-up
+  ticket to cross-check.
+- The wording "wired up, not yet actually rehearsed" itself depends on the code state described in ticket 12's Comments'
+  latest entry; that code is currently an uncommitted change in the main repo (`ops/sampler.py`/
+  `tests/test_incidents.py` etc. modified, not committed), and once it lands in some other way or the wording
+  changes again down the line, these two documentation spots need to be re-checked accordingly. This isn't something this round can pin
+  down as final.

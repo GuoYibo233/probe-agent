@@ -1,47 +1,47 @@
-# T07 报告:评测端超长事件的三种处理
+# T07 Report: Three Ways of Handling Overlong Events on the Eval Side
 
-工单:`.scratch/kvshare-train/issues/07-eval-overlong.md`
-spec 段落:16.2(判据)、16.9 第一条(测试)、16.10 #28/#33/#34/#35(静默失败点)
-分支:`ticket/2026-08-28-wave5/T07`,base `07907db08b50d66c1c193588f22b5cc97b24b4b3`,head `19f2c703062ea43ad17cd192f17790571d9300b6`
+Ticket: `.scratch/kvshare-train/issues/07-eval-overlong.md`
+spec paragraphs: 16.2 (criteria), 16.9 item 1 (tests), 16.10 #28/#33/#34/#35 (silent failure points)
+Branch: `ticket/2026-08-28-wave5/T07`, base `07907db08b50d66c1c193588f22b5cc97b24b4b3`, head `19f2c703062ea43ad17cd192f17790571d9300b6`
 
-## 一、做了什么(对照工单逐条)
+## I. What was done (checked against the ticket item by item)
 
-### 1. `share_data.py` 抽函数(工单第 1 条)
+### 1. Extracting functions in `share_data.py` (ticket item 1)
 
-- `full_token_ids(tok, full_text)`:`load_events` 第 145-147 行那次全文分词原样抽出(`add_special_tokens=False, truncation=False`)。
-- `n_full_tokens(tok, full_text)`:`return len(full_token_ids(tok, full_text))`。
-- `load_events` 改调 `full_token_ids`,行为逐字节不变(分词次数、结果都不变)。
-- `train_causal_tool.load_events` 第 128 行改调 `share_data.n_full_tokens(tok, e["full"])`——原来的调用没写 `truncation=False`,但没传 `max_length` 时 tokenizer 默认本来就不截断,数值不变。
-- `event_full_texts(rows) -> dict[event] -> full_text`:按 event 分组,取 `sent_idx` 最大那行的 `text`,不过滤行、不动 `load_events` 里 `events_all.append(dict(...))` 那段分组。
-- `select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new) -> (kept_keys, counts)`:见下面的设计说明。
+- `full_token_ids(tok, full_text)`: extracted as-is from the full-text tokenization at lines 145-147 of `load_events` (`add_special_tokens=False, truncation=False`).
+- `n_full_tokens(tok, full_text)`: `return len(full_token_ids(tok, full_text))`.
+- `load_events` now calls `full_token_ids` instead; behavior is byte-for-byte unchanged (same number of tokenizations, same results).
+- Line 128 of `train_causal_tool.load_events` now calls `share_data.n_full_tokens(tok, e["full"])` instead, the original call did not write `truncation=False`, but the tokenizer does not truncate by default when `max_length` is not passed, so the value is unchanged.
+- `event_full_texts(rows) -> dict[event] -> full_text`: groups by event, takes the `text` of the row with the largest `sent_idx`, without filtering rows, without touching the grouping in the `events_all.append(dict(...))` part of `load_events`.
+- `select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new) -> (kept_keys, counts)`: see the design notes below.
 
-四个新函数放在 `_pad16`(第 60 行)之后、`load_events`(原第 73 行)之前,没有碰工单点名"别动"的区域。
+The four new functions are placed after `_pad16` (line 60) and before `load_events` (originally line 73), without touching the area the ticket named as "do not touch".
 
-### 2. `eval_causal_call.py` / `eval_causal_param.py` 加 `--overlong`(工单第 2 条)
+### 2. Adding `--overlong` to `eval_causal_call.py` / `eval_causal_param.py` (ticket item 2)
 
-两个脚本都加 `--overlong {left,skip,drop-event}`,默认 `left`。三步顺序写死:readonly 排除(不变)→ `--overlong` 筛选(分词器加载之后,调 `share_data.select_keys`)→ `--limit`(位置从筛选之前挪到筛选之后)。`n_events_fired` 仍在筛选之前算,原义不变。
+Both scripts add `--overlong {left,skip,drop-event}`, default `left`. The three-step order is fixed: readonly exclusion (unchanged) → `--overlong` filtering (after the tokenizer loads, calling `share_data.select_keys`) → `--limit` (moved from before filtering to after filtering). `n_events_fired` is still computed before filtering, its meaning unchanged.
 
-- `L(k)` 的分词口径与 `generate()` 一致(`add_special_tokens=False, truncation=False`);cparam 对 `gt_tool`/`pred_tool` 两套提示各算一遍,取最大值。
-- `drop-event` 只对 `keys` 里的事件调 `event_full_texts`/`n_full_tokens`,不对全集分词。
-- 两份报告(JSON+MD)都加 `overlong_mode` 与 `n_left_truncated/n_skipped_rows/n_dropped_events/n_excluded_by_ctool` 四个计数;cparam 另加诊断键 `n_left_truncated_by_tag = {"gt_tool": n, "pred_tool": n}`。
-- `--self-fire` 路径未改动。
+- The tokenization convention for `L(k)` matches `generate()` (`add_special_tokens=False, truncation=False`); cparam computes it once for each of the `gt_tool`/`pred_tool` prompt sets and takes the max.
+- `drop-event` only calls `event_full_texts`/`n_full_tokens` on the events in `keys`, without tokenizing the whole set.
+- Both reports (JSON+MD) add `overlong_mode` and the four counts `n_left_truncated/n_skipped_rows/n_dropped_events/n_excluded_by_ctool`; cparam additionally adds the diagnostic key `n_left_truncated_by_tag = {"gt_tool": n, "pred_tool": n}`.
+- The `--self-fire` path is unchanged.
 
-**与 ctool 的衔接**:读 `ctool_run/logits_test.meta.json` 的 `excluded_idx`(键不存在按空列表),按事件分组成 `dict[event] -> [row_idx,...]` 传给 `select_keys`;`select_keys` 内部对每个 key 检查"候选行是否全部被 ctool 剔除",全部被剔的 key 不判分、计入 `n_excluded_by_ctool`。
+**Interface with ctool**: reads `excluded_idx` from `ctool_run/logits_test.meta.json` (an empty list if the key does not exist), groups it by event into `dict[event] -> [row_idx,...]` and passes it to `select_keys`; internally, `select_keys` checks for each key "whether all of its candidate rows were excluded by ctool"; a key with all its rows excluded is not scored and is counted into `n_excluded_by_ctool`.
 
-### 3. `eval_tool.py` 的 `score_causal` 与主流程加 `--overlong`(工单第 3 条)
+### 3. Adding `--overlong` to `score_causal` and the main flow of `eval_tool.py` (ticket item 3)
 
-`score_causal(..., overlong="left")` 现在返回 `(out, excluded_idx, counts)`(`counts` = `n_oow/n_skipped_bounds/n_dropped_events/n_dropped_bounds`,工单原文只写了 "(out, excluded_idx)" 两元,我把 `counts` 作为第三个返回值加了进去——`n_oow` 与另外三个 mode 计数都要写进 REPLAY_REPORT,`score_causal` 是唯一算出这些数的地方,不加第三个返回值就没法把这些数带出来;这一处是我的设计判断,列进下面的"自查发现与存疑"里)。
+`score_causal(..., overlong="left")` now returns `(out, excluded_idx, counts)` (`counts` = `n_oow/n_skipped_bounds/n_dropped_events/n_dropped_bounds`; the ticket text only wrote the two-tuple "(out, excluded_idx)"; I added `counts` as the third return value. `n_oow` and the other three mode counts all need to be written into REPLAY_REPORT, and `score_causal` is the only place that computes these numbers, so without adding this third return value there would be no way to carry these numbers out; this is a design decision I made, listed below under "self-check findings and open questions").
 
-- `left`:不变,`n_oow` 只是诊断计数。
-- `skip`:窗口外边界(`read_position` 返回 -1)进 `excluded_idx`,计 `n_skipped_bounds`。
-- `drop-event`:`n_full_tokens(tok, 全文) > max_len` 的事件(用 ctool 训练器自己的规则——`rows` 在 `main()` 里已经按 `label in label2id` 过滤过,`items[-1][2]["text"]` 就是同一条"先过滤再取最后一行"规则)整个跳过分词/前向,全部边界记零 logits 进 `excluded_idx`。幸存事件的全文没被截断过,`n_oow` 恒为 0。
-- `main()` 加 `--overlong`,只对 `--head causal` 生效,`--head mbert` 传非 `left` 直接 `SystemExit`(检查点在参数解析之后、任何文件访问之前)。
-- `logits_*.meta.json` 新增 `overlong_mode`、`excluded_idx`,以及(causal 头下)`n_oow/n_skipped_bounds/n_dropped_events/n_dropped_bounds` 四个计数(后者是我为了让 `--cached-logits` 也能把这些数写进 REPLAY_REPORT 而加的,工单没有明写这四个键要不要落盘,见下面的存疑)。mbert 头恒写 `overlong_mode: "left"`、`excluded_idx: []`。
-- `--cached-logits` 路径:读回 `overlong_mode`,与本次 `--overlong` 不同(或缺键而本次非 `left`)就 `SystemExit` 并写明两种模式;相同就照常,并读回 `excluded_idx`/四个计数。
-- 每个 split(val/test)装载完 `rows`/`logits` 之后,按 `excluded_idx` 剔行再存进 `splits[sp]`——温度拟合、θ 扫描、test 冻结、stop-time 校准、深度桶 acc、先验基线、`token_cost`、`readonly_stats` 全部下游都吃剔行之后的数据。`logits_*.pt` 落盘时仍是全行数(剔除的行留零 logits),不影响 cgen/cparam 的下标对齐断言。
-- `REPLAY_REPORT.json/.md` 加 `overlong_mode` 与四个计数,固定取 **test 堆**的数(val 堆的 `overlong_mode`/计数也写进它自己的 `logits_val.meta.json`,但不进 REPLAY_REPORT——这是我的取舍,工单没有明说 REPLAY_REPORT 的计数该是哪个堆的,见存疑)。
+- `left`: unchanged, `n_oow` is only a diagnostic count.
+- `skip`: out-of-window boundaries (`read_position` returns -1) go into `excluded_idx`, counted as `n_skipped_bounds`.
+- `drop-event`: events where `n_full_tokens(tok, full text) > max_len` (using the ctool trainer's own rule, `rows` is already filtered by `label in label2id` in `main()`, and `items[-1][2]["text"]` is the same "filter first, then take the last row" rule) skip tokenization/forward pass entirely; all their boundaries are recorded as zero logits into `excluded_idx`. The surviving events' full text was never truncated, so `n_oow` is always 0.
+- `main()` adds `--overlong`, effective only for `--head causal`; passing anything other than `left` with `--head mbert` triggers `SystemExit` directly (the check point is after argument parsing and before any file access).
+- `logits_*.meta.json` gains `overlong_mode`, `excluded_idx`, and (under the causal head) the four counts `n_oow/n_skipped_bounds/n_dropped_events/n_dropped_bounds` (the latter were added by me so that `--cached-logits` can also write these numbers into REPLAY_REPORT; the ticket did not explicitly state whether these four keys should be persisted, see the open question below). The mbert head always writes `overlong_mode: "left"`, `excluded_idx: []`.
+- `--cached-logits` path: reads back `overlong_mode`; if it differs from this run's `--overlong` (or the key is missing while this run is not `left`), it `SystemExit`s and states both modes; if the same, it proceeds as usual and reads back `excluded_idx`/the four counts.
+- After each split (val/test) finishes loading `rows`/`logits`, rows are excluded per `excluded_idx` before being stored into `splits[sp]`. Temperature fitting, θ scanning, test freezing, stop-time calibration, depth-bucket acc, prior baseline, `token_cost`, `readonly_stats`, all downstream steps consume the data after row exclusion. `logits_*.pt` is still persisted with the full row count (excluded rows keep zero logits), so it does not affect the index-alignment assertions of cgen/cparam.
+- `REPLAY_REPORT.json/.md` adds `overlong_mode` and the four counts, fixed to always take the numbers from the **test split** (the val split's `overlong_mode`/counts are also written into its own `logits_val.meta.json`, but do not go into REPLAY_REPORT. This is a choice I made; the ticket did not state which split REPLAY_REPORT's counts should come from, see the open question).
 
-## 二、怎么验证的
+## II. How it was verified
 
 ```
 $ /home/y-guo/reproduce/new1/cprobe-env/bin/python -m unittest tests.test_eval_overlong tests.test_share_data tests.test_ctool_readpos
@@ -50,187 +50,132 @@ Ran 39 tests in 6.410s
 OK (skipped=1)
 ```
 
-(1 个 skip 是 `tests/test_share_data.py` 里需要现役 `pipeline/data/nyapass_aw_v1/gptoss/val.jsonl` 的用例——该目录 gitignore,worktree 里没有,主仓有;不是回归。)
+(The 1 skip is the test case in `tests/test_share_data.py` that needs the active `pipeline/data/nyapass_aw_v1/gptoss/val.jsonl`, that directory is gitignored, absent in the worktree, present in the main repo; this is not a regression.)
 
 ```
 $ grep -n "full_token_ids\|n_full_tokens" pipeline/train/share_data.py pipeline/train/train_causal_tool.py \
     pipeline/eval/eval_tool.py pipeline/eval/eval_causal_call.py pipeline/eval/eval_causal_param.py
 ```
-五个文件全命中。
+All five files match.
 
 ```
-$ grep -n 'tok(e\["full_text"\]' pipeline/train/share_data.py   # 零命中
-$ grep -rn "def select_keys" pipeline/                          # 只命中 share_data.py 一处
+$ grep -n 'tok(e\["full_text"\]' pipeline/train/share_data.py   # zero matches
+$ grep -rn "def select_keys" pipeline/                          # matches only in share_data.py, one location
 ```
 
-三个评测脚本 `--help` 都列出 `--overlong {left,skip,drop-event}`,默认 `left`(实测截图见对话记录,三份 `--help` 输出都带这一行)。
+The `--help` output of all three eval scripts lists `--overlong {left,skip,drop-event}`, default `left` (actual screenshots are in the conversation record; all three `--help` outputs carry this line).
 
 ```
 $ /home/y-guo/reproduce/new1/cprobe-env/bin/python -m unittest discover -s tests
 Ran 431 tests in 17.867s
 FAILED (failures=1, skipped=24)
 ```
-唯一失败 `test_no_env_reads_default_preset` 是 `tests/test_preset.py` 里硬编码了 `/home/y-guo/reproduce/new1/configs/presets/default.json` 这个绝对路径去比对,在本工作树(`new1-wt/2026-08-28-wave5-T07`)下自然对不上——用 `git stash` 验证过:不改任何代码时这条用例在本工作树里同样失败,与本工单无关。
+The only failure, `test_no_env_reads_default_preset`, is in `tests/test_preset.py`, which hardcodes the absolute path `/home/y-guo/reproduce/new1/configs/presets/default.json` for comparison; naturally it does not match under this worktree (`new1-wt/2026-08-28-wave5-T07`). Verified with `git stash`: this test case fails the same way in this worktree even with no code changes, unrelated to this ticket.
 
 ```
 $ python3 run.py selfcheck
-selfcheck: 76 任务 / 4 配方 / 3 预设, 16 处缺失
+selfcheck: 76 tasks / 4 recipes / 3 presets, 16 missing
 ```
-16 处缺失全是 venv/env 目录(`envs/*/venv`、`cprobe-env`、`mbert-env` 等),这些目录 gitignore、只在主仓存在,工作树里没有——本工单不改 `run.py`,主仓跑同一条命令是 `全部就位`,已用主仓验证过,不是回归。
+All 16 missing items are venv/env directories (`envs/*/venv`, `cprobe-env`, `mbert-env`, etc.); these directories are gitignored, exist only in the main repo, and are absent from the worktree. This ticket does not modify `run.py`; running the same command in the main repo gives `all present`, already verified in the main repo, not a regression.
 
-## 三、commit 清单
+## III. Commit list
 
-- `74d38f6` T07: share_data 抽 full_token_ids/n_full_tokens/event_full_texts/select_keys
-- `75e212c` T07: eval_tool.py score_causal 加 --overlong 三态,cached-logits 校验模式
-- `7d2c961` T07: eval_causal_call/eval_causal_param 加 --overlong,接 ctool 剔除
-- `19f2c70` T07: 新测试 tests/test_eval_overlong.py
+- `74d38f6` T07: share_data extract full_token_ids/n_full_tokens/event_full_texts/select_keys
+- `75e212c` T07: eval_tool.py score_causal add --overlong three states, cached-logits verification mode
+- `7d2c961` T07: eval_causal_call/eval_causal_param add --overlong, wire up ctool exclusion
+- `19f2c70` T07: new tests tests/test_eval_overlong.py
 
-## 四、自查发现与存疑
+## IV. Self-check findings and open questions
 
-1. **`select_keys` 的 `keys` 参数形状是我做的裁决,不是照抄工单原文**。工单写 `select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new)`,只说 `n_full`/`prompt_len` 是"按 key 查的字典"、`excluded_rows` 是"ctool 传来的剔除行集合"。工单验收里的 (b) 明确要测"给定 excluded_rows 时的剔除(部分行被剔的事件留下、全部候选行被剔的事件去掉并计入 n_excluded_by_ctool)"——一个事件要能表达"部分行被剔"和"全部候选行被剔"两种情况,`keys` 必须带每个事件的候选行下标,不能只是扁平的 event id 列表。我把 `keys` 定成 `dict[key] -> list[int]`(候选行下标列表),`select_keys` 内部逐 key 检查 `all(i in excluded_rows for i in keys[k])`。三个评测脚本的调用点里,`keys_rowmap = {k: ev_row_idx[k] for k in keys}` 里的候选行是"该事件在 `rows` 里的全部行下标",不是"只到当前触发行为止"——也就是说,如果一个事件的触发行恰好落在 ctool 剔除的行上、但同一事件还有别的候选行没被剔,我这版实现会把这个事件**继续按原来的触发点(`fired[k]["row"]`)判分**,不会去重新在剩下的行里挑一个新触发点。工单原文"一个事件在剩下的行里挑触发点"字面上要求重新挑,但重新挑需要 `probs`/`theta`(`select_keys` 签名里没有这两个参数,拿不到),要做到位得改 `replay_fire` 本身;鉴于项目里实际的 θ 都在 0.9 以上、远高于均匀分布的 `1/n_labels`,"零 logits 的行恰好触发"这个场景概率极低,我选择了只做工单里最具体、最可测的那条判据(候选行剔光就整个不判分),没有额外重挑触发点。这是我做的裁决,不是我看错了工单,想请你确认这个取舍是否可以接受。
-2. `score_causal` 从两值返回改成 `(out, excluded_idx, counts)` 三值——工单原文只写 "(out, excluded_idx)"。`counts` 是我加的第三个返回值,因为 `n_oow`/`n_skipped_bounds`/`n_dropped_events`/`n_dropped_bounds` 四个数工单要求写进 REPLAY_REPORT 与 `logits_*.meta.json`,而 `score_causal` 是唯一算出它们的地方,不加这个返回值就传不出来。
-3. `logits_*.meta.json` 里除了 `overlong_mode`/`excluded_idx` 之外,我还额外写了 `n_oow`/`n_skipped_bounds`/`n_dropped_events`/`n_dropped_bounds` 四个计数(工单第 3 条列的新增键只写了 `overlong_mode` 与 `excluded_idx`)——这是为了让 `--cached-logits` 路径也能把这四个数带进 REPLAY_REPORT(不这样做的话,走缓存的那次跑不出这几个计数,只能空着或者重新硬算一遍,都不对)。旧缓存(没有这四个键)按 0 处理。
-4. `REPLAY_REPORT` 的 `overlong_mode` 与四个计数,我固定取 **test 堆**的数,val 堆各自的数只留在 `logits_val.meta.json` 里、不进 REPLAY_REPORT——工单没有明说该取哪个堆(现有的 `probe_cost_test`/`n_events_test` 等字段本来就是 test-only 的命名惯例,我按同样的惯例处理)。
-5. `--overlong skip/drop-event` 下,`val` 堆(拟温度、扫 θ 用)也会按同样的规则剔行(而不是只对 test 堆生效)——工单原文的判据描述集中在 ctool 的 test 堆衔接段,没有明确提 val 堆要不要同样处理;我认为不处理的话,val 堆里残留的零 logits 行会污染温度拟合与 θ 扫描,与 `--overlong` 想解决的问题(零 logits 不该被当真)矛盾,所以我让两个堆都走同一套剔除逻辑。
-6. 为了让 `score_causal` 的签名变更不破坏既有测试,我改了 `tests/test_ctool_readpos.py` 两处调用点(工单的文件范围清单里没写这个文件)——这是工单本身要求的验收命令(`tests.test_ctool_readpos` 必须通过)与 `score_causal` 签名变更(工单第 3 条明确要求)两者相加的必然结果,不是我自己扩大范围。
-7. `n_dropped_events`(`select_keys`/`score_causal` 两处)用严格 `>` 判 `n_full[k] > max_len` / `n_full_tokens(...) > max_len`,与 `load_events`/`train_causal_tool.load_events` 的判据(同样严格 `>`)口径一致,没有引入新的边界差异。
-8. 没有跑到 GPU:这张工单全程是纯 CPU 代码改动 + CPU 单测,不涉及需要显卡的步骤,没有触发 gpu-run 流程。
+1. **The shape of `select_keys`'s `keys` parameter is a decision I made, not copied verbatim from the ticket**. The ticket wrote `select_keys(mode, keys, n_full, prompt_len, excluded_rows, max_len, max_new)`, only saying that `n_full`/`prompt_len` are "dictionaries looked up by key" and `excluded_rows` is "the set of excluded rows passed from ctool". Item (b) in the ticket's acceptance criteria explicitly requires testing "exclusion given excluded_rows (an event with some rows excluded is kept, an event with all its candidate rows excluded is dropped and counted into n_excluded_by_ctool)." For an event to express both "some rows excluded" and "all candidate rows excluded", `keys` must carry each event's candidate row indices, it cannot be just a flat list of event ids. I defined `keys` as `dict[key] -> list[int]` (a list of candidate row indices), and inside `select_keys`, each key is checked with `all(i in excluded_rows for i in keys[k])`. At the call sites in the three eval scripts, the candidate rows in `keys_rowmap = {k: ev_row_idx[k] for k in keys}` are "all row indices of that event in `rows`", not "only up to the current firing row", that is, if an event's firing row happens to land on a row excluded by ctool, but the same event has other candidate rows that were not excluded, this implementation **still scores the event at its original firing point (`fired[k]["row"]`)**, and does not go pick a new firing point among the remaining rows. The ticket's original text, "an event picks its firing point among the remaining rows", literally requires re-picking, but re-picking needs `probs`/`theta` (neither parameter is in `select_keys`'s signature, so they are not available), and doing it properly would require changing `replay_fire` itself; given that the actual θ values used in this project are all above 0.9, far above the uniform distribution's `1/n_labels`, the scenario of "a zero-logits row happening to fire" has extremely low probability, so I chose to implement only the most concrete and testable criterion in the ticket (an event with its candidate rows entirely excluded is not scored at all), without additionally re-picking a new firing point. This is a decision I made, not a misreading of the ticket; I would like you to confirm whether this tradeoff is acceptable.
+2. `score_causal` changed from a two-value return to the three-value `(out, excluded_idx, counts)`. The ticket text only wrote "(out, excluded_idx)". `counts` is the third return value I added, because the ticket requires the four numbers `n_oow`/`n_skipped_bounds`/`n_dropped_events`/`n_dropped_bounds` to be written into REPLAY_REPORT and `logits_*.meta.json`, and `score_causal` is the only place that computes them; without adding this return value there is no way to pass them out.
+3. In `logits_*.meta.json`, besides `overlong_mode`/`excluded_idx`, I additionally wrote the four counts `n_oow`/`n_skipped_bounds`/`n_dropped_events`/`n_dropped_bounds` (the new keys listed in ticket item 3 were only `overlong_mode` and `excluded_idx`). This is so that the `--cached-logits` path can also carry these four numbers into REPLAY_REPORT (without doing this, a run going through the cache could not produce these counts, and would either have to leave them blank or recompute them by force, neither of which is correct). Old caches (without these four keys) are treated as 0.
+4. For REPLAY_REPORT's `overlong_mode` and the four counts, I fixed them to always take the numbers from the **test split**; the val split's own numbers stay only in `logits_val.meta.json` and do not go into REPLAY_REPORT. The ticket did not state which split to take (the existing fields like `probe_cost_test`/`n_events_test` already follow a test-only naming convention, and I followed the same convention).
+5. Under `--overlong skip/drop-event`, the `val` split (used for temperature fitting and θ scanning) also has rows excluded by the same rule (rather than this taking effect only on the test split). The ticket's description of the criteria is concentrated in the section about interfacing with ctool's test split, and does not explicitly say whether the val split should be handled the same way; I think that if it is not handled, the zero-logits rows remaining in the val split would contaminate temperature fitting and θ scanning, which contradicts the problem `--overlong` is meant to solve (zero logits should not be taken at face value), so I made both splits go through the same exclusion logic.
+6. To keep the `score_causal` signature change from breaking existing tests, I changed two call sites in `tests/test_ctool_readpos.py` (this file was not listed in the ticket's file-scope list). This is the necessary consequence of adding together the ticket's own required acceptance command (`tests.test_ctool_readpos` must pass) and the `score_causal` signature change (explicitly required by ticket item 3); it is not scope expansion on my own part.
+7. `n_dropped_events` (in both `select_keys`/`score_causal`) uses strict `>` to judge `n_full[k] > max_len` / `n_full_tokens(...) > max_len`, matching the convention of `load_events`/`train_causal_tool.load_events`'s criteria (also strict `>`), introducing no new boundary discrepancy.
+8. No GPU was used: this ticket was pure CPU code changes plus CPU unit tests throughout, with no step requiring a GPU, so the gpu-run process was not triggered.
 
-## 五、修复第 1 轮(2026-08-28,接手自上一轮实现者)
+## V. Fix round 1 (2026-08-28, taken over from the previous round's implementer)
 
-工作树 `new1-wt/2026-08-28-wave5-T07-fix1`,分支仍是 `ticket/2026-08-28-wave5/T07`,
-起点(修复前)`19f2c70`,修复后 head `eadb3f8`。收到三条未决 finding,逐条修:
+Worktree `new1-wt/2026-08-28-wave5-T07-fix1`, branch still `ticket/2026-08-28-wave5/T07`,
+starting point (before the fix) `19f2c70`, head after the fix `eadb3f8`. Received three unresolved findings, fixed one by one:
 
-### F1(critical)eval_causal_call.py 未按 spec 16.2 实现"ctool 剔除后重新挑触发点"
+### F1 (critical) eval_causal_call.py did not implement "re-picking the firing point after ctool exclusion" per spec 16.2
 
-**根因**(与自查存疑第 1 条对应,现在给出根因修复而不是维持原裁决):
-`fired = replay_fire(rows, probs, ...)`(原第 578 行)在任何剔除之前就用**全部**
-行算出来,`keys_rowmap[k]` 传的又是该事件在 `rows` 里的**全部行下标**(含
-`fired[k]["row"]` 本身)。触发行的 conf 定义上必然 `>= θ`,而 ctool 剔除的行
-过 softmax 是均匀分布 `1/n_labels`,只有 `θ<=1/n_labels` 时才可能撞上——项目
-里的 θ 都在 0.9 以上,所以 `all(i in excluded_rows for i in keys[k])` 这条检查
-对任何已经进了 `keys` 的事件恒假,`n_excluded_by_ctool` 恒为 0。更根本的是:
-如果一个事件的候选行**全部**被 ctool 剔除(比如两行都是真实的零 logits),它
-在原始的、未经剔除处理的 `replay_fire` 里本来就不会 `fired`(0.5 类的 conf 过
-不了 0.9 的 θ),于是它连"已触发"这一步都进不去——`select_keys` 根本看不到
-这个 key,不是"检查它但判定假",是压根没有机会检查。这个事件就这样从
-`n_events_fired`、`n_excluded_by_ctool`、`n_events_scored` 三个计数里**同时消失**,
-不出现在任何分母里,也不报错。
+**Root cause** (corresponds to self-check open question 1; now giving a root-cause fix instead of keeping the original decision):
+`fired = replay_fire(rows, probs, ...)` (originally line 578) is computed using **all** rows before any exclusion happens, and `keys_rowmap[k]` in turn passes **all row indices** of that event in `rows` (including `fired[k]["row"]` itself). A firing row's conf is by definition always `>= θ`, while rows excluded by ctool have a uniform-distribution softmax of `1/n_labels`, which can only collide with θ when `θ<=1/n_labels`. The θ values in this project are all above 0.9, so the check `all(i in excluded_rows for i in keys[k])` is always false for any event that has already entered `keys`, and `n_excluded_by_ctool` is always 0. More fundamentally: if an event's candidate rows are **all** excluded by ctool (for example both rows are genuinely zero logits), it would never have `fired` in the original, unexcluded `replay_fire` in the first place (a class-0.5 conf cannot pass a θ of 0.9), so it never even gets past the "already fired" step. `select_keys` never sees this key at all; it is not "checked but judged false", it never gets the chance to be checked. This event thus **simultaneously disappears** from the three counts `n_events_fired`, `n_excluded_by_ctool`, `n_events_scored`, appearing in no denominator, and without raising any error.
 
-**修复**(直接覆盖错误逻辑,不打补丁):把 ctool 剔除挪到调 `replay_fire` **之前**——
-读 `excluded_idx` 之后,先按事件分组算"候选行是否全部被剔"计
-`n_excluded_by_ctool`(这一步在剔除之后,不依赖任何后续的 fired 状态),再把
-`rows`/`probs` 按"下标不在 excluded_rows 里"筛一遍(`cand_idx`/`cand_rows`/
-`cand_probs`),拿筛过的候选行去调 `replay_fire`。这样触发点天然只从未被剔除
-的候选行里挑,不管 θ 与 `1/n_labels` 的大小关系——不是"θ 通常挡得住所以没事",
-而是从源头上不让被剔除的行进入候选池。`--overlong` 那一步(第二次调
-`select_keys`)因此改传空的 `excluded_rows`:`keys` 里的事件都已经保证至少有
-一个候选行没被剔,`select_keys` 自己的剔除分支在这里永远不会再命中,加了
-一句 `assert length_counts["n_excluded_by_ctool"] == 0` 钉住这个不变量(断言失败
-说明前面的假设被破坏了,不是防御性兜底)。
+**Fix** (directly overwriting the faulty logic, not patching around it): move the ctool exclusion to **before** the call to `replay_fire`. After reading `excluded_idx`, first group by event and compute "whether all candidate rows are excluded" to get `n_excluded_by_ctool` (this step is after exclusion, and does not depend on any subsequent fired state), then filter `rows`/`probs` by "index not in excluded_rows" (`cand_idx`/`cand_rows`/`cand_probs`), and call `replay_fire` with the filtered candidate rows. This way the firing point is naturally picked only from candidate rows that were never excluded, regardless of the relative size of θ and `1/n_labels`. It is not "θ is usually high enough so it's fine", but rather that excluded rows are kept out of the candidate pool from the source. The `--overlong` step (the second call to `select_keys`) therefore now passes an empty `excluded_rows`: every event in `keys` is already guaranteed to have at least one candidate row that was not excluded, so `select_keys`'s own exclusion branch can never hit here again; an `assert length_counts["n_excluded_by_ctool"] == 0` was added to pin down this invariant (an assertion failure would mean the earlier assumption was broken, not a defensive fallback).
 
-`eval_causal_call.py` 第 572-607 行(挑触发点)、第 622-650 行(`--overlong`
-筛选)。
+`eval_causal_call.py` lines 572-607 (picking the firing point), lines 622-650 (`--overlong` filtering).
 
-### F2(critical)eval_causal_param.py 同一缺口
+### F2 (critical) eval_causal_param.py has the same gap
 
-`eval_causal_param.py` 的问题与 F1 逐字同构(`replay_fire` 调用在第 403 行、
-`keys_rowmap` 在原第 447 行同样取全部行下标),按同一个根因修复法处理:
-第 401-434 行(挑触发点,`ev_row_idx`/`excluded_rows`/`n_excluded_by_ctool` 提前
-算好、`cand_idx`/`cand_rows`/`cand_probs` 筛过再调 `replay_fire`)、第 453-486 行
-(`--overlong` 筛选改传空 `excluded_rows`,同样断言剩下的 `n_excluded_by_ctool`
-恒为 0)。两个脚本的 `select_keys`(`share_data.py`)本身没有改动——它作为纯
-函数的行为一直是对的(给定正确的 `keys`/`excluded_rows` 就能正确剔除),问题
-从来只在两个评测脚本调用它之前"喂给它什么"这一步。
+The problem in `eval_causal_param.py` is structurally identical, word for word, to F1 (the `replay_fire` call is at line 403, and `keys_rowmap` at the original line 447 likewise takes all row indices), handled with the same root-cause fix: lines 401-434 (picking the firing point, `ev_row_idx`/`excluded_rows`/`n_excluded_by_ctool` computed ahead of time, `cand_idx`/`cand_rows`/`cand_probs` filtered before calling `replay_fire`), lines 453-486 (`--overlong` filtering now passes an empty `excluded_rows`, likewise asserting that the remaining `n_excluded_by_ctool` is always 0). `select_keys` (`share_data.py`) itself, shared by both scripts, was not changed, as a pure function its behavior was always correct (given the correct `keys`/`excluded_rows` it excludes correctly); the problem was always only in the step of "what gets fed to it" before the two eval scripts call it.
 
-自查存疑第 4/5 条(`REPLAY_REPORT` 只取 test 堆数字、val 堆也走同一套剔除
-逻辑)与本次修复无关,不动;第 2/3/6/7 条(`score_causal` 三值返回、
-`logits_*.meta.json` 多写四个计数、`test_ctool_readpos.py` 两处调用点、
-`n_dropped_events` 判据)同样不在这次 finding 范围内,原样保留。
+Self-check open questions 4/5 (`REPLAY_REPORT` only taking the test split's numbers, the val split also going through the same exclusion logic) are unrelated to this fix and are left untouched; items 2/3/6/7 (`score_causal`'s three-value return, the four extra counts written into `logits_*.meta.json`, the two call sites in `test_ctool_readpos.py`, the `n_dropped_events` criterion) are likewise outside the scope of this finding and are kept as they are.
 
-### F3(important)新测试没有覆盖 F1/F2 实际所在的接线代码
+### F3 (important) the new tests do not cover the wiring code where F1/F2 actually live
 
-原来的 `TestSelectKeys` 直接手造 `keys = {"e1": [0, 1], ...}` 这种候选行下标
-字典去调 `select_keys`,绕开了两个评测脚本里"从 `rows` 建 `keys_rowmap`、拿
-`fired[k]['row']` 当触发点"这段真正的接线——F1/F2 的 bug 就在这段接线里,
-孤立单测测不到它。
+The original `TestSelectKeys` directly hand-built a candidate-row-index dictionary like `keys = {"e1": [0, 1], ...}` to call `select_keys`, bypassing the real wiring in the two eval scripts of "building `keys_rowmap` from `rows`, taking `fired[k]['row']` as the firing point". The F1/F2 bugs live exactly in this wiring, and an isolated unit test cannot catch it.
 
-`tests/test_eval_overlong.py` 新增两个端到端测试类:
+`tests/test_eval_overlong.py` adds two new end-to-end test classes:
 
-- `TestCgenCtoolExclusionWiring`(测 `eval_causal_call.py`)
-- `TestCparamCtoolExclusionWiring`(测 `eval_causal_param.py`)
+- `TestCgenCtoolExclusionWiring` (tests `eval_causal_call.py`)
+- `TestCparamCtoolExclusionWiring` (tests `eval_causal_param.py`)
 
-做法:手造真实 Qwen 分词器 + 随机初始化的两层 `AutoModelForCausalLM`(照
-`tests/test_lora_merge.py` 的 `tiny_config`/`save_pretrained` 套路存成一个
-`<run>/best` 目录),配一份手造的 `ctool` run(`REPLAY_REPORT.json` +
-`logits_test.pt` + `logits_test.meta.json`)与一份手造的 `test.jsonl`,把脚本里
-的 `generate()` 换成一个"回声"函数(原样返回喂进去的 prompt,不依赖模型真能
-写出什么),端到端跑 `eval_causal_call.main()` / `eval_causal_param.main()`,
-再读落盘的 `CALLGEN_REPORT.json` / `PARAM_REPORT.json`。
+Method: hand-build a real Qwen tokenizer plus a randomly initialized two-layer `AutoModelForCausalLM` (saved into a `<run>/best` directory following the `tiny_config`/`save_pretrained` pattern of `tests/test_lora_merge.py`), pair it with a hand-built `ctool` run (`REPLAY_REPORT.json` + `logits_test.pt` + `logits_test.meta.json`) and a hand-built `test.jsonl`, replace the script's `generate()` with an "echo" function (returns the fed-in prompt as-is, without depending on the model actually being able to produce anything), run `eval_causal_call.main()` / `eval_causal_param.main()` end to end, then read the persisted `CALLGEN_REPORT.json` / `PARAM_REPORT.json`.
 
-构造三个事件(2 类标签,`θ=0.9`):
+Three events constructed (2-class labels, `θ=0.9`):
 
-- `ev_reselect`:两行,sent_idx 0 被剔除但故意给强自信 logits(`[10,-10]`,
-  conf≈1.0)——用来验证"剔除的行不许当触发点候选"这条不是靠 θ 天然挡住的,
-  接线本身必须挡;sent_idx 1 没被剔除,logits `[3,-3]`(conf≈0.9975)存活。
-- `ev_full_excl`:两行都被剔除,logits 是 ctool 真实产出的零 logits
-  `[0,0]`(conf=0.5<0.9)——这正是 F1 指出的"老接线里这类事件连 fired 都进
-  不去、从所有计数里静默消失"的场景。
-- `ev_normal`:一行,没被剔除,正常触发,当基线对照。
+- `ev_reselect`: two rows, sent_idx 0 excluded but deliberately given strongly confident logits (`[10,-10]`, conf≈1.0), used to verify that "excluded rows must not be candidates for the firing point" is not something θ naturally blocks by itself, the wiring itself must block it; sent_idx 1 is not excluded, logits `[3,-3]` (conf≈0.9975), survives.
+- `ev_full_excl`: both rows excluded, logits are the genuine zero logits produced by ctool `[0,0]` (conf=0.5<0.9). This is exactly the scenario F1 pointed out, "in the old wiring this kind of event never even gets to fired, and silently disappears from all the counts".
+- `ev_normal`: one row, not excluded, fires normally, used as the baseline control.
 
-断言 `n_events_test==3`、`n_events_fired==2`、`n_excluded_by_ctool==1`、
-`n_events_scored==2`,并从回声报告的 `samples[...]["gen"]` 字段里读出
-`ev_reselect` 的生成 prompt——确认它含 "ROW1 SURVIVING TEXT"(重新挑到的那一
-行)、不含 "ROW0 EXCLUDED CONFIDENT TEXT"(被剔除的那一行)。
+Asserts `n_events_test==3`, `n_events_fired==2`, `n_excluded_by_ctool==1`, `n_events_scored==2`, and reads the generated prompt for `ev_reselect` from the echo report's `samples[...]["gen"]` field, confirming it contains "ROW1 SURVIVING TEXT" (the row that was re-picked) and does not contain "ROW0 EXCLUDED CONFIDENT TEXT" (the row that was excluded).
 
-**验证这两个新测试确实会抓住 F1/F2**(不是自娱自乐的绿测):用
-`git show 19f2c70:pipeline/eval/eval_causal_call.py`(修复前的版本)临时换上
-这两个脚本,单独跑这两个新测试类,两个都在 `n_excluded_by_ctool` 上失败
-(`0 != 1`);换回修复后的脚本,两个测试转绿。
+**Verified that these two new tests actually catch F1/F2** (not tests that pass trivially by construction): temporarily swapped in the two scripts using `git show 19f2c70:pipeline/eval/eval_causal_call.py` (the pre-fix version), ran the two new test classes alone, and both failed on `n_excluded_by_ctool` (`0 != 1`); switched back to the fixed scripts and both tests turned green.
 
-## 六、怎么验证的(本轮)
+## VI. How it was verified (this round)
 
 ```
 $ cprobe-env/bin/python -m unittest tests.test_eval_overlong tests.test_share_data tests.test_ctool_readpos
 Ran 41 tests in 7.225s
 OK (skipped=1)
 ```
-(41 = 上一轮的 39 + 本轮新增的 2 个端到端测试;跳过的 1 个与上一轮相同,是
-`tests/test_share_data.py` 里需要现役数据目录的用例,worktree 里没有那个
-gitignore 的目录,不是回归。)
+(41 = the previous round's 39 + the 2 end-to-end tests added this round; the 1 skip is the same as the previous round, the test case in `tests/test_share_data.py` that needs the active data directory, absent from the worktree since that gitignored directory is not there; not a regression.)
 
 ```
 $ cprobe-env/bin/python -m unittest discover -s tests
 Ran 433 tests in 17.016s
 FAILED (failures=1, skipped=24)
 ```
-唯一失败仍是 `tests.test_preset.TestBfclHandlerPreset.test_no_env_reads_default_preset`
-(硬编码 `/home/y-guo/reproduce/new1/...` 绝对路径,在本工作树路径下天然对不上,
-上一轮已确认与本工单无关,本轮验证依旧如此)。
+The only failure is still `tests.test_preset.TestBfclHandlerPreset.test_no_env_reads_default_preset`
+(hardcodes the absolute path `/home/y-guo/reproduce/new1/...`, which naturally does not match under this worktree's path; already confirmed unrelated to this ticket in the previous round, and this round's verification confirms the same).
 
 ```
 $ grep -n "full_token_ids\|n_full_tokens" pipeline/train/share_data.py pipeline/train/train_causal_tool.py \
     pipeline/eval/eval_tool.py pipeline/eval/eval_causal_call.py pipeline/eval/eval_causal_param.py | wc -l
-11   # 五个文件全命中
+11   # all five files match
 $ grep -n 'tok(e\["full_text"\]' pipeline/train/share_data.py | wc -l
 0
 $ grep -rn "def select_keys" pipeline/
-pipeline/train/share_data.py:104:def select_keys(...)   # 只此一处
+pipeline/train/share_data.py:104:def select_keys(...)   # only here
 ```
 
-三个评测脚本 `--help` 仍列出 `--overlong {left,skip,drop-event}`,默认 `left`
-(逐字重跑确认,输出与上一轮报告一致)。
+The `--help` of all three eval scripts still lists `--overlong {left,skip,drop-event}`, default `left`
+(re-ran verbatim to confirm, output matches the previous round's report).
 
 ```
 $ python3 run.py selfcheck
-selfcheck: 76 任务 / 4 配方 / 3 预设, 16 处缺失
+selfcheck: 76 tasks / 4 recipes / 3 presets, 16 missing
 ```
-16 处缺失仍是 venv/env 目录(gitignore,只在主仓,不在本工作树),与上一轮
-一致,不是回归。
+The 16 missing items are still the venv/env directories (gitignored, only in the main repo, not in this worktree), consistent with the previous round, not a regression.
 
-## 七、commit 清单(本轮)
+## VII. Commit list (this round)
 
-- `530c997` T07: 修复 F1/F2 ctool 剔除行接线——挑触发点前先剔候选行,重新挑触发点
-- `eadb3f8` T07: 补 F3 回归测试——端到端跑 eval_causal_call/param 的接线,不再只测孤立单元
+- `530c997` T07: fix F1/F2 ctool exclusion-row wiring, exclude candidate rows before picking the firing point, re-pick the firing point
+- `eadb3f8` T07: add F3 regression tests, run the wiring of eval_causal_call/param end to end, no longer testing only isolated units
 
-修复后 head:`eadb3f8`。
+Head after the fix: `eadb3f8`.

@@ -1,82 +1,82 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>速查卡 · vLLM 启动日志解码</title>
+<title>Cheat Sheet · Decoding the vLLM Startup Log</title>
 <link rel="stylesheet" href="../assets/lesson.css">
 </head>
 <body>
 <div class="wrap">
 
 <p class="kicker">Reference · vLLM 0.26.0</p>
-<h1>启动日志解码卡</h1>
-<p class="standfirst">想知道一台 vLLM 服务的真实口径，去日志里找哪一行。行号是 <code>new1_diag_srv_a.log</code> 那次启动的位置，别的日志行号会挪，认关键词。</p>
+<h1>Startup Log Decoder Card</h1>
+<p class="standfirst">To find a vLLM service's actual configuration, which line in the log to look for. Line numbers refer to positions from the <code>new1_diag_srv_a.log</code> startup; other logs will have different line numbers, so match on keywords instead.</p>
 
-<h2>问题 → 日志行</h2>
+<h2>Question → log line</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>我想知道</th><th>抓这个关键词</th><th>它长这样</th></tr></thead>
+<thead><tr><th>What I want to know</th><th>Grep this keyword</th><th>It looks like this</th></tr></thead>
 <tbody>
-<tr><td>我实际改了哪些参数</td><td><code>non-default args</code></td><td>一个 dict，只列与默认值不同的</td></tr>
-<tr><td>单条上下文上限</td><td><code>Using max model len</code></td><td><code>Using max model len 131072</code></td></tr>
-<tr><td>KV 池能装多少 token</td><td><code>GPU KV cache size</code></td><td><code>GPU KV cache size: 528,934 tokens</code></td></tr>
-<tr><td>能同时扛几条请求</td><td><code>Maximum concurrency</code></td><td><code>... per request: 4.04x</code></td></tr>
-<tr><td>显存怎么切的</td><td><code>Free memory on device</code></td><td>权重 / 激活 / non-torch / CUDAGraph 逐项</td></tr>
-<tr><td>KV 拿到多少字节</td><td><code>Available KV cache memory</code></td><td><code>Available KV cache memory: 20.45 GiB</code></td></tr>
-<tr><td>挂了哪个思考解析器</td><td><code>reasoning_parser=</code></td><td>在那条超长的 engine config 里</td></tr>
-<tr><td>用了什么量化格式</td><td><code>quantization=</code></td><td>同上，如 <code>quantization=gpt_oss_mxfp4</code></td></tr>
-<tr><td>前缀缓存开没开</td><td><code>enable_prefix_caching</code></td><td>同上，0.26.0 默认 True</td></tr>
-<tr><td>我的旗标被无视了吗</td><td><code>WARNING</code></td><td>如 gpt-oss 那条 ignore 工具旗标</td></tr>
-<tr><td>服务起来了没有</td><td><code>Application startup complete</code></td><td>出现即可收客户端请求</td></tr>
+<tr><td>Which parameters I actually changed</td><td><code>non-default args</code></td><td>A dict listing only what differs from the default</td></tr>
+<tr><td>Per-request context limit</td><td><code>Using max model len</code></td><td><code>Using max model len 131072</code></td></tr>
+<tr><td>How many tokens the KV pool holds</td><td><code>GPU KV cache size</code></td><td><code>GPU KV cache size: 528,934 tokens</code></td></tr>
+<tr><td>How many concurrent requests it can carry</td><td><code>Maximum concurrency</code></td><td><code>... per request: 4.04x</code></td></tr>
+<tr><td>How GPU memory is carved up</td><td><code>Free memory on device</code></td><td>weights / activations / non-torch / CUDAGraph, itemized</td></tr>
+<tr><td>How many bytes KV got</td><td><code>Available KV cache memory</code></td><td><code>Available KV cache memory: 20.45 GiB</code></td></tr>
+<tr><td>Which reasoning parser is attached</td><td><code>reasoning_parser=</code></td><td>In that very long engine config line</td></tr>
+<tr><td>What quantization format is used</td><td><code>quantization=</code></td><td>Same as above, e.g. <code>quantization=gpt_oss_mxfp4</code></td></tr>
+<tr><td>Whether prefix caching is on</td><td><code>enable_prefix_caching</code></td><td>Same as above, defaults to True in 0.26.0</td></tr>
+<tr><td>Whether my flag got ignored</td><td><code>WARNING</code></td><td>E.g. the gpt-oss line that ignores a tool flag</td></tr>
+<tr><td>Whether the service is up</td><td><code>Application startup complete</code></td><td>Once it appears, it can accept client requests</td></tr>
 </tbody>
 </table>
 </div>
 
-<h2>一条命令抓关键三行</h2>
+<h2>One command to grab the three key lines</h2>
 
-<pre><code>grep -E "Using max model len|GPU KV cache size|Maximum concurrency" &lt;日志&gt;</code></pre>
+<pre><code>grep -E "Using max model len|GPU KV cache size|Maximum concurrency" &lt;log&gt;</code></pre>
 
-<p>要连显存分配一起看：</p>
+<p>To see it together with the memory allocation:</p>
 
 <pre><code>grep -E "Using max model len|Available KV cache memory|GPU KV cache size|\
-Maximum concurrency|Free memory on device" &lt;日志&gt;</code></pre>
+Maximum concurrency|Free memory on device" &lt;log&gt;</code></pre>
 
-<p>本仓库的服务日志在 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/*srv*.log</code>（2026-08-01 之后的批次）。更早的批次落在 <code>envs/serve_logs/</code>，已随清场删除。</p>
+<p>This repo's service logs are at <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/*srv*.log</code> (batches after 2026-08-01). Earlier batches were at <code>envs/serve_logs/</code>, and have been deleted in cleanup.</p>
 
-<h2>一道必须会的除法</h2>
+<h2>One division you must know</h2>
 
 <div class="note">
-<strong>并发上限 = KV 池容量 ÷ 单条上下文上限。</strong>
-日志里那个 <code>N.NNx</code> 就是这么来的，不是估的。读完日志手算一遍，对得上说明行没认错。
+<strong>Concurrency limit = KV pool capacity ÷ per-request context limit.</strong>
+That <code>N.NNx</code> in the log comes from exactly this, it is not an estimate. After reading the log, do the math by hand once; if it matches, you read the line correctly.
 </div>
 
-<h2>默认值去哪儿查</h2>
+<h2>Where to look up defaults</h2>
 
-<p>官方文档写的是最新版，我们跑的是 0.26.0，撞过一次不一致。查默认值以本机源码为准，根目录 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/</code>：</p>
+<p>The official docs describe the latest version, and we run 0.26.0; we have hit an inconsistency once before. Look up defaults from the local source code, rooted at <code>envs/vllm-env/lib/python3.12/site-packages/vllm/</code>:</p>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>要查什么</th><th>文件</th><th>0.26.0 的值</th></tr></thead>
+<thead><tr><th>What to look up</th><th>File</th><th>0.26.0's value</th></tr></thead>
 <tbody>
-<tr><td>显存比例默认值</td><td><code>config/cache.py:68</code></td><td>0.92</td></tr>
-<tr><td>KV 数据类型</td><td><code>config/cache.py:76</code></td><td><code>auto</code>（=模型 dtype）</td></tr>
-<tr><td>上下文上限默认</td><td><code>config/model.py:190</code></td><td>从模型 config 自动取</td></tr>
-<tr><td>并发序列数默认</td><td><code>config/scheduler.py:44</code></td><td>128</td></tr>
-<tr><td>环境变量清单</td><td><code>envs.py</code></td><td>含每个变量的作用注释</td></tr>
-<tr><td>工具解析器名字表</td><td><code>tool_parsers/__init__.py</code></td><td><code>openai</code> → GptOssToolParser</td></tr>
-<tr><td>思考解析器名字表</td><td><code>reasoning/__init__.py</code></td><td><code>deepseek_r1</code>、<code>openai_gptoss</code></td></tr>
-<tr><td>哪些模型自动挂解析器</td><td><code>model_executor/models/config.py</code></td><td>gpt-oss → <code>openai_gptoss</code></td></tr>
+<tr><td>Default GPU memory fraction</td><td><code>config/cache.py:68</code></td><td>0.92</td></tr>
+<tr><td>KV data type</td><td><code>config/cache.py:76</code></td><td><code>auto</code> (= model dtype)</td></tr>
+<tr><td>Default context limit</td><td><code>config/model.py:190</code></td><td>Taken automatically from the model config</td></tr>
+<tr><td>Default number of concurrent sequences</td><td><code>config/scheduler.py:44</code></td><td>128</td></tr>
+<tr><td>List of environment variables</td><td><code>envs.py</code></td><td>Includes a comment on what each variable does</td></tr>
+<tr><td>Tool parser name table</td><td><code>tool_parsers/__init__.py</code></td><td><code>openai</code> → GptOssToolParser</td></tr>
+<tr><td>Reasoning parser name table</td><td><code>reasoning/__init__.py</code></td><td><code>deepseek_r1</code>, <code>openai_gptoss</code></td></tr>
+<tr><td>Which models auto-attach a parser</td><td><code>model_executor/models/config.py</code></td><td>gpt-oss → <code>openai_gptoss</code></td></tr>
 </tbody>
 </table>
 </div>
 
-<h2>本仓库四台服务的实测值</h2>
+<h2>Measured values from this repo's four services</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>日志</th><th>卡</th><th>上下文上限</th><th>显存比例</th><th>KV 池</th><th>并发</th></tr></thead>
+<thead><tr><th>Log</th><th>Card</th><th>Context limit</th><th>Memory fraction</th><th>KV pool</th><th>Concurrency</th></tr></thead>
 <tbody>
 <tr><td>splice_srv_{a,b,c}</td><td>93.1 GiB</td><td>65,536</td><td>0.92</td><td>475,669</td><td>7.26x</td></tr>
 <tr><td>diag_srv_{a,b,c}</td><td>93.1 GiB</td><td>131,072</td><td>0.92</td><td>528,934</td><td>4.04x</td></tr>
@@ -86,10 +86,10 @@ Maximum concurrency|Free memory on device" &lt;日志&gt;</code></pre>
 </tbody>
 </table>
 </div>
-<p class="src">全部 gpt-oss-120b，单卡单实例。93.1 GiB = tokyo108 的 H100（GPU 0-2），139.81 GiB = H200（GPU 3-5）。权重一律占 61.43 GiB。</p>
+<p class="src">All gpt-oss-120b, one instance per card. 93.1 GiB = tokyo108's H100 (GPU 0-2), 139.81 GiB = H200 (GPU 3-5). Weights always take up 61.43 GiB.</p>
 
 <div class="foot">
-<p><a class="local" href="../lessons/0001-reading-the-startup-log.html">← 第 1 课：一台服务的真实口径只在启动日志里</a></p>
+<p><a class="local" href="../lessons/0001-reading-the-startup-log.html">← Lesson 1: A service's actual configuration only lives in the startup log</a></p>
 </div>
 
 </div>

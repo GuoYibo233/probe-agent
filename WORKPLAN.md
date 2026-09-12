@@ -1,33 +1,48 @@
-# 工作计划
+# Work plan
 
-> 会被覆盖重写的当前计划。决策历史归 `TIMELINE.md`，两者分工不能颠倒。
+> The current plan, subject to being overwritten. Decision history belongs to
+> `TIMELINE.md`; the two must not swap roles.
 
-当前主线是 np821 批（计划全文 `plans/archive/2026-08-21-np821-plan.md`，口径定案见
-TIMELINE 2026-08-21 两条）。位置：施工块已完成并一个 commit 收口，
-执行块还没开始。
+The current main line is the np821 batch (full plan text in
+`plans/archive/2026-08-21-np821-plan.md`, the convention decisions are in the two
+TIMELINE 2026-08-21 entries). Position: the construction block is complete and closed
+out in one commit, the execution block has not started yet.
 
-1. **执行块**（按计划 §4 的依赖序走，入口是驱动器
-   `python3 run.py pipeline --config pipeline/configs/np821_gptoss.json`）：
-   NFS 空间预检 → 采集 1260 条 → 标注（切点分布停点裁决 `max_bounds`）→
-   三格 smoke 加排卡表 → 四批训练 → 评测 → 矩阵 → Phase D 收官 +
-   Phase E 回写 skill。
-2. **回写清单**（下次动到对应代码时一并做，np821 本批明确不动）：
-   - `pipeline/eval/eval_tool.py:49` 写死的 `SEED = 20260729`：评测五脚本
-     本批零改动，下次动评测代码时把种子并入 42 家族并重跑 G12 验收线。
-   - `pipeline/train/train_mbert_tool.py` / `train_mbert_extract.py` 的
-     `SEED = 20260729`：m 线 2026-08-21 起停跑，重启那天一并换。
-   - `pipeline/collect/gen_*_splits.py` 四个切分生成器的 `SEED = 20260729`：
-     它们是已入库题单的一次性生成器，常量是冻结产物的档案，动它们等于
-     换切分，要动必须连题单一起重新裁决。
-   - `envs/collect/build_dataset.py:27` 的 `SEED = 20260729`（注册表里的
-     build-dataset-legacy，已被 pipeline/annotate/ 取代的旧线历史入口）：
-     常量是冻结产物 bert_data v2 的档案（出厂报告头一行印着这个 SEED），
-     动它等于换旧数据的复现口径，与四个切分生成器同一条标准，不动。
-     施工时全仓清点漏了这处，2026-08-22 验收补记。
-   - `pipeline/inject/replay_inject.py:399` 与 `pipeline/inject/score_live.py:119`
-     按 `appworld_<unit>.jsonl` 反查轨迹文件：多样本批的文件名带 `_r<k>` 后缀，
-     反查会全部落空且是静默计数丢弃不报错（replay_inject 会退 0 出一份空
-     plan）。哪天这两条线（回放注入、活跑打分）要吃多样本批的数据，先把
-     反查改成用样本行自带的 `traj` 字段拼路径；同一趟里
-     `pipeline/inject/exec_calls.py:573` 按 unit 分组也要改成按 traj 分组，
-     不然同题四条轨迹的事件会全被拍到一条轨迹上。np821 执行块用不到这两条线。
+1. **Execution block** (follow the dependency order in plan §4, entered via the driver
+   `python3 run.py pipeline --config pipeline/configs/np821_gptoss.json`):
+   NFS space precheck → collect 1260 trajectories → annotate (the cut-point
+   distribution stop point decides `max_bounds`) → smoke test the three cells plus the
+   placement table → four batches of training → evaluation → matrix → Phase D
+   wrap-up + Phase E write-back to the skill.
+2. **Write-back list** (do these together the next time the matching code is touched;
+   explicitly not touched in this np821 batch):
+   - The hardcoded `SEED = 20260729` at `pipeline/eval/eval_tool.py:49`: zero changes
+     to the five evaluation scripts this batch; the next time the evaluation code is
+     touched, fold the seed into the 42 family and rerun the G12 acceptance line.
+   - The `SEED = 20260729` in `pipeline/train/train_mbert_tool.py` /
+     `train_mbert_extract.py`: the m-line has been paused since 2026-08-21, change it
+     together on the day it restarts.
+   - The `SEED = 20260729` in the four split generators
+     `pipeline/collect/gen_*_splits.py`: these are one-off generators for task lists
+     already checked into the repo, the constant is the archival record of a frozen
+     artifact, changing them means changing the split, and doing so requires
+     re-deciding the task list along with it.
+   - The `SEED = 20260729` at `envs/collect/build_dataset.py:27` (the registry's
+     build-dataset-legacy, the old line's historical entry point already superseded by
+     pipeline/annotate/): the constant is the archival record of the frozen artifact
+     bert_data v2 (the release report's first header line prints this SEED), changing
+     it means changing the reproduction convention for the old data, held to the same
+     standard as the four split generators, do not touch it. This spot was missed
+     during the full-repo inventory at construction time, added on 2026-08-22 during
+     acceptance review.
+   - `pipeline/inject/replay_inject.py:399` and `pipeline/inject/score_live.py:119`
+     look up the trajectory file by `appworld_<unit>.jsonl`: for a multi-sample batch,
+     the filename carries an `_r<k>` suffix, so every lookup comes up empty, and this
+     is a silent count-and-discard with no error (replay_inject exits 0 and produces
+     an empty plan). Whenever these two lines (replay injection, live-run scoring)
+     need to consume multi-sample-batch data, change the lookup to build the path from
+     the sample row's own `traj` field instead; in the same pass,
+     `pipeline/inject/exec_calls.py:573`'s grouping by unit must also change to
+     grouping by traj, otherwise the events from a task's four trajectories will all
+     get pinned onto a single trajectory. The np821 execution block does not need
+     either of these two lines.

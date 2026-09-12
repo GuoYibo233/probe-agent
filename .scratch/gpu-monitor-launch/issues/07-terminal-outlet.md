@@ -1,16 +1,40 @@
-# 07 — 终端出口改读采样历史
+# 07 — Terminal outlet switches to reading the sampling history
 
-**What to build:** gpu-jobs 的状态表、watch、json 三个出口改成先读采样历史：最后采样时刻在 5 分钟内就用采样历史瞬间出表（表头带最后采样时刻），过期就打一行警告退回现有的现场实探老路。json 出口过期时附 sampler_stale 标记。free、register、finish 一行不动，挑卡和销号永远现场实探。步骤照实施计划 Task 8 执行。
+**What to build:** gpu-jobs's three outlets, the status table, watch, and
+json, switch to reading the sampling history first: when the last sample
+time is within 5 minutes, the table is produced instantly from the
+sampling history (the header carries the last sample time); when it's
+stale, a warning line is printed and it falls back to the existing
+on-the-spot probing path. The json outlet attaches a sampler_stale flag
+when stale. free, register, and finish stay untouched; card picking and
+deregistration always probe on the spot. Steps follow Task 8 of the
+implementation plan.
 
-**Blocked by:** 02 采样器单轮走通
+**Blocked by:** 02 Sampler runs one round end to end
 
 **Status:** resolved
 
-- [ ] 没有采样器在跑的时候：警告行加老表照出，json 出口输出合法 JSON
-- [ ] 指一份假的最新采样文件：新表出得来，判定、进度、速率、ETA 各列都渲染
-- [ ] 已完成和已挂两种判定仍有收尾与看日志的提示行
+- [ ] When no sampler is running: the old table still comes out with a
+  warning line added, and the json outlet emits valid JSON
+- [ ] Pointing at a fake latest-sampling file: the new table is produced,
+  with all columns, verdict, progress, rate, ETA, rendered
+- [ ] The done and dead verdicts still have their finish and
+  check-the-log hint lines
 - [ ] commit
 
 ## Comments
 
-- 2026-08-09 ticket-run：DONE。分支 ticket/20260808-par/T07（base 2ce9834，head f5a864a，gpu_jobs.py +177、tests/test_gpu_jobs.py 新增 16 用例），合并 commit 0d2c1ac。修复 1 轮，无 minors、无 cannotVerify。主会话真实冒烟：活采样器在跑的情况下 `gpu-jobs status` 瞬间出表、表头带最后采样时刻，`gpu-jobs json` 直接吐采样结果原文（rows/extras/incidents_tail），16 测试全绿。concerns 两条照录：RATE 单位切换阈值（≥1 用 /s 否则 /h）是实现者自定边界，与网页出口固定 /s 不一致，留收官核对是否统一；已完成/已挂提示行保留旧关键短语但非逐字照抄。首个 workflow 昨日静默死亡，resume 重跑实现完成。报告：sdd/2026-08-08-wave1/T07-report.md。
+- 2026-08-09 ticket-run: DONE. Branch ticket/20260808-par/T07 (base
+  2ce9834, head f5a864a, gpu_jobs.py +177, tests/test_gpu_jobs.py added
+  with 16 new cases), merge commit 0d2c1ac. 1 fix round, no minors, no
+  cannotVerify. Main-conversation real smoke test: with a live sampler
+  running, `gpu-jobs status` produced the table instantly with the last
+  sample time in the header, and `gpu-jobs json` emitted the sampling
+  result verbatim (rows/extras/incidents_tail); 16 tests all green. Two
+  concerns noted as-is: the RATE unit-switch threshold (>=1 uses /s,
+  otherwise /h) is a boundary the implementer set on their own,
+  inconsistent with the web outlet's fixed /s, left for the wrap-up to
+  check whether to unify; the done/dead hint lines keep the old key
+  phrases but are not copied verbatim. The first workflow died silently
+  yesterday; resumed and re-run to completion. Report:
+  sdd/2026-08-08-wave1/T07-report.md.

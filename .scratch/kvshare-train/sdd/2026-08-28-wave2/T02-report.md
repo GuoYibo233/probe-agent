@@ -1,88 +1,110 @@
-# T02 报告 —— ctool 的丢弃规则、默认值、读取位置规则、日志
+# T02 Report — ctool's drop rules, defaults, read-position rule, logging
 
-工单:`.scratch/kvshare-train/issues/02-ctool-drop-readpos.md`
-分支:`ticket/2026-08-28-wave2/T02`(工作树 `new1-wt/2026-08-28-wave2-T02`,base `2216c44`)
+Ticket: `.scratch/kvshare-train/issues/02-ctool-drop-readpos.md`
+Branch: `ticket/2026-08-28-wave2/T02` (worktree `new1-wt/2026-08-28-wave2-T02`, base `2216c44`)
 
-## 一、做了什么(对照工单逐条)
+## I. What was done (against each ticket item)
 
-### 1. 丢弃规则(spec 11.1)
+### 1. Drop rule (spec 11.1)
 
-- `pipeline/train/train_causal_tool.py` 的 `load_events` 加了 `tok`、`max_len`
-  两个参数:分组、前缀性质抽查、`rows` 字段清理之后,对每个事件算
-  `len(tok(e["full"], add_special_tokens=False)["input_ids"])`,超过 `max_len`
-  就丢并计数;之后再走 `limit`/`spot` 的取子集逻辑。返回值从 `events` 改成
-  `(events, dropped)`。
-- `main()` 里 val、train 两次调用都传了 `tok, args.max_len`;`start` 事件加了
-  `dropped_events_train=dropped_events_train, dropped_events_val=dropped_events_val`。
-- `collate`(原第 137~138 行)与 `align_check`(原第 209~210 行)的
-  `truncation=True` 改成 `truncation=False`。
-- `n_bound_dropped` 字段保留,`step`/`eval` 事件照旧写;`collate` 里对应的
-  注释改成"找不到读取位置的切点数(n_bound_dropped),预期 0"。
+- `pipeline/train/train_causal_tool.py`'s `load_events` gained two parameters,
+  `tok` and `max_len`: after grouping, the prefix-property spot check, and
+  cleaning up the `rows` field, computes
+  `len(tok(e["full"], add_special_tokens=False)["input_ids"])` for each event,
+  drops it and counts it if it exceeds `max_len`; only then does it proceed to
+  the `limit`/`spot` subset-taking logic. The return value changed from
+  `events` to `(events, dropped)`.
+- Both calls to `main()`, for val and train, now pass `tok, args.max_len`;
+  the `start` event gained
+  `dropped_events_train=dropped_events_train, dropped_events_val=dropped_events_val`.
+- `truncation=True` in `collate` (originally lines 137~138) and `align_check`
+  (originally lines 209~210) was changed to `truncation=False`.
+- The `n_bound_dropped` field is kept, `step`/`eval` events still write it as
+  before; the corresponding comment in `collate` was changed to "the count of
+  cut points where a read position could not be found (n_bound_dropped),
+  expected to be 0".
 
-### 2. 默认值(spec 11.2)
+### 2. Defaults (spec 11.2)
 
-- `--max-len` 4096 → 8192。
-- `--accum` 8 → 2(`--bs` 仍是 4,一次更新 8 个事件)。
-- `--epochs` 默认值 3 未动(工单要求"不变")。
-- 顶部模块 docstring 的"截断"一节改写成"上限"一节,反映新行为(不截断、
-  整条丢超长事件、`n_bound_dropped` 现在恒为 0 的读取位置口径);argparse
-  里这两个参数本来就没有带数字的 `help=` 文本,没有需要另外同步的地方。
+- `--max-len` 4096 → 8192.
+- `--accum` 8 → 2 (`--bs` stays 4, one update covers 8 events).
+- `--epochs` default of 3 was left unchanged (the ticket required "unchanged").
+- The top-of-module docstring's "truncation" section was rewritten as a
+  "cap" section, reflecting the new behavior (no truncation, whole overlong
+  events dropped, `n_bound_dropped` is now always 0 under the read-position
+  convention); the argparse help for these two parameters never carried
+  the numbers as literal text to begin with, so there is nothing else to
+  keep in sync.
 
-### 3. 读取位置规则(spec 11.3)
+### 3. Read-position rule (spec 11.3)
 
-- `train_causal_tool.py` 顶层加了 `import share_data`(与 `lora_util`、
-  `readonly_map` 同一处、同种写法,不需要额外 `sys.path.insert`,因为
-  `share_data.py` 本来就和它同目录)。
-- `collate` 里原来 `for t in range(keep-1, -1, -1): if 0 < ends[t] <= b: ...`
-  的循环体整段删掉,改成 `j = share_data.read_position(offsets_i, full, b, keep)`;
-  `keep = int(enc["attention_mask"][i].sum())` 保留、作为第四个实参传入;
-  `if j < 0` 的守卫原样保留(`dropped += 1`)。
-- `eval_tool.py` 顶层在 `import readonly_map` 后面加了一行
-  `import share_data`(复用同一条 `sys.path.insert`)。`score_causal` 里同样
-  的循环体删掉,改调 `share_data.read_position(offsets_i, full, b, keep)`;
-  `if j < 0: n_oow += 1; continue` 原样保留。`_full` 改名成 `full`(要传给
-  `read_position` 当 `full_text` 用)。
-- `align_check` 没有切点循环,只改了第 209 行(现文件里的对应位置)的
-  `truncation`,和第 1 条共享同一处编辑。
-- `eval_tool.py` 的左截断(`score_causal` 里 `truncation=True,
-  max_length=max_len`)原样未动(spec 11.5)。
+- `train_causal_tool.py` gained `import share_data` at the top level
+  (in the same place and the same style as `lora_util`, `readonly_map`, no
+  extra `sys.path.insert` is needed because `share_data.py` is already in the
+  same directory).
+- In `collate`, the whole loop body that used to read
+  `for t in range(keep-1, -1, -1): if 0 < ends[t] <= b: ...` was deleted and
+  replaced with `j = share_data.read_position(offsets_i, full, b, keep)`;
+  `keep = int(enc["attention_mask"][i].sum())` was kept and passed in as the
+  fourth argument; the `if j < 0` guard (`dropped += 1`) is unchanged.
+- `eval_tool.py` gained a line `import share_data` right after
+  `import readonly_map` at the top level (reusing the same `sys.path.insert`).
+  In `score_causal`, the same loop body was deleted and replaced with a call
+  to `share_data.read_position(offsets_i, full, b, keep)`; `if j < 0: n_oow
+  += 1; continue` is unchanged. `_full` was renamed to `full` (needs to be
+  passed to `read_position` as `full_text`).
+- `align_check` has no cut-point loop, only line 209 (at its corresponding
+  position in the current file) for `truncation` was changed, sharing the
+  same edit as item 1.
+- `eval_tool.py`'s left truncation (`truncation=True, max_length=max_len` in
+  `score_causal`) was left untouched (spec 11.5).
 
-### 4. 日志(spec 11.4)
+### 4. Logging (spec 11.4)
 
-- `step` 事件加了 `lr=sch.get_last_lr()[0]`。
-- `loss` 字段:核对了现有实现——`run` 在每次写日志(`gstep % 50 == 0`)后就
-  清零、每个小批的 loss 都累加进 `run`,写日志时除以 `50 * args.accum`,这
-  本来就是"自上一条 step 以来全部小批损失的平均,累加器写完清零",不需要
-  再改计算逻辑,只补了 `lr` 这一个新字段。
+- The `step` event gained `lr=sch.get_last_lr()[0]`.
+- The `loss` field: checked the existing implementation — `run` is cleared
+  to zero after every log write (`gstep % 50 == 0`), every mini-batch's loss
+  is accumulated into `run`, and it is divided by `50 * args.accum` when the
+  log is written; this already is "the average of every mini-batch loss
+  since the last step log, the accumulator is cleared after writing", no
+  need to change the computation logic, only the new `lr` field was added.
 
-### 5. 测试 `tests/test_ctool_readpos.py`
+### 5. Tests `tests/test_ctool_readpos.py`
 
-四个类,对应工单 (a)~(d):
+Four classes, corresponding to ticket (a)~(d):
 
-- `TestReadPositionManual` + `TestCollateReadPosition`:(a)手造 offsets 直接
-  验 `share_data.read_position`;真实 Qwen 分词器上一个事件,验证
-  `train_causal_tool.collate` 读出的列下标与直接调
-  `share_data.read_position` 的结果一致(`'Spotify."\n\nWe are done here
-  now.'`,切点 10,预期覆盖 `'."\n\n'` 的 token)。
-- `TestLoadEventsDropCount`:(b)一短一长两个事件,长事件全文 token 数
-  > max_len,断言 `dropped == 1`、返回事件数 1、保留的是短事件。
-- `TestTrainEvalReadPositionAgree`:(c)同一全文、四个上限以内的切点,
-  分别过 `train_causal_tool.collate` 与 `eval_tool.score_causal`,用
-  monkeypatch `share_data.read_position`(两个模块 import 的是同一个模块
-  对象,已用 `train_causal_tool.share_data is eval_tool.share_data` 验证)
-  录下 `(cut, j)` 序列,断言两边完全一致。
-- `TestScoreCausalOutOfWindow`:(d)构造一个全文 token 数超过 `max_len` 的
-  事件(触发左截断),一个切点落在被截掉的开头部分、一个切点是全文末尾;
-  `head` 权重清零、偏置定值 1.0,直接从输出张量本身判断"这一行有没有被
-  gather 过"——窗口外那行输出 0.0(未 gather),窗口内那行输出 1.0(gather
-  到 bias),对应 `n_oow` 计数与 `cols` 收录的分野。
+- `TestReadPositionManual` + `TestCollateReadPosition`: (a) hand-built
+  offsets directly verify `share_data.read_position`; on the real Qwen
+  tokenizer, one event verifies that the column index read out by
+  `train_causal_tool.collate` agrees with the result of directly calling
+  `share_data.read_position` (`'Spotify."\n\nWe are done here now.'`, cut
+  point 10, expected to cover the tokens of `'."\n\n'`).
+- `TestLoadEventsDropCount`: (b) one short and one long event, the long
+  event's full-text token count > max_len, asserting `dropped == 1`, the
+  returned event count is 1, and the one kept is the short event.
+- `TestTrainEvalReadPositionAgree`: (c) the same full text, four cut points
+  within the cap, each run through `train_causal_tool.collate` and
+  `eval_tool.score_causal`, using monkeypatch on `share_data.read_position`
+  (verified that the two modules import the same module object, via
+  `train_causal_tool.share_data is eval_tool.share_data`) to record the
+  `(cut, j)` sequence, asserting the two sides agree completely.
+- `TestScoreCausalOutOfWindow`: (d) constructs an event whose full-text
+  token count exceeds `max_len` (triggering left truncation), with one cut
+  point falling in the truncated-off beginning portion and one cut point at
+  the very end of the full text; `head`'s weights are zeroed and its bias
+  is set to a fixed 1.0, judging directly from the output tensor itself
+  whether this row was ever gathered — the out-of-window row's output is
+  0.0 (never gathered), the in-window row's output is 1.0 (gathered the
+  bias), corresponding to the split between the `n_oow` count and what
+  `cols` collects.
 
-`score_causal` 需要真实的 `backbone`/`head` 对象才能跑,为避免为一个纯逻辑
-测试去加载整个 Qwen 模型,写了一个 `_StubBackbone`(只返回形状正确的全零
-`last_hidden_state`),因为这几条测试只关心读取位置选中的列下标,不关心
-gather 出来的隐状态数值本身。
+`score_causal` needs real `backbone`/`head` objects to run; to avoid loading
+an entire Qwen model for a purely logical test, a `_StubBackbone` was
+written (it only returns an all-zero `last_hidden_state` of the correct
+shape), because these tests only care about the column index selected by
+the read position, not the actual values of the gathered hidden state.
 
-## 二、怎么验证的
+## II. How it was verified
 
 ```
 cd new1-wt/2026-08-28-wave2-T02
@@ -92,47 +114,52 @@ cd new1-wt/2026-08-28-wave2-T02
 Ran 6 tests in 1.144s
 OK
 ```
-(有一条 `UserWarning: max_length is ignored when padding=True and there is no
-truncation strategy` 和一条 `ResourceWarning: unclosed file`,都记在下面「自
-查发现」里,不算测试失败。)
+(There is one `UserWarning: max_length is ignored when padding=True and there
+is no truncation strategy` and one `ResourceWarning: unclosed file`, both
+recorded below under "self-check findings", neither counts as a test
+failure.)
 
 ```
 /home/y-guo/reproduce/new1/cprobe-env/bin/python -m py_compile \
   pipeline/train/train_causal_tool.py pipeline/eval/eval_tool.py
 ```
 ```
-(无输出,退出码 0)
+(no output, exit code 0)
 ```
 
-硬门(mbert-env,真 import 不许 try/skip 兜):
+Hard gate (mbert-env, a real import, no try/skip fallback allowed):
 ```
 mbert-env/bin/python -c "import sys; sys.path.insert(0,'pipeline/eval'); import eval_tool; print('ok')"
 mbert-env/bin/python -c "import sys; sys.path.insert(0,'pipeline/eval'); import eval_mbert_call; print('ok')"
 ```
-两条都打印 `ok`,退出码 0(各有一条 transformers 自己的
-`TRANSFORMERS_CACHE` `FutureWarning`,与本工单无关)。
+Both print `ok`, exit code 0 (each has one `FutureWarning` from transformers
+itself about `TRANSFORMERS_CACHE`, unrelated to this ticket).
 
-`git diff` 范围核对(acceptance 第 4 条):
+`git diff` scope check (acceptance item 4):
 ```
 git diff -- pipeline/eval/eval_tool.py
 ```
-只有两处:顶层加 `import share_data` 一行;`score_causal` 里原来的切点定位
-循环换成 `share_data.read_position` 调用。`score` 函数(mbert 分类头路径)、
-`main()` 里的左截断设置等一个字没动。
+Only two spots: adding `import share_data` at the top level; the cut-point
+locating loop in `score_causal` swapped out for a call to
+`share_data.read_position`. The `score` function (the mbert classification
+head path), the left-truncation setting in `main()`, and so on were not
+touched at all.
 
-全量回归(确认没有引入新失败):
+Full regression (confirming no new failures were introduced):
 ```
-python3 -m unittest discover -s tests -v          # 系统 python3
+python3 -m unittest discover -s tests -v          # system python3
 ```
 ```
 Ran 357 tests in 8.678s
 FAILED (failures=1, errors=1, skipped=19)
 ```
-唯一的 failure(`test_no_env_reads_default_preset`)和唯一的 error
-(`test_splice_replay`)都是既有的、与本工单无关的失败——`test_splice_replay`
-是仓库记忆记过的"要 cprobe-env 才过"的用例,`test_no_env_reads_default_preset`
-是工单 01 收账报告里已经记录过的既有失败(预设那批,未深查)。本文件新增的
-`test_ctool_readpos` 在系统 python3 下按预期整模块 `skipped`。
+The single failure (`test_no_env_reads_default_preset`) and the single error
+(`test_splice_replay`) are both existing failures unrelated to this ticket —
+`test_splice_replay` is a case recorded in the repo's memory as "only passes
+under cprobe-env", `test_no_env_reads_default_preset` is an existing failure
+already recorded in ticket 01's wrap-up report (the presets batch, not
+investigated further). The newly added `test_ctool_readpos` in this file is
+`skipped` as a whole module under system python3, as expected.
 
 ```
 cprobe-env/bin/python -m unittest discover -s tests -v
@@ -141,71 +168,94 @@ cprobe-env/bin/python -m unittest discover -s tests -v
 Ran 415 tests in 11.847s
 FAILED (failures=1, skipped=16)
 ```
-同一条既有失败(`test_no_env_reads_default_preset`),`test_ctool_readpos` 的
-6 条全部实跑通过。
+The same existing failure (`test_no_env_reads_default_preset`), all 6 cases
+of `test_ctool_readpos` actually ran and passed.
 
 ```
 python3 run.py selfcheck
 ```
 ```
-selfcheck: 74 任务 / 4 配方 / 3 预设, 16 处缺失
+selfcheck: 74 tasks / 4 recipes / 3 presets, 16 gaps
 ```
-16 处缺失全是这个工作树里没有的 gitignore 掉的解释器/venv 目录(cprobe-env、
-mbert-env、envs/* 等),是新建工作树的正常现象,不是本工单改动引入的问题
-(本工单没有碰 `run.py` 或注册表本身)。任务/配方/预设计数与主仓最近一次
-selfcheck 记录的数字一致。
+All 16 gaps are gitignored interpreter/venv directories that this worktree
+does not have (cprobe-env, mbert-env, envs/*, and so on), a normal
+consequence of creating a new worktree, not a problem introduced by this
+ticket's changes (this ticket did not touch `run.py` or the registry itself).
+The task/recipe/preset counts agree with the numbers from the main repo's
+most recent selfcheck record.
 
-## 三、commit 清单
+## III. Commit list
 
-- `40cbd8d` T02: train_causal_tool.py 加事件级丢弃规则、读取位置改走
+- `40cbd8d` T02: train_causal_tool.py gained an event-level drop rule, the
+  read position now goes through share_data.read_position
+- `b6a3a51` T02: eval_tool.py's score_causal read position now goes through
   share_data.read_position
-- `b6a3a51` T02: eval_tool.py score_causal 的读取位置改走
-  share_data.read_position
-- `479b887` T02: 加测试 tests/test_ctool_readpos.py(读取位置与丢弃计数)
+- `479b887` T02: added tests tests/test_ctool_readpos.py (read position and
+  drop counts)
 
-分支起点(base)`2216c44`,分支末端(head)`479b887`。
+Branch start point (base) `2216c44`, branch end (head) `479b887`.
 
-## 三之二、给工单 04 的 MAP.md 文案
+## III-2. MAP.md text for ticket 04
 
-工单验收第 4 条要求 MAP.md 本工单不动、由工单 04 写,这里按验收原文给出的
-三个要点(上限 8192 超长事件整条丢弃;一次更新 8 个事件;读取位置读跨切点的
-空白 token)给出建议文案,供工单 04 采用或改写:
+Ticket acceptance item 4 requires that this ticket not touch MAP.md, and
+that ticket 04 write it; given here is a suggested text based on the three
+points given in the acceptance text itself (the cap 8192 drops overlong
+events whole; one update covers 8 events; the read position reads across
+the cut point's whitespace), for ticket 04 to adopt or rewrite:
 
-> 上限 `--max-len` 默认 8192(事件全文 token 数超限整条丢弃,不再截断,计数
-> 进 `dropped_events_train`/`dropped_events_val`);读取位置规则用
-> `share_data.read_position`,切点落在两个 token 之间的空白字符时读跨切点、
-> 归到前一个 token;`--bs 4 --accum 2`,一次更新 8 个事件
+> The cap `--max-len` defaults to 8192 (an event whose full-text token count
+> exceeds the cap is dropped whole, no longer truncated, counted in
+> `dropped_events_train`/`dropped_events_val`); the read-position rule uses
+> `share_data.read_position`, when a cut point falls on a whitespace
+> character between two tokens it reads across the cut, attributed to the
+> earlier token; `--bs 4 --accum 2`, one update covers 8 events
 
-## 四、自查发现与存疑
+## IV. Self-check findings and open questions
 
-1. **`collate`/`align_check` 里 `max_length=max_len` 参数在 `truncation=False`
-   下已经不生效**——HF tokenizer 会打一条一次性 `UserWarning`("max_length
-   is ignored when padding=True and there is no truncation strategy"),测试
-   跑的时候实测确认了这条警告确实会出现。工单原文只要求把 `truncation=True`
-   改成 `truncation=False`,没有要求同时删掉 `max_length` 这个已经变成摆设
-   的参数,所以我按字面只改了 `truncation`,把这条观察记在这里——是否要在
-   后续工单里顺手把这两处的 `max_length=max_len` 也删掉,由主会话/后续工单
-   判断。
-2. **`build()` 里 `tok.truncation_side = "left"` 现在也是摆设**——因为
-   `collate`/`align_check` 都不再截断了,这行设置不会再影响任何行为。工单
-   没有点名这一行,没有动它。
-3. **`load_events` 里 `for line in open(path):` 没用上下文管理器**——这是
-   改动之前就有的写法(不是本工单引入的),测试里跑到这条路径时 Python 会打
-   一条 `ResourceWarning: unclosed file`。工单范围内没有要求改这个,没有动。
-4. **`python3 -m unittest tests.test_ctool_readpos`(不加 `discover`)在
-   mbert-env 下会以退出码 1 崩溃**,而不是干净地跳过——这不是本工单测试写法
-   的问题,是 Python `unittest` 本身的行为:`loadTestsFromName`(直接点名单
-   个模块时走的加载路径)不会把模块导入期抛出的 `SkipTest` 当成正常跳过处理,
-   只有 `unittest discover` 才会正确识别成 `ModuleSkipped` 并报
-   `OK (skipped=N)`。用同样的手法逐一验证过:`tests/test_cparam_assembly.py`
-   和 `tests/test_share_data.py`(工单 01 已收账合并的文件)在 mbert-env 下
-   用 `-m unittest tests.<module>` 直接点名跑,同样会崩成退出码 1——这是这
-   三个文件共有的既有行为,不是本工单引入的回归。工单验收原文写的是
-   "两个环境都过",我按 discover 模式(`OK (skipped=1)`)与两条硬门 import
-   检查(`import eval_tool`/`import eval_mbert_call` 打印 `ok`)核验过 mbert-env
-   侧不会造成真实故障;是否需要因为这条 unittest 自身的行为去改测试运行方式
-   (比如统一改用 discover),留给主会话判断。
-5. **`step` 事件里的 `lr` 没有做四位小数的 `round()`**——工单原文给的表达式
-   就是 `sch.get_last_lr()[0]`,同一行里 `loss`/`ips` 都有 `round(...,4)`,
-   我按字面没加 round,直接写了原始 float。`json.dumps` 能正常序列化,不影
-   响正确性,只是精度显示上和同一条日志里其他字段不一致,记在这里供参考。
+1. **The `max_length=max_len` parameter in `collate`/`align_check` no longer
+   has any effect under `truncation=False`** — the HF tokenizer emits a
+   one-time `UserWarning` ("max_length is ignored when padding=True and
+   there is no truncation strategy"), and running the tests confirmed this
+   warning does indeed appear. The ticket text only required changing
+   `truncation=True` to `truncation=False`, it did not require also removing
+   the now-decorative `max_length` parameter, so I only changed
+   `truncation` as written literally, and recorded this observation here —
+   whether to also remove these two now-decorative `max_length=max_len`
+   spots in a follow-up ticket is left to the main session/a later ticket to
+   decide.
+2. **`tok.truncation_side = "left"` in `build()` is now also decorative** —
+   because `collate`/`align_check` no longer truncate at all, this line no
+   longer affects any behavior. The ticket did not name this line, it was
+   not touched.
+3. **`for line in open(path):` in `load_events` does not use a context
+   manager** — this predates this change (not introduced by this ticket),
+   and when the tests hit this path Python emits a
+   `ResourceWarning: unclosed file`. Not required to be changed within this
+   ticket's scope, not touched.
+4. **`python3 -m unittest tests.test_ctool_readpos` (without `discover`)
+   crashes with exit code 1 under mbert-env**, rather than cleanly skipping
+   — this is not a problem with how this ticket's tests are written, it is
+   `unittest` itself: `loadTestsFromName` (the loading path taken when a
+   single module is named directly) does not treat a `SkipTest` raised
+   during module import as a normal skip, only `unittest discover` correctly
+   recognizes it as `ModuleSkipped` and reports `OK (skipped=N)`. Verified
+   the same way one by one: `tests/test_cparam_assembly.py` and
+   `tests/test_share_data.py` (the file already merged and closed out under
+   ticket 01) likewise crash with exit code 1 under mbert-env when run
+   directly by name with `-m unittest tests.<module>` — this is an existing
+   behavior shared by these three files, not a regression introduced by this
+   ticket. The ticket's acceptance text literally says "passes under both
+   environments"; I verified the mbert-env side does not cause a real
+   failure using discover mode (`OK (skipped=1)`) plus the two hard-gate
+   import checks (`import eval_tool`/`import eval_mbert_call` printing
+   `ok`); whether the test-running approach needs to change because of this
+   behavior of unittest itself (for example, standardizing on discover) is
+   left to the main session to decide.
+5. **The `lr` in the `step` event is not `round()`-ed to four decimal
+   places** — the expression the ticket text gave is exactly
+   `sch.get_last_lr()[0]`, and in the same line `loss`/`ips` both have
+   `round(..., 4)`; I did not add a round per the literal text, and wrote
+   the raw float directly. `json.dumps` serializes it fine, this does not
+   affect correctness, it is only that the displayed precision is
+   inconsistent with the other fields in the same log line, recorded here
+   for reference.

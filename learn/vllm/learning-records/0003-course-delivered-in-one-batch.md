@@ -1,19 +1,19 @@
-# 用户要一次性拿全套，不走逐课校准
+# The user wants the whole set at once, skipping lesson-by-lesson calibration
 
-2026-08-04，第 2 课发出后，gyb 说"先不用管我的题，先给所有课都发布了吧"。
-于是第 3–5 课一次写完发布，没有按他的答题情况调难度。
+On 2026-08-04, after Lesson 2 went out, gyb said "don't worry about my quiz answers for now, just publish all the lessons."
+So lessons 3 through 5 were written and published in one batch, without adjusting difficulty based on how he had answered.
 
 ## Evidence
 
-- 第 1 课五题全对（见 [[0002-lesson-1-full-marks]]），第 2 课没答就直接要后续。
-- 他的用法看起来是"当参考材料囤着"，不是"跟着节奏一课一课上"。
+- Five for five on Lesson 1 (see [[0002-lesson-1-full-marks]]); he asked for the rest without answering Lesson 2's quiz at all.
+- His pattern of use looks like "stockpiling as reference material," not "working through it lesson by lesson at a set pace."
 
 ## Implications
 
-- 这五课要能**独立成立**：任何一课单独打开都得看得懂，不能依赖"上一课刚讲过"。
-  第 3–5 课都在开头把用到的前置概念重述了一遍，链接只做补充不做前提。
-- 既然不逐课校准，难度就按第 1 课全对那个水位统一定，不再逐课试探。
-- 速查卡的分量要加重——囤着当参考的人翻的是卡不是课。
-  所以这一批补了 `reference/request-params.html`，并且三张卡全部单独发了 artifact
-  （课页里的本地链接在 artifact 上是死的，卡必须有自己的 URL）。
-- 后续要再加课，仍从 `NOTES.md` 的候选表挑，但默认一次性交付整批，别再等反馈。
+- These five lessons need to **stand independently**: opening any single one on its own must still make sense; none can depend on
+  "we just covered this in the last lesson." Lessons 3 through 5 all restate the prerequisite concepts they use at the start; links are supplementary, not required reading.
+- Since there is no lesson-by-lesson calibration, difficulty is set uniformly at the level where Lesson 1 went five for five, with no more probing lesson by lesson.
+- Reference cards need to carry more weight; someone stockpiling material for reference flips through the cards, not the lessons.
+  So this batch added `reference/request-params.html`, and all three cards were published as separate artifacts
+  (a local link inside a lesson page is dead on the artifact; a card needs its own URL).
+- If more lessons get added later, still pick from the candidate list in `NOTES.md`, but the default is to deliver the whole batch at once rather than waiting for feedback again.

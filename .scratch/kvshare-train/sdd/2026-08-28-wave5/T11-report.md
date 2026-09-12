@@ -1,75 +1,100 @@
-# T11 报告:学习率扫描的驱动与报表 `pipeline/train/sweep_lr.py`
+# T11 Report: Learning-Rate Sweep Driver and Report `pipeline/train/sweep_lr.py`
 
-工单:`.scratch/kvshare-train/issues/11-sweep-lr.md`
-分支:`ticket/2026-08-28-wave5/T11`,commit `540d06b`,base `073382cbf2f636bf639ef9f2721d28cf1efa1ba2`。
+Ticket: `.scratch/kvshare-train/issues/11-sweep-lr.md`
+Branch: `ticket/2026-08-28-wave5/T11`, commit `540d06b`, base `073382cbf2f636bf639ef9f2721d28cf1efa1ba2`.
 
-## 做了什么
+## What was done
 
-对照工单逐条:
+Checked against the ticket item by item:
 
-1. **`pipeline/train/sweep_lr.py`,两个子命令。**
+1. **`pipeline/train/sweep_lr.py`, two subcommands.**
    - `plan [--grid <json>] [--data <dir>] [--out-root <dir>] [--py <python>] [--track kvshare-lr-sweep] [--write <plan.json>]`:
-     网格常量 `GRID`(工单初值:`b06` qwen 全参 `[1e-5,5e-5,2e-4]` 16384 Ada
-     `["--grad-ckpt"]`;`b17` qwen17 全参同上 16384 H200 `[]`;`l17` qwen17
-     LoRA `[1e-4,5e-4,2e-3]` 16384 H200 `[]`;`l4` qwen4 LoRA 同上 16384 H100
-     `["--grad-ckpt"]`)生成 12 条 run。run_id = `ks828<tag>_gptoss_cgen_lr<lr>`,
-     `<lr>` 由 `fmt_lr()`(`f"{lr:.0e}"` 去掉指数前导零)得到。命令按工单给定
-     顺序拼:`--mode cgen --base <base> --env appworld --data <data 绝对路径>
-     --out <out 绝对路径> --lr <lr> --tok-budget <tb> --epochs 1
-     --eval-per-epoch 4 --log-every 10 --mem-probe` 加 `--lora`(为真时)加
-     `extra`。`--data` 默认 `pipeline/data/nyapass_aw_v1/gptoss`、`--out-root`
-     默认 `pipeline/runs/sweep`,两者都解析成绝对路径写进命令;`--py` 默认
-     `<仓库根>/cprobe-env/bin/python`(仓库根 = `Path(__file__).resolve().parents[2]`)。
-     生成后自检 run_id 两两不同,撞车(如网格塞进 `1.2e-5`,`fmt_lr` 只留一位
-     有效数字会与 `1e-5` 撞)`SystemExit` 并打印撞车两条(含 tag、lr 原值)。
-     stdout 先打 Markdown 表(`run_id | tag | base | lora | lr | tok_budget |
-     card | extra`),再打提示「把 --piece 占位换成排卡表里的实际卡」,然后
-     12 行 `python3 run.py launch --cmd '<cmd>' --run-id <run_id> --track
-     <track> --outdir <out> --piece <host>:<gpu>`(`shlex.quote` 整条训练命令
-     字符串,`--piece` 占位符原样打印)。`--grid` 给 JSON 文件时整体替换
-     `GRID`。`--write` 给了就落 JSON 数组(每条 `run_id, tag, base, lora, lr,
-     tok_budget, card, cmd, outdir`)。
-   - `report --runs <路径或 glob,nargs="+"> --out <目录>`:每个 run 目录读
-     `train_log.jsonl`。`start` 事件取 `base, lora`(键在不在)`, lr,
-     tok_budget, n_train_events, dropped_events_train`;全部 `eval` 事件取
-     `frac, val_ce`,以及 `val_exact_call` 或 `val_exact_params`(两个键都不在
-     写 `null`);`done` 取 `best_val_ce, best_frac, wall_s`;`step` 事件里
-     `peak_mem_gb` 的最大值;`worst_gb` 优先取 `mem_probe_summary` 事件,没有
-     就退化到取各 `mem_probe` 事件 `peak_mem_gb` 的最大值,再没有写 `null`。
-     分组键 `(base, lora)`,组内按 lr 升序。写 `<out>/SWEEP_REPORT.json`(每条
-     上述字段加 `run_id, status`)与 `<out>/SWEEP_REPORT.md`(表头 `run_id |
-     lr | val_ce@<ep>.<frac>…(全部 run 出现过的 (ep,frac) 组合,动态生成、
-     升序)| best_val_ce | best_frac | val_exact(best) | peak_mem_gb |
-     worst_gb | wall_s | status`;`status` 是 `done` 或 `running`,running 的
-     行 best 列写目前为止最低的 eval;每组 best_val_ce 最低的一行在 run_id
-     前加 `*`)。表前一行写生成时间与读取目录数,表后不写结论句。目录下
-     找不到 `train_log.jsonl` 打一行警告到 stderr 并跳过,不报错。
+     the grid constant `GRID` (the ticket's initial values: `b06` qwen
+     full-parameter `[1e-5,5e-5,2e-4]` 16384 Ada `["--grad-ckpt"]`; `b17` qwen17
+     full-parameter same as above 16384 H200 `[]`; `l17` qwen17 LoRA
+     `[1e-4,5e-4,2e-3]` 16384 H200 `[]`; `l4` qwen4 LoRA same as above 16384
+     H100 `["--grad-ckpt"]`) generates 12 runs. run_id =
+     `ks828<tag>_gptoss_cgen_lr<lr>`, `<lr>` is obtained from `fmt_lr()`
+     (`f"{lr:.0e}"` with the leading zero of the exponent stripped). The
+     command is assembled in the order given by the ticket: `--mode cgen
+     --base <base> --env appworld --data <absolute data path> --out <absolute
+     out path> --lr <lr> --tok-budget <tb> --epochs 1 --eval-per-epoch 4
+     --log-every 10 --mem-probe` plus `--lora` (when true) plus `extra`.
+     `--data` defaults to `pipeline/data/nyapass_aw_v1/gptoss`, `--out-root`
+     defaults to `pipeline/runs/sweep`, both resolved to absolute paths and
+     written into the command; `--py` defaults to `<repo
+     root>/cprobe-env/bin/python` (repo root =
+     `Path(__file__).resolve().parents[2]`). After generation, self-checks
+     that the run_ids are pairwise distinct; a collision (e.g. if the grid has
+     `1.2e-5` stuffed in, `fmt_lr` keeping only one significant digit would
+     collide with `1e-5`) triggers `SystemExit` and prints the two colliding
+     entries (with tag and original lr value). stdout first prints a Markdown
+     table (`run_id | tag | base | lora | lr | tok_budget | card | extra`),
+     then prints a reminder "replace the --piece placeholder with the actual
+     card from the card-allocation table", then 12 lines of `python3 run.py
+     launch --cmd '<cmd>' --run-id <run_id> --track <track> --outdir <out>
+     --piece <host>:<gpu>` (`shlex.quote` on the whole training command
+     string, the `--piece` placeholder printed as-is). When `--grid` is given
+     a JSON file, it replaces `GRID` wholesale. When `--write` is given, a
+     JSON array is written to disk (each entry `run_id, tag, base, lora, lr,
+     tok_budget, card, cmd, outdir`).
+   - `report --runs <path or glob, nargs="+"> --out <dir>`: reads
+     `train_log.jsonl` for each run directory. The `start` event takes `base,
+     lora` (whether the key exists), `lr, tok_budget, n_train_events,
+     dropped_events_train`; every `eval` event takes `frac, val_ce`, and
+     either `val_exact_call` or `val_exact_params` (writes `null` if neither
+     key is present); `done` takes `best_val_ce, best_frac, wall_s`; the max
+     of `peak_mem_gb` among `step` events; `worst_gb` preferentially takes the
+     `mem_probe_summary` event, falling back to the max of `peak_mem_gb`
+     across the individual `mem_probe` events if absent, and writes `null` if
+     neither is present. Grouping key `(base, lora)`, sorted ascending by lr
+     within each group. Writes `<out>/SWEEP_REPORT.json` (each of the above
+     fields plus `run_id, status`) and `<out>/SWEEP_REPORT.md` (header row
+     `run_id | lr | val_ce@<ep>.<frac>…(the union of every (ep,frac)
+     combination that appeared across all runs, generated dynamically,
+     ascending) | best_val_ce | best_frac | val_exact(best) | peak_mem_gb |
+     worst_gb | wall_s | status`; `status` is `done` or `running`; for a
+     `running` row the best column writes the lowest eval seen so far; the row
+     with the lowest `best_val_ce` in each group gets a `*` prepended to its
+     run_id). A line before the table gives the generation time and the
+     number of directories read, no conclusion sentence is written after the
+     table. If `train_log.jsonl` is not found under a directory, a warning
+     line is printed to stderr and it is skipped, without raising an error.
 
-2. **`run.py` `TASKS` 加 `"sweep-lr"`**:`stage="train", py="cprobe",
-   script="pipeline/train/sweep_lr.py"`,`desc` 与 `notes` 按工单要求(两个
-   子命令用法、`GRID` 常量位置、发射仍走 gpu-run);字段集照
-   `gen-toolhop-splits` 先例(stage/py/script/desc/notes),不写 `gpu` 键。
+2. **Added `"sweep-lr"` to `run.py`'s `TASKS`**: `stage="train", py="cprobe",
+   script="pipeline/train/sweep_lr.py"`, `desc` and `notes` per the ticket's
+   requirements (usage of the two subcommands, the location of the `GRID`
+   constant, launching still goes through gpu-run); the field set follows the
+   precedent of `gen-toolhop-splits` (stage/py/script/desc/notes), no `gpu`
+   key is written.
 
-3. **`tests/test_sweep_lr.py`**(纯 CPU,不 import torch):
-   - `TestFmtLr`:六个学习率值的格式化(`1e-05→1e-5` 等六个例子)。
-   - `TestPlan`:默认 `GRID` 出 12 条不重复 run_id,每条 `cmd` 含正确的
-     `--lr` 与 `--log-every 10`,`lora` 为真/假的 `--lora` 有/无,`outdir` 以
-     run_id 结尾;CLI 层面 `main(["plan", "--write", ...])` 打 12 行
-     `python3 run.py launch` 且每行含 `--piece <host>:<gpu>` 占位,写出的
-     JSON 9 个字段齐全;给一个含 `1e-5` 与 `1.2e-5` 的 `--grid` 时
-     `SystemExit`。
-   - `TestReport`:手造两个 run 目录(一个 `start`+4 条 `eval`+`done`+2 条
-     `step`+`mem_probe_summary`,一个只有 `start`+1 条 `eval`),`report` 出
-     JSON 两条、`status` 各是 `done`/`running`、running 行的 `best_val_ce`
-     等于它唯一一条 eval 的值、Markdown 里 done 那行(`best_val_ce` 更低)
-     标 `*` 而 running 那行不标、`val_ce@` 动态列数等于两个目录出现过的
-     `(ep, frac)` 并集大小(4);另一个用例验证目录下没有 `train_log.jsonl`
-     时 `report` 返回 0、跳过、JSON 是空列表。
+3. **`tests/test_sweep_lr.py`** (pure CPU, does not import torch):
+   - `TestFmtLr`: formatting for six learning-rate values (`1e-05→1e-5` and
+     five other examples).
+   - `TestPlan`: the default `GRID` produces 12 non-duplicate run_ids, each
+     `cmd` contains the correct `--lr` and `--log-every 10`, `--lora` present
+     or absent according to `lora` being true/false, `outdir` ends with
+     run_id; at the CLI level, `main(["plan", "--write", ...])` prints 12
+     lines of `python3 run.py launch`, each line containing the `--piece
+     <host>:<gpu>` placeholder, the written JSON has all 9 fields complete;
+     given a `--grid` containing both `1e-5` and `1.2e-5`, `SystemExit`
+     occurs.
+   - `TestReport`: hand-built two run directories (one with `start`+4 `eval`
+     events+`done`+2 `step` events+`mem_probe_summary`, one with only
+     `start`+1 `eval` event), `report` produces two JSON entries, `status` is
+     `done`/`running` respectively, the `running` row's `best_val_ce` equals
+     the value of its single eval, in the Markdown the `done` row (with the
+     lower `best_val_ce`) is marked with `*` while the `running` row is not,
+     the dynamic column count of `val_ce@` equals the size of the union of
+     `(ep, frac)` pairs appearing across the two directories (4); another test
+     case verifies that when a directory has no `train_log.jsonl`, `report`
+     returns 0, skips it, and the JSON is an empty list.
 
-**没做的/超出范围的**:不改训练器(`train_causal_share.py` 零改动)、不改
-`MAP.md`(工单点明归工单 12)。
+**Not done / out of scope**: the trainer was not modified
+(`train_causal_share.py` has zero changes), `MAP.md` was not modified (the
+ticket names this as belonging to ticket 12).
 
-## 怎么验证的
+## How it was verified
 
 ```
 cd <worktree>
@@ -79,12 +104,14 @@ cd <worktree>
 Ran 6 tests in 0.007s
 OK
 ```
-(六个用例:`test_examples` `test_default_grid_twelve_unique_rows`
+(Six test cases: `test_examples`
+`test_default_grid_twelve_unique_rows`
 `test_cli_plan_prints_twelve_launch_lines_and_writes_json`
 `test_grid_with_colliding_lr_exits`
 `test_report_two_runs_status_star_and_columns`
-`test_missing_train_log_is_skipped_not_error`。cprobe-env 不在这台 worktree
-里,用主仓的解释器二进制、cwd 切到 worktree 跑。)
+`test_missing_train_log_is_skipped_not_error`. `cprobe-env` is not present in
+this worktree; ran using the main repo's interpreter binary, with cwd switched
+to the worktree.)
 
 ```
 python3 -m unittest tests.test_sweep_lr -v
@@ -93,24 +120,29 @@ python3 -m unittest tests.test_sweep_lr -v
 Ran 6 tests in 0.006s
 OK
 ```
-(系统 python3 同样全绿,脚本不 import torch。)
+(The system `python3` is likewise all green, the script does not import
+torch.)
 
 ```
 python3 run.py selfcheck
 ```
-worktree 里没有任何 venv(它们不进 git),原样跑出 15~16 处「缺解释器/缺
-脚本」,全部是 `cprobe-env` `mbert-env` `envs/*/venv` 这类未跟踪目录缺失,
-与本工单改动无关——`sweep-lr` 本身不在缺失清单里。临时把这些目录从主仓
-`/home/y-guo/reproduce/new1/` 软链进 worktree(诊断用,验完就删,没有进
-commit)复核一次:
+worktree has no venv at all (they are not tracked by git), running as-is
+produces 15-16 "missing interpreter/missing script" entries, all of them
+missing untracked directories like `cprobe-env`, `mbert-env`, `envs/*/venv`,
+unrelated to this ticket's changes. `sweep-lr` itself is not in the missing
+list. Temporarily symlinked these directories from the main repo
+`/home/y-guo/reproduce/new1/` into the worktree (for diagnostic purposes only,
+deleted right after verification, never committed) and re-checked once:
 ```
-selfcheck: 77 任务 / 4 配方 / 3 预设, 全部就位
+selfcheck: 77 tasks / 4 recipes / 3 presets, all present
 ```
-删软链后 `git status --porcelain` 干净(只剩本工单的三个改动文件),确认
-诊断没有污染分支。
+After removing the symlinks, `git status --porcelain` is clean (only this
+ticket's three changed files remain), confirming the diagnostic step did not
+pollute the branch.
 
-回归测试(改了 `run.py` 注册表,跑了受它影响的几个用例做兜底,没有全量跑
-discover——那需要各环境的 venv,不在本工单范围):
+Regression test (the `run.py` registry was changed, so ran the few test cases
+affected by it as a safety net, did not run the full `discover`, that would
+need each environment's venv, which is out of this ticket's scope):
 ```
 python3 -m unittest tests.test_sweep_lr tests.test_launch_cmd tests.test_gpu_jobs tests.test_driver -v
 ```
@@ -119,65 +151,106 @@ Ran 144 tests in 4.615s
 OK
 ```
 
-CLI 手测:
+Manual CLI test:
 ```
 python3 pipeline/train/sweep_lr.py plan
 ```
-打出 12 行表格、12 行 `python3 run.py launch ...--piece <host>:<gpu>`,人工
-核对四个配置各三个 lr、run_id 命名、`--lora` 有无、`extra` 拼接均与工单口径
-一致(`ks828b06_gptoss_cgen_lr1e-5` … `ks828l4_gptoss_cgen_lr2e-3` 共 12 个,
-两两不同)。
+Printed the 12-row table and 12 lines of `python3 run.py launch
+...--piece <host>:<gpu>`; manually checked that the three lr values for each
+of the four configs, the run_id naming, the presence/absence of `--lora`, and
+the `extra` concatenation all matched the ticket's convention
+(`ks828b06_gptoss_cgen_lr1e-5` … `ks828l4_gptoss_cgen_lr2e-3`, 12 in total, all
+pairwise distinct).
 
 ```
 python3 pipeline/train/sweep_lr.py plan --write /tmp/t11_plan_check.json
 ```
-落盘 12 条,每条含 `run_id, tag, base, lora, lr, tok_budget, card, cmd,
-outdir` 九个字段。
+12 entries persisted, each containing the nine fields `run_id, tag, base,
+lora, lr, tok_budget, card, cmd, outdir`.
 
-## commit 清单
+## Commit list
 
-- `540d06b` — T11: 学习率扫描驱动与报表 `pipeline/train/sweep_lr.py`(plan/report),注册 `sweep-lr`(单一逻辑单元:新脚本 + 新测试 + `run.py` 注册表条目)。
+- `540d06b` T11: learning-rate sweep driver and report
+  `pipeline/train/sweep_lr.py` (plan/report), register `sweep-lr` (a single
+  logical unit: new script + new tests + `run.py` registry entry).
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-- 自查时发现 `build_plan()` 有一个未使用的 `track` 形参、文件顶部有一个未使用的 `import re`(最初打算用正则做 `fmt_lr`,后来改成字符串切片实现),当场删掉了两处,连带更新了调用点与测试。
-- 工单第 1 条对 `--write` JSON 字段的描述(`run_id, tag, base, lora, lr, tok_budget, card, cmd, outdir` 九个字段)与 spec 16.6 原文(`run_id, cmd, outdir, card, tag, lr` 六个字段)不一致;按实现者规程「工单文件是唯一需求源」,以工单九字段为准实现——这不是歧义或缺信息,是工单在 spec 基础上做了补充,没有停下的必要,但记在这里供合并时核对。
-- `report` 输出 JSON 里每条 eval 记录用的键名是我自定的 `ep/frac/val_ce/val_exact`(工单原话是「取 frac, val_ce, val_exact_call(或 val_exact_params)」,没有钦定输出 JSON 里这一层的字段名,只钦定了要取哪些源键)。`val_exact` 是从源事件的 `val_exact_call` 或 `val_exact_params`(键不在时另一个)取来的统一字段,没有另外在顶层输出 `val_exact_call`/`val_exact_params` 两个键。这是我在没有更明确依据时做的实现选择,不是对工单的偏离,但因为不是工单文本直接给出的名字,列在这里说明依据,供其他工单(尤其是要读这份 JSON 的下游代码)对齐命名时参考。
-- `SWEEP_REPORT.json` 每条记录额外带了一个下划线前缀的内部字段 `_best_ep`——不对,写 JSON 前已经过滤掉了(`cmd_report` 里 `json_records` 是排除 `_best_ep` 后的版本),只在内存里传递给 Markdown 生成那一步找 `val_exact(best)` 用,最终产物 JSON 干净,没有多出字段。
-- 没有跑 GPU、没有碰训练器,`plan` 打出来的命令没有实际发射验证过(工单范围内本就不做这件事,由主会话走 gpu-run 冒烟)。
+- During self-check, found an unused `track` parameter in `build_plan()` and
+  an unused `import re` at the top of the file (originally intended to
+  implement `fmt_lr` with regex, later switched to a string-slicing
+  implementation); deleted both on the spot, and updated the call sites and
+  tests accordingly.
+- Ticket item 1's description of the `--write` JSON fields (the nine fields
+  `run_id, tag, base, lora, lr, tok_budget, card, cmd, outdir`) does not match
+  the spec 16.6 text (the six fields `run_id, cmd, outdir, card, tag, lr`);
+  per the implementer's rule that "the ticket file is the sole source of
+  requirements", implemented per the ticket's nine fields. This is not
+  ambiguity or missing information, the ticket supplements the spec, there
+  was no need to stop, but it is recorded here for cross-checking at merge
+  time.
+- The key names used for each eval record in `report`'s output JSON,
+  `ep/frac/val_ce/val_exact`, are ones I chose myself (the ticket's original
+  text says "take frac, val_ce, val_exact_call (or val_exact_params)", it does
+  not mandate the field names at this layer of the output JSON, only which
+  source keys to take). `val_exact` is a unified field taken from the source
+  event's `val_exact_call` or `val_exact_params` (whichever key is present),
+  without additionally outputting the two top-level keys
+  `val_exact_call`/`val_exact_params`. This is an implementation choice I made
+  in the absence of more explicit guidance, not a deviation from the ticket;
+  but since it is not a name the ticket text gives directly, it is listed here
+  to explain the rationale, for other tickets (especially downstream code
+  reading this JSON) to reference when aligning naming.
+- Each record in `SWEEP_REPORT.json` carries an extra underscore-prefixed
+  internal field `_best_ep`. No, it does not: it is already filtered out
+  before writing the JSON (`json_records` in `cmd_report` is the version with
+  `_best_ep` excluded); it is only passed in memory to the Markdown-generation
+  step to find `val_exact(best)`. The final JSON artifact is clean, with no
+  extra field.
+- No GPU was used, the trainer was not touched, the commands printed by
+  `plan` were not actually launched and verified (this was never meant to be
+  done within this ticket's scope; the main conversation handles the gpu-run
+  smoke test).
 
-## 修复第 1 轮(F1)
+## Fix round 1 (F1)
 
-工作树:`/home/y-guo/reproduce/new1-wt/2026-08-28-wave5-T11-fix1`,检出已有分支
-`ticket/2026-08-28-wave5/T11`(检出前 HEAD `540d06b`)。
+Worktree: `/home/y-guo/reproduce/new1-wt/2026-08-28-wave5-T11-fix1`, checked
+out the existing branch `ticket/2026-08-28-wave5/T11` (HEAD before checkout
+`540d06b`).
 
-### 待修 finding
+### Findings to fix
 
-- **F1(important)**:`summarize_run()` 里 `worst_gb` 的三条取值路径——优先
-  `mem_probe_summary.worst_gb`,其次退化到各 `mem_probe` 事件
-  `peak_mem_gb` 最大值(工单第 1 条明文要求的兼容旧探针分支),都没有写
-  `null`——测试只覆盖了第一条(`_make_done_run` 带 `mem_probe_summary`)和
-  第三条(`_make_running_run` 完全没有显存事件),中间那条 `elif
-  mem_probes: ...` 分支从未被任何用例触发。评审已确认该分支本身取值正确
-  (不是功能性 bug),纯粹是缺测试覆盖。
+- **F1 (important)**: `summarize_run()`'s three value-taking paths for
+  `worst_gb`, preferentially `mem_probe_summary.worst_gb`, falling back to
+  the max `peak_mem_gb` across the `mem_probe` events (the
+  backward-compatible old-probe branch explicitly required by ticket item 1),
+  or `null` when neither is present. The tests covered only the first
+  (`_make_done_run` with `mem_probe_summary`) and the third
+  (`_make_running_run` with no memory events at all); the middle `elif
+  mem_probes: ...` branch was never triggered by any test case. The review
+  already confirmed the branch's own value-taking is correct (not a
+  functional bug), it is purely a lack of test coverage.
 
-### 怎么修的
+### How it was fixed
 
-生产代码 `pipeline/train/sweep_lr.py` 未改动——`elif mem_probes:` 分支的
-逻辑本身没有问题,不需要根因修复,需要补的是测试。
+Production code `pipeline/train/sweep_lr.py` was not changed. The logic of
+the `elif mem_probes:` branch itself has no problem, it does not need a
+root-cause fix, what needs to be added is a test.
 
-在 `tests/test_sweep_lr.py` 的 `TestReport` 里新增:
+Added to `TestReport` in `tests/test_sweep_lr.py`:
 
-- `_make_run_with_mem_probe_events_only()`:手造一个只含 `start` + 一条
-  `eval` + 两条 `mem_probe`(`peak_mem_gb` 分别 18.3、21.5,无
-  `mem_probe_summary`)的 run 目录。
-- `test_worst_gb_falls_back_to_mem_probe_max_without_summary()`:对这个目录
-  直接调 `SL.summarize_run(d)`,断言 `rec["worst_gb"] == 21.5`(两条
-  `mem_probe` 里的最大值),把之前零覆盖的 `elif` 分支钉住。
+- `_make_run_with_mem_probe_events_only()`: hand-builds a run directory
+  containing only `start` + one `eval` + two `mem_probe` events
+  (`peak_mem_gb` 18.3 and 21.5 respectively, no `mem_probe_summary`).
+- `test_worst_gb_falls_back_to_mem_probe_max_without_summary()`: calls
+  `SL.summarize_run(d)` directly on this directory, asserts
+  `rec["worst_gb"] == 21.5` (the max of the two `mem_probe` values), pinning
+  down the previously zero-coverage `elif` branch.
 
-未触及 `plan` 子命令、`run.py` 注册表、`MAP.md`,不属于本轮 finding 范围。
+Did not touch the `plan` subcommand, the `run.py` registry, or `MAP.md`, not
+within the scope of this round's finding.
 
-### 怎么验证的
+### How it was verified
 
 ```
 cd /home/y-guo/reproduce/new1-wt/2026-08-28-wave5-T11-fix1
@@ -196,7 +269,8 @@ Ran 7 tests in 0.011s
 
 OK
 ```
-(系统 python3;6 条旧用例全绿,新增第 7 条覆盖 F1。)
+(System `python3`; the 6 old test cases are all green, the newly added 7th
+covers F1.)
 
 ```
 /home/y-guo/reproduce/new1/cprobe-env/bin/python -m unittest tests.test_sweep_lr -v
@@ -206,11 +280,13 @@ Ran 7 tests in 0.010s
 
 OK
 ```
-(worktree 里没有 `cprobe-env`,用主仓的解释器二进制、cwd 切到 worktree
-跑,验收里点名的两个解释器都过。)
+(worktree does not have `cprobe-env`; ran using the main repo's interpreter
+binary, with cwd switched to the worktree; both interpreters named in the
+acceptance criteria pass.)
 
-回归(改动是测试文件,`run.py` 注册表本身没动,仍按上一轮的同一组用例复核
-一遍兜底):
+Regression (the change is a test file, `run.py`'s registry itself was not
+touched, still re-checked once more against the previous round's same set of
+tests, as a safety net):
 ```
 python3 -m unittest tests.test_sweep_lr tests.test_launch_cmd tests.test_gpu_jobs tests.test_driver -v
 ```
@@ -219,25 +295,30 @@ Ran 145 tests in 4.537s
 
 OK
 ```
-(上一轮同一组是 144 条,本轮多出的 1 条就是新增的 F1 用例;其余 144 条
-结果与上一轮一致,均为 `sweep-lr` 之外任务打印到 stdout 的无关日志噪音,
-非失败。)
+(the same set in the previous round was 144; the 1 extra this round is the
+newly added F1 test case; the other 144 results are consistent with the
+previous round, all unrelated log noise printed to stdout by tasks other than
+`sweep-lr`, not failures.)
 
-### commit 清单
+### Commit list
 
-- `e0677fc` — T11: 补测 worst_gb 兼容旧探针分支(F1)(单一改动:
-  `tests/test_sweep_lr.py` 新增一个 run-目录构造器 + 一条测试,生产代码零
-  改动)。
+- `e0677fc` T11: add test coverage for the worst_gb backward-compatible
+  old-probe branch (F1) (single change: `tests/test_sweep_lr.py` gains one
+  run-directory constructor + one test, zero changes to production code).
 
-### 自查发现与存疑
+### Self-check findings and open questions
 
-- 逐行核对本轮 diff:只加了 `tests/test_sweep_lr.py` 里的一个 helper 方法
-  和一条测试方法,27 行全部是新增,没有改动或删除既有代码,没有涉及
-  `plan`、`run.py`、`MAP.md`,没有超出 F1 范围的改动。
-- 新测试直接调用 `SL.summarize_run()`(模块级公开函数),没有走完整的
-  `report` CLI 往返——这样能精确隔离 F1 点名的那条 `elif` 分支,不受
-  `cmd_report` 里其他逻辑(分组、动态列、Markdown 拼装)干扰,判断这样测更
-  贴合 finding 的诉求(finding 原话是「隔离环境里手造了一个只含
-  mem_probe 事件的 run_log 验证」,与直接调 `summarize_run` 是同一种验证
-  方式)。
-- 没有发现新的 finding。
+- Went through this round's diff line by line: only added one helper method
+  and one test method in `tests/test_sweep_lr.py`, all 27 lines are
+  additions, no existing code was changed or deleted, `plan`, `run.py`,
+  `MAP.md` were not touched, no change went beyond the scope of F1.
+- The new test calls `SL.summarize_run()` directly (a module-level public
+  function), instead of going through the full `report` CLI round trip.
+  This precisely isolates the `elif` branch named by F1, without
+  interference from other logic in `cmd_report` (grouping, dynamic columns,
+  Markdown assembly); judged that testing this way better fits what the
+  finding asked for (the finding's original wording is "hand-built, in an
+  isolated environment, a run_log containing only mem_probe events, and
+  verified it", which is the same kind of verification as calling
+  `summarize_run` directly).
+- No new findings were found.

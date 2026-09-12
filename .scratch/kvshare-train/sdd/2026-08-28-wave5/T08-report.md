@@ -1,127 +1,143 @@
-# T08 报告——新训练器加回生成式评估:`--gen-eval N`(默认 200)与 `--gen-bs`
+# T08 report — add generative evaluation back into the new trainer: `--gen-eval N` (default 200) and `--gen-bs`
 
-工单:`.scratch/kvshare-train/issues/08-gen-eval.md`
-Spec:`.scratch/kvshare-train/spec.md` 16.3(做法)、16.9(测试)、16.10 #29 #30(静默失败点)
-分支:`ticket/2026-08-28-wave5/T08`(工作树 `new1-wt/2026-08-28-wave5-T08`,已删除,分支保留)
-base:`07907db08b50d66c1c193588f22b5cc97b24b4b3`
-head:`b8a31f2`(`375acf5` → `05ca1b3` → `b8a31f2`)
+Ticket: `.scratch/kvshare-train/issues/08-gen-eval.md`
+Spec: `.scratch/kvshare-train/spec.md` 16.3 (approach), 16.9 (tests), 16.10 #29 #30 (silent failure points)
+Branch: `ticket/2026-08-28-wave5/T08` (worktree `new1-wt/2026-08-28-wave5-T08`, deleted, branch kept)
+base: `07907db08b50d66c1c193588f22b5cc97b24b4b3`
+head: `b8a31f2` (`375acf5` → `05ca1b3` → `b8a31f2`)
 
-## 一、做了什么(对照工单逐条)
+## 1. What was done (checked against the ticket, item by item)
 
-### 1. `share_data.load_events` 行元组加第 6 位
+### 1. `share_data.load_events` row tuple gets a 6th slot
 
-- cgen 分支:`tgt_str = r["label_call"]`、`tool = None`(cgen 分支本来就没
-  有 `tgt_str` 变量,直接对 `r["label_call"]` 分词加 eos,现在只是先把这个
-  字符串存进一个变量名再传给 `tok(...)`,不改分词逻辑本身)。
-- cparam 分支:`tool = r["label"]`(`tgt_str` 已经是现成变量,`param_target`
-  返回 None 的行仍旧整条丢弃、计入 `assembly_mismatch`,这条判断在赋值
-  `tool` 之前,顺序不变)。
-- `rows.append(...)` 末尾加 `gen = dict(tgt=tgt_str, tool=tool)` 当第 6
-  位,第 0 到 5 位(`sent_idx, text, p, seg_ids, seg_lab, w`)一个都没动。
-- `pack_event` 里六名字的拆包 `_sent_idx, _text, p, seg_ids, seg_lab, _w =
-  row` 改成 `= row[:6]`,7 位元组不再 `ValueError`。
-- `share_data.py` 第 214/215 行(`prefix_len`/`packed_len` 按下标读
-  `row[2]`/`row[3]`)、`train_causal_share.py` 第 179/470/789 行(按下标读
-  `row[5]`/`row[1]`)按下标访问,7 位元组下行为不变,未改动。
-- 文档字符串同步更新 `rows` 的元组形状说明。
+- cgen branch: `tgt_str = r["label_call"]`, `tool = None` (the cgen branch did not
+  have a `tgt_str` variable before; it tokenized `r["label_call"]` directly and added
+  eos, now it just stores that string into a variable name first before passing it to
+  `tok(...)`, the tokenization logic itself is unchanged).
+- cparam branch: `tool = r["label"]` (`tgt_str` is already an existing variable; rows
+  where `param_target` returns None are still dropped entirely and counted into
+  `assembly_mismatch`; this check happens before the `tool` assignment, the order is
+  unchanged).
+- `rows.append(...)` gets `gen = dict(tgt=tgt_str, tool=tool)` appended as the 6th
+  slot; slots 0 through 5 (`sent_idx, text, p, seg_ids, seg_lab, w`) are untouched.
+- The six-name unpacking in `pack_event`, `_sent_idx, _text, p, seg_ids, seg_lab, _w =
+  row`, is changed to `= row[:6]`, so a 7-slot tuple no longer raises `ValueError`.
+- Lines 214/215 of `share_data.py` (`prefix_len`/`packed_len` read `row[2]`/`row[3]` by
+  index) and lines 179/470/789 of `train_causal_share.py` (read `row[5]`/`row[1]` by
+  index) access by index; behavior is unchanged under a 7-slot tuple, so they are left
+  untouched.
+- The docstring's description of the `rows` tuple shape is updated to match.
 
-### 2. 测试里手造行元组的地方补第 6 位
+### 2. Places in the tests that hand-build row tuples get the 6th slot added
 
-- `tests/test_share_data.py`:`_toy_event()` 的 3 行、`test_batch_mask` 里
-  手造的 `ev_b` 单行,各补一个 `dict(tgt="", tool=None)` 占位(这两处不测
-  生成式评估,占位值不影响原有断言)。
-- `tests/test_share_data.py` 的 `TestPrefixRule._check_mode` 对真实
-  `share_data.load_events` 返回值的六名字拆包
-  `for sent_idx, text, p, seg_ids, seg_lab, w in ev["rows"]:` 改成七名字
-  (加 `_gen`)——工单没有点名这一行,但它拆包的是真实 `load_events` 输出,
-  行元组变 7 位之后不改就会 `ValueError`,连带修了。
-- `tests/test_share_trainer.py`:工单点名的第 374/437/495 行附近实际是
-  `W = sum(row[5] for ev in events for row in ev["rows"])`——按下标读,不是
-  手造元组,7 位元组下行为不变,核实后未改动这个文件(细节见第四节自查)。
+- `tests/test_share_data.py`: the 3 rows in `_toy_event()` and the single hand-built
+  `ev_b` row in `test_batch_mask` each get a `dict(tgt="", tool=None)` placeholder
+  added (neither of these two spots tests generative evaluation, the placeholder value
+  does not affect the existing assertions).
+- In `tests/test_share_data.py`, `TestPrefixRule._check_mode`'s six-name unpacking of
+  the real `share_data.load_events` return value,
+  `for sent_idx, text, p, seg_ids, seg_lab, w in ev["rows"]:`, is changed to seven
+  names (adding `_gen`) — the ticket did not name this line, but it unpacks the real
+  `load_events` output, and once the row tuple becomes 7 slots it would raise
+  `ValueError` if left unchanged, so it was fixed along the way.
+- `tests/test_share_trainer.py`: the lines around 374/437/495 named by the ticket are
+  actually `W = sum(row[5] for ev in events for row in ev["rows"])` — read by index,
+  not a hand-built tuple; behavior is unchanged under a 7-slot tuple, so after
+  checking, this file was not changed (details in the section 4 self-check).
 
-### 3. `train_causal_share.py` 加三个参数
+### 3. Three parameters added to `train_causal_share.py`
 
-`--gen-eval`(int,默认 200,0 关闭)、`--gen-bs`(int,默认 8)、
-`--gen-eval-at`(`choices=["all","last"]`,默认 `last`),三个都紧跟在
-`--log-every` 之后。
+`--gen-eval` (int, default 200, 0 disables it), `--gen-bs` (int, default 8),
+`--gen-eval-at` (`choices=["all","last"]`, default `last`), all three placed right
+after `--log-every`.
 
-### 4. 抽样:`sample_gen_eval_rows(events, mode, seed, n)`
+### 4. Sampling: `sample_gen_eval_rows(events, mode, seed, n)`
 
-`ev_events` 加载完之后立刻调用(在 `readonly_env` 审计块之前),按事件加载
-顺序、行按事件内 `sent_idx` 顺序摊平成一个列表(不过滤),
-`random.Random(seed).shuffle` 后取前 `n` 行(`n` 大于行数就全取,Python
-切片天然处理),再按 `mode` 打包:cgen `(text, None, None, tgt)`,cparam
-`(text, None, None, tool, tgt)`(`tgt`/`tool` 取自行元组第 6 位的 `gen`
-字典)。`seed` 用的是 `SEED = train_causal_callgen.SEED`(=42,同旧训练
-器)。独立于 main() 之外的纯函数,方便单测。
+Called right after `ev_events` finishes loading (before the `readonly_env` audit
+block), flattened into a single list in event-load order with rows in each event's
+`sent_idx` order (no filtering), then `random.Random(seed).shuffle` and take the first
+`n` rows (if `n` is larger than the row count, take all of them, handled naturally by
+Python slicing), then packed by `mode`: cgen `(text, None, None, tgt)`, cparam
+`(text, None, None, tool, tgt)` (`tgt`/`tool` come from the `gen` dict at slot 6 of the
+row tuple). `seed` uses `SEED = train_causal_callgen.SEED` (=42, same as the old
+trainer). A pure function kept independent of main(), for ease of unit testing.
 
-### 5. 生成:调旧脚本 `eval_gen`,不写新函数
+### 5. Generation: calls the old script's `eval_gen`, no new function written
 
-`grep -n "def eval_gen" pipeline/train/train_causal_share.py` 零命中——按
-`args.mode` 调 `train_causal_callgen.eval_gen` 或
-`train_causal_param.eval_gen`,两个旧函数自己处理
-`padding_side`/`use_cache`/`model.eval()`/`model.train()`。调用点在
-`eval_ce` 之后、写 `eval` 事件之前,不在 `_attn_ctx` 上下文里(第 7 条的
-守卫测试钉住这一点)。
+`grep -n "def eval_gen" pipeline/train/train_causal_share.py` has zero hits — it calls
+`train_causal_callgen.eval_gen` or `train_causal_param.eval_gen` depending on
+`args.mode`, and the two old functions handle
+`padding_side`/`use_cache`/`model.eval()`/`model.train()` themselves. The call site
+sits after `eval_ce` and before the `eval` event is written, not inside the
+`_attn_ctx` context (the guard test in item 7 pins this down).
 
-### 6. 日志
+### 6. Logging
 
-- `eval` 事件:`do_gen = args.gen_eval > 0 and (args.gen_eval_at == "all"
-  or frac == E)` 成立时才加 `val_exact_call`(cgen)/`val_exact_params`
-  (cparam)、`gen_n`(`len(gen_rows)`)、`gen_s`(`round(经过秒数, 2)`);不
-  成立(`--gen-eval 0`,或 `--gen-eval-at last` 下非 epoch 末评估点)时三
-  个键都不写。
-- `start` 事件加 `gen_eval`、`gen_bs`、`gen_eval_at` 三个键,放在
-  `log_every` 键之后(见第四节「工单内部两条要求不一致」的说明)。
-- `save_best` 判据没动,仍只看 `val_ce`。
-- `train_s` 的计时代码(`epoch_train_s += time.time() - t0`)没有触碰,
-  生成时间不计入。
+- `eval` event: `val_exact_call` (cgen) / `val_exact_params` (cparam), `gen_n`
+  (`len(gen_rows)`), `gen_s` (`round(elapsed seconds, 2)`) are only added when
+  `do_gen = args.gen_eval > 0 and (args.gen_eval_at == "all" or frac == E)` holds;
+  when it does not hold (`--gen-eval 0`, or an evaluation point that is not the end of
+  an epoch under `--gen-eval-at last`), none of the three keys are written.
+- The `start` event gets three keys added, `gen_eval`, `gen_bs`, `gen_eval_at`, placed
+  after the `log_every` key (see the section 4 note "the ticket's two requirements do
+  not fully agree with each other").
+- The `save_best` criterion is untouched, it still only looks at `val_ce`.
+- The `train_s` timing code (`epoch_train_s += time.time() - t0`) is not touched,
+  generation time is not counted into it.
 
-### 7. 评估段心跳
+### 7. Evaluation-segment heartbeat
 
-`eval_ce` 加可选参数 `beat=None`,块循环 `for i, blk in
-enumerate(blocks):` 里 `(i + 1) % 25 == 0` 时调一次;主流程调用点传
-`beat=lambda: heartbeat.emit(gstep, steps, "step")`;`do_gen` 为真时在调
-`eval_gen` 之前、之后各再发一次同样的心跳。`heartbeat.emit` 只传
-`(gstep, steps, "step")` 三个位置参数,没有传别的关键字。
+`eval_ce` gets an optional parameter `beat=None`, called once inside the block loop
+`for i, blk in enumerate(blocks):` when `(i + 1) % 25 == 0`; the call site in the main
+flow passes `beat=lambda: heartbeat.emit(gstep, steps, "step")`; when `do_gen` is
+true, the same heartbeat is emitted once more each, before and after calling
+`eval_gen`. `heartbeat.emit` only takes the three positional arguments
+`(gstep, steps, "step")`, no other keyword is passed.
 
-### 8. 测试(新文件 `tests/test_share_gen_eval.py`)
+### 8. Tests (new file `tests/test_share_gen_eval.py`)
 
-不追加进 `test_share_trainer.py`(工单 09/10 并行往同一文件末尾加用例会
-撞)。全部用手造小事件(每事件一行,`label`/`label_call` 互相匹配,cgen/
-cparam 都能干净装载)与随机初始化小模型(`_tiny_config`,从
-`tests.test_share_trainer` import),不读 `pipeline/data/nyapass_aw_v1/
-gptoss`(spec 16.9 前言)。真实分词器只用来分词/建模型词表。
+Not appended to `test_share_trainer.py` (tickets 09/10 running in parallel and adding
+cases to the end of the same file would collide). Everything uses hand-built small
+events (one row per event, `label`/`label_call` matching each other so both cgen and
+cparam load cleanly) and a randomly initialized small model (`_tiny_config`, imported
+from `tests.test_share_trainer`); it does not read
+`pipeline/data/nyapass_aw_v1/gptoss` (per the spec 16.9 preamble). The real tokenizer
+is only used to tokenize / build the model vocabulary.
 
-- `TestGenEvalEndToEnd`(对应 (a)(b)):12 个训练事件 + 6 个 val 事件,
-  `--events-per-mb 4 --accum 2 --eval-per-epoch 2` 给出两个不同的评估点
-  (`frac=1` 与 `frac=2`)。cgen/cparam 各三个用例:`--gen-eval-at all` 下
-  两条 `eval` 都有三个新键且 `gen_n==3`;`--gen-eval-at last` 下只有
-  `frac==2` 那条有;`--gen-eval 0` 下两条都没有。
-- `TestSampleGenEvalRowsDeterministic`(对应 (c)):同一批 `events` 调
-  `sample_gen_eval_rows` 两次结果相同(cgen/cparam 各一个用例);另一个
-  用例验证 `n` 大于行数时取全部。
-- `TestAttnCtxOnlyInForwardPacked`(对应 (d)):`ast` 解析
-  `train_causal_share.py` 源码,遍历 `Call` 节点找 `_attn_ctx(...)`,记录
-  每次调用所在的最近 `FunctionDef` 名字,断言全部是 `_forward_packed`
-  (`def _attn_ctx` 那一行本身是 `FunctionDef` 不是 `Call`,不会被计入)。
-- `TestEvalCeBeat`(对应 (e)):30 个 val 事件,`tok_budget` 取
-  「全部事件补齐长度里最小的那个」——这样任意两个事件的 `cand_max` 都
-  `>= tok_budget`,`2 * pad16(cand_max) > tok_budget` 恒成立,保证每个
-  事件独自成一个物理块(30 块 >= 25);断言 `beat` 至少被调用一次。另一个
-  用例验证 `beat=None`(默认)不报错。
+- `TestGenEvalEndToEnd` (corresponds to (a)(b)): 12 training events + 6 val events,
+  `--events-per-mb 4 --accum 2 --eval-per-epoch 2` gives two different evaluation
+  points (`frac=1` and `frac=2`). Three cases each for cgen/cparam: under
+  `--gen-eval-at all` both `eval` entries have the three new keys and `gen_n==3`;
+  under `--gen-eval-at last` only the `frac==2` entry has them; under `--gen-eval 0`
+  neither entry has them.
+- `TestSampleGenEvalRowsDeterministic` (corresponds to (c)): calling
+  `sample_gen_eval_rows` twice on the same batch of `events` gives the same result
+  (one case each for cgen/cparam); another case verifies that when `n` is larger than
+  the row count, all rows are taken.
+- `TestAttnCtxOnlyInForwardPacked` (corresponds to (d)): parses the
+  `train_causal_share.py` source with `ast`, walks the `Call` nodes to find
+  `_attn_ctx(...)`, records the name of the nearest enclosing `FunctionDef` for each
+  call, and asserts they are all `_forward_packed` (the `def _attn_ctx` line itself is
+  a `FunctionDef`, not a `Call`, so it is not counted).
+- `TestEvalCeBeat` (corresponds to (e)): 30 val events, `tok_budget` takes "the
+  smallest padded length among all events" — this way `cand_max` for any two events is
+  always `>= tok_budget`, so `2 * pad16(cand_max) > tok_budget` always holds,
+  guaranteeing that each event becomes its own physical block on its own (30 blocks
+  >= 25); asserts that `beat` is called at least once. Another case verifies that
+  `beat=None` (the default) does not raise an error.
 
-## 二、怎么验证的
+## 2. How it was verified
 
 ```
 cd new1-wt/2026-08-28-wave5-T08
 /home/y-guo/reproduce/new1/cprobe-env/bin/python -m unittest \
   tests.test_share_gen_eval tests.test_share_trainer tests.test_share_data
 ```
-输出:`Ran 33 tests in 20.219s` / `OK (skipped=9)`(跳过的是要真实分词器
-路径不存在、或 `peft` 未装的用例分支,和改动前的跳过原因一致)。
+Output: `Ran 33 tests in 20.219s` / `OK (skipped=9)` (the skips are branches that need
+the real tokenizer path, which does not exist, or that need `peft`, which is not
+installed; the same reason as before the change).
 
-单独跑新文件(`-v`)也全绿:
+Running just the new file (`-v`) is also all green:
 ```
 Ran 12 tests in 19.488s
 OK
@@ -130,68 +146,79 @@ OK
 ```
 grep -n "gen_eval\|val_exact_" pipeline/train/train_causal_share.py
 ```
-命中 `sample_gen_eval_rows` 定义、`gen_rows` 赋值、`start_kw` 里的
-`gen_eval`/`gen_bs`/`gen_eval_at`、`do_gen` 判据、`exact_key` 三处。
+Hits the `sample_gen_eval_rows` definition, the `gen_rows` assignment,
+`gen_eval`/`gen_bs`/`gen_eval_at` inside `start_kw`, the `do_gen` condition, and three
+occurrences of `exact_key`.
 
 ```
 grep -n "def eval_gen" pipeline/train/train_causal_share.py
 ```
-零命中(退出码 1)。
+Zero hits (exit code 1).
 
-工单验收清单原样命令,用真实 `--base qwen` 0.6B 底座、真实现役数据集
-`pipeline/data/nyapass_aw_v1/gptoss`,CPU 上跑:
+The exact command from the ticket's acceptance checklist, using the real `--base
+qwen` 0.6B backbone and the real in-service dataset
+`pipeline/data/nyapass_aw_v1/gptoss`, run on CPU:
 ```
 cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
   --base qwen --data pipeline/data/nyapass_aw_v1/gptoss \
   --out <out> --smoke --max-events 6 --gen-eval 3 --gen-bs 2 --device cpu
 ```
-`ALIGN_CHECK.json`:`PASS: true`(`max_abs_diff` 2.38e-06,`tol` 2e-05)。
-`train_log.jsonl` 的 `eval` 事件:
+`ALIGN_CHECK.json`: `PASS: true` (`max_abs_diff` 2.38e-06, `tol` 2e-05).
+The `eval` event in `train_log.jsonl`:
 ```
 {'event': 'eval', 'ep': 0, 'frac': 4, 'gstep': 1, 'val_ce': 1.2026,
  'n_eval_rows': 18, 'val_exact_call': 0.0, 'gen_n': 3, 'gen_s': 3.38,
  't': 1787923369.9}
 ```
-三个新键(`val_exact_call`、`gen_n`、`gen_s`)都在,`gen_n == 3` 与传入的
-`--gen-eval 3` 一致。`start` 事件里 `gen_eval: 3, gen_bs: 2, gen_eval_at:
-'last'` 三个键都在。`done` 事件 `wall_s: 13.91`(训练+评估本身很快,耗时
-主要在开训前的对齐检查——CPU 上用真实 0.6B 模型做 fp32 前向,这段代码
-本工单没有改动,过程中花了十几分钟,与本工单改动无关)。
+All three new keys (`val_exact_call`, `gen_n`, `gen_s`) are present, and
+`gen_n == 3` matches the `--gen-eval 3` passed in. In the `start` event, all three
+keys `gen_eval: 3, gen_bs: 2, gen_eval_at: 'last'` are present. The `done` event
+shows `wall_s: 13.91` (training + evaluation itself is fast; most of the time goes
+into the alignment check before training starts — doing an fp32 forward pass with
+the real 0.6B model on CPU, code this ticket did not change, which took on the order
+of ten-odd minutes in the process, unrelated to this ticket's changes).
 
-`git status --porcelain`(工作树内)只有:
+`git status --porcelain` (inside the worktree) shows only:
 ```
  M pipeline/train/share_data.py
  M pipeline/train/train_causal_share.py
  M tests/test_share_data.py
 ?? tests/test_share_gen_eval.py
 ```
-没有碰 `run.py`、`train_causal_callgen.py`、`train_causal_param.py`。
+`run.py`, `train_causal_callgen.py`, `train_causal_param.py` are not touched.
 
-## 三、commit 清单
+## 3. Commit list
 
-- `375acf5` T08: share_data 行元组加第 6 位 gen 字典,pack_event 拆包适配
-- `05ca1b3` T08: train_causal_share 加 --gen-eval/--gen-bs/--gen-eval-at
-- `b8a31f2` T08: 自查修复——去掉 test_share_gen_eval.py 里没用到的 random 导入
+- `375acf5` T08: share_data row tuple gets a 6th-slot gen dict, pack_event unpacking adapted
+- `05ca1b3` T08: train_causal_share adds --gen-eval/--gen-bs/--gen-eval-at
+- `b8a31f2` T08: self-check fix — remove the unused random import in test_share_gen_eval.py
 
-## 四、自查发现与存疑
+## 4. Self-check findings and open questions
 
-1. **工单内部两条要求不完全一致,已按更完整的一条实现,记在这里供收账
-   裁决**:工单第 2 条说「`start_kw` 字典里本工单加 `gen_eval / gen_bs`
-   两个键」(只提两个),第 5 条说「`start` 事件加 `gen_eval`、`gen_bs`、
-   `gen_eval_at`」(三个)。spec 16.3 原文也只写两个键。三处测试(点 7)
-   都不检查 `start` 事件的具体字段数,所以两种实现都不会让验收判据变红。
-   我按第 5 条(更完整、专门讲日志字段的一条)实现,`start_kw` 里加了
-   `gen_eval`、`gen_bs`、`gen_eval_at` 三个键——如果 gyb 的意图是只加两个
-   (比如 `gen_eval_at` 留给别处或者不落日志),需要主会话收账时改掉这一处
-   (`train_causal_share.py` 里 `log_every=args.log_every,` 那一行往后数
-   一行)。
-2. 工单第 1 条点名 `tests/test_share_trainer.py` 第 374/437/495 行附近
-   「手造行元组」要补第 6 位,核实后这三处是 `row[5]`(按下标读取真实
-   `load_events` 输出),不是手造元组,7 位元组下行为不受影响,所以没有
-   改这个文件。已跑过 `tests.test_share_trainer` 全绿确认。
-3. `--smoke` 下真实 0.6B `--base qwen` 模型在 CPU 上跑对齐检查很慢
-   (fp32、`REF_BATCH=4` 与 `bs=1` 单行基线两遍、加 `_new_forward`,CPU 无
-   GPU 加速,`bs=1` 那一遍是逐行各跑一次整模型前向),实测这一段花了十几
-   分钟才打印出第一行 `ALIGN_CHECK.json`——这是 `run_align_check` 现有
-   逻辑(本工单没有改动这段代码),不是本次改动引入的新开销。跑完之后
-   `PASS: true`,`train_log.jsonl` 里三个新键齐全,结果见第二节。
+1. **Two requirements inside the ticket do not fully agree with each other;
+   implemented per the more complete one, noted here for the closeout review to
+   decide**: ticket item 2 says "this ticket adds two keys, `gen_eval / gen_bs`, to
+   the `start_kw` dict" (only mentions two), item 5 says "the `start` event adds
+   `gen_eval`, `gen_bs`, `gen_eval_at`" (three). The spec 16.3 source text also only
+   writes two keys. None of the three tests (item 7) check the exact field count of
+   the `start` event, so neither implementation would turn the acceptance criteria
+   red. I implemented per item 5 (the more complete one, which specifically covers
+   the logging fields), adding all three keys `gen_eval`, `gen_bs`, `gen_eval_at`
+   into `start_kw` — if gyb's intent was to add only two (for example leaving
+   `gen_eval_at` for elsewhere, or not logging it), this one spot needs to be
+   changed during the main session's closeout review (one line after the
+   `log_every=args.log_every,` line in `train_causal_share.py`).
+2. Ticket item 1 named the lines around 374/437/495 in `tests/test_share_trainer.py`
+   as "hand-built row tuples" that need the 6th slot added; after checking, these
+   three spots are `row[5]` (reading the real `load_events` output by index), not
+   hand-built tuples, and behavior is unaffected under a 7-slot tuple, so this file
+   was not changed. Confirmed by running `tests.test_share_trainer` all green.
+3. Under `--smoke`, running the alignment check with the real 0.6B `--base qwen`
+   model on CPU is slow (fp32, two passes of `REF_BATCH=4` and a `bs=1` single-row
+   baseline, plus `_new_forward`; CPU has no GPU acceleration, and the `bs=1` pass
+   runs a full model forward pass once per row) — measured, this segment took on
+   the order of ten-odd minutes before printing the first line of
+   `ALIGN_CHECK.json` — this is `run_align_check`'s existing logic (this ticket did
+   not change this code), not new overhead introduced by this change. After it
+   finished, `PASS: true`, and the three new keys are all present in
+   `train_log.jsonl`; results are in section 2.

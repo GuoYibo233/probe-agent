@@ -1,69 +1,69 @@
-# 卡壳词表（exp-status 用，只增不改）
+# Stuck-word table (used by exp-status, only grows, never edited)
 
-每个项目里的原词全篇只用第二列那一个称呼。第三列不管出现在哪都算违规，写完用字符串搜索扫一遍；第四列有别的合法用法，搜出来要人眼判断。2026-09-04 第一次建表（kvshare-train 这条线的现状文档）。
+Every original term in the project uses only the one name in the second column throughout the whole document. The third column is a violation no matter where it appears; scan for it with a string search once the document is written. The fourth column has other legitimate uses; a hit there needs a human eye to judge. First table built 2026-09-04 (the status document for the kvshare-train line).
 
-| 项目里的原词 | 全篇唯一的称呼 | 永远违规的别名 | 看语境的别名 |
+| Original term in the project | The one name used throughout | Always a violation as an alias | Alias that depends on context |
 |---|---|---|---|
-| gpt-oss-120b（被采集轨迹的那个模型） | 被探测模型 | 被采模型、大模型、宿主模型、主模型 | 模型 |
-| ctool / cgen / cparam 三种小模型的统称 | 探针 | 小模型、预测头、探测器、probe | 头 |
-| ctool | ctool（只判工具类型并决定要不要触发的探针） | 分类探针、工具头、触发探针 | 分类头 |
-| cgen | cgen（生成整条调用串的探针） | 生成探针、调用生成器 | 生成 |
-| cparam | cparam（给定工具名只填参数的探针） | 参数探针、参数生成器 | 参数 |
-| cell | 格 | 任务格、训练格、格子、单元 | 格式 |
-| Qwen3-0.6B/1.7B/4B-Base | 底座 | 基座、基模、backbone、基础模型 | 模型 |
-| 四个底座配置的代号 b06 / b17 / l17 / l4 | b06、b17、l17、l4（第一次出现处展开） | 配置一、小模型档、大底座 | 配置 |
-| train_causal_share.py | 缓存复用训练器 | 新训练器、打包训练器、共享训练器、kvshare 训练器、前缀共享训练器 | 训练器 |
-| train_causal_callgen.py / train_causal_param.py | 逐行训练器 | 旧训练器、旧脚本、参照训练器 | 参照路径 |
-| event（同一次工具调用之前的一组行） | 事件 | 集、episode、样本组、一题 | 一次调用 |
-| row（jsonl 的一条记录，一个训练实例） | 行 | 样本、实例、条目、切点样本 | 样本 |
-| cut point（行文本的字符长度，也就是句子边界） | 切点 | 切口、开火点、断点 | 边界 |
-| 事件全文（sent_idx 最大那一行的 text） | 事件全文 | 全文、整段、完整文本 | 文本 |
-| 目标串 / 目标段 | 目标串（要生成的调用串加结束符）、目标段（公共前缀之后的尾巴加目标串） | 答案段、标签段、尾巴段 | 尾巴 |
-| logical minibatch | 逻辑小批 | 小批、mini-batch、微批 | 批 |
-| physical block | 物理块 | 块、物理批、chunk | 批 |
-| opt.step() 一次 | 一次更新 | 一步、step、迭代 | 步 |
-| --tok-budget | token 预算 | 预算、块预算、装块上限 | 上限 |
-| --max-len | 事件全文 token 上限 | 上限、最大长度、截断长度 | 长度 |
-| --mem-probe | 显存探针 | 探针（单独指显存探针时）、内存探针、probe | 探测 |
-| --mem-probe-pick 的三种取值 | 挑块方式 tokens / cost / loop | 探针模式、三种探针 | 模式 |
-| 对齐检查（新旧两条路径逐行 loss 比对） | 对齐检查 | 对齐验收、等价检查、一致性检查、对齐门 | 对齐 |
-| val_ce | 验证集交叉熵 | val loss、验证损失、验证集 loss | 损失 |
-| --gen-eval / val_exact_call | 生成式评估 / 整串全对率 | 生成评测、精确匹配率、exact match | 生成 |
-| --grad-ckpt | 梯度检查点 | 检查点、重算、gc | 存档 |
-| --overlong | 超长事件处理开关 | 超长开关、截断开关、overlong 模式 | 模式 |
-| --overlong 的三个取值 | 左截（left）、跳过行（skip）、丢事件（drop-event） | 截断档、跳过档、丢弃档 | 档 |
-| 全参微调 | 全参微调 | 全量微调、全参数训练、full FT | 全参 |
-| LoRA | LoRA（低秩适配器，只训练挂在线性层旁边的小矩阵） | 适配器训练、低秩训练 | 适配器 |
-| 学习率扫描 | 学习率扫描 | 扫参、网格搜索、超参搜索、sweep | 扫描 |
-| 批次前缀 ks828 | 批次前缀 ks828 | 新前缀、新批次号、ks 批 | 批次 |
-| run（一次登记过的 GPU 运行） | run | 任务、作业、跑次、一跑 | 任务 |
-| 整程 step 峰值（torch 已分配峰值，十进制 GB） | 整程峰值 | 真峰、训练峰值、显存峰值、峰值显存 | 峰值 |
-| 三个数据堆 | train 堆、val 堆、test 堆 | 训练集、验证集、测试集（单独出现时） | 集 |
-| 触发门槛 θ | 触发门槛 θ | 阈值、开火线、triggers | 门槛 |
-| 决定台账 decisions.md | 决定台账 | 决策日志、决定记录、台账（单独指它时） | 台账 |
-| plan-8-28 会话 | 主会话 | 我、plan 会话、主对话 | 会话 |
-| 8-28-assistant | 助手 1 | 记录员、审查员、assistant-1 | 助手 |
-| 8-28-assistant-2 | 助手 2 | 判读员、显存助手、assistant-2 | 助手 |
-| gpu-runner 子代理 | 发射员 | 发射子代理、launcher、gpu-runner | 发射 |
-| ticket-run 里做工单的子代理 | 实现者 | 工人、执行者、agent | 实现 |
-| 网页汇报 artifact | 汇报网页 | artifact、报告页、网页 | 汇报 |
-| 显存的两种量纲 | GB（十进制，torch 已分配峰值）与 GiB（二进制，nvidia-smi 与卡容量） | G、吉字节 | 显存 |
+| gpt-oss-120b (the model whose trajectories are collected) | the probed model | the collected model, the large model, the host model, the main model | the model |
+| The collective name for the three small models ctool / cgen / cparam | probe | the small model, the prediction head, the detector, probe (lowercase generic) | the head |
+| ctool | ctool (the probe that only judges tool type and decides whether to fire) | the classification probe, the tool head, the firing probe | the classification head |
+| cgen | cgen (the probe that generates the whole call string) | the generation probe, the call generator | generation |
+| cparam | cparam (the probe that fills in only the parameters given the tool name) | the parameter probe, the parameter generator | parameters |
+| cell | cell | the task cell, the training cell, the box, the unit | format |
+| Qwen3-0.6B/1.7B/4B-Base | base model | the foundation model, the base model (alt. phrasing), backbone, the underlying model | the model |
+| The code names of the four base-model configurations, b06 / b17 / l17 / l4 | b06, b17, l17, l4 (spelled out on first appearance) | configuration one, the small-model tier, the large base | configuration |
+| train_causal_share.py | cache-reuse trainer | the new trainer, the packing trainer, the shared trainer, the kvshare trainer, the prefix-sharing trainer | trainer |
+| train_causal_callgen.py / train_causal_param.py | row-by-row trainer | the old trainer, the old script, the reference trainer | the reference path |
+| event (the group of rows before the same tool call) | event | set, episode, sample group, one task | one call |
+| row (one jsonl record, one training instance) | row | sample, instance, entry, cut-point sample | sample |
+| cut point (a row text's character length, that is, a sentence boundary) | cut point | cut, firing point, breakpoint | boundary |
+| event's full text (the text of the row with the largest sent_idx) | event's full text | full text (bare), the whole segment, the complete text | text |
+| target string / target segment | target string (the call string to generate plus the end token), target segment (the tail after the common prefix plus the target string) | the answer segment, the label segment, the tail segment | the tail |
+| logical minibatch | logical mini-batch | mini-batch (bare), mini-batch (alt. spelling), micro-batch | batch |
+| physical block | physical block | block (bare), physical batch, chunk | batch |
+| one opt.step() | one update | one step, step (bare), one iteration | step |
+| --tok-budget | token budget | the budget (bare), the block budget, the packing cap | the cap |
+| --max-len | the event's full-text token cap | the cap (bare), the maximum length, the truncation length | length |
+| --mem-probe | memory probe | probe (bare, when meaning specifically the memory probe), the memory probe (alt. phrasing), probe (lowercase generic) | detection |
+| The three values of --mem-probe-pick | block-picking method tokens / cost / loop | probe mode, the three probes | mode |
+| Alignment check (row-by-row loss comparison between the old and new paths) | alignment check | alignment acceptance, equivalence check, consistency check, alignment gate | alignment |
+| val_ce | validation cross-entropy | val loss, validation loss, validation-set loss | loss |
+| --gen-eval / val_exact_call | generative evaluation / whole-string exact-match rate | generation eval, exact-match rate (bare), exact match | generation |
+| --grad-ckpt | gradient checkpoint | checkpoint (bare), recompute, gc | save state |
+| --overlong | overlong-event handling switch | overlong switch, truncation switch, overlong mode | mode |
+| The three values of --overlong | left-truncation (left), skip rows (skip), drop events (drop-event) | truncation tier, skip tier, drop tier | tier |
+| Full-parameter fine-tuning | full-parameter fine-tuning | full fine-tuning, full-parameter training, full FT | full-parameter |
+| LoRA | LoRA (low-rank adapter, training only the small matrices attached beside the linear layers) | adapter training, low-rank training | adapter |
+| Learning-rate sweep | learning-rate sweep | hyperparameter sweep, grid search, hyperparameter search, sweep (bare) | sweep |
+| Batch prefix ks828 | batch prefix ks828 | the new prefix, the new batch number, the ks batch | batch |
+| run (one registered GPU execution) | run | task, job, a run-through, one pass | task |
+| Whole-run step peak (torch's allocated peak, decimal GB) | whole-run peak | the real peak, the training peak, the memory peak, peak memory | peak |
+| The three data splits | train split, val split, test split | train set, validation set, test set (when appearing alone) | set |
+| Firing threshold θ | firing threshold θ | threshold, the firing line, triggers | threshold |
+| The decision ledger decisions.md | decision ledger | decision log, decision record, ledger (when referring specifically to it) | ledger |
+| The plan-8-28 session | main session | I/me, the plan session, the main conversation | session |
+| 8-28-assistant | helper 1 | the recorder, the reviewer, assistant-1 | helper |
+| 8-28-assistant-2 | helper 2 | the readout person, the memory helper, assistant-2 | helper |
+| The gpu-runner sub-agent | launcher | the launch sub-agent, launcher (alt. capitalization), gpu-runner | launch |
+| The sub-agent in ticket-run that works tickets | implementer | the worker, the executor, agent | implementation |
+| The web report artifact | report page | artifact, the report page (alt. phrasing), web page | report |
+| The two units for memory | GB (decimal, torch's allocated peak) and GiB (binary, nvidia-smi and card capacity) | G, gigabyte | memory |
 
-2026-09-04 第一轮检查后补的行（别名搜寻员报的 35 组里真要统一的，加检查员报的换叫法）。`--max-len` 那一行的「上限」从第三列挪到第四列：文档开头定义「事件全文 token 上限（下文简称上限）」之后可以用简称。
+Rows added after the first check round on 2026-09-04 (the ones from the alias-finder's 35 groups that genuinely needed unifying, plus renames the checker reported). The `--max-len` row's "the cap" moved from the third column to the fourth: once the document's opening defines "the event's full-text token cap (called the cap below)," the short form may be used.
 
-| 项目里的原词 | 全篇唯一的称呼 | 永远违规的别名 | 看语境的别名 |
+| Original term in the project | The one name used throughout | Always a violation as an alias | Alias that depends on context |
 |---|---|---|---|
-| 一套定死的训练或生成设置 | 口径（新口径 = 8-28 定的那套；旧口径 = np821 那套） | 新方案、新做法、新训练方式 | 设置 |
-| 目标 token 的位置 | 损失位 | loss 位、目标位、监督位 | 目标 token |
-| 行文本与事件全文分词后相同的开头 | 公共前缀 | 共享的前缀、共享前缀、前缀部分 | 前缀 |
-| 整程峰值发生的那个物理块 | 整程峰值那一块 | 峰值块、真峰块 | 块 |
-| wall_s | 整程墙钟 | 总墙钟、墙钟时间、总时长 | 墙钟 |
-| train / val / test 的完整数据 | 全集 | 全量、全部数据、整份 | 全 |
-| ctool 在 val 堆上的准确率字段 calA_weighted_acc | val 堆加权准确率（字段名沿用旧堆名 calA） | 校准集加权准确率、校准堆准确率 | 准确率 |
-| 评测脚本里的 bounds | 切点 | 边界、bound | 边 |
-| 评测脚本的 full_call_ok | 整条调用全对率（评测脚本的） | 整串全对率（那是训练器的 val_exact_call） | 全对率 |
-| 六项里的第六项标题 | 设置细节 | 值得注意的设置细节、注意事项 | 细节 |
-| 一个人不在场时的验收 | 检查员（逐段挑毛病的子代理） | 审稿人、评审员 | 检查 |
-| ticket-run 终审的子代理 | 终审员 | 审查员、reviewer | 终审 |
-| 五份温度 0.0 预设文件的处理 | 删除 | 移出仓库、移走 | 去掉 |
-| 训练开头速度比后来慢的那段 | 开头变慢的那一段 | 爬升段、热身段、稳态 | 开头 |
+| One fixed set of training or generation settings | convention (new convention = the set decided on 8-28; old convention = np821's set) | the new scheme, the new approach, the new training method | setting |
+| The position of a target token | loss position | loss pos, target position, supervised position | target token |
+| The matching start shared by a row's tokenization and the event's full-text tokenization | common prefix | the shared prefix, shared prefix (alt. phrasing), the prefix part | prefix |
+| The physical block where the whole-run peak occurs | the whole-run-peak block | the peak block, the real-peak block | block |
+| wall_s | whole-run wall clock | total wall clock, wall-clock time, total duration | wall clock |
+| The complete data for train / val / test | full dataset | the full amount, all the data, the whole set | full |
+| ctool's accuracy field on the val split, calA_weighted_acc | val-split weighted accuracy (the field name keeps the old split name calA) | calibration-set weighted accuracy, calibration-split accuracy | accuracy |
+| bounds in the eval scripts | cut point | boundary, bound | edge |
+| The eval script's full_call_ok | full-call exact-match rate (the eval script's) | whole-string exact-match rate (that is the trainer's val_exact_call) | exact-match rate |
+| The sixth item's heading among the six | configuration details | worth-noting configuration details, things to note | details |
+| Acceptance when a person is not present | checker (the sub-agent that finds fault section by section) | the reviewer (alt. phrasing), the referee | check |
+| The sub-agent doing final review in ticket-run | final reviewer | the reviewer (alt. phrasing), reviewer | final review |
+| How the five temperature-0.0 preset files were handled | delete | move out of the repository, move away | remove |
+| The segment where training starts slower than it runs later | the slow-start segment | the ramp-up segment, the warm-up segment, steady state | the start |

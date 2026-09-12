@@ -1,103 +1,103 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>速查卡 · vLLM 请求参数</title>
+<title>Cheat Sheet · vLLM Request Parameters</title>
 <link rel="stylesheet" href="../assets/lesson.css">
 </head>
 <body>
 <div class="wrap">
 
 <p class="kicker">Reference · vLLM 0.26.0</p>
-<h1>请求参数速查卡</h1>
-<p class="standfirst">发一条请求时能给的旗标、0.26.0 的默认值、本仓库两条线实际给的值。默认值一律以本机 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/</code> 为准，不以官方文档为准。</p>
+<h1>Request Parameter Cheat Sheet</h1>
+<p class="standfirst">The flags you can pass on a request, 0.26.0's defaults, and the actual values this repo's two pipelines give. Defaults are always taken from the local <code>envs/vllm-env/lib/python3.12/site-packages/vllm/</code>, not from the official docs.</p>
 
-<h2>默认值与我们的取值</h2>
+<h2>Defaults and our values</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>参数</th><th>0.26.0 默认</th><th>采集线 raw</th><th>采集线 chat</th><th>注入线</th></tr></thead>
+<thead><tr><th>Parameter</th><th>0.26.0 default</th><th>Collection pipeline raw</th><th>Collection pipeline chat</th><th>Injection pipeline</th></tr></thead>
 <tbody>
 <tr><td class="key">temperature</td><td>1.0</td><td>0.0</td><td>0.0</td><td>0.0</td></tr>
-<tr><td class="key">max_tokens</td><td>16</td><td>8192</td><td>8192</td><td>由参数给</td></tr>
-<tr><td class="key">stop</td><td>无</td><td><code>&lt;|im_end|&gt;</code></td><td>无</td><td><code>&lt;|return|&gt;</code></td></tr>
-<tr><td class="key">skip_special_tokens</td><td>True</td><td>没给</td><td>没给</td><td><strong>False</strong></td></tr>
-<tr><td class="key">include_stop_str_in_output</td><td>False</td><td>没给</td><td>没给</td><td>没给</td></tr>
-<tr><td class="key">seed</td><td>无</td><td>没给</td><td>没给</td><td>没给</td></tr>
-<tr><td class="key">stream</td><td>False</td><td>否</td><td>否</td><td>回放否 / 活跑是</td></tr>
+<tr><td class="key">max_tokens</td><td>16</td><td>8192</td><td>8192</td><td>given by parameter</td></tr>
+<tr><td class="key">stop</td><td>none</td><td><code>&lt;|im_end|&gt;</code></td><td>none</td><td><code>&lt;|return|&gt;</code></td></tr>
+<tr><td class="key">skip_special_tokens</td><td>True</td><td>not given</td><td>not given</td><td><strong>False</strong></td></tr>
+<tr><td class="key">include_stop_str_in_output</td><td>False</td><td>not given</td><td>not given</td><td>not given</td></tr>
+<tr><td class="key">seed</td><td>none</td><td>not given</td><td>not given</td><td>not given</td></tr>
+<tr><td class="key">stream</td><td>False</td><td>No</td><td>No</td><td>replay: no / live run: yes</td></tr>
 </tbody>
 </table>
 </div>
-<p class="src">采集线 <code>envs/collect/common.py:20, 56-59, 77-81</code>；注入线 <code>pipeline/inject/replay_inject.py:156, 812-814</code>；活跑 <code>pipeline/inject/live_appworld.py:146-150, 260-264</code>。默认值 <code>sampling_params.py:236, 262, 295, 299</code> 与 <code>entrypoints/openai/completion/protocol.py:60, 65, 82</code>。</p>
+<p class="src">Collection pipeline <code>envs/collect/common.py:20, 56-59, 77-81</code>; injection pipeline <code>pipeline/inject/replay_inject.py:156, 812-814</code>; live run <code>pipeline/inject/live_appworld.py:146-150, 260-264</code>. Defaults at <code>sampling_params.py:236, 262, 295, 299</code> and <code>entrypoints/openai/completion/protocol.py:60, 65, 82</code>.</p>
 
-<h2>四个最容易踩空的默认值</h2>
+<h2>Four defaults most likely to trip you up</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>旗标</th><th>默认</th><th>不给会怎样</th></tr></thead>
+<thead><tr><th>Flag</th><th>Default</th><th>What happens if you don't set it</th></tr></thead>
 <tbody>
-<tr><td><code>skip_special_tokens</code></td><td>True</td><td>特殊标记做的停止串<strong>静默失效</strong></td></tr>
-<tr><td><code>enable_prompt_tokens_details</code></td><td>False</td><td>响应里没有 <code>cached_tokens</code>，token 账拆不开</td></tr>
-<tr><td><code>enable_log_requests</code></td><td>False</td><td>日志里没有 abort / 请求明细，grep 出零条不说明任何事</td></tr>
-<tr><td><code>VLLM_BATCH_INVARIANT</code></td><td>"0"</td><td>结果随批组成变，改并发就可能改字</td></tr>
+<tr><td><code>skip_special_tokens</code></td><td>True</td><td>A stop string made of special tokens <strong>fails silently</strong></td></tr>
+<tr><td><code>enable_prompt_tokens_details</code></td><td>False</td><td>The response has no <code>cached_tokens</code>, and the token accounting can't be broken apart</td></tr>
+<tr><td><code>enable_log_requests</code></td><td>False</td><td>The logs have no abort / request detail; a zero-hit grep doesn't mean anything</td></tr>
+<tr><td><code>VLLM_BATCH_INVARIANT</code></td><td>"0"</td><td>Results vary with batch composition; changing concurrency can change the text</td></tr>
 </tbody>
 </table>
 </div>
-<p class="src">依次出自 <code>sampling_params.py:295</code>、<code>entrypoints/openai/cli_args.py:132</code>、<code>engine/arg_utils.py:2724</code>、<code>envs.py:602</code>。</p>
+<p class="src">In order, from <code>sampling_params.py:295</code>, <code>entrypoints/openai/cli_args.py:132</code>, <code>engine/arg_utils.py:2724</code>, <code>envs.py:602</code>.</p>
 
-<h2>两套停止机制</h2>
+<h2>Two stopping mechanisms</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th></th><th>停止 token</th><th>停止字符串</th></tr></thead>
+<thead><tr><th></th><th>Stop token</th><th>Stop string</th></tr></thead>
 <tbody>
-<tr><td>参数</td><td><code>stop_token_ids</code></td><td><code>stop</code></td></tr>
-<tr><td>比什么</td><td>刚采样出的 token id</td><td>已解码出的文本</td></tr>
-<tr><td>EOS</td><td>引擎自动加入（<code>sampling_params.py:635-641</code>）</td><td>不自动加</td></tr>
-<tr><td>受 <code>skip_special_tokens</code> 影响</td><td>不受</td><td><strong>受</strong>（<code>detokenizer.py:184-187</code>）</td></tr>
+<tr><td>Parameter</td><td><code>stop_token_ids</code></td><td><code>stop</code></td></tr>
+<tr><td>Compared against</td><td>the token id just sampled</td><td>text already decoded</td></tr>
+<tr><td>EOS</td><td>Added automatically by the engine (<code>sampling_params.py:635-641</code>)</td><td>Not added automatically</td></tr>
+<tr><td>Affected by <code>skip_special_tokens</code></td><td>No</td><td><strong>Yes</strong> (<code>detokenizer.py:184-187</code>)</td></tr>
 </tbody>
 </table>
 </div>
 
 <div class="note">
-<strong>一句话规则：</strong>停止串里出现尖括号包起来的特殊标记，就必须同时给 <code>skip_special_tokens=false</code>，否则那个串是空转的。它不报错。
+<strong>One-sentence rule:</strong> if a stop string contains a special token wrapped in angle brackets, you must also pass <code>skip_special_tokens=false</code>, or that string spins with no effect. It does not throw an error.
 </div>
 
-<h2>finish_reason 五个值</h2>
+<h2>The five finish_reason values</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>值</th><th>含义</th></tr></thead>
+<thead><tr><th>Value</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td class="key">stop</td><td>撞上停止 token 或停止串（具体是哪个看 <code>stop_reason</code>）</td></tr>
-<tr><td class="key">length</td><td><code>max_tokens</code> 用完，或撞上下文上限</td></tr>
-<tr><td class="key">abort</td><td>客户端中止（连接断开也算）</td></tr>
-<tr><td>error</td><td>引擎侧报错</td></tr>
-<tr><td>repetition</td><td>触发复读检测</td></tr>
+<tr><td class="key">stop</td><td>Hit a stop token or stop string (check <code>stop_reason</code> for which one)</td></tr>
+<tr><td class="key">length</td><td><code>max_tokens</code> ran out, or hit the context limit</td></tr>
+<tr><td class="key">abort</td><td>Client aborted (a dropped connection counts too)</td></tr>
+<tr><td>error</td><td>Engine-side error</td></tr>
+<tr><td>repetition</td><td>Repetition detection triggered</td></tr>
 </tbody>
 </table>
 </div>
-<p class="src"><code>v1/engine/__init__.py:30</code>；<code>stop_reason</code> 见 <code>outputs.py:46-47</code>。</p>
+<p class="src"><code>v1/engine/__init__.py:30</code>; <code>stop_reason</code> is at <code>outputs.py:46-47</code>.</p>
 
-<h2>temperature 的分界线</h2>
+<h2>temperature's dividing line</h2>
 
 <div class="eq">
-<p class="formula">temperature &lt; 1e-5 → 贪心档</p>
-<p class="gloss"><code>sampling_params.py:27, 492-497</code>：低于这个界，<code>top_p</code>／<code>top_k</code>／<code>min_p</code> 一并被覆盖成不筛选，走 <code>logits.argmax</code>（<code>v1/sample/sampler.py:240-241</code>）。<code>seed</code> 在这条路上不起作用。</p>
+<p class="formula">temperature &lt; 1e-5 → greedy mode</p>
+<p class="gloss"><code>sampling_params.py:27, 492-497</code>: below this threshold, <code>top_p</code>/<code>top_k</code>/<code>min_p</code> all get overwritten to no filtering, and it goes through <code>logits.argmax</code> (<code>v1/sample/sampler.py:240-241</code>). <code>seed</code> has no effect on this path.</p>
 </div>
 
-<h2>报数字时该带上的口径</h2>
+<h2>The methodology to carry when reporting numbers</h2>
 
 <ol class="tasklist">
-<li><strong>token 数</strong>是"发过去的"还是"重算的"——默认只拿得到前者。</li>
-<li><strong>并发</strong>是多少——它会改批组成，进而改 greedy 生成的结果。</li>
-<li><strong>有没有中途中止</strong>——中止的段落 usage 缺失，token 数是估的。</li>
-<li><strong>被丢弃的生成</strong>单独一列——算力花过，不该并进"省下的"。</li>
+<li><strong>Token count</strong>, whether it is "what was sent" or "recomputed" — by default you only get the former.</li>
+<li><strong>Concurrency</strong>, how much of it — it changes batch composition, and in turn changes greedy generation results.</li>
+<li><strong>Whether there was a mid-run abort</strong> — an aborted segment is missing usage, so its token count is estimated.</li>
+<li><strong>Discarded generation</strong> in its own column — the compute was spent, it should not be folded into "saved."</li>
 </ol>
 
 <div class="foot">
-<p>相关课：<a class="local" href="../lessons/0003-where-generation-stops.html">第 3 课 停止条件</a> · <a class="local" href="../lessons/0004-greedy-is-not-reproducible.html">第 4 课 可复现性</a> · <a class="local" href="../lessons/0005-streaming-and-aborting.html">第 5 课 流式与中止</a></p>
+<p>Related lessons: <a class="local" href="../lessons/0003-where-generation-stops.html">Lesson 3 Where Generation Stops</a> · <a class="local" href="../lessons/0004-greedy-is-not-reproducible.html">Lesson 4 Reproducibility</a> · <a class="local" href="../lessons/0005-streaming-and-aborting.html">Lesson 5 Streaming and Aborting</a></p>
 </div>
 
 </div>

@@ -1,18 +1,17 @@
-# 起点：已经走完一遍 vLLM 调用代码与官方文档对照
+# Starting point: already walked through the vLLM call code and cross-checked it against the official docs
 
-2026-08-04 开课前，gyb 已经跟着走了两轮：一轮把本仓库所有 vLLM 相关代码（服务发射脚本、
-采集客户端、注入客户端）过了一遍，一轮把其中的说法逐条对到官方文档与本机 0.26.0 源码上。
-所以第一课不必再讲"我们有哪些脚本""chat 端点和 completions 端点差在哪"——这些已经是地基。
+Before the course started on 2026-08-04, gyb had already gone through two passes: one pass over all of this repo's vLLM-related code (the service launch scripts, the collection client, the injection client), and one pass cross-checking those claims against the official docs and the local 0.26.0 source.
+So Lesson 1 does not need to cover "what scripts do we have" or "what's the difference between the chat endpoint and the completions endpoint" again; those are already the foundation.
 
 ## Evidence
 
-- 主动要求"对照官方文档"，说明他知道代码注释和参数记忆都可能是错的，需要一手核实。
-- 这一轮核出四处错，其中两处是我的：`--gpu-memory-utilization 0.92` 等于 0.26.0 的默认值；
-  `1,475,384 tokens / 22.51x` 是 H200 的数不是 H100 的。
+- He actively asked to "cross-check against the official docs," which shows he knows code comments and remembered parameter values can both be wrong and need primary verification.
+- This pass found four errors, two of them mine: `--gpu-memory-utilization 0.92` equals 0.26.0's default value;
+  `1,475,384 tokens / 22.51x` is the H200's number, not the H100's.
 
 ## Implications
 
-- 起点定在"能读懂发射脚本"，第一课直接进启动日志。
-- 他对"没记录理由就直说没记录"这种处理方式是接受的（`VLLM_USE_FLASHINFER_SAMPLER=0`
-  为什么关，仓库里查不到，如实标了）。后续课程遇到查不清的地方照此办理，不要圆场。
-- 他会自己动手核算。课里给的每个数字都要能被 grep 回原始文件，不能给他核不动的东西。
+- The starting point is set at "can read the launch scripts," so Lesson 1 goes straight into the startup log.
+- He accepts the practice of saying plainly "no record found" rather than papering over it (why `VLLM_USE_FLASHINFER_SAMPLER=0`
+  is turned off could not be found anywhere in the repo, and it was marked as such). Later lessons should handle unresolved points the same way, without smoothing them over.
+- He verifies numbers by hand himself. Every number given in a lesson must be traceable back to source, and he must never be given something he cannot verify.

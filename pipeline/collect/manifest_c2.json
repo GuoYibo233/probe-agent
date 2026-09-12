@@ -1,9 +1,9 @@
 {
   "run_id": "c2_alfworld",
   "env": "alfworld",
-  "_source": "c2 批次计划 plans/2026-07-31-c2-alfworld-plan.md §0/§5",
-  "_scale": "每模型 474 题(train 200 + val 140 + test 134),两模型共 948 题",
-  "_placement": "2026-07-31 22:55 实探: tokyo108 GPU 0/1/2 空(H100 95G), GPU 3/4/5 被 glin 满负载占着。q36 权重 54G / gptoss 64G 都能装进 95G, 但 A6000 的 48G 两个都装不下, 所以全集群只有这三张卡可用(w0 那批用的是六张)。gptoss 分两张: c1 实测它思考极长(每事件中位 51 个切点, q36 只有 3), 生成量远大于 q36, 一张卡会成为长杆。",
+  "_source": "c2 batch plan plans/2026-07-31-c2-alfworld-plan.md §0/§5",
+  "_scale": "474 tasks per model (train 200 + val 140 + test 134), 948 tasks total across both models",
+  "_placement": "Probed live at 2026-07-31 22:55: tokyo108 GPU 0/1/2 free (H100 95G), GPU 3/4/5 fully loaded by glin. q36 weights 54G / gptoss 64G both fit in 95G, but neither fits in A6000's 48G, so only these three cards in the whole cluster are usable (the w0 batch used six). gptoss is split across two cards: c1 measured its thinking as extremely long (median 51 cuts per event, vs. only 3 for q36), generating far more than q36, so a single card would become the long pole.",
   "envs_root": "/home/y-guo/reproduce/new1/envs",
   "client_session_prefix": "new1_c2alf",
   "servers": [

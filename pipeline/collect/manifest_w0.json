@@ -1,6 +1,6 @@
 {
   "run_id": "w0_aw_official",
-  "_source": "执行手册 2026-07-31-execution-playbook.md §3.2(六实例表)+ §3.4(十四分片表)原样转写",
+  "_source": "transcribed as-is from the runbook 2026-07-31-execution-playbook.md §3.2 (six-instance table) + §3.4 (fourteen-shard table)",
   "envs_root": "/home/y-guo/reproduce/new1/envs",
   "servers": [
     {"host": "tokyo108", "gpu": 3, "card": "H200", "model_key": "q35",

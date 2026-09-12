@@ -1,18 +1,19 @@
-# 第 1 课五题全对，难度可以再上一档
+# Five for five on Lesson 1, difficulty can go up a notch
 
-2026-08-04，gyb 做完第 1 课的五道题，回报"没错"，直接要第 2 课。
+On 2026-08-04, gyb finished the five questions in Lesson 1, reported "no mistakes," and asked directly for Lesson 2.
 
 ## Evidence
 
-- 五题覆盖：查表取数（Q1）、复述除法（Q2）、归因到正确变量（Q3）、
-  默认值与旗标的关系（Q4）、日志 WARNING 的字面含义（Q5）。全过。
-- 没有提出任何词汇上的疑问，也没说哪里太浅或太深。
+- The five questions covered: looking up a number in a table (Q1), restating a division (Q2),
+  attributing an effect to the correct variable (Q3), the relationship between a default value and a flag (Q4),
+  and the literal meaning of a WARNING in the log (Q5). All passed.
+- He did not raise any question about terminology, nor did he say anything was too shallow or too deep.
 
 ## Implications
 
-- 第 1 课那种"一行日志 + 一句解释"的密度对他偏低。第 2 课起可以：
-  一次引两三处源码行号、让他自己把关系串起来，不必每一步都铺垫。
-- 他能接受"课里直接甩源码行号"这种引用方式——第 1 课的 `config/cache.py:68`
-  他核过并答对了。第 2 课把这个用法加到了每一节。
-- 反馈信息量不高（只有"没错"两个字）。下一课起在结尾多问一个具体问题
-  （哪一节读得最慢 / 哪个数字最意外），比问"太浅还是太深"更容易拿到可用信号。
+- The density of Lesson 1 ("one log line plus one sentence of explanation") is on the low side for him. From Lesson 2 on:
+  cite two or three source line numbers at once and let him connect the relationships himself; not every step needs to be laid out.
+- He can handle a lesson dropping source line numbers directly. He checked `config/cache.py:68` from Lesson 1
+  and answered correctly on it. Lesson 2 adds this usage to every section.
+- The feedback carries little information (just the two words "no mistakes"). Starting next lesson, ask one specific question at the end
+  (which section took the longest to read, which number was the most surprising); that gets a more usable signal than asking "too shallow or too deep."

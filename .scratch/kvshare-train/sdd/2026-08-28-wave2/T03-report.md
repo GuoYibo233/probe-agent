@@ -1,349 +1,430 @@
-# T03 报告:训练器 `pipeline/train/train_causal_share.py` 与注册表
+# T03 report: trainer `pipeline/train/train_causal_share.py` and the registry
 
-工单:`.scratch/kvshare-train/issues/03-share-trainer.md`
-分支:`ticket/2026-08-28-wave2/T03`,base `2216c44d50838e6df6d3f8f78b31ca955998e520`,
-head `f40daaa`(工作树 `/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03`,已删除)。
+Ticket: `.scratch/kvshare-train/issues/03-share-trainer.md`
+Branch: `ticket/2026-08-28-wave2/T03`, base `2216c44d50838e6df6d3f8f78b31ca955998e520`,
+head `f40daaa` (worktree `/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03`, deleted).
 
-## 一、做了什么(对照工单逐条要求)
+## 1. What was done (checked against the ticket, item by item)
 
-### 1. 新建 `pipeline/train/train_causal_share.py`
+### 1. New file `pipeline/train/train_causal_share.py`
 
-- 数据走 `share_data.py`(工单 01);tokenizer 与模型走
-  `train_causal_callgen.build(dev, base=, attn_impl=, path=)`。`--base` 接受
-  `qwen/qwen17/qwen4` 或一个目录路径(`args.base in train_causal_callgen.MODELS`
-  判分支,是就传 `base=`,不是就传 `path=`)。
-- 前向按 spec 第 4 节 + `design-attention.md`:一张公用的 `_forward_packed`
-  先从末层隐状态按损失位 gather、再过 `model.lm_head`(不算全位置 logits),
-  cuda 上套 `sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])`(`_attn_ctx`,
-  CPU 上退化成 `contextlib.nullcontext()`)。掩码 dtype 由调用方传入
-  (`mask_dtype` 参数),训练/评估走 bf16(amp 开时)或 fp32(CPU),对齐检查
-  走 fp32,bf16 粗筛走 bf16。pad 位置的 position_ids 由 `share_data.batch_mask`
-  接着数(工单 01 已实现,本工单只是消费)。
-- 损失与更新按第 5 节:`block_row_ce`(一个物理块每行 mean CE + w)、
-  `backward_logical_minibatch`(一个逻辑小批按 `chunk_by_budget` 拆的物理块
-  列表,`loss_C = Σ w_r·ce_r / W`,`(loss_C/n_g).backward()`)。`main()` 里
-  每个 epoch 用 `random.Random(SEED+ep)` 打乱事件、按 `--events-per-mb` 切
-  逻辑小批、按 `--accum` 分组;尾组按 `min(accum, M-组起点)` 定 `n_g`,不漏
-  梯度、步长不打折。
-- 评估与 `best/` 按第 6 节:评估点集合 `{ceil(U·k/E): k=1..E}`,实现里用
-  `dict` 让同一个点被多个 `k` 命中时取 `max k` 当 `frac`(保证 `k=E` 那点、
-  也就是 `u=U` 恒定映射到 `frac=E`,不被更早的重复点占掉,细节见
-  「自查」)。`best/` 落盘与 `meta.json` 字段照工单逐项(`trainer/frac/
-  gstep/tok_budget/events_per_mb/accum/attn_impl` 新增,`readonly_env`/
-  `lora`/`grad_ckpt`/`param_only` 条件写)。
-- 日志与心跳按第 7 节:`start/step/eval/save_best/done/mem_probe` 六种事件
-  (`mem_probe` 只在 `--mem-probe` 时出现),`step` 的 `train_s` 只累计训练
-  段时间(每次更新前后各计时一次,评估调用夹在两次计时之间、天然不计入)。
-  `heartbeat.emit` 三处:起步(第 606 行)、每条 step(第 682 行)、收尾
-  (第 726 行)。
-- 命令行按第 8 节的表逐项实现;`--smoke`/`--max-events` 的组合规则(单独给
-  `--max-events` 随机、和 `--smoke` 同给按 `shortest` 且 N 覆盖 40/16)按
-  spec 字面写。
-- 对齐检查按第 9 节,细节见下面单独一节(改动最大、最值得复核的部分)。
+- Data goes through `share_data.py` (ticket 01); the tokenizer and model go through
+  `train_causal_callgen.build(dev, base=, attn_impl=, path=)`. `--base` accepts
+  `qwen/qwen17/qwen4` or a directory path (`args.base in train_causal_callgen.MODELS`
+  decides the branch: if yes, pass `base=`; if no, pass `path=`).
+- The forward pass follows spec section 4 + `design-attention.md`: one shared
+  `_forward_packed` first gathers from the last-layer hidden state at the loss
+  positions, then runs `model.lm_head` (not computing logits for every position);
+  on cuda it wraps `sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION])` (`_attn_ctx`,
+  degrades to `contextlib.nullcontext()` on CPU). The mask dtype is passed in by the
+  caller (the `mask_dtype` parameter); training/evaluation use bf16 (when amp is on)
+  or fp32 (CPU); the alignment check uses fp32; the bf16 coarse screen uses bf16.
+  The position_ids at pad positions keep being counted onward by
+  `share_data.batch_mask` (already implemented by ticket 01, this ticket only
+  consumes it).
+- Loss and updates follow section 5: `block_row_ce` (per-row mean CE + w for one
+  physical block), `backward_logical_minibatch` (a list of physical blocks that one
+  logical minibatch is split into by `chunk_by_budget`, `loss_C = Σ w_r·ce_r / W`,
+  `(loss_C/n_g).backward()`). Inside `main()`, each epoch shuffles events with
+  `random.Random(SEED+ep)`, cuts them into logical minibatches by `--events-per-mb`,
+  and groups them by `--accum`; the tail group's `n_g` is set by
+  `min(accum, M-group start)`, so no gradient is dropped and the step size is not
+  discounted.
+- Evaluation and `best/` follow section 6: the evaluation-point set is
+  `{ceil(U·k/E): k=1..E}`; the implementation uses a `dict` so that when the same
+  point is hit by multiple `k` values, the `max k` is taken as `frac` (guaranteeing
+  that the `k=E` point, i.e. `u=U`, always maps to `frac=E` and is never displaced by
+  an earlier duplicate point; details in "self-check"). The `best/` write-out and
+  the `meta.json` fields are implemented item by item per the ticket (`trainer/frac/
+  gstep/tok_budget/events_per_mb/accum/attn_impl` are new, `readonly_env`/
+  `lora`/`grad_ckpt`/`param_only` are written conditionally).
+- Logging and the heartbeat follow section 7: six event types,
+  `start/step/eval/save_best/done/mem_probe` (`mem_probe` only appears under
+  `--mem-probe`); `step`'s `train_s` only accumulates time spent in the training
+  segment (timed once before and once after each update; the evaluation call sits
+  between the two timings and is naturally excluded). `heartbeat.emit` appears in
+  three places: at startup (line 606), on every step (line 682), and at wrap-up
+  (line 726).
+- The command line is implemented item by item per the table in section 8; the
+  combination rule for `--smoke`/`--max-events` (`--max-events` alone is random,
+  given together with `--smoke` it uses `shortest` and N covers 40/16) is written
+  exactly as the spec states.
+- The alignment check follows section 9; details are in its own section below (the
+  part with the largest changes, most worth re-checking).
 
-### 2. `run.py` 注册表
+### 2. `run.py` registry
 
-- `CELLS["cgen"]`/`CELLS["cparam"]` 改指 `train_causal_share.py`,分别带
-  `["--mode", "cgen"]`/`["--mode", "cparam"]`;`CELL_ORDER` 未动。
-- `TASKS["train-cgen"]`/`TASKS["train-cparam"]` 同步改脚本 + `args`,notes
-  补了新口径的说明(上限、更新单位、内置对齐检查)。
-- 新增 `TASKS["train-cgen-rows"]`/`TASKS["train-cparam-rows"]` 指向两个旧
-  逐行脚本,字段照 `train-ctool` 逐项给全(`desc/stage/py/script/gpu/notes`),
-  notes 按工单原话写「逐行参照实现,只用于对齐检查与对照;产物不进矩阵,
-  run_id 不许用现役批次前缀」。
-- `python3 run.py selfcheck`、`python3 -c "import ops.launch_probe"`、
-  `python3 run.py show train-cgen` 打印含 `train_causal_share.py --mode cgen`
-  —— 三条都过,细节见「二、怎么验证的」。
-- `EVAL_CELLS` 未动(`git diff` 没有这块的改动)。
+- `CELLS["cgen"]`/`CELLS["cparam"]` are changed to point at
+  `train_causal_share.py`, carrying `["--mode", "cgen"]`/`["--mode", "cparam"]`
+  respectively; `CELL_ORDER` is untouched.
+- `TASKS["train-cgen"]`/`TASKS["train-cparam"]` have the script + `args` changed to
+  match, and notes add an explanation of the new convention (the cap, the update
+  unit, the built-in alignment check).
+- New `TASKS["train-cgen-rows"]`/`TASKS["train-cparam-rows"]` point at the two old
+  row-by-row scripts, with fields filled in item by item to match `train-ctool`
+  (`desc/stage/py/script/gpu/notes`); notes use the ticket's own wording: "row-by-row
+  reference implementation, used only for alignment checks and comparison; its
+  output does not go into the matrix, its run_id must not use the in-service
+  batch's prefix."
+- `python3 run.py selfcheck`, `python3 -c "import ops.launch_probe"`, and
+  `python3 run.py show train-cgen` printing a command that includes
+  `train_causal_share.py --mode cgen` — all three pass, details in "2. How it was
+  verified".
+- `EVAL_CELLS` is untouched (`git diff` shows no change in this part).
 
-### 3. `MAP.md` 文案(工单要求写进报告,由工单 04 落盘)
+### 3. `MAP.md` copy (the ticket asks for this to be written into the report, to be
+committed to disk by ticket 04)
 
-- **cgen** 行:程序列改 `train_causal_share.py --mode cgen`;关键设定列写
-  「一个事件一次前向共享前缀;上限 8192 超长事件整条丢弃;8 个事件一次
-  更新;1 个 epoch 每四分之一评一次 val_ce;`--tok-budget` 控显存」。
-- **cparam** 行:同上,程序列改 `--mode cparam`。
-- 新增一行 **(参照)**:`train_causal_callgen.py`/`train_causal_param.py`,
-  经 `train-cgen-rows`/`train-cparam-rows` 发射,4096、左截、3 epoch 的旧
-  逐行口径,冻结为对齐参照,产物不进矩阵。
-- 新增一行 **(共用)**:`pipeline/train/share_data.py`,cgen/cparam(以及
-  ctool 的 `read_position`,工单 02)共用的纯 CPU 数据与分词模块。
+- **cgen** row: the program column changes to `train_causal_share.py --mode cgen`;
+  the key-settings column reads "one event, one forward pass, shared prefix; events
+  over the 8192 cap are dropped whole; one update per 8 events; validated on
+  val_ce once every quarter epoch; `--tok-budget` controls VRAM."
+- **cparam** row: same as above, the program column changes to `--mode cparam`.
+- New row **(reference)**: `train_causal_callgen.py`/`train_causal_param.py`,
+  launched via `train-cgen-rows`/`train-cparam-rows`, the old row-by-row convention
+  of 4096, left-truncation, 3 epochs, frozen as the alignment reference; its output
+  does not go into the matrix.
+- New row **(shared)**: `pipeline/train/share_data.py`, the pure-CPU data and
+  tokenization module shared by cgen/cparam (and by ctool's `read_position`,
+  ticket 02).
 
-### 4. 对齐检查(第 9 节,改动最大的部分)
+### 4. Alignment check (section 9, the part with the largest changes)
 
-- 放在 `lora_util.wrap` 之前、`model.eval()` 下,`run_align_check()` 一个
-  函数做完:`torch.set_float32_matmul_precision("highest")` + cuda 上关两个
-  `allow_tf32`(`finally` 里恢复)。
-- 进料:`_align_candidates` 独立扫一遍 val(按 event 分组 + 全文分词过滤
-  `<= 2048` token,不跑 `share_data.load_events` 的行级流水线——这条是
-  为了不让 `--smoke` 时的抽样也背上全量行级分词的开销,细节见「自查」第
-  1 条),`random.Random(SEED)` 抽样,`_write_align_tmpfile` 按
-  `(event, sent_idx)` 升序写临时文件(`tempfile.mkstemp`,系统临时目录,
-  `finally` 里 `unlink`)。
-- 新路径:同一份临时文件喂 `share_data.load_events(limit=0)`,`_new_forward`
-  逐事件单独一次前向(数量小,不必按预算装块)。
-- 参照路径:`_ref_forward` 用旧 `collate`(`import` 自旧脚本,不复制)按
-  `bs` 行一批,手算与 `inst_ce` 相同公式的交叉熵,但多留逐 token 的中间量
-  ——这条和字面「import inst_ce」有出入,细节与理由见「自查」第 2 条。
-  `bs=4`「整批」与 `bs=1`「单行」各跑一遍(后者是补齐基线)。参照路径不套
-  `EFFICIENT_ATTENTION`(design-attention.md 7.1 节的坑:单行批没有掩码,
-  HF 走 `enable_gqa`,mem-efficient 不接 GQA)。
-- 配对:`len(ds.rows) == 新路径总行数`、逐位 `ds.rows[i][0] == 新路径第 i
-  行的 text`、丢弃计数相等(cgen 只查 `dropped_rows_tgt`,cparam 另查
-  `assembly_mismatch`;`mode != "cparam" or ds.mismatch == ...` 的短路写法
-  是必须的——`CallDS` 没有 `.mismatch` 属性,cgen 分支从不求值右边)。
-- 判定:逐行 `<= --align-tol`(默认 2e-5)且逐 token `<= 3e-4`(固定值
-  `TOK_DIFF_TOL`,不开成 CLI 参数,按 spec 字面);基线告警
-  `row_diff > max(3*baseline_diff, 1e-6)` 只告警不判定。bf16 粗筛只在 cuda
-  上做,CPU 上三个字段(`bf16_mean_abs_diff`/`bf16_max_abs_diff`/隐含的
-  `bf16_warn`)按 spec 写 null/False。`ALIGN_CHECK.json` 键名用大写 `PASS`,
-  另外按 spec 原文加了 `baseline_warn`(spec 正文明确要求「打
-  baseline_warn: true」)与一个额外诊断键 `bf16_warn`。
+- Placed before `lora_util.wrap`, under `model.eval()`; `run_align_check()` is one
+  function that does the whole job: `torch.set_float32_matmul_precision("highest")`
+  plus turning off the two `allow_tf32` flags on cuda (restored in `finally`).
+- Feed material: `_align_candidates` independently scans val once (grouped by
+  event, filtered on full-text tokenization to `<= 2048` tokens, not running
+  `share_data.load_events`'s row-level pipeline — this is so that sampling under
+  `--smoke` does not also carry the cost of full-scale row-level tokenization;
+  details and reasons in self-check item 1), sampled with `random.Random(SEED)`,
+  and `_write_align_tmpfile` writes a temp file in ascending `(event, sent_idx)`
+  order (`tempfile.mkstemp`, the system temp directory, `unlink` in `finally`).
+- New path: the same temp file feeds `share_data.load_events(limit=0)`;
+  `_new_forward` runs one separate forward pass per event (the count is small, no
+  need to pack into blocks by budget).
+- Reference path: `_ref_forward` uses the old `collate` (`import`ed from the old
+  script, not copied), batching `bs` rows at a time, hand-computing cross-entropy
+  with the same formula as `inst_ce`, but keeping the extra per-token intermediate
+  values — this diverges from the literal "import inst_ce" instruction; details and
+  reasoning in self-check item 2. `bs=4` "full batch" and `bs=1` "single row" are
+  each run once (the latter fills in the baseline). The reference path does not
+  wrap `EFFICIENT_ATTENTION` (the pitfall from design-attention.md section 7.1: a
+  single-row batch has no mask, HF goes through `enable_gqa`, and mem-efficient
+  does not support GQA).
+- Pairing: `len(ds.rows) == the new path's total row count`, position-by-position
+  `ds.rows[i][0] == the text of row i on the new path`, and equal drop counts (cgen
+  only checks `dropped_rows_tgt`; cparam also checks `assembly_mismatch`; the
+  short-circuit form `mode != "cparam" or ds.mismatch == ...` is required —
+  `CallDS` has no `.mismatch` attribute, and the cgen branch never evaluates the
+  right-hand side).
+- Verdict: per-row `<= --align-tol` (default 2e-5) and per-token `<= 3e-4` (a fixed
+  value `TOK_DIFF_TOL`, not exposed as a CLI argument, per the spec's literal text);
+  the baseline warning `row_diff > max(3*baseline_diff, 1e-6)` only warns, it does
+  not gate. The bf16 coarse screen only runs on cuda; on CPU, the three fields
+  (`bf16_mean_abs_diff`/`bf16_max_abs_diff`/the implied `bf16_warn`) are written as
+  null/False per the spec. `ALIGN_CHECK.json` uses the uppercase key name `PASS`,
+  and per the spec's own text also adds `baseline_warn` (the spec body explicitly
+  requires "set baseline_warn: true") and one extra diagnostic key, `bf16_warn`.
 
-## 二、怎么验证的
+## 2. How it was verified
 
-全部在工作树 `/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03` 里跑
-(cprobe-env/mbert-env 用软链接到主仓,pipeline/data、pipeline/runs 同样
-软链到 NFS——工作树是全新 checkout,这三类都不进 git,提交前已删掉软链)。
+All of it was run inside the worktree
+`/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03` (cprobe-env/mbert-env are
+symlinked to the main repo, and pipeline/data, pipeline/runs are likewise
+symlinked to NFS — the worktree is a fresh checkout, none of these three go into
+git, and the symlinks were removed before the commit).
 
-**单元测试**(`tests/test_share_trainer.py` 的 (a)(b)(c) + 既有三份):
+**Unit tests** ((a)(b)(c) of `tests/test_share_trainer.py` plus the existing three
+files):
 
 ```
 cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data \
   tests.test_cparam_assembly tests.test_lora_merge -v
 ```
-输出尾部:`Ran 48 tests in 165.629s` / `OK`(48 个全过,含我新写的 6 个:
-`TestPackedForwardMatchesOldPath.{test_cgen,test_cparam}`、
-`TestBackwardBlockSplitInvariance.test_split_into_1_vs_3_blocks`、
-`TestMainSmokeCPU.{test_cgen_smoke,test_cparam_smoke}` 算 3 个 test method
-但内含 cgen/cparam 两次断言链)。
+Tail of the output: `Ran 48 tests in 165.629s` / `OK` (all 48 pass, including 6 I
+wrote: `TestPackedForwardMatchesOldPath.{test_cgen,test_cparam}`,
+`TestBackwardBlockSplitInvariance.test_split_into_1_vs_3_blocks`,
+`TestMainSmokeCPU.{test_cgen_smoke,test_cparam_smoke}` count as 3 test methods but
+each contains both a cgen and a cparam assertion chain).
 
-系统 `python3` 直接点名这几个模块跑时,四个文件(含既有的
-`test_share_data.py`/`test_cparam_assembly.py`/`test_lora_merge.py`)全部同样
-在 import 阶段 `SkipTest` 被 `unittest.loader.loadTestsFromName` 当成异常抛
-出来(traceback 而不是「OK skipped」)——这是 `python3 -m unittest
-tests.test_X`(显式点名模块)这个调用形式本身的行为,`python3 -m unittest
-discover` 才会把它当 skip 处理,在**主仓**(未改动)对
-`tests/test_share_data.py` 复现过同样的 traceback,不是本工单引入的回归。
-`discover` 形式验过一遍:
+When these modules are run by naming them directly with the system `python3`, all
+four files (including the existing `test_share_data.py`/`test_cparam_assembly.py`/
+`test_lora_merge.py`) alike have their `SkipTest` at import time thrown by
+`unittest.loader.loadTestsFromName` as if it were an exception (a traceback rather
+than "OK skipped") — this is the behavior of the call form
+`python3 -m unittest tests.test_X` (naming a module explicitly) itself; only
+`python3 -m unittest discover` treats it as a skip. The same traceback was
+reproduced against `tests/test_share_data.py` on the **main repo** (unmodified),
+so it is not a regression introduced by this ticket. Verified once in `discover`
+form:
 ```
 python3 -m unittest discover -s tests -p "test_share_trainer.py" -v
 # test_share_trainer (unittest.loader.ModuleSkipped) ... skipped
 # Ran 1 test in 0.000s / OK (skipped=1)
 ```
 
-**grep 检查**:
+**grep checks**:
 ```
 grep -n "heartbeat.emit" pipeline/train/train_causal_share.py
 # 606:    heartbeat.emit(0, steps, "step")
 # 682:                heartbeat.emit(gstep, steps, "step", loss=loss_val)
 # 726:    heartbeat.emit(gstep, steps, "step", status="done")
 grep -n "sdpa_kernel" pipeline/train/train_causal_share.py
-# 命中 import 行 + _attn_ctx 定义(训练/评估/对齐检查三处前向都走
-# _forward_packed 这一个共用函数,所以只有一处 sdpa_kernel([...]) 字面量,
-# 但三处调用路径都经过它)
+# hits the import line + the _attn_ctx definition (all three forward-pass call
+# sites — training, evaluation, alignment check — go through this one shared
+# function, _forward_packed, so there is only one literal sdpa_kernel([...])
+# occurrence, but all three call paths pass through it)
 ```
 
-**CPU 真实冒烟**(0.6B fp32,按工单验收段的原始命令):
+**Real CPU smoke test** (0.6B fp32, using the original command from the ticket's
+acceptance section):
 ```
 cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
   --data pipeline/data/nyapass_aw_v1/gptoss --out pipeline/runs/smoke/share_cpu_cgen_smoke \
   --device cpu --smoke --max-events 6 --log-every 1 --align-events 2 --base qwen --force
 ```
-`ALIGN_CHECK.json`:`PASS: true`,`max_abs_diff: 2.384e-6`(tol 2e-5),
-`max_tok_diff: 2.193e-5`(tol 3e-4),`n_events: 2`,`n_rows: 75`。
-`train_log.jsonl` 五种事件都出现;`step` 只有一条(6 个事件、
-`events_per_mb=4`、`accum=2` → `M=2, U=1`,与工单第 5 条「6 个事件只有 1
-次更新」吻合);`loss` 从 3.3317 到 `val_ce` 1.2026(0.6B 底座已有语言
-先验,不是随机初始化,数字量级合理)。`best/` 目录 2.3G。
+`ALIGN_CHECK.json`: `PASS: true`, `max_abs_diff: 2.384e-6` (tol 2e-5),
+`max_tok_diff: 2.193e-5` (tol 3e-4), `n_events: 2`, `n_rows: 75`.
+All five event types appear in `train_log.jsonl`; there is only one `step` entry
+(6 events, `events_per_mb=4`, `accum=2` → `M=2, U=1`, matching ticket item 5's
+"6 events gives only 1 update"); `loss` goes from 3.3317 to `val_ce` 1.2026 (the
+0.6B backbone already has a language prior, it is not randomly initialized, so the
+order of magnitude is reasonable). The `best/` directory is 2.3G.
 
-cparam 同一条命令换 `--mode cparam --out .../share_cpu_cparam_smoke`:
-`ALIGN_CHECK.json` `PASS: true`,`max_abs_diff: 3.576e-6`,
-`max_tok_diff: 1.335e-5`;`best/meta.json` 含 `"param_only": true`。
+cparam, same command with `--mode cparam --out .../share_cpu_cparam_smoke`:
+`ALIGN_CHECK.json` `PASS: true`, `max_abs_diff: 3.576e-6`,
+`max_tok_diff: 1.335e-5`; `best/meta.json` contains `"param_only": true`.
 
-两次产物留在 NFS:
-`pipeline/runs/smoke/share_cpu_{cgen,cparam}_smoke/`。
+Both runs' output is kept on NFS:
+`pipeline/runs/smoke/share_cpu_{cgen,cparam}_smoke/`.
 
-**旧脚本零改动核验**:
+**Zero-change check on the old scripts**:
 ```
 git diff --stat
 #  pipeline/train/train_causal_callgen.py | 22 +++++++++----
 #  run.py                                 | 57 +++++++++++++++++++++++++++++-----
-git diff pipeline/train/train_causal_param.py   # 空输出
+git diff pipeline/train/train_causal_param.py   # empty output
 ```
 
-**`run.py` 注册表**:
+**`run.py` registry**:
 ```
 python3 run.py selfcheck
-# 74 个已存在任务在主仓「全部就位」;在本工作树里因为第三方 env(appworld/
-# alfworld/tales/tau2/toolhop/bfcl/vllm/stb-server)没有软链、报「缺解释器/
-# 程序」——这些跟 train-cgen/train-cparam/train-cgen-rows/train-cparam-rows
-# 或 train_causal_share.py 一个字都不沾,是全新 git 工作树缺第三方 venv 的
-# 通病(cprobe-env/mbert-env 补软链前也一样报;补上之后这两个不再出现在
-# 缺失列表里),不是本工单引入的注册表缺陷。
-python3 -c "import ops.launch_probe"   # 无输出,退出码 0
+# on the main repo, the 74 existing tasks are "all in place"; inside this
+# worktree, third-party envs (appworld/alfworld/tales/tau2/toolhop/bfcl/vllm/
+# stb-server) have no symlinks, so it reports "interpreter/program missing" —
+# none of these touch train-cgen/train-cparam/train-cgen-rows/train-cparam-rows
+# or train_causal_share.py at all; this is the standard symptom of a brand-new
+# git worktree missing third-party venvs (cprobe-env/mbert-env reported the
+# same before their symlinks were added; once added, these two no longer appear
+# in the missing list), not a registry defect introduced by this ticket.
+python3 -c "import ops.launch_probe"   # no output, exit code 0
 python3 run.py show train-cgen --allow-dirty
-#   命令: .../cprobe-env/bin/python .../train_causal_share.py --mode cgen '<参数...>'
+#   command: .../cprobe-env/bin/python .../train_causal_share.py --mode cgen '<args...>'
 ```
 
-## 三、commit 清单
+## 3. Commit list
 
-- `b503e84` T03: train_causal_callgen.build() 加 attn_impl/path 两个关键字参数
-- `2e50bfb` T03: 新增缓存复用训练器 train_causal_share.py,run.py 接入 cgen/cparam
-- `f40daaa` T03: tests/test_share_trainer.py,spec 12 (a)(b)(c)
+- `b503e84` T03: train_causal_callgen.build() adds the two keyword arguments attn_impl/path
+- `2e50bfb` T03: add the cache-reuse trainer train_causal_share.py, wire cgen/cparam into run.py
+- `f40daaa` T03: tests/test_share_trainer.py, spec 12 (a)(b)(c)
 
-## 四、自查发现与存疑
+## 4. Self-check findings and open questions
 
-1. **对齐检查的候选抽样绕开了 `share_data.load_events` 的行级流水线**
-   (`_align_candidates` 自己按 event 分组 + 全文分词,不调用
-   `share_data.load_events(val, limit=0)`)。原因是后者的行级分词发生在
-   「取子集之后」,但对齐候选抽样这一步恰恰需要**先看遍全部事件**才能
-   取子集(挑出 `<=2048` token 的事件),如果为了抽样先跑一遍
-   `load_events(limit=0)` 会连带对全量 val(115,211 行)做行级分词,`--smoke`
-   时这笔开销和抽 6 个事件的目的完全不成比例。这段逻辑因此没有直接复用
-   `share_data.py`,是我按性能考虑自己写的一段(按 event 分组 + 全文分词
-   过滤),不在工单点名的「不许复制」清单(`CALL_SEP`/`MAX_TGT_TOK`/
-   `param_prompt_tail`/`param_target`/`MODELS`/`SEED`)里,但请复核这个
-   取舍是否可接受。
+1. **The alignment check's candidate sampling bypasses `share_data.load_events`'s
+   row-level pipeline** (`_align_candidates` groups by event and does full-text
+   tokenization itself, it does not call `share_data.load_events(val, limit=0)`).
+   The reason is that the latter's row-level tokenization happens "after taking the
+   subset," but this candidate-sampling step needs precisely to **look over every
+   event first** before it can take a subset (picking out events with `<=2048`
+   tokens); if `load_events(limit=0)` were run first for the sake of sampling, it
+   would also do row-level tokenization over the entire val set (115,211 rows),
+   and under `--smoke` this cost would be completely out of proportion to the goal
+   of sampling 6 events. So this logic does not directly reuse `share_data.py`; it
+   is a piece I wrote myself for performance reasons (grouping by event plus
+   full-text tokenization filtering). It is not on the ticket's named "do not copy"
+   list (`CALL_SEP`/`MAX_TGT_TOK`/`param_prompt_tail`/`param_target`/`MODELS`/
+   `SEED`), but please re-check whether this tradeoff is acceptable.
 
-2. **参照路径的逐 token CE 不是直接调用 `inst_ce`,而是手算同一套公式**
-   (`_ref_forward`)。工单/spec 第 9 节字面写「import 旧脚本的 collate、
-   inst_ce...得到每行 ce」,但 spec 同一节还要求「逐目标 token 的最大差
-   ≤ 3e-4」这个逐 token 粒度的判据——`inst_ce` 本身只回每行 mean CE(见
-   `train_causal_callgen.py` 第 231~253 行),没有暴露逐 token 的中间量。
-   我的处理是:`_ref_forward` 里手写与 `inst_ce` 完全相同的移位预测 + 掩码
-   + 交叉熵公式(只是多留一步 `ce`(逐 token)而不是直接对 `inst_ce` 返回值
-   聚合),没有另外调用 `inst_ce` 做双重验证。这条我判断是「工单需求本身
-   要求的能力超出了 `inst_ce` 的接口」而不是「我图省事另写一套」,但它确实
-   是这张工单里离字面指令最远的一处自主决定,请重点复核公式是否与
-   `inst_ce` 逐位等价(cgen/cparam 两个真实冒烟的 `max_abs_diff`/
-   `max_tok_diff` 都在 1e-5~1e-6 量级、远低于门槛,是一个间接证据,但不是
-   逐行对 `inst_ce` 输出做过的直接断言)。
+2. **The reference path's per-token CE does not call `inst_ce` directly, it
+   hand-computes the same formula** (`_ref_forward`). The ticket/spec section 9
+   literally says "import the old script's collate, inst_ce ... to get the per-row
+   ce," but the same spec section also requires a per-token-granularity criterion,
+   "max difference over target tokens ≤ 3e-4" — `inst_ce` itself only returns
+   per-row mean CE (see lines 231-253 of `train_causal_callgen.py`), it does not
+   expose the per-token intermediate values. My handling is: `_ref_forward`
+   hand-writes the exact same shifted-prediction + mask + cross-entropy formula as
+   `inst_ce` (just keeping one extra step, `ce` (per-token), instead of directly
+   aggregating `inst_ce`'s return value), without additionally calling `inst_ce`
+   for double verification. I judge this to be "the capability the ticket's
+   requirement itself demands exceeds `inst_ce`'s interface," not "I wrote a
+   separate one for convenience," but it is indeed the autonomous decision in this
+   ticket furthest from the literal instruction; please review closely whether the
+   formula is position-by-position equivalent to `inst_ce` (the `max_abs_diff`/
+   `max_tok_diff` from the two real cgen/cparam smoke runs are both on the order
+   of 1e-5 to 1e-6, far below the threshold, which is indirect evidence, but it is
+   not a direct row-by-row assertion against `inst_ce`'s output).
 
-3. **`--mem-probe` 与 GPU 侧对齐检查、bf16 第二道粗筛(`dev.startswith
-   ("cuda")` 分支)在我这边完全没有跑到**——本工单铁律禁止发射 GPU 进程,
-   这几段代码按 spec 第 10 节、第 9 节字面写完,CPU 上只验证了
-   「`dev.startswith("cuda")` 为假时跳过」这条分支本身不炸,没有验证 cuda
-   分支的实际数值(尤其是 `run_mem_probe` 里「把 lr 置 0 做一次 opt.step()
-   分配 AdamW 状态、再清空」这套操作在真实优化器上是否如预期)。这部分
-   连同下面的「GPU 上要跑的命令」一起交主会话走 gpu-run。
+3. **`--mem-probe`, the GPU-side alignment check, and the second bf16 coarse
+   screen (the `dev.startswith("cuda")` branch) were not exercised at all on my
+   side** — this ticket's hard rule forbids launching GPU processes; these
+   segments of code are written per spec sections 10 and 9 literally, and on CPU
+   only "the branch itself does not crash when `dev.startswith("cuda")` is false"
+   was verified, not the actual values on the cuda branch (especially whether the
+   operation in `run_mem_probe` of "zero the lr, do one `opt.step()` to allocate
+   AdamW state, then clear it" behaves as expected on a real optimizer). This part,
+   together with "commands to run on GPU" below, is handed to the main session to
+   go through gpu-run.
 
-4. **`--mem-probe` 的全量训练集加载不带 `--readonly-env` 过滤**
-   (`share_data.load_events(..., ro=None, limit=0)`,main() 第 611 行)。
-   spec 没有明确说探针要不要过 readonly 过滤;不过滤会让探针看到的事件
-   集合(可能)比真实训练时更大,得到的显存峰值偏保守(不会低估),我认为
-   方向安全但不是 spec 点名的行为,列出来备查。
+4. **`--mem-probe`'s full training-set load does not go through the
+   `--readonly-env` filter** (`share_data.load_events(..., ro=None, limit=0)`,
+   line 611 of main()). The spec does not clearly state whether the probe should
+   pass through the readonly filter; not filtering makes the event set the probe
+   sees (possibly) larger than at real training time, giving a peak-memory
+   estimate that leans conservative (it will not underestimate); I judge the
+   direction to be safe but it is not a behavior the spec names, listing it here
+   for the record.
 
-5. **`wall_s`(done 事件)包含 `--mem-probe` 的耗时**——`training_t0` 打在
-   `heartbeat.emit(0, steps, "step")` 之后、`--mem-probe` 块之前,所以
-   `--mem-probe` 打开时 `wall_s` 会比纯训练时间长。spec 没有精确定义
-   `wall_s` 的起止点,这是我的选择(把它当「这次调用总耗时」而不是「纯
-   训练耗时」),备查。
+5. **`wall_s` (the done event) includes the time spent in `--mem-probe`** —
+   `training_t0` is set after `heartbeat.emit(0, steps, "step")` and before the
+   `--mem-probe` block, so when `--mem-probe` is on, `wall_s` will be longer than
+   pure training time. The spec does not precisely define the start/end points of
+   `wall_s`; this is my choice (treating it as "total time for this invocation"
+   rather than "pure training time"), noted for the record.
 
-6. **发现一个跟本工单无关但值得记的坑**:新建的 git 工作树里,`*-env/`
-   这条 `.gitignore` 规则(带斜杠)只匹配真目录,不匹配指向真目录的软链
-   ——我在工作树里为了跑测试临时建的 `cprobe-env`/`mbert-env` 软链
-   一度会被 `git status`/`git add -A` 当成未追踪的普通文件(不像
-   `pipeline/data`/`pipeline/runs` 那两条裸名规则,没有斜杠,软链也认)。
-   提交前已经 `rm` 掉这两个软链,没有进任何一次 commit,但后续别的
-   worktree 分支要小心同一个坑(不要在工作树里用软链复原 `*-env/` 之外
-   的大目录,或者软链之后 `git add` 前先 `git status` 确认)。
+6. **Found a pitfall unrelated to this ticket but worth recording**: in a
+   newly-created git worktree, the `.gitignore` rule for `*-env/` (with a trailing
+   slash) only matches a real directory, not a symlink pointing at a real
+   directory — the `cprobe-env`/`mbert-env` symlinks I temporarily created inside
+   the worktree to run the tests were, for a while, treated by `git status`/
+   `git add -A` as untracked plain files (unlike the two bare-name rules for
+   `pipeline/data`/`pipeline/runs`, which have no trailing slash and do recognize
+   symlinks). Both symlinks were `rm`'d before the commit and never entered any
+   commit, but other worktree branches later on should watch for this same
+   pitfall (do not use a symlink to restore a large directory other than
+   `*-env/` inside a worktree, or if you do, run `git status` to confirm before
+   `git add`).
 
-## 五、GPU 上要跑的命令(不在本工单,交主会话走 gpu-run)
+## 5. Commands to run on GPU (not part of this ticket, handed to the main session
+to go through gpu-run)
 
-冒烟档(`launch_probe` 会自动追加 `--smoke`):
+Smoke tier (`launch_probe` automatically appends `--smoke`):
 ```
 run_id: ks828b06_gptoss_cgen_smoke / ks828b06_gptoss_cparam_smoke
 ```
-用 `ops/launch_probe.py smoke`(或直接手发)起,产物落
-`pipeline/runs/smoke/<run_id>_smoke/`,验收「能跑、能存、日志齐、
-ALIGN_CHECK.json PASS」。
+Launched with `ops/launch_probe.py smoke` (or by hand directly), output lands at
+`pipeline/runs/smoke/<run_id>_smoke/`; acceptance is "it runs, it saves, the logs
+are complete, ALIGN_CHECK.json PASSes."
 
-速度/显存档(spec 第 10 节,tokyo108 H100,不带 `--smoke`):
+Speed/VRAM tier (spec section 10, tokyo108 H100, no `--smoke`):
 ```
 cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
   --data pipeline/data/nyapass_aw_v1/gptoss \
   --out pipeline/runs/smoke/ks828b06_gptoss_cgen_speed \
   --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe \
   --tok-budget 16384 --base qwen --force
-# 另跑一次 --tok-budget 24576;PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# 作为开关一起量(spec 第 10 节)
+# also run once more with --tok-budget 24576; PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# is measured alongside it as a switch (spec section 10)
 ```
-`--mem-probe` 打开时会先对 train 全集跑一遍事件级分词(186,479 行)再
-`worst_blocks` 找最坏块,GPU 上这一步比 CPU 上快得多,但仍是最耗时的
-前置步骤,排期时按「几分钟」量级预留即可(CPU 上完整跑一次
-`share_data.load_events(train, limit=0)` 的量级本身没有单独计时,冒烟档
-6 个事件 + 2 个对齐事件的完整命令墙钟在 26~27 秒,含这一步全量分词的
-`--mem-probe` 会更长)。
+When `--mem-probe` is on, it first does one pass of event-level tokenization over
+the entire train set (186,479 rows), then `worst_blocks` finds the worst block;
+this step is much faster on GPU than on CPU, but it is still the most
+time-consuming preparatory step; when scheduling, reserving on the order of "a few
+minutes" is enough (the cost of a full run of
+`share_data.load_events(train, limit=0)` on CPU was not separately timed by
+itself; the full command's wall clock for the smoke tier of 6 events + 2 alignment
+events is 26-27 seconds, and `--mem-probe`, which includes this full
+tokenization step, will take longer).
 
-## 六、修复轮 1(评审 finding F1)
+## 6. Fix round 1 (review finding F1)
 
-工作树:`/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03-fix1`(已删除),
-分支不变(`ticket/2026-08-28-wave2/T03`),base 仍是上面记的 `f40daaa`
-(检出既有分支,不是新分支),新 head `106ab63`。
+Worktree: `/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03-fix1` (deleted),
+branch unchanged (`ticket/2026-08-28-wave2/T03`), base is still the `f40daaa`
+recorded above (checked out from the existing branch, not a new branch), new
+head `106ab63`.
 
-### F1:对齐检查参照路径没有 import 调用 `inst_ce`,而是手写同公式的替代实现
+### F1: the alignment check's reference path does not import and call `inst_ce`, it
+hand-writes a substitute implementation of the same formula
 
-**finding 原文的核心质疑**:`_ref_forward` 只手写一套与 `inst_ce` 数学等价
-的公式,从未真正调用 `train_causal_callgen.inst_ce`/`train_causal_param.inst_ce`,
-和 spec 第 9 节字面「import 旧脚本的 `collate`、`inst_ce`...得到每行 ce」
-有出入;而且代码里没有任何一处把 `_ref_forward` 的逐行结果与真正调用
-`inst_ce` 的结果做过交叉验证——上一轮唯一相关的测试
-`TestPackedForwardMatchesOldPath` 验的是新路径 `block_row_ce` 对 `inst_ce`
-的差,验证的是另一条代码路径,不覆盖 `_ref_forward` 这段手写公式本身。
+**The core objection in the finding text**: `_ref_forward` only hand-writes a
+formula that is mathematically equivalent to `inst_ce`, and never actually calls
+`train_causal_callgen.inst_ce`/`train_causal_param.inst_ce`, which diverges from
+spec section 9's literal text, "import the old script's `collate`, `inst_ce` ...
+to get the per-row ce"; furthermore, nowhere in the code is `_ref_forward`'s
+per-row result cross-checked against the result of actually calling `inst_ce` —
+the only related test from the previous round, `TestPackedForwardMatchesOldPath`,
+checks the new path's `block_row_ce` against `inst_ce`, which verifies a different
+code path and does not cover `_ref_forward`'s hand-written formula itself.
 
-**根因**:`inst_ce` 只回传每行 mean CE(`train_causal_callgen.py` 第
-231~253 行 / `train_causal_param.py` 第 197~209 行的局部变量 `ce` 从未
-对外暴露),而 spec 同一节还要求逐目标 token 的最大差门槛(≤3e-4),这个
-粒度 `inst_ce` 的接口给不出来。上一轮的应对是绕开——整段另写一套「相同
-公式」,但从未真正调用过 `inst_ce` 做对照,所以「两套公式等价」只是
-未经验证的断言。
+**Root cause**: `inst_ce` only returns per-row mean CE (the local variable `ce`
+at lines 231-253 of `train_causal_callgen.py` / lines 197-209 of
+`train_causal_param.py` is never exposed externally), while the same spec section
+also requires a per-target-token max-difference threshold (≤3e-4); `inst_ce`'s
+interface cannot give this granularity. The previous round's response was to work
+around it — writing an entire separate "same formula," but never actually calling
+`inst_ce` for comparison, so "the two formulas are equivalent" was only an
+unverified assertion.
 
-**怎么改的(不是打补丁,是把接口缺口用真调用+断言堵死)**:
+**How it was fixed (not a patch, the interface gap is closed with a real call plus
+an assertion)**:
 
-1. `_ref_forward` 现在真的 import 并调用 `inst_ce_fn = train_causal_callgen.inst_ce`
-   / `train_causal_param.inst_ce`,函数返回的 `row_ce` 就是 `inst_ce` 的
-   直接返回值(`.tolist()` 之前没有再加工)——这一步满足 spec 第 9 节的
-   字面指令,不再是「同公式的另一份实现」。
-2. 逐 token 门槛需要的中间量 `inst_ce` 拿不到,所以仍然本地按
-   `inst_ce` 完全相同的移位预测 + 掩码 + 交叉熵公式算一份 `ce`(逐 token)
-   供 `tok_ce` 用;但每一批处理完之后,立刻断言这份本地公式聚合出的逐行
-   结果(`row_ce_local`)与真正调用 `inst_ce` 拿到的 `row_ce_inst` 一致
-   (新增常量 `REF_INST_CE_DRIFT_TOL = 1e-6`,同一批数据同一次 `no_grad`
-   前向调两遍理论上 bit 级相同,这道容差只防浮点求和顺序的极小抖动,
-   比 `--align-tol` 的 2e-5 低一个量级,离真正的公式错位——1e-2 量级——
-   还差 1000 倍,不会把结构性错位放过)。不一致就当场 `AssertionError`,
-   不会把一个未经验证的手写公式悄悄当成对齐检查的基准。
-3. 新增单测 `TestRefForwardUsesInstCe`(`tests/test_share_trainer.py`),
-   直接对 `_ref_forward` 断言(不像 (a) 那样只验新路径):调用
-   `_ref_forward` 拿到 `row_ref`,再不经过它、独立按同样的分批方式
-   (`tcs.REF_BATCH=4`)走一遍旧 `collate` + 直接调用 `old_inst_ce`,
-   两边逐行结果用 `assertEqual(diff, 0.0)` 断言完全相等(同一模型同一批
-   输入同一次 `no_grad` 前向,理论上无差)——这条测试独立于 `_ref_forward`
-   内部的断言,从外部再验一遍同一个性质,cgen/cparam 各一个 test method。
-4. 更新了函数 docstring 与模块级 docstring(第 22~28 行)里描述参照路径
-   公式的措辞,不再写「自算的逐 token CE,公式与 inst_ce 相同」,改成
-   「真正调用的 inst_ce 得到逐行 ce;逐 token 门槛需要的中间量另用同一套
-   公式本地算,每批都断言与 inst_ce 的返回值一致」。
+1. `_ref_forward` now actually imports and calls
+   `inst_ce_fn = train_causal_callgen.inst_ce` / `train_causal_param.inst_ce`; the
+   function's returned `row_ce` is `inst_ce`'s direct return value (no further
+   processing before `.tolist()`) — this step satisfies spec section 9's literal
+   instruction, it is no longer "a separate implementation of the same formula."
+2. The intermediate value needed for the per-token threshold cannot be obtained
+   from `inst_ce`, so a local `ce` (per-token) is still computed with the exact
+   same shifted-prediction + mask + cross-entropy formula as `inst_ce`, for
+   `tok_ce` to use; but right after each batch is processed, it immediately
+   asserts that the per-row result aggregated from this local formula
+   (`row_ce_local`) matches the `row_ce_inst` obtained from actually calling
+   `inst_ce` (a new constant, `REF_INST_CE_DRIFT_TOL = 1e-6`; calling the same
+   data through the same `no_grad` forward pass twice should in theory be
+   bit-identical, so this tolerance only guards against tiny floating-point
+   summation-order noise; it is an order of magnitude below `--align-tol`'s 2e-5,
+   and 1000x away from a genuine formula mismatch, which would be on the order of
+   1e-2 — it will not let a structural mismatch slip through). A mismatch raises
+   an `AssertionError` on the spot; an unverified hand-written formula will not be
+   quietly treated as the alignment check's baseline.
+3. New unit test `TestRefForwardUsesInstCe` (`tests/test_share_trainer.py`),
+   asserting directly against `_ref_forward` (unlike (a), which only verified the
+   new path): call `_ref_forward` to get `row_ref`, then independently, without
+   going through it, run the old `collate` plus a direct call to `old_inst_ce`
+   using the same batching scheme (`tcs.REF_BATCH=4`); assert the two sides'
+   per-row results are exactly equal with `assertEqual(diff, 0.0)` (same model,
+   same batch of input, same `no_grad` forward pass, no difference in theory) —
+   this test is independent of the assertion inside `_ref_forward`, verifying the
+   same property once more from the outside, one test method each for
+   cgen/cparam.
+4. Updated the wording describing the reference path's formula in the function
+   docstring and the module-level docstring (lines 22-28); it no longer says
+   "self-computed per-token CE, the formula is the same as inst_ce," it now says
+   "inst_ce is actually called to get the per-row ce; the intermediate value
+   needed for the per-token threshold is computed locally with the same formula,
+   and every batch asserts it matches inst_ce's return value."
 
-只改了这两个文件(`pipeline/train/train_causal_share.py`、
-`tests/test_share_trainer.py`),`git diff HEAD --stat` 确认
-`train_causal_callgen.py`/`train_causal_param.py` 零改动,未触碰工单
-其余任何验收点。
+Only these two files were changed (`pipeline/train/train_causal_share.py`,
+`tests/test_share_trainer.py`); `git diff HEAD --stat` confirms
+`train_causal_callgen.py`/`train_causal_param.py` have zero changes, and no other
+acceptance point of the ticket was touched.
 
-### 怎么验证的
+### How it was verified
 
-**单元测试**(与工单验收段同一条命令,重跑):
+**Unit tests** (same command as the ticket's acceptance section, re-run):
 ```
 cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data \
   tests.test_cparam_assembly tests.test_lora_merge
 # Ran 50 tests in 218.148s / OK
 ```
-(48 → 50,多出的 2 个是新增的 `TestRefForwardUsesInstCe.{test_cgen,test_cparam}`;
-单独 `-v` 跑过一遍 `tests.test_share_trainer`,7 个 test 全部 `ok`,含这
-两个新用例。)
+(48 → 50, the 2 extra are the new `TestRefForwardUsesInstCe.{test_cgen,test_cparam}`;
+`tests.test_share_trainer` was also run once with `-v` on its own, all 7 tests
+`ok`, including these two new cases.)
 
-**真实 Qwen3-0.6B-Base CPU smoke 重跑**(工单验收段原始命令,`--force`
-覆盖旧产物),核对数字与修复前(上一轮报告第二节)完全一致:
+**Re-ran the real Qwen3-0.6B-Base CPU smoke test** (the ticket acceptance
+section's original command, `--force` overwriting the old output), and checked the
+numbers exactly match the pre-fix state (section 2 of the previous round's
+report):
 
 cgen:
 ```
@@ -357,7 +438,8 @@ cgen:
  "baseline_warn": false, "bf16_warn": false
 }
 ```
-`loss` 3.3317 → `val_ce` 1.2026,与上一轮报告的数字逐位相同。
+`loss` 3.3317 → `val_ce` 1.2026, matches the previous round's report's numbers
+position by position.
 
 cparam:
 ```
@@ -371,203 +453,242 @@ cparam:
  "baseline_warn": false, "bf16_warn": false
 }
 ```
-与上一轮报告的数字逐位相同(`max_abs_diff` 3.576e-6、`max_tok_diff`
-1.335e-5)。两次运行里 `REF_INST_CE_DRIFT_TOL` 断言均未触发(没有
-`AssertionError`,`ALIGN_CHECK.json` 正常写出)。产物覆盖回
-`pipeline/runs/smoke/share_cpu_{cgen,cparam}_smoke/`。
+Matches the previous round's report's numbers position by position (`max_abs_diff`
+3.576e-6, `max_tok_diff` 1.335e-5). Neither run triggered the
+`REF_INST_CE_DRIFT_TOL` assertion (no `AssertionError`, `ALIGN_CHECK.json` written
+out normally). Output overwrote
+`pipeline/runs/smoke/share_cpu_{cgen,cparam}_smoke/`.
 
-**性能影响的对照实验**(finding 没有点名要测,但改动会让 `_ref_forward`
-每批多调一次 `inst_ce`,即参照路径的模型前向次数翻倍,主动测了一下量级,
-不是靠猜):用 `--align-only`(只跑对齐检查、不进训练/存盘)在同一台机器
-上前后各跑一次同一条命令(`--mode cgen --smoke --max-events 6
---align-events 2`),用 `git stash` 切回修复前的代码跑一次、`git stash pop`
-恢复后再跑一次:
+**A controlled experiment on the performance impact** (the finding did not name
+this as something to test, but the change makes `_ref_forward` call `inst_ce` one
+extra time per batch, i.e. doubles the number of model forward passes on the
+reference path; measured the order of magnitude proactively, not by guessing):
+using `--align-only` (only runs the alignment check, does not enter
+training/save), ran the same command (`--mode cgen --smoke --max-events 6
+--align-events 2`) once before and once after on the same machine, switching to
+the pre-fix code with `git stash`, running it, then restoring with
+`git stash pop` and running again:
 ```
-修复前(git stash 后): real 3m30.945s / user 84m56.327s / sys 5m59.441s
-修复后(当前代码):     real 6m54.556s / user 171m0.156s / sys 15m15.537s
+before the fix (after git stash): real 3m30.945s / user 84m56.327s / sys 5m59.441s
+after the fix (current code):     real 6m54.556s / user 171m0.156s / sys 15m15.537s
 ```
-约 2 倍,与「参照路径每批多调一次 `inst_ce`(多一次模型前向)」的理论
-预期吻合。这一开销只发生在开训前一次性的对齐检查阶段(由 `--align-events`
-控制规模,不随训练数据量增长),不影响 `wall_s`(训练循环计时字段不含
-对齐检查)、不影响任何已上报的 `train_log.jsonl` 事件字段。两次测量都在
-同一台当前负载中等偏高的登录机上(`uptime` 显示 5/15 分钟负载 13~18,
-64 核,同时有其他 wave2 工单的会话在跑),所以两个绝对数字本身(3m30s /
-6m54s)不能拿来跟上一轮报告里「26~27 秒」的机器空闲时基线直接比,但
-两次前后对照是背靠背在同一时间窗内做的,相对倍数(约 2x)是本次改动的
-真实成本,不是机器负载波动造成的假象。
+Roughly 2x, matching the theoretical expectation of "the reference path calls
+`inst_ce` one extra time per batch (one extra model forward pass)." This overhead
+only occurs during the one-time alignment-check stage before training starts
+(its scale is controlled by `--align-events`, it does not grow with the amount of
+training data); it does not affect `wall_s` (the training loop's timing field does
+not include the alignment check), and it does not affect any field already
+reported in `train_log.jsonl`. Both measurements were taken on the same login
+machine, whose current load was medium-to-high at the time (`uptime` showed a
+5/15-minute load of 13-18, 64 cores, with sessions from other wave2 tickets
+running at the same time), so the two absolute numbers themselves (3m30s / 6m54s)
+cannot be directly compared to the previous round's report's idle-machine baseline
+of "26-27 seconds," but the before/after comparison was done back-to-back within
+the same time window, so the relative factor (about 2x) is the real cost of this
+change, not an artifact of machine load fluctuation.
 
-**旧脚本零改动核验**:
+**Zero-change check on the old scripts**:
 ```
 git diff HEAD -- pipeline/train/train_causal_callgen.py pipeline/train/train_causal_param.py
-# 空输出
+# empty output
 ```
 
-**`run.py` 注册表(未受此次改动影响,复核一遍确认没有连带破坏)**:
+**`run.py` registry (unaffected by this change, re-checked once to confirm no
+collateral damage)**:
 ```
-python3 run.py selfcheck        # 76 任务缺失 14 项,清一色第三方 env
-                                  # 符号链接缺失(worktree 通病,与
-                                  # train-cgen/train-cparam 无关,同上一轮)
-python3 -c "import ops.launch_probe"   # 无输出,退出码 0
+python3 run.py selfcheck        # 76 tasks, 14 missing, all of them third-party
+                                  # env symlinks missing (a standard worktree
+                                  # symptom, unrelated to train-cgen/train-cparam,
+                                  # same as the previous round)
+python3 -c "import ops.launch_probe"   # no output, exit code 0
 python3 run.py show train-cgen --allow-dirty
-#   命令: .../cprobe-env/bin/python .../train_causal_share.py --mode cgen '<参数...>'
+#   command: .../cprobe-env/bin/python .../train_causal_share.py --mode cgen '<args...>'
 ```
 
-### commit 清单(本轮)
+### Commit list (this round)
 
-- `106ab63` T03: 修复1 F1 对齐检查参照路径改真调 inst_ce,不再手写替代公式
+- `106ab63` T03: fix 1, F1, the alignment check's reference path now really calls inst_ce instead of a hand-written substitute formula
 
-### 自查发现与存疑(本轮新增)
+### Self-check findings and open questions (new in this round)
 
-1. **对性能的取舍**:`_ref_forward` 现在对 `REF_BATCH` 整批、`bs=1` 单行
-   基线、cuda 上的 bf16 粗筛三处调用统一生效(它们共用同一个函数),而
-   真正门禁 PASS/FAIL 的只有第一处(`REF_BATCH` 那次调用);后两处只用于
-   告警(`baseline_warn`/`bf16_warn`),不参与判定。我判断按统一的单一
-   函数处理(不为「门禁用」和「告警用」两种调用方式分叉出两套 `_ref_forward`
-   实现)更简单、更不容易出现「只在其中一条路径上验证过」的新缺口,所以
-   没有只在 `REF_BATCH` 那一次套用真调用,三处都统一享有这个保证,代价
-   是三处的前向次数都翻倍。这是我的取舍,不是 finding 点名要求的,列出
-   来备查。
-2. **`REF_INST_CE_DRIFT_TOL` 的容差值(1e-6)没有专门在真实 GPU 环境上
-   验证过**——CPU 上两次真实 smoke 与新单测都在这个容差内通过(且实测
-   drift 远小于门槛,CPU 上两次前向理论上应为 bit 级相同),但 GPU 上是
-   否会因为不同 kernel 调度出现比 1e-6 更大的抖动没有实测过(本工单铁律
-   禁止发射 GPU 进程)。如果 GPU 上触发了这条检查,说明的是「同一批数据
-   同一个模型前向两次结果不同」这类内核不确定性问题,而不是逐行公式本身
-   错了;届时需要在 GPU 上单独复核这条容差是否需要放宽,不是本轮能验证
-   的范围(修复 2 之后,即便真触发,现在也会写出 `ALIGN_CHECK.json` 并
-   `sys.exit(2)`,而不是让进程带着未处理的异常崩溃——排查时能拿到结构化
-   产物)。
+1. **A tradeoff on performance**: `_ref_forward` now takes effect uniformly across
+   all three call sites — the `REF_BATCH` full batch, the `bs=1` single-row
+   baseline, and the cuda-side bf16 coarse screen (they share the same function),
+   but only the first one (the `REF_BATCH` call) actually gates PASS/FAIL; the
+   other two are only used for warnings (`baseline_warn`/`bf16_warn`), they do not
+   take part in the verdict. I judge that handling this with one unified function
+   (rather than forking two `_ref_forward` implementations for "used to gate" and
+   "used to warn") is simpler and less likely to create a new gap of "only
+   verified on one of the paths," so the real call was not applied only to the
+   `REF_BATCH` call; all three sites uniformly get this guarantee, at the cost of
+   doubling the forward-pass count at all three sites. This is my tradeoff, not
+   something the finding named as required, listed here for the record.
+2. **The tolerance value for `REF_INST_CE_DRIFT_TOL` (1e-6) has not been
+   specifically verified on a real GPU environment** — both real CPU smoke runs
+   and the new unit tests pass within this tolerance (and the measured drift is
+   far below the threshold; on CPU, two forward passes should in theory be
+   bit-identical), but whether GPU would see noise larger than 1e-6 due to
+   different kernel scheduling has not been measured (this ticket's hard rule
+   forbids launching GPU processes). If this check is triggered on GPU, it
+   indicates a kernel-nondeterminism issue of the kind "the same model forward
+   pass on the same batch of data gives two different results," not that the
+   per-row formula itself is wrong; at that point this tolerance would need to be
+   separately re-checked on GPU for whether it needs loosening, which is outside
+   the scope this round can verify (after fix 2, even if it is genuinely
+   triggered, it will now write out `ALIGN_CHECK.json` and `sys.exit(2)`, rather
+   than letting the process crash with an unhandled exception — a structured
+   artifact will be available when troubleshooting).
 
-## 七、修复轮 2(评审 finding N1)
+## 7. Fix round 2 (review finding N1)
 
-工作树:`/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03-fix2`(已删除),
-分支不变(`ticket/2026-08-28-wave2/T03`),base 仍是工单原始 base
-`2216c44d50838e6df6d3f8f78b31ca955998e520`(检出既有分支,不是新分支),
-上一轮 head `106ab63`,新 head `312038d`。
+Worktree: `/home/y-guo/reproduce/new1-wt/2026-08-28-wave2-T03-fix2` (deleted),
+branch unchanged (`ticket/2026-08-28-wave2/T03`), base is still the ticket's
+original base `2216c44d50838e6df6d3f8f78b31ca955998e520` (checked out from the
+existing branch, not a new branch), previous round's head `106ab63`, new head
+`312038d`.
 
-### N1:`REF_INST_CE_DRIFT_TOL` 校验用裸 `assert` 实现,绕开了本文件自己的
-失败上报通道
+### N1: the `REF_INST_CE_DRIFT_TOL` check is implemented with a bare `assert`,
+bypassing this file's own failure-reporting channel
 
-**finding 原文的核心质疑**:修复 1 新增的 `assert drift <=
-REF_INST_CE_DRIFT_TOL` 是判定「参照基线是否可信」的唯一运行时校验,但它
-没有走 `run_align_check` 里其余所有校验一致采用的模式——算出结果、写进
-`ALIGN_CHECK.json`、打印诊断信息、`sys.exit(2)`——而是用了一个裸
-`assert`。两个后果:(1)`-O`/`PYTHONOPTIMIZE` 下 Python 会把这条 assert
-整体剥掉,F1 修复要堵的口子会静默重新打开;(2)真触发时(报告已自陈
-1e-6 容差没在真实 GPU 上跑过)进程会以裸 `AssertionError` traceback
-崩溃,不会像同一函数里其它失败分支那样先写出 `ALIGN_CHECK.json`。
+**The core objection in the finding text**: fix 1's new
+`assert drift <= REF_INST_CE_DRIFT_TOL` is the sole runtime check that decides
+whether "the reference baseline can be trusted," but it does not follow the
+pattern that every other check in `run_align_check` consistently uses — compute
+the result, write it into `ALIGN_CHECK.json`, print diagnostic information,
+`sys.exit(2)` — it uses a bare `assert` instead. Two consequences: (1) under
+`-O`/`PYTHONOPTIMIZE`, Python strips this assert out entirely, so the gap that
+the F1 fix meant to close would silently reopen; (2) when it genuinely triggers
+(the report already states that the 1e-6 tolerance has not been run on real GPU),
+the process would crash with a bare `AssertionError` traceback, instead of first
+writing out `ALIGN_CHECK.json` the way every other failure branch in the same
+function does.
 
-**根因**:F1 修复时把这道校验实现成了 Python 语言层面的 `assert` 语句,
-而不是这个文件自己的失败上报机制(`if 条件: 写报告 + 打印 + sys.exit(2)`)
-——`assert` 本身就是一种可以被解释器优化开关整体禁用的机制,拿它做生产
-代码里唯一判定基线可信度的运行时校验,和文件里其余所有校验的处理方式不
-一致,是这次新引入的、和既有约定拧着的写法。
+**Root cause**: the F1 fix implemented this check as a Python-language-level
+`assert` statement, rather than this file's own failure-reporting mechanism
+(`if condition: write report + print + sys.exit(2)`) — `assert` is itself a
+mechanism that can be entirely disabled by an interpreter optimization switch;
+using it as the sole runtime check deciding baseline trustworthiness in
+production code is inconsistent with how every other check in the file is
+handled, and is a newly introduced piece of writing that fights the file's
+existing convention.
 
-**怎么改的(不是打补丁,是把错误逻辑——裸 assert——直接换成正确逻辑）**:
+**How it was fixed (not a patch, the wrong logic — the bare assert — is directly
+replaced with correct logic)**:
 
-1. 新增异常类 `RefBaselineDriftError(RuntimeError)`(定义在
-   `REF_INST_CE_DRIFT_TOL` 常量后面),docstring 写清楚为什么不能用裸
-   `assert`。
-2. `_ref_forward` 里把 `assert drift <= REF_INST_CE_DRIFT_TOL, (...)`
-   改成 `if drift > REF_INST_CE_DRIFT_TOL: raise RefBaselineDriftError(...)`
-   ——`if`/`raise` 不受 `-O`/`PYTHONOPTIMIZE` 影响,消息文案原样保留。
-3. `run_align_check` 的 `try/finally` 中间新增一个
-   `except RefBaselineDriftError as e:` 分支,按文件里其余所有失败分支
-   同样的模式处理:写 `report = dict(PASS=False,
-   stage="ref_forward_drift", error=str(e),
-   ref_inst_ce_drift_tol=REF_INST_CE_DRIFT_TOL)`,落盘
-   `ALIGN_CHECK.json`,打印诊断(说明排查方向:两套公式是否等价,或者
-   该环境是否需要放宽容差),再 `sys.exit(2)`。三处调用 `_ref_forward`
-   的地方(`REF_BATCH` 整批、`bs=1` 单行基线、cuda 上的 bf16 粗筛)共用
-   这一个 `except`,不管哪一处触发都走同一条上报路径;`finally` 块(恢复
-   精度设置、删临时文件、`model.train()`)在 `sys.exit(2)` 抛出
-   `SystemExit` 冒泡的过程中依然会执行,不受这次改动影响。
-4. 顺带更新了 `_ref_forward` 与模块级 docstring 里提到「不一致就当场
-   `AssertionError`」的措辞,改成准确描述新流程(抛 `RefBaselineDriftError`
-   → `run_align_check` 捕获 → 结构化上报)。
-5. 新增单测 `TestRunAlignCheckHandlesRefBaselineDriftError`
-   (`tests/test_share_trainer.py`),两个 test method:
-   - `test_ref_forward_raises_real_exception_not_assert`:给
-     `train_causal_callgen.inst_ce` 打 monkeypatch(返回值统一加
-     1.0,远超 1e-6 容差),直接对 `_ref_forward` 断言抛出
-     `tcs.RefBaselineDriftError`——证明这是一个真异常,不是会被 `-O`
-     剥除的 `assert`。
-   - `test_run_align_check_reports_drift_error_instead_of_crashing`:给
-     `tcs._ref_forward` 打 monkeypatch(直接抛
-     `RefBaselineDriftError("测试注入的漂移")`),调用
-     `run_align_check(...)`,断言抛出 `SystemExit` 且 `code == 2`,且
-     `ALIGN_CHECK.json` 落盘、`PASS` 为假、`stage ==
-     "ref_forward_drift"`、`error` 字段含注入的消息——证明失败会走结构化
-     上报通道,不是让异常原样冒出去变成未处理的 traceback。
+1. New exception class `RefBaselineDriftError(RuntimeError)` (defined after the
+   `REF_INST_CE_DRIFT_TOL` constant), with a docstring that spells out why a bare
+   `assert` cannot be used.
+2. In `_ref_forward`, `assert drift <= REF_INST_CE_DRIFT_TOL, (...)` is changed to
+   `if drift > REF_INST_CE_DRIFT_TOL: raise RefBaselineDriftError(...)` —
+   `if`/`raise` is unaffected by `-O`/`PYTHONOPTIMIZE`, and the message text is
+   kept as is.
+3. A new `except RefBaselineDriftError as e:` branch is added in the middle of
+   `run_align_check`'s `try/finally`, handled with the same pattern as every other
+   failure branch in the file: write
+   `report = dict(PASS=False, stage="ref_forward_drift", error=str(e),
+   ref_inst_ce_drift_tol=REF_INST_CE_DRIFT_TOL)`, write `ALIGN_CHECK.json` to
+   disk, print diagnostics (explaining what to check: whether the two formulas
+   are equivalent, or whether this environment needs a looser tolerance), then
+   `sys.exit(2)`. The three call sites of `_ref_forward` (the `REF_BATCH` full
+   batch, the `bs=1` single-row baseline, the cuda-side bf16 coarse screen) share
+   this one `except`; whichever one triggers goes through the same reporting
+   path; the `finally` block (restoring precision settings, deleting the temp
+   file, `model.train()`) still executes while the `SystemExit` raised by
+   `sys.exit(2)` is propagating, unaffected by this change.
+4. Along the way, updated the wording in `_ref_forward` and the module-level
+   docstring that mentioned "a mismatch raises an `AssertionError` on the spot,"
+   changing it to accurately describe the new flow (raise
+   `RefBaselineDriftError` → caught by `run_align_check` → reported in
+   structured form).
+5. New unit test `TestRunAlignCheckHandlesRefBaselineDriftError`
+   (`tests/test_share_trainer.py`), two test methods:
+   - `test_ref_forward_raises_real_exception_not_assert`: monkeypatches
+     `train_causal_callgen.inst_ce` (its return value uniformly gets 1.0 added,
+     far past the 1e-6 tolerance), asserts directly against `_ref_forward` that
+     it raises `tcs.RefBaselineDriftError` — proving this is a real exception,
+     not an `assert` that `-O` would strip.
+   - `test_run_align_check_reports_drift_error_instead_of_crashing`:
+     monkeypatches `tcs._ref_forward` (making it directly raise
+     `RefBaselineDriftError("injected drift for testing")`), calls
+     `run_align_check(...)`, asserts it raises `SystemExit` with `code == 2`, and
+     that `ALIGN_CHECK.json` is written to disk, `PASS` is false,
+     `stage == "ref_forward_drift"`, and the `error` field contains the injected
+     message — proving that a failure goes through the structured reporting
+     channel, rather than letting the exception surface as-is into an unhandled
+     traceback.
 
-只改了这两个文件(`pipeline/train/train_causal_share.py`、
-`tests/test_share_trainer.py`),`git diff HEAD --stat` 确认
-`train_causal_callgen.py`/`train_causal_param.py` 零改动,未触碰工单
-其余任何验收点,也没有借机做 finding 没点名的重构。
+Only these two files were changed (`pipeline/train/train_causal_share.py`,
+`tests/test_share_trainer.py`); `git diff HEAD --stat` confirms
+`train_causal_callgen.py`/`train_causal_param.py` have zero changes, no other
+acceptance point of the ticket was touched, and no refactoring not named by the
+finding was done under cover of this change.
 
-### 怎么验证的
+### How it was verified
 
-**单元测试**(工单验收段同一条命令,重跑):
+**Unit tests** (same command as the ticket's acceptance section, re-run):
 ```
 cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data \
   tests.test_cparam_assembly tests.test_lora_merge
 # Ran 52 tests in 230.616s / OK
 ```
-(50 → 52,多出的 2 个是新增的
+(50 → 52, the 2 extra are the new
 `TestRunAlignCheckHandlesRefBaselineDriftError.{test_ref_forward_raises_real_exception_not_assert,
-test_run_align_check_reports_drift_error_instead_of_crashing}`;单独
-`-v` 跑过一遍 `tests.test_share_trainer`,9 个 test 全部 `ok`,含这两个
-新用例,新用例的打印输出确认了预期行为:
+test_run_align_check_reports_drift_error_instead_of_crashing}`; `tests.test_share_trainer`
+was also run once with `-v` on its own, all 9 tests `ok`, including these two new
+cases; the new cases' printed output confirms the expected behavior:
 ```
 {
  "PASS": false,
  "stage": "ref_forward_drift",
- "error": "测试注入的漂移",
+ "error": "injected drift for testing",
  "ref_inst_ce_drift_tol": 1e-06
 }
-对齐检查 FAIL:参照路径自检失败,拒绝开训。
-  测试注入的漂移
-  排查:_ref_forward 里本地逐 token 公式与 inst_ce 的移位/掩码/聚合逻辑是否等价;...
+Alignment check FAIL: reference-path self-check failed, refusing to start training.
+  injected drift for testing
+  Check: whether the local per-token formula in _ref_forward is equivalent to inst_ce's shift/mask/aggregation logic; ...
 ```
 
-**真实 Qwen3-0.6B-Base CPU smoke 重跑**(工单验收段原始命令,`--force`
-覆盖旧产物),核对数字与修复前(上两轮报告)完全一致:
+**Re-ran the real Qwen3-0.6B-Base CPU smoke test** (the ticket acceptance
+section's original command, `--force` overwriting the old output), and checked the
+numbers exactly match the pre-fix state (the previous two rounds' reports):
 
-cgen:`PASS: true`,`max_abs_diff: 2.384185791015625e-06`,
-`max_tok_diff: 2.193450927734375e-05`,`baseline_max_abs_diff:
-2.1457672119140625e-06`;`loss` 3.3317 → `val_ce` 1.2026。
-cparam:`PASS: true`,`align_maxdiff: 3.5762786865234375e-06`
-(`train_log.jsonl` 的 `start` 事件字段,与 `ALIGN_CHECK.json` 的
-`max_abs_diff` 同一个数);`loss` 5.6631 → `val_ce` 1.9795。
-两次运行里新的 `except RefBaselineDriftError` 分支均未触发(没有走这条
-路径,`_ref_forward` 内部的 `if`/`raise` 没有跳),`ALIGN_CHECK.json` 走
-的是正常 `PASS=true` 分支,产物覆盖回
-`pipeline/runs/smoke/share_cpu_{cgen,cparam}_smoke/`。
+cgen: `PASS: true`, `max_abs_diff: 2.384185791015625e-06`,
+`max_tok_diff: 2.193450927734375e-05`, `baseline_max_abs_diff:
+2.1457672119140625e-06`; `loss` 3.3317 → `val_ce` 1.2026.
+cparam: `PASS: true`, `align_maxdiff: 3.5762786865234375e-06`
+(the `start` event field in `train_log.jsonl`, the same number as
+`ALIGN_CHECK.json`'s `max_abs_diff`); `loss` 5.6631 → `val_ce` 1.9795.
+Neither run triggered the new `except RefBaselineDriftError` branch (this path
+was not taken, the `if`/`raise` inside `_ref_forward` did not fire),
+`ALIGN_CHECK.json` went through the normal `PASS=true` branch, output overwrote
+`pipeline/runs/smoke/share_cpu_{cgen,cparam}_smoke/`.
 
-**grep 检查**(工单验收段原始命令,重跑):
+**grep checks** (the ticket acceptance section's original commands, re-run):
 ```
 grep -n "heartbeat.emit" pipeline/train/train_causal_share.py
-# 664/740/784,三处不变
+# 664/740/784, all three unchanged
 grep -n "sdpa_kernel" pipeline/train/train_causal_share.py
-# 命中不变
+# hits unchanged
 grep -n "^\s*assert " pipeline/train/train_causal_share.py
-# 空输出——全文件不再有裸 assert
+# empty output — the whole file no longer has a bare assert
 ```
 
-**旧脚本零改动核验**:
+**Zero-change check on the old scripts**:
 ```
 git diff HEAD -- pipeline/train/train_causal_callgen.py pipeline/train/train_causal_param.py
-# 空输出
+# empty output
 ```
 
-**`run.py` 注册表(未受此次改动影响,复核一遍确认没有连带破坏)**:
+**`run.py` registry (unaffected by this change, re-checked once to confirm no
+collateral damage)**:
 ```
-python3 run.py selfcheck        # 76 任务缺失 14 项,清一色第三方 env
-                                  # 符号链接缺失(worktree 通病,与
-                                  # train-cgen/train-cparam 无关,同前两轮)
-python3 -c "import ops.launch_probe"   # 无输出,退出码 0
+python3 run.py selfcheck        # 76 tasks, 14 missing, all of them third-party
+                                  # env symlinks missing (a standard worktree
+                                  # symptom, unrelated to train-cgen/train-cparam,
+                                  # same as the previous two rounds)
+python3 -c "import ops.launch_probe"   # no output, exit code 0
 python3 run.py show train-cgen --allow-dirty
-#   命令: .../cprobe-env/bin/python .../train_causal_share.py --mode cgen '<参数...>'
+#   command: .../cprobe-env/bin/python .../train_causal_share.py --mode cgen '<args...>'
 ```
 
 `git diff HEAD --stat`:
@@ -577,31 +698,40 @@ python3 run.py show train-cgen --allow-dirty
  2 files changed, 121 insertions(+), 7 deletions(-)
 ```
 
-### commit 清单(本轮)
+### Commit list (this round)
 
-- `312038d` T03: 修复2 N1 对齐检查参照基线自检改真异常+结构化上报,不再用裸 assert
+- `312038d` T03: fix 2, N1, the alignment check's reference-baseline self-check now raises a real exception with structured reporting, no longer a bare assert
 
-### 自查发现与存疑(本轮新增)
+### Self-check findings and open questions (new in this round)
 
-1. **除了 `try/finally` 之间新增的 `except RefBaselineDriftError`,没有
-   动 `run_align_check` 其余任何逻辑**——正常通过/正常 FAIL(逐行差超
-   `--align-tol` 或逐 token 差超 `TOK_DIFF_TOL`)两条既有路径的代码与行为
-   逐字未变,只是新增了第三条失败路径(参照基线自检失败)接进同一套
-   report/打印/sys.exit(2) 骨架,没有借这次改动顺带重构其余分支,符合
-   finding 只要求修这一处的范围限定。
-2. **`except RefBaselineDriftError` 分支写的 report dict 字段与正常路径
-   的 report 字段不完全相同**(少了 `n_events`/`n_rows`/`max_abs_diff` 等
-   字段,因为这些值在参照基线自检失败时根本没算出来;多了
-   `stage`/`ref_inst_ce_drift_tol` 两个字段区分这是哪一类失败)——两条
-   路径的 `ALIGN_CHECK.json` schema 因此不完全一致(共同点只有 `PASS` 一
-   定存在)。finding 只要求「走同一套写报告+打印+退出的通道」,没有要求
-   两类失败的字段 schema 完全统一;我判断如果消费 `ALIGN_CHECK.json` 的
-   下游代码(目前没有,人工读)以后要机器解析这个文件,应该先判断
-   `PASS` 再按需读其余字段,不应假设字段集合固定,这是我的取舍,列出来
-   备查,不属于本次要解决的范围。
-3. **`REF_INST_CE_DRIFT_TOL` 在真实 GPU 上是否需要放宽依然没有验证**
-   (与上一轮自查第 2 条相同,本工单铁律禁止发射 GPU 进程,没有变化)——
-   区别只在于:上一轮如果 GPU 上真触发这条检查,进程会带着未处理的
-   `AssertionError` 崩溃;这一轮触发后会写出结构化 `ALIGN_CHECK.json` 再
-   `sys.exit(2)`,排查时能看到 `stage: "ref_forward_drift"` 和具体的
-   drift 数值,不再是裸 traceback。
+1. **Other than the new `except RefBaselineDriftError` added between the
+   `try/finally`, no other logic in `run_align_check` was touched** — the code
+   and behavior of the two existing paths, normal PASS and normal FAIL (per-row
+   difference over `--align-tol` or per-token difference over `TOK_DIFF_TOL`),
+   are unchanged word for word; only a third failure path (reference-baseline
+   self-check failure) was added and wired into the same report/print/
+   sys.exit(2) skeleton, without refactoring any other branch under cover of this
+   change, matching the finding's scope limit of fixing only this one spot.
+2. **The report dict fields written by the `except RefBaselineDriftError`
+   branch are not fully the same as the normal path's report fields** (missing
+   fields like `n_events`/`n_rows`/`max_abs_diff`, because these values are
+   simply never computed when the reference-baseline self-check fails; it adds
+   two extra fields, `stage`/`ref_inst_ce_drift_tol`, to distinguish which kind of
+   failure this is) — so the two paths' `ALIGN_CHECK.json` schemas are not fully
+   consistent (the only thing they share is that `PASS` is always present). The
+   finding only requires "go through the same write-report + print + exit
+   channel," it does not require the two failure types' field schemas to be
+   fully unified; I judge that if downstream code consuming `ALIGN_CHECK.json`
+   (currently there is none, it is read by a person) later needs to parse this
+   file mechanically, it should check `PASS` first and then read the rest of the
+   fields as needed, rather than assuming a fixed field set; this is my
+   tradeoff, listed here for the record, not something this round needs to
+   resolve.
+3. **Whether `REF_INST_CE_DRIFT_TOL` needs loosening on real GPU is still
+   unverified** (same as self-check item 2 in the previous round, this ticket's
+   hard rule forbids launching GPU processes, unchanged) — the only difference
+   is: in the previous round, if this check were genuinely triggered on GPU, the
+   process would crash with an unhandled `AssertionError`; this round, once
+   triggered, it will write out a structured `ALIGN_CHECK.json` and then
+   `sys.exit(2)`; when troubleshooting, one can see `stage: "ref_forward_drift"`
+   and the concrete drift value, no longer a bare traceback.

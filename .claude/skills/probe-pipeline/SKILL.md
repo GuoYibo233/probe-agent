@@ -1,307 +1,319 @@
 ---
 name: probe-pipeline
-description: new1 探针流水线的执行入口——从轨迹采集到矩阵报告的全链一条龙：定批次 → 采集(GPU) → 写码/改码(CPU，与采集并行) → 双验收线 → 造数据集 → 各格 smoke → 批量训练 → 依赖顺序评测 → 矩阵汇总 → 记账收官 → 回写本 skill。也是**扩展这条流水线的唯一入口**：加新模型 / 加新环境 / 加新训练方法(新格) / 换新 split 方法，都从这里进，并在收尾时按 Phase E 把新方法写回 skill。Invoke whenever Dungeon♂Master says "跑流水线"、"跑一批探针"、"新数据集跑一遍"、"出矩阵"、"换个环境跑"、"加个新模型/新格"、"换个切分方式"、"加一种训练方法"、"run the pipeline"、或任何要把 collect/annotate/train/eval 串起来跑或扩展的活。单个 GPU 任务只用 gpu-run，这个 skill 管的是整条链。
+description: >-
+  The execution entry point for new1's probe pipeline: an end-to-end run from trajectory
+  collection to the matrix report. Pin the batch, then collect (GPU), write/edit code
+  (CPU, in parallel with collect), two acceptance lines, build the dataset, smoke each
+  cell, batch train, eval in dependency order, summarize the matrix, record and wrap up,
+  write back to this skill. It is also **the only entry point for extending this
+  pipeline**: adding a new model, a new environment, a new training method (a new cell),
+  or a new split method all go through here, and the new method must be written back into
+  the skill at wrap-up per Phase E. Invoke whenever Dungeon♂Master says "run the
+  pipeline", or any task that needs collect/annotate/train/eval chained together or
+  extended. A single GPU task uses gpu-run alone; this skill manages the whole chain.
+  Chinese triggers: "跑流水线" / "跑一批探针" / "新数据集跑一遍" / "出矩阵" / "换个环境跑" / "加个新模型/新格" / "换个切分方式"
+  / "加一种训练方法".
 version: 1.0.0
 ---
 
-# probe-pipeline — 探针流水线全链执行
+# probe-pipeline: full-chain execution of the probe pipeline
 
-一条五段流水线（collect → annotate → train → eval → inject），
-套在四阶段执行壳里（A 采集 / B 写码 / C 训练评测 / D 收官）。
-每段之间卡一道门禁，**跳门禁 = 违规**。
+A five-stage pipeline (collect → annotate → train → eval → inject),
+wrapped inside a four-phase execution shell (A collect / B write code / C train and eval / D wrap-up).
+A gate sits between every stage. **Skipping a gate is a violation.**
 
-配套文档（照抄命令去第一份，判断该不该改去第二份，卡住了去第三份）：
-- 命令表：`references/stage-commands.md`
-- 口径清单：`references/invariants.md`（改这里任何一条 → 新老数字不可比）
-- 门禁与应急：`references/gates.md`（门禁编号 G1–G24，下文按编号引用）
-- 扩展清单：`references/extending.md`（**加新模型 / 新环境 / 新训练方法 / 新 split 方法
-  从这份进**；§5 静默失败点总表；**§6 回写本 skill 的对照表**）
+Companion documents (go to the first one to copy commands verbatim, the second one to judge whether something should change, the third one when you're stuck):
+- Command table: `references/stage-commands.md`
+- Invariants checklist: `references/invariants.md` (change any entry here → new and old numbers are no longer comparable)
+- Gates and contingencies: `references/gates.md` (gate numbers G1-G24, referenced by number below)
+- Extension checklist: `references/extending.md` (**enter here to add a new model / new environment / new training method / new split method**;
+  §5 the silent-failure-point table; **§6 the checklist for writing back to this skill**)
 
-工程规则的上位法仍是 `CLAUDE.md`；GPU 发射的上位法仍是 `.claude/skills/gpu-run/SKILL.md`。
-**本 skill 不自己发射 GPU 任务**——凡是要占卡的步骤一律转 gpu-run。
+The engineering rules' higher authority is still `CLAUDE.md`; the higher authority for GPU launches is still `.claude/skills/gpu-run/SKILL.md`.
+**This skill does not launch GPU tasks itself**: any step that occupies a card is always handed off to gpu-run.
 
-**统一入口（2026-08-02 起）**：仓库根 `run.py` 是全链任务的运行注册表
-（解释器分派 / 参数透传 / GPU 任务只拼命令交 gpu-run / 多步配方），
-任务清单现查 `python3 run.py list`（别在文档里另抄一份会过期的名单），
-`show <task>` / `selfcheck` 同样从它进。本 skill 的命令表仍是
-参数细节的权威；解释器用哪个以 run.py 注册表为准。**任何扩展在改代码的同一个
-commit 里必须把新脚本/新格挂进 run.py 注册表**（训练格表唯一真源是它的 `CELLS`，
-`ops/launch_probe.py` 从它 import；**评测格表唯一真源是它的 `EVAL_CELLS`**，
-`ops/launch_eval.py` 只 import 不另抄），`selfcheck` 过了才算齐——这条与 Phase E
-回写并列，谁都不能替谁：skill 记流程与坑，run.py 记怎么跑。
-⚠️ `run.py show <task>` 对**发射类任务**也过脏树门禁（`git status --porcelain`
-非空就拒绝出命令，`--allow-dirty` 放行）——出命令这条路不是绕门的后门。
+**Unified entry point (since 2026-08-02)**: the repo root `run.py` is the running registry for the whole chain
+(interpreter dispatch / argument passthrough / GPU tasks only assemble the command and hand it to gpu-run / multi-step recipes).
+Check the task list with `python3 run.py list` (do not keep a separate copy in the docs that will go stale);
+`show <task>` / `selfcheck` also go through it. This skill's command table is still
+the authority for parameter details; which interpreter is used is decided by the run.py registry. **Any extension must, in the same
+commit that changes the code, hook the new script/new cell into the run.py registry**
+(the sole source of truth for the training-cell table is its `CELLS`,
+`ops/launch_probe.py` imports from it; **the sole source of truth for the eval-cell table is its `EVAL_CELLS`**,
+`ops/launch_eval.py` only imports it and does not keep a second copy). Only when `selfcheck` passes does it count as complete.
+This rule stands alongside the Phase E write-back, neither one can substitute for the other: the skill records the process and the pitfalls, run.py records how to run it.
+Warning: `run.py show <task>` also enforces the dirty-tree gate for **launch-type tasks** (a non-empty
+`git status --porcelain` refuses to emit the command; `--allow-dirty` lets it through). Emitting the command is not a backdoor around the gate.
 
 ---
 
-## Phase 0 — 定批次（先把这五个变量钉死，再动手）
+## Phase 0: Pin the batch (nail down these five variables before touching anything)
 
-| 变量 | 例（本轮 c1） | 定它的依据 |
+| Variable | Example (this round, c1) | Basis for setting it |
 |---|---|---|
-| `<BATCH>` | `c1` | run_id 前缀，一批一个，全链四处一致 |
-| `<ENV>` | `appworld` | appworld / bfcl / tales，决定事件抽取正则 |
-| `<MODELS>` | `q35 q36 gptoss` | 被探测的 agent 模型，**永不合并同族**（q35≠q36） |
-| `<CELLS>` | `ctool cgen cparam` | 因果线三格：判工具名 / 写整条调用 / 给定工具名只填参数。m 线(mtool/mext)2026-08-21 起停跑，两格仍留在 CELLS 可单发。底座三档 `--base qwen/qwen17/qwen4`，训法两种（全参 / `--lora`，np821 起），**一个批次只跑一档底座 + 一种训法**，两者写进批次前缀（extending §3.4、stage-commands §3.2） |
-| `<DATA_ROOT>` | `pipeline/data/aw_official_v1/` | 数据集版本目录，**换口径就换版本号** |
+| `<BATCH>` | `c1` | run_id prefix, one per batch, consistent across all four places in the chain |
+| `<ENV>` | `appworld` | appworld / bfcl / tales, decides the event-extraction regex |
+| `<MODELS>` | `q35 q36 gptoss` | the agent models being probed, **never merge same-family models** (q35 != q36) |
+| `<CELLS>` | `ctool cgen cparam` | the three causal-line cells: judge the tool name / write the whole call / given the tool name, fill in only the parameters. The m-line (mtool/mext) has been retired since 2026-08-21, both cells remain in CELLS and can still be launched individually. Three base tiers `--base qwen/qwen17/qwen4`, two training methods (full-parameter / `--lora`, since np821), **one batch runs only one base tier plus one training method**, both are written into the batch prefix (extending §3.4, stage-commands §3.2) |
+| `<DATA_ROOT>` | `pipeline/data/aw_official_v1/` | the dataset version directory, **change the convention and you change the version number** |
 
-这五个变量里有四个可以扩展，各自的改动清单在 `references/extending.md`：
-新模型 §1 · 新环境 §2 · **新格（新训练方法）§3** · **新 split 方法 §4**。
-扩展了任何一项，收尾必须走 **Phase E 回写本 skill**。
+Four of these five variables can be extended; each one's change checklist is in `references/extending.md`:
+new model §1, new environment §2, **new cell (new training method) §3**, **new split method §4**.
+Extending any of these means the wrap-up must go through **Phase E, writing back to this skill**.
 
-钉完立刻做三件事：
-1. 过一遍 `DATA.md §7` 检查清单（八条，每条都对应一个踩过的坑）。
-2. 写一份批次计划到 `plans/<日期>-<batch>-plan.md`，说清这批要回答什么问题。
-3. 确认 `<DATA_ROOT>` 是**新目录**——旧数据集一个字节都不动（G-铁律）。
+As soon as they're pinned, do three things immediately:
+1. Go through the `DATA.md §7` checklist (eight items, each one corresponds to a pitfall already hit).
+2. Write a batch plan to `plans/<date>-<batch>-plan.md`, stating clearly what question this batch is meant to answer.
+3. Confirm `<DATA_ROOT>` is a **new directory**: not one byte of the old dataset gets touched (G hard rule).
 
-现成范例照着改就行，别从零写：
-标注配置 `pipeline/configs/aw_q35.json`、采集清单 `pipeline/collect/manifest_w0.json`、
-排卡表 `ops/c1_placement.json`。
+Ready-made examples exist, just adapt them, don't write from scratch:
+annotate config `pipeline/configs/aw_q35.json`, collect manifest `pipeline/collect/manifest_w0.json`,
+placement table `ops/c1_placement.json`.
 
-> 判断要不要走全链：只换模型/换数据集 → 全链；只补几个格 → 直接从 Phase C 进。
-
----
-
-## Phase A — 采集（占大卡，墙钟 3–5h）
-
-**这一段全部转 gpu-run skill**，本 skill 只负责给它正确的输入和验收标准。
-
-1. 生成发射脚本：`python3 run.py gen-launch --config <manifest.json>`
-   （纯 CPU，只生成不执行；产出 `launch_servers.py` / `launch_clients.sh` / `MANIFEST.md`）
-2. **派 gpu-runner** 起服务 + 发客户端。服务侧天花板是 tokyo108 六张大卡——
-   27B 权重 54G、gpt-oss 63G，A6000 的 48G 装不下，一律单卡一实例。
-3. 门禁 **G3 服务健康**（六个全绿才放量）→ **G4 每模型 1 题 smoke** → 放量。
-4. 长杆模型（题最多那个）客户端并发开高一档，拉平三路墙钟。
-5. 收尾门禁 **G6 完整性**（文件数对上 **题数 × 每题轨迹数**、每文件末行 `type:"final"`）
-   → **G7 显存归零** → `python3 run.py gpu-jobs finish` → `python3 run.py record finish` → commit。
-
-⚠️ **一题多轨迹**（np821 起）：manifest 给 `traj_per_task` + `seed_family`（要么都给
-要么都不给，长度必须相等，只认 env=appworld），采集器按序给每条轨迹派一个种子并逐条
-落进轨迹 meta，文件名带采样序号 `appworld_<tid>_r0.jsonl … _r{K-1}.jsonl`
-（`--traj-per-task 1` 时无后缀 = 旧名、生成物与旧版逐字节一致）。K 条同题轨迹的 `unit`
-相同，所以**天然同堆**、不会跨 split 泄漏；样本量按 K 倍涨。下游连带项：标注侧配置写
-`trajs_per_unit`（门禁 B 按它判"一个 unit 恰好 K 条且序号齐全"）；**inject 线还没跟上**
-——`replay_inject.py` / `score_live.py` 仍按 `appworld_<unit>.jsonl` 反查，吃多样本批
-之前要先改（stage-commands §7）。
-
-⚠️ **G5 outdir 命名**：必须是标准名 `<env>_<model_key>`（如 `appworld_gptoss`），
-名字不标准会被下游事件抽取**静默跳过**——这个坑不报错，只让样本数变少。
+> Deciding whether to go through the whole chain: only changing model/dataset → whole chain; only filling in a few cells → go straight in at Phase C.
 
 ---
 
-## Phase B — 写码 / 改码（纯 CPU，**与 Phase A 并行**）
+## Phase A: Collect (occupies big cards, wall-clock 3-5h)
 
-这是全链最大的并行红利：采集占满 GPU 的那几小时，把代码全写完。
+**This whole stage is handed off to the gpu-run skill**; this skill is only responsible for giving it the correct input and acceptance criteria.
 
-- 写码顺序：annotate → eval → train 各格 → collect 生成器 → inject 校验器。
-- **一把写完再跑验收，不逐段试跑正式数据。**
-- 派 subagent 并行施工（本轮三个并发，eval 因 import 依赖稍后发）。
-  任务书标准结构见下文「派活的写法」。
+1. Generate the launch scripts: `python3 run.py gen-launch --config <manifest.json>`
+   (pure CPU, only generates, does not execute; produces `launch_servers.py` / `launch_clients.sh` / `MANIFEST.md`)
+2. **Dispatch gpu-runner** to bring up the services and send the clients. The ceiling on the service side is tokyo108's six big cards:
+   27B weights are 54G, gpt-oss is 63G, and A6000's 48G can't hold them, so it's always one instance per card.
+3. Gate **G3 service health** (all six green before ramping up volume) → **G4 one-task smoke per model** → ramp up volume.
+4. For the model with the longest pole (the one with the most tasks), open the client concurrency one notch higher to even out the wall-clock across all three.
+5. Wrap-up gate **G6 completeness** (file count matches **task count × trajectories per task**, every file's last line is `type:"final"`)
+   → **G7 zero VRAM** → `python3 run.py gpu-jobs finish` → `python3 run.py record finish` → commit.
 
-段末两道复现验收线，**不过不许进 Phase C**：
+Warning: **multiple trajectories per task** (since np821): the manifest gives `traj_per_task` + `seed_family` (either both are given
+or neither is, the lengths must be equal, only recognized when env=appworld). The collector assigns each trajectory a seed in order and
+writes it into the trajectory meta one by one; the filename carries a sampling index `appworld_<tid>_r0.jsonl … _r{K-1}.jsonl`
+(with `--traj-per-task 1` there is no suffix = the old name, and the output is byte-for-byte identical to the old version). The K trajectories of the same task share the same `unit`,
+so they **naturally fall in the same split** and won't leak across splits; the sample count grows by a factor of K. Downstream side effects: the annotate-side config writes
+`trajs_per_unit` (gate B uses it to judge "one unit has exactly K trajectories and the indices are all present"). **The inject line hasn't caught up yet**:
+`replay_inject.py` / `score_live.py` still look things up by `appworld_<unit>.jsonl`; this needs to be changed first before ingesting a multi-sample batch (stage-commands §7).
 
-| 门 | 验什么 | 判据 |
+Warning: **G5 outdir naming**: it must be the standard name `<env>_<model_key>` (e.g. `appworld_gptoss`);
+a non-standard name gets **silently skipped** by the downstream event extraction. This pitfall doesn't raise an error, it just makes the sample count smaller.
+
+---
+
+## Phase B: Write code / edit code (pure CPU, **runs in parallel with Phase A**)
+
+This is the biggest parallelism dividend in the whole chain: get all the code written during the hours collection has the GPUs fully occupied.
+
+- Code-writing order: annotate → eval → each train cell → collect generator → inject checker.
+- **Write it all in one pass and then run the acceptance checks, don't test-run against real data stage by stage.**
+- Dispatch subagents to build in parallel (three concurrent this round; eval is dispatched later because of its import dependency).
+  The standard structure for a task brief is under "How to dispatch work" below.
+
+At the end of this stage there are two reproduction acceptance lines, **failing to pass either means Phase C is off-limits**:
+
+| Gate | What it checks | Criterion |
 |---|---|---|
-| **G8 ACCEPT_V3DIFF** | 新 annotate 代码喂旧轨迹 | 与旧数据集九字段逐条比，不一致计数**全 0**（两个环境各跑一遍） |
-| **G12 ACCEPT_EVAL** | 新 eval 代码喂旧产物 | 温度 / chosen_theta / test_frozen 三块完全一致，报告写临时目录不碰旧文件 |
+| **G8 ACCEPT_V3DIFF** | feed the new annotate code the old trajectories | compare all nine fields entry-by-entry against the old dataset, the mismatch count is **all zero** (run once for each environment) |
+| **G12 ACCEPT_EVAL** | feed the new eval code the old artifacts | the three blocks temperature / chosen_theta / test_frozen are exactly identical, the report is written to a temp directory and doesn't touch the old files |
 
-这两道门是整条流水线可信度的地基：**新代码喂旧数据必须复现旧数字**，
-否则后面所有新数字都无法与历史对比。详见 `references/gates.md §2`。
+These two gates are the bedrock of the whole pipeline's credibility: **new code fed old data must reproduce the old numbers**,
+otherwise none of the new numbers that come after can be compared against history. See `references/gates.md §2` for details.
 
 ---
 
-## Phase C — 造数据集 → smoke → 训练 → 评测
+## Phase C: Build the dataset → smoke → train → eval
 
-### C1 造数据集（CPU）
-每个模型跑一次 `build.py` + `param_label.py`（命令见 stage-commands §2）。
-门禁 **G9 题单行数**（注意题单文件无末尾换行，`wc -l` 各少 1）、
-**G10 三模型同题**（train 堆 unit 集合完全相同，否则不可横比）、**G11 label_call 抽查**。
+### C1 Build the dataset (CPU)
+Run `build.py` + `param_label.py` once per model (commands in stage-commands §2).
+Gates: **G9 task-list line count** (note the task-list files have no trailing newline, so `wc -l` will each read 1 short),
+**G10 same tasks across three models** (the train split's unit set must be exactly identical across models, otherwise they can't be compared side by side), **G11 label_call spot check**.
 
-⚠️ **三份题单必须两两无交集，这一条要人工验**：`build.py` 对"unit 不在任何题单里"
-零容忍（退 1），但对"unit 同时在两份题单里"**一声不吭**——按 train→val→test 顺序
-后写覆盖，test 赢。交叠会静默让 train/test 边界失守，而报告照出、退出码 0。
-换环境时先跑一句 `comm` 对拍三份题单。
+Warning: **the three task lists must be pairwise disjoint, this must be verified by hand**: `build.py` has zero tolerance for "a unit is not in any task list"
+(exits with 1), but stays **silent** about "a unit is in two task lists at once": it processes them in train→val→test order and
+the later write overwrites the earlier one, so test wins. Overlap silently breaks the train/test boundary, while the report still comes out and the exit code is still 0.
+When changing environments, run a `comm` comparison across the three task lists first.
 
-### C2 各格 smoke（占卡，转 gpu-run）
-门禁 **G14**：`CELL_ORDER` 各格跑一次 `--smoke`（cgen/cparam **现役训练器**
-`train_causal_share.py` 的 `--smoke` 按事件全文 token 数升序取前 N 个：40 训练
-事件 / 16 评估**事件**，不依赖 `SEED`，不是随机抽；旧逐行脚本经
-`train-cgen-rows`/`train-cparam-rows` 发射，仍按各脚本自己的 `SEED` 常量随机抽
-500 训练 / 200 评估**实例**（因果三格 np821 起是 42，两个 mbert 格仍 20260729）；
-ctool 同法随机抽 200 / 80 **事件**；各格都是 1 epoch，
-没有步数上限。停跑的 mtool/mext 限额也是 500/200 实例——mext 是**参数实例级**
-不是样本级——留档备查），判据是 `train_log` 有 start 与 done、ckpt 能存能读
-（⚠️ "loss 在降"这一项 smoke 规模下判不了：每 50 个 gstep 才写一条 step 记录，
-smoke 一共才十几个 gstep，见 gates §1 的 G14 行）。
-ctool 另有 **G13 对齐检查**——先 `--align-only` 单跑，FAIL 即 `exit 2`
-（cgen/cparam 现役训练器 `train_causal_share.py` 另有自己的一套对齐检查（随机抽
-6 个事件，逐行 loss 对旧逐行训练器，fp32 逐行 ≤ 2e-5、逐 token ≤ 3e-4），有
-`--align-only`，落 `<out>/ALIGN_CHECK.json`，FAIL 同样 `sys.exit(2)`）。
-**smoke 不过不许放量**，一次都不许。
+### C2 Smoke each cell (occupies a card, hands off to gpu-run)
+Gate **G14**: each cell in `CELL_ORDER` runs `--smoke` once (cgen/cparam's **current training script**
+`train_causal_share.py`'s `--smoke` takes the top N events sorted ascending by the full event's token count: 40 training
+events / 16 eval **events**, not dependent on `SEED`, not a random draw; the old row-by-row scripts, launched via
+`train-cgen-rows`/`train-cparam-rows`, still randomly draw 500 training / 200 eval **instances** according to each script's own `SEED` constant
+(the three causal cells use 42 since np821, the two mbert cells still use 20260729);
+ctool draws 200 / 80 **events** randomly the same way; every cell is 1 epoch,
+with no step ceiling. The retired mtool/mext quota is also 500/200 instances, for mext this is at the **parameter-instance level**
+not the sample level, kept on file for reference), the criterion is that `train_log` has both start and done, and the checkpoint can be saved and read
+(Warning: the item "is loss decreasing" cannot be judged at smoke scale: a step record is only written every 50 gsteps,
+and smoke has only a dozen or so gsteps total, see the G14 row in gates §1).
+ctool additionally has **G13 alignment check**: run `--align-only` alone first, FAIL means `exit 2`
+(cgen/cparam's current training script `train_causal_share.py` has its own separate set of alignment checks, randomly draw
+6 events, compare per-row loss against the old row-by-row trainer, fp32 per-row ≤ 2e-5, per-token ≤ 3e-4, it also has
+`--align-only`, writes `<out>/ALIGN_CHECK.json`, FAIL likewise `sys.exit(2)`).
+**If smoke fails, ramping up volume is not allowed**, not even once.
 
-全链各段的小规模入口（采集 `--n`/训练 `--smoke`/评测 `--limit`/注入 `--limit`/
-活跑 `--n`）汇总在 `MAP.md` §0.5 冒烟总表（2026-08-21 盘点）——改完代码先挑
-对应行跑一遍再放量；评测侧 `eval-tool-* --limit` 只许对名字带 smoke 的
-`--run` 目录用（截断的 logits/REPLAY_REPORT 会写进 `--run`，真 run 不许沾）。
+The small-scale entry points for every stage in the whole chain (collect's `--n`/train's `--smoke`/eval's `--limit`/inject's `--limit`/
+live run's `--n`) are summarized in `MAP.md` §0.5's smoke summary table (surveyed 2026-08-21): after changing code, pick
+the corresponding row and run it once before ramping up volume; on the eval side, `eval-tool-* --limit` may only be used against
+`--run` directories whose name contains smoke (the truncated logits/REPLAY_REPORT get written into `--run`, a real run must never be touched by it).
 
-⚠️ **smoke 阶段树常是脏的**（代码刚改完还没定稿）：出命令用
-`python3 run.py show <task> --allow-dirty` 或 `python3 run.py launch-probe smoke … --allow-dirty`。
-smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这条追溯约束。
-重跑同一个 smoke 还要带 `--force`（smoke 目录名是从批次/模型/格确定性推出来的，
-第二次会被"同 out 已有 `train_log.jsonl`"守卫拦住）。
-**正式发射（C3）之前必须 commit**，那道门不许用 `--allow-dirty` 糊过去。
+Warning: **the tree during the smoke phase is often dirty** (the code was just changed and hasn't been finalized): to emit the command use
+`python3 run.py show <task> --allow-dirty` or `python3 run.py launch-probe smoke … --allow-dirty`.
+Smoke artifacts aren't kept on file, don't go into `runs.jsonl`, and aren't bound by the "HEAD must be able to trace back to the code" constraint.
+Rerunning the same smoke also needs `--force` (the smoke directory name is deterministically derived from the batch/model/cell,
+the second run gets blocked by the "an out with an existing `train_log.jsonl`" guard).
+**Before the formal launch (C3) you must commit**, that gate must not be papered over with `--allow-dirty`.
 
-⚠️ **smoke 过了不等于这张卡装得下全量**（np821 实测）：smoke 只抽 500 条实例，
-踩不到全量首批的长序列组合，而显存峰值由**批内最长序列**决定。np821b17 的 cgen
-smoke 在 48G 卡上峰值 44.1 GiB 跑完，全量发上去六分钟后第一个 backward 就 OOM
-（gates §3.9）。判法：**smoke 峰值离卡容量不足 ~10% 就当装不下，直接上大卡**。
-四档形态（底座 × 训法 × 开不开 `--grad-ckpt`）的实测峰值表在 stage-commands §3.1
-——挑卡先查它，别按模型大小拍脑袋，装不装得下的分水岭是 gc 不是模型多大。
+Warning: **passing smoke doesn't mean this card can hold the full volume** (measured on np821): smoke only samples 500 instances,
+and doesn't hit the kind of long-sequence combination that shows up in the full volume's first batch, while the VRAM peak is set by the
+**longest sequence within the batch**. np821b17's cgen smoke finished on a 48G card at a peak of 44.1 GiB, but once the full volume was launched
+it OOM'd on the very first backward pass six minutes in (gates §3.9). Rule of thumb: **if the smoke peak is within ~10% of the card's capacity, treat it as not fitting, and go straight to a bigger card**.
+The measured peak table for the four configurations (base tier × training method × whether `--grad-ckpt` is on) is in stage-commands §3.1,
+check it first when picking a card, don't guess from model size; the watershed for whether it fits is gc, not how big the model is.
 
-### C3 批量训练（占卡，转 gpu-run）
-`<MODELS>` × `<CELLS>` 全独立，**一把全上并行**，墙钟 ≈ 单次时长。
-发射前 **G1 工作树干净**（先 commit；run.py 对发射类任务是**硬门禁**，
-连 `show` 出命令都拒绝，`--allow-dirty` 才放行）→ **G2 实探空卡** → 发射 →
-**G16 双登记**——launch 自动写三处；手搓/register 补录路径仍在，漏了照旧算违规
-（`python3 run.py launch <task> ...` 一条命令做完台账 + `record.py start` + RUNMETA
-三处登记；手搓发射要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...`）。
+### C3 Batch training (occupies cards, hands off to gpu-run)
+`<MODELS>` × `<CELLS>` are all independent, **launch them all in parallel at once**, wall-clock is roughly the duration of a single run.
+Before launching: **G1 clean working tree** (commit first; run.py treats this as a **hard gate** for launch-type tasks,
+it refuses to emit the command even for `show`, only `--allow-dirty` lets it through) → **G2 actually probe for a free card** → launch →
+**G16 dual registration**, launch writes all three places automatically; the hand-rolled/register backfill path still exists, missing it still counts as a violation
+(one command `python3 run.py launch <task> ...` does all three registrations, the ledger + `record.py start` + RUNMETA;
+a hand-rolled launch has to backfill `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` itself).
 
-两条与"同一个 `--out` 二次训练"有关的新行为（2026-08-02 起）：各训练格都有 `--force`，
-**不带它时 `--out` 下已有 `train_log.jsonl` 就直接拒绝开训**（防两次产物混进同一个
-`best/`）；`run.py launch-probe` / `launch-eval` 发射成功后自动往产物目录写
-`RUNMETA.json`（`register_all` 第一步写，回执里有 `RUNMETA: <路径>` 一行；
-2026-08-26 之前回执里那句 `WARN 没给 --outdir，RUNMETA 没写` 是误报，按它手补
-会留重复条目，已修），手搓发射才要自己补
-`python3 run.py runmeta <outdir> --cmd '<命令>'`。
+Two new behaviors (since 2026-08-02) relating to "training a second time into the same `--out`": every training cell now has `--force`,
+**without it, if `--out` already has a `train_log.jsonl`, training is refused outright** (to prevent two runs' artifacts from getting mixed into the same
+`best/`); once `run.py launch-probe` / `launch-eval` launches successfully, it automatically writes
+`RUNMETA.json` into the artifact directory (written by the first step of `register_all`, the receipt has a line `RUNMETA: <path>`;
+before 2026-08-26 the receipt's line `WARN no --outdir given, RUNMETA not written` was a false alarm, backfilling by hand based on it
+would leave duplicate entries, this has been fixed), only a hand-rolled launch needs to backfill it itself with
+`python3 run.py runmeta <outdir> --cmd '<command>'`.
 
-排卡表落一份 `ops/<batch>_placement.json`，逐格写死 host/gpu/额外参数
-（`--base` / `--lora` / `--grad-ckpt` 都在 extra 里，排卡表是这三样的真源）——
-这样重发某一格时不用重新推理机位。
+Write down a placement table `ops/<batch>_placement.json`, with host/gpu/extra params pinned per cell
+(`--base` / `--lora` / `--grad-ckpt` are all in extra, the placement table is the source of truth for these three);
+this way, re-launching a single cell doesn't need re-deriving the card assignment.
 
-⚠️ **补发单格不许拿整张排卡表重发**（np821 实测）：已经跑完的格会被"同 out 已有
-`train_log.jsonl`"守卫秒退，但**登记在守卫之前就做了**——给那个早跑完的 run 补一条
-假 RUNMETA、把 run_id 塞回台账 active，还得手动清。补哪一格就临时写一张**只含那
-一格**的排卡表放仓库外，正式表里那一行同步改成新机位留档（stage-commands §3、
-extending §5 #24）。
+Warning: **relaunching a single cell must not be done by relaunching the whole placement table** (measured on np821): a cell that has already finished
+gets instantly rejected by the "out already has `train_log.jsonl`" guard, but **the registration was already done before the guard kicked in**:
+that already-finished run gets a fake RUNMETA entry added, and its run_id gets stuffed back into the active ledger, requiring a manual cleanup. To relaunch a specific cell, write a temporary
+placement table **containing only that cell** and keep it outside the repo, and update that row in the official table with the new machine placement for the record (stage-commands §3,
+extending §5 #24).
 
-**驱动器 `run.py pipeline` 的训练段一敲只发一批、四批严格串行**，发过的批留标记
-不重发；要跨批并行就自己用 `run.py launch-probe full --batch <批>` 手发其余批
-（同一套登记代码路径），手发批跑完驱动器照样认（它的判据是 `best/` 在 +
-`train_log` 有 done）。细节与两类完成判据见 stage-commands §6。
+**Each invocation of the driver `run.py pipeline`'s training stage only launches one batch, the four batches are strictly serial**; a launched batch keeps a marker
+and doesn't get relaunched; to parallelize across batches, hand-launch the rest yourself with `run.py launch-probe full --batch <batch>`
+(the same registration code path), once a hand-launched batch finishes, the driver still recognizes it (its criterion is `best/` existing plus
+`train_log` having done). See stage-commands §6 for details and the two kinds of completion criteria.
 
-### C4 评测（**内部必须串行，这是唯一有依赖的一段**）
+### C4 Eval (**must be serial internally, this is the only stage with dependencies**)
 
 ```
-先评工具格 (ctool；m 线停跑前还有 mtool) ── 出 REPLAY_REPORT.json + logits_test.pt
-                    ↓ 提供温度与触发点 θ
-后评参数/调用格 (cgen 与 cparam 都吃同模型 ctool 的；mext 吃 mtool 的)
+Eval the tool cell first (ctool; also mtool before the m-line was retired) ── produces REPLAY_REPORT.json + logits_test.pt
+                    ↓ provides the temperature and the trigger point θ
+Then eval the parameter/call cells (both cgen and cparam consume the same model's ctool; mext consumes mtool's)
 ```
 
-**双档策略**：先取 `--risk 0.05`；该档 θ 为 null 就退 `--risk 0.10` 并在报告里显式标注；
-两档皆无解 **记 N/A** ——不放宽风险目标、不借用别格触发点（两者都破口径，见 gates §3.4）。
+**Two-tier strategy**: take `--risk 0.05` first; if theta comes out null at that tier, fall back to `--risk 0.10` and mark it explicitly in the report;
+if both tiers have no solution, **record N/A**: don't loosen the risk target, don't borrow another cell's trigger point (both break the convention, see gates §3.4).
 
-不必等训练全批收官，**逐格收官逐格派评测**（同一个 subagent 用 SendMessage 续派）。
-用驱动器跑的批次也照样能这么干：**评测三步的完成判据只看产物文件、不看发射标记**，
-所以训练没全齐时直接 `run.py launch-eval` 把已训完的批先评掉，报告落地后驱动器
-敲到那一步会认作完成。配套两道门禁：**G23**——手发的评测**在飞时不许敲驱动器**
-（报告还没落地、又没有它自己的发射标记，`e2_call` 会把那批再发一遍，它不查台账）；
-**G24** 见 C5。耗时怎么估看 stage-commands §4.5（ctool 档按切点行数走、call 档
-只按被 θ 触发的事件数走）。
+No need to wait for the whole training batch to wrap up: **wrap up each cell and dispatch its eval as it finishes** (dispatch continuations to the same subagent with SendMessage).
+This works the same way for batches run by the driver: **the completion criterion for the three eval steps only looks at artifact files, not launch markers**,
+so when training isn't fully done, just use `run.py launch-eval` to evaluate the finished batches first; once the report lands, when the driver
+reaches that step it will recognize it as complete. Two gates go with this: **G23**, a hand-launched eval **must not have the driver invoked while it's still in flight**
+(the report hasn't landed yet, and it has no launch marker of its own, so `e2_call` will launch that batch again, since it doesn't check the ledger);
+**G24** see C5. For how to estimate the time cost see stage-commands §4.5 (the ctool tier scales with the cut-point row count, the call tier
+scales only with the number of events triggered by theta).
 
-### C5 矩阵汇总
+### C5 Matrix summary
 `python3 run.py matrix --runs-dir ... --out ... --risk 0.05`
-两档各出一份表。⚠️ 这个脚本有三个显示局限（N/A 显示成 PENDING、
-表固定读单一风险档、参数格两列无条件读可能混档），
-**引用矩阵表时必须配文字说明**，别让读者误读。
+Produces one table for each of the two tiers. Warning: this script has three display limitations (N/A displays as PENDING,
+the table fixedly reads a single risk tier, the parameter cell's two columns read unconditionally and may mix tiers),
+**quoting the matrix table always requires a written explanation alongside it**, don't let the reader misread it.
 
-**G24：某批的 call 档报告没齐之前不许先出那批的矩阵**——驱动器的 `m1_matrix`
-见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**，早产的那张带 PENDING 的表会
-一直留着、后面再敲也不重出（extending §5 #23）。已经留下了就删掉那两份 md 重出。
-
----
-
-## Phase D — 收官（强制六连，缺一不可）
-
-1. **记数字**：每个 run 一条 `python3 run.py record finish --metric ... --conclusion ...`。
-   （⚠️ record.py 三个语法坑见 gates §3.7）
-2. **补方向**：结论动了 `WORKPLAN.md` 任何一条判断 → 往 `TIMELINE.md` 追加一条。
-3. **补口径**：数据集的造法与设定写进 `DATA.md`（**只写设定不写结论**）。
-4. **释放**：杀光 tmux session，`nvidia-smi` 三机确认本项目零占用。
-5. **销号**：每个任务 `python3 run.py gpu-jobs finish`，台账清空。（session 还活着、
-   或 ssh 探测失败分不清死活，它都会 fail-closed 拒绝；确认要销带 `--force`。）
-6. **提交**：代码 + `ops/runs.jsonl` + `RESULTS.md` + 报告 `.md`，
-   commit message 里带 `<BATCH>` 与关键数字。
+**G24: the matrix for a batch must not be produced before that batch's call-tier reports are all in**: the driver's `m1_matrix`
+skips as soon as it sees `MATRIX_<batch>_r{0.05,0.1}.md` already exists, so a prematurely produced table carrying PENDING will
+stay around forever, and running it again later won't regenerate it (extending §5 #23). If one has already been left behind, delete those two md files and regenerate.
 
 ---
 
-## Phase E — 回写本 skill（**扩展了流水线就必须做，不做等于没做**）
+## Phase D: Wrap-up (six mandatory steps, none may be skipped)
 
-Phase D 结算的是这一批的数字；Phase E 让**下一批**不必重新踩一遍。
-skill 是活文档，用一次不回写就腐烂一次——下次调用它的人（很可能还是你）
-会拿着一份缺了新格、缺了新环境、缺了新坑的旧地图上路。
-
-### 触发条件（命中任意一条就必须回写）
-
-1. 加了新模型 / 新环境 / 新格 / 新 split 方法
-2. 改了任何写死的口径（哪怕只是放宽一个阈值）
-3. 新增或改动了脚本接口（加 flag、改默认值、改产物路径）
-4. **踩了一个本 skill 没记过的坑**——尤其是"不报错只是数字不对"那种
-5. 新立了一道门禁
-
-### 怎么回写
-
-对照 `references/extending.md §6` 的表逐行打勾，它写明了
-「做了什么 → 更新哪份文档的哪一节 → 更新什么内容」。三条硬规矩：
-
-- **新门禁编号从 G25 起顺延**，G1–G24 已占用，不许复用旧号（SKILL.md 按号引用）。
-- **区分"该进 skill"与"这一批一次性的事"**：判据是**下一个人会不会再遇到**。
-  「gptoss 在 A6000 上装不下」进 skill（硬件约束长期成立）；
-  「c1 批次里 q35 的 θ 是 0.85」不进（那是这批的结果，归 RESULTS.md）。
-- **回写与 Phase D 的提交一起做，不留到"以后"**——留到以后就是永远。
-  commit message 写 `skill: <改了什么> —— 由 <batch> 触发`。
-
-### 回写完自查两句
-
-- 新加的章节，SKILL.md 里有没有指向它的路？（孤岛文档等于不存在）
-- 引用的章节号/门禁号还对得上吗？（`grep -n '^#' references/*.md` 一眼扫完）
+1. **Record the numbers**: one `python3 run.py record finish --metric ... --conclusion ...` per run.
+   (Warning: the three record.py syntax pitfalls are in gates §3.7)
+2. **Record the direction**: if the conclusion changes any judgment in `WORKPLAN.md` → append an entry to `TIMELINE.md`.
+3. **Record the convention**: write the dataset's construction method and settings into `DATA.md` (**settings only, no conclusions**).
+4. **Release**: kill every tmux session, confirm zero occupancy for this project across all three machines with `nvidia-smi`.
+5. **Retire the job**: `python3 run.py gpu-jobs finish` for every task, clearing the ledger. (If the session is still alive,
+   or the ssh probe fails and can't tell whether it's dead or alive, it fails closed and refuses; add `--force` once you've confirmed it should be retired.)
+6. **Commit**: code + `ops/runs.jsonl` + `RESULTS.md` + the report `.md`,
+   with `<BATCH>` and the key numbers in the commit message.
 
 ---
 
-## 派活的写法（本轮方法论的核心）
+## Phase E: Write back to this skill (**mandatory if the pipeline was extended, not doing it is the same as not doing the work**)
 
-**主对话只做四件事：派活、验收裁决、git 提交、任务台账。**
-一切实干（写代码、跑命令、发射、评测、记账）交 subagent。
+Phase D settles the numbers for this batch; Phase E is what saves **the next batch** from stepping on the same problem again.
+The skill is a living document: use it once without writing back and it rots once. The next person to invoke it (quite possibly you)
+will walk in carrying an old map that's missing the new cell, the new environment, the new pitfall.
 
-| 活 | 派谁 | 备注 |
+### Trigger conditions (any one of these means writing back is mandatory)
+
+1. Added a new model / new environment / new cell / new split method
+2. Changed any hard-coded convention (even just loosening a threshold)
+3. Added or changed a script interface (added a flag, changed a default, changed an artifact path)
+4. **Hit a pitfall this skill hadn't recorded**, especially the kind that "doesn't error, the numbers are just wrong"
+5. Established a new gate
+
+### How to write back
+
+Go line by line down the table in `references/extending.md §6` and check each off; it spells out
+"what you did → which document's which section to update → what content to update". Three hard rules:
+
+- **New gate numbers pick up from G25**, G1-G24 are already taken, do not reuse an old number (SKILL.md references them by number).
+- **Distinguish "this belongs in the skill" from "this is a one-off thing for this batch"**: the criterion is **whether the next person will run into it again**.
+  "gptoss doesn't fit on an A6000" goes into the skill (a hardware constraint that holds long-term);
+  "in batch c1, q35's theta was 0.85" does not (that's this batch's result, it belongs in RESULTS.md).
+- **Write back together with Phase D's commit, don't leave it for "later"**, leaving it for later means forever.
+  Write the commit message as `skill: <what changed> -- triggered by <batch>`.
+
+### Two self-checks after writing back
+
+- For a newly added section, does SKILL.md have a path pointing to it? (An orphaned document is the same as not existing.)
+- Do the referenced section numbers/gate numbers still line up? (`grep -n '^#' references/*.md` scans it in one glance.)
+
+---
+
+## How to dispatch work (the core methodology this round)
+
+**The main conversation only does four things: dispatch work, judge acceptance, git commit, and keep the task ledger.**
+All the actual doing (writing code, running commands, launching, evaluating, bookkeeping) is handed off to subagents.
+
+| Work | Who to dispatch | Notes |
 |---|---|---|
-| 写代码 / 记账 / 清点 | `general-purpose`（opus） | 任务明确就用 opus，别上 Fable |
-| 发射与评测 | `gpu-runner` | 探卡→smoke→`launch`（自动三处登记+验活）一条龙 |
-| 长任务巡检 | `job-monitor` | 只读，kill 建议写报告里由主对话定 |
+| Write code / bookkeeping / stocktaking | `general-purpose` (opus) | if the task is clear, use opus, don't put it on Fable |
+| Launching and evaluating | `gpu-runner` | probe cards → smoke → `launch` (auto three-way registration + liveness check), start to finish |
+| Long-task monitoring | `job-monitor` | read-only; kill recommendations go in the report and are decided by the main conversation |
 
-**同一个 subagent 用 SendMessage 续派**，上下文不重建（本轮发射员续派 3 次、评测员 6 次）。
+**Continue dispatching to the same subagent with SendMessage**, so context doesn't get rebuilt (this round the launcher was re-dispatched 3 times, the evaluator 6 times).
 
-任务书标准结构（五段，缺一段就会有人跑偏）：
-1. **先读哪份规格的哪几节**（并声明"规格与任务书冲突时以规格为准"）
-2. **硬口径**：表格化——格 / 脚本 / 解释器 / 路径，一格一行
-3. **施工纪律**：不碰 git、旧文件只读、不改别人的脚本、
-   崩了先读 traceback 不许硬试超两次、双环境各跑一遍 `py_compile`
-4. **验收标准**：什么算过、什么算不过
-5. **回报格式**：要求它列出**自行决策点**（这是发现偏差的主要手段）
+Standard structure for a task brief (five sections; leave one out and someone will go off track):
+1. **Which sections of which spec to read first** (and state that "when the spec and the brief conflict, the spec wins")
+2. **Hard conventions**: tabulated, cell / script / interpreter / path, one row per cell
+3. **Work discipline**: don't touch git, read old files only, don't modify other people's scripts,
+   if it crashes read the traceback first, don't just retry blindly more than twice, run `py_compile` once in each of the two environments
+4. **Acceptance criteria**: what counts as passing, what counts as failing
+5. **Reporting format**: require it to list **its own autonomous decisions** (this is the main way to catch drift)
 
-⚠️ subagent 报的数字要抽验。本轮就出现过它凭印象写"差 <2e-5"、
-下游记账员实读文件发现是 2.0027e-5 的情况——**数字必须从文件读**要写进任务书。
+Warning: numbers reported by a subagent need to be spot-checked. This round there was a case where it wrote "difference < 2e-5" from memory,
+while the downstream bookkeeper who actually read the file found it was 2.0027e-5. The rule that **numbers must be read from the file** needs to be written into the task brief.
 
 ---
 
-## 铁律
+## Hard rules
 
-- **门禁不过就停**，不许"先跑着看看"。smoke 不过不发射、对齐 FAIL 全线停等裁决、
-  评测无触发点就 SystemExit 而不是硬指一个 θ。
-- **旧数据与旧数字一个字节不动**，新产物一律进新目录新版本号。
-- **test 冻结一次**。θ 在 val 上选定后，test 上的数字无论多难看都原样报告——
-  难看的那一格恰恰是矩阵要量的东西。
-- **run_id 四处一致**：数据目录名 / tmux session / 台账 name / commit message。
-- `RESULTS.md` 是渲染产物不手改；`runs.jsonl` append-only；台账只经 `python3 run.py gpu-jobs register/finish`。
-- **发射前先 commit**，脏工作树下记录里的 HEAD 追不回真实代码。
-- **唯一允许停下问用户的情形是"推翻前提"**——目标 split 根本跑不了、
-  权重路径失效、验收线反复过不了。其余一律自动处置（详见 gates §4）。
-  停之前先把已完成部分收尾干净。
+- **Stop the moment a gate fails**, no "let's just run it and see". If smoke fails, don't launch; if alignment FAILs, stop the whole line and wait for a ruling;
+  if eval has no trigger point, SystemExit rather than forcing a theta.
+- **Not one byte of old data or old numbers gets touched**; every new artifact goes into a new directory with a new version number.
+- **Test is frozen once.** Once theta is chosen on val, the numbers on test get reported as-is no matter how bad they look,
+  that ugly cell is exactly the thing the matrix is meant to measure.
+- **run_id is consistent across all four places**: the data directory name / tmux session / ledger name / commit message.
+- `RESULTS.md` is a rendered artifact, don't hand-edit it; `runs.jsonl` is append-only; the ledger is only touched via `python3 run.py gpu-jobs register/finish`.
+- **Commit before launching**, with a dirty working tree the HEAD stored in the record can't be traced back to the real code.
+- **The only situation where stopping to ask the user is allowed is "overturning a premise"**: the target split simply can't be run at all,
+  the weight path is dead, the acceptance line keeps failing repeatedly. Everything else is handled automatically (see gates §4 for details).
+  Before stopping, wrap up whatever has already been completed cleanly.

@@ -1152,7 +1152,7 @@
    "prefix_embed_grad_absmax": 0.5990216732025146,
    "prefix_embed_grad_nonzero_positions": 462,
    "prefix_len": 463,
-   "note": "use_cache=True 与 gradient checkpointing 互斥:modeling_layers.py 第 82-84 行在训练态开检查点时把 use_cache 强制改 False"
+   "note": "use_cache=True and gradient checkpointing are mutually exclusive: modeling_layers.py lines 82-84 force use_cache to False when checkpointing is enabled in training mode"
   },
   "grad_ckpt": {
    "row_diff_vs_no_ckpt": {

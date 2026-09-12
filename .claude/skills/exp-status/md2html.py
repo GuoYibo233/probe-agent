@@ -22,14 +22,14 @@ import html
 import re
 import sys
 
-PAGE_TITLE = "缓存复用训练器现状"
+PAGE_TITLE = "Cache-reuse trainer status"
 
-# Collapse-block opening tags: a paragraph starting with one of these three plus a
-# full-width colon gets folded into <details>.
-FOLD_LABELS = ("怎么做的", "为什么这么设计才算数", "看一条真的")
+# Collapse-block opening tags: a paragraph starting with one of these three plus an
+# ASCII colon gets folded into <details>.
+FOLD_LABELS = ("How it was done", "Why this design counts", "One real sample")
 # Collapse-block closing tags: a paragraph starting with one of these three ends the
 # collapse block.
-STOP_PREFIXES = ("实验结果", "值得注意", "索引")
+STOP_PREFIXES = ("Experiment results", "Worth noting", "Index")
 
 FENCE = "```"
 
@@ -336,10 +336,10 @@ JS = """
 # ---------------------------------------------------------------- inline rendering
 
 # Numbers: integers, thousands separators, decimals, scientific notation, percent signs;
-# only counts as an annotation when immediately followed by full-width parentheses.
+# only counts as an annotation when followed (optionally after one space) by parentheses.
 NUM_NOTE_RE = re.compile(
     r"(?P<num>[0-9][0-9,]*(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?%?)"
-    r"（(?P<body>[^（）]*)）"
+    r"(?P<sp> ?)\((?P<body>[^()]*)\)"
 )
 CODE_RE = re.compile(r"`([^`]+)`")
 URL_RE = re.compile(r"https?://[^\s\x00<>\"'（）「」，。、；]+")
@@ -368,10 +368,11 @@ def render_inline(text, notes=True):
     if notes:
         text = NUM_NOTE_RE.sub(
             lambda m: m.group("num")
+            + m.group("sp")
             + put("nopen")
-            + "（"
+            + "("
             + m.group("body")
-            + "）"
+            + ")"
             + put("nclose"),
             text,
         )
@@ -510,7 +511,7 @@ def parse_blocks(lines):
 def fold_label(text):
     """If the paragraph starts with "tag:", return that tag; otherwise return an empty string."""
     for label in FOLD_LABELS:
-        if text.startswith(label + "："):
+        if text.startswith(label + ":"):
             return label
     return ""
 

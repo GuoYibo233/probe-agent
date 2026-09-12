@@ -1,28 +1,44 @@
-# eval 段验收（规格 §6.5）— 2026-07-31
+# eval-stage acceptance (spec §6.5) -- 2026-07-31
 
-结论：**PASS**。新 `pipeline/eval/eval_tool.py` 在 `--legacy-splits --cached-logits`
-下重跑 v3 的 bfcl 分类头，产出的 `REPLAY_REPORT.json` 与旧
-`envs/bert_runs/bfcl_v3/REPLAY_REPORT.json` **逐字节相同**（不止 temperature /
-chosen_theta / test_frozen 三块，全文件相同；`.md` 也逐字节相同）。
-加跑的因果探针那一份（`bfcl_v3_causal_qwen`）同样逐字节相同。
+Conclusion: **PASS**. Rerunning v3's bfcl classification head with the new
+`pipeline/eval/eval_tool.py` under `--legacy-splits --cached-logits` produces a
+`REPLAY_REPORT.json` **byte-for-byte identical** to the old
+`envs/bert_runs/bfcl_v3/REPLAY_REPORT.json` (not just the temperature /
+chosen_theta / test_frozen blocks -- the whole file is identical; the `.md` is
+also byte-for-byte identical). The extra causal-probe run
+(`bfcl_v3_causal_qwen`) is likewise byte-for-byte identical.
 
-零 GPU：两次都走 `--cached-logits`，只读旧 `logits_*.pt` 做 CPU 后处理，
-mbert 侧 12 秒跑完。
+Zero GPU: both runs went through `--cached-logits`, only reading the old
+`logits_*.pt` for CPU post-processing; the mbert side finished in 12 seconds.
 
-## 0. 第二轮更正（2026-08-28，不改动上面的历史结论）
+## 0. Second-round correction (2026-08-28, does not change the historical conclusion above)
 
-本文档记的是 2026-07-31 代码状态下的验收结果，当时的判据是"逐字节相同"。第二轮（工单 07，spec 16.2）起 `eval_tool.py` 的 `REPLAY_REPORT.json` 无论 `--overlong` 传哪个值都会多写 `overlong_mode` 与四个计数键（`n_oow` / `n_skipped_bounds` / `n_dropped_events` / `n_dropped_bounds`，没发生的写 0）；cgen / cparam 的报告同样多写 `overlong_mode` 与各自那套计数。现在再跑本文①②两条命令，报告不会再与旧产物逐字节相同——**新判据是"除这几个新键外，其余现有键不变"**，不再要求整份文件字节级相同。
+This document records the acceptance result under the 2026-07-31 code state,
+when the criterion was "byte-for-byte identical." Starting with the second
+round (ticket 07, spec 16.2), `eval_tool.py`'s `REPLAY_REPORT.json` now writes
+extra fields regardless of what `--overlong` is given: `overlong_mode` plus
+four count keys (`n_oow` / `n_skipped_bounds` / `n_dropped_events` /
+`n_dropped_bounds`, written as 0 when they did not occur); the cgen / cparam
+reports likewise gain `overlong_mode` and their own set of counts. Rerunning
+this document's commands ① and ② now no longer produces a report
+byte-for-byte identical to the old artifact -- **the new criterion is "every
+existing key besides these few new ones is unchanged,"** no longer requiring
+the whole file to be byte-identical.
 
-## 1. 验收命令
+## 1. Acceptance commands
 
-入口是仓库根 `run.py`：`eval-tool-mbert` / `eval-tool-causal` 两条任务对应同一个
-`eval_tool.py` 的两个 `--head`（`--head` 与解释器都由注册表钉死，命令里不再写）。
-两条任务都登记为发射类，`python3 run.py <task> …` 只把命令打印出来不执行——本文这两条
-是纯 CPU 验收（`--cached-logits`），把打印出来的命令原样手跑即可
-（出命令带脏树门禁：工作树脏时加 `--allow-dirty` 才打印，这不是跳过 run.py，
-是 run.py 自己的逃生口）。
+The entry point is the repo root `run.py`: the two tasks `eval-tool-mbert` /
+`eval-tool-causal` both map to the two `--head` values of the same
+`eval_tool.py` (`--head` and the interpreter are both fixed by the registry,
+no longer written in the command). Both tasks are registered as launch-class;
+`python3 run.py <task> ...` only prints the command without running it -- these
+two are pure-CPU acceptance runs (`--cached-logits`), so run the printed
+command as-is (printing the command still goes through the dirty-tree gate:
+add `--allow-dirty` to get a print when the working tree is dirty; this is not
+a bypass of run.py, it is run.py's own escape hatch).
 
-规格给的命令（本次实跑时多加了 `--report-dir`，理由见 §4 偏离①）：
+The command given in the spec (this actual run added `--report-dir`, reason in
+§4 deviation ①):
 
 ```bash
 python3 run.py eval-tool-mbert --env bfcl \
@@ -32,10 +48,13 @@ python3 run.py eval-tool-mbert --env bfcl \
   --report-dir /home/y-guo/reproduce/new1/pipeline/eval/accept_bfcl_v3
 ```
 
-⚠️ `bfcl_v3` 是**冻结的旧 run，它的 `logits_*.pt` 没有指纹档**——直接照上面跑会被
-§1.1 那道校验挡住。先补档再跑（做法与理由见 §1.1）。
+Warning: `bfcl_v3` is **a frozen old run whose `logits_*.pt` has no
+fingerprint file** -- running the command above as-is would be blocked by the
+check in §1.1. Backfill the fingerprint first, then run (method and reason in
+§1.1).
 
-自加的第二条（因果头路径的同款验收）：
+The second command I added myself (the same acceptance run for the causal-head
+path):
 
 ```bash
 python3 run.py eval-tool-causal --env bfcl \
@@ -45,23 +64,29 @@ python3 run.py eval-tool-causal --env bfcl \
   --report-dir /home/y-guo/reproduce/new1/pipeline/eval/accept_bfcl_v3_causal
 ```
 
-⚠️ 同上：这条也要先按 §1.1 补一次指纹档，再带 `--cached-logits` 跑。
+Warning: same as above -- this one also needs a fingerprint file backfilled
+per §1.1 before running with `--cached-logits`.
 
-产物落在 `pipeline/eval/accept_bfcl_v3{,_causal}/`，旧目录一个字节没动
-（旧 `REPLAY_REPORT.json` 的 md5 跑前跑后都是 `18f948fe…`，
-causal 那份是 `1893a059…`）。
+Artifacts land in `pipeline/eval/accept_bfcl_v3{,_causal}/`; the old directory
+was not touched by a single byte (the old `REPLAY_REPORT.json`'s md5 was the
+same before and after the run, `18f948fe...`; the causal one is `1893a059...`).
 
-### 1.1 旧冻结 run 的 logits 没有指纹档，要先补一次
+### 1.1 The old frozen run's logits have no fingerprint file, so one must be backfilled first
 
-2026-08-02（审计 B9）起 `eval_tool.py` 给每份 `logits_<sp>.pt` 配一个
-`logits_<sp>.meta.json`，里面记着产它那份 `best/` 权重的指纹（**每个权重文件的
-大小 + 首尾各 64KB 的 sha1，不含 mtime**）与行数。带 `--cached-logits` 时缺这个
-文件就 `SystemExit`——旧缓存无从判断出自哪份权重，不许拿它冒充。
+Since 2026-08-02 (audit B9), `eval_tool.py` writes each `logits_<sp>.pt` a
+matching `logits_<sp>.meta.json`, recording the fingerprint of the `best/`
+weights that produced it (**the size of every weight file plus a sha1 of the
+first and last 64KB, not the mtime**) along with the row count. With
+`--cached-logits`, missing this file triggers `SystemExit` -- an old cache
+gives no way to tell which weights it came from, and is not allowed to
+impersonate one.
 
-本文两条验收命令读的都是**这套机制之前**产的 logits，所以没有 `.meta.json`。
-处置：把命令里的 `--cached-logits` 换成 `--adopt-logits-fingerprint` 先跑一遍，
-**其余参数一个字不改**（`--env` / `--run` / `--data` / `--legacy-splits` 都仍要给，
-`--report-dir` 给不给都行，这一趟不写报告）：
+Both of this document's acceptance commands read logits produced **before this
+mechanism existed**, so they have no `.meta.json`. Fix: swap `--cached-logits`
+in the command for `--adopt-logits-fingerprint` and run it once first, **not
+changing a single other argument** (`--env` / `--run` / `--data` /
+`--legacy-splits` still all need to be given; `--report-dir` may or may not be
+given, this run writes no report):
 
 ```bash
 python3 run.py eval-tool-mbert --env bfcl \
@@ -70,37 +95,48 @@ python3 run.py eval-tool-mbert --env bfcl \
   --legacy-splits --adopt-logits-fingerprint
 ```
 
-它做的事：给 `--run` 下每份已存在的 `logits_<sp>.pt` 写出 `.meta.json`，然后
-**直接退出，不评测**。放行条件是 `best/` 下**所有**权重文件的 mtime 都不比该
-logits 新——只有这样才能证明"当前权重就是产这些 logits 的权重"；权重更新就报
-"权重比 logits 新"并拒绝认领。补完再按上面的原命令带 `--cached-logits` 跑验收。
+What it does: writes a `.meta.json` for every `logits_<sp>.pt` already present
+under `--run`, then **exits directly, without evaluating**. The condition for
+letting it through is that the mtime of every weight file under `best/` is not
+newer than these logits -- only this proves "the current weights are the ones
+that produced these logits"; if the weights were updated, it reports "weights
+are newer than logits" and refuses to adopt. Once backfilled, run the original
+command above with `--cached-logits` for the acceptance run.
 
-不想认领也行：**去掉 `--cached-logits` 重算一次**，重算会自动写指纹。代价是这两条
-就不再是零 GPU 的 12 秒验收了，而且重算出的报告要能与旧产物逐字节相同才算数。
+Not adopting is also an option: **drop `--cached-logits` and recompute once**
+-- recomputing writes the fingerprint automatically. The cost is that these
+two runs are no longer the zero-GPU 12-second acceptance runs, and the
+recomputed report must still be byte-for-byte identical to the old artifact
+to count.
 
-## 2. 对比字段清单与逐字段结论
+## 2. Field-comparison checklist and per-field conclusion
 
-判定口径是规格点名的三块，逐字段结果如下（两次验收同样结论）：
+The basis for judgment is the three blocks named in the spec; per-field
+results below (both acceptance runs reach the same conclusion):
 
-| 字段 | bfcl_v3（mbert 头） | bfcl_v3_causal_qwen（因果头） |
+| field | bfcl_v3 (mbert head) | bfcl_v3_causal_qwen (causal head) |
 |---|---|---|
-| `temperature` | 一致：1.5218 | 一致：1.3883 |
-| `chosen_theta` | 一致：{"0.1": 0.725, "0.05": 0.95} | 一致：{"0.1": 0.8, "0.05": 0.925} |
-| `test_frozen["0.1"]` | 一致：θ=0.725, n=226, coverage 0.8894, trig_acc 0.8955, earliness 0.6897, wrong_spec 0.0929, ci 三项全等 | 一致：θ=0.8, n=226, coverage 0.8805, trig_acc 0.9347, earliness 0.6826, wrong_spec 0.0575, ci 三项全等 |
-| `test_frozen["0.05"]` | 一致：θ=0.95, n=226, coverage 0.5929, trig_acc 0.9925, earliness 0.6152, wrong_spec 0.0044, ci 三项全等 | 一致：θ=0.925, n=226, coverage 0.8009, trig_acc 0.9779, earliness 0.5596, wrong_spec 0.0177, ci 三项全等 |
+| `temperature` | matches: 1.5218 | matches: 1.3883 |
+| `chosen_theta` | matches: {"0.1": 0.725, "0.05": 0.95} | matches: {"0.1": 0.8, "0.05": 0.925} |
+| `test_frozen["0.1"]` | matches: theta=0.725, n=226, coverage 0.8894, trig_acc 0.8955, earliness 0.6897, wrong_spec 0.0929, all three ci entries equal | matches: theta=0.8, n=226, coverage 0.8805, trig_acc 0.9347, earliness 0.6826, wrong_spec 0.0575, all three ci entries equal |
+| `test_frozen["0.05"]` | matches: theta=0.95, n=226, coverage 0.5929, trig_acc 0.9925, earliness 0.6152, wrong_spec 0.0044, all three ci entries equal | matches: theta=0.925, n=226, coverage 0.8009, trig_acc 0.9779, earliness 0.5596, wrong_spec 0.0177, all three ci entries equal |
 
-判定之外的字段也一并比了，全部一致（所以 `diff` 全文件为空）：
-`env`、`theta_sweep_calB`（20 档 θ 的 agg 全等）、`stoptime_calibration_test`、
-`depth_bucket_acc_test`、`prior_baseline_event_acc`、`n_events_test`（226）、
-`speculation_economics`（calB_sweep + test_frozen 两段），
-以及因果头独有的 `probe_backbone`、`probe_cost_test`。
+Fields outside the basis for judgment were also compared, all matching (so
+`diff` on the whole file is empty): `env`, `theta_sweep_calB` (all 20 theta
+levels' agg all equal), `stoptime_calibration_test`,
+`depth_bucket_acc_test`, `prior_baseline_event_acc`, `n_events_test` (226),
+`speculation_economics` (both the calB_sweep and test_frozen sections), and
+the causal-head-only `probe_backbone`, `probe_cost_test`.
 
-bootstrap 置信区间能逐位对上，说明 `random.Random(SEED=20260729)` 的取用次序
-也与旧脚本一致——这是最容易被改动打乱的一处，专门确认过。
+The bootstrap confidence intervals line up bit for bit, which shows that
+`random.Random(SEED=20260729)`'s draw order also matches the old script --
+this is the spot most easily thrown out of order by a code change, and it was
+specifically checked.
 
-## 3. 另外跑过的新口径冒烟（不属于 §6.5，但顺手验了新分支）
+## 3. Other new-basis smoke runs done along the way (not part of §6.5, but verified the new branch while at it)
 
-`--legacy-splits` 关掉后的 val/test 新口径路径，用 4 个事件的小数据在 CPU 上跑通：
+With `--legacy-splits` turned off, the new val/test basis path, run through
+with 4 events of small data on CPU:
 
 ```bash
 python3 run.py eval-tool-causal --env bfcl \
@@ -108,36 +144,54 @@ python3 run.py eval-tool-causal --env bfcl \
   --report-dir /tmp/eval_smoke/rep
 ```
 
-（同上：run.py 出命令，这条 `--device cpu` 的冒烟把打印出来的命令原样手跑；
-run/best 是指向 `envs/bert_runs/bfcl_v3_causal_qwen/best` 的软链，只读；
-logits 写进 /tmp，旧目录未被写入。）这条路径验的是：`CausalProbe` 从
-`pipeline/train/train_causal_tool.py` 导入并加载 backbone + head.pt、
-按事件整段一次前向取边界位 logits、温度与 θ 都在 val 上定、test 冻结、
-`probe_cost_test` 计数。全程无 GPU。
+(Same as above: run.py prints the command, and this `--device cpu` smoke run
+was done by running the printed command as-is; run/best is a read-only
+symlink pointing at `envs/bert_runs/bfcl_v3_causal_qwen/best`; logits are
+written into /tmp, the old directory was not written to.) What this path
+verifies: `CausalProbe` is imported from `pipeline/train/train_causal_tool.py`
+and loads the backbone + head.pt, does one forward pass per whole event to get
+the boundary-position logits, fits both temperature and theta on val, freezes
+test, and counts `probe_cost_test`. No GPU throughout.
 
-## 4. 偏离与自行决策（规格未覆盖处）
+## 4. Deviations and decisions made on my own (spots the spec does not cover)
 
-1. **新增 `--report-dir`**（默认 = `--run`，行为不变）。规格 §6.5 要求
-   "把新报告写到临时目录，绝不覆盖旧文件"，但源脚本把报告硬写进 run 目录，
-   不加这个开关就没法在不碰旧件的前提下验收。口径无影响。
-2. **新增 `--device`**（默认 cuda）。源 `eval_replay.py` 把 `dev` 写死成 "cuda"；
-   `eval_replay_causal.py` 本来就有 `--device`。合并成一个脚本后统一暴露，
-   CPU 验收/冒烟要用。
-3. **`--data` 语义分叉**：新口径下 `--data` 直接指 `<data_out>`（规格 §6.1②），
-   但 v3 旧数据是 `<data>/<env>/` 两层。所以 `--legacy-splits` 下 `--data`
-   退回旧语义（拼 `/<env>`），只此一处，写在 `--help` 里。
-4. **因果头的 tokenizer 无条件加载**：`--cached-logits` 只跳过模型，不跳
-   tokenizer——因为 `probe_cost_test` 要用它数 token。这是【照抄】旧
-   `eval_replay_causal.py` 的行为（旧脚本也是无条件 `AutoTokenizer.from_pretrained`），
-   第一版我写成了跟着 cached 一起跳，导致报告少两个字段，已改回并重跑验收。
-5. **因果头的两个诊断字段只在 `--head causal` 时出现**（`probe_backbone`、
-   `probe_cost_test`）。规格 §3.6 的字段清单里没有它们，但旧因果报告有；
-   保留 = 新旧因果报告可逐字节对账，且 mbert 报告的字段集合一个不多。
-6. **`.md` 标题**：因果头沿用旧标题 `# 回放评测 — bfcl（因果探针 qwen）`，
-   mbert 头沿用 `# 回放评测 — bfcl`。不这么分，md 就对不上字节。
-7. **旧字段名一律不改**（§2.5）：新口径下温度和 θ 都在 val 上定，
-   但报告里仍叫 `theta_sweep_calB`、`stoptime_calibration_test`，
-   md 里"calB 上无满足约束的 θ"这句也照抄没改。下游按名读的脚本不受影响。
-8. **验收产物入不入 git 未定**：`pipeline/eval/accept_bfcl_v3{,_causal}/` 里的
-   `REPLAY_REPORT.json` 不在 `.gitignore` 覆盖范围内（`pipeline/data`、
-   `pipeline/runs` 才是）。留着当验收凭证，是否入库交主对话定。
+1. **Added `--report-dir`** (default = `--run`, behavior unchanged). Spec §6.5
+   requires "write the new report to a temporary directory, never overwrite
+   the old file," but the source script hardcodes writing the report into the
+   run directory; without this switch there is no way to run acceptance
+   without touching the old files. No effect on the basis.
+2. **Added `--device`** (default cuda). The source `eval_replay.py` hardcodes
+   `dev` to "cuda"; `eval_replay_causal.py` already had `--device`. After
+   merging into one script, it is exposed uniformly, needed for CPU
+   acceptance runs / smoke runs.
+3. **`--data` semantics fork**: under the new basis, `--data` points directly
+   at `<data_out>` (spec §6.1②), but the old v3 data is `<data>/<env>/`, two
+   levels deep. So under `--legacy-splits`, `--data` falls back to the old
+   semantics (appending `/<env>`), the only spot like this, documented in
+   `--help`.
+4. **The causal head's tokenizer loads unconditionally**:
+   `--cached-logits` only skips the model, not the tokenizer -- because
+   `probe_cost_test` needs it to count tokens. This is **copied as-is** from
+   the old `eval_replay_causal.py`'s behavior (the old script also does an
+   unconditional `AutoTokenizer.from_pretrained`); the first version I wrote
+   skipped it together with the cached path, which caused the report to be
+   missing two fields, already fixed and rerun for acceptance.
+5. **The causal head's two diagnostic fields appear only under
+   `--head causal`** (`probe_backbone`, `probe_cost_test`). Spec §3.6's field
+   checklist does not list them, but the old causal report has them; keeping
+   them means the new and old causal reports can be reconciled byte for byte,
+   and the mbert report's field set has not gained a single extra one.
+6. **`.md` title**: the causal head keeps the old title
+   `# Replay evaluation -- bfcl (causal probe, qwen)`, the mbert head keeps
+   `# Replay evaluation -- bfcl`. Without this split, the md would not match
+   byte for byte.
+7. **Old field names are left unchanged everywhere** (§2.5): under the new
+   basis, both temperature and theta are fit on val, but the report still
+   calls them `theta_sweep_calB`, `stoptime_calibration_test`, and the line
+   "no theta satisfies the constraint on calB" in the md is likewise copied
+   unchanged. Downstream scripts that read by name are unaffected.
+8. **Whether the acceptance artifacts go into git is undecided**: the
+   `REPLAY_REPORT.json` under `pipeline/eval/accept_bfcl_v3{,_causal}/` is not
+   covered by `.gitignore` (only `pipeline/data` and `pipeline/runs` are).
+   Kept as acceptance evidence; whether it goes into the repo is for the main
+   session to decide.

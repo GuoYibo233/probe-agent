@@ -1,76 +1,83 @@
-# 另外两条研究线（记忆、多跳注入）测出了什么
+# What the other two research lines (memory, multi-hop injection) measured
 
-这两条线与探针线并行做过，清场时一并终止。数字仍在账上，这里整理备查。
+These two lines were worked on in parallel with the probe line, and were terminated together at the wipe. The
+numbers are still on the ledger, organized here for reference.
 
-## c3 记忆线：把过去的经验塞进提示，值不值
+## The c3 memory line: is it worth stuffing past experience into the prompt
 
-场地是 ALFWorld，被试模型 Qwen3-8B（先导批用过 4B）。任务按相似度分档，
-正典编号：L2 = 完全一样的题，L2⁻ = 几乎一样的题，L1 = 同类但换了东西的题。
-注意原始文件名用另一套编号且取值正好颠倒（代码 L0=正典 L2），转换表在
-旧 `DATA.md` §6.1。
+The test bed is ALFWorld, the model under test is Qwen3-8B (the pilot batch used 4B). Tasks are graded by
+similarity, the canonical numbering: L2 = an identical question, L2⁻ = an almost identical question, L1 = the same
+kind of question with different objects swapped in. Note that the original file names use a different numbering
+that runs exactly reversed (in the code, L0 = canonical L2); the conversion table is in the old `DATA.md` §6.1.
 
-### 存成功经验那条臂（mem）对不存（nomem）的全矩阵（run `20260728_fig1_8bfull`，5 种子 × 10 集）
+### The full matrix of the arm that stores successful experience (mem) versus the one that does not (nomem) (run `20260728_fig1_8bfull`, 5 seeds × 10 episodes)
 
-| 正典档 | 成功率 mem/nomem | 墙钟变化 | 输出 token mem/nomem | 输入 token mem/nomem | 总 token 变化 |
+| Canonical tier | Success rate mem/nomem | Wall-clock change | Output tokens mem/nomem | Input tokens mem/nomem | Total token change |
 |---|---|---|---|---|---|
-| L1 部分相似 | 0.84 / 0.84 | -7% | 8288 / 8698（省 5%） | 13610 / 9605（贵 42%） | 贵 20% |
-| L2⁻ 近重复 | 1.00 / 1.00 | -12% | 3199 / 3634 | 5154 / 3519 | 贵 16.8% |
-| L2 完全重复 | 0.60 / 0.60 | -12% | 6133 / 6874 | 13973 / 15377 | 省 9.6% |
+| L1 partial similarity | 0.84 / 0.84 | -7% | 8288 / 8698 (saves 5%) | 13610 / 9605 (costs 42% more) | costs 20% more |
+| L2⁻ near-duplicate | 1.00 / 1.00 | -12% | 3199 / 3634 | 5154 / 3519 | costs 16.8% more |
+| L2 exact duplicate | 0.60 / 0.60 | -12% | 6133 / 6874 | 13973 / 15377 | saves 9.6% |
 
-（总 token 变化按 RESULTS 行的 `total_tok_saving_*` 字段换算：字段是"省的比例"，
-负值就是变贵，例如 L2⁻ 的字段值 -16.8% 换算成"贵 16.8%"。）
+(The total token change is converted from the `total_tok_saving_*` field in the RESULTS row: the field is "the
+share saved," a negative value means it costs more, e.g. L2⁻'s field value of -16.8% converts to "costs 16.8%
+more.")
 
-账上的判读（`fig1_pilot/ANALYSIS_8bfull.md` 结论节，属账内解读）：记忆的本质
-交易是拿便宜的输入 token 换昂贵的输出 token，论文记账必须输入输出分开列；
-只存成功经验救不了模型本来就做不成的 40% 任务；8B 的红利比先导批的 4B 小
-（墙钟 -12% 对 -31%）。
+The ledger's reading (`fig1_pilot/ANALYSIS_8bfull.md`'s conclusion section, an interpretation on the ledger itself):
+the core trade memory makes is spending cheap input tokens to save expensive output tokens, so a paper's accounting
+must list input and output separately; storing only successful experience does not rescue the 40% of tasks the
+model could not do in the first place; 8B's payoff is smaller than the pilot batch's 4B (wall-clock -12% versus
+-31%).
 
-### 全历史基线（run `20260730_fig1_fullhist_8b`，30 run 300 集，同卡配对）
+### The full-history baseline (run `20260730_fig1_fullhist_8b`, 30 runs, 300 episodes, matched on the same card)
 
-把过去全部原样塞进提示：完全一样的题成功率 +32 个百分点、总 token 乘 0.84
-（省在输出侧，输出 token -28%）；几乎一样的题 +2pp、token 乘 1.17；同类换
-东西的题 +2pp、token 乘 2.50。账上结论"档位越远全历史越不划算"。
-逐字回放上界（run `20260730_oracle_ceiling_8bfull`）：只在完全重复档非零
-（最多省 21.0%），与全历史构成上下界，账上写"支撑选择性记忆动机"。
+Stuffing the entire past into the prompt verbatim: for identical questions, success rate +32 percentage points,
+total tokens ×0.84 (the saving is on the output side, output tokens -28%); for almost-identical questions, +2pp,
+tokens ×1.17; for same-kind-different-object questions, +2pp, tokens ×2.50. Ledger conclusion: "the farther the
+tier, the less full history pays off."
+The verbatim-replay ceiling (run `20260730_oracle_ceiling_8bfull`): nonzero only on the exact-duplicate tier (saves
+up to 21.0%), forming an upper and lower bound together with full history; the ledger writes "supports the
+motivation for selective memory."
 
-### 负载真实性（run `20260727_tracelab_simv0`）
+### How realistic the workload is (run `20260727_tracelab_simv0`)
 
-真实编码 agent 轨迹里相邻任务相似度大于 0.8 的占 68.4%，50 条窗口内近重复
-占 96.1%。账上结论"重复相似任务是真实负载主体"。
+In real coding-agent trajectories, 68.4% of adjacent tasks have similarity above 0.8, and within a 50-task window
+96.1% are near-duplicates. Ledger conclusion: "repeated, similar tasks make up the bulk of real workloads."
 
-## C1 多跳注入线：把工具结果提前塞进思考，何时塞是关键
+## The C1 multi-hop injection line: feeding a tool result into the thinking early, timing is the key
 
-场地是 HotpotQA / 2WikiMultihopQA 真实多跳问答加合成两跳任务，gold 段落当
-工具结果，模型 Qwen3-8B 为主（4B 两代做协议对照）。出处
-`hotpot_inject/FINDINGS.md`（两波）与 `oracle_inject/FINDINGS.md`。
+The test bed is real multi-hop QA from HotpotQA / 2WikiMultihopQA plus a synthetic two-hop task, using the gold
+passage as the tool result, with Qwen3-8B as the main model (two 4B generations serve as a protocol control).
+Source: `hotpot_inject/FINDINGS.md` (two waves) and `oracle_inject/FINDINGS.md`.
 
-### 死区跨任务复现
+### The dead zone reproduces across tasks
 
-合成 lookup 任务（oracle 批，5 模型 × 60 题）：开场注入省 86 到 232 token、
-准确率 0.98 到 1.00；贴近调用点前 25 到 50 token 注入是负收益且准确率降
-5 到 15 个百分点。省 token 曲线非单调，账上命名"决策区死区"，并写了一条
-对探针路线的警报原文："置信度高了才注 ≈ 贴近调用点 ≈ 落进死区"。
+The synthetic lookup task (the oracle batch, 5 models × 60 questions): injecting at the opening saves 86 to 232
+tokens, accuracy 0.98 to 1.00; injecting 25 to 50 tokens before the call point is net-negative and drops accuracy by
+5 to 15 percentage points. The token-savings curve is non-monotonic, the ledger names this "the decision-zone dead
+zone," and writes one warning aimed at the probe route, verbatim: "only injecting once confidence is high ≈
+injecting close to the call point ≈ landing in the dead zone."
 
-真实多跳（Hotpot bridge 型，8B）：开场注入省 +383，提前 25 注入 -215；
-2wiki 与 4B 上同形状复现；温度 0.6 三种子复跑符号不翻
-（run `20260730_0413_hotpot_t11_var`，bridge -153±69）。合成两跳上死区
-从 token 亏损升级成准确率坍塌（d=25 注入 acc 从 1.00 掉到 0.67）。
+Real multi-hop (the Hotpot bridge type, 8B): opening injection saves +383, injecting 25 tokens early gives -215; the
+same shape reproduces on 2wiki and on 4B; at temperature 0.6, three seeds re-run without flipping sign (run
+`20260730_0413_hotpot_t11_var`, bridge -153±69). On the synthetic two-hop task the dead zone escalates from a token
+loss to an accuracy collapse (at d=25 the injection accuracy drops from 1.00 to 0.67).
 
-### 全场最优动作是开场注齐全部证据（both_start）
+### The best action across the board is injecting all the evidence at the opening (both_start)
 
-8B hotpot bridge：省 +457、准确率 +17pp；comparison 型单文档开场注入
--18pp 的抢答毒性被"注齐两份"消掉（-2pp，噪声带）。掺一份无关文档零代价
-（tray 实验：省 454 对 457、soft 0.69 对 0.67）。
+8B hotpot bridge: saves +457, accuracy +17pp; the comparison type's -18pp jump-the-gun toxicity from a
+single-document opening injection is erased by "injecting both documents together" (-2pp, within the noise band).
+Mixing in one irrelevant document costs nothing (the tray experiment: saves 454 versus 457, soft 0.69 versus 0.67).
 
-### 轻信的代价表
+### The cost table for being credulous
 
-注入错误值：合成两跳 acc 0.00（8B，同位置正确值 acc 1.00）；真实任务注入
-干扰段落 soft 0.49 到 0.15（-34pp），且照样"省"+319 token。账上原话
-"它以答错为代价短路了思考"。授权措辞的必要性按模型规模分化：4B 无授权
-开场注入崩盘（acc 0.00），8B 无授权曲线与有授权几乎重合。
+Injecting a wrong value: synthetic two-hop acc 0.00 (8B, the correct value at the same position gets acc 1.00);
+injecting a distractor passage on the real task drops soft from 0.49 to 0.15 (-34pp), and it still "saves" +319
+tokens. The ledger's exact words: "it short-circuits the thinking at the cost of a wrong answer." Whether
+authorizing wording is necessary splits by model scale: 4B collapses on an unauthorized opening injection (acc
+0.00), 8B's unauthorized curve nearly overlaps the authorized one.
 
-### 协议稳健性是模型属性
+### Protocol robustness is a property of the model
 
-baseline 正常率：Qwen3-8B 93% 到 96%，Qwen3-4B（上一代）92%，
-Qwen3.5-4B 只有 40%（48% 自发复读脱轨）。账上结论"4B 的结论是接不住注入，
-8B 的结论才是何时注入"。
+Baseline normal rate: Qwen3-8B 93% to 96%, Qwen3-4B (the previous generation) 92%, Qwen3.5-4B only 40% (48%
+spontaneously derails into repetition). Ledger conclusion: "4B's finding is that it cannot handle injection at all,
+only 8B's finding is actually about when to inject."

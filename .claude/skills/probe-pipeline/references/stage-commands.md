@@ -1,112 +1,112 @@
-# stage-commands — 五段流水线的照抄命令表
+# stage-commands: the copy-paste command table for the five-stage pipeline
 
-本文件是 collect / annotate / train / eval / inject 五段的命令模板,参数接口逐字抄自 `pipeline/` 源码(2026-07-31 c1 批次的代码状态),照抄替换占位符即可跑。
-**所有命令一律从仓库根 `run.py` 进(2026-08-02 起的 CLAUDE.md 铁律),不许直接调底层脚本**:解释器由注册表选、固定参数由注册表带、GPU 任务只拼命令交 gpu-run。本文件给的是每个任务要传哪些参数;任务名与解释器的真源是 `run.py`(`python3 run.py list` / `show <task>` 可查)。
-配套的流程说明在上一层的 `SKILL.md`;判分口径与数据设定不在本文件,在同目录的 `invariants.md`。
-占位符约定:`<MODEL>` = q35/q36/gptoss 之类的模型短名,`<BATCH>` = 批次前缀(如 c1),`<ENV>` = appworld/bfcl/tales,`<DATA_ROOT>` = 数据集目录(如 `pipeline/data/aw_official_v1/<MODEL>`)。
+This file is the command template for the five stages collect / annotate / train / eval / inject, with the parameter interfaces copied word-for-word from the `pipeline/` source code (the code state as of the 2026-07-31 c1 batch); copy it verbatim, substitute the placeholders, and it runs.
+**Every command always goes in through the repo root `run.py`** (a CLAUDE.md hard rule since 2026-08-02), don't call the underlying scripts directly: the interpreter is chosen by the registry, the fixed parameters are carried by the registry, and a GPU task only assembles the command and hands it to gpu-run. What this file gives is which parameters to pass for each task; the source of truth for task names and interpreters is `run.py` (checked with `python3 run.py list` / `show <task>`).
+The companion process description is one level up in `SKILL.md`; the scoring convention and data settings are not in this file, they're in `invariants.md` in the same directory.
+Placeholder convention: `<MODEL>` = a model short name like q35/q36/gptoss, `<BATCH>` = the batch prefix (e.g. c1), `<ENV>` = appworld/bfcl/tales, `<DATA_ROOT>` = the dataset directory (e.g. `pipeline/data/aw_official_v1/<MODEL>`).
 
-## 0. 环境与路径常量
+## 0. Environment and path constants
 
-| 环境 | 绝对路径 | transformers | 管哪条线 |
+| Environment | Absolute path | transformers | Which line it manages |
 |---|---|---|---|
-| mbert-env | `/home/y-guo/reproduce/new1/mbert-env/bin/python` | 4.57.6 | ModernBERT:mtool / mext,以及评它们的 eval |
-| cprobe-env | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` | 5.14.1 | 因果模型:ctool / cgen / cparam,以及评它们的 eval |
+| mbert-env | `/home/y-guo/reproduce/new1/mbert-env/bin/python` | 4.57.6 | ModernBERT: mtool / mext, and the eval that evaluates them |
+| cprobe-env | `/home/y-guo/reproduce/new1/cprobe-env/bin/python` | 5.14.1 | causal models: ctool / cgen / cparam, and the eval that evaluates them |
 
-两个环境互不升级(混合架构在旧版分块增量喂会静默算错,这是钉版本的原因)。**走 run.py 就不用自己选解释器**——上表只是让你看懂报错来自哪条线。
+Neither environment upgrades to match the other (a mixed architecture on the old version silently computes wrong under chunked incremental feeding, this is the reason the version is pinned). **Going through run.py means you don't have to pick the interpreter yourself**; the table above is only there so you can tell which line an error is coming from.
 
-各环境的版本锁快照在 `ops/env_locks/`(一个 venv 一份 `uv pip freeze` 的 txt,含上表两个和 `envs/` 下的采集/服务环境),说明与生成命令见该目录的 `README.md`。**重大升级前先重生成对应快照并 commit**,再动手装包——这样"某环境突然行为不一样"时能直接 `git log -p` 对出是哪个包变了,不用重趟一遍装包过程。
+Each environment's version-lock snapshot is in `ops/env_locks/` (one `uv pip freeze` txt per venv, covering both environments in the table above plus the collect/serve environments under `envs/`); the explanation and the generation command are in that directory's `README.md`. **Before a major upgrade, first regenerate the corresponding snapshot and commit it**, then install the packages; this way, when "some environment suddenly behaves differently," `git log -p` can pin down directly which package changed, without redoing the whole package-installation process.
 
-**哪些任务占卡、哪些不占:完整清单一律现查 `python3 run.py list`,标 `[发射]` 的才交 gpu-run**(run.py 对它们只把命令拼出来打印),没标的直接跑完出结果;本文件不再抄一份会过期的名单。两个例外要知道:① `launch-probe` / `launch-eval` 列表里不带 `[发射]` 标(它们自己 ssh+tmux 发射,不是交出命令),但同样过脏树门禁;② `ann-check-callstr` 是第三类——不占卡,但 import 链上有 torch,注册表给它钉的是 cprobe-env 并清空 `CUDA_VISIBLE_DEVICES`,绕过 run.py 手写 `python3 pipeline/annotate/check_callstr.py` 必死在 ModuleNotFoundError。单个任务的解释器/固定参数/是否过门禁看 `python3 run.py show <task>`。
-标 `[发射]` 的任务不用再手动"`show` 出命令 → 复制进 tmux → 手打三条登记"：
-`python3 run.py launch <task> [参数...] --run-id ID --track 方向 --piece host:gpus`
-一条命令做完探卡→tmux→30 秒验活→台账/record/RUNMETA 三处登记（见 gates.md G16）；
-`launch-probe`/`launch-eval` 是给排卡表批量场景的专用发射壳，同样接了这套登记。
+**Which tasks occupy a card and which don't: always check the full list live with `python3 run.py list`, only ones marked `[launch]` get handed to gpu-run** (run.py only assembles and prints the command for them), ones not marked run straight through to a result; this file no longer keeps a copy that would go stale. Two exceptions worth knowing: (1) `launch-probe` / `launch-eval` don't carry the `[launch]` mark in the list (they ssh+tmux and launch by themselves, they don't hand out a command), but they go through the same dirty-tree gate; (2) `ann-check-callstr` is a third kind: it doesn't occupy a card, but torch is on its import chain, and the registry has pinned it to cprobe-env and clears `CUDA_VISIBLE_DEVICES`; bypassing run.py and hand-typing `python3 pipeline/annotate/check_callstr.py` is guaranteed to die with a ModuleNotFoundError. For a single task's interpreter/fixed parameters/whether it goes through the gate, check `python3 run.py show <task>`.
+A task marked `[launch]` no longer needs the manual "`show` the command → copy into tmux → hand-type three registrations":
+`python3 run.py launch <task> [args...] --run-id ID --track direction --piece host:gpus`
+does probe the card → tmux → 30-second liveness check → the three registrations, ledger/record/RUNMETA, in one command (see gates.md G16);
+`launch-probe`/`launch-eval` are dedicated launch shells for the batch placement-table scenario, and they're wired into the same registration.
 
-| 名目 | 路径 |
+| Item | Path |
 |---|---|
-| 工程根 | `/home/y-guo/reproduce/new1` |
-| 数据根 | `/home/y-guo/reproduce/new1/pipeline/data/<批次数据集名>/<MODEL>` |
-| runs 根 | `/home/y-guo/reproduce/new1/pipeline/runs`(smoke 产物在 `pipeline/runs/smoke/<rid>_smoke`) |
-| 日志目录 | `/home/y-guo/reproduce/new1/logs` |
-| 采集 envs 根 | `/home/y-guo/reproduce/new1/envs`(轨迹落在 `envs/runs/<run_id>/`) |
-| vLLM 服务日志 | `/home/y-guo/reproduce/new1/envs/serve_logs` |
-| 模型权重 | `/net/tokyo100-10g/data/str01_01/y-guo/models`(别人的在 `.../zhou-y/models`) |
+| Project root | `/home/y-guo/reproduce/new1` |
+| Data root | `/home/y-guo/reproduce/new1/pipeline/data/<batch dataset name>/<MODEL>` |
+| runs root | `/home/y-guo/reproduce/new1/pipeline/runs` (smoke artifacts are in `pipeline/runs/smoke/<rid>_smoke`) |
+| Log directory | `/home/y-guo/reproduce/new1/logs` |
+| Collect envs root | `/home/y-guo/reproduce/new1/envs` (trajectories land in `envs/runs/<run_id>/`) |
+| vLLM service logs | `/home/y-guo/reproduce/new1/envs/serve_logs` |
+| Model weights | `/net/tokyo100-10g/data/str01_01/y-guo/models` (other people's are under `.../zhou-y/models`) |
 
-底座权重(写死在脚本里,换底座要改代码;**只记常量名不记行号——这批行号漂过一次**,要定位就 `grep -n` 常量名):
+Base weights (hard-coded in the scripts, changing the base means changing the code; **remember only the constant name, not the line number**, they've drifted once this round; to locate one, `grep -n` the constant name):
 - ModernBERT-base → `/net/tokyo100-10g/data/str01_01/y-guo/models/ModernBERT-base`
-  (`train_mbert_tool.py` 与 `train_mbert_extract.py` 各有一个模块级常量 `MODEL`)
+  (`train_mbert_tool.py` and `train_mbert_extract.py` each have a module-level constant `MODEL`)
 - Qwen3-0.6B-Base → `/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base`
-  (`train_causal_tool.py` 的 `MODELS` 表、`train_causal_callgen.py` 的 `QWEN`)
+  (`train_causal_tool.py`'s `MODELS` table, `train_causal_callgen.py`'s `QWEN`)
 
 ---
 
-## 1. collect — 采集
+## 1. collect
 
-**干什么**:吃一份 manifest json,生成 vLLM 服务发射器 + 客户端分片发射器 + 人读的清单;**只生成不执行**,不 ssh 不碰显卡。
+**What it does**: consumes a manifest json, generates the vLLM service launcher + the client-shard launcher + a human-readable manifest; **generates only, doesn't execute**, no ssh, doesn't touch a GPU.
 
 ```bash
 cd /home/y-guo/reproduce/new1
-# 试生成(先看一眼,绝不碰 envs/)
+# Trial generation (take a look first, never touch envs/)
 python3 run.py gen-launch --config pipeline/collect/manifest_<BATCH>.json \
   --dry-run --out-override /tmp/genlaunch_<BATCH>/
-# 正式生成 -> envs/runs/<run_id>/
+# Generate for real -> envs/runs/<run_id>/
 python3 run.py gen-launch --config pipeline/collect/manifest_<BATCH>.json
 ```
 
-| flag | 必填 | 说明 |
+| flag | Required | Description |
 |---|---|---|
-| `--config` | 是 | manifest json,模板见 `pipeline/collect/manifest_w0.json` |
-| `--dry-run` | 否 | 必须同时给 `--out-override`,否则退 2 |
-| `--out-override` | 否 | 改写到别处 |
-| `--force` | 否 | 允许覆盖目标目录已有同名文件 |
+| `--config` | yes | the manifest json, template at `pipeline/collect/manifest_w0.json` |
+| `--dry-run` | no | must be given together with `--out-override`, otherwise exits with 2 |
+| `--out-override` | no | write to a different location |
+| `--force` | no | allow overwriting an existing same-named file in the target directory |
 
-**输入**:manifest 必需 `run_id` / `servers[]{host,gpu,model_key,port,session,extra_flags,card}` / `clients[]{tag,model_key,split,num_shards,shard_ports[],outdir,exp}`;可选 `envs_root`(默认 `envs`)、`client_session_prefix`(默认由 run_id 前两段拼,`w0_aw_official` → `new1_w0aw`)、`traj_per_task`+`seed_family`(2026-08-22 起,一题多轨迹:要么都给要么都不给,`len(seed_family)==traj_per_task`,只认 env=appworld;在场时客户端命令追加 `--traj-per-task N --seeds a,b,…`,缺省时生成物与旧版逐字节一致)。
-**输出**:`envs/runs/<run_id>/launch_servers.py`、`launch_clients.sh`(0o775)、`MANIFEST.md`。
-**退出码**:正常 0;所有校验失败一律 `sys.exit(2)`——server 必须同一台机、model_key 必须在表里(只认 q35/q36/gptoss)、端口/session/卡不许重复、`len(shard_ports)==num_shards`、分片端口必须存在且模型匹配、目标已有同名文件且无 `--force`。`outdir` 非标准名只 WARN 并强制改成 `<env>_<model_key>`(`env` 取 manifest 顶层的 `env` 字段,缺省 `appworld`;下游按目录名尾巴认模型,改名会被静默跳过)。
+**Input**: the manifest requires `run_id` / `servers[]{host,gpu,model_key,port,session,extra_flags,card}` / `clients[]{tag,model_key,split,num_shards,shard_ports[],outdir,exp}`; optionally `envs_root` (default `envs`), `client_session_prefix` (defaults to the first two segments of run_id joined, `w0_aw_official` → `new1_w0aw`), `traj_per_task`+`seed_family` (since 2026-08-22, multiple trajectories per task: either both are given or neither is, `len(seed_family)==traj_per_task`, only recognized when env=appworld; when present, the client command appends `--traj-per-task N --seeds a,b,…`, and when absent the output is byte-for-byte identical to the old version).
+**Output**: `envs/runs/<run_id>/launch_servers.py`, `launch_clients.sh` (0o775), `MANIFEST.md`.
+**Exit code**: 0 normally; every validation failure is `sys.exit(2)`: the servers must be on the same machine, model_key must be in the table (only q35/q36/gptoss are recognized), ports/session/cards must not repeat, `len(shard_ports)==num_shards`, the shard ports must exist and match the model, the target already has a file of the same name with no `--force`. A non-standard `outdir` name only gets a WARN and is forced to `<env>_<model_key>` (`env` is taken from the manifest's top-level `env` field, defaulting to `appworld`; downstream recognizes the model by the directory-name tail, and a renamed one gets silently skipped).
 
-生成完的两个发射器仍然要占卡跑 → **走 gpu-run skill 发射,不要手搓 ssh/nohup**。
+The two generated launchers still need to occupy a card to run → **launch them through the gpu-run skill, don't hand-roll ssh/nohup**.
 
 ---
 
-## 2. annotate — 标注
+## 2. annotate
 
-**干什么**:把原始轨迹切成"思考前缀 → 该步调用哪个工具"的样本集(build.py),再给每个样本标出参数值的字符区间(param_label.py)。两步都是纯 CPU。
+**What it does**: cuts the raw trajectories into a sample set of "thinking prefix → which tool this step calls" (build.py), then labels each sample with the character span of its parameter values (param_label.py). Both steps are pure CPU.
 
 ```bash
 cd /home/y-guo/reproduce/new1
-# 三步一条链(推荐):build -> param_label -> check_callstr,同一份 config
+# Three steps as one chain (recommended): build -> param_label -> check_callstr, using the same config
 python3 run.py recipe annotate-chain --set config=pipeline/configs/<BATCH>_<MODEL>.json
-# 或者逐步跑
+# Or run step by step
 python3 run.py ann-build         --config pipeline/configs/<BATCH>_<MODEL>.json
 python3 run.py ann-params        --config pipeline/configs/<BATCH>_<MODEL>.json
 python3 run.py ann-check-callstr --config pipeline/configs/<BATCH>_<MODEL>.json
-# 可选:改过 rules.py/build.py 后的一致性验收(路径全写死,无参数)
+# Optional: consistency acceptance after changing rules.py/build.py (paths are all hard-coded, no parameters)
 python3 run.py ann-accept-v3diff
 ```
 
-配方跑完看 `python3 run.py status`;中途炸了修完接着走
-`python3 run.py recipe annotate-chain --id <id> --resume`。
-⚠️ 配方引擎本身有个冒烟件:`python3 run.py recipe engine-smoke`——两步纯 CPU 自测
-(跑两次 `parse-call-selftest`),验的是 `state.json` / 日志 / 续跑路径**这套机制**
-本身没坏,不验流水线数据。改过引擎或怀疑 `--resume` 不对时先跑它,别拿正式标注链当试验田。
+After the recipe finishes, check `python3 run.py status`; if it blows up midway, fix it and continue with
+`python3 run.py recipe annotate-chain --id <id> --resume`.
+Warning: the recipe engine itself has a smoke test: `python3 run.py recipe engine-smoke`, a two-step pure-CPU self-test
+(runs `parse-call-selftest` twice), which verifies that **the machinery** of `state.json` / logs / the resume path
+isn't broken itself, it doesn't verify pipeline data. Run it first when the engine has been changed or `--resume` is suspected of being wrong, don't use the real annotate chain as a testing ground.
 
-第三步 `ann-check-callstr` 是 **G19–G22 的实现**(不占卡,但注册表给它钉了
-cprobe-env——main() 里 import eval_causal_call → torch,系统 python3 没有,
-2026-08-22 起这个 import 挪出了模块层,`import check_callstr` 本身不再要 torch,
-跑 main 照旧要 cprobe-env;必须在前两步之后跑),产物
-`<DATA_ROOT>/CALLSTR_CHECK.md`;它同时做五道硬门禁与四类"只报不拦"的已知偏差,
-细节见 `gates.md §1` 的 G19–G22。
+The third step, `ann-check-callstr`, is **the implementation of G19-G22** (doesn't occupy a card, but the registry has pinned it to
+cprobe-env: `main()` imports eval_causal_call → torch, which the system python3 doesn't have;
+since 2026-08-22 this import was moved out of the module level, so `import check_callstr` itself no longer needs torch,
+but running main still needs cprobe-env; it must run after the first two steps), artifact
+`<DATA_ROOT>/CALLSTR_CHECK.md`; it does five hard gates and four classes of "reported but not blocked" known deviations at the same time,
+see the G19-G22 entries in `gates.md §1` for details.
 
-**bfcl 那批(`bfcl_mtb_v1`)的完整命令,可直接照抄换环境**——注意 bfcl 没有官方分区,
-题单要先自己生成一次(做法与门禁见 `extending.md §4.6`):
+**The bfcl batch (`bfcl_mtb_v1`)'s complete commands can be copied directly and adapted to a different environment**: note that bfcl has no official partition,
+the task list has to be self-generated once first (method and gates in `extending.md §4.6`):
 
 ```bash
 cd /home/y-guo/reproduce/new1
-# ① 题单:先 --dry-run 看统计,再落盘(第二次跑会被"不静默覆盖"门禁挡住,除非 --force)
+# ① Task list: --dry-run first to see the stats, then save (the second run gets blocked by the "don't silently overwrite" gate, unless --force)
 python3 run.py gen-bfcl-splits --dry-run
 python3 run.py gen-bfcl-splits --out-dir pipeline/splits/bfcl_mtb_v1
-wc -l pipeline/splits/bfcl_mtb_v1/{train,val,test}.txt      # 必须 140 / 40 / 20
-# ② 三个模型各三步(等价写法:三次 recipe annotate-chain,每次换 config)
+wc -l pipeline/splits/bfcl_mtb_v1/{train,val,test}.txt      # must be 140 / 40 / 20
+# ② Three steps per model (an equivalent way to write it: three recipe annotate-chain runs, changing config each time)
 for M in q35 q36 gptoss; do
   python3 run.py ann-build         --config pipeline/configs/bfcl_$M.json || break
   python3 run.py ann-params        --config pipeline/configs/bfcl_$M.json || break
@@ -114,234 +114,226 @@ for M in q35 q36 gptoss; do
 done
 ```
 
-其他环境的题单生成器同样在注册表里,换任务名即可:
-`gen-alf-splits`(ALFWorld,⚠️ 无防覆盖门禁)、`gen-tau2-splits`(tau2 三域)、
-`gen-toolhop-splits`(ToolHop 695/200/100)。
+The task-list generators for the other environments are likewise in the registry, just change the task name:
+`gen-alf-splits` (ALFWorld, warning: no anti-overwrite gate), `gen-tau2-splits` (tau2's three domains),
+`gen-toolhop-splits` (ToolHop 695/200/100).
 
-两脚本共用同一份 config,**一模型一份**。config 字段(照抄 `pipeline/configs/aw_q35.json`):
+The two scripts share the same config, **one per model**. Config fields (copied verbatim from `pipeline/configs/aw_q35.json`):
 
-| 字段 | 含义 |
+| Field | Meaning |
 |---|---|
-| `run_family` / `model_short` | 只进报告标题 |
-| `env` | appworld / tales / bfcl,决定事件抽取器 |
-| `model_full` | 按它过滤事件(如 `qwen3.5-27b`),一模型一套数据 |
-| `traj_runs[]` | 轨迹目录列表,绝对路径 |
-| `traj_runs[]` 的层级 | ⚠️ 必须写到 **run 目录本身**(`envs/runs/full_v1`),不是它的父目录(`envs/runs`)。写父目录会把 smoke 批次静默并进来,退 0 无告警(`extending.md §5 #20`,门禁 G21) |
-| `official_split_files.{train,val,test}` | 题单 txt,每行一个 task_id。**环境没有官方分区时也用这个字段**,指向 `pipeline/splits/<批次>/` 下自己生成的题单(见 `extending.md §4.6`) |
-| `split_mode` | 纯装饰,**没有任何代码读它**(`extending.md §5 #12`) |
-| `split_desc` | 可选,**报告文案从它取**。默认 `"官方题单,任务实例级"`;没有官方分区的环境必须写(bfcl 写的是 `"冻结 v3_1 老三堆,任务实例级;BFCL 无官方分区"`),不写会被门禁 G22 拦住 |
-| `data_out` | 数据集输出目录 = 后续所有 `--data` |
-| `seed` | 默认 42(np821 起,`rules.py` 常量已换种子家族首位);旧配置里显式写的 20260729 原样生效,压过默认值 |
-| `weight_mode` | 可选,2026-08-22 起。缺省 `uniform` = 每步等权 w=1(长期口径);旧口径 `per_event` = w=1/m 显式写才拿得到,用途只剩逐字节复现验收 |
-| `max_bounds` | 可选,2026-08-22 起。每事件切点上限,缺省 64,透传 `rules.boundaries` 抽稀 |
-| `trajs_per_unit` | 可选,2026-08-22 起。一题几条轨迹(np821 = 4):check_callstr 门禁 B 按它判「一个 unit 恰好 K 条 traj 且采样序号 `_r0..r{K-1}` 齐全」;**字段在场时** ANNOTATE_REPORT 追加四样统计(未截断切点分布、命中上限事件数、完全相同轨迹计数、30 步上限命中数),不在场时报告行集与旧版一致 |
+| `run_family` / `model_short` | only go into the report title |
+| `env` | appworld / tales / bfcl, decides the event extractor |
+| `model_full` | events are filtered by this (e.g. `qwen3.5-27b`), one model, one set of data |
+| `traj_runs[]` | list of trajectory directories, absolute paths |
+| `traj_runs[]`'s hierarchy | Warning: must be written down to the **run directory itself** (`envs/runs/full_v1`), not its parent directory (`envs/runs`). Writing the parent directory silently merges in the smoke batch, exits 0 with no warning (`extending.md §5 #20`, gate G21) |
+| `official_split_files.{train,val,test}` | task-list txt files, one task_id per line. **Also used when the environment has no official partition**, pointing at a self-generated task list under `pipeline/splits/<batch>/` (see `extending.md §4.6`) |
+| `split_mode` | pure decoration, **no code reads it** (`extending.md §5 #12`) |
+| `split_desc` | optional, **the report's wording is taken from it**. Default `"official task list, task-instance level"`; an environment with no official partition must write it (bfcl writes `"the frozen old three splits from v3_1, task-instance level; BFCL has no official partition"`), not writing it gets blocked by gate G22 |
+| `data_out` | the dataset output directory = every subsequent `--data` |
+| `seed` | defaults to 42 (since np821, `rules.py`'s constant has switched to the first entry of the seed family); an explicit 20260729 written in an old config still takes effect as-is, overriding the default |
+| `weight_mode` | optional, since 2026-08-22. Defaults to `uniform` = equal weight per step, w=1 (the long-term convention); the old convention `per_event` = w=1/m is only obtained by writing it explicitly, its only remaining use is byte-for-byte reproduction acceptance |
+| `max_bounds` | optional, since 2026-08-22. The cut-point ceiling per event, defaults to 64, passed through to `rules.boundaries` for thinning |
+| `trajs_per_unit` | optional, since 2026-08-22. How many trajectories per task (np821 = 4): check_callstr's gate B uses it to judge "one unit has exactly K traj and the sampling index `_r0..r{K-1}` is all present"; **when this field is present**, ANNOTATE_REPORT appends four extra statistics (the untruncated cut-point distribution, the count of events hitting the ceiling, the count of exactly-identical trajectories, the count hitting the 30-step ceiling); when absent, the report's set of lines matches the old version |
 
-`ann-build` 另有两个 CLI 旗压过同名配置字段:`--weight-mode uniform|per_event`、
-`--max-bounds N`。逐字节复现旧产物(G8 验收线)就是拿旧 config 原样加
-`--weight-mode per_event --max-bounds 64` 原地重跑:config 文件不动,报告里的
-`config=`/`out=` 行才能一字不差。
+`ann-build` also has two CLI flags that override config fields of the same name: `--weight-mode uniform|per_event`,
+`--max-bounds N`. Byte-for-byte reproduction of an old artifact (the G8 acceptance line) means taking the old config as-is and adding
+`--weight-mode per_event --max-bounds 64` and rerunning in place: the config file doesn't change, that's the only way the
+`config=`/`out=` lines in the report can match word-for-word.
 
-**输出**:`<DATA_ROOT>/{train,val,test}.jsonl`、`tool_vocab.json`、`router_stats.md`、`qa_sample.txt`、`ANNOTATE_REPORT.md`;param_label 再写 `<DATA_ROOT>/params/{train,val,test}.jsonl` + `PARAM_LABEL_REPORT.md` + `CHECK_50.md`;check_callstr 再写 `<DATA_ROOT>/CALLSTR_CHECK.md`(它**只读不写**数据本体)。
-**退出码**:0;`raise SystemExit`(=1)三种——过滤后没有 `model_full` 的事件、**有 unit 不在任何官方题单里**(拒绝静默丢弃,换环境时最常炸的一条:题单文件路径写错或换了 split 命名就会全量报错)、未知 env。自检 assert 失败也是 1(前缀=原文切片 200 抽检、unit 不跨 split、每堆 20 unit 题单归属)。accept_v3diff 特殊:**全一致=0,有任何不一致=1**,报告写 `pipeline/annotate/ACCEPT_V3DIFF.md`。
+**Output**: `<DATA_ROOT>/{train,val,test}.jsonl`, `tool_vocab.json`, `router_stats.md`, `qa_sample.txt`, `ANNOTATE_REPORT.md`; param_label additionally writes `<DATA_ROOT>/params/{train,val,test}.jsonl` + `PARAM_LABEL_REPORT.md` + `CHECK_50.md`; check_callstr additionally writes `<DATA_ROOT>/CALLSTR_CHECK.md` (it **only reads, never writes** the data itself).
+**Exit code**: 0; `raise SystemExit` (=1) in three cases: no events with `model_full` remain after filtering, **a unit is not in any official task list** (refuses to silently drop it; the pitfall most commonly hit when changing environments, a wrong task-list file path or a changed split naming will error out across the board), or an unknown env. A self-check assert failure is also 1 (prefix = a 200-entry spot check against the original-text slice, a unit doesn't cross splits, a 20-unit task-list-assignment spot check per split). accept_v3diff is special: **fully consistent = 0, any inconsistency = 1**, the report is written to `pipeline/annotate/ACCEPT_V3DIFF.md`.
 
 ---
 
-## 3. train — 训练格
+## 3. train
 
-**干什么**:同一份数据训各格。现役三格(2026-08-21 起 m 线停跑):ctool(因果模型判工具种类)、cgen(因果模型直接写整条调用)、cparam(因果模型给定工具名只写参数段,数据与 cgen 同源零新标注);停跑存档两格:mtool(ModernBERT 判工具种类)、mext(ModernBERT 圈参数区间),仍可单发。各格互不依赖,可全并行。底座三档:ctool/cgen/cparam 都认 `--base qwen(0.6B,默认)/qwen17(1.7B)/qwen4(4B)`,**一个批次只跑一档底座**(run_id 没有档位段,混档撞 rid,见 extending §3.4)。**训练全要显卡 → 走 gpu-run skill 发射,不要手搓 ssh/nohup。**
+**What it does**: trains each cell on the same data. Currently in service, three cells (the m-line retired since 2026-08-21): ctool (a causal model judges the tool kind), cgen (a causal model writes the whole call directly), cparam (a causal model, given the tool name, writes only the parameter segment; the data comes from the same source as cgen, zero new annotation); retired, kept for reference, two cells: mtool (ModernBERT judges the tool kind), mext (ModernBERT circles the parameter span), both can still be launched individually. The cells are independent of each other and can all run in parallel. Three base tiers: ctool/cgen/cparam all recognize `--base qwen (0.6B, default)/qwen17 (1.7B)/qwen4 (4B)`, **one batch runs only one base tier**, run_id has no tier segment, mixing tiers collides on rid (see extending §3.4). **Training all needs a GPU, so launch through the gpu-run skill, don't hand-roll ssh/nohup.**
 
-先冒烟(每格加 `--smoke`,产物写 `pipeline/runs/smoke/`,不污染正式目录),再全量。以下是 c1 批次**真实跑过的 12 条命令**的形态(每格一条,只有模型段不同):
+Smoke first (add `--smoke` to each cell, artifact written to `pipeline/runs/smoke/`, doesn't pollute the real directory), then the full volume. Below are the shapes of the **12 commands actually run in the c1 batch** (one per cell, only the model segment differs):
 
-各训练格都是发射类任务:`run.py` 只把完整命令**拼出来打印**(解释器与脚本路径由
-注册表填,不带 cd/CUDA_VISIBLE_DEVICES/tee——那是 gpu-run 发射模板的活),
-发射本身走 gpu-run。⚠️ 出命令前过脏树门禁:`git status --porcelain` 非空就拒绝,
-先 commit;非要跑加 `--allow-dirty`。**这道门连 `run.py show <task>` 也过**
-(2026-08-02 加固,审计 A3)——文档里"用 show 出命令"这条路不许成为绕门的后门,
-`show <task> --allow-dirty` 才放行。
+Every training cell is a launch-type task: `run.py` only **assembles and prints** the full command (the interpreter and script path are filled in by the registry, without cd/CUDA_VISIBLE_DEVICES/tee, that's the job of the gpu-run launch template), and the launch itself goes through gpu-run. Warning: the dirty-tree gate is enforced before emitting the command: a non-empty `git status --porcelain` refuses it, commit first; to force it through, add `--allow-dirty`. **This gate is enforced even by `run.py show <task>`**
+(hardened 2026-08-02, audit A3): the documented path "use show to emit the command" must not become a backdoor around the gate, only `show <task> --allow-dirty` lets it through.
 
 ```bash
 cd /home/y-guo/reproduce/new1
 R=pipeline/runs; D=pipeline/data/aw_official_v1
 python3 run.py train-mtool --data $D/q35 --out $R/c1_q35_mtool
 python3 run.py train-mext  --data $D/q35 --out $R/c1_q35_mext
-# ctool 的 --base qwen 已固定在注册表里,不用再传;--align-tol 是唯一动过的超参
+# ctool's --base qwen is already fixed in the registry, no need to pass it again; --align-tol is the only hyperparameter ever touched
 python3 run.py train-ctool --data $D/q35 --out $R/c1_q35_ctool --align-tol 3e-4
-# cgen/cparam 的 --base 默认 qwen(0.6B),换档传 --base qwen17 / qwen4
+# cgen/cparam's --base defaults to qwen (0.6B), pass --base qwen17 / qwen4 to switch tiers
 python3 run.py train-cgen  --data $D/q35 --out $R/c1_q35_cgen
-# cparam(2026-08-21 新格):给定工具名只生成参数
+# cparam (a new cell since 2026-08-21): given the tool name, only generates the parameters
 python3 run.py train-cparam --data $D/<m> --out $R/<batch>_<m>_cparam
 ```
 
-一把发全批走排卡发射器 `python3 run.py launch-probe`(格表的唯一真源是 `run.py`
-的 `CELLS`,`ops/launch_probe.py` 从它 import);先 `--dry-run` 看机位。
-它自己有一个 `--force`,**原样透传给四个训练脚本**:`launch-probe smoke` 重跑同一批
-必须带它——smoke 的 `--out` 是从 `<batch>_<model>_<cell>_smoke` 确定性推出来的,
-第二次会被"同 out 已有 `train_log.jsonl`"守卫拦成 SKIP/退出。full 档同理,
-只有确认要覆盖那个目录才加。
-它**发射成功后自动往每个 `--out` 目录 append 一条 `RUNMETA.json`**
-(时间/机器/kind=`train`/实际命令/commit/branch/dirty + 脏文件清单,外加
-session/launch_host/gpu/log/排卡表路径;append 不覆盖,同目录二次发射留两条),
-产物从此能钉回代码版本。这条由 `launch_common.register_all` 的第一步写
-(它是 RUNMETA 的唯一写手,三处登记顺序 RUNMETA→台账→记录),回执里有
-`RUNMETA: <路径>` 一行就是写了;只有回执出现 `WARN RUNMETA 没写上(<目录>): <错误>`
-才需要手补 `python3 run.py runmeta <outdir> --cmd '<实际命令>' --kind train`。
-(2026-08-26 之前发射器自己先写一条再调 `register_all`,回执里那句
-`WARN 没给 --outdir，RUNMETA 没写` 是误报——按它手补会在同一份 RUNMETA 里
-留两条重复记录,np821 的 12 个训练 run 目录就是这样;修复见 commit 6047f83。)
-手搓发射(不经 launch-probe)要自己补一条:`python3 run.py runmeta <outdir> --cmd '<实际命令>'`。
+Launching the whole batch at once goes through the placement-table launcher `python3 run.py launch-probe` (the cell table's sole source of truth is `run.py`'s
+`CELLS`, `ops/launch_probe.py` imports it); use `--dry-run` first to check the machine placement.
+It has its own `--force`, **passed through as-is to the four training scripts**: `launch-probe smoke` must carry it when rerunning the same batch, since smoke's `--out` is deterministically derived from `<batch>_<model>_<cell>_smoke`,
+and the second run gets blocked by the "an out with an existing `train_log.jsonl`" guard, turning into SKIP/exit. The full tier is the same way,
+only add it once you've confirmed you want to overwrite that directory.
+Once it **launches successfully it automatically appends one `RUNMETA.json` to every `--out` directory**
+(time/machine/kind=`train`/the actual command/commit/branch/dirty + the list of dirty files, plus the session/launch_host/gpu/log/placement-table paths; appends without overwriting, launching twice into the same directory leaves two entries). This is written by the first step of
+`launch_common.register_all` (it is the sole writer of RUNMETA, the three-registration order is RUNMETA→ledger→record), and a `RUNMETA: <path>` line in the receipt
+means it was written; only if the receipt shows `WARN RUNMETA not written (<directory>): <error>`
+does it need to be backfilled by hand with `python3 run.py runmeta <outdir> --cmd '<actual command>' --kind train`.
+(Before 2026-08-26 the launcher wrote one entry itself and then called `register_all`, and the receipt's line
+`WARN --outdir not given, RUNMETA not written` was a false alarm; backfilling it by hand based on that
+would leave two duplicate entries in the same RUNMETA, which is exactly what happened to np821's 12 training run directories; fixed in commit 6047f83.)
+A hand-rolled launch (not through launch-probe) needs to backfill one itself: `python3 run.py runmeta <outdir> --cmd '<actual command>'`.
 
-⚠️ **补发单格时别拿整张排卡表重发**(np821 实测):`launch-probe` / `launch-eval`
-逐格发,已经跑完的那些格会被训练脚本的"同 out 已有 `train_log.jsonl`"守卫秒退
-(退出码不变、整批不中断),但**发射器在守卫拦下之前已经把登记做了**——给那个
-早就跑完的 run 补一条假 `RUNMETA` 记录、把它的 run_id 重新塞回台账 active。
-台账从此有个永远不会自己消失的僵尸条目,RUNMETA 里也多一条没跑过的命令。
-处置:**补发哪一格就临时写一张只含那一格的排卡表**,放仓库外(如
-`$CLAUDE_JOB_DIR/tmp/<批次>_<格>_only_placement.json`)避免弄脏工作树,
-正式表 `ops/<批次>_placement.json` 里那一行同步改成新机位留档。
+Warning: **when relaunching a single cell, don't relaunch the whole placement table** (measured on np821): a cell that's already finished
+gets instantly rejected by the training script's "an out with an existing `train_log.jsonl`" guard (the exit code stays the same, the whole batch isn't interrupted), but **the launcher already did the registration before the guard blocked it**: that
+already-finished run gets a fake `RUNMETA` entry added, and its run_id gets stuffed back into the active ledger.
+The ledger ends up with a zombie entry that never disappears on its own, and RUNMETA gets one extra command that never actually ran.
+Handling: **write a temporary placement table containing only the cell being relaunched**, kept outside the repo (e.g.
+`$CLAUDE_JOB_DIR/tmp/<batch>_<cell>_only_placement.json`) to avoid dirtying the working tree,
+and update that row in the official table `ops/<batch>_placement.json` with the new machine placement for the record.
 
-换批次时把 `q35` 换成 `<MODEL>`、`c1` 换成 `<BATCH>`、数据集名换掉即可。run_id 一律 `<BATCH>_<MODEL>_<格名>`,四处一致(数据目录名 / tmux session / 台账 name / commit message)。
+When changing batches, just swap `q35` for `<MODEL>`, `c1` for `<BATCH>`, and the dataset name. run_id is always `<BATCH>_<MODEL>_<cell name>`, consistent across all four places (data directory name / tmux session / ledger name / commit message).
 
-| flag | 谁有 | 说明 |
+| flag | who has it | Description |
 |---|---|---|
-| `--data` | 各格 | 必填,`<DATA_ROOT>`;mext 另可用 `--params`(默认 `<DATA_ROOT>/params`) |
-| `--out` | 各格 | 必填,防覆盖旧件 |
-| `--force` | 各格 | **2026-08-02 起(审计 B7)**:不传时,`--out` 下已经有 `train_log.jsonl` 就**直接 SystemExit 拒绝开训**——那个目录训过一次,再训会把两次产物混进同一个 `best/` 且无法归属。正常处置是**换一个 `--out`**;确认要覆盖才加 `--force`。→ 重发某一格前先看目标目录有没有 `train_log.jsonl`,别把这个退出当成脚本坏了 |
-| `--base qwen` | 仅 ctool | **必填**,choices 只有 `qwen` |
-| `--align-tol` | ctool 与 cgen/cparam 都有,判据不同 | ctool:默认 `3e-4`(2026-08-28 起,决定 20;之前默认 1e-4——上限 8192 后长窗口是常态,`ks828b06` smoke 在 8,167 token 的事件上 maxdiff_hidden 1.03e-4、相对差 1.46e-6,被旧默认 1e-4 拦下;c1/np821 批实跑一直显式传 `3e-4`)。判是不是真算错看报告里的 reldiff:1e-6 量级=纯噪声,1e-3 以上=真算错,放宽也没用。cgen/cparam(新训练器):默认 `2e-5`,是 fp32 下逐行 ce 的最大绝对差门槛(逐 token 的最大差门槛写死 `3e-4`,不接受命令行传参),和 ctool 的 `--align-tol` 不是同一套判据、数字不通用(spec §9 末段) |
-| `--align-only` | ctool 与 cgen/cparam 都有 | 只跑对齐检查即退(0),开训前想单独验就用它 |
-| `--align-events` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起) | 默认 `6`,对齐检查从 val 里只抽 `len(full_ids) ≤ 2048` 的事件(控制耗时) |
-| `--mode` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起) | **必填**,`cgen` / `cparam`,决定目标串与拼接尾巴走哪一套;`run.py` 的 `train-cgen`/`train-cparam` 已经在注册表里带好这个旗,手搓才需要自己传 |
-| `--tok-budget` | 仅 cgen/cparam | 默认 `16384`(2026-08-28 冒烟裁决,不采纳 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`),一个物理块允许的「事件数 × 块内最长拼接序列补到 16 的倍数后的长度」上限;单个事件超预算独自成块(允许超预算)。`--eval-tok-budget` 默认 `0` = 2 × 本值,即 `32768`。依据:`ks828b06_gptoss_cgen_speed_b16k`(H100,450 事件 20,641 行 57 次更新)训练 step 峰值 60.59 GB(对 93.10 GiB 余量 39%);`--tok-budget 24576` 峰值 80.91 GB、慢 15%(`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`、`ops/runs.jsonl`) |
-| `--events-per-mb` | 仅 cgen/cparam | 默认 `4`,逻辑小批的事件数,损失的归一化单位 |
-| `--eval-per-epoch` | 仅 cgen/cparam | 默认 `4`,每个 epoch 评估这么多次全量 val(评估点集合 `{ceil(U·k/E): k=1..E}`,`k=E` 那个点是 epoch 末) |
-| `--accum` | ctool 与 cgen/cparam 都有,含义与定值都不同 | cgen/cparam:累积的逻辑小批数,默认 `2`(配 `--events-per-mb 4` = 8 个事件一次更新)。ctool:累积的物理批数,默认 `4`(配 `--bs 2` = 8 个事件一次更新,2026-08-28 起;之前是 `--bs 4 --accum 2`,H100 上 `--bs 4` 训练第一批 OOM——进程 92.94 GiB——才退到现在这档,决定 15;`--bs 2 --accum 4` 跑通,nvidia-smi 最大样本 56,859 MiB,`ops/runs.jsonl` 的 `ks828b06_gptoss_ctool_h100mem_bs2` 记录) |
-| `--base` | ctool/cgen/cparam | 三档 qwen=0.6B / qwen17=1.7B / qwen4=4B(权重都在 NFS models 盘)。ctool 必填(注册表已带 qwen);cgen/cparam 默认 qwen。发射换档走排卡表 extra(`--base qwen17`,argparse 后写的赢) |
-| `--smoke` | 各格 | 停跑的 mtool/mext 与旧逐行脚本(`train-cgen-rows`/`train-cparam-rows`)= 500 训练 / 200 评估实例;ctool = 200 / 80 事件;cgen/cparam **现役训练器**(`train_causal_share.py`,2026-08-28 起)= 40 训练事件 / 16 评估事件,取法是按事件全文 token 数**升序**取前 N 个(train 与 val 同规则,不是随机抽——重跑同一个 `--smoke` 会拿到完全相同的事件集合,和旧口径"随机抽 500/200"不是同一把尺子,数字不可比);均 1 epoch。和 `--max-events` 同给时 N 覆盖 40/16,取法仍是升序;单独给 `--max-events` 才走 `random.Random(SEED)` 随机(照 ctool 口径) |
-| `--env` | 各格 | 默认 appworld,**仅作日志标签**,不影响数据路径 |
-| `--device` | 除 mtool | 默认 cuda |
-| `--readonly-env` | 各格 | choices `appworld/bfcl`,默认不传(**不传 = 字节级旧行为**)。传了即"只读+弃权"口径(ro1 批起):mtool/ctool 真值折叠、词表 = 只读工具(原顺序)+ 末位哨兵 `<NON_READONLY>`;mext/cgen 只在只读事件上训任务,非只读样本仅当开火头负例;cparam 非只读样本整条丢弃(它没有开火头)。真值表在 `pipeline/annotate/readonly/<env>.json`,表外标签超 5% 硬停(`readonly_map.audit`)。产物多一份 `<out>/READONLY.json` |
-| `--fire-head` | mext/cgen(cparam 没有这旗) | 随训开火头(二值:该边界参数是否全就绪)。ready 真值按 `(event, sent_idx)` 联表 `params/<split>.jsonl`;mext 走独立样本流第二次前向,cgen 取 prompt 末位置(labels 最后一个 -100)的 logit 以免看见目标串。产物 `best/fire_head.pt`,`meta.json` 记 `fire_head: true` |
-| `--lora` | ctool/cgen/cparam(np821 起) | 底座换 LoRA 训,**分类头/开火头照常全参**;存 `best/` 之前先 `merge_and_unload` 并回底座再 `save_pretrained`,所以 `best/` 与全参训练存的逐项同构、**四个评测脚本零改动装得回**(它们一律 `from_pretrained(best/)`)。`meta.json` 多一个 `lora` 块记超参。不传本旗时脚本自己不碰 peft(peft 的 import 全在 `--lora` 分支里),行为与加这套旗标之前一致。旗标/默认值/target modules 的唯一真源是 `pipeline/train/lora_util.py`(三格共用,别处不许再抄) |
-| `--lora-rank` / `--lora-alpha` / `--lora-dropout` / `--lora-lr` | 同上三格 | 默认 16 / 32 / 0.05 / 2e-4(口径见 invariants §3 的 LoRA 行)。**学习率的优先级**:显式 `--lr` > `--lora-lr`(开 `--lora` 时) > 全参默认 1e-5——三个脚本的 `--lr` 默认值是 `None` 就是为了分得清"没传"和"传了个跟默认一样的值" |
-| `--grad-ckpt` | **ctool/cgen/cparam/mext**(mtool 没有) | OOM 唯一合规处置(invariants §6)。全参与 `--lora` 两种模式都能用。ro1 实测:开火头双前向让 q36/gptoss 长序列档在 48G 卡必 OOM,带此旗原卡重发即解。**z1 实测(2026-08-10):gptoss 轨迹的 ctool/cgen 不带 fire-head、默认超参也在 48G A6000 直接 OOM**——当时 cgen 还没有本旗,只能换 H100/H200 大卡(`launch --refire` 换 `--piece` 即可);np821 起三个因果格都有本旗,处置改为先加旗 |
-| `--gen-eval` / `--gen-bs` / `--gen-eval-at` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起,spec 16.3、工单 08) | `--gen-eval N` 训练评估时额外做的生成式评估行数,默认 `200`(0 关闭);`--gen-bs` 生成批大小,默认 `8`;`--gen-eval-at {all,last}` 默认 `last`(只在 `frac==E` 那次评估——epoch 末——做生成),`all` 每个评估点都做。开着时 `eval` 日志多 `val_exact_call`(cgen)/`val_exact_params`(cparam)、`gen_n`、`gen_s` 三个键(`--gen-eval 0` 或非该评估点时不写);选 best 仍只看 `val_ce`(决定 28,不变) |
-| `--align-tok-tol` / `--align-bf16-mean-tol` / `--align-bf16-max-tol` / `--align-baseline-factor` | 仅 cgen/cparam(`train_causal_share.py`,2026-08-28 起) | 原来写死在模块常量里的四个对齐粗筛门槛全部改成参数,默认值就是原常量:分别 `3e-4` / `2e-2` / `1e-1` / `3.0`;模块顶部的同名常量已删,参数默认值是唯一真源 |
-| `--align-rule` / `--align-rel-tol` | ctool 与 cgen/cparam 都有(ctool 只有这两个新增旗,没有上面那四个粗筛门槛) | `--align-rule {abs,rel,both}` 默认 `abs`(现状,逐行/逐 token 绝对差,ctool 是 `max(d_h, d_l) < tol`);`rel` 判相对差——cgen/cparam 是 `rel_max_abs_diff = max_abs_diff / mean(|ce_ref|) ≤ --align-rel-tol`,ctool 是 `reldiff_hidden ≤ tol 且 reldiff_logits ≤ tol`(这两个量 ctool 原来就在算,只是"诊断用不参与判定",现在接进判据);`both` 两条同时成立。`--align-rel-tol` 默认 `1e-5`(两边都是)。`ALIGN_CHECK.json` 都写全 `rule`/`rel_tol` 等新键,已有键不动 |
-| `--mem-probe-pick` | 仅 cgen/cparam,配 `--mem-probe`(spec 16.5,工单 10) | `{tokens,cost,loop}`,默认 `cost`。`tokens`=现状,全集里按 token 数挑最满块加最长事件,状态先建、连做两次反向;`cost`=只在本次 run 抽样出的事件上枚举 epoch 0 全部物理块,按"token 数最大"/"损失位数最大"/"两者各除以全局最大值再求和最大"挑三块(重复的块只跑一次),取三者峰值里最大的;`loop`=对 `cost` 挑出的三块各找到所在的更新组(同一组只跑一次),每组原样跑一次更新(lr 置 0 的 `opt.step()`,跑完 `opt.state.clear()`),每组一条 `mem_probe`(`group_of` 写这一组是为哪几块跑的),取各组峰值的大者(决定 32:只跑损失位最多那块所在的组,在不开检查点的配置上比真峰低约 6%)。三种方式共用"建状态→reset 峰值→跑→读峰值→清状态、恢复 lr、清梯度"骨架,末尾都写一条 `mem_probe_summary`(字段 `pick, worst_gb, worst_kind, scope, n_events_considered`,`loop` 另加 `worst_group_of`);`scope` = `full`(`tokens`,量的是全集)或 `run`(`cost`/`loop`,只量本次 run 抽样出的事件——`--smoke`/`--max-events` 下这个数是小样本,不能拿去排全量的卡,spec 16.10 #36) |
-| `--overlong` | 三个评测脚本(`eval_causal_call.py`/`eval_causal_param.py`/`eval_tool.py`,spec 16.2,工单 07) | `{left,skip,drop-event}`,默认 `left`。`left`=现状,提示/全文超长照旧左截:cgen/cparam 记 `n_left_truncated`(cparam 按 gt_tool/pred_tool 两套提示的最大长度 `L(k)` 算,另记 `n_left_truncated_by_tag`),ctool 窗口外边界记零 logits、计 `n_oow`;`skip`=超长的样本本身不进任何分母:cgen/cparam 记 `n_skipped_rows`,ctool 记 `n_skipped_bounds`;`drop-event`=事件全文 token 数超过 `max_len` 就整个事件不判分:cgen/cparam 记 `n_dropped_events`(还有 `n_excluded_by_ctool`,记 ctool 剔完候选行后没有触发点候选的事件),ctool 记 `n_dropped_events` 与 `n_dropped_bounds`。只对 `eval_tool.py --head causal` 生效,`--head mbert` 传非 `left` 直接 `SystemExit`(mbert 报告 `overlong_mode` 恒写 `left`)。所有报告都写 `overlong_mode` 与对应计数(没发生的写 0,不省略键);两份报告(ctool 与 cgen/cparam)各记各的 `overlong_mode`,读的人要对着一起看(extending §5 #28) |
+| `--data` | every cell | required, `<DATA_ROOT>`; mext can additionally use `--params` (defaults to `<DATA_ROOT>/params`) |
+| `--out` | every cell | required, to prevent overwriting an old artifact |
+| `--force` | every cell | **since 2026-08-02 (audit B7)**: without it, if `--out` already has a `train_log.jsonl`, it **exits outright with SystemExit, refusing to start training**: that directory has already been trained once, and training again would mix two runs' artifacts into the same `best/` with no way to tell them apart. The normal remedy is to **use a different `--out`**; only add `--force` once you've confirmed you want to overwrite. → before relaunching a specific cell, check whether the target directory already has a `train_log.jsonl`, don't mistake this exit for the script being broken |
+| `--base qwen` | ctool only | **required**, the only choice is `qwen` |
+| `--align-tol` | both ctool and cgen/cparam have it, with different criteria | ctool: defaults to `3e-4` (since 2026-08-28, decision 20; the previous default was 1e-4: after the ceiling became 8192, long windows became the norm, and `ks828b06` smoke had maxdiff_hidden 1.03e-4 with a relative difference of 1.46e-6 on an event with 8,167 tokens, which got blocked by the old default of 1e-4; the c1/np821 batches always passed `3e-4` explicitly). Whether it's a real computation error is judged by the reldiff in the report: on the order of 1e-6 = pure noise, above 1e-3 = a real computation error, loosening it wouldn't help. cgen/cparam (the new trainer): defaults to `2e-5`, the maximum absolute-difference threshold on per-row ce under fp32 (the per-token maximum-difference threshold is hard-coded at `3e-4`, and doesn't accept a command-line override), which is not the same criterion as ctool's `--align-tol`, and the numbers aren't interchangeable (spec §9, last paragraph) |
+| `--align-only` | both ctool and cgen/cparam have it | only runs the alignment check and then exits (0); use it to verify separately before starting training |
+| `--align-events` | cgen/cparam only (`train_causal_share.py`, since 2026-08-28) | defaults to `6`; the alignment check only draws events from val where `len(full_ids) <= 2048` (to control time cost) |
+| `--mode` | cgen/cparam only (`train_causal_share.py`, since 2026-08-28) | **required**, `cgen` / `cparam`, decides which set of target-string and concatenation-tail logic to use; `run.py`'s `train-cgen`/`train-cparam` already carries this flag in the registry, only a hand-rolled command needs to pass it |
+| `--tok-budget` | cgen/cparam only | defaults to `16384` (2026-08-28 smoke ruling, doesn't adopt `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`); the ceiling on "event count x the length of the longest concatenated sequence in the block, padded up to a multiple of 16" allowed in one physical block; a single event that exceeds the budget still forms its own block by itself (over-budget is allowed). `--eval-tok-budget` defaults to `0` = 2 x this value, i.e. `32768`. Basis: `ks828b06_gptoss_cgen_speed_b16k` (H100, 450 events, 20,641 rows, 57 updates) had a training-step peak of 60.59 GB (39% of the 93.10 GiB headroom); `--tok-budget 24576` had a peak of 80.91 GB and was 15% slower (`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`, `ops/runs.jsonl`) |
+| `--events-per-mb` | cgen/cparam only | defaults to `4`, the event count of a logical minibatch, the normalization unit for the loss |
+| `--eval-per-epoch` | cgen/cparam only | defaults to `4`, evaluate full-volume val this many times per epoch (the set of evaluation points is `{ceil(U·k/E): k=1..E}`, and the point at `k=E` is the end of the epoch) |
+| `--accum` | both ctool and cgen/cparam have it, with different meanings and different values | cgen/cparam: the number of logical minibatches accumulated, defaults to `2` (paired with `--events-per-mb 4` = 8 events per update). ctool: the number of physical batches accumulated, defaults to `4` (paired with `--bs 2` = 8 events per update, since 2026-08-28; previously it was `--bs 4 --accum 2`, but `--bs 4`'s first training batch OOM'd on H100, the process at 92.94 GiB, and it was backed off to this tier, decision 15; `--bs 2 --accum 4` ran through, nvidia-smi's maximum sample was 56,859 MiB, recorded in `ops/runs.jsonl`'s `ks828b06_gptoss_ctool_h100mem_bs2`) |
+| `--base` | ctool/cgen/cparam | three tiers, qwen=0.6B / qwen17=1.7B / qwen4=4B (the weights are all on the NFS models drive). Required for ctool (the registry already carries qwen); defaults to qwen for cgen/cparam. Switching tiers at launch time goes through the placement table's extra (`--base qwen17`, whichever argparse writes last wins) |
+| `--smoke` | every cell | the retired mtool/mext and the old row-by-row scripts (`train-cgen-rows`/`train-cparam-rows`) = 500 training / 200 eval instances; ctool = 200 / 80 events; cgen/cparam's **current trainer** (`train_causal_share.py`, since 2026-08-28) = 40 training events / 16 eval events, taken by sorting **ascending** by the full event's token count and taking the top N (train and val follow the same rule, not a random draw; rerunning the same `--smoke` gets exactly the same event set, which is not the same yardstick as the old convention "randomly draw 500/200", the numbers are not comparable); all are 1 epoch. When given together with `--max-events`, N overrides 40/16, still taken ascending; only when `--max-events` is given alone does it go through `random.Random(SEED)` randomly (following ctool's convention) |
+| `--env` | every cell | defaults to appworld, **is only a log label**, doesn't affect the data path |
+| `--device` | all except mtool | defaults to cuda |
+| `--readonly-env` | every cell | choices `appworld/bfcl`, not passed by default (**not passing it = byte-level old behavior**). When passed, it's the "read-only + abstain" convention (since the ro1 batch): mtool/ctool fold the ground truth, the vocabulary = read-only tools (original order) + a final sentinel `<NON_READONLY>`; mext/cgen only train the task on read-only events, non-read-only samples only serve as fire-head negatives; cparam drops non-read-only samples entirely (it has no fire head). The ground-truth table is at `pipeline/annotate/readonly/<env>.json`, more than 5% of labels falling outside the table hard-stops it (`readonly_map.audit`). The artifact gains one extra file, `<out>/READONLY.json` |
+| `--fire-head` | mext/cgen (cparam doesn't have this flag) | trains a fire head alongside (binary: whether all parameters at that boundary are ready). The ready ground truth is joined by `(event, sent_idx)` against `params/<split>.jsonl`; mext goes through an independent sample stream for a second forward pass, cgen takes the logit at the prompt's final position (the last `-100` in labels) so as not to see the target string. Artifact `best/fire_head.pt`, `meta.json` records `fire_head: true` |
+| `--lora` | ctool/cgen/cparam (since np821) | trains the base with LoRA, **the classification head/fire head are still full-parameter as usual**; before saving `best/`, `merge_and_unload` first and fold back into the base, then `save_pretrained`, so `best/` is item-for-item isomorphic with what full-parameter training saves, **the four eval scripts load it back with zero changes** (they all use `from_pretrained(best/)`). `meta.json` gains one extra `lora` block recording the hyperparameters. When this flag isn't passed, the script itself never touches peft (all of peft's imports are inside the `--lora` branch), and behavior is identical to before this flag existed. The sole source of truth for the flag/default values/target modules is `pipeline/train/lora_util.py` (shared by the three cells, no copy allowed anywhere else) |
+| `--lora-rank` / `--lora-alpha` / `--lora-dropout` / `--lora-lr` | the same three cells above | defaults 16 / 32 / 0.05 / 2e-4 (convention in the LoRA row of invariants §3). **The learning-rate priority**: an explicit `--lr` > `--lora-lr` (when `--lora` is on) > the full-parameter default of 1e-5; the three scripts' `--lr` default is `None` precisely so it can tell apart "not passed" from "passed a value that happens to equal the default" |
+| `--grad-ckpt` | **ctool/cgen/cparam/mext** (mtool doesn't have it) | the sole compliant remedy for OOM (invariants §6). Works in both full-parameter and `--lora` mode. Measured on ro1: the fire head's double forward pass guarantees an OOM on 48G cards for q36/gptoss's long-sequence tiers, and adding this flag and relaunching on the same card fixes it. **Measured on z1 (2026-08-10): gptoss trajectories' ctool/cgen, without fire-head, even with default hyperparameters, OOM directly on a 48G A6000**: at the time cgen didn't have this flag yet, and the only option was switching to a bigger H100/H200 card (`launch --refire` with a different `--piece` is enough); since np821 all three causal cells have this flag, and the remedy changed to adding the flag first |
+| `--gen-eval` / `--gen-bs` / `--gen-eval-at` | cgen/cparam only (`train_causal_share.py`, since 2026-08-28, spec 16.3, ticket 08) | `--gen-eval N` is the number of rows of extra generative evaluation done during training evaluation, defaults to `200` (0 turns it off); `--gen-bs` is the generation batch size, defaults to `8`; `--gen-eval-at {all,last}` defaults to `last` (only generates at the evaluation where `frac==E`, i.e. the end of the epoch), `all` generates at every evaluation point. When it's on, the `eval` log gains the three keys `val_exact_call` (cgen)/`val_exact_params` (cparam), `gen_n`, `gen_s` (not written when `--gen-eval 0` or not at that evaluation point); best selection still only looks at `val_ce` (decision 28, unchanged) |
+| `--align-tok-tol` / `--align-bf16-mean-tol` / `--align-bf16-max-tol` / `--align-baseline-factor` | cgen/cparam only (`train_causal_share.py`, since 2026-08-28) | the four alignment coarse-screening thresholds that used to be hard-coded module constants were all turned into parameters, and their default values are exactly the old constants: `3e-4` / `2e-2` / `1e-1` / `3.0` respectively; the same-named constants at the top of the module have been removed, the parameter defaults are the sole source of truth |
+| `--align-rule` / `--align-rel-tol` | both ctool and cgen/cparam have them (ctool only has these two new flags, not the four coarse-screening thresholds above) | `--align-rule {abs,rel,both}` defaults to `abs` (the status quo, absolute per-row/per-token difference, ctool is `max(d_h, d_l) < tol`); `rel` judges the relative difference: for cgen/cparam it's `rel_max_abs_diff = max_abs_diff / mean(|ce_ref|) <= --align-rel-tol`, for ctool it's `reldiff_hidden <= tol and reldiff_logits <= tol` (ctool already computed these two quantities before, they were just "diagnostic, not part of the judgment", now they're wired into the criterion); `both` requires both to hold. `--align-rel-tol` defaults to `1e-5` (on both sides). `ALIGN_CHECK.json` always writes the full set of new keys like `rule`/`rel_tol`, existing keys are unchanged |
+| `--mem-probe-pick` | cgen/cparam only, paired with `--mem-probe` (spec 16.5, ticket 10) | `{tokens,cost,loop}`, defaults to `cost`. `tokens` = the status quo, pick the fullest block plus the longest event by token count across the whole set, build the state first and then do two backward passes in a row; `cost` = enumerate all epoch-0 physical blocks only among the events sampled for this run, and pick three blocks by "largest token count" / "largest loss-position count" / "the largest sum after each is divided by its global maximum" (a repeated block only runs once), taking the largest of the three peaks; `loop` = for each of the three blocks `cost` picked, find the update group it belongs to (the same group only runs once), run one update per group as-is (`opt.step()` with lr set to 0, followed by `opt.state.clear()`), one `mem_probe` entry per group (`group_of` records which blocks this group was run for), and take the larger of the groups' peaks (decision 32: only running the group containing the block with the most loss positions comes in about 6% below the true peak on a configuration without checkpointing on). The three methods share the skeleton "build state → reset the peak → run → read the peak → clear the state, restore lr, clear the gradient", and each writes one `mem_probe_summary` entry at the end (fields `pick, worst_gb, worst_kind, scope, n_events_considered`, `loop` additionally has `worst_group_of`); `scope` = `full` (`tokens`, measuring the whole set) or `run` (`cost`/`loop`, only measuring the events sampled for this run; under `--smoke`/`--max-events` this is a small sample and can't be used to assign cards for the full volume, spec 16.10 #36) |
+| `--overlong` | the three eval scripts (`eval_causal_call.py`/`eval_causal_param.py`/`eval_tool.py`, spec 16.2, ticket 07) | `{left,skip,drop-event}`, defaults to `left`. `left` = the status quo, the prompt/full text is still left-truncated when overlong: cgen/cparam record `n_left_truncated` (cparam computes it against the maximum length `L(k)` of the two prompts, gt_tool/pred_tool, and additionally records `n_left_truncated_by_tag`), ctool records zero logits for out-of-window boundaries and counts `n_oow`; `skip` = an overlong sample itself doesn't enter any denominator: cgen/cparam record `n_skipped_rows`, ctool records `n_skipped_bounds`; `drop-event` = if an event's full-text token count exceeds `max_len`, the whole event isn't scored: cgen/cparam record `n_dropped_events` (plus `n_excluded_by_ctool`, recording events with no trigger-point candidate left after ctool strips its candidate rows), ctool records `n_dropped_events` and `n_dropped_bounds`. Only takes effect for `eval_tool.py --head causal`; passing anything other than `left` to `--head mbert` is an outright `SystemExit` (the mbert report's `overlong_mode` always writes `left`). Every report writes `overlong_mode` and the corresponding counts (writes 0 for something that didn't happen, the key is never omitted); the two reports (ctool and cgen/cparam) each record their own `overlong_mode`, and whoever reads them needs to look at both together (extending §5 #28) |
 
-其余全用默认(mbert 两格仍 `--max-len 4096 --bs 8 --accum 4 --lr 2e-5 --epochs 3`;因果三格 2026-08-28 起换新口径——三格同一个上限 `--max-len 8192`(超长事件整条丢弃,不再截断,三格才不分叉训练事件集):ctool `--bs 2 --accum 4 --lr 1e-5 --epochs 3`,cgen/cparam(新训练器)`--events-per-mb 4 --accum 2 --lr 1e-5 --epochs 1 --tok-budget 16384`,开 `--lora` 时 lr 换 2e-4。**np821 批用的是 `--max-len 4096`、因果三格 `--bs 4 --accum 8`、`--epochs 3`**)。c1 那 12 次训练除 ctool 的 `--align-tol` 外没动过任何超参;np821 四批同样只动 `--base` / `--lora` / `--grad-ckpt` 三个旗;`ks828` 起的新口径见本节新增的参数行与下面 `train_causal_share.py` 的真实命令。
+Everything else uses the defaults (the two mbert cells are still `--max-len 4096 --bs 8 --accum 4 --lr 2e-5 --epochs 3`; the three causal cells switched to a new convention since 2026-08-28: the same ceiling `--max-len 8192` for all three cells (an overlong event is dropped whole, no longer truncated, so the three cells' training event sets don't fork): ctool `--bs 2 --accum 4 --lr 1e-5 --epochs 3`, cgen/cparam (the new trainer) `--events-per-mb 4 --accum 2 --lr 1e-5 --epochs 1 --tok-budget 16384`, with lr switched to 2e-4 when `--lora` is on. **The np821 batch used `--max-len 4096`, the three causal cells used `--bs 4 --accum 8`, `--epochs 3`**). None of c1's 12 training runs touched any hyperparameter except ctool's `--align-tol`; np821's four batches likewise only touched the three flags `--base` / `--lora` / `--grad-ckpt`; the new convention starting with `ks828` is in this section's newly added parameter rows and the real `train_causal_share.py` commands below.
 
-**输出**:
-- mtool → `<out>/best/`(HF 权重 + tokenizer + `label_map.json`)+ `train_log.jsonl`
-- mext → `<out>/best/{model.pt(裸 state_dict,不是 HF 目录), tokenizer, meta.json}` + `train_log.jsonl`
+**Output**:
+- mtool → `<out>/best/` (HF weights + tokenizer + `label_map.json`) + `train_log.jsonl`
+- mext → `<out>/best/{model.pt (a bare state_dict, not an HF directory), tokenizer, meta.json}` + `train_log.jsonl`
 - ctool → `<out>/ALIGN_CHECK.json` + `<out>/best/{HF backbone, tokenizer, head.pt, label_map.json, meta.json}` + `train_log.jsonl`
-- cgen → `<out>/ALIGN_CHECK.json` + `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep`)+ `train_log.jsonl`
-- cparam → `<out>/ALIGN_CHECK.json` + `<out>/best/`(HF 权重 + tokenizer + `meta.json`,内含 `call_sep` 与 `param_only: true`)+ `train_log.jsonl`
-- `sweep-lr plan --write` → `<写的 json>`(每条 9 个字段);`sweep-lr report --out` → `SWEEP_REPORT.json/.md`(2026-08-28 起,spec 16.6)
-- 各格开 `--mem-probe` 时 `train_log.jsonl` 多写 `mem_probe`(每块/每组一条)与收尾一条 `mem_probe_summary` 事件(2026-08-28 起,spec 16.5,字段见 §3 参数表 `--mem-probe-pick` 行)
-- 三个评测脚本的报告(`REPLAY_REPORT.json`/`CALLGEN_REPORT.json`/`PARAM_REPORT.json`及对应 `.md`)都多写 `overlong_mode` 与对应计数键(2026-08-28 起,spec 16.2,字段见 §3 参数表 `--overlong` 行)
+- cgen → `<out>/ALIGN_CHECK.json` + `<out>/best/` (HF weights + tokenizer + `meta.json`, containing `call_sep`) + `train_log.jsonl`
+- cparam → `<out>/ALIGN_CHECK.json` + `<out>/best/` (HF weights + tokenizer + `meta.json`, containing `call_sep` and `param_only: true`) + `train_log.jsonl`
+- `sweep-lr plan --write` → `<the json written>` (9 fields per entry); `sweep-lr report --out` → `SWEEP_REPORT.json/.md` (since 2026-08-28, spec 16.6)
+- when a cell has `--mem-probe` on, `train_log.jsonl` gains `mem_probe` entries (one per block/group) and one `mem_probe_summary` wrap-up event (since 2026-08-28, spec 16.5, fields in the `--mem-probe-pick` row of the §3 parameter table)
+- the three eval scripts' reports (`REPLAY_REPORT.json`/`CALLGEN_REPORT.json`/`PARAM_REPORT.json` and the corresponding `.md`) all gain `overlong_mode` and the corresponding count keys (since 2026-08-28, spec 16.2, fields in the `--overlong` row of the §3 parameter table)
 
-**退出码**:ctool 与 cgen/cparam 的对齐检查 FAIL 都 `sys.exit(2)`,两者判据不同(ctool 比整段前向对逐 token 增量前向的隐状态与 logits,容差 3e-4;cgen/cparam 比逐行 ce 对旧逐行训练器,逐行 2e-5 逐 token 3e-4)。`ALIGN_CHECK.json` 无论过不过都会先落盘,拿它看 reldiff 再决定是放宽 tol 还是查版本。`share_data.load_events` 的两道硬停(装载后 0 行、cparam 剥离失败率超 5%)是 `SystemExit` 非 0。
+**Exit code**: ctool's and cgen/cparam's alignment checks both `sys.exit(2)` on FAIL, with different criteria for the two (ctool compares the whole-segment forward pass against the per-token incremental forward pass's hidden states and logits, tolerance 3e-4; cgen/cparam compare per-row ce against the old row-by-row trainer, per-row 2e-5, per-token 3e-4). `ALIGN_CHECK.json` is written to disk regardless of pass or fail; read its reldiff to decide whether to loosen the tolerance or check the version. `share_data.load_events`'s two hard stops (zero rows loaded, or cparam's stripping failure rate exceeding 5%) are non-zero `SystemExit`.
 
-**`train_causal_share.py` 的真实命令**(cgen/cparam 现役训练器,2026-08-28 起;`run.py` 的 `train-cgen`/`train-cparam` 就是拼这一条,`--mode` 由注册表带好):
+**`train_causal_share.py`'s real commands** (cgen/cparam's current trainer, since 2026-08-28; `run.py`'s `train-cgen`/`train-cparam` are exactly this command assembled, with `--mode` carried by the registry):
 
 ```bash
-# CPU smoke(工单 03 报告实测跑过,产物 0.6B fp32 best/ 约 2.4 GB,不许写 /tmp 或 home)
+# CPU smoke (actually run in ticket 03's report, artifact 0.6B fp32 best/ about 2.4 GB, must not be written to /tmp or home)
 cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
   --data pipeline/data/nyapass_aw_v1/gptoss --out pipeline/runs/smoke/share_cpu_cgen_smoke \
   --device cpu --smoke --max-events 6 --log-every 1 --align-events 2 --base qwen --force
-# cparam 同一条命令换 --mode cparam --out .../share_cpu_cparam_smoke
+# cparam is the same command with --mode cparam --out .../share_cpu_cparam_smoke
 
-# GPU 冒烟档(launch_probe 自动追加 --smoke;run.py show train-cgen 出的命令形态):
-# /…/cprobe-env/bin/python /…/pipeline/train/train_causal_share.py --mode cgen '<参数...>'
-python3 run.py show train-cgen   # 或 train-cparam;--data/--out 由 launch_probe 拼
+# GPU smoke tier (launch_probe automatically appends --smoke; the shape run.py show train-cgen prints):
+# /…/cprobe-env/bin/python /…/pipeline/train/train_causal_share.py --mode cgen '<args...>'
+python3 run.py show train-cgen   # or train-cparam; --data/--out are assembled by launch_probe
 
-# GPU 速度/显存档(spec 第 10 节,tokyo108 H100,不带 --smoke)
+# GPU speed/VRAM tier (spec section 10, tokyo108 H100, without --smoke)
 cprobe-env/bin/python pipeline/train/train_causal_share.py --mode cgen \
   --data pipeline/data/nyapass_aw_v1/gptoss \
   --out pipeline/runs/smoke/ks828b06_gptoss_cgen_speed \
   --max-events 450 --log-every 3 --eval-per-epoch 1 --mem-probe \
   --tok-budget 16384 --base qwen --force
-# 另跑一次 --tok-budget 24576;expandable_segments 开关已实测不采纳(见上面 --tok-budget 行)
+# also ran once more with --tok-budget 24576; the expandable_segments switch has been measured and is not adopted (see the --tok-budget row above)
 ```
 
-**学习率扫描(`pipeline/train/sweep_lr.py`,spec 16.6,工单 11;两个子命令都是纯 CPU,注册进 `run.py` 的 `sweep-lr`,GPU 发射仍走 gpu-run)**:
+**Learning-rate sweep** (`pipeline/train/sweep_lr.py`, spec 16.6, ticket 11; both subcommands are pure CPU, registered in `run.py` as `sweep-lr`, GPU launches still go through gpu-run):
 
 ```bash
-# plan:按 GRID 常量(b06/b17/l17/l4 四配置 × 三个学习率锚点)出 12 条命令,落一份 plan.json 备查
+# plan: produces 12 commands by the GRID constant (four configurations b06/b17/l17/l4 x three learning-rate anchors), writes a plan.json for the record
 python3 run.py sweep-lr plan --write pipeline/runs/sweep/plan.json
 
-# report:扫完之后收一批 run 目录的 train_log.jsonl 成表
+# report: after the sweep finishes, collect a batch of run directories' train_log.jsonl into a table
 python3 run.py sweep-lr report --runs pipeline/runs/sweep/ks828* \
   --out pipeline/runs/sweep
 ```
 
-`plan` 打印的 12 行 `python3 run.py launch --cmd ... --run-id ... --track kvshare-lr-sweep --outdir ...` 命令末尾带占位 `--piece <host>:<gpus>`,发射员换成排卡表的实际卡再发;`report` 出 `SWEEP_REPORT.json/.md`,按配置分组、组内按学习率升序,每组 `best_val_ce` 最低那行标 `*`。产物目录 `pipeline/runs/sweep/` 不进矩阵、不进 `summarize_matrix.py`(run_id 是四段 `ks828<tag>_gptoss_cgen_lr<lr>`,比现役训练格的三段 `{批次}_{模型}_{格}` 多一段,见 §3.2)。
+The 12 lines `plan` prints are commands of the form `python3 run.py launch --cmd ... --run-id ... --track kvshare-lr-sweep --outdir ...`, ending with a placeholder `--piece <host>:<gpus>`; the launcher swaps in the actual card from the placement table before launching; `report` produces `SWEEP_REPORT.json/.md`, grouped by configuration, sorted ascending by learning rate within each group, with the row of lowest `best_val_ce` in each group marked `*`. The artifact directory `pipeline/runs/sweep/` doesn't go into the matrix, doesn't go into `summarize_matrix.py` (run_id has four segments, `ks828<tag>_gptoss_cgen_lr<lr>`, one segment more than the three-segment `{batch}_{model}_{cell}` used by the cells currently in service, see §3.2).
 
-### 3.1 显存实测表(np821 实测:gpt-oss 轨迹 / `--max-len 4096` / `--bs 4 --accum 8`)
+### 3.1 Measured VRAM table (measured on np821: gpt-oss trajectories / `--max-len 4096` / `--bs 4 --accum 8`)
 
-挑卡先查这张表,别按模型大小拍脑袋——**装不装得下的分水岭是 `--grad-ckpt` 开没开,不是模型多大**(0.6B 不开 gc 的峰值比 1.7B 开 gc 高一倍)。
+Check this table first when picking a card, don't guess from model size: **the watershed for whether it fits is whether `--grad-ckpt` is on, not how big the model is** (0.6B without gc has a higher peak than 1.7B with gc, by a factor of two).
 
-| 批次形态 | ctool | cgen | cparam | 48G 卡(可用 47.51 GiB)结论 |
+| Batch configuration | ctool | cgen | cparam | Conclusion on a 48G card (47.51 GiB usable) |
 |---|---|---|---|---|
-| 0.6B 全参,**不带 gc** | 60.2 | 76.8 | 76.7 | **装不下**,三格 smoke 全 OOM(gates §3.10) |
-| 1.7B 全参 + gc | 35.4 | 44.1 | 44.1 | smoke 过得去,**全量装不下**——cgen 全量第一个 backward 就 OOM(gates §3.9) |
-| 1.7B LoRA + gc | 17.3 | 34.7 | 34.7 | 装得下,零 OOM 跑完 |
-| 4B LoRA + gc | 32.1 | 37.6 | 37.6 | 装得下,零 OOM 跑完 |
-| ctool 0.6B 全参,`--max-len 8192 × --bs 2`(ks828,2026-08-28 起新默认) | 56,859 MiB(H100,nvidia-smi 采样) | — | — | 新口径,tokyo108 **H100** 非 48G 卡;`--bs 4` 同条件训练第一批 OOM(进程 92.94 GiB,决定 15,`ops/runs.jsonl` 的 `ks828b06_gptoss_ctool_h100mem_bs2`) |
-| cgen 新训练器(`train_causal_share.py`)`--tok-budget 16384`(ks828) | — | 60.59 GB allocated(H100,`torch.cuda.max_memory_allocated`) | — | 新口径,tokyo108 **H100** 非 48G 卡;`--tok-budget 24576` 峰值 80.91 GB、慢 15%(`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`) |
+| 0.6B full-parameter, **without** gc | 60.2 | 76.8 | 76.7 | **doesn't fit**, all three cells' smoke OOM (gates §3.10) |
+| 1.7B full-parameter + gc | 35.4 | 44.1 | 44.1 | smoke gets through, **the full volume doesn't fit**: cgen's full volume OOMs on the very first backward pass (gates §3.9) |
+| 1.7B LoRA + gc | 17.3 | 34.7 | 34.7 | fits, zero OOM, finishes |
+| 4B LoRA + gc | 32.1 | 37.6 | 37.6 | fits, zero OOM, finishes |
+| ctool 0.6B full-parameter, `--max-len 8192 × --bs 2` (ks828, the new default since 2026-08-28) | 56,859 MiB (H100, nvidia-smi sample) | N/A | N/A | the new convention, tokyo108's **H100**, not a 48G card. `--bs 4` under the same conditions OOM'd on the first training batch (the process at 92.94 GiB, decision 15, `ops/runs.jsonl`'s `ks828b06_gptoss_ctool_h100mem_bs2`) |
+| cgen's new trainer (`train_causal_share.py`) `--tok-budget 16384` (ks828) | N/A | 60.59 GB allocated (H100, `torch.cuda.max_memory_allocated`) | N/A | the new convention, tokyo108's **H100**, not a 48G card. `--tok-budget 24576` had a peak of 80.91 GB and was 15% slower (`pipeline/runs/smoke/ks828b06_gptoss_cgen_speed*`) |
 
-(单位 GiB,峰值,末两行单位见各自单元格。) 两条读法:① **smoke 峰值离卡容量不足 ~10% 就当装不下**——smoke 只抽 500 条实例,踩不到全量首批的长序列组合,而峰值由批内最长序列决定;② 报错里 "reserved but unallocated" 那一项是碎片(np821 那次 8.63 GiB),余量还要再打一道折。末两行是 ks828 新口径在 H100 上的实测,和上面 np821/48G 的四行不同轴,不能直接横向比。③ **cgen/cparam 新训练器的 `--mem-probe` 是下界估计,排卡按「`mem_probe_summary.worst_gb` × 1.1」再打碎片折**(2026-08-28 起,spec 16.5、工单 10 收账;`--mem-probe-pick` 默认 `cost`,§3 参数表有三种挑法):2026-08-28 终验(旧口径,`tokens` 探针)里探针最满块比同预算整程 step 峰值低 7.5%(16384:54.38 对 58.47 GB)与 5.8%(24576:76.47 对 80.91 GB),`ks828b06_gptoss_cgen_final_b16k` / `_final_b24k_probe` 的 `mem_probe` 事件;这 1.1 只盖已分配峰值之间的差,② 的碎片折扣是另一层,两道都要打。④ **读 step 峰值要看是哪个 commit 跑的**:479aa4b 之前带 `--mem-probe` 的 run,第一条 `step` 的 `peak_mem_gb` 是探针最后一块的数(探针每块跑前各自归零、跑完没归零,第二轮五个冒烟的 gstep 1 全等于探针最后一块),训练自己的峰值从 gstep 2 起看;479aa4b 起探针返回后归零,第一条就是训练的。⑤ **LoRA 配置另核「固定项 + fp32 底座大小」不超卡容量**:每次存最好版本 `save_merged` 的 deepcopy 会把一份 fp32 底座临时放上卡(梯度与激活那时已释放),l4 冒烟 step 3 到 5 的 33.09 / 33.19 / 33.18 GB 就是这一刻(固定项 16.25 加 4B fp32 16.09),低于训练峰值 33.7 所以排卡看 `worst_gb × 1.1` 就够,但排到 48G 卡时副本那一刻 49.8 对 51 只差 1.2 GB(design-attention 9.9);墙钟上 4B 一次 `save_merged` 126 到 149 秒,学习率降到 0 的调度下四个评估点大概率次次创新低,一个 l4 run 约多 9 分钟。
+(Units are GiB, peak values, except the last two rows whose units are given in each cell.) Two ways to read this: (1) **if the smoke peak is within ~10% of the card's capacity, treat it as not fitting**: smoke only samples 500 instances, and doesn't hit the kind of long-sequence combination in the full volume's first batch, and the peak is set by the longest sequence in the batch; (2) the "reserved but unallocated" item in the error message is fragmentation (8.63 GiB in the np821 case), and the headroom needs a further discount on top of that. The last two rows are measurements of the new ks828 convention on H100, and are on a different axis from the four np821/48G rows above, they can't be compared side by side directly. (3) **cgen/cparam's new trainer's `--mem-probe` is a lower-bound estimate; assign cards using `mem_probe_summary.worst_gb × 1.1` with a further fragmentation discount on top** (since 2026-08-28, spec 16.5, ticket 10 wrap-up; `--mem-probe-pick` defaults to `cost`, the §3 parameter table has all three picking methods): in the 2026-08-28 final verification (the old convention, the `tokens` probe), the probe's fullest block came in 7.5% below the full run's step peak at the same budget (16384: 54.38 vs. 58.47 GB) and 5.8% below at another budget (24576: 76.47 vs. 80.91 GB), the `mem_probe` events of `ks828b06_gptoss_cgen_final_b16k` / `_final_b24k_probe`; this 1.1 only covers the gap between the already-allocated peaks, the discount from (2) for fragmentation is a separate layer, and both need to be applied. (4) **Check which commit a step peak was run under**: for a run with `--mem-probe` before commit 479aa4b, the first `step` entry's `peak_mem_gb` is the number from the probe's last block (the probe zeroes out before each block but not after it finishes, so in the second round of smoke the `gstep 1` of all five equals the probe's last block); from gstep 2 onward is training's own peak; from commit 479aa4b onward the probe zeroes out after returning, so the first entry is already training's own. (5) **For a LoRA configuration, additionally check that "the fixed items + the fp32 base's size" doesn't exceed the card's capacity**: every time the best version is saved, `save_merged`'s deepcopy temporarily puts one copy of the fp32 base onto the card (by that point the gradients and activations have already been released); l4 smoke's step 3 through 5, at 33.09 / 33.19 / 33.18 GB, are exactly this moment (16.25 fixed plus 16.09 for the 4B fp32), below the training peak of 33.7, so checking `worst_gb × 1.1` is enough here, but when placed on a 48G card, that moment's 49.8 against 51 leaves only 1.2 GB (design-attention 9.9); on the wall clock, one `save_merged` for 4B takes 126 to 149 seconds, and under a schedule where the learning rate decays to 0, each of the four evaluation points is very likely to set a new low, adding about 9 minutes to an l4 run.
 
-### 3.2 LoRA 批与全参批的关系
+### 3.2 The relationship between LoRA batches and full-parameter batches
 
-`--lora` 不是新格,是**训法轴**:同样三格(ctool/cgen/cparam)、同一份数据、同一套评测脚本,只换底座怎么训。run_id 模板里既没有底座档位段也没有训法段,所以**一个批次只跑一档 `--base` + 一种训法**,档位与训法写进批次前缀(np821 四批 `b06 / b17 / l17 / l4` = 0.6B 全参 / 1.7B 全参 / 1.7B LoRA / 4B LoRA)。发射时 `--base` / `--lora` / `--grad-ckpt` 一律写在**排卡表的 extra 里**(argparse 后写的赢);驱动器**不读**批次配置 `train.batches` 里的 `base`/`mode` 字段——那两个字段只是给人看的标记,排卡表才是真源。
+`--lora` is not a new cell, it's a **training axis**: the same three cells (ctool/cgen/cparam), the same data, the same eval scripts, only how the base is trained changes. The run_id template has neither a base-tier segment nor a training-method segment, so **one batch runs only one `--base` tier + one training method**, with the tier and the method written into the batch prefix (np821's four batches `b06 / b17 / l17 / l4` = 0.6B full-parameter / 1.7B full-parameter / 1.7B LoRA / 4B LoRA). At launch time, `--base` / `--lora` / `--grad-ckpt` are always written **in the placement table's extra** (whichever argparse writes last wins); the driver **does not read** the `base`/`mode` fields in the batch config's `train.batches`, those two fields are just markers for humans to look at, the placement table is the source of truth.
 
-**新口径的批次前缀(2026-08-28 起)是 `ks828` 加档位训法段**,形状同 np821 的 `b06/l17` 那一段,如 `ks828b06`、`ks828l17`,run_id 例如 `ks828b06_gptoss_cgen`;冒烟落 `pipeline/runs/smoke/<run_id>_smoke`。**`np821` 前缀不许再用于新口径(换实现之后)的 run**——两条口径的丢弃规则、上限、更新单位都不同,混着写前缀会让人误以为数字可比(extending §3.4)。
+**The new convention's batch prefix (since 2026-08-28) is `ks828` plus the tier-and-method segment**, shaped like np821's `b06/l17` segment, e.g. `ks828b06`, `ks828l17`, with a run_id example `ks828b06_gptoss_cgen`; smoke is written to `pipeline/runs/smoke/<run_id>_smoke`. **The `np821` prefix must not be used for a run under the new convention (after the implementation changed)**: the two conventions' dropping rule, ceiling, and update unit are all different, and mixing them into the same prefix would make people think the numbers are comparable when they aren't (extending §3.4).
 
-**学习率扫描的 run_id 是四段**(`sweep_lr.py`,spec 16.6,工单 11):`ks828<tag>_gptoss_cgen_lr<lr>`(`<tag>` 是 b06/b17/l17/l4,`<lr>` 写成 `1e-5` 这种形状),比现役训练格三段的 `{批次}_{模型}_{格}` 多一段;产物落 `pipeline/runs/sweep/`,**不进矩阵、不进 `summarize_matrix.py`**——它只用来选各配置的学习率,不是要进 MATRIX 表的格。
+**The learning-rate sweep's run_id has four segments** (`sweep_lr.py`, spec 16.6, ticket 11): `ks828<tag>_gptoss_cgen_lr<lr>` (`<tag>` is b06/b17/l17/l4, `<lr>` is shaped like `1e-5`), one segment more than the three-segment `{batch}_{model}_{cell}` used by cells currently in service; the artifacts land in `pipeline/runs/sweep/`, and **don't go into the matrix, don't go into `summarize_matrix.py`**: it's only used to choose each configuration's learning rate, it's not a cell meant to go into the MATRIX table.
 
 ---
 
-## 4. eval — 回放评测
+## 4. eval
 
-**干什么**:在 val 上拟温度、扫触发门槛 θ,再在 test 上冻结跑一次出数;然后在触发点上评参数/整条调用。
+**What it does**: fits the temperature on val, sweeps the trigger threshold theta on val, then freezes it and runs once on test to produce the numbers; then evaluates the parameters/whole call at the trigger points.
 
-### 4.1 依赖顺序(不能颠倒)
+### 4.1 Dependency order (must not be reversed)
 
-1. **先评工具格**(现役 ctool;m 线停跑前还有 mtool):`eval_tool.py` 产出 `REPLAY_REPORT.json` 与 `logits_test.pt` / `logits_val.pt`。工具格之间互不依赖,可并行。
-2. **再评参数/调用格**:`eval_mbert_call.py` 吃**同模型 mtool** 的报告与 logits;`eval_causal_call.py`(cgen)与 `eval_causal_param.py`(cparam)都吃**同模型 ctool** 的报告与 logits。跨模型串会 assert 失败。
-3. **最后汇总**:`summarize_matrix.py`(纯 CPU)。
+1. **Evaluate the tool cell first** (currently ctool; also mtool before the m-line was retired): `eval_tool.py` produces `REPLAY_REPORT.json` and `logits_test.pt` / `logits_val.pt`. The tool cells are independent of each other and can run in parallel.
+2. **Then evaluate the parameter/call cells**: `eval_mbert_call.py` consumes the **same model's mtool** report and logits; both `eval_causal_call.py` (cgen) and `eval_causal_param.py` (cparam) consume the **same model's ctool** report and logits. Crossing models will fail an assert.
+3. **Finally, summarize**: `summarize_matrix.py` (pure CPU).
 
-前两步占卡 → **走 gpu-run skill 发射,不要手搓 ssh/nohup**。
+The first two steps occupy a card → **launch through the gpu-run skill, don't hand-roll ssh/nohup**.
 
-### 4.2 命令
+### 4.2 Commands
 
 ```bash
 cd /home/y-guo/reproduce/new1
 R=pipeline/runs; D=pipeline/data/aw_official_v1
 
-# 工具格:同一个 eval_tool.py 按 --head 分岔成两条任务,解释器由注册表选
-# (mbert 头 → mbert-env;causal 头 → cprobe-env,它要 import train_causal_tool.py)
+# Tool cells: the same eval_tool.py forks into two tasks by --head, the interpreter is chosen by the registry
+# (the mbert head -> mbert-env; the causal head -> cprobe-env, since it has to import train_causal_tool.py)
 python3 run.py eval-tool-mbert  --env <ENV> --run $R/<BATCH>_<MODEL>_mtool --data $D/<MODEL>
 python3 run.py eval-tool-causal --env <ENV> --run $R/<BATCH>_<MODEL>_ctool --data $D/<MODEL>
 
-# 参数格
+# Parameter cells
 python3 run.py eval-mcall --env <ENV> --run $R/<BATCH>_<MODEL>_mtool \
   --extractor $R/<BATCH>_<MODEL>_mext --data $D/<MODEL>
 python3 run.py eval-ccall --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
   --cgen-run $R/<BATCH>_<MODEL>_cgen --data $D/<MODEL>
-# cparam:同一批 ctool 触发点跑 gt_tool/pred_tool 两口径,报告写进 --cparam-run
+# cparam: runs both the gt_tool/pred_tool conventions on the same batch's ctool trigger points, the report is written into --cparam-run
 python3 run.py eval-cparam --env <ENV> --ctool-run $R/<BATCH>_<MODEL>_ctool \
   --cparam-run $R/<BATCH>_<MODEL>_cparam --data $D/<MODEL>
 
-# 汇总(纯 CPU,run.py 直接跑;缺报告的格自动标 PENDING,可边跑边看)
+# Summarize (pure CPU, run.py runs it directly; a cell missing a report is automatically marked PENDING, can be viewed while still running)
 python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT.md --prefix <BATCH>
 python3 run.py matrix --runs-dir $R --out $R/MATRIX_REPORT_risk10.md --prefix <BATCH> --risk 0.1
 
-# "只读+弃权"批(ro1 起):四个 eval 都加 --readonly-env <ENV>(须与训练侧一致,双向保险丝见 §4.4);
-# 参数格另可加 --self-fire 出自主开火块。ro1 实跑形态:
+# The "read-only + abstain" batch (since ro1): all four evals add --readonly-env <ENV> (must match the training side, the two-way fuse is in §4.4);
+# the parameter cells can additionally add --self-fire to produce the self-fire block. ro1's actual run shape:
 python3 run.py eval-tool-mbert --env bfcl --run $R/ro1bf_q35_mtool --data $D/q35 --readonly-env bfcl
 python3 run.py eval-mcall --env bfcl --run $R/ro1bf_q35_mtool \
   --extractor $R/ro1bf_q35_mext --data $D/q35 --readonly-env bfcl --self-fire
@@ -349,192 +341,186 @@ python3 run.py eval-ccall --env bfcl --ctool-run $R/ro1bf_q35_ctool \
   --cgen-run $R/ro1bf_q35_cgen --data $D/q35 --readonly-env bfcl --self-fire
 ```
 
-五个 eval 任务全是发射类:`run.py` 只打印命令,发射交 gpu-run,出命令前过脏树门禁
-(连 `run.py show <task>` 也过——出命令这条路不是绕门的后门;非要脏树出命令加
-`--allow-dirty`)。`--head mbert` / `--head causal` 已固定在注册表里,**不要再手传**。
-排卡一把发走 `python3 run.py launch-eval`——它在发 call 档前硬检查依赖的工具格
-有没有 `REPLAY_REPORT.json`,没有就退,替 §4.1 的依赖顺序上锁;评测格表的唯一真源
-是 `run.py` 的 `EVAL_CELLS`(格 → 任务名 + 依赖的工具格),`ops/launch_eval.py`
-只 import。它同样**发射成功后自动写 `RUNMETA.json`**(append 一条 commit + 实际命令,
-不覆盖),但**落点与 §3 不同,别沿用那段的 `--out` 口径**:tool 档写进它的 `--run`
-目录(=`<BATCH>_<MODEL>_<mtool|ctool>`),call 档写进**头自己的目录**
-(mext / cgen / cparam 那个 run,不是它依赖的工具格目录),`kind` 分别记 `eval_tool` / `eval_call`。
-两档的 RUNMETA 落点与各自报告的落点是一致的(EXTRACT_REPORT 在 mext 目录、
-CALLGEN_REPORT 在 cgen 目录,见 §7 第一条)。RUNMETA 由 `register_all` 的第一步写
-(唯一写手,顺序 RUNMETA→台账→记录),回执里有 `RUNMETA: <路径>` 一行就是写了;
-台账/record 登记失败(比如重复 run_id)只打 `WARN 登记失败` 不中断发射,RUNMETA
-此时已经落盘。只有回执出现 `WARN RUNMETA 没写上(<目录>): <错误>` 才需要手补
-`python3 run.py runmeta <目录> --cmd '<命令>' --kind eval_tool|eval_call`。
-(2026-08-26 之前回执里那句 `WARN 没给 --outdir，RUNMETA 没写` 是误报,已修,见 §3 同款说明。)
+All five eval tasks are launch-type: `run.py` only prints the command, launching is handed to gpu-run, and the dirty-tree gate is enforced before the command is emitted
+(even `run.py show <task>` goes through it; emitting the command is not a backdoor around the gate; to force it through on a dirty tree, add
+`--allow-dirty`). `--head mbert` / `--head causal` are already fixed in the registry, **don't pass them by hand again**.
+Launching the whole placement table at once goes through `python3 run.py launch-eval`: before launching the call tier it hard-checks whether the tool cell it depends on
+has a `REPLAY_REPORT.json`, exiting if not, enforcing §4.1's dependency order; the eval-cell table's sole source of truth
+is `run.py`'s `EVAL_CELLS` (cell → task name + the tool cell it depends on), and `ops/launch_eval.py`
+only imports it. It likewise **automatically writes `RUNMETA.json` after a successful launch** (appends one commit + the actual command,
+doesn't overwrite), but **the landing spot differs from §3, don't reuse that section's `--out` convention**: the tool tier writes into its `--run`
+directory (= `<BATCH>_<MODEL>_<mtool|ctool>`), the call tier writes into **the head's own directory**
+(the mext / cgen / cparam run, not the tool cell it depends on), with `kind` recording `eval_tool` / `eval_call` respectively.
+The two tiers' RUNMETA landing spots are consistent with their own reports' landing spots (EXTRACT_REPORT is in the mext directory,
+CALLGEN_REPORT is in the cgen directory, see the first item of §7). RUNMETA is written by the first step of `register_all`
+(the sole writer, in the order RUNMETA→ledger→record); a `RUNMETA: <path>` line in the receipt means it was written;
+if the ledger/record registration fails (e.g. a duplicate run_id), it only prints `WARN registration failed` without interrupting the launch, and RUNMETA
+has already been saved to disk by that point. Only if the receipt shows `WARN RUNMETA not written (<directory>): <error>` does it need to be backfilled by hand with
+`python3 run.py runmeta <directory> --cmd '<command>' --kind eval_tool|eval_call`.
+(Before 2026-08-26 the receipt's line `WARN --outdir not given, RUNMETA not written` was a false alarm, already fixed, see the same explanation in §3.)
 
-### 4.3 `--risk` 双档策略
+### 4.3 The `--risk` two-tier strategy
 
-`eval_tool.py` 固定扫 20 档 θ(0.5→0.975,步长 0.025),对 `RISK_TARGETS = [0.10, 0.05]` 各挑一个"满足触发精度约束前提下覆盖率最大"的 θ,写进 `REPLAY_REPORT.json` 的 `chosen_theta`。约束太紧时该档是 `null`。所以参数格照这个顺序走:
+`eval_tool.py` fixedly sweeps 20 tiers of theta (0.5→0.975, step 0.025), and for each of `RISK_TARGETS = [0.10, 0.05]` picks the theta that "maximizes coverage subject to the trigger-accuracy constraint," writing it into `REPLAY_REPORT.json`'s `chosen_theta`. When the constraint is too tight, that tier is `null`. So the parameter cells follow this order:
 
-1. 先用默认 `--risk 0.05`;
-2. 报告里 `chosen_theta["0.05"]` 是 `null` → `eval_*_call.py` 直接 `SystemExit`(退 1),改传 `--risk 0.1` 重跑;
-3. 两档皆 `null` → 这一格判 **N/A**,不再重试(c1 批次的 `q35_mtool` 就是两档全 null,所以 `c1_q35_mext` 至今没有 EXTRACT_REPORT)。
+1. Use the default `--risk 0.05` first;
+2. if the report's `chosen_theta["0.05"]` is `null` → `eval_*_call.py` exits outright with `SystemExit` (exit 1), pass `--risk 0.1` instead and rerun;
+3. if both tiers are `null` → this cell is judged **N/A**, and isn't retried again (the c1 batch's `q35_mtool` is exactly this case, both tiers null, which is why `c1_q35_mext` still has no EXTRACT_REPORT to this day).
 
-### 4.4 参数表(只列会改的)
+### 4.4 Parameter table (only lists ones that change)
 
-| flag | 脚本 | 说明 |
+| flag | Script | Description |
 |---|---|---|
-| `--env` | 四个 eval | **必填**,choices tales/appworld/bfcl;`eval_causal_call.py` 与 `eval_causal_param.py` 用它选调用解析正则(appworld 用 `apis.x.y(`,其余用 `名字(`) |
-| `--head mbert\|causal` | eval_tool | 默认 mbert;causal 走 backbone + head.pt 路径 |
-| `--cached-logits` | eval_tool | 读已存的 `logits_*.pt` 跳过推理,纯 CPU 后处理,重出报告时用它不占卡。**2026-08-02 起有权重指纹校验(审计 B9)**:每份 `logits_<sp>.pt` 旁边配一个 `logits_<sp>.meta.json`,记 `best/` 下每个权重文件的指纹(**大小 + 首尾各 64KB 的 sha1,不含 mtime**——正常拷贝/恢复不该作废缓存)与行数;正常跑(不带本旗)会自动写/更新这份指纹。带本旗时两种情况硬退:**缺 `.meta.json`**(旧缓存无从判断出自哪份权重)、**指纹对不上**(权重被重训或覆盖过,拒绝拿旧 logits 冒充新权重的结果)。指纹不符只能去掉本旗重算;**缺指纹**(指纹机制之前产的旧 logits)多一条路,见下一行 |
-| `--adopt-logits-fingerprint` | eval_tool | **给指纹机制之前产的 logits 补档**,单独一趟跑:把 `--cached-logits` 换成本旗、其余参数照旧(`--env` / `--run` / `--data` 都仍必填),它给 `--run` 下每份已存在的 `logits_<sp>.pt` 写出 `.meta.json` 然后**直接 return 退出,不评测**。放行条件是 `best/` 下**所有**权重文件的 mtime 都不比该 logits 新——只有这样才能证明"当前权重就是产这些 logits 的权重";权重更新就 SystemExit,提示去掉 `--cached-logits` 重算。`best/` 下一个权重文件都没有时也 SystemExit(没东西可认领)。补完再按原命令带 `--cached-logits` |
-| `--report-dir` | eval_tool | 默认 = `--run`;验收/试跑时指向别处以免覆盖旧件 |
-| `--legacy-splits` | eval_tool | 读旧 calA/calB/test 三堆,仅历史验收用,新批次不要碰 |
-| `--risk` | 三个 call | 默认 0.05,见 §4.3 |
-| `--limit` | 三个 call | 截前 N 触发事件,冒烟用 |
-| `--device` | 四个 eval | 默认 cuda |
-| `--bs` | **只有三个 call 脚本有** | 默认 8。⚠️ `eval_tool.py` **没有这个 flag**——它的批大小是脚本里的常量:mbert 头走 `score()` 的默认 `bs=16`,因果头走 `EVAL_BS = 4`(事件/批)。想改只能改代码,命令行传 `--bs` 会被 argparse 拒 |
-| `--max-new-tokens` | **只有 eval_causal_param 有** | 默认 96(=`MAX_GEN_TOK`,照抄训练侧生成评估的上限);greedy 生成参数段的 token 上限 |
-| `--readonly-env` | 四个 eval | choices `appworld/bfcl`,默认不传。传了:真值折叠,触发条件加"argmax ≠ 弃权哨兵",参数指标只算真值为只读的触发事件;eval_tool 报告多 `readonly_stats` 块,`prior_baseline_event_acc` 改在**折叠后**词表上取最高频(de1c781 修的坑:折叠前取会把 bfcl 先验错印成 0.0)。**双向保险丝**:run 的 `best/label_map.json` 含哨兵 ⇔ 必须传本旗,单边即 SystemExit |
-| `--self-fire` | 两个 call | 自主开火评测:θ_fire 在 val 扫、test 冻结一次,触发点由参数格自己的开火头定。**必须与 `--readonly-env` 同传**(ready 定义依赖只读真值表),否则 SystemExit。要求参数格是 `--fire-head` 训的。只加 `self_fire` 报告块,旧字段一个不动 |
-| `--fire-bs` | 两个 call | 开火打分批大小,0 = 沿用 `--bs` |
-| `--params` | 两个 call | 参数标签目录,默认 `<data>/params`;self-fire 用它算 ready 真值 |
+| `--env` | all four evals | **required**, choices tales/appworld/bfcl; `eval_causal_call.py` and `eval_causal_param.py` use it to choose the call-parsing regex (appworld uses `apis.x.y(`, everything else uses `name(`) |
+| `--head mbert\|causal` | eval_tool | defaults to mbert; causal goes through the backbone + head.pt path |
+| `--cached-logits` | eval_tool | reads the already-saved `logits_*.pt`, skipping inference, pure CPU post-processing; use it when regenerating a report without occupying a card. **Since 2026-08-02 there is weight-fingerprint verification (audit B9)**: each `logits_<sp>.pt` is paired with a `logits_<sp>.meta.json`, recording the fingerprint of every weight file under `best/` (**size + a sha1 of the first and last 64KB, no mtime**, since a normal copy/restore shouldn't invalidate the cache) and the row count; running normally (without this flag) automatically writes/updates this fingerprint. With this flag on, two situations hard-exit: **missing `.meta.json`** (an old cache with no way to tell which weights it came from), **a fingerprint mismatch** (the weights have been retrained or overwritten, refusing to let old logits pass as the result of new weights). A fingerprint mismatch can only be resolved by dropping this flag and recomputing; **a missing fingerprint** (old logits produced before the fingerprint mechanism existed) has one more path, see the next row |
+| `--adopt-logits-fingerprint` | eval_tool | **backfills logits produced before the fingerprint mechanism**, a separate one-off run: swap `--cached-logits` for this flag, keep the rest of the parameters as-is (`--env` / `--run` / `--data` are all still required); it writes a `.meta.json` for every existing `logits_<sp>.pt` under `--run` and then **returns and exits directly, without evaluating**. It's only allowed when the mtime of **every** weight file under `best/` is no newer than that logits, since that's the only way to prove "the current weights are the weights that produced these logits"; if the weights have been updated it SystemExits, suggesting dropping `--cached-logits` and recomputing. It also SystemExits if `best/` has not a single weight file (nothing to claim). Once backfilled, rerun the original command with `--cached-logits` |
+| `--report-dir` | eval_tool | defaults to `--run`; point it elsewhere during acceptance/trial runs to avoid overwriting old artifacts |
+| `--legacy-splits` | eval_tool | reads the old calA/calB/test three splits, only for historical acceptance, don't touch it for a new batch |
+| `--risk` | the three calls | defaults to 0.05, see §4.3 |
+| `--limit` | the three calls | truncates to the first N triggered events, used for smoke |
+| `--device` | all four evals | defaults to cuda |
+| `--bs` | **only the three call scripts have it** | defaults to 8. Warning: `eval_tool.py` **doesn't have this flag**: its batch size is a constant in the script: the mbert head goes through `score()`'s default `bs=16`, the causal head goes through `EVAL_BS = 4` (events per batch). Changing it can only be done by changing the code; passing `--bs` on the command line gets rejected by argparse |
+| `--max-new-tokens` | **only eval_causal_param has it** | defaults to 96 (= `MAX_GEN_TOK`, copied from the ceiling used by the training-side generative evaluation); the token ceiling for greedy-generating the parameter segment |
+| `--readonly-env` | all four evals | choices `appworld/bfcl`, not passed by default. When passed: the ground truth is folded, the trigger condition gains "argmax != the abstention sentinel", the parameter metric only counts triggered events whose ground truth is read-only; the eval_tool report gains a `readonly_stats` block, and `prior_baseline_event_acc` changes to taking the highest frequency **on the folded vocabulary** (a pitfall fixed by de1c781: taking it before folding would misprint bfcl's prior as 0.0). **Two-way fuse**: the run's `best/label_map.json` containing the sentinel <=> this flag must be passed; one without the other is a SystemExit |
+| `--self-fire` | the two calls | self-fire evaluation: theta_fire is swept on val, frozen once on test, and the trigger point is set by the parameter cell's own fire head. **Must be passed together with `--readonly-env`** (the ready definition depends on the read-only ground-truth table), otherwise SystemExit. Requires the parameter cell to have been trained with `--fire-head`. Only adds the `self_fire` report block, not one old field is touched |
+| `--fire-bs` | the two calls | the fire-scoring batch size, 0 = follow `--bs` |
+| `--params` | the two calls | the parameter-label directory, defaults to `<data>/params`; self-fire uses it to compute the ready ground truth |
 
-**输入 / 输出**:
+**Input / Output**:
 
-| 脚本 | 读 | 写 |
+| Script | Reads | Writes |
 |---|---|---|
-| eval_tool | `<DATA_ROOT>/{val,test}.jsonl` + `tool_vocab.json`;`<run>/best/label_map.json`(causal 另读 `meta.json`、`head.pt`) | `<run>/logits_val.pt`、`<run>/logits_test.pt`、`<report-dir>/REPLAY_REPORT.{json,md}` |
-| eval_mbert_call | `<run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json`;`<DATA_ROOT>/test.jsonl` + `router_stats.md`;`<DATA_ROOT>/params/test.jsonl`;`<extractor>/best/` | `<extractor>/EXTRACT_REPORT.{json,md}` |
-| eval_causal_call | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json` + `best/meta.json`;`<DATA_ROOT>/test.jsonl`;`<cgen-run>/best/`(`call_sep` 从它的 meta.json 读,不硬编码) | `<cgen-run>/CALLGEN_REPORT.{json,md}` |
-| eval_causal_param | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json` + `best/meta.json`;`<DATA_ROOT>/test.jsonl`;`<cparam-run>/best/`(`call_sep` 同上从 meta.json 读) | `<cparam-run>/PARAM_REPORT.{json,md}`(矩阵只读它的 `pred_tool` 块) |
-| summarize_matrix | 各 run 的 `REPLAY_REPORT.json`(mtool/ctool)、`EXTRACT_REPORT.json`(mext)、`CALLGEN_REPORT.json`(cgen)、`PARAM_REPORT.json`(cparam,取 `pred_tool` 块) | `--out` 指的 .md,同时打到 stdout |
+| eval_tool | `<DATA_ROOT>/{val,test}.jsonl` + `tool_vocab.json`; `<run>/best/label_map.json` (causal additionally reads `meta.json`, `head.pt`) | `<run>/logits_val.pt`, `<run>/logits_test.pt`, `<report-dir>/REPLAY_REPORT.{json,md}` |
+| eval_mbert_call | `<run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json`; `<DATA_ROOT>/test.jsonl` + `router_stats.md`; `<DATA_ROOT>/params/test.jsonl`; `<extractor>/best/` | `<extractor>/EXTRACT_REPORT.{json,md}` |
+| eval_causal_call | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json` + `best/meta.json`; `<DATA_ROOT>/test.jsonl`; `<cgen-run>/best/` (`call_sep` is read from its meta.json, not hard-coded) | `<cgen-run>/CALLGEN_REPORT.{json,md}` |
+| eval_causal_param | `<ctool-run>/REPLAY_REPORT.json` + `logits_test.pt` + `best/label_map.json` + `best/meta.json`; `<DATA_ROOT>/test.jsonl`; `<cparam-run>/best/` (`call_sep` likewise read from meta.json) | `<cparam-run>/PARAM_REPORT.{json,md}` (the matrix only reads its `pred_tool` block) |
+| summarize_matrix | each run's `REPLAY_REPORT.json` (mtool/ctool), `EXTRACT_REPORT.json` (mext), `CALLGEN_REPORT.json` (cgen), `PARAM_REPORT.json` (cparam, taking the `pred_tool` block) | the .md pointed to by `--out`, also printed to stdout |
 
-**退出码**:eval_tool 正常路径无显式非 0;`--cached-logits` 下有三条硬退——缺 `logits_<sp>.meta.json`、权重指纹对不上(两条都是 SystemExit,见 §4.4 该行)、logits 行数与数据行数不符(assert 退 1,意味着 `--data` 与当次评测不同源)。另外 `best/` 下一个权重文件都找不到时建不了指纹,也 SystemExit。三个 call 脚本:该 risk 档 θ 为 null → `SystemExit` 退 1。`eval_causal_call` 与 `eval_causal_param` 另各有一条 assert 防止调用切分口径与 `annotate/rules.py` 漂移,外加三条格保险丝(都是 SystemExit 退 1):`eval_causal_param` 要求头 run 的 meta 带 `param_only: true`,`eval_causal_call` 反向拒收带 `param_only` 的 run(cparam 的 run 只训过写参数段,喂过去判分会全塌不报错);两脚本都做**数据三方对拍**——头 run 的 meta.data、`--data` 实参、`--ctool-run` 的 meta.data 三方 resolve 后不一致即硬停(防两档底座并行时交叉喂)。summarize_matrix 永远 0。
+**Exit code**: eval_tool's normal path has no explicit non-zero exit; under `--cached-logits` there are three hard exits: missing `logits_<sp>.meta.json`, a weight-fingerprint mismatch (both are SystemExit, see this row of §4.4), and the logits row count not matching the data row count (an assert exits 1, meaning `--data` and this evaluation come from different sources). Additionally, if `best/` has not a single weight file, a fingerprint can't be built, also SystemExit. The three call scripts: theta being null at that risk tier → `SystemExit` exits 1. `eval_causal_call` and `eval_causal_param` each additionally have an assert guarding against the call-splitting convention drifting from `annotate/rules.py`, plus three cell fuses (all SystemExit, exit 1): `eval_causal_param` requires the head run's meta to carry `param_only: true`, `eval_causal_call` conversely refuses a run carrying `param_only` (a cparam run was only ever trained to write the parameter segment, and feeding it in would make scoring collapse entirely without an error); both scripts do a **three-way data cross-check**: the head run's meta.data, the `--data` argument, and `--ctool-run`'s meta.data, resolved and hard-stopped if inconsistent (guarding against cross-feeding when two base tiers run in parallel). summarize_matrix always returns 0.
 
-### 4.5 耗时参考(np821 实测,排评测班次照这个估)
+### 4.5 Time-cost reference (measured on np821, use this to estimate when scheduling eval shifts)
 
-**先看清楚每个脚本按什么计数,再乘**——数据集行数(切点样本)和事件数是两个量级
-差几十倍的东西,np821 的 test 堆是 8533 个事件、391893 行样本,拿行数外推会把
-一个 40 分钟的活估成两三个小时。
+**First look carefully at what each script counts by, then multiply**: the dataset's row count (cut-point samples) and the event count are two things whose magnitude differs by several dozen times; np821's test split has 8533 events, 391893 sample rows, and extrapolating from the row count would estimate a 40-minute job as two or three hours.
 
-| 谁 | 计数单位(心跳的 `total` 就是它) | np821 实测量 | 一格墙钟 |
+| Who | Counting unit (this is exactly the heartbeat's `total`) | Measured quantity on np821 | Wall-clock per cell |
 |---|---|---|---|
-| `eval_tool`(ctool 档) | 事件:先 dev 全量、再 test 全量;每个事件内部给它**全部切点**打分(心跳的 `total` 在 dev 段是事件数、到 test 段换成切点行数,别拿"事件/秒"当稳定口径) | dev 2556 + test 8533 事件(= dev 115211 + test 391893 个切点) | H100 上 0.6B/1.7B 底座 **36–38 分钟**,H200 上 4B 底座 **约 45 分钟**(首末心跳跨度,np821 四批实算 35.7 / 37.6 / 38.0 / 44.8;台账窗口带权重加载与后处理是 39–48 分钟) |
-| `eval_causal_call` / `eval_causal_param`(call 档) | **被 θ 触发的 test 事件**,逐条 greedy 生成 | 该批 `REPLAY_REPORT.json` 里 test 的触发数(np821 四批落在 2192–2806) | **21–26 分钟**(心跳跨度;台账窗口 23–28 分钟)。cparam 内部跑 gt_tool / pred_tool 两遍,墙钟仍与 cgen 同量级 |
+| `eval_tool` (the ctool tier) | events: dev in full first, then test in full; within each event it scores **every cut point** (the heartbeat's `total` is the event count during the dev segment and switches to the cut-point row count during the test segment, don't treat "events/second" as a stable unit) | dev 2556 + test 8533 events (= dev 115211 + test 391893 cut points) | **36-38 minutes** on H100 for the 0.6B/1.7B base, **about 45 minutes** on H200 for the 4B base (first-to-last heartbeat span; np821's four batches actually measured 35.7 / 37.6 / 38.0 / 44.8; the ledger window, including weight loading and post-processing, is 39-48 minutes) |
+| `eval_causal_call` / `eval_causal_param` (the call tier) | **test events triggered by theta**, generated greedily one by one | that batch's `REPLAY_REPORT.json`'s test trigger count (np821's four batches fall in the range 2192-2806) | **21-26 minutes** (heartbeat span; ledger window 23-28 minutes). cparam internally runs gt_tool / pred_tool twice, but the wall-clock is still on the same order as cgen |
 
-两条推论:① **call 档的成本只跟触发事件数走**,与数据集有多少行样本无关——θ 越
-高触发越少、跑得越快,所以换批次估耗时要先看该批 `REPLAY_REPORT.json` 的
-`chosen_theta` 与触发数,别照抄别批的分钟数;② ctool 档的成本跟**切点行数**走,
-数据集样本翻几倍它就翻几倍(np821 数据是 p1 的约 4 倍,ctool 评测从 11–14 分钟
-涨到 39–48 分钟)。硬件那一侧的估法见 gpu-run 的 `references/launch-methodology.md`。
+Two conclusions: (1) **the call tier's cost only tracks the triggered-event count**, unrelated to how many sample rows the dataset has: the higher theta is, the fewer triggers and the faster it runs, so when estimating time for a different batch, first look at that batch's `REPLAY_REPORT.json`'s `chosen_theta` and trigger count, don't copy another batch's minute figures; (2) the ctool tier's cost tracks the **cut-point row count**, and multiplies right along with however many times the dataset's samples multiply (np821's data is about 4x p1's, and ctool's evaluation grew from 11-14 minutes to 39-48 minutes). See gpu-run's `references/launch-methodology.md` for how to estimate the hardware side.
 
 ---
 
-## 5. inject — 产物校验
+## 5. inject
 
-**干什么**:证明这套权重换个进程也装得起来、打得出分。**能跑通即凭证**,不是精度评测。冒烟阶段就该跑一次。
+**What it does**: proves that this set of weights can still be loaded and scored in a different process. **Running through successfully is itself the credential**, this is not an accuracy evaluation. It should be run once at the smoke stage already.
 
 ```bash
 cd /home/y-guo/reproduce/new1
-# mbert 头(mtool/mext 产物);注册表已带 --head mbert --device cpu,run.py 直接跑,不占卡
+# The mbert head (mtool/mext artifacts); the registry already carries --head mbert --device cpu, run.py runs it directly, no card occupied
 python3 run.py check-bundle-mbert --run pipeline/runs/<BATCH>_<MODEL>_mtool --data <DATA_ROOT>
-# causal 头(ctool 产物);注册表已带 --head causal,默认 cuda
+# The causal head (ctool artifact); the registry already carries --head causal, defaults to cuda
 python3 run.py check-bundle-causal --run pipeline/runs/<BATCH>_<MODEL>_ctool --data <DATA_ROOT>
 ```
 
-⚠️ 两条的执行方式不一样:`check-bundle-mbert` 是 CPU 任务,run.py 当场跑完出结果;
-`check-bundle-causal` 在注册表里标了 `gpu=True`,run.py **只打印命令**交 gpu-run
-——handoff 是按任务定的,加 `--device cpu` 也照样只打印,不会当场执行。
+Warning: the two run differently: `check-bundle-mbert` is a CPU task, run.py runs it to completion on the spot and produces a result;
+`check-bundle-causal` is marked `gpu=True` in the registry, and run.py **only prints the command** for gpu-run to handle:
+the handoff is decided by the task, and adding `--device cpu` still only gets it printed, it won't execute on the spot.
 
-| flag | 必填 | 说明 |
+| flag | Required | Description |
 |---|---|---|
-| `--run` / `--data` / `--head` | 是 | head ∈ mbert/causal |
-| `--device` | 否 | 默认 cuda,给 `cpu` 就能零占卡校验 |
-| `--dtype` | 否 | 默认 auto = cuda 上 bfloat16 / cpu 上 float32 |
-| `--index` | 否 | 默认 0,取 test.jsonl 第几条 |
-| `--temperature` | 否 | 覆盖 REPLAY_REPORT.json 的温度 |
+| `--run` / `--data` / `--head` | yes | head in mbert/causal |
+| `--device` | no | defaults to cuda, give `cpu` for zero-card verification |
+| `--dtype` | no | defaults to auto = bfloat16 on cuda / float32 on cpu |
+| `--index` | no | defaults to 0, which row of test.jsonl to take |
+| `--temperature` | no | overrides REPLAY_REPORT.json's temperature |
 
-**输入**:`<run>/best/`(label_map.json + 权重 + tokenizer,causal 另要 `head.pt`)、`<DATA_ROOT>/test.jsonl`;`<run>/REPLAY_REPORT.json` **可缺**——缺了就按 T=1.0、θ 记 N/A 走,这条路径专为"刚 smoke 完还没评测"设计。
-**输出**:`<run>/BUNDLE_CHECK.txt`(内容同时打到 stdout):预测工具 / 置信度 / 是否过 θ / 真值 / top5 / 加载与前向耗时。
-**退出码**:0;`test.jsonl` 里没有 `--index` 那条 → SystemExit 退 1。
-
----
-
-## 6. 一个批次的完整命令序列
-
-从零到矩阵表。`(CPU)` = 不占卡直接跑,`(GPU)` = **走 gpu-run skill 发射,不要手搓 ssh/nohup**。
-
-2026-08-22 起 np821 系批次有断点续跑驱动器把这串 S1–S11 程序化:
-`python3 run.py pipeline --config pipeline/configs/<批次>.json`,每敲一次推进
-一步,门禁不过就地停下并把原因写进 `logs/pipeline/<run_family>/state.json`;
-下表仍是每一步的真源,驱动器坏了照表手跑。
-
-**驱动器的两类完成判据,决定了它能和手发混用到什么程度**(np821 实测):
-
-- **训练段 `t2_full` 认发射标记**:一敲**只发一批**、四批**严格串行**(按配置里
-  `train.batches` 的顺序取第一个没跑完的),发过的批在 state.json 里留一条
-  `launched` 标记、后面再敲只等不重发。要跨批并行就**自己用
-  `run.py launch-probe full --batch <批>` 手发其余批**(同一套登记代码路径,
-  台账/record/RUNMETA 一样齐);手发的批驱动器认不出发射标记,但它的完成判据是
-  `best/` 在 + `train_log` 有 `event=done`,所以跑完之后驱动器照样放行。
-  ⚠️ 对**部分完成**的批再敲 `t2_full`(比如删了标记想补一格),它会重发整张排卡
-  表——已完成的那些格撞守卫秒退,却先补了假 RUNMETA、把 run_id 塞回台账 active
-  (`driver.py` 的 `step_t2_full` docstring 记着这个场景)。补一格走 §3 那条
-  "只含那一格的临时排卡表"。
-- **评测段 `e1_tool` / `e2_call` / `m1_matrix` 的完成判据只有产物文件**——各批
-  ctool 的 `REPLAY_REPORT.json`、cgen 的 `CALLGEN_REPORT.json`、cparam 的
-  `PARAM_REPORT.json`、`MATRIX_<批>_r{0.05,0.1}.md`;发射标记只用来挡**它自己**
-  发过的那一批,不参与判完成、也管不到手发的任务。好处是
-  训练还没全齐时可以直接用 `run.py launch-eval` 把已经训完的批先评掉,报告落地
-  后驱动器敲到那一步会直接认作完成(SKILL.md C4 的"逐格收官逐格派评测")。
-  代价是两个坑,各配一道门禁:手发的评测**在飞时不许敲驱动器**(报告还没落地、
-  又没有发射标记 → `e2_call` 把那批再发一遍,**G23**);某批 call 档报告没齐之前
-  **不许先出那批的矩阵**(`m1_matrix` 见文件已存在就跳过,早产的 PENDING 表会
-  一直留着,**G24**)。
-
-```
-S1 (CPU)  run.py gen-launch --config manifest_<BATCH>.json --dry-run --out-override /tmp/... → 看清单
-S2 (CPU)  run.py gen-launch --config manifest_<BATCH>.json                → envs/runs/<BATCH>/
-S3 (GPU)  launch_servers.py → smoke 每模型 1 题 → launch_clients.sh       ★ 采集,耗时最长
-          (这两个是 gen-launch 的生成物,一次性发射器不进注册表)
-S4 (CPU)  run.py ann-build  --config configs/<BATCH>_<MODEL>.json         ← 等 S3 轨迹落齐
-S5 (CPU)  run.py ann-params --config 同一份 config                        ← 等 S4 的 jsonl
-          (S4+S5+check 也可一条 run.py recipe annotate-chain --set config=...)
-S6 (GPU)  run.py train-<格> ... --smoke,产物进 pipeline/runs/smoke/       ← 等 S5
-S7 (CPU)  run.py check-bundle-mbert 对 smoke 产物跑一遍                    ← 等 S6
-S8 (GPU)  run.py train-<格> 各格全量(或 run.py launch-probe 一把排卡)     ← 等 S7 放行
-S9 (GPU)  run.py eval-tool-mbert / eval-tool-causal × 6                   ← 等 S8 对应格训完
-S10(GPU)  run.py eval-mcall(吃同模型 mtool)/ eval-ccall(吃同模型 ctool) ← 等 S9
-          (S9+S10 排卡一把发走 run.py launch-eval,它替依赖顺序上锁)
-S11(CPU)  run.py matrix 出 0.05 与 0.1 两档表                             ← 随时可跑,缺的标 PENDING
-```
-
-并行/串行:
-- **S4/S5 逐模型独立**,三个模型可并行(纯 CPU,互不抢资源);同一模型内 S5 必须等 S4。
-- **S8 四格 × 三模型 = 12 个 run 全并行**,只受卡数限制(c1 批次:tokyo105 八卡 + tokyo106 四卡)。
-- **S9 六个并行**;S10 必须等对应的 S9,因为它要读 `REPLAY_REPORT.json` 的温度/θ 与 `logits_test.pt`。
-- S11 任何时候都能跑,不完整就是一张带 PENDING 的表。
-- 每次 GPU 发射前先 commit(记录里的 HEAD 只有工作树干净时才追得回真实代码;run.py 对发射类任务是**硬门禁**,脏树直接拒绝出命令,`show` 出命令也一样拦,`--allow-dirty` 才放行)。**launch 自动写三处;手搓/register 补录路径仍在,漏了照旧算违规**——`python3 run.py launch <task> ...`(单任务)或 `launch-probe`/`launch-eval`(排卡批量)发射成功会自动做完台账登记 + `record.py start` + `<out>/RUNMETA.json` 三处;手搓发射(未接 launch 的老脚本)要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` + `python3 run.py runmeta <outdir> --cmd '<命令>'`,收尾各跑一次 `finish`。
+**Input**: `<run>/best/` (label_map.json + weights + tokenizer, causal additionally needs `head.pt`), `<DATA_ROOT>/test.jsonl`; `<run>/REPLAY_REPORT.json` **can be missing**: if missing, it goes with T=1.0 and theta recorded as N/A, this path is designed specifically for "smoke just finished, not evaluated yet."
+**Output**: `<run>/BUNDLE_CHECK.txt` (content also printed to stdout): predicted tool / confidence / whether theta is exceeded / ground truth / top5 / loading and forward-pass time cost.
+**Exit code**: 0; if `test.jsonl` has no entry at `--index` → SystemExit exits 1.
 
 ---
 
-## 7. 接口陷阱
+## 6. A batch's complete command sequence
 
-- **产物写向不对称**:`eval_tool.py` 的 `logits_*.pt` 永远写进 `--run`(`--report-dir` 只改报告);`eval_mbert_call.py` 的报告写进 `--extractor` 而非 `--run`;`eval_causal_call.py` 的报告写进 `--cgen-run` 而非 `--ctool-run`。→ 去 mtool 目录找 EXTRACT_REPORT 会一无所获。
-- **`train_log.jsonl` 是 append 模式**(各训练脚本一致):同一个 `--out` 重跑会在旧日志后面续写,不清空。→ 读日志算轮次/耗时前先确认只有一段 `event=start`,否则数字是两次跑的混合。**2026-08-02 起这个坑被堵住了**:各格开训前先查 `--out` 下有没有 `train_log.jsonl`,有且没传 `--force` 就 SystemExit(见 §3 的 `--force` 行);所以现在只有显式 `--force` 才可能出现混合日志,读到两段 `event=start` 就说明有人加过 `--force`。
-- **`--env` 在训练脚本里只是日志标签**,数据路径完全由 `--data` 决定;但在三个 eval 脚本里 `--env` 是必填且**影响判分**(选调用解析正则)。→ 训练时写错无害,评测时写错会让工具名全判错。
-- **底座三档(2026-08-21 起)**:ctool 的 `--base` 必填(注册表带 `qwen`),cgen/cparam 默认 `qwen`;三个脚本各有一份同构 `MODELS` 表(qwen/qwen17/qwen4),**没有单一真源,加档要改三处**。发射时换档走排卡表 extra(argparse 后写的赢)。
-- **eval_causal_param.py 的报告写进 `--cparam-run`**(PARAM_REPORT.{json,md});它带格保险丝:`best/meta.json` 没有 `param_only: true`(比如误喂 cgen 的 run)直接 SystemExit——cparam 的 prompt 自带工具名,喂 cgen run 会把工具名写两遍、数字静默变形,所以硬停。矩阵只读它的 **pred_tool 块**(系统乙口径),gt_tool 块只进报告。
-- **gen_launch 的 gpt-oss 客户端预设 2026-08-21 起可配**:manifest 顶层可选字段 `gptoss_client_preset`,缺省 `default`(全线现役的那一份口径);给了名字就校验 `configs/presets/<名>.json` 存在,缺文件退 2。
-- **launch_probe smoke 档的 `--gpus` 缺省 2026-08-21 起是 `0,1,2`**:张数必须等于 `CELL_ORDER` 长度(现为三格),给四张退 1。
-- **mext 的权重是 `best/model.pt` 裸 state_dict**,不是 HF 目录,不能用 `from_pretrained` 直接读。→ 复用它必须走 `train_mbert_extract.load_extractor()`。
-- **`--head causal` 的 eval_tool 会 import `pipeline/train/train_causal_tool.py`**,所以必须用 cprobe-env 跑;拿 mbert-env 跑 causal 头会在 import 或加载处炸。
-- **两个 call 脚本对 θ 为 null 是硬失败**(退 1),不是跳过。→ 批量评测脚本要接住这个退出码并降档到 `--risk 0.1`,否则整批中断。**例外**:带 `--self-fire` 时 θ null 不退 1——旧模式块整块跳过、只出 `self_fire` 块并打一行提示;别把"跑完了"当成"旧口径也有数"。
-- **`--self-fire` 与 `--readonly-env` 是绑定的**(缺一即 SystemExit);`--readonly-env` 自己又与 label_map 里的哨兵双向绑定(带哨兵的 run 不传旗、或不带哨兵的 run 传旗,都硬停)。→ 排查这类 SystemExit 先看 `best/label_map.json` 末位是不是 `<NON_READONLY>`,再看命令行,别去翻数据。
-- **`build.py` 对"unit 不在官方题单"零容忍**(退 1)。→ 换环境(appworld→bfcl→alfworld)时,题单文件的命名与 task_id 格式必须先对齐,否则第一步就全量报错。
-- **`gen_launch.py` 强制 `outdir = <env>_<model_key>`**(`env` 取 manifest 顶层的 `env` 字段,缺省 `appworld`;所以 appworld 批是 `appworld_q35`,alfworld 批是 `alfworld_q36`),自定义名只会被 WARN 并改掉;下游事件抽取按目录名尾巴认模型,`MODEL_OF` 只认 q35/q36/gptoss(`annotate/rules.py` 的 `MODEL_OF` 常量)。→ 新模型必须先往这张表里加一行,否则采到的轨迹会被静默跳过。
-- **`--smoke` 不改 `--out`**:冒烟和全量传同一个 `--out` 会让冒烟权重占住 `best/`。→ 照 `ops/launch_probe.py:71` 的做法,冒烟一律写 `pipeline/runs/smoke/<rid>_smoke`。**2026-08-02 起这条有了硬拦**:各格都带 `--force`,不带它时 `--out` 下已有 `train_log.jsonl` 就拒绝开训(见 §3 的 `--force` 行),所以"冒烟占住正式目录"现在会当场退出而不是静默混产物。
-- **`ann-build` 的两个旋钮 CLI 压配置**(2026-08-22 起):`--weight-mode`/`--max-bounds` 显式给了就盖过 config 里的 `weight_mode`/`max_bounds` 字段;`weight_mode` **缺省是新口径 uniform**,老配置不加旗直接重跑得到的是等权数据,不是旧的 w=1/m;要复现旧产物必须显式 `--weight-mode per_event`。报告的四样新统计只在 config 带 `trajs_per_unit` 键时出现,别拿带这个键的 config 去做逐字节复现。
-- **门禁 B 的判据跟着 `trajs_per_unit` 走**(2026-08-22 起):缺省 K=1 时文案与旧版逐字节相同;K>1 时一个 unit 必须恰好 K 条 traj **且**文件名尾部采样序号 `_r0..r{K-1}` 齐全,少一条(某轨迹一个可用事件都没出)也硬停,和偏差 2 的"缺题"不是一回事。→ K 倍意外重扫会先撞 `(event, sent_idx)` 唯一判据,序号判据是第二道。
-- **多样本轨迹文件名带 `_r<k>` 后缀**(`appworld_<tid>_r0.jsonl`…,2026-08-22 起,`--traj-per-task 1` 时无后缀=旧名):`build.py`/`param_label.py` 的 glob 都吃得下;但 `pipeline/inject/replay_inject.py:399` 与 `pipeline/inject/score_live.py:119` 仍按 `appworld_<unit>.jsonl` 反查,吃多样本批之前要先改兼容(记录在 WORKPLAN 回写清单)。
-- **预设 `default` 与 `gptoss_default` 是两份文件**:`default` 是全线现役口径(harmony/high/温度 1/top_p 1/max_tokens 8192,带 server 节 tokyo108:8103、显存 0.92,`serve_preset.py` 直接发射),`gptoss_default` 是 OpenAI 官方推荐口径(effort medium,server 节 max_model_len 131072)。manifest 的 `gptoss_client_preset` 写错一个字就换了口径,发射前 `MANIFEST.md` 里核一眼预设名。四个采集器省掉 `--base-url`/`--model` 时,端点与模型名取预设 server 节(`default` 就是 `http://tokyo108:8103/v1` 的 `gpt-oss-120b`),所以命令里这两项缺席仍会打到 tokyo108 那台服务。
-- **驱动器 `run.py pipeline` 没有 `--allow-dirty`**:发射步撞上脏树只会 blocked(原因落 `logs/pipeline/<run_family>/state.json`),commit 干净了再敲;退出码 3 只表示本次真的发射了,已发射还没跑完的批次再敲返回 0(waiting,不重发),0 另外还盖住推进一步与全部完成,4=等裁决(a1 切点停点,把 `max_bounds` 写进批次配置再敲),1=门禁失败。状态文件里有 `launched` 发射标记(`--status` 印出来;确认某批已死要重发,先把它那条标记从状态文件里删掉)与 `manifest_sha1`(c1 生成后 manifest 又改过 → c2/c5 blocked,`gen-launch --force` 重生成并更新该字段)。状态文件在 git 忽略区,`--status` 只读不改。
-- **`--mode` 对 `train_causal_share.py` 是必填旗**(2026-08-28 起,cgen/cparam 现役训练器):不传就是 argparse 报错退出,不是猜一个默认格。`run.py` 的 `train-cgen`/`train-cparam` 已经在 `CELLS`/`TASKS` 里把它带好(`["--mode", "cgen"]`/`["--mode", "cparam"]`),手搓命令才需要自己补。
-- **`train-cgen-rows`/`train-cparam-rows` 是参照不是现役**:这两个任务指向旧逐行脚本 `train_causal_callgen.py`/`train_causal_param.py`(4096、左截、3 个 epoch 的旧口径冻结不变),只用于对齐检查与对照,产物不进矩阵,`best/meta.json` 没有 `trainer` 字段;run_id 形状和现役的 `train-cgen`/`train-cparam` 相同,拿去评测会混进矩阵分不出来(extending §5 #26),run_id 不许用现役批次前缀。
-- **`--tok-budget` 超预算的单个事件独自成块**:`chunk_by_budget` 贪心装块时,一个事件自己的拼接序列长度就超过 `--tok-budget`,不会被拒收或截断,而是自己单独占一个物理块(允许这一块超预算)。→ 长事件多的数据集,`peak_mem_gb` 不能只按 `--tok-budget` 估,要看 `--mem-probe` 收尾那条 `mem_probe_summary` 的 `worst_gb`(2026-08-28 起,spec 16.5;`scope=full` 时探针在全集里找最满块/最长事件,能代表全量;`scope=run` 时只在本次 run 抽样出的事件里找,`--smoke`/`--max-events` 下这个数是小样本,不能拿去排全量的卡,spec 16.10 #36)。
+From zero to the matrix table. `(CPU)` = runs directly without occupying a card, `(GPU)` = **launch through the gpu-run skill, don't hand-roll ssh/nohup**.
+
+Since 2026-08-22, the np821-series batches have had a resumable driver that programmatizes this S1-S11 sequence:
+`python3 run.py pipeline --config pipeline/configs/<batch>.json`; each invocation advances
+one step, and if a gate fails it stops in place and writes the reason into `logs/pipeline/<run_family>/state.json`;
+the table below is still the source of truth for each step, and if the driver breaks, run it by hand following the table.
+
+**The driver's two kinds of completion criteria decide how far it can be mixed with hand-launching** (measured on np821):
+
+- **The training stage `t2_full` recognizes launch markers**: each invocation **only launches one batch**, the four batches are **strictly serial**
+  (taking the first unfinished one in the order of `train.batches` in the config); a launched batch keeps a
+  `launched` marker in state.json, and invoking it again after that only waits, never relaunches. To parallelize across batches,
+  **hand-launch the rest yourself with `run.py launch-probe full --batch <batch>`** (the same registration code path,
+  the ledger/record/RUNMETA all just as complete); the driver doesn't recognize a hand-launched batch's launch marker, but its completion criterion is
+  `best/` existing plus `train_log` having `event=done`, so once it finishes running, the driver lets it through all the same.
+  Warning: invoking `t2_full` again on a **partially completed** batch (e.g. deleting the marker wanting to fill in one cell) relaunches the whole placement
+  table: the already-finished cells get instantly rejected by the guard, but it has already backfilled a fake RUNMETA and stuffed the run_id back into the active ledger
+  (`driver.py`'s `step_t2_full` docstring records this scenario). To fill in one cell, follow §3's
+  "a temporary placement table containing only that cell."
+- **The eval stage `e1_tool` / `e2_call` / `m1_matrix`'s completion criterion is only the artifact files**: each batch's
+  ctool `REPLAY_REPORT.json`, cgen's `CALLGEN_REPORT.json`, cparam's
+  `PARAM_REPORT.json`, `MATRIX_<batch>_r{0.05,0.1}.md`; the launch marker is only used to block **the batch it itself
+  already launched**, it doesn't participate in judging completion, and it has no bearing on a hand-launched task either. The upside is that
+  when training isn't all complete yet, `run.py launch-eval` can directly evaluate the batches that have finished training first, and once the report lands,
+  when the driver invokes that step it will directly recognize it as complete (SKILL.md C4's "wrap up each cell and dispatch its eval as it finishes").
+  The cost is two pitfalls, each paired with a gate: a hand-launched eval **must not have the driver invoked while it's still in flight** (the report hasn't landed yet,
+  and there's no launch marker either → `e2_call` launches that batch again, **G23**); the matrix for a batch **must not be produced before that batch's call-tier
+  reports are all in** (`m1_matrix` skips as soon as it sees the file already exists, and a prematurely produced PENDING table will
+  stay around forever, **G24**).
+
+```
+S1 (CPU)  run.py gen-launch --config manifest_<BATCH>.json --dry-run --out-override /tmp/... -> look at the manifest
+S2 (CPU)  run.py gen-launch --config manifest_<BATCH>.json                -> envs/runs/<BATCH>/
+S3 (GPU)  launch_servers.py -> smoke 1 task per model -> launch_clients.sh       * collect, takes the longest
+          (these two are gen-launch's generated artifacts, a one-off launcher doesn't go into the registry)
+S4 (CPU)  run.py ann-build  --config configs/<BATCH>_<MODEL>.json         <- wait for S3's trajectories to all land
+S5 (CPU)  run.py ann-params --config the same config                     <- wait for S4's jsonl
+          (S4+S5+check can also be one command, run.py recipe annotate-chain --set config=...)
+S6 (GPU)  run.py train-<cell> ... --smoke, artifact goes into pipeline/runs/smoke/       <- wait for S5
+S7 (CPU)  run.py check-bundle-mbert run once against the smoke artifact    <- wait for S6
+S8 (GPU)  run.py train-<cell> full volume for each cell (or run.py launch-probe for the whole placement table at once)     <- wait for S7 to pass
+S9 (GPU)  run.py eval-tool-mbert / eval-tool-causal x 6                   <- wait for S8's corresponding cell to finish training
+S10(GPU)  run.py eval-mcall (consumes same model's mtool) / eval-ccall (consumes same model's ctool) <- wait for S9
+          (S9+S10 launched together via run.py launch-eval for the whole placement table, which enforces the dependency order)
+S11(CPU)  run.py matrix produces the 0.05 and 0.1 tier tables             <- can run anytime, missing ones marked PENDING
+```
+
+Parallel/serial:
+- **S4/S5 are independent per model**, the three models can run in parallel (pure CPU, not competing for resources); within the same model, S5 must wait for S4.
+- **S8's four cells x three models = 12 runs, all in parallel**, limited only by card count (the c1 batch: tokyo105's eight cards + tokyo106's four cards).
+- **S9's six run in parallel**; S10 must wait for the corresponding S9, since it needs to read the temperature/theta from `REPLAY_REPORT.json` and `logits_test.pt`.
+- S11 can run at any time, and an incomplete run just produces a table carrying PENDING.
+- Commit before every GPU launch (the HEAD stored in the record can only be traced back to the real code when the working tree is clean; run.py enforces this as a **hard gate** for launch-type tasks, a dirty tree refuses to emit the command outright, and `show` is blocked the same way, only `--allow-dirty` lets it through). **launch writes all three places automatically; the hand-rolled/register backfill path still exists, missing it still counts as a violation**: once `python3 run.py launch <task> ...` (a single task) or `launch-probe`/`launch-eval` (batch placement) launches successfully, it automatically completes all three, the ledger registration + `record.py start` + `<out>/RUNMETA.json`; a hand-rolled launch (an old script not wired into launch) needs to backfill `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` + `python3 run.py runmeta <outdir> --cmd '<command>'` itself, and run `finish` once for each at wrap-up.
+
+---
+
+## 7. Interface traps
+
+- **The write direction of artifacts is asymmetric**: `eval_tool.py`'s `logits_*.pt` is always written into `--run` (`--report-dir` only changes the report); `eval_mbert_call.py`'s report is written into `--extractor` rather than `--run`; `eval_causal_call.py`'s report is written into `--cgen-run` rather than `--ctool-run`. → looking for EXTRACT_REPORT in the mtool directory finds nothing.
+- **`train_log.jsonl` is in append mode** (consistent across every training script): rerunning into the same `--out` continues writing after the old log, it doesn't clear it. → before reading the log to compute epochs/time cost, first confirm there's only one `event=start` segment, otherwise the numbers are a mixture of two runs. **This pitfall was closed since 2026-08-02**: before starting training, each cell checks whether `--out` already has a `train_log.jsonl`, and if it does and `--force` wasn't passed, it SystemExits (see the `--force` row in §3); so now a mixed log can only appear with an explicit `--force`, and reading two `event=start` segments means someone added `--force`.
+- **`--env` is only a log label in the training scripts**, the data path is entirely decided by `--data`; but in the three eval scripts `--env` is required and **affects scoring** (choosing the call-parsing regex). → getting it wrong at training time is harmless, getting it wrong at eval time makes the tool name judged wrong across the board.
+- **Three base tiers (since 2026-08-21)**: ctool's `--base` is required (the registry carries `qwen`), cgen/cparam default to `qwen`; each of the three scripts has its own copy of an isomorphic `MODELS` table (qwen/qwen17/qwen4), **there is no single source of truth, adding a tier requires changing three places**. Switching tiers at launch time goes through the placement table's extra (whichever argparse writes last wins).
+- **eval_causal_param.py's report is written into `--cparam-run`** (PARAM_REPORT.{json,md}); it carries a cell fuse: `best/meta.json` lacking `param_only: true` (e.g. accidentally feeding it a cgen run) is an outright SystemExit; cparam's prompt already carries the tool name, so feeding it a cgen run would write the tool name twice and silently deform the numbers, hence the hard stop. The matrix only reads its **pred_tool block** (system B's convention), the gt_tool block only goes into the report.
+- **gen_launch's gpt-oss client preset has been configurable since 2026-08-21**: the manifest's optional top-level field `gptoss_client_preset`, defaulting to `default` (the convention currently in service across the whole line); if a name is given it validates that `configs/presets/<name>.json` exists, exiting with 2 if the file is missing.
+- **launch_probe's smoke tier `--gpus` default has been `0,1,2` since 2026-08-21**: the count must equal `CELL_ORDER`'s length (currently three cells), giving four exits with 1.
+- **mext's weights are a bare state_dict at `best/model.pt`**, not an HF directory, and can't be read directly with `from_pretrained`. → reusing it must go through `train_mbert_extract.load_extractor()`.
+- **`eval_tool` with `--head causal` imports `pipeline/train/train_causal_tool.py`**, so it must be run with cprobe-env; running the causal head with mbert-env will crash at the import or the loading step.
+- **For the two call scripts, theta being null is a hard failure** (exit 1), not a skip. → a batch eval script needs to catch this exit code and drop down to `--risk 0.1`, otherwise the whole batch gets interrupted. **Exception**: with `--self-fire` on, theta being null doesn't exit 1: the old-mode block gets skipped entirely, only the `self_fire` block comes out with one line printed as a notice; don't mistake "it finished running" for "the old convention has numbers too."
+- **`--self-fire` is bound to `--readonly-env`** (missing either one is a SystemExit); `--readonly-env` is itself two-way bound to the sentinel in label_map (a run carrying the sentinel with the flag not passed, or a run not carrying the sentinel with the flag passed, both hard-stop). → when troubleshooting this kind of SystemExit, first check whether `best/label_map.json`'s last entry is `<NON_READONLY>`, then check the command line, don't go digging through the data.
+- **`build.py` has zero tolerance for "a unit not in the official task list"** (exit 1). → when changing environments (appworld→bfcl→alfworld), the task-list file's naming and the task_id format must be aligned first, otherwise the very first step errors out across the board.
+- **`gen_launch.py` forces `outdir = <env>_<model_key>`** (`env` is taken from the manifest's top-level `env` field, defaulting to `appworld`; so an appworld batch is `appworld_q35`, an alfworld batch is `alfworld_q36`), a custom name only gets WARNed and changed; downstream event extraction recognizes the model by the directory-name tail, and `MODEL_OF` only recognizes q35/q36/gptoss (`annotate/rules.py`'s `MODEL_OF` constant). → a new model must first have a line added to this table, otherwise the collected trajectories get silently skipped.
+- **`--smoke` doesn't change `--out`**: passing the same `--out` for smoke and the full volume would let the smoke weights occupy `best/`. → follow `ops/launch_probe.py:71`'s approach, smoke always writes to `pipeline/runs/smoke/<rid>_smoke`. **This has been hard-blocked since 2026-08-02**: every cell now has `--force`, and without it, if `--out` already has a `train_log.jsonl`, it refuses to start training (see the `--force` row in §3), so "smoke occupying the real directory" now exits on the spot instead of silently mixing artifacts.
+- **`ann-build`'s two knobs override the config via the CLI** (since 2026-08-22): `--weight-mode`/`--max-bounds`, when given explicitly, override the `weight_mode`/`max_bounds` fields in the config; `weight_mode` **defaults to the new convention, uniform**, so rerunning an old config without adding the flag gets equal-weight data, not the old w=1/m; reproducing an old artifact requires an explicit `--weight-mode per_event`. The report's four new statistics only appear when the config carries the `trajs_per_unit` key, don't use a config carrying this key to do a byte-for-byte reproduction.
+- **Gate B's criterion follows `trajs_per_unit`** (since 2026-08-22): with the default K=1, the wording is byte-for-byte identical to the old version; with K>1, a unit must have exactly K traj **and** the filename's trailing sampling index `_r0..r{K-1}` must all be present, missing even one (some trajectory produced not a single usable event) also hard-stops it, which is not the same thing as deviation 2's "missing task." → an accidental K-fold re-scan hits the `(event, sent_idx)` uniqueness criterion first, the index criterion is the second line of defense.
+- **A multi-sample trajectory filename carries the `_r<k>` suffix** (`appworld_<tid>_r0.jsonl`…, since 2026-08-22, with `--traj-per-task 1` there's no suffix = the old name): both `build.py`/`param_label.py`'s glob can handle it; but `pipeline/inject/replay_inject.py:399` and `pipeline/inject/score_live.py:119` still look things up by `appworld_<unit>.jsonl`, and need to be made compatible before ingesting a multi-sample batch (recorded in the WORKPLAN write-back checklist).
+- **The presets `default` and `gptoss_default` are two different files**: `default` is the convention currently in service across the whole line (harmony/high/temperature 1/top_p 1/max_tokens 8192, with a server section tokyo108:8103, gpu-memory-utilization 0.92, launched directly by `serve_preset.py`), `gptoss_default` is OpenAI's official recommended convention (effort medium, server section max_model_len 131072). Getting one character of the manifest's `gptoss_client_preset` wrong changes the convention; check the preset name in `MANIFEST.md` before launching. When the four collectors omit `--base-url`/`--model`, the endpoint and model name are taken from the preset's server section (`default`'s is `gpt-oss-120b` at `http://tokyo108:8103/v1`), so leaving these two items out of the command still hits that service on tokyo108.
+- **The driver `run.py pipeline` has no `--allow-dirty`**: a launch step hitting a dirty tree only gets blocked (the reason lands in `logs/pipeline/<run_family>/state.json`), commit clean and invoke it again; exit code 3 only means it genuinely launched this time, invoking it again on a batch that's already launched but not yet finished returns 0 (waiting, not relaunching), 0 also covers advancing one step and being fully complete, 4 = waiting for a ruling (the a1 cut-point stopping point, write `max_bounds` into the batch config and invoke it again), 1 = a gate failed. The state file has a `launched` launch marker (printed by `--status`; to confirm a batch is dead and needs relaunching, first delete that marker from the state file) and `manifest_sha1` (if the manifest was changed again after c1 generated it → c2/c5 are blocked, `gen-launch --force` regenerates and updates this field). The state file is in the git-ignored zone, `--status` only reads it, never changes it.
+- **`--mode` is a required flag for `train_causal_share.py`** (since 2026-08-28, the cgen/cparam trainer currently in service): not passing it is an argparse error exit, not a guess at a default cell. `run.py`'s `train-cgen`/`train-cparam` already carry it in `CELLS`/`TASKS` (`["--mode", "cgen"]`/`["--mode", "cparam"]`), only a hand-rolled command needs to add it itself.
+- **`train-cgen-rows`/`train-cparam-rows` are a reference, not what's currently in service**: these two tasks point at the old row-by-row scripts `train_causal_callgen.py`/`train_causal_param.py` (the old convention frozen unchanged: 4096, left truncation, 3 epochs), used only for alignment checks and comparison, their artifacts don't go into the matrix, and `best/meta.json` has no `trainer` field; the run_id shape is the same as the current `train-cgen`/`train-cparam`, and taking it to eval would mix it into the matrix with no way to tell it apart (extending §5 #26), the run_id must not use the current batch prefix.
+- **A single event that exceeds the `--tok-budget` forms its own block**: when `chunk_by_budget` greedily packs blocks, if an event's own concatenated sequence length already exceeds `--tok-budget`, it is neither rejected nor truncated, it instead occupies one physical block by itself (this block is allowed to exceed the budget). → for a dataset with many long events, `peak_mem_gb` can't be estimated by `--tok-budget` alone, look at the `worst_gb` in the `mem_probe_summary` entry that `--mem-probe` writes at wrap-up (since 2026-08-28, spec 16.5; with `scope=full`, the probe finds the fullest block/longest event across the whole set, which can represent the full volume; with `scope=run`, it only finds one among the events sampled for this run, and under `--smoke`/`--max-events` this is a small sample and can't be used to assign cards for the full volume, spec 16.10 #36).

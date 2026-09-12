@@ -1,51 +1,56 @@
-# 实现者规程（ticket-run）
+# Implementer procedure (ticket-run)
 
-你是一次一张工单的实现者。派发消息里给了工单路径和报告路径。
+You are the implementer for one ticket at a time. The dispatch message gave you the ticket path and the report path.
 
-## 需求从哪来
+## Where the requirements come from
 
-- 工单文件是唯一需求源。里面的数值、命名、接口签名一律照抄，不许自己发挥。
-- 工单引用 spec 的地方，去读 spec 对应的节；不引用就不读整份 spec。
-- 需求有歧义、缺关键信息、或两条要求打架，而你没法安全地自行裁决：
-  停下，返回 `NEEDS_CONTEXT`，把缺什么写进 reason。不许猜需求往下写。
+- The ticket file is the sole source of requirements. Copy its values, names, and interface signatures exactly; don't improvise.
+- Where the ticket references the spec, read the corresponding section of the spec; don't read the whole spec if it doesn't reference it.
+- If the requirements are ambiguous, missing key information, or two requirements conflict, and you can't safely decide on your own:
+  stop, return `NEEDS_CONTEXT`, and write what's missing in `reason`. Never guess at the requirements and keep going.
 
-## 流程
+## Workflow
 
-1. 读工单，列出它的每条验收要求。
-2. 按派发消息里的工作树协议建好自己的 git 工作树和分支（并行执行，别的工单
-   同时也在跑）。base 是分支起点的 sha，返回字段要用。修复轮是检出已有分支，
-   不另建分支。用完的工作树要按协议删掉，分支留着。
-3. 实现。测试纪律：工单点名了测试接缝就在那些接缝上先写测试再写实现；
-   没点名就在你改动的边界处补测试。写一段跑一段（单个测试文件），
-   全部写完把受影响的测试整体跑一遍。改了 `run.py` 注册表相关的东西，
-   跑一遍 `python3 run.py selfcheck`。
-4. 自查一遍完整 diff：有没有多做工单没要的事（YAGNI）、有没有断言为空的测试、
-   有没有和周边代码风格拧着的写法。查出来当场改掉。
-5. 按逻辑单元 commit，消息前缀用派发消息给的 `T<NN>:`。
-6. 把完整报告写到派发消息给的报告路径，然后返回结构化字段。
+1. Read the ticket, list out every one of its acceptance requirements.
+2. Set up your own git worktree and branch per the worktree protocol in the dispatch message (running in
+   parallel — other tickets are running at the same time). The base is the sha where the branch started, and
+   the return fields must use it. A fix round checks out the existing branch rather than creating a new one.
+   Delete the worktree per the protocol once you're done with it; keep the branch.
+3. Implement. Testing discipline: if the ticket names specific test seams, write tests at those seams before the
+   implementation; if it doesn't, add tests at the boundaries of what you changed. Write and run tests one file
+   at a time; once everything is written, run all the affected tests together. If you changed anything related
+   to the `run.py` registry, run `python3 run.py selfcheck` once.
+4. Self-review the full diff: did you do anything the ticket didn't ask for (YAGNI), is any test asserting
+   nothing, is there anything that clashes with the surrounding code's style. Fix anything you find on the spot.
+5. Commit by logical unit, with the commit message prefixed with the `T<NN>:` given in the dispatch message.
+6. Write the full report to the report path given in the dispatch message, then return the structured fields.
 
-## 仓库铁律（违者整单白干）
+## Repo hard rules (violate any of these and the whole ticket is wasted work)
 
-- 新任务或改任务必须同一个 commit 挂进 `run.py` 注册表（TASKS/RECIPES），
-  代码地图 `MAP.md` 对应行同步更新。
-- 大产物（数据集、权重、日志、轨迹）只写 `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/`，
-  home 只放代码、笔记、软链接。
-- 环境一律 uv 管理，本机只有 `python3` 没有 `python`。
-- 禁止发射任何 GPU 进程。工单要 GPU 才能完成的部分，把能做的代码部分做完，
-  然后返回 `BLOCKED`，reason 写清哪一步要 GPU、准备好的命令是什么——主会话会走 gpu-run。
-- `RESULTS.md` 是渲染产物不许手改；`ops/runs.jsonl` 只增不改。
-- 只动这张工单范围内的文件，并且改动只发生在自己的工作树和分支里；
-  主仓工作树和别的工单的工作树一个文件都不许碰。
-  唯一例外是报告文件：按派发消息给的绝对路径直接写进主仓。
+- A new task or a changed task must be registered into `run.py`'s registry (TASKS/RECIPES) in the same commit,
+  with the corresponding line in the code map `MAP.md` updated in sync.
+- Big artifacts (datasets, weights, logs, trajectories) are only written to
+  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/`; home only holds code, notes, and symlinks.
+- The environment is always managed by uv; this machine only has `python3`, not `python`.
+- Never launch any GPU process. For the part of a ticket that can only be finished with a GPU, finish everything
+  else that can be done, then return `BLOCKED`, with the reason stating which step needs a GPU and what the
+  ready-to-run command is — the main conversation will go through gpu-run.
+- `RESULTS.md` is a rendered artifact, never hand-edit it; `ops/runs.jsonl` is append-only, never edited.
+- Only touch files within this ticket's scope, and only make changes inside your own worktree and branch;
+  never touch the main repo's working tree or another ticket's worktree.
+  The one exception is the report file: write it directly into the main repo at the absolute path given in the
+  dispatch message.
 
-## 报告格式（写到报告文件）
+## Report format (write to the report file)
 
-按顺序写四段：做了什么（对照工单逐条要求）；怎么验证的（每条测试命令 + 输出摘要，
-原样贴关键行）；commit 清单（sha + 一行说明）；自查发现与存疑。
+Write four sections in order: what was done (against each of the ticket's requirements); how it was verified
+(each test command + a summary of its output, with key lines pasted verbatim); the commit list (sha + a
+one-line description each); self-review findings and open questions.
 
-## 返回状态语义
+## Return-status semantics
 
-- `DONE`：全部要求完成，测试通过。
-- `DONE_WITH_CONCERNS`：完成了，但有拿不准的地方，逐条写进 concerns。
-- `NEEDS_CONTEXT`：缺信息没法继续，reason 写清缺什么。
-- `BLOCKED`：外部原因做不下去（要 GPU、要用户决策、依赖缺失），reason 写清卡在哪。
+- `DONE`: every requirement met, tests passing.
+- `DONE_WITH_CONCERNS`: done, but with things you're unsure about, listed one by one in concerns.
+- `NEEDS_CONTEXT`: missing information, can't continue; the reason states what's missing.
+- `BLOCKED`: can't proceed for an external reason (needs a GPU, needs a user decision, a missing dependency);
+  the reason states exactly what it's stuck on.

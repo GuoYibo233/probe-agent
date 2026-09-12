@@ -1,45 +1,55 @@
-# 探针具体是怎么训练的
+# How the probes were actually trained
 
-出处：快照 `b1f5b9c` 的 `pipeline/train/train_causal_tool.py`、
-`train_mbert_tool.py` 脚本原文（本文所有数字都从代码默认值和 `DATA.md` 抄录），
-样本构造规则见 `01-settings.md`。
+Source: the `pipeline/train/train_causal_tool.py` and `train_mbert_tool.py` script text in the snapshot `b1f5b9c`
+(every number in this file is copied from the code's default values and from `DATA.md`); the sample-construction
+rules are in `01-settings.md`.
 
-## 训练目标
+## The training objective
 
-监督信号全自动、零人工标注：一条轨迹里每个真实工具调用步是一个事件，
-事件按思考的句子边界切出若干前缀位置，每个位置的标签就是这一步实际调用的
-工具名。探针学的是"看到思考写到这里，预测这一步最终会调哪个工具"。
+The supervision signal is fully automatic, with zero manual labeling: every real tool-call step in a trajectory is
+one event, an event is cut into several prefix positions at the thinking's sentence boundaries, and the label at
+each position is the tool name actually called at that step. What the probe learns is "given the thinking written
+up to this point, predict which tool this step will ultimately call."
 
-## 因果头（ctool，主线胜出方案）
+## The causal head (ctool, the winning main-line scheme)
 
-- 底座 Qwen3-0.6B-Base 全参微调，头是一层 `nn.Linear`（末层隐状态 → 工具名分布）。
-- 一个事件整段只做一次前向：整条样本文本编码一次，在每个句子边界对应的
-  token 位置上同时取监督（脚本注释原话"整段一次前向"）。位置权重 w=1/m_i
-  （事件内均分），训练分布对齐部署分布——部署时每个句子边界都会问一次探针。
-- 超参（脚本默认值）：lr 1e-5，AdamW weight_decay 0.01，线性调度 warmup 5%，
-  3 epoch，批 4 事件 × 梯度累积 8，max_len 4096，超长左截（`truncation_side="left"`，
-  注释原话"保思考尾巴"）。
-- 精度方案：权重 fp32、计算 bf16 autocast。这是 bf16 硬训事故（lr 更新量低于
-  bf16 权重分辨率、模型近乎冻结）之后定下的修法。
-- 开训前强制过对齐检查：整段一次前向与逐 token 增量前向在 fp32 下末位
-  隐状态/logits 必须一致（容差 1e-4，禁 TF32），不过就拒绝开训。这是防
-  Mamba 混合架构静默算错的门禁。
-- 种子写死 20260729（数据、shuffle、初始化同源）。
+- Backbone Qwen3-0.6B-Base, full-parameter fine-tuning, the head is one `nn.Linear` layer (final hidden state →
+  distribution over tool names).
+- One forward pass over the whole event: the whole sample text is encoded once, and supervision is taken
+  simultaneously at the token positions corresponding to every sentence boundary (the script comment's exact words,
+  "one forward pass over the whole segment"). Position weight w=1/m_i (split evenly within the event), aligning the
+  training distribution to the deployment distribution, in deployment the probe is asked once at every sentence
+  boundary.
+- Hyperparameters (script defaults): lr 1e-5, AdamW weight_decay 0.01, linear schedule with 5% warmup, 3 epochs,
+  batch 4 events × gradient accumulation 8, max_len 4096, left truncation on overlong samples
+  (`truncation_side="left"`, the comment's exact words, "keep the thinking's tail").
+- Precision scheme: fp32 weights, bf16 autocast for compute. This is the fix settled on after the bf16
+  hard-training incident (the update magnitude at the chosen lr was below bf16 weight resolution, the model was
+  effectively frozen).
+- Before training starts, an alignment check must pass: the final hidden state and logits from the whole-segment
+  single forward pass and from a token-by-token incremental forward pass must match under fp32 (tolerance 1e-4,
+  TF32 disabled); training is refused if it does not pass. This is the gate against the Mamba hybrid architecture
+  silently computing wrong.
+- Seed fixed at 20260729 (data, shuffling, and initialization all share this source).
 
-## ModernBERT 头（mtool，被比下去的基线方案）
+## The ModernBERT head (mtool, the baseline scheme that lost the comparison)
 
-- 底座 ModernBERT-base（约 150M 编码器）加分类头，同样全参微调。
-- 超参默认值：lr 2e-5，批 8 × 累积 4，3 epoch，max_len 4096，bf16 autocast。
-- 与因果头的成绩差距在覆盖率不在判别力（c2 批同 θ=0.95：触发比例
-  0.9397 对 0.5988，精度 0.9467 对 0.9355）。
+- Backbone ModernBERT-base (an encoder of about 150M), plus a classification head, likewise full-parameter
+  fine-tuning.
+- Hyperparameter defaults: lr 2e-5, batch 8 × accumulation 4, 3 epochs, max_len 4096, bf16 autocast.
+- Its score gap against the causal head is in coverage, not in discriminative power (the c2 batch at the same
+  θ=0.95: trigger ratio 0.9397 versus 0.5988, accuracy 0.9467 versus 0.9355).
 
-## 另外两格（只在触发点上评，不另起炉灶）
+## The other two cells (evaluated only at the trigger point, no separate pipeline)
 
-- mext：ModernBERT 抽取头，在文本里定位参数值起止区间，只在 mtool 触发点上评。
-- cgen：Qwen3-0.6B 直接生成整条调用（工具名 + 全部参数），只在 ctool 触发点上评。
+- mext: a ModernBERT extraction head, locates the start and end span of parameter values in the text, evaluated
+  only at mtool's trigger points.
+- cgen: Qwen3-0.6B generates the whole call directly (tool name + all parameters), evaluated only at ctool's
+  trigger points.
 
-## 训练之后的校准（探针出厂前的最后两步）
+## Calibration after training (the probe's last two steps before shipping)
 
-训练完不直接用：先在拟温度堆上给置信度拟温度，再在扫门槛堆上扫出满足
-风险约束的 θ（risk0.1 档触发精度不低于 90%，risk0.05 档不低于 95%），
-最后拿冻结的 θ 到测试堆报数。θ 不是训练产物，是校准产物。
+The trained probe is not used directly: first a temperature is fit for its confidence on the fit-temperature split,
+then a θ satisfying the risk constraint is scanned for on the threshold-scan split (the risk0.1 tier requires
+trigger accuracy no lower than 90%, the risk0.05 tier no lower than 95%), and finally the frozen θ is reported on
+the test split. θ is not a training artifact, it is a calibration artifact.

@@ -1,27 +1,27 @@
-# 05 训练器审查修正（assistant-2 只读审查的 5 条建议 + 工单 03 的 2 条 minor）
+# 05 Trainer review fixes (assistant-2's 5 read-only review suggestions + ticket 03's 2 minors)
 
 Status: resolved
 Blocked by: 03
-Spec: `.scratch/kvshare-train/spec.md` 第 4、9 节；`design-attention.md` 第二、五节。改动只在 `pipeline/train/train_causal_share.py` 与 `tests/test_share_trainer.py`。行号按合并后的 main（`12c4a2b`），实现者以当前文件为准重新定位。
+Spec: `.scratch/kvshare-train/spec.md` sections 4, 9; `design-attention.md` sections 2, 5. Changes only in `pipeline/train/train_causal_share.py` and `tests/test_share_trainer.py`. Line numbers are against merged main (`12c4a2b`); the implementer should relocate them against the current file.
 
-## 要做的
+## What to do
 
-1. 末层隐状态的取法（S1，`train_causal_share.py` 第 133 到 136 行附近）：现在用 `output_hidden_states=True` 再取 `hidden_states[-1]`。改成 `model.model(input_ids=..., attention_mask=..., position_ids=..., use_cache=False).last_hidden_state` 再过 `model.lm_head`（LoRA 包装后 `model.model` / `model.lm_head` 的取法要兼容 peft 的包装对象，`get_base_model()` 或等价写法，实现者验证 `--lora` 下能跑）。理由：`hidden_states[-1]` 靠 HF 往元组末尾追加 `last_hidden_state` 的约定，并且 `--grad-ckpt` 下记录器会把 28 层输出全拿住（16k token 的块约 1.9 GB）。改完 `tests/test_share_trainer.py` 的 (a) 逐行 ce 等价测试必须仍然通过。
-2. bf16 粗筛不做漂移自检（S2，第 429 到 430 行与第 331 到 338 行附近）：`_ref_forward` 加一个 `check_drift` 开关；fp32 那一遍保留（容差 1e-6），bf16 粗筛那一遍关掉（它只用 `row_ce`）。理由：bf16 下比的是两次独立前向的 bf16 结果，GPU 内核只要抖 1e-6 就 `RefBaselineDriftError` → `exit(2)`，一条只告警的检查会挡住开训。
-3. 反向传播移出 autocast（S3，第 708 到 710 行附近）：`backward_logical_minibatch` 现在把 `.backward()` 也套在 autocast 里；改成 autocast 只包前向（收进 `block_row_ce` 的前向），`.backward()` 在外面，照旧训练器第 489 到 505 行的形状。
-4. 对齐候选的长度筛（S5，第 268 行附近）：`_align_candidates` 的筛选条件改成 `n_full <= min(ALIGN_LEN_FILTER, args.max_len)`，否则 `--max-len < 2048` 时新路径丢事件而 `CallDS` 不丢，行数不等直接 `exit(2)`。
-5. 参照路径的瞬时显存（S6，第 319 到 331 行附近）：fp32 参照路径里 `out`（[4, L, V] fp32 约 5.1 GB）还活着时又调一次 `inst_ce` 做漂移自检，瞬时约 10 GB；先 `del out, lg`（或者先取出需要的 `row_ce` / `tok_ce` 再释放）再调 `inst_ce`。
-6. `ALIGN_CHECK.json` 的键（工单 03 minor F2）：去掉 spec 列表之外的 `bf16_warn` 键（`align_bf16_warn` 已在 `start` 事件里），`baseline_warn` 保留（spec 正文点名）。同步把 spec 第 9 节结果段的字段列表补上 `baseline_warn`（只改那一行）。
-7. 断言分支的测试（工单 03 minor N2）：`tests/test_share_trainer.py` 加一个用例，给 `inst_ce_fn` 打补丁让它返回偏移过的行均值，断言 `_ref_forward(check_drift=True)` 抛 `RefBaselineDriftError`（或现有的那个异常类型）并且错误信息含漂移数值；再加一个用例断言 `check_drift=False` 时同样的补丁不抛。
+1. How the last hidden state is obtained (S1, around `train_causal_share.py` lines 133-136): it currently uses `output_hidden_states=True` and then takes `hidden_states[-1]`. Change to `model.model(input_ids=..., attention_mask=..., position_ids=..., use_cache=False).last_hidden_state`, then pass through `model.lm_head` (after LoRA wrapping, getting `model.model` / `model.lm_head` must be compatible with peft's wrapper object -- `get_base_model()` or the equivalent; the implementer should verify this runs under `--lora`). Reason: `hidden_states[-1]` relies on HF's convention of appending `last_hidden_state` to the end of the tuple, and under `--grad-ckpt` the recorder would hold onto the output of all 28 layers (about 1.9 GB for a 16k-token block). After the change, test (a)'s per-row ce equivalence test in `tests/test_share_trainer.py` must still pass.
+2. Don't run the bf16 coarse-screen drift self-check (S2, around lines 429-430 and 331-338): add a `check_drift` switch to `_ref_forward`; keep it for the fp32 pass (tolerance 1e-6), turn it off for the bf16 coarse-screen pass (which only uses `row_ce`). Reason: under bf16 we're comparing two independent forward passes' bf16 results, and a 1e-6 jitter in the GPU kernel alone would trigger `RefBaselineDriftError` -> `exit(2)`; a check meant only as a warning would end up blocking training from starting.
+3. Move backprop out of autocast (S3, around lines 708-710): `backward_logical_minibatch` currently wraps `.backward()` inside autocast too; change it so autocast wraps only the forward pass (feeding into `block_row_ce`), with `.backward()` outside it, matching the shape of the old trainer's lines 489-505.
+4. The length filter for alignment candidates (S5, around line 268): change `_align_candidates`'s filter condition to `n_full <= min(ALIGN_LEN_FILTER, args.max_len)`; otherwise, when `--max-len < 2048`, the new path drops events that `CallDS` does not, and the row-count mismatch causes an immediate `exit(2)`.
+5. The reference path's transient memory use (S6, around lines 319-331): while `out` (the fp32 [4, L, V] tensor, about 5.1 GB) from the fp32 reference path is still alive, `inst_ce` is called again for the drift self-check, transiently using about 10 GB; `del out, lg` first (or pull out the needed `row_ce` / `tok_ce` first) before calling `inst_ce`.
+6. `ALIGN_CHECK.json`'s keys (ticket 03 minor F2): drop the `bf16_warn` key that isn't in the spec's list (`align_bf16_warn` is already in the `start` event); keep `baseline_warn` (it's named explicitly in the spec text). Update spec section 9's result-field list to include `baseline_warn` accordingly (change only that one line).
+7. Tests for the assertion branch (ticket 03 minor N2): add a case to `tests/test_share_trainer.py` that patches `inst_ce_fn` to return an offset row mean, and assert `_ref_forward(check_drift=True)` raises `RefBaselineDriftError` (or whatever the actual exception type is) with the drift value in the message; add another case asserting that the same patch does not raise when `check_drift=False`.
 
-## 验收
+## Acceptance
 
-- `cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data` 通过；`python3 -m unittest discover -s tests -p 'test_share_*.py'` OK（skip 也算）。
-- `grep -n "output_hidden_states" pipeline/train/train_causal_share.py` 无命中；`grep -n "backward" pipeline/train/train_causal_share.py` 命中的行不在任何 `torch.autocast` 的 with 块之内（报告里贴出上下文证明）。
-- `--lora` 路径：`tests/test_share_trainer.py` 里加一个小模型 `--lora` 的一次前向加反向用例（peft 装了就跑，没装就 skip），证明第 1 条的取法在 peft 包装下能跑。
-- `python3 run.py selfcheck` 通过（注册表不动，只是确认没碰坏）。
-- 不改 `share_data.py`、不改旧脚本、不改 spec 除第 6 条那一行。
+- `cprobe-env/bin/python -m unittest tests.test_share_trainer tests.test_share_data` passes.
+- `grep -n "output_hidden_states" pipeline/train/train_causal_share.py` has no hits; every hit of `grep -n "backward" pipeline/train/train_causal_share.py` falls outside any `torch.autocast` with-block (show this in context in the report).
+- `--lora` path: add a small-model `--lora` forward-plus-backward case to `tests/test_share_trainer.py` (runs if peft is installed, skips otherwise) demonstrating that item 1's approach works under the peft wrapper.
+- `python3 run.py selfcheck` passes (the registry is untouched, this just confirms nothing broke).
+- Do not change `share_data.py`, do not change the old scripts, do not change the spec except for the one line in item 6.
 
 ## Comments
 
-- 2026-08-28 plan-8-28 收账：wave3 实现 1 轮修复过评审，分支 `ticket/2026-08-28-wave3/T05`（base `45c881e`，head `6c507cc`），合并为 `a89da00`（spec §9 字段列表那一行与主干冲突，取主干并补 `baseline_warn`）。主会话复核：cprobe-env 下 `test_share_trainer test_share_data test_ctool_readpos` Ran 39 tests OK；`grep -c output_hidden_states` 0；`_ref_forward(..., check_drift=True)` 开关在；selfcheck 76 任务就位。遗留 minors（照录）：F2 报告里 backward 的 grep 命中行数写的 4 实际 6（结论对：206、248 两处 `.backward()` 都不在 autocast 内）；N1 新测试与既有 `test_lora_forward_backward` 大段重复。实现者 concerns（照录）：顺手改了 `run_align_check` 里一条过时注释；worktree 里建了只读软链 `pipeline/data/nyapass_aw_v1`（在 .gitignore 里，随 worktree 删除）；worktree 里 selfcheck 报 16 处缺失是本地虚拟环境目录不在版本控制里，主仓对照 76/4/3 一致。GPU 上 S2/S6 的数值效果由主会话最终冒烟核。
+- 2026-08-28 plan-8-28 closeout: wave3 implementation passed review with 1 fix round, branch `ticket/2026-08-28-wave3/T05` (base `45c881e`, head `6c507cc`), merged as `a89da00` (the spec section 9 field-list line conflicted with main; kept main's version and added `baseline_warn`). Main-session re-check: under cprobe-env, `test_share_trainer test_share_data test_ctool_readpos` Ran 39 tests OK; `grep -c output_hidden_states` 0; the `_ref_forward(..., check_drift=True)` switch is in place; selfcheck all 76 tasks in place. Leftover minors (verbatim): F2 the report said the grep for backward hit 4 lines, actually 6 (the conclusion holds: both `.backward()` calls at lines 206 and 248 are outside autocast); N1 the new test heavily overlaps the existing `test_lora_forward_backward`. Implementer concerns (verbatim): fixed an outdated comment in `run_align_check` in passing; built a read-only symlink `pipeline/data/nyapass_aw_v1` in the worktree (covered by .gitignore, removed with the worktree); selfcheck in the worktree reported 16 missing items because the local virtualenv directories aren't under version control -- the main repo's own check shows 76/4/3 consistent. The numerical effect of S2/S6 on GPU is left for the main session's final smoke test.

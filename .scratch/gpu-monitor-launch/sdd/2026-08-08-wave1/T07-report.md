@@ -1,76 +1,77 @@
-# T07 报告 — 终端出口改读采样历史
+# T07 report: Terminal outlet switched to reading sampling history
 
-工单：`.scratch/gpu-monitor-launch/issues/07-terminal-outlet.md`
-参照：`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 8（工单正文点名）
-分支：`ticket/20260808-par/T07`，工作树 `new1-wt/20260808-par-T07`（已清理）
-commit：`873f478`
+Ticket: `.scratch/gpu-monitor-launch/issues/07-terminal-outlet.md`
+Reference: `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 8 (named directly in the ticket text)
+Branch: `ticket/20260808-par/T07`, worktree `new1-wt/20260808-par-T07` (cleaned up)
+commit: `873f478`
 
-## 做了什么
+## What was done
 
-工单四条要求逐条对照：
+Against the ticket's four requirements one by one:
 
-1. **没有采样器在跑的时候：警告行加老表照出，json 出口输出合法 JSON。**
-   `ops/gpu_jobs.py` 新增 `read_latest()`（读 `MONITOR_DIR/latest.json`，
-   返回 `(latest_dict|None, age_s|None)`，文件不在/读不了/JSON 坏了都
-   返回 `(None, None)`）。`cmd_status`/`cmd_watch`/`cmd_json` 三处都先调
-   `read_latest()`，`latest is None or age_s > FRESH_S`（`FRESH_S=300.0`）
-   就走过期分支：终端两个出口打印 `_stale_warning()` 给出的原文
-   `采样器不在跑(最后采样 <时刻|无>),现场实探一次`，再走原有
-   `collect()` + `fmt_table()` 老路；json 出口过期时输出
-   `{"rows": collect(), "sampler_stale": True}`（裸列表加不了字段，
-   套一层 `rows` 键，键名与 `latest.json` 本来的键名对上）。
+1. **When the sampler isn't running: the warning line falls back to the old table, and the json outlet outputs valid JSON.**
+   `ops/gpu_jobs.py` got a new `read_latest()` (reads `MONITOR_DIR/latest.json`,
+   returns `(latest_dict|None, age_s|None)`; missing file/unreadable/corrupt JSON all
+   return `(None, None)`). All three of `cmd_status`/`cmd_watch`/`cmd_json` call
+   `read_latest()` first; `latest is None or age_s > FRESH_S` (`FRESH_S=300.0`)
+   goes to the stale branch: the two terminal outlets print the original wording given by `_stale_warning()`,
+   `Sampler isn't running (last sampled <time|none>), probing live now`,
+   then fall back to the original `collect()` + `fmt_table()` path; the json outlet's stale case outputs
+   `{"rows": collect(), "sampler_stale": True}` (a bare list can't carry an extra field,
+   so it's wrapped in a `rows` key, whose name matches the key `latest.json` already uses).
 
-2. **指一份假的最新采样文件：新表出得来，判定、进度、速率、ETA 各列都渲染。**
-   新鲜分支调用新写的 `fmt_table_v2(rows, sampled_at)`：表头第一行
-   `最后采样 HH:MM:SS`；列 `JOB/HOST/GPU/判定/PROGRESS/RATE/TOK/ETA/SESSION`
-   （工单原文列表）。PROGRESS 用 sampler 已经算好的 `progress_pct`
-   拼成 `done/total (pct%) unit`；RATE 按数量级选单位——
-   `recent_rate >= 1` 保留 `/s`，否则乘 3600 显示 `/h`（工单原文
-   "乘 3600 显示 /h 或保留 /s 按数量级" 没给精确阈值，这条边界是我按
-   "批任务常见速率 <1/s、vLLM 类吞吐常见 >=1/s" 定的，写进了
-   `_fmt_rate_v2` 的 docstring，供复核）；TOK 用千分位缩写
-   （`_fmt_tok_short`：`>=1e6` 用 `X.YM`，`>=1e3` 用 `Xk`）拼成
-   `tok_in/tok_out`；ETA 把 `eta_s` 转 `HH:MM`。
+2. **Point at a fake latest-sample file: the new table can be produced, and the verdict/progress/rate/ETA columns all render.**
+   The fresh branch calls the newly written `fmt_table_v2(rows, sampled_at)`: the header's first line reads
+   `Last sampled HH:MM:SS`; columns are `JOB/HOST/GPU/verdict/PROGRESS/RATE/TOK/ETA/SESSION`
+   (the ticket's original list). PROGRESS uses the `progress_pct` the sampler already computed,
+   assembled into `done/total (pct%) unit`; RATE picks a unit by order of magnitude.
+   `recent_rate >= 1` keeps `/s`, otherwise multiplies by 3600 to show `/h` (the ticket's original wording,
+   "multiply by 3600 to show /h, or keep /s depending on order of magnitude," did not give a precise threshold.
+   This boundary was set by me on the grounds that "batch tasks commonly have rates <1/s, vLLM-style throughput commonly has >=1/s," written into
+   `_fmt_rate_v2`'s docstring for review); TOK is assembled using a thousands-abbreviated format
+   (`_fmt_tok_short`: `>=1e6` uses `X.YM`, `>=1e3` uses `Xk`) into
+   `tok_in/tok_out`; ETA converts `eta_s` into `HH:MM`.
 
-3. **已完成和已挂两种判定仍有收尾与看日志的提示行。**
-   `fmt_table_v2` 按 job 分组：一个 job 下所有分片判定都是
-   `verdicts.V_DONE`（已完成）才输出
-   `已完成 = 全部分片判定已完成——该收尾了: python3 run.py gpu-jobs finish <job>`；
-   任意一行判定是 `verdicts.V_DEAD`（已挂）就输出
-   `已挂 = session 没了，进度未到 100%，看日志: <第一条已挂行的 log 路径>`。
-   两条提示的措辞是照 `fmt_table()` 原有的 DONE/EXIT 两行改写的——原文本
-   依赖旧的 `state` 字段（"session 已退" / "进度 100%"），现在直接读采样器
-   算好的 `verdict` 字段，语义对得上但字面不是逐字照抄，算是工单
-   "措辞沿用" 这条里我拿的一个不影响功能的小判断，写进了下面的存疑。
+3. **The two verdicts done and dead still get a wrap-up/check-the-log tip line.**
+   `fmt_table_v2` groups by job: only when every piece under a job verdicts
+   `verdicts.V_DONE` (done) does it output
+   `Done = all pieces verdict done, time to wrap up: python3 run.py gpu-jobs finish <job>`;
+   whenever any row verdicts
+   `verdicts.V_DEAD` (dead), it outputs
+   `Dead = session is gone, progress not at 100%, check the log: <log path of the first dead row>`.
+   Both tips' wording were rewritten from the original DONE/EXIT two lines already in `fmt_table()`. That original text
+   depended on old `state` fields ("session has exited" / "progress 100%"), while now it directly reads the
+   `verdict` field the sampler already computed; the meaning lines up but the wording isn't a verbatim copy. This is a small,
+   non-functional judgment call I made regarding the ticket's "reuse the wording" instruction, noted in the open questions below.
 
-4. **commit。** `873f478`，见上。
+4. **Commit.** `873f478`, see above.
 
-`free`/`register`/`finish` 三个命令一行没动，仍然只经 `collect()`/
-`live_sessions()` 现场实探（对照 diff：改动只碰了 `cmd_status`/
-`cmd_watch`/新增的 `cmd_json`，`cmd_free`/`cmd_register`/`cmd_finish`/
-`cmd_finish_force` 原样未动）。
+`free`/`register`/`finish` were left entirely untouched, still only probing on the spot via
+`collect()`/`live_sessions()` (confirmed against the diff: changes only touched `cmd_status`/
+`cmd_watch`/the newly added `cmd_json`, `cmd_free`/`cmd_register`/`cmd_finish`/
+`cmd_finish_force` unchanged as-is).
 
-## 怎么验证的
+## How it was verified
 
-### 自动化测试
+### Automated tests
 
-新增 `tests/test_gpu_jobs.py`（这条流水线目前没有现成的 `gpu_jobs.py`
-测试先例，跟 `test_sampler.py`/`test_sampler_web.py` 一样的风格：用
-`NEW1_MONITOR_DIR`/monkeypatch `gpu_jobs.REG_PATH` 把落盘目录和台账指
-到 tmp）。四个测试类：
+New `tests/test_gpu_jobs.py` (this pipeline currently has no existing precedent of a
+`gpu_jobs.py` test, styled the same way as `test_sampler.py`/`test_sampler_web.py`: using
+`NEW1_MONITOR_DIR`/monkeypatching `gpu_jobs.REG_PATH` to point the on-disk directory and the ledger
+to tmp). Four test classes:
 
-- `TestReadLatest`：文件不在 → `(None, None)`；新鲜文件 → `age_s < 5`；
-  一小时前的旧文件 → `age_s > FRESH_S`；JSON 坏了 → `(None, None)`。
-- `TestFmtTableV2`：假 rows 渲染出全部列（判定值、`3/10 (30.0%) task`
-  的进度格式、`72/h` 的速率换算、`1.2M/340k` 的 token 缩写、`01:02` 的
-  ETA 换算）；空 rows 仍出表头占位；`已完成` 全分片的 job 出收尾提示；
-  `已挂` 的行出看日志提示。
-- `TestCmdJson`：无采样器 → `sampler_stale: True` 且 `rows == []`（台账
-  为空）；新鲜 latest.json → 原样吐出，不带 `sampler_stale` 字段；过期
-  → `sampler_stale: True` 加老 `collect()` 结果。
-- `TestCmdStatus`：无采样器 → 警告行原文 + 老表；新鲜 latest.json →
-  新表（不含"现场实探一次"，含"最后采样"/"判定"/extras 里的
-  `stray_session`）。
+- `TestReadLatest`: file missing → `(None, None)`; fresh file → `age_s < 5`;
+  a file from an hour ago → `age_s > FRESH_S`; corrupt JSON → `(None, None)`.
+- `TestFmtTableV2`: fake rows render all columns (verdict value, the progress format `3/10 (30.0%) task`,
+  the rate conversion `72/h`, the token abbreviation `1.2M/340k`, the
+  ETA conversion `01:02`); empty rows still gives a header placeholder; a job whose pieces are all
+  `done` gets a wrap-up tip; a `dead` row gets a check-the-log tip.
+- `TestCmdJson`: no sampler → `sampler_stale: True` with `rows == []` (ledger
+  empty); fresh latest.json → output verbatim, without a `sampler_stale` field; stale
+  → `sampler_stale: True` plus the old `collect()` result.
+- `TestCmdStatus`: no sampler → the warning line verbatim plus the old table; fresh latest.json →
+  the new table (without "probing live now," with "Last sampled"/"verdict"/extras'
+  `stray_session`).
 
 ```
 $ python3 -m unittest tests.test_gpu_jobs -v
@@ -79,7 +80,7 @@ Ran 13 tests in 4.043s
 OK
 ```
 
-改动波及的全部单测（含 sampler/verdicts/launch 系列）整体跑了一遍：
+Every unit test touched by this change (including the sampler/verdicts/launch series) was run together as a whole:
 
 ```
 $ python3 -m unittest discover -s tests -v 2>&1 | tail -5
@@ -88,133 +89,133 @@ Ran 92 tests in 6.890s
 OK
 ```
 
-`python3 run.py selfcheck`：worktree 里报 16 处"缺解释器/程序"，但这些
-都是各 env 的 venv（`envs/appworld/venv` 等）——venv 不进 git，新建的
-worktree 里没有这些目录，是 worktree 本身的产物隔离导致，不是本次改动
-引入的问题。同一条 selfcheck 在主仓工作树（有真实 venv）上跑是
-"63 任务 / 4 配方,全部就位"。本工单没碰 `run.py` 注册表（`gpu-jobs`
-任务条目原样未动，只改了脚本内部实现），selfcheck 门槛按规程不是硬
-要求，仍跑了一遍确认没有把台账相关的任务定义弄坏。
+`python3 run.py selfcheck`: the worktree reports 16 "missing interpreter/program" items, but these
+are all venvs of various envs (`envs/appworld/venv` etc.). venvs are not in git, and the newly built
+worktree has none of them, caused by the worktree's own product isolation, not a problem introduced by this
+change. The same selfcheck run in the main-repo worktree (with real venvs) gives
+"63 tasks / 4 recipes, all present." This ticket did not touch the `run.py` registry (the `gpu-jobs`
+task entry is unchanged, only the internal script implementation changed); the selfcheck gate isn't a hard requirement per the protocol, but it was
+still run once to confirm nothing about the ledger-related task definitions was broken.
 
-### 工单 Step 2 指定的手动验证
+### Manual verification specified in ticket Step 2
 
-工作树里没有设 `NEW1_MONITOR_DIR`（走默认 NFS 路径）时，登录机上真的
-有 T14 上线的采样器在跑，所以 `python3 run.py gpu-jobs` 直接走的是
-新鲜分支（表头 `最后采样 07:23:52`），不是工单 Step 2 描述的"没有采样
-器在跑"那个场景。为了照工单原文验证到位，另外补了两组：
+The worktree did not set `NEW1_MONITOR_DIR` (going through the default NFS path); the login machine really
+had the sampler from T14 running, so `python3 run.py gpu-jobs` went straight through the
+fresh branch (header `Last sampled 07:23:52`), not the "sampler isn't running" scenario described
+in ticket Step 2. To verify against the ticket's original wording faithfully, two extra groups were done:
 
-**场景 A（`NEW1_MONITOR_DIR` 指到空 tmp 目录，模拟采样器不在跑）：**
+**Scenario A (`NEW1_MONITOR_DIR` pointed at an empty tmp dir, simulating "sampler isn't running"):**
 
 ```
 $ NEW1_MONITOR_DIR=/tmp/t07-empty-mon python3 run.py gpu-jobs
-采样器不在跑(最后采样 无),现场实探一次
-台账为空——当前没有登记中的任务。发射走 gpu-run skill 会自动登记。
+Sampler isn't running (last sampled none), probing live now
+Ledger is empty, no jobs currently registered. Launching via the gpu-run skill auto-registers.
 ...
 $ NEW1_MONITOR_DIR=/tmp/t07-empty-mon python3 run.py gpu-jobs json \
     | python3 -c "import json,sys; d=json.load(sys.stdin); print('json ok', d.get('sampler_stale'))"
 json ok True
 ```
 
-**场景 B（假的最新采样文件）：**
+**Scenario B (a fake latest-sample file):**
 
 ```
 $ NEW1_MONITOR_DIR=/tmp/t07-fake-mon python3 run.py gpu-jobs
-最后采样 07:24:35
-JOB      HOST      GPU  判定  PROGRESS           RATE   TOK       ETA    SESSION
--------  --------  ---  --  -----------------  -----  --------  -----  -------------------
-fakejob  tokyo106  0    健康  5/20 (25.0%) task  180/h  500k/12k  00:05  new1_fakejob_t106g0
+Last sampled 07:24:35
+JOB      HOST      GPU  verdict  PROGRESS           RATE   TOK       ETA    SESSION
+-------  --------  ---  -------  -----------------  -----  --------  -----  -------------------
+fakejob  tokyo106  0    healthy  5/20 (25.0%) task  180/h  500k/12k  00:05  new1_fakejob_t106g0
 ```
 
-判定、进度、速率、ETA、token 各列都渲染，表头带最后采样时刻，符合验收
-要求 2。
+The verdict, progress, rate, ETA, and token columns all render, with the header carrying the last-sampled time, satisfying
+acceptance item 2.
 
-**场景 C（已完成/已挂两种判定的提示行）：**
+**Scenario C (tip lines for the two done/dead verdicts):**
 
 ```
-JOB      HOST  GPU  判定   PROGRESS             RATE  TOK  ETA  SESSION
--------  ----  ---  ---  -------------------  ----  ---  ---  -------
-donejob  h     0    已完成  10/10 (100.0%) task  -     -    -    s0
-deadjob  h     1    已挂   3/10 (30.0%) task    -     -    -    s1
+JOB      HOST  GPU  verdict   PROGRESS             RATE  TOK  ETA  SESSION
+-------  ----  ---  --------  -------------------  ----  ---  ---  -------
+donejob  h     0    done      10/10 (100.0%) task  -     -    -    s0
+deadjob  h     1    dead      3/10 (30.0%) task    -     -    -    s1
 
-已完成 = 全部分片判定已完成——该收尾了: python3 run.py gpu-jobs finish donejob
-已挂 = session 没了，进度未到 100%，看日志: /tmp/deadjob.log
+Done = all pieces verdict done, time to wrap up: python3 run.py gpu-jobs finish donejob
+Dead = session is gone, progress not at 100%, check the log: /tmp/deadjob.log
 ```
 
-符合验收要求 3。三组临时 `NEW1_MONITOR_DIR` 目录（`/tmp/t07-empty-mon`
-`/tmp/t07-fake-mon` `/tmp/t07-tips-mon`）验证完都删了。
+Satisfies acceptance item 3. All three temporary `NEW1_MONITOR_DIR` directories
+(`/tmp/t07-empty-mon`, `/tmp/t07-fake-mon`, `/tmp/t07-tips-mon`) were deleted after verification.
 
-## commit 清单
+## Commit list
 
-- `873f478` T07: gpu-jobs 三出口改读采样历史(新鲜用latest.json,过期亮警告退回实探)
-  （改 `ops/gpu_jobs.py`，新增 `tests/test_gpu_jobs.py`，同步 `MAP.md`
-  对应行）
+- `873f478`: T07: gpu-jobs's three outlets switched to reading sampling history (fresh uses latest.json, stale prints a warning and falls back to live probing)
+  (changed `ops/gpu_jobs.py`, added `tests/test_gpu_jobs.py`, synced the corresponding
+  `MAP.md` line)
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-- **发现并当场改掉的 bug**：第一版 `已挂` 提示行写成了 f-string 里带
-  `100%%`——那是从旧 `fmt_table()` 的 `%`-格式化字符串直接抄的写法，
-  但 f-string 不做 `%` 转义，会字面输出两个百分号。自查时发现并改成
-  `100%`（单个百分号），已在 commit 里。
-- **存疑 1（RATE 单位切换阈值）**：工单原文"乘 3600 显示 `/h` 或保留
-  `/s` 按数量级"没给精确的切换点。我定的是 `recent_rate >= 1` 用 `/s`，
-  否则乘 3600 用 `/h`。这条阈值是我自己按常见速率量级估的，没有更权威
-  的依据，如果跟其他出口（网页 `render_html` 固定用 `/s`，不做单位切
-  换）的显示习惯不一致，需要用户确认是否要改。
-- **存疑 2（提示行措辞）**：工单要求"措辞沿用现有 `fmt_table`"，但旧
-  措辞里嵌了旧字段语义（"session 已退"/"进度 100%"），跟新的
-  `verdict` 字段不是同一个判断依据。我保留了旧措辞的骨架（"该收尾
-  了"/"看日志"两个关键短语原样留着），但整句不是逐字照抄。如果用户想
-  要逐字复用旧句子，这里需要再调整措辞，不影响功能。
-- **未触碰**：`ops/jobs.json`、`run.py` 注册表、`free`/`register`/
-  `finish` 三个命令、`ops/sampler.py`、`ops/verdicts.py` 全部原样未动。
+- **A bug found and fixed on the spot**: the first version of the `dead` tip line was written as an f-string with
+  `100%%`, that was copied directly from the old `fmt_table()`'s `%`-format string, but
+  f-strings don't do `%`-escaping, so it would literally print two percent signs. Self-check caught this and
+  changed it to `100%` (a single percent sign), already in the commit.
+- **Open question 1 (RATE unit-switch threshold)**: the ticket's original wording, "multiply by 3600 to show
+  `/h`, or keep `/s` depending on order of magnitude," did not give a precise switch point.
+  I set it at `recent_rate >= 1` uses `/s`,
+  otherwise multiply by 3600 for `/h`. This threshold is my own estimate based on common rate
+  magnitudes, with no more authoritative basis. If it's inconsistent with how other outlets display it
+  (the web `render_html` always uses `/s`, no unit switching), it needs user confirmation on whether to change it.
+- **Open question 2 (tip line wording)**: the ticket asks to "reuse the existing `fmt_table` wording," but the
+  old wording was baked with old field semantics ("session exited"/"progress 100%"), which is not the same
+  basis of judgment as the new `verdict` field. I kept the skeleton of the old wording (the two key phrases
+  "time to wrap up"/"check the log" kept verbatim), but the sentence as a whole isn't a verbatim copy. If the user wants
+  the old sentence reused verbatim, the wording needs adjusting here; this does not affect functionality.
+- **Untouched**: `ops/jobs.json`, the `run.py` registry, the `free`/`register`/
+  `finish` commands, `ops/sampler.py`, `ops/verdicts.py`, all left as-is.
 
-## 修复第 1 轮（评审 findings F1/F2）
+## Fix round 1 (review findings F1/F2)
 
-分支：`ticket/20260808-par/T07`（同一分支），工作树
-`new1-wt/20260808-par-T07-fix1`（已清理），commit `f5a864a`。
+Branch: `ticket/20260808-par/T07` (same branch), worktree
+`new1-wt/20260808-par-T07-fix1` (cleaned up), commit `f5a864a`.
 
-### F1（critical）—— read_latest() 补 shape/类型防护
+### F1 (critical): read_latest() needs shape/type guards
 
-**问题**：`read_latest()` 只 catch `(OSError, ValueError)`，挡住了
-"文件不在" 和 "JSON 语法坏了" 两类，但 latest.json 一旦是合法 JSON
-却不是预期 shape（顶层不是 dict，或 `sampled_at` 类型不对），会在
-`read_latest()` 内部或调用方里抛未捕获异常，让 `status`/`watch`/
-`json` 三个出口直接 Traceback 退出，而不是工单要求的"过期就打警告退回
-实探"。
+**Problem**: `read_latest()` only caught `(OSError, ValueError)`, which blocks
+"file missing" and "JSON syntax is broken," but if latest.json is valid JSON
+that isn't the expected shape (the top level isn't a dict, or `sampled_at` isn't the right type), it will throw an
+uncaught exception inside `read_latest()` or at the call site, causing `status`/`watch`/
+`json` to all traceback straight out instead of the ticket's required "stale means print a warning and fall back to
+live probing."
 
-**怎么修的**：`read_latest()` 在 `json.load()` 成功之后加两层校验：
+**How it was fixed**: after `json.load()` succeeds, `read_latest()` now adds two layers of validation:
 
-1. `latest` 不是 `dict`（比如顶层是数组）—— 直接返回 `(None, None)`，
-   不再往下调 `latest.get(...)`。
-2. `sampled_at` 字段存在但类型不是 `int`/`float`（含排除 `bool`，因为
-   `bool` 是 `int` 子类但语义上不该被当时间戳用）—— 也返回
-   `(None, None)`，不把畸形的 `latest` 透传给调用方（调用方的
-   `_stale_warning()` 同样会在 `datetime.fromtimestamp()` 上对字符串
-   类型的 `sampled_at` 炸掉，所以这里选择连 `latest` 一起吞掉，而不是
-   只吞 `age_s`）。
-3. `sampled_at` 字段整个缺失（原有语义，不是本轮新增）——保留原行为：
-   返回 `(latest, None)`，`latest` 原样透传，调用方靠 `age_s is None`
-   走过期分支。
-4. 额外包了一层 `try/except (TypeError, OverflowError, OSError)` 包住
-   `time.time() - sampled_at` 这一步算术本身，防御性覆盖极端数值（比如
-   超大浮点数溢出）。
+1. If `latest` isn't a `dict` (e.g. the top level is an array), return
+   `(None, None)` directly, without going on to call `latest.get(...)`.
+2. If the `sampled_at` field exists but its type isn't `int`/`float` (excluding
+   `bool`, because `bool` is a subclass of `int` but shouldn't be treated as a timestamp semantically), also return
+   `(None, None)`, not passing the malformed `latest` through to the caller (the caller's
+   `_stale_warning()` would similarly crash on `datetime.fromtimestamp()` given a string-typed
+   `sampled_at`, so this swallows `latest` along with it rather than
+   only swallowing `age_s`).
+3. If the `sampled_at` field is entirely missing (original behavior, not new this round), keep the original behavior:
+   return `(latest, None)`, passing `latest` through as-is; the caller falls back to the stale branch by way of
+   `age_s is None`.
+4. An additional `try/except (TypeError, OverflowError, OSError)` was wrapped around the arithmetic
+   `time.time() - sampled_at` itself, defensively covering extreme values (e.g. an overly
+   large float overflowing).
 
-docstring 同步改写，把新覆盖的两类畸形 shape 写进"都返回 (None, None)"
-的清单。
+The docstring was rewritten to reflect the two newly-covered malformed shapes in the "all return (None, None)" list.
 
-**怎么验证的**：
+**How it was verified**:
 
-新增 3 个 `TestReadLatest` 用例（`tests/test_gpu_jobs.py`）：
+Added 3 `TestReadLatest` cases (`tests/test_gpu_jobs.py`):
 
-- `test_sampled_at_wrong_type_returns_none_none`：`sampled_at` 是字符串
-  → `(None, None)`。
-- `test_top_level_not_dict_returns_none_none`：顶层是 `[]` → `(None, None)`。
-- `test_missing_sampled_at_field_returns_latest_and_none_age`：
-  `sampled_at` 字段整个缺失（区别于类型错）→ `(latest, None)`，确认原
-  有行为没被新校验误伤。
+- `test_sampled_at_wrong_type_returns_none_none`: `sampled_at` is a string
+  → `(None, None)`.
+- `test_top_level_not_dict_returns_none_none`: top level is `[]` → `(None, None)`.
+- `test_missing_sampled_at_field_returns_latest_and_none_age`:
+  `sampled_at` entirely missing (distinct from a type error) → `(latest, None)`, confirming the original
+  behavior was not broken by the new validation.
 
-按 finding 给的原始复现命令重跑，两个场景都从"直接 Traceback 退出"
-变成"警告行 + 老表，exit 0"：
+Re-ran the finding's original reproduction commands, and both scenarios changed from "traceback out directly"
+to "warning line + old table, exit 0":
 
 ```
 $ mkdir -p /tmp/t07f1-strtype /tmp/t07f1-toplist
@@ -222,14 +223,14 @@ $ echo '{"sampled_at":"x"}' > /tmp/t07f1-strtype/latest.json
 $ echo '[]' > /tmp/t07f1-toplist/latest.json
 
 $ NEW1_MONITOR_DIR=/tmp/t07f1-strtype python3 ops/gpu_jobs.py; echo "exit=$?"
-采样器不在跑(最后采样 无),现场实探一次
-台账为空——当前没有登记中的任务。发射走 gpu-run skill 会自动登记。
+Sampler isn't running (last sampled none), probing live now
+Ledger is empty, no jobs currently registered. Launching via the gpu-run skill auto-registers.
 ...
 exit=0
 
 $ NEW1_MONITOR_DIR=/tmp/t07f1-toplist python3 ops/gpu_jobs.py; echo "exit=$?"
-采样器不在跑(最后采样 无),现场实探一次
-台账为空——当前没有登记中的任务。发射走 gpu-run skill 会自动登记。
+Sampler isn't running (last sampled none), probing live now
+Ledger is empty, no jobs currently registered. Launching via the gpu-run skill auto-registers.
 ...
 exit=0
 
@@ -248,37 +249,37 @@ $ NEW1_MONITOR_DIR=/tmp/t07f1-toplist python3 ops/gpu_jobs.py json; echo "exit=$
 exit=0
 ```
 
-`cmd_watch` 内部同一个 `read_latest()` 调用点（现在是共用的
-`_print_table_from_latest_or_fallback()`），同一份防护同时覆盖三个出
-口，未单独复测。
+`cmd_watch`'s call to the same `read_latest()` (now the shared
+`_print_table_from_latest_or_fallback()`) is covered by the same guard at the same time across all three outlets, and
+was not re-tested separately.
 
-### F2（important）—— cmd_status/cmd_watch 的新鲜度分支去重
+### F2 (important): de-duplicate the freshness branch in cmd_status/cmd_watch
 
-**问题**：`cmd_status()` 和 `cmd_watch()` 里各自内联了一份完全相同的
-"读 latest → 新鲜渲染/过期回退" 5 行逻辑，`FRESH_S` 判定条件或渲染选
-择要改，两处都要同步改，容易漏改一处。
+**Problem**: `cmd_status()` and `cmd_watch()` each had an inline copy of the exact same
+5-line "read latest → render fresh/fall back to stale" logic. Changing the
+`FRESH_S` condition or the rendering choice would need both places updated in sync, making it easy to miss one.
 
-**怎么修的**：把这段逻辑抽成新函数
-`_print_table_from_latest_or_fallback()`：内部调 `read_latest()`，新
-鲜就打印 `fmt_table_v2()` 并返回 `latest.get("extras") or {}`；否则打
-印 `_stale_warning()`，走 `collect(with_extras=True)` + `fmt_table()`
-，返回 `extras`。`cmd_status()`/`cmd_watch()` 各自只剩一行调用
-`extras = _print_table_from_latest_or_fallback()`，后面打印 extras 提
-示行的部分（两处提示文案本来就不同——status 是"漏 register?别的对话
-在用?"，watch 是精简版）保留在各自函数里，没有强行合并成不该合并的
-东西。
+**How it was fixed**: extracted this logic into a new function
+`_print_table_from_latest_or_fallback()`: internally calls `read_latest()`; if fresh, prints
+`fmt_table_v2()` and returns `latest.get("extras") or {}`; otherwise prints
+`_stale_warning()`, falls back to `collect(with_extras=True)` + `fmt_table()`,
+returning `extras`. `cmd_status()`/`cmd_watch()` are each reduced to one line calling
+`extras = _print_table_from_latest_or_fallback()`, with the part that prints the extras tip line
+afterward (the two tip texts were already different, status says "missed a
+register? another conversation using it?", watch is a condensed version) kept in their own functions, not
+force-merged into something that shouldn't be merged.
 
-`cmd_json()` 的判断分支没有被这次抽取覆盖——它跟 status/watch 走的渲
-染路径不同（json 序列化 vs 表格打印），finding 也只点了 status/watch
-两处，没有把 json 算进重复范围，保持工单原范围不扩大改动。
+`cmd_json()`'s branching logic was not covered by this extraction. It goes through a different
+rendering path from status/watch (JSON serialization vs. table printing), and the finding also only pointed at
+status/watch, not json, so the ticket's original scope was kept, not expanded.
 
-**怎么验证的**：抽取是纯重构（同一段逻辑挪进函数），行为靠既有测试兜
-底——`TestCmdStatus` 两个用例（无采样器/新鲜 latest.json）改动前后都
-通过；未单独为 `cmd_watch` 补测试（原报告里 `cmd_watch` 就没有专门的
-自动化测试，`while True` 循环不便单测，工单验收也没点名要 watch 专属
-测试，保持原有测试覆盖边界不扩大）。
+**How it was verified**: the extraction is a pure refactor (the same logic moved into a function); behavior is backed by
+existing tests. Both `TestCmdStatus` cases (no sampler/fresh latest.json) passed both before and after the
+change; no separate test was added for `cmd_watch` (the original report already had no dedicated
+automated test for `cmd_watch`. The `while True` loop isn't convenient to unit test, and the ticket's acceptance criteria
+did not name a dedicated watch test either, keeping the original test-coverage boundary unexpanded).
 
-### 测试结果汇总
+### Test results summary
 
 ```
 $ python3 -m unittest tests.test_gpu_jobs -v 2>&1 | tail -20
@@ -293,29 +294,29 @@ Ran 95 tests in 6.615s
 OK
 ```
 
-（92 → 95：本轮新增 3 个 `TestReadLatest` 边界用例。）
+(92 → 95: this round added 3 new `TestReadLatest` boundary cases.)
 
-`python3 run.py selfcheck`：worktree 里同样报 16 处"缺解释器/程序"，
-与原报告记录的一致——都是各 env 的 venv 缺失，worktree 产物隔离导致，
-不是本次改动引入。`gpu-jobs` 任务条目未动。
+`python3 run.py selfcheck`: the worktree reports the same 16 "missing interpreter/program" items,
+consistent with what the original report recorded. All caused by each env's missing venv, caused by worktree
+product isolation, not introduced by this change. The `gpu-jobs` task entry is unchanged.
 
-### commit 清单（本轮）
+### Commit list (this round)
 
-- `f5a864a` T07: 修复第 1 轮——read_latest() 补 shape/类型防护(F1),
-  status/watch 新鲜度分支去重(F2)
-  （改 `ops/gpu_jobs.py`：`read_latest()` 加 shape/类型校验，
-  `cmd_status`/`cmd_watch` 抽出 `_print_table_from_latest_or_fallback()`；
-  改 `tests/test_gpu_jobs.py`：新增 3 个 `TestReadLatest` 边界用例）
+- `f5a864a`: T07: fix round 1, read_latest() gets shape/type guards (F1),
+  status/watch freshness branch de-duplicated (F2)
+  (changed `ops/gpu_jobs.py`: `read_latest()` got shape/type validation,
+  `cmd_status`/`cmd_watch` extracted into `_print_table_from_latest_or_fallback()`; changed
+  `tests/test_gpu_jobs.py`: 3 new `TestReadLatest` boundary cases)
 
-### 自查发现与存疑（本轮）
+### Self-check findings and open questions (this round)
 
-- 没有发现新的 bug。
-- F1 修复时多想了一步：`sampled_at` 类型不对该不该保留 `latest` 只把
-  `age_s` 置 `None`？选了连 `latest` 一起吞掉——原因是 `_stale_warning()`
-  同样直接读 `latest.get("sampled_at")` 传给
-  `datetime.fromtimestamp()`，如果只吞 `age_s` 不吞 `latest`，畸形的
-  `sampled_at` 字符串会在 `_stale_warning()` 里换个地方炸，没有真正堵
-  住 finding 描述的那类问题。这个判断不影响验收要求，记在这里供复核。
-- F2 抽取时确认过 `cmd_json()` 不在 finding 范围内，没有顺手把它也拉
-  进来合并——finding 原文只点名 `cmd_status`/`cmd_watch` 两处，保持范
-  围不扩大。
+- No new bugs found.
+- Thought through one extra step while fixing F1: when `sampled_at`'s type is wrong, should `latest` be kept,
+  only setting `age_s` to `None`? Chose to swallow `latest` too. The reason being that `_stale_warning()`
+  likewise reads `latest.get("sampled_at")` directly and passes it to
+  `datetime.fromtimestamp()`; if only `age_s` were swallowed and not `latest`, the malformed
+  `sampled_at` string would crash somewhere else inside `_stale_warning()`, not actually plugging the
+  hole the finding described. This judgment doesn't affect the acceptance criteria, noted here for review.
+- When extracting F2, confirmed that `cmd_json()` is out of the finding's scope, and didn't opportunistically pull it in
+  too. The finding's original text only names `cmd_status`/`cmd_watch`, keeping the
+  scope unexpanded.

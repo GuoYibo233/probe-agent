@@ -1,71 +1,84 @@
 ---
 name: paper-write
-description: new1 论文写作与 LaTeX 工程的唯一入口。覆盖起草/改稿/编译/投稿体检全流程：
-  官方 acl-style-files 模板、latexmk 编译门禁（改完必编译）、结构体检（cite/ref/图文件/环境配对）、
-  数字溯源铁律（每个实验数字标 run_id）、保护块约定、投稿前 desk-reject 自查。
-  Invoke whenever Dungeon♂Master says "写论文"、"改论文"、"编译一下论文"、"投稿检查"、
-  "写 intro/method/experiment"、"latex"、"体检论文"、or any paper-writing work starts in new1.
+description: >-
+  The sole entry point for paper writing and LaTeX engineering in new1. Covers the full
+  drafting/revision/compile/submission-checkup workflow: the official acl-style-files
+  template, the latexmk compile gate (compile after every edit), the structural checkup
+  (cite/ref/figure-file/environment pairing), the number-provenance hard rule (every
+  experiment number tags a run_id), the protected-block convention, the pre-submission
+  desk-reject self-check. Invoke whenever Dungeon♂Master says "latex", or any
+  paper-writing work starts in new1. Chinese triggers: "写论文" / "改论文" / "编译一下论文" / "投稿检查" /
+  "写 intro/method/experiment" / "体检论文".
 ---
 
-# paper-write：new1 论文写作流程
+# paper-write: new1 paper-writing workflow
 
-分工先说死：本 skill 只管**机械层**（模板/编译/检查/溯源）；**文风层**归
-humanizer-gyb（写正文之前把 skill 全文读一遍），**格式规则本体**在
-`paper/FORMATTING.md`（ACLPUB 对照表，写前先读一遍相关小节），
-**章节结构**按 `references/writing-structure.md`（intro 七问、两条审稿红线、
-related work 段落定式——写 intro/related work 前必过一遍）。
+Division of labor settled up front: this skill only manages the **mechanical layer** (template/compile/checks/provenance); the
+**writing-style layer** belongs to humanizer-gyb (read the skill in full before drafting body text), the
+**formatting-rules body** lives in `paper/FORMATTING.md` (the ACLPUB cross-reference table, read the relevant section
+before writing), and the **section structure** follows `references/writing-structure.md` (intro's seven questions, the
+two reviewer red lines, the related-work paragraph template — go through it once before writing the intro/related work).
 
-## 0. 定位（每次进入先做）
+## 0. Orient (do this every time you enter)
 
-1. 论文源文件在 `paper/` 下；模板固定用 `paper/acl-style-files/`（官方 clone，不入 git）。
-   首篇论文起步：把 `acl_latex.tex`、`acl.sty`、`acl_natbib.bst`、`custom.bib`
-   拷到 `paper/<论文名>/` 作为工作目录，模板目录本身保持原样不动。
-2. 找主 tex（含 `\documentclass`），扫一遍 `%%% PROTECTED BEGIN/END` 保护块清单。
-3. 报告：主文件 / bib / 保护块数量，然后才动手。
+1. The paper's source files live under `paper/`; the template is fixed at `paper/acl-style-files/` (the official
+   clone, not checked into git). Starting the first paper: copy `acl_latex.tex`, `acl.sty`, `acl_natbib.bst`,
+   `custom.bib` into `paper/<paper-name>/` as the working directory; the template directory itself stays untouched.
+2. Find the main tex file (the one with `\documentclass`), scan for the list of `%%% PROTECTED BEGIN/END` protected blocks.
+3. Report: the main file / bib / protected-block count, then start work.
 
-## 1. 铁律（不可协商）
+## 1. Hard rules (non-negotiable)
 
-- **数字溯源**：论文里每一个实验数字都必须能追到 `ops/runs.jsonl` 的 run_id。
-  落法：含数字的 table/figure 环境内加一行 `% source: run_id=<id>`（可多个）。
-  check_paper.py 会对缺注释的数字表软告警。**手填一个查无 run_id 的数字 = 事故**。
-- **保护块**：`%%% PROTECTED BEGIN <说明>` … `%%% PROTECTED END` 之间的内容
-  （含空格注释）一律不改不动不重排。用户要求改其中内容时：指出位置，给建议
-  代码，由用户自己解除标记。不得代删标记绕过。
-- **acl.sty / .bst 等模板文件视同保护块**：格式问题在自己的 tex 里解决，不改样式文件。
-- **软告警不硬拦**：所有检查只报告不阻塞，动不动手由用户/主对话判断
-  （唯一例外：编译失败必须先修好才能继续改别的文件，见 §2）。
+- **Number provenance**: every experiment number in the paper must be traceable to a run_id in `ops/runs.jsonl`.
+  How: inside a table/figure environment that contains numbers, add a line `% source: run_id=<id>` (can be
+  multiple). check_paper.py soft-warns on a numeric table missing this annotation. **Hand-filling a number with
+  no traceable run_id is an incident.**
+- **Protected blocks**: content between `%%% PROTECTED BEGIN <description>` … `%%% PROTECTED END` (including
+  blank-line comments) is never changed, touched, or reordered. When the user asks to change what's inside:
+  point out the location, give suggested code, and let the user remove the marker themselves. Never delete the
+  marker on the user's behalf to work around this.
+- **acl.sty / .bst and other template files count as protected blocks**: solve formatting problems in your own
+  tex file, don't change the style files.
+- **Soft warnings never hard-block**: every check only reports, never blocks; whether to act on it is for the
+  user/main conversation to judge (the one exception: a compile failure must be fixed before touching any other
+  file — see §2).
 
-## 2. 改稿循环（每批编辑必走）
+## 2. Revision loop (every batch of edits goes through this)
 
 ```
-改 .tex → bash .claude/skills/paper-write/scripts/build.sh <main.tex>
-        → 失败：先修编译错误（脚本已提取错误行+上下文），修好前不碰其他文件
-        → 成功：看 Overfull/undefined 警告，顺手处理明显的
+Edit .tex → bash .claude/skills/paper-write/scripts/build.sh <main.tex>
+        → fails: fix the compile error first (the script already extracts the error line + context); don't touch other files until it's fixed
+        → succeeds: look at the Overfull/undefined warnings, handle the obvious ones while you're there
 → python3 .claude/skills/paper-write/scripts/check_paper.py <main.tex>
-        → 逐条告警人工判断（结构/图文件/TODO/溯源）
+        → judge each warning by hand (structure/figure files/TODOs/provenance)
 ```
 
-build.sh 用 latexmk（会自动跑 bibtex 和补趟数），不手搓 pdflatex 序列。
+build.sh uses latexmk (it runs bibtex and extra passes automatically); never hand-assemble a pdflatex sequence.
 
-## 3. 写作时的取数纪律
+## 3. Sourcing discipline while writing
 
-- 要写数字：先查 `RESULTS.md` / `ops/runs.jsonl` 拿 run_id 和数值，表格加 source 注释。
-- 做表优先走已有产物；表格式样按 FORMATTING.md §7（booktabs、灰度可读、caption 规范）。
-- 引用文献：先核实（paper-verifier / 亲自抓 abstract——记忆铁律 literature-judgment），
-  bib 条目尽量带 DOI（FORMATTING.md §6）。
+- Need a number: look it up in `RESULTS.md` / `ops/runs.jsonl` first to get the run_id and the value, and add a
+  source comment to the table.
+- Prefer building tables from existing artifacts; table styling follows FORMATTING.md §7 (booktabs, readable in
+  grayscale, caption conventions).
+- Citing literature: verify first (paper-verifier / fetch the abstract yourself — per the literature-judgment
+  memory hard rule), and give bib entries a DOI wherever possible (FORMATTING.md §6).
 
-## 4. 投稿前体检（deadline 前必跑）
+## 4. Pre-submission checkup (must run before every deadline)
 
 ```
-bash  scripts/build.sh <main.tex>                       # 干净编译
-python3 scripts/check_paper.py <main.tex> --anon --page-limit 8   # 审稿版 long paper
+bash  scripts/build.sh <main.tex>                       # clean compile
+python3 scripts/check_paper.py <main.tex> --anon --page-limit 8   # anonymized review version, long paper
 ```
 
-再对照 `paper/FORMATTING.md` §10 desk-reject 清单逐项打勾，重点：
-A4、字体全嵌入（pdffonts）、审稿版行号在/Acknowledgments 删/匿名（含 appendix）、
-Limitations 节存在、正文页数（脚本只报总页数，正文/references 分界人工看）。
+Then go through `paper/FORMATTING.md` §10's desk-reject checklist item by item, focusing on: A4, fonts fully
+embedded (pdffonts), line numbers present / Acknowledgments removed / anonymized in the review version (appendix
+included), a Limitations section exists, body page count (the script only reports the total page count; the
+boundary between body and references is checked by eye).
 
-## 5. 收尾
+## 5. Wrap-up
 
-- 阶段性成稿 → git commit（论文 tex 是工程资产，入库；PDF/编译中间产物不入）。
-- 结构性写作决策（比如砍掉一节、换主线故事）→ 补 TIMELINE.md，与实验决策同权。
+- Staged draft → git commit (the paper's tex is an engineering asset, checked in; the PDF and compile
+  intermediates are not).
+- Structural writing decisions (e.g. cutting a section, changing the main narrative) → add a TIMELINE.md entry,
+  with the same weight as an experiment decision.

@@ -1,8 +1,8 @@
 {
   "run_id": "p1",
   "decided_at": "2026-08-21",
-  "decided_by": "gpu-runner agent（G2 实探后定）",
-  "note": "manifest_p1.json 预排的 tokyo108 GPU 4/5（H200 143G）在 `python3 run.py gpu-jobs free` 实探中两张都是 FREE（0 MiB / 0 %），整台 tokyo108 六张卡全空，端口 8103/8106 在 tokyo108 上无监听。照预排发射，manifest 的 gpu/port/session 三个字段一个没改。",
+  "decided_by": "gpu-runner agent (decided after probing live)",
+  "note": "The tokyo108 GPU 4/5 (H200 143G) pre-arranged in manifest_p1.json both came back FREE (0 MiB / 0%) when probed live with `python3 run.py gpu-jobs free`; all six cards on tokyo108 were free, and ports 8103/8106 had no listener on tokyo108. Launched as pre-arranged; none of the manifest's gpu/port/session fields were changed.",
   "probe_cmd": "python3 run.py gpu-jobs free",
   "servers": [
     {

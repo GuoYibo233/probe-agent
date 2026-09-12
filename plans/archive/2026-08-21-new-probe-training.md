@@ -1,73 +1,73 @@
-# 新探针分三种模型训练，这份文档记 2026-08-21 讨论的定案和未决事项
+# The new probe trains three kinds of models; this document records the decisions and open items from the 2026-08-21 discussion
 
-这份文档记 2026-08-21 gyb 和 Claude 讨论新探针训练方法的结果。定下来的内容在前六节，没定下来的集中在最后一节。文档里的机制描述都对照过仓库当前的代码，数字都注明了出处。
+This document records the outcome of the 2026-08-21 discussion between gyb and Claude on the new probe's training methods. What was settled is in the first six sections, what wasn't settled is gathered in the last section. The mechanism descriptions in the document have all been checked against the repo's current code, and every number notes its source.
 
-## 这次讨论定下了四条总体决定
+## This discussion settled four overall decisions
 
-第一条，ModernBERT 那条线不再跑了。四格里的 mtool 和 mext 两格停掉，探针从此专注因果模型这一条线。
+First, the ModernBERT line is no longer run. The mtool and mext cells, two of the four cells, are stopped; the probe now focuses solely on the causal-model line.
 
-第二条，因果线的底座从只有 Qwen3-0.6B-Base 一档扩成三档：0.6B、1.7B、4B。扩档的目的是横向比较三个规模的表现，不是 0.6B 不够用，这一点 gyb 在讨论里明确说过。
+Second, the causal line's backbone expands from the single Qwen3-0.6B-Base size to three sizes: 0.6B, 1.7B, 4B. The purpose of adding sizes is to compare performance across the three scales side by side, not because 0.6B is insufficient; gyb said this explicitly in the discussion.
 
-第三条，训练分成三种模型。第一种只预测工具类型；第二种生成整条调用；第三种给定工具类型、只生成参数。第二种和第三种并存的目的是把「工具类型交给选择题来定」这件事的收益测出来：两种用同一批样本、同一份标准答案，只是拼串的方式不同，比出来的差距只可能来自工具名是不是提前给定。
+Third, training splits into three kinds of models. The first predicts only the tool type; the second generates the whole call; the third, given the tool type, generates only the parameters. The point of having the second and third coexist is to measure the payoff of "letting a multiple-choice step decide the tool type": both use the same batch of samples and the same ground truth, differing only in how the string is assembled, so any gap measured between them can only come from whether the tool name is given in advance.
 
-第四条，试点顺序上 gyb 倾向先在 1.7B 上做第一轮试验。三种乘三档一共九个格子，先跑满哪几个还没有最终定。
+Fourth, on pilot order, gyb leans toward running the first round of experiments on 1.7B first. Three kinds times three sizes makes nine cells in total, and which ones to fill first has not been finalized.
 
-## 第一种只预测工具类型，训法就是现在的 ctool
+## The first kind, predicting only the tool type, trains the way ctool does now
 
-机制照 `pipeline/train/train_causal_tool.py` 的现状描述。训练数据的一条记录是一次工具调用事件：把调用发生之前的全部文本在每个句子结尾切一刀，切出一串互为前缀的样本，每个样本的标签都是这次调用的工具名。输入文本的拼法固定是三段（`pipeline/annotate/rules.py` 的 `assemble` 函数）：
+The mechanism is described as it currently stands in `pipeline/train/train_causal_tool.py`. One record of training data is one tool-call event: all the text before the call happens is cut at every sentence end, producing a series of samples that are prefixes of each other, and every sample's label is that call's tool name. The input text's assembly is fixed at three segments (the `assemble` function in `pipeline/annotate/rules.py`):
 
 ```
-Task: <题干>
+Task: <task description>
 [HISTORY]
-<之前的调用> -> <环境返回>
+<previous call> -> <environment return>
 [THINKING]
-<思考前缀>
+<thinking prefix>
 ```
 
-训练的时候整段文本只做一次前向，在每个句子结尾对应的 token 位置上取出末层隐状态，喂给一个线性分类头去猜工具名，损失是加权交叉熵，同一个事件的各个边界均分权重（`build.py` 里 `w = 1/m`，m 是这个事件的边界数）。梯度不只更新分类头，整个底座跟着一起微调，代码里没有冻结任何参数。开训前必须过对齐检查：整段一次前向和逐 token 增量前向的末位隐状态要一致，这条是流水线铁律。训练出来的模型在任何一个句子结尾都能吐出一组各个工具的置信度，触发阈值 θ 的选取全靠这组置信度。
+During training, the whole text goes through only one forward pass; at the token position corresponding to each sentence end, the last-layer hidden state is taken out and fed to a linear classification head to guess the tool name, and the loss is a weighted cross-entropy, with the weight split evenly across the boundaries of the same event (`w = 1/m` in `build.py`, where m is that event's number of boundaries). The gradient doesn't only update the classification head, the whole backbone is fine-tuned along with it, and nothing in the code freezes any parameters. Before training starts, an alignment check must pass: the last-position hidden states from one whole-text forward pass and from a token-by-token incremental forward pass must match; this is an iron rule of the pipeline. The trained model can produce a set of per-tool confidence scores at any sentence end, and the choice of firing threshold theta relies entirely on this set of confidence scores.
 
-gyb 在讨论里确认过一条口径：参数不进第一种的训练。拆开说是三个位置。监督目标只有工具名，训练代码加载数据时只读文本、标签、权重几个字段，样本里虽然存着完整调用串和参数表，加载函数碰都不碰。本次调用的参数也不在输入文本里，思考前缀停在调用发生之前，本次参数属于未来，进了输入就是泄题。历史那一段是唯一出现参数的位置：之前轮次已经发生的调用带着各自的参数原样摆着，最多保留最近 3 轮，环境返回超过 400 个字符就截断（都是 `rules.py` 里的常量），这些是过去的事实，属于合法上下文。
+gyb confirmed one convention in the discussion: parameters do not enter the first kind's training. Broken down, that's three places. The supervision target is only the tool name; when the training code loads data, it reads only the text, label, and weight fields, and even though the samples store the complete call string and parameter table, the loading function never touches them. This call's parameters are also not in the input text; the thinking prefix stops before the call happens, so this call's parameters belong to the future, and putting them in the input would leak the answer. The history segment is the only place parameters appear: calls that already happened in earlier turns are laid out as is with their own parameters, keeping at most the most recent 3 turns, with an environment return truncated past 400 characters (both are constants in `rules.py`); these are facts about the past, and count as legitimate context.
 
-## 第二种生成整条调用，训法就是现在的 cgen
+## The second kind, generating the whole call, trains the way cgen does now
 
-机制照 `pipeline/train/train_causal_callgen.py` 的现状描述。一条样本带三个字段：文本、标准答案调用串、权重。拼法是输入串等于文本接上固定分隔串 `\n[CALL] `，目标串等于整条调用串加结束符。损失只算在目标段的 token 上，输入段一律不罚，教的是「接在分隔串后面该写什么」。这是标准的语言模型微调，全部参数都在动。为了防止左截断吃掉目标，代码先把目标串单独 tokenize，超长的样本整条丢弃并计数，再按剩余额度左截输入。选最优权重只看验证集上目标段的加权交叉熵。
+The mechanism is described as it currently stands in `pipeline/train/train_causal_callgen.py`. One sample carries three fields: text, the ground-truth call string, weight. The assembly is that the input string equals the text followed by a fixed separator string `\n[CALL] `, and the target string equals the whole call string plus an end token. The loss is computed only on the target segment's tokens, the input segment is never penalized; what's being taught is "what to write right after the separator string." This is standard language-model fine-tuning, with all parameters in motion. To keep left-truncation from eating into the target, the code first tokenizes the target string separately, discards and counts overlong samples entirely, then left-truncates the input by the remaining budget. Choosing the best checkpoint looks only at the weighted cross-entropy of the target segment on the validation set.
 
-## 第三种给定类型只生成参数，是要新建的格
+## The third kind, given the type, generating only the parameters, is a new cell to be built
 
-第三种照第二种改一个地方：输入串从「文本加分隔串」延长成「文本加分隔串加工具名加左括号」，目标串从整条调用串缩短成括号里的参数部分。拿 `train_causal_callgen.py` 文件头注释里的调用串 `apis.spotify.login(username=x, password=y)` 举例，两种的样本长这样：
+The third kind changes one thing from the second: the input string extends from "text plus separator string" to "text plus separator string plus tool name plus opening parenthesis," and the target string shortens from the whole call string to just the parameter part inside the parentheses. Taking the call string `apis.spotify.login(username=x, password=y)` from the comment at the top of `train_causal_callgen.py` as an example, samples for the two kinds look like this:
 
 ```
-第二种  输入: …题干、历史、思考前缀…\n[CALL]
-        目标: apis.spotify.login(username=x, password=y)<eos>
+Second kind  input:  ...task description, history, thinking prefix...\n[CALL]
+             target: apis.spotify.login(username=x, password=y)<eos>
 
-第三种  输入: …题干、历史、思考前缀…\n[CALL] apis.spotify.login(
-        目标: username=x, password=y)<eos>
+Third kind   input:  ...task description, history, thinking prefix...\n[CALL] apis.spotify.login(
+             target: username=x, password=y)<eos>
 ```
 
-第三种的模型自己只写左括号后面那一截，工具名和左括号是喂给模型的输入的一部分。没有参数的调用，目标串就只剩一个右括号加结束符。
+The third kind's model itself writes only the part after the opening parenthesis; the tool name and the opening parenthesis are part of what's fed into the model as input. For a call with no parameters, the target string is left with just a closing parenthesis plus an end token.
 
-数据不需要任何新的标注。造数据的 `build.py` 在拼标准答案之前，手里本来就分开握着工具名（`ev["tool"]`）和参数表（`args_named`），拼完两半也都存进了每条样本的 `label` 和 `args_named` 字段。第三种的输入串里的工具名取自 `label` 字段，目标串从 `args_named` 按 `make_call` 同一条拼串规则拼出参数部分。验收门禁 `check_callstr` 已经在保证每条调用串都能被评测侧的 `parse_call` 切回工具名和参数，两半的边界是干净的。改动落在训练脚本的拼串函数上，采集、标注、验收整条上游一步不用动。改动量在十行的量级，十行是估计，没细数。
+The data needs no new annotation. `build.py`, which builds the data, already holds the tool name (`ev["tool"]`) and the parameter table (`args_named`) separately before assembling the ground truth, and after assembling both halves it also stores them in each sample's `label` and `args_named` fields. The third kind's input string takes the tool name from the `label` field, and its target string assembles the parameter part from `args_named` using the same assembly rule as `make_call`. The acceptance gate `check_callstr` already guarantees that every call string can be split back into tool name and parameters by the evaluation side's `parse_call`, so the boundary between the two halves is clean. The change lands in the training script's string-assembly function; the entire upstream chain, collection, annotation, acceptance, needs no change at all. The size of the change is on the order of ten lines; ten lines is an estimate, not counted precisely.
 
-训练的时候输入串里的工具名永远用标准答案里的真值。使用的时候工具名来自第一种模型的预测，所以存在一处训练和使用的不一致：模型从来没见过「工具名给错了」的样本，工具名一错参数基本跟着全错。这个不一致要靠评测的两个口径来量（见下一节）。
+During training, the tool name in the input string always uses the ground truth. At use time, the tool name comes from the first kind of model's prediction, so there is one place where training and use don't match: the model has never seen a sample where "the tool name was given wrong," and once the tool name is wrong the parameters mostly go wrong along with it. This mismatch has to be measured with the evaluation's two conventions (see the next section).
 
-讨论里还过了另一个方案，受限解码：第二种照旧生成整条调用，只是在写工具名的那几个 token 上把词表限制在合法工具名的范围里。没有采用，原因是解码逻辑要自己维护「写到哪个位置、该限制什么」，写起来绕，而且工具名等于被生成模型和分类头各定一次，两个真源的别扭还在。
+The discussion also went over another option, constrained decoding: the second kind still generates the whole call as before, but on the tokens that write the tool name, the vocabulary is restricted to the set of valid tool names. This was not adopted, because the decoding logic would have to maintain its own "which position am I at, what should be restricted," which is roundabout to write, and the tool name would still end up decided twice, once by the generating model and once by the classification head, leaving the same awkwardness of two sources of truth.
 
-## 使用的时候三种组成两套系统来对比
+## At use time, the three kinds form two systems for comparison
 
-不管哪套系统，触发这一步永远是第一种在做：句子结尾问置信度，过阈值 θ 才出手。出手之后写调用串分两条路。系统甲是第一种加第二种，第二种自己把整条调用写完，工具名由第二种重新定一次，第一种报的名字只用来触发。系统乙是第一种加第三种，第一种报的工具名直接拼进第三种的输入，第三种只填参数，两个模型的输出拼接起来才是完整调用串。两套系统的触发部分完全相同，差别全在写调用那一半，比较结果能干净地归因到「工具名是重新生成的还是沿用分类头的」这一件事上。
+Regardless of which system, the firing step is always done by the first kind: confidence is checked at each sentence end, and firing only happens past the threshold theta. After firing, writing the call string splits into two paths. System A is the first kind plus the second kind: the second kind writes out the whole call itself, deciding the tool name a second time, and the name reported by the first kind is used only to trigger firing. System B is the first kind plus the third kind: the tool name reported by the first kind is spliced directly into the third kind's input, the third kind only fills in the parameters, and the complete call string only comes from concatenating the two models' outputs. The two systems' firing parts are exactly the same; the whole difference is in the half that writes the call, so the comparison's result can be cleanly attributed to one single thing: whether the tool name is regenerated or carried over from the classification head.
 
-第三种的评测要跑两个口径。一个口径喂真值工具名，量的是模型纯粹的填参数能力；另一个口径喂第一种的预测，量的是系统乙的真实表现。两个口径的差就是第一种选错工具漏下来的损失。
+The third kind's evaluation has to run under two conventions. One convention feeds in the ground-truth tool name, measuring the model's pure parameter-filling ability; the other feeds in the first kind's prediction, measuring system B's real-world performance. The gap between the two conventions is exactly the loss that leaks through from the first kind picking the wrong tool.
 
-选择生成而不是加头来做参数，讨论里给过三条理由。参数的值经常不是从上文抄出来的，是模型要自己组出来的，加头的做法组不出没在上文出现过的值。下游的执行和注入吃的是一条完整调用串，生成的产出直接就是这条串。生成这条路的评测代码 `eval_causal_call.py` 是现成的。
+The discussion gave three reasons for choosing generation over adding a head to produce parameters. A parameter's value is often not copied straight out of the preceding text, the model has to compose it itself, and a head-based approach cannot compose a value that never appeared in the preceding text. Downstream execution and injection consume a complete call string, and generation's output is directly that string. The evaluation code for the generation path, `eval_causal_call.py`, already exists.
 
-## 训练开销的实测数字只有小样一波，更大规模全靠推算
+## The only measured numbers for training cost are from one small-sample round; anything larger is entirely projected
 
-先摆事实。账上能查到的因果线训练耗时只有一波：2026-08-10 的 z1 冒烟，数据是 20 道题的小样，在 H100 上，ctool 训练了 4 分钟、cgen 训练了 69 分钟（`ops/runs.jsonl` 里 finish 条目的 `train_wall_min` 字段，装的是训练的墙钟分钟数）。清场前 c1 那波全量矩阵，账上六个因果训练的开始时间全记在 2026-07-31 的 09:12、结束时间全记在 17:02 到 17:34 之间，这是收账时间不是真实起止，单个训练在全量数据上的墙钟时长从账上读不出来，只能说包括 ModernBERT 线在内的 12 个训练当天之内收完了。0.6B 的两格都在 48G 的 A6000 上 OOM 过，z1 是换到 H100 才跑通的。ctool 比 cgen 便宜是实测（4 分钟对 69 分钟），但原因没有查过，ctool 同样是全模型微调，不是只训练一个头。
+Facts first. The only round of measured causal-line training time on record is the 2026-08-10 z1 smoke test, on a small sample of 20 tasks, on an H100, where ctool trained for 4 minutes and cgen for 69 minutes (the `train_wall_min` field of the finish entries in `ops/runs.jsonl`, which holds the training's wall-clock minutes). For the c1 full-matrix round before the clean sweep, the ledger records all six causal trainings' start time as 09:12 on 2026-07-31 and end time somewhere between 17:02 and 17:34, which are recording times, not the real start and end; a single training's wall-clock duration on the full data cannot be read from the ledger, all that can be said is that the 12 trainings, including the ModernBERT line, wrapped up within that same day. Both of 0.6B's two cells OOM'd on the 48G A6000; z1 only got running after switching to an H100. That ctool is cheaper than cgen is a measurement (4 minutes versus 69 minutes), but the reason has not been investigated; ctool is likewise a full-model fine-tune, not training just a head.
 
-下面是推算，不是实测。微调的计算量差不多随参数量线性涨，1.7B 的参数量约是 0.6B 的三倍，同样的数据训练一次大约三倍时间：cgen 在小样上推算三个多小时，在全量数据上推算一天的量级，前提是用 H100 或者 H200。4B 的全参微调可能要换成 LoRA 这类只训一小部分参数的省钱办法才划算，这一档没有细算。
+Below is a projection, not a measurement. Fine-tuning's compute scales roughly linearly with parameter count; 1.7B has about three times 0.6B's parameter count, so training once on the same data takes about three times as long: cgen is projected at a bit over three hours on the small sample, and on the order of one day on the full data, assuming an H100 or H200 is used. 4B's full-parameter fine-tuning may only be worthwhile if switched to a parameter-saving approach like LoRA that trains only a small fraction of the parameters; this size has not been worked out in detail.
 
-## 还有三件事没定，动手之前有四件准备工作
+## Three things are still undecided, and four preparations are needed before starting
 
-三件事还没定。数据用哪批没定：NFS 上的数据集目录现在是空的，这次比较要先走一遍采集和造数据，采哪个环境、采哪个模型的轨迹都还没讨论。九个格子先跑哪几个没定，只有「先在 1.7B 上做第一轮试验」这个倾向。4B 那一档用全参微调还是 LoRA 没定。
+Three things are still undecided. Which batch of data to use is undecided: the dataset directory on NFS is currently empty, this comparison will need to go through collection and dataset building first, and which environment to collect from, whose model's trajectories to collect, have not been discussed yet. Which of the nine cells to run first is undecided, there is only the leaning of "run the first round of experiments on 1.7B first." Whether the 4B size uses full-parameter fine-tuning or LoRA is undecided.
 
-动手之前有四件准备工作。把 Qwen3 的 1.7B 和 4B 权重下载到 NFS 的模型盘，现在盘上千问只有 0.6B-Base 一份。给 ctool 的 `--base` 参数加新档位的别名。把 cgen 写死的 0.6B 底座改成可以选。第三种作为新格走三件套：训练代码、run.py 注册表、probe-pipeline skill 回写，同一个 commit，注册名等定下来再起。
+Four preparations are needed before starting. Download Qwen3's 1.7B and 4B weights to the model drive on NFS; currently the drive has only one copy of Qwen, 0.6B-Base. Add aliases for the new sizes to ctool's `--base` argument. Change cgen's hardcoded 0.6B backbone to be selectable. As a new cell, the third kind goes through the three-part set: training code, the run.py registry, the probe-pipeline skill write-back, in the same commit; the registered name is decided once settled.

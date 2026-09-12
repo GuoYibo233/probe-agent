@@ -1,35 +1,36 @@
-# 这个文件夹是 2026-08-09 组会汇报的数据底稿
+# This folder is the data backing for the 2026-08-09 group meeting report
 
-这里放的是今天（2026-08-09）以前跑出来的全部实验数据的整理稿，供准备汇报用。
-数据本身不新——全部摘自仓库里已有的记录，整理的时候一个数字都没有改动。
+This holds the write-up of every experiment run before today (2026-08-09), prepared for the report.
+The data itself is not new, all of it is taken from records already in the repo, and not a single number was changed while organizing it.
 
-## 数据从哪里来
+## Where the data comes from
 
-- 旧阶段（2026-07-26 到 2026-08-02）的全部记录在清场前快照 commit `b1f5b9c`
-  里面。想核对任何一个数字，用 `git show b1f5b9c:<文件路径>` 就能看到原文。
-- 现役阶段（2026-08-08 重启之后）的记录在工作区的 `RESULTS.md` 和 `METHOD.md` 里。
-- NFS 上的原始数据（轨迹、权重、日志）在 2026-08-02 清场的时候删掉了，不可恢复。
-  所以本文件夹里的数字就是能追到的最细粒度。
+- All records from the old phase (2026-07-26 to 2026-08-02) are in the pre-wipe snapshot commit `b1f5b9c`.
+  To check any number, run `git show b1f5b9c:<file path>` to see the original text.
+- Records from the current phase (after the 2026-08-08 restart) are in the working tree's `RESULTS.md` and `METHOD.md`.
+- The raw data on NFS (trajectories, weights, logs) was deleted at the 2026-08-02 wipe and cannot be recovered.
+  So the numbers in this folder are the finest granularity that can still be traced.
 
-## 文件清单
+## File list
 
-| 文件 | 回答什么问题 |
+| File | What question it answers |
 |---|---|
-| `data/01-settings.md` | 旧阶段用了什么实验设定 |
-| `data/02-probe-matrix.md` | 训练出了哪些探针，各自准确率是多少 |
-| `data/03-offline-inject.md` | 离线注入实验测出了什么 |
-| `data/04-live-runs.md` | 活跑实验三版各自跑出了什么 |
-| `data/05-other-lines.md` | 另外两条研究线（记忆、多跳注入）测出了什么 |
-| `data/06-timeline-and-incidents.md` | 方向决策按什么顺序发生，中途出过哪些工程事故 |
-| `data/07-current-phase.md` | 现役阶段手上有什么 |
+| `data/01-settings.md` | What experiment settings the old phase used |
+| `data/02-probe-matrix.md` | Which probes were trained, and their accuracy |
+| `data/03-offline-inject.md` | What the offline injection experiments measured |
+| `data/04-live-runs.md` | What each of the three live-run versions measured |
+| `data/05-other-lines.md` | What the other two research lines (memory, multi-hop injection) measured |
+| `data/06-timeline-and-incidents.md` | The order direction decisions happened in, and what engineering incidents came up along the way |
+| `data/07-current-phase.md` | What the current phase has in hand |
 
-## 引用这批数字之前要知道的三条口径纪律
+## Three sourcing rules to know before citing these numbers
 
-1. `METHOD.md` §5 定案写着"旧阶段数字一概不作参照"——指的是新阶段做实验
-   不拿旧数字当基线。这批数字进汇报要以什么身份出现，由汇报人决定。
-2. 场地有两代（自切分的 v2 到 v3_1，和官方题单的 aw_official_v1 等），
-   旧 `DATA.md` §4 的原话是"同一个 appworld 名字下是两套完全不同的场地"，
-   两代数字不可比。
-3. gptoss 侧的先验基线（0.404）比 q35/q36 侧（0.174/0.159）高一倍多，
-   旧 `DATA.md` §3.1 的原话是"看绝对精度会高估 gptoss 侧的探针"。
-   比较模型要连先验一起看。
+1. `METHOD.md` §5's ruling says "old-phase numbers are not to be used as a reference at all", meaning the new phase's
+   experiments do not take the old numbers as a baseline. It is up to the presenter what standing these numbers take
+   on in the report.
+2. The test bed went through two generations (self-split v2 through v3_1, and the official problem sets
+   `aw_official_v1` and so on). The old `DATA.md`'s exact words were "under the same appworld name these are two
+   completely different test beds", the numbers from the two generations are not comparable.
+3. The gptoss-side prior baseline (0.404) is more than double the q35/q36 side (0.174/0.159); the old `DATA.md`
+   §3.1's exact words were "looking at absolute precision overrates the gptoss-side probe."
+   Comparing models means reading the prior alongside the number.

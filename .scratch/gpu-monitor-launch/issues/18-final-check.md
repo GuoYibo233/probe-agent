@@ -1,19 +1,92 @@
-# 18 — 收官自检
+# 18 — Final wrap-up self-check
 
-**What to build:** 整条链收官：全量单测加 selfcheck 全绿；grep 扫尾确认仓库里不再有"手打三条登记命令"的旧流程叙述残留；CONTEXT.md 词汇表与实现复核一遍（shardable、监控参数字段名这批实施中出现的词收进词汇表，注明日期）；最终汇报改动清单、新命令速查、看门狗 crontab 行和 v1 明确不做的清单。步骤照实施计划 Task 19 执行。
+**What to build:** Wrap up the whole chain: full unit tests plus
+selfcheck all green; a final grep sweep confirms no leftover old-flow
+narration about "hand-typing three registration commands" remains in the
+repo; a review pass over the CONTEXT.md glossary against the
+implementation (words that emerged during implementation, such as
+shardable and the monitor-parameter field names, get collected into the
+glossary with a date noted); the final report covers the change list, a
+new-command quick reference, the watchdog crontab line, and the explicit
+v1 not-doing list. Steps follow Task 19 of the implementation plan.
 
-**Blocked by:** 15 文档回写 gpu-run、16 文档回写 agent 定义、17 文档回写 probe-pipeline 与根文档（连带全部前置）
+**Blocked by:** 15 Doc write-back gpu-run, 16 Doc write-back agent
+definitions, 17 Doc write-back probe-pipeline and root docs (and
+everything upstream of them)
 
 **Status:** resolved
 
-- [x] `python3 -m unittest discover -s tests -v` 全绿加 `python3 run.py selfcheck` 通过
-- [x] 双登记、record start、register 的 grep 结果全部是新语境
-- [x] CONTEXT.md 复核完成，新词已收
-- [x] 最终 commit 加汇报
+- [x] `python3 -m unittest discover -s tests -v` all green plus
+  `python3 run.py selfcheck` passes
+- [x] grep results for double registration, record start, and register
+  are all in the new context
+- [x] CONTEXT.md review done, new words collected
+- [x] Final commit plus report
 
 ## Comments
 
-- 2026-08-08 主会话转记（收官自检加两项）：其一，gpu-run SKILL.md 手搓补录路径的 RUNMETA `--kind` 通用占位与 launch 自动登记写 kind="launch" 是两套值，收官时核对文档与代码口径是否需要统一；其二，launch-methodology.md Step6 仍留旧的"ETA claims need ≥60s of tqdm observation"措辞，与重写后的 monitor-methodology.md 判定值输入不齐，收官时一并对齐。
-- 2026-08-09 主会话转记（来自 T13 收账）：收官自检再加一项——port 字段从发射到采样的传递链路断在登记侧（launch --port 透传不进 piece、register 不认 --port/--kind），服务档 kind="service" 无现成命令行可登记；收官汇报里必须列为已知缺口，是否开后续工单由用户裁决。
-- 2026-08-09 主会话收官执行记录：117 测试全绿 + selfcheck 63 任务全部就位；grep 三个关键词的命中全部是"launch 自动做/补录路径"新语境；CONTEXT.md 收进 shardable 与监控参数两条新词（注明 2026-08-09）。追加两项的裁决：RUNMETA `--kind` 不统一成一个值——kind 本来就是自由字符串，三个发射器各写各的（launch / train / eval_<阶段>），gpu-run SKILL.md 的占位旁补了一句口径说明；launch-methodology.md Step6 复核发现旧的"≥60s tqdm"措辞已在 T15 改掉（现行文本第 141 行是"ETA claims come from the sampler's verdict, not hand-parsed tqdm"），无需再改。采样器重启到合并后代码（台账 active 为空的窗口期重启，无监控中断），看门狗 crontab 在位。port 传递缺口维持待裁决。
-- 2026-08-09 Phase 4 终审与修复闭环（本条为最终记录）：opus 整分支终审（f30e6cf..5963842）出 3 critical + 2 important + 21 观察。挡合并五项全部修复并经 sonnet 范围复审判 ADDRESSED（commit f79b0d5/2136f97/3b0642c/66eb140/0d26563/8ff20e7）：C1 测试套件真拉付费 opus 子进程（mock + NEW1_NO_SPAWN 双防线，修后全量 124 测试实测零子进程）；C2 --service 无 port 必误判卡死（launch 强制 --port 且落 piece，register 补 --port/--kind）；C3 事故触发异常隔离 + shutil.which 解析 + state.json 落盘紧跟触发；I4 五处文档旧文本 + gpu_state 补部署事实段；I5 判定引擎补服务两格与判定线主公式断言。复审新发现两条裁决：--port 在 -- 前被 launch 截走不透传——与 --outdir 遮蔽同类的既有约定（任务侧旗标写 -- 之后），搁置；piece 的 port:null 与 register 缺省不带键的 schema 漂移——无实害照录。终审 21 条观察中未处理的按原文留存于终审记录，重点三条转待用户裁决：第一次真实多分片发射后肉眼核对 RESULTS.md 渲染；事故链修复后仍未真实演练，建议白天对假分片演练一次；网页绑全网卡无鉴权（spec 只要求 ssh 转发，可收紧到 127.0.0.1）。T06 遗留的两个 /tmp sampler 进程已清（pid 2574051/2575583）。采样器 22:18 杀、22:20 由看门狗以 cron 环境拉回，跑含全部修复的 HEAD。
+- 2026-08-08 transcribed by the main conversation (two items added to
+  the final self-check): first, gpu-run SKILL.md's hand-typed backfill
+  path uses a generic RUNMETA `--kind` placeholder, while launch's
+  automatic registration writes kind="launch"; these are two different
+  value sets, and at wrap-up check whether docs and code need to be
+  unified on this; second, launch-methodology.md Step6 still has the old
+  wording "ETA claims need >=60s of tqdm observation," which doesn't
+  line up with the rewritten monitor-methodology.md's verdict-value
+  inputs, to be aligned together at wrap-up.
+- 2026-08-09 transcribed by the main conversation (from T13's wrap-up):
+  one more item added to the final self-check, the port field's path
+  from launch to sampling breaks on the registration side (launch's
+  --port only passes through and doesn't land in piece, and register
+  doesn't recognize --port/--kind), so a service record with
+  kind="service" has no ready-made command line for registering it; this
+  must be listed as a known gap in the final report, with the user to
+  decide whether to open a follow-up ticket.
+- 2026-08-09 main-conversation wrap-up execution record: 117 tests all
+  green + selfcheck's 63 tasks all in place; grep hits on the three key
+  terms are all in the new context of "launch does it automatically /
+  the backfill path"; CONTEXT.md gained two new words, shardable and
+  monitor parameters (dated 2026-08-09). Rulings on the two added items:
+  RUNMETA `--kind` is not unified to one value, since kind was always
+  meant to be a free-form string, and the three launchers each write
+  their own (launch / train / eval_<stage>); a phrasing note was added
+  next to gpu-run SKILL.md's placeholder to explain this. Re-checking
+  launch-methodology.md Step6 found the old "≥60s tqdm" wording had
+  already been changed in T15 (the current text at line 141 reads "ETA
+  claims come from the sampler's verdict, not hand-parsed tqdm"), so no
+  further change is needed. The sampler was restarted onto the
+  post-merge code (restarted during a window when the ledger's active
+  list was empty, no monitoring interruption), and the watchdog crontab
+  is in place. The port-passing gap remains pending a decision.
+- 2026-08-09 Phase 4 final review and fix-loop closure (this is the
+  final record): the opus whole-branch final review (f30e6cf..5963842)
+  produced 3 critical + 2 important + 21 observations. All five
+  merge-blocking items were fixed and judged ADDRESSED by a sonnet
+  scoped re-review (commits
+  f79b0d5/2136f97/3b0642c/66eb140/0d26563/8ff20e7): C1, the test suite
+  really spawned a paid opus subprocess (fixed with a double defense of
+  a mock plus NEW1_NO_SPAWN; after the fix, all 124 tests were verified
+  to spawn zero subprocesses); C2, --service without a port would
+  inevitably be misjudged as dead (launch now requires --port and lands
+  it in piece, register adds --port/--kind); C3, incident-trigger
+  exception isolation + shutil.which resolution + state.json's disk
+  write moved to right after the trigger; I4, five spots of stale doc
+  text plus a deployment-facts section added to gpu_state; I5, the
+  verdict engine gets an assertion covering the two service cells and
+  the verdict-line main formula. Two rulings on newly found issues from
+  the re-review: --port gets cut off by launch before the -- and isn't
+  passed through, an existing convention in the same category as
+  --outdir being shadowed (task-side flags go after --), left as is; the
+  piece's port:null versus register's default not carrying the key at
+  all is a schema drift with no real harm, noted as-is. Of the final
+  review's 21 observations, the unaddressed ones are kept verbatim in
+  the final-review record; three key ones are passed on for the user to
+  decide: eyeball RESULTS.md's rendering after the first real
+  multi-piece launch; the incident chain, even after the fix, still
+  hasn't been rehearsed for real, recommend rehearsing once on a fake
+  piece during the day; the web page binds to all network interfaces
+  with no authentication (the spec only requires ssh forwarding, this
+  could be tightened to 127.0.0.1). The two leftover /tmp sampler
+  processes from T06 have been cleaned up (pid 2574051/2575583). The
+  sampler was killed at 22:18 and pulled back by the watchdog under the
+  cron environment at 22:20, running the HEAD with all fixes included.

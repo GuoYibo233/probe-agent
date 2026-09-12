@@ -1,86 +1,96 @@
-# 旧阶段用了什么实验设定
+# What experiment settings the old phase used
 
-出处：快照 `b1f5b9c` 的 `DATA.md`（数据设定账）。本文只搬事实，不加判断。
+Source: `DATA.md` (the data-settings ledger) in the pre-wipe snapshot `b1f5b9c`. This file only carries over facts, it adds no judgment.
 
-## 被探测的 agent 模型是三个，全部本地服务
+## Three agent models were probed, all served locally
 
-| 简称 | 模型 | 服务方式 |
+| Short name | Model | Serving mode |
 |---|---|---|
-| q35 | qwen3.5-27b | vLLM raw 模式自拼模板，思考段不丢 |
-| q36 | qwen3.6-27b | vLLM raw 模式；Mamba 混合架构，`--max-num-seqs` 要降到 256 |
-| gptoss | gpt-oss-120b | vLLM chat 模式，思考取 `message.reasoning` |
+| q35 | qwen3.5-27b | vLLM raw mode, template assembled by hand, thinking segment not dropped |
+| q36 | qwen3.6-27b | vLLM raw mode; Mamba hybrid architecture, `--max-num-seqs` had to be lowered to 256 |
+| gptoss | gpt-oss-120b | vLLM chat mode, thinking taken from `message.reasoning` |
 
-零付费 API，全部跑在 tokyo105 到 108 的卡上。
+Zero paid APIs, everything ran on the tokyo105 to 108 cards.
 
-## 场地经历了两代，两代数字不可比
+## The test bed went through two generations, the numbers from the two are not comparable
 
-第一代是自切分：AppWorld、TALES（烹饪文字游戏）、BFCL（multi_turn_base 200 题）
-三个环境，数据版本从 v2 走到 v3_1（v3 比 v2 多并入一批补采，v3_1 只重建了
-BFCL 把 gpt-oss 的 200 条并进去）。第二代改认官方题单：
+The first generation was self-split: three environments, AppWorld, TALES (a cooking text game), and BFCL
+(multi_turn_base, 200 questions), with the data version going from v2 to v3_1 (v3 folded in an extra batch of
+collection beyond v2, v3_1 only rebuilt BFCL to fold in the 200 gpt-oss entries). The second generation switched to
+the official problem sets:
 
-- `aw_official_v1`：AppWorld 官方分区，train 90 / val 57 / test_normal 168 个
-  任务实例，一个模型一份数据集，三个模型题单逐集合比对完全一致（同题对比成立）。
-- `alf_official_v1`：ALFWorld 官方目录映射（train 取分层抽的 200 配置 /
-  val 140 / test 134），q36 和 gptoss 两份，题单一致。
-- `bfcl_mtb_v1`：BFCL 的新流水线数据集（ro1 批全程在用），切分 140/40/20。
-  旧 `DATA.md` §8.3 承认这份数据集的造法一节没来得及写。
+- `aw_official_v1`: the AppWorld official split, train 90 / val 57 / test_normal 168 task instances, one dataset per
+  model, the three models' problem sets match exactly set by set (so same-question comparison holds).
+- `alf_official_v1`: the ALFWorld official directory mapping (train takes a stratified sample of 200 configurations /
+  val 140 / test 134), two copies for q36 and gptoss, matching problem sets.
+- `bfcl_mtb_v1`: BFCL's new-pipeline dataset (the one the ro1 batch used throughout), split 140/40/20. The old
+  `DATA.md` §8.3 admits it never got around to writing up how this dataset was built.
 
-一个要紧的更正（旧 `DATA.md` §8.2 自查发现）：§1.1 写的 TALES 设定
-（seed 101 到 120、两档难度）是探索批，一条也没进训练数据；真正进数据的是
-`full_v1` 批（seed 31 到 50、40 步上限），而且那批"三模型胜率全 0"。
+One correction worth noting (found by the old `DATA.md` §8.2's own self-check): the TALES settings written in §1.1
+(seed 101 to 120, two difficulty tiers) were an exploration batch, not one of which entered the training data; what
+actually went into the data was the `full_v1` batch (seed 31 to 50, 40-step cap), and that batch had "all three
+models at 0% win rate."
 
-## 轨迹怎么变成训练样本
+## How trajectories become training samples
 
-规则 2026-07-29 定稿后没有改过（写死在 `build_dataset.py` 文件头）：
+The rule has not changed since it was finalized on 2026-07-29 (fixed at the top of `build_dataset.py`):
 
-- agent 做完一个任务留一条轨迹；轨迹里每个要调用工具的步是一个事件。
-- 一个事件按思考文本的句子边界切前缀，每个前缀是一条样本，上限 64 个
-  （超了均匀抽，末尾那个永远保留）。句子边界的定义是换行，或者 `.!?` 后面跟空白。
-- 样本文本 = 任务描述 + `[HISTORY]` 段（最近 3 轮，每条环境返回最多 400 字符）
-  + `[THINKING]` 前缀。
-- 标签 = 这一步真实调用的工具名，全自动零人工。
-- 训练损失里每个事件等权（`w=1/m_i`）。理由：部署时每个句子边界都会问一次
-  探针，训练分布要对齐部署分布。
-- 切分按任务实例做，同一道题在不同模型下的轨迹同进同出，防姊妹泄漏。
-- 思考短于 40 字符的事件直接丢。超过 4096 token 的样本由训练脚本左截。
-- 种子全线固定：数据 20260729，训练 42 或 20260729（逐条看 RESULTS 的种子栏）。
+- The agent finishes a task and leaves one trajectory; every step in the trajectory that calls a tool is one event.
+- One event is cut into prefixes at the sentence boundaries of its thinking text, each prefix is one sample, capped
+  at 64 (over the cap, sample evenly, the last one is always kept). A sentence boundary is defined as a newline, or
+  `.!?` followed by whitespace.
+- Sample text = task description + `[HISTORY]` segment (last 3 turns, each environment return capped at 400
+  characters) + `[THINKING]` prefix.
+- Label = the tool name actually called at this step, fully automatic with no manual work.
+- Every event carries equal weight in the training loss (`w=1/m_i`). Reason: in deployment the probe is asked once
+  at every sentence boundary, so the training distribution should be aligned to the deployment distribution.
+- The split is done by task instance, so the trajectories of the same question under different models move together
+  into the same split, to prevent sibling leakage.
+- Events whose thinking is shorter than 40 characters are dropped outright. Samples over 4096 tokens are left-
+  truncated by the training script.
+- Seeds are fixed across the board: data 20260729, training 42 or 20260729 (check the seed column in RESULTS row by
+  row).
 
-## 评测协议是三步，账上叫"calA 拟温度、calB 扫 θ、test 冻结"
+## The evaluation protocol has three steps, on the ledger called "calA fit temperature, calB scan θ, test freeze"
 
-数据切四堆（训练 70% / 拟温度 10% / 扫门槛 10% / 测试 10%；官方分区时代按
-官方题单归堆）。第一步在拟温度堆上给探针置信度拟温度；第二步在扫门槛堆上
-扫出满足风险约束的 θ（risk0.1 档要求触发精度不低于 90%，risk0.05 档不低于
-95%）；第三步拿冻结的 θ 到测试堆上报数。及格线是打赢频率先验基线。
+The data is cut into four splits (train 70% / fit-temperature 10% / threshold-scan 10% / test 10%; in the
+official-split era, splits followed the official problem sets). Step one fits a temperature for the probe's
+confidence on the fit-temperature split; step two scans the threshold-scan split for a θ that satisfies the risk
+constraint (the risk0.1 tier requires trigger accuracy no lower than 90%, the risk0.05 tier no lower than 95%); step
+three reports the frozen θ on the test split. The passing bar is beating the frequency prior baseline.
 
-## 频率先验基线随数据变，引用数字前先对表
+## The frequency prior baseline moves with the data, check the table before citing a number
 
-先验基线的定义："永远猜训练集里最高频的那个工具"在测试堆上的正确率。
+The prior baseline is defined as: the accuracy on the test split of "always guess the most frequent tool in the
+training set."
 
-| 数据集 | 测试堆事件数 | 先验基线 | 最高频工具 |
+| Dataset | Test-split event count | Prior baseline | Most frequent tool |
 |---|---|---|---|
 | v2 appworld | 305 | 0.226 | `apis.api_docs.show_api_doc` |
 | v2 tales | 201 | 0.672 | `open` |
 | v2 bfcl | 237 | 0.038 | `startEngine` |
-| v3 appworld | 791 | 0.298 | 同上 |
+| v3 appworld | 791 | 0.298 | same as above |
 | v3 tales | 408 | 0.556 | `open` |
 | v3 bfcl | 226 | 0.049 | `startEngine` |
 | v3_1 bfcl | 335 | 0.042 | `startEngine` |
-| aw_official_v1 q35 侧 | 3356 | 0.174 | `apis.api_docs.show_api_doc` |
-| aw_official_v1 q36 侧 | 3150 | 0.159 | 同上 |
-| aw_official_v1 gptoss 侧 | 2138 | 0.404 | 同上 |
-| alf_official_v1 q36 侧 | 2146 | 0.548 | `go` |
-| alf_official_v1 gptoss 侧 | 3497 | 0.470 | `go` |
+| aw_official_v1 q35 side | 3356 | 0.174 | `apis.api_docs.show_api_doc` |
+| aw_official_v1 q36 side | 3150 | 0.159 | same as above |
+| aw_official_v1 gptoss side | 2138 | 0.404 | same as above |
+| alf_official_v1 q36 side | 2146 | 0.548 | `go` |
+| alf_official_v1 gptoss side | 3497 | 0.470 | `go` |
 
-两条口径警告（旧 `DATA.md` §3.1、§3.2 原文都有）：
+Two sourcing warnings (both are verbatim from the old `DATA.md` §3.1 and §3.2):
 
-1. gptoss 的思考文本长（每步中位 2991 字符，q36 是 292），切点密逼近 64 上限，
-   所以事件数最少、样本数反而最多。按样本数横比模型会得出反直觉结论，要比就比事件数。
-2. gptoss 的先验基线高（AppWorld 0.404 / ALFWorld 0.470），看绝对精度会高估
-   gptoss 侧的探针。
+1. gptoss's thinking text is long (median 2991 characters per step, versus 292 for q36), so its cut points pack
+   densely close to the 64 cap; that is why it has the fewest events but the most samples. Comparing models by
+   sample count gives a counterintuitive conclusion, comparisons should be by event count.
+2. gptoss's prior baseline is high (AppWorld 0.404 / ALFWorld 0.470); reading absolute accuracy overrates the probe
+   on the gptoss side.
 
-## 只读折叠（ro1 批加的口径，2026-08-01）
+## Read-only folding (a sourcing convention added by the ro1 batch, 2026-08-01)
 
-投机只对只读工具出手。真值表逐工具人工复核：AppWorld 183 个工具里 100 个只读
-（只读事件占比 80.0%），BFCL 106 里 57（51.3%）；登录/认证类一律判非只读。
-折叠不改数据文件：词表变成"只读工具 + 末位哨兵 `<NON_READONLY>`"，评测触发
-加一条"argmax 不是哨兵"。ALFWorld 只读事件仅 4.6%，不进这套方案。
+Speculation only fires on read-only tools. The ground-truth table was manually reviewed tool by tool: of AppWorld's
+183 tools, 100 are read-only (read-only events are 80.0% of the total), of BFCL's 106, 57 are (51.3%); any
+login/authentication tool is ruled non-read-only across the board. Folding does not change the data files: the
+vocabulary becomes "read-only tools + a trailing sentinel `<NON_READONLY>`," and evaluation triggering adds one more
+condition, "argmax is not the sentinel." ALFWorld's read-only events are only 4.6%, this scheme is not applied to it.

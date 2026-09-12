@@ -1,11 +1,12 @@
-# 发射方法论（gpu-run reference）
+# Launch methodology (gpu-run reference)
 
 Generic launcher playbook for GPU work on the tokyo cluster — probe, allocate,
 shard, launch in tmux, verify, report.
 
-由 `.claude/agents/gpu-runner.md` 和 gpu-run Phase 2/4 引用。原为全局
-`launch-gpu-job` skill，2026-07-30 迁入项目内。项目级流程与铁律以
-`.claude/skills/gpu-run/SKILL.md` 为准，本文件只提供方法论细节。
+Referenced by `.claude/agents/gpu-runner.md` and gpu-run Phase 2/4. Originally a global
+`launch-gpu-job` skill, moved into the project on 2026-07-30. `.claude/skills/gpu-run/SKILL.md`
+is authoritative for project-level workflow and hard rules; this file only provides methodology
+detail.
 
 ## Ground rules
 
@@ -25,12 +26,12 @@ shard, launch in tmux, verify, report.
 ## Step 1 — Probe
 
 ```bash
-# new1 首选（带台账信息，约 6 秒；注册任务一律从仓库根 run.py 进）：
+# new1's preferred choice (carries ledger info, ~6 seconds; registered tasks always go through the repo-root run.py):
 cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs free
 
-# 底层脚本（等价探测，本机只有 python3，没有 python）：
-bash /home/y-guo/reproduce/new1/.claude/skills/gpu-run/scripts/gpu_status.sh          # 四台全探
-bash /home/y-guo/reproduce/new1/.claude/skills/gpu-run/scripts/gpu_status.sh tokyo108 # 单台
+# Underlying script (equivalent probe; this machine only has python3, no python):
+bash /home/y-guo/reproduce/new1/.claude/skills/gpu-run/scripts/gpu_status.sh          # probe all four hosts
+bash /home/y-guo/reproduce/new1/.claude/skills/gpu-run/scripts/gpu_status.sh tokyo108 # single host
 ```
 
 Output: one line per GPU with `OWNERS` column — `FREE`, `y-guo`, or another username. Build the candidate list from `FREE` cards (plus own-process cards after deciding reuse/kill).
@@ -54,7 +55,7 @@ Rules, in order:
 Sharding is a `run.py launch` flag now, not something you hand-assemble per
 shard: pass multiple `--piece host:gpus` and it auto-injects
 `--shard-id i --num-shards N` into each piece's command, names each
-session/log, and refuses outright ("没标 shardable,不许给 N 个 --piece")
+session/log, and refuses outright ("not marked shardable, cannot give N --piece flags")
 if the task in `TASKS` isn't marked `shardable: True`.
 
 Shard when the work is many independent items (dataset rows, prompts, seeds, configs) AND single-GPU wall time would exceed ~1h.

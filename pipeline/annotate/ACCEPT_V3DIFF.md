@@ -1,51 +1,60 @@
-# ACCEPT_V3DIFF — annotate 段与 v3 旧数据一致性验收
+# ACCEPT_V3DIFF -- consistency acceptance of the annotate stage against the old v3 data
 
-口径:新代码(rules.py + build.py 的 jsonl_events/bfcl_events/make_samples)跑 v3 当年输入(full_v1 + full_v2_topup,不过滤模型、不切分),与 envs/bert_data/v3/<env> 四堆合并按 (event, sent_idx) 对比;比 text/label/w/depth/n_sents/traj/unit/model/step 九字段,新字段不比。
+Basis: run the new code (rules.py + build.py's jsonl_events/bfcl_events/make_samples)
+on v3's original inputs (full_v1 + full_v2_topup, no model filtering, no
+splitting), and compare against the four piles of `envs/bert_data/v3/<env>`
+merged together, keyed on (event, sent_idx); compare the nine fields
+text/label/w/depth/n_sents/traj/unit/model/step, new fields are not compared.
 
-一处口径补丁:v3 建库(2026-07-30 00:38)之后才采完的采集目录(bfcl_gptoss,03:48 落地)旧数据里根本没有,整批剔除后再比,剔除清单逐环境列在下表。判据不写死目录名,取自旧数据自己的采集目录集合。
+One basis patch: the collection directory collected after v3's database was
+built (2026-07-30 00:38) (bfcl_gptoss, landed 03:48) is not in the old data at
+all, so the whole batch is stripped out before comparing, and the stripped
+list is listed per environment in the table below. The criterion is not a
+hardcoded directory name; it is taken from the old data's own set of
+collection directories.
 
 
-## bfcl — PASS
+## bfcl -- PASS
 
-| 项 | 值 |
+| item | value |
 |---|---|
-| 新代码事件数(含漂移目录) | 3325 |
-| 新代码样本数(剔除漂移目录后) | 36343 |
-| 剔除的漂移采集目录 | {'bfcl_gptoss': 32163} |
-| v3 旧样本数(四堆合并) | 36343 |
-| 逐条比对数 | 36343 |
-| 主键只在新侧 | 0 |
-| 主键只在旧侧 | 0 |
-| 新侧重复主键(超出首条) | 0 |
-| 旧侧重复主键(超出首条) | 0 |
-| 同主键条数不等 | 0 |
+| new-code event count (drift dirs included) | 3325 |
+| new-code sample count (drift dirs stripped) | 36343 |
+| stripped drift collection dirs | {'bfcl_gptoss': 32163} |
+| v3 old sample count (four piles merged) | 36343 |
+| samples compared line by line | 36343 |
+| primary keys only on the new side | 0 |
+| primary keys only on the old side | 0 |
+| duplicate primary keys on the new side (beyond the first) | 0 |
+| duplicate primary keys on the old side (beyond the first) | 0 |
+| same primary key, different field count | 0 |
 
-逐字段不一致计数:
+Per-field mismatch counts:
 
-| 字段 | text | label | w | depth | n_sents | traj | unit | model | step |
+| field | text | label | w | depth | n_sents | traj | unit | model | step |
 |---|---|---|---|---|---|---|---|---|---|
-| 不一致 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| mismatches | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-## appworld — PASS
+## appworld -- PASS
 
-| 项 | 值 |
+| item | value |
 |---|---|
-| 新代码事件数(含漂移目录) | 5552 |
-| 新代码样本数(剔除漂移目录后) | 111767 |
-| 剔除的漂移采集目录 | 无 |
-| v3 旧样本数(四堆合并) | 111767 |
-| 逐条比对数 | 111767 |
-| 主键只在新侧 | 0 |
-| 主键只在旧侧 | 0 |
-| 新侧重复主键(超出首条) | 0 |
-| 旧侧重复主键(超出首条) | 0 |
-| 同主键条数不等 | 0 |
+| new-code event count (drift dirs included) | 5552 |
+| new-code sample count (drift dirs stripped) | 111767 |
+| stripped drift collection dirs | none |
+| v3 old sample count (four piles merged) | 111767 |
+| samples compared line by line | 111767 |
+| primary keys only on the new side | 0 |
+| primary keys only on the old side | 0 |
+| duplicate primary keys on the new side (beyond the first) | 0 |
+| duplicate primary keys on the old side (beyond the first) | 0 |
+| same primary key, different field count | 0 |
 
-逐字段不一致计数:
+Per-field mismatch counts:
 
-| 字段 | text | label | w | depth | n_sents | traj | unit | model | step |
+| field | text | label | w | depth | n_sents | traj | unit | model | step |
 |---|---|---|---|---|---|---|---|---|---|
-| 不一致 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| mismatches | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 
 
-## 总判定: PASS(全 0)
+## Overall verdict: PASS (all zero)

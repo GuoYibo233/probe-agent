@@ -1,36 +1,43 @@
-# bfcl_gptoss 补采执行手册(2026-07-30)
+# bfcl_gptoss top-up collection runbook (2026-07-30)
 
-> 2026-08-20 gen-preset 改造:handler 的 max_tokens/effort/temperature 全部来自
-> 一份预设的 client 节(取其中非 null 的值)。环境变量
-> `NEW1_PRESET_JSON=<configs/presets/某份.json 的绝对路径>` 指这份预设;
-> 环境变量缺席时 handler 读仓库根的 `configs/presets/default.json`,
-> 这一档是 api chat(端点由 handler 自己定)、effort high、max_tokens 8192、
-> top_p 1.0、temperature 1.0。要跑 BFCL 线 16384 加 BFCL 自带温度的那一档,
-> 把 `NEW1_PRESET_JSON` 指到 `configs/presets/gptoss_bfcl_high.json`。
+> 2026-08-20 gen-preset rework: the handler's max_tokens/effort/temperature all
+> come from one preset's client block (taking whichever values in it are not
+> null). The environment variable
+> `NEW1_PRESET_JSON=<absolute path to some file in configs/presets/>` points at
+> this preset; when the environment variable is absent, the handler reads the
+> repo root's `configs/presets/default.json`, which is api chat (the handler
+> fixes the endpoint itself), effort high, max_tokens 8192, top_p 1.0,
+> temperature 1.0. To run the BFCL line's setting of 16384 plus BFCL's own
+> built-in temperature, point `NEW1_PRESET_JSON` at
+> `configs/presets/gptoss_bfcl_high.json`.
 
-代码全部就绪(handler 已装进 venv 并注册,commit 6fc03f3),
-本 session 被权限拦截无法 ssh 发射,按下列步骤由 gpu-runner 或人工执行。
-每步都幂等,断了从当步重跑。
+All code is ready (the handler is installed into the venv and registered,
+commit 6fc03f3); this session is blocked by permissions from launching over
+ssh, so execute the steps below via gpu-runner or by hand. Every step is
+idempotent, and a break can be resumed from that step.
 
-## 1. 发射服务(tokyo108 H100 g0,发射时实探确认仍空闲)
+## 1. Launch the service (tokyo108 H100 g0, probe live at launch time to confirm it is still free)
 
 ```bash
 python3 /home/y-guo/reproduce/new1/envs/serve_logs/launch_vllm_bfcl_gptoss.py
 ```
 
-就绪判据(120B 从 NFS 加载约 5-10 分钟):
+Readiness check (the 120B loads from NFS in roughly 5-10 minutes):
 
 ```bash
 curl -s http://tokyo108:8103/v1/models | grep gpt-oss-120b
 ```
 
-## 2. smoke:单任务全流程
+## 2. Smoke: a single task, end to end
 
-正规入口是 `python3 run.py collect-bfcl <bfcl 的参数...>`——`cwd=envs/bfcl` 与
-`BFCL_PROJECT_ROOT` 由注册表带上,不用自己 cd 和 export;下面两段仍写 `venv/bin/bfcl`
-的原始形态,因为 `bfcl` 是 venv 里的 console script,`collect-bfcl` 就是它的注册壳,
-两者跑的是同一个可执行文件(服务端两个环境变量 `LOCAL_SERVER_ENDPOINT` /
-`LOCAL_SERVER_PORT` 仍要自己给)。
+The proper entry point is `python3 run.py collect-bfcl <bfcl's arguments...>`
+-- `cwd=envs/bfcl` and `BFCL_PROJECT_ROOT` are carried by the registry, no need
+to cd and export yourself; the two blocks below still write the raw
+`venv/bin/bfcl` form, because `bfcl` is the console script in the venv, and
+`collect-bfcl` is just its registered wrapper -- both run the same
+executable (the two server-side environment variables
+`LOCAL_SERVER_ENDPOINT` / `LOCAL_SERVER_PORT` still need to be given
+yourself).
 
 ```bash
 cd /home/y-guo/reproduce/new1/envs/bfcl
@@ -43,32 +50,40 @@ venv/bin/bfcl generate --model openai/gpt-oss-120b \
   --result-dir /home/y-guo/reproduce/new1/envs/runs/full_v2_topup/bfcl_gptoss
 ```
 
-(--run-ids 会用 ids 文件**替代**类目全集,已读源码确认,只跑这 1 题;
-smoke 直接写最终目录,全量续跑按 id 去重不重做。单题高思考档可能要 10 分钟量级。)
+(--run-ids **replaces** the whole category with the ids file, confirmed by
+reading the source, so this only runs this 1 task; the smoke run writes
+straight to the final directory, and the full-scale continuation dedupes by
+id and does not redo it. A single task at the high-thinking setting can take
+on the order of 10 minutes.)
 
-验收(两条都过才继续):
+Acceptance (both must pass before continuing):
 
 ```bash
 python3 - <<'EOF'
 import json, glob
 f = glob.glob("/home/y-guo/reproduce/new1/envs/runs/full_v2_topup/bfcl_gptoss/**/*multi_turn*result.json", recursive=True)[0]
 e = json.loads(open(f).readline())
-# 思考在结果条目顶层 reasoning_content 字段,形状 list[list[str]](按轮按步);
-# 旧版脚本去 inference_log 里找 role=assistant 会得到空列表假阴性(2026-07-30 实测修正)
+# The thinking is in the result entry's top-level reasoning_content field, shaped
+# list[list[str]] (by turn, by step); the old script's approach of looking for
+# role=assistant inside inference_log gets an empty list, a false negative
+# (confirmed by measurement 2026-07-30)
 rc = e.get("reasoning_content") or []
-print("思考字符数(逐轮逐步):", [[len(s) for s in turn] for turn in rc][:10])
-print("首轮动作:", str(e["result"][0])[:200])
+print("thinking char counts (by turn, by step):", [[len(s) for s in turn] for turn in rc][:10])
+print("first-turn action:", str(e["result"][0])[:200])
 EOF
 ```
 
-- 思考字符数普遍 > 0(reasoning 通道通了)
-- 首轮动作是 `[func(...)]` 形态的调用文本(文本协议解析通了)
+- Thinking char counts are generally > 0 (the reasoning channel is working)
+- The first-turn action is call text shaped like `[func(...)]` (the text
+  protocol parses correctly)
 
-若 vLLM 拒收 model 名(404):服务端没设 served-model-name 时模型 id=权重路径,
-与 --local-model-path 相同,理论上必对;真报错就看 curl /v1/models 返回的 id,
-用 REMOTE_OPENAI_BASE_URL 覆盖或改 launcher 加 --served-model-name 对齐。
+If vLLM rejects the model name (404): when the server has no
+served-model-name set, the model id is the weights path, which is the same as
+--local-model-path, so it should in principle always match; if it really
+errors, check the id returned by curl /v1/models, and either override with
+REMOTE_OPENAI_BASE_URL or add --served-model-name to the launcher to align it.
 
-## 3. 全量发射(200 题,tmux,本机)
+## 3. Full-scale launch (200 tasks, tmux, this machine)
 
 ```bash
 tmux new-session -d -s new1_topup_bfcl_gptoss bash -c '
@@ -82,7 +97,7 @@ venv/bin/bfcl generate --model openai/gpt-oss-120b \
   2>&1 | tee /home/y-guo/reproduce/new1/envs/runs/full_v2_topup/logs/bfcl_gptoss.log'
 ```
 
-## 4. 双登记
+## 4. Register in both ledgers
 
 ```bash
 cd /home/y-guo/reproduce/new1
@@ -90,19 +105,22 @@ python3 run.py gpu-jobs register --name bfcl_gptoss_topup \
   --piece "tokyo108:0:new1_srv_gptoss_bfcl_t108g0:/home/y-guo/reproduce/new1/envs/serve_logs/new1_srv_gptoss_bfcl_t108g0.log" \
   --piece "$(hostname):-:new1_topup_bfcl_gptoss:/home/y-guo/reproduce/new1/envs/runs/full_v2_topup/logs/bfcl_gptoss.log"
 python3 run.py record start --name bfcl_gptoss_topup --track collect \
-  --cmd "bfcl generate --model openai/gpt-oss-120b --test-category multi_turn_base(经 chat 端点,reasoning high)" \
+  --cmd "bfcl generate --model openai/gpt-oss-120b --test-category multi_turn_base (via the chat endpoint, reasoning high)" \
   --host tokyo108 --gpu 0 --model gpt-oss-120b \
   --data envs/runs/full_v2_topup/bfcl_gptoss \
-  --note "补 v1 缺口:bfcl 无 gpt-oss 轨迹,跨模型双向矩阵需要它"
+  --note "backfills the v1 gap: bfcl has no gpt-oss trajectories, and the cross-model bidirectional matrix needs it"
 ```
 
-## 5. 收尾(批次跑完)
+## 5. Wrap-up (once the batch has finished running)
 
-- 完成判据:result.json 200 个 id 齐(`python3 -c` 数行数)。
-- 杀服务:ssh tokyo108 tmux kill-session new1_srv_gptoss_bfcl_t108g0,nvidia-smi 确认 g0 归零。
+- Completion criterion: result.json has all 200 ids (`python3 -c` counts the
+  lines).
+- Kill the service: ssh tokyo108 tmux kill-session
+  new1_srv_gptoss_bfcl_t108g0, confirm g0 is back to zero with nvidia-smi.
 - `python3 run.py gpu-jobs finish bfcl_gptoss_topup` +
-  `python3 run.py record finish <run_id> --metric n_traj=200`。
-- **v3 数据集缺这一批**(v3 建库先于本批),要出 v3.1:
+  `python3 run.py record finish <run_id> --metric n_traj=200`.
+- **The v3 dataset is missing this batch** (v3's database was built before
+  this batch), so a v3.1 is needed:
   `python3 run.py build-dataset-legacy --runs envs/runs/full_v1 --runs envs/runs/full_v2_topup --out envs/bert_data/v3.1`
-  (cprobe 解释器由注册表带上)
-  跨模型矩阵实验以 v3.1 为准。
+  (the cprobe interpreter is carried by the registry)
+  Cross-model matrix experiments use v3.1 as the basis.

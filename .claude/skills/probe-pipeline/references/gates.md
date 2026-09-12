@@ -1,164 +1,161 @@
-# gates — 门禁与应急处置
+# gates: gates and contingency handling
 
-跑到某一步卡住了，先在 §1 找对应的门禁编号，再看 §3 有没有同款案例；判断"该停还是该修"看 §4。
-命令行怎么敲见 `stage-commands.md`；哪些常量不许动见 `invariants.md`（都在本目录）。
+If you get stuck at some step, first find the corresponding gate number in §1, then check §3 for a matching case; to judge "should I stop or should I fix it" see §4.
+See `stage-commands.md` for how to type the command line; see `invariants.md` for which constants must not be touched (both in this directory).
 
-## 1. 门禁总表
+## 1. Gate summary table
 
-| 编号 | 检查点 | 在哪一步 | 判据 | 不过时的标准动作 |
+| No. | Checkpoint | At which step | Criterion | Standard action if it fails |
 |---|---|---|---|---|
-| G1 | 工作树干净 | 任何 GPU 发射前 | `git status --short` 为空 | 先 commit 再发射；不干净就发射，记录里的 HEAD 追不回真实代码（PLAY §0.11、§3.1） |
-| G2 | 实探空卡 | 发射前 | `python3 run.py gpu-jobs free`，只用 `OWNERS=FREE` 的卡，永不信缓存；`python3 run.py launch` 内部对每个 piece 也会自动重探一遍，任何一张非 FREE 整次拒绝（fail-closed，一张都不发射）；`launch-probe`/`launch-eval`（排卡批量）逐格重探，非 FREE 只打印原因跳过该格、继续发下一格，不是整批拒绝——手动 `free` 是给人挑卡用，不是唯一防线 | 等卡或换机器（`CLAUDE.md`、PLAY §3.1） |
-| G3 | 服务健康 | 采集放量前 | 日志出现 `Application startup complete`，且 `curl /v1/models` 返回模型名；**全部实例健康才放量** | 读服务日志定位；单实例救不活就把它的分片改指同模型另一实例的端口，不停摆（PLAY §3.2、§3.7） |
-| G4 | 采集 smoke | 每模型各 1 题 | outdir 出现 `<env>_<tid>.jsonl`；`type:"gen"` 带非空 `reasoning`、`type:"env"` 带代码动作、末行 `type:"final"` | 先查服务日志再修；反复修不好按 §4 判断是否死局（PLAY §3.3） |
-| G5 | outdir 命名 | 采集发射时 | 目录名必须是 `<env>_<model_key>` 标准名（如 `appworld_gptoss`），尾巴对上 `MODEL_OF` 的键 | 改名重跑；名字不标准会被下游事件抽取**静默跳过**，见 §3.6（PLAY §3.3、ENG §4.2.1、§7） |
-| G6 | 采集完整性 | Phase A 收尾 | 各 outdir 的 jsonl 文件数对上 **题数 × 每题轨迹数 K**（K>1 时文件名带采样序号 `_r0..r{K-1}`，同一题的 K 条落**同一个** outdir），且每个文件末行是 `type:"final"` | 用 `--resume` 重发缺题分片补齐（K>1 时 `--resume` 的判定粒度是"（题, 序号）"，不是整题）；补齐后才算 A 段结束（PLAY §3.8.1-2） |
-| G7 | 显存归零 | Phase A 收尾 | 服务 session 全杀，`nvidia-smi` 显存归零 | 批量任务结束不许占卡过夜，必须杀干净（PLAY §0.12、§3.8.3） |
-| G8 | **ACCEPT_V3DIFF** | annotate 段末，不过不许进 train | 新旧样本数相等、主键单边为 0、九字段（text/label/w/depth/n_sents/traj/unit/model/step）不一致计数**全 0**，每个有旧基准的环境各跑一遍 | 修 annotate 代码重跑；反复过不了属"推翻前提"，按 §4 停下问用户（ENG §4.5、§9） |
-| G9 | 题单行数 | annotate 自检 | 三个题单文件行数对上官方分区（本轮 90 / 57 / 168） | 注意题单文件**无末尾换行**，`wc -l` 会各少 1，别直接当真（ENG §4.6） |
-| G10 | 三模型同题 | annotate 自检 | 三个模型**共用同一份题单**，且 train 堆 unit 集合相同（val/test 同理）。⚠️**允许有缺口**，见 G19：某个 unit 的轨迹一个可用事件都没出时该 unit 不进数据集，这不是 bug | 集合不同又解释不出缺口的原因 → 回查 `model_full` 过滤与题单归属逻辑（ENG §4.6、DATA.md §3.1）；缺口有原因 → 按 G19 逐条列进报告 |
-| G11 | label_call 抽查 | annotate 自检 | 抽 20 条：工具名 == label，参数与 action 原文对得上 | 回查 `split_args_named` 与归一化（ENG §4.6） |
-| G12 | **ACCEPT_EVAL** | eval 段末，不过不许进 Phase C 发射 | 重跑旧数据，`temperature / chosen_theta / test_frozen` 三块完全一致；新报告写临时目录，旧文件 md5 跑前跑后不变 | 修 eval 代码重跑；本轮就因"cached 时误跳 tokenizer 导致报告少两个字段"改回并重跑（ENG §6.5、ACCEPT_EVAL §4.4） |
-| G13 | 对齐检查 | 因果格开训前 | `ALIGN_CHECK` PASS，FAIL 即 `exit 2`；先用 `--align-only` 单独跑一遍。**smoke 门只读 `PASS` 这一个键**（2026-08-28 起，`ALIGN_CHECK.json` 多写了 `rule`/`tok_tol`/`rel_tol` 等新字段，`rule` 是 `abs`/`rel`/`both` 中的哪个都不影响这道门） | 看 §3.1：先判是数值噪声还是实现错误，放宽阈值必须记 TIMELINE（ENG §5.3、§9） |
-| G14 | 各格 smoke | 批量训练发射前 | `CELL_ORDER` 各格跑一次 `--smoke`（现役 ctool/cgen/cparam；m 线 2026-08-21 停跑）：mtool/mext（停跑）与旧逐行脚本（`train-cgen-rows`/`train-cparam-rows`）**按各脚本自己的 `SEED` 常量随机抽** 500 训练 / 200 评估**实例**（`random.Random(SEED).shuffle(...)` 之后再切前 N 条，不是原序截断；mext 的 500/200 落在 `join_rows` 展开出来的**参数实例**上，不是样本），ctool 同法随机抽 200 / 80 **事件**；cgen/cparam **现役训练器**（`train_causal_share.py`，2026-08-28 起）改成**按事件全文 token 数升序取前 N 个**（不依赖 `SEED`，不是随机抽）：40 训练事件 / 16 评估事件。各格/各口径都是 1 epoch、**没有步数上限**（口径同 `stage-commands.md §3` 的 `--smoke` 行）；判据是 `train_log.jsonl` 有 `event=start` 与 `event=done`、`best/` 落盘能存能读，ctool 另含 ALIGN_CHECK PASS。⚠️ **"loss 在降"这一项在 smoke 规模上判不了**：ctool 每 50 个 gstep 才写一条 `event=step`，200 事件 ÷（`--bs 2 × --accum 4` = 8 个事件一次更新）= 25 个 gstep；cgen/cparam 40 事件 ÷（`--events-per-mb 4 × --accum 2` = 8 个事件一次更新）= 5 个 gstep，两边都写不出一条 `step` 记录（`--log-every` 默认 50）——要看曲线得读 stdout 的进度行，别拿"日志里没有 step"当训练没动 | 修脚本重 smoke，不许直接放量（PLAY §5.2、ENG §9）。⚠️ 重跑同一个 smoke 目录要带 `--force`（同 out 已有 `train_log.jsonl` 即拒绝开训），出命令阶段树脏就 `--allow-dirty` |
-| G15 | bundle 校验 | 批量训练发射前 | `check_bundle.py` 对 smoke 产物跑通：能加载、出 softmax、打印预测/置信度/是否过 θ/真值 | 产物格式不合 `probe_server.py` 就改存盘格式（ENG §8、§9） |
-| G16 | 双登记 | 发射后立刻 | **launch 自动写三处；手搓/register 补录路径仍在，漏了照旧算违规**——`python3 run.py launch`/`launch-probe`/`launch-eval` 发射成功自动做完台账 + `record.py start` + RUNMETA 三处登记；手搓发射要自己补 `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` | 立刻补登记；台账只能通过 CLI 读写（`CLAUDE.md`、PLAY §3.5、§3.6） |
-| G17 | 收尾销号 | 每个 run 结束 | `python3 run.py record finish --metric …` + `python3 run.py gpu-jobs finish` + 释放显存 + commit——**这一步 launch 没有收编，G16 的自动化只管发射时的登记，销号仍要手动跑这四连** | 不销号就是占卡过夜；数字不进 `runs.jsonl` 就不进 `RESULTS.md`（PLAY §3.8、§5.5）。`gpu-jobs finish` 是 fail-closed 的：session 还活着、或 ssh 探测失败（分不清死活）都会拒绝销号，确认要销带 `--force` |
-| G18 | 总验收清单 | 批量训练发射前逐项打勾 | ENG §9 的七条：G8 / G12 / 产物清单齐 / 题单一致 / 各格 smoke / G15 / 全部新代码已 commit | 缺哪条补哪条，一条不缺才发射（ENG §9） |
-| G19 | 题单缺口逐条列出 | annotate 段末 | 三模型共用一份题单，但**实现出的 unit 集合允许有缺口**；缺口必须逐条列进 `CALLSTR_CHECK.md` 并说明原因（轨迹一个可用事件都没出：思考 <40 字符 或 调用正则解析不出）。bfcl 实测缺口：q35 0 题、q36 4 题（`multi_turn_base_{63,84,176,187}`，其中 176 在 test 堆 → q36 test 只有 19 实例）、gptoss 1 题（`multi_turn_base_30`，val 堆） | 缺口列不出来 = G10 的字面版本失守，"三模型同题对比"这句话有水分，报告里必须改口成"近似同题"（`check_callstr.py` 偏差 2） |
-| G20 | 真值调用串可回读 | annotate 段末，进 train 前 | 把每个事件的 `label_call` 喂给 `eval_causal_call.parse_call`，切回来的 `(key, norm(value))` 必须与该事件的 `args_named` 全等。回读率 = `params_all_ok` / `full_call_ok` 的**天花板**，必须写进报告。实测（事件级回读率，q35/q36/gptoss）：bfcl 0.9735 / 0.9763 / 0.9755，appworld 0.9932 / 0.9953 / 0.9985 | 回读率异常低（<0.95）先查 `make_call` 与 `split_named_raw` 的切法是不是漂了；正常低（参数值含逗号）**只记录不修口径**——给单个环境补逗号闸门会让它与已上账的 appworld 不是一把尺子（EXT §5 #21） |
-| G21 | traj_runs 不许写父目录 | annotate 段末 | `traj_runs[]` 的每一项都是 run 目录**本身**（其下直接有 `<env>_<模型>` 子目录，且再往下没有嵌套的 run 目录）；且 `(event, sent_idx)` 全局唯一、**一个 unit 恰好对 K 条 traj**（K = config 的 `trajs_per_unit`，缺省 1；K>1 时还要求文件名尾部的采样序号 `_r0..r{K-1}` 齐全，少一条也硬停） | 写成父目录 = 把 smoke 批次静默并进来，退 0 无告警、只是样本数悄悄涨（EXT §5 #20）。`check_callstr.py` 门禁 C + 门禁 B 硬拦 |
-| G22 | 报告文案不撒谎 | annotate 段末 | 题单目录的 `SPLIT_REPORT.json` 写着 `official_split_exists: false` 时，`ANNOTATE_REPORT.md` 里不许出现"官方题单" | 在 config 里写 `split_desc` 说明真实切法（`build.py` 从该字段取文案，默认值保持旧说法）。`check_callstr.py` 门禁 E 硬拦（EXT §5 #18） |
-| G23 | 手发的评测不在飞 | **每次敲 `run.py pipeline` 之前**（只要这一批有过手发的 eval） | `python3 run.py gpu-jobs watch`（或 `json`）里没有本批在飞的 eval 任务，且手发那几格的报告已落地 | 等报告落地再敲驱动器。**驱动器只看产物文件与它自己的发射标记，不查台账**——手发的 `launch-eval` 不留标记，报告又还没落地，`e2_call` 就会把那一批**再发一遍**，两个进程写同一份报告（EXT §5 #23）。已经重发了：杀掉后发的那个 session、销号，让先发的跑完 |
-| G24 | 出矩阵前该批报告齐 | 跑 `run.py matrix` / 驱动器 `m1_matrix` 之前 | 该批要进表的每一格都有报告（ctool 的 `REPLAY_REPORT.json`、cgen 的 `CALLGEN_REPORT.json`、cparam 的 `PARAM_REPORT.json`） | 缺报告就先别出这一批的表。`m1_matrix` 见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**，于是一张带 PENDING 的早产表会一直留着、后面再敲驱动器也不会重出（EXT §5 #23）。已经留下早产表：删掉那两份 md 再敲，或手跑 `run.py matrix` 覆盖 |
+| G1 | Clean working tree | before any GPU launch | `git status --short` is empty | commit before launching; launching while dirty means the HEAD stored in the record can't be traced back to the real code (PLAY §0.11, §3.1) |
+| G2 | Actually probe for a free card | before launching | `python3 run.py gpu-jobs free`, only use cards with `OWNERS=FREE`, never trust the cache; `python3 run.py launch` also automatically re-probes each piece internally, and if any single one is not FREE the whole launch is rejected (fail-closed, not a single one gets launched); `launch-probe`/`launch-eval` (batch card placement) re-probe cell by cell, a non-FREE one just prints the reason and skips that cell, moving on to launch the next one; it's not a whole-batch rejection. Manually running `free` is for humans to pick cards with, it is not the only line of defense | wait for a card or switch machines (`CLAUDE.md`, PLAY §3.1) |
+| G3 | Service health | before ramping up collection volume | the log shows `Application startup complete`, and `curl /v1/models` returns the model name; **only ramp up volume once every instance is healthy** | pinpoint it by reading the service log; if a single instance can't be revived, point its shard at another instance of the same model's port instead, don't stall (PLAY §3.2, §3.7) |
+| G4 | Collect smoke | 1 task per model | `<env>_<tid>.jsonl` appears in outdir; `type:"gen"` carries a non-empty `reasoning`, `type:"env"` carries a code action, the last line is `type:"final"` | check the service log before fixing anything; if it keeps failing to fix, use §4 to judge whether this is a dead end (PLAY §3.3) |
+| G5 | outdir naming | at collection launch | the directory name must be the standard `<env>_<model_key>` (e.g. `appworld_gptoss`), the tail matching a key in `MODEL_OF` | rename and rerun; a non-standard name gets **silently skipped** by the downstream event extraction, see §3.6 (PLAY §3.3, ENG §4.2.1, §7) |
+| G6 | Collection completeness | Phase A wrap-up | each outdir's jsonl file count matches **task count × trajectories per task K** (when K>1 the filename carries a sampling index `_r0..r{K-1}`, the K trajectories of the same task land in the **same** outdir), and every file's last line is `type:"final"` | relaunch the shard missing tasks with `--resume` to fill the gap (when K>1, `--resume`'s granularity of judgment is "(task, index)", not the whole task); Phase A only counts as finished once it's filled in (PLAY §3.8.1-2) |
+| G7 | Zero VRAM | Phase A wrap-up | every service session killed, `nvidia-smi` shows zero VRAM | batch tasks must not hold cards overnight once finished, they must be killed clean (PLAY §0.12, §3.8.3) |
+| G8 | **ACCEPT_V3DIFF** | end of annotate, failing it means train is off-limits | new and old sample counts equal, the one-sided primary-key count is 0, the nine fields (text/label/w/depth/n_sents/traj/unit/model/step) have a mismatch count of **all zero**, run once for every environment that has an old baseline | fix the annotate code and rerun; repeatedly failing it counts as "overturning a premise", stop per §4 and ask the user (ENG §4.5, §9) |
+| G9 | Task-list line count | annotate self-check | the three task-list files' line counts match the official partition (this round 90 / 57 / 168) | note that the task-list files **have no trailing newline**, `wc -l` will each read 1 short, don't take it at face value (ENG §4.6) |
+| G10 | Same tasks across three models | annotate self-check | the three models **share the same task list**, and the train split's unit set is identical (val/test likewise). Warning: **gaps are allowed**, see G19: when a unit's trajectory produces not a single usable event, that unit doesn't go into the dataset, this is not a bug | different sets with no explainable reason for the gap → go back and check the `model_full` filter and the task-list assignment logic (ENG §4.6, DATA.md §3.1); a gap with a reason → list it entry by entry in the report per G19 |
+| G11 | label_call spot check | annotate self-check | sample 20 entries: the tool name == label, the parameters match the action's original text | check `split_args_named` and the normalization (ENG §4.6) |
+| G12 | **ACCEPT_EVAL** | end of eval, failing it means launching in Phase C is off-limits | rerun the old data, the three blocks `temperature / chosen_theta / test_frozen` are exactly identical; the new report is written to a temp directory, the old file's md5 is unchanged before and after the run | fix the eval code and rerun; this round it was fixed and rerun because "skipping the tokenizer by mistake when cached made the report short two fields" (ENG §6.5, ACCEPT_EVAL §4.4) |
+| G13 | Alignment check | before a causal cell starts training | `ALIGN_CHECK` PASS, FAIL means `exit 2`; run `--align-only` alone first. **The smoke gate only reads the single key `PASS`** (since 2026-08-28, `ALIGN_CHECK.json` writes additional new fields like `rule`/`tok_tol`/`rel_tol`; whichever of `abs`/`rel`/`both` `rule` is doesn't affect this gate) | see §3.1: first judge whether it's numerical noise or an implementation error, loosening the threshold must be recorded in TIMELINE (ENG §5.3, §9) |
+| G14 | Smoke each cell | before launching batch training | each cell in `CELL_ORDER` runs `--smoke` once (currently in service: ctool/cgen/cparam; the m-line was retired 2026-08-21): mtool/mext (retired) and the old row-by-row scripts (`train-cgen-rows`/`train-cparam-rows`) **randomly draw using each script's own `SEED` constant**, 500 training / 200 eval **instances** (`random.Random(SEED).shuffle(...)` then slice the first N rows, not truncation in original order; mext's 500/200 land on the **parameter instances** expanded out by `join_rows`, not samples), ctool draws 200/80 **events** randomly the same way; cgen/cparam's **trainer currently in service** (`train_causal_share.py`, since 2026-08-28) switched to **taking the top N sorted ascending by the full event's token count** (not dependent on `SEED`, not a random draw): 40 training events / 16 eval events. Every cell/convention is 1 epoch, **with no step ceiling** (the same convention as the `--smoke` row in `stage-commands.md §3`); the criterion is that `train_log.jsonl` has both `event=start` and `event=done`, and `best/` can be saved and read to disk; ctool additionally requires ALIGN_CHECK PASS. Warning: **the item "is loss decreasing" cannot be judged at smoke scale**: ctool only writes an `event=step` every 50 gsteps, 200 events ÷ (`--bs 2 × --accum 4` = 8 events per update) = 25 gsteps; cgen/cparam's 40 events ÷ (`--events-per-mb 4 × --accum 2` = 8 events per update) = 5 gsteps, neither side writes even one `step` record (`--log-every` defaults to 50); to see the curve you have to read the progress lines in stdout, don't take "no step in the log" to mean training didn't move | fix the script and re-smoke, ramping up volume directly is not allowed (PLAY §5.2, ENG §9). Warning: rerunning the same smoke directory needs `--force` (an existing `train_log.jsonl` under the same out refuses to start training); if the tree is dirty at the command-emitting stage, use `--allow-dirty` |
+| G15 | bundle check | before launching batch training | `check_bundle.py` runs successfully against the smoke artifact: it can load, produce a softmax, and print prediction/confidence/whether theta is exceeded/ground truth | if the artifact format doesn't suit `probe_server.py`, change the save format (ENG §8, §9) |
+| G16 | Dual registration | immediately after launching | **launch writes all three places automatically; the hand-rolled/register backfill path still exists, missing it still counts as a violation**: once `python3 run.py launch`/`launch-probe`/`launch-eval` launches successfully it automatically completes all three registrations, the ledger + `record.py start` + RUNMETA; a hand-rolled launch has to backfill `python3 run.py gpu-jobs register ...` + `python3 run.py record start ...` itself | backfill the registration immediately; the ledger can only be read and written through the CLI (`CLAUDE.md`, PLAY §3.5, §3.6) |
+| G17 | Wrap-up and retire | at the end of every run | `python3 run.py record finish --metric …` + `python3 run.py gpu-jobs finish` + free VRAM + commit; **launch does not fold this step in, G16's automation only covers registration at launch time, retiring the job still requires manually running these four steps** | not retiring the job means holding a card overnight; numbers that don't make it into `runs.jsonl` don't make it into `RESULTS.md` (PLAY §3.8, §5.5). `gpu-jobs finish` is fail-closed: if the session is still alive, or the ssh probe fails (can't tell whether it's dead or alive), it refuses to retire it; add `--force` once you've confirmed it should be retired |
+| G18 | Overall acceptance checklist | check off item by item before launching batch training | the seven items from ENG §9: G8 / G12 / the artifact checklist is complete / the task lists match / each cell's smoke / G15 / all new code has been committed | fill in whichever item is missing, only launch once none are missing (ENG §9) |
+| G19 | List task-list gaps entry by entry | end of annotate | the three models share one task list, but **the realized unit set is allowed to have gaps**; gaps must be listed entry by entry in `CALLSTR_CHECK.md` with a reason (the trajectory produced not a single usable event: thinking <40 characters, or the call regex couldn't parse it). Gaps measured for bfcl: q35 0 tasks, q36 4 tasks (`multi_turn_base_{63,84,176,187}`, of which 176 is in the test split → q36's test only has 19 instances), gptoss 1 task (`multi_turn_base_30`, val split) | if the gaps can't be listed = G10's literal claim fails to hold, the statement "comparing the same tasks across three models" has some slack in it, the report must be reworded to "approximately the same tasks" (`check_callstr.py` deviation 2) |
+| G20 | Ground-truth call strings must be re-parseable | end of annotate, before train | feed each event's `label_call` into `eval_causal_call.parse_call`, the `(key, norm(value))` it cuts back out must be exactly equal to that event's `args_named`. The re-parse rate is the **ceiling** for `params_all_ok` / `full_call_ok`, and must be written into the report. Measured (event-level re-parse rate, q35/q36/gptoss): bfcl 0.9735 / 0.9763 / 0.9755, appworld 0.9932 / 0.9953 / 0.9985 | if the re-parse rate is abnormally low (<0.95), first check whether `make_call`'s and `split_named_raw`'s cutting method has drifted; a normally low rate (parameter values contain commas) is **only recorded, not fixed at the convention level**: adding a comma gate for a single environment would make it not the same yardstick as appworld, which is already booked (EXT §5 #21) |
+| G21 | traj_runs must not point at a parent directory | end of annotate | every item in `traj_runs[]` is the run directory **itself** (directly under it are `<env>_<model>` subdirectories, and there is no nested run directory further down); and `(event, sent_idx)` is globally unique, **one unit corresponds to exactly K traj** (K = config's `trajs_per_unit`, default 1; when K>1 it also requires the filename's trailing sampling index `_r0..r{K-1}` to all be present, missing even one hard-stops it) | writing a parent directory = silently merging in the smoke batch, exits 0 with no warning, just quietly bumps up the sample count (EXT §5 #20). Hard-blocked by `check_callstr.py`'s gate C + gate B |
+| G22 | The report's wording must not lie | end of annotate | when the task-list directory's `SPLIT_REPORT.json` says `official_split_exists: false`, `ANNOTATE_REPORT.md` must not say "official task list" | write `split_desc` in the config to state the real splitting method (`build.py` takes its wording from this field, the default keeps the old wording). Hard-blocked by `check_callstr.py`'s gate E (EXT §5 #18) |
+| G23 | Hand-launched eval isn't still in flight | **every time before invoking `run.py pipeline`** (as long as this batch has had a hand-launched eval) | `python3 run.py gpu-jobs watch` (or `json`) shows no in-flight eval task for this batch, and the report for those hand-launched cells has already landed | wait for the report to land before invoking the driver. **The driver only looks at artifact files and its own launch markers, it doesn't check the ledger**: a hand-launched `launch-eval` leaves no marker, and the report hasn't landed either, so `e2_call` will **relaunch that batch**, and two processes write the same report (EXT §5 #23). If it's already been relaunched, kill the session that launched later, retire it, and let the one that launched first finish |
+| G24 | That batch's reports must be complete before producing the matrix | before running `run.py matrix` / the driver's `m1_matrix` | every cell of this batch that goes into the table has a report (ctool's `REPLAY_REPORT.json`, cgen's `CALLGEN_REPORT.json`, cparam's `PARAM_REPORT.json`) | if a report is missing, don't produce this batch's table yet. `m1_matrix` skips as soon as it sees `MATRIX_<batch>_r{0.05,0.1}.md` already exists, so a prematurely produced table carrying PENDING will stay around forever, and invoking the driver again later won't regenerate it (EXT §5 #23). If a premature table has already been left behind, delete those two md files and invoke it again, or manually run `run.py matrix` to overwrite it |
 
-**G19–G22 的实现都在一个脚本里**：`pipeline/annotate/check_callstr.py --config <同一份 config>`，纯 CPU、跑在 `build.py` + `param_label.py` 之后，产物 `<DATA_ROOT>/CALLSTR_CHECK.md`。它内部编号 A–E（A 一模型一数据集 / B 样本键唯一 / C traj_runs 层级 / D 题单归属**全量**核对（比 G11 的抽 20 条更严）/ E 文案一致）全部 `sys.exit(1)` 硬拦，另有四类"只报不拦"的已知偏差（回读损失 / 题单缺口 / test 有 train 无的工具 / test 堆厚度告警）。
+**The implementation of G19-G22 all lives in one script**: `pipeline/annotate/check_callstr.py --config <the same config>`, pure CPU, runs after `build.py` + `param_label.py`, artifact `<DATA_ROOT>/CALLSTR_CHECK.md`. Its internal checks A-E (A one model per dataset / B unique sample keys / C traj_runs hierarchy / D **full-volume** verification of task-list assignment (stricter than G11's sample of 20) / E consistent wording) all hard-block with `sys.exit(1)`, and there are four other classes of "reported but not blocked" known deviations (re-parse loss / task-list gaps / a tool in test but not train / test-split thickness warning).
 
-**G23–G24 没有脚本实现**（np821 批新加）：它们拦的是"驱动器 `run.py pipeline` 与手发的
-`launch-eval` / `run.py matrix` 混用"这件事，判据靠人（或跑流水线的 agent）在敲命令前
-自己核一眼台账与报告落地情况。驱动器那边的两条对应行为写在 `stage-commands.md §6`，
-静默症状写在 `extending.md §5 #23`。
+**G23-G24 have no script implementation** (newly added for the np821 batch): what they block is the situation where "the driver `run.py pipeline` gets mixed with a hand-launched `launch-eval` / `run.py matrix`"; the criterion depends on a human (or the agent running the pipeline) checking the ledger and the report's landing status themselves before invoking a command. The two corresponding behaviors on the driver's side are written in `stage-commands.md §6`, and the silent symptom is written in `extending.md §5 #23`.
 
-## 2. 两条复现验收线
+## 2. The two reproduction acceptance lines
 
-这两道门（G8、G12）是整条流水线可信度的地基。核心论点一句话：**新代码喂旧数据必须复现旧数字**——先证明管子不漏水，再往里灌新东西（PLAN §1.2）。它们值得单独拎出来，是因为其余门禁都只证明"这次跑通了"，只有这两道证明"这次跑出来的数和历史那批是同一把尺子量的"。而且它们**零 GPU、几十秒量级**，成本极低却是唯一能拦住静默口径漂移的机制。
+These two gates (G8, G12) are the bedrock of the whole pipeline's credibility. The core argument in one sentence: **new code fed old data must reproduce the old numbers**. Prove the pipe doesn't leak before pouring new things into it (PLAN §1.2). They're worth pulling out on their own because every other gate only proves "this run went through", while only these two prove "the numbers this run produced were measured with the same yardstick as the historical batch". And they cost **zero GPU, on the order of tens of seconds**, an extremely low cost for being the only mechanism that can catch a silent drift in convention.
 
-### 2.1 ACCEPT_V3DIFF（G8，annotate 段）
+### 2.1 ACCEPT_V3DIFF (G8, the annotate stage)
 
-- **验什么**：事件抽取 + 切样本这个核心与上一版数据集逐条一致。切分法不同（官方分区 vs 自切），**所以不比堆归属**，只比样本本身（ENG §4.5）。
-- **怎么跑**：用新 `rules.py` + `build.py` 的抽取与造样本代码跑旧数据当年的输入目录，**不过滤模型、不切分**；与旧数据四堆合并后按主键 `(event, sent_idx)` 建索引对比（ENG §4.5.1-2）。
-- **判据**：两边样本数相等；主键单边为 0；同主键条数相等；九字段逐字段不一致计数全 0。新增字段（`label_call`、`args_named`）不比。
-- **本轮结果**：bfcl 与 appworld 两侧 PASS，全 0。bfcl 逐条比对 36343 条、appworld 111767 条，主键单边 / 重复 / 条数不等全为 0（`pipeline/annotate/ACCEPT_V3DIFF.md`）。
-- **一处口径补丁值得记住**：旧数据建库之后才采完的采集目录（本轮是 `bfcl_gptoss`，32163 条样本），旧数据里根本没有，整批剔除后再比；**剔除清单不写死目录名，取自旧数据自己的采集目录集合**——这样换数据集时判据自动成立（`ACCEPT_V3DIFF.md` 开头）。
+- **What it checks**: that the core of event extraction plus sample-cutting matches the previous dataset version entry by entry. Since the splitting method differs (official partition vs. self-split), **it doesn't compare split assignment**, only the samples themselves (ENG §4.5).
+- **How to run it**: run the new `rules.py` + `build.py` extraction and sample-building code against the input directory the old data used back then, **without filtering by model, without splitting**; merge it with the old data's four splits and build an index keyed on the primary key `(event, sent_idx)` to compare (ENG §4.5.1-2).
+- **Criterion**: equal sample counts on both sides; the one-sided primary-key count is 0; equal counts for the same primary key; the mismatch count for all nine fields is zero, field by field. New fields (`label_call`, `args_named`) are not compared.
+- **This round's result**: both bfcl and appworld sides PASS, all zero. bfcl was compared entry by entry across 36343 entries, appworld across 111767; one-sided primary key / duplicates / unequal counts were all zero (`pipeline/annotate/ACCEPT_V3DIFF.md`).
+- **One convention patch worth remembering**: a collection directory that only finished being collected after the old data was already built into a database (this round it's `bfcl_gptoss`, 32163 samples) simply isn't in the old data at all, so the whole batch is excluded before comparing; **the exclusion list doesn't hard-code the directory name, it's taken from the old data's own set of collection directories**, so the criterion holds automatically when the dataset changes (start of `ACCEPT_V3DIFF.md`).
 
-### 2.2 ACCEPT_EVAL（G12，eval 段）
+### 2.2 ACCEPT_EVAL (G12, the eval stage)
 
-- **验什么**：评测后处理（首次越阈回放、温度拟合、θ 扫描、bootstrap、stop-time 校准、深度十桶、先验基线、经济换算）与旧脚本一致。
-- **怎么跑**：`--legacy-splits --cached-logits`，复用旧 `logits_*.pt` 只做 CPU 后处理，报告写 `--report-dir` 指的临时目录（ENG §6.5、ACCEPT_EVAL §1）。
-- ⚠️ **指纹机制（2026-08-02，审计 B9）之前产的 logits 没有配套 `logits_<sp>.meta.json`，直接 `--cached-logits` 会 SystemExit**。两条路：① 权重确认没动过 → 先把同一条命令的 `--cached-logits` 换成 `--adopt-logits-fingerprint` 跑一遍补档（它只认领指纹然后退出，不评测；放行条件是 `best/` 下**所有**权重文件的 mtime 都不比 logits 新——这是"当前权重就是产这些 logits 的权重"唯一能自动证明的方式），补完再按原命令带 `--cached-logits`；② 不想认领就去掉 `--cached-logits` 重算一次，重算会自动写指纹。指纹本身是**权重文件大小 + 首尾各 64KB 的 sha1**，不含 mtime——正常拷贝/恢复不作废缓存。
-- **判据**：`temperature / chosen_theta / test_frozen` 三块完全一致，且**绝不覆盖旧文件**。
-- **本轮结果**：PASS，且强于要求——整份 `REPLAY_REPORT.json` 与 `.md` 都与旧产物**逐字节相同**；mbert 头 12 秒跑完；自加的因果头那一份同样逐字节相同；旧文件 md5 跑前跑后未变（`ACCEPT_EVAL.md` §1、§2）。
-- **最容易被打乱的一处**：bootstrap 置信区间能逐位对上，说明 `random.Random(SEED)` 的**取用次序**也与旧脚本一致——改动评测代码时最先破的就是这个，专门确认它（`ACCEPT_EVAL.md` §2）。
+- **What it checks**: that the eval post-processing (first-crossing-threshold replay, temperature fitting, theta sweep, bootstrap, stop-time calibration, the ten depth buckets, the prior baseline, economic conversion) matches the old script.
+- **How to run it**: `--legacy-splits --cached-logits`, reuse the old `logits_*.pt` and do CPU-only post-processing, write the report to the temp directory pointed to by `--report-dir` (ENG §6.5, ACCEPT_EVAL §1).
+- Warning: **logits produced before the fingerprint mechanism (2026-08-02, audit B9) lack the matching `logits_<sp>.meta.json`, and using `--cached-logits` directly on them causes a SystemExit**. Two paths: (1) if the weights are confirmed unchanged, first swap `--cached-logits` for `--adopt-logits-fingerprint` on the same command and run it once to backfill (it only claims the fingerprint and then exits, it doesn't evaluate; it's only allowed when **every** weight file under `best/` has an mtime no newer than the logits, the only way to automatically prove "the current weights are the weights that produced these logits"), then rerun the original command with `--cached-logits` once backfilled; (2) if you don't want to claim them, drop `--cached-logits` and recompute once, recomputing automatically writes the fingerprint. The fingerprint itself is **the weight file's size plus a sha1 of the first and last 64KB**, no mtime, so a normal copy/restore doesn't invalidate the cache.
+- **Criterion**: the three blocks `temperature / chosen_theta / test_frozen` are exactly identical, and **the old files are never overwritten**.
+- **This round's result**: PASS, and stronger than required: the entire `REPLAY_REPORT.json` and `.md` are **byte-for-byte identical** to the old artifact; the mbert head finished in 12 seconds; the additionally added causal head's copy was likewise byte-for-byte identical; the old file's md5 was unchanged before and after the run (`ACCEPT_EVAL.md` §1, §2).
+- **The spot most easily thrown off**: the bootstrap confidence interval lining up digit-for-digit shows that `random.Random(SEED)`'s **order of consumption** also matches the old script; this is the first thing that breaks when the eval code is changed, so confirm it specifically (`ACCEPT_EVAL.md` §2).
 
-## 3. 本轮真实发生过的意外与处置
+## 3. Real incidents that happened this round, and how they were handled
 
-### 3.1 因果格对齐检查 FAIL（G13）
+### 3.1 A causal cell's alignment check FAILed (G13)
 
-- **现象**：`ctool` 开训前的对齐检查报 FAIL，hidden maxdiff 达 `1.678e-4`，超过 `ALIGN_TOL = 1e-4`。
-- **判断依据**：看的是**差值的量级构成**而不是单个数字过没过线——三个 `ctool` 的 hidden maxdiff 落在 8.39e-5 ~ 1.68e-4、logits maxdiff 1.69e-5 ~ 2.00e-5、相对差 2.3e-6 ~ 3.3e-6。相对差在 1e-6 量级是 fp32 累加噪声的典型幅度，若是实现错误（如分块增量喂喂错位置）差值会大得多且不成比例。台账里 T8 有同款先例。
-- **处置**：按 T8 先例把门槛放宽到 `3e-4`，三格全部 PASS 放行，并把这条决策与实测差值写进 `TIMELINE.md`（2026-07-31 c1 条·取舍其一）。
-- **事后评价**：正确但**必须留证据**。`--align-tol` 属于可调旋钮（invariants §6）——它是门禁阈值不进梯度，所以放宽不改数字；但放宽等于降低正确性判定标准，不记 TIMELINE 就变成"悄悄把红灯改成绿灯"。判据要写成"差值构成符合数值噪声特征"，不能写成"差得不多"。
+- **Symptom**: the alignment check before `ctool` started training reported FAIL, hidden maxdiff reached `1.678e-4`, exceeding `ALIGN_TOL = 1e-4`.
+- **Basis for the judgment**: what mattered was **the composition of the magnitude of the difference**, not whether a single number crossed a line: the three `ctool` runs' hidden maxdiff fell in the range 8.39e-5 ~ 1.68e-4, logits maxdiff 1.69e-5 ~ 2.00e-5, relative difference 2.3e-6 ~ 3.3e-6. A relative difference on the order of 1e-6 is the typical magnitude of fp32 accumulation noise; if it were an implementation error (e.g. chunked incremental feeding at the wrong position), the difference would be much larger and disproportionate. There's a matching precedent, T8, in the ledger.
+- **How it was handled**: following the T8 precedent, the threshold was loosened to `3e-4`, all three cells PASSed and were let through, and this decision along with the measured differences was written into `TIMELINE.md` (TIMELINE 2026-07-31 c1 entry, tradeoff one).
+- **Retrospective assessment**: correct, but **evidence must be kept**. `--align-tol` is a tunable knob (invariants §6): it's a gate threshold that doesn't enter the gradient, so loosening it doesn't change the numbers; but loosening it is equivalent to lowering the bar for judging correctness, and not recording it in TIMELINE turns it into "quietly turning a red light green". The criterion needs to be written as "the composition of the difference matches the profile of numerical noise", not as "the difference isn't that big".
 
-### 3.2 四个 run 在 A6000 48G 上 OOM
+### 3.2 Four runs OOM'd on the A6000's 48G
 
-- **现象**：批量训练发射后，四个 run 在 48G 的 A6000 上显存不足。
-- **判断依据**：两条路可选——降 batch size，或开梯度检查点。降 bs 会改变有效批大小，同一格的三个模型就不再跑在同一训练配方上，**跨模型可比性直接破掉**（invariants §3 的 mbert/causal 超参行）；`--grad-ckpt` 只是把中间激活丢掉、反向时重算，梯度逐位相同，换的是显存与速度。
-- **处置**：加 `--grad-ckpt` 重发，超参一个不动。
-- **事后评价**：这是"旋钮判据"的标准案例——**先问这个开关影响的是显存还是梯度**。凡是能用数学中性的开关解决的资源问题，都不许动超参。
+- **Symptom**: after batch training was launched, four runs ran out of VRAM on the A6000's 48G.
+- **Basis for the judgment**: two paths were available: lower the batch size, or turn on gradient checkpointing. Lowering bs would change the effective batch size, and the three models of the same cell would no longer be running under the same training recipe, **cross-model comparability breaks outright** (the mbert/causal hyperparameter row in invariants §3); `--grad-ckpt` just discards the intermediate activations and recomputes them on the backward pass, the gradient is bit-for-bit identical, what changes is VRAM and speed.
+- **How it was handled**: added `--grad-ckpt` and relaunched, not a single hyperparameter was touched.
+- **Retrospective assessment**: this is the standard case of "the knob criterion": **first ask whether this switch affects VRAM or the gradient**. Any resource problem that can be solved with a mathematically neutral switch must never be solved by touching a hyperparameter.
 
-### 3.3 `gptoss_cgen` 速率异常
+### 3.3 `gptoss_cgen`'s speed was abnormal
 
-- **现象**：加了 `--grad-ckpt` 之后该 run 跑到 22.15 s/step，ETA 26.7 小时，远超同批其他 run 的 1–2.5 小时量级。
-- **判断依据**：`--grad-ckpt` 的代价是时间换显存，在这一格上代价被放大到不可接受；而 gptoss 的思考文本长、切点密（边界数中位数 51，DATA.md §3.1），样本最重。既然瓶颈是显存，换一张显存更大的卡就能把开关关掉。
-- **处置**：杀掉、把残局归档到 `pipeline/runs/_aborted_c1_gptoss_cgen_t106g3`（不删、留痕），迁到 tokyo108 的 H200 上**不带 grad-ckpt** 重发，实际墙钟 5h13m（TIMELINE 2026-07-31 c1 条·取舍其二）。
-- **事后评价**：ETA 异常要**当场比同批其他 run**，不要等。残局用 `_aborted_` 前缀归档而不是删除，这样矩阵汇总不会误认它是有效格，同时保留了现场。换卡属自由旋钮，唯一后果是这一格的墙钟不能和 A6000 上的其他格横比（DATA.md §7.4）。
+- **Symptom**: after `--grad-ckpt` was added, this run ran at 22.15 s/step, an ETA of 26.7 hours, far exceeding the 1-2.5 hour range of the other runs in the same batch.
+- **Basis for the judgment**: `--grad-ckpt`'s cost is trading time for VRAM, and on this cell the cost got amplified to an unacceptable level; gptoss's thinking text is long and its cut points are dense (boundary-count median 51, DATA.md §3.1), making it the heaviest sample. Since the bottleneck was VRAM, switching to a card with more VRAM would let the switch be turned off.
+- **How it was handled**: killed it, archived the leftover state to `pipeline/runs/_aborted_c1_gptoss_cgen_t106g3` (not deleted, kept for the record), moved it to an H200 on tokyo108 and relaunched it **without grad-ckpt**, actual wall-clock 5h13m (TIMELINE 2026-07-31 c1 entry, tradeoff two).
+- **Retrospective assessment**: an abnormal ETA needs to be **compared against the other runs in the same batch on the spot**, not waited on. The leftover state was archived with an `_aborted_` prefix instead of being deleted, so the matrix summary won't mistake it for a valid cell, while still preserving the scene. Switching cards is a free knob, the only consequence being that this cell's wall-clock can't be compared side by side with other cells on the A6000 (DATA.md §7.4).
 
-### 3.4 `q35_mtool` 两档 θ 皆 null，连带 mext 无法评测
+### 3.4 `q35_mtool`'s theta was null at both tiers, and mext couldn't be evaluated as a result
 
-- **现象**：θ 扫描在两个风险档（0.10 / 0.05）上都找不到解——val 上最高 trig_acc 只有 0.871，够不到 0.90 的契约线，`chosen_theta` 两档全 null。上游没有触发点，下游 `c1_q35_mext` 就没得评。
-- **判断依据**：能"抢救"的两条路都破口径——放宽风险目标等于换契约（invariants §4 的 RISK_TARGETS 行）；借用别格（如 ctool）的触发点，那评的就不再是 mbert 这条路线了（invariants §4 的触发点来源行）。
-- **处置**：**如实记 N/A**。`c1_q35_mext` 在矩阵表里标 N/A 并注明原因"上游 `c1_q35_mtool` 两档 θ 皆 null，没有触发点可评"，写进 TIMELINE（2026-07-31 c1 条·触发）。
-- **事后评价**：无解本身就是结论——它正是"因果头全面胜出"这条判断的一半证据（同源的 `c1_q35_ctool` 把两档无解变成双档有解）。缺格要在矩阵表里显式标记（`summarize_matrix.py` 用 `PENDING` 标缺报告的格，ENG §6.4），不能留空让人以为忘了跑。
+- **Symptom**: the theta sweep couldn't find a solution at either risk tier (0.10 / 0.05): the highest trig_acc on val was only 0.871, falling short of the 0.90 contract line, `chosen_theta` was null at both tiers. With no upstream trigger point, downstream `c1_q35_mext` had nothing to evaluate.
+- **Basis for the judgment**: both possible "rescue" paths break the convention: loosening the risk target is equivalent to changing the contract (the RISK_TARGETS row in invariants §4); borrowing another cell's (e.g. ctool's) trigger point means what's being evaluated is no longer the mbert line at all (the trigger-point-source row in invariants §4).
+- **How it was handled**: **recorded N/A as-is**. `c1_q35_mext` is marked N/A in the matrix table with the reason noted, "upstream `c1_q35_mtool`'s theta was null at both tiers, there's no trigger point to evaluate", and written into TIMELINE (2026-07-31 c1 entry, trigger).
+- **Retrospective assessment**: having no solution is itself a conclusion: it is exactly half the evidence for the judgment "the causal head wins across the board" (the same-source `c1_q35_ctool` turned "no solution at either tier" into "a solution at both tiers"). A missing cell must be marked explicitly in the matrix table (`summarize_matrix.py` marks a cell with a missing report as `PENDING`, ENG §6.4), it can't be left blank leaving people to think it was just forgotten.
 
-### 3.5 `gptoss_mtool` 风险契约在 test 上未兑现
+### 3.5 `gptoss_mtool`'s risk contract wasn't honored on test
 
-- **现象**：0.10 档在 val 上选中 θ=0.975，到 test 上 trig_acc 只有 0.8642，低于 0.90 的契约线。
-- **判断依据**：**test 冻结一次是铁律**（invariants §4 评测三步行、PLAN §1.2）。回头在 test 上换 θ 就是拿测试集选点，所有数字作废。
-- **处置**：数字原样报告，不调 θ、不重扫。
-- **事后评价**：这不是事故，这正是计划里写明"接受了的设定"要量的东西——温度和门槛在 dev（易题）上校准、在 test_normal（难题）上用，**难度迁移**风险如实兑现，论文如实写（PLAN §3）。它成了本轮三条结论之一（TIMELINE 2026-07-31 c1 条②）。
+- **Symptom**: at the 0.10 tier, theta=0.975 was chosen on val, but on test trig_acc was only 0.8642, below the 0.90 contract line.
+- **Basis for the judgment**: **freezing test once is a hard rule** (the three-eval-steps row in invariants §4, PLAN §1.2). Going back and changing theta on test would be using the test set to choose the point, invalidating every number.
+- **How it was handled**: the number is reported as-is, theta is not adjusted, no re-sweep.
+- **Retrospective assessment**: this isn't an incident, it's exactly the thing the plan explicitly stated as an "accepted setting" that needed measuring: the temperature and threshold are calibrated on dev (easier tasks) and used on test_normal (harder tasks), and the **difficulty-transfer** risk is honored as-is, written into the paper as-is (PLAN §3). It became one of this round's three conclusions (TIMELINE 2026-07-31 c1 entry ②).
 
-### 3.6 采集 outdir 命名不标准 → 下游静默跳过（G5）
+### 3.6 A non-standard collect outdir name → downstream silently skipped it (G5)
 
-- **现象**：事件抽取按目录名尾巴认模型（glob `appworld_*/appworld_*.jsonl` + `MODEL_OF` 键匹配），`appworld_q35_tn` 这类名字对不上键，**整个目录被跳过且不报错**——数据集少一大块，没有任何一处告警。
-- **判断依据**：这是实测过的坑，两份规格都专门标注（PLAY §3.3、ENG §4.2.1、§7）。
-- **处置**：outdir 一律用 `<env>_<model_key>` 标准名；同一模型的不同 split 轨迹落**同一个** outdir（文件名按 task_id 天然不冲突）。
-- **事后评价**：这类"静默跳过"是最危险的一类失败——它不触发任何门禁，只能靠 G6 的条数核对和 G10 的题单一致性抓住。所以 G6 要数文件数，不能只看"跑完了没报错"。
+- **Symptom**: event extraction recognizes models by the directory-name tail (glob `appworld_*/appworld_*.jsonl` + a key match against `MODEL_OF`); a name like `appworld_q35_tn` doesn't match any key, and **the whole directory gets skipped with no error**, the dataset loses a whole chunk with not a single warning anywhere.
+- **Basis for the judgment**: this is a pitfall hit in practice, and both specs specifically flag it (PLAY §3.3, ENG §4.2.1, §7).
+- **How it was handled**: outdir always uses the standard name `<env>_<model_key>`; different split trajectories of the same model land in the **same** outdir (filenames don't naturally conflict, since they're keyed by task_id).
+- **Retrospective assessment**: this kind of "silent skip" is the most dangerous class of failure, it doesn't trigger any gate, and can only be caught by G6's file-count check and G10's task-list consistency. That's why G6 has to count files, it can't just look at "did it finish without error".
 
-### 3.7 `record.py` 的三个语法坑（G16 / G17）
+### 3.7 `record.py`'s three syntax pitfalls (G16 / G17)
 
-- **现象与成因**：
-  1. **`--metric` 的值含 `.` 或 `e` 会被强转数值**——`ops/record.py` 的 `kv()` 里是 `v = float(v) if ("." in v or "e" in v.lower()) else int(v)`，转不动才 `except` 退回字符串（**按函数名 grep，别记行号——这批行号漂过**）。所以像 `1e-4`、`0.05` 会变成 float，而含 `e` 的英文单词侥幸没转成也是走的异常路径。
-  2. **`null` 会以字符串 `"null"` 落账**（同上，`float("null")` 抛异常→退回字符串），账面上看起来像有值。
-  3. **同一个 run_id 不许二次 `start`**（`cmd_start()` 里的 `if ev["run_id"] in load(): sys.exit(...)`）；`finish` 找不到 run_id 会直接退出并提示先 `start`（`cmd_finish()` 里的同款检查）。同样按函数名 grep。
-- **处置**：记 N/A 的格（如 §3.4 的 `c1_q35_mext`）用 `--conclusion` 写清原因，不要靠 `--metric x=null` 表达；发射前确认这个 run_id 没 start 过。
-- **事后评价**：记账 CLI 的语法坑不会让实验失败，但会让 `RESULTS.md` 里出现类型不一致的列，事后统计时要多一道清洗。约定：**能进 metric 的只有真数字，解释性内容一律进 conclusion**。
+- **Symptom and cause**:
+  1. **an `--metric` value containing `.` or `e` gets force-converted to a number**: `ops/record.py`'s `kv()` has `v = float(v) if ("." in v or "e" in v.lower()) else int(v)`, and only falls back to a string via `except` if the conversion fails (grep by function name, don't rely on line numbers, they've drifted this round). So things like `1e-4`, `0.05` become floats, and an English word containing `e` that happens not to convert also takes the exception path.
+  2. **`null` gets booked as the string `"null"`** (same as above, `float("null")` raises an exception → falls back to a string), and on the books it looks like it has a value.
+  3. **the same run_id is not allowed to `start` twice** (`cmd_start()` has `if ev["run_id"] in load(): sys.exit(...)`); `finish` exits outright with a hint to `start` first if it can't find the run_id (the same kind of check in `cmd_finish()`). Also grep by function name.
+- **How it was handled**: for a cell recorded as N/A (like `c1_q35_mext` in §3.4), write the reason clearly with `--conclusion`, don't try to express it via `--metric x=null`; before launching, confirm this run_id hasn't been started before.
+- **Retrospective assessment**: the bookkeeping CLI's syntax pitfalls don't fail the experiment, but they do produce columns of inconsistent type in `RESULTS.md`, requiring an extra cleanup pass later on. The convention: **only real numbers may go into metric, explanatory content always goes into conclusion**.
 
-### 3.8 开火头双前向让长思考模型档 OOM（ro1 批，两轮共 8 个）
+### 3.8 The fire head's double forward pass OOM'd the long-thinking-model tiers (the ro1 batch, 8 across two rounds)
 
-- **现象**：ro1 批带 `--fire-head` 的训练，q36/gptoss × 两环境在 48G 卡上先后 8 个 OOM（ctool 4 个、mext 4 个），**q35 全程零事故**。mext 尤其意外——0.1B 的模型、c1 批同卡同数据跑得好好的。
-- **成因**：开火头走独立样本流，每步**多一次全长前向**，激活显存近乎翻倍；代价随思考长度上升，所以只打长思考模型（q36/gptoss 的边界数中位数是 q35 的数倍到数十倍）。
-- **处置**：按 §3.2 同款判据加 `--grad-ckpt` 原卡重发（mext 当时还没有这个旗，补旗即一次 commit `fbe4d15`，训练逻辑零改动）。8 个全部重发成功，超参一个未动。
-- **事后评价**：§3.2 的判据第二次验证成立，同时补一条经验：**给训练加"额外前向"类的新头时，显存预算按最长思考的模型档估**，q35 上冒烟通过不代表 gptoss 档放得下；发射前在排卡表里给长思考档预留 `--grad-ckpt` 是零成本的保险。
+- **Symptom**: in the ro1 batch's training with `--fire-head` on, q36/gptoss across two environments hit 8 OOMs in sequence on 48G cards (ctool 4, mext 4), while **q35 had zero incidents throughout**. mext was especially unexpected, a 0.1B model that ran fine on the same card with the same data in the c1 batch.
+- **Cause**: the fire head goes through an independent sample stream, adding **one extra full-length forward pass** per step, nearly doubling the activation VRAM; the cost rises with thinking length, so it only hit the long-thinking models (q36/gptoss's boundary-count median is several times to several dozen times q35's).
+- **How it was handled**: added `--grad-ckpt` following the same criterion as §3.2 and relaunched on the same card (mext didn't have this flag at the time, adding it was a single commit `fbe4d15`, zero change to the training logic). All 8 were relaunched successfully, not one hyperparameter was touched.
+- **Retrospective assessment**: §3.2's criterion was validated a second time, and one lesson was added: **when adding a new head that does "extra forward passes" to training, budget the VRAM against the longest-thinking model tier**, passing smoke on q35 doesn't mean the gptoss tier will fit; reserving `--grad-ckpt` in the placement table for the long-thinking tier before launching is a zero-cost insurance policy.
 
-### 3.9 smoke 在 48G 上过了，全量第一个 backward 就 OOM（np821 批，b17_cgen）
+### 3.9 Smoke passed on 48G, but the full volume OOM'd on the very first backward pass (the np821 batch, b17_cgen)
 
-- **现象**：`np821b17_gptoss_cgen`（Qwen3-1.7B 全参 + `--grad-ckpt`）的 smoke 在 RTX 6000 Ada（47.51 GiB 可用）上跑完、实测峰值 44.1 GiB，据此判"48G 装得下"并把全量发了上去；全量发射 **6 分钟后第一个 backward 就 OOM**——要 4.64 GiB、只剩 3.61 GiB，其中 PyTorch 实占 34.75 GiB、另有 8.63 GiB 是保留未分配的碎片（traceback 全文在 `logs/new1_np821b17_gptoss_cgen_t107g3.log`）。
-- **成因**：smoke 只喂固定种子抽的 500 条实例，**踩不到全量第一个批次里那种长序列组合**；显存峰值由批内最长序列决定，不由平均值决定。碎片 8.63 GiB 说明余量还要再打一道折。
-- **处置**：不做 `expandable_segments` 分配器实验（省下的时间对不上一个几十小时的 run 中途再 OOM 的风险），改等安全大卡——等同批 ctool 在 H100 上收官腾出卡再重发。**48G 对 1.7B 全参 + gc 的全量记「装不下」**，smoke 的那个 44.1 GiB 不作数。
-- **事后评价**：判据要改口——**smoke 通过只证明"代码跑得通"，不证明"这张卡装得下全量"**。余量的判法是：smoke 峰值离卡容量不足 ~10% 就当装不下，直接上大卡；`--grad-ckpt` 是显存的合规开关，但它救不了"余量本来就只剩个位数 GiB"这种局面。同批实测的四档峰值见 `stage-commands.md §3.1` 的显存表。
+- **Symptom**: `np821b17_gptoss_cgen`'s smoke (Qwen3-1.7B full-parameter + `--grad-ckpt`) finished on an RTX 6000 Ada (47.51 GiB available) with a measured peak of 44.1 GiB; based on that it was judged "fits on 48G" and the full volume was launched; **6 minutes into the full-volume launch it OOM'd on the very first backward pass**, needing 4.64 GiB with only 3.61 GiB left, of which PyTorch actually held 34.75 GiB with another 8.63 GiB reserved-but-unallocated fragmentation (the full traceback is in `logs/new1_np821b17_gptoss_cgen_t107g3.log`).
+- **Cause**: smoke only feeds 500 instances drawn with a fixed seed, and **doesn't hit the kind of long-sequence combination that shows up in the full volume's first batch**; the VRAM peak is set by the longest sequence within the batch, not by the average. The 8.63 GiB of fragmentation shows the headroom needs an additional discount on top.
+- **How it was handled**: no `expandable_segments` allocator experiment was done (the time saved wasn't worth the risk of a tens-of-hours run OOMing again partway through), instead waited for a safe big card: waited for ctool in the same batch to wrap up on H100 and free up a card, then relaunched. **48G is recorded as "doesn't fit" for the full volume of 1.7B full-parameter + gc**, that 44.1 GiB from smoke doesn't count.
+- **Retrospective assessment**: the criterion needs rewording: **passing smoke only proves "the code runs", it doesn't prove "this card can hold the full volume"**. The way to judge headroom: if the smoke peak is within ~10% of the card's capacity, treat it as not fitting, go straight to a bigger card; `--grad-ckpt` is a compliant VRAM switch, but it can't save a situation where the headroom is already down to single-digit GiB. The measured peaks for the four configurations in the same batch are in the VRAM table in `stage-commands.md §3.1`.
 
-### 3.10 48G 装不下 0.6B 全参（无梯度检查点）（np821 批，三格 smoke 全 OOM）
+### 3.10 48G can't hold 0.6B full-parameter (no gradient checkpointing) (the np821 batch, all three cells' smoke OOM'd)
 
-- **现象**：`np821b06` 三格（Qwen3-0.6B 全参、**不带** `--grad-ckpt`）在 RTX 6000 Ada 上 smoke 全部 OOM（traceback 存档 `logs/smoke_np821b06_cparam.oom_t107.log`：47.51 GiB 里 PyTorch 已占 42.26 GiB，再要 128 MiB 就没了）；挪到大卡后实测峰值 ctool 60.2 / cgen 76.8 / cparam 76.7 GiB。
-- **判断依据**：0.6B 的权重才 1.2G 左右，60–77 GiB 全是激活——**装不装得下的分水岭是 `--grad-ckpt` 开没开，不是模型大小**。同批 1.7B 带 gc 的峰值只有 35–44 GiB，比 0.6B 不带 gc 低一半。
-- **处置**：0.6B 全参这一批整批上 H100（95G）。
-- **事后评价**：排卡前先问"这一格开不开 gc"，再问"多大模型"；顺序反了就会像这次一样，拿"模型小"推出"小卡放得下"，三格 smoke 一起白跑一轮。
+- **Symptom**: all three cells of `np821b06` (Qwen3-0.6B full-parameter, **without** `--grad-ckpt`) had their smoke OOM on an RTX 6000 Ada (traceback archived in `logs/smoke_np821b06_cparam.oom_t107.log`: PyTorch already held 42.26 GiB of 47.51 GiB, and asking for another 128 MiB was too much); after moving to a bigger card the measured peaks were ctool 60.2 / cgen 76.8 / cparam 76.7 GiB.
+- **Basis for the judgment**: 0.6B's weights are only about 1.2G, so 60-77 GiB is all activations. **The watershed for whether it fits is whether `--grad-ckpt` is on, not the model size**. In the same batch, 1.7B with gc had a peak of only 35-44 GiB, half of 0.6B without gc.
+- **How it was handled**: the entire 0.6B full-parameter batch was moved to H100 (95G).
+- **Retrospective assessment**: before assigning cards, ask "is gc on for this cell" first, then "how big is the model"; get the order backwards and you end up like this time, inferring "a small card will hold it" from "the model is small", and wasting a whole round of smoke across three cells.
 
-## 4. 死局判据
+## 4. Dead-end criteria
 
-**唯一允许停下来问用户的情形：推翻前提的事。** 原文列举的三类是——目标 split 的任务在环境里根本跑不了、权重路径失效、双验收线反复过不了（PLAY §0 前言、§6）。
+**The only situation where it's permissible to stop and ask the user: something that overturns a premise.** The three categories the original text lists are: the target split's tasks simply can't be run at all in the environment, a weight path is dead, or the two acceptance lines keep failing repeatedly (PLAY §0 preamble, §6).
 
-**停之前必须把已完成的部分收尾干净**（PLAY §0 前言）：核对并落盘已完成的产物、杀掉还在占卡的服务、`nvidia-smi` 确认归零、`python3 run.py gpu-jobs finish` 销号、`python3 run.py record finish` 记上已有的数字与中断原因、commit。
+**Before stopping, whatever has already been completed must be wrapped up cleanly** (PLAY §0 preamble): verify and save the completed artifacts, kill any service still holding a card, confirm zero with `nvidia-smi`, retire the job with `python3 run.py gpu-jobs finish`, record the numbers already obtained plus the reason for interruption with `python3 run.py record finish`, and commit.
 
-**其余一律自动处置，不找用户**（PLAY §6）：分片挂 → 修 + 重发；实例挂 → 分片改指同模型另一端口；OOM → 砍并发或换更大的卡重发（**不是降 bs**，见 §3.2）；单题超时卡死 → 跳过该题并记入报告缺口。
+**Everything else is handled automatically, without going to the user** (PLAY §6): a shard dies → fix it and relaunch; an instance dies → point the shard at another instance of the same model's port; OOM → cut concurrency or switch to a bigger card and relaunch (**not lowering bs**, see §3.2); a single task times out and hangs → skip that task and record it as a gap in the report.
 
-**前提**：这条自动化授权来自用户说过的那一句"发射"——说了之后整条链做到底，链内动作（包括杀 vLLM 释放显存、批量发射训练）免再批；**链外的新主意仍要问**（PLAY §0 前言、§0.1）。
+**Premise**: this authorization for automation comes from the user having already said the word "launch": once said, the whole chain is carried through to the end, and in-chain actions (including killing vLLM to free VRAM, batch-launching training) don't need re-approval; **a new idea outside the chain still needs to be asked about** (PLAY §0 preamble, §0.1).
 
-**两个已知的仪器坑，别误判成故障**（PLAY §6）：① appworld 包内置 freezegun 冻结了进程内时钟，**不要用 `time.time()` 测单题耗时**，要测就用 jsonl 文件 mtime 差；② `evaluate()` 在 test 分区可能报错——采集器已容错（评测失败不弃轨迹），属正常。
+**Two known instrumentation pitfalls, don't misjudge them as failures** (PLAY §6): (1) the appworld package has freezegun built in, which freezes the in-process clock, **don't use `time.time()` to measure how long a single task took**, use the mtime difference of the jsonl files instead; (2) `evaluate()` may error out on the test partition, the collector already tolerates this (a failed evaluation doesn't discard the trajectory), this is normal.
 
-## 5. 已知缺口
+## 5. Known gaps
 
-**有意不做（本轮划定的边界）**：
+**Deliberately not done (the boundary drawn this round)**:
 
-- `test_challenge` 区 417 题不碰（PLAN §1.6）。
-- 注入段只定产物存盘格式、不跑端到端实验；等矩阵结果出来、知道哪格值得注入之后另行立项（PLAN §1.9）。
-- 第 3 波整体不在本轮：bfcl 三堆单切（数据已齐、零采集）→ 环境扩展（ALFWorld 已探明可低成本接入，候选第三站）→ 注入端到端实验（PLAN §2）。
-- bfcl 降为第二站、串行做；本轮只跑 appworld（PLAN §1.5）。
+- The `test_challenge` region's 417 tasks are untouched (PLAN §1.6).
+- The inject stage only fixes the artifact save format, it doesn't run an end-to-end experiment; once the matrix results are in and it's clear which cells are worth injecting, this will be scoped as a separate project (PLAN §1.9).
+- Wave 3 as a whole is not part of this round: splitting bfcl's three splits alone (data is already complete, zero new collection) → environment extension (ALFWorld has been confirmed to be low-cost to integrate, a candidate third venue) → the inject end-to-end experiment (PLAN §2).
+- bfcl has been downgraded to the second venue, done serially; this round only runs appworld (PLAN §1.5).
 
-**欠账（该做没做，下一轮补）**：
+**Owed work (should have been done but wasn't, to be made up next round)**:
 
-- **`aw_official_v1` 自己的"重建两次逐字节比"没做**（上一版 v3_1 当年做过）。目前"重跑必得同一份数据"是靠固定种子 + 采集脚本幂等 + ACCEPT_V3DIFF 三条推出来的，**不是直接实测过的**（DATA.md §3.1）。→ `bfcl_mtb_v1` 这批**已补**：三个模型各重建一次、`train/val/test.jsonl` + `tool_vocab.json` + `router_stats.md` + `qa_sample.txt` 全部 `cmp` 零差异，q35 的 `params/*.jsonl` + `CHECK_50.md` 同样零差异；题单 `gen_bfcl_splits.py` 跑两遍也逐字节一致。appworld 那批仍是欠账，但顺手实测过：改 `build.py` 报告文案后重建 `aw_official_v1/q35`，三个 jsonl 与 `tool_vocab.json` 与线上产物 `cmp` 零差异。
-- ACCEPT_EVAL 的验收产物（`pipeline/eval/accept_bfcl_v3{,_causal}/`）入不入 git 未定——它们不在 `.gitignore` 的 `pipeline/data`、`pipeline/runs` 覆盖范围内，留作验收凭证，归属待定（ACCEPT_EVAL §4.8）。
-- ~~BFCL 参数重抽多出 217 个事件原因未查~~ → **已排除是新线的问题**。`param_label.collect_events` 与 `build.bfcl_events` 在新流水线里是两份**逐字相同**的实现，`bfcl_mtb_v1` 三个模型的 `PARAM_LABEL_REPORT.md` 里"数据集有而重抽缺"全是 **0**；"重抽有而数据集无"分别是 2116 / 2269 / 2265，正好等于 `3325 − 该模型事件数`（重抽不按模型过滤，扫的是全部三个 bfcl 目录），完全可预测。老那 217 的差是旧代码两份实现漂移造成的，与新线无关。
-- DATA.md §8 的既有缺口本轮未动：BFCL 聊天模板未查、表面相似度过滤 τ 未接、参数三档的档位表还是 v2 事件算的、全历史臂 24576 token 预算的来历没记账。
-- 采集矩阵不齐：三模型 × 三环境九格都有数据但量差很远（DATA.md §8.1）。
+- **`aw_official_v1`'s own "rebuild twice and compare byte-for-byte" wasn't done** (the previous version, v3_1, did this back in its day). Currently "rerunning is guaranteed to produce the same data" is inferred from three things: the fixed seed, the collector script's idempotence, and ACCEPT_V3DIFF, **it hasn't been directly measured** (DATA.md §3.1). → This has **already been made up** for the `bfcl_mtb_v1` batch: each of the three models was rebuilt once, and `train/val/test.jsonl` + `tool_vocab.json` + `router_stats.md` + `qa_sample.txt` all `cmp` at zero difference, q35's `params/*.jsonl` + `CHECK_50.md` likewise at zero difference; running the task-list generator `gen_bfcl_splits.py` twice was also byte-for-byte identical. The appworld batch is still owed, but was measured in passing: after changing `build.py`'s report wording and rebuilding `aw_official_v1/q35`, the three jsonl files and `tool_vocab.json` had zero `cmp` difference against the live artifact.
+- Whether ACCEPT_EVAL's acceptance artifacts (`pipeline/eval/accept_bfcl_v3{,_causal}/`) go into git is undecided; they don't fall under `.gitignore`'s `pipeline/data`, `pipeline/runs` coverage, they're being kept as acceptance evidence, ownership is to be decided (ACCEPT_EVAL §4.8).
+- ~~the reason BFCL parameter re-extraction produces 217 extra events was never investigated~~ → **already ruled out as a problem with the new line**. `param_label.collect_events` and `build.bfcl_events` are two **word-for-word identical** implementations in the new pipeline; in the `PARAM_LABEL_REPORT.md` for all three `bfcl_mtb_v1` models, "in the dataset but missing from the re-extraction" is **0 across the board**; "in the re-extraction but missing from the dataset" is 2116 / 2269 / 2265 respectively, exactly equal to `3325 − that model's event count` (the re-extraction doesn't filter by model, it scans all three bfcl directories), fully predictable. The old 217-event discrepancy was caused by two implementations of the old code drifting apart, and has nothing to do with the new line.
+- Existing gaps in DATA.md §8 were untouched this round: BFCL's chat template hasn't been checked, the surface-similarity filter tau hasn't been wired in, the parameter three-tier tier table is still computed from v2 events, and the origin of the full-history arm's 24576-token budget hasn't been recorded.
+- The collection matrix isn't uniform: all nine cells of three models x three environments have data, but the volumes differ widely (DATA.md §8.1).

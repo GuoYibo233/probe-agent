@@ -1,59 +1,66 @@
-# 训练出了哪些探针，各自准确率是多少
+# Which probes were trained, and their accuracy
 
-出处：快照 `b1f5b9c` 的 `pipeline/runs/{MATRIX_REPORT,c2_MATRIX_REPORT,ro1aw_MATRIX_REPORT,ro1bf_MATRIX_REPORT}.md`（风险 0.05 档矩阵）和 `RESULTS.md` 各 run 条目（风险 0.1 档数字、更早的 ModernBERT 时代数字）。
+Source: `pipeline/runs/{MATRIX_REPORT,c2_MATRIX_REPORT,ro1aw_MATRIX_REPORT,ro1bf_MATRIX_REPORT}.md` (the risk-0.05-tier matrix) in the snapshot `b1f5b9c`, and the per-run entries in `RESULTS.md` (risk-0.1-tier numbers, numbers from the earlier ModernBERT era).
 
-## 探针是四种，账上叫四格
+## Four kinds of probes were trained, called the four cells on the ledger
 
-四格 = 两种底座乘两种任务。底座一是 ModernBERT-base（约 1.5 亿参数的编码器），
-底座二是 Qwen3-0.6B-Base（6 亿参数的因果语言模型）。
+The four cells = two backbones times two tasks. Backbone one is ModernBERT-base (an encoder with about 150M
+parameters), backbone two is Qwen3-0.6B-Base (a 600M-parameter causal language model).
 
-- mtool：ModernBERT 加分类头，读样本文本，输出工具名概率分布。
-- ctool：Qwen3-0.6B 做同一件事（账上叫因果头），置信度经温度校准后过 θ 出手。
-- mext：ModernBERT 抽取头，在文本里定位参数值的起止区间，只在 mtool 触发点上评。
-- cgen：Qwen3-0.6B 直接生成整条调用（工具名加全部参数），只在 ctool 触发点上评。
+- mtool: ModernBERT plus a classification head, reads the sample text, outputs a probability distribution over tool
+  names.
+- ctool: Qwen3-0.6B doing the same thing (called the causal head on the ledger), confidence is temperature-
+  calibrated and fires once it clears θ.
+- mext: a ModernBERT extraction head, locates the start and end span of parameter values in the text, evaluated only
+  at mtool's trigger points.
+- cgen: Qwen3-0.6B generates the whole call directly (tool name plus all parameters), evaluated only at ctool's
+  trigger points.
 
-探针读的是重拼文本（任务 + 历史 + 思考前缀），用自己的分词器重新编码，
-不读 agent 模型的内部状态。探测成本是被探测模型生成成本的二十分之一到
-三十四分之一（run `20260730_1716_bert_t8_causal` 的 cost_ratio 字段 19.8 到 34.1）。
+The probe reads reassembled text (task + history + thinking prefix), re-encoded with its own tokenizer; it does not
+read the agent model's internal state. Probing cost is one twentieth to one thirty-fourth of the probed model's
+generation cost (the `cost_ratio` field in run `20260730_1716_bert_t8_causal` is 19.8 to 34.1).
 
-指标定义：触发比例（coverage）= 测试堆全部事件里探针置信度过 θ 敢出手的比例；
-触发精度（trig_acc）= 出手的事件里工具名猜对的比例；earliness = 出手时机的
-早晚（数值越大出手越早）；full_call_ok = 触发事件里整条调用完全正确的比例。
+Metric definitions: trigger ratio (coverage) = the share of all events in the test split where the probe's
+confidence clears θ and it dares to fire; trigger accuracy (trig_acc) = the share of fired events where the tool
+name is guessed correctly; earliness = how early or late the fire happens (a larger value means firing earlier);
+full_call_ok = the share of triggered events where the whole call is entirely correct.
 
-## c1 批：AppWorld 官方分区十二格（2026-07-31）
+## The c1 batch: twelve cells on the AppWorld official split (2026-07-31)
 
-风险 0.05 档（矩阵报告原表，无解的格空着）：
+The risk-0.05 tier (the matrix report's original table, cells with no solution left blank):
 
-| 模型 | 格 | θ | 触发比例 | 触发精度 | earliness | full_call_ok |
+| Model | Cell | θ | Trigger ratio | Trigger accuracy | earliness | full_call_ok |
 |---|---|---|---|---|---|---|
-| q35 | mtool | 无解 | - | - | - | - |
+| q35 | mtool | no solution | - | - | - | - |
 | q35 | ctool | 0.975 | 0.0653 | 0.968 | 0.3131 | - |
-| q35 | mext | 没法评（上游 mtool 无触发点） | - | - | - | - |
+| q35 | mext | cannot be scored (upstream mtool has no trigger point) | - | - | - | - |
 | q35 | cgen | 0.975 | - | - | - | 0.8904 |
 | q36 | mtool | 0.975 | 0.0705 | 0.973 | 0.4841 | - |
-| q36 | ctool | 无解（退 0.1 档） | - | - | - | - |
+| q36 | ctool | no solution (fell back to the 0.1 tier) | - | - | - | - |
 | q36 | mext | 0.975 | - | - | - | 0.9324 |
-| q36 | cgen | 0.925（0.1 档） | - | - | - | 0.8135 |
-| gptoss | mtool | 无解 | - | - | - | - |
+| q36 | cgen | 0.925 (0.1 tier) | - | - | - | 0.8135 |
+| gptoss | mtool | no solution | - | - | - | - |
 | gptoss | ctool | 0.975 | 0.2961 | 0.951 | 0.6343 | - |
-| gptoss | mext | 0.975（0.1 档） | - | - | - | 0.6755 |
+| gptoss | mext | 0.975 (0.1 tier) | - | - | - | 0.6755 |
 | gptoss | cgen | 0.975 | - | - | - | 0.7852 |
 
-风险 0.1 档的工具格补充（RESULTS 各条）：q35_ctool 0.925 / 0.1642 / 0.9292；
-q36_ctool 0.925 / 0.2911 / 0.9368；q36_mtool 0.925 / 0.1724 / 0.9208；
-gptoss_ctool 0.925 / 0.4963 / 0.9057；gptoss_mtool 0.975 / 0.1239 / 0.8642，
-这一格账上判"未兑现"（test 上低于 0.90 的契约线，val 选的点没在 test 兑现）。
+The risk-0.1-tier addendum for the tool cells (from the RESULTS entries): q35_ctool 0.925 / 0.1642 / 0.9292;
+q36_ctool 0.925 / 0.2911 / 0.9368; q36_mtool 0.925 / 0.1724 / 0.9208; gptoss_ctool 0.925 / 0.4963 / 0.9057;
+gptoss_mtool 0.975 / 0.1239 / 0.8642, this cell is ruled on the ledger as "did not hold up" (below the 0.90 contract
+line on test, the point picked on val did not hold up on test).
 
-账上的三条批结论（TIMELINE 2026-07-31 条目）：因果头全面胜出（gptoss 侧触发
-比例 0.4963 是 mtool 0.1239 的 4.0 倍）；难度迁移风险兑现一例（gptoss_mtool）；
-宽松与严格判定的差距只出现在抽取路线（cgen 三格两套判定完全相等，
-mext 两格差到 0.9595 对 0.8874、0.7887 对 0.4377）。
+The batch's three conclusions on the ledger (the TIMELINE 2026-07-31 entry): the causal head wins across the board
+(on the gptoss side the trigger ratio 0.4963 is 4.0 times mtool's 0.1239); the difficulty-transfer risk materialized
+in one case (gptoss_mtool); the gap between the loose and strict verdicts only shows up on the extraction route (the
+three cgen cells give identical numbers under both verdicts, the two mext cells differ, 0.9595 versus 0.8874 and
+0.7887 versus 0.4377).
 
-## c2 批：ALFWorld 七格出数一格跳过（2026-08-02）
+## The c2 batch: seven ALFWorld cells reported, one skipped (2026-08-02)
 
-先验基线 q36 侧 0.548、gptoss 侧 0.470（`go` 一个动作占一半）。风险 0.05 档：
+Prior baseline is 0.548 on the q36 side and 0.470 on the gptoss side (the single action `go` is half of them). The
+risk-0.05 tier:
 
-| 模型 | 格 | θ | 触发比例 | 触发精度 | earliness | full_call_ok |
+| Model | Cell | θ | Trigger ratio | Trigger accuracy | earliness | full_call_ok |
 |---|---|---|---|---|---|---|
 | q36 | mtool | 0.575 | 0.9995 | 0.9473 | 0.8287 | - |
 | q36 | ctool | 0.5 | 1.0 | 0.9441 | 0.8359 | - |
@@ -62,72 +69,75 @@ mext 两格差到 0.9595 对 0.8874、0.7887 对 0.4377）。
 | gptoss | mtool | 0.95 | 0.5988 | 0.9355 | 0.5769 | - |
 | gptoss | ctool | 0.95 | 0.9397 | 0.9467 | 0.5767 | - |
 | gptoss | mext | 0.95 | - | - | - | 0.8324 |
-| gptoss | cgen | 主动跳过（训练要 85.1 小时，超 12 小时墙钟上限） | - | - | - | - |
+| gptoss | cgen | deliberately skipped (training would take 85.1 hours, over the 12-hour wall-clock cap) | - | - | - | - |
 
-账上的批结论（TIMELINE 2026-08-02 条目）：高先验低工具基数的环境探针照样拉开
-（q36_ctool 最低门槛 θ=0.5 拿满触发比例）；因果头对 ModernBERT 的差距在
-覆盖率不在判别力（同 θ=0.95，触发比例 0.9397 对 0.5988，精度 0.9467 对 0.9355）；
-省多少由被探测模型思考长度决定（gptoss 思考长十倍，earliness 0.577 对 q36 的 0.83）。
+The batch's conclusion on the ledger (the TIMELINE 2026-08-02 entry): even in a high-prior, low-tool-count
+environment the probe still separates out (q36_ctool hits full trigger ratio at the lowest threshold, θ=0.5); the
+gap between the causal head and ModernBERT is in coverage, not in discriminative power (at the same θ=0.95, trigger
+ratio 0.9397 versus 0.5988, accuracy 0.9467 versus 0.9355); how much is saved is decided by the probed model's
+thinking length (gptoss's thinking is ten times longer, earliness 0.577 versus q36's 0.83).
 
-## ro1 批：只读折叠后的 AppWorld 与 BFCL（2026-08-02 收官）
+## The ro1 batch: AppWorld and BFCL after read-only folding (wrapped up 2026-08-02)
 
-风险 0.05 档，AppWorld（先验折叠后 q35/q36/gptoss = 0.2333/0.2584/0.4041）：
+The risk-0.05 tier, AppWorld (prior after folding, q35/q36/gptoss = 0.2333/0.2584/0.4041):
 
-| 模型 | 格 | θ | 触发比例 | 触发精度 | full_call_ok |
+| Model | Cell | θ | Trigger ratio | Trigger accuracy | full_call_ok |
 |---|---|---|---|---|---|
 | q35 | mtool | 0.975 | 0.0054 | 0.8889 | - |
 | q35 | ctool | 0.95 | 0.0882 | 0.9831 | - |
 | q35 | mext | 0.975 | - | - | 0.7647 |
 | q35 | cgen | 0.95 | - | - | 0.8741 |
-| q36 | mtool | 无解（退 0.1 档） | - | - | - |
+| q36 | mtool | no solution (fell back to the 0.1 tier) | - | - | - |
 | q36 | ctool | 0.975 | 0.0905 | 0.986 | - |
-| q36 | mext | 0.925（0.1 档） | - | - | 0.8687 |
+| q36 | mext | 0.925 (0.1 tier) | - | - | 0.8687 |
 | q36 | cgen | 0.975 | - | - | 0.9433 |
-| gptoss | mtool | 无解 | - | - | - |
+| gptoss | mtool | no solution | - | - | - |
 | gptoss | ctool | 0.95 | 0.3606 | 0.9481 | - |
-| gptoss | mext | 0.975（0.1 档） | - | - | 0.625 |
+| gptoss | mext | 0.975 (0.1 tier) | - | - | 0.625 |
 | gptoss | cgen | 0.95 | - | - | 0.7562 |
 
-BFCL（先验折叠后 0.5167/0.5094/0.4679），十二格两档 θ 全有解，0.05 档：
+BFCL (prior after folding, 0.5167/0.5094/0.4679), all twelve cells have a solution at both tiers, the 0.05 tier:
 
-| 模型 | mtool（θ/比例/精度） | ctool（θ/比例/精度） | mext full_call_ok | cgen full_call_ok |
+| Model | mtool (θ/ratio/accuracy) | ctool (θ/ratio/accuracy) | mext full_call_ok | cgen full_call_ok |
 |---|---|---|---|---|
 | q35 | 0.875 / 0.25 / 0.9333 | 0.875 / 0.3167 / 0.9211 | 0.8276 | 0.75 |
 | q36 | 0.95 / 0.3113 / 0.9697 | 0.8 / 0.4245 / 0.8889 | 0.9375 | 0.8571 |
 | gptoss | 0.725 / 0.3303 / 0.8889 | 0.825 / 0.3394 / 0.8919 | 0.8529 | 0.9412 |
 
-弃权类的安全数字：非只读事件的误触发率 BFCL 侧全部不超过 0.047、AppWorld
-q35/q36 侧不超过 0.016；全批唯一破 0.05 的格是 ro1aw_gptoss_mtool（0.2295）。
-随训的自主开火头 14 个参数格里 12 格无工作点，开火精度卡在 0.72 到 0.86。
+Safety numbers for the abstention class: the false-trigger rate on non-read-only events is no higher than 0.047
+across the board on the BFCL side, and no higher than 0.016 on the AppWorld q35/q36 side; the only cell in the whole
+batch to break 0.05 is ro1aw_gptoss_mtool (0.2295). The co-trained autonomous-firing head has no working point in 12
+of its 14 parameter cells, firing accuracy is stuck between 0.72 and 0.86.
 
-## 更早的 ModernBERT 自切分时代（2026-07-29 到 30）
+## The earlier ModernBERT self-split era (2026-07-29 to 30)
 
-- bfcl v2fix（run `20260729_2235`）：θ=0.8 时触发比例 0.7553 / 精度 0.9441 /
-  earliness 0.664；θ=0.925 时比例 0.6203 / 精度 0.966。先验 0.038。
-- appworld v3 终审（run `20260730_0814`）：0.1 档比例 0.19 / 精度 0.933，
-  0.05 档无可行 θ。账上判"95% 标准下门不开"。
-- tales v3 终审（run `20260730_1645`）：0.1 档比例 0.336 / 精度 0.839，
-  0.05 档 0.147 / 0.85。账上归因"开放动作空间"。
-- bfcl v3 重切分（run `20260730_0204`）：精度 0.9925 / 比例 0.5929，与 v2fix
-  的差在置信区间内互覆，切分方差约正负 3 个百分点。
+- bfcl v2fix (run `20260729_2235`): at θ=0.8, trigger ratio 0.7553 / accuracy 0.9441 / earliness 0.664; at θ=0.925,
+  ratio 0.6203 / accuracy 0.966. Prior 0.038.
+- appworld v3 final review (run `20260730_0814`): 0.1-tier ratio 0.19 / accuracy 0.933, no feasible θ at the 0.05
+  tier. Ruled on the ledger as "the gate does not open under the 95% standard."
+- tales v3 final review (run `20260730_1645`): 0.1-tier ratio 0.336 / accuracy 0.839, 0.05 tier 0.147 / 0.85.
+  Attributed on the ledger to "the open action space."
+- bfcl v3 re-split (run `20260730_0204`): accuracy 0.9925 / ratio 0.5929, the difference from v2fix falls within
+  overlapping confidence intervals, split variance is about plus or minus 3 percentage points.
 
-## 因果底座裁决与跨模型矩阵（2026-07-30）
+## The causal-backbone ruling and the cross-model matrix (2026-07-30)
 
-- 因果探针（run `20260730_1716_bert_t8_causal`）：appworld 0.05 档精度 0.9621 /
-  比例 0.3338（ModernBERT 同处无解）；bfcl 0.9779；tales 0.9077（tales 的
-  0.1 档 θ 迁移失守，账上标为 tales 特有）。三环境触发比例 2.5 到 4.3 倍。
-- 跨模型（run `20260730_1713_bert_t6_xqwen`）：bfcl 主场 0.9748 / 冷迁移 0.897 /
-  只换校准救回 0.971（触发比例减半）；appworld 换校准救不满；tales 全弱。
-  gptoss 侧同款（`20260730_1716_bert_t6_xgptoss`）：主场强度 bfcl 0.9623 >
-  appworld 0.9298 > tales 0.7551，tales 冷迁移触发比例 0.0。
-- bfcl 混训天花板（run `20260730_1835`）：qwen 侧 0.9645/0.7478、gptoss 侧
-  0.9157/0.7615，对照纯 qwen 天花板 0.509/0.349，账上结论"增益在覆盖不在精度"。
-- 抽取头收官（run `20260730_1713_bert_t7_extractor`）：bfcl 触发时刻整条调用
-  0.9179（账上对标竞品 SPORK 的 0.076），appworld 只在 0.1 档可挂载 0.76；
-  账上写"真瓶颈是触发时值未出现（自由档参数已出现率仅 0.235），非抽取本身"。
-- 信号分解（run `20260730_1713_bert_t5_ablation`）：把思考去掉后校准堆加权
-  准确率 bfcl 0.4381 / appworld 0.421 / tales 0.6054，同指标的全输入基线是
-  bfcl 0.7518 / appworld 0.6133 / tales 0.6947（run `20260730_0056_bert_probe_v3`，
-  同 v3 数据同脚本）；把历史去掉后 bfcl 0.982 近平、appworld 0.954 破 95 线
-  （这两个是 risk0.05 档触发精度，与去思考的指标不同档，不能横比）。
-  账上原话"历史是有害噪声"。
+- The causal probe (run `20260730_1716_bert_t8_causal`): appworld 0.05-tier accuracy 0.9621 / ratio 0.3338 (no
+  solution for ModernBERT on the same cell); bfcl 0.9779; tales 0.9077 (tales's 0.1-tier θ transfer failed to hold,
+  marked on the ledger as tales-specific). Trigger ratio across the three environments is 2.5 to 4.3 times higher.
+- Cross-model (run `20260730_1713_bert_t6_xqwen`): bfcl in-domain 0.9748 / cold transfer 0.897 / recalibration alone
+  recovers 0.971 (at half the trigger ratio); appworld's recalibration does not fully recover it; tales is weak
+  across the board. The gptoss-side counterpart (`20260730_1716_bert_t6_xgptoss`): in-domain strength is bfcl 0.9623
+  > appworld 0.9298 > tales 0.7551, tales's cold-transfer trigger ratio is 0.0.
+- The bfcl mixed-training ceiling (run `20260730_1835`): qwen side 0.9645/0.7478, gptoss side 0.9157/0.7615, against
+  a pure-qwen ceiling of 0.509/0.349, ledger conclusion "the gain is in coverage, not in accuracy."
+- The extraction head wrap-up (run `20260730_1713_bert_t7_extractor`): bfcl's whole-call accuracy at the trigger
+  moment is 0.9179 (the ledger benchmarks this against the competing SPORK's 0.076), appworld can only attach 0.76 at
+  the 0.1 tier; the ledger writes "the real bottleneck is that the value has not yet appeared at fire time
+  (free-form-tier parameters have appeared only 0.235 of the time), not extraction itself."
+- Signal decomposition (run `20260730_1713_bert_t5_ablation`): with the thinking removed, calibration-split weighted
+  accuracy is bfcl 0.4381 / appworld 0.421 / tales 0.6054; the full-input baseline on the same metric is bfcl 0.7518
+  / appworld 0.6133 / tales 0.6947 (run `20260730_0056_bert_probe_v3`, same v3 data, same script); with the history
+  removed, bfcl is near flat at 0.982, appworld breaks the 95 line at 0.954 (these two are risk0.05-tier trigger
+  accuracy, a different metric from the no-thinking ablation, not comparable side by side). The ledger's exact
+  words: "history is harmful noise."

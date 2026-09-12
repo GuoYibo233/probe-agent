@@ -1,82 +1,82 @@
-# T08 — 发射公共件（08-launch-common）报告
+# T08: Launch commons (08-launch-common) report
 
-工单：`.scratch/gpu-monitor-launch/issues/08-launch-common.md`
-需求细节来源：工单未引用 spec，按工单指示读了实施计划
-`docs/plans/2026-08-08-gpu-monitor-launch.md` 的 Task 10（第 797-818 行）。
-工作树：`/home/y-guo/reproduce/new1-wt/20260808-par-T08`，分支 `ticket/20260808-par/T08`。
+Ticket: `.scratch/gpu-monitor-launch/issues/08-launch-common.md`
+Requirement detail source: the ticket does not cite spec; per the ticket's instruction, read the implementation plan
+`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 10 (lines 797-818).
+Worktree: `/home/y-guo/reproduce/new1-wt/20260808-par-T08`, branch `ticket/20260808-par/T08`.
 
-## 做了什么
+## What was done
 
-新建 `ops/launch_common.py`，对照工单三条能力逐条实现：
+New `ops/launch_common.py`, implementing the ticket's three capabilities one by one:
 
-1. **探卡 `probe_free(host, gpus)`**：`ssh <host> nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader -i <gpus>`。
-   stdout 非空 → `(False, "占用中: <首行>")`；ssh 超时/`OSError`/非零退出 →
-   `(False, "探测失败: ...")`；stdout 为空 → `(True, "")`。fail-closed：探测
-   失败与占用中同样返回非 FREE。
+1. **Probe free `probe_free(host, gpus)`**: `ssh <host> nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader -i <gpus>`.
+   Non-empty stdout → `(False, "occupied: <first line>")`; ssh timeout/`OSError`/nonzero exit →
+   `(False, "probe failed: ...")`; empty stdout → `(True, "")`. Fail-closed: probe
+   failure and occupied both return non-FREE the same way.
 
-2. **tmux 发射模板**：`ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}`
-   照抄；`local_host()`（从 `launch_probe.py` 原来的模块级常量 `LOCAL` 改成
-   按需算的函数，方便测试 monkeypatch，行为不变——都是 `hostname` 经 ALIAS
-   折算）；`has_session(host, s)` 与 `tmux_launch(host, sess, inner_cmd)` 与
-   `launch_probe.py:47-62` 的逻辑一致（本机走 `bash -c`，远程走
-   `ssh -n host`；`tmux_launch` 的 inner 模板与调用方拼好的
-   `cd <wd> && CUDA_VISIBLE_DEVICES=<g> <cmd> 2>&1 | tee <log>` 一致）。
-   与 `launch_probe.py` 原来的 `launch()` 不同的一点：`tmux_launch` 不做
-   「session 已存在就跳过」的判断——那是调用方（launch_cmd / 排卡发射器）
-   的业务，工单 09/11 会各自处理；这一张不改任何现有发射器的行为，
-   `launch_probe.py`/`launch_eval.py` 原样未动。
+2. **tmux launch template**: `ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}`
+   copied as-is; `local_host()` (changed from `launch_probe.py`'s original module-level constant `LOCAL` into a
+   function computed on demand, for easier test monkeypatching, with no behavior change. Both are computed by
+   folding `hostname` through ALIAS); `has_session(host, s)` and `tmux_launch(host, sess, inner_cmd)` are consistent with the
+   logic at `launch_probe.py:47-62` (locally goes through `bash -c`, remotely goes through
+   `ssh -n host`; `tmux_launch`'s inner template matches the caller-assembled
+   `cd <wd> && CUDA_VISIBLE_DEVICES=<g> <cmd> 2>&1 | tee <log>`).
+   One difference from `launch_probe.py`'s original `launch()`: `tmux_launch` does not do the
+   "skip if session already exists" check. That is the caller's (launch_cmd / the queued launchers)
+   business, which tickets 09/11 will each handle; this ticket does not change any existing launcher's
+   behavior, `launch_probe.py`/`launch_eval.py` are left unchanged.
 
-3. **`register_all(run_id, workdir, pieces, track, cmd_display, note=None, outdir=None, monitor=None)`**：
-   三处登记按固定顺序（台账→记录→RUNMETA）不吞异常地做：
-   - 台账：`gpu_jobs.mutate_reg` 里 `reg["active"]` 已有同名 job（`name==run_id`）
-     就 `sys.exit`（重复 run_id 拒绝，锁内检查，护栏）；否则 append
-     `{"name","workdir","note","started_at","pieces"}`，`pieces` 就是调用方
-     传进来的 rich piece 列表（原样收，不重新构造字段）；`monitor` 只在非
-     `None` 时才写进 job（避免下游 `job.get("monitor",{}).get("warmup_s")`
-     在 `monitor` 显式为 `None` 时因为 key 存在但值不是 dict 而报错——这是
-     我自己推的一条安全边界，工单原文没写这条，见下方"自查发现"）。
-   - 记录：`subprocess.run([sys.executable, OPS/"record.py", "start", "--run-id", run_id, "--track", track, "--cmd", cmd_display, "--host", ..., "--gpu", ..., "--log", ...])`，
-     多分片的 host/gpus/log 各自逗号拼成一个展示串传给这三个参数（工单原文
-     只写了"..."没给多分片时的拼法，这是我做的裁决，见下方"自查发现"）；
-     不 `capture_output`，让 `record.py` 自己的报错直接打到终端；`rc != 0`
-     → `sys.exit(rc)` 原样透出并中止。
-   - RUNMETA：`outdir` 给了才 `runmeta.append_runmeta(outdir, cmd_display, kind="launch")`；
-     没给打印并在回执里带一行 `WARN 没给 --outdir，RUNMETA 没写`。
-   - 返回三行回执文本（台账/记录/RUNMETA 各一行）。
+3. **`register_all(run_id, workdir, pieces, track, cmd_display, note=None, outdir=None, monitor=None)`**:
+   the three registrations, in fixed order (ledger→record→RUNMETA), without swallowing exceptions:
+   - Ledger: in `gpu_jobs.mutate_reg`, if `reg["active"]` already has a job with the same name (`name==run_id`)
+     it calls `sys.exit` (duplicate run_id rejected, checked inside the lock, a guard rail); otherwise appends
+     `{"name","workdir","note","started_at","pieces"}`, with `pieces` being the caller's own rich piece list passed in
+     as-is (not reconstructed with new fields); `monitor` is only written into the job when
+     it is not `None` (avoiding a downstream `job.get("monitor",{}).get("warmup_s")`
+     erroring when `monitor` is explicitly `None` (the key exists but its value isn't a dict). This is a safety
+     boundary I added myself; the ticket's original text does not say this, see "Self-check findings" below).
+   - Record: `subprocess.run([sys.executable, OPS/"record.py", "start", "--run-id", run_id, "--track", track, "--cmd", cmd_display, "--host", ..., "--gpu", ..., "--log", ...])`,
+     with the host/gpus/log for multiple pieces each comma-joined into one display string passed to these three arguments (the ticket's original
+     text only wrote "..." without saying how to join them for multiple pieces. This is a ruling I made, see "Self-check
+     findings" below); does not `capture_output`, letting `record.py`'s own error print directly to the terminal;
+     `rc != 0` → `sys.exit(rc)` passed through as-is and aborts.
+   - RUNMETA: only when `outdir` is given does it call `runmeta.append_runmeta(outdir, cmd_display, kind="launch")`;
+     if not given, prints and includes a line in the receipt, `WARN --outdir not given, RUNMETA was not written`.
+   - Returns three lines of receipt text (ledger/record/RUNMETA each one line).
 
-同一 commit 更新了 `MAP.md`：在「记账与发射工具」表里加了 `ops/launch_common.py`
-一行（放在 `ops/jobs.json` 和 `ops/launch_probe.py` 之间）。没有改
-`run.py` 注册表——`launch_common.py` 本身不是一个可跑的任务，是给工单 09
-（`run.py launch`）和工单 11（两个排卡发射器）用的库，工单原文明确写了
-「这一张不改任何现有发射器的行为」。
+The same commit also updated `MAP.md`: adding a line for `ops/launch_common.py` in the
+"ledger and launch tools" table (placed between `ops/jobs.json` and `ops/launch_probe.py`). Did not touch
+`run.py`'s registry. `launch_common.py` itself is not a runnable task, it's a library for
+ticket 09 (`run.py launch`) and ticket 11 (the two queued launchers); the ticket's original text explicitly stated
+"this one does not change any existing launcher's behavior."
 
-## 怎么验证的
+## How it was verified
 
-写了 `tests/test_launch_common.py`，14 个用例，覆盖工单两条验收要求外加
-`local_host`/`has_session`/`tmux_launch` 的基本行为：
+Wrote `tests/test_launch_common.py`, 14 cases, covering the ticket's two acceptance requirements plus
+the basic behavior of `local_host`/`has_session`/`tmux_launch`:
 
-- `TestProbeFree`：空 stdout / 有进程行 / `subprocess.TimeoutExpired` /
-  非零 rc 四种输入（工单点名的三种 + 我补的非零 rc 一种，理由见下方
-  "自查发现"）对应四种返回。
-- `TestRegisterAll`：`test_ledger_gets_rich_piece_full_fields` 断言台账
-  `pieces[0]` 出现 `host/gpus/session/log/cmd/launched_at/kind/stall_line/escalate_line`
-  全部九个字段；`test_duplicate_run_id_rejected_on_second_call` 断言同一
-  `run_id` 第二次调用 `register_all` 抛 `SystemExit`，且台账里仍只有一条；
-  另加 `test_no_monitor_key_when_not_given`（不给 `monitor` 时台账里没有
-  这个 key）、`test_record_failure_aborts_but_ledger_already_written`
-  （`record.py` 模拟 rc=1 时 `register_all` 抛出，但台账那一步已经落地）、
-  `test_outdir_given_writes_runmeta` / `test_no_outdir_warns_instead_of_writing`。
-  用 `monkeypatch gpu_jobs.REG_PATH` 指到 tmp 文件隔离台账（工单原文写法）。
-- `TestLocalAndSession`：`local_host` 经 ALIAS 折算、`has_session`/
-  `tmux_launch` 本机走 `bash`、远程走 `ssh` 的分支各一个用例。
+- `TestProbeFree`: empty stdout / has a process line / `subprocess.TimeoutExpired` /
+  nonzero rc, four kinds of input (the three named by the ticket plus one I added for nonzero rc, reason
+  in "Self-check findings" below) each mapping to a corresponding return value.
+- `TestRegisterAll`: `test_ledger_gets_rich_piece_full_fields` asserts the ledger's
+  `pieces[0]` has all nine fields `host/gpus/session/log/cmd/launched_at/kind/stall_line/escalate_line`;
+  `test_duplicate_run_id_rejected_on_second_call` asserts that calling `register_all` a second time with the same
+  `run_id` raises `SystemExit`, and the ledger still has only one entry;
+  also added `test_no_monitor_key_when_not_given` (when `monitor` isn't given, the ledger has no such
+  key), `test_record_failure_aborts_but_ledger_already_written`
+  (when `record.py` is mocked to rc=1, `register_all` raises, but the ledger step has already landed),
+  and `test_outdir_given_writes_runmeta` / `test_no_outdir_warns_instead_of_writing`.
+  `monkeypatch gpu_jobs.REG_PATH` points the ledger at a tmp file to isolate it (the ticket's original written pattern).
+- `TestLocalAndSession`: `local_host` folded through ALIAS, and one case each for
+  `has_session`/`tmux_launch` going through `bash` locally / `ssh` remotely.
 
-运行：
+Run:
 
 ```
 python3 -m unittest tests.test_launch_common -v
 ```
 
-输出（尾部）：
+Output (tail):
 
 ```
 test_has_session_local_uses_bash (tests.test_launch_common.TestLocalAndSession) ... ok
@@ -99,61 +99,63 @@ Ran 14 tests in 0.157s
 OK
 ```
 
-再跑全量：
+Then ran the whole suite:
 
 ```
 python3 -m unittest discover -s tests -v
 ```
 
-29 个测试（含 T01 之前写的 `test_heartbeat.py`/`test_verdicts.py`）全绿，
-`ops/jobs.json`/`RESULTS.md` 没被动过（`git status --porcelain` 确认）。
+29 tests (including `test_heartbeat.py`/`test_verdicts.py` written before T01) all green,
+`ops/jobs.json`/`RESULTS.md` untouched (confirmed with `git status --porcelain`).
 
-`run.py selfcheck` 跑了一遍（没改注册表，非强制项，顺手确认没引入新问题）：
-输出 `62 任务 / 4 配方, 16 处缺失`，16 条全是这个工作树没有各 env 的
-venv/解释器（`envs/appworld/venv/bin/python` 之类），是工作树本身的环境
-缺失，与本工单改动无关，`launch_common.py`/`launch_common` 相关任务不在
-缺失清单里（因为它压根没进注册表）。
+Ran `run.py selfcheck` once (no registry change, not a hard requirement, just confirming no new problem introduced):
+output `62 tasks / 4 recipes, 16 missing`, the 16 lines all being missing envs/
+venv/interpreters in this worktree (things like `envs/appworld/venv/bin/python`), which is a gap in this
+worktree's own environment, unrelated to this ticket's changes. `launch_common.py`/anything related to it
+is not in the missing list (because it never went into the registry at all).
 
-## commit 清单
+## Commit list
 
-- `c55e47a` — `T08: 发射公共件 ops/launch_common.py(探卡fail-closed/tmux模板/三处登记一口气)`
-  （`ops/launch_common.py` 新建、`tests/test_launch_common.py` 新建、
-  `MAP.md` 加一行）
+- `c55e47a`: `T08: launch commons ops/launch_common.py(fail-closed probe/tmux template/three registrations in one go)`
+  (`ops/launch_common.py` new, `tests/test_launch_common.py` new,
+  `MAP.md` one line added)
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-工单原文对 `register_all` 的描述里有两处细节没写全，我按"能安全裁决"的
-标准自己定了，记在这里供评审核对：
+The ticket's original description of `register_all` left two details unspecified, ruled on myself under the
+"safe to decide" standard, noted here for reviewer cross-check:
 
-1. **`monitor` 为 `None` 时台账 job 要不要写 `monitor` key**：工单写
-   "job 级 `monitor={"warmup_s":...}`"，没说不给 `monitor` 参数时怎么办。
-   实施计划另一处（Task 6 采样器，第 698 行）写了消费端逻辑：
-   `warmup_s` 从 `job.get("monitor", {}).get("warmup_s")` 取，缺省退到
-   `verdicts.DEFAULTS`。如果 `register_all` 在 `monitor=None` 时仍然写
-   `job["monitor"] = None`，消费端 `job.get("monitor", {})` 会因为 key
-   存在而返回 `None`（不会退到 `{}`），再 `.get("warmup_s")` 就会在 `None`
-   上报 `AttributeError`。我判断这是能安全裁决的坑，选择"`monitor` 是
-   `None` 就不写这个 key"，用 `test_no_monitor_key_when_not_given` 钉住。
-   **这条不在工单验收清单里，值得工单 09（`run.py launch`）落地时确认
-   一下它会不会给一个非空 `monitor` dict。**
+1. **Whether the ledger job should write a `monitor` key when `monitor` is `None`**: the ticket writes
+   "job-level `monitor={"warmup_s":...}`," without saying what to do when `monitor` isn't given.
+   Another part of the implementation plan (Task 6, sampler, line 698) writes the consuming side's logic:
+   `warmup_s` is taken from `job.get("monitor", {}).get("warmup_s")`, falling back to
+   `verdicts.DEFAULTS` when absent. If `register_all` still writes
+   `job["monitor"] = None` when `monitor=None`, the consuming side's `job.get("monitor", {})` would return
+   `None` because the key exists (it would not fall back to `{}`), and then calling `.get("warmup_s")`
+   on it would report `AttributeError`. I judged this to be a pitfall that was safe to rule on myself, choosing
+   "don't write this key when `monitor` is `None`," pinned down with
+   `test_no_monitor_key_when_not_given`. **This is not on the ticket's acceptance checklist and is worth confirming
+   when ticket 09 (`run.py launch`) lands, to check whether it will pass a non-empty `monitor` dict.**
 
-2. **多分片时 `record.py start` 的 `--host`/`--gpu`/`--log` 怎么填**：
-   `record.py` 的 `cmd_start` 每个参数只接受一个字符串值，而
-   `register_all` 的 `pieces` 是列表（工单 09 的分片场景一次发射可能是
-   多个 host:gpu）。工单原文只写了 "`--host`, ..., `--gpu`, ..., `--log`, ..."，
-   没给多分片时的拼法。我选的是把各分片的 `host`/`gpus`/`log` 分别用逗号
-   拼成一个字符串（`"tokyo106,tokyo107"` 这种）。这个字段在 `RESULTS.md`
-   里只是展示用，不影响记录体系的其它字段，风险低，我判断能安全裁决；
-   但拼法本身没有测试断言具体值（只断言了 `subprocess.run` 被调用且
-   `rc==0` 路径正常），**工单 09 落地、真正产出多分片调用时最好肉眼核对
-   一下 `RESULTS.md` 里这行长什么样，看是否需要换个更好读的格式。**
+2. **How to fill `record.py start`'s `--host`/`--gpu`/`--log` when there are multiple pieces**:
+   `record.py`'s `cmd_start` takes only a single string value per argument, but
+   `register_all`'s `pieces` is a list (ticket 09's sharding scenario can be multiple
+   host:gpu per launch). The ticket's original text only wrote "`--host`, ..., `--gpu`, ..., `--log`, ...," without
+   giving the join format for multiple pieces. I chose to join each piece's
+   `host`/`gpus`/`log` with commas into one string (something like `"tokyo106,tokyo107"`). This field is
+   only for display in `RESULTS.md`, doesn't affect any other field in the record system, and is low
+   risk, so I judged it safe to decide on my own; but the join format itself has no test asserting the exact value
+   (only that `subprocess.run` was called and the `rc==0` path was normal), **when ticket 09 lands
+   and actually produces a multi-piece call, it's worth eyeballing what this line looks like in `RESULTS.md`,
+   to see whether a more readable format is needed.**
 
-3. `probe_free` 补了一种工单没点名的输入（ssh 命令本身 rc 非零但没超时、
-   stdout 也是空——比如远程 `nvidia-smi` 报错或 host key 拒连）：按
-   fail-closed 原则也判成"探测失败"。工单验收清单写的是"空卡、占用中、
-   探测超时三种输入"，我多测了一种，不影响这三种原有断言，认为是必要的
-   补充覆盖，不算 YAGNI（同一个函数的另一条分支，不是额外功能）。
+3. `probe_free` covers one input not named by the ticket (the ssh command itself has a nonzero rc but no timeout,
+   and stdout is also empty, e.g. a remote `nvidia-smi` error or the host key being refused): under
+   fail-closed principles, this is also judged "probe failed." The ticket's acceptance checklist wrote "empty card,
+   occupied, probe timeout, three kinds of input"; I tested one extra kind, without touching the three original
+   assertions, and I consider this necessary added coverage, not YAGNI (it's another branch of the same
+   function, not extra functionality).
 
-没有发现需要改的风格不一致问题；`has_session`/`tmux_launch`/`local_host`
-的 ssh/bash 分支写法与 `ops/launch_probe.py:47-62` 保持一致（本机
-`bash -c`、远程 `ssh -n host`）。
+No stylistic inconsistency was found needing fixing; `has_session`/`tmux_launch`/`local_host`'s
+ssh/bash branching matches `ops/launch_probe.py:47-62` (local
+`bash -c`, remote `ssh -n host`).

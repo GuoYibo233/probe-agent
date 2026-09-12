@@ -1,78 +1,79 @@
-# T11 — 两个排卡发射器接登记（11-board-launchers）报告
+# T11: Two queued launchers wired to registration (11-board-launchers) report
 
-工单：`.scratch/gpu-monitor-launch/issues/11-board-launchers.md`
-需求细节来源：工单指向实施计划 `docs/plans/2026-08-08-gpu-monitor-launch.md`
-的 Task 13（第 896-916 行）。
-工作树：`/home/y-guo/reproduce/new1-wt/20260808-par-T11`，
-分支 `ticket/20260808-par/T11`。
+Ticket: `.scratch/gpu-monitor-launch/issues/11-board-launchers.md`
+Requirement detail source: the ticket points to implementation plan `docs/plans/2026-08-08-gpu-monitor-launch.md`
+Task 13 (lines 896-916).
+Worktree: `/home/y-guo/reproduce/new1-wt/20260808-par-T11`,
+branch `ticket/20260808-par/T11`.
 
-## 做了什么
+## What was done
 
-对照工单四条要求逐条实现：
+Against the ticket's four requirements one by one:
 
-1. **本地 tmux 辅助函数删掉换成 import**：`ops/launch_probe.py`（原
-   `:47-62`）和 `ops/launch_eval.py`（原 `:62-77`）里各自的 `has_session`/
-   `launch` 本地函数、以及为它们服务的模块级 `LOCAL`/`ALIAS` 计算全部删掉，
-   换成 `from launch_common import has_session, tmux_launch, probe_free,
-   register_all`。两个文件原来 `launch()` 的调用点（在 `main()` 的发射循环
-   里）改成一个新的 `launch_and_register(...)` 函数，内部拼 inner 命令后
-   调 `tmux_launch`——inner 模板与原来完全一致
-   （`cd <wd> && CUDA_VISIBLE_DEVICES=<g> <cmd> 2>&1 | tee <log>`），
-   `has_session` 存在性检查的 `SKIP (exists)` 行为原样保留。
+1. **Local tmux helper functions deleted and replaced with imports**: `ops/launch_probe.py` (originally
+   `:47-62`) and `ops/launch_eval.py` (originally `:62-77`) each had their own `has_session`/
+   `launch` local functions, plus the module-level `LOCAL`/`ALIAS` computation serving them, all deleted,
+   replaced with `from launch_common import has_session, tmux_launch, probe_free,
+   register_all`. Both files' original call sites for `launch()` (inside `main()`'s launch
+   loop) were changed to a new `launch_and_register(...)` function, which assembles the inner command
+   internally before calling `tmux_launch`. The inner template is exactly the same as before
+   (`cd <wd> && CUDA_VISIBLE_DEVICES=<g> <cmd> 2>&1 | tee <log>`), and the
+   `has_session` existence check's `SKIP (exists)` behavior is kept as-is.
 
-2. **每格发射前 FREE 实探**：`launch_and_register` 在 `has_session`
-   通过之后、真正 `tmux_launch` 之前调 `probe_free(host, str(gpu))`；
-   非 FREE 只打印原因并 `return False` 跳过这一格（`SKIP (非 FREE):
-   <sess>  <host> gpu<g>  <why>`），不整表拒绝——排卡表半空常见，与
-   `run.py launch` 单任务"整次拒绝"口径不同，函数 docstring 里写明了
-   这条差异。
+2. **FREE probe before each cell launches**: `launch_and_register` calls `probe_free(host, str(gpu))`
+   after `has_session` passes and before actually calling `tmux_launch`;
+   non-FREE only prints the reason and `return False`, skipping this one cell (`SKIP (non-FREE):
+   <sess>  <host> gpu<g>  <why>`), not rejecting the whole batch. A half-empty
+   queue table is common, differing from `run.py launch`'s single-task "reject the whole batch" convention;
+   this difference is written into the `launch_and_register` docstring.
 
-3. **每格发射后自动补台账和 record**：`launch_and_register` 在
-   `tmux_launch` 成功、`append_runmeta` 照旧写完之后，拼一个 rich piece
-   （`host/gpus/session/log/cmd/launched_at/kind/stall_line/escalate_line`
-   九个字段，`stall_line`/`escalate_line` 都传 `None`——两个排卡发射器不
-   支持按格覆盖判定线，工单原文也没要求）调
-   `register_all(rid, str(WD), [piece], track, cmd_display, outdir=None)`。
-   `outdir=None` 是因为 RUNMETA 那一步已经在 `append_runmeta` 里单独写过
-   了，工单原文明确写"RUNMETA 一步传 `outdir=None` 跳过，别写两遍"。
-   `track` 两个文件不同：`launch_probe` 用 `f"probe_{batch}"`，
-   `launch_eval` 用 `f"eval_{batch}"`。`launch_eval` 的 `rid` 按工单原文
-   "用 sess 去掉前缀 `eval_` 的 `{batch}_{model}_{cell}`" 取
-   `sess[len("eval_"):]`。`register_all` 抛出 `SystemExit`（比如撞了重复
-   `run_id`，或者 `record.py start` 内部拒绝）只打 `WARN 登记失败(<rid>):
-   <e>` 不重新抛出——tmux 那格已经真的发出去了，登记失败不能把已发射的
-   任务藏起来不让 alive check 看见，工单原文明确写了这条"打 WARN 继续，
-   不中断发射循环"。
+3. **Auto-registration into the ledger and record after each cell launches**: after `tmux_launch`
+   succeeds and `append_runmeta` finishes writing as before, `launch_and_register` assembles a rich piece
+   (nine fields: `host/gpus/session/log/cmd/launched_at/kind/stall_line/escalate_line`,
+   `stall_line`/`escalate_line` both passed as `None`. The two queued launchers don't
+   support overriding the verdict lines per cell, and the ticket's original text doesn't require it either), then calls
+   `register_all(rid, str(WD), [piece], track, cmd_display, outdir=None)`.
+   `outdir=None` because the RUNMETA step is already handled separately by `append_runmeta` earlier;
+   the ticket's original text explicitly states "pass `outdir=None` for the RUNMETA step to skip it, don't write it twice."
+   `track` differs between the two files: `launch_probe` uses `f"probe_{batch}"`,
+   `launch_eval` uses `f"eval_{batch}"`. `launch_eval`'s `rid`, per the ticket's original text
+   "session with the `eval_` prefix stripped, `{batch}_{model}_{cell}`," takes
+   `sess[len("eval_"):]`. When `register_all` raises `SystemExit` (e.g. hitting a duplicate
+   `run_id`, or `record.py start` internally rejecting), only `WARN registration failed(<rid>):
+   <e>` is printed without re-raising. The tmux cell has really already been launched, and a registration failure must not
+   hide an already-launched task from alive checks; the ticket's original text explicitly states this convention: "print WARN and keep
+   going, don't abort the launch loop."
 
-4. **各自守卫一个不动**：`launch_probe.py` 的排卡表解析（`build()`）和
-   smoke 模式（`--model`/`--host`/`--gpus` 四格 zip）逻辑一字未动；
-   `launch_eval.py` 的依赖顺序硬检查（call 档发射前查 `dep_run/
-   REPLAY_REPORT.json`）和训练产物存在检查（`run/best` 目录）逻辑一字未动
-   ——`git diff` 里 `build()` 函数完全没有出现在改动范围内。
+4. **Each script's own guardrail left untouched**: `launch_probe.py`'s queue table parsing (`build()`) and
+   smoke mode (the four-cell zip of `--model`/`--host`/`--gpus`) logic wasn't changed a single character;
+   `launch_eval.py`'s dependency-order hard check (checking `dep_run/
+   REPLAY_REPORT.json` before launching a call-stage) and training-artifact existence check (the `run/best`
+   directory) logic wasn't changed a single character.
+   `git diff` shows `build()` doesn't appear in the change scope at all.
 
-`kind` 字段：`launch_probe` 传 `"train"`，`launch_eval` 传
-`f"eval_{stage}"`（`eval_tool`/`eval_call`）——与两个文件原本
-`append_runmeta(..., kind=...)` 用的值一致，`verdicts.judge()` 只对
-`kind=="service"` 特判，其余值走批处理判定路径，两个值都不是
-`"service"`，不影响判定。
+`kind` field: `launch_probe` passes `"train"`, `launch_eval` passes
+`f"eval_{stage}"` (`eval_tool`/`eval_call`), matching the values the two files' original
+`append_runmeta(..., kind=...)` calls already used; `verdicts.judge()` only special-cases
+`kind=="service"`, everything else goes through the batch verdict path, and neither of these two values is
+`"service"`, so this doesn't affect verdicts.
 
-同一 commit 更新了 `MAP.md` 里 `ops/launch_probe.py`/`ops/launch_eval.py`
-两行，写明已接 `launch_common` 和自动登记行为。没有改 `run.py` 注册表——
-两个文件的 CLI 签名、`launch-probe`/`launch-eval` 任务条目、dry-run 输出
-格式全部没变，`run.py` 里对这两个任务的描述仍然准确。
+The same commit updated the two `MAP.md` lines for `ops/launch_probe.py`/`ops/launch_eval.py`,
+noting they now go through `launch_common` and auto-register. The `run.py` registry wasn't touched.
+neither file's CLI signature, the `launch-probe`/`launch-eval` task entries, nor the dry-run output
+format changed at all; `run.py`'s descriptions of these two tasks are still accurate.
 
-## 怎么验证的
+## How it was verified
 
-新增 `tests/test_launch_probe.py`（4 个用例）、`tests/test_launch_eval.py`
-（4 个用例），覆盖新的 `launch_and_register` 边界四条路径：session 已存在
-跳过、目标卡非 FREE 跳过、正常发射并登记 rich piece 全字段、登记抛
-`SystemExit` 时只 WARN 不中断（且发射结果仍算成功，返回 `True`）。
+New `tests/test_launch_probe.py` (4 cases), `tests/test_launch_eval.py`
+(4 cases), covering the four boundary paths of the new `launch_and_register`: session already exists,
+skip; target card non-FREE, skip; normal launch and registration with all rich piece fields; registration throws
+`SystemExit`, only WARN without aborting (and the launch is still reported as successful, returning `True`).
 
 ```
 python3 -m unittest tests.test_launch_probe tests.test_launch_eval -v
 ```
 
-输出（尾部）：
+Output (tail):
 
 ```
 test_launches_and_registers_rich_piece (tests.test_launch_probe.TestLaunchAndRegister) ... ok
@@ -89,25 +90,24 @@ Ran 8 tests in 0.007s
 OK
 ```
 
-全量：
+Full suite:
 
 ```
 python3 -m unittest discover -s tests -v
 ```
 
-37 个测试全绿（含 T01/T02/T03/T08 之前写的 `test_heartbeat.py`/
-`test_verdicts.py`/`test_launch_common.py`，此工作树里还没有其它并行工单
-的测试文件）。`ops/jobs.json`/`RESULTS.md` 没被动过（`git status
---porcelain` 只有我改的 5 个文件）。
+37 tests all green (including `test_heartbeat.py`/`test_verdicts.py`/`test_launch_common.py`, written before T01/T02/T03/T08;
+this worktree has no other parallel ticket's test files yet). `ops/jobs.json`/`RESULTS.md`
+weren't touched (`git status --porcelain` shows only the 5 files I changed).
 
-工单验收项"两个发射器 dry-run 照常打印"：`pipeline/data/` 在这个工作树
-里不存在（不是回归——`pipeline/data/` 本来就不进 git，是 NFS 大产物；
-主仓 `/home/y-guo/reproduce/new1` 下也没有现成的 `pipeline/data/`，检查
-过了确实找不到任何一批已采集的数据可以直接拿来跑，不是工作树隔离导致的
-缺失），用 `/tmp` 下建的假数据目录（`mkdir -p /tmp/.../q35`）+ 假训练产物
-目录（`mkdir -p pipeline/runs/zz_q35_mtool/best`，跑完立即删掉）走通了
-两条 dry-run 命令，确认 CLI 解析、`build()`、dry-run 打印路径在删掉本地
-`has_session`/`launch` 换成 import 之后没有被破坏：
+The ticket's acceptance item "both launchers dry-run as usual": `pipeline/data/` doesn't
+exist in this worktree (not a regression, `pipeline/data/` was never in git, it's an NFS-hosted big
+artifact; `/home/y-guo/reproduce/new1` also has no ready-made `pipeline/data/`. Checked and
+genuinely couldn't find any already-collected data batch to use directly, not caused by worktree isolation), so a fake data directory
+(`mkdir -p /tmp/.../q35`) + fake training-artifact directory (`mkdir -p pipeline/runs/zz_q35_mtool/best`, deleted
+right after the run) were built under `/tmp` to walk through both dry-run commands, confirming CLI parsing,
+`build()`, and the dry-run print path weren't broken after replacing the local `has_session`/
+`launch` with imports:
 
 ```
 python3 run.py launch-probe smoke --batch zz --data-root /tmp/t11_smoke_data \
@@ -118,8 +118,8 @@ python3 run.py launch-probe smoke --batch zz --data-root /tmp/t11_smoke_data \
   python3 .../ops/launch_probe.py smoke --batch zz --data-root /tmp/t11_smoke_data --env appworld --model q35 --dry-run
 [dry-run] tokyo107 gpu0 new1_zz_q35_mtool_smoke_t107g0
     .../mbert-env/bin/python .../pipeline/train/train_mbert_tool.py --data /tmp/t11_smoke_data/q35 --out .../pipeline/runs/smoke/zz_q35_mtool_smoke --env appworld --smoke
-（另外三格类似）
-共 4 格(dry-run,未发射)
+(three more cells like this)
+4 cells total (dry-run, not launched)
 ```
 
 ```
@@ -131,133 +131,135 @@ python3 run.py launch-eval tool --batch zz --data-root /tmp/t11_smoke_eval_data 
   python3 .../ops/launch_eval.py tool --batch zz --data-root /tmp/t11_smoke_eval_data --env appworld --placement /tmp/t11_eval_placement.json --dry-run
 [dry-run] tokyo106 gpu0 eval_zz_q35_mtool
     .../mbert-env/bin/python .../pipeline/eval/eval_tool.py --env appworld --run .../pipeline/runs/zz_q35_mtool --data /tmp/t11_smoke_eval_data/q35 --head mbert
-共 1 格(dry-run,未发射)
+1 cell total (dry-run, not launched)
 ```
 
-两条命令都在 dry-run 分支直接 `return`，不碰 `probe_free`/`tmux_launch`/
-`register_all`，与工单"dry-run 照常打印"的要求一致（dry-run 逻辑本身
-这次改动完全没碰）。
+Both commands return directly in the dry-run branch, without touching `probe_free`/`tmux_launch`/
+`register_all`, consistent with the ticket's "dry-run as usual" requirement (the dry-run logic itself wasn't touched at all this time).
 
-`run.py selfcheck` 在这个工作树里跑出 `16 处缺失`，全部是
-`envs/*/venv`、`mbert-env`、`cprobe-env` 之类的解释器路径缺失——
-在主仓 `/home/y-guo/reproduce/new1`（同一个 HEAD 之前，没有我的改动）
-跑同一条命令是 `63 任务 / 4 配方, 全部就位`，对比确认这 16 处缺失是
-`git worktree add` 不带走未跟踪文件（venv 目录整个不进 git）导致的
-工作树隔离限制，与本工单的代码改动无关；`launch-probe`/`launch-eval`
-两个任务本身不在缺失清单里。
+`run.py selfcheck` in this worktree reports `16 missing`, all
+`envs/*/venv`, `mbert-env`, `cprobe-env` and similar interpreter paths missing.
+Running the same command in the main repo `/home/y-guo/reproduce/new1` (same HEAD before, without my changes)
+gives `63 tasks / 4 recipes, all present`; the comparison confirms these 16 missing items are a worktree-isolation
+limitation caused by `git worktree add` not bringing over untracked files (venv directories are entirely excluded from git),
+unrelated to this ticket's code changes; `launch-probe`/`launch-eval`
+themselves are not in the missing list.
 
-## commit 清单
+## Commit list
 
-- `1d1d84b` — `T11: 排卡发射器接 launch_common(FREE 实探+自动台账/record,RUNMETA 照旧)`
-  （`ops/launch_probe.py`、`ops/launch_eval.py`、`MAP.md` 改动，
-  `tests/test_launch_probe.py`、`tests/test_launch_eval.py` 新建）
+- `1d1d84b`: `T11: queued launchers wired to launch_common(FREE probe + auto ledger/record, RUNMETA unchanged)`
+  (`ops/launch_probe.py`, `ops/launch_eval.py`, `MAP.md` changes,
+  `tests/test_launch_probe.py`, `tests/test_launch_eval.py` new)
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-1. **`register_all` 的 `workdir` 参数传了 `str(WD)`（仓库根）**：工单
-   原文没有点名这个参数该传什么。两个发射器的 inner 命令都是
-   `cd {WD} && ...`，进程真实 cwd 就是仓库根，我判断传 `str(WD)` 是
-   忠实反映实情的选择；对照台账历史记录（`ops/jobs.json` 的
-   `history` 里 `hcap` 那条 job 的 `workdir` 是它自己产物目录，不是
-   仓库根）来看，"workdir" 字段在不同发射路径下语义不完全统一
-   （有的填产物目录、有的填进程 cwd），这个工单没有要求统一，我没有
-   动这个既有的不一致，只是给这两个新接入的发射路径选了"进程真实
-   cwd"这个解释,判断是能安全裁决的点，不影响任何测试断言或验收项。
+1. **`register_all`'s `workdir` argument was passed `str(WD)` (the repo root)**: the ticket's original
+   text doesn't name what this argument should be. Both launchers' inner commands are
+   `cd {WD} && ...`, so the process's real cwd is the repo root; I judged passing `str(WD)` to be
+   the choice that honestly reflects reality; comparing against the ledger's historical record
+   (`ops/jobs.json`'s `history`'s `hcap` job has its own `workdir` set to its own artifact
+   directory, not the repo root), the "workdir" field's semantics aren't fully consistent across different
+   launch paths already (some fill in the artifact directory, some fill in the process cwd), this ticket does not require
+   unifying this, and I did not touch this existing inconsistency, just picked "the process's real
+   cwd" as the interpretation for these two newly-wired launch paths. Judged to be a safe call, not affecting any
+   test assertion or acceptance item.
 
-2. **`stall_line`/`escalate_line` 固定传 `None`**：工单原文和实施计划
-   Task 13 都没提到这两个排卡发射器要支持按格覆盖判定线/升级线（这是
-   `run.py launch`——工单 09——的能力,签名里有 `--stall-line`/
-   `--escalate-line`）。我直接固定传 `None`，让采样器退到
-   `verdicts.DEFAULTS` 的自适应判定线。如果后续要给这两个发射器也加
-   覆盖能力，需要额外开工单，不在这张范围内。
+2. **`stall_line`/`escalate_line` are fixed to `None`**: neither the ticket's original text nor implementation plan
+   Task 13 mention that these two queued launchers should support per-cell overrides of the verdict/escalate
+   line (that is `run.py launch`'s capability, ticket 09, whose signature has
+   `--stall-line`/`--escalate-line`). I fixed them at `None`, letting the sampler fall back to
+   `verdicts.DEFAULTS`'s adaptive verdict lines. If these two launchers need override capability added
+   later, that needs a separate ticket, not within this one's scope.
 
-3. 为改动边界补的两个测试文件里，`test_launches_and_registers_rich_piece`
-   （launch_probe）用字符串精确匹配断言了 `tmux_launch` 收到的 inner
-   命令文本，绑定了 `f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd}
-   2>&1 | tee {log}"` 这个具体格式；如果以后这个模板改了这条测试会跟着
-   炸，这是有意为之（模板是"inner 模板一致，行为不变"这条验收要求的
-   直接体现，值得钉死）。
+3. For the two test files added to cover the boundary, `test_launches_and_registers_rich_piece`
+   (launch_probe) uses an exact string match to assert the inner command received by `tmux_launch`,
+   binding it to the specific format `f"cd {WD} && CUDA_VISIBLE_DEVICES={gpu} {cmd}
+   2>&1 | tee {log}"`; if this template is ever changed, this test would break with it. This is
+   deliberate (the template is the direct embodiment of the acceptance requirement "inner template unchanged, behavior unchanged," worth
+   pinning down).
 
-没有发现需要改的风格不一致问题；`launch_and_register` 的 docstring
-风格、`WARN` 前缀打印方式都照抄了 `launch_common.register_all` 和两个
-文件原有的 `append_runmeta` 失败处理写法。两个文件里 `shlex` 仍在
-`build()`/`cell_cmd_parts()` 里用，`subprocess` 已经不再需要（探卡/
-tmux 全部转给 `launch_common`），删掉了 `import subprocess`。
+No stylistic inconsistency needing a fix was found; `launch_and_register`'s
+docstring style and the `WARN`-prefix printing convention both copy `launch_common.register_all` and
+both files' original `append_runmeta` failure-handling style. `shlex` is still used in
+`build()`/`cell_cmd_parts()` in both files; `subprocess` is no longer needed
+(probing/tmux all handed off to `launch_common`), and `import subprocess` was removed.
 
 ---
 
-## 修复第 1 轮（F1）
+## Fix round 1 (F1)
 
-工作树：`/home/y-guo/reproduce/new1-wt/20260808-par-T11-fix1`，
-同一分支 `ticket/20260808-par/T11`（检出已有分支，不新建）。
+Worktree: `/home/y-guo/reproduce/new1-wt/20260808-par-T11-fix1`,
+same branch `ticket/20260808-par/T11` (checked out the existing branch, not newly created).
 
-### F1（critical）：launch-eval 的 run_id 与 launch-probe 完全同名，标准流程下 register_all 必撞
+### F1 (critical): launch-eval's run_id is exactly the same name as launch-probe's, so under the standard flow register_all is bound to collide
 
-**评审指出的问题**：`ops/launch_eval.py:86` 原来 `rid = sess[len("eval_"):]`，
-`sess = f"eval_{batch}_{model}_{cell}"`，去掉 `eval_` 前缀后等于
-`f"{batch}_{model}_{cell}"`——与 `ops/launch_probe.py` 的 `build()` 给同一格
-训练 job 用的 `rid`（`f"{batch}_{model}_{cell}"`）逐字符相同。`register_all`
-的去重检查（`ops/launch_common.py` `if any(j["name"]==run_id for j in
-reg["active"])`）只看 `jobs.json` 的 `active` 列表；训练 job 从 `active`
-移出只发生在 `gpu_jobs finish`（销号），按 `probe-pipeline/SKILL.md`，
-销号排在 Phase D（收官），明确排在 C4 评测之后（C4 小节原文：'不必等
-训练全批收官，逐格收官逐格派评测'）。标准跑法下，`launch-eval` 调
-`register_all` 时同名训练 job 几乎总还在 `active` 里，`register_all` 会
-`sys.exit(f"run_id {run_id} 已在台账里…")`，被 `launch_and_register` 的
-`except SystemExit` 吞成一行 WARN——tmux 评测任务照常发出去，但从头到尾
-没有台账条目，也没有 `record.py` 记录。
+**Problem pointed out by review**: `ops/launch_eval.py:86` originally had `rid = sess[len("eval_"):]`,
+with `sess = f"eval_{batch}_{model}_{cell}"`. Stripping the `eval_` prefix leaves it equal to
+`f"{batch}_{model}_{cell}"`, character-for-character the same as the `rid` `ops/launch_probe.py`'s
+`build()` uses for the same training-job cell (`f"{batch}_{model}_{cell}"`). `register_all`'s
+de-dup check (`ops/launch_common.py`'s `if any(j["name"]==run_id for j in
+reg["active"])`) only looks at `jobs.json`'s `active` list; a training job only leaves
+`active` when `gpu_jobs finish` deregisters it. Per `probe-pipeline/SKILL.md`,
+deregistration comes at Phase D (wrap-up), explicitly after C4's evaluation (C4's section
+says explicitly: "no need to wait for the whole training batch to wrap up, wrap up each cell as it finishes and dispatch its eval").
+Under the standard flow, when `launch-eval` calls
+`register_all`, the same-named training job is almost always still in `active`, and `register_all` will
+`sys.exit(f"run_id {run_id} already in ledger…")`, which gets swallowed by `launch_and_register`'s
+`except SystemExit` into one WARN line. The tmux eval task still gets launched as usual, but from start to finish it
+has no ledger entry, and no `record.py` record either.
 
-**复核加深的一层**：追查 `ops/record.py` 后发现问题比评审描述的还要严重——
-`record.py start`（`register_all` 第②步）自己也有一层独立的重复检查
-（`record.py:237-238` `if ev["run_id"] in load(): sys.exit(...)`）。`load()`
-是把 `runs.jsonl` 里全部历史事件按 `run_id` 折叠出来的，`finish` 只是往
-事件流里再 append 一条 `finish` 事件，不会把 `run_id` 从 `load()` 的返回值
-里删掉。也就是说，即便训练 job 已经在 `jobs.json` 里 `finish` 销号完毕
-（绕开了评审描述的第一层撞车），只要这个 `run_id` 曾经在 `record.py` 里
-`start` 过，`record.py start` 自己就会再撞一次、独立于 `jobs.json` 的
-`active` 列表状态——`rid = sess[len("eval_"):]` 这个写法在**任何**训练/
-评测时序下都会撞车，不只是"标准跑法下几乎总撞"。
+**A layer deepened by further review**: after tracing into `ops/record.py`, the problem turns out to be even
+more serious than the review's description. `record.py start` (step 2 of `register_all`) itself has its own
+independent duplicate check (`record.py:237-238` `if ev["run_id"] in load(): sys.exit(...)`).
+`load()` folds `runs.jsonl`'s entire history of events by `run_id`; `finish` just
+appends another `finish` event into the event stream, it does not remove the `run_id` from
+`load()`'s return value. In other words, even if the training job has already been
+`finish`-deregistered in `jobs.json` (avoiding the review's described first-layer collision), as long as
+this `run_id` was ever `start`-ed in `record.py`, `record.py start` itself will collide again,
+independently of `jobs.json`'s `active`-list state. The `rid = sess[len("eval_"):]`
+pattern collides under **any** train/eval timing, not just "almost always collides under the standard flow."
 
-**修法**：把 `rid = sess[len("eval_"):]` 改成 `rid = sess`（不去掉
-`eval_` 前缀）。选这个修法而不是另起一套编码规则的理由：
-1. 结构上不可能再跟训练 rid 撞——训练 rid 是 `x = f"{batch}_{model}_{cell}"`，
-   评测 rid 现在是 `f"eval_{x}"`，`"eval_" + x == x` 对任何非空 `x` 都无解，
-   不依赖 `batch`/`model`/`cell` 的具体取值，是构造上的保证而不是"通常不会"。
-2. 有历史先例：`ops/gpu_jobs.py` 的 `cmd_finish` 里有一条审计注释——
-   "防提前销号(审计实例 eval_c2_q36_mtool 16:52 被销号,实际跑到 18:17)"，
-   说明这个项目历史上真实跑过、台账里真实登记过的评测 job name 就是带
-   `eval_` 前缀的完整 session 名，不是去掉前缀的版本。改成 `rid = sess`
-   是回到这个已经验证过的命名先例，不是发明新规则。
-3. 没有下游代码依赖"评测 rid 等于训练 rid 去掉前缀"这个约定——搜索了
-   `ops/*.py`、`run.py`、`tests/*.py` 里所有 `eval_` 相关字符串，没有
-   找到任何地方假设两者的 rid 存在这种对应关系。
+**Fix**: changed `rid = sess[len("eval_"):]` to `rid = sess` (not stripping the
+`eval_` prefix). The reasons for choosing this fix over inventing a whole new encoding scheme:
+1. Structurally can no longer collide with the training rid. The training rid is `x = f"{batch}_{model}_{cell}"`,
+   the eval rid is now `f"eval_{x}"`, and `"eval_" + x == x` has no solution for any non-empty
+   `x`; this doesn't depend on the specific values of `batch`/`model`/`cell`, it's a
+   structural guarantee, not a "usually won't happen."
+2. There's historical precedent: `ops/gpu_jobs.py`'s `cmd_finish` has an audit comment,
+   "guard against premature deregistration (audit instance eval_c2_q36_mtool 16:52 deregistered,
+   actually ran until 18:17)", showing that historically, the real eval job name genuinely registered in the ledger in this
+   project was the full session name with the `eval_` prefix, not the prefix-stripped version. Changing to
+   `rid = sess` returns to this already-verified precedent, it doesn't invent a new rule.
+3. No downstream code depends on the convention "the eval rid equals the training rid with the prefix stripped". Searched
+   all `eval_`-related strings across `ops/*.py`, `run.py`, `tests/*.py`, and
+   found nowhere assuming this kind of correspondence between the two.
 
-`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 13 Step 2 原文写的就是
-"rid 用 sess 去掉前缀 eval_ 的 `{batch}_{model}_{cell}`"——这条撞车是计划
-文本本身携带的缺陷，上一轮实现者是照办的，不是实现偏离了计划。这次修复
-没有回改这份计划文档（不在工单范围内，且这段 Task 13 已经执行完毕，没有
-后续工单会再读这一步去重新执行）。
+`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 13 Step 2's original text is exactly
+"rid takes session with the eval_ prefix stripped, `{batch}_{model}_{cell}`". This collision is a flaw
+carried by the plan text itself; the previous round's implementer followed it faithfully, it isn't an implementation deviating from the
+plan. This fix did not revise that plan document (out of this ticket's scope, and this part of Task 13
+has already finished executing, with no follow-up ticket needing to read this step to re-execute it).
 
-**改的文件**：
-- `ops/launch_eval.py`：`rid = sess[len("eval_"):]` → `rid = sess`，加了
-  一段注释解释为什么不能去前缀（撞车机制 + 结构保证 + 历史先例三点）。
-- `tests/test_launch_eval.py`：测试名从
-  `test_launches_and_registers_rich_piece_rid_strips_eval_prefix` 改成
-  `test_launches_and_registers_rich_piece_rid_keeps_eval_prefix`；断言从
-  `self.assertEqual(run_id, "c2_q36_mtool")` 改成
-  `self.assertEqual(run_id, "eval_c2_q36_mtool")` 并加了一行
-  `self.assertNotEqual(run_id, "c2_q36_mtool")` 把"不能等于训练 rid"这条
-  钉死成显式断言；文件头 docstring 同步改了措辞。
-- `MAP.md`：`ops/launch_eval.py` 那一行里"run_id 取 session 去掉 `eval_`
-  前缀"改成"run_id = session 原样，不去掉前缀"，附一句撞车原因。
+**Files changed**:
+- `ops/launch_eval.py`: `rid = sess[len("eval_"):]` → `rid = sess`, with a comment added
+  explaining why the prefix must not be stripped (three points: the collision mechanism + structural guarantee + historical precedent).
+- `tests/test_launch_eval.py`: test name changed from
+  `test_launches_and_registers_rich_piece_rid_strips_eval_prefix` to
+  `test_launches_and_registers_rich_piece_rid_keeps_eval_prefix`; assertion changed from
+  `self.assertEqual(run_id, "c2_q36_mtool")` to
+  `self.assertEqual(run_id, "eval_c2_q36_mtool")` with a line added,
+  `self.assertNotEqual(run_id, "c2_q36_mtool")`, pinning down "must not equal the training rid" as an
+  explicit assertion; the file header docstring's wording was updated to match.
+- `MAP.md`: `ops/launch_eval.py`'s line, "run_id takes the session with the `eval_`
+  prefix stripped," changed to "run_id = session as-is, prefix not stripped," with a sentence added on the collision reason.
 
-### 验证
+### Verification
 
 ```
 python3 -m unittest tests.test_launch_probe tests.test_launch_eval -v
 ```
 
-尾部输出：
+Tail output:
 
 ```
 test_launches_and_registers_rich_piece (tests.test_launch_probe.TestLaunchAndRegister) ... ok
@@ -274,48 +276,49 @@ Ran 8 tests in 0.007s
 OK
 ```
 
-发射模拟打印里能看到修复生效——WARN 那一行现在带的是完整前缀名：
+The launch-simulation print now shows the fix in effect. The WARN line now carries the full prefixed name:
 
 ```
-WARN 登记失败(eval_c2_q36_mtool): run_id 已在台账里
+WARN registration failed(eval_c2_q36_mtool): run_id already in ledger
 ```
 
-（改之前这一行会打印 `WARN 登记失败(c2_q36_mtool): ...`，跟训练 rid 撞的
-就是这个字符串。）
+(before the fix, this line would print `WARN registration failed(c2_q36_mtool): ...`, which is
+exactly the string that collided with the training rid.)
 
-全量：
+Full suite:
 
 ```
 python3 -m unittest discover -s tests -v
 ```
 
-37 个测试全绿，与改动前数量一致（这一轮没加新测试文件，只改了已有的一个
-断言 + 测试名）。
+37 tests all green, same count as before the change (this round added no new test file, only changed one
+existing assertion + a test name).
 
 ```
 python3 run.py selfcheck
 ```
 
-`62 任务 / 4 配方, 16 处缺失`——16 处缺失全部是 `envs/*/venv`、
-`mbert-env`、`cprobe-env` 之类的解释器路径，与上一轮报告记录的一致
-（`git worktree add` 不带走未跟踪的 venv 目录，工作树隔离导致，与本轮
-代码改动无关）；`launch-probe`/`launch-eval` 两个任务本身不在缺失清单里。
+`62 tasks / 4 recipes, 16 missing`. The 16 missing items are all `envs/*/venv`,
+`mbert-env`, `cprobe-env` and similar interpreter paths, consistent with what the previous round's report recorded
+(`git worktree add` doesn't bring over untracked venv directories, caused by worktree isolation, unrelated to
+this round's code change); `launch-probe`/`launch-eval` themselves are not in the missing list.
 
-dry-run 路径这一轮没有重新跑：F1 的改动只碰 `launch_and_register` 内部
-`rid` 这一行赋值，`build()`/`main()` 的 dry-run 分支（`args.dry_run` 为真
-时直接 `return`，不进 `launch_and_register`）完全没有触碰这行代码，
-上一轮报告里两条 dry-run 命令的输出仍然如实反映当前代码的 dry-run 行为；
-`launch_and_register` 本身的四条路径由上面的单测直接覆盖（含新改的
-`rid` 断言），判断不需要重复跑一次真实 CLI dry-run 来确认。
+The dry-run path wasn't re-run this round: F1's change only touches the single `rid` assignment line inside
+`launch_and_register`; `build()`/`main()`'s dry-run branch (returns directly when
+`args.dry_run` is true, without entering `launch_and_register`) was never touched by this line of code at all,
+so the previous round's report's two dry-run command outputs still faithfully reflect the current code's dry-run behavior;
+`launch_and_register` itself's four paths are covered directly by the unit tests above (including the newly
+changed `rid` assertion), judged unnecessary to re-run a real CLI dry-run to confirm.
 
-### commit 清单（本轮）
+### Commit list (this round)
 
-- `b49705b` — `T11: 修复评测 rid 与训练 rid 撞车(F1)——eval rid 保留 eval_ 前缀不去掉`
-  （`ops/launch_eval.py`、`tests/test_launch_eval.py`、`MAP.md`）
+- `b49705b`: `T11: fix eval rid colliding with training rid (F1), eval rid keeps the eval_ prefix, doesn't strip it`
+  (`ops/launch_eval.py`, `tests/test_launch_eval.py`, `MAP.md`)
 
-### 自查发现与存疑（本轮）
+### Self-check findings and open questions (this round)
 
-未发现新的问题。这一轮改动只涉及一处赋值语句 + 对应测试断言 + 两处文档
-描述行，没有触碰上一轮报告里记录的另外两条自查存疑（`workdir` 传
-`str(WD)`、`stall_line`/`escalate_line` 固定传 `None`）——它们不在这次
-findings 范围内，按"逐条修掉，不许扩大范围重构"的指示原样保留。
+No new problems found. This round's change only involves one assignment statement + the corresponding
+test assertion + two lines of documentation wording, without touching the other two open questions recorded in the previous
+round's report (`workdir` passed `str(WD)`, `stall_line`/`escalate_line` fixed to
+`None`). They're not in this finding's scope, kept as-is per the instruction "fix items one by one, no
+scope-widening refactor."

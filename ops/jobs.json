@@ -1,5 +1,48 @@
 {
-  "active": [],
+  "active": [
+    {
+      "name": "fmt_smoke_probe",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "probe server np821b06 pair for injection-format smoke",
+      "started_at": "2026-09-12 21:25",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "1",
+          "session": "new1_fmt_smoke_probe_t108g1",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_fmt_smoke_probe_t108g1.log",
+          "cmd": "/home/y-guo/reproduce/new1/cprobe-env/bin/python /home/y-guo/reproduce/new1/pipeline/inject/probe_server.py serve --ctool-run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool --cgen-run /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen --theta 0.975 --device cuda:0 --port 8790",
+          "launched_at": 1789215910.4912443,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": "probe-serve",
+          "port": 8790
+        }
+      ]
+    },
+    {
+      "name": "fmt_smoke_srv",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "gpt-oss-120b vLLM, preset default server section + VLLM_SYSTEM_START_DATE=2026-07-31 (METHOD 6-4)",
+      "started_at": "2026-09-12 21:39",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_fmt_smoke_srv_t108g0",
+          "log": "/home/y-guo/reproduce/new1/logs/new1_fmt_smoke_srv_t108g0.log",
+          "cmd": "LD_LIBRARY_PATH=/home/y-guo/reproduce/new1/envs/cuda-compat-13.0 VLLM_USE_FLASHINFER_SAMPLER=0 CUDA_DEVICE_ORDER=PCI_BUS_ID VLLM_SYSTEM_START_DATE=2026-07-31 /home/y-guo/reproduce/new1/envs/vllm-env/bin/vllm serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --host 0.0.0.0 --gpu-memory-utilization 0.92 --port 8103",
+          "launched_at": 1789216794.1414964,
+          "kind": "service",
+          "stall_line": null,
+          "escalate_line": null,
+          "task": null,
+          "port": 8103
+        }
+      ]
+    }
+  ],
   "history": [
     {
       "name": "hcap",
@@ -19,7 +62,7 @@
     {
       "name": "mth_datepin",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "§6-④ 运行时验证:VLLM_SYSTEM_START_DATE 钉 2026-07-31",
+      "note": "§6-④ runtime verification: VLLM_SYSTEM_START_DATE pinned to 2026-07-31",
       "started_at": "2026-08-10 01:34",
       "pieces": [
         {
@@ -44,7 +87,7 @@
     {
       "name": "z1_srv",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "z1 冒烟批 vLLM 服务:采集/训练评测期间常驻,收官时杀",
+      "note": "z1 smoke batch vLLM service: stays long-running through collection/training/eval, killed at wrap-up",
       "started_at": "2026-08-10 02:00",
       "pieces": [
         {
@@ -69,7 +112,7 @@
     {
       "name": "z1_probe_srv",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "z1 探针服务:θ=0.65 手动(val 扫描 coverage 0.64),小样 ctool/cgen",
+      "note": "z1 probe service: θ=0.65 set manually (val sweep coverage 0.64), small-sample ctool/cgen",
       "started_at": "2026-08-10 04:13",
       "pieces": [
         {
@@ -94,7 +137,7 @@
     {
       "name": "z1_gptoss_ctool",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "z1 冒烟批 ctool(小样)",
+      "note": "z1 smoke batch ctool (small sample)",
       "started_at": "2026-08-10 02:50",
       "pieces": [
         {
@@ -116,7 +159,7 @@
     {
       "name": "z1_gptoss_cgen",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "z1 冒烟批 cgen(小样)",
+      "note": "z1 smoke batch cgen (small sample)",
       "started_at": "2026-08-10 02:50",
       "pieces": [
         {
@@ -138,7 +181,7 @@
     {
       "name": "z1_eval_ctool",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "z1 ctool 回放评测:出 REPLAY_REPORT 温度",
+      "note": "z1 ctool replay eval: produces REPLAY_REPORT temperature",
       "started_at": "2026-08-10 04:09",
       "pieces": [
         {
@@ -160,7 +203,7 @@
     {
       "name": "cmp_chat_noprobe_5_srv",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "chat baseline vs no probe 五题对比用的 gpt-oss-120b 单副本",
+      "note": "single gpt-oss-120b replica used for the chat baseline vs. no probe five-item comparison",
       "started_at": "2026-08-18 04:31",
       "pieces": [
         {
@@ -182,7 +225,7 @@
     {
       "name": "cmp_chat_noprobe_5_srv2",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "同 srv 加 VLLM_SERVER_DEV_MODE=1(开 /reset_prefix_cache),测缓存未命中的输出是否稳定",
+      "note": "same as srv plus VLLM_SERVER_DEV_MODE=1 (enables /reset_prefix_cache), testing whether cache-miss output is stable",
       "started_at": "2026-08-18 05:11",
       "pieces": [
         {
@@ -204,7 +247,7 @@
     {
       "name": "cmp_chat_noprobe_5_srv3",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "同 srv2 加 VLLM_BATCH_INVARIANT=1,测冷/暖缓存输出是否变一致",
+      "note": "same as srv2 plus VLLM_BATCH_INVARIANT=1, testing whether cold/warm cache output becomes consistent",
       "started_at": "2026-08-18 05:17",
       "pieces": [
         {
@@ -226,7 +269,7 @@
     {
       "name": "cmp_chat_noprobe_5_srv4",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "同 srv2;量分叉位冷/暖两态的 top-5 logprob",
+      "note": "same as srv2; measuring the top-5 logprob at divergence points for the cold/warm states",
       "started_at": "2026-08-18 05:30",
       "pieces": [
         {
@@ -248,7 +291,7 @@
     {
       "name": "splice_replay_v1_srv",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "塞法回放 splice_replay_v1 的 gpt-oss-120b 服务(同 cmp_chat_noprobe_5 口径)",
+      "note": "gpt-oss-120b service for the splice replay splice_replay_v1 (same convention as cmp_chat_noprobe_5)",
       "started_at": "2026-08-18 06:59",
       "pieces": [
         {
@@ -270,7 +313,7 @@
     {
       "name": "ident3_v1_srv",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "ident3 三臂逐token同 5题x10遍 的 gpt-oss-120b 单副本(同 splice_replay_v1_srv 口径)",
+      "note": "single gpt-oss-120b replica for ident3's three-arm per-token identity, 5 items x 10 repeats (same convention as splice_replay_v1_srv)",
       "started_at": "2026-08-18 10:21",
       "pieces": [
         {
@@ -292,7 +335,7 @@
     {
       "name": "p1",
       "workdir": "/home/y-guo/reproduce/new1/envs/runs/p1",
-      "note": "p1 采集批客户端 7 分片(train2/dev1/test_normal4,共315题),跑在 tokyo105(登录机,纯CPU),打 tokyo108 的两个 gptoss 实例;服务分片登在 p1_srv_a/p1_srv_b",
+      "note": "p1 collection batch, 7 client pieces (train2/dev1/test_normal4, 315 items total), running on tokyo105 (the login machine, CPU only), hitting the two gptoss instances on tokyo108; the service pieces are registered under p1_srv_a/p1_srv_b",
       "started_at": "2026-08-21 08:28",
       "pieces": [
         {
@@ -350,7 +393,7 @@
     {
       "name": "p1_srv_a",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "p1 采集批 gpt-oss-120b 副本A(tokyo108 GPU4 H200,port 8103),采集全程常驻,收官时杀",
+      "note": "p1 collection batch, gpt-oss-120b replica A (tokyo108 GPU4 H200, port 8103), long-running through all of collection, killed at wrap-up",
       "started_at": "2026-08-21 08:28",
       "pieces": [
         {
@@ -367,7 +410,7 @@
     {
       "name": "p1_srv_b",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "p1 采集批 gpt-oss-120b 副本B(tokyo108 GPU5 H200,port 8106),采集全程常驻,收官时杀",
+      "note": "p1 collection batch, gpt-oss-120b replica B (tokyo108 GPU5 H200, port 8106), long-running through all of collection, killed at wrap-up",
       "started_at": "2026-08-21 08:28",
       "pieces": [
         {
@@ -804,7 +847,7 @@
     {
       "name": "nyapass",
       "workdir": "/home/y-guo/reproduce/new1/envs/runs/nyapass",
-      "note": "nyapass_aw_v1 采集批客户端 12 分片(每题 4 条,种子 [42, 67, 4267, 6742])",
+      "note": "nyapass_aw_v1 collection batch, 12 client pieces (4 per item, seeds [42, 67, 4267, 6742])",
       "started_at": "2026-08-22 05:49",
       "pieces": [
         {
@@ -897,7 +940,7 @@
     {
       "name": "nyapass_srv_a",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8103),采集全程常驻,收官时杀",
+      "note": "nyapass_aw_v1 collection batch, gpt-oss-120b instance (port 8103), long-running through all of collection, killed at wrap-up",
       "started_at": "2026-08-22 05:49",
       "pieces": [
         {
@@ -914,7 +957,7 @@
     {
       "name": "nyapass_srv_b",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8106),采集全程常驻,收官时杀",
+      "note": "nyapass_aw_v1 collection batch, gpt-oss-120b instance (port 8106), long-running through all of collection, killed at wrap-up",
       "started_at": "2026-08-22 05:49",
       "pieces": [
         {
@@ -931,7 +974,7 @@
     {
       "name": "nyapass_srv_c",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8107),采集全程常驻,收官时杀",
+      "note": "nyapass_aw_v1 collection batch, gpt-oss-120b instance (port 8107), long-running through all of collection, killed at wrap-up",
       "started_at": "2026-08-22 05:49",
       "pieces": [
         {
@@ -948,7 +991,7 @@
     {
       "name": "nyapass_srv_d",
       "workdir": "/home/y-guo/reproduce/new1/envs/serve_logs",
-      "note": "nyapass_aw_v1 采集批 gpt-oss-120b 实例(port 8108),采集全程常驻,收官时杀",
+      "note": "nyapass_aw_v1 collection batch, gpt-oss-120b instance (port 8108), long-running through all of collection, killed at wrap-up",
       "started_at": "2026-08-22 05:49",
       "pieces": [
         {
@@ -1465,7 +1508,7 @@
     {
       "name": "kvshare_gpu_kernel_check",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "形态A GPU 内核/显存/bf16 对齐一次性验证(七步,读 val 集与 Qwen3-0.6B-Base,写 gpu_result.json)",
+      "note": "packing layout A one-off GPU kernel/memory/bf16 alignment verification (seven steps, reads the val split and Qwen3-0.6B-Base, writes gpu_result.json)",
       "started_at": "2026-08-28 09:16",
       "pieces": [
         {
@@ -1527,7 +1570,7 @@
     {
       "name": "ks828b06_gptoss_cgen_speed_b16k",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "kvshare 速度档 S1: tok-budget 16384, 450 events",
+      "note": "kvshare speed tier S1: tok-budget 16384, 450 events",
       "started_at": "2026-08-28 13:07",
       "pieces": [
         {
@@ -1549,7 +1592,7 @@
     {
       "name": "ks828b06_gptoss_cgen_speed_b24k",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "kvshare 速度档 S2: tok-budget 24576, 450 events",
+      "note": "kvshare speed tier S2: tok-budget 24576, 450 events",
       "started_at": "2026-08-28 13:08",
       "pieces": [
         {
@@ -1571,7 +1614,7 @@
     {
       "name": "ks828b06_gptoss_cgen_speed_b16k_es",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "kvshare 速度档 S3: tok-budget 16384 + expandable_segments, 450 events",
+      "note": "kvshare speed tier S3: tok-budget 16384 + expandable_segments, 450 events",
       "started_at": "2026-08-28 13:08",
       "pieces": [
         {
@@ -1855,7 +1898,7 @@
     {
       "name": "ks828b06_ovl_left_ctool",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "overlong 开关端到端验证: ctool left",
+      "note": "overlong switch end-to-end verification: ctool left",
       "started_at": "2026-08-28 23:59",
       "pieces": [
         {
@@ -1877,7 +1920,7 @@
     {
       "name": "ks828l4_gptoss_cgen_smoke2",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "l4 grad-ckpt 反向内核修复后重测冒烟(b5cee8d)",
+      "note": "l4 grad-ckpt retested smoke after the backward-kernel fix (b5cee8d)",
       "started_at": "2026-08-28 23:41",
       "pieces": [
         {
@@ -1899,7 +1942,7 @@
     {
       "name": "ks828b06_gptoss_cgen_smoke4",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "b06 开 grad-ckpt 的探针数, 给 Ada 排卡用(b5cee8d)",
+      "note": "b06 probe numbers with grad-ckpt on, for Ada card-placement planning (b5cee8d)",
       "started_at": "2026-08-28 23:42",
       "pieces": [
         {
@@ -1921,7 +1964,7 @@
     {
       "name": "ks828b06_ovl_skip_ctool",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "overlong 开关端到端验证: ctool skip",
+      "note": "overlong switch end-to-end verification: ctool skip",
       "started_at": "2026-08-29 00:06",
       "pieces": [
         {
@@ -1943,7 +1986,7 @@
     {
       "name": "ks828b06_ovl_dropevent_ctool",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "overlong 开关端到端验证: ctool drop-event",
+      "note": "overlong switch end-to-end verification: ctool drop-event",
       "started_at": "2026-08-29 00:09",
       "pieces": [
         {
@@ -1965,7 +2008,7 @@
     {
       "name": "ks828b06_ovl_left_ccall",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "overlong 开关端到端验证 ccall left(b06 冒烟 ctool 无 theta, 改用 np821b06 全量 ctool+cgen, 报告写进 best 软链的替身目录, 不碰 np821 原产物)",
+      "note": "overlong switch end-to-end verification ccall left (b06 smoke ctool has no theta, switched to np821b06 full-scale ctool+cgen, the report is written into the best-symlink stand-in directory, without touching np821's original outputs)",
       "started_at": "2026-08-29 00:13",
       "pieces": [
         {
@@ -1987,7 +2030,7 @@
     {
       "name": "ks828b06_ovl_skip_ccall",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "overlong 开关端到端验证 ccall skip(np821b06 ctool+cgen 替身)",
+      "note": "overlong switch end-to-end verification ccall skip (np821b06 ctool+cgen stand-in)",
       "started_at": "2026-08-29 00:15",
       "pieces": [
         {
@@ -2009,7 +2052,7 @@
     {
       "name": "ks828b06_ovl_dropevent_ccall",
       "workdir": "/home/y-guo/reproduce/new1",
-      "note": "overlong 开关端到端验证 ccall drop-event(np821b06 ctool+cgen 替身)",
+      "note": "overlong switch end-to-end verification ccall drop-event (np821b06 ctool+cgen stand-in)",
       "started_at": "2026-08-29 00:17",
       "pieces": [
         {
@@ -2401,6 +2444,23 @@
         }
       ],
       "finished_at": "2026-08-29 04:03"
+    },
+    {
+      "name": "fmt_smoke_srv",
+      "workdir": "/home/y-guo/reproduce/new1",
+      "note": "gpt-oss-120b vLLM (preset default) for injection-format smoke",
+      "started_at": "2026-09-12 21:25",
+      "pieces": [
+        {
+          "host": "tokyo108",
+          "gpus": "0",
+          "session": "new1_fmt_smoke_srv_t108g0",
+          "log": "/home/y-guo/reproduce/new1/envs/serve_logs/new1_fmt_smoke_srv_t108g0.log",
+          "kind": "service",
+          "port": 8103
+        }
+      ],
+      "finished_at": "2026-09-12 21:38"
     }
   ]
 }

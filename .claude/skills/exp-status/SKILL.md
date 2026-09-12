@@ -1,488 +1,511 @@
 ---
 name: exp-status
-description: 把"这个项目现在跑到哪了"讲到用户真的听懂，再落成文档和网页。工程侧盘点自己做过的实验，不查外部文献。流程：定范围 → 主对话亲自读三层账（TIMELINE/RESULTS/runs.jsonl/jobs.json/plans）→ 逐块讲解并验收用户是否听懂（问"哪个词卡住了"，不问"懂了吗"）→ 定稿落盘 plans/STATUS_*.md（整篇劈两半：上半全是事实、下半全是解读，不许来回切。每个实验附一段自然语言实验说明：怎么做的 + 为什么这么做才算数 + 从原始数据现捞的一条真实样例 + 值得注意的地方，不写命令行和参数）→ 自查一遍（含机械核算：下半每个数字回上半 grep、每个计数手算一遍）→ 派一群 sonnet subagent 逐段验收"有没有一个词你不懂"，外加一个只管算账的检查员（只给前文不给背景，硬项跑到零新增）→ 用确定性转换器渲染成 artifact 并逐字符校验（一个字不许改）。同一条线第二次跑走"更新模式"：只送检改动过的段落。全程五条硬规则：事实与解读分开且事实在前、每个数字带指代与出处、讲实验内容引用原文、不省句子成分且概念词必须焊在具体东西上、平直严谨的口语。外加强制 humanizer-gyb。中文触发：现在跑到哪了 / 我们现在什么情况 / 盘点一下实验 / 捋一遍实验 / 做了哪些实验 / 实验现状 / 研究现状 / 复盘一下 / 出个状态书 / 现状图 / where are we / experiment status。
+description: >-
+  Explain "where this project currently stands" until the user actually understands it,
+  then commit it to a document and a web page. Engineering-side inventory of experiments
+  already run; does not look at external literature. Workflow: set the scope → the main
+  conversation reads the three-layer ledger itself
+  (TIMELINE/RESULTS/runs.jsonl/jobs.json/plans) → walk through it block by block and check
+  the user actually understood (ask "which word tripped you up," not "did you get it") →
+  finalize and write to plans/STATUS_*.md (the whole document split in half: the top half
+  is all facts, the bottom half is all interpretation, no switching back and forth. Each
+  experiment carries a paragraph of natural-language experiment description: how it was
+  done + why this design counts + one real sample freshly pulled from the raw data +
+  anything worth noting, with no command lines or parameters) → self-check (including
+  mechanical verification: grep every number in the bottom half back against the top half,
+  hand-recompute every count) → dispatch a swarm of sonnet subagents to check section by
+  section for "is there a word you don't understand," plus one checker whose only job is
+  to verify the arithmetic (given only the preceding text, no background, run until hard
+  items hit zero new findings) → render to an artifact with a deterministic converter and
+  verify it character by character (not a single character may change). A second run on
+  the same line goes into "update mode": only the changed sections get sent for review.
+  Five hard rules apply throughout: facts and interpretation are separated with facts
+  first, every number carries a referent and a source, describing an experiment quotes the
+  original text, no sentence component is omitted and every concept word must be welded to
+  something concrete, and the tone is plain and rigorous colloquial speech. humanizer-gyb
+  is also mandatory. Invoke when the user asks "where are we" or "experiment status."
+  Chinese triggers: "现在跑到哪了" / "我们现在什么情况" / "盘点一下实验" / "捋一遍实验" / "做了哪些实验" / "实验现状" /
+  "研究现状" / "复盘一下" / "出个状态书" / "现状图".
 version: 1.1.0
 ---
 
-# exp-status：把项目现状讲到用户听懂
+# exp-status: explain the project status until the user understands it
 
-这个 skill 回答一个问题：**我这个项目做过哪些实验、各自结论是什么、还缺什么。**
+This skill answers one question: **what experiments has this project run, what did each one conclude, and what's still missing.**
 
-工程侧，只看自己家的账。想知道外面别人做了什么，那是 `update-knowledge-map` 的活，别在这里做。
+Engineering side only, looking only at our own ledger. Wanting to know what other people out there have done is the job of `update-knowledge-map`; don't do that here.
 
-产出三样，顺序不能颠倒：
+Produces three things, in an order that must not be reversed:
 
-1. 一份用户**逐块验收过、确实看懂了**的文字版，落盘 `plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`
-2. 文字版里每个实验带一段**实验说明**——用白话讲清怎么做的、为什么这么做才算数，外人只看它就能重新设计出同一个实验
-3. 一个 artifact，由 subagent 从定稿文字版渲染，一个字不许改
+1. A written version the user has **accepted block by block and actually understood**, saved to `plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`
+2. Every experiment in the written version carries an **experiment description** — plain language explaining how it was done and why this design counts, so that an outsider reading only it could redesign the same experiment
+3. An artifact, rendered by a subagent from the finalized written version, not a single character changed
 
-## 为什么要有这个 skill（不是套话）
+## Why this skill exists (not just a formality)
 
-项目里已经有过一份 `plans/archive/STATUS_20260730_1833_all_lines.md`（已退役归档）。它信息全、数字准，用户看不懂。原因不在用户：正文里塞满了 `best_calA_weighted_acc`、`θ=0.8 v2fix`、`Sp@k`、`L2minus` 和二十几个 commit hash，每一个都是压缩过的索引，读的人得先解压才能读到内容。
+There's already a `plans/archive/STATUS_20260730_1833_all_lines.md` in the project (retired and archived). It was complete and the numbers were accurate, and the user couldn't understand it. The reason wasn't the user: the body was packed with `best_calA_weighted_acc`, `θ=0.8 v2fix`, `Sp@k`, `L2minus`, and two dozen commit hashes, each one a compressed index that the reader has to decompress before they can get to the content.
 
-所以本 skill 的主体功能不是"整理信息"，是**说人话**。整理信息只是它的副产品。
+So the main function of this skill isn't "organizing information," it's **saying it in plain words**. Organizing information is just a side effect of that.
 
-## 第一动作：加载说人话规则（不许跳过）
+## First action: load the plain-language rules (do not skip)
 
-Read 这个文件全文，凭印象不算：
+Read this file in full, don't rely on memory:
 
 - `~/.claude/skills/humanizer-gyb/SKILL.md`
 
-这一份清单自带全部条目（51 条规则分五类：词、句、段、篇、版面），去 AI 痕迹和 gyb 的个人偏好都在里面办完，不需要再叠加别的写作清单。这份规则约束的不只是最后的文档，**聊天里每一轮讲解同样适用**。
+This one checklist carries all the entries by itself (51 rules in five categories: words, sentences, paragraphs, the whole piece, layout); stripping out AI-tells and gyb's personal preferences are both handled in it, no need to stack another writing checklist on top. This set of rules doesn't just constrain the final document — **it applies equally to every round of explanation in chat.**
 
-## 贯穿全程的五条硬规则
+## Five hard rules that run through everything
 
-聊天里、文字版里、artifact 上一律适用。
+Apply in chat, in the written version, and on the artifact, without exception.
 
-### 一、事实和分析分开，事实在前
+### One: facts and analysis are separate, facts first
 
-**先如实报实验量到了什么，最后再解读。实验结果那一段里不许出现任何评价**——"说明""证明""意外""超出预期""最漂亮的一档""最容易被读错"这类词一个都不许进，攒到解读那一段再说。
+**First honestly report what the experiment actually measured, interpret only at the end. No evaluative word may appear in the experiment-results section** — words like "shows," "proves," "surprising," "beyond expectations," "the cleanest tier," "the easiest to misread" are all banned there; save them for the interpretation section.
 
-理由：事实和解读焊在一起，读者就没法只接受事实而不接受解读。解读是可以吵的，事实不是；混在一起等于逼读者连解读一起吞下去。写的人自己也会因此看不见"我这个结论其实没有数字撑着"。
+Reason: once facts and interpretation are welded together, the reader has no way to accept the facts without also accepting the interpretation. Interpretation can be argued with; facts can't. Mixing them forces the reader to swallow the interpretation along with the facts. The writer also loses sight of the fact that a conclusion might not actually be backed by numbers.
 
-**判断办法**：把解读整段删掉，剩下的部分应该完全站得住，一个字都不用改。要改字就说明评价已经渗进事实层了。
+**Test**: delete the whole interpretation section. What's left should stand completely on its own, without changing a single character. If you need to change a character, that means evaluation has leaked into the facts layer.
 
-### 二、每个数字都要能追到出处，也要说清指的是什么
+### Two: every number must be traceable to a source, and must say clearly what it refers to
 
-正文里出现的每个数字，读者必须当场知道两件事：**它指的是什么**、**从哪来的**。
+For every number that appears in the body text, the reader must know two things on the spot: **what it refers to**, and **where it came from**.
 
-- **文字版**：用括号紧跟在数字后面。写成"第 0 集（十集连做里的头一集，这时候记忆还是空的）两边都走了 5 步、读进 2901 个 token、写出 3765 个（原始记录里 `steps`/`tokens_in`/`tokens_out` 三个字段，开记忆和关记忆各一份，都是种子 0 的第 1 条）"。
-- **artifact**：数字挂一个能点开或悬停看到的注释，内容和文字版括号里的一致。不许只在页面底部堆一张出处表——读者看到数字的那一刻就得查得到。
+- **Written version**: use parentheses right after the number. Write it as "Episode 0 (the first of ten consecutive episodes, when memory is still empty) took 5 steps on both sides, read in 2901 tokens, and wrote out 3765 (in the raw record, the `steps`/`tokens_in`/`tokens_out` fields, one copy each for memory-on and memory-off, seed 0's first entry)."
+- **Artifact**: attach a clickable or hoverable annotation to the number, with content matching what's in the written version's parentheses. Don't just pile an attribution table at the bottom of the page — the reader must be able to look it up the moment they see the number.
 
-**序号同样要注。** 读者不知道"集"从 0 还是从 1 开始数、"5 步"是谁走的 5 步。这类序号第一次出现就括号说清。
+**Sequence numbers need the same treatment.** The reader doesn't know whether "episode" counts from 0 or from 1, or whose "5 steps" this is. The first time such a sequence number appears, spell it out in parentheses.
 
-**写出原始字段名的时候，必须同时说清这个字段装的是什么东西。** 光甩一个 `tokens_in` 不行——读者没法从名字判断它算的是一步的提示长度，还是这一集里所有步骤加起来的提示长度，两者能差十几倍。要写成"读进去 2901 个 token（原始记录里的 `tokens_in` 字段，装的是这一集里每一步发给模型的提示 token 数加总）"。
+**Whenever a raw field name is written out, you must also say clearly what that field holds.** Just throwing out `tokens_in` isn't enough — the reader can't tell from the name alone whether it counts the prompt length for one step or the summed prompt length for every step in the episode, and the two can differ by a factor of ten or more. Write it as "read in 2901 tokens (the raw record's `tokens_in` field, which holds the summed prompt token count across every step in this episode)."
 
-字段名的作用是让人能回原始文件里查到同一个数，它是钥匙，不是解释。钥匙和解释都得给。
+The role of a field name is to let someone look the same number up in the raw file — it's a key, not an explanation. Both the key and the explanation must be given.
 
-### 三、讲实验内容要引用原文
+### Three: quote the original text when describing what the experiment does
 
-讲这个实验具体在做什么的时候，**能引用原文就引用原文**：任务的英文原句、提示模板里的原字符串、模型实际输出的动作序列，原样贴出来并标明出自哪个文件。
+When describing what this experiment is actually doing, **quote the original wherever you can**: the task's original English sentence, the exact string from the prompt template, the model's actual output action sequence — paste them verbatim and mark which file they came from.
 
-理由：转述过的东西读者没法核对，而且转述会悄悄改变含义——"把纸放到架子上"和 `put a toiletpaper in toiletpaperhanger.` 之间的差别，可能正好是这个实验成败的地方。原文贴出来，读者能自己判断。
+Reason: a paraphrase can't be checked by the reader, and paraphrasing quietly changes meaning — the difference between "put the paper on the shelf" and `put a toiletpaper in toiletpaperhanger.` might be exactly where this experiment succeeds or fails. With the original text pasted in, the reader can judge for themselves.
 
-原文一律不翻译。要解释就在原文下面另起一句解释，不许拿翻译替换原文。
+Never translate the original text. If it needs explaining, write a separate explanatory sentence below the original — don't replace the original with a translation.
 
-### 四、不许省略句子成分，不许留下没解释的概念词
+### Four: don't omit sentence components, don't leave an unexplained concept word
 
-**每句话的主语、谓语、宾语都要齐全，修饰语一个都不许省。** 省掉的成分读者只能靠猜，猜错了整句意思就反了。
+**Every sentence's subject, verb, and object must all be present, and no modifier may be omitted.** A reader can only guess at an omitted component, and a wrong guess flips the meaning of the whole sentence.
 
-**任何概念词都必须当场变具体，或者当场加注释。** 光写"证据"不行，要写"**什么的**证据"，而且那个"什么"必须具体到能拿去验证。
+**Any concept word must be made concrete on the spot, or annotated on the spot.** Just writing "evidence" won't do — write "evidence **of what**," and that "what" must be concrete enough to be checked.
 
-- ❌ 这是种子对齐的直接证据。
-- ✅ 这是"开记忆那一条和关记忆那一条拿到的题目顺序完全一样"的直接证据：两条的第 0 集（十集连做里的头一集）数字逐位相同，只有顺序一致才可能这样。
+- ❌ This is direct evidence of seed alignment.
+- ✅ This is direct evidence that "the memory-on run and the memory-off run got the exact same task order": episode 0 (the first of ten consecutive episodes) has identical digits between the two runs, and that can only happen if the order is identical.
 
-**自己造的简称一律禁止裸用。** "输入税""记忆饥饿"这类词，要么当场用一整句把它指的事说清楚，要么根本别用。用了又不解释，读者会以为这是个已经存在的正式概念，然后按自己脑补的意思往下读。
+**Self-coined abbreviations may never be used bare.** Words like "input tax" or "memory hunger" must either be spelled out in a full sentence on the spot explaining what they refer to, or not used at all. Using one without explaining it makes the reader think it's an already-established formal concept, and they'll read on with whatever meaning they've guessed at.
 
-**判断办法**：把文稿里每个抽象名词圈出来——证据、信号、口径、红利、上界、方差、迁移、税、饥饿。每个圈出来的词，后面要么紧跟着"……的"把它焊在具体东西上，要么括号里跟着一句解释。一个都不许空着。
+**Test**: circle every abstract noun in the draft — evidence, signal, criterion, dividend, upper bound, variance, transfer, tax, hunger. Every circled word must either be immediately followed by "...of ___" welding it to something concrete, or have a parenthetical explanation right after it. Not one may be left bare.
 
-### 五、语气：平直严谨的口语，像专家当面讲
+### Five: tone — plain, rigorous, spoken language, like an expert talking face to face
 
-全程用**说出来的句子**写，不用写出来的句子。解释东西的时候尤其要这样——解释一旦端起书面腔，读者要先在脑子里把书面话翻译回人话，才能开始理解，等于凭空多一道关卡。
+Write the whole thing in **sentences as spoken**, not sentences as written. This matters especially when explaining something — the moment an explanation puts on a written-register voice, the reader first has to translate the written language back into ordinary speech in their head before they can start to understand, which is an extra barrier for nothing.
 
-**判断办法：念一遍。** 念着别扭、念着不像话，就是书面腔，重写。
+**Test: read it aloud.** If it sounds awkward, if it doesn't sound like something a person would say, that's written-register — rewrite it.
 
-具体到词：
+Specific to word choice:
 
-- 书面连接词换成口语的。"因此"写成"所以"，"然而"写成"但是"，"此外"写成"还有"，"综上所述"写成"所以总的来看"。
-- "进行""予以""加以"加动词的结构一律拆掉。"进行验证"就写"验一下"，"予以说明"就写"说清楚"。
-- 四字书面套语一个不留："至关重要""不容忽视""一目了然""行之有效""显而易见"，全删。
-- 长定语拆成两句。一句话里套三层"的"，念出来就断气了。
+- Replace written-register connectives with spoken ones. "Therefore" becomes "so," "however" becomes "but," "moreover" becomes "also," "in summary" becomes "so overall."
+- Tear down any "carry out / conduct / perform + verb" construction. "Carry out verification" becomes "check it," "provide clarification" becomes "make it clear."
+- Cut every four-character written-register stock phrase: "of the utmost importance," "cannot be overlooked," "at a glance," "proven effective," "self-evident" — all deleted.
+- Split long modifiers into two sentences. A sentence with three layers of "that" nested inside it runs out of breath when read aloud.
 
-**专家的口吻是：不客套、不铺垫、不自谦，直接说结论和依据。** 不写"我们可以看到""值得一提的是""接下来我们来看"这种过门，想说什么直接说。
+**An expert's tone is: no pleasantries, no preamble, no false modesty — state the conclusion and the basis directly.** Don't write "as we can see," "it's worth mentioning that," "next let's look at" — say what you mean to say, directly.
 
-**口语指的是句子怎么搭，不是内容可以含糊。** 数字、口径、限定语一个都不能因为"说着顺口"就省掉——规则四照样管着这一条。平直和严谨要同时在场：话是大白话，事情是钉死的。
+**"Spoken" is about how the sentence is put together, not about the content being allowed to be vague.** Numbers, units, and qualifiers can never be dropped just because "it sounds smoother" — rule four still governs this. Plainness and rigor coexist: the words are everyday speech, the facts are nailed down.
 
-## 阶段 0：定范围
+## Phase 0: set the scope
 
-问一句，然后停下等回答：这次要**全景**（整个项目至今所有实验），还是**一条线**（给一个主题或一个 run 前缀）。
+Ask one question, then stop and wait for the answer: is this round **the whole picture** (every experiment the project has run to date), or **one line** (a given topic or a given run prefix)?
 
-理由：全景和单线的信息量差一个数量级。全景讲不细，单线讲不全，选错了后面每一轮都在讲用户不关心的东西。
+Reason: the whole picture and a single line differ in information volume by an order of magnitude. Doing the whole picture in detail is too much, doing one line covers too little — get the choice wrong and every subsequent round talks about things the user doesn't care about.
 
-## 阶段 0.5：判断这是第一次跑还是重跑
+## Phase 0.5: determine whether this is a first run or a rerun
 
-先看 `plans/` 下有没有同一条线的 `STATUS_*.md`。有就是**重跑**，走更新模式；没有才从头跑。
+First check whether there's already a `STATUS_*.md` for this same line under `plans/`. If there is, it's a **rerun**, go into update mode; if not, only then start from scratch.
 
-这一步是 2026-07-31 补的：那次是同一条线的第二次跑，但 skill 通篇假设第一次，结果我把全篇重新送检，成本翻倍，还把上一版已经验收过的段落又报了一遍。
+This step was added on 2026-07-31: that time was a second run on the same line, but the skill assumed throughout it was a first run, so the whole document got resent for review, doubling the cost, and sections already accepted in the previous version got reported all over again.
 
-**更新模式怎么走：**
+**How to run update mode:**
 
-1. 读上一版 `STATUS_*.md` 全文，读它的时间戳，只从那个时间点往后 diff 账（`git log`、`ops/runs.jsonl` 新增的行、比那个时间新的产物文件）。
-2. **上一版验收过、这次没改的段落，不再送检。** 它们已经过关了，重复送检只会重复报同样的软项。
-3. 只送检两类段落：这次新写的，和这次改过的。
-4. 新版 markdown **按新时间戳新建文件**（`plans/STATUS_<新时间戳>_<slug>.md`），不覆盖旧的——旧版是历史，和 `runs.jsonl` 只增不改是一个道理。开头写一句"这一版替换哪一份、新增了什么"。
-5. artifact **必须复用同一个 HTML 文件路径**，这样 URL 不变。用户是靠那个链接找页面的，换 URL 等于把页面弄丢。
+1. Read the previous `STATUS_*.md` in full, note its timestamp, and diff the ledger only from that point forward (`git log`, new lines added to `ops/runs.jsonl`, artifact files newer than that timestamp).
+2. **Sections already accepted in the previous version that weren't changed this time are not sent for review again.** They already passed; reviewing them again would only report the same soft issues again.
+3. Only send two kinds of section for review: newly written this time, and changed this time.
+4. The new version's markdown **is created as a new file under the new timestamp** (`plans/STATUS_<new timestamp>_<slug>.md`), not overwriting the old one — the old version is history, the same principle as `runs.jsonl` being append-only. Open with a line saying which version this replaces and what's new.
+5. The artifact **must reuse the same HTML file path**, so the URL doesn't change. The user finds the page by that link — changing the URL loses the page for them.
 
-## 阶段 1：主对话亲自读账
+## Phase 1: the main conversation reads the ledger itself
 
-读这些，都在项目根：
+Read these, all at the project root:
 
-- `TIMELINE.md` —— 当初为什么这么定
-- `RESULTS.md` —— 渲染好的数字（只读，永远不手改）
-- `ops/runs.jsonl` —— 数字的原始记录，主键 run_id
-- `ops/jobs.json` —— 任务台账，谁在跑、谁跑完了
-- `plans/` 下最近的 `STATUS_*.md` 和计划文件
-- `git log --oneline`（最近三五十条）
-- `plans/PLAINWORDS.md` —— 卡壳词表，见阶段 2；文件不存在就是第一次跑
+- `TIMELINE.md` — why things were decided the way they were
+- `RESULTS.md` — the rendered numbers (read-only, never hand-edited)
+- `ops/runs.jsonl` — the raw record of the numbers, keyed by run_id
+- `ops/jobs.json` — the job ledger, what's running, what's finished
+- the most recent `STATUS_*.md` and plan files under `plans/`
+- `git log --oneline` (the most recent thirty to fifty)
+- `plans/PLAINWORDS.md` — the sticking-point word list, see Phase 2; if the file doesn't exist, this is a first run
 
-**主对话自己读，不派 subagent 通读。** 这几个文件加起来几百行，自己读的成本远低于拿二手笔记讲解的失真成本；而且后面每一轮讲解都要随时回查原始数字，读过才知道去哪查。
+**The main conversation reads these itself, does not dispatch a subagent to read through them.** These few files add up to a few hundred lines; reading them yourself costs far less than the distortion cost of explaining from secondhand notes, and every subsequent round of explanation needs to check back against the raw numbers at any time — you only know where to look if you've read them.
 
-subagent 只干一件脏活：进 NFS 的 run 目录和日志里捞散落的数字和实验设置——翻几十个文件、只回传精华，这是子 agent 最划算的用法。**它报回来的数字标记为"agent 报的"，写进文字版之前主对话必须自己打开原文件核一遍。** 子 agent 的数字和搜索摘要一样会编，而且专挑最承重的那个数字编。
+The subagent does exactly one dirty job: digging scattered numbers and experiment settings out of NFS run directories and logs — flipping through dozens of files and reporting back only the essentials, which is the most cost-effective use of a subagent. **Any number it reports back is marked "reported by an agent," and the main conversation must personally open the original file and check it before putting it into the written version.** A subagent's numbers fabricate just as easily as a search summary's do, and it fabricates the single most load-bearing number in particular.
 
-账上没有的东西就是没有。不许靠推理补全一个看起来合理的数字。
+Whatever isn't in the ledger doesn't exist. Never fill in a plausible-looking number by inference.
 
-## 阶段 2：逐块讲，验收听懂（本 skill 的核心）
+## Phase 2: explain block by block, verify understanding (the core of this skill)
 
-这不是汇报，是教学。每轮只讲**一块**：一个实验，或一条结论。
+This isn't a report, it's teaching. Each round covers exactly **one block**: one experiment, or one conclusion.
 
-每轮固定两段，中间留明显的分界，正文 300 字以内：
+Each round has two fixed parts, with a clear boundary between them, body text under 300 characters:
 
-1. **实验量到了什么**——只有事实。每个数字后面跟一句"它指的是什么、怎么量出来的"。这一段里不许有任何评价。
-2. **我的解读**——开口就明说"下面是我的解读"。这些数说明什么、哪里不牢、哪里存疑。
+1. **What the experiment measured** — facts only. Every number followed by a sentence on what it refers to and how it was measured. No evaluation of any kind in this part.
+2. **My interpretation** — open by saying explicitly "here's my interpretation." What these numbers show, where it's shaky, where it's still uncertain.
 
-分界要让用户一眼看得见事实在哪结束。第一段是他可以直接信的，第二段是他可以跟我吵的。
+The boundary must let the user see at a glance where the facts end. The first part is what they can trust directly; the second part is what they can argue with me about.
 
-### 术语规则（硬规则）
+### Terminology rule (hard rule)
 
-- 每轮最多引入**一个**新词，先白话讲清是什么，术语作为标签贴在后面。
-- **run_id、commit hash、文件路径不进正文。** 它们是索引不是内容，统一放在这块末尾的一行"索引："里。
-- **指标字段名永远不裸用。** 正文写"校准集上的加权准确率"，`best_calA_weighted_acc` 这种原始字段名放索引行，并且在索引行里跟一句它装的是什么。
-- 自己在这次对话里造的简称，跨轮复用等于第一次出现——要么重新定义，要么别用。
-- 一个东西全场只用一个称呼，不换词、不起俗称（"毕业""开火"这类一律禁止）。
+- Introduce **at most one** new term per round; explain it in plain language first, with the term attached afterward as a label.
+- **run_id, commit hashes, and file paths do not go into the body text.** They're an index, not content — put them all in a single "Index:" line at the end of this block.
+- **A metric field name is never used bare.** The body text writes "weighted accuracy on the calibration set"; the raw field name `best_calA_weighted_acc` goes in the index line, along with a sentence there on what it holds.
+- An abbreviation coined earlier in this same conversation, reused in a later round, counts as its first appearance again — either redefine it, or don't use it.
+- One entity gets exactly one name for the whole session, never switch words or use a nickname ("graduated," "opened fire," and the like are all banned).
 
-### 验收动作（不许省）
+### Acceptance actions (do not skip)
 
-- **普通块**：问"这一块有哪个词卡住了"。不许问"懂了吗"——问"懂了吗"只会换来"懂了"。
-- **承重块**（这块的结论决定下一步做什么）：请用户用自己的话把结论说一遍。听完先指出偏差，没偏差就明说没偏差，不要为了礼貌放过错误理解。
-- **用户说看不懂**：不许把同一句话重说一遍。换一条更短的因果链重新讲，同时把卡住的那个词记进卡壳词表。
+- **Ordinary block**: ask "which word in this block tripped you up." Never ask "did you get it" — asking "did you get it" only ever gets "yes."
+- **Load-bearing block** (this block's conclusion decides what happens next): ask the user to restate the conclusion in their own words. Listen, point out any deviation first, and if there's no deviation say so explicitly — don't let a misunderstanding slide by out of politeness.
+- **User says they don't understand**: never just repeat the same sentence. Re-explain with a shorter causal chain, and record the word that tripped them up in the sticking-point word list.
 
-### 用户不在场怎么办（离线模式）
+### What to do when the user isn't present (offline mode)
 
-现实里有大量"用户说了直接做、然后就走开了"的场景。这时候阶段 2 没法执行，但不许假装执行过。
+In reality there are plenty of cases where "the user said just do it, then walked away." Phase 2 can't run in that case, but you must not pretend it ran.
 
-- 阶段 2 的验收职责由阶段 4.5 的检查员代偿——检查员就是"没听过讲解的读者"，它报不懂的词，等价于用户会卡住的词。
-- **必须在产出文档的开头写明"这一版没有经过用户逐块验收"。** 不写这句，读者会以为它过了那道关。
-- 用户下次回来时，把检查员报得最密集的那两三块拎出来当面讲一遍，补做验收。
+- Phase 2's acceptance duty is substituted by Phase 4.5's checker — the checker is "a reader who never heard the explanation," and the words it reports as not understood are equivalent to the words the user would trip on.
+- **The produced document must state at the top that "this version has not been accepted block by block by the user."** Without this sentence, the reader will assume it passed that gate.
+- Next time the user is back, pick the two or three blocks the checker flagged most heavily and walk through them in person, filling in the missed acceptance step.
 
-### 卡壳词表
+### Sticking-point word list
 
-`plans/PLAINWORDS.md`，四列，只增不改：
+`plans/PLAINWORDS.md`, four columns, append-only:
 
-| 项目里的原词 | 全篇唯一的称呼 | 永远违规的别名 | 看语境的别名 |
+| Original term in the project | The one name used throughout | Aliases that are always a violation | Aliases that depend on context |
 |---|---|---|---|
 
-后两列必须分开，这是 2026-07-31 实测的教训：当时三列表里 139 个禁用别名跑机械搜索命中 31 个词，真违规只有 7 个。误报全部来自"数据""评测""一次""精度""发射"这类**只在特定语境下才算违规**的词——它们混在同一列里，把搜索结果淹了。
+The last two columns must be kept separate — this is a lesson learned in practice on 2026-07-31: at the time a three-column table had 139 banned aliases, and a mechanical search hit 31 words, of which only 7 were real violations. All the false positives came from words like "data," "eval," "once," "precision," "launch" — words that **are only a violation in a specific context** — mixed into the same column, drowning the search results.
 
-- **永远违规的别名**：不管在哪出现都是错，机械搜索只跑这一列，命中即改。
-- **看语境的别名**：这个词有别的合法用法（比如"发射"指发射 GPU 任务是合法的，指探针触发就是违规），搜索出来要人眼过一遍。
+- **Aliases that are always a violation**: wrong wherever they appear, mechanical search only runs against this column, fix on any hit.
+- **Aliases that depend on context**: this word has other legitimate uses (e.g. "launch" meaning launching a GPU job is legitimate, but meaning a probe firing is a violation) — search for it, but have a human eyeball the results.
 
-每次跑这个 skill 先读它。读过的词直接用已经定好的称呼，别每次重新发明。这是防止同一个词反复卡住的唯一办法——用户在某个词上卡过一次，就不该在同一个词上卡第二次。
+Read it first every time this skill runs. For words already read, use the name already settled on — don't reinvent it every time. This is the only way to prevent the same word from tripping people up repeatedly — once the user has gotten stuck on a word, they shouldn't get stuck on the same word a second time.
 
-第三列"禁用的别名"是给阶段 4.5 的字符串搜索用的，作用见那一节。写文字版之前先把这张表填好，别等写完了再回头补。
+The third column, "banned aliases," is for Phase 4.5's string search; its role is explained in that section. Fill in this table before writing the written version, don't go back and patch it in after writing is done.
 
-## 阶段 3：落盘文字版
+## Phase 3: write the document to disk
 
-路径 `plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`。
+Path: `plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`.
 
-**整篇劈成两半，上半全是事实，下半全是解读。** 不许在实验之间来回切——不许"实验一的数字、实验一的解读、实验二的数字、实验二的解读"这样排。所有实验的数字排完，才轮到我说话。
+**Split the whole document in half, the top half all facts, the bottom half all interpretation.** Never switch back and forth between experiments — never lay it out as "experiment 1's numbers, experiment 1's interpretation, experiment 2's numbers, experiment 2's interpretation." Only after every experiment's numbers are laid out does it become my turn to speak.
 
-两半之间放一道明显的分界，写清"以上全是实验量出来的东西，以下全是我的判断，可以吵"。
+Put a clear boundary between the two halves, stating "everything above is what the experiments measured, everything below is my judgment, and it can be argued with."
 
-**篇幅的分配是死的：事实占绝大部分，我的话只占最后一节。** 实验做了什么、量出了什么，要一个实验一个实验讲透；轮到我下判断的时候，一节写完。写的人的话比实验的事实还长，这份文档就写坏了。
+**The space allocation is fixed: facts take up the vast majority, my words take up only the last section.** What the experiments did and what they measured has to be spelled out experiment by experiment; once it's my turn to make a judgment, write it in one section. If the writer's own words end up longer than the experiment facts, the document has gone wrong.
 
-### 上半：事实（五节，主体在这）
+### Top half: facts (five sections, the main body is here)
 
-**第一节 · 一共做了哪些实验。** 一个实验一行：这个实验问的是什么、跑完了没有。让人先知道总共几件事，再往下看细节。
+**Section 1 · What experiments were run in total.** One line per experiment: what question this experiment asked, whether it finished. Let the reader know the total count of things first, before going into detail.
 
-**第二节 · 每个实验详解。** 这是整份文档的主体，一个实验一个条目，条目内部六项，顺序不许调：
+**Section 2 · Detail on every experiment.** This is the main body of the whole document, one entry per experiment, six items inside each entry, in this fixed order:
 
-1. 这个实验问的是什么
-2. 怎么做的
-3. 为什么这么设计才算数（判定标准是开跑前定的，属于设置，不属于解读）
-4. 看一条真的
-5. 实验结果：纯数字，每个数带指代和出处，**一句评价都不许有**
-6. ⚠ 值得注意的设置细节
+1. What question this experiment asks
+2. How it was done
+3. Why this design counts (the judging criteria were set before the run started, which counts as setup, not as interpretation)
+4. One real sample
+5. Experiment results: pure numbers, each number with a referent and a source, **not a single word of evaluation allowed**
+6. ⚠ Worth noting: setup details
 
-**这一节不许压缩。** 想省字就省我自己的话，不许省实验的事实。
+**This section must not be compressed.** Cut your own words to save space; never cut the experiment's facts.
 
-**第三节 · 数字并排。** 把几个实验里可以对着看的数字摆在一起，只摆不说。哪个高哪个低读者自己看得见，不需要我告诉他这意味着什么。
+**Section 3 · Numbers side by side.** Lay side by side the numbers from different experiments that are comparable, showing only, not commenting. Which is higher and which is lower is visible to the reader on its own; they don't need to be told what it means.
 
-**第四节 · 决策记录。** 从 `TIMELINE.md` 取，每条只写两件事实：当初怎么定的、后来哪个实验跑出了什么数。**不写"所以那个决定是对的还是错的"**，那句话归下半。
+**Section 4 · Decision record.** Taken from `TIMELINE.md`, each entry writes only two facts: how the decision was made at the time, and which experiment later produced what number. **Don't write "so that decision turned out right or wrong"** — that sentence belongs in the bottom half.
 
-**第五节 · 账面状态。** 哪些实验跑完了、哪些还在跑、哪些没跑、哪些跑失败了、哪些数据丢了。全是能核对的事实，一条一行。
+**Section 5 · Ledger status.** Which experiments finished, which are still running, which haven't run, which failed, which lost data. All checkable facts, one line per item.
 
-### 下半：解读（就一节，在最后）
+### Bottom half: interpretation (just one section, at the end)
 
-**第六节 · 我的判断。** 这一节里把话说完：这些数说明什么、结论是什么、哪个研究问题被答到了什么程度、哪些当初的决定被推翻了、哪里不牢、下一步该补什么。
+**Section 6 · My judgment.** Say everything here: what these numbers show, what the conclusion is, how far each research question got answered, which earlier decisions got overturned, where it's shaky, what needs to be filled in next.
 
-几条约束：
+A few constraints:
 
-- 开头明写"以下全是我的判断，可以吵"。
-- 每条判断都要指回上半的哪个数字，让人能翻回去对。
-- 说某个研究问题被答了，就说清哪一半答了、哪一半根本没测。禁止"部分支持"这种没下文的说法。
-- **已经被数字推翻、但 `TIMELINE.md` 还没补记的决定，单独点出来**——那是账本上的窟窿。
-- 这一节的长度不许超过第二节。超了就是话太多，砍。
+- Open by stating explicitly "everything below is my judgment, and it can be argued with."
+- Every judgment must point back to a specific number in the top half, so the reader can flip back and check.
+- When saying a research question was answered, say clearly which half was answered and which half was never even tested. "Partially supported" with no follow-up is banned.
+- **A decision that's already been overturned by the numbers, but that `TIMELINE.md` hasn't recorded yet, gets called out separately** — that's a hole in the ledger.
+- This section must not be longer than section 2. If it is, that means there's too much talk — cut it.
 
-### 为什么非得整篇分开，不能一个实验分一次
+### Why the whole document has to be split, not split experiment by experiment
 
-一个实验内部分开，读者读完实验一的解读，脑子里已经装了我的判断，再去看实验二的数字时，看到的就不是干净的数字了。整篇分开，读者能一口气把所有数字读完，形成自己的看法，然后再来看我的看法哪里不一样。这是分开的全部意义所在；分得不彻底，等于没分。
+If a single experiment is split internally, by the time the reader finishes reading experiment 1's interpretation, my judgment is already loaded into their head, and when they go look at experiment 2's numbers, what they see isn't clean numbers anymore. Splitting the whole document lets the reader read through all the numbers in one go, form their own view, and then come compare it against my view to see where they differ. That's the entire point of the split; splitting it incompletely is the same as not splitting it at all.
 
-文字版是自包含的：任何人（包括被压缩掉上下文的下一个 session）只读它就能接上现状。
+The written version is self-contained: anyone (including the next session with its context compressed away) can pick up the current state by reading only it.
 
-### 实验说明（第 2、3 项的写法）
+### How to write the experiment description (items 2 and 3)
 
-标准只有一条：**一个没参与过这个项目的人，只看这段说明，能自己重新设计出同一个实验。**
+There's only one standard: **someone who has never been involved in this project, reading only this description, should be able to redesign the same experiment themselves.**
 
-用自然语言成段地写，不是字段表。**命令行、文件路径、权重路径、超参数值这些工程细节不要写**——它们在代码和账本里躺着，搬进来只会把说明变成一份配置文件，读的人看完还是不知道这个实验到底在干什么。
+Write it as flowing natural-language paragraphs, not a field table. **Don't write in command lines, file paths, weight paths, or hyperparameter values** — those already live in the code and the ledger; bringing them in here only turns the description into a config file, and the reader still won't know what this experiment is actually doing after reading it.
 
-要讲清两层：怎么做的，以及为什么这么做才算数。
+Two things need to be made clear: how it was done, and why this design counts.
 
-**怎么做的。** 拿什么数据、多少条、怎么划分的；用哪个模型（说名字和大小，不说路径）；把什么和什么放在一起比；每个条件重复跑了几次、靠什么保证跑出来的差异不是随机波动；最后量的是哪个数、在哪批数据上量的。写到"外人能照着把流程复述一遍"为止。
+**How it was done.** What data was used, how many items, how it was split; which model (name and size, not path); what's being compared against what; how many times each condition was repeated, and what guarantees the resulting difference isn't random noise; and finally, which number was measured, on which batch of data. Write until "an outsider could repeat the process back."
 
-**为什么这么做才算数。** 三件事必须说到：
+**Why this design counts.** Three things must be covered:
 
-- **变的是什么，不变的是什么。** 两个对比条件之间只有一样东西不同，差异才归得到它头上。如果实际上同时变了两样，直接说清楚，别写成只变了一样。
-- **什么结果算支持结论，什么结果算推翻结论。** 这条本该开跑前就定好；事后才定的，标出来。
-- **这个设计管不住什么。** 哪些因素搅在一起分不开、结论只在多大范围内成立。
+- **What changes, what stays the same.** A difference is only attributable to one thing if exactly one thing differs between the two compared conditions. If two things actually changed at once, say so plainly — don't write it as if only one changed.
+- **What result counts as supporting the conclusion, what result counts as overturning it.** This should ideally be decided before the run starts; if it was decided after the fact, flag that.
+- **What this design can't control for.** Which factors are tangled together and can't be separated, and how far the conclusion actually generalizes.
 
-写法长这样（这里示范的是形式，内容是编的）：
+Written like this (this example is illustrative in form; the content is made up):
 
-> 这个实验问的是"训练数据里的思考文本到底有没有用"。做法是把思考段整段删掉、其余一切不动，重新训一遍，再和用完整数据训出来的模型比同一批测试题的准确率。两边只差"有没有思考段"这一项。要是删掉之后准确率明显掉下来，说明思考段里带着模型真正用得上的信息；几乎不掉，就说明它只是装饰。结果是准确率从七成五掉到三成四——掉得比预想多，所以还要再看一遍评测报告，确认不是训练本身出了岔子。
+> This experiment asks "does the reasoning text in the training data actually do anything." The approach was to delete the reasoning segments entirely, leave everything else unchanged, retrain, and compare accuracy on the same test questions against a model trained on the full data. The two sides differ only in "whether the reasoning segment is present." If accuracy drops noticeably after deleting it, that means the reasoning segment carries information the model actually uses; if it barely drops, that means it's just decoration. The result was accuracy dropping from seventy-five percent to thirty-four percent — a bigger drop than expected, so the eval report needs a second look to make sure it isn't the training itself that went wrong.
 
-#### 看一条真的
+#### One real sample
 
-**从原始数据里现捞一条真实记录贴上来，不许编、不许写"示意"。** 至少给三样：
+**Pull one real record fresh from the raw data and paste it in — never make one up, never write "illustrative."** Give at least three things:
 
-- **模型真实看到的输入**：任务原文，以及提示里最关键那一段的真实内容。这段内容如果是代码拼出来的（比如把前几集的经验拼成一块贴进提示），就按代码逻辑重建出来，并说明是重建的。
-- **模型真实做出的输出**：它实际执行了哪几步。
-- **这一条的真实数字**，以及它和聚合数字对不对得上。
+- **The input the model actually saw**: the original task text, and the actual content of the most load-bearing part of the prompt. If that content is assembled by code (e.g. stitching together experience from earlier episodes and pasting it into the prompt), reconstruct it by following the code's logic and say that it's a reconstruction.
+- **The output the model actually produced**: which steps it actually executed.
+- **This record's real numbers**, and whether they match the aggregate numbers.
 
-原文原样贴，英文就是英文，**不许翻译**——翻译过的样例没法回原始数据核对。注明捞的是哪个文件、第几条。
+Paste the original verbatim; English stays English, **never translate it** — a translated sample can't be checked against the raw data. Note which file it was pulled from and which entry.
 
-**样例还要标出它属于哪一次运行，以及那次运行的软硬件配置去哪查。** 同一条实验分几批跑很常见，不同批次的推理服务、显卡型号、框架版本可能不一样，跨批次的数字不能相减。2026-07-31 实测就靠这一条发现了问题：同一条臂在两批里逐种子对不上，最大差 121479 个 token，追下去是一批走 transformers 直起的服务、一批走 vLLM。只标"哪个文件第几条"是不够的，那查不出批次。
+**The sample must also be labeled with which run it belongs to, and where to look up that run's software/hardware configuration.** It's common for one line of experiments to run in several batches, and the inference service, GPU model, and framework version can differ across batches — numbers across batches can't be subtracted from each other. This is exactly how a problem was caught in practice on 2026-07-31: the same arm didn't match seed-by-seed across two batches, with a max difference of 121479 tokens, and tracking it down found that one batch went through a server started directly with transformers and the other went through vLLM. Just labeling "which file, which entry" isn't enough — that can't tell you the batch.
 
-为什么这一节非有不可：流程描述写得再准也是抽象的，读的人脑补出来的样子经常和真实数据差很远。贴一条真的，读者一眼就能对照自己理解得对不对；而且贴的过程中，写的人自己会发现流程描述里含糊的地方——捞不出来，说明根本没搞清楚。
+Why this section is essential: however accurate a description of the process is, it's still abstract, and what the reader imagines often looks very different from the real data. Pasting in one real sample lets the reader check at a glance whether their understanding matches; and in the process of pulling it, the writer will discover the vague spots in their own process description — if it can't be pulled out, that means it was never actually understood.
 
-**单条样例不许当证据用。** 它是给人看清楚"一条数据长什么样"的。单条数字和聚合数字不一致很正常，不一致就明说不一致，并说清为什么聚合才作数。
+**A single sample must never be used as evidence.** It's there to let people see clearly "what one piece of data looks like." A single number not matching the aggregate number is normal — if they don't match, say so plainly and explain why the aggregate is what counts.
 
-#### 实验结果（只有事实）
+#### Experiment results (facts only)
 
-把量到的数报出来，仅此而已。每个数字按贯穿规则第二条带上指代和出处。
+Report the measured numbers, that's it. Every number carries a referent and a source per rule two above.
 
-**这一段的检验标准：通篇不出现一个能被反驳的句子。** 数字本身没法反驳，"这说明记忆有用"可以反驳——后者属于解读，挪走。同样挪走的还有：哪一档"最漂亮"、哪个结果"比预想的多"、哪个数"要小心"。
+**The test for this section: not a single refutable sentence appears anywhere in it.** A number by itself can't be refuted; "this shows memory is useful" can be — that's interpretation, move it out. Also to be moved out: which tier is "the cleanest," which result is "more than expected," which number "needs care."
 
-数字之间的客观对照可以留（"开记忆读进 2669，关记忆读进 2115"），因果话不许留（"因为贴了经验所以读得多"——这是解释，归解读）。
+Objective comparisons between numbers can stay ("memory-on read in 2669, memory-off read in 2115"); causal statements cannot ("read in more because experience was pasted in" — that's an explanation, it belongs in interpretation).
 
-#### ⚠ 值得注意
+#### ⚠ Worth noting
 
-**仍然属于事实部分**，所以这里写的是设置和数据的客观属性，不是对它们的评价。写"这两个数不是一个口径：一个只算写出来的 token，另一个把读进去的也算上"，不写"这里最容易被读错"。
+**Still part of the facts section**, so what's written here is the objective properties of the setup and the data, not an evaluation of them. Write "these two numbers aren't on the same basis: one counts only tokens written out, the other counts read-in tokens too" — don't write "this is the easiest place to misread."
 
-单开一小节，写这个实验里不寻常的地方。前面那两层照着账本和记忆就能写出来，这一节得自己想：一个外人照着前面的说明重做，会在哪里做出不一样的结果。
+Open a small subsection for the unusual points in this experiment. The previous two layers can be written just by following the ledger and memory; this one has to be thought through yourself: where would an outsider following the earlier description get a different result when redoing it.
 
-- 偏离常规的选择，以及当初为什么这么选（调过学习率、换过截断长度、关掉了某个默认开着的加速）
-- 为了绕开坑打的补丁（钉死某个版本、关掉某条计算路径、服务改成单线程）——补丁本身就是坑存在的证据
-- 数据上的特殊处理（去过重、修过排序、某类样本被筛掉了）
-- 口径陷阱：这个数和隔壁那个数**不是一个口径**，直接比会比出错误结论
-- 已知的不干净：跑到一半改过代码、某个种子的数据丢了、某一格是后来补跑的
+- Choices that deviate from the norm, and why they were made at the time (a learning rate that was tuned, a truncation length that was changed, a default-on acceleration that was turned off)
+- Patches applied to work around a known trap (pinning a specific version, turning off a certain computation path, switching a service to single-threaded) — the patch itself is evidence the trap exists
+- Special handling on the data (deduplication done, ordering fixed, some category of samples filtered out)
+- Basis traps: this number and the one next to it are **not on the same basis**, comparing them directly leads to a wrong conclusion
+- Known impurities: code changed partway through a run, one seed's data got lost, one cell was backfilled later
 
-这一节同样用白话写完整句子，不许写成"lr=1e-5（改过）"这种半截话——外人看不出改之前是多少、为什么改。没有值得注意的地方就写"无"；写"无"是个判断，得真想过一遍才配写。
+Write this section in complete plain-language sentences too, never as a half-sentence like "lr=1e-5 (changed)" — an outsider can't tell what it was before the change or why it was changed. If there's nothing worth noting, write "none"; writing "none" is itself a judgment, and it only earns the right to be written after actually thinking it through.
 
-**实验说明和正文的关系**：正文只给一句话结论加关键数字，实验说明把做法和逻辑展开。两边都是白话，都受说人话规则约束，差别只在详略。没有哪一层可以退回参数堆。
+**The relationship between the experiment description and the body text**: the body text gives only a one-line conclusion plus the key numbers; the experiment description expands on the method and the logic. Both are in plain language and both are bound by the plain-language rules — the only difference is how much detail. Neither layer may fall back to a pile of parameters.
 
-## 阶段 4：生成完自己看一遍
+## Phase 4: read through it yourself once it's generated
 
-文字版写完别急着交，从头读一遍，逐条过：
+Don't hand over the written version right after finishing it — read through from the top, going item by item:
 
-- **每个名词第一次出现有没有解释？** 没有就补一句白话，或者干脆把这个词删掉换成白话说法。
-- **逻辑连不连？** 每条结论能不能顺着上面的数字推下来。推不下来说明中间缺一步：要么把那一步补出来，要么把结论降级成"还不知道"。
-- **humanizer-gyb 的快速检查清单**全过一遍。
-- **事实和解读分开了吗？** 把下半整个删掉，上半要一个字不改还站得住。站不住就说明评价渗进上半了，挑出来挪到下半去。
-- **上半里有没有形容词式的判断？** 逐句扫上半，凡是能被人反驳的句子都不该在上半。
-- **原始字段名有没有跟解释？** 每个出现的字段名后面要有一句它装的是什么，只给名字不算。
-- **每个数字有没有指代和出处？** 逐个数字过，包括序号（第几集、第几步）。缺一个补一个。
-- **每个抽象名词有没有被焊在具体东西上？** 证据、信号、口径、上界这类词，后面没跟"……的"、括号里也没解释的，当场补。
-- **句子成分有没有缺？** 主语谓语宾语齐不齐、修饰语是不是被省掉了。
-- **通篇念一遍。** 念着别扭的地方就是书面腔，当场改成说得出口的话。
-- **每段实验说明**：假装自己是从没见过这个项目的人，照着它能不能重新设计出同一个实验。哪一步说不出来，那一步就是漏的。顺带查一遍有没有混进命令行、路径、参数值——混进来就删掉，改成白话。
-- **每条样例**：是不是真从原始数据捞的、注明了出处、能照着出处回去核对。凭印象写出来的样例是这份文档里最危险的东西——它看起来最具体，所以最容易被当成事实。
-- **聚合数字自己重算一遍**：拿原始数据把报出来的关键数字重新算一次，和账上记的对不对得上。对不上就是账错了或者理解错了，两种都必须当场查清楚再往下写。
+- **Does every noun get explained the first time it appears?** If not, add a plain-language sentence, or just delete the word and use a plain-language phrase instead.
+- **Does the logic connect?** Can every conclusion be derived by following the numbers above it. If it can't, that means a step is missing in between: either fill in that step, or downgrade the conclusion to "still unknown."
+- Go through **humanizer-gyb's quick checklist** in full.
+- **Are facts and interpretation actually separated?** Delete the whole bottom half — the top half should stand without changing a single character. If it doesn't stand, that means an evaluation leaked into the top half; pick it out and move it to the bottom.
+- **Is there any adjective-style judgment in the top half?** Scan every sentence in the top half; any sentence that could be refuted by someone shouldn't be there.
+- **Does every raw field name come with an explanation?** Every field name that appears needs a sentence after it saying what it holds; giving just the name doesn't count.
+- **Does every number have a referent and a source?** Go through each number one by one, including sequence numbers (which episode, which step). Fill in any that's missing.
+- **Is every abstract noun welded to something concrete?** Words like evidence, signal, criterion, upper bound — if one isn't followed by "...of ___" and has no parenthetical explanation either, fill it in on the spot.
+- **Are any sentence components missing?** Are subject, verb, and object all present, has any modifier been dropped.
+- **Read the whole thing aloud.** Anywhere it sounds awkward is written-register — rewrite it into something you'd actually say, on the spot.
+- **For every experiment description**: pretend to be someone who's never seen this project before — could they redesign the same experiment from it? Wherever a step can't be worked out, that step is missing. Also check for any command line, path, or parameter value that snuck in — delete it and replace with plain language.
+- **For every sample**: is it really pulled from the raw data, is the source noted, can it be checked back against that source. A sample written from memory is the most dangerous thing in this document — it looks the most concrete, so it's the most likely to be mistaken for a fact.
+- **Recompute every aggregate number yourself**: take the raw data and recompute the key reported numbers, check them against what's recorded in the ledger. If they don't match, either the ledger is wrong or the understanding is wrong — either way it must be tracked down on the spot before continuing.
 
-最后两条用脚本跑，不许用眼睛代替：
+The last two must be run with a script, never by eyeballing:
 
-- **下半每个数字回上半 grep 一遍。** 把下半出现的所有数字正则抽出来，逐个在上半搜。搜不到就是下半引用了上半没给过的东西，必须补进上半或者从下半删掉。这条规则 skill 里早就有（"每条判断都要指回上半的哪个数字"），但一直没有执行手段，所以 2026-07-31 那次连续三轮都被破——"上一版是 4 份""任务清单的依赖图""审稿只认真实计时"全是这么漏出去的。这件事根本不需要 agent，正则加 grep 就够。
-- **每个计数和加总手算一遍。** 表格有几行、写"几格""几块卡""几份""几条"，逐个数、逐个加。2026-07-31 那次抓到的四个硬错误全部来自这一步：把三格写成四格、"九块卡"和十行的表对不上、下半说"两种做法达标"而上半的表是三种、把还在跑的一格算进"全部不达标"。**这类错误一条都不是靠"哪个词不懂"问出来的。**
+- **Grep every number in the bottom half back against the top half.** Regex out every number that appears in the bottom half, and search for each one in the top half. If it can't be found, that means the bottom half is citing something the top half never gave, and it must either be added to the top half or deleted from the bottom half. This rule was already in the skill ("every judgment must point back to a number in the top half"), but there was never an enforcement mechanism, so it got broken three rounds running on 2026-07-31 — "the previous version was 4 copies," "the task list's dependency graph," "the review only trusts real timing" all leaked through this way. This doesn't need an agent at all, regex plus grep is enough.
+- **Hand-recompute every count and total.** How many rows a table has, how many "cells," "cards," "copies," "entries" a sentence claims — count and add them up one by one. All four hard errors caught on 2026-07-31 came from this step: writing three cells as four, "nine cards" not matching a ten-row table, the bottom half saying "two methods met the bar" while the top half's table showed three, and counting a still-running cell into "all failed to meet the bar." **Not one of these errors could have been surfaced by asking "which word don't you understand."**
 
-这一遍改掉了什么，用一两句话告诉用户。不许默默改。
+Tell the user in one or two sentences what this pass fixed. Never fix silently.
 
-## 阶段 4.5：派一群 subagent 逐段验收（不许跳过）
+## Phase 4.5: dispatch a swarm of subagents to review section by section (do not skip)
 
-自查靠不住。写的人知道自己想说什么，所以看自己的字总是看得懂——这叫熟悉度的错觉，不是文字真的清楚。所以自查完必须再过一道外人关。
+Self-review can't be trusted. The writer already knows what they meant to say, so their own words always read as clear to them — that's the illusion of familiarity, not real clarity. So after self-review, it still has to go through an outsider's check.
 
-**做法：把文字版拆成段，一段派一个 `sonnet` 模型的 subagent，全部并发发出去。**
+**Method: split the written version into sections, dispatch one `sonnet`-model subagent per section, all in parallel.**
 
-### 铁律：给前文，不给背景
+### Hard rule: give it the preceding text, not the background
 
-每个 subagent 收到的是**要检查的那一段，加上它前面的所有段**，外加下面那份检查清单。**不许给它任何项目背景**——不许说这是什么项目、不许解释里面的词、不许贴代码或原始数据。
+Each subagent receives **the section to check, plus every section before it**, plus the checklist below. **Give it no project background whatsoever** — don't say what project this is, don't explain the terms in it, don't paste code or raw data.
 
-给前文，是因为真实读者是从头往下读的。一个词在第二段解释过，读到第五段的人就已经懂了；把第五段单独拎出去检查，检查员会把这个词报成"不懂"，而这是检查方式造成的假警报，不是文字的毛病。**这条是 2026-07-30 实测踩出来的**：单段送检时，六个检查员里有四个把"开记忆""档""token"报成不懂，而这三个词在前面的段落里全都定义过。
+Give it the preceding text because a real reader reads from the top down. A word explained in section two is already understood by someone reading section five; pull section five out on its own to check, and the checker will report that word as "not understood," which is a false alarm caused by the checking method, not a flaw in the text. **This was learned in practice on 2026-07-30**: when sections were sent for review individually, four out of six checkers reported "memory-on," "cell," and "token" as not understood, even though all three had already been defined in earlier sections.
 
-不给背景，是因为一旦给了，检查员就能靠背景猜出意思，然后回报"看懂了"。真实读者手上没有背景。**检查员得和读者一样无知，检出来的东西才作数。**
+Give it no background because once given background, the checker can guess the meaning from it and report back "understood." A real reader has no background in hand. **The checker has to be as ignorant as the reader for its findings to count.**
 
-**检查员的人设要写准：一个 NLP 研究员，但完全没碰过这个项目。** 不是一个什么都不懂的人。2026-07-30 实测用过更弱的模型、又把人设写成"普通读者"，回报里塞满了"我不懂'模型'""我不懂'提示'""我不懂'题'"，真正的毛病被埋在下面几乎看不见。人设定得太无知，检查结果就没法用。
+Write the boundary explicitly into the prompt, listing both sides:
 
-把界线在提示里写死，两边都要列：
+- **It already knows this, reporting it doesn't count**: model, prompt, token, random seed, decoding method, accuracy, baseline, ablation, eval set, and public model names like Qwen and Llama and public dataset names.
+- **It couldn't possibly know this, and if it's unexplained that's a real gap**: names coined inside this project ("memory-on," "cell," "canonical id," and the like), self-coined abbreviations, experiment run numbers, raw record field names, self-defined metrics, numbers with no stated origin.
 
-- **他本来就懂，报了不算数**：模型、提示、token、随机种子、解码方式、准确率、基线、消融、评测集，以及 Qwen、Llama 这类公开模型的名字和公开数据集的名字。
-- **他不可能懂，没解释就是漏了**：这个项目内部起的叫法（"开记忆""档""正典编号"这种）、自己造的缩写、实验流水号、原始记录里的字段名、自己定义的指标、来路没交代的数字。
+Use `sonnet` as the model. It understands basic domain vocabulary, so what it reports back is genuinely stuff that wasn't written clearly.
 
-模型用 `sonnet`。它读得懂领域基础词，报上来的东西才都是真的没写清楚的地方。
+**When processing the reports, check the preceding text first.** If a reported word really was explained in an earlier section, it doesn't count, skip it; if it wasn't explained earlier, it's a real gap and must be filled in.
 
-**处理回报时先查前文。** 被报的词，如果前面某一段真的解释过，就不算数，跳过；前面没解释过，就是真的漏了，必须补。
+### What each subagent is tasked with
 
-### 每个 subagent 的任务
+Send it something along these lines:
 
-发给它的话照这个写：
-
-> 你是一个 NLP 研究员，但完全没碰过这个项目。模型、提示、token、随机种子、解码方式、准确率、基线、消融、评测集这些词你本来就懂，Qwen、Llama 这类公开模型名和公开数据集名你也认得，这些一律不要报。你不懂的是这个项目内部自己起的叫法、自己造的缩写、实验流水号、原始记录里的字段名、自己定义的指标、来路没交代的数字——这些没解释就要报。
+> You're an NLP researcher who has never touched this project. You already know words like model, prompt, token, random seed, decoding method, accuracy, baseline, ablation, and eval set, and you recognize public model names like Qwen and Llama and public dataset names — never report these. What you don't know are names this project coined internally, self-coined abbreviations, experiment run numbers, raw record field names, self-defined metrics, and numbers with no stated origin — report these if they're unexplained.
 >
-> 下面是一份文档从开头到某一段的全部内容，除此之外你没有任何背景信息，也不许去查。
+> Below is a document's full content from the beginning up to a certain section, and you have no background information beyond this and may not go look anything up.
 >
-> 【这里贴：从文档开头到这一段的所有文字，并标出最后哪一段是要重点检查的】
+> [Paste here: all the text from the start of the document to this section, marking which section is the one to focus on checking]
 >
-> 逐句读，重点检查最后那一段，然后老老实实回答：
-> 1. **有哪些词你不懂？** 把每一个你说不出确切意思的词列出来——包括看起来像专业名词的、像是缩写的、像是这个项目内部叫法的。**前面的段落里已经解释过的词不要报。** 领域里的通用词（模型、提示、准确率这类）你应该懂，也不要报。剩下的宁可多报，不许放过。
-> 2. **有哪些概念只是被抛出来，没有解释？** 就是那种作者当你已经知道的东西。
-> 3. **有没有比喻？** 任何拿别的东西来打比方的说法，列出来。
-> 4. **有哪些数字你不知道它指的是什么、或者不知道它从哪来？** 逐个数字查，包括"第几个""几步"这类序号。
-> 5. **有没有出现原始字段名而没说清它装的是什么？**
-> 6. **哪些句子缺主语、缺宾语，或者你要读两遍才知道在说谁？**
-> 7. **哪些句子念着像书面报告，不像人说话？**
-> 8. **这一段里有没有对事实的评价？** 比如"最重要的""意外的""效果好"这类判断。
-> 9. **这一段里有没有哪个东西，前面的段落用的是另一个叫法？** 逐个对，把"前面叫 X、这里叫 Y"的都列出来。你手上只有前文，所以只查这个方向，查到即报。
-> 10. **读完之后，用你自己的话复述这一段在说什么。** 复述不出来就直说复述不出来。
+> Read it sentence by sentence, focus on checking the last section, then honestly answer:
+> 1. **Which words don't you understand?** List every word whose exact meaning you can't state — including anything that looks like a technical term, an abbreviation, or an internal project name. **Don't report words already explained in earlier sections.** You should already know general domain words (model, prompt, accuracy, etc.), don't report those either. Better to over-report than let something slide.
+> 2. **Which concepts are just thrown out with no explanation?** The kind of thing the author assumes you already know.
+> 3. **Is there any metaphor?** List any statement that uses one thing to stand in for another.
+> 4. **Which numbers do you not know the referent or the source of?** Check every number one by one, including sequence markers like "which one" or "how many steps."
+> 5. **Does any raw field name appear without saying what it holds?**
+> 6. **Which sentences are missing a subject, missing an object, or need two reads to tell who's being talked about?**
+> 7. **Which sentences read like a written report, not like something a person would say?**
+> 8. **Is there any evaluation of facts in this section?** Things like "most important," "surprising," "worked well" — judgments like that.
+> 9. **Is there anything in this section called by a different name than what an earlier section used for it?** Match them one by one, list every case of "called X earlier, Y here." You only have the preceding text, so only check in this direction — report whatever you find.
+> 10. **After reading it, restate in your own words what this section is saying.** If you can't restate it, say so directly.
 >
-> 不许客气，不许因为"大概能猜到"就放过。你猜到了，说明作者没写清楚。
+> Don't be polite about it, and don't let something slide just because "you can probably guess it." If you had to guess, that means the author didn't write it clearly.
 
-### 另外单开一个算账员（这条最值钱）
+### Also dispatch a separate accounting checker (this one is the most valuable)
 
-除了逐段的检查员，**单独派一个 subagent，只干一件事：把文档里每个计数、加总、比值、表格行数手算一遍。** 不问词、不挑比喻、不管语气。
+Besides the section-by-section checkers, **dispatch one separate subagent whose only job is to hand-recompute every count, total, ratio, and table row count in the document.** It doesn't ask about words, doesn't flag metaphors, doesn't care about tone.
 
-发给它的话照这个写：
+Send it something along these lines:
 
-> 用 Read 读这份文档。你只干一件事：**把里面所有的计数和加总亲手算一遍。**
+> Use Read to read this document. Your only job is to **hand-recompute every count and total in it.**
 >
-> 具体要算的：表格有几行、正文说"几格""几条""几块卡""几份"这类数字对不对、百分比和比值除出来对不对、分项加起来等不等于总数、同一个数在不同小节出现时是不是同一个值。
+> Specifically what to compute: how many rows a table has, whether the body text's claims of "how many cells," "how many entries," "how many cards," "how many copies" are correct, whether percentages and ratios divide out correctly, whether the parts add up to the stated total, whether the same number appearing in different subsections is the same value each time.
 >
-> 逐个算，把算式写出来。对得上的也要说对得上。**对不上的，把两边的数和你的算式一起报出来。**
+> Compute each one and write out the arithmetic. Say so even when it matches. **When it doesn't match, report both sides' numbers along with your arithmetic.**
 >
-> 不要评论文字好不好读，不要挑词，不要挑比喻。只算账。
+> Don't comment on whether the writing reads well, don't flag word choice, don't flag metaphors. Only do the accounting.
 
-为什么单开：2026-07-31 实测，十个逐段检查员报回来两百多条，真错误一条计数错误都没抓到；而"逐个数一遍"数出来四个硬错误。计数在逐段检查员的提示里只是第 4 问的一个附带，注意力被前三问吃光了。**产出密度上，这一个算账员抵得上其余全部检查员。**
+Why dispatch it separately: on 2026-07-31, ten section-by-section checkers reported back over two hundred items, and not one of them caught a single counting error; a single "count it one by one" pass found four hard errors. Counting was only an incidental part of question 4 in the section-by-section checkers' prompt, and attention was already used up by the first three questions. **In terms of output density, this one accounting checker outweighs every other checker combined.**
 
-### 分诊规则：怎么处理回报（不许每次现判）
+### Triage rule: how to handle the reports (don't re-decide it every time)
 
-2026-07-31 实测，第一轮十个检查员报回来两百余条，真问题不到 20 条，信噪比约 1:10。花在分诊上的力气超过改稿本身。所以分诊规则写死在这里，不许每次重新判。
+On 2026-07-31, the first round of ten checkers reported back over two hundred items, fewer than 20 of them real problems, a signal-to-noise ratio of about 1:10. More effort went into triage than into actually fixing the draft. So the triage rule is fixed here, don't re-decide it every time.
 
-**自动驳回，不必处理：**
+**Automatically rejected, no action needed:**
 
-1. **字段名内部的子串。** `prior_baseline_event_acc` 里含 "baseline"、`best_calA_weighted_acc` 里含 "calA"——检查员把子串当成裸用的术语报上来，这是搜索方式的假警报。
-2. **已经明确标注为引用原文的内容。** 引用一律不改（贯穿规则第三条），检查员报"这句话像书面报告"或"这里有比喻"，只要它在引号或代码块里且标了出处，就跳过。
-3. **领域通用词。** 模型、提示、准确率、评测这类。检查员偶尔还是会报，人设写得再准也拦不干净。
+1. **A substring inside a field name.** `prior_baseline_event_acc` contains "baseline," `best_calA_weighted_acc` contains "calA" — the checker reports the substring as a bare term, which is a false alarm from the search method.
+2. **Content already explicitly marked as a quotation of the original.** Quotations are never changed (rule three above); if the checker reports "this sentence reads like a written report" or "there's a metaphor here" but it's inside quotes or a code block and marked with its source, skip it.
+3. **General domain terms.** Words like model, prompt, accuracy, eval. The checker will occasionally still report these no matter how precisely its persona is written.
 
-**必须接受，不许辩解：**
+**Must be accepted, no arguing:**
 
-1. **计数对不上。** 无条件改，而且要回原始数据核实哪个数是对的。
-2. **数字没有出处。** 要么补出处，要么删掉这个数。
-3. **上半混进了评价、推断或归因。** 挪到下半，或者改写成纯事实。
-4. **同一个东西前后用了两个叫法。** 统一。
-5. **比喻。** 一律以检查员的判断为准，不许自己驳回（理由见下一节）。
+1. **A count that doesn't match.** Fix it unconditionally, and go back to the raw data to verify which number is correct.
+2. **A number with no source.** Either add the source, or delete the number.
+3. **Evaluation, inference, or attribution mixed into the top half.** Move it to the bottom half, or rewrite it as pure fact.
+4. **The same thing called by two different names in different places.** Unify them.
+5. **A metaphor.** Always defer to the checker's judgment, never reject it yourself (reason in the next section).
 
-剩下的（单个词够不够白话、某句话像不像人说的）按软项处理，见收敛判据那一条。
+Everything else (whether a single word is plain enough, whether a given sentence sounds like something a person would say) is handled as a soft item, see the convergence criterion below.
 
-### 收回来之后怎么处理
+### How to process what comes back
 
-- **每一个被报的词，必须处理，不许无视。** 处理办法只有两个：换成白话，或者当场加一句解释。觉得这个词非留不可，就在文字版里加解释，不能在心里觉得"这个应该都懂"。
-- **复述不出来的段落必须重写。** 复述错了比复述不出来更严重——说明那段文字在主动误导。
-- **改完的段落重新派一个 subagent 复检**，用新的 subagent，不要让原来那个看修改稿（它已经被你的解释污染了）。
-- **每轮改完，把改动过的句子单独拎出来再看一遍。** 只查两件事：这次新写进去的词，前文有没有定义；这个词是不是已经被别的东西占用了。**改稿引入的新问题和原稿的问题一样多，但没人专门查它。** 2026-07-31 实测：把"参照上界"这个词改掉之后，"上限"在两节里指了两件不同的事（一节指最多能省多少，一节指放进提示的内容最多有多少），这是第一轮修改自己造出来的问题。
-- **收敛判据分两级，不许用一个标准卡到死。** 报回来的东西分硬项和软项：
-  - **硬项**——计数对不对、数字有没有出处、上半有没有混进解读、跨段有没有换词。硬项要求**连续两轮零新增**，没到就继续跑。
-  - **软项**——比喻、书面腔、单个词够不够白话。软项**允许带着走**，但必须在文档末尾列一节"已知没处理的地方"，一条一条写清楚，不许闷着。
+- **Every word that gets reported must be dealt with, none ignored.** There are only two ways to deal with it: replace it with plain language, or add an explanatory sentence on the spot. If you feel the word absolutely has to stay, add an explanation in the written version — don't just assume in your head that "everyone should already know this."
+- **A section that can't be restated must be rewritten.** A wrong restatement is more serious than an impossible one — it means that section is actively misleading.
+- **After revising a section, dispatch a new subagent to re-check it** — use a fresh subagent, don't let the original one see the revised draft (it's already been contaminated by your own explanation).
+- **After each round of edits, pull out just the sentences that were changed and look at them again.** Check only two things: whether the newly written words this round were defined earlier, and whether this word has already been claimed by something else. **A revision introduces just as many new problems as the original draft had, but nobody specifically checks for them.** As observed on 2026-07-31: after changing the word "reference upper bound," "upper bound" ended up meaning two different things in two sections (one meaning the most that could be saved, one meaning the most that could be put into the prompt) — a problem the first round of edits created by itself.
+- **The convergence criterion has two tiers; don't hold everything to one single standard until it dies.** Split what comes back into hard items and soft items:
+  - **Hard items** — whether counts are correct, whether numbers have sources, whether interpretation leaked into the top half, whether the same thing got renamed across sections. Hard items require **two consecutive rounds with zero new findings**; if that's not reached yet, keep running.
+  - **Soft items** — metaphors, written-register tone, whether a given word is plain enough. Soft items **are allowed to be carried forward**, but must be listed in a "known unaddressed items" section at the end of the document, one item at a time, not buried.
 
-  为什么要分级：2026-07-31 实测跑了三轮，每一轮都有新增（第一轮两百余条、第二轮十几条、第三轮 2 条），按"零新增"的字面意思会无限循环，因为上一轮的修改本身在制造新的软项。真正该卡死的只有硬项——那四类是错误，其余是风格。
-- **"这个数字为什么是这个值"也要当成真问题。** 检查员经常问"为什么是十集""为什么是五个随机数种子"。这类问题问的是实验设计的依据，文字版里本来就该交代，不许当成噪声划掉。
-- **检查员抓比喻抓得比自己准。** 实测里，写的人自己念了一遍没发现的三处比喻（象棋术语、买卖说法、把连续的东西说成一格一格），检查员一次全抓出来。比喻这一项一律以检查员的判断为准，不许自己驳回。
+  Why split them: on 2026-07-31 it took three rounds, and every round had new findings (over two hundred in round one, a dozen or so in round two, 2 in round three) — going by the literal meaning of "zero new findings" would loop forever, because the previous round's edits were themselves generating new soft items. The only thing that should actually be held to zero is hard items — those four categories are errors, everything else is style.
+- **"Why is this number this particular value" also counts as a real question.** The checker often asks "why ten episodes," "why five random seeds." These questions are asking about the basis for the experiment design, which the written version should already be accounting for — don't dismiss it as noise.
+- **The checker catches metaphors more accurately than self-review does.** In practice, three metaphors the writer didn't notice on their own read-through (chess terminology, trading language, describing something continuous as if it were cells) were all caught in one pass by the checker. Always defer to the checker's judgment on metaphors, never reject it yourself.
 
-### 跨段的一物一名怎么查（派 agent 查不了，得分三层）
+### How to check one-name-per-thing across sections (can't be done by dispatching an agent, needs three layers)
 
-**先认清逐段检查员的能力边界：它只拿到前文，拿不到后文。** 所以第 8 段冒出来的新叫法，它在检查第 2 段的时候看不见；反过来，检查第 8 段的那个检查员手里有第 2 段，是能发现"这个东西前面叫的不是这个名字"的。结论是：**逐段检查只能查"后面换词"，查不了"前面换词"，光靠它一定漏。**
+**First recognize the section-by-section checker's limits: it only gets the preceding text, not what comes after.** So a new name that shows up in section 8 is invisible when checking section 2; conversely, the checker reviewing section 8 does have section 2 in hand, and can catch "this thing wasn't called this name earlier." Conclusion: **section-by-section checking can only catch a later section changing the name, not an earlier section changing it — relying on it alone is guaranteed to miss things.**
 
-所以跨段一致性拆成三层，各干各自能干的事。
+So cross-section consistency is split into three layers, each doing what it's actually capable of.
 
-**第一层：先出词表，落盘。** 写文字版之前就把词表定好，写进 `plans/PLAINWORDS.md`，四列：
+**Layer one: settle the glossary first, write it to disk.** Before writing the written version, settle the glossary and write it into `plans/PLAINWORDS.md`, four columns:
 
-| 项目里的原词 | 全篇唯一的称呼 | 永远违规的别名 | 看语境的别名 |
+| Original term in the project | The one name used throughout | Aliases that are always a violation | Aliases that depend on context |
 |---|---|---|---|
-| episode | 一轮 | 一集、一个 episode | 一次 |
-| mem / nomem 两条臂 | 存解法 / 不存解法 | 开记忆、关记忆、带记忆、记忆臂 | — |
+| episode | a round | an episode, one episode | one time |
+| the mem / nomem arms | solution-stored / solution-not-stored | memory-on, memory-off, with-memory, memory arm | — |
 
-后两列记的都是**写的时候手滑会用出来的词**，包括自己上一版用过的、比喻性的、口语顺嘴的。只增不改，越积越准。分成两列的理由见阶段 2 那一节。
+The last two columns record **words that slip out by hand while writing**, including ones used in a previous version, ones that are metaphorical, ones that just roll off the tongue in speech. Append-only, gets more accurate over time. See the Phase 2 section for why it's split into two columns.
 
-**第二层：拿永远违规那一列跑字符串搜索。** 第三列每一个词，在文字版里搜一遍，命中就是违规。这一层是机械的，对已知别名一个都不会漏，也不花钱——所以这层永远先跑，不许用 agent 代替。第四列（看语境的）也搜，但搜出来的要人眼判断，别当成违规直接改。
+**Layer two: run a string search against the always-violation column.** Search the written version for every word in the third column; a hit is a violation. This layer is mechanical, never misses a known alias, and costs nothing — so it always runs first, no agent needed as a substitute. Also search the fourth column (context-dependent), but the hits need a human eye on them, don't auto-fix them as violations.
 
-**第三层：派一个 subagent 通读全篇，只干一件事——找词表里还没有的别名。** 让它列出"看起来指同一个东西、但写法不同"的所有词组，**不要它判断哪个对**，判断由主对话做。这是 agent 在这件事上唯一比搜索强的地方：发现我自己没想到的别名。它报回来的新别名，补进词表第三列，然后第二层重跑。
+**Layer three: dispatch a subagent to read straight through the whole document, with exactly one job — find aliases not yet in the glossary.** Have it list every group of words that "look like they refer to the same thing but are written differently," **don't have it judge which one is correct** — that judgment is made by the main conversation. This is the one thing an agent is better at than a search here: finding an alias the writer didn't think of. Any new alias it reports gets added to the glossary's third column, then layer two reruns.
 
-**为什么不能只靠第三层**：一份长文档里同义替换可能有几十处，让一个 agent 一次找全，它会挑几个显眼的报上来就收工。搜索不会。
+**Why layer three alone isn't enough**: a long document can have dozens of instances of synonym substitution, and if one agent is asked to find them all in one pass, it'll pick a few obvious ones and call it done. A search won't.
 
-### 另外派一个查分层的
+### Also dispatch one to check the split between the two halves
 
-再派一个 subagent 读全篇，只查一件事：上半里有没有混进解读，下半里有没有混进上半没出现过的新事实。把可疑句子逐句列出来。
+Dispatch another subagent to read straight through the whole document, checking exactly one thing: whether interpretation has leaked into the top half, and whether the bottom half has mixed in a new fact that never appeared in the top half. List every suspect sentence one by one.
 
-### 报给用户
+### Report to the user
 
-这一关的结果要跟用户说：**一共报回来多少个不懂的词、哪些段落被打回重写、跑了几轮才收敛**。这几个数是这份文档好不好读的直接证据，不许省略不报。
+The result of this stage must be reported to the user: **how many not-understood words came back in total, which sections got sent back for rewriting, how many rounds it took to converge.** These numbers are direct evidence of whether this document is readable — don't leave them out of the report.
 
-## 阶段 5：渲染 artifact（确定性转换 + 逐字符校验）
+## Phase 5: render the artifact (deterministic conversion + character-by-character verification)
 
-这一阶段原来写的是"交 subagent 渲染"，2026-07-31 改掉了。**理由：这一阶段唯一的硬规则是"一个字不许改"，而这条只有确定性转换才能证明。** 让模型抄一遍长文档，它一定会顺手动几个字——实测第一次渲染就丢了 19 个字符（折叠标题吃掉末尾的句号，还有一处标题被换成了自己编的说法）。抄完再人工核对，等于把校验交给了同一个会出错的东西。
+This stage used to say "hand it to a subagent to render," changed on 2026-07-31. **Reason: the only hard rule at this stage is "not a single character may change," and only a deterministic conversion can prove that.** Have a model copy out a long document and it will inevitably shift a few characters without meaning to — in practice the very first render dropped 19 characters (a collapsed heading ate the trailing period, and one heading got swapped for a phrase the model made up itself). Having a human check it afterward just hands verification back to the same thing that makes the mistakes.
 
-所以分成两步，第一次和之后每次做的事不一样。
+So it's split into two steps, and the first time and every time after that do different things.
 
-### 第一次：让 subagent 造一个转换器，不是造一个页面
+### The first time: have a subagent build a converter, not a page
 
-派 subagent，指令写清：
+Dispatch a subagent with clear instructions:
 
-- 动手前先 load `artifact-design` skill。
-- 产出的**不是 HTML，是一个 markdown → HTML 的转换脚本**，输入这份文字版、输出页面。版式要求见下面那一节。
-- 脚本必须是纯确定性的：同样的输入永远得到同样的输出，不许有任何"这里我改写得更顺一点"的余地。
-- 脚本要处理的块类型至少有：标题、段落、表格、代码围栏、引用块、无序列表、水平线；行内至少有：加粗、反引号代码、转义。
+- Load the `artifact-design` skill before doing anything else.
+- What it produces is **not HTML, it's a markdown → HTML conversion script**, which takes this written version as input and produces the page as output. Layout requirements are in the section below.
+- The script must be purely deterministic: the same input always produces the same output, with no room for "let me smooth this over a bit here."
+- Block types the script must handle include at least: headings, paragraphs, tables, code fences, blockquotes, unordered lists, horizontal rules; inline types include at least: bold, backtick code, escapes.
 
-### 之后每次：只跑脚本，然后逐字符校验
+### Every time after that: just run the script, then verify character by character
 
-1. 跑转换器，得到 HTML。
-2. **把 HTML 里的可见文字抽出来（剥掉所有标签、还原实体），和 markdown 剥掉标记符号之后的文字，逐字符比对。** 忽略空白之后必须完全相同。用 `difflib` 打印差异块。
-3. **不一致就不许发布。** 先查是转换器丢了字，还是 markdown 里有转换器不认识的语法。
+1. Run the converter to get the HTML.
+2. **Extract the visible text from the HTML (strip all tags, restore entities), and compare it character by character against the markdown's text with its markup stripped.** They must be exactly identical after ignoring whitespace. Use `difflib` to print the diff blocks.
+3. **Do not publish if they don't match.** First find out whether the converter dropped characters, or the markdown has syntax the converter doesn't recognize.
 
-这一步 2026-07-31 跑通过两次，两次都报 "md 36082 / html 36082 → 逐字符一致"。有了这个数，"一个字不许改"才是可证的，不是口头承诺。
+This step ran successfully twice on 2026-07-31, both times reporting "md 36082 / html 36082 → character-for-character identical." With that number, "not a single character may change" is provable, not just a verbal promise.
 
-### 版式要求（转换器要实现的）
+### Layout requirements (for the converter to implement)
 
-- 六节两半的结构照搬，上半五节全是事实、下半一节是解读的顺序不许动。
-- 实验说明默认折叠，展开才看得到（页面先给数字，做法和逻辑是点开细看的）。**折叠标题必须逐字取自 markdown 里那一行加粗文字，连标点都不许动**——上次丢的 19 个字符就丢在这里。
-- **两半在页面上必须一眼分得开**——底色、边框或者一道横贯的标题带都行，但不能只靠一个小标题区分。下半开头要明确写着"以下全是解读，可以吵"。
-- **每个数字挂一条注释**，点开或悬停能看到它指的是什么、从哪来的，内容和文字版括号里的一致。注释用纯 HTML 和 CSS 实现（比如 `<details>` 或者 `:hover` 显示的小块），不许外链任何脚本。手机上没有悬停，所以点击也要能打开。
-- 浅色深色两种主题都要可读：颜色写成 `:root` 上的自定义属性，在 `@media (prefers-color-scheme: dark)` 和 `:root[data-theme="dark"]` / `:root[data-theme="light"]` 三处各重定义一遍。
-- 宽表格在自己的容器里横向滚动，页面本身不横向滚；中日韩字体用系统字体栈，不许外链 webfont。
-- favicon 固定一个，跨次重发不换。同一条线的现状页**用同一个文件路径重发**，保持同一个 URL（见阶段 0.5）。
+- Keep the six-section, two-half structure as is; the order of five fact sections on top, one interpretation section on the bottom, must not change.
+- Experiment descriptions are collapsed by default, expand to see them (the page gives the numbers first, the method and logic are for clicking into). **The collapsed heading must be taken verbatim from that bold line of text in the markdown, not even punctuation may change** — the 19 characters dropped last time were lost exactly here.
+- **The two halves must be visually distinguishable at a glance on the page** — background color, a border, or a banner heading spanning the width all work, but it can't rely on just a small label to tell them apart. The bottom half must open with a clear statement that "everything below is interpretation, and it can be argued with."
+- **Every number carries an annotation**, viewable by clicking or hovering, showing what it refers to and where it's from, with content matching what's in the written version's parentheses. Implement the annotation with pure HTML and CSS (e.g. `<details>` or a `:hover`-revealed block), no external script. There's no hover on a phone, so a tap must also be able to open it.
+- Both light and dark themes must be readable: write colors as custom properties on `:root`, redefined once each under `@media (prefers-color-scheme: dark)` and under `:root[data-theme="dark"]` / `:root[data-theme="light"]`.
+- Wide tables scroll horizontally inside their own container, the page itself never scrolls horizontally; CJK text uses the system font stack, no external webfont.
+- The favicon is fixed and doesn't change across re-publishes. A status page for the same line **is re-published to the same file path**, keeping the same URL (see Phase 0.5).
 
-## 红线
+## Red lines
 
-- **账上没有的数字不许出现。** 缺就写缺。
-- **"懂了吗"不算验收。**
-- **subagent 不许改文字版一个字。**
-- **一个实体全场只用一个称呼。**
-- **不查外部文献。** 别人做了什么是 `update-knowledge-map` 的活。
-- **不碰 `RESULTS.md`。** 它是渲染产物，手改就毁了。
-- **下半不许出现上半没给过的数字或事实。** 用脚本查，不靠自觉。
-- **artifact 没通过逐字符校验，不许发布。**
-- 结论动了 `WORKPLAN.md` 里任何一条判断 → 提醒用户补一条 `TIMELINE.md`，但别自己动手写 TIMELINE，那是人写的。
+- **No number may appear that isn't in the ledger.** If it's missing, say it's missing.
+- **"Did you get it" doesn't count as acceptance.**
+- **Subagents may not change a single character of the written version.**
+- **One entity gets exactly one name for the whole session.**
+- **No external literature review.** What other people have done is the job of `update-knowledge-map`.
+- **Never touch `RESULTS.md`.** It's a rendered artifact, a hand edit destroys it.
+- **The bottom half may not contain any number or fact the top half never gave.** Check with a script, don't rely on self-discipline.
+- **The artifact may not be published without passing character-by-character verification.**
+- If a conclusion changes any judgment in `WORKPLAN.md` → remind the user to add a `TIMELINE.md` entry, but don't write the TIMELINE entry yourself — that's for a human to write.

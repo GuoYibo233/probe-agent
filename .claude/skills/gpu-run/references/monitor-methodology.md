@@ -1,12 +1,12 @@
-# 测速与 ETA 方法论（gpu-run reference）
+# Speed and ETA methodology (gpu-run reference)
 
 Read the sampler's verdict, decide next step. Never guess from memory, and
 don't re-derive it by hand from raw logs either — that's the sampler's job.
 
-由 `.claude/agents/job-monitor.md` 和 gpu-run Phase 5 引用。原为一个全局
-skill，2026-07-30 迁入项目内、全局那份已作废；下面的示例路径来自旧项目，
-**new1 里一律以 `python3 run.py gpu-jobs json` 的台账输出和
-`<workdir>/logs/` 为准**。
+Referenced by `.claude/agents/job-monitor.md` and gpu-run Phase 5. Originally a global
+skill, moved into the project on 2026-07-30 with the global copy retired; the example paths
+below are from the old project — **inside new1, always go by the ledger output of
+`python3 run.py gpu-jobs json` and `<workdir>/logs/`**.
 
 ## When to invoke
 
@@ -14,69 +14,76 @@ skill，2026-07-30 迁入项目内、全局那份已作废；下面的示例路�
 - User asks "how's it going", "ETA?", "is it stuck"
 - About to quote an ETA or wall-time estimate to the user
 
-## 程序职责说明：判定从哪来
+## What the program is responsible for: where the verdict comes from
 
-以前这份文档教的是「两个时间点读 tqdm 算真实速率、纠正分片 ETA、手工 parse
-进度行」这一整套手工流程——那套活现在是 `ops/heartbeat.py` +
-`ops/sampler.py` + `ops/verdicts.py` 的常设职责：每个已接心跳的采集/训练/
-评测脚本主循环里 `emit(done, total, ...)`，后台采样器每
-`sample_interval_s`（默认 60 秒）读一轮全部心跳，按下面的六格判定 + 两线
-公式算出判定/速率/ETA，写进它自己的状态文件（`MONITOR_DIR/latest.json`）。
-**读判定优先用 `python3 run.py gpu-jobs json`——终端出口已经接读这份采样
-历史（带新鲜度门槛：`sampled_at` 在 5 分钟内直接吐采样器的判定，过期退回
-现场实探老路，工单 07 已完成），这条命令直接吐判定；网页出口
-`http://localhost:8377/json` 是同一份数据的另一条路（采样器自己起的网页，
-工单 06 已完成），两边选一个读就够。不要再手翻日志、手算 tqdm 行**——手工
-流程只在采样查不到时（比如任务根本没接心跳，或采样器没跑）才退回去用。
+This document used to teach the whole manual workflow of "read tqdm at two points in time to
+compute the real rate, correct the per-piece ETA, hand-parse progress lines" — that work is now
+the standing responsibility of `ops/heartbeat.py` + `ops/sampler.py` + `ops/verdicts.py`: every
+collection/training/eval script wired to heartbeats calls `emit(done, total, ...)` in its main
+loop, and the background sampler reads a round of all heartbeats every `sample_interval_s`
+(default 60 seconds), computes the verdict/rate/ETA using the six-cell judgment plus the
+two-line formula below, and writes them into its own state file (`MONITOR_DIR/latest.json`).
+**Prefer `python3 run.py gpu-jobs json` to read the verdict** — the terminal outlet already
+reads from this sampling history (with a freshness threshold: within 5 minutes of `sampled_at`
+it directly outputs the sampler's verdict, and past that it falls back to the old path of
+probing on the spot, ticket 07 is done), this command directly outputs the verdict; the web
+outlet `http://localhost:8377/json` is another route to the same data (a web page the sampler
+runs itself, ticket 06 is done), either one is enough to read. **Do not go back to manually
+paging through logs or hand-computing tqdm lines** — the manual workflow is only a fallback for
+when the sampler can't find anything (e.g. the task was never wired to heartbeats, or the
+sampler isn't running).
 
-六格判定（`ops/verdicts.py` 的 `V_DONE`/`V_DEAD`/`V_STALL`/`V_WARMUP`/
-`V_SLOW`/`V_OK`，`judge()` 按固定优先级判，命中即停）：
+Six-cell verdict (`ops/verdicts.py`'s `V_DONE`/`V_DEAD`/`V_STALL`/`V_WARMUP`/`V_SLOW`/`V_OK`,
+`judge()` checks them in a fixed priority order and stops at the first match):
 
-| 判定常量 | 中文 | 命中条件（摘自 `judge()`） |
+| Verdict constant | Label | Match condition (excerpted from `judge()`) |
 |---|---|---|
-| `V_DONE` | 已完成 | `status=="done"` 或 `done >= total` |
-| `V_DEAD` | 已挂 | tmux session 探不到（`alive is False`） |
-| `V_STALL` | 疑似卡死 | 距上次心跳（还没见过心跳时距发射）超过判定线 |
-| `V_WARMUP` | warm-up 中 | 还没见过第一条心跳，且未超 warm-up 上限 |
-| `V_SLOW` | 变慢 | 近期速率 < 平均速率 × `slow_ratio` |
-| `V_OK` | 健康 | 以上都不命中 |
+| `V_DONE` | done | `status=="done"` or `done >= total` |
+| `V_DEAD` | dead | tmux session can't be probed (`alive is False`) |
+| `V_STALL` | suspected stall | time since the last heartbeat (or since launch if no heartbeat has been seen yet) exceeds the stall line |
+| `V_WARMUP` | warming up | no first heartbeat seen yet, and the warm-up cap hasn't been exceeded |
+| `V_SLOW` | slow | recent rate < average rate × `slow_ratio` |
+| `V_OK` | healthy | none of the above match |
 
-两线公式（常数收在 `ops/verdicts.py` `DEFAULTS`，别处不许硬编码）：
+Two-line formula (constants live in `ops/verdicts.py`'s `DEFAULTS`; never hardcode them
+elsewhere):
 
-- **判定线**（stall line，多久没心跳算卡死）：
-  `max(stall_mult × 典型心跳间隔, stall_floor_samples × sample_interval_s)`，
-  默认 `stall_mult=5.0`、`stall_floor_samples=3`、`sample_interval_s=60.0`；
-  典型心跳间隔取最近 ≤`typical_beats`（20）个心跳间隔的中位数，样本不足
-  `min_intervals`（3）个时退回 `warmup_line_s`（默认 1800 秒/30 分钟）顶着，
-  避免长 task/长 step 开局就被误判卡死；发射时给了 `--stall-line` 就直接用
-  那个数，不再算自适应值。
-- **升级线**（escalate line，多久没心跳该拉人介入）：
-  `判定线 × escalate_mult`（默认 3.0），或发射时给的 `--escalate-line`。
-  过了升级线，采样器把这一轮的 `escalated` 标成真——这是 Phase 5「事故记录
-  有内容才派 job-monitor」的输入。
-- 服务类分片（`--service` 发射，如 vLLM）走 `_judge_service`：端口探测
-  （`/health`）连续失败 `port_fail_rounds`（默认 3）轮记 `V_STALL`，达到
-  `port_fail_rounds × escalate_mult` 轮升级；还没探到过一次 200 时按
-  warm-up 上限顶着。
+- **Stall line** (how long without a heartbeat counts as a stall):
+  `max(stall_mult × typical heartbeat interval, stall_floor_samples × sample_interval_s)`,
+  defaults `stall_mult=5.0`, `stall_floor_samples=3`, `sample_interval_s=60.0`; the typical
+  heartbeat interval is the median of the most recent ≤`typical_beats` (20) heartbeat
+  intervals, and when there are fewer than `min_intervals` (3) samples it falls back to
+  `warmup_line_s` (default 1800 seconds / 30 minutes) as a floor, to avoid a long task/long
+  step being misjudged as stalled right at the start; if `--stall-line` was given at launch
+  time, that number is used directly instead of computing the adaptive value.
+- **Escalation line** (how long without a heartbeat before someone should step in):
+  `stall line × escalate_mult` (default 3.0), or the `--escalate-line` given at launch time.
+  Once past the escalation line, the sampler marks this round's `escalated` as true — this is
+  the input to Phase 5's "only dispatch job-monitor once the incident record has content."
+- Service-class pieces (launched with `--service`, e.g. vLLM) go through `_judge_service`:
+  port-probe (`/health`) failing `port_fail_rounds` (default 3) rounds in a row records
+  `V_STALL`, and it escalates once it reaches `port_fail_rounds × escalate_mult` rounds; before
+  a single 200 has ever been probed, it is capped at the warm-up limit.
 
-要改判定口径，改 `ops/verdicts.py` 的 `DEFAULTS`——这份文档只负责讲清楚
-口径是什么，不再教怎么手工复现它。
+To change the verdict rules, change `ops/verdicts.py`'s `DEFAULTS` — this document is only
+responsible for explaining what the rules are, not for teaching how to manually reproduce them.
 
 ## Decision tree
 
-判断输入是采样器给的判定值（`verdict`/`escalated` 字段——`gpu-jobs json`
-新鲜时直接就在那，过期看提示退回现场实探；网页 `http://localhost:8377/json`
-读到的是同一份数据），不是原始日志：
+The input to judge on is the verdict value the sampler gives (the `verdict`/`escalated`
+fields — `gpu-jobs json` has them directly when fresh, and falls back to probing on the spot
+past that per the hint; the web page `http://localhost:8377/json` reads the same data), not
+raw logs:
 
-| 判定 | Action |
+| Verdict | Action |
 |---|---|
-| `V_OK` 健康 | 不用特别处理，按下面 Wakeup scheduling guidance 的节奏走 |
-| `V_SLOW` 变慢 | 检查是不是尾部数据本身更慢（如冗长输出的样本），报告 + 按平均值外推 |
-| `V_WARMUP` warm-up 中 | 还没心跳，正常；超过 warm-up 上限会自动变成 `V_STALL`，不用手动催 |
-| `V_STALL` 疑似卡死，`escalated=false` | 记一笔，按常规节奏下次再看 |
-| `V_STALL` 疑似卡死，`escalated=true` | 读日志定位死因——采样器已经把这一条记进事故记录，并自动拉起一个无头事故 agent 去处理（**已接线、未经真实演练**）；发现这条也可以靠人或 Claude 主动巡检介入 |
-| `V_DEAD` 已挂 | 读日志定位死因，能修则补射：`python3 run.py launch --refire <run_id> --idx <N>` |
-| `V_DONE` 已完成 | 走 Phase 6a 收尾五连，不用再监控 |
+| `V_OK` healthy | No special handling needed, follow the pace in the Wakeup scheduling guidance below |
+| `V_SLOW` slow | Check whether the tail data itself is just slower (e.g. samples with long output), report + extrapolate from the average |
+| `V_WARMUP` warming up | No heartbeat yet, normal; exceeding the warm-up cap automatically turns into `V_STALL`, no need to manually chase it |
+| `V_STALL` suspected stall, `escalated=false` | Note it down, check again next time on the regular cadence |
+| `V_STALL` suspected stall, `escalated=true` | Read the logs to pin down the cause of death — the sampler has already recorded this into the incident record and automatically spawned a headless incident agent to handle it (**wired up, never rehearsed for real**); a human or Claude actively patrolling can also step in on finding this |
+| `V_DEAD` dead | Read the logs to pin down the cause of death, refire if it can be fixed: `python3 run.py launch --refire <run_id> --idx <N>` |
+| `V_DONE` done | Go through the Phase 6a wrap-up five-step, no need to keep monitoring |
 
 ## Wakeup scheduling guidance
 

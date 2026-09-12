@@ -1,38 +1,38 @@
-# T01 — 心跳模块与判定引擎，单测全绿
+# T01: Heartbeat module and verdict engine, all unit tests green
 
-工单：`.scratch/gpu-monitor-launch/issues/01-heartbeat-verdicts.md`
-需求依据：`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 1（心跳模块）、Task 2（判定引擎）。
-本单未直接引用 spec.md 的任何节（工单点名的是实施计划，不是 spec），未读 spec.md。
+Ticket: `.scratch/gpu-monitor-launch/issues/01-heartbeat-verdicts.md`
+Requirement source: `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 1 (heartbeat module), Task 2 (verdict engine).
+This ticket does not directly cite any section of spec.md (the ticket names the implementation plan, not the spec); spec.md was not read.
 
-## 做了什么（对照工单四条验收）
+## What was done (against the ticket's four acceptance items)
 
-1. **心跳测试通过：必填字段齐、选填不给不出现、parse 往返一致、垃圾行返回 None**
-   - 新建 `ops/heartbeat.py`：`emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)` 与 `parse(line) -> dict | None`，常量 `PREFIX = "@hb "`。代码与计划 Task 1 Step 3 给出的实现逐字一致。
-   - 新建 `tests/test_heartbeat.py`，4 个用例：必填字段齐全、选填字段按需出现/不出现、emit→parse 往返、三种垃圾行（非 `@hb ` 前缀 / 非法 JSON / 缺必填字段）均返回 `None`。
+1. **Heartbeat tests pass: required fields all present, optional fields absent when not given, parse round-trips consistently, garbage lines return None**
+   - New `ops/heartbeat.py`: `emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)` and `parse(line) -> dict | None`, constant `PREFIX = "@hb "`. The code matches the implementation given in plan Task 1 Step 3 verbatim.
+   - New `tests/test_heartbeat.py`, 4 cases: all required fields present, optional fields appear/don't appear as needed, emit→parse round trip, three kinds of garbage lines (no `@hb ` prefix / invalid JSON / missing required field) all return `None`.
 
-2. **判定测试通过：六格每格至少一个用例，判定线下限、warm-up 上限、探测失败不判已挂、服务类四格都有边界用例**
-   - 新建 `ops/verdicts.py`：`DEFAULTS` 配置字典、`typical_gap_s`、`stall_line_s`、`rates`、`judge`（含内部 `_judge_service` 处理 `kind="service"` 分支），六个判定常量 `V_DONE/V_DEAD/V_STALL/V_WARMUP/V_SLOW/V_OK`。代码与计划 Task 2 Step 3 给出的实现逐字一致。
-   - 新建 `tests/test_verdicts.py`，11 个用例，覆盖：
-     - `test_done_beats_everything`：已完成优先级压过 alive/status
-     - `test_dead`：alive=False 判已挂且当场达升级线
-     - `test_stall_and_escalate`：停摆超判定线判疑似卡死，超升级线（判定线×3）才 escalate=True
-     - `test_warmup_and_warmup_timeout`：warm-up 中，超 warm-up 上限转疑似卡死
-     - `test_stall_line_fallback_when_few_intervals`：`stall_s=None`（间隔样本不足）时用 warm-up 上限顶着，不误报
-     - `test_slow_needs_recent_rate`：近期速率 < 平均×0.5 判变慢，近期速率缺失判健康
-     - `test_probe_fail_keeps_previous_alive`：`alive=None`（探测失败）不判已挂
-     - `test_service`：服务类四格（端口未应答过→warm-up、应答过→健康、连续 3 轮不应答→疑似卡死、alive=False→已挂）
-     - `TestLinesAndRates` 三个用例：`typical_gap_s` 中位数、`stall_line_s` 下限与 override 与样本不足返回 None、`rates` 平均/近期速率及 first_beat/recent_beats 为空的边界。
+2. **Verdict tests pass: at least one case per each of the six verdicts, stall-line floor, warm-up ceiling, probe failure does not verdict dead, all four service-kind cells have boundary cases**
+   - New `ops/verdicts.py`: `DEFAULTS` config dict, `typical_gap_s`, `stall_line_s`, `rates`, `judge` (including an internal `_judge_service` that handles the `kind="service"` branch), six verdict constants `V_DONE/V_DEAD/V_STALL/V_WARMUP/V_SLOW/V_OK`. The code matches the implementation given in plan Task 2 Step 3 verbatim.
+   - New `tests/test_verdicts.py`, 11 cases, covering:
+     - `test_done_beats_everything`: done outranks alive/status
+     - `test_dead`: alive=False verdicts dead and immediately hits the escalate line
+     - `test_stall_and_escalate`: a stall past the stall line verdicts suspected stall; only past the escalate line (stall line x3) does escalate=True
+     - `test_warmup_and_warmup_timeout`: warming up, past the warm-up ceiling turns into suspected stall
+     - `test_stall_line_fallback_when_few_intervals`: when `stall_s=None` (not enough interval samples), the warm-up ceiling is used as a stopgap, no false positive
+     - `test_slow_needs_recent_rate`: recent rate < average x0.5 verdicts slow, missing recent rate verdicts healthy
+     - `test_probe_fail_keeps_previous_alive`: `alive=None` (probe failure) does not verdict dead
+     - `test_service`: the four service-kind cells (port never answered → warming up, has answered → healthy, 3 consecutive rounds no answer → suspected stall, alive=False → dead)
+     - Three `TestLinesAndRates` cases: `typical_gap_s` median, `stall_line_s` floor plus override plus returning None on insufficient samples, `rates` average/recent rate and the boundary where first_beat/recent_beats are empty.
 
-3. **两个模块只用标准库，常数全部收在判定引擎的 DEFAULTS 配置里**
-   - `ops/heartbeat.py` 只 import `json`、`sys`、`time`。
-   - `ops/verdicts.py` 只 import `statistics.median`。
-   - 判定引擎里出现的所有阈值（判定线倍数、下限采样轮数、升级线倍数、warm-up 上限、近期速率窗口、典型心跳间隔窗口、最少间隔数、变慢比例、服务端口连续失败轮数）全部收在 `DEFAULTS` dict，函数体内没有散落的硬编码常数。
+3. **Both modules use only the standard library, all constants are collected in the verdict engine's DEFAULTS config**
+   - `ops/heartbeat.py` only imports `json`, `sys`, `time`.
+   - `ops/verdicts.py` only imports `statistics.median`.
+   - Every threshold that appears in the verdict engine (stall-line multiplier, floor sample-round count, escalate-line multiplier, warm-up ceiling, recent-rate window, typical heartbeat interval window, minimum interval count, slow-down ratio, service-port consecutive-failure round count) is collected in the `DEFAULTS` dict; there are no scattered hardcoded constants in the function bodies.
 
-4. **`python3 run.py selfcheck` 通过，两个任务各自 commit**
-   - `python3 run.py selfcheck` 输出 `selfcheck: 62 任务 / 4 配方, 全部就位`（本工单没有新增/改动 run.py 注册表条目——heartbeat 和 verdicts 是被其他任务 import 的纯库模块，不是独立可跑任务，plan 里 Task 1/2 也未要求挂注册表）。
-   - Task 1 单独一个 commit，Task 2 单独一个 commit（清单见下）。
+4. **`python3 run.py selfcheck` passes, each task has its own commit**
+   - `python3 run.py selfcheck` prints `selfcheck: 62 tasks / 4 recipes, all present` (this ticket did not add or change any run.py registry entries. Heartbeat and verdicts are pure library modules imported by other tasks, not standalone runnable tasks, and the plan's Task 1/2 did not require registering them either).
+   - Task 1 has its own commit, Task 2 has its own commit (list below).
 
-## 怎么验证的
+## How it was verified
 
 ```
 $ python3 -m unittest tests.test_heartbeat -v
@@ -67,25 +67,25 @@ OK
 
 ```
 $ python3 run.py selfcheck
-selfcheck: 62 任务 / 4 配方, 全部就位
+selfcheck: 62 tasks / 4 recipes, all present
 ```
 
 ```
 $ python3 -m unittest discover -s tests -v
-（15 项全 ok，heartbeat 4 + verdicts 11）
+(all 15 items ok, heartbeat 4 + verdicts 11)
 Ran 15 tests in 0.001s
 OK
 ```
 
-## Commit 清单
+## Commit list
 
-- `c890cec` — T01: monitor: 心跳模块 ops/heartbeat.py(emit/parse,stdlib-only)
-  （`ops/heartbeat.py`、`tests/__init__.py`、`tests/test_heartbeat.py`）
-- `ba3cdbb` — T01: monitor: 判定引擎 ops/verdicts.py(六格优先级+自适应两线+速率,纯函数)
-  （`ops/verdicts.py`、`tests/test_verdicts.py`）
+- `c890cec`: T01: monitor: heartbeat module ops/heartbeat.py(emit/parse,stdlib-only)
+  (`ops/heartbeat.py`, `tests/__init__.py`, `tests/test_heartbeat.py`)
+- `ba3cdbb`: T01: monitor: verdict engine ops/verdicts.py(six-cell priority + adaptive two lines + rates, pure functions)
+  (`ops/verdicts.py`, `tests/test_verdicts.py`)
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-- 两个模块的实现代码和测试代码在计划文档里已经写死（Step 1/Step 3 给出完整源码），本单严格照抄，没有自行发挥的空间，也没有发现和计划代码不一致需要临场决策的地方。
-- `run.py selfcheck` 的"任务/配方全部就位"是通用自检，本单没有改动 `run.py` 注册表，这条验收项等同于"没弄坏别的东西"，不是本单新增内容的针对性检查。
-- 没有发现需要偏离工单/计划的情况，也没有遗留的歧义点。
+- The implementation code and test code for both modules were already fixed in the plan document (Step 1/Step 3 give the full source), so this ticket copied them exactly, with no room for improvisation and no place found where the implementation differed from the plan's code in a way that needed an on-the-spot decision.
+- `run.py selfcheck`'s "all tasks/recipes present" is a generic self-check; this ticket did not change the `run.py` registry, so this acceptance item is equivalent to "nothing else got broken," not a targeted check of this ticket's new content.
+- No deviation from the ticket/plan was found, and there are no lingering ambiguities.

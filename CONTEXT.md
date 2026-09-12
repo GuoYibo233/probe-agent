@@ -1,104 +1,163 @@
-# CONTEXT — 全仓库词汇表
+# CONTEXT — Repository-wide glossary
 
-本文件只做词汇表：每个词一个定义，全项目讨论与代码注释里同名同义。
-不写实现细节，实现决定进 docs/adr/。
+This file is only a glossary: one definition per term, used with the same name
+and meaning across project-wide discussion and code comments. It does not
+record implementation details; implementation decisions go into `docs/adr/`.
 
-## 已定的词
+## Settled terms
 
-- **长程任务（job）**：进台账的 GPU 任务。判据是"占卡且长跑"；CPU 长活与
-  recipe 步骤不进这个范围（2026-08-08 定，理由：实际会跑很久的基本只有 GPU）。
-- **台账**：`ops/jobs.json`。长程任务的登记簿，`{active, history}` 两个列表。
-- **分片（piece）**：一个长程任务拆到一张卡/一台机上的一份，台账里
-  一个任务名下挂多个分片。四元组 host:gpus:session:log。
-- **窗口**：看长程任务状态的入口，同一份采样历史的三个出口——终端表
-  （人在终端临时看）、json（agent 读）、网页（用户远程看，经 ssh 端口
-  转发）（2026-08-08 定，出口从两个改成三个：json 单列成 agent 的口）。
-- **判定（verdict）**：程序对一个分片给出的健康结论，取值
-  健康 / warm-up 中 / 变慢 / 疑似卡死 / 已挂 / 已完成。由程序算，不由 agent 猜。
-- **发射（launch）**：把一个长程任务起进 tmux 并写满三处登记
-  （台账 register、实验记录 record start、产物目录 RUNMETA.json）的动作。
-  本程序把发射做成 run.py 的一条子命令，登记由程序保证而不是靠人记；
-  发射要求显式指定 机器:卡，出手前实探那张卡，非 FREE 就拒绝
-  （挑卡的判断留给 agent/人，程序只守"不往有人的卡上发射"这条线）
-  （2026-08-08 定）。两个排卡发射器 launch-probe / launch-eval 不合并进
-  这条子命令，但内部调用同一套登记代码与同一个 FREE 实探——
-  "程序保证登记"在所有发射路径上成立（2026-08-08 定）。
-- **心跳（heartbeat）**：脚本每完成一个进度单位，往自己日志里打的一行
-  固定前缀的结构化记录（进度 + token 数）。监控端只认心跳行，不猜日志格式。
-  自己写的脚本都打心跳；第三方程序（vLLM 服务）不打，监控端解析它
-  自带的吞吐日志行（2026-08-08 定）。
-- **采样器（sampler）**：常驻在登录机 tmux 里的监控进程，定期把所有
-  active 任务采一遍（读心跳、探存活），写进采样历史，同一个进程开
-  HTTP 端口出网页（2026-08-08 定）。常设的定时 agent 巡检制度撤销，
-  由采样器顶替：判定变成 已挂（当场）或 疑似卡死 过了升级线时，采样器
-  自动拉起事故 agent（2026-08-08 定；边界见 事故 agent / 验尸 / 补射 /
-  事故记录 四条）。
-- **升级线**：疑似卡死持续多久才拉事故 agent 的那条线。和疑似卡死的
-  判定线一样不按任务写死数字，按这个任务自己的典型心跳间隔自适应
-  （心跳越密线越短），发射时可手动覆盖；唯一的下限来自采样间隔——
-  停摆时间低于几轮采样，采样器分不清"停了"还是"还没看到"
-  （2026-08-08 定）。
-- **事故 agent（incident agent）**：采样器在判定变坏时自动拉起的无头
-  claude（模型钉 opus），只干把实验办好这一件事，不写人读的报告。
-  与会话里只读的 job-monitor 是两个角色：job-monitor 是人派的检查员，
-  事故 agent 是半夜的处置员（2026-08-08 定）。
-- **验尸（autopsy）**：判定变坏后读日志定位原因的动作。事故 agent
-  的权限线：已挂的分片验尸后自动补射；疑似卡死的只验尸不杀——
-  心跳久停有假阳性（存 checkpoint、长评测段），杀错一个活任务
-  比晚几小时补射贵（2026-08-08 定）。
-- **补射（refire）**：把挂掉的分片按原命令重新发射。自动补射前照样实探
-  目标卡；同一分片自动补射只许一次，补射后再挂就停手留记录等人
-  （2026-08-08 定）。
-- **事故记录（incident record）**：判定变坏 → 拉起 agent → 补射结果这串
-  事件的落盘记录，网页单开一块展示。由程序写，agent 不写人读的报告；
-  细节早上开新会话现场查（2026-08-08 定）。
-- **采样历史**：采样器每轮采样落盘的状态记录。终端表、网页、agent 的
-  json 三个出口读的都是它。
-- **shardable**：注册表任务上的布尔标记。标了的任务才允许一次发射带多个
-  `--piece`，发射器自动往每个分片的命令里注入 `--shard-id`/`--num-shards`；
-  没标的任务给多个 `--piece` 直接拒绝——分片编号不许靠人手拆
-  （2026-08-09 收进词汇表，词出自工单 09 的实现）。
-- **监控参数**：发射时可以覆盖监控判定的三个字段——分片级 `stall_line`
-  （疑似卡死判定线，秒）与 `escalate_line`（升级线，秒），任务级
-  `monitor.warmup_s`（warm-up 上限，秒）。不给就按 `ops/verdicts.py` 的
-  DEFAULTS 用这个任务自己的典型心跳间隔自适应
-  （2026-08-09 收进词汇表，词出自工单 02/09 的实现）。
+- **Job (长程任务)**: a GPU task that enters the ledger. The criterion is
+  "holds a GPU and runs long"; long-running CPU work and recipe steps are
+  outside this scope (decided 2026-08-08; reasoning: in practice only GPU
+  work actually runs long).
+- **Ledger (台账)**: `ops/jobs.json`. The registry of jobs, with two lists,
+  `{active, history}`.
+- **Piece (分片)**: the portion of a job split onto one GPU / one machine;
+  a job name in the ledger can carry multiple pieces. A four-tuple of
+  host:gpus:session:log.
+- **Window (窗口)**: the entry point for viewing job status, three outlets
+  onto the same sampling history: a terminal table (for a person to check
+  ad hoc in the terminal), json (for an agent to read), and a web page (for
+  the user to check remotely, via ssh port forwarding) (decided 2026-08-08;
+  the outlets went from two to three: json was split out as a dedicated
+  outlet for agents).
+- **Verdict (判定)**: the health conclusion a program gives for a piece,
+  taking one of the values healthy / warming up / slowed / suspected
+  stall / dead / done. Computed by the program, never guessed by an agent.
+- **Launch (发射)**: the action of starting a job inside tmux and filling in
+  all three registrations (ledger register, experiment record start,
+  RUNMETA.json in the output directory). This project turns launch into one
+  subcommand of run.py, so the registration is guaranteed by the program
+  instead of relying on a person to remember; launch requires explicitly
+  specifying machine:GPU, it actually probes that GPU before acting, and
+  refuses if it is not FREE (which GPU to pick is left to the agent/person's
+  judgment; the program only holds the line of "never launch onto a GPU
+  someone else is using") (decided 2026-08-08). The two queueing launchers,
+  launch-probe / launch-eval, are not merged into this subcommand, but
+  internally call the same registration code and the same FREE probe check,
+  so "the program guarantees registration" holds across every launch path
+  (decided 2026-08-08).
+- **Heartbeat (心跳)**: a structured line with a fixed prefix (progress +
+  token count) that a script writes to its own log every time it finishes
+  one progress unit. The monitoring side only recognizes heartbeat lines;
+  it never guesses at log formats. Every script we write emits heartbeats;
+  third-party programs (the vLLM service) do not, so the monitoring side
+  parses their own built-in throughput log lines instead (decided
+  2026-08-08).
+- **Sampler (采样器)**: a monitoring process that stays resident in a tmux
+  session on the login machine, periodically sampling every active job
+  (reading heartbeats, probing whether it is alive), writing the results
+  into the sampling history, and the same process opens an HTTP port to
+  serve the web page (decided 2026-08-08). The former standing system of
+  scheduled agent inspections is retired and replaced by the sampler: when
+  a verdict turns dead (on the spot) or suspected stall past the escalation
+  line, the sampler automatically spins up an incident agent (decided
+  2026-08-08; the boundaries are covered in the four entries incident
+  agent / autopsy / refire / incident record).
+- **Escalation line (升级线)**: the threshold for how long a suspected stall
+  must persist before an incident agent is spun up. Like the threshold for
+  the suspected-stall verdict itself, it is not a fixed number per job; it
+  adapts to that job's own typical heartbeat interval (the denser the
+  heartbeats, the shorter the line), and can be manually overridden at
+  launch time. The only floor comes from the sampling interval: if the
+  downtime is shorter than a few sampling rounds, the sampler cannot tell
+  "stopped" from "not yet seen" (decided 2026-08-08).
+- **Incident agent (事故 agent)**: a headless claude instance (model pinned
+  to opus) that the sampler automatically spins up when a verdict turns
+  bad. Its only job is to get the experiment back in working order; it does
+  not write a report for a person to read. It is a separate role from the
+  read-only job-monitor in an interactive session: job-monitor is an
+  inspector a person dispatches, the incident agent is the middle-of-the-
+  night responder (decided 2026-08-08).
+- **Autopsy (验尸)**: the action of reading the logs to locate the cause
+  after a verdict turns bad. This is the incident agent's authority
+  boundary: a dead piece gets an autopsy and is then automatically refired;
+  a suspected-stall piece only gets an autopsy, never a kill, because a
+  long heartbeat gap has false positives (checkpoint saving, a long
+  evaluation segment), and wrongly killing a live job costs more than
+  refiring a few hours late (decided 2026-08-08).
+- **Refire (补射)**: relaunching a dead piece with its original command. An
+  automatic refire still probes the target GPU first, same as any launch;
+  the same piece is allowed only one automatic refire, if it dies again
+  after that the process stops, leaves a record, and waits for a person
+  (decided 2026-08-08).
+- **Incident record (事故记录)**: the on-disk record of the event chain
+  verdict turns bad → agent spun up → refire outcome, shown in its own
+  section on the web page. Written by the program, not by an agent writing
+  a report for a person to read; details get looked up live in a fresh
+  session the next morning (decided 2026-08-08).
+- **Sampling history (采样历史)**: the state record the sampler writes to
+  disk on every sampling round. All three outlets, the terminal table, the
+  web page, and the agent's json, read from it.
+- **shardable**: a boolean flag on a registry task. Only a task flagged this
+  way may be launched once with multiple `--piece` values; the launcher
+  automatically injects `--shard-id`/`--num-shards` into each piece's
+  command. A task not flagged this way is flatly refused if given multiple
+  `--piece` values; splitting into pieces is never left to a person to do
+  by hand (brought into the glossary 2026-08-09; the term comes from the
+  implementation of ticket 09).
+- **Monitoring parameters (监控参数)**: three fields that can be overridden
+  at launch time to control the verdict computation, at the piece level
+  `stall_line` (the suspected-stall threshold, in seconds) and
+  `escalate_line` (the escalation line, in seconds), and at the task level
+  `monitor.warmup_s` (the warm-up cap, in seconds). If not given, the
+  DEFAULTS in `ops/verdicts.py` apply, adapted to that task's own typical
+  heartbeat interval (brought into the glossary 2026-08-09; the term comes
+  from the implementation of tickets 02/09).
 
-- **进度单位（unit）**：进度分母里的单位——采集里是一个 task，训练里是
-  一个 step。不强行统一叫法：心跳必填 done / total / unit / ts 四个字段
-  （ts 是打心跳那台机自己的钟，只用于同机心跳之间做差），unit 由脚本
-  自己报（"task" 或 "step"），token 数、loss 是选填，窗口照脚本报的
-  单位显示（2026-08-08 定）。
+- **Unit (进度单位)**: the unit in the progress denominator, one task during
+  collection, one step during training. The name is not forced to be
+  uniform: a heartbeat must carry four fields, done / total / unit / ts
+  (ts is that machine's own clock at the moment the heartbeat is written,
+  used only to diff between heartbeats on the same machine), unit is
+  reported by the script itself ("task" or "step"), token count and loss
+  are optional, and the window displays whatever unit the script reports
+  (decided 2026-08-08).
 
-- **探针（probe）**：旁路的预测模型，读 agent 模型当前的思考前缀，给出
-  下一个工具调用的预测和置信度。旧称"观察者"废弃，全场只叫探针（2026-08-08 定）。
-- **切口（cut）**：思考文本里的一个句子边界。探测和注入都只发生在切口上
-  （2026-08-08 定）。
-- **出手（fire）**：触发规则在某个切口上判定为真，投机从这一刻开始
-  （2026-08-08 定）。
-- **注入（inject）**：把预测的调用和这次调用的结果以文本形式塞回切口处，
-  让模型接着写（2026-08-08 定）。
-- **触发点（θ）**：出手用的置信度阈值。θ 永远由人手动给定，不给就拒绝启动
-  （2026-08-08 定）。
-- **空注入对照 / no probe**：把方法的全套机器挂上但一次都不出手的对照臂，用来验证
-  机器本身不改变模型行为（2026-08-08 定）。操作名 no probe：`live_appworld.py`
-  加 `--no-probe`，轨迹 meta 记 `arm="no_probe"`（2026-08-18 定）。
-- **chat baseline**：原始的 chat 端点路——`run_appworld.py --api chat`，harmony
-  模板由 vLLM 服务端套，一步一个整请求、中途没有切口。同设铁律里的"基线"
-  指的就是它（2026-08-18 定）。
-- **with probe**：活跑里挂探针、切口上出手注入的臂——`live_appworld.py`
-  默认路径，轨迹 meta 记 `arm="probe"`。与 no probe 只差"出不出手"，
-  与 chat baseline 的对照经 no probe 中转（2026-08-18 定）。
-- **同设铁律**：基线和方法必须用同一套实验设置，方法侧不得引入基线没有的
-  解码手段（2026-08-08 定）。
-- **主干 / 轴**：主干是定死的循环，轴是排队待试的可换环节，划分见
-  `METHOD.md`（2026-08-08 定）。
-- **三色标注**：文档里每一项标【现状】/【已定要改】/【想法待定】，
-  三种身份绝不混写（2026-08-08 定）。
-- **骨架臂（skel）**：离线注入的一类臂，工具名由探针钉死、参数让 agent 模型
-  自己写（2026-08-08 定）。
-- **正身世界**：被回放到目标步的真环境实例。投机在正身世界上执行，
-  执行完回档，世界状态不留痕（2026-08-08 定）。
+- **Probe (探针)**: a side-channel predictive model that reads the agent
+  model's current thinking prefix and gives a prediction of the next tool
+  call along with a confidence score. The old name "observer" is retired;
+  the whole project calls it only the probe (decided 2026-08-08).
+- **Cut (切口)**: a sentence boundary inside the thinking text. Both
+  prediction and injection only happen at cuts (decided 2026-08-08).
+- **Fire (出手)**: the moment the trigger rule evaluates true at a cut;
+  speculation begins from this moment (decided 2026-08-08).
+- **Inject (注入)**: putting the predicted call and its result back into the
+  cut as text, so the model continues writing from there (decided
+  2026-08-08).
+- **Trigger point (θ)**: the confidence threshold used to decide firing. θ
+  is always given manually by a person; if it is not given, startup is
+  refused (decided 2026-08-08).
+- **No-injection control / no probe (空注入对照)**: a control arm that wires
+  up the method's whole machinery but never fires, used to verify that the
+  machinery itself does not change model behavior (decided 2026-08-08).
+  Operational name no probe: `live_appworld.py` with `--no-probe` added,
+  trajectory meta records `arm="no_probe"` (decided 2026-08-18).
+- **chat baseline**: the original chat-endpoint path, `run_appworld.py --api
+  chat`, where the harmony template is applied server-side by vLLM, one
+  whole request per step, with no cuts along the way. The "baseline" in the
+  same-setup rule refers to this (decided 2026-08-18).
+- **with probe**: the arm in a live run that wires up the probe and
+  fires/injects at cuts, the default path of `live_appworld.py`, trajectory
+  meta records `arm="probe"`. It differs from no probe only in whether it
+  fires; its comparison against chat baseline is routed through no probe
+  (decided 2026-08-18).
+- **Same-setup rule (同设铁律)**: the baseline and the method must use the
+  same experimental setup, the method side must not introduce any decoding
+  technique the baseline does not have (decided 2026-08-08).
+- **Backbone / axis (主干 / 轴)**: the backbone is the fixed, settled loop;
+  an axis is a swappable component queued up to try. The division is laid
+  out in `METHOD.md` (decided 2026-08-08).
+- **Three-color tagging (三色标注)**: every item in a document is tagged
+  [Current state]/[Settled, to change]/[Idea, undecided], and the
+  three statuses are never mixed together in writing (decided 2026-08-08).
+- **Skeleton arm (骨架臂, skel)**: a class of offline-injection arm where the
+  tool name is pinned by the probe and the arguments are left for the agent
+  model to write itself (decided 2026-08-08).
+- **The genuine world (正身世界)**: the real environment instance replayed
+  forward to the target step. Speculation executes on the genuine world,
+  then rolls back once execution finishes; no trace of world state is left
+  behind (decided 2026-08-08).
 
 - **Injection format (format)**: the named way a fired probe's call and result are put back into
   the token stream — where (placement `p1` inside the open thinking, `p2` after closing the
@@ -110,6 +169,6 @@
   closes; named `prefetch` and not `python` so the model does not switch into calling the python
   tool, which the AppWorld harness has no server for (decided 2026-09-12).
 
-## 待定的词（讨论中，定了搬上面）
+## Undecided terms (under discussion, move up once settled)
 
-（暂无）
+(none yet)

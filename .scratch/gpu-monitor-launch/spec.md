@@ -1,103 +1,277 @@
-# 长程任务监控与发射 — spec
+# Long-running job monitoring and launch — spec
 
 Status: ready-for-agent
 
-这份 spec 从 2026-08-08 的两份文档提炼：设计决定在 `docs/design/2026-08-08-gpu-monitor-launch.md`，任务分解在 `docs/plans/2026-08-08-gpu-monitor-launch.md`。全文的长程任务、台账、分片、窗口、判定、发射、心跳、采样器、采样历史、升级线、验尸、补射、事故记录、事故 agent、进度单位这些词，都按仓库根 `CONTEXT.md` 词汇表的定义使用，不另造名字。
+This spec is distilled from two 2026-08-08 documents: the design decisions are
+in `docs/design/2026-08-08-gpu-monitor-launch.md`, and the task breakdown is
+in `docs/plans/2026-08-08-gpu-monitor-launch.md`. Throughout, the words job,
+ledger, piece, window, verdict, launch, heartbeat, sampler, sampling history,
+escalation line, autopsy, refire, incident record, incident agent, and unit
+are all used per the definitions in the repo-root `CONTEXT.md` glossary; no
+new names are invented here.
 
-## Problem Statement（要解决的问题）
+## Problem Statement
 
-我在四台 GPU 机器上跑长程任务：采集、训练、评测，还有 vLLM 服务。现在想知道一个任务跑到哪了，要派一个只读 agent 逐台机器读日志、自己做两点测速来推算速率；发射一个任务要人手打三条登记命令，漏掉一条台账就断了；定时巡检制度让 agent 半小时醒一次，醒来大多数时候看到的是"一切健康"，上下文和 token 却已经花掉；半夜任务挂了没有人管，第二天早上才发现，一整夜的卡时白白流走。
+I run long jobs on four GPU machines: collection, training, evaluation, and
+vLLM serving. Right now, finding out where a job stands means dispatching a
+read-only agent to read logs machine by machine and do its own two-point rate
+measurement; launching a job means typing three registration commands by hand,
+and missing one breaks the ledger; the scheduled-checkin regime wakes an agent
+every half hour, and most of the time what it sees on waking is "everything's
+healthy," while context and tokens have already been spent; when a job dies in
+the middle of the night nobody is watching, it's only discovered the next
+morning, and a whole night of GPU time has been wasted for nothing.
 
-## Solution（方案）
+## Solution
 
-一句话：脚本打心跳，采样器算判定，三个出口读同一份采样历史，出事自动拉事故 agent 补射，发射收成一条子命令。
+One sentence: scripts emit heartbeats, the sampler computes verdicts, three
+outlets read the same sampling history, an incident automatically pulls in an
+incident agent to refire, and launching is collapsed into a single subcommand.
 
-拆开是五块，每块解决上面的一个痛点：
+Broken apart, that's five pieces, each solving one of the pains above:
 
-1. 自己写的脚本每完成一个进度单位，往自己的日志里打一行心跳，监控端从此不猜日志格式。
-2. 登录机常驻一个采样器，每轮读心跳、探存活、算判定，落成采样历史；判定由程序算，agent 只读结论。
-3. 终端表、json、网页三个出口读同一份采样历史：终端表给人在终端临时看，json 给 agent 读现成结论，网页经 ssh 端口转发给我远程看。
-4. 判定变已挂当场、疑似卡死停摆超过升级线时，采样器自动拉起事故 agent 验尸；已挂的分片自动补射一次，事故记录由程序落盘。
-5. 发射收成 `run.py launch` 一条子命令：验卡、起 tmux、三处登记、验活一口气做完；两个排卡发射器不合并，但内部接同一套登记，"程序保证登记"在所有发射路径上成立。
+1. Every script we write emits one heartbeat line to its own log each time it
+   finishes one unit of progress; the monitoring side never has to guess the
+   log format again.
+2. A sampler stays resident on the login machine; each round it reads
+   heartbeats, probes liveness, and computes a verdict, landing it in the
+   sampling history; the verdict is computed by the program, and the agent
+   only reads the conclusion.
+3. Three outlets, the terminal table, json, and the web page, read the same
+   sampling history: the terminal table is for a quick look in the terminal,
+   json is for the agent to read a ready-made conclusion, and the web page,
+   via ssh port forwarding, is for me to watch remotely.
+4. When a verdict turns into dead on the spot, or stalled for longer than the
+   escalation line, the sampler automatically pulls in an incident agent to
+   run an autopsy; a dead piece is automatically refired once, and the
+   incident record is written to disk by the program.
+5. Launching collapses into one subcommand, `run.py launch`: probing cards,
+   starting tmux, the three registrations, and verifying liveness all happen
+   in one go; the two queue-based launchers are not merged into it, but they
+   call into the same registration internally, so "the program guarantees
+   registration" holds across every launch path.
 
-## User Stories（用户故事）
+## User Stories
 
-1. 作为实验者，我要在终端一条命令看到所有长程任务的判定、进度、速率和 ETA，这样不用派 agent 读日志做推理。
-2. 作为实验者，我要在本地浏览器里看到同一张任务表（经 ssh 端口转发），这样人不在终端也能远程盯任务。
-3. 作为实验者，我要窗口标出最后采样时刻并在过期的时候亮红，这样监控系统自己停了我能一眼发现。
-4. 作为实验者，我要半夜挂掉的分片被自动验尸并补射一次，这样不用等到早上才发现一整夜的卡时流走了。
-5. 作为实验者，我要疑似卡死的分片只被验尸、不被杀，这样存 checkpoint 或长评测段造成的心跳久停不会误杀活任务。
-6. 作为实验者，我要同一分片位的自动补射整个任务生命周期只许一次，这样反复挂的任务不会被无限重发。
-7. 作为实验者，我要事故记录由程序落盘并在网页单开一块展示，这样早上能查清半夜发生过什么。
-8. 作为实验者，我要发射一个长程任务只打一条命令，这样台账、实验记录、RUNMETA 三处登记不再靠人记。
-9. 作为实验者，我要发射前程序实探每张目标卡，任何一张非 FREE 就整次拒绝，这样绝不往有人的卡上发射。
-10. 作为实验者，我要标了 shardable（注册表里"这个任务可以拆分片"的标记）的任务给多个分片时自动注入分片编号，这样分片编号不过人手，两张卡不会各跑一份全量互写输出。
-11. 作为实验者，我要没标 shardable 的任务给多个分片时被直接拒绝，这样误发多分片的错误在发射时就被拦下。
-12. 作为实验者，我要 run_id 在 tmux session 名、台账名、实验记录、日志名四处由程序从同一个值生成，这样四处一致不靠人对。
-13. 作为实验者，我要注册表外的一次性命令也能走同一条发射命令，这样一次性发射同样拿到全套登记。
-14. 作为实验者，我要发射后 30 秒内验活（session 在、日志有输出、无 traceback），这样发射失败当场报出来，不落一笔假账。
-15. 作为实验者，我要脚本进主循环先打一条 done=0 的心跳，这样模型加载耗时永远落在心跳时间轴之外，不污染速率。
-16. 作为实验者，我要采集脚本的心跳带累计 token 数，这样窗口里能看到 token 速率。
-17. 作为实验者，我要训练脚本的心跳带滑动 loss，这样窗口里能看到训练走势。
-18. 作为实验者，我要 warm-up 有上限，超了转疑似卡死，这样卡死在加载阶段的任务不会永远沉默。
-19. 作为实验者，我要判定线按任务自己的典型心跳间隔自适应，这样心跳稀的任务不被误报、心跳密的任务出事报得快。
-20. 作为实验者，我要发射时能手动覆盖判定线、升级线和 warm-up 上限，这样特殊任务能按需要调。
-21. 作为实验者，我要 vLLM 服务按端口应答判死活、吞吐行只做速率显示，这样空闲的服务不会被误判停摆。
-22. 作为实验者，我要探测失败的那一轮沿用上一轮结论并标出来，连续失败只亮红不触发事故，这样分不清死活的时候程序不动手。
-23. 作为实验者，我要挑卡和销号永远现场实探、不读缓存，这样占卡决策不会被过期的采样历史误导。
-24. 作为实验者，我要台账外的漏登记 session 上表提醒，这样手搓发射的漏网之鱼看得见。
-25. 作为实验者，我要采样器无状态、重启后从采样历史恢复，这样看门狗随时可以拉起采样器接着算。
-26. 作为实验者，我要登录机的看门狗定时检查采样器并在采样器不在的时候拉起，这样监控自身也被监控。
-27. 作为实验者，我要判定用到的所有常数收在一处可配置，这样跑出误报能一处调，不用满仓库找硬编码。
-28. 作为主对话的 Claude，我要一个 json 出口给出现成的判定、速率和 ETA，这样不再自己两点测速，省下上下文和 token。
-29. 作为 job-monitor 检查员，我要判定由采样器算好、我只读结论加按需验尸，这样职责收窄成只读检查，不和事故 agent 抢活。
-30. 作为事故 agent，我要提示词里带上任务的判定、分片、日志路径和原始发射命令，这样验尸不用自己找现场。
-31. 作为事故 agent，我要补射走同一条发射命令，原卡被占的时候拿到明确报错，这样换卡重试有章可循。
-32. 作为后来接手的人，我要 skill、agent 定义和根文档跟着这次改造回写，这样拿到的是新地图，不是旧流程的叙述。
+1. As the experimenter, I want to see the verdict, progress, rate, and ETA
+   for every long-running job in one terminal command, so I don't have to
+   dispatch an agent to read logs and reason it out.
+2. As the experimenter, I want to see the same job table in my local browser
+   (via ssh port forwarding), so I can watch jobs remotely without being at
+   the terminal.
+3. As the experimenter, I want the window to show the last sample time and
+   turn red when it's stale, so I notice for myself when the monitoring
+   system has stopped.
+4. As the experimenter, I want a piece that dies in the middle of the night
+   to be automatically autopsied and refired once, so I don't have to wait
+   until morning to find out a whole night of GPU time was wasted.
+5. As the experimenter, I want a piece that suspected stall to only be autopsied,
+   never killed, so a long heartbeat gap caused by checkpoint saving or a
+   long eval segment doesn't get an active job killed by mistake.
+6. As the experimenter, I want automatic refire for the same piece slot to be
+   allowed only once in a job's whole lifetime, so a job that keeps dying
+   isn't relaunched forever.
+7. As the experimenter, I want incident records written to disk by the
+   program and shown in their own block on the web page, so I can check in
+   the morning what happened overnight.
+8. As the experimenter, I want launching a long-running job to take one
+   command, so the ledger, the experiment record, and RUNMETA don't rely on
+   me remembering three registrations.
+9. As the experimenter, I want the program to probe every target card before
+   launch and reject the whole launch if even one card isn't FREE, so I
+   never launch onto a card someone else is using.
+10. As the experimenter, I want a job marked shardable (the registry flag
+    meaning "this job can be split into pieces") to automatically get shard
+    indices injected when given multiple pieces, so shard numbering never
+    passes through human hands and two cards don't each run a full copy that
+    overwrites the other's output.
+11. As the experimenter, I want a job not marked shardable to be flatly
+    rejected when given multiple pieces, so a mistaken multi-piece launch is
+    caught at launch time.
+12. As the experimenter, I want the run_id to be generated by the program
+    from one single value across the tmux session name, the ledger name, the
+    experiment record, and the log name, so the four stay consistent without
+    a human cross-checking them.
+13. As the experimenter, I want a one-off command outside the registry to
+    also go through the same launch command, so a one-off launch gets the
+    full set of registrations too.
+14. As the experimenter, I want liveness verified within 30 seconds of launch
+    (session exists, the log has output, no traceback), so a launch failure
+    is reported on the spot instead of leaving a false entry in the ledger.
+15. As the experimenter, I want a script to emit one done=0 heartbeat right
+    as it enters its main loop, so model-loading time always falls outside
+    the heartbeat timeline and never pollutes the rate.
+16. As the experimenter, I want a collection script's heartbeat to carry
+    cumulative token counts, so the window can show token throughput.
+17. As the experimenter, I want a training script's heartbeat to carry a
+    rolling loss, so the window can show the training trend.
+18. As the experimenter, I want warm-up to have a cap, past which it turns
+    into suspected stall, so a job stuck in the loading stage doesn't stay silent
+    forever.
+19. As the experimenter, I want the verdict lines to adapt to each job's own
+    typical heartbeat interval, so a job with sparse heartbeats isn't
+    falsely flagged and a job with dense heartbeats gets reported quickly
+    when something goes wrong.
+20. As the experimenter, I want to be able to manually override the verdict
+    line, the escalation line, and the warm-up cap at launch time, so a
+    special job can be tuned as needed.
+21. As the experimenter, I want a vLLM service to be judged alive or dead by
+    port response, with the throughput line used only for rate display, so
+    an idle service isn't mistaken for a stall.
+22. As the experimenter, I want a round where the probe fails to carry over
+    the previous round's conclusion and be flagged, and consecutive failures
+    to only turn the display red without triggering an incident, so the
+    program doesn't take action when it can't tell alive from dead.
+23. As the experimenter, I want card picking and deregistration to always
+    probe live and never trust the cache, so occupancy decisions are never
+    misled by stale sampling history.
+24. As the experimenter, I want a session missing from the ledger to show up
+    on the table as a reminder, so a stray hand-launched session doesn't
+    slip through unnoticed.
+25. As the experimenter, I want the sampler to be stateless and recover from
+    the sampling history after a restart, so a watchdog can pull it back up
+    at any time and have it pick right back up.
+26. As the experimenter, I want a watchdog on the login machine to check the
+    sampler periodically and pull it back up when it's gone, so the monitor
+    itself is also monitored.
+27. As the experimenter, I want every constant used in a verdict to be
+    collected in one configurable place, so a false alarm can be tuned in
+    one spot instead of hunting the whole repo for hardcoded values.
+28. As the main-conversation Claude, I want a json outlet that gives me a
+    ready-made verdict, rate, and ETA, so I no longer do my own two-point
+    rate measurement, saving context and tokens.
+29. As the job-monitor reviewer, I want the verdict already computed by the
+    sampler so I only read the conclusion and autopsy on demand, so my job
+    narrows to read-only checking and doesn't compete with the incident
+    agent.
+30. As the incident agent, I want the prompt to carry the job's verdict,
+    piece, log path, and original launch command, so an autopsy doesn't
+    require finding the scene myself.
+31. As the incident agent, I want refire to go through the same launch
+    command, and to get a clear error when the original card is occupied,
+    so there's a clear procedure for switching cards and retrying.
+32. As whoever picks this up next, I want the skill, the agent definitions,
+    and the root docs to be rewritten along with this overhaul, so what they
+    get is a new map, not a narrative of the old flow.
 
-## Implementation Decisions（实施决定）
+## Implementation Decisions
 
-- 新建四类模块：心跳模块（emit 和 parse 两个入口，只用标准库，所有 venv 都要能 import）；判定引擎（纯函数、零 IO，判定口径全部收在这一层）；采样器（常驻进程，采样线程和网页线程分开，采样卡住不影响出页）；发射件（公共登记函数加 `run.py launch` 子命令）。
-- 心跳协议：一行等于固定前缀 `@hb ` 加一个 JSON。必填 done、total、unit、ts 四个字段；选填 tok_in、tok_out（都是累计值）、loss、status（值 done 表示正常收尾）。进主循环先打一条 done=0，作为"模型加载完了"的标志。
-- 判定六格，按固定优先级判，命中即停。这张表是设计定稿的原文：
+- Four new modules: the heartbeat module (two entry points, emit and parse,
+  standard library only, importable from every venv); the verdict engine
+  (pure functions, zero IO, all verdict conventions collected in this layer);
+  the sampler (a resident process, sampling thread and web thread kept
+  separate, so a stuck sampling round doesn't affect serving the page); and
+  the launch piece (a common registration function plus the `run.py launch`
+  subcommand).
+- Heartbeat protocol: one line equals a fixed prefix `@hb ` plus a JSON
+  object. Required fields are done, total, unit, and ts; optional fields are
+  tok_in, tok_out (both cumulative), loss, and status (a value of done marks
+  a normal finish). One done=0 heartbeat is emitted right as it enters the
+  main loop, marking "model loading is finished."
+- Six verdict cells, checked in a fixed priority order, first hit wins. This
+  table is the design's finalized text:
 
-| 顺序 | 判定 | 条件 |
+| Order | Verdict | Condition |
 |---|---|---|
-| 1 | 已完成 | done == total，或收到 status=done 的心跳 |
-| 2 | 已挂 | session 没了，又不满足已完成 |
-| 3 | 疑似卡死 | session 活着，停摆时长 > 判定线 |
-| 4 | warm-up 中 | session 活着，一条心跳都没有 |
-| 5 | 变慢 | 近期速率有值，且 < 全程平均速率 × 0.5 |
-| 6 | 健康 | 以上都不是 |
+| 1 | done | done == total, or a heartbeat with status=done was received |
+| 2 | dead | session is gone, and done is not satisfied |
+| 3 | suspected stall | session is alive, stall duration > verdict line |
+| 4 | warming up | session is alive, not a single heartbeat yet |
+| 5 | slowed | recent rate has a value and is < 0.5 × the overall average rate |
+| 6 | healthy | none of the above |
 
-- 时钟纪律：跨机不比钟。停摆时长用采样器自己的钟算；心跳里的 ts 只在同一台机的心跳之间做差。
-- 判定线 = 5 × 典型心跳间隔（最近至多 20 个间隔的中位数），下限 3 轮采样间隔；间隔样本攒不够的时候判定线暂用 warm-up 上限顶着。升级线 = 判定线 × 3。warm-up 上限默认 30 分钟。三条线发射时都可以手动覆盖。
-- 服务类分片（vLLM）只用四格判定：warm-up 中、健康、疑似卡死、已挂，死活看端口应答，不看吞吐行；吞吐行只拿来出 token 速率显示。
-- 采样历史落在 NFS 镜像目录的 monitor 子目录下，不进 git；最新一轮结果和累计状态各一份原子写的文件，逐轮历史按任务追加。累计状态里存每个分片位的首条心跳、最新进度、事故编号和补射次数，采样器重启后从这里恢复。
-- 事故触发规则收在纯函数里：达升级线才触发，同一次事故只拉一次 agent（事故编号防重复）；允许补射的条件是判定已挂并且这个分片位还没补射过。事故 agent 是无头 claude，模型钉 opus，不写给人读的报告。
-- 补射后的账：任务名和分片编号不变，台账里这个分片位的四元组更新成新值；心跳时间轴重开，判定线和速率全部从补射后的 done=0 重新积累。
-- 发射流程钉死顺序：脏树门禁、验卡（任何一张非 FREE 整次拒绝）、起 tmux、验活 30 秒、三处登记、打印监控入口。验活失败不登记也不回滚，杀进程是人的决定。
-- 两个排卡发射器不合并进 launch，各自的守卫保留，内部改调同一套登记函数和同一个 FREE 实探。排卡场景下非 FREE 的格跳过而不是整表拒绝，原因是排卡表半空常见，整表拒绝会把好格拖死。
-- 终端出口读采样历史有新鲜度门槛：最后采样时刻在 5 分钟内才用，过期打警告退回现场实探。挑卡的 free 命令和发射验卡永远现场实探。
-- 判定的全部常数集中在判定引擎的一个配置字典里，别处不许硬编码。
+- Clock discipline: clocks are never compared across machines. Stall duration
+  is computed with the sampler's own clock; the ts inside a heartbeat is only
+  differenced between heartbeats on the same machine.
+- Verdict line = 5 × typical heartbeat interval (the median of at most the
+  most recent 20 intervals), with a floor of 3 sampling intervals; when not
+  enough interval samples have accumulated yet, the verdict line temporarily
+  uses the warm-up cap as a stand-in. Escalation line = verdict line × 3. The
+  warm-up cap defaults to 30 minutes. All three lines can be manually
+  overridden at launch time.
+- Service-type pieces (vLLM) use only four verdict cells: warming up,
+  healthy, suspected stall, dead; alive/dead is judged by port response, not by
+  the throughput line; the throughput line is only used to display token
+  rate.
+- Sampling history is written under a monitor subdirectory of the NFS mirror
+  directory, not tracked in git; the latest round's result and the
+  accumulated state are each an atomically-written file, and per-round
+  history is appended per job. The accumulated state stores each piece
+  slot's first heartbeat, latest progress, incident number, and refire
+  count, which is what the sampler recovers from after a restart.
+- Incident-trigger rules are collected in pure functions: escalation only
+  fires once the escalation line is reached, and the same incident only
+  pulls in an agent once (guarded by the incident number); refire is
+  allowed only when the verdict is dead and this piece slot has not been
+  refired before. The incident agent is a headless claude with the model
+  pinned to opus, and it writes no human-facing report.
+- The account after a refire: the job name and piece index don't change,
+  but this piece slot's four-tuple in the ledger is updated to the new
+  values. The heartbeat timeline restarts, and the verdict line and rate
+  accumulate again from done=0 after the refire.
+- The launch flow is fixed in this order: dirty-tree gate, probe cards
+  (reject the whole launch if even one card isn't FREE), start tmux, verify
+  liveness for 30 seconds, the three registrations, print the monitoring
+  entry point. A liveness-verification failure means no registration and
+  no rollback; killing the process is a human decision.
+- The two queue-based launchers are not merged into launch; each keeps its
+  own guards, and internally switches to calling the same registration
+  functions and the same FREE probe. In the queue scenario, a non-FREE slot
+  is skipped rather than rejecting the whole table, because a queue table
+  being half-empty is common, and rejecting the whole table would strand the
+  good slots.
+- The terminal outlet reading the sampling history has a freshness
+  threshold: it's only used when the last sample time is within 5 minutes;
+  otherwise it prints a warning and falls back to the on-the-spot probing
+  path. The free command for card picking and the launch-time card probe
+  always probe live.
+- All the verdict engine's constants are collected in one config dict inside
+  the verdict engine; hardcoding elsewhere is not allowed.
 
-## Testing Decisions（测试决定）
+## Testing Decisions
 
-- 好测试只测外部行为：判定引擎是给状态进、拿判定出；采样器是给假台账和假日志进、拿落盘文件出；发射是给参数进、拿命令清单出。不测内部函数怎么组织。
-- 测试缝四条（2026-08-08 与实验者确认过）：判定引擎的纯函数单测压满全部判定口径和边界；采样器用单轮采样模式做集成冒烟，输入是临时目录里的假台账和假日志，ssh 探测函数由测试替换；发射的分片注入等纯逻辑拆成函数单测，探卡和登记用替换掉的 subprocess 检验，整条命令用 dry-run 冒烟；事故触发的规则收在纯函数里单测。
-- 测试框架用标准库的 unittest，测试目录由这条流水线首建。仓库此前没有单元测试，既有的验证习惯是 `run.py selfcheck`，selfcheck 继续作为每个任务收尾的门。
-- 测试的先例：仓库内没有现成的测试先例可循；用环境变量把落盘目录指到临时目录的做法，由采样器的测试立为本仓库的首个先例。
+- A good test only tests external behavior: the verdict engine takes state
+  in and gives a verdict out; the sampler takes a fake ledger and fake logs
+  in and gives files written to disk out; launch takes parameters in and
+  gives a command list out. Internal function organization is not tested.
+- Four test seams (confirmed with the experimenter on 2026-08-08): the
+  verdict engine's pure functions are unit-tested to cover every verdict
+  convention and edge case; the sampler is integration-smoke-tested in a
+  single-round sampling mode, fed a fake ledger and fake logs in a temp
+  directory, with the ssh probe function replaced by the test; the launch
+  piece's pure logic, such as shard injection, is broken into functions and
+  unit-tested, with card-probing and registration checked via a replaced
+  subprocess, and the whole command smoke-tested via dry-run; the
+  incident-trigger rules are collected in pure functions and unit-tested.
+- The test framework is the standard library's unittest, and the test
+  directory is first created by this pipeline. The repo had no unit tests
+  before this; the existing verification habit is `run.py selfcheck`,
+  which continues to serve as the gate at the end of each task.
+- Testing precedent: there was no existing test precedent in the repo to
+  follow; pointing the on-disk output directory at a temp directory via an
+  environment variable is established as this repo's first precedent by the
+  sampler's tests.
 
-## Out of Scope（明确不做）
+## Out of Scope
 
-- CPU 任务不进窗口。
-- 手机推送不做；事故记录里每条事故自带定位所需的字段，以后接推送是加法。
-- 对活着的任务自动杀，不做。
-- 常设定时巡检制度是撤销，不是改良，采样器顶替。
-- 采样历史不进 git。
+- CPU jobs do not enter the window.
+- Phone push notifications are not built; each incident record already
+  carries the fields needed to locate it, so adding push later is additive.
+- Automatically killing a live job is not done.
+- The standing scheduled-checkin regime is retired, not improved; the
+  sampler replaces it.
+- Sampling history is not tracked in git.
 
-## Further Notes（其他说明）
+## Further Notes
 
-- 常数的首版取值和"留到实施时定的小事"清单（事故记录字段表、评测脚本名单、分片输出文件名、网页布局）在设计文档 §10。
-- vLLM 吞吐行的格式已经拿真实日志核实过：默认每 10 秒一条，引擎空闲的时候降级成 debug 不打印，所以吞吐行断流不算停摆。
-- Status 打 ready-for-agent 的理由：实施计划已经把工作分解成 19 个带步骤和验证命令的任务，agent 可以照计划逐个执行。
+- The first-version values for the constants, and the list of "small things
+  left to decide during implementation" (the incident-record field table,
+  the eval-script roster, per-piece output filenames, the web page layout),
+  are in §10 of the design document.
+- The vLLM throughput line's format has been verified against real logs: by
+  default one line every 10 seconds, downgraded to a debug line that isn't
+  printed when the engine is idle, so a gap in the throughput line does not
+  count as a stall.
+- Reason for marking Status ready-for-agent: the implementation plan has
+  already broken the work into 19 tasks with steps and verification
+  commands, and an agent can execute them one by one per the plan.

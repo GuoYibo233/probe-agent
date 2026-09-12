@@ -1,76 +1,176 @@
-# demo：在 CPU 上用 debugger 走一遍训练器
+# demo: step through the trainer with a debugger on CPU
 
-## 这个目录用来在没有显卡的机器上一步一步看训练器怎么跑
+## This directory is for watching the trainer run step by step on a machine with no GPU
 
-要看的训练器是 `pipeline/train/train_causal_share.py`，cgen 与 cparam 两格共用的缓存复用训练器。缓存复用的意思是：一个事件（轨迹里的一步，带若干个切点，每个切点是一行样本）的全文只过一遍模型，每一行的目标段接在共享的前缀后面计算损失，同一段前缀在几行之间不重复计算。真实训练要加载 Qwen3-0.6B 到 4B 的底座、读取 NFS 上 1.2 GB 的 `train.jsonl`，两样都不适合在 debugger 里等。
+The trainer under study is `pipeline/train/train_causal_share.py`, the
+cache-reuse trainer shared by the cgen and cparam cells. Cache reuse means:
+an event's (one step in a trajectory, with several cut points, each cut point
+one row of sample) full text passes through the model only once, and each
+row's target segment is appended after the shared prefix to compute loss, so
+the same prefix is not recomputed across rows. Real training loads a Qwen3
+backbone from 0.6B to 4B and reads a 1.2 GB `train.jsonl` on NFS, neither of
+which is suited to waiting inside a debugger.
 
-训练器本身一个字都没有改。训练器本来就留了两扇门：`--base` 给一个目录路径的时候走 `build(path=...)` 加载任意目录里的模型，`--device cpu` 不碰显卡。演示只是把这两扇门后面的东西换成假件：
+The trainer itself has not had a single character changed. The trainer
+already left two doors open: `--base` given a directory path goes through
+`build(path=...)` to load a model from any directory, and `--device cpu`
+touches no GPU. The demo just swaps out what is behind those two doors:
 
-- 模型换成 `demo/tiny_qwen3/`：两层、hidden 64 的随机初始化 Qwen3，978 万参数（`prepare.py` 打印的 `9780928 params`），分词器是从真 Qwen3-0.6B-Base 拷贝过来的。结构与真底座同族，所以训练器要取的 `model.model` 与 `model.lm_head` 都在。
-- 数据换成 `demo/data/train.jsonl` 与 `demo/data/val.jsonl`：合成的 AppWorld 风格样本，训练集 12 个事件 61 行，验证集 6 个事件 27 行。字段与真数据逐个相同；切点用 `rules.boundaries`，题干用 `rules.assemble`，调用串用 `build.make_call`，三个都是标注段的真函数，只有轨迹的内容是编写的。
+- The model is swapped for `demo/tiny_qwen3/`: a randomly initialized Qwen3
+  with two layers, hidden size 64, 9.78 million parameters (the
+  `9780928 params` printed by `prepare.py`), whose tokenizer is copied from
+  the real Qwen3-0.6B-Base. The structure is the same family as the real
+  backbone, so both `model.model` and `model.lm_head`, which the trainer
+  needs, are present.
+- The data is swapped for `demo/data/train.jsonl` and `demo/data/val.jsonl`:
+  synthetic AppWorld-style samples, 12 events / 61 rows in the training set,
+  6 events / 27 rows in the validation set. Fields match the real data
+  one-for-one; cut points use `rules.boundaries`, the prompt uses
+  `rules.assemble`, and the call string uses `build.make_call` -- all three
+  are the real functions from the annotate stage, only the trajectory
+  content is authored.
 
-两样假件都由 `demo/prepare.py` 一条命令构建出来，随种子固定，重新构建得到相同的文件。按工程铁律，大产物直接写 net 盘：`prepare.py` 会把 `demo/tiny_qwen3` 与 `demo/runs` 做成指向 `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/demo/` 下同名目录的软链，与 `pipeline/data`、`pipeline/runs` 同一个做法，home 里只留代码、数据 jsonl 与软链。
+Both fake artifacts are built by a single `demo/prepare.py` command, with a
+fixed seed, so rebuilding produces the same files. Per the project's iron
+rule, big artifacts go straight to net storage: `prepare.py` makes
+`demo/tiny_qwen3` and `demo/runs` symlinks pointing at directories of the
+same name under
+`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/demo/`, the same
+approach as `pipeline/data` and `pipeline/runs`, so home keeps only code,
+the data jsonl, and the symlinks.
 
-“训练的代码”在这里指的是现役这一条线（cgen / cparam 共用的缓存复用训练器）。同一份假件也能指给 ctool 格的 `train_causal_tool.py`，那个脚本的 `--base` 只接受 qwen / qwen17 / qwen4 三个名字，要先给那个脚本加上 `path=` 这一扇门。
+"The code for training" here means this line currently in service (the
+cache-reuse trainer shared by cgen / cparam). The same fake artifacts can
+also be pointed at the ctool cell's `train_causal_tool.py`, but that script's
+`--base` only accepts the three names qwen / qwen17 / qwen4 -- that script
+would need this `path=` door added first.
 
-## 两条命令就能把演示跑起来
+## Two commands run the whole demo
 
-第一条命令构建假件，十秒跑完（分词器从 NFS 拷贝，模型写到 net 盘）：
+The first command builds the fake artifacts, done in ten seconds (the
+tokenizer is copied from NFS, the model is written to net storage):
 
 ```
 python3 run.py demo-prep
 ```
 
-第二条是进 debugger。`.vscode/launch.json` 里有三个配置，在 VS Code 的“运行和调试”面板里选择“demo: train cgen on CPU (tiny model)”按 F5 就开始跑；看 cparam 格就选择第二个配置。两个配置都把 `CUDA_VISIBLE_DEVICES` 置空，所以进程看不见任何显卡。整程（对齐检查加两个 epoch 的训练）在 shiga 上 15 秒跑完。配置里的 `"type": "debugpy"` 要现在的 Python Debugger 扩展；扩展太旧的话把 `"type"` 改成 `"python"` 就能用。
+The second command enters the debugger. `.vscode/launch.json` has three
+configurations; in VS Code's Run and Debug panel, select "demo: train cgen on
+CPU (tiny model)" and press F5 to start; to watch the cparam cell, select the
+second configuration instead. Both configurations set `CUDA_VISIBLE_DEVICES`
+to empty, so the process sees no GPU at all. The whole run (the alignment
+check plus two epochs of training) finishes in 15 seconds on shiga. The
+`"type": "debugpy"` in the config needs the current Python Debugger
+extension; if the extension is too old, changing `"type"` to `"python"` works
+too.
 
-不进 debugger、只想看训练器跑一遍的时候：
+To watch the trainer run through once without entering the debugger:
 
 ```
 python3 run.py demo-train --mode cgen --out demo/runs/cgen
 ```
 
-`--out` 目录里已经有 `train_log.jsonl` 的时候训练器会拒绝再训，这道门是防止两次产物混进同一个 `best/`。第二次跑要加 `--force`；launch.json 里的两个训练配置已经带上了 `--force`，可以反复按 F5。
+The trainer refuses to train again when the `--out` directory already has a
+`train_log.jsonl`; this gate prevents two runs' artifacts from mixing into
+the same `best/`. A second run needs `--force`; the two training
+configurations in launch.json already carry `--force`, so F5 can be pressed
+repeatedly.
 
-## 每个参数都是为了让训练循环的某一层走到
+## Every argument exists to exercise some layer of the training loop
 
-launch.json 与 `demo-train` 用的是同一组参数：
+launch.json and `demo-train` use the same set of arguments:
 
-- `--epochs 2 --eval-per-epoch 2`：两个 epoch，每个 epoch 评估两次，所以评估点、保存 best、下一个 epoch 换种子重新打乱这几处都会经过。
-- `--events-per-mb 4 --accum 2`（训练器的默认值）：12 个训练事件切成 3 个逻辑小批，每 2 个逻辑小批做一次参数更新，所以一个 epoch 是 2 次更新，第二次更新只有 1 个逻辑小批，`n_g` 从 2 变成 1，不满组的分支能看到。
-- `--tok-budget 768`：一个逻辑小批的 4 个事件按拼接长度装块，768 的预算下 epoch 0 的三个逻辑小批各切成 2 个物理块（`prepare.py` 打印的 `[2, 2, 2]`；epoch 1 重新打乱，块数可能不同），所以“一个逻辑小批拆成多个物理块、梯度累加”这一层不是空转。
-- `--log-every 1`：每次更新都写一条 step 日志。
-- `--gen-eval 4 --gen-bs 2`：epoch 末的评估额外对 4 行做生成式评估，生成式评估会调用 `model.generate`，所以生成路径也走到。
-- `--align-events 3`：开训前的对齐检查只抽取 3 个验证事件。
+- `--epochs 2 --eval-per-epoch 2`: two epochs, evaluated twice per epoch, so
+  the evaluation points, saving best, and reshuffling with a new seed for the
+  next epoch all get exercised.
+- `--events-per-mb 4 --accum 2` (the trainer's defaults): the 12 training
+  events are cut into 3 logical minibatches, one parameter update per 2
+  logical minibatches, so one epoch is 2 updates, the second update has only
+  1 logical minibatch, `n_g` goes from 2 to 1, and the not-a-full-group
+  branch gets exercised.
+- `--tok-budget 768`: a logical minibatch's 4 events are packed into blocks
+  by concatenated length; at a budget of 768, epoch 0's three logical
+  minibatches each split into 2 physical blocks (the `[2, 2, 2]` printed by
+  `prepare.py`; epoch 1 reshuffles, and the block count can differ), so the
+  layer of "one logical minibatch splits into several physical blocks,
+  gradients accumulate" is not left idle.
+- `--log-every 1`: every update writes one step-log line.
+- `--gen-eval 4 --gen-bs 2`: the end-of-epoch evaluation additionally runs
+  generative evaluation on 4 rows; generative evaluation calls
+  `model.generate`, so the generation path is exercised too.
+- `--align-events 3`: the pre-training alignment check draws 3 validation
+  events.
 
-## 断点按 main() 的顺序下在这十个函数上
+## Breakpoints go on these ten functions, in main()'s order
 
-想从第一行开始按执行顺序逐段读，看 `demo/WALKTHROUGH.md`：那份导读分 15 站，每一站给出行号、这几行在做什么、在假件上停下来会看到的数，以及按哪个键。下面这十个函数是导读的缩写版。
+To read from the first line, in execution order, see
+`demo/WALKTHROUGH.md`: that walkthrough has 15 stops, and each stop gives the
+line numbers, what those lines do, what values show up when stopped on the
+fake artifacts, and which key to press. The ten functions below are the
+short version of the walkthrough.
 
-行号会变，函数名不变，所以断点按函数名下：
+Line numbers will drift, function names will not, so set breakpoints by
+function name:
 
-1. `train_causal_callgen.build`：加载分词器与模型。演示里 `--base` 是目录路径，走 `path=` 分支。
-2. `run_align_check`：开训前的对齐检查。同一份验证事件分别走新路径（`_new_forward`，打包一次前向）与参照路径（`_ref_forward`，旧训练器逐行前向），逐行 loss 的差要小于 `--align-tol`。不过就 `sys.exit(2)`，报告写在 `ALIGN_CHECK.json`。
-3. `share_data.load_events`：加载一个 split。按事件分组、全文分词、计算每行与全文的公共前缀长度 `p`、拼接出目标段 `seg_ids` / `seg_lab`。一个事件是 `dict(event, n_full, packed_len, prefix_len, full_ids, rows)`，`rows` 里每一行是七元组 `(sent_idx, text, p, seg_ids, seg_lab, w, gen)`。
-4. `share_data.epoch_minibatches`：一个 epoch 用种子加 epoch 号打乱事件，每 4 个事件一个逻辑小批。
-5. `share_data.chunk_by_budget`：一个逻辑小批按 token 预算贪心装块，每一块就是一个物理块。
-6. `_forward_packed` 里调用的 `share_data.pack_event` 与 `share_data.batch_mask`：把一个事件拼接成一条序列（共享前缀加各行的目标段）并构建注意力掩码。`batch_mask` 返回的 `mask` 是 `[B, 1, L_pad, L_pad]` 的加性掩码，可看的位置是 0、不可看的位置是负无穷；`loss_idx` 是每个目标 token 的（batch 下标、query 位置、目标 id、行号）。掩码这一步是缓存复用训练器与逐行训练器的差别所在。
-7. `backward_logical_minibatch` 调用 `block_row_ce`：一个物理块前向、逐 token CE 按行聚合、按行权重加权、反向。
-8. `main()` 里的 `clip_grad_norm_`、`opt.step()`、`sch.step()`：一次参数更新。
-9. `eval_ce` 与 `train_causal_callgen.eval_gen`：验证集全量加权 CE，以及 epoch 末的生成式评估。
-10. `model.save_pretrained(out / "best")`：val_ce 创新低就保存一份。
+1. `train_causal_callgen.build`: loads the tokenizer and model. In the demo,
+   `--base` is a directory path, taking the `path=` branch.
+2. `run_align_check`: the pre-training alignment check. The same validation
+   events go through both the new path (`_new_forward`, one packed forward
+   pass) and the reference path (`_ref_forward`, the old trainer's row-by-row
+   forward pass), and the per-row loss diff must be under `--align-tol`. If
+   not, `sys.exit(2)`, with the report written to `ALIGN_CHECK.json`.
+3. `share_data.load_events`: loads one split. Groups by event, tokenizes the
+   full text, computes each row's common prefix length `p` against the full
+   text, and concatenates the target segment `seg_ids` / `seg_lab`. An event
+   is `dict(event, n_full, packed_len, prefix_len, full_ids, rows)`, and each
+   row in `rows` is the seven-tuple
+   `(sent_idx, text, p, seg_ids, seg_lab, w, gen)`.
+4. `share_data.epoch_minibatches`: one epoch shuffles events with the seed
+   plus the epoch number, 4 events per logical minibatch.
+5. `share_data.chunk_by_budget`: one logical minibatch is greedily packed
+   into blocks by a token budget, each block being one physical block.
+6. `share_data.pack_event` and `share_data.batch_mask`, called inside
+   `_forward_packed`: concatenates one event into a single sequence (the
+   shared prefix plus each row's target segment) and builds the attention
+   mask. `batch_mask` returns a `mask` shaped `[B, 1, L_pad, L_pad]`, an
+   additive mask where visible positions are 0 and invisible positions are
+   negative infinity; `loss_idx` is the (batch index, query position, target
+   id, row number) for each target token. This masking step is exactly where
+   the cache-reuse trainer differs from the row-by-row trainer.
+7. `backward_logical_minibatch`, calling `block_row_ce`: one physical block's
+   forward pass, per-token CE aggregated per row, weighted per row, then
+   backward.
+8. `clip_grad_norm_`, `opt.step()`, `sch.step()` inside `main()`: one
+   parameter update.
+9. `eval_ce` and `train_causal_callgen.eval_gen`: the full weighted CE over
+   the validation set, and the end-of-epoch generative evaluation.
+10. `model.save_pretrained(out / "best")`: saved whenever val_ce hits a new
+    low.
 
-看掩码最直观的办法是在 `batch_mask` 的 return 处停下来，对第一个事件执行 `(mask[0, 0] == 0).int()`，得到的 0/1 矩阵就是“哪个 token 能看到哪个 token”。
+The most direct way to see the mask is to stop at `batch_mask`'s return, and
+for the first event run `(mask[0, 0] == 0).int()`, which gives the 0/1 matrix
+of "which token can see which token."
 
-## CPU 上有几处分支和显卡上不同
+## A few branches on CPU differ from GPU
 
-看到下面这几处的时候不要当成 bug：
+Do not treat the following as bugs when you see them:
 
-- `_attn_ctx` 在 CPU 上返回空上下文，`sdpa_kernel([EFFICIENT_ATTENTION])` 只在 cuda 上生效。
-- `amp` 是 False，`torch.autocast("cuda", enabled=False)` 是空操作，掩码用 fp32。
-- `_peak_gb` 在 CPU 上恒为 0，step 日志里的 `peak_mem_gb` 一直是 0.0。
-- 对齐检查里 bf16 粗筛那一段只在 cuda 上跑，`ALIGN_CHECK.json` 里的 `bf16_mean_abs_diff` 是 null。
-- 模型是随机初始化的，loss 与 val_ce 的数值没有意义，只看流程。
+- `_attn_ctx` returns an empty context on CPU; `sdpa_kernel([EFFICIENT_ATTENTION])`
+  only takes effect on cuda.
+- `amp` is False, `torch.autocast("cuda", enabled=False)` is a no-op, and the
+  mask uses fp32.
+- `_peak_gb` is always 0 on CPU, so `peak_mem_gb` in the step log stays 0.0.
+- The bf16 coarse-screening step in the alignment check only runs on cuda;
+  `bf16_mean_abs_diff` in `ALIGN_CHECK.json` is null.
+- The model is randomly initialized, so the loss and val_ce values are
+  meaningless -- only the flow through the code matters.
 
-## 产物在 net 盘上，删掉重新构建就回来
+## Artifacts live on net storage, and reappear when rebuilt after deletion
 
-`demo/runs/<mode>/` 里是 `train_log.jsonl`、`ALIGN_CHECK.json` 与 `best/`，和真实训练的产物同构；不进库、不进矩阵、不记账。`demo/tiny_qwen3` 与 `demo/runs` 是软链，实体在 net 盘的镜像目录里，两个软链都在 `.gitignore` 里；删掉之后重跑 `demo-prep` 就回来。`demo/data/*.jsonl` 进库，不跑脚本也能在编辑器里读样本。
+`demo/runs/<mode>/` holds `train_log.jsonl`, `ALIGN_CHECK.json` and `best/`,
+structured the same as real-training artifacts; it does not enter the repo,
+the matrix, or the ledgers. `demo/tiny_qwen3` and `demo/runs` are symlinks,
+with the real files in the mirror directory on net storage, and both symlinks
+are in `.gitignore`; deleting them and rerunning `demo-prep` brings them back.
+`demo/data/*.jsonl` is checked into the repo, so samples can be read in an
+editor without running any script.

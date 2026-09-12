@@ -1,228 +1,277 @@
-# 长程任务监控与发射 — 设计定稿（2026-08-08）
+# Long-running task monitoring and launch — final design (2026-08-08)
 
-一句话：脚本打心跳，采样器算判定，三个出口读同一份采样历史，出事自动拉
-事故 agent 补射，发射收成 run.py 一条子命令。
+One sentence: scripts emit heartbeats, the sampler computes verdicts, three exits read the same
+sampling history, an incident automatically pulls up an incident agent to refire, and launching
+collapses into one run.py subcommand.
 
-词汇表在 `CONTEXT.md`（长程任务 / 台账 / 分片 / 窗口 / 判定 / 发射 / 心跳 /
-采样器 / 采样历史 / 升级线 / 验尸 / 补射 / 事故记录 / 事故 agent / 进度单位），
-本文沿用，不再重复定义。本文记设计决定；实施顺序另出计划，动工前再过一次同意。
+The glossary is in `CONTEXT.md` (long-running task / ledger / piece / window / verdict / launch /
+heartbeat / sampler / sampling history / escalation line / autopsy / refire / incident record /
+incident agent / progress unit); this document follows it and does not redefine these terms. This
+document records design decisions; the implementation order is a separate plan, to be agreed on
+again before work starts.
 
-要解决的问题（2026-08-08 的现状）：看任务状态要 agent 到处读文件做推理——
-判定靠 job-monitor agent 两点测速，发射登记靠人打三条命令，定时巡检费上下文
-又费 token，agent 半小时一醒大多数时候看到的是"一切健康"。
+The problem to solve (state of things as of 2026-08-08): checking task status requires an agent to
+read files everywhere and reason about them — the verdict relies on the job-monitor agent
+measuring speed at two points, launch registration relies on a person typing three commands,
+periodic check-ins cost both context and tokens, and most of the time an agent wakes up every half
+hour just to see "everything is healthy."
 
-## 1 范围
+## 1 Scope
 
-只管 GPU 任务（进台账的那些）。CPU 长活、recipe 步骤不进。
+Only GPU tasks are in scope (the ones that go into the ledger). CPU long-running processes and
+recipe steps are out.
 
-交付物三块：
-1. 程序：心跳模块 + 采样器 + `run.py launch` 子命令 + 两个排卡发射器的登记改造。
-2. 脚本改造：自己的采集/训练/评测脚本接心跳。
-3. 文档回写：§8 清单里的 skill / agent / 根文档。
+Three deliverables:
+1. Programs: the heartbeat module + the sampler + the `run.py launch` subcommand + the
+   registration rework of the two queueing launchers.
+2. Script changes: wiring our own collection / training / evaluation scripts to emit heartbeats.
+3. Documentation write-back: the skill / agent / root documents listed in §8.
 
-## 2 心跳（脚本侧）
+## 2 Heartbeat (script side)
 
-- 新文件 `ops/heartbeat.py`，只用标准库——哪个 venv 都能 import，不新增依赖。
-- 脚本每完成一个进度单位往 stdout 打一行：固定前缀 `@hb ` 加一个 JSON。
-  心跳行混在普通日志里落进 tmux 的 tee 日志，监控端 tail 日志尾只认前缀。
-- 字段：必填 `done` / `total` / `unit`（"task" 或 "step"，脚本自己报）/
-  `ts`（打这行时脚本所在机器自己的钟）；选填 `tok_in` / `tok_out`
-  （**累计**值：到这一刻为止所有请求的 prompt / completion token 加总）、
-  `loss`、`status`（"done" 表示正常收尾）。
-- 进主循环先打一条 done=0——这条是"模型加载完了"的标志，
-  加载耗时从此永远落在心跳时间轴之外。
-- 改造名单：
-  - `envs/collect/run_appworld.py`（unit=task；token 数据现成——
-    `envs/collect/common.py` 每个请求都拿到 usage，累计后塞进心跳）
-  - `pipeline/train/train_mbert_tool.py` 等训练脚本（unit=step，报 loss）
-  - 评测脚本（实施时逐个过一遍名单）
-- vLLM 服务是第三方，不打心跳，也没有 done/total 这回事。它按服务类
-  分片走另一套判定（见 §4 末尾）；它日志里的吞吐行只拿来出 token 速率
-  显示，不参与判定。吞吐行已在真实日志里核实
-  （`/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log`，
-  vllm 0.26.0，原文：`Avg prompt throughput: 785.1 tokens/s, Avg generation
-  throughput: 671.8 tokens/s, Running: 4 reqs, ...`，默认每 10 秒一条，
-  引擎空闲时降级成 debug 不打印——这正好印证"空闲不打吞吐行不算停摆"）。
+- New file `ops/heartbeat.py`, standard library only — any venv can import it, no new dependency.
+- Every time a script finishes one progress unit it writes one line to stdout: a fixed prefix
+  `@hb ` plus a JSON object. Heartbeat lines are mixed in with ordinary log lines inside the tmux
+  tee log; the monitoring side tails the log's end and only recognizes lines with the prefix.
+- Fields: required `done` / `total` / `unit` ("task" or "step", reported by the script itself) /
+  `ts` (the clock of the machine the script is running on, at the moment this line is written);
+  optional `tok_in` / `tok_out` (**cumulative** values: the sum of prompt / completion tokens over
+  all requests up to this moment), `loss`, `status` ("done" means a normal finish).
+- Before entering the main loop, emit one done=0 line first — this is the marker for "model
+  loading finished," so loading time always falls outside the heartbeat timeline from here on.
+- List of scripts to change:
+  - `envs/collect/run_appworld.py` (unit=task; token data is already available —
+    `envs/collect/common.py` gets usage on every request, accumulate it and put it into the
+    heartbeat)
+  - Training scripts such as `pipeline/train/train_mbert_tool.py` (unit=step, reports loss)
+  - Evaluation scripts (go through the list one by one during implementation)
+- The vLLM service is third-party; it does not emit heartbeats, and there is no such thing as
+  done/total for it. It goes through a separate verdict track for service-type pieces (see the end
+  of §4); the throughput lines in its log are only used to show token rates and do not participate
+  in the verdict. The throughput line has been verified against a real log
+  (`/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log`,
+  vllm 0.26.0, original text: `Avg prompt throughput: 785.1 tokens/s, Avg generation
+  throughput: 671.8 tokens/s, Running: 4 reqs, ...`, one line every 10 seconds by default,
+  downgraded to debug and not printed when the engine is idle — which is exactly why "no
+  throughput line while idle does not count as a stall").
 
-## 3 采样器（监控侧）
+## 3 Sampler (monitoring side)
 
-- 新文件 `ops/sampler.py`，登录机 tmux 常驻（session 名 `new1_sampler`），
-  60 秒一轮。
-- 每轮干四件事：从台账 active 读任务清单 → tail 各分片日志抓心跳
-  （日志在 NFS，本地读，不用 ssh）→ ssh 四台机 `tmux ls` 探存活
-  （沿用现有 fail-closed 语义：探测失败 ≠ 没有 session）→ 算判定，
-  append 进采样历史。
-- 采样历史一个任务一个文件，逐轮的行里带分片位（shard-id），多分片
-  各算各的。除逐轮记录外，每个分片位存一份累计状态：首条心跳 ts、
-  最新 done、事故编号、补射次数。平均速率的原点从这里拿，不依赖
-  日志开头还在不在 tail 范围里；采样器重启也从这里恢复。
-- 台账外 session 扫描保留（现在 `collect(with_extras=True)` 的行为）：
-  固定扫 tokyo105-108，漏登记的 session 上表提醒——只列 host 和
-  session 名，不算判定、不触发事故（没登记就没有日志路径和发射命令，
-  想管先补 register）。
-- 采样线程和网页线程分开：HTTP 端口（可配，默认 8377）出网页，网页
-  线程只读最新采样历史，采样那边 ssh 卡住不影响出页，页上时刻会变旧。
-  ssh 探测本身带超时。你在 VS Code Remote-SSH 里端口自动转发，本地
-  浏览器直接看。页面内容：任务表（判定 / 进度 / 速率 / token 指标 /
-  ETA）、最后采样时刻（超过 3 轮没更新就变红）、事故记录块、
-  台账外 session。
-- 采样器自身的死活有两层兜底：终端表和网页都把"最后采样时刻过期"
-  亮出来给人看；登录机 crontab 每 5 分钟查一次 tmux session，不在就
-  重启采样器——采样器无状态，重启后从采样历史恢复，接着算。
-- 落盘：采样历史和事故记录都是高频增量，不进 git，放 NFS 镜像目录
-  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/`，
-  finish 后留档不删（占地小）。
+- New file `ops/sampler.py`, resident in a tmux session on the login machine (session name
+  `new1_sampler`), one round every 60 seconds.
+- Each round does four things: read the task list from the ledger's active list → tail each
+  piece's log to pick up heartbeats (the log is on NFS, read locally, no ssh needed) → ssh into the
+  four machines and run `tmux ls` to probe liveness (keeping the existing fail-closed semantics: a
+  failed probe ≠ no session) → compute the verdict, append it to the sampling history.
+- The sampling history is one file per task; each round's line carries a piece slot (shard-id), and
+  pieces with multiple shards are each computed on their own. Besides the round-by-round record,
+  each piece slot stores one cumulative state: the ts of the first heartbeat, the latest done, the
+  incident number, the refire count. The origin point for the average rate is taken from here, so
+  it does not depend on whether the start of the log is still within the tail range; the sampler
+  also recovers from here after a restart.
+- The scan for sessions outside the ledger is kept (the current behavior of
+  `collect(with_extras=True)`): it always scans tokyo105-108, and unregistered sessions show up on
+  the table as a reminder — only host and session name are listed, no verdict is computed, no
+  incident is triggered (without registration there is no log path or launch command; to manage
+  it, register it first).
+- The sampling thread and the web thread are separate: the HTTP port (configurable, default 8377)
+  serves the web page, and the web thread only reads the latest sampling history; if ssh hangs on
+  the sampling side, it does not affect serving the page — the timestamp on the page will just get
+  stale. The ssh probe itself carries a timeout. With VS Code Remote-SSH's automatic port
+  forwarding, you can view it directly in your local browser. Page contents: a task table (verdict
+  / progress / rate / token metrics / ETA), the time of the last sample (turns red if it has not
+  updated for more than 3 rounds), the incident record block, and sessions outside the ledger.
+- The sampler's own liveness has two layers of backup: both the terminal table and the web page
+  surface "the last sample time has gone stale" for a person to see; a crontab on the login machine
+  checks the tmux session every 5 minutes and restarts the sampler if it is gone — the sampler is
+  stateless, and after a restart it recovers from the sampling history and keeps computing.
+- On disk: both the sampling history and the incident record are high-frequency increments, they do
+  not go into git, they live in the NFS mirror directory
+  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/`, and they are kept, not deleted,
+  after finish (the footprint is small).
 
-## 4 判定
+## 4 Verdict
 
-六个值全由采样器算，agent 只读结论。一个分片一轮恰好一格，按下面的
-顺序判，命中即停：
+All six values are computed by the sampler; the agent only reads the conclusion. Each piece gets
+exactly one cell per round, judged in the order below, stopping at the first match:
 
-| 顺序 | 判定 | 条件 |
+| Order | Verdict | Condition |
 |---|---|---|
-| 1 | 已完成 | done == total，或收到 status=done 的心跳 |
-| 2 | 已挂 | session 没了，又不满足已完成（包括一条心跳都没打就死的） |
-| 3 | 疑似卡死 | session 活着，停摆时长 > 判定线 |
-| 4 | warm-up 中 | session 活着，一条心跳都没有（还在加载） |
-| 5 | 变慢 | 近期速率有值，且 < 全程平均速率 × 0.5 |
-| 6 | 健康 | 以上都不是 |
+| 1 | done | done == total, or a heartbeat with status=done was received |
+| 2 | dead | the session is gone, and done is not satisfied (including dying before ever emitting a heartbeat) |
+| 3 | suspected stall | the session is alive, and the stall duration > the stall line |
+| 4 | warming up | the session is alive, and there is no heartbeat at all yet (still loading) |
+| 5 | slowed | the recent rate has a value, and it is < the overall average rate × 0.5 |
+| 6 | healthy | none of the above |
 
-- **时钟纪律**：跨机不比钟。停摆时长 = 采样器自己的钟下，"最近一次
-  看到新心跳的采样时刻"到现在；心跳 `ts` 只用于同一台机自己的心跳
-  之间做差（平均速率的分母）。
-- **warm-up 有上限**：从发射时刻计，默认 30 分钟，超了转疑似卡死——
-  卡死在加载阶段的任务不再永远沉默。`--warmup-line` 覆盖。
-- **判定线** = 5 × 典型心跳间隔，下限 3 轮采样间隔（60 秒一轮即
-  3 分钟）。下限的来历是采样粒度：停摆时间低于几轮采样，采样器分不清
-  "停了"还是"还没轮到我看"，所以它跟采样间隔走，不是任务侧写死的数。
-  典型心跳间隔 = 最近至多 20 个心跳间隔的中位数；攒不够 3 个间隔时
-  判定线暂用 warm-up 上限顶着（长 task / 长 step 开局不误报）。
-- **升级线** = 判定线 × 3，量的是同一个停摆时长：停摆超判定线转
-  疑似卡死，停摆超升级线拉事故 agent。
-- **速率**：平均速率 =（最新 done − 0）÷（最新心跳 ts − done=0 那条的
-  ts）；近期速率 = 最近至多 10 条心跳的 Δdone ÷ Δts，不足 2 条就没值
-  （表里显示 —）。token 速率同理用累计 tok 做差。加载时间碰不到任何
-  分母。ETA = 剩余单位数 ÷ 近期速率，近期没值退回用平均速率。
-- **探测失败**：那一轮存活沿用上一轮结论，表上标"探测失败"；连续
-  10 轮探测失败只亮红、不触发事故 agent——分不清死活就不动手，
-  fail-closed 一以贯之。
-- **服务类分片（vLLM）**只用四格：warm-up 中（session 活着，端口还没
-  应答过，同样吃 warm-up 上限）、健康（session 活着，端口应答）、
-  疑似卡死（session 活着，端口连续 3 轮不应答）、已挂（session 没了）。
-  已完成、变慢对常驻服务不适用；空闲不打吞吐行不算停摆。
+- **Clock discipline**: never compare clocks across machines. Stall duration = under the sampler's
+  own clock, the time from "the sampling moment when a new heartbeat was last seen" to now; the
+  heartbeat `ts` is only used to take differences between heartbeats on the same machine (the
+  denominator of the average rate).
+- **Warm-up has a ceiling**: counted from the launch moment, 30 minutes by default; once exceeded
+  it turns into suspected stall — a task stuck in the loading stage no longer stays silent forever.
+  Override with `--warmup-line`.
+- **Stall line** = 5 × typical heartbeat interval, with a floor of 3 sampling rounds (at 60 seconds
+  per round, that is 3 minutes). The floor comes from the sampling granularity: when the stall
+  duration is under a few sampling rounds, the sampler cannot tell "it has stopped" from "it just
+  hasn't been my turn to look yet," so it tracks the sampling interval rather than a number
+  hardcoded on the task side. Typical heartbeat interval = the median of the most recent 20
+  heartbeat intervals at most; when fewer than 3 intervals have accumulated, the stall line
+  temporarily falls back to the warm-up ceiling (so a long task / long step does not false-positive
+  at the start).
+- **Escalation line** = stall line × 3, measured on the same stall duration: stalling past the stall
+  line turns the verdict into suspected stall, stalling past the escalation line pulls up an incident
+  agent.
+- **Rate**: average rate = (latest done − 0) ÷ (the ts of the latest heartbeat − the ts of the
+  done=0 line); recent rate = Δdone ÷ Δts over the most recent 10 heartbeats at most, and there is
+  no value if fewer than 2 are available (shown as — in the table). The token rate works the same
+  way, taking the difference of cumulative tok values. Loading time never touches any denominator.
+  ETA = remaining units ÷ recent rate, falling back to the average rate when the recent rate has no
+  value.
+- **Probe failure**: for that round, liveness carries over the previous round's conclusion, and the
+  table marks "probe failed"; 10 consecutive rounds of probe failure only turn the table red, they
+  do not trigger an incident agent — when you cannot tell dead from alive you do not act;
+  fail-closed is applied consistently.
+- **Service-type pieces (vLLM)** only use four cells: warming up (session alive, the port has not
+  answered yet, also subject to the warm-up ceiling), healthy (session alive, the port answers),
+  suspected stall (session alive, the port has not answered for 3 consecutive rounds), dead (session is
+  gone). Done and slowed do not apply to a resident service; not printing a throughput line
+  while idle does not count as a stall.
 
-## 5 出事之后
+## 5 After an incident
 
-- 触发：判定变 **已挂** 当场触发；**疑似卡死** 停摆超过升级线触发。
-- 动作：采样器起一个事故 agent（无头 `claude -p`，模型钉 opus），
-  提示词带上这个任务的 json（判定、分片、日志路径、原始发射命令）。
-  它和会话里只读的 job-monitor 是两个角色：job-monitor 是你派的检查员，
-  只读不动手；事故 agent 是半夜的处置员。
-- 事故 agent 只干"把实验办好"一件事，权限线：
-  - 已挂 → 验尸（读日志尾定位死因）后补射一次。补射也走 launch：
-    先 `gpu-jobs free` 实探挑卡（原卡优先，被占就换实探到的空卡），
-    launch 出手前再验一次，被抢就换卡重试。session 已经没了，
-    补射弄不坏任何在跑的东西。
-  - 疑似卡死 → 只验尸，**不许杀**。心跳久停有假阳性（存 checkpoint、
-    长评测段），杀错一个活任务比晚几小时补射贵。
-  - 不写人读的报告。事故记录由采样器写；agent 的对话记录自动落在
-    claude session 文件里，早上开新会话现场查。
-- 补射后的账怎么接：任务名和 shard-id 不变，台账里该分片位的四元组
-  （host / gpus / session / log）更新成新的；事故编号和补射限额跟着
-  分片位（任务名 + shard-id）走，不跟 session 名走。该分片的心跳
-  时间轴重开：判定线、平均速率、近期速率全部从补射后的 done=0
-  重新积累，不跟旧轨迹混算。
-- 限额与防抖：同一分片位整个任务生命周期**自动补射只许一次**，
-  不清零；补射后再挂就停手，只记事故等人。同一次事故只拉一次
-  事故 agent（事故记录里每条事故有编号，采样器认编号防重复触发）。
+- Trigger: the verdict turning **dead** triggers on the spot; **suspected stall** triggers once the stall
+  duration passes the escalation line.
+- Action: the sampler starts an incident agent (headless `claude -p`, model pinned to opus), with a
+  prompt carrying this task's json (verdict, piece, log path, original launch command). It is a
+  different role from the read-only job-monitor in a session: job-monitor is the inspector you
+  dispatch, read-only and hands-off; the incident agent is the one handling things in the middle of
+  the night.
+- The incident agent does exactly one thing, "get the experiment handled," within these permission
+  lines:
+  - Dead → autopsy (read the tail of the log to locate the cause of death), then refire once.
+    Refiring also goes through launch: first probe with `gpu-jobs free` to pick a card live (the
+    original card first, switching to a probed-free card if it is occupied), probe once more right
+    before launch fires, and retry on a different card if it gets taken. Since the session is
+    already gone, refiring cannot break anything that is still running.
+  - Stalled → autopsy only, **killing is not allowed**. A long heartbeat pause has false positives
+    (saving a checkpoint, a long evaluation segment); killing a live task by mistake costs more
+    than refiring a few hours late.
+  - No report written for a person to read. The incident record is written by the sampler; the
+    agent's conversation record lands automatically in the claude session file, to be checked in a
+    fresh session in the morning.
+- How the books connect after a refire: the task name and shard-id stay the same, and the
+  quadruple for that piece slot in the ledger (host / gpus / session / log) is updated to the new
+  one; the incident number and the refire quota travel with the piece slot (task name + shard-id),
+  not with the session name. That piece's heartbeat timeline reopens: the stall line, the average
+  rate, and the recent rate all reaccumulate from the done=0 after the refire, not mixed in with
+  the old trajectory.
+- Quota and debounce: over a piece slot's whole task lifetime, **an automatic refire is allowed
+  only once**, and it does not reset; if it dies again after a refire, stop and just record the
+  incident and wait for a person. The same incident only pulls up one incident agent (each incident
+  in the incident record has a number, and the sampler recognizes the number to prevent duplicate
+  triggers).
 
-## 6 发射
+## 6 Launch
 
 ```
-python3 run.py launch <task> [任务参数] --piece <host>:<gpus> [--piece ...] \
-  [--track <方向>] [--note <想验证什么>] \
-  [--stall-line 秒] [--escalate-line 秒] [--warmup-line 秒] [--allow-dirty]
+python3 run.py launch <task> [task args] --piece <host>:<gpus> [--piece ...] \
+  [--track <track>] [--note <what you want to verify>] \
+  [--stall-line seconds] [--escalate-line seconds] [--warmup-line seconds] [--allow-dirty]
 ```
 
-- 解释器 / 脚本 / cwd 从注册表拿；脏树门禁沿用（LEDGER_PATHS 豁免不变，
-  smoke 场景 `--allow-dirty` 照旧）。
-- `--piece <host>:<gpus>`，gpus 是逗号列表（一张卡就一个数，如
-  `tokyo108:0,1`）。出手前对每个 piece 的卡做 FREE 实探，任何一张非
-  FREE 整次拒绝——程序只守"不往有人的卡上发射"这条线，挑哪张卡仍是
-  agent/人的判断。
-- 分片：注册表 TASKS 新加一个键 `shardable`（现在没有这个键；现存的
-  `shards=N` 是 RECIPES 步骤上的另一套，别混）。标了 shardable 的任务
-  给多个 `--piece` 时，按 piece 顺序自动注入 `--shard-id i
-  --num-shards N`，i 从 0 起——分片编号从此不过人手。没标的任务给
-  多个 `--piece` 直接拒绝（防止两张卡各跑一份全量互写输出）。
-- 然后一口气：起 tmux（session 名沿用 `new1_<task>_<host>g<gpus>`，
-  多卡把逗号写成连字符；日志 `<workdir>/logs/<session>.log`）→
-  三处登记（gpu-jobs register、record start、RUNMETA.json）→ 验活 →
-  打印监控入口。验活标准：session 在、30 秒内日志有输出且无
-  traceback，即发射成功；加载完不完交给采样器的 warm-up 判定，
-  launch 不在原地等。
-- run_id 一致性照 CLAUDE.md 原律（原始数据目录名 / tmux session /
-  台账 name / commit message 四处一致）：session 名、台账 name、
-  record run-id、日志名全部由程序从同一个 run_id 生成，不靠人对。
-- 注册表外的一次性发射（2026-08-02 裁决的唯一例外）不给 `<task>`，
-  用 `run.py launch --name <run_id> --workdir <dir> --cmd '<完整命令>'
-  --piece ...`：命令原样进 tmux，解释器写在命令里，登记照做。
-- `launch-probe` / `launch-eval` 两个排卡发射器不合并，各自的守卫
-  保留（launch-probe 的排卡表与 smoke 模式；launch-eval 的依赖顺序
-  硬检查与训练产物 `best/` 存在检查——它没有 smoke），内部改调
-  同一套登记函数 + 同一个 FREE 实探。改完，"程序保证登记"在所有
-  发射路径上成立，没有例外注脚。
+- The interpreter / script / cwd come from the registry; the dirty-tree gate carries over (the
+  LEDGER_PATHS exemption is unchanged, `--allow-dirty` for smoke scenarios stays as before).
+- `--piece <host>:<gpus>`, where gpus is a comma-separated list (one number per card, e.g.
+  `tokyo108:0,1`). Before firing, each piece's card gets a live FREE probe; any card that is not
+  FREE rejects the whole launch — the program only guards the line "never launch onto a card
+  someone else is using"; which card to pick is still the agent's/person's judgment call.
+- Sharding: a new key `shardable` is added to the TASKS registry (this key does not exist yet; the
+  existing `shards=N` is a separate mechanism on RECIPES steps, don't mix them up). For a task
+  marked shardable, when given multiple `--piece` entries, `--shard-id i --num-shards N` is
+  auto-injected in piece order, with i starting at 0 — shard numbering no longer passes through
+  human hands. A task not marked this way rejects multiple `--piece` entries outright (to prevent
+  two cards each running a full copy and overwriting each other's output).
+- Then, in one breath: start tmux (session name follows `new1_<task>_<host>g<gpus>`, with commas
+  written as hyphens for multiple cards; log at `<workdir>/logs/<session>.log`) → register in three
+  places (gpu-jobs register, record start, RUNMETA.json) → verify liveness → print the monitoring
+  entry points. Liveness criterion: the session exists, the log has output within 30 seconds, and
+  there is no traceback — that counts as a successful launch; whether loading has finished is left
+  to the sampler's warm-up verdict, launch does not wait around for it.
+- run_id consistency follows the original rule in CLAUDE.md (the raw data directory name / tmux
+  session / ledger name / commit message stay consistent in all four places): the session name, the
+  ledger name, the record run-id, and the log name are all generated by the program from the same
+  run_id, not matched up by hand.
+- A one-off launch outside the registry (the sole exception ruled on 2026-08-02) does not give
+  `<task>`, instead using `run.py launch --name <run_id> --workdir <dir> --cmd '<full command>'
+  --piece ...`: the command goes into tmux verbatim, the interpreter is written into the command
+  itself, and registration still happens as usual.
+- The two queueing launchers `launch-probe` / `launch-eval` are not merged; each keeps its own
+  guard rails (launch-probe's queue table and smoke mode; launch-eval's hard dependency-order check
+  and the check that the training artifact `best/` exists — it has no smoke mode); internally they
+  are changed to call the same registration functions plus the same live FREE probe. Once changed,
+  "the program guarantees registration" holds across every launch path, with no exception
+  footnote.
 
-## 7 三个出口
+## 7 Three exits
 
-- **终端表**：`gpu-jobs` / `watch` 改读采样历史，瞬间出结果，表头带
-  最后采样时刻，过期亮出来。`free` 和发射验卡**永远现场实探**——
-  "永不信缓存"这条铁律管占卡决策，不管看进度。
-- **json**：给 agent 的出口，判定、速率、ETA 都是现成结论。job-monitor
-  从此不再自己两点测速——那套动作变成采样器的固有能力。
-- **网页**：同一份采样历史的出口，你远程看。
-- 收尾流程不动：已完成只是判定，销号仍走 `gpu-jobs finish` 的
-  fail-closed 检查，gpu-run skill 的 Phase 6a 五连照旧。
+- **Terminal table**: `gpu-jobs` / `watch` switch to reading the sampling history, producing
+  results instantly, with the table header carrying the last sample time, which lights up when
+  stale. `free` and the card check before launch **always probe live, on the spot** — the iron rule
+  of "never trust the cache" governs the decision to occupy a card, not viewing progress.
+- **json**: the exit for agents; the verdict, rate, and ETA are all ready-made conclusions.
+  job-monitor no longer measures speed at two points itself from here on — that action becomes an
+  intrinsic capability of the sampler.
+- **Web page**: an exit onto the same sampling history, for you to view remotely.
+- The wrap-up process is unchanged: done is just a verdict, deregistering still goes through the
+  fail-closed check of `gpu-jobs finish`, and the five steps of gpu-run skill's Phase 6a stay as
+  they are.
 
-## 8 文档回写清单
+## 8 Documentation write-back list
 
-grep 数出来的引用点（2026-08-08），实施时逐个改：
+Reference points counted by grep (2026-08-08), to be changed one by one during implementation:
 
-**大改**：`gpu-run/SKILL.md`（Phase 4 发射段收成一条 launch、Phase 5 巡检
-制度改成采样器条款、交给用户的监控命令换新）；`gpu-run/references/
-launch-methodology.md`（tmux 模板段归 launch）；`gpu-run/references/
-monitor-methodology.md`（两点测速从 agent 手册变程序职责说明）；
-`agents/job-monitor.md`（瘦成"读 json 判定 + 按需验尸"，只读不变，
-与事故 agent 的分工写清）；`agents/gpu-runner.md`（发射段改用 launch，
-双登记段删）；`probe-pipeline/SKILL.md`（74-75 收尾链、134 G16、
-172-173 释放销号、221-222 agent 分工表）；`probe-pipeline/references/
-gates.md`（G2/G16/G17 措辞）；`references/stage-commands.md`（19、352 行）；
-`references/invariants.md`（记账双写：从"人保证"变"launch 保证"）；
-`references/extending.md`（新脚本清单加"接心跳"，130 行 job-monitor
-认日志事件）；`MAP.md`（gpu_jobs.py、launch_probe.py、launch_eval.py
-三行更新，heartbeat.py / sampler.py / launch 各加一行）；`CLAUDE.md`
-（GPU 段监控命令与台账入口）；`ops/gpu_state.md`（页首指引）。
+**Major changes**: `gpu-run/SKILL.md` (the Phase 4 launch section collapses into one launch
+command, the Phase 5 monitoring regime changes to a sampler clause, the monitoring commands handed
+to the user are replaced); `gpu-run/references/launch-methodology.md` (the tmux template section
+moves under launch); `gpu-run/references/monitor-methodology.md` (two-point speed measurement
+changes from an agent manual into a description of the program's responsibility);
+`agents/job-monitor.md` (slimmed down to "read the json verdict + autopsy on demand," staying
+read-only, with the division of labor against the incident agent written out clearly);
+`agents/gpu-runner.md` (the launch section switches to launch, the double-registration section is
+deleted); `probe-pipeline/SKILL.md` (the wrap-up chain at 74-75, G16 at 134, releasing/deregistering
+at 172-173, the agent division-of-labor table at 221-222); `probe-pipeline/references/gates.md`
+(the wording of G2/G16/G17); `references/stage-commands.md` (lines 19 and 352);
+`references/invariants.md` (double-write bookkeeping: from "guaranteed by the person" to
+"guaranteed by launch"); `references/extending.md` (add "wire up heartbeats" to the new-script
+checklist, line 130 on job-monitor recognizing log events); `MAP.md` (the three lines for
+gpu_jobs.py, launch_probe.py, launch_eval.py updated, one line each added for heartbeat.py /
+sampler.py / launch); `CLAUDE.md` (the GPU section's monitoring commands and ledger entry point);
+`ops/gpu_state.md` (the page-top pointer).
 
-**小改**：`handoff/SKILL.md` 42 行"在跑的任务"表指向采样历史。
+**Minor changes**: `handoff/SKILL.md` line 42, the "running tasks" table points to the sampling
+history.
 
-**不动**：`agents/env-runner.md`（CPU 侧，范围外）、exp-status /
-paper-write / 两个 knowledge-map skill（无引用）。
+**Untouched**: `agents/env-runner.md` (CPU side, out of scope), exp-status / paper-write / the two
+knowledge-map skills (no references).
 
-## 9 明确不做（v1）
+## 9 Explicitly not doing (v1)
 
-- CPU 任务不进窗口。
-- 手机推送不做；事故记录里每条事故自带定位一条事故所需的字段，
-  以后接推送是加法。
-- 对活着的任务自动杀，不做。
-- 常设定时巡检制度撤销，不是改良——采样器顶替。
-- 采样历史不进 git。
+- CPU tasks do not enter the window.
+- Mobile push notifications are not done; every incident in the incident record already carries
+  the fields needed to locate it, so adding push later is purely additive.
+- Automatically killing a live task is not done.
+- The standing periodic check-in regime is retired, not improved — the sampler replaces it.
+- The sampling history does not go into git.
 
-## 10 留到实施时定的小事
+## 10 Small things left to decide at implementation time
 
-- 事故记录与 json 出口的字段表。
-- 评测脚本接心跳的具体文件名单（逐个过）。
-- 分片输出文件名怎么从模板生成。
-- 网页具体布局。
-- 所有常数做成配置，跑出误报再调：判定线的 5 倍与 3 轮采样下限、
-  升级线的 ×3、warm-up 上限 30 分钟、近期速率窗口 10 条心跳、
-  探测失败亮红的 10 轮、验活等待 30 秒。
+- The field table for the incident record and the json exit.
+- The concrete file list of evaluation scripts to wire up with heartbeats (go through them one by
+  one).
+- How the piece output file name is generated from a template.
+- The concrete web page layout.
+- Turn every constant into configuration, to be tuned once it produces false positives: the stall
+  line's 5x and the 3-round sampling floor, the escalation line's ×3, the 30-minute warm-up
+  ceiling, the 10-heartbeat recent-rate window, the 10 rounds before probe failure turns red, the
+  30-second liveness wait.

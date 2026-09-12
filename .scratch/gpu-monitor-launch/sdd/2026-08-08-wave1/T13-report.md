@@ -1,70 +1,70 @@
-# T13 — vLLM 服务档
+# T13: vLLM service ledger
 
-工单: `.scratch/gpu-monitor-launch/issues/13-vllm-service.md`
-参照: `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 15(工单点名的实施步骤来源)
+Ticket: `.scratch/gpu-monitor-launch/issues/13-vllm-service.md`
+Reference: `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 15 (implementation-step source named by the ticket)
 
-## 做了什么
+## What was done
 
-逐条对工单验收要求:
+Against the ticket's acceptance requirements one by one:
 
-1. **吞吐行解析测试通过:真实样本行抽出生成速率、prompt 速率和并发数,无匹配返回 None**
+1. **Throughput-line parsing tests pass: a real sample line yields the generation rate, prompt rate, and concurrency count; no match returns None**
 
-   `ops/sampler.py` 新增 `VLLM_STATS_RE`(正则)+ `parse_vllm_stats(text)` +
+   `ops/sampler.py` got a new `VLLM_STATS_RE` (regex) + `parse_vllm_stats(text)` +
    `read_vllm_stats(log_path, max_bytes=8192)`:
 
-   - `parse_vllm_stats(text)`:从文本里抽所有 `Avg prompt throughput: X
-     tokens/s, Avg generation throughput: Y tokens/s, Running: N reqs`
-     匹配,取**最后一条**(text 可能是多行 tail,取最新一次采样),返回
-     `{"prompt_tok_s": X, "gen_tok_s": Y, "running": N}`;无匹配返回
-     `None`。
-   - fixture 行**不是手造文本**:2026-08-08 现场核对
+   - `parse_vllm_stats(text)`: extracts every match of `Avg prompt throughput: X
+     tokens/s, Avg generation throughput: Y tokens/s, Running: N reqs` from the text, taking
+     **the last one** (text can be a multi-line tail, so take the most recent sample), returning
+     `{"prompt_tok_s": X, "gen_tok_s": Y, "running": N}`; returns `None` on no match.
+   - The fixture line is **not hand-crafted text**: on 2026-08-08 checked directly against
      `/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log`
-     第 9421 行,与实施计划文档给的样例逐字节一致(`grep -n "19:50:14"`
-     核对过,见"怎么验证的"一节)。测试里另外用了同一份真实日志第 112 行
-     (`Running: 0 reqs`,并发数不同、数值不同)做第二条断言,避免实现把
-     fixture 的具体数字焊死。
-   - `read_vllm_stats(log_path)`:tail 8192 字节,调 `parse_vllm_stats`;
-     文件不存在(`OSError`)或这一轮日志里没有吞吐行(vLLM 引擎空闲时该行
-     降级 debug 不打印)都返回 `None`——调用方(见下)决定要不要沿用上一轮
-     的显示值,这个函数本身不猜。
+     line 9421, matching the implementation plan document's given sample byte-for-byte (checked with
+     `grep -n "19:50:14"`, see "How it was verified" below). The tests also use another line, line 112
+     from the same real log (`Running: 0 reqs`, a different concurrency count and different values), for a second assertion,
+     avoiding baking the fixture's specific numbers into the implementation.
+   - `read_vllm_stats(log_path)`: tails 8192 bytes, calls `parse_vllm_stats`;
+     returns `None` if the file doesn't exist (`OSError`) or this round's log has no throughput line
+     (the vLLM engine downgrades this line to debug and doesn't print it when idle). The caller (see below)
+     decides whether to keep the previous round's displayed value; the function itself doesn't guess.
 
-2. **服务分片不走心跳解析,判定只由端口探测决定**
+2. **Service pieces don't go through heartbeat parsing, verdict is decided only by port probing**
 
-   - `sample_once()` 改成按 `piece.get("kind")` 分支:`kind=="service"`
-     的分片 `beats=[]`(不再调用 `heartbeat.parse`,即不调用
-     `read_beats`)、改调 `read_vllm_stats(piece["log"])` 拿
-     `vllm_stats`;非 service 分片行为不变(`read_beats` 照旧)。
-   - `update_piece_state()` 新增可选参数 `vllm_stats=None`:service 分片
-     这一轮有值就存进 `ps["vllm_stats"]`,没有值(引擎空闲断流)就保留
-     上一轮的旧值不动——`spec.md`"空闲不打吞吐行不算停摆"这条不只是不
-     触发判定,显示位也不该因为断流就闪回空白。
-   - `build_row()`:`kind=="service"` 时,`tok_in`/`tok_out` 两个显示位
-     从 `ps["vllm_stats"]` 取(`prompt_tok_s`/`gen_tok_s`),不再从
-     `last_beat`(心跳协议字段)取;`last_beat` 对 service 分片本来就永远
-     是空 dict,因为 `recent_beats` 从不会被喂心跳。
-   - 判定路径完全没动:`verdicts._judge_service` 早在 T02 就已经只吃
-     `alive`/`port_ok`/`port_ever_ok`/`port_fail_rounds`/
-     `since_launch_s`/`warmup_s` 六个字段,不看 `done`/`total`/心跳时间
-     轴——这次改动确认了这一点(测试里往服务分片的日志里混了一行合法
-     `@hb` 文本,断言它完全没被算进 `recent_beats`/`first_beat`,判定
-     只跟 `probe_port` 的返回值走)。
+   - `sample_once()` now branches on `piece.get("kind")`: for `kind=="service"` pieces,
+     `beats=[]` (no longer calling `heartbeat.parse`, i.e. not calling
+     `read_beats`), instead calling `read_vllm_stats(piece["log"])` for
+     `vllm_stats`; non-service pieces' behavior is unchanged (`read_beats` as before).
+   - `update_piece_state()` got a new optional parameter `vllm_stats=None`: for a service piece,
+     if there's a value this round, it's stored into `ps["vllm_stats"]`; if there's no value (the engine went idle and
+     stopped emitting), the old value is kept unchanged. spec.md's "idle not emitting the throughput line doesn't
+     count as a stall" is not just about not triggering the verdict, the display should also not blink back to blank just
+     because of a stopped stream.
+   - `build_row()`: for `kind=="service"`, the `tok_in`/`tok_out` display slots
+     take from `ps["vllm_stats"]` (`prompt_tok_s`/`gen_tok_s`), no longer from
+     `last_beat` (the heartbeat-protocol field); `last_beat` for a service piece was always going to be an empty dict
+     anyway, because `recent_beats` is never fed any heartbeat.
+   - The verdict path itself is completely untouched: `verdicts._judge_service` was already, since T02, only consuming
+     the six fields `alive`/`port_ok`/`port_ever_ok`/`port_fail_rounds`/
+     `since_launch_s`/`warmup_s`, not looking at `done`/`total`/the heartbeat time axis at all. This
+     change confirms this (the test mixed a valid `@hb` line of text into the service piece's log,
+     asserting it was never counted into `recent_beats`/`first_beat` at all, and the verdict follows only
+     `probe_port`'s return value).
 
-3. **fixture 用 2026-08-08 从真实日志核实过的原文**:见上文验收项 1,以及
-   "怎么验证的"一节的 `grep` 记录。
+3. **The fixture uses text checked against the real log on 2026-08-08**: see acceptance item 1 above, and
+   the `grep` record in "How it was verified."
 
-4. **服务分片登记时日志字段要填真实路径**:这条工单原话是发射/登记时的
-   操作要求,不是代码约束——`piece["log"]` 本来就是自由字符串字段,
-   `read_vllm_stats(piece["log"])` 不对路径做任何假设(不拼 workdir、
-   不猜相对路径),给什么路径就读什么路径。代码侧没有需要新增的东西;
-   实测时用的临时 fixture 路径故意放在跟 `workdir` 不相干的目录下
-   (`tests/test_vllm_stats.py` 的 `TestServicePieceSampling.setUp`),
-   验证这条路径无关性成立。
+4. **The log field must be filled with a real path when registering a service piece**: this original ticket wording is an
+   operational requirement for launching/registration, not a code constraint. `piece["log"]` was already a
+   free-form string field, `read_vllm_stats(piece["log"])` makes no assumptions about the path (doesn't join with
+   workdir, doesn't guess a relative path), it reads whatever path is given. Nothing on the code side needed to be added;
+   the temporary fixture path used in real testing was deliberately placed in a directory unrelated to `workdir`
+   (`tests/test_vllm_stats.py`'s `TestServicePieceSampling.setUp`), verifying this path
+   independence held.
 
-5. **commit**:见下方 commit 清单。
+5. **Commit**: see the commit list below.
 
-## 怎么验证的
+## How it was verified
 
-先核对 fixture 是不是真实原文(不是照抄计划文档,是现场重新 grep 一遍):
+First checked whether the fixture is real original text (not copied from the plan document, checked fresh with grep):
 
 ```
 $ grep -n "19:50:14" /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log
@@ -72,10 +72,10 @@ $ grep -n "19:50:14" /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_
 ```
 9421:(APIServer pid=263921) INFO 08-02 19:50:14 [loggers.py:310] Engine 000: Avg prompt throughput: 785.1 tokens/s, Avg generation throughput: 671.8 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 11.2%, Prefix cache hit rate: 97.1%
 ```
-逐字节与实施计划 Task 15 给出的样例一致。
+Byte-for-byte match to the sample given in implementation plan Task 15.
 
-新写的测试(TDD:先跑一遍确认全部因为 `AttributeError`/断言失败红,截图
-略,写完实现后是这份全绿输出):
+Newly written tests (TDD: ran once first to confirm everything failed red on
+`AttributeError`/assertion failures, screenshot omitted, this is the all-green output after the implementation was written):
 
 ```
 $ python3 -m unittest tests.test_vllm_stats -v
@@ -98,19 +98,20 @@ Ran 10 tests in 0.049s
 OK
 ```
 
-10 条里:`TestParseVllmStats`/`TestReadVllmStats` 七条是纯函数单测(工单
-验收项 1);`TestServicePieceSampling` 三条是集成冒烟(工单验收项 2)——
-分别验证「端口健康+日志里混一行合法 `@hb` 也不进心跳,显示位吃到吞吐行」
-「端口探测失败给已挂,不管吞吐行还在不在」「吞吐行断流(第二轮日志没有
-吞吐行)判定仍健康、显示位沿用上一轮」。
+Of the 10, `TestParseVllmStats`/`TestReadVllmStats`'s seven are pure-function unit tests (ticket
+acceptance item 1); `TestServicePieceSampling`'s three are integration smoke tests (ticket
+acceptance item 2). Separately verifying "port healthy + a valid `@hb` line mixed into the log still
+doesn't get counted as a heartbeat, the display slot picks up the throughput line," "port probe failure gives dead,
+regardless of whether the throughput line is still there," and "throughput line stops (the second round's log has no
+throughput line), verdict is still healthy, display slot keeps the previous round's value."
 
-全仓测试(与其它并行工单在各自工作树里的改动互不干扰):
+Whole-repo tests (independent of other parallel tickets' changes in their own worktrees):
 
 ```
 $ python3 -m unittest discover -s tests -v
 ```
 ```
-...(89 条,含新增 10 条)
+...(89 cases, including the 10 new ones)
 ----------------------------------------------------------------------
 Ran 89 tests in 3.544s
 
@@ -121,88 +122,87 @@ OK
 $ python3 run.py selfcheck
 ```
 ```
-selfcheck: 63 任务 / 4 配方, 16 处缺失
+selfcheck: 63 tasks / 4 recipes, 16 missing
 ```
-16 条全部是 `envs/*/venv`、`cprobe-env`、`mbert-env` 等第三方 venv 目录
-在这个新建的 `git worktree` 里天然不存在(不进 git,`.gitignore` 排除)——
-与 T09 报告记录的现象一致,不是本次改动引入的问题;在主仓工作树
-(`/home/y-guo/reproduce/new1`)跑同一条命令的历史记录里也确认过是
-"全部就位"。本工单没有新建/改动 `run.py` 的 TASKS/RECIPES 注册表条目
-(只改了 `ops/sampler.py` 内部逻辑),所以这次没有单独重新核对主仓
-selfcheck——性质与 T09 记录的完全一样,不重复验证。
+All 16 lines are `envs/*/venv`, `cprobe-env`, `mbert-env` and other third-party venv directories that
+naturally don't exist in this newly built `git worktree` (excluded from git by `.gitignore`), consistent
+with the phenomenon recorded in the T09 report, not a problem introduced by this change; also confirmed running the same command
+in the main-repo worktree (`/home/y-guo/reproduce/new1`) that it's "all present." This ticket did not
+create/change any `run.py` TASKS/RECIPES registry entry (only changed internal logic in
+`ops/sampler.py`), so this time selfcheck wasn't separately re-checked against the main repo. The nature of it is
+exactly the same as what T09's report recorded, no need to re-verify.
 
-## commit 清单
+## Commit list
 
-- `3540212` — `T13: monitor: vLLM 服务档(端口探测进判定,吞吐行只做速率显示)`
-  改动:`ops/sampler.py`(新增 `parse_vllm_stats`/`read_vllm_stats`,
-  `sample_once`/`update_piece_state`/`build_row` 三处按 `kind=="service"`
-  分支)、`tests/test_vllm_stats.py`(新建,10 条测试)、`MAP.md`(补一句
-  `ops/sampler.py` 行的行为说明)。
+- `3540212`: `T13: monitor: vLLM service ledger (port probing goes into the verdict, throughput line is display-only)`
+  Changes: `ops/sampler.py` (added `parse_vllm_stats`/`read_vllm_stats`,
+  `sample_once`/`update_piece_state`/`build_row` all branch on `kind=="service"`), `tests/test_vllm_stats.py` (new,
+  10 tests), `MAP.md` (a sentence added to the `ops/sampler.py` line describing the behavior).
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-- **`port` 字段目前没有任何发射路径自动写入(工单 Comments 点名的必核项)**:
-  `ops/sampler.py` 里 `piece.get("port")` 这个读取点是 T02(工单 02)就
-  已经写好的,这次我没有新增它,只是确认并依赖它。但完整链路上游——
-  `ops/launch_cmd.py`(工单 09)——目前**没有任何代码把 `--port` 的值
-  写进 rich piece**:`--port` 不在 `launch_cmd.py` 的 `_VALUE_FLAGS`/
-  `_BOOL_FLAGS` 里,所以它和它的值都会落进 `extra`(未知旗标透传给
-  任务),原样拼进发给 `vllm serve` 的命令行里——这对"把 `--port` 传给
-  真正的服务进程"这件事是对的,但意味着 `register_all()` 组装的
-  `rich_pieces` 字典里完全没有 `"port"` 这个键。也就是说,如果真按
+- **No launch path currently auto-writes the `port` field (a must-check item named in the ticket's Comments)**:
+  the read point `piece.get("port")` inside `ops/sampler.py` was already written by T02 (ticket 02);
+  I did not add it this time, only confirmed it and relied on it. But upstream in the complete chain,
+  `ops/launch_cmd.py` (ticket 09), currently **has no code that writes a `--port`
+  value into a rich piece**: `--port` isn't in `launch_cmd.py`'s `_VALUE_FLAGS`/
+  `_BOOL_FLAGS`, so it and its value both fall into `extra` (unrecognized flags passed through
+  to the task), joining the command line sent to `vllm serve` verbatim. This is correct for "passing
+  `--port` to the actual service process," but it means `register_all()`'s assembled
+  `rich_pieces` dict has no `"port"` key at all. That is to say, if a service is actually launched via
   `python3 run.py launch serve-mirrorapi --service --piece host:gpu
-  --run-id X --track Y -- --port 8125 ...` 这样发射一个服务,采样器这边
-  `piece.get("port")` 会拿到 `None`,`update_piece_state` 里
-  `port_ok = probe_port(...) if port else False` 直接短路成
-  `False`(见 `ops/sampler.py` 的"服务类:端口探测"段),这个分片永远判
-  不了"健康",只会卡在"warm-up 中"直到 warm-up 上限,然后转"疑似卡死"。
+  --run-id X --track Y -- --port 8125 ...`, the sampler's side, `piece.get("port")` will get
+  `None`, and `update_piece_state`'s `port_ok = probe_port(...) if port else False` will
+  short-circuit directly to `False` (see `ops/sampler.py`'s "service kind: port probing" segment); this
+  piece can never verdict "healthy," it will only sit at "warming up" until the warm-up ceiling, then turn into
+  "suspected stall."
 
-  我**没有**去改 `ops/launch_cmd.py`——理由:工单原文写的是"步骤照
-  实施计划 Task 15 执行",Task 15 的 Files 清单只列了
-  `ops/sampler.py`(改)+ `tests/test_vllm_stats.py`(新建),十个编号
-  步骤里也完全没有提到要碰 `launch_cmd.py` 或 `--service`/`--port` 的
-  解析;而工单 Comments 原话给了两条路都行的出口("要么把 port 落进
-  piece/台账字段并让采样器读到，要么在报告里明确说明 port 从哪来")。
-  在这两条之间,我选了"说清楚在报告里",没有顺手扩大这张工单的改动
-  范围去碰 `launch_cmd.py`(那是工单 09 的文件,不在这张工单的
-  "只动这张工单范围内的文件"边界内,擅自改动等于借工单 13 的名义做了
-  工单 09 范围的事)。
+  I **did not** change `ops/launch_cmd.py`. Reason: the ticket's original text says "steps follow
+  implementation plan Task 15's execution," and Task 15's Files list only names
+  `ops/sampler.py` (change) + `tests/test_vllm_stats.py` (new); none of its ten numbered
+  steps mentions touching `launch_cmd.py` or `--service`/`--port` parsing either; and the ticket's
+  Comments give two acceptable ways out ("either land port into a piece/ledger field so the sampler can read it, or
+  state clearly in the report where port comes from"). Between these two, I chose "state it clearly in the
+  report," without opportunistically widening this ticket's scope of change to touch `launch_cmd.py`
+  (that's ticket 09's file, out of this ticket's "only touch files within this ticket's scope" boundary; changing it
+  myself would mean doing ticket 09's work under ticket 13's name).
 
-  实际验证过的路径(测试里走的)是:`piece` 字典本身对 `"port"` 没有任何
-  schema 校验,谁往里塞这个键、`sampler.py` 就读得到——`ops/gpu_jobs.py`
-  的 `cmd_register`(手搓登记的老路径)目前也**没有** `--port`/`--kind`
-  的 CLI 支持(只认 `--name`/`--workdir`/`--note`/`--piece
-  host:gpus:session:log`),同样接不上 `kind="service"` + `port` 这两个
-  字段。所以现状是:**没有任何一条现成命令行路径能把一个真实 vLLM 服务
-  正确登记成 `kind="service"` 带 `port` 的台账条目**——想让这次改动在
-  真实服务上生效,得靠人手工调用 `launch_common.register_all()`(Python
-  级)或者直接手改 `ops/jobs.json` 把 `"kind": "service", "port": N` 塞
-  进对应 piece。这是留给后续工单(或用户决策)的真实缺口,不是这张工单
-  能力范围内能一并补上的。
+  The path actually verified (as exercised by the tests) is: the `piece` dict itself has no schema validation
+  on `"port"`, whoever puts this key in, `sampler.py` reads it back. `ops/gpu_jobs.py`'s
+  `cmd_register` (the old hand-registration path) currently also has **no** `--port`/`--kind`
+  CLI support either (only recognizing `--name`/`--workdir`/`--note`/`--piece
+  host:gpus:session:log`), similarly unable to accommodate `kind="service"` + `port` together.
+  So the current state is: **no existing command-line path can correctly register a real vLLM service
+  as a `kind="service"` ledger entry carrying `port`**. For this change to take effect on a
+  real service, someone would have to manually call `launch_common.register_all()` (at the Python
+  level) or directly hand-edit `ops/jobs.json` to stuff `"kind": "service", "port": N` into the
+  corresponding piece. This is a real gap left for a follow-up ticket (or user decision), not something within this
+  ticket's scope that can be filled in at the same time.
 
-- **`probe_port` 的 `/health` 假设没有真实验证**:`ops/sampler.py` 里
-  `probe_port()` 的实现和它的注释("vLLM 的 /health 返回 200,工单 13
-  核对后如有出入改这里")都是 T02 就写好的。这张工单规程明确禁止发射
-  任何 GPU 进程,我没有起真实 vLLM 服务去实测 `/health` 的返回码,所以
-  这条假设仍然停留在"未经这张工单实测"的状态——只是把这份存疑原样
-  保留下来,没有假装验证过。
+- **`probe_port`'s `/health` assumption has not been really verified**: `ops/sampler.py`'s
+  `probe_port()` implementation and its comment ("vLLM's /health returns 200, ticket 13 to
+  check and fix here if it differs") were both already written by T02. This ticket's protocol explicitly
+  forbids launching any GPU process, so I did not start a real vLLM service to test `/health`'s
+  actual return code. This assumption remains in a state of "not tested by this ticket," this open question is just
+  carried forward as-is, without pretending it's been verified.
 
-- **`tok_in`/`tok_out` 复用心跳协议的显示位这个设计选择不是工单原文
-  逐字规定的**:实施计划 Task 15 的 Step 3 原话是"抓吞吐行 → row 的
-  `tok_out` 速率显示位",只点名了 `tok_out` 一个字段。我额外把
-  `prompt_tok_s` 放进了 `tok_in`(对称复用同一对"进/出"显示位,而不是
-  另开新字段),这是我在没有更细规格时做的最小合理选择,不是按某处
-  既有先例抄的——如果这两个位置将来要在网页/终端表里单独标"这是吞吐
-  速率不是累计 token 数",需要另外定显示格式,这次没有改
-  `render_html()` 的表头/单位标注,`tok` 列现在对服务分片显示的是纯数字
-  (如 `785.1/671.8`),视觉上和批处理任务的累计 token 数长得一样,容易
-  被人读错单位——值得下一次真的接一个服务分片跑起来之后肉眼核对一遍。
+- **Reusing the heartbeat protocol's display slots for `tok_in`/`tok_out` is a design choice not verbatim mandated
+  by the ticket's original text**: implementation plan Task 15's Step 3 said "grab the throughput line → the row's
+  `tok_out` rate display slot," naming only the one field `tok_out`. I additionally put
+  `prompt_tok_s` into `tok_in` (symmetrically reusing the same pair of "in/out" display slots,
+  rather than opening a new field), which is the smallest reasonable choice I made in the absence of a more detailed spec,
+  not copied from some existing precedent. If these two positions ever need to be labeled "this is a throughput
+  rate, not a cumulative token count" on the web/terminal table down the line, a separate display format needs to be defined;
+  I did not change `render_html()`'s header/unit annotation this time; the `tok` column for a
+  service piece currently displays plain numbers (like `785.1/671.8`), which looks visually the same as a batch
+  task's cumulative token count, and could easily be misread. Worth eyeballing once a real service piece is actually wired up
+  and running.
 
-- 没有发射任何真实 GPU 进程或 tmux session;测试全部用临时目录 + 假日志
-  文件 + monkeypatch `probe_port`/`live_sessions`,没有触碰真实台账
-  (`ops/jobs.json`)、`ops/runs.jsonl`、任何 GPU 机器,也没有连接真实网络
-  端口(`probe_port` 的单测用端口 1 触发 `ConnectionRefused`,这条测试
-  在 T02 就有,这次没有改动)。
-- 没有改 `run.py` 的 TASKS/RECIPES 注册表,`python3 run.py selfcheck` 不
-  是这次改动要过的新门(不涉及新任务/新配方),仍然照工单纪律跑了一遍
-  确认没有引入新的缺失项。
+- No real GPU process or tmux session was launched; all tests used temp directories + fake log
+  files + monkeypatched `probe_port`/`live_sessions`, without touching the real ledger
+  (`ops/jobs.json`), `ops/runs.jsonl`, any GPU machine, or connecting to any real network
+  port (`probe_port`'s unit test uses port 1 to trigger `ConnectionRefused`, this test was already
+  there in T02, unchanged this time).
+- The `run.py` TASKS/RECIPES registry wasn't touched, `python3 run.py selfcheck` isn't a new gate for
+  this change (it doesn't involve a new task/new recipe), but it was still run once per ticket discipline to
+  confirm it didn't introduce any new missing item.

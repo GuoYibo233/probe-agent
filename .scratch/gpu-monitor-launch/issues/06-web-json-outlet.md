@@ -1,15 +1,37 @@
-# 06 — 网页与 json 出口
+# 06 — Web and json outlets
 
-**What to build:** 采样器同一个进程开 HTTP 端口（默认 8377，可覆盖）：根路径出任务表网页（判定、进度、速率、token、ETA、事故记录块、台账外 session，30 秒自动刷新，最后采样时刻过期亮红），/json 出最新采样结果原文。网页线程只读落盘的最新结果文件，不碰采样线程的内存，采样那边 ssh 卡住不影响出页。用户经 VS Code 端口转发在本地浏览器看。步骤照实施计划 Task 7 执行。
+**What to build:** The sampler opens an HTTP port (default 8377,
+overridable) in the same process: the root path serves a job-table web
+page (verdict, progress, rate, token, ETA, the incident-record block,
+sessions missing from the ledger, auto-refreshing every 30 seconds,
+turning red when the last sample time is stale), and /json serves the
+latest sampling result verbatim. The web thread only reads the on-disk
+latest-result file and never touches the sampling thread's memory, so a
+stuck ssh call on the sampling side doesn't affect serving the page. The
+user watches in a local browser via VS Code port forwarding. Steps follow
+Task 7 of the implementation plan.
 
-**Blocked by:** 02 采样器单轮走通
+**Blocked by:** 02 Sampler runs one round end to end
 
 **Status:** resolved
 
-- [ ] 网页测试通过：/json 与落盘文件一致，根路径 200 且正文含任务名、判定和最后采样时刻
-- [ ] 过期亮红的阈值从判定引擎的 DEFAULTS 生成进页面，不另抄一个数
+- [ ] Web tests pass: /json matches the on-disk file, root path returns
+  200 with a body containing the job name, verdict, and last sample time
+- [ ] The stale-turns-red threshold is generated into the page from the
+  verdict engine's DEFAULTS, not copied as a separate number
 - [ ] commit
 
 ## Comments
 
-- 2026-08-08 ticket-run：DONE。分支 ticket/20260808-par/T06（base 1d421be，head 5897417，ops/sampler.py +204 行网页段、tests/test_sampler_web.py 新增），合并进 main 后 41 测试全绿、selfcheck 63 就位。修复 0 轮。遗留 minor 一条：/json 是 latest.json 解析后重序列化（语义一致、字节不同，缩进丢失），验收条目"与落盘文件一致"按语义过；若未来有消费方按字节哈希比新鲜度会踩，先记录不改。concern 一条照录：latest.json 缺失时 /json 返回 503 + error json，是实现者自裁的接口，后续消费方如有别的期望要回来对齐。报告：sdd/2026-08-08-wave1/T06-report.md。
+- 2026-08-08 ticket-run: DONE. Branch ticket/20260808-par/T06 (base
+  1d421be, head 5897417, ops/sampler.py +204 lines for the web section,
+  tests/test_sampler_web.py added), 41 tests all green and selfcheck's 63
+  tasks in place after merging into main. 0 fix rounds. One leftover
+  minor: /json is latest.json re-serialized after parsing (semantically
+  identical, byte-different, indentation lost); the acceptance item
+  "matches the on-disk file" is passed on a semantic basis; if a future
+  consumer compares freshness by byte hash it will trip on this, noted
+  for now and left unchanged. One concern noted as-is: when latest.json is
+  missing, /json returns 503 + an error json, an interface the implementer
+  decided on their own; if a future consumer has a different expectation,
+  it needs to be reconciled then. Report: sdd/2026-08-08-wave1/T06-report.md.

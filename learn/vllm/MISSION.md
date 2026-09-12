@@ -1,35 +1,27 @@
-# Mission: vLLM（服务侧推理）
+# Mission: vLLM (server-side inference)
 
 ## Why
 
-new1 的每一条实验数据都是从一台 vLLM 服务里吐出来的：采集轨迹、注入续写、活跑。
-服务侧配置错一个旗标，整批数据的口径就变了，而且错得安静——不报错，只是数字不一样。
-现在这类判断全靠问 Claude；目标是 gyb 自己就能看一眼命令行和启动日志，
-知道这台服务的口径是什么、值不值得信、下一批实验该改哪个旋钮。
+Every piece of experiment data in new1 comes out of a vLLM service: trajectory collection, injection continuation, live runs.
+Get one flag wrong on the server side and the settings for the whole batch of data change, quietly, with no error, just different numbers.
+Right now that judgment call always goes through asking Claude. The goal is for gyb to be able to look at a command line and a startup log himself and know this service's settings: whether they can be trusted, and which knob the next batch of experiments should change.
 
 ## Success looks like
 
-- 看一眼 `vllm serve` 的命令行 + 启动日志，能说出这台服务的单条上下文上限、KV 池容量、
-  实际并发上限、自动挂了哪个解析器——不查文档、不问人。
-- 下一批实验要换模型或换环境时，能自己判断哪些 vLLM 功能用得上、哪个是坑
-  （前缀缓存、结构化输出、logprobs、量化格式、工具调用解析）。
-- 写论文方法与附录时，能准确写出服务侧配置如何影响结果口径
-  （token 账、并发、上下文长度、跨批不可比）。
-- 读 `pipeline/inject/` 里那些贴着 vLLM 打的代码时不再是黑盒：
-  流式中途 close 掉解码、harmony 前缀重建、`skip_special_tokens=False`，
-  每一处都知道它在跟服务的哪个行为打交道。
+- Look at a `vllm serve` command line plus its startup log and be able to state the per-request context limit, the KV pool capacity, the actual concurrency limit, and which parser got attached automatically, without checking the docs or asking anyone.
+- When the next batch of experiments switches model or environment, be able to judge on his own which vLLM features are worth using and which are traps (prefix caching, structured output, logprobs, quantization formats, tool-call parsing).
+- When writing the paper's methods and appendix, be able to state accurately how server-side configuration affects the settings results were produced under (token accounting, concurrency, context length, why results across batches are not comparable).
+- Stop treating the vLLM-adjacent code in `pipeline/inject/` as a black box: closing the decode mid-stream, rebuilding the harmony prefix, `skip_special_tokens=False`, each one now maps to a specific server behavior.
 
 ## Constraints
 
-- 教材落在 `new1/learn/vllm/`，进 git，跟代码一起走。
-- 每一课的数字必须来自本仓库的代码、本机装的 vLLM 0.26.0 源码、或我们自己服务器的日志。
-  不许用编的例子，不许用没核实的参数知识。
-- 中文授课。规则以 `humanizer-gyb` skill 为准：白话先行、事实与解读分开且事实在前、
-  每个数字带指代和出处。
-- 一次一课，短。
+- The course material lives in `new1/learn/vllm/`, checked into git, versioned alongside the code.
+- Every number in every lesson must come from this repo's code, the vLLM 0.26.0 source installed on this machine, or our own servers' logs. No invented examples, no unverified knowledge of parameters.
+- Taught in Chinese. Rules follow the `humanizer-gyb` skill: plain words first, facts and interpretation separated with facts first, every number carries what it refers to and where it came from.
+- One lesson at a time, short.
 
 ## Out of scope
 
-- 训练侧（探针四格的训练代码）——那是另一条线，不在这里教。
-- vLLM 的 CUDA kernel 与调度器内部实现——除非某个实验现象逼着我们进去看。
-- 部署运维（Kubernetes、多机集群、自动扩缩）——我们只有四台机器，手起手停。
+- The training side (the probe four-format training code): that is a separate line of work, not taught here.
+- vLLM's CUDA kernels and scheduler internals, unless some experiment result forces us to look inside.
+- Deployment operations (Kubernetes, multi-machine clusters, autoscaling): we only have four machines, started and stopped by hand.

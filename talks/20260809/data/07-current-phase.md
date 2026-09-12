@@ -1,32 +1,35 @@
-# 现役阶段手上有什么
+# What the current phase has in hand
 
-出处：工作区的 `METHOD.md`（2026-08-08 定稿）、`RESULTS.md`、`WORKPLAN.md`。
+Source: the working tree's `METHOD.md` (finalized 2026-08-08), `RESULTS.md`, `WORKPLAN.md`.
 
-## 方法定性变了：从一个定死的方法变成一个实验空间
+## The method's characterization changed: from a fixed method to an experiment space
 
-主干循环定死（agent 在环境里逐步做任务；思考推进到句子切口时旁路探针看一眼
-前缀；触发规则说出手就产出预测的工具调用并取得结果；以文本塞回切口；模型
-接着写）。其余八根轴排队待试：探针读什么、探针用什么模型、参数怎么来、
-触发规则、塞什么、何时塞、工具类型怎么分、一步之内何时收手。
+The main loop is fixed (the agent does the task in the environment step by step; when the thinking advances to a
+sentence cut, a side-channel probe looks at the prefix; when the trigger rule says fire, it produces the predicted
+tool call and gets a result; the result is fed back into the cut as text; the model keeps writing). Eight other axes
+are queued for trying: what the probe reads, what model the probe uses, where parameters come from, the trigger
+rule, what gets fed back, when to feed it back, how to split tool types, and when to stop within a single step.
 
-两条铁律凌驾于一切轴：同设铁律（基线与方法同一套设置，检验办法是空注入
-对照）和注入格式同效（注入内容落到 token 层与模型自己写的思考完全同效，
-拆成 R1 到 R4 四条判据）。θ 永远手动给定，不给就拒绝启动。
+Two hard rules override every axis: the same-setup rule (baseline and method use the same set of settings, checked
+by the no-probe control) and injection-format equivalence (the injected content, at the token level, is fully
+equivalent to thinking the model wrote itself, broken into four criteria, R1 through R4). θ is always given by
+hand, if it is not given, startup is refused.
 
-现役实例化：gpt-oss-120b + AppWorld，活跑驱动器 `pipeline/inject/live_appworld.py`
-加探针服务 `pipeline/inject/probe_server.py`。
+The current instantiation: gpt-oss-120b + AppWorld, the live-run driver `pipeline/inject/live_appworld.py` plus the
+probe server `pipeline/inject/probe_server.py`.
 
-## 现役账上只有一条 run，是基础设施验证不是方法效果
+## The current ledger has only one run, and it verifies the infrastructure, not the method's effect
 
-run `hcap`（2026-08-06）：验证客户端自拼 harmony 走 /v1/completions 与 chat 路
-端到端等价（同一组消息 prompt 和输出 token 数、reasoning 与 content 逐字相同），
-并抓到一条 AppWorld 轨迹的 13 步真实逐 token 流，其中 3 步撞 8192 输出上限。
+Run `hcap` (2026-08-06): verified that a client assembling harmony by hand over /v1/completions is end-to-end
+equivalent to the chat path (for the same set of messages, the prompt and output token counts, and the reasoning
+and content, match exactly, character for character), and captured a real token-by-token stream for 13 steps of one
+AppWorld trajectory, of which 3 steps hit the 8192-output cap.
 
-## 下一步已排（`WORKPLAN.md`）
+## What's queued next (`WORKPLAN.md`)
 
-1. 部署会话：按 `METHOD.md` §6 改齐四件对齐，然后跑冒烟 2 道题，验收三件
-   （每次出手可指认、R3 token 比对、空注入对照）。
-2. 方向会话：讨论轴上的新想法（塞什么的新方案、探针改读隐藏状态、
-   工具类型按只读和会写分开）。
+1. Deployment session: make all four alignment items match per `METHOD.md` §6, then run a 2-question smoke test,
+   and check off three things (every fire can be pinpointed, the R3 token comparison, the no-probe control).
+2. Direction session: discuss new ideas on the axes (new schemes for what to feed back, having the probe read
+   hidden state instead, splitting tool types into read-only and write).
 
-现役阶段还没有训练过任何探针，也没有任何方法效果数字。
+The current phase has not yet trained any probe, and has no method-effect numbers of any kind.

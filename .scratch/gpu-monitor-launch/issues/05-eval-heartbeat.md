@@ -1,15 +1,37 @@
-# 05 — 三个评测脚本接心跳
+# 05 — Three eval scripts wire up heartbeats
 
-**What to build:** 三个评测脚本（工具评测、mbert 调用评测、causal 调用评测）接上心跳，进度单位是 item（样本条数）：批循环前打 done=0，跟着已有的进度 print 打心跳（没有进度 print 的按每 50 批一条补节奏），写完报告之后打 status=done。多段循环的脚本以最长那段为进度分母，一个脚本只打一根进度轴。步骤照实施计划 Task 5 执行。
+**What to build:** The three eval scripts (tool eval, mbert-call eval,
+causal-call eval) wire up heartbeats, with item (sample count) as the
+progress unit: emit done=0 before the batch loop, emit a heartbeat
+alongside each existing progress print (for scripts without a progress
+print, add one every 50 batches to set the pace), and emit status=done
+after the report is written. For a script with multiple loop segments, the
+longest segment is the progress denominator; each script emits only one
+progress axis. Steps follow Task 5 of the implementation plan.
 
-**Blocked by:** 01 心跳模块与判定引擎
+**Blocked by:** 01 Heartbeat module and verdict engine
 
 **Status:** resolved
 
-- [ ] 三个文件语法检查通过
-- [ ] 每个脚本只有一根进度轴，正常结束点打 status=done
+- [ ] Syntax check passes on all three files
+- [ ] Each script has only one progress axis, and status=done is emitted
+  at the normal end point
 - [ ] commit
 
 ## Comments
 
-- 2026-08-08 ticket-run：DONE。分支 ticket/20260808-par/T05（base 5be5d08，head b8cda45，三个评测脚本共 +20 行），合并进 main 后 29 测试全绿、三文件 py_compile 过。修复 0 轮，无 minors。cannotVerify 一条（"最长段"选轴对 eval_mbert_call/eval_causal_call 是否成立取决于运行期数据）主会话裁决：进度轴必须静态可定，实现者选的主口径路径是必跑段、--self-fire 是默认关闭的可选支路，按"必跑段为轴"收下，不改。concerns 三条照录：--self-fire 的 score_fire() 不接心跳；eval_tool 跨 split 时 done 从 0 重起（verdicts.rates() 对 done 回跳有保护，速率记 None 不报错）；status=done 的 done/total 只计主口径不含 self-fire 数据量。报告：sdd/2026-08-08-wave1/T05-report.md。
+- 2026-08-08 ticket-run: DONE. Branch ticket/20260808-par/T05 (base
+  5be5d08, head b8cda45, +20 lines total across three eval scripts), 29
+  tests all green and py_compile passing on all three files after merging
+  into main. 0 fix rounds, no minors. One cannotVerify item (whether the
+  "longest segment" axis choice holds for eval_mbert_call/eval_causal_call
+  depends on runtime data) ruled on by the main conversation: the progress
+  axis must be statically determinable; the implementer's chosen
+  main-convention path is the must-run segment, and --self-fire is an
+  optional branch off by default, so it's accepted as "must-run segment is
+  the axis," unchanged. Three concerns noted as-is: --self-fire's
+  score_fire() does not wire up heartbeats; eval_tool's done restarts from
+  0 across a split (verdicts.rates() is guarded against done going
+  backward, recording the rate as None without erroring); status=done's
+  done/total counts only the main convention and does not include
+  self-fire's data volume. Report: sdd/2026-08-08-wave1/T05-report.md.

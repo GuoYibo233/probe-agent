@@ -1,116 +1,146 @@
 ---
 name: ticket-run
-description: 成批执行 .scratch/<功能名>/issues/ 里工单的唯一入口——主会话按 Blocked by 把工单分成波，每波发射一个 workflow，波内工单并行（每张一棵独立 git 工作树、一条独立分支），workflow 内部按"实现 → 评审 → 修复循环（上限 5 轮）"跑每张工单，分支合并、收账、裁决、终审回主会话。Invoke whenever Dungeon♂Master says "执行工单"、"清 ticket"、"把这批 issue 做了"、"按 spec 实施"、"execute tickets"、or a batch of .scratch issues needs implementing.
+description: >-
+  The sole entry point for executing tickets in batch from .scratch/<feature-name>/issues/
+  — the main conversation splits tickets into waves by Blocked-by, dispatches one workflow
+  per wave, tickets within a wave run in parallel (each ticket gets its own git worktree
+  and its own branch), the workflow internally runs each ticket through "implement →
+  review → fix loop (capped at 5 rounds)," and branch merging, reconciliation,
+  adjudication, and final review return to the main conversation. Invoke whenever
+  Dungeon♂Master says "execute tickets", or a batch of .scratch issues needs implementing.
+  Chinese triggers: "执行工单" / "清 ticket" / "把这批 issue 做了" / "按 spec 实施".
 version: 1.0.0
 ---
 
-# ticket-run — 工单成批执行的全生命周期
+# ticket-run — the full lifecycle of batch ticket execution
 
-拼法来源：过程骨架抄 superpowers 的 subagent-driven-development（每任务一个全新实现者
-+ 每任务一道评审 + 修复循环上限 5 轮 + 最后整分支终审），控制流交给 Workflow 工具的
-确定性脚本（循环上限、门禁、断点续跑都写死在 JS 里，不靠主会话自觉），实现纪律
-（TDD 于接缝、常跑单测、最后全量、逐单元 commit）写死在实现者规程里。
+Where the design comes from: the process skeleton is copied from superpowers's subagent-driven-development
+(a brand-new implementer per task + one review per task + a fix loop capped at 5 rounds + a final
+whole-branch review at the end); control flow is handed to a deterministic Workflow-tool script (the
+round cap, gates, and resume-from-checkpoint are all hardcoded in JS, not left to the main conversation's
+self-discipline); implementation discipline (TDD at the seams, running unit tests often, a full run at
+the end, committing per unit) is hardcoded into the implementer's procedure.
 
-固定路径：
-- 波脚本：`.claude/skills/ticket-run/wave.js`
-- 角色规程：`.claude/skills/ticket-run/prompts/{implementer,reviewer,re-reviewer,final-reviewer}.md`
-- 工单约定：`docs/agents/issue-tracker.md`；状态字符串：`docs/agents/triage-labels.md`
-- 每波报告目录：`.scratch/<功能名>/sdd/<日期>-wave<N>/`（进 git，是评审记录的一部分）
+Fixed paths:
+- Wave script: `.claude/skills/ticket-run/wave.js`
+- Role procedures: `.claude/skills/ticket-run/prompts/{implementer,reviewer,re-reviewer,final-reviewer}.md`
+- Ticket conventions: `docs/agents/issue-tracker.md`; status strings: `docs/agents/triage-labels.md`
+- Per-wave report directory: `.scratch/<feature-name>/sdd/<date>-wave<N>/` (goes into git, part of the review record)
 
-## Phase 0 — 分波
+## Phase 0 — Split into waves
 
-1. 读 `.scratch/<功能名>/spec.md` 和 `issues/` 下全部工单。
-2. 可执行集合 = 用户点名的工单；用户没点名就取 `Status: ready-for-agent` 的全部。
-3. 按每张工单的 `Blocked by:` 行建依赖图，切成波：第 1 波 = 无未完成前置的工单，
-   第 2 波 = 只依赖第 1 波的工单，依此类推。
-4. 每张工单建一个 todo，备注波号和 Blocked by。todo 只是本会话的视图，
-   真源永远是工单文件的 `Status:` 行——会话断了就从文件重建分波。
+1. Read `.scratch/<feature-name>/spec.md` and every ticket under `issues/`.
+2. The executable set = the tickets the user named; if the user didn't name any, take every ticket with `Status: ready-for-agent`.
+3. Build a dependency graph from each ticket's `Blocked by:` line, and cut it into waves: wave 1 = tickets with
+   no unfinished prerequisite, wave 2 = tickets that only depend on wave 1, and so on.
+4. Create a todo for each ticket, noting its wave number and Blocked by. The todo is only this session's view —
+   the real source of truth is always the ticket file's `Status:` line; if the session breaks, rebuild the waves
+   from the files.
 
-每波装 2 到 4 张工单。一张工单最坏要花 12 次 agent 调用
-（1 次实现 + 1 次评审 + 5 轮修复，每轮 1 修 1 复审），波装太大一次 workflow 就超预算。
+Each wave holds 2 to 4 tickets. A single ticket takes up to 12 agent calls in the worst case (1 implementation +
+1 review + 5 fix rounds, each round being 1 fix + 1 re-review); a wave that's too big will blow the budget of a
+single workflow run.
 
-## Phase 1 — 预检与发射前 commit
+## Phase 1 — Precheck and commit before launch
 
-1. 预检扫一遍：工单之间互相矛盾、工单与 spec 矛盾、工单要求的做法撞仓库铁律
-   （绕过 run.py 注册表、往 home 写大产物、手改 RESULTS.md），全部攒成一个批量问题
-   一次问完用户再动。扫不出问题就不出声直接往下走。
-2. 工作树必须干净，未提交的先 commit（仓库铁律：发射前 commit，否则记录追不回代码）。
-3. 建本波报告目录，把本波每张工单的 `Status:` 改成 `claimed`，连同报告目录一起 commit。
+1. Do one precheck pass: tickets that contradict each other, a ticket that contradicts the spec, an approach a
+   ticket requires that collides with a repo hard rule (bypassing the run.py registry, writing a big artifact to
+   home, hand-editing RESULTS.md) — gather all of these into one batch question and ask the user once before
+   proceeding. If the scan finds nothing, proceed silently.
+2. The working tree must be clean; commit anything uncommitted first (repo hard rule: commit before launch,
+   otherwise the record can't trace back to the code).
+3. Create this wave's report directory, change every ticket in this wave's `Status:` to `claimed`, and commit
+   that together with the report directory.
 
-## Phase 2 — 发射一波
+## Phase 2 — Launch a wave
 
-用 Workflow 工具发射，脚本定死控制流：
+Launch with the Workflow tool; the script pins down the control flow:
 
 ```
 Workflow({
   scriptPath: ".claude/skills/ticket-run/wave.js",
   args: {
     repo: "/home/y-guo/reproduce/new1",
-    feature: "<功能名>",
-    wave: "<日期>-wave<N>",
+    feature: "<feature-name>",
+    wave: "<date>-wave<N>",
     promptDir: "/home/y-guo/reproduce/new1/.claude/skills/ticket-run/prompts",
-    reportDir: "/home/y-guo/reproduce/new1/.scratch/<功能名>/sdd/<日期>-wave<N>",
-    tickets: [{ id: "01", path: ".scratch/<功能名>/issues/01-xxx.md" }, ...]
+    reportDir: "/home/y-guo/reproduce/new1/.scratch/<feature-name>/sdd/<date>-wave<N>",
+    tickets: [{ id: "01", path: ".scratch/<feature-name>/issues/01-xxx.md" }, ...]
   }
 })
 ```
 
-三条定死在脚本里、不许在发射时改掉的规则：
-- 波内工单并行，一张工单内部严格串行。每张工单的改动全部落在自己的分支
-  `ticket/<波名>/T<NN>` 上，agent 在仓库旁边的 `<repo>-wt/` 下自建工作树、
-  用完即删（git 的各工作树共享对象库，所以评审在主仓用 sha 就取得到 diff）。
-  发射后主仓工作树谁都不动，代码合并等收账时做。工作树只用 git 命令建和进，
-  派发消息里明令禁调 EnterWorktree 工具——subagent 调它会吊死不返回，
-  wave3 和 wave9 各挂过一次（wave9 吊了 6 小时才被发现）。
-  卡住的判法：读 workflow 目录下 agent-*.jsonl 的末行时间戳，
-  停滞半小时以上就 TaskStop 后按下面的 resumeFromRunId 续跑。
-- 每个 agent 的模型显式写死：实现和评审用 sonnet，修复第 4、5 轮升级 opus。
-  不传模型就会继承主会话的 Fable，这条撞 subagent 禁 Fable 的硬规则。
-- 修复循环上限 5 轮，到顶就带着未决 findings 返回，脚本不做裁决。
+Three rules hardcoded into the script, not to be changed at launch time:
+- Tickets within a wave run in parallel; inside a single ticket everything runs strictly in sequence. Every
+  ticket's changes all land on its own branch `ticket/<wave name>/T<NN>`, and the agent builds its own worktree
+  under `<repo>-wt/` next to the repo, deleting it as soon as it's done (git's worktrees share the object store,
+  so a review in the main repo can get the diff just from the sha). After launch, nobody touches the main repo's
+  working tree; code merging happens at reconciliation time. Worktrees are only created and entered with git
+  commands — the dispatch message explicitly bans calling the EnterWorktree tool, because a subagent calling it
+  hangs and never returns; wave3 and wave9 each hit this once (wave9 hung for 6 hours before it was noticed).
+  How to tell it's stuck: read the timestamp of the last line in the workflow directory's `agent-*.jsonl`; if
+  it's been stalled for more than half an hour, TaskStop it and resume with `resumeFromRunId` below.
+- Every agent's model is explicitly hardcoded: implementation and review use sonnet, fix rounds 4 and 5 escalate
+  to opus. Not passing a model would inherit the main conversation's Fable, which collides with the hard rule
+  banning Fable for subagents.
+- The fix loop caps at 5 rounds; once it hits the cap, it returns with unresolved findings and the script does
+  not adjudicate.
 
-workflow 在后台跑，等完成通知。中途挂了或要改脚本，用 tool result 里的 runId
-配 `resumeFromRunId` 续跑，已完成的工单命中缓存不会重跑；返回值可疑先读
-transcript 目录的 `journal.jsonl` 再下判断。
+The workflow runs in the background; wait for the completion notification. If it hangs midway or the script
+needs changing, resume with the runId from the tool result paired with `resumeFromRunId` — tickets that
+already finished hit the cache and won't rerun; if a return value looks suspicious, read the `journal.jsonl`
+in the transcript directory before judging.
 
-## Phase 3 — 收账（每波返回后）
+## Phase 3 — Reconciliation (after each wave returns)
 
-workflow 返回逐工单的结构化结果（含各自的分支名）。先合并代码，再做状态账：
+The workflow returns a structured result per ticket (including each one's branch name). Merge the code first,
+then do the status accounting:
 
-1. `DONE` 的工单按工单号顺序逐个 `git merge --no-ff ticket/<波名>/T<NN>`。
-   合并起冲突就停下报告用户——冲突本身说明这两张工单并不独立，分波分错了。
-2. `CAP_TRIPPED` 的分支先不合，等下面的裁决做完再决定合并还是弃掉。
-3. 清理：合并完删掉已合分支，`git worktree prune`，`<repo>-wt/` 下的残留目录删掉。
+1. For `DONE` tickets, `git merge --no-ff ticket/<wave name>/T<NN>` one by one in ticket-number order. If a
+   merge conflicts, stop and report to the user — a conflict itself means these two tickets weren't actually
+   independent, and the wave split was wrong.
+2. Don't merge `CAP_TRIPPED` branches yet; decide whether to merge or discard once the adjudication below is done.
+3. Cleanup: delete merged branches once merging is done, `git worktree prune`, and delete leftover directories
+   under `<repo>-wt/`.
 
-然后按状态处理每张工单：
+Then handle each ticket by status:
 
-- `DONE`：工单 `Status:` 改 `resolved`，在工单 `## Comments` 下追加一条：
-  commit 范围、修复轮数、遗留 minors、实现者 concerns。
-- `CAP_TRIPPED`（5 轮打满还有未决 findings）：主会话逐条裁决——评审错了就搁置并写明理由，
-  真问题但没人依赖也搁置，真问题且后续工单要在上面盖楼就停下报告用户。
-  裁决逐条写进工单 Comments，不许静默丢弃。
-- `BLOCKED` / `NEEDS_CONTEXT`：缺的是上下文就补齐后把这张工单单独再发一波；
-  缺的是用户决策就把 `Status:` 改 `ready-for-human` 并上报。
-  工单要用 GPU 的活会以 BLOCKED 回来（实现者被禁止发射 GPU 进程），主会话走 gpu-run。
-- `cannotVerify` 清单（评审在 diff 里查不了的项）：主会话自己核对，
-  核实是真缺口就当 findings 把这张工单再发一波修复。
+- `DONE`: change the ticket's `Status:` to `resolved`, and append an entry under the ticket's `## Comments`:
+  commit range, number of fix rounds, remaining minors, implementer concerns.
+- `CAP_TRIPPED` (hit all 5 rounds with findings still unresolved): the main conversation adjudicates each one —
+  if the review was wrong, shelve it and write down why; a real problem nobody depends on also gets shelved; a
+  real problem that a later ticket needs to build on stops and gets reported to the user. Adjudications go into
+  the ticket's Comments one by one, never silently dropped.
+- `BLOCKED` / `NEEDS_CONTEXT`: if what's missing is context, fill it in and send this ticket out alone in
+  another wave; if what's missing is a user decision, change `Status:` to `ready-for-human` and report it up.
+  Work that needs a GPU comes back as BLOCKED (implementers are forbidden from launching GPU processes) — the
+  main conversation goes through gpu-run.
+- The `cannotVerify` list (items the review couldn't check in the diff): the main conversation checks these
+  itself; if verification finds a real gap, treat it as a finding and send this ticket out for another wave of
+  fixing.
 
-收完账 commit 一次（工单状态行 + Comments + 报告目录），然后发下一波，直到波清空。
+Once reconciliation is done, commit once (ticket status lines + Comments + report directory), then launch the
+next wave, until the waves are empty.
 
-## Phase 4 — 终审与汇报
+## Phase 4 — Final review and report
 
-全部波完成后做一次整分支终审，单个 agent 不用 workflow：
+Once all waves are done, do one whole-branch final review, a single agent without a workflow:
 
-1. 用 Agent 工具派 opus，prompt 指向 `prompts/final-reviewer.md`，
-   给它起点 commit（第一波发射前的 HEAD）、终点 HEAD、spec 路径、
-   全部工单路径、收账攒下的 minors 与搁置清单。
-2. 终审有 findings：派一个 sonnet 修复 agent 一次修完整个清单（不许一条一个 agent），
-   再派一次范围限定的复审。残余的按 Phase 3 的 CAP_TRIPPED 规则裁决。
-3. 汇报用户：每张工单的最终状态与 commit 范围、搁置清单、终审结论。只摆事实不带评语。
+1. Use the Agent tool to dispatch opus, with the prompt pointed at `prompts/final-reviewer.md`, giving it the
+   starting commit (the HEAD before the first wave launched), the ending HEAD, the spec path, every ticket
+   path, and the minors and shelved list accumulated during reconciliation.
+2. If the final review has findings: dispatch one sonnet fix agent to fix the whole list in one pass (never one
+   agent per item), then dispatch one scope-limited re-review. Anything remaining is adjudicated per Phase 3's
+   CAP_TRIPPED rule.
+3. Report to the user: each ticket's final status and commit range, the shelved list, and the final review's
+   conclusion. State facts only, no commentary.
 
-## 铁律接线
+## Hard-rule wiring
 
-- 实现者规程里已写死：run.py 注册表三件套同 commit、大产物只写 NFS、uv 管环境、
-  禁发 GPU 进程、禁手改 RESULTS.md。评审会当 spec 缺口抓，但主会话收账时再核一遍。
-- 本 skill 管的是代码工单。工单本身要跑 GPU 实验的，实施部分照常走本 skill，
-  发射部分回主会话走 gpu-run。
-- 改了本 skill 的流程或脚本，按仓库规矩回写本文件，同一个 commit。
+- Already hardcoded in the implementer's procedure: the run.py registry three-piece update in the same commit,
+  big artifacts only written to NFS, uv managing the environment, no launching GPU processes, no hand-editing
+  RESULTS.md. Review catches these as spec gaps, but the main conversation checks again at reconciliation.
+- This skill manages code tickets. If a ticket itself needs to run a GPU experiment, the implementation part
+  goes through this skill as usual, and the launch part goes back to the main conversation through gpu-run.
+- If this skill's workflow or script changes, write it back into this file per the repo's convention, in the
+  same commit.

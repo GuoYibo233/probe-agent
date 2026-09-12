@@ -1,44 +1,44 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>第 1 课 · 一台服务的真实口径只在启动日志里</title>
+<title>Lesson 1 · A service's real settings live only in the startup log</title>
 <link rel="stylesheet" href="../assets/lesson.css">
 </head>
 <body>
 <div class="wrap">
 
 <p class="kicker">Lesson 0001 · vLLM 0.26.0</p>
-<h1>一台服务的真实口径，只在启动日志里</h1>
-<p class="standfirst">命令行写的是你的意图，日志写的是实际发生的事。两者经常不一样，而且不一样的时候没人报错。这一课教你从启动日志里读出五件事，然后拿我们自己四台服务的真实数字做练习。</p>
+<h1>A service's real settings live only in the startup log</h1>
+<p class="standfirst">The command line records what you intended. The log records what actually happened. The two often disagree, and when they disagree nothing raises an error. This lesson teaches you to read five things out of a startup log, then practice on the real numbers from our own four services.</p>
 
-<h2>为什么先学这个</h2>
+<h2>Why learn this first</h2>
 
-<p>你的四个目标——判断配置对不对、下一批选对功能、论文里说清口径、看懂现有代码——第一步是同一件事：<strong>能说出一台服务此刻的真实口径</strong>。这件事不看命令行，看启动日志。</p>
+<p>Your four goals, judging whether a configuration is correct, picking the right features for the next batch, stating settings clearly in the paper, and understanding the existing code, all start with the same first step: <strong>being able to state a service's real settings right now</strong>. That does not come from the command line. It comes from the startup log.</p>
 
-<p>命令行不够用，有三个具体原因。第一，你没写的旗标有默认值，默认值随版本变。第二，vLLM 会替你自动决定一些事（挂哪个解析器、上下文取多长），命令行上看不见。第三，有些旗标你写了会被无视——下面第五行日志就是一例。</p>
+<p>The command line falls short for three specific reasons. First, any flag you did not write still has a default value, and that default changes across versions. Second, vLLM decides some things for you automatically (which parser to attach, how long the context is), and none of that shows up on the command line. Third, some flags you do write get ignored, the fifth log line below is one example.</p>
 
-<h2>五行日志，五件事</h2>
+<h2>Five log lines, five things</h2>
 
-<p>下面全部来自同一个文件：<code>new1_diag_srv_a.log</code>，2026-08-02 17:08 那次启动，gpt-oss-120b 跑在 tokyo108 GPU 0。左边挂的是它在那个文件里的行号。</p>
+<p>Everything below comes from the same file: <code>new1_diag_srv_a.log</code>, the startup at 2026-08-02 17:08, gpt-oss-120b running on tokyo108 GPU 0. The number on the left is its line number in that file.</p>
 
-<h3>① 我实际传了什么</h3>
+<h3>1. What I actually passed in</h3>
 <figure class="logline">
 <span class="addr">L7</span>
 <pre><code>non-default args: {'model_tag': '.../gpt-oss-120b', 'host': '0.0.0.0',
  'port': 8103, 'model': '.../gpt-oss-120b', 'served_model_name': ['gpt-oss-120b']}</code></pre>
 </figure>
-<p>vLLM 只打印<strong>与默认值不同</strong>的参数。这台服务命令行上明明写了 <code>--gpu-memory-utilization 0.92</code>，这一行里却没有它——因为 0.26.0 的默认值就是 0.92，写了等于没写。这一行是查"我以为我改了、其实没改"的最快入口。</p>
+<p>vLLM only prints arguments <strong>that differ from the default</strong>. This service's command line clearly has <code>--gpu-memory-utilization 0.92</code>, yet this line does not show it, because 0.26.0's default already is 0.92, so writing it changes nothing. This line is the fastest way to check for "I thought I changed this, but I didn't."</p>
 
-<h3>② 上下文上限最终定成多少</h3>
+<h3>2. What the context limit ends up being</h3>
 <figure class="logline">
 <span class="addr">L9</span>
 <pre><code>[model.py:1788] Using max model len <mark>131072</mark></code></pre>
 </figure>
-<p>这台没给 <code>--max-model-len</code>，vLLM 从模型 config 自动取了 131072。这是<strong>刻意的</strong>：那批实验要复刻 w0 采集时的原样配置，理由写在 <code>envs/serve_logs/launch_vllm_awdiag.py</code> 文件头。同期另一批服务给了 65536——同一个模型，两个口径，产出的数据不能混着比。</p>
+<p>This service was not given <code>--max-model-len</code>, so vLLM took 131072 automatically from the model config. That was <strong>deliberate</strong>: that batch of experiments needed to reproduce the exact configuration used during the w0 collection run, and the reason is written at the top of <code>envs/serve_logs/launch_vllm_awdiag.py</code>. Another batch of services from the same period was given 65536 instead. Same model, two different settings, and the data they produce cannot be compared directly.</p>
 
-<h3>③ 显存被切成了几块</h3>
+<h3>3. How the GPU memory got split up</h3>
 <figure class="logline">
 <span class="addr">L66</span>
 <pre><code>Free memory on device (92.58/93.1 GiB) on startup. Desired GPU memory
@@ -46,40 +46,40 @@ utilization is (0.92, 85.65 GiB). Actual usage is <mark>61.43 GiB for weight</ma
 2.87 GiB for peak activation, 0.24 GiB for non-torch memory, and
 1.22 GiB for CUDAGraph memory. ... Current kv cache memory in use is <mark>20.45 GiB</mark>.</code></pre>
 </figure>
-<p>整张卡 93.1 GiB，按 0.92 圈走 85.65 GiB，其中权重吃掉 61.43 GiB，剩下 20.45 GiB 才是 KV 缓存池。<strong>"KV 缓存池"就是服务用来存已经算过的上下文的那块显存</strong>——它决定这台服务能同时扛几条请求。</p>
+<p>The whole card is 93.1 GiB. At 0.92 it claims 85.65 GiB, of which the weights take 61.43 GiB, leaving 20.45 GiB as the KV cache pool. <strong>The "KV cache pool" is the GPU memory the service uses to store context it has already computed</strong>, it decides how many requests this service can hold at once.</p>
 
-<h3>④ 池子能装多少、能同时扛几条</h3>
+<h3>4. How much the pool holds, and how many it can hold at once</h3>
 <figure class="logline">
 <span class="addr">L57–58</span>
 <pre><code>GPU KV cache size: <mark>528,934 tokens</mark>
 Maximum concurrency for 131,072 tokens per request: <mark>4.04x</mark></code></pre>
 </figure>
-<p>这两行是整份日志里最该记住的。第一行是池子的总容量，按 token 数算。第二行是它的直接推论：</p>
+<p>These two lines are the most important ones in the whole log. The first line is the pool's total capacity, counted in tokens. The second line is its direct consequence:</p>
 
 <div class="eq">
-<p class="formula">并发上限 ＝ KV 池容量 ÷ 单条上下文上限</p>
+<p class="formula">Concurrency limit = KV pool capacity ÷ per-request context limit</p>
 <p class="worked">528,934 ÷ 131,072 = 4.04</p>
-<p class="gloss">日志印的就是 4.04x。这是一道除法，你可以自己验算。意思是：<strong>如果</strong>每条请求都用满 131072 的上下文，这台服务只能同时伺候四条。</p>
+<p class="gloss">The log prints exactly 4.04x. This is one division, and you can verify it yourself. It means: <strong>if</strong> every request used the full 131072-token context, this service could only serve four of them at once.</p>
 </div>
 
-<p>所以第 ② 行那个数不是随便填的。上下文上限翻一倍，并发就砍一半。</p>
+<p>So the number in line 2 is not arbitrary. Double the context limit, and concurrency is cut in half.</p>
 
-<h3>⑤ 有些旗标给了也白给</h3>
+<h3>5. Some flags you give are given for nothing</h3>
 <figure class="logline">
 <span class="addr">L72</span>
 <pre><code>WARNING [serving.py:218] For gpt-oss, we ignore --enable-auto-tool-choice
 and always enable tool use.</code></pre>
 </figure>
-<p>vLLM 明说了它无视这个旗标。同一份日志的第 14 行还能看到它自动挂上了 <code>reasoning_parser='openai_gptoss'</code>——这两件事命令行上一个字都没有。</p>
+<p>vLLM states plainly that it ignores this flag. Line 14 of the same log also shows it automatically attached <code>reasoning_parser='openai_gptoss'</code>, neither of these two facts appears anywhere on the command line.</p>
 
-<h2>四台服务，四组真实数字</h2>
+<h2>Four services, four sets of real numbers</h2>
 
-<p>全部取自 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>，同一个模型 gpt-oss-120b。看最后一列怎么随前面几列变。</p>
+<p>All taken from <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/</code>, the same model gpt-oss-120b. Watch how the last column changes with the columns before it.</p>
 
 <div class="tbl-scroll">
 <table>
 <thead>
-<tr><th>日志</th><th>卡</th><th>上下文上限</th><th>显存比例</th><th>KV 池</th><th>并发</th></tr>
+<tr><th>Log</th><th>Card</th><th>Context limit</th><th>Memory fraction</th><th>KV pool</th><th>Concurrency</th></tr>
 </thead>
 <tbody>
 <tr><td>splice_srv_a</td><td>93.1 GiB</td><td>65,536</td><td>0.92</td><td>475,669</td><td class="key">7.26x</td></tr>
@@ -89,91 +89,91 @@ and always enable tool use.</code></pre>
 </tbody>
 </table>
 </div>
-<p class="src">四行分别出自 new1_splice_srv_a_t108g0.log、new1_diag_srv_a.log、new1_effort_srv_d_t108g3.log、new1_splice_srv_echo_t108g0.log。93.1 GiB 是 H100，139.81 GiB 是 H200。</p>
+<p class="src">The four rows come from new1_splice_srv_a_t108g0.log, new1_diag_srv_a.log, new1_effort_srv_d_t108g3.log, and new1_splice_srv_echo_t108g0.log respectively. 93.1 GiB is an H100, 139.81 GiB is an H200.</p>
 
 <div class="note">
-<strong>一处诚实的空白。</strong>前两行的 KV 内存都是 20.45 GiB，一模一样，但装得下的 token 数不一样（475,669 对 528,934）。同样的字节、不同的容量，原因我还没查清，先记在这里不编解释。这不影响你用这张表——你要的数字日志直接给了。
+<strong>An honest gap.</strong> The first two rows both show 20.45 GiB of KV memory, identical, but they hold different numbers of tokens (475,669 versus 528,934). Same number of bytes, different capacity. I have not found the reason, and I am noting that here instead of making one up. It does not stop you from using this table, the numbers you need are given directly in the log.
 </div>
 
-<h2>练一练</h2>
+<h2>Practice</h2>
 
-<p>不许翻上面。答错立刻有反馈，答完就锁。</p>
+<p>No scrolling back up. A wrong answer gets feedback immediately, and once you answer, it locks.</p>
 
 <div class="quiz" data-answer="a">
-  <p class="q">1. H100 那张卡上、上下文上限 65,536 的那台服务，KV 池是多大？</p>
+  <p class="q">1. On the H100 card, for the service with a context limit of 65,536, how big is the KV pool?</p>
   <div class="opts">
     <button data-k="a">475,669</button>
     <button data-k="b">528,934</button>
     <button data-k="c">254,720</button>
   </div>
-  <p class="fb" data-k="a">对。splice_srv_a，H100 + 65,536 + 0.92 → 475,669 tokens，并发 7.26x。</p>
-  <p class="fb" data-k="b">这是 diag_srv_a 的数——同一张 H100，但上下文上限是 131,072。答案是 475,669。</p>
-  <p class="fb" data-k="c">这是 splice_srv_echo 的数——它的显存比例是 0.80，不是 0.92。答案是 475,669。</p>
+  <p class="fb" data-k="a">Correct. splice_srv_a, H100 + 65,536 + 0.92 → 475,669 tokens, concurrency 7.26x.</p>
+  <p class="fb" data-k="b">That is diag_srv_a's number, the same H100, but its context limit is 131,072. The answer is 475,669.</p>
+  <p class="fb" data-k="c">That is splice_srv_echo's number, its memory fraction is 0.80, not 0.92. The answer is 475,669.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">2. 日志里那个 <code>22.51x</code> 是怎么算出来的？</p>
+  <p class="q">2. How is that <code>22.51x</code> in the log worked out?</p>
   <div class="opts">
-    <button data-k="a">用KV池容量除以单条上限</button>
-    <button data-k="b">用整卡显存除以权重体积</button>
-    <button data-k="c">用批大小乘以并行分片数</button>
+    <button data-k="a">KV pool capacity divided by the per-request limit</button>
+    <button data-k="b">Total card memory divided by the weight size</button>
+    <button data-k="c">Batch size multiplied by the number of parallel shards</button>
   </div>
-  <p class="fb" data-k="a">对。1,475,384 ÷ 65,536 = 22.51。一道除法，随时可以自己验。</p>
-  <p class="fb" data-k="b">不是。显存那笔账在另一行（"Free memory on device …"），并发这一行只跟 KV 池和上下文上限有关：1,475,384 ÷ 65,536 = 22.51。</p>
-  <p class="fb" data-k="c">不是。这台服务的并行分片数是 1（单卡单实例）。正解是 1,475,384 ÷ 65,536 = 22.51。</p>
+  <p class="fb" data-k="a">Correct. 1,475,384 ÷ 65,536 = 22.51. One division, and you can check it yourself anytime.</p>
+  <p class="fb" data-k="b">No. The memory accounting is on a different line ("Free memory on device …"). The concurrency line only depends on the KV pool and the context limit: 1,475,384 ÷ 65,536 = 22.51.</p>
+  <p class="fb" data-k="c">No. This service has a parallel shard count of 1 (single card, single instance). The correct working is 1,475,384 ÷ 65,536 = 22.51.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">3. 两台 H100 的 KV 内存都是 20.45 GiB，为什么并发一个 7.26x 一个 4.04x？</p>
+  <p class="q">3. Both H100s have 20.45 GiB of KV memory. Why is one concurrency 7.26x and the other 4.04x?</p>
   <div class="opts">
-    <button data-k="a">单条上限不同，池子一样大</button>
-    <button data-k="b">显卡型号不同，池子大三倍</button>
-    <button data-k="c">显存比例不同，池子小一半</button>
+    <button data-k="a">The per-request limit differs, the pool is the same size</button>
+    <button data-k="b">The GPU model differs, the pool is three times bigger</button>
+    <button data-k="c">The memory fraction differs, the pool is half the size</button>
   </div>
-  <p class="fb" data-k="a">对。65,536 对 131,072，分母翻倍，并发几乎砍半。这就是为什么给不给 <code>--max-model-len</code> 是个真决策。</p>
-  <p class="fb" data-k="b">不是。两台都是 93.1 GiB 的 H100。差在上下文上限：65,536 对 131,072。</p>
-  <p class="fb" data-k="c">不是。两台的显存比例都是 0.92，KV 内存都是 20.45 GiB。差在上下文上限：65,536 对 131,072。</p>
+  <p class="fb" data-k="a">Correct. 65,536 versus 131,072: the denominator doubles, and concurrency is nearly cut in half. That is why whether to give <code>--max-model-len</code> is a real decision.</p>
+  <p class="fb" data-k="b">No. Both are 93.1 GiB H100s. The difference is the context limit: 65,536 versus 131,072.</p>
+  <p class="fb" data-k="c">No. Both have a memory fraction of 0.92, and both have 20.45 GiB of KV memory. The difference is the context limit: 65,536 versus 131,072.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">4. 我们脚本里写的 <code>--gpu-memory-utilization 0.92</code>，在装着的 0.26.0 上是什么处境？</p>
+  <p class="q">4. Our script writes <code>--gpu-memory-utilization 0.92</code>. What is its status on the installed 0.26.0?</p>
   <div class="opts">
-    <button data-k="a">等于默认值</button>
-    <button data-k="b">高于默认值</button>
-    <button data-k="c">低于默认值</button>
+    <button data-k="a">Equal to the default</button>
+    <button data-k="b">Above the default</button>
+    <button data-k="c">Below the default</button>
   </div>
-  <p class="fb" data-k="a">对。<code>vllm/config/cache.py:68</code> 写着 <code>Field(default=0.92)</code>。所以它压根不出现在 "non-default args" 那一行里。</p>
-  <p class="fb" data-k="b">不是。0.26.0 的默认值正是 0.92（<code>vllm/config/cache.py:68</code>）——这个旗标在这个版本上等于没写。</p>
-  <p class="fb" data-k="c">不是。0.26.0 的默认值正是 0.92（<code>vllm/config/cache.py:68</code>）——这个旗标在这个版本上等于没写。</p>
+  <p class="fb" data-k="a">Correct. <code>vllm/config/cache.py:68</code> reads <code>Field(default=0.92)</code>. That is why it never shows up in the "non-default args" line at all.</p>
+  <p class="fb" data-k="b">No. 0.26.0's default is exactly 0.92 (<code>vllm/config/cache.py:68</code>), on this version, writing this flag changes nothing.</p>
+  <p class="fb" data-k="c">No. 0.26.0's default is exactly 0.92 (<code>vllm/config/cache.py:68</code>), on this version, writing this flag changes nothing.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">5. 给 gpt-oss 的服务加上 <code>--enable-auto-tool-choice</code>，会发生什么？</p>
+  <p class="q">5. What happens if you add <code>--enable-auto-tool-choice</code> to a gpt-oss service?</p>
   <div class="opts">
-    <button data-k="a">被忽略，工具始终开启</button>
-    <button data-k="b">被采纳，工具按需开启</button>
-    <button data-k="c">被拒绝，服务启动失败</button>
+    <button data-k="a">It is ignored, and tool use stays always on</button>
+    <button data-k="b">It is adopted, and tool use turns on as needed</button>
+    <button data-k="c">It is rejected, and the service fails to start</button>
   </div>
-  <p class="fb" data-k="a">对。日志第 72 行原话："For gpt-oss, we ignore --enable-auto-tool-choice and always enable tool use."</p>
-  <p class="fb" data-k="b">不是。日志第 72 行原话："we ignore --enable-auto-tool-choice and always enable tool use." 对 gpt-oss 它是空转的。</p>
-  <p class="fb" data-k="c">不是，服务照常起来。日志第 72 行只是一条 WARNING："we ignore --enable-auto-tool-choice and always enable tool use."</p>
+  <p class="fb" data-k="a">Correct. Line 72 of the log, verbatim: "For gpt-oss, we ignore --enable-auto-tool-choice and always enable tool use."</p>
+  <p class="fb" data-k="b">No. Line 72 of the log, verbatim: "we ignore --enable-auto-tool-choice and always enable tool use." For gpt-oss it does nothing.</p>
+  <p class="fb" data-k="c">No, the service starts normally. Line 72 of the log is only a WARNING: "we ignore --enable-auto-tool-choice and always enable tool use."</p>
 </div>
 
 <p class="score"></p>
 
-<h2>下次起服务时做这一件事</h2>
+<h2>The one thing to do next time you start a service</h2>
 
 <ol class="tasklist">
-<li>服务起来后，从日志里抓这三行，贴进你的实验记录：
-<pre><code>grep -E "Using max model len|GPU KV cache size|Maximum concurrency" &lt;日志&gt;</code></pre></li>
-<li>手算一遍：KV 池 ÷ 上下文上限，看等不等于日志印的并发倍数。等，说明你读对了行。</li>
-<li>把这个并发倍数跟你实际起的客户端分片数比一比。分片数超过它，多出来的请求会排队而不是并行。</li>
+<li>Once the service is up, pull these three lines from the log and paste them into your experiment record:
+<pre><code>grep -E "Using max model len|GPU KV cache size|Maximum concurrency" &lt;log&gt;</code></pre></li>
+<li>Work it out by hand: KV pool ÷ context limit, and check whether it equals the concurrency multiplier the log prints. If it matches, you read the right lines.</li>
+<li>Compare that concurrency multiplier against the number of client shards you actually launched. If the shard count exceeds it, the extra requests queue instead of running in parallel.</li>
 </ol>
 
 <div class="foot">
-<p><strong>先读这一份：</strong><a href="https://docs.vllm.ai/en/latest/configuration/engine_args.html">vLLM Engine Arguments</a>——只看 <code>--gpu-memory-utilization</code>、<code>--max-model-len</code>、<code>--max-num-seqs</code> 三条。⚠️ 它写的是最新版，默认值可能跟我们装的 0.26.0 不同；拿不准就去翻 <code>envs/vllm-env/lib/python3.12/site-packages/vllm/config/</code>。</p>
-<p><strong>随手查：</strong><a class="local" href="../reference/startup-log-decoder.html">启动日志速查卡</a> · <a class="local" href="../GLOSSARY.md">术语表</a> · <a class="local" href="../MISSION.md">这门课要干什么</a>（都在 <code>learn/vllm/</code> 下）</p>
-<p><strong>有一个词没看懂就问我。</strong>我是这门课的老师，日志里任何一行、任何一个数字，随时可以让我拆开讲。这一课哪里太浅或太深，也直接说，下一课我会调。</p>
+<p><strong>Read this one first:</strong> <a href="https://docs.vllm.ai/en/latest/configuration/engine_args.html">vLLM Engine Arguments</a>, look only at <code>--gpu-memory-utilization</code>, <code>--max-model-len</code>, and <code>--max-num-seqs</code>. ⚠️ It documents the latest version, and its defaults may differ from our installed 0.26.0; when in doubt, check <code>envs/vllm-env/lib/python3.12/site-packages/vllm/config/</code>.</p>
+<p><strong>Quick reference:</strong> <a class="local" href="../reference/startup-log-decoder.html">Startup log decoder card</a> · <a class="local" href="../GLOSSARY.md">Glossary</a> · <a class="local" href="../MISSION.md">What this course is for</a> (all under <code>learn/vllm/</code>)</p>
+<p><strong>If a term does not make sense, ask me.</strong> I am the teacher for this course, and any line or number in the log can be broken down further at any time. If this lesson runs too shallow or too deep anywhere, say so directly, and I will adjust the next one.</p>
 </div>
 
 </div>

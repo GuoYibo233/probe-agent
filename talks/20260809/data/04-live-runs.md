@@ -1,59 +1,65 @@
-# 活跑实验三版各自跑出了什么
+# What each of the three live-run versions measured
 
-活跑 = 整题在线跑：agent 在 AppWorld 里从头做题，探针实时在思考切口打分，
-过 θ 就出手（预测调用、真执行、结果塞回切口），整题跑完看成败。
-场地固定为 AppWorld 官方 test_normal 分区 168 题 × gpt-oss-120b，
-每版都有两臂：探针臂（真出手）和不出手臂（全套机器挂上、一次不出手，
-即现役词汇里的空注入对照）。对外锚点 w0 = chat 基线成功率 0.2857（48/168）。
+Live run = the whole question run online: the agent does the task from scratch in AppWorld, the probe scores every
+thinking cut in real time, and fires once it clears θ (predicts the call, executes it for real, feeds the result
+back into the cut); success or failure is judged once the whole question finishes. The test bed is fixed as the
+AppWorld official test_normal split, 168 questions × gpt-oss-120b, and every version has two arms: the probe arm
+(fires for real) and the no-fire arm (the whole machinery is hooked up but it never fires once, what the current
+vocabulary calls the no-probe control). The external anchor is w0 = the chat baseline's success rate, 0.2857
+(48/168).
 
-出处：快照 `b1f5b9c` 的 `RESULTS.md` 条目 `20260802_0136_live_aw_gptoss`、
-`live_aw_gptoss_v2`、`live_aw_gptoss_v3`、`20260802_0240_live_aw_effort`、
-`20260802_0306_live_aw_probe_effort`，以及
-`pipeline/inject/runs/live_aw_gptoss/{probe,noprobe}/LIVE_REPORT.md`。
+Source: the `RESULTS.md` entries `20260802_0136_live_aw_gptoss`, `live_aw_gptoss_v2`, `live_aw_gptoss_v3`,
+`20260802_0240_live_aw_effort`, `20260802_0306_live_aw_probe_effort` in the snapshot `b1f5b9c`, and
+`pipeline/inject/runs/live_aw_gptoss/{probe,noprobe}/LIVE_REPORT.md`.
 
-## 三版主线数字
+## The main-line numbers across the three versions
 
-| 版本 | 修了什么 | 探针臂成功率 | 不出手臂成功率 | 计费 token（探针/不出手） | 注入次数/题 |
+| Version | What was fixed | Probe-arm success rate | No-fire-arm success rate | Billed tokens (probe/no-fire) | Injections per question |
 |---|---|---|---|---|---|
-| v1（08-02 01:36） | 无 | 0.119（20/168） | 0.0714（12/168） | 5.32M / 5.72M（省 7%） | 1.35 |
-| v2（08-02 05:47） | 停止符漏洞 | 0.190（32/168） | 0.173（29/168） | 3.35M / 3.92M（省 14.7%） | 1.66 |
-| v3（08-02 17:45） | commentary 解析 | 0.238（40/168） | 0.268（45/168） | 3.47M / 3.56M（省 2.4%） | 1.46 |
-| v4（08-02 20:22 发射） | 与 w0 chat 逻辑同构 | 清场时 running，无收尾数字 | 同左 | - | - |
+| v1 (08-02 01:36) | none | 0.119 (20/168) | 0.0714 (12/168) | 5.32M / 5.72M (saves 7%) | 1.35 |
+| v2 (08-02 05:47) | the stop-token bug | 0.190 (32/168) | 0.173 (29/168) | 3.35M / 3.92M (saves 14.7%) | 1.66 |
+| v3 (08-02 17:45) | the commentary parsing | 0.238 (40/168) | 0.268 (45/168) | 3.47M / 3.56M (saves 2.4%) | 1.46 |
+| v4 (08-02 20:22 launched) | made logic-isomorphic with the w0 chat path | was running at the wipe, no wrap-up numbers | same as left | - | - |
 
-两个修复的内容：v2 修的是 gpt-oss 只停 `<|return|>`、final 段用 `<|end|>` 收尾后
-伪造新回合污染 content 的停止符漏洞（修复后污染步数从 v1 不出手臂的
-1235/2157 变成 0/4692，撞 64k 上下文墙的题从 27 对 39 变成两臂都是 0）。
-v3 修的是 commentary 通道的解析。
+What the two fixes were: v2 fixed the stop-token bug where gpt-oss only stops on `<|return|>`, and once the final
+segment ended with `<|end|>` it fabricated a new turn that contaminated content (after the fix, contaminated steps
+went from 1235/2157 on v1's no-fire arm to 0/4692, and questions hitting the 64k context wall went from 27 versus 39
+to 0 on both arms). v3 fixed the parsing of the commentary channel.
 
-## 各版账上的结论原文（照抄 RESULTS 结论列）
+## Each version's verbatim conclusion on the ledger (copied from the RESULTS conclusion column)
 
-- v1："同一活跑框架内探针全面占优:成功率 11.9%>7.1%,token 省 7%,撞 64k 上限
-  少 12 题;但框架本身未对齐 w0(剔撞线后 9.3% vs 31.8%),绝对值口径待修"。
-- v2："停止符修复后 v2:探针臂 32/168 vs 无探针 29/168,计费 token 还省 14.7%
-  ——同框架下探针不伤准确率纯赚 token;两臂较 v1(20/12)大幅回血但仍低于
-  w0 28.6%(贪心混沌+answer 冗余,已归因非 bug)"。
-- v3："commentary 修复后:noprobe 45/168 进 w0 噪声带(chat 重跑今日 47+/166
-  复现 28.6%);探针臂 40,省 token 缩到 2.4%,v2 双赢含坏框架加成;残余单边差=
-  answer 乱塞(ADD 55 vs 底噪 9,22 题纯冤死),嫌疑=分段缝或预填,np1shot_fp 与
-  v4 在验"。
+- v1: "within the same live-run framework the probe wins across the board: success rate 11.9%>7.1%, tokens saved
+  7%, 12 fewer questions hit the 64k cap; but the framework itself is not yet aligned with w0 (after excluding
+  cap-hitting questions, 9.3% vs 31.8%), the absolute-value basis still needs fixing."
+- v2: "after the stop-token fix, v2: probe arm 32/168 vs no-probe 29/168, billed tokens still save 14.7%, under the
+  same framework the probe costs no accuracy and purely gains tokens; both arms recover substantially from v1
+  (20/12) but are still below w0's 28.6% (greedy-decoding chaos plus answer padding, already attributed, not a
+  bug)."
+- v3: "after the commentary fix: noprobe 45/168 falls inside w0's noise band (a chat re-run today reproduces 28.6%
+  at 47+/166); probe arm 40, token savings shrink to 2.4%, v2's double win included a bonus from the broken
+  framework; the remaining one-sided gap = answer padding (ADD 55 versus a baseline noise of 9, 22 questions are
+  pure bad luck), suspected cause = a segment seam or a pre-fill, np1shot_fp and v4 are verifying it."
 
-活跑线在清场时停在 v3 的悬案上：探针臂比不出手臂低 5 题，账上把单边差归到
-探针臂的 answer 乱塞失败（ADD 类 55 题对底噪 9 题，22 题账上称"纯冤死"），
-嫌疑对象写的是分段缝或预填，验证任务交给了没跑完的 v4。
+The live-run line stopped at the wipe on v3's open question: the probe arm is 5 questions behind the no-fire arm;
+the ledger attributes the one-sided gap to the probe arm's answer-padding failures (the ADD class is 55 questions
+against a baseline noise of 9, 22 questions the ledger calls "pure bad luck"), the suspected cause named is a
+segment seam or a pre-fill, and the job of verifying it was handed to v4, which never finished running.
 
-## 出手质量的细账（v1 探针臂 LIVE_REPORT）
+## The fine-grained accounting of fire quality (v1 probe-arm LIVE_REPORT)
 
-出手 226 次里执行成功率 0.9867（错误只有 1 次 AttributeError、2 次 http_422）；
-预测的工具名与该步真实调用一致 0.1947，整条调用一致 0.1195。v2 时执行成功率
-0.9892（279 次出手）；v3 时工具名一致 0.1878（245 次出手）。
+Across 226 fires, the execution success rate is 0.9867 (only 1 error is AttributeError, 2 are http_422); the
+predicted tool name matches the step's real call 0.1947 of the time, the whole call matches 0.1195 of the time. At
+v2 the execution success rate is 0.9892 (279 fires); at v3 the tool-name match rate is 0.1878 (245 fires).
 
-## effort 对照：两条替代路线的数字（v1 同批）
+## The effort control: numbers for two alternative routes (same batch as v1)
 
-把 gpt-oss 的 reasoning effort 从 high 拧小来省 token：low 档成功率 0.0655
-（11/168）、med 档 0.0714（12/168），对照 high 档 w0 的 0.2857；med 比 low
-多花 2.6 倍 token（1.37M 对 0.52M）。账上结论"省 token 不能靠拧小 effort"。
+Turning gpt-oss's reasoning effort down from high to save tokens: the low tier's success rate is 0.0655 (11/168),
+the med tier's is 0.0714 (12/168), against the high tier's w0 of 0.2857; med spends 2.6 times the tokens of low
+(1.37M versus 0.52M). Ledger conclusion: "saving tokens cannot be done by turning effort down."
 
-把 high 档训的探针直接搬到低档上用：low 档几乎不触发（0.06 次/题，出手 10 次
-工具名全错但无害），成绩 0.0893 略高于 low 基线 0.0655；med 档频繁触发
-（0.72 次/题）但工具名只对 0.2893，成绩被拖到 0.0476 低于 med 基线 0.0714。
-账上结论"θ 和探针都必须按 effort 档标定，跨档直接搬会伤成绩"。
+Taking the probe trained on the high tier and using it directly on the low tier: at the low tier it almost never
+fires (0.06 times per question, the 10 fires it does make all get the tool name wrong but do no harm), the score is
+0.0893, slightly above the low baseline of 0.0655; at the med tier it fires often (0.72 times per question) but the
+tool name is only right 0.2893 of the time, dragging the score down to 0.0476, below the med baseline of 0.0714.
+Ledger conclusion: "both θ and the probe must be calibrated per effort tier, moving them across tiers directly
+hurts the score."

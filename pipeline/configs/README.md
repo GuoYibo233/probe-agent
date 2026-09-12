@@ -1,6 +1,8 @@
-# pipeline/configs/ — 数据批次配置
+# pipeline/configs/ -- data batch configs
 
-这个目录管数据批次（一份 json = 环境 × 模型的一次标注/建库设定：
-轨迹源目录、题单模式、落点、种子），`ann-build` 等任务用 `--config` 吃。
-生成设置（模型地址、vLLM 启动参数、采样参数）不在这里——在仓库根的
-`configs/`（models.json + presets/），别放错地方。
+This directory manages data batch configs (one json = one annotate/build-database
+setting for an environment x model combination: the trajectory source directory,
+the problem-list mode, where output lands, the seed). Tasks like `ann-build` take
+these with `--config`. Generation settings (model addresses, vLLM launch args,
+sampling params) do not live here -- they live in the repo root's `configs/`
+(models.json + presets/); do not put them in the wrong place.

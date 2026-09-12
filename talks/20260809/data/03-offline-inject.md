@@ -1,40 +1,41 @@
-# 离线注入实验测出了什么
+# What the offline injection experiments measured
 
-离线注入 = 把已经采好的轨迹回放到某一步，在思考的切口处塞进预测的调用和结果，
-让模型从那里接着写，量它接下来省了多少 token、有没有采纳注入。全部在
-AppWorld × gptoss 上做，事件 2138 个，触发用 ctool 的 θ。
+Offline injection = replaying an already-collected trajectory to a given step, inserting the predicted call and its
+result at the thinking cut, letting the model keep writing from there, and measuring how many tokens that saves
+going forward and whether the injection is adopted. All of it was done on AppWorld × gptoss, 2138 events, triggering
+with ctool's θ.
 
-出处：快照 `b1f5b9c` 的 `pipeline/inject/runs/aw_gptoss_r10/INJECT_REPORT.md`、
-`aw_gptoss_th*/INJECT_REPORT.md`、`aw_gptoss_splice_th0925/INJECT_REPORT.md`
-和 `RESULTS.md` 对应条目。
+Source: `pipeline/inject/runs/aw_gptoss_r10/INJECT_REPORT.md`, `aw_gptoss_th*/INJECT_REPORT.md`,
+`aw_gptoss_splice_th0925/INJECT_REPORT.md` in the snapshot `b1f5b9c`, and the corresponding entries in `RESULTS.md`.
 
-## 时机实验：注入被采纳，但省 token 强依赖注入深度（run `20260801_0113_inject_aw_gptoss_r10`）
+## The timing experiment: injection is adopted, but token savings depend strongly on injection depth (run `20260801_0113_inject_aw_gptoss_r10`)
 
-口径 risk=0.1、θ=0.925，触发 1061 事件、可注入 689。对照臂 nofill 是同样构造、
-同样截断、只差注入行的重放。整体两臂：
+Basis: risk=0.1, θ=0.925, 1061 events triggered, 689 injectable. The control arm nofill is a replay built the same
+way, truncated the same way, differing only in the injected line. The two arms overall:
 
-| 臂 | n | 省 token 中位 | 省为正比例 | 重调被注入工具 | 推进率 |
+| Arm | n | Median tokens saved | Share with positive savings | Re-called the injected tool | Advance rate |
 |---|---|---|---|---|---|
 | nofill | 1061 | 0 | - | 0.8812 | 0.0971 |
 | inject | 689 | -27 | 0.4514 | 0.3396 | 0.6168 |
 
-推进率 0.62 对 0.10、重调率 0.34 对 0.88，是"注入被模型采纳"的直接数字。
-按触发深度（出手时思考已写完的比例）分桶，inject 臂的省 token 均值：
+Advance rate 0.62 versus 0.10, re-call rate 0.34 versus 0.88, are the direct numbers behind "the injection is
+adopted by the model." Bucketed by trigger depth (the share of thinking already written when firing), the inject
+arm's mean tokens saved:
 
-| 深度桶 | n | 省 token 均值 |
+| Depth bucket | n | Mean tokens saved |
 |---|---|---|
-| 0.0 到 0.2 | 362 | +377.7 |
-| 0.2 到 0.4 | 93 | +14.0 |
-| 0.4 到 0.6 | 47 | +284.5 |
-| 0.6 到 0.8 | 33 | -635.8 |
-| 0.8 到 1.0 | 154 | -696.8 |
+| 0.0 to 0.2 | 362 | +377.7 |
+| 0.2 to 0.4 | 93 | +14.0 |
+| 0.4 to 0.6 | 47 | +284.5 |
+| 0.6 to 0.8 | 33 | -635.8 |
+| 0.8 to 1.0 | 154 | -696.8 |
 
-探针按置信度触发有 21.8% 的出手落在最差的 0.8 到 1.0 桶。TIMELINE 称这批数字
-是"死区在真实 agent 环境加真实探针驱动下首次复现"。
+Of the fires the probe triggers by confidence, 21.8% fall in the worst bucket, 0.8 to 1.0. TIMELINE calls this batch
+of numbers "the first reproduction of the dead zone under a real agent environment driven by a real probe."
 
-## θ 扫描：六个点的工作特性，求和口径的省 token 判不可解读（run `20260801_0407/0413` 系列）
+## θ scan: the working characteristics at six points; the summed-basis token savings are ruled uninterpretable (run `20260801_0407/0413` series)
 
-| θ | 触发比例 | 整条调用一致率 | 工具名一致率 | 省 token 中位 | 上帝时机上限 | 采纳率 |
+| θ | Trigger ratio | Whole-call match rate | Tool-name match rate | Median tokens saved | Oracle-timing ceiling | Adoption rate |
 |---|---|---|---|---|---|---|
 | 0.5 | 0.9097 | 0.3445 | 0.6607 | 0 | 0.1117 | 0.6239 |
 | 0.7 | 0.8036 | 0.4173 | 0.7509 | -15 | 0.1597 | 0.6067 |
@@ -43,32 +44,36 @@ AppWorld × gptoss 上做，事件 2138 个，触发用 ctool 的 θ。
 | 0.925 | 0.4963 | 0.6466 | 0.9057 | -40 | 0.2945 | 0.6297 |
 | 0.95 | 0.4242 | 0.6902 | 0.925 | -37 | 0.3432 | 0.6326 |
 
-（"上帝时机上限"是 oracle_timing_ceiling 字段：假如每次都挑最优时机注入能省的
-比例上界。"采纳率"是 adopted 字段。）θ 越高整条调用越准、触发越少，是一条
-干净的换算曲线。但六个点求和口径的"省 token 比例"全部标了不可解读：服务侧
-对照量出的噪声地板 0.1528 比六点全跨度 0.1075 还大，根因是撞 8192 生成上限的
-失控生成（同一事件两次跑可差 8161 个 token）。
+(The "oracle-timing ceiling" is the `oracle_timing_ceiling` field: the upper bound on the savings share if every
+injection picked the optimal timing. "Adoption rate" is the `adopted` field.) The higher θ is, the more accurate the
+whole call and the fewer the fires, a clean trade-off curve. But the "token savings share" on the summed basis at
+all six points is marked uninterpretable: the noise floor measured by the serving-side control, 0.1528, is larger
+than the full span across the six points, 0.1075; the root cause is runaway generation hitting the 8192 generation
+cap (the same event can differ by 8161 tokens between two runs).
 
-## 截断拼回八臂：钉工具名的转场臂胜出（run `20260801_2257_inject_aw_gptoss_splice`）
+## Truncate-and-splice-back, eight arms: the tool-name-pinned transition arm wins (run `20260801_2257_inject_aw_gptoss_splice`)
 
-这批换了主对照：省 token 相对原轨迹（模型当时自己从切口写到发调用实际花掉的
-token）。八臂里四个骨架臂是"探针钉工具名、模型只补参数"的不同话术：
+This batch changed the main control: tokens saved are measured against the original trajectory (the tokens the
+model actually spent writing from the cut to issuing the call on its own, at the time). Of the eight arms, four
+skeleton arms are different phrasings of "the probe pins the tool name, the model only fills in the parameters":
 
-| 臂 | 省 token 中位 | 省为正比例 | 说明 |
+| Arm | Median tokens saved | Share with positive savings | Description |
 |---|---|---|---|
-| skel_switch | +239 | 0.8935 | 通道切换字节 + 围栏 + 骨架（胜出臂） |
-| switch_only | +143 | 0.7512 | 只切通道，整条调用模型自写 |
-| inject_stop | +181 | 0.6079 | SYSTEM NOTE 注入 + 结果后停止 |
-| skel_bare | +69 | 0.6635 | 思考段裸骨架 |
-| skel_a | +42 | 0.59 | 思考段骨架话术 A |
-| skel_b | +27 | 0.591 | 思考段骨架话术 B |
-| inject | +1 | 0.5 | SYSTEM NOTE 注入（不停） |
-| nofill | +3 | - | 管线体检臂（nofill 与原轨迹近似才放行整批数字） |
+| skel_switch | +239 | 0.8935 | channel-switch bytes + fence + skeleton (the winning arm) |
+| switch_only | +143 | 0.7512 | only switches channel, the whole call is written by the model itself |
+| inject_stop | +181 | 0.6079 | SYSTEM NOTE injection + stop after the result |
+| skel_bare | +69 | 0.6635 | a bare skeleton in the thinking segment |
+| skel_a | +42 | 0.59 | thinking-segment skeleton phrasing A |
+| skel_b | +27 | 0.591 | thinking-segment skeleton phrasing B |
+| inject | +1 | 0.5 | SYSTEM NOTE injection (does not stop) |
+| nofill | +3 | - | pipeline health-check arm (the whole batch's numbers are only cleared for release once nofill closely matches the original trajectory) |
 
-skel_switch 的骨架补完率 1.0、工具名被改写 0.0、补完后又想 0 字符；思考段三个
-骨架臂被改写 11% 到 13%、补完后又想 235 到 730 字符。执行侧：skel_switch 送去
-真执行的调用与原轨迹执行结果一致率 0.728（探针猜对工具名的桶里 0.803），
-反超模型自写整条的 switch_only（0.538）；账上的解释是"钉工具名把模型拉回
-原轨迹行为"，并注明 switch_only 的低分多为合理偏离、属系统性低估。
-验收对账：逐 token 验收臂整条逐字相同率 0.128，两路对账不一致率 0.126
-（vLLM logprob 抖动的实测量级）。
+skel_switch's skeleton completion rate is 1.0, its tool name is rewritten 0.0 of the time, and after completion it
+still thinks for 0 more characters; the three thinking-segment skeleton arms are rewritten 11% to 13% of the time
+and still think for 235 to 730 more characters after completion. On the execution side: the calls skel_switch sends
+to real execution match the original trajectory's execution result at a rate of 0.728 (0.803 within the bucket where
+the probe guessed the tool name correctly), overtaking switch_only, where the model writes the whole call itself
+(0.538); the ledger's explanation is "pinning the tool name pulls the model back to the original trajectory's
+behavior," noting that switch_only's low score is mostly reasonable deviation and a systematic underestimate.
+Acceptance cross-check: the token-by-token acceptance arm has a whole-call exact-match rate of 0.128, the two
+cross-check paths disagree at a rate of 0.126 (the measured scale of vLLM logprob jitter).

@@ -1,16 +1,33 @@
-# 01 — 心跳模块与判定引擎，单测全绿
+# 01 — Heartbeat module and verdict engine, unit tests all green
 
-**What to build:** 脚本侧有了打心跳的唯一入口（emit 打一行前缀加 JSON，parse 只认合法心跳行），监控侧有了算判定的唯一口径（六格判定按固定优先级、判定线与升级线自适应、平均与近期两种速率，全部是纯函数零 IO）。步骤照实施计划 Task 1 与 Task 2（`docs/plans/2026-08-08-gpu-monitor-launch.md`）执行，测试代码计划里现成。
+**What to build:** The script side now has a single entry point for emitting
+heartbeats (emit prints one prefixed JSON line, parse only recognizes valid
+heartbeat lines); the monitoring side now has a single convention for
+computing verdicts (six verdict cells in fixed priority order, the verdict
+line and escalation line adapting automatically, two rate flavors, average
+and recent, all pure functions with zero IO). Steps follow Task 1 and Task 2
+of the implementation plan (`docs/plans/2026-08-08-gpu-monitor-launch.md`);
+the test code is ready-made in the plan.
 
 **Blocked by:** None — can start immediately
 
 **Status:** resolved
 
-- [ ] 心跳测试通过：必填字段齐、选填不给不出现、parse 往返一致、垃圾行返回 None
-- [ ] 判定测试通过：六格每格至少一个用例，判定线下限、warm-up 上限、探测失败不判已挂、服务类四格都有边界用例
-- [ ] 两个模块只用标准库，常数全部收在判定引擎的 DEFAULTS 配置里
-- [ ] `python3 run.py selfcheck` 通过，两个任务各自 commit
+- [ ] Heartbeat tests pass: required fields all present, optional fields
+  absent when not given, parse round-trips consistently, garbage lines
+  return None
+- [ ] Verdict tests pass: at least one test case per verdict cell (six
+  total), the verdict-line floor, the warm-up cap, a probe failure not
+  being judged as dead, and edge cases for all four service-type cells
+- [ ] Both modules use only the standard library, with all constants
+  collected in the verdict engine's DEFAULTS config
+- [ ] `python3 run.py selfcheck` passes, each task committed separately
 
 ## Comments
 
-- 2026-08-08 ticket-run：DONE。commit 范围 ae41f27..ba3cdbb（c890cec 心跳模块 ops/heartbeat.py，ba3cdbb 判定引擎 ops/verdicts.py，直接落在 main，当时还是串行波模式）。测试 15/15 绿（test_heartbeat 4 + test_verdicts 11），selfcheck 过。评审零 findings、零 cannotVerify，修复 0 轮，无遗留 minors、无实现者 concerns。报告：sdd/2026-08-08-wave1/T01-report.md。
+- 2026-08-08 ticket-run: DONE. Commit range ae41f27..ba3cdbb (c890cec
+  heartbeat module ops/heartbeat.py, ba3cdbb verdict engine ops/verdicts.py,
+  landed directly on main, back when it was still serial-wave mode). Tests
+  15/15 green (test_heartbeat 4 + test_verdicts 11), selfcheck passed.
+  Review: zero findings, zero cannotVerify, 0 fix rounds, no leftover
+  minors, no implementer concerns. Report: sdd/2026-08-08-wave1/T01-report.md.

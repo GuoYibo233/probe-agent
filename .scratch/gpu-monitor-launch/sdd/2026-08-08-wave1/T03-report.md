@@ -1,55 +1,56 @@
-# T03 — 采集脚本接心跳（`run_appworld.py`）报告
+# T03: Collection script wired to heartbeats (`run_appworld.py`) report
 
-工单：`.scratch/gpu-monitor-launch/issues/03-collect-heartbeat.md`
-依赖：01（`ops/heartbeat.py`，main 上已 resolved，commit c890cec）
-步骤依据：`docs/plans/2026-08-08-gpu-monitor-launch.md` Task 3（line 390-445）
+Ticket: `.scratch/gpu-monitor-launch/issues/03-collect-heartbeat.md`
+Dependency: 01 (`ops/heartbeat.py`, already resolved on main, commit c890cec)
+Step source: `docs/plans/2026-08-08-gpu-monitor-launch.md` Task 3 (lines 390-445)
 
-## 做了什么
+## What was done
 
-对照工单三条验收要求逐条实现，全部落在 `envs/collect/run_appworld.py`：
+Implemented against the ticket's three acceptance requirements one by one, all landing in `envs/collect/run_appworld.py`:
 
-1. **心跳 import**：`sys.path.insert` 一行之后加了
+1. **Heartbeat import**: after the `sys.path.insert` line, added
    `sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))`
-   和 `import heartbeat  # noqa: E402`，放在 `from common import Chat, TrajLog`
-   之前（第 15-17 行）。
+   and `import heartbeat  # noqa: E402`, placed before `from common import Chat, TrajLog`
+   (lines 15-17).
 
-2. **进主循环先打 done=0**：`shard ... exp=...` 那行 print 之后、
-   `for tid in ids:` 之前加了
+2. **Emit done=0 right before the main loop**: after the print of the `shard ... exp=...` line and before
+   `for tid in ids:`, added
    ```python
    tok_in = tok_out = 0
    n_done = 0
    heartbeat.emit(0, len(ids), "task", tok_in=0, tok_out=0)
    ```
-   （第 80-82 行）。`heartbeat.emit` 是 T01 已落地的模块，签名
-   `emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)`。
+   (lines 80-82). `heartbeat.emit` is the module already landed by T01, with signature
+   `emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)`.
 
-3. **每题推进 done、累计 token**：
-   - `g = chat(msgs)` 之后加了
+3. **Advance done and accumulate tokens per question**:
+   - After `g = chat(msgs)`, added
      `tok_in += g["usage"]["in"]; tok_out += g["usage"]["out"]`
-     （第 105-106 行）。`g["usage"]` 的字段名 `in`/`out` 是
-     `envs/collect/common.py:161,182,220-221` 现成的，common.py 未改动。
-   - resume 的 SKIP 分支（`continue` 之前）加了 `n_done += 1` 和一条
+     (lines 105-106). The field names `in`/`out` on `g["usage"]` come from the existing
+     `envs/collect/common.py:161,182,220-221`; `common.py` was not modified.
+   - The resume SKIP branch (before the `continue`) added `n_done += 1` and one
      `heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in, tok_out=tok_out)`
-     （第 88-92 行）——工单点名"resume 跳过的题同样推进 done"，这里覆盖到。
-   - 每题正常收尾（`print(f"task={tid} steps=...")` 之后）同样加了
-     `n_done += 1` + 一条心跳（第 134-138 行）。
-   - `main()` 末尾、`for tid in ids:` 循环结束后，加了正常收尾标志：
+     (lines 88-92). The ticket specifically calls out "resume-skipped questions still advance done", covered here.
+   - Every question's normal wrap-up (after the `print(f"task={tid} steps=...")`) similarly added
+     `n_done += 1` plus one heartbeat (lines 134-138).
+   - At the end of `main()`, after the `for tid in ids:` loop finishes, added a normal-completion marker:
      `heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in, tok_out=tok_out, status="done")`
-     （第 140-141 行）。
+     (lines 140-141).
 
-三条验收要求（语法检查+--help、每题/SKIP 都推进 done+循环结束 status=done、commit）
-全部完成。
+All three acceptance items (syntax check + --help, done advances for both regular questions and SKIP + status=done at loop end, commit)
+are complete.
 
-## 怎么验证的
+## How it was verified
 
-工单指定的验证命令是 appworld venv 下跑语法检查和 `--help`（证明心跳模块
-在该 venv 里 import 得动，这是"stdlib-only"约束的实测）。
+The ticket specifies verifying with a syntax check and `--help` under the appworld venv (proving the heartbeat module
+can be imported inside that venv, which is the real test of the "stdlib-only" constraint).
 
-`envs/appworld` 整个目录是 gitignored（venv/data/runs 都不进 git），
-`git worktree add` 不会把它带进新工作树，所以 venv 物理上只存在于主仓
-`/home/y-guo/reproduce/new1/envs/appworld/venv/`。脚本本身用绝对路径
-`os.chdir("/home/y-guo/reproduce/new1/envs/appworld")`，与工作树位置无关，
-所以直接指向主仓 venv 跑工作树里的脚本文件是等价的、也是唯一可行的验证方式。
+The entire `envs/appworld` directory is gitignored (venv/data/runs are all excluded from git),
+`git worktree add` will not carry it into a new worktree, so the venv physically exists only in the main repo,
+`/home/y-guo/reproduce/new1/envs/appworld/venv/`. The script itself uses the absolute path
+`os.chdir("/home/y-guo/reproduce/new1/envs/appworld")`, independent of the worktree location,
+so pointing directly at the main-repo venv to run the worktree's script file is equivalent, and is
+the only feasible way to verify this.
 
 ```
 $ /home/y-guo/reproduce/new1/envs/appworld/venv/bin/python -c \
@@ -67,39 +68,39 @@ options:
   ...
 ```
 
-`--help` 正常打印到底（含所有参数），证明 `import heartbeat` 在
-appworld venv（stdlib-only 约束）下成功，没有触发任何 ImportError。
+The `--help` output printed all the way through (all args included), proving `import heartbeat` succeeds under the
+appworld venv (stdlib-only constraint), without triggering any ImportError.
 
-另外跑了 `python3 -c "import py_compile; py_compile.compile(...)"`（复核语法）：
-`py_compile ok`。
+Also ran `python3 -c "import py_compile; py_compile.compile(...)"` (a second syntax pass):
+`py_compile ok`.
 
-工单没有点名单测接缝（心跳 emit/parse 的单测已在 T01 覆盖），这次改动
-是脚本里插桩调用，没有新增可独立单测的纯函数，因此没有另写测试文件——
-按实现者规程"没点名就在改动的边界处补测试"，边界处的验证就是工单指定的
-这条 `--help` 实测，已跑过。
+The ticket did not name a unit-test seam for this (unit tests for heartbeat emit/parse are already covered by T01); this
+change is instrumentation calls inserted into a script, with no new independently-unit-testable pure functions, so no separate test
+file was written. Per the implementer's protocol of "add tests at the changed boundary if not otherwise specified," verification at that boundary is
+exactly the `--help` run the ticket specified, which has already been run.
 
-`run.py selfcheck` 在这个工作树里跑会报 16 处"缺解释器"（appworld/alfworld/
-tau2/toolhop/bfcl 等 venv 全部缺失），原因是这些 venv 目录本身就是
-gitignored、未进 git wordktree，不是本次改动引入的问题——在主仓
-`/home/y-guo/reproduce/new1` 里跑同一个 `python3 run.py selfcheck`，
-结果是"62 任务 / 4 配方, 全部就位"。本工单没有改动 `run.py` 注册表，
-不属于"改了注册表相关的东西"的强制门槛，但仍确认过主仓侧 selfcheck 干净。
+`run.py selfcheck` run in this worktree reports 16 "missing interpreter" items (appworld/alfworld/
+tau2/toolhop/bfcl venvs etc. all missing), because these venv directories are themselves
+gitignored and not part of the git worktree, not a problem introduced by this change. In the main repo
+`/home/y-guo/reproduce/new1`, running the same `python3 run.py selfcheck` gives
+"62 tasks / 4 recipes, all present". This ticket did not change the `run.py` registry, so this is
+not a case of "changed something related to the registry" that would make this a hard gate, but the main-repo-side selfcheck was still confirmed clean.
 
-## commit 清单
+## Commit list
 
-- `9838281` — `T03: collect: run_appworld 接心跳(每题 done/累计 token,done=0 标加载完)`
-  （工作树 `/home/y-guo/reproduce/new1-wt/20260808-par-T03`，分支
-  `ticket/20260808-par/T03`，diff 1 file changed, 17 insertions）
+- `9838281`: `T03: collect: wire run_appworld to heartbeats (per-question done/cumulative tokens, done=0 marks load complete)`
+  (worktree `/home/y-guo/reproduce/new1-wt/20260808-par-T03`, branch
+  `ticket/20260808-par/T03`, diff 1 file changed, 17 insertions)
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-- 自查完整 diff：只有 `envs/collect/run_appworld.py` 一个文件，17 行新增，
-  没有删除或改动既有逻辑行，没有超出工单范围的改动。
-- 没有引入新依赖、没有碰 `common.py`（工单明确写了"common.py 不用改"）。
-- 没有触碰 `run.py` 注册表——这张工单不需要，`envs/collect/run_appworld.py`
-  的调用方式（`python3 run.py collect-aw ...`）没有变化。
-- 存疑点：`heartbeat.emit` 的 `tok_in`/`tok_out` 传的是"这一刻的累计值"
-  而不是增量，这与心跳协议"tok_in/tok_out 都是累计值"的定义（spec.md
-  "心跳协议"一节）一致，写法上没有歧义，记在这里是为了让评审知道我确认过
-  这一点而不是漏看。
-- 没有其他存疑；未触发 NEEDS_CONTEXT 或 BLOCKED 条件。
+- Self-checked the full diff: only `envs/collect/run_appworld.py`, 17 lines added,
+  no deletions or changes to any existing logic lines, no changes beyond the ticket's scope.
+- No new dependency introduced, `common.py` was not touched (the ticket explicitly said "no need to change common.py").
+- The `run.py` registry was not touched. This ticket does not need it, and how
+  `envs/collect/run_appworld.py` is invoked (`python3 run.py collect-aw ...`) has not changed.
+- Open question: `heartbeat.emit`'s `tok_in`/`tok_out` are passed as "the cumulative value at this moment"
+  rather than an increment, which is consistent with the heartbeat protocol's definition that "tok_in/tok_out are both cumulative values" (spec.md's
+  "heartbeat protocol" section), with no ambiguity in the writing; noted here so the reviewer knows this was checked and
+  not overlooked.
+- No other open questions; no NEEDS_CONTEXT or BLOCKED conditions triggered.

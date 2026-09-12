@@ -1,27 +1,31 @@
-<title>第 2 课 · 同一段 prompt，服务报两个数</title>
+<title>Lesson 2 · One prompt, two numbers from the service</title>
 
-<!-- 内联自 lesson.css(唯一真源,勿在此处改) -->
+<!-- inlined from lesson.css (single source of truth, do not edit here) -->
 <style>
-/* new1 vLLM 课程共用样式。lessons/ 与 reference/ 下的页面都链这一份，
-   build_artifact.py 发布时把它内联进去——两处永远同一套。
+/* Shared new1 vLLM lesson styles. Pages under lessons/ and reference/ all link
+   this file; build_artifact.py inlines it at publish time, so the two stay
+   in sync.
 
-   设计取向：整页当成"读一份日志"。冷灰蓝的底、终端 INFO 的青做主色、
-   日志里被点名的数字用琥珀标出。标题无衬线 / 正文衬线 / 数据等宽三个角色分开。
-   中文无法内嵌字体（CJK 字库体积过大且 CSP 挡 CDN），全部走系统字族。 */
+   Design direction: treat the whole page like reading a log. Cool gray-blue
+   ground, terminal INFO cyan as the accent, numbers called out in a log
+   marked in amber. Headings sans-serif, body serif, data monospace, three
+   separate roles. Chinese text cannot embed a font (CJK font files are too
+   large and CSP blocks the CDN), so everything falls back to the system font
+   stack. */
 
-/* ---------- 令牌：浅色 ---------- */
+/* ---------- Tokens: light ---------- */
 
 :root {
-  --ground:      #f6f7f9;   /* 冷灰蓝的纸 */
-  --ground-sunk: #eceff3;   /* 下沉块：日志、表头 */
+  --ground:      #f6f7f9;   /* cool gray-blue paper */
+  --ground-sunk: #eceff3;   /* sunken blocks: logs, table headers */
   --ink:         #151922;
   --ink-soft:    #4c5563;
   --ink-faint:   #7b8595;
   --rule:        #d7dce3;
   --rule-soft:   #e6eaef;
-  --accent:      #0f6b74;   /* 青：链接、强调、结构线 */
+  --accent:      #0f6b74;   /* cyan: links, emphasis, structural lines */
   --accent-wash: #e2eef0;
-  --flag:        #8a5a00;   /* 琥珀：日志里被点名的数字 */
+  --flag:        #8a5a00;   /* amber: numbers called out in a log */
   --flag-wash:   #f7ecd6;
   --ok:          #1f6b45;
   --ok-wash:     #e3f0e8;
@@ -40,7 +44,7 @@
             "Liberation Mono", monospace;
 }
 
-/* ---------- 令牌：深色 ---------- */
+/* ---------- Tokens: dark ---------- */
 
 @media (prefers-color-scheme: dark) {
   :root {
@@ -62,7 +66,7 @@
   }
 }
 
-/* 阅读器的主题开关必须压过系统偏好，两个方向都要压 */
+/* The reader's theme switch must override the system preference, in both directions */
 :root[data-theme="dark"] {
   --ground:      #14171c;
   --ground-sunk: #1b1f26;
@@ -99,7 +103,7 @@
   --bad-wash:    #f6e4e4;
 }
 
-/* ---------- 骨架 ---------- */
+/* ---------- Skeleton ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -108,7 +112,7 @@ html { background: var(--ground); }
 body {
   margin: 0;
   padding: 3.2rem 1.4rem 6rem;
-  background: var(--ground);     /* 外壳会注入浅色 body 背景，必须显式压掉 */
+  background: var(--ground);     /* the shell injects a light body background; this must override it explicitly */
   color: var(--ink);
   font-family: var(--f-body);
   font-size: 17px;
@@ -125,7 +129,7 @@ body {
   gap: 1.15rem;
 }
 
-/* ---------- 标题 ---------- */
+/* ---------- Headings ---------- */
 
 .kicker {
   font-family: var(--f-mono);
@@ -181,7 +185,7 @@ h3 .where {
 
 p { margin: 0; }
 
-/* ---------- 代码与日志 ---------- */
+/* ---------- Code and logs ---------- */
 
 code {
   font-family: var(--f-mono);
@@ -213,7 +217,7 @@ pre mark {
   border-radius: 2px;
 }
 
-/* 日志摘录：左边挂它在文件里的真实行号 */
+/* Log excerpt: the real line number in the file hangs on the left */
 .logline {
   display: grid;
   grid-template-columns: var(--rail) 1fr;
@@ -237,7 +241,7 @@ pre mark {
   .logline .addr { text-align: left; padding-top: 0; }
 }
 
-/* ---------- 那道除法：全页唯一放开的地方 ---------- */
+/* ---------- The division: the one place on the page that opens up ---------- */
 
 .eq {
   background: var(--accent-wash);
@@ -272,7 +276,7 @@ pre mark {
   margin: 0 auto;
 }
 
-/* ---------- 表格 ---------- */
+/* ---------- Tables ---------- */
 
 .tbl-scroll { overflow-x: auto; }
 
@@ -305,7 +309,7 @@ td.key { color: var(--flag); font-weight: 700; }
 
 tbody tr:hover td { background: var(--accent-wash); }
 
-/* ---------- 提示 ---------- */
+/* ---------- Notes ---------- */
 
 .note {
   border-left: 3px solid var(--flag);
@@ -325,7 +329,7 @@ tbody tr:hover td { background: var(--accent-wash); }
   margin: -.5rem 0 0;
 }
 
-/* ---------- 测验 ---------- */
+/* ---------- Quiz ---------- */
 
 .quiz {
   border: 1px solid var(--rule);
@@ -388,7 +392,7 @@ tbody tr:hover td { background: var(--accent-wash); }
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 清单与页脚 ---------- */
+/* ---------- Lists and footer ---------- */
 
 ol.tasklist { margin: 0; padding-left: 1.2rem; }
 ol.tasklist > li { margin-bottom: .7rem; }
@@ -414,7 +418,7 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   * { transition: none !important; animation: none !important; }
 }
 
-/* ---------- 打印 ---------- */
+/* ---------- Print ---------- */
 
 @media print {
   :root {
@@ -431,25 +435,25 @@ a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 <div class="wrap">
 
 <p class="kicker">Lesson 0002 · vLLM 0.26.0</p>
-<h1>同一段 prompt，服务报两个数</h1>
-<p class="standfirst">一个是你发过去的长度，一个是它真正算了的长度。前缀缓存把这两个数劈开了，而我们的 jsonl 里只存了其中一个。这一课先说清哪个是哪个，再说清我们现有的数据能不能拆。</p>
+<h1>One prompt, two numbers from the service</h1>
+<p class="standfirst">One is the length you sent. One is the length it actually computed. Prefix caching splits these two numbers apart, and our jsonl only stores one of them. This lesson first sorts out which is which, then sorts out whether our existing data can be split apart.</p>
 
-<h2>先回答你那个问题：这个功能不是我们选的</h2>
+<h2>Answering your question first: this feature was not something we chose</h2>
 
-<p>你问的是"为什么从几个可选功能里选了这个"。前缀缓存的答案很直白：<strong>我们没选，它自己就开着。</strong></p>
+<p>Your question was "why did we choose this one out of the several optional features." Prefix caching's answer is blunt: <strong>we did not choose it, it is on by itself.</strong></p>
 
 <figure class="logline">
 <span class="addr">cache.py<br>L93</span>
 <pre><code>enable_prefix_caching: bool = <mark>True</mark></code></pre>
 </figure>
 
-<p>这是 <code>envs/vllm-env/…/vllm/config/cache.py</code> 第 93 行。要关掉得显式给 <code>--no-enable-prefix-caching</code>（vLLM 自己的源码里就是这么写的，见 <code>kv_transfer/…/nixl/base_worker.py:1712</code>）。我在整个 new1 仓库里搜过 <code>prefix_caching</code> 和 <code>prefix-caching</code>，除了我自己写的教学笔记，一处都没有——三份发射器、生成器、所有 job 脚本，全都没提过它。</p>
+<p>This is line 93 of <code>envs/vllm-env/…/vllm/config/cache.py</code>. Turning it off requires explicitly giving <code>--no-enable-prefix-caching</code> (that is how vLLM's own source writes it too, see <code>kv_transfer/…/nixl/base_worker.py:1712</code>). I searched the whole new1 repo for <code>prefix_caching</code> and <code>prefix-caching</code>, and other than my own teaching notes, there is not a single hit, not in any of the three launchers, the generator, or any job script.</p>
 
-<p>所以真正的选择不在这个旗标上。<strong>我们选的是 prompt 的形状</strong>，而这个形状决定了这个默认功能生效到什么程度。下面两条线，形状是一样的。</p>
+<p>So the real choice is not this flag. <strong>What we chose is the shape of the prompt</strong>, and that shape decides how far this default feature actually reaches. The two lines below share the same shape.</p>
 
-<h2>我们的两条线，都在反复重发同一段开头</h2>
+<h2>Both of our lines keep resending the same opening over and over</h2>
 
-<h3>chat 采集：每一步都把前面整段带上 <span class="where">envs/collect/run_appworld.py</span></h3>
+<h3>Chat collection: every step carries the whole preceding stretch along <span class="where">envs/collect/run_appworld.py</span></h3>
 
 <figure class="logline">
 <span class="addr">L94<br>L98<br>L106</span>
@@ -458,26 +462,26 @@ msgs.append({"role": "user", "content": …})
 msgs.append({"role": "user", …})</code></pre>
 </figure>
 
-<p>一道题一个 <code>msgs</code> 列表，只往后加，从不裁剪。第 13 步那次请求，发过去的是前 12 步的全部内容加上新的一段。客户端日志里能直接看到步数：<code>new1_awdiag_chat_s0.log</code> 第 2 行起，<code>steps=13</code>、<code>steps=18</code>、<code>steps=30</code>——那就是 13 次、18 次、30 次请求，每次的开头都跟上一次一模一样。</p>
+<p>One <code>msgs</code> list per task, only ever appended to, never trimmed. The request at step 13 sends everything from the previous 12 steps plus one new segment. The step count is right there in the client log: <code>new1_awdiag_chat_s0.log</code>, from line 2 on, <code>steps=13</code>, <code>steps=18</code>, <code>steps=30</code>, meaning 13, 18, and 30 requests, each one's opening identical to the one before it.</p>
 
-<h3>注入线：同一个事件发好几枪，只有尾巴不同 <span class="where">pipeline/inject/replay_inject.py</span></h3>
+<h3>Inject line: several shots at the same event, only the tail differs <span class="where">pipeline/inject/replay_inject.py</span></h3>
 
 <figure class="logline">
 <span class="addr">L801</span>
 <pre><code>prompt = <mark>prefix + R.ANALYSIS_OPEN + head</mark> + splice</code></pre>
 </figure>
 
-<p>划出来的三段由事件本身定，一个事件上不管跑几个臂都不变；变的只有最后的 <code>splice</code>。跑四个臂就是四次请求，共享一段几千 token 的开头，从某个位置起才分岔。</p>
+<p>The three marked segments are fixed by the event itself, unchanged no matter how many arms run on that event; only the final <code>splice</code> changes. Running four arms means four requests, sharing an opening of several thousand tokens, branching apart only from some point onward.</p>
 
 <div class="note">
-<strong>这就是前缀缓存最理想的形状。</strong>它的规则很简单：这段开头如果服务刚算过、KV 池里还留着，就直接接着用，不重算。仓库里没有任何一处记录说这两个形状是为了迁就缓存才这么定的——它们各有各的来由，缓存是顺带命中的。
+<strong>This is prefix caching's ideal shape.</strong> Its rule is simple: if this opening was just computed by the service and is still sitting in the KV pool, it gets reused directly, not recomputed. Nothing in the repo records that these two shapes were chosen to suit the cache, they each have their own reasons, and the cache hit is incidental.
 </div>
 
-<h2>日志里看它生效了多少</h2>
+<h2>Seeing how much it took effect, from the log</h2>
 
-<p>下面两行都来自 <code>new1_diag_srv_a.log</code>，就是第 1 课那台 gpt-oss-120b、tokyo108 GPU 0、端口 8103。</p>
+<p>Both lines below come from <code>new1_diag_srv_a.log</code>, the same gpt-oss-120b, tokyo108 GPU 0, port 8103 service from Lesson 1.</p>
 
-<h3>chat 采集跑着的时候 <span class="where">08-02 19:50:14</span></h3>
+<h3>While chat collection was running <span class="where">08-02 19:50:14</span></h3>
 <figure class="logline">
 <span class="addr">L9421</span>
 <pre><code>Avg prompt throughput: <mark>785.1 tokens/s</mark>, Avg generation throughput: 671.8
@@ -485,7 +489,7 @@ tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 11.2%,
 <mark>Prefix cache hit rate: 97.1%</mark></code></pre>
 </figure>
 
-<h3>另一段负载下 <span class="where">08-02 18:38:26</span></h3>
+<h3>Under a different load <span class="where">08-02 18:38:26</span></h3>
 <figure class="logline">
 <span class="addr">L5412</span>
 <pre><code>Avg prompt throughput: <mark>149.4 tokens/s</mark>, Avg generation throughput: 626.8
@@ -493,9 +497,9 @@ tokens/s, Running: 9 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.5%,
 <mark>Prefix cache hit rate: 98.3%</mark></code></pre>
 </figure>
 
-<p>先看那个 <code>149.4 tokens/s</code>。九条请求同时在跑，每条的 prompt 都是几千到几万 token 的对话历史——一秒钟只"处理"149 个 prompt token，听起来不对。</p>
+<p>Look at that <code>149.4 tokens/s</code> first. Nine requests running at once, each one's prompt a conversation history of several thousand to tens of thousands of tokens, and it "processes" only 149 prompt tokens a second. That sounds wrong.</p>
 
-<p>它没错，只是数的东西跟你以为的不是一个：</p>
+<p>It is not wrong, it is just counting something different from what you would assume:</p>
 
 <figure class="logline">
 <span class="addr">loggers.py<br>L146–147</span>
@@ -503,11 +507,11 @@ tokens/s, Running: 9 reqs, Waiting: 0 reqs, GPU KV cache usage: 7.5%,
 self.num_prompt_tokens += iteration_stats.prompt_token_stats.<mark>computed</mark></code></pre>
 </figure>
 
-<p>源码自己写了注释。<strong><code>Avg prompt throughput</code> 数的是真正重算的那部分，命中缓存的不算。</strong>149.4 不是"prompt 处理得慢"，是"绝大部分 prompt 根本没重算"。</p>
+<p>The source's own comment says it. <strong><code>Avg prompt throughput</code> counts only the part that was actually recomputed; whatever hit the cache does not count.</strong> 149.4 does not mean "the prompt was processed slowly," it means "almost none of the prompt was recomputed at all."</p>
 
-<h2>"97.1%" 到底是什么的百分比</h2>
+<h2>What "97.1%" is actually a percentage of</h2>
 
-<p>这个数很容易读成"97% 的请求命中了"。不是。两处源码定死了它的口径：</p>
+<p>This number is easy to misread as "97% of requests hit the cache." It is not. Two places in the source pin down its exact meaning:</p>
 
 <figure class="logline">
 <span class="addr">stats.py<br>L119<br>L141</span>
@@ -522,137 +526,138 @@ self.num_prompt_tokens += iteration_stats.prompt_token_stats.<mark>computed</mar
 def __init__(self, max_recent_requests: int = <mark>1000</mark>) -> None:</code></pre>
 </figure>
 
-<p>所以完整的读法是：<strong>最近 1000 条请求里，被查询的 token 中有 97.1% 是直接拿现成的，没重算。</strong>分子分母都是 token，不是请求条数；而且是个滑动窗口，老的请求会被挤出去——同一台服务在不同时刻印出的命中率不能当成累计值来比。</p>
+<p>So the full reading is: <strong>among the most recent 1000 requests, 97.1% of the tokens queried were served directly from what already existed, without recomputation.</strong> Both numerator and denominator are tokens, not request counts, and it is a sliding window, older requests get pushed out. The hit rate printed by the same service at different moments cannot be treated as a cumulative value for comparison.</p>
 
-<h2>我们存进 jsonl 的那个数，是另一个</h2>
+<h2>The number we store into jsonl is a different one</h2>
 
-<p>采集线和注入线都存了 token 用量，两处存的都是 <code>usage.prompt_tokens</code>：</p>
+<p>Both the collection line and the inject line store token usage, and both store <code>usage.prompt_tokens</code>:</p>
 
 <div class="tbl-scroll">
 <table>
 <thead>
-<tr><th>文件</th><th>行</th><th>存下来的字段</th><th>它是什么</th></tr>
+<tr><th>File</th><th>Line</th><th>Field stored</th><th>What it is</th></tr>
 </thead>
 <tbody>
-<tr><td>envs/collect/common.py</td><td>68 / 89</td><td class="key">usage.prompt_tokens</td><td>整段提示词的完整长度</td></tr>
-<tr><td>pipeline/inject/replay_inject.py</td><td>818</td><td class="key">usage.prompt_tokens</td><td>整段提示词的完整长度</td></tr>
+<tr><td>envs/collect/common.py</td><td>68 / 89</td><td class="key">usage.prompt_tokens</td><td>The full length of the entire prompt</td></tr>
+<tr><td>pipeline/inject/replay_inject.py</td><td>818</td><td class="key">usage.prompt_tokens</td><td>The full length of the entire prompt</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>引擎内部其实是拆开的——<code>stats.py:288</code> 一行就写着 <code>num_computed_tokens = num_prompt_tokens - num_cached_tokens</code>。但这个拆分要传到 API 响应里，得开一个旗标：</p>
+<p>Internally, the engine actually does split this apart, <code>stats.py:288</code> has the one line <code>num_computed_tokens = num_prompt_tokens - num_cached_tokens</code>. But getting that split into the API response requires turning on a flag:</p>
 
 <figure class="logline">
 <span class="addr">cli_args.py<br>L132</span>
 <pre><code>enable_prompt_tokens_details: bool = <mark>False</mark></code></pre>
 </figure>
 
-<p>默认关着，我们一次都没给过。<strong>结论：现有数据里，每条请求实际算了多少 token，拆不出来。</strong>能看到的只有服务端日志里那个按 1000 条滑窗聚合的命中率。</p>
+<p>Off by default, and we have never turned it on once. <strong>Conclusion: in our existing data, how many tokens each request actually computed cannot be split out.</strong> All that is visible is the hit rate aggregated over a 1000-request sliding window in the server log.</p>
 
 <div class="note">
-<strong>这条要写进口径。</strong>如果哪里要报 token 成本，得说清报的是哪一个数。而且注入线上同一事件的几个臂共享一大段前缀——把各臂的 <code>prompt_tokens</code> 加起来，得到的不是服务实际算的量，是发过去的量。命中率 97%–98% 的直接含义就是：被查询的 token 里只有百分之二三真的重算了。
+<strong>This needs to go into the settings record.</strong> Wherever token cost gets reported, it has to say clearly which number is being reported. And on the inject line, several arms of the same event share one large prefix, adding up the <code>prompt_tokens</code> across arms gives you the amount sent, not the amount the service actually computed. A hit rate of 97 to 98 percent means directly: of the tokens queried, only two or three percent were actually recomputed.
 </div>
 
-<h2>练一练</h2>
+<h2>Practice</h2>
 
-<p>不许翻上面。答错立刻有反馈，答完就锁。</p>
-
-<div class="quiz" data-answer="a">
-  <p class="q">1. 我们装的 0.26.0 上，前缀缓存的默认状态是什么？</p>
-  <div class="opts">
-    <button data-k="a">默认开启，不必给旗标</button>
-    <button data-k="b">默认关闭，必须给旗标</button>
-    <button data-k="c">随模型变，未必给旗标</button>
-  </div>
-  <p class="fb" data-k="a">对。<code>config/cache.py:93</code> 是 <code>enable_prefix_caching: bool = True</code>。要关反而得写 <code>--no-enable-prefix-caching</code>。</p>
-  <p class="fb" data-k="b">反了。<code>config/cache.py:93</code> 写的是 <code>= True</code>，默认就开着；要<em>关</em>才需要旗标。</p>
-  <p class="fb" data-k="c">不是。<code>config/cache.py:93</code> 是一个跟模型无关的字段默认值 <code>= True</code>，一律开着。</p>
-</div>
+<p>No scrolling back up. A wrong answer gets feedback immediately, and once you answer, it locks.</p>
 
 <div class="quiz" data-answer="a">
-  <p class="q">2. 日志里 <code>Avg prompt throughput</code> 数的是哪些 token？</p>
+  <p class="q">1. On our installed 0.26.0, what is prefix caching's default state?</p>
   <div class="opts">
-    <button data-k="a">实际重算的那部分</button>
-    <button data-k="b">请求发来的全部量</button>
-    <button data-k="c">命中缓存的那部分</button>
+    <button data-k="a">On by default, no flag needed</button>
+    <button data-k="b">Off by default, a flag is required</button>
+    <button data-k="c">Varies by model, a flag may or may not be needed</button>
   </div>
-  <p class="fb" data-k="a">对。<code>loggers.py:146</code> 的注释原话：excludes cached/transferred。所以 149.4 tokens/s 不代表处理得慢。</p>
-  <p class="fb" data-k="b">不是，正好把命中的那部分排除掉了。<code>loggers.py:146</code>：excludes cached/transferred。</p>
-  <p class="fb" data-k="c">反了。<code>loggers.py:146</code> 累加的是 <code>prompt_token_stats.computed</code>——重算的那部分。</p>
+  <p class="fb" data-k="a">Correct. <code>config/cache.py:93</code> is <code>enable_prefix_caching: bool = True</code>. Turning it off is what requires writing <code>--no-enable-prefix-caching</code>.</p>
+  <p class="fb" data-k="b">Backwards. <code>config/cache.py:93</code> reads <code>= True</code>, on by default; it is turning it <em>off</em> that needs the flag.</p>
+  <p class="fb" data-k="c">No. <code>config/cache.py:93</code> is a model-independent field with a default of <code>= True</code>, always on.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">3. <code>Prefix cache hit rate: 97.1%</code> 的分子分母，单位是什么？</p>
+  <p class="q">2. Which tokens does <code>Avg prompt throughput</code> in the log count?</p>
   <div class="opts">
-    <button data-k="a">最近若干条请求的 token 数</button>
-    <button data-k="b">最近若干条请求的命中条数</button>
-    <button data-k="c">最近若干条请求的分块个数</button>
+    <button data-k="a">Only the part actually recomputed</button>
+    <button data-k="b">The full amount sent in the request</button>
+    <button data-k="c">Only the part that hit the cache</button>
   </div>
-  <p class="fb" data-k="a">对。<code>stats.py:119</code> 明写 queries 是 token 数，<code>stats.py:141</code> 累加的也是 <code>num_tokens</code>。</p>
-  <p class="fb" data-k="b">不是请求条数。<code>stats.py:119</code>：queries refers to the number of <em>tokens</em> that were queried。</p>
-  <p class="fb" data-k="c">这个版本不是按块数。<code>stats.py:119</code> 和 <code>141</code> 用的都是 token 数。</p>
+  <p class="fb" data-k="a">Correct. <code>loggers.py:146</code>'s comment, verbatim: excludes cached/transferred. So 149.4 tokens/s does not mean processing is slow.</p>
+  <p class="fb" data-k="b">No, it specifically excludes the part that hit the cache. <code>loggers.py:146</code>: excludes cached/transferred.</p>
+  <p class="fb" data-k="c">Backwards. <code>loggers.py:146</code> accumulates <code>prompt_token_stats.computed</code>, the part that was recomputed.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">4. 我们 jsonl 里存的 <code>usage.in</code>，是哪一个长度？</p>
+  <p class="q">3. In <code>Prefix cache hit rate: 97.1%</code>, what unit are the numerator and denominator counted in?</p>
   <div class="opts">
-    <button data-k="a">整段提示词的完整长度</button>
-    <button data-k="b">真正重算的那段长度</button>
-    <button data-k="c">命中缓存的那段长度</button>
+    <button data-k="a">Token count over the most recent requests</button>
+    <button data-k="b">Hit count over the most recent requests</button>
+    <button data-k="c">Chunk count over the most recent requests</button>
   </div>
-  <p class="fb" data-k="a">对。<code>common.py:68</code> 存的是 <code>r.usage.prompt_tokens</code>，也就是发过去的全长。</p>
-  <p class="fb" data-k="b">不是。要拿到这个数得开 <code>--enable-prompt-tokens-details</code>，默认关着（<code>cli_args.py:132</code>），我们没开过。</p>
-  <p class="fb" data-k="c">不是。这个数同样要 <code>--enable-prompt-tokens-details</code> 才会出现在响应里，默认关着。</p>
+  <p class="fb" data-k="a">Correct. <code>stats.py:119</code> spells out that queries are a token count, and <code>stats.py:141</code> accumulates <code>num_tokens</code> too.</p>
+  <p class="fb" data-k="b">Not a request count. <code>stats.py:119</code>: queries refers to the number of <em>tokens</em> that were queried.</p>
+  <p class="fb" data-k="c">This version is not counted by chunk. Both <code>stats.py:119</code> and <code>141</code> use a token count.</p>
 </div>
 
 <div class="quiz" data-answer="a">
-  <p class="q">5. 想让每条响应带上"这次命中了多少 token"，要动哪里？</p>
+  <p class="q">4. The <code>usage.in</code> we store in jsonl is which length?</p>
   <div class="opts">
-    <button data-k="a">起服务时加一个旗标</button>
-    <button data-k="b">客户端里加一个字段</button>
-    <button data-k="c">日志里调一个等级</button>
+    <button data-k="a">The full length of the entire prompt</button>
+    <button data-k="b">The length of the part actually recomputed</button>
+    <button data-k="c">The length of the part that hit the cache</button>
   </div>
-  <p class="fb" data-k="a">对。<code>--enable-prompt-tokens-details</code>，服务侧的事。开了之后客户端才读得到 <code>prompt_tokens_details.cached_tokens</code>。</p>
-  <p class="fb" data-k="b">客户端只能读服务给的东西。字段本身由 <code>--enable-prompt-tokens-details</code> 控制，默认关着就根本不出现。</p>
-  <p class="fb" data-k="c">日志等级管不到响应体。要的是 <code>--enable-prompt-tokens-details</code>——它决定响应里有没有这个字段。</p>
+  <p class="fb" data-k="a">Correct. <code>common.py:68</code> stores <code>r.usage.prompt_tokens</code>, the full length sent.</p>
+  <p class="fb" data-k="b">No. Getting that number requires turning on <code>--enable-prompt-tokens-details</code>, off by default (<code>cli_args.py:132</code>), and we never have.</p>
+  <p class="fb" data-k="c">No. That number also only appears in the response with <code>--enable-prompt-tokens-details</code>, off by default.</p>
+</div>
+
+<div class="quiz" data-answer="a">
+  <p class="q">5. To have every response carry "how many tokens this one hit," what needs to change?</p>
+  <div class="opts">
+    <button data-k="a">Add a flag when starting the service</button>
+    <button data-k="b">Add a field in the client</button>
+    <button data-k="c">Adjust a log level</button>
+  </div>
+  <p class="fb" data-k="a">Correct. <code>--enable-prompt-tokens-details</code>, a server-side matter. Only once it is on can the client read <code>prompt_tokens_details.cached_tokens</code>.</p>
+  <p class="fb" data-k="b">The client can only read what the server gives it. The field itself is controlled by <code>--enable-prompt-tokens-details</code>; off by default means it simply never appears.</p>
+  <p class="fb" data-k="c">The log level does not reach the response body. What is needed is <code>--enable-prompt-tokens-details</code>, it decides whether the field exists in the response.</p>
 </div>
 
 <p class="score"></p>
 
-<h2>下一批实验开跑前做这三件事</h2>
+<h2>Three things to do before the next batch of experiments starts</h2>
 
 <ol class="tasklist">
-<li>随手看一眼任何一台服务当下的命中率，判断你的 prompt 形状有没有在浪费算力：
-<pre><code>grep -o "Prefix cache hit rate: [0-9.]*%" &lt;日志&gt; | tail -1</code></pre>
-命中率低而你的负载本该有长共享前缀，说明前缀在某处被打断了（比如每条请求里塞了不同的时间戳）。</li>
-<li>决定要不要 <code>--enable-prompt-tokens-details</code>。<strong>要就得两半一起加</strong>：服务侧给旗标，客户端把 <code>prompt_tokens_details.cached_tokens</code> 一起存进 jsonl。只加一半等于没加——服务给了没人存，或者代码去读一个永远是 <code>None</code> 的字段。</li>
-<li>如果加，按仓库的三件套规矩走：改代码 + 挂 <code>run.py</code> 注册表 + 回写 skill，同一个 commit。</li>
+<li>Glance at any service's current hit rate to judge whether your prompt shape is wasting compute:
+<pre><code>grep -o "Prefix cache hit rate: [0-9.]*%" &lt;log&gt; | tail -1</code></pre>
+A low hit rate where your workload should have a long shared prefix means the prefix got broken somewhere (for example, a different timestamp stuffed into each request).</li>
+<li>Decide whether to turn on <code>--enable-prompt-tokens-details</code>. <strong>If you do, add both halves together</strong>: give the flag server-side, and have the client store <code>prompt_tokens_details.cached_tokens</code> into jsonl alongside it. Adding only half is the same as not adding it, either the server gives it and nobody stores it, or the code reads a field that is always <code>None</code>.</li>
+<li>If you add it, follow the repo's three-part rule: change the code + register in <code>run.py</code> + write back to the skill, all in the same commit.</li>
 </ol>
 
 <div class="foot">
-<p><strong>先读这一份：</strong><a href="https://docs.vllm.ai/en/latest/design/prefix_caching.html">vLLM Automatic Prefix Caching</a>——看它怎么描述"哪些前缀算同一段"。⚠️ 官方文档写的是最新版；口径细节（按 token 还是按块、窗口多长）以我们装的 0.26.0 源码为准，就是本课引的那几行。</p>
-<p><strong>随手查：</strong><span class="local">token 账速查卡</span> · <span class="local">启动日志速查卡</span> · <span class="local">术语表</span>（都在 <code>learn/vllm/</code> 下）</p>
-<p><strong>上一课：</strong><span class="local">一台服务的真实口径，只在启动日志里</span></p>
-<p><strong>有一个词没看懂就问我。</strong>本课引的每一行源码和日志都在机器上，随时可以让我打开给你看。这一课哪里太浅或太深，也直接说。</p>
+<p><strong>Read this one first:</strong> <a href="https://docs.vllm.ai/en/latest/design/prefix_caching.html">vLLM Automatic Prefix Caching</a>, see how it describes "which prefixes count as the same segment." ⚠️ The official docs describe the latest version; for the exact details of the settings (by token or by chunk, how long the window is), our installed 0.26.0 source is the source of truth, which is exactly the lines this lesson cites.</p>
+<p><strong>Quick reference:</strong> <span class="local">Token accounting card</span> · <span class="local">Startup log decoder card</span> · <span class="local">Glossary</span> (all under <code>learn/vllm/</code>)</p>
+<p><strong>Previous lesson:</strong> <span class="local">A service's real settings live only in the startup log</span></p>
+<p><strong>If a term does not make sense, ask me.</strong> Every line of source and every log this lesson cites is on the machine, ready to open for you anytime. If this lesson runs too shallow or too deep anywhere, say so directly.</p>
 </div>
 
 </div>
 
-<!-- 内联自 quiz.js -->
+<!-- inlined from quiz.js -->
 <script>
-/* 共用测验组件。用法（HTML 里不写任何 JS）：
+/* Shared quiz component. Usage (write no JS in the HTML):
  *
  *   <div class="quiz" data-answer="b">
- *     <p class="q">题干</p>
+ *     <p class="q">question stem</p>
  *     <div class="opts">
- *       <button data-k="a">选项一</button>
- *       <button data-k="b">选项二</button>
+ *       <button data-k="a">option one</button>
+ *       <button data-k="b">option two</button>
  *     </div>
- *     <p class="fb" data-k="a">选 a 时给的反馈</p>
- *     <p class="fb" data-k="b">选 b 时给的反馈</p>
+ *     <p class="fb" data-k="a">feedback shown for a</p>
+ *     <p class="fb" data-k="b">feedback shown for b</p>
  *   </div>
  *
- * 反馈立刻出，答完锁定。页面底部若有 <p class="score"> 会自动计分。
+ * Feedback appears immediately, and it locks once answered. If the page has
+ * a <p class="score"> at the bottom it is scored automatically.
  */
 (function () {
   function init() {
@@ -662,7 +667,7 @@ def __init__(self, max_recent_requests: int = <mark>1000</mark>) -> None:</code>
 
     function paint() {
       if (!board) return;
-      board.textContent = '已答 ' + done + '/' + quizzes.length + '，答对 ' + right;
+      board.textContent = 'Answered ' + done + '/' + quizzes.length + ', correct ' + right;
     }
     paint();
 

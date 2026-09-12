@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>逐 token 看一个真实任务被处理</title>
+<title>Watching a Real Task Get Processed, Token by Token</title>
 <link rel="stylesheet" href="../assets/lesson.css">
 <link rel="stylesheet" href="../assets/tokenwalk.css">
 </head>
@@ -11,64 +11,64 @@
 <div class="wrap wide">
 
 <p class="kicker">Reference · vLLM 0.26.0 · run_id hcap</p>
-<h1>逐 token 看一个真实任务被处理</h1>
-<p class="standfirst">下面每一个 token 都是 2026-08-06 从 tokyo108 那台 gpt-oss-120b 上现抓的：客户端自己拼 harmony 提示词走 <code>/v1/completions</code>，带 <code>return_token_ids</code>，服务端把真实生成的 token id 原样交回来。点「下一个 token」，看它一个一个落进哪个桶。</p>
+<h1>Watching a Real Task Get Processed, Token by Token</h1>
+<p class="standfirst">Every token below was captured live on 2026-08-06 from the gpt-oss-120b on tokyo108: the client assembles the harmony prompt itself and goes through <code>/v1/completions</code>, with <code>return_token_ids</code>, and the server hands back the actually-generated token ids unchanged. Click "Next token" to watch each one land in its bucket, one at a time.</p>
 
 <div class="note">
-<p><strong>题目</strong>：Reset friends on venmo to be the same as my friends in my phone. Befriend and unfriend as needed.<br>
-AppWorld <code>test_normal</code> 任务 <code>3d9a636_1</code>，一共走了 13 步。</p>
+<p><strong>Task</strong>: Reset friends on venmo to be the same as my friends in my phone. Befriend and unfriend as needed.<br>
+AppWorld <code>test_normal</code> task <code>3d9a636_1</code>, 13 steps in total.</p>
 </div>
 
 <div id="tw"></div>
 
-<h2>这台机器上真实发生的事</h2>
+<h2>What actually happened on this machine</h2>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>项</th><th>值</th></tr></thead>
+<thead><tr><th>Item</th><th>Value</th></tr></thead>
 <tbody>
-<tr><td class="key">模型</td><td>gpt-oss-120b (mxfp4)，tokyo108 GPU 2 (H100 95G)，端口 8113</td></tr>
-<tr><td class="key">采样</td><td>temperature 0.0，reasoning effort high，max_tokens 8192</td></tr>
-<tr><td class="key">提示词</td><td>客户端自拼，Current date 钉死 2026-08-06</td></tr>
-<tr><td class="key">请求参数</td><td>add_special_tokens=false，skip_special_tokens=false，return_token_ids=true</td></tr>
-<tr><td class="key">这条轨迹</td><td>13 步，输出 token 合计 39088，任务完成=True</td></tr>
-<tr><td class="key">工具调用单发</td><td>另抓一条带函数工具的生成，输出 484 个 token，停在 id 200012</td></tr>
+<tr><td class="key">Model</td><td>gpt-oss-120b (mxfp4), tokyo108 GPU 2 (H100 95G), port 8113</td></tr>
+<tr><td class="key">Sampling</td><td>temperature 0.0, reasoning effort high, max_tokens 8192</td></tr>
+<tr><td class="key">Prompt</td><td>Assembled by the client, Current date pinned to 2026-08-06</td></tr>
+<tr><td class="key">Request parameters</td><td>add_special_tokens=false, skip_special_tokens=false, return_token_ids=true</td></tr>
+<tr><td class="key">This trajectory</td><td>13 steps, 39088 output tokens total, task completed=True</td></tr>
+<tr><td class="key">Single tool-call sample</td><td>A separately captured generation with function tools, 484 output tokens, stopping at id 200012</td></tr>
 </tbody>
 </table>
 </div>
 
-<p class="src">原始记录在 <code>/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/hcap/appworld_gptoss/appworld_3d9a636_1.jsonl</code>，工具调用单发在 <code>/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/hcap/toolcall_single.json</code>。服务端配置见 <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_hcap_srv.log</code>。本页由 <code>learn/vllm/build_token_walk.py</code> 从这些文件现生成，手改会被下次重跑覆盖。</p>
+<p class="src">Raw records at <code>/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/hcap/appworld_gptoss/appworld_3d9a636_1.jsonl</code>, the single tool-call sample at <code>/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/envs/runs/hcap/toolcall_single.json</code>. Server configuration at <code>/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_hcap_srv.log</code>. This page is generated live from these files by <code>learn/vllm/build_token_walk.py</code>; manual edits will be overwritten on the next regeneration.</p>
 
-<h2>抓这批数据时撞见的两件事</h2>
+<h2>Two things encountered while capturing this batch of data</h2>
 
-<h3>一、自己拼和让 vLLM 拼，结果一模一样</h3>
+<h3>1. Assembling it ourselves vs. letting vLLM assemble it: identical results</h3>
 
-<p>拿第 2 步开跑前那一组消息，同一台服务、同一个时刻，两条路各发一次：</p>
+<p>Take the message set right before step 2 starts, on the same service, at the same moment, sent once down each of the two paths:</p>
 
 <div class="tbl-scroll">
 <table>
-<thead><tr><th>路径</th><th>prompt token</th><th>输出 token</th><th>reasoning</th><th>content</th></tr></thead>
+<thead><tr><th>Path</th><th>prompt tokens</th><th>Output tokens</th><th>reasoning</th><th>content</th></tr></thead>
 <tbody>
-<tr><td class="key">自拼 harmony 走 /v1/completions</td><td>1457</td><td>136</td><td>349 字</td><td>120 字</td></tr>
-<tr><td class="key">交 messages 走 /v1/chat/completions</td><td>1457</td><td>136</td><td>349 字</td><td>120 字</td></tr>
+<tr><td class="key">Self-assembled harmony via /v1/completions</td><td>1457</td><td>136</td><td>349 characters</td><td>120 characters</td></tr>
+<tr><td class="key">Handed messages via /v1/chat/completions</td><td>1457</td><td>136</td><td>349 characters</td><td>120 characters</td></tr>
 </tbody>
 </table>
 </div>
 
-<p>content 的前 120 个字符也逐字相同。四项全等，说明手拼那份 harmony 串和服务端 <code>openai_harmony</code> 渲出来的是同一串——之前只有"逐字节比对渲染结果"这一条代码层证据，这次是端到端跑出来的。</p>
+<p>The first 120 characters of content are also identical, character for character. All four values match, which shows that the hand-assembled harmony string and what the server's <code>openai_harmony</code> renders are the same string — before, the only evidence was code-level "byte-for-byte comparison of the rendered result"; this time it came from an end-to-end run.</p>
 
-<h3>二、同一个 prompt、temperature 0，两次跑出来不一样长</h3>
+<h3>2. Same prompt, temperature 0, two runs come out different lengths</h3>
 
-<p>采集时第 2 步撞了 <code>max_tokens</code> 上限：8192 个输出 token，401 段消息，模型在一次生成里自己编环境返回、一轮接一轮往下写，始终没吐 <code>&lt;|return|&gt;</code>。上面那张对照表里同一个 prompt（prompt token 同为 1457）重发一次，只有 136 个输出 token 就正常收尾了。</p>
+<p>During collection, step 2 hit the <code>max_tokens</code> limit: 8192 output tokens, 401 message segments, with the model fabricating environment responses inside one single generation, writing turn after turn without ever emitting <code>&lt;|return|&gt;</code>. Resending the same prompt from the comparison table above (prompt tokens also 1457) once more finished normally with just 136 output tokens.</p>
 
-<p>第 6 步和第 8 步也是 8192 撞顶，形态一样。这条轨迹一共 13 步、输出 token 合计 39088，其中三步占了 24576。</p>
+<p>Steps 6 and 8 also hit the 8192 ceiling, in the same shape. This trajectory has 13 steps in total, 39088 output tokens altogether, of which three steps account for 24576.</p>
 
 <div class="note">
-<p><strong>这两个数只是观测。</strong>为什么同一个 prompt 在 temperature 0 下会跑出两种长度，本页不给解释——没查到证据之前不写机制。</p>
+<p><strong>These two numbers are only an observation.</strong> Why the same prompt at temperature 0 produces two different lengths, this page does not explain — no mechanism gets written until evidence is found.</p>
 </div>
 
 <div class="foot">
-<p><a class="local" href="../reference/prompt-assembly.html">← 速查卡：prompt 是怎么拼出来的</a></p>
+<p><a class="local" href="../reference/prompt-assembly.html">← Cheat Sheet: How the Prompt Gets Assembled</a></p>
 </div>
 
 </div>

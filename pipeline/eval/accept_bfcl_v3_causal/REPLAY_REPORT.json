@@ -275,7 +275,7 @@
  "prior_baseline_event_acc": 0.0487,
  "n_events_test": 226,
  "speculation_economics": {
-  "note": "T4 离线估算;与 T10 fork 对照(在线实测)同量对账。save=截断口径 触发率×提前量;overlap=预取口径 仅触发且对",
+  "note": "T4 offline estimate; reconciled against the same quantity from the T10 fork control (measured online). save = truncation basis, trigger rate x earliness; overlap = prefetch basis, fired and correct only",
   "calB_sweep": [
    [
     0.5,

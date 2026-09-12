@@ -2,637 +2,637 @@
  "startEngine": {
   "readonly": false,
   "count": 161,
-  "reason": "点火",
+  "reason": "starts the engine",
   "flag": null
  },
  "cd": {
   "readonly": false,
   "count": 140,
-  "reason": "改当前目录，猜错会让后续真实命令跑错地方",
+  "reason": "changes the current directory; guessing wrong sends later real commands to the wrong place",
   "flag": null
  },
  "pressBrakePedal": {
   "readonly": false,
   "count": 123,
-  "reason": "踩刹车",
+  "reason": "presses the brake pedal",
   "flag": null
  },
  "get_stock_info": {
   "readonly": true,
   "count": 139,
-  "reason": "查股价",
+  "reason": "queries stock price",
   "flag": null
  },
  "get_nearest_airport_by_city": {
   "readonly": true,
   "count": 99,
-  "reason": "查机场",
+  "reason": "queries an airport",
   "flag": null
  },
  "get_order_details": {
   "readonly": true,
   "count": 85,
-  "reason": "查订单详情",
+  "reason": "queries order details",
   "flag": null
  },
  "lockDoors": {
   "readonly": false,
   "count": 100,
-  "reason": "锁门",
+  "reason": "locks the doors",
   "flag": null
  },
  "ls": {
   "readonly": true,
   "count": 80,
-  "reason": "列目录",
+  "reason": "lists a directory",
   "flag": null
  },
  "fillFuelTank": {
   "readonly": false,
   "count": 86,
-  "reason": "加油",
+  "reason": "fills the fuel tank",
   "flag": null
  },
  "displayCarStatus": {
   "readonly": true,
   "count": 78,
-  "reason": "显示车况",
+  "reason": "displays car status",
   "flag": null
  },
  "get_flight_cost": {
   "readonly": true,
   "count": 94,
-  "reason": "查票价",
+  "reason": "queries flight cost",
   "flag": null
  },
  "place_order": {
   "readonly": false,
   "count": 79,
-  "reason": "下单，动钱",
+  "reason": "places an order, moves money",
   "flag": null
  },
  "echo": {
   "readonly": false,
   "count": 74,
-  "reason": "带 file_name 参数时会写文件",
+  "reason": "writes a file when given the file_name argument",
   "flag": null
  },
  "retrieve_invoice": {
   "readonly": true,
   "count": 82,
-  "reason": "查发票",
+  "reason": "queries an invoice",
   "flag": null
  },
  "send_message": {
   "readonly": false,
   "count": 64,
-  "reason": "发消息，收不回",
+  "reason": "sends a message, cannot be recalled",
   "flag": null
  },
  "book_flight": {
   "readonly": false,
   "count": 77,
-  "reason": "订票，动钱",
+  "reason": "books a flight, moves money",
   "flag": null
  },
  "find": {
   "readonly": true,
   "count": 62,
-  "reason": "查找文件",
+  "reason": "finds a file",
   "flag": null
  },
  "get_symbol_by_name": {
   "readonly": true,
   "count": 74,
-  "reason": "查代码",
+  "reason": "queries a symbol",
   "flag": null
  },
  "cat": {
   "readonly": true,
   "count": 52,
-  "reason": "读文件",
+  "reason": "reads a file",
   "flag": null
  },
  "check_tire_pressure": {
   "readonly": true,
   "count": 60,
-  "reason": "查胎压",
+  "reason": "queries tire pressure",
   "flag": null
  },
  "get_zipcode_based_on_city": {
   "readonly": true,
   "count": 67,
-  "reason": "查邮编",
+  "reason": "queries a zip code",
   "flag": null
  },
  "estimate_distance": {
   "readonly": true,
   "count": 57,
-  "reason": "纯计算距离",
+  "reason": "pure distance computation",
   "flag": null
  },
  "cancel_order": {
   "readonly": false,
   "count": 52,
-  "reason": "撤单",
+  "reason": "cancels an order",
   "flag": null
  },
  "get_watchlist": {
   "readonly": true,
   "count": 58,
-  "reason": "查自选列表",
+  "reason": "queries the watchlist",
   "flag": null
  },
  "touch": {
   "readonly": false,
   "count": 48,
-  "reason": "建文件",
+  "reason": "creates a file",
   "flag": null
  },
  "cancel_booking": {
   "readonly": false,
   "count": 46,
-  "reason": "退票",
+  "reason": "cancels a booking",
   "flag": null
  },
  "post_tweet": {
   "readonly": false,
   "count": 43,
-  "reason": "发推文，收不回",
+  "reason": "posts a tweet, cannot be recalled",
   "flag": null
  },
  "view_messages_sent": {
   "readonly": true,
   "count": 41,
-  "reason": "查已发消息",
+  "reason": "queries sent messages",
   "flag": null
  },
  "create_ticket": {
   "readonly": false,
   "count": 33,
-  "reason": "开工单",
+  "reason": "opens a ticket",
   "flag": null
  },
  "add_to_watchlist": {
   "readonly": false,
   "count": 42,
-  "reason": "写自选列表",
+  "reason": "writes the watchlist",
   "flag": null
  },
  "find_nearest_tire_shop": {
   "readonly": true,
   "count": 35,
-  "reason": "查轮胎店",
+  "reason": "queries a tire shop",
   "flag": null
  },
  "authenticate_twitter": {
   "readonly": false,
   "count": 35,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "estimate_drive_feasibility_by_mileage": {
   "readonly": true,
   "count": 34,
-  "reason": "纯计算可达性",
+  "reason": "pure feasibility computation",
   "flag": null
  },
  "get_account_info": {
   "readonly": true,
   "count": 40,
-  "reason": "查账户",
+  "reason": "queries an account",
   "flag": null
  },
  "contact_customer_support": {
   "readonly": false,
   "count": 37,
-  "reason": "给客服发消息",
+  "reason": "sends a message to customer support",
   "flag": null
  },
  "set_budget_limit": {
   "readonly": false,
   "count": 38,
-  "reason": "设预算上限",
+  "reason": "sets a budget limit",
   "flag": null
  },
  "wc": {
   "readonly": true,
   "count": 30,
-  "reason": "统计行数",
+  "reason": "counts lines",
   "flag": null
  },
  "get_order_history": {
   "readonly": true,
   "count": 38,
-  "reason": "查订单历史",
+  "reason": "queries order history",
   "flag": null
  },
  "mv": {
   "readonly": false,
   "count": 22,
-  "reason": "移动文件",
+  "reason": "moves a file",
   "flag": null
  },
  "get_user_id": {
   "readonly": true,
   "count": 34,
-  "reason": "查用户 id",
+  "reason": "queries the user id",
   "flag": null
  },
  "set_navigation": {
   "readonly": false,
   "count": 29,
-  "reason": "设定导航",
+  "reason": "sets navigation",
   "flag": null
  },
  "compute_exchange_rate": {
   "readonly": true,
   "count": 32,
-  "reason": "纯计算汇率",
+  "reason": "pure exchange-rate computation",
   "flag": null
  },
  "diff": {
   "readonly": true,
   "count": 23,
-  "reason": "比较文件，只读两侧",
+  "reason": "compares files, reads both sides only",
   "flag": null
  },
  "mean": {
   "readonly": true,
   "count": 22,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "ticket_login": {
   "readonly": false,
   "count": 23,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "sort": {
   "readonly": true,
   "count": 18,
-  "reason": "返回排序结果，不写回文件",
+  "reason": "returns the sorted result, does not write back to the file",
   "flag": null
  },
  "resolve_ticket": {
   "readonly": false,
   "count": 22,
-  "reason": "改工单状态",
+  "reason": "changes ticket status",
   "flag": null
  },
  "liter_to_gallon": {
   "readonly": true,
   "count": 22,
-  "reason": "纯换算",
+  "reason": "pure unit conversion",
   "flag": null
  },
  "retweet": {
   "readonly": false,
   "count": 23,
-  "reason": "转推",
+  "reason": "retweets",
   "flag": null
  },
  "get_available_stocks": {
   "readonly": true,
   "count": 24,
-  "reason": "查可交易股票",
+  "reason": "queries tradeable stocks",
   "flag": null
  },
  "verify_traveler_information": {
   "readonly": true,
   "count": 22,
-  "reason": "核对信息，只比对不写入",
+  "reason": "checks information, compares only, does not write",
   "flag": null
  },
  "purchase_insurance": {
   "readonly": false,
   "count": 26,
-  "reason": "买保险，动钱",
+  "reason": "purchases insurance, moves money",
   "flag": null
  },
  "pwd": {
   "readonly": true,
   "count": 19,
-  "reason": "显示当前目录",
+  "reason": "displays the current directory",
   "flag": null
  },
  "tail": {
   "readonly": true,
   "count": 20,
-  "reason": "读文件尾部",
+  "reason": "reads the tail of a file",
   "flag": null
  },
  "message_login": {
   "readonly": false,
   "count": 23,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "get_ticket": {
   "readonly": true,
   "count": 19,
-  "reason": "查工单",
+  "reason": "queries a ticket",
   "flag": null
  },
  "get_booking_history": {
   "readonly": true,
   "count": 19,
-  "reason": "查订票历史",
+  "reason": "queries booking history",
   "flag": null
  },
  "grep": {
   "readonly": true,
   "count": 16,
-  "reason": "文本搜索",
+  "reason": "text search",
   "flag": null
  },
  "remove_stock_from_watchlist": {
   "readonly": false,
   "count": 15,
-  "reason": "写自选列表",
+  "reason": "writes the watchlist",
   "flag": null
  },
  "list_all_airports": {
   "readonly": true,
   "count": 18,
-  "reason": "列机场",
+  "reason": "lists airports",
   "flag": null
  },
  "cp": {
   "readonly": false,
   "count": 20,
-  "reason": "复制文件",
+  "reason": "copies a file",
   "flag": null
  },
  "comment": {
   "readonly": false,
   "count": 14,
-  "reason": "发评论",
+  "reason": "posts a comment",
   "flag": null
  },
  "rm": {
   "readonly": false,
   "count": 11,
-  "reason": "删文件",
+  "reason": "deletes a file",
   "flag": null
  },
  "mkdir": {
   "readonly": false,
   "count": 17,
-  "reason": "建目录",
+  "reason": "creates a directory",
   "flag": null
  },
  "gallon_to_liter": {
   "readonly": true,
   "count": 12,
-  "reason": "纯换算",
+  "reason": "pure unit conversion",
   "flag": null
  },
  "close_ticket": {
   "readonly": false,
   "count": 13,
-  "reason": "关工单",
+  "reason": "closes a ticket",
   "flag": null
  },
  "get_user_tickets": {
   "readonly": true,
   "count": 8,
-  "reason": "查工单",
+  "reason": "queries a ticket",
   "flag": null
  },
  "fund_account": {
   "readonly": false,
   "count": 11,
-  "reason": "入金",
+  "reason": "funds the account",
   "flag": null
  },
  "delete_message": {
   "readonly": false,
   "count": 11,
-  "reason": "删消息",
+  "reason": "deletes a message",
   "flag": null
  },
  "logarithm": {
   "readonly": true,
   "count": 11,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "releaseBrakePedal": {
   "readonly": false,
   "count": 3,
-  "reason": "松刹车",
+  "reason": "releases the brake pedal",
   "flag": null
  },
  "get_current_time": {
   "readonly": true,
   "count": 7,
-  "reason": "查时间",
+  "reason": "queries the current time",
   "flag": null
  },
  "authenticate_travel": {
   "readonly": false,
   "count": 8,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "register_credit_card": {
   "readonly": false,
   "count": 8,
-  "reason": "绑卡",
+  "reason": "registers a credit card",
   "flag": null
  },
  "posting_get_login_status": {
   "readonly": true,
   "count": 9,
-  "reason": "查登录态",
+  "reason": "queries login state",
   "flag": null
  },
  "du": {
   "readonly": true,
   "count": 6,
-  "reason": "查磁盘占用",
+  "reason": "queries disk usage",
   "flag": null
  },
  "round_number": {
   "readonly": true,
   "count": 7,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "mention": {
   "readonly": false,
   "count": 5,
-  "reason": "发@提及",
+  "reason": "posts an @mention",
   "flag": null
  },
  "ticket_get_login_status": {
   "readonly": true,
   "count": 2,
-  "reason": "查登录态",
+  "reason": "queries login state",
   "flag": null
  },
  "trading_logout": {
   "readonly": false,
   "count": 6,
-  "reason": "登出会话，后续真实调用会失效",
+  "reason": "logs out the session; later real calls become invalid",
   "flag": null
  },
  "MA": {
   "readonly": true,
   "count": 7,
-  "reason": "纯计算移动平均",
+  "reason": "pure moving-average computation",
   "flag": null
  },
  "add_contact": {
   "readonly": false,
   "count": 1,
-  "reason": "写通讯录",
+  "reason": "writes the contact list",
   "flag": null
  },
  "deploy": {
   "readonly": false,
   "count": 2,
-  "reason": "身份不明，保守判非只读",
+  "reason": "identity unclear, conservatively judged not read-only",
   "flag": null
  },
  "rmdir": {
   "readonly": false,
   "count": 2,
-  "reason": "删目录",
+  "reason": "deletes a directory",
   "flag": null
  },
  "standard_deviation": {
   "readonly": true,
   "count": 3,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "edit_ticket": {
   "readonly": false,
   "count": 7,
-  "reason": "改工单内容",
+  "reason": "changes ticket content",
   "flag": null
  },
  "setCruiseControl": {
   "readonly": false,
   "count": 3,
-  "reason": "设定巡航",
+  "reason": "sets cruise control",
   "flag": null
  },
  "imperial_si_conversion": {
   "readonly": true,
   "count": 2,
-  "reason": "纯换算",
+  "reason": "pure unit conversion",
   "flag": null
  },
  "get_outside_temperature_from_google": {
   "readonly": true,
   "count": 3,
-  "reason": "查气温",
+  "reason": "queries outside temperature",
   "flag": null
  },
  "trading_login": {
   "readonly": false,
   "count": 3,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "trading_get_login_status": {
   "readonly": true,
   "count": 1,
-  "reason": "查登录态",
+  "reason": "queries login state",
   "flag": null
  },
  "withdraw_funds": {
   "readonly": false,
   "count": 3,
-  "reason": "出金",
+  "reason": "withdraws funds",
   "flag": null
  },
  "get_credit_card_balance": {
   "readonly": true,
   "count": 3,
-  "reason": "查卡余额",
+  "reason": "queries credit card balance",
   "flag": null
  },
  "get_user_tweets": {
   "readonly": true,
   "count": 2,
-  "reason": "查推文",
+  "reason": "queries tweets",
   "flag": null
  },
  "func_startEngine": {
   "readonly": false,
   "count": 4,
-  "reason": "点火（日志里的变体名）",
+  "reason": "starts the engine (a variant name seen in logs)",
   "flag": null
  },
  "line": {
   "readonly": false,
   "count": 3,
-  "reason": "身份不明，保守判非只读",
+  "reason": "identity unclear, conservatively judged not read-only",
   "flag": null
  },
  "sum_values": {
   "readonly": true,
   "count": 1,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "divide": {
   "readonly": true,
   "count": 1,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "display_log": {
   "readonly": true,
   "count": 2,
-  "reason": "显示日志",
+  "reason": "displays a log",
   "flag": null
  },
  "func_call": {
   "readonly": false,
   "count": 1,
-  "reason": "幻觉产物，保守判非只读",
+  "reason": "hallucinated artifact, conservatively judged not read-only",
   "flag": null
  },
  "func_name1": {
   "readonly": false,
   "count": 1,
-  "reason": "幻觉产物，保守判非只读",
+  "reason": "hallucinated artifact, conservatively judged not read-only",
   "flag": null
  },
  "search_messages": {
   "readonly": true,
   "count": 2,
-  "reason": "搜消息",
+  "reason": "searches messages",
   "flag": null
  },
  "get_all_credit_cards": {
   "readonly": true,
   "count": 2,
-  "reason": "列信用卡",
+  "reason": "lists credit cards",
   "flag": null
  },
  "multiply": {
   "readonly": true,
   "count": 1,
-  "reason": "纯计算",
+  "reason": "pure computation",
   "flag": null
  },
  "message_get_login_status": {
   "readonly": true,
   "count": 1,
-  "reason": "查登录态",
+  "reason": "queries login state",
   "flag": null
  },
  "list_users": {
   "readonly": true,
   "count": 1,
-  "reason": "列用户",
+  "reason": "lists users",
   "flag": null
  }
 }

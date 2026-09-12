@@ -1,21 +1,28 @@
-# θ 扫描曲线:省 token vs 正确率
+# theta sweep curve: token savings vs. correctness
 
-- 点数 6  θ 从 0.5 到 0.95
+- 6 points, theta from 0.5 to 0.95
 - miss_policy = skip
-- 事件总数 2138(test 段全部工具调用事件)
+- 2138 events total (every tool-call event in the test segment)
 
-> **省 token 比例 = 部署总账**:分子是 inject 段实际省下的 token 总和,
-> 分母是 nofill 段在**全部出手事件**上的 token 总和。出手但预测不对、
-> 因而没注入的事件省 0 却照样占分母——探针猜错的代价不许从这一轴上抹掉。
-> **正确率这一轴量的是调用一致率**(预测的整条调用与真实是否一致),
-> **不是任务级成绩**。
-> 采纳率 = 续写去干了别的事(说明吃下了注入);重调率 = 又调了一遍被注入的工具。
-> **skip 口径**:预测不对就不注入,所以猜错的代价没进**注入内容**这条账(只进了省 token 的分母)。
+> **Token-saving ratio = the deployment ledger**: the numerator is the total
+> tokens actually saved in the inject segment; the denominator is the total
+> tokens across **every fired event** in the nofill segment. An event that
+> fired but predicted wrong, and so was not injected, saves 0 tokens but still
+> counts in the denominator -- the cost of the probe guessing wrong is not
+> allowed to be erased from this axis.
+> **The correctness axis measures call agreement** (whether the whole
+> predicted call matches the real one), **not task-level success**.
+> Adoption rate = the continuation went off and did something else (meaning it
+> swallowed the injection); re-call rate = the injected tool got called again
+> anyway.
+> **skip basis**: a wrong prediction is not injected, so the cost of a wrong
+> guess never enters the **injected content** ledger (it only enters the
+> token-saving denominator).
 
-## 主表
+## Main table
 
-| θ | 覆盖率 | 出手 | 注入 | 省token比例(部署) | 省token总量 | 注入均省 | 注入中位 | 省为正 | 工具对 | 整条调用对 | 采纳 | 重调 | 晚出手占比 |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| theta | coverage | fired | injected | token-saving ratio (deployment) | total tokens saved | mean saved per injection | median per injection | saving positive | tool match | full call match | adopted | re-called | late-fire share |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 0.5 | 0.9097 | 1945 | 670 | -0.01041 | -42776 | -63.8 | 0 | 0.497 | 0.6607 | 0.3445 | 0.6239 | 0.3224 | 0.0955 |
 | 0.7 | 0.8036 | 1718 | 717 | -0.00796 | -25096 | -35.0 | -15 | 0.4742 | 0.7509 | 0.4173 | 0.6067 | 0.3473 | 0.1688 |
 | 0.8 | 0.7175 | 1534 | 724 | -0.03605 | -93718 | -129.4 | -29 | 0.4544 | 0.8044 | 0.472 | 0.6257 | 0.3343 | 0.2017 |
@@ -23,9 +30,9 @@
 | 0.925 | 0.4963 | 1061 | 686 | -0.10299 | -144259 | -210.3 | -40 | 0.4344 | 0.9057 | 0.6466 | 0.6297 | 0.3367 | 0.2697 |
 | 0.95 | 0.4242 | 907 | 626 | 0.00446 | 5969 | 9.5 | -37 | 0.4233 | 0.925 | 0.6902 | 0.6326 | 0.3163 | 0.2684 |
 
-## 主图两条线(横轴覆盖率)
+## The two lines on the main figure (x-axis is coverage)
 
-| 覆盖率 | θ | 省 token 比例 | 调用一致率 |
+| coverage | theta | token-saving ratio | call agreement rate |
 |---|---|---|---|
 | 0.9097 | 0.5 | -0.01041 | 0.3445 |
 | 0.8036 | 0.7 | -0.00796 | 0.4173 |
@@ -34,14 +41,18 @@
 | 0.4963 | 0.925 | -0.10299 | 0.6466 |
 | 0.4242 | 0.95 | 0.00446 | 0.6902 |
 
-## 时机值不值得学(同一批出手事件,只换出手时刻的决定)
+## Is timing worth learning (same batch of fired events, only the firing moment changes)
 
-> 三列都是部署总账口径、同一个分母。**现行** = 预测对就注入;
-> **深度阈值** = 只在思考段前若干比例处注入(现成信号,不用学);
-> **上帝时机** = 事后只在真能省的事件上注入(完美时机的上限)。
-> 吃到上限的比例 = 现行 / 上帝时机。这一栏越低,时机头的空间越大。
+> All three columns are on the deployment-ledger basis with the same
+> denominator. **Current** = inject when the prediction is correct;
+> **depth threshold** = only inject at a certain fraction into the thinking
+> segment (a ready-made signal, nothing to learn); **oracle timing** = only
+> inject, after the fact, on events that truly save tokens (the ceiling of
+> perfect timing).
+> Ratio reached vs. the ceiling = current / oracle timing. The lower this
+> column is, the more room a timing head has.
 
-| θ | 现行 | 深度阈值(最优切点) | 上帝时机 | 吃到上限 | 亏token的注入 | 省下 | 倒亏 |
+| theta | current | depth threshold (best cut point) | oracle timing | ratio reached | injections that lose tokens | saved | lost |
 |---|---|---|---|---|---|---|---|
 | 0.5 | -0.01041 | 0.02726 (depth<0.2) | 0.11168 | -0.0932 | 337/670 | 459132 | 501908 |
 | 0.7 | -0.00796 | 0.02255 (depth<0.15) | 0.15969 | -0.0498 | 377/717 | 503616 | 528712 |
@@ -50,35 +61,42 @@
 | 0.925 | -0.10299 | -0.00584 (depth<0.25) | 0.2945 | -0.3497 | 388/686 | 412526 | 556785 |
 | 0.95 | 0.00446 | 0.09709 (depth<0.85) | 0.34318 | 0.013 | 361/626 | 459180 | 453211 |
 
-## 服务侧对照(同 θ 同 plan,只换服务条件重跑)
+## Serving-side control (same theta, same plan, only the serving condition rerun)
 
-> greedy 续写在服务端批组成变化下会有数值抖动(replay_inject.py 文件头已列这条已知偏差)。
-> 这张表量的就是那点抖动:同一个 θ、同一份 plan,换一批服务重跑,
-> 省 token 比例差多少。**这个差值是曲线的噪声地板**——曲线上小于
-> 它的起伏不能当成真实趋势来读。
+> Greedy continuation has numeric jitter under changes in server-side batch
+> composition (this known bias is already listed in replay_inject.py's file
+> header). This table measures exactly that jitter: same theta, same plan,
+> rerun against a different batch of servers, how much the token-saving ratio
+> differs. **This difference is the curve's noise floor** -- swings on the
+> curve smaller than it cannot be read as a real trend.
 
-| θ | 主曲线 省token比例 | 对照 省token比例 | 差 | 主曲线 调用一致率 | 对照 调用一致率 | 对照来源 |
+| theta | main curve token-saving ratio | control token-saving ratio | diff | main curve call agreement rate | control call agreement rate | control source |
 |---|---|---|---|---|---|---|
 | 0.875 | -0.01397 | -0.03533 | -0.02136 | 0.5768 | 0.5768 | aw_gptoss_th0875_h100 |
 | 0.925 | -0.10299 | -0.0653 | +0.03769 | 0.6466 | 0.6466 | aw_gptoss_th0925_h100 |
 | 0.95 | 0.00446 | -0.14834 | -0.15280 | 0.6902 | 0.6902 | aw_gptoss_th095_h100 |
 
-**求和型指标的噪声地板 = 0.15280**(对照点里最大的绝对差,共 3 对)。
+**Noise floor for the summed metric = 0.15280** (the largest absolute diff
+among the control pairs, 3 pairs total).
 
-### 逐指标:噪声地板 vs 主曲线跨度
+### Per-metric: noise floor vs. main-curve span
 
-> 噪声地板 = 三对对照里同 θ 两次跑的最大绝对差(只换服务条件)。
-> 跨度 = 该指标在主曲线六个点上的最大值减最小值。
-> **噪声地板 ≥ 跨度的指标不能画进主图**——它测到的全是抖动。
+> Noise floor = the largest absolute diff between the two runs at the same
+> theta, across the three control pairs (only the serving condition changed).
+> Span = the max minus the min of this metric across the six points on the
+> main curve.
+> **A metric whose noise floor >= its span cannot go into the main figure** --
+> everything it measures is jitter.
 
-| 指标 | 噪声地板 | 主曲线跨度 | 跨度/噪声 | 能不能画 |
+| metric | noise floor | main curve span | span/noise | plottable |
 |---|---|---|---|---|
-| 省token比例(求和) | 0.1528 | 0.1075 | 0.7x | **不可** |
-| 省token中位 | 7.0000 | 40.0000 | 5.7x | 可 |
-| 省为正 | 0.0258 | 0.0737 | 2.9x | 勉强 |
-| 调用一致率 | 0.0000 | 0.3457 | infx | 可 |
-| 采纳率 | 0.0122 | 0.0259 | 2.1x | 勉强 |
-| 失控率(不注入) | 0.0199 | 0.0302 | 1.5x | **不可** |
-| 失控率(注入) | 0.0177 | 0.0259 | 1.5x | **不可** |
+| token-saving ratio (summed) | 0.1528 | 0.1075 | 0.7x | **no** |
+| median tokens saved | 7.0000 | 40.0000 | 5.7x | yes |
+| saving positive | 0.0258 | 0.0737 | 2.9x | borderline |
+| call agreement rate | 0.0000 | 0.3457 | infx | yes |
+| adoption rate | 0.0122 | 0.0259 | 2.1x | borderline |
+| runaway rate (not injected) | 0.0199 | 0.0302 | 1.5x | **no** |
+| runaway rate (injected) | 0.0177 | 0.0259 | 1.5x | **no** |
 
-> 判据:跨度至少要有噪声的 3 倍才算能读,2-3 倍勉强,不足 2 倍不可。
+> Criterion: the span must be at least 3x the noise to be readable, 2-3x is
+> borderline, under 2x is unreadable.

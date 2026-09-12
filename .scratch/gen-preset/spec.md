@@ -1,69 +1,75 @@
-# spec: 生成设置进配置文件（gen-preset）
+# spec: generation settings into config files (gen-preset)
 
 Status: ready-for-agent
-日期: 2026-08-20。裁决人 gyb，两个关键选择都选了 a：模型表搬进配置文件；
-vLLM 发射也吃配置。目标是「py 文件只留逻辑，模型和设置放配置，以后能按名字
-选很多套设置」。
+Date: 2026-08-20. Decided by gyb, both key choices picked option a: move the model
+table into config files; vLLM launch also reads from config. The goal is "py files
+keep only logic, models and settings go into config, so later we can pick from many
+sets of settings by name."
 
-## 现状（改动前）
+## Current state (before the change)
 
-gpt-oss 的生成设置散在五处，值不一致：
+gpt-oss's generation settings are scattered across five places, with inconsistent
+values:
 
-| 位置 | temperature | max_tokens | effort | stop |
+| Location | temperature | max_tokens | effort | stop |
 |---|---|---|---|---|
-| `envs/collect/common.py:48` Chat 缺省 | 0.0 | 8192 | None（harmony 提示词里落 medium） | 无 |
-| `envs/collect/run_appworld.py:65` + `gen_launch.py:64` | 同上 | 同上 | chat 模式钉 high | 无 |
-| `envs/collect/bfcl_gptoss/gpt_oss_chat.py:58-61` | BFCL 自带 | 16384（写死） | high（写死） | 无 |
-| `pipeline/inject/live_appworld.py:76,387-388,549` | 0.0 | 8192 | high | `["<\|return\|>"]` |
-| `pipeline/inject/replay_inject.py:812-813,1283` | 0.0 | 8192（CLI 缺省） | 不适用（续写） | `["<\|return\|>"]` |
+| `envs/collect/common.py:48` Chat default | 0.0 | 8192 | None (falls to medium in the harmony prompt) | none |
+| `envs/collect/run_appworld.py:65` + `gen_launch.py:64` | same as above | same as above | chat mode pinned to high | none |
+| `envs/collect/bfcl_gptoss/gpt_oss_chat.py:58-61` | BFCL's own | 16384 (hardcoded) | high (hardcoded) | none |
+| `pipeline/inject/live_appworld.py:76,387-388,549` | 0.0 | 8192 | high | `["<|return|>"]` |
+| `pipeline/inject/replay_inject.py:812-813,1283` | 0.0 | 8192 (CLI default) | not applicable (continuation) | `["<|return|>"]` |
 
-模型路径的现状：`model_registry.py` 自称唯一映射但零个 import 方；
-`envs/serve_logs/launch_vllm_*.py` 13 个发射器各自写死路径/端口/环境变量；
-NFS 上 LFM2.5-350M-Base、Qwen3-0.6B-Base、MirrorAPI-Cache 三个在用的模型
-没进注册表（MAP.md:177 记了前两个；MirrorAPI-Cache 在 run.py:414 写死）。
+Current state of model paths: `model_registry.py` claims to be the single mapping
+but has zero importers; the 13 launchers in `envs/serve_logs/launch_vllm_*.py`
+each hardcode their own path/port/environment variables; three models in active
+use on NFS, LFM2.5-350M-Base, Qwen3-0.6B-Base, and MirrorAPI-Cache, are not in
+the registry (MAP.md:177 records the first two; MirrorAPI-Cache is hardcoded
+in run.py:414).
 
-轨迹 meta 现在只记 env/task_id/model/instruction（run_appworld.py:100-102），
-采样参数与 effort 全都没落痕。
+Trajectory meta currently only records env/task_id/model/instruction
+(run_appworld.py:100-102); sampling parameters and effort leave no trace at all.
 
-## 设计
+## Design
 
-### 文件布局
+### File layout
 
 ```
 configs/
-  README.md          # 头一行写清与 pipeline/configs/ 的分工
-  models.json        # 唯一模型地址映射（model_registry.py 改从这里读）
+  README.md          # first line states clearly the division of labor with pipeline/configs/
+  models.json        # the single model address mapping (model_registry.py switches to reading from here)
   presets/
-    gptoss_chat_high.json      # 采集线 chat 口径（=现状 gen_launch 的 gptoss 附加旗标）
-    gptoss_harmony_medium.json # 采集线 harmony 口径（=现状 run_appworld --api harmony 缺省）
-    gptoss_bfcl_high.json      # BFCL 线（=现状 gpt_oss_chat.py 写死值）
-    gptoss_live_high.json      # 活跑线（=现状 live_appworld 缺省）
-    gptoss_replay.json         # 回放续写线（=现状 replay_inject run 缺省）
+    gptoss_chat_high.json      # collection-line chat convention (= current gen_launch's gptoss extra flags)
+    gptoss_harmony_medium.json # collection-line harmony convention (= current run_appworld --api harmony default)
+    gptoss_bfcl_high.json      # BFCL line (= current gpt_oss_chat.py hardcoded values)
+    gptoss_live_high.json      # live-run line (= current live_appworld default)
+    gptoss_replay.json         # replay-continuation line (= current replay_inject run default)
 ```
 
-`pipeline/configs/` 管数据批次（哪些轨迹、怎么切分），`configs/` 管生成设置
-（模型、服务端参数、采样参数）。两边 README 头一行互相指认。
+`pipeline/configs/` manages data batches (which trajectories, how they're split);
+`configs/` manages generation settings (model, server parameters, sampling
+parameters). The first line of each README points to the other.
 
-### models.json 结构
+### models.json structure
 
 ```json
 {
-  "models": {"别名": {"path": "...", "note": "..."}},
+  "models": {"alias": {"path": "...", "note": "..."}},
   "aliases": {"qwen3.6": "qwen3.6-27b", "qwen3.5": "qwen3.5-27b"}
 }
 ```
 
-搬 `model_registry.py` 的 MODELS/ALIASES 全部条目，补三条：
-LFM2.5-350M-Base、Qwen3-0.6B-Base、MirrorAPI-Cache（路径都在
-`/net/tokyo100-10g/data/str01_01/y-guo/models/` 下，2026-08-20 ls 验证在盘）。
-`model_registry.py` 改成读 json 的薄壳，`resolve()` 签名与行为一字不改，
-`python3 model_registry.py <别名>` 的 CLI 行为也不改。
+Move all entries of `model_registry.py`'s MODELS/ALIASES, and add three:
+LFM2.5-350M-Base, Qwen3-0.6B-Base, MirrorAPI-Cache (all paths under
+`/net/tokyo100-10g/data/str01_01/y-guo/models/`, verified on disk with ls on
+2026-08-20). `model_registry.py` becomes a thin shell that reads the json,
+`resolve()`'s signature and behavior do not change one bit, and the CLI
+behavior of `python3 model_registry.py <alias>` does not change either.
 
-### 预设结构（configs/presets/<名>.json）
+### Preset structure (configs/presets/<name>.json)
 
 ```json
 {
-  "desc": "一句话说明这套设置是哪条线的什么口径",
+  "desc": "One sentence stating which line this set of settings is for and what convention it follows",
   "model": "gpt-oss-120b",
   "server": {
     "host": "tokyo108",
@@ -88,90 +94,115 @@ LFM2.5-350M-Base、Qwen3-0.6B-Base、MirrorAPI-Cache（路径都在
 }
 ```
 
-server 节与 client 节都可省（活跑/回放预设不带 server 节，服务另起）。
-null 等于「不指定，用调用方原有缺省」。GPU 卡号不进预设：挑卡是发射时
-gpu-run 的事，`serve_preset.py` 用 `--gpu` 接。
+Both the server section and the client section can be omitted (live-run/replay
+presets carry no server section; the service is started separately). null means
+"not specified, use the caller's original default." GPU card numbers do not go
+into the preset: picking a card is gpu-run's job at launch time; `serve_preset.py`
+takes it via `--gpu`.
 
-### 读取器 preset_loader.py（仓库根，纯标准库）
+### Reader preset_loader.py (repo root, pure standard library)
 
-- `load_models()` / `load_preset(name)` / `list_presets()`。
-- `validate(preset)`：未知键、类型错、model 别名不在 models.json，三类都报错。
-- `merge_client(cli, client_node, fallbacks)`：三层优先级
-  CLI 显式值 > 预设值 > 原有缺省。cli 字典里 None 视为「没显式给」。
-- 入口脚本里 argparse 原来带实义缺省的字段（如 live 的 --effort high、
-  replay 的 --max-tokens 8192）改成 default=None，原缺省值挪进 fallbacks，
-  这样才分得清「用户给了」和「落缺省」。效果不变。
+- `load_models()` / `load_preset(name)` / `list_presets()`.
+- `validate(preset)`: reports errors for all three cases: unknown keys, type
+  errors, and a model alias not in models.json.
+- `merge_client(cli, client_node, fallbacks)`: three-level priority, explicit
+  CLI value > preset value > original default. None in the cli dict counts as
+  "not explicitly given."
+- Fields in entry-script argparse that used to carry meaningful defaults (such
+  as live's --effort high, replay's --max-tokens 8192) change to default=None,
+  and the original default values move into fallbacks, so that "the user gave
+  it" and "fell to default" can be told apart. The effect does not change.
 
-### 七个入口接 --preset
+### Seven entry points wire up --preset
 
 run_appworld / run_alfworld / run_tales / run_tau2 / live_appworld /
-replay_inject(run 子命令) 各加 `--preset 名`。合并后传给 Chat/请求体。
-预设带 server 节时，`--model` 与 `--base-url` 可省：model 取
-server.served_model_name，base_url 取 `http://{host}:{port}/v1`；
-显式给了照旧压过。**不传 --preset 时一切行为与现在逐字节相同。**
+replay_inject (the run subcommand) each get a `--preset name` flag added.
+After merging, it's passed to Chat/the request body. When the preset carries
+a server section, `--model` and `--base-url` can be omitted: model takes
+server.served_model_name, base_url takes `http://{host}:{port}/v1`; an
+explicit value still overrides as before. **When --preset is not passed, all
+behavior stays byte-for-byte identical to now.**
 
-bfcl 的 gpt_oss_chat.py 是拷进 BFCL venv 的文件，没有自己的 CLI，
-改成读环境变量 `NEW1_PRESET_JSON`（预设文件的绝对路径）：设了就取
-client 节的 max_tokens/reasoning_effort，没设走现在的写死值。
+bfcl's gpt_oss_chat.py is a file copied into the BFCL venv with no CLI of its
+own; it changes to reading the environment variable `NEW1_PRESET_JSON` (the
+preset file's absolute path): when set, it takes max_tokens/reasoning_effort
+from the client section; when not set, it falls back to the current
+hardcoded values.
 
-### 落痕
+### Leaving traces
 
-- Chat 加 `settings()` 方法，返回 api/model/temperature/max_tokens/
-  reasoning_effort/start_date 字典；四个采集器把
-  `gen_settings=chat.settings()` 和 `preset=<名或 None>` 塞进 TrajLog meta。
-  annotate 侧 build.py 只按键取值，多键无害。
-- live_appworld 的 meta dict（run_task 里）加 preset 名。
-- serve_preset.py 发射时把预设全文抄一份到日志目录 `<session>.preset.json`。
-- RUNMETA 自动抓 argv，preset 名随 argv 进 RUNMETA，不用额外做。
-- run_id 带预设名写成 DATA.md 检查清单一条。
+- Chat gets a `settings()` method that returns a dict of api/model/temperature/
+  max_tokens/reasoning_effort/start_date; the four collectors put
+  `gen_settings=chat.settings()` and `preset=<name or None>` into the TrajLog
+  meta. On the annotate side, build.py only reads by key, so extra keys are
+  harmless.
+- live_appworld's meta dict (inside run_task) gets the preset name added.
+- serve_preset.py copies the full preset text to the log directory as
+  `<session>.preset.json` at launch time.
+- RUNMETA auto-captures argv, so the preset name rides along with argv into
+  RUNMETA; nothing extra needed.
+- run_id carrying the preset name becomes one item on the DATA.md checklist.
 
-### serve_preset.py（仓库根）+ run.py 注册
+### serve_preset.py (repo root) + run.py registration
 
-读预设 server 节 + models.json 解析路径，拼与 launch_vllm_gptoss.py 同构的
-ssh+tmux 命令。参数：`--preset` 必给、`--gpu` 必给、`--host/--port/--session`
-覆盖预设、`--dry-run` 只打印不执行。session 缺省 `new1_vllm_<host>_<preset名>`。
+Reads the preset's server section plus models.json to resolve the path, and
+assembles an ssh+tmux command isomorphic to launch_vllm_gptoss.py's.
+Arguments: `--preset` required, `--gpu` required, `--host/--port/--session`
+override the preset, `--dry-run` only prints without executing. session
+defaults to `new1_vllm_<host>_<preset name>`.
 
-run.py TASKS 加：
+run.py TASKS adds:
 
 ```python
 "serve-preset": dict(stage="live", py="sys", script="serve_preset.py",
                      handoff=True, gpu=True, ...)
 ```
 
-handoff+gpu：show 出命令、过脏树门禁、发射走 gpu-run。
-gen_launch.py 的 `GPTOSS_CLIENT_EXTRA` 改成 `--preset gptoss_chat_high`
-（展开后与旧串逐项等价），文档行同步。
+handoff+gpu: show prints the command, it passes the dirty-tree gate, and the
+launch itself goes through gpu-run. gen_launch.py's `GPTOSS_CLIENT_EXTRA`
+changes to `--preset gptoss_chat_high` (equivalent item-for-item to the old
+string once expanded); the doc line is updated in sync.
 
-### 验收
+### Acceptance
 
-1. `run.py selfcheck` 扩展：逐份预设过 validate；models.json 每条有
-   path+note、aliases 指向存在的键。
-2. tests/test_preset.py（unittest，sys python3 可跑）：
-   - 五份预设逐份 validate 通过；
-   - resolve("gpt-oss-120b") 等于改前的路径字符串（防搬运抄错）；
-   - merge_client 三层优先级各一个用例；
-   - 等价性：gptoss_chat_high 展开后 == {api:chat, effort:high, temp:0.0,
-     max_tokens:8192}；其余四份预设逐份对现状表；
-   - serve_preset --dry-run 对 gptoss_chat_high 生成的 vllm serve 命令串,
-     与 launch_vllm_gptoss.py 的 CMD 逐词对比（端口/旗标/环境变量）。
-3. 各入口用各自 venv 的 python 跑 `--help` 或 py_compile，确认改后能 import。
-4. 旧命令等价：用 appworld venv 起 run_appworld 的设置解析函数，
-   `--preset gptoss_chat_high` 与 `--api chat --reasoning-effort high`
-   两组 args 产出的 Chat 参数字典逐键相等。
+1. `run.py selfcheck` extended: run validate over each preset one by one;
+   every models.json entry has path+note, and aliases point to keys that
+   exist.
+2. tests/test_preset.py (unittest, runnable with sys python3):
+   - each of the five presets passes validate;
+   - resolve("gpt-oss-120b") equals the pre-change path string (guards
+     against a copy-paste error while moving it);
+   - one test case each for merge_client's three-level priority;
+   - equivalence: gptoss_chat_high expands to == {api:chat, effort:high,
+     temp:0.0, max_tokens:8192}; the other four presets each checked against
+     the current-state table;
+   - the vllm serve command string serve_preset --dry-run generates for
+     gptoss_chat_high is compared word-by-word against
+     launch_vllm_gptoss.py's CMD (port/flags/environment variables).
+3. Each entry point runs `--help` or py_compile with its own venv's python,
+   confirming it can import after the change.
+4. Old command equivalence: using the appworld venv to invoke
+   run_appworld's settings-parsing function, the two argument sets
+   `--preset gptoss_chat_high` and `--api chat --reasoning-effort high`
+   produce Chat parameter dicts equal key by key.
 
-### 不做的事
+### Not doing
 
-- 13 个旧 launch_vllm_*.py 一个不动，留作历史。
-- 不给 qwen 线造预设（这次只管 gpt-oss；机制是通用的，加一份 json 就行）。
-- vLLM 服务端参数里挑卡（GPU 号）不进预设。
-- CELLS/EVAL_CELLS（训练/评测四格）不动，探针训练不是生成设置。
+- The 13 old launch_vllm_*.py files are left untouched, kept as history.
+- No presets are built for the qwen line (this round only covers gpt-oss;
+  the mechanism is general, adding one json file is enough).
+- Picking a card (GPU number) in vLLM server-side parameters does not go
+  into the preset.
+- CELLS/EVAL_CELLS (the training/eval four cells) are left untouched; probe
+  training is not a generation setting.
 
-### 收尾清单
+### Wrap-up checklist
 
-MAP.md（configs/ 与 serve_preset.py 与 preset_loader.py 三行、
-model_registry 行更新、§已知坑里"缺条目"一条销掉）；
-probe-pipeline references/stage-commands.md 与 extending.md 里
-`--api chat --reasoning-effort high` 的位置回写 --preset 说法；
-bfcl RUNBOOK.md 补 NEW1_PRESET_JSON；configs/README.md 与
-pipeline/configs/README.md 互指；DATA.md 检查清单加一条；TIMELINE 补条目；
-`run.py selfcheck` 全绿后代码+注册表+配置同一个 commit。
+MAP.md (three lines for configs/, serve_preset.py and preset_loader.py; the
+model_registry line updated; the "missing entry" item in §Known Pitfalls
+struck out); the `--api chat --reasoning-effort high` spots in probe-pipeline's
+references/stage-commands.md and extending.md are rewritten to the --preset
+phrasing; bfcl RUNBOOK.md gets NEW1_PRESET_JSON added; configs/README.md and
+pipeline/configs/README.md point to each other; DATA.md checklist gets one
+more item; TIMELINE gets an entry added; once `run.py selfcheck` is all
+green, code + registry + config go in the same commit.

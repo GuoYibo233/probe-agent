@@ -1,343 +1,333 @@
-# extending — 接入新模型 / 新环境 / 新训练方法 / 新 split 的改动清单
+# extending: the change checklist for integrating a new model / new environment / new training method / new split
 
-本文件回答一件事:要在这条五段流水线上加**新的被探测模型**(§1)、**全新环境**(§2)、**新训练方法即新格**(§3)、**新 split 方法**(§4),到底要动哪些文件的哪几行,漏改会报错还是会静默出错;§5 是静默失败点总表,§6 是"改完之后怎么把新方法写回 skill"。
-逐条结论都标了 `文件:行号`(2026-07-31 c1 批次的代码状态);流程说明在上一层 `SKILL.md`,照抄命令去同目录 `stage-commands.md`,判分口径去 `invariants.md`。
+This file answers one question: to add a **new probed model** (§1), a **brand-new environment** (§2), a **new training method, i.e. a new cell** (§3), or a **new split method** (§4) to this five-stage pipeline, exactly which lines of which files need to be touched, and whether missing one causes an error or a silent failure; §5 is the silent-failure-point table, §6 is "how to write the new method back into the skill once it's done."
+Every conclusion is tagged with `file:line` (the code state as of the 2026-07-31 c1 batch); the process description is one level up in `SKILL.md`, go to `stage-commands.md` in the same directory to copy commands, go to `invariants.md` for the scoring convention.
 
-**横切一条(2026-08-02 起,四种情形通用)**:下面每一份必改清单都隐含最后一步——
-把新脚本/新格/新配方挂进仓库根 `run.py` 的注册表(TASKS / RECIPES / CELLS /
-EVAL_CELLS),同一个 commit 里完成,`python3 run.py selfcheck` 通过才算改完。
-漏挂的后果是静默的:入口地图缺这一格,下一个人回到手翻文档考古的老路;
-训练格漏挂更直接——`ops/launch_probe.py` 的格表就是从 run.py 的 `CELLS` import 的,
-没挂 = 发射器不认识这个格。**评测格表的真源同样在 run.py,是它的 `EVAL_CELLS`**
-(格 → `(run.py 任务名, 依赖的工具格|None)`),`ops/launch_eval.py` 只 import、
-并从对应 TASKS 条目取解释器/脚本/固定参数,别处不许再抄一份同构表。
-
----
-
-## 1. 情形 A:加一个新的被探测模型(同环境 appworld)
-
-全流水线只有**三处**枚举了模型短名:`rules.py:18`、`gen_launch.py:47-54`、`summarize_matrix.py:67`。其余全部按 `--data` / config 走路径。
-
-### 1.1 必改清单
-
-| 文件:行 | 改什么 | 漏改的后果 | 改动量 |
-|---|---|---|---|
-| `pipeline/annotate/rules.py:18` | `MODEL_OF` 加一行 `"<key>": "<model_full>"` | `build.py:41-43` / `param_label.py:42-43` 拿 `MODEL_OF.get(目录名尾巴)` 认模型,取不到就 `continue` **静默跳过整个采集目录**;单模型建库时后续 `build.py:225-227` 会因"过滤后零事件"退 1(响),但同批别的模型照常出数 | 加一行 |
-| `pipeline/collect/gen_launch.py:47-54` | `MODEL_TABLE` 加一条 `dict(served=, const=ZMODELS/YMODELS, weights=, family=)` | `gen_launch.py:93-94`(server)与 `105-107`(client)`die` 退 2,响 | 加一条 |
-| `pipeline/collect/gen_launch.py:47-54` 的 `family` 字段 | 只有 `"qwen"` 与 `"gptoss"` 两族有分支 | ⚠️**静默**:`serve_flags()`(`gen_launch.py:172-177`)把非 qwen 一律当 gptoss 发旗标(只给 `--gpu-memory-utilization 0.92`,不给 tool-call parser);`gen_clients` 同理(`gen_launch.py:266`)会给它加 `--preset default`(2026-08-20 起走预设文件,展开后 = harmony / effort high / 温度 1.0 / top_p 1.0 / max_tokens 8192,预设在 `configs/presets/`)。生成的发射脚本能跑,只是服务端解析口径不对 | 新族要加一个分支 |
-| 新建 `pipeline/configs/<BATCH>_<MODEL>.json` | 照抄 `pipeline/configs/aw_q35.json`(19 行),换 `model_short` / `model_full` / `data_out` 三处 | `model_full` 必须与 `MODEL_OF` 的值**逐字**相同,否则 `build.py:225-227` 退 1(响) | 新建一份 json |
-| 新建 `pipeline/collect/manifest_<BATCH>.json` | 照抄 `pipeline/collect/manifest_w0.json`,加 `servers[]` 与 `clients[]` | 校验规则见 `gen_launch.py:86-122`(单机、端口/session/卡不重复、`len(shard_ports)==num_shards`、分片端口的模型必须对上),全部 `die` 退 2,响 | 新建一份 json |
-| `pipeline/eval/summarize_matrix.py:82` | `--models` 默认表加新模型,或每次命令行显式传全 | ⚠️**静默**:不传就是这条默认表,新模型的四行**根本不出现在矩阵表里**,脚本退 0、stdout 也不提 | 改一行 / 命令行加参数 |
-| `ops/<BATCH>_placement.json` | 照 `ops/c1_placement.json`(12 行)加四行(model/cell/host/gpu,ctool 那行带 `--align-tol`) | 排卡表是人读的输入,漏了只是重发时要重新推机位 | 加四行 |
-
-### 1.2 不用改的(省得白费功夫)
-
-- **四个训练脚本一个字都不用改**。`--env` 在训练侧**纯粹是日志标签**:四个脚本各有一条 `ap.add_argument("--env", default="appworld", …)`,`args.env` 的全部用处就是 `log(event="start", env=args.env, …)` 那一行,外加 mext 与 ctool 写 `best/meta.json` 时带上它——没有任何一处进入数据路径或损失。(**按 `--env` / `args.env` grep,不引行号:这批行号漂过。**)
-- **底座权重常量不用改**:`train_mbert_tool.py` 与 `train_mbert_extract.py` 的模块级常量 `MODEL`(ModernBERT-base)、`train_causal_tool.py` 的 `MODELS` 表、`train_causal_callgen.py` 的 `QWEN`(**按常量名 grep,不引行号——这批行号漂过一次**)。这四个是**探针自己的骨架**,与被探测的 agent 模型无关。
-- **四个 eval 脚本不用改**:模型全靠 `--run` / `--data` 指路径。
-- **`pipeline/inject/check_bundle.py` 不用改**:全文无环境常量也无模型表,参数只有 `--run/--data/--head/--device/--dtype/--index/--temperature/--max-len`(全在它的 `main()` 里,grep `add_argument`)。
-- **`pipeline/annotate/accept_v3diff.py` 不用改**:输入路径写死旧数据(模块级常量 `BASE` / `RUNS` / `V3`),它只负责证明新代码复现旧口径,不该跟着新模型走。
-- `rules.py` 的 `AW_CALL`/`BFCL_CALL` 两个正则常量不用改——同环境同解析。
-
-### 1.3 最短路径
-
-1. 改 `rules.py:18` + `gen_launch.py:47-54`,写 config 与 manifest → **stage-commands §1** 生成发射器(先 `--dry-run --out-override`)。
-2. **stage-commands §1** 正式生成 → 走 gpu-run 采集,验 outdir 名必须是 `appworld_<key>`(`gen_launch.py:117-122` 会强制改名并 WARN)。
-3. **stage-commands §2**:`build.py` + `param_label.py`,各一次,同一份 config。
-4. **stage-commands §3**:各格 `--smoke` → **§5** `check_bundle.py --device cpu` → 各格全量。
-5. **stage-commands §4.1** 的依赖顺序:先 `eval_tool.py`(mtool/ctool),再 `eval_mbert_call.py` / `eval_causal_call.py`。
-6. **stage-commands §4.2** 的 `summarize_matrix.py`,**记得带 `--models ... <新模型>`**。
+**One cross-cutting item (since 2026-08-02, applies to all four scenarios below)**: every mandatory-change checklist below has an implied last step:
+hook the new script/new cell/new recipe into the repo root `run.py`'s registry (TASKS / RECIPES / CELLS /
+EVAL_CELLS), done in the same commit, and only counts as finished once `python3 run.py selfcheck` passes.
+The consequence of missing this hook is silent: the entry-point map is missing this cell, and the next person is back to hand-digging through the docs like an archaeologist;
+missing a training-cell hook is more direct: `ops/launch_probe.py`'s cell table is imported straight from run.py's `CELLS`,
+not hooking it in means the launcher doesn't recognize this cell. **The eval-cell table's source of truth is likewise in run.py, its `EVAL_CELLS`**
+(cell -> `(the run.py task name, the tool cell it depends on | None)`), `ops/launch_eval.py` only imports it,
+and takes the interpreter/script/fixed params from the corresponding TASKS entry; no second copy of this isomorphic table may be kept anywhere else.
 
 ---
 
-## 2. 情形 B:加一个全新环境
+## 1. Scenario A: add a new probed model (same environment, appworld)
 
-### 2.1 必改清单
+The whole pipeline enumerates model short names in only **three places**: `rules.py:18`, `gen_launch.py:47-54`, `summarize_matrix.py:67`. Everything else goes by path via `--data` / config.
 
-| 文件:行 | 改什么 | 漏改的后果 | 改动量 |
+### 1.1 Mandatory change checklist
+
+| File:line | What to change | Consequence of missing it | Amount of change |
 |---|---|---|---|
-| `pipeline/annotate/build.py:135-148` | `collect_events` 加 `elif env == "<新env>"` 分支,指定 glob 模式 | `build.py:146` `raise SystemExit(f"未知环境")` 退 1,响 | 加一个分支 |
-| `pipeline/annotate/param_label.py:114-130` | 同上,另一份独立的 `collect_events` | `param_label.py:124` 同样 SystemExit,响 | 加一个分支 |
-| `pipeline/annotate/build.py:63-79` | `jsonl_events` 里的事件抽取:`63-69` 是 appworld 分支,`70-79` 是 else | ⚠️**静默**:else 是 **catch-all**,注释写着 tales,但**任何非 appworld 的 env 都会落进来**,拿到"命令首词 = 工具名、剩下整串 = 唯一参数"的语义。数据能造出来、报告也正常,只是标签口径全错 | 加一个分支 |
-| `pipeline/annotate/param_label.py:56-69` | 同一处 catch-all,参数侧的副本 | 同上,且两份必须同口径,否则 `param_label.py:202` 的 `assert tool == r["label"]` 才会响 | 加一个分支 |
-| `pipeline/annotate/build.py:50-51` | `unit` 派生:`env=="tales"` 用 `seed<n>`,其余用 `meta["task_id"]`,再退到文件名 | 新环境若 meta 里没有 `task_id`,unit 变成文件名 → 对不上题单 → `build.py:235-237` 退 1(响,但错误信息会指向题单而不是这里) | 加一个分支 |
-| `pipeline/annotate/rules.py:55-56` | 调用正则。新环境的调用语法若既不是 `apis.x.y(` 也不是 `名字(`,要新增一条 | 正则不匹配 = 该步不产事件,**静默少样本** | 加一个常量 |
-| `pipeline/eval/eval_causal_call.py:117-124` | `parse_call` 的 `name_re` 与工具名拼法,现在是"appworld 用 AW_CALL,**其余一律 BFCL_CALL**" | ⚠️**静默**:新环境走 BFCL_CALL 兜底,解析出来的工具名与真值对不上,`tool_ok` 全 false,数字整体塌陷,退出码 0 | 加一个分支 |
-| 七处 `--env` 的 `choices` | `eval_tool.py:223-224`、`eval_mbert_call.py:108-109`、`eval_causal_call.py:196-197`、`train_mbert_tool.py:83-84`、`train_mbert_extract.py:212-213`、`train_causal_tool.py:231-232`、`train_causal_callgen.py:180-181` | argparse 直接拒绝,响 | 七处各加一个字符串 |
-| `pipeline/collect/gen_launch.py` 的 `ENV_TABLE` | 加一条 `"<新env>": dict(venv=, runner=, fn=, common=)`——`venv` = `envs/<venv>/venv` 下的解释器、`runner` = `envs/collect/` 下的采集器文件名、`fn` = 生成的 sh 里那个函数叫什么、`common` = 该环境的统一客户端参数(如 `--n 0 --max-steps 50`) | `load_manifest` 校验 `cfg["env"]` 必须在 `ENV_TABLE` 里,不在就 `die` 退 2,**响**。客户端生成段 `gen_clients` 与清单生成段 `gen_manifest_md` 都只查这张表,表里有了就自动出对的 sh,不用改代码 | 加一条 |
-| config 的 `official_split_files`(`aw_q35.json:12-16`) | 三份 txt,每行一个 unit id | `build.py:190-205` 读它切分;有 unit 不在任何题单 → `build.py:235-237` 退 1(响),**换环境时最先炸的就是这条** | 三个路径 |
+| `pipeline/annotate/rules.py:18` | add one line to `MODEL_OF`: `"<key>": "<model_full>"` | `build.py:41-43` / `param_label.py:42-43` recognize the model by `MODEL_OF.get(directory name tail)`; if it can't find one, `continue` **silently skips the whole collection directory**; when building a single-model database, the downstream `build.py:225-227` will exit with 1 (raises) because of "zero events after filtering", but other models in the same batch still produce numbers normally | add one line |
+| `pipeline/collect/gen_launch.py:47-54` | add one entry to `MODEL_TABLE`: `dict(served=, const=ZMODELS/YMODELS, weights=, family=)` | `gen_launch.py:93-94` (server) and `105-107` (client) `die` with exit 2, raises | add one entry |
+| The `family` field of `pipeline/collect/gen_launch.py:47-54` | only the two families `"qwen"` and `"gptoss"` have a branch | Warning: **silent**: `serve_flags()` (`gen_launch.py:172-177`) treats anything non-qwen as gptoss for flags (only gives `--gpu-memory-utilization 0.92`, no tool-call parser); `gen_clients` does the same (`gen_launch.py:266`) and adds `--preset default` to it (since 2026-08-20 this goes through a preset file, which expands to harmony / effort high / temperature 1.0 / top_p 1.0 / max_tokens 8192, presets are in `configs/presets/`). The generated launch script can run, it's just that the server-side parsing convention is wrong | a new family needs a new branch |
+| newly create `pipeline/configs/<BATCH>_<MODEL>.json` | copy `pipeline/configs/aw_q35.json` (19 lines) verbatim, change the three fields `model_short` / `model_full` / `data_out` | `model_full` must match `MODEL_OF`'s value **word-for-word**, otherwise `build.py:225-227` exits with 1 (raises) | create a new json file |
+| newly create `pipeline/collect/manifest_<BATCH>.json` | copy `pipeline/collect/manifest_w0.json` verbatim, add `servers[]` and `clients[]` | validation rules are in `gen_launch.py:86-122` (single machine, ports/session/cards must not repeat, `len(shard_ports)==num_shards`, the shard ports' model must match), all `die` with exit 2, raises | create a new json file |
+| `pipeline/eval/summarize_matrix.py:82` | add the new model to the `--models` default table, or explicitly pass the full list on the command line every time | Warning: **silent**: not passing it means it uses this default table, the new model's four rows **simply don't appear in the matrix table**, the script exits 0 and stdout doesn't mention it either | change one line / add a command-line argument |
+| `ops/<BATCH>_placement.json` | add four rows following `ops/c1_placement.json` (12 lines) (model/cell/host/gpu, ctool's row carries `--align-tol`) | the placement table is human-readable input, missing it only means having to re-derive the machine placement when relaunching | add four rows |
 
-### 2.2 要新写的东西
+### 1.2 What doesn't need changing (so effort isn't wasted)
 
-| 新写什么 | 照抄哪个模板 | 硬约束 |
+- **Not one character of the four training scripts needs to change.** `--env` on the training side is **purely a log label**: each of the four scripts has one line `ap.add_argument("--env", default="appworld", …)`, and `args.env`'s only use is the line `log(event="start", env=args.env, …)`, plus mext and ctool carrying it along when writing `best/meta.json`; it enters neither the data path nor the loss anywhere. (Grep by `--env` / `args.env`, don't rely on line numbers, they've drifted this round.)
+- **The base-weight constants don't need to change**: `train_mbert_tool.py` and `train_mbert_extract.py`'s module-level constant `MODEL` (ModernBERT-base), `train_causal_tool.py`'s `MODELS` table, `train_causal_callgen.py`'s `QWEN` (grep by constant name, don't rely on line numbers, they've drifted once this round). These four are **the probe's own skeleton**, unrelated to the agent model being probed.
+- **The four eval scripts don't need to change**: the model is entirely path-directed via `--run` / `--data`.
+- **`pipeline/inject/check_bundle.py` doesn't need to change**: the whole file has no environment constants or model table, its only parameters are `--run/--data/--head/--device/--dtype/--index/--temperature/--max-len` (all in its `main()`, grep `add_argument`).
+- **`pipeline/annotate/accept_v3diff.py` doesn't need to change**: the input path is hard-coded to the old data (module-level constants `BASE` / `RUNS` / `V3`), its only job is to prove the new code reproduces the old convention, it shouldn't follow along with a new model.
+- `rules.py`'s two regex constants `AW_CALL`/`BFCL_CALL` don't need to change: same environment, same parsing.
+
+### 1.3 Shortest path
+
+1. Change `rules.py:18` + `gen_launch.py:47-54`, write the config and manifest → **stage-commands §1** to generate the launch scripts (`--dry-run --out-override` first).
+2. **stage-commands §1** to generate for real → collect via gpu-run, verify the outdir name must be `appworld_<key>` (`gen_launch.py:117-122` forces a rename and WARNs).
+3. **stage-commands §2**: `build.py` + `param_label.py`, once each, using the same config.
+4. **stage-commands §3**: each cell's `--smoke` → **§5** `check_bundle.py --device cpu` → each cell's full volume.
+5. The dependency order in **stage-commands §4.1**: `eval_tool.py` first (mtool/ctool), then `eval_mbert_call.py` / `eval_causal_call.py`.
+6. `summarize_matrix.py` in **stage-commands §4.2**, **remember to include `--models ... <new model>`**.
+
+---
+
+## 2. Scenario B: add a brand-new environment
+
+### 2.1 Mandatory change checklist
+
+| File:line | What to change | Consequence of missing it | Amount of change |
+|---|---|---|---|
+| `pipeline/annotate/build.py:135-148` | add an `elif env == "<new env>"` branch to `collect_events`, specifying the glob pattern | `build.py:146`'s `raise SystemExit(f"unknown environment")` exits with 1, raises | add one branch |
+| `pipeline/annotate/param_label.py:114-130` | same as above, a second independent `collect_events` | `param_label.py:124` likewise SystemExit, raises | add one branch |
+| `pipeline/annotate/build.py:63-79` | the event extraction in `jsonl_events`: `63-69` is the appworld branch, `70-79` is else | Warning: **silent**: else is a **catch-all**, the comment says tales, but **any non-appworld env falls into it**, getting the semantics "the command's first word = the tool name, the rest of the whole string = the single parameter". The data can still be built and the report still comes out normally, it's just that every label convention is wrong | add one branch |
+| `pipeline/annotate/param_label.py:56-69` | the same catch-all spot, the parameter side's copy | same as above, and the two copies must use the same convention, otherwise `param_label.py:202`'s `assert tool == r["label"]` is the only thing that will raise | add one branch |
+| `pipeline/annotate/build.py:50-51` | `unit` derivation: `env=="tales"` uses `seed<n>`, everything else uses `meta["task_id"]`, falling back to the filename | if the new environment's meta has no `task_id`, unit becomes the filename → doesn't match the task list → `build.py:235-237` exits with 1 (raises, but the error message points at the task list rather than here) | add one branch |
+| `pipeline/annotate/rules.py:55-56` | the call regex. If the new environment's call syntax is neither `apis.x.y(` nor `name(`, a new one needs to be added | a regex mismatch = that step produces no event, **silently loses samples** | add one constant |
+| `pipeline/eval/eval_causal_call.py:117-124` | `parse_call`'s `name_re` and the tool-name construction, currently "appworld uses AW_CALL, **everything else uses BFCL_CALL**" | Warning: **silent**: the new environment falls back to BFCL_CALL, the parsed-out tool name doesn't match the ground truth, `tool_ok` is false across the board, the numbers collapse entirely, exit code 0 | add one branch |
+| the `choices` at seven `--env` sites | `eval_tool.py:223-224`, `eval_mbert_call.py:108-109`, `eval_causal_call.py:196-197`, `train_mbert_tool.py:83-84`, `train_mbert_extract.py:212-213`, `train_causal_tool.py:231-232`, `train_causal_callgen.py:180-181` | argparse rejects it outright, raises | add one string at each of the seven sites |
+| `pipeline/collect/gen_launch.py`'s `ENV_TABLE` | add an entry `"<new env>": dict(venv=, runner=, fn=, common=)`; `venv` = the interpreter under `envs/<venv>/venv`, `runner` = the collector filename under `envs/collect/`, `fn` = the name of the function in the generated sh, `common` = that environment's uniform client parameters (e.g. `--n 0 --max-steps 50`) | `load_manifest` validates that `cfg["env"]` must be in `ENV_TABLE`, if not it `die`s with exit 2, **raises**. Both the client-generation section `gen_clients` and the manifest-generation section `gen_manifest_md` only look up this table; once it's in the table the right sh comes out automatically, no code change needed | add one entry |
+| config's `official_split_files` (`aw_q35.json:12-16`) | three txt files, one unit id per line | `build.py:190-205` reads them to split; a unit not in any task list → `build.py:235-237` exits with 1 (raises), **this is the very first thing to blow up when changing environments** | three paths |
+
+### 2.2 What needs to be newly written
+
+| What to newly write | Which template to copy | Hard constraints |
 |---|---|---|
-| 采集器 `envs/collect/run_<env>.py` | `envs/collect/run_appworld.py`(124 行)或 `run_tales.py`(102 行) | 必须用 `envs/collect/common.py:94-104` 的 `TrajLog`:首行 `type:"meta"`(带 `task_id`)、逐步一条 `type:"gen"`(字段 `step`/`reasoning`)+ 一条 `type:"env"`(字段 `step`/`action`/`result`)、末行 `type:"final"`。`build.py:46-47` 按 `type` 分桶,`:55-56` 只认 `reasoning` 与 `action` |
-| 落盘命名 | `run_appworld.py:75`/`:82` | 目录 `<env>_<model_key>`(尾巴要能被 `MODEL_OF` 认出)、文件 `<env>_<id>.jsonl`;`build.py:140` 的 glob 是 `appworld_*/appworld_*.jsonl`,新环境要给出对应的一对 |
-| gen_launch 的客户端函数 | **不用写**——`gen_clients` 已经参数化,函数名取 `ENV_TABLE[env]["fn"]`、解释器取 `["venv"]`、采集器取 `["runner"]`、统一参数取 `["common"]`,`outdir` 统一拼 `<env>_<model_key>`(`load_manifest` 里的 `std = f"{env}_{c['model_key']}"` 强制,非标准名只 WARN 并改掉) | 所以这一格的活是 **§2.1 里给 `ENV_TABLE` 加一条 + 本节上一行写 `envs/collect/run_<env>.py`**,**不是**再复制一个 `aw()` 出来。`MANIFEST.md` 里 outdir 那句说明也是从 `cfg["env"]` 拼的,跟着自动对 |
-| 若"工具"不是函数调用形(如 ALFWorld 的自然语言动作) | 无现成模板 | `label_call` 的拼法(`build.py:158-162` 的 `make_call`)与参数切分(`rules.py:106-152` 的 `split_args_named`/`first_call_named`/`mkparams`)整套要重定义,`eval_causal_call.py:138` 那条"切法必须与 rules 一致"的 assert 也要跟着改。**这是情形 B 里唯一一块真正的设计工作,其余都是加分支** |
+| collector `envs/collect/run_<env>.py` | `envs/collect/run_appworld.py` (124 lines) or `run_tales.py` (102 lines) | must use `envs/collect/common.py:94-104`'s `TrajLog`: the first line is `type:"meta"` (carrying `task_id`), then for each step one `type:"gen"` (fields `step`/`reasoning`) plus one `type:"env"` (fields `step`/`action`/`result`), and the last line is `type:"final"`. `build.py:46-47` buckets by `type`, `:55-56` only recognizes `reasoning` and `action` |
+| on-disk naming | `run_appworld.py:75`/`:82` | directory `<env>_<model_key>` (the tail must be recognizable by `MODEL_OF`), file `<env>_<id>.jsonl`; `build.py:140`'s glob is `appworld_*/appworld_*.jsonl`, the new environment needs to give a matching pair |
+| gen_launch's client function | **doesn't need to be written**: `gen_clients` is already parameterized, taking the function name from `ENV_TABLE[env]["fn"]`, the interpreter from `["venv"]`, the collector from `["runner"]`, the uniform parameters from `["common"]`, `outdir` is uniformly built as `<env>_<model_key>` (forced by `load_manifest`'s `std = f"{env}_{c['model_key']}"`, a non-standard name only gets WARNed and changed) | so the work for this cell is **adding an entry to `ENV_TABLE` per §2.1 + writing `envs/collect/run_<env>.py` per the row above**, **not** copying out another `aw()`. The `outdir` explanation line in `MANIFEST.md` is also built from `cfg["env"]`, and matches automatically |
+| if the "tool" isn't in call-expression form (e.g. ALFWorld's natural-language actions) | no ready-made template | the whole set, `label_call`'s construction (`build.py:158-162`'s `make_call`) and parameter splitting (`rules.py:106-152`'s `split_args_named`/`first_call_named`/`mkparams`), needs to be redefined, and `eval_causal_call.py:138`'s assert that "the splitting method must match rules" needs to be changed along with it. **This is the only piece of genuine design work in scenario B, everything else is adding branches** |
 
-### 2.3 最短路径
+### 2.3 Shortest path
 
-1. 先解决题单:拿到新环境的官方 train/val/test 三份 id 清单(`build.py:190-193` 只要求"每行一个 id、去空行")。**这一步不落地就别往下走**,`build.py:235-237` 会全量报错。
-2. 写采集器 → 手跑 1 题验轨迹格式(首行 meta 有 task_id、末行 final)。
-3. 给 `gen_launch.py` 的 `ENV_TABLE` 加一条(不用改客户端生成代码) → **stage-commands §1** `--dry-run` 看生成的 sh 对不对 → 正式采集(gpu-run)。
-4. 改 annotate 五处分支(collect_events ×2、jsonl_events ×2、unit 派生)+ 正则 → **stage-commands §2** 建库;`ANNOTATE_REPORT.md` 的工具词表与频率先验基线是第一道人眼验收。
-5. 改七处 `choices` + `eval_causal_call.py:117-124` → **stage-commands §3 / §4** 照常跑,训练与 eval 主体不动。
-6. `accept_v3diff.py` 对新环境**没有对照旧数据**,G8 那道门在新环境上无效——要另想验收办法(见 §7)。
+1. Resolve the task list first: get the new environment's official train/val/test three id lists (`build.py:190-193` only requires "one id per line, no blank lines"). **Don't proceed until this step is landed**, `build.py:235-237` will error out across the board.
+2. Write the collector → hand-run 1 task to verify the trajectory format (the first line's meta has task_id, the last line is final).
+3. Add an entry to `gen_launch.py`'s `ENV_TABLE` (no need to change the client-generation code) → **stage-commands §1** `--dry-run` to see whether the generated sh looks right → collect for real (gpu-run).
+4. Change annotate's five branch spots (collect_events x2, jsonl_events x2, unit derivation) + the regex → **stage-commands §2** to build the database; `ANNOTATE_REPORT.md`'s tool vocabulary and frequency prior baseline are the first line of human-eye acceptance.
+5. Change the seven `choices` + `eval_causal_call.py:117-124` → run **stage-commands §3 / §4** as usual, the training and eval bodies don't change.
+6. `accept_v3diff.py` **has no old data to compare against** for the new environment, gate G8 is void on the new environment; a different acceptance method must be devised (see §7).
 
-### 2.4 先验成本估计(只数代码,不估工时)
+### 2.4 A priori cost estimate (counting code only, not estimating hours)
 
-- **要新写的文件:2 类** —— 1 个采集器(`envs/collect/run_<env>.py`,模板 102–124 行)、每模型 1 份 config(19 行)+ 1 份 manifest。
-- **要加的分支:11 处** —— `build.collect_events` 1、`build.jsonl_events` 1、`build` 的 unit 派生 1、`param_label.collect_events` 1、`param_label.jsonl_events` 1、`rules` 正则 1、`eval_causal_call.parse_call` 1、`gen_launch.ENV_TABLE` 加一条(**是查表不是写分支**)1、`gen_launch.MODEL_TABLE`(若同时换模型)1,外加 `--env choices` 7 处(算 1 处批量改)、`summarize_matrix --prefix/--models` 1。
-- **一行不动的:5 个文件** —— 四个训练脚本 + `inject/check_bundle.py`。`eval_tool.py` 与 `eval_mbert_call.py` 也只动 choices 一行。
-- **风险集中度**:11 处分支里有 4 处漏改**不报错**(见 §5 的 #5 #6 #7 #10),其余漏改都会当场退非 0。
+- **Files to newly write: 2 kinds**: 1 collector (`envs/collect/run_<env>.py`, template 102-124 lines), 1 config per model (19 lines) + 1 manifest.
+- **Branches to add: 11 spots**: `build.collect_events` 1, `build.jsonl_events` 1, `build`'s unit derivation 1, `param_label.collect_events` 1, `param_label.jsonl_events` 1, `rules`'s regex 1, `eval_causal_call.parse_call` 1, `gen_launch.ENV_TABLE` adding one entry (**this is a table lookup, not writing a branch**) 1, `gen_launch.MODEL_TABLE` (if changing the model at the same time) 1, plus the 7 `--env choices` spots (counted as 1 batch change), `summarize_matrix --prefix/--models` 1.
+- **Files with not one line touched: 5**, namely the four training scripts plus `inject/check_bundle.py`. `eval_tool.py` and `eval_mbert_call.py` also only touch one line of choices.
+- **Concentration of risk**: 4 of the 11 branch spots **don't error when missed** (see #5 #6 #7 #10 in §5), the rest all exit non-zero on the spot when missed.
 
 ---
 
-## 3. 情形 C:加一种新训练方法(新格)
+## 3. Scenario C: add a new training method (a new cell)
 
-"格" = 骨架 × 头。现状五格(m 线两格 2026-08-21 起停跑,仍可单发;因果三格的
-底座 2026-08-21 起扩成三档 `--base qwen/qwen17/qwen4`,三个脚本各一份同构
-`MODELS` 表,没有单一真源,加档要改三处):
+"Cell" = skeleton x head. Currently there are five cells (the m-line's two cells have been retired since 2026-08-21, they can still be launched individually; the causal three cells' base was expanded into three tiers `--base qwen/qwen17/qwen4` since 2026-08-21, each of the three scripts has its own copy of an isomorphic `MODELS` table, with no single source of truth, adding a tier requires changing three places):
 
-**行号一律不引**(这批漂过一次):下表的定位靠常量名与日志事件名 grep——选 best 的判断都在 `log(event="eval", …)` 之后那个 `if`,存盘都在紧跟着的 `log(event="save_best", …)` 之前。
+**Line numbers are never cited** (they've drifted once this round): the table below is located by grepping constant names and log event names: the judgment for selecting best is always in the `if` right after `log(event="eval", …)`, and saving to disk is always right before the following `log(event="save_best", …)`.
 
-| 格 | 脚本 | 骨架 | 头 | 选 best 的指标 | `best/` 存盘格式 |
+| Cell | Script | Skeleton | Head | The metric that selects best | `best/` save format |
 |---|---|---|---|---|---|
-| mtool | `train_mbert_tool.py` | ModernBERT(常量 `MODEL`) | 序列分类 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | HF 目录(`save_pretrained`)+ tokenizer + `label_map.json` |
-| mext | `train_mbert_extract.py` | ModernBERT(常量 `MODEL`) | span 抽取(start/end/可答) | val 参数 acc(日志字段 `calA_param_acc`,越大越好) | **裸 state_dict** `best/model.pt`(`torch.save(model.state_dict(), …)`)+ tokenizer + `meta.json` |
-| ctool | `train_causal_tool.py` | Qwen3 三档(常量 `MODELS`,`--base` 必填) | 线性头挂末位隐状态 | val 加权 acc(日志字段 `calA_weighted_acc`,越大越好) | backbone HF + `head.pt` + `label_map.json` + `meta.json` |
-| cgen | `train_causal_callgen.py` | Qwen3 三档(常量 `MODELS`,`--base` 默认 qwen) | 语言建模(直接写整条调用) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**) | HF 目录 + tokenizer + `meta.json` |
-| cparam | `train_causal_param.py` | Qwen3 三档(常量 `MODELS`,`--base` 默认 qwen) | 语言建模(给定工具名与左括号,只写参数段;目标从 `label_call` 按 `label+"("` 前缀剥离,对不上整条丢弃计 `assembly_mismatch`) | val 加权 masked-CE(日志字段 `val_ce`,**越低越好**;`val_exact_params` 只进日志) | HF 目录 + tokenizer + `meta.json`(含 `param_only: true`) |
+| mtool | `train_mbert_tool.py` | ModernBERT (constant `MODEL`) | sequence classification | val weighted acc (log field `calA_weighted_acc`, higher is better) | an HF directory (`save_pretrained`) + tokenizer + `label_map.json` |
+| mext | `train_mbert_extract.py` | ModernBERT (constant `MODEL`) | span extraction (start/end/answerable) | val parameter acc (log field `calA_param_acc`, higher is better) | a **bare state_dict** `best/model.pt` (`torch.save(model.state_dict(), …)`) + tokenizer + `meta.json` |
+| ctool | `train_causal_tool.py` | Qwen3, three tiers (constant `MODELS`, `--base` required) | a linear head on the final hidden state | val weighted acc (log field `calA_weighted_acc`, higher is better) | backbone HF + `head.pt` + `label_map.json` + `meta.json` |
+| cgen | `train_causal_callgen.py` | Qwen3, three tiers (constant `MODELS`, `--base` defaults to qwen) | language modeling (writes the whole call directly) | val weighted masked-CE (log field `val_ce`, **lower is better**) | HF directory + tokenizer + `meta.json` |
+| cparam | `train_causal_param.py` | Qwen3, three tiers (constant `MODELS`, `--base` defaults to qwen) | language modeling (given the tool name and the opening parenthesis, writes only the parameter segment; the target is stripped from `label_call` by the `label+"("` prefix, dropping the whole thing and counting `assembly_mismatch` when it doesn't match) | val weighted masked-CE (log field `val_ce`, **lower is better**; `val_exact_params` only goes into the log) | HF directory + tokenizer + `meta.json` (containing `param_only: true`) |
 
-⚠️ **先分清"新格"与"新训法轴",清单只对前者**。np821 加的 `--lora` 不是新格:
-格没变(还是 ctool/cgen/cparam)、数据没变、评测脚本一行没改,变的只是底座怎么训。
-这类扩展**不走 §3.1 的必改清单**(不用新写训练脚本、不用登记 `CELLS` /
-`EVAL_CELLS` / `summarize_matrix` 的三张表),要做的是三件:① **实现收在一个共用
-模块里**——LoRA 收在 `pipeline/train/lora_util.py`,三个因果格共用旗标、默认值、
-target modules,别处不许再抄一份(同构表必漂移,而那种漂移是静默的);② **存档
-契约不许变**——LoRA 存 `best/` 之前先 `merge_and_unload` 并回底座再
-`save_pretrained`,`best/` 与全参训练存的逐项同构,四个评测脚本零改动装得回;
-③ **新轴写进 run_id 的批次前缀而不是格名**(§3.4 的 run_id 那条)。新格才往下走 §3.1。
+Warning: **first distinguish "a new cell" from "a new training axis", the checklist only applies to the former**. The `--lora` added in np821 is not a new cell:
+the cell hasn't changed (it's still ctool/cgen/cparam), the data hasn't changed, not one line of the eval scripts changed, all that changed is how the base is trained.
+This kind of extension **doesn't go through §3.1's mandatory-change checklist** (no need to write a new training script, no need to register the three tables `CELLS` /
+`EVAL_CELLS` / `summarize_matrix`); there are three things to do instead: (1) **the implementation is kept in one shared
+module**: LoRA is kept in `pipeline/train/lora_util.py`, with the flags, defaults, and target modules shared across the three causal cells, no second copy may be kept anywhere else (an isomorphic table is bound to drift, and that kind of drift is silent); (2) **the save contract must not change**:
+LoRA runs `merge_and_unload` and folds back into the base before saving `best/`, then does `save_pretrained`, so `best/` is item-for-item isomorphic with what full-parameter training saves, and the four eval scripts can load it back with zero changes;
+(3) **the new axis is written into run_id's batch prefix, not the cell name** (the run_id row in §3.4). Only a genuinely new cell goes on to §3.1.
 
-**"换实现"也不走 §3.1,先例是 2026-08-28 的 `train_causal_share.py`**:格名(还是 cgen/cparam)、数据不改,四个评测脚本判分一字不改、输入构造第二轮加了 `--overlong` 一个开关(默认 `left` 时逐字段不变,spec 16.2),只换训练脚本本身(旧逐行前向换成一个事件一次前向、共享前缀)。判据和"新训法轴"一样看**格/数据/评测有没有变**——变的只是"用什么脚本训出这个格",不是"多训了一种法子"或"加了一个新格",所以也不登记 `CELLS` / `EVAL_CELLS` / `summarize_matrix` 三张表(只需要把已登记的 `CELLS`/`TASKS` 条目**指向新脚本**,不是新增一行);旧脚本冻结为对齐参照,经专门的 `<格>-rows` 任务发射,产物不进矩阵(见 §5 #26)。第二轮(工单 07-10)加的 `--overlong` / `--gen-eval` / `--align-rule` / `--mem-probe-pick` 四个开关也是同款"换实现不算新格"的先例:全是参数,默认值等于推荐值(spec 16.1 的表),不新增格、不登记三张表。
+**"Changing the implementation" also doesn't go through §3.1; the precedent is 2026-08-28's `train_causal_share.py`**: the cell name (still cgen/cparam) and the data are unchanged, the four eval scripts' scoring didn't change by one character, the input construction gained one switch, `--overlong`, in the second round (the field-by-field behavior is unchanged when the default `left` is used, spec 16.2), only the training script itself was replaced (the old row-by-row forward pass was replaced with one forward pass per event with a shared prefix). The criterion is the same as for "a new training axis": look at **whether the cell/data/eval has changed**; what changed is only "which script is used to train this cell", not "one more training method has been added" or "a new cell has been added", so it likewise doesn't register the three tables `CELLS` / `EVAL_CELLS` / `summarize_matrix` (all that's needed is to point the already-registered `CELLS`/`TASKS` entries **at the new script**, not add a new row); the old script is frozen as an alignment reference, launched via a dedicated `<cell>-rows` task, and its artifacts don't go into the matrix (see §5 #26). The four switches added in the second round (tickets 07-10), `--overlong` / `--gen-eval` / `--align-rule` / `--mem-probe-pick`, are the same kind of precedent for "changing the implementation doesn't count as a new cell": they're all parameters, whose defaults equal the recommended values (the table in spec 16.1), adding no new cell and registering none of the three tables.
 
-### 3.1 必改清单
+### 3.1 Mandatory change checklist
 
-| 文件:行 | 改什么 | 漏改的后果 | 改动量 |
+| File:line | What to change | Consequence of missing it | Amount of change |
 |---|---|---|---|
-| 新建 `pipeline/train/train_<新格>.py` | 模板选法见 §3.2 | —— | 新写 180–372 行(四个现成脚本的行数区间) |
-| 仓库根 `run.py` 的 `CELLS`(训练格表唯一真源) | 加一行 `"<格名>": (解释器, 脚本绝对路径, base_args)`,并把格名加进 `CELL_ORDER` | `ops/launch_probe.py` 从 run.py import 这张表,`build()` 里 `CELLS[cell]` KeyError,响;顺带 `TASKS` 也要加一条 `train-<格名>`,否则 `run.py` 里没有这个任务 | 加一行 |
-| 仓库根 `run.py` 的 `EVAL_CELLS`(评测格表唯一真源) | 加一行 `"<格名>": ("<eval 任务名>", "<依赖的工具格>" 或 None)` | `ops/launch_eval.py` 从这里 import 并据此排依赖顺序,漏挂 = 排卡发射器发不出这个格的评测 | 加一行 |
-| `pipeline/eval/summarize_matrix.py:24` | `CELLS` 元组加格名 | ⚠️**静默**:新格四行**根本不进矩阵表**,脚本退 0、stdout 不提 | 加一项 |
-| `pipeline/eval/summarize_matrix.py:25-27` | `REPORT_OF` 加 `"<格名>": "<报告文件名>.json"` | `read_cell` 在 `:37` `REPORT_OF[cell]` KeyError,响 | 加一项 |
-| `pipeline/eval/summarize_matrix.py:41-73` | 取数的四分支 | ⚠️**静默**:新格落到 `:70-73` 的 else,按 `params_all_ok`/`full_call_ok` 取字段,名字对不上就 `rep.get()` 全 None → 表里一整行 `-`,状态列却写着 `OK` | 加一个分支 |
-| `pipeline/inject/check_bundle.py:82-160` + `:165` | 加一个 Bundle 类 + `--head` 加一个 choice | 两个现成类都要求 `best/label_map.json` 并让 `probs()` 吐类别分布(`:104-110`、`:145-160`);非分类头拿现成类装会当场崩(响)。不加 = **这个格没有 inject 凭证**(mext/cgen 现在就是这个状态) | 加一个类(约 40 行) |
+| newly create `pipeline/train/train_<new cell>.py` | see §3.2 for template selection | N/A | write anew, 180-372 lines (the line-count range of the four existing scripts) |
+| repo root `run.py`'s `CELLS` (the sole source of truth for the training-cell table) | add one line `"<cell name>": (interpreter, absolute script path, base_args)`, and add the cell name to `CELL_ORDER` | `ops/launch_probe.py` imports this table from run.py, `CELLS[cell]` in `build()` gets a KeyError, raises; incidentally `TASKS` also needs an added entry `train-<cell name>`, otherwise this task doesn't exist in `run.py` | add one line |
+| repo root `run.py`'s `EVAL_CELLS` (the sole source of truth for the eval-cell table) | add one line `"<cell name>": ("<eval task name>", "<the tool cell it depends on>" or None)` | `ops/launch_eval.py` imports from here and orders dependencies by it; missing this hook means the placement-table launcher can't launch this cell's eval | add one line |
+| `pipeline/eval/summarize_matrix.py:24` | add the cell name to the `CELLS` tuple | Warning: **silent**: the new cell's four rows **simply don't go into the matrix table**, the script exits 0 and stdout doesn't mention it | add one item |
+| `pipeline/eval/summarize_matrix.py:25-27` | add `"<cell name>": "<report filename>.json"` to `REPORT_OF` | `read_cell` at `:37` gets a `REPORT_OF[cell]` KeyError, raises | add one item |
+| `pipeline/eval/summarize_matrix.py:41-73` | the four branches that fetch the numbers | Warning: **silent**: the new cell falls into the else at `:70-73`, which fetches fields by `params_all_ok`/`full_call_ok`; if the names don't match, `rep.get()` returns all None → the whole row in the table is `-`, while the status column still says `OK` | add one branch |
+| `pipeline/inject/check_bundle.py:82-160` + `:165` | add a Bundle class + add one choice to `--head` | both existing classes require `best/label_map.json` and have `probs()` produce a class distribution (`:104-110`, `:145-160`); loading a non-classification head with an existing class crashes on the spot (raises). Not adding one = **this cell has no inject credential** (mext/cgen are currently in this state) | add one class (about 40 lines) |
 
-### 3.2 能照抄什么、不能照抄什么
+### 3.2 What can be copied verbatim, what can't
 
-**四个训练脚本之间几乎不共享代码**,全流水线只有一处真 import:`train_mbert_tool.py:30` 的 `from input_modes import apply_mode`(`pipeline/train/input_modes.py`),**只有 mtool 一个格用**——所以 `--input-mode`(`train_mbert_tool.py:96-98`)也只有 mtool 有。其余全是各自复制粘贴:
+**The four training scripts share almost no code with each other**; there's only one genuine import in the whole pipeline: `train_mbert_tool.py:30`'s `from input_modes import apply_mode` (`pipeline/train/input_modes.py`), **used only by the one cell mtool**, which is why `--input-mode` (`train_mbert_tool.py:96-98`) is also only in mtool. Everything else is each script copy-pasting its own:
 
-| 部件 | 四份各在哪 | 抄的时候注意 |
+| Component | Where it lives in each of the four | Watch for when copying |
 |---|---|---|
-| `SEED` 常量 + `torch.manual_seed`/`random.seed` | 每个训练脚本一份模块级 `SEED`(另有 `rules.py` 第五份),按常量名 grep;设种子紧跟在 argparse 之后 | **各脚本一份独立常量,没有单一真源**,而且 np821 起**取值已经分家**:`rules.py` 与三个因果脚本换成种子家族首位 **42**,两个 mbert 脚本(m 线停跑)仍是 20260729。新格照它所在那条线的现值写死,别照抄本表里的数字;换种子家族要全仓 grep 一遍取值点 |
-| `collate()` 与 Dataset 类 | `collate` mtool`:56` / mext`:124` / ctool`:98` / cgen`:76`;数据集 `JsonlDS`(mtool`:36`)/ `InstDS`+`join_rows`(mext`:63`)/ `load_events`+`EventDS`(ctool)/ `CallDS`(cgen`:58-63`) | 八份签名各不相同,一律不能复用;按"新格吃什么标签"挑最近的抄 |
-| `train_log.jsonl` 的 `log()` 闭包 | mtool`:132-138` / mext`:265-267` / ctool`:313-315` / cgen`:234-236` | 一律 `open(..., "a")` **追加模式**;事件名约定 `start`/`step`/`eval`/`save_best`/`done`,新格不照这套写,读日志的人和 job-monitor 都认不出 |
-| 心跳 emit(`ops/heartbeat.py`) | 五个训练脚本、四个 eval 脚本、`run_appworld.py` 已接(`import heartbeat` / `heartbeat.emit` grep 定位,不引行号;`run_tales.py`/`run_alfworld.py`/`run_tau2.py` 尚未接) | **新采集/训练/评测脚本必须接 `ops/heartbeat.py`(进主循环 emit(0,...),每单位 emit,收尾 status=done),不接的脚本在窗口里永远是 warm-up 中** |
-| smoke 限额 | mtool`:118`、mext`:247`、cgen`:210` 都是 500/200 **实例**;ctool`:269` 是 200/80 **事件** | 新格自己定,定完写进 stage-commands §3 的表 |
-| 日志字段旧名 | `calA_weighted_acc`(mtool`:168`)、`calA_param_acc`(mext`:323`)、`best_calA_weighted_acc`(ctool`:368`) | 堆名早已是 val,字段名故意保留旧的 `calA_*`(规格 `plans/2026-07-31-pipeline-engineering.md:330` 明令"保持原名不改,下游按名读") |
+| `SEED` constant + `torch.manual_seed`/`random.seed` | each training script has its own module-level `SEED` (plus a fifth copy in `rules.py`), grep by constant name; the seed is set right after argparse | **each script has its own independent constant, there is no single source of truth**, and since np821 **the values have diverged**: `rules.py` and the three causal scripts switched to the first entry of the seed family, **42**, the two mbert scripts (m-line retired) are still 20260729. Hard-code the new cell to the current value on whichever line it belongs to, don't copy the numbers from this table; changing the seed family requires grepping the whole repo for every place a value is taken |
+| `collate()` and the Dataset class | `collate`: mtool `:56` / mext `:124` / ctool `:98` / cgen `:76`; the dataset: `JsonlDS` (mtool `:36`) / `InstDS`+`join_rows` (mext `:63`) / `load_events`+`EventDS` (ctool) / `CallDS` (cgen `:58-63`) | the eight signatures all differ, none can be reused as-is; pick the closest one and copy it based on "what labels the new cell consumes" |
+| `train_log.jsonl`'s `log()` closure | mtool `:132-138` / mext `:265-267` / ctool `:313-315` / cgen `:234-236` | all use `open(..., "a")`, **append mode**; the event-name convention is `start`/`step`/`eval`/`save_best`/`done`; if a new cell doesn't follow this, neither the person reading the log nor job-monitor will recognize it |
+| heartbeat emit (`ops/heartbeat.py`) | the five training scripts, the four eval scripts, and `run_appworld.py` already have it wired in (locate with `import heartbeat` / `heartbeat.emit` grep, don't cite line numbers; `run_tales.py`/`run_alfworld.py`/`run_tau2.py` don't have it yet) | **a new collect/train/eval script must wire in `ops/heartbeat.py`** (emit(0,...) entering the main loop, emit per unit, status=done at wrap-up); a script that doesn't wire it in shows as forever "warm-up in progress" in the window |
+| smoke quota | mtool `:118`, mext `:247`, cgen `:210` are all 500/200 **instances**; ctool `:269` is 200/80 **events** | the new cell sets its own, and once set, write it into the table in stage-commands §3 |
+| old log field names | `calA_weighted_acc` (mtool `:168`), `calA_param_acc` (mext `:323`), `best_calA_weighted_acc` (ctool `:368`) | the split has long since been named val, but the field names deliberately keep the old `calA_*` (the spec, `plans/2026-07-31-pipeline-engineering.md:330`, explicitly orders "keep the original name unchanged, downstream reads by name") |
 
-**模板怎么选**:换头不换骨架 → 抄同骨架那两个里更近的一个(ModernBERT 线抄 mtool/mext,Qwen 线抄 ctool/cgen);换骨架不换头 → 抄同头那一个,只改权重常量与加载方式;**新目标函数** → 抄 cgen,它是四个里损失最独立的(masked-CE,`:13-14`)。
+**How to pick the template**: changing the head but not the skeleton → copy whichever of the two same-skeleton scripts is closer (the ModernBERT line copies mtool/mext, the Qwen line copies ctool/cgen); changing the skeleton but not the head → copy the one with the same head, only changing the weight constants and loading method; **a new objective function** → copy cgen, it's the one with the most self-contained loss of the four (masked-CE, `:13-14`).
 
-### 3.3 评测侧:四个评测脚本的适用边界
+### 3.3 The eval side: the applicability boundary of the four eval scripts
 
-| 脚本 | 只吃什么 | 新格能不能复用 |
+| Script | Only consumes what | Can a new cell reuse it |
 |---|---|---|
-| `eval_tool.py` | 任何**分类头**:要 `best/label_map.json`(`:253`);mbert 分支走 `AutoModelForSequenceClassification`(`:270-272`),causal 分支 `from train_causal_tool import CausalProbe`(`:69-70`) | 分类头 + 现有两种骨架之一 → **一行不用改直接复用**;新骨架 → 在 `:255-272` 加第三个 `--head` 选项 |
-| `eval_mbert_call.py` | **只吃 mext**:`:28-29` 直接 `from train_mbert_extract import FIND, collate, decode, load_extractor, span_ok` | 换头就得换 import,等于新写 |
-| `eval_causal_call.py` | **只吃 cgen**:`:238-249` 按 HF CausalLM 装 `best/`,`:239` 从 meta 读 `call_sep` | 同上;它也是最独立的,新写评测脚本抄它 |
-| `eval_causal_param.py` | **只吃 cparam**:meta 没有 `param_only: true` 即 SystemExit(格保险丝,防误喂 cgen run——那样工具名会被写两遍,数字静默变形)。同一批 ctool 触发点跑两口径:gt_tool 喂真值工具名(纯填参能力)、pred_tool 喂分类头 argmax(系统乙真实数字),判分前重组 `工具名+"("+生成串` 再走 cgen 同一套 parse/判分 | 2026-08-21 照 eval_causal_call.py 抄出来的先例;矩阵四列只读 pred_tool 块 |
+| `eval_tool.py` | any **classification head**: needs `best/label_map.json` (`:253`); the mbert branch goes through `AutoModelForSequenceClassification` (`:270-272`), the causal branch through `from train_causal_tool import CausalProbe` (`:69-70`) | a classification head plus one of the two existing skeletons → **reuse directly, not one line needs to change**; a new skeleton → add a third `--head` option at `:255-272` |
+| `eval_mbert_call.py` | **only consumes mext**: `:28-29` directly does `from train_mbert_extract import FIND, collate, decode, load_extractor, span_ok` | changing the head means changing the import, which amounts to writing a new one |
+| `eval_causal_call.py` | **only consumes cgen**: `:238-249` loads `best/` as an HF CausalLM, `:239` reads `call_sep` from meta | same as above; it's also the most self-contained, a new eval script should be written by copying it |
+| `eval_causal_param.py` | **only consumes cparam**: SystemExit if meta lacks `param_only: true` (a cell fuse, to prevent accidentally feeding it a cgen run, which would write the tool name twice and silently deform the numbers). The same batch of ctool trigger points is run under two conventions: gt_tool feeds the ground-truth tool name (pure parameter-filling ability), pred_tool feeds the classification head's argmax (system B's real numbers); before scoring, they're reassembled as `tool name+"("+generated string` and then run through the same cgen parse/scoring | a precedent copied from eval_causal_call.py on 2026-08-21; the matrix's four columns only read the pred_tool block |
 
-三个 call 脚本的共同结构:从工具格 `REPLAY_REPORT.json` 取温度与 θ(`eval_mbert_call.py:125-130`、`eval_causal_call.py:495-497`、`eval_causal_param.py:328-330`),再靠 `logits_test.pt` 的行数 assert 对齐(`:139` / `:569` / `:397`)。新的"依赖格"照这个结构写。
+### 3.4 Dependencies and gates
 
-### 3.4 依赖关系与门禁
+- **Independent cells vs. dependent cells**: mtool/ctool only consume the dataset, independent of each other; mext/cgen have to consume the **same model's tool cell**'s trigger points (`replay_fire` in `eval_mbert_call.py:140`, `eval_causal_call.py:229`). Any new cell that "evaluates at a trigger point" must be scheduled after the tool cell, in the order given in stage-commands §4.1.
+- **The alignment check (G13) only makes sense for a causal skeleton**: `--align-only` / `--align-tol` and the `sys.exit(2)` on FAIL are only in the `train_causal_tool.py:229-244` region; **cgen uses the same skeleton but has none of this check** (grepping `align` gets no hits in callgen). If the new cell is a causal skeleton and does incremental speculation → this should be copied; if it's an encoder skeleton → not needed. **smoke (G14)**'s criterion is that `train_log` has start and done + the checkpoint can be saved and read + it can be loaded by `check_bundle.py --device cpu` (stage-commands §5), so the Bundle class in §3.1 is not optional. ("Is loss decreasing" can't be judged at smoke scale; a new cell that copies the "write one `event=step` every 50 gsteps" convention will likewise not be judgeable there, see the G14 row in gates §1.)
+- **run_id has no base-tier segment, and no training-method segment** (`{batch}_{model}_{cell}`): switching the `--base` tier or the training method and retraining the same cell collides on the rid, and the two runs' artifacts can't be told apart. The convention is **one training batch runs only one base tier + one training method**, and both are written into the batch prefix (the p1 line's p1b06/p1b17/p1b4; the np821 line's np821b06/np821b17/np821l17/np821l4, `b`=full-parameter, `l`=LoRA); switching tier or training method always gets written as `--base <tier>` / `--lora` in the placement table's extra (tiers were fixed 2026-08-21, np821 added the training-method axis). **The driver does not read the `base`/`mode` fields from the batch config**, the placement table's extra is the source of truth. **"Changing the implementation" is likewise written into the batch prefix** (the precedent at the start of §3): the new convention since 2026-08-28 (the dropping rule, the ceiling, and the update unit all changed) has the prefix `ks828` plus the tier-and-method segment, e.g. `ks828b06`, `ks828l17`; the `np821` prefix must never be used for a run under the new convention, the numbers from the two conventions are not comparable (stage-commands §3.2). **The learning-rate sweep's run_id has four segments** (`sweep_lr.py`, spec 16.6, ticket 11): `ks828<tag>_gptoss_cgen_lr<lr>`, one segment more than the three-segment `{batch}_{model}_{cell}` used here; the artifacts land in `pipeline/runs/sweep/`, and don't go into the matrix or into `summarize_matrix` (the same explanation as stage-commands §3.2).
+- **run_id has almost no constraint on the cell name**: there are three concatenation points (`ops/launch_probe.py:67`'s `rid = f"{batch}_{model}_{cell}"`, `summarize_matrix.py:75`'s `rid = f"{args.prefix}_{m}_{c}"`, and the placement table's `cell` field), and both lookup points are exact matches (`launch_probe.py:66`'s `CELLS[cell]`, `summarize_matrix.py:22`'s `REPORT_OF`); **no code reverse-parses run_id** (no reverse-parsing logic was found). A cell name containing an underscore won't crash anything, it will just make the session name `ops/launch_probe.py:112` (smoke tier)/`:123` (full tier) builds ambiguous for a human to read. A single lowercase segment is recommended.
+- **VRAM is estimated by "whether `--grad-ckpt` is on or off", not by model size**: measured on np821, 0.6B full-parameter **without** gc's peak (60-77 GiB) is more than double 1.7B full-parameter **with** gc (35-44 GiB), and LoRA + gc is a tier lower still (17-38 GiB). The measured peak table for the four configurations is in `stage-commands.md §3.1`, check it before picking a card; the story behind the two times this was hit is in `gates.md §3.9` (smoke passed but the full volume still OOM'd) and `§3.10` (0.6B full-parameter OOM'd across all three cells on 48G).
 
-- **独立格 vs 依赖格**:mtool/ctool 只吃数据集,互不依赖;mext/cgen 要吃**同模型工具格**的触发点(`eval_mbert_call.py:140`、`eval_causal_call.py:229` 的 `replay_fire`)。新格只要是"在触发点上评",就必须排在工具格之后,顺序照 stage-commands §4.1。
-- **对齐检查(G13)只对因果骨架有意义**:`--align-only` / `--align-tol` 与 FAIL 时的 `sys.exit(2)` 只在 `train_causal_tool.py:229-244` 区;**cgen 用同一个骨架却没有这套检查**(grep `align` 在 callgen 无命中)。新格是因果骨架且要做增量投机 → 该抄;是 encoder 骨架 → 不需要。**smoke(G14)** 判据是 `train_log` 有 start 与 done + ckpt 能存能读 + 能被 `check_bundle.py --device cpu` 装起来(stage-commands §5),所以 §3.1 里那个 Bundle 类不是可选项。("loss 在降"这一项 smoke 规模上判不了,新格照抄"每 50 gstep 写一条 `event=step`"的写法就会同样判不了,见 gates §1 的 G14 行。)
-- **run_id 没有底座档位段,也没有训法段**(`{batch}_{model}_{cell}`):同一格换 `--base` 档或换训法重训会撞 rid,两次产物无法归属。约定**一个训练批次只跑一档底座 + 一种训法**,两者都写进批次前缀(p1 线的 p1b06/p1b17/p1b4;np821 线的 np821b06/np821b17/np821l17/np821l4,`b`=全参、`l`=LoRA),换档换训法一律在排卡表 extra 里写 `--base <档>` / `--lora`(2026-08-21 定档位,np821 加训法轴)。**驱动器不读批次配置里的 `base`/`mode` 字段**,排卡表 extra 才是真源。**"换实现"同理写进批次前缀**(§3 开头的先例):2026-08-28 起的新口径(丢弃规则、上限、更新单位都变了)前缀是 `ks828` 加档位训法段,如 `ks828b06`、`ks828l17`;`np821` 前缀不许再用于新口径的 run,两条口径的数字不可比(stage-commands §3.2)。**学习率扫描的 run_id 是四段**(`sweep_lr.py`,spec 16.6,工单 11):`ks828<tag>_gptoss_cgen_lr<lr>`,比这里的三段 `{batch}_{model}_{cell}` 多一段;产物落 `pipeline/runs/sweep/`,不进矩阵、不进 `summarize_matrix`(stage-commands §3.2 同款说明)。
-- **run_id 对格名几乎没有约束**:拼接点三处(`ops/launch_probe.py:67` 的 `rid = f"{batch}_{model}_{cell}"`、`summarize_matrix.py:75` 的 `rid = f"{args.prefix}_{m}_{c}"`、排卡表的 `cell` 字段),两处查表都是精确匹配(`launch_probe.py:66` 的 `CELLS[cell]`、`summarize_matrix.py:22` 的 `REPORT_OF`),**没有任何代码反解 run_id**(未读到反解逻辑)。格名含下划线不会崩,只会让 `ops/launch_probe.py:112`(smoke 档)/`:123`(full 档)拼的 session 名人读歧义。建议单段小写。
-- **显存按"开不开 `--grad-ckpt`"估,不按模型大小估**:np821 实测 0.6B 全参**不带** gc 的峰值(60–77 GiB)比 1.7B 全参**带** gc(35–44 GiB)高一倍,LoRA + gc 又低一档(17–38 GiB)。四档形态的实测峰值表在 `stage-commands.md §3.1`,挑卡前查它;两次踩坑的经过见 `gates.md §3.9`(smoke 过了全量仍 OOM)与 `§3.10`(0.6B 全参在 48G 上三格全 OOM)。
+### 3.5 Shortest path
 
-### 3.5 最短路径
-
-1. 先答"改的是骨架还是头" → 按 §3.2 末段选模板 → 写训练脚本 → 双环境 `py_compile` → `--smoke` 跑一遍(**stage-commands §3**),看 loss 与 `best/` 落盘。
-2. 加 `check_bundle.py` 的 Bundle 类 → `--device cpu` 验产物(**stage-commands §5**)。
-3. 按 §3.3 判能不能复用 `eval_tool.py`;不能就照 `eval_causal_call.py` 新写(**stage-commands §4**)。
-4. 四处登记:`summarize_matrix.py:24-27`、仓库根 `run.py` 的 `CELLS`+`CELL_ORDER`(训练格表真源)、同文件的 `EVAL_CELLS`(评测格表真源)、`ops/<batch>_placement.json`。
-5. **回写 skill(§6)**。
+1. First answer "is it the skeleton or the head that's changing" → pick a template per the last part of §3.2 → write the training script → `py_compile` in both environments → run `--smoke` once (**stage-commands §3**), check the loss and that `best/` is saved.
+2. Add a Bundle class to `check_bundle.py` → verify the artifact with `--device cpu` (**stage-commands §5**).
+3. Judge per §3.3 whether `eval_tool.py` can be reused; if not, write a new one modeled on `eval_causal_call.py` (**stage-commands §4**).
+4. Register in four places: `summarize_matrix.py:24-27`, the repo root `run.py`'s `CELLS`+`CELL_ORDER` (the source of truth for the training-cell table), the same file's `EVAL_CELLS` (the source of truth for the eval-cell table), `ops/<batch>_placement.json`.
+5. **Write back to the skill (§6)**.
 
 ---
 
-## 4. 情形 D:加一种新 split 方法
+## 4. Scenario D: add a new split method
 
-现状:切法的唯一实现是 `build.py:190-205`(`read_unit_list` + `official_split`),`main()` 在 `:231` 调它一次;**此后全流水线再没有第二处做过切分**。
+Current state: the splitting method's sole implementation is `build.py:190-205` (`read_unit_list` + `official_split`), called once by `main()` at `:231`; **nowhere else in the whole pipeline does splitting happen a second time**.
 
-### 4.1 `split_mode` 的真实结论:声明了但没接线的字段,不是能用的开关
+### 4.1 `split_mode`'s real conclusion: a field that's declared but not wired in, not a usable switch
 
-- 三份 config 都写了 `"split_mode": "official"`(`pipeline/configs/aw_q35.json:11`、`aw_q36.json:11`、`aw_gptoss.json:11`),规格的 schema 示例里也有(`plans/2026-07-31-pipeline-engineering.md:102`)。
-- **但全仓库没有任何代码读它**(grep `split_mode` 只命中上面四处)。`build.py:214-219` 从 cfg 只取 `env`/`model_full`/`traj_runs`/`data_out`/`seed`;`official_split()`(`:196-205`)直接拿 `cfg["official_split_files"]`,不看 mode。
-- 结论:它是**规格里给这件事留的名字,实现时没接线**。接线很便宜——在 `build.py:231` 前加一个按 `cfg.get("split_mode", "official")` 的分发,官方切法原样保留,新切法各写一个返回同样 `(part, lists)` 的函数。
+- All three configs write `"split_mode": "official"` (`pipeline/configs/aw_q35.json:11`, `aw_q36.json:11`, `aw_gptoss.json:11`), and it's also in the spec's schema example (`plans/2026-07-31-pipeline-engineering.md:102`).
+- **But no code anywhere in the repo reads it** (grepping `split_mode` only hits the four spots above). `build.py:214-219` only takes `env`/`model_full`/`traj_runs`/`data_out`/`seed` from cfg; `official_split()` (`:196-205`) directly takes `cfg["official_split_files"]`, without looking at mode.
+- Conclusion: it's **a name the spec left in place for this concept, and it was never wired in at implementation time**. Wiring it in is cheap: add a dispatch based on `cfg.get("split_mode", "official")` before `build.py:231`, keeping the official splitting method as-is, and writing one function per new splitting method that returns the same `(part, lists)`.
 
-### 4.2 必改清单
+### 4.2 Mandatory change checklist
 
-| 文件:行 | 改什么 | 漏改的后果 | 改动量 |
+| File:line | What to change | Consequence of missing it | Amount of change |
 |---|---|---|---|
-| `pipeline/annotate/build.py:196-205` | 新写 `<mode>_split(cfg, events)`,返回契约必须与 `official_split()` 完全一致:`(part: unit→堆名, lists: 堆名→unit 集合)` | 契约不一致时,`:231-237` 的 missing 判定、`:249-250` 的不跨 split 自检、`:254` 的分桶、`:266` 的题单归属抽查会各自崩在不同地方(响,但报错信息会指向错的地方) | 加一个函数 |
-| `pipeline/annotate/build.py:231` | 按 `cfg["split_mode"]` 分发 | ⚠️**静默**:不分发就永远走官方切法,config 里写了新 mode 也没人理,数据照造 | 加三行 |
-| `pipeline/annotate/build.py:32` `SPLITS` | 堆名或堆数要变时 | `:256` 按它写文件、`:262` 按它抽查;**`param_label.py:31` 另有一份独立的同名常量**,两处不同步 → `param_label.py:191-193` 去读不存在的 `<堆>.jsonl`,FileNotFoundError(响) | 两处各改一行 |
-| `pipeline/annotate/build.py:202-204` | 新切法若可能产生堆间重叠,要加一条重叠 assert | ⚠️**静默**:现状是 `part[u] = name` 后写覆盖、**零重叠检查**(详见 §5 #4) | 加一个 assert |
-| `pipeline/annotate/build.py:260-267` | 官方切法专用的自检 3 | ⚠️**静默**:随机/分层切法下 `lists` 是自己造的,`assert u in lists[name]`(`:266`)**恒真**,自检形同虚设却照样在报告里打 ✓(`:341-342`) | 换一条自检 |
-| `pipeline/configs/*.json` 的 `split_desc` | 报告里"规则"行与"切分"行的文案从这个字段取(`bfcl_mtb_v1` 批次接的线),默认值 = 旧说法"官方题单,任务实例级" | ⚠️**静默**:不写这个字段就照打"官方题单",`ANNOTATE_REPORT.md` 自己撒谎。`check_callstr.py` 门禁 E 已把这条静默变成硬拦(条件:题单目录的 `SPLIT_REPORT.json` 里 `official_split_exists: false`) | 写一个 json 字段 |
+| `pipeline/annotate/build.py:196-205` | write a new `<mode>_split(cfg, events)`, whose return contract must exactly match `official_split()`: `(part: unit→split name, lists: split name→unit set)` | if the contract doesn't match, the `missing` judgment at `:231-237`, the no-cross-split self-check at `:249-250`, the bucketing at `:254`, and the task-list-assignment spot check at `:266` will each crash in a different place (raises, but the error message points at the wrong place) | add one function |
+| `pipeline/annotate/build.py:231` | dispatch on `cfg["split_mode"]` | Warning: **silent**: without a dispatch, it always goes through the official splitting method, and writing a new mode in the config gets ignored, the data still gets built | add three lines |
+| `pipeline/annotate/build.py:32` `SPLITS` | when the split names or split count need to change | `:256` writes files by it, `:262` spot-checks by it; **`param_label.py:31` has a second independent constant of the same name**, and if the two go out of sync → `param_label.py:191-193` tries to read a `<split>.jsonl` that doesn't exist, FileNotFoundError (raises) | change one line in each of the two spots |
+| `pipeline/annotate/build.py:202-204` | if the new splitting method might produce overlap between splits, an overlap assert needs to be added | Warning: **silent**: currently `part[u] = name` overwrites on a later write, **zero overlap check** (see §5 #4 for details) | add one assert |
+| `pipeline/annotate/build.py:260-267` | self-check 3, dedicated to the official splitting method | Warning: **silent**: under a random/stratified splitting method, `lists` is self-constructed, so `assert u in lists[name]` (`:266`) is **always true**, the self-check is meaningless but still prints a check mark in the report (`:341-342`) | swap in a different self-check |
+| `pipeline/configs/*.json`'s `split_desc` | the report's "rule" line and "split" line take their wording from this field (a line wired in by the `bfcl_mtb_v1` batch), default value = the old wording "official task list, task-instance level" | Warning: **silent**: not writing this field means it prints "official task list" regardless, `ANNOTATE_REPORT.md` lies to itself. `check_callstr.py`'s gate E has already turned this silence into a hard block (condition: `official_split_exists: false` in the task-list directory's `SPLIT_REPORT.json`) | write one json field |
 
-### 4.3 下游对堆名的硬依赖(全部按文件名假设 split 的地方)
+### 4.3 Downstream hard dependencies on split names (every place that assumes the split by filename)
 
-| 位置 | 读哪堆 |
+| Location | Which split it reads |
 |---|---|
-| 四个训练脚本 | 写死 `train.jsonl` + `val.jsonl`:mtool`:120-121`、mext`:252-253`(经 `join_rows`,`:66`+`:68` 同时开 `<data>/<split>.jsonl` 与 `<params>/<split>.jsonl`)、ctool`:274`+`:298`、cgen`:215-216` |
-| `eval_tool.py:245-251` | 新口径 `("val","test")`,legacy `("calA","calB","test")`;`fit_sp` 与 `sweep_sp` 都是 val |
-| `eval_tool.py:274-291` | 按 `split_names` 循环,顺带把 logits 存成 `logits_<sp>.pt` |
-| `eval_tool.py:314` | **`splits["test"]` 写死**——不管 `split_names` 怎么变,必须有一堆叫 test |
-| 三个下游脚本 | 写死 `test.jsonl`:`eval_mbert_call.py:134`(另加 `:144` 的 `params/test.jsonl`)、`eval_causal_call.py:223`、`check_bundle.py:197` |
+| the four training scripts | hard-code `train.jsonl` + `val.jsonl`: mtool `:120-121`, mext `:252-253` (via `join_rows`, `:66`+`:68` opens both `<data>/<split>.jsonl` and `<params>/<split>.jsonl` at once), ctool `:274`+`:298`, cgen `:215-216` |
+| `eval_tool.py:245-251` | the new convention `("val","test")`, legacy `("calA","calB","test")`; both `fit_sp` and `sweep_sp` are val |
+| `eval_tool.py:274-291` | loops over `split_names`, and along the way saves the logits as `logits_<sp>.pt` |
+| `eval_tool.py:314` | **`splits["test"]` is hard-coded**: no matter how `split_names` changes, there must be a split called test |
+| three downstream scripts | hard-code `test.jsonl`: `eval_mbert_call.py:134` (plus `:144`'s `params/test.jsonl`), `eval_causal_call.py:223`, `check_bundle.py:197` |
 
-**堆数不是 3 会在哪崩**:K 折切法把 K 个堆写进同一个目录后,四个训练脚本只认 `train.jsonl`/`val.jsonl`(FileNotFoundError,响),`eval_tool.py:314` 只认 `test`(KeyError,响)。→ 可行做法是**每折造一个独立的 `data_out` 目录**(折内仍叫 train/val/test),这样下游一行都不用改,run_id 里带折号即可。
+**Where it breaks when the split count isn't 3**: after a K-fold splitting method writes K splits into the same directory, the four training scripts only recognize `train.jsonl`/`val.jsonl` (FileNotFoundError, raises), and `eval_tool.py:314` only recognizes `test` (KeyError, raises). → A workable approach is to **build an independent `data_out` directory per fold** (still calling them train/val/test within a fold), so downstream doesn't need to change a single line, just carry the fold number in run_id.
 
-### 4.4 评测三步对 val/test 的硬依赖,以及旧字段名
+### 4.4 The eval three-step process's hard dependency on val/test, and the old field names
 
-`eval_tool.py:293-325` 三步全写死:温度在 `fit_sp`(=val)拟(`:294-295`)、θ 在 `sweep_sp`(=val)扫(`:298-311`)、冻结在 `"test"`(`:314`)。少 val → `:276` 读文件即崩(响);少 test → `:314` KeyError(响)。**没有"只有 train/test 两堆"的降级路径**,新切法必须保证至少两堆、且其中一堆叫 test。
-另外 `eval_tool.py:356` 的 `theta_sweep_calB` 与 `:366` 的 `calB_sweep` 沿用旧堆名、实际扫的是 val,训练日志的 `calA_*` 同理(见 §3.2 末行);规格 `plans/2026-07-31-pipeline-engineering.md:330` 明令保留旧名给下游按名读。换 split 方法后这些名字会**更**误导(随机切之后还叫 calB),要改就得同步改读的一侧并写进 `invariants.md`。
+`eval_tool.py:293-325`'s three steps are all hard-coded: the temperature is fit on `fit_sp` (=val) (`:294-295`), theta is swept on `sweep_sp` (=val) (`:298-311`), and it's frozen on `"test"` (`:314`). Missing val → reading the file at `:276` crashes outright (raises); missing test → `:314` KeyError (raises). **There is no degraded path for "only two splits, train/test"**, a new splitting method must guarantee at least two splits, one of which is called test.
+Additionally, `eval_tool.py:356`'s `theta_sweep_calB` and `:366`'s `calB_sweep` keep the old split name while actually sweeping val, and the training log's `calA_*` is the same (see the last row of §3.2). After changing the splitting method these names become **more** misleading (still called calB after a random split); changing them requires changing the reading side in sync and writing it into `invariants.md`.
 
-### 4.5 最短路径
+### 4.5 Shortest path
 
-1. 先答两个问题:堆数是不是 3、其中一堆是不是叫 test。都是 → 只动 `build.py`;否 → 按 §4.3 末段改造成"一折一目录"。
-2. `build.py`:加切法函数 → `:231` 加分发 → 换掉 `:260-267` 的自检 → 改 `:329-333` 的文案;`param_label.py:31` 的 `SPLITS` 跟着改(它**不重做切分**,只按堆名读 build 的产物,`:191-193`)。
-3. 重建库,用 `ANNOTATE_REPORT.md` 的三堆实例数核对(**stage-commands §2**)。
-4. 新 split = **新数据集版本号**(SKILL.md Phase 0 的 `<DATA_ROOT>`),旧数字一律不可比 → 回写 `invariants.md §2` + `TIMELINE.md`。
+1. First answer two questions: is the split count 3, and is one of them called test. If both yes → only touch `build.py`; if not → rebuild as "one fold, one directory" per the last part of §4.3.
+2. `build.py`: add the splitting function → add the dispatch at `:231` → swap out the self-check at `:260-267` → change the wording at `:329-333`; `param_label.py:31`'s `SPLITS` needs to change along with it (it **doesn't redo the splitting**, it only reads build's artifacts by split name, `:191-193`).
+3. Rebuild the database, cross-check with `ANNOTATE_REPORT.md`'s instance counts for the three splits (**stage-commands §2**).
+4. A new split = **a new dataset version number** (SKILL.md Phase 0's `<DATA_ROOT>`), the old numbers are never comparable → write back to `invariants.md §2` + `TIMELINE.md`.
 
-### 4.6 环境根本没有官方 train/val/test 分区时怎么办(ALFWorld + bfcl 两个先例)
+### 4.6 What to do when an environment has no official train/val/test partition at all (the two precedents ALFWorld + bfcl)
 
-**先别急着写新切法函数**。§4.1–§4.5 那整张必改清单(新写切法函数、`:231` 加分发、换掉自检 3)只在"切的规则要变"时才触发。环境没有官方分区≠要换切法——**把题单一次性定下来写成 txt,仍走 `official_split()`,清单整张都不触发**。两个先例都是这么做的:
+**Don't rush to write a new splitting function.** The whole §4.1-§4.5 mandatory-change checklist (writing a new splitting function, adding a dispatch at `:231`, swapping out self-check 3) is only triggered when "the splitting rule needs to change." An environment lacking an official partition is not the same as needing a different splitting method: **pin down the task list once as a txt file and still go through `official_split()`, and the whole checklist stays untriggered**. Both precedents did exactly this:
 
-| | ALFWorld(`alf_official_v1`) | BFCL(`bfcl_mtb_v1`) |
+| | ALFWorld (`alf_official_v1`) | BFCL (`bfcl_mtb_v1`) |
 |---|---|---|
-| 官方给什么 | 三个分区目录(train / valid_seen / valid_unseen),但**不给 id 清单文件**,官方枚举方式是 `os.walk`,遍历序跨机不保证一致 | **什么都不给**。本机 `bfcl_eval==2026.3.23` 的 `BFCL_v4_multi_turn_base.json` 实测 200 条,字段只有 `['excluded_function','id','initial_config','involved_classes','path','question']`,**无 split 字段**;`TEST_COLLECTION_MAPPING` 全是 test 集合。它是纯评测榜 |
-| 题单怎么来 | `pipeline/collect/gen_alfworld_splits.py`:val/test 取官方两个分区全量,train 在官方 train 里六类等比例分层抽样 | `pipeline/collect/gen_bfcl_splits.py`:**冻结老线 v3_1 已经用过的那三堆**(`envs/bert_data/v3_1/bfcl/` 的 train / calA∪calB / test → 140/40/20),不重新 shuffle |
-| 为什么这么选 | 官方分区本身就是 train/val/test,只有 train 需要抽样(原始分布倾斜) | 为了**保住与老数字的同场地**:test 那 20 题原封不动,新因果头数字与 `RESULTS.md` 里老分类头的 bfcl 数字落在同一块地上 |
+| What the official source gives | three partition directories (train / valid_seen / valid_unseen), but **no id list file**; the official way to enumerate is `os.walk`, whose traversal order isn't guaranteed to be consistent across machines | **gives nothing**. Measured locally, `bfcl_eval==2026.3.23`'s `BFCL_v4_multi_turn_base.json` has 200 entries, whose fields are only `['excluded_function','id','initial_config','involved_classes','path','question']`, **no split field**; `TEST_COLLECTION_MAPPING` is entirely a test collection. It is a pure eval leaderboard |
+| Where the task list comes from | `pipeline/collect/gen_alfworld_splits.py`: val/test take the two official partitions in full, train is stratified sampled proportionally across the six categories within the official train | `pipeline/collect/gen_bfcl_splits.py`: **freeze the three splits already used by the old line v3_1** (`envs/bert_data/v3_1/bfcl/`'s train / calA union calB / test → 140/40/20), no reshuffling |
+| Why this was chosen | the official partition already is train/val/test, only train needs sampling (the raw distribution is skewed) | to **preserve being on the same footing as the old numbers**: those 20 test tasks stay exactly as they are, so the new causal head's numbers and the old classification head's bfcl numbers in `RESULTS.md` land on the same ground |
 
-**bfcl 这条路上踩到的三件事,下次照抄**:
+**Three things hit on the bfcl path, to be copied next time**:
 
-1. **"重新执行老规则"不等于"复现老切分"**。老脚本 `envs/collect/build_dataset.py:224` 的 rng 是三个环境**共用**、bfcl 排在 appworld/tales 之后,随机数状态已被前两个环境消耗掉。实测 `random.Random(20260729).shuffle(sorted(units))` 复现出的 test 与老 test 只重合 1/20。要保可比性只能**读老产物的 unit 字段反推**,不能重跑规则。
-2. **题单的推导源可能不在 git 里**。bfcl 的推导源是 `envs/bert_data/v3_1/bfcl/*.jsonl`,而 `.gitignore` 只放 `envs/bert_data/**/*.md` 进库——那四个 jsonl 删了就再也推不出来。所以**入库的 txt 是唯一真源**,`SPLIT_REPORT.json` 里记的 md5 只是审计线索、不是"能一键重生成"的承诺。`gen_bfcl_splits.py` 为此加了一道门禁:已入库的 txt 与本次算出的不同时**拒绝覆盖**,要覆盖得显式 `--force`。
-3. **题单落哪**:`pipeline/splits/<批次>/`。别放 `envs/<env>/splits/`——`.gitignore` 把 `envs/bfcl/`、`envs/appworld/`、`envs/tales/` 整目录当第三方 clone 忽略,题单放进去不入库(alfworld 是自建目录、`.gitignore` 专门为 `envs/alfworld/splits/` 开了口子,所以它在那儿是对的)。工程里因此有两个题单落点,新环境一律用 `pipeline/splits/`。
+1. **"Re-executing the old rule" is not the same as "reproducing the old split."** The old script `envs/collect/build_dataset.py:224`'s rng is **shared** across the three environments, and bfcl is ordered after appworld/tales, so the random-number state had already been consumed by the first two environments. Measured, `random.Random(20260729).shuffle(sorted(units))` reproduces a test that overlaps with the old test by only 1/20. Comparability can only be preserved by **reading the unit field back out of the old artifact**, not by rerunning the rule.
+2. **The task list's derivation source may not be in git.** bfcl's derivation source is `envs/bert_data/v3_1/bfcl/*.jsonl`, while `.gitignore` only puts `envs/bert_data/**/*.md` into the repo; if those four jsonl files were deleted, they could never be derived again. So **the txt files checked into the repo are the sole source of truth**, the md5 recorded in `SPLIT_REPORT.json` is just an audit trail, not a promise of "one-command regeneration." `gen_bfcl_splits.py` added a gate for this: **refuses to overwrite** when the txt already in the repo differs from what's computed this time, overwriting requires an explicit `--force`.
+3. **Where the task list lands**: `pipeline/splits/<batch>/`. Don't put it under `envs/<env>/splits/`: `.gitignore` treats the whole `envs/bfcl/`, `envs/appworld/`, `envs/tales/` directories as third-party clones and ignores them, so a task list put there doesn't get checked in (ALFWorld is a self-built directory, and `.gitignore` opened a specific exception for `envs/alfworld/splits/`, so it is correct there). The project therefore has two landing spots for task lists; a new environment always uses `pipeline/splits/`.
 
-**必写的四道门禁**(`gen_bfcl_splits.py` 里全是 `sys.exit` 硬拦,照抄):① 三堆两两无交集(对应 §5 #4:`official_split` 是后写覆盖、零重叠检查);② 三堆并集 == 官方全集文件的 id 全集且无多余(**没有官方分区也几乎总有一个"官方全集"文件可以当锚**,这是唯一能拿到的外部校验);③ 每堆行数硬核对(G9);④ 不静默覆盖已入库的题单。
+**Four mandatory gates** (`gen_bfcl_splits.py` is all `sys.exit` hard blocks, copy them): (1) the three splits are pairwise disjoint (corresponding to §5 #4: `official_split` overwrites on a later write, zero overlap check); (2) the union of the three splits == the official complete-set file's full id set with nothing extra (**even without an official partition there's almost always an "official complete set" file to anchor against**, this is the only external validation available); (3) hard-check each split's row count (G9); (4) don't silently overwrite a task list already checked into the repo.
 
-**又添两个先例(2026-08-02,tau2_official_v1 / toolhop_v1,四道门禁照抄)**:
+**Two more precedents added (2026-08-02, tau2_official_v1 / toolhop_v1, the four gates copied over)**:
 
-- **tau2 = 第三种情形:官方有 train/test 但没有 val**(三域 `split_tasks.json`
-  实测 train∩test=0、train∪test==base)。处理:官方 test 原封冻结,val 从官方
-  train 抽官方 test 的**半数**,抽剩当 train;门禁 ② 之外加一条"各域本堆 test
-  逐字 == 官方 test"的冻结承诺。SPLIT_REPORT 的 `official_split_exists` 记
-  **false**(val 不是官方堆),借门禁 E 逼 config 写诚实的 `split_desc`。
-- **toolhop = 纯自切**(995 条平铺列表、无 split 字段):比例对齐 bfcl 的
-  70/20/10,按 `answer_type` 六类分层、每层配额最大余数法。分层键只挑**干净的
-  枚举字段**——它的 `domain` 字段是大小写混乱的自由文本('Film'/'film' 并存),
-  当分层键就是自欺。
-- **抽样种子一律按子集独立派生** `random.Random(f"{SEED}:{domain或层名}")`,
-  不共用一个 rng 流——共用流的死法 bfcl 那条(上文第 1 件)已实测:任何一个
-  子集的规模变了,后面全部对不上。
+- **tau2 = a third scenario: the official source has train/test but no val** (measured, the three domains' `split_tasks.json` have train intersect test = 0, train union test == base). Handling: the official test is frozen exactly as-is, val is sampled from **half** of the official test's count out of official train, with the remainder left as train; besides gate ②, one more freeze commitment is added, "each domain's own test split matches the official test word-for-word." SPLIT_REPORT's `official_split_exists` records **false** (val isn't an official split), leveraging gate E to force the config to write an honest `split_desc`.
+- **toolhop = pure self-splitting** (a flat list of 995 entries, no split field): the ratio is aligned with bfcl's
+  70/20/10, stratified across the six `answer_type` categories, with a largest-remainder method for each stratum's quota. The stratification key only picks a **clean
+  enumerated field**: its `domain` field is free text with inconsistent casing ('Film'/'film' both present),
+  using it as the stratification key would be self-deception.
+- **Sampling seeds are always derived independently per subset**, `random.Random(f"{SEED}:{domain or stratum name}")`,
+  not sharing one rng stream: the way sharing a stream dies has already been measured on the bfcl case (item 1 above): if any
+  subset's size changes, everything after it stops lining up.
 
 ---
 
-## 5. 静默失败点总表
+## 5. Silent-failure-point table
 
-报错的坑会自己暴露,静默的不会。下面每一条都是"改错/漏改之后脚本照常退 0,只是数字变了或样本少了"。
+A pitfall that errors out exposes itself; a silent one doesn't. Every entry below is a case of "after a mistaken or missed change, the script still exits 0 as normal, it's just that the numbers changed or the sample count dropped."
 
-| # | 位置 | 触发条件 | 症状 |
+| # | Location | Trigger condition | Symptom |
 |---|---|---|---|
-| 1 | `build.py:41-43` / `param_label.py:42-43` | 采集目录名尾巴(`rsplit("_",1)[1]`)不在 `MODEL_OF` | **整个目录被跳过**。同批其他模型照常出数;补采时新起了个不同名目录(如 `appworld_gptoss2`)最容易中招 |
-| 2 | `build.py:40-41` | 轨迹写进了别的模型的 outdir | **模型张冠李戴**。模型归属**只看目录名**;`run_appworld.py:82-84` 写进 meta 的 `model` 字段全流水线无人读过(grep 无消费方) |
-| 3 | `build.py:140` | 文件名不是 `appworld_*.jsonl` | glob 不命中,**静默少样本** |
-| 4 | `build.py:196-205` | 三份官方题单之间有重叠 unit | `part[u]=name` 按 `SPLITS=("train","val","test")` 顺序后写覆盖,**test 最后写赢**,全程无重叠检查 → 划分静默变形、train/test 边界失守 |
-| 5 | `build.py:70-79` / `param_label.py:63-69` | 新 env 复用 `jsonl_events` 但没加分支 | else 是 catch-all,**任何非 appworld 都拿 tales 的"动词=工具名"语义**,数据照造 |
-| 6 | `rules.py:18` | 两个 key 映到同一个 `model_full` | `build.py:225` 的过滤把两批轨迹**静默合并**,直接破"永不合并同族"的口径(SKILL.md Phase 0) |
-| 7 | `eval_causal_call.py:155-157` / `eval_causal_param.py:149-151` | `--env` 传错 | 只换正则不报错。appworld 数据传 `--env bfcl`,`apis.spotify.login(` 会被解析成工具 `login`,**tool_ok 全 false、数字整体塌陷**。注意:同一个 `--env` 在 `eval_tool.py`(只用于 `:239` 的 legacy 路径拼接与 `:355`/`:380` 的标题)和 `eval_mbert_call.py`(只用于 `:210`/`:225` 的标题字段)里**纯属标签**——四个 eval 里只有 `eval_causal_call.py` 与 `eval_causal_param.py` 两个真影响判分 |
-| 8 | `summarize_matrix.py:82` | 忘了给 `--models` 加新模型 | 该模型全部格**整体不出现在表里**,退 0 且 stdout 不提示 |
-| 9 | `summarize_matrix.py:53-73` + `108-111` | 某个参数格是在 `--risk 0.1` 下跑出来的 | `--risk` 只作用于 tool 格的 `test_frozen[risk]`(`:42`);参数格两列**无条件读该 run 的报告**,而 `EXTRACT_REPORT.json` / `CALLGEN_REPORT.json` / `PARAM_REPORT.json` 是单文件覆盖写 → 0.05 档的表里会混进 0.10 档的数 |
-| 10 | `gen_launch.py:172-177` + `:266` | 新模型 `family` 既不是 qwen 也不是 gptoss | 走 else,**按 gptoss 发服务旗标与客户端旗标**,发射脚本照常生成 |
-| 11 | 四个训练脚本的 `--env` | 传错 | 只污染 `train_log.jsonl` 与 `best/meta.json` 的标签,数字不受影响(反向的静默:看日志的人会被误导) |
-| 12 | `pipeline/configs/*.json` 的 `split_mode` 字段 | 改它 | **全流水线没有任何代码读这个字段**(grep 无命中),纯装饰。`bfcl_mtb_v1` 那三份 config 写的是 `"frozen_v3_1"`,同样没人读——它只是给人看的标记。**真正被读的是同批新加的 `split_desc`**(`build.py` 报告文案从它取,见 #18) |
-| 13 | `eval_causal_call.py:228` / `eval_mbert_call.py:139` | 跨模型串 run 与 data | 唯一的防线是 `len(rows) == logits.shape[0]` 的形状 assert;两个模型的 test 行数**恰好相等**时就静默串味 |
-| 14 | `summarize_matrix.py:24` | 加了新格没往 `CELLS` 登记 | 新格**整体不进矩阵表**,退 0 且 stdout 不提(与 #8 同源:这个脚本的两张表全靠常量枚举) |
-| 15 | `summarize_matrix.py:70-73` | 新格的报告字段名不叫 `params_all_ok` / `full_call_ok` | 落进 else 分支,`rep.get()` 全取到 `None` → 表里一整行 `-`,**状态列却写着 OK**,比 PENDING 更容易被当成"跑出来就是这么差" |
-| 16 | `build.py:231` | config 里写了新 `split_mode` 但没在这里加分发 | **永远走官方切法**,配置形同虚设,数据照造照出报告 |
-| 17 | `build.py:260-267` | 新切法沿用官方切法的自检 3 | `lists` 是新切法自己造的,`assert u in lists[name]` 恒真,自检失效却照样在 `:341-342` 打 ✓ |
-| 18 | `build.py` 的两行报告文案 / `eval_tool.py:356` `:366` | 换了切法没改文案与字段名 | 报告里写着"官方题单"、字段叫 `theta_sweep_calB`,数字却来自别的切法/别的堆。**已部分接线**(`bfcl_mtb_v1` 批次):`build.py` 的"规则"行与"切分"行都改成从 `cfg.get("split_desc", "官方题单,任务实例级")` 取,不写该字段的 config 保持旧说法;`check_callstr.py` 门禁 E 会**硬拦**"SPLIT_REPORT.json 说没有官方分区、报告里却印着『官方题单』"这种撒谎。`eval_tool.py` 那两个 `calB` 旧字段名**仍未动**(规格明令保留给下游按名读) |
-| 19 | `train_mbert_tool.py:30` `:96-98` | 拿 `--input-mode` 做 T5 消融 | `apply_mode` **只有 mtool 一个格 import**;其余各格连这个参数都没有(传了会被 argparse 拒,响),但"各格一起做消融"这件事会**静默只做成一格** |
-| 20 | `build.py:101`(`runs.glob("bfcl_*")`)+ config 的 `traj_runs[]` | `traj_runs` 写成 run 目录的**父目录**(如 `/envs/runs` 而不是 `/envs/runs/full_v1`) | glob 只在该目录**平级**找 `bfcl_*`,于是命中的是 21 题的 smoke 批次 `envs/runs/bfcl_q35/`;若父目录与正确的 run 目录**同时**列进 `traj_runs`,smoke 批次的 traj 名(`bfcl_q35/<id>`)与全量批次逐字相同,同一批 event key **重复进库**、退 0、无告警,只是样本数悄悄涨。实测 bfcl q35 从 11094 涨到 12395 样本(+1301),报告里三堆实例数全都还是 140/40/20,肉眼看不出来。防线:`check_callstr.py` 门禁 C(traj_runs 项下不许再有嵌套 run 目录)+ 门禁 B(`(event, sent_idx)` 全局唯一、一个 unit 只对一条 traj) |
-| 21 | `build.py:154-156`(`make_call`)对 `eval_causal_call.py:83-116`(`split_named_raw`) | 真值参数值里含**逗号** | `make_call` 是 `", ".join(f"{k}={v}")` 手拼、**不加引号**,eval 侧按顶层逗号切 → 一条真值被切成 `k=前半` + `pos0=后半`,`params_all_ok` / `full_call_ok` 被**静默压低**,生成侧写得再对也拿不到分。实测(`check_callstr.py` 全量算的,不是抽样;两批都是三模型加总):bfcl 3325 事件里 **83 条回读失败(2.50%)**、5027 个参数实例里 229 个含逗号(4.56%);appworld 16030 事件里 **76 条(0.47%)**、24674 个参数实例里 104 个含逗号(0.42%)。所以 bfcl 的参数侧数字天生比 appworld 难看 **约 5.3 倍**,原因是 bfcl 的工具里有 `send_message` / `resolve_ticket` / `post_tweet` 这类自由文本参数,而 appworld 的参数多是 id 与短字段。`rules.py` 的 ALFWorld 有 `ALF_BAD_CHARS` 逗号闸门专门拦这件事,appworld / bfcl 都没有;**不要单给一个环境补闸门**(appworld 的 c1_* 十二格已按无闸门口径上账,补了就不是一把尺子)。防线:`check_callstr.py` 偏差 1 逐批量出天花板,写进 `CALLSTR_CHECK.md` |
-| 22 | `eval_mbert_call.py:274`(`pick_theta`,`eval_causal_call.py` 同款) | 拿 `self_fire.theta_sweep_val` 扫描表对着 risk 找"达标行"来判有没有解 | 选 θ_fire 的真实约束是 `fire_acc ≥ 1-risk`(开火**精度**),而扫描表里的 `wrong_fire_rate` 是按**全事件**归一的另一个数——后者 ≤ risk 时该档照样可能 null。ro1 批实测:bf_q36_mext 在 θ=0.95 处 wrong_fire_rate 0.09 ≤ 0.1 但 fire_acc 只有 0.78,0.1 档判 null 是**正确行为**;不知道这条的人会把它当 bug 去"修",一修就换了契约 |
-| 23 | `pipeline/driver.py` 的 `step_e2_call` / `step_m1_matrix`(按函数名 grep) | 手发了评测(`launch-eval`)、报告还没落地时敲 `run.py pipeline`;或某批 call 档报告没齐就先出了那批矩阵 | 两条都退 0、都不报警。① `e2_call` 的判据只有"报告文件在不在"加"它自己的发射标记在不在",**不查台账里在飞的 eval 任务**——手发的那批两样都不满足,于是**再发一遍**,两个进程写同一份报告;② `m1_matrix` 见 `MATRIX_<批>_r{0.05,0.1}.md` 已存在**就跳过**,所以报告没齐时出的那张带 PENDING 的早产表会**永久留着**,后面再敲驱动器也不重出,读表的人拿到的是缺格的旧数。防线:**G23**(敲驱动器前确认手发的评测不在飞)与 **G24**(出矩阵前确认该批报告齐) |
-| 24 | `pipeline/driver.py` 的 `step_t2_full`(docstring 里写着这个场景) | 对**部分完成**的批再敲 t2_full(比如删了 `launched` 标记想补一格) | 它重发整张排卡表,已完成的格撞训练脚本的"同 out 已有 `train_log.jsonl`"守卫秒退,**但登记在守卫之前就做了**:那个早跑完的 run 被补一条假 RUNMETA、run_id 被塞回台账 active,而 `launch_probe` 发没发都退 0。台账多个不会自己消失的僵尸条目,追溯链里多一条没跑过的命令。补一格的正确做法见 `stage-commands.md §3`(只含那一格的临时排卡表) |
-| 25 | `train_causal_tool.py` 的 `collate` 与 `eval_tool.py` 的 `score_causal`(2026-08-28 前的读取位置循环:`for t in range(keep-1, -1, -1): if 0 < ends[t] <= b`) | 切点前的 token 跨过切点(token 起始位置 < 切点 < 结束位置)并且切点到结束位置之间的字符全是空白 | 约 6.3% 的切点读到句尾标点前一个词的隐状态(草稿 4.4 实测)。训练侧 `collate` 与离线评测侧 `score_causal` 用的是同一段旧循环,两边内部一致,数字不报错也不互相矛盾,肉眼看不出偏差。2026-08-28 起两处都改走 `share_data.read_position`,读取位置和全文一次分词的边界一致——**这只修了训练/离线评测这一段,不许写成"活跑错位已修"**:活跑时模型自己生成的 token 边界和离线全文分词的边界可能不同(比如活跑先出 `."\n` 再出 `\n`,离线合成一个 `."\n\n`),那是分词边界的另一个坑,这一轮没有解决(spec 11.3 末段) |
-| 26 | `run.py` 的 `train-cgen-rows` / `train-cparam-rows`(指向冻结的旧逐行脚本 `train_causal_callgen.py` / `train_causal_param.py`) | 拿这两个任务发射出的 run 目录去评测、进矩阵 | 走的是旧口径(`--max-len 4096`、逐行左截、3 个 epoch),产物 `best/meta.json` 没有 `trainer` 字段,run_id 形状和现役 `train-cgen`/`train-cparam` 相同(`<批次>_<model>_cgen` / `<批次>_<model>_cparam`);评测脚本与 `summarize_matrix.py` 都不检查 `trainer` 字段,混进矩阵之后**分不出这一行数字来自哪个训练器**——8192、不截断、1 epoch 的现役口径和 4096、左截、3 epoch 的参照口径会被当成同一批数字 |
-| 27 | `pipeline/train/share_data.py` | 在 mbert-env(transformers 4.57.6)下 import `share_data`,而它的模块顶层直接 import 了 `train_causal_callgen` / `train_causal_param`(这两个旧脚本模块层有版本门) | `eval_tool.py` / `eval_mbert_call.py` 在 import 阶段直接 `SystemExit`,表现是"`eval-tool-mbert` 开跑即死",容易被误判成"解释器用错了?"——实际是 `share_data` 把旧脚本的版本门带进了 mbert-env。根因修复(工单 01 已按此实现):`share_data` 模块顶层只留 stdlib + torch,对这两个旧脚本以及 `rules.MAX_BOUNDS` 的 import 全部延迟到 `load_events` 函数体内 |
-| 28 | `eval_causal_call.py` / `eval_causal_param.py` 的 `drop-event` 计数与 `eval_tool.py` 的 `overlong_mode` | cgen/cparam 用某一种 `--overlong` 跑,而 ctool 评测用的是另一种(比如 ctool 用 `drop-event` 丢过事件、cgen/cparam 却用 `left`) | ctool 已丢的事件在 cgen/cparam 那边根本不存在触发点,cgen/cparam 看到的是 `n_excluded_by_ctool` 非零而不是自己的 `n_dropped_events` 涨——两份报告各记各的 `overlong_mode`,不对着一起看会把"ctool 丢过的事件"错当成"cgen/cparam 自己判定超长"(spec 16.2) |
-| 29 | `train_causal_share.py` 的 `--gen-eval` 生成段(`model.generate`) | 生成调用被套进 `_attn_ctx(dev)` 上下文 | `generate` 不带 4D 掩码、HF 走 `enable_gqa=True`,mem-efficient 内核不接 GQA,报 `No available kernel`;工单 08 的守卫测试(`ast` 找 `_attn_ctx(` 的调用点,只许落在前向 `_forward_packed` 与反向 `backward_logical_minibatch` / `_fwd_bwd_block` 三处,生成路径永远不许)专防这个回归 |
-| 30 | `share_data.py` 的行元组(`load_events` 行元组从 0 数的第 6 位 `gen` 字典,与代码注释同一记法)与手造行元组的测试 | 手造行元组只给 6 位,缺第 6 位 `gen = dict(tgt=..., tool=...)` | `pack_event` 的拆包已经是 `row[:6]`,7 位元组不会报 `ValueError`,但 `--gen-eval` 拿不到 `gen` 字段做抽样与目标串,生成式评估要么静默漏行要么在别处报 `KeyError`;新测试手造行元组必须带全 7 位 |
-| 31 | `train_causal_share.py` 的 `run_mem_probe` 系(`_mem_probe_tokens`/`_mem_probe_cost`/`_mem_probe_loop`) | 探针前后不保存/恢复 `random`/`torch`/`torch.cuda` 的随机数状态 | LoRA dropout 消耗的随机数流被探针多跑的那几次前反向偷走,带 `--mem-probe` 与不带的两次训练 `train_log.jsonl` 的 `loss` 不再逐条相同(不挂 `--lora` 时 dropout=0,这条测不出区分度) |
-| 32 | `_mem_probe_loop` | 每组更新(lr 置 0 的 `opt.step()`)后不 `opt.state.clear()` | AdamW 的 `exp_avg`/`exp_avg_sq`/`step` 计数照写不误,lr=0 只保证参数值不变、不保证优化器状态不变;不清空的话探针之后的正式训练从一个非空优化器状态起步,和真实"从头训"的轨迹不一致 |
-| 33 | `eval_tool.py` 的 `--cached-logits` | 用不同 `--overlong` 跑出的 `logits_<sp>.pt` 行数刚好相同(三种模式都写全行数,行数不随模式变) | 旧缓存(没有 `overlong_mode` 键的 `.meta.json`)按 `left` 处理;`.meta.json` 记的 `overlong_mode` 与本次 `--overlong` 不同时已用硬停堵住(不同就 `SystemExit`)——这里记的是为什么要有这道硬停:`skip`/`drop-event` 剔掉的是不同下标,行数相同但内容不同的两份缓存会互相冒充 |
-| 34 | `eval_tool.py` 的 `drop-event`(取事件全文走 `train_causal_tool.py` 的规则:先按 `label in label2id` 过滤行再取最后一行文本)与 `eval_causal_call.py`/`eval_causal_param.py` 的 `drop-event`(取事件全文走 `share_data.event_full_texts`,不过滤行直接取 `sent_idx` 最大那行文本) | 一个事件里最大 `sent_idx` 的那一行 label 不在词表里 | 两边在这种情况下取到的不是同一段"全文",`dropped_events` 计数也可能不同;每个评测脚本只跟自己的训练器同规则,不能拿 ctool 的丢弃数去推 cgen/cparam 会不会丢同一个事件(冒烟里两边巧合相同不代表规则相同) |
-| 35 | `eval_tool.py` 的 `--overlong skip`/`drop-event` 与 `summarize_matrix.py` | ctool 评测用非 `left` 模式跑,报告进矩阵 | `skip`/`drop-event` 改变 `n_events_scored`(`summarize_matrix.py` 读 pred_tool 块用它),矩阵里看不到 `overlong_mode`,不同模式的 run 混进一张矩阵分不出口径;矩阵只收 `left` 的评测,其他模式的数只进各自的报告(spec 16.10 #35) |
-| 36 | `train_causal_share.py` 的 `mem_probe_summary`(`scope=run`) | `--mem-probe-pick cost`/`loop` 配 `--smoke` 或 `--max-events` 跑探针,拿 `worst_gb` 去排全量的卡 | `scope=run` 的 `worst_gb` 只覆盖本次 run 抽样出的事件,`--smoke` 取的是全文 token 数最短的 40 个事件,量到的是最小块;排全量的卡要用 `scope=full`(`tokens`)的数(spec 16.10 #36;第二轮 b06 smoke2 的 cost worst 15.35 GB 对全集 tokens 探针 54.38 GB) |
-| 37 | `train_causal_share.py` 的 `.backward()`(`backward_logical_minibatch`/`_fwd_bwd_block`)配 `--grad-ckpt` | 只把前向套进 `_attn_ctx`(mem-efficient 内核),`.backward()` 在上下文外 | 梯度检查点的重算发生在 `.backward()` 里,重算走默认内核选择(cuDNN),保存的张量元数据对不上,torch 报 `CheckpointError: Recomputed values ... have different metadata`(2026-08-28 l4 冒烟 `ks828l4_gptoss_cgen_smoke` 在探针第一次反向就崩;b06 开检查点同样会撞);`.backward()` 也套 `_attn_ctx`,守卫测试允许的调用点是前向一处加反向两处,生成路径仍不许套(spec 16.10 #37,提交 b5cee8d) |
+| 1 | `build.py:41-43` / `param_label.py:42-43` | the collection directory-name tail (`rsplit("_",1)[1]`) isn't in `MODEL_OF` | **the whole directory gets skipped**. Other models in the same batch still produce numbers normally; this is most easily hit when a supplementary collection starts a differently-named directory (e.g. `appworld_gptoss2`) |
+| 2 | `build.py:40-41` | a trajectory got written into a different model's outdir | **the model gets mismatched**. Model attribution **only looks at the directory name**; the `model` field `run_appworld.py:82-84` writes into meta is never read anywhere in the whole pipeline (grepping finds no consumer) |
+| 3 | `build.py:140` | the filename isn't `appworld_*.jsonl` | the glob doesn't match, **silently losing samples** |
+| 4 | `build.py:196-205` | there's an overlapping unit across the three official task lists | `part[u]=name` overwrites on a later write in `SPLITS=("train","val","test")` order, **test, written last, wins**, with no overlap check anywhere → the split assignment silently deforms, and the train/test boundary fails to hold |
+| 5 | `build.py:70-79` / `param_label.py:63-69` | a new env reuses `jsonl_events` but has no branch added | else is a catch-all, **anything non-appworld gets tales's "verb=tool name" semantics**, the data still gets built |
+| 6 | `rules.py:18` | two keys map to the same `model_full` | `build.py:225`'s filter **silently merges** the two batches of trajectories, directly breaking the "never merge same-family models" convention (SKILL.md Phase 0) |
+| 7 | `eval_causal_call.py:155-157` / `eval_causal_param.py:149-151` | `--env` is passed wrong | it only swaps the regex, no error. If appworld data is passed `--env bfcl`, `apis.spotify.login(` gets parsed as the tool `login`, **tool_ok is false across the board, the numbers collapse entirely**. Note: the same `--env` is **purely a label** in `eval_tool.py` (only used for the legacy-path concatenation at `:239` and the title at `:355`/`:380`) and in `eval_mbert_call.py` (only used for the title field at `:210`/`:225`); of the four evals, only `eval_causal_call.py` and `eval_causal_param.py` genuinely affect scoring |
+| 8 | `summarize_matrix.py:82` | forgot to add the new model to `--models` | that model's cells **as a whole simply don't appear in the table**, exits 0 with no hint from stdout |
+| 9 | `summarize_matrix.py:53-73` + `108-111` | a parameter cell was run under `--risk 0.1` | `--risk` only affects the tool cell's `test_frozen[risk]` (`:42`); the parameter cell's two columns **read that run's report unconditionally**, and `EXTRACT_REPORT.json` / `CALLGEN_REPORT.json` / `PARAM_REPORT.json` are single files overwritten on write → numbers from the 0.10 tier get mixed into the 0.05-tier table |
+| 10 | `gen_launch.py:172-177` + `:266` | the new model's `family` is neither qwen nor gptoss | falls into else, **sends server and client flags as if it were gptoss**, the launch script still gets generated normally |
+| 11 | the four training scripts' `--env` | passed wrong | only pollutes the label in `train_log.jsonl` and `best/meta.json`, the numbers are unaffected (the reverse kind of silence: whoever reads the log gets misled) |
+| 12 | `pipeline/configs/*.json`'s `split_mode` field | change it | **no code anywhere in the whole pipeline reads this field** (grepping gets no hits), pure decoration. The three `bfcl_mtb_v1` configs write `"frozen_v3_1"`, and likewise nobody reads it, it's just a marker for humans to look at. **What's actually read is `split_desc`, added in the same batch** (`build.py`'s report wording takes it from there, see #18) |
+| 13 | `eval_causal_call.py:228` / `eval_mbert_call.py:139` | run and data get crossed between models | the only line of defense is the shape assert `len(rows) == logits.shape[0]`; when two models' test row counts **happen to be equal**, it silently gets cross-contaminated |
+| 14 | `summarize_matrix.py:24` | a new cell was added but not registered in `CELLS` | the new cell **as a whole doesn't go into the matrix table**, exits 0 with no mention from stdout (same source as #8: this script's two tables rely entirely on constant enumeration) |
+| 15 | `summarize_matrix.py:70-73` | the new cell's report field isn't named `params_all_ok` / `full_call_ok` | falls into the else branch, `rep.get()` gets `None` for everything → the whole row in the table is `-`, **while the status column says OK**, more easily mistaken for "this is genuinely how bad it ran" than PENDING would be |
+| 16 | `build.py:231` | a new `split_mode` is written in the config but no dispatch was added here | **always goes through the official splitting method**, the config is meaningless, the data still gets built and the report still comes out |
+| 17 | `build.py:260-267` | a new splitting method keeps the official method's self-check 3 | `lists` is self-constructed by the new method, `assert u in lists[name]` is always true, the self-check is dead but still prints a check mark at `:341-342` |
+| 18 | `build.py`'s two lines of report wording / `eval_tool.py:356` `:366` | the splitting method changed but the wording and field names didn't | the report says "official task list" and the field is named `theta_sweep_calB`, but the numbers come from a different splitting method / a different split. **Partially wired in already** (the `bfcl_mtb_v1` batch): `build.py`'s "rule" line and "split" line both now take their text from `cfg.get("split_desc", "official task list, task-instance level")`, and a config that doesn't write this field keeps the old wording; `check_callstr.py`'s gate E **hard-blocks** this kind of lie, where SPLIT_REPORT.json says there's no official partition but the report still prints "official task list." `eval_tool.py`'s two old `calB` field names are **still untouched** (the spec explicitly orders keeping them for downstream to read by name) |
+| 19 | `train_mbert_tool.py:30` `:96-98` | using `--input-mode` for a T5 ablation | `apply_mode` is **only imported by the one cell, mtool**; every other cell doesn't even have this parameter (passing it gets rejected by argparse, raises), but the goal of "ablating across every cell together" **silently only gets done for one cell** |
+| 20 | `build.py:101` (`runs.glob("bfcl_*")`) + config's `traj_runs[]` | `traj_runs` is written as the run directory's **parent directory** (e.g. `/envs/runs` instead of `/envs/runs/full_v1`) | the glob only looks for `bfcl_*` **at the same level** as that directory, so it hits the 21-task smoke batch `envs/runs/bfcl_q35/`; if the parent directory and the correct run directory are **both** listed in `traj_runs` at once, the smoke batch's traj name (`bfcl_q35/<id>`) is word-for-word identical to the full batch's, and the same batch's event keys get **duplicated into the database**, exits 0 with no warning, only the sample count quietly rises. Measured, bfcl q35's samples rose from 11094 to 12395 (+1301), while the report's three-split instance counts still all read 140/40/20, invisible to the eye. Defense: `check_callstr.py`'s gate C (no nested run directory allowed under a traj_runs entry) + gate B (`(event, sent_idx)` globally unique, one unit maps to only one traj) |
+| 21 | `build.py:154-156` (`make_call`) vs. `eval_causal_call.py:83-116` (`split_named_raw`) | a ground-truth parameter value contains a **comma** | `make_call` is hand-built as `", ".join(f"{k}={v}")`, **without quoting**, and the eval side cuts on top-level commas → a single ground-truth value gets cut into `k=first half` + `pos0=second half`, `params_all_ok` / `full_call_ok` get **silently suppressed**, and no matter how correctly the generation side writes it, it gets no credit. Measured (computed on the full volume by `check_callstr.py`, not sampled; both batches are the sum across three models): out of bfcl's 3325 events, **83 entries fail re-parsing (2.50%)**, and out of 5027 parameter instances, 229 contain a comma (4.56%); out of appworld's 16030 events, **76 entries (0.47%)**, and out of 24674 parameter instances, 104 contain a comma (0.42%). So bfcl's parameter-side numbers are inherently about **5.3 times** worse-looking than appworld's, because bfcl's tools have free-text parameters like `send_message` / `resolve_ticket` / `post_tweet`, while appworld's parameters are mostly ids and short fields. `rules.py`'s ALFWorld has an `ALF_BAD_CHARS` comma gate specifically to block this, neither appworld nor bfcl has one; **don't patch a gate in for a single environment** (appworld's twelve c1_* cells are already booked under the no-gate convention, adding one would make it a different yardstick). Defense: `check_callstr.py` deviation 1 computes the ceiling per batch and writes it into `CALLSTR_CHECK.md` |
+| 22 | `eval_mbert_call.py:274` (`pick_theta`, `eval_causal_call.py` has the same) | using the `self_fire.theta_sweep_val` sweep table against risk to find a "qualifying row" to judge whether there's a solution | the real constraint for choosing theta_fire is `fire_acc >= 1-risk` (fire **accuracy**), while the sweep table's `wrong_fire_rate` is a different number normalized over **all events**; that tier can still come out null even when the latter is <= risk. Measured on the ro1 batch: at theta=0.95, bf_q36_mext has wrong_fire_rate 0.09 <= 0.1 but fire_acc is only 0.78, and judging the 0.1 tier as null is **correct behavior**; someone who doesn't know this would treat it as a bug and "fix" it, and fixing it would change the contract |
+| 23 | `pipeline/driver.py`'s `step_e2_call` / `step_m1_matrix` (grep by function name) | invoking `run.py pipeline` after hand-launching an eval (`launch-eval`) while the report hasn't landed yet; or producing that batch's matrix before its call-tier reports are all in | both exit 0 and neither warns. (1) `e2_call`'s criterion is only "is the report file there" plus "is its own launch marker there," it **doesn't check the ledger for in-flight eval tasks**; the hand-launched batch satisfies neither, so it gets **relaunched**, and two processes write the same report; (2) `m1_matrix` skips as soon as it sees `MATRIX_<batch>_r{0.05,0.1}.md` already exists, so the prematurely produced table carrying PENDING that comes out when the reports aren't complete **stays around permanently**, and invoking the driver again later doesn't regenerate it, so whoever reads the table gets old, incomplete data. Defense: **G23** (confirm the hand-launched eval isn't in flight before invoking the driver) and **G24** (confirm that batch's reports are complete before producing the matrix) |
+| 24 | `pipeline/driver.py`'s `step_t2_full` (the docstring writes down this scenario) | invoking t2_full again on a **partially completed** batch (e.g. deleting the `launched` marker wanting to fill in one cell) | it relaunches the whole placement table; the already-finished cells get instantly rejected by the training script's "an out with an existing `train_log.jsonl`" guard, **but the registration was already done before the guard kicked in**: that already-finished run gets a fake RUNMETA entry added, and its run_id gets stuffed back into the active ledger, while `launch_probe` exits 0 whether it launched or not. The ledger ends up with a zombie entry that never disappears on its own, and the trace chain gets an extra command that never actually ran. The correct way to fill in one cell is in `stage-commands.md §3` (a temporary placement table containing only that cell) |
+| 25 | `train_causal_tool.py`'s `collate` and `eval_tool.py`'s `score_causal` (the read-position loop before 2026-08-28: `for t in range(keep-1, -1, -1): if 0 < ends[t] <= b`) | the token before a cut point straddles the cut point (the token's start position < the cut point < its end position) and the characters between the cut point and the end position are all whitespace | about 6.3% of cut points end up reading the hidden state of the word before the sentence-ending punctuation (measured in draft 4.4). The training side's `collate` and the offline-eval side's `score_causal` use the same old loop, the two sides are internally consistent, the numbers don't error out and don't contradict each other, and the bias is invisible to the eye. Since 2026-08-28 both places switched to `share_data.read_position`, whose read position matches the boundary from tokenizing the full text once. **This only fixed the training/offline-eval segment, it must not be written up as "the live-run misalignment is fixed"**: at live-run time, the token boundary the model generates on its own and the offline full-text tokenization boundary can differ (e.g. the live run first emits `."\n` and then `\n`, while offline synthesizes a single `."\n\n`), which is a different tokenization-boundary pitfall that this round did not resolve (spec 11.3, last paragraph) |
+| 26 | `run.py`'s `train-cgen-rows` / `train-cparam-rows` (point at the frozen old row-by-row scripts `train_causal_callgen.py` / `train_causal_param.py`) | taking the run directory launched by these two tasks to eval and into the matrix | this runs under the old convention (`--max-len 4096`, row-by-row left truncation, 3 epochs), its artifact `best/meta.json` has no `trainer` field, and the run_id shape is the same as the current `train-cgen`/`train-cparam` (`<batch>_<model>_cgen` / `<batch>_<model>_cparam`); neither the eval scripts nor `summarize_matrix.py` check the `trainer` field, so once mixed into the matrix, **there's no way to tell which trainer this row's numbers came from**; the current convention (8192, no truncation, 1 epoch) and the reference convention (4096, left truncation, 3 epochs) end up treated as the same batch of numbers |
+| 27 | `pipeline/train/share_data.py` | importing `share_data` under mbert-env (transformers 4.57.6), while its module top level directly imports `train_causal_callgen` / `train_causal_param` (these two old scripts have a version gate at the module level) | `eval_tool.py` / `eval_mbert_call.py` `SystemExit` outright at the import stage, showing up as "`eval-tool-mbert` dies the moment it starts," easily misjudged as "was the wrong interpreter used?" when actually `share_data` carried the old scripts' version gate into mbert-env. Root-cause fix (ticket 01 has implemented this): `share_data`'s module top level keeps only stdlib + torch, and the imports of these two old scripts plus `rules.MAX_BOUNDS` are all deferred into the body of the `load_events` function |
+| 28 | `eval_causal_call.py` / `eval_causal_param.py`'s `drop-event` count and `eval_tool.py`'s `overlong_mode` | cgen/cparam are run with one `--overlong` mode while ctool's eval uses a different one (e.g. ctool drops events via `drop-event` while cgen/cparam use `left`) | an event ctool has already dropped simply has no trigger point on the cgen/cparam side; what cgen/cparam see is a nonzero `n_excluded_by_ctool`, not their own `n_dropped_events` rising; the two reports each record their own `overlong_mode`, and without reading them side by side, "an event ctool dropped" gets mistaken for "cgen/cparam itself judged it overlong" (spec 16.2) |
+| 29 | `train_causal_share.py`'s `--gen-eval` generation segment (`model.generate`) | the generation call is wrapped inside the `_attn_ctx(dev)` context | `generate` doesn't carry a 4D mask, HF goes through `enable_gqa=True`, the mem-efficient kernel doesn't support GQA, reporting `No available kernel`; ticket 08's guard test (`ast` finds every call site of `_attn_ctx(`, only allowing it to land in the three spots forward `_forward_packed` and backward `backward_logical_minibatch` / `_fwd_bwd_block`, never the generation path) specifically guards against this regression |
+| 30 | `share_data.py`'s row tuple (`load_events`'s row tuple has the `gen` dict at 0-indexed position 6, matching the code comment's own notation) vs. a test that hand-builds a row tuple | a hand-built row tuple only supplies 6 positions, missing position 6, `gen = dict(tgt=..., tool=...)` | `pack_event`'s unpacking is already `row[:6]`, so a 7-position tuple won't raise `ValueError`, but `--gen-eval` can't get the `gen` field for sampling and the target string, and the generative evaluation either silently drops rows or raises `KeyError` somewhere else; a new test that hand-builds a row tuple must carry all 7 positions |
+| 31 | `train_causal_share.py`'s `run_mem_probe` family (`_mem_probe_tokens`/`_mem_probe_cost`/`_mem_probe_loop`) | the random-number state of `random`/`torch`/`torch.cuda` isn't saved/restored around the probe | the random-number stream that LoRA dropout consumes gets stolen by those extra forward-backward passes the probe runs, and the `loss` in `train_log.jsonl` is no longer entry-for-entry identical between a training run with `--mem-probe` and one without (with `--lora` not attached, dropout=0, so this can't be told apart by testing) |
+| 32 | `_mem_probe_loop` | doesn't `opt.state.clear()` after each group's update (`opt.step()` with lr set to 0) | AdamW's `exp_avg`/`exp_avg_sq`/`step` count still get written regardless, lr=0 only guarantees the parameter values don't change, it doesn't guarantee the optimizer state doesn't change; without clearing it, the real training that follows the probe starts from a non-empty optimizer state, inconsistent with the trajectory of genuinely "training from scratch" |
+| 33 | `eval_tool.py`'s `--cached-logits` | `logits_<sp>.pt` files produced with different `--overlong` settings happen to have the same row count (all three modes write the full row count, the row count doesn't change with the mode) | an old cache (a `.meta.json` with no `overlong_mode` key) is treated as `left`; a mismatch between the `overlong_mode` recorded in `.meta.json` and this run's `--overlong` is already blocked by a hard stop (`SystemExit` if different); what's recorded here is why this hard stop needs to exist: `skip`/`drop-event` remove different indices, so two caches with the same row count but different content would impersonate each other |
+| 34 | `eval_tool.py`'s `drop-event` (getting an event's full text follows `train_causal_tool.py`'s rule: filter rows by `label in label2id` first, then take the last row's text) vs. `eval_causal_call.py`/`eval_causal_param.py`'s `drop-event` (getting an event's full text follows `share_data.event_full_texts`, taking the row with the largest `sent_idx` directly, without filtering rows) | the row with the largest `sent_idx` in an event has a label not in the vocabulary | the two sides don't get the same "full text" in this case, and the `dropped_events` count may differ too; each eval script only follows the same rule as its own trainer, and ctool's drop count can't be used to infer whether cgen/cparam would drop the same event (the two sides coinciding in smoke doesn't mean the rules are the same) |
+| 35 | `eval_tool.py`'s `--overlong skip`/`drop-event` vs. `summarize_matrix.py` | ctool's eval is run in a non-`left` mode, and the report goes into the matrix | `skip`/`drop-event` change `n_events_scored` (`summarize_matrix.py` reads this for the pred_tool block), `overlong_mode` isn't visible in the matrix, and runs from different modes mixed into one matrix have no way to tell the convention apart; the matrix only accepts `left` evals, numbers from the other modes only go into their own reports (spec 16.10 #35) |
+| 36 | `train_causal_share.py`'s `mem_probe_summary` (`scope=run`) | running the probe with `--mem-probe-pick cost`/`loop` paired with `--smoke` or `--max-events`, then using `worst_gb` to assign cards for the full volume | `scope=run`'s `worst_gb` only covers the events sampled for this run; `--smoke` takes the 40 events with the shortest full-text token count, so it's measuring the smallest block; assigning cards for the full volume needs the `scope=full` (`tokens`) number instead (spec 16.10 #36; the second round's b06 smoke2 had a `cost` worst of 15.35 GB against the full-set `tokens` probe's 54.38 GB) |
+| 37 | `train_causal_share.py`'s `.backward()` (`backward_logical_minibatch`/`_fwd_bwd_block`) paired with `--grad-ckpt` | only the forward pass is wrapped in `_attn_ctx` (the mem-efficient kernel), `.backward()` is outside that context | gradient checkpointing's recomputation happens inside `.backward()`, and the recomputation goes through the default kernel choice (cuDNN); the saved tensor metadata doesn't match, and torch raises `CheckpointError: Recomputed values ... have different metadata` (on 2026-08-28, l4 smoke `ks828l4_gptoss_cgen_smoke` crashed on the probe's very first backward pass; b06 with checkpointing on hits the same); `.backward()` also gets wrapped in `_attn_ctx`, and the guard test now allows the call sites to be one in the forward pass plus two in the backward pass, the generation path is still never allowed to be wrapped (spec 16.10 #37, commit b5cee8d) |
 
 ---
 
-## 6. 回写本 skill
+## 6. Writing back to this skill
 
-这条 skill 是活的:**任何一次用它加了新东西,收尾时必须把新东西写回文档**,否则下一次调用还是按旧方法走,而且下一个人读到的清单是错的。照下表打勾。
+This skill is alive: **any time it's used to add something new, the new thing must be written back into the documentation at wrap-up**, otherwise the next invocation still follows the old method, and the next person reads a checklist that's wrong. Check off against the table below.
 
-| 你这次做了什么 | 更新哪份文档的哪一节 | 更新什么内容 |
+| What you did this time | Which document's which section to update | What content to update |
 |---|---|---|
-| 加了新模型 | `extending §1` / `stage-commands §0` | §1 的三处枚举表补上新短名;§0 若引入了新权重目录,补一行路径 |
-| 加了新环境 | `extending §2` / `SKILL.md` Phase 0 的 `<ENV>` 行 / `stage-commands §1 §2` | §2 的分支清单标注"这个环境已接";Phase 0 的候选环境列表加名;§1 的 outdir 命名规则、§2 的 config `env` 字段取值同步 |
-| 加了新格 | `extending §3` / `SKILL.md` Phase 0 的 `<CELLS>` 行与 Phase C4 的依赖图 / `stage-commands §3 §4` | §3 的格表加一行(骨架/头/best 格式/选 best 指标四列都要填);§3 的命令表加一条真实跑过的命令;§4 的依赖顺序图标出新格排在哪一层 |
-| 加了新训法轴(格没变,只换底座怎么训,如 LoRA) | `extending §3` 开头的"新格 vs 新训法轴" + `§3.4` 的 run_id 行 / `stage-commands §3` 的旗标表与 §3.2 / `invariants §3` | §3 写清共用模块在哪、存档契约有没有变;§3.4 补一句新轴写进批次前缀;旗标表补 flag 行;invariants 记死新轴的超参默认值 |
-| 实测了硬件占用(显存峰值、装不装得下) | `stage-commands §3.1` 的显存表 / `gates §3` 加案例 / `gpu-run` 的 `references/launch-methodology.md` Step 2 | 表里按"底座档 × 训法 × 开不开 gc"一行,写峰值与结论;OOM 有故事的进 gates §3;gpu-run 那侧只留一句结论加指路,细表不抄第二份 |
-| 实测了某一段的墙钟 | `stage-commands` 对应段的耗时参考(eval 是 §4.5) | **先写清这一段按什么计数**(事件?触发事件?样本行?),再给量与分钟数——不写单位的分钟数下一批就用错 |
-| 加了新 split 方法 | `extending §4` / `invariants.md §2` | §4.1 的 `split_mode` 结论从"没接线"改成"已接线,取值有 X/Y";invariants §2 记录新切法的口径与"与旧数字不可比"这句 |
-| 改了任何写死的口径 | `invariants.md` 对应节 + `TIMELINE.md` | invariants 改数;TIMELINE 追加一条说明"为什么改、改之前的数字作废到什么程度" |
-| 踩了一个新坑 | `gates.md §3` 加一个案例 / 本文件 §5 加一行 | 坑会报错 → 进 gates §3;坑**不报错** → 必须进 §5 静默总表,并写清"症状长什么样" |
-| 新加了门禁 | `gates.md §1` 总表加一行 | 编号顺延,同时在 SKILL.md 对应 Phase 里引用 |
-| 改了脚本接口(加/删/改 flag、改产物路径) | `stage-commands` 对应节 + `stage-commands §7 接口陷阱` | 参数表改字段;新增的不对称行为(产物写向、覆盖语义)进 §7 |
+| Added a new model | `extending §1` / `stage-commands §0` | fill in the new short name in §1's three enumeration tables; if §0 introduces a new weight directory, add one line with the path |
+| Added a new environment | `extending §2` / `SKILL.md` Phase 0's `<ENV>` row / `stage-commands §1 §2` | mark §2's branch checklist "this environment is now integrated"; add the name to Phase 0's candidate environment list; sync §1's outdir naming rule and §2's config `env` field values |
+| Added a new cell | `extending §3` / `SKILL.md` Phase 0's `<CELLS>` row and Phase C4's dependency diagram / `stage-commands §3 §4` | add one row to §3's cell table (fill in all four columns: skeleton / head / best format / best-selection metric); add one actually-run command to §3's command table; mark on §4's dependency diagram which layer the new cell is in |
+| Added a new training axis (the cell didn't change, only how the base is trained, e.g. LoRA) | the "new cell vs. new training axis" at the start of `extending §3` + the run_id row in `§3.4` / the flag table and §3.2 of `stage-commands §3` / `invariants §3` | §3 writes clearly where the shared module is and whether the save contract changed; §3.4 adds a note that the new axis is written into the batch prefix; the flag table adds the flag row; invariants records the new axis's hyperparameter defaults as fixed |
+| Measured hardware usage (VRAM peak, whether it fits) | `stage-commands §3.1`'s VRAM table / add a case to `gates §3` / `gpu-run`'s `references/launch-methodology.md` Step 2 | one row in the table by "base tier x training method x whether gc is on," write the peak and the conclusion; anything with an OOM story goes into gates §3; on the gpu-run side, keep just one sentence of conclusion plus a pointer, don't copy the detailed table a second time |
+| Measured a stage's wall-clock time | `stage-commands`'s time-cost reference for the corresponding stage (eval is §4.5) | **first write clearly what this stage counts by** (events? triggered events? sample rows?), then give the quantity and the minutes: a minute figure with no stated unit means the next batch will use it wrong |
+| Added a new split method | `extending §4` / `invariants.md §2` | change §4.1's `split_mode` conclusion from "not wired in" to "wired in, takes values X/Y"; invariants §2 records the new splitting method's convention and the sentence "not comparable to the old numbers" |
+| Changed any hard-coded convention | the corresponding section of `invariants.md` + `TIMELINE.md` | invariants changes the number; TIMELINE appends an entry explaining "why it changed, and to what extent the pre-change numbers are invalidated" |
+| Hit a new pitfall | add a case to `gates.md §3` / add a row to this file's §5 | a pitfall that errors → goes into gates §3; a pitfall that **doesn't error** → must go into §5's silent-failure table, with a clear write-up of "what the symptom looks like" |
+| Added a new gate | add one row to `gates.md §1`'s summary table | numbers pick up in sequence, and reference it in the corresponding Phase of SKILL.md at the same time |
+| Changed a script interface (added/removed/changed a flag, changed an artifact path) | the corresponding section of `stage-commands` + `stage-commands §7 interface traps` | change the field in the parameter table; a newly introduced asymmetric behavior (artifact write direction, overwrite semantics) goes into §7 |
 
-**原则一:什么该进 skill,什么是这批次一次性的事。** 判据是"下一批次还会不会碰上"。**进 skill**:改了代码接口、加了新分支、发现了一个静默失败点、定下了一条新口径、新增了一道门禁——这些下一批次一定会再遇上。**不进 skill**:某次排卡表怎么分的(`ops/<batch>_placement.json` 自己留档就够)、某个 run 跑了多久、某次某张卡坏了、某个模型这一批的具体数字——这些属于 `RESULTS.md` / `TIMELINE.md` / `ops/jobs.json`。一句话:**skill 只收"方法",不收"这批的结果"**。边界情形——同一个坑第二次踩到,不管当时觉得多偶然,一律进 skill。
+**Principle one: what belongs in the skill, and what's a one-off thing for this batch.** The criterion is **whether the next batch will run into it again**. **Goes into the skill**: a code interface changed, a new branch was added, a silent failure point was discovered, a new convention was fixed, a new gate was added: the next batch will always run into these again. **Doesn't go into the skill**: how a particular batch's placement table was divided up (`ops/<batch>_placement.json` keeping its own record is enough), how long a particular run took, a particular card breaking one time, a particular model's specific number this batch: these belong to `RESULTS.md` / `TIMELINE.md` / `ops/jobs.json`. In one sentence: **the skill only collects "method," not "this batch's results."** Edge case: the same pitfall hit a second time, no matter how coincidental it feels at the time, always goes into the skill.
 
-**原则二:回写时机是"当场记、收尾写"。** 发现的当下先在批次计划 `plans/<日期>-<batch>-plan.md` 里记一行原始现象(哪个文件哪一行、什么症状),因为细节两小时后就丢了;正式改 skill 放在 Phase D 收官时一并做,和 `record.py finish` / TIMELINE 补条同一轮。理由:实验跑到一半改 skill,会让"这批用的到底是哪版方法"说不清——skill 的改动必须和批次收官在同一个 commit 边界上。
+**Principle two: write back "at the moment it's found, write it up at wrap-up."** Record one line of the raw phenomenon (which file, which line, what symptom) in the batch plan `plans/<date>-<batch>-plan.md` as soon as it's found, because the details are gone two hours later; make the formal skill edit at Phase D wrap-up, done in the same pass as `record.py finish` / the TIMELINE entry. Reason: editing the skill mid-experiment would leave it unclear "which version of the method this batch actually used"; the skill's changes must sit on the same commit boundary as the batch's wrap-up.
 
-**原则三:回写必须 commit,且和数字分开。** skill 的改动跟着 Phase D 第 6 步的收官 commit 一起进库即可,但 commit message 里要**单独点名**改了哪几节,让人从日志能查到方法是哪一版——`skill: probe-pipeline 补 <批次> 的方法改动——extending §3 加 <格名> 格 / §5 新增静默点 #23 / gates 新增 G23`。如果这一批只改了 skill 没出数字(例如只是清点),那就单独一个 `skill:` 前缀的 commit,不要混进 `exp:` 或 `data:`。
+**Principle three: writing back must be committed, and kept separate from the numbers.** The skill's changes can go into the repo together with Phase D step 6's wrap-up commit, but the commit message must **call out by name** which sections were changed, so the method version can be looked up from the log: `skill: <what changed> -- triggered by <batch>`. If this batch only changed the skill and produced no numbers (e.g. it was just a stocktaking), make a separate commit with the `skill:` prefix on its own, don't mix it into `exp:` or `data:`.
 
-⚠️ **门禁编号 G1–G24 已占用,新门禁从 G25 起顺延,不许复用旧号**——SKILL.md 与本文件都按号引用,复用旧号会让两处指向不同的东西。(G19–G22 是 `check_callstr.py` 那批;G23–G24 是 np821 批加的"驱动器与手发评测混用"两道,见 `gates.md §1`。)
+Warning: **gate numbers G1-G24 are already taken, new gates pick up from G25, do not reuse an old number**: both SKILL.md and this file reference them by number, reusing an old number would make the same reference point at two different things. (G19-G22 are from the `check_callstr.py` batch; G23-G24 are the two "driver mixed with hand-launched eval" gates added for the np821 batch, see `gates.md §1`.)
 
 ---
 
-## 7. 未解之处
+## 7. Unresolved matters
 
-- **非 qwen / 非 gpt-oss 的第三种服务旗标**没有现成模板。`gen_launch.py` 只有 `QWEN_FLAGS_SRC`(`:57-59`)与 `GPTOSS_SERVE_FLAGS`(`:61`)两套,新族(如 Llama 的 tool-call parser)该配什么旗标,本仓库未读到。
-- ~~ALFWorld 在本仓库不存在~~ → **已接入,这条作废**。`envs/alfworld/`(自建目录,含 `data`/`splits`/`venv`/`logs`)已在位;`run.py` 里有 `collect-alf`(解释器 `envs/alfworld/venv/bin/python`,脚本 `envs/collect/run_alfworld.py`)与 `gen-alf-splits`(`pipeline/collect/gen_alfworld_splits.py`,官方三个分区目录抽题单,做法见 §4.6 左栏);`rules.py` 也已有 ALFWorld 的 `ALF_BAD_CHARS` 逗号闸门(§5 #21)。⚠️ 遗留一点:`gen-alf-splits` **没有防覆盖门禁**(run.py 该任务的 notes 原话是"重跑直接改写已入库 txt",别的三个 `gen-*-splits` 都有 `--force` 门禁)。另注:`gen_launch.py` 的客户端生成段是**查 `ENV_TABLE`** 的(常量 `ENV_TABLE`,现有 `appworld` / `alfworld` 两条,各带 venv/runner/fn/统一参数;`gen_clients` 与 `gen_manifest_md` 都按 `cfg["env"]` 取),加新环境 = 往这张表加一条 + 写对应 `run_<env>.py`,§2.1/§2.2 已按此写。
-- ~~一个环境是否必须配一个采集器,存疑~~ → **bfcl 就是反例,已确认**。bfcl 没有自己的采集器,`build.bfcl_events` 直接读外部 BFCL 工具产出的原生结果文件:`<traj_run>/bfcl_<模型>/**/*multi_turn*result.json`,逐行 json、按 `entry["id"]` 去重,事件从 `entry["inference_log"]` 里扁平化出的 `(role, content, reasoning_content)` 三元组抽。本轮实测的两个 run 目录是 `envs/runs/full_v1`(q35 + q36)与 `envs/runs/full_v2_topup`(gptoss),合计 200 题 × 3 模型 = 595 条有事件的轨迹 / 3325 事件。同目录下的 `bfcl_<模型>_score/` 是评分目录,靠 `MODEL_OF.get(rsplit("_",1)[1])` 取不到模型而被跳过(不是靠白名单)。
-- **tales 链路未验证**。`eval_causal_call.py:119` 对 tales 走 `BFCL_CALL`,而 tales 的标签是动词、`label_call` 由 `build.py:158-162` 拼成 `verb(arg=...)`,形式上能对上,但 c1 批次没跑过 tales 的 cgen 格,未实测。
-- **新环境下 G8(ACCEPT_V3DIFF)失效**。`accept_v3diff.py:24-25`/`:108` 把输入路径与环境列表写死成 `("bfcl","appworld")` 的旧数据,新环境没有旧数据可复现,这道门该换成什么验收,规格里未读到。
-- **非分类头的 inject 凭证没有定义**。`check_bundle.py:165` 只有 `mbert`/`causal` 两个选项,两个 Bundle 类都以"吐类别分布 + 查 `label_map.json`"为接口(`:104-110`、`:145-160`),所以 **mext 与 cgen 两个格至今没有 BUNDLE_CHECK**。抽取头/生成头的"能装起来"该怎么验(生成一条?抽一个区间?),规格里未读到。
-- **K 折 / 留一法的 run_id 与记账约定未读到**。§4.3 建议的"一折一目录"会让 run 数翻 K 倍,折号写进 run_id 的哪一段、`ops/jobs.json` 与 `record.py` 怎么归并同一折的多个 run,现有文档里没有相关约定。
+- **A third set of service flags for non-qwen / non-gpt-oss families** has no ready-made template. `gen_launch.py` only has the two sets `QWEN_FLAGS_SRC` (`:57-59`) and `GPTOSS_SERVE_FLAGS` (`:61`); what flags a new family (e.g. Llama's tool-call parser) should be configured with was not found in this repo.
+- ~~ALFWorld doesn't exist in this repo~~ → **already integrated, this entry is void**. `envs/alfworld/` (a self-built directory containing `data`/`splits`/`venv`/`logs`) is already in place; `run.py` has `collect-alf` (interpreter `envs/alfworld/venv/bin/python`, script `envs/collect/run_alfworld.py`) and `gen-alf-splits` (`pipeline/collect/gen_alfworld_splits.py`, drawing the task list from the three official partition directories, method in the left column of §4.6); `rules.py` also already has ALFWorld's `ALF_BAD_CHARS` comma gate (§5 #21). Warning: one thing left over: `gen-alf-splits` **has no anti-overwrite gate** (the notes on this task in run.py literally say "rerunning directly overwrites the txt already checked in"; the other three `gen-*-splits` all have a `--force` gate). Another note: `gen_launch.py`'s client-generation section works by **looking up `ENV_TABLE`** (constant `ENV_TABLE`, currently has two entries, `appworld` / `alfworld`, each carrying venv/runner/fn/uniform parameters; both `gen_clients` and `gen_manifest_md` fetch by `cfg["env"]`); adding a new environment = adding one entry to this table + writing the corresponding `run_<env>.py`, which is exactly how §2.1/§2.2 are already written.
+- ~~whether an environment must have its own collector was an open question~~ → **bfcl is the counterexample, now confirmed**. bfcl has no collector of its own; `build.bfcl_events` directly reads the raw result files produced by the external BFCL tool: `<traj_run>/bfcl_<model>/**/*multi_turn*result.json`, one json per line, deduplicated by `entry["id"]`, with events extracted from the `(role, content, reasoning_content)` triples flattened out of `entry["inference_log"]`. The two run directories measured this round are `envs/runs/full_v1` (q35 + q36) and `envs/runs/full_v2_topup` (gptoss), a total of 200 tasks x 3 models = 595 trajectories with events / 3325 events. `bfcl_<model>_score/` under the same directory is a scoring directory, skipped because `MODEL_OF.get(rsplit("_",1)[1])` can't find a model for it (not by an allowlist).
+- **The tales chain has not been verified.** `eval_causal_call.py:119` routes tales through `BFCL_CALL`, and tales's labels are verbs, with `label_call` assembled by `build.py:158-162` into `verb(arg=...)`, which matches in form, but the c1 batch never ran tales's cgen cell, so this hasn't been measured.
+- **G8 (ACCEPT_V3DIFF) is void under a new environment.** `accept_v3diff.py:24-25`/`:108` hard-codes the input path and environment list to the old data `("bfcl","appworld")`; a new environment has no old data to reproduce against, and what this gate should be replaced with for acceptance was not found in the spec.
+- **There's no definition of an inject credential for a non-classification head.** `check_bundle.py:165` only has the two options `mbert`/`causal`, and both Bundle classes use "produce a class distribution + look up `label_map.json`" as their interface (`:104-110`, `:145-160`), so **the two cells mext and cgen have no BUNDLE_CHECK to this day**. How to verify "can it be loaded" for an extraction head or a generation head (generate one? extract a span?) was not found in the spec.
+- **No run_id or bookkeeping convention was found for K-fold / leave-one-out.** §4.3's suggested "one fold, one directory" would multiply the run count by K; which segment of run_id the fold number goes into, and how `ops/jobs.json` and `record.py` should merge multiple runs of the same fold, has no existing convention in the documentation.

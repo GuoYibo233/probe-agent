@@ -1,44 +1,43 @@
 # vLLM Glossary
 
-new1 这条线上跟 vLLM 打交道时的固定说法。一个概念只用一个词，别名列在 _避免_ 里。
-只有 gyb 已经能正确使用的词才进这里——新讲的概念先待在课里。
+Fixed terminology for this new1 line of work when dealing with vLLM. One concept, one word; aliases are listed under _avoid_.
+Only words gyb can already use correctly go in here; newly taught concepts stay in the lessons first.
 
-## 服务与显存
+## Serving and GPU memory
 
-**KV 缓存池**：
-服务启动时一次性圈走的那块显存，用来存已经算过的上下文。它的容量决定这台服务能同时扛几条请求。
-_避免_：KV cache、缓存、显存池
+**KV cache pool**:
+The block of GPU memory a service claims once at startup, used to store context that has already been computed. Its capacity decides how many requests this service can hold at the same time.
+_Avoid_: KV cache, cache, memory pool
 
-**单条上下文上限**：
-一条请求最多允许占用多少 token 的上下文，由 `--max-model-len` 定；不给就从模型 config 自动取。
-_避免_：max_model_len、上下文窗口、context length
+**Per-request context limit**:
+The maximum number of tokens one request is allowed to occupy, set by `--max-model-len`; if not given, it is taken automatically from the model config.
+_Avoid_: max_model_len, context window, context length
 
-**并发上限**：
-KV 缓存池容量除以单条上下文上限，日志里印成 `N.NNx`。它是"每条请求都用满上限"时的条数，不是实测吞吐。
-_避免_：并发数、max concurrency、吞吐
+**Concurrency limit**:
+KV cache pool capacity divided by the per-request context limit, printed in the log as `N.NNx`. It is the number of requests the service can hold "if every request used the full limit," not measured throughput.
+_Avoid_: concurrent count, max concurrency, throughput
 
-**显存比例**：
-`--gpu-memory-utilization`，服务从整张卡上圈走多大一块。0.26.0 的默认值是 0.92。
-按实例算——同卡跑两个实例，两个都会各自去圈这个比例。
-_避免_：显存占用率、gpu util
+**Memory fraction**:
+`--gpu-memory-utilization`, how much of the whole card a service claims. The default in 0.26.0 is 0.92.
+Counted per instance: running two instances on the same card means each one claims this fraction separately.
+_Avoid_: memory occupancy rate, gpu util
 
-## 端点与解析
+## Endpoints and parsing
 
-**completions 端点**：
-`/v1/completions`。客户端自己拼好整段字符串，服务端原样喂进模型。注入线只能走这条。
-_避免_：补全接口、raw 端点、原始端点
+**completions endpoint**:
+`/v1/completions`. The client assembles the whole string itself and the server feeds it into the model as-is. The inject line can only go through this one.
+_Avoid_: completion interface, raw endpoint, raw interface
 
-**chat 端点**：
-`/v1/chat/completions`。客户端只给 messages，服务端套聊天模板、并把思考段解析进 `reasoning` 字段。
-_避免_：对话接口、chat completions
+**chat endpoint**:
+`/v1/chat/completions`. The client only supplies messages, and the server applies the chat template and parses the reasoning segment into the `reasoning` field.
+_Avoid_: conversation interface, chat completions
 
-**思考解析器**：
-`--reasoning-parser`，服务端用来把模型输出里的思考段切出来的那个部件。gpt-oss 由 vLLM 自动挂 `openai_gptoss`。
-_避免_：reasoning parser、推理解析器
+**reasoning parser**:
+`--reasoning-parser`, the component the server uses to cut the reasoning segment out of the model's output. For gpt-oss, vLLM attaches `openai_gptoss` automatically.
+_Avoid_: reasoning parser (Chinese gloss), inference parser
 
-## 口径
+## Settings
 
-**口径**：
-一批数据是在什么服务配置下产出的——上下文上限、显存比例、走哪个端点、挂了哪个解析器。
-口径不同的两批数据不能直接比。
-_避免_：设置、配置、setup（这几个词在本仓库另有所指）
+**Settings**:
+The service configuration a batch of data was produced under: context limit, memory fraction, which endpoint, which parser attached. Two batches produced under different settings cannot be compared directly.
+_Avoid_: setup, configuration, config (these words mean something else elsewhere in this repo)

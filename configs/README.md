@@ -1,60 +1,78 @@
-# configs/ — 生成设置的唯一真源
+# configs/ -- the single source of truth for generation settings
 
-这个目录管生成设置（模型地址、vLLM 启动参数、采样参数）；
-`pipeline/configs/` 管的是数据批次（哪些轨迹、怎么切分），两边不要混。
+This directory manages generation settings (model addresses, vLLM launch args,
+sampling params); `pipeline/configs/` manages data batches (which trajectories,
+how they are split) -- do not mix the two up.
 
-两样东西：
+Two things live here:
 
-- `models.json`：唯一的模型地址映射。`model_registry.py` 从这里读,
-  脚本一律经 `resolve()` 取路径，不许硬编码。
-- `presets/<名>.json`：一份文件一套生成设置。`model` 是 models.json 里的
-  别名；`server` 节是 vLLM 启动参数（`serve_preset.py` 吃，
-  发射走 `run.py show serve-preset`）；`client` 节是采样参数
-  （api / reasoning_effort / temperature / top_p / max_tokens / stop /
-  start_date / seed，采集器、活跑、回放的 `--preset` 吃，BFCL handler 走
-  环境变量 `NEW1_PRESET_JSON`）。节里的 null = 不指定，落到调用方原有缺省。
-  temperature 只从 client 节来；预设把它写成 null 时，生成入口经
-  `require_temperature` 当场停下并点名是哪份预设（BFCL handler 例外，
-  null 时用 BFCL 自带的那一档）。
+- `models.json`: the single mapping of model addresses. `model_registry.py`
+  reads from here, and scripts always take the path through `resolve()`,
+  never hardcoded.
+- `presets/<name>.json`: one file, one set of generation settings. `model` is
+  an alias from models.json; the `server` block is vLLM launch args (`serve_preset.py`
+  consumes it; launching goes through `run.py show serve-preset`); the `client`
+  block is sampling params (api / reasoning_effort / temperature / top_p / max_tokens /
+  stop / start_date / seed, consumed by the `--preset` flag of the collector, the
+  live run, and replay; the BFCL handler takes it through the environment variable
+  `NEW1_PRESET_JSON`). A null in the block means unspecified, falling back to
+  the caller's own existing default. temperature comes only from the client
+  block; when a preset writes it as null, the generation entry point stops on
+  the spot through `require_temperature` and names which preset it was (except
+  the BFCL handler, which uses BFCL's own built-in setting when it is null).
 
-client 节八个键在四类入口的取用范围（2026-08-21 对齐；此前 top_p/seed 只有
-采集线取，活跑/回放/BFCL 静默吃不到，现在钉在 `tests/test_preset.py` 的
-TestSamplingForwarding 与 TestBfclHandlerPreset）：
+The range each of the client block's eight keys is taken from, across the four
+entry points (aligned 2026-08-21; before this, top_p/seed were taken only by
+the collection line, silently unreachable from the live run / replay / BFCL,
+now pinned down by TestSamplingForwarding and TestBfclHandlerPreset in
+`tests/test_preset.py`):
 
-| 键 | 采集线(4 个收集器) | BFCL | 活跑 | 回放 |
+| key | collection line (4 collectors) | BFCL | live run | replay |
 |---|---|---|---|---|
-| temperature / top_p / max_tokens / seed | 取 | 取 | 取 | 取 |
-| reasoning_effort | 取(chat/harmony 口径) | 取 | 取 | 不用(effort 定死在被回放的前缀里) |
-| stop | 不取(raw 钉死 `<\|im_end\|>`,chat/harmony 不传) | 不取 | 取 | 取 |
-| api / start_date | 取 | 不取 | 不取 | 不取 |
+| temperature / top_p / max_tokens / seed | taken | taken | taken | taken |
+| reasoning_effort | taken (chat/harmony basis) | taken | taken | not used (effort is fixed in the replayed prefix) |
+| stop | not taken (raw is fixed to `<\|im_end\|>`, chat/harmony do not pass it) | not taken | taken | taken |
+| api / start_date | taken | not taken | not taken | not taken |
 
-以后加新采样键，四处一起动：`preset_loader.py` 的 CLIENT_KEYS、
-`envs/collect/common.py` settings_from_args 的兜底、活跑与回放的 PRESET_FB、
-BFCL handler 的预设读取段；`tests/test_preset.py` 的 SAMPLING_KEYS 跟着扩
-（活跑/回放兜底漏键测试会红，另两处靠 TestCollectorSettings 与
-TestBfclHandlerPreset 的取值断言盯着）。
+Whenever a new sampling key is added, four places move together: the CLIENT_KEYS
+in `preset_loader.py`, the fallback in `envs/collect/common.py`'s
+settings_from_args, the PRESET_FB in the live run and replay, and the BFCL
+handler's preset-reading block; `tests/test_preset.py`'s SAMPLING_KEYS expands
+along with them (a missing-key fallback in the live run / replay will fail red;
+the other two spots are watched by the value assertions in
+TestCollectorSettings and TestBfclHandlerPreset).
 
-三条规矩：
+Three rules:
 
-1. 命令行显式给的参数永远压过预设值（merge 逻辑在 `preset_loader.py`）。
-2. 加一套新设置 = 加一份 json。加完跑 `python3 run.py selfcheck`
-   （校验别名解析与字段类型）和 `python3 -m unittest tests.test_preset`。
-3. 用了预设的跑，run_id 里带上预设名（DATA.md 检查清单第 9 条）。
+1. An argument given explicitly on the command line always overrides the
+   preset value (the merge logic lives in `preset_loader.py`).
+2. Adding a new set of settings = adding one json file. After adding one, run
+   `python3 run.py selfcheck` (checks alias resolution and field types) and
+   `python3 -m unittest tests.test_preset`.
+3. A run that used a preset carries the preset name in its run_id (DATA.md's
+   checklist, item 9).
 
-现有三份预设，值由 `tests/test_preset.py` 钉着：
+Three presets currently exist, their values pinned by `tests/test_preset.py`:
 
-- `default` 是全线现役的唯一口径，每个入口的 `--preset` 缺省就是它。
-  client 节 api harmony / effort high / temperature 1.0 / top_p 1.0 /
-  max_tokens 8192 / stop null / start_date 2026-08-06 / seed null；
-  server 节 tokyo108:8103、gpt-oss-120b、显存 0.92（`serve_preset.py` 直接发射）。
-- `gptoss_default` 是 OpenAI 官方推荐口径（temperature=1.0 / top_p=1.0 /
-  top_k=0 / min_p=0.0 / effort medium / 上下文 131072，出处与对照写在它的 desc 里）。
-- `gptoss_bfcl_high` 是 BFCL 线口径（api chat / effort high / max_tokens 16384；
-  temperature 留 null，BFCL handler 用它自己那一档；无 server 节）。
-  BFCL handler 不设 `NEW1_PRESET_JSON` 时读 `default`，取 max_tokens 8192 /
-  top_p 1.0 / temperature 1.0；指到 `gptoss_bfcl_high` 时取 max_tokens 16384、
-  温度用 BFCL 自带的那一档。
-别手改预设去"顺手调参"——调参就新开一份预设，名字说清口径。
-成组调参不用手开 N 份：`python3 run.py preset-sweep --base <名> --grid
-键=值,值,...`（可多条 --grid 取笛卡尔积）一条命令生成整批网格预设，
-名字 `<base>__<键><值>…` 即口径，生成完先 commit 再逐点发射。
+- `default` is the one setting in service across the whole line; every entry
+  point's `--preset` defaults to it. client block: api harmony / effort high /
+  temperature 1.0 / top_p 1.0 / max_tokens 8192 / stop null / start_date
+  2026-08-06 / seed null; server block: tokyo108:8103, gpt-oss-120b, VRAM
+  fraction 0.92 (`serve_preset.py` launches it directly).
+- `gptoss_default` is OpenAI's own recommended setting (temperature=1.0 /
+  top_p=1.0 / top_k=0 / min_p=0.0 / effort medium / context 131072; the source
+  and the comparison are written in its desc).
+- `gptoss_bfcl_high` is the BFCL line's setting (api chat / effort high /
+  max_tokens 16384; temperature is left null, the BFCL handler uses its own
+  setting; no server block). When the BFCL handler has no `NEW1_PRESET_JSON`
+  set, it reads `default`, taking max_tokens 8192 / top_p 1.0 / temperature
+  1.0; when pointed at `gptoss_bfcl_high`, it takes max_tokens 16384, with
+  temperature from BFCL's own setting.
+
+Do not hand-edit a preset to "tweak parameters while you're at it" -- open a new
+preset for that, with a name that states the setting clearly. For sweeping a
+group of parameters, no need to hand-open N presets: `python3 run.py
+preset-sweep --base <name> --grid key=value,value,...` (multiple --grid flags
+take the cartesian product) generates a whole grid of presets in one command,
+named `<base>__<key><value>...`, which is itself the setting; commit right
+after generating them, then launch point by point.

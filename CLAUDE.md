@@ -1,143 +1,196 @@
-# new1 工程规则
+# new1 project rules
 
 ## Everything written into this repo is English (user order, 2026-09-12)
 
 Every file and every new addition is written in English: code, comments,
 docstrings, runtime strings (errors, exit messages, argparse help, log lines,
 report titles), plan documents, and new ledger entries. Terminology follows the
-English terms in parentheses in the `CONTEXT.md` glossary
+English terms in the `CONTEXT.md` glossary
 (probe / cut / fire / inject / launch / heartbeat / sampler / verdict / piece / refire).
-Chinese documents already on disk stay as they are; translate one only when the
-user names it. One script parses Chinese documents through Chinese pattern
-strings on purpose (exp-status `md2html.py`); leave those strings alone.
+The whole repo was translated to English in one pass on 2026-09-12, including
+the ledgers and the archive; nothing on disk is Chinese any more, with two
+allowed exceptions. First, the `description` field of each skill and agent
+definition ends with one clause of Chinese trigger phrases, because those
+phrases route Chinese requests to the right skill. Second, each `CONTEXT.md`
+glossary entry keeps the original Chinese term once in parentheses after its
+English head term, because the glossary is the map from the words the user
+says in chat to the canonical English terms. The user speaks Chinese in chat;
+that never changes the language of a file.
 
-## GPU 任务：唯一入口是 gpu-run skill
+## GPU jobs: the only entry is the gpu-run skill
 
-任何要用显卡跑的程序（训练/推理/探针/vLLM，不分大小）一律走
-`.claude/skills/gpu-run/SKILL.md` 的全生命周期流水线：
-探卡 → 挑卡 → smoke → 发射前 commit → `launch` 发射（tmux + 三处登记）→
-交监控命令 → 采样器接管判定与升级 → 收尾（汇报/记数字/释放/销号/提交）或中断。
-禁止绕过它手搓 ssh/nohup 启动。
+Any program that uses a GPU (training / inference / probe / vLLM, no matter how
+small) goes through the full life-cycle pipeline in
+`.claude/skills/gpu-run/SKILL.md`:
+probe the cards -> pick cards -> smoke -> commit before launch -> `launch`
+(tmux + registration in three places) -> hand over the monitoring command ->
+the sampler takes over verdicts and escalation -> wrap-up (report / record
+numbers / release / deregister / commit) or interruption.
+Hand-rolled ssh/nohup launches that bypass it are forbidden.
 
-- 发射与登记收成 `python3 run.py launch` 一条命令（探卡/tmux/验活/三处登记一口气做完）。
-- 集群慢变量（驱动/CUDA/坑）：`ops/gpu_state.md`
-- 任务台账：`ops/jobs.json`，`launch` 发射时自动登记，收尾 `python3 run.py gpu-jobs finish` 销号，
-  手搓发射才用 `gpu-jobs register` 补录；不许手改文件本体
-- 用户自助监控：`python3 run.py gpu-jobs watch`；网页 `http://localhost:8377`（ssh 端口转发）
-  由常驻采样器 `python3 run.py sampler` 提供，采样器没跑网页就没有
-- 实时空卡：`python3 run.py gpu-jobs free`（永不信缓存的占用状态）
-- 产物钉代码：发射器自动往产物目录写 `RUNMETA.json`（commit+argv+脏清单）；
-  手搓发射必须补 `python3 run.py runmeta <产物目录> --cmd '<完整命令>'`
+- Launch and registration collapse into one command, `python3 run.py launch`
+  (card probe / tmux / liveness check / three registrations in one go).
+- Cluster slow variables (driver / CUDA / pitfalls): `ops/gpu_state.md`
+- Job ledger: `ops/jobs.json`. `launch` registers automatically; wrap-up
+  deregisters with `python3 run.py gpu-jobs finish`; `gpu-jobs register` is
+  only for backfilling hand-rolled launches. Never edit the file body by hand.
+- Self-service monitoring: `python3 run.py gpu-jobs watch`; the web page
+  `http://localhost:8377` (ssh port forward) is served by the long-running
+  sampler `python3 run.py sampler`. No sampler, no web page.
+- Free cards right now: `python3 run.py gpu-jobs free` (never trusts cached
+  occupancy).
+- Outputs pinned to code: the launcher writes `RUNMETA.json` (commit + argv +
+  dirty list) into the output directory automatically; a hand-rolled launch
+  must backfill it with `python3 run.py runmeta <output dir> --cmd '<full command>'`.
 
-## 探针流水线：整条链走 probe-pipeline skill
+## Probe pipeline: the whole chain goes through the probe-pipeline skill
 
-要把 collect/annotate/train/eval 串起来跑一批（换数据集 / 换模型 / 出矩阵），
-走 `.claude/skills/probe-pipeline/SKILL.md`：定批次 → 采集 → 写码 → 双验收线 →
-造数据 → smoke → 训练 → 依赖顺序评测 → 矩阵 → 收官 → **回写 skill**。
-单个 GPU 任务仍只用 gpu-run；这个 skill 管的是整条链，GPU 环节转交 gpu-run。
+To chain collect/annotate/train/eval into one batch (new dataset / new model /
+a matrix), use `.claude/skills/probe-pipeline/SKILL.md`: define the batch ->
+collect -> write code -> two acceptance lines -> build data -> smoke -> train
+-> evaluate in dependency order -> matrix -> wrap-up -> **write back into the
+skill**. A single GPU job still uses only gpu-run; this skill manages the whole
+chain and hands each GPU step to gpu-run.
 
-**扩展流水线也从这里进**：加新模型 / 新环境 / 新训练方法(新格) / 新 split 方法，
-改动清单在 `references/extending.md`（§5 静默失败点总表必看）。
-**扩展完必须按 Phase E 回写 skill**——不回写，下一个人拿的就是旧地图。
+**Extending the pipeline also enters here**: adding a model / an environment /
+a training method (a new cell) / a split method. The change list is in
+`references/extending.md` (section 5, the table of silent failure points, is
+required reading). **After extending, write the skill back per Phase E**;
+without the write-back the next person gets the old map.
 
-## 跑任务：统一从 run.py 进
+## Running tasks: always enter through run.py
 
-凡是注册表里有的任务（采集/标注/训练/评测/回放注入/执行/活跑，不分 CPU、GPU），
-一律从仓库根 `run.py` 进，禁止直接调底层脚本：
-- CPU 任务：`python3 run.py <task> [参数...]` 直跑，解释器由注册表定。
-- GPU/发射类任务：`python3 run.py show <task>` 出命令，发射本身仍走 gpu-run skill。
-  show 对发射类同样过脏树门禁（`--allow-dirty` 放行）；三个台账文件与锁
-  （jobs.json/runs.jsonl/RESULTS.md/*.lock）不算脏。
-- 多步流程用 `python3 run.py recipe <name>`，进度看 `run.py status`。
-- 注册表里没有的任务：先挂进 TASKS/RECIPES 再跑
-  （一次性发射器按 2026-08-02 裁决不进注册表，属唯一例外）。
-- 扩展代码与注册表更新同一个 commit，交付前过 `python3 run.py selfcheck`。
+Every task in the registry (collect / annotate / train / eval / replay
+injection / execute / live run, CPU or GPU) is entered through `run.py` at the
+repo root; calling the underlying scripts directly is forbidden:
+- CPU tasks: `python3 run.py <task> [args...]` runs directly; the interpreter
+  is set by the registry.
+- GPU / launch-type tasks: `python3 run.py show <task>` prints the command; the
+  launch itself still goes through the gpu-run skill. `show` applies the
+  dirty-tree gate to launch-type tasks too (`--allow-dirty` bypasses it); the
+  three ledger files and the locks (jobs.json / runs.jsonl / RESULTS.md /
+  *.lock) do not count as dirty.
+- Multi-step flows use `python3 run.py recipe <name>`; progress is in
+  `run.py status`.
+- A task missing from the registry is added to TASKS/RECIPES before it runs
+  (one-off launchers stay out of the registry per the 2026-08-02 ruling, the
+  only exception).
+- Extension code and the registry update land in the same commit; run
+  `python3 run.py selfcheck` before delivery.
 
-## 记录：四本账加原始数据，主键 run_id
+## Records: four ledgers plus raw data, primary key run_id
 
-每次实验都要留下痕迹，分五层（四本账 + 原始数据），别混用：
+Every experiment leaves a trace, in five layers (four ledgers + raw data); do
+not mix them:
 
-| 层 | 文件 | 谁写 | 回答什么问题 |
+| Layer | File | Who writes | Which question it answers |
 |---|---|---|---|
-| 方向 | `TIMELINE.md` | 人写，只增不改 | 当初为什么这么定 |
-| 数字 | `ops/runs.jsonl` → `RESULTS.md` | `ops/record.py` | 数据长什么样 |
-| 数据设定 | `DATA.md` | 人写，随数据版本更新 | 这批数据是怎么造出来的 |
-| 计划 | `WORKPLAN.md` | 人写，会被覆盖 | 接下来打算做什么 |
-| 原始数据 | NFS，不进 git | 实验脚本 | 数据本体在哪 |
+| Direction | `TIMELINE.md` | a person, append only | why it was decided this way at the time |
+| Numbers | `ops/runs.jsonl` -> `RESULTS.md` | `ops/record.py` | what the data looks like |
+| Data settings | `DATA.md` | a person, updated with each data version | how this batch of data was built |
+| Plan | `WORKPLAN.md` | a person, overwritten | what comes next |
+| Raw data | NFS, not in git | experiment scripts | where the data itself lives |
 
-- **开新实验之前先过 `DATA.md` 的检查清单**。里面每一条都对应一个已经踩过的坑。
-- `DATA.md` 只写设定与口径，**不写结论**——结论归 `RESULTS.md`，否则会长成第二本账。
-- 代码地图在 `MAP.md`：每个程序是干什么的、怎么用。加新程序要更新对应行。
-- `run.py launch` 发射时自动调 `record start`（抓 git HEAD），收尾时手动
-  `run.py record finish` 补数字，两步写在 gpu-run skill 的 Phase 4 / 6a 里，跟着流水线走就不会漏。
-- `RESULTS.md` 是渲染产物，**不要手改**；`runs.jsonl` append-only，只增不改。
-- `WORKPLAN.md` 是会被覆盖的当前计划，`TIMELINE.md` 是永不覆盖的决策历史，
-  两者分工不能颠倒。实验结论动了 WORKPLAN 任何一条判断 → 必须补一条 TIMELINE。
-- run_id 四处一致：原始数据目录名 / tmux session / 台账 name / commit message。
+- **Go through the `DATA.md` checklist before starting a new experiment.**
+  Every item there corresponds to a pitfall already hit.
+- `DATA.md` records settings and definitions only, **no conclusions**;
+  conclusions belong to `RESULTS.md`, otherwise it grows into a second ledger.
+- The code map is `MAP.md`: what each program does and how to use it. Adding a
+  program updates its line.
+- `run.py launch` calls `record start` automatically (captures git HEAD); at
+  wrap-up, `run.py record finish` adds the numbers by hand. Both steps are
+  written into Phase 4 / 6a of the gpu-run skill; following the pipeline means
+  nothing is missed.
+- `RESULTS.md` is a rendered product, **never edit it by hand**; `runs.jsonl`
+  is append-only. The one-time English translation of both on 2026-09-12 is the
+  only historical exception and is recorded in `TIMELINE.md`.
+- `WORKPLAN.md` is the current plan and gets overwritten; `TIMELINE.md` is the
+  decision history and is never overwritten. The two roles never swap. When an
+  experiment result changes any judgment in WORKPLAN, add a TIMELINE entry.
+- run_id is identical in four places: raw data directory name / tmux session /
+  ledger name / commit message.
 
-## 远古记忆：2026-08-20 之前的记录默认不读（2026-09-12 用户明令）
+## Ancient memory: records from before 2026-08-20 are not read by default (user order, 2026-09-12)
 
-`plans/archive/` 整个目录是远古记忆——2026-08-20 之前的计划、报告、评审，
-加上从 `TIMELINE.md` 搬出去的 2026-08-02 到 2026-08-18 条目
-（`plans/archive/TIMELINE-2026-08-02-to-2026-08-18.md`）。
-用户明说"查远古记忆"或者点名某份归档文件的时候才去读；其余时候不读、
-不引用、不拿来回答问题。回答需要用到那批记录的时候，直说"依据在
-远古记忆里"，停下来等用户发话。`ops/runs.jsonl` 与 `RESULTS.md` 里
-2026-08-20 之前的数字行不搬（账本只增不改、渲染产物不手改），
-`METHOD.md` 与 `CONTEXT.md` 里带旧日期戳的条目是现役规则，都不算远古记忆。
+The whole `plans/archive/` directory is ancient memory: plans, reports, and
+reviews from before 2026-08-20, plus the 2026-08-02 to 2026-08-18 entries moved
+out of `TIMELINE.md` (`plans/archive/TIMELINE-2026-08-02-to-2026-08-18.md`).
+Read it only when the user explicitly says "check the ancient memory" or names
+an archived file; otherwise do not read it, cite it, or use it to answer
+questions. When an answer needs those records, say "the evidence is in the
+ancient memory" and stop until the user speaks. Number rows dated before
+2026-08-20 in `ops/runs.jsonl` and `RESULTS.md` are not moved (the ledger is
+append-only, the rendered product is not hand-edited). Entries with old date
+stamps in `METHOD.md` and `CONTEXT.md` are active rules and do not count as
+ancient memory.
 
-## 版本控制
+## Version control
 
-- 本目录是 git 仓库（2026-07-29 建，无 remote）。
-- 入库边界：代码 / 笔记 / 统计数字进库；虚拟环境、第三方 clone、
-  原始轨迹、模型权重、日志不进库（见 `.gitignore`）。
-- **发射实验前先 commit**：记录里存的 HEAD 只有工作树干净时才追得回真实代码。
+- This directory is a git repository (created 2026-07-29, no remote).
+- Repository boundary: code / notes / statistics go in; virtual environments,
+  third-party clones, raw trajectories, model weights, and logs stay out (see
+  `.gitignore`).
+- **Commit before launching an experiment**: the HEAD stored in a record leads
+  back to the real code only when the working tree was clean.
 
-## 铁律：不许猜数据结果
+## Iron rule: no guessing about data results
 
-没有用户明确允许，以下三件事一律不做：
+Without explicit user permission, none of these three things happens:
 
-1. **没亲眼读过实际的输出文件或代码，不许对数据结果做任何猜测、判断、解读。**
-   包括归因、下结论、推测机制。反面案例：w2 比 w0 差，没看任何日志就说是 GPU 原因。
-   要解释一个数字，先把产出它的文件（日志 / jsonl / eval 输出）和跑它的代码读了；
-   读不到就直说读不到，然后停在那里。
-2. **不许给"什么数据有说服力""论文该怎么叙事"这类建议。**
-3. **不许夸**用户的结论、问题或数据结果。
+1. **Without having read the actual output file or code, make no guess,
+   judgment, or interpretation about a data result.** That includes
+   attribution, conclusions, and speculated mechanisms. Counterexample: w2 is
+   worse than w0, and without reading any log the GPU was blamed. To explain a
+   number, first read the file that produced it (log / jsonl / eval output)
+   and the code that ran it; if it cannot be read, say so and stop there.
+2. **Give no advice of the kind "which data is convincing" or "how the paper
+   should tell the story".**
+3. **Do not praise** the user's conclusions, questions, or data results.
 
-汇报实验结果只摆事实、不带评语。这条与 `DATA.md` 只写设定不写结论、
-以及"事实和解读分开且事实在前"是同一条纪律。
+Report experiment results as facts only, with no commentary. This is the same
+discipline as "`DATA.md` records settings, not conclusions" and "facts and
+interpretation are separated, facts first".
 
-## 其他铁律
+## Other iron rules
 
-- 与 `/home/y-guo/ACL2026` 完全隔离：不读写其数据/代码/结果（硬件共用没问题）。
-- **大产物一律直接写 net 盘**（2026-08-01 起，home quota 打满后的铁律）：训练产物 /
-  原始轨迹 / 数据集 / checkpoint 都放
-  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/`（镜像本目录结构），
-  home 里只留代码、笔记和软链接。
-- 环境一律 uv 管理。
-- 模型权重下载到 `/net/tokyo100-10g/data/str01_01/y-guo/models`，不放 /home。
+- Complete isolation from `/home/y-guo/ACL2026`: never read or write its data /
+  code / results (sharing hardware is fine).
+- **Large outputs go straight to the net disk** (iron rule since 2026-08-01,
+  after the home quota filled up): training outputs / raw trajectories /
+  datasets / checkpoints all live under
+  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/` (mirroring this
+  directory's structure); home keeps only code, notes, and symlinks.
+- Environments are managed with uv, always.
+- Model weights download to `/net/tokyo100-10g/data/str01_01/y-guo/models`,
+  never to /home.
 
 ## Agent skills
 
 ### Issue tracker
 
-spec 和工单以本地 markdown 文件存放：一个功能一个目录 `.scratch/<功能名>/`，
-spec 是 `spec.md`，工单是 `issues/NN-<名字>.md`。约定见 `docs/agents/issue-tracker.md`。
+Specs and tickets are local markdown files: one directory per feature,
+`.scratch/<feature>/`, with the spec in `spec.md` and tickets in
+`issues/NN-<name>.md`. Conventions are in `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
-工单状态用五个默认标签字符串（needs-triage / needs-info / ready-for-agent /
-ready-for-human / wontfix），写在工单文件的 Status 行。对照表见 `docs/agents/triage-labels.md`。
+Ticket status uses the five default label strings (needs-triage / needs-info /
+ready-for-agent / ready-for-human / wontfix), written on the ticket file's
+Status line. The mapping is in `docs/agents/triage-labels.md`.
 
-### Ticket 执行
+### Ticket execution
 
-成批执行 `.scratch/<功能名>/issues/` 里的工单，唯一入口是
-`.claude/skills/ticket-run/SKILL.md`：主会话按 Blocked by 分波 → 预检+发射前 commit →
-每波发射一个 workflow（`wave.js`，波内工单并行、每张一棵独立工作树一条独立分支，
-实现-评审-修复循环上限 5 轮定死在脚本里）→ 分支合并与收账裁决 → 整分支终审。
-subagent 模型写死 sonnet/opus，实现者禁发 GPU 进程（回 BLOCKED 走 gpu-run）。
+Batch execution of the tickets in `.scratch/<feature>/issues/` has one entry,
+`.claude/skills/ticket-run/SKILL.md`: the main session groups tickets into
+waves by Blocked by -> pre-check + commit before launch -> one workflow per
+wave (`wave.js`; tickets in a wave run in parallel, each on its own worktree
+and branch; the implement-review-fix loop is capped at 5 rounds in the script)
+-> branch merge and accounting ruling -> final review of the whole branch.
+Subagent models are fixed to sonnet/opus; implementers never start GPU
+processes (they return BLOCKED and the work goes through gpu-run).
 
 ### Domain docs
 
-单库布局：词汇表是仓库根的 `CONTEXT.md`，架构决策记录放 `docs/adr/`。
-读取规则见 `docs/agents/domain.md`。
+Single-repo layout: the glossary is `CONTEXT.md` at the repo root, and
+architecture decision records live in `docs/adr/`. Reading rules are in
+`docs/agents/domain.md`.

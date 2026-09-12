@@ -1,14 +1,38 @@
-# 10 — 补射模式 --refire
+# 10 — Refire mode --refire
 
-**What to build:** `run.py launch --refire` 把台账里死掉的分片按原命令重发：session 还活着就拒绝（补射只对死分片），目标卡是指定的或原卡、发射前照样实探，非 FREE 拒绝并给明确报错（事故 agent 拿报错去换卡重试）。成功后台账里这个分片位的四元组更新、launched_at 刷新，session 名不变、日志换新文件；不新开 record、不重复登记，补射不是新任务。采样器看到 launched_at 变了会自动重开该分片的心跳时间轴。步骤照实施计划 Task 12 执行。
+**What to build:** `run.py launch --refire` relaunches a dead piece from
+the ledger under its original command: it's rejected if the session is
+still alive (refire is only for dead pieces); the target card is either
+the one specified or the original, probed on the spot the same as any
+launch, and rejected with a clear error if not FREE (the incident agent
+uses the error to switch cards and retry). On success, this piece slot's
+four-tuple in the ledger is updated and launched_at is refreshed; the
+session name stays the same but the log switches to a new file; no new
+record is opened and there's no repeat registration, since a refire is
+not a new job. When the sampler sees launched_at change, it automatically
+restarts that piece's heartbeat timeline. Steps follow Task 12 of the
+implementation plan.
 
-**Blocked by:** 09 launch 子命令
+**Blocked by:** 09 launch subcommand
 
 **Status:** resolved
 
-- [ ] 测试通过：活 session 拒绝，非 FREE 拒绝，成功路径台账分片的日志和 launched_at 更新且命令不变、没有第二个任务出现
+- [ ] Tests pass: a live session is rejected, a non-FREE card is
+  rejected, and the success path updates the ledger piece's log and
+  launched_at with the command unchanged and no second job appearing
 - [ ] commit
 
 ## Comments
 
-- 2026-08-08 ticket-run：DONE。分支 ticket/20260808-par/T10（base 8dfdec0，head 55a0d0e，launch_cmd.py +115、launch_common.py 微调、run.py +3、测试 +185），合并进 main 后 72 测试全绿、selfcheck 63 就位。修复 2 轮，无遗留 minors、无 cannotVerify。concerns 三条照录：launch_cmd.py 缺 MAP.md 行（T09 既有缺口，留给 T17 的 MAP 更新，T17 收账时核）；补射在采样器未追上的窗口内连发两次会撞同一 .r1.log 后缀（追加写不覆盖，边界未定义）；补射后不做 30 秒验活（工单与计划均未要求）。报告：sdd/2026-08-08-wave1/T10-report.md。
+- 2026-08-08 ticket-run: DONE. Branch ticket/20260808-par/T10 (base
+  8dfdec0, head 55a0d0e, launch_cmd.py +115, launch_common.py minor
+  tweak, run.py +3, tests +185), 72 tests all green and selfcheck's 63
+  tasks in place after merging into main. 2 fix rounds, no leftover
+  minors, no cannotVerify. Three concerns noted as-is: launch_cmd.py is
+  missing a MAP.md line (a pre-existing gap from T09, left for T17's MAP
+  update, to be checked at T17's wrap-up); firing refire twice in a row
+  within a window the sampler hasn't caught up to collides on the same
+  .r1.log suffix (append writes don't overwrite; the boundary is
+  undefined); refire does not do a 30-second liveness check afterward
+  (neither the ticket nor the plan required it). Report:
+  sdd/2026-08-08-wave1/T10-report.md.

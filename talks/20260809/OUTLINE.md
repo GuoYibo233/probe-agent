@@ -1,55 +1,62 @@
-# 组会 PPT 口述提纲（只收用户亲口说要讲的条目）
+# Group meeting slide outline (only items the user explicitly said to cover)
 
-收录规则：只记用户在对话里亲口说"要讲"的内容，助手的建议一律不进这个文件。
-随对话继续追加。
+Inclusion rule: only records content the user said, in their own words in conversation, that they want to cover;
+assistant suggestions never go into this file. Appended as the conversation continues.
 
-## 背景部分
+## Background section
 
-- agent 是什么
-- 防止 overthinking：作为引出用——之前有人做了防止 chat 场景多思考，我想把它
-  带到 agent 场景；agent 场景的区别是要调哪个工具约等于选择题
-  （用户原话"tool的输出约等于选择题"）
-- tool call 是什么
-- 省 token 之类的内容（用户原话："总之要介绍一下省token之类的内容"）
-- 过去其他人的代表性研究，一两篇就行，每篇一句话说明要干什么
-  （查证结果已回，候选如下，abstract 均已亲自抓取核实，选哪几篇待用户拍板：）
-  - ReAct（arxiv 2210.03629，Yao et al.）：让大模型把推理文字和环境动作交替生成，
-    定义了"边想边调工具"的 agent 范式。
-  - 备选（若保留 overthinking 一词）：Do NOT Think That Much for 2+3=?
-    （arxiv 2412.21187，Chen et al.）：首个系统研究 o1 类模型 overthinking，
-    指出简单题上大量思考 token 白花。
-- 背景要收紧：agent 是什么和 tool call 是什么合并成一页
+- what an agent is
+- preventing overthinking: used as a lead-in, someone earlier worked on preventing chat-scenario overthinking, and I
+  want to bring that to the agent scenario; the agent scenario's distinguishing feature is that which tool to call is
+  roughly a multiple-choice question (user's own words: "the tool's output is roughly a multiple-choice question")
+- what a tool call is
+- content about saving tokens and the like (user's own words: "anyway, cover something about saving tokens and the
+  like")
+- one or two representative pieces of prior work by others, one sentence each on what it set out to do
+  (verification results are back, candidates below, every abstract has been fetched and verified in person, which
+  ones to keep is the user's call:)
+  - ReAct (arxiv 2210.03629, Yao et al.): has the large model generate reasoning text and environment actions in
+    alternation, defining the "think while calling tools" agent paradigm.
+  - Alternate (kept if the word overthinking is kept): Do NOT Think That Much for 2+3=?
+    (arxiv 2412.21187, Chen et al.): the first systematic study of overthinking in o1-class models, showing that on
+    easy problems a large share of thinking tokens is wasted.
+- tighten the background: merge "what an agent is" and "what a tool call is" into one page
 
-## 想法（方法核心）
+## The idea (the core of the method)
 
-- Toolformer 从这里讲，不算背景，算想法的开始
-  （arxiv 2302.04761，Schick et al.：自监督学会在生成中间哪个位置调哪个 API、
-  怎么把结果并进后续预测，把"文本中间插工具调用和结果"立成研究对象。）
-- 训练一个探针，能够根据（尽量少的）思考内容去预测接下来的工具调用
+- start from Toolformer, not counted as background, counted as the start of the idea
+  (arxiv 2302.04761, Schick et al.: self-supervised learning of where in generation to call which API and how to
+  fold the result into the following prediction, establishing "inserting a tool call and its result mid-text" as an
+  object of study.)
+- train a probe that predicts the coming tool call from (as little as possible of) the thinking content
 
-## 做了什么
+## What was done
 
-- 弄了几个 agent 任务，给模型去执行一下，然后用探针去预测
-- 任务讲两个；执行模型先用 gptoss 和 qwen3.6
-- 分别介绍任务和模型的特点、彼此的区别，说一下为什么选这些
-- 具体怎么训练这些探针的，要写清楚（查实的训练过程整理在 `data/08-training-details.md`）
-- 训练出的模型放在什么任务、用什么数据跑了
-- 注入的这次先别说，只讲预测的准确率
-- 画一条曲线：不同触发阈值 θ 下的正确比例和触发比例
-  - 只放 gptoss（AppWorld）那条六点曲线，其他格用单点表
-  - 数据源：`data/03-offline-inject.md` θ 扫描表（纯预测指标两列，可不提注入）
-  - 混排注意：曲线与矩阵表的 gptoss 数字取点口径不同，要标注出处
+- built a few agent tasks, had the model execute them, then had the probe predict from that
+- cover two tasks; the execution models used first are gptoss and qwen3.6
+- introduce each task's and each model's traits and their differences from each other, and say why these were chosen
+- how these probes were actually trained needs to be spelled out clearly (the verified training process is written
+  up in `data/08-training-details.md`)
+- what tasks and what data the trained models were run on
+- do not talk about injection yet, only cover prediction accuracy
+- plot one curve: correct fraction and trigger fraction at different trigger thresholds θ
+  - only show the gptoss (AppWorld) six-point curve, other cells get a single-point table
+  - data source: `data/03-offline-inject.md`'s θ scan table (the two pure-prediction-metric columns, injection need
+    not be mentioned)
+  - mixing caution: the curve and the matrix table take their gptoss numbers at different reading points, mark the
+    source for each
 
-## 目前水平的发现
+## Findings at the current stage
 
-- 训练能提前预测出工具
+- training can predict the tool ahead of time
 
-## 未来的计划（只讲方向上的新想法）
+## Plans going forward (only new ideas about direction)
 
-- 探索怎么把预测结果塞回去（塞什么的新方案）
-- 参数怎么来（mext 区间抽取 / 骨架臂等替代路线）
-- 工具类型（按只读和会写分开处理）
+- explore how to feed the prediction back in (new schemes for what to feed back)
+- where the parameters come from (mext span extraction / skeleton-arm and other alternative routes)
+- tool types (handle read-only and write tools separately)
 
-## 定位
+## Positioning
 
-- 这是组会汇报，介绍的是干了一半的研究（用户原话："就介绍干了一半的研究"）
+- this is a group-meeting report, presenting research that is half done (user's own words: "just present the
+  research that's half done")

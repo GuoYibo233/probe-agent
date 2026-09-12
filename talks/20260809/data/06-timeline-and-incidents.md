@@ -1,58 +1,69 @@
-# 方向决策按什么顺序发生，中途出过哪些工程事故
+# The order direction decisions happened in, and what engineering incidents came up along the way
 
-出处：快照 `b1f5b9c` 的 `TIMELINE.md`（决策原文）与 `RESULTS.md` 相关条目。
-每条后面括号里是触发它的 run_id 或 commit。
+Source: `TIMELINE.md` (the decisions verbatim) in the snapshot `b1f5b9c`, and the relevant `RESULTS.md` entries. The
+parenthetical after each item is the run_id or commit that triggered it.
 
-## 决策线（从早到晚）
+## The decision line (earliest to latest)
 
-1. 2026-07-29：建立版本控制与三层记录体系（此前代码侧完全断链，旧结果对应的
-   代码版本不可恢复）。
-2. 2026-07-29：v2 三训作废——bf16 硬训精度缺陷，lr 2e-5 的更新量低于 bf16 权重
-   分辨率，模型近乎冻结；修复后 A/B 冒烟准确率差 19 倍（0.156 对 0.008）。
-3. 2026-07-29：修复版验证通过，bfcl 的投机门开了（`20260729_2235`）。
-4. 2026-07-30：v3 终审，投机门只在 bfcl 开；appworld 和 tales 判"加数据救不动"
-   （`20260730_0814` / `20260730_1645`）。
-5. 2026-07-30：因果探针裁决，探针底座换成 Qwen3-0.6B-Base，appworld 的门被
-   打开；"窗口太短是根因"假设作废（`20260730_1716_bert_t8_causal`）。
-6. 2026-07-30：跨模型矩阵定部署结论——bfcl 换 agent 模型只需重做校准；
-   混训天花板增益在覆盖不在精度（`20260730_1713` / `20260730_1835`）。
-7. 2026-07-30：全历史基线立住选择性记忆动机（c3 线，`20260730_fig1_fullhist_8b`）。
-8. 2026-07-31：c1 十二格全收，因果头取代分类头当主线，appworld 官方分区成为
-   标准场地；记录体系加第四层 `DATA.md`。
-9. 2026-08-01：离线注入时机实验，死区在真实 agent 环境首次复现
-   （`20260801_0113_inject_aw_gptoss_r10`）。
-10. 2026-08-02：拼回八臂收官，skel_switch（转场加骨架）定为截断拼回主形态
-    （`20260801_2257_inject_aw_gptoss_splice`）。
-11. 2026-08-02：ro1 批收官，只读加弃权类上线；随训开火头判不达标。
-12. 2026-08-02：活跑六臂收官（v1），同框架内探针占优；effort 两条对照路线
-    双双封死；静态分片判死改动态领题。
-13. 2026-08-02：停止符修复后 v2 重跑，v1 两臂绝对值作废，探针占优结论
-    账上写"加固"。
-14. 2026-08-02：c2 批收官，ALFWorld 接入，"工具少参数多"反面案例成立。
-15. 2026-08-02 深夜：清场，旧阶段实验全部终止，NFS 产物约 116G 删除，
-    四本账清零重建（快照 commit `b1f5b9c` 之后执行）。
-16. 2026-08-08：探针线重启，定性从"一个定死的方法"改成"一个实验空间"，
-    `METHOD.md` 立为方法真源（现役 `TIMELINE.md` 首条）。
+1. 2026-07-29: set up version control and the three-layer recording system (before this, the code side was
+   completely disconnected, the code versions behind the old results could not be recovered).
+2. 2026-07-29: the v2 three-way training run was voided, the bf16 hard-training precision defect meant the update
+   magnitude at lr 2e-5 was below bf16 weight resolution, the model was effectively frozen; after the fix, the A/B
+   smoke-test accuracy differed by 19x (0.156 versus 0.008).
+3. 2026-07-29: the fixed version passed verification, the speculation gate opened for bfcl (`20260729_2235`).
+4. 2026-07-30: v3 final review, the speculation gate opened only for bfcl; appworld and tales were ruled "adding
+   data cannot save it" (`20260730_0814` / `20260730_1645`).
+5. 2026-07-30: the causal-probe ruling, the probe backbone was switched to Qwen3-0.6B-Base, and appworld's gate
+   opened; the "too-short a window is the root cause" hypothesis was voided (`20260730_1716_bert_t8_causal`).
+6. 2026-07-30: the cross-model matrix settled the deployment conclusion, swapping the agent model on bfcl only
+   needs redoing calibration; the mixed-training ceiling's gain is in coverage, not in accuracy
+   (`20260730_1713` / `20260730_1835`).
+7. 2026-07-30: the full-history baseline established the motivation for selective memory (the c3 line,
+   `20260730_fig1_fullhist_8b`).
+8. 2026-07-31: all twelve c1 cells wrapped up, the causal head replaced the classification head as the main line,
+   the AppWorld official split became the standard test bed; a fourth layer, `DATA.md`, was added to the recording
+   system.
+9. 2026-08-01: the offline-injection timing experiment, the dead zone was reproduced for the first time in a real
+   agent environment (`20260801_0113_inject_aw_gptoss_r10`).
+10. 2026-08-02: the eight-arm splice-back wrap-up, skel_switch (transition plus skeleton) was set as the primary
+    form of truncate-and-splice-back (`20260801_2257_inject_aw_gptoss_splice`).
+11. 2026-08-02: the ro1 batch wrapped up, read-only plus the abstention class went live; the co-trained firing head
+    was ruled below standard.
+12. 2026-08-02: the six-arm live-run wrap-up (v1), the probe won within the same framework; both effort control
+    routes were ruled dead ends; static sharding was ruled dead and changed to dynamic task claiming.
+13. 2026-08-02: after the stop-token fix, v2 was re-run, v1's absolute values on both arms were voided, and the
+    ledger records the probe's winning conclusion as "reinforced."
+14. 2026-08-02: the c2 batch wrapped up, ALFWorld was brought in, the "few tools, many parameters" counter-case was
+    established.
+15. Late night, 2026-08-02: the wipe, all old-phase experiments were terminated, about 116G of NFS artifacts were
+    deleted, the four ledgers were zeroed out and rebuilt (carried out after the snapshot commit `b1f5b9c`).
+16. 2026-08-08: the probe line restarted, its characterization changed from "a fixed method" to "an experiment
+    space," `METHOD.md` was established as the source of truth for the method (the first entry in the current
+    `TIMELINE.md`).
 
-## 工程事故与静默失败点（写幻灯片讲工程故事可用，全部有账）
+## Engineering incidents and silent failure points (usable for the engineering-story slide, all on the ledger)
 
-- bf16 硬训缺陷：lr 更新量低于权重分辨率，模型近乎冻结但训练照常收尾出报告。
-  症状是深度曲线全平 0.26、置信度趴地。修法 fp32 权重加 autocast。
-- 磁盘配额空洞 checkpoint：home 配额打满时 `model.safetensors` 表观 598MB
-  实占 1.0MB（0%），`torch.load` 不报错，训练日志照写 done，评测退出码 0，
-  全链没有一环会喊。唯一露馅处是评测报告 20 个 θ 的覆盖率全是 0.000。
-  由此立了新门禁：训练收尾校验 checkpoint 实占块。
-- 停止符漏洞（活跑 v1）：gpt-oss 只停 `<|return|>`，final 段用 `<|end|>` 收尾后
-  伪造新回合污染 content，v1 不出手臂 2157 步里 1235 步带污染。修复含 9 项单测。
-- harmony 解析 500：思考特别长时服务端解析器收不干净，异常冒泡导致整条分片
-  剩余种子全丢。修法是客户端 4 次退避重试。
-- BFCL 思考文本假阴性：思考在结果顶层 `reasoning_content` 字段
-  （list[list[str]]），去 `inference_log` 里找 assistant 拿到的是空列表，
-  会误判"这批没有思考"。
-- ALFWorld 语法断代：0.4.0 起 `put X in/on Y` 改成 `move X to Y`，用旧语法
-  每个放置动作收 `Nothing happens.` 且一声不吭。对策是提示词不写死动作模板，
-  只让模型从 `admissible_commands` 逐字抄。
-- 建库脚本排序不定：递归通配符返回顺序不定加按 id 去重，两次重建事件数在
-  2265 和 2267 之间飘。修成 `sorted(glob)` 后 v3_1 做过两次重建逐字节对比。
-- 静态分片：最胖 10% 的题占 19% 生成量零成功，一题堵死一条分片。
-  改成 mkdir 原子票动态领题。
+- The bf16 hard-training defect: the update magnitude at the chosen lr was below weight resolution, the model was
+  effectively frozen but training still finished normally and produced a report. The symptom was a flat depth curve
+  at 0.26 and confidence pinned to the floor. The fix was fp32 weights plus autocast.
+- A disk-quota hollow checkpoint: when the home quota was full, `model.safetensors` had an apparent size of 598MB
+  but occupied only 1.0MB (0%) on disk, `torch.load` raised no error, the training log still wrote done, the
+  evaluation exit code was 0, no link in the whole chain complained. The only place it showed was that the
+  evaluation report's coverage was 0.000 across all 20 θ values. This established a new gate: verify the
+  checkpoint's actual disk blocks at the end of training.
+- The stop-token bug (live run v1): gpt-oss only stops on `<|return|>`, and once the final segment ended with
+  `<|end|>` it fabricated a new turn that contaminated content; 1235 of 2157 steps on v1's no-fire arm were
+  contaminated. The fix included 9 unit tests.
+- A harmony parsing 500: when thinking is especially long the server-side parser fails to clean up, the exception
+  propagates up and drops every remaining seed in the whole shard. The fix was 4 client-side backoff retries.
+- A BFCL thinking-text false negative: the thinking lives in the top-level `reasoning_content` field of the result
+  (list[list[str]]); looking for it under the assistant entry in `inference_log` returns an empty list, which
+  misdiagnoses "this batch has no thinking."
+- An ALFWorld syntax break: from 0.4.0 on, `put X in/on Y` changed to `move X to Y`; using the old syntax gets
+  `Nothing happens.` on every placement action, silently. The countermeasure is to not hardcode the action template
+  in the prompt, and instead have the model copy verbatim from `admissible_commands`.
+- Nondeterministic ordering in the dataset-building script: the recursive glob's return order was nondeterministic,
+  combined with dedup by id, the event count drifted between 2265 and 2267 across two rebuilds. After fixing it to
+  `sorted(glob)`, v3_1 did two rebuilds and byte-for-byte compared them.
+- Static sharding: the fattest 10% of questions accounted for 19% of generation with zero success, one question
+  could stall a whole shard. Changed to dynamic task claiming with mkdir as an atomic ticket.

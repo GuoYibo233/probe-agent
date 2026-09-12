@@ -3,11 +3,11 @@
   "seed": 20260729,
   "splits": {
     "train": {
-      "官方分区": "train",
-      "分区全量": 3553,
-      "本堆题数": 200,
-      "任务配置数": 200,
-      "六类分布": {
+      "official partition": "train",
+      "partition full set": 3553,
+      "number of tasks in this pile": 200,
+      "number of task configs": 200,
+      "distribution across six categories": {
         "look_at_obj_in_light": 34,
         "pick_and_place_simple": 34,
         "pick_clean_then_place_in_recep": 33,
@@ -15,10 +15,10 @@
         "pick_heat_then_place_in_recep": 33,
         "pick_two_obj_and_place": 33
       },
-      "抽样统计": {
-        "配置总数": 1465,
-        "每配置取一条后": 1465,
-        "每类配额": {
+      "sampling stats": {
+        "total configs": 1465,
+        "after taking one per config": 1465,
+        "quota per category": {
           "look_at_obj_in_light": 34,
           "pick_and_place_simple": 34,
           "pick_clean_then_place_in_recep": 33,
@@ -26,16 +26,16 @@
           "pick_heat_then_place_in_recep": 33,
           "pick_two_obj_and_place": 33
         },
-        "配额缺口": {},
-        "实际抽出": 200
+        "quota gap": {},
+        "actually drawn": 200
       }
     },
     "val": {
-      "官方分区": "valid_seen",
-      "分区全量": 140,
-      "本堆题数": 140,
-      "任务配置数": 137,
-      "六类分布": {
+      "official partition": "valid_seen",
+      "partition full set": 140,
+      "number of tasks in this pile": 140,
+      "number of task configs": 137,
+      "distribution across six categories": {
         "look_at_obj_in_light": 13,
         "pick_and_place_simple": 35,
         "pick_clean_then_place_in_recep": 27,
@@ -43,16 +43,16 @@
         "pick_heat_then_place_in_recep": 16,
         "pick_two_obj_and_place": 24
       },
-      "抽样统计": {
-        "取法": "全量"
+      "sampling stats": {
+        "sampling method": "full set"
       }
     },
     "test": {
-      "官方分区": "valid_unseen",
-      "分区全量": 134,
-      "本堆题数": 134,
-      "任务配置数": 47,
-      "六类分布": {
+      "official partition": "valid_unseen",
+      "partition full set": 134,
+      "number of tasks in this pile": 134,
+      "number of task configs": 47,
+      "distribution across six categories": {
         "look_at_obj_in_light": 18,
         "pick_and_place_simple": 24,
         "pick_clean_then_place_in_recep": 31,
@@ -60,8 +60,8 @@
         "pick_heat_then_place_in_recep": 23,
         "pick_two_obj_and_place": 17
       },
-      "抽样统计": {
-        "取法": "全量"
+      "sampling stats": {
+        "sampling method": "full set"
       }
     }
   }

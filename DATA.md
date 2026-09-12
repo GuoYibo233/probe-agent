@@ -1,103 +1,142 @@
-# DATA — 数据设定与口径
+# DATA — Data settings and conventions
 
-> 只写设定与口径，**不写结论**——结论归 `RESULTS.md`。
-> 2026-08-02 清场后重建。旧阶段的数据口径见 git 快照 commit `b1f5b9c`。
-> 新阶段第一批数据造出来时，把"怎么采的 / 怎么变成样本 / 版本 / 规模与
-> 先验基线"按节补进来。
+> Only settings and conventions are recorded here, **no conclusions** — conclusions
+> belong to `RESULTS.md`.
+> Rebuilt after the 2026-08-02 clear-out. The old phase's data conventions are in the
+> git snapshot commit `b1f5b9c`.
+> When the new phase's first batch of data is produced, add sections for "how it was
+> collected / how it became samples / version / scale and prior baseline."
 
-## 新实验开工前的检查清单
+## Checklist before starting a new experiment
 
-旧阶段踩过的坑抽成的通用规则，每开一批新实验按顺序过一遍：
+General rules distilled from pitfalls hit in the old phase, go through them in order
+before starting any new batch of experiments:
 
-1. **用的是哪一版数据？** 版本不同的数字不可比，版本号写进 run_id 和记录。
-2. **先验基线取对了吗？** 先验基线随数据版本变，每版单独记，不许跨版本套用。
-3. **档位/难度编号只用一套定义。** 代码里的编号和文档里的编号一旦有两套就会颠倒。
-4. **要比耗时吗？** 先确认对比的两条臂跑在同一型号的卡上，否则耗时列作废。
-5. **种子写死了吗？** 造数据/训练一律固定随机种子并写进报告，重跑逐样本一致。
-6. **重建过的数据做逐字节对比了吗？** 建库脚本有排序不稳定的前科，重建后必须比对。
-7. **同一个探针要评多个数据配置吗？** 用符号链接分身，否则回放报告互相覆盖。
-8. **动了 `WORKPLAN.md` 里任何一条判断吗？** 补一条 `TIMELINE.md`。
-9. **生成设置走预设了吗？** 换 effort/温度/预算这类生成设置，先在
-   `configs/presets/` 开一份新预设（不改旧份），run_id 里带上预设名；
-   轨迹 meta 会自动落 preset 名和展开后的 gen_settings，事后可核对。
+1. **Which data version is being used?** Numbers from different versions are not
+   comparable, the version number goes into the run_id and the record.
+2. **Is the prior baseline taken correctly?** The prior baseline changes with the data
+   version, record it separately per version, never carry it over across versions.
+3. **The tier/difficulty numbering uses only one definition.** If the numbering in the
+   code and the numbering in the documents ever diverge into two sets, they will get
+   swapped.
+4. **Comparing wall-clock time?** First confirm the two arms being compared ran on the
+   same model of GPU, otherwise the timing column is invalid.
+5. **Is the seed fixed?** Data generation/training always fixes a random seed and
+   writes it into the report; a rerun must match sample-for-sample.
+6. **Was a rebuilt dataset compared byte-for-byte?** The dataset-building script has a
+   history of unstable ordering, a byte-for-byte comparison is required after a
+   rebuild.
+7. **Is the same probe being evaluated across multiple data configs?** Use a symlinked
+   copy, otherwise replay reports overwrite each other.
+8. **Did this touch any judgment call in `WORKPLAN.md`?** Add an entry to
+   `TIMELINE.md`.
+9. **Did the generation settings go through a preset?** For any change to a generation
+   setting like effort/temperature/budget, first open a new preset under
+   `configs/presets/` (do not edit the old one), carry the preset name in the run_id;
+   the trajectory meta automatically records the preset name and the expanded
+   gen_settings, so it can be checked afterward.
 
-## nyapass_aw_v1 — np821 批采集数据（2026-08-22 造，温度 1 / 每题 4 条 / 每步等权）
+## nyapass_aw_v1 — the np821 batch's collected data (produced 2026-08-22, temperature 1 / 4 per task / equal weight per step)
 
-**怎么采的**：run_id `nyapass`。被采模型 gpt-oss-120b（四 vLLM 实例，tokyo108
-GPU 2 H100 + 3/4/5 H200），预设 `default`（api harmony、reasoning_effort high、
-温度 1.0、top_p 1.0、max_tokens 8192、start_date 2026-08-06），`--max-steps 30`。
-每题 4 条轨迹，种子家族 42 / 67 / 4267 / 6742 按采样序号 r0..r3 逐条配发并落
-轨迹 meta；文件名 `appworld_<tid>_r<k>.jsonl`。题单 AppWorld 官方三堆全量
-315 题（train 90 / dev 57 / test_normal 168，txt 末尾无换行 `wc -l` 各少 1）。
-轨迹 1260 份全部末行 final，落 `envs/runs/nyapass/appworld_gptoss`（穿软链在
-NFS）。30 步顶格 41 条（涉及 35 题）；完全相同轨迹 0 对（只计数不去重）。
+**How it was collected**: run_id `nyapass`. The model being probed is gpt-oss-120b
+(four vLLM instances, tokyo108 GPUs 2 H100 + 3/4/5 H200), preset `default` (api
+harmony, reasoning_effort high, temperature 1.0, top_p 1.0, max_tokens 8192,
+start_date 2026-08-06), `--max-steps 30`. 4 trajectories per task, seed family
+42 / 67 / 4267 / 6742 assigned per trajectory in order by sampling index r0..r3 and
+recorded in the trajectory meta; filenames `appworld_<tid>_r<k>.jsonl`. The task list
+is the full set of AppWorld's official three splits, 315 tasks (train 90 / dev 57 /
+test_normal 168, the txt files have no trailing newline, so `wc -l` reads one less
+for each). All 1260 trajectories end with a final line, written to
+`envs/runs/nyapass/appworld_gptoss` (via a symlink onto NFS). 41 hit the 30-step cap
+(across 35 tasks); 0 pairs of completely identical trajectories (counted, not
+deduplicated).
 
-**种子复现边界**：vLLM 的 seed 按请求生效，服务端连续批处理带数值噪声，
-跨次重采不保证逐字节一致；可复现的真源是存档的原始轨迹本体，不是「同种子
-重采一遍」。
+**Seed reproduction boundary**: vLLM's seed takes effect per request, the server's
+continuous batching carries numerical noise, resampling with the same seed on a later
+run is not guaranteed to be byte-identical; the reproducible source of truth is the
+archived raw trajectory itself, not "resample once with the same seed."
 
-**怎么变成样本**：配方 `annotate-chain`，config
-`pipeline/configs/np821_gptoss.json`。规则：全句边界前缀、每步等权 w=1
-（`weight_mode: uniform`）、每事件边界上限 `max_bounds=64`（a1 停点裁决，
-TIMELINE 2026-08-22 条：未截断 p50 60 / p90 246 / max 842，超 64 事件占
-47.8%，抽稀近等距、末尾切点必留）、官方题单任务实例级三路切分（dev 作
-val）、`trajs_per_unit=4`（同题四条轨迹同堆，切分种子 42）。
+**How it became samples**: recipe `annotate-chain`, config
+`pipeline/configs/np821_gptoss.json`. Rules: full-sentence-boundary prefixes, equal
+weight per step w=1 (`weight_mode: uniform`), a cap of `max_bounds=64` per event's
+boundaries (decided at the a1 stop point, TIMELINE 2026-08-22 entry: untruncated
+p50 60 / p90 246 / max 842, events over 64 make up 47.8%, subsampling is near-evenly
+spaced and always keeps the final cut), the official task list's task-instance-level
+three-way split (dev used as val), `trajs_per_unit=4` (the same task's four
+trajectories go into the same split, split seed 42).
 
-**版本与规模**（数字出自 `ANNOTATE_REPORT.md`）：数据目录
-`pipeline/data/nyapass_aw_v1/gptoss`（NFS）。事件 15216、样本 693583；
-train 90 实例·4127 事件·186479 样本 / val 57·2556·115211 /
-test 168·8533·391893；工具词表 150 类（长尾出现<5 次的 92 类）；题干长度
-p50=4876 / p90=13432 / max=52351 字符（超 4096 token 由训练脚本左截）。
-参数标注在 `params/` 三堆，行数与主数据逐堆相同（参数 874014 个、
-found_rate 0.846）。
+**Version and scale** (numbers from `ANNOTATE_REPORT.md`): data directory
+`pipeline/data/nyapass_aw_v1/gptoss` (NFS). 15216 events, 693583 samples;
+train 90 instances · 4127 events · 186479 samples / val 57 · 2556 · 115211 /
+test 168 · 8533 · 391893; the tool vocabulary has 150 classes (92 classes appear
+fewer than 5 times, the long tail); task-text length p50=4876 / p90=13432 /
+max=52351 characters (anything over 4096 tokens is left-truncated by the training
+scripts). Argument annotation is in the `params/` three splits, with the same row
+counts per split as the main data (874014 arguments, found_rate 0.846).
 
-**先验基线**：test 事件级频率先验 0.387（全猜最高频工具
-`apis.api_docs.show_api_doc`）。本版单独记，不跨版本套用。
+**Prior baseline**: the test event-level frequency prior is 0.387 (always guessing the
+most frequent tool, `apis.api_docs.show_api_doc`). Recorded separately for this
+version, not carried over across versions.
 
-**门禁与重建**：`check_callstr` 门禁 A（693583 行模型归属全对）、B（样本键
-全唯一；K=4 新判据——315 个 unit 各对恰好 4 条互异 traj、采样序号 r0..r3
-齐全）、D（题单归属全量核对）通过；C 跳过（appworld 不走 runs.glob 路径）、
-E 跳过（无 SPLIT_REPORT.json）。真值调用串回读 15192/15216（0.9984），
-参数实例 19095/19132（0.9981），失败主因参数值含逗号 21 例（与 p1 同款
-已知偏差，天花板口径见 CALLSTR_CHECK.md 文件头）。重建对比（检查清单
-第 6 条）：a3_gates 把 build+param_label 的 12 件产物重跑一遍，逐字节 cmp
-一致。CHECK_50 人工件：50 定位 / 10 抽不到。
+**Gates and rebuild**: `check_callstr` gate A (all 693583 rows have correct model
+attribution), gate B (all sample keys unique; K=4 is the new criterion, each of the
+315 units pairs with exactly 4 mutually distinct trajectories, sampling indices
+r0..r3 all present), gate D (full check of task-list membership) all pass; gate C is
+skipped (appworld does not go through the runs.glob path), gate E is skipped (no
+SPLIT_REPORT.json). The ground-truth call string reads back 15192/15216 (0.9984),
+argument instances 19095/19132 (0.9981), the main cause of failure is an argument
+value containing a comma, 21 cases (the same known bias as p1, the ceiling
+convention is in the header of CALLSTR_CHECK.md). Rebuild comparison (checklist item
+6): `a3_gates` reran all 12 artifacts of build+param_label, byte-for-byte `cmp`
+identical. The CHECK_50 manual check: 50 located / 10 not found.
 
-**口径备注**：温度 1 的数字与温度 0 的任何历史数字（aw_p1_v1 系）不可比。
-与 aw_p1_v1 的口径差异恰三项：温度（1.0 对 0.0）、每题条数（4 对 1）、
-样本权重（每步 w=1 对事件内 w=1/m_i）；切点上限同为 64。
+**Convention note**: numbers at temperature 1 are not comparable with any historical
+number at temperature 0 (the aw_p1_v1 line). Against aw_p1_v1, there are exactly
+three convention differences: temperature (1.0 vs. 0.0), trajectories per task (4 vs.
+1), sample weighting (w=1 per step vs. w=1/m_i within an event); the cut-point cap is
+the same 64 in both.
 
-## aw_p1_v1 — p1 批采集数据（2026-08-21 造）
+## aw_p1_v1 — the p1 batch's collected data (produced 2026-08-21)
 
-**怎么采的**：run_id `p1`。被采模型 gpt-oss-120b（双 vLLM 实例，tokyo108
-两张 H200），预设 `gptoss_harmony_high`（api harmony、reasoning_effort high、
-温度 0.0、start_date 2026-08-06），`--max-steps 30`，seed 20260729。题单是
-AppWorld 官方三堆全量 315 题：train 90 / dev 57 / test_normal 168，文件在
-`envs/appworld/data/datasets/{train,dev,test_normal}.txt`（⚠️ 三份 txt 末尾
-无换行，`wc -l` 各少 1）。轨迹 315 份全部末行 final，落
-`envs/runs/p1/appworld_gptoss`（穿软链在 NFS）。
+**How it was collected**: run_id `p1`. The model being probed is gpt-oss-120b (two
+vLLM instances, tokyo108 two H200 cards), preset `gptoss_harmony_high` (api harmony,
+reasoning_effort high, temperature 0.0, start_date 2026-08-06), `--max-steps 30`, seed
+20260729. The task list is the full set of AppWorld's official three splits, 315
+tasks: train 90 / dev 57 / test_normal 168, files at
+`envs/appworld/data/datasets/{train,dev,test_normal}.txt` (⚠️ none of the three txt
+files has a trailing newline, `wc -l` reads one less for each). All 315 trajectories
+end with a final line, written to `envs/runs/p1/appworld_gptoss` (via a symlink onto
+NFS).
 
-**怎么变成样本**：配方 `annotate-chain`（ann-build → ann-params →
-ann-check-callstr），config `pipeline/configs/p1_gptoss.json`。规则：全句边界
-前缀、事件内等权 w=1/m_i、每事件边界上限 MAX_BOUNDS=64、官方题单任务实例级
-三路切分（dev 作 val）。
+**How it became samples**: recipe `annotate-chain` (ann-build → ann-params →
+ann-check-callstr), config `pipeline/configs/p1_gptoss.json`. Rules:
+full-sentence-boundary prefixes, equal weight within an event w=1/m_i, a cap of
+MAX_BOUNDS=64 per event's boundaries, the official task list's task-instance-level
+three-way split (dev used as val).
 
-**版本与规模**（数字出自 `ANNOTATE_REPORT.md`）：数据目录
-`pipeline/data/aw_p1_v1/gptoss`（NFS）。事件 4048、样本 175359；
-train 90 实例·1098 事件·46438 样本 / val 57·675·29202 / test 168·2275·99719；
-工具词表 83 类（长尾出现<5 次的 57 类）；题干长度 p50=4645 / p90=13364 /
-max=47019 字符（超 4096 token 由训练脚本左截）。参数标注在 `params/` 三堆，
-行数与主数据逐堆相同。
+**Version and scale** (numbers from `ANNOTATE_REPORT.md`): data directory
+`pipeline/data/aw_p1_v1/gptoss` (NFS). 4048 events, 175359 samples;
+train 90 instances · 1098 events · 46438 samples / val 57 · 675 · 29202 /
+test 168 · 2275 · 99719; the tool vocabulary has 83 classes (57 classes appear
+fewer than 5 times, the long tail); task-text length p50=4645 / p90=13364 /
+max=47019 characters (anything over 4096 tokens is left-truncated by the training
+scripts). Argument annotation is in the `params/` three splits, with the same row
+counts per split as the main data.
 
-**先验基线**：test 事件级频率先验 0.419（全猜最高频工具
-`apis.api_docs.show_api_doc`）。本版单独记，不跨版本套用。
+**Prior baseline**: the test event-level frequency prior is 0.419 (always guessing the
+most frequent tool, `apis.api_docs.show_api_doc`). Recorded separately for this
+version, not carried over across versions.
 
-**门禁与重建**：`check_callstr` 门禁 A（模型归属 175359 行全对）、
-B（样本键全唯一，315 unit 各对一条 traj）、D（题单归属全量核对）通过；
-C 跳过（appworld 不走 runs.glob 路径）、E 跳过（无 SPLIT_REPORT.json，
-官方切分无此件）。真值调用串回读 4041/4048（0.9983），含逗号参数实例
-5/5267。重建对比（检查清单第 6 条）：build+param_label 重跑一遍，
-七个数据文件与全部报告逐字节 cmp 一致。
+**Gates and rebuild**: `check_callstr` gate A (all 175359 rows have correct model
+attribution), gate B (all sample keys unique, each of the 315 units pairs with one
+trajectory), gate D (full check of task-list membership) all pass; gate C is skipped
+(appworld does not go through the runs.glob path), gate E is skipped (no
+SPLIT_REPORT.json, the official split has no such artifact). The ground-truth call
+string reads back 4041/4048 (0.9983), argument instances with a comma 5/5267. Rebuild
+comparison (checklist item 6): build+param_label reran once, the seven data files and
+every report matched byte-for-byte `cmp`.
 
-**口径备注**：与 aw_official_v1 的数字不可比（effort 档不同，见
-`plans/archive/2026-08-21-p1-collection-plan.md` 生成设置一节），只作数量级参照。
+**Convention note**: not comparable with aw_official_v1's numbers (a different effort
+tier, see the generation-settings section of
+`plans/archive/2026-08-21-p1-collection-plan.md`), use only as an order-of-magnitude
+reference.

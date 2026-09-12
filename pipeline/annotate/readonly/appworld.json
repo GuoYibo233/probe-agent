@@ -2,1099 +2,1099 @@
  "apis.api_docs.show_api_doc": {
   "readonly": true,
   "count": 3736,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.api_docs.show_api_descriptions": {
   "readonly": true,
   "count": 2274,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.supervisor.show_profile": {
   "readonly": true,
   "count": 1242,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.show_transactions": {
   "readonly": true,
   "count": 451,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.api_docs.show_app_descriptions": {
   "readonly": true,
   "count": 1067,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.supervisor.complete_task": {
   "readonly": false,
   "count": 550,
-  "reason": "提交任务终答，发出去任务就结束了",
+  "reason": "submits the task's final answer; once sent, the task is over",
   "flag": null
  },
  "apis.supervisor.show_account_passwords": {
   "readonly": true,
   "count": 563,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.login": {
   "readonly": false,
   "count": 367,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.file_system.show_directory": {
   "readonly": true,
   "count": 281,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.search_users": {
   "readonly": true,
   "count": 234,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.spotify.login": {
   "readonly": false,
   "count": 354,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.phone.search_contacts": {
   "readonly": true,
   "count": 231,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.simple_note.show_note": {
   "readonly": true,
   "count": 217,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.login": {
   "readonly": false,
   "count": 285,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.spotify.show_song": {
   "readonly": true,
   "count": 191,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.create_transaction": {
   "readonly": false,
   "count": 182,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.simple_note.search_notes": {
   "readonly": true,
   "count": 212,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.spotify.search_songs": {
   "readonly": true,
   "count": 182,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.simple_note.login": {
   "readonly": false,
   "count": 192,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.spotify.show_song_library": {
   "readonly": true,
   "count": 110,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.show_file": {
   "readonly": true,
   "count": 119,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.login": {
   "readonly": false,
   "count": 155,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.spotify.search_playlists": {
   "readonly": true,
   "count": 83,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.venmo.show_received_payment_requests": {
   "readonly": true,
   "count": 115,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.show_contact_relationships": {
   "readonly": true,
   "count": 97,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_profile": {
   "readonly": true,
   "count": 65,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.search_friends": {
   "readonly": true,
   "count": 90,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.spotify.show_playlist_library": {
   "readonly": true,
   "count": 104,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.search_text_messages": {
   "readonly": true,
   "count": 106,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.spotify.show_playlist": {
   "readonly": true,
   "count": 68,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_account": {
   "readonly": true,
   "count": 43,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.send_text_message": {
   "readonly": false,
   "count": 67,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.spotify.show_album_library": {
   "readonly": true,
   "count": 65,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.add_friend": {
   "readonly": false,
   "count": 61,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.phone.delete_text_message": {
   "readonly": false,
   "count": 39,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.spotify.show_liked_songs": {
   "readonly": true,
   "count": 70,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.delete_voice_message": {
   "readonly": false,
   "count": 37,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.spotify.search_artists": {
   "readonly": true,
   "count": 53,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.venmo.add_to_venmo_balance": {
   "readonly": false,
   "count": 42,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.todoist.show_tasks": {
   "readonly": true,
   "count": 43,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.get_current_date_and_time": {
   "readonly": true,
   "count": 58,
-  "reason": "纯读取，不改任何状态",
+  "reason": "pure read, does not change any state",
   "flag": null
  },
  "apis.spotify.add_song_to_playlist": {
   "readonly": false,
   "count": 40,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.venmo.remove_friend": {
   "readonly": false,
   "count": 41,
-  "reason": "移除对象",
+  "reason": "removes an object",
   "flag": null
  },
  "apis.venmo.show_venmo_balance": {
   "readonly": true,
   "count": 44,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.show_alarms": {
   "readonly": true,
   "count": 32,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.show_transaction": {
   "readonly": true,
   "count": 22,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_song_privates": {
   "readonly": true,
   "count": 35,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.create_directory": {
   "readonly": false,
   "count": 43,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.spotify.show_artist": {
   "readonly": true,
   "count": 26,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.directory_exists": {
   "readonly": true,
   "count": 22,
-  "reason": "directory_exists：只查存在性",
+  "reason": "directory_exists: only checks existence",
   "flag": null
  },
  "apis.file_system.move_file": {
   "readonly": false,
   "count": 28,
-  "reason": "移动文件，写文件系统",
+  "reason": "moves a file, writes to the file system",
   "flag": null
  },
  "apis.spotify.create_playlist": {
   "readonly": false,
   "count": 31,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.todoist.show_task_comments": {
   "readonly": true,
   "count": 23,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.show_contacts": {
   "readonly": true,
   "count": 20,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.splitwise.record_expense": {
   "readonly": false,
   "count": 31,
-  "reason": "记账写入",
+  "reason": "bookkeeping write",
   "flag": null
  },
  "apis.file_system.create_file": {
   "readonly": false,
   "count": 20,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.venmo.like_transaction": {
   "readonly": false,
   "count": 23,
-  "reason": "写入点赞状态",
+  "reason": "writes like state",
   "flag": null
  },
  "apis.spotify.remove_song_from_library": {
   "readonly": false,
   "count": 22,
-  "reason": "移除对象",
+  "reason": "removes an object",
   "flag": null
  },
  "apis.venmo.show_payment_cards": {
   "readonly": true,
   "count": 31,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.update_alarm": {
   "readonly": false,
   "count": 29,
-  "reason": "改写已有对象",
+  "reason": "rewrites an existing object",
   "flag": null
  },
  "apis.phone.search_voice_messages": {
   "readonly": true,
   "count": 18,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.venmo.approve_payment_request": {
   "readonly": false,
   "count": 38,
-  "reason": "批准付款请求，动钱",
+  "reason": "approves a payment request, moves money",
   "flag": null
  },
  "apis.file_system.compress_directory": {
   "readonly": false,
   "count": 21,
-  "reason": "生成压缩包，写文件系统",
+  "reason": "generates an archive, writes to the file system",
   "flag": null
  },
  "apis.spotify.follow_artist": {
   "readonly": false,
   "count": 22,
-  "reason": "写入关注状态",
+  "reason": "writes follow state",
   "flag": null
  },
  "apis.splitwise.accept_group_invitation": {
   "readonly": false,
   "count": 20,
-  "reason": "接受邀请，写入成员状态",
+  "reason": "accepts an invitation, writes member state",
   "flag": null
  },
  "apis.venmo.show_profile": {
   "readonly": true,
   "count": 15,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.splitwise.show_group_expenses": {
   "readonly": true,
   "count": 11,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.remove_song_from_playlist": {
   "readonly": false,
   "count": 31,
-  "reason": "移除对象",
+  "reason": "removes an object",
   "flag": null
  },
  "apis.venmo.create_payment_request": {
   "readonly": false,
   "count": 42,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.splitwise.login": {
   "readonly": false,
   "count": 28,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.spotify.show_artist_following": {
   "readonly": true,
   "count": 19,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.add_payment_card": {
   "readonly": false,
   "count": 30,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.simple_note.update_note": {
   "readonly": false,
   "count": 19,
-  "reason": "改写已有对象",
+  "reason": "rewrites an existing object",
   "flag": null
  },
  "apis.venmo.show_account": {
   "readonly": true,
   "count": 7,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_liked_playlists": {
   "readonly": true,
   "count": 10,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.delete_directory": {
   "readonly": false,
   "count": 9,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.file_system.list_files": {
   "readonly": true,
   "count": 14,
-  "reason": "纯列举，不改任何状态",
+  "reason": "pure listing, does not change any state",
   "flag": null
  },
  "apis.venmo.update_transaction": {
   "readonly": false,
   "count": 7,
-  "reason": "改写已有对象",
+  "reason": "rewrites an existing object",
   "flag": null
  },
  "apis.venmo.create_transaction_comment": {
   "readonly": false,
   "count": 11,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.supervisor.show_payment_cards": {
   "readonly": true,
   "count": 19,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_liked_albums": {
   "readonly": true,
   "count": 16,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.like_song": {
   "readonly": false,
   "count": 16,
-  "reason": "写入点赞状态",
+  "reason": "writes like state",
   "flag": null
  },
  "apis.splitwise.show_activity": {
   "readonly": true,
   "count": 12,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.deny_payment_request": {
   "readonly": false,
   "count": 12,
-  "reason": "拒绝付款请求",
+  "reason": "denies a payment request",
   "flag": null
  },
  "apis.todoist.login": {
   "readonly": false,
   "count": 35,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.todoist.assign_or_unassign_task": {
   "readonly": false,
   "count": 11,
-  "reason": "改任务分配",
+  "reason": "changes task assignment",
   "flag": null
  },
  "apis.todoist.show_task": {
   "readonly": true,
   "count": 11,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.signup": {
   "readonly": false,
   "count": 10,
-  "reason": "注册新账号",
+  "reason": "registers a new account",
   "flag": null
  },
  "apis.file_system.file_exists": {
   "readonly": true,
   "count": 5,
-  "reason": "file_exists：只查存在性",
+  "reason": "file_exists: only checks existence",
   "flag": null
  },
  "apis.todoist.show_projects": {
   "readonly": true,
   "count": 18,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.todoist.post_task_comment": {
   "readonly": false,
   "count": 6,
-  "reason": "发表评论",
+  "reason": "posts a comment",
   "flag": null
  },
  "apis.simple_note.create_note": {
   "readonly": false,
   "count": 8,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.spotify.unlike_song": {
   "readonly": false,
   "count": 5,
-  "reason": "写入取消点赞",
+  "reason": "writes unlike state",
   "flag": null
  },
  "apis.spotify.search_albums": {
   "readonly": true,
   "count": 8,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.spotify.show_downloaded_songs": {
   "readonly": true,
   "count": 4,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.show_account": {
   "readonly": true,
   "count": 11,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.previous_song": {
   "readonly": false,
   "count": 11,
-  "reason": "改播放器状态",
+  "reason": "changes player state",
   "flag": null
  },
  "apis.spotify.show_genres": {
   "readonly": true,
   "count": 11,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_album_privates": {
   "readonly": true,
   "count": 10,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.play_song": {
   "readonly": false,
   "count": 5,
-  "reason": "改播放器状态",
+  "reason": "changes player state",
   "flag": null
  },
  "apis.phone.send_voice_message": {
   "readonly": false,
   "count": 9,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.spotify.remove_album_from_library": {
   "readonly": false,
   "count": 7,
-  "reason": "移除对象",
+  "reason": "removes an object",
   "flag": null
  },
  "apis.spotify.show_album": {
   "readonly": true,
   "count": 7,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.splitwise.search_users": {
   "readonly": true,
   "count": 7,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.splitwise.show_groups": {
   "readonly": true,
   "count": 11,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.show_api_descriptions": {
   "readonly": true,
   "count": 4,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.simple_note.add_content_to_note": {
   "readonly": false,
   "count": 5,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.file_system.update_file": {
   "readonly": false,
   "count": 9,
-  "reason": "改写已有对象",
+  "reason": "rewrites an existing object",
   "flag": null
  },
  "apis.spotify.download_song": {
   "readonly": false,
   "count": 7,
-  "reason": "写入下载库/落盘文件",
+  "reason": "writes to the download library / writes a file to disk",
   "flag": null
  },
  "apis.splitwise.show_expense": {
   "readonly": true,
   "count": 5,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.splitwise.create_group": {
   "readonly": false,
   "count": 3,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.filesystem.list_files": {
   "readonly": true,
   "count": 3,
-  "reason": "纯列举，不改任何状态",
+  "reason": "pure listing, does not change any state",
   "flag": null
  },
  "apis.spotify.update_playlist": {
   "readonly": false,
   "count": 7,
-  "reason": "改写已有对象",
+  "reason": "rewrites an existing object",
   "flag": null
  },
  "apis.file_system.delete_file": {
   "readonly": false,
   "count": 6,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.spotify.delete_account": {
   "readonly": false,
   "count": 6,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.venmo.download_transaction_receipt": {
   "readonly": false,
   "count": 11,
-  "reason": "写入下载库/落盘文件",
+  "reason": "writes to the download library / writes a file to disk",
   "flag": null
  },
  "apis.splitwise.record_payment": {
   "readonly": false,
   "count": 10,
-  "reason": "记账写入",
+  "reason": "bookkeeping write",
   "flag": null
  },
  "apis.todoist.show_project": {
   "readonly": true,
   "count": 3,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.todoist.delete_task": {
   "readonly": false,
   "count": 10,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.spotify.show_playlist_privates": {
   "readonly": true,
   "count": 4,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.splitwise.show_group": {
   "readonly": true,
   "count": 6,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.review_song": {
   "readonly": false,
   "count": 5,
-  "reason": "写入评价",
+  "reason": "writes a review",
   "flag": null
  },
  "apis.gmail.show_inbox_threads": {
   "readonly": true,
   "count": 16,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.simple_note.show_api_doc": {
   "readonly": true,
   "count": 2,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.play_playlist": {
   "readonly": false,
   "count": 2,
-  "reason": "改播放器状态",
+  "reason": "changes player state",
   "flag": null
  },
  "apis.todoist.create_task": {
   "readonly": false,
   "count": 5,
-  "reason": "新建对象（转账/文件/歌单/任务…）",
+  "reason": "creates a new object (transfer/file/playlist/task/...)",
   "flag": null
  },
  "apis.venmo.withdraw_from_venmo_balance": {
   "readonly": false,
   "count": 4,
-  "reason": "取钱，动余额",
+  "reason": "withdraws money, changes balance",
   "flag": null
  },
  "apis.spotify.like_album": {
   "readonly": false,
   "count": 5,
-  "reason": "写入点赞状态",
+  "reason": "writes like state",
   "flag": null
  },
  "apis.spotify.add_to_queue": {
   "readonly": false,
   "count": 6,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.spotify.show_premium_subscriptions": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.show_text_message_window": {
   "readonly": true,
   "count": 2,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_song_queue": {
   "readonly": true,
   "count": 14,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_current_song": {
   "readonly": true,
   "count": 12,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.play_music": {
   "readonly": false,
   "count": 11,
-  "reason": "改播放器状态",
+  "reason": "changes player state",
   "flag": null
  },
  "apis.file_system.read_file": {
   "readonly": true,
   "count": 3,
-  "reason": "纯读取文件内容",
+  "reason": "pure read of file content",
   "flag": null
  },
  "apis.spotify.show_song_reviews": {
   "readonly": true,
   "count": 5,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.gmail.login": {
   "readonly": false,
   "count": 8,
-  "reason": "登录类：2026-08-01 拍板按严格只读口径判非只读（改会话状态）",
+  "reason": "login-type: decided 2026-08-01, judged not read-only under the strict read-only standard (changes session state)",
   "flag": "borderline"
  },
  "apis.gmail.show_archived_threads": {
   "readonly": true,
   "count": 3,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.file_system.show_files": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.todoist.show_account": {
   "readonly": true,
   "count": 2,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.simple_note.show_notes": {
   "readonly": true,
   "count": 2,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.add_song_to_library": {
   "readonly": false,
   "count": 1,
-  "reason": "追加对象或款项",
+  "reason": "appends an object or funds",
   "flag": null
  },
  "apis.spotify.show_queue": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_recommendations": {
   "readonly": true,
   "count": 13,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.show_sent_payment_requests": {
   "readonly": true,
   "count": 11,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.show_social_feed": {
   "readonly": true,
   "count": 9,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.remove_song_from_queue": {
   "readonly": false,
   "count": 8,
-  "reason": "移除对象",
+  "reason": "removes an object",
   "flag": null
  },
  "apis.spotify.show_following_artists": {
   "readonly": true,
   "count": 5,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.delete_payment_request": {
   "readonly": false,
   "count": 5,
-  "reason": "删除对象",
+  "reason": "deletes an object",
   "flag": null
  },
  "apis.file_system.show_account": {
   "readonly": true,
   "count": 4,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.remind_payment_request": {
   "readonly": false,
   "count": 2,
-  "reason": "对外发提醒",
+  "reason": "sends an external reminder",
   "flag": null
  },
  "apis.spotify.update_song_review": {
   "readonly": false,
   "count": 2,
-  "reason": "改写已有对象",
+  "reason": "rewrites an existing object",
   "flag": null
  },
  "apis.spotify.clear_song_queue": {
   "readonly": false,
   "count": 3,
-  "reason": "清空播放队列",
+  "reason": "clears the play queue",
   "flag": null
  },
  "apis.spotify.shuffle_song_queue": {
   "readonly": false,
   "count": 2,
-  "reason": "改播放队列",
+  "reason": "changes the play queue",
   "flag": null
  },
  "apis.gmail.show_thread": {
   "readonly": true,
   "count": 2,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.show_feed": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.next_song": {
   "readonly": false,
   "count": 1,
-  "reason": "改播放器状态",
+  "reason": "changes player state",
   "flag": null
  },
  "apis.phone.get_contacts": {
   "readonly": true,
   "count": 1,
-  "reason": "纯读取，不改任何状态",
+  "reason": "pure read, does not change any state",
   "flag": null
  },
  "apis.spotify.show_song_review": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.unfollow_artist": {
   "readonly": false,
   "count": 1,
-  "reason": "写入取关状态",
+  "reason": "writes unfollow state",
   "flag": null
  },
  "apis.phone.show_alarm": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.gmail.show_outbox_threads": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.gmail.show_account": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.gmail.search_emails": {
   "readonly": true,
   "count": 1,
-  "reason": "纯查询，不改任何状态",
+  "reason": "pure query, does not change any state",
   "flag": null
  },
  "apis.phone.show_messages": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_followed_artists": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.show_artist_library": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.supervisor.show_active_task": {
   "readonly": true,
   "count": 3,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.spotify.send_verification_code": {
   "readonly": false,
   "count": 3,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.phone.list_contacts": {
   "readonly": true,
   "count": 2,
-  "reason": "纯列举，不改任何状态",
+  "reason": "pure listing, does not change any state",
   "flag": null
  },
  "apis.spotify.show_user_recently_played": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.venmo.send_password_reset_code": {
   "readonly": false,
   "count": 1,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.spotify.play_track": {
   "readonly": false,
   "count": 1,
-  "reason": "改播放器状态",
+  "reason": "changes player state",
   "flag": null
  },
  "apis.spotify.send_password_reset_code": {
   "readonly": false,
   "count": 1,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.spotify.signup": {
   "readonly": false,
   "count": 1,
-  "reason": "注册新账号",
+  "reason": "registers a new account",
   "flag": null
  },
  "apis.gmail.signup": {
   "readonly": false,
   "count": 1,
-  "reason": "注册新账号",
+  "reason": "registers a new account",
   "flag": null
  },
  "apis.gmail.show_spam_threads": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.phone.send_password_reset_code": {
   "readonly": false,
   "count": 1,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.phone.reset_password": {
   "readonly": false,
   "count": 1,
-  "reason": "重置密码",
+  "reason": "resets the password",
   "flag": null
  },
  "apis.supervisor.show_account": {
   "readonly": true,
   "count": 1,
-  "reason": "纯展示，不改任何状态",
+  "reason": "pure display, does not change any state",
   "flag": null
  },
  "apis.simple_note.send_verification_code": {
   "readonly": false,
   "count": 1,
-  "reason": "对外发送（短信/语音/验证码）",
+  "reason": "sends externally (text message/voice message/verification code)",
   "flag": null
  },
  "apis.simple_note.signup": {
   "readonly": false,
   "count": 1,
-  "reason": "注册新账号",
+  "reason": "registers a new account",
   "flag": null
  },
  "apis.spotify.get_queue": {
   "readonly": true,
   "count": 1,
-  "reason": "纯读取，不改任何状态",
+  "reason": "pure read, does not change any state",
   "flag": null
  }
 }

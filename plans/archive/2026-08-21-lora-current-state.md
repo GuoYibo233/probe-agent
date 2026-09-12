@@ -1,91 +1,91 @@
-# LoRA 试验线现状报告（2026-08-21，拿去请教人用的底稿）
+# LoRA experiment-line status report (2026-08-21, a draft for consulting someone)
 
-这份报告盘点 new1 工程里 LoRA 训练这条线现在长什么样：配置是什么、配置从哪来、跑出过什么实测数字。全文只摆事实，每个数字都注明出自哪个文件；报告没有任何一处是评价或者建议，还没定的问题单独列在最后一节。
+This report surveys what the LoRA training line in the new1 project currently looks like: what the configuration is, where the configuration came from, what measured numbers it has produced. The whole report states only facts, and every number notes which file it comes from; nowhere in the report is there any evaluation or recommendation, and the open questions are listed separately in the last section.
 
-## 1. 背景：LoRA 微调的对象是什么
+## 1. Background: what LoRA fine-tuning is applied to
 
-被微调的模型是探针，探针的任务是盯着一个正在解题的大模型（gpt-oss-120b 在 AppWorld 环境里做任务），在它每写完一句思考的时候，从文本预测它接下来会发起哪个工具调用。探针一共有三种训法，各自是一个独立的训练任务：
+The model being fine-tuned is the probe, whose job is to watch a large model that is solving a task (gpt-oss-120b working on tasks in the AppWorld environment) and, every time it finishes writing a sentence of thinking, predict from the text which tool call it is about to make next. The probe has three training methods in total, each its own independent training task:
 
-1. ctool：只预测工具名。底座上取末层隐状态，外挂一个线性分类头做多分类。
-2. cgen：生成整条调用串（工具名加参数），标准的语言模型微调。
-3. cparam：给定工具名，只生成括号里的参数部分，同样是语言模型微调。
+1. ctool: predicts only the tool name. The last-layer hidden state is taken from the backbone, with a linear classification head attached on top for multi-class classification.
+2. cgen: generates the whole call string (tool name plus parameters), standard language-model fine-tuning.
+3. cparam: given the tool name, generates only the parameter part inside the parentheses, also language-model fine-tuning.
 
-底座是 Qwen3 家族的 Base 预训练版，三个档位：0.6B、1.7B、4B（权重在 NFS，`pipeline/train/train_causal_tool.py:70-72` 的路径映射）。输入序列上限 4096 token，超长从左边截（`train_causal_tool.py:189`）；底座权重以 fp32 加载（`train_causal_tool.py:169`），前向用 bf16 autocast（`train_causal_tool.py:410`），即混合精度训练。
+The backbone is the Base pretrained version of the Qwen3 family, at three sizes: 0.6B, 1.7B, 4B (weights on NFS, path mapping at `pipeline/train/train_causal_tool.py:70-72`). The input sequence cap is 4096 tokens, with overlong sequences truncated from the left (`train_causal_tool.py:189`); the backbone weights are loaded in fp32 (`train_causal_tool.py:169`), and the forward pass uses bf16 autocast (`train_causal_tool.py:410`), i.e. mixed-precision training.
 
-## 2. LoRA 的当前配置
+## 2. LoRA's current configuration
 
-三个训练脚本共用同一份实现 `pipeline/train/lora_util.py`，没有分叉。配置全部是代码里的默认值：
+All three training scripts share the same implementation, `pipeline/train/lora_util.py`, with no divergence. The configuration is entirely the defaults in the code:
 
-| 项 | 值 | 出处 |
+| Item | Value | Source |
 |---|---|---|
 | rank | 16 | `lora_util.py:30` |
 | alpha | 32 | `lora_util.py:31` |
 | dropout | 0.05 | `lora_util.py:32` |
-| 学习率 | 2e-4 | `lora_util.py:33`（显式传 `--lr` 时以 `--lr` 为准，`lora_util.py:53-61`） |
-| 适配器打在哪 | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj | `lora_util.py:27-28`，注释称「Qwen3 的标准七件：注意力四件 + MLP 三件」 |
+| learning rate | 2e-4 | `lora_util.py:33` (when `--lr` is passed explicitly, `--lr` takes precedence, `lora_util.py:53-61`) |
+| where the adapter is attached | q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj | `lora_util.py:27-28`, the comment calls it "Qwen3's standard seven: four for attention plus three for MLP" |
 | bias | none | `lora_util.py:76` |
 
-适配器之外还在训练的参数：ctool 的线性分类头始终全参（`train_causal_tool.py:372` 只包 backbone，头不在包装范围）；cgen 若开二值开火头，该头也全参（`train_causal_callgen.py:458-459` 显式拼进优化器）；cparam 没有任何头，开 LoRA 时可训参数只有适配器本身（`train_causal_param.py:362` 注释）。词表输出层（lm_head）不在七件套里，peft 包装后连同底座其余参数一起被冻结。
+Parameters that keep training outside the adapter: ctool's linear classification head is always fully trained (`train_causal_tool.py:372` wraps only the backbone, the head is not in the wrapped scope); if cgen turns on a binary fire-head, that head is also fully trained (`train_causal_callgen.py:458-459` explicitly appends it to the optimizer); cparam has no head at all, so with LoRA on, the only trainable parameters are the adapter itself (`train_causal_param.py:362` comment). The vocabulary output layer (lm_head) is not among the seven targets, and after the peft wrapping it is frozen along with the rest of the backbone's parameters.
 
-除了学习率，训练配方全部沿用全参那一套，没有为 LoRA 单独调过：批大小 4 条、梯度累积 8（等效一步 32 条）、3 个 epoch、warmup 5%、梯度裁剪 1.0（`invariants.md` §3 训练侧口径表）。全参的学习率是 1e-5。
+Apart from the learning rate, the training recipe entirely reuses the full-parameter one, with nothing tuned separately for LoRA: batch size 4, gradient accumulation 8 (effectively 32 per step), 3 epochs, 5% warmup, gradient clipping 1.0 (`invariants.md` §3 training-side convention table). The full-parameter learning rate is 1e-5.
 
-存档方式：每次验证指标创新低就把适配器深拷一份、merge_and_unload 并回底座、整套 HF 权重存进 `best/`（`lora_util.py:80-101`），所以评测端零改动，读到的就是一份普通权重。环境版本实测：peft 0.20.0、transformers 5.14.1、torch 2.11.0+cu128（`uv pip list` 对 cprobe-env 实测输出）。
+Checkpointing: every time the validation metric hits a new low, a deep copy of the adapter is made, merged and unloaded back into the backbone, and the whole HF weight set is saved into `best/` (`lora_util.py:80-101`), so the evaluation side needs zero changes, it just reads an ordinary set of weights. Measured environment versions: peft 0.20.0, transformers 5.14.1, torch 2.11.0+cu128 (measured output of `uv pip list` against cprobe-env).
 
-## 3. 这套配置从哪来
+## 3. Where this configuration came from
 
-LoRA 支持是 2026-08-21 当天加的（commit `822cfce`）。rank 16、alpha 32、dropout 0.05、学习率 2e-4 这四个数的选取依据在 commit message、源码注释、计划文档里都没有记录；评审记录里写的是「LoRA 线超参走旗标默认，不进锁超参横比」（`plans/2026-08-21-review-findings.md:100`），也就是说这批数字是拿惯例默认值直接用的，没有调过参，也没有跑过任何超参对照。
+LoRA support was added on 2026-08-21 itself (commit `822cfce`). The basis for picking the four numbers rank 16, alpha 32, dropout 0.05, learning rate 2e-4 is recorded nowhere, not in the commit message, not in source comments, not in a plan document; the review record says "the LoRA line's hyperparameters follow the flag defaults, and are not part of the locked-hyperparameter comparison" (`plans/2026-08-21-review-findings.md:100`), meaning these numbers were used straight off convention defaults, with no tuning done and no hyperparameter comparison run.
 
-开这条线的动机记录在 `TIMELINE.md:13-30`：主线全参跑大卡，小卡另开 LoRA 试验线（gyb 原话「小卡试一试 LoRA，反正可以并行」）；z1 批实测 0.6B 全参在 48G 卡上爆显存，小卡跑得动的是 LoRA；取舍依据是「LoRA 省显存不省算力（前向反向仍要过整个底座），大卡够用时主线全参……超参先锁死拿基线，将来要自调再加对照轮」。
+The motivation for opening this line is recorded in `TIMELINE.md:13-30`: the main line runs full-parameter on big cards, and a separate LoRA experiment line was opened for small cards (gyb's own words, "try LoRA on the small cards, it can run in parallel anyway"); the z1 batch measured that 0.6B full-parameter blows out memory on a 48G card, and what a small card can run is LoRA; the reasoning behind the tradeoff was "LoRA saves VRAM, not compute (the forward and backward passes still go through the whole backbone); when a big card is available, the main line stays full-parameter... lock the hyperparameters first to get a baseline, add a comparison round later if tuning is needed."
 
-## 4. 训练数据的规模
+## 4. The scale of the training data
 
-以下是被中断那一轮（p1 批）吃的数据，出自 `DATA.md` aw_p1_v1 一节：训练堆 46438 条样本（90 道题、1098 次工具调用事件），验证堆 29202 条；3 个 epoch 折 4356 个优化步（每步 32 条样本，train_log.jsonl 首行 steps 字段与此吻合）。题干长度中位数 4645 字符，超过 4096 token 的部分左截。
+The following is the data consumed by the round that got interrupted (the p1 batch), from the `DATA.md` aw_p1_v1 section: the train split has 46438 samples (90 tasks, 1098 tool-call events), the validation split has 29202; 3 epochs works out to 4356 optimizer steps (32 samples per step, matching the steps field on the first line of train_log.jsonl). The median task-description length is 4645 characters, with anything past 4096 tokens truncated from the left.
 
-注意：这批数据即将退役。下一批的口径是温度 1、每道题采 4 条轨迹、样本每步等权，样本量要采完才知道；如果每条轨迹的切点密度和 p1 相当，训练堆大约是 p1 的 4 倍（这是推算，不是实测）。
+Note: this batch of data is about to retire. The next batch's convention is temperature 1, 4 trajectories collected per task, samples weighted equally per step; the sample size will only be known once collection finishes; if each trajectory's cut density is comparable to p1's, the train split would be about 4 times p1's size (this is a projection, not a measurement).
 
-## 5. 实测之一：显存
+## 5. Measurement one: VRAM
 
-发射前 smoke 在 tokyo106 的 A6000（48G）上做过一轮完整测试（日志 `logs/new1_p1l*`）：三档底座乘三格共九格，不开梯度检查点时八格 OOM，只有 0.6B 的 ctool 一格直接通过；九格统一加 `--grad-ckpt` 后全部通过。OOM 时刻日志里的显存占用：0.6B 两格 43.97 GiB、1.7B 两格 47.5 GiB、4B 两格 47.33 GiB（各 smoke 日志的 OOM 报错行）。计划文档里另记有两个峰值数字（0.6B ctool 无检查点 46114 MiB、4B cgen/cparam 带检查点 46426 MiB，`plans/2026-08-21-p1-collection-plan.md:116,118`），这两个数在日志里找不到第二处出处，只能追到计划文档本身。
+A full round of testing was done before launch, as a smoke test on the tokyo106 A6000 (48G) (log `logs/new1_p1l*`): three backbone sizes times three cells makes nine cells; without gradient checkpointing, eight cells OOM, and only the 0.6B ctool cell passes directly; with `--grad-ckpt` added uniformly across all nine cells, all of them pass. VRAM usage at the moment of OOM in the logs: 0.6B's two cells 43.97 GiB, 1.7B's two cells 47.5 GiB, 4B's two cells 47.33 GiB (the OOM error lines in each smoke log). The plan document separately records two peak numbers (0.6B ctool without checkpointing 46114 MiB, 4B cgen/cparam with checkpointing 46426 MiB, `plans/2026-08-21-p1-collection-plan.md:116,118`); these two numbers have no second source in the logs, they can only be traced back to the plan document itself.
 
-## 6. 实测之二：速度，以及被中断的六个训练
+## 6. Measurement two: speed, and the six trainings that got interrupted
 
-2026-08-21 12:44 发射了九个 LoRA 训练（三档底座乘三格，全部带梯度检查点，A6000 单卡一个）。三个 ctool 当天训完；六个 cgen/cparam 在 22:42 被 gyb 喊停杀掉（commit `b17d9cb`），到被杀为止跑了约 9 小时 58 分（台账 `ops/jobs.json` 的发射与结束时间相减）。六个被杀的训练一个都没跑到第 1 个 epoch 边界，没存过任何 checkpoint，所以没有验证集数字。
+At 12:44 on 2026-08-21, nine LoRA trainings were launched (three backbone sizes times three cells, all with gradient checkpointing, one per A6000 card). The three ctool trainings finished the same day; the six cgen/cparam trainings were stopped and killed by gyb at 22:42 (commit `b17d9cb`), having run for about 9 hours 58 minutes by the time they were killed (the launch and end times in the `ops/jobs.json` ledger, subtracted). None of the six killed trainings reached the 1st epoch boundary, none had saved any checkpoint, so there are no validation-set numbers for them.
 
-被杀时刻的速度与进度（各产物目录 `train_log.jsonl` 最后一行；ips 字段装的是每秒处理的训练样本数）：
+Speed and progress at the moment of being killed (the last line of `train_log.jsonl` in each output directory; the ips field holds the number of training samples processed per second):
 
-| 训练 | 底座 | 进度（步/总步） | ips |
+| Training | Backbone | Progress (step/total) | ips |
 |---|---|---|---|
-| p1l06 cgen | 0.6B | 1300/4356（29.8%） | 1.17 |
-| p1l06 cparam | 0.6B | 1350/4356（31.0%） | 1.22 |
-| p1l17 cgen | 1.7B | 1000/4356（23.0%） | 0.92 |
-| p1l17 cparam | 1.7B | 1000/4356（23.0%） | 0.92 |
-| p1l4 cgen | 4B | 450/4356（10.3%） | 0.41 |
-| p1l4 cparam | 4B | 450/4356（10.3%） | 0.41 |
+| p1l06 cgen | 0.6B | 1300/4356 (29.8%) | 1.17 |
+| p1l06 cparam | 0.6B | 1350/4356 (31.0%) | 1.22 |
+| p1l17 cgen | 1.7B | 1000/4356 (23.0%) | 0.92 |
+| p1l17 cparam | 1.7B | 1000/4356 (23.0%) | 0.92 |
+| p1l4 cgen | 4B | 450/4356 (10.3%) | 0.41 |
+| p1l4 cparam | 4B | 450/4356 (10.3%) | 0.41 |
 
-照这个速度外推整程（139314 条样本除以 ips，是推算不是实测）：0.6B 约 32 到 33 小时，1.7B 约 42 小时，4B 约 94 小时。4B 的推算和实际进度对得上（9.97 小时跑了 10.3%）。
+Extrapolating this speed to the whole run (139314 samples divided by ips, a projection, not a measurement): about 32 to 33 hours for 0.6B, about 42 hours for 1.7B, about 94 hours for 4B. The 4B projection matches the actual progress (9.97 hours to reach 10.3%).
 
-三个训完的 ctool LoRA 用时短得多：0.6B 和 1.7B 约 1.5 小时收官，4B 约 3.5 小时（台账时间相减）。ctool 每个事件整段文本只做一次前向，样本处理方式和生成两格不同。
+The three completed ctool LoRA trainings took much less time: 0.6B and 1.7B wrapped up in about 1.5 hours, 4B in about 3.5 hours (subtracting ledger times). ctool does only one forward pass over the whole text per event, a different way of processing samples than the two generation cells.
 
-## 7. 同一份数据上已有的完整结果
+## 7. Complete results already available on the same data
 
-下面是 p1 数据上已经收官的数字，LoRA 与全参可以对着看。指标字段 `best_calA_weighted_acc` 装的是验证堆上按样本权重加权的工具名准确率在三轮里的最高值（出处 `ops/runs.jsonl` 各 finish 行）：
+Below are the numbers already wrapped up on the p1 data, LoRA and full-parameter can be looked at side by side. The metric field `best_calA_weighted_acc` holds the highest value across the three epochs of the sample-weighted tool-name accuracy on the validation split (source: each finish line in `ops/runs.jsonl`):
 
-| 格 | 底座 | LoRA | 全参 |
+| Cell | Backbone | LoRA | Full-parameter |
 |---|---|---|---|
 | ctool | 0.6B | 0.6878 | 0.6924 |
 | ctool | 1.7B | 0.6628 | 0.6685 |
-| ctool | 4B | 0.6689 | 没跑过 |
+| ctool | 4B | 0.6689 | never run |
 
-cgen 和 cparam 两格 LoRA 没有任何完成数（六个都被中断）；全参侧的终值：cgen 验证集掩码交叉熵 0.6B 是 0.4043、1.7B 是 0.4531，cparam 是 0.6B 0.3493、1.7B 0.332（`ops/runs.jsonl` 行 50、51、58、59）。
+LoRA has no completed numbers at all for the cgen and cparam cells (all six were interrupted); the full-parameter side's final values: cgen's masked validation cross-entropy is 0.4043 for 0.6B and 0.4531 for 1.7B, cparam is 0.3493 for 0.6B and 0.332 for 1.7B (`ops/runs.jsonl` lines 50, 51, 58, 59).
 
-## 8. 下一批的情境
+## 8. Context for the next batch
 
-请教的时候可以带上这批背景：下一批（nyanpasu-probtest821）计划四个训练批次，0.6B 只跑全参，1.7B 全参和 LoRA 各跑一份，4B 只跑 LoRA；三格全跑。数据换成温度 1、每题 4 条轨迹、每步等权的新采集，样本量预计涨到 p1 的 4 倍上下（推算）。可用硬件：tokyo106 十张 A6000 48G；大卡侧 p1 的全参 1.7B 正式跑排的是 H200。
+When consulting someone, this background can be brought along: the next batch (nyanpasu-probtest821) plans four training batches, 0.6B running full-parameter only, 1.7B running one each of full-parameter and LoRA, 4B running LoRA only; all three cells run. The data switches to a new collection at temperature 1, 4 trajectories per task, equal weight per step, with the sample size projected to rise to around 4 times p1's (a projection). Available hardware: ten A6000 48G cards on tokyo106; on the big-card side, p1's full-parameter 1.7B was scheduled on an H200.
 
-## 9. 还没定的问题
+## 9. Open questions
 
-1. rank、alpha、dropout、学习率四个值现在全是惯例默认，一次对照都没跑过；这套值对这个任务（4096 长序列、几万条样本、Base 底座）合不合适没有证据。
-2. epoch 数和批大小沿用全参配方，LoRA 学习率高 20 倍的情况下要不要单独定，没有讨论过。
-3. 适配器只打七个线性层，embedding 和 lm_head 都冻结；cgen 和 cparam 是生成任务，输出层不训是否合适，没有讨论过。
-4. 速度问题：数据涨 4 倍后，照第 6 节的 ips 外推 4B LoRA 单格要 370 小时上下（94 小时乘 4，推算），A6000 上这样跑是否成立，没有定。
-5. 数据翻倍之后 epoch 数要不要降，没有讨论过。
+1. rank, alpha, dropout, and learning rate are all currently convention defaults, not a single comparison has been run; there is no evidence on whether this set of values suits this task (4096-length sequences, tens of thousands of samples, a Base backbone).
+2. The epoch count and batch size reuse the full-parameter recipe; whether they should be set separately given that LoRA's learning rate is 20 times higher has not been discussed.
+3. The adapter is attached to only seven linear layers, with embedding and lm_head both frozen; whether it's appropriate to leave the output layer untrained for cgen and cparam, which are generation tasks, has not been discussed.
+4. Speed: once the data grows 4x, extrapolating from §6's ips puts a single 4B LoRA cell at around 370 hours (94 hours times 4, a projection); whether running it this way on an A6000 is viable has not been decided.
+5. Whether the epoch count should be lowered once the data doubles has not been discussed.

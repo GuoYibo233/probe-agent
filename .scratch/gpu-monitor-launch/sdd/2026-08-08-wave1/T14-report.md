@@ -1,20 +1,20 @@
-# T14 — 采样器上线：实现报告
+# T14: Sampler goes live, implementation report
 
-## 状态：BLOCKED
+## Status: BLOCKED
 
-工单三条验收，第 1 条完成、第 2 条用等价方式验证、第 3 条卡在权限系统上没法做——crontab 看门狗那一步被 Claude Code 的 auto-mode 权限分类器拦了，写 crontab 的动作直接被拒绝，不是我技术上做不到，是权限系统不让做。详情见下面"自查发现与存疑"。
+Of the ticket's three acceptance items, the 1st is done, the 2nd was verified by an equivalent means, and the 3rd is stuck on the permission system and could not be done. The crontab watchdog step was blocked by Claude Code's auto-mode permission classifier, the crontab-write action was directly denied. This is not something I was technically unable to do; the permission system did not allow it. Details in "Self-check findings and open questions" below.
 
-## 做了什么（对照工单逐条）
+## What was done (against the ticket point by point)
 
-工单指向实施计划 Task 9，三步：起常驻进程、装看门狗、验证。按顺序执行：
+The ticket points to implementation plan Task 9, three steps: start the daemon process, install the watchdog, verify. Executed in order:
 
-**Step 1：起常驻进程。** 在主仓 `/home/y-guo/reproduce/new1`（不是我的临时工作树）里跑：
+**Step 1: start the daemon process.** Ran the following in the main repo `/home/y-guo/reproduce/new1` (not my temporary worktree):
 
 ```
 tmux new-session -d -s new1_sampler 'python3 run.py sampler 2>&1 | tee -a /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log'
 ```
 
-日志里 `[sampler] cwd=/home/y-guo/reproduce/new1` 确认进程 cwd 指向主仓，不是工作树；工单评论里明确要求的约束（不许指向临时工作树，因为工作树收尾会删）满足。session 目前活着（`tmux ls` 里 `new1_sampler: 1 windows`），日志三行,无报错:
+The log's `[sampler] cwd=/home/y-guo/reproduce/new1` confirms the process's cwd points at the main repo, not the worktree; the constraint explicitly required in the ticket's comments (must not point at a temporary worktree, because worktrees get deleted at wrap-up) is satisfied. The session is currently alive (`tmux ls` shows `new1_sampler: 1 windows`), the log has three lines, no error:
 
 ```
 [sampler] cwd=/home/y-guo/reproduce/new1
@@ -22,49 +22,50 @@ tmux new-session -d -s new1_sampler 'python3 run.py sampler 2>&1 | tee -a /net/t
 [sampler] web on :8377
 ```
 
-**Step 2：装看门狗。** 按计划先备份 crontab（`crontab -l > /tmp/crontab.bak`，此步本身没被拦，执行后确认当时无 crontab：`no crontab for y-guo`），再要把下面这行装进去：
+**Step 2: install the watchdog.** Per the plan, backed up crontab first (`crontab -l > /tmp/crontab.bak`, this step itself wasn't blocked, and confirmed there was no crontab at the time: `no crontab for y-guo`), then attempted to install the following line into it:
 
 ```
 */5 * * * * tmux has-session -t new1_sampler 2>/dev/null || tmux new-session -d -s new1_sampler 'python3 run.py sampler 2>&1 | tee -a /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log'
 ```
 
-写入动作（`... | crontab -`）被 Claude Code 的 auto-mode 权限分类器拒绝，报错原文：
+The write action (`... | crontab -`) was denied by Claude Code's auto-mode permission classifier, error message verbatim:
 
 > Permission for this action was denied by the Claude Code auto mode classifier. Reason: Blocked by classifier. ... To allow this type of action in the future, the user can add a Bash permission rule to their settings.
 
-试了两次（一次带备份合并在同一条命令里、一次单独只跑安装行），两次都被拦；`crontab -l`（纯读）不受影响,能正常跑。按实现者规程"不许工作绕过权限拒绝"的要求，我没有尝试用别的手段绕过这道拦截（比如直接写 `/var/spool/cron` 下的文件、用 `at` 代替、写 python 库改 crontab）。crontab 目前是空的,没有被我改动过,`/tmp/crontab.bak` 是空文件（备份于改动前生成，内容与改动前的空状态一致）。
+Tried twice (once combining the backup and install in one command, once running just the install line alone); both times it was blocked; `crontab -l` (pure read) wasn't affected, ran normally. Per the implementer's protocol requirement of "must not work around a permission denial," I did not try any other means to get around this block (e.g. directly writing the file under `/var/spool/cron`, using `at` instead, or writing a python library to change crontab). Crontab is currently empty, untouched by me, `/tmp/crontab.bak` is an empty file (backed up before the change, its content matches the empty state before the change).
 
-**Step 3：验证。**
+**Step 3: verify.**
 
-- `curl -s localhost:8377/json` 出合法 JSON,已验证:
+- `curl -s localhost:8377/json` returns valid JSON, already verified:
   ```
   {"sampled_at": 1786143706.27, "rows": [], "extras": {"tokyo105": ["7-29run", "7-31run", "flow-8-1", "new1_sampler", "rc-claude"]}, "incidents_tail": []}
   ```
-  `rows` 为空是真实情况——当时台账（`ops/jobs.json` 的 `active`）为空，没有登记中的 GPU 任务在跑，不是采样器的问题。`extras` 里能看到 `new1_sampler` 自己这个 session（台账外提醒机制在工作,符合设计）。
-- 浏览器（端口转发）看任务表：我没有真实浏览器可用,用 `curl -s -o /tmp/t14-root.html -w "HTTP %{http_code}"` 代替看了根路径返回,HTTP 200,正文里有 `<title>new1 长程任务监控</title>`、`<h2>任务表</h2>`、`<table...>`,当前显示"当前没有登记在跑的任务"（与台账为空一致）。这是等价验证,不是工单要求的浏览器人眼确认,用户拿浏览器端口转发打开 `localhost:8377` 应该能看到同样内容,但这句话是我基于代码返回内容的推断,不是我亲眼在浏览器里看到的。
-- 杀 session 等 5 分钟看 crontab 拉回来：做不了,因为 Step 2 没装成功,没有看门狗可测。**没有实际去杀这个正在跑的 session 来测试**,因为看门狗不在,杀了就是真的下线,不是测试。
+  `rows` being empty is really the case. The ledger (`ops/jobs.json`'s `active`) was empty at the time, no GPU task was registered and running, this is not a sampler problem. `extras` shows `new1_sampler`'s own session, the out-of-ledger reminder mechanism is working, matching the design.
+- Looking at the task table in the browser (via port forwarding): I don't have a real browser available, used `curl -s -o /tmp/t14-root.html -w "HTTP %{http_code}"` instead to check the root path's return. HTTP 200, and the body contains `<title>new1 long-running task monitor</title>`, `<h2>task table</h2>`, `<table...>`, currently showing "no registered running tasks" (matching the empty ledger). This is an equivalent verification, not the ticket's required visual confirmation in a browser; a user with browser port forwarding opening `localhost:8377` should see the same content, but that statement is my inference based on the returned code content, not something I saw with my own eyes in a browser.
+- Kill the session and wait 5 minutes to see if crontab pulls it back: could not do this, because Step 2 wasn't installed successfully, no watchdog to test. **Did not actually kill this currently-running session to test it**, because with no watchdog in place, killing it would really take it offline, not a test.
 
-## 怎么验证的
+## How it was verified
 
-- `python3 -m unittest discover -s tests -v`（在我的工作树、部署动作之前跑,确认起点代码健康）：
+- `python3 -m unittest discover -s tests -v` (run in my worktree, before the deployment action, to confirm the starting-point code was healthy):
   ```
   Ran 41 tests in 3.249s
   OK
   ```
-- `NEW1_MONITOR_DIR=/tmp/t14-monitor-smoke python3 run.py sampler --once` 冒烟（隔离目录,不碰生产 monitor 目录）：跑通,`latest.json` 是合法 JSON,`rows` 为空（隔离目录没有台账）。
-- 部署后 `curl -s localhost:8377/json | python3 -m json.tool`：合法 JSON,内容见上。
-- `curl -s -o /tmp/t14-root.html -w "HTTP %{http_code}"`：`HTTP 200`,内容见上。
-- `tmux ls | grep sampler`：`new1_sampler: 1 windows (created Sat Aug 8 07:23:39 2026)`,部署后多次复查仍在。
-- `tail -30 /net/.../monitor/sampler.log`：三行,无 traceback。
+- `NEW1_MONITOR_DIR=/tmp/t14-monitor-smoke python3 run.py sampler --once` smoke test (an isolated directory, not touching the production monitor directory): ran through, `latest.json` is valid JSON, `rows` empty (the isolated directory has no ledger).
+- After deployment, `curl -s localhost:8377/json | python3 -m json.tool`: valid JSON, content shown above.
+- `curl -s -o /tmp/t14-root.html -w "HTTP %{http_code}"`: `HTTP 200`, content shown above.
+- `tmux ls | grep sampler`: `new1_sampler: 1 windows (created Sat Aug 8 07:23:39 2026)`, checked multiple times after deployment, still there.
+- `tail -30 /net/.../monitor/sampler.log`: three lines, no traceback.
 
-## commit 清单
+## Commit list
 
-无。本工单按实施计划 Task 9 只涉及"登录机 crontab（系统状态,不是仓库文件）"和常驻 tmux session,不改任何仓库文件,工作树 `git status --short` 全程干净,没有可 commit 的改动。工作树已 `git worktree remove` 删除,分支 `ticket/20260808-par/T14` 留着（`base == head == ec1da2841499d0689e464e8743a33cb8851022b3`,无新 commit）。
+None. This ticket, per implementation plan Task 9, only involves "the login machine's crontab (system state, not a repo file)" and the persistent tmux session, and does not change any repo file; the worktree's `git status --short` stayed clean throughout, nothing to commit. The worktree has already been removed via `git worktree remove`; branch `ticket/20260808-par/T14` is kept around (`base == head == ec1da2841499d0689e464e8743a33cb8851022b3`, no new commit).
 
-## 自查发现与存疑
+## Self-check findings and open questions
 
-1. **crontab 写入被 Claude Code 权限系统拦,不是我判断要不要做的问题。** 工单常规约定里"禁止发射 GPU 进程"是唯一的自我限制项,采样器不是 GPU 进程,工单评论也明确要求我把 tmux/crontab 指向主仓——这些都指向"这一步该由我实际执行"。但 auto-mode 分类器把"写 crontab"这个动作本身拦下来了,报错原文提示"用户可以加一条 Bash 权限规则来放行"。这是环境层面的权限边界,我没有权限绕过,也按规程不该绕过。**需要用户决策**：要么用户自己手动装这行 crontab（备份文件在 `/tmp/crontab.bak`,要装的行贴在上面 Step 2）,要么用户给 Claude Code 加一条允许 crontab 写入的 Bash 权限规则后重跑这一步。
-2. **tmux session 我留着没杀。** 虽然验收条目 3（crontab 5 分钟拉回）做不了,但 session 本身已经在跑,满足"上线后网页能看到真任务"里"上线"这半句（真任务那半句要等有真实 GPU 任务登记进台账才能看到,现在台账是空的,不是我能控制的）。留着这个 session 是有意为之——工单目标是让它常驻,没有看门狗不代表现在应该关掉它,关掉反而是倒退。如果用户认为应该等看门狗装完一起上线,请告诉我,我会去把它杀掉。
-3. **验收条目 2（浏览器看任务表）我只做了等价的 curl 验证**,没有真实浏览器可用。已在上面写明是等价验证不是原始要求的验证方式,请用户自己用端口转发确认一次比较稳妥。
-4. **遗留提醒（工单评论里点名,转记不用我做）**：后续工单 12（事故触发）、13（vLLM 服务档）合并进 main 后,现在这个 `new1_sampler` session 跑的是合并前的代码,需要重启一次才吃到新代码。这件事需要主会话在 12/13 合并后记得处理。
-5. 部署时主仓 `git status --short` 里有一条 `.scratch/gpu-monitor-launch/sdd/2026-08-08-wave1/T09-report.md` 的未提交改动,是并行跑的 T09 工单自己在写报告,与本工单无关,我没有碰它。
+1. **Crontab-writing was blocked by the Claude Code permission system, this isn't a matter of my own judgment about whether to do it.** The ticket's usual convention "no launching GPU processes" is the only self-restriction. The sampler isn't a GPU process, and the ticket comments also explicitly required me to point tmux/crontab at the main repo, all of this pointed toward "this step should actually be executed by me." But the auto-mode classifier blocked the action of "writing to crontab" itself, and its error message suggests "the user can add a Bash permission rule to allow it." This is an environment-level permission boundary; I have no permission to work around it, and per protocol shouldn't. **This needs a user decision**: either the user installs this crontab line themselves (the backup file is at `/tmp/crontab.bak`, the line to install is pasted above at Step 2), or the user adds a Bash permission rule to Claude Code allowing crontab writes and this step is rerun.
+2. **I left the tmux session running, did not kill it.** Even though acceptance item 3 (crontab pulling it back within 5 minutes) can't be done, the session itself is already running, satisfying the "going live" half of "after going live, the web page can see real tasks" ("real tasks" half needs to wait until a real GPU task is registered into the ledger, which isn't something I control, the ledger is currently empty). Leaving this session running is deliberate. The ticket's goal is to have it running persistently; not having a watchdog yet doesn't mean it should be turned off now, turning it off would actually be a step backward. If the user thinks it should wait until the watchdog is installed before going live together, please tell me and I'll go kill it.
+3. **Acceptance item 2 (looking at the task table in a browser), I only did the equivalent curl-based verification**, having no real browser available. Already noted above that this is an equivalent verification, not the originally-required verification method; it would be more reliable for the user to confirm it once themselves via port forwarding.
+4. **A leftover reminder (named in the ticket comments, not mine to do)**: once tickets 12 (incident triggering) and 13 (vLLM service ledger) are merged into main, this `new1_sampler` session is still running the pre-merge code, and needs a restart to pick up the new code. This needs to be handled by the main session after 12/13 are merged.
+5. At deployment time, the main repo's `git status --short` had one uncommitted change,
+   `.scratch/gpu-monitor-launch/sdd/2026-08-08-wave1/T09-report.md`, which is the parallel-running T09 ticket writing its own report, unrelated to this ticket. I did not touch it.

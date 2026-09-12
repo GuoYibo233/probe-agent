@@ -1,36 +1,36 @@
-# 长程任务监控与发射 — 实施计划
+# Long-running task monitoring and launch — implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 落地 `docs/design/2026-08-08-gpu-monitor-launch.md`：脚本打心跳，采样器算判定，三个出口读同一份采样历史，出事自动拉事故 agent 补射，发射收成 `run.py launch` 一条子命令。
+**Goal:** Land `docs/design/2026-08-08-gpu-monitor-launch.md`: scripts emit heartbeats, the sampler computes verdicts, three exits read the same sampling history, an incident automatically pulls up an incident agent to refire, and launching collapses into one `run.py launch` subcommand.
 
-**Architecture:** 四个新模块（`ops/heartbeat.py` 心跳、`ops/verdicts.py` 判定纯函数、`ops/sampler.py` 常驻采样器、`ops/launch_common.py`+`ops/launch_cmd.py` 发射）加三类改造（脚本接心跳、`ops/gpu_jobs.py` 出口改读采样历史、两个排卡发射器接同一套登记）。判定引擎是纯函数、零 IO，单元测试全压在它身上；IO 都在采样器里，用 `--once` 模式配假日志做集成冒烟。
+**Architecture:** Four new modules (`ops/heartbeat.py` the heartbeat, `ops/verdicts.py` the pure-function verdict engine, `ops/sampler.py` the resident sampler, `ops/launch_common.py`+`ops/launch_cmd.py` for launching) plus three kinds of rework (wiring scripts up with heartbeats, changing the `ops/gpu_jobs.py` exits to read the sampling history, wiring the two queueing launchers into the same registration). The verdict engine is a pure function with zero IO, so unit tests carry the full weight there; all the IO lives in the sampler, tested with an integration smoke test using `--once` mode against a fake log.
 
-**Tech Stack:** 纯 Python 标准库（ops 下所有新模块零第三方依赖，任何 venv 都能 import）；测试用 stdlib `unittest`；网页用 `http.server`，无前端依赖。
+**Tech Stack:** Pure Python standard library (every new module under ops has zero third-party dependencies, any venv can import it); tests use stdlib `unittest`; the web page uses `http.server`, no frontend dependency.
 
 ## Global Constraints
 
-- ops 下新模块**只用标准库**（设计 §2：11 个解释器谁都要能 import）。
-- 每个任务收尾必须跑 `python3 run.py selfcheck` 通过再 commit（CLAUDE.md：扩展代码与注册表更新同一个 commit）。
-- 测试统一 `python3 -m unittest discover -s tests -v`（仓库根执行；本机没有 `python`，只有 `python3`）。
-- 采样历史/事故记录落 NFS：`/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/`（大产物不进 home，不进 git；`.gitignore` 不用改——目录在仓库外）。
-- 事故 agent 模型钉 **opus**（用户 2026-08-08 指定，不用 sonnet）。
-- 判定的名字、口径一律照 `CONTEXT.md` 词汇表与设计文档 §4，不许另造。
-- 不读写 `/home/y-guo/ACL2026` 下任何东西。
-- 常数集中放 `ops/verdicts.py` 的 `DEFAULTS`，不许散落硬编码（设计 §10：跑出误报要能一处调）。
+- New modules under ops **use the standard library only** (design §2: all 11 interpreters must be able to import them).
+- Every task must pass `python3 run.py selfcheck` at wrap-up before committing (CLAUDE.md: extension code and registry updates land in the same commit).
+- Tests are run uniformly with `python3 -m unittest discover -s tests -v` (run from the repo root; this machine has no `python`, only `python3`).
+- The sampling history / incident record land on NFS: `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/` (large artifacts do not go into home, do not go into git; `.gitignore` does not need to change — the directory is outside the repo).
+- The incident agent's model is pinned to **opus** (specified by the user on 2026-08-08, not sonnet).
+- Verdict names and their exact meaning follow `CONTEXT.md`'s glossary and design document §4 without exception; no inventing new ones.
+- Do not read or write anything under `/home/y-guo/ACL2026`.
+- Constants are all centralized in `ops/verdicts.py`'s `DEFAULTS`; no scattering them as hardcoded values (design §10: producing a false positive should be tunable from one place).
 
 ---
 
-### Task 1: 心跳模块 `ops/heartbeat.py`
+### Task 1: Heartbeat module `ops/heartbeat.py`
 
 **Files:**
 - Create: `ops/heartbeat.py`
 - Create: `tests/test_heartbeat.py`
 
 **Interfaces:**
-- Produces: `emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)`；`parse(line) -> dict | None`；常量 `PREFIX = "@hb "`。后续所有任务按这两个签名用。
+- Produces: `emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None, status=None, stream=None)`; `parse(line) -> dict | None`; the constant `PREFIX = "@hb "`. Every later task uses these two signatures.
 
-- [ ] **Step 1: 写失败测试** `tests/test_heartbeat.py`（`tests/` 目录与空的 `tests/__init__.py` 一并建）：
+- [ ] **Step 1: Write the failing test** `tests/test_heartbeat.py` (create the `tests/` directory together with an empty `tests/__init__.py`):
 
 ```python
 import io
@@ -52,7 +52,7 @@ class TestHeartbeat(unittest.TestCase):
         for k in ("done", "total", "unit", "ts"):
             self.assertIn(k, rec)
         self.assertEqual(rec["done"], 3)
-        self.assertNotIn("tok_in", rec)          # 选填不给就不出现
+        self.assertNotIn("tok_in", rec)          # optional field not given -> doesn't appear
 
     def test_emit_optional_fields(self):
         buf = io.StringIO()
@@ -71,28 +71,30 @@ class TestHeartbeat(unittest.TestCase):
     def test_parse_rejects_garbage(self):
         self.assertIsNone(heartbeat.parse("task=1 SKIP (done)"))
         self.assertIsNone(heartbeat.parse("@hb not-json"))
-        self.assertIsNone(heartbeat.parse('@hb {"done": 1}'))  # 缺必填
+        self.assertIsNone(heartbeat.parse('@hb {"done": 1}'))  # missing a required field
 
 
 if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **Step 2: Run the test, confirm it fails**
 
 Run: `python3 -m unittest tests.test_heartbeat -v`
-Expected: FAIL（`ModuleNotFoundError: heartbeat`）
+Expected: FAIL (`ModuleNotFoundError: heartbeat`)
 
-- [ ] **Step 3: 实现 `ops/heartbeat.py`**
+- [ ] **Step 3: Implement `ops/heartbeat.py`**
 
 ```python
 #!/usr/bin/env python3
-"""心跳:长程任务脚本向采样器上报进度的唯一通道(设计文档 §2)。
+"""Heartbeat: the sole channel by which a long-running task script reports progress to the
+sampler (design document §2).
 
-一行 = 前缀 "@hb " + 一个 JSON。必填 done/total/unit/ts,选填
-tok_in/tok_out(累计值)/loss/status("done"=正常收尾)。
-进主循环先 emit(0, total, unit) 一条——那是"模型加载完了"的标志。
-只用标准库:任何 venv 都要能 import 本文件。
+One line = the prefix "@hb " + one JSON object. Required: done/total/unit/ts, optional:
+tok_in/tok_out (cumulative values)/loss/status ("done" = normal finish).
+Before entering the main loop, emit(0, total, unit) once first -- that is the marker for
+"model loading finished."
+Standard library only: any venv must be able to import this file.
 """
 import json
 import sys
@@ -120,7 +122,8 @@ def emit(done, total, unit, *, tok_in=None, tok_out=None, loss=None,
 
 
 def parse(line):
-    """心跳行 -> dict;不是合法心跳行返回 None(监控端只认这个入口)。"""
+    """Heartbeat line -> dict; returns None if the line is not a valid heartbeat (the monitoring
+    side trusts only this entry point)."""
     line = line.strip()
     if not line.startswith(PREFIX):
         return None
@@ -133,31 +136,31 @@ def parse(line):
     return rec
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **Step 4: Run the test, confirm it passes**
 
 Run: `python3 -m unittest tests.test_heartbeat -v`
-Expected: PASS（4 个用例）
+Expected: PASS (4 test cases)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add ops/heartbeat.py tests/__init__.py tests/test_heartbeat.py
-git commit -m "monitor: 心跳模块 ops/heartbeat.py(emit/parse,stdlib-only)"
+git commit -m "monitor: heartbeat module ops/heartbeat.py (emit/parse, stdlib-only)"
 ```
 
 ---
 
-### Task 2: 判定引擎 `ops/verdicts.py`（纯函数）
+### Task 2: Verdict engine `ops/verdicts.py` (pure functions)
 
 **Files:**
 - Create: `ops/verdicts.py`
 - Create: `tests/test_verdicts.py`
 
 **Interfaces:**
-- Produces: `DEFAULTS` 配置 dict；`typical_gap_s(beat_ts, cfg)`；`stall_line_s(beat_ts, cfg, override=None)`；`rates(first_beat, recent_beats, cfg)`；`judge(p, cfg) -> (判定字符串, 是否达升级线)`。判定字符串常量 `V_DONE/V_DEAD/V_STALL/V_WARMUP/V_SLOW/V_OK` = "已完成"/"已挂"/"疑似卡死"/"warm-up 中"/"变慢"/"健康"。
-- `judge` 的输入 `p`（采样器 Task 4 负责攒出这个 dict）：`kind`("batch"|"service")、`alive`(True|False|None=探测失败沿用上一轮)、`done`、`total`、`status`、`has_beat`、`beat_age_s`(最近一次看到新心跳距现在，采样器自己的钟)、`since_launch_s`、`stall_s`(None=间隔样本不够，用 warm-up 上限顶)、`escalate_s`(None=判定线×escalate_mult)、`warmup_s`、`avg_rate`、`recent_rate`、`port_ok`、`port_ever_ok`、`port_fail_rounds`。
+- Produces: the `DEFAULTS` config dict; `typical_gap_s(beat_ts, cfg)`; `stall_line_s(beat_ts, cfg, override=None)`; `rates(first_beat, recent_beats, cfg)`; `judge(p, cfg) -> (verdict string, whether the escalation line is reached)`. The verdict string constants `V_DONE/V_DEAD/V_STALL/V_WARMUP/V_SLOW/V_OK` = "done"/"dead"/"stalled"/"warming up"/"slowing down"/"healthy".
+- The input `p` to `judge` (Task 4, the sampler, is responsible for assembling this dict): `kind` ("batch"|"service"), `alive` (True|False|None = probe failed, carry over the previous round), `done`, `total`, `status`, `has_beat`, `beat_age_s` (time since the most recent new heartbeat was seen, under the sampler's own clock), `since_launch_s`, `stall_s` (None = not enough interval samples, use the warm-up ceiling as a stand-in), `escalate_s` (None = stall line × escalate_mult), `warmup_s`, `avg_rate`, `recent_rate`, `port_ok`, `port_ever_ok`, `port_fail_rounds`.
 
-- [ ] **Step 1: 写失败测试**（设计 §4 判定表逐格 + 边界，每格至少一个用例）：
+- [ ] **Step 1: Write the failing test** (one cell of the design §4 verdict table at a time, plus edge cases, at least one test case per cell):
 
 ```python
 import unittest
@@ -167,7 +170,7 @@ import verdicts as V
 
 
 def p(**kw):
-    """batch 分片的默认状态,单测里按格覆盖。"""
+    """Default state for a batch piece; overridden per cell in the unit tests."""
     base = dict(kind="batch", alive=True, done=5, total=100, status=None,
                 has_beat=True, beat_age_s=10.0, since_launch_s=600.0,
                 stall_s=180.0, escalate_s=None, warmup_s=1800.0,
@@ -178,42 +181,43 @@ def p(**kw):
 
 
 class TestJudge(unittest.TestCase):
-    def test_done_beats_everything(self):        # 优先级 1:已完成压过活着
+    def test_done_beats_everything(self):        # priority 1: done overrides alive
         self.assertEqual(V.judge(p(done=100))[0], V.V_DONE)
         self.assertEqual(V.judge(p(alive=False, status="done", done=3))[0],
                          V.V_DONE)
 
-    def test_dead(self):                          # 优先级 2:含零心跳就死的
+    def test_dead(self):                          # priority 2: includes dying with zero heartbeats
         v, esc = V.judge(p(alive=False))
         self.assertEqual(v, V.V_DEAD)
-        self.assertTrue(esc)                      # 已挂当场达升级线
+        self.assertTrue(esc)                      # dead reaches the escalation line on the spot
         v, _ = V.judge(p(alive=False, has_beat=False, done=None, total=None))
         self.assertEqual(v, V.V_DEAD)
 
-    def test_stall_and_escalate(self):            # 优先级 3 + 升级线
-        v, esc = V.judge(p(beat_age_s=200.0))     # 停摆 200s > 判定线 180s
+    def test_stall_and_escalate(self):            # priority 3 + escalation line
+        v, esc = V.judge(p(beat_age_s=200.0))     # stalled 200s > stall line 180s
         self.assertEqual(v, V.V_STALL)
-        self.assertFalse(esc)                     # 未过 180×3
+        self.assertFalse(esc)                     # has not passed 180x3
         v, esc = V.judge(p(beat_age_s=600.0))
         self.assertEqual(v, V.V_STALL)
         self.assertTrue(esc)
 
-    def test_warmup_and_warmup_timeout(self):     # 优先级 4 + 上限
+    def test_warmup_and_warmup_timeout(self):     # priority 4 + ceiling
         self.assertEqual(V.judge(p(has_beat=False, since_launch_s=300.0))[0],
                          V.V_WARMUP)
         v, _ = V.judge(p(has_beat=False, since_launch_s=2000.0))
-        self.assertEqual(v, V.V_STALL)            # 超 warm-up 上限转疑似卡死
+        self.assertEqual(v, V.V_STALL)            # past the warm-up ceiling, turns into suspected stall
 
     def test_stall_line_fallback_when_few_intervals(self):
-        # 间隔样本不足:stall_s=None,长首题不误报(停摆 400s < warmup 1800s)
+        # not enough interval samples: stall_s=None, a long first item doesn't false-positive
+        # (stalled 400s < warmup 1800s)
         self.assertEqual(V.judge(p(stall_s=None, beat_age_s=400.0))[0], V.V_OK)
 
-    def test_slow_needs_recent_rate(self):        # 优先级 5
+    def test_slow_needs_recent_rate(self):        # priority 5
         self.assertEqual(V.judge(p(recent_rate=0.4))[0], V.V_SLOW)
         self.assertEqual(V.judge(p(recent_rate=None))[0], V.V_OK)
 
     def test_probe_fail_keeps_previous_alive(self):
-        # alive=None(探测失败折算后未知)不判已挂
+        # alive=None (unknown after folding in a probe failure) does not judge dead
         self.assertNotEqual(V.judge(p(alive=None))[0], V.V_DEAD)
 
     def test_service(self):
@@ -222,32 +226,32 @@ class TestJudge(unittest.TestCase):
                  stall_s=None, escalate_s=None, warmup_s=1800.0,
                  avg_rate=None, recent_rate=None,
                  port_ok=False, port_ever_ok=False, port_fail_rounds=0)
-        self.assertEqual(V.judge(s)[0], V.V_WARMUP)          # 端口还没应答过
+        self.assertEqual(V.judge(s)[0], V.V_WARMUP)          # the port has never answered yet
         s.update(port_ok=True, port_ever_ok=True)
         self.assertEqual(V.judge(s)[0], V.V_OK)
         s.update(port_ok=False, port_fail_rounds=3)
-        self.assertEqual(V.judge(s)[0], V.V_STALL)           # 连续 3 轮不应答
+        self.assertEqual(V.judge(s)[0], V.V_STALL)           # 3 consecutive rounds unanswered
         s.update(alive=False)
         self.assertEqual(V.judge(s)[0], V.V_DEAD)
 
 
 class TestLinesAndRates(unittest.TestCase):
     def test_typical_gap_median(self):
-        ts = [0, 10, 20, 30, 100]                 # 间隔 10,10,10,70 -> 中位 10
+        ts = [0, 10, 20, 30, 100]                 # intervals 10,10,10,70 -> median 10
         self.assertEqual(V.typical_gap_s(ts), 10)
 
     def test_stall_line_floor(self):
-        ts = [0, 1, 2, 3, 4]                      # 密心跳:5×1s < 3×60s 下限
+        ts = [0, 1, 2, 3, 4]                      # dense heartbeats: 5x1s < the 3x60s floor
         self.assertEqual(V.stall_line_s(ts), 180.0)
         self.assertEqual(V.stall_line_s(ts, override=42.0), 42.0)
-        self.assertIsNone(V.stall_line_s([0, 10]))  # 只有 1 个间隔 -> None
+        self.assertIsNone(V.stall_line_s([0, 10]))  # only 1 interval -> None
 
     def test_rates(self):
         first = {"ts": 0.0, "done": 0}
         recent = [{"ts": 100.0 + i * 10, "done": 50 + i} for i in range(5)]
         avg, rc = V.rates(first, recent)
         self.assertAlmostEqual(avg, 54 / 140.0)   # (54-0)/(140-0)
-        self.assertAlmostEqual(rc, 4 / 40.0)      # 窗口内 Δdone/Δts
+        self.assertAlmostEqual(rc, 4 / 40.0)      # Δdone/Δts within the window
         self.assertEqual(V.rates(first, recent[:1]), ((50 - 0) / 100.0, None))
         self.assertEqual(V.rates(None, []), (None, None))
 
@@ -256,41 +260,46 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [ ] **Step 2: Run the test, confirm it fails**
 
 Run: `python3 -m unittest tests.test_verdicts -v`
-Expected: FAIL（`ModuleNotFoundError: verdicts`）
+Expected: FAIL (`ModuleNotFoundError: verdicts`)
 
-- [ ] **Step 3: 实现 `ops/verdicts.py`**
+- [ ] **Step 3: Implement `ops/verdicts.py`**
 
 ```python
 #!/usr/bin/env python3
-"""判定引擎:纯函数,零 IO(设计文档 §4)。采样器喂状态进来,拿判定出去。
-六格判定按固定优先级判,命中即停:已完成→已挂→疑似卡死→warm-up 中→变慢→健康。
-时钟纪律:跨机不比钟——beat_age_s/since_launch_s 由采样器用自己的钟算好喂进来,
-心跳 ts 只在 rates() 里同机做差。所有常数收在 DEFAULTS,别处不许硬编码。
+"""Verdict engine: pure functions, zero IO (design document §4). The sampler feeds state in,
+gets a verdict out.
+The six-cell verdict is judged by a fixed priority order, stopping at the first match:
+done -> dead -> suspected stall -> warming up -> slowed -> healthy.
+Clock discipline: never compare clocks across machines -- beat_age_s/since_launch_s are computed
+by the sampler using its own clock and fed in; the heartbeat ts is only diffed against itself,
+on the same machine, inside rates(). All constants are collected in DEFAULTS; hardcoding
+elsewhere is not allowed.
 """
 from statistics import median
 
-V_DONE, V_DEAD, V_STALL = "已完成", "已挂", "疑似卡死"
-V_WARMUP, V_SLOW, V_OK = "warm-up 中", "变慢", "健康"
+V_DONE, V_DEAD, V_STALL = "done", "dead", "suspected stall"
+V_WARMUP, V_SLOW, V_OK = "warming up", "slowed", "healthy"
 
 DEFAULTS = dict(
-    sample_interval_s=60.0,   # 采样器一轮的间隔
-    stall_mult=5.0,           # 判定线 = 5 × 典型心跳间隔
-    stall_floor_samples=3,    # 判定线下限 = 3 轮采样(采样粒度以下分不清停没停)
-    escalate_mult=3.0,        # 升级线 = 判定线 × 3
-    warmup_line_s=1800.0,     # warm-up 上限,默认 30 分钟
-    recent_beats=10,          # 近期速率窗口:最近 ≤10 条心跳
-    typical_beats=20,         # 典型心跳间隔:最近 ≤20 个间隔的中位数
-    min_intervals=3,          # 攒够 3 个间隔才用自适应判定线
-    slow_ratio=0.5,           # 变慢 = 近期速率 < 平均 × 0.5
-    port_fail_rounds=3,       # 服务:连续 3 轮端口不应答 = 疑似卡死
+    sample_interval_s=60.0,   # the interval of one sampler round
+    stall_mult=5.0,           # stall line = 5 x the typical heartbeat interval
+    stall_floor_samples=3,    # stall line floor = 3 sampling rounds (below sampling granularity, can't tell stopped from not-yet)
+    escalate_mult=3.0,        # escalation line = stall line x 3
+    warmup_line_s=1800.0,     # warm-up ceiling, 30 minutes by default
+    recent_beats=10,          # recent rate window: the most recent <=10 heartbeats
+    typical_beats=20,         # typical heartbeat interval: median of the most recent <=20 intervals
+    min_intervals=3,          # need at least 3 intervals before using the adaptive stall line
+    slow_ratio=0.5,           # slowed = recent rate < average x 0.5
+    port_fail_rounds=3,       # service: 3 consecutive rounds with no port answer = suspected stall
 )
 
 
 def typical_gap_s(beat_ts, cfg=DEFAULTS):
-    """最近 ≤typical_beats 个心跳间隔的中位数;间隔不足 min_intervals 个返回 None。"""
+    """Median of the most recent <=typical_beats heartbeat intervals; returns None if fewer than
+    min_intervals intervals are available."""
     ts = list(beat_ts)[-(cfg["typical_beats"] + 1):]
     gaps = [b - a for a, b in zip(ts, ts[1:]) if b >= a]
     if len(gaps) < cfg["min_intervals"]:
@@ -299,8 +308,9 @@ def typical_gap_s(beat_ts, cfg=DEFAULTS):
 
 
 def stall_line_s(beat_ts, cfg=DEFAULTS, override=None):
-    """判定线(秒)。override=发射时的 --stall-line;样本不足返回 None
-    (调用方用 warm-up 上限顶着,长 task/长 step 开局不误报)。"""
+    """The stall line (seconds). override = the --stall-line given at launch time; returns None
+    if there are not enough samples (the caller falls back to the warm-up ceiling, so a long
+    task/long step does not false-positive at the start)."""
     if override is not None:
         return float(override)
     gap = typical_gap_s(beat_ts, cfg)
@@ -311,9 +321,10 @@ def stall_line_s(beat_ts, cfg=DEFAULTS, override=None):
 
 
 def rates(first_beat, recent_beats, cfg=DEFAULTS):
-    """(平均速率, 近期速率),单位 done/秒;算不出的为 None。
-    first_beat: 首条心跳 {'ts','done'}(采样器累计状态里存的,不依赖日志尾)。
-    recent_beats: 最近 ≤typical_beats 条心跳(升序)。分母全在心跳时间轴上。"""
+    """(average rate, recent rate), in done/second; None where it cannot be computed.
+    first_beat: the first heartbeat {'ts','done'} (stored in the sampler's cumulative state,
+    does not depend on the tail of the log). recent_beats: the most recent <=typical_beats
+    heartbeats (ascending). The denominator is always on the heartbeat timeline."""
     if not first_beat or not recent_beats:
         return None, None
     last = recent_beats[-1]
@@ -348,8 +359,9 @@ def _judge_service(p, cfg):
 
 
 def judge(p, cfg=DEFAULTS):
-    """一个分片一轮恰好一格。返回 (判定, 是否达升级线)。
-    已完成、变慢对服务类不适用(设计 §4 末尾),服务走 _judge_service。"""
+    """Exactly one cell per piece per round. Returns (verdict, whether the escalation line is
+    reached). Done and slowed do not apply to service pieces (design §4, end); services go
+    through _judge_service."""
     if p["kind"] == "service":
         return _judge_service(p, cfg)
     done, total = p.get("done"), p.get("total")
@@ -373,36 +385,36 @@ def judge(p, cfg=DEFAULTS):
     return V_OK, False
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **Step 4: Run the test, confirm it passes**
 
 Run: `python3 -m unittest tests.test_verdicts -v`
-Expected: PASS（11 个用例）
+Expected: PASS (11 test cases)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add ops/verdicts.py tests/test_verdicts.py
-git commit -m "monitor: 判定引擎 ops/verdicts.py(六格优先级+自适应两线+速率,纯函数)"
+git commit -m "monitor: verdict engine ops/verdicts.py (six-cell priority + adaptive two lines + rates, pure functions)"
 ```
 
 ---
 
-### Task 3: 采集脚本接心跳（`run_appworld.py`）
+### Task 3: Wire the collection script up with heartbeats (`run_appworld.py`)
 
 **Files:**
-- Modify: `envs/collect/run_appworld.py:14-15`（import 区）、`:76`（主循环前）、`:78-124`（循环体）
+- Modify: `envs/collect/run_appworld.py:14-15` (the import area), `:76` (before the main loop), `:78-124` (the loop body)
 
 **Interfaces:**
-- Consumes: Task 1 的 `heartbeat.emit`。token 数据源是 `common.Chat.__call__` 返回 dict 里的 `g["usage"]["in"]` / `g["usage"]["out"]`（`envs/collect/common.py:161,182,220-221`，现成，common.py 不用改）。
+- Consumes: Task 1's `heartbeat.emit`. The token data source is `g["usage"]["in"]` / `g["usage"]["out"]` in the dict returned by `common.Chat.__call__` (`envs/collect/common.py:161,182,220-221`, already there, no need to change common.py).
 
-- [ ] **Step 1: 加 import**（`sys.path.insert(0, str(Path(__file__).parent))` 一行之后）：
+- [ ] **Step 1: Add the import** (after the line `sys.path.insert(0, str(Path(__file__).parent))`):
 
 ```python
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat  # noqa: E402
 ```
 
-- [ ] **Step 2: 主循环前打 done=0**（`print(f"shard {args.shard_id}...")` 之后、`for tid in ids:` 之前）：
+- [ ] **Step 2: Emit done=0 before the main loop** (after `print(f"shard {args.shard_id}...")`, before `for tid in ids:`):
 
 ```python
 tok_in = tok_out = 0
@@ -410,52 +422,53 @@ n_done = 0
 heartbeat.emit(0, len(ids), "task", tok_in=0, tok_out=0)
 ```
 
-- [ ] **Step 3: 累计 token 与每题心跳**。改两处：
-  1. `g = chat(msgs)` 之后（`log.w({"type": "gen", ...})` 之前）加：
+- [ ] **Step 3: Accumulate tokens and emit a heartbeat per item**. Change two spots:
+  1. After `g = chat(msgs)` (before `log.w({"type": "gen", ...})`), add:
 
 ```python
                 tok_in += g["usage"]["in"]
                 tok_out += g["usage"]["out"]
 ```
 
-  2. 每题收尾 `print(f"task={tid} steps=...")` 之后加（resume SKIP 分支的 `continue` 之前也加一份，SKIP 的题同样推进 done）：
+  2. After each item's wrap-up `print(f"task={tid} steps=...")`, add (also add one before the `continue`
+     of the resume SKIP branch, since a SKIPped item still advances done):
 
 ```python
             n_done += 1
             heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in, tok_out=tok_out)
 ```
 
-  循环结束（`main()` 末尾）加正常收尾标志：
+  At the end of the loop (the end of `main()`), add the normal-finish marker:
 
 ```python
     heartbeat.emit(n_done, len(ids), "task", tok_in=tok_in, tok_out=tok_out,
                    status="done")
 ```
 
-- [ ] **Step 4: 验证**
+- [ ] **Step 4: Verify**
 
-Run: `envs/appworld/venv/bin/python -c "import ast,sys; ast.parse(open('envs/collect/run_appworld.py').read()); print('syntax ok')"` 然后 `envs/appworld/venv/bin/python envs/collect/run_appworld.py --help`
-Expected: `syntax ok`；--help 正常打印（heartbeat import 在 appworld venv 下成功——这就是"stdlib only"约束的实测）
+Run: `envs/appworld/venv/bin/python -c "import ast,sys; ast.parse(open('envs/collect/run_appworld.py').read()); print('syntax ok')"` then `envs/appworld/venv/bin/python envs/collect/run_appworld.py --help`
+Expected: `syntax ok`; --help prints normally (the heartbeat import succeeds under the appworld venv -- this is the real-world test of the "stdlib only" constraint)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add envs/collect/run_appworld.py
-git commit -m "collect: run_appworld 接心跳(每题 done/累计 token,done=0 标加载完)"
+git commit -m "collect: wire run_appworld up with heartbeats (per-item done/cumulative tokens, done=0 marks loading finished)"
 ```
 
 ---
 
-### Task 4: 训练脚本接心跳（四格）
+### Task 4: Wire the training scripts up with heartbeats (four cells)
 
 **Files:**
-- Modify: `pipeline/train/train_mbert_tool.py`、`train_mbert_extract.py`、`train_causal_tool.py`、`train_causal_callgen.py`（四个文件同一模式；各文件的 `log()` 闭包位置见 `probe-pipeline/references/extending.md:130`：mtool:132-138 / mext:265-267 / ctool:313-315 / cgen:234-236，行号以 grep 现查为准）
+- Modify: `pipeline/train/train_mbert_tool.py`, `train_mbert_extract.py`, `train_causal_tool.py`, `train_causal_callgen.py` (same pattern across all four files; the location of each file's `log()` closure is in `probe-pipeline/references/extending.md:130`: mtool:132-138 / mext:265-267 / ctool:313-315 / cgen:234-236, treat line numbers as approximate, re-check with grep)
 
 **Interfaces:**
-- Consumes: `heartbeat.emit`。总步数 = 各脚本已算好的 `steps` 变量（mtool 在 `train_mbert_tool.py:172`），当前步 = `gstep`，loss = 现有 step 日志里的滑动均值。
+- Consumes: `heartbeat.emit`. Total steps = each script's already-computed `steps` variable (mtool has it at `train_mbert_tool.py:172`), current step = `gstep`, loss = the running mean already in the existing step log.
 
-- [ ] **Step 1: mtool 的三处插入**（其余三格照同一锚点重复）：
-  1. 文件头 import 区加：
+- [ ] **Step 1: Three insertion points for mtool** (repeat at the same anchors for the other three cells):
+  1. In the file-header import area, add:
 
 ```python
 import sys as _sys
@@ -464,75 +477,75 @@ _sys.path.insert(0, str(_Path(__file__).resolve().parents[2] / "ops"))
 import heartbeat
 ```
 
-  2. `log(event="start", ...)`（mtool:185）之后加：`heartbeat.emit(0, steps, "step")`
-  3. `gstep % 50 == 0` 的 `log(event="step", ...)`（mtool:208-210）之后加：
+  2. After `log(event="start", ...)` (mtool:185), add: `heartbeat.emit(0, steps, "step")`
+  3. After the `log(event="step", ...)` under `gstep % 50 == 0` (mtool:208-210), add:
 
 ```python
                     heartbeat.emit(gstep, steps, "step",
                                    loss=round(run / (50 * args.accum), 4))
 ```
 
-  注意：这一行在 `run = 0.0` 复位**之前**插，取的是同一个滑动均值。
-  4. `log(event="done", ...)`（mtool:222）之后加：`heartbeat.emit(gstep, steps, "step", status="done")`
+  Note: this line is inserted **before** the `run = 0.0` reset, taking the same running mean.
+  4. After `log(event="done", ...)` (mtool:222), add: `heartbeat.emit(gstep, steps, "step", status="done")`
 
-- [ ] **Step 2: 其余三格重复**。先 `grep -n "event=\"start\"\|event=\"step\"\|event=\"done\"\|steps =" pipeline/train/train_mbert_extract.py pipeline/train/train_causal_tool.py pipeline/train/train_causal_callgen.py` 找锚点，逐文件插同样四处（变量名以各文件实际为准——总步数变量、全局步变量、loss 滑动均值表达式照抄它自己 `log(event="step")` 里已有的那份）。
+- [ ] **Step 2: Repeat for the other three cells**. First run `grep -n "event=\"start\"\|event=\"step\"\|event=\"done\"\|steps =" pipeline/train/train_mbert_extract.py pipeline/train/train_causal_tool.py pipeline/train/train_causal_callgen.py` to find the anchors, then insert the same four spots per file (go by each file's actual variable names -- the total-steps variable, the global-step variable, and the loss running-mean expression should be copied from what already exists in that file's own `log(event="step")` call).
 
-- [ ] **Step 3: 验证**
+- [ ] **Step 3: Verify**
 
 Run: `for f in pipeline/train/train_*.py; do mbert-env/bin/python -c "import ast; ast.parse(open('$f').read())" && echo "$f ok"; done`
-Expected: 四个 ok。再 `mbert-env/bin/python -c "import sys; sys.path.insert(0,'ops'); import heartbeat; print('import ok')"` 与 `cprobe-env/bin/python -c "同上"`——两个训练 venv 都能 import。
+Expected: four "ok" lines. Then `mbert-env/bin/python -c "import sys; sys.path.insert(0,'ops'); import heartbeat; print('import ok')"` and `cprobe-env/bin/python -c "<same>"` -- both training venvs must be able to import it.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add pipeline/train/train_mbert_tool.py pipeline/train/train_mbert_extract.py \
         pipeline/train/train_causal_tool.py pipeline/train/train_causal_callgen.py
-git commit -m "train: 四格训练脚本接心跳(unit=step,报滑动 loss)"
+git commit -m "train: wire the four training cells up with heartbeats (unit=step, reports the running loss)"
 ```
 
 ---
 
-### Task 5: 评测脚本接心跳（三个）
+### Task 5: Wire the evaluation scripts up with heartbeats (three of them)
 
 **Files:**
-- Modify: `pipeline/eval/eval_tool.py`（锚点 `:69` 的 `print(f"scored {i}/{len(rows)}")`）、`pipeline/eval/eval_mbert_call.py`（锚点 `:127` 的 `print(f"extracted {i}/...")`）、`pipeline/eval/eval_causal_call.py`（锚点 `:207` 起的批循环）
+- Modify: `pipeline/eval/eval_tool.py` (anchor `:69`'s `print(f"scored {i}/{len(rows)}")`), `pipeline/eval/eval_mbert_call.py` (anchor `:127`'s `print(f"extracted {i}/...")`), `pipeline/eval/eval_causal_call.py` (the batch loop starting at anchor `:207`)
 
 **Interfaces:**
-- Consumes: `heartbeat.emit`。unit 用 `"item"`（评测的进度分母是样本条数）。
+- Consumes: `heartbeat.emit`. Use unit `"item"` (evaluation's progress denominator is the sample count).
 
-- [ ] **Step 1: 逐文件插入**。import 区加与 Task 4 相同的四行（parents[2] 对 pipeline/eval 同样落在仓库根）。主批循环开始前 `heartbeat.emit(0, <总数表达式>, "item")`；每个已有进度 print 的位置跟一条 `heartbeat.emit(<当前 i>, <总数>, "item")`；脚本正常结束点（写报告文件之后）`heartbeat.emit(<总数>, <总数>, "item", status="done")`。eval_causal_call.py 没有现成进度 print，就在 `:207` 的 `for i in range(0, len(prompts), bs):` 循环体尾部按同样节奏（每 50 批一条）加。多段循环的文件（eval_tool 有 score 段和 replay 段）以**最长的那段**为进度分母，其他段不打心跳——一个脚本一条进度轴，别打出两根。
+- [ ] **Step 1: Insert per file**. Add the same four import lines as Task 4 (parents[2] also lands at the repo root for pipeline/eval). Before the main batch loop starts: `heartbeat.emit(0, <total-count expression>, "item")`; alongside every existing progress print: `heartbeat.emit(<current i>, <total>, "item")`; at the script's normal end point (after writing the report file): `heartbeat.emit(<total>, <total>, "item", status="done")`. eval_causal_call.py has no existing progress print, so add one at the tail of the loop body of `:207`'s `for i in range(0, len(prompts), bs):` at the same cadence (one every 50 batches). For files with multiple loop segments (eval_tool has a score segment and a replay segment), use **the longest segment** as the progress denominator, and don't emit heartbeats from the other segments -- one script, one progress axis, don't emit two.
 
-- [ ] **Step 2: 验证**
+- [ ] **Step 2: Verify**
 
 Run: `for f in pipeline/eval/eval_tool.py pipeline/eval/eval_mbert_call.py pipeline/eval/eval_causal_call.py; do python3 -c "import ast; ast.parse(open('$f').read())" && echo "$f ok"; done`
-Expected: 三个 ok
+Expected: three "ok" lines
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add pipeline/eval/eval_tool.py pipeline/eval/eval_mbert_call.py pipeline/eval/eval_causal_call.py
-git commit -m "eval: 三个评测脚本接心跳(unit=item)"
+git commit -m "eval: wire the three evaluation scripts up with heartbeats (unit=item)"
 ```
 
 ---
 
-### Task 6: 采样器核心 `ops/sampler.py`（采样循环，先不带网页与事故）
+### Task 6: Sampler core `ops/sampler.py` (the sampling loop, without the web page or incidents yet)
 
 **Files:**
 - Create: `ops/sampler.py`
 - Create: `tests/test_sampler.py`
-- Modify: `run.py`（TASKS 加 `"sampler"` 条目）
+- Modify: `run.py` (add a `"sampler"` entry to TASKS)
 
 **Interfaces:**
-- Consumes: `gpu_jobs.load_reg` / `gpu_jobs.live_sessions` / `gpu_jobs.DEFAULT_HOSTS`（`ops/gpu_jobs.py:37,62,107`，import 复用，不复制）；`heartbeat.parse`；`verdicts.judge/rates/stall_line_s`。
-- Produces（后续任务和出口读的落盘格式）：
-  - `MONITOR_DIR = /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/`（环境变量 `NEW1_MONITOR_DIR` 可覆盖——单测用它指到 tmp）
-  - `latest.json`（原子写）：`{"sampled_at": <epoch>, "rows": [...], "extras": {...}, "incidents_tail": [...]}`；每行 row：`{"job","idx","host","gpus","session","kind","verdict","escalated","done","total","unit","progress_pct","avg_rate","recent_rate","tok_in","tok_out","loss","eta_s","log","probe_failed","refires"}`
-  - `state.json`（原子写）：`{"<job>#<idx>": {"first_beat":{"ts","done"},"recent_beats":[≤20 条 {"ts","done","tok_in","tok_out","loss","status"}],"last_new_beat_mono","last_done","launched_at","alive_last","probe_fail_rounds","port_ever_ok","port_fail_rounds","verdict","escalated_since_mono","incident_open","refires"}`
-  - `history/<job>.jsonl`（append）：每轮每分片一行 row（同 latest 的 row + `"t"`）
-  - 函数 `sample_once(now_mono, now_wall) -> latest dict`；`main()` 支持 `--once`（采一轮就退，冒烟用）与 `--interval N`
+- Consumes: `gpu_jobs.load_reg` / `gpu_jobs.live_sessions` / `gpu_jobs.DEFAULT_HOSTS` (`ops/gpu_jobs.py:37,62,107`, imported and reused, not duplicated); `heartbeat.parse`; `verdicts.judge/rates/stall_line_s`.
+- Produces (the on-disk format later tasks and exits read):
+  - `MONITOR_DIR = /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/` (overridable via the `NEW1_MONITOR_DIR` env var -- unit tests point it at a tmp dir)
+  - `latest.json` (atomic write): `{"sampled_at": <epoch>, "rows": [...], "extras": {...}, "incidents_tail": [...]}`; each row: `{"job","idx","host","gpus","session","kind","verdict","escalated","done","total","unit","progress_pct","avg_rate","recent_rate","tok_in","tok_out","loss","eta_s","log","probe_failed","refires"}`
+  - `state.json` (atomic write): `{"<job>#<idx>": {"first_beat":{"ts","done"},"recent_beats":[<=20 entries of {"ts","done","tok_in","tok_out","loss","status"}],"last_new_beat_mono","last_done","launched_at","alive_last","probe_fail_rounds","port_ever_ok","port_fail_rounds","verdict","escalated_since_mono","incident_open","refires"}`
+  - `history/<job>.jsonl` (append): one row per piece per round (the same row as latest, plus `"t"`)
+  - Function `sample_once(now_mono, now_wall) -> latest dict`; `main()` supports `--once` (sample one round then exit, for smoke testing) and `--interval N`
 
-- [ ] **Step 1: 写失败测试**。fixture：tmp 目录里造 `jobs.json`（一个任务两分片，piece 带 `log` 指向 tmp 里手写的日志文件——一份日志尾部有三条心跳行，另一份没有心跳只有普通文本）；monkeypatch `sampler.live_sessions = lambda hosts: {"tokyo106": {"new1_x_t106g0"}}`（第 1 分片活、第 2 分片名字不在集合里）。断言 `sample_once()` 返回的 rows：分片 0 判定 ∈ {健康, warm-up 中}（有心跳、alive）、分片 1 判定 = 已挂；latest.json / state.json / history 文件真的落了盘且能 json.load；再跑一轮，分片 0 的 `recent_beats` 不重复追加同一条心跳（同 ts 同 done 不算新心跳）。测试骨架：
+- [ ] **Step 1: Write the failing test**. Fixture: build a `jobs.json` in a tmp dir (one task, two pieces, each piece's `log` points to a hand-written log file in the tmp dir -- one log has three heartbeat lines at the tail, the other has no heartbeat, just plain text); monkeypatch `sampler.live_sessions = lambda hosts: {"tokyo106": {"new1_x_t106g0"}}` (piece 0's name is alive, piece 1's name is not in the set). Assert on the rows returned by `sample_once()`: piece 0's verdict in {healthy, warming up} (has a heartbeat, alive), piece 1's verdict = dead; the latest.json / state.json / history files are really written to disk and can be json.load'd; run one more round and confirm piece 0's `recent_beats` does not append the same heartbeat twice (same ts, same done does not count as a new heartbeat). Test skeleton:
 
 ```python
 import json, os, pathlib, tempfile, time, unittest
@@ -578,8 +591,8 @@ class TestSampleOnce(unittest.TestCase):
     def test_round(self):
         latest = self.S.sample_once()
         rows = {r["idx"]: r for r in latest["rows"]}
-        self.assertIn(rows[0]["verdict"], ("健康", "warm-up 中"))
-        self.assertEqual(rows[1]["verdict"], "已挂")
+        self.assertIn(rows[0]["verdict"], ("healthy", "warming up"))
+        self.assertEqual(rows[1]["verdict"], "dead")
         self.assertEqual(rows[0]["tok_in"], 210)
         mon = pathlib.Path(os.environ["NEW1_MONITOR_DIR"])
         self.assertTrue((mon / "latest.json").exists())
@@ -587,7 +600,7 @@ class TestSampleOnce(unittest.TestCase):
         self.assertTrue((mon / "history" / "x.jsonl").exists())
         n1 = len(json.loads((mon / "state.json").read_text())
                  ["x#0"]["recent_beats"])
-        self.S.sample_once()                      # 日志没变,不重复计心跳
+        self.S.sample_once()                      # the log hasn't changed, heartbeats aren't recounted
         n2 = len(json.loads((mon / "state.json").read_text())
                  ["x#0"]["recent_beats"])
         self.assertEqual(n1, n2)
@@ -597,17 +610,19 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: 跑测试确认失败**（`ModuleNotFoundError: sampler`）
+- [ ] **Step 2: Run the test, confirm it fails** (`ModuleNotFoundError: sampler`)
 
-- [ ] **Step 3: 实现 `ops/sampler.py`**。结构（函数逐个写，行为按注释钉死）：
+- [ ] **Step 3: Implement `ops/sampler.py`**. Structure (write the functions one by one, behavior pinned down by the comments):
 
 ```python
 #!/usr/bin/env python3
-"""采样器:长程任务的常驻监控进程(设计文档 §3-§5)。
-每轮:读台账 → tail 日志抓心跳(NFS 本地读) → ssh 探存活 → verdicts.judge
-→ append 采样历史 + 原子写 latest.json/state.json。
-本文件只做 IO 和攒状态,判定口径全在 ops/verdicts.py。stdlib only。
-用法: sampler.py [--once] [--interval 60] [--port 8377](网页 Task 7 加)
+"""Sampler: the resident monitoring process for long-running tasks (design document §3-§5).
+Each round: read the ledger -> tail the logs to pick up heartbeats (read locally from NFS) ->
+ssh to probe liveness -> verdicts.judge -> append to the sampling history + atomically write
+latest.json/state.json.
+This file only does IO and accumulates state; the verdict logic lives entirely in
+ops/verdicts.py. stdlib only.
+Usage: sampler.py [--once] [--interval 60] [--port 8377] (the web page is added in Task 7)
 """
 import argparse, json, os, subprocess, sys, time
 from pathlib import Path
@@ -622,31 +637,33 @@ MONITOR_DIR = Path(os.environ.get(
     "/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor"))
 
 def read_beats(log_path, max_bytes=262144):
-    """日志尾 256KB 里的所有心跳行(升序)。tqdm 的 \r 先换 \n。"""
+    """All heartbeat lines in the last 256KB of the log (ascending). tqdm's \r is turned into \n first."""
 
-def atomic_write(path, obj): ...        # tmp + os.replace,与 run.py save_state 同款
+def atomic_write(path, obj): ...        # tmp + os.replace, the same pattern as run.py save_state
 
-def load_state(): ...                    # state.json 不在/坏了 -> {}
+def load_state(): ...                    # state.json missing/corrupt -> {}
 
 def piece_key(job, idx): ...             # f"{job}#{idx}"
 
 def update_piece_state(st, job, idx, piece, beats, alive, now_mono):
-    """攒一个分片的累计状态(设计 §3):
-    - launched_at 变了(补射) -> 整段状态重开,refires += 1
-    - beats 里比 last_done/last_ts 新的条目 append 进 recent_beats(截 ≤20),
-      并刷新 last_new_beat_mono = now_mono
-    - first_beat 只在第一次见到心跳时记
-    - alive: None(探测失败) -> alive_last 沿用,probe_fail_rounds += 1;
-      True/False -> 直取,probe_fail_rounds = 0
-    - 服务类:port_ok 由 probe_port() 出,port_ever_ok/port_fail_rounds 同理攒"""
+    """Accumulate one piece's cumulative state (design §3):
+    - launched_at changed (refired) -> the whole state block reopens, refires += 1
+    - entries in beats newer than last_done/last_ts are appended to recent_beats (capped at <=20),
+      and last_new_beat_mono = now_mono is refreshed
+    - first_beat is recorded only the first time a heartbeat is seen
+    - alive: None (probe failed) -> carry over alive_last, probe_fail_rounds += 1;
+      True/False -> taken directly, probe_fail_rounds = 0
+    - service type: port_ok comes from probe_port(), port_ever_ok/port_fail_rounds accumulate the same way"""
 
 def probe_port(host, port, timeout=3):
-    """服务类分片的端口探测:HTTP GET http://host:port/health,
-    连接被拒/超时 -> False。vLLM 的 /health 返回 200(Task 15 核对后如有出入改这里)。"""
+    """Port probe for a service-type piece: HTTP GET http://host:port/health,
+    connection refused/timeout -> False. vLLM's /health returns 200 (if this differs after
+    checking in Task 15, change it here)."""
 
 def build_row(job, idx, piece, ps, now_mono):
-    """状态 -> 出口 row:调 verdicts.stall_line_s(override=piece 里的 stall_line)
-    / rates / judge,算 progress_pct 和 eta_s(近期速率没值退回平均;都没值 None)。"""
+    """State -> exit row: call verdicts.stall_line_s (override = the piece's stall_line)
+    / rates / judge, compute progress_pct and eta_s (falls back to the average rate when the
+    recent rate has no value; None if neither has a value)."""
 
 def sample_once():
     reg = load_reg()
@@ -665,14 +682,14 @@ def sample_once():
             row = build_row(job["name"], idx, piece, ps, now_mono)
             rows.append(row)
             per_job_lines.setdefault(job["name"], []).append(dict(row, t=now_wall))
-    extras = {h: sorted(s - registered) ...}     # 照 gpu_jobs.collect 的 extras 逻辑
+    extras = {h: sorted(s - registered) ...}     # follows gpu_jobs.collect's extras logic
     latest = {"sampled_at": now_wall, "rows": rows, "extras": extras,
               "incidents_tail": read_incidents_tail()}
     for jname, lines in per_job_lines.items():
         append_jsonl(MONITOR_DIR / "history" / f"{jname}.jsonl", lines)
     atomic_write(MONITOR_DIR / "state.json", st)
     atomic_write(MONITOR_DIR / "latest.json", latest)
-    maybe_trigger_incidents(rows, st)            # Task 14 前先放空函数 pass
+    maybe_trigger_incidents(rows, st)            # leave as an empty pass function until Task 14
     return latest
 
 def main():
@@ -685,173 +702,173 @@ def main():
         t0 = time.monotonic()
         try:
             sample_once()
-        except Exception as e:                   # 单轮失败不许弄死常驻进程
+        except Exception as e:                   # a single failed round must not kill the resident process
             print(f"[sampler] round failed: {e}", file=sys.stderr, flush=True)
         if a.once:
             break
         time.sleep(max(1.0, a.interval - (time.monotonic() - t0)))
 ```
 
-  关键实现约束（都来自设计文档，写代码时逐条对）：
-  - **时钟**：`last_new_beat_mono` 用 `time.monotonic()`；`beat_age_s = now_mono - last_new_beat_mono`；`since_launch_s = now_wall - piece["launched_at"]`（launched_at 是发射机的挂钟，登录机和发射机都是 NTP 机器，分钟级误差可接受——分片没有 launched_at 字段（手工 register 的旧格式）就用 job["started_at"] 解析，再没有就当 now，即宽松处理）。
-  - **新心跳判定**：`(b["ts"], b["done"]) > (last_ts, last_done)` 才算新。
-  - **`stall_line_s` 的 override** 从 `piece.get("stall_line")` 取；`escalate_s` 从 `piece.get("escalate_line")`；`warmup_s` 从 `job.get("monitor", {}).get("warmup_s")`，缺省 `verdicts.DEFAULTS["warmup_line_s"]`。
-  - **探测失败连续 10 轮**：row 加 `"probe_failed": true` 且 `probe_fail_rounds` 进 row，出口负责亮红——采样器不因此触发事故（fail-closed）。
+  Key implementation constraints (all from the design document, check off each one while writing the code):
+  - **Clock**: `last_new_beat_mono` uses `time.monotonic()`; `beat_age_s = now_mono - last_new_beat_mono`; `since_launch_s = now_wall - piece["launched_at"]` (launched_at is the launch machine's wall clock; both the login machine and the launch machine are NTP machines, so minute-level error is acceptable -- if a piece has no launched_at field (an old format from manual register), parse job["started_at"] instead, and if that's missing too, just use now, i.e. handle it loosely).
+  - **New-heartbeat test**: only `(b["ts"], b["done"]) > (last_ts, last_done)` counts as new.
+  - **`stall_line_s`'s override** is taken from `piece.get("stall_line")`; `escalate_s` from `piece.get("escalate_line")`; `warmup_s` from `job.get("monitor", {}).get("warmup_s")`, defaulting to `verdicts.DEFAULTS["warmup_line_s"]`.
+  - **10 consecutive rounds of probe failure**: add `"probe_failed": true` to the row plus put `probe_fail_rounds` into the row; the exit is responsible for lighting it up red -- the sampler does not trigger an incident because of this (fail-closed).
 
-- [ ] **Step 4: run.py 挂注册表**。`TASKS` 的 ops 段加：
+- [ ] **Step 4: Hook it into run.py's registry**. Add to the ops section of `TASKS`:
 
 ```python
     "sampler": dict(
         stage="ops", py="sys", script="ops/sampler.py",
-        desc="长程任务采样器(常驻;60s 一轮采心跳/探存活/算判定,开网页)",
-        notes=["常驻进程,登录机 tmux 里跑: tmux new-session -d -s new1_sampler "
+        desc="Long-running task sampler (resident; one round every 60s: pick up heartbeats/probe liveness/compute verdicts, serves the web page)",
+        notes=["Resident process, run in a tmux session on the login machine: tmux new-session -d -s new1_sampler "
                "'python3 run.py sampler'",
-               "落盘在 NFS monitor/(latest.json/state.json/history/incidents),不进 git",
-               "冒烟: python3 run.py sampler --once 采一轮就退"]),
+               "Lands on NFS monitor/ (latest.json/state.json/history/incidents), does not go into git",
+               "Smoke test: python3 run.py sampler --once samples one round then exits"]),
 ```
 
-- [ ] **Step 5: 跑测试 + selfcheck 确认通过**
+- [ ] **Step 5: Run the tests + selfcheck, confirm they pass**
 
 Run: `python3 -m unittest tests.test_sampler -v && python3 run.py selfcheck`
-Expected: PASS；selfcheck 全部就位
+Expected: PASS; selfcheck all green
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add ops/sampler.py tests/test_sampler.py run.py
-git commit -m "monitor: 采样器核心(采心跳/探存活/判定/落盘 latest+state+history)+注册 sampler 任务"
+git commit -m "monitor: sampler core (pick up heartbeats/probe liveness/verdict/write latest+state+history) + register the sampler task"
 ```
 
 ---
 
-### Task 7: 采样器网页（HTTP 线程 + /json）
+### Task 7: Sampler web page (HTTP thread + /json)
 
 **Files:**
-- Modify: `ops/sampler.py`（加 HTTP 线程与 `--port`）
+- Modify: `ops/sampler.py` (add the HTTP thread and `--port`)
 - Create: `tests/test_sampler_web.py`
 
 **Interfaces:**
-- Produces: `GET /` = HTML 任务表；`GET /json` = latest.json 原文（Content-Type application/json）。端口默认 8377，`--port` 覆盖。网页线程只读 latest.json，不碰采样线程的内存——采样卡住不影响出页（设计 §3）。
+- Produces: `GET /` = the HTML task table; `GET /json` = the raw content of latest.json (Content-Type application/json). Port defaults to 8377, overridable with `--port`. The web thread only reads latest.json, it does not touch the sampling thread's memory -- the sampler hanging does not affect serving the page (design §3).
 
-- [ ] **Step 1: 写失败测试**：fixture 写一份 latest.json（含 sampled_at 与两行 rows），起 `sampler.WebServer(port=0, monitor_dir=...)`（port=0 让 OS 分配，测试从 `server.server_address[1]` 拿真实端口），`urllib.request` 抓 `/json` 断言与文件一致、抓 `/` 断言 200 且 body 含任务名与判定字符串、含 `sampled_at` 的时间戳文本。
+- [ ] **Step 1: Write the failing test**: the fixture writes a latest.json (with sampled_at and two rows), start `sampler.WebServer(port=0, monitor_dir=...)` (port=0 lets the OS assign one, the test gets the real port from `server.server_address[1]`), fetch `/json` with `urllib.request` and assert it matches the file, fetch `/` and assert 200 with a body containing the task name and the verdict string, plus the timestamp text containing `sampled_at`.
 
-- [ ] **Step 2: 实现**：`http.server.ThreadingHTTPServer` + `BaseHTTPRequestHandler`；`do_GET` 按 path 分流；HTML 用一个 `render_html(latest)` 纯函数拼（表列：JOB/分片/HOST/GPU/判定/进度/速率/token/ETA/SESSION；`<meta http-equiv="refresh" content="30">` 自动刷新；页顶最后采样时刻，内嵌一段 `<script>`：`sampled_at` 距现在 > 3×60s 就把横幅类名换成红色——阈值从 `verdicts.DEFAULTS["sample_interval_s"]` 乘 3 生成进页面，不再抄一个数）；事故记录块渲染 `incidents_tail`；台账外 session 渲染 `extras`。`main()` 加 `--port`，非 `--once` 时先起 web 线程（daemon=True）再进采样循环。
+- [ ] **Step 2: Implement**: `http.server.ThreadingHTTPServer` + `BaseHTTPRequestHandler`; `do_GET` dispatches by path; the HTML is assembled by one pure function `render_html(latest)` (table columns: JOB/piece/HOST/GPU/verdict/progress/rate/token/ETA/SESSION; `<meta http-equiv="refresh" content="30">` for auto-refresh; the last-sample time at the top of the page, with an inline `<script>`: switch the banner's class name to red once `sampled_at` is more than 3x60s in the past -- the threshold is generated into the page from `verdicts.DEFAULTS["sample_interval_s"]` times 3, not copied as a separate number); the incident record block renders `incidents_tail`; sessions outside the ledger render `extras`. `main()` adds `--port`, and starts the web thread (daemon=True) before entering the sampling loop when not in `--once` mode.
 
-- [ ] **Step 3: 跑测试确认通过** `python3 -m unittest tests.test_sampler_web -v`
+- [ ] **Step 3: Run the test, confirm it passes**: `python3 -m unittest tests.test_sampler_web -v`
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add ops/sampler.py tests/test_sampler_web.py
-git commit -m "monitor: 采样器网页出口(/ 任务表 + /json,只读 latest.json)"
+git commit -m "monitor: sampler web exit (/ task table + /json, read-only against latest.json)"
 ```
 
 ---
 
-### Task 8: 终端出口改读采样历史（`ops/gpu_jobs.py`）
+### Task 8: Switch the terminal exits to reading the sampling history (`ops/gpu_jobs.py`)
 
 **Files:**
-- Modify: `ops/gpu_jobs.py`（`cmd_status`/`cmd_watch`/`json` 三个出口；`free`/`register`/`finish` 一行不动）
+- Modify: `ops/gpu_jobs.py` (the three exits `cmd_status`/`cmd_watch`/`json`; leave `free`/`register`/`finish` untouched)
 
 **Interfaces:**
-- Consumes: `latest.json`（Task 6 的格式）。
-- Produces: 三个出口的读取顺序：latest.json 存在且 `sampled_at` 距现在 ≤ 300 秒 → 用它渲染（表头第一行 `最后采样 HH:MM:SS`）；否则打印一行警告 `采样器不在跑(最后采样 <时刻|无>),现场实探一次` 后走现有 `collect()` 老路。`json` 出口同理：新鲜时输出 latest.json 原文，否则输出老 `collect()` 结果外加 `"sampler_stale": true` 字段。
+- Consumes: `latest.json` (Task 6's format).
+- Produces: the read order for the three exits: if latest.json exists and `sampled_at` is <= 300 seconds ago -> render from it (table header's first line: `last sampled HH:MM:SS`); otherwise print a warning line `sampler is not running (last sampled <time|never>), probing live now` and fall back to the existing `collect()` path. The `json` exit works the same way: output latest.json's raw content when fresh, otherwise output the old `collect()` result plus a `"sampler_stale": true` field.
 
-- [ ] **Step 1: 实现** `read_latest()`（返回 `(latest_dict|None, age_s|None)`）与 `fmt_table_v2(rows)`（列：JOB/HOST/GPU/判定/PROGRESS/RATE/TOK/ETA/SESSION；PROGRESS = `done/total (pct%) unit`；RATE = `recent_rate` 有值取它、乘 3600 显示 `/h` 或保留 `/s` 按数量级、没值 `-`；TOK = `tok_in/tok_out` 千分位缩写如 `1.2M/340k`；ETA = `eta_s` 转 `HH:MM`）。`DONE 该收尾` 与 `EXIT 看日志` 的两段提示行为保留（判定=已完成/已挂 时输出对应提示，措辞沿用现有 `fmt_table`）。
+- [ ] **Step 1: Implement** `read_latest()` (returns `(latest_dict|None, age_s|None)`) and `fmt_table_v2(rows)` (columns: JOB/HOST/GPU/verdict/PROGRESS/RATE/TOK/ETA/SESSION; PROGRESS = `done/total (pct%) unit`; RATE = take `recent_rate` if it has a value, multiply by 3600 to show `/h` or keep `/s` depending on magnitude, `-` if no value; TOK = `tok_in/tok_out` abbreviated with thousands separators like `1.2M/340k`; ETA = `eta_s` converted to `HH:MM`). The two prompt behaviors `DONE, time to wrap up` and `EXIT, check the log` are kept (printed when the verdict is done/dead, wording follows the existing `fmt_table`).
 
-- [ ] **Step 2: 手动验证**（没有采样器在跑的机器上）：
+- [ ] **Step 2: Verify manually** (on a machine with no sampler running):
 
 Run: `python3 run.py gpu-jobs && python3 run.py gpu-jobs json | python3 -c "import json,sys; json.load(sys.stdin); print('json ok')"`
-Expected: 警告行 + 老表照出；`json ok`。再造一份假 latest.json（`NEW1_MONITOR_DIR` 指向 tmp）确认新表出得来、表头带最后采样时刻。
+Expected: the warning line + the old table still prints; `json ok`. Then build a fake latest.json (`NEW1_MONITOR_DIR` pointed at a tmp dir) and confirm the new table renders and the header carries the last sample time.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add ops/gpu_jobs.py
-git commit -m "monitor: gpu-jobs 三出口改读采样历史(新鲜用之,过期亮警告退回实探)"
+git commit -m "monitor: switch gpu-jobs' three exits to reading the sampling history (use it when fresh, warn and fall back to a live probe when stale)"
 ```
 
 ---
 
-### Task 9: 采样器上线（tmux + crontab 看门狗）
+### Task 9: Bring the sampler online (tmux + a crontab watchdog)
 
 **Files:**
-- Modify: 登录机 crontab（系统状态，不是仓库文件）
+- Modify: the login machine's crontab (system state, not a repo file)
 
-- [ ] **Step 1: 起常驻进程**
+- [ ] **Step 1: Start the resident process**
 
 ```bash
 tmux new-session -d -s new1_sampler 'cd /home/y-guo/reproduce/new1 && python3 run.py sampler 2>&1 | tee -a /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log'
 ```
 
-- [ ] **Step 2: 装看门狗**（`crontab -l` 先备份到 `/tmp/crontab.bak`，再追加一行）：
+- [ ] **Step 2: Install the watchdog** (back up `crontab -l` to `/tmp/crontab.bak` first, then append one line):
 
 ```
 */5 * * * * tmux has-session -t new1_sampler 2>/dev/null || tmux new-session -d -s new1_sampler 'cd /home/y-guo/reproduce/new1 && python3 run.py sampler 2>&1 | tee -a /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/monitor/sampler.log'
 ```
 
-- [ ] **Step 3: 验证**：`curl -s localhost:8377/json | python3 -m json.tool | head`（出合法 JSON）；浏览器（VS Code 端口转发）开 `localhost:8377` 看到任务表；`tmux kill-session -t new1_sampler` 后等 5 分钟确认 crontab 把它拉回来（`tmux ls` 里再次出现）。
+- [ ] **Step 3: Verify**: `curl -s localhost:8377/json | python3 -m json.tool | head` (produces valid JSON); open `localhost:8377` in a browser (via VS Code port forwarding) and see the task table; `tmux kill-session -t new1_sampler`, then wait 5 minutes and confirm the crontab brings it back (it shows up again in `tmux ls`).
 
 ---
 
-### Task 10: 发射公共件 `ops/launch_common.py`
+### Task 10: Launch common module `ops/launch_common.py`
 
 **Files:**
 - Create: `ops/launch_common.py`
 - Create: `tests/test_launch_common.py`
 
 **Interfaces:**
-- Produces（Task 11-13 全靠这些签名）：
-  - `ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}`；`local_host()`；`has_session(host, sess)`；`tmux_launch(host, sess, inner_cmd)`——这三个从 `ops/launch_probe.py:47-62` 原样搬（搬完 Task 13 让 launch_probe 反过来 import 这里的，删它自己那份）。
-  - `probe_free(host, gpus) -> (ok: bool, why: str)`：`ssh <host> nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader -i <gpus>`；stdout 非空 → `(False, "占用中: <首行>")`；ssh 失败/超时 → `(False, "探测失败: ...")`（fail-closed）；空 → `(True, "")`。
-  - `register_all(run_id, workdir, pieces, track, cmd_display, note=None, outdir=None, monitor=None) -> str`：三处登记一口气——①台账：`gpu_jobs.mutate_reg` 直接 append job（rich piece：host/gpus/session/log/cmd/launched_at/kind/stall_line/escalate_line；job 级 `monitor={"warmup_s":...}`，`note`）；②实验记录：`subprocess.run([sys.executable, str(OPS/"record.py"), "start", "--run-id", run_id, "--track", track, "--cmd", cmd_display, "--host", ..., "--gpu", ..., "--log", ...])`（subprocess 隔离 record 的 sys.exit；rc≠0 原样透出并中止——record 拒绝重复 run_id 是护栏不是障碍）；③RUNMETA：`outdir` 给了才 `runmeta.append_runmeta(outdir, cmd_display, kind="launch")`，没给打一行 `WARN 没给 --outdir,RUNMETA 没写`。返回登记回执文本。
+- Produces (Tasks 11-13 depend entirely on these signatures):
+  - `ALIAS = {"shiga": "tokyo105", "saitama": "tokyo108"}`; `local_host()`; `has_session(host, sess)`; `tmux_launch(host, sess, inner_cmd)` -- these three are moved verbatim from `ops/launch_probe.py:47-62` (once moved, Task 13 makes launch_probe import them back from here instead, and deletes its own copy).
+  - `probe_free(host, gpus) -> (ok: bool, why: str)`: `ssh <host> nvidia-smi --query-compute-apps=pid,used_memory --format=csv,noheader -i <gpus>`; non-empty stdout -> `(False, "occupied: <first line>")`; ssh failure/timeout -> `(False, "probe failed: ...")` (fail-closed); empty -> `(True, "")`.
+  - `register_all(run_id, workdir, pieces, track, cmd_display, note=None, outdir=None, monitor=None) -> str`: register in three places in one go -- (1) the ledger: `gpu_jobs.mutate_reg` directly appends the job (a rich piece: host/gpus/session/log/cmd/launched_at/kind/stall_line/escalate_line; job-level `monitor={"warmup_s":...}`, `note`); (2) the experiment record: `subprocess.run([sys.executable, str(OPS/"record.py"), "start", "--run-id", run_id, "--track", track, "--cmd", cmd_display, "--host", ..., "--gpu", ..., "--log", ...])` (subprocess isolates record's sys.exit; rc != 0 is surfaced as-is and aborts -- record refusing a duplicate run_id is a guard rail, not an obstacle); (3) RUNMETA: `runmeta.append_runmeta(outdir, cmd_display, kind="launch")` only when `outdir` is given, otherwise print one line `WARN --outdir not given, RUNMETA not written`. Returns the registration receipt text.
 
-- [ ] **Step 1: 写失败测试**：`probe_free` 用 monkeypatch 替 `subprocess.run` 喂三种结果（空 stdout / 有进程行 / raise TimeoutExpired）断言三种返回；`register_all` 用 `NEW1_MONITOR_DIR`+tmp 的 jobs.json（monkeypatch `gpu_jobs.REG_PATH`）断言台账里出现 rich piece 全字段、重复 run_id 第二次调用抛 SystemExit。
+- [ ] **Step 1: Write the failing test**: for `probe_free`, monkeypatch `subprocess.run` to feed it three kinds of results (empty stdout / a process line / raise TimeoutExpired) and assert the three return values; for `register_all`, use `NEW1_MONITOR_DIR` + a tmp jobs.json (monkeypatch `gpu_jobs.REG_PATH`) and assert the ledger gets a rich piece with all fields, and that calling it a second time with the same run_id raises SystemExit.
 
-- [ ] **Step 2: 实现**（照上面接口签名；`tmux_launch` 的 inner 模板与 launch_probe.py:57 完全一致：`cd <wd> && CUDA_VISIBLE_DEVICES=<g> <cmd> 2>&1 | tee <log>`，env 变量有就前置 `K=V` 对）。
+- [ ] **Step 2: Implement** (following the interface signatures above; `tmux_launch`'s inner template is exactly the same as launch_probe.py:57: `cd <wd> && CUDA_VISIBLE_DEVICES=<g> <cmd> 2>&1 | tee <log>`, prefixed with `K=V` pairs when there are env vars).
 
-- [ ] **Step 3: 跑测试确认通过**，然后 Commit：
+- [ ] **Step 3: Run the test, confirm it passes**, then Commit:
 
 ```bash
 git add ops/launch_common.py tests/test_launch_common.py
-git commit -m "launch: 公共件(探卡 fail-closed/tmux 模板/三处登记一口气)"
+git commit -m "launch: common module (fail-closed card probe/tmux template/three-way registration in one go)"
 ```
 
 ---
 
-### Task 11: `run.py launch` 子命令（task 模式 + --cmd 模式）
+### Task 11: `run.py launch` subcommand (task mode + --cmd mode)
 
 **Files:**
 - Create: `ops/launch_cmd.py`
 - Create: `tests/test_launch_cmd.py`
-- Modify: `run.py`（main() 加 dispatch；`collect-aw` 条目加 `shardable=True`；文件头 usage 文档加一行 launch 用法）
+- Modify: `run.py` (add dispatch in main(); add `shardable=True` to the `collect-aw` entry; add one line for launch usage in the file-header usage doc)
 
 **Interfaces:**
-- Consumes: `run.TASKS/PY/build_cmd/gate_dirty/gate_of`（`sys.path` 到仓库根后 `from run import ...`，照 launch_probe.py:41-42 的既有做法）；Task 10 全部。
-- Produces: 命令行（设计 §6 定稿的签名）：
+- Consumes: `run.TASKS/PY/build_cmd/gate_dirty/gate_of` (`from run import ...` after adding the repo root to `sys.path`, following launch_probe.py:41-42's existing pattern); all of Task 10.
+- Produces: the command line (the signature finalized in design §6):
 
 ```
-python3 run.py launch <task> [任务参数...] --run-id ID --piece host:gpus [--piece ...]
-    --track 方向 [--note ...] [--outdir DIR]
-    [--stall-line 秒] [--escalate-line 秒] [--warmup-line 秒]
+python3 run.py launch <task> [task args...] --run-id ID --piece host:gpus [--piece ...]
+    --track track [--note ...] [--outdir DIR]
+    [--stall-line seconds] [--escalate-line seconds] [--warmup-line seconds]
     [--service --port N] [--allow-dirty] [--dry-run]
-python3 run.py launch --cmd '<完整命令>' --run-id ID --workdir DIR --piece ... (其余同上)
+python3 run.py launch --cmd '<full command>' --run-id ID --workdir DIR --piece ... (the rest as above)
 ```
 
-- [ ] **Step 1: 写失败测试**（把纯逻辑拆成可测函数）：`build_pieces(argv 解析结果, task_entry)` 的分片注入——2 个 piece + `shardable=True` → 两条命令分别带 `--shard-id 0/1 --num-shards 2`；非 shardable + 2 piece → SystemExit；session 名 = `new1_<run_id>_t<host去掉tokyo>g<gpus 逗号换连字符>`；同 host 同 gpus 两个 piece → SystemExit。`--cmd` 模式不查注册表、命令原样。dry-run 输出含全部 inner 命令且不碰任何登记（monkeypatch register_all 断言没被调）。
+- [ ] **Step 1: Write the failing test** (split the pure logic into testable functions): `build_pieces`(the argv parse result, task_entry)'s shard injection -- 2 pieces + `shardable=True` -> the two commands carry `--shard-id 0/1 --num-shards 2` respectively; not shardable + 2 pieces -> SystemExit; session name = `new1_<run_id>_t<host with tokyo stripped>g<gpus with commas turned into hyphens>`; two pieces with the same host and same gpus -> SystemExit. `--cmd` mode does not consult the registry, the command is passed through as-is. dry-run's output contains every inner command and touches no registration (monkeypatch register_all and assert it was not called).
 
-- [ ] **Step 2: 实现 `cmd_launch(argv)`**。流程钉死成十步，一步不许换序：
-  1. 手写参数解析（gpu_jobs.py 的 iter 风格；未知参数留给任务透传，`--` 之后全透传）。
-  2. task 模式：`t = TASKS[task]`；`--cmd` 模式跳过注册表。
-  3. `gate_dirty(...)`（honor_dry=True：`--dry-run` 放行；沿用 run.py:546 的实现，import 复用）。
-  4. run_id 必填校验；`--track` 必填（record start 硬要求）。
-  5. pieces 解析 + 分片注入 + session/log 命名（log = `<workdir>/logs/<sess>.log`，workdir 默认 ROOT，task 有 cwd 用 cwd）。
-  6. `--dry-run` → 打印每分片 host/gpu/session/inner 命令，返回 0。
-  7. 逐 piece `probe_free`，任何一张不 FREE → SystemExit 列出原因（一张都不发射）。
-  8. 逐 piece `tmux_launch`。
-  9. **验活 30 秒**：每 5 秒一轮,轮内逐 piece 查 `has_session` + 日志文件字节数增长 + tail 4KB 无 `Traceback`；全部 piece 见到输出即提前通过；30 秒后 session 没了或 tail 有 Traceback → 打印失败分片与日志尾 40 行，**已发射的不回滚**（杀进程是人的决定），返回 1 且不登记——发射失败不落账。
-  10. `register_all(...)` + 打印监控入口（`python3 run.py gpu-jobs` / `watch` / 网页 `localhost:8377`）。
-  在 `run.py:main()` 的 `if cmd == "selfcheck"` 之后加：
+- [ ] **Step 2: Implement `cmd_launch(argv)`**. The flow is pinned down as ten steps, in this exact order:
+  1. Hand-written argument parsing (in gpu_jobs.py's iter style; unknown arguments are passed through to the task, everything after `--` is passed through as-is).
+  2. Task mode: `t = TASKS[task]`; `--cmd` mode skips the registry.
+  3. `gate_dirty(...)` (honor_dry=True: `--dry-run` is let through; reuses run.py:546's implementation via import, not duplicated).
+  4. run_id is a required check; `--track` is required (a hard requirement of record start).
+  5. Parse pieces + inject shard args + name the session/log (log = `<workdir>/logs/<sess>.log`, workdir defaults to ROOT, uses cwd when the task has one).
+  6. `--dry-run` -> print each piece's host/gpu/session/inner command, return 0.
+  7. Run `probe_free` on each piece; if any card is not FREE -> SystemExit listing the reasons (nothing gets launched at all).
+  8. Run `tmux_launch` on each piece.
+  9. **Verify liveness for 30 seconds**: one round every 5 seconds, checking each piece's `has_session` + growth in the log file's byte count + no `Traceback` in the last 4KB of the tail; passes early once every piece has shown output; if after 30 seconds a session is gone or the tail has a Traceback -> print the failed pieces and the last 40 lines of their logs, **launched pieces are not rolled back** (killing a process is a human decision), return 1 and register nothing -- a failed launch does not get booked.
+  10. `register_all(...)` + print the monitoring entry points (`python3 run.py gpu-jobs` / `watch` / the web page at `localhost:8377`).
+  Add, after `if cmd == "selfcheck"` in `run.py:main()`:
 
 ```python
     if cmd == "launch":
@@ -860,76 +877,76 @@ python3 run.py launch --cmd '<完整命令>' --run-id ID --workdir DIR --piece .
         return cmd_launch(rest)
 ```
 
-- [ ] **Step 3: 跑测试 + selfcheck**，冒烟一发 dry-run：
+- [ ] **Step 3: Run the tests + selfcheck**, fire one dry-run smoke test:
 
 Run: `python3 -m unittest tests.test_launch_cmd -v && python3 run.py selfcheck && python3 run.py launch collect-aw --run-id smoke_x --track smoke --piece tokyo106:0 --piece tokyo106:1 --dry-run --allow-dirty -- --base-url http://x/v1 --model m --outdir /tmp/x`
-Expected: 测试过；dry-run 打出两条带 `--shard-id 0/1` 的 inner 命令
+Expected: tests pass; dry-run prints two inner commands carrying `--shard-id 0/1`
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add ops/launch_cmd.py tests/test_launch_cmd.py run.py
-git commit -m "launch: run.py launch 子命令(验卡→tmux→验活→三处登记一条命令;shardable 注入)"
+git commit -m "launch: run.py launch subcommand (probe cards -> tmux -> verify liveness -> three-way registration in one command; shardable injection)"
 ```
 
 ---
 
-### Task 12: 补射模式 `launch --refire`
+### Task 12: Refire mode `launch --refire`
 
 **Files:**
-- Modify: `ops/launch_cmd.py`、`tests/test_launch_cmd.py`
+- Modify: `ops/launch_cmd.py`, `tests/test_launch_cmd.py`
 
 **Interfaces:**
-- Produces: `python3 run.py launch --refire <run_id> --idx <分片号> [--piece host:gpus] [--allow-dirty]`。行为：台账里找该 job 的第 idx 个 piece → 那个 session 必须已经死了（`has_session` 为真 → SystemExit "session 还活着,补射只对死分片"）→ 目标卡 = `--piece` 给的或原卡，`probe_free` 验，不 FREE → SystemExit（事故 agent 拿这个报错回去换卡重试）→ 用 piece 里存的 `cmd` 原样重发（session 名不变，log 换新文件 `<sess>.r<refires+1>.log`）→ `mutate_reg` 更新该 piece 的 host/gpus/log/`launched_at=now` → 不新开 record、不重复 register（补射不是新任务）。采样器看到 `launched_at` 变了自动重开该分片的心跳时间轴并 `refires+=1`（Task 6 已实现）。
+- Produces: `python3 run.py launch --refire <run_id> --idx <piece number> [--piece host:gpus] [--allow-dirty]`. Behavior: find that job's idx-th piece in the ledger -> that session must already be dead (`has_session` true -> SystemExit "session is still alive, refire only applies to a dead piece") -> the target card = whatever `--piece` gives, or the original card, verified with `probe_free`, not FREE -> SystemExit (the incident agent takes this error back and retries on a different card) -> resend the `cmd` stored on the piece verbatim (the session name is unchanged, the log switches to a new file `<sess>.r<refires+1>.log`) -> `mutate_reg` updates that piece's host/gpus/log/`launched_at=now` -> does not open a new record, does not register again (a refire is not a new task). The sampler, seeing `launched_at` change, automatically reopens that piece's heartbeat timeline and does `refires+=1` (already implemented in Task 6).
 
-- [ ] **Step 1: 写失败测试**：tmp 台账 + monkeypatch `has_session`/`probe_free`/`tmux_launch`，断言：活 session 拒绝；非 FREE 拒绝；成功路径下台账 piece 的 log/launched_at 更新且 cmd 未变、没有第二个 job 出现。
+- [ ] **Step 1: Write the failing test**: a tmp ledger + monkeypatch `has_session`/`probe_free`/`tmux_launch`, asserting: a live session is rejected; not-FREE is rejected; on the success path the ledger piece's log/launched_at are updated and cmd is unchanged, and no second job appears.
 
-- [ ] **Step 2: 实现 + 跑测试通过 + Commit**
+- [ ] **Step 2: Implement + run the test until it passes + Commit**
 
 ```bash
 git add ops/launch_cmd.py tests/test_launch_cmd.py
-git commit -m "launch: --refire 按台账原命令补射死分片(只补死的,验卡 fail-closed)"
+git commit -m "launch: --refire re-launches a dead piece with its original ledger command (only dead pieces, fail-closed card probe)"
 ```
 
 ---
 
-### Task 13: 两个排卡发射器接同一套登记
+### Task 13: Wire the two queueing launchers into the same registration
 
 **Files:**
-- Modify: `ops/launch_probe.py`（`has_session/launch` 换成 import `launch_common`；`main()` 发射循环里 RUNMETA 之后补台账+record）
-- Modify: `ops/launch_eval.py`（同样）
+- Modify: `ops/launch_probe.py` (replace `has_session/launch` with an import of `launch_common`; add the ledger + record write-through after RUNMETA in `main()`'s launch loop)
+- Modify: `ops/launch_eval.py` (same)
 
 **Interfaces:**
-- Consumes: `launch_common.probe_free/register_all/has_session/tmux_launch`。
+- Consumes: `launch_common.probe_free/register_all/has_session/tmux_launch`.
 
-- [ ] **Step 1: launch_probe 改造**：
-  1. 删掉本地 `has_session`/`launch`（:47-62），换 `from launch_common import has_session, tmux_launch, probe_free, register_all`（sys.path 已有 ops）。原 `launch()` 的调用点改为拼 inner 后调 `tmux_launch`（inner 模板一致，行为不变）。
-  2. 发射前逐格 `probe_free(host, str(gpu))`，不 FREE 的格打印原因**跳过该格**（排卡表半空常见，整表拒绝会把好格拖死——与 launch 单任务"整次拒绝"口径不同，注释里写明原因）。
-  3. 每格 LAUNCHED 后：RUNMETA 照旧，再 `register_all(run_id=rid, workdir=str(WD), pieces=[该格 rich piece], track=f"probe_{args.batch}", cmd_display=cmd, outdir=None)`——outdir 已由 RUNMETA 自己写了，register_all 里 RUNMETA 一步传 `outdir=None` 跳过，别写两遍。record start 若因 run_id 已存在而 rc≠0（smoke 后重发 full 的正常路径是不同 run_id，不该撞；撞了说明重复发射）→ 打 WARN 继续，不中断发射循环。
-- [ ] **Step 2: launch_eval 同样四处**（track=f"eval_{args.batch}"；rid 用 sess 去掉前缀 eval_ 的 `{batch}_{model}_{cell}`）。
-- [ ] **Step 3: 验证**：`python3 run.py launch-probe smoke --batch zz --data-root pipeline/data/<现存任一> --env appworld --model q35 --dry-run --allow-dirty` 照常打印；单测跑 `python3 -m unittest discover -s tests -v` 全绿（launch_common 的测试覆盖了 register_all）。
+- [ ] **Step 1: launch_probe rework**:
+  1. Delete the local `has_session`/`launch` (:47-62), replace with `from launch_common import has_session, tmux_launch, probe_free, register_all` (ops is already on sys.path). Change the original `launch()` call site to assemble the inner command and then call `tmux_launch` (same inner template, unchanged behavior).
+  2. Before launching, run `probe_free(host, str(gpu))` per cell; a cell that is not FREE prints the reason and **skips that cell** (a half-empty queue table is common; rejecting the whole table would drag down the good cells too -- this differs from launch's single-task "reject the whole thing" policy, note the reason in a comment).
+  3. After each cell is LAUNCHED: RUNMETA as before, then `register_all(run_id=rid, workdir=str(WD), pieces=[that cell's rich piece], track=f"probe_{args.batch}", cmd_display=cmd, outdir=None)` -- RUNMETA has already been written by itself, so register_all's own RUNMETA step is skipped by passing `outdir=None`, don't write it twice. If record start's rc != 0 because the run_id already exists (the normal path of resending full after smoke uses a different run_id, so it shouldn't collide; a collision means a duplicate launch) -> print a WARN and keep going, don't abort the launch loop.
+- [ ] **Step 2: The same four spots for launch_eval** (track=f"eval_{args.batch}"; rid uses `{batch}_{model}_{cell}` from sess with the eval_ prefix stripped).
+- [ ] **Step 3: Verify**: `python3 run.py launch-probe smoke --batch zz --data-root pipeline/data/<any existing one> --env appworld --model q35 --dry-run --allow-dirty` prints as usual; run the unit tests with `python3 -m unittest discover -s tests -v`, all green (launch_common's tests cover register_all).
 - [ ] **Step 4: Commit**
 
 ```bash
 git add ops/launch_probe.py ops/launch_eval.py
-git commit -m "launch: 排卡发射器接 launch_common(FREE 实探+自动台账/record,RUNMETA 照旧)"
+git commit -m "launch: wire the queueing launchers into launch_common (live FREE probe + automatic ledger/record, RUNMETA unchanged)"
 ```
 
 ---
 
-### Task 14: 事故触发（采样器拉事故 agent）
+### Task 14: Incident trigger (the sampler pulls up an incident agent)
 
 **Files:**
-- Modify: `ops/sampler.py`（实装 `maybe_trigger_incidents`）
+- Modify: `ops/sampler.py` (implement `maybe_trigger_incidents`)
 - Create: `tests/test_incidents.py`
 
 **Interfaces:**
-- Produces: `monitor/incidents.jsonl`（append）：`{"id": "<job>#<idx>@<epoch>", "t", "job", "idx", "session", "verdict", "log", "allow_refire", "agent_pid"}`；`monitor/incidents/<id>.out` = 事故 agent 的 stdout。
-- 触发规则（设计 §5，全在纯函数 `should_trigger(row, ps) -> (bool, allow_refire)` 里判，单测压它）：`row["escalated"]` 为真，且 `ps["incident_open"]` 为空（同一次事故只拉一次；分片判定回到健康/warm-up/已完成时清 `incident_open`）。`allow_refire` = (判定==已挂 且 `ps["refires"] == 0`)。
+- Produces: `monitor/incidents.jsonl` (append): `{"id": "<job>#<idx>@<epoch>", "t", "job", "idx", "session", "verdict", "log", "allow_refire", "agent_pid"}`; `monitor/incidents/<id>.out` = the incident agent's stdout.
+- Trigger rule (design §5, judged entirely inside the pure function `should_trigger(row, ps) -> (bool, allow_refire)`, unit tests carry the weight): `row["escalated"]` is true, and `ps["incident_open"]` is empty (the same incident only pulls up one agent; `incident_open` is cleared once the piece's verdict returns to healthy/warming up/done). `allow_refire` = (verdict==dead and `ps["refires"] == 0`).
 
-- [ ] **Step 1: 写失败测试**：`should_trigger` 四种情形（首次已挂→(True,True)；已挂但 refires=1→(True,False)；已有 incident_open→(False,_)；疑似卡死未达升级线→(False,_)）；`build_incident_prompt(row, allow_refire)` 输出里含日志路径、`gpu-jobs json` 命令、补射命令或"不许补射"。
+- [ ] **Step 1: Write the failing test**: four cases for `should_trigger` (first time dead -> (True,True); dead but refires=1 -> (True,False); incident_open already set -> (False,_); stalled but not past the escalation line -> (False,_)); `build_incident_prompt(row, allow_refire)`'s output contains the log path, the `gpu-jobs json` command, and either a refire command or "refiring is not allowed."
 
-- [ ] **Step 2: 实现**。agent 拉起：
+- [ ] **Step 2: Implement**. Pulling up the agent:
 
 ```python
 def spawn_agent(incident, prompt):
@@ -942,123 +959,127 @@ def spawn_agent(incident, prompt):
     return p.pid
 ```
 
-  实施时先跑 `claude --help` 核对无头模式与免确认旗标的当前拼写（`-p/--print`、`--model`、`--dangerously-skip-permissions` 或 `--permission-mode bypassPermissions`），以 help 输出为准改这一处。提示词模板（写成模块级常量 `INCIDENT_PROMPT`，`{}` 占位 format）：
+  During implementation, first run `claude --help` to check the current spelling of headless mode and the no-confirmation flag (`-p/--print`, `--model`, `--dangerously-skip-permissions` or `--permission-mode bypassPermissions`), and change this spot to match the help output. Prompt template (write it as the module-level constant `INCIDENT_PROMPT`, with `{}` placeholders filled by format):
 
 ```
-你是 new1 工程的事故 agent,只干"把实验办好"一件事,不写给人看的报告。
-事故: 任务 {job} 分片 {idx}(session {session},host {host},GPU {gpus})判定 {verdict}。
-日志: {log}
-先看现场: tail -c 8192 '{log}' | tr '\r' '\n' | tail -40
-台账 json: cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs json
-规则(不许越线):
+You are the incident agent for the new1 project. You do exactly one thing, "get the experiment
+handled," and you do not write a report for a human to read.
+Incident: task {job} piece {idx} (session {session}, host {host}, GPU {gpus}) verdict {verdict}.
+Log: {log}
+Look at the scene first: tail -c 8192 '{log}' | tr '\r' '\n' | tail -40
+Ledger json: cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs json
+Rules (do not cross these lines):
 - {refire_clause}
-- 判定是 疑似卡死: 只读日志定位原因,禁止 kill 任何 session、禁止改任何文件。
-- 只碰这一个分片,别的任务一概不动。
-- 结束时输出一行: DONE <你做了什么,15 字内>。
+- If the verdict is suspected stall: only read the log to locate the cause, killing any session is
+  forbidden, changing any file is forbidden.
+- Only touch this one piece, do not touch any other task.
+- When done, output one line: DONE <what you did, under 15 words>.
 ```
 
-  `refire_clause` 两个取值：允许时 =「判定是 已挂: 读日志定位死因后补射一次: `python3 run.py launch --refire {job} --idx {idx}`;原卡被占(命令会报错)时 `python3 run.py gpu-jobs free` 挑空卡后加 `--piece <host>:<gpus>` 重试一次」；不允许时 =「这个分片补射额度已用完: 只验尸,不许再发射任何东西」。
-  触发后 `ps["incident_open"] = incident_id`；采样器**不等** agent 结束（Popen 即走）；下一轮判定回到 已完成/健康/warm-up 中 时清 `incident_open`。
+  The two values of `refire_clause`: allowed = "If the verdict is dead: read the log to locate the cause of death, then refire once: `python3 run.py launch --refire {job} --idx {idx}`; if the original card is occupied (the command will error), run `python3 run.py gpu-jobs free` to pick a free card and retry once with `--piece <host>:<gpus>` added"; not allowed = "This piece's refire quota is used up: autopsy only, launching anything again is forbidden."
+  After triggering, `ps["incident_open"] = incident_id`; the sampler **does not wait** for the agent to finish (Popen returns immediately); `incident_open` is cleared once the next round's verdict returns to done/healthy/warming up.
 
-- [ ] **Step 3: 跑测试通过 + 手动演练**：造一个假任务（register 一个指向不存在 session 的 piece + 有心跳未完的日志）→ `python3 run.py sampler --once` → 断言 incidents.jsonl 出现一条、`incidents/<id>.out` 里事故 agent 真跑了（读到 DONE 行）。演练完 `gpu-jobs finish <假任务> --force` 清场。
+- [ ] **Step 3: Run the tests until they pass + a manual dry run**: build a fake task (register a piece pointing at a nonexistent session + a log with heartbeats but not finished) -> `python3 run.py sampler --once` -> assert one line shows up in incidents.jsonl, and that `incidents/<id>.out` shows the incident agent really ran (a DONE line is read). After the dry run, clean up with `gpu-jobs finish <fake task> --force`.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add ops/sampler.py tests/test_incidents.py
-git commit -m "monitor: 事故触发(升级线->claude -p opus,防抖+补射限额,记录 incidents)"
+git commit -m "monitor: incident trigger (escalation line -> claude -p opus, debounce + refire quota, records incidents)"
 ```
 
 ---
 
-### Task 15: vLLM 服务档（端口探测 + 吞吐行显示）
+### Task 15: The vLLM service track (port probe + throughput display)
 
 **Files:**
-- Modify: `ops/sampler.py`（`read_beats` 对 `kind=="service"` 的分片改走 `read_vllm_stats`；`probe_port` 核对）
+- Modify: `ops/sampler.py` (`read_beats` switches to `read_vllm_stats` for `kind=="service"` pieces; check `probe_port`)
 - Create: `tests/test_vllm_stats.py`
 
-- [ ] **Step 1: fixture 用已核实的真实样本**（2026-08-08 从
-  `/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log`
-  取的原文，vllm 0.26.0，格式串在
-  `envs/vllm-env/lib/python3.12/site-packages/vllm/v1/metrics/loggers.py:263-313`）：
+- [ ] **Step 1: the fixture uses an already-verified real sample** (original text taken on 2026-08-08 from
+  `/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/logs/new1_diag_srv_a.log`,
+  vllm 0.26.0, the format string is in
+  `envs/vllm-env/lib/python3.12/site-packages/vllm/v1/metrics/loggers.py:263-313`):
 
 ```
 (APIServer pid=263921) INFO 08-02 19:50:14 [loggers.py:310] Engine 000: Avg prompt throughput: 785.1 tokens/s, Avg generation throughput: 671.8 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 11.2%, Prefix cache hit rate: 97.1%
 ```
 
-  已知事实：默认每 10 秒一条（`VLLM_LOG_STATS_INTERVAL`，`vllm/envs.py:47`）；
-  引擎空闲时该行降级 debug 不进 stdout——所以吞吐行断流不算停摆，判定只看端口
-  （设计 §4 已定）。另注意 vLLM serve 的日志不在 `<workdir>/logs/`，发射器把它
-  重定向到 `/net/.../vllm_cache/logs/`（`envs/serve_logs/launch_vllm_awdiag.py`
-  写死）——服务分片 register 时 log 字段要填真实路径。
-- [ ] **Step 2: 写失败测试**：`parse_vllm_stats(tail_text)` 从上面 fixture 行里抽 `{"gen_tok_s": 671.8, "prompt_tok_s": 785.1, "running": 4}`；无匹配 → None。
-- [ ] **Step 3: 实现**：service 分片不走 heartbeat.parse，`read_vllm_stats(log)` 抓吞吐行 → row 的 `tok_out` 速率显示位（只做显示，不进判定——判定走 `probe_port`，`/health` 路径实测：起服务的机器上 `curl -s -o /dev/null -w '%{http_code}' localhost:<port>/health`，vLLM OpenAI server 返回 200 无 body；对不上就以实测为准改 `probe_port`）。
-- [ ] **Step 4: 跑测试通过 + Commit**
+  Known facts: one line every 10 seconds by default (`VLLM_LOG_STATS_INTERVAL`, `vllm/envs.py:47`);
+  the line downgrades to debug and does not go to stdout when the engine is idle -- so the
+  throughput line going quiet does not count as a stall, the verdict only looks at the port
+  (already decided in design §4). Also note that the vLLM serve log is not under `<workdir>/logs/`,
+  the launcher redirects it to `/net/.../vllm_cache/logs/` (hardcoded in
+  `envs/serve_logs/launch_vllm_awdiag.py`) -- the log field must hold the real path when
+  registering a service piece.
+- [ ] **Step 2: Write the failing test**: `parse_vllm_stats(tail_text)` extracts `{"gen_tok_s": 671.8, "prompt_tok_s": 785.1, "running": 4}` from the fixture line above; no match -> None.
+- [ ] **Step 3: Implement**: a service piece does not go through heartbeat.parse, `read_vllm_stats(log)` grabs the throughput line -> feeds the row's `tok_out` rate display field (display only, does not enter the verdict -- the verdict goes through `probe_port`; the `/health` path was verified in practice: on the machine running the service, `curl -s -o /dev/null -w '%{http_code}' localhost:<port>/health`, the vLLM OpenAI server returns 200 with no body; if it doesn't match, change `probe_port` to match what's actually observed).
+- [ ] **Step 4: Run the test until it passes + Commit**
 
 ```bash
 git add ops/sampler.py tests/test_vllm_stats.py
-git commit -m "monitor: vLLM 服务档(端口探测进判定,吞吐行只做速率显示)"
+git commit -m "monitor: vLLM service track (port probe feeds the verdict, throughput line is display-only for rate)"
 ```
 
 ---
 
-### Task 16: 文档回写 — gpu-run skill 与两份方法论
+### Task 16: Documentation write-back — the gpu-run skill and two methodology references
 
 **Files:**
-- Modify: `.claude/skills/gpu-run/SKILL.md`、`references/launch-methodology.md`、`references/monitor-methodology.md`
+- Modify: `.claude/skills/gpu-run/SKILL.md`, `references/launch-methodology.md`, `references/monitor-methodology.md`
 
-- [ ] **Step 1: SKILL.md**。Phase 4 整段改写：发射三步（commit → `python3 run.py launch <task> ... --run-id X --track Y --piece host:gpus` → 读它打印的监控入口交给用户），双登记/RUNMETA/record 手打命令段全删（launch 保证）；Phase 4 第 6 步交给用户的命令换成 `python3 run.py gpu-jobs`、`watch`、浏览器 `localhost:8377`；Phase 5 改写为采样器条款：常设巡检撤销，判定/升级/事故 agent 由采样器负责，Claude 只在用户问起或事故记录有内容时派 job-monitor 读 `gpu-jobs json`；Phase 6a 五连保留（已完成只是判定，销号仍 fail-closed）。Phase 3 smoke 段补一句：smoke 也可用 `launch --dry-run` 先看命令。
-- [ ] **Step 2: launch-methodology.md**：tmux 模板一节改为「launch 替你做了什么」（模板本身留作 `--cmd` 逃生口的参考）；挑卡规则一节保留（挑卡仍是 agent 的判断）；分片一节改成 shardable + 多 `--piece` 用法。
-- [ ] **Step 3: monitor-methodology.md**：两点测速/ETA 修正/tqdm 解析三节改写为「程序职责说明」（口径 = `ops/verdicts.py` 的 DEFAULTS，表格列出六格判定与两线公式），保留「decision tree」一节但判断输入改成判定值不是原始日志。
+- [ ] **Step 1: SKILL.md**. Rewrite the whole of Phase 4: launching becomes three steps (commit -> `python3 run.py launch <task> ... --run-id X --track Y --piece host:gpus` -> read the monitoring entry points it prints and hand them to the user); delete the whole double-registration/RUNMETA/record hand-typed command section (launch guarantees it now); Phase 4 step 6's commands handed to the user become `python3 run.py gpu-jobs`, `watch`, the browser at `localhost:8377`; rewrite Phase 5 as the sampler clause: the standing check-in regime is retired, the verdict/escalation/incident agent are the sampler's responsibility, Claude only dispatches job-monitor to read `gpu-jobs json` when the user asks or when the incident record has content; keep Phase 6a's five steps (done is just a verdict, deregistering is still fail-closed). Add one sentence to the Phase 3 smoke section: smoke can also use `launch --dry-run` to preview the command first.
+- [ ] **Step 2: launch-methodology.md**: turn the tmux template section into "what launch does for you" (the template itself stays as a reference for the `--cmd` escape hatch); keep the card-picking-rules section (picking a card is still the agent's judgment call); turn the sharding section into shardable + multi-`--piece` usage.
+- [ ] **Step 3: monitor-methodology.md**: rewrite the two-point speed measurement / ETA correction / tqdm parsing sections into "a description of the program's responsibility" (the exact meaning follows `ops/verdicts.py`'s DEFAULTS, with a table listing the six-cell verdict and the two-line formulas); keep the "decision tree" section but change the judgment input from raw logs to verdict values.
 - [ ] **Step 4: Commit**
 
 ```bash
 git add .claude/skills/gpu-run/
-git commit -m "docs: gpu-run skill 改写(Phase4 收成一条 launch,Phase5 巡检制度换采样器)"
+git commit -m "docs: rewrite the gpu-run skill (Phase 4 collapses into one launch command, Phase 5's check-in regime is replaced by the sampler)"
 ```
 
 ---
 
-### Task 17: 文档回写 — 两个 agent 定义
+### Task 17: Documentation write-back — the two agent definitions
 
 **Files:**
-- Modify: `.claude/agents/job-monitor.md`、`.claude/agents/gpu-runner.md`
+- Modify: `.claude/agents/job-monitor.md`, `.claude/agents/gpu-runner.md`
 
-- [ ] **Step 1: job-monitor.md** 瘦身：删两点测速、ETA 手算、tqdm 解析全部操作细节（改一句「判定/速率/ETA 由采样器算好,你读 `python3 run.py gpu-jobs json` 的现成结论」）；保留只读铁律、验尸流程（读日志定位死因）、报告格式（健康表的"判定"列直接抄 json 的 verdict）；加一段与事故 agent 的分工：你是人派的检查员，半夜自动处置的是采样器拉的事故 agent，别替它补射。
-- [ ] **Step 2: gpu-runner.md**：第 3 条（发射命令从 run.py 拿）与第 4 条（双登记）合并改写为「发射一律 `python3 run.py launch ...`,验卡/tmux/三处登记它包了;launch-probe/launch-eval 两个排卡发射器照旧直接跑（它们内部同样自动登记）」；报告格式的「登记回执」节改成贴 launch 的输出。
+- [ ] **Step 1: slim down job-monitor.md**: delete all the operational detail about two-point speed measurement, hand-computing ETA, and tqdm parsing (replace with one sentence: "the verdict/rate/ETA are already computed by the sampler, you read the ready-made conclusion from `python3 run.py gpu-jobs json`"); keep the read-only iron rule, the autopsy procedure (read the log to locate the cause of death), the report format (the health table's "verdict" column is copied straight from the json's verdict); add a paragraph on the division of labor with the incident agent: you are the inspector a person dispatches, the one handling things automatically in the middle of the night is the incident agent the sampler pulls up, don't refire in its place.
+- [ ] **Step 2: gpu-runner.md**: merge item 3 (get the launch command from run.py) and item 4 (double registration) and rewrite them as "launching is always `python3 run.py launch ...`, it covers the card probe/tmux/three-way registration; the two queueing launchers launch-probe/launch-eval still run directly as before (they also register automatically internally)"; change the report format's "registration receipt" section to paste launch's output instead.
 - [ ] **Step 3: Commit**
 
 ```bash
 git add .claude/agents/job-monitor.md .claude/agents/gpu-runner.md
-git commit -m "docs: job-monitor 瘦身读现成判定;gpu-runner 发射段改 launch"
+git commit -m "docs: slim down job-monitor to read the ready-made verdict; change gpu-runner's launch section to launch"
 ```
 
 ---
 
-### Task 18: 文档回写 — probe-pipeline、handoff、根文档
+### Task 18: Documentation write-back — probe-pipeline, handoff, root documents
 
 **Files:**
-- Modify: `.claude/skills/probe-pipeline/SKILL.md`（:74-75 收尾链、:134 G16、:172-173 释放销号、:221-222 agent 分工表）、`references/gates.md`（G2/G16/G17）、`references/stage-commands.md`（:19、:352）、`references/invariants.md`（记账双写行）、`references/extending.md`（:130 + 新脚本清单加「接心跳」一条）
-- Modify: `.claude/skills/handoff/SKILL.md:42`（进度来源指 `gpu-jobs json`/采样历史）
-- Modify: `CLAUDE.md`（gpu-run 段加一句：发射与登记收成 `run.py launch`，用户自助监控 = `gpu-jobs watch` + 网页 8377）、`MAP.md`（gpu_jobs.py/launch_probe.py/launch_eval.py 三行更新；heartbeat.py/verdicts.py/sampler.py/launch_cmd.py/launch_common.py 各加一行，格式照现有表）、`ops/gpu_state.md` 页首指引补采样器一行
+- Modify: `.claude/skills/probe-pipeline/SKILL.md` (:74-75 the wrap-up chain, :134 G16, :172-173 releasing/deregistering, :221-222 the agent division-of-labor table), `references/gates.md` (G2/G16/G17), `references/stage-commands.md` (:19, :352), `references/invariants.md` (the double-write bookkeeping line), `references/extending.md` (:130 + add a "wire up heartbeats" item to the new-script checklist)
+- Modify: `.claude/skills/handoff/SKILL.md:42` (the progress source points to `gpu-jobs json`/the sampling history)
+- Modify: `CLAUDE.md` (add one sentence to the GPU section: launching and registration collapse into `run.py launch`, the user's self-service monitoring = `gpu-jobs watch` + the web page at 8377), `MAP.md` (update the three lines for gpu_jobs.py/launch_probe.py/launch_eval.py; add one line each for heartbeat.py/verdicts.py/sampler.py/launch_cmd.py/launch_common.py, following the existing table format), `ops/gpu_state.md` (add one line about the sampler to the page-top pointer)
 
-- [ ] **Step 1: 逐文件改**。G16 双登记的新表述统一为：「launch 自动写三处;手搓/register 补录路径仍在,漏了照旧算违规」。invariants 的记账双写行改为「双写由 launch 保证;绕过 launch 手搓发射的,双登记责任回到人」。extending.md 新脚本清单加一条硬项：「新采集/训练/评测脚本必须接 `ops/heartbeat.py`(进主循环 emit(0,...),每单位 emit,收尾 status=done),不接的脚本在窗口里永远是 warm-up 中」。
+- [ ] **Step 1: Change each file**. Unify G16's double-registration wording as: "launch writes all three places automatically; the manual/register fallback path still exists, and missing it still counts as a violation." Change invariants' double-write bookkeeping line to "the double write is guaranteed by launch; for a hand-typed launch that bypasses launch, the double-registration responsibility falls back to the person." Add one hard item to extending.md's new-script checklist: "a new collection/training/evaluation script must be wired up with `ops/heartbeat.py` (emit(0,...) entering the main loop, emit per unit, status=done at wrap-up); a script not wired up stays permanently in warming up in the window."
 - [ ] **Step 2: Commit**
 
 ```bash
 git add .claude/skills/probe-pipeline/ .claude/skills/handoff/SKILL.md CLAUDE.md MAP.md ops/gpu_state.md
-git commit -m "docs: probe-pipeline/handoff/CLAUDE/MAP/gpu_state 对齐 launch+采样器"
+git commit -m "docs: align probe-pipeline/handoff/CLAUDE/MAP/gpu_state with launch+the sampler"
 ```
 
 ---
 
-### Task 19: 收官自检
+### Task 19: Final self-check
 
-- [ ] **Step 1: 全量测试与体检**
+- [ ] **Step 1: Full test run and health check**
 
 Run: `python3 -m unittest discover -s tests -v && python3 run.py selfcheck`
-Expected: 全绿；selfcheck 全部就位
+Expected: all green; selfcheck all set
 
-- [ ] **Step 2: 文档一致性扫尾**：`grep -rn "双登记\|record start --run-id\|gpu-jobs register" .claude/ CLAUDE.md MAP.md` 逐条确认剩下的引用都是「launch 自动做/补录路径」语境，没有残留「手打三条命令」的旧流程叙述。
-- [ ] **Step 3: CONTEXT.md 复核**：词汇表与实现对一遍（尤其 shardable、监控参数字段名），有出入按实现改词汇表并注明日期。
-- [ ] **Step 4: 最终 Commit + 汇报**：改动清单、新命令速查（launch/refire/sampler/watch/网页）、看门狗 crontab 行、已知限制（v1 不做的清单照设计 §9）。
+- [ ] **Step 2: Documentation-consistency sweep**: `grep -rn "double registration\|record start --run-id\|gpu-jobs register" .claude/ CLAUDE.md MAP.md` and confirm every remaining reference is in the context of "launch does it automatically / the fallback registration path," with no leftover narrative about the old "hand-type three commands" flow.
+- [ ] **Step 3: CONTEXT.md review**: go over the glossary against the implementation (especially shardable and the monitoring-parameter field names); where they differ, change the glossary to match the implementation and note the date.
+- [ ] **Step 4: Final Commit + report**: the changelog, a quick-reference for the new commands (launch/refire/sampler/watch/the web page), the watchdog crontab line, known limitations (the v1 not-doing list from design §9).

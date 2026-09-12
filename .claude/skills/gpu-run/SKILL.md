@@ -1,192 +1,236 @@
 ---
 name: gpu-run
-description: new1 工程内运行任何 GPU 程序的唯一入口——全生命周期一条龙：读慢变量档案 → 实探空卡 → 挑卡分片 → smoke → `launch` 一条命令发射（自动三处登记）→ 告诉用户自助监控命令 → 采样器接管判定与升级 → 结束收尾（汇报+释放显存+销号）或中途中断。Invoke whenever Dungeon♂Master says "跑程序"、"run"、"跑实验"、"跑一下"、"发射"、"用显卡跑"、"起个任务"、"train"、"inference"、or any GPU work needs starting in new1.
+description: >-
+  The sole entry point for running any GPU program inside the new1 project — a
+  full-lifecycle pipeline: read the slow-variable log → probe the cards for free ones →
+  pick cards and shard → smoke → launch with a single `launch` command (auto-registers in
+  three ledgers) → tell the user the self-service monitoring command → hand off to the
+  sampler for verdict and escalation → wrap up (report + free VRAM + deregister) or
+  interrupt midway. Invoke whenever Dungeon♂Master says "run", "train", "inference", or
+  any GPU work needs starting in new1. Chinese triggers: "跑程序" / "跑实验" / "跑一下" / "发射" /
+  "用显卡跑" / "起个任务".
 version: 1.0.0
 ---
 
-# gpu-run — new1 GPU 任务全生命周期
+# gpu-run — new1 GPU job full lifecycle
 
-一个任务从生到死的强制流水线。每一步都有产物，跳步 = 违规。
+A mandatory pipeline for a job from birth to death. Every step has an artifact; skipping a step is a violation.
 
-固定路径（NFS，处处一致）：
-- 慢变量档案：`/home/y-guo/reproduce/new1/ops/gpu_state.md`
-- 台账 CLI：`python3 run.py gpu-jobs`（注册任务，底层是 `ops/gpu_jobs.py`；
-  记数字同理走 `python3 run.py record`。本机没有 `python`，只有 `python3`）
-- 发射方法论（挑卡规则/分片/launch 替你做了什么）：`.claude/skills/gpu-run/references/launch-methodology.md`
-- 测速与 ETA 方法论（`ops/verdicts.py` 判定口径/decision tree）：`.claude/skills/gpu-run/references/monitor-methodology.md`
-- 探卡脚本：`.claude/skills/gpu-run/scripts/gpu_status.sh`
+Fixed paths (NFS, consistent everywhere):
+- Slow-variable log: `/home/y-guo/reproduce/new1/ops/gpu_state.md`
+- Ledger CLI: `python3 run.py gpu-jobs` (registers jobs; underlying implementation is `ops/gpu_jobs.py`;
+  recording numbers goes the same way through `python3 run.py record`. This machine has no `python`, only `python3`)
+- Launch methodology (card-picking rules / sharding / what `launch` does for you): `.claude/skills/gpu-run/references/launch-methodology.md`
+- Speed and ETA methodology (`ops/verdicts.py` verdict rules / decision tree): `.claude/skills/gpu-run/references/monitor-methodology.md`
+- Card-probing script: `.claude/skills/gpu-run/scripts/gpu_status.sh`
 
-## Phase 0 — 读档案
+## Phase 0 — Read the log
 
-Read `ops/gpu_state.md`。重点：别名去重（shiga=105, saitama=108）、
-tokyo106/107 只有 CUDA 12.2、tokyo108 的 H100/H200 idx 分布。
+Read `ops/gpu_state.md`. Focus on: alias deduplication (shiga=105, saitama=108),
+tokyo106/107 only having CUDA 12.2, and tokyo108's H100/H200 index layout.
 
-## Phase 1 — 实探空卡（永不信缓存）
+## Phase 1 — Probe the cards for real (never trust the cache)
 
 ```bash
-python3 run.py gpu-jobs free   # ≈6 秒（仓库根执行）
+python3 run.py gpu-jobs free   # ≈6 seconds (run from repo root)
 ```
 
-只用 OWNERS=FREE 的卡。别人的进程（哪怕 0% util）= 禁区。
-自己的残留进程 = 先判断是不是热服务，不明确就问。
+Only use cards where OWNERS=FREE. Another user's process (even at 0% util) is off-limits.
+Your own leftover process: first decide whether it's a warm service; ask if it isn't clear.
 
-## Phase 2 — 挑卡 + 分片
+## Phase 2 — Pick cards + shard
 
-按 `references/launch-methodology.md` 的规则：bf16 ≈ 2×params GB 估显存；
-48G 装得下 → 105/106/107 优先，大模型 → 108；分片当且仅当
-独立条目多且单卡 >1h；分片输出必须写不同文件。
-**追加本工程约束**：要装新 CUDA 轮子的任务避开 106/107（12.2 坑）；
-已有的 cu128 轮子（如 mbert-env 的 torch）上 106/107 前必须先花 10 秒实测能跑。
+Follow the rules in `references/launch-methodology.md`: estimate VRAM as bf16 ≈ 2×params GB;
+fits in 48G → prefer 105/106/107, big model → 108; shard only when there are many
+independent items and a single card would take >1h; sharded outputs must be written to distinct files.
+**Additional project-specific constraint**: tasks that need to install a new CUDA wheel avoid 106/107 (the 12.2 trap);
+an existing cu128 wheel (e.g. mbert-env's torch) must first be spot-checked for 10 seconds to confirm it runs before going on 106/107.
 
-## Phase 3 — smoke 再放量
+## Phase 3 — Smoke before scaling up
 
-没被明确告知"已小规模验证过"的任务，先发几十条/几步的 smoke，
-日志里见到真实进度（模型加载完、第一个 batch、tqdm 行）才准发全量。
-smoke 失败就修；修不好带 traceback 汇报，不许硬发。
+For any task not explicitly told to already be "validated at small scale," first fire a smoke run
+of a few dozen items/steps; only launch the full run once the log shows real progress (model
+finished loading, first batch, a tqdm line). If smoke fails, fix it; if it can't be fixed, report
+it with the traceback — never force a full launch.
 
-**smoke 阶段树常是脏的**（代码刚改完还没定稿），所以这一段用
-`python3 run.py show <task> --allow-dirty` / `python3 run.py launch-probe smoke … --allow-dirty`
-出命令：smoke 产物不留档、不进 `runs.jsonl`，不受"HEAD 要追得回代码"这条追溯约束。
-`launch-probe smoke` 重跑同一个 smoke 目录还要带 `--force`（smoke 目录名是从
-批次/模型/格确定性推出来的，第二次会被"同 out 已有 train_log.jsonl"守卫拦住）。
-smoke 也可以先用 `python3 run.py launch <task> ... --dry-run` 看每个分片实际
-会跑的命令——只打印，不发射、不登记。
-**正式发射（Phase 4）之前必须 commit**，那一步的脏树门禁不许用 `--allow-dirty` 糊过去。
+**The tree during the smoke phase is often dirty** (code was just changed and hasn't been
+finalized), so use `python3 run.py show <task> --allow-dirty` / `python3 run.py launch-probe smoke … --allow-dirty`
+to get the command for this stage: smoke artifacts are not recorded and don't go into `runs.jsonl`,
+so they're not bound by the "HEAD must be able to trace back to the code" rule.
+Rerunning `launch-probe smoke` on the same smoke directory needs `--force` too (the smoke directory
+name is deterministically derived from batch/model/cell, so a second run is blocked by the "an out
+with an existing train_log.jsonl" guard). Smoke can also be previewed with
+`python3 run.py launch <task> ... --dry-run` to see the actual command each piece will run —
+it only prints, it does not launch or register.
+**A commit is required before the real launch (Phase 4)** — that step's dirty-tree gate must not
+be papered over with `--allow-dirty`.
 
-## Phase 4 — 发射前 commit + launch + 交监控入口
+## Phase 4 — Commit before launch + launch + hand off the monitoring entry point
 
-**执行方式**：发射环节整段派 `gpu-runner` agent 干（探卡/smoke/launch/验活
-打包给它，opus 够用），不在主对话手搓——主对话负责规划与写脚本。
+**How to execute**: dispatch the entire launch segment to a `gpu-runner` agent (card-probing/smoke/launch/liveness-check
+all bundled to it, opus is sufficient) rather than hand-doing it in the main conversation —
+the main conversation is responsible for planning and writing scripts.
 
-1. **commit 代码**。实验记录里存的 git HEAD，只有工作树干净时才追得回
-   真实跑的那版代码。脏工作树 `record.py` 会打 ⚠️ 但不拦你——追溯断链是你自己的损失。
-   仓库根 `run.py` 从这里往前顶了一步：注册表里的 GPU/发射类任务出命令前查
-   `git status`，脏树直接拒绝（`--allow-dirty` 逃生）——2026-08-02 起的硬门禁。
-2. **`python3 run.py launch`**：
+1. **Commit the code**. The git HEAD stored in the experiment record can only trace back to
+   the actual code that ran when the working tree is clean. `record.py` prints a ⚠️ on a dirty
+   working tree but does not block you — a broken trace is your own loss.
+   `run.py` at the repo root pushes one step further from here: for GPU/launch-class tasks in
+   the registry, it checks `git status` before producing the command, and a dirty tree is
+   refused outright (`--allow-dirty` is the escape hatch) — a hard gate in force since 2026-08-02.
+2. **`python3 run.py launch`**:
    ```bash
-   python3 run.py launch <task> [任务参数...] --run-id <run_id> --track <方向> \
+   python3 run.py launch <task> [task args...] --run-id <run_id> --track <direction> \
      --piece <host>:<gpus> [--piece <host2>:<gpus2> ...] [--note "..."] \
-     [--outdir <产物目录>] [--stall-line 秒] [--escalate-line 秒] \
-     [--warmup-line 秒] [--service]
+     [--outdir <output dir>] [--stall-line seconds] [--escalate-line seconds] \
+     [--warmup-line seconds] [--service]
    ```
-   一条命令做完发射流水线钉死的十步（顺序见 `ops/launch_cmd.py` 头注释）：
-   解析参数 → 脏树门禁 → pieces 解析（多分片要任务在注册表里标了
-   `shardable: True` 才许多个 `--piece`，会自动往每个分片注入
-   `--shard-id i --num-shards N`）+ session/log 命名（session 名
-   `new1_<run_id>_t<host去掉tokyo前缀>g<gpu>`，日志
-   `<workdir>/logs/<session>.log`）→ 逐 piece 实探非 FREE 就整次拒绝（一张
-   占用都不发射）→ tmux 发射 → 30 秒验活窗口（全部 piece 见到日志字节数增长
-   即提前通过；窗口到时 session 没了或 tail 出现 Traceback 才算失败——已发射
-   的不回滚也不登记，失败会把每个失败分片的日志末 40 行打出来）→ 台账
-   `ops/jobs.json`、实验记录 `ops/runs.jsonl`（经 `record.py start` 子进程）、
-   产物目录 `RUNMETA.json` 三处登记一次做完（`ops/launch_common.py`
-   `register_all`，顺序固定 RUNMETA→台账→记录：RUNMETA 排最前，发射已经
-   真实发生，产物钉代码先落盘，后面台账/记录拒绝（重复 run_id）也不会把它
-   连带丢掉；RUNMETA 写失败只 WARN，台账/记录任何一步失败原样往外抛，
-   不吞）。`register_all` 是 RUNMETA 的唯一写手：两个排卡发射器
-   `launch-probe` / `launch-eval` 把产物目录、kind（`train` / `eval_tool` /
-   `eval_call`）和 session/gpu/log/排卡表交给它写，回执里有 `RUNMETA: <路径>`
-   一行；只有 `run.py launch` 没给 `--outdir` 时才会看到
-   `WARN 没给 --outdir，RUNMETA 没写`，那才是真没写。2026-08-26 之前两个排卡
-   发射器各自先写一条再调 `register_all`，回执里那句 WARN 是误报，按它手补
-   `runmeta` 会在同一份 RUNMETA 里留两条重复记录（np821 批实录）。
-   手打三条登记命令的流程不存在了。
-   `--run-id`/`--track` 必填（`record start` 硬要求，`--track` 要和
-   `TIMELINE.md` 里的方向对得上）；给了 `--outdir` 才写 RUNMETA，没给只打一行
-   `WARN`（产物目录事后才能确定的任务，回头自己补
-   `python3 run.py runmeta <产物目录> --cmd '<完整命令>' --kind <kind>`；
-   kind 是自由字符串，launch 自动登记写 `launch`，两个排卡发射器写
-   `train` / `eval_<阶段>`，手搓补录照这批值挑一个贴切的）。
-   注册表外的一次性命令走 `--cmd '<完整命令>' --workdir <dir>` 逃生口，不查
-   TASKS，命令原样进 tmux，登记照做。
-   分片死了要重发同一 session（补射）：
-   `python3 run.py launch --refire <run_id> --idx <N> [--piece host:gpus]`——
-   不新开 record、不重复 register，只改台账该 piece 的 host/gpus/log/
-   launched_at 四元组。
-3. **交监控入口**：`launch` 发射成功会自己打印这两条，确认它们出现在给
-   用户的回复里（这是用户亲自监控的入口）：
+   One command does all ten steps pinned into the launch pipeline (order is in the head
+   comment of `ops/launch_cmd.py`): parse args → dirty-tree gate → piece parsing (multiple
+   pieces require the task to be marked `shardable: True` in the registry; each piece
+   automatically gets `--shard-id i --num-shards N` injected) + session/log naming
+   (session name `new1_<run_id>_t<host with the tokyo prefix stripped>g<gpu>`, log
+   `<workdir>/logs/<session>.log`) → probe each piece for real, and refuse the entire launch
+   if any is non-FREE (not a single occupied card gets launched) → fire in tmux → a 30-second
+   liveness window (every piece passes early as soon as its log byte count grows; a failure is
+   only counted if the session is gone or a Traceback shows up in the tail by the time the
+   window closes — already-launched pieces are neither rolled back nor registered on failure,
+   and a failure prints the last 40 log lines of each failed piece) → the ledger
+   `ops/jobs.json`, the experiment record `ops/runs.jsonl` (via a `record.py start` subprocess),
+   and the output-directory `RUNMETA.json` — all three registrations done in one pass
+   (`ops/launch_common.py`'s `register_all`, in a fixed order RUNMETA → ledger → record:
+   RUNMETA goes first because the launch has already really happened, so the artifact-to-code
+   pin lands first; if the ledger/record steps later refuse (duplicate run_id) that won't drag
+   RUNMETA down with it; a RUNMETA write failure is only a WARN, while any failure in the
+   ledger/record steps is thrown straight through, never swallowed). `register_all` is the sole
+   writer of RUNMETA: the two queueing launchers `launch-probe` / `launch-eval` hand it the
+   output directory, kind (`train` / `eval_tool` / `eval_call`), and the session/gpu/log/queue
+   table to write, and the receipt carries a `RUNMETA: <path>` line; the
+   `WARN --outdir not given, RUNMETA not written` line only shows up when `run.py launch`
+   wasn't given `--outdir` — that's the only case where it's really not written. Before
+   2026-08-26 the two queueing launchers each wrote one record themselves and then called
+   `register_all`, so that WARN line in the receipt was a false alarm; hand-filling `runmeta`
+   based on it leaves two duplicate records in the same RUNMETA (observed in the np821 batch).
+   The workflow of manually typing three registration commands no longer exists.
+   `--run-id`/`--track` are required (a hard requirement of `record start`; `--track` must
+   match a direction in `TIMELINE.md`); RUNMETA is only written when `--outdir` is given,
+   otherwise it just prints a `WARN` line (for tasks whose output directory can only be
+   determined afterward, fill it in later yourself with
+   `python3 run.py runmeta <output dir> --cmd '<full command>' --kind <kind>`;
+   `kind` is a free-form string — auto-registration by launch writes `launch`, the two
+   queueing launchers write `train` / `eval_<stage>`, and a manual backfill should pick
+   whichever of these values fits).
+   A one-off command outside the registry goes through the `--cmd '<full command>' --workdir <dir>`
+   escape hatch: it skips the TASKS lookup, the command goes into tmux as-is, and registration
+   still happens.
+   When a piece dies and needs to be relaunched in the same session (refire):
+   `python3 run.py launch --refire <run_id> --idx <N> [--piece host:gpus]` — this does not
+   start a new record or register again, it only updates that piece's host/gpus/log/
+   launched_at quadruple in the ledger.
+3. **Hand off the monitoring entry point**: a successful `launch` prints these two lines
+   itself; make sure they appear in the reply to the user (this is the entry point for the
+   user's own monitoring):
    ```bash
-   cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs           # 看一眼
-   cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs watch     # 30s 自动刷新
+   cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs           # one look
+   cd /home/y-guo/reproduce/new1 && python3 run.py gpu-jobs watch     # auto-refresh every 30s
    ```
-   表里有每个分片的进度、实测速率、ETA、tmux 存活状态。
-   **两条命令末尾都会列"台账外 tmux session"**（裸 `gpu-jobs` 与 `watch` 走的是
-   同一个 `collect(with_extras=True)`），扫的是固定四台机器
-   `tokyo105/106/107/108`——不是只扫台账里已有的 host，所以台账为空时也照样能
-   看见漏 register 的 session 或别的对话在跑的东西。
-   外加浏览器 `http://localhost:8377`（ssh 端口转发）：后台采样器（下一节）
-   自己起的网页，展示的是 `ops/verdicts.py` 算出来的六格判定
-   （健康/变慢/warm-up 中/疑似卡死/已挂/已完成），`/json` 路径出机器可读的
-   同一份数据——终端 `gpu-jobs`/`watch`/`json` 三个出口已经接读这份采样历史
-   （工单 07，口径见 `references/monitor-methodology.md`）：`latest.json`
-   在 5 分钟新鲜度门槛内就直接渲染判定，过期退回现场实探老路（tail 日志/
-   ssh 探 session），不必再单独去开网页看。
+   The table shows each piece's progress, measured rate, ETA, and tmux liveness.
+   **Both commands also list "tmux sessions outside the ledger" at the end** (bare `gpu-jobs`
+   and `watch` both go through the same `collect(with_extras=True)`), which scans the fixed
+   four machines `tokyo105/106/107/108` — not just the hosts already in the ledger — so even
+   when the ledger is empty you can still see a session that missed registration or something
+   another conversation is running.
+   Plus the browser at `http://localhost:8377` (via ssh port forwarding): a web page the
+   background sampler (next section) runs itself, showing the six-cell verdict computed by
+   `ops/verdicts.py` (healthy / slow / warming up / suspected stall / dead / done); the `/json`
+   route serves the same data in a machine-readable form — the terminal outlets
+   `gpu-jobs`/`watch`/`json` already read from this sampling history (ticket 07; see
+   `references/monitor-methodology.md` for the exact rules): within a 5-minute freshness
+   threshold `latest.json` is rendered directly as the verdict, and past that it falls back to
+   the old path of probing on the spot (tailing logs / probing the session over ssh) — there's
+   no need to separately open the web page to check.
 
-## Phase 5 — 采样器接管（Claude 不再常设巡检）
+## Phase 5 — The sampler takes over (Claude no longer does standing patrols)
 
-判定、升级由后台采样器负责（`ops/sampler.py` 每 `sample_interval_s`
-（默认 60 秒）读一轮全部心跳，按 `ops/verdicts.py` 算出每个分片的判定/速率/
-ETA，写进它自己的状态文件（`latest.json`，网页出口直接读这份；口径见
-`references/monitor-methodology.md`）——不用再靠 Claude 定时排程巡检。
+Verdicts and escalation are the responsibility of the background sampler (`ops/sampler.py`
+reads all heartbeats once every `sample_interval_s` (default 60 seconds), computes each
+piece's verdict/rate/ETA using `ops/verdicts.py`, and writes them into its own state file
+(`latest.json`, which the web outlet reads directly; see `references/monitor-methodology.md`
+for the exact rules) — there's no more need to rely on Claude scheduling periodic patrols.
 
-Claude 只在两种时机派只读的 `job-monitor` agent 读采样结果
-（`python3 run.py gpu-jobs json`——5 分钟新鲜度门槛内直接吐采样器的判定，
-过期自动退回现场实探；网页 `http://localhost:8377/json` 是同一份数据的
-另一个出口，两边选一个读就够）：
-1. 用户问起进度/ETA/是不是卡住了；
-2. 事故记录（`incidents.jsonl`）里有新内容（说明采样器至少判过一次升级）。
+Claude only dispatches the read-only `job-monitor` agent to read the sampling results
+(`python3 run.py gpu-jobs json` — within the 5-minute freshness threshold it directly outputs
+the sampler's verdict, and past that it automatically falls back to probing on the spot; the
+web page `http://localhost:8377/json` is another outlet for the same data, either one is
+enough to read) at two moments:
+1. the user asks about progress/ETA/whether something is stuck;
+2. there is new content in the incident record (`incidents.jsonl`) (meaning the sampler has
+   judged at least one escalation).
 
-**事故 agent 自动验尸补射：已接线、未经真实演练。** `ops/sampler.py` 的
-`should_trigger`（触发规则纯函数）与 `maybe_trigger_incidents`（命中后拉
-agent）在 2026-08-08 经用户授权由主会话实装：升级发生时先把事故记录写进
-`incidents.jsonl`，再拉起一个无头 `claude` 子进程（模型钉 opus，detach 不
-等待，输出写进 `monitor/incidents/<事故编号>.out`），同时标记
-`incident_open` 防止同一事故每轮重复拉起。手动演练经用户裁决取消——全链
-只有单测背书，没有真实拉过一次 agent，第一次真实事故发生时这条链是首跑。
-发现升级仍可以靠人或 Claude 主动巡检去看，读日志定位死因，能修则用
-`python3 run.py launch --refire <run_id> --idx <N>` 补射。
+**Incident-agent auto-autopsy-and-refire: wired up, never rehearsed for real.**
+`ops/sampler.py`'s `should_trigger` (a pure function for the trigger rule) and
+`maybe_trigger_incidents` (which pulls in an agent once triggered) were implemented by the
+main conversation on 2026-08-08 with the user's authorization: when an escalation happens, it
+first writes an incident record into `incidents.jsonl`, then spawns a headless `claude`
+subprocess (model pinned to opus, detached and not waited on, output written to
+`monitor/incidents/<incident id>.out`), and simultaneously marks `incident_open` to keep the
+same incident from pulling in an agent again on every subsequent round. A manual rehearsal was
+called off by the user's own decision — the whole chain is backed only by unit tests, no agent
+has ever really been pulled in, and this chain will be running for the first time whenever the
+first real incident happens. An escalation can still be caught by a human or by Claude actively
+patrolling, reading the logs to pin down the cause of death, and refiring with
+`python3 run.py launch --refire <run_id> --idx <N>` if it can be fixed.
 
-## Phase 6a — 正常收尾（强制五连）
+## Phase 6a — Normal wrap-up (mandatory five-step)
 
-1. **汇报**：结果文件在哪、条数对不对（分片合并后 count == total）、
-   关键数字一句话。
-2. **记数字**：
+1. **Report**: where the result files are, whether the counts are right (count == total after
+   merging pieces), and the key numbers in one line.
+2. **Record the numbers**:
    ```bash
    python3 run.py record finish <run_id> --metric <k=v> [--metric ...] \
-     --data <最终数据路径> --conclusion "一句话结论"
+     --data <path to final data> --conclusion "one-line conclusion"
    ```
-   数字自动进 `RESULTS.md`。**如果这个结论动了 `WORKPLAN.md` 里任何一条判断，
-   同时往 `TIMELINE.md` 最上面追加一条方向决策**（写清决定了什么、被哪个 run_id
-   触发、作废了什么）。纯进度推进不用记 TIMELINE，那是 `plans/` worklog 的活。
-3. **释放**：杀掉所有残留 tmux session / vLLM 服务，
-   `nvidia-smi` 确认显存归零。批量任务结束不许占卡过夜。
-4. **销号**：`python3 run.py gpu-jobs finish <task>`。
-   session 还活着它会**拒绝销号**并把活着的 session 名列出来——先确认是不是真跑完了
-   （踩过的坑：16:52 销号，任务实际跑到 18:17）。
-   **探测失败也一样拒绝**（fail-closed）：ssh 连不上那台机时它分不清 session 是死是活，
-   会列出探测失败的 host 并退出，不会当成"没有 session"放行。
-   两种拒绝的逃生口是同一个：`finish <task> --force`（会在 history 里打 `force_finished` 标记）。
-5. **提交**：`git add` 本次改的代码 + 三个台账文件 `ops/runs.jsonl` + `RESULTS.md` +
-   `ops/jobs.json`(+ `TIMELINE.md` 如有)，commit message 里带上 run_id。
-   **提交台账是为了历史保全**——把这次跑的数字与台账变动钉进 git 历史，
-   以后 `git log` 能查到哪一版账对应哪一次实验。
-   它已经**不是**"下一次发射靠它"了：2026-08-02 起这三个文件加 `ops/*.lock`
-   在脏树门禁里走白名单豁免（`run.py` 的 `LEDGER_PATHS`，`ops/record.py` 与
-   `ops/runmeta.py` 各有一份同名单），台账没提交也不会拦住下一枪。
+   The numbers go into `RESULTS.md` automatically. **If this conclusion changes any judgment in
+   `WORKPLAN.md`, also append a direction decision to the top of `TIMELINE.md`** (write clearly
+   what was decided, which run_id triggered it, and what it invalidates). Plain progress does
+   not need a TIMELINE entry — that's the job of the `plans/` worklog.
+3. **Release**: kill every leftover tmux session / vLLM service, and confirm with `nvidia-smi`
+   that VRAM is back to zero. A batch job must not hold a card overnight after it finishes.
+4. **Deregister**: `python3 run.py gpu-jobs finish <task>`. It **refuses to deregister** if a
+   session is still alive and lists the alive session names — check first whether the job
+   actually finished (a mistake hit before: deregistered at 16:52 while the job actually ran
+   until 18:17).
+   **A probe failure gets the same refusal** (fail-closed): when ssh can't reach a host, it
+   can't tell whether the session is dead or alive, so it lists the hosts whose probe failed
+   and exits, instead of treating them as "no session" and letting it through.
+   Both kinds of refusal share the same escape hatch: `finish <task> --force` (which stamps a
+   `force_finished` marker in the history).
+5. **Commit**: `git add` the code changed this time plus the three ledger files
+   `ops/runs.jsonl` + `RESULTS.md` + `ops/jobs.json` (+ `TIMELINE.md` if any), with the run_id
+   in the commit message.
+   **Committing the ledger is for historical preservation** — it pins this run's numbers and
+   ledger changes into git history, so `git log` can later look up which version of the ledger
+   corresponds to which experiment.
+   It is **no longer** "needed for the next launch to work": since 2026-08-02 these three files
+   plus `ops/*.lock` are on a whitelist exemption in the dirty-tree gate (`run.py`'s
+   `LEDGER_PATHS`, with `ops/record.py` and `ops/runmeta.py` each keeping their own copy of the
+   same list) — an uncommitted ledger will not block the next launch.
 
-## Phase 6b — 中途中断（用户喊停或巡检判死）
+## Phase 6b — Interrupted midway (the user calls a stop, or a patrol judges it dead)
 
-1. 逐分片 `ssh <host> tmux kill-session -t <session>`。
-2. `nvidia-smi` 确认显存已释放。
-3. 汇报已完成到哪、日志和半成品输出在哪、可否断点续跑。
-4. `finish <task>` 销号，台账 history 里留档。
+1. Per piece, `ssh <host> tmux kill-session -t <session>`.
+2. Confirm with `nvidia-smi` that VRAM has been released.
+3. Report how far it got, where the logs and partial output are, and whether it can be resumed
+   from a checkpoint.
+4. `finish <task>` to deregister, keeping a record in the ledger history.
 
-## 铁律
+## Hard rules
 
-- 台账只通过 `run.py gpu-jobs register/finish` 读写，不手改 jobs.json。
-- 占用状态永远 Phase 1 现场实探，档案文件只记慢变量。
-- 一个任务一个 name，重名先 finish 旧的。
-- 统计数字只通过 `run.py record start/finish` 写；`RESULTS.md` 是渲染产物，
-  手改会在下次 render 时被覆盖。`runs.jsonl` 只增不改。
-- run_id 是贯穿主键：原始数据目录名 / tmux session / 台账 name / commit
-  message 四处一致，缺一处就断一条追溯路径。
+- The ledger is only read and written through `run.py gpu-jobs register/finish`; never
+  hand-edit jobs.json.
+- Occupancy state is always probed live in Phase 1; the log file only records slow variables.
+- One name per job; if a name is reused, finish the old one first.
+- Numbers are only ever written through `run.py record start/finish`; `RESULTS.md` is a
+  rendered artifact, and a hand edit gets overwritten on the next render. `runs.jsonl` is
+  append-only, never edited.
+- run_id is the primary key running through everything: the raw data directory name / tmux
+  session / ledger name / commit message must all match — missing one breaks a link in the trace.

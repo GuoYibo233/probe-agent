@@ -1,24 +1,24 @@
-# 回放评测 — bfcl
-- 温度 T=1.522
-- test 事件数 226;频率先验基线 0.049
+# Replay evaluation -- bfcl
+- Temperature T=1.522
+- 226 test events; frequency-prior baseline 0.049
 
-- **风险≤0.1** θ=0.725: coverage 0.8894 (CI (0.8313, 0.9498)), 触发精度 0.8955 (CI (0.8488, 0.9333)), earliness 0.6897 (CI (0.6291, 0.751)), 错误投机率 0.0929
-- **风险≤0.05** θ=0.95: coverage 0.5929 (CI (0.4862, 0.6912)), 触发精度 0.9925 (CI (0.9759, 1.0)), earliness 0.6152 (CI (0.5655, 0.6708)), 错误投机率 0.0044
+- **Risk<=0.1** theta=0.725: coverage 0.8894 (CI (0.8313, 0.9498)), trigger accuracy 0.8955 (CI (0.8488, 0.9333)), earliness 0.6897 (CI (0.6291, 0.751)), wrong-speculation rate 0.0929
+- **Risk<=0.05** theta=0.95: coverage 0.5929 (CI (0.4862, 0.6912)), trigger accuracy 0.9925 (CI (0.9759, 1.0)), earliness 0.6152 (CI (0.5655, 0.6708)), wrong-speculation rate 0.0044
 
-## 深度桶 acc(样本级,诊断)
+## Depth-bucket acc (sample-level, diagnostic)
 {"0.0": 0.729, "0.1": 0.731, "0.2": 0.751, "0.3": 0.801, "0.4": 0.789, "0.5": 0.799, "0.6": 0.826, "0.7": 0.841, "0.8": 0.861, "0.9": 0.868}
 
-## stop-time 校准(首次触发点)
+## Stop-time calibration (first firing point)
 {"0.9-1.0": {"n": 134, "mean_conf": 0.975, "acc": 0.993}}
 
-## 投机经济换算(T4 离线估算,口径对齐 T10 fork 对照)
-| 口径 | θ | 期望省 token 比例(截断) | 期望重叠延迟比例(预取) |
+## Speculation economics conversion (T4 offline estimate, basis aligned with the T10 fork control)
+| basis | theta | expected token-saving ratio (truncation) | expected overlap-latency ratio (prefetch) |
 |---|---|---|---|
-| test 风险≤0.1 | 0.725 | 0.6134 | 0.5388 |
-| test 风险≤0.05 | 0.95 | 0.3648 | 0.3608 |
+| test risk<=0.1 | 0.725 | 0.6134 | 0.5388 |
+| test risk<=0.05 | 0.95 | 0.3648 | 0.3608 |
 
-calB 全 θ 档:
-| θ | 省 token | 重叠延迟 |
+calB, all theta values:
+| theta | tokens saved | overlap latency |
 |---|---|---|
 | 0.5 | 0.7046 | 0.5846 |
 | 0.525 | 0.6967 | 0.5778 |

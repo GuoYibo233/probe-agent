@@ -1,120 +1,120 @@
-# 2026-08-28 草稿：缓存复用训练器的裁决与骨架（第五轮讨论的暂存）
+# 2026-08-28 draft: the cache-reuse trainer's rulings and skeleton (staging area for round 5 discussion)
 
-这份文件是 2026-08-28 第五轮讨论的暂存，目的是让 compact 之后的对话不用重读上下文就能接着做。第五轮接在 `plans/2026-08-28-plan.md` 的第一到第十四节后面（第十二到第十四节是另一个会话在同一天做的 np821 复盘，第五轮读过并且吸收了）。文件分四块：第一节是目标，第二节是已经锁定的裁决，第三节是骨架和每步的状态，第四节是这一轮实测出来的事实。到写这份文件为止仓库代码一行没改，HEAD 仍是 `dddd4da`，这一轮没有发射任何 GPU 任务，只在 CPU 上跑了分词器检查。
+This file is the staging area for round 5 of discussion on 2026-08-28, meant so a conversation after a compact does not need to reread the context to keep going. Round 5 follows sections 1 through 14 of `plans/2026-08-28-plan.md` (sections 12 through 14 are the np821 review another session did the same day, which round 5 has read and absorbed). The file has four blocks: section 1 is the goal, section 2 is the rulings already locked in, section 3 is the skeleton and each step's status, section 4 is the facts measured this round. As of writing this file, not one line of the repo's code has changed; HEAD is still `dddd4da`; this round has not launched any GPU task, only run tokenizer checks on CPU.
 
-## 一、目标（gyb 已确认）
+## I. Goal (confirmed by gyb)
 
-这一轮的产物是一个新的训练程序，终点是冒烟通过。新程序做四件事：一个事件的全文只过一遍底座，每个切点的目标段接在共享的前缀后面算损失，也就是 `plans/2026-08-28-plan.md` 第 10.2 节的思路一；不再截断任何样本，全文超过上限的事件整条丢弃并且计数；上限从 4096 改成候选 8192；cgen 和 cparam 的训练遍数固定 1 个 epoch。
+This round's deliverable is a new training program, ending when it passes smoke testing. The new program does four things: an event's full text passes through the base model only once, and each cut point's target segment is appended after the shared prefix to compute loss, which is idea one in `plans/2026-08-28-plan.md` section 10.2; no sample is truncated any more, an event whose full text exceeds the cap is dropped whole and counted; the cap changes from 4096 to a candidate value of 8192; cgen and cparam's number of training passes is fixed at 1 epoch.
 
-范围：缓存复用做 cgen，cparam 用同一套代码（`train_causal_param.py` 第 152 到 166 行核对过，cparam 每一行的输入是 text 加分隔串加工具名加左括号，目标是参数串加结束符，和 cgen 同一个结构）；丢弃、上限、epoch 这三项改动三个格都吃；评测端只做被新训练器逼着改的部分。
+Scope: cache reuse is done for cgen, and cparam uses the same code (checked against `train_causal_param.py` lines 152 through 166: cparam's input per row is text plus separator string plus tool name plus open parenthesis, target is the parameter string plus end token, the same structure as cgen); the three changes, drop, cap, epoch, apply to all three cells; the eval side only changes the parts the new trainer forces it to change.
 
-成功的样子：随机抽事件，新训练器算出的逐行 loss 和现有逐行训练器算出的逐行 loss 差值在容差以内；H100 上的冒烟里新训练器每秒处理的行数高于现状的 2.75 行（`plans/2026-08-28-plan.md` 第 9.2 节 A_h100 冒烟第 50 次更新的 `ips`），显存峰值余量 10% 以上。
+What success looks like: for randomly drawn events, the row-by-row loss the new trainer computes differs from the existing row-by-row trainer's row-by-row loss within tolerance; in smoke testing on H100, the new trainer's rows-per-second exceeds the current 2.75 rows (`plans/2026-08-28-plan.md` section 9.2, A_h100 smoke test's `ips` at update 50), with at least 10% headroom on the memory peak.
 
-## 二、已锁定的裁决
+## II. Rulings already locked in
 
-每条写裁决本身和讨论里真正定下来的那条理由。
+Each entry gives the ruling itself and the reason actually settled on in discussion.
 
-### 2.1 上限候选 8192，冒烟定，组批按 token 预算动态定
+### 2.1 Cap candidate 8192, fixed by smoke testing; batches are sized dynamically by token budget
 
-TIMELINE 记成「上限候选 8192，冒烟用 8192 以内最长的事件量峰值，H100 余量不足 10% 就退到 6144；组批按 token 预算动态定，特别长的事件单独成一批」。
+TIMELINE records this as "cap candidate 8192, smoke testing measures the peak using the longest event within 8192, falling back to 6144 if H100's headroom is under 10%; batches are sized dynamically by token budget, with an especially long event forming its own batch."
 
-理由：gyb 最初想直接定 6144，依据是「8192 配合一次两条太慢」，这个数来自旧的逐行训练器（第 9.2 节：每批 2 行的 B_h100 每秒 1.45 行，对 A_h100 的 2.75 行）。新训练器里没有「一次两条」这回事，一批放几个事件按 token 预算定。上限 6144 和 8192 在 train 里只差 58 个事件（第四节的表：6144 丢 58 个事件，8192 丢 1 个），这 58 个事件按每个 7,000 个 token 估算合计约 40 万个，占 7,008,045 个前缀 token 的 6% 以内，所以上限不决定速度。上限决定的是两件事：最长一个事件单条过底座、连带平均 45 个目标段的计算图留到反向传播的时候的显存峰值（8192 和 6144 都没有量过）；评测要丢多少 test 事件（8192 丢 16 个事件 1,024 行 0.26%，6144 丢 218 个事件 13,728 行 3.50%）。gyb 的原话是「总之动态一些，防止炸了显存，特别长的单独处理也是一种办法」。
+Reason: gyb's first instinct was to set 6144 directly, based on "8192 with two at a time is too slow," a number from the old row-by-row trainer (section 9.2: B_h100 at 2 rows per batch does 1.45 rows per second, against A_h100's 2.75). The new trainer has no such thing as "two at a time"; how many events go in one batch is set by the token budget. The cap of 6144 versus 8192 only differs by 58 events in train (the table in section 4: 6144 drops 58 events, 8192 drops 1), and these 58 events, estimated at about 7,000 tokens each, total roughly 400,000, within 6% of the 7,008,045 prefix tokens, so the cap does not determine speed. What the cap determines is two things: the memory peak when the single longest event passes through the base model along with the computation graph for an average of 45 target segments held until the backward pass (neither 6144 nor 8192 has been measured); and how many test events get dropped in evaluation (8192 drops 16 events, 1,024 rows, 0.26%; 6144 drops 218 events, 13,728 rows, 3.50%). gyb's own words were "keep it dynamic in general, so it doesn't blow up memory; handling especially long ones separately is one way to do it too."
 
-### 2.2 更新单位：8 个事件一次更新，三个格同口径
+### 2.2 Update unit: 8 events per update, same convention across all three cells
 
-一次参数更新是 2 个逻辑小批，每个逻辑小批 4 个事件，损失是这 4 个事件全部行的交叉熵平均（行在小批内等权，小批之间等权），和现在 ctool 的写法逐字相同（`train_causal_tool.py` 第 404 到 429 行），只是累积次数从 8 改成 2。显存动态化放在物理层：一个逻辑小批的 4 个事件按 token 预算拆成 1 到 4 次前向，每次前向的行 loss 求和以后除以这个逻辑小批的总行数，梯度和一次算完完全一样。一个 epoch 是 516 次更新（4,126 个事件 ÷ 8），cgen 一次更新约 360 行。三个格用同一个更新单位，ctool 自己也从 32 个事件改成 8 个，和 np821 的 ctool 不再同口径。
+One parameter update is 2 logical mini-batches, each of 4 events; the loss is the average cross-entropy over all rows of these 4 events (rows weighted equally within a mini-batch, mini-batches weighted equally against each other), character-for-character the same as ctool's current code (`train_causal_tool.py` lines 404 through 429), except the accumulation count changes from 8 to 2. Memory dynamics are handled at the physical layer: a logical mini-batch's 4 events are split into 1 to 4 forward passes by token budget, and each forward pass's summed row loss is divided by that logical mini-batch's total row count, giving exactly the same gradient as computing it all at once. One epoch is 516 updates (4,126 events ÷ 8), and one cgen update is about 360 rows. All three cells use the same update unit; ctool itself also changes from 32 events to 8, no longer matching np821's ctool convention.
 
-理由：一次更新的行数越接近旧口径的 32 行，学习率越不用往外推。32 个事件一次更新（约 1,450 行，45 倍）的时候三条线交出来的估计是 5e-5，8 个事件（约 360 行，11 倍）的时候平方根规则给出 1e-5 到 3.3e-5，落回已经跑通的量级。文献里扫过批大小的 SFT 来源也偏小批（`plans/archive/2026-08-26-hparam-survey.md` 第 2.4 节：Massive SFT 从 {32, 64, 128, 256} 里选了 32，LoRA Without Regret 建议有效批小于 32）。gyb 的原话是「那给更新的一次弄得少一点吧 感觉太多了」。
+Reason: the closer one update's row count is to the old convention's 32 rows, the less the learning rate needs to be extrapolated. At 32 events per update (about 1,450 rows, 45x), the three lines of reasoning converge on an estimate of 5e-5; at 8 events (about 360 rows, 11x), the square-root rule gives 1e-5 to 3.3e-5, falling back into an already-proven range. SFT sources surveyed in the literature also lean toward small batches (`plans/archive/2026-08-26-hparam-survey.md` section 2.4: Massive SFT picked 32 from {32, 64, 128, 256}, LoRA Without Regret recommends an effective batch under 32). gyb's own words were "let's make the update size smaller then, it feels like too much."
 
-作废的候选：32 个事件一次更新（和 np821 的 ctool 完全一致）、4 个事件一次更新、16 个事件一次更新。
+Candidates dropped: 32 events per update (exactly matching np821's ctool), 4 events per update, 16 events per update.
 
-### 2.3 学习率：默认值不动，冒烟之后扫描定
+### 2.3 Learning rate: default unchanged, sweep to be decided after smoke testing
 
-代码里的默认值不动：全参 1e-5（`train_causal_callgen.py` 第 82 行 `FULL_LR`），LoRA 2e-4（`lora_util.py`）。冒烟只量速度和显存，学习率是多少不影响。新训练器冒烟过了之后做扫描，按 val_ce 挑最好的写成新默认值：
+The code's default values are unchanged: full-parameter 1e-5 (`train_causal_callgen.py` line 82, `FULL_LR`), LoRA 2e-4 (`lora_util.py`). Smoke testing only measures speed and memory; the learning-rate value does not affect it. After the new trainer passes smoke testing, a sweep will be run, picking the best by val_ce and writing it in as the new default:
 
-- 最小版本扫两组：0.6B 全参的 cgen 扫 {1e-5, 2e-5, 5e-5}，1.7B LoRA 的 cgen 扫 {1e-4, 2e-4, 5e-4}，各 1 个 epoch，同一模式里的尺寸沿用。
-- 如果冒烟量出来一个 epoch 只要几小时，升级成每个底座各扫一组（4 个底座 × 3 个值 = 12 次 1 个 epoch 的训练），每个尺寸在自己的最优点上比，这是 Tulu 3 和 OLMo 2 的做法。
+- The minimum version sweeps two groups: 0.6B full-parameter cgen sweeps {1e-5, 2e-5, 5e-5}, 1.7B LoRA cgen sweeps {1e-4, 2e-4, 5e-4}, 1 epoch each, with sizes following the same mode.
+- If smoke testing shows one epoch only takes a few hours, upgrade to sweeping one group per base model (4 base models x 3 values = 12 runs of 1-epoch training), comparing each size at its own optimum, the approach Tulu 3 and OLMo 2 use.
 
-理由：调研报告第 4 节末尾的结论是没有任何来源在 Qwen3-Base 上扫过 SFT 学习率，文献里的做法全是固定别的设定、对数刻度取 3 个值、按验证集挑。要分开扫的是全参和 LoRA 两种模式（最优值差 10 倍），不是三个尺寸：三个底座宽度 1024 / 2048 / 2560，按 arXiv 2602.06204 的 n^(−1/2) 公式 4B 的最优值是 0.6B 的 0.63 倍，比扫描网格相邻两档的 2 到 2.5 倍还小。gyb 的原话是「那我觉得扫描吧」。
+Reason: the survey report's section 4 concludes that no source has swept the SFT learning rate on Qwen3-Base; every approach in the literature fixes other settings, takes 3 values on a log scale, and picks by validation set. What needs a separate sweep is the two modes, full-parameter and LoRA (whose optima differ 10x), not the three sizes: the three base models' widths are 1024 / 2048 / 2560, and by arXiv 2602.06204's n^(-1/2) formula, 4B's optimum is 0.63 times 0.6B's, smaller than the 2 to 2.5x gap between adjacent tiers on the sweep grid. gyb's own words were "then I think sweep it."
 
-扫描要用到的仓库事实（第五轮读日志得到）：ctool 三个批次在「32 个事件一次更新、1e-5」下 `calA_weighted_acc` 三个 epoch 末分别是 b06 0.6279 / 0.6773 / 0.6883，b17 0.6462 / 0.6749 / 0.6867，l17 0.6508 / 0.6702 / 0.6974（各 run 的 `train_log.jsonl` eval 事件）；cgen b06 的 step 事件 `loss`（最近 50 次更新的全部小批损失的平均，`train_causal_callgen.py` 第 513 到 515 行）第 50 次 2.0384、第 200 次 0.24、第 1,000 次 0.0791、第 5,800 次 0.006。
+Repository facts needed for the sweep (obtained by round 5 reading the logs): under "32 events per update, 1e-5," ctool's three batches' `calA_weighted_acc` at the end of three epochs are b06 0.6279 / 0.6773 / 0.6883, b17 0.6462 / 0.6749 / 0.6867, l17 0.6508 / 0.6702 / 0.6974 (each run's `train_log.jsonl` eval events); cgen b06's step event `loss` (the average loss over all mini-batches in the last 50 updates, `train_causal_callgen.py` lines 513 through 515) is 2.0384 at update 50, 0.24 at update 200, 0.0791 at update 1,000, 0.006 at update 5,800.
 
-### 2.4 分词口径：公共前缀规则
+### 2.4 Tokenization convention: the common-prefix rule
 
-每一行照旧训练器的办法分词（行文本加分隔串一起分，目标串另接），拿这串 token 从头和事件全文的 token 逐个比，相同的那一段共享缓存，剩下的尾巴和分隔串、目标串一起作为这一行的目标段。cparam 的尾巴是分隔串加工具名加左括号，同一条规则。
+Each row is tokenized the old trainer's way (row text plus separator string tokenized together, target string appended separately); this token sequence is compared token by token against the event's full-text tokens from the start, and the matching segment shares the cache, with the remaining tail plus the separator string and target string together forming this row's target segment. cparam's tail is the separator string plus tool name plus open parenthesis, the same rule.
 
-理由：第四节 4.1 到 4.3 的实测。这条规则让新训练器每一行的 token 序列和旧训练器逐 token 相同，代价只是前缀最后一两个 token 不共享。后果有三个：对齐验收可以直接拿现有逐行训练器当参照，同一行的 loss 逐行比；评测端 cgen 和 cparam 的输入构造不用动（两个评测脚本本来就是行文本加分隔串一起分词）；活跑的前缀截法（第 13.8 节）不受影响。
+Reason: the measurements in section 4, 4.1 through 4.3. This rule makes the new trainer's per-row token sequence match the old trainer's token for token, at the cost of only the last token or two of the prefix not being shared. Three consequences follow: the alignment acceptance check can directly use the existing row-by-row trainer as a reference, comparing loss row by row on the same row; the eval side's cgen and cparam input construction needs no change (both eval scripts already tokenize row text plus separator string together); the live-run prefix-truncation method (section 13.8) is unaffected.
 
-### 2.5 epoch 数按格各自定（按 Claude 推荐锁定，gyb 2026-08-28 授权「先给待我定的都订好」）
+### 2.5 Epoch count set per cell (locked on Claude's recommendation, gyb authorized on 2026-08-28 with "just settle everything you'd otherwise wait on me for")
 
-cgen 和 cparam 用 1 个 epoch，ctool 照旧 3 个，epoch 数保留为每格各自的参数。
+cgen and cparam use 1 epoch, ctool keeps its 3, with epoch count remaining a per-cell parameter.
 
-理由：第 12.7 节的 8 个 cgen/cparam run 的 val_ce 全在 epoch 0 最低；第 12.8 节的 4 个 ctool run 三个 epoch 一路升、epoch 2 还没转平，「1 个 epoch」对 ctool 是有证据的退步，而 ctool 一个 run 只要 1 到 3 小时。第 13.3 节的 6 个 epoch 是另一个实验，不在这一轮。
+Reason: section 12.7's 8 cgen/cparam runs all have their lowest val_ce at epoch 0; section 12.8's 4 ctool runs keep rising over three epochs, not yet flattening at epoch 2, so "1 epoch" is a proven regression for ctool, while one ctool run only takes 1 to 3 hours. Section 13.3's 6 epochs is a separate experiment, not part of this round.
 
-### 2.6 ctool 的读取位置规则在第 5 步一起修（按 Claude 推荐锁定，同上授权）
+### 2.6 ctool's read-position rule gets fixed together at step 5 (locked on Claude's recommendation, same authorization as above)
 
-现在的规则是「结束位置不超过切点的最后一个 token」（`train_causal_tool.py` 第 144 到 149 行，`eval_tool.py` 第 141 到 147 行同一条）。改成：找到跨过切点的那个 token，切点之后的部分全是空白就读这个 token，否则（比如 `ĠNext` 这种带下一个词的）退回前一个 token。
+The current rule is "the last token whose end position does not exceed the cut point" (`train_causal_tool.py` lines 144 through 149, the same rule at `eval_tool.py` lines 141 through 147). It changes to: find the token that crosses the cut point; if everything after the cut point is whitespace, read this token, otherwise (for example `ĠNext`, which carries the start of the next word) back off to the previous token.
 
-理由：第四节 4.4 的实测，6.3% 的切点现在读的是句尾标点前面那个词的位置。训练和离线评测同一条规则，np821 的 ctool 数字内部一致，不算算错，但是「探针读句尾隐状态」这个口径在这 6.3% 上没做到，活跑的时候探针在句尾 token 开火，和训练时读的位置差一个 token。新一版 ctool 反正要按新口径重训，这处修正不多花时间。
+Reason: the measurement in section 4, 4.4: 6.3% of cut points currently read the position of the word before the end-of-sentence punctuation. Training and offline evaluation follow the same rule, so np821's ctool numbers are internally consistent, not miscalculated, but the convention "the probe reads the end-of-sentence hidden state" is not achieved on this 6.3%; during a live run, the probe fires at the end-of-sentence token, one token off from the position read during training. Since the new version of ctool has to be retrained under the new convention anyway, this fix costs little extra time.
 
-### 2.7 新训练器的其他设定
+### 2.7 Other settings for the new trainer
 
-- 每四分之一个 epoch 评一次全量 val_ce、存最好的一版。理由：只训 1 个 epoch 之后 best 的选择会退化成存最后一版（第 13.1 节）；前缀共享之后算一次全量 val_ce 只要过 2,556 个事件，评估变便宜了。
-- step 日志加 `lr` 字段，累加器改成写日志的时候清零（第 13.7 节：现在 `run` 在 epoch 开头清零而除数固定 400，跨 epoch 的第一条 step 的 loss 偏小）。
-- 第 13.4 节的切点抽样不采纳：前缀共享之后 45 个目标段几乎不花算力，权重口径照 ctool（每步等权，08-21 裁决）。
-- 每行在更新里的权重、逻辑小批 4 个事件、物理批按 token 预算拆，见 2.2。
-- 注意力实现打算用「ctool 的一次前向，序列后面再接上全部目标段，用一张注意力掩码让第 k 段只看前缀的前 p_k 个位置和自己，位置编号从 p_k 接着数」。这个形态和 ctool 最接近。最脆处：sdpa 带自定义掩码用哪个内核，选错了 8192 的事件会因为注意力矩阵实体化而爆显存，写 spec 之前要在 CPU 或者单卡上验内核选择。
+- Evaluate full val_ce once per quarter epoch, saving the best version. Reason: training only 1 epoch would otherwise degrade the choice of best into just saving the last version (section 13.1); once the prefix is shared, computing one full val_ce only needs passing through 2,556 events, so evaluation becomes cheap.
+- The step log gains an `lr` field; the accumulator now resets to zero when the log line is written (section 13.7: currently `run` resets at the start of the epoch while the divisor is fixed at 400, making the first step's loss after crossing an epoch boundary read artificially low).
+- Section 13.4's cut-point subsampling is not adopted: once the prefix is shared, the 45 target segments cost almost no extra compute; the weighting convention follows ctool (equal weight per step, the 08-21 ruling).
+- Per-row weight within an update, 4 events per logical mini-batch, physical batches split by token budget: see 2.2.
+- The planned attention implementation is "one ctool-style forward pass, with all the target segments appended after the sequence, using one attention mask so that segment k sees only the first p_k positions of the prefix plus itself, with position indices continuing to count up from p_k." This shape is closest to ctool's. The most fragile point: which kernel sdpa picks with a custom mask; picking wrong would materialize the attention matrix and blow up memory on an 8192-token event, so the kernel choice must be verified on CPU or a single card before the spec is written.
 
-## 三、骨架与状态
+## III. Skeleton and status
 
-1. `已锁` TIMELINE 记一条新一版口径（2.1 的原文，加上 2.2 的更新单位、2.5 的 epoch、2.4 的分词规则），和 np821 十二格不同口径。
-2. `已锁` 新训练器的口径细节：2.2 更新单位、2.3 学习率流程、2.4 分词规则、2.7 其他设定。
-3. `待过` 把裁决写成 spec 和工单，放 `.scratch/kvshare-train/`（`spec.md` 加 `issues/NN-<名字>.md`，约定见 `docs/agents/issue-tracker.md`）。spec 要写：缓存复用的前向设计和注意力掩码（含内核选择的验证结果）、按 token 预算拆物理批、公共前缀规则、对齐验收的定义（随机抽事件，逐行 loss 对比现有逐行训练器，容差照 ctool 的 `--align-tol 3e-4` 那条线定）、三个格的丢弃规则、每四分之一 epoch 评估、日志字段、ctool 读取位置规则。为什么先写 spec：第 4 到 6 步要派 subagent 并行实现，没有 spec 每个实现者各猜一套口径。
-4. `待过` 实现缓存复用训练器（cgen 和 cparam 共用一份），挂 `run.py` 注册表（扩展清单在 `.claude/skills/probe-pipeline/references/extending.md`）。
-5. `待过` 三个训练器的截断改成按事件全文超过上限整条丢弃并计数，`--max-len` 默认改成候选值，cgen 和 cparam 的 epoch 默认改 1，ctool 的读取位置规则按 2.6 改。
-6. `待过` 对齐验收：随机抽若干事件，新训练器的逐行 loss 和现有逐行训练器比，差值在容差以内才允许冒烟。
-7. `待过` 冒烟走 gpu-run skill：H100 上新 cgen 训练器量每秒行数和显存峰值，对照 A_h100 的 2.75。冒烟设计要处理第 12.10 节的爬升段（tokyo108 上每个 run 头 2,000 步比稳态慢，b06 cgen 从每秒 2.77 爬到 11.3）：新旧训练器按相同的行数比，不按更新次数比；第 13.2 节的 `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` 可以作为开关一起量。
-8. `待过` `python3 run.py selfcheck` 通过、commit、按 probe-pipeline 的 Phase E 回写 skill。
+1. `locked` TIMELINE records one entry for the new convention (the text of 2.1, plus 2.2's update unit, 2.5's epoch count, 2.4's tokenization rule), a different convention from np821's twelve cells.
+2. `locked` The new trainer's convention details: 2.2's update unit, 2.3's learning-rate process, 2.4's tokenization rule, 2.7's other settings.
+3. `pending` Write the rulings into a spec and tickets, in `.scratch/kvshare-train/` (`spec.md` plus `issues/NN-<name>.md`, convention in `docs/agents/issue-tracker.md`). The spec needs to cover: the cache-reuse forward-pass design and attention mask (including kernel-choice verification results), splitting physical batches by token budget, the common-prefix rule, the definition of alignment acceptance (randomly drawn events, row-by-row loss compared against the existing row-by-row trainer, tolerance set at the same line as ctool's `--align-tol 3e-4`), the drop rule for all three cells, evaluation every quarter epoch, log fields, ctool's read-position rule. Why write the spec first: steps 4 through 6 need to dispatch sub-agents to implement in parallel, and without a spec, each implementer would guess at a different convention.
+4. `pending` Implement the cache-reuse trainer (one shared version for cgen and cparam), registered in `run.py`'s registry (extension checklist in `.claude/skills/probe-pipeline/references/extending.md`).
+5. `pending` Change all three trainers' truncation to whole-event drop-and-count when an event's full text exceeds the cap, change `--max-len`'s default to the candidate value, change cgen and cparam's epoch default to 1, change ctool's read-position rule per 2.6.
+6. `pending` Alignment acceptance: randomly draw some events, compare the new trainer's row-by-row loss against the existing row-by-row trainer's, and only allow smoke testing once the difference is within tolerance.
+7. `pending` Smoke testing goes through the gpu-run skill: measure the new cgen trainer's rows per second and memory peak on H100, against A_h100's 2.75. The smoke-test design needs to handle section 12.10's ramp-up segment (on tokyo108, every run's first 2,000 steps are slower than steady state; b06 cgen climbs from 2.77 to 11.3 rows per second): compare the new and old trainers at the same row count, not the same update count; section 13.2's `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` can be measured alongside as a switch.
+8. `pending` `python3 run.py selfcheck` passes, commit, write back to the skill per probe-pipeline's Phase E.
 
-挂起项：
+Pending items:
 
-- 评测端超长事件的处理（跳过并计数，还是继续左截）。冒烟用不到，等新模型要评测的时候定。分词构造不用改（2.4）。
-- 学习率扫描（2.3），冒烟给出一个 epoch 的小时数之后定最小版本还是每个底座各扫。
-- `plans/2026-08-28-plan.md` 第七节第 5 条（`toklen.py` 等临时脚本进不进仓库）、第 6 条（artifact 三处更正）没有动。
-- 第十四节的六条实验（分配器冒烟、ctool 6 个 epoch、切点抽样、token 归一等）gyb 没有拍板，和这一轮互不依赖。
+- How the eval side handles overlong events (skip and count, or keep left-truncating). Not needed for smoke testing; to be decided when the new model needs evaluation. The tokenization construction does not need to change (2.4).
+- The learning-rate sweep (2.3); whether to run the minimum version or sweep each base model separately is decided once smoke testing gives the hours needed for one epoch.
+- `plans/2026-08-28-plan.md` section 7 item 5 (whether temporary scripts like `toklen.py` enter the repository) and item 6 (three corrections to the artifact) have not been touched.
+- The six experiments in section 14 (allocator smoke test, ctool at 6 epochs, cut-point subsampling, token normalization, and so on) have not been ruled on by gyb and are independent of this round.
 
-下一步动作：过第 3 步（写 spec 和工单）。第 3 步的最脆处是注意力掩码的内核选择，写 spec 之前先验。
+Next action: work through step 3 (write the spec and tickets). Step 3's most fragile point is the attention mask's kernel choice; verify it before writing the spec.
 
-## 四、第五轮实测的事实（CPU，Qwen3-0.6B-Base 分词器，val 集随机抽 300 个事件、12,987 行）
+## IV. Facts measured in round 5 (CPU, Qwen3-0.6B-Base tokenizer, 300 events randomly drawn from the val set, 12,987 rows)
 
-四个检查合在一个脚本里：`/home/y-guo/.claude/jobs/b39c625e/tmp/tokjunction_check.py`（任务临时目录，任务删除时会一起清掉），在仓库根用 `cprobe-env/bin/python` 跑，约两分钟。分隔串 `\n[CALL] ` 分成 `Ċ`、`[`、`CALL`、`]`、`Ġ` 五个 token。
+All four checks are combined into one script: `/home/y-guo/.claude/jobs/b39c625e/tmp/tokjunction_check.py` (the task's temporary directory, cleared along with the task when it is deleted), run from the repo root with `cprobe-env/bin/python`, taking about two minutes. The separator string `\n[CALL] ` splits into five tokens, `Ċ`, `[`, `CALL`, `]`, `Ġ`.
 
-### 4.1 旧序列和「偏移前缀 + 分隔串」几乎没有一行相同
+### 4.1 The old sequence and "offset prefix + separator string" almost never match on the same row
 
-旧 cgen 训练器把「行文本 + 分隔串」一起分词得到的序列，和「事件全文按字符偏移切到切点（结束位置 ≤ 切点的最大 token）+ 分隔串单独分词」的序列，12,987 行里只有 2 行相同。原因是接缝处的空白会和分隔串的换行并成一个 token：行文本末尾是两个换行的时候，旧序列是 `.ĊĊĊ` 一个 token，全文里是 `.ĊĊ` 加分隔串自己的 `Ċ` 两个 token。
+The sequence the old cgen trainer gets by tokenizing "row text + separator string" together, versus the sequence from tokenizing "the event's full text cut at the cut point by character offset (the largest token whose end position is ≤ the cut point) + separator string" separately: only 2 of 12,987 rows match. The reason is that whitespace at the seam merges with the separator string's newline into one token: when a row's text ends in two newlines, the old sequence has `.ĊĊĊ` as one token, while in the full text it is `.ĊĊ` plus the separator string's own `Ċ`, two tokens.
 
-### 4.2 只拿行文本分词复现不了偏移前缀
+### 4.2 Tokenizing row text alone cannot reproduce the offset prefix
 
-三种试法：A 行文本直接分词；B 行文本分词后去掉末尾纯空白的 token；C 行文本 rstrip 之后分词。按行文本末尾的空白类型分：
+Three approaches tried: A, tokenize the row text directly; B, tokenize the row text and drop the trailing token if it is pure whitespace; C, rstrip the row text before tokenizing. Broken down by the type of whitespace at the end of the row text:
 
-| 空白类型（行数） | A 对上 | B 对上 | C 对上 |
+| whitespace type (row count) | A matches | B matches | C matches |
 |---|---|---|---|
-| 一个空格（6,228） | 3 | 6,225 | 6,225 |
-| 一个换行（2,662） | 1,806 | 1,394 | 49 |
-| 两个换行（3,684） | 3,681 | 3,647 | 1 |
-| 没有空白（300，事件末尾） | 300 | 300 | 300 |
-| 三个换行（65） | 65 | 65 | 0 |
+| one space (6,228) | 3 | 6,225 | 6,225 |
+| one newline (2,662) | 1,806 | 1,394 | 49 |
+| two newlines (3,684) | 3,681 | 3,647 | 1 |
+| no whitespace (300, end of event) | 300 | 300 | 300 |
+| three newlines (65) | 65 | 65 | 0 |
 
-没有一种试法在所有类型上对得上。单换行的行对不上的原因是像 `)ĊĊ` 这种 token 横跨切点（切点在第一个换行之后，第二个换行属于下一行的文本），按「结束位置 ≤ 切点」的规则整个 token 都被划到切点之后。
+No single approach matches on every type. The reason single-newline rows fail to match is that a token like `)ĊĊ` straddles the cut point (the cut point is right after the first newline, and the second newline belongs to the next row's text); under the rule "end position ≤ cut point," the whole token gets assigned to after the cut point.
 
-### 4.3 公共前缀规则全对上
+### 4.3 The common-prefix rule matches on every row
 
-旧序列（行文本 + 分隔串一起分词）和全文 token 的最长公共前缀，比偏移前缀短 0 个 token 的 6,231 行、短 1 个的 5,761 行、短 2 个的 136 行、反而长 1 个的 859 行。目标段比「分隔串 5 个 token 加目标串」多出的 token 数只有 −1、0、1 三种：0 的 11,812 行，−1 的 859 行，1 的 316 行。没有一行多出 2 个以上。
+Comparing the old sequence (row text plus separator string tokenized together) against the full-text tokens' longest common prefix: 6,231 rows are 0 tokens shorter than the offset prefix, 5,761 rows are 1 token shorter, 136 rows are 2 tokens shorter, and 859 rows are actually 1 token longer. The target segment's token count, compared with "the separator string's 5 tokens plus the target string," differs by only -1, 0, or 1: 0 for 11,812 rows, -1 for 859 rows, 1 for 316 rows. Not one row differs by 2 or more.
 
-### 4.4 ctool 的读取位置到切点的字符距离
+### 4.4 The character distance from ctool's read position to the cut point
 
-按 `train_causal_tool.py` 第 144 到 149 行的规则（从后往前找第一个 `0 < ends[t] <= b` 的 t）：0 个字符 5,868（45.2%），1 个字符 6,304（48.5%），2 个字符 593（4.6%），3 个字符 193（1.5%），4 个字符 28（0.2%），5 个字符 1 个。距离 2 个字符以上的例子：全文是 `Spotify."\n` 加下一行 `\nWe`，分词器把 `."\n\n` 并成一个 token，这个 token 跨过了切点，被读的 token 是 `ĠSpotify`。`plans/2026-08-28-plan.md` 第 12.5 节那 400 个样本报了 0 和 1 两档共 375 个，剩下 25 个没有写出来，和这里的 6.3% 对得上。
+By the rule in `train_causal_tool.py` lines 144 through 149 (searching backward for the first t with `0 < ends[t] <= b`): 0 characters, 5,868 (45.2%); 1 character, 6,304 (48.5%); 2 characters, 593 (4.6%); 3 characters, 193 (1.5%); 4 characters, 28 (0.2%); 5 characters, 1. An example at a distance of 2 or more characters: the full text is `Spotify."\n` followed by the next row's `\nWe`; the tokenizer merges `."\n\n` into one token, which crosses the cut point, and the token actually read is `ĠSpotify`. The 400 samples reported in `plans/2026-08-28-plan.md` section 12.5 report 375 total across the 0- and 1-character tiers, with the remaining 25 not broken out, matching the 6.3% here.
 
-### 4.5 核对过的现状
+### 4.5 Verified current state
 
-HEAD `dddd4da`，工作树只有未入库的 `plans/2026-08-26-hparam-survey.md`、`plans/2026-08-28-plan.md` 和本文件。两处临时目录都还在：`/home/y-guo/.claude/jobs/9822b062/tmp/toklen/`（统计脚本和逐行长度）、`/home/y-guo/.claude/jobs/bbbecca7/tmp/`（停机脚本、排列复现脚本、冒烟汇总）。六个冒烟的产物目录 `pipeline/runs/smoke/bslen_*_smoke` 都在。`.scratch/` 下面有 gen-preset、gpu-monitor-launch、research-loop 三个目录，还没有 kvshare-train。
+HEAD `dddd4da`, with the working tree holding only the uncommitted `plans/2026-08-26-hparam-survey.md`, `plans/2026-08-28-plan.md`, and this file. Two temporary directories still exist: `/home/y-guo/.claude/jobs/9822b062/tmp/toklen/` (the stats script and per-row lengths), `/home/y-guo/.claude/jobs/bbbecca7/tmp/` (the shutdown script, the permutation-reproduction script, the smoke-test summary). All six smoke-test output directories `pipeline/runs/smoke/bslen_*_smoke` are present. Under `.scratch/` there are three directories, gen-preset, gpu-monitor-launch, research-loop, and not yet kvshare-train.

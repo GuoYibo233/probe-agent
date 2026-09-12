@@ -1,527 +1,769 @@
-# np821 执行块 worklog（2026-08-22 开跑，Claude 自主运行）
+# np821 execution block worklog (started 2026-08-22, run autonomously by Claude)
 
-gyb 2026-08-22 授权：执行块全程自主运行，所有停点由 Claude 裁决并落档，gyb 回来检查。
-本文件是过程性裁决与推进纪录；口径类裁决另记 TIMELINE。计划本体在
-`plans/2026-08-21-np821-plan.md`。
+gyb's 2026-08-22 authorization: the execution block runs autonomously
+throughout, every stop point is ruled on by Claude and filed, gyb checks
+it upon return. This file is the record of process-level rulings and
+progress; convention-level rulings are recorded separately in TIMELINE.
+The plan itself is in `plans/2026-08-21-np821-plan.md`.
 
-## 开跑前预检（执行块 todo 1 + 追加三路，2026-08-22 早）
+## Precheck before starting (execution block todo 1 plus three additional checks, morning of 2026-08-22)
 
-- NFS 空间：/net/tokyo100-10g/data/str01_01 可用 43T。本批需求最坏加总约 187G
-  （新数据集 ≈ p1 的 1.3G×4 = 5.2G；新轨迹 ≈ 479M×4 ≈ 1.9G；test 档 logits
-  缓存 ≈ 32M×4 = 128M；12 个训练 run 的 checkpoint 按 p1 实测三档外推，全 4B
-  档最坏 15G×12 = 180G）。占可用不到 0.5%，放行。
-- 配置核对：np821_gptoss.json、manifest_np821.json、configs/presets/default.json
-  逐项与计划口径总表一致；gpt-oss-120b 权重 15 个分片在 NFS 齐全；题单
-  wc -l 89/56/167（无末尾换行，实际 90/57/168，共 315 题）。
-- DATA.md 开工检查清单九条过完：数据版本进 run_family（nyapass_aw_v1）、种子
-  写死进 manifest、生成设置走新预设 default（预设名与展开后的 gen_settings
-  自动落轨迹 meta）；逐字节重建对比、TIMELINE 补录排在标注环节。
-- 工作树干净，HEAD a8566db。
+- NFS space: /net/tokyo100-10g/data/str01_01 has 43T available. This
+  batch's worst-case total demand is about 187G (new dataset ≈ p1's
+  1.3G x 4 = 5.2G; new trajectories ≈ 479M x 4 ≈ 1.9G; the test split's
+  logits cache ≈ 32M x 4 = 128M; the checkpoints for 12 training runs
+  extrapolated from p1's three measured sizes, worst case all-4B at
+  15G x 12 = 180G). Under 0.5% of what's available, cleared.
+- Config check: np821_gptoss.json, manifest_np821.json,
+  configs/presets/default.json match the plan's master convention table
+  item for item; gpt-oss-120b's 15 weight shards are all present on NFS;
+  task-set `wc -l` gives 89/56/167 (no trailing newline, actually
+  90/57/168, 315 tasks in total).
+- All nine items of DATA.md's start-of-work checklist done: the data
+  version goes into run_family (nyapass_aw_v1), the seed is hardcoded
+  into the manifest, generation settings go through the new preset
+  default (the preset name and the expanded gen_settings land in
+  trajectory meta automatically); the byte-for-byte reconstruction
+  comparison and the TIMELINE entry are scheduled for the annotation
+  stage.
+- Working tree clean, HEAD a8566db.
 
-## 裁决 1：采集卡位照 manifest 占位值 2/3/4/5，不改
+## Ruling 1: collection card slots follow the manifest's placeholder values 2/3/4/5, unchanged
 
-实探（gpu-jobs free）tokyo108 六张大卡全 FREE。占位值 2/3/4/5 正好是
-1×H100 95G + 3×H200 143G，三张 H200 全拿，是六张里能凑出的显存最大的四张组合；
-不改文件工作树保持干净，c2 的 G2 门禁发射时又实探了一次兜底。属过程性裁决，
-不进 TIMELINE。
+A real probe (gpu-jobs free) found all six big cards on tokyo108 FREE.
+The placeholder values 2/3/4/5 are exactly 1 H100 95G plus 3 H200 143G,
+taking all three H200s, which is the largest-VRAM four-card combination
+obtainable from the six; the file is left unchanged, keeping the working
+tree clean, and c2's G2 gate ran another real probe as a backstop at
+launch time. This is a process-level ruling, not entered into TIMELINE.
 
-## 采集发射回执（2026-08-22 05:40–05:50）
+## Collection launch record (2026-08-22 05:40-05:50)
 
-驱动器五敲全过（gpu-runner agent 执行）：
+All five driver invocations passed (executed by the gpu-runner agent):
 
-- c1_gen：三件生成物落 envs/runs/nyapass/（launch_servers.py /
-  launch_clients.sh / MANIFEST.md），卡号端口逐条核对。
-- c2_servers：四个 vLLM 实例发射，session
-  `new1_nyapass_srv_gptoss{a,b,c,d}_t108g{2,3,4,5}`，端口 8103/8106/8107/8108。
-- c3_health：05:40:42 起轮询，05:44:42 四端口全通，用时约 4 分钟，无 session 掉线。
-- c4_smoke：1 题 × 4 条轨迹 264 秒跑完，G4 判据全过——4 个文件 `_r0.._r3` 齐、
-  末行 final、meta 种子 42/67/4267/6742 按 r0..r3 逐条对上、温度 1.0 /
-  effort high / 预设 default。4 条里 3 条 eval success=True、1 条 False
-  （轨迹质量不是门禁项，照常放行）。
-- c5_clients：12 个客户端分片发射（登录机，session
-  `new1_nyapass_gptr_s0..s3` / `gpdv_s0..s1` / `gptn_s0..s5`），分片任务数
-  360+228+672 = 1260 与题单×4 对上。三处登记驱动器自动补齐：gpu-jobs 五个名
-  （nyapass + nyapass_srv_a..d）、record start（run_id nyapass、track
-  collect_nyapass、commit a8566db、树干净）、RUNMETA.json 第 1 条。
+- c1_gen: the three generated files land in envs/runs/nyapass/
+  (launch_servers.py / launch_clients.sh / MANIFEST.md), card numbers and
+  ports checked item by item.
+- c2_servers: four vLLM instances launched, sessions
+  `new1_nyapass_srv_gptoss{a,b,c,d}_t108g{2,3,4,5}`, ports
+  8103/8106/8107/8108.
+- c3_health: polling started at 05:40:42, all four ports reachable by
+  05:44:42, took about 4 minutes, no session dropped.
+- c4_smoke: 1 task x 4 trajectories finished in 264 seconds, G4's
+  criteria all passed: the 4 files `_r0.._r3` are all present, last line
+  is final, meta's seeds 42/67/4267/6742 match r0..r3 one by one,
+  temperature 1.0 / effort high / preset default. Of the 4, 3 had eval
+  success=True and 1 had False (trajectory quality isn't a gate item, let
+  through as usual).
+- c5_clients: 12 client shards launched (on the login machine, sessions
+  `new1_nyapass_gptr_s0..s3` / `gpdv_s0..s1` / `gptn_s0..s5`), shard task
+  counts 360+228+672 = 1260, matching the task set x 4. The driver
+  auto-filled all three ledger entries: five gpu-jobs names (nyapass +
+  nyapass_srv_a..d), record start (run_id nyapass, track
+  collect_nyapass, commit a8566db, tree clean), RUNMETA.json's first
+  entry.
 
-发射后指针停在 c6_done（launched）。产物目录
-`envs/runs/nyapass/appworld_gptoss/`，客户端日志 `envs/runs/nyapass/logs/`，
-服务日志 `envs/serve_logs/`。
+After launch the pointer stops at c6_done (launched). The output
+directory is `envs/runs/nyapass/appworld_gptoss/`, client logs are in
+`envs/runs/nyapass/logs/`, server logs are in `envs/serve_logs/`.
 
-## 监控安排
+## Monitoring arrangement
 
-常驻采样器在跑（网页 8377）。主会话另架一个常驻监控（5 分钟一轮）：
-12 个客户端 session 全退 → 叫醒推进 c6（先杀四个 vLLM 再敲，G7 才过得去）；
-服务 session 数变化或 90 分钟无新文件 → 叫醒排查。
-预计墙钟 6 小时起（p1 实测折 52 题/h/实例 × 4 实例，温度 1 只会更慢）。
+The resident sampler is running (web page at 8377). The main session
+also set up a standing monitor (one round every 5 minutes): all 12
+client sessions exiting -> wake up and advance c6 (killing the four vLLM
+instances first, then running it, so G7 can pass); a change in the
+server session count or 90 minutes with no new file -> wake up and
+investigate. Wall-clock is projected at 6 hours and up (p1 measured out
+to about 52 tasks/hour/instance x 4 instances, and temperature 1 can only
+be slower).
 
-## 等待期侦察摘要（2026-08-22 上午，两个 agent 读代码所得，行号见 agent 报告）
+## Waiting-period reconnaissance summary (morning of 2026-08-22, from two agents reading the code, line numbers in the agent reports)
 
-后九步路线的要点，验证与开跑都按这里走：
+Key points of the remaining nine-step route, both verification and
+running follow this:
 
-- a1 停点：驱动器自己按 max_bounds=10^9 扫全部轨迹出未截断切点分布
-  （p50/p90/p99/max + 超 32/64/128/256 计数），写进 state.json 的
-  cutpoint_stats。裁决写法是往 np821_gptoss.json 顶层加 `"max_bounds": <数>`，
-  留 64 也必须显式写。max_bounds 不进状态指纹，改配置不会撞 ident。
-- max_bounds 语义：限每事件（一步的 think 文本）切出的样本数；超限走
-  下标近似等距抽稀、末尾切点永远保留，抽掉的是思考中后段的渐进决策点样本。
-  p1 基线：4048 事件、每事件边界数 min 1 / med 56 / max 64（这份统计
-  本身被 64 截断过，p1 的真实截断率读不出来）。
-- a2 每敲整链重跑 annotate-chain（build → param_label → check_callstr），
-  门禁 A/B/D 在 check_callstr 里硬拦；a3 做 G9/G11 加 12 件产物重建逐字节
-  cmp（备份目录 `<data_out>_rebuild_ref`，NFS 要多备一份数据集大小）。
-- 改完配置进训练段之前必须 commit（t1 一开头查脏树）。
-- t1_smoke 只验判据：12 格 smoke 要手发，产物目录必须叫
-  `pipeline/runs/smoke/<批>_gptoss_<格>_smoke`。b06 可走
-  `launch-probe smoke`；b17/l17/l4 逐格手发 train_causal_{tool,callgen,param}.py
-  `--smoke`，旗标照 p1 台账同形（b17: --base qwen17 --grad-ckpt；l17: 再加
-  --lora；l4: --base qwen4 --lora --grad-ckpt；ctool 带 --align-tol 3e-4）。
-- smoke 排布草案（兼答排卡两问）：b06 与 b17 六格放 tokyo107 48G 实测
-  装不装得下（b17 若 OOM 则答案记「48G 装不下」，该格 smoke 挪 108 重跑过门禁）；
-  l17 与 l4 六格放 tokyo108 大卡实测 LoRA 速度。
-- t2_full 一敲发一批、四批严格串行（pend[0]），跨批并行要手发且有
-  「驱动器补发假 RUNMETA」的坑——是否跨批并行等 smoke 实测速度后再裁。
-- 驱动器不读 batches 里的 base/mode，--base/--lora/--grad-ckpt 全由排卡表
-  extra 决定；12 份排卡表（4 训练 + 4 eval_tool + 4 eval_call）现在一份都
-  没有，要在各自发射前手写，形状照 p1 的同名表。
-- 评测风险档：ctool 一次算完 0.05/0.10 两档进 REPLAY_REPORT.json；发 e2 之前
-  先读各批 REPLAY_REPORT 的 chosen_theta——0.05 有解按缺省发，无解就把
-  `--risk 0.1` 写进该批 eval_call 表的 extra（写 0.1 不许写 0.10，矩阵按
-  字符串键取数）并在报告标注。这样 0.05 无解不会变成 tmux 里静默退 1。
-- launch-probe/launch-eval 发射后驱动器退出码不保证进程活着（§6.3 偏离）：
-  发完必读 logs/pipeline/nyapass_aw_v1/t2_full.log 等分步日志尾部的
-  alive check，再用 gpu-jobs 盯。
+- The a1 stop point: the driver itself scans all trajectories with
+  max_bounds=10^9 to produce the untruncated cut distribution (p50/p90/
+  p99/max plus counts over 32/64/128/256), writing it into state.json's
+  cutpoint_stats. The way to rule is to add `"max_bounds": <number>` at
+  the top level of np821_gptoss.json; even keeping it at 64 must be
+  written explicitly. max_bounds does not enter the state fingerprint, so
+  changing the config won't collide on ident.
+- The meaning of max_bounds: it caps the number of samples cut out of
+  each event (one step's think text); beyond the cap, thinning is by
+  approximately equal-spaced index, the final cut is always kept, and
+  what gets thinned out are the samples at the gradual decision points in
+  the middle-to-late part of the thinking. p1's baseline: 4048 events,
+  boundaries per event min 1 / med 56 / max 64 (this statistic was itself
+  already truncated at 64, p1's true truncation rate cannot be read from
+  it).
+- a2 reruns the whole annotate-chain each time it's invoked (build ->
+  param_label -> check_callstr), with gates A/B/D hard-blocking inside
+  check_callstr; a3 does G9/G11 plus a byte-for-byte cmp on a rebuild of
+  the 12 output files (backup directory `<data_out>_rebuild_ref`, NFS
+  needs one more dataset's worth of space reserved).
+- After editing the config, a commit is required before entering the
+  training stage (t1 checks for a dirty tree right at the start).
+- t1_smoke only checks the criteria: the 12 cells' smoke tests must be
+  fired manually, and the output directory must be named
+  `pipeline/runs/smoke/<batch>_gptoss_<cell>_smoke`. b06 can go through
+  `launch-probe smoke`; b17/l17/l4 fire
+  train_causal_{tool,callgen,param}.py `--smoke` manually per cell, with
+  flags in the same shape as the p1 ledger (b17: --base qwen17
+  --grad-ckpt; l17: add --lora as well; l4: --base qwen4 --lora
+  --grad-ckpt; ctool carries --align-tol 3e-4).
+- Draft smoke layout (also answering the two card-placement questions):
+  b06 and b17's six cells go on tokyo107 48G to actually measure whether
+  they fit (if b17 OOMs, the answer is recorded as "doesn't fit on 48G,"
+  and that cell's smoke test moves to 108 and reruns to pass the gate);
+  l17 and l4's six cells go on tokyo108's big cards to actually measure
+  LoRA speed.
+- t2_full launches one batch per invocation, with the four batches
+  strictly serial (pend[0]); cross-batch parallelism requires manual
+  launching and has the pitfall of "the driver reissuing a fake
+  RUNMETA," so whether to run batches in parallel is ruled on after the
+  smoke test's measured speed.
+- The driver doesn't read base/mode from batches; --base/--lora/
+  --grad-ckpt are entirely decided by the placement table's extra; none
+  of the 12 placement tables (4 training + 4 eval_tool + 4 eval_call)
+  exist yet, they need to be handwritten before each launch, shaped after
+  p1's tables of the same name.
+- The evaluation risk level: ctool computes both the 0.05/0.10 levels
+  in one pass into REPLAY_REPORT.json; before launching e2, read each
+  batch's REPLAY_REPORT's chosen_theta first: if 0.05 has a solution,
+  launch with the default, and if not, write `--risk 0.1` into that
+  batch's eval_call table's extra (write 0.1, not 0.10, since the matrix
+  looks up values by string key), noted in the report. This way, 0.05
+  being unsolvable doesn't turn into a silent exit 1 in tmux.
+- After launch-probe/launch-eval launches, the driver's exit code
+  doesn't guarantee the process is alive (the §6.3 deviation): after
+  launching, always read the alive check at the tail of stage logs such
+  as `logs/pipeline/nyapass_aw_v1/t2_full.log`, then watch with
+  gpu-jobs.
 
-## 采集收官回执（2026-08-22 10:38–11:0x）
+## Collection wrap-up record (2026-08-22 10:38-11:0x)
 
-- 12 个客户端全部自然退出，1260/1260 文件全部末行 final（主会话逐文件核过，
-  零坏件）；41 条轨迹顶到 30 步上限。
-- 四个 vLLM session 杀净，GPU 2/3/4/5 显存实测 0 MiB；驱动器 c6 一敲全过：
-  五个号销掉、record finish 落 trajs=1260 / units=315 / steps30_hit=41
-  （41 与主会话独立核数一致）。
-- 实测墙钟：05:50 发射到 10:5x 收齐约 5 小时，速率约 260 条/小时（四实例），
-  比 p1 折算的预估略快。
+- All 12 clients exited naturally, all 1260/1260 files end in final
+  (checked file by file by the main session, zero corrupt files); 41
+  trajectories hit the 30-step cap.
+- All four vLLM sessions killed clean, GPU 2/3/4/5 VRAM measured 0
+  MiB; the driver's c6 passed on one invocation: all five names
+  deregistered, record finish landed trajs=1260 / units=315 /
+  steps30_hit=41 (41 matches the main session's independent count).
+- Measured wall-clock: launched at 05:50, all collected by 10:5x,
+  about 5 hours, a rate of about 260 per hour (four instances), slightly
+  faster than the estimate projected from p1.
 
-## 裁决 2：max_bounds 留 64（口径类，已进 TIMELINE 2026-08-22 条）
+## Ruling 2: max_bounds stays at 64 (a convention-level ruling, already entered into TIMELINE's 2026-08-22 entry)
 
-a1 停点统计：15216 事件，未截断切点 p50 60 / p90 246 / p99 572 / max 842，
-超 32/64/128/256 的事件 10417/7271/4019/1408。各候选上限下的分堆样本量
-（boundary_counts 同款代码实算）：
+a1 stop-point statistics: 15216 events, untruncated cuts p50 60 / p90
+246 / p99 572 / max 842, event counts over 32/64/128/256 are
+10417/7271/4019/1408. Per-split sample counts under each candidate cap
+(computed for real with the same boundary_counts code):
 
-| 上限 | train | dev | test_normal | 总量 | train 对 p1(46438) |
+| Cap | train | dev | test_normal | Total | train vs p1 (46438) |
 |---|---|---|---|---|---|
-| 64 | 186479 | 115211 | 391893 | 693583 | ×4.02 |
-| 96 | 238893 | 148731 | 505964 | 893588 | ×5.14 |
-| 128 | 277594 | 174279 | 590482 | 1042355 | ×5.98 |
-| 256 | 358380 | 228864 | 768824 | 1356068 | ×7.72 |
-| 不截 | 402722 | 263063 | 881153 | 1546938 | ×8.67 |
+| 64 | 186479 | 115211 | 391893 | 693583 | x4.02 |
+| 96 | 238893 | 148731 | 505964 | 893588 | x5.14 |
+| 128 | 277594 | 174279 | 590482 | 1042355 | x5.98 |
+| 256 | 358380 | 228864 | 768824 | 1356068 | x7.72 |
+| uncapped | 402722 | 263063 | 881153 | 1546938 | x8.67 |
 
-三堆事件数 train 4127 / dev 2556 / test_normal 8533。裁决理由四条见 TIMELINE
-当日条（预算吻合、等权下长尾支配、抽稀保深度覆盖、可逆）。
+Event counts across the three splits: train 4127 / dev 2556 /
+test_normal 8533. The four reasons for the ruling are in TIMELINE's entry
+for that day (budget fit, the long tail dominating under equal weight,
+thinning preserving depth coverage, reversibility).
 
-## smoke 回执（2026-08-22 中午，12 格全过）
+## Smoke test record (midday 2026-08-22, all 12 cells passed)
 
-判据四项（start/done/best/、ctool 加 ALIGN PASS）12 格全过，四个 ctool 的
-对齐检查全 PASS（b06_ctool 的 align_maxdiff_hidden 4.53e-05，tol 3e-4 内）。
-排卡两问的硬答案：
+The four criteria (start/done/best/, plus ALIGN PASS for ctool) all
+passed across all 12 cells, and all four ctool alignment checks PASS
+(b06_ctool's align_maxdiff_hidden is 4.53e-05, within tol 3e-4). Hard
+answers to the two card-placement questions:
 
-- **48G 装不下 0.6B 全参（无检查点）**：tokyo107 上三格全 OOM（traceback
-  存档 `logs/smoke_np821b06_cparam.oom_t107.log`），挪大卡后实测峰值
-  ctool 60.2 / cgen 76.8 / cparam 76.7 GiB——差的不是一点。装下装不下的
-  分水岭是 `--grad-ckpt`，不是模型大小。
-- **48G 装得下 1.7B 全参+检查点**：峰值 ctool 35.4 / cgen 44.1 /
-  cparam 44.1 GiB，对 47.5 GiB 可用只剩 3.4 GiB 余量。
-- LoRA 显存小：l17 峰值 17.3/34.7/34.7，l4 峰值 32.1/37.6/37.6 GiB。
-- smoke 的 ips 是污染下限（区间含验证前向与 200 条生成，step 事件在 smoke
-  规模下一条都不写），不用于 ETA；ETA 基准换 p1 实跑墙钟。
+- **0.6B full-parameter (no checkpointing) does not fit on 48G**: all
+  three cells OOM on tokyo107 (traceback archived at
+  `logs/smoke_np821b06_cparam.oom_t107.log`); after moving to a big card,
+  measured peaks are ctool 60.2 / cgen 76.8 / cparam 76.7 GiB, not a
+  small gap. The watershed for whether it fits is `--grad-ckpt`, not
+  model size.
+- **1.7B full-parameter + checkpointing does fit on 48G**: peaks are
+  ctool 35.4 / cgen 44.1 / cparam 44.1 GiB, leaving only 3.4 GiB of
+  headroom against 47.5 GiB available.
+- LoRA's VRAM is small: l17 peaks 17.3/34.7/34.7, l4 peaks
+  32.1/37.6/37.6 GiB.
+- The smoke test's ips is a contaminated lower bound (the interval
+  includes the validation forward pass and 200 generations, and at smoke
+  scale not a single step event is written); it's not used for ETA, the
+  ETA baseline instead uses p1's real run wall-clock.
 
-p1 实跑墙钟（runs.jsonl，×1 数据）：b06 在 H100 上 ctool 0.57h、cgen/cparam
-各 6.07h；b17 在 H200 上 ctool 0.55h、cgen/cparam 各 8.72h；LoRA 在 A6000 上
-只有 ctool 完成过（l17 1.53h / l4 3.53h），cgen/cparam 无 finish 记录。
+p1's real-run wall-clock (runs.jsonl, x1 data): b06 on H100, ctool
+0.57h, cgen/cparam 6.07h each; b17 on H200, ctool 0.55h, cgen/cparam
+8.72h each; on A6000, LoRA only ever completed ctool (l17 1.53h / l4
+3.53h), cgen/cparam have no finish record.
 
-## 裁决 3：四批排卡与并行策略（过程性）
+## Ruling 3: card placement and parallel strategy for the four batches (process-level)
 
-数据 ×4.02 推算：b06 的 cgen/cparam 在 H100 约 24.4h；b17 同格在 H200 约
-35h（H100 略慢）。排布：
+Projected at data x4.02: b06's cgen/cparam on H100 is about 24.4h;
+b17's same cells on H200 are about 35h (H100 is slightly slower).
+Layout:
 
-- 现在发三批：b06 → 108 H100 idx0/1/2（唯一装得下 60–77G 峰值的空卡组）；
-  l4 → 108 H200 idx3/4/5（最大模型配最快卡）；l17 → 107 Ada idx0/1/2
-  （峰值 ≤35G 余量 13G，零 OOM 风险）。
-- b17 等 b06 跑完接它腾出的 H100 idx0/1/2（约 +24h，驱动器串行顺序正好
-  轮到它）。b17 不上 Ada：44.1G 贴 48G 只剩 3.4G，几十小时的 run 不冒
-  中途 OOM 的险。Ada idx3 留备用。
-- 驱动器只敲两次 t2（发 b06、b06 完发 b17）；l17/l4 用 launch-probe full
-  手动发（同一登记代码路径）。两次敲之外 t2 不敲，避开「部分完成批被
-  驱动器补发假 RUNMETA」（driver.py:1260-1269 注释的场景）。
-- LoRA 大卡速度无历史数据：发射后 1–2 小时从 train_log 的 step 事件取
-  实测 ips 重算 ETA 落档，跑不成立再裁（见待办）。
+- Three batches launch now: b06 -> 108 H100 idx0/1/2 (the only free
+  card group that fits the 60-77G peaks); l4 -> 108 H200 idx3/4/5 (the
+  biggest model paired with the fastest card); l17 -> 107 Ada idx0/1/2
+  (peak <=35G, 13G headroom, zero OOM risk).
+- b17 waits for b06 to finish and takes over its H100 idx0/1/2 (about
+  +24h, and the driver's serial ordering happens to reach it next). b17
+  does not go on Ada: 44.1G against 48G leaves only 3.4G, and a
+  tens-of-hours-long run should not risk an OOM partway through. Ada idx3
+  is kept in reserve.
+- The driver only invokes t2 twice (launch b06, then launch b17 once
+  b06 is done); l17/l4 are launched manually with `launch-probe full`
+  (the same registration code path). t2 is not invoked outside of these
+  two times, avoiding "a partially completed batch getting a fake
+  RUNMETA reissued by the driver" (the scenario in driver.py:1260-1269's
+  comment).
+- No historical data exists for LoRA speed on big cards: 1-2 hours
+  after launch, the measured ips is taken from train_log's step events to
+  recompute and file the ETA, ruled on again if it turns out infeasible
+  (see the pending item).
 
-## 训练三批发射回执（2026-08-22 下午）
+## Training three-batch launch record (afternoon 2026-08-22)
 
-- t1 门禁 12 格 smoke 判据全过（loss 在降一项 smoke 规模写不出 step 记录，
-  驱动器按已知口径记「没判」不拦）。
-- t2 第一敲发 np821b06 → H100 idx0/1/2，三格 ALIVE；l4 → H200 idx3/4/5、
-  l17 → Ada idx0/1/2 用 launch-probe full 手动发，六格 ALIVE。九格全部
-  record start 在 commit 1b9334f（树干净）。
-- launch-probe 不写 RUNMETA（WARN 实录），九个 run 已逐个补
-  `runmeta --kind train`，命令取自台账 cmd 字段，追溯链完整。
-- b06_cgen 的 start 记录确认全量在训：n_train 186479 / 总步数 17484
-  （批 32、3 epoch）。
-- 监控：采样器 + 30 分钟心跳（step 事件的 ips 直读），b06 三格 done 即
-  叫醒敲 t2 发 b17（接 H100 0/1/2），任何格无 done 死亡即告警。
+- t1's gate, the 12 cells' smoke criteria, all passed (the "loss is
+  dropping" item can't produce a step record at smoke scale, and the
+  driver, per the known convention, records "not judged" and doesn't
+  block on it).
+- t2's first invocation launched np821b06 -> H100 idx0/1/2, all three
+  cells ALIVE; l4 -> H200 idx3/4/5 and l17 -> Ada idx0/1/2 were launched
+  manually with `launch-probe full`, all six cells ALIVE. All nine
+  cells' record start is at commit 1b9334f (tree clean).
+- launch-probe doesn't write RUNMETA (a WARN was actually logged), and
+  `runmeta --kind train` has been added to each of the nine runs one by
+  one, with the command taken from the ledger's cmd field, keeping the
+  traceability chain complete.
+- b06_cgen's start record confirms it's training on the full data:
+  n_train 186479 / total steps 17484 (batch 32, 3 epochs).
+- Monitoring: the sampler plus a 30-minute heartbeat (reading ips
+  directly from step events); once b06's three cells are done, wake up
+  and invoke t2 to launch b17 (taking over H100 0/1/2); if any cell dies
+  without a done, alert.
 
-## 待办的裁决点（预告）
+## Pending rulings (preview)
 
-- ~~标注 a1_stats 切点分布出来后裁 `max_bounds`~~（已裁：留 64，见上）。
-- ~~四批训练是否跨批并行占卡~~（已裁：三批即发 + b17 接棒，见裁决 3）。
-- ~~裁决 4 待做~~（已裁，见下）。
+- ~~Rule on `max_bounds` once annotation's a1_stats cut distribution is
+  out~~ (already ruled: stays at 64, see above).
+- ~~Whether the four training batches run in parallel across batches for
+  cards~~ (already ruled: launch three batches at once + b17 takes over,
+  see ruling 3).
+- ~~Ruling 4 pending~~ (already ruled, see below).
 
-## 裁决 4：LoRA 实测 ETA 跑得成立（过程性，2026-08-22 15:02 终算）
+## Ruling 4: LoRA's measured ETA makes the run viable (process-level, final calculation 2026-08-22 15:02)
 
-方法说明：台账的 record 窗口时长不可信（p1b06_cgen 台账 6.07h、train_log
-真实 5.60h），ETA 一律用 train_log 的 step 事件时间戳算。早期速率严重低估
-稳态——p1 与 np821 的全参 cgen 前 100 步都只有 ~5.4 gstep/min，稳态爬到
-13.5 以上；LoRA 没有这个爬速曲线，从头就稳。
+Method note: the ledger's record window duration is not trustworthy
+(p1b06_cgen's ledger says 6.07h, train_log's real value is 5.60h); ETA is
+always computed from train_log's step-event timestamps. The early-rate
+severely underestimates the steady state: both p1 and np821's
+full-parameter cgen only run ~5.4 gstep/min for the first 100 steps,
+climbing to above 13.5 at steady state; LoRA has no such ramp-up curve,
+it is steady from the start.
 
-两小时稳态窗口（13:01→15:02）实测：
+Measured over a two-hour steady-state window (13:01 -> 15:02):
 
-- b06 cgen/cparam：稳态已过 16.7 gstep/min 且还在爬，剩余 ETA ≈ 15h，
-  预计 08-23 早晨收官 → b17 接棒 H100。
-- l17 cgen/cparam（Ada）：3.31 gstep/min，剩余 ≈ 85h（3.6 天），
-  预计 08-26 凌晨收官。
-- l4 cgen/cparam（H200）：3.31 gstep/min，剩余 ≈ 85h，同上。
+- b06 cgen/cparam: already past 16.7 gstep/min at steady state and
+  still climbing, remaining ETA ≈ 15h, expected to wrap up the morning of
+  08-23 -> b17 takes over the H100.
+- l17 cgen/cparam (Ada): 3.31 gstep/min, remaining ≈ 85h (3.6 days),
+  expected to wrap up in the small hours of 08-26.
+- l4 cgen/cparam (H200): 3.31 gstep/min, remaining ≈ 85h, same as
+  above.
 
-裁决：**跑得成立，不砍不改**。依据：85h 远低于 A6000 推算的 170/380h
-（换大卡的目的达到了）；b17 接棒用的是 b06 腾的 H100，与 LoRA 两批零冲突，
-LoRA 跑满期间没有任何任务在等这六张卡；砍掉或缩配省不出任何东西，评测
-和矩阵横竖要等这些 run。计划「ETA 跑不成立属推翻前提」的条款没有触发，
-无口径变更，不进 TIMELINE。
+Ruling: **the run is viable, nothing is cut or changed**. Basis: 85h
+is far below the A6000-projected 170/380h (the point of switching to a
+big card is achieved); b17's takeover uses the H100 that b06 freed, zero
+conflict with the two LoRA batches, and no task is waiting on these six
+cards while LoRA runs to completion; cutting or scaling down would save
+nothing, since evaluation and the matrix have to wait for these runs
+either way. The plan's clause "an infeasible ETA overturns the premise"
+was not triggered, no convention changes, not entered into TIMELINE.
 
-三个 ctool 已全量收官并逐 run 收账（销号 + record finish）：
-b06 acc 0.6883（H100 约 1.0h）、l17 acc 0.6974（Ada 约 3.2h）、
-l4 acc 0.7016（H200 约 3.0h），ALIGN 全 PASS。
+Three ctool cells have already fully wrapped up and been settled run
+by run (deregistered + record finish): b06 acc 0.6883 (H100, about 1.0h),
+l17 acc 0.6974 (Ada, about 3.2h), l4 acc 0.7016 (H200, about 3.0h), ALIGN
+all PASS.
 
-## b06 收官与 b17 接棒（2026-08-23 晨）+ 裁决 5：cgen 改道 Ada
+## b06 wraps up and b17 takes over (morning 2026-08-23) + Ruling 5: cgen reroutes to Ada
 
-- b06 全批收官：ctool acc 0.6883、cgen best_val_ce 0.4793、cparam
-  best_val_ce 0.396，三 run 逐个销号 + record finish。epoch 边界验证
-  （val 115211 行 + 200 生成）每次约 1 小时，两格墙钟约 18h。
-- 变故：b06 腾出的 108 gpu0 与 l4_ctool 腾出的 gpu3 先后被他人进程占用
-  （gpu0 用户 glin 51.8G 已跑 7h48m；gpu3 pid 3144460 50.9G）。别人的卡
-  是禁区，不碰不等确定释放时间。
-- 裁决 5：b17 的 ctool/cparam 落 108 gpu1/gpu2（H100，正常发射 ALIVE）；
-  cgen 改道 107 Ada gpu3（备用卡）。依据：smoke 在 Ada 上实测 cgen 峰值
-  44.1G 稳定跑完，全量峰值同构（max_len 同批大小同）；等被占大卡释放
-  时长不可知。发射后 2 小时测 Ada 稳态速率：若 ETA 拖过 08-26 中午且
-  届时有大卡已释放，早期止损重发（放弃 2 小时 Ada 进度换 35h 大卡时长）。
-- 驱动器在第一次发射（gpu3 SKIP）时已打 launched 标记，补发走手动
-  launch-probe（ctool/cparam 存活 SKIP，只发 cgen），三处登记齐，
-  RUNMETA 三 run 补钉在 commit 7dbd28e。
+- b06's whole batch wraps up: ctool acc 0.6883, cgen best_val_ce
+  0.4793, cparam best_val_ce 0.396, all three runs deregistered + record
+  finish one by one. Each epoch-boundary validation (val's 115211 lines
+  plus 200 generations) takes about 1 hour, and both cells' wall-clock is
+  about 18h.
+- Complication: the 108 gpu0 that b06 freed and the gpu3 that
+  l4_ctool freed were subsequently taken by other users' processes (gpu0
+  user glin 51.8G, already running 7h48m; gpu3 pid 3144460 50.9G).
+  Someone else's card is off-limits: it's not touched, and its release
+  time is not waited on.
+- Ruling 5: b17's ctool/cparam land on 108 gpu1/gpu2 (H100, launched
+  normally, ALIVE); cgen reroutes to 107 Ada gpu3 (the reserve card).
+  Basis: the smoke test measured cgen's peak on Ada at 44.1G, running
+  stably to completion, with the same structure as the full-scale peak
+  (same max_len, same batch size); how long it will take for the taken
+  big cards to be released is unknown. Ada's steady-state rate is
+  measured 2 hours after launch: if the ETA stretches past midday
+  08-26 and a big card has been freed by then, cut losses early and
+  refire (giving up 2 hours of Ada progress for 35h of big-card time).
+- The driver had already stamped the `launched` marker on the first
+  launch attempt (gpu3 SKIP); the relaunch went through manual
+  launch-probe (ctool/cparam are alive, SKIP, only cgen was launched),
+  all three ledger entries filled in, RUNMETA for the three runs pinned
+  at commit 7dbd28e.
 
-## 裁决 6：b17_cgen 在 Ada 首个 backward 就 OOM，改等安全大卡（2026-08-23 05:50）
+## Ruling 6: b17_cgen OOMs on Ada on the very first backward pass, switching to waiting for a safe big card (2026-08-23 05:50)
 
-- 事实：发射 6 分钟后第一个 backward OOM（要 4.64G 只剩 3.61G；PyTorch
-  实占 34.75G + 碎片保留 8.63G，traceback 在 tmux 日志
-  `new1_np821b17_gptoss_cgen_t107g3.log` 全文保留）。smoke 的 500 条
-  子集没踩到全量首批的序列组合——「smoke 峰值 44.1G 可容」这个裁决 5 的
-  前提被实证推翻，48G 对 b17_cgen 全量记「装不下」。
-- 裁决：不做 expandable_segments 分配器实验（省下的时间对不上 30 小时级
-  run 中途再 OOM 的风险），cgen 改等安全大卡：b17_ctool 约 08:00 在
-  H100 gpu1 收官后落 gpu1；108 的 gpu0/gpu3 被占卡若更早释放就用先空的。
-  监控盯两个条件任一触发叫醒重发。
-- 已清理：死 session 杀净（gpu3 显存 4 MiB 空卡基线）、台账销号；失败
-  attempt 的 record start 留在 append-only 的 runs.jsonl 里，重发时再记
-  一条新 start，不冲突。
+- Fact: 6 minutes after launch, the first backward OOM'd (needed
+  4.64G with only 3.61G left; PyTorch actually held 34.75G plus 8.63G
+  reserved as fragmentation, the full traceback is kept in the tmux log
+  `new1_np821b17_gptoss_cgen_t107g3.log`). The smoke test's 500-sample
+  subset never hit the sequence combination in the full data's first
+  batch: ruling 5's premise, "the smoke peak of 44.1G fits," was
+  empirically overturned, and 48G is recorded as "doesn't fit" for
+  b17_cgen at full scale.
+- Ruling: no experiment with the expandable_segments allocator is
+  done (the time saved doesn't outweigh the risk of another OOM partway
+  through a 30-hour-class run); cgen instead waits for a safe big card:
+  it lands on gpu1 once b17_ctool wraps up there around 08:00 on H100
+  gpu1; if the taken cards 108 gpu0/gpu3 are released earlier, whichever
+  is free first is used. Monitoring watches both conditions, and wakes
+  up to refire on whichever triggers first.
+- Already cleaned up: the dead session killed clean (gpu3's VRAM at
+  the 4 MiB empty-card baseline), the ledger deregistered; the failed
+  attempt's record start stays in the append-only runs.jsonl, and a new
+  start is recorded on refiring, with no conflict.
 
-## b17_cgen 三次落位定稿（2026-08-23 07:17–07:2x）
+## b17_cgen's third placement finalized (2026-08-23 07:17-07:2x)
 
-- b17_ctool 07:17 在 H100 gpu1 收官（acc 0.6867、ALIGN PASS 2.14e-04、
-  墙钟约 1.5h），销号 + record finish 完毕，gpu1 实测 0 MiB。
-- cgen 重发到 gpu1：用只含 cgen 一格的临时排卡表
-  （`$CLAUDE_JOB_DIR/tmp/np821b17_cgen_only_placement.json`，不进 git）
-  发射，避开 launch-probe 对已完成 ctool 格的「重发→守卫秒退→假登记」坑；
-  正式表 `ops/np821b17_placement.json` 的 cgen 行同步改成 108 gpu1 留档。
-- 登记实况：台账 active 有正确的新 session 条目（launch-probe 的
-  「登记失败」WARN 与实况不符，以 jobs.json 为准）；record start 复用
-  05:44 那条（commit 7dbd28e，重复 run_id 拒新增），实际发射 commit 是
-  097d81c——差异只有排卡表与 worklog，训练代码同一版，RUNMETA 第 4 条
-  钉的是 097d81c，追溯以 RUNMETA 为准。
-- 全批 12 run 的落位定格：b06=H100×3、b17 ctool/cparam=H100 gpu1/2、
-  b17 cgen=H100 gpu1（接棒 ctool）、l17=Ada×3、l4=H200×3。
-- 四批训练是否跨批并行占卡（smoke 实测速度后裁，过程性，记本文件）。
-- LoRA smoke 实测 ETA 若跑不成立，裁换卡/缩配（口径类，进 TIMELINE）。
-- e2 各批风险档按 REPLAY_REPORT 的 chosen_theta 定（口径既定，只记执行结果）。
+- b17_ctool wrapped up on H100 gpu1 at 07:17 (acc 0.6867, ALIGN PASS
+  2.14e-04, wall-clock about 1.5h), deregistered + record finish done,
+  gpu1 measured 0 MiB.
+- cgen refired onto gpu1: launched with a temporary placement table
+  containing only the cgen cell
+  (`$CLAUDE_JOB_DIR/tmp/np821b17_cgen_only_placement.json`, not checked
+  into git), avoiding the pitfall of launch-probe's "refire -> guard
+  exits instantly -> fake registration" against the already-completed
+  ctool cell; the real table `ops/np821b17_placement.json`'s cgen row is
+  synchronously updated to 108 gpu1, on file.
+- Registration in fact: the ledger's active list has the correct new
+  session entry (launch-probe's "registration failed" WARN doesn't match
+  reality, jobs.json is authoritative); record start reuses the 05:44
+  entry (commit 7dbd28e, a duplicate run_id refuses to add a new one),
+  and the actual launch commit is 097d81c, the difference being only the
+  placement table and the worklog, the training code is the same
+  version; RUNMETA's 4th entry pins 097d81c, and 097d81c is authoritative
+  for tracing.
+- The whole batch's 12 runs' final placement: b06=H100 x3, b17
+  ctool/cparam=H100 gpu1/2, b17 cgen=H100 gpu1 (taking over from ctool),
+  l17=Ada x3, l4=H200 x3.
+- Whether the four training batches run cross-batch parallel for
+  cards (ruled after the smoke test's measured speed, process-level,
+  recorded in this file).
+- If LoRA's smoke-measured ETA turns out infeasible, rule on switching
+  cards / scaling down (convention-level, entered into TIMELINE).
+- Each batch's evaluation risk level is set by REPLAY_REPORT's
+  chosen_theta (the convention is already settled, only the execution
+  result is recorded here).
 
-## b17 两格收官（2026-08-24 15:34）
+## b17's two cells wrap up (2026-08-24 15:34)
 
-- cgen best_val_ce 0.512（H100 gpu1 接棒 ctool，含改道折腾，从 097d81c
-  重发算起墙钟约 32.2h）；cparam best_val_ce 0.3378（H100 gpu2，约 30.1h）。
-- 两 run 逐个销号 + record finish，b17 批 3/3 齐。全参两批（b06/b17）
-  六格全部收官。
+- cgen best_val_ce 0.512 (H100 gpu1, taking over from ctool, including
+  the rerouting hassle, wall-clock about 32.2h counting from the 097d81c
+  refire); cparam best_val_ce 0.3378 (H100 gpu2, about 30.1h).
+- Both runs deregistered + record finish one by one, b17's batch 3/3
+  complete. Both full-parameter batches (b06/b17), six cells in total,
+  have all wrapped up.
 
-## l4_cgen 收官（2026-08-25 04:25），9/12 齐
+## l4_cgen wraps up (2026-08-25 04:25), 9/12 complete
 
-- best_val_ce 0.371（Qwen3-4B LoRA+gc，H200，墙钟约 64.2h）。末 epoch
-  val_ce 0.5716 比 best 差，best/ 取自更早 epoch，权重文件齐。
-- 销号 + record finish 完毕。余 3 格：l4_cparam 在末次验证段（H200 验证
-  约 2.5h，预计 08-25 晨收）；l17 cgen/cparam 在第 2 epoch 边界验证
-  （Ada，预计 08-26 晨收）。
+- best_val_ce 0.371 (Qwen3-4B LoRA+gc, H200, wall-clock about 64.2h).
+  The last epoch's val_ce 0.5716 is worse than best, best/ is taken from
+  an earlier epoch, the weight files are all present.
+- Deregistered + record finish done. 3 cells remain: l4_cparam is in
+  its final validation segment (H200 validation about 2.5h, expected to
+  wrap up the morning of 08-25); l17 cgen/cparam are at the 2nd
+  epoch-boundary validation (Ada, expected to wrap up the morning of
+  08-26).
 
-## l4_cparam 收官（2026-08-25 04:5x），10/12 齐，l4 批 3/3
+## l4_cparam wraps up (2026-08-25 04:5x), 10/12 complete, l4's batch 3/3
 
-- best_val_ce 0.3375（Qwen3-4B LoRA+gc，H200，墙钟约 64.4h）。末 epoch
-  val_ce 0.4186、val_exact_params 0.77，best/ 权重齐。销号 + record
-  finish 完毕。
-- 108 实探：gpu3/4/5 归零（l4 释放干净，且原占 gpu3 的他人进程已走）；
-  gpu0/1/2 各 34–36G 被他人占用（b17 08-24 已收官，非我方残留）。
-  预写的 eval_tool 排卡表指向 108 gpu0-3，届时按实探改排。
-- 余 2 格：l17 cgen/cparam（Ada，g11650/17484，预计 08-26 晨收）。
+- best_val_ce 0.3375 (Qwen3-4B LoRA+gc, H200, wall-clock about 64.4h).
+  Last epoch's val_ce 0.4186, val_exact_params 0.77, best/ weights all
+  present. Deregistered + record finish done.
+- A real probe of 108: gpu3/4/5 at zero (l4 released clean, and the
+  other user's process that had taken gpu3 is gone); gpu0/1/2 each show
+  34-36G taken by other users (b17 wrapped up on 08-24, this is not our
+  own leftover). The pre-written eval_tool placement table points at 108
+  gpu0-3, to be re-arranged per the real probe when the time comes.
+- 2 cells remain: l17 cgen/cparam (Ada, g11650/17484, expected to wrap
+  up the morning of 08-26).
 
-## 分工变更：评测线移交分支会话（2026-08-26 03:5x）
+## Division of labor change: the evaluation line hands off to a branch session (2026-08-26 03:5x)
 
-- 用户开分支会话「new-exp-plan ⑂ 我想先评测一下目前微调好的部分」，
-  下令先评测已训完的 10 格。两会话分工：
-  分支管全部评测线（e1_tool/e2_call/矩阵、驱动器 t2→t3→e1 推进、
-  Phase D 收官、Phase E 回写 skill）；本会话只管 l17 cgen/cparam
-  训练监控与收官（销号 + record finish + 回执 + commit），收官后
-  发消息通知分支，由分支补发 l17 的 e2_call。
-- 本会话从此不敲 `run.py pipeline`、不发评测任务，避免重复发射与
-  state.json 冲突。台账两边都只经 run.py gpu-jobs/record 写（有锁）；
-  git 提交各自只 add 自己动的文件。
-- 分支 03:5x 实探：108 六卡全空、105 八卡全空（此前占 108 gpu0/1/2 的
-  他人进程已走），评测优先用 108。
+- The user opened a branch session, "new-exp-plan ⑂ I want to
+  evaluate the fine-tuned parts done so far first," ordering evaluation
+  of the 10 already-trained cells first. Division of labor between the
+  two sessions: the branch handles the whole evaluation line
+  (e1_tool/e2_call/matrix, advancing the driver's t2->t3->e1, Phase D
+  wrap-up, Phase E writing back to the skill); this session only handles
+  l17 cgen/cparam's training monitoring and wrap-up (deregister + record
+  finish + record + commit), and once wrapped up, sends a message
+  notifying the branch, which then launches l17's e2_call.
+- From here on, this session doesn't invoke `run.py pipeline` and
+  doesn't launch evaluation tasks, to avoid duplicate launches and
+  state.json conflicts. Both sides write the ledger only through
+  `run.py gpu-jobs`/`record` (which lock); git commits each add only the
+  files they themselves touched.
+- The branch's real probe at 03:5x: all six cards on 108 empty, all
+  eight cards on 105 empty (the other user's process that had taken 108
+  gpu0/1/2 is gone), evaluation prioritizes 108.
 
-## 裁决 7：评测不另做 smoke，用发射验活 + 首进度行代替（分支会话，2026-08-26 03:5x）
+## Ruling 7: evaluation does no separate smoke test, launch's liveness check plus the first progress line substitute for it (branch session, 2026-08-26 03:5x)
 
-- 事实：驱动器 e1/e2/m1 的完成判据只看产物文件（各批 ctool 的
-  REPLAY_REPORT.json、cgen/cparam 的 CALLGEN/PARAM_REPORT.json、
-  MATRIX md），不看 state.json 的发射标记；t2_full 要 12 格全齐才放行。
-  所以现在用 `launch-eval` 直接评已训完的格，之后驱动器敲到评测段会
-  直接认作完成，不冲突（skill C4 本来就写着"逐格收官逐格派评测"）。
-- 裁决：不另做评测 smoke。依据：同一版评测代码在 p1 的 b06/b17 两批
-  （0.6B、1.7B 底座）全量跑通过；三个训练脚本存 best/ 前都
-  merge_and_unload，LoRA 格 best/ 与全参格逐项同构（l4 model.safetensors
-  16.09G、l17 6.88G，都是合并后整模），评测脚本一律 from_pretrained(best/)
-  零改动装回；cgen/cparam 评测的数据三方对拍（头 meta.data / --data /
-  ctool meta.data）都指向 nyapass_aw_v1/gptoss。用 `--limit` 做 smoke 要
-  复制 16G 的 run 目录，代价高于收益。替代验证点 = 发射 30 秒验活 +
-  首条 @hb 进度行。
+- Fact: the driver's e1/e2/m1 completion criteria only look at output
+  files (each batch's ctool REPLAY_REPORT.json, cgen/cparam's
+  CALLGEN/PARAM_REPORT.json, MATRIX md), not state.json's launch marker;
+  t2_full only clears once all 12 cells are complete. So evaluating the
+  already-trained cells directly with `launch-eval` now means the driver,
+  when it later reaches the evaluation stage, will recognize them as done
+  with no conflict (skill C4 already says "dispatch evaluation cell by
+  cell as each wraps up").
+- Ruling: no separate evaluation smoke test. Basis: the same version
+  of the evaluation code already ran through in full on p1's b06/b17
+  batches (0.6B, 1.7B backbones); all three training scripts do
+  merge_and_unload before saving best/, so a LoRA cell's best/ is
+  structurally identical to a full-parameter cell's item for item (l4's
+  model.safetensors is 16.09G, l17's is 6.88G, both merged full models);
+  the evaluation script always loads back with from_pretrained(best/),
+  zero changes; cgen/cparam evaluation's three-way data cross-check
+  (the header's meta.data / --data / ctool's meta.data) all point at
+  nyapass_aw_v1/gptoss. Doing a smoke test with `--limit` would require
+  copying a 16G run directory, a cost higher than the benefit. The
+  substitute verification point = launch's 30-second liveness check plus
+  the first @hb progress line.
 
-## 评测发射回执：四批 ctool（2026-08-26 03:58）
+## Evaluation launch record: four batches' ctool (2026-08-26 03:58)
 
-- `launch-eval tool` 逐批发：b06→108 gpu0（H100）、b17→gpu1（H100）、
-  l17→gpu2（H100）、l4→gpu3（H200），四格 ALIVE，record start 钉
-  commit 1edd5ae（树干净），run_id `eval_np821{b06,b17,l17,l4}_gptoss_ctool`。
-- 验证点过：四格权重装完后 100 秒内都到 @hb 100/2556（先评 dev 堆
-  2556 事件，再评 test 堆 8533 事件）。
-- **RUNMETA WARN 文案与实况不符（要回写 skill）**：launch-eval 打
-  "没给 --outdir，RUNMETA 没写"，但它随后自己往 `<run>/RUNMETA.json`
-  的 `launches` 追加了一条 kind=eval_tool（03:58:10，带 session/gpu/
-  log/排卡表）。按 WARN 手补 `run.py runmeta` 的那条（03:59:07）成了
-  重复项。回看训练 run 同样：launch-probe 的 12:03:50 条 + 手补的
-  12:05:20 条。重复项无害（追溯链只多不少），以后 launch-probe /
-  launch-eval 发射后**不再手补 runmeta**，改为读 RUNMETA 核实。
-- 监控 b8phu882x：REPLAY_REPORT 落地/日志出错叫醒，30 分钟心跳。
-  报告落地后读 chosen_theta 定风险档、写 eval_call 排卡表、发
-  b06/b17/l4 的 cgen/cparam 评测；l17 的 call 档等母会话通知训练收官。
+- `launch-eval tool` launched per batch: b06->108 gpu0 (H100),
+  b17->gpu1 (H100), l17->gpu2 (H100), l4->gpu3 (H200), all four cells
+  ALIVE, record start pinned to commit 1edd5ae (tree clean), run_id
+  `eval_np821{b06,b17,l17,l4}_gptoss_ctool`.
+- Verification point passed: within 100 seconds of finishing loading
+  weights, all four cells reached @hb 100/2556 (dev split's 2556 events
+  are evaluated first, then test split's 8533 events).
+- **The RUNMETA WARN's wording doesn't match reality (needs to be
+  written back into the skill)**: launch-eval prints "no --outdir given,
+  RUNMETA not written," but it then appends an entry itself, kind=
+  eval_tool, to `<run>/RUNMETA.json`'s `launches` (03:58:10, with
+  session/gpu/log/placement table). Manually adding `run.py runmeta` per
+  the WARN (03:59:07) becomes a duplicate. Looking back at training runs,
+  the same thing: launch-probe's 12:03:50 entry plus the manually added
+  12:05:20 entry. Duplicates are harmless (the traceability chain only
+  gains entries, never loses them); from now on, **runmeta is no longer
+  manually added** after launch-probe / launch-eval launches, instead
+  RUNMETA is read to verify.
+- Monitor b8phu882x: wakes up on REPLAY_REPORT landing or a log error,
+  30-minute heartbeat. Once the report lands, read chosen_theta to set
+  the risk level, write the eval_call placement table, and launch
+  b06/b17/l4's cgen/cparam evaluation; l17's call cells wait for the
+  parent session's notification that training has wrapped up.
 
-## ctool 评测收官 ×3 + call 档发射 ×2（2026-08-26 04:37–04:45）
+## ctool evaluation wraps up x3 + call cells launched x2 (2026-08-26 04:37-04:45)
 
-- 速率实测：评测按事件走（dev 2556 + test 8533 事件），H100 上 0.6B/1.7B
-  各约 4.6–4.8 事件/秒，H200 上 4B 约 3.7 事件/秒；一批 ctool 评测约
-  40 分钟，远快于按 p1 样本行数外推的 2–3 小时。
-- 三批 REPLAY_REPORT（test 冻结，n=8533，先验基线 0.3867）：
+- Measured rate: evaluation runs by event count (dev 2556 + test 8533
+  events); on H100, 0.6B/1.7B are each about 4.6-4.8 events/second, on
+  H200 4B is about 3.7 events/second; one batch's ctool evaluation takes
+  about 40 minutes, far faster than the 2-3 hours projected from p1's
+  sample row count.
+- Three batches' REPLAY_REPORT (test frozen, n=8533, the frequency
+  prior baseline 0.3867):
 
-  | 批 | θ(0.05) | θ(0.1) | 0.05 档 coverage / trig_acc / earliness / wrong_spec | 温度 |
+  | Batch | θ(0.05) | θ(0.1) | 0.05-level coverage / trig_acc / earliness / wrong_spec | Temperature |
   |---|---|---|---|---|
   | b06 | 0.975 | 0.9 | 0.261 / 0.9529 / 0.565 / 0.0123 | 1.1959 |
   | b17 | 0.975 | 0.925 | 0.3288 / 0.9533 / 0.4758 / 0.0154 | 1.2359 |
   | l17 | 0.95 | 0.85 | 0.3401 / 0.9476 / 0.5042 / 0.0178 | 1.24 |
 
-  三批 0.05 档都有解，call 档一律缺省风险档（不加 --risk）。
-  三格逐个销号 + record finish（run_id `eval_np821<b>_gptoss_ctool`）。
-- b06 call 档 04:38 发 108 gpu4/gpu5（H200），b17 call 档 04:45 发
-  gpu0/gpu1（H100），四格 ALIVE；排卡表
-  `ops/np821{b06,b17}_eval_call_placement.json` 随台账一起提交
-  （d4ff119 / e6d1a39）。b06 两格 40 秒内出首进度：cgen 8/2227、
-  cparam 16/2227（2227 = θ=0.975 触发的 test 事件数；cparam 跑
-  gt_tool / pred_tool 两遍）。RUNMETA 的 eval_call 条由 launch-eval 自写，
-  未手补。
-- 监控 b7pufajd8 盯 call 档（读台账自动纳入新发的格）。l4 ctool 报告
-  未落（H200 上 4B 慢一档），落地后 call 档落 gpu2/gpu3。
+  All three batches have a solution at the 0.05 level, so the call cells
+  all use the default risk level (no `--risk` added). All three cells
+  deregistered + record finish one by one (run_id
+  `eval_np821<batch>_gptoss_ctool`).
+- b06's call cells launched at 04:38 on 108 gpu4/gpu5 (H200), b17's
+  call cells launched at 04:45 on gpu0/gpu1 (H100), all four cells
+  ALIVE; the placement tables
+  `ops/np821{b06,b17}_eval_call_placement.json` were committed along
+  with the ledger (d4ff119 / e6d1a39). b06's two cells showed their
+  first progress within 40 seconds: cgen 8/2227, cparam 16/2227 (2227 =
+  the count of test events fired at theta=0.975; cparam runs both
+  gt_tool / pred_tool passes). RUNMETA's eval_call entry is
+  self-written by launch-eval, not manually added.
+- Monitor b7pufajd8 watches the call cells (reads the ledger to
+  automatically pick up newly launched cells). l4's ctool report hasn't
+  landed yet (4B is one notch slower on H200); once it lands, its call
+  cells land on gpu2/gpu3.
 
-## l4 ctool 收官 + call 档发射（2026-08-26 04:46–04:50），四批 ctool 评测齐
+## l4 ctool wraps up + call cells launched (2026-08-26 04:46-04:50), all four batches' ctool evaluation complete
 
-- l4 REPLAY_REPORT（test 冻结 n=8533）：θ(0.05)=0.975、θ(0.1)=0.875；
-  0.05 档 coverage 0.2569 / trig_acc 0.9599 / earliness 0.3886 /
-  wrong_spec 0.0103；温度 1.2704。0.05 有解 → 缺省档。销号 + record
-  finish（H200 约 48 分钟）。
-- l4 call 档 04:50 发 108 gpu2（cgen，H100）/ gpu3（cparam，H200——两遍
-  生成给快卡），ALIVE，钉 15c90e8。至此 108 六卡跑 b06/b17/l4 六个
-  call 档评测；四批 ctool 评测报告全在，驱动器 e1_tool 判据已满足。
-- 四批 0.05 档 θ 全部有解，e2 的 `--risk 0.1` 退让条款一次都没触发。
+- l4's REPLAY_REPORT (test frozen n=8533): θ(0.05)=0.975, θ(0.1)=0.875;
+  0.05-level coverage 0.2569 / trig_acc 0.9599 / earliness 0.3886 /
+  wrong_spec 0.0103; temperature 1.2704. 0.05 has a solution -> the
+  default level. Deregistered + record finish (H200, about 48 minutes).
+- l4's call cells launched at 04:50 on 108 gpu2 (cgen, H100) / gpu3
+  (cparam, H200, since two generation passes go to the faster card),
+  ALIVE, pinned at 15c90e8. At this point, 108's six cards are running
+  b06/b17/l4's six call-cell evaluations; all four batches' ctool
+  evaluation reports are present, and the driver's e1_tool criterion is
+  already satisfied.
+- All four batches have a solution at the 0.05 theta level, e2's
+  `--risk 0.1` fallback clause was never triggered once.
 
-## b06 call 档收官（2026-08-26 05:00–05:0x），b06 批三格评测齐
+## b06's call cells wrap up (2026-08-26 05:00-05:0x), b06's batch, three cells, evaluation complete
 
-- 两格都是 risk 0.05、θ 0.975、触发 2227 = 评分 2227 个 test 事件、
-  parse_fail 0、无参数事件占 0.467。H200 上 cparam 约 22 分钟、cgen
-  约 23 分钟（生成速率 1.1–1.4 条/秒）。
-- cgen：tool_ok 0.9057 / params_all_ok 0.8702 / full_call_ok 0.8276 /
-  exact_call_ok 0.8289 / 参数实例准确率 0.7406（2120 个参数实例）。
-- cparam：pred_tool 口径 tool_ok 0.9529 / params_all_ok 0.9026 /
-  full_call_ok 0.8752 / exact_call_ok 0.8765 / 参数实例准确率 0.8182
-  （2079 个实例）；gt_tool 口径 params_all_ok 0.9106 / 参数实例准确率
-  0.8693（1997 个实例）。
-- 两格销号 + record finish（run_id `eval_np821b06_gptoss_{cgen,cparam}`）。
-- b06 两档矩阵已出：`pipeline/runs/MATRIX_np821b06_r0.05.md` / `_r0.1.md`
-  （NFS 产物目录，驱动器 m1 同款命令与文件名）。矩阵脚本两条已知显示
-  局限这次都出现：m 线两格（本批没训）标 PENDING；0.1 档表里 cgen/cparam
-  两行仍是 0.05 档触发点（θ 0.975）的数——引用 0.1 档表必须配文字说明。
+- Both cells are risk 0.05, θ 0.975, fired 2227 = 2227 test events
+  scored, parse_fail 0, share of no-parameter events 0.467. On H200,
+  cparam takes about 22 minutes, cgen about 23 minutes (generation rate
+  1.1-1.4 per second).
+- cgen: tool_ok 0.9057 / params_all_ok 0.8702 / full_call_ok 0.8276 /
+  exact_call_ok 0.8289 / parameter-instance accuracy 0.7406 (2120
+  parameter instances).
+- cparam: the pred_tool convention gives tool_ok 0.9529 /
+  params_all_ok 0.9026 / full_call_ok 0.8752 / exact_call_ok 0.8765 /
+  parameter-instance accuracy 0.8182 (2079 instances); the gt_tool
+  convention gives params_all_ok 0.9106 / parameter-instance accuracy
+  0.8693 (1997 instances).
+- Both cells deregistered + record finish (run_id
+  `eval_np821b06_gptoss_{cgen,cparam}`).
+- b06's two risk-level matrices are out:
+  `pipeline/runs/MATRIX_np821b06_r0.05.md` / `_r0.1.md` (NFS output
+  directory, the same command and filename as the driver's m1). Both of
+  the matrix script's known display limitations show up here: the
+  m-line's two cells (not trained in this batch) are marked PENDING; in
+  the 0.1-level table, the cgen/cparam rows are still the numbers at the
+  0.05-level firing threshold (θ 0.975), so citing the 0.1-level table
+  must come with a written explanation.
 
-## b17 call 档收官（2026-08-26 05:06–05:0x），b17 批三格评测齐
+## b17's call cells wrap up (2026-08-26 05:06-05:0x), b17's batch, three cells, evaluation complete
 
-- 两格都是 risk 0.05、θ 0.975、触发 2806 = 评分 2806 个 test 事件、
-  parse_fail 0、无参数事件占 0.3977。H100 上 cgen 约 26 分钟、cparam
-  约 27 分钟。
-- cgen：tool_ok 0.9006 / params_all_ok 0.8254 / full_call_ok 0.7887 /
-  exact_call_ok 0.7876 / 参数实例准确率 0.6927（3095 个实例）。
-- cparam：pred_tool 口径 tool_ok 0.9533 / params_all_ok 0.8795 /
-  full_call_ok 0.8525 / exact_call_ok 0.8521 / 参数实例准确率 0.8116
-  （2957 个实例）；gt_tool 口径 params_all_ok 0.8902 / 参数实例准确率
-  0.864（2830 个实例）。
-- 两格销号 + record finish；b17 两档矩阵随后出。
+- Both cells are risk 0.05, θ 0.975, fired 2806 = 2806 test events
+  scored, parse_fail 0, share of no-parameter events 0.3977. On H100,
+  cgen takes about 26 minutes, cparam about 27 minutes.
+- cgen: tool_ok 0.9006 / params_all_ok 0.8254 / full_call_ok 0.7887 /
+  exact_call_ok 0.7876 / parameter-instance accuracy 0.6927 (3095
+  instances).
+- cparam: the pred_tool convention gives tool_ok 0.9533 /
+  params_all_ok 0.8795 / full_call_ok 0.8525 / exact_call_ok 0.8521 /
+  parameter-instance accuracy 0.8116 (2957 instances); the gt_tool
+  convention gives params_all_ok 0.8902 / parameter-instance accuracy
+  0.864 (2830 instances).
+- Both cells deregistered + record finish; b17's two risk-level
+  matrices come out afterward.
 
-## l4 call 档收官（2026-08-26 05:13–05:1x），l4 批三格评测齐；108 六卡归零
+## l4's call cells wrap up (2026-08-26 05:13-05:1x), l4's batch, three cells, evaluation complete; 108's six cards back to zero
 
-- 两格都是 risk 0.05、θ 0.975、触发 2192 = 评分 2192 个 test 事件、
-  parse_fail 0、无参数事件占 0.3828。cgen（H100）约 23 分钟、cparam
-  （H200）约 24 分钟。
-- cgen：tool_ok 0.9056 / params_all_ok 0.8472 / full_call_ok 0.8294 /
-  exact_call_ok 0.8271 / 参数实例准确率 0.7291（2676 个实例）。
-- cparam：pred_tool 口径 tool_ok 0.9599 / params_all_ok 0.8828 /
-  full_call_ok 0.8654 / exact_call_ok 0.8645 / 参数实例准确率 0.8251
-  （2590 个实例）；gt_tool 口径 params_all_ok 0.8969 / 参数实例准确率
-  0.8794（2488 个实例）。
-- 两格销号 + record finish。108 实探：评测 session 清零、六卡显存全
-  0 MiB（G7 过）。评测线台账 active 里 np821 相关条目清空。
-- 已训完 10 格的评测至此全部收官（4 个 ctool + 6 个 call 档）；剩 l17
-  的 cgen/cparam 评测等母会话通知训练收官。
+- Both cells are risk 0.05, θ 0.975, fired 2192 = 2192 test events
+  scored, parse_fail 0, share of no-parameter events 0.3828. cgen (H100)
+  about 23 minutes, cparam (H200) about 24 minutes.
+- cgen: tool_ok 0.9056 / params_all_ok 0.8472 / full_call_ok 0.8294 /
+  exact_call_ok 0.8271 / parameter-instance accuracy 0.7291 (2676
+  instances).
+- cparam: the pred_tool convention gives tool_ok 0.9599 /
+  params_all_ok 0.8828 / full_call_ok 0.8654 / exact_call_ok 0.8645 /
+  parameter-instance accuracy 0.8251 (2590 instances); the gt_tool
+  convention gives params_all_ok 0.8969 / parameter-instance accuracy
+  0.8794 (2488 instances).
+- Both cells deregistered + record finish. A real probe of 108:
+  evaluation sessions cleared to zero, all six cards' VRAM at 0 MiB (G7
+  passes). The np821-related entries in the evaluation line's ledger
+  active list are cleared.
+- Evaluation of the 10 already-trained cells has now all wrapped up (4
+  ctool + 6 call cells); l17's cgen/cparam evaluation remains, waiting
+  for the parent session's notification that training has wrapped up.
 
-## l17_cparam 训练收官（2026-08-26 14:3x，母会话），11/12 齐
+## l17_cparam training wraps up (2026-08-26 14:3x, parent session), 11/12 complete
 
-- best_val_ce 0.3146（Qwen3-1.7B LoRA+gc，Ada，墙钟约 98.3h）。末 epoch
-  val_ce 0.4518、val_exact_params 0.725，best/ 权重齐。销号 + record
-  finish 完毕。
-- 余 1 格：l17_cgen 在末次验证段（12:05 前后进验证，预计 15:00 前后出
-  done），收官后一并通知分支发 l17 的 call 档评测。
+- best_val_ce 0.3146 (Qwen3-1.7B LoRA+gc, Ada, wall-clock about
+  98.3h). Last epoch's val_ce 0.4518, val_exact_params 0.725, best/
+  weights all present. Deregistered + record finish done.
+- 1 cell remains: l17_cgen is in its final validation segment (entered
+  validation around 12:05, expected to produce done around 15:00); once
+  it wraps up, the branch will be notified all at once to launch l17's
+  call-cell evaluation.
 
-## l17_cgen 训练收官（2026-08-26 14:5x，母会话），12/12 训练全收
+## l17_cgen training wraps up (2026-08-26 14:5x, parent session), 12/12 training all complete
 
-- best_val_ce 0.3814（Qwen3-1.7B LoRA+gc，Ada，墙钟约 98.7h）。末 epoch
-  val_ce 0.643、val_exact_call 0.505，best/ 权重齐。销号 + record finish
-  完毕；107 四卡实测 4 MiB 基线，释放干净。
-- np821 十二格训练至此全部收官。四批 best_val_ce 汇总（cgen/cparam）：
-  b06 0.4793/0.396、b17 0.512/0.3378、l17 0.3814/0.3146、l4 0.371/0.3375；
-  四 ctool best_calA_weighted_acc：b06 0.6883、b17 0.6867、l17 0.6974、
-  l4 0.7016。
-- 训练监控收摊（监控任务在 TRAIN_ALL_DONE 后自行结束），已发消息通知
-  分支会话补发 l17 的 call 档评测并出 l17 矩阵。本会话职责清空。
+- best_val_ce 0.3814 (Qwen3-1.7B LoRA+gc, Ada, wall-clock about
+  98.7h). Last epoch's val_ce 0.643, val_exact_call 0.505, best/ weights
+  all present. Deregistered + record finish done; 107's four cards
+  measured at the 4 MiB baseline, released clean.
+- All twelve of np821's training cells have now wrapped up. Summary
+  of the four batches' best_val_ce (cgen/cparam): b06 0.4793/0.396, b17
+  0.512/0.3378, l17 0.3814/0.3146, l4 0.371/0.3375; the four ctool
+  best_calA_weighted_acc: b06 0.6883, b17 0.6867, l17 0.6974, l4 0.7016.
+- Training monitoring wound down (the monitoring task ends itself
+  after TRAIN_ALL_DONE); a message has been sent notifying the branch
+  session to launch l17's call-cell evaluation and produce l17's matrix.
+  This session's responsibilities are now clear.
 
-## l17 call 档发射（2026-08-26 15:0x，分支会话）
+## l17's call cells launched (2026-08-26 15:0x, branch session)
 
-- 分支亲核母会话的收官事实：两格 train_log 的 done 事件（0.3814 /
-  0.3146）、best/ 权重齐、runs.jsonl 有 finish、台账 active 空、树干净在
-  7076c34、108 六卡实探全空。
-- l17 ctool 的 0.05 档 θ=0.95 有解 → call 档缺省风险档。排卡表
-  `ops/np821l17_eval_call_placement.json`（cgen→108 gpu0、cparam→gpu1）
-  提交 fad9abe 后 `launch-eval call` 发射，两格 ALIVE，record start 钉
-  fad9abe。监控 b7pufajd8 从台账自动纳入。
-- 驱动器此时不敲：e2_call 见 l17 两份报告缺、又无发射标记，会再发一遍
-  l17 的 call 档（驱动器不查台账里在飞的 eval 任务）。等报告落地再敲
-  t2→t3→e1→e2→m1 一路过，m1 只补 l17 两档矩阵（已存在的六份跳过）。
+- The branch personally verified the parent session's wrap-up facts:
+  both cells' train_log done events (0.3814 / 0.3146), best/ weights all
+  present, runs.jsonl has finish, the ledger's active list is empty, the
+  tree is clean at 7076c34, a real probe of 108's six cards found them
+  all empty.
+- l17 ctool's 0.05-level θ=0.95 has a solution -> the call cells use
+  the default risk level. The placement table
+  `ops/np821l17_eval_call_placement.json` (cgen->108 gpu0,
+  cparam->gpu1) was committed as fad9abe, then `launch-eval call`
+  launched, both cells ALIVE, record start pinned to fad9abe. Monitor
+  b7pufajd8 picks it up automatically from the ledger.
+- The driver is not invoked at this point: e2_call would see l17's two
+  reports missing and no launch marker, and would launch l17's call
+  cells again (the driver doesn't check the ledger for in-flight eval
+  tasks). Once the reports land, t2->t3->e1->e2->m1 are invoked straight
+  through, with m1 only adding l17's two risk-level matrices (skipping
+  the six that already exist).
 
-## 根因修复：RUNMETA 两个写手 → register_all 唯一写手（2026-08-26 15:1x）
+## Root-cause fix: RUNMETA's two writers become register_all's single writer (2026-08-26 15:1x)
 
-- 根因：`launch_common.register_all` 自带 RUNMETA 步（给 outdir 才写，顺序
-  台账→记录→RUNMETA），两个排卡发射器 `launch_probe` / `launch_eval` 为了
-  "发射真实发生就先钉代码、后面登记拒绝也不能丢"在调它之前各自先
-  `append_runmeta` 一条（带 session/gpu/log/排卡表），再传 `outdir=None`
-  ——于是 register_all 打出 "WARN 没给 --outdir，RUNMETA 没写"，与实况相反。
-- 修法（肯定式、单一写手）：RUNMETA 步挪到 register_all 最前面（顺序改为
-  RUNMETA→台账→记录），新增 `runmeta_kind` / `runmeta_extra` 参数，写失败
-  只 WARN；两个发射器删掉私写，改传 outdir + kind + extra。`run.py launch`
-  没给 --outdir 时的 WARN 保留（那是真没写）。
-- 测试：`tests/test_launch_{probe,eval}.py` 去掉对私写的 patch，改为断言
-  outdir/kind/extra 传到了 register_all；`tests/test_launch_common.py` 加
-  两条（record 拒绝时 RUNMETA 已落盘；kind/extra 进了记录且只有一条）。
-  四份发射器测试 57 条全过，`run.py selfcheck` 过。
-- 文档：gpu-run SKILL.md Phase 4 的登记顺序与 WARN 语义改写；probe-pipeline
-  的 stage-commands 里"launch-probe 不写 RUNMETA / 看到 WARN 要自己补"两句
-  等回写 agent 交付后由本会话改（避免与 agent 同时编辑同一文件）。
-- 本批 12 个训练 run 与 6 个评测 run 目录里已有的重复 RUNMETA 条目
-  （发射器一条 + 手补一条）原样保留：追溯链只多不少，不回头删产物记录。
-- 修复提交 6047f83（含 test_driver 里过期的 `max_bounds` 断言：裁决 2 后配置
-  显式写 64，测试改为断言 == 64；整套 354 条只剩已知的 test_splice_replay
-  环境差异 1 error）。
+- Root cause: `launch_common.register_all` carries its own RUNMETA
+  step (writes only when given outdir, in the order ledger -> record ->
+  RUNMETA); the two placement launchers, `launch_probe` / `launch_eval`,
+  in order to ensure "once a launch really happens, pin the code first,
+  even if registration is later refused it must not be lost," each
+  called `append_runmeta` once themselves before invoking it (with
+  session/gpu/log/placement table), then passed `outdir=None`, so
+  register_all printed "WARN no --outdir given, RUNMETA not written,"
+  the opposite of what actually happened.
+- Fix (stated affirmatively, a single writer): the RUNMETA step moves
+  to the very front of register_all (the order becomes RUNMETA -> ledger
+  -> record), with new `runmeta_kind` / `runmeta_extra` parameters, and a
+  write failure only WARNs; the two launchers drop their private write
+  and instead pass outdir + kind + extra. `run.py launch`'s WARN when
+  --outdir isn't given is kept (that case really doesn't write).
+- Tests: `tests/test_launch_{probe,eval}.py` drop the patch on the
+  private write, asserting instead that outdir/kind/extra are passed
+  through to register_all; `tests/test_launch_common.py` adds two cases
+  (RUNMETA has already landed when record is refused; kind/extra make it
+  into the record and there's only one entry). All 57 cases across the
+  four launcher test files pass, `run.py selfcheck` passes.
+- Documentation: gpu-run SKILL.md's Phase 4 registration order and
+  WARN semantics are rewritten; the two sentences in probe-pipeline's
+  stage-commands, "launch-probe doesn't write RUNMETA / on seeing a WARN,
+  add it yourself," are changed by this session once the write-back
+  agent delivers (to avoid editing the same file at the same time as the
+  agent).
+- The duplicate RUNMETA entries already present in this batch's 12
+  training run directories and 6 evaluation run directories (one from
+  the launcher, one manually added) are left as is: the traceability
+  chain only gains entries, never loses them, and output records are not
+  deleted after the fact.
+- Fix committed as 6047f83 (including a stale `max_bounds` assertion
+  in test_driver: after ruling 2, the config explicitly writes 64, so the
+  test now asserts == 64; the whole suite of 354 cases has only the known
+  1 error from test_splice_replay's environment difference).
 
-## Phase E 回写 skill（2026-08-26 15:0x–15:3x）
+## Phase E write-back to the skill (2026-08-26 15:0x-15:3x)
 
-- opus 子代理按任务书回写 7 份文档（probe-pipeline 的 SKILL.md /
-  gates / invariants / stage-commands / extending，gpu-run 的
-  launch-methodology / monitor-methodology），187 行增 27 行删。要点：
-  立 **G23**（手发评测在飞时不敲驱动器）与 **G24**（该批报告齐才出矩阵），
-  静默表加 #23/#24；补 LoRA 训法轴整条（extending §3 开头、stage-commands
-  §3.2、invariants LoRA 行、run_id 前缀带训法）；显存实测表 stage-commands
-  §3.1 + gates §3.9/§3.10 两个 OOM 案例；评测耗时表 §4.5（先写计数单位）；
-  驱动器两类完成判据写进 §6；多轨迹口径（种子家族、trajs_per_unit、预设
-  唯一真源、max_bounds 字段、等权 w=1）补进 invariants；G14 判据改口
-  （smoke 规模写不出 step 记录，"loss 在降"判不了）。
-- 主会话验收：两批 diff 通读；对文档里的代码行为断言逐条 grep 源码核实
-  （SEED 常量分家、`--weight-mode` 缺省 uniform、check_callstr 门禁 B 按 K、
-  gen_launch 的 traj_per_task/seed_family 约束、inject 线仍按
-  `appworld_<unit>.jsonl` 反查）全部对上。数字订正一处：§4.5 的 ctool 分钟数
-  按首末心跳复算改为 36–38（H100）/ 约 45（H200 4B），并注明 ctool 的 @hb
-  单位在 dev 段是事件、test 段是切点行。
-- 评测速率订正（对本文件前文）：前文写的"4.6–4.8 事件/秒"与"生成 1.1–1.4
-  条/秒"是飞行早期窗口读数；全程首末心跳实算 cgen 生成 1.57–1.85 条/秒、
-  cparam 两遍合计 2.98–3.63 条/秒，call 档一格 21–26 分钟；记忆文件
-  gpu-time-reference 已按全程值更新。
-- RUNMETA 相关三处（stage-commands §3、§4.2，SKILL.md C3）由主会话按修复后
-  的单一写手语义改写；gates G16 行原文仍准确，未动。
+- An opus subagent wrote back 7 documents per the task brief
+  (probe-pipeline's SKILL.md / gates / invariants / stage-commands /
+  extending, gpu-run's launch-methodology / monitor-methodology), +187
+  -27 lines. Key points: establishing **G23** (don't invoke the driver
+  while a manually launched evaluation is in flight) and **G24** (a
+  matrix is only produced once that batch's reports are all present),
+  added to the silent-failure table as #23/#24; adding the whole LoRA
+  training-method axis (extending §3's opening, stage-commands §3.2,
+  invariants' LoRA row, the run_id prefix carrying the training method);
+  the measured-VRAM table, stage-commands §3.1, plus gates §3.9/§3.10's
+  two OOM cases; the evaluation-duration table §4.5 (writing the counting
+  unit first); the driver's two kinds of completion criteria written into
+  §6; the multi-trajectory convention (seed family, trajs_per_unit, the
+  preset as the single source of truth, the max_bounds field, equal
+  weight w=1) added into invariants; G14's criterion rewording (a smoke
+  run can't produce a step record at that scale, so "loss is dropping"
+  cannot be judged).
+- Main-session acceptance: read through both batches of diff in full;
+  every code-behavior assertion in the documents was checked against the
+  source with grep one by one (the SEED constant split, `--weight-mode`'s
+  default of uniform, check_callstr gate B by K, gen_launch's
+  traj_per_task/seed_family constraints, the inject line still looking up
+  by `appworld_<unit>.jsonl`) and all matched. One number was corrected:
+  §4.5's ctool minute count, recomputed from first-to-last heartbeat, is
+  changed to 36-38 (H100) / about 45 (H200 4B), noting that ctool's @hb
+  unit is events in the dev segment and cut-point rows in the test
+  segment.
+- Evaluation-rate correction (to earlier text in this file): the
+  earlier "4.6-4.8 events/second" and "generation 1.1-1.4 per second"
+  were readings from an early window in flight; computed for real from
+  first-to-last heartbeat over the whole run, cgen generates at
+  1.57-1.85 per second, cparam's two passes combined at 2.98-3.63 per
+  second, a call cell takes 21-26 minutes; the memory file
+  gpu-time-reference has been updated to the whole-run values.
+- The three RUNMETA-related spots (stage-commands §3, §4.2, SKILL.md
+  C3) were rewritten by the main session per the fixed single-writer
+  semantics; gates' G16 line's original text is still accurate,
+  untouched.
 
-## l17 cgen 评测收官（2026-08-26 15:18）
+## l17 cgen evaluation wraps up (2026-08-26 15:18)
 
-- risk 0.05、θ 0.95、触发 2902 = 评分 2902、parse_fail 0；tool_ok 0.8866 /
-  params_all_ok 0.7774 / full_call_ok 0.7326 / exact_call_ok 0.7316 /
-  参数实例准确率 0.6287（3420 个实例）；无参数事件占 0.387。H100 约 23
-  分钟。销号 + record finish；gpu0 归零。cparam 第二遍在跑。
+risk 0.05, θ 0.95, fired 2902 = 2902 scored, parse_fail 0; tool_ok
+0.8866 / params_all_ok 0.7774 / full_call_ok 0.7326 / exact_call_ok
+0.7316 / parameter-instance accuracy 0.6287 (3420 instances); share of
+no-parameter events 0.387. H100, about 23 minutes. Deregistered + record
+finish; gpu0 back to zero. cparam's second pass is running.
 
-## l17 cparam 评测收官（2026-08-26 15:19），12/12 评测全收
+## l17 cparam evaluation wraps up (2026-08-26 15:19), 12/12 evaluation all complete
 
-- risk 0.05、θ 0.95、触发 2902 = 评分 2902、parse_fail 0；pred_tool 口径
-  tool_ok 0.9476 / params_all_ok 0.8322 / full_call_ok 0.8094 /
-  exact_call_ok 0.8067 / 参数实例准确率 0.7498（3221 个实例）；gt_tool 口径
-  params_all_ok 0.8467 / 参数实例准确率 0.808（3083 个实例）。H100 约 24
-  分钟。销号 + record finish。
-- 108 实探：评测 session 清零、六卡显存全 0 MiB；台账 active 空。四批
-  ctool + 八格 call 档评测至此全部收官，接着敲驱动器 t2→t3→e1→e2→m1。
+risk 0.05, θ 0.95, fired 2902 = 2902 scored, parse_fail 0; the
+pred_tool convention gives tool_ok 0.9476 / params_all_ok 0.8322 /
+full_call_ok 0.8094 / exact_call_ok 0.8067 / parameter-instance accuracy
+0.7498 (3221 instances); the gt_tool convention gives params_all_ok
+0.8467 / parameter-instance accuracy 0.808 (3083 instances). H100, about
+24 minutes. Deregistered + record finish.
 
-## 驱动器收官（2026-08-26 15:21）：流水线 nyapass_aw_v1 全部完成
+A real probe of 108: evaluation sessions cleared to zero, all six
+cards' VRAM at 0 MiB; the ledger's active list is empty. All four
+batches' ctool plus the eight call cells' evaluation have now all
+wrapped up, next the driver is invoked through t2->t3->e1->e2->m1.
 
-- 连敲五次全绿：t2_full「12 个训练 run 全跑完」→ t3_close「12 个 run 三处
-  登记齐、数字已记」→ e1_tool「4 批 ctool 报告全在」→ e2_call「call 档报告
-  全在，θ 两档皆 null 记 N/A 的批次：无」→ m1_matrix 新出
-  `MATRIX_np821l17_r0.05.md` / `_r0.1.md`（其余六份早已在，按判据跳过）→
-  done。手发的评测被驱动器全部认作完成，与裁决 7 的预期一致。
-- 八份矩阵齐：`pipeline/runs/MATRIX_np821{b06,b17,l17,l4}_r{0.05,0.1}.md`。
+## The driver wraps up (2026-08-26 15:21): the nyapass_aw_v1 pipeline is fully complete
 
-## Phase D 六连（2026-08-26 15:2x）
+Five invocations in a row all green: t2_full "all 12 training runs
+finished" -> t3_close "all 12 runs have all three ledger entries,
+numbers recorded" -> e1_tool "all 4 batches' ctool reports present" ->
+e2_call "all call-cell reports present, batches where both theta levels
+are null and recorded N/A: none" -> m1_matrix newly producing
+`MATRIX_np821l17_r0.05.md` / `_r0.1.md` (the other six already existed,
+skipped per the criterion) -> done. All manually launched evaluations
+were recognized as complete by the driver, matching ruling 7's
+expectation.
 
-1. 记数字：24 条 finish（12 训练 + 12 评测）全在 `ops/runs.jsonl`，`RESULTS.md` 已渲染。
-2. 补方向：不做——这批数字是否改动 WORKPLAN 的判断归 gyb 裁决（铁律：不解读结果）。
-3. 补口径：`DATA.md` 的 nyapass_aw_v1 节在标注环节已写，本轮无新增设定。
-4. 释放：三机实探 105/107/108 无一张非 FREE 卡，np821/nyapass 相关 tmux session
-   三机为零；call 档监控 b7pufajd8 已停。
-5. 销号：台账 active 空。
-6. 提交：结果报告 `plans/2026-08-26-np821-results.md`（只摆事实）+ 台账三文件 +
-   本 worklog + Phase E 的 7 份 skill 文档，一个 commit。
+All eight matrices are present:
+`pipeline/runs/MATRIX_np821{b06,b17,l17,l4}_r{0.05,0.1}.md`.
+
+## Phase D's six-part chain (2026-08-26 15:2x)
+
+1. Record numbers: all 24 finish entries (12 training + 12 evaluation)
+   are in `ops/runs.jsonl`, `RESULTS.md` has been rendered.
+2. Add direction: not done, whether these numbers change any judgment
+   in WORKPLAN is gyb's call to make (the iron rule: don't interpret
+   results).
+3. Add conventions: `DATA.md`'s nyapass_aw_v1 section was already
+   written at the annotation stage, no new settings this round.
+4. Release: a real probe of the three machines 105/107/108 found not a
+   single non-FREE card, np821/nyapass-related tmux sessions are zero
+   across all three machines; the call-cell monitor b7pufajd8 has
+   stopped.
+5. Deregister: the ledger's active list is empty.
+6. Commit: the results report `plans/2026-08-26-np821-results.md`
+   (states only facts) + the three ledger files + this worklog + Phase
+   E's 7 skill documents, in one commit.
