@@ -35,18 +35,42 @@ new1/
   settings/               everything written by hand
     config.py               the shape of an experiment (every field with its default) and how a file becomes one
     paths.yaml              where things are on this cluster: the outputs root on NFS, the weights root, AppWorld
+    a path_datasets yaml for datasets 
+    a path_outputs yaml for output
+
     models.yaml             the model table: each agent model and probe backbone, its weights, template, how it is served
+    path_models
+    
     debug.yaml              the tiny overlay that --debug merges on top of any experiment
+    is this necessary? what is in this. i mean debug is just a subset of normal settings, which containse super small models and number of data
+
+
     experiments/            one YAML per experiment; the file name is the experiment name
       baseline_gptoss.yaml
       probe_ctool_qwen06.yaml
+
+      it is weird. what does this define? and if i update the baseline, what will it be?
+      and ctool qwen 06 is the exact settings. use baseline and train probe as two files, do not include exact setting in file name.
+      save settings in the file.
+      for example
+      in baseline.yaml, there are multi settings:
+      - gpt-oss-120b appworld
+      - qwen3.8 alfworld
+      when running a program, i can set which baseline i want
+
+
     presets/                YAML blocks an experiment may `include`; created on the third repetition, not before
+    what is this? i mean every experiment is a preset
+
 
   data/                   the environment, the record of a run, and the dataset built from records
     appworld.py             the AppWorld environment: tasks per split, reset, step, save, restore, judge, its system prompt
     trajectory.py           the record of one task run: what the model saw, wrote and got back, step by step; read and write
     rules.py                how the text of a record is read: cut points, the call syntax, argument splitting; pure, one copy
     build.py                records -> examples for the three probe methods, the split, the report, the gates
+file names here is not clear, hard to read. rules.py trajectory.py they are unclear, what are these?
+
+
 
   models/                 the two models: how each is loaded, prompted and served
     template_gptoss.py      the gpt-oss conversation format (its name is "harmony"): render, parse the stream, end of turn
@@ -54,6 +78,9 @@ new1/
     probe.py                the probe model: backbone plus head; load, score a prefix, generate a call
     serve_agent.py          start the vLLM server for a model table row and run its checks, including render-equals-server
     serve_probe.py          the probe as a local HTTP service for the agent loop, with --check
+
+
+
 
   agent/                  the loop that runs the agent on tasks; the probe is a switch inside its generation step
     loop.py                 run each task and seed: reset, generate, parse, step, until done; write the record
@@ -63,9 +90,13 @@ new1/
 
   train/                  train a probe
     train.py                one trainer for ctool, cgen and cparam: the method is a settings value; checkpoints; --check alignment
+    
     batches.py              examples -> packed batches; the instance strings and their constants
     reference.py            the row-by-row loss for cgen and cparam that the alignment check compares the packed loss against
+    batches and references unclear, and this is not for everyexperiment, and this is run before actually training, so like pro-process. if this is related to exp setting, it can change the result, put it into train.py if not, use a new file to save all those not important things. if something only need to be checked once, put it in to tests
+
     lora.py                 the tuning axis: full or LoRA; merge for evaluation
+    what is this? lora is the same as train, right? what's its difference from train?
 
   eval/                   score a probe or a run
     eval_probe.py           a trained probe offline: fit theta on val at the risk targets, freeze it, report on test
@@ -73,6 +104,7 @@ new1/
     matrix.py               the backbone x method table from the ledger
 
   scripts/                the programs that are not a stage: put a run on cards, watch it, record it
+  there are nvitop right? is it necessary to use extra method
     launch.py               free cards, one tmux session per piece, the registrations, the alive check, refire
     monitor.py              read-only: heartbeats -> verdicts, the terminal table, the web page
     heartbeat.py            the progress protocol every stage writes; standard library only
@@ -81,7 +113,7 @@ new1/
   ledger/                 the records kept in git
     runs.jsonl              one row per stage run, appended at start and at finish; never edited
     RESULTS.md              rendered from runs.jsonl; never edited by hand
-    jobs.json               the live GPU jobs; written by launch.py, read by monitor.py; ignored by git
+    jobs.json               the live GPU jobs; written by launch.py, read by monitor.py; ignored by gitra
     gpu_state.md            cluster notes written by hand: drivers, CUDA, pitfalls
 
   tests/                  one test per contract
@@ -92,8 +124,10 @@ new1/
     test_alignment.py       packed loss equals the reference loss on CPU with the debug model
     test_ledger.py          a row survives a start, a finish and a relaunch
 
-  notebooks/              quick runs: load an experiment with --debug and step through a stage in-process
+  notebooks/              no, it should not refer to the code above
+
   figures/                one script per figure; empty until the first figure exists
+
   envs/                   the three uv environments (agent, probe, vllm) and their lock files; the AppWorld clone stays here
   plans/  docs/  .claude/ as today
 ```
@@ -116,6 +150,7 @@ leaves one directory with its resolved settings, its metadata and its outputs,
 and one row in the ledger.
 
 ### What keeps the tree this shape
+Better to write a way to review and set a task, review the code base with an agent every 2 days.
 
 Checked by `python run.py selfcheck`:
 
