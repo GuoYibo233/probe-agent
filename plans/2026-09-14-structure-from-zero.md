@@ -34,12 +34,14 @@ new1/
                           root documents, reviewed by gyb by hand later; untouched by this plan
   run.py                  the one command: run one setting of one workflow file; also ls, where, find, free, selfcheck
 
-  settings/               everything written by hand
-    config.py               the shape of a setting: every hyperparameter with its default and a one-line comment; the loader
+  constants/              written by hand; nothing in here changes a result
     path_datasets.yaml      where each environment and dataset lives on this cluster
     path_outputs.yaml       where outputs go on NFS
     path_models.yaml        where each model's weights live
     models.yaml             the model table: for each model, its family (which template) and how it is served
+
+  settings/               written by hand; everything in here changes a result
+    config.py               the shape of a setting: every hyperparameter with its default and a one-line comment; the loader
     debug.yaml              only the small values: the smallest models, 3 tasks, 1 seed, 64 examples, 20 steps;
                             --debug lays them over any setting, so no setting needs a small copy of itself
     baseline.yaml           workflow sample, score; named settings inside, for example gptoss120b_appworld, qwen3_8b_alfworld
@@ -145,7 +147,7 @@ a default that reproduces the old behavior changes no key.
    every Python file starts with `# env: agent | probe | vllm | any` and
    imports under that environment (a file marked `any` under all three, with
    only the standard library at module top); no `/home/` or `/net/` in code
-   outside `settings/`; every tracked Python file appears in the README tree.
+   outside `constants/`; every tracked Python file appears in the README tree.
 3. Two rules for people: code is shared on its third repetition, and only
    when it has stopped changing; a stage's `VERSION` is bumped when its
    output changes meaning for the same settings, and only then.
@@ -326,8 +328,9 @@ self-hosted alternative behind the same switch. The tracker is a mirror;
 losing it loses nothing.
 
 Offers: `load(workflow, setting, overrides, debug)`, `diff(cfg)`, `key(cfg,
-stage, upstream_keys)`, `save(cfg, run_dir)`. Reads the three path files and
-`models.yaml`. Replaces `preset_loader.py`, `model_registry.py`,
+stage, upstream_keys)`, `save(cfg, run_dir)`. Reads `constants/` for the
+paths and the model table; nothing in `constants/` enters a key. Replaces
+`preset_loader.py`, `model_registry.py`,
 `configs/models.json`, `configs/presets/`, `pipeline/configs/`, the manifests
 in `pipeline/collect/`, and the tables in `run.py`.
 
@@ -343,7 +346,7 @@ contains environment code; a second environment is a second file with the
 same five methods, chosen by `data.env`, and a shared base class waits for
 the third.
 
-Reads `path_datasets.yaml`. Replaces the world half of
+Reads `constants/path_datasets.yaml`. Replaces the world half of
 `envs/collect/run_appworld.py`, `pipeline/inject/exec_calls.py`, the system
 prompt copy in `rebuild.py`, and the three copies of `APPWORLD_HOME`.
 
@@ -393,7 +396,7 @@ with the read-only feature.
 The gpt-oss conversation format, whose name is "harmony": `render(messages)`
 gives the prompt tokens exactly as the server renders them, `parse(text)`
 splits a streamed reply into reasoning, answer and call, and `end_of_turn`
-says where a reply ends. `settings/models.yaml` names the template for each
+says where a reply ends. `constants/models.yaml` names the template for each
 model (`template: gptoss`); when Qwen becomes an agent model,
 `template_qwen.py` is a second file with the same three functions and a
 second table row. The rendering library is imported inside `render`, so the
@@ -430,7 +433,7 @@ Start the vLLM server for a model table row with the generation settings
 table: health, and render-equals-server (the template's tokens for one
 conversation equal the server's). `stop` ends it. The date is a settings
 value, so the two arms of a comparison always share it; the old constant
-goes. Reads `models.agent`, `generation`, `path_models.yaml`. Replaces
+goes. Reads `models.agent`, `generation`, `constants/path_models.yaml`. Replaces
 `serve_preset.py`, the seventeen `launch_vllm_*.py` under `envs/serve_logs/`,
 `ident3_gate.py`, `ident3_score.py`, `run_gptoss.sh`.
 
