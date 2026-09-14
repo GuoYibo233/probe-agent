@@ -132,17 +132,28 @@ Changed lines carry a reason; unchanged lines are as proposed.
 new1/
   README.md  CLAUDE.md  TRAPS.md
   METHOD.md  DATA.md  WORKPLAN.md  TIMELINE.md  RESULTS.md
+  i will manully reviwe these files later
+
   run.py
   registry.py       tables + settings loader; stdlib; no NFS check at import
+  it contains path for datasets, models, and constants
+
   chain.py          moved from jobs/: it orchestrates steps, not cards; step
                     artifacts come from registry.STEPS
+  it is about what a work flow is like, right?, if yes, it should be in settings
+
   figures/          moved from eval/: figures read the ledger of every step
     figlib.py
 
   settings/         (as proposed)
 
   agent/
+      agent should only handle the agent structure, it can receive input from dataset, but never run the dataset( dataset here means appworld and things like this )
+
+
     run_appworld.py   the adapter: task loop, records, world primitives
+    better to call env_appworld.py
+
     messages.py       NEW, stdlib: the AppWorld message convention (SYSTEM,
                       turn templates, trajectory -> messages, load_steps);
                       replaces rebuild.py's live half and the regex source check
@@ -155,9 +166,23 @@ new1/
     serve.py          start the server + check table, including
                       render-equals-server (today ident3_gate)
     probe_server.py   HTTP service + --check; selftest deleted
+    files above is still not unclear, for examole, harmony is a specfic thing with gpt, but when we use qwen, there may not be harmony, so and no one knows what harmony is, it should be put into some where else, template setting or sth 
+
+
     runs -> NFS   live -> NFS
+    why HTTP service here?
+    
+    how to add the probe is also a question, i think it should be like a switch, if it is on, when generating, the stop condition is related to probe instead of just related to the output token
+
+    and agnet and appworld should be in different folders agnet should only run the agent
+    and every file should do one function, that means when i want to edit one thing, i can easily reach it via its name. things now is not very clear
+
 
   dataset/
+    dataset should deal with dataset and output of runs in dataset, appwolrds should be here
+
+
+
     build.py
     rules.py          + complete_call, the eval-side parse_call, make_call;
                       param_label stays out
@@ -170,11 +195,16 @@ new1/
     trainer_base.py   + MODELS/SEED/FULL_LR (from the three trainer dicts)
     probe_model.py    NEW: CausalProbe, load_ctool, load_cgen, generate_call;
                       one loader for train_tool, eval_tool, probe_server, --check
+    what dose this file do?
     share_data.py     + CALL_SEP, MAX_TGT_TOK, param_prompt_tail, param_target
     train_tool.py
+
     train_call.py
+    these tool should be in one file
     rowwise_cgen.py   imports constants from share_data (dependency reversed)
     rowwise_cparam.py
+    so as these files
+
     lora_util.py      kept: the tuning axis table with its own contract test
     demo/
     runs -> NFS
@@ -197,6 +227,42 @@ new1/
 ```
 
 Count: 31 Python files instead of 28 (three new: `messages.py`, `probe_hook.py`, `probe_model.py`; one moved back: `lora_util.py`; `chain.py` at root; `param_label.py` kept or deleted).
+IMPORTANT:
+let me give some instruction:
+1. one experiment is one config, the center of the whole repo is about how to handle the setting.
+- all hyperparameters should be included
+- what the workflow is like. for example, use agent to run the experiment is baseline. use probe is probe way, sometimes we just do sample, sometimes we do both sample and training, design a proper way to handle this
+- what file type to use depends on you. json? yaml? hydra?
+- easy to edit, and its structure is easy to be updated, for example, when i add one more hyperparameter, all previous settings may cointain one more argument, not sure how to handle this
+- every code file is responsibe for things in parameter.
+
+2 everytime it runs, we can reproduce.
+- if output file with same settings already exists and it is not 增量, skip generation
+- easy to reterive the output file with certain settings
+- easy to retrive logs, wandb / mlflow or anything you recommned
+- still can retrive even code is edites, maybe we should use version number
+- eval should use version number, too
+
+i've heard that Hydra + OmegaConf is common, anyway you should find avaliable light and quick models to recommend
+
+3.short and small layers
+data
+models
+train
+eval
+scripts
+
+they are standard layers, settings contorl the arguments of them
+
+notebooks (for quick run)
+
+other parts (demo, figure....)
+
+4. debug or tiny mode. --debug avaliable: small model, small subset of data, super quick verify
+
+5 NO exterme abstraction, do not use multi almost same files, 科研代码最常见的两种病：一是复制粘贴出五个几乎一样的训练脚本；二是过早抽象成一个万能框架，改一个小点要动六个文件。合理的度是：重复第三次再抽象，抽象只针对已经稳定的东西。
+
+6 Read me is for the future: check whether pepole in the future can quick understand
 
 ## 7. Rules that keep files single-purpose, each testable by `run.py selfcheck`
 
@@ -209,7 +275,11 @@ Count: 31 Python files instead of 28 (three new: `messages.py`, `probe_hook.py`,
 ## 8. Questions only the owner can answer
 
 1. Read-only feature (spec open item 3): keep or drop. Dropping removes `readonly/`, `readonly_map.py`, the fire head (`train_causal_callgen.py:110-134,400-464`), `--self-fire` (`eval_causal_call.py:262-490`), and `param_label.py` with its `params/` outputs, since nothing else reads them.
+drop
+
+
 2. Does the fire head survive at all when the production trainer is `train_call.py`, which has none? If not, `rowwise_cgen.py` shrinks and `eval_call.py` loses about 230 lines.
+
 3. The date in the prompt: the live line pins 2026-07-31, the sampler 2026-08-06 (section 2). Which value goes into `settings/generation/temp1_high.json` for the live run, and is a second generation file needed to reproduce the old live runs? This decides whether `COLLECT_DATE` survives anywhere.
 4. Is `probe_server.py selftest` (280-343) deleted with the replay line it reads from?
 5. Should `chain.py` keep the 15-step gated state machine of `driver.py` (and its 1337-line test), or be rewritten to the "walk `source` upward" form of spec 4.11? The answer changes whether it is a root file of about 150 lines or a folder-sized program.
