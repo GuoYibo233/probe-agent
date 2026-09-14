@@ -144,8 +144,8 @@ new1/
   plans/  docs/  .claude/ as today
 ```
 
-Python files: 30 (root 1, settings 1, data 5, models 6, agent 4, train 6,
-eval 6, scripts 2), plus tests. Today: about 60 under the code directories.
+Python files: 31 (root 1, settings 1, data 5, models 6, agent 4, train 6,
+eval 6, scripts 2), plus 13 under tests. Today: about 60 under the code directories.
 
 Outputs live on NFS only, under `outputs/<stage>/<key>/`: the key alone,
 because a directory that nine settings share cannot carry one setting's
