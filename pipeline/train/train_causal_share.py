@@ -927,6 +927,7 @@ def run_align_check(model, tok, args, dev, mode, ro_set):
 
 def main():
     ap = argparse.ArgumentParser()
+
     ap.add_argument("--mode", required=True, choices=["cgen", "cparam"],
                     help="which construction path the target string and tail follow (spec 3.3)")
     ap.add_argument("--base", default="qwen",
@@ -1006,7 +1007,8 @@ def main():
     lora_util.add_args(ap)
     args = ap.parse_args()
     lr = lora_util.resolve_lr(args, train_causal_callgen.FULL_LR)
-
+    if not args.device.startswith("cuda"):
+        ap.error("--device must be a CUDA device; CPU execution is not supported")
     SEED = train_causal_callgen.SEED
     torch.manual_seed(SEED)
     random.seed(SEED)
@@ -1020,6 +1022,9 @@ def main():
     dev = args.device
     amp = dev.startswith("cuda")
     mask_dtype = torch.bfloat16 if amp else torch.float32
+
+
+
 
     base_kw = (dict(base=args.base) if args.base in train_causal_callgen.MODELS
               else dict(path=args.base))
