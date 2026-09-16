@@ -36,20 +36,20 @@ fig1_pilot/alfworld_data
 envs/toolhop
 envs/runs
 envs/stabletoolbench
-pipeline/data
-pipeline/runs
+legacy/pipeline/data
+legacy/pipeline/runs
 
 # ── Replay execution cache (result cache for exec_calls, pure output)
-pipeline/inject/exec_cache/
+legacy/pipeline/inject/exec_cache/
 
 # ── Fixtures for the debugger demo (rebuilt with one command, demo/prepare.py): the tiny model dir and training outputs
 #    are symlinks made by prepare.py pointing at the net drive; per the "symlinks to directories moved to NFS" rule above, use the bare name;
 #    demo/data/*.jsonl is small and seed-deterministic; it's in the repo so samples can be read in the editor without running the script
-demo/tiny_qwen3
-demo/runs
+legacy/demo/tiny_qwen3
+legacy/demo/runs
 
 # ── Ledger lock files (flock carrier for gpu_jobs.py's mutate_reg)
-ops/*.lock
+legacy/ops/*.lock
 
 # ── Experiment output dirs: only .md reports are kept; the rest (trajectories / weights / intermediate files) are not in the repo
 envs/runs/**
@@ -69,7 +69,7 @@ envs/bert_runs/**
 !*/results/**/*.md
 
 # ── Launch by-product: preset snapshot that serve_preset.py copies into the log dir (the source of truth is in configs/presets/)
-envs/serve_logs/*.preset.json
+legacy/envs/serve_logs/*.preset.json
 
 # ── Logs and weights
 logs/
@@ -104,15 +104,20 @@ __pycache__/
 # ── C3 task-pair data itself (byte-for-byte reproducible from seed 20260729; stats.json statistics are in the repo)
 benchmark_design/*.jsonl
 
-pipeline/data/**
-!pipeline/data/**/
-!pipeline/data/**/*.md
-pipeline/runs/**
-!pipeline/runs/**/
-!pipeline/runs/**/*.md
+legacy/pipeline/data/**
+!legacy/pipeline/data/**/
+!legacy/pipeline/data/**/*.md
+legacy/pipeline/runs/**
+!legacy/pipeline/runs/**/
+!legacy/pipeline/runs/**/*.md
 # On-disk injection replay output (plan.jsonl/raw.jsonl is raw trajectory-level data, tens of MB per run);
 # only the md report and plan_config.json go into the repo; the latter is a settings record, a few hundred bytes
-pipeline/inject/runs/**
-!pipeline/inject/runs/**/
-!pipeline/inject/runs/**/*.md
-!pipeline/inject/runs/**/plan_config.json
+legacy/pipeline/inject/runs/**
+!legacy/pipeline/inject/runs/**/
+!legacy/pipeline/inject/runs/**/*.md
+!legacy/pipeline/inject/runs/**/plan_config.json
+
+# from-zero: venv and clone links under external/ (bare names, see the symlink rule above)
+external/appworld
+external/probe-env
+external/vllm-env
