@@ -135,7 +135,6 @@ class Writer:
         row.update(fields)
         self._file.write(json.dumps(row) + "\n")
         self._file.flush()
-        os.fsync(self._file.fileno())
         self._rows.append(row)
 
     def frame(self) -> pl.DataFrame:

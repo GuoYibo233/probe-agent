@@ -23,7 +23,7 @@ data/                   the benchmark environments, and every format that lives 
     reads:   -   writes: -   venv: any
   task_record.py          the record one task run leaves: six row kinds, one file per (task, seed); write,
                           read, is_done, owner, to_messages; carries VERSION
-    imports: data/__init__.py; [polars]
+    imports: data/__init__.py
     used by: agent/loop.py (meta, gen, env, final), agent/inject.py (spec, resume),
              data/build_dataset.py, eval/score_run.py,
              jobs/launch.py (done_pairs, is_done, owner, release),
