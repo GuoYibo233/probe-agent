@@ -141,3 +141,41 @@ Run the concurrent-append check with the probe interpreter:
 ```
 external/probe-env/bin/python tests/test_registry_concurrent_append.py
 ```
+
+## Ticket 05 — the environment contract and AppWorld
+
+```
+    environments/           one file per benchmark environment; the only place a new environment adds a file
+      __init__.py           the contract and the entrance: class Environment declares the nine methods
+                            (tasks, open, step, speculate, judge, close, split_args, build_call,
+                            complete_call) with one line each and no logic, and the StepObservation
+                            dataclass that step returns (4.2); open_env(name) imports
+                            environments/<name>.py inside the function, checks the methods are there, and
+                            returns the instance; requested_pairs(env, splits, tasks, n_tasks, seeds) is the
+                            one definition of what a run asks for, as (split, task_id, seed) triples
+                            (2.3); carries VERSION
+        imports: none (repo); [importlib, PyYAML]
+        used by: data/environments/appworld.py (subclass), agent/loop.py (open_env, StepObservation,
+                 requested_pairs), agent/inject.py, data/build_dataset.py (open_env, requested_pairs),
+                 train/methods/cgen.py, train/methods/cparam.py (open_env, for the environment their
+                 validation metric's match takes, 2.6), eval/methods/cgen.py, eval/methods/cparam.py,
+                 eval/score_run.py,
+                 jobs/launch.py (tasks and requested_pairs, to resolve the split files before the pieces
+                 start), run.py (open_env and requested_pairs, for the subset skip test and done.json's
+                 pairs, 2.3)
+        reads:   constants/path_datasets.yaml   writes: -   venv: any
+      appworld.py           class AppWorld(Environment): the nine methods on the AppWorld package, its task
+                            instruction variants, its no-code message, its call regex and Python call
+                            syntax; carries VERSION
+        imports: data/environments/__init__.py; [the appworld package, inside open() alone]
+        used by: data/environments/__init__.py (by name)
+        reads:   constants/path_datasets.yaml, the split task-id files
+        writes:  the AppWorld per-task output directory, deleted by close()
+        venv:    any at import and for the call-syntax methods; appworld to hold a world
+```
+
+The `imports:` line for `appworld.py` reads "inside open() alone", not contracts
+0.2's "inside open()/step()/speculate()": the ticket text and errata E11 both
+state the `from appworld import AppWorld` statement sits in `open` alone, with
+the other four world methods using the handle `open` already stored. See the
+report for T05.
