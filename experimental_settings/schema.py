@@ -1165,8 +1165,12 @@ def _merge_request_fields(doc: dict, existing: dict, sections: set[str]) -> None
         old_seeds = existing[sec].get("seeds") or []
         new_seeds = doc[sec].get("seeds") or []
         doc[sec]["seeds"] = old_seeds + [s for s in new_seeds if s not in old_seeds]
-        if existing[sec].get("tasks") is None or doc[sec].get("tasks") is None:
+        old_tasks = existing[sec].get("tasks")
+        new_tasks = doc[sec].get("tasks")
+        if old_tasks is None or new_tasks is None:
             doc[sec]["tasks"] = None
+        else:
+            doc[sec]["tasks"] = old_tasks + [t for t in new_tasks if t not in old_tasks]
 
 
 def _projection_sections(stage: str, setting: Setting) -> set[str]:

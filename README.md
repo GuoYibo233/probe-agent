@@ -135,7 +135,7 @@ line parses as JSON.
 experimental_settings/schema.py — the setting schema: the dataclasses, the
 stage table, and the loader that reads a YAML file against them (file ->
 setting, diff, key).
-  imports: none (repo); [PyYAML]
+  imports: none (repo); [PyYAML, ast, dataclasses, hashlib, itertools, json, pathlib, typing]
   used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py,
            train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py,
            eval/method_table.py, models/agent_models/service.py,
