@@ -195,12 +195,24 @@ def check(args) -> int:
 
     plain = client.encode("a<|end|>b", False)
     special = client.encode("a<|end|>b", True)
-    if len(special["ids"]) >= len(plain["ids"]):
-        print("check: <|end|> fixture: the special encoding did not collapse to fewer ids than the plain one")
+    control_ids = client.encode("<|end|>", True)["ids"]
+    if len(control_ids) != 1:
+        print(f"check: <|end|> fixture: encoding '<|end|>' alone with special=true did not "
+              f"give a single control-token id, got {control_ids!r}")
         ok = False
+    else:
+        control_id = control_ids[0]
+        if control_id in plain["ids"]:
+            print(f"check: <|end|> fixture: the special=false encoding contains the "
+                  f"control-token id {control_id}")
+            ok = False
+        if control_id not in special["ids"]:
+            print(f"check: <|end|> fixture: the special=true encoding does not contain the "
+                  f"control-token id {control_id}")
+            ok = False
     back = client.decode(plain["ids"])
     if back["text"] != "a<|end|>b":
-        print("check: <|end|> fixture: the plain encoding does not round-trip")
+        print("check: <|end|> fixture: the special=false encoding does not round-trip")
         ok = False
 
     return 0 if ok else 1
