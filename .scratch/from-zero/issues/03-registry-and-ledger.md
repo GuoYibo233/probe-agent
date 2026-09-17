@@ -1,6 +1,6 @@
 # 03 the registry and the ledger
 
-Status: claimed
+Status: resolved
 Blocked by: (none)
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7, 9)
 
@@ -446,3 +446,5 @@ list, never a full one). `M-J2` `live_sessions()` lists every host's tmux
 sessions and reports a session **alive** when the ssh to its host is broken.
 
 ## Comments
+
+- 2026-09-17 wave 1 closeout: implementation passed review after 2 fix rounds, branch `ticket/2026-09-17-wave1/T03` (base `cca3ca3`, head `ecfd925`), merged as `361dabd`. Main-session checks after the merge: `jobs.registry` imports under the three interpreters; `tests/test_registry_concurrent_append.py` passes (1 test, OK); `M-J1` `free()` and `cards_busy()` against the real cluster agree with a by-hand `nvidia-smi --query-compute-apps` per host (busy: tokyo105 card 0, tokyo106 cards 0 and 1, tokyo108 cards 0 and 1, tokyo107 none), and an unreachable host yields an empty free list and an all-busy card set; `M-J2` `live_sessions()` lists the 12 tmux sessions a by-hand `tmux ls` shows on the four hosts, `session_alive` answers True for an unreachable host and False for a missing session on a reachable one. Remaining minors (not blocking, for the final review): F5 `ConnectTimeout=5` added to the pinned ssh command; NF2 `_known_sessions()` reads every historical run's `meta.json` on every `ls()`; NF3 the synthetic orphan row uses the verdict string `orphan`, outside the six pinned verdicts. Deferred by design to tickets 12, 14, 15: the `behind/consumed/split/pinned` flags of `ls()`, selfcheck, the `/health` protocol behind `_probe_port`. Report `sdd/2026-09-17-wave1/T03-report.md`.

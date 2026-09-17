@@ -1,0 +1,99 @@
+{
+ "feature": "from-zero",
+ "wave": "2026-09-17-wave1",
+ "tickets": [
+  {
+   "id": "01",
+   "status": "DONE",
+   "branch": "ticket/2026-09-17-wave1/T01",
+   "commits": {
+    "base": "cca3ca3a506cf5b2a8d990e641ec160e40e8465f",
+    "head": "035b18868dcf1149fca81c83b93af12a7aaafca4"
+   },
+   "rounds": 0,
+   "openFindings": [],
+   "minors": [],
+   "cannotVerify": [
+    "A3's os.makedirs(root/debug_subdir) side effect on NFS (creating /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs/debug) and A7's hook-arming end-to-end test through the real Claude Code harness are marked in the ticket as main-session / GPU-session work (\"GPU / main session \u2014 not yours\"), not this ticket's acceptance surface; not re-verified here since the report's pasted output already covers the hand-run acceptance commands.",
+    "M-G1 (hosts inventory via ssh nvidia-smi -L) and M-G2 (outputs root writable from tokyo106) are explicitly marked in the ticket as main-session tasks, out of scope for this implementer and this review.",
+    "Whether the downstream readers listed in README.md's `read by:` lines (data/environments/__init__.py, data/environments/appworld.py, experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, models/__init__.py, models/agent_models/service.py, run.py) will actually read these fields as described cannot be checked now: none of those files exist yet on this branch (they arrive in later wave tickets), so this is a forward-looking claim that only later tickets can confirm.",
+    "Whether contracts 6.1 in notes/plans/2026-09-17-contracts.md truly settles \"models/table.yaml is covered by the hook\" as the ticket's errata claims was not independently re-derived from the contracts document; the ticket states it as an already-made decision and the implementer correctly followed the ticket's instruction, so this is a cannotVerify on the ticket's own upstream premise, not on the diff."
+   ],
+   "concerns": [
+    "constants/path_models.yaml's `note` fields cite legacy/ (e.g. `legacy train_causal_tool.py:86`) exactly as the ticket's verbatim block specifies; spec section 5's no-legacy-citation rule is scoped to Python files but ticket 18's C9 greps the code directories for the word, so this is worth checking at wave-18 time.",
+    "The hook's Bash-command 'mentions a protected path' check is a substring match anywhere in the command line, so a command containing both a protected filename and an unrelated write marker elsewhere in the line would be blocked (conservative, block-direction only, not tested by any acceptance case)."
+   ]
+  },
+  {
+   "id": "02",
+   "status": "DONE",
+   "branch": "ticket/2026-09-17-wave1/T02",
+   "commits": {
+    "base": "cca3ca3a506cf5b2a8d990e641ec160e40e8465f",
+    "head": "80b0d01"
+   },
+   "rounds": 1,
+   "openFindings": [],
+   "minors": [],
+   "cannotVerify": [
+    "M-D2 (the cross-host exclusive-claim race: 24 processes across three hosts racing for 150 files under a fresh NFS run directory, counts must sum to exactly 150) is explicitly marked in the ticket as 'GPU / main session \u2014 not yours' and requires multi-host GPU infrastructure this review has no access to; not checkable from this diff.",
+    "data/task_record.py's to_messages(df, upto_step, ...) looks up df rows by step via `gen_by_step[step]`/`env_by_step[step]` dict indexing, which would raise a bare KeyError (rather than a clean, named error) if called with an upto_step that references a step with no matching gen/env row (e.g. on an abort-only record, per the REQUIRED table's own note that step/reasoning/content/result can be legitimately absent). Neither the ticket text nor its acceptance commands specify or exercise this case, and whether it can actually arise depends on how agent/loop.py (ticket 11, not yet built) calls to_messages, so it cannot be confirmed as a real defect from this diff alone.",
+    "The ticket's own file table gives data/example.py and data/prediction.py an `imports: data/__init__.py; [polars]` line (matched exactly by the shipped README.md), but the authoritative contracts 0.2 text for those same two files omits the polars bracket, the same inconsistency flagged for task_record.py in F1 but running the other direction (ticket and contracts agree with each other for task_record.py; they disagree with each other for example.py/prediction.py, and the implementer matched the ticket in both cases). Reconciling contracts.md against the ticket text for all three files' import lines is a documentation question that reaches outside this diff and is better resolved by whoever owns notes/plans/2026-09-17-contracts.md."
+   ],
+   "concerns": [
+    "README.md line for data/task_record.py lists imports as 'data/__init__.py; [polars]' though both the ticket's file table and contracts 0.2 omit the [polars] bracket for this file. The code must import polars (SCHEMA holds live pl.DataType instances, unaffected by `from __future__ import annotations`), so I corrected the README line to match reality; flagged in the report for the owner/reviewer to confirm against contracts 0.2 which appears to have the same omission.",
+    "example.py and prediction.py write() functions fill any SCHEMA column absent from the caller's frame using DEFAULTS before selecting/writing, rather than a bare stamp+select. This was necessary to pass acceptance E2 (a generator's prediction row with classifier columns entirely absent) but is not spelled out in the ticket's one-line gloss of write(); documented as a design inference in the report.",
+    "data/task_record.py's SCHEMA declaration order was reconstructed from the ticket's two-column table read column-major (not row-major), since no literal dict was given (unlike example.py/prediction.py). No acceptance command checks this order directly, but it's worth a second look if another ticket later depends on task_record.SCHEMA's iteration order.",
+    "Writer.row calls os.fsync on every row in addition to flush(), beyond what the ticket's prose literally required, for the durability the surrounding contract text argues for; purely additive, no behavior change."
+   ]
+  },
+  {
+   "id": "03",
+   "status": "DONE",
+   "branch": "ticket/2026-09-17-wave1/T03",
+   "commits": {
+    "base": "cca3ca3a506cf5b2a8d990e641ec160e40e8465f",
+    "head": "ecfd925"
+   },
+   "rounds": 2,
+   "openFindings": [],
+   "minors": [
+    {
+     "id": "F5",
+     "severity": "minor",
+     "title": "live_sessions()/session_alive() add an undocumented ConnectTimeout option",
+     "file": "jobs/registry.py",
+     "line": 446,
+     "detail": "The ticket pins the exact command `ssh -o BatchMode=yes <host> \"tmux ls -F '#S' 2>/dev/null; true\"`. jobs/registry.py's `_remote_shell` (line 446) builds `[\"ssh\", \"-o\", \"BatchMode=yes\", \"-o\", \"ConnectTimeout=5\", host, script]`, adding a `ConnectTimeout=5` option not in the ticket's pinned invocation. This is extra functionality beyond the spec; it does not change fail-closed semantics (a stalled connect just fails faster, within the existing `timeout=20.0` bound) so the impact is low, but it is a deviation from the literal command the ticket specifies."
+    },
+    {
+     "id": "NF2",
+     "severity": "minor",
+     "title": "_known_sessions() reads every historical run's meta.json on every ls() call",
+     "file": "jobs/registry.py",
+     "detail": "_known_sessions(all_entries) (added around line 795) calls _pieces_of(run_dir, start) - which opens and JSON-parses that run's meta.json - for every entry in the whole ledger, not just the rows this ls() call will display, and not gated by the workflow/debug filters. This adds an unbounded per-call disk-I/O cost (one meta.json read per run ever recorded) to every ls() invocation, growing without bound as the ledger accumulates runs, where previously ls() only read meta.json for the rows actually being folded and shown."
+    },
+    {
+     "id": "NF3",
+     "severity": "minor",
+     "title": "Synthetic orphan row uses a verdict string outside the pinned six-verdict enum",
+     "file": "jobs/registry.py",
+     "detail": "_orphan_session_row (added around line 786) sets its piece's `verdict` to the literal string \"orphan\". Contracts 8.5 pins judge()/judge_service() to exactly six verdicts (done, dead, suspected stall, warming up, slowed, healthy); nothing in the ticket or contracts sanctions a seventh verdict value. A future caller that switches on the pinned verdict set (e.g. ticket 14's run.py ls renderer) will need an unplanned special case for this row. The implementer's own report already flags this as an open, unpinned design choice, but it is a new problem introduced by this diff and not yet resolved."
+    }
+   ],
+   "cannotVerify": [
+    "M-J1/M-J2 (cards_busy()/free()'s nvidia-smi probe shape and live_sessions()/session_alive()'s ssh behavior against a real multi-host cluster) \u2014 the ticket itself marks these 'GPU / main session \u2014 not yours'; this review has no ssh access or GPU cluster to exercise them against, same as the implementer.",
+    "The `behind`, `consumed`, `split`, `pinned` entries of ls()'s flag column \u2014 the implementer's report (decision 3) defers these to ticket 14 (run.py's walk) because they need files outside this module's `reads:` line (schema.py, task_record.py); whether that wiring is done correctly can only be checked once ticket 14 exists.",
+    "run.py selfcheck's checks (README.md annotation vs. ast-parsed import graph, the no-VERSION rule, the no-/home//-/net/ rule) \u2014 these are pinned to ticket 15, which has not been implemented yet.",
+    "The real end-to-end behaviour of write_meta's launches/pieces merge and lock()'s reentrancy under jobs/launch.py's and run.py's actual call sequences (tickets 12 and 14) \u2014 those callers don't exist in this diff, so only the isolated unit behaviour (exercised by A1-A10) could be checked here."
+   ],
+   "concerns": [
+    "A2's printed console order came out swapped from the ticket's illustration and the wait was ~32s instead of ~2s; instrumented with absolute timestamps to confirm this is (a) a stdio block-buffering display artifact, not an execution-order bug, and (b) a real, newly-measured ~30s flock() grant latency on the NFSv3-mounted /home/y-guo (confirmed via mount/df -T), not a bug in the lock implementation - mutual exclusion is provably correct. The acceptance line only requires wait >= 1.5s, which is satisfied, but tickets 12/14 (jobs/launch.py, run.py) take this same lock around the launch gate and should expect tens-of-seconds delays at lock boundaries on this machine.",
+    "ls()'s flag column intentionally omits behind/consumed/split/pinned - these need files outside jobs/registry.py's contracts-cited reads: line (schema.py VERSION parsing, arbitrary source/data file hashing); implemented edited (passed through), debug, dirty, orphan only. Left for ticket 14 (run.py's walk) to compute and merge in, same pattern as edited/progress.",
+    "cards_busy()/free()/live_sessions()/session_alive() (ssh + nvidia-smi + tmux probing) are implemented per the contracts but not exercised by any of this ticket's own acceptance commands (A1-A10 never call them), and cannot be verified from this worktree (no ssh, no GPU, no cluster access) - ticket itself marks the real verification (M-J1/M-J2) as 'GPU / main session - not yours'.",
+    "Service-piece port health check (_probe_port) is a generic raw TCP connect placeholder since the actual /health protocol lives in Part 7 (tickets 05-07), outside this ticket's cited spec sections.",
+    "Deviated from implementer.md's blanket '# venv: <name> comment on every new file' instruction: followed spec.md section 5 (explicitly cited by the ticket) instead, which only adds that comment for non-'any' venvs, so jobs/registry.py carries no '# venv: any' line while tests/test_registry_concurrent_append.py (venv: probe) does."
+   ]
+  }
+ ]
+}

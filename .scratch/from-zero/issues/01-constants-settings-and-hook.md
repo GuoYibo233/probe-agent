@@ -1,6 +1,6 @@
 # 01 constants, the setting files, and the read-only hook
 
-Status: claimed
+Status: resolved
 Blocked by: (none)
 Spec: .scratch/from-zero/spec.md (sections 1, 2, 4, 7, 9)
 
@@ -470,3 +470,5 @@ disk (5.3); each `any` file imports under every interpreter of the `venvs:` map
   must print `WRITABLE`.
 
 ## Comments
+
+- 2026-09-17 wave 1 closeout: implementation passed review in 0 fix rounds, branch `ticket/2026-09-17-wave1/T01` (base `cca3ca3`, head `035b188`), merged as `9776fd9`. Main-session checks run after the merge: all seven YAML files parse; `M-G1` hosts inventory matches `constants/path_outputs.yaml` (tokyo105 answers `shiga` with 8 cards, tokyo106 10, tokyo107 4, tokyo108 answers `saitama` with 6); `M-G2` the outputs root's `debug/` subtree is writable from tokyo106. Not done: arming the hook in `.claude/settings.json` and its harness test (`A7`), scheduled after wave 2 by the construction plan because wave 2 still writes `models/table.yaml`. Implementer concerns (verbatim in `sdd/2026-09-17-wave1/wave-result.json`): the `note` fields of `constants/path_models.yaml` cite `legacy/` as the ticket's verbatim block specifies, to be checked against ticket 18's grep; the hook's Bash check is a substring match over the whole command line, so it can block a command that only mentions a protected file name. Report `sdd/2026-09-17-wave1/T01-report.md`.

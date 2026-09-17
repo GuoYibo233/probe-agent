@@ -1,6 +1,6 @@
 # 02 the three on-disk formats and the probe's input
 
-Status: claimed
+Status: resolved
 Blocked by: (none)
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7)
 
@@ -739,3 +739,5 @@ and tokyo107, eight processes released at a common wall-clock barrier race for
 across all 24 processes must sum to exactly 150.
 
 ## Comments
+
+- 2026-09-17 wave 1 closeout: implementation passed review after 1 fix round (finding F1, a README import line, addressed), branch `ticket/2026-09-17-wave1/T02` (base `cca3ca3`, head `80b0d01`), merged as `025c54c` (README conflict resolved by keeping every ticket's lines). Main-session checks after the merge: `data`, `data.task_record`, `data.example`, `data.prediction`, `data.probe_input` import under the probe, appworld and vllm interpreters; `M-D2` the cross-host claim race: 8 processes on each of tokyo105, tokyo106, tokyo107 released at a common barrier raced for 150 record files under a fresh NFS directory with `open_record`, claims 64 + 42 + 44 = 150, 150 files on disk. System `python3` (3.10) cannot import `data/__init__.py` because it has no polars; the contracts define `venv: any` over the interpreters in the `venvs:` map, which does not include it. Left for later tickets (reviewer cannotVerify): `to_messages` raises a bare `KeyError` for a step with no gen/env row, which depends on how `agent/loop.py` (ticket 11) calls it; the contracts' 0.2 import lines for `example.py` and `prediction.py` omit the `[polars]` bracket the ticket and the code carry. Implementer concerns: `write()` in `example.py` and `prediction.py` fills absent SCHEMA columns from DEFAULTS; `task_record.SCHEMA` order was reconstructed column-major from the ticket's table; `Writer.row` also calls `os.fsync`. Report `sdd/2026-09-17-wave1/T02-report.md`.
