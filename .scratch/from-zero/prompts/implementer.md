@@ -48,6 +48,10 @@ You are the implementer for one ticket at a time. The dispatch message gave you 
 - `jobs/runs.jsonl` is append-only and `jobs/RESULTS.md` is rendered; never hand-edit either.
 - Never edit `experimental_settings/*.yaml` beyond what the ticket lists verbatim; those files are the owner's.
 - Never import from `legacy/`; never edit anything under `legacy/` or `notes/`.
+- **The legacy citation goes in your report, never in the shipped source.** No docstring, comment or
+  variable name mentions `legacy/`: that directory is deleted by the last ticket of the build, and the
+  migration ticket greps the code directories for the word. Say what the code does; say where it came from
+  in the report.
 - Only touch files within this ticket's scope, and only make changes inside your own worktree and branch;
   never touch the main repo's working tree or another ticket's worktree.
   The one exception is the report file: write it directly into the main repo at the absolute path given in the
