@@ -86,21 +86,114 @@ def _split_args_named(argstr: str) -> list[tuple[str, str]]:
     return out
 
 
+def _call_close(text: str, start: int) -> int | None:
+    """Index of the `)` closing the call whose `(` is at `start`; None when it never closes.
+
+    Python source rules, so a parenthesis that belongs to a value is left alone: inside a
+    string literal only the closing quote counts (single, double and triple quoted), a
+    backslash escapes the next character, and `#` runs to the end of the line. This is the
+    one walk `split_args` and `complete_call` both use.
+    """
+    i, depth = start, 0
+    quote: str | None = None
+    while i < len(text):
+        c = text[i]
+        if quote is not None:
+            if c == "\\":
+                i += 2
+                continue
+            if text.startswith(quote, i):
+                i += len(quote)
+                quote = None
+                continue
+            i += 1
+            continue
+        if c in "\"'":
+            quote = c * 3 if text.startswith(c * 3, i) else c
+            i += len(quote)
+            continue
+        if c == "#":
+            nl = text.find("\n", i)
+            if nl < 0:
+                return None
+            i = nl + 1
+            continue
+        if c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return None
+
+
 def _first_call_named(text: str) -> tuple[str, str, list[tuple[str, str]], int, int] | None:
     """The first `apis.<app>.<api>(...)` call in text: (app, api, named args, call start, index right after the close)."""
     m = re.search(CALL_START, text)
     if m is None:
         return None
-    i, depth = m.end() - 1, 0
-    for j in range(i, len(text)):
-        if text[j] == "(":
-            depth += 1
-        elif text[j] == ")":
-            depth -= 1
-            if depth == 0:
-                args = _split_args_named(text[i + 1:j])
-                return m.group(1), m.group(2), args, m.start(), j + 1
-    return None
+    i = m.end() - 1
+    j = _call_close(text, i)
+    if j is None:
+        return None
+    return m.group(1), m.group(2), _split_args_named(text[i + 1:j]), m.start(), j + 1
+
+
+def _closes_the_call(written: str) -> bool:
+    """Whether `_call_close` still reaches the call's own `)` after `written` went in before it.
+
+    The writer asks the reader itself rather than carrying a copy of its rules, so the two
+    cannot drift: `written` is put in as the whole argument body of a one-argument call, and
+    the answer is yes when the reader closes that call at the parenthesis the writer appended.
+    It is no for a `#` that comments that parenthesis out, for a stray `(` or `)`, and for a
+    quote the reader leaves open — including one whose closing quote a backslash escapes.
+    """
+    return _call_close(f"({written})", 0) == len(written) + 1
+
+
+def _stays_one_argument(value: str) -> bool:
+    """Whether `_split_args_named` keeps a bare `value` whole and reads its key with it.
+
+    That reader counts every bracket kind and carries no backslash escape, and it ends an
+    argument on a `,` and reads a key off an `=`, both whenever they stand outside every
+    bracket and every quote. So a bare value holds neither of those two characters in the
+    open, keeps its bracket depth at zero and dips below it at no point, and leaves no quote
+    open — an open bracket or quote swallows the arguments that follow.
+    """
+    brackets = 0
+    quote: str | None = None
+    for ch in value:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+        elif ch in "([{":
+            brackets += 1
+        elif ch in ")]}":
+            brackets -= 1
+            if brackets < 0:
+                return False
+        elif ch in ",=" and brackets == 0:
+            return False
+    return brackets == 0 and quote is None
+
+
+def _bare_safe(value: str) -> bool:
+    """Whether `value` can be written bare into a call and read back as itself.
+
+    Both readers have to agree with the writer: `_call_close`, which has to reach the call's
+    closing parenthesis, and `_split_args_named`, which has to keep the value whole. On top of
+    the two the re-parse strips whitespace off the ends of a bare value, so a value that
+    carries its own leading or trailing whitespace is quoted instead.
+    """
+    if value == "":
+        return False
+    if value != value.strip():
+        return False
+    return _closes_the_call(value) and _stays_one_argument(value)
 
 
 def _quote_value(tool: str, key: str, value: str) -> str:
@@ -114,29 +207,13 @@ def _quote_value(tool: str, key: str, value: str) -> str:
             f"appworld.build_call: {tool} argument {key!r} value {value!r} holds both a single and a double quote"
         )
     q = '"' if has_single else "'"
-    return f"{q}{value}{q}"
-
-
-def _bare_safe(value: str) -> bool:
-    """Whether `value` can be written bare: not empty, no top-level `,` or `=`, and balanced brackets/quotes throughout."""
-    if value == "":
-        return False
-    depth = 0
-    quote: str | None = None
-    for ch in value:
-        if quote is not None:
-            if ch == quote:
-                quote = None
-            continue
-        if ch in "\"'":
-            quote = ch
-        elif ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-        elif ch in ",=" and depth == 0:
-            return False
-    return depth == 0 and quote is None
+    wrapped = f"{q}{value}{q}"
+    if _closes_the_call(wrapped):
+        return wrapped
+    raise ValueError(
+        f"appworld.build_call: {tool} argument {key!r} value {value!r} needs quoting and ends in a backslash "
+        f"that escapes its closing {q}, so the call it would be written into never closes"
+    )
 
 
 def _requote(call: str, user_ns: dict) -> tuple[str, list[str]]:
@@ -234,37 +311,10 @@ class AppWorld(Environment):
         m = re.search(CALL_START, s)
         if m is None:
             return None
-        i, depth, quote = m.end() - 1, 0, None
-        while i < len(s):
-            c = s[i]
-            if quote is not None:
-                if c == "\\":
-                    i += 2
-                    continue
-                if s.startswith(quote, i):
-                    i += len(quote)
-                    quote = None
-                    continue
-                i += 1
-                continue
-            if c in "\"'":
-                quote = c * 3 if s.startswith(c * 3, i) else c
-                i += len(quote)
-                continue
-            if c == "#":
-                nl = s.find("\n", i)
-                if nl < 0:
-                    return None
-                i = nl + 1
-                continue
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth == 0:
-                    return s[m.start():i + 1]
-            i += 1
-        return None
+        j = _call_close(s, m.end() - 1)
+        if j is None:
+            return None
+        return s[m.start():j + 1]
 
     def open(self, task_id: str, seed: int) -> None:
         os.environ["APPWORLD_ROOT"] = self.home
