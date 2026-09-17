@@ -44,7 +44,7 @@ extra probe backbones this project already trains on (legacy
 row):
 
 ```yaml
-gptoss120b:
+gpt_oss_120b:
   role: agent
   family: gptoss
   result:
@@ -66,19 +66,19 @@ gptoss120b:
       VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
       TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
 
-qwen06:
+qwen3_0pt6b:
   role: probe
   family: qwen
   result: {weights: qwen3-0.6b-base, dtype: float32}
   serving: {}
 
-qwen17:
+qwen3_1pt7b:
   role: probe
   family: qwen
   result: {weights: qwen3-1.7b-base, dtype: float32}
   serving: {}
 
-qwen4:
+qwen3_4b:
   role: probe
   family: qwen
   result: {weights: qwen3-4b-base, dtype: float32}
@@ -96,8 +96,8 @@ vLLM), `legacy/envs/serve_logs/launch_vllm_awdiag.py:1-20` (native
 `legacy/pipeline/train/train_causal_tool.py:84-88` (the weights aliases).
 
 Two deliberate departures from 6.1's example row are in section 6 (errata 1 and
-2): `gptoss120b.result.dtype` is `auto`, not `bfloat16`, and
-`qwen06.result.dtype` is `float32`, not `bfloat16`.
+2): `gpt_oss_120b.result.dtype` is `auto`, not `bfloat16`, and
+`qwen3_0pt6b.result.dtype` is `float32`, not `bfloat16`.
 
 **Not ported.** `legacy/configs/presets/*.json`'s whole `client:` block
 (`api`, `reasoning_effort`, `temperature`, `top_p`, `max_tokens`, `stop`,
@@ -748,7 +748,7 @@ Expected: four lines `ok`, exit 0. (`models.probe_models.base` and
 ```
 python3 -c "
 import models, pathlib
-a = models.agent('gptoss120b'); p = models.probe('qwen06')
+a = models.agent('gpt_oss_120b'); p = models.probe('qwen3_0pt6b')
 print(a.role, a.family, a.weights, a.module.NAME, a.serving['host'], a.serving['port'])
 print(p.role, p.family, p.weights, hasattr(p, 'module'))
 print(pathlib.Path(a.weights_path).is_dir(), pathlib.Path(p.weights_path).is_dir())"
@@ -767,7 +767,7 @@ True True
 ```
 python3 -c "
 import models
-for call, arg in ((models.agent,'qwen06'), (models.probe,'gptoss120b'), (models.agent,'nosuch')):
+for call, arg in ((models.agent,'qwen3_0pt6b'), (models.probe,'gpt_oss_120b'), (models.agent,'nosuch')):
     try: call(arg); print('NO REFUSAL', arg)
     except Exception as e: print(type(e).__name__, str(e)[:80])"
 ```
@@ -927,7 +927,7 @@ AutoModelForCausalLM.from_config(cfg).save_pretrained(best); tok.save_pretrained
 labels = ["apis.spotify.login", "apis.supervisor.show_profile"]
 torch.save(torch.nn.Linear(64, 2).state_dict(), best / "head.pt")
 (best / "meta.json").write_text(json.dumps(dict(
-    backbone="qwen06", tuning="full", labels=labels, call_sep="\n[CALL] ",
+    backbone="qwen3_0pt6b", tuning="full", labels=labels, call_sep="\n[CALL] ",
     param_only=False, max_len=256, train_key="0123456789ab")))
 p = base.load(None, None, probe_kind="classifier", ckpt_dir=best, device="cpu")
 logits, names = p.score(["thinking so far", "another prefix"])
@@ -935,7 +935,7 @@ print("score", len(logits), len(logits[0]), names[0] in labels, p.max_len, p.lab
 gen = base.load(None, None, probe_kind="generator", ckpt_dir=best, device="cpu")
 out = gen.generate(["thinking so far"], 8, "\n[CALL] ")
 print("gen", len(out), "\n" not in out[0])
-p.save(d / "again", labels=labels, meta=dict(backbone="qwen06", tuning="full",
+p.save(d / "again", labels=labels, meta=dict(backbone="qwen3_0pt6b", tuning="full",
        max_len=256, train_key="0123456789ab"), extra=dict(call_sep="\n[CALL] ", param_only=False))
 m = json.loads((d / "again" / "meta.json").read_text())
 print("save", sorted(m), (d / "again" / "head.pt").exists())
@@ -982,7 +982,7 @@ server half reads no `settings.yaml`.
 
 ```
 D=$(mktemp -d); external/probe-env/bin/python -m models.probe_models.service serve \
-  --run-dir $D --agent-model gptoss120b --port 8599 --render-only > $D/srv.log 2>&1 &
+  --run-dir $D --agent-model gpt_oss_120b --port 8599 --render-only > $D/srv.log 2>&1 &
 # wait for $D/service_probe_0.json, then:
 external/probe-env/bin/python -c "
 from models.probe_models.service import Client
@@ -1020,7 +1020,7 @@ and `$D/service_probe_0.json` exists carrying `kind`, `replica`, `base_url`,
 external/vllm-env/bin/python -c "
 from models.agent_models.service import build_command
 import models
-m = models.agent('gptoss120b')
+m = models.agent('gpt_oss_120b')
 row = dict(role='agent', family='gptoss', weights='gpt-oss-120b', dtype='auto',
            quantization=None, max_model_len=131072, served_model_name='gpt-oss-120b',
            env_result={'VLLM_USE_FLASHINFER_SAMPLER': '0'}, extra_flags='')
@@ -1078,11 +1078,11 @@ None of these may be run by an implementer; each is a ready-to-run command for
 the main session, through the gpu-run skill.
 
 **G1 — the agent service starts, checks and serves.** On the host in the row
-(`tokyo108`), with a run directory whose `settings.yaml` names `gptoss120b`:
+(`tokyo108`), with a run directory whose `settings.yaml` names `gpt_oss_120b`:
 
 ```
 external/vllm-env/bin/python -m models.agent_models.service serve \
-  --run-dir <run_dir> --model gptoss120b --port 8103 --gpus 0 --replica 0
+  --run-dir <run_dir> --model gpt_oss_120b --port 8103 --gpus 0 --replica 0
 ```
 
 Must show: the three check-table lines pass — `/health` answers inside
@@ -1113,7 +1113,7 @@ through returns immediately with `usage is None`.
 
 ```
 external/probe-env/bin/python -m models.probe_models.service serve \
-  --run-dir <inject run_dir> --agent-model gptoss120b --port 8500 \
+  --run-dir <inject run_dir> --agent-model gpt_oss_120b --port 8500 \
   --score-ckpt <ctool train run_dir> --gen-ckpt <cgen train run_dir> \
   --temperature <fitted T> --device cuda:0
 external/probe-env/bin/python -m models.probe_models.service check \
@@ -1230,11 +1230,11 @@ run's probe piece (2.1's piece rule).
 Each line is also appended to
 `.scratch/from-zero/contract-errata.md`.
 
-1. **6.1** writes `dtype: bfloat16` in `gptoss120b`'s `result:` block -> the
+1. **6.1** writes `dtype: bfloat16` in `gpt_oss_120b`'s `result:` block -> the
    table writes `dtype: auto`, the value today's launcher effectively used
    (`legacy/serve_preset.py:41-48` passes no `--dtype`), because an explicit
    `bfloat16` over the mxfp4 checkpoint is a different server.
-2. **6.1** writes `dtype: bfloat16` in `qwen06`'s `result:` block -> the table
+2. **6.1** writes `dtype: bfloat16` in `qwen3_0pt6b`'s `result:` block -> the table
    writes `dtype: float32`, because `legacy/pipeline/train/train_causal_tool.py:196`
    loads the backbone in fp32 and autocasts bf16; loading bf16 weights changes
    full-tuning numerics under an identical key. The bf16 cast stays on the

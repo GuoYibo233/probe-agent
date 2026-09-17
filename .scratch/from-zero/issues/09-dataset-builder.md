@@ -279,7 +279,7 @@ for i, (split, tid, seed) in enumerate(triples):
     w = trajectory_record.open_record(sdir, tid, seed)     # the RUN DIRECTORY
     w.row("meta", stage="sample", env="appworld", task_id=tid, seed=seed, env_seed=100,
           split=split, arm="sample", instructions="v1", task_text="Play my playlist.",
-          agent_model="gptoss120b", generation="{}", inject=None, commit="deadbeef",
+          agent_model="gpt_oss_120b", generation="{}", inject=None, commit="deadbeef",
           run_key=SK, owner_session="sample-" + SK + "-0")
     for step, (think, action, result) in enumerate(STEPS):
         w.row("gen", step=step, reasoning=think, content="```python\nx\n```",
@@ -482,7 +482,7 @@ third-party list `[polars, PyYAML]` and the `constants/path_datasets.yaml` read
 
 `M-D1` a real `--debug` `sample` run's records build:
 ```bash
-run.py train_probe ctool_q06 --debug        # the walk reaches build itself
+run.py train_probe ctool_qwen3_0pt6b --debug        # the walk reaches build itself
 <appworld python> -c "
 import sys; sys.path.insert(0,'.')
 import data.training_data as ex

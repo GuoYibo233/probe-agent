@@ -99,9 +99,9 @@ PY_VLLM=/home/y-guo/reproduce/new1/external/vllm-env/bin/python          # 3.12,
 | `constants/path_models.yaml` | weights alias -> the directory the weights live in |
 | `experimental_settings/schema.py` | every setting field with its default, the axes, the stage table, and the loader (file -> setting, diff, key, run_dir, freeze) |
 | `experimental_settings/debug.yaml` | sizes only; `--debug` lays it over any setting |
-| `experimental_settings/baseline.yaml` | workflow `sample, score`; named setting `gptoss_aw` |
-| `experimental_settings/train_probe.yaml` | workflow `sample, build, train, eval`; `ctool_q06`, `cgen_q06`, `cparam_q06` |
-| `experimental_settings/inject.yaml` | workflow `inject, score`; `p1e1_t080`, `no_probe_t080` |
+| `experimental_settings/baseline.yaml` | workflow `sample, score`; named setting `gpt_oss_120b_appworld` |
+| `experimental_settings/train_probe.yaml` | workflow `sample, build, train, eval`; `ctool_qwen3_0pt6b`, `cgen_qwen3_0pt6b`, `cparam_qwen3_0pt6b` |
+| `experimental_settings/inject.yaml` | workflow `inject, score`; `probe_p1_e1_theta_0pt80`, `no_probe_p1_e1_theta_0pt80` |
 | `.claude/hooks/settings_readonly.sh` | the PreToolUse hook that refuses an agent edit to `experimental_settings/*.yaml` and `models/table.yaml` |
 
 **Legacy sources.** `legacy/run.py:63-75` (the interpreter map);
@@ -595,11 +595,11 @@ pieces down and continues into the next stage.
 
 ```
 PY=/home/y-guo/reproduce/new1/external/probe-env/bin/python
-$PY run.py baseline    gptoss_aw  --debug      # workflow: sample, score
-$PY run.py train_probe ctool_q06  --debug      # workflow: sample, build, train, eval
-$PY run.py train_probe cgen_q06   --debug
-$PY run.py train_probe cparam_q06 --debug
-$PY run.py inject      p1e1_t080  --debug \
+$PY run.py baseline    gpt_oss_120b_appworld  --debug      # workflow: sample, score
+$PY run.py train_probe ctool_qwen3_0pt6b  --debug      # workflow: sample, build, train, eval
+$PY run.py train_probe cgen_qwen3_0pt6b   --debug
+$PY run.py train_probe cparam_qwen3_0pt6b --debug
+$PY run.py inject      probe_p1_e1_theta_0pt80  --debug \
    "inject.probe_score={key: {train: <KS>, eval: <KE>}}" \
    "inject.probe_gen={key: {train: <KG>}}" \
    "score.baseline={key: {sample: <KB>}}"
@@ -677,9 +677,9 @@ stated gate would have stopped every build, are:
    `.claude/skills/gpu-run/references/gpu_state.md`: tokyo105 (alias shiga) 8,
    tokyo106 10, tokyo107 4, tokyo108 (alias saitama) 6 — 28 in total.
 5. **5.2, `train_probe.yaml`'s named settings.** The settings plan ships
-   `ctool_q06` and `cgen_q06` only, while the loader's `param_only` refusal and
+   `ctool_qwen3_0pt6b` and `cgen_qwen3_0pt6b` only, while the loader's `param_only` refusal and
    the cparam `--debug` walk both need a cparam setting. The file also ships
-   `cparam_q06`, whose `eval.theta_from` is `train_probe/ctool_q06`.
+   `cparam_qwen3_0pt6b`, whose `eval.theta_from` is `train_probe/ctool_qwen3_0pt6b`.
 6. **0.1, the interpreter paths in every acceptance command.** `external/` is
    git-ignored and absent from a worktree, so a relative
    `external/probe-env/bin/python` does not resolve where an implementer works.

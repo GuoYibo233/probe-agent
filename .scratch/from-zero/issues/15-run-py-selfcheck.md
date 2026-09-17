@@ -200,13 +200,13 @@ and `build`, because `train/` had not merged in wave 5 and a `train`, `eval` or
 `VERSION` lines. Wave 6 has them, so the full sweep lands here.
 ```bash
 set -e
-for a in "baseline gptoss_aw sample" "baseline gptoss_aw score" \
-         "train_probe ctool_q06 sample" "train_probe ctool_q06 build" \
-         "train_probe ctool_q06 train"  "train_probe ctool_q06 eval" \
-         "train_probe cgen_q06 train"   "train_probe cgen_q06 eval" \
-         "train_probe cparam_q06 train" "train_probe cparam_q06 eval" \
-         "inject p1e1_t080 inject"      "inject p1e1_t080 score" \
-         "inject no_probe_t080 inject"  "inject no_probe_t080 score"; do
+for a in "baseline gpt_oss_120b_appworld sample" "baseline gpt_oss_120b_appworld score" \
+         "train_probe ctool_qwen3_0pt6b sample" "train_probe ctool_qwen3_0pt6b build" \
+         "train_probe ctool_qwen3_0pt6b train"  "train_probe ctool_qwen3_0pt6b eval" \
+         "train_probe cgen_qwen3_0pt6b train"   "train_probe cgen_qwen3_0pt6b eval" \
+         "train_probe cparam_qwen3_0pt6b train" "train_probe cparam_qwen3_0pt6b eval" \
+         "inject probe_p1_e1_theta_0pt80 inject"      "inject probe_p1_e1_theta_0pt80 score" \
+         "inject no_probe_p1_e1_theta_0pt80 inject"  "inject no_probe_p1_e1_theta_0pt80 score"; do
   "$PR" run.py where $a
   "$PR" run.py where $a --debug
 done

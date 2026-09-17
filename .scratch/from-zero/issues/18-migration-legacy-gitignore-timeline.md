@@ -311,10 +311,10 @@ The main session fills in, before dispatching this ticket, the run-directory key
 the three `--debug` walks produced, so the TIMELINE entry can quote them:
 
 ```
-baseline    gptoss_aw   --debug   sample=<key>  score=<key>
-train_probe ctool_q06   --debug   sample=<key>  build=<key>  train=<key>  eval=<key>
-train_probe cgen_q06    --debug   train=<key>   eval=<key>
-train_probe cparam_q06  --debug   train=<key>   eval=<key>
-inject      p1e1_t080   --debug   inject=<key>  score=<key>
+baseline    gpt_oss_120b_appworld   --debug   sample=<key>  score=<key>
+train_probe ctool_qwen3_0pt6b   --debug   sample=<key>  build=<key>  train=<key>  eval=<key>
+train_probe cgen_qwen3_0pt6b    --debug   train=<key>   eval=<key>
+train_probe cparam_qwen3_0pt6b  --debug   train=<key>   eval=<key>
+inject      probe_p1_e1_theta_0pt80   --debug   inject=<key>  score=<key>
 run.py selfcheck: <the line it printed>
 ```

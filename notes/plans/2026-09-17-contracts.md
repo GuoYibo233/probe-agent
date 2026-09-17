@@ -861,7 +861,7 @@ whose six loop pieces all died (one vLLM restart is enough) would release claims
 report them and launch nothing, forever.* *The reason the release does
 not start anything by itself while siblings are live: the sampler is retired and
 the only refire left is a person's (2.3, 9(a)#39), so a plain `run.py train_probe
-ctool_q06` over a run with one dead piece among five live ones must release that
+ctool_qwen3_0pt6b` over a run with one dead piece among five live ones must release that
 session's claims and say so, not silently start a seventh piece into a directory
 six are writing.* **A record file whose
 first line does not parse as a `meta` row is treated as unowned and is deleted by
@@ -2545,7 +2545,7 @@ key(stage, setting) = sha256(canonical_json({
   fields of those sections, so the reference's raw **text** would enter `fields`
   while the key it resolves to enters `upstream` — one fact keyed twice, in two
   spellings. The three reference syntaxes of 5.4 would then stop being
-  interchangeable: converting `eval.theta_from: train_probe/ctool_q06` to the
+  interchangeable: converting `eval.theta_from: train_probe/ctool_qwen3_0pt6b` to the
   pinned `key: {eval: <hex>}` that 5.4 says survives an edit to the named setting
   would move the eval directory and force a rerun, and renaming a referenced
   setting that still resolves to the same key would move the score directory.
@@ -2771,7 +2771,7 @@ piece and rewrites that entry while the start row stands. A run whose required c
 free on any host is **refused**, naming every host probed and its free count.
 *The failure this prevents: "pick free cards and ports" over four hosts is not a
 rule, so `jobs/launch.py` cannot be written and a person cannot predict where
-`run.py train_probe ctool_q06` puts a training run, or whether the probe service
+`run.py train_probe ctool_qwen3_0pt6b` puts a training run, or whether the probe service
 lands on a different machine from the vLLM server it shares a run with.*
 
 The tmux session name is the piece's identity everywhere: in the start row, in
@@ -3082,8 +3082,8 @@ Reference fields are marked `ref` and explained in 5.4.
 
 | field | type | default | key | one line |
 |---|---|---|---|---|
-| `agent` | alias | `gptoss120b` | yes | the agent model, an alias string and nothing else, so `models.agent(cfg.models.agent)` and the command-line override `models.agent=<alias>` (5.7) keep working |
-| `probe` | alias | `qwen06` | yes | the probe backbone; likewise |
+| `agent` | alias | `gpt_oss_120b` | yes | the agent model, an alias string and nothing else, so `models.agent(cfg.models.agent)` and the command-line override `models.agent=<alias>` (5.7) keep working |
+| `probe` | alias | `qwen3_0pt6b` | yes | the probe backbone; likewise |
 | `agent_row` | dict | — | yes, through 3.3's `models` entry and never as a field of the diff | **read-only, written by the loader**: the agent alias's table row expanded — exactly `{role, family, **the result block}` (6.1), so the field and what the key is computed over are the same object. The absolute weights path is **not** in it: `weights` is the alias, and the path is resolved at run time through `models.agent(alias)` from `constants/path_models.yaml`, which enters no key (3.3). This is where the expansion of 3.3's first pre-diff resolution lands and what `freeze` writes into `settings.yaml`, so every reader of the expanded row names one field: `schema.key`, `agent/loop.py`, `agent/inject.py` and `models/probe_models/service.py`'s `check` client all compare against `cfg.models.agent_row["family"]` (7.2, 9(a)#46). Every keyed column of a model row is read here, under the rule in 6.2 |
 | `probe_row` | dict | — | the same | the same for the probe alias; absent from a setting whose workflow contains `inject`, which names no `models.probe` (2.1) |
 
@@ -3380,7 +3380,7 @@ the two modules that fitted it (2.1, 2.2). Nothing in `models/` ever opens an
 
 ```yaml
 ctool_q17_lr:
-  models: {probe: qwen17}
+  models: {probe: qwen3_1pt7b}
   probe: {method: ctool, tuning: lora}
   sweep: {train.lr: [1.0e-4, 3.0e-4, 5.0e-4], train.seed: [42, 67]}
 ```
@@ -3537,7 +3537,7 @@ in `result:` and enters the key; no goes in `serving:` and never does. That is
 the substance of the structure review's item 7 without moving the file.
 
 ```yaml
-gptoss120b:
+gpt_oss_120b:
   role: agent
   family: gptoss
   result:
@@ -3555,7 +3555,7 @@ gptoss120b:
     tensor_parallel_size: 1
     env: {LD_LIBRARY_PATH: .../cuda-compat-13.0}
 
-qwen06:
+qwen3_0pt6b:
   role: probe
   family: qwen                     # models/probe_models/qwen.py
   result:
@@ -4281,7 +4281,7 @@ writes it into that piece's entry in the start row:
   registry row's piece entry, move the assignment to the next free one.
   *The failure the order prevents: with the relocation running first it always
   moves off exactly the port the attach test looks for, so `--attach-only` is
-  unreachable — a second run wanting `gptoss120b` while a first still serves it at
+  unreachable — a second run wanting `gpt_oss_120b` while a first still serves it at
   `tokyo108:8103` is assigned 8104 and launches a second 120B server on an
   occupied card, and the whole attach-verification mechanism of 7.1 is dead code.*
 - a **probe service** piece takes the first free port at or above
@@ -5190,7 +5190,7 @@ Each line: the fix, the file it would add, split or move, what it would buy.
 These are the acceptance cases for the contracts: each one must pass through
 the tables above without a gap. They are the construction plan's smoke list.
 
-**1. First run of `train_probe.yaml:ctool_q06`.** `run.py train_probe ctool_q06`
+**1. First run of `train_probe.yaml:ctool_qwen3_0pt6b`.** `run.py train_probe ctool_qwen3_0pt6b`
 loads the setting (5.7), expands the model rows, and walks
 `workflow: [sample, build, train, eval]`. For `sample`, `run_dir` gives a path
 with no `done.json`, so `run.py` takes `runs.jsonl.lock`, calls
@@ -5232,12 +5232,12 @@ gone, heartbeat stale). The rerun finds no `done.json` and no `train_done.json`
 but a `last/` whose commit equals this launch's `cfg._commit`, so the trainer resumes from step 40 into
 the same directory. Had it died during prediction, `train_done.json` would be
 present and only the prediction step would run. Had the commit moved, the
-trainer refuses and says so; `run.py retry train_probe ctool_q06 train` clears
+trainer refuses and says so; `run.py retry train_probe ctool_qwen3_0pt6b train` clears
 the directory and starts fresh (2.4).
 
 **4. Dead piece.** One of six sample loop pieces died with two tasks claimed and
 unfinished. `ls` shows five healthy and one `dead`.
-`run.py refire train_probe ctool_q06 sample --piece 3` calls
+`run.py refire train_probe ctool_qwen3_0pt6b sample --piece 3` calls
 `jobs/launch.refire`, which first probes that piece's session on its recorded
 host and, finding it gone, reads the piece's frozen command from
 `meta.json`, deletes the unfinished record files whose `meta` row names the dead
@@ -5283,9 +5283,9 @@ addresses one child, the value formatted as 5.5 pins it;
 `eval/method_table.py` groups them by `parent` and reports mean and spread.
 
 **7. Inject referencing a probe.** `inject.yaml:ctool_q06_p1e1` names
-`probe_score: train_probe/ctool_q06`, `probe_gen: train_probe/cgen_q06`,
+`probe_score: train_probe/ctool_qwen3_0pt6b`, `probe_gen: train_probe/cgen_qwen3_0pt6b`,
 `theta: 0.9`, `format: p1_e1`, `arm: probe`, and
-`score.baseline: baseline/gptoss120b_appworld`. It names no `probe:` section and
+`score.baseline: baseline/gpt_oss_120b_appworld`. It names no `probe:` section and
 no `models.probe`, which the loader would refuse (5.7). The loader resolves the
 three references and checks the agreement **per inherited group** (5.4):
 `data`, `models.agent` and `generation` across all three, and the `build` fields

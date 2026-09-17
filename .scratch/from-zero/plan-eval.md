@@ -810,7 +810,7 @@ for d, ok in ((sdir, True), (bdir, False)):
         w = trajectory_record.open_record(d / "records", tid, seed)
         w.row("meta", step=None, ts=time.time(), record_id=f"{tid}__s{seed}", stage="sample",
               env="appworld", task_id=tid, seed=seed, env_seed=100, split=split, arm="sample",
-              instructions="v1", task_text="do it", agent_model="gptoss120b",
+              instructions="v1", task_text="do it", agent_model="gpt_oss_120b",
               generation="{}", inject=None, commit="deadbeef", run_key=d.name,
               owner_session="fixture", version=1)
         w.row("gen", step=0, ts=time.time(), reasoning="think", content="answer",
@@ -825,7 +825,7 @@ for d, ok in ((sdir, True), (bdir, False)):
 for d, k in ((sdir, SK), (bdir, BK)):
     (d / "settings.yaml").write_text(f"""
 data: {{env: appworld, instructions: v1}}
-models: {{agent: gptoss120b}}
+models: {{agent: gpt_oss_120b}}
 generation: {{temperature: 1.0, top_p: null, max_step_tokens: 8192}}
 sample: {{split: [train], seeds: [42], tasks: null, n_tasks: 2, max_steps: 30}}
 _stage: sample

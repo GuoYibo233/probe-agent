@@ -291,7 +291,7 @@ from jobs import registry as r
 rd = T/"out/sample/abc123abc123"; rd.mkdir(parents=True)
 row = dict(ev="start", t="2026-09-17 10:00", run_id="sample-abc123abc123",
            stage="sample", key="abc123abc123", dir=str(rd),
-           workflow="baseline", setting="gptoss_aw", parent=None, swept=None,
+           workflow="baseline", setting="gpt_oss_120b_appworld", parent=None, swept=None,
            debug=False, upstream={}, versions={"agent/loop.py": 1}, diff={"sample.max_steps": 40},
            commit="deadbee", branch="from-zero", dirty=False, dirty_count=0, dirty_files=[],
            host="shiga", status="launching",

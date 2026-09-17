@@ -21,7 +21,7 @@ def _start_row(proc_index: int, row_index: int, run_dir: Path) -> dict:
         "ev": "start", "t": "2026-09-17 12:00",
         "run_id": f"sample-{proc_index}-{row_index}",
         "stage": "sample", "key": f"{proc_index}{row_index}",
-        "dir": str(run_dir), "workflow": "baseline", "setting": "gptoss_aw",
+        "dir": str(run_dir), "workflow": "baseline", "setting": "gpt_oss_120b_appworld",
         "parent": None, "swept": None, "debug": False,
         "upstream": {}, "versions": {}, "diff": {},
         "commit": "deadbee", "branch": "main",

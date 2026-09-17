@@ -39,7 +39,7 @@ this project already trains on (`legacy/pipeline/train/train_causal_tool.py:84-8
 hardcoded three Qwen tiers; the tree makes each a row).
 
 ```yaml
-gptoss120b:
+gpt_oss_120b:
   role: agent
   family: gptoss
   result:
@@ -61,19 +61,19 @@ gptoss120b:
       VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
       TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
 
-qwen06:
+qwen3_0pt6b:
   role: probe
   family: qwen
   result: {weights: qwen3-0.6b-base, dtype: float32}
   serving: {}
 
-qwen17:
+qwen3_1pt7b:
   role: probe
   family: qwen
   result: {weights: qwen3-1.7b-base, dtype: float32}
   serving: {}
 
-qwen4:
+qwen3_4b:
   role: probe
   family: qwen
   result: {weights: qwen3-4b-base, dtype: float32}
@@ -81,10 +81,10 @@ qwen4:
 ```
 
 **Two decisions already made (errata), both departures from 6.1's example row:**
-`gptoss120b.result.dtype` is `auto`, not `bfloat16` — the value today's launcher
+`gpt_oss_120b.result.dtype` is `auto`, not `bfloat16` — the value today's launcher
 effectively used (`legacy/serve_preset.py:41-48` passes no `--dtype`), because an
 explicit `bfloat16` over the mxfp4 checkpoint is a different server. And
-`qwen06.result.dtype` is `float32`, not `bfloat16` — `train_causal_tool.py:196`
+`qwen3_0pt6b.result.dtype` is `float32`, not `bfloat16` — `train_causal_tool.py:196`
 loads the backbone fp32 and autocasts bf16, so loading bf16 weights would change
 full-tuning numerics under an identical key; the bf16 cast stays on the restore
 path as `qwen.DTYPE`.
@@ -394,7 +394,7 @@ Expected: four lines `ok`, exit 0. (`models.probe_models.base` and
 ```bash
 python3 -c "
 import models, pathlib
-a = models.agent('gptoss120b'); p = models.probe('qwen06')
+a = models.agent('gpt_oss_120b'); p = models.probe('qwen3_0pt6b')
 print(a.role, a.family, a.weights, a.module.NAME, a.serving['host'], a.serving['port'])
 print(p.role, p.family, p.weights, hasattr(p, 'module'))
 print(pathlib.Path(a.weights_path).is_dir(), pathlib.Path(p.weights_path).is_dir())"
@@ -410,7 +410,7 @@ True True
 ```bash
 python3 -c "
 import models
-for call, arg in ((models.agent,'qwen06'), (models.probe,'gptoss120b'), (models.agent,'nosuch')):
+for call, arg in ((models.agent,'qwen3_0pt6b'), (models.probe,'gpt_oss_120b'), (models.agent,'nosuch')):
     try: call(arg); print('NO REFUSAL', arg)
     except Exception as e: print(type(e).__name__, str(e)[:80])"
 ```
@@ -555,7 +555,7 @@ AutoModelForCausalLM.from_config(cfg).save_pretrained(best); tok.save_pretrained
 labels = ["apis.spotify.login", "apis.supervisor.show_profile"]
 torch.save(torch.nn.Linear(64, 2).state_dict(), best / "head.pt")
 (best / "meta.json").write_text(json.dumps(dict(
-    backbone="qwen06", tuning="full", labels=labels, call_sep="\n[CALL] ",
+    backbone="qwen3_0pt6b", tuning="full", labels=labels, call_sep="\n[CALL] ",
     param_only=False, max_len=256, train_key="0123456789ab")))
 p = base.load(None, None, probe_kind="classifier", ckpt_dir=best, device="cpu")
 logits, names = p.score(["thinking so far", "another prefix"])
@@ -563,7 +563,7 @@ print("score", len(logits), len(logits[0]), names[0] in labels, p.max_len, p.lab
 gen = base.load(None, None, probe_kind="generator", ckpt_dir=best, device="cpu")
 out = gen.generate(["thinking so far"], 8, "\n[CALL] ")
 print("gen", len(out), "\n" not in out[0])
-p.save(d / "again", labels=labels, meta=dict(backbone="qwen06", tuning="full",
+p.save(d / "again", labels=labels, meta=dict(backbone="qwen3_0pt6b", tuning="full",
        max_len=256, train_key="0123456789ab"), extra=dict(call_sep="\n[CALL] ", param_only=False))
 m = json.loads((d / "again" / "meta.json").read_text())
 print("save", sorted(m), (d / "again" / "head.pt").exists())
@@ -619,7 +619,7 @@ models.probe = lambda alias: types.SimpleNamespace(
 
 row = {"role": "probe", "family": "qwen", "weights": "qwen3-0.6b-base", "dtype": "float32"}
 cfg = types.SimpleNamespace(
-    models=types.SimpleNamespace(probe="qwen06", probe_row=row),
+    models=types.SimpleNamespace(probe="qwen3_0pt6b", probe_row=row),
     probe=types.SimpleNamespace(tuning="lora", lora_r=16, lora_alpha=32,
                                 lora_dropout=0.05, lora_targets=None),
     train=types.SimpleNamespace(max_len=256))
@@ -631,7 +631,7 @@ targets = sorted({n.rsplit(".lora_A", 1)[0].rsplit(".", 1)[-1]
 print(len(targets), "lora targets", targets)
 
 p.save(d / "merged", labels=labels,
-       meta=dict(backbone="qwen06", tuning="lora", max_len=256, train_key="0123456789ab"),
+       meta=dict(backbone="qwen3_0pt6b", tuning="lora", max_len=256, train_key="0123456789ab"),
        extra=dict(call_sep="\n[CALL] ", param_only=False))
 base_sd = AutoModel.from_pretrained(src, dtype=torch.float32).state_dict()
 merged_sd = AutoModel.from_pretrained(d / "merged", dtype=torch.float32).state_dict()

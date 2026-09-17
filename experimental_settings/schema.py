@@ -40,8 +40,8 @@ class Data:
 
 @dataclass
 class Models:
-    agent: str = "gptoss120b"                   # the agent model, an alias string
-    probe: str | None = "qwen06"                 # the probe backbone; likewise
+    agent: str = "gpt_oss_120b"                   # the agent model, an alias string
+    probe: str | None = "qwen3_0pt6b"                 # the probe backbone; likewise
     agent_row: dict | None = None                # read-only, written by the loader (5.2)
     probe_row: dict | None = None                # read-only, written by the loader (5.2)
 
@@ -209,7 +209,7 @@ STAGES = {
     "projection": ("sample.seeds", "sample.tasks", "sample.n_tasks",
                    "sample.pieces", "sample.replicas"),
     "projection_generator": (),
-    "versions": ("agent/loop.py", "agent/generate.py", "data/task_record.py",
+    "versions": ("agent/loop.py", "agent/generate.py", "data/trajectory_record.py",
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/service.py"),
@@ -219,15 +219,15 @@ STAGES = {
                  "sample.split", "sample.tasks", "sample.n_tasks", "sample.seeds"),
     "models": (),
     "upstream": ({"name": "sample", "source": "same", "stage": "sample", "key": "fold"},),
-    "program": "data.build_dataset",
+    "program": "data.build_training_dataset",
     "venv": "any",
     "pieces": (("cpu", 1, None),),
     "cards": False,
     "done_writer": "stage",
     "projection": (),
     "projection_generator": (),
-    "versions": ("data/build_dataset.py", "data/probe_input.py", "data/example.py",
-                 "data/task_record.py", "data/environments/__init__.py",
+    "versions": ("data/build_training_dataset.py", "data/probe_input.py", "data/training_data.py",
+                 "data/trajectory_record.py", "data/environments/__init__.py",
                  "data/environments/{env}.py"),
   },
   "train": {
@@ -242,7 +242,7 @@ STAGES = {
     "projection": ("train.checkpoint_hours",),
     "projection_generator": ("data",),
     "versions": ("train/utils/trainer.py", "train/methods/{method}.py",
-                 "eval/methods/{method}.py", "data/example.py", "data/prediction.py",
+                 "eval/methods/{method}.py", "data/training_data.py", "data/probe_output.py",
                  "models/probe_models/base.py", "models/probe_models/{backbone}.py"),
   },
   "eval": {
@@ -259,7 +259,7 @@ STAGES = {
     "projection": (),
     "projection_generator": ("data",),
     "versions": ("eval/utils/probe_eval.py", "eval/methods/{method}.py",
-                 "data/prediction.py"),
+                 "data/probe_output.py"),
   },
   "inject": {
     "sections": ("data", "models.agent", "generation",
@@ -285,7 +285,7 @@ STAGES = {
                    "inject.pieces", "inject.replicas"),
     "projection_generator": (),
     "versions": ("agent/loop.py", "agent/generate.py", "agent/inject.py",
-                 "agent/inject_format.py", "data/probe_input.py", "data/task_record.py",
+                 "agent/inject_format.py", "data/probe_input.py", "data/trajectory_record.py",
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/base.py", "models/probe_models/service.py",
@@ -309,7 +309,7 @@ STAGES = {
     "done_writer": "stage",
     "projection": ("data",),
     "projection_generator": (),
-    "versions": ("eval/score_run.py", "data/task_record.py"),
+    "versions": ("eval/score_run.py", "data/trajectory_record.py"),
   },
 }
 

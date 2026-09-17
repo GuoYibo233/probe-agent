@@ -394,7 +394,7 @@ not in the code).
 
 `M-E1` the first real classifier eval over a real `train` run's
 `predictions.parquet`:
-`run.py train_probe ctool_q06 --debug` then `run.py where train_probe ctool_q06 eval`
+`run.py train_probe ctool_qwen3_0pt6b --debug` then `run.py where train_probe ctool_qwen3_0pt6b eval`
 must show `probe_report.json` with a `temperature` between 0.5 and 5, a `chosen`
 entry per risk target, `frozen` numbers whose `n` equals the test event count in
 the train run's `done.json` `counts`, and a `fires.parquet` whose `event_id`

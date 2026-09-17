@@ -263,8 +263,8 @@ prints an ssh error, report it as a ticket-03 defect; an implementer never runs
 **C4 — `where` answers for every keyable stage, real and debug.**
 ```bash
 set -e
-for a in "baseline gptoss_aw sample" "baseline gptoss_aw score" \
-         "train_probe ctool_q06 sample" "train_probe ctool_q06 build"; do
+for a in "baseline gpt_oss_120b_appworld sample" "baseline gpt_oss_120b_appworld score" \
+         "train_probe ctool_qwen3_0pt6b sample" "train_probe ctool_qwen3_0pt6b build"; do
   "$PR" run.py where $a
   "$PR" run.py where $a --debug
 done
@@ -290,8 +290,8 @@ import yaml, pathlib
 p = pathlib.Path('$T5/constants/path_outputs.yaml')
 d = yaml.safe_load(p.read_text()); d['root'] = '$T5/no_such_outputs_root'
 p.write_text(yaml.safe_dump(d))"
-A=$("$PR" run.py where baseline gptoss_aw sample)
-B=$(cd "$T5" && "$PR" run.py where baseline gptoss_aw sample)
+A=$("$PR" run.py where baseline gpt_oss_120b_appworld sample)
+B=$(cd "$T5" && "$PR" run.py where baseline gpt_oss_120b_appworld sample)
 echo "repo root: $A"
 echo "temp root: $B"
 test ! -e "$T5/no_such_outputs_root" && echo "outputs root still absent"

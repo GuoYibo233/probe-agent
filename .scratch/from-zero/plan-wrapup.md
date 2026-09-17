@@ -436,10 +436,10 @@ the check working: it names the field (5.7).
 twice with the outputs root made unreadable and compare.
 
 ```bash
-external/probe-env/bin/python run.py where train_probe ctool_q06 train > /tmp/k1.txt
+external/probe-env/bin/python run.py where train_probe ctool_qwen3_0pt6b train > /tmp/k1.txt
 OUT=$(external/probe-env/bin/python -c "import yaml;print(yaml.safe_load(open('constants/path_outputs.yaml'))['root'])")
 test ! -e "$OUT" || mv "$OUT" "$OUT.hidden"
-external/probe-env/bin/python run.py where train_probe ctool_q06 train > /tmp/k2.txt
+external/probe-env/bin/python run.py where train_probe ctool_qwen3_0pt6b train > /tmp/k2.txt
 test -e "$OUT.hidden" && mv "$OUT.hidden" "$OUT"
 diff /tmp/k1.txt /tmp/k2.txt && echo "C2 ok"
 ```
@@ -453,9 +453,9 @@ on this machine, the weaker form is the same `where` call run twice with
 
 ```bash
 set -e
-for a in "baseline gptoss120b_appworld sample" "baseline gptoss120b_appworld score" \
-         "train_probe ctool_q06 sample" "train_probe ctool_q06 build" \
-         "train_probe ctool_q06 train"  "train_probe ctool_q06 eval" \
+for a in "baseline gpt_oss_120b_appworld sample" "baseline gpt_oss_120b_appworld score" \
+         "train_probe ctool_qwen3_0pt6b sample" "train_probe ctool_qwen3_0pt6b build" \
+         "train_probe ctool_qwen3_0pt6b train"  "train_probe ctool_qwen3_0pt6b eval" \
          "inject ctool_q06_p1e1 inject" "inject ctool_q06_p1e1 score"; do
   external/probe-env/bin/python run.py where $a
   external/probe-env/bin/python run.py where $a --debug

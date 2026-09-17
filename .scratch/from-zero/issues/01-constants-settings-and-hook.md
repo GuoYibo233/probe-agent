@@ -153,9 +153,9 @@ workflow: [sample, score]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
 
-gptoss_aw:
+gpt_oss_120b_appworld:
   meta:   {notes: "AppWorld trajectories from gpt-oss-120b with no probe; the baseline an inject run is scored against"}
   sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
   score:  {by_seed: true}
@@ -176,29 +176,29 @@ workflow: [sample, build, train, eval]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
   sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
 
-ctool_q06:
+ctool_qwen3_0pt6b:
   meta:   {notes: "classification probe, Qwen3-0.6B-Base, full tuning; the theta source for the generating probes"}
-  models: {probe: qwen06}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: ctool, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
   eval:   {risk: [0.10, 0.05]}
 
-cgen_q06:
-  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_q06"}
-  models: {probe: qwen06}
+cgen_qwen3_0pt6b:
+  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_qwen3_0pt6b"}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: cgen, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
-  eval:   {theta_from: train_probe/ctool_q06}
+  eval:   {theta_from: train_probe/ctool_qwen3_0pt6b}
 
-cparam_q06:
+cparam_qwen3_0pt6b:
   meta:   {notes: "argument-generating probe on the same dataset; param_only, so it can never be an inject.probe_gen"}
-  models: {probe: qwen06}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: cparam, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
-  eval:   {theta_from: train_probe/ctool_q06}
+  eval:   {theta_from: train_probe/ctool_qwen3_0pt6b}
 ```
 
 All three take the same `sample` and `build` fields, so their train runs share a
@@ -215,9 +215,9 @@ workflow: [inject, score]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
 
-p1e1_t080:
+probe_p1_e1_theta_0pt80:
   meta:  {notes: "live run: fire at theta 0.80, injection format p1_e1, probe arm"}
   inject:
     split: [test]
@@ -225,13 +225,13 @@ p1e1_t080:
     theta: 0.80
     arm: probe
     format: p1_e1
-    probe_score: train_probe/ctool_q06
-    probe_gen: train_probe/cgen_q06
+    probe_score: train_probe/ctool_qwen3_0pt6b
+    probe_gen: train_probe/cgen_qwen3_0pt6b
     pieces: 6
     replicas: 1
-  score: {baseline: baseline/gptoss_aw}
+  score: {baseline: baseline/gpt_oss_120b_appworld}
 
-no_probe_t080:
+no_probe_p1_e1_theta_0pt80:
   meta:  {notes: "control arm: the machinery wired and never firing"}
   inject:
     split: [test]
@@ -239,11 +239,11 @@ no_probe_t080:
     theta: 0.80
     arm: no_probe
     format: p1_e1
-    probe_score: train_probe/ctool_q06
-    probe_gen: train_probe/cgen_q06
+    probe_score: train_probe/ctool_qwen3_0pt6b
+    probe_gen: train_probe/cgen_qwen3_0pt6b
     pieces: 6
     replicas: 1
-  score: {baseline: baseline/gptoss_aw}
+  score: {baseline: baseline/gpt_oss_120b_appworld}
 ```
 
 Neither setting states a `probe:` section or a `models.probe` field — the loader
@@ -389,9 +389,9 @@ print('debug', dbg['sample'], dbg['train'])"
 ```
 Expected exactly:
 ```
-baseline ['sample', 'score'] ['gptoss_aw']
-train_probe ['sample', 'build', 'train', 'eval'] ['ctool_q06', 'cgen_q06', 'cparam_q06']
-inject ['inject', 'score'] ['p1e1_t080', 'no_probe_t080']
+baseline ['sample', 'score'] ['gpt_oss_120b_appworld']
+train_probe ['sample', 'build', 'train', 'eval'] ['ctool_qwen3_0pt6b', 'cgen_qwen3_0pt6b', 'cparam_qwen3_0pt6b']
+inject ['inject', 'score'] ['probe_p1_e1_theta_0pt80', 'no_probe_p1_e1_theta_0pt80']
 debug {'n_tasks': 3, 'seeds': [42], 'pieces': 1, 'replicas': 1, 'max_steps': 6} {'epochs': 1, 'max_steps': 20, 'predict': {'cap': 100}}
 ```
 
@@ -401,9 +401,9 @@ debug {'n_tasks': 3, 'seeds': [42], 'pieces': 1, 'replicas': 1, 'max_steps': 6} 
 python3 -c "
 import yaml
 tp = yaml.safe_load(open('experimental_settings/train_probe.yaml'))
-for n in ('ctool_q06','cgen_q06','cparam_q06'):
+for n in ('ctool_qwen3_0pt6b','cgen_qwen3_0pt6b','cparam_qwen3_0pt6b'):
     assert isinstance(tp[n]['train']['lr'], float), (n, type(tp[n]['train']['lr']))
-for n in ('cgen_q06','cparam_q06'):
+for n in ('cgen_qwen3_0pt6b','cparam_qwen3_0pt6b'):
     f, name = tp[n]['eval']['theta_from'].split('/')
     assert name in yaml.safe_load(open(f'experimental_settings/{f}.yaml')), n
 inj = yaml.safe_load(open('experimental_settings/inject.yaml'))

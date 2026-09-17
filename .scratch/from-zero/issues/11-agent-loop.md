@@ -548,8 +548,8 @@ class Gen:
 cfg = types.SimpleNamespace(
     generation=Gen(), inject=None,
     sample=types.SimpleNamespace(store_token_ids=False),
-    models=types.SimpleNamespace(agent="gptoss120b",
-                                 agent_row={"family": "gptoss", "weights": "gptoss120b",
+    models=types.SimpleNamespace(agent="gpt_oss_120b",
+                                 agent_row={"family": "gptoss", "weights": "gpt_oss_120b",
                                             "served_model_name": "gpt-oss-120b"}))
 res = g.step(None, g.Clients(agent=FakeAgent(), probe=None), cfg, None, [], [11, 12],
              [], "task text", 0, 42)
@@ -711,14 +711,14 @@ cfg = types.SimpleNamespace(
                                  chunk_tokens=64, tail_tokens=1024, store_token_ids=True,
                                  split=["test"], seeds=[42], tasks=None, n_tasks=None,
                                  max_steps=30, pieces=1, replicas=1),
-    models=types.SimpleNamespace(agent="gptoss120b",
-        agent_row={"family": "gptoss", "weights": "gptoss120b", "served_model_name": "gpt-oss-120b"}))
+    models=types.SimpleNamespace(agent="gpt_oss_120b",
+        agent_row={"family": "gptoss", "weights": "gpt_oss_120b", "served_model_name": "gpt-oss-120b"}))
 
 rd = Path(tempfile.mkdtemp())                       # the RUN DIRECTORY
 w = open_record(rd, "50e1ac9_1", 42)
 w.row("meta", stage="inject", env="appworld", task_id="50e1ac9_1",
       seed=42, env_seed=100, split="test", arm="probe", instructions="v1",
-      task_text="do the thing", agent_model="gptoss120b", generation="{}", inject="{}",
+      task_text="do the thing", agent_model="gpt_oss_120b", generation="{}", inject="{}",
       commit="deadbeef", run_key="k", owner_session="inject-k-0")
 res = inj.step(FakeEnv(), g.Clients(agent=FakeAgent(), probe=FakeProbe()), cfg, w,
                [], [11, 12], [("print(1)", "1")], "do the thing", 0, 42)
@@ -809,7 +809,7 @@ def mkcfg(arm, nth):
                                      chunk_tokens=64, tail_tokens=1024, store_token_ids=True,
                                      split=["test"], seeds=[42], tasks=None, n_tasks=None,
                                      max_steps=30, pieces=1, replicas=1),
-        models=types.SimpleNamespace(agent="gptoss120b",
+        models=types.SimpleNamespace(agent="gpt_oss_120b",
             agent_row={"family": "gptoss", "weights": "gpt-oss-120b",
                        "served_model_name": "gpt-oss-120b"}))
 
@@ -819,7 +819,7 @@ for arm, nth, fires in (("no_probe", 0, 0), ("probe_nofill", 1, 1)):
     w = open_record(rd, "50e1ac9_1", 42)
     w.row("meta", stage="inject", env="appworld", task_id="50e1ac9_1", seed=42,
           env_seed=100, split="test", arm=arm, instructions="v1",
-          task_text="do the thing", agent_model="gptoss120b", generation="{}", inject="{}",
+          task_text="do the thing", agent_model="gpt_oss_120b", generation="{}", inject="{}",
           commit="deadbeef", run_key="k", owner_session="inject-k-0")
     res = inj.step(FakeEnv(), g.Clients(agent=FakeAgent(), probe=RaisingProbe()), cfg, w,
                    [], [11, 12], [("print(1)", "1")], "do the thing", 0, 42)
@@ -914,7 +914,7 @@ class FakeProbeClient:
 
 SETTINGS = """
 data: {env: appworld, instructions: v1}
-models: {agent: gptoss120b, agent_row: {role: agent, family: gptoss,
+models: {agent: gpt_oss_120b, agent_row: {role: agent, family: gptoss,
          weights: gpt-oss-120b, dtype: auto, quantization: null,
          max_model_len: 131072, served_model_name: gpt-oss-120b,
          env_result: {}, extra_flags: ''}}
@@ -1068,7 +1068,7 @@ in code.
 ### GPU / main session — not yours
 
 `M-A1` a `--debug` sample walk end to end
-(`run.py train_probe ctool_q06 --debug`): a vLLM piece and a render-only probe
+(`run.py train_probe ctool_qwen3_0pt6b --debug`): a vLLM piece and a render-only probe
 piece up, the loop pieces writing `records/*.jsonl`, `run.py ls` reporting `done`
 with 9 records, and a `meta` row whose `owner_session` matches a session name
 `run.py ls` prints — the check for the one value `loop.py` and `jobs/launch.py`

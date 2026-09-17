@@ -126,7 +126,7 @@ restatements.
 | `RETIRED` | 3.3 | 0.4 | |
 | `<root>/<stage>/<key>/`, `<root>/<debug_subdir>/<stage>/<key>/` | 3.4 | 3.1, 6.3, 8.0, 9(c)#8 | |
 | "no `outputs` symlink; `run.py where` prints the path" | 3.4 | 6.3 | **collapsed**: deleted from 6.3 |
-| the sweep child name (`repr()` of the parsed value) | 5.5 | 3.4, 9(c)#6, 9(d) | **collapsed**: 3.4 states the name's use, 5.5 its spelling; 3.4's example setting was `ctool_q06`, which sweeps nothing, and is now `ctool_q17_lr` |
+| the sweep child name (`repr()` of the parsed value) | 5.5 | 3.4, 9(c)#6, 9(d) | **collapsed**: 3.4 states the name's use, 5.5 its spelling; 3.4's example setting was `ctool_qwen3_0pt6b`, which sweeps nothing, and is now `ctool_q17_lr` |
 | `schema.freeze` and the projection | 3.4 | 1.5, 5.1 | |
 | the collision check over `settings_diff.yaml` | 3.4 | 9(a)#32 | |
 | `CUDA_VISIBLE_DEVICES` | 3.4 | 8.1 | |

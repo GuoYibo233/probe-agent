@@ -496,7 +496,7 @@ for d, ok in ((sdir, True), (bdir, False)):
         # no record_id=: the writer stamps it, and passing a stamped column raises
         w.row("meta", stage="sample",
               env="appworld", task_id=tid, seed=seed, env_seed=100, split=split, arm="sample",
-              instructions="v1", task_text="do it", agent_model="gptoss120b",
+              instructions="v1", task_text="do it", agent_model="gpt_oss_120b",
               generation="{}", inject=None, commit="deadbeef", run_key=d.name,
               owner_session="fixture")
         w.row("gen", step=0, reasoning="think", content="answer",
@@ -511,7 +511,7 @@ for d, ok in ((sdir, True), (bdir, False)):
 for d, k in ((sdir, SK), (bdir, BK)):
     (d / "settings.yaml").write_text(f"""
 data: {{env: appworld, instructions: v1}}
-models: {{agent: gptoss120b}}
+models: {{agent: gpt_oss_120b}}
 generation: {{temperature: 1.0, top_p: null, max_step_tokens: 8192}}
 sample: {{split: [train], seeds: [42], tasks: null, n_tasks: 2, max_steps: 30}}
 _stage: sample
@@ -525,7 +525,7 @@ _resolved: {{}}
 (rdir / "settings.yaml").write_text(f"""
 data: {{env: appworld, instructions: v1}}
 sample: {{split: [train], seeds: [42], tasks: null, n_tasks: 2, max_steps: 30}}
-score: {{baseline: 'baseline/gptoss_aw', by_seed: true}}
+score: {{baseline: 'baseline/gpt_oss_120b_appworld', by_seed: true}}
 _stage: score
 _key: {RK}
 _upstream: {{sample: {SK}, baseline.sample: {BK}}}
@@ -605,7 +605,7 @@ outside `constants/`.
 ### GPU / main session — not yours
 
 `M-E2` the generator eval against a real classifier eval:
-`run.py train_probe cgen_q06 --debug` then `run.py table train_probe` must show
+`run.py train_probe cgen_qwen3_0pt6b --debug` then `run.py table train_probe` must show
 `exact` numbers with the same `n` as the classifier's `frozen` `n` at that risk,
 and a table row per `(backbone, method, risk)`. `M-E3` the first real `score`
 over an inject run and its `sample` baseline: `run_report.json` with `spec.n`

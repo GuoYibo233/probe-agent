@@ -542,7 +542,7 @@ for ev in range(2):                       # two events, three cuts each
             text=text, tool="phone.pay" if ev else "phone.login",
             call=("phone.pay(id=1)" if ev else "phone.login(user='a')"),
             args=[{"key": "id", "value": "1"}] if ev else [{"key": "user", "value": "a"}],
-            weight=1.0, split="train", env="appworld", agent_model="gptoss120b"))
+            weight=1.0, split="train", env="appworld", agent_model="gpt_oss_120b"))
 d = pathlib.Path(tempfile.mkdtemp())
 training_data.write(d / "examples.parquet", pl.DataFrame(rows))
 df = training_data.read(d / "examples.parquet")
@@ -621,14 +621,14 @@ for ev in range(4):                                   # 4 events x 3 cuts x 3 sp
                 tool="phone.pay" if ev % 2 else "phone.login",
                 call=("phone.pay(id=1)" if ev % 2 else "phone.login(user='a')"),
                 args=[{"key": "id", "value": "1"}], weight=1.0, split=split,
-                env="appworld", agent_model="gptoss120b"))
+                env="appworld", agent_model="gpt_oss_120b"))
 training_data.write(build_dir / "examples.parquet", pl.DataFrame(rows))
 
 cfg = types.SimpleNamespace(
     _key="t0", _commit="deadbee", _debug=True, _upstream={"build": "b0"},
     _versions={"train/utils/trainer.py": 1}, _stage="train",
     data=types.SimpleNamespace(env="appworld"),
-    models=types.SimpleNamespace(probe="qwen06", probe_row={"role": "probe", "family": "qwen"}),
+    models=types.SimpleNamespace(probe="qwen3_0pt6b", probe_row={"role": "probe", "family": "qwen"}),
     probe=types.SimpleNamespace(method="ctool", tuning="full"),
     train=types.SimpleNamespace(
         lr=1e-4, epochs=1, warmup_ratio=0.0, seed=42, max_len=256, events_per_mb=2,

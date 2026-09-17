@@ -596,7 +596,7 @@ from jobs import registry as r
 rd = T/"out/sample/abc123abc123"; rd.mkdir(parents=True)
 row = dict(ev="start", t="2026-09-17 10:00", run_id="sample-abc123abc123",
            stage="sample", key="abc123abc123", dir=str(rd),
-           workflow="baseline", setting="gptoss120b_appworld", parent=None, swept=None,
+           workflow="baseline", setting="gpt_oss_120b_appworld", parent=None, swept=None,
            debug=False, upstream={}, versions={"agent/loop.py": 1}, diff={"sample.max_steps": 40},
            commit="deadbee", branch="from-zero", dirty=False, dirty_count=0, dirty_files=[],
            host="shiga", status="launching",
@@ -859,8 +859,8 @@ Expected: for each, a one-line "no runs" message (or a header with no rows) and 
 `experimental_settings/`, `constants/` and `data/` have landed (wave dependency), on a
 prepared throw-away outputs root:
 ```bash
-external/probe-env/bin/python run.py where train_probe ctool_q06 sample
-external/probe-env/bin/python run.py where train_probe ctool_q06 build
+external/probe-env/bin/python run.py where train_probe ctool_qwen3_0pt6b sample
+external/probe-env/bin/python run.py where train_probe ctool_qwen3_0pt6b build
 ```
 Expected: two absolute paths under `constants/path_outputs.yaml`'s `root`, of the shape
 `<root>/sample/<12 hex>` and `<root>/build/<12 hex>`, printed whether or not they exist,
@@ -935,13 +935,13 @@ These need ssh to other hosts, cards, or both. Each names what it must show.
    Must list the tmux sessions of every host, and must report a session **alive** when the
    ssh to its host is broken (test by pointing one `hosts:` entry at an unreachable name).
 3. **A first debug walk** (needs every folder):
-   `external/probe-env/bin/python run.py train_probe ctool_q06 --debug`
+   `external/probe-env/bin/python run.py train_probe ctool_qwen3_0pt6b --debug`
    Must, for `sample`: append exactly one start row with `status: "launching"` whose
    `pieces` list holds one `service_agent`, one `service_probe` (render-only, no card,
    on `login_host`) and `sample.pieces` loop pieces; create the tmux sessions named
    `sample-<key>-<i>`; print the monitoring command; and stop without waiting.
    `run.py ls train_probe` must then show the piece verdicts and a progress pair.
-4. **Completeness, teardown, finish row.** On a later `run.py train_probe ctool_q06
+4. **Completeness, teardown, finish row.** On a later `run.py train_probe ctool_qwen3_0pt6b
    --debug`, once every requested pair is done: `done.json` appears with a `pairs` list
    equal to the requested pairs, both service tmux sessions are gone, exactly one `ok`
    finish row is appended, and the walk continues into `build` in place.
@@ -950,7 +950,7 @@ These need ssh to other hosts, cards, or both. Each names what it must show.
    may start, `teardown_services` must have ended the service sessions, and `run.py` must
    append a `launch_failed` finish row.
 6. **Refire.** Kill one loop piece's tmux session, then
-   `run.py refire train_probe ctool_q06 sample --piece 3`: it must delete only that
+   `run.py refire train_probe ctool_qwen3_0pt6b sample --piece 3`: it must delete only that
    piece's unfinished record files, restart the session under the same name, append a
    `launches` entry, leave the five live pieces untouched, reuse the service pieces, and
    the refired piece must open `heartbeat/3-1.jsonl`.

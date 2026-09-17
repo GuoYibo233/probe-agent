@@ -398,7 +398,7 @@ import graph; no `/home/` or `/net/` literal (B8); and that it carries no
 
 An implementer that reaches any of these returns BLOCKED with the command.
 
-- `M-J3` the first debug walk (`run.py train_probe ctool_q06 --debug`): exactly
+- `M-J3` the first debug walk (`run.py train_probe ctool_qwen3_0pt6b --debug`): exactly
   one start row with `status: "launching"` whose `pieces` list holds one
   `service_agent`, one `service_probe` (render-only, no card, on `login_host`)
   and `sample.pieces` loop pieces; tmux sessions named `sample-<key>-<i>`; the
@@ -411,7 +411,7 @@ An implementer that reaches any of these returns BLOCKED with the command.
   `teardown_services` has ended the service sessions, and `run.py` appends a
   `launch_failed` finish row.
 - `M-J6` refire: kill one loop piece's tmux session, then
-  `run.py refire train_probe ctool_q06 sample --piece 3` — it deletes only that
+  `run.py refire train_probe ctool_qwen3_0pt6b sample --piece 3` — it deletes only that
   piece's unfinished record files, restarts the session under the same name,
   appends a `launches` entry, leaves the five live pieces untouched, reuses the
   service pieces, and the refired piece opens `heartbeat/3-1.jsonl`.

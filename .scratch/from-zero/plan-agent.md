@@ -630,8 +630,8 @@ class Gen:
 cfg = types.SimpleNamespace(
     generation=Gen(), inject=None,
     sample=types.SimpleNamespace(store_token_ids=False),
-    models=types.SimpleNamespace(agent="gptoss120b",
-                                 agent_row={"family": "gptoss", "weights": "gptoss120b",
+    models=types.SimpleNamespace(agent="gpt_oss_120b",
+                                 agent_row={"family": "gptoss", "weights": "gpt_oss_120b",
                                             "served_model_name": "gpt-oss-120b"}))
 res = g.step(None, g.Clients(agent=FakeAgent(), probe=None), cfg, None, [], [11, 12],
              [], "task text", 0, 42)
@@ -783,14 +783,14 @@ cfg = types.SimpleNamespace(
                                  chunk_tokens=64, tail_tokens=1024, store_token_ids=True,
                                  split=["test"], seeds=[42], tasks=None, n_tasks=None,
                                  max_steps=30, pieces=1, replicas=1),
-    models=types.SimpleNamespace(agent="gptoss120b",
-        agent_row={"family": "gptoss", "weights": "gptoss120b", "served_model_name": "gpt-oss-120b"}))
+    models=types.SimpleNamespace(agent="gpt_oss_120b",
+        agent_row={"family": "gptoss", "weights": "gpt_oss_120b", "served_model_name": "gpt-oss-120b"}))
 
 d = Path(tempfile.mkdtemp()) / "records"; d.mkdir(parents=True)
 w = open_record(d, "50e1ac9_1", 42)
 w.row("meta", record_id="50e1ac9_1__s42", stage="inject", env="appworld", task_id="50e1ac9_1",
       seed=42, env_seed=100, split="test", arm="probe", instructions="v1",
-      task_text="do the thing", agent_model="gptoss120b", generation="{}", inject="{}",
+      task_text="do the thing", agent_model="gpt_oss_120b", generation="{}", inject="{}",
       commit="deadbeef", run_key="k", owner_session="inject-k-0")
 res = inj.step(FakeEnv(), g.Clients(agent=FakeAgent(), probe=FakeProbe()), cfg, w,
                [], [11, 12], [("print(1)", "1")], "do the thing", 0, 42)
@@ -929,7 +929,7 @@ with the command.
 **G1 — a `--debug` sample walk end to end.**
 
 ```bash
-external/probe-env/bin/python run.py train_probe ctool_q06 --debug --stage sample
+external/probe-env/bin/python run.py train_probe ctool_qwen3_0pt6b --debug --stage sample
 ```
 Must show: a vLLM piece and a render-only probe piece up, six loop pieces
 writing `records/*.jsonl`, and `run.py ls` reporting `done` with 9 records (3

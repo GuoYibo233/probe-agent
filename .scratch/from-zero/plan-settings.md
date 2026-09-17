@@ -171,7 +171,7 @@ weights path of the row it serves).
 
 **Legacy source.** `legacy/configs/models.json` (the whole `models:` block, with
 its notes); `legacy/pipeline/train/train_causal_tool.py:84-88` (the
-`qwen`/`qwen17`/`qwen4` path map, repeated at
+`qwen`/`qwen3_1pt7b`/`qwen3_4b` path map, repeated at
 `train_causal_callgen.py:95-99` and `train_causal_param.py:83-87`);
 `legacy/model_registry.py:15-31` (the reader).
 
@@ -224,7 +224,7 @@ class Meta:        notes: str = ""; override: list[str] = []
 @dataclass
 class Data:        env: str = "appworld"; instructions: str = "v1"
 @dataclass
-class Models:      agent: str = "gptoss120b"; probe: str | None = "qwen06"
+class Models:      agent: str = "gpt_oss_120b"; probe: str | None = "qwen3_0pt6b"
                    agent_row: dict | None = None   # read-only, written by the loader (5.2)
                    probe_row: dict | None = None
 @dataclass
@@ -582,9 +582,9 @@ workflow: [sample, score]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
 
-gptoss_aw:
+gpt_oss_120b_appworld:
   meta:   {notes: "AppWorld trajectories from gpt-oss-120b with no probe; the baseline an inject run is scored against"}
   sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
   score:  {by_seed: true}
@@ -605,22 +605,22 @@ workflow: [sample, build, train, eval]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
   sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
 
-ctool_q06:
+ctool_qwen3_0pt6b:
   meta:   {notes: "classification probe, Qwen3-0.6B-Base, full tuning; the theta source for the generating probes"}
-  models: {probe: qwen06}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: ctool, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
   eval:   {risk: [0.10, 0.05]}
 
-cgen_q06:
-  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_q06"}
-  models: {probe: qwen06}
+cgen_qwen3_0pt6b:
+  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_qwen3_0pt6b"}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: cgen, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
-  eval:   {theta_from: train_probe/ctool_q06}
+  eval:   {theta_from: train_probe/ctool_qwen3_0pt6b}
 ```
 
 Both settings take the same `sample` and `build` fields, so their two train runs
@@ -641,9 +641,9 @@ workflow: [inject, score]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
 
-p1e1_t080:
+probe_p1_e1_theta_0pt80:
   meta:  {notes: "live run: fire at theta 0.80, injection format p1_e1, probe arm"}
   inject:
     split: [test]
@@ -651,13 +651,13 @@ p1e1_t080:
     theta: 0.80
     arm: probe
     format: p1_e1
-    probe_score: train_probe/ctool_q06
-    probe_gen: train_probe/cgen_q06
+    probe_score: train_probe/ctool_qwen3_0pt6b
+    probe_gen: train_probe/cgen_qwen3_0pt6b
     pieces: 6
     replicas: 1
-  score: {baseline: baseline/gptoss_aw}
+  score: {baseline: baseline/gpt_oss_120b_appworld}
 
-no_probe_t080:
+no_probe_p1_e1_theta_0pt80:
   meta:  {notes: "control arm: the machinery wired and never firing"}
   inject:
     split: [test]
@@ -665,11 +665,11 @@ no_probe_t080:
     theta: 0.80
     arm: no_probe
     format: p1_e1
-    probe_score: train_probe/ctool_q06
-    probe_gen: train_probe/cgen_q06
+    probe_score: train_probe/ctool_qwen3_0pt6b
+    probe_gen: train_probe/cgen_qwen3_0pt6b
     pieces: 6
     replicas: 1
-  score: {baseline: baseline/gptoss_aw}
+  score: {baseline: baseline/gpt_oss_120b_appworld}
 ```
 
 Neither setting states a `probe:` section or a `models.probe` field — the loader
@@ -746,7 +746,7 @@ fixture tree the command builds itself (that is what `ROOT` is for):
 
 | needed by | file | what is read out of it |
 |---|---|---|
-| T03 `load` | `models/table.yaml` | the rows `gptoss120b` (role agent, family gptoss) and `qwen06` (role probe, family qwen), their `result:` blocks (6.1) |
+| T03 `load` | `models/table.yaml` | the rows `gpt_oss_120b` (role agent, family gptoss) and `qwen3_0pt6b` (role probe, family qwen), their `result:` blocks (6.1) |
 | T03 `load` | `models/agent_models/gptoss.py` | column-zero `NAME`, `STOP`, `EFFORTS`, `DEFAULT_EFFORT`, `DEFAULT_DATE`, `VERSION` (6.2, 3.3) |
 | T03 `load` | `models/probe_models/qwen.py` | column-zero `LORA_TARGETS`, `VERSION` (6.2) |
 | T03 `load` | `data/environments/appworld.py` | column-zero `INSTRUCTIONS` (key `v1`), `SPLIT_ROLE`, `VERSION` (4.1) |
@@ -785,7 +785,7 @@ cp constants/*.yaml "$FIX/constants/"
 cp experimental_settings/*.yaml "$FIX/experimental_settings/"
 sed -i "s|^root:.*|root: $FIX/outputs|" "$FIX/constants/path_outputs.yaml"
 cat > "$FIX/models/table.yaml" <<'Y'
-gptoss120b:
+gpt_oss_120b:
   role: agent
   family: gptoss
   result: {weights: gpt-oss-120b, dtype: bfloat16, quantization: null,
@@ -793,7 +793,7 @@ gptoss120b:
            env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}, extra_flags: ""}
   serving: {host: tokyo108, port: 8103, gpu_memory_utilization: 0.92,
             tensor_parallel_size: 1, env: {}}
-qwen06:
+qwen3_0pt6b:
   role: probe
   family: qwen
   result: {weights: qwen3-0.6b-base, dtype: bfloat16}
@@ -935,9 +935,9 @@ print('debug', dbg['sample'], dbg['train'])"
 ```
 Expected:
 ```
-baseline ['sample', 'score'] ['gptoss_aw']
-train_probe ['sample', 'build', 'train', 'eval'] ['ctool_q06', 'cgen_q06']
-inject ['inject', 'score'] ['p1e1_t080', 'no_probe_t080']
+baseline ['sample', 'score'] ['gpt_oss_120b_appworld']
+train_probe ['sample', 'build', 'train', 'eval'] ['ctool_qwen3_0pt6b', 'cgen_qwen3_0pt6b']
+inject ['inject', 'score'] ['probe_p1_e1_theta_0pt80', 'no_probe_p1_e1_theta_0pt80']
 debug {'n_tasks': 3, 'seeds': [42], 'pieces': 1, 'replicas': 1, 'max_steps': 6} {'epochs': 1, 'max_steps': 20, 'predict': {'cap': 100}}
 ```
 
@@ -947,7 +947,7 @@ debug {'n_tasks': 3, 'seeds': [42], 'pieces': 1, 'replicas': 1, 'max_steps': 6} 
 python3 -c "
 import yaml
 tp = yaml.safe_load(open('experimental_settings/train_probe.yaml'))
-assert isinstance(tp['ctool_q06']['train']['lr'], float), type(tp['ctool_q06']['train']['lr'])
+assert isinstance(tp['ctool_qwen3_0pt6b']['train']['lr'], float), type(tp['ctool_qwen3_0pt6b']['train']['lr'])
 inj = yaml.safe_load(open('experimental_settings/inject.yaml'))
 for n, s in inj.items():
     if n in ('workflow','common'): continue
@@ -1121,7 +1121,7 @@ FIX=$(bash /tmp/mkfix.sh); python3 -c "
 from pathlib import Path
 import experimental_settings.schema as S
 S.ROOT = Path('$FIX')
-cs = S.load(Path('$FIX/experimental_settings/train_probe.yaml'), 'ctool_q06', debug=False, overrides={})
+cs = S.load(Path('$FIX/experimental_settings/train_probe.yaml'), 'ctool_qwen3_0pt6b', debug=False, overrides={})
 assert len(cs) == 1
 c = cs[0]
 print(c._name, c._workflow, c._debug)
@@ -1133,8 +1133,8 @@ print('inject is None:', c.inject is None, '| build present:', c.build is not No
 ```
 Expected:
 ```
-ctool_q06 ['sample', 'build', 'train', 'eval'] False
-appworld v1 gptoss120b qwen06
+ctool_qwen3_0pt6b ['sample', 'build', 'train', 'eval'] False
+appworld v1 gpt_oss_120b qwen3_0pt6b
 gptoss ['dtype', 'env_result', 'extra_flags', 'family']
 ['<|return|>'] high 2026-08-06
 ctool None 1e-05 None
@@ -1152,9 +1152,9 @@ FIX=$(bash /tmp/mkfix.sh); python3 -c "
 from pathlib import Path
 import experimental_settings.schema as S
 S.ROOT = Path('$FIX')
-c = S.load(Path('$FIX/experimental_settings/train_probe.yaml'), 'ctool_q06', debug=True, overrides={})[0]
+c = S.load(Path('$FIX/experimental_settings/train_probe.yaml'), 'ctool_qwen3_0pt6b', debug=True, overrides={})[0]
 print(c._debug, c.sample.n_tasks, c.sample.pieces, c.sample.max_steps, c.build.max_cuts, c.build.max_examples, c.train.max_steps, c.train.predict.cap, c.eval.bootstrap)
-b = S.load(Path('$FIX/experimental_settings/baseline.yaml'), 'gptoss_aw', debug=True, overrides={})[0]
+b = S.load(Path('$FIX/experimental_settings/baseline.yaml'), 'gpt_oss_120b_appworld', debug=True, overrides={})[0]
 print(b.sample.n_tasks, b.build, b.train, b.inject)"
 ```
 Expected: `True 3 1 6 8 64 20 100 50` then `3 None None None` — the overlay
@@ -1167,25 +1167,25 @@ FIX=$(bash /tmp/mkfix.sh); python3 -c "
 from pathlib import Path
 import experimental_settings.schema as S
 S.ROOT = Path('$FIX')
-c = S.load(Path('$FIX/experimental_settings/train_probe.yaml'), 'ctool_q06', debug=False,
+c = S.load(Path('$FIX/experimental_settings/train_probe.yaml'), 'ctool_qwen3_0pt6b', debug=False,
            overrides={'train.lr': '3.0e-4', 'probe.tuning': 'lora', 'sample.seeds': '[42, 67]'})[0]
 print(c.train.lr, c.probe.tuning, c.sample.seeds)
 import yaml, pathlib
 p = pathlib.Path('$FIX/experimental_settings/train_probe.yaml')
-d = yaml.safe_load(p.read_text()); d['ctool_q06']['sweep'] = {'train.lr': [1.0e-4, 3.0e-4], 'train.seed': [42, 67]}
+d = yaml.safe_load(p.read_text()); d['ctool_qwen3_0pt6b']['sweep'] = {'train.lr': [1.0e-4, 3.0e-4], 'train.seed': [42, 67]}
 p.write_text(yaml.safe_dump(d))
-cs = S.load(p, 'ctool_q06', debug=False, overrides={})
+cs = S.load(p, 'ctool_qwen3_0pt6b', debug=False, overrides={})
 print(len(cs)); print([x._name for x in cs]); print([x.train.lr for x in cs])
-one = S.load(p, 'ctool_q06/train.lr=0.0003,train.seed=67', debug=False, overrides={})[0]
+one = S.load(p, 'ctool_qwen3_0pt6b/train.lr=0.0003,train.seed=67', debug=False, overrides={})[0]
 print(one._name, one.train.lr, one.train.seed)"
 ```
 Expected:
 ```
 0.0003 lora [42, 67]
 4
-['ctool_q06/train.lr=0.0001,train.seed=42', 'ctool_q06/train.lr=0.0001,train.seed=67', 'ctool_q06/train.lr=0.0003,train.seed=42', 'ctool_q06/train.lr=0.0003,train.seed=67']
+['ctool_qwen3_0pt6b/train.lr=0.0001,train.seed=42', 'ctool_qwen3_0pt6b/train.lr=0.0001,train.seed=67', 'ctool_qwen3_0pt6b/train.lr=0.0003,train.seed=42', 'ctool_qwen3_0pt6b/train.lr=0.0003,train.seed=67']
 [0.0001, 0.0001, 0.0003, 0.0003]
-ctool_q06/train.lr=0.0003,train.seed=67 0.0003 67
+ctool_qwen3_0pt6b/train.lr=0.0003,train.seed=67 0.0003 67
 ```
 (the child name is `repr()` of the parsed value, 5.5, and a child name is
 accepted anywhere a setting name is, 3.4.)
@@ -1214,24 +1214,24 @@ def d(mut):
     import copy; x = copy.deepcopy(base); mut(x); return x
 def j(mut):
     import copy; x = copy.deepcopy(binj); mut(x); return x
-run('unknown key',      d(lambda x: x['ctool_q06']['train'].__setitem__('lrr', 1.0)), tp, 'ctool_q06')
-run('off-axis value',   d(lambda x: x['ctool_q06']['probe'].__setitem__('method', 'ctoool')), tp, 'ctool_q06')
-run('bad instructions', d(lambda x: x['common']['data'].__setitem__('instructions', 'v9')), tp, 'ctool_q06')
-run('bad split',        d(lambda x: x['common']['sample'].__setitem__('split', ['holdout'])), tp, 'ctool_q06')
-run('wrong role',       d(lambda x: x['ctool_q06']['models'].__setitem__('probe', 'gptoss120b')), tp, 'ctool_q06')
-run('bad effort',       d(lambda x: x['common'].__setitem__('generation', {'effort': 'ultra'})), tp, 'ctool_q06')
-run('section not in workflow', d(lambda x: x['ctool_q06'].__setitem__('inject', {'theta': 0.5})), tp, 'ctool_q06')
-run('type mismatch',    d(lambda x: x['ctool_q06']['train'].__setitem__('lr', '1e-5')), tp, 'ctool_q06')
-run('sweep over debug field', d(lambda x: x['ctool_q06'].__setitem__('sweep', {'train.max_steps': [10, 20]})), tp, 'ctool_q06', debug=True)
-run('override of swept field', d(lambda x: x['ctool_q06'].__setitem__('sweep', {'train.lr': [1.0e-4, 3.0e-4]})), tp, 'ctool_q06', overrides={'train.lr': '2.0e-4'})
-run('missing reference', d(lambda x: x['cgen_q06']['eval'].__setitem__('theta_from', 'train_probe/nope')), tp, 'cgen_q06')
-run('generator without theta_from', d(lambda x: x['cgen_q06']['eval'].pop('theta_from')), tp, 'cgen_q06')
-run('probe section under inject', j(lambda x: x['p1e1_t080'].__setitem__('probe', {'tuning': 'lora'})), inj, 'p1e1_t080')
-run('models.probe under inject',   j(lambda x: x['common']['models'].__setitem__('probe', 'qwen06')), inj, 'p1e1_t080')
-run('theta unset',      j(lambda x: x['p1e1_t080']['inject'].pop('theta')), inj, 'p1e1_t080')
-run('probe_gen is a param-only method', j(lambda x: x['p1e1_t080']['inject'].__setitem__('probe_gen', 'train_probe/cparam_q06')), inj, 'p1e1_t080')
-run('fire_nth_cut under no_probe', j(lambda x: x['no_probe_t080']['inject'].__setitem__('fire_nth_cut', 3)), inj, 'no_probe_t080')
-run('baseline split not a superset', j(lambda x: x['p1e1_t080']['inject'].__setitem__('split', ['train', 'dev', 'test'])) if False else j(lambda x: x['p1e1_t080']['inject'].__setitem__('seeds', [42, 67])), inj, 'p1e1_t080')
+run('unknown key',      d(lambda x: x['ctool_qwen3_0pt6b']['train'].__setitem__('lrr', 1.0)), tp, 'ctool_qwen3_0pt6b')
+run('off-axis value',   d(lambda x: x['ctool_qwen3_0pt6b']['probe'].__setitem__('method', 'ctoool')), tp, 'ctool_qwen3_0pt6b')
+run('bad instructions', d(lambda x: x['common']['data'].__setitem__('instructions', 'v9')), tp, 'ctool_qwen3_0pt6b')
+run('bad split',        d(lambda x: x['common']['sample'].__setitem__('split', ['holdout'])), tp, 'ctool_qwen3_0pt6b')
+run('wrong role',       d(lambda x: x['ctool_qwen3_0pt6b']['models'].__setitem__('probe', 'gpt_oss_120b')), tp, 'ctool_qwen3_0pt6b')
+run('bad effort',       d(lambda x: x['common'].__setitem__('generation', {'effort': 'ultra'})), tp, 'ctool_qwen3_0pt6b')
+run('section not in workflow', d(lambda x: x['ctool_qwen3_0pt6b'].__setitem__('inject', {'theta': 0.5})), tp, 'ctool_qwen3_0pt6b')
+run('type mismatch',    d(lambda x: x['ctool_qwen3_0pt6b']['train'].__setitem__('lr', '1e-5')), tp, 'ctool_qwen3_0pt6b')
+run('sweep over debug field', d(lambda x: x['ctool_qwen3_0pt6b'].__setitem__('sweep', {'train.max_steps': [10, 20]})), tp, 'ctool_qwen3_0pt6b', debug=True)
+run('override of swept field', d(lambda x: x['ctool_qwen3_0pt6b'].__setitem__('sweep', {'train.lr': [1.0e-4, 3.0e-4]})), tp, 'ctool_qwen3_0pt6b', overrides={'train.lr': '2.0e-4'})
+run('missing reference', d(lambda x: x['cgen_qwen3_0pt6b']['eval'].__setitem__('theta_from', 'train_probe/nope')), tp, 'cgen_qwen3_0pt6b')
+run('generator without theta_from', d(lambda x: x['cgen_qwen3_0pt6b']['eval'].pop('theta_from')), tp, 'cgen_qwen3_0pt6b')
+run('probe section under inject', j(lambda x: x['probe_p1_e1_theta_0pt80'].__setitem__('probe', {'tuning': 'lora'})), inj, 'probe_p1_e1_theta_0pt80')
+run('models.probe under inject',   j(lambda x: x['common']['models'].__setitem__('probe', 'qwen3_0pt6b')), inj, 'probe_p1_e1_theta_0pt80')
+run('theta unset',      j(lambda x: x['probe_p1_e1_theta_0pt80']['inject'].pop('theta')), inj, 'probe_p1_e1_theta_0pt80')
+run('probe_gen is a param-only method', j(lambda x: x['probe_p1_e1_theta_0pt80']['inject'].__setitem__('probe_gen', 'train_probe/cparam_qwen3_0pt6b')), inj, 'probe_p1_e1_theta_0pt80')
+run('fire_nth_cut under no_probe', j(lambda x: x['no_probe_p1_e1_theta_0pt80']['inject'].__setitem__('fire_nth_cut', 3)), inj, 'no_probe_p1_e1_theta_0pt80')
+run('baseline split not a superset', j(lambda x: x['probe_p1_e1_theta_0pt80']['inject'].__setitem__('split', ['train', 'dev', 'test'])) if False else j(lambda x: x['probe_p1_e1_theta_0pt80']['inject'].__setitem__('seeds', [42, 67])), inj, 'probe_p1_e1_theta_0pt80')
 PY
 ```
 Expected: 18 lines, every one `REFUSED`, each message naming the offending field
@@ -1239,7 +1239,7 @@ Expected: 18 lines, every one `REFUSED`, each message naming the offending field
 `models.probe`, `generation.effort`, `inject`, `train.lr`, `train.max_steps`,
 `train.lr`, `eval.theta_from`, `eval.theta_from`, `probe`, `models.probe`,
 `inject.theta`, `inject.probe_gen`, `inject.fire_nth_cut`, `score.baseline`).
-The `probe_gen is a param-only method` case needs a `cparam_q06` setting in the
+The `probe_gen is a param-only method` case needs a `cparam_qwen3_0pt6b` setting in the
 fixture's `train_probe.yaml`; the command adds it, or the implementer adds two
 lines to the fixture and says so.
 
@@ -1253,22 +1253,22 @@ import experimental_settings.schema as S
 FIX = Path(sys.argv[1]); S.ROOT = FIX
 inj = FIX / 'experimental_settings/inject.yaml'
 tp = FIX / 'experimental_settings/train_probe.yaml'
-c = S.load(inj, 'p1e1_t080', debug=False, overrides={})[0]
+c = S.load(inj, 'probe_p1_e1_theta_0pt80', debug=False, overrides={})[0]
 print('inherited build fields:', {f: getattr(c.build, f) for f in S.PROBE_TEXT_FIELDS})
 print('probe row absent:', c.models.probe is None and c.models.probe_row is None)
 d = yaml.safe_load(tp.read_text()); d['common']['build'] = {'hist_rounds': 5}
 tp.write_text(yaml.safe_dump(d))
-c2 = S.load(inj, 'p1e1_t080', debug=False, overrides={})[0]
+c2 = S.load(inj, 'probe_p1_e1_theta_0pt80', debug=False, overrides={})[0]
 print('inherited after the build edit:', c2.build.hist_rounds)
-d2 = yaml.safe_load(inj.read_text()); d2['p1e1_t080']['data'] = {'instructions': 'v1', 'env': 'appworld'}
-d2['p1e1_t080']['generation'] = {'temperature': 0.7}
+d2 = yaml.safe_load(inj.read_text()); d2['probe_p1_e1_theta_0pt80']['data'] = {'instructions': 'v1', 'env': 'appworld'}
+d2['probe_p1_e1_theta_0pt80']['generation'] = {'temperature': 0.7}
 inj.write_text(yaml.safe_dump(d2))
 try:
-    S.load(inj, 'p1e1_t080', debug=False, overrides={}); print('stated-differently: NOT REFUSED')
+    S.load(inj, 'probe_p1_e1_theta_0pt80', debug=False, overrides={}); print('stated-differently: NOT REFUSED')
 except Exception as ex: print('stated-differently: REFUSED', str(ex)[:90])
-d2['p1e1_t080']['meta'] = {'override': ['generation.temperature']}
+d2['probe_p1_e1_theta_0pt80']['meta'] = {'override': ['generation.temperature']}
 inj.write_text(yaml.safe_dump(d2))
-c3 = S.load(inj, 'p1e1_t080', debug=False, overrides={})[0]
+c3 = S.load(inj, 'probe_p1_e1_theta_0pt80', debug=False, overrides={})[0]
 print('with meta.override:', c3.generation.temperature)
 PY
 ```
@@ -1295,24 +1295,24 @@ from pathlib import Path
 import experimental_settings.schema as S
 FIX = Path(sys.argv[1]); S.ROOT = FIX
 tp = FIX / 'experimental_settings/train_probe.yaml'
-c = S.load(tp, 'ctool_q06', debug=False, overrides={})[0]
+c = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]
 k = {st: S.key(st, c) for st in ('sample', 'build', 'train', 'eval')}
 for st, v in k.items():
     assert re.fullmatch(r'[0-9a-f]{12}', v), (st, v)
 print(k)
-print('determinism:', all(S.key(st, S.load(tp, 'ctool_q06', debug=False, overrides={})[0]) == v for st, v in k.items()))
-d = S.load(tp, 'ctool_q06', debug=True, overrides={})[0]
+print('determinism:', all(S.key(st, S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]) == v for st, v in k.items()))
+d = S.load(tp, 'ctool_qwen3_0pt6b', debug=True, overrides={})[0]
 print('debug separates:', S.key('train', d) != k['train'])
-n = S.load(tp, 'ctool_q06', debug=False, overrides={'meta.notes': 'anything at all'})[0]
+n = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={'meta.notes': 'anything at all'})[0]
 print('notes insensitive:', S.key('train', n) == k['train'])
-lr = S.load(tp, 'ctool_q06', debug=False, overrides={'train.lr': '1.0e-5'})[0]
+lr = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={'train.lr': '1.0e-5'})[0]
 print('default restated == unset:', S.key('train', lr) == k['train'])
-lr2 = S.load(tp, 'ctool_q06', debug=False, overrides={'train.lr': '3.0e-4'})[0]
+lr2 = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={'train.lr': '3.0e-4'})[0]
 print('lr moves train, not sample/build:', S.key('train', lr2) != k['train'],
       S.key('sample', lr2) == k['sample'], S.key('build', lr2) == k['build'])
-ev = S.load(tp, 'ctool_q06', debug=False, overrides={'eval.risk': '[0.2]'})[0]
+ev = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={'eval.risk': '[0.2]'})[0]
 print('eval.risk moves eval only:', S.key('eval', ev) != k['eval'], S.key('train', ev) == k['train'])
-pr = S.load(tp, 'ctool_q06', debug=False, overrides={'models.probe': 'qwen06'})[0]
+pr = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={'models.probe': 'qwen3_0pt6b'})[0]
 print('fields block:', sorted(S.fields_of('train', c)))
 print('models block:', sorted(S.models_of('train', c)), sorted(S.models_of('build', c)))
 print('upstream block:', S.upstream_of('build', c), S.upstream_of('sample', c))
@@ -1334,16 +1334,16 @@ from pathlib import Path
 import experimental_settings.schema as S
 FIX = Path(sys.argv[1]); S.ROOT = FIX
 tp, inj = FIX/'experimental_settings/train_probe.yaml', FIX/'experimental_settings/inject.yaml'
-c = S.load(tp, 'ctool_q06', debug=False, overrides={})[0]
+c = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]
 print(sorted(S.versions_of('train', c)))
-i = S.load(inj, 'p1e1_t080', debug=False, overrides={})[0]
+i = S.load(inj, 'probe_p1_e1_theta_0pt80', debug=False, overrides={})[0]
 u = S.upstream_of('inject', i); print(sorted(u))
 k0 = S.key('inject', i)
 p = FIX/'eval/utils/probe_eval.py'; p.write_text('VERSION = 2\n')
-i2 = S.load(inj, 'p1e1_t080', debug=False, overrides={})[0]
+i2 = S.load(inj, 'probe_p1_e1_theta_0pt80', debug=False, overrides={})[0]
 print('probe_eval VERSION moves the inject key:', S.key('inject', i2) != k0)
 q = FIX/'train/utils/trainer.py'; q.write_text('VERSION = 2\n')
-c2 = S.load(tp, 'ctool_q06', debug=False, overrides={})[0]
+c2 = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]
 print('trainer VERSION moves train, not build:', S.key('train', c2) != S.key('train', c), S.key('build', c2) == S.key('build', c))
 PY
 ```
@@ -1364,8 +1364,8 @@ from pathlib import Path
 import experimental_settings.schema as S
 FIX = Path(sys.argv[1]); S.ROOT = FIX
 tp = FIX/'experimental_settings/train_probe.yaml'
-c = S.load(tp, 'ctool_q06', debug=False, overrides={})[0]
-d = S.load(tp, 'ctool_q06', debug=True, overrides={})[0]
+c = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]
+d = S.load(tp, 'ctool_qwen3_0pt6b', debug=True, overrides={})[0]
 rd, dd = S.run_dir('train', c), S.run_dir('train', d)
 print(rd.relative_to('%s/outputs' % FIX), dd.relative_to('%s/outputs' % FIX))
 print(S.run_dir_of('train', S.key('train', c), debug=False) == rd,
@@ -1385,7 +1385,7 @@ from pathlib import Path
 import experimental_settings.schema as S
 FIX = Path(sys.argv[1]); S.ROOT = FIX
 tp = FIX/'experimental_settings/train_probe.yaml'
-c = S.load(tp, 'ctool_q06', debug=False, overrides={})[0]
+c = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]
 rd = S.run_dir('sample', c); rd.mkdir(parents=True)
 S.freeze(c, 'sample', rd, {}, 'deadbeefcafe')
 y = yaml.safe_load((rd/'settings.yaml').read_text())
@@ -1395,7 +1395,7 @@ print(y['_stage'], y['_key'] == S.key('sample', c), y['_commit'], y['_debug'], y
 print('versions:', sorted(y['_versions'])[:3], len(y['_versions']))
 print('diff:', yaml.safe_load((rd/'settings_diff.yaml').read_text()) == S.fields_of('sample', c))
 print('no workflow line:', '_workflow' not in y)
-c2 = S.load(tp, 'ctool_q06', debug=False, overrides={'sample.seeds': '[42, 67]'})[0]
+c2 = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={'sample.seeds': '[42, 67]'})[0]
 S.freeze(c2, 'sample', rd, {}, 'deadbeefcafe')
 print('seeds merged:', yaml.safe_load((rd/'settings.yaml').read_text())['sample']['seeds'])
 tr = S.run_dir('train', c); tr.mkdir(parents=True)
@@ -1431,7 +1431,7 @@ from pathlib import Path
 import experimental_settings.schema as S
 FIX = Path(sys.argv[1]); S.ROOT = FIX
 tp = FIX/'experimental_settings/train_probe.yaml'
-c = S.load(tp, 'ctool_q06', debug=False, overrides={})[0]
+c = S.load(tp, 'ctool_qwen3_0pt6b', debug=False, overrides={})[0]
 rd = S.run_dir('train', c); rd.mkdir(parents=True)
 S.freeze(c, 'train', rd, {}, 'deadbeefcafe')
 f = S.load_frozen(rd)
@@ -1576,8 +1576,8 @@ errata 7.
 branch, run C1 once more against the repo root and paste both.
 
 **Needs from other folders** (as source text, satisfied by the fixture during
-implementation and for real at G3): `models/table.yaml` (rows `gptoss120b`,
-`qwen06`); `models/agent_models/gptoss.py` (`NAME`, `STOP`, `EFFORTS`,
+implementation and for real at G3): `models/table.yaml` (rows `gpt_oss_120b`,
+`qwen3_0pt6b`); `models/agent_models/gptoss.py` (`NAME`, `STOP`, `EFFORTS`,
 `DEFAULT_EFFORT`, `DEFAULT_DATE`); `models/probe_models/qwen.py`
 (`LORA_TARGETS`); `data/environments/appworld.py` (`INSTRUCTIONS` with key `v1`,
 `SPLIT_ROLE`); `train/methods/{ctool,cgen,cparam}.py` (`PROBE_KIND`,
@@ -1675,8 +1675,8 @@ Appended verbatim to `.scratch/from-zero/contract-errata.md`.
     `tokyo105`'s alias in the same file's `hosts:` list.
 14. **experimental_settings/*.yaml**: the contracts fix the schema but not the
     owner's settings -> the build ships one workflow file per tree line with the
-    named settings `baseline/gptoss_aw`, `train_probe/ctool_q06`,
-    `train_probe/cgen_q06`, `inject/p1e1_t080` and `inject/no_probe_t080`, whose
+    named settings `baseline/gpt_oss_120b_appworld`, `train_probe/ctool_qwen3_0pt6b`,
+    `train_probe/cgen_qwen3_0pt6b`, `inject/probe_p1_e1_theta_0pt80` and `inject/no_probe_p1_e1_theta_0pt80`, whose
     values are schema defaults except where a required field or a reference
     forces one; the owner overwrites them.
 15. **5.7**: the merge of one section between `common:` and a named setting is

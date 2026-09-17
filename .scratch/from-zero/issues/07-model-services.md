@@ -284,7 +284,7 @@ its serving function.
 ```bash
 D=$(mktemp -d)
 "$PR" -m models.probe_models.service serve \
-  --run-dir $D --agent-model gptoss120b --port 8599 --render-only > $D/srv.log 2>&1 &
+  --run-dir $D --agent-model gpt_oss_120b --port 8599 --render-only > $D/srv.log 2>&1 &
 SRV=$!
 for i in $(seq 1 60); do [ -f "$D/service_probe_0.json" ] && break; sleep 1; done
 test -f "$D/service_probe_0.json" || { echo "no endpoint file after 60 s"; cat "$D/srv.log"; kill $SRV; exit 1; }
@@ -322,7 +322,7 @@ and the endpoint file listing
 "$VL" -c "
 from models.agent_models.service import build_command
 import models
-m = models.agent('gptoss120b')
+m = models.agent('gpt_oss_120b')
 row = dict(role='agent', family='gptoss', weights='gpt-oss-120b', dtype='auto',
            quantization=None, max_model_len=131072, served_model_name='gpt-oss-120b',
            env_result={'VLLM_USE_FLASHINFER_SAMPLER': '0'}, extra_flags='')
@@ -431,8 +431,8 @@ never module-level imports (A16).
 An implementer that reaches any of these returns BLOCKED with the command.
 
 - `M-M1` on `tokyo108`, with a run directory whose `settings.yaml` names
-  `gptoss120b`:
-  `<vllm python> -m models.agent_models.service serve --run-dir <run_dir> --model gptoss120b --port 8103 --gpus 0 --replica 0`
+  `gpt_oss_120b`:
+  `<vllm python> -m models.agent_models.service serve --run-dir <run_dir> --model gpt_oss_120b --port 8103 --gpus 0 --replica 0`
   must pass all three check-table lines and write `service_agent_0.json` with
   `base_url: http://tokyo108:8103/v1`, the pid, and `claims` equal to the frozen
   `result:` block plus `role` and `family`.

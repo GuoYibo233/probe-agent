@@ -3,9 +3,9 @@ workflow: [inject, score]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
 
-p1e1_t080:
+probe_p1_e1_theta_0pt80:
   meta:  {notes: "live run: fire at theta 0.80, injection format p1_e1, probe arm"}
   inject:
     split: [test]
@@ -13,13 +13,13 @@ p1e1_t080:
     theta: 0.80
     arm: probe
     format: p1_e1
-    probe_score: train_probe/ctool_q06
-    probe_gen: train_probe/cgen_q06
+    probe_score: train_probe/ctool_qwen3_0pt6b
+    probe_gen: train_probe/cgen_qwen3_0pt6b
     pieces: 6
     replicas: 1
-  score: {baseline: baseline/gptoss_aw}
+  score: {baseline: baseline/gpt_oss_120b_appworld}
 
-no_probe_t080:
+no_probe_p1_e1_theta_0pt80:
   meta:  {notes: "control arm: the machinery wired and never firing"}
   inject:
     split: [test]
@@ -27,8 +27,8 @@ no_probe_t080:
     theta: 0.80
     arm: no_probe
     format: p1_e1
-    probe_score: train_probe/ctool_q06
-    probe_gen: train_probe/cgen_q06
+    probe_score: train_probe/ctool_qwen3_0pt6b
+    probe_gen: train_probe/cgen_qwen3_0pt6b
     pieces: 6
     replicas: 1
-  score: {baseline: baseline/gptoss_aw}
+  score: {baseline: baseline/gpt_oss_120b_appworld}

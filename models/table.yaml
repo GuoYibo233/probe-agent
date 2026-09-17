@@ -3,7 +3,7 @@
 # an existing family or backbone is one row here plus one row in
 # constants/path_models.yaml.
 
-gptoss120b:
+gpt_oss_120b:
   role: agent
   family: gptoss
   result:
@@ -25,19 +25,19 @@ gptoss120b:
       VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
       TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
 
-qwen06:
+qwen3_0pt6b:
   role: probe
   family: qwen
   result: {weights: qwen3-0.6b-base, dtype: float32}
   serving: {}
 
-qwen17:
+qwen3_1pt7b:
   role: probe
   family: qwen
   result: {weights: qwen3-1.7b-base, dtype: float32}
   serving: {}
 
-qwen4:
+qwen3_4b:
   role: probe
   family: qwen
   result: {weights: qwen3-4b-base, dtype: float32}

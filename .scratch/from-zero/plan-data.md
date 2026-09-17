@@ -856,7 +856,7 @@ assert p == d/"records"/"50e1ac9_1__s42.jsonl", p
 assert not tr.is_done(p)
 w.row("meta", stage="sample", env="appworld", task_id="50e1ac9_1", seed=42,
       env_seed=100, split="train", arm="sample", instructions="v1",
-      task_text="Play my playlist.", agent_model="gptoss120b",
+      task_text="Play my playlist.", agent_model="gpt_oss_120b",
       generation="{}", inject=None, commit="deadbee", run_key="abc123def456",
       owner_session="sample-abc123def456-0")
 w.row("gen", step=0, reasoning="I think. I check.", content="```python\nx\n```",
@@ -901,7 +901,7 @@ assert tr.to_messages(df, 0, "t", "DEV", "NC", None) == [
 w2 = tr.open_record(d, "abc0000_2", 7)
 w2.row("meta", stage="sample", env="appworld", task_id="abc0000_2", seed=7,
        env_seed=100, split="train", arm="sample", instructions="v1",
-       task_text="t", agent_model="gptoss120b", generation="{}", inject=None,
+       task_text="t", agent_model="gpt_oss_120b", generation="{}", inject=None,
        commit="deadbee", run_key="abc123def456", owner_session="gone-0")
 w2.close()
 fd = os.open(d/"records"/"zzz9999_3__s1.jsonl", os.O_CREAT|os.O_EXCL|os.O_WRONLY); os.close(fd)
@@ -957,7 +957,7 @@ rows = pl.DataFrame({
   "call": ["apis.spotify.show_playlists(access_token=tok)"]*2,
   "args": [[{"key": "access_token", "value": "tok"}]]*2,
   "weight": [1.0, 1.0], "split": ["train", "train"],
-  "env": ["appworld"]*2, "agent_model": ["gptoss120b"]*2,
+  "env": ["appworld"]*2, "agent_model": ["gpt_oss_120b"]*2,
 }, strict=False)
 p = d/"examples.parquet"
 ex.write(p, rows)

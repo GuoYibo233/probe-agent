@@ -3,26 +3,26 @@ workflow: [sample, build, train, eval]
 
 common:
   data:   {env: appworld, instructions: v1}
-  models: {agent: gptoss120b}
+  models: {agent: gpt_oss_120b}
   sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
 
-ctool_q06:
+ctool_qwen3_0pt6b:
   meta:   {notes: "classification probe, Qwen3-0.6B-Base, full tuning; the theta source for the generating probes"}
-  models: {probe: qwen06}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: ctool, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
   eval:   {risk: [0.10, 0.05]}
 
-cgen_q06:
-  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_q06"}
-  models: {probe: qwen06}
+cgen_qwen3_0pt6b:
+  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_qwen3_0pt6b"}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: cgen, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
-  eval:   {theta_from: train_probe/ctool_q06}
+  eval:   {theta_from: train_probe/ctool_qwen3_0pt6b}
 
-cparam_q06:
+cparam_qwen3_0pt6b:
   meta:   {notes: "argument-generating probe on the same dataset; param_only, so it can never be an inject.probe_gen"}
-  models: {probe: qwen06}
+  models: {probe: qwen3_0pt6b}
   probe:  {method: cparam, tuning: full}
   train:  {lr: 1.0e-5, epochs: 1}
-  eval:   {theta_from: train_probe/ctool_q06}
+  eval:   {theta_from: train_probe/ctool_qwen3_0pt6b}
