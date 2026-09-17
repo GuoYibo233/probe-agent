@@ -1,6 +1,6 @@
 # 11 the agent loop: formats, generation, injection, the task walk
 
-Status: claimed
+Status: resolved
 Blocked by: 02, 03, 04, 05, 06, 07
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -1145,3 +1145,23 @@ majority of rows under `probe_nofill`.
   1.1 declares on every row kind but `meta` and ticket 10's scorer joins on.
   Items (2)'s rebuild rule and (3) are in the errata under "Added by the wave-4
   precheck".
+- 2026-09-18, wave 4 reconciliation (main session of wave 4). Resolved. Commits
+  `46f5375..c26f0f7` on `ticket/2026-09-18-wave4/T11` (implementation `bea7274`,
+  fix round `c26f0f7`), merged as `6a0ed23`. One fix round: the resend after a
+  fire now carries `prefix_ids + gen_ids` (the first version resent the bare
+  prefix), and the `meta` row's field list exists once. No minor left open.
+  Implementer decisions the ticket did not make: `spec.gen_call` stores the
+  probe's raw call and not `complete_call`'s result (1.1: "the call the
+  generation probe wrote"); `Clients.agent` is annotated with the agent client
+  class while `probe` stays `object`; `complete_call` returning None is passed
+  to `speculate` unguarded, which the merged `speculate` turns into an
+  `unparsable_raw` execution. Noted for every later acceptance: a stray
+  `/tmp/jobs.py` on this machine shadows the repo's `jobs` package whenever
+  `/tmp` is put on `sys.path`, so the D-fixture was written to
+  `/tmp/T11_loopfix/loopfix.py`. Main-session checks after the merge:
+  `agent/inject_format.py` imports under the three interpreters and the other
+  three files under the appworld venv; `jobs/launch.py` numbers a loop piece by
+  its position in `STAGES[...]["pieces"]`, where the loop pieces come first, so
+  its session name `<stage>-<key>-<i>` equals this ticket's
+  `meta.owner_session` and its heartbeat file index. `M-A1` to `M-A4` stay with
+  the GPU list after wave 6.

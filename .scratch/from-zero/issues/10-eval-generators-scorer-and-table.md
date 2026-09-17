@@ -1,6 +1,6 @@
 # 10 the generator metrics, the run scorer and the matrix table
 
-Status: claimed
+Status: resolved
 Blocked by: 02, 03, 04, 05, 08
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -672,3 +672,22 @@ requested pair count.
   `5b0dc71`: `cgen.py` (136 lines) and `cparam.py` (143 lines) differ in 29 diff
   lines; `_params_all_ok`, `match`, `_stat`, the risk loop and the entry point are
   line-for-line copies.
+- 2026-09-18, wave 4 reconciliation (main session of wave 4). Resolved. Commits
+  `46f5375..32e8c48` on `ticket/2026-09-18-wave4/T10` (implementation `5b0dc71`,
+  fix round `32e8c48`), merged as `cb3d40a`. One fix round: `score_run`'s
+  by-seed block raised `StopIteration` on zero records, and the completeness
+  gate rescanned `done_pairs` per pair. Minors left open: `score_run` computes
+  `usage_out_sum` and never reads it (F3); the fix added a second `_run_block`
+  pass whose only use is its key names (T10-RR1). Implementer decisions the
+  ticket did not make, listed for the owner: `method_table` prints the `n`
+  column as an integer (mean ± spread with one decimal for a group); `score_run`
+  sets `tool_agree` and `call_agree` to False when `spec.gen_call` or
+  `env.action` does not parse; the by-seed `spread` of a single seed is `0.0`.
+  Main-session checks after the merge: the six `eval/` files import under the
+  three interpreters of the `venvs:` map; none of the nine fixture keys of A6a,
+  A6 and A8 is left under the outputs root, debug or non-debug;
+  `schema.load` now succeeds on `train_probe`'s `cgen_qwen3_0pt6b` and
+  `cparam_qwen3_0pt6b` (it failed before this merge for want of
+  `eval/methods/cgen.py` and `cparam.py`), while both `inject.yaml` settings
+  still fail, now on the missing `train/methods/cgen.py` (ticket 13). `M-E2`
+  and `M-E3` stay with the GPU list after wave 6.

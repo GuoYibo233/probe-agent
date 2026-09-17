@@ -1,6 +1,6 @@
 # 12 the launcher
 
-Status: claimed
+Status: resolved
 Blocked by: 01, 02, 03, 04, 05, 06
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7, 9)
 
@@ -455,3 +455,21 @@ An implementer that reaches any of these returns BLOCKED with the command.
   (2) `teardown_services` reaches a host that normalises to `login_host` with a
   local `tmux kill-session` and no `ssh`, the branch the piece start already
   takes (T12-5; errata under "Added by the wave-4 precheck").
+- 2026-09-18, wave 4 reconciliation (main session of wave 4). Resolved. Commits
+  `46f5375..0c4063d` on `ticket/2026-09-18-wave4/T12` (implementation `3a484c9`,
+  fix round `0c4063d`), merged as `de6ae52`. One fix round: a citation of
+  `legacy/` was dropped from the source, and `--gpus` no longer corrupts the
+  argv of an attached agent service. Minor left open: `refire`'s branch that
+  relocates a service piece can never run, because the regex that parses the
+  frozen command matches only the shape `piece_command` produces (F3).
+  Implementer decisions the ticket did not make, listed for the owner: the
+  start row's `parent` and `swept` are always null, since `launch`'s pinned
+  signature gives sweep metadata no channel; `refire` re-derives the card count
+  from the old piece's `gpus` string and prefers the old host; of
+  `data/trajectory_record.py`'s four names the file imports only `release`. Not
+  covered by any CPU acceptance and left to the post-merge review and to
+  `M-J3`..`M-J8`: `launch()`'s piece construction, the two service command
+  builders, the attach test's match over `claims`, and whether a stale endpoint
+  file of this run's own dead launch can be matched. Main-session checks after
+  the merge: the file imports under the probe interpreter; no `dirty.patch` and
+  no `meta.json` in the repo root; no `/home/`, `/net/` or `legacy` in the file.
