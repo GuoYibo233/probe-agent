@@ -506,6 +506,20 @@ def _debug_fields() -> set[str]:
     return out
 
 
+def _refuse_probe_under_inject(workflow: list[str], dotted: str) -> None:
+    """2.1 / 5.7: a setting whose workflow contains inject states no probe field and no models.probe.
+
+    The refusal holds for the merged setting, so it fires whichever path set the value -- the YAML
+    file, a sweep or a command-line override -- and names the field it refused on.
+    """
+    if "inject" not in workflow:
+        return
+    if dotted == "models.probe" or dotted.split(".", 1)[0] == "probe":
+        raise SchemaError(
+            f"{dotted}: a setting whose workflow contains inject may not state {dotted}; "
+            "an inject run's probe comes from the settings inject.probe_score and inject.probe_gen name")
+
+
 def _check_raw_sections(workflow: list[str], common: dict, named: dict, base_name: str) -> None:
     """5.7's 'a section for a stage the workflow does not name', evaluated against the raw file content only."""
     allowed = _yaml_allowed_sections(workflow)
@@ -513,14 +527,11 @@ def _check_raw_sections(workflow: list[str], common: dict, named: dict, base_nam
         for key in d:
             if key not in allowed:
                 raise SchemaError(f"{key}: no stage of this file's workflow reads this section")
-    if "inject" in workflow:
-        for d in (common, named):
-            if "probe" in d:
-                raise SchemaError(
-                    "probe: a setting whose workflow contains inject may not state a probe section")
-            if "probe" in d.get("models", {}):
-                raise SchemaError(
-                    "models.probe: a setting whose workflow contains inject may not state models.probe")
+    for d in (common, named):
+        if "probe" in d:
+            _refuse_probe_under_inject(workflow, "probe")
+        if "probe" in d.get("models", {}):
+            _refuse_probe_under_inject(workflow, "models.probe")
 
 
 def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, overrides: dict,
@@ -547,6 +558,7 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
                 _apply_fields(full[sec], section_overlay, SECTION_CLASSES[sec], sec, set())
 
     for dotted, raw in overrides.items():
+        _refuse_probe_under_inject(workflow, dotted)
         section, _, field_name = dotted.partition(".")
         if section not in SECTION_CLASSES or section not in full:
             raise SchemaError(f"{dotted}: not a field of the schema")
@@ -560,8 +572,9 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
     return full, authored
 
 
-def _sweep_children(sweep: dict, debug_fields: set[str]) -> list[tuple[str, dict]]:
+def _sweep_children(sweep: dict, debug_fields: set[str], workflow: list[str]) -> list[tuple[str, dict]]:
     for dotted in sweep:
+        _refuse_probe_under_inject(workflow, dotted)
         section, _, field_name = dotted.partition(".")
         if section not in SECTION_CLASSES:
             raise SchemaError(f"sweep.{dotted}: not a field of the schema")
@@ -646,9 +659,40 @@ def _resolve_name_ref(value: str) -> Setting:
     return results[0]
 
 
-def _resolve_ref(field_dotted: str, value: Any) -> tuple[str, Any]:
-    """Resolve one reference field's stated value to ('setting', Setting) or ('keys', {stage: key})."""
+METHOD_REF_FIELDS = ("inject.probe_score", "inject.probe_gen")
+
+
+def _pinned_method(field_dotted: str, value: dict, kind: str) -> str | None:
+    """The probe method a pinned (key: / dir:) reference states in its `method:` sibling (owner ruling, 2026-09-17).
+
+    `method:` sits beside `key:` or `dir:`, never inside them, so the stage set the pinned form
+    carries stays exactly the stages the stage table requires. It is required on
+    inject.probe_score and inject.probe_gen, whose method the loader has no other source for, and
+    refused everywhere else.
+    """
+    stated = value.get("method")
+    if field_dotted in METHOD_REF_FIELDS:
+        if stated is None:
+            raise SchemaError(
+                f"a {kind}: reference of this field states the probe method as a sibling entry "
+                f"'method: <one of {AXES['probe.method']}>'; method is required")
+        if stated not in AXES["probe.method"]:
+            raise SchemaError(f"method {stated!r} is not one of {AXES['probe.method']}")
+        return stated
+    if stated is not None:
+        raise SchemaError(
+            "a reference of this field states no 'method:'; only inject.probe_score and "
+            "inject.probe_gen carry one")
+    return None
+
+
+def _resolve_ref(field_dotted: str, value: Any) -> tuple[str, Any, str | None]:
+    """Resolve one reference field's stated value to ('setting', Setting, method) or ('keys', {stage: key}, method)."""
     try:
+        if isinstance(value, dict) and "method" in value and "key" not in value and "dir" not in value:
+            raise SchemaError(
+                "a name-form reference states no 'method:'; the loader reads the method off the "
+                "named setting, and 'method:' belongs to a key: or dir: reference")
         kind = _ref_kind(value)
         required = set(_ref_requirements(field_dotted))
         if kind == "name":
@@ -657,16 +701,18 @@ def _resolve_ref(field_dotted: str, value: Any) -> tuple[str, Any]:
             if missing:
                 raise SchemaError(
                     f"{value!r}: workflow {setting._workflow} does not provide stage(s) {sorted(missing)}")
-            return ("setting", setting)
-        if kind == "key":
-            got = set(value["key"])
-            if got != required:
-                raise SchemaError(f"pinned key stages {sorted(got)} != required {sorted(required)}")
-            return ("keys", dict(value["key"]))
-        got = set(value["dir"])
+            method = setting.probe.method if setting.probe is not None else None
+            return ("setting", setting, method)
+        method = _pinned_method(field_dotted, value, kind)
+        extra = set(value) - {kind, "method"}
+        if extra:
+            raise SchemaError(f"a {kind}: reference holds no entry {sorted(extra)}")
+        got = set(value[kind])
         if got != required:
-            raise SchemaError(f"pinned dir stages {sorted(got)} != required {sorted(required)}")
-        return ("keys", {stage: Path(p).name for stage, p in value["dir"].items()})
+            raise SchemaError(f"pinned {kind} stages {sorted(got)} != required {sorted(required)}")
+        if kind == "key":
+            return ("keys", dict(value["key"]), method)
+        return ("keys", {stage: Path(p).name for stage, p in value["dir"].items()}, method)
     except SchemaError as ex:
         raise SchemaError(f"{field_dotted}: {ex}") from ex
 
@@ -708,9 +754,10 @@ def _apply_inherit_group(full: dict, authored: set[str], override_perm: set[str]
             _set_dotted(full, dotted, agreed)
 
 
-def _apply_inheritance(full: dict, authored: set[str], refs: dict[str, tuple[str, Any]]) -> None:
+def _apply_inheritance(full: dict, authored: set[str],
+                       refs: dict[str, tuple[str, Any, str | None]]) -> None:
     override_perm = set(full["meta"].get("override", []))
-    setting_refs = {name: payload for name, (kind, payload) in refs.items() if kind == "setting"}
+    setting_refs = {name: payload for name, (kind, payload, _method) in refs.items() if kind == "setting"}
     if not setting_refs:
         return
     for dotted_fields in _INHERIT_GROUPS.values():
@@ -787,6 +834,74 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
             if v not in axis_values:
                 raise SchemaError(f"{dotted}: {v!r} is not one of {axis_values}")
 
+    if "inject" in workflow and full["models"]["probe"] is not None:
+        _refuse_probe_under_inject(workflow, "models.probe")
+
+    if "inject" in full and full["inject"]["arm"] == "no_probe" and full["inject"]["fire_nth_cut"] > 0:
+        raise SchemaError("inject.fire_nth_cut: must be 0 under arm: no_probe")
+
+    for dotted in REQUIRED_FIELDS:
+        if "inject" in full and _get_dotted(full, dotted) is None:
+            raise SchemaError(f"{dotted}: is required and was not set")
+
+    # Each reference field is resolved and checked in turn -- a field's own check runs right after
+    # its resolution, so an unrelated field's mutation is refused before a later reference is even
+    # opened. eval.theta_from and score.baseline are self-contained checks; inject.probe_score is
+    # needed only for inheritance; inject.probe_gen's method check runs right after its resolution.
+    refs: dict[str, tuple[str, Any, str | None]] = {}
+
+    def _resolve_if_set(dotted: str) -> None:
+        section, _, field_name = dotted.partition(".")
+        if section not in full:
+            return
+        value = full[section].get(field_name)
+        if value is None:
+            return
+        refs[dotted] = _resolve_ref(dotted, value)
+
+    _resolve_if_set("eval.theta_from")
+    if "eval" in full:
+        method = full["probe"]["method"] if "probe" in full else None
+        if method is not None:
+            kind = _method_kind(method)
+            if kind == "generator" and "eval.theta_from" not in refs:
+                raise SchemaError("eval.theta_from: is required when probe.method's PROBE_KIND is generator")
+
+    _resolve_if_set("score.baseline")
+    if "score.baseline" in refs:
+        kind, payload, _method = refs["score.baseline"]
+        if kind == "setting":
+            own_section = "inject" if "inject" in full else "sample"
+            own_split = set(full[own_section]["split"])
+            own_seeds = set(full[own_section]["seeds"])
+            base_split = set(payload.sample.split)
+            base_seeds = set(payload.sample.seeds)
+            if not (own_split <= base_split and own_seeds <= base_seeds):
+                raise SchemaError(
+                    "score.baseline: baseline split/seeds are not a superset of this setting's "
+                    f"{own_section}.split/seeds ({sorted(own_split)}/{sorted(own_seeds)} vs "
+                    f"{sorted(base_split)}/{sorted(base_seeds)})")
+
+    _resolve_if_set("inject.probe_score")
+
+    # The whole-call-generator check reads the method the reference selects, which the name form
+    # takes off the named setting and the key: / dir: form states in its method: sibling, so the
+    # check runs the same way in all three forms (owner ruling, 2026-09-17).
+    _resolve_if_set("inject.probe_gen")
+    if "inject.probe_gen" in refs:
+        gen_method = refs["inject.probe_gen"][2]
+        checkpoint_meta = module_literal(f"train/methods/{gen_method}.py", "CHECKPOINT_META")
+        gen_kind = _method_kind(gen_method)
+        whole_call_generator = gen_kind == "generator" and checkpoint_meta.get("param_only") is False
+        if whole_call_generator is False:
+            raise SchemaError(
+                f"inject.probe_gen: {gen_method!r} is not a whole-call generator "
+                f"(param_only={checkpoint_meta.get('param_only')}, PROBE_KIND={gen_kind!r})")
+
+    _apply_inheritance(full, authored, refs)
+
+    # 5.3 / 5.4 / 5.7: everything below reads a field 5.4 lets a reference fill in, so it runs on
+    # the values inheritance chose -- the values this setting runs with.
     env = full["data"]["env"]
     instructions_keys = tuple(module_literal(_env_module(env), "INSTRUCTIONS"))
     if full["data"]["instructions"] not in instructions_keys:
@@ -819,66 +934,6 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
             raise SchemaError(
                 f"generation.effort: {effort!r} is not one of {efforts} for family {agent_family!r}")
 
-    if "inject" in full and full["inject"]["arm"] == "no_probe" and full["inject"]["fire_nth_cut"] > 0:
-        raise SchemaError("inject.fire_nth_cut: must be 0 under arm: no_probe")
-
-    for dotted in REQUIRED_FIELDS:
-        if "inject" in full and _get_dotted(full, dotted) is None:
-            raise SchemaError(f"{dotted}: is required and was not set")
-
-    # Each reference field is resolved and checked in turn -- a field's own check runs right after
-    # its resolution, so an unrelated field's mutation is refused before a later reference is even
-    # opened. eval.theta_from and score.baseline are self-contained checks; inject.probe_score is
-    # needed only for inheritance; inject.probe_gen's method check runs right after its resolution.
-    refs: dict[str, tuple[str, Any]] = {}
-
-    def _resolve_if_set(dotted: str) -> None:
-        section, _, field_name = dotted.partition(".")
-        if section not in full:
-            return
-        value = full[section].get(field_name)
-        if value is None:
-            return
-        refs[dotted] = _resolve_ref(dotted, value)
-
-    _resolve_if_set("eval.theta_from")
-    if "eval" in full:
-        method = full["probe"]["method"] if "probe" in full else None
-        if method is not None:
-            kind = _method_kind(method)
-            if kind == "generator" and "eval.theta_from" not in refs:
-                raise SchemaError("eval.theta_from: is required when probe.method's PROBE_KIND is generator")
-
-    _resolve_if_set("score.baseline")
-    if "score.baseline" in refs:
-        kind, payload = refs["score.baseline"]
-        if kind == "setting":
-            own_section = "inject" if "inject" in full else "sample"
-            own_split = set(full[own_section]["split"])
-            own_seeds = set(full[own_section]["seeds"])
-            base_split = set(payload.sample.split)
-            base_seeds = set(payload.sample.seeds)
-            if not (own_split <= base_split and own_seeds <= base_seeds):
-                raise SchemaError(
-                    "score.baseline: baseline split/seeds are not a superset of this setting's "
-                    f"{own_section}.split/seeds ({sorted(own_split)}/{sorted(own_seeds)} vs "
-                    f"{sorted(base_split)}/{sorted(base_seeds)})")
-
-    _resolve_if_set("inject.probe_score")
-
-    _resolve_if_set("inject.probe_gen")
-    if "inject.probe_gen" in refs:
-        kind, payload = refs["inject.probe_gen"]
-        if kind == "setting":
-            gen_method = payload.probe.method
-            checkpoint_meta = module_literal(f"train/methods/{gen_method}.py", "CHECKPOINT_META")
-            gen_kind = _method_kind(gen_method)
-            if checkpoint_meta.get("param_only") or gen_kind != "generator":
-                raise SchemaError(
-                    f"inject.probe_gen: {gen_method!r} is not a whole-call generator "
-                    f"(param_only={checkpoint_meta.get('param_only')}, PROBE_KIND={gen_kind!r})")
-
-    _apply_inheritance(full, authored, refs)
     _resolve_generation(full, agent_family)
 
     full["models"]["agent_row"] = _model_row(table, agent_alias)
@@ -902,7 +957,7 @@ def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -
         clash = set(overrides) & set(sweep)
         if clash:
             raise SchemaError(f"{sorted(clash)[0]}: overridden and swept at once")
-        children_extras = _sweep_children(sweep, _debug_fields())
+        children_extras = _sweep_children(sweep, _debug_fields(), workflow)
     else:
         children_extras = [(None, {})]
 
@@ -1040,11 +1095,12 @@ def _substitute(template: str, setting: Setting) -> str:
     if "{method}" in template:
         template = template.replace("{method}", setting.probe.method)
     if "{probe_score_method}" in template:
-        kind, payload = _resolve_ref("inject.probe_score", setting.inject.probe_score)
-        if kind != "setting":
+        method = _resolve_ref("inject.probe_score", setting.inject.probe_score)[2]
+        if method is None:
             raise SchemaError(
-                "inject.probe_score: a pinned (key/dir) reference cannot resolve {probe_score_method}")
-        template = template.replace("{probe_score_method}", payload.probe.method)
+                "inject.probe_score: the referenced setting states no probe.method, so the version "
+                "of its eval method file has no source")
+        template = template.replace("{probe_score_method}", method)
     return template
 
 
@@ -1077,7 +1133,7 @@ def upstream(stage: str, setting: Setting) -> dict:
         value = getattr(section_obj, field_name) if section_obj is not None else None
         if value is None:
             continue
-        kind, payload = _resolve_ref(field_dotted, value)
+        kind, payload, _method = _resolve_ref(field_dotted, value)
         out[entry["name"]] = key(entry["stage"], payload) if kind == "setting" else payload[entry["stage"]]
     return out
 
