@@ -319,3 +319,234 @@ touched, and no refactor beyond the two findings was done. F1's fix reuses
 `_run_block`'s existing null-shape guarantee rather than adding a new
 special-cased empty check, keeping the block functions' zero-input behavior
 uniform across the file. No open questions.
+
+## Post-merge fix round 1
+
+Worked in worktree `/home/y-guo/reproduce/new1-wt/2026-09-18-wave4-T10-postfix1`
+(removed at the end; branch kept), on the existing branch
+`ticket/2026-09-18-wave4/T10-postfix`, created from `from-zero`'s tip at
+`e8b257d` (this is the merged, post-review branch, not `ticket/2026-09-18-wave4/T10`
+from the implementation round). Three findings from the wave-4 post-merge
+review's `post-merge-review.json`, all verified `real` and all in
+`eval/score_run.py`. `PY=/home/y-guo/reproduce/new1/external/probe-env/bin/python`
+for every command below.
+
+**SCORE-1 — `spec.tool_agree`, `call_agree` and `recalled` always 0.0.**
+`_spec_block` joined the spec frame to the env rows on `(record_id, step)`,
+but the spec frame already carries every column of
+`data/trajectory_record.SCHEMA`, `action` included (null on every spec row,
+since only `agent/loop.py`'s `env` row writer ever sets `action`). Polars
+therefore named the env side's column `action_right`, and the code read
+`row["action"]` — the spec row's own null — so `ap` was always `None` and
+every rate was computed off the always-false branch. Root-cause fix: the env
+side's `action` is selected under a name of its own, `env_action`, before
+the join, and the comparison reads that column:
+
+```python
+-    env_rows = df.filter(pl.col("type") == "env").select(["record_id", "step", "action"])
++    env_rows = df.filter(pl.col("type") == "env").select(
++        ["record_id", "step", pl.col("action").alias("env_action")])
+     joined = spec.join(env_rows, on=["record_id", "step"], how="left")
+     ...
+-        action = row["action"]
++        action = row["env_action"]
+```
+
+**SCORE-2 — `TypeError` on an inject run whose every `spec.conf` is null.**
+`conf_mean` and `discarded_chars` (and nine other fields across the file)
+computed `round(float(series.mean()), 4)` directly; `Series.mean()` of an
+all-null column returns `None`, and `float(None)` raises before
+`run_report.json`, `report.md` or `done.json` is written. Root-cause fix:
+every mean in the file now goes through one null-safe helper, `_mean`,
+applying the same rule `_rate` already applies to a zero denominator:
+
+```python
+def _mean(series: pl.Series) -> float | None:
+    """The series' mean rounded to 4, or None when it holds no non-null value (Series.mean of an all-null column)."""
+    value = series.mean()
+    return round(float(value), 4) if value is not None else None
+```
+
+All eleven `.mean()` call sites in the file (`_run_block`'s seven,
+`_paired_block`'s two, `_spec_block`'s two, `_resume_block`'s one — eleven
+total across four functions) were checked and now go through `_mean`.
+Checked `.sum()` too, per the finding's instruction: measured directly
+(`external/probe-env`, a fresh all-null `Float64` and all-null `Boolean`
+Polars series), `Series.sum()` of an all-null column returns `0`/`0.0`, never
+`None`, so no `.sum()` call site in the file shares this failure shape; only
+`.mean()` does.
+
+**SCORE-3 — every heartbeat beat emitted before any record is read.**
+`main` emitted `hb.emit(0, len(pairs), "task")` and then all `len(pairs)`
+per-task beats in one loop, entirely before `trajectory_record.read_dir` was
+called once over the whole pair list. Root-cause fix: the pairs are now read
+one at a time, `trajectory_record.read_dir(dir, [pair])` per requested pair
+(scored and, when paired, baseline), and the beat for a pair is emitted
+right after both its reads complete; the frames are concatenated afterward.
+Both gates (same-setup, baseline completeness) still run over the whole pair
+list before the first read, unchanged.
+
+```python
+-    for i in range(1, len(pairs) + 1):
++    scored_frames: list[pl.DataFrame] = []
++    base_frames: list[pl.DataFrame] = []
++    for i, pair in enumerate(pairs, start=1):
++        scored_frames.append(trajectory_record.read_dir(scored_dir, [pair]))
++        if base_dir is not None:
++            base_frames.append(trajectory_record.read_dir(base_dir, [pair]))
+         hb.emit(i, len(pairs), "task")
+
+-    df = trajectory_record.read_dir(scored_dir, pairs)
+-    bdf = trajectory_record.read_dir(base_dir, pairs) if base_dir is not None else None
++    df = pl.concat(scored_frames) if scored_frames else pl.DataFrame(schema=trajectory_record.SCHEMA)
++    bdf = None
++    if base_dir is not None:
++        bdf = pl.concat(base_frames) if base_frames else pl.DataFrame(schema=trajectory_record.SCHEMA)
+```
+
+### How it was verified
+
+**A1 — import test, six files, three venvs.** Rerun in full: `import test
+done`, no `FAIL` line, exit 0.
+
+**A2 — no torch, no GPU.** Rerun: no matches, `exit=1`.
+
+**A3 — the literal lines.** Rerun: `literals ok`, exit 0.
+
+**A8 — `score_run` end to end, plus both refusals.** Rebuilt the same
+fixture as the earlier rounds (`1111aaaa1111` debug sample, `2222bbbb2222`
+non-debug baseline sample, `3333cccc3333` debug score). Main run: `A8 ok`
+with the same assertions as before (`rep["run"]["success"] == 1.0`,
+`rep["baseline"]["success"] == 0.0`, `rep["paired"]["n"] == 2`,
+`rep["paired"]["delta_success"] == 1.0`, `rep["spec"]["n"] == 0`,
+`rep["by_seed"]["42"]["n_records"] == 2`, `done.json` `stage == "score"` and
+`report == "report.md"`, no `consumed.json`), and the heartbeat file for
+this run now reads (interleaved, one beat per task read, as SCORE-3
+requires):
+```
+{"done": 0, "total": 2, "unit": "task", ...}
+{"done": 1, "total": 2, "unit": "task", ...}
+{"done": 2, "total": 2, "unit": "task", ...}
+{"done": 2, "total": 2, "unit": "task", ..., "status": "done"}
+```
+Then the same-setup gate refusal (baseline `temperature` set to `0.7`):
+`ValueError: score_run: same-setup gate failed between .../debug/sample/1111aaaa1111
+and .../sample/2222bbbb2222: generation.temperature differs`, `exit=1`. Then,
+after restoring `temperature: 1.0` and deleting the baseline record
+`82e2fac_1__s42.jsonl`, the completeness gate raised
+`ValueError: score_run: baseline .../sample/2222bbbb2222 is missing a done
+record for pair(s) [('82e2fac_1', 42)]`, `exit=1`. Both match the ticket's
+expected messages. Cleaned up all three directories afterward; a `find`
+over the outputs root for the three keys returned nothing.
+
+**SCORE-1 — direct fixture, mktemp -d, `data/trajectory_record.py`'s
+writer, `_spec_block` called on the frame read back (not the outputs
+root).** Two records, two steps each (four spec rows total): record 1
+step 0 has `gen_call` byte-identical to that step's `env.action`
+(`apis.a.x(k=1)` both sides — expect `tool_agree`/`call_agree`/`recalled`
+all true for that row); record 1 step 1 has the same tool but a different
+argument (`gen_call=apis.a.x(k=2)` against `env.action=apis.a.x(k=1)` —
+`tool_agree` true, `call_agree` false, `recalled` true, since the tool name
+is still a substring of the env action text); record 2 step 0 has a
+`gen_call` that does not parse (`"not a call at all"`); record 2 step 1 has
+`env.action=None` (a null action row) with a `gen_call` for a different
+tool (`apis.b.y(k=1)`). Every step also carries a `resume` row, to confirm
+the presence of another row kind sharing the `step` column does not disturb
+the join.
+
+```
+spec block: {'n': 4, 'exec_ok': 1.0, 'tool_agree': 0.5, 'call_agree': 0.25, 'recalled': 0.5, 'conf_mean': 0.9, 'discarded_chars': 3.0, 'error_kinds': {}}
+SCORE-1 fixture ok
+```
+`n=4`, `tool_agree=0.5` (2/4: step 0 of each kind of match plus the
+different-argument row), `call_agree=0.25` (1/4: only the byte-identical
+row), `recalled=0.5` (2/4: the two rows whose parsed tool name appears in a
+non-null `env.action`) — matches hand computation.
+
+**Before/after comparison for SCORE-1** (`git stash` to the pre-fix code,
+same fixture script, `git stash pop` after): pre-fix gives
+`{'tool_agree': 0.0, 'call_agree': 0.0, 'recalled': 0.0, ...}` on the same
+four rows — confirms the defect and the fix are both exercised by a real
+before/after run, not just presumed.
+
+**SCORE-2 — direct fixture (same mktemp -d approach) plus a full
+`main()` end-to-end run.** Direct fixture: one record, two steps, both
+spec rows carrying `conf=None, pred_label=None` (the shape
+`agent/inject.py` writes under `inject.fire_nth_cut > 0`):
+```
+spec block (all-null conf): {'n': 2, 'exec_ok': 1.0, 'tool_agree': 1.0, 'call_agree': 1.0, 'recalled': 1.0, 'conf_mean': None, 'discarded_chars': 3.0, 'error_kinds': {}}
+SCORE-2 fixture ok
+```
+Before/after: the same script against the pre-fix code (`git stash`) raises
+`TypeError: float() argument must be a string or a real number, not
+'NoneType'` at the `conf_mean` line, confirming the defect.
+
+End-to-end `main()` run: an `inject`-scored score run (`_upstream` carrying
+`inject` and `baseline.sample`, `inject.fire_nth_cut: 1` in the frozen
+setting) whose two spec rows both carry `conf=None, pred_label=None`, paired
+against a `sample` baseline. `main()` completed with exit 0:
+```
+spec block: {'n': 2, 'exec_ok': 1.0, 'tool_agree': 1.0, 'call_agree': 1.0, 'recalled': 1.0, 'conf_mean': None, 'discarded_chars': 3.0, 'error_kinds': {}}
+done metrics: {'success': 1.0, 'base_success': 0.0, 'delta_success': 1.0, 'tokens_out': 20.0, 'spec_exec_ok': 1.0, 'spec_tool_agree': 1.0, 'spec_call_agree': 1.0, 'n_records': 2}
+SCORE-2 e2e ok
+```
+`run_report.json`, `report.md` and `done.json` were all written, and
+`done.json`'s `metrics` correctly omits `conf_mean` (it is not one of the
+pinned `done.json` metric names, and the pinned ones present are all
+non-null). Cleaned up the three fixture directories (keys `8888iiii8888`,
+`9999jjjj9999`, `aaaakkkkaaaa`) afterward; a `find` over the outputs root
+returned nothing.
+
+**SCORE-3 — a real `score_run.main()` run with a read that raises on the
+second pair.** Built a two-pair `sample` fixture and a `score` run over it
+(no baseline, to isolate the scored-side read loop), then monkeypatched
+`data.trajectory_record.read_dir` to raise `RuntimeError` on its second
+invocation and called `score_run.main(rdir)` directly (not through
+`subprocess`, so the monkeypatch reaches the module). The call raised as
+expected, and the heartbeat file left behind was:
+```
+{"done": 0, "total": 2, "unit": "task", ...}
+{"done": 1, "total": 2, "unit": "task", ...}
+```
+— stopped at `done=1` of `total=2`, no `status: "done"` line, and no
+`done.json` was written. This is the exact shape the finding names: a
+score run that dies mid-read leaves a heartbeat that does not reach
+`done >= total`, so `registry.judge` (which tests `done >= total` before
+`alive`) no longer reports it `done`.
+
+**Before/after comparison for SCORE-3** (`git stash` to the pre-fix code,
+same script): the pre-fix code calls `trajectory_record.read_dir` exactly
+once, over the whole pair list, so the monkeypatch's "raise on the second
+call" never fires (there is only one call) — and the heartbeat file already
+reached `{"done": 2, "total": 2, ..., "status": "done"}` *before* that one
+read call ran, confirming the defect directly: every beat is emitted before
+any record is read, whether or not the read later fails.
+
+**Clean-up.** Deleted all fixture directories from the SCORE-1, SCORE-2 and
+SCORE-3 checks above (the SCORE-1 and SCORE-2 direct fixtures wrote nothing
+under the outputs root — they call `_spec_block` on an in-memory frame built
+under `mktemp -d`, per the finding's own instruction). The SCORE-2 e2e keys
+(`8888iiii8888`, `9999jjjj9999`, `aaaakkkkaaaa`) and the SCORE-3 keys
+(`bbbb1111bbbb`, `cccc2222cccc`) were removed by their scripts; the A8
+keys (`1111aaaa1111`, `2222bbbb2222`, `3333cccc3333`) were removed after the
+A8 rerun. A final `find` over the outputs root for all eight keys returned
+nothing.
+
+### Commits
+
+- `3117e32` — `T10: post-merge fix round 1 (SCORE-1, SCORE-2, SCORE-3)`
+  (all three findings, one commit).
+
+### Self-review and open questions
+
+Every fix is a root-cause correction in the exact function the finding
+names — no special case was added around the wrong logic, the wrong logic
+was replaced outright. SCORE-1's fix is a one-name change (`env_action`
+instead of colliding on `action`); SCORE-2's fix introduces one small
+helper (`_mean`) and routes every existing `.mean()` call through it,
+touching no other arithmetic; SCORE-3's fix reorders the existing read and
+beat calls without changing what either does. No refactor beyond the three
+findings was done, and no other file was touched. AGENT-1, LAUNCH-1,
+LAUNCH-3 and LAUNCH-4 (the other findings the wave-4 review verified `real`)
+are outside `eval/score_run.py` and are not this ticket's — they belong to
+tickets 11 and 12 respectively. No open questions.

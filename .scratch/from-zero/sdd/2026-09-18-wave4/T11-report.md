@@ -606,3 +606,282 @@ exist on this branch.
 - No other findings were in scope for this round; nothing else in
   `agent/inject.py` or `agent/loop.py` was touched.
 - No GPU work, no missing dependency, nothing blocked.
+
+## Post-merge fix round 1
+
+Worktree `/home/y-guo/reproduce/new1-wt/2026-09-18-wave4-T11-postfix1`
+(removed at the end), branch `ticket/2026-09-18-wave4/T11-postfix`, base
+`e8b257d7ffeebdc93d882963ce26314711976141` (HEAD of `from-zero` at dispatch
+time, which already carries this ticket's merged implementation and fix
+round 1). New head after this round:
+`f5aa447` (commit message: `T11: post-merge fix round 1 -- env.close()
+failure no longer escapes the per-task guard`).
+
+### AGENT-1 (important) -- a failure in one task's env.close() escapes the
+per-task guard and ends the whole piece
+
+**The bug.** `agent/loop.py`'s per-task work sat inside
+`try: ... except Exception as exc: ... finally: env.close()`. The guard
+(`except Exception`) covers only the try body; `env.close()` ran in the
+`finally` attached to the *same* try statement, which is not inside the
+guarded region -- a `finally` clause's own exception is never caught by
+that try's own `except`. So a raising `env.close()` propagated straight
+out of the `for split, task_id, seed in triples:` loop and out of `main`,
+past the outer `try/finally: hb.finish()`, ending the piece: every
+remaining triple of that piece's rotation was never walked, and the
+heartbeat's last beat was left however far the walk had gotten (misleadingly
+carrying `status: "done"` from `hb.finish()`'s own finally, despite the
+piece having died partway through).
+
+**Root-cause fix.** `agent/loop.py`, the `finally:` clause of the per-task
+try statement:
+
+```python
+# before
+finally:
+    env.close()
+
+# after
+finally:
+    # a raising close() must cost only this task's teardown, not the piece's walk
+    try:
+        env.close()
+    except Exception as exc:
+        print(
+            f"agent.loop: task {task_id} seed {seed}: env.close() failed: {exc}",
+            file=sys.stderr,
+        )
+```
+
+(`import sys` added to the module's import block.) `env.close()` still runs
+on every path through the per-task try statement -- success, the
+`context_overflow_400` abort, and the generic `task_error` guard -- because
+it stays in the `finally`. What changes is that a raising `close()` no
+longer escapes: it is caught in place, reported on stderr naming the task
+id, the seed and the exception, and the per-task `finally` then completes
+normally, so the enclosing `for` loop proceeds to the next triple exactly
+as it does after any other task's `finally` runs cleanly. The task's own
+record is left exactly as the try/except body already wrote it (its
+`final` row, written before `env.close()` runs at all, is never touched by
+this change) -- this is a pure teardown-error guard, not a new outcome for
+the task's own trajectory.
+
+**Why this is the root cause, not a patch.** The wrong logic was the
+placement of the close call outside any exception guard while looking
+guarded (the same indentation level as the `except`, but a `finally` is
+not covered by its own try's `except`); the fix replaces that placement
+with the correct one in the same spot, with no special case added
+elsewhere and no flag introduced -- `env.close()` is unconditionally
+guarded now, for every task, not only the one the regression check
+happens to break.
+
+### How it was verified
+
+All commands run from the worktree root with the interpreters the ticket
+names, against a fresh `mktemp -d` directory on `sys.path` (never `/tmp`
+itself -- `/tmp/jobs.py` is confirmed still present on this machine, dated
+Aug 2, and shadows the repo's `jobs` package the moment bare `/tmp` is put
+on `sys.path`).
+
+```
+A=/home/y-guo/reproduce/new1/external/appworld/venv/bin/python
+P=/home/y-guo/reproduce/new1/external/probe-env/bin/python
+V=/home/y-guo/reproduce/new1/external/vllm-env/bin/python
+FIXDIR=$(mktemp -d)   # /tmp/tmp.YsvYAKdtqI in this run
+```
+
+**A1** (unaffected file, rerun for completeness)
+```
+1 ['note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2']
+1 ['note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2']
+1 ['note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2']
+1 ['note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2']
+```
+
+**A5** (unaffected file, rerun for completeness) -> `NO_CONTROL_TOKEN`.
+
+**B1** (unaffected file, rerun for completeness)
+```
+1 ['reasoning', 'content', 'usage', 'wall_s', 'finish_reason', 'stop_reason', 'prefix_tok', 'prefix_sha', 'gen_ids', 'n_inject', 'discard']
+1 ['reasoning', 'content', 'usage', 'wall_s', 'finish_reason', 'stop_reason', 'prefix_tok', 'prefix_sha', 'gen_ids', 'n_inject', 'discard']
+```
+
+**C1** (unaffected file, rerun for completeness) -> `inject ok 1`, then
+`16:ARMS = ("probe", "no_probe", "probe_nofill")`.
+
+**D1**
+```
+$ "$A" -c "import agent.loop as l; print(l.VERSION)"
+1
+$ grep -n '^ *import models\|^ *from models import\|from models\.' agent/loop.py | grep -v 'models\.agent_models\.service\|models\.probe_models\.service'
+(no output, grep exit 1 -- the pass)
+```
+
+**D2**
+```
+usage: python -m agent.loop [-h] --run-dir RUN_DIR --piece PIECE
+
+options:
+  -h, --help         show this help message and exit
+  --run-dir RUN_DIR
+  --piece PIECE      i/n
+```
+
+**D-fixture**: written to `$FIXDIR/loopfix.py`, content byte-for-byte the
+ticket's own (same file the two earlier rounds used, rewritten fresh into
+a new `mktemp -d` directory for this round rather than reused, per the
+dispatch's fixture instruction).
+
+**D3**
+```
+records: ['t_1__s42.jsonl', 't_2__s42.jsonl']
+heartbeat: ['0-0.jsonl']
+first beat: {'done': 0, 'total': 2, 'unit': 'task'} last status: done
+```
+
+**D4** -> `record ok`.
+
+**D5**
+```
+render refused: True True True
+family refused: True True True
+weights refused: True True True
+health ok
+```
+
+**D6**
+```
+after piece 0: ['t_1__s42.jsonl', 't_2__s42.jsonl']
+after piece 1: ['t_1__s42.jsonl', 't_2__s42.jsonl']
+nothing rewritten: True
+heartbeats: ['0-0.jsonl', '1-0.jsonl']
+```
+
+`python3 run.py selfcheck`: skipped again -- `run.py` still does not exist
+on this branch.
+
+**New check -- the AGENT-1 regression (not added to the repo; the ticket
+names no test seam for this, so it is run directly against the worktree
+and pasted here in full, per the implementer protocol's "write a test
+file only where the ticket names a test seam").** A `FakeEnv` subclassing
+the D-fixture's own `FakeEnv`, whose `close()` raises `RuntimeError` on
+exactly the first of three requested triples; `n_tasks` raised to 3 in the
+fixture's settings so all three of `t_1`, `t_2`, `t_3` are requested.
+
+```python
+"$A" - <<'PY'
+import sys, io, json, pathlib, tempfile
+sys.path.insert(0, "$FIXDIR")
+import loopfix
+from data.trajectory_record import read
+
+TASKS3 = {"train": ["t_1", "t_2", "t_3"], "dev": ["d_1"], "test": ["x_1"]}
+
+class FakeEnvCloseRaises(loopfix.FakeEnv):
+    def __init__(self):
+        super().__init__()
+        self.n_closes = 0
+        self.opened = []
+    def tasks(self, split):
+        return list(TASKS3[split])
+    def open(self, task_id, seed):
+        self.opened.append(task_id)
+        super().open(task_id, seed)
+    def close(self):
+        self.n_closes += 1
+        if self.n_closes == 1:
+            raise RuntimeError("world.close failed")
+        super().close()
+
+env_holder = {}
+def make_env(name):
+    e = FakeEnvCloseRaises()
+    env_holder["env"] = e
+    return e
+
+loopfix.loop.open_env = make_env
+loopfix.loop.AgentClient = loopfix.FakeAgentClient
+loopfix.loop.ProbeClient = loopfix.FakeProbeClient
+
+rd = pathlib.Path(tempfile.mkdtemp())
+(rd / "settings.yaml").write_text(loopfix.SETTINGS.replace("n_tasks: 2", "n_tasks: 3"))
+for kind in ("agent", "probe"):
+    (rd / ("service_%s_0.json" % kind)).write_text(json.dumps(
+        {"kind": kind, "replica": 0, "base_url": "http://127.0.0.1:1/v1",
+         "host": "localhost", "port": 1, "pid": 0, "started_at": 0.0,
+         "flags": [], "claims": {}, "attached_to": None}))
+
+stderr_buf = io.StringIO()
+old_stderr = sys.stderr
+sys.stderr = stderr_buf
+try:
+    loopfix.loop.main(rd, (0, 1))
+finally:
+    sys.stderr = old_stderr
+
+captured_stderr = stderr_buf.getvalue()
+recs = sorted((rd / "records").glob("*.jsonl"))
+kinds_per_file = {p.name: read(p)["type"].to_list() for p in recs}
+for name, types in kinds_per_file.items():
+    assert types[0] == "meta" and types[-1] == "final", (name, types)
+hb = sorted((rd / "heartbeat").glob("*.jsonl"))
+last = json.loads(hb[0].read_text().splitlines()[-1])
+print("opened tasks:", env_holder["env"].opened)
+print("records:", [p.name for p in recs])
+print("last heartbeat status:", last.get("status"))
+print("stderr:", captured_stderr.strip())
+assert env_holder["env"].opened == ["t_1", "t_2", "t_3"]
+assert len(recs) == 3
+assert last.get("status") == "done"
+print("AGENT-1 regression ok (post-fix)")
+PY
+```
+
+Output against the fixed code:
+```
+opened tasks: ['t_1', 't_2', 't_3']
+records: ['t_1__s42.jsonl', 't_2__s42.jsonl', 't_3__s42.jsonl']
+last heartbeat status: done
+stderr: agent.loop: task t_1 seed 42: env.close() failed: world.close failed
+AGENT-1 regression ok (post-fix)
+```
+All three tasks were opened despite the first one's teardown raising; all
+three record files exist, each starting with a `meta` row and ending in a
+`final` row (`t_1`'s own trajectory record is untouched by its close
+failure); the heartbeat's last beat is genuinely `done` because the walk
+actually finished all three triples this time; and the stderr line names
+the task (`t_1`), the seed (`42`) and the exception (`world.close
+failed`), exactly as the finding asks.
+
+Output against the pre-fix code (the `finally: env.close()` line restored
+to its unguarded form and rerun, to confirm the check is not vacuous):
+```
+main() raised RuntimeError (the pre-fix bug): world.close failed
+opened tasks: ['t_1']
+records: ['t_1__s42.jsonl']
+last heartbeat line: {"done": 0, "total": 3, "unit": "task", "ts": ..., "status": "done"}
+```
+Only `t_1` was ever opened -- `t_2` and `t_3` were never reached, and the
+heartbeat's last line already carries `status: "done"` at `done: 0` out of
+`total: 3`, which is exactly the misleading "done" verdict the finding
+describes (`hb.finish()` runs in `main`'s own outer `finally`, so it fires
+even though the walk died after zero completed tasks). The fix was then
+reapplied before committing.
+
+### Commit list (post-merge fix round 1)
+
+- `f5aa447` -- `T11: post-merge fix round 1 -- env.close() failure no
+  longer escapes the per-task guard` (the one finding, one logical unit).
+
+### Self-review and open questions (post-merge fix round 1)
+
+- Only `agent/loop.py` was touched; `README.md`'s Ticket 11 annotation
+  block describes `loop.py` at a level ("run each task and seed: open,
+  step, parse, act, until the environment reports the task completed or
+  max_steps is reached; claim tasks across pieces; write the record") that
+  says nothing about close-error handling, so no line of it became wrong
+  and none was edited, per the dispatch's "README.md only if a line of it
+  becomes wrong."
+- The fix is scoped to exactly the one open finding (AGENT-1); nothing
+  else in `agent/loop.py` was touched, no refactor beyond the finding.
+- No GPU work, no missing dependency, nothing blocked.

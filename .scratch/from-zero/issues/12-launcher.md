@@ -473,3 +473,30 @@ An implementer that reaches any of these returns BLOCKED with the command.
   file of this run's own dead launch can be matched. Main-session checks after
   the merge: the file imports under the probe interpreter; no `dirty.patch` and
   no `meta.json` in the repo root; no `/home/`, `/net/` or `legacy` in the file.
+- 2026-09-18, wave 4 post-merge review and fix (main session of wave 4; records
+  `post-merge-review.json` and `post-merge-fix.json` under
+  `.scratch/from-zero/sdd/2026-09-18-wave4/`). Three real findings, fixed on
+  `ticket/2026-09-18-wave4/T12-postfix` (`3661305`, one round, re-reviewed by
+  opus) and merged as `c52088d`: an attached agent service's command line
+  carried no `--gpus`, which the merged service requires, so every
+  `--attach-only` piece exited at argparse (LAUNCH-1, SEAMS-1 — fix round 1 had
+  dropped the flag; it is now always present and shell-quoted, and the main
+  session parsed both command lines with the service's own parser: `gpus ''`
+  with `attach_only True`, and `gpus '0,1'`); `_piece_alive` ignored the
+  failed-host set of `registry.live_sessions()`, so an unreachable host opened
+  the launch gate and failed the alive check (LAUNCH-3, SEAMS-3); `launch()`
+  wrote no `meta.json` `launches` entry (LAUNCH-4; one builder now serves
+  `launch` and `refire`). Refuted: LAUNCH-2 (a stale endpoint file matched by
+  the attach test). Minors left open: `teardown_services` counts a session as
+  ended only when `tmux` exited 0 (LAUNCH-5); the agent-service card refusal
+  names only `serving.host` (LAUNCH-6); piece entries record the login machine
+  under its alias while other hosts are canonical, and the port reservation
+  compares the raw strings (LAUNCH-7, SEAMS-4); a missing
+  `resolved["probe_temperature"]` reaches the probe service as the string
+  `None` (LAUNCH-8); the module docstring's first line is not the README
+  sentence (LAUNCH-9), and the README block lacks contracts 0.2's `offers:`
+  line (SEAMS-7); `launch` and `refire` hand the one `launches` builder
+  different value shapes for `cards` and `cmd` (N1-1); `registry._alive_on`
+  tests `failed_hosts` on the raw host string while `launch._piece_alive`
+  canonicalises first, so the registry side misses a piece recorded under an
+  alias (N1-2, a wave-1 file).

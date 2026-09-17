@@ -691,3 +691,27 @@ requested pair count.
   `eval/methods/cgen.py` and `cparam.py`), while both `inject.yaml` settings
   still fail, now on the missing `train/methods/cgen.py` (ticket 13). `M-E2`
   and `M-E3` stay with the GPU list after wave 6.
+- 2026-09-18, wave 4 post-merge review and fix (main session of wave 4; records
+  `post-merge-review.json` and `post-merge-fix.json` under
+  `.scratch/from-zero/sdd/2026-09-18-wave4/`). Three real findings in
+  `eval/score_run.py`, fixed on `ticket/2026-09-18-wave4/T10-postfix` (`3117e32`,
+  one round, re-reviewed by opus) and merged as `b19b5ae`: `spec.tool_agree`,
+  `call_agree` and `recalled` were always 0.0, because the spec frame already
+  carries an `action` column and the join named the env side `action_right`
+  (SCORE-1; the env side is now selected as `env_action`); an all-null
+  `spec.conf`, which `inject.fire_nth_cut > 0` produces on every row, raised
+  `TypeError` before any report was written (SCORE-2, SEAMS-2; every mean goes
+  through one null-safe `_mean`); every heartbeat beat was emitted before the
+  first record was read, so `registry.judge` called a crashed score run `done`
+  (SCORE-3, SEAMS-5; the records are read pair by pair with one beat after each).
+  Refuted: GENEVAL-1 (the generator join lowers `n` when a fired test event has
+  no prediction row — the ticket and 1.4 pin the inner join, and errata entry
+  5.2 `train.max_len` makes differing drop sets the designed outcome). Minors
+  left open: `eval.theta_from` naming a generator eval dies with a bare
+  `KeyError: 'chosen'` (GENEVAL-2); `probe_eval.run` reads
+  `stage_extra["labels"]` before the generator gates (GENEVAL-3); a null
+  `text_pred` reaches `match` unguarded (GENEVAL-4); `method_table` renders no
+  row, so no `PENDING`, for a group with no report yet (SCORE-4); a sweep group
+  takes backbone and method from its first member (SCORE-5); `spec.exec_ok`,
+  `tool_agree` and `call_agree` report 0.0 instead of null for a
+  `probe_nofill` run, whose spec rows hold nulls (SEAMS-6, N1-1).

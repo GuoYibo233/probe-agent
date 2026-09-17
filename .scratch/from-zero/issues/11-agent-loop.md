@@ -1165,3 +1165,15 @@ majority of rows under `probe_nofill`.
   its session name `<stage>-<key>-<i>` equals this ticket's
   `meta.owner_session` and its heartbeat file index. `M-A1` to `M-A4` stay with
   the GPU list after wave 6.
+- 2026-09-18, wave 4 post-merge review and fix (main session of wave 4; records
+  `post-merge-review.json` and `post-merge-fix.json` under
+  `.scratch/from-zero/sdd/2026-09-18-wave4/`). One real finding, fixed on
+  `ticket/2026-09-18-wave4/T11-postfix` (`f5aa447`, one round, re-reviewed by
+  opus) and merged as `7e929af`: an exception out of `env.close()` left the
+  per-task guard and ended the whole piece (AGENT-1); the close is now caught
+  inside the task, reported on stderr with the task and the seed, and the walk
+  goes on. Minors left open: a raising `env.judge()` is recorded as
+  `task_error` with `completed=false` and not as the ticket's `eval_error`
+  (AGENT-2); the two `*_e2` formats' system text arrives with a doubled blank
+  line (AGENT-3); the close-failure line prints `str(exc)` only, so an
+  exception without a message names nothing (N1-1).
