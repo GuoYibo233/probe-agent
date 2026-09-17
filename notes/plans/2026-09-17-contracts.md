@@ -4973,7 +4973,9 @@ Each line: the choice, the alternative it beat, why this one.
     because the lock file lives on NFSv3 home and four hosts can reach it, so
     the convention is the only thing between the design and two hosts passing
     the launch gate at once. The price is one key in `constants/` and a refusal
-    a person can hit on the wrong terminal.
+    a person can hit on the wrong terminal. **Confirmed by gyb, 2026-09-17:**
+    the restriction stays, and `login_host` stays `shiga`, the one machine gyb
+    launches from.
 35. **`refire` and `retry` are `run.py` subcommands and `jobs/launch.py` has no
     `__main__`** (2.3, 2.4, 8.6); alternative: `jobs/launch.py --refire <dir>`,
     as earlier drafts wrote it, and a `--retry` flag on the piece command.
