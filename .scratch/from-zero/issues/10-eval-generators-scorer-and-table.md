@@ -1,6 +1,6 @@
 # 10 the generator metrics, the run scorer and the matrix table
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02, 03, 04, 05, 08
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -49,11 +49,15 @@ comparison `train/methods/cgen.py`'s `validate` also calls:
 
 1. `t = env.split_args(target)`; **raise**, naming the target, when it is None —
    the build gate of 2.5 makes a non-round-trippable `call` impossible, so a
-   failure here is a defect, not data.
+   failure here is a defect, not data. **`split_args` returns a plain 3-tuple**
+   `(tool, args, (start, end))` with `args` a list of `(key, value)` pairs
+   (`data/environments/__init__.py`, 4.2), so unpack it:
+   `t_tool, t_args, _ = env.split_args(target)`.
 2. `p = env.split_args(pred)`; when None, return all three False (the port of
    `parse_call`'s `parse_fail`, `eval_causal_call.py:172-203`, now the
-   environment's business).
-3. `tool_ok = p.tool == t.tool`.
+   environment's business). Otherwise `p_tool, p_args, _ = p`.
+3. `tool_ok = p_tool == t_tool`. Step 4's two argument lists are `t_args` and
+   `p_args`.
 4. `params_all_ok`: the union-by-key comparison of `eval_causal_call.py:205-226`
    over the two argument lists — group each side's `(key, value)` pairs by key in
    call order, walk `list(truth_keys) + [k for k in gen_keys if k not in
@@ -245,11 +249,24 @@ it.
    **Decision already made (errata):** the registry offers no raw-row reader, so
    `table` calls `registry.ls(...)` and the folded row carries the start row's
    `stage`, `key`, `dir`, `diff`, `parent` and `swept`.
-2. Per row, resolve the cell **without opening any `settings.yaml`**: `backbone`
-   is `diff["models"]["probe"]` when present and the schema default for
-   `models.probe` otherwise; `method` is `diff["probe"]["method"]` when present
-   and the schema default otherwise (`diff` is `settings_diff.yaml` as JSON, 8.1,
-   so a default-valued field is absent from it).
+2. Per row, resolve the cell **without opening any `settings.yaml`**. `diff` is
+   `settings_diff.yaml` as JSON (8.1), which `schema.fields_of` writes as a
+   **flat map of dotted field name to value** — `{"probe.method": "cgen", ...}`,
+   never a nested dict — and a default-valued field is absent from it.
+   `method` is `diff.get("probe.method")`, the schema default for
+   `probe.method` when absent.
+   **`backbone` is not in an eval row's `diff` under any spelling** (errata,
+   wave-4 precheck): `STAGES["eval"]`'s projection is `probe.method` plus the
+   `eval` section, so `models.probe` never enters it. It is read off the
+   **train** row instead: take `upstream["train"]` from the eval run's
+   `<row["dir"]>/meta.json` (the file `probe_eval` already reads for the
+   build-key gate), find the row of the same `registry.ls(...)` result whose
+   `stage` is `"train"` and whose `key` equals it, and `backbone` is that row's
+   `diff.get("models.probe")`, the schema default for `models.probe` when
+   absent. An eval row with no `meta.json`, or whose train row is not in the
+   result, prints `backbone` as `?` and still renders. So step 1 keeps the whole
+   `registry.ls(workflow, debug=False)` result for this lookup and filters
+   `stage == "eval"` for the table rows.
 3. Group the sweep children: the group key is `row["parent"]` when it is set and
    `row["setting"]` otherwise (5.5).
 4. Per row, `read_report(Path(row["dir"]))`; a directory with no
@@ -369,7 +386,7 @@ assert r.returncode == 0, r.returncode
     {"stage": "eval", "key": EK0, "upstream": {"train": TK0}}))
 f = pl.read_parquet(edir / "fires.parquet")
 print("reference fires:", f.height, sorted(set(f["split"].to_list())))
-assert f.filter(f["split"] == "test").filter(f["risk"] == 0.05).height == 10
+assert f.filter((pl.col("split") == "test") & (pl.col("risk") == 0.05)).height == 10
 print("A6a ok")
 PY
 ```
@@ -485,7 +502,7 @@ from data.environments import open_env, requested_pairs
 env = open_env("appworld")
 SK, BK, RK = "1111aaaa1111", "2222bbbb2222", "3333cccc3333"
 sdir = schema.run_dir_of("sample", SK, debug=True)
-bdir = schema.run_dir_of("sample", BK, debug=True)
+bdir = schema.run_dir_of("sample", BK, debug=False)   # a reference is located without the debug overlay (step 3)
 rdir = schema.run_dir_of("score",  RK, debug=True)
 for d in (sdir, bdir, rdir): d.mkdir(parents=True, exist_ok=True)
 triples = requested_pairs(env, ["train"], None, 2, [42])
@@ -555,17 +572,29 @@ named reason on stderr:
 "$PY" -c "
 import sys; sys.path.insert(0, '.')
 from experimental_settings import schema
-p = schema.run_dir_of('sample', '2222bbbb2222', debug=True) / 'settings.yaml'
+p = schema.run_dir_of('sample', '2222bbbb2222', debug=False) / 'settings.yaml'
 p.write_text(p.read_text().replace('temperature: 1.0', 'temperature: 0.7'))"
 "$PY" -m eval.score_run --run-dir "$("$PY" -c "import sys;sys.path.insert(0,'.');from experimental_settings import schema;print(schema.run_dir_of('score','3333cccc3333',debug=True))")" ; echo "exit=$?"
 ```
 Expected: a message naming both run directories and `generation.temperature`,
-`exit=1`. Then delete one baseline record file and rerun the same command:
-expected a message naming the missing `(task_id, seed)` pair, `exit=1`.
+`exit=1`. Then **put the baseline's temperature back** — the same-setup gate
+(step 4) runs before the completeness gate (step 5), so without this the second
+refusal would be the first one again:
+```bash
+"$PY" -c "
+import sys; sys.path.insert(0, '.')
+from experimental_settings import schema
+p = schema.run_dir_of('sample', '2222bbbb2222', debug=False) / 'settings.yaml'
+p.write_text(p.read_text().replace('temperature: 0.7', 'temperature: 1.0'))"
+```
+delete one baseline record file (one `*.jsonl` under that directory's
+`records/`) and rerun the same `eval.score_run` command: expected a message
+naming the missing `(task_id, seed)` pair, `exit=1`.
 
 **Clean up after A8**: delete the three fixture directories and name the keys
-(`1111aaaa1111`, `2222bbbb2222`, `3333cccc3333`, all under `debug/`) in your
-report.
+in your report — `1111aaaa1111` (sample) and `3333cccc3333` (score) under
+`debug/`, and `2222bbbb2222` (the baseline sample) in the **non-debug** tree,
+because a resolved reference is located without the debug overlay.
 
 **A9 — `method_table`.**
 ```bash
@@ -613,3 +642,24 @@ equal to the `spec` row count of the inject records and `paired.n` equal to the
 requested pair count.
 
 ## Comments
+
+- 2026-09-18, wave 4 precheck (main session of wave 4, before dispatch; record
+  in `.scratch/from-zero/sdd/2026-09-18-wave4/precheck.json`). Five corrections
+  were made to this ticket's body, all found against the merged code: (1)
+  `match` steps 1-3 unpack `env.split_args`'s plain 3-tuple instead of reading
+  `.tool` (T10-4); (2) A6a's last assertion is one filter expression — the
+  chained form applied a 40-row mask to a 20-row frame and raised `ShapeError`
+  (T10-1); (3) A8 builds the baseline sample run in the non-debug tree, where
+  step 3 locates it, and the first refusal command and the clean-up note follow
+  (T10-2); (4) A8 restores `temperature: 1.0` before the second refusal, because
+  the same-setup gate runs before the completeness gate (T10-3); (5)
+  `method_table` step 2 reads `diff` as the flat dotted map `schema.fields_of`
+  writes, and takes `backbone` from the train row named by the eval run's
+  `meta.json` `upstream["train"]` (T10-5, T10-6, X-1, X-2). The source of
+  `backbone` is an assumption of this precheck, open for the owner; it is in the
+  errata under "Added by the wave-4 precheck".
+- 2026-09-18, same precheck, not the implementer's: `M-E2` as written cannot
+  show an eval row, because a `--debug` walk's start row carries `debug: true`
+  and `table` is pinned to `registry.ls(workflow, debug=False)` (T10-7). Step 1
+  stays as written; whether `M-E2` runs over a non-debug run or `table` learns
+  to show debug rows is the owner's call.

@@ -1,6 +1,6 @@
 # 12 the launcher
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01, 02, 03, 04, 05, 06
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7, 9)
 
@@ -155,6 +155,13 @@ spec section 9 forbids.
   `kind: service`, `ssh <host> tmux kill-session -t <session>`, **skipped for a
   piece whose owning `run_id` appears in the `attached_to` field of another live
   run's `service_<kind>_<replica>.json`**. Returns the sessions it ended.
+  **A host that normalises to `login_host` is reached with a local
+  `tmux kill-session` and no `ssh`** — the same local-or-`ssh` branch the piece
+  start above takes (errata, wave-4 precheck): a `sample` run's `--render-only`
+  probe service sits on `login_host`, so the one service session such a run
+  tears down is a local one, and an `ssh` to this machine is what the errata on
+  `registry.session_alive` already records as unconfigured. A session counts as
+  ended only when the kill command reached its host.
 - **`refire(run_dir, git, piece=None)` (2.3).** Probe that piece's tmux session on
   the host in its `meta.json` entry, through `registry.session_alive(host,
   session)`, and **refuse while it is alive**, naming the session and the host
@@ -252,6 +259,7 @@ writes into `jobs/runs.jsonl` or `jobs/RESULTS.md`** (spec section 9): the
 exemption is proved as a pure function over a fabricated path list, and the
 refusal against the worktree as it stands.
 ```bash
+T2=$(mktemp -d)     # this block's own directory: a variable set in B2's shell does not survive into this one
 "$PR" -c "
 import sys, pathlib; sys.path.insert(0,'.')
 from jobs import launch
@@ -354,6 +362,7 @@ an implementer run `ssh` — which spec section 7 forbids — or get "alive"
 fail-closed from a refused `ssh` and pass for the wrong reason. The shim below
 proves no `ssh` was issued.
 ```bash
+T3=$(mktemp -d)     # this block's own directory: a variable set in B6's shell does not survive into this one
 tmux new-session -d -s selfcheck-refire-probe 'sleep 60'
 SHIM=$(mktemp -d)
 printf '#!/bin/sh\ntouch %s/ssh_was_called\nexit 255\n' "$SHIM" > "$SHIM/ssh"
@@ -437,3 +446,12 @@ An implementer that reaches any of these returns BLOCKED with the command.
   the comparison of the whole `result:` block in 7.4's attach test, which this
   ticket already carries, is the only one made.
 
+- 2026-09-18, wave 4 precheck (main session of wave 4, before dispatch; record
+  in `.scratch/from-zero/sdd/2026-09-18-wave4/precheck.json`). Two corrections
+  were made to this ticket's body: (1) `B3` and `B7` each create their own
+  temporary directory — they used `$T2` and `$T3`, which `B2` and `B6` set in
+  another shell, so run as separate commands they wrote `dirty.patch` and
+  `meta.json` into the repo root and still printed the expected output (T12-1);
+  (2) `teardown_services` reaches a host that normalises to `login_host` with a
+  local `tmux kill-session` and no `ssh`, the branch the piece start already
+  takes (T12-5; errata under "Added by the wave-4 precheck").

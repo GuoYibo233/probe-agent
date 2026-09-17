@@ -1,6 +1,6 @@
 # 11 the agent loop: formats, generation, injection, the task walk
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02, 03, 04, 05, 06, 07
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -57,7 +57,7 @@ text**:
 | `p1_e1` | `p1` | `False` | `None` | `"[Prefetch: " + EXPLAIN + "]\n"` |
 | `p1_e2` | `p1` | `False` | `SYSTEM_EXTRA` | `MARKER + "\n"` |
 | `p2_e1` | `p2` | `True` | `None` | `EXPLAIN` |
-| `p2_e2` | `p2` | `True` | `SYSTEM_EXTRA` | `"{call} = {exec_out}"` |
+| `p2_e2` | `p2` | `True` | `SYSTEM_EXTRA` | `"{call} = {result}"` |
 
 with the three text constants copied verbatim from `inject_format.py:28-34`:
 
@@ -125,8 +125,16 @@ def ids_sha(ids: list[int]) -> str
    process** (errata): `mod = models.agent(cfg.models.agent).module`, refuse when
    `mod.NAME != cfg.models.agent_row["family"]`.
 2. Open one stream with `stream(clients, cfg, prefix_ids, seed)`; accumulate
-   `raw` (text) and `gen_ids`, and call `state = mod.parse(delta, state)` per
-   chunk, keeping the two keys `reasoning` and `content`.
+   `raw` (text) and `gen_ids`, and call `out = mod.parse(delta, state)` per
+   chunk, keeping the two keys `reasoning` and `content` of `out`. **`state` is
+   one dict per step, created as `{}` before the first chunk, handed to every
+   `parse` call and never rebound to the return value**: the merged
+   `models/agent_models/gptoss.parse` keeps its accumulator inside the dict it
+   is handed (`state["raw"]`) and returns a **new** two-key dict that does not
+   carry it (6.2: "per-family bookkeeping lives in `state` and never in the
+   returned dict"), so `state = mod.parse(delta, state)` would parse every
+   chunk after the first alone — `B4`'s `"Hi there." in res.reasoning` fails on
+   that spelling.
 3. **The step ends when the stream ends** (errata: `end_of_turn(ids)` gets no
    caller in `agent/`; `live_appworld.py:539-554`). Fill `StepResult`:
    `reasoning`/`content` from the last `parse` result; `usage` summed over the
@@ -211,8 +219,10 @@ checkpoints).
    raises. Stream over
    `generate.stream(clients, cfg, prefix_ids, seed,
    budget=max(1, cfg.generation.max_step_tokens - len(gen_ids)))`.
-2. Per chunk, `state = mod.parse(delta, state)`;
-   `thinking_so_far = state["reasoning"]`. **Stop scoring for the rest of the
+2. Per chunk, `out = mod.parse(delta, state)`;
+   `thinking_so_far = out["reasoning"]` — `state` is the accumulator dict of
+   `generate.step`'s step 2, never rebound to the return value, and the
+   invariant is **`state["raw"] == raw` at all times**. **Stop scoring for the rest of the
    step as soon as `raw.endswith(thinking_so_far)` stops holding**; while it
    holds, `ts = len(raw) - len(thinking_so_far)`. **This is the riskiest decision
    in the folder (errata):** `parse` returns only the two grown channel texts,
@@ -256,8 +266,16 @@ checkpoints).
      (the seam rule, errata);
    - `placement == "p2"`: `note = mod.wrap_prefetch(body, FORMATS[fmt].system_text)`.
    `note_ids = clients.probe.encode(note, special=FORMATS[fmt].needs_special)["ids"]`.
-8. Write the `spec` row with all of 1.1's columns: `fire_index` (0-based within
-   the step), `cut`, `n_checked`, `conf`, `pred_label`, `gen_call`, `exec_code`,
+8. Write the `spec` row with all of 1.1's columns: **`step` (`step_index` — 1.1
+   declares `step` on every row kind but `meta`, the writer stamps only `type`
+   and `ts`, and `eval/score_run.py` pairs a `spec` row with the `env` row of
+   the same step through it)**, `fire_index` (0-based within
+   the step), `cut`, `n_checked` (**the cuts counted in this step up to and
+   including this one**, so the first cut of a step records 1 — errata: 1.1's
+   table says "before this one", while `:476,516` increment before the score
+   call, `fire_nth_cut` fires when `n_checked == cfg.inject.fire_nth_cut`, and
+   `C4` asserts 1; under `fire_nth_cut > 0` a counted cut is one that would have
+   been scored), `conf`, `pred_label`, `gen_call`, `exec_code`,
    `arg_modes`, `exec_out`, `exec_ok`, `error_kind`, `note`, `format`
    (`cfg.inject.format`), `head_tok` (`k`), `head_chars` (`len(head_txt) - ts`),
    `note_tok` (`len(note_ids)`), `discarded_chars`
@@ -266,9 +284,12 @@ checkpoints).
 9. Reset the stream state exactly as `:529-535`: `raw = head_txt + note`,
    `gen_ids = head_ids + note_ids`, `bounds = [(len(raw), len(gen_ids))]`, the
    scored-cut set cleared, `accepted = (len(head_txt) - ts) + len(note)` so the
-   text before the splice is not re-scored; close the stream and re-issue.
+   text before the splice is not re-scored; **the parse accumulator is rebuilt
+   from the new `raw`** — `state = {}` then `out = mod.parse(raw, state)` — so
+   `state["raw"] == raw` holds again (errata); close the stream and re-issue.
 10. The `resume` row is written when the next fire arrives or when the step ends
-    with a fire outstanding (`:396-408`, `:527-528`, `:548-550`): `fire_index`,
+    with a fire outstanding (`:396-408`, `:527-528`, `:548-550`): `step`
+    (`step_index`, as on the `spec` row), `fire_index`,
     `overflow_tok`, `new_tok`, `match_len`, `identical`, `stop_reason`.
 11. Return a `StepResult` whose `n_inject` is the fire count and whose `discard`
     accumulates `chars`, `tokens` and `events` (`:512-514`). Everything else is
@@ -1109,3 +1130,18 @@ majority of rows under `probe_nofill`.
   `print(1+1) -> 2\n`, so the two texts differ; `AppWorld.step` returns
   `'print(1+1)\n'` for an ordinary code block and `''` for an empty one. The
   ruling is the last entry of `.scratch/from-zero/contract-errata.md`.
+- 2026-09-18, wave 4 precheck (main session of wave 4, before dispatch; record
+  in `.scratch/from-zero/sdd/2026-09-18-wave4/precheck.json`). Four corrections
+  were made to this ticket's body, all found against the merged code: (1) the
+  `p2_e2` template is `"{call} = {result}"`, legacy's spelling, which the
+  `.format(call=call, result=exec_out)` rule needs (T11-2); (2) the parse
+  accumulator: `out = mod.parse(delta, state)` with `state` one dict per step
+  that is never rebound, in `generate.step` step 2 and `inject.step` step 2, and
+  rebuilt from the new `raw` after a splice in step 9 (T11-1) — the merged
+  `gptoss.parse` keeps `state["raw"]` in the dict it is handed and returns a new
+  two-key dict; (3) `n_checked` counts the cuts of the step up to and including
+  this one, so the first cut records 1, which is what `C4` asserts (T11-3); (4)
+  the `spec` and the `resume` row carry `step=step_index` (T11-4, X-4), which
+  1.1 declares on every row kind but `meta` and ticket 10's scorer joins on.
+  Items (2)'s rebuild rule and (3) are in the errata under "Added by the wave-4
+  precheck".
