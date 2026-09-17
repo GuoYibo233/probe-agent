@@ -201,8 +201,20 @@ def _pieces_of_row(run_id: str, row: dict, meta_by_run: dict) -> list[dict]:
 
 
 def _piece_alive(piece: dict, live_sessions) -> bool:
-    session = piece.get("session")
-    return bool(session) and session in live_sessions
+    """A piece is alive when its session is a live one, or — fail-closed,
+    3.4/8.0, `jobs/registry._alive_on`'s own rule — when its host's probe
+    never answered at all: `registry.live_sessions()` then names that host
+    in the returned set's `failed_hosts`, the canonical `hosts:` name (the
+    same normalisation `_canonical_host` gives every other host comparison
+    in this file). A plain set (no `failed_hosts` attribute) has no failed
+    hosts, so a bare-membership caller sees no change."""
+    host, session = piece.get("host"), piece.get("session")
+    if not host or not session:
+        return False
+    failed_hosts = getattr(live_sessions, "failed_hosts", None)
+    if failed_hosts and _canonical_host(host) in failed_hosts:
+        return True
+    return session in live_sessions
 
 
 def gate_open_row(open_rows, meta_by_run, live_sessions, now_ts, beats=None) -> str | None:
@@ -314,14 +326,15 @@ def piece_command(python, module, run_dir, piece, n, gpus, log) -> str:
 def _agent_service_cmd(python, run_dir, model_alias, port, gpus, replica, *,
                         attach_only, attached_to, log) -> str:
     """7.1's serve line, plus the `--replica` and `--attached-to` flags of
-    errata 7.1/1.5. `--gpus` is omitted when the piece takes no card (an
-    attached replica), the same way the probe service's checkpoint/device
-    flags are omitted under `--render-only`."""
+    errata 7.1/1.5. `--gpus` is unbracketed on every serve line (7.1), so it
+    is always present; its value is shell-quoted (`shlex.quote`) so a
+    card-less, attached replica's empty value survives tmux's shell as a
+    real, empty token — `--gpus ''` — instead of vanishing under ordinary
+    word-splitting and shifting every flag after it onto the previous
+    flag's place."""
     parts = [python, "-m", "models.agent_models.service", "serve",
               "--run-dir", str(run_dir), "--model", model_alias,
-              "--port", str(port)]
-    if gpus:
-        parts += ["--gpus", gpus]
+              "--port", str(port), "--gpus", shlex.quote(gpus)]
     parts += ["--replica", str(replica)]
     if attach_only:
         parts += ["--attach-only", "--attached-to", attached_to]
@@ -654,6 +667,20 @@ def _wait_for_endpoint(run_dir: Path, piece: dict) -> str:
     sys.exit(f"jobs/launch.py: {path} did not appear within launch_timeout_s")
 
 
+def _launch_entry(git, *, host, cards, pieces, cmd) -> dict:
+    """One entry for `meta.json`'s `launches` list (8.3): `{t, host, commit,
+    branch, dirty_count, dirty_files, cards, pieces, cmd}`, from the `git`
+    dict the caller was handed. The one builder both `launch()` (many
+    pieces, one login-machine event) and `refire()` (one restarted piece)
+    go through, so the two write one shape."""
+    return {
+        "t": _now(), "host": host,
+        "commit": git.get("commit"), "branch": git.get("branch"),
+        "dirty_count": git.get("dirty_count"), "dirty_files": git.get("dirty_files"),
+        "cards": cards, "pieces": pieces, "cmd": cmd,
+    }
+
+
 def _with_ended(placed: list[dict], ended_sessions: list[str]) -> list[dict]:
     out = []
     for p in placed:
@@ -823,10 +850,17 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
             "status": "launching",
         }
         registry.append_start(start_row)
+        launch_entry = _launch_entry(
+            git, host=_login_host(),
+            cards={p["index"]: p.get("gpus", "") for p in persisted_pieces},
+            pieces=[p["index"] for p in persisted_pieces],
+            cmd={p["index"]: p.get("cmd", "") for p in persisted_pieces},
+        )
         registry.write_meta(run_dir, stage=stage, key=key, dir=run_dir_str,
                              versions=start_row["versions"], upstream=start_row["upstream"],
                              diff=start_row["diff"], debug=setting._debug,
-                             pieces=persisted_pieces, split_files=split_files)
+                             pieces=persisted_pieces, split_files=split_files,
+                             launches=[launch_entry])
 
     # -- lock released; start the tmux sessions. --
     _ensure_log_dir(run_dir)
@@ -942,10 +976,6 @@ def refire(run_dir, git, piece=None) -> list[dict]:
         sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
 
     updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None, cmd=new_cmd)
-    launch_entry = {
-        "t": _now(), "host": new_host, "commit": git.get("commit"), "branch": git.get("branch"),
-        "dirty_count": git.get("dirty_count"), "dirty_files": git.get("dirty_files"),
-        "cards": new_gpus, "pieces": [piece], "cmd": new_cmd,
-    }
+    launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[piece], cmd=new_cmd)
     registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
     return [updated_piece]
