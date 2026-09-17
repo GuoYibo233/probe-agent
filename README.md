@@ -385,3 +385,56 @@ the env mapping); the report; the gates; carries VERSION
 
 No setting name on the command line; the program calls `experimental_settings.schema.load_frozen(run_dir)`
 itself (contracts 2.6).
+
+## Ticket 10 — the generator metrics, the run scorer and the matrix table
+
+```
+    methods/
+      cgen.py               exact match of the generated call at the frozen theta; carries VERSION and
+                            PROBE_KIND
+        imports: eval/utils/probe_eval.py, data/environments/__init__.py (open_env, for the
+                 environment whose split_args and build_call report normalises with, 2.6);
+                 [polars, numpy]
+        used by: train/methods/cgen.py (its match function)
+        reads:   -   writes: - (everything goes through eval/utils/probe_eval.py, which hands the
+                 prediction frame and the referenced report to the report hook, 2.6)
+        venv:    any
+      cparam.py             exact match of the generated arguments at the frozen theta; carries VERSION and
+                            PROBE_KIND
+        imports: eval/utils/probe_eval.py, data/environments/__init__.py (open_env, for the
+                 environment whose split_args and build_call report normalises with, 2.6);
+                 [polars, numpy]
+        used by: train/methods/cparam.py (its match function)
+        reads:   -   writes: - (everything goes through eval/utils/probe_eval.py, which hands the
+                 prediction frame and the referenced report to the report hook, 2.6)
+        venv:    any
+    score_run.py            a sample or inject run from its records: task success, speculation outcomes,
+                            tokens and time; by seed; against a baseline; carries VERSION
+      imports: experimental_settings/schema.py, data/trajectory_record.py, data/environments/__init__.py
+               (open_env for split_args and build_call, and requested_pairs, 2.3),
+               jobs/registry.py; [polars]
+      used by: none (program)
+      reads:   the task records of this run and of its baseline; the environment's split task-id files
+               (through data/environments/requested_pairs, for the pair list both record gates of 2.5
+               are stated over); the scored run's and the baseline run's settings.yaml (the same-setup
+               gate of 2.5)
+      writes:  run_report.json, report.md, heartbeat, done.json
+      venv:    any
+    method_table.py         the backbone x method table from the registry; groups sweep children, reports
+                            mean and spread
+      offers:  table(workflow: str | None = None, out: Path | None = None) -> str (8.6)
+      imports: experimental_settings/schema.py, jobs/registry.py, eval/utils/probe_eval.py (read_report)
+      used by: run.py (the table subcommand, 8.6; this file is not a stage and has no __main__)
+      reads:   jobs/runs.jsonl, the probe reports the rows point at
+      writes:  a markdown table on stdout or into a named file
+      venv:    any
+```
+
+Decisions made where the ticket did not fix a detail (see the T10 report for the
+full account): `method_table.table`'s `backbone` column is read off the eval
+row's `upstream["train"]` train row (errata T10-6, since an eval row's own
+`diff` never carries `models.probe`), printed as `?` when either the eval row's
+`meta.json` or its named train row is missing from the registry listing; a
+sweep group's `n` column and every rate column render `mean ± spread` the same
+way, the bare value when the group holds one run, and `-` when the group holds
+no report at all.
