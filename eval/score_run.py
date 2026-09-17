@@ -31,6 +31,12 @@ def _rate(numer: float, denom: int) -> float | None:
     return round(numer / denom, 4) if denom else None
 
 
+def _mean(series: pl.Series) -> float | None:
+    """The series' mean rounded to 4, or None when it holds no non-null value (Series.mean of an all-null column)."""
+    value = series.mean()
+    return round(float(value), 4) if value is not None else None
+
+
 def _first_diff_field(a, b) -> str | None:
     """The first field (dotted, section first) where a and b's data, models.agent or generation sections differ."""
     for name in _DATA_FIELDS:
@@ -86,14 +92,14 @@ def _run_block(rec: pl.DataFrame) -> dict:
         "n_abort": n_abort,
         "success": _rate(float(rec["success"].sum()), n),
         "success_no_abort": _rate(float(no_abort["success"].sum()), no_abort.height),
-        "steps_mean": round(float(rec["steps"].mean()), 4),
+        "steps_mean": _mean(rec["steps"]),
         "completed": _rate(float(rec["completed"].sum()), n),
-        "tokens_in": round(float(rec["tokens_in"].mean()), 4),
-        "tokens_out": round(float(rec["tokens_out"].mean()), 4),
-        "n_inject_per_task": round(float(rec["n_inject_sum"].mean()), 4),
-        "discard_chars": round(float(rec["discard_chars_sum"].mean()), 4),
-        "discard_tokens": round(float(rec["discard_tokens_sum"].mean()), 4),
-        "wall_s_mean": round(float(rec["wall_s"].mean()), 4),
+        "tokens_in": _mean(rec["tokens_in"]),
+        "tokens_out": _mean(rec["tokens_out"]),
+        "n_inject_per_task": _mean(rec["n_inject_sum"]),
+        "discard_chars": _mean(rec["discard_chars_sum"]),
+        "discard_tokens": _mean(rec["discard_tokens_sum"]),
+        "wall_s_mean": _mean(rec["wall_s"]),
     }
 
 
@@ -113,8 +119,8 @@ def _paired_block(rec: pl.DataFrame, brec: pl.DataFrame | None) -> dict:
         "success": round(success, 4),
         "base_success": round(base_success, 4),
         "delta_success": round(success - base_success, 4),
-        "tokens_out": round(float(joined["tokens_out"].mean()), 4),
-        "base_tokens_out": round(float(joined["tokens_out_base"].mean()), 4),
+        "tokens_out": _mean(joined["tokens_out"]),
+        "base_tokens_out": _mean(joined["tokens_out_base"]),
     }
 
 
@@ -126,12 +132,13 @@ def _spec_block(df: pl.DataFrame, env) -> dict:
         return {"n": 0, "exec_ok": None, "tool_agree": None, "call_agree": None,
                 "recalled": None, "conf_mean": None, "discarded_chars": None, "error_kinds": {}}
 
-    env_rows = df.filter(pl.col("type") == "env").select(["record_id", "step", "action"])
+    env_rows = df.filter(pl.col("type") == "env").select(
+        ["record_id", "step", pl.col("action").alias("env_action")])
     joined = spec.join(env_rows, on=["record_id", "step"], how="left")
 
     tool_agree_vals, call_agree_vals, recalled_vals = [], [], []
     for row in joined.iter_rows(named=True):
-        action = row["action"]
+        action = row["env_action"]
         gen_call = row["gen_call"]
         gp = env.split_args(gen_call) if gen_call is not None else None
         ap = env.split_args(action) if action is not None else None
@@ -156,8 +163,8 @@ def _spec_block(df: pl.DataFrame, env) -> dict:
         "tool_agree": _rate(float(sum(tool_agree_vals)), n),
         "call_agree": _rate(float(sum(call_agree_vals)), n),
         "recalled": _rate(float(sum(recalled_vals)), n),
-        "conf_mean": round(float(spec["conf"].mean()), 4),
-        "discarded_chars": round(float(spec["discarded_chars"].mean()), 4),
+        "conf_mean": _mean(spec["conf"]),
+        "discarded_chars": _mean(spec["discarded_chars"]),
         "error_kinds": error_kinds,
     }
 
@@ -170,7 +177,7 @@ def _resume_block(df: pl.DataFrame) -> dict:
     return {
         "n": n,
         "identical": _rate(float(resume["identical"].sum()), n),
-        "match_len_mean": round(float(resume["match_len"].mean()), 4),
+        "match_len_mean": _mean(resume["match_len"]),
     }
 
 
@@ -253,11 +260,18 @@ def main(run_dir: Path) -> None:
 
     hb = registry.beat(run_dir, 0)
     hb.emit(0, len(pairs), "task")
-    for i in range(1, len(pairs) + 1):
+    scored_frames: list[pl.DataFrame] = []
+    base_frames: list[pl.DataFrame] = []
+    for i, pair in enumerate(pairs, start=1):
+        scored_frames.append(trajectory_record.read_dir(scored_dir, [pair]))
+        if base_dir is not None:
+            base_frames.append(trajectory_record.read_dir(base_dir, [pair]))
         hb.emit(i, len(pairs), "task")
 
-    df = trajectory_record.read_dir(scored_dir, pairs)
-    bdf = trajectory_record.read_dir(base_dir, pairs) if base_dir is not None else None
+    df = pl.concat(scored_frames) if scored_frames else pl.DataFrame(schema=trajectory_record.SCHEMA)
+    bdf = None
+    if base_dir is not None:
+        bdf = pl.concat(base_frames) if base_frames else pl.DataFrame(schema=trajectory_record.SCHEMA)
 
     rec = _finals(df)
     brec = _finals(bdf) if bdf is not None else None
