@@ -374,10 +374,16 @@ Command shape (2.6, 3.4): `<venv python> -m agent.loop --run-dir <dir> --piece
      the completion test are all the environment's);
      `writer.row("env", step=step_index, action=obs.action,
      result=obs.observation, error_kind=obs.error_kind)`;
-     append `(obs.action, obs.observation)` to `history` **only when
-     `obs.action` is not None** (errata — 7.3 says "after each
-     `Environment.step`", but both legacy sides append only for a step that
-     produced an action, and the offline and live histories must be identical);
+     append `(obs.action.strip(), obs.observation)` to `history` **only when
+     `obs.action` is a string whose `strip()` is non-empty** — the record row
+     above keeps `obs.action` as the environment returned it, only the history
+     entry is stripped (errata, gyb's ruling of 2026-09-18 — 7.3 says "after
+     each `Environment.step`", but `data/build_training_dataset.py` appends
+     `(action.strip(), result)` and leaves a step whose stripped action is empty
+     out of its history, and 1.7 makes the offline and the live history
+     identical: AppWorld returns `'print(1+1)\n'` for an ordinary code block and
+     `''` for an empty one, so the unstripped form would differ from the
+     training text on nearly every step);
      break when `obs.completed`.
    - A 400 from the agent client sets `abort = "context_overflow_400"` and ends
      the trajectory (7.1). **Any other exception from one task is caught,
@@ -1094,3 +1100,12 @@ majority of rows under `probe_nofill`.
   or an empty code block, the live probe text and the training text differ,
   which 1.7 forbids. Not ruled by the owner; whoever dispatches this ticket
   settles which side moves and records it in the errata first.
+- 2026-09-18, ruled by gyb: the live side moves. Step 3's clause above now
+  appends `(obs.action.strip(), obs.observation)` and only when the stripped
+  action is non-empty; the record row still stores `obs.action` unstripped, and
+  `data/build_training_dataset.py` is unchanged. Measured before the ruling with
+  `data/probe_input.assemble`: the history entry `('print(1+1)\n', '2\n')`
+  renders `print(1+1)\n -> 2\n` and `('print(1+1)', '2\n')` renders
+  `print(1+1) -> 2\n`, so the two texts differ; `AppWorld.step` returns
+  `'print(1+1)\n'` for an ordinary code block and `''` for an empty one. The
+  ruling is the last entry of `.scratch/from-zero/contract-errata.md`.
