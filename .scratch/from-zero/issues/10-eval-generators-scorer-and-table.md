@@ -663,3 +663,12 @@ requested pair count.
   and `table` is pinned to `registry.ls(workflow, debug=False)` (T10-7). Step 1
   stays as written; whether `M-E2` runs over a non-debug run or `table` learns
   to show debug rows is the owner's call.
+- 2026-09-18, from gyb (review of waves 2 and 3, session fork1), not a change to
+  this ticket's work: this ticket merges as written. After wave 4 merges and before
+  wave 5 is dispatched, `eval/methods/{ctool,cgen,cparam}.py` fold into
+  `eval/utils/probe_eval.py` and the folder goes away (errata, the entry
+  "0.2 / 2.1 / 2.6 (`eval/methods/`)"; details in the `TODO(gyb, 2026-09-18)` at
+  the top of `eval/methods/ctool.py`). Measured on this ticket's branch at
+  `5b0dc71`: `cgen.py` (136 lines) and `cparam.py` (143 lines) differ in 29 diff
+  lines; `_params_all_ok`, `match`, `_stat`, the risk loop and the entry point are
+  line-for-line copies.

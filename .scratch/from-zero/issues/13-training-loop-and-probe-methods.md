@@ -696,3 +696,13 @@ command.
    and extrapolate to the full example count. Report as facts only.
 
 ## Comments
+
+- 2026-09-18, from gyb (review of waves 2 and 3, session fork1): **do not dispatch
+  this ticket before the `eval/methods/` fold has merged.** gyb ruled that
+  `eval/methods/{ctool,cgen,cparam}.py` fold into `eval/utils/probe_eval.py`
+  after wave 4 and before wave 5 (errata, the entry "0.2 / 2.1 / 2.6
+  (`eval/methods/`)"; details in the `TODO(gyb, 2026-09-18)` at the top of
+  `eval/methods/ctool.py`). Every place in this ticket that imports
+  `eval.methods.<m>`, reads its `PROBE_KIND`, or names `eval/methods/<m>.py` in a
+  versions list is rewritten by that change to the new home of `match` and to the
+  per-method match version; `train/methods/` stays one file per method.

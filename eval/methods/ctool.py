@@ -1,6 +1,19 @@
 """Fit the temperature and theta on the val rows at the risk targets, freeze theta, report on the test rows, and write the fired rows."""
 from __future__ import annotations
 
+# TODO(gyb, 2026-09-18): this folder goes away. After wave 4 merges and before wave 5 is
+# dispatched, eval/methods/{ctool,cgen,cparam}.py fold into eval/utils/probe_eval.py: nothing in
+# this file but match() is specific to ctool (the temperature fit, the first crossing, the four
+# numbers, the theta choice and the fired rows hold for any classifier probe), and cgen.py and
+# cparam.py differ in 29 lines. probe_eval.py then holds one classifier report, one generator
+# report, the three match functions, a column-zero table of method -> PROBE_KIND, and a
+# column-zero table of per-method match versions (MATCH_VERSION), so that train and inject fold
+# only their own method's match version and an edit to the eval side does not re-key every
+# train run. The eval program becomes eval.utils.probe_eval for every method (the method is
+# cfg.probe.method of the frozen setting). Carried into experimental_settings/schema.py (the
+# stage table's program and versions cells, _method_kind), the tree document (34 -> 31 Python
+# files), the contracts, README.md and tickets 13, 14, 15 and 18. train/methods/ stays.
+
 import sys
 from pathlib import Path
 
