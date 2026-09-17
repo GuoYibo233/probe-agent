@@ -1,0 +1,34 @@
+# Workflow: run the agent live with the probe, then score against a baseline.
+workflow: [inject, score]
+
+common:
+  data:   {env: appworld, instructions: v1}
+  models: {agent: gptoss120b}
+
+p1e1_t080:
+  meta:  {notes: "live run: fire at theta 0.80, injection format p1_e1, probe arm"}
+  inject:
+    split: [test]
+    seeds: [42]
+    theta: 0.80
+    arm: probe
+    format: p1_e1
+    probe_score: train_probe/ctool_q06
+    probe_gen: train_probe/cgen_q06
+    pieces: 6
+    replicas: 1
+  score: {baseline: baseline/gptoss_aw}
+
+no_probe_t080:
+  meta:  {notes: "control arm: the machinery wired and never firing"}
+  inject:
+    split: [test]
+    seeds: [42]
+    theta: 0.80
+    arm: no_probe
+    format: p1_e1
+    probe_score: train_probe/ctool_q06
+    probe_gen: train_probe/cgen_q06
+    pieces: 6
+    replicas: 1
+  score: {baseline: baseline/gptoss_aw}
