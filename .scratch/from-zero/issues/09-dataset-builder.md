@@ -527,3 +527,13 @@ prevent, and the one thing a fixture cannot prove.
     the completeness gate.
   - Not run: `M-D1` (a real `--debug` sample run, GPU, main session, after
     wave 6).
+- 2026-09-17, wave 3 post-merge review (main session). No real non-minor
+  finding in this ticket's file. Refuted as a wave-3 defect: BUILDER-1 — the
+  builder appends the **stripped** action to `history`, as the ticket's step 12
+  and legacy do; `agent/loop.py` (ticket 11) must append the same stripped value,
+  or the live probe text differs from the training text by the action's trailing
+  newline (1.7 requires the two histories identical). Minors left: BUILDER-2 (an
+  empty-string, non-null action is counted as `events_skipped_no_action` and left
+  out of `history`, while 7.3's live rule appends whenever the action is not
+  None), BUILDER-3 (a `build_call` `ValueError` leaves the event loop without
+  naming the record, the step or the example).

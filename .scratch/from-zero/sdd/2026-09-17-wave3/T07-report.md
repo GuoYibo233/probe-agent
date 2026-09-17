@@ -422,3 +422,253 @@ has these two commits on top of the wave-3 base.)
   from the ticket's prose, not exercised by any CPU acceptance command
   (`M-M1`/`M-M2` are GPU-only); still worth a second look before the first
   real launch.
+
+## Post-merge fix round 1
+
+Branch `ticket/2026-09-17-wave3/T07-postfix` (the post-merge fix branch, not a
+continuation of the merged `ticket/2026-09-17-wave3/T07`, which no longer
+exists as a ref after the merge), worktree
+`/home/y-guo/reproduce/new1-wt/2026-09-17-wave3-T07-postfix1` (removed at the
+end of this round). Base `cff38ef5d56d11e7c55c3b69fddd90138bfb8ad0` (`from-zero`
+HEAD at dispatch, which already carries the merged ticket 07 code). Fixing the
+two findings the wave-3 post-merge review verified as real against
+`models/agent_models/service.py` and `models/probe_models/service.py`
+(`.scratch/from-zero/sdd/2026-09-17-wave3/post-merge-review.json`); the
+review's third finding, `SERVICES-2` (the dead `except Exception:
+proc.terminate()` guard), was refuted in the same review record (its own
+stub run shows the guard does fire on every non-`SystemExit` failure, and no
+contract requires the service itself to tear down its child on a check
+failure — that is `jobs/launch.launch`'s `teardown_services` per contracts
+2.3/8.1) and is out of this round's scope.
+
+### SERVICES-1 (critical) — `build_command` resolved the vllm binary outside the venv
+
+Root cause: `vllm_bin = str(Path(sys.executable).resolve().parent / "vllm")`.
+`sys.executable` under an `external/*/bin/python` interpreter is a symlink
+into the uv-managed base install (`external/vllm-env/bin/python ->
+~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12`), and
+`.resolve()` follows that symlink before taking `.parent`, so `vllm_bin`
+pointed at the base interpreter's directory, which holds no `vllm` binary,
+while the venv's own `bin/vllm` does. Every non-attach `serve` would raise
+`FileNotFoundError` at `subprocess.Popen`, after the card was already
+reserved and the start row already appended.
+
+Fix, in `models/agent_models/service.py`, `build_command`: dropped
+`.resolve()`, so `vllm_bin` is `Path(sys.executable).parent / "vllm"` — the
+directory `sys.executable` itself names, unresolved, which is the venv's
+`bin/` for every one of the three `external/*/bin/python` interpreters and
+for a bare `python3` alike. No other line of `build_command` changed.
+
+### SERVICES-3 (important) — `check` issued no `/render`, `/score` or `/gen` request
+
+Root cause: `check()` compared the `/health` echo and exercised `/encode` and
+`/decode` only, so a probe service whose `/render`, `/score` or `/gen` route
+was broken — wrong argument name, wrong shape, an exception the route
+mishandles — still passed `check` and let `jobs/launch.py` treat the piece as
+up.
+
+Fix, in `models/probe_models/service.py`:
+- Two module-level literal fixtures, next to `VERSION`:
+  `_CHECK_RENDER_MESSAGES` (a two-message system/user conversation) for
+  `/render`, and `_CHECK_PROBE_TEXT` (one line of fixture text) for `/score`
+  and `/gen`.
+- `check()` now issues, after the existing `/health` and `<|end|>` `/encode`
+  /`/decode` checks:
+  - `/render` **always** (the render-only case included, since `/render` is
+    the route a `sample` run's probe piece actually serves), called as
+    `client.render(_CHECK_RENDER_MESSAGES, cfg.generation.effort,
+    cfg.generation.date)` — both inputs taken from the frozen setting `check`
+    already loaded, matching the agent service's own render check. Validates
+    `prefix_ids` is a non-empty list of ints.
+  - `/score` and `/gen`, only when `has_inject` (already computed for the
+    `/health` comparison rows) — an inject run's probe piece always loads
+    both checkpoints, so both routes are live exactly when `has_inject` is
+    true. `client.score(_CHECK_PROBE_TEXT)` validates `conf` is a float in
+    `[0, 1]` and `label` is a non-empty string. `client.generate(
+    _CHECK_PROBE_TEXT, cfg.inject.max_new)` validates `call` is a string —
+    `max_new` taken from `cfg.inject.max_new`, the same field
+    `agent/inject.py` sends on every real call (contracts 7.2's `/gen` row).
+  - Each check prints the route and the value it saw (`check: /render ...`,
+    `check: /score ...`, `check: /gen ...`) and clears `ok` to `False` on a
+    mismatch, so a failure both names its route in the printed output and
+    drives `check`'s exit code non-zero, unchanged from the existing pattern
+    the `/health` and `<|end|>` checks already use.
+- Not implemented as written in the finding: the finding's shape line reads
+  "label one of the labels `/health` echoes." Contracts 7.2's `GET /health`
+  field list (`family`, `weights`, `render`, `encode_special`, `decode`,
+  `temperature`, `agent_model`, `score_train_key`, `gen_train_key`,
+  `max_len`, `device`, `version` — `notes/plans/2026-09-17-contracts.md:4043`)
+  carries no `labels` field, and the ticket's `/health` echo line (07,
+  around line 214) names the same twelve fields; a class list lives only in
+  the checkpoint's own `best/meta.json`, which `check` has no path to (it
+  reads only the run directory's `settings.yaml`). Validating `label`
+  against a list `/health` does not carry would either always fail or
+  require adding a thirteenth `/health` field outside this round's two
+  files' scope and outside what any contract or errata entry asks for. Fixed
+  at the root against what `check` can actually observe: `label` is checked
+  to be a non-empty string, the shape `/score`'s route contract actually
+  promises ("the argmax class name," contracts 7.2's `/score` row); worth
+  the owner's eye if a stronger check is wanted.
+
+### How the fixes were verified
+
+Reran every acceptance command in the ticket verbatim from the worktree
+root, plus targeted checks for both findings.
+
+**A1** (all four interpreters):
+```
+1 1
+1 1
+1 1
+1 1
+```
+
+**A13** (probe service end to end, render-only), unchanged:
+```
+gptoss gpt-oss-120b ids True None None None
+[64, 27, 91, 419, 91, 29, 65]
+[64, 200007, 65]
+a<|end|>b
+83 83
+score refused
+['attached_to', 'base_url', 'claims', 'flags', 'host', 'kind', 'pid', 'port', 'replica', 'started_at']
+```
+
+**A14** (agent service command/env), unchanged:
+```
+serve /net/tokyo100-10g/data/str01_01/y-guo/models/gpt-oss-120b --served-model-name gpt-oss-120b --host 0.0.0.0 --port 8103 --gpu-memory-utilization 0.92 --tensor-parallel-size 1 --max-model-len 131072 --dtype auto
+[('CUDA_DEVICE_ORDER', 'PCI_BUS_ID'), ('CUDA_VISIBLE_DEVICES', '0'), ('LD_LIBRARY_PATH', '/home/y-guo/reproduce/new1/envs/cuda-compat-13.0'), ('TRITON_CACHE_DIR', '/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton'), ('VLLM_CACHE_ROOT', '/net/tokyo100-10g/data/str01_01/y-guo/vllm_cache'), ('VLLM_SYSTEM_START_DATE', '2026-08-06'), ('VLLM_USE_FLASHINFER_SAMPLER', '0')]
+```
+
+**SERVICES-1, targeted.** `A14`'s script prints only `argv[1:]`, which is
+exactly why the review says "the CPU acceptance did not see it"; extended it
+to print `argv[0]` and check it on disk, under the vllm interpreter:
+```
+$ "$VL" -c "
+import os
+from models.agent_models.service import build_command
+import models
+m = models.agent('gpt_oss_120b')
+row = dict(role='agent', family='gptoss', weights='gpt-oss-120b', dtype='auto',
+           quantization=None, max_model_len=131072, served_model_name='gpt-oss-120b',
+           env_result={'VLLM_USE_FLASHINFER_SAMPLER': '0'}, extra_flags='')
+argv, env = build_command(row, m.serving, m.weights_path, 8103, '0', '2026-08-06')
+print('argv[0]:', argv[0])
+print('exists on disk:', os.path.exists(argv[0]))
+"
+argv[0]: /home/y-guo/reproduce/new1/external/vllm-env/bin/vllm
+exists on disk: True
+```
+For contrast, the pre-fix formula on the same interpreter:
+```
+old (broken) argv[0]: /home/y-guo/.local/share/uv/python/cpython-3.12.13-linux-x86_64-gnu/bin/vllm
+old exists on disk: False
+```
+
+**A15** (completion request body), unchanged:
+```
+pairs: [('he', [123]), ('llo', [456])]
+body1: ['add_special_tokens', 'max_tokens', 'model', 'prompt', 'return_token_ids', 'skip_special_tokens', 'stream', 'stream_options', 'temperature']
+usage: {'prompt_tokens': 7, 'completion_tokens': 2} finish: stop stop: <|return|>
+body2: ['add_special_tokens', 'max_tokens', 'model', 'prompt', 'return_token_ids', 'seed', 'skip_special_tokens', 'stop', 'stream', 'stream_options', 'temperature', 'top_p']
+prompt is ids: True model: gpt-oss-120b path hits: 2
+```
+
+**A16** (annotation lines): the same known script defect as both earlier
+rounds (`AttributeError: 'Import' object has no attribute 'module'`, ticket
+05's `B6` / ticket 06's `A16`), reproduced identically and not bent around;
+the hand bypass of the buggy line gives the same clean result as both earlier
+rounds (`forbid hit: set()`, `heavy at top level: set()`, `VERSION lines: 1`
+for both files) and `grep -n "/home/\|/net/"` still finds nothing
+(`NO_ABS_PATH`).
+
+**SERVICES-3, targeted — render-only (`has_inject=False`).** Started the
+probe service exactly as in `A13` (render-only, CPU), then ran `check` against
+it with `schema.load_frozen` patched to a stub frozen setting (`inject=None`):
+```
+check: family expected='gptoss' got='gptoss'
+check: weights expected='gpt-oss-120b' got='gpt-oss-120b'
+check: score_train_key expected=None got=None
+check: gen_train_key expected=None got=None
+check: temperature expected=None got=None
+check: render expected='ids' got='ids'
+check: encode_special expected=True got=True
+check: /render prefix_ids is a non-empty list of ints: True (got [200006, 17360, ... 173781])
+RC: 0
+```
+`/render` is now issued and validated even under `has_inject=False`; `/score`
+and `/gen` are correctly not called (no score/gen checkpoint is loaded under
+`--render-only`, so calling them would 503).
+
+**SERVICES-3, targeted — inject mode (`has_inject=True`), all four routes.**
+A hand-written stub HTTP server implementing `/health`, `/score`, `/gen`,
+`/render`, `/encode`, `/decode` with well-formed responses, `check` run
+against it with `schema.load_frozen` patched to a stub setting carrying a
+non-`None` `inject` and `cfg.inject.max_new = 64`:
+```
+check: family expected='gptoss' got='gptoss'
+check: weights expected='gpt-oss-120b' got='gpt-oss-120b'
+check: score_train_key expected='deadbeef' got='deadbeef'
+check: gen_train_key expected='cafef00d' got='cafef00d'
+check: temperature expected=0.7 got=0.7
+check: render expected='ids' got='ids'
+check: encode_special expected=True got=True
+check: /render prefix_ids is a non-empty list of ints: True (got [1, 2, 3])
+check: /score conf is a float in [0,1]: True (got 0.73)
+check: /score label is a non-empty str: True (got 'read_email')
+check: /gen call is a str: True (got 'apis.example.sample_api(x=1)')
+RC: 0
+```
+All four routes (`/render`, `/score`, `/gen`, plus the pre-existing
+`/health`/`/encode`/`/decode` checks) are now exercised in inject mode.
+
+**SERVICES-3, targeted — the failure path names its route.** Same stub
+server, with `/render` answering an empty `prefix_ids` and `/score` answering
+a `conf` of `1.5` (out of `[0, 1]`):
+```
+check: /render prefix_ids is a non-empty list of ints: False (got [])
+check: /score conf is a float in [0,1]: False (got 1.5)
+check: /score label is a non-empty str: True (got 'read_email')
+check: /gen call is a str: True (got 'apis.example.sample_api(x=1)')
+RC: 1
+```
+Confirms a broken `/render` or `/score` route now fails `check` with the
+route named in the printed line and the exit code non-zero, which
+`jobs/launch.py` reads as `service_check` (contracts 8.1).
+
+`python3 -m py_compile` on both files: clean. `python3 -m
+models.agent_models.service --help` and `... models.probe_models.service
+--help`: both print cleanly. `run.py` still does not exist on this branch, so
+`run.py selfcheck` remains not applicable, unchanged from both earlier
+rounds.
+
+### The fix-round commit list
+
+- `e75eb38` — `T07: post-merge fix round 1 (SERVICES-1, SERVICES-3)`
+
+(base of this round `cff38ef5d56d11e7c55c3b69fddd90138bfb8ad0`, the
+`from-zero` HEAD the dispatch named; the branch
+`ticket/2026-09-17-wave3/T07-postfix` has this one commit on top of it.)
+
+### Self-review
+
+- YAGNI check: touched only `models/agent_models/service.py` (SERVICES-1) and
+  `models/probe_models/service.py` (SERVICES-3); no other file, no refactor
+  beyond the two findings, `README.md` left unchanged since no line of it
+  describes `.resolve()` or `check`'s exact route list and none became
+  wrong.
+- `SERVICES-2` (the `terminate()` guard) is not touched: the review's own
+  verdict on that finding says it is not real, and neither this dispatch's
+  "Open findings" list nor the errata names it, so it is out of scope for
+  this round.
+- Open item carried forward from the first round and both fix rounds,
+  unchanged: the render-equals-server check's fixture (`CHECK_MESSAGES` in
+  the agent service) is a literal built from the ticket's prose, not
+  exercised by any CPU acceptance command (`M-M1`/`M-M2` are GPU-only);
+  still worth a second look before the first real launch.
+- New, this round: `check`'s two new fixtures (`_CHECK_RENDER_MESSAGES`,
+  `_CHECK_PROBE_TEXT`) are literals of my own choosing, since neither the
+  ticket nor the finding names exact fixture text for these two routes (only
+  `CHECK_MESSAGES` on the agent-service side has ticket-specified content);
+  they are exercised by the targeted verification above but not by any GPU
+  run yet.

@@ -502,3 +502,35 @@ An implementer that reaches any of these returns BLOCKED with the command.
   - Not run: `M-M1` through `M-M6` (GPU, main session, after wave 6).
   - All five wave-3 modules import under the three interpreters of the `venvs:`
     map (main session, at `a88d100`).
+- 2026-09-17, wave 3 post-merge review and fix (main session). Four opus
+  reviewers over the merged HEAD `a88d100`, each non-minor finding re-checked by
+  an opus refuter: five non-minor findings, two real, both in this ticket's
+  files; record in `.scratch/from-zero/sdd/2026-09-17-wave3/post-merge-review.json`
+  and `post-merge-fix.json`. Fixed on `ticket/2026-09-17-wave3/T07-postfix`
+  (`cff38ef..e75eb38`, one fix round, opus re-review), merged as `2b8bc1e`.
+  - SERVICES-1 (critical): `build_command` took the `vllm` binary from
+    `Path(sys.executable).resolve().parent`, which follows the venv's `bin/python`
+    symlink to the uv base interpreter, where no `vllm` exists, so every
+    non-attach `serve` would have raised `FileNotFoundError` at `Popen`. Now
+    `Path(sys.executable).parent`. Main-session check: under
+    `external/vllm-env/bin/python`, `argv[0]` is `external/vllm-env/bin/vllm` and
+    exists. Acceptance `A14` prints `argv[1:]` and cannot see `argv[0]`.
+  - SERVICES-3 (important): the probe `check` subcommand called `/health`,
+    `/encode` and `/decode` only, while 7.2 says one request of each route. It now
+    also calls `/render` always and `/score` and `/gen` when the frozen setting
+    has an inject section, validates each body and exits non-zero naming the route.
+  - Refuted: SERVICES-2 (the `except Exception` guard around the check table does
+    not catch the three `SystemExit` refusals, so `proc.terminate()` is skipped on
+    those; refuted because 2.3 gives `jobs/launch.teardown_services` the cleanup of
+    a failed launch and no rule asks the service to do it).
+  - Minors left, from the review: SERVICES-4 (`VLLM_SYSTEM_START_DATE` is set to
+    the string `"None"` when `generation.date` is None; gpt-oss always has a
+    date), SERVICES-5 (`--attach-only` compares the first model card only),
+    SERVICES-6 (`/render`, `/encode`, `/decode` run outside the lock), SERVICES-7
+    (`serve` accepts a checkpoint mode with flags missing). From the fix
+    re-review: N1-1 (a 503 from `/score` or `/gen`, a render-only service checked
+    against an inject setting, ends `check` with a `RuntimeError` traceback after
+    the retries, exit code still non-zero), N1-2 (`check` tests the `/score`
+    label for non-empty only; `/health` echoes no `labels`, so M-M5's "a label
+    from the checkpoint's labels" needs a thirteenth `/health` field, an owner
+    decision).

@@ -432,3 +432,11 @@ values are a subset of the prediction frame's.
     with `FileNotFoundError` on `eval/methods/cgen.py` or `eval/methods/cparam.py`,
     ticket 10's files.
   - Not run: `M-E1` (GPU, main session, after wave 6).
+- 2026-09-17, wave 3 post-merge review (main session). No real non-minor
+  finding in this ticket's files. Refuted: EVAL-1 (the unconditional
+  `stage_extra["labels"]` read is the ticket's own pinned expression). Minors
+  left: EVAL-2 (`n_events` key order follows a bare Polars `group_by`, so
+  `probe_report.json` and `report.md` can differ byte for byte between identical
+  runs), EVAL-3 (an empty test split writes a `frozen` block of zeros with a
+  `[0.0, 0.0]` interval and no refusal), EVAL-4 (the first-crossing comparison
+  runs in float32).

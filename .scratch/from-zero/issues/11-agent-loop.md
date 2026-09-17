@@ -1082,3 +1082,15 @@ resume account: one `resume` row per `spec` row, and `identical` true on a
 majority of rows under `probe_nofill`.
 
 ## Comments
+
+- 2026-09-17, note from the wave 3 post-merge review (main session of wave 3;
+  findings BUILDER-1 and BUILDER-2 in
+  `.scratch/from-zero/sdd/2026-09-17-wave3/post-merge-review.json`). The merged
+  `data/build_training_dataset.py` appends `(action.strip(), env.result)` to its
+  history (ticket 09 step 12, as legacy does), and it leaves a step whose action
+  is the empty string out of the history and counts it as
+  `events_skipped_no_action`. Step 3's clause here appends `obs.action` as it is
+  and whenever it is not None. With an action that carries a trailing newline,
+  or an empty code block, the live probe text and the training text differ,
+  which 1.7 forbids. Not ruled by the owner; whoever dispatches this ticket
+  settles which side moves and records it in the errata first.
