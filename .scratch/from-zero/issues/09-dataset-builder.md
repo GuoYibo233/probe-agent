@@ -1,6 +1,6 @@
 # 09 the dataset builder
 
-Status: claimed
+Status: resolved
 Blocked by: 02, 03, 04, 05
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -513,3 +513,17 @@ prevent, and the one thing a fixture cannot prove.
     lists, and the builder derives both the requested pairs and the records it
     reads from those lists, so the run stops at step 5's completeness gate and the
     unknown-task split gate is never reached by that variant.
+- 2026-09-17, wave 3 reconciliation (main session). Resolved. Commit
+  `28735bb..2be4f06` on `ticket/2026-09-17-wave3/T09`, merged as `a88d100`. No
+  fix round, no open finding.
+  - Minors left: F1, the per-record beats are emitted right after the one
+    `read_dir` call and not interleaved with the reads (`read_dir` offers no
+    per-record callback); F2, the call round-trip gate runs once per event, before
+    the cut loop, and names `cut_index 0`.
+  - Implementer decisions: `counts.tools`, `counts.tools_unseen_in_train` and the
+    report's per-split tool vocabulary are computed over the frame after the row
+    caps; the ticket pins neither side.
+  - Script defect, reported as predicted: `F3`'s `unknown_task` variant stops at
+    the completeness gate.
+  - Not run: `M-D1` (a real `--debug` sample run, GPU, main session, after
+    wave 6).

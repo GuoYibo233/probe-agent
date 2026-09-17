@@ -1,6 +1,6 @@
 # 07 the two model services
 
-Status: claimed
+Status: resolved
 Blocked by: 04, 06
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -480,3 +480,25 @@ An implementer that reaches any of these returns BLOCKED with the command.
     import check near acceptance line 411 reads `.module` on `ast.Import` nodes
     and raises `AttributeError` (the same defect as ticket 05's `B6` and ticket
     06's `A16`).
+- 2026-09-17, wave 3 reconciliation (main session). Resolved. Commits
+  `28735bb..74d2a6c` on `ticket/2026-09-17-wave3/T07` (implementation `e5d8a93`,
+  fix round `74d2a6c`), merged as `bd74fa9`. One fix round: F1 (the `check`
+  subcommand's `<|end|>` fixture now checks id containment, not a count), F2 (the
+  `--attached-to` decision recorded in the errata). No open finding, no minor.
+  - Implementer decisions, open for the owner: `serve --attach-only` also takes
+    `--attached-to <run_id>` (errata 7.1 / 1.5), which `jobs/launch.py` (ticket
+    12) must pass; under `--attach-only` the endpoint file's `pid` is null; the
+    agent service's `CHECK_MESSAGES` fixture is the implementer's own literal and
+    runs on a GPU host only; the probe `check` subcommand tests the `<|end|>`
+    fixture without naming the control-token id; `--attach-only` compares
+    `served_model_name` and `max_model_len` only (errata, precheck assumption).
+  - cannotVerify, checked by the main session: `/render`, `/encode` and `/decode`
+    run outside the model lock; `/encode` and `/decode` use the server's own
+    `AutoTokenizer` instance (`service.py:59`), not the one either probe holds
+    under the lock, and pass no truncation or padding argument. The probe
+    service's argparse lets `--score-ckpt`, `--gen-ckpt`, `--temperature` and
+    `--device` be left out one by one outside `--render-only`; whether that
+    matters is decided by the command line ticket 12 builds.
+  - Not run: `M-M1` through `M-M6` (GPU, main session, after wave 6).
+  - All five wave-3 modules import under the three interpreters of the `venvs:`
+    map (main session, at `a88d100`).

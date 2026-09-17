@@ -1,6 +1,6 @@
 # 08 the eval library and the classifier metric
 
-Status: claimed
+Status: resolved
 Blocked by: 02, 03, 04
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -409,3 +409,26 @@ values are a subset of the prediction frame's.
   stays at step 2; the first `emit` moves to right after step 4 and is
   `hb.emit(0, n_events, "item")` with `n_events` the distinct `event_id` count of
   `pred_df`, the number step 13 records as `counts["events"]`.
+- 2026-09-17, wave 3 reconciliation (main session). Resolved. Commits
+  `28735bb..38ee017` on `ticket/2026-09-17-wave3/T08` (implementation `4652288`,
+  fix round `38ee017`), merged as `cf61adb`. One fix round: the README's `eval/`
+  tree header line was replaced with the contracts' verbatim text. No open
+  finding.
+  - Minor left: F2, `probe_eval.run`'s generator branch guards a missing
+    `fires.parquet` for `n_rows` and not for the `_sha1` call on the next line.
+  - Implementer decisions: `report.md`'s per-risk theta is read from
+    `fields["chosen"][risk]`, since 1.4's `frozen` struct carries no theta;
+    `bootstrap_ci` duplicates a group's rows on a repeated draw, as legacy does.
+  - cannotVerify, carried to later tickets: `probe_eval.run` reads
+    `train_meta["stage_extra"]["labels"]` with no default
+    (`eval/utils/probe_eval.py:225`), so ticket 13's trainer must always write the
+    key, null for a generator; the generator branch's three gates have no test
+    until ticket 10's `cgen.py` / `cparam.py` exist; the selfcheck cross-file
+    checks wait for tickets 13 and 15.
+  - Main-session check at `a88d100`: with `eval/methods/ctool.py` on disk,
+    `schema.load` succeeds on `baseline.yaml` `gpt_oss_120b_appworld` and
+    `train_probe.yaml` `ctool_qwen3_0pt6b`, with and without the debug overlay;
+    `cgen_qwen3_0pt6b`, `cparam_qwen3_0pt6b` and both `inject.yaml` settings stop
+    with `FileNotFoundError` on `eval/methods/cgen.py` or `eval/methods/cparam.py`,
+    ticket 10's files.
+  - Not run: `M-E1` (GPU, main session, after wave 6).
