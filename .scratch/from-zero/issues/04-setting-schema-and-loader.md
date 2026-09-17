@@ -1,6 +1,6 @@
 # 04 the setting schema and its loader
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: .scratch/from-zero/spec.md (sections 1, 2, 3, 4, 5, 7)
 

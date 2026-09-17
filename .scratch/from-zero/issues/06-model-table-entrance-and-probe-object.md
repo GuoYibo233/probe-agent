@@ -1,6 +1,6 @@
 # 06 the model table, the entrance, the gpt-oss family and the probe object
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7, 9)
 

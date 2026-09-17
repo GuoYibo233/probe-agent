@@ -1,6 +1,6 @@
 # 05 the environment contract and AppWorld
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 01
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7)
 
