@@ -14,9 +14,9 @@ the specification; read them in full.
 ```
 data/__init__.py        venv any   imports: none (repo); [polars]      carries NO VERSION
 data/probe_input.py     venv any   imports: none (repo); [re]          VERSION = 1
-data/task_record.py     venv any   imports: data/__init__.py           VERSION = 1
-data/example.py         venv any   imports: data/__init__.py; [polars] VERSION = 1
-data/prediction.py      venv any   imports: data/__init__.py; [polars] VERSION = 1
+data/trajectory_record.py     venv any   imports: data/__init__.py           VERSION = 1
+data/training_data.py         venv any   imports: data/__init__.py; [polars] VERSION = 1
+data/probe_output.py      venv any   imports: data/__init__.py; [polars] VERSION = 1
 README.md               your five lines only
 ```
 
@@ -95,7 +95,7 @@ def assemble(task: str, history: list[tuple[str, str]],
 
 All three are pure: every parameter is passed in, nothing is read from a file, no
 setting value is a module constant. That is what keeps the offline caller
-(`data/build_dataset.py`) and the live caller (`agent/inject.py`) from drifting.
+(`data/build_training_dataset.py`) and the live caller (`agent/inject.py`) from drifting.
 
 `cuts` is the offline enumeration, ported from
 `legacy/pipeline/annotate/rules.py:29-47` (`boundaries`) with `MAX_BOUNDS` and
@@ -118,7 +118,7 @@ return pts
 `legacy/pipeline/inject/live_appworld.py:165-175` (`sent_starts`): `m.start()`
 offsets, the same `min_think // 2` per-cut filter, **no** terminal cut and **no**
 thinning. Its docstring carries 1.7's three reasons, and both this file's and
-`data/task_record.py`'s README lines say that `example.cut` and `spec.cut` are
+`data/trajectory_record.py`'s README lines say that `example.cut` and `spec.cut` are
 not the same coordinate.
 
 `assemble` is ported from `legacy/pipeline/annotate/rules.py:50-62`
@@ -142,7 +142,7 @@ setting fields now; `split_args`, `first_call_args`, `split_args_named`,
 `first_call_named`, `mkparams`, `AW_CALL`, `BFCL_CALL` (`:67-178`) — call syntax
 is the environment's (ticket 05); the whole ALFWorld block (`:181-305`).
 
-### 3. `data/task_record.py` (contracts 1.1)
+### 3. `data/trajectory_record.py` (contracts 1.1)
 
 Layout: `<run_dir>/records/<task_id>__s<seed>.jsonl`.
 
@@ -298,7 +298,7 @@ free-form dict (`run_appworld.py:189`); `final.eval` in its two legacy shapes
 canonical JSON text plus a declared boolean `success`; the resume-by-skip that
 overwrote a not-done file (`run_appworld.py:180-184`).
 
-### 4. `data/example.py` (contracts 1.2)
+### 4. `data/training_data.py` (contracts 1.2)
 
 ```python
 VERSION = 1
@@ -333,7 +333,7 @@ Not ported: the `model` column (`build.py:224`); the three separate
 column; `tool_vocab.json` (`build.py:404-406`) — the class order is
 `head_labels`' and lives in `best/meta.json`.
 
-### 5. `data/prediction.py` (contracts 1.3)
+### 5. `data/probe_output.py` (contracts 1.3)
 
 ```python
 VERSION = 1
@@ -374,12 +374,12 @@ VL=/home/y-guo/reproduce/new1/external/vllm-env/bin/python
 ```bash
 for P in "$PR" "$AW" "$VL"; do
   "$P" -c "import sys; sys.path.insert(0,'.');
-import data, data.task_record, data.example, data.prediction, data.probe_input
+import data, data.trajectory_record, data.training_data, data.probe_output, data.probe_input
 print('imports ok', sys.version.split()[0])"
 done
 ```
 Expected: `imports ok 3.11.15`, `imports ok 3.12.13`, `imports ok 3.12.13`;
-exit 0 each. (`data.build_dataset` is ticket 09 and is not in this list.)
+exit 0 each. (`data.build_training_dataset` is ticket 09 and is not in this list.)
 
 **A2 — `data/probe_input.py` also imports under system `python3`** (3.10, no polars).
 ```bash
@@ -393,7 +393,7 @@ Expected: `probe_input imports on 3.10.12`; exit 0.
 
 **A3 — the `VERSION` line shape (3.3).**
 ```bash
-for f in data/task_record.py data/example.py data/prediction.py data/probe_input.py; do
+for f in data/trajectory_record.py data/training_data.py data/probe_output.py data/probe_input.py; do
   n=$(grep -c '^VERSION = [0-9][0-9]*$' "$f"); echo "$f $n"
 done
 test "$(grep -c '^VERSION' data/__init__.py)" = 0 && echo NO_VERSION
@@ -407,7 +407,7 @@ implementation look like a failed command.
 ```bash
 "$PR" -c "
 import sys; sys.path.insert(0,'.')
-import data.task_record as tr, data.example as ex, data.prediction as pr
+import data.trajectory_record as tr, data.training_data as ex, data.probe_output as pr
 for m in (tr, ex, pr):
     bad = sorted(set(m.REQUIRED) - set(m.SCHEMA))
     assert not bad, (m.__name__, bad)
@@ -532,7 +532,7 @@ Run under all three interpreters.
 ```bash
 "$AW" - <<'PY'
 import sys, json, os, time, tempfile, pathlib; sys.path.insert(0,'.')
-import data.task_record as tr
+import data.trajectory_record as tr
 d = pathlib.Path(tempfile.mkdtemp())          # d is the RUN DIRECTORY; records/ is appended inside
 
 w = tr.open_record(d, "50e1ac9_1", 42)
@@ -625,23 +625,23 @@ assert a["result"].to_list() == [None, None]
 assert a["abort"].to_list()[-1] == "context_overflow_400"
 assert tr.read_dir(d, [("abort01_1", 5)]).height == 2
 print("abort-only record ok")
-print("task_record ok")
+print("trajectory_record ok")
 PY
 ```
 Expected: `stamped columns refused`, then `abort-only record ok`, then
-`task_record ok`; exit 0, under each of the three interpreters. The
+`trajectory_record ok`; exit 0, under each of the three interpreters. The
 `abort-only` block is the executable form of the `REQUIRED` rule above: the
 record `agent/loop.py` writes when step 0 raises holds a `meta` row and a `final`
 row and nothing else, so `step`, `reasoning`, `content` and `result` are absent
 from its inferred schema. `is_done` is true for it, so `read_dir` — and through
-it `data/build_dataset.py`'s completeness gate — reads it, and a `REQUIRED` that
+it `data/build_training_dataset.py`'s completeness gate — reads it, and a `REQUIRED` that
 names any of those four raises before the builder's abort-share gate can run.
 
 **D2 — a killed writer's file is readable to its last flushed row.**
 ```bash
 "$AW" - <<'PY'
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
-import data.task_record as tr
+import data.trajectory_record as tr
 d = pathlib.Path(tempfile.mkdtemp())
 w = tr.open_record(d, "t_1", 1)
 w.row("meta", stage="sample", env="appworld", task_id="t_1", seed=1, env_seed=100,
@@ -662,7 +662,7 @@ Expected: `flush-per-row ok`; exit 0.
 ```bash
 "$AW" - <<'PY'
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
-import polars as pl, data.example as ex, data.prediction as pr
+import polars as pl, data.training_data as ex, data.probe_output as pr
 d = pathlib.Path(tempfile.mkdtemp())
 rows = pl.DataFrame({
   "example_id": ["t_1__s1|s0|c0", "t_1__s1|s0|c1"],
@@ -708,7 +708,7 @@ Expected: `example+prediction ok`; exit 0.
 ```bash
 "$AW" - <<'PY'
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
-import polars as pl, data.prediction as pr
+import polars as pl, data.probe_output as pr
 d = pathlib.Path(tempfile.mkdtemp()); q = d/"p.parquet"
 pr.write(q, pl.DataFrame({
   "example_id": ["a"], "event_id": ["e"], "task_id": ["t"], "depth": [0.5],
@@ -740,4 +740,4 @@ across all 24 processes must sum to exactly 150.
 
 ## Comments
 
-- 2026-09-17 wave 1 closeout: implementation passed review after 1 fix round (finding F1, a README import line, addressed), branch `ticket/2026-09-17-wave1/T02` (base `cca3ca3`, head `80b0d01`), merged as `025c54c` (README conflict resolved by keeping every ticket's lines). Main-session checks after the merge: `data`, `data.task_record`, `data.example`, `data.prediction`, `data.probe_input` import under the probe, appworld and vllm interpreters; `M-D2` the cross-host claim race: 8 processes on each of tokyo105, tokyo106, tokyo107 released at a common barrier raced for 150 record files under a fresh NFS directory with `open_record`, claims 64 + 42 + 44 = 150, 150 files on disk. System `python3` (3.10) cannot import `data/__init__.py` because it has no polars; the contracts define `venv: any` over the interpreters in the `venvs:` map, which does not include it. Left for later tickets (reviewer cannotVerify): `to_messages` raises a bare `KeyError` for a step with no gen/env row, which depends on how `agent/loop.py` (ticket 11) calls it; the contracts' 0.2 import lines for `example.py` and `prediction.py` omit the `[polars]` bracket the ticket and the code carry. Implementer concerns: `write()` in `example.py` and `prediction.py` fills absent SCHEMA columns from DEFAULTS; `task_record.SCHEMA` order was reconstructed column-major from the ticket's table; `Writer.row` also calls `os.fsync`. Report `sdd/2026-09-17-wave1/T02-report.md`.
+- 2026-09-17 wave 1 closeout: implementation passed review after 1 fix round (finding F1, a README import line, addressed), branch `ticket/2026-09-17-wave1/T02` (base `cca3ca3`, head `80b0d01`), merged as `025c54c` (README conflict resolved by keeping every ticket's lines). Main-session checks after the merge: `data`, `data.trajectory_record`, `data.training_data`, `data.probe_output`, `data.probe_input` import under the probe, appworld and vllm interpreters; `M-D2` the cross-host claim race: 8 processes on each of tokyo105, tokyo106, tokyo107 released at a common barrier raced for 150 record files under a fresh NFS directory with `open_record`, claims 64 + 42 + 44 = 150, 150 files on disk. System `python3` (3.10) cannot import `data/__init__.py` because it has no polars; the contracts define `venv: any` over the interpreters in the `venvs:` map, which does not include it. Left for later tickets (reviewer cannotVerify): `to_messages` raises a bare `KeyError` for a step with no gen/env row, which depends on how `agent/loop.py` (ticket 11) calls it; the contracts' 0.2 import lines for `training_data.py` and `probe_output.py` omit the `[polars]` bracket the ticket and the code carry. Implementer concerns: `write()` in `training_data.py` and `probe_output.py` fills absent SCHEMA columns from DEFAULTS; `trajectory_record.SCHEMA` order was reconstructed column-major from the ticket's table; `Writer.row` also calls `os.fsync`. Report `sdd/2026-09-17-wave1/T02-report.md`.

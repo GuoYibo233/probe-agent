@@ -13,7 +13,7 @@ Contracts Part 5 (5.1 through 5.7), Part 3 (3.1 through 3.4), Part 2 (2.1, 2.2,
 ```
 experimental_settings/schema.py   venv: any
   imports: none (repo); [PyYAML, dataclasses, hashlib, re, ast]
-  used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py,
+  used by: run.py, jobs/launch.py, agent/loop.py, data/build_training_dataset.py,
            train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py,
            eval/method_table.py, models/agent_models/service.py,
            models/probe_models/service.py  (ten; both services take load_frozen only)
@@ -183,7 +183,7 @@ STAGES = {
     "projection": ("sample.seeds", "sample.tasks", "sample.n_tasks",
                    "sample.pieces", "sample.replicas"),
     "projection_generator": (),
-    "versions": ("agent/loop.py", "agent/generate.py", "data/task_record.py",
+    "versions": ("agent/loop.py", "agent/generate.py", "data/trajectory_record.py",
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/service.py"),
@@ -193,15 +193,15 @@ STAGES = {
                  "sample.split", "sample.tasks", "sample.n_tasks", "sample.seeds"),
     "models": (),
     "upstream": ({"name": "sample", "source": "same", "stage": "sample", "key": "fold"},),
-    "program": "data.build_dataset",
+    "program": "data.build_training_dataset",
     "venv": "any",
     "pieces": (("cpu", 1, None),),
     "cards": False,
     "done_writer": "stage",
     "projection": (),
     "projection_generator": (),
-    "versions": ("data/build_dataset.py", "data/probe_input.py", "data/example.py",
-                 "data/task_record.py", "data/environments/__init__.py",
+    "versions": ("data/build_training_dataset.py", "data/probe_input.py", "data/training_data.py",
+                 "data/trajectory_record.py", "data/environments/__init__.py",
                  "data/environments/{env}.py"),
   },
   "train": {
@@ -216,7 +216,7 @@ STAGES = {
     "projection": ("train.checkpoint_hours",),
     "projection_generator": ("data",),
     "versions": ("train/utils/trainer.py", "train/methods/{method}.py",
-                 "eval/methods/{method}.py", "data/example.py", "data/prediction.py",
+                 "eval/methods/{method}.py", "data/training_data.py", "data/probe_output.py",
                  "models/probe_models/base.py", "models/probe_models/{backbone}.py"),
   },
   "eval": {
@@ -233,7 +233,7 @@ STAGES = {
     "projection": (),
     "projection_generator": ("data",),
     "versions": ("eval/utils/probe_eval.py", "eval/methods/{method}.py",
-                 "data/prediction.py"),
+                 "data/probe_output.py"),
   },
   "inject": {
     "sections": ("data", "models.agent", "generation",
@@ -259,7 +259,7 @@ STAGES = {
                    "inject.pieces", "inject.replicas"),
     "projection_generator": (),
     "versions": ("agent/loop.py", "agent/generate.py", "agent/inject.py",
-                 "agent/inject_format.py", "data/probe_input.py", "data/task_record.py",
+                 "agent/inject_format.py", "data/probe_input.py", "data/trajectory_record.py",
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/base.py", "models/probe_models/service.py",
@@ -283,7 +283,7 @@ STAGES = {
     "done_writer": "stage",
     "projection": ("data",),
     "projection_generator": (),
-    "versions": ("eval/score_run.py", "data/task_record.py"),
+    "versions": ("eval/score_run.py", "data/trajectory_record.py"),
   },
 }
 ```
@@ -478,8 +478,8 @@ VERSION = 1
 INSTRUCTIONS = {"v1": "developer message v1"}
 SPLIT_ROLE = {"train": "train", "dev": "val", "test": "test"}
 P
-for f in data/environments/__init__.py data/task_record.py data/example.py \
-         data/prediction.py data/probe_input.py data/build_dataset.py \
+for f in data/environments/__init__.py data/trajectory_record.py data/training_data.py \
+         data/probe_output.py data/probe_input.py data/build_training_dataset.py \
          agent/loop.py agent/generate.py agent/inject.py agent/inject_format.py \
          models/agent_models/service.py models/probe_models/base.py \
          models/probe_models/service.py train/utils/trainer.py \

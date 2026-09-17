@@ -15,7 +15,7 @@ endpoint files, the attach test), 2.3 (refire and the teardown) and 8.3
 ```
 jobs/launch.py   venv: probe (it runs on the login machine)
   imports: experimental_settings/schema.py, jobs/registry.py,
-           data/task_record.py (done_pairs, is_done, owner, release),
+           data/trajectory_record.py (done_pairs, is_done, owner, release),
            data/environments/__init__.py (tasks and requested_pairs)
   used by: run.py
   reads:   constants/path_datasets.yaml (the venv per environment and the venvs map),
@@ -165,9 +165,9 @@ spec section 9 forbids.
   implementer's worktree; **warn** when this piece already has more than one entry in
   `meta.json.launches`, name those entries, and proceed — **there is no refire
   quota**; release that piece's claims through
-  `data/task_record.release(run_dir, registry.live_sessions(), registry.DEFAULTS["launch_timeout_s"])`
+  `data/trajectory_record.release(run_dir, registry.live_sessions(), registry.DEFAULTS["launch_timeout_s"])`
   — **the run directory**, not `<run_dir>/records`, because
-  `data/task_record.py` appends `records/` itself (errata); probe the cards
+  `data/trajectory_record.py` appends `records/` itself (errata); probe the cards
   again; restart the piece in a new tmux session; rewrite that piece's
   `meta.json` entry (`host`, `gpus`, `session`, `pid`, `cmd`) and append a
   `launches` entry carrying the `git` dict it was handed — both through
@@ -256,7 +256,7 @@ refusal against the worktree as it stands.
 import sys, pathlib; sys.path.insert(0,'.')
 from jobs import launch
 paths = ['jobs/runs.jsonl', 'jobs/RESULTS.md', 'jobs/runs.jsonl.lock',
-         'data/task_record.py', 'README.md']
+         'data/trajectory_record.py', 'README.md']
 print('kept:', [p for p in paths if not launch.is_ledger_path(p)])
 g = launch.git_state(pathlib.Path('$T2'), True)
 print('no ledger file in dirty_files:', not any(launch.is_ledger_path(f) for f in g['dirty_files']))
@@ -266,7 +266,7 @@ try:
 except SystemExit as e:
     print('refused:', str(e).splitlines()[0][:60])"
 ```
-Expected: `kept: ['data/task_record.py', 'README.md']`;
+Expected: `kept: ['data/trajectory_record.py', 'README.md']`;
 `no ledger file in dirty_files: True`; then `refused: …` naming the dirty files,
 which is the normal case in your worktree because you have just written
 `jobs/launch.py` and `README.md`. If it prints `NO REFUSAL (clean worktree)`

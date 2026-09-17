@@ -29,13 +29,13 @@ format (`probe_report.json` + `fires.parquet`), the temperature fit, the bootstr
 interval, `consumed.json`, the heartbeat and `done.json`.
 
 - **venv:** `any` (runs under `venvs.probe` = `external/probe-env/bin/python`, 6.3).
-- **imports** (0.2): `experimental_settings/schema.py`, `data/prediction.py`,
+- **imports** (0.2): `experimental_settings/schema.py`, `data/probe_output.py`,
   `jobs/registry.py`; `[polars, numpy]`. It must **not** import `data/__init__.py`
   or `data/environments/__init__.py` — `selfcheck` parses the import statements
   against this line (0.1).
 - **used by** (0.2): `eval/methods/{ctool,cgen,cparam}.py`, `run.py` (`read_report`,
   to freeze `_resolved.probe_temperature`, 5.4), `eval/method_table.py`.
-- **reads:** `predictions.parquet` (through `data/prediction.py`), its own train
+- **reads:** `predictions.parquet` (through `data/probe_output.py`), its own train
   run's `meta.json` (`stage_extra.labels`, `upstream["build"]`), the referenced
   eval run's `meta.json` and its train run's `meta.json` (the 2.5 gate), the
   referenced probe report (through its own `read_report`).
@@ -74,7 +74,7 @@ def softmax(logits: "np.ndarray", temperature: float) -> "np.ndarray"     # help
    work; `unit` is `item` for eval and the piece index is 0 (8.4).
 3. `train_dir = schema.run_dir_of("train", cfg._upstream["train"], debug=cfg._debug)`
    (3.1; the same-setting upstream keeps the debug overlay).
-4. `pred_df = prediction.read(train_dir / "predictions.parquet")`. Raise, naming
+4. `pred_df = probe_output.read(train_dir / "predictions.parquet")`. Raise, naming
    the values, when the frame's `method` column holds anything but
    `cfg.probe.method`.
 5. `labels = json.load(train_dir/"meta.json")["stage_extra"]["labels"]` (1.3, 8.3).
@@ -369,7 +369,7 @@ One sentence: score a `sample` or `inject` run from its task records — task
 success, speculation outcomes, tokens and time, by seed, against a baseline.
 
 - **venv:** `any`.
-- **imports** (0.2): `experimental_settings/schema.py`, `data/task_record.py`,
+- **imports** (0.2): `experimental_settings/schema.py`, `data/trajectory_record.py`,
   `data/environments/__init__.py` (`open_env` for `split_args` and `build_call`,
   and `requested_pairs`, 2.3), `jobs/registry.py`; `[polars]`.
 - **used by:** none (program).
@@ -408,7 +408,7 @@ plus `if __name__ == "__main__":` parsing exactly `--run-dir <dir>`.
    every pair; refuse naming the missing pairs.
 6. `hb = registry.beat(run_dir, 0)`, `hb.emit(0, len(pairs), "task")` (8.4's unit
    for score is `task`), then one beat per task read.
-7. `df = task_record.read_dir(scored_dir, pairs)`; `bdf = read_dir(base_dir, pairs)`
+7. `df = trajectory_record.read_dir(scored_dir, pairs)`; `bdf = read_dir(base_dir, pairs)`
    when paired. Both gates and both reads are stated over this pair list and never
    over the directory (2.5).
 8. Compute (columns from 1.1):
@@ -540,11 +540,11 @@ From other folders, per file (the integrator turns these into Blocked-by):
 | this file | needs to exist | which names |
 |---|---|---|
 | `probe_eval.py` | `experimental_settings/schema.py` | `load_frozen(run_dir) -> Setting`, `run_dir_of(stage, key, *, debug)`, the `Setting` with `eval`, `probe`, `data` sections and `_key`, `_commit`, `_debug`, `_upstream`, `_versions` |
-| | `data/prediction.py` | `read(path) -> DataFrame`, `write(path, df)`, `SCHEMA`, `VERSION` |
+| | `data/probe_output.py` | `read(path) -> DataFrame`, `write(path, df)`, `SCHEMA`, `VERSION` |
 | | `jobs/registry.py` | `beat(run_dir, piece) -> Heartbeat`, `Heartbeat.emit`, `Heartbeat.finish`, `write_done(run_dir, *, stage, key, commit, counts, versions, metrics, report, pairs=None, stage_extra=None)` |
 | `methods/ctool.py` | `eval/utils/probe_eval.py` | `run`, `fit_temperature`, `bootstrap_ci`, `softmax` |
 | `methods/cgen.py`, `methods/cparam.py` | `eval/utils/probe_eval.py`; `data/environments/__init__.py` | `open_env(name)`; the environment's `split_args(text)` and `build_call(tool, args)` |
-| `score_run.py` | `experimental_settings/schema.py`; `data/task_record.py`; `data/environments/__init__.py`; `jobs/registry.py` | `load_frozen`, `run_dir_of`; `read_dir(dir, pairs)`, `done_pairs(dir, pairs)`; `open_env`, `requested_pairs(env, splits, tasks, n_tasks, seeds)`, `env.split_args`, `env.build_call`, `env.tasks`; `beat`, `write_done` |
+| `score_run.py` | `experimental_settings/schema.py`; `data/trajectory_record.py`; `data/environments/__init__.py`; `jobs/registry.py` | `load_frozen`, `run_dir_of`; `read_dir(dir, pairs)`, `done_pairs(dir, pairs)`; `open_env`, `requested_pairs(env, splits, tasks, n_tasks, seeds)`, `env.split_args`, `env.build_call`, `env.tasks`; `beat`, `write_done` |
 | `method_table.py` | `experimental_settings/schema.py`; `jobs/registry.py`; `eval/utils/probe_eval.py` | the schema defaults for `models.probe` and `probe.method`; `ls(workflow=None, *, debug=False, edited=None, progress=None) -> list[dict]` with the start row's `stage`, `key`, `dir`, `diff`, `parent`, `swept` on each row; `read_report` |
 
 `constants/path_outputs.yaml` and `constants/path_datasets.yaml` must exist, but
@@ -608,7 +608,7 @@ external/probe-env/bin/python - <<'PY'
 import json, subprocess, sys, polars as pl
 sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import prediction
+from data import probe_output
 
 TK, EK = "aaaaaaaaaaaa", "bbbbbbbbbbbb"
 tdir = schema.run_dir_of("train", TK, debug=True); tdir.mkdir(parents=True, exist_ok=True)
@@ -626,7 +626,7 @@ for ev in range(20):                       # 20 events, 2 cuts each, 10 val / 10
             score=0.9, label_pred=tool,
             logits=[3.0, 0.0] if tool == labels[0] else [0.0, 3.0],
             text_pred=None, gen_tokens=None))
-prediction.write(tdir / "predictions.parquet", pl.DataFrame(rows))
+probe_output.write(tdir / "predictions.parquet", pl.DataFrame(rows))
 (tdir / "meta.json").write_text(json.dumps(
     {"stage": "train", "key": TK, "upstream": {"build": "cccccccccccc"},
      "stage_extra": {"labels": labels}}))
@@ -707,7 +707,7 @@ Run after A4 in the same shell session (it reuses `bbbbbbbbbbbb`).
 external/probe-env/bin/python - <<'PY'
 import json, subprocess, sys, polars as pl; sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import prediction
+from data import probe_output
 from data.environments import open_env
 env = open_env("appworld")
 TK2, EK2 = "dddddddddddd", "eeeeeeeeeeee"
@@ -725,7 +725,7 @@ for ev in range(20):
                          score=None, label_pred=None, logits=None,
                          text_pred=call if ev % 4 else env.build_call(tool, [("k", "2")]),
                          gen_tokens=7))
-prediction.write(tdir / "predictions.parquet", pl.DataFrame(rows))
+probe_output.write(tdir / "predictions.parquet", pl.DataFrame(rows))
 (tdir / "meta.json").write_text(json.dumps(
     {"stage": "train", "key": TK2, "upstream": {"build": "cccccccccccc"},
      "stage_extra": {"labels": None}}))
@@ -795,7 +795,7 @@ Expected: `A7 ok`, exit 0.
 external/probe-env/bin/python - <<'PY'
 import json, subprocess, sys, time; sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import task_record
+from data import trajectory_record
 from data.environments import open_env, requested_pairs
 env = open_env("appworld")
 SK, BK, RK = "1111aaaa1111", "2222bbbb2222", "3333cccc3333"
@@ -807,7 +807,7 @@ triples = requested_pairs(env, ["train"], None, 2, [42])
 print("requested:", triples)
 for d, ok in ((sdir, True), (bdir, False)):
     for split, tid, seed in triples:
-        w = task_record.open_record(d / "records", tid, seed)
+        w = trajectory_record.open_record(d / "records", tid, seed)
         w.row("meta", step=None, ts=time.time(), record_id=f"{tid}__s{seed}", stage="sample",
               env="appworld", task_id=tid, seed=seed, env_seed=100, split=split, arm="sample",
               instructions="v1", task_text="do it", agent_model="gptoss120b",
@@ -988,7 +988,7 @@ them.
   minimiser (errata E4), not torch.
 - **Acceptance:** A1, A2, A3, A4, A5 (and A10 when `run.py` exists).
 - **Needs from other folders:** `experimental_settings/schema.py`
-  (`load_frozen`, `run_dir_of`, the `Setting`); `data/prediction.py`
+  (`load_frozen`, `run_dir_of`, the `Setting`); `data/probe_output.py`
   (`read`, `write`, `SCHEMA`, `VERSION`); `jobs/registry.py`
   (`beat`, `Heartbeat.emit`, `Heartbeat.finish`, `write_done`).
 
@@ -1005,7 +1005,7 @@ them.
 - **Acceptance:** A1, A2, A3, A6, A7.
 - **Needs from other folders:** `eval/utils/probe_eval.py` (T-EVAL-1);
   `data/environments/__init__.py` (`open_env`, and the environment's
-  `split_args`, `build_call`); `data/prediction.py`;
+  `split_args`, `build_call`); `data/probe_output.py`;
   `experimental_settings/schema.py`; `jobs/registry.py` (through `probe_eval`).
 
 ### T-EVAL-3 — the run scorer
@@ -1019,7 +1019,7 @@ them.
   `norm_call` with `env.split_args` / `env.build_call`.
 - **Acceptance:** A1, A2, A3, A8.
 - **Needs from other folders:** `experimental_settings/schema.py`
-  (`load_frozen`, `run_dir_of`); `data/task_record.py` (`open_record`,
+  (`load_frozen`, `run_dir_of`); `data/trajectory_record.py` (`open_record`,
   `Writer.row`, `Writer.close`, `read_dir`, `done_pairs`);
   `data/environments/__init__.py` (`open_env`, `requested_pairs`, `env.tasks`,
   `env.split_args`, `env.build_call`); `jobs/registry.py` (`beat`, `write_done`).

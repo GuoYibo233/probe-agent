@@ -6,15 +6,15 @@ Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
 ## What to do
 
-One file: `data/build_dataset.py`, plus its `README.md` entry. Contracts 2.5
+One file: `data/build_training_dataset.py`, plus its `README.md` entry. Contracts 2.5
 (every gate), 1.2 (the example row), 1.7 (the probe's input), 2.3 (the requested
 pair list) and 1.5 (`consumed.json`, `done.json`) are the specification.
 
 ```
-data/build_dataset.py   venv: any (2.1's build row; run.py starts it in place with the
+data/build_training_dataset.py   venv: any (2.1's build row; run.py starts it in place with the
                         `any` interpreter, 2.3)
   imports: experimental_settings/schema.py, data/__init__.py (the id functions),
-           data/task_record.py, data/example.py, data/probe_input.py,
+           data/trajectory_record.py, data/training_data.py, data/probe_input.py,
            data/environments/__init__.py, jobs/registry.py; [polars, PyYAML]
   used by: none (program)
   reads:   the sample run's task records, constants/path_datasets.yaml (the splits
@@ -41,9 +41,9 @@ itself.
 4. `sample_dir = schema.run_dir_of("sample", cfg._upstream["sample"],
    debug=cfg._debug)` — the key is **read out of `_upstream`, never recomputed**
    (2.1).
-5. **Completeness gate** (2.5): `done = task_record.done_pairs(sample_dir,
+5. **Completeness gate** (2.5): `done = trajectory_record.done_pairs(sample_dir,
    pairs)`; raise, naming the missing pairs, when `done` does not cover `pairs`.
-   **`done_pairs` takes the run directory**; `data/task_record.py` appends
+   **`done_pairs` takes the run directory**; `data/trajectory_record.py` appends
    `records/` itself (errata).
 6. `hb.emit(0, len(pairs), "row")`, then one beat per record read. **Decision
    already made (errata):** `build` emits one beat per **record**, with `done` and
@@ -55,7 +55,7 @@ itself.
 8. **Split gates** (2.5): a task id that appears in two splits, and a task id of
    the records that is in none of the environment's official lists, each stop the
    build and name the ids.
-9. `df = task_record.read_dir(sample_dir, pairs)`.
+9. `df = trajectory_record.read_dir(sample_dir, pairs)`.
 10. **Abort gate** (2.5): the share of records whose `final.abort` is non-null
     above `cfg.build.max_abort_frac` stops the build, naming the share and the
     field.
@@ -116,8 +116,8 @@ itself.
 15. **Per-split cap**: keep the first `cfg.build.max_examples` rows of **each**
     split in `example_id` order, so the cap is a deterministic function of its
     input (2.5).
-16. `example.write(run_dir / "examples.parquet", frame)`.
-17. `consumed.json`: every record file it read, by `task_record.record_path`,
+16. `training_data.write(run_dir / "examples.parquet", frame)`.
+17. `consumed.json`: every record file it read, by `trajectory_record.record_path`,
     with its sha1 and row count; **and** every split file, with its path, sha1 and
     task count (2.5, 1.5).
 18. `report.md` (below).
@@ -181,7 +181,7 @@ for P in /home/y-guo/reproduce/new1/external/probe-env/bin/python \
          /home/y-guo/reproduce/new1/external/appworld/venv/bin/python \
          /home/y-guo/reproduce/new1/external/vllm-env/bin/python; do
   "$P" -c "import sys; sys.path.insert(0,'.');
-import data, data.task_record, data.example, data.prediction, data.probe_input, data.build_dataset
+import data, data.trajectory_record, data.training_data, data.probe_output, data.probe_input, data.build_training_dataset
 print('imports ok', sys.version.split()[0])"
 done
 ```
@@ -189,14 +189,14 @@ Expected: `imports ok 3.11.15`, `imports ok 3.12.13`, `imports ok 3.12.13`.
 
 **A3 — one column-zero `VERSION`.**
 ```bash
-grep -c '^VERSION = [0-9][0-9]*$' data/build_dataset.py
+grep -c '^VERSION = [0-9][0-9]*$' data/build_training_dataset.py
 ```
 Expected: `1`.
 
 **F1 — the command shape of 2.6, and no setting name on the command line.**
 ```bash
-"$AW" -m data.build_dataset --help 2>&1 | head -5
-"$AW" -m data.build_dataset --run-dir /nonexistent; echo "exit=$?"
+"$AW" -m data.build_training_dataset --help 2>&1 | head -5
+"$AW" -m data.build_training_dataset --run-dir /nonexistent; echo "exit=$?"
 ```
 Expected: the help text names `--run-dir` and **no** `--setting`, `--config`,
 `--env` or `--out`; the second command exits non-zero with a message naming
@@ -251,7 +251,7 @@ if VARIANT == "bad_text":
                  "def assemble(*a, **k):\n    return _assemble_orig(*a, **k) + '.'\n")
 
 from experimental_settings import schema
-from data import task_record
+from data import trajectory_record
 from data.environments import open_env, requested_pairs
 env = open_env("appworld")
 
@@ -276,7 +276,7 @@ STEPS = [                                   # think, action, result
     (LONG, GOOD4, "[{'name': 'alice'}]"),                                 # 4 normal
 ]
 for i, (split, tid, seed) in enumerate(triples):
-    w = task_record.open_record(sdir, tid, seed)     # the RUN DIRECTORY
+    w = trajectory_record.open_record(sdir, tid, seed)     # the RUN DIRECTORY
     w.row("meta", stage="sample", env="appworld", task_id=tid, seed=seed, env_seed=100,
           split=split, arm="sample", instructions="v1", task_text="Play my playlist.",
           agent_model="gptoss120b", generation="{}", inject=None, commit="deadbeef",
@@ -298,7 +298,7 @@ for i, (split, tid, seed) in enumerate(triples):
     w.close()
 
 if VARIANT == "missing_record":
-    task_record.record_path(sdir, triples[0][1], triples[0][2]).unlink()
+    trajectory_record.record_path(sdir, triples[0][1], triples[0][2]).unlink()
 if VARIANT == "two_splits":                  # the dev list's first id also in train
     tr = FIX / "splits/train.txt"; dv = FIX / "splits/dev.txt"
     tr.write_text(tr.read_text().rstrip("\n") + "\n" + dv.read_text().splitlines()[0])
@@ -343,11 +343,11 @@ and then runs the builder **inside `$FIX`**, because that is the tree whose
 **F2 — the end-to-end build.**
 ```bash
 read -r FIX SDIR BDIR < <(bash /tmp/mkbuildfix.sh ok | paste -sd' ')
-(cd "$FIX" && "$AW" -m data.build_dataset --run-dir "$BDIR"); echo "exit=$?"
+(cd "$FIX" && "$AW" -m data.build_training_dataset --run-dir "$BDIR"); echo "exit=$?"
 ls "$BDIR"
 (cd "$FIX" && "$AW" -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 df = ex.read('$BDIR/examples.parquet')
 print(df.height, sorted(set(df['split'].to_list())), list(df.columns))")
 ```
@@ -355,7 +355,7 @@ Expected: `exit=0`; the directory holds `examples.parquet`, `consumed.json`,
 `report.md`, `done.json` and `heartbeat/0-0.jsonl`; the read prints a non-zero
 row count, `['test', 'train', 'val']` (the six records are two per benchmark
 split and `SPLIT_ROLE` maps `dev` to `val`), and the full declared column list of
-`data/example.py`'s `SCHEMA` **in order**.
+`data/training_data.py`'s `SCHEMA` **in order**.
 
 **F3 — each gate of 2.5 fires and names what it found.** One command per row; the
 variant name is the fixture argument. Every one must exit non-zero and print the
@@ -364,7 +364,7 @@ named thing.
 for V in missing_record abort orphan_gen two_splits unknown_task bad_call bad_text; do
   read -r FIX SDIR BDIR < <(bash /tmp/mkbuildfix.sh $V | paste -sd' ')
   echo "=== $V ==="
-  (cd "$FIX" && "$AW" -m data.build_dataset --run-dir "$BDIR" > /tmp/g_$V.txt 2>&1)
+  (cd "$FIX" && "$AW" -m data.build_training_dataset --run-dir "$BDIR" > /tmp/g_$V.txt 2>&1)
   echo "exit=$?"
   tail -3 /tmp/g_$V.txt
 done
@@ -395,10 +395,10 @@ the row's right-hand column says.
 **F4 — the three skip-and-count cases are skipped, not raised, and are counted.**
 ```bash
 read -r FIX SDIR BDIR < <(bash /tmp/mkbuildfix.sh ok | paste -sd' ')
-(cd "$FIX" && "$AW" -m data.build_dataset --run-dir "$BDIR")
+(cd "$FIX" && "$AW" -m data.build_training_dataset --run-dir "$BDIR")
 (cd "$FIX" && "$AW" -c "
 import sys, json; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 c = json.load(open('$BDIR/done.json'))['counts']
 print(c['events_skipped_no_action'], c['events_skipped_no_call'],
       c['events_skipped_short_think'], c['events'], c['examples'])
@@ -429,11 +429,11 @@ fixtures with `build.max_examples: 1`, built and compared.
 ```bash
 read -r FIXA SA BA < <(bash /tmp/mkbuildfix.sh cap | paste -sd' ')
 read -r FIXB SB BB < <(bash /tmp/mkbuildfix.sh cap | paste -sd' ')
-(cd "$FIXA" && "$AW" -m data.build_dataset --run-dir "$BA")
-(cd "$FIXB" && "$AW" -m data.build_dataset --run-dir "$BB")
+(cd "$FIXA" && "$AW" -m data.build_training_dataset --run-dir "$BA")
+(cd "$FIXB" && "$AW" -m data.build_training_dataset --run-dir "$BB")
 (cd "$FIXA" && "$AW" -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 a = ex.read('$BA/examples.parquet'); b = ex.read('$BB/examples.parquet')
 assert a.equals(b), 'the cap is not a deterministic function of its input'
 print('deterministic cap ok', a.height, sorted(a['split'].to_list()))")
@@ -447,10 +447,10 @@ step 1, the api-less step 2 and the short-thinking step 3, and `hist_rounds` is
 `NO_CODE_BLOCK`.
 ```bash
 read -r FIX SDIR BDIR < <(bash /tmp/mkbuildfix.sh ok | paste -sd' ')
-(cd "$FIX" && "$AW" -m data.build_dataset --run-dir "$BDIR")
+(cd "$FIX" && "$AW" -m data.build_training_dataset --run-dir "$BDIR")
 (cd "$FIX" && "$AW" -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 df = ex.read('$BDIR/examples.parquet')
 row = df.filter(df['event_id'].str.ends_with('|s4')).sort('example_id').to_dicts()[0]
 t = row['text']
@@ -485,7 +485,7 @@ third-party list `[polars, PyYAML]` and the `constants/path_datasets.yaml` read
 run.py train_probe ctool_q06 --debug        # the walk reaches build itself
 <appworld python> -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 df = ex.read('<debug build dir>/examples.parquet')
 print(df.height, df['split'].value_counts().sort('split'))"
 ```

@@ -201,14 +201,14 @@ speculate, splice the result in and resume from the spliced prefix.
 
 - **venv**: the environment's (0.2).
 - **imports** (0.2): `agent/generate.py`, `agent/inject_format.py`,
-  `data/probe_input.py`, `data/task_record.py`,
+  `data/probe_input.py`, `data/trajectory_record.py`,
   `data/environments/__init__.py` (type only; the object is passed in),
   `models/probe_models/service.py` (client), `models/__init__.py` (the family
   module). **It does not import `experimental_settings/schema.py`** — the
   setting is passed in by `loop.py`.
 - **used by**: `agent/loop.py`.
 - **reads**: nothing. **writes**: `spec` and `resume` rows, through
-  `data/task_record.py`'s writer it was handed (0.2, 1.1's "who writes").
+  `data/trajectory_record.py`'s writer it was handed (0.2, 1.1's "who writes").
 
 **Names it must offer.**
 
@@ -322,7 +322,7 @@ act, judge, close — and write the record.
 
 - **venv**: the environment's (0.2, 2.1).
 - **imports** (0.2): `experimental_settings/schema.py` (`load_frozen` only),
-  `data/environments/__init__.py`, `data/task_record.py`,
+  `data/environments/__init__.py`, `data/trajectory_record.py`,
   `models/agent_models/service.py` (client), `models/probe_models/service.py`
   (client, for `render`), `agent/generate.py`, `agent/inject.py`,
   `jobs/registry.py`. **It imports `models/__init__.py` nowhere** (0.2, and the
@@ -438,7 +438,7 @@ capture at `:186-190`, the abort capture at `:221-228`, the evaluation and
   completeness check and the claim release are the login machine's (1.1, 2.3).
 - `resolve_seeds`, `traj_path`, `exp_name`, `traj_meta`
   (`run_appworld.py:48-106`) — seeds come from `requested_pairs`, the path from
-  `data/task_record.py`, and the benchmark's experiment name from
+  `data/trajectory_record.py`, and the benchmark's experiment name from
   `Environment.open` (4.2).
 - The code-block regex, the no-code reply and the `world.execute` call
   (`run_appworld.py:45,204-217`; `live_appworld.py:804-816`) — `Environment.step`
@@ -465,8 +465,8 @@ What each file needs from other folders, by file and function:
 |---|---|
 | `inject_format.py` | nothing |
 | `generate.py` | `models/__init__.py` (`agent(alias) -> AgentModel`, field `module`); `models/agent_models/gptoss.py` (`NAME`, `parse(text_delta, state)`); `models/agent_models/service.py` (the client half: `Client(base_url, served_model_name)`, `stream(prompt_ids, generation, seed)`, `health()`); `experimental_settings/schema.py` for the `generation` dataclass `dataclasses.replace` is applied to (imported by nobody in this file — it arrives as `cfg`) |
-| `inject.py` | everything `generate.py` needs, plus `models/agent_models/gptoss.py` (`wrap_prefetch(body, system_text)`); `models/probe_models/service.py` (the client half: `Client(base_url)`, `score(text)`, `generate(text, max_new)`, `encode(text, special)`, `decode(ids)`, `health()`); `data/probe_input.py` (`cuts_live(thinking_so_far, min_think)`, `assemble(task, history, thinking_prefix, hist_rounds, probe_result_cap)`); `data/task_record.py` (`Writer.row`); `data/environments/__init__.py` (`Environment` for the type annotation; the object is passed in, and its `speculate`, `complete_call`, `build_call` are called on it) |
-| `loop.py` | everything the three need, plus `experimental_settings/schema.py` (`load_frozen(run_dir) -> Setting`); `data/environments/__init__.py` (`open_env(name)`, `requested_pairs(env, splits, tasks, n_tasks, seeds)`, `StepObservation`); `data/task_record.py` (`open_record(dir, task_id, seed)`, `Writer.row`, `Writer.frame`, `Writer.close`, `to_messages(df, upto_step, task_text, instructions, no_code, extra_developer)`); `data/__init__.py` (`record_id`); `models/probe_models/service.py` (the client's `render(messages, effort, date)` and `health()`); `jobs/registry.py` (`beat(run_dir, piece)`, `Heartbeat.emit`, `Heartbeat.finish`, `DEFAULTS["launch_timeout_s"]`) |
+| `inject.py` | everything `generate.py` needs, plus `models/agent_models/gptoss.py` (`wrap_prefetch(body, system_text)`); `models/probe_models/service.py` (the client half: `Client(base_url)`, `score(text)`, `generate(text, max_new)`, `encode(text, special)`, `decode(ids)`, `health()`); `data/probe_input.py` (`cuts_live(thinking_so_far, min_think)`, `assemble(task, history, thinking_prefix, hist_rounds, probe_result_cap)`); `data/trajectory_record.py` (`Writer.row`); `data/environments/__init__.py` (`Environment` for the type annotation; the object is passed in, and its `speculate`, `complete_call`, `build_call` are called on it) |
+| `loop.py` | everything the three need, plus `experimental_settings/schema.py` (`load_frozen(run_dir) -> Setting`); `data/environments/__init__.py` (`open_env(name)`, `requested_pairs(env, splits, tasks, n_tasks, seeds)`, `StepObservation`); `data/trajectory_record.py` (`open_record(dir, task_id, seed)`, `Writer.row`, `Writer.frame`, `Writer.close`, `to_messages(df, upto_step, task_text, instructions, no_code, extra_developer)`); `data/__init__.py` (`record_id`); `models/probe_models/service.py` (the client's `render(messages, effort, date)` and `health()`); `jobs/registry.py` (`beat(run_dir, piece)`, `Heartbeat.emit`, `Heartbeat.finish`, `DEFAULTS["launch_timeout_s"]`) |
 
 ---
 
@@ -728,14 +728,14 @@ Expected: `raises ok`, exit 0.
 
 **C4 — a whole fired step against stub clients and a real record writer.** This
 is the acceptance that matters: it exercises `inject.step` end to end on CPU and
-reads the rows back with `data/task_record.read`.
+reads the rows back with `data/trajectory_record.read`.
 
 ```bash
 external/appworld/venv/bin/python - <<'PY'
 import dataclasses, tempfile, types
 from pathlib import Path
 import agent.generate as g, agent.inject as inj
-from data.task_record import open_record, read
+from data.trajectory_record import open_record, read
 
 class FakeStream:
     finish_reason, stop_reason = "stop", "<|return|>"
@@ -875,7 +875,7 @@ Expected: one `<task_id>__s<seed>.jsonl` per requested triple, each ending in a
 
 ```bash
 external/appworld/venv/bin/python -c "
-from data.task_record import read
+from data.trajectory_record import read
 df = read('<tmp>/records/<task_id>__s42.jsonl')
 m = df.filter(df['type']=='meta').to_dicts()[0]
 assert m['split'] == 'train' and m['arm'] == 'sample' and m['stage'] == 'sample'
@@ -963,7 +963,7 @@ by exactly one `resume` row with the same `fire_index`:
 
 ```bash
 external/probe-env/bin/python - <<'PY'
-from data.task_record import read_dir
+from data.trajectory_record import read_dir
 df = read_dir('<dir>/records', pairs)
 s = df.filter(df['type']=='spec'); r = df.filter(df['type']=='resume')
 assert s.height == r.height
@@ -1014,7 +1014,7 @@ Four tickets, one per file, in the order of section 2.
 - **Acceptance**: C1, C2, C3, C4, C5 (and A1 re-run, since C imports A).
 - **Needs from other folders**: `agent/generate.py` (ticket B);
   `agent/inject_format.py` (ticket A); `data/probe_input.py` (`cuts_live`,
-  `assemble`); `data/task_record.py` (`Writer.row`, `open_record`, `read` for
+  `assemble`); `data/trajectory_record.py` (`Writer.row`, `open_record`, `read` for
   the acceptance); `data/environments/__init__.py` (`Environment`, and the
   object's `speculate`, `complete_call`, `build_call`);
   `models/probe_models/service.py` (client: `score`, `generate`, `encode`,
@@ -1032,7 +1032,7 @@ Four tickets, one per file, in the order of section 2.
 - **Acceptance**: D1, D2, D3, D4, D5, D6.
 - **Needs from other folders**: `experimental_settings/schema.py`
   (`load_frozen`); `data/environments/__init__.py` (`open_env`,
-  `requested_pairs`, `StepObservation`); `data/task_record.py` (`open_record`,
+  `requested_pairs`, `StepObservation`); `data/trajectory_record.py` (`open_record`,
   `Writer.row`, `Writer.frame`, `Writer.close`, `to_messages`, `read` for the
   acceptance); `data/__init__.py` (`record_id`);
   `models/agent_models/service.py` and `models/probe_models/service.py` (both
@@ -1101,8 +1101,8 @@ Each line below is appended to
   and a loop piece reads no `meta.json` (7.4); it computes 3.4's session name,
   `f"{cfg._stage}-{cfg._key}-{piece}"`. `jobs/launch.py` must spell it the same.
 - **[D-15] 1.1** — `meta.version` and every row's `ts` are stamped by
-  `data/task_record.py`'s writer, not passed in by `agent/loop.py`, the way
-  `data/prediction.py`'s writer stamps `version` (2.6).
+  `data/trajectory_record.py`'s writer, not passed in by `agent/loop.py`, the way
+  `data/probe_output.py`'s writer stamps `version` (2.6).
 - **[D-16] 1.1** — `to_messages`'s `upto_step` is exclusive: the messages for
   step N carry the rows of steps 0..N-1.
 - **[D-17] 1.7 / 7.3** — 7.3 says the loop appends
@@ -1111,7 +1111,7 @@ Each line below is appended to
   produced an action (`live_appworld.py:816` inside the code-block branch,
   `legacy/pipeline/annotate/build.py:81-82,117` skipping before the append), and
   the offline and live histories must be identical (1.7). The loop appends only
-  when `observation.action` is not None, and `data/build_dataset.py` must do the
+  when `observation.action` is not None, and `data/build_training_dataset.py` must do the
   same.
 - **[D-18] 1.1 / 7.1** — `final.abort` is defined only for the 400 case; a task
   that raises anything else would leave a record with no `final` row, which

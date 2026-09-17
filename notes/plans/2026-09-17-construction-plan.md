@@ -155,11 +155,11 @@ in `.claude/settings.json` after wave 2 and re-test it through the harness.
 | file | one line |
 |---|---|
 | `data/__init__.py` | the id chain, `read_frame` / `write_frame`, the `VERSION`/`DEFAULTS`/`REQUIRED` rule |
-| `data/task_record.py` | the record one task run leaves: six row kinds, the `O_EXCL` claim, the readers, the conversation rebuild |
-| `data/example.py` | the row `build` writes per cut, with all three methods' targets |
-| `data/prediction.py` | the row `train` writes per example after training |
+| `data/trajectory_record.py` | the record one task run leaves: six row kinds, the `O_EXCL` claim, the readers, the conversation rebuild |
+| `data/training_data.py` | the row `build` writes per cut, with all three methods' targets |
+| `data/probe_output.py` | the row `train` writes per example after training |
 | `data/probe_input.py` | the cut positions and the text the probe sees, offline and live |
-| `data/build_dataset.py` | the program: records -> example rows, the split, the gates, the report |
+| `data/build_training_dataset.py` | the program: records -> example rows, the split, the gates, the report |
 
 **Legacy sources.** `legacy/pipeline/inject/live_appworld.py:290-299` (the jsonl
 writer and the flush rule), `:34-42` (the six row kinds), `:590-603` (the claim
@@ -185,9 +185,9 @@ the call round trip).
 - `C2` `assemble` byte for byte, including the 393-character clip.
 - `D1` the claim, the six kinds, the round trip, `is_done` / `owner` / `done_pairs` / `read_dir` / `to_messages` / `release`, run through the real entry points.
 - `D2` a killed writer's file reads to its last flushed row.
-- `E1` `example.write` / `read` and `prediction.write` / `read`: declared column order, the stamped `version`, the struct-list `args`.
+- `E1` `training_data.write` / `read` and `probe_output.write` / `read`: declared column order, the stamped `version`, the struct-list `args`.
 - `E2` a generator's prediction row reads back with the classifier columns null.
-- `F1` (ticket 09) `python -m data.build_dataset --help` names `--run-dir` and nothing else.
+- `F1` (ticket 09) `python -m data.build_training_dataset --help` names `--run-dir` and nothing else.
 - `F2` (ticket 09) the end-to-end build over a fixture run directory built with the real writers; the fixture script is a scratch copy of the code tree with its own outputs root and its own split-file copies, and `F3`-`F7` are variants of it.
 - `F3` (ticket 09) each gate of 2.5 fires and names what it found (seven variants).
 - `F4` (ticket 09) the three skip-and-count cases — null action, api-less code block, short thinking — are skipped, counted, and absent from `examples.parquet`.
@@ -339,7 +339,7 @@ sample-side walk, the heartbeat, the abort capture, the `final` row).
 - `D1` `agent/loop.py` imports under the appworld venv and imports `models/__init__.py` nowhere.
 - `D2` `-m agent.loop --help` names exactly `--run-dir` and `--piece`.
 - `D3` a `--debug`-sized sample walk on stubs: one record file per triple, each ending in a `final` row, plus the heartbeat file.
-- `D4` the record's columns read back through `data/task_record.read`.
+- `D4` the record's columns read back through `data/trajectory_record.read`.
 - `D5` the `/health` refusal in its three forms.
 - `D6` two pieces cover the requested list and claim nothing twice.
 
@@ -548,14 +548,14 @@ own files' lines; that is not a dependency and not a conflict (section 1).
 | # | title | files | Blocked by | wave |
 |---|---|---|---|---|
 | 01 | constants, the setting files, and the read-only hook | `constants/path_datasets.yaml`, `constants/path_outputs.yaml`, `constants/path_models.yaml`, `experimental_settings/{debug,baseline,train_probe,inject}.yaml`, `.claude/hooks/settings_readonly.sh` | (none) | 1 |
-| 02 | the three on-disk formats and the probe's input | `data/__init__.py`, `data/probe_input.py`, `data/task_record.py`, `data/example.py`, `data/prediction.py` | (none) | 1 |
+| 02 | the three on-disk formats and the probe's input | `data/__init__.py`, `data/probe_input.py`, `data/trajectory_record.py`, `data/training_data.py`, `data/probe_output.py` | (none) | 1 |
 | 03 | the registry and the ledger | `jobs/registry.py`, `jobs/runs.jsonl`, `jobs/RESULTS.md`, `tests/test_registry_concurrent_append.py`, `.gitignore` | (none) | 1 |
 | 04 | the setting schema and its loader | `experimental_settings/schema.py` | 01 | 2 |
 | 05 | the environment contract and AppWorld | `data/environments/__init__.py`, `data/environments/appworld.py` | 01 | 2 |
 | 06 | the model table, the entrance, the gpt-oss family and the probe object | `models/table.yaml`, `models/__init__.py`, `models/agent_models/__init__.py`, `models/agent_models/gptoss.py`, `models/probe_models/__init__.py`, `models/probe_models/qwen.py`, `models/probe_models/base.py` | 01 | 2 |
 | 07 | the two model services | `models/agent_models/service.py`, `models/probe_models/service.py` | 04, 06 | 3 |
 | 08 | the eval library and the classifier metric | `eval/utils/probe_eval.py`, `eval/methods/ctool.py` | 02, 03, 04 | 3 |
-| 09 | the dataset builder | `data/build_dataset.py` | 02, 03, 04, 05 | 3 |
+| 09 | the dataset builder | `data/build_training_dataset.py` | 02, 03, 04, 05 | 3 |
 | 10 | the generator metrics, the run scorer and the matrix table | `eval/methods/cgen.py`, `eval/methods/cparam.py`, `eval/score_run.py`, `eval/method_table.py` | 02, 03, 04, 05, 08 | 4 |
 | 11 | the agent loop: formats, generation, injection, the task walk | `agent/inject_format.py`, `agent/generate.py`, `agent/inject.py`, `agent/loop.py` | 02, 03, 04, 05, 06, 07 | 4 |
 | 12 | the launcher | `jobs/launch.py` | 01, 02, 03, 04, 05, 06 | 4 |
@@ -645,7 +645,7 @@ format `<contracts section>: <what it says> -> <what the build does> (planner:
 name, where `generation.{stop, effort, date}` are resolved, `Writer.row` refusing
 a stamped column, and `ls` probing no host over an empty ledger — and the round-2
 ticket review eight more, marked `planner: reviewer round 2`:
-`data/task_record.REQUIRED` cut to the twelve columns every record file carries,
+`data/trajectory_record.REQUIRED` cut to the twelve columns every record file carries,
 the per-task guard's `final` row and its `meta`-first rule, `inject.py`'s
 `bounds` starting at `(0, 0)`, `loop.main`'s `piece` being the `(i, n)` pair,
 `registry.session_alive`'s local-host short-circuit, `launch.is_ledger_path`,
@@ -654,10 +654,10 @@ The six the integrator had to settle, because two folders disagreed or because a
 stated gate would have stopped every build, are:
 
 1. **1.1, the `dir` parameter.** The data plan makes `dir` the run directory and
-   has `data/task_record.py` append `records/`; the jobs and eval plans pass
+   has `data/trajectory_record.py` append `records/`; the jobs and eval plans pass
    `<run_dir>/records`. The build takes the first: `open_record`, `record_path`,
    `done_pairs`, `read_dir` and `release` are all called with the **run
-   directory**, and only `data/task_record.py` spells `records/`.
+   directory**, and only `data/trajectory_record.py` spells `records/`.
 2. **2.5, a non-null action that `split_args` returns None for.** Stated as a
    hard stop. Measured over all 315 p1 trajectories on 2026-09-17: **34 of 4,074
    non-null actions (0.83%), in 22 trajectories** — 24 (in 13 trajectories) are

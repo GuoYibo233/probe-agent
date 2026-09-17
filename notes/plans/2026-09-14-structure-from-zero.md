@@ -96,20 +96,20 @@ new1/
                             adding an environment: this file's sibling, its clone and venv under external/, its path in
                             constants/path_datasets.yaml, its name on the data.env axis in schema.py, its README line;
                             then --debug on one setting with data.env set to it
-    task_record.py          the record one task run leaves: each step's prompt, reasoning, answer and observation, the
+    trajectory_record.py    the record one task run leaves: each step's prompt, reasoning, answer and observation, the
                             speculation events, the outcome, the seed, the commit; write, read, rebuild the conversation.
                             Edited when a field is added to the record
-    example.py              the row build writes per probe example: the record and cut it came from, the text the probe
+    training_data.py        the row build writes per probe example: the record and cut it came from, the text the probe
                             sees, the target (a label for ctool, a call for cgen, arguments for cparam); write, read. The
                             interface between build and train. Edited when a field is added to the row
-    prediction.py           the row train writes per example after training: the example id, its label, the score
+    probe_output.py         the row train writes per example after training: the example id, its label, the score
                             (ctool) or the generated text (cgen, cparam); write, read. The interface between train and
                             eval. Edited when a field is added to the row
     probe_input.py          what the probe is asked and shown: the cut positions in the reasoning, and the text assembled
                             for the probe (the task, the clipped tool history, the thinking so far); one rule offline and
                             live. Edited when the cut rule or what the probe sees changes; environment text comes through
                             the environment object
-    build_dataset.py        the program: records -> example rows for the three probe methods; the train/val/test split;
+    build_training_dataset.py  the program: records -> example rows for the three probe methods; the train/val/test split;
                             the report; the gates. Edited when how examples are made, the split or a gate changes; calls
                             are parsed through the environment object
 

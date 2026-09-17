@@ -31,7 +31,7 @@ restatements.
 | `REQUIRED` (per format file) | Part 1 | 0.4, 8.6 | |
 | the two-rule table for a new column | Part 1 | 0.4 (two task-record rows), 9(a)#29 | |
 
-## 2. Task record — `data/task_record.py` (1.1)
+## 2. Task record — `data/trajectory_record.py` (1.1)
 
 | name | owner | also in | note |
 |---|---|---|---|
@@ -40,7 +40,7 @@ restatements.
 | six row kinds (`meta`, `gen`, `spec`, `resume`, `env`, `final`) | 1.1 | 4.2, 7.3 | |
 | every record column (`task_text`, `judge`, `success`, `generation`, `inject`, `commit`, …) | 1.1 | 1.7, 4.2, 7.3, 9(a)#43, 9(a)#48 | |
 | `RESULT_CAP` as the record's observation clip | 4.1 | 1.1, 1.7, 4.2, 4.3, 4.4, 5.2 | **collapsed**: the value 4,000 now only in 4.1 |
-| `open_record`, `Writer.row`, `Writer.frame`, `Writer.close`, `is_done`, `owner`, `done_pairs`, `release`, `read`, `read_dir`, `to_messages` | 1.1 | 0.2, 2.3, 2.5, 8.0, 8.4, 8.6 | **Round 6**: `to_messages` gained `extra_developer`, the sixth parameter, applied inside it (7.3); `release`'s live-session set now has a producer, `registry.live_sessions()` (8.0). **Round 7**: `open_record(dir, task_id, seed)` no longer takes `meta` — the claim is the empty create and the `meta` row is the caller's first `row` call; `release(dir, live_sessions, unowned_age_s)` takes the margin as a third argument, so `data/task_record.py` still imports only `data/__init__.py` |
+| `open_record`, `Writer.row`, `Writer.frame`, `Writer.close`, `is_done`, `owner`, `done_pairs`, `release`, `read`, `read_dir`, `to_messages` | 1.1 | 0.2, 2.3, 2.5, 8.0, 8.4, 8.6 | **Round 6**: `to_messages` gained `extra_developer`, the sixth parameter, applied inside it (7.3); `release`'s live-session set now has a producer, `registry.live_sessions()` (8.0). **Round 7**: `open_record(dir, task_id, seed)` no longer takes `meta` — the claim is the empty create and the `meta` row is the caller's first `row` call; `release(dir, live_sessions, unowned_age_s)` takes the margin as a third argument, so `data/trajectory_record.py` still imports only `data/__init__.py` |
 | the relaunch condition ("no piece of `kind` `loop` or `train` has a live session") | 1.1 | 2.3, 2.5 | **added Round 7**: a service piece never exits on its own, so the old "no session of the run" reading was never true and the launch gate's live-session clause now skips `kind: service` |
 | `extra_developer` (the appended developer text) | 1.1 | 0.2, 7.3 | **added Round 6** |
 | `meta.split`'s producer (the triple `agent/loop.py` walks) | 1.1 | 2.3, 2.5, 4.1 | **added Round 6** |
@@ -79,7 +79,7 @@ restatements.
 | the checkpoint layout, `best/`, `last/`, `best/meta.json` | 1.6 | 1.3, 2.4, 2.6, 6.2, 7.2 | |
 | `call_sep`, `param_only` | 1.6 | 2.6, 5.7, 7.2 | |
 | `cuts(thinking, min_think, max_cuts)`, `cuts_live(thinking_so_far, min_think)`, `assemble(...)` | 1.7 | 0.2, 7.3, 9(a)#31 | **fixed**: 1.7 said "Both are pure" for three functions |
-| the event-level `min_think` gate, offline and live | 1.7 | 0.2, 2.5, 7.3 | **added Round 7**: `agent/inject.py` scores no cut until the thinking so far reaches `min_think`, the streaming form of the gate `data/build_dataset.py` applies per event |
+| the event-level `min_think` gate, offline and live | 1.7 | 0.2, 2.5, 7.3 | **added Round 7**: `agent/inject.py` scores no cut until the thinking so far reaches `min_think`, the streaming form of the gate `data/build_training_dataset.py` applies per event |
 | `probe_result_cap` vs `Environment.RESULT_CAP` | 1.7 (the distinction) | 4.1, 5.2 | **collapsed**: both values now stated once each (4.1, 5.2) |
 | `PROBE_TEXT_FIELDS` | 1.7 | 0.4, 2.1, 2.2, 3.3, 3.4, 5.1, 5.4, 5.7, 9(c)#7 | **collapsed**: 9(c)#7 listed the three members |
 | `history` as the earlier steps' pairs | 1.7 | 7.3 | |
@@ -236,7 +236,7 @@ restatements.
 | `data/environments/__init__.py` used by | 2.3, 4.2, 2.6 | **fixed**: `jobs/launch.py (tasks and requested_pairs)` |
 | `jobs/launch.py` imports | 2.3, 4.2, 8.3 | **fixed**: `requested_pairs` added |
 | `agent/loop.py` imports `models/__init__.py` | 7.2, 7.3, 0.4 | **fixed**: no caller in Parts 1-8; removed from both lines |
-| `data/build_dataset.py` description (the `hash` formula) | 5.2 | **collapsed** to a reference |
+| `data/build_training_dataset.py` description (the `hash` formula) | 5.2 | **collapsed** to a reference |
 | `jobs/launch.py` description (ssh, fail-closed) | 3.4 | **collapsed** to a reference |
 | `data/probe_input.py` description | 1.7 | agrees (three functions) |
 | `tests/`'s cross-reference to 9(b) | 9(b) | **fixed**: it pointed at #16 (`RESULTS.md` into `notes/`); the deferred tests are #17 |

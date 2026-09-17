@@ -13,11 +13,11 @@ heartbeat) are the specification; read 2.6 and 1.6 in full.
 
 ```
 train/utils/trainer.py       imports: experimental_settings/schema.py, models/__init__.py,
-                             models/probe_models/base.py, data/example.py,
-                             data/prediction.py, jobs/registry.py; [torch]
+                             models/probe_models/base.py, data/training_data.py,
+                             data/probe_output.py, jobs/registry.py; [torch]
                              used by: train/methods/{ctool,cgen,cparam}.py   VERSION = 1
 train/methods/ctool.py       imports: train/utils/trainer.py, models/probe_models/base.py,
-                             data/example.py, eval/methods/ctool.py; [torch]  VERSION = 1
+                             data/training_data.py, eval/methods/ctool.py; [torch]  VERSION = 1
 train/methods/cgen.py        + data/environments/__init__.py (open_env)       VERSION = 1
 train/methods/cparam.py      + data/environments/__init__.py (open_env)       VERSION = 1
 tests/test_packed_loss.py    venv probe (the header line names it)
@@ -38,7 +38,7 @@ Build order: `trainer.py` -> `ctool.py` -> `cgen.py` and `cparam.py` ->
 **The import aliases are part of the contract**, because the acceptance replaces
 two of them: `trainer.py` writes `from experimental_settings import schema`,
 `import models`, `from models.probe_models import base`,
-`from data import example, prediction`, `from jobs import registry` — so
+`from data import training_data, probe_output`, `from jobs import registry` — so
 `trainer.schema`, `trainer.base`, `trainer.models`, `trainer.example`,
 `trainer.prediction` and `trainer.registry` all name the modules.
 
@@ -80,7 +80,7 @@ name** and reads exactly two method-supplied `Batch` keys, `mb` and `mb_weight`.
 4. `torch.manual_seed(cfg.train.seed)`; `torch.backends.cuda.matmul.allow_tf32 =
    False` while the alignment gate runs.
 5. `build_dir = schema.run_dir_of("build", cfg._upstream["build"], debug=cfg._debug)`;
-   `df = example.read(build_dir / "examples.parquet")`. Write `consumed.json` =
+   `df = training_data.read(build_dir / "examples.parquet")`. Write `consumed.json` =
    `[{path, sha1, n_rows}]` for that one file.
 6. `labels = method.head_labels(df, cfg)` on the **whole** frame, **before**
    `base.load`. On a resume or on the predict-only path the list is read back
@@ -146,7 +146,7 @@ name** and reads exactly two method-supplied `Batch` keys, `mb` and `mb_weight`.
     `method.predict(probe, df, probe.tokenizer, cfg)`. Join the five
     method-independent columns `event_id`, `task_id`, `depth`, `split`, `tool`
     from the example frame on `example_id`, and write with
-    `prediction.write(run_dir / "predictions.parquet", frame)`, which stamps
+    `probe_output.write(run_dir / "predictions.parquet", frame)`, which stamps
     `version`. **The trainer writes neither `target` nor `method` nor
     `version`.**
 13. `registry.write_done(run_dir, stage="train", key=cfg._key,
@@ -380,7 +380,7 @@ The second of the four checks the tree's `tests/` line names: "the packed loss
 equals a row-by-row loss kept in its plainest form ... on a tiny CPU model". Turn
 A3.3 below into a `unittest.TestCase` with one test per method, building the tiny
 two-layer model from the Qwen3-0.6B-Base config and the fixture frame through
-`data/example.py`'s writer. The header line names the venv (`probe`). The
+`data/training_data.py`'s writer. The header line names the venv (`probe`). The
 tolerance is 2.5's `1e-4` on the per-example-row difference. `pytest` is not
 installed on this machine.
 
@@ -440,7 +440,7 @@ Expected: `OK`, exit 0.
 Expected: `1 classifier generator generator True`, exit 0.
 
 **A3.3 — the packed loss equals the plain loss, per method.** The script writes a
-tiny example frame with `data/example.py`'s **writer**, reads it back with its
+tiny example frame with `data/training_data.py`'s **writer**, reads it back with its
 reader, builds a stub `Probe` whose `forward` is the one
 `models/probe_models/base.py` has, and runs the method's own hooks.
 ```bash
@@ -459,7 +459,7 @@ backbone = AutoModel.from_config(cfgm, dtype=torch.float32).eval()
 head = torch.nn.Linear(64, 3)
 lm = torch.nn.Linear(64, cfgm.vocab_size, bias=False)
 
-from data import example
+from data import training_data
 rows = []
 for ev in range(2):                       # two events, three cuts each
     base = "The task is to pay a bill. I will look at the phone app. "
@@ -474,8 +474,8 @@ for ev in range(2):                       # two events, three cuts each
             args=[{"key": "id", "value": "1"}] if ev else [{"key": "user", "value": "a"}],
             weight=1.0, split="train", env="appworld", agent_model="gptoss120b"))
 d = pathlib.Path(tempfile.mkdtemp())
-example.write(d / "examples.parquet", pl.DataFrame(rows, strict=False))
-df = example.read(d / "examples.parquet")
+training_data.write(d / "examples.parquet", pl.DataFrame(rows, strict=False))
+df = training_data.read(d / "examples.parquet")
 
 class Outputs:
     def __init__(self, logits, hidden): self.logits, self.hidden = logits, hidden
@@ -518,15 +518,15 @@ above the tolerance is the packing bug the gate exists for.
 
 **A3.4 — the whole loop, on CPU, with two stubs.** `trainer.run` is exercised end
 to end: only `schema.load_frozen`, `schema.run_dir_of`, `base.load` and
-`models.probe` are replaced; everything else — `data/example.py`,
-`data/prediction.py`, `jobs/registry.py`, the method's hooks, the checkpoint
+`models.probe` are replaced; everything else — `data/training_data.py`,
+`data/probe_output.py`, `jobs/registry.py`, the method's hooks, the checkpoint
 calls — is the real code.
 ```bash
 "$PR" - <<'PY'
 import json, pathlib, tempfile, types, importlib, torch, polars as pl
 from transformers import AutoTokenizer, AutoConfig, AutoModel
 import train.utils.trainer as trainer
-from data import example, prediction
+from data import training_data, probe_output
 
 TOKDIR = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
 tok = AutoTokenizer.from_pretrained(TOKDIR)
@@ -553,7 +553,7 @@ for ev in range(4):                                   # 4 events x 3 cuts x 3 sp
                 call=("phone.pay(id=1)" if ev % 2 else "phone.login(user='a')"),
                 args=[{"key": "id", "value": "1"}], weight=1.0, split=split,
                 env="appworld", agent_model="gptoss120b"))
-example.write(build_dir / "examples.parquet", pl.DataFrame(rows, strict=False))
+training_data.write(build_dir / "examples.parquet", pl.DataFrame(rows, strict=False))
 
 cfg = types.SimpleNamespace(
     _key="t0", _commit="deadbee", _debug=True, _upstream={"build": "b0"},
@@ -595,7 +595,7 @@ trainer.models.probe = lambda alias: types.SimpleNamespace(
     alias=alias, weights=alias, weights_path=TOKDIR, family="qwen", role="probe", serving={})
 
 trainer.run(run_dir, importlib.import_module("train.methods.ctool"))
-p = prediction.read(run_dir / "predictions.parquet")
+p = probe_output.read(run_dir / "predictions.parquet")
 print(sorted(p.columns))
 print(sorted(p["split"].unique().to_list()), p.height)
 print(json.loads((run_dir / "done.json").read_text())["stage_extra"]["labels"])
@@ -624,7 +624,7 @@ print("a", (run_dir / "predictions.parquet").stat().st_mtime_ns == pred_before,
 
 (run_dir / "done.json").unlink(); (run_dir / "predictions.parquet").unlink()
 trainer.run(run_dir, ctool)                                   # (b) predict only
-print("b", prediction.read(run_dir / "predictions.parquet").height,
+print("b", probe_output.read(run_dir / "predictions.parquet").height,
       (run_dir / "train_log.jsonl").read_text() == log_before)
 
 (run_dir / "done.json").unlink(); (run_dir / "train_done.json").unlink()

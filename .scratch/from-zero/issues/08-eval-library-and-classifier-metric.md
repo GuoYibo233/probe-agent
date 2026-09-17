@@ -13,7 +13,7 @@ in full.
 
 ```
 eval/utils/probe_eval.py   venv: any    VERSION = 1
-  imports: experimental_settings/schema.py, data/prediction.py, jobs/registry.py;
+  imports: experimental_settings/schema.py, data/probe_output.py, jobs/registry.py;
            [polars, numpy]        — and NOT data/__init__.py, NOT data/environments/
   used by: eval/methods/{ctool,cgen,cparam}.py, run.py (read_report), eval/method_table.py
   reads:   prediction (parquet), its own and the referenced eval run's train meta.json,
@@ -61,7 +61,7 @@ def softmax(logits: "np.ndarray", temperature: float) -> "np.ndarray"
    work; `unit` is `item` for eval and the piece index is 0 (8.4).
 3. `train_dir = schema.run_dir_of("train", cfg._upstream["train"], debug=cfg._debug)`
    — the same-setting upstream keeps the debug overlay.
-4. `pred_df = prediction.read(train_dir / "predictions.parquet")`. Raise, naming
+4. `pred_df = probe_output.read(train_dir / "predictions.parquet")`. Raise, naming
    the values, when the frame's `method` column holds anything but
    `cfg.probe.method`.
 5. `labels = json.load(train_dir/"meta.json")["stage_extra"]["labels"]` (1.3,
@@ -254,7 +254,7 @@ Expected: `literals ok`, exit 0.
 import json, subprocess, sys, polars as pl
 sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import prediction
+from data import probe_output
 
 TK, EK = "aaaaaaaaaaaa", "bbbbbbbbbbbb"
 tdir = schema.run_dir_of("train", TK, debug=True); tdir.mkdir(parents=True, exist_ok=True)
@@ -271,7 +271,7 @@ for ev in range(20):                       # 20 events, 2 cuts each, 10 val / 10
             method="ctool", target=tool, score=0.9, label_pred=tool,
             logits=[3.0, 0.0] if tool == labels[0] else [0.0, 3.0],
             text_pred=None, gen_tokens=None))
-prediction.write(tdir / "predictions.parquet", pl.DataFrame(rows, strict=False))
+probe_output.write(tdir / "predictions.parquet", pl.DataFrame(rows, strict=False))
 (tdir / "meta.json").write_text(json.dumps(
     {"stage": "train", "key": TK, "upstream": {"build": "cccccccccccc"},
      "stage_extra": {"labels": labels}}))

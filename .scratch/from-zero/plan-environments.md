@@ -30,7 +30,7 @@ and PyYAML; no repo import, no benchmark package. (0.2, 4.4.)
 imports: none (repo); [importlib, PyYAML]
 used by: data/environments/appworld.py (subclass), agent/loop.py (open_env,
          StepObservation, requested_pairs), agent/inject.py,
-         data/build_dataset.py (open_env, requested_pairs),
+         data/build_training_dataset.py (open_env, requested_pairs),
          train/methods/cgen.py, train/methods/cparam.py (open_env),
          eval/methods/cgen.py, eval/methods/cparam.py, eval/score_run.py,
          jobs/launch.py (tasks and requested_pairs), run.py (open_env and
@@ -295,7 +295,7 @@ signature returns the call alone.
 - `legacy/pipeline/inject/live_appworld.py`: everything but `speculate` and the
   world handling — the stream, the cuts, `find_head`, the formats, the claim,
   `selftest_shadow` — belongs to `agent/`, `data/probe_input.py` and
-  `data/task_record.py`.
+  `data/trajectory_record.py`.
 - `legacy/envs/collect/run_appworld.py`: `resolve_seeds`, `traj_path`,
   `is_done`, `exp_name`, `traj_meta`, the heartbeat and the whole `main` — the
   loop's, the record's and the registry's business.
@@ -304,7 +304,7 @@ signature returns the call alone.
   `find_fence_close` (`:91-100`).
 - AppWorld's own `load_task_ids` (`run_appworld.py:157`): `tasks` reads the
   split file named in `constants/path_datasets.yaml` instead, which is what
-  keeps `tasks` in the `any` venv for `data/build_dataset.py` and
+  keeps `tasks` in the `any` venv for `data/build_training_dataset.py` and
   `jobs/launch.py` (4.2).
 - The process `chdir` (`run_appworld.py:149`, `live_appworld.py:692`): replaced
   by `APPWORLD_ROOT` (decision E11).
@@ -344,7 +344,7 @@ Nothing in this folder needs `experimental_settings/schema.py`, `models/`,
 `schema.py`'s loader reads this file's `INSTRUCTIONS` and `SPLIT_ROLE` literals
 as source text (3.3, 5.3), `agent/loop.py` reads `env.task_text` after `open`
 (decision E3), `jobs/launch.py` refuses an out-of-split `tasks` id against
-`requested_pairs` (2.3), and `data/build_dataset.py` holds the call round-trip
+`requested_pairs` (2.3), and `data/build_training_dataset.py` holds the call round-trip
 gate over `build_call` (2.5).
 
 ---
@@ -902,6 +902,6 @@ trajectories) contain no `apis.<app>.<api>(` at all — they are real steps whos
 code block only inspects the namespace, parses text with `re`, or prints a
 variable. Under 2.5 as written, every build over p1-shaped data stops. The
 environment side is not the place to soften it (`split_args` must keep
-returning None for text with no call); `data/build_dataset.py`'s planner has to
+returning None for text with no call); `data/build_training_dataset.py`'s planner has to
 decide whether such an event is skipped and counted like a null action or
 whether the stop stands.

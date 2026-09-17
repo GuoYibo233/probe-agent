@@ -19,12 +19,12 @@ agent/generate.py        venv: the environment's (appworld today)          VERSI
            module). It imports models/probe_models/service.py NOWHERE.
 agent/inject.py          venv: the environment's                          VERSION = 1
   imports: agent/generate.py, agent/inject_format.py, data/probe_input.py,
-           data/task_record.py, data/environments/__init__.py (type only),
+           data/trajectory_record.py, data/environments/__init__.py (type only),
            models/probe_models/service.py (client), models/__init__.py (the family module).
            It does NOT import experimental_settings/schema.py.
 agent/loop.py            venv: the environment's                          VERSION = 1
   imports: experimental_settings/schema.py (load_frozen only),
-           data/environments/__init__.py, data/task_record.py,
+           data/environments/__init__.py, data/trajectory_record.py,
            models/agent_models/service.py (client), models/probe_models/service.py
            (client, for render), agent/generate.py, agent/inject.py, jobs/registry.py.
            It imports models/__init__.py NOWHERE.
@@ -344,7 +344,7 @@ Command shape (2.6, 3.4): `<venv python> -m agent.loop --run-dir <dir> --piece
    count for every piece (8.4).
 8. Per triple `(split, task_id, seed)`:
    - `writer = open_record(run_dir, task_id, seed)` — **the run directory**;
-     `data/task_record.py` appends `records/` itself (errata). `None` means
+     `data/trajectory_record.py` appends `records/` itself (errata). `None` means
      another piece holds it: move on, deleting nothing.
    - `env.open(task_id, seed)`; capture `env.task_text`.
    - `writer.row("meta", …)` with every column of 1.1's `meta` block:
@@ -384,7 +384,7 @@ Command shape (2.6, 3.4): `<venv python> -m agent.loop --run-dir <dir> --piece
      recorded and walked past** (errata, `live_appworld.py:739-756`): write a
      `final` row with `abort=f"task_error:{type(e).__name__}"`, `success=false`
      and a `judge` of `{"success": false, "task_error": "..."}`.
-     **Two shapes the guard must keep**, because `data/task_record.REQUIRED`
+     **Two shapes the guard must keep**, because `data/trajectory_record.REQUIRED`
      rests on them (ticket 02): the `final` row carries **every** column of 1.1's
      `final` block whatever the abort — `steps` (the steps finished), `completed`
      (`False`), `tokens_in`, `tokens_out`, `wall_s` and `finished_at` from the
@@ -655,7 +655,7 @@ import dataclasses, tempfile, types
 from pathlib import Path
 import agent.generate as g, agent.inject as inj
 from agent.inject_format import FORMATS
-from data.task_record import open_record, read
+from data.trajectory_record import open_record, read
 
 CHUNK1A = "<|channel|>analysis<|message|>I will look it up. "        # 49 characters
 CHUNK1B = "Next I check the profile. "
@@ -754,7 +754,7 @@ well, where a decoder that cannot reproduce the stream raises.
 import dataclasses, tempfile, types
 from pathlib import Path
 import agent.generate as g, agent.inject as inj
-from data.task_record import open_record, read
+from data.trajectory_record import open_record, read
 
 CHUNK1A = "<|channel|>analysis<|message|>I will look it up. "        # 49 characters
 CHUNK1B = "Next I check the profile. "
@@ -954,7 +954,7 @@ PY
 import json, pathlib, sys
 sys.path.insert(0, "/tmp")
 import loopfix
-from data.task_record import read
+from data.trajectory_record import read
 loopfix.install()
 rd = loopfix.run_dir()
 loopfix.loop.main(rd, (0, 1))
@@ -983,7 +983,7 @@ one record file per requested triple, each ending in a `final` row.
 ```bash
 RD=$(cat /tmp/d3_run_dir.txt)
 "$A" -c "
-from data.task_record import read
+from data.trajectory_record import read
 df = read('$RD/records/t_1__s42.jsonl')
 m = df.filter(df['type']=='meta').to_dicts()[0]
 assert m['split'] == 'train' and m['arm'] == 'sample' and m['stage'] == 'sample'

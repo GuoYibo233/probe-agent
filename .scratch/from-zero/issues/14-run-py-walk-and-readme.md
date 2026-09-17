@@ -14,7 +14,7 @@ README) are the specification; read 2.3, 2.5 and 8.6 in full.
 ```
 run.py       venv: probe (the interpreter this repo's commands are typed with)
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py,
-           data/task_record.py (done_pairs, is_done, owner, release),
+           data/trajectory_record.py (done_pairs, is_done, owner, release),
            data/environments/__init__.py (open_env, requested_pairs),
            eval/utils/probe_eval.py (read_report), eval/method_table.py (table)
   used by: none (program)
@@ -75,8 +75,8 @@ For each `Setting` that `schema.load(file, name, debug=…, overrides=…)` retu
 2. **The skip test.** For `sample` and `inject` it is the **pair check**: build
    the requested list with `requested_pairs(env, splits, tasks, n_tasks, seeds)`,
    project the triples to `(task_id, seed)` pairs, and compare against
-   `task_record.done_pairs(run_dir, pairs)` — **the run directory**;
-   `data/task_record.py` appends `records/` itself (errata). A subset means skip.
+   `trajectory_record.done_pairs(run_dir, pairs)` — **the run directory**;
+   `data/trajectory_record.py` appends `records/` itself (errata). A subset means skip.
    Every other stage skips on the presence of `done.json`.
 3. **Before a skip**: compare the directory's `consumed.json` entries — and, for
    `sample` and `inject`, `meta.json`'s `split_files` hashes — against the files
@@ -86,7 +86,7 @@ For each `Setting` that `schema.load(file, name, debug=…, overrides=…)` retu
    is an ownership event (8.3, 2.3).
 4. **A `sample`/`inject` directory that is partly done**: while any piece of
    `kind` `loop` or `train` of that run has a live session, release the dead
-   sessions' claims through `task_record.release(run_dir,
+   sessions' claims through `trajectory_record.release(run_dir,
    registry.live_sessions(), registry.DEFAULTS["launch_timeout_s"])`, report
    them, and **launch nothing**; once none has, relaunch for the missing pairs,
    reusing the run's live service pieces.
@@ -129,7 +129,7 @@ For each `Setting` that `schema.load(file, name, debug=…, overrides=…)` retu
 ### 3. The subcommands (8.6)
 
 - `ls` computes `edited` (the named setting's current key against the directory)
-  and `progress` (`task_record.done_pairs` against the requested total) itself and
+  and `progress` (`trajectory_record.done_pairs` against the requested total) itself and
   passes both into `registry.ls`.
 - `where` uses `schema.run_dir` (it has the setting and therefore `--debug`).
 - `find` passes the parsed `section.field=value` dict to `registry.find`.
@@ -185,7 +185,7 @@ Four sections, in this order:
    `jobs/RESULTS.md`, `tests/`). Earlier tickets added their own lines as they
    landed; reconcile them against 0.2 and against
    `.scratch/from-zero/contract-errata.md` where an erratum corrected an
-   annotation line (`data/build_dataset.py`'s `imports:` and `reads:`,
+   annotation line (`data/build_training_dataset.py`'s `imports:` and `reads:`,
    `train/utils/trainer.py`'s third-party list, `eval/score_run.py`'s `reads:`).
 3. **The extension recipes** — contracts 0.4's seven scenario rows plus the two
    non-extension rows, each as "what you edit, in order, and what it costs".

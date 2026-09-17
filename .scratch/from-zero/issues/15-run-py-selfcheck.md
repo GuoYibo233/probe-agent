@@ -39,8 +39,8 @@ match and zero matches are both failures that name the file and the count.
 without them check 2 can never be green:
 
 1. **`imports_of` joins `module.name` for an `ImportFrom` only when the join is a
-   repo file.** `from data import example` yields `data.example` because
-   `data/example.py` exists; `from dataclasses import dataclass` yields
+   repo file.** `from data import training_data` yields `data.training_data` because
+   `data/training_data.py` exists; `from dataclasses import dataclass` yields
    `dataclasses`, because neither `dataclasses/dataclass.py` nor
    `dataclasses/dataclass/__init__.py` is in this repo. Without the rule a
    `from <package> import <module>` import of a repo file is invisible to the
@@ -48,8 +48,8 @@ without them check 2 can never be green:
 2. **`readme_entries` strips what an annotation line carries for a reader.** On an
    `imports:` or `used by:` line it drops the bracketed third-party list
    (`[polars, numpy]`) and every parenthetical after a name
-   (`data/task_record.py (done_pairs, is_done, owner, release)` is the file
-   `data/task_record.py`; `models/probe_models/<backbone>.py (by name, inside
+   (`data/trajectory_record.py (done_pairs, is_done, owner, release)` is the file
+   `data/trajectory_record.py`; `models/probe_models/<backbone>.py (by name, inside
    load())` is a by-name entry, rule 3). What is compared is the set of repo file
    paths, nothing else.
 3. **A `used by:` entry that is not an `ast` edge is checked differently.** Spec
@@ -129,7 +129,7 @@ Run from the repo root and paste the real output. `$PR` is
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
 import run
 d = pathlib.Path(tempfile.mkdtemp()); f = d/'m.py'
-f.write_text('VERSION = 3\nimport os\nfrom data import example\nclass A:\n    VERSION = VERSION\n')
+f.write_text('VERSION = 3\nimport os\nfrom data import training_data\nclass A:\n    VERSION = VERSION\n')
 print(run.literal_of(f, 'VERSION'))
 print(sorted(run.imports_of(f)))
 g = d/'bad.py'; g.write_text('VERSION = 1\nVERSION = 2\n')
@@ -138,10 +138,10 @@ try:
 except SystemExit as e:
     print('two matches -> refused:', 'bad.py' in str(e))"
 ```
-Expected: `3`; `['data.example', 'os']`; then a refusal naming the file for the
+Expected: `3`; `['data.training_data', 'os']`; then a refusal naming the file for the
 two-match case (or a `None` plus a printed problem, whichever the implementation
-uses — more than one match **is** a failure). `data.example` and not
-`['data', 'os']` is rule 1 above: the join is taken because `data/example.py` is
+uses — more than one match **is** a failure). `data.training_data` and not
+`['data', 'os']` is rule 1 above: the join is taken because `data/training_data.py` is
 a repo file. Run the same command with `from dataclasses import dataclass` in the
 fixture and paste that too — it must print `['dataclasses', 'os']`.
 
@@ -163,8 +163,8 @@ message `selfcheck` printed. The eleven breakages:
 | 1 | delete one `.py` line from `README.md` |
 | 2 | add `import jobs.registry` to `models/probe_models/base.py` |
 | 3 | add a sixth key to `agent/inject_format.py`'s `FORMATS` |
-| 4 | add a second column-zero `VERSION` to `data/example.py` |
-| 5 | add a name to `data/prediction.py`'s `REQUIRED` that its `SCHEMA` does not declare |
+| 4 | add a second column-zero `VERSION` to `data/training_data.py` |
+| 5 | add a name to `data/probe_output.py`'s `REQUIRED` that its `SCHEMA` does not declare |
 | 6 | change `eval/methods/cgen.py`'s `PROBE_KIND` to `"classifier"` |
 | 7 | change `models/agent_models/gptoss.py`'s `DEFAULT_EFFORT` to `"ultra"` |
 | 8 | delete one alias block from `constants/path_models.yaml`, so a `models/table.yaml` row's `result.weights` no longer resolves |

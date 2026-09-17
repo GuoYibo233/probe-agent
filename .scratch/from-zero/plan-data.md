@@ -6,8 +6,8 @@ Planner: data. Written 2026-09-17 against
 3.3, 4.1–4.2, 5.2, 8.0, 8.3, 8.4) and the legacy code under `legacy/`.
 
 Files in scope, and only these:
-`data/__init__.py`, `data/task_record.py`, `data/example.py`,
-`data/prediction.py`, `data/probe_input.py`, `data/build_dataset.py`.
+`data/__init__.py`, `data/trajectory_record.py`, `data/training_data.py`,
+`data/probe_output.py`, `data/probe_input.py`, `data/build_training_dataset.py`.
 
 `data/environments/__init__.py` and `data/environments/appworld.py` are **not**
 in this folder group; they are a cross-folder dependency named in section 5.
@@ -40,8 +40,8 @@ shared reader and writer, and the `VERSION` / `DEFAULTS` / `REQUIRED` rule.
 
 - **venv**: any. Imports `polars` and the standard library; no repo import.
 - **imports** (0.2): none (repo); `[polars]`.
-- **used by** (0.2): `data/task_record.py`, `data/example.py`,
-  `data/prediction.py`, `data/build_dataset.py` (the id functions, which the
+- **used by** (0.2): `data/trajectory_record.py`, `data/training_data.py`,
+  `data/probe_output.py`, `data/build_training_dataset.py` (the id functions, which the
   builder calls rather than formatting a string).
 - **reads / writes**: —
 - **`VERSION`**: none. This file carries no `VERSION` line: 0.2 gives it none
@@ -112,7 +112,7 @@ file is new.
 
 ---
 
-### 1.2 `data/task_record.py`
+### 1.2 `data/trajectory_record.py`
 
 One sentence: the record one task run leaves — six row kinds, one file per
 (task, seed), the exclusive-create claim, the readers the login machine uses,
@@ -124,7 +124,7 @@ and the conversation rebuild.
   arguments, and `to_messages` takes the two environment texts as arguments
   (1.1).
 - **used by** (0.2): `agent/loop.py` (`meta`, `gen`, `env`, `final`),
-  `agent/inject.py` (`spec`, `resume`), `data/build_dataset.py`,
+  `agent/inject.py` (`spec`, `resume`), `data/build_training_dataset.py`,
   `eval/score_run.py`, `jobs/launch.py` (`done_pairs`, `is_done`, `owner`,
   `release`), `run.py` (the same four).
 - **reads / writes**: task record (jsonl).
@@ -288,13 +288,13 @@ Behaviour that the sections pin, plus the details settled here:
 
 ---
 
-### 1.3 `data/example.py`
+### 1.3 `data/training_data.py`
 
 One sentence: the row `build` writes per cut — where it came from, the text the
 probe sees, and all three methods' targets.
 
 - **venv**: any. **imports**: `data/__init__.py`; `[polars]`.
-- **used by** (0.2): `data/build_dataset.py` (write),
+- **used by** (0.2): `data/build_training_dataset.py` (write),
   `train/utils/trainer.py` (read), `train/methods/{ctool,cgen,cparam}.py` (their
   target column).
 - **reads / writes**: example (parquet), `<run_dir>/examples.parquet`.
@@ -343,7 +343,7 @@ class order is `head_labels`' and lives in `best/meta.json` (1.3).
 
 ---
 
-### 1.4 `data/prediction.py`
+### 1.4 `data/probe_output.py`
 
 One sentence: the row `train` writes per example after training, and the only
 file `eval/` reads.
@@ -370,7 +370,7 @@ The classifier trio (`score`, `label_pred`, `logits`) and the generator pair
 (`text_pred`, `gen_tokens`) are out: each is null for the other `PROBE_KIND`
 (1.3), and under errata 12 an all-null column reads as absent.
 
-**Offered functions**: the same two as `data/example.py`
+**Offered functions**: the same two as `data/training_data.py`
 (`write(path, df)`, `read(path)`), same errata 9.
 
 **Legacy source**: none as a file. Today the equivalent numbers are produced
@@ -385,13 +385,13 @@ sidecar file.
 ### 1.5 `data/probe_input.py`
 
 One sentence: the cut positions in the reasoning and the text assembled for the
-probe — the one text that `data/build_dataset.py` (offline) and
+probe — the one text that `data/build_training_dataset.py` (offline) and
 `agent/inject.py` (live) must build identically.
 
 - **venv**: any, and additionally importable under system `python3` (its whole
   import list is `re`).
 - **imports** (0.2): none (repo); `[re]`.
-- **used by** (0.2): `data/build_dataset.py`, `agent/inject.py`.
+- **used by** (0.2): `data/build_training_dataset.py`, `agent/inject.py`.
 - **reads / writes**: —
 - **`VERSION = 1`** at column zero, exactly once. 1.7: this file's `VERSION` is
   the expensive one — it folds into the `build` and `inject` keys (2.2).
@@ -471,7 +471,7 @@ return "\n".join(lines)
 
 ---
 
-### 1.6 `data/build_dataset.py`
+### 1.6 `data/build_training_dataset.py`
 
 One sentence: the program that turns a `sample` run's task records into example
 rows for the three probe methods, assigns the train/val/test split, holds the
@@ -480,8 +480,8 @@ build gates and writes the report.
 - **venv**: any (2.1's `build` row). `run.py` starts it in place with the `any`
   interpreter (2.3).
 - **imports** (0.2, corrected by errata 11): `experimental_settings/schema.py`,
-  `data/__init__.py` (the id functions), `data/task_record.py`,
-  `data/example.py`, `data/probe_input.py`, `data/environments/__init__.py`,
+  `data/__init__.py` (the id functions), `data/trajectory_record.py`,
+  `data/training_data.py`, `data/probe_input.py`, `data/environments/__init__.py`,
   `jobs/registry.py`; `[polars, PyYAML]`.
 - **used by**: none (program).
 - **reads** (errata 11): the sample run's task records,
@@ -507,7 +507,7 @@ itself.
 4. `sample_dir = schema.run_dir_of("sample", cfg._upstream["sample"],
    debug=cfg._debug)` — the key is read out of `_upstream`, never recomputed
    (2.1).
-5. **Completeness gate** (2.5): `done = task_record.done_pairs(sample_dir,
+5. **Completeness gate** (2.5): `done = trajectory_record.done_pairs(sample_dir,
    pairs)`; raise, naming the missing pairs, when `done` does not cover `pairs`.
 6. `hb.emit(0, len(pairs), "row")`, then one beat per record read (errata 14).
 7. Resolve the split files: read `constants/path_datasets.yaml`, take the
@@ -516,7 +516,7 @@ itself.
 8. **Split gates** (2.5): a task id that appears in two splits, and a task id of
    the records that is in none of the environment's official lists, each stop the
    build and name the ids.
-9. `df = task_record.read_dir(sample_dir, pairs)`.
+9. `df = trajectory_record.read_dir(sample_dir, pairs)`.
 10. **Abort gate** (2.5): the share of records whose `final.abort` is non-null
     above `cfg.build.max_abort_frac` stops the build.
 11. Per record, join the `gen` and `env` rows on `step`. **A `gen` row with no
@@ -554,8 +554,8 @@ itself.
     check, spelled `row.text.endswith(thinking[:cut])` (errata 15).
 15. **Per-split cap**: keep the first `cfg.build.max_examples` rows of **each**
     split in `example_id` order (2.5).
-16. `example.write(run_dir / "examples.parquet", frame)`.
-17. `consumed.json`: every record file it read, by `task_record.record_path`,
+16. `training_data.write(run_dir / "examples.parquet", frame)`.
+17. `consumed.json`: every record file it read, by `trajectory_record.record_path`,
     with its sha1 and row count; **and** every split file, with its path, sha1
     and task count (2.5, 1.5).
 18. `report.md` (section 1.6's list below).
@@ -634,13 +634,13 @@ max; the abort share against `max_abort_frac`; and how many rows the per-split
 ```
 data/__init__.py          (no repo import)
   ├── data/probe_input.py (no repo import; can be written in parallel)
-  ├── data/task_record.py       needs data/__init__.py
-  ├── data/example.py           needs data/__init__.py
-  └── data/prediction.py        needs data/__init__.py
-          └── data/build_dataset.py   needs all five, plus three other folders
+  ├── data/trajectory_record.py       needs data/__init__.py
+  ├── data/training_data.py           needs data/__init__.py
+  └── data/probe_output.py        needs data/__init__.py
+          └── data/build_training_dataset.py   needs all five, plus three other folders
 ```
 
-`data/build_dataset.py` is last and needs these names to **exist** first:
+`data/build_training_dataset.py` is last and needs these names to **exist** first:
 
 | file (other folder) | names it must offer |
 |---|---|
@@ -667,7 +667,7 @@ interpreters in turn:
 ```sh
 for P in external/probe-env/bin/python external/appworld/venv/bin/python external/vllm-env/bin/python; do
   "$P" -c "import sys; sys.path.insert(0,'.');
-import data, data.task_record, data.example, data.prediction, data.probe_input, data.build_dataset
+import data, data.trajectory_record, data.training_data, data.probe_output, data.probe_input, data.build_training_dataset
 print('imports ok', sys.version.split()[0])"
 done
 ```
@@ -690,7 +690,7 @@ Expected: `probe_input imports on 3.10.12`; exit 0.
 **A3 — the `VERSION` line shape (3.3), the selfcheck rule this folder must
 satisfy.** `run.py selfcheck` does not exist yet; this is its grep stand-in.
 ```sh
-for f in data/task_record.py data/example.py data/prediction.py data/probe_input.py data/build_dataset.py; do
+for f in data/trajectory_record.py data/training_data.py data/probe_output.py data/probe_input.py data/build_training_dataset.py; do
   n=$(grep -c '^VERSION = [0-9][0-9]*$' "$f"); echo "$f $n"
 done
 grep -c '^VERSION' data/__init__.py
@@ -702,7 +702,7 @@ Expected: five lines each ending in ` 1`, then `0` for `data/__init__.py`
 ```sh
 external/probe-env/bin/python -c "
 import sys; sys.path.insert(0,'.')
-import data.task_record as tr, data.example as ex, data.prediction as pr
+import data.trajectory_record as tr, data.training_data as ex, data.probe_output as pr
 for m in (tr, ex, pr):
     bad = sorted(set(m.REQUIRED) - set(m.SCHEMA))
     assert not bad, (m.__name__, bad)
@@ -837,7 +837,7 @@ print('assemble ok')"
 Expected: `assemble ok`; exit 0. (393 = `400 - 60 + 13 + 40`, the legacy `clip`
 shape of `rules.py:50-52`.)
 
-### D. `data/task_record.py` (ticket 02)
+### D. `data/trajectory_record.py` (ticket 02)
 
 **D1 — the claim, the six kinds, the round trip, `is_done` / `owner` /
 `done_pairs` / `read_dir` / `to_messages` / `release`, on a fixture built by the
@@ -845,7 +845,7 @@ real entry points.**
 ```sh
 external/appworld/venv/bin/python - <<'PY'
 import sys, json, os, time, tempfile, pathlib; sys.path.insert(0,'.')
-import data.task_record as tr
+import data.trajectory_record as tr
 d = pathlib.Path(tempfile.mkdtemp())
 
 w = tr.open_record(d, "50e1ac9_1", 42)
@@ -909,16 +909,16 @@ os.utime(d/"records"/"zzz9999_3__s1.jsonl", (0, 0))            # older than the 
 gone = sorted(x.name for x in tr.release(d, {"sample-abc123def456-0"}, 1800))
 assert gone == ["abc0000_2__s7.jsonl", "zzz9999_3__s1.jsonl"], gone
 assert p.exists()
-print("task_record ok")
+print("trajectory_record ok")
 PY
 ```
-Expected: `task_record ok`; exit 0. Run under all three `$P`.
+Expected: `trajectory_record ok`; exit 0. Run under all three `$P`.
 
 **D2 — a killed writer's file is readable to its last flushed row.**
 ```sh
 external/appworld/venv/bin/python - <<'PY'
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
-import data.task_record as tr
+import data.trajectory_record as tr
 d = pathlib.Path(tempfile.mkdtemp())
 w = tr.open_record(d, "t_1", 1)
 w.row("meta", stage="sample", env="appworld", task_id="t_1", seed=1, env_seed=100,
@@ -935,14 +935,14 @@ PY
 ```
 Expected: `flush-per-row ok`; exit 0.
 
-### E. `data/example.py` and `data/prediction.py` (ticket 03)
+### E. `data/training_data.py` and `data/probe_output.py` (ticket 03)
 
 **E1 — write with the format's writer, read it back, and get the declared
 columns.**
 ```sh
 external/appworld/venv/bin/python - <<'PY'
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
-import polars as pl, data.example as ex, data.prediction as pr
+import polars as pl, data.training_data as ex, data.probe_output as pr
 d = pathlib.Path(tempfile.mkdtemp())
 
 rows = pl.DataFrame({
@@ -991,7 +991,7 @@ per-`PROBE_KIND` column split).
 ```sh
 external/appworld/venv/bin/python - <<'PY'
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
-import polars as pl, data.prediction as pr
+import polars as pl, data.probe_output as pr
 d = pathlib.Path(tempfile.mkdtemp()); q = d/"p.parquet"
 pr.write(q, pl.DataFrame({
   "example_id": ["a"], "event_id": ["e"], "task_id": ["t"], "depth": [0.5],
@@ -1005,13 +1005,13 @@ PY
 ```
 Expected: `generator prediction ok`; exit 0.
 
-### F. `data/build_dataset.py` (ticket 04)
+### F. `data/build_training_dataset.py` (ticket 04)
 
 **F1 — the module is a program with the command shape of 2.6 and no setting name
 on its command line.**
 ```sh
-external/appworld/venv/bin/python -m data.build_dataset --help 2>&1 | head -5
-external/appworld/venv/bin/python -m data.build_dataset --run-dir /nonexistent; echo "exit=$?"
+external/appworld/venv/bin/python -m data.build_training_dataset --help 2>&1 | head -5
+external/appworld/venv/bin/python -m data.build_training_dataset --run-dir /nonexistent; echo "exit=$?"
 ```
 Expected: the help text names `--run-dir` and **no** `--setting`, `--config`,
 `--env` or `--out`; the second command exits non-zero with a message naming
@@ -1019,21 +1019,21 @@ Expected: the help text names `--run-dir` and **no** `--setting`, `--config`,
 
 **F2 — the end-to-end build over a fixture run directory.** The ticket's
 implementer builds the fixture with the real writers: a `sample` run directory
-with two record files written through `data/task_record.py`, a frozen
+with two record files written through `data/trajectory_record.py`, a frozen
 `settings.yaml` written through `schema.freeze`, and a `build` run directory.
 ```sh
-external/appworld/venv/bin/python -m data.build_dataset --run-dir <fixture build dir>; echo "exit=$?"
+external/appworld/venv/bin/python -m data.build_training_dataset --run-dir <fixture build dir>; echo "exit=$?"
 ls <fixture build dir>
 external/appworld/venv/bin/python -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 df = ex.read('<fixture build dir>/examples.parquet')
 print(df.height, sorted(set(df['split'].to_list())), list(df.columns))"
 ```
 Expected: `exit=0`; the directory holds `examples.parquet`, `consumed.json`,
 `report.md`, `done.json` and `heartbeat/0-0.jsonl`; the read prints the row
 count, the split values present, and the full declared column list of
-`data/example.py`'s `SCHEMA` in order.
+`data/training_data.py`'s `SCHEMA` in order.
 
 **F3 — each gate of 2.5 fires and names what it found.** One command per gate,
 each against a fixture that is the F2 fixture with one thing changed; every one
@@ -1075,7 +1075,7 @@ input** (2.5): run the build twice into two directories with
 ```sh
 external/appworld/venv/bin/python -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 a = ex.read('<dir A>/examples.parquet'); b = ex.read('<dir B>/examples.parquet')
 assert a.equals(b)
 print('deterministic cap ok', a.height)"
@@ -1098,7 +1098,7 @@ run the build against its own run directory:
 python3 run.py train_probe <setting> --debug        # the walk reaches build itself
 external/appworld/venv/bin/python -c "
 import sys; sys.path.insert(0,'.')
-import data.example as ex
+import data.training_data as ex
 df = ex.read('<debug build dir>/examples.parquet')
 print(df.height, df['split'].value_counts().sort('split'))"
 ```
@@ -1113,7 +1113,7 @@ was made outside this code. Repeat it against this implementation:
 # on each of shiga/tokyo105, tokyo106, tokyo107, released at a common wall-clock barrier
 for i in $(seq 8); do external/appworld/venv/bin/python -c "
 import sys; sys.path.insert(0,'.')
-import data.task_record as tr
+import data.trajectory_record as tr
 n = sum(1 for k in range(150) if tr.open_record('<a fresh NFS run dir>', 'race_%d' % k, 0) is not None)
 print(n)" & done; wait
 ```
@@ -1140,7 +1140,7 @@ Must show: the counts across all 24 processes sum to exactly 150.
 
 ### Ticket 02 — the task record
 
-- **Files**: `data/task_record.py`.
+- **Files**: `data/trajectory_record.py`.
 - **What to do**: section 1.2 above — `VERSION`, `SCHEMA`, `DEFAULTS`,
   `REQUIRED`, and the eleven offered names. The claim is the `O_EXCL` create of
   an empty file and nothing else; the `meta` row is the caller's first
@@ -1153,7 +1153,7 @@ Must show: the counts across all 24 processes sum to exactly 150.
 
 ### Ticket 03 — the example and prediction formats
 
-- **Files**: `data/example.py`, `data/prediction.py`.
+- **Files**: `data/training_data.py`, `data/probe_output.py`.
 - **What to do**: sections 1.3 and 1.4 above — the two column lists with their
   dtypes, `DEFAULTS` all null, the `REQUIRED` sets as stated, and
   `write(path, df)` / `read(path)` on each. `write` stamps `version` and selects
@@ -1164,11 +1164,11 @@ Must show: the counts across all 24 processes sum to exactly 150.
 
 ### Ticket 04 — the builder
 
-- **Files**: `data/build_dataset.py`.
+- **Files**: `data/build_training_dataset.py`.
 - **What to do**: section 1.6 above — `main(run_dir)`, the nineteen-step walk,
   every gate of 2.5 with the spellings this plan fixes, the `split` assignment
   by both rules of `build.split_source`, the per-split `max_examples` cap,
-  `examples.parquet` through `data/example.py`, `consumed.json` with both kinds
+  `examples.parquet` through `data/training_data.py`, `consumed.json` with both kinds
   of entry, `report.md` with the lines section 1.6 lists, the heartbeat and
   `done.json` through `jobs/registry.py`. The "not ported" list of section 1.6
   is part of the ticket: none of those legacy outputs is recreated.
@@ -1203,7 +1203,7 @@ Appended verbatim to `.scratch/from-zero/contract-errata.md`.
    and `read_frame` returns the columns in that order.
 4. **Part 1.1 (`dir`)** — `open_record`, `done_pairs`, `read_dir` and `release`
    take a `dir` whose meaning is unstated -> it is the **run directory**, and
-   `data/task_record.py` appends `records/` itself.
+   `data/trajectory_record.py` appends `records/` itself.
 5. **Part 1.1 (offered names)** — the list gives no way for a caller to name the
    record files it read, which 2.5 requires for `build`'s `consumed.json` ->
    `record_path(dir, task_id, seed) -> Path` is added to this file's offered
@@ -1233,7 +1233,7 @@ Appended verbatim to `.scratch/from-zero/contract-errata.md`.
     `cuts` raises `ValueError` naming `max_cuts` below 2 (today's hard stop,
     `legacy/pipeline/annotate/build.py:353-355`) and `assemble` raises
     `ValueError` naming `probe_result_cap` below 100.
-11. **Part 0.2 (`data/build_dataset.py`'s annotation lines)** — its `imports:`
+11. **Part 0.2 (`data/build_training_dataset.py`'s annotation lines)** — its `imports:`
     names no third-party and its `reads:` no `constants/` file, while 2.5
     requires `consumed.json` to carry each split file's path and sha1, which only
     `constants/path_datasets.yaml` holds -> `imports: ...; [polars, PyYAML]` and

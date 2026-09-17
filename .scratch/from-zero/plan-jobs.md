@@ -25,7 +25,7 @@ heartbeat, the verdicts, `ls`/`where`/`find`/`kill`/`free`/`sync`, and `RESULTS.
 
 **imports / used by (0.2).**
 `imports: none (repo); [PyYAML]`.
-`used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py,
+`used by: run.py, jobs/launch.py, agent/loop.py, data/build_training_dataset.py,
 train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py,
 eval/method_table.py` (eight; a service piece writes no registry file and is judged by
 its port, 8.5).
@@ -195,7 +195,7 @@ gate on the probe service; refire; and the teardown of a finished run's service 
 **venv.** `probe` (it runs on the login machine).
 
 **imports / used by (0.2).**
-`imports: experimental_settings/schema.py, jobs/registry.py, data/task_record.py
+`imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py
 (done_pairs, is_done, owner, release), data/environments/__init__.py (tasks and
 requested_pairs)`.
 `used by: run.py`.
@@ -295,7 +295,7 @@ def alive_check(pieces, window_s=30, poll_s=5) -> tuple[bool, list]            #
   in its `meta.json` entry and **refuse while it is alive**, naming the session and the
   host (fail-closed); warn when this piece already has more than one entry in
   `meta.json.launches` and proceed (**no quota**); release that piece's claims through
-  `data/task_record.release(<run_dir>/records, registry.live_sessions(),
+  `data/trajectory_record.release(<run_dir>/records, registry.live_sessions(),
   registry.DEFAULTS["launch_timeout_s"])`; probe the cards again; restart the piece in a
   new tmux session; rewrite that piece's `meta.json` entry (`host`, `gpus`, `session`,
   `pid`, `cmd`) and append a `launches` entry carrying the `git` dict it was handed —
@@ -342,7 +342,7 @@ file; `ls`, `where`, `find`, `free`, `kill`, `refire`, `retry`, `sync`, `table`,
 
 **imports / used by (0.2).**
 `imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py,
-data/task_record.py (done_pairs, is_done, owner, release),
+data/trajectory_record.py (done_pairs, is_done, owner, release),
 data/environments/__init__.py (open_env, requested_pairs),
 eval/utils/probe_eval.py (read_report), eval/method_table.py (table)`.
 `used by: none (program)`.
@@ -376,7 +376,7 @@ children, 5.5), for each stage of `cfg._workflow` in order:
 2. Skip test. For `sample` and `inject` it is the **pair check**: build the requested
    list with `requested_pairs(env, splits, tasks, n_tasks, seeds)`, project the triples
    to `(task_id, seed)` pairs, and compare against
-   `task_record.done_pairs(<run_dir>/records, pairs)`; a subset means skip. Every other
+   `trajectory_record.done_pairs(<run_dir>/records, pairs)`; a subset means skip. Every other
    stage skips on the presence of `done.json`.
 3. Before a skip: compare the directory's `consumed.json` entries — and, for `sample` and
    `inject`, `meta.json`'s `split_files` hashes — against the files they name; on a
@@ -385,7 +385,7 @@ children, 5.5), for each stage of `cfg._workflow` in order:
    the lock.
 4. A `sample`/`inject` directory that is partly done: while any piece of `kind` `loop` or
    `train` of that run has a live session, release the dead sessions' claims through
-   `task_record.release(...)`, report them, and launch nothing; once none has, relaunch
+   `trajectory_record.release(...)`, report them, and launch nothing; once none has, relaunch
    for the missing pairs, reusing the run's live service pieces.
 5. Completeness reached: write `done.json` through
    `registry.write_done(run_dir, …, pairs=pairs, counts={records: len(pairs),
@@ -417,7 +417,7 @@ children, 5.5), for each stage of `cfg._workflow` in order:
    walk that first sees it (8.2).
 
 **Subcommands** (8.6). `ls` computes `edited` (the named setting's current key against the
-directory) and `progress` (`task_record.done_pairs` against the requested total) itself
+directory) and `progress` (`trajectory_record.done_pairs` against the requested total) itself
 and passes both into `registry.ls`; `where` uses `schema.run_dir` (it has the setting and
 therefore `--debug`); `find` passes the parsed `section.field=value` dict to
 `registry.find`; `kill` calls `registry.kill` and writes the `killed` finish row;
@@ -518,7 +518,7 @@ contracts 0.2.
    same ticket.
 3. **`jobs/launch.py`** — after registry. Needs:
    `experimental_settings/schema.py`: `STAGES`, `load_frozen`, `run_dir_of`;
-   `data/task_record.py`: `done_pairs`, `is_done`, `owner`, `release`;
+   `data/trajectory_record.py`: `done_pairs`, `is_done`, `owner`, `release`;
    `data/environments/__init__.py`: `open_env`, `requested_pairs`, `Environment.tasks`;
    `constants/path_datasets.yaml` (the `venvs:` map and each environment's `venv` column);
    `models/table.yaml` (the `serving:` block).
@@ -886,14 +886,14 @@ external/probe-env/bin/python -c "
 import sys, pathlib, tempfile; sys.path.insert(0,'.')
 import run
 d = pathlib.Path(tempfile.mkdtemp()); f = d/'m.py'
-f.write_text('VERSION = 3\nimport os\nfrom data import example\nclass A:\n    VERSION = VERSION\n')
+f.write_text('VERSION = 3\nimport os\nfrom data import training_data\nclass A:\n    VERSION = VERSION\n')
 print(run.literal_of(f, 'VERSION'))
 print(sorted(run.imports_of(f)))
 g = d/'bad.py'; g.write_text('VERSION = 1\nVERSION = 2\n')
 print(run.literal_of(g, 'VERSION'))
 "
 ```
-Expected: `3`; `['data.example', 'os']`; then a refusal naming two matches for `VERSION`
+Expected: `3`; `['data.training_data', 'os']`; then a refusal naming two matches for `VERSION`
 (a raised `SystemExit` or a `None` plus a printed problem, whichever the implementation
 uses — the ticket pins "more than one match is a failure"), exit 0 for the first two
 lines.
@@ -1006,7 +1006,7 @@ section 4 and is returned as BLOCKED with the ready-to-run command.
 **Needs from other folders.** `jobs/registry.py` (T1: `lock`, `open_runs`, `append_start`,
 `write_meta`, `free`, `live_sessions`, `session_alive`, `DEFAULTS`);
 `experimental_settings/schema.py`: `STAGES`, `load_frozen`, `run_dir_of`;
-`data/task_record.py`: `done_pairs`, `is_done`, `owner`, `release`;
+`data/trajectory_record.py`: `done_pairs`, `is_done`, `owner`, `release`;
 `data/environments/__init__.py`: `open_env`, `requested_pairs`, `Environment.tasks`;
 `constants/path_datasets.yaml` (`venvs:` map, per-environment `venv` column);
 `constants/path_outputs.yaml` (`login_host`, `hosts:`); `models/table.yaml`
@@ -1031,7 +1031,7 @@ and constants folders; if they have not landed, run C1–C3 and say so.
 **Needs from other folders.** `jobs/registry.py` (T1) and `jobs/launch.py` (T2);
 `experimental_settings/schema.py`: `load`, `load_frozen`, `key`, `run_dir`, `run_dir_of`,
 `freeze`, `STAGES`, and the two names errata 8 adds — `upstream(stage, setting)` and
-`module_version(path)`; `data/task_record.py`: `done_pairs`, `is_done`, `owner`,
+`module_version(path)`; `data/trajectory_record.py`: `done_pairs`, `is_done`, `owner`,
 `release`; `data/environments/__init__.py`: `open_env`, `requested_pairs`;
 `eval/utils/probe_eval.py`: `read_report`; `eval/method_table.py`: `table`.
 

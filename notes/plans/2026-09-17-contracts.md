@@ -133,7 +133,7 @@ new1/
                           find, free, kill, refire, retry, sync, table, selfcheck. Edited when a subcommand is
                           added or the stage walk changes
       imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py,
-               data/task_record.py (done_pairs, is_done, owner, release),
+               data/trajectory_record.py (done_pairs, is_done, owner, release),
                data/environments/__init__.py (open_env, requested_pairs: the requested
                (split, task_id, seed) list, which run.py computes on the setting it holds and
                projects to pairs, 2.3),
@@ -144,7 +144,7 @@ new1/
                meta.json / done.json / consumed.json and the upstream files it names (the skip gate of
                2.3) / heartbeat/*.jsonl / service_<kind>_<replica>.json (for attached_to, 7.1),
                the sample or inject run's task records (through
-               data/task_record.py, for the completeness check, the progress count of 8.4 and the claim
+               data/trajectory_record.py, for the completeness check, the progress count of 8.4 and the claim
                release), the environment's split task-id files (through
                data/environments/requested_pairs, for the subset skip test and done.json's pairs, 2.3),
                the probe report of
@@ -193,7 +193,7 @@ new1/
                             allowed values of each axis, the stage table; and the loader that reads a YAML
                             file against it (file -> setting, diff, key), plus run_dir and freeze
       imports: none (repo); [PyYAML, dataclasses, hashlib, re, ast]
-      used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py, train/utils/trainer.py,
+      used by: run.py, jobs/launch.py, agent/loop.py, data/build_training_dataset.py, train/utils/trainer.py,
                eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py,
                models/agent_models/service.py, models/probe_models/service.py (ten; both services take
                load_frozen only, the agent one in its server main and the probe one in its check client)
@@ -225,7 +225,7 @@ new1/
                             VERSION / DEFAULTS / REQUIRED rule, including the raise on a missing
                             required column. Edited never
       imports: none (repo); [polars]
-      used by: data/task_record.py, data/example.py, data/prediction.py, data/build_dataset.py (the id
+      used by: data/trajectory_record.py, data/training_data.py, data/probe_output.py, data/build_training_dataset.py (the id
                functions, which the builder calls rather than formatting a string)
       reads:   -   writes: -   venv: any
     environments/           one file per benchmark environment; the only place a new environment adds a file
@@ -239,7 +239,7 @@ new1/
                             (2.3); carries VERSION
         imports: none (repo); [importlib, PyYAML]
         used by: data/environments/appworld.py (subclass), agent/loop.py (open_env, StepObservation,
-                 requested_pairs), agent/inject.py, data/build_dataset.py (open_env, requested_pairs),
+                 requested_pairs), agent/inject.py, data/build_training_dataset.py (open_env, requested_pairs),
                  train/methods/cgen.py, train/methods/cparam.py (open_env, for the environment their
                  validation metric's match takes, 2.6), eval/methods/cgen.py, eval/methods/cparam.py,
                  eval/score_run.py,
@@ -255,24 +255,24 @@ new1/
         reads:   constants/path_datasets.yaml, the split task-id files
         writes:  the AppWorld per-task output directory, deleted by close()
         venv:    any at import and for the call-syntax methods; appworld to hold a world
-    task_record.py          the record one task run leaves: six row kinds, one file per (task, seed); write,
+    trajectory_record.py          the record one task run leaves: six row kinds, one file per (task, seed); write,
                             read, is_done, owner, to_messages; carries VERSION
       imports: data/__init__.py
       used by: agent/loop.py (meta, gen, env, final), agent/inject.py (spec, resume),
-               data/build_dataset.py, eval/score_run.py,
+               data/build_training_dataset.py, eval/score_run.py,
                jobs/launch.py (done_pairs, is_done, owner, release),
                run.py (done_pairs, is_done, owner, release: the completeness check, the progress count
                of 8.4 and the claim release, all of which happen on the login machine, 1.1)
       reads/writes: task record (jsonl)
       venv:    any
-    example.py              the row build writes per cut: the record and cut it came from, the text the probe
+    training_data.py              the row build writes per cut: the record and cut it came from, the text the probe
                             sees, and all three targets; write, read; carries VERSION
       imports: data/__init__.py
-      used by: data/build_dataset.py (write), train/utils/trainer.py (read),
+      used by: data/build_training_dataset.py (write), train/utils/trainer.py (read),
                train/methods/{ctool,cgen,cparam}.py (their target column)
       reads/writes: example (parquet)
       venv:    any
-    prediction.py           the row train writes per example after training: the example id, its target, the
+    probe_output.py           the row train writes per example after training: the example id, its target, the
                             true tool, the score and class logits (ctool) or the generated text (cgen,
                             cparam); write, read; carries VERSION
       imports: data/__init__.py
@@ -282,20 +282,20 @@ new1/
     probe_input.py          what the probe is asked and shown: the cut positions in the reasoning (the
                             offline enumeration and the streaming one, which differ in their offset
                             convention and are therefore not comparable, Part 1.7; the event-level
-                            min_think gate lives in data/build_dataset.py offline and in agent/inject.py
+                            min_think gate lives in data/build_training_dataset.py offline and in agent/inject.py
                             live, which scores no cut until the thinking reaches min_think, 1.7), and the text assembled
                             for the probe (the task, the clipped tool history, the thinking so far); pure
                             functions whose every parameter is passed in, never a module constant and never
                             read from a file, so the offline and the live caller cannot drift; carries
                             VERSION
       imports: none (repo); [re]
-      used by: data/build_dataset.py, agent/inject.py
+      used by: data/build_training_dataset.py, agent/inject.py
       reads:   -   writes: -   venv: any
-    build_dataset.py        the program: records -> example rows for the three probe methods; the
+    build_training_dataset.py        the program: records -> example rows for the three probe methods; the
                             train/val/test split, by either rule of build.split_source (5.2 for the
                             hash share, 2.5 for the env mapping); the report; the gates; carries VERSION
-      imports: experimental_settings/schema.py, data/__init__.py (the id functions), data/task_record.py,
-               data/example.py, data/probe_input.py, data/environments/__init__.py, jobs/registry.py
+      imports: experimental_settings/schema.py, data/__init__.py (the id functions), data/trajectory_record.py,
+               data/training_data.py, data/probe_input.py, data/environments/__init__.py, jobs/registry.py
       used by: none (program)
       reads:   the sample run's task records, the environment's split task-id files
       writes:  examples.parquet, consumed.json, report.md, heartbeat, done.json
@@ -405,7 +405,7 @@ new1/
                             system_text(cfg) into to_messages as extra_developer on every call (7.3, 1.1);
                             holds no probe code itself; carries VERSION
       imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py,
-               data/task_record.py, models/agent_models/service.py (client),
+               data/trajectory_record.py, models/agent_models/service.py (client),
                models/probe_models/service.py (client, for render), agent/generate.py, agent/inject.py,
                jobs/registry.py. It names no family module and imports models/__init__.py nowhere: it
                renders through the probe service and compares the family the service echoes against
@@ -436,12 +436,12 @@ new1/
                             conversation (7.3);
                             declares the module-level literal ARMS, which is what schema's inject.arm
                             axis is checked against (5.3); carries VERSION
-      imports: agent/generate.py, agent/inject_format.py, data/probe_input.py, data/task_record.py,
+      imports: agent/generate.py, agent/inject_format.py, data/probe_input.py, data/trajectory_record.py,
                data/environments/__init__.py (type only; the object is passed in),
                models/probe_models/service.py (client), models/__init__.py (the family module).
                The setting is passed in by loop.py, so this file does not import schema
       used by: agent/loop.py
-      reads:   -   writes: spec and resume rows, through data/task_record.py
+      reads:   -   writes: spec and resume rows, through data/trajectory_record.py
       venv:    the environment's
     inject_format.py        the table of the five ways an early result is written into the stream, as the
                             module-level literal FORMATS whose entries have the four fields of Part 7.3;
@@ -464,7 +464,7 @@ new1/
                             directory with the checkpoint and no predictions is continued from that step;
                             carries VERSION
         imports: experimental_settings/schema.py, models/__init__.py, models/probe_models/base.py,
-                 data/example.py, data/prediction.py, jobs/registry.py; [torch, peft]
+                 data/training_data.py, data/probe_output.py, jobs/registry.py; [torch, peft]
         used by: train/methods/{ctool,cgen,cparam}.py
         reads:   example (parquet), the checkpoint layout
         writes:  best/, last/, train_log.jsonl, align_check.json, train_done.json, predictions.parquet,
@@ -477,14 +477,14 @@ new1/
                             catches the one that was missed
       ctool.py              the classification probe: its batches, its head use, its loss, its validation
                             accuracy; carries VERSION
-        imports: train/utils/trainer.py, models/probe_models/base.py, data/example.py,
+        imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py,
                  eval/methods/ctool.py (its match function, per the tree's eval/methods line); [torch]
         used by: none (program)
         reads:   -   writes: - (everything goes through trainer.py)
         venv:    probe
       cgen.py               the call-generating probe: its packing, its instance strings and target, its loss
                             positions, its exact-match validation; carries VERSION
-        imports: train/utils/trainer.py, models/probe_models/base.py, data/example.py,
+        imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py,
                  eval/methods/cgen.py (its match function), data/environments/__init__.py (open_env, for
                  the environment that match takes, 2.6); [torch]
         used by: none (program)
@@ -492,7 +492,7 @@ new1/
         venv:    probe
       cparam.py             the argument-generating probe: its own packing and strings, the arguments as the
                             target; carries VERSION
-        imports: train/utils/trainer.py, models/probe_models/base.py, data/example.py,
+        imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py,
                  eval/methods/cparam.py (its match function), data/environments/__init__.py (open_env, for
                  the environment that match takes, 2.6); [torch]
         used by: none (program)
@@ -508,7 +508,7 @@ new1/
       probe_eval.py         shared by the three methods: read a train run's prediction rows and targets,
                             bootstrap the confidence interval, write the report (both of its files) and read
                             it back; carries VERSION
-        imports: experimental_settings/schema.py, data/prediction.py, jobs/registry.py; [polars, numpy]
+        imports: experimental_settings/schema.py, data/probe_output.py, jobs/registry.py; [polars, numpy]
         used by: eval/methods/{ctool,cgen,cparam}.py, run.py (read_report, to freeze a temperature),
                  eval/method_table.py
         reads:   prediction (parquet), its own and the referenced eval run's train meta.json
@@ -548,7 +548,7 @@ new1/
         venv:    any
     score_run.py            a sample or inject run from its records: task success, speculation outcomes,
                             tokens and time; by seed; against a baseline; carries VERSION
-      imports: experimental_settings/schema.py, data/task_record.py, data/environments/__init__.py
+      imports: experimental_settings/schema.py, data/trajectory_record.py, data/environments/__init__.py
                (open_env for split_args and build_call, and requested_pairs, 2.3),
                jobs/registry.py; [polars]
       used by: none (program)
@@ -584,7 +584,7 @@ new1/
                refire(run_dir, git, piece=None) -> list[dict], teardown_services(run_dir) -> list[str],
                git_state(run_dir, allow_dirty) -> dict (the dirty gate and the git fields of a start row
                in one function, called by run.py as well, 2.5)
-      imports: experimental_settings/schema.py, jobs/registry.py, data/task_record.py (done_pairs,
+      imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (done_pairs,
                is_done, owner, release: to release a dead piece's claims),
                data/environments/__init__.py (tasks and requested_pairs: to resolve the split files
                into meta.json before the pieces start, 8.3, and to refuse an out-of-split tasks id, 2.3)
@@ -604,7 +604,7 @@ new1/
                             already counts inside `venv: any`; the day ls or kill needs more, the
                             subcommand half becomes registry_cli.py
       imports: none (repo); [PyYAML]
-      used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py, train/utils/trainer.py,
+      used by: run.py, jobs/launch.py, agent/loop.py, data/build_training_dataset.py, train/utils/trainer.py,
                eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py (eight; a service piece
                writes no registry file and is judged by its port, Part 8.5)
       reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories' meta.json and heartbeat,
@@ -643,8 +643,8 @@ new1/
 
 Python files, by directory: root 1 (`run.py`); `experimental_settings` 1
 (`schema.py`); `data` 8 (`__init__.py`, `environments/__init__.py`,
-`environments/appworld.py`, `task_record.py`, `example.py`, `prediction.py`,
-`probe_input.py`, `build_dataset.py`); `models` 8 (`__init__.py`,
+`environments/appworld.py`, `trajectory_record.py`, `training_data.py`, `probe_output.py`,
+`probe_input.py`, `build_training_dataset.py`); `models` 8 (`__init__.py`,
 `agent_models/__init__.py`, `agent_models/gptoss.py`, `agent_models/service.py`,
 `probe_models/__init__.py`, `probe_models/base.py`, `probe_models/qwen.py`,
 `probe_models/service.py`); `agent` 4; `train` 4; `eval` 6; `jobs` 2.
@@ -674,10 +674,10 @@ agent); neither is repeated in the counts.
 
 | Scenario | Files touched | Why it is not more |
 |---|---|---|
-| A new benchmark environment | `data/environments/<env>.py` (new, and it declares its own `SPLIT_ROLE` map beside the other class attributes, 4.1); `experimental_settings/schema.py` (one value on `data.env`, one on `data.instructions`, **and one value on `sample.split` / `inject.split` for every split name the new environment has that no existing one has**); `constants/path_datasets.yaml` (home, venv, data root, split files, **and a `venvs:` entry when the benchmark brings its own interpreter — which must carry PyYAML, Polars and NumPy, because `venv: any` is defined over every interpreter in that map, 0.1**) | The loop calls nine methods and nothing else; the call syntax, the instruction text and the no-code message are the environment's; the interpreter that runs the loop is a column in `path_datasets.yaml` (dependencies P7). `data/build_dataset.py` parses calls through the environment object, so it is untouched. |
-| A fourth probe method | `train/methods/<m>.py` (new); `eval/methods/<m>.py` (new); `experimental_settings/schema.py` (one value on `probe.method`) | The example row is method-independent (Part 1.2): build writes one row per cut carrying every target, so `data/build_dataset.py` and `data/example.py` are untouched. The prediction row is method-independent (Part 1.3). `trainer.py` never branches on method: the method file is the program and hands its hooks down (Part 2.6). The head lives in `probe_models/base.py` (dependencies P10). The program name is `train.methods.<probe.method>`, computed from the axis value, so the stage table does not list methods. Nothing branches on the method's *name*: the stage table, the loader's required-field rule and the report's shape all branch on `PROBE_KIND` (Part 2.6), which is declared at column zero in **both** new files — `schema.py` reads the train file's copy as source text, `eval/utils/probe_eval.py` reads the eval file's off the module it was handed, and `selfcheck` fails when the two disagree. A method that is neither a classifier nor a generator needs a third `PROBE_KIND` and therefore also touches `data/prediction.py` (a column for its output), `eval/utils/probe_eval.py` (a third report shape) and `models/probe_models/base.py` (a third head, beside the `attach_head` that is called only for `classifier`, 6.2). A generating method that is not a whole-call generator states it in its `CHECKPOINT_META` (2.6), which is what keeps `param_only` out of `base.py`'s branches. |
+| A new benchmark environment | `data/environments/<env>.py` (new, and it declares its own `SPLIT_ROLE` map beside the other class attributes, 4.1); `experimental_settings/schema.py` (one value on `data.env`, one on `data.instructions`, **and one value on `sample.split` / `inject.split` for every split name the new environment has that no existing one has**); `constants/path_datasets.yaml` (home, venv, data root, split files, **and a `venvs:` entry when the benchmark brings its own interpreter — which must carry PyYAML, Polars and NumPy, because `venv: any` is defined over every interpreter in that map, 0.1**) | The loop calls nine methods and nothing else; the call syntax, the instruction text and the no-code message are the environment's; the interpreter that runs the loop is a column in `path_datasets.yaml` (dependencies P7). `data/build_training_dataset.py` parses calls through the environment object, so it is untouched. |
+| A fourth probe method | `train/methods/<m>.py` (new); `eval/methods/<m>.py` (new); `experimental_settings/schema.py` (one value on `probe.method`) | The example row is method-independent (Part 1.2): build writes one row per cut carrying every target, so `data/build_training_dataset.py` and `data/training_data.py` are untouched. The prediction row is method-independent (Part 1.3). `trainer.py` never branches on method: the method file is the program and hands its hooks down (Part 2.6). The head lives in `probe_models/base.py` (dependencies P10). The program name is `train.methods.<probe.method>`, computed from the axis value, so the stage table does not list methods. Nothing branches on the method's *name*: the stage table, the loader's required-field rule and the report's shape all branch on `PROBE_KIND` (Part 2.6), which is declared at column zero in **both** new files — `schema.py` reads the train file's copy as source text, `eval/utils/probe_eval.py` reads the eval file's off the module it was handed, and `selfcheck` fails when the two disagree. A method that is neither a classifier nor a generator needs a third `PROBE_KIND` and therefore also touches `data/probe_output.py` (a column for its output), `eval/utils/probe_eval.py` (a third report shape) and `models/probe_models/base.py` (a third head, beside the `attach_head` that is called only for `classifier`, 6.2). A generating method that is not a whole-call generator states it in its `CHECKPOINT_META` (2.6), which is what keeps `param_only` out of `base.py`'s branches. |
 | A new training hyperparameter | `experimental_settings/schema.py` (field, default, comment); the one module that reads it (`train/utils/trainer.py` or one method file) | The key is over the *diff from the defaults* (Part 3.3), so a field whose default reproduces the old behaviour changes no key and reruns nothing. |
-| A new field on the task record, read by nobody downstream | `data/task_record.py` (the column and its entry in `DEFAULTS`); the one writer (`agent/loop.py` or `agent/inject.py`, 1.1 — an environment never writes a record row; a field that comes out of the environment reaches the record as a value one of the nine methods returned) | A column that every reader treats as optional is added with a declared default and leaves `VERSION` alone, so old record files still read and no key moves (dependencies P9). |
+| A new field on the task record, read by nobody downstream | `data/trajectory_record.py` (the column and its entry in `DEFAULTS`); the one writer (`agent/loop.py` or `agent/inject.py`, 1.1 — an environment never writes a record row; a field that comes out of the environment reaches the record as a value one of the nine methods returned) | A column that every reader treats as optional is added with a declared default and leaves `VERSION` alone, so old record files still read and no key moves (dependencies P9). |
 | A new field on the task record that a downstream stage reads | the same two files (same writers: `agent/loop.py` or `agent/inject.py`), **plus the column's name in `REQUIRED` and a `VERSION` bump**, which re-keys `sample` and `inject` and costs the recollection | Leaving `VERSION` alone would reuse the finished sample directory, in which the column is absent from every file, and hand the new reader its declared default for every row — silently (Part 1's DEFAULTS rule). The bump is the honest price of needing the field. |
 | A sixth injection format that reuses a placement | `agent/inject_format.py` (one entry); `experimental_settings/schema.py` (one value on `inject.format`) | The axis values are a literal list in `schema.py` that `selfcheck` proves equal to `FORMATS.keys()`, so `schema.py` does not import `agent/`, and the two edits are the same two the environment and probe-method rows make. A *new placement* costs one more file, `models/agent_models/<family>.py`, which owns the control-token wrapping (synthesis 6) — one function per family, not one entry. |
 | A new probe backbone | `models/probe_models/<backbone>.py` (new); `models/table.yaml` (one row); `constants/path_models.yaml` (one row) | Model aliases are validated against `table.yaml`, not against a schema axis, so there is one list of legal model names. `base.py` holds everything the backbones share. |
@@ -773,9 +773,9 @@ Conventions shared by the three formats in `data/`, defined in
   def example_id(event_id: str, cut_index: int) -> str
   ```
 
-  *The reason they are named here: `data/task_record.py` builds
+  *The reason they are named here: `data/trajectory_record.py` builds
   `<run_dir>/records/<task_id>__s<seed>.jsonl` paths inside `done_pairs` (1.1)
-  and `data/build_dataset.py` builds every example id, so two files must agree on
+  and `data/build_training_dataset.py` builds every example id, so two files must agree on
   the argument order and the types, and the table above shows only the rendered
   strings.* Ids are stable
   across runs: the same task, seed, step and cut index in another run gives the
@@ -795,12 +795,12 @@ Conventions shared by the three formats in `data/`, defined in
   `version`, and on a declared column present with the wrong type; it fills every
   other declared column absent from the file from `defaults`. `write_frame`
   writes through a temporary name in the same directory and renames.
-  *The reason they are named here: `data/task_record.py`, `data/example.py` and
-  `data/prediction.py` are three files that must all reach the rules above
+  *The reason they are named here: `data/trajectory_record.py`, `data/training_data.py` and
+  `data/probe_output.py` are three files that must all reach the rules above
   through one call, and a rule referred to five times as "the shared reader" is
   three readers by the time three files are written.*
 
-## 1.1 Task record — `data/task_record.py`
+## 1.1 Task record — `data/trajectory_record.py`
 
 **Layout.** One file per task run,
 `<run_dir>/records/<task_id>__s<seed>.jsonl`. One file is one task and one
@@ -870,7 +870,7 @@ passes in as `unowned_age_s`, which is
 `registry.DEFAULTS["launch_timeout_s"]`** (8.5, the one constant 2.5, 7.4, 8.1
 and 8.2 also read; `run.py` and `jobs/launch.py` both import `jobs/registry.py`
 and pass the value in, exactly as they pass `registry.live_sessions()`, so
-`data/task_record.py` imports only `data/__init__.py`) — that is the state a
+`data/trajectory_record.py` imports only `data/__init__.py`) — that is the state a
 piece killed between the exclusive create and the first write leaves behind, and
 `owner(path)` returns None for it, so no dead-session test can reach it. The age
 margin is what keeps the release off a live claim: a live piece writes its `meta`
@@ -975,7 +975,7 @@ for a person and for `eval/score_run.py`'s same-setup comparison, which is a
 string equality over the canonical text, and they are never parsed against a
 declared field list. *The reason: Part 1's reading convention passes a declared
 schema, so a struct column would have to enumerate its inner fields in
-`data/task_record.py`'s `SCHEMA`, and then every added `generation.*` or
+`data/trajectory_record.py`'s `SCHEMA`, and then every added `generation.*` or
 `inject.*` field would be an edit to this format file — and, because `build` and
 `score` read the record, a `VERSION` bump under the second `DEFAULTS` rule, which
 re-keys `sample` and `inject` and costs a recollection. That would contradict 3.3
@@ -989,7 +989,7 @@ dict (`legacy/pipeline/inject/live_appworld.py:834`), and the scoring side has
 to read it. One shape: **canonical JSON text plus a declared boolean `success`**,
 the same rule `meta.generation` and `meta.inject` follow above. *The reason it is
 not a struct: the evaluation dict's fields are the benchmark's, so a struct
-column would have to enumerate them in `data/task_record.py`'s `SCHEMA`, and a
+column would have to enumerate them in `data/trajectory_record.py`'s `SCHEMA`, and a
 second benchmark — or an AppWorld upgrade that adds a field — would then cost an
 edit to this format file plus a `VERSION` bump and a full recollection, while
 0.4's new-environment row lists neither this file nor that cost. `success` is a
@@ -1003,19 +1003,19 @@ under `store_token_ids`, for a later audit.
 **`task_text` is a required column from this format's first version.**
 `meta.instructions` is a variant name, not the task goal, and the task goal is
 the conversation's first user turn: `to_messages` cannot rebuild the history
-without it and `data/build_dataset.py` cannot call `probe_input.assemble`, whose
+without it and `data/build_training_dataset.py` cannot call `probe_input.assemble`, whose
 first parameter is the task text. `build` runs in the `any` venv and the nine
 methods of Part 4.2 hand out task *ids*, not task text, so the only place the
 text can be captured is the loop, after `Environment.open`. Today's code already
 does exactly that (`legacy/envs/collect/run_appworld.py:188,102` writes
 `instruction = world.task.instruction`, `legacy/pipeline/annotate/build.py:69`
 reads `task = meta.get("instruction")`). It gets an entry in `DEFAULTS` like
-every other column, and `data/task_record.py` carries `VERSION` from its first
+every other column, and `data/trajectory_record.py` carries `VERSION` from its first
 version, because 1's second `DEFAULTS` rule applies: a downstream stage reads it.
 
 **Who writes.** `agent/loop.py` writes `meta`, `gen`, `env`, `final`;
 `agent/inject.py` writes `spec` and `resume` through the same writer object.
-**Who reads.** `data/build_dataset.py` (events and cuts), `eval/score_run.py`
+**Who reads.** `data/build_training_dataset.py` (events and cuts), `eval/score_run.py`
 (outcomes, tokens, speculation), and the two login-machine programs
 `jobs/launch.py` and `run.py` (`done_pairs`, `is_done`, `owner`, `release` — the
 completeness check of 2.3 and the claim release above are both login-machine
@@ -1067,7 +1067,7 @@ record carries only the instruction-variant *name*. Both callers pass
 `df` (whose `meta` row holds `task_text`),
 `env.INSTRUCTIONS[cfg.data.instructions]` and `env.NO_CODE_MESSAGE`.
 That keeps the two texts entering from one place and keeps
-`data/task_record.py` free of any import of `data/environments/`.
+`data/trajectory_record.py` free of any import of `data/environments/`.
 
 **`extra_developer` is appended to the developer message inside
 `to_messages`**, and it is the sixth parameter because the conversation is
@@ -1090,17 +1090,17 @@ or lets the loop assemble `messages` its own way — which is exactly the drift
 step is not something this document asks for.*
 
 **The gen-and-env pairing.** A step is one `gen` row and one `env` row with the
-same `step`. `build_dataset.py` joins them inside one file and **raises, naming
+same `step`. `build_training_dataset.py` joins them inside one file and **raises, naming
 the record and the step, when a `gen` row has no `env` row** rather than
 stopping the trajectory there. *The failure this prevents: today's builder
 breaks out of the loop on a failed join
 (`legacy/pipeline/annotate/build.py:75-80`, `if e is None: break`) and silently
 drops the rest of a trajectory.*
 
-## 1.2 Example — `data/example.py`
+## 1.2 Example — `data/training_data.py`
 
 **Layout.** `<run_dir>/examples.parquet`, one file, written once by
-`data/build_dataset.py`. The split is a column, not three files, so a change to
+`data/build_training_dataset.py`. The split is a column, not three files, so a change to
 the split rule rewrites one file and any reader takes "the val rows" by filter.
 
 **One row per cut, not per method.** This is the single decision that makes a
@@ -1147,11 +1147,11 @@ There is no `method` column and no `target` column: the three methods read the
 same rows. *The failure this prevents: three datasets per sample where one
 suffices, and a cgen run trained on a ctool build.*
 
-**Who writes.** `data/build_dataset.py`. **Who reads.**
+**Who writes.** `data/build_training_dataset.py`. **Who reads.**
 `train/utils/trainer.py` (all rows of the requested split, handed to the method
 file as a frame).
 
-## 1.3 Prediction — `data/prediction.py`
+## 1.3 Prediction — `data/probe_output.py`
 
 **Layout.** `<train run_dir>/predictions.parquet`, written by
 `train/utils/trainer.py` as the last step of training with the probe still on
@@ -1184,7 +1184,7 @@ returns `example_id`, `method`, `target` and its own output columns (`score`,
 `label_pred`, `logits` for a classifier; `text_pred`, `gen_tokens` for a
 generator); `train/utils/trainer.py` copies the five method-independent columns
 `event_id`, `task_id`, `depth`, `split` and `tool` from the example row it
-already holds, joining on `example_id`; and `data/prediction.py`'s writer stamps
+already holds, joining on `example_id`; and `data/probe_output.py`'s writer stamps
 `version`. Everything is written once, in one place, from one frame, so that
 **`eval/` reads exactly one upstream directory**, the train run, and nothing can
 drift within a run. *The failure the split prevents: `target` is `tool` for
@@ -1506,7 +1506,7 @@ service is caught by comparing keys rather than by hope.
 ## 1.7 The probe's input — `data/probe_input.py`
 
 Not a format between two stages either, but the one *text* two layers must
-build identically: `data/build_dataset.py` builds it offline, in the `any`
+build identically: `data/build_training_dataset.py` builds it offline, in the `any`
 venv, to train on; `agent/inject.py` builds it live, in the environment's venv,
 to fire on. A divergence between the two invalidates every live run and shows
 up in no number. So the three functions are pinned here the way the four formats
@@ -1533,7 +1533,7 @@ cannot be one.** The offline caller has the whole thinking text; the live caller
 has a growing prefix. Both live in this file, so the shared part is still written
 once, but neither pretends to be the other.
 
-- `cuts` is the **offline** enumeration, called by `data/build_dataset.py`. It
+- `cuts` is the **offline** enumeration, called by `data/build_training_dataset.py`. It
   returns character offsets into the finished `thinking`, in increasing order,
   taken at `m.end()` of each sentence match (today's rule,
   `legacy/pipeline/annotate/rules.py:38`), with a terminal cut at
@@ -1555,7 +1555,7 @@ once, but neither pretends to be the other.
 - **The `min_think` filter is per cut**, in both functions:
   a cut at offset `p` is kept when `len(thinking[:p].strip()) >= min_think // 2`.
   The event-level gate — the whole step has no cuts when
-  `len(thinking) < min_think` — lives in `data/build_dataset.py`, because it is
+  `len(thinking) < min_think` — lives in `data/build_training_dataset.py`, because it is
   a decision about which events become example rows. **The live side holds the
   same gate in its streaming form**: `agent/inject.py` scores no cut until
   `len(thinking_so_far.strip()) >= min_think`, and a step whose thinking never
@@ -1646,7 +1646,7 @@ make it work (dependencies P1, synthesis 8).
 | stage | sections read (the keyed part) | upstream, and how it is found | program (module, entry) | venv | cards |
 |---|---|---|---|---|---|
 | `sample` | `data`, `models.agent`, `generation`, `sample.{split, max_steps, store_token_ids}` | none | `agent.loop`, `main(run_dir, piece)` | the environment's, from `constants/path_datasets.yaml`; `vllm` and `probe` for its service pieces | yes |
-| `build` | `data`, `build`, `sample.{split, tasks, n_tasks, seeds}` | `sample` of the same setting, by its key | `data.build_dataset`, `main(run_dir)` | any | no |
+| `build` | `data`, `build`, `sample.{split, tasks, n_tasks, seeds}` | `sample` of the same setting, by its key | `data.build_training_dataset`, `main(run_dir)` | any | no |
 | `train` | `models.probe`, `probe`, `train` | `build` of the same setting, by its key | `train.methods.<probe.method>`, `main(run_dir)` | probe | yes |
 | `eval` | `probe.method`, `eval` | `train` of the same setting; and when the method's `PROBE_KIND` is `generator`, the setting named by `eval.theta_from`, resolved to **its classifier eval key** | `eval.methods.<probe.method>`, `main(run_dir)` | any | no |
 | `inject` | `data`, `models.agent`, `generation`, the inherited `build` fields in `PROBE_TEXT_FIELDS` (1.7), `inject.{split, max_steps, theta, format, arm, fire_nth_cut, max_inject_per_step, max_cuts, max_new, chunk_tokens, tail_tokens, store_token_ids}` | the setting named by `inject.probe_score`, resolved to **both its train(classifier) key** (the weights) **and its classifier eval key** (the temperature); the setting named by `inject.probe_gen`, resolved to **its train(generator) key** | `agent.loop`, `main(run_dir, piece)` | the environment's; `vllm` and `probe` for its service pieces | yes |
@@ -1764,12 +1764,12 @@ from their schema default.
 
 | stage | plus | minus | module VERSIONs folded in |
 |---|---|---|---|
-| `sample` | — | `sample.{seeds, tasks, n_tasks, pieces, replicas}` | `agent/loop.py`, `agent/generate.py`, `data/task_record.py`, `data/environments/__init__.py`, `data/environments/<env>.py`, `models/agent_models/<family>.py`, `models/agent_models/service.py`, `models/probe_models/service.py` |
-| `build` | the sample key | — | `data/build_dataset.py`, `data/probe_input.py`, `data/example.py`, `data/task_record.py`, `data/environments/__init__.py`, `data/environments/<env>.py` |
-| `train` | the build key | — | `train/utils/trainer.py`, `train/methods/<m>.py`, `eval/methods/<m>.py`, `data/example.py`, `data/prediction.py`, `models/probe_models/base.py`, `models/probe_models/<backbone>.py` |
-| `eval` | the train key; for a generator method the resolved `eval.theta_from` eval key | — | `eval/utils/probe_eval.py`, `eval/methods/<m>.py`, `data/prediction.py` |
-| `inject` | the resolved probe_score **train** key and the resolved probe_gen train key (the probe_score **eval** key is in `_upstream` and not in the key, 2.1) | `inject.{seeds, tasks, n_tasks, pieces, replicas}` | `agent/loop.py`, `agent/generate.py`, `agent/inject.py`, `agent/inject_format.py`, `data/probe_input.py`, `data/task_record.py`, `data/environments/__init__.py`, `data/environments/<env>.py`, `models/agent_models/<family>.py`, `models/agent_models/service.py`, `models/probe_models/base.py`, `models/probe_models/service.py`, and — standing in for the probe_score eval key — `eval/utils/probe_eval.py` and the referenced setting's `eval/methods/<m>.py` |
-| `score` | the scored run's key; the resolved baseline key | — | `eval/score_run.py`, `data/task_record.py` |
+| `sample` | — | `sample.{seeds, tasks, n_tasks, pieces, replicas}` | `agent/loop.py`, `agent/generate.py`, `data/trajectory_record.py`, `data/environments/__init__.py`, `data/environments/<env>.py`, `models/agent_models/<family>.py`, `models/agent_models/service.py`, `models/probe_models/service.py` |
+| `build` | the sample key | — | `data/build_training_dataset.py`, `data/probe_input.py`, `data/training_data.py`, `data/trajectory_record.py`, `data/environments/__init__.py`, `data/environments/<env>.py` |
+| `train` | the build key | — | `train/utils/trainer.py`, `train/methods/<m>.py`, `eval/methods/<m>.py`, `data/training_data.py`, `data/probe_output.py`, `models/probe_models/base.py`, `models/probe_models/<backbone>.py` |
+| `eval` | the train key; for a generator method the resolved `eval.theta_from` eval key | — | `eval/utils/probe_eval.py`, `eval/methods/<m>.py`, `data/probe_output.py` |
+| `inject` | the resolved probe_score **train** key and the resolved probe_gen train key (the probe_score **eval** key is in `_upstream` and not in the key, 2.1) | `inject.{seeds, tasks, n_tasks, pieces, replicas}` | `agent/loop.py`, `agent/generate.py`, `agent/inject.py`, `agent/inject_format.py`, `data/probe_input.py`, `data/trajectory_record.py`, `data/environments/__init__.py`, `data/environments/<env>.py`, `models/agent_models/<family>.py`, `models/agent_models/service.py`, `models/probe_models/base.py`, `models/probe_models/service.py`, and — standing in for the probe_score eval key — `eval/utils/probe_eval.py` and the referenced setting's `eval/methods/<m>.py` |
+| `score` | the scored run's key; the resolved baseline key | — | `eval/score_run.py`, `data/trajectory_record.py` |
 
 **Which column is authoritative.** The "sections read" column of 2.1 is the
 list `key` consults; the "minus" column here only records *why* those five
@@ -1868,7 +1868,7 @@ A one-process stage is its own last piece and writes its own marker.
 need that list — `jobs/launch.py` (to refuse an out-of-split `tasks` id, below;
 `meta.json`'s `split_files` it resolves with `env.tasks` instead, 8.3),
 `agent/loop.py` (to walk its rotation,
-since a loop piece reads no `meta.json`, 7.4), `data/build_dataset.py` (for
+since a loop piece reads no `meta.json`, 7.4), `data/build_training_dataset.py` (for
 `read_dir(dir, pairs)` and its own key), `eval/score_run.py` (for
 `read_dir(dir, pairs)` over the scored run and over its baseline, 2.5) and
 `run.py` (for the subset skip test below and for the `pairs` list it writes into
@@ -1885,7 +1885,7 @@ split files.
 **It returns `(split, task_id, seed)` triples, and the projection to pairs is
 stated once, here.** The four callers that want pairs — `run.py`'s subset test
 and `done.json`'s `pairs`, `jobs/launch.py`'s claim release,
-`data/build_dataset.py`'s and `eval/score_run.py`'s `read_dir(dir, pairs)` — drop
+`data/build_training_dataset.py`'s and `eval/score_run.py`'s `read_dir(dir, pairs)` — drop
 the first element, so `done_pairs` and `read_dir` keep the `(task_id, seed)`
 signatures 1.1 gives them. The fifth caller, `agent/loop.py`, walks the triples
 themselves and writes each record's `meta.split` from the one it is on (1.1).
@@ -2108,7 +2108,7 @@ finished directory was reused.* They cost seconds, so nothing is lost.
   `NO_CODE_MESSAGE`), and the three ways out — skip the event, write a row with
   nulls, raise — give three different datasets under one key.*
 - **A tool that appears in val or test and never in train is not a gate.** It is
-  a line in `data/build_dataset.py`'s `report.md` and a count in
+  a line in `data/build_training_dataset.py`'s `report.md` and a count in
   `done.json`'s `counts`. *The reason it is not a refusal: it is an expected,
   documented condition — today's vocabulary is counted over the whole pile for
   exactly that reason (`legacy/pipeline/annotate/build.py:404`) and
@@ -2119,7 +2119,7 @@ finished directory was reused.* They cost seconds, so nothing is lost.
   the class list sufficient instead is 1.3's rule: `head_labels` is computed over
   the whole example frame.
 - **`build.max_examples` is a cap per split, applied after the split column is
-  assigned**: `data/build_dataset.py` keeps the first `max_examples` rows of each
+  assigned**: `data/build_training_dataset.py` keeps the first `max_examples` rows of each
   split in `example_id` order, so the cap is a deterministic function of its
   input. *The failure this prevents: applied over the concatenated frame it takes
   the head of one split — which under `--debug` is the same empty `val` and `test`
@@ -2136,7 +2136,7 @@ finished directory was reused.* They cost seconds, so nothing is lost.
   file shows on the build directory the way a changed record file does.
 - **How a row's `split` is assigned under `split_source: env`.** A record's
   `meta.split` already names the benchmark split its task was collected from
-  (1.1), and `data/build_dataset.py` maps it through `env.SPLIT_ROLE` (4.1) to
+  (1.1), and `data/build_training_dataset.py` maps it through `env.SPLIT_ROLE` (4.1) to
   the `train` / `val` / `test` value it writes into the example row's `split`
   column — so the benchmark's `dev` becomes the role `val`, and no file assigns a
   split by re-reading a split file per row. *The failure this prevents: the
@@ -2214,7 +2214,7 @@ finished directory was reused.* They cost seconds, so nothing is lost.
   exclude the task and seed lists from their keys (2.2), so one directory holds
   every request that ever shared the key, and a directory-wide gate would make a
   `score` run's numbers depend on collections it never asked for — while
-  `data/task_record.py` offers no directory-glob reader for it to use anyway
+  `data/trajectory_record.py` offers no directory-glob reader for it to use anyway
   (1.1).*
 - `score` refuses unless the baseline run holds a done record for every
   (task, seed) **of that list**, and names the missing pairs. This is the
@@ -2339,7 +2339,7 @@ these names, and `trainer.py` calls them and never branches on the method:
 | `batches(df, tok, cfg)` | `DataFrame, Tokenizer, Setting -> Iterator[Batch]` | the method's own batching or packing; `cgen` and `cparam` each carry their own, per the tree's "no shared packing". `Batch` is the dictionary type `models/probe_models/base.py` declares (6.2), which is where the split between the backbone's keys and the method's own is fixed — including `event_end`, the required key that names the token each event's decision is taken at, whatever this method's packing puts in the sequence (6.2) |
 | `loss(probe, batch)` | `Probe, Batch -> Tensor` | the training loss |
 | `validate(probe, df, tok, cfg)` | `... -> dict[str, float]` | the validation metric, computed with `eval/methods/<m>.py`'s `match(pred, target, env)`; a generator method obtains the environment with `open_env(cfg.data.env)`, which its frozen `settings.yaml` carries because 3.4 writes `data` into a generator train run's projection, and a classifier passes `None`. A generator's `validate` generates through `Probe.generate` and supplies its own `CHECKPOINT_META["call_sep"]` exactly as its `predict` hook does (below, 6.2). The key `objective` is the number `best/` is chosen on, lower is better |
-| `predict(probe, df, tok, cfg)` | `... -> Iterator[dict]` | one prediction row per example row, carrying `example_id`, `method`, `target` and this method's own output columns of `data/prediction.py`, which 1.3 lists per `PROBE_KIND`. It writes `target` itself because the derivation is the method's (`tool` for ctool, `call` for cgen, and for cparam the string derived from `call` and `tool`, 1.2), and it already holds the example frame as `df`. A generator's `predict` calls `Probe.generate(texts, max_new, call_sep)` and passes its **own** module's `CHECKPOINT_META["call_sep"]` (6.2, 1.6), which is what keeps the separator off `base.py` and reachable while the probe is still on the card and no checkpoint exists yet. `trainer.run` joins the five method-independent columns 1.3 names on `example_id`, and `data/prediction.py`'s writer stamps `version`, so a method writes neither and `trainer.py` still branches on nothing |
+| `predict(probe, df, tok, cfg)` | `... -> Iterator[dict]` | one prediction row per example row, carrying `example_id`, `method`, `target` and this method's own output columns of `data/probe_output.py`, which 1.3 lists per `PROBE_KIND`. It writes `target` itself because the derivation is the method's (`tool` for ctool, `call` for cgen, and for cparam the string derived from `call` and `tool`, 1.2), and it already holds the example frame as `df`. A generator's `predict` calls `Probe.generate(texts, max_new, call_sep)` and passes its **own** module's `CHECKPOINT_META["call_sep"]` (6.2, 1.6), which is what keeps the separator off `base.py` and reachable while the probe is still on the card and no checkpoint exists yet. `trainer.run` joins the five method-independent columns 1.3 names on `example_id`, and `data/probe_output.py`'s writer stamps `version`, so a method writes neither and `trainer.py` still branches on nothing |
 | `reference_loss(probe, df)` | `Probe, DataFrame -> Tensor` | the same loss computed one example row per sequence, in its plainest form, over a slice of the same example-row frame `trainer.run` hands `batches`. The gate is executable because both sides are pinned: `trainer.run` takes the first `train.events_per_mb * train.accum` rows of the training split, calls `batches` on that slice, sums `loss` over the batches it yields, and compares that against `reference_loss` on the same slice, **both normalised per example row**; 2.5 stops training on a difference above `1e-4` |
 
 `reference_loss` closes the gap the structure review found (its item 1): the
@@ -2820,7 +2820,7 @@ def requested_pairs(env: Environment, splits: list[str], tasks: list[str] | None
 "test": "test"}`: its `splits:` block in `constants/path_datasets.yaml` is keyed
 `train`, `dev`, `test` (5.3, 6.3) while an example row's `split` column is
 `train`, `val`, `test` (1.2). Under `build.split_source: env`,
-`data/build_dataset.py` takes each row's split from the record's `meta.split`
+`data/build_training_dataset.py` takes each row's split from the record's `meta.split`
 through this map (2.5, 6.3). *The failure this prevents: without it the two name
 sets are simply never connected, so a `dev` task's example row has no defined
 `split` value at all and every builder invents one.*
@@ -2904,7 +2904,7 @@ rename to `parse_call` would be a change to a tree line and is Part 9(b)#14.
 attributes `INSTRUCTIONS[cfg.data.instructions]` and `NO_CODE_MESSAGE`.
 `agent/inject.py`: `speculate`, `complete_call`, `build_call`, on the object the
 loop passes it; it never opens a world of its own.
-`data/build_dataset.py`: `tasks`, `split_args`, `build_call`.
+`data/build_training_dataset.py`: `tasks`, `split_args`, `build_call`.
 `eval/methods/{cgen,cparam}.py`: `split_args` and `build_call` only;
 `train/methods/{cgen,cparam}.py`: `open_env`, for the environment their
 `validate` hook hands to `eval/methods/<m>.py`'s `match` (2.6); a classifier
@@ -2912,7 +2912,7 @@ method calls nothing here.
 `eval/score_run.py`: the same two, plus the requested list below.
 `jobs/launch.py`: `tasks`, to resolve the split files into `meta.json` before the
 pieces start (8.3), and `requested_pairs`, to refuse an out-of-split `tasks` id.
-`agent/loop.py`, `data/build_dataset.py`, `eval/score_run.py` and `run.py` reach
+`agent/loop.py`, `data/build_training_dataset.py`, `eval/score_run.py` and `run.py` reach
 the requested list through `requested_pairs` as well — the five callers 2.3
 names; `run.py` calls it on the
 setting it holds in memory, which is what makes its skip test and `done.json`'s
@@ -3234,8 +3234,8 @@ dropped with the sampler (Part 9(a)#13).
 | `probe.tuning` | `full`, `lora` | a branch in `models/probe_models/base.py` | — |
 | `inject.format` | `note`, `p1_e1`, `p1_e2`, `p2_e1`, `p2_e2` | an entry in `agent/inject_format.py`'s `FORMATS` | `FORMATS`' keys, parsed with `ast` |
 | `inject.arm` | `probe`, `no_probe`, `probe_nofill` | a branch in `agent/inject.py`, listed in that file's module-level `ARMS` literal | `ARMS`, parsed with `ast` |
-| `build.weight_mode` | `uniform`, `per_event` | a branch in `data/build_dataset.py` | — |
-| `build.split_source` | `env`, `hash` | a branch in `data/build_dataset.py` | — |
+| `build.weight_mode` | `uniform`, `per_event` | a branch in `data/build_training_dataset.py` | — |
+| `build.split_source` | `env`, `hash` | a branch in `data/build_training_dataset.py` | — |
 
 Model aliases are **not** an axis: they are validated against the rows of
 `models/table.yaml`, which is the one registry of legal model names. The fourth
@@ -3250,9 +3250,9 @@ column is `—` (`probe.tuning`, `build.weight_mode`,
 `build.split_source`) and `generation.effort`, whose values are branches in a
 family module and are additionally declared there as a literal; the three files
 that hold such dispatch are
-`data/build_dataset.py`, `models/probe_models/base.py` and
+`data/build_training_dataset.py`, `models/probe_models/base.py` and
 `models/agent_models/<family>.py`. *The failure this prevents: adding a third
-split method is a value in `schema.py` plus a branch in `data/build_dataset.py`,
+split method is a value in `schema.py` plus a branch in `data/build_training_dataset.py`,
 and if the branch is missed the value loads cleanly, falls through to whatever
 the `if/else` ends on, and produces a dataset split by the old rule under a new
 key — a wrong number, not a crash, which is the class every gate in this
@@ -4353,7 +4353,7 @@ machine:
 | `beat` | `beat(run_dir: Path, piece: int) -> Heartbeat` | every batch piece, once, before its main loop. It resolves `<launch>` from the run directory's own `heartbeat/` listing (8.4) and opens `heartbeat/<piece>-<launch>.jsonl` for append; it opens no `meta.json`, so 7.4's "a loop piece reads no other file" stands |
 | `Heartbeat.emit` | `emit(done: int, total: int, unit: str, **extra) -> None` | the same piece, per beat; `extra` is the optional `tok_in`, `tok_out`, `loss` |
 | `Heartbeat.finish` | `finish() -> None` | the same piece, once: the final beat with `status: "done"` |
-| `write_done` | `write_done(run_dir, *, stage, key, commit, counts, versions, metrics, report, pairs=None, stage_extra=None) -> None` | the one-process stages for themselves (`data/build_dataset.py`, `train/utils/trainer.py`, `eval/utils/probe_eval.py`, `eval/score_run.py`), and `run.py` for `sample` and `inject` with `pairs` (2.3). It writes `done.json` through a temporary name and a rename |
+| `write_done` | `write_done(run_dir, *, stage, key, commit, counts, versions, metrics, report, pairs=None, stage_extra=None) -> None` | the one-process stages for themselves (`data/build_training_dataset.py`, `train/utils/trainer.py`, `eval/utils/probe_eval.py`, `eval/score_run.py`), and `run.py` for `sample` and `inject` with `pairs` (2.3). It writes `done.json` through a temporary name and a rename |
 | `write_meta` | `write_meta(run_dir, **fields) -> None` | `run.py` and `jobs/launch.py` only (8.3); it rewrites the whole file through a temporary name and a rename, under `lock()` like the two appends. `run.py` calls it for a CPU stage it starts in place — the run's `meta.json` and its `launches` entry — exactly as `jobs/launch.py` does for a tmux stage (2.3) |
 | `lock` | `lock() -> ContextManager[None]` | `run.py` and `jobs/launch.py` (8.6), and `append_start`, `append_finish` and `write_meta` internally. **It is re-entrant by construction**: one module-level file descriptor per process plus a depth counter, the `fcntl` acquisition taken at depth 0 and released only when the outermost context exits, so a nested acquisition is a counter increment and never a second `fcntl` call. *The failure this prevents: `fcntl` record locks are per process and do not stack — a second acquisition on a second descriptor is granted without blocking, and the inner release, or the close of that inner descriptor, drops the process's lock on the file outright. A caller that believed it still held the lock would then append and re-render `RESULTS.md` unlocked, racing exactly the second session 9(c)#9 says is blocked* |
 | `append_start` | `append_start(row: dict) -> None` | `jobs/launch.py` for a tmux stage, `run.py` for a CPU stage (2.3). Calls `lock()` unconditionally and re-renders `RESULTS.md`; a caller that already holds the lock gets the counter increment and nothing else |
@@ -4364,14 +4364,14 @@ machine:
 
 | name | signature |
 |---|---|
-| `ls` | `ls(workflow: str \| None = None, *, debug: bool = False, edited: dict[str, bool] \| None = None, progress: dict[str, tuple[int, int]] \| None = None) -> list[dict]` — one folded row per run, verdicts included. `edited` is the per-`run_id` map `run.py` computes and passes in, because this file imports nothing from the repo and so cannot call `key`; given None, `ls` leaves that column blank. `progress` is the same shape for a claiming stage: the per-`run_id` `(done, total)` that `run.py` computes with `data/task_record.done_pairs` (1.1), for the same reason — this file cannot tell a done record from a claimed one; given None, `ls` shows the sum of beats (8.4) |
+| `ls` | `ls(workflow: str \| None = None, *, debug: bool = False, edited: dict[str, bool] \| None = None, progress: dict[str, tuple[int, int]] \| None = None) -> list[dict]` — one folded row per run, verdicts included. `edited` is the per-`run_id` map `run.py` computes and passes in, because this file imports nothing from the repo and so cannot call `key`; given None, `ls` leaves that column blank. `progress` is the same shape for a claiming stage: the per-`run_id` `(done, total)` that `run.py` computes with `data/trajectory_record.done_pairs` (1.1), for the same reason — this file cannot tell a done record from a claimed one; given None, `ls` shows the sum of beats (8.4) |
 | `where` | `where(stage: str, key: str, *, debug: bool = False) -> Path` — the debug flag because a debug run lives under `<root>/<debug_subdir>/<stage>/<key>` and the root cannot be probed (3.1, 3.2 rule 2); the caller passes the `debug` field of the registry row the key came from (8.6) |
 | `find` | `find(fields: dict) -> list[dict]` — what `run.py find` prints (8.6) |
 | `kill` | `kill(run_id: str) -> list[str]` — the sessions it ended |
 | `free` | `free() -> dict[str, list[int]]` — free cards per host, probed now |
 | `sync` | `sync() -> list[str]` — the finish rows it wrote |
 | `open_runs` | `open_runs() -> list[dict]` — the rows with a start and no finish; what the launch gate and the card reservation read |
-| `live_sessions` | `live_sessions() -> set[str]` — one `ssh <host> tmux ls` per host of `constants/path_outputs.yaml`'s `hosts:` list, fail-closed per 3.4, so an unclear probe reports the session alive. It is the first of the two values `data/task_record.release(dir, live_sessions, unowned_age_s)` takes, the second being `DEFAULTS["launch_timeout_s"]` (1.1, 8.5) — both passed in by this function's two callers, `run.py` and `jobs/launch.py`, so that format file imports no registry. It is also what 8.5's verdicts take as their liveness input |
+| `live_sessions` | `live_sessions() -> set[str]` — one `ssh <host> tmux ls` per host of `constants/path_outputs.yaml`'s `hosts:` list, fail-closed per 3.4, so an unclear probe reports the session alive. It is the first of the two values `data/trajectory_record.release(dir, live_sessions, unowned_age_s)` takes, the second being `DEFAULTS["launch_timeout_s"]` (1.1, 8.5) — both passed in by this function's two callers, `run.py` and `jobs/launch.py`, so that format file imports no registry. It is also what 8.5's verdicts take as their liveness input |
 | `session_alive` | `session_alive(host: str, session: str) -> bool` — the single-piece form, fail-closed the same way; `jobs/launch.refire` probes one session with it before it deletes that piece's claims (2.3) |
 
 The verdict helpers of 8.5 are part of the reader half and are pure functions
@@ -4763,7 +4763,7 @@ Each line: the choice, the alternative it beat, why this one.
 
 1. **The example row is method-independent** — one row per cut carrying `tool`,
    `call` and `args`; alternative: one example file per method, as today's build
-   writes. Chosen because it takes `data/build_dataset.py` and `data/example.py`
+   writes. Chosen because it takes `data/build_training_dataset.py` and `data/training_data.py`
    off the "fourth probe method" list and lets one build serve three methods; it
    costs unused columns and a parquet about 15% larger.
 2. **The prediction row is method-independent and the generators predict at
@@ -5038,7 +5038,7 @@ Each line: the choice, the alternative it beat, why this one.
 43. **`meta.generation` and `meta.inject` are canonical JSON text, not structs**
     (1.1); alternative: struct columns, as earlier drafts typed them. Rejected
     because Part 1's reading convention passes a declared schema, so a struct
-    column would have to enumerate its inner fields in `data/task_record.py`, and
+    column would have to enumerate its inner fields in `data/trajectory_record.py`, and
     every new `generation.*` or `inject.*` field would then cost an edit there
     plus a `VERSION` bump and a recollection — which contradicts 3.3 and 0.4,
     where adding a hyperparameter is free. The price is that nothing may parse
@@ -5091,7 +5091,7 @@ Each line: the choice, the alternative it beat, why this one.
     drafts typed it as. Rejected for the reason 9(a)#43 gives for
     `meta.generation`: Part 1's reading convention passes a declared schema, so a
     struct would have to enumerate the benchmark's own evaluation fields in
-    `data/task_record.py`, and a second benchmark — or an AppWorld upgrade that
+    `data/trajectory_record.py`, and a second benchmark — or an AppWorld upgrade that
     adds a field — would cost an edit there plus a `VERSION` bump and a full
     recollection, while 0.4's new-environment row lists neither. `success` is a
     column because it is the one field `eval/score_run.py` reads, and a declared

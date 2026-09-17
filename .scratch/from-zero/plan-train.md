@@ -25,12 +25,12 @@ over `train.predict.splits` with the probe still on the card.
 acceptance scripts of section 3 use.
 
 **Imports (0.2, authoritative).** `experimental_settings/schema.py`,
-`models/__init__.py`, `models/probe_models/base.py`, `data/example.py`,
-`data/prediction.py`, `jobs/registry.py`; third-party `[torch]` (erratum E11:
+`models/__init__.py`, `models/probe_models/base.py`, `data/training_data.py`,
+`data/probe_output.py`, `jobs/registry.py`; third-party `[torch]` (erratum E11:
 0.2 says `[torch, peft]`; peft lives in `base.py` and the LR schedule is a
 `torch.optim.lr_scheduler.LambdaLR`).
 **Used by.** `train/methods/{ctool,cgen,cparam}.py`.
-**Reads.** `<build run_dir>/examples.parquet` (through `data/example.py`), the
+**Reads.** `<build run_dir>/examples.parquet` (through `data/training_data.py`), the
 checkpoint layout of 1.6.
 **Writes.** `best/`, `last/` (plus `last/optimizer.pt`, erratum E6),
 `train_log.jsonl`, `align_check.json`, `train_done.json`,
@@ -52,12 +52,12 @@ contract-errata pin (`mb`, `mb_weight`, E4).
 **The import aliases are part of the contract**, because the acceptance scripts
 of section 3 replace two of them: the file writes
 `from experimental_settings import schema`, `import models`,
-`from models.probe_models import base`, `from data import example, prediction`,
+`from models.probe_models import base`, `from data import training_data, probe_output`,
 `from jobs import registry` — so `trainer.schema`, `trainer.base`,
 `trainer.models`, `trainer.example`, `trainer.prediction` and
 `trainer.registry` all name the modules. The three method files import
 `from train.utils import trainer`, `from models.probe_models import base`,
-`from data import example`, and `from eval.methods import <name> as ev` (plus
+`from data import training_data`, and `from eval.methods import <name> as ev` (plus
 `from data.environments import open_env` in the two generators).
 
 **What `run` does, in order.**
@@ -79,7 +79,7 @@ of section 3 replace two of them: the file writes
    runs the gate with TF32 off).
 5. Read the example frame:
    `build_dir = schema.run_dir_of("build", cfg._upstream["build"], debug=cfg._debug)`
-   (2.1), `df = example.read(build_dir / "examples.parquet")`. Write
+   (2.1), `df = training_data.read(build_dir / "examples.parquet")`. Write
    `consumed.json` = `[{path, sha1, n_rows}]` for that one file (1.5).
 6. `labels = method.head_labels(df, cfg)` on the **whole** frame, before
    `base.load` (2.6, 1.3). On a resume or on the predict-only path the list is
@@ -140,7 +140,7 @@ of section 3 replace two of them: the file writes
     `cfg.train.predict.cap` when it is set, and call `method.predict(probe, df,
     probe.tokenizer, cfg)`. Join the five method-independent columns
     `event_id`, `task_id`, `depth`, `split`, `tool` from the example frame on
-    `example_id`, and write with `prediction.write(run_dir /
+    `example_id`, and write with `probe_output.write(run_dir /
     "predictions.parquet", frame)`, which stamps `version`. The trainer writes
     neither `target` nor `method` nor `version`.
 13. `registry.write_done(run_dir, stage="train", key=cfg._key,
@@ -189,7 +189,7 @@ rows.
 
 **venv.** `probe`.
 **Imports (0.2).** `train/utils/trainer.py`, `models/probe_models/base.py`,
-`data/example.py`, `eval/methods/ctool.py`; `[torch]`.
+`data/training_data.py`, `eval/methods/ctool.py`; `[torch]`.
 **Used by.** none (program). **Reads/writes.** nothing directly; everything goes
 through `trainer.py`.
 
@@ -287,7 +287,7 @@ generated prediction rows.
 
 **venv.** `probe`.
 **Imports (0.2).** `train/utils/trainer.py`, `models/probe_models/base.py`,
-`data/example.py`, `eval/methods/cgen.py`, `data/environments/__init__.py`
+`data/training_data.py`, `eval/methods/cgen.py`, `data/environments/__init__.py`
 (`open_env`, for the environment `match` takes); `[torch]`.
 **Used by.** none (program).
 
@@ -368,7 +368,7 @@ a per-row prompt tail that names the tool and a target derived from `call` and
 
 **venv.** `probe`.
 **Imports (0.2).** `train/utils/trainer.py`, `models/probe_models/base.py`,
-`data/example.py`, `eval/methods/cparam.py`, `data/environments/__init__.py`;
+`data/training_data.py`, `eval/methods/cparam.py`, `data/environments/__init__.py`;
 `[torch]`.
 
 **Module-level names.**
@@ -431,8 +431,8 @@ From other folders, before `trainer.py` can be imported and run:
 | file | names |
 |---|---|
 | `experimental_settings/schema.py` | `load_frozen(run_dir) -> Setting`, `run_dir_of(stage, key, *, debug)`, the `Setting` fields `_key`, `_commit`, `_debug`, `_upstream`, `_versions`, `models.probe`, `models.probe_row`, `probe.tuning`, `train.*` |
-| `data/example.py` | `read(path) -> DataFrame`, `SCHEMA`, `VERSION` (E15) |
-| `data/prediction.py` | `write(path, df) -> None`, `SCHEMA`, `VERSION` (E15) |
+| `data/training_data.py` | `read(path) -> DataFrame`, `SCHEMA`, `VERSION` (E15) |
+| `data/probe_output.py` | `write(path, df) -> None`, `SCHEMA`, `VERSION` (E15) |
 | `jobs/registry.py` | `beat(run_dir, piece) -> Heartbeat`, `Heartbeat.emit`, `Heartbeat.finish`, `write_done(run_dir, *, stage, key, commit, counts, versions, metrics, report, pairs=None, stage_extra=None)` |
 | `models/__init__.py` | `probe(alias) -> ProbeModel` (`weights`, `weights_path`, `family`) |
 | `models/probe_models/base.py` | `load(row, cfg, *, probe_kind, n_labels=None, labels=None, ckpt_dir=None) -> Probe`, `Probe.save(dir, *, labels=None, extra=None, meta=None)`, `Probe.forward(batch) -> Outputs`, `Probe.generate(texts, max_new, call_sep)`, `Probe.score(texts)`, `Probe.tokenizer`, `Probe.max_len`, `Batch`, `Outputs`, and the three names errata E5 adds: `trainable_parameters()`, `set_training(flag)`, `grad_checkpointing(enabled)` |
@@ -508,7 +508,7 @@ Expected: prints `1 classifier generator generator True`, exit 0.
 
 ### A3.3 The packed loss equals the plain loss, per method (probe venv, CPU)
 
-The script writes a tiny example frame with `data/example.py`'s **writer**,
+The script writes a tiny example frame with `data/training_data.py`'s **writer**,
 reads it back with its reader, builds a stub `Probe` whose `forward` is the one
 `models/probe_models/base.py` will have, and runs the method's own hooks. Run it
 once with `M=ctool`, once with `M=cgen`, once with `M=cparam`.
@@ -529,7 +529,7 @@ backbone = AutoModel.from_config(cfgm, dtype=torch.float32).eval()
 head = torch.nn.Linear(64, 3)
 lm = torch.nn.Linear(64, cfgm.vocab_size, bias=False)
 
-from data import example
+from data import training_data
 rows = []
 for ev in range(2):                       # two events, three cuts each
     base = "The task is to pay a bill. I will look at the phone app. "
@@ -544,8 +544,8 @@ for ev in range(2):                       # two events, three cuts each
             args=[{"key": "id", "value": "1"}] if ev else [{"key": "user", "value": "a"}],
             weight=1.0, split="train", env="appworld", agent_model="gptoss120b"))
 d = pathlib.Path(tempfile.mkdtemp())
-example.write(d / "examples.parquet", pl.DataFrame(rows))
-df = example.read(d / "examples.parquet")
+training_data.write(d / "examples.parquet", pl.DataFrame(rows))
+df = training_data.read(d / "examples.parquet")
 
 class Outputs:
     def __init__(self, logits, hidden): self.logits, self.hidden = logits, hidden
@@ -587,7 +587,7 @@ above the tolerance is the packing bug the gate exists for.
 ### A3.4 The whole loop, on CPU, with two stubs (probe venv)
 
 `trainer.run` is exercised end to end: only `schema.load_frozen` and `base.load`
-are replaced, everything else — `data/example.py`, `data/prediction.py`,
+are replaced, everything else — `data/training_data.py`, `data/probe_output.py`,
 `jobs/registry.py`, the method's hooks, the checkpoint calls — is the real code.
 
 ```bash
@@ -595,7 +595,7 @@ external/probe-env/bin/python - <<'PY'
 import json, pathlib, tempfile, types, importlib, torch, polars as pl
 from transformers import AutoTokenizer, AutoConfig, AutoModel
 import train.utils.trainer as trainer
-from data import example, prediction
+from data import training_data, probe_output
 
 TOKDIR = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
 tok = AutoTokenizer.from_pretrained(TOKDIR)
@@ -622,7 +622,7 @@ for ev in range(4):                                   # 4 events x 3 cuts x 3 sp
                 call=("phone.pay(id=1)" if ev % 2 else "phone.login(user='a')"),
                 args=[{"key": "id", "value": "1"}], weight=1.0, split=split,
                 env="appworld", agent_model="gptoss120b"))
-example.write(build_dir / "examples.parquet", pl.DataFrame(rows))
+training_data.write(build_dir / "examples.parquet", pl.DataFrame(rows))
 
 cfg = types.SimpleNamespace(
     _key="t0", _commit="deadbee", _debug=True, _upstream={"build": "b0"},
@@ -661,7 +661,7 @@ trainer.models.probe = lambda alias: types.SimpleNamespace(
     alias=alias, weights=alias, weights_path=TOKDIR, family="qwen", role="probe", serving={})
 
 trainer.run(run_dir, importlib.import_module("train.methods.ctool"))
-p = prediction.read(run_dir / "predictions.parquet")
+p = probe_output.read(run_dir / "predictions.parquet")
 print(sorted(p.columns))
 print(sorted(p["split"].unique().to_list()), p.height)
 print(json.loads((run_dir / "done.json").read_text())["stage_extra"]["labels"])
@@ -695,7 +695,7 @@ print("a", (run_dir / "predictions.parquet").stat().st_mtime_ns == pred_before,
 
 (run_dir / "done.json").unlink(); (run_dir / "predictions.parquet").unlink()
 trainer.run(run_dir, ctool)                                   # (b) predict only
-print("b", prediction.read(run_dir / "predictions.parquet").height,
+print("b", probe_output.read(run_dir / "predictions.parquet").height,
       (run_dir / "train_log.jsonl").read_text() == log_before)
 
 (run_dir / "done.json").unlink(); (run_dir / "train_done.json").unlink()
@@ -785,8 +785,8 @@ of 8.4. `run` never branches on a method name; it reads exactly two
 method-supplied `Batch` keys, `mb` and `mb_weight`. It appends no registry row.
 **Acceptance.** A3.1 (the `VERSION` part), A3.2 (the trainer import), A3.4, A3.5.
 **Needs from other folders.** `experimental_settings/schema.py`
-(`load_frozen`, `run_dir_of`); `data/example.py` (`read`, `SCHEMA`);
-`data/prediction.py` (`write`, `SCHEMA`); `jobs/registry.py` (`beat`,
+(`load_frozen`, `run_dir_of`); `data/training_data.py` (`read`, `SCHEMA`);
+`data/probe_output.py` (`write`, `SCHEMA`); `jobs/registry.py` (`beat`,
 `Heartbeat.emit`, `Heartbeat.finish`, `write_done`); `models/__init__.py`
 (`probe`); `models/probe_models/base.py` (`load`, `Probe.save`, `Probe.forward`,
 `Probe.tokenizer`, `Probe.max_len`, `Probe.trainable_parameters`,
@@ -801,7 +801,7 @@ prefix-shared packing and its block-diagonal mask, `loss`, `reference_loss`,
 packed path (E13), `main` and the `--run-dir` block.
 **Acceptance.** A3.1, A3.2, A3.3 with `M=ctool`, A3.4.
 **Needs from other folders.** `eval/methods/ctool.py` (`match`, `PROBE_KIND`);
-`data/example.py` (`SCHEMA`, the column names); `models/probe_models/base.py`
+`data/training_data.py` (`SCHEMA`, the column names); `models/probe_models/base.py`
 (`Batch`, `Outputs`, `Probe.forward`); and T1.
 
 ### T3 — The two generating probes (`train/methods/cgen.py`, `train/methods/cparam.py`)
@@ -818,7 +818,7 @@ values 5.7 reads.
 **Acceptance.** A3.1, A3.2, A3.3 with `M=cgen` and `M=cparam`.
 **Needs from other folders.** `eval/methods/cgen.py` and `eval/methods/cparam.py`
 (`match`, `PROBE_KIND`); `data/environments/__init__.py` (`open_env`);
-`data/example.py`; `models/probe_models/base.py` (`Probe.generate`,
+`data/training_data.py`; `models/probe_models/base.py` (`Probe.generate`,
 `Probe.forward`, `Batch`, `Outputs`); and T1.
 
 ### T4 — The permanent packed-loss check (`tests/test_packed_loss.py`)
@@ -828,10 +828,10 @@ values 5.7 reads.
 plainest form ... on a tiny CPU model").
 **What to do.** Turn A3.3 into a `unittest.TestCase` with one test per method,
 building the tiny two-layer model from the Qwen3-0.6B-Base config and the
-fixture frame through `data/example.py`'s writer. The header line names the venv
+fixture frame through `data/training_data.py`'s writer. The header line names the venv
 (`probe`). The tolerance is 2.5's `1e-4` on the per-example-row difference.
 **Acceptance.** A3.6.
-**Needs from other folders.** `data/example.py`; and T2, T3.
+**Needs from other folders.** `data/training_data.py`; and T2, T3.
 
 ---
 
@@ -909,7 +909,7 @@ Each line is also appended to `.scratch/from-zero/contract-errata.md`.
   event; the dropped rows get no prediction row either, and the count is
   `done.json`'s `counts.dropped_overlong`.
 - **E15 — 1.2/1.3, the reader and writer names.** Neither section names the
-  functions `data/example.py` and `data/prediction.py` offer. The build calls
-  `example.read(path) -> DataFrame`, `example.write(path, df) -> None`,
-  `prediction.read`, `prediction.write`, and the module-level `SCHEMA` dict each
+  functions `data/training_data.py` and `data/probe_output.py` offer. The build calls
+  `training_data.read(path) -> DataFrame`, `training_data.write(path, df) -> None`,
+  `probe_output.read`, `probe_output.write`, and the module-level `SCHEMA` dict each
   format file already passes to `read_frame` (Part 1).

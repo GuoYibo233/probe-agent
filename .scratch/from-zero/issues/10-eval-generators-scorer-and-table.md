@@ -18,7 +18,7 @@ eval/methods/cparam.py   venv any   VERSION = 1, PROBE_KIND = "generator"
   imports: eval/utils/probe_eval.py, data/environments/__init__.py (open_env); [polars, numpy]
   used by: train/methods/cparam.py (its match function)
 eval/score_run.py        venv any   VERSION = 1
-  imports: experimental_settings/schema.py, data/task_record.py,
+  imports: experimental_settings/schema.py, data/trajectory_record.py,
            data/environments/__init__.py (open_env for split_args and build_call, and
            requested_pairs), jobs/registry.py; [polars]
   used by: none (program)
@@ -173,7 +173,7 @@ plus `if __name__ == "__main__":` parsing exactly `--run-dir`.
    directory**, not `<run_dir>/records` (errata).
 6. `hb = registry.beat(run_dir, 0)`, `hb.emit(0, len(pairs), "task")` (8.4's unit
    for `score` is `task`), then one beat per task read.
-7. `df = task_record.read_dir(scored_dir, pairs)`; `bdf = read_dir(base_dir,
+7. `df = trajectory_record.read_dir(scored_dir, pairs)`; `bdf = read_dir(base_dir,
    pairs)` when paired. **Both gates and both reads are stated over this pair
    list**, never over the directory (2.5).
 8. Compute, with the columns of 1.1:
@@ -328,7 +328,7 @@ reads `upstream["train"]` out of it.
 "$PY" - <<'PY'
 import json, subprocess, sys, polars as pl; sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import prediction
+from data import probe_output
 
 TK0, EK0, BK0 = "4444dddd4444", "5555eeee5555", "cccccccccccc"
 tdir = schema.run_dir_of("train", TK0, debug=False); tdir.mkdir(parents=True, exist_ok=True)
@@ -345,7 +345,7 @@ for ev in range(20):                       # 20 events, 2 cuts each, 10 val / 10
             method="ctool", target=tool, score=0.9, label_pred=tool,
             logits=[3.0, 0.0] if tool == labels[0] else [0.0, 3.0],
             text_pred=None, gen_tokens=None))
-prediction.write(tdir / "predictions.parquet", pl.DataFrame(rows, strict=False))
+probe_output.write(tdir / "predictions.parquet", pl.DataFrame(rows, strict=False))
 (tdir / "meta.json").write_text(json.dumps(
     {"stage": "train", "key": TK0, "upstream": {"build": BK0},
      "stage_extra": {"labels": labels}}))
@@ -381,7 +381,7 @@ for M in cgen cparam; do
 "$PY" - "$M" <<'PY'
 import json, subprocess, sys, polars as pl; sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import prediction
+from data import probe_output
 from data.environments import open_env
 name = sys.argv[1]
 env = open_env("appworld")
@@ -405,7 +405,7 @@ for ev in range(20):
                          method=name, target=good,
                          score=None, label_pred=None, logits=None,
                          text_pred=bad if wrong else good, gen_tokens=7))
-prediction.write(tdir / "predictions.parquet", pl.DataFrame(rows, strict=False))
+probe_output.write(tdir / "predictions.parquet", pl.DataFrame(rows, strict=False))
 (tdir / "meta.json").write_text(json.dumps(
     {"stage": "train", "key": TK2, "upstream": {"build": BK0},
      "stage_extra": {"labels": None}}))
@@ -480,7 +480,7 @@ Expected: `A7 ok`, exit 0.
 "$PY" - <<'PY'
 import json, subprocess, sys; sys.path.insert(0, ".")
 from experimental_settings import schema
-from data import task_record
+from data import trajectory_record
 from data.environments import open_env, requested_pairs
 env = open_env("appworld")
 SK, BK, RK = "1111aaaa1111", "2222bbbb2222", "3333cccc3333"
@@ -492,7 +492,7 @@ triples = requested_pairs(env, ["train"], None, 2, [42])
 print("requested:", triples)
 for d, ok in ((sdir, True), (bdir, False)):
     for split, tid, seed in triples:
-        w = task_record.open_record(d, tid, seed)          # d is the RUN DIRECTORY
+        w = trajectory_record.open_record(d, tid, seed)          # d is the RUN DIRECTORY
         # no record_id=: the writer stamps it, and passing a stamped column raises
         w.row("meta", stage="sample",
               env="appworld", task_id=tid, seed=seed, env_seed=100, split=split, arm="sample",

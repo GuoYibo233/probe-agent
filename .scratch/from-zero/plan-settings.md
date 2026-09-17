@@ -195,7 +195,7 @@ That fixes the dialect: `from __future__ import annotations` at the top, no
 `imports: none (repo); [PyYAML, dataclasses, hashlib, re, ast]`).
 
 **Imports / used by** (contracts 0.2). Imports nothing from the repo. Used by
-ten files: `run.py`, `jobs/launch.py`, `agent/loop.py`, `data/build_dataset.py`,
+ten files: `run.py`, `jobs/launch.py`, `agent/loop.py`, `data/build_training_dataset.py`,
 `train/utils/trainer.py`, `eval/utils/probe_eval.py`, `eval/score_run.py`,
 `eval/method_table.py`, `models/agent_models/service.py`,
 `models/probe_models/service.py` (the last two take `load_frozen` only).
@@ -352,7 +352,7 @@ STAGES = {
     "projection": ("sample.seeds", "sample.tasks", "sample.n_tasks",
                    "sample.pieces", "sample.replicas"),
     "projection_generator": (),
-    "versions": ("agent/loop.py", "agent/generate.py", "data/task_record.py",
+    "versions": ("agent/loop.py", "agent/generate.py", "data/trajectory_record.py",
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/service.py"),
@@ -362,15 +362,15 @@ STAGES = {
                  "sample.split", "sample.tasks", "sample.n_tasks", "sample.seeds"),
     "models": (),
     "upstream": ({"name": "sample", "source": "same", "stage": "sample", "key": "fold"},),
-    "program": "data.build_dataset",
+    "program": "data.build_training_dataset",
     "venv": "any",
     "pieces": (("cpu", 1, None),),
     "cards": False,
     "done_writer": "stage",
     "projection": (),
     "projection_generator": (),
-    "versions": ("data/build_dataset.py", "data/probe_input.py", "data/example.py",
-                 "data/task_record.py", "data/environments/__init__.py",
+    "versions": ("data/build_training_dataset.py", "data/probe_input.py", "data/training_data.py",
+                 "data/trajectory_record.py", "data/environments/__init__.py",
                  "data/environments/{env}.py"),
   },
   "train": {
@@ -385,7 +385,7 @@ STAGES = {
     "projection": ("train.checkpoint_hours",),
     "projection_generator": ("data",),
     "versions": ("train/utils/trainer.py", "train/methods/{method}.py",
-                 "eval/methods/{method}.py", "data/example.py", "data/prediction.py",
+                 "eval/methods/{method}.py", "data/training_data.py", "data/probe_output.py",
                  "models/probe_models/base.py", "models/probe_models/{backbone}.py"),
   },
   "eval": {
@@ -402,7 +402,7 @@ STAGES = {
     "projection": (),
     "projection_generator": ("data",),
     "versions": ("eval/utils/probe_eval.py", "eval/methods/{method}.py",
-                 "data/prediction.py"),
+                 "data/probe_output.py"),
   },
   "inject": {
     "sections": ("data", "models.agent", "generation",
@@ -428,7 +428,7 @@ STAGES = {
                    "inject.pieces", "inject.replicas"),
     "projection_generator": (),
     "versions": ("agent/loop.py", "agent/generate.py", "agent/inject.py",
-                 "agent/inject_format.py", "data/probe_input.py", "data/task_record.py",
+                 "agent/inject_format.py", "data/probe_input.py", "data/trajectory_record.py",
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/base.py", "models/probe_models/service.py",
@@ -452,7 +452,7 @@ STAGES = {
     "done_writer": "stage",
     "projection": ("data",),
     "projection_generator": (),
-    "versions": ("eval/score_run.py", "data/task_record.py"),
+    "versions": ("eval/score_run.py", "data/trajectory_record.py"),
   },
 }
 ```
@@ -751,7 +751,7 @@ fixture tree the command builds itself (that is what `ROOT` is for):
 | T03 `load` | `models/probe_models/qwen.py` | column-zero `LORA_TARGETS`, `VERSION` (6.2) |
 | T03 `load` | `data/environments/appworld.py` | column-zero `INSTRUCTIONS` (key `v1`), `SPLIT_ROLE`, `VERSION` (4.1) |
 | T03 `load` | `data/environments/__init__.py` | column-zero `VERSION` (4.1) |
-| T04 `key` | every module named in a `versions` cell above | its one column-zero `VERSION = <int>` line: `agent/{loop,generate,inject,inject_format}.py`, `data/{task_record,example,prediction,probe_input,build_dataset}.py`, `data/environments/{__init__,appworld}.py`, `models/agent_models/{gptoss,service}.py`, `models/probe_models/{base,qwen,service}.py`, `train/utils/trainer.py`, `train/methods/{ctool,cgen,cparam}.py`, `eval/utils/probe_eval.py`, `eval/methods/{ctool,cgen,cparam}.py`, `eval/score_run.py` |
+| T04 `key` | every module named in a `versions` cell above | its one column-zero `VERSION = <int>` line: `agent/{loop,generate,inject,inject_format}.py`, `data/{trajectory_record,example,prediction,probe_input,build_training_dataset}.py`, `data/environments/{__init__,appworld}.py`, `models/agent_models/{gptoss,service}.py`, `models/probe_models/{base,qwen,service}.py`, `train/utils/trainer.py`, `train/methods/{ctool,cgen,cparam}.py`, `eval/utils/probe_eval.py`, `eval/methods/{ctool,cgen,cparam}.py`, `eval/score_run.py` |
 | T04 `key` | `train/methods/{ctool,cgen,cparam}.py` | column-zero `PROBE_KIND` and `CHECKPOINT_META` (2.6, 5.7) |
 
 Consumers of this folder, for the integrator's sequencing: `run.py` and
@@ -818,8 +818,8 @@ VERSION = 1
 INSTRUCTIONS = {"v1": "developer message v1"}
 SPLIT_ROLE = {"train": "train", "dev": "val", "test": "test"}
 P
-for f in data/environments/__init__.py data/task_record.py data/example.py \
-         data/prediction.py data/probe_input.py data/build_dataset.py \
+for f in data/environments/__init__.py data/trajectory_record.py data/training_data.py \
+         data/probe_output.py data/probe_input.py data/build_training_dataset.py \
          agent/loop.py agent/generate.py agent/inject.py agent/inject_format.py \
          models/agent_models/service.py models/probe_models/base.py \
          models/probe_models/service.py train/utils/trainer.py \
@@ -1602,7 +1602,7 @@ tree.
 **Needs from other folders** (source text only, one `VERSION = <int>` line each;
 the fixture stands in during implementation, G3 is the real run):
 `agent/{loop,generate,inject,inject_format}.py`,
-`data/{task_record,example,prediction,probe_input,build_dataset}.py`,
+`data/{trajectory_record,example,prediction,probe_input,build_training_dataset}.py`,
 `data/environments/{__init__,appworld}.py`,
 `models/agent_models/{gptoss,service}.py`,
 `models/probe_models/{base,qwen,service}.py`, `train/utils/trainer.py`,
