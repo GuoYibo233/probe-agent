@@ -879,19 +879,25 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     """One folded row per run, verdicts included, plus one synthetic row per
     live tmux session matching no piece anywhere in the ledger (8.6's
     `orphan`: "a tmux session of this repo matching no row"). Calls
-    `live_sessions()` only when there is at least one row to judge, so
+    `live_sessions()` whenever the ledger holds any run at all, regardless of
+    the `workflow`/`debug` display filters: an orphan session belongs to no
+    known run by construction, so it has no workflow to match a `workflow=`
+    filter and no non-debug run to satisfy the default `debug=False` filter,
+    and gating the probe on the filtered display set would hide a genuinely
+    live orphaned session whenever that filter happens to pass nothing. Only
+    a truly empty ledger (no run recorded at all) skips the probe, so
     `run.py ls` and `eval/method_table.table()` against an empty ledger issue
     no `ssh` at all (8.6, A10)."""
     edited = edited or {}
     progress = progress or {}
     all_entries = [e for e in fold(_read_rows()).values() if e["start"] is not None]
+    if not all_entries:
+        return []
     entries = all_entries
     if workflow is not None:
         entries = [e for e in entries if e["start"].get("workflow") == workflow]
     if not debug:
         entries = [e for e in entries if not e["start"].get("debug")]
-    if not entries:
-        return []
     sessions = live_sessions()
     now_ts = time.time()
     rows = [_ls_row(e, sessions, now_ts, edited, progress) for e in entries]
