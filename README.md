@@ -280,3 +280,28 @@ group, but no `service.py` line is added here.
 `models/__init__.py` is a library with no `__main__`. Run the acceptance
 commands of `.scratch/from-zero/issues/06-model-table-entrance-and-probe-object.md`
 (A1 through A12, A16) from the repo root, with the interpreter each one names.
+
+## Ticket 09 — the dataset builder
+
+```
+data/build_training_dataset.py — the program: records -> example rows for the three probe methods; the
+train/val/test split, by either rule of build.split_source (contracts 5.2 for the hash share, 2.5 for
+the env mapping); the report; the gates; carries VERSION
+  imports: experimental_settings/schema.py, data/__init__.py (the id functions), data/trajectory_record.py,
+           data/training_data.py, data/probe_input.py, data/environments/__init__.py, jobs/registry.py;
+           [polars, PyYAML]
+  used by: none (program)
+  reads:   the sample run's task records, constants/path_datasets.yaml (the splits block of cfg.data.env,
+           for the split files' paths), the environment's split task-id files
+  writes:  examples.parquet, consumed.json, report.md, heartbeat, done.json
+  venv:    any
+```
+
+## How to run (ticket 09's own piece)
+
+```
+<the any interpreter of 6.3> -m data.build_training_dataset --run-dir <a build stage's own run directory>
+```
+
+No setting name on the command line; the program calls `experimental_settings.schema.load_frozen(run_dir)`
+itself (contracts 2.6).
