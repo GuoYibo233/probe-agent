@@ -177,7 +177,7 @@ def _resume_block(df: pl.DataFrame) -> dict:
 def _by_seed_block(rec: pl.DataFrame) -> dict:
     seeds = sorted(rec["seed"].unique().to_list())
     per_seed = {str(seed): _run_block(rec.filter(pl.col("seed") == seed)) for seed in seeds}
-    metric_names = [k for k in next(iter(per_seed.values())) if k not in ("n_records", "n_abort")]
+    metric_names = [k for k in _run_block(rec) if k not in ("n_records", "n_abort")]
     mean_block, spread_block = {}, {}
     for name in metric_names:
         values = [per_seed[s][name] for s in per_seed if per_seed[s][name] is not None]
@@ -245,7 +245,8 @@ def main(run_dir: Path) -> None:
         if diff_field is not None:
             raise ValueError(
                 f"score_run: same-setup gate failed between {scored_dir} and {base_dir}: {diff_field} differs")
-        missing = [pair for pair in pairs if pair not in trajectory_record.done_pairs(base_dir, pairs)]
+        done = trajectory_record.done_pairs(base_dir, pairs)
+        missing = [pair for pair in pairs if pair not in done]
         if missing:
             raise ValueError(
                 f"score_run: baseline {base_dir} is missing a done record for pair(s) {missing}")
