@@ -391,3 +391,5 @@ three end-to-end `--debug` walks of the construction plan's section 4. An
 implementer that reaches one returns BLOCKED with the command.
 
 ## Comments
+
+- 2026-09-17, from the wave 2 reconciliation (gyb's ruling, errata entry `5.4 / 2.1 ({probe_score_method} under a key: or dir: reference)`): a `key:` or `dir:` reference in `inject.probe_score` and `inject.probe_gen` now carries `method: <probe.method value>`, and `experimental_settings/schema.py` cannot verify it because `key` never touches the output tree. `run.py` verifies it before it starts an inject stage, next to 5.4's `done.json` check on the referenced run: it reads `probe.method` from the referenced **train** run's frozen `settings.yaml` and refuses, naming the field, the stated method and the method found, when the two differ. The `--debug` inject walk of the construction plan's section 4 writes `method:` inside both pinned references, for example `"inject.probe_score={key: {train: <KS>, eval: <KE>}, method: ctool}"` and `"inject.probe_gen={key: {train: <KG>}, method: cgen}"`.

@@ -1,6 +1,6 @@
 # 06 the model table, the entrance, the gpt-oss family and the probe object
 
-Status: claimed
+Status: resolved
 Blocked by: 01
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7, 9)
 
@@ -706,3 +706,5 @@ its validation accuracy to 1e-6, LoRA and full alike — the real-weights form o
 A10 and A12.
 
 ## Comments
+
+- 2026-09-17 wave 2 closeout: implementation passed review after 1 fix round (F1, critical: `Probe.generate()` inherited the tokenizer's right padding, which corrupted the output of the shorter texts of a mixed-length batch; `generate` now passes `padding_side="left"` on its own tokenizer call), branch `ticket/2026-09-17-wave2/T06` (base `1895873`, head `7d2f53f`; the branch started after the two owner commits `464e143` and `1895873` that landed during the wave), merged as `6fa349e` (README conflict resolved by keeping every ticket's lines). Main-session checks after the merge: `models`, `models.agent_models.gptoss` and `models.probe_models.qwen` import under system `python3` and the three venv interpreters, `models.probe_models.base` under the probe and vllm interpreters (`venv: probe`; it needs torch); `A2` prints the ticket's three expected lines and `A3` three refusals naming the role or the known aliases (both rerun after the owner's alias rename `67473dd` with `gpt_oss_120b` and `qwen3_0pt6b`); every alias of `models/table.yaml` has a weights row in `constants/path_models.yaml`. The post-merge review found no critical or important finding in this ticket's files. Acceptance-script defect left in the ticket text: `A16` reads `.module` on an `ast.Import` node (ticket 07's acceptance carries the same line). Implementer concern for tickets 14/15: the declared third-party brackets omit `re` for `gptoss.py` and `torch` for `qwen.py`. Not run (GPU / main session, after wave 6): `M-M1` to `M-M7`. Minor for the final review: MODELS-1 (`Probe.forward`'s generator branch casts the hidden state to float32 before the LM head, which raises outside autocast for a backbone that is not float32). Report `sdd/2026-09-17-wave2/T06-report.md`.
