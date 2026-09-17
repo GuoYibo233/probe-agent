@@ -121,3 +121,6 @@ legacy/pipeline/inject/runs/**
 external/appworld
 external/probe-env
 external/vllm-env
+
+# from-zero: the registry's own lock carrier, never in git (ticket 03)
+jobs/runs.jsonl.lock
