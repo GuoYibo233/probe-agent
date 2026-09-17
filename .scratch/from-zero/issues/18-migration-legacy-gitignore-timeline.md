@@ -318,3 +318,13 @@ train_probe cparam_qwen3_0pt6b  --debug   train=<key>   eval=<key>
 inject      probe_p1_e1_theta_0pt80   --debug   inject=<key>  score=<key>
 run.py selfcheck: <the line it printed>
 ```
+
+- 2026-09-18, from gyb (wave 2/3 review): one rename is deferred to the end of the
+  build, after every wave has merged, and is the owner's change to the fixed tree, not
+  this ticket's: `data/training_data.py` -> `data/training_data_format.py`,
+  `data/trajectory_record.py` -> `data/trajectory_record_format.py`,
+  `data/probe_output.py` -> `data/probe_output_format.py`, with the first docstring
+  line of `data/training_data.py` rewritten to say what the file is for. The note that
+  carries the details is the `TODO(gyb, 2026-09-18)` comment at the top of
+  `data/training_data.py`. Whoever dispatches this ticket asks gyb whether the rename
+  runs before it or after it; `C6` and `C9` here count and grep file names.

@@ -1,6 +1,16 @@
 """The row build writes per cut of a trajectory: the record and cut it came from, the text the probe sees, and all three probe methods' targets."""
 from __future__ import annotations
 
+# TODO(gyb, 2026-09-18): rename the three format files together once every wave has merged, not
+# before (in-flight ticket branches import them): data/training_data.py ->
+# data/training_data_format.py, data/trajectory_record.py -> data/trajectory_record_format.py,
+# data/probe_output.py -> data/probe_output_format.py. The present names read as programs; each
+# file holds a table's columns plus its write() and read(). In the same pass rewrite this file's
+# first docstring line so it says what the file is for (the table the build stage hands to the
+# train stage), and carry the names and the sentence into README.md, experimental_settings/schema.py's
+# stage table, the tree document, the contracts, the tickets and the folder plans; search every
+# code directory, the last rename missed schema.py.
+
 from pathlib import Path
 from typing import Any
 
