@@ -325,3 +325,38 @@ Neither file has a library-only entrance; both are run with
 Run the acceptance commands of
 `.scratch/from-zero/issues/07-model-services.md` (A1, A13 through A16) from the
 repo root, with the interpreter each one names.
+
+## Ticket 08 — the eval library and the classifier metric
+
+```
+  eval/                   reads what is on disk and computes numbers; no GPU, no torch, every file imports
+                          as any. A new probe method is a file under methods/; a new metric is an edit to
+                          the file that reports it
+    utils/
+      probe_eval.py         shared by the three methods: read a train run's prediction rows and targets,
+                            bootstrap the confidence interval, write the report (both of its files) and read
+                            it back; carries VERSION
+        imports: experimental_settings/schema.py, data/probe_output.py, jobs/registry.py; [polars, numpy]
+        used by: eval/methods/{ctool,cgen,cparam}.py, run.py (read_report, to freeze a temperature),
+                 eval/method_table.py
+        reads:   prediction (parquet), its own and the referenced eval run's train meta.json
+                 (stage_extra.labels, upstream["build"] — the second is what the 2.5 gate compares), probe
+                 report (json + parquet)
+        writes:  probe report (probe_report.json + fires.parquet), report.md, consumed.json (the
+                 prediction parquet and any referenced report it read), heartbeat, done.json
+        venv:    any
+    methods/                one file per probe method, the metric computed from prediction rows;
+                            train/methods/<name>.py calls this file's match function for its validation
+                            metric, never its own copy. Each file carries VERSION and PROBE_KIND, the
+                            second declared identically in the matching train/methods/<name>.py and
+                            compared by selfcheck (Part 2.6)
+      ctool.py              fit the temperature and theta on the val rows at the risk targets, freeze theta,
+                            report on the test rows, write the fired rows; carries VERSION and PROBE_KIND
+        imports: eval/utils/probe_eval.py; [polars, numpy]
+        used by: train/methods/ctool.py (its match function)
+        reads:   -   writes: - (everything goes through eval/utils/probe_eval.py)
+        venv:    any
+```
+
+`eval/methods/cgen.py` and `eval/methods/cparam.py` are not this ticket's; their
+lines are added by tickets 09 and 10.
