@@ -806,3 +806,315 @@ trigger a host probe over a genuinely empty ledger.
   filter argument is caller-supplied UI/display state, not a signal that
   the underlying ledger has nothing live to check.
 - No open questions from this round.
+
+## 10. Redispatched "fix round 1" — independent re-verification, no code changes
+
+This dispatch arrived carrying the same four findings (F1-F4) section 8 above already
+describes fixing, framed as "fix round 1" and pointed at a fresh worktree of
+`ticket/2026-09-17-wave1/T03`. Setting that up surfaced two things this report had not
+yet recorded, both consistent with a concurrent session working the same branch (new1's
+multi-session setup shares one working tree, `bgIsolation=none`):
+
+- A leftover, uncommitted worktree at `.../new1-wt/2026-09-17-wave1-T03-fix2`, checked
+  out at `98ff8a1` (section 8's commit) with one uncommitted hunk to `jobs/registry.py` —
+  a duplicate, unfinished attempt at the same gating fix section 9 above describes,
+  byte-for-byte identical to what is committed as `ecfd925` by `git diff`. Nothing was
+  lost: an equivalent, already self-reviewed fix had separately landed as `ecfd925`
+  before this dispatch's own worktree existed, so the leftover was removed with
+  `git worktree remove --force` per the dispatch protocol for exactly this case, only
+  after `git status --porcelain -uall` confirmed it held nothing beyond that one
+  duplicate hunk.
+- Section 9 (fix round 2) was not yet in this file when this dispatch started reading
+  it, and appeared mid-file partway through this dispatch's own testing — written by
+  that same concurrent session. This dispatch's own fresh worktree was independently
+  removed by concurrent activity seconds after creation and had to be recreated once
+  before proceeding.
+
+Rather than take either report section on trust, this dispatch re-verified all four
+originally-assigned findings against the code directly, with its own commands, before
+discovering (below) that the branch had by then already been merged:
+
+- **F2** (docstring/README/contracts text): `notes/plans/2026-09-17-contracts.md:600-601`,
+  `jobs/registry.py:1` and `README.md:11-12` read back and compared by eye — all three
+  carry the identical sentence `the registry: runs.jsonl rows under a lock, meta.json,
+  the heartbeat, the verdicts, ls/where/find/kill/free, RESULTS.md.` (the docstring
+  capitalises the sentence-initial "The"; the other two do not), matching contracts 0.2
+  exactly.
+- **F1, F3, F4**: exercised with new Python snippets independent of sections 8/9,
+  actual output from this run:
+
+```
+[F1a] orphan detection, unfiltered call:
+  rows: 2  orphans: ['stray-session-xyz']  known row's own orphan flag: False
+
+[F1b] round-2 case: a workflow filter that empties the displayed row set must
+      not hide a real orphan session:
+  rows: 1  statuses: ['orphan_session']
+
+[F3] a scrambled meta.json ("{not json at all"), then write_meta(...):
+  dir listing: ['meta.json', 'meta.json.corrupt.20260917_180628']
+  corrupt archived: True
+  archived content matches original garbage: True
+  fresh meta stage: sample  owners: [{'workflow': 'baseline'}]
+
+[F4] kill() on a piece whose host is unreachable, then reachable:
+  kill() while host unreachable: []
+  kill() while host reachable: ['killtest-abc123abc123-0']
+```
+
+- **A1-A10**, the ticket's full acceptance suite, rerun verbatim end to end from this
+  dispatch's own worktree, through the same absolute interpreters, on fresh `mktemp -d`
+  trees: all ten passed, matching the ticket's expected output exactly (A2's wait was
+  `1.9`, comfortably over the `>= 1.5` bar; every other command's output was
+  character-for-character what sections 8 and 9 already pasted).
+
+While this pass was still running, `git log` on the ticket branch started returning
+"unknown revision": the main conversation had, concurrently and without this dispatch's
+involvement, merged `ticket/2026-09-17-wave1/T03` into `from-zero` (`361dabd`), run its
+own wave-1 reconciliation (`6cb1171`, including the main-session-only checks `M-J1`/
+`M-J2` the ticket reserves for it), and marked the ticket `resolved`. `git diff ecfd925
+6cb1171 -- jobs/registry.py` is empty — the merge carried `ecfd925` through byte for
+byte — so the evidence above, gathered independently of that merge, verifies exactly
+the code now on `from-zero`.
+
+**F1-F4 are correctly and completely fixed in the code already merged to `from-zero`.
+This dispatch made no code changes and no new commit**: the working tree it built was
+clean and matched an already-correct head, so there was no wrong logic left to correct.
+The `head` this dispatch reports is `ecfd925`, ticket T03's own last commit (now folded
+into `from-zero` at `6cb1171` via merge `361dabd`); the ticket branch itself no longer
+exists to query directly, having been deleted after the merge.
+
+## 11. Fix round 2 (redispatched) — N1, orphan sessions scoped to this repo
+
+This dispatch carried one new finding, found by a review pass over the code already
+merged to `from-zero` (T03 itself is marked `resolved`; the fix round number in this
+dispatch's own framing counts against this finding, not against F1-F4/NF1 above, which
+sections 8-10 already closed).
+
+**Branch state at the start of this round.** The worktree protocol's prescribed command
+(`git worktree add .../fix2 ticket/2026-09-17-wave1/T03`) failed with
+`fatal: invalid reference: ticket/2026-09-17-wave1/T03` — consistent with section 10's
+own finding that the branch was deleted once the main session merged it (`361dabd`) and
+reconciled wave 1 (`6cb1171`). Since the code this finding is about lives on `from-zero`
+now, and `from-zero` was already checked out in the main worktree (git refuses to check
+out the same branch in two worktrees at once), I recreated
+`ticket/2026-09-17-wave1/T03` from `from-zero`'s current tip (`6cb1171`, which carries
+F1-F4/NF1 unchanged — confirmed already by section 10's `git diff ecfd925 6cb1171 --
+jobs/registry.py` being empty) and built the fix worktree on that branch, so the branch
+name and the worktree path both still match what the dispatch named. The fix commit
+below is this branch's only new commit; it still needs the same merge-into-`from-zero`
+step the main session already did twice for this ticket.
+
+**N1 (important) — orphan-session rows were not scoped to sessions of this repo.**
+`ls()`'s orphan-candidate computation (`set(sessions) - known`) used
+`live_sessions()`'s raw return value directly: every bare session name a `tmux ls`
+against a `hosts:` machine happens to report, filtered only by whether it matched a
+piece this ledger already knows about. `constants/path_outputs.yaml`'s `hosts:`
+(tokyo105-108) are shared cluster machines other work also runs on under the same
+login (project memory records them as freely usable by, for instance, ACL2026), and the
+piece session-naming convention contracts pins (2699, `tmux new-session -d -s
+<stage>-<key>-<piece>`) carries no repo-specific prefix. So nothing in the code
+distinguished "a new1 session no row claims" from "some other process's tmux session
+that happens to be running on the same shared host" — both landed identically as a
+synthetic `orphan_session` row.
+
+Root cause: the wrong logic was the implicit definition of "candidate orphan" as "any
+name `live_sessions()` returns." The fix replaces that definition at its source with
+the correct one — "a name shaped like this repo's own launcher would produce" — rather
+than leaving the raw set-difference in place and filtering its output from outside.
+
+Fix: added `_is_repo_session_name(name)`, matching the pinned `<stage>-<key>-<piece>`
+shape using only two facts this module already owns as part of its own row schema — the
+`key` format (2414: 12 lowercase hex characters, the same value this module already
+stores and returns in every folded row) and the piece `index` format (8.1: a bare
+integer) — via `re.compile(r"^.+-[0-9a-f]{12}-\d+$")`. This adds no hardcoded stage-name
+list (the six stage names live in `experimental_settings/schema.py`, which this module
+is deliberately kept ignorant of per decision 3, section 4 above) and no new dependency
+beyond the stdlib `re` module already implied by the file's "stdlib and PyYAML only"
+line. `ls()` now intersects `live_sessions()`'s result with this shape before
+subtracting `known`, so only a name that could plausibly be this repo's own is ever a
+candidate; `_known_sessions()`, `_orphan_session_row()`, `live_sessions()`,
+`cards_busy()`, `session_alive()` and `sync()` are unchanged — the finding is specific
+to the one unscoped set-difference inside `ls()`, and none of those other functions do
+a raw membership test against the *entire* live-session set (they all test one already-
+known session name at a time, which is correct for any name, convention-shaped or not).
+Updated `ls()`'s own docstring and added one to the new helper, since the prior
+docstring already claimed to implement "a tmux session of this repo" without the code
+actually checking that condition.
+
+Verified directly, reproducing the finding's own scenario plus a regression check that
+genuine orphan detection still works, against the fix worktree's own copy of the file
+(never the real `jobs/runs.jsonl`), on the A3/A4/A5 temp tree (which already carries one
+real, finished `sample-abc123abc123` run with tracked session
+`sample-abc123abc123-0`):
+
+```
+orphan sessions reported by ls(): ['sample-deadbeef0123-2']
+known run's own orphan flag: False
+_is_repo_session_name('sample-abc123abc123-0') = True
+_is_repo_session_name('ACL2026-eval-run') = False
+_is_repo_session_name('gyb-manual-debug') = False
+_is_repo_session_name('sample-deadbeef0123-2') = True
+```
+
+`live_sessions()` was monkeypatched to return four names: the one real tracked session,
+the finding's own two unrelated names (`ACL2026-eval-run`, `gyb-manual-debug`), and one
+genuine-but-never-registered new1-shaped session (`sample-deadbeef0123-2`, matching the
+naming convention but claimed by no piece in the ledger). Before this fix, all three
+unknown names would have been reported as orphan; after it, only the repo-shaped,
+genuinely-unregistered one is — the two unrelated names are gone from the output, and
+the real run's own row still correctly shows `orphan: False`.
+
+### Full acceptance re-run (A1-A10), after the fix
+
+All ten commands re-run verbatim from the fix-round-2 worktree's repo root, through the
+same absolute interpreters, on a fresh `mktemp -d` tree for every functional check
+(never the real `jobs/runs.jsonl`); outputs pasted in full.
+
+**A1**
+```
+1800 180
+1800 180
+1800 180
+sys ok
+```
+(exit 0 for all four checks)
+
+**A2**
+```
+waited 1.9
+outer released
+exit=0
+```
+
+**A3**
+```
+open: ['sample-abc123abc123']
+open after finish: []
+lines: 2
+results has run: True
+find: ['sample-abc123abc123']
+exit=0
+```
+
+**A4**
+```
+owners: 2 stage kept: sample
+done keys: ['commit', 'counts', 'finished_at', 'key', 'metrics', 'pairs', 'report', 'stage', 'versions']
+no temp left: ['done.json', 'meta.json']
+exit=0
+```
+
+**A5**
+```
+['3-0.jsonl', '3-1.jsonl']
+3 ['done', 'total', 'ts', 'unit'] done
+exit=0
+```
+(stdout additionally carries the `@hb `-prefixed mirror lines per the errata,
+unchanged from prior rounds)
+
+**A6**
+```
+60.0
+None
+1800.0 300.0
+(0.1, 0.1)
+('done', False)
+('dead', True)
+('suspected stall', True)
+('warming up', False)
+('slowed', False)
+('healthy', False)
+('healthy', False)
+('warming up', False)
+('suspected stall', True)
+('dead', True)
+exit=0
+```
+
+**A7**
+```
+$ external/probe-env/bin/python tests/test_registry_concurrent_append.py
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.202s
+
+OK
+exit=0
+```
+
+**A8**
+```
+ledger empty
+# Registry results
+> Generated by `jobs/registry.py`'s `render()` from `jobs/runs.jsonl` — do not edit by hand.
+No runs yet.
+jobs/runs.jsonl.lock
+```
+`git status --porcelain jobs/` showed only ` M jobs/registry.py` before the commit
+(this round's fix, uncommitted at the time of the check) and nothing beyond that; the
+ledger seed files were untouched throughout.
+
+**A9**
+```
+NO_ABS_PATH
+```
+
+**A10**
+```
+empty ls: []
+empty ls --debug: []
+empty ls workflow=x: []
+exit=0
+```
+No `AssertionError`; a shape-scoped filter alone cannot trigger a host probe over a
+genuinely empty ledger, unchanged from round 2's own addition of the `workflow=`
+variant.
+
+### Commit
+
+- `ec1c026` — `T03: fix round 2 — orphan-session detection scoped to this repo's own
+  session-name shape`, on branch `ticket/2026-09-17-wave1/T03` (recreated from
+  `from-zero`'s tip `6cb1171`, per the branch-state note above). One file changed
+  (`jobs/registry.py`), 34 insertions, 12 deletions. `README.md` needed no change: the
+  module's one-sentence summary (the F2-aligned line shared by the docstring, `README`,
+  and contracts 0.2) is untouched, the `imports:` line already reads `none (repo);
+  [PyYAML]` (it does not enumerate individual stdlib modules, so adding the stdlib `re`
+  import changes nothing it states), and no new read, write or `venv` behaviour was
+  added. `run.py` does not exist yet on this branch, so the implementer protocol's
+  `run.py selfcheck` step does not apply.
+
+### Self-review
+
+- Full diff read back (`git diff jobs/registry.py`, `git show ec1c026`): every hunk
+  traces to N1 — the new `import re`, the new `_SESSION_NAME_RE`/
+  `_is_repo_session_name`, the `ls()` docstring update describing the scoping, and the
+  one-line change to what `ls()` iterates before building orphan rows. No other function
+  was touched.
+- No new `legacy/` citation (`grep -in legacy jobs/registry.py` → no match): the fix is
+  a new mechanism this round needed, not a ported one, so nothing to cite.
+- Considered hardcoding the six stage names (`sample`, `build`, `train`, `eval`,
+  `inject`, `score`) from contracts 2.1 into the shape check instead of a suffix-only
+  match, for a tighter test; decided against it, for two reasons: it would encode a fact
+  from a file this module deliberately does not import or track versions of (schema.py
+  owns the stage table; this module "cannot call `key`" per decision 3, section 4
+  above), and it would silently misclassify a genuine session of a future seventh stage
+  as not-this-repo's the day contracts 2.1 grows one, which is a worse failure than
+  today's over-broad match — a real new1 session going unflagged as orphan is a
+  fail-open outcome the file's fail-closed posture (3.4, 8.6) argues against everywhere
+  else it applies.
+- Considered whether the shape check should also apply inside `live_sessions()` itself
+  or `cards_busy()`/`sync()`; decided against it — those functions test membership of
+  one already-known session name at a time (a name this module's own writer half
+  produced), never do a raw sweep over every live session the way `ls()`'s orphan branch
+  did, and the finding's own citation (`jobs/registry.py:906-907`) points at exactly that
+  one branch.
+- Open question for the reviewer, not blocking: the shape check is a heuristic — a
+  session from some other tool that happens to look like `<word>-<12 lowercase hex
+  chars>-<digits>` would still be misreported as a new1 orphan, and conversely nothing
+  stops a person from starting a manual tmux session that happens to match the shape on
+  purpose. Neither case is reachable from this finding's own reproduction, and closing
+  it completely would need a repo-specific prefix in the naming convention itself
+  (contracts 2699, `jobs/launch.py`, ticket 12) — out of this ticket's file list and
+  this module's `reads:` scope.
