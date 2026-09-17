@@ -38,7 +38,7 @@ _RETRY_BASE_S = 1.0
 def build_command(row: dict, serving: dict, weights_path: str, port: int,
                    gpus: str, date: str | None) -> tuple[list[str], dict[str, str]]:
     """The vllm serve argv and its environment for one agent-model row."""
-    vllm_bin = str(Path(sys.executable).resolve().parent / "vllm")
+    vllm_bin = str(Path(sys.executable).parent / "vllm")
     argv = [
         vllm_bin, "serve", weights_path,
         "--served-model-name", str(row["served_model_name"]),

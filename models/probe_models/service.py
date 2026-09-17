@@ -14,6 +14,15 @@ from pathlib import Path
 
 VERSION = 1
 
+# check's own fixtures: a minimal conversation for /render and a minimal
+# probe input for /score and /gen. Every other request input check makes
+# comes straight off the frozen setting it already loaded.
+_CHECK_RENDER_MESSAGES = [
+    {"role": "system", "content": "check fixture: a minimal render smoke test."},
+    {"role": "user", "content": "check fixture: say ready."},
+]
+_CHECK_PROBE_TEXT = "check fixture: call apis.example.sample_api()"
+
 _RETRIES = 3
 _RETRY_BASE_S = 1.0
 
@@ -214,6 +223,33 @@ def check(args) -> int:
     if back["text"] != "a<|end|>b":
         print("check: <|end|> fixture: the special=false encoding does not round-trip")
         ok = False
+
+    render = client.render(_CHECK_RENDER_MESSAGES, cfg.generation.effort, cfg.generation.date)
+    prefix_ids = render.get("prefix_ids")
+    render_ok = (isinstance(prefix_ids, list) and len(prefix_ids) > 0
+                 and all(isinstance(i, int) for i in prefix_ids))
+    print(f"check: /render prefix_ids is a non-empty list of ints: {render_ok} "
+          f"(got {prefix_ids!r})")
+    if not render_ok:
+        ok = False
+
+    if has_inject:
+        score = client.score(_CHECK_PROBE_TEXT)
+        conf = score.get("conf")
+        label = score.get("label")
+        conf_ok = isinstance(conf, (int, float)) and not isinstance(conf, bool) and 0.0 <= conf <= 1.0
+        label_ok = isinstance(label, str) and label != ""
+        print(f"check: /score conf is a float in [0,1]: {conf_ok} (got {conf!r})")
+        print(f"check: /score label is a non-empty str: {label_ok} (got {label!r})")
+        if not (conf_ok and label_ok):
+            ok = False
+
+        gen = client.generate(_CHECK_PROBE_TEXT, cfg.inject.max_new)
+        call = gen.get("call")
+        call_ok = isinstance(call, str)
+        print(f"check: /gen call is a str: {call_ok} (got {call!r})")
+        if not call_ok:
+            ok = False
 
     return 0 if ok else 1
 
