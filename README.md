@@ -498,3 +498,22 @@ no report at all.
       used by: agent/inject.py; its keys are cross-checked against schema.py's axis by run.py selfcheck
       reads:   -   writes: -   venv: any
 ```
+
+## Ticket 12 — the launcher
+
+```
+jobs/launch.py — launches and refires the tmux pieces of a sample, inject or train run: the dirty-tree
+gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
+  imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release),
+           data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
+  used by: run.py
+  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map),
+           constants/path_outputs.yaml (the login_host and the hosts list), models/table.yaml (the
+           serving block), the run directory's settings.yaml and meta.json, other live runs'
+           service_<kind>_<replica>.json, nvidia-smi (through jobs/registry.py), tmux, git
+  writes:  the start row in jobs/runs.jsonl, meta.json launch entries, meta.json's split_files,
+           dirty.patch, the piece commands
+  venv:    probe
+```
+
+A library with no entry-point guard: `run.py` is the one command that calls it.
