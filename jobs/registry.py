@@ -1,4 +1,4 @@
-"""The registry: runs.jsonl rows under a lock, meta.json, the heartbeat files, the verdict functions, ls/where/find/kill/free/sync, and RESULTS.md.
+"""The registry: runs.jsonl rows under a lock, meta.json, the heartbeat, the verdicts, ls/where/find/kill/free, RESULTS.md.
 
 Standard library and PyYAML only, imported by every stage to write its start and
 finish rows and by run.py for the subcommands. Imports nothing from this repo.
@@ -194,6 +194,24 @@ def _default_meta() -> dict:
     }
 
 
+def _read_meta_or_recover(meta_path: Path) -> dict:
+    """`meta.json`'s own read for `write_meta`: a missing file is a run's first
+    call and gets a fresh default; a file that exists but does not parse as
+    JSON is renamed aside as `meta.json.corrupt.<timestamp>` before a fresh
+    default takes its place, so a scrambled write is archived for forensics
+    rather than silently discarded (8.3)."""
+    if not meta_path.exists():
+        return _default_meta()
+    try:
+        with open(meta_path) as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        corrupt = meta_path.with_name(
+            meta_path.name + ".corrupt." + datetime.now().strftime("%Y%m%d_%H%M%S"))
+        os.replace(meta_path, corrupt)
+        return _default_meta()
+
+
 def _merge_pieces(existing: list, new_entries: list) -> list:
     """`pieces is replaced entry by entry` (8.3): match on `index`, replace
     the matched entry whole, append an entry whose index is new."""
@@ -214,9 +232,7 @@ def write_meta(run_dir, **fields) -> None:
     run_dir = Path(run_dir)
     meta_path = run_dir / "meta.json"
     with lock():
-        meta = _read_json(meta_path)
-        if meta is None:
-            meta = _default_meta()
+        meta = _read_meta_or_recover(meta_path)
         for name, value in fields.items():
             if name == "launches":
                 meta.setdefault("launches", [])
@@ -455,13 +471,16 @@ def _remote_shell(host: str, script: str, timeout: float = 20.0) -> tuple[bool, 
 
 class _ProbedSessions(set):
     """The set `live_sessions()` returns: the real session names it collected,
-    plus `failed_hosts`, the hosts whose probe did not answer — internal
-    bookkeeping this module's own alive tests consult so a piece on an
-    unreachable host is still reported alive (fail-closed, 3.4)."""
+    plus `failed_hosts`, the hosts whose probe did not answer, and `host_of`,
+    the host each collected name came from — internal bookkeeping this
+    module's own alive tests and `ls()`'s orphan-session check consult, so a
+    piece on an unreachable host is still reported alive (fail-closed, 3.4)
+    and an orphan session can still name its host."""
 
-    def __init__(self, names=(), failed_hosts=()):
+    def __init__(self, names=(), failed_hosts=(), host_of=None):
         super().__init__(names)
         self.failed_hosts = set(failed_hosts)
+        self.host_of = dict(host_of) if host_of else {}
 
 
 def live_sessions() -> set[str]:
@@ -470,14 +489,17 @@ def live_sessions() -> set[str]:
     cfg = _outputs_config()
     names: set[str] = set()
     failed: set[str] = set()
+    host_of: dict[str, str] = {}
     for host in cfg.get("hosts", []):
         host_name = host["name"]
         ok, out = _remote_shell(host_name, "tmux ls -F '#S' 2>/dev/null; true")
         if ok:
-            names.update(out.split())
+            for name in out.split():
+                names.add(name)
+                host_of[name] = host_name
         else:
             failed.add(host_name)
-    return _ProbedSessions(names, failed)
+    return _ProbedSessions(names, failed, host_of)
 
 
 def session_alive(host: str, session: str) -> bool:
@@ -732,6 +754,61 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
     }
 
 
+def _known_sessions(all_entries) -> set[str]:
+    """Every session name recorded in any run's current pieces (`meta.json`
+    when it exists, else the start row), across the whole ledger — not just
+    the rows `ls()` will display, so a session belonging to a filtered-out
+    workflow or a filtered-out debug run is never mistaken for orphan."""
+    known: set[str] = set()
+    for entry in all_entries:
+        start = entry["start"]
+        if start is None:
+            continue
+        run_dir = Path(start["dir"])
+        for piece in _pieces_of(run_dir, start):
+            session = piece.get("session")
+            if session:
+                known.add(session)
+    return known
+
+
+def _orphan_session_row(name: str, host: str | None) -> dict:
+    """A synthetic `ls()` row for a live tmux session matching no piece
+    recorded anywhere in the ledger (8.6's first `orphan` case: "a tmux
+    session of this repo matching no row"). There is no run behind it, so
+    every run-identifying field is `None`; only the session's own name and,
+    when known, its host are real."""
+    return {
+        "run_id": None,
+        "t": "",
+        "stage": None,
+        "key": None,
+        "dir": None,
+        "workflow": None,
+        "setting": None,
+        "parent": None,
+        "swept": None,
+        "diff": None,
+        "commit": None,
+        "status": "orphan_session",
+        "pieces": [{
+            "index": None,
+            "kind": None,
+            "host": host,
+            "session": name,
+            "verdict": "orphan",
+            "escalated": False,
+        }],
+        "progress": (0, 0),
+        "flags": {
+            "edited": None,
+            "debug": False,
+            "dirty": False,
+            "orphan": True,
+        },
+    }
+
+
 def _ls_row(entry: dict, sessions: set, now_ts: float,
             edited: dict, progress: dict) -> dict:
     start, finish = entry["start"], entry["finish"]
@@ -761,6 +838,10 @@ def _ls_row(entry: dict, sessions: set, now_ts: float,
         done, total = sum_done, sum_total
     if finish is not None:
         status = finish.get("status")
+        # 8.6's second orphan case: a service piece still running after its
+        # owner run finished. The first case (a live session matching no row
+        # at all) has no owner run to attach to and is flagged instead by
+        # ls()'s own synthetic rows, built from _known_sessions().
         orphan = any(p["kind"] == "service" and p["verdict"] != "dead" for p in piece_rows)
     else:
         status = start.get("status", "launching")
@@ -795,13 +876,16 @@ def _ls_row(entry: dict, sessions: set, now_ts: float,
 def ls(workflow: str | None = None, *, debug: bool = False,
        edited: dict[str, bool] | None = None,
        progress: dict[str, tuple[int, int]] | None = None) -> list[dict]:
-    """One folded row per run, verdicts included. Calls `live_sessions()` only
-    when there is at least one row to judge, so `run.py ls` and
-    `eval/method_table.table()` against an empty ledger issue no `ssh` at
-    all (8.6, A10)."""
+    """One folded row per run, verdicts included, plus one synthetic row per
+    live tmux session matching no piece anywhere in the ledger (8.6's
+    `orphan`: "a tmux session of this repo matching no row"). Calls
+    `live_sessions()` only when there is at least one row to judge, so
+    `run.py ls` and `eval/method_table.table()` against an empty ledger issue
+    no `ssh` at all (8.6, A10)."""
     edited = edited or {}
     progress = progress or {}
-    entries = [e for e in fold(_read_rows()).values() if e["start"] is not None]
+    all_entries = [e for e in fold(_read_rows()).values() if e["start"] is not None]
+    entries = all_entries
     if workflow is not None:
         entries = [e for e in entries if e["start"].get("workflow") == workflow]
     if not debug:
@@ -811,6 +895,10 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     sessions = live_sessions()
     now_ts = time.time()
     rows = [_ls_row(e, sessions, now_ts, edited, progress) for e in entries]
+    known = _known_sessions(all_entries)
+    host_of = sessions.host_of if isinstance(sessions, _ProbedSessions) else {}
+    for name in sorted(set(sessions) - known):
+        rows.append(_orphan_session_row(name, host_of.get(name)))
     rows.sort(key=lambda r: r.get("t", ""), reverse=True)
     return rows
 
@@ -832,8 +920,12 @@ def _attached_elsewhere(run_id: str) -> bool:
 def kill(run_id: str) -> list[str]:
     """End each piece of `run_id` — a tmux piece by its session, a `cpu`
     piece by its `pid`, both read from `meta.json`'s `pieces` list — and
-    return the sessions it ended. Refuses while any live run's
-    `service_<kind>_<replica>.json` names this `run_id` in `attached_to`."""
+    return the sessions it actually ended: a `cpu` piece counts only when its
+    `pid` was still alive to signal, and a tmux piece only when the kill
+    command actually reached its host (an unreachable host reports nothing
+    ended for that piece, rather than a session that was never touched).
+    Refuses while any live run's `service_<kind>_<replica>.json` names this
+    `run_id` in `attached_to`."""
     entry = fold(_read_rows()).get(run_id)
     if entry is None or entry["start"] is None:
         return []
@@ -856,8 +948,10 @@ def kill(run_id: str) -> list[str]:
         else:
             session, host = piece.get("session"), piece.get("host")
             if session and host:
-                _remote_shell(host, f"tmux kill-session -t {shlex.quote(session)} 2>/dev/null; true")
-                ended.append(session)
+                ok, _out = _remote_shell(
+                    host, f"tmux kill-session -t {shlex.quote(session)} 2>/dev/null; true")
+                if ok:
+                    ended.append(session)
     return ended
 
 

@@ -9,7 +9,7 @@ expected and are resolved by keeping every ticket's lines.
 
 ```
 jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the
-heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
+heartbeat, the verdicts, ls/where/find/kill/free, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py,
            train/utils/trainer.py, eval/utils/probe_eval.py,
@@ -17,6 +17,7 @@ heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
   reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories'
            meta.json and heartbeat, ssh, tmux, nvidia-smi
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json,
+           meta.json.corrupt.<timestamp> (a corrupt meta.json renamed aside),
            heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
