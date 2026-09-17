@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import sys
 import time
 import urllib.error
 from pathlib import Path
@@ -173,7 +174,14 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                 )
                 writer.close()
             finally:
-                env.close()
+                # a raising close() must cost only this task's teardown, not the piece's walk
+                try:
+                    env.close()
+                except Exception as exc:
+                    print(
+                        f"agent.loop: task {task_id} seed {seed}: env.close() failed: {exc}",
+                        file=sys.stderr,
+                    )
 
             done += 1
             hb.emit(done, len(triples), "task", tok_in=tokens_in, tok_out=tokens_out)
