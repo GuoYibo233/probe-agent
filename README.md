@@ -129,6 +129,34 @@ line parses as JSON.
   venv:    probe
 ```
 
+## Ticket 04 — the setting schema and its loader
+
+```
+experimental_settings/schema.py — the setting schema: the dataclasses, the
+stage table, and the loader that reads a YAML file against them (file ->
+setting, diff, key).
+  imports: none (repo); [PyYAML, ast, dataclasses, hashlib, itertools, json, pathlib, typing]
+  used by: run.py, jobs/launch.py, agent/loop.py, data/build_dataset.py,
+           train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py,
+           eval/method_table.py, models/agent_models/service.py,
+           models/probe_models/service.py  (ten; both services take
+           load_frozen only)
+  reads:   experimental_settings/*.yaml, models/table.yaml,
+           constants/path_outputs.yaml, constants/path_datasets.yaml (the
+           splits block of the chosen environment), a run directory's
+           settings.yaml, and the VERSION / PROBE_KIND lines and
+           module-level literals of contracts 3.3's literal rule -- all as
+           source text, never by importing
+  writes:  settings.yaml and settings_diff.yaml in a run directory
+  venv:    any
+```
+
+`load`, `load_frozen`, `freeze`, `key`, `run_dir`, `run_dir_of`, `upstream`,
+`module_version`, `module_literal`, `fields_of`, `models_of`, `upstream_of`
+and `versions_of` are the names the file offers (contracts 5.1, 3.1, 3.3).
+`fields_of`, `models_of`, `upstream_of`, `versions_of`, `module_version` and
+`module_literal` are called only by this file and by `run.py`.
+
 ## How to run (ticket 03's own piece)
 
 `jobs/registry.py` is a library with no `__main__`; nothing here is run
