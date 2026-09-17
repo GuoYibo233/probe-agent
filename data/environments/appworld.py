@@ -140,6 +140,62 @@ def _first_call_named(text: str) -> tuple[str, str, list[tuple[str, str]], int, 
     return m.group(1), m.group(2), _split_args_named(text[i + 1:j]), m.start(), j + 1
 
 
+def _closes_the_call(written: str) -> bool:
+    """Whether `_call_close` still reaches the call's own `)` after `written` went in before it.
+
+    The writer asks the reader itself rather than carrying a copy of its rules, so the two
+    cannot drift: `written` is put in as the whole argument body of a one-argument call, and
+    the answer is yes when the reader closes that call at the parenthesis the writer appended.
+    It is no for a `#` that comments that parenthesis out, for a stray `(` or `)`, and for a
+    quote the reader leaves open — including one whose closing quote a backslash escapes.
+    """
+    return _call_close(f"({written})", 0) == len(written) + 1
+
+
+def _stays_one_argument(value: str) -> bool:
+    """Whether `_split_args_named` keeps a bare `value` whole and reads its key with it.
+
+    That reader counts every bracket kind and carries no backslash escape, and it ends an
+    argument on a `,` and reads a key off an `=`, both whenever they stand outside every
+    bracket and every quote. So a bare value holds neither of those two characters in the
+    open, keeps its bracket depth at zero and dips below it at no point, and leaves no quote
+    open — an open bracket or quote swallows the arguments that follow.
+    """
+    brackets = 0
+    quote: str | None = None
+    for ch in value:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+        elif ch in "([{":
+            brackets += 1
+        elif ch in ")]}":
+            brackets -= 1
+            if brackets < 0:
+                return False
+        elif ch in ",=" and brackets == 0:
+            return False
+    return brackets == 0 and quote is None
+
+
+def _bare_safe(value: str) -> bool:
+    """Whether `value` can be written bare into a call and read back as itself.
+
+    Both readers have to agree with the writer: `_call_close`, which has to reach the call's
+    closing parenthesis, and `_split_args_named`, which has to keep the value whole. On top of
+    the two the re-parse strips whitespace off the ends of a bare value, so a value that
+    carries its own leading or trailing whitespace is quoted instead.
+    """
+    if value == "":
+        return False
+    if value != value.strip():
+        return False
+    return _closes_the_call(value) and _stays_one_argument(value)
+
+
 def _quote_value(tool: str, key: str, value: str) -> str:
     """Bare unless the value needs protecting; never `repr()` (errata E5)."""
     if _bare_safe(value):
@@ -151,55 +207,13 @@ def _quote_value(tool: str, key: str, value: str) -> str:
             f"appworld.build_call: {tool} argument {key!r} value {value!r} holds both a single and a double quote"
         )
     q = '"' if has_single else "'"
-    return f"{q}{value}{q}"
-
-
-def _bare_safe(value: str) -> bool:
-    """Whether `value` can be written bare into a call and read back as itself.
-
-    Two readers have to agree with the writer, and each counts its own thing.
-    `_call_close` counts parentheses alone and reads a `#` outside a quote as a comment
-    running to the end of the line, so a bare value holds no such `#`, ends at the
-    parenthesis depth it started at and dips below it at no point: a stray `)` closes the
-    call early and a stray `(` keeps it open. `_split_args_named` counts every bracket kind
-    and cuts both on a `,` outside all of them and on the first such `=`, so a bare value
-    holds neither and keeps its bracket depth at zero the same way. On top of that the
-    re-parse strips whitespace and quotes off the ends of a bare value, and an unclosed
-    quote swallows the arguments that follow, so a value with either is quoted instead.
-    """
-    if value == "":
-        return False
-    if value != value.strip():
-        return False
-    parens = 0
-    brackets = 0
-    quote: str | None = None
-    for ch in value:
-        if quote is not None:
-            if ch == quote:
-                quote = None
-            continue
-        if ch in "\"'":
-            quote = ch
-        elif ch == "#":
-            return False
-        elif ch == "(":
-            parens += 1
-            brackets += 1
-        elif ch == ")":
-            parens -= 1
-            brackets -= 1
-            if parens < 0:
-                return False
-        elif ch in "[{":
-            brackets += 1
-        elif ch in "]}":
-            brackets -= 1
-            if brackets < 0:
-                return False
-        elif ch in ",=" and brackets == 0:
-            return False
-    return parens == 0 and brackets == 0 and quote is None
+    wrapped = f"{q}{value}{q}"
+    if _closes_the_call(wrapped):
+        return wrapped
+    raise ValueError(
+        f"appworld.build_call: {tool} argument {key!r} value {value!r} needs quoting and ends in a backslash "
+        f"that escapes its closing {q}, so the call it would be written into never closes"
+    )
 
 
 def _requote(call: str, user_ns: dict) -> tuple[str, list[str]]:
