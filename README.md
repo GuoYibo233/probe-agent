@@ -284,8 +284,9 @@ commands of `.scratch/from-zero/issues/06-model-table-entrance-and-probe-object.
 ## Ticket 08 — the eval library and the classifier metric
 
 ```
-  eval/                    computed from train's predictions.parquet, no GPU, no environment except for
-                          the two call-generating methods' own use of split_args/build_call
+  eval/                   reads what is on disk and computes numbers; no GPU, no torch, every file imports
+                          as any. A new probe method is a file under methods/; a new metric is an edit to
+                          the file that reports it
     utils/
       probe_eval.py         shared by the three methods: read a train run's prediction rows and targets,
                             bootstrap the confidence interval, write the report (both of its files) and read
