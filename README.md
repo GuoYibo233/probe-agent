@@ -280,3 +280,48 @@ group, but no `service.py` line is added here.
 `models/__init__.py` is a library with no `__main__`. Run the acceptance
 commands of `.scratch/from-zero/issues/06-model-table-entrance-and-probe-object.md`
 (A1 through A12, A16) from the repo root, with the interpreter each one names.
+
+## Ticket 07 — the two model services
+
+The two `service.py` lines `agent_models/` and `probe_models/` (Ticket 06)
+already point at, filled in:
+
+```
+    agent_models/
+      service.py            both ends of the served agent model: start or attach to the vLLM server for a
+                            table row and check it (main, vllm venv); the loop's client, a raw token
+                            stream with a seed (standard library); carries VERSION, which is folded into
+                            the sample and inject keys for the reason 2.2 gives
+        imports: models/__init__.py (the family through agent(alias), inside the server main),
+                 experimental_settings/schema.py (load_frozen)
+        used by: agent/generate.py (client), agent/loop.py (health); jobs/launch.py starts it as a
+                 piece, which is a tmux command and not an import
+        reads:   models/table.yaml (the serving block only), constants/path_models.yaml, the run
+                 directory's settings.yaml (models.agent_row — every keyed column — plus
+                 generation.date and generation.effort)
+        writes:  service_agent_<replica>.json and its piece log in the run directory
+        venv:    any at import; vllm to serve
+    probe_models/
+      service.py            both ends of the probe service: the HTTP server that loads the probe and
+                            answers score, generate, encode, decode and render, plus the check
+                            subcommand, a client against a running service that loads no checkpoint
+                            (main, probe venv); the loop's client (standard library); carries VERSION,
+                            which is folded into the sample and inject keys for the reason 2.2 gives
+        imports: models/__init__.py; experimental_settings/schema.py (load_frozen, for the check
+                 client's expected values); models/probe_models/base.py inside serve();
+                 [http.server, transformers and torch inside serve()]
+        used by: agent/loop.py (client: render), agent/inject.py (client: score, generate, encode,
+                 decode); jobs/launch.py starts it as a piece, which is a tmux command and not an import
+        reads:   the checkpoint directories named on its command line, including each one's
+                 best/meta.json; the run directory's settings.yaml, the check client only
+        writes:  service_probe_0.json and its piece log in the run directory
+        venv:    any at import; probe to serve
+```
+
+### How to run (ticket 07's own piece)
+
+Neither file has a library-only entrance; both are run with
+`python -m models.agent_models.service` / `python -m models.probe_models.service`.
+Run the acceptance commands of
+`.scratch/from-zero/issues/07-model-services.md` (A1, A13 through A16) from the
+repo root, with the interpreter each one names.
