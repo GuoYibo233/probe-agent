@@ -207,3 +207,76 @@ The `imports:` line for `appworld.py` reads "inside open() alone", not contracts
 state the `from appworld import AppWorld` statement sits in `open` alone, with
 the other four world methods using the handle `open` already stored. See the
 report for T05.
+
+## Ticket 06 — the model table, the entrance, the gpt-oss family and the probe object
+
+```
+  models/                 the models: the table, the agent-model side, the probe-model side. A model's own
+                          settings (format, serving, tokenizer quirks) live here; a run's settings live in
+                          experimental_settings/
+    __init__.py             the entrance: agent(alias) reads table.yaml and imports the family module inside
+                            the function, returning it as AgentModel.module beside the row's alias, role,
+                            family, weights (the alias) and weights_path (from constants/path_models.yaml)
+                            and its serving block; probe(alias) returns the same shape as ProbeModel, minus
+                            the module, without importing the backbone module —
+                            models/probe_models/base.py imports that, by name, inside load(). The two return
+                            types are in Part 6.2. Edited never; a new model is a row, a new family or
+                            backbone a file
+      imports: none (repo); [importlib, PyYAML]
+      used by: agent/generate.py, agent/inject.py, models/agent_models/service.py,
+               models/probe_models/base.py, models/probe_models/service.py, train/utils/trainer.py
+               (six; agent/loop.py is not among them, 7.2)
+      reads:   models/table.yaml, constants/path_models.yaml
+      writes:  -   venv: any
+    table.yaml              one row per alias, in two blocks: result (expanded into the setting before
+                            keying) and serving (never keyed). Edited when a new model alias is wanted; a
+                            model of an existing family or backbone needs only this row
+      read by: models/__init__.py, experimental_settings/schema.py (the result block),
+               models/agent_models/service.py (the serving block),
+               jobs/launch.py (the serving block: host and port)
+    agent_models/           one file per family (a family shares one conversation format), plus its service
+      __init__.py           empty, so the client half of service.py imports without the family's libraries
+        imports: none
+        used by: models/agent_models/service.py, models/agent_models/gptoss.py (as their package)
+        reads:   -   writes: -   venv: any
+      gptoss.py             gpt-oss's format ("harmony"): messages -> token ids, parse a streamed reply, end
+                            of turn, the model's own system message (date, effort), the control-token
+                            wrapping of a prefetch message, and the family's own generation defaults; the
+                            module interface is Part 6.2; carries VERSION
+        imports: none (repo); [openai_harmony, inside render_ids()]
+        used by: models/__init__.py (by name). Every other file reaches this module as the object
+                 models/__init__.py's agent(alias) returns, and names no family file
+        reads:   -   writes: -
+        venv:    any at import and for parse/end_of_turn/wrap_prefetch; probe or vllm for render_ids()
+    probe_models/           the probe model: the shared class, one file per backbone, plus its service
+      __init__.py           empty, so the client half of service.py imports without torch
+        imports: none
+        used by: models/probe_models/base.py, models/probe_models/service.py,
+                 models/probe_models/qwen.py (as their package)
+        reads:   -   writes: -   venv: any
+      base.py               the probe class every backbone shares: load, save, score a prefix, generate a
+                            call; owns the classification head and the checkpoint layout; carries VERSION
+        imports: models/__init__.py; models/probe_models/<backbone>.py (by name, inside load());
+                 [torch, transformers, peft]
+        used by: train/utils/trainer.py, train/methods/{ctool,cgen,cparam}.py,
+                 models/probe_models/service.py (inside serve())
+        reads/writes: the checkpoint layout (Part 1.6), including the class order in best/meta.json
+                 (Part 1.3); it writes no run-level file and imports neither schema nor registry
+        venv:    probe
+      qwen.py                Qwen's tokenizer quirks, pad token, head attach point, LoRA target modules,
+                            dtype; the module interface is Part 6.2; carries VERSION
+        imports: none (repo); [transformers]
+        used by: models/probe_models/base.py (by name)
+        reads:   -   writes: -   venv: probe
+```
+
+`models/agent_models/service.py` and `models/probe_models/service.py` are ticket
+07's, not this ticket's; the two group lines above (`agent_models/`,
+`probe_models/`) already say "plus its service" because they describe the whole
+group, but no `service.py` line is added here.
+
+## How to run (ticket 06's own piece)
+
+`models/__init__.py` is a library with no `__main__`. Run the acceptance
+commands of `.scratch/from-zero/issues/06-model-table-entrance-and-probe-object.md`
+(A1 through A12, A16) from the repo root, with the interpreter each one names.
