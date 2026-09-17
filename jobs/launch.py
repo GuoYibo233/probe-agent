@@ -314,10 +314,15 @@ def piece_command(python, module, run_dir, piece, n, gpus, log) -> str:
 def _agent_service_cmd(python, run_dir, model_alias, port, gpus, replica, *,
                         attach_only, attached_to, log) -> str:
     """7.1's serve line, plus the `--replica` and `--attached-to` flags of
-    errata 7.1/1.5."""
+    errata 7.1/1.5. `--gpus` is omitted when the piece takes no card (an
+    attached replica), the same way the probe service's checkpoint/device
+    flags are omitted under `--render-only`."""
     parts = [python, "-m", "models.agent_models.service", "serve",
               "--run-dir", str(run_dir), "--model", model_alias,
-              "--port", str(port), "--gpus", gpus, "--replica", str(replica)]
+              "--port", str(port)]
+    if gpus:
+        parts += ["--gpus", gpus]
+    parts += ["--replica", str(replica)]
     if attach_only:
         parts += ["--attach-only", "--attached-to", attached_to]
     return f"cd {_repo_root()} && {' '.join(parts)} 2>&1 | tee -a {log}"
@@ -387,11 +392,11 @@ def _port_answers(host: str | None, port) -> bool:
 
 def alive_check(pieces, window_s=30, poll_s=5) -> tuple[bool, list]:
     """`(all_up, failed_pieces)` over `window_s`, polled every `poll_s`
-    (errata against `legacy/ops/launch_cmd.py:220-242`). A `loop`, `train`
-    or `cpu` piece passes when its log file has grown and its session is
-    alive with no `Traceback` in the log's last 4 KB; a `service` piece
-    passes when its endpoint file has appeared and its port answers.
-    Returns as soon as every piece passes."""
+    (errata; 8.1 names the alive check and never defines it). A `loop`,
+    `train` or `cpu` piece passes when its log file has grown and its
+    session is alive with no `Traceback` in the log's last 4 KB; a
+    `service` piece passes when its endpoint file has appeared and its
+    port answers. Returns as soon as every piece passes."""
     pieces = list(pieces)
     if not pieces:
         return True, []
