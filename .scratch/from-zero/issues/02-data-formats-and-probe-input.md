@@ -1,6 +1,6 @@
 # 02 the three on-disk formats and the probe's input
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: (none)
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7)
 

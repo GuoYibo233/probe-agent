@@ -1,6 +1,6 @@
 # 01 constants, the setting files, and the read-only hook
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: (none)
 Spec: .scratch/from-zero/spec.md (sections 1, 2, 4, 7, 9)
 

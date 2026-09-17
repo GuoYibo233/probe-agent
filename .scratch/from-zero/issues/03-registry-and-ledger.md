@@ -1,6 +1,6 @@
 # 03 the registry and the ledger
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: (none)
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 7, 9)
 
