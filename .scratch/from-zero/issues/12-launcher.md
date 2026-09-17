@@ -424,3 +424,16 @@ An implementer that reaches any of these returns BLOCKED with the command.
   appears.
 
 ## Comments
+
+- 2026-09-18, note from wave 3 (main session of wave 3). "The two service command
+  lines are 7.1's and 7.2's, verbatim" needs one more flag than `--replica`: the
+  merged `models/agent_models/service.py` refuses `serve --attach-only` without
+  `--attached-to <run_id>` (errata 7.1 / 1.5, planner: models), and writes that
+  value into the endpoint file's `attached_to`, which `teardown_services` reads.
+  `launch` passes the `run_id` of the live registry row whose server 7.4's attach
+  test matched. Under `--attach-only` the endpoint file's `pid` is null. The
+  service itself compares only the served model name and `max_model_len` on
+  attach (errata 7.1 / 7.4, a precheck assumption the owner has not ruled on), so
+  the comparison of the whole `result:` block in 7.4's attach test, which this
+  ticket already carries, is the only one made.
+
