@@ -120,9 +120,13 @@ class Probe(torch.nn.Module):
         """The greedy continuation after call_sep, cut at the first newline and stripped."""
         device = next(self.backbone.parameters()).device
         prompts = [t + call_sep for t in texts]
+        # batched autoregressive generation reads the next-token logits from the
+        # physically last column of the sequence, so the batch must be left-padded
+        # regardless of the tokenizer's stored padding_side (score()'s right-padding,
+        # which its attention_mask.sum(dim=1)-1 rule depends on)
         enc = self.tokenizer(prompts, add_special_tokens=False, truncation=True,
                              max_length=max(self.max_len - max_new, 1), padding=True,
-                             return_tensors="pt").to(device)
+                             padding_side="left", return_tensors="pt").to(device)
         with torch.no_grad():
             out = self.backbone.generate(
                 **enc, do_sample=False, max_new_tokens=max_new,
