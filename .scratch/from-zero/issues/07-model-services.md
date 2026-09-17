@@ -1,6 +1,6 @@
 # 07 the two model services
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 04, 06
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -459,3 +459,24 @@ An implementer that reaches any of these returns BLOCKED with the command.
   non-zero on `score_train_key` / `gen_train_key`.
 
 ## Comments
+
+- 2026-09-17, wave 3 precheck (main session, before dispatch). Two clauses of
+  "What to do" are settled by `.scratch/from-zero/contract-errata.md` (the three
+  entries under "Added by the wave-3 precheck"), and the errata wins over the
+  clause:
+  - Step 5's "`/health` answers within `registry.DEFAULTS["launch_timeout_s"]`":
+    neither service imports `jobs/registry.py` in any spelling (`import
+    jobs.registry`, `from jobs import registry`, `from jobs.registry import ...`).
+    The service's check row is "`/health` answers", asked with a request timeout
+    of its own; the deadline over the whole start belongs to `jobs/launch.py`'s
+    alive check (contracts 7.1's health row, errata 8.1).
+  - Step 4's `--attach-only` comparison of "every keyed column": `GET /v1/models`
+    exposes the served model name (`id`) and `max_model_len` only, so the service
+    compares those two against `cfg.models.agent_row` and refuses on a
+    difference; the comparison of the whole `result:` block is `jobs/launch.py`'s,
+    through the endpoint file's `claims` (7.4). This one is an assumption the
+    owner has not confirmed; report it under concerns.
+  - Known script defect, report it as it is and do not bend code to pass it: the
+    import check near acceptance line 411 reads `.module` on `ast.Import` nodes
+    and raises `AttributeError` (the same defect as ticket 05's `B6` and ticket
+    06's `A16`).

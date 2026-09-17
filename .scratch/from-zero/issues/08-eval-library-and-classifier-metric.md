@@ -1,6 +1,6 @@
 # 08 the eval library and the classifier metric
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02, 03, 04
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -401,3 +401,11 @@ the train run's `done.json` `counts`, and a `fires.parquet` whose `event_id`
 values are a subset of the prediction frame's.
 
 ## Comments
+
+- 2026-09-17, wave 3 precheck (main session, before dispatch). `run` step 2
+  writes `hb.emit(0, total, "item")` before step 4 reads the frame that is the
+  only source of `total`, and defines `total` nowhere. Settled by the errata
+  entry under "Added by the wave-3 precheck": `hb = registry.beat(run_dir, 0)`
+  stays at step 2; the first `emit` moves to right after step 4 and is
+  `hb.emit(0, n_events, "item")` with `n_events` the distinct `event_id` count of
+  `pred_df`, the number step 13 records as `counts["events"]`.

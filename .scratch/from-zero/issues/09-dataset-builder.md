@@ -1,6 +1,6 @@
 # 09 the dataset builder
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02, 03, 04, 05
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -494,3 +494,22 @@ the failure 2.3's per-split `n_tasks` cap and 4.1's `SPLIT_ROLE` map exist to
 prevent, and the one thing a fixture cannot prove.
 
 ## Comments
+
+- 2026-09-17, wave 3 precheck (main session, before dispatch).
+  - The corpus counts quoted in step 4 ("34 of 4,074", "24 ... and 10 ...",
+    "`4074 4040 4040`") were measured before the wave-2 post-merge fix made
+    `split_args` quote-aware. The last entry of
+    `.scratch/from-zero/contract-errata.md` holds the re-measured numbers and
+    wins: 4,074 non-null actions, 4,050 parsed, 4,050 round-tripped, 24 returning
+    None, all 24 code blocks that call no api, in 13 of 315 trajectories. Over p1
+    `counts.events_skipped_no_call` has that one kind of input; the skip-and-count
+    rule itself is unchanged.
+  - `build_call` raises `ValueError` (naming the tool, the key and the value) for
+    a value that needs quoting and ends in an odd number of backslashes. None of
+    the 5,297 argument values of the p1 corpus holds a backslash. The owner has
+    not ruled on it (ticket 05's Comments): let it raise, do not route around it.
+  - Known script defect, report it as it is and do not bend code to pass it:
+    acceptance `F3`'s `unknown_task` variant only removes an id from the split
+    lists, and the builder derives both the requested pairs and the records it
+    reads from those lists, so the run stops at step 5's completeness gate and the
+    unknown-task split gate is never reached by that variant.
