@@ -17,6 +17,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import shlex
 import signal
 import socket
@@ -754,6 +755,20 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
     }
 
 
+_SESSION_NAME_RE = re.compile(r"^.+-[0-9a-f]{12}-\d+$")
+
+
+def _is_repo_session_name(name: str) -> bool:
+    """Whether `name` has the shape this repo's own launcher names a tmux
+    session with, `<stage>-<key>-<piece>` (contracts 2699): a 12-lowercase-
+    hex `key` (the format `key()` returns) followed by a bare piece index.
+    `hosts:` machines are shared cluster machines (3.4), so `live_sessions()`
+    returns every session anyone is running there, under any name; a name
+    with no such shape belongs to some other process on the host, not to
+    this repo, and is never a candidate for 8.6's first orphan case."""
+    return bool(_SESSION_NAME_RE.match(name))
+
+
 def _known_sessions(all_entries) -> set[str]:
     """Every session name recorded in any run's current pieces (`meta.json`
     when it exists, else the start row), across the whole ledger — not just
@@ -877,17 +892,23 @@ def ls(workflow: str | None = None, *, debug: bool = False,
        edited: dict[str, bool] | None = None,
        progress: dict[str, tuple[int, int]] | None = None) -> list[dict]:
     """One folded row per run, verdicts included, plus one synthetic row per
-    live tmux session matching no piece anywhere in the ledger (8.6's
-    `orphan`: "a tmux session of this repo matching no row"). Calls
-    `live_sessions()` whenever the ledger holds any run at all, regardless of
-    the `workflow`/`debug` display filters: an orphan session belongs to no
-    known run by construction, so it has no workflow to match a `workflow=`
-    filter and no non-debug run to satisfy the default `debug=False` filter,
-    and gating the probe on the filtered display set would hide a genuinely
-    live orphaned session whenever that filter happens to pass nothing. Only
-    a truly empty ledger (no run recorded at all) skips the probe, so
-    `run.py ls` and `eval/method_table.table()` against an empty ledger issue
-    no `ssh` at all (8.6, A10)."""
+    live tmux session that has this repo's own session-name shape and
+    matches no piece anywhere in the ledger (8.6's `orphan`: "a tmux session
+    of this repo matching no row"). `hosts:` machines are shared cluster
+    machines (3.4), so `live_sessions()` returns every session anyone is
+    running there; `_is_repo_session_name` is what narrows that raw set down
+    to "of this repo" before the ledger is even consulted, so an unrelated
+    session started by other work on the same host is never reported as this
+    repo's own orphan. Calls `live_sessions()` whenever the ledger holds any
+    run at all, regardless of the `workflow`/`debug` display filters: an
+    orphan session belongs to no known run by construction, so it has no
+    workflow to match a `workflow=` filter and no non-debug run to satisfy
+    the default `debug=False` filter, and gating the probe on the filtered
+    display set would hide a genuinely live orphaned session whenever that
+    filter happens to pass nothing. Only a truly empty ledger (no run
+    recorded at all) skips the probe, so `run.py ls` and
+    `eval/method_table.table()` against an empty ledger issue no `ssh` at
+    all (8.6, A10)."""
     edited = edited or {}
     progress = progress or {}
     all_entries = [e for e in fold(_read_rows()).values() if e["start"] is not None]
@@ -903,7 +924,8 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     rows = [_ls_row(e, sessions, now_ts, edited, progress) for e in entries]
     known = _known_sessions(all_entries)
     host_of = sessions.host_of if isinstance(sessions, _ProbedSessions) else {}
-    for name in sorted(set(sessions) - known):
+    repo_sessions = {n for n in sessions if _is_repo_session_name(n)}
+    for name in sorted(repo_sessions - known):
         rows.append(_orphan_session_row(name, host_of.get(name)))
     rows.sort(key=lambda r: r.get("t", ""), reverse=True)
     return rows
