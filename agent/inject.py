@@ -146,7 +146,7 @@ def step(env: Environment, clients: generate.Clients, cfg, writer: Writer, messa
 
     while True:
         budget = max(1, cfg.generation.max_step_tokens - len(gen_ids))
-        st = generate.stream(clients, cfg, prefix_ids, seed, budget=budget)
+        st = generate.stream(clients, cfg, prefix_ids + gen_ids, seed, budget=budget)
         fired = False
         for delta, ids in st:
             raw += delta

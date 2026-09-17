@@ -26,6 +26,19 @@ def _canonical_json(obj) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 
 
+def _meta_fields(cfg, task_id: str, seed: int | None, env_seed, split: str, arm: str,
+                  task_text: str, piece_i: int) -> dict:
+    """The meta row's shared field set (1.1), task_text aside: the normal write and the exception-guard write both call this."""
+    return dict(
+        stage=cfg._stage, env=cfg.data.env, task_id=task_id, seed=seed,
+        env_seed=env_seed, split=split, arm=arm, instructions=cfg.data.instructions,
+        task_text=task_text, agent_model=cfg.models.agent,
+        generation=_canonical_json(dataclasses.asdict(cfg.generation)),
+        inject=(_canonical_json(dataclasses.asdict(cfg.inject)) if cfg.inject is not None else None),
+        commit=cfg._commit, run_key=cfg._key, owner_session=f"{cfg._stage}-{cfg._key}-{piece_i}",
+    )
+
+
 def _parse_piece(text: str) -> tuple[int, int]:
     i_str, _, n_str = text.partition("/")
     return int(i_str), int(n_str)
@@ -106,14 +119,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
             try:
                 env.open(task_id, seed)
                 task_text = env.task_text
-                writer.row(
-                    "meta", stage=cfg._stage, env=cfg.data.env, task_id=task_id, seed=seed,
-                    env_seed=env.SEED, split=split, arm=arm, instructions=cfg.data.instructions,
-                    task_text=task_text, agent_model=cfg.models.agent,
-                    generation=_canonical_json(dataclasses.asdict(cfg.generation)),
-                    inject=(_canonical_json(dataclasses.asdict(cfg.inject)) if cfg.inject is not None else None),
-                    commit=cfg._commit, run_key=cfg._key, owner_session=f"{cfg._stage}-{cfg._key}-{i}",
-                )
+                writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, task_text, i))
                 meta_written = True
 
                 try:
@@ -157,14 +163,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
             except Exception as exc:  # one task's failure must not take the whole piece down (errata)
                 t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
                 if not meta_written:
-                    writer.row(
-                        "meta", stage=cfg._stage, env=cfg.data.env, task_id=task_id, seed=seed,
-                        env_seed=env.SEED, split=split, arm=arm, instructions=cfg.data.instructions,
-                        task_text="", agent_model=cfg.models.agent,
-                        generation=_canonical_json(dataclasses.asdict(cfg.generation)),
-                        inject=(_canonical_json(dataclasses.asdict(cfg.inject)) if cfg.inject is not None else None),
-                        commit=cfg._commit, run_key=cfg._key, owner_session=f"{cfg._stage}-{cfg._key}-{i}",
-                    )
+                    writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, "", i))
                 writer.row(
                     "final", steps=steps_done, completed=False,
                     abort=f"task_error:{type(exc).__name__}",
