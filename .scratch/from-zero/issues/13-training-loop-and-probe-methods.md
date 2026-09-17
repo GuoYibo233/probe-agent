@@ -706,3 +706,4 @@ command.
   `eval.methods.<m>`, reads its `PROBE_KIND`, or names `eval/methods/<m>.py` in a
   versions list is rewritten by that change to the new home of `match` and to the
   per-method match version; `train/methods/` stays one file per method.
+- 2026-09-18, from gyb (errata "3.3 / 8.6 (what a `VERSION` bump invalidates)"): every file of this ticket that carries `VERSION` also carries, directly above it, the VERSION rule comment block and, directly below it, the column-zero literal `VERSION_HISTORY = {}`. Copy both verbatim from a merged file (`data/probe_input.py` has them once the change `owner/2026-09-18-version-history` has merged); `.scratch/from-zero/spec.md` section 5 states the rule. Wherever this ticket says a `VERSION` enters a key, the number folded is the file's effective version for the stage being keyed, and `_versions` still records the real `VERSION`.

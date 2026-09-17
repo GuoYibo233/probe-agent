@@ -254,3 +254,5 @@ of the construction plan's section 2 and the three end-to-end `--debug` walks of
 its section 4, whose run keys ticket 18's TIMELINE entry quotes.
 
 ## Comments
+
+- 2026-09-18, from gyb (errata "3.3 / 8.6 (what a `VERSION` bump invalidates)"): selfcheck enforces the strict shape the key path leaves lenient. For every file with a column-zero `VERSION`: the VERSION rule comment block sits directly above it with the pinned text; `VERSION_HISTORY` exists at column zero exactly once and is a plain literal; its keys are exactly 2..`VERSION`; every entry has a non-empty `why`; every `stale` value is a tuple of stage names of `schema.STAGES`. A file at `VERSION = 1` has `VERSION_HISTORY = {}`.
