@@ -1,0 +1,28 @@
+# Workflow: collect, build the dataset, train a probe, evaluate it.
+workflow: [sample, build, train, eval]
+
+common:
+  data:   {env: appworld, instructions: v1}
+  models: {agent: gptoss120b}
+  sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
+
+ctool_q06:
+  meta:   {notes: "classification probe, Qwen3-0.6B-Base, full tuning; the theta source for the generating probes"}
+  models: {probe: qwen06}
+  probe:  {method: ctool, tuning: full}
+  train:  {lr: 1.0e-5, epochs: 1}
+  eval:   {risk: [0.10, 0.05]}
+
+cgen_q06:
+  meta:   {notes: "whole-call generating probe on the same dataset; theta is frozen by ctool_q06"}
+  models: {probe: qwen06}
+  probe:  {method: cgen, tuning: full}
+  train:  {lr: 1.0e-5, epochs: 1}
+  eval:   {theta_from: train_probe/ctool_q06}
+
+cparam_q06:
+  meta:   {notes: "argument-generating probe on the same dataset; param_only, so it can never be an inject.probe_gen"}
+  models: {probe: qwen06}
+  probe:  {method: cparam, tuning: full}
+  train:  {lr: 1.0e-5, epochs: 1}
+  eval:   {theta_from: train_probe/ctool_q06}

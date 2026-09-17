@@ -1,0 +1,11 @@
+# The outputs root, the debug subdirectory, the login machine and the cluster
+# inventory. Locations only; nothing here enters a key (contracts 6.3).
+
+root: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs
+debug_subdir: debug
+login_host: shiga          # what `hostname` answers on the machine this repo is typed on
+hosts:
+  - {name: tokyo105, alias: shiga,   cards: 8}
+  - {name: tokyo106, cards: 10}
+  - {name: tokyo107, cards: 4}
+  - {name: tokyo108, alias: saitama, cards: 6}
