@@ -385,3 +385,63 @@ the env mapping); the report; the gates; carries VERSION
 
 No setting name on the command line; the program calls `experimental_settings.schema.load_frozen(run_dir)`
 itself (contracts 2.6).
+
+## Ticket 11 — the agent loop: formats, generation, injection, the task walk
+
+```
+  agent/                  the loop that runs the agent model on tasks. Nothing is added here; a new way to
+                          inject is an entry in inject_format.py, a new injection mechanism is an edit to
+                          inject.py, and loop.py and generate.py change for neither
+    loop.py                 run each task and seed: open, step, parse, act, until the environment reports the
+                            task completed or max_steps is reached; claim tasks across pieces; write the
+                            record. Picks the generation step by the setting: the inject section present ->
+                            inject.step, absent -> generate.step; passes agent/inject.py's
+                            system_text(cfg) into to_messages as extra_developer on every call (7.3, 1.1);
+                            holds no probe code itself; carries VERSION
+      imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py,
+               data/trajectory_record.py, models/agent_models/service.py (client),
+               models/probe_models/service.py (client, for render), agent/generate.py, agent/inject.py,
+               jobs/registry.py. It names no family module and imports models/__init__.py nowhere: it
+               renders through the probe service and compares the family the service echoes against
+               cfg.models.agent_row["family"] (7.2)
+      used by: none (program)
+      reads:   its run directory's settings.yaml, the environment's split task-id files (through
+               data/environments/requested_pairs, whose triples carry the split each task came from,
+               2.3), and the
+               service_agent_<replica>.json / service_probe_0.json endpoint files in its own run
+               directory, whose names it computes from its own --piece index and settings.yaml's
+               replicas (Part 7.4)
+      writes:  task records (jsonl), heartbeat
+      venv:    the environment's (appworld today)
+    generate.py             the plain generation step: stream tokens from the agent model to end of turn;
+                            exposes the token stream so inject.py iterates it instead of copying it. The
+                            baseline path; carries VERSION
+      imports: models/agent_models/service.py (client), models/__init__.py (the family module).
+               The `probe` field of the `clients` dataclass this file declares is annotated `object`,
+               not the probe client class, so this file imports models/probe_models/service.py
+               nowhere (7.3)
+      used by: agent/loop.py, agent/inject.py
+      reads:   -   writes: -   venv: the environment's
+    inject.py               the generation step with the probe: iterate generate's token stream, score at
+                            each cut, on fire get the call, run it early through the environment, write the
+                            result in (inject_format), start a new request from the spliced prefix, roll
+                            back on mismatch. Replaces generate.step when the setting has an inject section;
+                            offers system_text(cfg), the one place a format's system text reaches the
+                            conversation (7.3);
+                            declares the module-level literal ARMS, which is what schema's inject.arm
+                            axis is checked against (5.3); carries VERSION
+      imports: agent/generate.py, agent/inject_format.py, data/probe_input.py, data/trajectory_record.py,
+               data/environments/__init__.py (type only; the object is passed in),
+               models/probe_models/service.py (client), models/__init__.py (the family module).
+               The setting is passed in by loop.py, so this file does not import schema
+      used by: agent/loop.py
+      reads:   -   writes: spec and resume rows, through data/trajectory_record.py
+      venv:    the environment's
+    inject_format.py        the table of the five ways an early result is written into the stream, as the
+                            module-level literal FORMATS whose entries have the four fields of Part 7.3;
+                            schema's inject.format axis is checked against its keys, so a sixth way is one
+                            entry here and one schema value; carries VERSION
+      imports: none
+      used by: agent/inject.py; its keys are cross-checked against schema.py's axis by run.py selfcheck
+      reads:   -   writes: -   venv: any
+```
