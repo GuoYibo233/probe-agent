@@ -111,11 +111,32 @@ ticket, your worktree root).
   the three `models/.../__init__.py`, `models/__init__.py`,
   `eval/method_table.py`, `jobs/registry.py`, `jobs/launch.py` and `run.py` carry
   **no** `VERSION`.
+- **When to bump `VERSION`, and what every bump carries** (errata
+  "3.3 / 8.6"): bump it only when some existing setting would now produce a
+  different output of a stage that lists the file in the stage table of
+  `experimental_settings/schema.py`. A new feature behind a new setting field
+  whose default reproduces the old behaviour, a message, a comment or a report
+  layout does not bump. **Every bump adds one `VERSION_HISTORY` entry**,
+  `{<new version>: {"why": "<one sentence>", "stale": (<stage names>)}}`, where
+  `stale` names the stages (`sample`, `build`, `train`, `eval`, `inject`,
+  `score`) whose existing outputs can no longer be used; **leave `stale` out and
+  every stage is stale**, the safe default an unstated bump takes. The key folds,
+  for each stage, the highest version that made that stage stale, so a bump that
+  leaves a stage usable keeps that stage's run directory, while `_versions` in
+  `settings.yaml` and `meta.json` goes on recording the file's real `VERSION`.
+  When you are unsure whether a stage survives the bump, list the stage. Every
+  file carrying `VERSION` carries, directly above it, the comment block that
+  states this rule, and directly below it the column-zero literal
+  `VERSION_HISTORY = {}` — copy both verbatim from a file that already has them,
+  `data/probe_input.py`, and a new versioned file carries them from its first
+  line. `run.py selfcheck` (ticket 15) enforces the strict shape: one entry with
+  a non-empty `why` for every version from 2 to `VERSION`.
 - **Every module-level literal the loader reads follows the same rule**: column
   zero, exactly once, a plain literal `ast.literal_eval` succeeds on — `STOP`,
   `EFFORTS`, `DEFAULT_EFFORT`, `DEFAULT_DATE`, `NAME`, `END_IDS`, `LORA_TARGETS`,
   `HEAD_LAYER`, `DTYPE`, `INSTRUCTIONS`, `SPLIT_ROLE`, `PROBE_KIND`,
-  `CHECKPOINT_META`, `FORMATS`, `ARMS`. No f-string, no `+`, no comprehension.
+  `CHECKPOINT_META`, `FORMATS`, `ARMS`, `VERSION_HISTORY`. No f-string, no `+`,
+  no comprehension.
 - **No `/home/` and no `/net/` path anywhere in code outside `constants/`.**
   Paths come from `constants/*.yaml` or from `Path(__file__).resolve().parents[n]`.
   `run.py selfcheck` fails on a literal.
