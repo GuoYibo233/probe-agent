@@ -1,6 +1,6 @@
 # 15 run.py selfcheck
 
-Status: claimed
+Status: resolved
 Blocked by: 13, 14
 Spec: .scratch/from-zero/spec.md (sections 1, 2, 3, 4, 5, 7)
 
@@ -546,3 +546,4 @@ its section 4, whose run keys ticket 18's TIMELINE entry quotes.
 ## Comments
 
 - 2026-09-18, from gyb (errata "3.3 / 8.6 (what a `VERSION` bump invalidates)"): selfcheck enforces the strict shape the key path leaves lenient. For every file with a column-zero `VERSION`: the VERSION rule comment block sits directly above it with the pinned text; `VERSION_HISTORY` exists at column zero exactly once and is a plain literal; its keys are exactly 2..`VERSION`; every entry has a non-empty `why`; every `stale` value is a tuple of stage names of `schema.STAGES`. A file at `VERSION = 1` has `VERSION_HISTORY = {}`.
+- 2026-09-19, wave 6 (fork5): resolved. Branch ticket/2026-09-19-wave6/T15, commits db856fb..c21c566 on base f1f849e, merged as 9c85aa0. One fix round (check 4 also enforces the pinned VERSION rule comment block), no open finding, no minor, nothing the review could not verify, no implementer concern. Main-session checks on the merged tree (724db73): `run.py selfcheck` prints `selfcheck: 31 python files, 0 problems`, rc=0; D5 lists the ten subcommands; D6 prints 28 paths and `D6 ok`; D7 prints a 12-hex key per stage for every setting, real and debug, and `D7 ok`. The ticket body was corrected before dispatch (precheck, .scratch/from-zero/sdd/2026-09-19-wave6/precheck.json); six README annotation lines were corrected by this ticket while contracts 0.2 stays as written (open for the owner, errata).

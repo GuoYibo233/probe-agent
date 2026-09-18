@@ -1,6 +1,6 @@
 # 16 the gpu-run and probe-pipeline skills
 
-Status: claimed
+Status: resolved
 Blocked by: 14
 Spec: .scratch/from-zero/spec.md (sections 1, 5, 7, 9)
 
@@ -413,3 +413,5 @@ ticket 17 merges, and runs the three end-to-end `--debug` walks under the skill
 this ticket rewrote.
 
 ## Comments
+
+- 2026-09-19, wave 6 (fork5): resolved. Branch ticket/2026-09-19-wave6/T16, commit 602d5d1 on base f1f849e, merged as 724db73. No fix round, no open finding, no minor. Main-session checks on the merged tree: W1, W2, W3, W5, C7 (exempt range lines 175-197) and C8 (`missing: []`) pass. Could not be verified by the review, checked here: (1) C7/C8 over all of `.claude/` and the three `--debug` walks are the main session's after wave 7 and are not this ticket's; (2) the repo-review skill's Chinese trigger clause is the implementer's own wording (the ticket names no phrases) -- for the owner's eye; (3) repo-review point 1 says the tree is reviewed against `README.md`'s seven principles and does not repeat the file count; no acceptance check reads that phrase, left as it is. Implementer concerns: the skill cites `notes/docs/agents/...`, which exist only after ticket 18's move, as the ticket orders.
