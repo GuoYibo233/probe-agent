@@ -200,14 +200,16 @@ def _pieces_of_row(run_id: str, row: dict, meta_by_run: dict) -> list[dict]:
     return meta.get("pieces") or row.get("pieces") or []
 
 
-def _piece_alive(piece: dict, live_sessions) -> bool:
+def piece_alive(piece: dict, live_sessions) -> bool:
     """A piece is alive when its session is a live one, or — fail-closed,
     3.4/8.0, `jobs/registry._alive_on`'s own rule — when its host's probe
     never answered at all: `registry.live_sessions()` then names that host
     in the returned set's `failed_hosts`, the canonical `hosts:` name (the
     same normalisation `_canonical_host` gives every other host comparison
     in this file). A plain set (no `failed_hosts` attribute) has no failed
-    hosts, so a bare-membership caller sees no change."""
+    hosts, so a bare-membership caller sees no change. Public: `run.py`'s
+    own partial-piece check (2.3/2.4) calls this directly rather than
+    keeping a second copy."""
     host, session = piece.get("host"), piece.get("session")
     if not host or not session:
         return False
@@ -233,7 +235,7 @@ def gate_open_row(open_rows, meta_by_run, live_sessions, now_ts, beats=None) -> 
         row_beats = beats.get(run_id) or {}
 
         for piece in pieces:
-            if _piece_alive(piece, live_sessions):
+            if piece_alive(piece, live_sessions):
                 return (f"refusing to launch {row.get('key')!r}: live session "
                         f"{piece.get('session')!r} on host {piece.get('host')!r}")
 
@@ -250,7 +252,7 @@ def gate_open_row(open_rows, meta_by_run, live_sessions, now_ts, beats=None) -> 
         if age_s < registry.DEFAULTS["launch_timeout_s"]:
             observed_dead = False
             for piece in pieces:
-                alive = _piece_alive(piece, live_sessions)
+                alive = piece_alive(piece, live_sessions)
                 if piece.get("kind") == "cpu":
                     has_emitted = piece.get("pid") is not None
                 else:
@@ -432,7 +434,7 @@ def alive_check(pieces, window_s=30, poll_s=5) -> tuple[bool, list]:
             else:
                 log = Path(p.get("log", ""))
                 grew = log.exists() and log.stat().st_size > initial_size.get(p["index"], 0)
-                session_ok = _piece_alive(p, sessions)
+                session_ok = piece_alive(p, sessions)
                 tb_free = True
                 if log.exists():
                     try:
@@ -600,9 +602,12 @@ def _find_attach_target(agent_row: dict, serving_host):
     return None
 
 
-def _read_beats_for_run(run_dir: Path) -> dict[int, list[float]]:
+def read_beats_for_run(run_dir: Path) -> dict[int, list[float]]:
     """`{piece index: [beat ts, ...]}` over every incarnation of every piece
-    of this run directory (errata: `gate_open_row`'s `beats` argument)."""
+    of this run directory (errata: `gate_open_row`'s `beats` argument).
+    Public: `run.py`'s own CPU-stage gate call (2.3/2.5) reads the same
+    heartbeat files through this function rather than keeping a second
+    copy."""
     hb_dir = run_dir / "heartbeat"
     out: dict[int, list[float]] = {}
     if not hb_dir.is_dir():
@@ -731,7 +736,7 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
         for r in open_rows:
             m = _read_json(Path(r["dir"]) / "meta.json") or {}
             meta_by_run[r["run_id"]] = m
-            beats[r["run_id"]] = _read_beats_for_run(Path(r["dir"]))
+            beats[r["run_id"]] = read_beats_for_run(Path(r["dir"]))
         sessions = registry.live_sessions()
         refusal = gate_open_row(open_rows, meta_by_run, sessions, time.time(), beats)
         if refusal is not None:
