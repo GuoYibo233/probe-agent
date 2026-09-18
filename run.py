@@ -693,9 +693,12 @@ def _owners_with(run_dir: Path, cfg) -> list[dict]:
 
 
 def _record_owner(run_dir: Path, cfg) -> None:
-    """A skip is an ownership event (2.3): add {workflow, setting} to meta.json's owners, under the lock."""
+    """A skip is an ownership event (2.3): add {workflow, setting} to meta.json's owners, under the lock, on the walk that first brings this setting to the directory."""
     with registry.lock():
-        registry.write_meta(run_dir, owners=_owners_with(run_dir, cfg))
+        stored = list((_read_json(run_dir / "meta.json") or {}).get("owners") or [])
+        owners = _owners_with(run_dir, cfg)
+        if owners != stored:
+            registry.write_meta(run_dir, owners=owners)
 
 
 def _fold_stage_extra(run_dir: Path, done: dict) -> None:
