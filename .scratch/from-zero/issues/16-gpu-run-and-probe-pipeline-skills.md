@@ -113,11 +113,12 @@ list. Six numbered points, and nothing else:
    file**, plus `run.py selfcheck` before delivery.
 5. **Extending.** The four places a file is added are
    `data/environments/<env>.py`, `models/agent_models/<family>.py`,
-   `models/probe_models/<backbone>.py`, and the pair `train/methods/<m>.py` +
-   `eval/methods/<m>.py` (0.3). What each extension touches is contracts 0.4's
-   table, and the recipe lives in `README.md`. **This skill points at both and
-   keeps no copy** — the old `references/extending.md` existed because there was
-   no single table; there is one now.
+   `models/probe_models/<backbone>.py`, and `train/methods/<m>.py`, whose eval
+   side is a `PROBE_KIND` and a `MATCH_VERSION` entry plus a `match_<m>`
+   function in `eval/utils/probe_eval.py` (0.3). What each extension touches is
+   contracts 0.4's table, and the recipe lives in `README.md`. **This skill
+   points at both and keeps no copy** — the old `references/extending.md`
+   existed because there was no single table; there is one now.
 6. **Write-back.** Phase E's "write the new method back into the skill" is
    replaced by: the new file's five annotation lines go into `README.md` in the
    same commit, `run.py selfcheck` proves them against the real import graph, and
