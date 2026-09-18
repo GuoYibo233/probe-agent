@@ -1,6 +1,6 @@
 # 16 the gpu-run and probe-pipeline skills
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 14
 Spec: .scratch/from-zero/spec.md (sections 1, 5, 7, 9)
 
@@ -26,7 +26,9 @@ may touch, and nothing else:
 
 Both `description` front-matter lines **keep their Chinese trigger clause** (the
 project CLAUDE.md's one exception) and drop the words "three ledgers" and
-"sampler". Neither file may name a command that `run.py --help` does not list.
+"sampler". Neither file may name a command that `run.py --help` does not list,
+outside the gpu-run skill's one `## What is gone` list (section 1), which the C7
+and C8 checks exempt by that heading.
 
 ### 1. `.claude/skills/gpu-run/SKILL.md`
 
@@ -41,16 +43,21 @@ copied from:
 | 1 | `run.py free` — free cards per host over `constants/path_outputs.yaml`'s `hosts:` list, probed now, never cached, under the busy test of 2.5 | 8.6, 2.5, 6.3 |
 | 2 | commit before launching; the dirty-tree gate is `jobs/launch.git_state(run_dir, allow_dirty)` and refuses without `--allow-dirty`, which writes `dirty.patch` into the run directory; `jobs/runs.jsonl`, `jobs/RESULTS.md` and `*.lock` never count as dirty | 2.5, 1.5 |
 | 3 | the smoke is `--debug` on the **same** setting, not a hand-shrunk copy: `debug.yaml` lays sizes over any setting, the model, the tuning and the code path stay the same, and `debug: true` enters the key, so a debug run can never be mistaken for or reused by a real one | 5.6, 3.4 |
-| 4 | one command: `run.py <workflow> <setting> [--debug]`. It walks the workflow's stage list, freezes `settings.yaml` / `settings_diff.yaml`, takes `runs.jsonl.lock` across the git gate, the launch gate, the attach test, the card reservation, the port assignment and the start-row append, releases it, starts the service pieces, runs the probe service's `check` client for an `inject` run, then the loop pieces — and **stops**, printing the monitoring command. A GPU stage is never waited on | 8.1, 8.6, 2.3, 7.2 |
-| 5 | monitoring is `run.py ls [workflow]`: one folded line per run with the six verdicts (`done`, `dead`, `suspected stall`, `warming up`, `slowed`, `healthy`), the progress pair, the heartbeat age, sessions and cards, and the flag column (`edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`, `orphan`). A person looks when they want to; nothing patrols | 8.5, 8.6 |
-| 6a | wrap-up is re-running the same `run.py` command: it writes `done.json` with the certified `pairs`, appends the finish row, **tears the service pieces down**, and walks on to the next stage. Numbers reach `jobs/RESULTS.md` through `done.json` -> the finish row -> the render; nothing is typed in. Then `run.py table [workflow]`, and one commit carrying `jobs/runs.jsonl` and `jobs/RESULTS.md` with the key in the message | 2.3, 1.5, 8.2, 8.6 |
-| 6b | interruption: `run.py kill <workflow> <setting> <stage>` (writes the `killed` finish row, refuses while another live run is attached to this run's service); a dead piece is `run.py refire <workflow> <setting> <stage> --piece i` (liveness refusal first, claims released, cards re-probed, a launch entry appended, a **warning** when that piece has been launched before — there is **no quota**); "start fresh" is `run.py retry <workflow> <setting> <stage>` | 8.6, 2.3, 2.4 |
+| 4 | one command: `run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]` — the usage line `run.py --help` prints. It walks the stage list of each named setting, and of each child a `sweep:` expands to, one after another, each child with its own key, run directory and registry row. For each it freezes `settings.yaml` / `settings_diff.yaml`, takes `jobs/runs.jsonl.lock` across the git gate, the launch gate, the attach test, the card reservation, the port assignment and the start-row append, starts the service pieces, runs the probe service's `check` client for an `inject` run, then the loop pieces — and **stops that setting's walk**, printing the monitoring command, so one call over several settings or over a sweep parent leaves one launched run per child. A GPU stage is never waited on; a CPU stage runs inline and the walk goes on to the next stage | 8.1, 8.6, 2.3, 7.2 |
+| 5 | monitoring is `run.py ls [workflow] [--debug]`: one folded line per run with the six verdicts (`done`, `dead`, `suspected stall`, `warming up`, `slowed`, `healthy`), progress as `done/total <unit>` and the recent rate, the heartbeat age, sessions and cards, the flag column (`edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`, `orphan`), and — for a run whose key has moved (`edited`) because a file's effective `VERSION` rose — a trailing `stale=<path> VERSION <n>: "<why>"` naming that file and quoting the bump's own `why`. A `behind` run is the other case: its recorded `VERSION` is below the current one but its key still matches, so it stays usable and carries no `stale=` text. A `--debug` run shows only when `--debug` is given, because `ls` drops debug rows by default, so the Phase 3 smoke is monitored with the flag. A person looks when they want to; nothing patrols | 8.5, 8.6 |
+| 6a | wrap-up is re-running the same `run.py` command, and what that re-run does depends on the stage. For `sample` and `inject` the walk finds every requested pair done, writes `done.json` with the certified `pairs`, **tears the run's service pieces down** and appends the `ok` finish row, in that order. For `build` and `train` the stage program wrote `done.json` itself, so the walk only appends the finish row from it when the run still has none, and there are no service pieces to tear down. `eval` and `score` never skip (2.4): the re-run recomputes the whole stage in place and appends that run's own finish row. Then it walks on to the next stage. Numbers reach `jobs/RESULTS.md` through `done.json` -> the finish row -> the render; nothing is typed in. Then `run.py table [workflow] [--debug]`, and one commit carrying `jobs/runs.jsonl` and `jobs/RESULTS.md` with the key in the message | 2.3, 2.4, 1.5, 8.2, 8.6 |
+| 6b | interruption: `run.py kill <workflow> <setting> <stage>` (writes the `killed` finish row, refuses while another live run is attached to this run's service); a dead piece is `run.py refire <workflow> <setting> <stage> --piece i` (liveness refusal first, claims released, cards re-probed, a launch entry appended, a **warning** when that piece already has more than one `launches` entry, counted as the entries whose `pieces` list contains this piece index — there is **no quota**); "start fresh" is `run.py retry <workflow> <setting> <stage>` | 8.6, 2.3, 2.4 |
 | hard rules | `jobs/runs.jsonl` is append-only and `jobs/RESULTS.md` is rendered — never hand-edited; `run.py` and `jobs/launch.py` refuse to run on any host but `login_host`; an agent never starts a GPU process and returns BLOCKED with the ready-to-run command; one key is one directory and `run.py where` prints it | 8.6, 3.4, the branch CLAUDE.md |
 
-The old file is **rewritten, not patched**: lines 19-26 (fixed paths), 27-40
-(Phase 0-1), 41-67 (Phase 2-3), 68-151 (Phase 4 and the three registrations),
-152-182 (Phase 5, the sampler and the incident agent), 183-217 (Phase 6a),
-218-225 (Phase 6b) and 226-236 (hard rules) — that is the whole file.
+The old file is **rewritten, not patched**, front matter included: the
+`description` scalar is lines 3-11 of the current file (`version: 1.0.0` is line
+12, the closing `---` line 13), and it is rewritten so that it keeps its Chinese
+trigger clause and loses "three ledgers" (line 7) and "sampler" (line 8). Then
+the body: lines 14-18 (the title and the one-sentence intro), 19-26 (fixed
+paths), 27-40 (Phase 0-1), 41-67 (Phase 2-3),
+68-151 (Phase 4 and the three registrations), 152-182 (Phase 5, the sampler and
+the incident agent), 183-217 (Phase 6a), 218-225 (Phase 6b) and 226-236 (hard
+rules) — that is the rest of the file, which is 236 lines long.
 
 **One "what is gone" list**, as a single section **whose heading line is exactly
 `## What is gone`** (the acceptance locates it by that text and takes everything
@@ -75,8 +82,10 @@ note); **keep lines 56-97 verbatim** — the kept block starts at
 `Surveyed on: 2026-07-29 (measured, not hearsay).`, then `## Hardware and drivers`
 at line 58, the six known traps and the machines outside the pool. They are the
 measured slow variables the tree asks this file to hold. Cutting at 46 instead
-leaves eight orphaned lines about the machinery this wave retires, and `W1`'s
-sampler-token count would not be zero.
+(that is, keeping 46-97) keeps line 46's `python3 run.py sampler --port 8377`, so
+`W1`'s sampler-token count would not be zero; cutting at 47 gets the token count
+to zero but still leaves eight orphaned lines (47-54) about the machinery this
+wave retires.
 
 `references/launch-methodology.md` is deleted: card picking, sharding and what
 `launch` does are contract text (3.4's placement rules, 2.3's piece rule) and are
@@ -104,36 +113,71 @@ list. Six numbered points, and nothing else:
    default that reproduces the old behaviour.
 3. **The gates are in the programs.** The old `references/gates.md` numbering
    (G1-G24) is retired: every gate is held by the stage that can fail it and is
-   listed in contracts 2.5 — `build`'s record completeness, abort share, call
-   round-trip, split membership and per-split `max_examples`; `train`'s alignment
-   gate; the generator eval's shared-build-key gate; `inject`'s two
-   `run.py`-held gates; `score`'s same-setup and baseline-pair gates; the launch
-   gate and the card reservation.
+   listed in contracts 2.5 as `.scratch/from-zero/contract-errata.md` amends it —
+   `build`'s record completeness, its abort share, its split gates (a task id in
+   two splits, a record's task id in none of the environment's official lists)
+   and its row gates (an empty `text`, a `depth` outside [0, 1], a text whose
+   thinking part is not a prefix of the record's thinking); `train`'s alignment
+   gate; the generator eval's shared-build-key gate; `inject`'s **three**
+   `run.py`-held gates — contracts 2.5's shared-build-key gate and code-currency
+   gate, plus the errata's `5.4 / 2.1` ruling, which compares a `key:`/`dir:`
+   reference's stated `method:` against the referenced train run's frozen
+   `probe.method`; `score`'s same-setup and baseline-pair gates; the launch gate
+   and the card reservation. Two things that read like build gates are not gates,
+   and the skill says so: an event whose call `build_call` refuses, that fails
+   the round-trip gate, or whose non-null action `split_args` cannot parse is
+   skipped and counted under `counts.events_skipped_no_call`; `report.md`
+   carries that count for all three, and one line per event naming the record,
+   the step and the reason for the `build_call`-refusal and round-trip cases
+   only (the errata's two rulings on 2.5, of 2026-09-17 and 2026-09-18 —
+   the build reports a rare data problem and goes on); and `build.max_examples`
+   is a cap per split, applied after the split column is assigned, not a gate.
 4. **The acceptance of any chain change is the `--debug` walk of its workflow
    file**, plus `run.py selfcheck` before delivery.
 5. **Extending.** The four places a file is added are
    `data/environments/<env>.py`, `models/agent_models/<family>.py`,
    `models/probe_models/<backbone>.py`, and `train/methods/<m>.py`, whose eval
    side is a `PROBE_KIND` and a `MATCH_VERSION` entry plus a `match_<m>`
-   function in `eval/utils/probe_eval.py` (0.3). What each extension touches is
-   contracts 0.4's table, and the recipe lives in `README.md`. **This skill
-   points at both and keeps no copy** — the old `references/extending.md`
-   existed because there was no single table; there is one now.
+   function in `eval/utils/probe_eval.py` (the errata's
+   `0.2 / 2.1 / 2.6 (eval/methods/)` ruling of 2026-09-18, which folded the three
+   `eval/methods/` files into that one file). What each extension touches is
+   **`README.md` section 3, "The extension recipes"**, and that one section is
+   the only place this skill points at **for what an extension touches**. **It
+   keeps no copy** — the old `references/extending.md` existed because there was
+   no single table; there is one now. Do not cite contracts 0.3 or 0.4 here:
+   both predate the fold and the renames of 2026-09-18 — 0.3 still names
+   `eval/methods/<m>.py` and counts 34 files, 0.4 still names
+   `eval/methods/<m>.py` and `agent/inject_format.py` — and `notes/` is not
+   rewritten.
 6. **Write-back.** Phase E's "write the new method back into the skill" is
    replaced by: the new file's five annotation lines go into `README.md` in the
    same commit, `run.py selfcheck` proves them against the real import graph, and
    a new axis value is registered in `schema.py` before any YAML may use it.
 
-The whole file is rewritten (lines 18-47 and every phase below them).
+The whole file is rewritten, front matter included. The `description` scalar is
+lines 3-15 of the current file (`version: 1.0.0` is line 16, the closing `---`
+line 17), and it is rewritten to the new chain — `run.py <workflow> <setting>`
+over a workflow file's stage list, extension through `README.md` — keeping its
+Chinese trigger clause and dropping Phase E's write-back, the matrix and cell
+language, and the `collect/annotate/train/eval` stage names (the stages are
+`sample, build, train, eval`). The body below it, lines 18-319, is rewritten too.
 
 ### 3. `.claude/skills/repo-review/SKILL.md` — new
 
 The fixed tree names this file and nothing else in the build writes it, so it is
 this ticket's. The tree's own one line is the whole brief: **"the two-day review:
 an agent reads the tree against the six principles and writes tasks"**. Keep it
-short — it is a procedure, not a second copy of the contracts:
+short — it is a procedure, not a second copy of the contracts.
 
-1. **What it reviews**: the 34-file tree against the owner's principles as
+That quoted line's count is stale, and the quote stays as it is because the fixed
+tree is never reworded: `notes/plans/2026-09-14-structure-from-zero.md`'s opening
+list of principles (lines 11-32, above that document's
+`## Part 1. The file structure` heading) numbers seven and
+`README.md` line 5 opens "Seven principles hold the tree together", and item 1
+below is that list. The `SKILL.md` you write says it reviews against the seven
+principles `README.md` section 1 states, and never writes "six".
+
+1. **What it reviews**: the 31-file tree against the owner's principles as
    `README.md` states them (one experiment is one setting; outputs keyed by
    setting and version; the layer boundaries `data/ models/ agent/ train/ eval/
    jobs/`; `--debug` runs any setting tiny; no near-duplicate and no framework;
@@ -163,8 +207,10 @@ short — it is a procedure, not a second copy of the contracts:
 configs, collect manifests, placement tables, the presets (`configs/presets/`,
 `sweep_preset`, `serve_preset`), and the `DATA.md §7` pre-flight checklist
 reference (its checks are now loader refusals in 5.7 and stage gates in 2.5). All
-four `references/` files are deleted — their content is 0.4, 2.5, 3.3 + 2.2 and
-2.6 respectively, and a second copy in a skill is a copy that rots.
+four `references/` files are deleted — their content is `README.md` section 3
+(`extending.md`; contracts 0.4 says the same but predates the `eval/methods/`
+fold), 2.5, 3.3 + 2.2 and 2.6 respectively, and a second copy in a skill is a
+copy that rots.
 
 ## Acceptance
 
@@ -185,22 +231,27 @@ test ! -e .claude/skills/probe-pipeline/references && echo ok-ppreferences
 wc -l .claude/skills/gpu-run/references/gpu_state.md
 head -1 .claude/skills/gpu-run/references/gpu_state.md
 grep -c 'tokyo105 | shiga' .claude/skills/gpu-run/references/gpu_state.md
-grep -c 'sampler\|8377\|crontab' .claude/skills/gpu-run/references/gpu_state.md
+grep -c 'sampler\|8377\|crontab' .claude/skills/gpu-run/references/gpu_state.md || true
 ```
 Expected: the four `ok-` lines; **`42`** lines (the file was 97 and lines 1-55 are
 gone); a first line reading
 `Surveyed on: 2026-07-29 (measured, not hearsay).`; `1` for the hardware-table
-row; `0` for the sampler tokens.
+row; `0` for the sampler tokens. The last line carries `|| true` on purpose:
+`grep -c` exits 1 when the count is zero, so a bare `grep -c ...` expecting `0`
+would make a correct implementation look like a failed command.
 
 **W2 — the repo-review skill exists and names its output directory.**
 ```bash
 test -f .claude/skills/repo-review/SKILL.md && echo ok-exists
 grep -c '\.scratch/review/issues/' .claude/skills/repo-review/SKILL.md
 grep -c 'run.py selfcheck' .claude/skills/repo-review/SKILL.md
-head -8 .claude/skills/repo-review/SKILL.md
+awk 'NR>1 && /^---$/{exit} {print}' .claude/skills/repo-review/SKILL.md
 ```
 Expected: `ok-exists`; a count of at least `1` for each grep; and a
-`description` front-matter line ending in its Chinese trigger clause.
+`description` front-matter line ending in its Chinese trigger clause. The `awk`
+prints the whole front matter and stops at the closing `---`: a `head -8` cannot
+show the trigger clause, because every skill in this repo has a `description: >-`
+block whose closing `---` is at line 12 or later.
 
 **C7 — no retired command survives in any of the three skills**, outside the
 gpu-run skill's one "what is gone" list. The exempt range is found by its heading
@@ -314,12 +365,46 @@ Expected: each line ending in a count of at least 1.
 **W4 — the trigger clauses survived.** (Numbered `W4`, not `C10`: ticket 18 owns
 `C10`.)
 ```bash
-head -8 .claude/skills/gpu-run/SKILL.md
-head -8 .claude/skills/probe-pipeline/SKILL.md
-head -8 .claude/skills/repo-review/SKILL.md
+awk 'NR>1 && /^---$/{exit} {print}' .claude/skills/gpu-run/SKILL.md
+awk 'NR>1 && /^---$/{exit} {print}' .claude/skills/probe-pipeline/SKILL.md
+awk 'NR>1 && /^---$/{exit} {print}' .claude/skills/repo-review/SKILL.md
 ```
 Expected: each `description` front-matter line still ends with its Chinese
 trigger-phrase clause, and none contains the words "sampler" or "three ledgers".
+Each `awk` prints that file's whole front matter and stops at the closing `---`;
+`head -8` is not used, because it truncates every one of these descriptions
+before the trigger clause and both halves of the Expected sentence would then be
+unverifiable from the pasted output.
+
+**W5 — no bare ledger name in the three skills.** Ticket 17's `C15` scans
+`CLAUDE.md` and every `*.md` under `.claude/` in the next wave, these three
+skill directories included, with no exempt section, and ticket 17 may not edit
+the files this ticket writes. So every ledger and notes file is written with its
+directory here: `jobs/runs.jsonl`, `jobs/runs.jsonl.lock`, `jobs/RESULTS.md`,
+`notes/TIMELINE.md`, `notes/WORKPLAN.md`, `notes/DATA.md`, `notes/plans/`. The
+`## What is gone` list passes as the ticket words it: `ops/jobs.json` and
+`ops/runs.jsonl` carry a `/` before the name and `RUNMETA.json` is not
+`jobs.json`. The pattern list is ticket 17's, copied whole; keep the two
+interchangeable.
+```bash
+"$PR" - <<'PY'
+import pathlib, re, sys
+OLD = [r"(?<![\w/])TIMELINE\.md", r"(?<![\w/])RESULTS\.md",
+       r"(?<![\w/])runs\.jsonl", r"(?<![\w/])jobs\.json",
+       r"(?<![\w/])WORKPLAN\.md", r"(?<![\w/])DATA\.md",
+       r"(?<![\w/.])plans/"]
+bad = []
+for d in (".claude/skills/gpu-run", ".claude/skills/probe-pipeline",
+          ".claude/skills/repo-review"):
+    for p in sorted(pathlib.Path(d).rglob("*.md")):
+        for i, line in enumerate(p.read_text().splitlines(), 1):
+            for pat in OLD:
+                if re.search(pat, line): bad.append((str(p), pat, i))
+for b in bad: print("BARE", *b)
+print("W5", "ok" if not bad else "FAIL"); sys.exit(1 if bad else 0)
+PY
+```
+Expected: exit 0 and `W5 ok`.
 
 ### GPU / main session — not yours
 
