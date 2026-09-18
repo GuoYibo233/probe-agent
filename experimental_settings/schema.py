@@ -240,7 +240,8 @@ STAGES = {
     "projection": ("train.checkpoint_hours",),
     "projection_generator": ("data",),
     "versions": ("train/utils/trainer.py", "train/methods/{method}.py",
-                 "eval/methods/{method}.py", "data/training_data.py", "data/probe_output.py",
+                 "eval/utils/probe_eval.py#MATCH_VERSION.{method}",
+                 "data/training_data.py", "data/probe_output.py",
                  "models/probe_models/base.py", "models/probe_models/{backbone}.py"),
   },
   "eval": {
@@ -249,15 +250,14 @@ STAGES = {
     "upstream": ({"name": "train", "source": "same", "stage": "train", "key": "fold"},
                  {"name": "theta_from.eval", "source": "ref:eval.theta_from",
                   "stage": "eval", "key": "fold", "when": "generator"}),
-    "program": "eval.methods.{method}",
+    "program": "eval.utils.probe_eval",
     "venv": "any",
     "pieces": (("cpu", 1, None),),
     "cards": False,
     "done_writer": "stage",
     "projection": (),
     "projection_generator": ("data",),
-    "versions": ("eval/utils/probe_eval.py", "eval/methods/{method}.py",
-                 "data/probe_output.py"),
+    "versions": ("eval/utils/probe_eval.py", "data/probe_output.py"),
   },
   "inject": {
     "sections": ("data", "models.agent", "generation",
@@ -286,7 +286,8 @@ STAGES = {
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/base.py", "models/probe_models/service.py",
-                 "eval/utils/probe_eval.py", "eval/methods/{probe_score_method}.py"),
+                 "eval/utils/probe_eval.py",
+                 "eval/utils/probe_eval.py#MATCH_VERSION.{probe_score_method}"),
   },
   "score": {
     "sections": ("score",
@@ -616,7 +617,13 @@ def _model_row(table: dict, alias: str) -> dict:
 
 
 def _method_kind(method: str) -> str:
-    return module_literal(f"eval/methods/{method}.py", "PROBE_KIND")
+    """The report shape of a probe method, read out of eval/utils/probe_eval.py's column-zero PROBE_KIND table."""
+    table = module_literal("eval/utils/probe_eval.py", "PROBE_KIND")
+    if method in table:
+        return table[method]
+    raise SchemaError(
+        f"probe.method {method!r} is not a key of PROBE_KIND in eval/utils/probe_eval.py; "
+        f"it holds {sorted(table)}")
 
 
 def _ref_kind(value: Any) -> str:
@@ -1095,18 +1102,38 @@ def _substitute(template: str, setting: Setting) -> str:
         method = _resolve_ref("inject.probe_score", setting.inject.probe_score)[2]
         if method is None:
             raise SchemaError(
-                "inject.probe_score: the referenced setting states no probe.method, so the version "
-                "of its eval method file has no source")
+                "inject.probe_score: the referenced setting states no probe.method, so its "
+                "match version has no source")
         template = template.replace("{probe_score_method}", method)
     return template
 
 
 def versions_of(stage: str, setting: Setting) -> dict:
-    """The 'versions' block of 3.3: module path -> VERSION, read as source text (module path -> int)."""
+    """The 'versions' block of 3.3: entry -> version, read as source text (entry -> int).
+
+    An entry is spelled one of two ways. A bare repo-relative module path takes that whole
+    module's `VERSION`, which is the form of every entry on the sample, build, eval and score
+    rows. An entry spelled `<path>#<TABLE>.<method>` takes one probe method's own version out
+    of the named column-zero table of that module, and enters the key under that same
+    spelling: `train` folds `eval/utils/probe_eval.py#MATCH_VERSION.<method>` and `inject`
+    folds the same entry for its scoring probe's method, so a change to the eval driver, to a
+    report or to another method's match leaves an existing train run's key where it is, while
+    a change to the match its validation metric is computed with re-keys it.
+    """
     out = {}
     for template in STAGES[stage]["versions"]:
-        path = _substitute(template, setting)
-        out[path] = module_version(path)
+        entry = _substitute(template, setting)
+        path, marker, table_entry = entry.partition("#")
+        if marker:
+            table_name, _, method = table_entry.partition(".")
+            table = module_literal(path, table_name)
+            if method not in table:
+                raise SchemaError(
+                    f"{path}: {table_name} has no entry for method {method!r}; "
+                    f"it holds {sorted(table)}")
+            out[entry] = table[method]
+            continue
+        out[entry] = module_version(path)
     return out
 
 
