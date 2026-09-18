@@ -1,5 +1,9 @@
 """Exact match of the generated arguments against the target at the frozen classifier theta.
 
+TODO(gyb, 2026-09-18): owner ruling — the matching rule behind tool_ok,
+params_all_ok and full_call_ok, as match() computes them today, is open. The
+owner decides it later; no logic in this file changes for this ruling.
+
 Today's build drops the `noparam` short-circuit: params_all_ok is the union count over
 both sides' arguments, so a spurious argument on a no-argument target counts wrong
 instead of being automatically true.
