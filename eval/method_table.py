@@ -75,14 +75,18 @@ def _render_md(rows: list[dict]) -> str:
 
 
 def table(workflow: str | None = None, out: Path | None = None, *, debug: bool = False) -> str:
-    """The backbone x method x risk table over the registry's eval rows, one group per setting name
-    (a sweep child's own full name, never its parent), with debug rows included when debug is True."""
+    """The backbone x method x risk table over the registry's eval rows, one group per (setting name,
+    debug flag) pair (a sweep child's own full name, never its parent), with debug rows included when
+    debug is True. registry.ls(workflow, debug=True) drops the debug filter rather than selecting debug
+    rows, so it returns both a --debug walk's rows and any non-debug run of the same setting; keying each
+    group on the row's own debug flag as well as its setting name keeps those two runs in separate groups
+    instead of averaging one real run and one debug run of the same setting into a single cell."""
     all_rows = registry.ls(workflow, debug=debug)
     eval_rows = [row for row in all_rows if row["stage"] == "eval"]
 
-    groups: dict[str, list[dict]] = {}
+    groups: dict[tuple[str, bool], list[dict]] = {}
     for row in eval_rows:
-        groups.setdefault(row["setting"], []).append(row)
+        groups.setdefault((row["setting"], row["flags"]["debug"]), []).append(row)
 
     table_rows = []
     for members in groups.values():

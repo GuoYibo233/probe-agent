@@ -420,9 +420,10 @@ itself (contracts 2.6).
                gate of 2.5)
       writes:  run_report.json, report.md, heartbeat, done.json
       venv:    any
-    method_table.py         the backbone x method table from the registry; one group per setting (a sweep
-                            child's own name, never its parent), reports mean and spread; an optional
-                            debug switch shows debug rows
+    method_table.py         the backbone x method table from the registry; one group per (setting, debug
+                            flag) pair (a sweep child's own name, never its parent, and a debug run never
+                            grouped with a non-debug run of the same setting), reports mean and spread; an
+                            optional debug switch shows debug rows
       offers:  table(workflow: str | None = None, out: Path | None = None, *, debug: bool = False) -> str (8.6)
       imports: experimental_settings/schema.py, jobs/registry.py, eval/utils/probe_eval.py (read_report)
       used by: run.py (the table subcommand, 8.6; this file is not a stage and has no __main__)
@@ -439,12 +440,16 @@ full account, and the owner rulings round 1 for the current state): `method_tabl
 row's own debug flag>)` rather than through the registry listing (an eval's train
 reference may point at a directory the registry never recorded); it prints `?` when
 either the eval row's `meta.json` or the train directory's `meta.json` is missing.
-`table` groups by `row["setting"]` only, never by `row["parent"]`: a sweep's children
-are parallel settings and are never merged into one row. `table`'s `debug` keyword
-switch (default `False`) is passed straight to `registry.ls`, so a debug walk's eval
-rows can be listed on request. A group's `n` column and every rate column render
-`mean ± spread` the same way, the bare value when the group holds one run, and `-`
-when the group holds no report at all.
+`table` groups by `(row["setting"], row["flags"]["debug"])`, never by `row["parent"]`:
+a sweep's children are parallel settings and are never merged into one row. `table`'s
+`debug` keyword switch (default `False`) is passed straight to `registry.ls`, which
+drops its own debug filter rather than selecting debug rows, so a `debug=True` call
+returns a debug walk's rows alongside any non-debug run of the same setting; keying
+each group on the row's own debug flag as well as its setting name keeps those two
+runs apart instead of averaging one real run and one debug run of the same setting
+into a single cell. A group's `n` column and every rate column render `mean ± spread`
+the same way, the bare value when the group holds one run, and `-` when the group
+holds no report at all.
 
 ## Ticket 11 — the agent loop: formats, generation, injection, the task walk
 
