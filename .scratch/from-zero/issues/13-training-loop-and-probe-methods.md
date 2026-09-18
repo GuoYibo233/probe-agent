@@ -1,6 +1,6 @@
 # 13 the training loop and the three probe methods
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 02, 03, 04, 05, 06, 08, 10
 Spec: .scratch/from-zero/spec.md (sections 2, 3, 4, 5, 6, 7)
 
@@ -712,3 +712,4 @@ command.
   `eval/utils/probe_eval.py#MATCH_VERSION.<method>` in place of a per-method
   file's `VERSION`. `train/methods/` stays one file per method.
 - 2026-09-18, from gyb (errata "3.3 / 8.6 (what a `VERSION` bump invalidates)"): every file of this ticket that carries `VERSION` also carries, directly above it, the VERSION rule comment block and, directly below it, the column-zero literal `VERSION_HISTORY = {}`. Copy both verbatim from a merged file (`data/probe_input.py` has them once the change `owner/2026-09-18-version-history` has merged); `.scratch/from-zero/spec.md` section 5 states the rule. Wherever this ticket says a `VERSION` enters a key, the number folded is the file's effective version for the stage being keyed, and `_versions` still records the real `VERSION`.
+- 2026-09-18, wave 5 precheck (main session of wave 5, session new1-97; record in `.scratch/from-zero/sdd/2026-09-18-wave5/precheck.json`). The change `owner/2026-09-18-version-history` is merged (39b3d60): `data/probe_input.py` carries the rule block and `VERSION_HISTORY = {}`, and the train row of the stage table folds `train/utils/trainer.py`, `train/methods/{method}.py` and `eval/utils/probe_eval.py#MATCH_VERSION.{method}`. Every function this ticket imports exists on the merge base with the signature the ticket names. The read-only hook refuses any Bash command line that names `experimental_settings` or a settings yaml together with a write word; none of this ticket's acceptance commands does.
