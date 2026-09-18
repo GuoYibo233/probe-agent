@@ -1409,29 +1409,6 @@ def _merge_request_fields(doc: dict, existing: dict, sections: set[str]) -> None
             doc[sec]["tasks"] = old_tasks + [t for t in new_tasks if t not in old_tasks]
 
 
-def _keep_recorded_versions(current: dict, recorded: dict, run_dir: Path) -> dict:
-    """The `_versions` block of a directory that is written into a second time (errata "3.3 / 8.6").
-
-    A bump whose VERSION_HISTORY entry leaves this stage usable keeps this stage's key, so one
-    run directory now holds output that two real VERSIONs of the same module produced. That
-    block is the record of which program made the output, so every entry the directory already
-    recorded keeps the version its existing output was produced under, and every difference is
-    printed, naming the module and both numbers. The launch that is starting records its own
-    real versions in its `runs.jsonl` start row (8.1), which is where the per-launch pairs of
-    commit and versions live; `_commit` is rewritten on every launch, as 3.4 requires, because
-    2.5's `last/` resume rule compares a checkpoint against the commit of the launch that reads
-    it.
-    """
-    out = dict(current)
-    for module, version in recorded.items():
-        if module in current and current[module] != version:
-            print(f"schema.freeze: {run_dir} holds output produced under {module} VERSION "
-                  f"{version} and this launch runs VERSION {current[module]}; the directory "
-                  f"keeps {version}")
-            out[module] = version
-    return out
-
-
 def _projection_sections(stage: str, setting: Setting) -> set[str]:
     entry = STAGES[stage]
     sections = {t.split(".", 1)[0] for t in entry["sections"]}
@@ -1446,11 +1423,7 @@ def _projection_sections(stage: str, setting: Setting) -> set[str]:
 
 
 def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: str) -> None:
-    """The stage projection of 3.4, plus the _ block of 1.5; writes both files through a temporary name.
-
-    On a re-freeze of a directory that already holds this key's settings, 3.4 merges the
-    non-keyed request fields and `_keep_recorded_versions` keeps the recorded `_versions`.
-    """
+    """The stage projection of 3.4, plus the _ block of 1.5; writes both files through a temporary name."""
     run_dir = Path(run_dir)
     sections = _projection_sections(stage, setting)
 
@@ -1479,8 +1452,6 @@ def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: 
                 f"freeze: {run_dir} already holds settings for a different key under stage {stage!r}")
         existing_settings = yaml.safe_load(settings_path.read_text()) or {}
         _merge_request_fields(doc, existing_settings, sections)
-        doc["_versions"] = _keep_recorded_versions(
-            doc["_versions"], existing_settings.get("_versions") or {}, run_dir)
 
     _atomic_write_yaml(settings_path, doc)
     _atomic_write_yaml(diff_path, diff)
