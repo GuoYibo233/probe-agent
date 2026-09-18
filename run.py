@@ -408,7 +408,8 @@ def _format_ls_row(row: dict, stale: str = "") -> str:
     setting_name = row.get("setting") or "-"
     status = row.get("status") or "-"
     done, total = row.get("progress", (0, 0))
-    unit = row.get("unit") or "item"
+    # The unit comes from the beats (8.4), so a run that has not beaten yet has none to print.
+    unit = f" {row['unit']}" if row.get("unit") else ""
     rate = row.get("recent_rate")
     rate_str = f"{rate:.3g}/s" if rate is not None else "-"
     beat_age = row.get("beat_age_s")
@@ -418,7 +419,7 @@ def _format_ls_row(row: dict, stale: str = "") -> str:
     pieces = row.get("pieces") or []
     piece_str = "; ".join(_format_piece(p) for p in pieces) or "-"
     line = (f"{run_id}  stage={stage}  {workflow_name}/{setting_name}  status={status}  "
-            f"progress={done}/{total} {unit}  rate={rate_str}  beat={beat_str}  "
+            f"progress={done}/{total}{unit}  rate={rate_str}  beat={beat_str}  "
             f"flags={flag_str}  pieces={piece_str}")
     if stale:
         line += f"  stale={stale}"
