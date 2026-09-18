@@ -440,3 +440,12 @@ values are a subset of the prediction frame's.
   runs), EVAL-3 (an empty test split writes a `frozen` block of zeros with a
   `[0.0, 0.0]` interval and no refusal), EVAL-4 (the first-crossing comparison
   runs in float32).
+- 2026-09-18, the `eval/methods/` fold (main session of wave 4, gyb's ruling,
+  merged as `f13f0ad`; errata, the entry "0.2 / 2.1 / 2.6 (`eval/methods/`) ...
+  done"). `eval/methods/ctool.py` is gone: its `match` is
+  `eval/utils/probe_eval.match_ctool`, its report is the classifier branch of
+  `probe_eval.report`, and the eval program is `eval.utils.probe_eval` with
+  the method read off the frozen setting. This ticket's "selfcheck lines that
+  apply later" note that `probe_eval.py` imports neither `data/__init__.py`
+  nor `data/environments/__init__.py` is now half false: the generator report
+  it carries imports `open_env`, and `README.md`'s imports line says so.

@@ -735,3 +735,13 @@ requested pair count.
   run and a real run of one setting render as two rows no column tells apart
   (the thirteen pinned columns carry no setting name); the errata entries the
   rulings overturn are superseded by the rulings block appended after them.
+- 2026-09-18, the `eval/methods/` fold (main session of wave 4, gyb's ruling,
+  merged as `f13f0ad`). `eval/methods/cgen.py` and `cparam.py` are gone: their
+  `match` functions are `eval/utils/probe_eval.match_cgen` and `match_cparam`
+  (one shared comparison body, the `TODO(gyb, 2026-09-18)` on the matching
+  rule carried once), their report is the generator branch of
+  `probe_eval.report`, and the eval program is `eval.utils.probe_eval`. Sections
+  1 and 2 of this ticket and `A1`, `A3`, `A6`, `A7` name the old files and
+  stay as the record of what was built; the fold report
+  (`sdd/2026-09-18-wave4/eval-methods-fold-report.md`) reran `A6a`, `A6` and
+  `A7` under the new names with the same numbers.

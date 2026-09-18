@@ -472,3 +472,15 @@ disk (5.3); each `any` file imports under every interpreter of the `venvs:` map
 ## Comments
 
 - 2026-09-17 wave 1 closeout: implementation passed review in 0 fix rounds, branch `ticket/2026-09-17-wave1/T01` (base `cca3ca3`, head `035b188`), merged as `9776fd9`. Main-session checks run after the merge: all seven YAML files parse; `M-G1` hosts inventory matches `constants/path_outputs.yaml` (tokyo105 answers `shiga` with 8 cards, tokyo106 10, tokyo107 4, tokyo108 answers `saitama` with 6); `M-G2` the outputs root's `debug/` subtree is writable from tokyo106. Not done: arming the hook in `.claude/settings.json` and its harness test (`A7`), scheduled after wave 2 by the construction plan because wave 2 still writes `models/table.yaml`. Implementer concerns (verbatim in `sdd/2026-09-17-wave1/wave-result.json`): the `note` fields of `constants/path_models.yaml` cite `legacy/` as the ticket's verbatim block specifies, to be checked against ticket 18's grep; the hook's Bash check is a substring match over the whole command line, so it can block a command that only mentions a protected file name. Report `sdd/2026-09-17-wave1/T01-report.md`.
+- 2026-09-18, the hook is armed (main session of wave 4, on gyb's order in its
+  own conversation). The snippet is merged into `.claude/settings.json` beside
+  the existing `worktree` entry. `A7` rerun on the script before arming: the
+  eight lines as expected and the refusal message verbatim. Through the
+  harness: an `Edit` on the debug overlay file was refused with the hook's
+  message and the file is unchanged. The hook's Bash test is a substring match
+  over the whole command line, so a command that mentions a protected path
+  together with `cp `, `tee`, `>` or another listed word is refused whatever it
+  does; the main session's own heredoc that quoted a setting file's name was
+  refused the same minute. Fixture scripts that copy the settings directory
+  with `cp -a` are refused from now on and must build their tree from
+  `git show`; ticket 15's selfcheck and ticket 04's fixture need that change.
