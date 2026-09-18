@@ -504,3 +504,67 @@ gate, the launch gate, card placement, port assignment, the piece and service co
 ```
 
 A library with no entry-point guard: `run.py` is the one command that calls it.
+
+## Ticket 13 — the training loop and the three probe methods
+
+```
+  train/                  train a probe. A training hyperparameter is a YAML line; a new training practice
+                          is a schema.py value plus an edit to trainer.py; a new probe method is a file
+                          under methods/ plus a schema.py value
+    utils/
+      trainer.py            the training loop every method shares: settings -> arguments, seed, backbone,
+                            tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment
+                            gate; and its last step, the probe run over the prediction splits with one
+                            prediction row per example written to disk (the probe is still on the card). A
+                            directory with the checkpoint and no predictions is continued from that step;
+                            carries VERSION
+        imports: experimental_settings/schema.py, models/__init__.py, models/probe_models/base.py,
+                 data/training_data.py, data/probe_output.py, jobs/registry.py; [torch]
+        used by: train/methods/{ctool,cgen,cparam}.py
+        reads:   example (parquet), the checkpoint layout
+        writes:  best/, last/, train_log.jsonl, align_check.json, train_done.json, predictions.parquet,
+                 consumed.json (the example parquet it read), heartbeat, done.json (whose stage_extra
+                 carries the class order, copied out of best/meta.json)
+        venv:    probe
+    methods/                one file per probe method, each complete on its own: its batches or packing, its
+                            target, its loss, its validation metric; the files do not import each other, so
+                            a fix in one is repeated in the other and the alignment test, run per method,
+                            catches the one that was missed
+      ctool.py              the classification probe: its batches, its head use, its loss, its validation
+                            accuracy; carries VERSION
+        imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py,
+                 eval/utils/probe_eval.py (match_ctool, for its validation metric); [torch]
+        used by: none (program)
+        reads:   -   writes: - (everything goes through trainer.py)
+        venv:    probe
+      cgen.py               the call-generating probe: its packing, its instance strings and target, its loss
+                            positions, its exact-match validation; carries VERSION
+        imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py,
+                 eval/utils/probe_eval.py (match_cgen, for its validation metric),
+                 data/environments/__init__.py (open_env, for the environment that match takes, 2.6); [torch]
+        used by: none (program)
+        reads:   -   writes: - (everything goes through trainer.py)
+        venv:    probe
+      cparam.py             the argument-generating probe: its own packing and strings, the arguments as the
+                            target; carries VERSION
+        imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py,
+                 eval/utils/probe_eval.py (match_cparam, for its validation metric),
+                 data/environments/__init__.py (open_env, for the environment that match takes, 2.6); [torch]
+        used by: none (program)
+        reads:   -   writes: - (everything goes through trainer.py)
+        venv:    probe
+  tests/test_packed_loss.py    the packed loss equals a row-by-row loss kept in its plainest form, one test
+                          per probe method, on a tiny CPU model built from the Qwen3-0.6B-Base config;
+                          venv: probe
+```
+
+`eval/utils/probe_eval.py`'s own `PROBE_KIND` and `MATCH_VERSION` tables (Ticket 08's line, folded per
+gyb's 2026-09-18 eval-fold ruling) are what the three method files' own `PROBE_KIND` literal is checked
+against, and what a train run's key folds in place of a per-method eval file's `VERSION`.
+
+`train.warmup_ratio` defaults to `0.0` in `experimental_settings/schema.py`, while the previous
+pipeline hardcoded `int(steps * 0.05)`; a setting that wants that schedule writes `warmup_ratio: 0.05`.
+
+`train/methods/<m>.py`'s `batches(df, tok, cfg)` takes no epoch: one call is one pass over `df`, and
+`trainer.py`'s step loop calls it fresh once per epoch, so the per-epoch shuffle variation lives in which
+epoch calls it rather than in an argument the hook reads.
