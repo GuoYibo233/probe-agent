@@ -2,6 +2,7 @@
 # venv: probe
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -208,6 +209,122 @@ def readme_entries(path) -> dict[str, dict[str, str]]:
         if m and current is not None:
             entries[current][m.group(1)] = m.group(2)
     return entries
+
+
+# ---------------------------------------------------------------------------
+# selfcheck's three parsers (ticket 15; contracts 0.1, 3.3): imports_of reads
+# the real import graph with ast, and literal_of / literal_keys_of read a
+# module-level literal the same way schema.py's loader does, but as a
+# standalone reader that never raises past run.py's own message. A caller
+# that wants a reader failure to stop only its own check, not the whole run,
+# catches the SystemExit these two raise around each call.
+# ---------------------------------------------------------------------------
+
+
+def _dotted_to_relpath(name: str) -> str | None:
+    """The repo file a dotted module name names, as a path relative to ROOT, or None when it names no repo file (imports_of's rule 1)."""
+    candidate = name.replace(".", "/") + ".py"
+    if (ROOT / candidate).is_file():
+        return candidate
+    candidate = name.replace(".", "/") + "/__init__.py"
+    if (ROOT / candidate).is_file():
+        return candidate
+    return None
+
+
+def imports_of(path) -> set[str]:
+    """The dotted module names this file imports, parsed with ast -- every Import and ImportFrom, including the ones inside a function body, never an import of the module itself.
+
+    An ImportFrom's `module.name` is joined into one dotted name only when that join is a repo
+    file (rule 1 of check 2's normalisation): `from data import training_data` yields
+    `data.training_data` because `data/training_data.py` exists, but `from dataclasses import
+    dataclass` yields the bare `dataclasses`, because neither `dataclasses/dataclass.py` nor
+    `dataclasses/dataclass/__init__.py` is in this repo. Without the rule a `from <package>
+    import <module>` import of a repo file would be invisible to the graph.
+    """
+    tree = ast.parse(Path(path).read_text())
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                for alias in node.names:
+                    names.add(alias.name)
+                continue
+            for alias in node.names:
+                joined = f"{node.module}.{alias.name}"
+                names.add(joined if _dotted_to_relpath(joined) else node.module)
+    return names
+
+
+def _repo_imports(path) -> set[str]:
+    """`imports_of(path)` restricted to repo files, as relative path strings (check 2's 'imports_of restricted to repo files')."""
+    out: set[str] = set()
+    for name in imports_of(path):
+        rel = _dotted_to_relpath(name)
+        if rel:
+            out.add(rel)
+    return out
+
+
+def _column_zero_assign_values(path, name: str) -> list:
+    """Every column-zero ast.Assign of `name` in the module at path, as its value node -- literal_of and literal_keys_of match ast.Assign only, never ast.AnnAssign (3.3's literal rule; check 5's SCHEMA/DEFAULTS/REQUIRED are the annotated exception, read separately)."""
+    tree = ast.parse(Path(path).read_text())
+    matches = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and node.col_offset == 0:
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    matches.append(node.value)
+    return matches
+
+
+def literal_of(path, name: str):
+    """The one column-zero ast.Assign of `name` in the module at path, ast.literal_eval'd -- never an import.
+
+    Refuses, naming the file and the name, on zero matches, more than one match, and a value
+    ast.literal_eval refuses (contracts 3.3): each of the three is a failure, reported the same
+    way every other selfcheck problem is. `FORMATS` in agent/injected_text_formats.py is a dict
+    of Format(...) calls, which is exactly the value this function must refuse rather than
+    fall back on -- literal_keys_of is its reader.
+    """
+    matches = _column_zero_assign_values(path, name)
+    if not matches:
+        raise SystemExit(f"selfcheck: {path}: no column-zero assignment to {name!r}")
+    if len(matches) > 1:
+        raise SystemExit(
+            f"selfcheck: {path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+    try:
+        return ast.literal_eval(matches[0])
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as ex:
+        raise SystemExit(f"selfcheck: {path}: {name!r}'s value is not a literal ({ex})") from ex
+
+
+def literal_keys_of(path, name: str) -> list:
+    """The keys of the one column-zero ast.Dict display assigned to `name` in the module at path, ast.literal_eval'd one at a time, in source order.
+
+    For a name whose value ast.literal_eval refuses whole -- FORMATS' Format(...) calls -- but
+    whose keys are themselves literals. Refuses, naming the file and the name, on zero matches,
+    more than one match, a value that is not a dict display, and a key ast.literal_eval refuses.
+    """
+    matches = _column_zero_assign_values(path, name)
+    if not matches:
+        raise SystemExit(f"selfcheck: {path}: no column-zero assignment to {name!r}")
+    if len(matches) > 1:
+        raise SystemExit(
+            f"selfcheck: {path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+    value = matches[0]
+    if not isinstance(value, ast.Dict):
+        raise SystemExit(f"selfcheck: {path}: {name!r} is not a dict display, cannot read its keys")
+    keys = []
+    for key_node in value.keys:
+        try:
+            keys.append(ast.literal_eval(key_node))
+        except (ValueError, TypeError, SyntaxError) as ex:
+            raise SystemExit(f"selfcheck: {path}: {name!r} has a non-literal key ({ex})") from ex
+    return keys
 
 
 # ---------------------------------------------------------------------------
@@ -632,8 +749,699 @@ def cmd_sync(rest: list[str]) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# selfcheck (8.6, ticket 15): the tree's self-consistency checks, in the
+# contract's order. Every _check_N function returns a list of problem lines;
+# cmd_selfcheck prints them all and exits 1 on any, so one file's failure
+# never hides another's.
+# ---------------------------------------------------------------------------
+
+PY_ROOTS = ("constants", "experimental_settings", "data", "models", "agent", "train", "eval", "jobs")
+
+
+def _tree_python_files() -> list[str]:
+    """Every .py file under run.py and the tree's code roots, as paths relative to ROOT (check 1)."""
+    files = ["run.py"]
+    for root_name in PY_ROOTS:
+        for p in sorted((ROOT / root_name).rglob("*.py")):
+            files.append(str(p.relative_to(ROOT)))
+    return sorted(files)
+
+
+def _stems_of(dirname: str) -> set[str]:
+    """The .py file stems directly under dirname, __init__ excluded (check 3's set comparisons)."""
+    return {p.stem for p in (ROOT / dirname).glob("*.py") if p.stem != "__init__"}
+
+
+def _table_rows() -> dict:
+    with open(ROOT / "models" / "table.yaml") as f:
+        return yaml.safe_load(f)
+
+
+def _families(role: str) -> list[str]:
+    """The distinct `family` values of models/table.yaml's rows of this role, sorted (checks 3, 4, 7, 10)."""
+    return sorted({row["family"] for row in _table_rows().values() if row.get("role") == role})
+
+
+def _safe_literal(problems: list[str], check: str, path, name: str):
+    """literal_of(path, name), appending its SystemExit message to problems and returning None on a refusal, so one bad file never stops the rest of a check's loop."""
+    try:
+        return literal_of(path, name)
+    except SystemExit as ex:
+        problems.append(f"{check}: {ex}")
+        return None
+
+
+# --- check 1: the README's file list against the tree -----------------------
+
+
+def _check_1(entries: dict, tree_files: list[str]) -> list[str]:
+    problems = []
+    for f in tree_files:
+        if f not in entries:
+            problems.append(f"check 1: {f} is a .py file in the tree with no README entry")
+    for name in entries:
+        if not (ROOT / name).exists():
+            problems.append(f"check 1: README entry {name!r} names a path that does not exist")
+    return problems
+
+
+# --- check 2: every annotation line against the real import graph -----------
+
+
+_BRACKET_RE = re.compile(r"\[[^\[\]]*\]")
+_BRACE_RE = re.compile(r"\{([^{}]*)\}")
+
+
+def _drop_bracket_groups(text: str) -> str:
+    """Drop every bracketed third-party list, whole (rule 1: '[polars, numpy]' and the like)."""
+    return _BRACKET_RE.sub("", text)
+
+
+def _split_top_level(text: str) -> list[str]:
+    """Split text on every ',' and ';' that sits outside every (), [] and {} (rule 2 step 2)."""
+    fragments = []
+    depth = 0
+    current: list[str] = []
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+            current.append(ch)
+        elif ch in ")]}":
+            depth -= 1
+            current.append(ch)
+        elif ch in ",;" and depth == 0:
+            fragments.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    fragments.append("".join(current))
+    return fragments
+
+
+def _drop_parenthetical(fragment: str) -> tuple[str, str | None]:
+    """Drop a fragment's parenthetical, from its first '(' to its last ')' (rule 2 step 3): (path text, parenthetical text or None)."""
+    start = fragment.find("(")
+    if start == -1:
+        return fragment.strip(), None
+    end = fragment.rfind(")")
+    if end == -1 or end < start:
+        return fragment.strip(), None
+    return fragment[:start].strip(), fragment[start + 1:end].strip()
+
+
+def _expand_braces(path_text: str) -> list[str]:
+    """Expand one brace alternation into one path per alternative (rule 2 step 4); a fragment with none is itself the only entry."""
+    m = _BRACE_RE.search(path_text)
+    if not m:
+        return [path_text]
+    return [path_text[:m.start()] + alt.strip() + path_text[m.end():] for alt in m.group(1).split(",")]
+
+
+def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]]]:
+    """One README imports:/used by: value, parsed into (plain entries, by-name fragments) per check 2's five-step rule (rule 2); the caller has already handled the 'none (program)' and '(as their package)' whole-line spellings of rule 3.
+
+    A plain entry survives steps 1-5 as exactly a repo file path. A by-name fragment's
+    parenthetical starts 'by name' (rule 3) and is returned separately, dropped from the plain
+    equality either way.
+    """
+    normal: set[str] = set()
+    by_name: list[tuple[str, str]] = []
+    for fragment in _split_top_level(_drop_bracket_groups(raw)):
+        path_text, paren_text = _drop_parenthetical(fragment)
+        if not path_text:
+            continue
+        if paren_text is not None and paren_text.startswith("by name"):
+            by_name.append((path_text, paren_text))
+            continue
+        for candidate in _expand_braces(path_text):
+            candidate = candidate.strip()
+            if candidate and (ROOT / candidate).exists():
+                normal.add(candidate)
+    return normal, by_name
+
+
+def _has_dynamic_import_call(path) -> bool:
+    """Whether the module at path holds an importlib.import_module(...) call anywhere, ast.walk over the whole tree (rule 3's by-name existence test)."""
+    tree = ast.parse((ROOT / path).read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "import_module":
+            return True
+        if isinstance(func, ast.Name) and func.id == "import_module":
+            return True
+    return False
+
+
+def _has_fstring_dynamic_import(path, prefix: str) -> bool:
+    """Whether path holds an importlib.import_module(...) call whose one argument is an f-string beginning with prefix (models/probe_models/base.py's <backbone> placeholder, rule 3)."""
+    tree = ast.parse((ROOT / path).read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        is_import_module = ((isinstance(func, ast.Attribute) and func.attr == "import_module")
+                             or (isinstance(func, ast.Name) and func.id == "import_module"))
+        if not (is_import_module and node.args):
+            continue
+        arg = node.args[0]
+        if isinstance(arg, ast.JoinedStr) and arg.values:
+            first = arg.values[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(prefix):
+                return True
+    return False
+
+
+def _has_main_block(path) -> bool:
+    """Whether the module at path holds an `if __name__ == ...:` block at any depth (rule 3's 'none (program)' test)."""
+    tree = ast.parse((ROOT / path).read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and isinstance(node.test, ast.Compare):
+            left = node.test.left
+            if isinstance(left, ast.Name) and left.id == "__name__":
+                return True
+    return False
+
+
+def _check_by_name_fragments(current_file: str, label: str, fragments: list[tuple[str, str]]) -> list[str]:
+    """Rule 3's by-name spelling: a fragment naming a real file is checked for existence and a dynamic-import call; the one placeholder spelling (models/probe_models/base.py's own <backbone>.py) is checked by its own f-string rule instead."""
+    problems = []
+    for path_text, _paren in fragments:
+        if "<" in path_text:
+            if current_file == "models/probe_models/base.py" and label == "imports":
+                if not _has_fstring_dynamic_import(current_file, "models.probe_models."):
+                    problems.append(
+                        f"check 2: {current_file}: no importlib.import_module f-string call beginning "
+                        "'models.probe_models.' for its by-name backbone import")
+            else:
+                problems.append(f"check 2: {current_file} {label}: unrecognised by-name placeholder {path_text!r}")
+            continue
+        if not (ROOT / path_text).is_file():
+            problems.append(f"check 2: {current_file} {label}: by-name entry {path_text} does not exist")
+        elif not _has_dynamic_import_call(path_text):
+            problems.append(
+                f"check 2: {current_file} {label}: by-name entry {path_text} holds no importlib.import_module call")
+    return problems
+
+
+def _check_package_marker(current_file: str, label: str, raw: str) -> list[str]:
+    """Rule 3's '(as their package)' spelling: the whole used by: line's named set must equal the .py files of the marker's own directory, __init__.py excluded."""
+    if label != "used by":
+        return [f"check 2: {current_file}: '(as their package)' on an {label}: line"]
+    text = raw[:raw.rfind("(as their package)")]
+    named = {t.strip() for t in text.split(",") if t.strip()}
+    directory = Path(current_file).parent
+    real = {str(p.relative_to(ROOT)) for p in sorted((ROOT / directory).glob("*.py")) if p.name != "__init__.py"}
+    if named != real:
+        return [f"check 2: {current_file} used by: package marker names {sorted(named)}, "
+                f"directory {directory} holds {sorted(real)}"]
+    return []
+
+
+def _check_2(tree_files: list[str], entries: dict) -> list[str]:
+    problems: list[str] = []
+    imports_map = {f: _repo_imports(f) for f in tree_files}
+    used_by_map: dict[str, set[str]] = {f: set() for f in tree_files}
+    for f, imps in imports_map.items():
+        for target in imps:
+            used_by_map.setdefault(target, set()).add(f)
+    graphs = {"imports": imports_map, "used by": used_by_map}
+
+    for f in tree_files:
+        entry = entries.get(f, {})
+        for label, graph in graphs.items():
+            raw = entry.get(label)
+            if raw is None:
+                problems.append(f"check 2: {f} has no {label}: line")
+                continue
+            raw = raw.strip()
+            if raw == "none (program)":
+                if label != "used by":
+                    problems.append(f"check 2: {f}: 'none (program)' on an {label}: line")
+                    continue
+                if graph.get(f):
+                    problems.append(
+                        f"check 2: {f}: used by: none (program), but imported by {sorted(graph[f])}")
+                if not _has_main_block(f):
+                    problems.append(f"check 2: {f}: used by: none (program), but has no __main__ block")
+                continue
+            if raw.endswith("(as their package)"):
+                problems.extend(_check_package_marker(f, label, raw))
+                continue
+            normal, by_name = _parse_annotation(raw)
+            actual = graph.get(f, set())
+            if normal != actual:
+                problems.append(
+                    f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
+            problems.extend(_check_by_name_fragments(f, label, by_name))
+    return problems
+
+
+# --- check 3: every axis literal against the files behind it ----------------
+
+
+def _check_3() -> list[str]:
+    problems: list[str] = []
+    axes = schema.AXES
+
+    try:
+        fmt_keys = tuple(literal_keys_of("agent/injected_text_formats.py", "FORMATS"))
+    except SystemExit as ex:
+        problems.append(f"check 3: {ex}")
+        fmt_keys = None
+    if fmt_keys is not None and tuple(axes["inject.format"]) != fmt_keys:
+        problems.append(
+            f"check 3: schema.AXES['inject.format'] {tuple(axes['inject.format'])} != "
+            f"agent/injected_text_formats.py FORMATS keys {fmt_keys}")
+
+    arms = _safe_literal(problems, "check 3", "agent/step_with_probe.py", "ARMS")
+    if arms is not None and tuple(axes["inject.arm"]) != tuple(arms):
+        problems.append(
+            f"check 3: schema.AXES['inject.arm'] {tuple(axes['inject.arm'])} != "
+            f"agent/step_with_probe.py ARMS {tuple(arms)}")
+
+    probe_kind = _safe_literal(problems, "check 3", "eval/utils/probe_eval.py", "PROBE_KIND")
+    match_version = _safe_literal(problems, "check 3", "eval/utils/probe_eval.py", "MATCH_VERSION")
+    for m in axes["probe.method"]:
+        if probe_kind is not None and m not in probe_kind:
+            problems.append(f"check 3: schema.AXES['probe.method'] value {m!r} is not a key of PROBE_KIND")
+        if match_version is not None and m not in match_version:
+            problems.append(f"check 3: schema.AXES['probe.method'] value {m!r} is not a key of MATCH_VERSION")
+    method_stems = _stems_of("train/methods")
+    if set(axes["probe.method"]) != method_stems:
+        problems.append(
+            f"check 3: schema.AXES['probe.method'] {set(axes['probe.method'])} != "
+            f"train/methods/ stems {method_stems}")
+
+    env_stems = _stems_of("data/environments")
+    if set(axes["data.env"]) != env_stems:
+        problems.append(
+            f"check 3: schema.AXES['data.env'] {set(axes['data.env'])} != data/environments/ stems {env_stems}")
+
+    instructions_union: set = set()
+    split_role_union: set = set()
+    for env in sorted(env_stems):
+        path = f"data/environments/{env}.py"
+        instr = _safe_literal(problems, "check 3", path, "INSTRUCTIONS")
+        if instr is not None:
+            instructions_union |= set(instr)
+        split_role = _safe_literal(problems, "check 3", path, "SPLIT_ROLE")
+        if split_role is not None:
+            split_role_union |= set(split_role)
+    if not set(axes["data.instructions"]) <= instructions_union:
+        problems.append(
+            f"check 3: schema.AXES['data.instructions'] {set(axes['data.instructions'])} is not within "
+            f"the environments' INSTRUCTIONS keys {instructions_union}")
+    for axis_name in ("sample.split", "inject.split"):
+        if not set(axes[axis_name]) <= split_role_union:
+            problems.append(
+                f"check 3: schema.AXES[{axis_name!r}] {set(axes[axis_name])} is not within "
+                f"the environments' SPLIT_ROLE keys {split_role_union}")
+
+    effort_union: set = set()
+    for fam in _families("agent"):
+        efforts = _safe_literal(problems, "check 3", f"models/agent_models/{fam}.py", "EFFORTS")
+        if efforts is not None:
+            effort_union |= set(efforts)
+    if not set(axes["generation.effort"]) <= effort_union:
+        problems.append(
+            f"check 3: schema.AXES['generation.effort'] {set(axes['generation.effort'])} is not within "
+            f"the family modules' EFFORTS {effort_union}")
+    return problems
+
+
+# --- check 4: one VERSION per stage-table module, one literal apiece --------
+
+
+def _resolve_versions_entry(entry: str) -> list[str]:
+    """One `versions` tuple entry of schema.STAGES, resolved to the concrete file(s) it names: drop the @stage/#table.name tail, then expand whichever of the four templates the remaining path holds (5.2's resolution, check 4)."""
+    path = entry.split("@")[0].split("#")[0]
+    rows = _table_rows()
+    agent_fams = sorted({r["family"] for r in rows.values() if r.get("role") == "agent"})
+    probe_fams = sorted({r["family"] for r in rows.values() if r.get("role") == "probe"})
+    outs = [path]
+    for token, values in (
+        ("{env}", schema.AXES["data.env"]),
+        ("{method}", schema.AXES["probe.method"]),
+        ("{probe_score_method}", schema.AXES["probe.method"]),
+        ("{family}", agent_fams),
+        ("{backbone}", probe_fams),
+    ):
+        if token in path:
+            outs = [path.replace(token, v) for v in values]
+    return outs
+
+
+def _stage_table_files() -> set[str]:
+    named: set[str] = set()
+    for row in schema.STAGES.values():
+        for entry in row["versions"]:
+            named |= set(_resolve_versions_entry(entry))
+    return named
+
+
+# The VERSION rule comment block pinned directly above every column-zero VERSION
+# assignment in the 22 stage-table files (errata "3.3 / 8.6", gyb 2026-09-18):
+# word-for-word identical in all of them, checked by _check_version_comment below.
+_VERSION_RULE_COMMENT = (
+    '# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).',
+    "# Bump VERSION only when some existing setting would now produce a different output of a stage",
+    "# that lists this file in the stage table of experimental_settings/schema.py. A new feature",
+    "# behind a new setting field whose default reproduces the old behaviour, a message, a comment",
+    "# or a report layout does not bump.",
+    '# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",',
+    '# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,',
+    '# score) whose existing outputs can no longer be used; leave "stale" out and every stage is',
+    "# stale. The key folds the highest version that made a stage stale, so a bump that leaves a",
+    "# stage usable keeps that stage's run directory. When unsure, list the stage.",
+)
+
+
+def _version_assign_lineno(path) -> int | None:
+    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
+    tree = ast.parse(Path(path).read_text())
+    matches = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and node.col_offset == 0
+        and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets)
+    ]
+    if len(matches) != 1:
+        return None
+    return matches[0].lineno
+
+
+def _check_version_comment(path) -> list[str]:
+    """The VERSION rule comment block sits directly above the file's VERSION assignment, word for word (errata '3.3 / 8.6', gyb 2026-09-18)."""
+    problems: list[str] = []
+    lineno = _version_assign_lineno(path)
+    if lineno is None:
+        return problems
+    lines = Path(path).read_text().splitlines()
+    start = lineno - 1 - len(_VERSION_RULE_COMMENT)
+    if start < 0:
+        problems.append(
+            f"check 4: {path}: the VERSION rule comment block is missing directly above VERSION (line {lineno})")
+        return problems
+    above = tuple(lines[start:lineno - 1])
+    if above != _VERSION_RULE_COMMENT:
+        problems.append(
+            f"check 4: {path}: the lines directly above VERSION (line {lineno}) do not match the pinned VERSION rule comment block")
+    return problems
+
+
+def _check_version_and_history(path: str) -> list[str]:
+    """One file's VERSION rule comment (pinned text, directly above), VERSION (an int) and VERSION_HISTORY (errata '3.3 / 8.6'): keys exactly 2..VERSION, every entry's why non-empty, every stale a tuple of schema.STAGES names."""
+    problems: list[str] = []
+    problems.extend(_check_version_comment(path))
+    version = _safe_literal(problems, "check 4", path, "VERSION")
+    if version is None:
+        return problems
+    if isinstance(version, bool) or not isinstance(version, int):
+        problems.append(f"check 4: {path}: VERSION is a {type(version).__name__}, expected an int")
+        return problems
+    history = _safe_literal(problems, "check 4", path, "VERSION_HISTORY")
+    if history is None:
+        return problems
+    if not isinstance(history, dict):
+        problems.append(f"check 4: {path}: VERSION_HISTORY is a {type(history).__name__}, expected a mapping")
+        return problems
+    expected_keys = set(range(2, version + 1))
+    if set(history) != expected_keys:
+        problems.append(f"check 4: {path}: VERSION_HISTORY keys {sorted(history)} != expected {sorted(expected_keys)}")
+    stage_names = set(schema.STAGES)
+    for entry_version, entry in history.items():
+        if not isinstance(entry, dict):
+            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}] is not a mapping")
+            continue
+        if not entry.get("why"):
+            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}] has no non-empty 'why'")
+        stale = entry.get("stale")
+        if stale is None:
+            continue
+        if not isinstance(stale, tuple):
+            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}]['stale'] is a "
+                             f"{type(stale).__name__}, expected a tuple")
+        elif not set(stale) <= stage_names:
+            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}]['stale'] names "
+                             f"{sorted(set(stale) - stage_names)}, not one of {sorted(stage_names)}")
+    return problems
+
+
+def _check_4() -> list[str]:
+    problems: list[str] = []
+    named = _stage_table_files()
+    for path in sorted(named):
+        if not (ROOT / path).exists():
+            problems.append(f"check 4: {path} is named by the stage table's versions but does not exist")
+            continue
+        problems.extend(_check_version_and_history(path))
+
+    for method in sorted(_stems_of("train/methods")):
+        path = f"train/methods/{method}.py"
+        _safe_literal(problems, "check 4", path, "PROBE_KIND")
+        _safe_literal(problems, "check 4", path, "CHECKPOINT_META")
+    for fam in _families("agent"):
+        path = f"models/agent_models/{fam}.py"
+        for name in ("STOP", "EFFORTS", "DEFAULT_EFFORT", "DEFAULT_DATE"):
+            _safe_literal(problems, "check 4", path, name)
+    for fam in _families("probe"):
+        path = f"models/probe_models/{fam}.py"
+        _safe_literal(problems, "check 4", path, "LORA_TARGETS")
+    for env in sorted(_stems_of("data/environments")):
+        path = f"data/environments/{env}.py"
+        for name in ("INSTRUCTIONS", "SPLIT_ROLE"):
+            _safe_literal(problems, "check 4", path, name)
+    return problems
+
+
+# --- check 5: SCHEMA / DEFAULTS / REQUIRED in each format file --------------
+
+
+FORMAT_FILES = ("data/trajectory_record.py", "data/training_data.py", "data/probe_output.py")
+
+
+def _column_zero_ann_or_assign(tree, name: str) -> list:
+    """Every column-zero ast.Assign or ast.AnnAssign whose target's bare id is `name` (check 5 matches the target's id, never ast.unparse(target), so a subscript target like DEFAULTS['n_inject'] = 0 is not a second match)."""
+    matches = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and node.col_offset == 0:
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.col_offset == 0:
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == name:
+                matches.append(node.value)
+    return matches
+
+
+def _check_5() -> list[str]:
+    problems: list[str] = []
+    for path in FORMAT_FILES:
+        tree = ast.parse((ROOT / path).read_text())
+        nodes: dict[str, object] = {}
+        for name in ("SCHEMA", "DEFAULTS", "REQUIRED"):
+            matches = _column_zero_ann_or_assign(tree, name)
+            if len(matches) != 1:
+                problems.append(
+                    f"check 5: {path}: {len(matches)} column-zero bindings of {name!r}, expected exactly one")
+                continue
+            nodes[name] = matches[0]
+        if "SCHEMA" not in nodes or "REQUIRED" not in nodes:
+            continue
+        schema_node = nodes["SCHEMA"]
+        if not isinstance(schema_node, ast.Dict):
+            problems.append(f"check 5: {path}: SCHEMA is not a dict display")
+            continue
+        try:
+            schema_cols = {ast.literal_eval(k) for k in schema_node.keys}
+        except (ValueError, TypeError, SyntaxError) as ex:
+            problems.append(f"check 5: {path}: SCHEMA has a non-literal key ({ex})")
+            continue
+        required_node = nodes["REQUIRED"]
+        if not (isinstance(required_node, ast.Call) and isinstance(required_node.func, ast.Name)
+                and required_node.func.id == "frozenset" and required_node.args):
+            problems.append(f"check 5: {path}: REQUIRED is not a frozenset(...) call")
+            continue
+        try:
+            required_names = ast.literal_eval(required_node.args[0])
+        except (ValueError, TypeError, SyntaxError) as ex:
+            problems.append(f"check 5: {path}: REQUIRED's argument is not a literal ({ex})")
+            continue
+        missing = set(required_names) - schema_cols
+        if missing:
+            problems.append(f"check 5: {path}: REQUIRED names {sorted(missing)}, which SCHEMA does not declare")
+    return problems
+
+
+# --- check 6: the two PROBE_KIND declarations of a method -------------------
+
+
+def _check_6() -> list[str]:
+    problems: list[str] = []
+    probe_kind = _safe_literal(problems, "check 6", "eval/utils/probe_eval.py", "PROBE_KIND")
+    if probe_kind is None:
+        return problems
+    for method in sorted(_stems_of("train/methods")):
+        path = f"train/methods/{method}.py"
+        own = _safe_literal(problems, "check 6", path, "PROBE_KIND")
+        if own is None:
+            continue
+        other = probe_kind.get(method)
+        if own != other:
+            problems.append(
+                f"check 6: {path}'s PROBE_KIND {own!r} != eval/utils/probe_eval.py "
+                f"PROBE_KIND[{method!r}] {other!r}")
+    return problems
+
+
+# --- check 7: DEFAULT_EFFORT a member of its own EFFORTS, or both empty -----
+
+
+def _check_7() -> list[str]:
+    problems: list[str] = []
+    for fam in _families("agent"):
+        path = f"models/agent_models/{fam}.py"
+        efforts = _safe_literal(problems, "check 7", path, "EFFORTS")
+        default_effort = _safe_literal(problems, "check 7", path, "DEFAULT_EFFORT")
+        if efforts is None or default_effort is None:
+            continue
+        if efforts == () and default_effort is None:
+            continue
+        if default_effort not in efforts:
+            problems.append(f"check 7: {path}: DEFAULT_EFFORT {default_effort!r} is not in EFFORTS {efforts}")
+    return problems
+
+
+# --- check 8: models/table.yaml's family and weights alias ------------------
+
+
+def _check_8() -> list[str]:
+    problems: list[str] = []
+    rows = _table_rows()
+    with open(ROOT / "constants" / "path_models.yaml") as f:
+        aliases = yaml.safe_load(f)
+    subdir_of_role = {"agent": "agent_models", "probe": "probe_models"}
+    for alias, row in rows.items():
+        role = row.get("role")
+        family = row.get("family")
+        subdir = subdir_of_role.get(role)
+        if subdir is None:
+            problems.append(f"check 8: models/table.yaml[{alias!r}]: role {role!r} is not 'agent' or 'probe'")
+            continue
+        path = f"models/{subdir}/{family}.py"
+        if not (ROOT / path).is_file():
+            problems.append(
+                f"check 8: models/table.yaml[{alias!r}]: family {family!r} names {path}, which does not exist")
+        weights = (row.get("result") or {}).get("weights")
+        if weights not in aliases:
+            problems.append(
+                f"check 8: models/table.yaml[{alias!r}]: result.weights {weights!r} is not an alias of "
+                "constants/path_models.yaml")
+    return problems
+
+
+# --- check 9: no /home/ or /net/ path in code outside constants/ ------------
+
+
+_FORBIDDEN_ROOTS = ("/" + "home/", "/" + "net/")   # split so this check's own source never matches itself
+
+
+def _check_9(tree_files: list[str]) -> list[str]:
+    problems: list[str] = []
+    for path in tree_files:
+        if path.startswith("constants/"):
+            continue
+        tree = ast.parse((ROOT / path).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if any(root in node.value for root in _FORBIDDEN_ROOTS):
+                    problems.append(
+                        f"check 9: {path}: a string literal names an absolute path outside constants/: "
+                        f"{node.value!r}")
+    return problems
+
+
+# --- check 10: any files under every venv; family modules under probe+vllm --
+
+
+def _module_name(rel_path: str) -> str:
+    if rel_path.endswith("/__init__.py"):
+        return rel_path[: -len("/__init__.py")].replace("/", ".")
+    return rel_path[:-3].replace("/", ".")
+
+
+def _import_under(interpreter: str, rel_path: str) -> str | None:
+    """None on a clean `import <module>` under interpreter with ROOT as cwd, else a message naming the failure's last stderr line."""
+    dotted = _module_name(rel_path)
+    proc = subprocess.run(
+        [interpreter, "-c", f"import {dotted}"], cwd=str(ROOT), capture_output=True, text=True)
+    if proc.returncode == 0:
+        return None
+    tail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"exit {proc.returncode}"
+    return f"{rel_path}: import under {interpreter} failed: {tail}"
+
+
+def _check_10(entries: dict) -> list[str]:
+    problems: list[str] = []
+    venvs = _venvs_config()
+    for path, entry in entries.items():
+        if not path.endswith(".py"):
+            continue
+        venv_value = (entry.get("venv") or "").strip()
+        if not venv_value.startswith("any"):
+            continue
+        for interp in venvs.values():
+            msg = _import_under(interp, path)
+            if msg:
+                problems.append(f"check 10: {msg}")
+    for fam in _families("agent"):
+        path = f"models/agent_models/{fam}.py"
+        for name in ("probe", "vllm"):
+            interp = venvs.get(name)
+            if interp is None:
+                problems.append(f"check 10: constants/path_datasets.yaml's venvs: map has no {name!r} entry")
+                continue
+            msg = _import_under(interp, path)
+            if msg:
+                problems.append(f"check 10: {msg}")
+    return problems
+
+
+# --- check 11: no workflow file's stem is a reserved subcommand name --------
+
+
+def _check_11() -> list[str]:
+    problems: list[str] = []
+    for path in sorted((ROOT / "experimental_settings").glob("*.yaml")):
+        if path.stem in RESERVED_SUBCOMMANDS:
+            problems.append(
+                f"check 11: experimental_settings/{path.name}: stem {path.stem!r} is a reserved subcommand name")
+    return problems
+
+
 def cmd_selfcheck(rest: list[str]) -> int:
-    raise SystemExit("selfcheck arrives in ticket 15")
+    entries = readme_entries(ROOT / "README.md")
+    tree_files = _tree_python_files()
+    problems: list[str] = []
+    problems += _check_1(entries, tree_files)
+    problems += _check_2(tree_files, entries)
+    problems += _check_3()
+    problems += _check_4()
+    problems += _check_5()
+    problems += _check_6()
+    problems += _check_7()
+    problems += _check_8()
+    problems += _check_9(tree_files)
+    problems += _check_10(entries)
+    problems += _check_11()
+    for line in problems:
+        print(line)
+    print(f"selfcheck: {len(tree_files)} python files, {len(problems)} problems")
+    return 1 if problems else 0
 
 
 # ---------------------------------------------------------------------------

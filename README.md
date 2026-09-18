@@ -126,7 +126,7 @@ data/trajectory_record.py — the record one task run leaves: six row kinds in o
 
 data/training_data.py — the row build writes per cut: the record and cut it came from, the text the probe sees, and all three probe methods' targets.
   imports: data/__init__.py; [polars]
-  used by: data/build_training_dataset.py (write), train/utils/trainer.py (read), train/methods/{ctool,cgen,cparam}.py (their target column)
+  used by: data/build_training_dataset.py (write), train/utils/trainer.py (read)
   reads:   example (parquet)
   writes:  example (parquet)
   venv:    any
@@ -194,7 +194,7 @@ models/probe_models/__init__.py — empty package marker, so the client half of 
 
 models/probe_models/base.py — the probe class every backbone shares: load, save, score a prefix, generate a call; owns the classification head and the checkpoint layout.
   imports: models/__init__.py; models/probe_models/<backbone>.py (by name, inside load()); [torch, transformers, peft]
-  used by: train/utils/trainer.py, train/methods/{ctool,cgen,cparam}.py, models/probe_models/service.py (inside serve())
+  used by: train/utils/trainer.py, models/probe_models/service.py (inside serve())
   reads:   the checkpoint layout, including the class order in best/meta.json
   writes:  the checkpoint layout
   venv:    probe
@@ -207,7 +207,7 @@ models/probe_models/qwen.py — Qwen's tokenizer quirks, pad token, head attach 
   venv:    probe
 
 models/probe_models/service.py — both ends of the probe service: the HTTP server that scores, generates, encodes, decodes and renders, plus the check client and the loop's client.
-  imports: models/__init__.py; experimental_settings/schema.py (load_frozen, for the check client's expected values); models/probe_models/base.py inside serve(); [http.server, transformers and torch inside serve()]
+  imports: models/__init__.py; experimental_settings/schema.py (load_frozen, for the check client's expected values); models/probe_models/base.py (inside serve()); [http.server, transformers and torch inside serve()]
   used by: agent/run_tasks.py (client: render), agent/step_with_probe.py (client: score, generate, encode, decode); jobs/launch.py starts it as a piece, which is a tmux command and not an import
   reads:   the checkpoint directories named on its command line, including each one's best/meta.json; the run directory's settings.yaml, the check client only
   writes:  service_probe_0.json and its piece log in the run directory
@@ -253,21 +253,21 @@ train/utils/trainer.py — the training loop every method shares: settings -> ar
   venv:    probe
 
 train/methods/ctool.py — the classification probe: its batches, its head use, its loss, its validation accuracy.
-  imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py, eval/utils/probe_eval.py (match_ctool); [torch]
+  imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_ctool); [torch]
   used by: none (program)
   reads:   -
   writes:  - (everything goes through trainer.py)
   venv:    probe
 
 train/methods/cgen.py — the call-generating probe: its packing, its instance strings and target, its loss positions, its exact-match validation.
-  imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py, eval/utils/probe_eval.py (match_cgen), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
+  imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_cgen), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
   used by: none (program)
   reads:   -
   writes:  - (everything goes through trainer.py)
   venv:    probe
 
 train/methods/cparam.py — the argument-generating probe: its own packing and strings, the arguments as the target.
-  imports: train/utils/trainer.py, models/probe_models/base.py, data/training_data.py, eval/utils/probe_eval.py (match_cparam), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
+  imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_cparam), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
   used by: none (program)
   reads:   -
   writes:  - (everything goes through trainer.py)
