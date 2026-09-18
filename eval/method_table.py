@@ -1,4 +1,4 @@
-"""Render the backbone x method x risk table from the registry's eval rows, grouped by sweep parent, mean and spread over each group's runs.
+"""Render the backbone x method x risk table from the registry's eval rows, one group per setting, mean and spread over each group's runs.
 """
 from __future__ import annotations
 
@@ -21,9 +21,11 @@ def _method_of(row: dict) -> str:
     return diff.get("probe.method", schema.SECTION_CLASSES["probe"]().method)
 
 
-def _backbone_of(all_rows: list[dict], row: dict) -> str:
+def _backbone_of(row: dict) -> str:
     """An eval row's diff never carries models.probe (STAGES["eval"]'s projection is probe.method plus eval),
-    so the backbone is read off the train row the eval run's own meta.json names."""
+    so the backbone is read off the train run directory the eval run's own meta.json names, located with
+    schema.run_dir_of rather than through the registry listing (an eval's train reference may point at a
+    directory the registry never recorded)."""
     meta_path = Path(row["dir"]) / "meta.json"
     if not meta_path.exists():
         return "?"
@@ -31,11 +33,14 @@ def _backbone_of(all_rows: list[dict], row: dict) -> str:
     train_key = (meta.get("upstream") or {}).get("train")
     if train_key is None:
         return "?"
-    for other in all_rows:
-        if other["stage"] == "train" and other.get("key") == train_key:
-            diff = other.get("diff") or {}
-            return diff.get("models.probe", schema.SECTION_CLASSES["models"]().probe)
-    return "?"
+    debug = row.get("flags", {}).get("debug", False)
+    train_dir = schema.run_dir_of("train", train_key, debug=debug)
+    train_meta_path = train_dir / "meta.json"
+    if not train_meta_path.exists():
+        return "?"
+    train_meta = json.loads(train_meta_path.read_text())
+    diff = train_meta.get("diff") or {}
+    return diff.get("models.probe", schema.SECTION_CLASSES["models"]().probe)
 
 
 def _fmt(values: list[float | None], decimals: int = 4) -> str:
@@ -69,19 +74,23 @@ def _render_md(rows: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def table(workflow: str | None = None, out: Path | None = None) -> str:
-    """The backbone x method x risk table over every eval row of the (non-debug) registry, grouped by sweep parent."""
-    all_rows = registry.ls(workflow, debug=False)
+def table(workflow: str | None = None, out: Path | None = None, *, debug: bool = False) -> str:
+    """The backbone x method x risk table over the registry's eval rows, one group per (setting name,
+    debug flag) pair (a sweep child's own full name, never its parent), with debug rows included when
+    debug is True. registry.ls(workflow, debug=True) drops the debug filter rather than selecting debug
+    rows, so it returns both a --debug walk's rows and any non-debug run of the same setting; keying each
+    group on the row's own debug flag as well as its setting name keeps those two runs in separate groups
+    instead of averaging one real run and one debug run of the same setting into a single cell."""
+    all_rows = registry.ls(workflow, debug=debug)
     eval_rows = [row for row in all_rows if row["stage"] == "eval"]
 
-    groups: dict[str, list[dict]] = {}
+    groups: dict[tuple[str, bool], list[dict]] = {}
     for row in eval_rows:
-        group_key = row.get("parent") or row.get("setting")
-        groups.setdefault(group_key, []).append(row)
+        groups.setdefault((row["setting"], row["flags"]["debug"]), []).append(row)
 
     table_rows = []
     for members in groups.values():
-        backbone = _backbone_of(all_rows, members[0])
+        backbone = _backbone_of(members[0])
         method = _method_of(members[0])
 
         reports = []
