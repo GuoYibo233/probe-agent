@@ -205,17 +205,34 @@ def batches(df, tok, cfg):
 
 
 def loss(probe, batch):
-    """Weighted cross-entropy sum over this batch's decision rows -- the unnormalised weighted sum, since a per-batch mean is not additive across the alignment gate's sum (2.6)."""
+    """Weighted cross-entropy sum over this batch's decision rows -- the unnormalised weighted sum, since a per-batch mean is not additive across the alignment gate's sum (2.6). Every tensor built beside the model's outputs is built on the device those outputs came back on: a batch is packed on the CPU while the backbone sits on the run's card."""
     out = probe.forward(batch)
-    y = torch.tensor([probe.labels.index(t) for t in batch["target"]], dtype=torch.long)
+    device = out.logits.device
+    y = torch.tensor([probe.labels.index(t) for t in batch["target"]], dtype=torch.long,
+                     device=device)
     ce = F.cross_entropy(out.logits.float(), y, reduction="none")
-    return (ce * batch["weight"]).sum()
+    return (ce * batch["weight"].to(device)).sum()
 
 
 def reference_loss(probe, df):
-    """The same weighted cross-entropy sum, one example row per sequence, in its plainest form: tokenize each row's text alone, right-pad, a plain 2-D mask, no position_ids."""
+    """The same weighted cross-entropy sum, one example row per sequence, in its plainest form: tokenize each row's text alone, right-pad, a plain 2-D mask, no position_ids.
+
+    It scores the rows `batches` keeps and no others: an event whose longest text tokenizes past
+    the probe's max_len is dropped whole here too. The alignment gate divides both sides by the
+    same row count, so a row only one side scores is a difference the gate reports as a packing
+    bug in a correctly packed run.
+    """
     tok = probe.tokenizer
-    rows = df.to_dicts()
+    max_len = probe.max_len
+    rows = []
+    for _event_id, group in df.group_by("event_id", maintain_order=True):
+        event_rows = group.sort("cut_index").to_dicts()
+        longest = max(event_rows, key=lambda r: len(r["text"]))["text"]
+        if len(tok(longest, add_special_tokens=False, truncation=False)["input_ids"]) > max_len:
+            continue
+        rows.extend(event_rows)
+    if not rows:
+        return torch.zeros(())
     ids_list = [tok(r["text"], add_special_tokens=False, truncation=False)["input_ids"] for r in rows]
     length = max((len(x) for x in ids_list), default=1)
     input_ids = torch.zeros((len(rows), length), dtype=torch.long)
@@ -227,8 +244,9 @@ def reference_loss(probe, df):
         event_end[i] = torch.tensor([i, max(len(ids) - 1, 0)])
     batch = {"input_ids": input_ids, "attention_mask": attention_mask, "event_end": event_end}
     out = probe.forward(batch)
-    y = torch.tensor([probe.labels.index(r["tool"]) for r in rows], dtype=torch.long)
-    w = torch.tensor([float(r["weight"]) for r in rows], dtype=torch.float32)
+    device = out.logits.device
+    y = torch.tensor([probe.labels.index(r["tool"]) for r in rows], dtype=torch.long, device=device)
+    w = torch.tensor([float(r["weight"]) for r in rows], dtype=torch.float32, device=device)
     ce = F.cross_entropy(out.logits.float(), y, reduction="none")
     return (ce * w).sum()
 

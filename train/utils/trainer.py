@@ -31,9 +31,10 @@ from jobs import registry
 VERSION = 1
 VERSION_HISTORY = {}
 
-# Behaviour change worth stating here (construction plan): train.warmup_ratio defaults to 0.0
-# in experimental_settings/schema.py; the previous pipeline hardcoded a warmup of 5% of steps.
-# A setting that wants that schedule writes warmup_ratio: 0.05 explicitly.
+# The learning-rate schedule, stated here because a reader looks for it: train.warmup_ratio
+# defaults to 0.05 in experimental_settings/schema.py, the share of steps the previous pipeline
+# hardcoded, so a setting that says nothing warms over the first 5% of its steps and a setting
+# that wants no warmup writes warmup_ratio: 0.0 explicitly.
 
 LOG_EVERY = 50   # a step line and a heartbeat beat land every this many optimizer steps; a module constant, changes no number
 
@@ -97,16 +98,17 @@ def _epoch_cfg(cfg, epoch: int):
     return epoch_cfg
 
 
-def _batches_with_epoch_end(batch_iter):
-    """Pair each batch with whether it is the last physical block of the last logical minibatch
-    the iterator yields, found by one-item lookahead -- robust to however many events a method's
-    batches() drops (overlong events, unassembled targets, ...), unlike a minibatch count
-    computed ahead of time from the split's raw event count."""
+def _batches_with_flags(batch_iter):
+    """Pair each batch with the two facts one-item lookahead gives: whether it is the last physical
+    block of its own logical minibatch, and whether it is the last block the iterator yields, which
+    is the end of the epoch. Both are read off the lookahead rather than from a minibatch count
+    computed ahead of time from the split's raw event count, which is wrong by however many events
+    a method's batches() drops (overlong events, unassembled targets, ...)."""
     prev = next(batch_iter, None)
     while prev is not None:
         nxt = next(batch_iter, None)
-        is_epoch_end = nxt is None or nxt["mb"] != prev["mb"]
-        yield prev, is_epoch_end
+        is_mb_end = nxt is None or nxt["mb"] != prev["mb"]
+        yield prev, is_mb_end, nxt is None
         prev = nxt
 
 
@@ -175,8 +177,6 @@ def run(run_dir: Path, method) -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     probe = base.load(cfg.models.probe_row, cfg, probe_kind=method.PROBE_KIND,
                        n_labels=n_labels, labels=labels, ckpt_dir=ckpt_dir, device=device)
-    if cfg.train.grad_ckpt:
-        probe.grad_checkpointing(True)
 
     train_df = df.filter(pl.col("split") == "train")
     val_df = df.filter(pl.col("split") == "val")
@@ -206,6 +206,15 @@ def run(run_dir: Path, method) -> None:
         if cfg.train.align_check and resume_step is None:
             _run_alignment_gate(run_dir, probe, method, train_df, cfg)
 
+        # base.load hands the probe back in eval mode (transformers' from_pretrained ends with
+        # model.eval()), and training mode is what dropout and transformers' activation
+        # checkpointing both read, so this loop turns it on for every path that trains -- a setting
+        # with align_check: false and every resume reach the step loop without passing through the
+        # alignment gate, which runs in eval mode by design.
+        probe.set_training(True)
+        if cfg.train.grad_ckpt:
+            probe.grad_checkpointing(True)
+
         hb.emit(0, steps, "step")   # the model has finished loading (8.4)
 
         opt = torch.optim.AdamW(probe.trainable_parameters(), lr=cfg.train.lr, weight_decay=0.01)
@@ -230,8 +239,19 @@ def run(run_dir: Path, method) -> None:
         seen_mbs: set = set()
         window_loss_sum = 0.0
         window_loss_n = 0
+        last_logged_step = 0
         last_epoch_validated = -1
         last_epoch_seen = 0
+
+        def _log_step(ep: int) -> None:
+            """One step line and one loss-carrying beat, over the losses seen since the last one."""
+            nonlocal window_loss_sum, window_loss_n, last_logged_step
+            loss_val = window_loss_sum / max(window_loss_n, 1)
+            log(event="step", ep=ep, gstep=gstep, loss=loss_val, lr=sch.get_last_lr()[0])
+            hb.emit(gstep, steps, "step", loss=loss_val)
+            window_loss_sum = 0.0
+            window_loss_n = 0
+            last_logged_step = gstep
 
         def _validate_and_maybe_save(ep: int) -> None:
             nonlocal best, best_metrics, last_epoch_validated
@@ -255,14 +275,15 @@ def run(run_dir: Path, method) -> None:
             # (construction-plan prose: random.Random(cfg.train.seed + epoch)) is threaded in by
             # handing this one call a per-epoch cfg copy instead of an argument batches() reads.
             batch_iter = method.batches(train_df, probe.tokenizer, _epoch_cfg(cfg, ep))
-            for batch, is_epoch_end in _batches_with_epoch_end(batch_iter):
+            for batch, is_mb_end, is_epoch_end in _batches_with_flags(batch_iter):
                 mb = batch["mb"]
                 last_epoch_seen = ep
 
                 if gstep < skip_target:
                     # fast-forward past steps a crashed incarnation already completed, without
                     # recomputing gradients for them
-                    seen_mbs.add(mb)
+                    if is_mb_end:
+                        seen_mbs.add(mb)
                     if len(seen_mbs) >= cfg.train.accum or is_epoch_end:
                         gstep += 1
                         seen_mbs = set()
@@ -272,7 +293,10 @@ def run(run_dir: Path, method) -> None:
                 (loss / batch["mb_weight"] / cfg.train.accum).backward()
                 window_loss_sum += float(loss.detach()) / float(batch["mb_weight"])
                 window_loss_n += 1
-                seen_mbs.add(mb)
+                # a logical minibatch counts towards the accumulation once its last physical block
+                # has its gradient in, so the step never fires with part of a minibatch missing
+                if is_mb_end:
+                    seen_mbs.add(mb)
 
                 if len(seen_mbs) >= cfg.train.accum or is_epoch_end:
                     torch.nn.utils.clip_grad_norm_(probe.trainable_parameters(), 1.0)
@@ -282,13 +306,11 @@ def run(run_dir: Path, method) -> None:
                     gstep += 1
                     seen_mbs = set()
 
-                    if gstep % LOG_EVERY == 0:
-                        loss_val = window_loss_sum / max(window_loss_n, 1)
-                        log(event="step", ep=ep, gstep=gstep, loss=loss_val,
-                            lr=sch.get_last_lr()[0])
-                        hb.emit(gstep, steps, "step", loss=loss_val)
-                        window_loss_sum = 0.0
-                        window_loss_n = 0
+                    # the first step and the last one always leave a line, so a short run -- a
+                    # --debug smoke stops at train.max_steps = 20, below LOG_EVERY -- still shows
+                    # its loss in train_log.jsonl and in the heartbeat
+                    if gstep == 1 or gstep % LOG_EVERY == 0 or gstep >= steps:
+                        _log_step(ep)
 
                     now = time.monotonic()
                     if now - last_checkpoint_t >= cfg.train.checkpoint_hours * 3600:
@@ -307,6 +329,9 @@ def run(run_dir: Path, method) -> None:
 
                     if gstep >= steps:
                         break
+
+        if gstep > last_logged_step and window_loss_n > 0:
+            _log_step(last_epoch_seen)   # the run ended on a step no cadence had logged
 
         if last_epoch_validated != last_epoch_seen:
             hb.emit(gstep, steps, "step")
@@ -329,12 +354,22 @@ def run(run_dir: Path, method) -> None:
         train_val_metrics = {"objective": train_done["best_objective"]}
 
     probe.set_training(False)
+    # The prediction pass is the longest phase of a generator run, and 8.4 asks every piece for an
+    # emit(0, total, unit) before its main loop: the predict-only path of 2.4 skips the step loop
+    # entirely, so without this beat it writes nothing until finish() and registry.judge reads it
+    # as a suspected stall. `total` counts the splits plus the one frame their rows are written
+    # into, so the last beat of this loop reads done < total and only finish() makes the piece
+    # done (8.5's first rule); the unit stays 8.4's word for the train stage.
+    predict_splits = list(cfg.train.predict.splits)
+    predict_total = len(predict_splits) + 1
+    hb.emit(0, predict_total, "step")
     pred_rows: list[dict] = []
-    for split in cfg.train.predict.splits:
+    for i, split in enumerate(predict_splits):
         split_df = df.filter(pl.col("split") == split).sort("example_id")
         if cfg.train.predict.cap is not None:
             split_df = split_df.head(cfg.train.predict.cap)
         pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg))
+        hb.emit(i + 1, predict_total, "step")
 
     if pred_rows:
         pred_df = pl.DataFrame(pred_rows, strict=False)
@@ -357,7 +392,7 @@ def run(run_dir: Path, method) -> None:
 
 
 def _run_alignment_gate(run_dir: Path, probe, method, train_df: pl.DataFrame, cfg) -> None:
-    """2.5 / 2.6: compare the packed loss against the plain loss over the first events_per_mb * accum rows of the train split, before the first optimizer step. torch.backends.cuda.matmul.allow_tf32 is held False only for the duration of this comparison."""
+    """2.5 / 2.6: compare the packed loss against the plain loss over the first events_per_mb * accum rows of the train split, before the first optimizer step. torch.backends.cuda.matmul.allow_tf32 is held False only for the duration of this comparison, and the probe is left in eval mode -- run() is the one place that puts it into training mode, right before the step loop, so that the paths which skip this gate get there too."""
     n = cfg.train.events_per_mb * cfg.train.accum
     slice_df = train_df.sort("example_id").head(n)
 
@@ -371,7 +406,6 @@ def _run_alignment_gate(run_dir: Path, probe, method, train_df: pl.DataFrame, cf
             plain = float(method.reference_loss(probe, slice_df))
     finally:
         torch.backends.cuda.matmul.allow_tf32 = prev_tf32
-        probe.set_training(True)
 
     n_rows = slice_df.height
     packed_n = packed / max(n_rows, 1)

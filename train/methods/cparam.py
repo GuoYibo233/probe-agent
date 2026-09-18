@@ -242,39 +242,57 @@ def batches(df, tok, cfg):
 
 
 def _row_mean_ce(probe, batch):
+    """Every tensor here is built on the device the model's outputs came back on: a batch is packed on the CPU while the backbone sits on the run's card."""
     out = probe.forward(batch)
-    tok_ce = F.cross_entropy(out.logits.float(), batch["target_ids"], reduction="none")
+    device = out.logits.device
+    target_ids = batch["target_ids"].to(device)
+    row_of = batch["row_of"].to(device)
+    tok_ce = F.cross_entropy(out.logits.float(), target_ids, reduction="none")
     n_rows = batch["weight"].shape[0]
-    row_of = batch["row_of"]
-    ssum = torch.zeros(n_rows).index_add(0, row_of, tok_ce)
-    cnt = torch.zeros(n_rows).index_add(0, row_of, torch.ones_like(tok_ce))
+    ssum = torch.zeros(n_rows, device=device).index_add(0, row_of, tok_ce)
+    cnt = torch.zeros(n_rows, device=device).index_add(0, row_of, torch.ones_like(tok_ce))
     return ssum / cnt.clamp(min=1)
 
 
 def loss(probe, batch):
     row_ce = _row_mean_ce(probe, batch)
-    return (row_ce * batch["weight"]).sum()
+    return (row_ce * batch["weight"].to(row_ce.device)).sum()
 
 
 def reference_loss(probe, df):
-    """One row per sequence, in its plainest form, over the rows whose target assembles; left-truncated prompt, right padding, labels masking the prompt."""
+    """One row per sequence, in its plainest form: right padding, labels masking the prompt.
+
+    It scores the rows `batches` keeps, and presents each of them with the same tokens. A row whose
+    target does not assemble is dropped on both sides, an event whose longest text tokenizes past
+    the probe's max_len is dropped whole here too, a row whose target exceeds MAX_TGT_TOK is
+    dropped here too, and the prompt is never truncated, because the packed path drops an over-long
+    event instead of cutting one. The alignment gate divides both sides by the same row count and
+    calls any difference a packing bug, so a row only one side scores, or a row the two sides show
+    different tokens, fails a correctly packed run.
+    """
     tok = probe.tokenizer
     max_len = probe.max_len
     eos_id = tok.eos_token_id
-    rows = df.to_dicts()
     seqs = []
-    for r in rows:
-        target = _derive_target(r["tool"], r["call"])
-        if target is None:
+    for _event_id, group in df.group_by("event_id", maintain_order=True):
+        event_rows = group.sort("cut_index").to_dicts()
+        longest = max(event_rows, key=lambda r: len(r["text"]))["text"]
+        if len(tok(longest, add_special_tokens=False, truncation=False)["input_ids"]) > max_len:
             continue
-        tgt_ids = tok(target, add_special_tokens=False)["input_ids"] + [eos_id]
-        budget = max(max_len - len(tgt_ids), 1)
-        prompt_full = tok(r["text"] + _prompt_tail(r["tool"]), add_special_tokens=False,
-                          truncation=False)["input_ids"]
-        prompt_ids = prompt_full[-budget:] if len(prompt_full) > budget else prompt_full
-        seq_ids = prompt_ids + tgt_ids
-        seg_lab = [-100] * len(prompt_ids) + tgt_ids
-        seqs.append((seq_ids, seg_lab, float(r["weight"])))
+        for r in event_rows:
+            target = _derive_target(r["tool"], r["call"])
+            if target is None:
+                continue
+            tgt_ids = tok(target, add_special_tokens=False)["input_ids"] + [eos_id]
+            if len(tgt_ids) > MAX_TGT_TOK:
+                continue
+            prompt_ids = tok(r["text"] + _prompt_tail(r["tool"]), add_special_tokens=False,
+                             truncation=False)["input_ids"]
+            seq_ids = prompt_ids + tgt_ids
+            seg_lab = [-100] * len(prompt_ids) + tgt_ids
+            seqs.append((seq_ids, seg_lab, float(r["weight"])))
+    if not seqs:
+        return torch.zeros(())
 
     L = max((len(s) for s, _lab, _w in seqs), default=1)
     B = len(seqs)
@@ -299,7 +317,7 @@ def reference_loss(probe, df):
              "row_of": torch.tensor(row_of, dtype=torch.long),
              "weight": torch.tensor([w for _s, _l, w in seqs], dtype=torch.float32)}
     row_ce = _row_mean_ce(probe, batch)
-    return (row_ce * batch["weight"]).sum()
+    return (row_ce * batch["weight"].to(row_ce.device)).sum()
 
 
 def _weighted_val_ce(probe, df, tok, cfg) -> float:
