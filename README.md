@@ -152,8 +152,10 @@ setting, diff, key).
 ```
 
 `load`, `load_frozen`, `freeze`, `key`, `run_dir`, `run_dir_of`, `upstream`,
-`module_version`, `module_literal`, `fields_of`, `models_of`, `upstream_of`
-and `versions_of` are the names the file offers (contracts 5.1, 3.1, 3.3).
+`module_version`, `module_literal`, `version_history`, `effective_version`,
+`fields_of`, `models_of`, `upstream_of` and `versions_of` are the names the
+file offers (contracts 5.1, 3.1, 3.3; `version_history` and
+`effective_version` come from the errata entry "3.3 / 8.6").
 `fields_of`, `models_of`, `upstream_of`, `versions_of`, `module_version` and
 `module_literal` are called only by this file and by `run.py`.
 

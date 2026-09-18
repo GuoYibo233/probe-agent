@@ -286,7 +286,15 @@ STAGES = {
                  "data/environments/__init__.py", "data/environments/{env}.py",
                  "models/agent_models/{family}.py", "models/agent_models/service.py",
                  "models/probe_models/base.py", "models/probe_models/service.py",
-                 "eval/utils/probe_eval.py",
+                 # `@eval`: this row folds the eval driver for the carried probe_score eval
+                 # key's sake (the fitted temperature a live run reads), so it folds the
+                 # version that stage's key folds as well (errata "3.3 / 8.6").
+                 # The eval row's other file, `data/probe_output.py`, carries no stand-in
+                 # here: a bump of it stating `stale: ("eval",)` moves the carried eval key
+                 # and leaves this key where it is, and an entry that names `train` as well
+                 # moves this key, through the folded probe_score train key. Adding the
+                 # stand-in moves today's inject key, so that one is the owner's to add.
+                 "eval/utils/probe_eval.py@eval",
                  "eval/utils/probe_eval.py#MATCH_VERSION.{probe_score_method}"),
   },
   "score": {
@@ -331,21 +339,36 @@ MODELS_READONLY = ("agent_row", "probe_row")
 # ---------------------------------------------------------------------------
 
 
-def _column_zero_literal(rel_path: str, name: str) -> Any:
-    """Read the one column-zero module-level assignment of `name` in `rel_path`, with ast.literal_eval, never by importing."""
-    tree = ast.parse((ROOT / rel_path).read_text())
+def _parse_module(rel_path: str) -> ast.Module:
+    """The module at rel_path parsed as source text, never imported (3.3); a caller that wants two literals of one file parses it once."""
+    return ast.parse((ROOT / rel_path).read_text())
+
+
+def _column_zero_matches(tree: ast.Module, name: str) -> list:
+    """Every column-zero module-level assignment of `name` in an already parsed module, read with ast.literal_eval."""
     matches = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and node.col_offset == 0:
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == name:
                     matches.append(ast.literal_eval(node.value))
+    return matches
+
+
+def _one_column_zero(rel_path: str, tree: ast.Module, name: str) -> Any:
+    """The one column-zero assignment of `name` in an already parsed module; refuses zero matches and two, naming the file."""
+    matches = _column_zero_matches(tree, name)
     if not matches:
         raise SchemaError(f"{rel_path}: no column-zero assignment to {name!r}")
     if len(matches) > 1:
         raise SchemaError(
             f"{rel_path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     return matches[0]
+
+
+def _column_zero_literal(rel_path: str, name: str) -> Any:
+    """Read the one column-zero module-level assignment of `name` in `rel_path`, with ast.literal_eval, never by importing."""
+    return _one_column_zero(rel_path, _parse_module(rel_path), name)
 
 
 def module_version(rel_path: str) -> int:
@@ -356,6 +379,88 @@ def module_version(rel_path: str) -> int:
 def module_literal(rel_path: str, name: str) -> Any:
     """The one column-zero literal named `name` in the module at rel_path, read as source text (3.3)."""
     return _column_zero_literal(rel_path, name)
+
+
+def _check_version_history(rel_path: str, table: Any, version: int) -> None:
+    """Refuse, naming the file, a VERSION_HISTORY the key path cannot read (errata "3.3 / 8.6").
+
+    The strict shape -- one entry with a non-empty `why` for every version from 2 to VERSION --
+    is `run.py selfcheck`'s to enforce, so a missing `why` passes here.
+    """
+    stages = tuple(STAGES)
+    if not isinstance(table, dict):
+        raise SchemaError(
+            f"{rel_path}: VERSION_HISTORY is a {type(table).__name__}, expected a mapping of "
+            "version -> entry")
+    for entry_version, entry in table.items():
+        if isinstance(entry_version, bool) or not isinstance(entry_version, int):
+            raise SchemaError(
+                f"{rel_path}: VERSION_HISTORY key {entry_version!r} is a "
+                f"{type(entry_version).__name__}, expected an int from 2 to {version}")
+        if not 2 <= entry_version <= version:
+            raise SchemaError(
+                f"{rel_path}: VERSION_HISTORY key {entry_version} is outside 2..{version}, this "
+                "file's VERSION")
+        if not isinstance(entry, dict):
+            raise SchemaError(
+                f"{rel_path}: VERSION_HISTORY[{entry_version}] is a {type(entry).__name__}, "
+                "expected a mapping")
+        if "stale" in entry:
+            stale = entry["stale"]
+            if not isinstance(stale, (tuple, list)):
+                raise SchemaError(
+                    f"{rel_path}: VERSION_HISTORY[{entry_version}]['stale'] is a "
+                    f"{type(stale).__name__}, expected a tuple of stage names of {stages}")
+            for name in stale:
+                if name not in STAGES:
+                    raise SchemaError(
+                        f"{rel_path}: VERSION_HISTORY[{entry_version}]['stale'] names {name!r}, "
+                        f"which is not one of {stages}")
+
+
+def _history_of(rel_path: str, tree: ast.Module) -> dict:
+    """The checked VERSION_HISTORY of an already parsed module; a module with no such literal has an empty table."""
+    matches = _column_zero_matches(tree, "VERSION_HISTORY")
+    if not matches:
+        return {}
+    if len(matches) > 1:
+        raise SchemaError(
+            f"{rel_path}: {len(matches)} column-zero assignments to 'VERSION_HISTORY', "
+            "expected exactly one")
+    table = matches[0]
+    _check_version_history(rel_path, table, _one_column_zero(rel_path, tree, "VERSION"))
+    return table
+
+
+def version_history(rel_path: str) -> dict:
+    """The one column-zero VERSION_HISTORY of the module at rel_path; a file with no such literal has an empty table (errata "3.3 / 8.6")."""
+    return _history_of(rel_path, _parse_module(rel_path))
+
+
+def _stale_at(table: dict, entry_version: int, stage: str) -> bool:
+    """Whether the bump to `entry_version` made `stage`'s existing outputs unusable (errata "3.3 / 8.6")."""
+    entry = table.get(entry_version)
+    if entry is None:
+        return True                            # a version with no entry is stale for every stage
+    if "stale" not in entry:
+        return True                            # an unstated bump invalidates every stage
+    return stage in entry["stale"]
+
+
+def _effective_version_over(rel_path: str, stages: tuple[str, ...]) -> int:
+    """The highest version from 2 to VERSION whose entry made any stage of `stages` stale, else 1; one parse of the file."""
+    tree = _parse_module(rel_path)
+    version = _one_column_zero(rel_path, tree, "VERSION")
+    table = _history_of(rel_path, tree)
+    for entry_version in range(version, 1, -1):
+        if any(_stale_at(table, entry_version, stage_name) for stage_name in stages):
+            return entry_version
+    return 1
+
+
+def effective_version(rel_path: str, stage: str) -> int:
+    """The version of the module at rel_path that `stage`'s key folds: the highest version from 2 to VERSION that made `stage` stale, else 1 (errata "3.3 / 8.6")."""
+    return _effective_version_over(rel_path, (stage,))
 
 
 def _read_yaml(rel_path: str) -> dict:
@@ -1108,32 +1213,84 @@ def _substitute(template: str, setting: Setting) -> str:
     return template
 
 
+def _entry_parts(entry: str) -> tuple[str, str, str, str]:
+    """One versions entry of the stage table, split into the four parts its two readers use.
+
+    The name an entry enters a payload and a `_versions` record under, the module path to read,
+    the table entry to take out of that module (empty for the other two spellings), and the
+    stage the entry stands in for (empty for the other two spellings). The three spellings:
+
+    - `<path>`: the whole module, read for the stage that lists it.
+    - `<path>#<TABLE>.<method>`: one probe method's own version out of the named column-zero
+      table of that module.
+    - `<path>@<stage>`: a module the row lists for another stage's sake, where 2.1 carries that
+      stage's key instead of folding it. The `@<stage>` part is the stage table's own
+      bookkeeping and stays out of every payload, so an entry keeps the name it had before the
+      marker existed.
+    """
+    name, _, stands_for = entry.partition("@")
+    path, _, table_entry = name.partition("#")
+    return name, path, table_entry, stands_for
+
+
 def versions_of(stage: str, setting: Setting) -> dict:
     """The 'versions' block of 3.3: entry -> version, read as source text (entry -> int).
 
-    An entry is spelled one of two ways. A bare repo-relative module path takes that whole
-    module's `VERSION`, which is the form of every entry on the sample, build, eval and score
-    rows. An entry spelled `<path>#<TABLE>.<method>` takes one probe method's own version out
-    of the named column-zero table of that module, and enters the key under that same
-    spelling: `train` folds `eval/utils/probe_eval.py#MATCH_VERSION.<method>` and `inject`
+    An entry is spelled one of the three ways `_entry_parts` describes. A bare repo-relative
+    module path takes that whole module's `VERSION`, which is the form of every entry on the
+    sample, build, eval and score rows; so does a `<path>@<stage>` stand-in, which records the
+    module it names. An entry spelled `<path>#<TABLE>.<method>` takes one probe method's own
+    version out of the named column-zero table of that module, and enters the key under that
+    same spelling: `train` folds `eval/utils/probe_eval.py#MATCH_VERSION.<method>` and `inject`
     folds the same entry for its scoring probe's method, so a change to the eval driver, to a
     report or to another method's match leaves an existing train run's key where it is, while
     a change to the match its validation metric is computed with re-keys it.
+
+    This is the real version of every entry the stage lists, which is what settings.yaml's and
+    meta.json's `_versions` record; the key folds `_key_versions` instead.
     """
     out = {}
     for template in STAGES[stage]["versions"]:
-        entry = _substitute(template, setting)
-        path, marker, table_entry = entry.partition("#")
-        if marker:
-            table_name, _, method = table_entry.partition(".")
-            table = module_literal(path, table_name)
-            if method not in table:
-                raise SchemaError(
-                    f"{path}: {table_name} has no entry for method {method!r}; "
-                    f"it holds {sorted(table)}")
-            out[entry] = table[method]
+        name, path, table_entry, _stands_for = _entry_parts(_substitute(template, setting))
+        if table_entry:
+            out[name] = _table_entry_version(path, table_entry)
             continue
-        out[entry] = module_version(path)
+        out[name] = module_version(path)
+    return out
+
+
+def _table_entry_version(path: str, table_entry: str) -> int:
+    """One probe method's version out of a column-zero table: the value of `<TABLE>.<method>` in the module at `path`."""
+    table_name, _, method = table_entry.partition(".")
+    table = module_literal(path, table_name)
+    if method not in table:
+        raise SchemaError(
+            f"{path}: {table_name} has no entry for method {method!r}; "
+            f"it holds {sorted(table)}")
+    return table[method]
+
+
+def _key_versions(stage: str, setting: Setting) -> dict:
+    """The 'versions' payload of the key: entry -> the version `stage`'s key folds (errata "3.3 / 8.6").
+
+    A bare module path folds the file's effective version for `stage`, the stage whose key is
+    being computed. A `<path>@<other>` stand-in folds the highest version that made either
+    `stage` or `other` stale, because the row lists it for `other`'s sake: the inject row folds
+    `eval/utils/probe_eval.py@eval` in place of the probe_score eval key 2.1 carries, since a
+    live inject run takes `_resolved.probe_temperature` out of that eval report, so a bump that
+    states `stale: ("eval",)` moves the inject key too, and one that states `stale: ("inject",)`
+    moves it as well. A `<path>#<TABLE>.<method>` entry folds the table value itself: a
+    per-method match version is already scoped to the one method that folds it, so it carries
+    no VERSION_HISTORY.
+    """
+    out = {}
+    for template in STAGES[stage]["versions"]:
+        name, path, table_entry, stands_for = _entry_parts(_substitute(template, setting))
+        if table_entry:
+            out[name] = _table_entry_version(path, table_entry)
+            continue
+        stages = (stage, stands_for) if stands_for else (stage,)
+        out[name] = _effective_version_over(path, stages)
     return out
 
 
@@ -1168,13 +1325,17 @@ def upstream_of(stage: str, setting: Setting) -> dict:
 
 
 def key(stage: str, setting: Setting) -> str:
-    """The payload of 3.3, canonical JSON, sha256, first 12 lowercase hex characters."""
+    """The payload of 3.3, canonical JSON, sha256, first 12 lowercase hex characters.
+
+    The 'versions' block of the payload holds effective versions, not the files' real VERSION
+    (errata "3.3 / 8.6"): a bump that leaves this stage usable keeps this stage's key.
+    """
     fields = fields_of(stage, setting)
     models = models_of(stage, setting)
     full_upstream = upstream(stage, setting)
     fold_names = {e["name"] for e in STAGES[stage]["upstream"] if e["key"] == "fold"}
     upstream_payload = {name: k for name, k in full_upstream.items() if name in fold_names}
-    versions = versions_of(stage, setting)
+    versions = _key_versions(stage, setting)
     payload = {"stage": stage, "fields": fields, "models": models,
                "upstream": upstream_payload, "versions": versions}
     if setting._debug:
