@@ -17,7 +17,7 @@ train/utils/trainer.py       imports: experimental_settings/schema.py, models/__
                              data/probe_output.py, jobs/registry.py; [torch]
                              used by: train/methods/{ctool,cgen,cparam}.py   VERSION = 1
 train/methods/ctool.py       imports: train/utils/trainer.py, models/probe_models/base.py,
-                             data/training_data.py, eval/methods/ctool.py; [torch]  VERSION = 1
+                             data/training_data.py, eval/utils/probe_eval.py; [torch]  VERSION = 1
 train/methods/cgen.py        + data/environments/__init__.py (open_env)       VERSION = 1
 train/methods/cparam.py      + data/environments/__init__.py (open_env)       VERSION = 1
 tests/test_packed_loss.py    venv probe (the header line names it)
@@ -244,7 +244,7 @@ plus `if __name__ == "__main__":` parsing `--run-dir` only.
   with the target index taken through `probe.labels` exactly as `loss` does.
   **This is the one piece of code written twice on purpose** (2.6).
 - `validate`: score the frame it is handed through the same packed path, compare
-  with `eval/methods/ctool.py`'s `match(pred_label, target_tool, None)` (a
+  with `eval/utils/probe_eval.py`'s `match_ctool(pred_label, target_tool, None)` (a
   classifier passes `None`), and return
   `{"objective": 1 - weighted_accuracy, "val_wacc": weighted_accuracy,
   "val_lastcut_acc": ...}` (`train_causal_tool.py:308-323`; the last-cut accuracy
@@ -309,8 +309,8 @@ The same seven hook names as ctool, with `head_labels` returning `None`.
   packed path, `train_causal_callgen.py:297-337`) **and** greedy generation over a
   deterministic subsample of `GEN_N` rows
   (`random.Random(cfg.train.seed).shuffle` over the rows in `example_id` order,
-  `train_causal_share.py:272-295`), compared with `eval/methods/cgen.py`'s
-  `match(pred, target, env)` where `env = open_env(cfg.data.env)` — the
+  `train_causal_share.py:272-295`), compared with `eval/utils/probe_eval.py`'s
+  `match_cgen(pred, target, env)` where `env = open_env(cfg.data.env)` — the
   environment is reachable because 3.4 writes `data` into a generator train run's
   projection. `max_new` is `cfg.train.predict.max_new` (errata). Returns
   `{"objective": 1 - weighted full_call_ok, "val_ce": ..., "val_tool_ok": ...,
@@ -366,7 +366,7 @@ Hooks as cgen's, with three differences:
   `Probe.generate(texts, max_new, call_sep)` appends one separator to every text
   while this method's tail is per row; `CHECKPOINT_META["call_sep"]` stays
   `"\n[CALL] "` and `param_only` stays `true`).
-- `validate` calls `eval/methods/cparam.py`'s `match` on two **whole calls**:
+- `validate` calls `eval/utils/probe_eval.py`'s `match_cparam` on two **whole calls**:
   both the prediction and the target get `row.tool + "("` prepended, per 2.6's
   rule for cparam's two callers. `objective = 1 - weighted params_all_ok`.
 
@@ -421,11 +421,13 @@ for f in files:
         for forbidden in ("experimental_settings.schema", "jobs.registry"):
             if any(m0 == forbidden or m0.startswith(forbidden + ".") for m0 in mods):
                 bad.append((f, forbidden))
-        e = ast.parse(pathlib.Path("eval/methods/" + f.split("/")[-1]).read_text())
+        e = ast.parse(pathlib.Path("eval/utils/probe_eval.py").read_text())
         ek = [n for n in e.body if isinstance(n, ast.Assign)
               and isinstance(n.targets[0], ast.Name) and n.targets[0].id == "PROBE_KIND"
               and n.col_offset == 0]
-        if len(ek) != 1 or ast.literal_eval(ek[0].value) != ast.literal_eval(k[0].value):
+        method = f.split("/")[-1][:-3]
+        table = ast.literal_eval(ek[0].value) if len(ek) == 1 else {}
+        if table.get(method) != ast.literal_eval(k[0].value):
             bad.append((f, "PROBE_KIND disagrees with the eval side"))
 print("FAIL", bad) if bad else print("OK")
 sys.exit(1 if bad else 0)
@@ -655,8 +657,10 @@ command, never in the code.)
 `run.py selfcheck` (ticket 15) will check: the four files' `README.md` annotation
 lines against their real imports; one `VERSION` line per file, at column zero,
 exactly once; the `probe.method` axis against the intersection of the file names
-under `train/methods/` and `eval/methods/`; and `PROBE_KIND` declared in both
-method files and equal. A3.1 stands in for all but the first.
+under `train/methods/` and the keys of `eval/utils/probe_eval.py`'s `PROBE_KIND`
+and `MATCH_VERSION` tables; and `PROBE_KIND` declared in the train method file
+and equal to that method's entry in the eval table. A3.1 stands in for all but
+the first.
 
 ### GPU / main session — not yours
 
@@ -697,13 +701,14 @@ command.
 
 ## Comments
 
-- 2026-09-18, from gyb (review of waves 2 and 3, session fork1): **do not dispatch
-  this ticket before the `eval/methods/` fold has merged.** gyb ruled that
-  `eval/methods/{ctool,cgen,cparam}.py` fold into `eval/utils/probe_eval.py`
-  after wave 4 and before wave 5 (errata, the entry "0.2 / 2.1 / 2.6
-  (`eval/methods/`)"; details in the `TODO(gyb, 2026-09-18)` at the top of
-  `eval/methods/ctool.py`). Every place in this ticket that imports
-  `eval.methods.<m>`, reads its `PROBE_KIND`, or names `eval/methods/<m>.py` in a
-  versions list is rewritten by that change to the new home of `match` and to the
-  per-method match version; `train/methods/` stays one file per method.
+- 2026-09-18, from gyb (review of waves 2 and 3, session fork1): the eval fold
+  gyb ruled on (errata, the entry "0.2 / 2.1 / 2.6") has landed before this
+  ticket is dispatched, and this ticket's text is already rewritten to it. The
+  eval side is now one file, `eval/utils/probe_eval.py`: it holds the column-zero
+  tables `PROBE_KIND` (method -> report shape) and `MATCH_VERSION` (method ->
+  match version), and the three match functions under the names `match_ctool`,
+  `match_cgen` and `match_cparam`. A train method file imports that one file for
+  its validation metric, and `STAGES["train"]["versions"]` folds
+  `eval/utils/probe_eval.py#MATCH_VERSION.<method>` in place of a per-method
+  file's `VERSION`. `train/methods/` stays one file per method.
 - 2026-09-18, from gyb (errata "3.3 / 8.6 (what a `VERSION` bump invalidates)"): every file of this ticket that carries `VERSION` also carries, directly above it, the VERSION rule comment block and, directly below it, the column-zero literal `VERSION_HISTORY = {}`. Copy both verbatim from a merged file (`data/probe_input.py` has them once the change `owner/2026-09-18-version-history` has merged); `.scratch/from-zero/spec.md` section 5 states the rule. Wherever this ticket says a `VERSION` enters a key, the number folded is the file's effective version for the stage being keyed, and `_versions` still records the real `VERSION`.

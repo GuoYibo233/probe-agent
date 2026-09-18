@@ -165,13 +165,13 @@ entries are the format model. It must state, in this order:
 
 - **Trigger**: gyb's seven principles (the tree's Part 1 numbered list) and the
   2026-09-13..09-17 renewal discussion.
-- **Decision**: the old tree is replaced by the 34-file tree of
+- **Decision**: the old tree is replaced by the 31-file tree of
   `notes/plans/2026-09-14-structure-from-zero.md`, whose interfaces are
   `notes/plans/2026-09-17-contracts.md` and whose build order was
   `notes/plans/2026-09-17-construction-plan.md`; six stages, one command
   (`run.py`), one experiment is one setting, a run directory is named by its key,
   `--debug` runs any setting tiny, `eval/` reads only disk.
-- **Counts**: about 60 Python files under the old code directories -> 34; the old
+- **Counts**: about 60 Python files under the old code directories -> 31; the old
   four-ledger layout -> five record layers with `jobs/runs.jsonl` and
   `jobs/RESULTS.md` beside the registry.
 - **What is retired, by name**: the resident sampler, its web page
@@ -255,7 +255,7 @@ unchanged from before the edit.
 ```bash
 "$PR" run.py selfcheck; echo "rc=$?"
 ```
-Expected: `selfcheck: 34 python files, 0 problems`, `rc=0`. This is the check
+Expected: `selfcheck: 31 python files, 0 problems`, `rc=0`. This is the check
 that proves nothing in the new tree depended on `legacy/`.
 
 **C6 — the file count and the README cover.**
@@ -265,7 +265,7 @@ find run.py constants experimental_settings data models agent train eval jobs \
 find run.py constants experimental_settings data models agent train eval jobs \
      -name '*.py' | while read -r f; do grep -qF "$f" README.md || echo "MISSING $f"; done
 ```
-Expected: `34`, and no `MISSING` line.
+Expected: `31`, and no `MISSING` line.
 
 **C16 — the `docs/` move landed and nothing still points at the old path.**
 ```bash

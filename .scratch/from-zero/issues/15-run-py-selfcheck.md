@@ -17,7 +17,7 @@ run.py       venv: probe    the only file this ticket may touch, besides README.
 README.md    only if a line of it is wrong — say which and why in your report
 ```
 
-By this wave every one of the 34 Python files is on the branch, so **a green
+By this wave every one of the 31 Python files is on the branch, so **a green
 `selfcheck` is the deliverable**, not an aspiration.
 
 ### The parsers
@@ -76,7 +76,7 @@ starts an interpreter is the per-interpreter import test at the end.
 1. The README's file list against the tree: every `.py` under `run.py`,
    `constants/`, `experimental_settings/`, `data/`, `models/`, `agent/`,
    `train/`, `eval/`, `jobs/` has an entry, and every entry names a file that
-   exists. The count is **34**.
+   exists. The count is **31**.
 2. Every annotation line against the real import graph, parsed with `ast`: the
    `imports:` line equals `imports_of` restricted to repo files, and the
    `used by:` line equals the set of repo files whose `imports_of` names this one
@@ -86,8 +86,9 @@ starts an interpreter is the per-interpreter import test at the end.
 3. Every axis literal against the files behind it (5.3):
    `schema.AXES["inject.format"]` equals `agent/inject_format.py`'s `FORMATS`
    keys; `schema.AXES["inject.arm"]` equals `agent/inject.py`'s `ARMS`;
-   `schema.AXES["probe.method"]` equals the intersection of the file stems under
-   `train/methods/` and `eval/methods/`; `schema.AXES["data.env"]` equals the file
+   every axis value of `schema.AXES["probe.method"]` is a key of
+   `eval/utils/probe_eval.py`'s `PROBE_KIND` and of its `MATCH_VERSION`, and the
+   axis equals the file stems under `train/methods/`; `schema.AXES["data.env"]` equals the file
    stems under `data/environments/` minus `__init__`;
    `schema.AXES["data.instructions"]` is within the union of every environment's
    `INSTRUCTIONS` keys; `sample.split` and `inject.split` are within the union of
@@ -100,8 +101,9 @@ starts an interpreter is the per-interpreter import test at the end.
 5. A `DEFAULTS` and a `REQUIRED` literal in every format file under `data/`, with
    **every name in `REQUIRED` a declared column of that file's `SCHEMA`**
    (Part 1).
-6. The two `PROBE_KIND` declarations of a method — `train/methods/<m>.py` and
-   `eval/methods/<m>.py` — are equal (2.6).
+6. The two `PROBE_KIND` declarations of a method — `train/methods/<m>.py`'s
+   literal and that method's entry in `eval/utils/probe_eval.py`'s `PROBE_KIND`
+   table — are equal (2.6).
 7. Every family module's `DEFAULT_EFFORT` is in its own `EFFORTS`.
 8. Every `models/table.yaml` row's `family` resolves to a file under
    `models/agent_models/` or `models/probe_models/` per its `role`, and its
@@ -115,7 +117,7 @@ starts an interpreter is the per-interpreter import test at the end.
     refused, naming the file (errata).
 
 Print **one line per problem** and exit 1 on any; on success print
-`selfcheck: 34 python files, 0 problems` and exit 0. Shape ported from
+`selfcheck: 31 python files, 0 problems` and exit 0. Shape ported from
 `legacy/run.py:1172-1267` (count, one line per problem, exit 1 on any).
 
 ## Acceptance
@@ -149,7 +151,7 @@ fixture and paste that too — it must print `['dataclasses', 'os']`.
 ```bash
 "$PR" run.py selfcheck; echo "rc=$?"
 ```
-Expected: `selfcheck: 34 python files, 0 problems` and `rc=0`.
+Expected: `selfcheck: 31 python files, 0 problems` and `rc=0`.
 
 **D4 — each check actually fires.** For each of the eleven checks above, break one
 thing in a **scratch copy of the tree** (never in the worktree's own files —
@@ -165,7 +167,7 @@ message `selfcheck` printed. The eleven breakages:
 | 3 | add a sixth key to `agent/inject_format.py`'s `FORMATS` |
 | 4 | add a second column-zero `VERSION` to `data/training_data.py` |
 | 5 | add a name to `data/probe_output.py`'s `REQUIRED` that its `SCHEMA` does not declare |
-| 6 | change `eval/methods/cgen.py`'s `PROBE_KIND` to `"classifier"` |
+| 6 | change `eval/utils/probe_eval.py`'s `PROBE_KIND["cgen"]` to `"classifier"` |
 | 7 | change `models/agent_models/gptoss.py`'s `DEFAULT_EFFORT` to `"ultra"` |
 | 8 | delete one alias block from `constants/path_models.yaml`, so a `models/table.yaml` row's `result.weights` no longer resolves |
 | 9 | put a literal `/net/tokyo100-10g/...` path in `eval/score_run.py` |

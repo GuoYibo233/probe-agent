@@ -180,7 +180,7 @@ Four sections, in this order:
      writes:  <format or file>
      venv:    any | appworld | probe | vllm
    ```
-   All **34** Python files of 0.3 plus the non-Python entries (`constants/*.yaml`,
+   All **31** Python files of 0.3 plus the non-Python entries (`constants/*.yaml`,
    `experimental_settings/*.yaml`, `models/table.yaml`, `jobs/runs.jsonl`,
    `jobs/RESULTS.md`, `tests/`). Earlier tickets added their own lines as they
    landed; reconcile them against 0.2 and against
@@ -351,7 +351,7 @@ ent = run.readme_entries('README.md')
 py = [p for p in ent if p.endswith('.py')]
 print(len(py), all(set(ent[p]) >= {'imports','used by','reads','venv'} for p in py))"
 ```
-Expected: `34 True`, exit 0. (`readme_entries` is the parser ticket 15's
+Expected: `31 True`, exit 0. (`readme_entries` is the parser ticket 15's
 `selfcheck` uses; write it here, with `where`/`ls`, so D1 can run.)
 
 **D2 — the file count on disk, and the README covering every file that exists.**
@@ -361,13 +361,13 @@ find run.py constants experimental_settings data models agent eval jobs \
 find run.py constants experimental_settings data models agent eval jobs \
      -name '*.py' | while read -r f; do grep -qF "$f" README.md || echo "MISSING $f"; done
 ```
-Expected: `30`, and no `MISSING` line. **30, not 34**: `train/` is ticket 13's and
+Expected: `27`, and no `MISSING` line. **27, not 31**: `train/` is ticket 13's and
 merges at the end of this same wave, so the four `train/*.py` files are not on
 disk in your worktree — `1 run.py + 1 schema.py + 8 data + 8 models + 4 agent +
-6 eval + 2 jobs`. `README.md` still carries all **34** entries, the four `train/`
+3 eval + 2 jobs`. `README.md` still carries all **31** entries, the four `train/`
 ones included, because it is assembled from contracts 0.2 and `D1` counts them
-(`34 True`). Do not drop a `train/` line to make this command print 34, and do
-not add `train` to the `find` list. The 34-file check is **ticket 15's `D3`** and
+(`31 True`). Do not drop a `train/` line to make this command print 31, and do
+not add `train` to the `find` list. The 31-file check is **ticket 15's `D3`** and
 **ticket 18's `C6`**, both after wave 5 merges.
 
 **D3 — no absolute cluster path in `run.py`.**
