@@ -330,8 +330,9 @@ repo root, with the interpreter each one names.
 
 ```
   eval/                   reads what is on disk and computes numbers; no GPU, no torch, every file imports
-                          as any. A new probe method is a file under methods/; a new metric is an edit to
-                          the file that reports it
+                          as any. A new probe method is a key in probe_eval.py's PROBE_KIND and
+                          MATCH_VERSION tables plus a match_<m> function there; a new metric is an edit
+                          to the file that reports it
     utils/
       probe_eval.py         the eval program of every probe method: the PROBE_KIND and MATCH_VERSION
                             tables, the three match functions, the classifier and the generator report,
