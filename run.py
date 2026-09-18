@@ -1,4 +1,4 @@
-"""The one command: walk a named setting's stages, or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck)."""
+"""The one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck)."""
 # venv: probe
 from __future__ import annotations
 
@@ -774,33 +774,30 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
                     print(f"run.py: {run_dir} has a live piece; launching nothing")
                 return "stop"
 
+    upstream_map = schema.upstream(stage, cfg)
+    _refuse_missing_upstream(stage, cfg, upstream_map)
     resolved: dict = {}
     if stage == "inject":
-        upstream_map = schema.upstream(stage, cfg)
-        _refuse_missing_upstream(stage, cfg, upstream_map)
         _check_inject_probe_methods(cfg, upstream_map)
         _check_inject_shared_build_key(upstream_map)
         _check_inject_code_currency(upstream_map)
         resolved = _resolve_inject_temperature(upstream_map)
-    else:
-        _refuse_missing_upstream(stage, cfg, schema.upstream(stage, cfg))
 
     proc = None
     with registry.lock():
         git = launch.git_state(run_dir, allow_dirty)
         schema.freeze(cfg, stage, run_dir, resolved, git["commit"])
         versions = schema.versions_of(stage, cfg)
-        upstream_map_full = schema.upstream(stage, cfg)
         diff = schema.fields_of(stage, cfg)
         registry.write_meta(run_dir, stage=stage, key=key, dir=str(run_dir), versions=versions,
-                             upstream=upstream_map_full, diff=diff, debug=cfg._debug)
+                             upstream=upstream_map, diff=diff, debug=cfg._debug)
 
         if entry["cards"]:
             outcome, _pieces = launch.launch(stage, cfg, run_dir, resolved, git)
         else:
             outcome = None
             proc = _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions,
-                                     upstream_map_full, diff)
+                                     upstream_map, diff)
 
     if entry["cards"]:
         if outcome != "up":
