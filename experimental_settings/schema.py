@@ -331,9 +331,13 @@ MODELS_READONLY = ("agent_row", "probe_row")
 # ---------------------------------------------------------------------------
 
 
-def _column_zero_matches(rel_path: str, name: str) -> list:
-    """Every column-zero module-level assignment of `name` in `rel_path`, read with ast.literal_eval, never by importing."""
-    tree = ast.parse((ROOT / rel_path).read_text())
+def _parse_module(rel_path: str) -> ast.Module:
+    """The module at rel_path parsed as source text, never imported (3.3); a caller that wants two literals of one file parses it once."""
+    return ast.parse((ROOT / rel_path).read_text())
+
+
+def _column_zero_matches(tree: ast.Module, name: str) -> list:
+    """Every column-zero module-level assignment of `name` in an already parsed module, read with ast.literal_eval."""
     matches = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and node.col_offset == 0:
@@ -343,15 +347,20 @@ def _column_zero_matches(rel_path: str, name: str) -> list:
     return matches
 
 
-def _column_zero_literal(rel_path: str, name: str) -> Any:
-    """Read the one column-zero module-level assignment of `name` in `rel_path`, with ast.literal_eval, never by importing."""
-    matches = _column_zero_matches(rel_path, name)
+def _one_column_zero(rel_path: str, tree: ast.Module, name: str) -> Any:
+    """The one column-zero assignment of `name` in an already parsed module; refuses zero matches and two, naming the file."""
+    matches = _column_zero_matches(tree, name)
     if not matches:
         raise SchemaError(f"{rel_path}: no column-zero assignment to {name!r}")
     if len(matches) > 1:
         raise SchemaError(
             f"{rel_path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     return matches[0]
+
+
+def _column_zero_literal(rel_path: str, name: str) -> Any:
+    """Read the one column-zero module-level assignment of `name` in `rel_path`, with ast.literal_eval, never by importing."""
+    return _one_column_zero(rel_path, _parse_module(rel_path), name)
 
 
 def module_version(rel_path: str) -> int:
@@ -401,9 +410,9 @@ def _check_version_history(rel_path: str, table: Any, version: int) -> None:
                         f"which is not one of {stages}")
 
 
-def version_history(rel_path: str) -> dict:
-    """The one column-zero VERSION_HISTORY of the module at rel_path; a file with no such literal has an empty table (errata "3.3 / 8.6")."""
-    matches = _column_zero_matches(rel_path, "VERSION_HISTORY")
+def _history_of(rel_path: str, tree: ast.Module) -> dict:
+    """The checked VERSION_HISTORY of an already parsed module; a module with no such literal has an empty table."""
+    matches = _column_zero_matches(tree, "VERSION_HISTORY")
     if not matches:
         return {}
     if len(matches) > 1:
@@ -411,8 +420,13 @@ def version_history(rel_path: str) -> dict:
             f"{rel_path}: {len(matches)} column-zero assignments to 'VERSION_HISTORY', "
             "expected exactly one")
     table = matches[0]
-    _check_version_history(rel_path, table, module_version(rel_path))
+    _check_version_history(rel_path, table, _one_column_zero(rel_path, tree, "VERSION"))
     return table
+
+
+def version_history(rel_path: str) -> dict:
+    """The one column-zero VERSION_HISTORY of the module at rel_path; a file with no such literal has an empty table (errata "3.3 / 8.6")."""
+    return _history_of(rel_path, _parse_module(rel_path))
 
 
 def _stale_at(table: dict, entry_version: int, stage: str) -> bool:
@@ -427,8 +441,9 @@ def _stale_at(table: dict, entry_version: int, stage: str) -> bool:
 
 def effective_version(rel_path: str, stage: str) -> int:
     """The version of the module at rel_path that `stage`'s key folds: the highest version from 2 to VERSION that made `stage` stale, else 1 (errata "3.3 / 8.6")."""
-    version = module_version(rel_path)
-    table = version_history(rel_path)
+    tree = _parse_module(rel_path)
+    version = _one_column_zero(rel_path, tree, "VERSION")
+    table = _history_of(rel_path, tree)
     for entry_version in range(version, 1, -1):
         if _stale_at(table, entry_version, stage):
             return entry_version
