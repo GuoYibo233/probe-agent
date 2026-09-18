@@ -102,7 +102,7 @@ class Predict:
 class Train:
     lr: float = 1.0e-5                           # learning rate
     epochs: int = 1                              # passes over the training split
-    warmup_ratio: float = 0.0                    # share of steps spent warming the schedule
+    warmup_ratio: float = 0.05                   # share of steps spent warming the schedule
     seed: int = 42                               # seeds the init, the shuffle and the dropout
     max_len: int = 8192                          # tokens per event; a longer event is dropped whole
     events_per_mb: int = 4                        # events in one logical minibatch
@@ -139,8 +139,6 @@ class Inject:
     max_inject_per_step: int = 1                  # injections allowed per step
     max_cuts: int = 64                            # cuts scored per step
     max_new: int = 96                             # the probe's generation budget per fire
-    chunk_tokens: int = 64                        # tokens per streaming segment between probe calls
-    tail_tokens: int = 1024                       # segment size once probing has stopped
     store_token_ids: bool = True                  # keep the generated and discarded token ids in the record
     pieces: int = 6                               # how many loop processes
     replicas: int = 1                             # how many agent servers
@@ -266,8 +264,7 @@ STAGES = {
                  "build.min_think", "build.hist_rounds", "build.probe_result_cap",
                  "inject.split", "inject.max_steps", "inject.theta", "inject.format",
                  "inject.arm", "inject.fire_nth_cut", "inject.max_inject_per_step",
-                 "inject.max_cuts", "inject.max_new", "inject.chunk_tokens",
-                 "inject.tail_tokens", "inject.store_token_ids"),
+                 "inject.max_cuts", "inject.max_new", "inject.store_token_ids"),
     "models": ("agent",),
     "upstream": ({"name": "probe_score.train", "source": "ref:inject.probe_score",
                   "stage": "train", "key": "fold"},
