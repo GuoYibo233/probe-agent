@@ -1102,9 +1102,59 @@ def _stage_table_files() -> set[str]:
     return named
 
 
-def _check_version_and_history(path: str) -> list[str]:
-    """One file's VERSION (an int) and VERSION_HISTORY (errata '3.3 / 8.6'): keys exactly 2..VERSION, every entry's why non-empty, every stale a tuple of schema.STAGES names."""
+# The VERSION rule comment block pinned directly above every column-zero VERSION
+# assignment in the 22 stage-table files (errata "3.3 / 8.6", gyb 2026-09-18):
+# word-for-word identical in all of them, checked by _check_version_comment below.
+_VERSION_RULE_COMMENT = (
+    '# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).',
+    "# Bump VERSION only when some existing setting would now produce a different output of a stage",
+    "# that lists this file in the stage table of experimental_settings/schema.py. A new feature",
+    "# behind a new setting field whose default reproduces the old behaviour, a message, a comment",
+    "# or a report layout does not bump.",
+    '# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",',
+    '# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,',
+    '# score) whose existing outputs can no longer be used; leave "stale" out and every stage is',
+    "# stale. The key folds the highest version that made a stage stale, so a bump that leaves a",
+    "# stage usable keeps that stage's run directory. When unsure, list the stage.",
+)
+
+
+def _version_assign_lineno(path) -> int | None:
+    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
+    tree = ast.parse(Path(path).read_text())
+    matches = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Assign) and node.col_offset == 0
+        and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets)
+    ]
+    if len(matches) != 1:
+        return None
+    return matches[0].lineno
+
+
+def _check_version_comment(path) -> list[str]:
+    """The VERSION rule comment block sits directly above the file's VERSION assignment, word for word (errata '3.3 / 8.6', gyb 2026-09-18)."""
     problems: list[str] = []
+    lineno = _version_assign_lineno(path)
+    if lineno is None:
+        return problems
+    lines = Path(path).read_text().splitlines()
+    start = lineno - 1 - len(_VERSION_RULE_COMMENT)
+    if start < 0:
+        problems.append(
+            f"check 4: {path}: the VERSION rule comment block is missing directly above VERSION (line {lineno})")
+        return problems
+    above = tuple(lines[start:lineno - 1])
+    if above != _VERSION_RULE_COMMENT:
+        problems.append(
+            f"check 4: {path}: the lines directly above VERSION (line {lineno}) do not match the pinned VERSION rule comment block")
+    return problems
+
+
+def _check_version_and_history(path: str) -> list[str]:
+    """One file's VERSION rule comment (pinned text, directly above), VERSION (an int) and VERSION_HISTORY (errata '3.3 / 8.6'): keys exactly 2..VERSION, every entry's why non-empty, every stale a tuple of schema.STAGES names."""
+    problems: list[str] = []
+    problems.extend(_check_version_comment(path))
     version = _safe_literal(problems, "check 4", path, "VERSION")
     if version is None:
         return problems
