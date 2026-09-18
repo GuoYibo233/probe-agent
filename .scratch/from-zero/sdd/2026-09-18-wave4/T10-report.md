@@ -550,3 +550,490 @@ findings was done, and no other file was touched. AGENT-1, LAUNCH-1,
 LAUNCH-3 and LAUNCH-4 (the other findings the wave-4 review verified `real`)
 are outside `eval/score_run.py` and are not this ticket's — they belong to
 tickets 11 and 12 respectively. No open questions.
+
+## Owner rulings applied, round 1
+
+Worked in worktree `/home/y-guo/reproduce/new1-wt/2026-09-18-wave4-T10-table-ruling1`
+(removed at the end; branch kept), on a fresh branch
+`ticket/2026-09-18-wave4/T10-table-ruling` cut from `from-zero`'s tip at
+`d1a4e60`. Three owner rulings on `eval/method_table.py`, all applied.
+`PY=/home/y-guo/reproduce/new1/external/probe-env/bin/python` for every
+command below.
+
+**RULING-1 — backbone off the train run's own directory, not a registry-row
+match.** `_backbone_of` no longer takes `all_rows` and no longer searches the
+`registry.ls(...)` result for a `stage == "train"` row whose `key` matches.
+It now reads the eval row's own `meta.json` for `upstream["train"]` (as
+before), then locates the train run directory directly with
+`schema.run_dir_of("train", train_key, debug=row["flags"]["debug"])` (the
+eval row's own debug placement — an eval's train upstream sits in the same
+workflow walk) and reads that directory's own `meta.json`, taking
+`backbone = diff.get("models.probe", <schema default>)`. A missing eval
+`meta.json`, a missing `upstream["train"]`, or a missing train-directory
+`meta.json` all print `"?"`. This removes the dependency on the train run
+being present in the same `registry.ls` result — the registry-row lookup is
+gone, `table` calls `registry.ls` once and no longer needs to keep the whole
+unfiltered result around for a second pass.
+
+```python
+def _backbone_of(row: dict) -> str:
+    meta_path = Path(row["dir"]) / "meta.json"
+    if not meta_path.exists():
+        return "?"
+    meta = json.loads(meta_path.read_text())
+    train_key = (meta.get("upstream") or {}).get("train")
+    if train_key is None:
+        return "?"
+    debug = row.get("flags", {}).get("debug", False)
+    train_dir = schema.run_dir_of("train", train_key, debug=debug)
+    train_meta_path = train_dir / "meta.json"
+    if not train_meta_path.exists():
+        return "?"
+    train_meta = json.loads(train_meta_path.read_text())
+    diff = train_meta.get("diff") or {}
+    return diff.get("models.probe", schema.SECTION_CLASSES["models"]().probe)
+```
+
+**RULING-2 — a `debug` switch, passed straight to `registry.ls`.**
+`table`'s signature is now
+`table(workflow: str | None = None, out: Path | None = None, *, debug: bool = False) -> str`;
+the body calls `registry.ls(workflow, debug=debug)` instead of the
+hard-coded `debug=False`, and keeps the `stage == "eval"` filter. With
+`debug=False` (the default) the table is exactly what it was; with
+`debug=True` a `--debug` walk's eval rows are listed too. Ticket 14's
+`run.py` will expose this as `run.py table [workflow] --debug`, per the
+owner's ruling text.
+
+**RULING-3 — sweep children are parallel settings, never grouped by
+parent.** The grouping line changed from
+`group_key = row.get("parent") or row.get("setting")` to
+`groups.setdefault(row["setting"], []).append(row)` — the group key is
+always the row's own `setting` name, a sweep child's full name included.
+`row["parent"]` and `row["swept"]` are read nowhere in the file now (checked
+with `grep -n "parent\|swept" eval/method_table.py`: the only remaining hit
+is the word "parent" inside a docstring sentence, not a dict read). A group
+still holds every run recorded under one setting name and reports
+`mean ± spread` over those runs, the bare value for a group of one.
+
+Both `README.md`'s `## Ticket 10` file line for `method_table.py` and its
+"Decisions made" paragraph were updated to match: the `offers:` signature
+now carries the `debug` keyword, the `reads:` line names the train run's own
+`meta.json`, and the prose states the setting-keyed grouping and the
+`schema.run_dir_of`-located backbone instead of the old registry-row lookup
+and parent-keyed grouping.
+
+### How it was verified
+
+**A1 — import test, six files, three venvs.** Rerun in full over
+`external/probe-env`, `external/appworld/venv`, `external/vllm-env`:
+`import test done`, no `FAIL` line, exit 0.
+
+**A3 — the literal lines.** Rerun: `literals ok`, exit 0.
+
+**A9 — `method_table` over the (still empty in this worktree) real
+registry.**
+```
+| backbone | method | risk | n | coverage | trig_acc | earliness | wrong_spec | tool_ok | params_all_ok | full_call_ok | runs | status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+```
+Header starting `#`, the `| backbone | method | risk |` row present, empty
+body, `exit=0`. Completed instantly with no `ssh`-related output — this
+worktree's `jobs/runs.jsonl` is empty, so `registry.ls`'s early return
+(before `live_sessions()`) still fires, unaffected by RULING-2's new
+`debug` parameter.
+
+**Fabricated-ledger check for all three rulings**, in a `mktemp -d` tree
+(`/tmp/tmp.BbGMo2Lu19`, removed after the run), with `jobs/registry.py`'s
+`_runs_path`/`_lock_path`/`_results_path` and
+`experimental_settings/schema.py`'s `_outputs_config` monkeypatched to a
+second `tempfile.mkdtemp()` tree inside the same process, and
+`registry.live_sessions` stubbed to `lambda: set()` so no `ssh`/`tmux` call
+is made at any point. Ledger rows were appended directly as JSON lines
+(bypassing `registry.append_start`, since no real launch is being
+simulated); run directories carried a hand-written `meta.json` and, where a
+report was needed to produce a table row, a minimal generator
+`probe_report.json` (`probe_kind: "generator"`, one risk `0.05`, `exact`
+block with `tool_ok/params_all_ok/full_call_ok = 1.0`, `n = 10`).
+
+1. **Backbone from the train directory's own `meta.json`, `"?"` when
+   absent.** One non-debug eval row's train key pointed at a train
+   directory whose `meta.json` carried `diff: {"models.probe":
+   "qwen3_1pt7b"}`; a second non-debug eval row's train key pointed at a
+   train directory that exists but carries no `meta.json` at all. Output:
+   ```
+   | qwen3_1pt7b | cgen | 0.05 | 10 | - | - | - | - | 1.0000 | 1.0000 | 1.0000 | 1 | OK |
+   | ? | cgen | 0.05 | 10 | - | - | - | - | 1.0000 | 1.0000 | 1.0000 | 1 | OK |
+   ```
+   Both rows present, `qwen3_1pt7b` and `?` each appearing exactly once.
+   Confirmed check: `check 1 ok: backbone off the train run's own meta.json
+   (found qwen3_1pt7b and ?)`.
+2. **`table(debug=True)` lists a debug eval row, `table()` does not.** A
+   third eval row was appended with `debug: true` in its start row and a
+   train reference to a `qwen3_0pt6b` backbone. `table()` (default
+   `debug=False`) rendered no row carrying `qwen3_0pt6b`; `table(debug=True)`
+   did. Confirmed check: `check 2 ok: table(debug=True) lists the debug
+   eval row, table() does not`.
+3. **Two sweep children of one parent render as two separate groups.** Two
+   more eval rows were appended sharing one sweep parent
+   (`parent: "cgen_sweep"`) but distinct setting names
+   (`cgen_sweep/train.lr=0.0001,train.seed=42` and
+   `cgen_sweep/train.lr=0.0003,train.seed=42`), each with its own report.
+   Output added two more `qwen3_1pt7b | cgen | 0.05` rows, each with
+   `runs = 1` — no row anywhere in the table carries `runs = 2`. Confirmed
+   check: `check 3 ok: the two sweep children render as two separate groups
+   (runs=1 each), not merged`.
+
+Full script output ended `ALL FABRICATED-LEDGER CHECKS OK`. The temp
+ledger/outputs tree (`tempfile.mkdtemp()`'s own directory, distinct from
+the script's own `mktemp -d` home) was removed after the run
+(`rm -rf /tmp/tmpz761skbb`); nothing was written under the real outputs
+root or into the real `jobs/runs.jsonl`/`jobs/RESULTS.md`.
+
+### Commits
+
+- `1dd95ff` — `T10: eval/method_table.py -- apply owner rulings round 1`
+  (backbone off the train run's own `meta.json` via `schema.run_dir_of`, a
+  `debug` switch on `table()`, sweep children grouped by their own setting
+  name; both files, one commit).
+
+### Self-review and open questions
+
+Each ruling replaced the ruled-over logic outright — `_backbone_of` no
+longer takes or reads `all_rows` at all (the registry-row search is gone,
+not special-cased around), the grouping line reads `row["setting"]` only
+(no `or row.get("parent")` fallback survives), and `debug` flows straight
+into `registry.ls` with no branch of its own. No file outside
+`eval/method_table.py` and `README.md` was touched. No open questions.
+
+## Owner rulings applied, round 1 (score_run, cgen, cparam)
+
+Worked in worktree
+`/home/y-guo/reproduce/new1-wt/2026-09-18-wave4-T10-score-ruling1` (removed at
+the end; branch kept), on a fresh branch
+`ticket/2026-09-18-wave4/T10-score-ruling` cut from `from-zero`'s tip at
+`d1a4e60` (base). Head after the commit: `a120a60`. Two owner rulings, on
+`eval/score_run.py`, `eval/methods/cgen.py` and `eval/methods/cparam.py`, both
+applied. `PY=/home/y-guo/reproduce/new1/external/probe-env/bin/python` for
+every command below.
+
+**RULING-4 — the score report keeps only the success rates and the probe
+agreement rates.** Every removed field's computation was deleted outright,
+not special-cased around:
+
+- `_finals` now selects only `record_id`, `task_id`, `seed` off the meta rows
+  and `record_id`, `success`, `abort` off the final rows — the `steps`,
+  `completed`, `tokens_in`, `tokens_out`, `wall_s` columns and the whole
+  gen-row sum join (`n_inject_sum`, `usage_out_sum`, `discard_chars_sum`,
+  `discard_tokens_sum`) are gone, since no kept field reads them.
+- `_run_block` returns only `n_records`, `n_abort`, `success`,
+  `success_no_abort`; `steps_mean`, `completed`, `tokens_in`, `tokens_out`,
+  `n_inject_per_task`, `discard_chars`, `discard_tokens`, `wall_s_mean` and
+  their computations are gone.
+- `_paired_block` returns only `n`, `success`, `base_success`,
+  `delta_success`; `tokens_out` and `base_tokens_out` are gone.
+- `_spec_block` returns only `n`, `tool_agree`, `call_agree`, `recalled`;
+  `exec_ok`, `conf_mean`, `discarded_chars`, `error_kinds` and their
+  computations are gone. The agreement logic itself is unchanged: a
+  `gen_call` or `env.action` that fails to parse already fell through to the
+  `else` branch (`tool_agree_vals.append(False)`, `call_agree_vals.append(False)`)
+  before this ruling, which is exactly the owner's option-A rule, so nothing
+  needed to change there — re-verified below with a fixture built for this
+  ruling.
+- `_resume_block` and `_by_seed_block` are deleted in full, and `main` no
+  longer calls them or reads `cfg.score.by_seed`; that setting is now read by
+  nothing in the file (noted in the docstring TODO).
+- `_render_report_md`'s per-task line is now
+  `task_id | seed | success | base_success`, four columns, dropping `steps`,
+  `n_inject`, `tokens_out`.
+- `done.json`'s `metrics` are now `success`, `base_success`, `delta_success`,
+  `spec_tool_agree`, `spec_call_agree`, `n_records`, with `tokens_out` and
+  `spec_exec_ok` removed; the existing null-filter (`metrics = {name: value
+  for name, value in metrics.items() if value is not None}`) is unchanged and
+  still applies.
+- The now-unused `_mean` helper and the `statistics` import are deleted; `_rate`
+  stays, since the four kept rate fields all still go through it.
+- Both gates (same-setup, baseline completeness) and the pair-by-pair read
+  with one beat per task (the SCORE-3 fix) are untouched — verified by
+  rerunning A8's two refusals and reading the heartbeat file below.
+- The module docstring's first line is now "Score a sample or inject run from
+  its task records: success rates and probe agreement rates, paired against a
+  baseline," matched in `README.md`'s `score_run.py` line (the previous
+  wording named `tokens and time` and `by seed`, both gone). A
+  `TODO(gyb, 2026-09-18)` block follows the first line, listing every removed
+  field by name and stating the owner decides later what the report holds,
+  and noting `score.by_seed` is now unread.
+
+**RULING-5 — the exact-match rule of the generator accuracy is marked
+open.** No logic changed in `eval/methods/cgen.py` or `cparam.py`. Each
+file's module docstring got one `TODO(gyb, 2026-09-18)` block, right after the
+first line and before the existing `noparam` paragraph, stating that the
+matching rule behind `match()`'s `tool_ok`, `params_all_ok` and
+`full_call_ok` is open and the owner decides it later.
+
+### How it was verified
+
+**A1 — import test, six files, three venvs.** Rerun in full over
+`external/probe-env`, `external/appworld/venv`, `external/vllm-env`:
+```
+import test done
+```
+No `FAIL` line, exit 0.
+
+**A3 — the literal lines.** Rerun:
+```
+literals ok
+```
+Exit 0. `VERSION` and `PROBE_KIND` are untouched by both rulings, as expected.
+
+**A7 — `match` callable from the train side.** Rerun verbatim:
+```
+A7 ok
+```
+Confirms RULING-5 changed no logic: `cgen.match`'s and `cparam.match`'s
+behaviour, including the dropped `noparam` short-circuit, is exactly as
+before.
+
+**A8 — `score_run` end to end, plus both refusals, with the ruling's fields
+retired named.** Rebuilt the ticket's own fixture verbatim (`1111aaaa1111`
+debug sample, `2222bbbb2222` non-debug baseline sample, `3333cccc3333` debug
+score — created under the real outputs root by the ticket's own command, as
+the acceptance text does, then deleted). Heartbeat file for the run, one beat
+per task read plus the finish beat, unchanged from the post-merge fix shape:
+```
+@hb {"done": 0, "total": 2, "unit": "task", ...}
+@hb {"done": 1, "total": 2, "unit": "task", ...}
+@hb {"done": 2, "total": 2, "unit": "task", ...}
+@hb {"done": 2, "total": 2, "unit": "task", ..., "status": "done"}
+```
+Main run assertions, with the retired ones dropped and a check added that
+`by_seed` and `resume` no longer appear on the report:
+```
+score keys: ['baseline', 'baseline_key', 'commit', 'n_pairs', 'n_seeds', 'n_tasks', 'paired', 'run', 'scored_key', 'scored_stage', 'spec', 'stage_key', 'version']
+done metrics: {'success': 1.0, 'base_success': 0.0, 'delta_success': 1.0, 'n_records': 2}
+A8 ok (ruling-adjusted)
+```
+`rep["scored_stage"] == "sample"`, `rep["n_pairs"] == 2`,
+`rep["run"]["success"] == 1.0`, `rep["baseline"]["success"] == 0.0`,
+`rep["paired"]["n"] == 2`, `rep["paired"]["delta_success"] == 1.0`,
+`rep["spec"]["n"] == 0`, `done.json`'s `stage == "score"` and
+`report == "report.md"`, `report.md` exists, no `consumed.json` — all held.
+**Retired by this ruling, and why:** the ticket's original A8 line
+`assert rep["spec"]["n"] == 0 and rep["by_seed"]["42"]["n_records"] == 2`
+had its second half retired — `rep["by_seed"]` no longer exists, since
+RULING-4 deletes the whole by-seed block; `rep["spec"]["n"] == 0` is
+unretired and still checked, since `spec.n` is a kept field. No other A8
+assertion referenced a removed field. The acceptance text itself was not
+edited, per instruction.
+
+Then the same-setup gate refusal (baseline `temperature` set to `0.7`):
+```
+ValueError: score_run: same-setup gate failed between .../debug/sample/1111aaaa1111 and .../sample/2222bbbb2222: generation.temperature differs
+exit=1
+```
+Then, after restoring `temperature: 1.0` and deleting the baseline record
+`82e2fac_1__s42.jsonl`, the completeness gate:
+```
+ValueError: score_run: baseline .../sample/2222bbbb2222 is missing a done record for pair(s) [('82e2fac_1', 42)]
+exit=1
+```
+Both messages match the ticket's expected wording and both gates ran
+unchanged by this ruling. **Clean-up:** deleted all three fixture
+directories afterward — `debug/sample/1111aaaa1111`, `sample/2222bbbb2222`
+(non-debug), `debug/score/3333cccc3333` — and a `find` over the outputs root
+for the three keys returned nothing.
+
+**SCORE-1 fixture rerun (post-merge fix), gen_call equal to env.action on
+every step.** A direct fixture built under `mktemp -d`
+(`data/trajectory_record.py`'s writer, `_spec_block` called on the frame held
+in memory, nothing written under the outputs root): one record, two steps,
+each step's `spec.gen_call` byte-identical to that step's `env.action`
+(`apis.a.x(k=1)` and `apis.b.y(k=2)`). Result:
+```
+SCORE-1 equal-call fixture spec block: {'n': 2, 'tool_agree': 1.0, 'call_agree': 1.0, 'recalled': 1.0}
+SCORE-1 equal-call fixture ok
+```
+`n=2`, `tool_agree=1.0`, `call_agree=1.0`, `recalled=1.0` — the SCORE-1
+post-merge fix (the `env_action` column rename that stopped `_spec_block`
+from reading the spec row's own null `action` column) still holds under
+RULING-4's trimmed-down `_spec_block`.
+
+### Commits
+
+- `a120a60` — `T10: owner rulings round 1 (RULING-4, RULING-5)` (both
+  rulings, one commit).
+
+### Self-review and open questions
+
+Both rulings replaced the ruled-over logic outright: no removed field is
+computed anywhere in the file and then merely dropped from the output dict,
+and no special case or flag was added around either ruling. `eval/score_run.py`
+is 76 lines shorter (336 -> 261 after also removing the now-dead `_mean`
+helper and `statistics` import); `eval/methods/cgen.py` and `cparam.py` gained
+only their four-line TODO blocks, no logic line changed, confirmed by A7's
+unchanged output. `README.md`'s `score_run.py` line was updated to match the
+new docstring first line, since the old one named fields (`tokens and time`,
+`by seed`) that no longer exist; `cgen.py` and `cparam.py`'s README lines
+needed no change, since their one-line summaries ("exact match of the
+generated call/arguments at the frozen theta") were never about the tiers'
+computation rule and stay true. No file outside `eval/score_run.py`,
+`eval/methods/cgen.py`, `eval/methods/cparam.py` and `README.md` was touched.
+
+Open question carried forward for the owner, not mine to resolve: RULING-4's
+`score.by_seed` setting is now read by nothing in the codebase (noted in the
+docstring TODO) — whether the setting itself should also be removed from
+`experimental_settings/schema.py` is outside this ticket's file list and the
+owner's to decide alongside "what a score report holds."
+
+## Owner rulings applied, round 2
+
+Worked in worktree
+`/home/y-guo/reproduce/new1-wt/2026-09-18-wave4-T10-table-ruling2` (removed at
+the end; branch kept), checking out the existing branch
+`ticket/2026-09-18-wave4/T10-table-ruling` at `1dd95ff` (base
+`d1a4e60ffb50436bd4a8d7e8a3df5b194e71fe54`, the same base the round-1 branch
+was cut from — round 2 continues that branch rather than starting a new one).
+Head after the commit: `b497315`. One finding applied, N1-1, in
+`eval/method_table.py`.
+
+**N1-1 — `table(debug=True)` averaged a debug run and a real run of the same
+setting into one cell.** Root cause: `registry.ls(workflow, debug=True)`
+drops the `debug` filter rather than selecting only debug rows
+(`jobs/registry.py`: `if not debug: entries = [e for e in entries if not
+e["start"].get("debug")]`), so a `debug=True` call returns every debug **and**
+non-debug row. `table`'s grouping key was `row["setting"]` alone (round 1's
+`RULING-3`), so a `--debug` walk of a setting that already has a real eval run
+landed in the same group as that real run and the two were averaged — the
+exact shape the finding reproduced: a real `cls_main` row (`n=1000, coverage
+0.9000`) and a debug `cls_main` row (`n=4, coverage 0.1000`) folded into one
+printed row, `n = 502.0 ± 704.3, coverage = 0.5000 ± 0.5657, runs = 2`,
+matching neither run and carrying no column that says a debug run is mixed
+in. This defeats the owner's purpose for the `debug` switch (round 1's
+`RULING-2`): `M-E2` verifies the generator eval on a `--debug` walk, and the
+number the table shows is unusable whenever a non-debug run of the same
+setting already exists.
+
+Fix, applied at the root — the grouping key itself, not a filter layered on
+top of it: the group key is now `(row["setting"], row["flags"]["debug"])`
+instead of `row["setting"]` alone.
+
+```python
+-    groups: dict[str, list[dict]] = {}
++    groups: dict[tuple[str, bool], list[dict]] = {}
+     for row in eval_rows:
+-        groups.setdefault(row["setting"], []).append(row)
++        groups.setdefault((row["setting"], row["flags"]["debug"]), []).append(row)
+```
+
+`table()` (default `debug=False`) is unaffected — `registry.ls(..., debug=False)`
+already excludes every debug row before grouping runs, so its groups were
+already debug-free. `table(debug=True)` now renders the real run and the
+debug run of one setting as two separate rows/groups, each `runs = 1`,
+instead of one merged `runs = 2` row. No new column names which run is
+debug — the printed column set stays the contract-pinned thirteen — the fix
+is that the two numbers are no longer combined, not that the table narrates
+the difference. `README.md`'s `## Ticket 10` file line and the
+"Decisions made" paragraph for `method_table.py` were updated to state the
+`(setting, debug)` grouping key and why `registry.ls`'s own filter shape
+makes it necessary.
+
+### How it was verified
+
+`PY=/home/y-guo/reproduce/new1/external/probe-env/bin/python` for every
+command below, run from the worktree root.
+
+**A1 — import test, six files, three venvs.** Rerun in full over
+`external/probe-env`, `external/appworld/venv`, `external/vllm-env`:
+```
+import test done
+```
+No `FAIL` line, exit 0.
+
+**A3 — the literal lines.** Rerun:
+```
+literals ok
+```
+Exit 0.
+
+**A9 — `method_table` over the (still empty in this worktree) real
+registry.**
+```
+# eval matrix: backbone x method x risk
+
+| backbone | method | risk | n | coverage | trig_acc | earliness | wrong_spec | tool_ok | params_all_ok | full_call_ok | runs | status |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+```
+Header starting `#`, the `| backbone | method | risk |` row present, empty
+body, `exit=0`, elapsed 0.001 s — the empty-ledger `live_sessions()`
+short-circuit still fires (confirmed by the near-instant return; no
+`ssh`-related output).
+
+**Fabricated-ledger check, all three items the dispatch names**, in a
+`mktemp -d` script directory (`/tmp/tmp.By38XpTARu`, removed after the run)
+with a *separate* `tempfile.mkdtemp()` scratch tree monkeypatched into the
+process for the ledger and the outputs root
+(`jobs/registry.py`'s `_runs_path`/`_lock_path`/`_results_path` and
+`experimental_settings/schema.py`'s `_outputs_config`), and
+`registry.live_sessions` stubbed to `lambda: set()` so no `ssh`/`tmux` call
+is made. Ledger rows were appended directly as JSON lines; run directories
+carried a hand-written `meta.json` and, per row, a minimal `probe_report.json`.
+
+1. **Backbone from the train directory's own `meta.json`, `"?"` when
+   absent.** One non-debug eval row's train key pointed at a train
+   directory whose `meta.json` carried `diff: {"models.probe":
+   "qwen3_1pt7b"}`; a second non-debug eval row's train key pointed at a
+   train directory that exists but carries no `meta.json`. Output:
+   ```
+   | qwen3_1pt7b | ctool | 0.05 | 40 | 0.7500 | 0.8000 | 0.3000 | 0.0500 | - | - | - | 1 | OK |
+   | ? | ctool | 0.05 | 40 | 0.7500 | 0.8000 | 0.3000 | 0.0500 | - | - | - | 1 | OK |
+   ```
+   `check 1 ok: backbone off the train run's own meta.json (qwen3_1pt7b) and
+   '?' when absent`.
+2. **`table(debug=True)` lists a debug eval row and `table()` does not — the
+   N1-1 regression itself.** A real eval row (`cls_main`, `n=1000, coverage
+   0.9000`) and a debug eval row of the same setting name (`cls_main`,
+   `n=4, coverage 0.1000`) were appended. `table()` (`debug=False`):
+   ```
+   | qwen3_1pt7b | ctool | 0.05 | 1000 | 0.9000 | 0.8500 | 0.2500 | 0.0200 | - | - | - | 1 | OK |
+   ```
+   one row, the real run only. `table(debug=True)`:
+   ```
+   | qwen3_1pt7b | ctool | 0.05 | 1000 | 0.9000 | 0.8500 | 0.2500 | 0.0200 | - | - | - | 1 | OK |
+   | qwen3_1pt7b | ctool | 0.05 | 4 | 0.1000 | 0.5000 | 0.5000 | 0.5000 | - | - | - | 1 | OK |
+   ```
+   two rows, `runs = 1` each, no `±` anywhere and no `502`. `check 2a ok`,
+   `check 2b ok`. **Before/after comparison**: the same script run against
+   the pre-fix code (`git stash` to `1dd95ff`, rerun, `git stash pop`)
+   reproduced the exact defect the finding names on the same fixture —
+   `table(debug=True)` printed one merged row,
+   `| qwen3_1pt7b | ctool | 0.05 | 502.0 ± 704.3 | 0.5000 ± 0.5657 | 0.6750 ± 0.2475 | 0.3750 ± 0.1768 | 0.2600 ± 0.3394 | - | - | - | 2 | OK |`
+   — confirming the defect and the fix are both exercised by a real
+   before/after run on the fix's own regression fixture, not just presumed.
+3. **Two sweep children of one parent render as two separate groups.** Two
+   eval rows sharing one sweep parent (`parent: "cgen_sweep"`) but distinct
+   setting names (`cgen_sweep/train.lr=0.0001,train.seed=42` and
+   `cgen_sweep/train.lr=0.0003,train.seed=42`), each with its own generator
+   report, rendered as two rows, each `runs = 1` — no row carries `runs = 2`.
+   `check 3 ok`.
+
+Full script output ended `ALL N1-1 FABRICATED-LEDGER CHECKS OK`. The
+`tempfile.mkdtemp()` ledger/outputs scratch tree and the `mktemp -d` script
+directory were both removed after the run; nothing was written under the
+real outputs root or into the real `jobs/runs.jsonl`/`jobs/RESULTS.md`.
+
+### Commits
+
+- `b497315` — `T10: eval/method_table.py -- fix N1-1, debug/non-debug rows of
+  one setting no longer merge` (the grouping-key fix, `eval/method_table.py`
+  and `README.md`, one commit).
+
+### Self-review and open questions
+
+The fix replaces the ruled-over logic outright: the group key is
+`(row["setting"], row["flags"]["debug"])` everywhere in the file now, with no
+leftover `row["setting"]`-only path and no special case guarding the
+mixed-debug scenario — a debug row simply can never share a group with a
+non-debug row, by construction of the key. No column was added to the
+contract-pinned thirteen to narrate which run is debug; the fix is that the
+two runs' numbers are never combined, which is what the finding asked to be
+true. No file outside `eval/method_table.py` and `README.md` was touched.
+No open questions.

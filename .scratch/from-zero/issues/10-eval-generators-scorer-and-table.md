@@ -715,3 +715,23 @@ requested pair count.
   takes backbone and method from its first member (SCORE-5); `spec.exec_ok`,
   `tool_agree` and `call_agree` report 0.0 instead of null for a
   `probe_nofill` run, whose spec rows hold nulls (SEAMS-6, N1-1).
+- 2026-09-18, owner rulings applied at the wave-4 closeout (main session of
+  wave 4; record `.scratch/from-zero/sdd/2026-09-18-wave4/owner-rulings.json`).
+  Branch `ticket/2026-09-18-wave4/T10-table-ruling` (`b497315`, two rounds,
+  merged as `b72fe5b`): `method_table` reads `backbone` from the train run's
+  own `meta.json` located through the eval run's `meta.json`
+  `upstream["train"]` (a `dir:` reference is a key too), never from a registry
+  row; `table(workflow, out, *, debug=False)` shows debug rows when asked
+  (`run.py table --debug`, ticket 14); sweep children are parallel groups keyed
+  by their own setting name, `parent` and `swept` are read nowhere. Branch
+  `ticket/2026-09-18-wave4/T10-score-ruling` (`a120a60`, one round, merged as
+  `014f57f`): `score_run` keeps only the success rates and the three agreement
+  rates, everything else is removed with a `TODO(gyb, 2026-09-18)` in the
+  docstring (the owner decides later what a score report holds); `A8`'s
+  assertions on `by_seed` and the other removed fields are retired, `spec.n`
+  stays; `cgen.py` and `cparam.py` carry a `TODO(gyb, 2026-09-18)` that the
+  exact-match rule is open. Minors: `method_table` re-reads
+  `constants/path_outputs.yaml` once per eval row; with `debug=True` a debug
+  run and a real run of one setting render as two rows no column tells apart
+  (the thirteen pinned columns carry no setting name); the errata entries the
+  rulings overturn are superseded by the rulings block appended after them.

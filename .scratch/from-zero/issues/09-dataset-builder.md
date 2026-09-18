@@ -537,3 +537,17 @@ prevent, and the one thing a fixture cannot prove.
   out of `history`, while 7.3's live rule appends whenever the action is not
   None), BUILDER-3 (a `build_call` `ValueError` leaves the event loop without
   naming the record, the step or the example).
+- 2026-09-18, owner ruling applied at the wave-4 closeout (main session of
+  wave 4; record `.scratch/from-zero/sdd/2026-09-18-wave4/owner-rulings.json`,
+  report `T09-builder-ruling-report.md`; branch
+  `ticket/2026-09-18-wave4/T09-builder-ruling`, `dfba7dc`, merged as
+  `5a0ad25`). gyb's principle: a rare data problem is reported in the log and
+  the run continues where it can. An event whose call `build_call` refuses
+  (a value with both quote kinds, or ending in an odd number of backslashes) or
+  that fails the round-trip gate of step 12 is now skipped, counted under
+  `events_skipped_no_call` and listed in `report.md` with the record, the step
+  and the reason, and the build goes on; this ticket's `F3` hard-stop row and
+  contracts 2.5's hard stop are superseded (errata). Minors recorded by the
+  re-reviewer: a systemically broken `build_call` degrades a build instead of
+  stopping it (only `report.md` and the examples-to-events ratio show it);
+  `report.md` gains one uncapped line per refused event.
