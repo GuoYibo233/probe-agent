@@ -28,22 +28,61 @@ def _tiny_backbone_and_tokenizer():
     return tok, backbone, cfg
 
 
+def _event(event_id, texts, tool, call):
+    """One event's rows: nested prefixes in cut order, one tool and one call for the whole event."""
+    return [dict(
+        example_id=f"{event_id}|c{i}", event_id=event_id, record_id=event_id.split("|")[0],
+        task_id=event_id.split("__")[0], seed=42, step=0, cut=len(text), cut_index=i,
+        n_cuts=len(texts), depth=0.3 * (i + 1), text=text, tool=tool, call=call,
+        args=[{"key": "id", "value": "1"}], weight=1.0, split="train", env="appworld",
+        agent_model="gpt_oss_120b") for i, text in enumerate(texts)]
+
+
+def _grow(base, n=3, step="Thinking step "):
+    return [base + step * (i + 1) for i in range(n)]
+
+
 def _fixture_frame() -> pl.DataFrame:
     """Two events, three cuts each -- the same shape data/training_data.py's writer stamps a version onto."""
-    rows = []
-    for ev in range(2):
-        base = "The task is to pay a bill. I will look at the phone app. "
-        for c in range(3):
-            text = base + "Thinking step " * (c + 1)
-            rows.append(dict(
-                example_id=f"t{ev}__s42|s0|c{c}", event_id=f"t{ev}__s42|s0",
-                record_id=f"t{ev}__s42", task_id=f"t{ev}", seed=42, step=0,
-                cut=len(text), cut_index=c, n_cuts=3, depth=0.3 * (c + 1),
-                text=text, tool="phone.pay" if ev else "phone.login",
-                call=("phone.pay(id=1)" if ev else "phone.login(user='a')"),
-                args=[{"key": "id", "value": "1"}] if ev else [{"key": "user", "value": "a"}],
-                weight=1.0, split="train", env="appworld", agent_model="gpt_oss_120b"))
+    base = "The task is to pay a bill. I will look at the phone app. "
+    rows = _event("t0__s42|s0", _grow(base), "phone.login", "phone.login(user='a')")
+    rows += _event("t1__s42|s0", _grow(base), "phone.pay", "phone.pay(id=1)")
     return pl.DataFrame(rows, strict=False)
+
+
+def _n_tok(tok, text) -> int:
+    return len(tok(text, add_special_tokens=False, truncation=False)["input_ids"])
+
+
+def _cases(tok):
+    """(label, frame, max_len) triples: the plain fixture, and the three shapes where a method's
+    batches() legitimately keeps fewer rows, or fewer tokens, than the whole frame carries. Each of
+    the three fails whenever the two sides stop agreeing on which rows are scored and how they are
+    cut, which is what the alignment gate would then report as a packing bug."""
+    short = "The task is to pay a bill. I will look at the phone app. "
+    long_text = "The agent looked at the phone application screen again and again. " * 8
+    long_call = "phone.pay(id='" + "x " * 200 + "')"
+
+    overlong = pl.DataFrame(
+        _event("a0__s42|s0", _grow(short), "phone.pay", "phone.pay(id=1)")
+        + _event("a1__s42|s0", _grow(long_text), "phone.login", "phone.login(user='a')"),
+        strict=False)
+
+    long_target = pl.DataFrame(
+        _event("b0__s42|s0", _grow(short), "phone.pay", "phone.pay(id=1)")
+        + _event("b1__s42|s0", _grow(short + "again "), "phone.pay", long_call), strict=False)
+
+    band_texts = _grow("The agent read the bill and opened the phone application. " * 2)
+    band = pl.DataFrame(_event("c0__s42|s0", band_texts, "phone.pay", "phone.pay(id=1)"),
+                        strict=False)
+    band_max_len = max(_n_tok(tok, t) for t in band_texts) + 2
+
+    return [
+        ("two events of nested prefixes", _fixture_frame(), 512),
+        ("an event whose longest text is over max_len", overlong, 64),
+        ("an event whose target is over MAX_TGT_TOK", long_target, 512),
+        ("an event whose prompt sits just under max_len", band, band_max_len),
+    ]
 
 
 class _StubOutputs:
@@ -83,32 +122,40 @@ class TestPackedLoss(unittest.TestCase):
         head = torch.nn.Linear(64, 3)
         lm_head = torch.nn.Linear(64, cfg_model.vocab_size, bias=False)
 
-        d = pathlib.Path(tempfile.mkdtemp())
-        training_data.write(d / "examples.parquet", _fixture_frame())
-        df = training_data.read(d / "examples.parquet")
-
         probe_kind = "classifier" if method_name == "ctool" else "generator"
         probe = _StubProbe(tok, backbone, head, lm_head, probe_kind, ["phone.login", "phone.pay"])
+        method = importlib.import_module(f"train.methods.{method_name}")
+        d = pathlib.Path(tempfile.mkdtemp())
 
         import types
 
-        cfg = types.SimpleNamespace(
-            train=types.SimpleNamespace(seed=42, max_len=512, events_per_mb=2, accum=1,
-                                        predict=types.SimpleNamespace(splits=["train"], cap=None, max_new=8)),
-            probe=types.SimpleNamespace(method=method_name), data=types.SimpleNamespace(env="appworld"))
+        for i, (label, frame, max_len) in enumerate(_cases(tok)):
+            with self.subTest(case=label):
+                path = d / f"examples{i}.parquet"
+                training_data.write(path, frame)
+                df = training_data.read(path)
+                probe.max_len = max_len
 
-        method = importlib.import_module(f"train.methods.{method_name}")
-        if method_name == "ctool":
-            labels = method.head_labels(df, cfg)
-            self.assertEqual(labels, sorted(df["tool"].unique().to_list()))
+                cfg = types.SimpleNamespace(
+                    train=types.SimpleNamespace(
+                        seed=42, max_len=max_len, events_per_mb=2, accum=1,
+                        predict=types.SimpleNamespace(splits=["train"], cap=None, max_new=8)),
+                    probe=types.SimpleNamespace(method=method_name),
+                    data=types.SimpleNamespace(env="appworld"))
 
-        with torch.no_grad():
-            packed = sum(float(method.loss(probe, b)) for b in method.batches(df, tok, cfg))
-            plain = float(method.reference_loss(probe, df))
+                if method_name == "ctool":
+                    labels = method.head_labels(df, cfg)
+                    self.assertEqual(labels, sorted(df["tool"].unique().to_list()))
 
-        n = len(df)
-        diff = abs(packed - plain) / n
-        self.assertLess(diff, TOL, f"{method_name}: packed={packed / n} plain={plain / n} diff={diff}")
+                with torch.no_grad():
+                    packed = sum(float(method.loss(probe, b))
+                                 for b in method.batches(df, tok, cfg))
+                    plain = float(method.reference_loss(probe, df))
+
+                n = len(df)
+                diff = abs(packed - plain) / n
+                self.assertLess(diff, TOL, f"{method_name} [{label}]: packed={packed / n} "
+                                           f"plain={plain / n} diff={diff}")
 
     def test_ctool(self) -> None:
         self._check("ctool")
