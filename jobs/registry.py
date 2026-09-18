@@ -515,8 +515,10 @@ def session_alive(host: str, session: str) -> bool:
 def _alive_on(host: str | None, session: str | None, sessions: set) -> bool:
     if not host or not session:
         return False
-    if isinstance(sessions, _ProbedSessions) and host in sessions.failed_hosts:
-        return True
+    if isinstance(sessions, _ProbedSessions):
+        cfg = _outputs_config()
+        if _canonical_host(host, cfg) in sessions.failed_hosts:
+            return True
     return session in sessions
 
 
