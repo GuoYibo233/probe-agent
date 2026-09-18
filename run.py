@@ -518,46 +518,6 @@ def _walk_one(cfg, allow_dirty: bool) -> None:
             return
 
 
-def _piece_alive(piece: dict, sessions, hosts_cfg: list[dict]) -> bool:
-    """Fail-closed liveness (3.4/8.0), mirroring jobs.launch._piece_alive and jobs.registry._alive_on: a live session, or a host whose probe never answered at all."""
-    host, session = piece.get("host"), piece.get("session")
-    if not host or not session:
-        return False
-    failed_hosts = getattr(sessions, "failed_hosts", None)
-    if failed_hosts and normalize_host(host, hosts_cfg) in failed_hosts:
-        return True
-    return session in sessions
-
-
-def _read_beats(run_dir: Path) -> dict[int, list[float]]:
-    """{piece index: [beat ts, ...]} over every incarnation of every piece in this run directory (mirrors jobs.launch's own private reader, for the CPU-stage gate call below, 2.3/2.5)."""
-    hb_dir = run_dir / "heartbeat"
-    out: dict[int, list[float]] = {}
-    if not hb_dir.is_dir():
-        return out
-    for path in hb_dir.glob("*-*.jsonl"):
-        idx_str = path.name.split("-", 1)[0]
-        if not idx_str.isdigit():
-            continue
-        idx = int(idx_str)
-        ts_list = out.setdefault(idx, [])
-        try:
-            with open(path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ts = json.loads(line).get("ts")
-                    except json.JSONDecodeError:
-                        continue
-                    if ts is not None:
-                        ts_list.append(ts)
-        except OSError:
-            continue
-    return out
-
-
 def _refuse_on_stale_inputs(stage: str, run_dir: Path) -> None:
     """Before a skip (2.3): refuse, naming the file and both hashes, when a consumed.json entry -- or, for sample/inject, a meta.json split_files entry -- no longer matches the file it names."""
     entries: list[dict] = []
@@ -696,7 +656,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     open_rows = [r for r in registry.open_runs() if r.get("run_id") == run_id]
     if open_rows:
         meta_by_run = {run_id: _read_json(run_dir / "meta.json") or {}}
-        beats = {run_id: _read_beats(run_dir)}
+        beats = {run_id: launch.read_beats_for_run(run_dir)}
         sessions = registry.live_sessions()
         refusal = launch.gate_open_row(open_rows, meta_by_run, sessions, time.time(), beats)
         if refusal is not None:
@@ -764,14 +724,17 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
         work_pieces = [p for p in (meta.get("pieces") or []) if p.get("kind") in ("loop", "train")]
         if work_pieces:
             sessions = registry.live_sessions()
-            hosts_cfg = _hosts_config()
-            if any(_piece_alive(p, sessions, hosts_cfg) for p in work_pieces):
-                released = trajectory_record.release(
-                    run_dir, sessions, registry.DEFAULTS["launch_timeout_s"])
-                if released:
-                    print(f"run.py: released {len(released)} dead claim(s) under {run_dir}")
-                else:
-                    print(f"run.py: {run_dir} has a live piece; launching nothing")
+            # release() only deletes a claim whose owner session is not in `sessions`
+            # (data/trajectory_record.py), so this always runs, whether or not any of
+            # this run's own pieces are still alive: a live piece's own claims are
+            # untouched, and a fully-dead run's stale claims are freed so the relaunch
+            # below can re-claim them instead of skipping them forever.
+            released = trajectory_record.release(
+                run_dir, sessions, registry.DEFAULTS["launch_timeout_s"])
+            if released:
+                print(f"run.py: released {len(released)} dead claim(s) under {run_dir}")
+            if any(launch.piece_alive(p, sessions) for p in work_pieces):
+                print(f"run.py: {run_dir} has a live piece; launching nothing")
                 return "stop"
 
     upstream_map = schema.upstream(stage, cfg)
