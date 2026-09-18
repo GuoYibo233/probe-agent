@@ -163,11 +163,15 @@ def run(run_dir: Path, method) -> None:
 
     n_labels = len(labels) if labels else None
     weights_path = models.probe(cfg.models.probe).weights_path  # resolved for the start log line only
-    # device= is not in the ticket's pinned base.load(...) call or in contracts 2.6's signature
-    # table; it is a real, non-defaulted-to-GPU keyword on the merged models/probe_models/base.py
-    # (default "cpu"), so leaving it out would silently pin every probe to CPU on a GPU run. This
-    # is a considered gap-fill flagged for the owner's sign-off (T13 report, open finding F5), not
-    # part of the ticket's own text.
+    # base.load's own pinned signature (ticket 06: "load(row, cfg, *, probe_kind, n_labels=None,
+    # labels=None, ckpt_dir=None, device='cpu') -> Probe") carries device as a real keyword,
+    # defaulting to "cpu"; contracts 2.6 and 6.2 echo the signature without it, an abbreviation of
+    # the same interface, not a disagreement with ticket 06. The train launch line carries no
+    # --device flag (unlike the probe service's launch line, which does) and no cfg field carries
+    # one, so this loop is the only place that can supply it. jobs/launch.py scopes the process to
+    # one physical GPU through CUDA_VISIBLE_DEVICES, so torch.cuda.is_available() alone tells this
+    # process whether that GPU is there; leaving device out would pin the backbone to base.load's
+    # "cpu" default and the run would never touch the GPU it was launched on.
     device = "cuda" if torch.cuda.is_available() else "cpu"
     probe = base.load(cfg.models.probe_row, cfg, probe_kind=method.PROBE_KIND,
                        n_labels=n_labels, labels=labels, ckpt_dir=ckpt_dir, device=device)
