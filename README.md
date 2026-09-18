@@ -408,8 +408,8 @@ itself (contracts 2.6).
         reads:   -   writes: - (everything goes through eval/utils/probe_eval.py, which hands the
                  prediction frame and the referenced report to the report hook, 2.6)
         venv:    any
-    score_run.py            a sample or inject run from its records: task success, speculation outcomes,
-                            tokens and time; by seed; against a baseline; carries VERSION
+    score_run.py            a sample or inject run from its records: success rates and probe agreement
+                            rates, paired against a baseline; carries VERSION
       imports: experimental_settings/schema.py, data/trajectory_record.py, data/environments/__init__.py
                (open_env for split_args and build_call, and requested_pairs, 2.3),
                jobs/registry.py; [polars]

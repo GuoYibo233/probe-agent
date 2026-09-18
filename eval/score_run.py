@@ -1,10 +1,18 @@
-"""Score a sample or inject run from its task records: success, speculation outcomes, tokens and time, paired against a baseline and broken out by seed.
+"""Score a sample or inject run from its task records: success rates and probe agreement rates, paired against a baseline.
+
+TODO(gyb, 2026-09-18): owner ruling — nothing in this report beyond accuracy
+was ever asked for, so everything else is removed until the owner decides
+what a score report should hold. Removed, with all the code that computed
+them: the run and baseline blocks' steps_mean, completed, tokens_in,
+tokens_out, n_inject_per_task, discard_chars, discard_tokens, wall_s_mean;
+the paired block's tokens_out and base_tokens_out; the spec block's exec_ok,
+conf_mean, discarded_chars, error_kinds; the whole resume block; the whole
+by_seed block. score.by_seed is now a setting that nothing reads.
 """
 from __future__ import annotations
 
 import json
 import os
-import statistics
 from pathlib import Path
 
 import polars as pl
@@ -31,12 +39,6 @@ def _rate(numer: float, denom: int) -> float | None:
     return round(numer / denom, 4) if denom else None
 
 
-def _mean(series: pl.Series) -> float | None:
-    """The series' mean rounded to 4, or None when it holds no non-null value (Series.mean of an all-null column)."""
-    value = series.mean()
-    return round(float(value), 4) if value is not None else None
-
-
 def _first_diff_field(a, b) -> str | None:
     """The first field (dotted, section first) where a and b's data, models.agent or generation sections differ."""
     for name in _DATA_FIELDS:
@@ -51,40 +53,16 @@ def _first_diff_field(a, b) -> str | None:
 
 
 def _finals(df: pl.DataFrame) -> pl.DataFrame:
-    """One row per record: its meta identity, its final outcome, and its gen-row sums."""
+    """One row per record: its meta identity and its final success/abort outcome."""
     meta = df.filter(pl.col("type") == "meta").select(["record_id", "task_id", "seed"])
-    final = df.filter(pl.col("type") == "final").select(
-        ["record_id", "success", "abort", "steps", "completed", "tokens_in", "tokens_out", "wall_s"])
-    gen = df.filter(pl.col("type") == "gen")
-    if gen.height:
-        gen_sums = gen.group_by("record_id").agg([
-            pl.col("n_inject").sum().alias("n_inject_sum"),
-            pl.col("usage").struct.field("out").sum().alias("usage_out_sum"),
-            pl.col("discard").struct.field("chars").sum().alias("discard_chars_sum"),
-            pl.col("discard").struct.field("tokens").sum().alias("discard_tokens_sum"),
-        ])
-    else:
-        gen_sums = pl.DataFrame(schema={
-            "record_id": pl.Utf8, "n_inject_sum": pl.Int64, "usage_out_sum": pl.Int64,
-            "discard_chars_sum": pl.Int64, "discard_tokens_sum": pl.Int64,
-        })
-    out = meta.join(final, on="record_id", how="left").join(gen_sums, on="record_id", how="left")
-    return out.with_columns([
-        pl.col("n_inject_sum").fill_null(0),
-        pl.col("usage_out_sum").fill_null(0),
-        pl.col("discard_chars_sum").fill_null(0),
-        pl.col("discard_tokens_sum").fill_null(0),
-    ])
+    final = df.filter(pl.col("type") == "final").select(["record_id", "success", "abort"])
+    return meta.join(final, on="record_id", how="left")
 
 
 def _run_block(rec: pl.DataFrame) -> dict:
     n = rec.height
     if n == 0:
-        return {
-            "n_records": 0, "n_abort": 0, "success": None, "success_no_abort": None,
-            "steps_mean": None, "completed": None, "tokens_in": None, "tokens_out": None,
-            "n_inject_per_task": None, "discard_chars": None, "discard_tokens": None, "wall_s_mean": None,
-        }
+        return {"n_records": 0, "n_abort": 0, "success": None, "success_no_abort": None}
     n_abort = rec.filter(pl.col("abort").is_not_null()).height
     no_abort = rec.filter(pl.col("abort").is_null())
     return {
@@ -92,20 +70,11 @@ def _run_block(rec: pl.DataFrame) -> dict:
         "n_abort": n_abort,
         "success": _rate(float(rec["success"].sum()), n),
         "success_no_abort": _rate(float(no_abort["success"].sum()), no_abort.height),
-        "steps_mean": _mean(rec["steps"]),
-        "completed": _rate(float(rec["completed"].sum()), n),
-        "tokens_in": _mean(rec["tokens_in"]),
-        "tokens_out": _mean(rec["tokens_out"]),
-        "n_inject_per_task": _mean(rec["n_inject_sum"]),
-        "discard_chars": _mean(rec["discard_chars_sum"]),
-        "discard_tokens": _mean(rec["discard_tokens_sum"]),
-        "wall_s_mean": _mean(rec["wall_s"]),
     }
 
 
 def _paired_block(rec: pl.DataFrame, brec: pl.DataFrame | None) -> dict:
-    empty = {"n": 0, "success": None, "base_success": None, "delta_success": None,
-             "tokens_out": None, "base_tokens_out": None}
+    empty = {"n": 0, "success": None, "base_success": None, "delta_success": None}
     if brec is None:
         return empty
     joined = rec.join(brec, on=["task_id", "seed"], how="inner", suffix="_base")
@@ -119,18 +88,15 @@ def _paired_block(rec: pl.DataFrame, brec: pl.DataFrame | None) -> dict:
         "success": round(success, 4),
         "base_success": round(base_success, 4),
         "delta_success": round(success - base_success, 4),
-        "tokens_out": _mean(joined["tokens_out"]),
-        "base_tokens_out": _mean(joined["tokens_out_base"]),
     }
 
 
 def _spec_block(df: pl.DataFrame, env) -> dict:
-    """exec_ok, error_kind counts, conf and discarded_chars off the spec rows; tool_agree, call_agree and recalled recomputed against that step's env.action."""
+    """tool_agree, call_agree and recalled recomputed against that step's env.action; a gen_call or env.action that does not parse counts as not agreeing."""
     spec = df.filter(pl.col("type") == "spec")
     n = spec.height
     if n == 0:
-        return {"n": 0, "exec_ok": None, "tool_agree": None, "call_agree": None,
-                "recalled": None, "conf_mean": None, "discarded_chars": None, "error_kinds": {}}
+        return {"n": 0, "tool_agree": None, "call_agree": None, "recalled": None}
 
     env_rows = df.filter(pl.col("type") == "env").select(
         ["record_id", "step", pl.col("action").alias("env_action")])
@@ -152,51 +118,12 @@ def _spec_block(df: pl.DataFrame, env) -> dict:
             call_agree_vals.append(False)
         recalled_vals.append(bool(gp is not None and action is not None and gp[0] in action))
 
-    error_kinds: dict[str, int] = {}
-    for kind in spec["error_kind"].to_list():
-        if kind is not None:
-            error_kinds[kind] = error_kinds.get(kind, 0) + 1
-
     return {
         "n": n,
-        "exec_ok": _rate(float(spec["exec_ok"].sum()), n),
         "tool_agree": _rate(float(sum(tool_agree_vals)), n),
         "call_agree": _rate(float(sum(call_agree_vals)), n),
         "recalled": _rate(float(sum(recalled_vals)), n),
-        "conf_mean": _mean(spec["conf"]),
-        "discarded_chars": _mean(spec["discarded_chars"]),
-        "error_kinds": error_kinds,
     }
-
-
-def _resume_block(df: pl.DataFrame) -> dict:
-    resume = df.filter(pl.col("type") == "resume")
-    n = resume.height
-    if n == 0:
-        return {"n": 0, "identical": None, "match_len_mean": None}
-    return {
-        "n": n,
-        "identical": _rate(float(resume["identical"].sum()), n),
-        "match_len_mean": _mean(resume["match_len"]),
-    }
-
-
-def _by_seed_block(rec: pl.DataFrame) -> dict:
-    seeds = sorted(rec["seed"].unique().to_list())
-    per_seed = {str(seed): _run_block(rec.filter(pl.col("seed") == seed)) for seed in seeds}
-    metric_names = [k for k in _run_block(rec) if k not in ("n_records", "n_abort")]
-    mean_block, spread_block = {}, {}
-    for name in metric_names:
-        values = [per_seed[s][name] for s in per_seed if per_seed[s][name] is not None]
-        if not values:
-            mean_block[name] = None
-            spread_block[name] = None
-        else:
-            mean_block[name] = round(statistics.fmean(values), 4)
-            spread_block[name] = round(statistics.stdev(values), 4) if len(values) > 1 else 0.0
-    per_seed["mean"] = mean_block
-    per_seed["spread"] = spread_block
-    return per_seed
 
 
 def _render_report_md(fields: dict, rec: pl.DataFrame, brec: pl.DataFrame | None) -> str:
@@ -204,18 +131,17 @@ def _render_report_md(fields: dict, rec: pl.DataFrame, brec: pl.DataFrame | None
     lines = [
         f"# score {fields['stage_key']} — {fields['scored_stage']} at {fields['commit']}",
         "",
-        f"n_records={run['n_records']} n_abort={run['n_abort']} success={run['success']} "
-        f"steps_mean={run['steps_mean']} tokens_out={run['tokens_out']}",
+        f"n_records={run['n_records']} n_abort={run['n_abort']} success={run['success']}",
     ]
     if fields["baseline"] is not None:
         base = fields["baseline"]
         paired = fields["paired"]
-        lines.append(f"baseline: success={base['success']} tokens_out={base['tokens_out']}")
+        lines.append(f"baseline: success={base['success']}")
         lines.append(f"paired: n={paired['n']} delta_success={paired['delta_success']}")
     lines.append("")
     lines.append("## per task")
-    lines.append("task_id | seed | success | base_success | steps | n_inject | tokens_out")
-    lines.append("---|---|---|---|---|---|---")
+    lines.append("task_id | seed | success | base_success")
+    lines.append("---|---|---|---")
 
     base_success_by_pair: dict[tuple, bool | None] = {}
     if brec is not None:
@@ -224,10 +150,7 @@ def _render_report_md(fields: dict, rec: pl.DataFrame, brec: pl.DataFrame | None
 
     for row in rec.sort(["task_id", "seed"]).iter_rows(named=True):
         base_success = base_success_by_pair.get((row["task_id"], row["seed"]))
-        lines.append(
-            f"{row['task_id']} | {row['seed']} | {row['success']} | {base_success} | "
-            f"{row['steps']} | {row['n_inject_sum']} | {row['tokens_out']}"
-        )
+        lines.append(f"{row['task_id']} | {row['seed']} | {row['success']} | {base_success}")
     return "\n".join(lines) + "\n"
 
 
@@ -280,8 +203,6 @@ def main(run_dir: Path) -> None:
     baseline_block = _run_block(brec) if brec is not None else None
     paired_block = _paired_block(rec, brec)
     spec_block = _spec_block(df, env)
-    resume_block = _resume_block(df)
-    by_seed_block = _by_seed_block(rec) if cfg.score.by_seed else None
 
     n_tasks = len({task_id for task_id, _ in pairs})
     n_seeds = len({seed for _, seed in pairs})
@@ -300,8 +221,6 @@ def main(run_dir: Path) -> None:
         "baseline": baseline_block,
         "paired": paired_block,
         "spec": spec_block,
-        "resume": resume_block,
-        "by_seed": by_seed_block,
     }
 
     _atomic_write_json(run_dir / "run_report.json", fields)
@@ -311,8 +230,6 @@ def main(run_dir: Path) -> None:
         "success": run_block["success"],
         "base_success": baseline_block["success"] if baseline_block is not None else None,
         "delta_success": paired_block["delta_success"],
-        "tokens_out": run_block["tokens_out"],
-        "spec_exec_ok": spec_block["exec_ok"],
         "spec_tool_agree": spec_block["tool_agree"],
         "spec_call_agree": spec_block["call_agree"],
         "n_records": run_block["n_records"],
