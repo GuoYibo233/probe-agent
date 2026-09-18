@@ -217,7 +217,8 @@ def readme_entries(path) -> dict[str, dict[str, str]]:
 # ---------------------------------------------------------------------------
 
 
-def _current_key(workflow_name: str, setting_name: str, stage: str, debug: bool) -> str | None:
+def _current_setting(workflow_name: str, setting_name: str, debug: bool):
+    """The named setting as it loads today, or None when its file, its name or its load is gone (8.6's edited and behind flags compare a row against it)."""
     workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
     if not workflow_file.exists():
         return None
@@ -225,35 +226,184 @@ def _current_key(workflow_name: str, setting_name: str, stage: str, debug: bool)
         cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides={})
     except schema.SchemaError:
         return None
-    if len(cfgs) != 1:
-        return None
+    if len(cfgs) == 1:
+        return cfgs[0]
+    return None
+
+
+def _current_key_and_versions(stage: str, cfg) -> tuple[str | None, dict]:
+    """Today's key for this stage of this setting, and the `versions` block that keys it.
+
+    Both readers parse every module the stage's row lists, so this is what one ledger row
+    costs to judge and it is read once per (setting, stage, debug) rather than once per row
+    (8.6's `ls` runs over the whole ledger). An unreadable setting gives `None` and an empty
+    block, which is the blank `edited` column of 8.6.
+    """
+    if cfg is None:
+        return None, {}
     try:
-        return schema.key(stage, cfgs[0])
+        current_key = schema.key(stage, cfg)
     except Exception:
-        return None
+        current_key = None
+    try:
+        current_versions = schema.versions_of(stage, cfg)
+    except Exception:
+        current_versions = {}
+    return current_key, current_versions
 
 
-def _compute_edited(rows: list[dict]) -> dict[str, bool | None]:
-    """{run_id: the named setting's current key != this row's key}, None when the setting can't be reloaded (8.6's edited flag)."""
-    edited: dict[str, bool | None] = {}
-    cache: dict[tuple, str | None] = {}
+def _behind_versions(recorded: dict, current: dict) -> bool:
+    """Whether any module the `recorded` block names now carries a higher VERSION than the block records (8.6's behind: 'a folded module's VERSION is ahead of the directory's').
+
+    `current` comes from `schema.versions_of`, the same reader that wrote the row's own
+    `versions` block, so a table entry (`<path>#<TABLE>.<method>`) and a stand-in
+    (`<path>@<stage>`) are compared the way the stage table spells them, and this file parses
+    no module itself (ticket 14's comment of 2026-09-18).
+    """
+    return any(name in current and recorded[name] < current[name] for name in recorded)
+
+
+def _stale_sentence(stage: str, recorded: dict) -> str:
+    """Which file's `VERSION` bump made this run stale, and that bump's own `why` (ticket 14's comment of 2026-09-18, errata '3.3 / 8.6').
+
+    A stage's key folds each listed file's effective version for that stage — the highest
+    version whose `VERSION_HISTORY` entry calls that stage stale — so a file whose effective
+    version now stands above the version this run recorded is a file whose bump moved this
+    run's key. A `<path>@<other>` stand-in is stale when either stage's entries say so, the
+    way `key` folds it; a `<path>#<TABLE>.<method>` entry carries no version history and is
+    left out.
+    """
+    parts = []
+    for name, version in recorded.items():
+        if "#" in name:
+            continue
+        path, _, stands_for = name.partition("@")
+        try:
+            effective = schema.effective_version(path, stage)
+            if stands_for:
+                effective = max(effective, schema.effective_version(path, stands_for))
+            history = schema.version_history(path)
+        except Exception:
+            continue
+        if effective > version:
+            why = (history.get(effective) or {}).get("why", "")
+            parts.append(f'{path} VERSION {effective}: "{why}"')
+    return "; ".join(parts)
+
+
+def _inputs_changed(entries) -> bool:
+    """Whether any recorded `{path, sha1}` entry no longer matches the file it names — the comparison behind 8.6's consumed and split flags, and the one the walk's skip gate makes (2.3)."""
+    for entry in entries or []:
+        path, recorded = entry.get("path"), entry.get("sha1")
+        if path is None or recorded is None:
+            continue
+        p = Path(path)
+        actual = _sha1_of(p) if p.exists() else "<missing>"
+        if actual != recorded:
+            return True
+    return False
+
+
+def _has_pinned_reference(run_dir: Path) -> bool:
+    """Whether the run's frozen setting gives one of the four reference fields in the pinned `key:`/`dir:` form, which skipped the inheritance check and the shared-build-key gate (5.4, 8.6's pinned flag)."""
+    if not (run_dir / "settings.yaml").exists():
+        return False
+    try:
+        frozen = schema.load_frozen(run_dir)
+    except (schema.SchemaError, OSError, yaml.YAMLError):
+        return False
+    for dotted in schema.REF_FIELDS:
+        section_name, _, field_name = dotted.partition(".")
+        section = getattr(frozen, section_name, None)
+        value = getattr(section, field_name, None) if section is not None else None
+        if isinstance(value, dict):
+            return True
+    return False
+
+
+def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
+    """Per run_id, the five flags of 8.6 that `run.py` owns because `jobs/registry.py` imports nothing from this repo — `edited`, `behind`, `consumed`, `split`, `pinned` — plus the sentence naming the bump that made a stale run stale.
+
+    `edited` is the named setting's current key against this directory's; `behind` is a
+    recorded `VERSION` below the file's current one while that key still matches, which is
+    the run that stayed usable across the bumps between (ticket 14's comment of 2026-09-18);
+    a run whose key moved is stale instead, and `stale` carries which file's bump did it.
+
+    A ledger holds many rows per setting, and every reading of a setting or of a module's
+    `VERSION` re-reads and re-parses source text, so each of the three source readings is
+    done once and reused: the setting per (workflow, setting, debug), the key and the
+    versions block per stage of it, and the stale sentence per (stage, recorded versions),
+    which is all it is a function of.
+    """
+    out: dict[str, dict] = {}
+    settings: dict[tuple, object] = {}
+    readings: dict[tuple, tuple[str | None, dict]] = {}
+    sentences: dict[tuple, str] = {}
     for row in rows:
         run_id = row.get("run_id")
         workflow_name, setting_name, stage = row.get("workflow"), row.get("setting"), row.get("stage")
         debug = bool(row.get("debug"))
         if not (run_id and workflow_name and setting_name and stage):
             continue
-        cache_key = (workflow_name, setting_name, stage, debug)
-        if cache_key not in cache:
-            cache[cache_key] = _current_key(workflow_name, setting_name, stage, debug)
-        current = cache[cache_key]
-        edited[run_id] = None if current is None else (current != row.get("key"))
-    return edited
+        setting_id = (workflow_name, setting_name, debug)
+        if setting_id not in settings:
+            settings[setting_id] = _current_setting(workflow_name, setting_name, debug)
+        stage_id = setting_id + (stage,)
+        if stage_id not in readings:
+            readings[stage_id] = _current_key_and_versions(stage, settings[setting_id])
+        current, current_versions = readings[stage_id]
+        recorded = row.get("versions") or {}
+        if current is None:
+            edited, behind, stale = None, None, ""
+        else:
+            key_matches = current == row.get("key")
+            edited = not key_matches
+            behind = key_matches and _behind_versions(recorded, current_versions)
+            if key_matches:
+                stale = ""
+            else:
+                sentence_id = (stage, tuple(sorted(recorded.items())))
+                if sentence_id not in sentences:
+                    sentences[sentence_id] = _stale_sentence(stage, recorded)
+                stale = sentences[sentence_id]
+        run_dir = Path(row["dir"]) if row.get("dir") else None
+        consumed = split = pinned = False
+        if run_dir is not None:
+            consumed = _inputs_changed(_read_json(run_dir / "consumed.json"))
+            split = _inputs_changed((_read_json(run_dir / "meta.json") or {}).get("split_files"))
+            pinned = _has_pinned_reference(run_dir)
+        out[run_id] = {"edited": edited, "behind": behind, "consumed": consumed,
+                       "split": split, "pinned": pinned, "stale": stale}
+    return out
+
+
+def _requested_pairs_of(workflow_name: str, setting_name: str, stage: str, debug: bool) -> list | None:
+    """The (task, seed) pairs this stage of this setting asks for, or None when the setting or its environment cannot be read.
+
+    Reading them loads the setting and opens the environment, which is why the caller reads
+    them once per (setting, stage) and counts every row of that setting against the one list.
+    """
+    try:
+        cfg = _current_setting(workflow_name, setting_name, debug)
+        if cfg is None:
+            return None
+        section = cfg.inject if stage == "inject" else cfg.sample
+        env = open_env(cfg.data.env)
+        triples = requested_pairs(env, section.split, section.tasks, section.n_tasks, section.seeds)
+    except Exception:
+        return None
+    return [(task_id, seed) for _split, task_id, seed in triples]
 
 
 def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
-    """{run_id: (done, total)} for every sample/inject row, through trajectory_record.done_pairs against the row's own requested (task, seed) list (8.0's progress argument)."""
+    """{run_id: (done, total)} for every sample/inject row, through trajectory_record.done_pairs against the row's own requested (task, seed) list (8.0's progress argument).
+
+    The request is a function of the setting and the stage, so it is read once per
+    (setting, stage, debug) over the whole ledger; `done_pairs` reads the row's own directory
+    and stays per row.
+    """
     progress: dict[str, tuple[int, int]] = {}
+    requested: dict[tuple, list | None] = {}
     for row in rows:
         stage = row.get("stage")
         if stage not in ("sample", "inject"):
@@ -263,53 +413,79 @@ def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
         debug = bool(row.get("debug"))
         if not (run_id and workflow_name and setting_name and run_dir):
             continue
-        workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
-        if not workflow_file.exists():
+        request_id = (workflow_name, setting_name, debug, stage)
+        if request_id not in requested:
+            requested[request_id] = _requested_pairs_of(workflow_name, setting_name, stage, debug)
+        pairs = requested[request_id]
+        if pairs is None:
             continue
         try:
-            cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides={})
-            if len(cfgs) != 1:
-                continue
-            cfg = cfgs[0]
-            section = cfg.inject if stage == "inject" else cfg.sample
-            env = open_env(cfg.data.env)
-            triples = requested_pairs(env, section.split, section.tasks, section.n_tasks, section.seeds)
-            pairs = [(task_id, seed) for _split, task_id, seed in triples]
             done = trajectory_record.done_pairs(Path(run_dir), pairs)
-            progress[run_id] = (len(done), len(pairs))
         except Exception:
             continue
+        progress[run_id] = (len(done), len(pairs))
     return progress
 
 
-def _format_ls_row(row: dict) -> str:
+def _format_piece(piece: dict) -> str:
+    """One piece on the ls line: its index and verdict, the session it runs in and the host it runs on, and the cards it holds (8.6)."""
+    text = f"{piece.get('index')}:{piece.get('verdict')}"
+    host, session = piece.get("host"), piece.get("session")
+    if session:
+        text += f"@{host}:{session}"
+    elif host:
+        text += f"@{host}"
+    gpus = piece.get("gpus")
+    if gpus:
+        text += f" cards={gpus}"
+    return text
+
+
+def _format_ls_row(row: dict, stale: str = "") -> str:
+    """8.6's folded line: run_id, stage, the names that own it, status, progress as done/total unit with a rate, the heartbeat's age, the eight flags, and per piece its verdict, session, host and cards."""
     run_id = row.get("run_id") or "-"
     stage = row.get("stage") or "-"
     workflow_name = row.get("workflow") or "-"
     setting_name = row.get("setting") or "-"
     status = row.get("status") or "-"
     done, total = row.get("progress", (0, 0))
+    # The unit comes from the beats (8.4), so a run that has not beaten yet has none to print.
+    unit = f" {row['unit']}" if row.get("unit") else ""
+    rate = row.get("recent_rate")
+    rate_str = f"{rate:.3g}/s" if rate is not None else "-"
+    beat_age = row.get("beat_age_s")
+    beat_str = f"{beat_age:.0f}s" if beat_age is not None else "-"
     flags = row.get("flags") or {}
     flag_str = ",".join(k for k, v in flags.items() if v) or "-"
     pieces = row.get("pieces") or []
-    verdicts = ",".join(f"{p.get('index')}:{p.get('verdict')}" for p in pieces) or "-"
-    return (f"{run_id}  stage={stage}  {workflow_name}/{setting_name}  status={status}  "
-            f"progress={done}/{total}  flags={flag_str}  pieces={verdicts}")
+    piece_str = "; ".join(_format_piece(p) for p in pieces) or "-"
+    line = (f"{run_id}  stage={stage}  {workflow_name}/{setting_name}  status={status}  "
+            f"progress={done}/{total}{unit}  rate={rate_str}  beat={beat_str}  "
+            f"flags={flag_str}  pieces={piece_str}")
+    if stale:
+        line += f"  stale={stale}"
+    return line
 
 
 def cmd_ls(rest: list[str]) -> int:
     debug = "--debug" in rest
     workflow_name = next((t for t in rest if t != "--debug"), None)
     rows = registry.find({})
-    edited = _compute_edited(rows)
+    row_flags = _compute_row_flags(rows)
     progress = _compute_progress(rows)
-    result = registry.ls(workflow_name, debug=debug, edited=edited, progress=progress)
+    result = registry.ls(
+        workflow_name, debug=debug, progress=progress,
+        edited={rid: f["edited"] for rid, f in row_flags.items()},
+        behind={rid: f["behind"] for rid, f in row_flags.items()},
+        consumed={rid: f["consumed"] for rid, f in row_flags.items()},
+        split={rid: f["split"] for rid, f in row_flags.items()},
+        pinned={rid: f["pinned"] for rid, f in row_flags.items()})
     if not result:
         print("run.py ls: no runs")
         return 0
-    print("run_id | stage | workflow/setting | status | progress | flags | pieces")
+    print("run_id | stage | workflow/setting | status | progress | rate | heartbeat | flags | pieces")
     for row in result:
-        print(_format_ls_row(row))
+        print(_format_ls_row(row, (row_flags.get(row.get("run_id")) or {}).get("stale", "")))
     return 0
 
 
@@ -464,6 +640,14 @@ def cmd_selfcheck(rest: list[str]) -> int:
 # The walk (2.3, 2.4, 2.5, 3.4, 8.1, 8.2).
 # ---------------------------------------------------------------------------
 
+# 2.3's continue column and 2.4: `eval` and `score` always recompute inside their key -- a
+# rerun overwrites its own directory, and each recomputation gets its own finish row (8.2).
+# They cost seconds, and the failure this prevents is a metric fix that never runs because a
+# finished directory was reused. Ticket 14's step 2 sentence "every other stage skips on the
+# presence of done.json" is 2.3's general rule; the stage table's own row for these two names
+# them and wins.
+ALWAYS_RECOMPUTE = ("eval", "score")
+
 
 def _is_override_token(tok: str) -> bool:
     if "=" not in tok:
@@ -539,19 +723,40 @@ def _refuse_on_stale_inputs(stage: str, run_dir: Path) -> None:
                 "run `run.py retry` to rebuild")
 
 
-def _record_owner(run_dir: Path, cfg) -> None:
-    """A skip is an ownership event (2.3): add {workflow, setting} to meta.json's owners, under the lock."""
+def _owners_with(run_dir: Path, cfg) -> list[dict]:
+    """This directory's owners list with {workflow, setting} in it: 8.3's owners holds every setting that has run into or reused the directory. Read under the caller's lock hold."""
+    meta = _read_json(run_dir / "meta.json") or {}
+    owners = list(meta.get("owners") or [])
     entry = {"workflow": cfg._file, "setting": cfg._name}
+    if entry not in owners:
+        owners.append(entry)
+    return owners
+
+
+def _record_owner(run_dir: Path, cfg) -> None:
+    """A skip is an ownership event (2.3): add {workflow, setting} to meta.json's owners, under the lock, on the walk that first brings this setting to the directory."""
     with registry.lock():
-        meta = _read_json(run_dir / "meta.json") or {}
-        owners = list(meta.get("owners") or [])
-        if entry not in owners:
-            owners.append(entry)
+        stored = list((_read_json(run_dir / "meta.json") or {}).get("owners") or [])
+        owners = _owners_with(run_dir, cfg)
+        if owners != stored:
             registry.write_meta(run_dir, owners=owners)
 
 
+def _fold_stage_extra(run_dir: Path, done: dict) -> None:
+    """8.3 and 1.3: a stage writes its own `stage_extra` — train puts the class order there — into its `done.json`, and `run.py` folds it into `meta.json` on the walk that sees that file, under the lock, so `meta.json` keeps exactly two writers and the eval stage reads the train run's labels from it."""
+    extra = done.get("stage_extra")
+    if extra:
+        with registry.lock():
+            registry.write_meta(run_dir, stage_extra=extra)
+
+
 def _backfill_finish_row(run_id: str, run_dir: Path) -> None:
-    """A directory whose done.json exists with no finish row gets one, on the walk that first sees it (8.2)."""
+    """A directory whose done.json exists with no finish row gets one, on the walk that first sees it (8.2).
+
+    8.2's other rule — a stage that always recomputes gets a new finish row per recomputation —
+    is held by the walk itself: `eval` and `score` never skip (2.4), so `run.py` runs each
+    recomputation in place and appends that run's own `ok` row when the process exits zero.
+    """
     open_ids = {r["run_id"] for r in registry.open_runs()}
     if run_id not in open_ids:
         return
@@ -561,6 +766,21 @@ def _backfill_finish_row(run_id: str, run_dir: Path) -> None:
             "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
             "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
             "report": done.get("report"), "elapsed_s": _elapsed(run_id)})
+
+
+def _certifies_request(done: dict | None, pairs: list[tuple[str, int]]) -> bool:
+    """Whether this directory's done.json already certifies every requested pair (2.3).
+
+    One `sample` or `inject` directory serves several requests, and a request widened after an
+    earlier one finished is completed again: `done.json` is rewritten with the wider `pairs`
+    list, the run's service pieces are ended and a new finish row is appended. So the test that
+    tells a completed request from one still to certify is the recorded `pairs` list, not the
+    presence of the file.
+    """
+    if done is None:
+        return False
+    recorded = {(p[0], p[1]) for p in done.get("pairs") or [] if len(p) == 2}
+    return set(pairs) <= recorded
 
 
 def _finalize_pair_stage(stage: str, run_dir: Path, key: str, pairs: list[tuple[str, int]]) -> None:
@@ -579,18 +799,75 @@ def _finalize_pair_stage(stage: str, run_dir: Path, key: str, pairs: list[tuple[
         "counts": counts, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
 
 
-def _refuse_missing_upstream(stage: str, cfg, upstream_map: dict) -> None:
+def _reference_is_pinned(cfg, source: str) -> bool:
+    """Whether the setting states this upstream's reference in the pinned key:/dir: form (5.4): a name is a string, a pinned reference is a mapping."""
+    dotted = source[len("ref:"):]
+    section_name, _, field_name = dotted.partition(".")
+    section = getattr(cfg, section_name, None)
+    value = getattr(section, field_name, None) if section is not None else None
+    return isinstance(value, dict)
+
+
+def _pinned_run_dir(stage: str, key_val: str) -> Path | None:
+    """The run directory a pinned key names, or None when neither root holds it.
+
+    A run's `--debug` flag is part of its own key payload (3.3), so a pinned `key:`/`dir:`
+    reference — a key computed elsewhere, not from the setting being walked — names a
+    directory under whichever of the two roots that run was written in. The one that answers
+    is the directory whose frozen `settings.yaml` records this very key; a directory made
+    before this scheme carries no `settings.yaml` (5.4's reason for the `dir:` form), so the
+    one that exists stands in for it.
+    """
+    candidates = [schema.run_dir_of(stage, key_val, debug=flag) for flag in (False, True)]
+    for candidate in candidates:
+        if (candidate / "settings.yaml").exists() and schema.load_frozen(candidate)._key == key_val:
+            return candidate
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _upstream_dirs(stage: str, cfg, upstream_map: dict) -> dict[str, Path | None]:
+    """Where each of this stage's upstream runs lives (3.4, 5.4).
+
+    A `same`-source upstream is keyed from this very setting, so it lives under this walk's own
+    root — under `<root>/debug/` for a `--debug` walk. A name-form reference is loaded by the
+    schema with `debug=False`, so its key is the non-debug one and its run lives under the real
+    root. A pinned reference carries a key whose payload holds its own debug flag, so the root
+    it lives under is the key's, not the walk's: errata '3.4 / 9(c)#8' pins the debug keys the
+    construction plan's `--debug` walk produced into `inject.yaml`'s three references, and that
+    walk has to find them.
+    """
+    by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
+    dirs: dict[str, Path | None] = {}
+    for name, key_val in upstream_map.items():
+        entry = by_name[name]
+        if entry["source"] == "same":
+            dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=cfg._debug)
+        elif _reference_is_pinned(cfg, entry["source"]):
+            dirs[name] = _pinned_run_dir(entry["stage"], key_val)
+        else:
+            dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=False)
+    return dirs
+
+
+def _refuse_missing_upstream(stage: str, upstream_map: dict, upstream_dirs: dict) -> None:
     """5.4: refuse to start a stage whose referenced run has no done.json."""
     by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
-    for name, key_val in upstream_map.items():
-        e = by_name[name]
-        debug = cfg._debug if e["source"] == "same" else False
-        target_dir = schema.run_dir_of(e["stage"], key_val, debug=debug)
+    for name, target_dir in upstream_dirs.items():
+        if target_dir is None:
+            key_val = upstream_map[name]
+            candidates = " or ".join(
+                str(schema.run_dir_of(by_name[name]["stage"], key_val, debug=flag))
+                for flag in (False, True))
+            sys.exit(f"run.py: {stage}: upstream {name!r} is pinned to key {key_val}, which is "
+                     f"neither {candidates}; run it first")
         if not (target_dir / "done.json").exists():
             sys.exit(f"run.py: {stage}: upstream {name!r} at {target_dir} has no done.json; run it first")
 
 
-def _check_inject_probe_methods(cfg, upstream_map: dict) -> None:
+def _check_inject_probe_methods(cfg, upstream_dirs: dict) -> None:
     """Errata '5.4 / 2.1': a key:/dir: reference's stated method must match the referenced train run's frozen probe.method."""
     for field_name, ref_value, train_key_name in (
         ("inject.probe_score", cfg.inject.probe_score, "probe_score.train"),
@@ -599,8 +876,7 @@ def _check_inject_probe_methods(cfg, upstream_map: dict) -> None:
         if not (isinstance(ref_value, dict) and "method" in ref_value):
             continue
         stated = ref_value["method"]
-        train_dir = schema.run_dir_of("train", upstream_map[train_key_name], debug=False)
-        frozen = schema.load_frozen(train_dir)
+        frozen = schema.load_frozen(upstream_dirs[train_key_name])
         actual = frozen.probe.method if frozen.probe is not None else None
         if actual != stated:
             sys.exit(
@@ -608,25 +884,26 @@ def _check_inject_probe_methods(cfg, upstream_map: dict) -> None:
                 f"frozen probe.method is {actual!r}")
 
 
-def _check_inject_shared_build_key(upstream_map: dict) -> None:
+def _check_inject_shared_build_key(upstream_dirs: dict) -> None:
     """2.5: inject.probe_score and inject.probe_gen are refused unless their two train runs share a build key."""
-    score_dir = schema.run_dir_of("train", upstream_map["probe_score.train"], debug=False)
-    gen_dir = schema.run_dir_of("train", upstream_map["probe_gen.train"], debug=False)
-    score_build = schema.load_frozen(score_dir)._upstream.get("build")
-    gen_build = schema.load_frozen(gen_dir)._upstream.get("build")
+    score_build = schema.load_frozen(upstream_dirs["probe_score.train"])._upstream.get("build")
+    gen_build = schema.load_frozen(upstream_dirs["probe_gen.train"])._upstream.get("build")
     if score_build != gen_build:
         sys.exit(
             f"run.py: inject refuses: probe_score's train run build key {score_build!r} != "
             f"probe_gen's train run build key {gen_build!r}")
 
 
-def _check_inject_code_currency(upstream_map: dict) -> None:
+def _check_inject_code_currency(upstream_dirs: dict) -> None:
     """2.5: inject refuses when the live code differs from the code its two probes were trained under: data/probe_input.py (off the build run), models/probe_models/base.py and each train run's own backbone module (off the train run), each against schema.module_version's current source reading."""
     for label in ("probe_score.train", "probe_gen.train"):
-        train_dir = schema.run_dir_of("train", upstream_map[label], debug=False)
+        train_dir = upstream_dirs[label]
         train_frozen = schema.load_frozen(train_dir)
         build_key = train_frozen._upstream.get("build")
-        build_dir = schema.run_dir_of("build", build_key, debug=False)
+        # The build run of a train run lives under the root that train run was written in: a
+        # debug train run's `build` key is a debug key (3.3), and its own frozen settings say
+        # which root it belongs to.
+        build_dir = schema.run_dir_of("build", build_key, debug=train_frozen._debug)
         build_frozen = schema.load_frozen(build_dir)
         family = train_frozen.models.probe_row["family"]
         backbone_mod = f"models/probe_models/{family}.py"
@@ -644,10 +921,9 @@ def _check_inject_code_currency(upstream_map: dict) -> None:
                     f"{recorded}, current source VERSION is {current}")
 
 
-def _resolve_inject_temperature(upstream_map: dict) -> dict:
+def _resolve_inject_temperature(upstream_dirs: dict) -> dict:
     """5.4: the softmax temperature is read from the referenced classifier eval's report and frozen under _resolved.probe_temperature."""
-    eval_dir = schema.run_dir_of("eval", upstream_map["probe_score.eval"], debug=False)
-    fields, _fires = probe_eval.read_report(eval_dir)
+    fields, _fires = probe_eval.read_report(upstream_dirs["probe_score.eval"])
     return {"probe_temperature": fields["temperature"]}
 
 
@@ -707,16 +983,26 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
         pairs = [(task_id, seed) for _split, task_id, seed in triples]
         done = trajectory_record.done_pairs(run_dir, pairs)
         fully_done = len(done) == len(pairs)
+    elif stage in ALWAYS_RECOMPUTE:
+        fully_done = False
     else:
         fully_done = done_path.exists()
 
     if fully_done:
         _refuse_on_stale_inputs(stage, run_dir)
         _record_owner(run_dir, cfg)
-        if stage in ("sample", "inject") and not done_path.exists():
-            _finalize_pair_stage(stage, run_dir, key, pairs)
+        done_doc = _read_json(done_path)
+        # A pair stage is certified by the request its done.json records, every other stage by
+        # the presence of that file, which is what the skip test above already read (2.3).
+        if stage in ("sample", "inject"):
+            certified = _certifies_request(done_doc, pairs)
         else:
+            certified = True
+        if certified:
+            _fold_stage_extra(run_dir, done_doc or {})
             _backfill_finish_row(run_id, run_dir)
+        else:
+            _finalize_pair_stage(stage, run_dir, key, pairs)
         return "continue"
 
     if stage in ("sample", "inject"):
@@ -738,13 +1024,14 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
                 return "stop"
 
     upstream_map = schema.upstream(stage, cfg)
-    _refuse_missing_upstream(stage, cfg, upstream_map)
+    upstream_dirs = _upstream_dirs(stage, cfg, upstream_map)
+    _refuse_missing_upstream(stage, upstream_map, upstream_dirs)
     resolved: dict = {}
     if stage == "inject":
-        _check_inject_probe_methods(cfg, upstream_map)
-        _check_inject_shared_build_key(upstream_map)
-        _check_inject_code_currency(upstream_map)
-        resolved = _resolve_inject_temperature(upstream_map)
+        _check_inject_probe_methods(cfg, upstream_dirs)
+        _check_inject_shared_build_key(upstream_dirs)
+        _check_inject_code_currency(upstream_dirs)
+        resolved = _resolve_inject_temperature(upstream_dirs)
 
     proc = None
     with registry.lock():
@@ -752,8 +1039,12 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
         schema.freeze(cfg, stage, run_dir, resolved, git["commit"])
         versions = schema.versions_of(stage, cfg)
         diff = schema.fields_of(stage, cfg)
+        # `owners` holds every setting that has run into or reused this directory (8.3), and a
+        # stage that always recomputes never takes the skip that records one, so a launch
+        # records its own setting here.
         registry.write_meta(run_dir, stage=stage, key=key, dir=str(run_dir), versions=versions,
-                             upstream=upstream_map, diff=diff, debug=cfg._debug)
+                             upstream=upstream_map, diff=diff, debug=cfg._debug,
+                             owners=_owners_with(run_dir, cfg))
 
         if entry["cards"]:
             outcome, _pieces = launch.launch(stage, cfg, run_dir, resolved, git)
@@ -780,6 +1071,7 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
                 "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
         return "stop"
     done = _read_json(done_path) or {}
+    _fold_stage_extra(run_dir, done)
     registry.append_finish(run_id, {
         "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
         "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),

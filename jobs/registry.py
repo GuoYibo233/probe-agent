@@ -747,6 +747,8 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
         "status": last.get("status") if last else None,
         "done": last.get("done") if last else None,
         "total": last.get("total") if last else None,
+        # The beat's own unit, which 8.6's ls line prints beside done/total.
+        "unit": last.get("unit") if last else None,
         "has_beat": has_beat,
         "beat_ts": beat_ts,
         "beat_age_s": (now_ts - beat_ts[-1]) if has_beat else None,
@@ -813,27 +815,41 @@ def _orphan_session_row(name: str, host: str | None) -> dict:
             "kind": None,
             "host": host,
             "session": name,
+            "gpus": None,
             "verdict": "orphan",
             "escalated": False,
+            "beat_age_s": None,
         }],
         "progress": (0, 0),
+        "unit": None,
+        "avg_rate": None,
+        "recent_rate": None,
+        "beat_age_s": None,
         "flags": {
             "edited": None,
-            "debug": False,
+            "behind": None,
+            "consumed": False,
+            "split": False,
+            "pinned": False,
             "dirty": False,
+            "debug": False,
             "orphan": True,
         },
     }
 
 
-def _ls_row(entry: dict, sessions: set, now_ts: float,
-            edited: dict, progress: dict) -> dict:
+def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: dict,
+            behind: dict, consumed: dict, split: dict, pinned: dict) -> dict:
     start, finish = entry["start"], entry["finish"]
     run_id = start["run_id"]
     run_dir = Path(start["dir"])
     pieces = _pieces_of(run_dir, start)
     piece_rows = []
     sum_done = sum_total = 0
+    unit = None
+    beat_ages: list[float] = []
+    avg_rates: list[float] = []
+    recent_rates: list[float] = []
     for piece in pieces:
         pv = _piece_verdict_dict(piece, run_dir, sessions, start["t"], now_ts)
         verdict, escalated = (judge_service(pv) if pv["kind"] == "service"
@@ -841,13 +857,24 @@ def _ls_row(entry: dict, sessions: set, now_ts: float,
         if pv["kind"] != "service":
             sum_done += pv.get("done") or 0
             sum_total += pv.get("total") or 0
+            unit = pv.get("unit") or unit
+            if pv.get("beat_age_s") is not None:
+                beat_ages.append(pv["beat_age_s"])
+            if pv.get("avg_rate") is not None:
+                avg_rates.append(pv["avg_rate"])
+            if pv.get("recent_rate") is not None:
+                recent_rates.append(pv["recent_rate"])
         piece_rows.append({
             "index": piece.get("index"),
             "kind": pv["kind"],
             "host": piece.get("host"),
             "session": piece.get("session"),
+            # The cards this piece holds, as `jobs/launch.py` placed it (8.3); 8.6's ls line
+            # prints them beside the session.
+            "gpus": piece.get("gpus"),
             "verdict": verdict,
             "escalated": escalated,
+            "beat_age_s": pv.get("beat_age_s"),
         })
     if run_id in progress:
         done, total = progress[run_id]
@@ -881,10 +908,21 @@ def _ls_row(entry: dict, sessions: set, now_ts: float,
         "status": status,
         "pieces": piece_rows,
         "progress": (done, total),
+        # The beat unit, the two rates and the newest heartbeat's age, folded over the run's
+        # work pieces: 8.6's ls line prints progress as `done/total unit` with a rate, and the
+        # heartbeat's age beside it.
+        "unit": unit,
+        "avg_rate": sum(avg_rates) if avg_rates else None,
+        "recent_rate": sum(recent_rates) if recent_rates else None,
+        "beat_age_s": min(beat_ages) if beat_ages else None,
         "flags": {
             "edited": edited.get(run_id),
-            "debug": bool(start.get("debug")),
+            "behind": behind.get(run_id),
+            "consumed": bool(consumed.get(run_id)),
+            "split": bool(split.get(run_id)),
+            "pinned": bool(pinned.get(run_id)),
             "dirty": bool(start.get("dirty")),
+            "debug": bool(start.get("debug")),
             "orphan": orphan,
         },
     }
@@ -892,7 +930,11 @@ def _ls_row(entry: dict, sessions: set, now_ts: float,
 
 def ls(workflow: str | None = None, *, debug: bool = False,
        edited: dict[str, bool] | None = None,
-       progress: dict[str, tuple[int, int]] | None = None) -> list[dict]:
+       progress: dict[str, tuple[int, int]] | None = None,
+       behind: dict[str, bool] | None = None,
+       consumed: dict[str, bool] | None = None,
+       split: dict[str, bool] | None = None,
+       pinned: dict[str, bool] | None = None) -> list[dict]:
     """One folded row per run, verdicts included, plus one synthetic row per
     live tmux session that has this repo's own session-name shape and
     matches no piece anywhere in the ledger (8.6's `orphan`: "a tmux session
@@ -910,9 +952,19 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     filter happens to pass nothing. Only a truly empty ledger (no run
     recorded at all) skips the probe, so `run.py ls` and
     `eval/method_table.table()` against an empty ledger issue no `ssh` at
-    all (8.6, A10)."""
+    all (8.6, A10).
+
+    `edited`, `behind`, `consumed`, `split` and `pinned` are the five flags of
+    8.6 that `run.py` computes and passes in, for the reason `edited` names:
+    this file imports nothing from the repo, so it can call neither `key` nor
+    `version_history` nor a settings reader, and it hashes no upstream file.
+    Given None, ls leaves that flag blank."""
     edited = edited or {}
     progress = progress or {}
+    behind = behind or {}
+    consumed = consumed or {}
+    split = split or {}
+    pinned = pinned or {}
     all_entries = [e for e in fold(_read_rows()).values() if e["start"] is not None]
     if not all_entries:
         return []
@@ -923,7 +975,8 @@ def ls(workflow: str | None = None, *, debug: bool = False,
         entries = [e for e in entries if not e["start"].get("debug")]
     sessions = live_sessions()
     now_ts = time.time()
-    rows = [_ls_row(e, sessions, now_ts, edited, progress) for e in entries]
+    rows = [_ls_row(e, sessions, now_ts, edited, progress, behind, consumed, split, pinned)
+            for e in entries]
     known = _known_sessions(all_entries)
     host_of = sessions.host_of if isinstance(sessions, _ProbedSessions) else {}
     repo_sessions = {n for n in sessions if _is_repo_session_name(n)}
