@@ -2,6 +2,7 @@
 # venv: probe
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -84,6 +85,31 @@ def _checkpoint_meta(cfg) -> dict:
             "max_len": cfg.train.max_len, "train_key": cfg._key}
 
 
+def _epoch_cfg(cfg, epoch: int):
+    """A shallow copy of cfg whose train.seed is cfg.train.seed + epoch, for the one call to
+    method.batches() this epoch makes -- every other reader of cfg (validate, the alignment gate,
+    logging, checkpoint meta) keeps the original, unshifted object. copy.copy works uniformly on
+    the real schema.Setting dataclass and on a test fixture's types.SimpleNamespace alike."""
+    epoch_train = copy.copy(cfg.train)
+    epoch_train.seed = cfg.train.seed + epoch
+    epoch_cfg = copy.copy(cfg)
+    epoch_cfg.train = epoch_train
+    return epoch_cfg
+
+
+def _batches_with_epoch_end(batch_iter):
+    """Pair each batch with whether it is the last physical block of the last logical minibatch
+    the iterator yields, found by one-item lookahead -- robust to however many events a method's
+    batches() drops (overlong events, unassembled targets, ...), unlike a minibatch count
+    computed ahead of time from the split's raw event count."""
+    prev = next(batch_iter, None)
+    while prev is not None:
+        nxt = next(batch_iter, None)
+        is_epoch_end = nxt is None or nxt["mb"] != prev["mb"]
+        yield prev, is_epoch_end
+        prev = nxt
+
+
 def run(run_dir: Path, method) -> None:
     """Drive one train run: load the frozen setting, resume or start fresh per the continue rule, run the alignment gate and the step loop, checkpoint, predict, mark done. `method` is the caller's own module (a train/methods/<m>.py); this function never branches on which one it is."""
     run_dir = Path(run_dir)
@@ -137,6 +163,11 @@ def run(run_dir: Path, method) -> None:
 
     n_labels = len(labels) if labels else None
     weights_path = models.probe(cfg.models.probe).weights_path  # resolved for the start log line only
+    # device= is not in the ticket's pinned base.load(...) call or in contracts 2.6's signature
+    # table; it is a real, non-defaulted-to-GPU keyword on the merged models/probe_models/base.py
+    # (default "cpu"), so leaving it out would silently pin every probe to CPU on a GPU run. This
+    # is a considered gap-fill flagged for the owner's sign-off (T13 report, open finding F5), not
+    # part of the ticket's own text.
     device = "cuda" if torch.cuda.is_available() else "cpu"
     probe = base.load(cfg.models.probe_row, cfg, probe_kind=method.PROBE_KIND,
                        n_labels=n_labels, labels=labels, ckpt_dir=ckpt_dir, device=device)
@@ -216,11 +247,12 @@ def run(run_dir: Path, method) -> None:
             if gstep >= steps:
                 break
             # method.batches is called fresh once per epoch: its own signature (2.6) and this
-            # ticket's own acceptance fixture (A3.3) carry no epoch, so the per-epoch variation
-            # lives in which epoch calls it, not in an argument it reads.
-            for batch in method.batches(train_df, probe.tokenizer, cfg):
+            # ticket's own acceptance fixture (A3.3) carry no epoch, so the per-epoch shuffle
+            # (construction-plan prose: random.Random(cfg.train.seed + epoch)) is threaded in by
+            # handing this one call a per-epoch cfg copy instead of an argument batches() reads.
+            batch_iter = method.batches(train_df, probe.tokenizer, _epoch_cfg(cfg, ep))
+            for batch, is_epoch_end in _batches_with_epoch_end(batch_iter):
                 mb = batch["mb"]
-                is_epoch_end = (mb + 1) == m_per_epoch
                 last_epoch_seen = ep
 
                 if gstep < skip_target:
@@ -285,7 +317,8 @@ def run(run_dir: Path, method) -> None:
         }, ensure_ascii=False))
 
         probe = base.load(cfg.models.probe_row, cfg, probe_kind=method.PROBE_KIND,
-                           n_labels=n_labels, labels=labels, ckpt_dir=best_dir, device=device)
+                           n_labels=n_labels, labels=labels, ckpt_dir=best_dir,
+                           device=device)  # device: see the first base.load call above
         train_val_metrics = best_metrics
     else:
         train_done = json.loads(train_done_path.read_text())

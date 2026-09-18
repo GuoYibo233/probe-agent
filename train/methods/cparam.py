@@ -11,7 +11,18 @@ import torch.nn.functional as F
 
 from train.utils import trainer
 
+# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).
+# Bump VERSION only when some existing setting would now produce a different output of a stage
+# that lists this file in the stage table of experimental_settings/schema.py. A new feature
+# behind a new setting field whose default reproduces the old behaviour, a message, a comment
+# or a report layout does not bump.
+# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",
+# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,
+# score) whose existing outputs can no longer be used; leave "stale" out and every stage is
+# stale. The key folds the highest version that made a stage stale, so a bump that leaves a
+# stage usable keeps that stage's run directory. When unsure, list the stage.
 VERSION = 1
+VERSION_HISTORY = {}
 PROBE_KIND = "generator"
 CHECKPOINT_META = {"call_sep": "\n[CALL] ", "param_only": True}
 GEN_N = 200
@@ -334,8 +345,8 @@ def validate(probe, df, tok, cfg):
 
 
 def predict(probe, df, tok, cfg):
-    """One row per example row whose target assembles: the whole prompt per row (text + call_sep + tool + "("), generated with an empty call_sep since the tail is already in the prompt. A row whose call does not start with tool + "(" is dropped whole, as in batches (1.2)."""
-    rows = [r for r in df.to_dicts() if _derive_target(r["tool"], r["call"]) is not None]
+    """One row per example row, no drop: the whole prompt per row (text + call_sep + tool + "("), generated with an empty call_sep since the tail is already in the prompt. Unlike batches/reference_loss, a row whose call does not start with tool + "(" still gets a prediction row -- its `target` is None (1.2's derivation rule only says such rows are dropped from training) -- so predictions.parquet keeps one row per input row, matching the val/test example-row count the acceptance requires."""
+    rows = df.to_dicts()
     texts = [r["text"] + _prompt_tail(r["tool"]) for r in rows]
     outs = probe.generate(texts, cfg.train.predict.max_new, "") if rows else []
     for r, out in zip(rows, outs):
