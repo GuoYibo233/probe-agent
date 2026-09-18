@@ -23,8 +23,13 @@ import models
 # score) whose existing outputs can no longer be used; leave "stale" out and every stage is
 # stale. The key folds the highest version that made a stage stale, so a bump that leaves a
 # stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 1
-VERSION_HISTORY = {}
+VERSION = 2
+VERSION_HISTORY = {
+    2: {"why": "A restore that is handed the model row and the frozen setting keeps the row's "
+               "dtype and rebuilds the adapter its tuning names, so a resumed run and the "
+               "reload of best/ before the prediction step carry the form the fresh load built.",
+        "stale": ("train",)},
+}
 
 Batch = dict[str, Any]      # keys forward consumes: input_ids, attention_mask,
                             # event_end, position_ids (optional); every other key
@@ -191,7 +196,13 @@ def load(row: dict | None, cfg: object, *, probe_kind: str, n_labels: int | None
         weights_path = models.probe(cfg.models.probe).weights_path
 
     backbone_module = importlib.import_module(f"models.probe_models.{family}")
-    dtype_name = row["dtype"] if ckpt_dir is None else (
+    # The dtype is the model row's whenever a row is given, restore or not: a resume from
+    # last/ and the reload of best/ before the prediction step come back in the dtype the
+    # fresh load picked, so one run's numerics are the same on both sides of a crash. The
+    # served form is handed no row (models/probe_models/service.py) and takes the family's
+    # serving dtype on a card and float32 on the cpu -- ticket 06's "a restore with no row",
+    # and the sentence qwen.DTYPE carries: a row's result.dtype overrides at training.
+    dtype_name = row["dtype"] if row is not None else (
         backbone_module.DTYPE if str(device).startswith("cuda") else "float32")
     dtype = getattr(torch, dtype_name)
 
@@ -212,8 +223,17 @@ def load(row: dict | None, cfg: object, *, probe_kind: str, n_labels: int | None
         if ckpt_dir is not None:
             head.load_state_dict(torch.load(ckpt_dir / "head.pt", map_location="cpu"))
 
+    # The tuning is built whenever the frozen setting is given, restore or not: the four
+    # lora_* values live in cfg.probe alone, and the tuning itself comes from the checkpoint's
+    # own meta.json on a restore. A restored LoRA probe therefore holds the adapter its
+    # training held, so trainable_parameters() names the same tensors the crashed
+    # incarnation's optimizer state holds and the run resumes as a LoRA run. save() merged
+    # that adapter into the weights, so the rebuilt adapter starts from peft's
+    # zero-initialised B over the merged weights and the probe scores what it scored before.
+    # A load with no frozen setting is the served form (models/probe_models/service.py): it
+    # serves those merged weights and trains nothing.
     lora = None
-    if ckpt_dir is None:
+    if cfg is not None:
         if tuning == "full":
             pass
         elif tuning == "lora":
