@@ -108,6 +108,7 @@ def main(run_dir: Path) -> None:
     skip_no_call = 0
     skip_short_think = 0
     cuts_per_event: list[int] = []
+    refused_calls: list[dict] = []
 
     for task_id, seed in pairs:
         rid = record_id(task_id, seed)
@@ -161,17 +162,36 @@ def main(run_dir: Path) -> None:
                 continue
 
             tool, call_args, _span = parsed
-            call = env.build_call(tool, call_args)
 
-            # 2.5's call round-trip gate: build_call must be the inverse of split_args.
-            round_trip = env.split_args(call)
-            if round_trip is None or round_trip[0] != tool or round_trip[1] != call_args:
-                bad_id = example_id(event_id(rid, step), 0)
-                raise ValueError(
-                    f"build: example {bad_id}: call {call!r} does not round-trip through "
-                    f"split_args/build_call (built from tool={tool!r} args={call_args!r}, "
-                    f"re-parsed to {round_trip!r})"
-                )
+            # Owner ruling, 2026-09-18 (RULING-9): a call build_call refuses, or one that
+            # fails the round-trip gate, is skipped and counted exactly like a non-parsing
+            # action, instead of stopping the build. The affirmative condition is "the call
+            # rebuilds and round-trips"; everything else takes the skip path.
+            build_error: str | None = None
+            try:
+                call = env.build_call(tool, call_args)
+            except ValueError as e:
+                call = None
+                build_error = str(e)
+
+            round_trip = env.split_args(call) if build_error is None else None
+            call_rebuilds_and_round_trips = (
+                build_error is None and round_trip is not None
+                and round_trip[0] == tool and round_trip[1] == call_args
+            )
+
+            if not call_rebuilds_and_round_trips:
+                if build_error is not None:
+                    reason = build_error
+                else:
+                    reason = (
+                        f"call {call!r} does not round-trip through split_args/build_call "
+                        f"(built from tool={tool!r} args={call_args!r}, re-parsed to {round_trip!r})"
+                    )
+                skip_no_call += 1
+                refused_calls.append({"record_id": rid, "step": step, "reason": reason})
+                history.append((action, env_row["result"]))
+                continue
 
             offsets = probe_input.cuts(thinking, cfg.build.min_think, cfg.build.max_cuts)
             n_cuts = len(offsets)
@@ -284,6 +304,11 @@ def main(run_dir: Path) -> None:
         n_events = sub["event_id"].n_unique() if sub.height else 0
         per_split_lines.append(f"- {name}: {n_tasks} tasks, {n_events} events, {sub.height} examples")
 
+    refused_call_lines = [
+        f"  - record={entry['record_id']} step={entry['step']}: {entry['reason']}"
+        for entry in refused_calls
+    ]
+
     report_lines = [
         "# build report",
         "",
@@ -292,6 +317,8 @@ def main(run_dir: Path) -> None:
         f"- records={len(pairs)} events={events_total} "
         f"events_skipped_no_action={skip_no_action} events_skipped_no_call={skip_no_call} "
         f"events_skipped_short_think={skip_short_think} examples={final_frame.height}",
+        f"- calls build_call refused or that failed the round-trip gate: {len(refused_calls)}",
+        *refused_call_lines,
         f"- cuts per event: min={cuts_min} median={cuts_median} max={cuts_max} (cap {cfg.build.max_cuts})",
         "- per split:",
         *per_split_lines,
