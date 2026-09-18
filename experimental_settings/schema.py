@@ -289,6 +289,11 @@ STAGES = {
                  # `@eval`: this row folds the eval driver for the carried probe_score eval
                  # key's sake (the fitted temperature a live run reads), so it folds the
                  # version that stage's key folds as well (errata "3.3 / 8.6").
+                 # The eval row's other file, `data/probe_output.py`, carries no stand-in
+                 # here: a bump of it stating `stale: ("eval",)` moves the carried eval key
+                 # and leaves this key where it is, and an entry that names `train` as well
+                 # moves this key, through the folded probe_score train key. Adding the
+                 # stand-in moves today's inject key, so that one is the owner's to add.
                  "eval/utils/probe_eval.py@eval",
                  "eval/utils/probe_eval.py#MATCH_VERSION.{probe_score_method}"),
   },
