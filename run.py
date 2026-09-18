@@ -231,33 +231,39 @@ def _current_setting(workflow_name: str, setting_name: str, debug: bool):
     return None
 
 
-def _current_key(workflow_name: str, setting_name: str, stage: str, debug: bool) -> str | None:
-    cfg = _current_setting(workflow_name, setting_name, debug)
-    if cfg is None:
-        return None
-    try:
-        return schema.key(stage, cfg)
-    except Exception:
-        return None
+def _current_key_and_versions(stage: str, cfg) -> tuple[str | None, dict]:
+    """Today's key for this stage of this setting, and the `versions` block that keys it.
 
-
-def _behind_versions(row: dict, cfg) -> bool:
-    """Whether any module this row recorded a VERSION for now carries a higher one (8.6's behind: 'a folded module's VERSION is ahead of the directory's').
-
-    Read through `schema.versions_of`, the same reader that wrote the row's own `versions`
-    block, so a table entry (`<path>#<TABLE>.<method>`) and a stand-in (`<path>@<stage>`) are
-    compared the way the stage table spells them, and this file parses no module itself
-    (ticket 14's comment of 2026-09-18).
+    Both readers parse every module the stage's row lists, so this is what one ledger row
+    costs to judge and it is read once per (setting, stage, debug) rather than once per row
+    (8.6's `ls` runs over the whole ledger). An unreadable setting gives `None` and an empty
+    block, which is the blank `edited` column of 8.6.
     """
-    recorded = row.get("versions") or {}
+    if cfg is None:
+        return None, {}
     try:
-        current = schema.versions_of(row["stage"], cfg)
+        current_key = schema.key(stage, cfg)
     except Exception:
-        return False
+        current_key = None
+    try:
+        current_versions = schema.versions_of(stage, cfg)
+    except Exception:
+        current_versions = {}
+    return current_key, current_versions
+
+
+def _behind_versions(recorded: dict, current: dict) -> bool:
+    """Whether any module the `recorded` block names now carries a higher VERSION than the block records (8.6's behind: 'a folded module's VERSION is ahead of the directory's').
+
+    `current` comes from `schema.versions_of`, the same reader that wrote the row's own
+    `versions` block, so a table entry (`<path>#<TABLE>.<method>`) and a stand-in
+    (`<path>@<stage>`) are compared the way the stage table spells them, and this file parses
+    no module itself (ticket 14's comment of 2026-09-18).
+    """
     return any(name in current and recorded[name] < current[name] for name in recorded)
 
 
-def _stale_sentence(row: dict) -> str:
+def _stale_sentence(stage: str, recorded: dict) -> str:
     """Which file's `VERSION` bump made this run stale, and that bump's own `why` (ticket 14's comment of 2026-09-18, errata '3.3 / 8.6').
 
     A stage's key folds each listed file's effective version for that stage — the highest
@@ -267,9 +273,8 @@ def _stale_sentence(row: dict) -> str:
     way `key` folds it; a `<path>#<TABLE>.<method>` entry carries no version history and is
     left out.
     """
-    stage = row.get("stage")
     parts = []
-    for name, recorded in (row.get("versions") or {}).items():
+    for name, version in recorded.items():
         if "#" in name:
             continue
         path, _, stands_for = name.partition("@")
@@ -280,7 +285,7 @@ def _stale_sentence(row: dict) -> str:
             history = schema.version_history(path)
         except Exception:
             continue
-        if effective > recorded:
+        if effective > version:
             why = (history.get(effective) or {}).get("why", "")
             parts.append(f'{path} VERSION {effective}: "{why}"')
     return "; ".join(parts)
@@ -323,27 +328,44 @@ def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
     recorded `VERSION` below the file's current one while that key still matches, which is
     the run that stayed usable across the bumps between (ticket 14's comment of 2026-09-18);
     a run whose key moved is stale instead, and `stale` carries which file's bump did it.
+
+    A ledger holds many rows per setting, and every reading of a setting or of a module's
+    `VERSION` re-reads and re-parses source text, so each of the three source readings is
+    done once and reused: the setting per (workflow, setting, debug), the key and the
+    versions block per stage of it, and the stale sentence per (stage, recorded versions),
+    which is all it is a function of.
     """
     out: dict[str, dict] = {}
     settings: dict[tuple, object] = {}
+    readings: dict[tuple, tuple[str | None, dict]] = {}
+    sentences: dict[tuple, str] = {}
     for row in rows:
         run_id = row.get("run_id")
         workflow_name, setting_name, stage = row.get("workflow"), row.get("setting"), row.get("stage")
         debug = bool(row.get("debug"))
         if not (run_id and workflow_name and setting_name and stage):
             continue
-        cache_key = (workflow_name, setting_name, debug)
-        if cache_key not in settings:
-            settings[cache_key] = _current_setting(workflow_name, setting_name, debug)
-        cfg = settings[cache_key]
-        current = None if cfg is None else _current_key(workflow_name, setting_name, stage, debug)
+        setting_id = (workflow_name, setting_name, debug)
+        if setting_id not in settings:
+            settings[setting_id] = _current_setting(workflow_name, setting_name, debug)
+        stage_id = setting_id + (stage,)
+        if stage_id not in readings:
+            readings[stage_id] = _current_key_and_versions(stage, settings[setting_id])
+        current, current_versions = readings[stage_id]
+        recorded = row.get("versions") or {}
         if current is None:
             edited, behind, stale = None, None, ""
         else:
             key_matches = current == row.get("key")
             edited = not key_matches
-            behind = key_matches and _behind_versions(row, cfg)
-            stale = "" if key_matches else _stale_sentence(row)
+            behind = key_matches and _behind_versions(recorded, current_versions)
+            if key_matches:
+                stale = ""
+            else:
+                sentence_id = (stage, tuple(sorted(recorded.items())))
+                if sentence_id not in sentences:
+                    sentences[sentence_id] = _stale_sentence(stage, recorded)
+                stale = sentences[sentence_id]
         run_dir = Path(row["dir"]) if row.get("dir") else None
         consumed = split = pinned = False
         if run_dir is not None:
@@ -355,9 +377,33 @@ def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
     return out
 
 
+def _requested_pairs_of(workflow_name: str, setting_name: str, stage: str, debug: bool) -> list | None:
+    """The (task, seed) pairs this stage of this setting asks for, or None when the setting or its environment cannot be read.
+
+    Reading them loads the setting and opens the environment, which is why the caller reads
+    them once per (setting, stage) and counts every row of that setting against the one list.
+    """
+    try:
+        cfg = _current_setting(workflow_name, setting_name, debug)
+        if cfg is None:
+            return None
+        section = cfg.inject if stage == "inject" else cfg.sample
+        env = open_env(cfg.data.env)
+        triples = requested_pairs(env, section.split, section.tasks, section.n_tasks, section.seeds)
+    except Exception:
+        return None
+    return [(task_id, seed) for _split, task_id, seed in triples]
+
+
 def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
-    """{run_id: (done, total)} for every sample/inject row, through trajectory_record.done_pairs against the row's own requested (task, seed) list (8.0's progress argument)."""
+    """{run_id: (done, total)} for every sample/inject row, through trajectory_record.done_pairs against the row's own requested (task, seed) list (8.0's progress argument).
+
+    The request is a function of the setting and the stage, so it is read once per
+    (setting, stage, debug) over the whole ledger; `done_pairs` reads the row's own directory
+    and stays per row.
+    """
     progress: dict[str, tuple[int, int]] = {}
+    requested: dict[tuple, list | None] = {}
     for row in rows:
         stage = row.get("stage")
         if stage not in ("sample", "inject"):
@@ -367,22 +413,17 @@ def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
         debug = bool(row.get("debug"))
         if not (run_id and workflow_name and setting_name and run_dir):
             continue
-        workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
-        if not workflow_file.exists():
+        request_id = (workflow_name, setting_name, debug, stage)
+        if request_id not in requested:
+            requested[request_id] = _requested_pairs_of(workflow_name, setting_name, stage, debug)
+        pairs = requested[request_id]
+        if pairs is None:
             continue
         try:
-            cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides={})
-            if len(cfgs) != 1:
-                continue
-            cfg = cfgs[0]
-            section = cfg.inject if stage == "inject" else cfg.sample
-            env = open_env(cfg.data.env)
-            triples = requested_pairs(env, section.split, section.tasks, section.n_tasks, section.seeds)
-            pairs = [(task_id, seed) for _split, task_id, seed in triples]
             done = trajectory_record.done_pairs(Path(run_dir), pairs)
-            progress[run_id] = (len(done), len(pairs))
         except Exception:
             continue
+        progress[run_id] = (len(done), len(pairs))
     return progress
 
 
