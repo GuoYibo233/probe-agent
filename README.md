@@ -64,7 +64,7 @@ data/                   the benchmark environments, and every format that lives 
   trajectory_record.py    the record one task run leaves: six row kinds, one file per (task, seed); write,
                           read, is_done, owner, to_messages; carries VERSION
     imports: data/__init__.py
-    used by: agent/loop.py (meta, gen, env, final), agent/inject.py (spec, resume),
+    used by: agent/run_tasks.py (meta, gen, env, final), agent/step_with_probe.py (spec, resume),
              data/build_training_dataset.py, eval/score_run.py,
              jobs/launch.py (done_pairs, is_done, owner, release),
              run.py (done_pairs, is_done, owner, release: the completeness check, the progress count
@@ -88,7 +88,7 @@ data/                   the benchmark environments, and every format that lives 
   probe_input.py          what the probe is asked and shown: the cut positions in the reasoning (the
                           offline enumeration and the streaming one, which differ in their offset
                           convention and are therefore not comparable, contracts 1.7; the event-level
-                          min_think gate lives in data/build_training_dataset.py offline and in agent/inject.py
+                          min_think gate lives in data/build_training_dataset.py offline and in agent/step_with_probe.py
                           live, which scores no cut until the thinking reaches min_think), and the text
                           assembled for the probe (the task, the clipped tool history, the thinking so
                           far). example.cut and spec.cut are not the same coordinate (contracts 1.7).
@@ -96,7 +96,7 @@ data/                   the benchmark environments, and every format that lives 
                           never read from a file, so the offline and the live caller cannot drift;
                           carries VERSION
     imports: none (repo); [re]
-    used by: data/build_training_dataset.py, agent/inject.py
+    used by: data/build_training_dataset.py, agent/step_with_probe.py
     reads:   -   writes: -   venv: any
 ```
 
@@ -106,7 +106,7 @@ data/                   the benchmark environments, and every format that lives 
 jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the
 heartbeat, the verdicts, ls/where/find/kill/free, RESULTS.md.
   imports: none (repo); [PyYAML]
-  used by: run.py, jobs/launch.py, agent/loop.py, data/build_training_dataset.py,
+  used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py,
            train/utils/trainer.py, eval/utils/probe_eval.py,
            eval/score_run.py, eval/method_table.py
   reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories'
@@ -136,7 +136,7 @@ experimental_settings/schema.py — the setting schema: the dataclasses, the
 stage table, and the loader that reads a YAML file against them (file ->
 setting, diff, key).
   imports: none (repo); [PyYAML, ast, dataclasses, hashlib, itertools, json, pathlib, typing]
-  used by: run.py, jobs/launch.py, agent/loop.py, data/build_training_dataset.py,
+  used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py,
            train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py,
            eval/method_table.py, models/agent_models/service.py,
            models/probe_models/service.py  (ten; both services take
@@ -183,8 +183,8 @@ external/probe-env/bin/python tests/test_registry_concurrent_append.py
                             one definition of what a run asks for, as (split, task_id, seed) triples
                             (2.3); carries VERSION
         imports: none (repo); [importlib, PyYAML]
-        used by: data/environments/appworld.py (subclass), agent/loop.py (open_env, StepObservation,
-                 requested_pairs), agent/inject.py, data/build_training_dataset.py (open_env, requested_pairs),
+        used by: data/environments/appworld.py (subclass), agent/run_tasks.py (open_env, StepObservation,
+                 requested_pairs), agent/step_with_probe.py, data/build_training_dataset.py (open_env, requested_pairs),
                  train/methods/cgen.py, train/methods/cparam.py (open_env, for the environment their
                  validation metric's match takes, 2.6), eval/utils/probe_eval.py,
                  eval/score_run.py,
@@ -223,9 +223,9 @@ report for T05.
                             types are in Part 6.2. Edited never; a new model is a row, a new family or
                             backbone a file
       imports: none (repo); [importlib, PyYAML]
-      used by: agent/generate.py, agent/inject.py, models/agent_models/service.py,
+      used by: agent/step_without_probe.py, agent/step_with_probe.py, models/agent_models/service.py,
                models/probe_models/base.py, models/probe_models/service.py, train/utils/trainer.py
-               (six; agent/loop.py is not among them, 7.2)
+               (six; agent/run_tasks.py is not among them, 7.2)
       reads:   models/table.yaml, constants/path_models.yaml
       writes:  -   venv: any
     table.yaml              one row per alias, in two blocks: result (expanded into the setting before
@@ -294,7 +294,7 @@ already point at, filled in:
                             the sample and inject keys for the reason 2.2 gives
         imports: models/__init__.py (the family through agent(alias), inside the server main),
                  experimental_settings/schema.py (load_frozen)
-        used by: agent/generate.py (client), agent/loop.py (health); jobs/launch.py starts it as a
+        used by: agent/step_without_probe.py (client), agent/run_tasks.py (health); jobs/launch.py starts it as a
                  piece, which is a tmux command and not an import
         reads:   models/table.yaml (the serving block only), constants/path_models.yaml, the run
                  directory's settings.yaml (models.agent_row — every keyed column — plus
@@ -310,7 +310,7 @@ already point at, filled in:
         imports: models/__init__.py; experimental_settings/schema.py (load_frozen, for the check
                  client's expected values); models/probe_models/base.py inside serve();
                  [http.server, transformers and torch inside serve()]
-        used by: agent/loop.py (client: render), agent/inject.py (client: score, generate, encode,
+        used by: agent/run_tasks.py (client: render), agent/step_with_probe.py (client: score, generate, encode,
                  decode); jobs/launch.py starts it as a piece, which is a tmux command and not an import
         reads:   the checkpoint directories named on its command line, including each one's
                  best/meta.json; the run directory's settings.yaml, the check client only
@@ -428,17 +428,17 @@ holds no report at all.
 
 ```
   agent/                  the loop that runs the agent model on tasks. Nothing is added here; a new way to
-                          inject is an entry in inject_format.py, a new injection mechanism is an edit to
-                          inject.py, and loop.py and generate.py change for neither
-    loop.py                 run each task and seed: open, step, parse, act, until the environment reports the
+                          inject is an entry in injected_text_formats.py, a new injection mechanism is an edit to
+                          step_with_probe.py, and run_tasks.py and step_without_probe.py change for neither
+    run_tasks.py                 run each task and seed: open, step, parse, act, until the environment reports the
                             task completed or max_steps is reached; claim tasks across pieces; write the
                             record. Picks the generation step by the setting: the inject section present ->
-                            inject.step, absent -> generate.step; passes agent/inject.py's
+                            step_with_probe.step, absent -> step_without_probe.step; passes agent/step_with_probe.py's
                             system_text(cfg) into to_messages as extra_developer on every call (7.3, 1.1);
                             holds no probe code itself; carries VERSION
       imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py,
                data/trajectory_record.py, models/agent_models/service.py (client),
-               models/probe_models/service.py (client, for render), agent/generate.py, agent/inject.py,
+               models/probe_models/service.py (client, for render), agent/step_without_probe.py, agent/step_with_probe.py,
                jobs/registry.py. It names no family module and imports models/__init__.py nowhere: it
                renders through the probe service and compares the family the service echoes against
                cfg.models.agent_row["family"] (7.2)
@@ -451,36 +451,36 @@ holds no report at all.
                replicas (Part 7.4)
       writes:  task records (jsonl), heartbeat
       venv:    the environment's (appworld today)
-    generate.py             the plain generation step: stream tokens from the agent model to end of turn;
+    step_without_probe.py             the plain generation step: stream tokens from the agent model to end of turn;
                             exposes the token stream so inject.py iterates it instead of copying it. The
                             baseline path; carries VERSION
       imports: models/agent_models/service.py (client), models/__init__.py (the family module).
                The `probe` field of the `clients` dataclass this file declares is annotated `object`,
                not the probe client class, so this file imports models/probe_models/service.py
                nowhere (7.3)
-      used by: agent/loop.py, agent/inject.py
+      used by: agent/run_tasks.py, agent/step_with_probe.py
       reads:   -   writes: -   venv: the environment's
-    inject.py               the generation step with the probe: iterate generate's token stream, score at
+    step_with_probe.py               the generation step with the probe: iterate generate's token stream, score at
                             each cut, on fire get the call, run it early through the environment, write the
-                            result in (inject_format), start a new request from the spliced prefix, roll
+                            result in (injected_text_formats), start a new request from the spliced prefix, roll
                             back on mismatch. Replaces generate.step when the setting has an inject section;
                             offers system_text(cfg), the one place a format's system text reaches the
                             conversation (7.3);
                             declares the module-level literal ARMS, which is what schema's inject.arm
                             axis is checked against (5.3); carries VERSION
-      imports: agent/generate.py, agent/inject_format.py, data/probe_input.py, data/trajectory_record.py,
+      imports: agent/step_without_probe.py, agent/injected_text_formats.py, data/probe_input.py, data/trajectory_record.py,
                data/environments/__init__.py (type only; the object is passed in),
                models/probe_models/service.py (client), models/__init__.py (the family module).
                The setting is passed in by loop.py, so this file does not import schema
-      used by: agent/loop.py
+      used by: agent/run_tasks.py
       reads:   -   writes: spec and resume rows, through data/trajectory_record.py
       venv:    the environment's
-    inject_format.py        the table of the five ways an early result is written into the stream, as the
+    injected_text_formats.py        the table of the five ways an early result is written into the stream, as the
                             module-level literal FORMATS whose entries have the four fields of Part 7.3;
                             schema's inject.format axis is checked against its keys, so a sixth way is one
                             entry here and one schema value; carries VERSION
       imports: none
-      used by: agent/inject.py; its keys are cross-checked against schema.py's axis by run.py selfcheck
+      used by: agent/step_with_probe.py; its keys are cross-checked against schema.py's axis by run.py selfcheck
       reads:   -   writes: -   venv: any
 ```
 

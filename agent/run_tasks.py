@@ -2,6 +2,11 @@
 # venv: the environment's (appworld today)
 from __future__ import annotations
 
+# TODO(gyb, 2026-09-18): this file was renamed from agent/loop.py on gyb's order, because the old
+# name did not say what the file does. The tree document, the contracts and the older
+# tickets still use the old name. Delete this comment once every program of the tree is
+# written (after wave 7).
+
 import argparse
 import dataclasses
 import json
@@ -17,7 +22,7 @@ from jobs import registry
 from models.agent_models.service import Client as AgentClient
 from models.probe_models.service import Client as ProbeClient
 
-from agent import generate, inject
+from agent import step_with_probe, step_without_probe
 
 VERSION = 1
 
@@ -51,7 +56,7 @@ def _wait_for_endpoints(run_dir: Path, agent_path: Path, probe_path: Path, timeo
         if time.monotonic() > deadline:
             missing = [p for p in (agent_path, probe_path) if not p.exists()]
             raise SystemExit(
-                f"agent.loop: {run_dir}: endpoint file(s) did not appear within {timeout_s}s: {missing}"
+                f"agent.run_tasks: {run_dir}: endpoint file(s) did not appear within {timeout_s}s: {missing}"
             )
         time.sleep(1.0)
 
@@ -73,30 +78,30 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     agent_doc = json.loads(agent_path.read_text())
     probe_doc = json.loads(probe_path.read_text())
 
-    clients = generate.Clients(
+    clients = step_without_probe.Clients(
         agent=AgentClient(agent_doc["base_url"], cfg.models.agent_row["served_model_name"]),
         probe=ProbeClient(probe_doc["base_url"]),
     )
 
     health = clients.probe.health()
     if health.get("render") != "ids":
-        raise SystemExit(f"agent.loop: probe /health render: expected 'ids', got {health.get('render')!r}")
+        raise SystemExit(f"agent.run_tasks: probe /health render: expected 'ids', got {health.get('render')!r}")
     if health.get("family") != cfg.models.agent_row["family"]:
         raise SystemExit(
-            f"agent.loop: probe /health family: expected {cfg.models.agent_row['family']!r}, "
+            f"agent.run_tasks: probe /health family: expected {cfg.models.agent_row['family']!r}, "
             f"got {health.get('family')!r}"
         )
     if health.get("weights") != cfg.models.agent_row["weights"]:
         raise SystemExit(
-            f"agent.loop: probe /health weights: expected {cfg.models.agent_row['weights']!r}, "
+            f"agent.run_tasks: probe /health weights: expected {cfg.models.agent_row['weights']!r}, "
             f"got {health.get('weights')!r}"
         )
 
     if cfg.inject is not None:
-        inject.ensure_health(clients, cfg)
+        step_with_probe.ensure_health(clients, cfg)
 
-    gen_step = inject.step if cfg.inject is not None else generate.step
-    extra = inject.system_text(cfg)
+    gen_step = step_with_probe.step if cfg.inject is not None else step_without_probe.step
+    extra = step_with_probe.system_text(cfg)
 
     triples = requested_pairs(env, run.split, run.tasks, run.n_tasks, run.seeds)
     triples = triples[i:] + triples[:i]
@@ -179,7 +184,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                     env.close()
                 except Exception as exc:
                     print(
-                        f"agent.loop: task {task_id} seed {seed}: env.close() failed: {exc}",
+                        f"agent.run_tasks: task {task_id} seed {seed}: env.close() failed: {exc}",
                         file=sys.stderr,
                     )
 
@@ -190,7 +195,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(prog="python -m agent.loop")
+    ap = argparse.ArgumentParser(prog="python -m agent.run_tasks")
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--piece", required=True, type=_parse_piece, help="i/n")
     args = ap.parse_args()

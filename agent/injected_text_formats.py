@@ -1,6 +1,11 @@
 """The table of the five ways an early speculation result is written into the token stream."""
 from __future__ import annotations
 
+# TODO(gyb, 2026-09-18): this file was renamed from agent/inject_format.py on gyb's order, because the old
+# name did not say what the file does. The tree document, the contracts and the older
+# tickets still use the old name. Delete this comment once every program of the tree is
+# written (after wave 7).
+
 from dataclasses import dataclass
 from typing import Callable
 

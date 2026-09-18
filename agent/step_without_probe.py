@@ -1,6 +1,11 @@
-"""The plain generation step: stream tokens from the agent model to end of turn, exposing the stream so inject.py can iterate it instead."""
+"""The plain generation step: stream tokens from the agent model to end of turn, exposing the stream so step_with_probe.py can iterate it instead."""
 # venv: the environment's
 from __future__ import annotations
+
+# TODO(gyb, 2026-09-18): this file was renamed from agent/generate.py on gyb's order, because the old
+# name did not say what the file does. The tree document, the contracts and the older
+# tickets still use the old name. Delete this comment once every program of the tree is
+# written (after wave 7).
 
 import hashlib
 import time
@@ -19,7 +24,7 @@ _family_checked = False
 
 @dataclass
 class StepResult:
-    """The gen row's non-derived fields, filled by both generate.step and inject.step."""
+    """The gen row's non-derived fields, filled by both step_without_probe.step and step_with_probe.step."""
 
     reasoning: str
     content: str
@@ -36,7 +41,7 @@ class StepResult:
 
 @dataclass
 class Clients:
-    """The two service clients a step needs, constructed once by agent/loop.py from its endpoint files."""
+    """The two service clients a step needs, constructed once by agent/run_tasks.py from its endpoint files."""
 
     agent: AgentClient
     probe: object                # kept generic (7.3): the probe service's client class is never named in this file
@@ -59,7 +64,7 @@ def _check_family_once(cfg, mod) -> None:
     want = cfg.models.agent_row["family"]
     if mod.NAME != want:
         raise SystemExit(
-            f"agent.generate: family {mod.NAME!r} of models.agent {cfg.models.agent!r} differs "
+            f"agent.step_without_probe: family {mod.NAME!r} of models.agent {cfg.models.agent!r} differs "
             f"from the frozen models.agent_row family {want!r}"
         )
     _family_checked = True
@@ -78,7 +83,7 @@ def stream(clients: Clients, cfg, prefix_ids: list[int], seed: int | None, *, bu
 
 def step(env, clients: Clients, cfg, writer, messages: list[dict], prefix_ids: list[int],
          history: list[tuple[str, str]], task_text: str, step_index: int, seed: int | None) -> StepResult:
-    """Stream one turn from the agent model to end of turn, with no probe attached; the baseline path inject.step replaces."""
+    """Stream one turn from the agent model to end of turn, with no probe attached; the baseline path step_with_probe.step replaces."""
     del env, writer, messages, history, task_text  # accepted only so the two step implementations are substitutable (7.3)
     mod = models.agent(cfg.models.agent).module
     _check_family_once(cfg, mod)

@@ -84,8 +84,8 @@ starts an interpreter is the per-interpreter import test at the end.
    `(by name)` and the literal `none (program)` take their own test instead of
    the equality. A line that disagrees is a failure naming both sides.
 3. Every axis literal against the files behind it (5.3):
-   `schema.AXES["inject.format"]` equals `agent/inject_format.py`'s `FORMATS`
-   keys; `schema.AXES["inject.arm"]` equals `agent/inject.py`'s `ARMS`;
+   `schema.AXES["inject.format"]` equals `agent/injected_text_formats.py`'s `FORMATS`
+   keys; `schema.AXES["inject.arm"]` equals `agent/step_with_probe.py`'s `ARMS`;
    every axis value of `schema.AXES["probe.method"]` is a key of
    `eval/utils/probe_eval.py`'s `PROBE_KIND` and of its `MATCH_VERSION`, and the
    axis equals the file stems under `train/methods/`; `schema.AXES["data.env"]` equals the file
@@ -164,7 +164,7 @@ message `selfcheck` printed. The eleven breakages:
 |---|---|
 | 1 | delete one `.py` line from `README.md` |
 | 2 | add `import jobs.registry` to `models/probe_models/base.py` |
-| 3 | add a sixth key to `agent/inject_format.py`'s `FORMATS` |
+| 3 | add a sixth key to `agent/injected_text_formats.py`'s `FORMATS` |
 | 4 | add a second column-zero `VERSION` to `data/training_data.py` |
 | 5 | add a name to `data/probe_output.py`'s `REQUIRED` that its `SCHEMA` does not declare |
 | 6 | change `eval/utils/probe_eval.py`'s `PROBE_KIND["cgen"]` to `"classifier"` |

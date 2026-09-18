@@ -2,10 +2,15 @@
 # venv: the environment's
 from __future__ import annotations
 
+# TODO(gyb, 2026-09-18): this file was renamed from agent/inject.py on gyb's order, because the old
+# name did not say what the file does. The tree document, the contracts and the older
+# tickets still use the old name. Delete this comment once every program of the tree is
+# written (after wave 7).
+
 import time
 
-from agent import generate
-from agent.inject_format import FORMATS
+from agent import step_without_probe
+from agent.injected_text_formats import FORMATS
 from data import probe_input
 from data.environments import Environment
 from data.trajectory_record import Writer
@@ -24,13 +29,13 @@ def system_text(cfg) -> str | None:
     return fmt.system_text if fmt.placement == "p1" else None
 
 
-def ensure_health(clients: generate.Clients, cfg) -> None:
-    """The /health refusal (7.2), taken once by agent/loop.py before the walk, unconditionally across the three arms."""
+def ensure_health(clients: step_without_probe.Clients, cfg) -> None:
+    """The /health refusal (7.2), taken once by agent/run_tasks.py before the walk, unconditionally across the three arms."""
     mod = models.agent(cfg.models.agent).module
     want_family = cfg.models.agent_row["family"]
     if mod.NAME != want_family:
         raise SystemExit(
-            f"agent.inject.ensure_health: family {mod.NAME!r} of models.agent {cfg.models.agent!r} "
+            f"agent.step_with_probe.ensure_health: family {mod.NAME!r} of models.agent {cfg.models.agent!r} "
             f"differs from the frozen models.agent_row family {want_family!r}"
         )
 
@@ -38,25 +43,25 @@ def ensure_health(clients: generate.Clients, cfg) -> None:
     health = probe.health()
     if not health.get("decode"):
         raise SystemExit(
-            f"agent.inject.ensure_health: probe /health decode: expected True, got {health.get('decode')!r}"
+            f"agent.step_with_probe.ensure_health: probe /health decode: expected True, got {health.get('decode')!r}"
         )
     if FORMATS[cfg.inject.format].needs_special and not health.get("encode_special"):
         raise SystemExit(
-            f"agent.inject.ensure_health: probe /health encode_special: expected True for format "
+            f"agent.step_with_probe.ensure_health: probe /health encode_special: expected True for format "
             f"{cfg.inject.format!r}, got {health.get('encode_special')!r}"
         )
     want_score_key = cfg._upstream["probe_score.train"]
     got_score_key = health.get("score_train_key")
     if got_score_key != want_score_key:
         raise SystemExit(
-            f"agent.inject.ensure_health: probe /health score_train_key: expected {want_score_key!r}, "
+            f"agent.step_with_probe.ensure_health: probe /health score_train_key: expected {want_score_key!r}, "
             f"got {got_score_key!r}"
         )
     want_gen_key = cfg._upstream["probe_gen.train"]
     got_gen_key = health.get("gen_train_key")
     if got_gen_key != want_gen_key:
         raise SystemExit(
-            f"agent.inject.ensure_health: probe /health gen_train_key: expected {want_gen_key!r}, "
+            f"agent.step_with_probe.ensure_health: probe /health gen_train_key: expected {want_gen_key!r}, "
             f"got {got_gen_key!r}"
         )
 
@@ -117,9 +122,9 @@ def _resume_fields(pending: dict, gen_ids: list[int], stop_reason: str | None) -
     }
 
 
-def step(env: Environment, clients: generate.Clients, cfg, writer: Writer, messages: list[dict],
+def step(env: Environment, clients: step_without_probe.Clients, cfg, writer: Writer, messages: list[dict],
          prefix_ids: list[int], history: list[tuple[str, str]], task_text: str, step_index: int,
-         seed: int | None) -> generate.StepResult:
+         seed: int | None) -> step_without_probe.StepResult:
     """Iterate generate's token stream, score each cut, fire on the first crossing of theta, splice the result in and resume."""
     del messages
     mod = models.agent(cfg.models.agent).module
@@ -146,7 +151,7 @@ def step(env: Environment, clients: generate.Clients, cfg, writer: Writer, messa
 
     while True:
         budget = max(1, cfg.generation.max_step_tokens - len(gen_ids))
-        st = generate.stream(clients, cfg, prefix_ids + gen_ids, seed, budget=budget)
+        st = step_without_probe.stream(clients, cfg, prefix_ids + gen_ids, seed, budget=budget)
         fired = False
         for delta, ids in st:
             raw += delta
@@ -263,7 +268,7 @@ def step(env: Environment, clients: generate.Clients, cfg, writer: Writer, messa
         break
 
     t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
-    return generate.StepResult(
+    return step_without_probe.StepResult(
         reasoning=out["reasoning"],
         content=out["content"],
         usage={"in": usage_in, "out": usage_out},
@@ -271,7 +276,7 @@ def step(env: Environment, clients: generate.Clients, cfg, writer: Writer, messa
         finish_reason=finish_reason,
         stop_reason=stop_reason,
         prefix_tok=len(prefix_ids),
-        prefix_sha=generate.ids_sha(prefix_ids),
+        prefix_sha=step_without_probe.ids_sha(prefix_ids),
         gen_ids=gen_ids if store_ids else None,
         n_inject=n_inject,
         discard=discard,

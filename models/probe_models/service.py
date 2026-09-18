@@ -280,8 +280,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Client half (standard library only), imported by agent/loop.py (render)
-# and agent/inject.py (score, generate, encode, decode).
+# Client half (standard library only), imported by agent/run_tasks.py (render)
+# and agent/step_with_probe.py (score, generate, encode, decode).
 # ---------------------------------------------------------------------------
 
 def _request(url: str, payload: dict | None, timeout: float, retries: int = _RETRIES):

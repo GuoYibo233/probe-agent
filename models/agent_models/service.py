@@ -233,8 +233,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Client half (standard library only), imported by agent/generate.py and
-# agent/loop.py.
+# Client half (standard library only), imported by agent/step_without_probe.py and
+# agent/run_tasks.py.
 # ---------------------------------------------------------------------------
 
 class Stream:

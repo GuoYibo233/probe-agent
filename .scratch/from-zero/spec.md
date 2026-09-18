@@ -87,7 +87,7 @@ library, PyYAML, Polars and NumPy. System `python3` is **not** in that map: it h
 neither Polars nor NumPy, so `any` does not include it. A file whose whole import
 list is the standard library (`data/probe_input.py`,
 `data/environments/__init__.py`, `experimental_settings/schema.py`,
-`jobs/registry.py`, `agent/inject_format.py`) is checked under system `python3`
+`jobs/registry.py`, `agent/injected_text_formats.py`) is checked under system `python3`
 as well, because it costs nothing and its ticket says so.
 
 **Always name the interpreter by absolute path.** `external/` is git-ignored and

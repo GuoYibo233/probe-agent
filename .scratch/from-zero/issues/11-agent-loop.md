@@ -1177,3 +1177,13 @@ majority of rows under `probe_nofill`.
   (AGENT-2); the two `*_e2` formats' system text arrives with a doubled blank
   line (AGENT-3); the close-failure line prints `str(exc)` only, so an
   exception without a message names nothing (N1-1).
+- 2026-09-18, renamed on gyb's order (main session of wave 4, after gyb read
+  the built tree): `agent/loop.py` -> `agent/run_tasks.py`,
+  `agent/generate.py` -> `agent/step_without_probe.py`,
+  `agent/inject.py` -> `agent/step_with_probe.py`,
+  `agent/inject_format.py` -> `agent/injected_text_formats.py`. Only names and
+  references changed; each file carries a `TODO(gyb, 2026-09-18)` with its old
+  name, to be deleted once every program is written. This ticket's body keeps
+  the old names as the record of what was built; the stage table, `README.md`,
+  ticket 15 and the spec use the new ones (errata, the entry "0.2 (the four
+  `agent/` file names)").
