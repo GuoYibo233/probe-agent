@@ -727,3 +727,215 @@ positional; `cmd_free` (`run.py:740`), `cmd_sync` (`run.py:746`) and
 `_parse_walk_rest` (`run.py:1469-1476`) splits settings, `--debug`,
 `--allow-dirty` and `section.field=value`. Nothing was launched; no walk, kill,
 refire or retry ran.
+
+## Fix round 3
+
+Base `81df864`, head `cd980a7`, on branch `fix/2026-09-20-wave6-r3` in the worktree
+`/home/y-guo/reproduce/new1-wt/2026-09-20-wave6-fix-r3`, one commit:
+
+| sha | subject |
+|---|---|
+| cd980a7 | the launch-failure shapes, retry against a live run, repo-review's interpreter |
+
+All four re-review findings are real and fixed; none is declined. Only
+`.claude/skills/gpu-run/SKILL.md` and `.claude/skills/repo-review/SKILL.md` changed.
+The round's other commit, `5f455eb`, is the area-selfcheck fix and touches `run.py`
+alone; it is recorded in `post-merge-fix-selfcheck.md`. Every `run.py` line number
+below is read at this round's head `cd980a7`; `5f455eb` added four lines inside
+`_has_dynamic_import_of`, so a `run.py` citation above line 952 is the same number at
+`81df864` and one below it is four lower there.
+
+### skills-r3:GR4-third-shape-trigger-wrong (important) — the third shape's trigger
+
+Confirmed as reported, read off the code on this base:
+
+- `launch()` starts the service pieces at `jobs/launch.py:885-886` and runs
+  `alive_check(service_pieces, window_s=registry.DEFAULTS["launch_timeout_s"], poll_s=5)`
+  at `jobs/launch.py:887`. A `service` piece passes that check only when its endpoint
+  file exists **and** its port answers:
+  `endpoint_ok = bool(run_dir) and (Path(run_dir) / p["endpoint_file"]).exists()` and
+  `ok = endpoint_ok and _port_answers(p.get("host"), p.get("port"))`
+  (`jobs/launch.py:432-433`).
+- A probe service that never writes `service_probe_0.json` therefore fails at
+  `jobs/launch.py:887`, and `jobs/launch.py:888-890` tears the services down and
+  returns `"alive_check"`. `run.py` turns that into the `launch_failed` finish row and
+  `return "stop"` (`run.py:2044-2050`), the call exiting 0. Nothing is left for `kill`
+  to end.
+- `_wait_for_endpoint` (`jobs/launch.py:664-672`) is called at `jobs/launch.py:894`,
+  after that check has already proved the file exists, so its
+  `sys.exit(f"jobs/launch.py: {path} did not appear within launch_timeout_s")` fires
+  only when the file that exists never parses into a dict with a truthy `base_url`
+  (`jobs/launch.py:669`).
+
+So the skill sent an operator whose probe service failed to come up to a live-cards
+diagnosis and a `kill`, when the services were already down. The "never writes its
+endpoint file" case moved into the quiet shape, where the alive check sends it, and the
+shape that reaches `jobs/launch.py:672` now carries its real trigger: the endpoint file
+exists and the port answers while the file never carries a `base_url`. The rest of that
+shape's sentence — start row written, services up, open `launching` row, `kill` — is
+unchanged, because it is correct for that condition.
+
+### skills-r3:retry-on-a-live-run-does-not-launch (important) — what `retry` does to a live run
+
+Confirmed as reported, read off the code on this base:
+
+- `cmd_retry` (`run.py:730-741`) calls `_clear_continue_markers(stage, run_dir)` at
+  `run.py:739`, before the dirty-tree gate, before the launch gate and before any
+  liveness test, and only then calls `_stage_step` at `run.py:740`.
+- `_clear_continue_markers` (`run.py:714-727`) unlinks `done.json` and `consumed.json`,
+  and for `train` also `train_log.jsonl`, `train_done.json`, `align_check.json` and the
+  whole `last/` directory (`shutil.rmtree(last_dir)`, `run.py:727`).
+- For `sample` and `inject` with a live work piece, `_stage_step` prints
+  `run.py: <run_dir> has a live piece; launching nothing` and returns `"stop"`
+  (`run.py:1996-2012`). No launch.
+- For `train` there is no live-piece guard: the guard at `run.py:1996` is
+  `if stage in ("sample", "inject")`. The walk reaches `launch.launch`, whose launch
+  gate refuses on the live session (`gate_open_row`, `jobs/launch.py:238-240`; the exit
+  at `jobs/launch.py:741-743`). No launch, and by then `last/` and `train_log.jsonl`
+  are gone.
+
+`cmd_retry`'s code was not changed; the clearing-before-the-gates order is recorded for
+the owner below. The skill's sentence now states it: `retry` clears the markers first
+and unconditionally, names what it deletes, says a live `sample` or `inject` stops at
+`has a live piece; launching nothing` and a live `train` is refused by the launch gate
+with its checkpoint directory and training log already gone, and tells the operator to
+`kill` the run and let its pieces end before typing `retry`. The same sentence's
+`refire` clause now carries the liveness refusal (`jobs/launch.py:950-951`), which the
+bullet above it already stated.
+
+### skills-r3:quiet-shape-attributes-check-lines-to-the-wrong-outcome (minor)
+
+Confirmed as reported. `jobs/launch.py` holds exactly one `print`, at
+`jobs/launch.py:955`, inside `refire`. The `check: ...` lines
+(`models/probe_models/service.py:212-261`) come from the client started at
+`jobs/launch.py:895-898`, which runs only after the service alive check at
+`jobs/launch.py:887` has passed, and its non-zero return is the separate
+`service_check` outcome (`jobs/launch.py:899-901`). An alive-check failure therefore
+prints nothing at all. Phase 4 now reads "one of four shapes": the pre-start-row
+refusals, the quiet alive-check failure that prints nothing and is read from
+`<run_dir>/log/<piece index>.txt`, the `inject` run whose `check` client fails its gate
+and writes its `check: ...` lines, and the endpoint file with no `base_url`. The middle
+two end the same way — teardown, exit 0, `launch_failed` row — and the sentence says so.
+
+### skills-r3:repo-review-names-run-py-with-no-interpreter (minor)
+
+Confirmed as reported: before this round
+`grep -c "probe-env/bin/python" .claude/skills/repo-review/SKILL.md` printed 0 while the
+file named `run.py selfcheck` three times and made it the blocking first step. Point 2
+now carries the command once as a fenced block, spelled the way the gpu-run skill spells
+its `run.py` commands:
+
+```bash
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py selfcheck
+```
+
+with one sentence giving the reason — the system `python3` cannot import `run.py`'s
+dependencies. The three prose mentions keep saying `run.py selfcheck`.
+
+### Acceptance, run from the worktree root on head cd980a7
+
+`$PR = /home/y-guo/reproduce/new1/external/probe-env/bin/python`.
+
+**W1**
+
+```
+$ test ! -e .claude/skills/gpu-run/references/launch-methodology.md && echo ok-launchmeth
+ok-launchmeth
+$ test ! -e .claude/skills/gpu-run/references/monitor-methodology.md && echo ok-monitormeth
+ok-monitormeth
+$ test ! -e .claude/skills/gpu-run/scripts && echo ok-scripts
+ok-scripts
+$ test ! -e .claude/skills/probe-pipeline/references && echo ok-ppreferences
+ok-ppreferences
+$ wc -l .claude/skills/gpu-run/references/gpu_state.md
+42 .claude/skills/gpu-run/references/gpu_state.md
+$ head -1 .claude/skills/gpu-run/references/gpu_state.md
+Surveyed on: 2026-07-29 (measured, not hearsay).
+$ grep -c 'tokyo105 | shiga' .claude/skills/gpu-run/references/gpu_state.md
+1
+$ grep -c 'sampler\|8377\|crontab' .claude/skills/gpu-run/references/gpu_state.md || true
+0
+```
+
+**W2**
+
+```
+$ test -f .claude/skills/repo-review/SKILL.md && echo ok-exists
+ok-exists
+$ grep -c '\.scratch/review/issues/' .claude/skills/repo-review/SKILL.md
+2
+$ grep -c 'run.py selfcheck' .claude/skills/repo-review/SKILL.md
+4
+```
+The `run.py selfcheck` count is 4, one more than before this round: the three prose
+mentions plus the new fenced command. The front matter printed by
+`awk 'NR>1 && /^---$/{exit} {print}'` still ends in
+`Chinese triggers: "审查仓库" / "复盘整棵树" / "两天复盘" / "查一遍仓库".`
+
+**W3**
+
+```
+data/environments/ 1
+models/agent_models/ 1
+models/probe_models/ 1
+train/methods/ 1
+```
+
+**W4** — each of the three front matters printed whole; each `description` still ends
+in its Chinese trigger clause, byte-identical to the base, and none contains "sampler"
+or "three ledgers":
+
+```
+  says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
+  triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
+  ...
+  the whole chain. Chinese triggers: "跑流水线" / "跑一批探针" / "新数据集跑一遍" / "出矩阵" /
+  "换个环境跑" / "加个新模型/新格" / "换个切分方式" / "加一种训练方法".
+  ...
+  tree review is due. Chinese triggers: "审查仓库" / "复盘整棵树" / "两天复盘" / "查一遍仓库".
+```
+
+**W5**
+
+```
+W5 ok
+rc=0
+```
+
+**C7**
+
+```
+exempt range: [('.claude/skills/gpu-run/SKILL.md', 247, 269)]
+C7 ok
+rc=0
+```
+The `## What is gone` section sits at line 247, eleven lines below round 2's 236,
+because Phase 4's paragraph and Phase 6b's last bullet grew by eleven lines between
+them.
+
+**C8**
+
+```
+exempt range: [('.claude/skills/gpu-run/SKILL.md', 247, 269)]
+named: ['free', 'kill', 'ls', 'refire', 'retry', 'selfcheck', 'sync', 'table', 'train_probe', 'where']
+missing: []
+C8 ok
+rc=0
+```
+
+**Ticket 15's D5** and the selfcheck runs from the worktree root and from `/tmp` are in
+`post-merge-fix-selfcheck.md`, under that file's "Fix round 3"; both pass at this head.
+
+Nothing was launched; no walk, kill, refire or retry ran, and no GPU process was
+started.
+
+### For the owner
+
+`cmd_retry` clears this stage's markers at `run.py:739` before the dirty-tree gate, the
+launch gate and any liveness test, so a `retry` typed at a live `train` run deletes
+`last/`, `train_log.jsonl`, `train_done.json`, `align_check.json`, `consumed.json` and
+`done.json` and then launches nothing, because the launch gate refuses on the live
+session. This round documented that order in the skill rather than changing it, as the
+task's scope stated. Moving the clearing after the gates, or adding the live-piece guard
+that `sample` and `inject` have at `run.py:1996`, is a `run.py` change and is the
+owner's call.

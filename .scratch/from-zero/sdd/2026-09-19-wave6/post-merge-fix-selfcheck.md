@@ -786,3 +786,180 @@ Every scratch copy of this round was built with `git archive HEAD | tar -x` plus
 round's two edited files, under
 `/home/y-guo/.claude/jobs/46e92203/tmp/fix-selfcheck-scratch`, and the whole scratch
 directory was deleted at the end of the round.
+
+# Fix round 3
+
+Head `5f455eb`, on top of `81df864`, on branch `fix/2026-09-20-wave6-r3` in the
+worktree `/home/y-guo/reproduce/new1-wt/2026-09-20-wave6-fix-r3`. One file changed,
+`run.py`; `README.md` and `tests/` untouched. The round's one selfcheck finding is
+fixed, none is declined.
+
+| commit | what it fixes | finding |
+|---|---|---|
+| `5f455eb` | a repo-root by-name target's f-string test takes the module's own dotted name as its required leading text | rr-selfcheck-03-empty-prefix-passes-any-fstring |
+
+## rr-selfcheck-03 — the empty prefix passed any f-string
+
+Confirmed as reported, and confirmed as the blind spot round 2 opened. Round 2 gave a
+repo-root module the empty package prefix (`_dynamic_import_prefix`, `run.py:941-949`),
+which is right for what that helper answers. The f-string arm of
+`_has_dynamic_import_of` then tested `first.value.startswith(prefix)` (`run.py:972` at
+`81df864`), and every string starts with the empty string, so for a root-level
+`used by: ... (by name)` claim that arm passed any `importlib.import_module(f"...")`
+call whose first piece is a string constant, whatever module it named. The plain-string
+arm was never reached, because an f-string argument is an `ast.JoinedStr` and not an
+`ast.Constant` (`run.py:978`).
+
+The fix names the required leading text once, at the top of the helper, and the arm
+tests against it (`run.py:963`, `run.py:976`):
+
+```python
+    lead = prefix or exact
+```
+
+A target inside a package keeps its non-empty package prefix, so nothing changes there.
+A repo-root target takes `exact`, which the by-name call site already passes as
+`_module_name(imported)` (`run.py:1030`) and which is `run` for `run.py`. The
+placeholder call site (`run.py:1009`) passes no `exact` and a non-empty prefix, so it is
+untouched. The helper's docstring now states which of the two the test uses and why.
+
+### The defect reproduced, and the fix proved, on scratch copies
+
+The copies were built with `git archive | tar -x` under
+`/home/y-guo/.claude/jobs/46e92203/tmp/r3-scratch`, one from `81df864` and one from this
+round's head, each carrying the same two fixture edits: `README.md:60` holds
+`used by: eval/method_table.py (by name, inside the table subcommand)` in place of
+`none (program)`, and `eval/method_table.py` holds a function returning
+`importlib.import_module(f"<module>{suffix}")`.
+
+The correct spelling, `f"run{suffix}"`, on this round's head — green, so the fix does not
+cost a true by-name claim its pass:
+```
+$ "$PR" run.py selfcheck
+selfcheck: 31 python files, 0 problems
+rc=0
+```
+
+The wrong module named, `f"data.training_data{suffix}"`, while the annotation still
+claims `run.py` is imported by name. At `81df864` this is the blind spot:
+```
+$ "$PR" run.py selfcheck
+selfcheck: 31 python files, 0 problems
+rc=0
+```
+On this round's head the same copy fires:
+```
+$ "$PR" run.py selfcheck
+check 2: run.py used by: by-name entry eval/method_table.py holds no importlib.import_module call naming <module>
+selfcheck: 31 python files, 1 problems
+rc=1
+```
+The message's `{prefix}<module>` tail (`run.py:1033`) reads bare `<module>` for a
+repo-root target. It was left as it is: the line already names `run.py` as the annotated
+file, and this round's scope is the test, not the wording.
+
+The whole scratch directory was deleted at the end of the round.
+
+## Acceptance, real output at `5f455eb`
+
+### Selfcheck, from the worktree root and from another working directory
+
+```
+$ cd /home/y-guo/reproduce/new1-wt/2026-09-20-wave6-fix-r3
+$ "$PR" run.py selfcheck
+selfcheck: 31 python files, 0 problems
+rc=0
+$ cd /tmp
+$ "$PR" /home/y-guo/reproduce/new1-wt/2026-09-20-wave6-fix-r3/run.py selfcheck
+selfcheck: 31 python files, 0 problems
+rc=0
+```
+
+### Ticket 15's D2
+
+The fixture parsers:
+```
+3
+['data.training_data', 'os']
+two matches -> refused: True
+```
+with `from dataclasses import dataclass` in the fixture:
+```
+['dataclasses', 'os']
+```
+
+The two literal readers:
+```
+['note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2']
+literal_of refuses FORMATS: SystemExit agent/injected_text_formats.py: 'FORMATS' has a value that is not a literal (malformed node or string on line 65: <ast.Call object at 0x7f8e54143130>)
+```
+
+The annotation-line parse, printed with check 2's own helper, `run._parse_annotation`,
+as `(normal, by_name, dead)`:
+```
+train/utils/trainer.py | used by
+   normal:    ['train/methods/cgen.py', 'train/methods/cparam.py', 'train/methods/ctool.py']
+   by_name:   []
+   dead:      []
+models/agent_models/service.py | used by
+   normal:    ['agent/run_tasks.py', 'agent/step_without_probe.py']
+   by_name:   []
+   dead:      []
+models/probe_models/base.py | imports
+   normal:    ['models/__init__.py']
+   by_name:   [('models/probe_models/<backbone>.py', 'by name, inside load()')]
+   dead:      []
+models/probe_models/__init__.py | used by
+   normal:    ['models/probe_models/base.py', 'models/probe_models/qwen.py', 'models/probe_models/service.py']
+   by_name:   []
+   dead:      []
+```
+
+Check 5's structural read:
+```
+data/trajectory_record.py {'SCHEMA': 1, 'DEFAULTS': 1, 'REQUIRED': 1} 12 []
+data/training_data.py {'SCHEMA': 1, 'DEFAULTS': 1, 'REQUIRED': 1} 16 []
+data/probe_output.py {'SCHEMA': 1, 'DEFAULTS': 1, 'REQUIRED': 1} 9 []
+```
+
+Check 4's expansion:
+```
+22 missing: []
+```
+
+### D5
+
+```
+$ "$PR" run.py --help
+usage: run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
+
+The first word is one of the ten reserved subcommands below, or else the stem of a
+workflow file under experimental_settings/.
+
+subcommands:
+  ls          [workflow] [--debug] -- one folded line per run
+  where       <workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage
+  find        section.field=value ... -- the runs whose settings_diff matches every given field
+  kill        <workflow> <setting> <stage> -- end one run's pieces, write the killed finish row
+  refire      <workflow> <setting> <stage> [--piece i] [--allow-dirty] -- restart one dead piece
+  retry       <workflow> <setting> <stage> [--allow-dirty] -- clear markers, then launch it fresh
+  table       [workflow] [--out FILE] [--debug] -- the backbone x method x risk table
+  free        -- the free cards per host
+  sync        -- fold done.json and heartbeats into missing finish rows
+  selfcheck   -- the tree's self-consistency checks
+rc=0
+```
+
+### Tests
+
+Each test module in its own process, never both in one:
+```
+$ "$PR" tests/test_registry_concurrent_append.py
+Ran 1 test in 0.211s
+OK
+rc=0
+$ PYTHONPATH=. "$PR" tests/test_packed_loss.py
+Ran 3 tests in 2.666s
+OK
+rc=0
+```
