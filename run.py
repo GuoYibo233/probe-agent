@@ -217,8 +217,29 @@ def readme_entries(path) -> dict[str, dict[str, str]]:
 # module-level literal the same way schema.py's loader does, but as a
 # standalone reader that never raises past run.py's own message. A caller
 # that wants a reader failure to stop only its own check, not the whole run,
-# catches the SystemExit these two raise around each call.
+# catches the SystemExit these readers raise around each call, and prefixes
+# the message with its own check number -- the readers name the file and the
+# name, and leave the prefix to the caller.
+#
+# Every path these readers take is relative to ROOT, so selfcheck reads the
+# same tree whatever the shell's working directory is; an absolute path
+# passes through ROOT / path unchanged, which is what ticket 15's D2 fixtures
+# in a temp directory rely on.
 # ---------------------------------------------------------------------------
+
+
+def _parse(path) -> ast.Module:
+    """The module at path, parsed with ast -- the one reader every selfcheck ast pass goes through.
+
+    A file that does not parse is a selfcheck problem like any other: this refuses with the same
+    SystemExit shape literal_of raises, naming the file and the syntax error's line, so the
+    caller's own `except SystemExit` turns it into one problem line instead of a traceback.
+    """
+    source_path = ROOT / path
+    try:
+        return ast.parse(source_path.read_text(), filename=str(source_path))
+    except SyntaxError as ex:
+        raise SystemExit(f"{path}: does not parse ({ex.msg}, line {ex.lineno})") from ex
 
 
 def _dotted_to_relpath(name: str) -> str | None:
@@ -242,7 +263,7 @@ def imports_of(path) -> set[str]:
     `dataclasses/dataclass/__init__.py` is in this repo. Without the rule a `from <package>
     import <module>` import of a repo file would be invisible to the graph.
     """
-    tree = ast.parse(Path(path).read_text())
+    tree = _parse(path)
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -271,7 +292,7 @@ def _repo_imports(path) -> set[str]:
 
 def _column_zero_assign_values(path, name: str) -> list:
     """Every column-zero ast.Assign of `name` in the module at path, as its value node -- literal_of and literal_keys_of match ast.Assign only, never ast.AnnAssign (3.3's literal rule; check 5's SCHEMA/DEFAULTS/REQUIRED are the annotated exception, read separately)."""
-    tree = ast.parse(Path(path).read_text())
+    tree = _parse(path)
     matches = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and node.col_offset == 0:
@@ -792,6 +813,15 @@ def _safe_literal(problems: list[str], check: str, path, name: str):
         return None
 
 
+def _safe_parse(problems: list[str], check: str, path):
+    """_parse(path), appending its SystemExit message to problems and returning None on a file that does not parse, so one unparsable file never stops the rest of a check's loop (the shape _safe_literal uses for a literal)."""
+    try:
+        return _parse(path)
+    except SystemExit as ex:
+        problems.append(f"{check}: {ex}")
+        return None
+
+
 # --- check 1: the README's file list against the tree -----------------------
 
 
@@ -916,7 +946,7 @@ def _has_fstring_dynamic_import(path, prefix: str) -> bool:
 
 def _has_main_block(path) -> bool:
     """Whether the module at path holds an `if __name__ == ...:` block at any depth (rule 3's 'none (program)' test)."""
-    tree = ast.parse((ROOT / path).read_text())
+    tree = _parse(path)
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and isinstance(node.test, ast.Compare):
             left = node.test.left
@@ -962,7 +992,13 @@ def _check_package_marker(current_file: str, label: str, raw: str) -> list[str]:
 
 def _check_2(tree_files: list[str], entries: dict) -> list[str]:
     problems: list[str] = []
-    imports_map = {f: _repo_imports(f) for f in tree_files}
+    imports_map: dict[str, set[str]] = {}
+    for f in tree_files:
+        try:
+            imports_map[f] = _repo_imports(f)
+        except SystemExit as ex:
+            problems.append(f"check 2: {ex}")
+            imports_map[f] = set()
     used_by_map: dict[str, set[str]] = {f: set() for f in tree_files}
     for f, imps in imports_map.items():
         for target in imps:
@@ -1119,14 +1155,18 @@ _VERSION_RULE_COMMENT = (
 )
 
 
-def _version_assign_lineno(path) -> int | None:
-    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
-    tree = ast.parse(Path(path).read_text())
-    matches = [
-        node for node in ast.walk(tree)
+def _version_assigns(path) -> list[ast.Assign]:
+    """Every column-zero ast.Assign to VERSION in the module at path, in source order (check 4 reads their count and the one's line number)."""
+    return [
+        node for node in ast.walk(_parse(path))
         if isinstance(node, ast.Assign) and node.col_offset == 0
         and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets)
     ]
+
+
+def _version_assign_lineno(path) -> int | None:
+    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
+    matches = _version_assigns(path)
     if len(matches) != 1:
         return None
     return matches[0].lineno
@@ -1135,10 +1175,14 @@ def _version_assign_lineno(path) -> int | None:
 def _check_version_comment(path) -> list[str]:
     """The VERSION rule comment block sits directly above the file's VERSION assignment, word for word (errata '3.3 / 8.6', gyb 2026-09-18)."""
     problems: list[str] = []
-    lineno = _version_assign_lineno(path)
+    try:
+        lineno = _version_assign_lineno(path)
+    except SystemExit as ex:
+        problems.append(f"check 4: {ex}")
+        return problems
     if lineno is None:
         return problems
-    lines = Path(path).read_text().splitlines()
+    lines = (ROOT / path).read_text().splitlines()
     start = lineno - 1 - len(_VERSION_RULE_COMMENT)
     if start < 0:
         problems.append(
@@ -1241,7 +1285,9 @@ def _column_zero_ann_or_assign(tree, name: str) -> list:
 def _check_5() -> list[str]:
     problems: list[str] = []
     for path in FORMAT_FILES:
-        tree = ast.parse((ROOT / path).read_text())
+        tree = _safe_parse(problems, "check 5", path)
+        if tree is None:
+            continue
         nodes: dict[str, object] = {}
         for name in ("SCHEMA", "DEFAULTS", "REQUIRED"):
             matches = _column_zero_ann_or_assign(tree, name)
@@ -1355,7 +1401,9 @@ def _check_9(tree_files: list[str]) -> list[str]:
     for path in tree_files:
         if path.startswith("constants/"):
             continue
-        tree = ast.parse((ROOT / path).read_text())
+        tree = _safe_parse(problems, "check 9", path)
+        if tree is None:
+            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 if any(root in node.value for root in _FORBIDDEN_ROOTS):
@@ -1427,17 +1475,29 @@ def cmd_selfcheck(rest: list[str]) -> int:
     entries = readme_entries(ROOT / "README.md")
     tree_files = _tree_python_files()
     problems: list[str] = []
-    problems += _check_1(entries, tree_files)
-    problems += _check_2(tree_files, entries)
-    problems += _check_3()
-    problems += _check_4()
-    problems += _check_5()
-    problems += _check_6()
-    problems += _check_7()
-    problems += _check_8()
-    problems += _check_9(tree_files)
-    problems += _check_10(entries)
-    problems += _check_11()
+    # A check that raises becomes a problem line of its own, so the other ten still run and the
+    # count still prints: an edit that a check cannot read -- a renamed axis, a file that does
+    # not parse -- is a problem to report, not a reason to stop reporting.
+    checks = (
+        (1, lambda: _check_1(entries, tree_files)),
+        (2, lambda: _check_2(tree_files, entries)),
+        (3, _check_3),
+        (4, _check_4),
+        (5, _check_5),
+        (6, _check_6),
+        (7, _check_7),
+        (8, _check_8),
+        (9, lambda: _check_9(tree_files)),
+        (10, lambda: _check_10(entries)),
+        (11, _check_11),
+    )
+    for number, check in checks:
+        try:
+            problems += check()
+        except SystemExit as ex:
+            problems.append(f"check {number}: {ex}")
+        except Exception as ex:
+            problems.append(f"check {number} raised: {type(ex).__name__}: {ex}")
     for line in problems:
         print(line)
     print(f"selfcheck: {len(tree_files)} python files, {len(problems)} problems")
