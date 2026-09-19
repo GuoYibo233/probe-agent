@@ -52,7 +52,10 @@ where each line comes from:
 5. **`experimental_settings/` is gyb's**: a hook refuses an agent edit to
    `experimental_settings/*.yaml` **and to `models/table.yaml`** (contracts 6.1
    answers the owner's open question with yes); an agent proposes a setting as a
-   task.
+   task. **Write `CLAUDE.md` with the Write tool**: the hook refuses any Bash
+   command whose text carries that table file's name together with a write word
+   (a redirect, `tee`, `cp`, `mv`, `sed -i` ...), so a heredoc into `CLAUDE.md`
+   is refused.
 6. The iron rules that already hold on the branch, unchanged in substance: large
    outputs to `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/`, weights to
    `.../models`, uv for environments, complete isolation from
@@ -85,8 +88,9 @@ its ledger paths and its number sources moved to the new tree. By line:
   `jobs/runs.jsonl`; `ops/jobs.json` -> **deleted**, replaced by "`run.py ls` for
   what is running now" (there is no separate job ledger, 8.6); `plans/` ->
   `notes/plans/`; `plans/PLAINWORDS.md` -> `notes/plans/PLAINWORDS.md`.
-- lines 10, 40, 129, 135, 138, 194, 210, 445: the `plans/STATUS_*.md` path ->
+- lines 10, 40, 129, 138, 194, 210, 445: the `plans/STATUS_*.md` path ->
   `notes/plans/STATUS_*.md`.
+- line 135: `ops/runs.jsonl` -> `jobs/runs.jsonl`.
 - line 46: `plans/archive/...` -> `notes/plans/archive/...`, and the
   ancient-memory rule restated (that directory is read only when gyb says so).
 - line 508: "never touch `RESULTS.md`" -> "never touch `jobs/RESULTS.md`; it is
@@ -135,6 +139,16 @@ longer runs. They are in scope for that reason and no other.
 
 Same defect, smallest possible change; **no method is touched**.
 
+**The line numbers below are a map, not the rule, exactly as in section 2: every
+occurrence** of `TIMELINE.md`, `RESULTS.md`, `runs.jsonl`, `jobs.json`,
+`WORKPLAN.md`, `DATA.md` and `plans/` in these three files takes its new path, and
+`C15` proves it by regex. On 2026-09-20 the occurrences the numbered list misses
+are `handoff/SKILL.md` line 52 (`WORKPLAN.md` and `TIMELINE.md` bare in the
+Phase-1 read list), `paper-write/SKILL.md` line 83 (`TIMELINE.md` bare in the
+commit-discipline bullet) and `ticket-run/SKILL.md` lines 48 and 142 (`RESULTS.md`
+bare, the continuation of the sentences at 47 and 140). The method is untouched;
+only the path moves.
+
 - `handoff/SKILL.md` lines 45, 51, 60: `run.py gpu-jobs json` and the sampling
   history -> `run.py ls`; `tail ops/runs.jsonl` -> `tail jobs/runs.jsonl` (rows
   with a start and no finish are `registry.open_runs()`, 8.0).
@@ -143,8 +157,8 @@ Same defect, smallest possible change; **no method is touched**.
   (the run_id is still the primary key of a registry row, 8.1).
 - `ticket-run/SKILL.md` line 27 (`docs/agents/issue-tracker.md` and
   `docs/agents/triage-labels.md` -> `notes/docs/agents/...`, the same move
-  `CLAUDE.md` takes), lines 47, 140 and `ticket-run/prompts/implementer.md`
-  lines 22, 30-31, 38: the "run.py registry three-piece update" hard rule is
+  `CLAUDE.md` takes), lines 47, 140 (the copy of `prompts/implementer.md` is
+  overwritten whole by the paragraph below, so it takes no line edit): the "run.py registry three-piece update" hard rule is
   replaced by the branch rule — the file's five annotation lines go into
   `README.md` and `run.py selfcheck` proves them; the `MAP.md` sentence is
   deleted (there is no `MAP.md`); the ledger sentence takes the new paths.
@@ -152,7 +166,9 @@ Same defect, smallest possible change; **no method is touched**.
   (`implementer.md`, `reviewer.md`, `re-reviewer.md`, `final-reviewer.md`),
   written for this branch in commit `f28474c`, **replace** the copies under
   `.claude/skills/ticket-run/prompts/`, so the branch stops having two versions
-  of the same prompt. Copy them over and delete nothing else in that directory.
+  of the same prompt. On 2026-09-20 `reviewer.md`, `re-reviewer.md` and
+  `final-reviewer.md` are already byte-identical, so only `implementer.md`
+  actually changes; copy all four anyway and delete nothing else in that directory.
 
   **First rewrite every line of `.scratch/from-zero/prompts/implementer.md` that
   carries the token `legacy/`, then copy.** That prompt was written for the
@@ -284,13 +300,14 @@ print("named:", sorted(named)); print("missing:", missing)
 print("C8", "ok" if not missing else "FAIL"); sys.exit(1 if missing else 0)
 PY
 ```
-Expected: exit 0, the `exempt range:` line, `C8 ok`, and the `named:` line
-containing exactly
+Expected: exit 0, the `exempt range:` line, `C8 ok`, and a `named:` line that is a
+subset of
 `free, ls, where, find, kill, refire, retry, table, sync, selfcheck` plus the
-three workflow-file names. `sub` is parsed out of ticket 14's pinned `--help`
+three workflow-file names (no document spells `run.py find`, `run.py baseline` or
+`run.py inject` today, and C8 does not require them). `sub` is parsed out of ticket 14's pinned `--help`
 layout — one subcommand per line, indented two spaces, name first.
 
-**C11 — the diff of the six edited documents is paths and command names only.**
+**C11 — the diff of the seven edited documents is paths and command names only.**
 ```bash
 git diff --stat .claude/skills/exp-status .claude/skills/handoff \
     .claude/skills/paper-write .claude/skills/ticket-run .claude/agents
@@ -299,7 +316,7 @@ git diff .claude/skills/exp-status .claude/skills/handoff \
 ```
 Expected: a small stat, and a diff in which every removed line is a path, a
 command name or the deleted incident paragraph. Paste the stat and say, for each
-of the six files, what changed in one sentence.
+of the seven files, what changed in one sentence.
 
 **C12 — the prompts are one copy, not two.**
 ```bash
@@ -348,7 +365,7 @@ so this is a regression check).
 ```bash
 "$PR" run.py selfcheck; echo "rc=$?"
 ```
-Expected: `selfcheck: 34 python files, 0 problems`, `rc=0`.
+Expected: `selfcheck: 31 python files, 0 problems`, `rc=0`.
 
 ### GPU / main session — not yours
 

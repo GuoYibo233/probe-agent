@@ -12,6 +12,7 @@ Four things, in this order. The files you may touch, and nothing else:
 docs/                 moved whole into notes/, with git mv docs notes/docs
 legacy/               deleted entirely, with git rm -r
 .gitignore            edited: every rule naming a deleted directory removed
+constants/path_models.yaml   two source citations stripped (C9 greps for the word `legacy`)
 notes/TIMELINE.md     one entry appended at the top
 ```
 
@@ -33,12 +34,15 @@ hand: ... plans/ and docs/ (moved whole)", and contracts 0.2's tree lists no
 root-level `docs/`. The move was missed when the rest of gyb's documents went to
 `notes/` in commit `25e64ed`, and until it happens the root carries a directory
 the fixed tree does not name while two documents this build writes — ticket 16's
-`.claude/skills/repo-review/SKILL.md` and ticket 17's `CLAUDE.md`, both in flight
-beside this ticket — cite `notes/docs/agents/issue-tracker.md` and
+`.claude/skills/repo-review/SKILL.md`, already on the branch, and ticket 17's
+`CLAUDE.md`, in flight beside this ticket — cite `notes/docs/agents/issue-tracker.md` and
 `notes/docs/agents/triage-labels.md`. **This is the one write into `notes/` this
 ticket makes besides the TIMELINE entry, and it is a move, not an edit**: the
 spec's rule that `notes/` is the owner's stands, and `git status` must show the
-three files as pure renames (`R`), with no content change.
+five tracked files (`docs/agents/domain.md`, `docs/agents/issue-tracker.md`,
+`docs/agents/triage-labels.md`, `docs/design/2026-08-08-gpu-monitor-launch.md`,
+`docs/plans/2026-08-08-gpu-monitor-launch.md`) as pure renames (`R`), with no
+content change.
 
 Check before and after:
 
@@ -81,8 +85,10 @@ blocks and `legacy/pipeline/inject/runs/**`. Removed as well, because their
 directories are absent from this machine (`ls -d` finds none of them):
 `paper/acl-style-files/`, `related_work/`, `jacobian-lens/`,
 `fig1_pilot/alfworld_data/`, `traj_pipeline/data/`, `envs/bert_runs`, the
-`envs/bert_runs/**` and `envs/bert_data/**` keep-only-md blocks, `*/results/**`
-and `benchmark_design/*.jsonl`. **Before removing any of those, run
+`envs/bert_runs/**` and `envs/bert_data/**` keep-only-md blocks, `*/results/**`,
+`benchmark_design/*.jsonl`, the `envs/runs/**` keep-only-md block (`envs/runs` is a
+symlink, so a rule under it never matches) and `*.feather` (first check that
+`git ls-files '*.feather' | wc -l` prints `0`; keep the rule otherwise). **Before removing any of those, run
 `ls -d <path>` and paste the result**; keep the rule if the path is there.
 
 **Kept or added**, each with the rule it comes from:
@@ -141,6 +147,15 @@ logs/
 The LaTeX block is **not** carried over — but check rather than assume:
 `git ls-files '*.tex' | wc -l` must print `0` (C10 below).
 
+### 1b. `constants/path_models.yaml` — two parentheticals removed
+
+Lines 12 and 15 end `(legacy train_causal_tool.py:86)` and
+`(legacy train_causal_tool.py:87)`. `legacy/` is deleted by this ticket, so the
+citation dangles and C9's bare-word grep hits it. Delete the parenthetical on both
+lines, leaving `note: own replica; the 1.7B tier of the three-tier backbone sweep`
+and `note: own replica; the 4B tier of the same sweep`. No other line of the file
+is touched. Use the Edit tool.
+
 ### 2. `legacy/` — deleted
 
 `git rm -r legacy/` as the last construction step. The tree's own line says it:
@@ -161,7 +176,10 @@ commit `647dc45`, which the TIMELINE entry names.
 ### 3. `notes/TIMELINE.md` — one entry appended at the top
 
 Written under that file's own "new entries go on top" rule; the file's existing
-entries are the format model. It must state, in this order:
+entries are the format model (`## YYYY-MM-DD <sentence>`, then labelled bullets).
+"On top" means above the newest entry (`## 2026-09-12 ...`, line 19 today) and
+below the title and the blockquote header, never at line 1. It must state, in
+this order:
 
 - **Trigger**: gyb's seven principles (the tree's Part 1 numbered list) and the
   2026-09-13..09-17 renewal discussion.
@@ -217,7 +235,7 @@ over `CLAUDE.md` and `.claude/` after the wave merges.
 git ls-files legacy | wc -l                       # expect: 0
 test ! -e legacy && echo ok-gone
 grep -rn "legacy" run.py constants experimental_settings data models agent \
-     train eval jobs README.md || echo ok-noref
+     train eval jobs tests README.md || echo ok-noref
 grep -n "legacy\|fig1_pilot\|traj_pipeline\|benchmark_design" .gitignore \
      || echo ok-gitignore
 ```
@@ -275,11 +293,12 @@ grep -rnE '(^|[^/])docs/agents' CLAUDE.md README.md .claude --include='*.md' \
   || echo ok-no-bare-docs-path
 git log --diff-filter=R --name-status -1 -- notes/docs | head -5
 ```
-Expected: `ok-docs-moved`, `ok-issue-tracker`, `ok-no-bare-docs-path` — every
-surviving citation is `notes/docs/agents/...`, written by tickets 16 and 17 in
-this same wave. If the grep prints a line from `.claude/skills/ticket-run/` or
-`CLAUDE.md`, that is ticket 17's to fix, not yours: report it and do not edit
-those files. The last command is informational; the rename may not be committed
+Expected: `ok-docs-moved` and `ok-issue-tracker`. The grep is **expected to print**
+in your worktree, where ticket 17's rewrites are absent: on 2026-09-20 it prints
+`CLAUDE.md:69`, `CLAUDE.md:70` and `.claude/skills/ticket-run/SKILL.md:27`. Those
+are ticket 17's to fix, not yours: paste them in your report and do not edit
+those files. The main session re-runs this grep after the wave merges and requires
+`ok-no-bare-docs-path` there. The last command is informational; the rename may not be committed
 yet when you run it, since the workflow commits.
 
 **C14 — the TIMELINE entry is on top and names the real keys.**
