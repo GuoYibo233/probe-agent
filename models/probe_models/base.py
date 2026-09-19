@@ -35,6 +35,8 @@ Batch = dict[str, Any]      # keys forward consumes: input_ids, attention_mask,
                             # event_end, position_ids (optional); every other key
                             # is the method's own and base.py never reads it
 
+GENERATE_BATCH = 8          # prompts per backbone.generate call inside Probe.generate
+
 _PROBE_KINDS = ("classifier", "generator")
 _TUNINGS = ("full", "lora")
 
@@ -140,15 +142,21 @@ class Probe(torch.nn.Module):
         # physically last column of the sequence, so the batch must be left-padded
         # regardless of the tokenizer's stored padding_side (score()'s right-padding,
         # which its attention_mask.sum(dim=1)-1 rule depends on)
-        enc = self.tokenizer(prompts, add_special_tokens=False, truncation=True,
-                             max_length=max(self.max_len - max_new, 1), padding=True,
-                             padding_side="left", return_tensors="pt").to(device)
-        with torch.no_grad():
-            out = self.backbone.generate(
-                **enc, do_sample=False, max_new_tokens=max_new,
-                eos_token_id=self.tokenizer.eos_token_id, pad_token_id=self.tokenizer.pad_token_id)
-        continuations = out[:, enc["input_ids"].shape[1]:]
-        decoded = self.tokenizer.batch_decode(continuations, skip_special_tokens=True)
+        # GENERATE_BATCH prompts per backbone.generate call: a validation or prediction frame
+        # holds hundreds of prompts of several thousand tokens each, and one call over all of
+        # them does not fit a 48 GB card
+        decoded: list[str] = []
+        for i in range(0, len(prompts), GENERATE_BATCH):
+            enc = self.tokenizer(prompts[i:i + GENERATE_BATCH], add_special_tokens=False,
+                                 truncation=True, max_length=max(self.max_len - max_new, 1),
+                                 padding=True, padding_side="left", return_tensors="pt").to(device)
+            with torch.no_grad():
+                out = self.backbone.generate(
+                    **enc, do_sample=False, max_new_tokens=max_new,
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    pad_token_id=self.tokenizer.pad_token_id)
+            continuations = out[:, enc["input_ids"].shape[1]:]
+            decoded.extend(self.tokenizer.batch_decode(continuations, skip_special_tokens=True))
         return [d.split("\n")[0].strip() for d in decoded]
 
     def trainable_parameters(self) -> list:
