@@ -79,14 +79,7 @@ error" does not mean "the job got done."
    conversation, and let the user decide whether to build a third
    environment. **Never** run `uv pip install -U`, `--upgrade`, or any command
    that would change the existing version number of transformers / torch.
-8. **A registered task goes through run.py**: if the CPU script to run is
-   already hooked into the repo root's `run.py` registry (check with
-   `python3 run.py list`), always go through `python3 run.py <task> [args]`,
-   never call the underlying script directly, since which venv's interpreter
-   is used is pinned by the registry, and calling directly makes it easy to
-   use the wrong environment. A one-off script or smoke check outside the
-   registry is not bound by this.
-9. **Don't ask, decide yourself, report the assumption**: you cannot ask the
+8. **Don't ask, decide yourself, report the assumption**: you cannot ask the
    user a question. When **building a new** environment and no version is
    specified, pick the latest stable version and state it in the report
    (subject to rule 7); a conflict you cannot resolve gets reported with the
