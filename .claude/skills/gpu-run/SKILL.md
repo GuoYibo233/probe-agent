@@ -97,12 +97,16 @@ port answers (contracts 2.3, 7.2), then starts the loop pieces — and **stops t
 setting's walk there**, printing the monitoring command. One call over several settings,
 or over a sweep parent, therefore leaves exactly one launched run per child.
 
-The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and
-the call exits 0 either way. A launch that fails prints no such line — often nothing at
-all, since the probe service's `check` client is the only launch step that writes to the
-terminal — tears the run's service pieces down and appends a `launch_failed` finish row.
-Read Phase 5's `ls` line for that row, and `<run_dir>/log/<piece index>.txt` for why the
-piece died.
+The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
+failed launch takes one of two shapes. `jobs/launch.py` refuses before the start row is
+written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards,
+a service endpoint file that never appeared — and each of those refusals prints its own
+`jobs/launch.py: ...` line and exits 1, leaving no registry row, nothing in Phase 5's
+`ls` and no piece log; that printed line is the diagnosis. A piece that starts and then
+fails its alive check is the quiet shape: the call prints nothing further and exits 0,
+tears the run's service pieces down and appends a `launch_failed` finish row. Read Phase
+5's `ls` line for that row, and `<run_dir>/log/<piece index>.txt` for why the piece
+died.
 
 A GPU stage (`sample`, `train`, `inject`) is never waited on. A CPU stage (`build`,
 `eval`, `score`) runs inline, in place, with no tmux and no ssh, and the walk goes
@@ -203,10 +207,14 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
   row — rather than sampled again.
 - All three key the real run and none of them parses `--debug`: typing the flag is a
   usage error, and leaving it off names the real run, so none of them can reach a Phase
-  3 smoke — `kill` on a smoke prints `ended []` and stops nothing while the smoke keeps
-  its cards. End a smoke by hand instead: `ssh <host> tmux kill-session -t <session>`
-  for every piece, service pieces included, taking each host and session from the
-  smoke's Phase 5 `ls --debug` line, then `run.py sync` to write the missing finish row.
+  3 smoke. With that setting and stage carrying a real run, all three act on that real
+  run: `kill` ends its pieces and writes its `killed` finish row, `refire` restarts one
+  of its pieces and `retry` clears its markers and launches it again. With the smoke as
+  the only run of that setting and stage, `kill` prints `ended []` and stops nothing
+  while the smoke keeps its cards. End a smoke by hand instead:
+  `ssh <host> tmux kill-session -t <session>` for every piece, service pieces included,
+  taking each host and session from the smoke's Phase 5 `ls --debug` line, then
+  `run.py sync` to write the missing finish row.
 
 ## Hard rules
 
