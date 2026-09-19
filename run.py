@@ -217,8 +217,29 @@ def readme_entries(path) -> dict[str, dict[str, str]]:
 # module-level literal the same way schema.py's loader does, but as a
 # standalone reader that never raises past run.py's own message. A caller
 # that wants a reader failure to stop only its own check, not the whole run,
-# catches the SystemExit these two raise around each call.
+# catches the SystemExit these readers raise around each call, and prefixes
+# the message with its own check number -- the readers name the file and the
+# name, and leave the prefix to the caller.
+#
+# Every path these readers take is relative to ROOT, so selfcheck reads the
+# same tree whatever the shell's working directory is; an absolute path
+# passes through ROOT / path unchanged, which is what ticket 15's D2 fixtures
+# in a temp directory rely on.
 # ---------------------------------------------------------------------------
+
+
+def _parse(path) -> ast.Module:
+    """The module at path, parsed with ast -- the one reader every selfcheck ast pass goes through.
+
+    A file that does not parse is a selfcheck problem like any other: this refuses with the same
+    SystemExit shape literal_of raises, naming the file and the syntax error's line, so the
+    caller's own `except SystemExit` turns it into one problem line instead of a traceback.
+    """
+    source_path = ROOT / path
+    try:
+        return ast.parse(source_path.read_text(), filename=str(source_path))
+    except SyntaxError as ex:
+        raise SystemExit(f"{path}: does not parse ({ex.msg}, line {ex.lineno})") from ex
 
 
 def _dotted_to_relpath(name: str) -> str | None:
@@ -242,7 +263,7 @@ def imports_of(path) -> set[str]:
     `dataclasses/dataclass/__init__.py` is in this repo. Without the rule a `from <package>
     import <module>` import of a repo file would be invisible to the graph.
     """
-    tree = ast.parse(Path(path).read_text())
+    tree = _parse(path)
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -271,7 +292,7 @@ def _repo_imports(path) -> set[str]:
 
 def _column_zero_assign_values(path, name: str) -> list:
     """Every column-zero ast.Assign of `name` in the module at path, as its value node -- literal_of and literal_keys_of match ast.Assign only, never ast.AnnAssign (3.3's literal rule; check 5's SCHEMA/DEFAULTS/REQUIRED are the annotated exception, read separately)."""
-    tree = ast.parse(Path(path).read_text())
+    tree = _parse(path)
     matches = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign) and node.col_offset == 0:
@@ -292,14 +313,14 @@ def literal_of(path, name: str):
     """
     matches = _column_zero_assign_values(path, name)
     if not matches:
-        raise SystemExit(f"selfcheck: {path}: no column-zero assignment to {name!r}")
+        raise SystemExit(f"{path}: no column-zero assignment to {name!r}")
     if len(matches) > 1:
         raise SystemExit(
-            f"selfcheck: {path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+            f"{path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     try:
         return ast.literal_eval(matches[0])
     except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as ex:
-        raise SystemExit(f"selfcheck: {path}: {name!r}'s value is not a literal ({ex})") from ex
+        raise SystemExit(f"{path}: {name!r} has a value that is not a literal ({ex})") from ex
 
 
 def literal_keys_of(path, name: str) -> list:
@@ -311,19 +332,19 @@ def literal_keys_of(path, name: str) -> list:
     """
     matches = _column_zero_assign_values(path, name)
     if not matches:
-        raise SystemExit(f"selfcheck: {path}: no column-zero assignment to {name!r}")
+        raise SystemExit(f"{path}: no column-zero assignment to {name!r}")
     if len(matches) > 1:
         raise SystemExit(
-            f"selfcheck: {path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+            f"{path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     value = matches[0]
     if not isinstance(value, ast.Dict):
-        raise SystemExit(f"selfcheck: {path}: {name!r} is not a dict display, cannot read its keys")
+        raise SystemExit(f"{path}: {name!r} is not a dict display, cannot read its keys")
     keys = []
     for key_node in value.keys:
         try:
             keys.append(ast.literal_eval(key_node))
         except (ValueError, TypeError, SyntaxError) as ex:
-            raise SystemExit(f"selfcheck: {path}: {name!r} has a non-literal key ({ex})") from ex
+            raise SystemExit(f"{path}: {name!r} has a non-literal key ({ex})") from ex
     return keys
 
 
@@ -792,7 +813,26 @@ def _safe_literal(problems: list[str], check: str, path, name: str):
         return None
 
 
+def _safe_parse(problems: list[str], check: str, path):
+    """_parse(path), appending its SystemExit message to problems and returning None on a file that does not parse, so one unparsable file never stops the rest of a check's loop (the shape _safe_literal uses for a literal)."""
+    try:
+        return _parse(path)
+    except SystemExit as ex:
+        problems.append(f"{check}: {ex}")
+        return None
+
+
 # --- check 1: the README's file list against the tree -----------------------
+
+
+# Contracts 0.1's five-line format: every .py entry of README section 2 carries these five
+# labels, in this order. Check 1 requires each of them to be there and to carry a value, for
+# three reasons: check 10 reads venv: and drops the file from its import proof in silence when
+# that line is gone, so check 1 is the only place that line is required; check 2 reads imports:
+# and used by: and reports a missing one by name itself, so check 1 repeats that report for a
+# .py entry rather than being its only source; and reads: and writes:, which no check reads,
+# are required here because a line nobody requires rots.
+README_PY_LABELS = ("imports", "used by", "reads", "writes", "venv")
 
 
 def _check_1(entries: dict, tree_files: list[str]) -> list[str]:
@@ -800,9 +840,15 @@ def _check_1(entries: dict, tree_files: list[str]) -> list[str]:
     for f in tree_files:
         if f not in entries:
             problems.append(f"check 1: {f} is a .py file in the tree with no README entry")
-    for name in entries:
+    for name, entry in entries.items():
         if not (ROOT / name).exists():
             problems.append(f"check 1: README entry {name!r} names a path that does not exist")
+        if name.endswith(".py"):
+            for label in README_PY_LABELS:
+                if (entry.get(label) or "").strip() == "":
+                    problems.append(
+                        f"check 1: README entry {name!r} carries no {label}: line "
+                        "(contracts 0.1's five-line format)")
     return problems
 
 
@@ -858,15 +904,23 @@ def _expand_braces(path_text: str) -> list[str]:
     return [path_text[:m.start()] + alt.strip() + path_text[m.end():] for alt in m.group(1).split(",")]
 
 
-def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]]]:
-    """One README imports:/used by: value, parsed into (plain entries, by-name fragments) per check 2's five-step rule (rule 2); the caller has already handled the 'none (program)' and '(as their package)' whole-line spellings of rule 3.
+def _is_path_token(fragment: str) -> bool:
+    """Whether a fragment is a bare path token -- one whitespace-free word ending in .py or .yaml -- and so names a repo file rather than prose (rule 2 step 5's prose rule, the other way round)."""
+    return len(fragment.split()) == 1 and fragment.endswith((".py", ".yaml"))
+
+
+def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]], list[str]]:
+    """One README imports:/used by: value, parsed into (plain entries, by-name fragments, dead path tokens) per check 2's five-step rule (rule 2); the caller has already handled the 'none (program)' and '(as their package)' whole-line spellings of rule 3.
 
     A plain entry survives steps 1-5 as exactly a repo file path. A by-name fragment's
     parenthetical starts 'by name' (rule 3) and is returned separately, dropped from the plain
-    equality either way.
+    equality either way. A fragment that is a bare path token yet names no repo file is a dead
+    name -- what a rename leaves behind -- and is returned as the third value for the caller to
+    report; prose fragments, which are several words, stay out of all three.
     """
     normal: set[str] = set()
     by_name: list[tuple[str, str]] = []
+    dead: list[str] = []
     for fragment in _split_top_level(_drop_bracket_groups(raw)):
         path_text, paren_text = _drop_parenthetical(fragment)
         if not path_text:
@@ -874,30 +928,36 @@ def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]]]:
         if paren_text is not None and paren_text.startswith("by name"):
             by_name.append((path_text, paren_text))
             continue
-        for candidate in _expand_braces(path_text):
-            candidate = candidate.strip()
-            if candidate and (ROOT / candidate).exists():
+        for candidate in (c.strip() for c in _expand_braces(path_text)):
+            if candidate == "":
+                continue
+            if (ROOT / candidate).exists():
                 normal.add(candidate)
-    return normal, by_name
+            elif _is_path_token(candidate):
+                dead.append(candidate)
+    return normal, by_name, dead
 
 
-def _has_dynamic_import_call(path) -> bool:
-    """Whether the module at path holds an importlib.import_module(...) call anywhere, ast.walk over the whole tree (rule 3's by-name existence test)."""
-    tree = ast.parse((ROOT / path).read_text())
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "import_module":
-            return True
-        if isinstance(func, ast.Name) and func.id == "import_module":
-            return True
-    return False
+def _dynamic_import_prefix(annotated_file: str) -> str:
+    """The dotted package a by-name importer must name to reach the annotated file: `models/agent_models/gptoss.py` -> `models.agent_models.`, and a repo-root file -> `` (rule 3).
+
+    A root-level module's dotted name is the stem alone, so its package part is empty and the
+    prefix is the empty string; every other file's prefix is its directory, dotted, with the
+    separating dot on the end.
+    """
+    parts = Path(annotated_file).parent.parts
+    return ".".join(parts) + "." if parts else ""
 
 
-def _has_fstring_dynamic_import(path, prefix: str) -> bool:
-    """Whether path holds an importlib.import_module(...) call whose one argument is an f-string beginning with prefix (models/probe_models/base.py's <backbone> placeholder, rule 3)."""
-    tree = ast.parse((ROOT / path).read_text())
+def _has_dynamic_import_of(path, prefix: str, exact: str = "") -> bool:
+    """Whether the module at path holds an importlib.import_module(...) call that names a module under prefix: an f-string whose leading constant starts with prefix, or the plain string `exact` (rule 3's by-name test).
+
+    The prefix is what makes the test bite: a call that imports something else entirely is the
+    breakage this rule exists to catch, and ast cannot see the edge any other way. A placeholder
+    fragment (models/probe_models/<backbone>.py) names no one module, so it passes no `exact`
+    and the f-string arm alone answers for it.
+    """
+    tree = _parse(path)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -911,12 +971,14 @@ def _has_fstring_dynamic_import(path, prefix: str) -> bool:
             first = arg.values[0]
             if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(prefix):
                 return True
+        if exact and isinstance(arg, ast.Constant) and arg.value == exact:
+            return True
     return False
 
 
 def _has_main_block(path) -> bool:
     """Whether the module at path holds an `if __name__ == ...:` block at any depth (rule 3's 'none (program)' test)."""
-    tree = ast.parse((ROOT / path).read_text())
+    tree = _parse(path)
     for node in ast.walk(tree):
         if isinstance(node, ast.If) and isinstance(node.test, ast.Compare):
             left = node.test.left
@@ -925,24 +987,46 @@ def _has_main_block(path) -> bool:
     return False
 
 
-def _check_by_name_fragments(current_file: str, label: str, fragments: list[tuple[str, str]]) -> list[str]:
-    """Rule 3's by-name spelling: a fragment naming a real file is checked for existence and a dynamic-import call; the one placeholder spelling (models/probe_models/base.py's own <backbone>.py) is checked by its own f-string rule instead."""
+def _check_by_name_fragments(current_file: str, label: str, fragments: list[tuple[str, str]],
+                             unreadable: set[str]) -> list[str]:
+    """Rule 3's by-name spelling: a fragment naming a real file is checked for existence and a dynamic-import call; the one placeholder spelling (models/probe_models/base.py's own <backbone>.py) is checked by its own f-string rule instead.
+
+    The label says which of the two files holds the importlib call: on an `imports:` line the
+    annotated file is the importer and the fragment is the module it names, on a `used by:` line
+    the fragment is the importer and the annotated file is the module it names. `unreadable` is
+    check 2's set of files that do not parse; a fragment whose importer sits in it is passed over,
+    because that file's own parse-failure line is already among the problems.
+    """
     problems = []
     for path_text, _paren in fragments:
         if "<" in path_text:
-            if current_file == "models/probe_models/base.py" and label == "imports":
-                if not _has_fstring_dynamic_import(current_file, "models.probe_models."):
+            if label == "imports":
+                prefix = _dynamic_import_prefix(path_text)
+                if not _has_dynamic_import_of(current_file, prefix):
                     problems.append(
                         f"check 2: {current_file}: no importlib.import_module f-string call beginning "
-                        "'models.probe_models.' for its by-name backbone import")
+                        f"{prefix!r} for its by-name import of {path_text}")
             else:
                 problems.append(f"check 2: {current_file} {label}: unrecognised by-name placeholder {path_text!r}")
             continue
         if not (ROOT / path_text).is_file():
             problems.append(f"check 2: {current_file} {label}: by-name entry {path_text} does not exist")
-        elif not _has_dynamic_import_call(path_text):
+            continue
+        if label == "imports":
+            importer, imported = current_file, path_text
+            subject = f"{current_file} holds no"
+            tail = f" for by-name entry {path_text}"
+        else:
+            importer, imported = path_text, current_file
+            subject = f"by-name entry {path_text} holds no"
+            tail = ""
+        if importer in unreadable:
+            continue
+        prefix = _dynamic_import_prefix(imported)
+        if not _has_dynamic_import_of(importer, prefix, _module_name(imported)):
             problems.append(
-                f"check 2: {current_file} {label}: by-name entry {path_text} holds no importlib.import_module call")
+                f"check 2: {current_file} {label}: {subject} "
+                f"importlib.import_module call naming {prefix}<module>{tail}")
     return problems
 
 
@@ -962,7 +1046,15 @@ def _check_package_marker(current_file: str, label: str, raw: str) -> list[str]:
 
 def _check_2(tree_files: list[str], entries: dict) -> list[str]:
     problems: list[str] = []
-    imports_map = {f: _repo_imports(f) for f in tree_files}
+    imports_map: dict[str, set[str]] = {}
+    unreadable: set[str] = set()
+    for f in tree_files:
+        try:
+            imports_map[f] = _repo_imports(f)
+        except SystemExit as ex:
+            problems.append(f"check 2: {ex}")
+            imports_map[f] = set()
+            unreadable.add(f)
     used_by_map: dict[str, set[str]] = {f: set() for f in tree_files}
     for f, imps in imports_map.items():
         for target in imps:
@@ -970,6 +1062,8 @@ def _check_2(tree_files: list[str], entries: dict) -> list[str]:
     graphs = {"imports": imports_map, "used by": used_by_map}
 
     for f in tree_files:
+        if f in unreadable:
+            continue       # its own line is already above; its annotation lines say nothing more
         entry = entries.get(f, {})
         for label, graph in graphs.items():
             raw = entry.get(label)
@@ -977,25 +1071,30 @@ def _check_2(tree_files: list[str], entries: dict) -> list[str]:
                 problems.append(f"check 2: {f} has no {label}: line")
                 continue
             raw = raw.strip()
-            if raw == "none (program)":
-                if label != "used by":
-                    problems.append(f"check 2: {f}: 'none (program)' on an {label}: line")
+            try:
+                if raw == "none (program)":
+                    if label != "used by":
+                        problems.append(f"check 2: {f}: 'none (program)' on an {label}: line")
+                        continue
+                    if graph.get(f):
+                        problems.append(
+                            f"check 2: {f}: used by: none (program), but imported by {sorted(graph[f])}")
+                    if not _has_main_block(f):
+                        problems.append(f"check 2: {f}: used by: none (program), but has no __main__ block")
                     continue
-                if graph.get(f):
+                if raw.endswith("(as their package)"):
+                    problems.extend(_check_package_marker(f, label, raw))
+                    continue
+                normal, by_name, dead = _parse_annotation(raw)
+                actual = graph.get(f, set())
+                if normal != actual:
                     problems.append(
-                        f"check 2: {f}: used by: none (program), but imported by {sorted(graph[f])}")
-                if not _has_main_block(f):
-                    problems.append(f"check 2: {f}: used by: none (program), but has no __main__ block")
-                continue
-            if raw.endswith("(as their package)"):
-                problems.extend(_check_package_marker(f, label, raw))
-                continue
-            normal, by_name = _parse_annotation(raw)
-            actual = graph.get(f, set())
-            if normal != actual:
-                problems.append(
-                    f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
-            problems.extend(_check_by_name_fragments(f, label, by_name))
+                        f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
+                for candidate in dead:
+                    problems.append(f"check 2: {f} {label}: names {candidate}, which is not a repo file")
+                problems.extend(_check_by_name_fragments(f, label, by_name, unreadable))
+            except SystemExit as ex:
+                problems.append(f"check 2: {ex}")
     return problems
 
 
@@ -1090,7 +1189,7 @@ def _resolve_versions_entry(entry: str) -> list[str]:
         ("{backbone}", probe_fams),
     ):
         if token in path:
-            outs = [path.replace(token, v) for v in values]
+            outs = [out.replace(token, v) for out in outs for v in values]
     return outs
 
 
@@ -1119,14 +1218,18 @@ _VERSION_RULE_COMMENT = (
 )
 
 
-def _version_assign_lineno(path) -> int | None:
-    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
-    tree = ast.parse(Path(path).read_text())
-    matches = [
-        node for node in ast.walk(tree)
+def _version_assigns(path) -> list[ast.Assign]:
+    """Every column-zero ast.Assign to VERSION in the module at path, in source order (check 4 reads their count and the one's line number)."""
+    return [
+        node for node in ast.walk(_parse(path))
         if isinstance(node, ast.Assign) and node.col_offset == 0
         and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets)
     ]
+
+
+def _version_assign_lineno(path) -> int | None:
+    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
+    matches = _version_assigns(path)
     if len(matches) != 1:
         return None
     return matches[0].lineno
@@ -1135,10 +1238,14 @@ def _version_assign_lineno(path) -> int | None:
 def _check_version_comment(path) -> list[str]:
     """The VERSION rule comment block sits directly above the file's VERSION assignment, word for word (errata '3.3 / 8.6', gyb 2026-09-18)."""
     problems: list[str] = []
-    lineno = _version_assign_lineno(path)
+    try:
+        lineno = _version_assign_lineno(path)
+    except SystemExit as ex:
+        problems.append(f"check 4: {ex}")
+        return problems
     if lineno is None:
         return problems
-    lines = Path(path).read_text().splitlines()
+    lines = (ROOT / path).read_text().splitlines()
     start = lineno - 1 - len(_VERSION_RULE_COMMENT)
     if start < 0:
         problems.append(
@@ -1192,7 +1299,26 @@ def _check_version_and_history(path: str) -> list[str]:
 def _check_4() -> list[str]:
     problems: list[str] = []
     named = _stage_table_files()
-    for path in sorted(named):
+    # The set difference runs in both directions (ticket 15 step 4): a stage-table file with no
+    # VERSION is caught by the strict shape below, and a file that carries a VERSION the stage
+    # table does not name is reported here, because that VERSION folds into no key -- a bump of
+    # it would invalidate nothing while its pinned comment block says it invalidates runs. The
+    # strict shape then holds for every versioned file (gyb's comment), named or not.
+    carriers: set[str] = set()
+    unreadable: set[str] = set()
+    for path in _tree_python_files():
+        try:
+            assigns = _version_assigns(path)
+        except SystemExit as ex:
+            problems.append(f"check 4: {ex}")
+            unreadable.add(path)
+            continue
+        if assigns:
+            carriers.add(path)
+    for path in sorted(carriers - named):
+        problems.append(
+            f"check 4: {path} carries a column-zero VERSION but the stage table's versions do not name it")
+    for path in sorted((named | carriers) - unreadable):
         if not (ROOT / path).exists():
             problems.append(f"check 4: {path} is named by the stage table's versions but does not exist")
             continue
@@ -1241,7 +1367,9 @@ def _column_zero_ann_or_assign(tree, name: str) -> list:
 def _check_5() -> list[str]:
     problems: list[str] = []
     for path in FORMAT_FILES:
-        tree = ast.parse((ROOT / path).read_text())
+        tree = _safe_parse(problems, "check 5", path)
+        if tree is None:
+            continue
         nodes: dict[str, object] = {}
         for name in ("SCHEMA", "DEFAULTS", "REQUIRED"):
             matches = _column_zero_ann_or_assign(tree, name)
@@ -1305,9 +1433,18 @@ def _check_7() -> list[str]:
     problems: list[str] = []
     for fam in _families("agent"):
         path = f"models/agent_models/{fam}.py"
-        efforts = _safe_literal(problems, "check 7", path, "EFFORTS")
-        default_effort = _safe_literal(problems, "check 7", path, "DEFAULT_EFFORT")
-        if efforts is None or default_effort is None:
+        # Read both literals directly, because None is a legal DEFAULT_EFFORT value and
+        # _safe_literal returns None for a refusal too: routed through it, the family whose
+        # EFFORTS are non-empty while DEFAULT_EFFORT is None -- the one spelling contracts 6.2
+        # allows only with EFFORTS = () -- would be read as a refusal and skipped.
+        try:
+            efforts = literal_of(path, "EFFORTS")
+            default_effort = literal_of(path, "DEFAULT_EFFORT")
+        except SystemExit as ex:
+            problems.append(f"check 7: {ex}")
+            continue
+        if not isinstance(efforts, tuple):
+            problems.append(f"check 7: {path}: EFFORTS {efforts!r} is not a tuple (contracts 6.2)")
             continue
         if efforts == () and default_effort is None:
             continue
@@ -1344,7 +1481,7 @@ def _check_8() -> list[str]:
     return problems
 
 
-# --- check 9: no /home/ or /net/ path in code outside constants/ ------------
+# --- check 9: no cluster-absolute path in code outside constants/ -----------
 
 
 _FORBIDDEN_ROOTS = ("/" + "home/", "/" + "net/")   # split so this check's own source never matches itself
@@ -1355,7 +1492,9 @@ def _check_9(tree_files: list[str]) -> list[str]:
     for path in tree_files:
         if path.startswith("constants/"):
             continue
-        tree = ast.parse((ROOT / path).read_text())
+        tree = _safe_parse(problems, "check 9", path)
+        if tree is None:
+            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 if any(root in node.value for root in _FORBIDDEN_ROOTS):
@@ -1385,6 +1524,24 @@ def _import_under(interpreter: str, rel_path: str) -> str | None:
     return f"{rel_path}: import under {interpreter} failed: {tail}"
 
 
+# The one README venv: spelling that names an interpreter by the benchmark that brings it
+# rather than by a venvs: key: "the environment's (appworld today)" and its bare form.
+_VENV_ENVIRONMENT_SPELLING = "the environment's"
+
+
+def _venv_names_an_interpreter(venv_value: str, venvs: dict) -> bool:
+    """Whether a README venv: value opens with an interpreter check 10 knows: `any`, a key of constants/path_datasets.yaml's venvs: map, or the environment's own interpreter.
+
+    Check 10 imports a file under every interpreter when its value opens with `any`, so a value
+    it cannot read -- a typo, or a venvs: key that no longer exists -- drops the file out of the
+    check in silence. Requiring the value to name something keeps that from happening.
+    """
+    if venv_value.startswith(_VENV_ENVIRONMENT_SPELLING):
+        return True
+    tokens = venv_value.split()
+    return bool(tokens) and (tokens[0] == "any" or tokens[0] in venvs)
+
+
 def _check_10(entries: dict) -> list[str]:
     problems: list[str] = []
     venvs = _venvs_config()
@@ -1392,6 +1549,13 @@ def _check_10(entries: dict) -> list[str]:
         if not path.endswith(".py"):
             continue
         venv_value = (entry.get("venv") or "").strip()
+        if venv_value == "":
+            continue                     # check 1 reports the missing venv: line
+        if not _venv_names_an_interpreter(venv_value, venvs):
+            problems.append(
+                f"check 10: {path}: venv: {venv_value!r} names no interpreter: expected 'any', "
+                f"one of {sorted(venvs)}, or {_VENV_ENVIRONMENT_SPELLING!r}")
+            continue
         if not venv_value.startswith("any"):
             continue
         for interp in venvs.values():
@@ -1427,17 +1591,29 @@ def cmd_selfcheck(rest: list[str]) -> int:
     entries = readme_entries(ROOT / "README.md")
     tree_files = _tree_python_files()
     problems: list[str] = []
-    problems += _check_1(entries, tree_files)
-    problems += _check_2(tree_files, entries)
-    problems += _check_3()
-    problems += _check_4()
-    problems += _check_5()
-    problems += _check_6()
-    problems += _check_7()
-    problems += _check_8()
-    problems += _check_9(tree_files)
-    problems += _check_10(entries)
-    problems += _check_11()
+    # A check that raises becomes a problem line of its own, so the other ten still run and the
+    # count still prints: an edit that a check cannot read -- a renamed axis, a file that does
+    # not parse -- is a problem to report, not a reason to stop reporting.
+    checks = (
+        (1, lambda: _check_1(entries, tree_files)),
+        (2, lambda: _check_2(tree_files, entries)),
+        (3, _check_3),
+        (4, _check_4),
+        (5, _check_5),
+        (6, _check_6),
+        (7, _check_7),
+        (8, _check_8),
+        (9, lambda: _check_9(tree_files)),
+        (10, lambda: _check_10(entries)),
+        (11, _check_11),
+    )
+    for number, check in checks:
+        try:
+            problems += check()
+        except SystemExit as ex:
+            problems.append(f"check {number}: {ex}")
+        except Exception as ex:
+            problems.append(f"check {number} raised: {type(ex).__name__}: {ex}")
     for line in problems:
         print(line)
     print(f"selfcheck: {len(tree_files)} python files, {len(problems)} problems")
