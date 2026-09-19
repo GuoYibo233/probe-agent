@@ -3,8 +3,9 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `score-a4e05cb2fbe3` | 2026-09-20 06:50 | score | inject/probe_p1_e1_theta_0pt80 | `8fc75af` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
 | `score-d49397cf4dd9` | 2026-09-20 06:43 | score | inject/probe_p1_e1_theta_0pt80 | `08337dc` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
-| `inject-27d4bad1b70a` | 2026-09-20 06:43 | inject | inject/probe_p1_e1_theta_0pt80 | `80a7701` | launching | - | - |
+| `inject-27d4bad1b70a` | 2026-09-20 06:43 | inject | inject/probe_p1_e1_theta_0pt80 | `80a7701` | ok | - | - |
 | `inject-c96e48a8be3d` | 2026-09-20 06:36 | inject | inject/probe_p1_e1_theta_0pt80 | `08337dc` | ok | - | - |
 | `eval-e5d6ba9d8c7b` | 2026-09-20 06:35 | eval | train_probe/cgen_qwen3_0pt6b | `08337dc` | ok | - | report.md |
 | `eval-ef9644a7e92f` | 2026-09-20 06:35 | eval | train_probe/cparam_qwen3_0pt6b | `08337dc` | ok | - | report.md |
