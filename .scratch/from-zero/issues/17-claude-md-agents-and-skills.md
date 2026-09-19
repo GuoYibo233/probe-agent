@@ -1,6 +1,6 @@
 # 17 CLAUDE.md, exp-status, the agents and the remaining skills
 
-Status: ready-for-agent
+Status: claimed
 Blocked by: 15, 16
 Spec: .scratch/from-zero/spec.md (sections 1, 5, 7, 9)
 
