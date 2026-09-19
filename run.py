@@ -888,15 +888,23 @@ def _expand_braces(path_text: str) -> list[str]:
     return [path_text[:m.start()] + alt.strip() + path_text[m.end():] for alt in m.group(1).split(",")]
 
 
-def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]]]:
-    """One README imports:/used by: value, parsed into (plain entries, by-name fragments) per check 2's five-step rule (rule 2); the caller has already handled the 'none (program)' and '(as their package)' whole-line spellings of rule 3.
+def _is_path_token(fragment: str) -> bool:
+    """Whether a fragment is a bare path token -- one whitespace-free word ending in .py or .yaml -- and so names a repo file rather than prose (rule 2 step 5's prose rule, the other way round)."""
+    return len(fragment.split()) == 1 and fragment.endswith((".py", ".yaml"))
+
+
+def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]], list[str]]:
+    """One README imports:/used by: value, parsed into (plain entries, by-name fragments, dead path tokens) per check 2's five-step rule (rule 2); the caller has already handled the 'none (program)' and '(as their package)' whole-line spellings of rule 3.
 
     A plain entry survives steps 1-5 as exactly a repo file path. A by-name fragment's
     parenthetical starts 'by name' (rule 3) and is returned separately, dropped from the plain
-    equality either way.
+    equality either way. A fragment that is a bare path token yet names no repo file is a dead
+    name -- what a rename leaves behind -- and is returned as the third value for the caller to
+    report; prose fragments, which are several words, stay out of all three.
     """
     normal: set[str] = set()
     by_name: list[tuple[str, str]] = []
+    dead: list[str] = []
     for fragment in _split_top_level(_drop_bracket_groups(raw)):
         path_text, paren_text = _drop_parenthetical(fragment)
         if not path_text:
@@ -904,30 +912,30 @@ def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]]]:
         if paren_text is not None and paren_text.startswith("by name"):
             by_name.append((path_text, paren_text))
             continue
-        for candidate in _expand_braces(path_text):
-            candidate = candidate.strip()
-            if candidate and (ROOT / candidate).exists():
+        for candidate in (c.strip() for c in _expand_braces(path_text)):
+            if candidate == "":
+                continue
+            if (ROOT / candidate).exists():
                 normal.add(candidate)
-    return normal, by_name
+            elif _is_path_token(candidate):
+                dead.append(candidate)
+    return normal, by_name, dead
 
 
-def _has_dynamic_import_call(path) -> bool:
-    """Whether the module at path holds an importlib.import_module(...) call anywhere, ast.walk over the whole tree (rule 3's by-name existence test)."""
-    tree = ast.parse((ROOT / path).read_text())
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "import_module":
-            return True
-        if isinstance(func, ast.Name) and func.id == "import_module":
-            return True
-    return False
+def _dynamic_import_prefix(annotated_file: str) -> str:
+    """The dotted package a by-name importer must name to reach the annotated file: `models/agent_models/gptoss.py` -> `models.agent_models.` (rule 3)."""
+    return ".".join(Path(annotated_file).parent.parts) + "."
 
 
-def _has_fstring_dynamic_import(path, prefix: str) -> bool:
-    """Whether path holds an importlib.import_module(...) call whose one argument is an f-string beginning with prefix (models/probe_models/base.py's <backbone> placeholder, rule 3)."""
-    tree = ast.parse((ROOT / path).read_text())
+def _has_dynamic_import_of(path, prefix: str, exact: str = "") -> bool:
+    """Whether the module at path holds an importlib.import_module(...) call that names a module under prefix: an f-string whose leading constant starts with prefix, or the plain string `exact` (rule 3's by-name test).
+
+    The prefix is what makes the test bite: a call that imports something else entirely is the
+    breakage this rule exists to catch, and ast cannot see the edge any other way. A placeholder
+    fragment (models/probe_models/<backbone>.py) names no one module, so it passes no `exact`
+    and the f-string arm alone answers for it.
+    """
+    tree = _parse(path)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -941,6 +949,8 @@ def _has_fstring_dynamic_import(path, prefix: str) -> bool:
             first = arg.values[0]
             if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(prefix):
                 return True
+        if exact and isinstance(arg, ast.Constant) and arg.value == exact:
+            return True
     return False
 
 
@@ -960,19 +970,23 @@ def _check_by_name_fragments(current_file: str, label: str, fragments: list[tupl
     problems = []
     for path_text, _paren in fragments:
         if "<" in path_text:
-            if current_file == "models/probe_models/base.py" and label == "imports":
-                if not _has_fstring_dynamic_import(current_file, "models.probe_models."):
+            if label == "imports":
+                prefix = _dynamic_import_prefix(path_text)
+                if not _has_dynamic_import_of(current_file, prefix):
                     problems.append(
                         f"check 2: {current_file}: no importlib.import_module f-string call beginning "
-                        "'models.probe_models.' for its by-name backbone import")
+                        f"{prefix!r} for its by-name import of {path_text}")
             else:
                 problems.append(f"check 2: {current_file} {label}: unrecognised by-name placeholder {path_text!r}")
             continue
         if not (ROOT / path_text).is_file():
             problems.append(f"check 2: {current_file} {label}: by-name entry {path_text} does not exist")
-        elif not _has_dynamic_import_call(path_text):
+            continue
+        prefix = _dynamic_import_prefix(current_file)
+        if not _has_dynamic_import_of(path_text, prefix, _module_name(current_file)):
             problems.append(
-                f"check 2: {current_file} {label}: by-name entry {path_text} holds no importlib.import_module call")
+                f"check 2: {current_file} {label}: by-name entry {path_text} holds no "
+                f"importlib.import_module call naming {prefix}<module>")
     return problems
 
 
@@ -1013,25 +1027,30 @@ def _check_2(tree_files: list[str], entries: dict) -> list[str]:
                 problems.append(f"check 2: {f} has no {label}: line")
                 continue
             raw = raw.strip()
-            if raw == "none (program)":
-                if label != "used by":
-                    problems.append(f"check 2: {f}: 'none (program)' on an {label}: line")
+            try:
+                if raw == "none (program)":
+                    if label != "used by":
+                        problems.append(f"check 2: {f}: 'none (program)' on an {label}: line")
+                        continue
+                    if graph.get(f):
+                        problems.append(
+                            f"check 2: {f}: used by: none (program), but imported by {sorted(graph[f])}")
+                    if not _has_main_block(f):
+                        problems.append(f"check 2: {f}: used by: none (program), but has no __main__ block")
                     continue
-                if graph.get(f):
+                if raw.endswith("(as their package)"):
+                    problems.extend(_check_package_marker(f, label, raw))
+                    continue
+                normal, by_name, dead = _parse_annotation(raw)
+                actual = graph.get(f, set())
+                if normal != actual:
                     problems.append(
-                        f"check 2: {f}: used by: none (program), but imported by {sorted(graph[f])}")
-                if not _has_main_block(f):
-                    problems.append(f"check 2: {f}: used by: none (program), but has no __main__ block")
-                continue
-            if raw.endswith("(as their package)"):
-                problems.extend(_check_package_marker(f, label, raw))
-                continue
-            normal, by_name = _parse_annotation(raw)
-            actual = graph.get(f, set())
-            if normal != actual:
-                problems.append(
-                    f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
-            problems.extend(_check_by_name_fragments(f, label, by_name))
+                        f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
+                for candidate in dead:
+                    problems.append(f"check 2: {f} {label}: names {candidate}, which is not a repo file")
+                problems.extend(_check_by_name_fragments(f, label, by_name))
+            except SystemExit as ex:
+                problems.append(f"check 2: {ex}")
     return problems
 
 
