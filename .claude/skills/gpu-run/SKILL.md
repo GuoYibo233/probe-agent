@@ -20,8 +20,11 @@ leaves an artifact on disk, and skipping a step is a violation.
 
 Fixed paths:
 - Slow-variable log: `.claude/skills/gpu-run/references/gpu_state.md`.
-- The one command: `run.py`, at the repo root; `run.py --help` lists every subcommand
-  this file names. This machine has no `python`, only `python3`.
+- The one command: `run.py`, at the repo root, typed with the `probe` interpreter of
+  `constants/path_datasets.yaml`'s `venvs:` map,
+  `/home/y-guo/reproduce/new1/external/probe-env/bin/python` — that is the interpreter
+  `README.md` gives `run.py` (`venv: probe`), and the system `python3` cannot import its
+  dependencies. `run.py --help` lists every subcommand this file names.
 - Cluster inventory and the login machine: `constants/path_outputs.yaml`'s `hosts:` and
   `login_host:` keys.
 
@@ -35,7 +38,7 @@ H200). A card's live occupancy is never read from this file.
 ## Phase 1 — Probe the cards for real
 
 ```bash
-python3 run.py free
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py free
 ```
 
 Free cards per host, over `constants/path_outputs.yaml`'s `hosts:` list, probed now and
@@ -50,8 +53,12 @@ card (contracts 3.4, 6.3).
 The dirty-tree gate is one function, `jobs/launch.git_state(run_dir, allow_dirty)`: it
 refuses a dirty tree without `--allow-dirty`, and with the flag writes `dirty.patch`
 into the run directory and returns the git fields of the start row (contracts 2.5, 1.5).
-`jobs/runs.jsonl`, `jobs/RESULTS.md` and any `*.lock` never count as dirty. Commit before
-every real launch; `--allow-dirty` is for the smoke of Phase 3 only, never for Phase 4.
+`jobs/runs.jsonl`, `jobs/RESULTS.md` and any `*.lock` never count as dirty. The gate
+guards every launch: Phase 4's walk, and the `refire` and `retry` of Phase 6b, which
+`run.py --help` also lists with `--allow-dirty`. The flag covers the smoke of Phase 3;
+every launch that produces a real result is committed first, Phase 6b's two included,
+because a refire re-freezes `_commit` to the commit it cleared (contracts 2.3) and the
+recorded HEAD has to lead back to the code that ran (the branch `CLAUDE.md`).
 
 ## Phase 3 — Smoke on the same setting
 
@@ -63,7 +70,7 @@ the key (contracts 3.4), so a debug run can never be mistaken for, or reused by,
 one:
 
 ```bash
-python3 run.py <workflow> <setting> --debug [--allow-dirty]
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting> --debug [--allow-dirty]
 ```
 
 The tree is often still dirty at this point, so `--allow-dirty` covers the smoke; the
@@ -72,10 +79,10 @@ commit of Phase 2 still has to happen before the real launch that follows.
 ## Phase 4 — Launch: one command walks the stage list
 
 ```bash
-python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
 ```
 
-This is the whole entry point; `run.py --help` prints this usage line. `<workflow>` is
+This is the whole entry point; `run.py --help` prints this argument shape. `<workflow>` is
 the stem of a file under `experimental_settings/` (`baseline`, `train_probe`, `inject`);
 `<setting>` is a name inside it, or a sweep child's own name
 (`<setting>/<field>=<value>,...`); several settings may be walked in one call.
@@ -90,6 +97,23 @@ port answers (contracts 2.3, 7.2), then starts the loop pieces — and **stops t
 setting's walk there**, printing the monitoring command. One call over several settings,
 or over a sweep parent, therefore leaves exactly one launched run per child.
 
+The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
+failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is
+written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards —
+and each of those refusals prints its own `jobs/launch.py: ...` line and exits 1, leaving
+no registry row, nothing in Phase 5's `ls` and no piece log; that printed line is the
+diagnosis. A piece that starts and then fails its alive check is the quiet shape: the
+call exits 0, tears the run's service pieces down and appends a `launch_failed` finish
+row — an `inject` run's probe-service `check` client is the one thing that writes to the
+terminal on this path, and its `check: ...` lines are the diagnosis; everything else
+prints nothing further. Read Phase 5's `ls` line for that row, and
+`<run_dir>/log/<piece index>.txt` for why the piece died. An `inject` launch whose probe
+service never writes its endpoint file is the third shape: the start row is already
+written and the service pieces are already up, so
+`jobs/launch.py: <path> did not appear within launch_timeout_s` exits 1 and leaves an
+open `launching` row in Phase 5's `ls`, the piece logs under `<run_dir>/log/`, and the
+service pieces alive on their cards — end them with Phase 6b's `kill`.
+
 A GPU stage (`sample`, `train`, `inject`) is never waited on. A CPU stage (`build`,
 `eval`, `score`) runs inline, in place, with no tmux and no ssh, and the walk goes
 straight on to the next stage without stopping there.
@@ -103,21 +127,30 @@ frozen `probe.method` before the stage starts (the `5.4 / 2.1` ruling of
 ## Phase 5 — Monitoring is self-service
 
 ```bash
-python3 run.py ls [workflow] [--debug]
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py ls [workflow] [--debug]
 ```
 
 One folded line per run, with each piece's verdict in priority order — `done`, `dead`,
 `suspected stall`, `warming up`, `slowed`, `healthy` (contracts 8.5) — progress as
 `done/total <unit>` and the recent rate, the heartbeat age, sessions and cards, and a
 flag column: `edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`,
-`orphan` (contracts 8.6). An `edited` run's key has moved because a file's effective
-`VERSION` rose, and its line carries a trailing `stale=<path> VERSION <n>: "<why>"`
-naming that file and quoting the bump's own `why`. A `behind` run's recorded `VERSION`
-is below the current one but its key still matches, so it stays usable and carries no
-`stale=` text.
+`orphan` (contracts 8.6). That priority order is the rule for a loop, train or cpu
+piece; a `service` piece is judged by its port instead of by its beats, so it reads
+`dead`, `healthy`, `suspected stall` or `warming up` and never `done` or `slowed`. A
+live tmux session of this repo that matches no row gets a line of its own, with no
+`run_id` and the verdict `orphan`.
+
+An `edited` run is one whose named setting's current key no longer matches this
+directory — an edited setting field, or a `VERSION` bump. When the key moved because a
+file the run recorded had its effective `VERSION` raised, the line also carries a
+trailing `stale=<path> VERSION <n>: "<why>"` naming that file and quoting the bump's own
+`why`; an `edited` run whose key moved for any other reason carries no `stale=` text. A
+`behind` run's recorded `VERSION` is below the current one but its key still matches, so
+it stays usable and carries no `stale=` text.
 
 `--debug` runs show only when `--debug` is given, because `ls` drops debug rows by
-default, so the Phase 3 smoke is monitored with `python3 run.py ls <workflow> --debug`.
+default, so the Phase 3 smoke is monitored with
+`/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py ls <workflow> --debug`.
 
 A person looks when they want to; nothing patrols. There is no background process
 computing verdicts: `ls` computes them on demand from the run directory's heartbeat
@@ -141,25 +174,53 @@ Then the walk goes on to the next stage, the same way Phase 4 does. Numbers reac
 `jobs/RESULTS.md` through `done.json` -> the finish row -> the render; nothing is typed
 in by hand (contracts 8.2).
 
+The wrap-up call is the launch command, so it starts cards for any stage the walk lands
+on that is not done: an incomplete `sample` or `inject` stage with no live work piece
+releases its dead claims and relaunches on cards, and a completed stage lets the walk go
+on into the next stage, which may itself be a GPU launch. The hard rule below holds here
+too — an agent returns the command as `BLOCKED` and a person types it.
+
 ```bash
-python3 run.py table [workflow] [--debug]
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py table [workflow] [--debug]
 ```
 
-Prints the backbone x method table, grouped by parent, mean and spread over the group's
-runs (contracts 8.6). Commit `jobs/runs.jsonl` and `jobs/RESULTS.md` together, with the
-key in the commit message.
+Prints the backbone x method x risk table, one group per (setting, debug flag) pair — a
+sweep child's own name, never its parent — each cell the mean and spread over the
+group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`). Commit
+`jobs/runs.jsonl` and `jobs/RESULTS.md` together, with the key in the commit message.
 
 ## Phase 6b — Interruption
 
-- `python3 run.py kill <workflow> <setting> <stage>` writes the `killed` finish row and
-  refuses while another live run is attached to this run's service (contracts 8.6).
-- A dead piece: `python3 run.py refire <workflow> <setting> <stage> --piece i` — a
-  liveness refusal first, then claims released, cards re-probed, a launch entry
-  appended. It **warns**, and never refuses, when this piece already has more than one
-  entry in `meta.json`'s `launches` (counted as the entries whose `pieces` list contains
-  this piece index) — **there is no quota** (contracts 2.3).
-- "Start fresh": `python3 run.py retry <workflow> <setting> <stage>` clears what the
-  continue rule would resume from, then launches normally (contracts 2.4).
+- `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py kill <workflow>
+  <setting> <stage>` writes the `killed` finish row and refuses while another live run
+  is attached to this run's service (contracts 8.6).
+- A dead piece: `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py refire
+  <workflow> <setting> <stage> --piece i` — a liveness refusal first, then claims
+  released, cards re-probed, a launch entry appended. It **warns**, and never refuses,
+  when this piece already has more than one entry in `meta.json`'s `launches` (counted
+  as the entries whose `pieces` list contains this piece index) — **there is no quota**
+  (contracts 2.3). A refire is a launch and takes the Phase 2 dirty-tree gate, so commit
+  the tree before it.
+- "Start fresh": `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py retry
+  <workflow> <setting> <stage>`, which also takes the Phase 2 dirty-tree gate. For
+  `train` the phrase holds: it deletes `last/`, `train_log.jsonl`, `train_done.json`,
+  `align_check.json`, `consumed.json` and `done.json`, then launches normally (contracts
+  2.4). For `sample` and `inject` it clears `done.json` and `consumed.json` only; those
+  two stages resume from the per-pair files under the run directory's `records/`
+  (contracts 2.3), which retry never deletes, so a partial directory continues exactly
+  as a plain re-run would, and a directory whose per-pair files are already complete is
+  re-certified — a rewritten `done.json`, a service teardown and a second `ok` finish
+  row — rather than sampled again.
+- All three key the real run and none of them parses `--debug`: typing the flag is a
+  usage error, and leaving it off names the real run, so none of them can reach a Phase
+  3 smoke. With that setting and stage carrying a real run, all three act on that real
+  run: `kill` ends its pieces and writes its `killed` finish row, `refire` restarts one
+  of its pieces and `retry` clears its markers and launches it again. With the smoke as
+  the only run of that setting and stage, `kill` prints `ended []` and stops nothing
+  while the smoke keeps its cards. End a smoke by hand instead:
+  `ssh <host> tmux kill-session -t <session>` for every piece, service pieces included,
+  taking each host and session from the smoke's Phase 5 `ls --debug` line, then
+  `run.py sync` to write the missing finish row.
 
 ## Hard rules
 

@@ -6,9 +6,10 @@ description: >-
   `run.py <workflow> <setting>` (gpu-run handles the mechanics of any GPU stage inside
   it). It is also **the only entry point for extending this pipeline**: a new benchmark
   environment, agent-model family, probe backbone or training method all go through the
-  four extension places `README.md` section 3 names, each registered in
-  `experimental_settings/schema.py` before any setting may use it. Invoke whenever
-  Dungeon♂Master says "run the pipeline", or any task needs sample/build/train/eval
+  four extension places `README.md` section 3 names, and any new axis value an extension
+  brings is registered in `experimental_settings/schema.py` before any setting may use
+  it. Invoke whenever Dungeon♂Master says "run the pipeline", or any task needs
+  sample/build/train/eval
   chained together or extended. A single GPU task uses gpu-run alone; this skill manages
   the whole chain. Chinese triggers: "跑流水线" / "跑一批探针" / "新数据集跑一遍" / "出矩阵" /
   "换个环境跑" / "加个新模型/新格" / "换个切分方式" / "加一种训练方法".
@@ -36,12 +37,14 @@ version: 1.0.0
    share, its split gates (a task id in two splits, a task id in none of the
    environment's official lists) and its row gates (an empty `text`, a `depth` outside
    `[0, 1]`, a text whose thinking part is not a prefix of the record's thinking);
-   `train`'s alignment gate; the generator eval's shared-build-key gate; `inject`'s
-   **three** `run.py`-held gates — the shared-build-key gate and the code-currency gate
+   `train`'s alignment gate; the generator eval's **three** gates — the referenced
+   classifier eval has a `done.json`, `eval.risk` equals that report's `risk_targets`,
+   and the two train runs share a build key; `inject`'s **three** `run.py`-held gates —
+   the shared-build-key gate and the code-currency gate
    of contracts 2.5, plus the `5.4 / 2.1` errata ruling that compares a `key:`/`dir:`
    reference's stated `method:` against the referenced train run's frozen
-   `probe.method`; `score`'s same-setup and baseline-pair gates; the launch gate and the
-   card reservation.
+   `probe.method`; `score`'s same-setup and baseline-pair gates; the launch gate, the
+   dirty-tree gate and the card reservation.
    Two things that read like build gates are not gates: an event whose call `build_call`
    refuses, that fails the round-trip gate, or whose non-null action `split_args` cannot
    parse is skipped and counted under `counts.events_skipped_no_call`; `report.md`
