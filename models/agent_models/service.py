@@ -94,7 +94,7 @@ def _write_endpoint_file(path: Path, *, replica: int, base_url: str, host: str, 
 
 
 def _request(url: str, payload: dict | None, timeout: float, retries: int = _RETRIES):
-    """A GET (payload None) or POST, decoded from JSON; retries connection errors and 5xx, raises at once on 4xx."""
+    """A GET (payload None) or POST; a JSON body is decoded, an empty body (vLLM's /health) returns None; retries connection errors and 5xx, raises at once on 4xx."""
     body = None if payload is None else json.dumps(payload).encode()
     headers = {"Content-Type": "application/json"} if body is not None else {}
     last_exc: Exception | None = None
@@ -103,7 +103,8 @@ def _request(url: str, payload: dict | None, timeout: float, retries: int = _RET
             req = urllib.request.Request(url, data=body, headers=headers,
                                           method="GET" if body is None else "POST")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read())
+                raw = resp.read()
+                return json.loads(raw) if raw.strip() else None
         except urllib.error.HTTPError as e:
             if e.code < 500 or attempt == retries - 1:
                 raise
