@@ -939,8 +939,14 @@ def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]], list[s
 
 
 def _dynamic_import_prefix(annotated_file: str) -> str:
-    """The dotted package a by-name importer must name to reach the annotated file: `models/agent_models/gptoss.py` -> `models.agent_models.` (rule 3)."""
-    return ".".join(Path(annotated_file).parent.parts) + "."
+    """The dotted package a by-name importer must name to reach the annotated file: `models/agent_models/gptoss.py` -> `models.agent_models.`, and a repo-root file -> `` (rule 3).
+
+    A root-level module's dotted name is the stem alone, so its package part is empty and the
+    prefix is the empty string; every other file's prefix is its directory, dotted, with the
+    separating dot on the end.
+    """
+    parts = Path(annotated_file).parent.parts
+    return ".".join(parts) + "." if parts else ""
 
 
 def _has_dynamic_import_of(path, prefix: str, exact: str = "") -> bool:
