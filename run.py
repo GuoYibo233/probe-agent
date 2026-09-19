@@ -1400,9 +1400,18 @@ def _check_7() -> list[str]:
     problems: list[str] = []
     for fam in _families("agent"):
         path = f"models/agent_models/{fam}.py"
-        efforts = _safe_literal(problems, "check 7", path, "EFFORTS")
-        default_effort = _safe_literal(problems, "check 7", path, "DEFAULT_EFFORT")
-        if efforts is None or default_effort is None:
+        # Read both literals directly, because None is a legal DEFAULT_EFFORT value and
+        # _safe_literal returns None for a refusal too: routed through it, the family whose
+        # EFFORTS are non-empty while DEFAULT_EFFORT is None -- the one spelling contracts 6.2
+        # allows only with EFFORTS = () -- would be read as a refusal and skipped.
+        try:
+            efforts = literal_of(path, "EFFORTS")
+            default_effort = literal_of(path, "DEFAULT_EFFORT")
+        except SystemExit as ex:
+            problems.append(f"check 7: {ex}")
+            continue
+        if not isinstance(efforts, tuple):
+            problems.append(f"check 7: {path}: EFFORTS {efforts!r} is not a tuple (contracts 6.2)")
             continue
         if efforts == () and default_effort is None:
             continue
