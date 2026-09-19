@@ -98,18 +98,22 @@ setting's walk there**, printing the monitoring command. One call over several s
 or over a sweep parent, therefore leaves exactly one launched run per child.
 
 The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
-failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is
+failed launch takes one of four shapes. `jobs/launch.py` refuses before the start row is
 written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards —
 and each of those refusals prints its own `jobs/launch.py: ...` line and exits 1, leaving
 no registry row, nothing in Phase 5's `ls` and no piece log; that printed line is the
 diagnosis. A piece that starts and then fails its alive check is the quiet shape: the
-call exits 0, tears the run's service pieces down and appends a `launch_failed` finish
-row — an `inject` run's probe-service `check` client is the one thing that writes to the
-terminal on this path, and its `check: ...` lines are the diagnosis; everything else
-prints nothing further. Read Phase 5's `ls` line for that row, and
-`<run_dir>/log/<piece index>.txt` for why the piece died. An `inject` launch whose probe
-service never writes its endpoint file is the third shape: the start row is already
-written and the service pieces are already up, so
+call prints nothing at all, exits 0, tears the run's service pieces down and appends a
+`launch_failed` finish row. A probe service that never writes its endpoint file fails
+that same check and takes that same path, because a `service` piece passes its alive
+check only when its endpoint file exists **and** its port answers. Read Phase 5's `ls`
+line for that row, and `<run_dir>/log/<piece index>.txt` for why the piece died — on this
+path the piece logs are the whole diagnosis. The third shape is an `inject` run whose
+probe-service `check` client fails its gate: it ends the same way — teardown, exit 0,
+`launch_failed` row — and it is the one launch failure that writes to the terminal, so
+its `check: ...` lines are the diagnosis. The fourth shape is an `inject` launch whose
+probe-service endpoint file exists and whose port answers while the file never carries a
+`base_url`: the start row is already written and the service pieces are already up, so
 `jobs/launch.py: <path> did not appear within launch_timeout_s` exits 1 and leaves an
 open `launching` row in Phase 5's `ls`, the piece logs under `<run_dir>/log/`, and the
 service pieces alive on their cards — end them with Phase 6b's `kill`.
@@ -214,9 +218,16 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
 - All three key the real run and none of them parses `--debug`: typing the flag is a
   usage error, and leaving it off names the real run, so none of them can reach a Phase
   3 smoke. With that setting and stage carrying a real run, all three act on that real
-  run: `kill` ends its pieces and writes its `killed` finish row, `refire` restarts one
-  of its pieces and `retry` clears its markers and launches it again. With the smoke as
-  the only run of that setting and stage, `kill` prints `ended []` and stops nothing
+  run: `kill` ends its pieces and writes its `killed` finish row; `refire` restarts one
+  of its pieces, and refuses while that piece's session is alive, as the bullet above
+  states; `retry` clears the markers first and unconditionally — `done.json` and
+  `consumed.json`, and for `train` also `last/`, `train_log.jsonl`, `train_done.json`
+  and `align_check.json` — and only then walks the stage. So `retry` against a live run
+  deletes those files and launches nothing: a live `sample` or `inject` stops at
+  `run.py: <run_dir> has a live piece; launching nothing`, and a live `train` is refused
+  by the launch gate, by which time its checkpoint directory and its training log are
+  already gone. `kill` the run and let its pieces end before typing `retry`. With the
+  smoke as the only run of that setting and stage, `kill` prints `ended []` and stops nothing
   while the smoke keeps its cards. End a smoke by hand instead:
   `ssh <host> tmux kill-session -t <session>` for every piece, service pieces included,
   taking each host and session from the smoke's Phase 5 `ls --debug` line, then
