@@ -26,16 +26,17 @@ the fixed tree is never reworded. This file reviews against the **seven** princi
    on disk and `eval/` CPU-only.
 
 2. **What it reads, in order.** `README.md`, then the file under review, then the
-   section of `notes/plans/2026-09-17-contracts.md` that covers that file: the section
-   whose heading carries the file's own path where there is one (Parts 4, 5, 7 and 8,
-   and the format sections of Part 1), otherwise the part that covers the mechanism the
-   file implements — Part 1 for an on-disk format, Part 2 for a stage program, Part 3
-   for anything that computes a key or a run directory, Part 6 for the model table and
-   the constants. Contracts 0.2 is where `README.md` section 2's annotation lines are
-   reproduced from and holds nothing past them, so it is not the section to read here.
-   It runs
-   `run.py selfcheck` first and stops if that is not green — a review over a tree that
-   fails its own checks reports noise.
+   section of `notes/plans/2026-09-17-contracts.md` that covers that file: the part or
+   section whose heading carries the file's own path where there is one — Part 4 for
+   `data/environments/__init__.py`, Part 5 for `experimental_settings/schema.py`, Part 8
+   for `jobs/registry.py`, the format sections of Part 1 and the two service sections of
+   Part 7 — otherwise the part that covers the mechanism the file implements: Part 1 for
+   an on-disk format, Part 2 for a stage program, Part 3 for anything that computes a
+   key or a run directory, Part 6 for the model table and the constants. Contracts 0.2
+   is where `README.md` section 2's annotation lines are reproduced from and holds
+   nothing past them, so it is not the section to read here. It runs `run.py selfcheck`
+   first and stops if that is not green — a review over a tree that fails its own checks
+   reports noise.
 
 3. **What it writes.** One ticket per finding into `.scratch/review/issues/`, in the
    issue-tracker format of `notes/docs/agents/issue-tracker.md`, with the Status line
