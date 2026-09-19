@@ -28,8 +28,13 @@ from jobs import registry
 # score) whose existing outputs can no longer be used; leave "stale" out and every stage is
 # stale. The key folds the highest version that made a stage stale, so a bump that leaves a
 # stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 1
-VERSION_HISTORY = {}
+VERSION = 2
+VERSION_HISTORY = {
+    2: {"why": "The training, validation and prediction forwards run under bfloat16 autocast on a "
+               "card, the form the float32 model row was written for (errata 6.1); version 1 ran "
+               "them in float32 and the two generator methods ran out of memory on a 48 GB card.",
+        "stale": ("train",)},
+}
 
 # The learning-rate schedule, stated here because a reader looks for it: train.warmup_ratio
 # defaults to 0.05 in experimental_settings/schema.py, the share of steps the previous pipeline
@@ -61,6 +66,12 @@ def _lr_lambda(step: int, warmup_steps: int, total_steps: int) -> float:
     if total_steps <= warmup_steps:
         return 0.0
     return max(0.0, (total_steps - step) / max(total_steps - warmup_steps, 1))
+
+
+def _bf16_forward(probe):
+    """The autocast every training, validation and prediction forward runs under: float32 weights, bfloat16 compute on a card, plain float32 on the cpu. `.backward()` stays outside it, and the alignment gate never enters it, so that gate compares the two losses in float32."""
+    on_card = next(probe.backbone.parameters()).device.type == "cuda"
+    return torch.autocast("cuda", dtype=torch.bfloat16, enabled=on_card)
 
 
 def _dropped_overlong_events(df: pl.DataFrame, tok, max_len: int) -> int:
@@ -256,7 +267,8 @@ def run(run_dir: Path, method) -> None:
         def _validate_and_maybe_save(ep: int) -> None:
             nonlocal best, best_metrics, last_epoch_validated
             probe.set_training(False)
-            metrics = method.validate(probe, val_df, probe.tokenizer, cfg)
+            with _bf16_forward(probe):
+                metrics = method.validate(probe, val_df, probe.tokenizer, cfg)
             probe.set_training(True)
             log(event="eval", ep=ep, gstep=gstep, **metrics)
             if metrics["objective"] < best:
@@ -289,7 +301,8 @@ def run(run_dir: Path, method) -> None:
                         seen_mbs = set()
                     continue
 
-                loss = method.loss(probe, batch)
+                with _bf16_forward(probe):
+                    loss = method.loss(probe, batch)
                 (loss / batch["mb_weight"] / cfg.train.accum).backward()
                 window_loss_sum += float(loss.detach()) / float(batch["mb_weight"])
                 window_loss_n += 1
@@ -368,7 +381,8 @@ def run(run_dir: Path, method) -> None:
         split_df = df.filter(pl.col("split") == split).sort("example_id")
         if cfg.train.predict.cap is not None:
             split_df = split_df.head(cfg.train.predict.cap)
-        pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg))
+        with _bf16_forward(probe):
+            pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg))
         hb.emit(i + 1, predict_total, "step")
 
     if pred_rows:

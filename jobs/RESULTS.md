@@ -3,5 +3,9 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `train-4f98555bfe73` | 2026-09-20 06:10 | train | train_probe/cparam_qwen3_0pt6b | `30aae15` | failed | - | - |
+| `train-f4b98907f380` | 2026-09-20 06:09 | train | train_probe/cgen_qwen3_0pt6b | `30aae15` | failed | - | - |
 | `score-20eaad1deae5` | 2026-09-20 06:08 | score | baseline/gpt_oss_120b_appworld | `1e1dda9` | ok | success=0.0 n_records=9 | report.md |
+| `build-b565f5ab1b94` | 2026-09-20 06:08 | build | train_probe/ctool_qwen3_0pt6b | `30aae15` | ok | - | report.md |
+| `train-22a0980de899` | 2026-09-20 06:08 | train | train_probe/ctool_qwen3_0pt6b | `30aae15` | ok | objective=0.75 val_wacc=0.25 val_lastcut_acc=0.25 | - |
 | `sample-96de225de2b4` | 2026-09-20 05:56 | sample | baseline/gpt_oss_120b_appworld | `be60c4c` | ok | - | - |
