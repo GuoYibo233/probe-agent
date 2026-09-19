@@ -826,9 +826,12 @@ def _safe_parse(problems: list[str], check: str, path):
 
 
 # Contracts 0.1's five-line format: every .py entry of README section 2 carries these five
-# labels, in this order. Check 1 requires each of them to be there and to carry a value,
-# because the checks that read them -- check 2 reads imports: and used by:, check 10 reads
-# venv: -- lose the file silently when its line is gone, and a line nobody requires rots.
+# labels, in this order. Check 1 requires each of them to be there and to carry a value, for
+# three reasons: check 10 reads venv: and drops the file from its import proof in silence when
+# that line is gone, so check 1 is the only place that line is required; check 2 reads imports:
+# and used by: and reports a missing one by name itself, so check 1 repeats that report for a
+# .py entry rather than being its only source; and reads: and writes:, which no check reads,
+# are required here because a line nobody requires rots.
 README_PY_LABELS = ("imports", "used by", "reads", "writes", "venv")
 
 

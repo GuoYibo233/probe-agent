@@ -328,10 +328,10 @@ two changes that are not extensions but deserve the same treatment (contracts 0.
 
 Every recipe that adds a file (1, 2, 6 and 7) also writes that file's own five annotation lines
 into section 2 above, and adds the new file's name to the `used by:` line of every repo file it
-imports; where such a line is written as a brace list, `train/methods/{ctool,cgen,cparam}.py`,
-the new name widens the brace list rather than standing beside it. `run.py selfcheck` compares
-those lines against the real import graph, so it is the check that catches a recipe followed
-half way.
+imports. `run.py selfcheck` compares those lines against the real import graph, so it is the
+check that catches a recipe followed half way. A line written as a brace list,
+`train/methods/{ctool,cgen,cparam}.py`, is widened rather than extended with a second fragment;
+selfcheck reads both spellings the same, and this one keeps the line short.
 
 1. **A new benchmark environment.** `data/environments/<env>.py` (new, carrying its own
    column-zero `INSTRUCTIONS` and `SPLIT_ROLE` maps, plus `VERSION` and `VERSION_HISTORY` under
