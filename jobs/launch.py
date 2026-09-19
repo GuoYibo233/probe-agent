@@ -405,16 +405,24 @@ def _port_answers(host: str | None, port) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def alive_check(pieces, window_s=30, poll_s=5) -> tuple[bool, list]:
-    """`(all_up, failed_pieces)` over `window_s`, polled every `poll_s`
-    (errata; 8.1 names the alive check and never defines it). A `loop`,
-    `train` or `cpu` piece passes when its log file has grown and its
-    session is alive with no `Traceback` in the log's last 4 KB; a
-    `service` piece passes when its endpoint file has appeared and its
-    port answers. Returns as soon as every piece passes."""
+def alive_check(pieces, window_s=None, poll_s=5) -> tuple[bool, list]:
+    """`(all_up, failed_pieces)`, polled every `poll_s` for at most `window_s`
+    (default `registry.DEFAULTS["launch_timeout_s"]`; errata: 8.1 names the
+    alive check and never defines it). Each poll puts every piece in one of
+    three states. Up: a `loop`, `train` or `cpu` piece whose log file has
+    grown while its session is alive with no `Traceback` in the log's last
+    4 KB; a `service` piece whose endpoint file has appeared and whose port
+    answers. Down: a piece that is not up and whose session has ended, or a
+    `loop`, `train` or `cpu` piece with a `Traceback` in its log. Waiting:
+    every other piece -- a live session that has written nothing yet, which
+    is what a cold interpreter start over NFS looks like for the better part
+    of a minute. Returns as soon as every piece is up (`True`), as soon as
+    one is down, or at the deadline (`False`, with the pieces that are not up)."""
     pieces = list(pieces)
     if not pieces:
         return True, []
+    if window_s is None:
+        window_s = registry.DEFAULTS["launch_timeout_s"]
     initial_size = {}
     for p in pieces:
         if p.get("kind") != "service":
@@ -422,35 +430,38 @@ def alive_check(pieces, window_s=30, poll_s=5) -> tuple[bool, list]:
             initial_size[p["index"]] = log.stat().st_size if log.exists() else 0
 
     deadline = time.time() + window_s
-    failed: list = []
     while True:
         sessions = registry.live_sessions()
-        failed = []
+        pending: list = []      # every piece that is waiting or down
+        any_down = False
         for p in pieces:
+            session_ok = piece_alive(p, sessions)
             if p.get("kind") == "service":
                 run_dir = p.get("run_dir")
                 endpoint_ok = bool(run_dir) and (Path(run_dir) / p["endpoint_file"]).exists()
-                ok = endpoint_ok and _port_answers(p.get("host"), p.get("port"))
+                up = endpoint_ok and _port_answers(p.get("host"), p.get("port"))
+                down = (not up) and (not session_ok)
             else:
                 log = Path(p.get("log", ""))
                 grew = log.exists() and log.stat().st_size > initial_size.get(p["index"], 0)
-                session_ok = piece_alive(p, sessions)
-                tb_free = True
+                has_traceback = False
                 if log.exists():
                     try:
                         size = log.stat().st_size
                         with open(log, "rb") as f:
                             f.seek(max(0, size - 4096))
-                            tb_free = b"Traceback" not in f.read()
+                            has_traceback = b"Traceback" in f.read()
                     except OSError:
-                        tb_free = True
-                ok = grew and session_ok and tb_free
-            if not ok:
-                failed.append(p)
-        if not failed or time.time() >= deadline:
-            break
+                        has_traceback = False
+                up = grew and session_ok and (not has_traceback)
+                down = has_traceback or (not session_ok)
+            if not up:
+                pending.append(p)
+            any_down = any_down or down
+        all_up = len(pending) == 0
+        if all_up or any_down or time.time() >= deadline:
+            return all_up, pending
         time.sleep(poll_s)
-    return (not failed), failed
 
 
 # ---------------------------------------------------------------------------
@@ -884,7 +895,7 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
 
     for p in service_pieces:
         _start_tmux(p["host"], p["session"], p["cmd"])
-    up, _failed = alive_check(service_pieces, window_s=registry.DEFAULTS["launch_timeout_s"], poll_s=5)
+    up, _failed = alive_check(service_pieces)
     if not up:
         ended = teardown_services(run_dir)
         return "alive_check", _with_ended(placed, ended)
