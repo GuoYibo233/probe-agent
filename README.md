@@ -324,17 +324,29 @@ tests/ — empty by the owner's decision, except for the two of the four planned
 ## 3. The extension recipes
 
 What you edit, in order, and what it costs, for each of the seven ways this tree grows and the
-two changes that are not extensions but deserve the same treatment (contracts 0.4):
+two changes that are not extensions but deserve the same treatment (contracts 0.4).
 
-1. **A new benchmark environment.** `data/environments/<env>.py` (new, declaring its own
-   `SPLIT_ROLE` map); `experimental_settings/schema.py` (one value on `data.env`, one on
+Every recipe that adds a file (1, 2, 6 and 7) also writes that file's own five annotation lines
+into section 2 above, and adds the new file's name to the `used by:` line of every repo file it
+imports; where such a line is written as a brace list, `train/methods/{ctool,cgen,cparam}.py`,
+the new name widens the brace list rather than standing beside it. `run.py selfcheck` compares
+those lines against the real import graph, so it is the check that catches a recipe followed
+half way.
+
+1. **A new benchmark environment.** `data/environments/<env>.py` (new, carrying its own
+   column-zero `INSTRUCTIONS` and `SPLIT_ROLE` maps, plus `VERSION` and `VERSION_HISTORY` under
+   the pinned VERSION rule comment block, because the stage table names this file);
+   `experimental_settings/schema.py` (one value on `data.env`, one on
    `data.instructions`, and one value on `sample.split` / `inject.split` for every split name the
    new environment has that no existing one has); `constants/path_datasets.yaml` (home, venv,
    data root, split files, and a `venvs:` entry when the benchmark brings its own interpreter,
    which must carry PyYAML, Polars and NumPy). Cost: nothing else, because the loop calls nine
    methods and nothing else, and `data/build_training_dataset.py` parses calls through the
    environment object.
-2. **A fourth probe method.** `train/methods/<m>.py` (new); `experimental_settings/schema.py`
+2. **A fourth probe method.** `train/methods/<m>.py` (new, carrying four column-zero bindings:
+   `VERSION` and `VERSION_HISTORY` under the pinned VERSION rule comment block, `PROBE_KIND`
+   matching the entry you add to `eval/utils/probe_eval.py`, and `CHECKPOINT_META`);
+   `experimental_settings/schema.py`
    (one value on `probe.method`); `eval/utils/probe_eval.py` (a `match_<m>` function plus one
    entry each in `PROBE_KIND` and `MATCH_VERSION`, both column-zero tables). Cost: the example
    row and the prediction row are method-independent, so `data/build_training_dataset.py`,
@@ -355,10 +367,15 @@ two changes that are not extensions but deserve the same treatment (contracts 0.
    `FORMATS` entry); `experimental_settings/schema.py` (one value on `inject.format`). A new
    placement costs one more file, `models/agent_models/<family>.py` (one function per family,
    the control-token wrapping).
-6. **A new probe backbone.** `models/probe_models/<backbone>.py` (new); `models/table.yaml`
+6. **A new probe backbone.** `models/probe_models/<backbone>.py` (new, carrying a column-zero
+   `LORA_TARGETS`, plus `VERSION` and `VERSION_HISTORY` under the pinned VERSION rule comment
+   block, because the stage table names this file); `models/table.yaml`
    (one row); `constants/path_models.yaml` (one row). Cost: `base.py` holds everything the
    backbones share.
-7. **A new agent-model family.** `models/agent_models/<family>.py` (new); `models/table.yaml`
+7. **A new agent-model family.** `models/agent_models/<family>.py` (new, carrying column-zero
+   `STOP`, `EFFORTS`, `DEFAULT_EFFORT` and `DEFAULT_DATE`, plus `VERSION` and `VERSION_HISTORY`
+   under the pinned VERSION rule comment block, because the stage table names this file);
+   `models/table.yaml`
    (one row); `constants/path_models.yaml` (one row); `experimental_settings/schema.py` (one
    value on `generation.effort` for each reasoning tier the new family has that no existing
    family has); plus the family's rendering library installed in the probe venv and the vllm
