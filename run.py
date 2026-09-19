@@ -1145,7 +1145,7 @@ def _resolve_versions_entry(entry: str) -> list[str]:
         ("{backbone}", probe_fams),
     ):
         if token in path:
-            outs = [path.replace(token, v) for v in values]
+            outs = [out.replace(token, v) for out in outs for v in values]
     return outs
 
 
@@ -1255,7 +1255,24 @@ def _check_version_and_history(path: str) -> list[str]:
 def _check_4() -> list[str]:
     problems: list[str] = []
     named = _stage_table_files()
-    for path in sorted(named):
+    # The set difference runs in both directions (ticket 15 step 4): a stage-table file with no
+    # VERSION is caught by the strict shape below, and a file that carries a VERSION the stage
+    # table does not name is reported here, because that VERSION folds into no key -- a bump of
+    # it would invalidate nothing while its pinned comment block says it invalidates runs. The
+    # strict shape then holds for every versioned file (gyb's comment), named or not.
+    carriers: set[str] = set()
+    for path in _tree_python_files():
+        try:
+            assigns = _version_assigns(path)
+        except SystemExit as ex:
+            problems.append(f"check 4: {ex}")
+            continue
+        if assigns:
+            carriers.add(path)
+    for path in sorted(carriers - named):
+        problems.append(
+            f"check 4: {path} carries a column-zero VERSION but the stage table's versions do not name it")
+    for path in sorted(named | carriers):
         if not (ROOT / path).exists():
             problems.append(f"check 4: {path} is named by the stage table's versions but does not exist")
             continue
