@@ -1027,10 +1027,13 @@ def _check_by_name_fragments(current_file: str, label: str, fragments: list[tupl
         if importer in unreadable:
             continue
         prefix = _dynamic_import_prefix(imported)
-        if not _has_dynamic_import_of(importer, prefix, _module_name(imported)):
+        module = _module_name(imported)
+        if not _has_dynamic_import_of(importer, prefix, module):
+            # a module inside a package is named by its package prefix, a repo-root module by its own name
+            required = f"{prefix}<module>" if prefix else module
             problems.append(
                 f"check 2: {current_file} {label}: {subject} "
-                f"importlib.import_module call naming {prefix}<module>{tail}")
+                f"importlib.import_module call naming {required}{tail}")
     return problems
 
 

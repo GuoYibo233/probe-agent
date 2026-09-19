@@ -110,8 +110,8 @@ check only when its endpoint file exists **and** its port answers. Read Phase 5'
 line for that row, and `<run_dir>/log/<piece index>.txt` for why the piece died — on this
 path the piece logs are the whole diagnosis. The third shape is an `inject` run whose
 probe-service `check` client fails its gate: it ends the same way — teardown, exit 0,
-`launch_failed` row — and it is the one launch failure that writes to the terminal, so
-its `check: ...` lines are the diagnosis. The fourth shape is an `inject` launch whose
+`launch_failed` row — and it is the one launch failure that exits 0 and still writes to
+the terminal, so its `check: ...` lines are the diagnosis. The fourth shape is an `inject` launch whose
 probe-service endpoint file exists and whose port answers while the file never carries a
 `base_url`: the start row is already written and the service pieces are already up, so
 `jobs/launch.py: <path> did not appear within launch_timeout_s` exits 1 and leaves an
