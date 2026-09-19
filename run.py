@@ -950,13 +950,17 @@ def _dynamic_import_prefix(annotated_file: str) -> str:
 
 
 def _has_dynamic_import_of(path, prefix: str, exact: str = "") -> bool:
-    """Whether the module at path holds an importlib.import_module(...) call that names a module under prefix: an f-string whose leading constant starts with prefix, or the plain string `exact` (rule 3's by-name test).
+    """Whether the module at path holds an importlib.import_module(...) call that names the target: an f-string whose leading constant starts with the required leading text, or the plain string `exact` (rule 3's by-name test).
 
-    The prefix is what makes the test bite: a call that imports something else entirely is the
-    breakage this rule exists to catch, and ast cannot see the edge any other way. A placeholder
-    fragment (models/probe_models/<backbone>.py) names no one module, so it passes no `exact`
-    and the f-string arm alone answers for it.
+    The required leading text is what makes the test bite: a call that imports something else
+    entirely is the breakage this rule exists to catch, and ast cannot see the edge any other
+    way. It is the target's package prefix wherever the target sits inside a package. A
+    repo-root target has an empty package prefix, which every string starts with, so there the
+    required leading text is the module's own dotted name, `exact`. A placeholder fragment
+    (models/probe_models/<backbone>.py) names no one module, so it passes no `exact` and its
+    non-empty package prefix answers for it alone.
     """
+    lead = prefix or exact
     tree = _parse(path)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -969,7 +973,7 @@ def _has_dynamic_import_of(path, prefix: str, exact: str = "") -> bool:
         arg = node.args[0]
         if isinstance(arg, ast.JoinedStr) and arg.values:
             first = arg.values[0]
-            if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(prefix):
+            if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(lead):
                 return True
         if exact and isinstance(arg, ast.Constant) and arg.value == exact:
             return True

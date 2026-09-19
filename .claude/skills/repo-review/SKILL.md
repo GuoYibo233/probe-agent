@@ -37,7 +37,13 @@ the fixed tree is never reworded. This file reviews against the **seven** princi
    spells the pre-2026-09-18 tree (`eval/methods/`, the old `agent/` names), so it adds
    nothing to the annotation lines already read in `README.md` and is not the section to
    read here. It runs `run.py selfcheck` first and stops if that is not green — a review
-   over a tree that fails its own checks reports noise.
+   over a tree that fails its own checks reports noise. That command is typed with the
+   `probe` interpreter, because the system `python3` cannot import `run.py`'s
+   dependencies:
+
+   ```bash
+   /home/y-guo/reproduce/new1/external/probe-env/bin/python run.py selfcheck
+   ```
 
 3. **What it writes.** One ticket per finding into `.scratch/review/issues/`, in the
    issue-tracker format of `notes/docs/agents/issue-tracker.md`, with the Status line
