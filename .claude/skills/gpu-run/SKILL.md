@@ -160,15 +160,15 @@ depends on the stage it lands on:
 - `eval` and `score` **never skip** (contracts 2.4): the re-run recomputes the whole
   stage in place and appends that run's own finish row every time.
 
-The wrap-up call is the launch command, so it starts cards for any stage the walk lands
-on that is not done: an incomplete `sample` or `inject` stage with no live work piece
-releases its dead claims and relaunches on cards, and a completed stage lets the walk go
-on into the next stage, which may itself be a GPU launch. The hard rule below holds
-here too — an agent returns the command as `BLOCKED` and a person types it.
-
 Then the walk goes on to the next stage, the same way Phase 4 does. Numbers reach
 `jobs/RESULTS.md` through `done.json` -> the finish row -> the render; nothing is typed
 in by hand (contracts 8.2).
+
+The wrap-up call is the launch command, so it starts cards for any stage the walk lands
+on that is not done: an incomplete `sample` or `inject` stage with no live work piece
+releases its dead claims and relaunches on cards, and a completed stage lets the walk go
+on into the next stage, which may itself be a GPU launch. The hard rule below holds here
+too — an agent returns the command as `BLOCKED` and a person types it.
 
 ```bash
 /home/y-guo/reproduce/new1/external/probe-env/bin/python run.py table [workflow] [--debug]
@@ -193,7 +193,7 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
   the tree before it.
 - "Start fresh": `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py retry
   <workflow> <setting> <stage>`, which also takes the Phase 2 dirty-tree gate. For
-  `train` it is start fresh: it deletes `last/`, `train_log.jsonl`, `train_done.json`,
+  `train` the phrase holds: it deletes `last/`, `train_log.jsonl`, `train_done.json`,
   `align_check.json`, `consumed.json` and `done.json`, then launches normally (contracts
   2.4). For `sample` and `inject` it clears `done.json` and `consumed.json` only; those
   two stages resume from the per-pair files under the run directory's `records/`
