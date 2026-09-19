@@ -1448,7 +1448,7 @@ def _check_8() -> list[str]:
     return problems
 
 
-# --- check 9: no /home/ or /net/ path in code outside constants/ ------------
+# --- check 9: no cluster-absolute path in code outside constants/ -----------
 
 
 _FORBIDDEN_ROOTS = ("/" + "home/", "/" + "net/")   # split so this check's own source never matches itself
