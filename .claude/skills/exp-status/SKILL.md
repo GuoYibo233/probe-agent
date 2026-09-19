@@ -5,9 +5,10 @@ description: >-
   then commit it to a document and a web page. Engineering-side inventory of experiments
   already run; does not look at external literature. Workflow: set the scope → the main
   conversation reads the three-layer ledger itself
-  (TIMELINE/RESULTS/runs.jsonl/jobs.json/plans) → walk through it block by block and check
+  (notes/TIMELINE.md / jobs/RESULTS.md / jobs/runs.jsonl / `run.py ls` for what is running
+  now / notes/plans/) → walk through it block by block and check
   the user actually understood (ask "which word tripped you up," not "did you get it") →
-  finalize and write to plans/STATUS_*.md (the whole document split in half: the top half
+  finalize and write to notes/plans/STATUS_*.md (the whole document split in half: the top half
   is all facts, the bottom half is all interpretation, no switching back and forth. Each
   experiment carries a paragraph of natural-language experiment description: how it was
   done + why this design counts + one real sample freshly pulled from the raw data +
@@ -37,13 +38,13 @@ Engineering side only, looking only at our own ledger. Wanting to know what othe
 
 Produces three things, in an order that must not be reversed:
 
-1. A written version the user has **accepted block by block and actually understood**, saved to `plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`
+1. A written version the user has **accepted block by block and actually understood**, saved to `notes/plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`
 2. Every experiment in the written version carries an **experiment description** — plain language explaining how it was done and why this design counts, so that an outsider reading only it could redesign the same experiment
 3. An artifact, rendered by a subagent from the finalized written version, not a single character changed
 
 ## Why this skill exists (not just a formality)
 
-There's already a `plans/archive/STATUS_20260730_1833_all_lines.md` in the project (retired and archived). It was complete and the numbers were accurate, and the user couldn't understand it. The reason wasn't the user: the body was packed with `best_calA_weighted_acc`, `θ=0.8 v2fix`, `Sp@k`, `L2minus`, and two dozen commit hashes, each one a compressed index that the reader has to decompress before they can get to the content.
+There's already a `notes/plans/archive/STATUS_20260730_1833_all_lines.md` in the project (retired and archived; read only when the user says so explicitly). It was complete and the numbers were accurate, and the user couldn't understand it. The reason wasn't the user: the body was packed with `best_calA_weighted_acc`, `θ=0.8 v2fix`, `Sp@k`, `L2minus`, and two dozen commit hashes, each one a compressed index that the reader has to decompress before they can get to the content.
 
 So the main function of this skill isn't "organizing information," it's **saying it in plain words**. Organizing information is just a side effect of that.
 
@@ -126,29 +127,32 @@ Reason: the whole picture and a single line differ in information volume by an o
 
 ## Phase 0.5: determine whether this is a first run or a rerun
 
-First check whether there's already a `STATUS_*.md` for this same line under `plans/`. If there is, it's a **rerun**, go into update mode; if not, only then start from scratch.
+First check whether there's already a `STATUS_*.md` for this same line under `notes/plans/`. If there is, it's a **rerun**, go into update mode; if not, only then start from scratch.
 
 This step was added on 2026-07-31: that time was a second run on the same line, but the skill assumed throughout it was a first run, so the whole document got resent for review, doubling the cost, and sections already accepted in the previous version got reported all over again.
 
 **How to run update mode:**
 
-1. Read the previous `STATUS_*.md` in full, note its timestamp, and diff the ledger only from that point forward (`git log`, new lines added to `ops/runs.jsonl`, artifact files newer than that timestamp).
+1. Read the previous `STATUS_*.md` in full, note its timestamp, and diff the ledger only from that point forward (`git log`, new lines added to `jobs/runs.jsonl`, artifact files newer than that timestamp).
 2. **Sections already accepted in the previous version that weren't changed this time are not sent for review again.** They already passed; reviewing them again would only report the same soft issues again.
 3. Only send two kinds of section for review: newly written this time, and changed this time.
-4. The new version's markdown **is created as a new file under the new timestamp** (`plans/STATUS_<new timestamp>_<slug>.md`), not overwriting the old one — the old version is history, the same principle as `runs.jsonl` being append-only. Open with a line saying which version this replaces and what's new.
+4. The new version's markdown **is created as a new file under the new timestamp** (`notes/plans/STATUS_<new timestamp>_<slug>.md`), not overwriting the old one — the old version is history, the same principle as `jobs/runs.jsonl` being append-only. Open with a line saying which version this replaces and what's new.
 5. The artifact **must reuse the same HTML file path**, so the URL doesn't change. The user finds the page by that link — changing the URL loses the page for them.
 
 ## Phase 1: the main conversation reads the ledger itself
 
 Read these, all at the project root:
 
-- `TIMELINE.md` — why things were decided the way they were
-- `RESULTS.md` — the rendered numbers (read-only, never hand-edited)
-- `ops/runs.jsonl` — the raw record of the numbers, keyed by run_id
-- `ops/jobs.json` — the job ledger, what's running, what's finished
-- the most recent `STATUS_*.md` and plan files under `plans/`
+- `notes/TIMELINE.md` — why things were decided the way they were
+- `jobs/RESULTS.md` — the rendered numbers (read-only, never hand-edited)
+- `jobs/runs.jsonl` — the raw record of the numbers, keyed by run_id
+- `run.py ls` — what's running now (there is no separate job ledger)
+- the most recent `STATUS_*.md` and plan files under `notes/plans/`
 - `git log --oneline` (the most recent thirty to fifty)
-- `plans/PLAINWORDS.md` — the sticking-point word list, see Phase 2; if the file doesn't exist, this is a first run
+- `notes/plans/PLAINWORDS.md` — the sticking-point word list, see Phase 2; if the file doesn't exist, this is a first run
+- a run's own numbers live in its `done.json` (`metrics` and `report`), which reach the
+  finish row verbatim — a status pass reads `jobs/runs.jsonl` and the named report file
+  and never parses a training log
 
 **The main conversation reads these itself, does not dispatch a subagent to read through them.** These few files add up to a few hundred lines; reading them yourself costs far less than the distortion cost of explaining from secondhand notes, and every subsequent round of explanation needs to check back against the raw numbers at any time — you only know where to look if you've read them.
 
@@ -191,7 +195,7 @@ In reality there are plenty of cases where "the user said just do it, then walke
 
 ### Sticking-point word list
 
-`plans/PLAINWORDS.md`, four columns, append-only:
+`notes/plans/PLAINWORDS.md`, four columns, append-only:
 
 | Original term in the project | The one name used throughout | Aliases that are always a violation | Aliases that depend on context |
 |---|---|---|---|
@@ -207,7 +211,7 @@ The third column, "banned aliases," is for Phase 4.5's string search; its role i
 
 ## Phase 3: write the document to disk
 
-Path: `plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`.
+Path: `notes/plans/STATUS_<YYYYMMDD_HHMM>_<slug>.md`.
 
 **Split the whole document in half, the top half all facts, the bottom half all interpretation.** Never switch back and forth between experiments — never lay it out as "experiment 1's numbers, experiment 1's interpretation, experiment 2's numbers, experiment 2's interpretation." Only after every experiment's numbers are laid out does it become my turn to speak.
 
@@ -232,7 +236,7 @@ Put a clear boundary between the two halves, stating "everything above is what t
 
 **Section 3 · Numbers side by side.** Lay side by side the numbers from different experiments that are comparable, showing only, not commenting. Which is higher and which is lower is visible to the reader on its own; they don't need to be told what it means.
 
-**Section 4 · Decision record.** Taken from `TIMELINE.md`, each entry writes only two facts: how the decision was made at the time, and which experiment later produced what number. **Don't write "so that decision turned out right or wrong"** — that sentence belongs in the bottom half.
+**Section 4 · Decision record.** Taken from `notes/TIMELINE.md`, each entry writes only two facts: how the decision was made at the time, and which experiment later produced what number. **Don't write "so that decision turned out right or wrong"** — that sentence belongs in the bottom half.
 
 **Section 5 · Ledger status.** Which experiments finished, which are still running, which haven't run, which failed, which lost data. All checkable facts, one line per item.
 
@@ -245,7 +249,7 @@ A few constraints:
 - Open by stating explicitly "everything below is my judgment, and it can be argued with."
 - Every judgment must point back to a specific number in the top half, so the reader can flip back and check.
 - When saying a research question was answered, say clearly which half was answered and which half was never even tested. "Partially supported" with no follow-up is banned.
-- **A decision that's already been overturned by the numbers, but that `TIMELINE.md` hasn't recorded yet, gets called out separately** — that's a hole in the ledger.
+- **A decision that's already been overturned by the numbers, but that `notes/TIMELINE.md` hasn't recorded yet, gets called out separately** — that's a hole in the ledger.
 - This section must not be longer than section 2. If it is, that means there's too much talk — cut it.
 
 ### Why the whole document has to be split, not split experiment by experiment
@@ -442,7 +446,7 @@ Everything else (whether a single word is plain enough, whether a given sentence
 
 So cross-section consistency is split into three layers, each doing what it's actually capable of.
 
-**Layer one: settle the glossary first, write it to disk.** Before writing the written version, settle the glossary and write it into `plans/PLAINWORDS.md`, four columns:
+**Layer one: settle the glossary first, write it to disk.** Before writing the written version, settle the glossary and write it into `notes/plans/PLAINWORDS.md`, four columns:
 
 | Original term in the project | The one name used throughout | Aliases that are always a violation | Aliases that depend on context |
 |---|---|---|---|
@@ -505,7 +509,7 @@ This step ran successfully twice on 2026-07-31, both times reporting "md 36082 /
 - **Subagents may not change a single character of the written version.**
 - **One entity gets exactly one name for the whole session.**
 - **No external literature review.** What other people have done is the job of `update-knowledge-map`.
-- **Never touch `RESULTS.md`.** It's a rendered artifact, a hand edit destroys it.
+- **Never touch `jobs/RESULTS.md`.** It's rendered from `jobs/runs.jsonl` by `jobs/registry.py`; a hand edit destroys it.
 - **The bottom half may not contain any number or fact the top half never gave.** Check with a script, don't rely on self-discipline.
 - **The artifact may not be published without passing character-by-character verification.**
-- If a conclusion changes any judgment in `WORKPLAN.md` → remind the user to add a `TIMELINE.md` entry, but don't write the TIMELINE entry yourself — that's for a human to write.
+- If a conclusion changes any judgment in `notes/WORKPLAN.md` → remind the user to add a `notes/TIMELINE.md` entry, but don't write the TIMELINE entry yourself — that's for a human to write.

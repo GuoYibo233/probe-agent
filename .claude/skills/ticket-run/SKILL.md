@@ -24,7 +24,7 @@ the end, committing per unit) is hardcoded into the implementer's procedure.
 Fixed paths:
 - Wave script: `.claude/skills/ticket-run/wave.js`
 - Role procedures: `.claude/skills/ticket-run/prompts/{implementer,reviewer,re-reviewer,final-reviewer}.md`
-- Ticket conventions: `docs/agents/issue-tracker.md`; status strings: `docs/agents/triage-labels.md`
+- Ticket conventions: `notes/docs/agents/issue-tracker.md`; status strings: `notes/docs/agents/triage-labels.md`
 - Per-wave report directory: `.scratch/<feature-name>/sdd/<date>-wave<N>/` (goes into git, part of the review record)
 
 ## Phase 0 — Split into waves
@@ -44,9 +44,9 @@ single workflow run.
 ## Phase 1 — Precheck and commit before launch
 
 1. Do one precheck pass: tickets that contradict each other, a ticket that contradicts the spec, an approach a
-   ticket requires that collides with a repo hard rule (bypassing the run.py registry, writing a big artifact to
-   home, hand-editing RESULTS.md) — gather all of these into one batch question and ask the user once before
-   proceeding. If the scan finds nothing, proceed silently.
+   ticket requires that collides with a repo hard rule (skipping a new file's five annotation lines in `README.md`,
+   writing a big artifact to home, hand-editing `jobs/RESULTS.md`) — gather all of these into one batch question
+   and ask the user once before proceeding. If the scan finds nothing, proceed silently.
 2. The working tree must be clean; commit anything uncommitted first (repo hard rule: commit before launch,
    otherwise the record can't trace back to the code).
 3. Create this wave's report directory, change every ticket in this wave's `Status:` to `claimed`, and commit
@@ -137,9 +137,10 @@ Once all waves are done, do one whole-branch final review, a single agent withou
 
 ## Hard-rule wiring
 
-- Already hardcoded in the implementer's procedure: the run.py registry three-piece update in the same commit,
-  big artifacts only written to NFS, uv managing the environment, no launching GPU processes, no hand-editing
-  RESULTS.md. Review catches these as spec gaps, but the main conversation checks again at reconciliation.
+- Already hardcoded in the implementer's procedure: the file's five annotation lines go into `README.md` and
+  `run.py selfcheck` proves them, big artifacts only written to NFS, uv managing the environment, no launching
+  GPU processes, no hand-editing `jobs/RESULTS.md`. Review catches these as spec gaps, but the main conversation
+  checks again at reconciliation.
 - This skill manages code tickets. If a ticket itself needs to run a GPU experiment, the implementation part
   goes through this skill as usual, and the launch part goes back to the main conversation through gpu-run.
 - If this skill's workflow or script changes, write it back into this file per the repo's convention, in the

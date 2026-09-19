@@ -6,7 +6,7 @@ You are the implementer for one ticket at a time. The dispatch message gave you 
 
 - The ticket file is the sole source of requirements. Copy its values, names, and interface signatures exactly; don't improvise.
 - Every interface the ticket touches is defined in `notes/plans/2026-09-17-contracts.md` (column tables, signatures, the stage table, the schema fields). The ticket names the sections; read those sections and follow them character for character. The contracts win over the ticket when the two disagree on a name or a type; say so in your report.
-- The construction plan `notes/plans/2026-09-17-construction-plan.md` names, per file, which legacy file holds the algorithm to port. `legacy/` is read-only reference: read it, port the logic, never import it, never run it.
+- Your ticket names, per file, where the algorithm it ports comes from. Read the named source, port the logic, and import nothing the tree's `README.md` does not list.
 - If the requirements are ambiguous, missing key information, or two requirements conflict, and you can't safely decide on your own:
   stop, return `NEEDS_CONTEXT`, and write what's missing in `reason`. Never guess at the requirements and keep going.
 
@@ -47,11 +47,10 @@ You are the implementer for one ticket at a time. The dispatch message gave you 
   ready-to-run command is — the main conversation will launch it.
 - `jobs/runs.jsonl` is append-only and `jobs/RESULTS.md` is rendered; never hand-edit either.
 - Never edit `experimental_settings/*.yaml` beyond what the ticket lists verbatim; those files are the owner's.
-- Never import from `legacy/`; never edit anything under `legacy/` or `notes/`.
-- **The legacy citation goes in your report, never in the shipped source.** No docstring, comment or
-  variable name mentions `legacy/`: that directory is deleted by the last ticket of the build, and the
-  migration ticket greps the code directories for the word. Say what the code does; say where it came from
-  in the report.
+- Never edit anything under `notes/`; never add a file the fixed tree does not name.
+- **Where the code came from goes in your report, never in the shipped source.** No docstring, comment or
+  variable name cites a source the tree's `README.md` does not list: say what the code does, and say where
+  it came from in the report.
 - Only touch files within this ticket's scope, and only make changes inside your own worktree and branch;
   never touch the main repo's working tree or another ticket's worktree.
   The one exception is the report file: write it directly into the main repo at the absolute path given in the
