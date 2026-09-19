@@ -28,7 +28,7 @@ caller's given list and new1's `<workdir>/logs/`, never touch anything under
 /home/y-guo/ACL2026.
 
 The only way this project gets its numbers is by running
-`python3 run.py ls [workflow] [--debug]` inside /home/y-guo/reproduce/new1
+`external/probe-env/bin/python run.py ls [workflow] [--debug]` inside /home/y-guo/reproduce/new1
 (the repo root's `run.py` is the single entry point for every stage, do not
 call the underlying modules directly; this machine only has `python3`, not
 `python`) — every piece's progress, verdict, rate, ETA, and tmux liveness are
@@ -57,7 +57,7 @@ never wired up heartbeats) do you need to manually check the logs yourself.
 
 ## Checklist (go through this for every task)
 
-- First read `python3 run.py ls [workflow]`, copy `verdict`/progress/
+- First read `external/probe-env/bin/python run.py ls [workflow]`, copy `verdict`/progress/
   rate/ETA/session liveness into the health table.
 - If `verdict` is `healthy`/`warming up`/`slowed`/`done`: just
   copy it, no autopsy needed.

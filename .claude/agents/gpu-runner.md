@@ -24,7 +24,7 @@ one standard operating procedure is written in
 step** (read the slow-variable log → probe the cards for real → commit →
 smoke with `--debug` → launch → monitor → wrap up); this file only adds
 project-local constraints, it does not repeat or override that skill. For
-everyday probing use `python3 run.py free` (the repo root's `run.py` is the
+everyday probing use `external/probe-env/bin/python run.py free` (the repo root's `run.py` is the
 single entry point for every stage; the underlying modules are never called
 by hand). **Note that this machine's shell only has `python3`, not
 `python`**; writing `python` in a command will fail outright.
@@ -38,10 +38,10 @@ by hand). **Note that this machine's shell only has `python3`, not
 2. **No hand-rolled launches**: no running commands over bare ssh, no nohup,
    everything goes into tmux, this is a hard project rule with no
    exceptions.
-3. **Launch always goes through `python3 run.py <workflow> <setting>`, and
+3. **Launch always goes through `external/probe-env/bin/python run.py <workflow> <setting>`, and
    the working tree must be clean**: a run is launched with one command:
    ```bash
-   python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] \
+   external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] \
      [section.field=value ...]
    ```
    which walks that setting's stage list end to end: freeze
@@ -68,7 +68,7 @@ by hand). **Note that this machine's shell only has `python3`, not
    launch).
    **Refiring a dead piece is not a new launch**: if a piece dies, do not
    hand-edit the ledger and do not launch again, use
-   `python3 run.py refire <workflow> <setting> <stage> --piece i`, which
+   `external/probe-env/bin/python run.py refire <workflow> <setting> <stage> --piece i`, which
    refuses while the piece's session is still alive, re-probes the target
    card before restarting it, and only warns (never refuses) when the piece
    already has more than one launch entry — there is no quota on refires.
@@ -116,7 +116,7 @@ by hand). **Note that this machine's shell only has `python3`, not
 Each session: alive ✓/✗ + key lines from the log tail (progress evidence or traceback)
 
 ## Registration receipt
-The full output of `python3 run.py <workflow> <setting> ...` (the launch line
+The full output of `external/probe-env/bin/python run.py <workflow> <setting> ...` (the launch line
 plus the monitoring command it prints), pasted as-is; for a refire, paste
 that refire output instead.
 

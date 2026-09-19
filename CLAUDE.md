@@ -41,7 +41,7 @@ lists them). Any other first word names a workflow file's stem, and a walk
 is:
 
 ```
-python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
+external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
 ```
 
 which freezes the setting, takes the launch gate, and walks that setting's

@@ -1,6 +1,6 @@
 # 17 CLAUDE.md, exp-status, the agents and the remaining skills
 
-Status: claimed
+Status: resolved
 Blocked by: 15, 16
 Spec: .scratch/from-zero/spec.md (sections 1, 5, 7, 9)
 
@@ -372,3 +372,18 @@ Expected: `selfcheck: 31 python files, 0 problems`, `rc=0`.
 None in this ticket.
 
 ## Comments
+
+- 2026-09-20, resolved in wave 7 (session new1-08): commits 8fc75af..7db4c0b on
+  `ticket/2026-09-20-wave7/T17`, merged as 25f01d4; no fix round. The reviewer's one
+  minor: the opening references of `gpu-runner.md` and `job-monitor.md` were repointed
+  from the two methodology files ticket 16 deleted to `.claude/skills/gpu-run/SKILL.md`,
+  outside the named line ranges. Implementer concerns: no `MAP.md` sentence existed in
+  `ticket-run/SKILL.md` to delete; `gpu-runner.md`'s smoke bullet still describes an
+  ad-hoc smoke instead of `--debug`. After the merge the main session respelled every
+  `python3 run.py` in `CLAUDE.md`, `handoff/SKILL.md`, `job-monitor.md` and
+  `gpu-runner.md` as `external/probe-env/bin/python run.py` (the system `python3`
+  cannot import `run.py`'s dependencies; wave 6 made the same change in the skills),
+  then ran C5, C7, C8, C12, C13 and C15 on the merged tree: all pass, exempt range
+  lines 247-269. Until ticket 18 lands, `CLAUDE.md` and `ticket-run/SKILL.md` cite
+  `notes/docs/agents/...` before the move, and `CLAUDE.md` says the old reference code
+  has been removed while `legacy/` is still in the tree.

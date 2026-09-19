@@ -42,7 +42,7 @@ task within 5 minutes, without stepping on a known trap, and without starting wo
 
 ## Phase 1 — Probe (four lines of evidence)
 
-1. `python3 run.py ls`: the active ledger, with each piece's progress, verdict, rate and ETA
+1. `external/probe-env/bin/python run.py ls`: the active ledger, with each piece's progress, verdict, rate and ETA
    computed fresh on the call from its own heartbeat files. Tailing each piece's log still gets
    you the rawest text, for a piece that never got wired to heartbeats.
 2. `git log --oneline -5` + `git status --short`: where HEAD is, what's uncommitted.
