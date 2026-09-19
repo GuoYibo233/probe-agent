@@ -313,14 +313,14 @@ def literal_of(path, name: str):
     """
     matches = _column_zero_assign_values(path, name)
     if not matches:
-        raise SystemExit(f"selfcheck: {path}: no column-zero assignment to {name!r}")
+        raise SystemExit(f"{path}: no column-zero assignment to {name!r}")
     if len(matches) > 1:
         raise SystemExit(
-            f"selfcheck: {path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+            f"{path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     try:
         return ast.literal_eval(matches[0])
     except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as ex:
-        raise SystemExit(f"selfcheck: {path}: {name!r}'s value is not a literal ({ex})") from ex
+        raise SystemExit(f"{path}: {name!r} has a value that is not a literal ({ex})") from ex
 
 
 def literal_keys_of(path, name: str) -> list:
@@ -332,19 +332,19 @@ def literal_keys_of(path, name: str) -> list:
     """
     matches = _column_zero_assign_values(path, name)
     if not matches:
-        raise SystemExit(f"selfcheck: {path}: no column-zero assignment to {name!r}")
+        raise SystemExit(f"{path}: no column-zero assignment to {name!r}")
     if len(matches) > 1:
         raise SystemExit(
-            f"selfcheck: {path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+            f"{path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     value = matches[0]
     if not isinstance(value, ast.Dict):
-        raise SystemExit(f"selfcheck: {path}: {name!r} is not a dict display, cannot read its keys")
+        raise SystemExit(f"{path}: {name!r} is not a dict display, cannot read its keys")
     keys = []
     for key_node in value.keys:
         try:
             keys.append(ast.literal_eval(key_node))
         except (ValueError, TypeError, SyntaxError) as ex:
-            raise SystemExit(f"selfcheck: {path}: {name!r} has a non-literal key ({ex})") from ex
+            raise SystemExit(f"{path}: {name!r} has a non-literal key ({ex})") from ex
     return keys
 
 
