@@ -1,0 +1,447 @@
+{
+ "wave": "2026-09-19-wave6",
+ "review": "post-merge-review.json (30 verified, 6 refuted)",
+ "branches": [
+  {
+   "branch": "fix/2026-09-20-wave6-selfcheck",
+   "head": "f40d4530deb19ae0106ae633a97608e3dc9021fa",
+   "fixed": [
+    {
+     "ids": [
+      "checks-fire:W6-L15-01",
+      "checks-blind:SC-5"
+     ],
+     "what": "Commit 6630b77: check 4 now walks the tree for every column-zero VERSION, reports each file the stage table does not name (\"check 4: <path> carries a column-zero VERSION but the stage table's versions do not name it\"), and runs the strict VERSION/VERSION_HISTORY shape over the union of the stage-table set and the carriers, which is gyb's \"every file with a column-zero VERSION\". Detection is a direct ast test for at least one column-zero VERSION assign, so a duplicated VERSION stays visible."
+    },
+    {
+     "ids": [
+      "checks-blind:SC-8"
+     ],
+     "what": "Commit 6630b77: _resolve_versions_entry expands the list it has built so far instead of rebuilding from the original path, so a versions entry holding two templates expands both: models/{family}_{backbone}.py now gives ['models/gptoss_qwen.py'] and _stage_table_files() is still 22."
+    },
+    {
+     "ids": [
+      "checks-blind:SC-2",
+      "checks-fire:W6-L15-02"
+     ],
+     "what": "Commit 15b66e5: every selfcheck ast pass goes through one _parse(path) that reads (ROOT / path), so the command works from any working directory and an absolute D2 fixture path still passes through unchanged."
+    },
+    {
+     "ids": [
+      "checks-fire:W6-L15-04",
+      "runpy-regression:W6-L15-4"
+     ],
+     "what": "Commit 15b66e5 (+3d199b1): _parse refuses an unparsable file with literal_of's SystemExit shape naming the file and the syntax line; _safe_parse and per-file guards keep a check going over its remaining files; cmd_selfcheck turns any check that still raises into one problem line. The two approved fixes disagreed (abort vs continue); the built fix meets both goals: one named line per file per check, all eleven checks run, the summary prints, rc=1. 3d199b1 removes the duplicate line a second reader of the same file produced."
+    },
+    {
+     "ids": [
+      "checks-blind:SC-9"
+     ],
+     "what": "Commit 15b66e5: cmd_selfcheck runs the eleven checks from a (number, callable) list and records a raising check as \"check N raised: KeyError: 'inject.format'\", so a renamed axis no longer stops checks 4-11 and the summary."
+    },
+    {
+     "ids": [
+      "checks-fire:W6-L15-05"
+     ],
+     "what": "Commit 7f8964e: the seven literal_of / literal_keys_of refusals drop their own \"selfcheck: \" prefix (the caller supplies the check number) and the possessive is gone: \"'VERSION_HISTORY' has a value that is not a literal\"."
+    },
+    {
+     "ids": [
+      "checks-blind:SC-3"
+     ],
+     "what": "Commit 96acf01: _has_dynamic_import_of replaces _has_dynamic_import_call and _has_fstring_dynamic_import; it takes the dotted package of the annotated file (the import target on a used by: line) and accepts an import_module call only when its f-string begins with that package or its plain string is the annotated module. The placeholder branch derives its prefix from the placeholder path instead of hardcoding base.py. Retargeting either loader to import_module(\"os\") is now reported."
+    },
+    {
+     "ids": [
+      "checks-blind:SC-6"
+     ],
+     "what": "Commit 96acf01: _parse_annotation returns a third list, the fragments that are a single whitespace-free token ending in .py or .yaml yet name no repo file, and check 2 reports each one (\"names data/deleted_module.py, which is not a repo file\"). Multi-word prose fragments stay out; the list is empty on today's README."
+    },
+    {
+     "ids": [
+      "checks-blind:SC-4"
+     ],
+     "what": "Commit 8e71bf3: check 1 requires every .py entry to carry all five of contracts 0.1's labels with a value, and check 10 requires the venv: value to open with 'any', a key of constants/path_datasets.yaml's venvs: map, or the documented \"the environment's\" spelling, reporting the value otherwise. Both halves of the hole (deleted line, misspelled value) now fire."
+    },
+    {
+     "ids": [
+      "runpy-regression:W6-L15-2"
+     ],
+     "what": "Commit 7ee140e: check 7 reads EFFORTS and DEFAULT_EFFORT with literal_of directly and reports a refusal itself, so a literal None is a value rather than a refusal; it then proves EFFORTS is a tuple before the membership test. EFFORTS non-empty with DEFAULT_EFFORT None is reported, EFFORTS = () with None stays legal, EFFORTS = None is reported instead of crashing."
+    },
+    {
+     "ids": [
+      "runpy-regression:W6-L15-3"
+     ],
+     "what": "Commit 95f871f: check 9's section header reads \"no cluster-absolute path in code outside constants/\", so ticket 14's D3 grep over run.py prints NO_ABS_PATH again."
+    },
+    {
+     "ids": [
+      "pipeline-review-skills:W6-L15-2"
+     ],
+     "what": "Commit 72228bb: README section 3 recipes 1, 2, 6 and 7 name the column-zero bindings and the pinned VERSION rule comment block their new file needs, and a sentence above the list says the new file's own five annotation lines go into section 2 and its name joins the used by: line of every file it imports, widening a brace list where the line is written as one. Recipe 7 carried the same omission as 1, 2 and 6 and was closed in the same edit. Following recipe 2 literally in a scratch copy now gives 32 python files, 0 problems, rc=0."
+    },
+    {
+     "ids": [
+      "rr1-selfcheck-03"
+     ],
+     "what": "run.py `_check_by_name_fragments`: the non-placeholder branch now derives (importer, imported) from the label instead of assuming one direction -- on an `imports:` line the annotated file is the importer and the fragment is the module it names, on a `used by:` line the other way round -- and words its message after the direction it tested (the `used by:` message is unchanged; the `imports:` message names the annotated file as the reader and the fragment at the end). Commit 647d759. Reproduced on a scratch copy: at 3d199b1 the truthful annotation `imports: data/environments/appworld.py (by name, inside open_env); [importlib, PyYAML]` printed `check 2: data/environments/__init__.py imports: by-name entry data/environments/appworld.py holds no importlib.import_module call naming data.environments.<module>` / `selfcheck: 31 python files, 1 problems`; at a40659b the same annotation gives `selfcheck: 31 python files, 0 problems` rc=0, and with the loader retargeted to `importlib.import_module(\"os\")` both directions fire: `check 2: data/environments/__init__.py imports: data/environments/__init__.py holds no importlib.import_module call naming data.environments.<module> for by-name entry data/environments/appworld.py` and `check 2: data/environments/appworld.py used by: by-name entry data/environments/__init__.py holds no importlib.import_module call naming data.environments.<module>`."
+    },
+    {
+     "ids": [
+      "rr1-selfcheck-04"
+     ],
+     "what": "run.py: check 2's `unreadable` set now travels into `_check_by_name_fragments`, which passes over a fragment whose importer sits in it, so the set guards every reader in the check rather than only the annotated file's own iteration. Commit 647d759. Reproduced with `def broken(:` appended to models/probe_models/base.py (named by models/probe_models/qwen.py's `used by:` by-name line): at 3d199b1 the line `check 2: models/probe_models/base.py: does not parse (invalid syntax, line 254)` printed twice and the run ended `selfcheck: 31 python files, 5 problems`; at a40659b it prints once per check (check 2, check 4, check 9) and the run ends `selfcheck: 31 python files, 4 problems` rc=1."
+    },
+    {
+     "ids": [
+      "rr1-selfcheck-01"
+     ],
+     "what": "run.py: the comment above README_PY_LABELS now gives the real reason for each required label -- check 10 reads venv: and drops the file from its import proof in silence when that line is gone, so check 1 is the only place that line is required; check 2 reads imports: and used by: and reports a missing one by name itself, so check 1 is a second source rather than the only one; reads: and writes:, which no check reads, are required because a line nobody requires rots. No code changed. Commit a40659b. Both halves checked on scratch copies of a40659b: deleting only eval/score_run.py's `imports:` line prints `check 1: README entry 'eval/score_run.py' carries no imports: line (contracts 0.1's five-line format)` and `check 2: eval/score_run.py has no imports: line` (2 problems); deleting data/environments/appworld.py's `venv:` line with `import definitely_not_a_module` at the top of that file prints the check 1 line alone (1 problem) -- check 10 says nothing."
+    },
+    {
+     "ids": [
+      "rr1-selfcheck-02"
+     ],
+     "what": "README.md section 3 preamble: the import-graph comparison is now the sentence about what selfcheck catches, and the brace list is named as the house spelling selfcheck reads either way ('A line written as a brace list, `train/methods/{ctool,cgen,cparam}.py`, is widened rather than extended with a second fragment; selfcheck reads both spellings the same, and this one keeps the line short.'). Commit a40659b. Checked on a scratch copy of a40659b by splitting `cparam` out of both brace lists (README lines 250 and 280): `selfcheck: 31 python files, 0 problems` rc=0, so the claim that selfcheck accepts both spellings is the one the README now makes."
+    },
+    {
+     "ids": [
+      "rr2-selfcheck-01"
+     ],
+     "what": "README.md section 3's preamble now states both of check 2's obligations for a new file, in one sentence beside the brace-list rule: the file's own five annotation lines, its name on the `used by:` line of every repo file it imports, and -- when it lands in a package directory whose `__init__.py` carries an `(as their package)` used-by line (models/agent_models/ and models/probe_models/ today) -- its name on that list too, because `_check_package_marker` (run.py:1025-1036) holds such a line equal to the .py files of the directory. Commit f31b269, README.md:329-337."
+    },
+    {
+     "ids": [
+      "rr2-selfcheck-02"
+     ],
+     "what": "run.py `_dynamic_import_prefix` derives the prefix from the module's own dotted name instead of joining the parent's parts unconditionally: `parts = Path(annotated_file).parent.parts; return \".\".join(parts) + \".\" if parts else \"\"`. A repo-root module's prefix is now the empty string rather than '.', so a correct by-name importlib.import_module of a root-level module is accepted and the failure message's tail reads `<module>`. The docstring says what a root-level file gives. Commit f40d453, run.py:941-950."
+    }
+   ],
+   "declined": [],
+   "rounds": [
+    {
+     "round": 1,
+     "problems": [
+      {
+       "id": "rr1-selfcheck-01",
+       "severity": "minor",
+       "detail": "New false statement in run.py. The comment above README_PY_LABELS (run.py, check 1's section header block) justifies the new five-label rule with \"because the checks that read them -- check 2 reads imports: and used by:, check 10 reads venv: -- lose the file silently when its line is gone\". Check 2 does not lose the file silently: it reports the missing line by name. Verified in a scratch copy of 3d199b1 (git archive | tar -x, baseline `selfcheck: 31 python files, 0 problems`): deleting only the `imports:` line of the `eval/score_run.py` entry, keeping the header, prints\n\n  check 1: README entry 'eval/score_run.py' carries no imports: line (contracts 0.1's five-line format)\n  check 2: eval/score_run.py has no imports: line\n  selfcheck: 31 python files, 2 problems\n\nOnly check 10 is silent (verified separately: deleting the `venv:` line of `data/environments/appworld.py` while `import definitely_not_a_module` sits in that file drops all three check-10 lines). The comment is the stated reason for a rule a later agent may revisit, and it credits check 2 with a hole it does not have.",
+       "fix": "Reword the comment to state the real reason: check 10 reads venv: and loses the file in silence when that line is gone, check 2 already reports a missing imports:/used by: line itself, and reads:/writes: are required because a line nobody requires rots. Nothing about the code changes."
+      },
+      {
+       "id": "rr1-selfcheck-02",
+       "severity": "minor",
+       "detail": "New statement in README.md section 3 that selfcheck does not back. The added preamble reads \"... adds the new file's name to the `used by:` line of every repo file it imports; where such a line is written as a brace list, `train/methods/{ctool,cgen,cparam}.py`, the new name widens the brace list rather than standing beside it. `run.py selfcheck` compares those lines against the real import graph, so it is the check that catches a recipe followed half way.\" The approved fix's rationale says an extender \"who appends a separate path instead of widening the brace list still fails check 2\". That is false: `_split_top_level` splits the line on the top-level comma first and `_expand_braces` runs per fragment, so the separate-path form yields the same set. Verified in a scratch copy that had recipe 2 followed to green (`selfcheck: 32 python files, 0 problems`): rewriting README.md:250 as `used by: train/methods/{ctool,cgen,cparam}.py, train/methods/cseq.py` and README.md:287 the same way still prints `selfcheck: 32 python files, 0 problems`, rc=0. An extender who reads the paragraph as a selfcheck requirement is told something the check never tests.",
+       "fix": "Separate the two claims in that sentence: keep \"adds the new file's name to the `used by:` line of every repo file it imports\" as what selfcheck catches, and either drop the brace-list clause or mark it as the house spelling that selfcheck accepts either way -- e.g. \"a line written as a brace list, `train/methods/{ctool,cgen,cparam}.py`, is widened rather than extended with a second fragment; selfcheck reads both spellings the same, this one keeps the line short.\""
+      },
+      {
+       "id": "rr1-selfcheck-03",
+       "severity": "minor",
+       "detail": "Check 2's by-name test reads the wrong file on an `imports:` line, and the rewritten message now asserts that wrong direction. In `_check_by_name_fragments` (run.py), the non-placeholder branch always treats `path_text` as the importer: `prefix = _dynamic_import_prefix(current_file)` and `_has_dynamic_import_of(path_text, prefix, _module_name(current_file))`. That is right for a `used by:` line (the annotated file is the import target, `path_text` is the importer) and backwards for an `imports:` line (the annotated file is the importer, `path_text` is the target) -- the placeholder branch two lines above gets the `imports:` direction right, testing `current_file` with the prefix derived from `path_text`. Verified on a scratch copy of 3d199b1: replacing `data/environments/__init__.py`'s `imports: none (repo); [importlib, PyYAML]` with the truthful `imports: data/environments/appworld.py (by name, inside open_env); [importlib, PyYAML]` prints\n\n  check 2: data/environments/__init__.py imports: by-name entry data/environments/appworld.py holds no importlib.import_module call naming data.environments.<module>\n  selfcheck: 31 python files, 1 problems\n\nso a correct annotation is reported as a defect. The wrong direction was in the pre-fix `_has_dynamic_import_call(path_text)` too, but the SC-3 rewrite touched exactly this line and hardened the assumption into the prefix and the message text. Latent today: no `imports:` line carries a non-placeholder by-name fragment.",
+       "fix": "Branch on the label the way the placeholder branch already does. On an `imports:` line the annotated file is the importer, so test `_has_dynamic_import_of(current_file, _dynamic_import_prefix(path_text), _module_name(path_text))` and word the message as \"<current_file> holds no importlib.import_module call naming <prefix><module>\". On a `used by:` line keep today's `_has_dynamic_import_of(path_text, _dynamic_import_prefix(current_file), _module_name(current_file))` and today's message."
+      },
+      {
+       "id": "rr1-selfcheck-04",
+       "severity": "minor",
+       "detail": "Commit 3d199b1's stated property -- \"one line per unparsable file per check, not one per reader\" -- does not hold for a file another file's by-name annotation points at. `_check_2` records the file in `unreadable` and skips its own annotation iteration, but `_check_by_name_fragments`, reached from a different file's `used by:` line, re-parses it through `_has_dynamic_import_of` and the caught SystemExit appends the same message again. Verified on a scratch copy of 3d199b1 by appending `def broken(:` to models/probe_models/base.py (named by `models/probe_models/qwen.py`'s `used by: models/probe_models/base.py (by name...)`):\n\n  check 2: models/probe_models/base.py: does not parse (invalid syntax, line 255)\n  check 2: models/__init__.py used by: README names [...], the graph gives [...]\n  check 2: models/probe_models/base.py: does not parse (invalid syntax, line 255)\n  check 4: models/probe_models/base.py: does not parse (invalid syntax, line 255)\n  check 9: models/probe_models/base.py: does not parse (invalid syntax, line 255)\n  selfcheck: 31 python files, 5 problems\n\nThe same duplication does not appear for eval/score_run.py, which no by-name line names, which is why the fixer's own run missed it. Cosmetic only: rc is 1 and the file is named.",
+       "fix": "Make `_check_2`'s unreadable set the guard for every reader in the check, not only for the annotated file's own iteration: pass it down to `_check_by_name_fragments` (or consult it before calling `_has_dynamic_import_of`) and skip a by-name fragment whose target is already recorded as unreadable, since its own line is already above."
+      }
+     ],
+     "cannotVerify": [
+      "Check 11's breakage (a reserved-stem workflow file under experimental_settings/) was not exercised: creating or deleting experimental_settings/<x>.yaml is barred by the task's hard rules and by the read-only hook. Check 11's code is untouched by this branch, and the SC-9 test showed checks 4-11 all run after an earlier check raises.",
+      "Check 8's D4 breakage (removing an alias block from constants/path_models.yaml) was not run; check 8's code is untouched by this branch."
+     ]
+    },
+    {
+     "round": 2,
+     "problems": [
+      {
+       "id": "rr2-selfcheck-01",
+       "severity": "important",
+       "detail": "README.md section 3 (the preamble added at README.md:329-335, and recipes 6 and 7 at README.md:367-381). The fix's own claim for pipeline-review-skills:W6-L15-2 is that a recipe followed literally now ends green, and the new preamble states the whole annotation obligation as \"writes that file's own five annotation lines into section 2 above, and adds the new file's name to the `used by:` line of every repo file it imports\". That is the import-graph half of check 2 only. Check 2 has a second obligation the sentence does not name: `_check_package_marker` (run.py:1032-1046) requires an `(as their package)` used-by line to equal the .py files of its own directory, and two such lines exist (README.md:169 for models/agent_models/__init__.py, README.md:190 for models/probe_models/__init__.py). Recipes 6 and 7 both add a file into one of those directories, and both kinds of new file import no repo file at all (models/probe_models/qwen.py is `imports: none (repo); [transformers]`, models/agent_models/gptoss.py is `imports: none (repo); [openai_harmony, ...]`), so the preamble's rule gives the extender nothing to do and the marker line is never widened. Verified in a scratch copy of fix/2026-09-20-wave6-selfcheck (baseline `selfcheck: 31 python files, 0 problems`, rc=0). Recipe 6: added models/probe_models/qwen2.py with a column-zero LORA_TARGETS plus its five README annotation lines -> `check 2: models/probe_models/__init__.py used by: package marker names ['models/probe_models/base.py', 'models/probe_models/qwen.py', 'models/probe_models/service.py'], directory models/probe_models holds ['models/probe_models/base.py', 'models/probe_models/qwen.py', 'models/probe_models/qwen2.py', 'models/probe_models/service.py']` / `selfcheck: 32 python files, 1 problems`, rc=1. Recipe 7: added models/agent_models/llama.py with column-zero STOP, EFFORTS, DEFAULT_EFFORT, DEFAULT_DATE plus its five annotation lines -> `check 2: models/agent_models/__init__.py used by: package marker names ['models/agent_models/gptoss.py', 'models/agent_models/service.py'], directory models/agent_models holds ['models/agent_models/gptoss.py', 'models/agent_models/llama.py', 'models/agent_models/service.py']` / `selfcheck: 32 python files, 1 problems`, rc=1. The other two recipes the same edit touched do end green: recipe 2 followed literally (train/methods/cseq.py with VERSION, VERSION_HISTORY under the rule block, PROBE_KIND, CHECKPOINT_META; \"cseq\" on AXES['probe.method']; PROBE_KIND + MATCH_VERSION + match_cseq in eval/utils/probe_eval.py; the five annotation lines; the two brace lists widened) gives `selfcheck: 32 python files, 0 problems`, rc=0, and recipe 1 followed literally (data/environments/toy.py with INSTRUCTIONS, SPLIT_ROLE, VERSION, VERSION_HISTORY under the rule block; \"toy\" on AXES['data.env']; the five annotation lines; toy.py added to data/environments/__init__.py's used by: line) gives `selfcheck: 32 python files, 0 problems`, rc=0. So the fixer's summary sentence \"Recipe 7 carried the same omission as 1, 2 and 6 and was closed in the same edit\" holds for the column-zero bindings but not for the annotation work, and the preamble's claim that selfcheck \"is the check that catches a recipe followed half way\" now describes a recipe that is itself half way.",
+       "fix": "Widen the preamble sentence at README.md:329-335 so it states both of check 2's obligations for a new file, not just the import-graph one: the new file's own five annotation lines go into section 2, its name joins the `used by:` line of every repo file it imports, and -- when the new file sits in a package directory whose `__init__.py` carries an `(as their package)` used-by line (models/agent_models/ and models/probe_models/ today) -- its name joins that list too, because check 2 compares that line against the directory's .py files. Keep it one sentence in the preamble rather than repeating it in recipes 6 and 7, matching how the brace-list rule is already written there. Re-verify by repeating the two experiments above: with the marker line widened, each gives `selfcheck: 32 python files, 0 problems`, rc=0."
+      },
+      {
+       "id": "rr2-selfcheck-02",
+       "severity": "minor",
+       "detail": "run.py:938-940, `_dynamic_import_prefix`. It builds the dotted package as `\".\".join(Path(annotated_file).parent.parts) + \".\"`, which is right for a file inside a package but wrong for a file at the repo root: `_dynamic_import_prefix('run.py')` returns `'.'` (verified on the fix branch: `python -c \"import run; print(repr(run._dynamic_import_prefix('run.py')))\"` -> `'.'`). The correct prefix for a root-level module is the empty string, since its dotted name has no package part. With `'.'`, the f-string arm of `_has_dynamic_import_of` (run.py:955-963) demands a leading constant starting with a dot, which no `importlib.import_module(f\"run...\")` call would have, so a correct dynamic import of a root-level module would be reported as missing; only the `exact` arm (`_module_name('run.py')` -> `'run'`) would still accept the plain-string spelling. This is latent on today's tree -- run.py is the only root-level .py file and no `(by name)` annotation names it -- so nothing fires now; it is the same class of latent arithmetic error as the already-fixed `_resolve_versions_entry` two-template bug.",
+       "fix": "Derive the prefix from the module's own dotted name instead of joining path parts unconditionally: in `_dynamic_import_prefix`, return `\"\"` when `Path(annotated_file).parent.parts` is empty and the joined package plus a dot otherwise -- e.g. `parts = Path(annotated_file).parent.parts; return \".\".join(parts) + \".\" if parts else \"\"`. Every prefix in use today (`data.environments.`, `models.agent_models.`, `models.probe_models.`) is unchanged, so `run.py selfcheck` stays at `31 python files, 0 problems`; the failure message's `{prefix}<module>` tail then reads `<module>` for a root-level file, which is correct."
+      }
+     ],
+     "cannotVerify": [
+      "Check 11's breakage (`touch <scratch>/experimental_settings/free.yaml`) could not be run: the read-only hook refuses any Bash command line naming experimental_settings/<x>.yaml together with rm, and the ticket's own undo is `rm -rf` of the whole scratch copy, which the hook also refuses when the command names that path. Check 11 is untouched by the fix diff (run.py's `_check_11` is byte-identical between f810f9f and the fix branch), so nothing in the change can reach it. The other ten D4 breakages were run and all still fire with one named line each.",
+      "Recipes 6 and 7 could not be followed all the way to their `models/table.yaml` row, because that file is the owner's and the hook refuses to write it even in a scratch copy. I isolated the annotation half instead: the new backbone / family file plus its five README annotation lines, with no table row, which is enough to reach and reproduce the package-marker failure reported as rr2-selfcheck-01 but leaves the check 4 LORA_TARGETS / STOP / EFFORTS / DEFAULT_EFFORT / DEFAULT_DATE half of those two recipes unexercised end to end. That half is verified by reading run.py:1320-1333 and by the stage-table listing, which names models/probe_models/qwen.py and models/agent_models/gptoss.py among its 22 files, so the recipes' new 'because the stage table names this file' clauses are true.",
+      "`\"$PR -m unittest\"` from the tree root runs 0 tests (`Ran 0 tests in 0.000s / OK`, rc=0) on the fix branch. tests/ holds test_packed_loss.py and test_registry_concurrent_append.py, and README.md:322 says to run the latter as a script (`external/probe-env/bin/python tests/test_registry_concurrent_append.py`), not through unittest discovery. tests/ is byte-identical to f810f9f, so this is the state the fix inherited, not a regression it caused; I did not treat it as a problem of this branch."
+     ]
+    }
+   ],
+   "ownerQuestions": [
+    "With an empty prefix, a root-level by-name target passes the f-string arm of `_has_dynamic_import_of` for any `importlib.import_module` f-string, since ast sees only that the call names some top-level module; only the plain-string spelling is still tested exactly. That is inherent to a module with no package part, it is latent today (no `(by name)` annotation names run.py), and no finding asked for more, so nothing further was built.",
+    "README.md section 2's `tests/` sentence still names the run command for tests/test_registry_concurrent_append.py only, while tests/test_packed_loss.py needs the repo root on PYTHONPATH; carried over from round 1, still uncovered by any finding."
+   ]
+  },
+  {
+   "branch": "fix/2026-09-20-wave6-skills",
+   "head": "c17d75cb65efbee3fdac308bef4e713058c7c38c",
+   "fixed": [
+    {
+     "ids": [
+      "gpu-run-skill:GR1",
+      "pipeline-review-skills:W6-L16-1"
+     ],
+     "what": "gpu-run SKILL.md: the nine copy-paste command lines now begin with /home/y-guo/reproduce/new1/external/probe-env/bin/python, and the fixed-paths block names that interpreter (run.py:2 `# venv: probe`, README.md:63, constants/path_datasets.yaml:7) instead of telling the operator to use python3, which cannot import run.py's dependencies (run.py:19 -> data/__init__.py:8, polars). The absolute form is used because external/ is git-ignored and absent from a worktree (contract-errata.md:126). `python3 run.py sampler` inside `## What is gone` is untouched."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR4"
+     ],
+     "what": "gpu-run Phase 4 now states the only success signal, that the call exits 0 either way, and that a failed launch prints nothing, tears the service pieces down and appends a launch_failed finish row (run.py:1865-1871; jobs/launch.py:878-908 teardown_services; jobs/launch.py:955 the file's only print), with <run_dir>/log/<piece index>.txt as where to read why (jobs/launch.py:758)."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR3"
+     ],
+     "what": "gpu-run Phase 5 redefines `edited` as the setting's current key no longer matching the directory — an edited field moves it too (run.py:476-477) — and says the trailing stale= text appears only when a recorded file's effective VERSION rose (run.py:383-408, run.py:582-583)."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR9"
+     ],
+     "what": "gpu-run Phase 5 marks the six-verdict priority order as the loop/train/cpu rule, adds that a service piece is judged by its port and never reads done or slowed (jobs/registry.py:680-691, dispatch at :854-855), and that an unmatched live session appears as its own line with the verdict orphan (jobs/registry.py:819)."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR6",
+      "pipeline-review-skills:W6-L16-3"
+     ],
+     "what": "gpu-run Phase 6a: `table` prints the backbone x method x risk table, one group per (setting, debug flag) pair, a sweep child's own name and never its parent (eval/method_table.py:89, docstring :78-81; run.py:39), citing the errata's 5.5 / 8.6 ruling (contract-errata.md:179) in place of the superseded contracts 8.6 line."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR5"
+     ],
+     "what": "gpu-run Phase 6b: the retry bullet is split by stage. train really starts fresh; sample and inject keep their per-pair files under records/, which _clear_continue_markers never deletes (run.py:693-707), so a complete directory is re-certified through _finalize_pair_stage (run.py:1789-1814) rather than sampled again. run.py is unchanged."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR2"
+     ],
+     "what": "gpu-run Phase 6b states that kill, refire and retry key the real run and parse no --debug (run.py:641-656, :660, :709-715), so none of them can reach a Phase 3 smoke — kill prints `ended []` — and gives the by-hand ending: ssh <host> tmux kill-session -t <session> per piece, service pieces included, from the smoke's ls --debug line, then run.py sync."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR10"
+     ],
+     "what": "gpu-run Phase 2 says the dirty-tree gate guards Phase 4's walk and Phase 6b's refire and retry, which run.py --help also lists with --allow-dirty (run.py:683; run.py:719 -> run.py:1846; jobs/launch.py:172-174), and that both are committed first because a refire re-freezes _commit (run.py:687). The flag is deliberately not added to the two Phase 6b command lines; each bullet carries the gate clause instead."
+    },
+    {
+     "ids": [
+      "gpu-run-skill:GR7"
+     ],
+     "what": "gpu-run Phase 6a adds that the wrap-up call is the launch command: an incomplete sample or inject stage with no live work piece relaunches on cards and a completed stage lets the walk continue into the next stage (run.py:1816-1858), and the hard rule to return it as BLOCKED holds there too."
+    },
+    {
+     "ids": [
+      "pipeline-review-skills:W6-L16-4"
+     ],
+     "what": "probe-pipeline point 3: the gate roster now names the generator eval's three gates (eval/utils/probe_eval.py:587-589 done.json of the referenced classifier eval, :591-594 eval.risk against its risk_targets, :602-605 shared build key) in place of the single shared-build-key phrase, and adds the dirty-tree gate the walk takes inside the lock (run.py:1846)."
+    },
+    {
+     "ids": [
+      "pipeline-review-skills:W6-L16-7"
+     ],
+     "what": "probe-pipeline description: dropped the false universal that each of the four extension kinds is registered in experimental_settings/schema.py. A probe backbone has no axis (schema.py:178-189), run.py:1082-1090 expands {backbone} over the model table's role: probe rows, README.md:358-360 recipe 6 names no schema edit. It now says a new axis value an extension brings is registered before any setting may use it, matching body point 6."
+    },
+    {
+     "ids": [
+      "pipeline-review-skills:W6-L16-5"
+     ],
+     "what": "repo-review point 2 and the description: the third read pointed at 'the contracts section its annotation line cites', and no annotation line cites one (contracts 0.1's five-line format; README.md:59-63; only README.md:81 of 43 entries mentions a contracts section, as a rule name). Both now name the part or section whose heading carries the file's own path (Parts 4, 5, 8; Part 1's format sections; Part 7's two service sections), else the part covering the mechanism, and say contracts 0.2 is what README section 2 is reproduced from (README.md:46) and so is not that target."
+    },
+    {
+     "ids": [
+      "pipeline-review-skills:W6-L16-6"
+     ],
+     "what": "repo-review point 4: the new-file rule anchored on the 2026-09-14 tree document, which is stale in the ways the errata records (contract-errata.md:181, :183 — 34 files, the three per-method eval files, the old agent/ names). It now anchors on the tree as README.md section 2 spells it, which is the list run.py selfcheck check 1 enforces (_check_1 at run.py:798-806, fed by run.py:1427)."
+    },
+    {
+     "ids": [
+      "rereview-skills-r1:P1"
+     ],
+     "what": "gpu-run SKILL.md Phase 4 (now lines 100-109) no longer states one failure shape as universal. Verified on this base: launch() leaves through sys.exit(<string>) — which writes to stderr and exits 1 — at jobs/launch.py:743 (launch gate), :779/:795/:820 (_no_cards_message, built at :558-563), :672 (endpoint file never appeared), plus the Phase 2 dirty-tree refusal at :174; registry.append_start is at jobs/launch.py:857, after all of them, so those paths leave no start row, run.py:1865-1869 (the only launch_failed writer) is never reached and neither the ls line nor <run_dir>/log/<piece index>.txt exists. The alive-check/service-check shape is real (jobs/launch.py:878-908 tears the service pieces down and returns a non-\"up\" outcome; run.py:1871 is the success print; the piece log path is jobs/launch.py:758). The paragraph now names the two shapes separately: a jobs/launch.py refusal prints its own line and exits 1 with nothing in the registry, and a piece failing its alive check prints nothing further, exits 0, tears the service pieces down and appends launch_failed."
+    },
+    {
+     "ids": [
+      "rereview-skills-r1:P2"
+     ],
+     "what": "gpu-run SKILL.md Phase 6b (now lines 208-217) writes both branches instead of asserting `ended []`. registry.kill returns [] only when the folded ledger holds no start row for that run_id (jobs/registry.py:1012-1014); every other piece path ends the recorded session (jobs/registry.py:1031-1037). With a real run at that key, cmd_kill (run.py:641-657) ends its pieces and appends its killed finish row (run.py:651-655), cmd_refire (run.py:660-690) restarts one of its pieces, and cmd_retry (run.py:709-720) clears that run's markers (_clear_continue_markers, run.py:693-707) and launches it again. The bullet now says the real run at that key is what all three act on, and that with the smoke as the only run of that setting and stage kill prints `ended []` and stops nothing; the by-hand smoke ending is unchanged."
+    },
+    {
+     "ids": [
+      "skills-r2:GR4-endpoint-shape-false",
+      "skills-r2:GR4-two-shapes-excludes-service-check"
+     ],
+     "what": "gpu-run SKILL.md Phase 4 rewritten from \"two shapes\" to \"three shapes\" (/home/y-guo/reproduce/new1/.claude/skills/gpu-run/SKILL.md:100-115 on the new head). (a) \"a service endpoint file that never appeared\" is out of the pre-start-row refusal list and has its own clause: _wait_for_endpoint (jobs/launch.py:664-672, sys.exit at :672) is called only at jobs/launch.py:894, after registry.append_start at :857 with status \"launching\" (:855), after meta.json is written (:864-868), after the lock block ends (:868), after _ensure_log_dir (:871) and after the service pieces start (:885-886) and pass their alive check (:887-890); unlike jobs/launch.py:878, :889, :900 and :907 it calls no teardown_services, so the skill now says the start row is written, the ls line and piece logs exist, and the live service pieces are ended with Phase 6b's kill (registry.kill reads the pieces from meta.json, jobs/registry.py:1003-1021). (b) The quiet shape now names the inject run's probe-service check client as the one writer to the terminal on that path: jobs/launch.py:895-898 runs it with subprocess.run(..., cwd=...) and no capture, models/probe_models/service.py:212/220/226/230/242/253/254/261 print the check: lines, jobs/launch.py:899-901 tears down and returns \"service_check\", and run.py:1865-1870 writes the same launch_failed finish row and returns \"stop\" with no print (run.py:1871 is the success branch)."
+    },
+    {
+     "ids": [
+      "skills-r2:W6-L16-5-contracts-0.2-equivalence"
+     ],
+     "what": "repo-review SKILL.md point 2 (/home/y-guo/reproduce/new1/.claude/skills/repo-review/SKILL.md:34-39 on the new head): \"and holds nothing past them\" replaced with \"and it still spells the pre-2026-09-18 tree (eval/methods/, the old agent/ names), so it adds nothing to the annotation lines already read in README.md\". Verified: contracts 0.2 runs from notes/plans/2026-09-17-contracts.md:119 (## 0.2 The tree) to :641 (## 0.3 The count at 642) and its annotation lines still name eval/methods/cgen.py, eval/methods/cparam.py, agent/loop.py, agent/generate.py and agent/inject.py; README.md section 2 (README.md:44-322) names none of them (eval/utils/probe_eval.py at README.md:278, agent/run_tasks.py and agent/step_with_probe.py at README.md:108); README.md:46-47 says its copy is reconciled against the lines each ticket landed and against the errata; .scratch/from-zero/contract-errata.md:181 and :183 record 0.2's tree as deliberately not rewritten. The conclusion (not the section to read here) is unchanged."
+    }
+   ],
+   "declined": [],
+   "rounds": [
+    {
+     "round": 1,
+     "problems": [
+      {
+       "id": "rereview-skills-r1:P1",
+       "severity": "important",
+       "detail": "New false statements introduced by the GR4 fix. .claude/skills/gpu-run/SKILL.md:100-105 now says: \"The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and the call exits 0 either way. A launch that fails prints no such line — often nothing at all, since the probe service's `check` client is the only launch step that writes to the terminal — tears the run's service pieces down and appends a `launch_failed` finish row. Read Phase 5's `ls` line for that row...\". Three of those claims are false for jobs/launch.py's own refusal paths, which are the common way a launch fails.\n\n(a) `jobs/launch.launch` leaves the process through `sys.exit(<string>)` at jobs/launch.py:743 (the launch gate refusal), :779, :795 and :820 (`_no_cards_message`, jobs/launch.py:558-563) and :672 (the endpoint file did not appear). `sys.exit` with a string writes that string to stderr and exits 1, so the call neither exits 0 nor prints nothing, and the probe service's `check` client (jobs/launch.py:895-899) is not the only launch step that writes to the terminal. The dirty-tree refusal the skill itself describes in Phase 2 is another one (jobs/launch.py:174).\n\n(b) Worse, `registry.append_start(start_row)` is at jobs/launch.py:857, after the piece-placement loop that holds the three `_no_cards_message` exits (:779, :795, :820) and after the gate refusal (:743). On those four paths there is no start row at all, and run.py:1865-1869 (the only place a `launch_failed` row is written) is never reached because `launch.launch` never returns. So for the most common launch failure — no host has enough free cards — nothing appears in `run.py ls`, there is no `launch_failed` row, and `<run_dir>/log/<piece index>.txt` does not exist either. An operator following the new paragraph looks in two places that are both empty and has already been told to ignore the exit code, while the actual diagnosis was printed on stderr.\n\nThe `outcome != \"up\"` case the paragraph describes (run.py:1865-1871, reached only after the start row exists) is real, but it is one branch of the failure set, not the whole of it. Verified by reading jobs/launch.py and run.py on the fix branch; no launch was run.",
+       "fix": "Rewrite .claude/skills/gpu-run/SKILL.md:100-105 to split the two failure shapes instead of stating one as universal. Something like: \"`run.py: launched <run_id>; monitor with ...` is the only success signal. A launch can fail in two shapes. `jobs/launch.py` refuses before the start row is written — the launch gate, a host with too few free cards, an endpoint file that never appeared — and each of those prints its own `jobs/launch.py: ...` line and exits 1, leaving no registry row and nothing in `ls`; read that line. A piece that starts and then fails its alive check is the silent shape: the call prints nothing more and exits 0, the run's service pieces are torn down and a `launch_failed` finish row is appended. Read Phase 5's `ls` line for that row and `<run_dir>/log/<piece index>.txt` for why the piece died.\" (Citations: jobs/launch.py:743, :779/:795/:820, :672, :857; run.py:1865-1871; jobs/launch.py:758 for the log path.)"
+      },
+      {
+       "id": "rereview-skills-r1:P2",
+       "severity": "minor",
+       "detail": "The GR2 fix drops the branch the verifier's approved wording required. .claude/skills/gpu-run/SKILL.md:204-209 reads \"All three key the real run and none of them parses `--debug` ... so none of them can reach a Phase 3 smoke — `kill` on a smoke prints `ended []` and stops nothing while the smoke keeps its cards.\" The verifier-approved sentence was \"leaving it off either ends nothing (`ended []`) or touches the real run\"; the skill asserts the first outcome unconditionally.\n\n`registry.kill` returns [] only when the folded ledger has no entry for that run_id (jobs/registry.py:1012-1014). When a real run of the same setting and stage is open — the case the verifier called the worse one — `cmd_kill` (run.py:646-656) keys that real run, `registry.kill` ends its pieces and run.py:651-655 appends a `killed` finish row for it, so `kill` on a smoke ends the real run rather than printing `ended []`. `retry` (run.py:709-720) likewise runs `_clear_continue_markers` (run.py:693-707) on the real run's directory. The preceding clause \"leaving it off names the real run\" states the mechanism correctly, so a careful reader is warned, but the illustration that follows contradicts it and is the sentence an operator will act on. Read off the code; kill/refire/retry were not executed.",
+       "fix": "Restore the second branch at .claude/skills/gpu-run/SKILL.md:206-207, e.g. \"— with no real run at that key `kill` prints `ended []` and stops nothing while the smoke keeps its cards, and with a real run open at that key all three act on that real run instead (`kill` writes its `killed` row, `retry` clears its markers).\" (Citations: jobs/registry.py:1012-1014; run.py:646-656, :693-707, :709-720.)"
+      }
+     ],
+     "cannotVerify": [
+      "kill / refire / retry / the stage walk were never executed, per the hard rules; their behaviour above is read off run.py and jobs/registry.py on the fix branch only.",
+      "The rendered-markdown behaviour of the Phase 6b command spans, where an inline code span wraps across two source lines (.claude/skills/gpu-run/SKILL.md:184-185, :187-188, :194-195), was not checked in a renderer; the text parses as a valid command line once the newline folds to a space."
+     ]
+    },
+    {
+     "round": 2,
+     "problems": [
+      {
+       "id": "skills-r2:GR4-endpoint-shape-false",
+       "severity": "important",
+       "detail": "The GR4 fix (`.claude/skills/gpu-run/SKILL.md:100-109`) splits a failed launch into two shapes and puts \"a service endpoint file that never appeared\" in the first one: \"`jobs/launch.py` refuses before the start row is written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards, a service endpoint file that never appeared — and each of those refusals prints its own `jobs/launch.py: ...` line and exits 1, leaving no registry row, nothing in Phase 5's `ls` and no piece log\". Three of the four items are right; the endpoint item is false on every clause, and it is the one case where the skill's advice leaves cards held.\n\nRead off the code on this base: `_wait_for_endpoint` (jobs/launch.py:664-672, `sys.exit(f\"jobs/launch.py: {path} did not appear within launch_timeout_s\")`) is called at jobs/launch.py:894, inside `launch()` for `stage == \"inject\"` only. By then `registry.append_start(start_row)` has already run at jobs/launch.py:857 with `\"status\": \"launching\"` (jobs/launch.py:855), the lock has been released (the `with registry.lock():` block ends at jobs/launch.py:868), the log directory has been made (`_ensure_log_dir`, jobs/launch.py:871), the service pieces have been started (jobs/launch.py:885-887) and their alive check has passed (jobs/launch.py:887-890). So the start row exists, the run shows in `run.py ls` as an open row, `<run_dir>/log/<piece index>.txt` exists for each started service piece, and — unlike every other failure path in `launch()`, which calls `teardown_services` before returning (jobs/launch.py:878, 889, 900, 907) — this `sys.exit` tears nothing down: the agent and probe services stay alive on their cards. A second launch of the same key is then refused by the launch gate while the row is younger than `launch_timeout_s` and no piece has beaten (jobs/launch.py:251-265).\n\nAn operator following the paragraph reads the printed `jobs/launch.py: ... did not appear` line, believes nothing was recorded and nothing started, and leaves live vLLM and probe services holding cards plus an open `launching` row behind.",
+       "fix": "Take \"a service endpoint file that never appeared\" out of the pre-start-row list and give it its own clause, for example after the quiet shape: \"An `inject` launch whose probe service never writes its endpoint file is the third shape: the start row is already written (jobs/launch.py:857) and the service pieces are already up, so `jobs/launch.py: <path> did not appear within launch_timeout_s` exits 1 leaving an open `launching` row in Phase 5's `ls`, the piece logs under `<run_dir>/log/`, and the service pieces alive on their cards — end them with Phase 6b's `kill`.\" Leave the other three items where they are; they do precede the start row."
+      },
+      {
+       "id": "skills-r2:GR4-two-shapes-excludes-service-check",
+       "severity": "minor",
+       "detail": "The same new paragraph asserts \"a failed launch takes one of two shapes\" and describes the non-refusal shape as \"A piece that starts and then fails its alive check is the quiet shape: the call prints nothing further and exits 0\" (.claude/skills/gpu-run/SKILL.md:101, :105-107). A third shape exists and it is neither quiet nor a `jobs/launch.py:` refusal: for `inject`, jobs/launch.py:895-898 runs the probe service's `check` client with `subprocess.run([...], cwd=str(_repo_root()))` and no capture, so its own diagnosis lines reach the terminal (models/probe_models/service.py:212, 220, 226, 230, 235, 242, 253, 254, 261, all `print(f\"check: ...\")`); on `rc != 0` it tears the services down and returns `\"service_check\"` (jobs/launch.py:899-901), which run.py:1865-1870 turns into the same `launch_failed` finish row and exit 0. The verifier-approved fix text named exactly this case (\"often nothing at all, since only the probe service's `check` client writes to the terminal\"); the rewrite dropped it and replaced it with a two-way split that misplaces it.",
+       "fix": "Replace \"takes one of two shapes\" with wording that covers the check client, e.g. keep the two shapes but add to the quiet one: \"— an `inject` run's probe-service `check` client is the one thing that writes to the terminal on this path (its `check: ...` lines are the diagnosis), everything else prints nothing further.\""
+      },
+      {
+       "id": "skills-r2:W6-L16-5-contracts-0.2-equivalence",
+       "severity": "minor",
+       "detail": "The rewritten repo-review point 2 ends: \"Contracts 0.2 is where `README.md` section 2's annotation lines are reproduced from and holds nothing past them, so it is not the section to read here\" (.claude/skills/repo-review/SKILL.md:34-36). The conclusion is right, the reason is not: contracts 0.2 is not a copy of README section 2, it is the stale predecessor of it. Within contracts 0.2 (notes/plans/2026-09-17-contracts.md:119-641) the annotation lines still name `eval/methods/cgen.py` and `eval/methods/cparam.py` and the old `agent/loop.py`, `agent/generate.py`, `agent/inject.py`, and the block also carries the non-code directory entries `notebooks/`, `figures/`, `external/`, none of which appears in README section 2 (README.md:44-322). README.md:46 itself says its copy is \"reconciled against the lines each ticket landed and against `.scratch/from-zero/contract-errata.md`\", and errata:181 records 0.2's tree as deliberately not rewritten. So \"holds nothing past them\" tells a reviewer the two agree, while point 4 of the same file (rewritten in this same round) exists precisely because that tree listing is stale.",
+       "fix": "Replace \"and holds nothing past them\" with what is true, e.g. \"and still spells the pre-2026-09-18 tree (`eval/methods/`, the old `agent/` names), so it adds nothing to the annotation lines the reviewer has already read in `README.md` and is not the section to read here.\""
+      }
+     ],
+     "cannotVerify": [
+      "Behaviour of a real failed launch was not observed: no GPU process was started and no run was launched, so every statement above about `launch()`, teardown and the registry rows is read off the code on this base (jobs/launch.py, run.py), not executed.",
+      "Ticket 16's acceptance blocks W1, W2, W3, W4, W5, C7 and C8 were all run from the extracted branch tree with PR=/home/y-guo/reproduce/new1/external/probe-env/bin/python and all pass: W1 four ok- lines, 42 lines, first line `Surveyed on: 2026-07-29 (measured, not hearsay).`, 1, 0; W2 ok-exists, 2, 3, full front matter with the Chinese trigger clause; W3 each of the four places counted 1; W4 the three descriptions end in their unchanged Chinese trigger clauses; W5 `W5 ok` exit 0; C7 `exempt range: [('.claude/skills/gpu-run/SKILL.md', 230, 252)]`, `C7 ok` exit 0; C8 `C8 ok` exit 0 with named: free, kill, ls, refire, retry, selfcheck, sync, table, train_probe, where. The heading `## What is gone` is unchanged and `python3 run.py sampler` inside it (SKILL.md:243) is untouched.",
+      "Every command line in the three skills parses against run.py's argument handling, checked without launching anything: `free` (run.py:740), `ls [workflow] [--debug]` (run.py:587-589), `where <workflow> <setting> <stage>` (run.py:609-614), `table [workflow] [--debug]` (run.py:723-734), `kill <workflow> <setting> <stage>` (run.py:641-644), `refire <workflow> <setting> <stage> --piece i` (run.py:660-675), `retry <workflow> <setting> <stage>` (run.py:709-714), `sync` (run.py:746), and the walk shape (run.py:1908-1919, usage line printed by `run.py --help`). The nine copy-paste lines now carry /home/y-guo/reproduce/new1/external/probe-env/bin/python (a symlink to cpython 3.11.15), which is what constants/path_datasets.yaml:7 maps `probe:` to and what README.md:63 gives run.py (`venv: probe`).",
+      "No edit outside scope: `git diff --stat f810f9f fix/2026-09-20-wave6-skills` touches only .claude/skills/gpu-run/SKILL.md, .claude/skills/probe-pipeline/SKILL.md and .claude/skills/repo-review/SKILL.md, and the same diff restricted to everything but .claude/skills is empty. No code change was made, so no special-case wrapper was introduced; the changed sentences state their conditions affirmatively (no negated negatives).",
+      "The other fixes reproduce as claimed: GR1/W6-L16-1 (nine lines plus the fixed-paths rule), GR2 (run.py:641-644, :660-675, :709-714 all reject `--debug` as a usage error and key the non-debug run; registry.py:1012-1014 returns [] so `ended []`; registry.py:1041-1080 sync writes the missing finish row; run.py:547-558 prints host and session per piece), GR3 (run.py:476-477, :383-408, :582-583), GR5 (run.py:693-707 clears done.json/consumed.json plus the four train markers; data/trajectory_record.py:108/228 records/; run.py:1588-1589 and :1593-1607 re-certify through _finalize_pair_stage), GR6/W6-L16-3 (eval/method_table.py:87-89 groups by (setting, debug), errata 5.5/8.6 ruling), GR7 (run.py:1816-1832 -> :1834-1858; _walk_one run.py:1506-1509), GR9 (jobs/registry.py:658-677 vs :680-692, :794-838 orphan row), GR10 (run.py:683, :710-719 -> :1846; jobs/launch.py:172-174; help lists --allow-dirty on both), W6-L16-4 (eval/utils/probe_eval.py:587-589, :591-594, :602-605; run.py:1846), W6-L16-6 (errata:181 fold on 2026-09-18 of ctool/cgen/cparam into eval/utils/probe_eval.py, errata agent/ renames; run.py:797-806 check 1 enforces the README list), W6-L16-7 (experimental_settings/schema.py:178-189 has no backbone axis; run.py:1082-1090 expands {backbone} over models/table.yaml role: probe)."
+     ]
+    }
+   ],
+   "ownerQuestions": [
+    "Round 1 already raised two items that stand: README.md:19 still spells the launch command `python3 run.py <workflow> ...`, which the system python3 cannot run (it is wave 5's line, outside this area's scope), and `kill` / `refire` / `retry` cannot address a --debug run at all, which is a change to contracts 8.6's pinned argv. Do you want either taken up as its own item?",
+    "The endpoint-timeout path (jobs/launch.py:672) is the one failure in launch() that leaves the service pieces running and an open `launching` registry row; the skill now tells the operator to clean it up with `run.py kill`. Should jobs/launch.py instead call teardown_services before that sys.exit, the way its four other failure paths do? That is a code change outside this area's scope, so nothing was changed there."
+   ]
+  }
+ ],
+ "final_rereview_of_round2": [
+  {
+   "area": "selfcheck",
+   "problems": [
+    {
+     "id": "rr-selfcheck-03-empty-prefix-passes-any-fstring",
+     "severity": "minor",
+     "detail": "Verification summary first, since most of the round is clean. rr2-selfcheck-01 is really fixed: in a scratch copy, recipe 6 followed literally (models/probe_models/qwen2.py with column-zero LORA_TARGETS/VERSION/VERSION_HISTORY plus its five README lines) fires `check 2: models/probe_models/__init__.py used by: package marker names [...base.py, qwen.py, service.py], directory models/probe_models holds [...qwen2.py...]`, and widening the `(as their package)` line as the new preamble sentence instructs clears it; the same for recipe 7 with models/agent_models/llama.py. With the recipe finished to the letter (the models/table.yaml row and the constants/path_models.yaml row the recipe also names) both copies print `selfcheck: 32 python files, 0 problems`, rc=0. rr2-selfcheck-02 is really fixed: a copy carrying the pre-fix helper plus a root-level by-name annotation (README's run.py `used by: eval/method_table.py (by name, inside the table subcommand)` and a correct `importlib.import_module(f\"run{suffix}\")` in eval/method_table.py) fires the false positive `check 2: run.py used by: by-name entry eval/method_table.py holds no importlib.import_module call naming .<module>`; the same copy at f40d453 prints 0 problems, and retargeting that call to `import_module(\"os\")` fires again. The by-name rule fires in both directions at all three dynamic-import sites: retargeting `data/environments/__init__.py:84`, `models/__init__.py:70` and `models/probe_models/base.py:198` to `f\"os.path.{...}\"` fires the matching check-2 line each time (the base.py copy fires twice, once for the `imports:` placeholder line and once for qwen.py's `used by:` line); dropping `(by name)`, pointing the fragment at a non-importer, and pointing it at a non-existent file each fire their own line; an `imports:` by-name fragment naming a real file (base.py -> qwen.py) stays green and the same line pointed at data/probe_input.py fires. The real tree prints `selfcheck: 31 python files, 0 problems`, rc=0, both from /home/y-guo/reproduce/new1 and from /tmp with the absolute run.py path. a40659b's two prose claims also hold (check 10 at run.py:1552-1553 skips an empty `venv:` in silence and leaves the report to check 1; check 2 at run.py:1071 reports a missing imports:/used by: line by name; rewriting the two `train/methods/{ctool,cgen,cparam}.py` brace lists into three fragments stays at 0 problems). The one real defect is the blind spot f40d453 opened, which the fix record states but does not close. `_has_dynamic_import_of` (run.py:970-973) tests the f-string arm with `first.value.startswith(prefix)`, and since f40d453 a repo-root target's prefix is the empty string, which every string starts with. So for a root-level by-name claim the f-string arm passes any `import_module` whose first f-string piece is a string constant, no matter which module it names. Evidence: the same scratch copy as above, with eval/method_table.py holding `importlib.import_module(f\"data.training_data{suffix}\")` while README claims it imports run.py by name, prints `selfcheck: 31 python files, 0 problems`, rc=0. Before f40d453 the same site was a false positive instead, so the round traded one for the other. It is latent today (run.py is the only repo-root .py file and no annotation names it by name), which is why this is minor, not important.",
+     "fix": "run.py:972, make the required leading text the module's own dotted name when there is no package part: `first.value.startswith(prefix or exact)`. The call site at run.py:1026 already passes `_module_name(imported)`, which is `run` for a repo-root file, and a target inside a package keeps a non-empty prefix, so nothing else changes. Verified in scratch copies: the real tree stays `31 python files, 0 problems`; the copy whose method_table.py holds the correct `f\"run{suffix}\"` stays at 0 problems; the copy holding `f\"data.training_data{suffix}\"` now fires `check 2: run.py used by: by-name entry eval/method_table.py holds no importlib.import_module call naming <module>`. The message's `{prefix}<module>` tail reads bare `<module>` for a root target and would be clearer as the module's name, which is the same one-expression change at run.py:1029."
+    }
+   ]
+  },
+  {
+   "area": "skills",
+   "problems": [
+    {
+     "id": "skills-r3:GR4-third-shape-trigger-wrong",
+     "severity": "important",
+     "detail": "`.claude/skills/gpu-run/SKILL.md:110-115` (added by c17d75c) says the third launch-failure shape is \"An `inject` launch whose probe service never writes its endpoint file\", and tells the operator that shape leaves an open `launching` row, the piece logs and \"the service pieces alive on their cards — end them with Phase 6b's `kill`\". That trigger belongs to the second (quiet) shape, not the third. `launch()` runs `alive_check(service_pieces, window_s=launch_timeout_s, poll_s=5)` at `jobs/launch.py:887`, and a `service` piece passes that check only when `(run_dir / p[\"endpoint_file\"]).exists()` **and** its port answers (`jobs/launch.py:432-433`). So a probe service that never writes `service_probe_0.json` fails there: `jobs/launch.py:888-890` calls `teardown_services(run_dir)` and returns `\"alive_check\"`, `run.py:2040-2046` appends the `launch_failed` finish row and `return \"stop\"` with the call exiting 0 — services torn down, no `launching` row, nothing for `kill` to end. `_wait_for_endpoint` (`jobs/launch.py:664-672`) is reached only at `jobs/launch.py:894`, i.e. after that check already proved the file exists, so its `sys.exit(f\"jobs/launch.py: {path} did not appear within launch_timeout_s\")` can fire only when the already-existing file never parses into a dict with a truthy `base_url` (`jobs/launch.py:669`) — and `models/probe_models/service.py:53-62` writes `base_url` into that file atomically (tmp + replace), so in normal operation the third shape is unreachable. An operator whose probe service failed to come up therefore follows the skill to a live-cards/`kill` diagnosis that is the opposite of what happened.",
+     "fix": "Rewrite the third shape's trigger clause in `.claude/skills/gpu-run/SKILL.md:110-112` to the condition that actually reaches `jobs/launch.py:672` — the probe service's endpoint file exists and its port answers, but the file never carries a `base_url` — and add the \"never writes its endpoint file\" case to the quiet shape, where the service alive check at `jobs/launch.py:887` sends it. Leave the rest of the third-shape sentence (start row written, services up, open `launching` row, `kill`) as it is; it is correct for that condition."
+    },
+    {
+     "id": "skills-r3:retry-on-a-live-run-does-not-launch",
+     "severity": "important",
+     "detail": "`.claude/skills/gpu-run/SKILL.md:216-218` (added by 687b685) says that when the setting and stage carry a real run, \"all three act on that real run: ... `retry` clears its markers and launches it again.\" `retry` does not launch a run whose pieces are still live, and it clears the markers before it finds that out. `cmd_retry` (`run.py:731-741`) calls `_clear_continue_markers(stage, run_dir)` at `run.py:739` unconditionally — before the dirty-tree gate, before the launch gate, before any liveness test — and `_clear_continue_markers` (`run.py:693-707`) unlinks `done.json` and `consumed.json`, and for `train` also `train_log.jsonl`, `train_done.json`, `align_check.json` and the whole `last/` directory (`shutil.rmtree`). Only then does `run.py:740` call `_stage_step`. For `sample`/`inject` with a live work piece, `_stage_step` prints `run.py: <run_dir> has a live piece; launching nothing` and returns `\"stop\"` (`run.py:1992-2007`) — no launch. For `train` there is no live-piece guard at all (the guard at `run.py:1992` is `if stage in (\"sample\", \"inject\")`), so the walk reaches `launch.launch` and the launch gate refuses on the live session (`jobs/launch.py:239-240`, `:743`) — again no launch, after `last/` and `train_log.jsonl` are already gone. The sentence invites `retry` at a running train job and costs it its checkpoint directory and its log.",
+     "fix": "In `.claude/skills/gpu-run/SKILL.md:216-218`, state what `retry` does against a live run instead of \"launches it again\": it clears the markers first and unconditionally (`run.py:739`), then does not launch — `sample`/`inject` stop with `has a live piece; launching nothing`, `train` is refused by the launch gate — so `kill` the run before `retry`. The same sentence's `refire` clause needs the same qualifier: `launch.refire` refuses while the piece's session is alive (`jobs/launch.py:949-951`), which the bullet above already states."
+    },
+    {
+     "id": "skills-r3:quiet-shape-attributes-check-lines-to-the-wrong-outcome",
+     "severity": "minor",
+     "detail": "`.claude/skills/gpu-run/SKILL.md:105-109` (rewritten by c17d75c) makes one sentence out of two different outcomes: it names the shape \"A piece that starts and then fails its alive check\", then says \"an `inject` run's probe-service `check` client is the one thing that writes to the terminal on this path, and its `check: ...` lines are the diagnosis\". On a real alive-check failure the `check` client never runs and nothing is printed: the service alive check is at `jobs/launch.py:887` and its failure returns at `:888-890`, while the `check` client is started at `jobs/launch.py:895-898`, only after that check passed. The `check: ...` lines (`models/probe_models/service.py:212-261`) belong to the separate `service_check` outcome (`jobs/launch.py:899-901`), which is not an alive-check failure although it ends the same way (teardown, exit 0, `launch_failed` row). A reader hitting the alive-check failure is sent looking for terminal output that does not exist; `jobs/launch.py` has exactly one `print`, at `:955`, in `refire`.",
+     "fix": "Split the quiet shape's two outcomes in `.claude/skills/gpu-run/SKILL.md:105-109`: a piece failing its alive check prints nothing at all and is read from `<run_dir>/log/<piece index>.txt`; an `inject` run whose `check` client fails its gate prints its own `check: ...` lines. Both exit 0, tear the service pieces down and append the `launch_failed` finish row."
+    },
+    {
+     "id": "skills-r3:repo-review-names-run-py-with-no-interpreter",
+     "severity": "minor",
+     "detail": "`.claude/skills/repo-review/SKILL.md` names `run.py selfcheck` three times (`:5`, `:39`, `:52`) and makes it the skill's first, blocking step (\"stops if that is not green\"), but the file spells no interpreter anywhere: `grep -c \"probe-env/bin/python\" .claude/skills/repo-review/SKILL.md` prints 0, and there is no fenced command block in the file. The GR1 fix gave `gpu-run/SKILL.md` an absolute `/home/y-guo/reproduce/new1/external/probe-env/bin/python` on all ten command lines plus a fixed-paths note that \"the system `python3` cannot import its dependencies\" (`:23-27`), but nothing in `repo-review` points at that note, and repo-review does not reference the gpu-run skill. An agent that types the obvious `python3 run.py selfcheck` gets `ModuleNotFoundError: No module named 'polars'` (measured: `run.py:19` -> `data/__init__.py:8`) and, reading its own instruction, stops the review. (`probe-pipeline/SKILL.md` has the same gap at `:22`, `:58`, `:69`, but it delegates every launch to gpu-run; `.claude/skills/handoff/SKILL.md:45` and `.claude/skills/ticket-run/prompts/implementer.md:22` also carry `python3 run.py ...`, and both are out of ticket 16's scope note — ticket 17 rewrites them.)",
+     "fix": "Give `.claude/skills/repo-review/SKILL.md` the command once as a fenced block with the absolute interpreter, `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py selfcheck`, at point 2 where the step is ordered, and let the three prose mentions keep saying `run.py selfcheck`."
+    }
+   ]
+  }
+ ],
+ "round3": {
+  "branch": "fix/2026-09-20-wave6-r3",
+  "head": "cd980a77cebea3196f5725c1870dc3c3b8fe7918",
+  "fixed": [
+   "rr-selfcheck-03-empty-prefix-passes-any-fstring — run.py:952 _has_dynamic_import_of now computes `lead = prefix or exact` (run.py:963) and the f-string arm tests `first.value.startswith(lead)` (run.py:976). A repo-root target's package prefix is the empty string (_dynamic_import_prefix, run.py:941-949), which every string starts with; the by-name call site at run.py:1030 already passes `_module_name(imported)`, so a root target now requires its own dotted name while a target inside a package keeps its non-empty package prefix. The placeholder call site (run.py:1009) passes no `exact` and a non-empty prefix, so it is untouched. Commit 5f455eb.",
+   "skills-r3:GR4-third-shape-trigger-wrong — .claude/skills/gpu-run/SKILL.md Phase 4. A probe service that never writes its endpoint file fails the service alive check at jobs/launch.py:887 (a `service` piece passes only when `(run_dir / p[\"endpoint_file\"]).exists()` and `_port_answers(...)`, jobs/launch.py:432-433), which tears the services down and returns \"alive_check\" (jobs/launch.py:888-890), with run.py:2044-2050 appending the `launch_failed` row and the call exiting 0 — nothing left for `kill`. That case moved into the quiet shape; the shape that reaches `_wait_for_endpoint`'s sys.exit (jobs/launch.py:672, called at :894 after the file is known to exist) now carries its real trigger: the endpoint file exists and the port answers while the file never carries a `base_url` (jobs/launch.py:669). Commit cd980a7.",
+   "skills-r3:quiet-shape-attributes-check-lines-to-the-wrong-outcome — Phase 4 now names four shapes instead of three. An alive-check failure prints nothing at all (jobs/launch.py holds one print, at :955, inside refire) and is read from <run_dir>/log/<piece index>.txt; the `check: ...` lines (models/probe_models/service.py:212-261) belong to the separate `service_check` outcome (jobs/launch.py:899-901), whose client starts at :895-898 only after the alive check at :887 has passed. Both end with teardown, exit 0 and a `launch_failed` row, and the text says so. Commit cd980a7.",
+   "skills-r3:retry-on-a-live-run-does-not-launch — .claude/skills/gpu-run/SKILL.md Phase 6b's last bullet now says `retry` clears the markers first and unconditionally (cmd_retry calls _clear_continue_markers at run.py:739, before the dirty-tree gate, before the launch gate and before any liveness test), names what it deletes (done.json, consumed.json, and for train also last/, train_log.jsonl, train_done.json, align_check.json — run.py:714-727), and states that against a live run it launches nothing: sample/inject stop at `run.py: <run_dir> has a live piece; launching nothing` (run.py:1996-2012) and train is refused by the launch gate (gate_open_row jobs/launch.py:238-240, exit at :741-743) with last/ and the training log already gone — so `kill` the run and let its pieces end before typing `retry`. The refire clause gained the liveness refusal (jobs/launch.py:950-951). cmd_retry's code was NOT changed; the clearing-before-the-gates order is written up under \"For the owner\" in post-merge-fix-skills.md. Commit cd980a7.",
+   "skills-r3:repo-review-names-run-py-with-no-interpreter — .claude/skills/repo-review/SKILL.md point 2 now carries the command once as a fenced block, `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py selfcheck`, spelled the way gpu-run/SKILL.md spells its run.py commands, with one sentence giving the reason (the system python3 cannot import run.py's dependencies). The three prose mentions still read `run.py selfcheck`. Commit cd980a7."
+  ],
+  "rereview_problems": [
+   {
+    "id": "rr3-skills-01-third-shape-claims-to-be-the-only-terminal-output",
+    "severity": "minor",
+    "detail": "`.claude/skills/gpu-run/SKILL.md` Phase 4, the third-shape sentence added by cd980a7, says of the `service_check` outcome: \"it ends the same way — teardown, exit 0, `launch_failed` row — and it is the one launch failure that writes to the terminal, so its `check: ...` lines are the diagnosis.\" That absolute claim is contradicted twice inside the same paragraph. The first shape's own sentence says each of those refusals \"prints its own `jobs/launch.py: ...` line and exits 1\" (real: `jobs/launch.py:174` dirty tree, `:743` launch gate, `:553`/`:779`/`:795`/`:820` too few free cards — every one a `sys.exit` with a message, which Python writes to stderr), and the fourth shape's own sentence quotes `jobs/launch.py: <path> did not appear within launch_timeout_s` (`jobs/launch.py:672`). So three of the four shapes write to the terminal, not one. The wording the rewrite replaced carried the scope that made the claim true — the old text read \"the one thing that writes to the terminal **on this path**\" — and the r3 rewrite dropped it while moving the sentence to a different shape. A reader who trusts the sentence literally learns that any `jobs/launch.py:` line on the terminal cannot be a launch failure, which is the opposite of shapes 1 and 4.",
+    "fix": "Restore the scope the sentence lost: in the third-shape sentence of `.claude/skills/gpu-run/SKILL.md` Phase 4, write that it is the one launch failure that ends with exit 0 and still writes to the terminal (or, equally correct, \"the one thing that writes to the terminal on this path\"), so that shapes 1 and 4, which print their own `jobs/launch.py: ...` line and exit 1, stay outside the claim."
+   },
+   {
+    "id": "rr3-selfcheck-02-root-target-failure-message-names-no-module",
+    "severity": "minor",
+    "detail": "The message the newly-biting arm produces names no module. `run.py:1031-1033` builds `f\"check 2: {current_file} {label}: {subject} importlib.import_module call naming {prefix}<module>{tail}\"`, and for a repo-root target `prefix` is the empty string (`_dynamic_import_prefix`, `run.py:941-949`), so the `{prefix}<module>` tail collapses to the literal `<module>`. Measured in a scratch copy of the branch tree: with README giving `run.py` a `used by: eval/method_table.py (by name, inside the table subcommand)` line and `eval/method_table.py` holding `importlib.import_module(f\"data.training_data{suffix}\")`, selfcheck prints `check 2: run.py used by: by-name entry eval/method_table.py holds no importlib.import_module call naming <module>`, rc=1. For a target inside a package the same tail reads `naming models.probe_models.<module>`, where `<module>` correctly stands for any module of that package; for a root target the required text is one exact dotted name (`run`) and the message hides it, so the operator is told to add a call naming a placeholder. The rr-selfcheck-03 fix text called this out and named `run.py:1029` (now `:1033`) as the same one-expression change; commit 5f455eb changed only the test at `run.py:963`/`:976` and left the message. Minor because the fix itself is correct and no annotation in the tree names a repo-root file by name today, so the line is unreachable on the real tree.",
+    "fix": "At `run.py:1033`, make the quoted requirement the text the test actually demands: build the tail from the same value the test uses, e.g. name the module itself when the package prefix is empty — `naming {prefix}<module>` becomes `naming {prefix or _module_name(imported)}` for a root target — so the root-target line reads `... importlib.import_module call naming run` while every package target keeps its present `models.probe_models.<module>` form."
+   }
+  ],
+  "rereview_problems_resolution": "both minors fixed by the main session in the commit after the round-3 merge"
+ },
+ "merged": [
+  "b53726b selfcheck",
+  "81df864 skills",
+  "2ffbbaa round 3"
+ ],
+ "main_session_checks_on_the_final_tree": [
+  "run.py selfcheck from the repo root and from /tmp: 'selfcheck: 31 python files, 0 problems', rc=0",
+  "ticket 14 D3 grep over run.py: 0 hits",
+  "ticket 15 D5, D6, D7 pass",
+  "ticket 16 W1, W2, W3, W5, C7, C8 pass",
+  "tests/test_packed_loss.py (3 tests) and tests/test_registry_concurrent_append.py (1 test) pass when run separately; jobs/runs.jsonl stays at 0 rows",
+  "scratch copy: a wrong root-level by-name import prints 'check 2: run.py used by: by-name entry eval/method_table.py holds no importlib.import_module call naming run', rc=1"
+ ],
+ "open_for_owner": [
+  "run.py holds jobs/runs.jsonl.lock across jobs/launch.launch (both tmux waves, the alive checks, the inject check client), against contracts 8.1 / 8.6 which release it before any tmux session starts; merged ticket 14 code. The gpu-run skill states what the code does.",
+  "run.py retry clears the continue markers first and unconditionally (done.json, consumed.json; for train also last/, train_log.jsonl, train_done.json, align_check.json) before the dirty-tree gate, the launch gate and any liveness test, so retry against a live train run deletes its checkpoint directory and log and then launches nothing; merged ticket 14 code. The gpu-run skill now tells the operator to kill first.",
+  "kill / refire / retry take no --debug and cannot address a --debug run; contracts 8.6 pins their argv.",
+  "run.py prints the monitoring line without --debug on a --debug walk; README.md line 19 spells the launch command with python3, which cannot import run.py's dependencies (both wave 5's lines).",
+  "jobs/launch.py's endpoint-timeout exit (the file exists, the port answers, no base_url) is the one failure path that leaves the service pieces up and an open launching row instead of calling teardown_services.",
+  "tests/test_registry_concurrent_append.py is isolated only when it runs in its own process: run together with tests/test_packed_loss.py in one process (unittest discover) it appends its 160 fixture rows to the real jobs/runs.jsonl, re-renders jobs/RESULTS.md, took 4856 s and failed once here (2026-09-20, main session; the two files were restored to HEAD, which held 0 rows). Two review findings that reported this were refuted by their verifiers as outside wave 6's diff; the behaviour is real. README names only the first test's run command.",
+  "Contracts 0.2's six annotation lines that disagree with the import graph stay as written; README.md is what selfcheck checks (wave-6 precheck, errata).",
+  "FORMATS stays a dict of Format(...) calls read through a keys-only reader; SCHEMA / DEFAULTS / REQUIRED stay annotated non-literal bindings read structurally; the package-marker used-by line is tested by equality with the directory's .py siblings (wave-6 precheck, errata).",
+  "The repo-review skill's Chinese trigger clause is the implementer's wording.",
+  "A repo-root by-name import target is tested by its own module name; no annotation uses that form today."
+ ]
+}
