@@ -825,14 +825,27 @@ def _safe_parse(problems: list[str], check: str, path):
 # --- check 1: the README's file list against the tree -----------------------
 
 
+# Contracts 0.1's five-line format: every .py entry of README section 2 carries these five
+# labels, in this order. Check 1 requires each of them to be there and to carry a value,
+# because the checks that read them -- check 2 reads imports: and used by:, check 10 reads
+# venv: -- lose the file silently when its line is gone, and a line nobody requires rots.
+README_PY_LABELS = ("imports", "used by", "reads", "writes", "venv")
+
+
 def _check_1(entries: dict, tree_files: list[str]) -> list[str]:
     problems = []
     for f in tree_files:
         if f not in entries:
             problems.append(f"check 1: {f} is a .py file in the tree with no README entry")
-    for name in entries:
+    for name, entry in entries.items():
         if not (ROOT / name).exists():
             problems.append(f"check 1: README entry {name!r} names a path that does not exist")
+        if name.endswith(".py"):
+            for label in README_PY_LABELS:
+                if (entry.get(label) or "").strip() == "":
+                    problems.append(
+                        f"check 1: README entry {name!r} carries no {label}: line "
+                        "(contracts 0.1's five-line format)")
     return problems
 
 
@@ -1469,6 +1482,24 @@ def _import_under(interpreter: str, rel_path: str) -> str | None:
     return f"{rel_path}: import under {interpreter} failed: {tail}"
 
 
+# The one README venv: spelling that names an interpreter by the benchmark that brings it
+# rather than by a venvs: key: "the environment's (appworld today)" and its bare form.
+_VENV_ENVIRONMENT_SPELLING = "the environment's"
+
+
+def _venv_names_an_interpreter(venv_value: str, venvs: dict) -> bool:
+    """Whether a README venv: value opens with an interpreter check 10 knows: `any`, a key of constants/path_datasets.yaml's venvs: map, or the environment's own interpreter.
+
+    Check 10 imports a file under every interpreter when its value opens with `any`, so a value
+    it cannot read -- a typo, or a venvs: key that no longer exists -- drops the file out of the
+    check in silence. Requiring the value to name something keeps that from happening.
+    """
+    if venv_value.startswith(_VENV_ENVIRONMENT_SPELLING):
+        return True
+    tokens = venv_value.split()
+    return bool(tokens) and (tokens[0] == "any" or tokens[0] in venvs)
+
+
 def _check_10(entries: dict) -> list[str]:
     problems: list[str] = []
     venvs = _venvs_config()
@@ -1476,6 +1507,13 @@ def _check_10(entries: dict) -> list[str]:
         if not path.endswith(".py"):
             continue
         venv_value = (entry.get("venv") or "").strip()
+        if venv_value == "":
+            continue                     # check 1 reports the missing venv: line
+        if not _venv_names_an_interpreter(venv_value, venvs):
+            problems.append(
+                f"check 10: {path}: venv: {venv_value!r} names no interpreter: expected 'any', "
+                f"one of {sorted(venvs)}, or {_VENV_ENVIRONMENT_SPELLING!r}")
+            continue
         if not venv_value.startswith("any"):
             continue
         for interp in venvs.values():
