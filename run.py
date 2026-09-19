@@ -1020,12 +1020,14 @@ def _check_package_marker(current_file: str, label: str, raw: str) -> list[str]:
 def _check_2(tree_files: list[str], entries: dict) -> list[str]:
     problems: list[str] = []
     imports_map: dict[str, set[str]] = {}
+    unreadable: set[str] = set()
     for f in tree_files:
         try:
             imports_map[f] = _repo_imports(f)
         except SystemExit as ex:
             problems.append(f"check 2: {ex}")
             imports_map[f] = set()
+            unreadable.add(f)
     used_by_map: dict[str, set[str]] = {f: set() for f in tree_files}
     for f, imps in imports_map.items():
         for target in imps:
@@ -1033,6 +1035,8 @@ def _check_2(tree_files: list[str], entries: dict) -> list[str]:
     graphs = {"imports": imports_map, "used by": used_by_map}
 
     for f in tree_files:
+        if f in unreadable:
+            continue       # its own line is already above; its annotation lines say nothing more
         entry = entries.get(f, {})
         for label, graph in graphs.items():
             raw = entry.get(label)
@@ -1274,18 +1278,20 @@ def _check_4() -> list[str]:
     # it would invalidate nothing while its pinned comment block says it invalidates runs. The
     # strict shape then holds for every versioned file (gyb's comment), named or not.
     carriers: set[str] = set()
+    unreadable: set[str] = set()
     for path in _tree_python_files():
         try:
             assigns = _version_assigns(path)
         except SystemExit as ex:
             problems.append(f"check 4: {ex}")
+            unreadable.add(path)
             continue
         if assigns:
             carriers.add(path)
     for path in sorted(carriers - named):
         problems.append(
             f"check 4: {path} carries a column-zero VERSION but the stage table's versions do not name it")
-    for path in sorted(named | carriers):
+    for path in sorted((named | carriers) - unreadable):
         if not (ROOT / path).exists():
             problems.append(f"check 4: {path} is named by the stage table's versions but does not exist")
             continue
