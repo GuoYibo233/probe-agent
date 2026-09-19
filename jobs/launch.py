@@ -835,8 +835,8 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
                     gpu_id = _claim_cards(free_by_host, host, 1)[0]
                     gpus, device = str(gpu_id), f"cuda:{gpu_id}"
                     upstream_map = schema.upstream(stage, setting)
-                    score_ckpt = schema.run_dir_of("train", upstream_map["probe_score.train"], debug=False)
-                    gen_ckpt = schema.run_dir_of("train", upstream_map["probe_gen.train"], debug=False)
+                    score_ckpt = schema.referenced_run_dir("train", upstream_map["probe_score.train"])
+                    gen_ckpt = schema.referenced_run_dir("train", upstream_map["probe_gen.train"])
                     temperature = resolved.get("probe_temperature")
                 port = _next_free_port("service_probe", 0, None, host)
                 endpoint_file = "service_probe_0.json"

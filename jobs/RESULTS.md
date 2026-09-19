@@ -3,9 +3,11 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
-| `eval-b5999ae061f9` | 2026-09-20 06:17 | eval | train_probe/ctool_qwen3_0pt6b | `c470bd1` | ok | - | report.md |
-| `train-5b398c217e13` | 2026-09-20 06:14 | train | train_probe/cparam_qwen3_0pt6b | `0793692` | launching | - | - |
-| `train-b45633250e8b` | 2026-09-20 06:13 | train | train_probe/cgen_qwen3_0pt6b | `0793692` | launching | - | - |
+| `eval-e5d6ba9d8c7b` | 2026-09-20 06:35 | eval | train_probe/cgen_qwen3_0pt6b | `44a1eb8` | ok | - | report.md |
+| `eval-ef9644a7e92f` | 2026-09-20 06:35 | eval | train_probe/cparam_qwen3_0pt6b | `44a1eb8` | ok | - | report.md |
+| `eval-b5999ae061f9` | 2026-09-20 06:33 | eval | train_probe/ctool_qwen3_0pt6b | `44a1eb8` | ok | - | report.md |
+| `train-5b398c217e13` | 2026-09-20 06:21 | train | train_probe/cparam_qwen3_0pt6b | `44a1eb8` | launch_failed | - | - |
+| `train-b45633250e8b` | 2026-09-20 06:20 | train | train_probe/cgen_qwen3_0pt6b | `44a1eb8` | launch_failed | - | - |
 | `train-0f3e343f0eca` | 2026-09-20 06:12 | train | train_probe/ctool_qwen3_0pt6b | `0793692` | launch_failed | - | - |
 | `train-4f98555bfe73` | 2026-09-20 06:10 | train | train_probe/cparam_qwen3_0pt6b | `30aae15` | failed | - | - |
 | `train-f4b98907f380` | 2026-09-20 06:09 | train | train_probe/cgen_qwen3_0pt6b | `30aae15` | failed | - | - |

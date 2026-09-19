@@ -583,10 +583,11 @@ def run(run_dir: Path) -> None:
     ref_eval_dir: Path | None = None
     if kind == "generator":
         ref_key = cfg._upstream["theta_from.eval"]
-        ref_eval_dir = schema.run_dir_of("eval", ref_key, debug=False)
-        if not (ref_eval_dir / "done.json").exists():
+        ref_eval_dir = schema.referenced_run_dir("eval", ref_key)
+        if ref_eval_dir is None or not (ref_eval_dir / "done.json").exists():
             raise ValueError(
-                f"{ref_eval_dir}: the referenced classifier eval (theta_from) has no done.json")
+                f"eval key {ref_key} at {ref_eval_dir}: the referenced classifier eval "
+                "(theta_from) has no done.json")
         ref = read_report(ref_eval_dir)
         if ref[0]["risk_targets"] != cfg.eval.risk:
             raise ValueError(
@@ -595,7 +596,7 @@ def run(run_dir: Path) -> None:
 
         ref_meta = json.loads((ref_eval_dir / "meta.json").read_text())
         ref_train_key = ref_meta["upstream"]["train"]
-        ref_train_dir = schema.run_dir_of("train", ref_train_key, debug=False)
+        ref_train_dir = schema.referenced_run_dir("train", ref_train_key)
         ref_train_meta = json.loads((ref_train_dir / "meta.json").read_text())
         ref_build_key = ref_train_meta["upstream"]["build"]
         own_build_key = train_meta["upstream"]["build"]

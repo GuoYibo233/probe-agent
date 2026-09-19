@@ -179,7 +179,7 @@ def main(run_dir: Path) -> None:
 
     base_dir: Path | None = None
     if cfg.score.baseline is not None:
-        base_dir = schema.run_dir_of("sample", cfg._upstream["baseline.sample"], debug=False)
+        base_dir = schema.referenced_run_dir("sample", cfg._upstream["baseline.sample"])
         scored_cfg = schema.load_frozen(scored_dir)
         base_cfg = schema.load_frozen(base_dir)
         diff_field = _first_diff_field(scored_cfg, base_cfg)

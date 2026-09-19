@@ -1357,6 +1357,27 @@ def run_dir(stage: str, setting: Setting) -> Path:
     return run_dir_of(stage, key(stage, setting), debug=setting._debug)
 
 
+def referenced_run_dir(stage: str, key: str) -> Path | None:
+    """The directory of a run reached through a reference (5.4), or None when neither root holds it.
+
+    A run's `--debug` flag is part of its own key payload (3.3), so a referenced key -- a key
+    computed from another setting, in the name form or pinned as `key:`/`dir:` -- names a
+    directory under whichever of the two roots that run was written in, never under the
+    referring run's root. The one that answers is the directory whose frozen `settings.yaml`
+    records this very key; a directory made before this scheme carries no `settings.yaml`
+    (5.4's reason for the `dir:` form), so the one that exists stands in for it. `run.py`, the
+    launcher and the stage programs all locate a referenced run through this one function.
+    """
+    candidates = [run_dir_of(stage, key, debug=flag) for flag in (False, True)]
+    for candidate in candidates:
+        if (candidate / "settings.yaml").exists() and load_frozen(candidate)._key == key:
+            return candidate
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def _dataclass_to_dict(obj: Any) -> Any:
     if obj is None:
         return None

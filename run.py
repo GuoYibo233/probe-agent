@@ -1799,26 +1799,6 @@ def _reference_is_pinned(cfg, source: str) -> bool:
     return isinstance(value, dict)
 
 
-def _pinned_run_dir(stage: str, key_val: str) -> Path | None:
-    """The run directory a pinned key names, or None when neither root holds it.
-
-    A run's `--debug` flag is part of its own key payload (3.3), so a pinned `key:`/`dir:`
-    reference — a key computed elsewhere, not from the setting being walked — names a
-    directory under whichever of the two roots that run was written in. The one that answers
-    is the directory whose frozen `settings.yaml` records this very key; a directory made
-    before this scheme carries no `settings.yaml` (5.4's reason for the `dir:` form), so the
-    one that exists stands in for it.
-    """
-    candidates = [schema.run_dir_of(stage, key_val, debug=flag) for flag in (False, True)]
-    for candidate in candidates:
-        if (candidate / "settings.yaml").exists() and schema.load_frozen(candidate)._key == key_val:
-            return candidate
-    for candidate in candidates:
-        if candidate.is_dir():
-            return candidate
-    return None
-
-
 def _upstream_dirs(stage: str, cfg, upstream_map: dict) -> dict[str, Path | None]:
     """Where each of this stage's upstream runs lives (3.4, 5.4).
 
@@ -1837,7 +1817,7 @@ def _upstream_dirs(stage: str, cfg, upstream_map: dict) -> dict[str, Path | None
         if entry["source"] == "same":
             dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=cfg._debug)
         elif _reference_is_pinned(cfg, entry["source"]):
-            dirs[name] = _pinned_run_dir(entry["stage"], key_val)
+            dirs[name] = schema.referenced_run_dir(entry["stage"], key_val)
         else:
             dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=False)
     return dirs
