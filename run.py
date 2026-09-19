@@ -978,8 +978,16 @@ def _has_main_block(path) -> bool:
     return False
 
 
-def _check_by_name_fragments(current_file: str, label: str, fragments: list[tuple[str, str]]) -> list[str]:
-    """Rule 3's by-name spelling: a fragment naming a real file is checked for existence and a dynamic-import call; the one placeholder spelling (models/probe_models/base.py's own <backbone>.py) is checked by its own f-string rule instead."""
+def _check_by_name_fragments(current_file: str, label: str, fragments: list[tuple[str, str]],
+                             unreadable: set[str]) -> list[str]:
+    """Rule 3's by-name spelling: a fragment naming a real file is checked for existence and a dynamic-import call; the one placeholder spelling (models/probe_models/base.py's own <backbone>.py) is checked by its own f-string rule instead.
+
+    The label says which of the two files holds the importlib call: on an `imports:` line the
+    annotated file is the importer and the fragment is the module it names, on a `used by:` line
+    the fragment is the importer and the annotated file is the module it names. `unreadable` is
+    check 2's set of files that do not parse; a fragment whose importer sits in it is passed over,
+    because that file's own parse-failure line is already among the problems.
+    """
     problems = []
     for path_text, _paren in fragments:
         if "<" in path_text:
@@ -995,11 +1003,21 @@ def _check_by_name_fragments(current_file: str, label: str, fragments: list[tupl
         if not (ROOT / path_text).is_file():
             problems.append(f"check 2: {current_file} {label}: by-name entry {path_text} does not exist")
             continue
-        prefix = _dynamic_import_prefix(current_file)
-        if not _has_dynamic_import_of(path_text, prefix, _module_name(current_file)):
+        if label == "imports":
+            importer, imported = current_file, path_text
+            subject = f"{current_file} holds no"
+            tail = f" for by-name entry {path_text}"
+        else:
+            importer, imported = path_text, current_file
+            subject = f"by-name entry {path_text} holds no"
+            tail = ""
+        if importer in unreadable:
+            continue
+        prefix = _dynamic_import_prefix(imported)
+        if not _has_dynamic_import_of(importer, prefix, _module_name(imported)):
             problems.append(
-                f"check 2: {current_file} {label}: by-name entry {path_text} holds no "
-                f"importlib.import_module call naming {prefix}<module>")
+                f"check 2: {current_file} {label}: {subject} "
+                f"importlib.import_module call naming {prefix}<module>{tail}")
     return problems
 
 
@@ -1065,7 +1083,7 @@ def _check_2(tree_files: list[str], entries: dict) -> list[str]:
                         f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
                 for candidate in dead:
                     problems.append(f"check 2: {f} {label}: names {candidate}, which is not a repo file")
-                problems.extend(_check_by_name_fragments(f, label, by_name))
+                problems.extend(_check_by_name_fragments(f, label, by_name, unreadable))
             except SystemExit as ex:
                 problems.append(f"check 2: {ex}")
     return problems
