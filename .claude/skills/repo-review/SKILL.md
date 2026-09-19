@@ -33,10 +33,11 @@ the fixed tree is never reworded. This file reviews against the **seven** princi
    Part 7 — otherwise the part that covers the mechanism the file implements: Part 1 for
    an on-disk format, Part 2 for a stage program, Part 3 for anything that computes a
    key or a run directory, Part 6 for the model table and the constants. Contracts 0.2
-   is where `README.md` section 2's annotation lines are reproduced from and holds
-   nothing past them, so it is not the section to read here. It runs `run.py selfcheck`
-   first and stops if that is not green — a review over a tree that fails its own checks
-   reports noise.
+   is where `README.md` section 2's annotation lines are reproduced from, and it still
+   spells the pre-2026-09-18 tree (`eval/methods/`, the old `agent/` names), so it adds
+   nothing to the annotation lines already read in `README.md` and is not the section to
+   read here. It runs `run.py selfcheck` first and stops if that is not green — a review
+   over a tree that fails its own checks reports noise.
 
 3. **What it writes.** One ticket per finding into `.scratch/review/issues/`, in the
    issue-tracker format of `notes/docs/agents/issue-tracker.md`, with the Status line

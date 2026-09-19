@@ -98,15 +98,21 @@ setting's walk there**, printing the monitoring command. One call over several s
 or over a sweep parent, therefore leaves exactly one launched run per child.
 
 The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
-failed launch takes one of two shapes. `jobs/launch.py` refuses before the start row is
-written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards,
-a service endpoint file that never appeared — and each of those refusals prints its own
-`jobs/launch.py: ...` line and exits 1, leaving no registry row, nothing in Phase 5's
-`ls` and no piece log; that printed line is the diagnosis. A piece that starts and then
-fails its alive check is the quiet shape: the call prints nothing further and exits 0,
-tears the run's service pieces down and appends a `launch_failed` finish row. Read Phase
-5's `ls` line for that row, and `<run_dir>/log/<piece index>.txt` for why the piece
-died.
+failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is
+written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards —
+and each of those refusals prints its own `jobs/launch.py: ...` line and exits 1, leaving
+no registry row, nothing in Phase 5's `ls` and no piece log; that printed line is the
+diagnosis. A piece that starts and then fails its alive check is the quiet shape: the
+call exits 0, tears the run's service pieces down and appends a `launch_failed` finish
+row — an `inject` run's probe-service `check` client is the one thing that writes to the
+terminal on this path, and its `check: ...` lines are the diagnosis; everything else
+prints nothing further. Read Phase 5's `ls` line for that row, and
+`<run_dir>/log/<piece index>.txt` for why the piece died. An `inject` launch whose probe
+service never writes its endpoint file is the third shape: the start row is already
+written and the service pieces are already up, so
+`jobs/launch.py: <path> did not appear within launch_timeout_s` exits 1 and leaves an
+open `launching` row in Phase 5's `ls`, the piece logs under `<run_dir>/log/`, and the
+service pieces alive on their cards — end them with Phase 6b's `kill`.
 
 A GPU stage (`sample`, `train`, `inject`) is never waited on. A CPU stage (`build`,
 `eval`, `score`) runs inline, in place, with no tmux and no ssh, and the walk goes
