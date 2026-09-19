@@ -339,15 +339,21 @@ def _read_rows() -> list[dict]:
 
 
 def fold(rows: list[dict]) -> dict[str, dict]:
-    """`run_id -> {"start": newest start row, "finish": newest finish row}`
-    (8.2). The file is append-only in chronological order, so the last
-    occurrence of each event kind for a `run_id` is already the newest."""
+    """`run_id -> {"start": newest start row, "finish": the newest finish row
+    that follows it, or None}` (8.2). The file is append-only in chronological
+    order, so the last occurrence of each event kind for a `run_id` is already
+    the newest. One `run_id` collects several start rows, and a relaunch after
+    a `failed` or `launch_failed` finish appends its start row below that
+    finish row: that finish row closed the earlier launch, so a start row
+    clears it and the relaunch stays open until a finish row of its own lands
+    (errata, wave 7)."""
     folded: dict[str, dict] = {}
     for row in rows:
         rid = row["run_id"]
         entry = folded.setdefault(rid, {"start": None, "finish": None})
         if row.get("ev") == "start":
             entry["start"] = row
+            entry["finish"] = None
         elif row.get("ev") == "finish":
             entry["finish"] = row
     return folded
@@ -389,7 +395,7 @@ def render() -> None:
 
 
 def open_runs() -> list[dict]:
-    """The start rows of every run with no finish row yet."""
+    """The newest start row of every run whose newest launch has no finish row yet."""
     return [e["start"] for e in fold(_read_rows()).values()
             if e["start"] is not None and e["finish"] is None]
 

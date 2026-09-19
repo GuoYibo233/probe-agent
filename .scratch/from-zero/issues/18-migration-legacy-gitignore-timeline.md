@@ -330,13 +330,27 @@ The main session fills in, before dispatching this ticket, the run-directory key
 the three `--debug` walks produced, so the TIMELINE entry can quote them:
 
 ```
-baseline    gpt_oss_120b_appworld   --debug   sample=<key>  score=<key>
-train_probe ctool_qwen3_0pt6b   --debug   sample=<key>  build=<key>  train=<key>  eval=<key>
-train_probe cgen_qwen3_0pt6b    --debug   train=<key>   eval=<key>
-train_probe cparam_qwen3_0pt6b  --debug   train=<key>   eval=<key>
-inject      probe_p1_e1_theta_0pt80   --debug   inject=<key>  score=<key>
-run.py selfcheck: <the line it printed>
+baseline    gpt_oss_120b_appworld   --debug   sample=96de225de2b4  score=20eaad1deae5
+train_probe ctool_qwen3_0pt6b   --debug   sample=96de225de2b4  build=b565f5ab1b94  train=0f3e343f0eca  eval=b5999ae061f9
+train_probe cgen_qwen3_0pt6b    --debug   train=b45633250e8b   eval=e5d6ba9d8c7b
+train_probe cparam_qwen3_0pt6b  --debug   train=5b398c217e13   eval=ef9644a7e92f
+inject      probe_p1_e1_theta_0pt80   --debug   inject=c96e48a8be3d  score=d49397cf4dd9
+inject      probe_p1_e1_theta_0pt80   --debug inject.fire_nth_cut=1   inject=27d4bad1b70a  score=a4e05cb2fbe3
+run.py selfcheck: selfcheck: 31 python files, 0 problems
 ```
+
+Filled on 2026-09-20 by session new1-08, walks run on commits be60c4c to 08337dc.
+The cgen and cparam evals took `"eval.theta_from={key: {eval: b5999ae061f9}}"` and
+the inject walk took the three pinned references of the construction plan's
+section 4 (errata, wave-5 entry (d)). The first inject run never crossed theta
+0.80 (no `spec` row), so the plan's forced rerun with `inject.fire_nth_cut=1` was
+made: 18 `spec` rows and 18 `resume` rows over 3 tasks. Five defects found by the
+walks were fixed first (commits be60c4c, the trainer's VERSION 2 commit, the
+`alive_check` commit, the `GENERATE_BATCH` commit and 08337dc), and a sixth in
+`registry.fold` (a start row now clears the finish row of the earlier launch). The
+ctool train row `train-0f3e343f0eca` reads `launch_failed` in `jobs/RESULTS.md`
+although the run finished with a `done.json`: the 30-second alive window closed it
+while it ran, and no later start row follows that finish row.
 
 - 2026-09-18, from gyb (wave 2/3 review): one rename is deferred to the end of the
   build, after every wave has merged, and is the owner's change to the fixed tree, not
