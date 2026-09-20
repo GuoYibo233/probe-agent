@@ -302,13 +302,15 @@ def report_passes(method: str, cfg) -> int:
 
     One beat closes one pass over the prediction frame. The classifier makes one pass per
     theta on the grid and, per risk target, the frozen crossing, its bootstrap and the fires
-    crossing. The generator makes, per risk target, the join with its row scoring and its
-    bootstrap. A risk target whose theta is None skips its work and still closes its passes,
-    so this count is exact for every setting and the report's last beat reads done == total.
+    crossing; its risk targets are the keys of `chosen`, one per distinct `str(risk)`, so a
+    risk value the setting writes twice is one target. The generator makes, per entry of
+    `cfg.eval.risk`, the join with its row scoring and its bootstrap. A risk target whose
+    theta is None skips its work and still closes its passes, so this count is exact for
+    every setting and the report's last beat reads done == total.
     """
     kind = PROBE_KIND[method]
     if kind == "classifier":
-        return len(cfg.eval.theta_grid) + 3 * len(cfg.eval.risk)
+        return len(cfg.eval.theta_grid) + 3 * len({str(risk) for risk in cfg.eval.risk})
     if kind == "generator":
         return 2 * len(cfg.eval.risk)
     raise ValueError(
