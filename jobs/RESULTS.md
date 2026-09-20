@@ -3,6 +3,8 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-2c850184f2c2` | 2026-09-20 20:57 | eval | train_probe/ctool_qwen3_0pt6b | `00b4b81` | ok | - | report.md |
+| `train-feabb7b090f5` | 2026-09-20 20:56 | train | train_probe/ctool_qwen3_0pt6b | `00b4b81` | ok | objective=0.71875 val_wacc=0.28125 val_lastcut_acc=0.25 | - |
 | `score-ec64bdd1b80b` | 2026-09-20 19:59 | score | inject/probe_p1_e1_theta_0pt80 | `74cfc76` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
 | `score-6b63fdac42fe` | 2026-09-20 19:59 | score | inject/probe_p1_e1_theta_0pt80 | `74cfc76` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
 | `inject-a36cf8d69e00` | 2026-09-20 19:49 | inject | inject/probe_p1_e1_theta_0pt80 | `b59bdf2` | ok | - | - |
