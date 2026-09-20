@@ -605,6 +605,44 @@ def _format_ls_row(row: dict, stale: str = "") -> str:
     return line
 
 
+def _close_failed_launches(rows: list[dict]) -> None:
+    """Write the finish row of every launch that never came up (8.1, 8.2).
+
+    `registry.launch_failed` is the one rule that says a launch never came up, and `run.py` is
+    the side that writes the row: the run is open, older than `launch_timeout_s`, and every one
+    of its pieces is dead, so no process of that launch is left to close it. The row goes in
+    before these rows are printed, so the `ls` line, `jobs/RESULTS.md` and a later `run.py sync`
+    carry one word for the state. The verdicts are the ones `registry.ls` has already judged, so
+    this costs no second `tmux` probe.
+
+    The row closes the one launch those verdicts describe, and a launch is named by its start
+    row, so the hold takes the run's open start row again and appends only while that row is
+    still the judged one — same `run_id`, same `t`. Everything above was read before the lock, at
+    the top of `cmd_ls`, and that whole `ls` is the gap: the flags and the progress over every
+    sample directory's task records, then one `tmux ls` per host. A relaunch of this very run
+    lands inside it — the launch gate lets it through, because a run whose pieces are all dead
+    and whose start row is older than `launch_timeout_s` has no live session, no fresh heartbeat
+    and no young start row (2.5) — and a second `run.py ls` beside this one reaches the same
+    stale launch. Under the hold the first leaves a start row of its own and the second leaves a
+    finish row, so in both cases the open start row is another row than the judged one and this
+    launch is already accounted for. `elapsed_s` is measured from that judged row, the launch the
+    row closes.
+    """
+    for row in rows:
+        verdicts = [p["verdict"] for p in row.get("pieces") or []]
+        if row.get("status") == "launching" and registry.launch_failed(row.get("t", ""), verdicts):
+            run_id = row["run_id"]
+            with registry.lock():
+                judged = next((r for r in registry.open_runs()
+                               if r["run_id"] == run_id and r.get("t") == row.get("t")), None)
+                if judged is not None:
+                    registry.append_finish(run_id, {
+                        "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
+                        "counts": {}, "metrics": {}, "report": None,
+                        "elapsed_s": time.time() - _parse_t(judged["t"])})
+                    row["status"] = "launch_failed"
+
+
 def cmd_ls(rest: list[str]) -> int:
     debug = "--debug" in rest
     workflow_name = next((t for t in rest if t != "--debug"), None)
@@ -621,6 +659,7 @@ def cmd_ls(rest: list[str]) -> int:
     if not result:
         print("run.py ls: no runs")
         return 0
+    _close_failed_launches(result)
     print("run_id | stage | workflow/setting | status | progress | rate | heartbeat | flags | pieces")
     for row in result:
         print(_format_ls_row(row, (row_flags.get(row.get("run_id")) or {}).get("stale", "")))
@@ -722,9 +761,14 @@ def _clear_continue_markers(stage: str, run_dir: Path) -> None:
             p = run_dir / name
             if p.exists():
                 p.unlink()
-        last_dir = run_dir / "last"
-        if last_dir.is_dir():
-            shutil.rmtree(last_dir)
+        # The resume checkpoint carries three names while `_save_last` swaps it
+        # (train/utils/trainer.py): a kill inside the swap leaves `last.tmp/` or `last.prev/`
+        # on disk, and `_settle_last` gives `last.prev/` the name `last/` back on the next
+        # start. "start fresh" removes every name the checkpoint can be under.
+        for name in ("last", "last.tmp", "last.prev"):
+            d = run_dir / name
+            if d.is_dir():
+                shutil.rmtree(d)
 
 
 def cmd_retry(rest: list[str]) -> int:
@@ -1744,13 +1788,12 @@ def _fold_stage_extra(run_dir: Path, done: dict) -> None:
 def _backfill_finish_row(run_id: str, run_dir: Path) -> None:
     """The finish row of a launch that ended without one, appended on the walk that first sees its done.json (8.2).
 
-    The row is owed to the computation that wrote that done.json, so the test is that the file
-    belongs to the launch that is open: `finished_at` (`registry.write_done`) at or after the open
-    start row's `t`, both `%Y-%m-%d %H:%M`, so string order is chronological order, and a stage
-    that starts and finishes inside one minute still gets its row. A done.json older than the open
-    start row is the previous incarnation's — one sample directory serves several requests (2.3)
-    and a relaunch leaves the earlier request's file in place — so the live launch is left open and
-    writes its own row when it completes.
+    The row is owed to the computation the open launch ran, and the walk closes a run by the one
+    rule `registry.sync` closes it by: `registry.write_done` stamps done.json with the launch that
+    wrote it (8.2, 8.3), so the file closes the run when its `launch` is the directory's current
+    ordinal. A done.json carrying an earlier launch belongs to the previous computation — one
+    sample directory serves several requests (2.3) and a relaunch leaves the earlier request's
+    file in place — so the launch in flight is left open and writes its own row when it completes.
 
     8.2's other rule — a stage that always recomputes gets a new finish row per recomputation —
     is held by the walk itself: `eval` and `score` never skip (2.4), so `run.py` runs each
@@ -1760,8 +1803,7 @@ def _backfill_finish_row(run_id: str, run_dir: Path) -> None:
     if open_row is None:
         return
     done = _read_json(run_dir / "done.json") or {}
-    finished_at = done.get("finished_at")
-    if isinstance(finished_at, str) and finished_at >= open_row.get("t", ""):
+    if done.get("launch") == registry.launch_ordinal(run_dir):
         with registry.lock():
             registry.append_finish(run_id, {
                 "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
