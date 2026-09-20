@@ -1,4 +1,0 @@
-[
-  {"model": "gptoss", "cell": "cgen", "host": "tokyo108", "gpu": 0, "extra": ["--risk", "0.1"]},
-  {"model": "gptoss", "cell": "cparam", "host": "tokyo108", "gpu": 3, "extra": ["--risk", "0.1"]}
-]

@@ -9,10 +9,10 @@ qwen3-0.6b-base:
   note: own replica, 1.2G; the probe backbone of the cgen/ctool line since 2026-08-20
 qwen3-1.7b-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-1.7B-Base
-  note: own replica; the 1.7B tier of the three-tier backbone sweep (legacy train_causal_tool.py:86)
+  note: own replica; the 1.7B tier of the three-tier backbone sweep
 qwen3-4b-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base
-  note: own replica; the 4B tier of the same sweep (legacy train_causal_tool.py:87)
+  note: own replica; the 4B tier of the same sweep
 lfm2.5-350m-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/LFM2.5-350M-Base
   note: own replica, 681M; used by the cgen cell, registered 2026-08-20
