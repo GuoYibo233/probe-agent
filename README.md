@@ -302,7 +302,7 @@ eval/method_table.py — the backbone x method table from the registry; one grou
 jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
-  reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories' meta.json and heartbeat, ssh, tmux, nvidia-smi
+  reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories' meta.json, done.json and heartbeat, ssh, tmux, nvidia-smi
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
