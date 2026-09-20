@@ -3,14 +3,21 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `score-35d9f3051a22` | 2026-09-20 15:31 | score | inject/probe_p1_e1_theta_0pt80 | `8c72466` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
+| `score-d6a35770c910` | 2026-09-20 15:31 | score | inject/no_probe_p1_e1_theta_0pt80 | `8c72466` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
+| `inject-7c45d0327b85` | 2026-09-20 15:27 | inject | inject/probe_p1_e1_theta_0pt80 | `8c72466` | ok | - | - |
+| `inject-ecf0f0957791` | 2026-09-20 15:19 | inject | inject/no_probe_p1_e1_theta_0pt80 | `8c72466` | ok | - | - |
+| `eval-ef9644a7e92f` | 2026-09-20 15:18 | eval | train_probe/cparam_qwen3_0pt6b | `8c72466` | ok | - | report.md |
+| `eval-f343c9118516` | 2026-09-20 15:18 | eval | train_probe/ctool_qwen3_0pt6b | `8c72466` | ok | - | report.md |
+| `train-f895049ab1dc` | 2026-09-20 15:14 | train | train_probe/cgen_qwen3_0pt6b | `8c72466` | launching | - | - |
+| `train-e643baeab23b` | 2026-09-20 15:06 | train | train_probe/ctool_qwen3_0pt6b | `8c72466` | ok | objective=0.953125 val_wacc=0.046875 val_lastcut_acc=0.0 | - |
+| `train-5b398c217e13` | 2026-09-20 15:04 | train | train_probe/cparam_qwen3_0pt6b | `8c72466` | ok | objective=0.546875 | - |
 | `eval-b5999ae061f9` | 2026-09-20 06:53 | eval | train_probe/ctool_qwen3_0pt6b | `939312a` | ok | - | report.md |
 | `eval-e5d6ba9d8c7b` | 2026-09-20 06:53 | eval | train_probe/cgen_qwen3_0pt6b | `939312a` | ok | - | report.md |
-| `eval-ef9644a7e92f` | 2026-09-20 06:53 | eval | train_probe/cparam_qwen3_0pt6b | `939312a` | ok | - | report.md |
 | `score-a4e05cb2fbe3` | 2026-09-20 06:50 | score | inject/probe_p1_e1_theta_0pt80 | `8fc75af` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
 | `score-d49397cf4dd9` | 2026-09-20 06:43 | score | inject/probe_p1_e1_theta_0pt80 | `08337dc` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
 | `inject-27d4bad1b70a` | 2026-09-20 06:43 | inject | inject/probe_p1_e1_theta_0pt80 | `80a7701` | ok | - | - |
 | `inject-c96e48a8be3d` | 2026-09-20 06:36 | inject | inject/probe_p1_e1_theta_0pt80 | `08337dc` | ok | - | - |
-| `train-5b398c217e13` | 2026-09-20 06:21 | train | train_probe/cparam_qwen3_0pt6b | `44a1eb8` | ok | objective=0.546875 val_ce=4.24401718378067 val_params_all_ok=0.453125 gen_n=64 | - |
 | `train-b45633250e8b` | 2026-09-20 06:20 | train | train_probe/cgen_qwen3_0pt6b | `44a1eb8` | ok | objective=0.734375 val_ce=1.796652764081955 val_tool_ok=0.265625 val_params_all_ok=0.328125 val_full_call_ok=0.265625 gen_n=64 | - |
 | `train-0f3e343f0eca` | 2026-09-20 06:12 | train | train_probe/ctool_qwen3_0pt6b | `0793692` | launch_failed | - | - |
 | `train-4f98555bfe73` | 2026-09-20 06:10 | train | train_probe/cparam_qwen3_0pt6b | `30aae15` | failed | - | - |
