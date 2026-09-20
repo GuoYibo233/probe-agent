@@ -1046,33 +1046,27 @@ def kill(run_id: str) -> list[str]:
 
 def sync() -> list[str]:
     """Fold every run directory's `done.json` and heartbeat files into the
-    missing finish rows; write the `failed` row for a run whose `done.json`
-    reports no computation of its own and whose pieces `judge` calls `dead`;
+    missing finish rows; write the `failed` row for a run whose open launch
+    wrote no `done.json` of its own and whose pieces `judge` calls `dead`;
     re-render `RESULTS.md`. Appends those rows itself, through
     `append_finish`."""
     synced = []
-    rows = _read_rows()
-    # The newest finish row's time per `run_id`, taken from the whole file: a
-    # start row clears the finish row inside `fold`, and this is the stamp 8.2
-    # measures `done.json` against.
-    reported: dict[str, str] = {}
-    for past in rows:
-        if past.get("ev") == "finish":
-            reported[past["run_id"]] = past.get("t", "")
-    for run_id, entry in fold(rows).items():
+    for run_id, entry in fold(_read_rows()).items():
         start = entry["start"]
         if start is None or entry["finish"] is not None:
             continue
         run_dir = Path(start["dir"])
         done = _read_json(run_dir / "done.json") or {}
-        # 8.2: a finish row is owed to the computation that wrote `done.json`,
-        # so this file closes the run when its `finished_at` is later than the
-        # newest finish row the `run_id` already carries. A relaunch into a
-        # directory that already served a request (2.3) or already computed
-        # (2.4) starts with the previous computation's `done.json` on disk;
-        # that one is reported, and the launch in flight stays open for its own
-        # finish row or for the dead-piece test below.
-        if done.get("finished_at", "") > reported.get(run_id, ""):
+        # 8.2: the finish row is owed to the computation the open start row
+        # launched, so this file closes the run when its `finished_at` is at or
+        # after that row's time. A relaunch into a directory that already
+        # served a request (2.3) or already computed (2.4) starts with the
+        # previous computation's `done.json` on disk; that one belongs to a
+        # launch already past, and the launch in flight stays open for its own
+        # finish row or for the dead-piece test below. This also satisfies
+        # the stamp 8.2 names: `fold` left this entry's finish row empty, so
+        # every finish row of the `run_id` precedes the open start row.
+        if done.get("finished_at", "") >= start["t"]:
             row = {
                 "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
                 "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
