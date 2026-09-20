@@ -2,6 +2,7 @@
 # venv: probe
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -45,8 +46,15 @@ class ConcurrentAppendTest(unittest.TestCase):
             for proc_index in range(N_PROCS):
                 pid = os.fork()
                 if pid == 0:
-                    sys.path.insert(0, str(tree))
-                    from jobs import registry  # imported only in the child (see report)
+                    # The child loads the temporary tree's copy by file path, under a name of
+                    # its own. `from jobs import registry` returns whatever `jobs.registry` the
+                    # forked parent already holds in sys.modules -- the real one whenever another
+                    # test module ran first in this process -- and that one appends to the real
+                    # jobs/runs.jsonl (42 fixture rows reached it on 2026-09-20).
+                    spec = importlib.util.spec_from_file_location(
+                        "registry_under_test", tree / "jobs" / "registry.py")
+                    registry = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(registry)
                     for row_index in range(N_ROWS):
                         registry.append_start(_start_row(proc_index, row_index, run_dir))
                     os._exit(0)
