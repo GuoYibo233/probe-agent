@@ -383,6 +383,24 @@ def _start_tmux(host: str, session: str, inner_cmd: str) -> bool:
     return ok
 
 
+def _start_wave(pieces) -> bool:
+    """Start one wave's tmux sessions; True when every session of the wave
+    started. `tmux new-session` fails when the host is unreachable and when a
+    session of that name is already there — the session name is a pure
+    function of the run id and the piece index (8.1), so a relaunch into a
+    directory whose earlier piece is still running hits its own name. Both
+    mean this launch has no process of its own for that piece, so it says so
+    and the caller ends the launch, rather than passing an alive check against
+    somebody else's session."""
+    started = True
+    for p in pieces:
+        if not _start_tmux(p["host"], p["session"], p["cmd"]):
+            print(f"jobs/launch.py: piece {p['index']}: tmux new-session failed for session "
+                  f"{p['session']!r} on host {p['host']!r}", file=sys.stderr)
+            started = False
+    return started
+
+
 def _kill_tmux(host: str, session: str) -> bool:
     script = f"tmux kill-session -t {shlex.quote(session)}"
     ok, _out = _remote_run(host, script)
@@ -404,57 +422,169 @@ def _port_answers(host: str | None, port) -> bool:
 # 8.1: the alive check (errata; 8.1 names it and never defines it).
 # ---------------------------------------------------------------------------
 
+# How long a piece whose session has ended keeps its waiting state before the
+# check calls it down. The evidence a piece leaves is a file in the run
+# directory, which is on the NFS outputs mount with the default attribute
+# cache, so this host can answer a lookup from cache for tens of seconds after
+# the serving host wrote the file, while the session probe (`tmux ls` over ssh)
+# is always live. The grace is the window in which the two facts disagree.
+SESSION_END_GRACE_S = 60
 
-def alive_check(pieces, window_s=None, poll_s=5) -> tuple[bool, list]:
-    """`(all_up, failed_pieces)`, polled every `poll_s` for at most `window_s`
+
+def _newest_beat_launch(run_dir, index: int) -> int:
+    """The largest `<launch>` among this piece's `heartbeat/<index>-<launch>.jsonl`
+    files, -1 when it has none: the same numbering `registry.beat` hands the
+    next incarnation (8.4)."""
+    hb_dir = Path(run_dir) / "heartbeat"
+    prefix = f"{index}-"
+    best = -1
+    if not hb_dir.is_dir():
+        return best
+    for path in hb_dir.iterdir():
+        name = path.name
+        if name.startswith(prefix) and name.endswith(".jsonl"):
+            n_str = name[len(prefix):-len(".jsonl")]
+            if n_str.isdigit():
+                best = max(best, int(n_str))
+    return best
+
+
+def incarnation_origin(run_dir, pieces) -> dict[int, dict]:
+    """`{piece index: {"log_size", "beat_launch"}}` for every `loop`, `train`
+    or `cpu` piece: what its `log/<index>.txt` and its `heartbeat/` listing
+    already held before this launch started it. A run directory is relaunched
+    into and the piece command appends (`tee -a`, 3.4), so this map is what
+    lets `alive_check` read this incarnation's output and no earlier one's
+    (errata, section-4 walks: an old `Traceback` in the reused log closed every
+    relaunch at its first poll). Taken before the first `tmux new-session`,
+    because everything a piece writes after that is its own."""
+    run_dir = Path(run_dir)
+    origin: dict[int, dict] = {}
+    for p in pieces:
+        if p.get("kind") == "service":
+            continue
+        log = Path(p.get("log", ""))
+        origin[p["index"]] = {
+            "log_size": log.stat().st_size if log.exists() else 0,
+            "beat_launch": _newest_beat_launch(run_dir, p["index"]),
+        }
+    return origin
+
+
+def _log_shows_traceback(log: Path, first_byte: int) -> bool:
+    """Whether this incarnation's own output carries a `Traceback`: the last
+    4 KB of `log`, reaching no further back than `first_byte`, where this
+    launch's output starts."""
+    try:
+        size = log.stat().st_size
+        with open(log, "rb") as f:
+            f.seek(max(first_byte, size - 4096))
+            return b"Traceback" in f.read()
+    except OSError:
+        return False
+
+
+def _last_beat_status(path: Path) -> str | None:
+    """The `status` of the last row of one heartbeat file (`None` when its last
+    row carries none): `registry.Heartbeat.finish` writes `"done"` and an
+    ordinary beat writes no status at all (8.4)."""
+    status = None
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    status = json.loads(line).get("status")
+                except json.JSONDecodeError:
+                    continue
+    except OSError:
+        return None
+    return status
+
+
+def _piece_finished(run_dir, index: int, beat_launch: int) -> bool:
+    """Whether this incarnation of a `loop`, `train` or `cpu` piece walked its
+    whole share: the newest heartbeat file opened after `beat_launch` (the
+    launch number `incarnation_origin` found) ends with the `status: "done"`
+    row `registry.Heartbeat.finish` writes. `agent/run_tasks.py` writes it when
+    its rotation is walked out and `train/utils/trainer.py` after `done.json`,
+    so a piece whose session has ended with that row on disk did its work; a
+    piece killed mid-share leaves no such row."""
+    newest = _newest_beat_launch(run_dir, index)
+    if newest <= beat_launch:
+        return False
+    return _last_beat_status(Path(run_dir) / "heartbeat" / f"{index}-{newest}.jsonl") == "done"
+
+
+def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
+    """`(all_up, pending_pieces)`, polled every `poll_s` for at most `window_s`
     (default `registry.DEFAULTS["launch_timeout_s"]`; errata: 8.1 names the
-    alive check and never defines it). Each poll puts every piece in one of
-    three states. Up: a `loop`, `train` or `cpu` piece whose log file has
-    grown while its session is alive with no `Traceback` in the log's last
-    4 KB; a `service` piece whose endpoint file has appeared and whose port
-    answers. Down: a piece that is not up and whose session has ended, or a
-    `loop`, `train` or `cpu` piece with a `Traceback` in its log. Waiting:
-    every other piece -- a live session that has written nothing yet, which
-    is what a cold interpreter start over NFS looks like for the better part
-    of a minute. Returns as soon as every piece is up (`True`), as soon as
-    one is down, or at the deadline (`False`, with the pieces that are not up)."""
+    alive check and never defines it). `origin` is `incarnation_origin`'s map,
+    taken before the sessions started, and it is what makes every test below
+    read this incarnation's own output.
+
+    One rule over every kind of piece. A piece is **up** while it shows the
+    evidence of its kind: a `loop`, `train` or `cpu` piece whose log has grown
+    since this launch started it, or whose heartbeat says it walked its whole
+    share; a `service` piece whose endpoint file is there and whose port
+    answers. It is **down** the moment this incarnation's log carries a
+    `Traceback`, and otherwise once its session has ended and it still owes
+    that evidence `SESSION_END_GRACE_S` later. Every other piece is
+    **waiting**: a live session that has written nothing yet, which is what a
+    cold interpreter start over NFS looks like for the better part of a
+    minute, and the grace window, in which this host's directory cache can
+    still be hiding the file a piece wrote just before it exited.
+
+    The grace window and the finish row are what keep the two pieces whose
+    ended session is their success state out of the down state: an
+    `--attach-only` agent service, which writes its endpoint file and returns
+    (7.4), and a loop piece that finds every record of its rotation already
+    claimed and exits seconds after its first beat (2.3). A piece that dies
+    without ever producing its evidence is still down, one grace period into
+    a `launch_timeout_s` window.
+
+    Returns as soon as every piece is up (`True`), as soon as one is down, or
+    at the deadline (`False`, with the pieces that are not up)."""
     pieces = list(pieces)
     if not pieces:
         return True, []
     if window_s is None:
         window_s = registry.DEFAULTS["launch_timeout_s"]
-    initial_size = {}
-    for p in pieces:
-        if p.get("kind") != "service":
-            log = Path(p.get("log", ""))
-            initial_size[p["index"]] = log.stat().st_size if log.exists() else 0
 
+    session_ended_at: dict[int, float] = {}
     deadline = time.time() + window_s
     while True:
         sessions = registry.live_sessions()
+        now = time.time()
         pending: list = []      # every piece that is waiting or down
         any_down = False
         for p in pieces:
+            index = p["index"]
             session_ok = piece_alive(p, sessions)
             if p.get("kind") == "service":
                 run_dir = p.get("run_dir")
                 endpoint_ok = bool(run_dir) and (Path(run_dir) / p["endpoint_file"]).exists()
-                up = endpoint_ok and _port_answers(p.get("host"), p.get("port"))
-                down = (not up) and (not session_ok)
+                working = endpoint_ok and _port_answers(p.get("host"), p.get("port"))
+                finished = False
+                crashed = False
             else:
                 log = Path(p.get("log", ""))
-                grew = log.exists() and log.stat().st_size > initial_size.get(p["index"], 0)
-                has_traceback = False
-                if log.exists():
-                    try:
-                        size = log.stat().st_size
-                        with open(log, "rb") as f:
-                            f.seek(max(0, size - 4096))
-                            has_traceback = b"Traceback" in f.read()
-                    except OSError:
-                        has_traceback = False
-                up = grew and session_ok and (not has_traceback)
-                down = has_traceback or (not session_ok)
+                started_from = origin[index]
+                working = log.exists() and log.stat().st_size > started_from["log_size"]
+                finished = _piece_finished(p.get("run_dir", ""), index,
+                                           started_from["beat_launch"])
+                crashed = _log_shows_traceback(log, started_from["log_size"])
+            up = (working or finished) and not crashed
+            if crashed:
+                down = True
+            elif up or session_ok:
+                session_ended_at.pop(index, None)
+                down = False
+            else:
+                ended_at = session_ended_at.setdefault(index, now)
+                down = now - ended_at >= SESSION_END_GRACE_S
             if not up:
                 pending.append(p)
             any_down = any_down or down
@@ -504,6 +634,30 @@ def teardown_services(run_dir) -> list[str]:
     ended = []
     for piece in meta.get("pieces") or []:
         if piece.get("kind") != "service":
+            continue
+        host, session = piece.get("host"), piece.get("session")
+        if not host or not session:
+            continue
+        if _kill_tmux(host, session):
+            ended.append(session)
+    return ended
+
+
+def teardown_launch(run_dir, pieces) -> list[str]:
+    """End every session this launch started (8.1): the `service` pieces
+    through `teardown_services`, which keeps its own `attached_to` skip rule
+    (2.3), and this launch's `loop` and `train` pieces by `ssh <host> tmux
+    kill-session`. This is what `launch()` calls before it returns any outcome
+    but `up`, so a run that a `launch_failed` finish row closes (8.2) has
+    nothing of its own left running: a work piece holds a card, writes into the
+    run directory and claims records exactly as a service piece holds a card,
+    and the closed row makes every gate stop refusing a second launch into the
+    same directory. `teardown_services` keeps its own meaning for the finished
+    pair stage of 2.3, where the loop pieces have already exited. Returns the
+    sessions actually ended."""
+    ended = teardown_services(run_dir)
+    for piece in pieces:
+        if piece.get("kind") == "service":
             continue
         host, session = piece.get("host"), piece.get("session")
         if not host or not session:
@@ -596,21 +750,45 @@ def _next_free_port(kind: str, replica: int, serving_port, host: str) -> int:
 def _find_attach_target(agent_row: dict, serving_host):
     """7.4's attach search: a live registry row with a `service_agent_*.json`
     on `serving_host` whose `claims` match this run's frozen `result:` block
-    (plus `role`/`family`) value for value."""
+    (plus `role`/`family`) value for value, and whose server is answering now.
+
+    Answering now is part of the test because an endpoint file outlives its
+    server: nothing deletes it, and a run is open from its start row on (8.2)
+    while its relaunched vLLM is still loading weights and the file on disk is
+    the previous incarnation's. The two facts that make the document current
+    are the ones `alive_check` already reads for a service piece: the run has a
+    service piece with that endpoint file and that port -- from `meta.json`,
+    the current truth a refire rewrites (8.3), and from the start row's list
+    when the directory has no `meta.json` -- and the port answers."""
     if not agent_row or serving_host is None:
         return None
     for row in registry.open_runs():
         run_dir = Path(row.get("dir", ""))
         if not run_dir.is_dir():
             continue
+        meta = _read_json(run_dir / "meta.json") or {}
+        row_pieces = meta.get("pieces") or row.get("pieces") or []
         for path in sorted(run_dir.glob("service_agent_*.json")):
             doc = _read_json(path)
             if not doc or doc.get("host") != serving_host:
                 continue
             claims = doc.get("claims") or {}
-            if all(claims.get(k) == v for k, v in agent_row.items()):
+            if not all(claims.get(k) == v for k, v in agent_row.items()):
+                continue
+            served = any(p.get("kind") == "service" and p.get("endpoint_file") == path.name
+                         and p.get("port") == doc.get("port") for p in row_pieces)
+            if served and _port_answers(doc.get("host"), doc.get("port")):
                 return {"run_id": row.get("run_id"), "host": doc.get("host"), "port": doc.get("port")}
     return None
+
+
+def _folded_row_of(run_id: str):
+    """The registry's newest row for one run, folded (8.2): `registry.find({})`
+    matches every row and the fold keeps each `run_id`'s newest start row.
+    `refire` reads the request fields of the run it restarts a piece of from
+    here -- `workflow`, `setting`, `parent`, `swept`, `upstream`, `versions`,
+    `diff` -- because those live in the row and not in `meta.json`."""
+    return next((r for r in registry.find({}) if r.get("run_id") == run_id), None)
 
 
 def read_beats_for_run(run_dir: Path) -> dict[int, list[float]]:
@@ -720,8 +898,9 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
     pieces and their alive check first (an `inject` run's `service_check`
     gate in between), loop pieces last — or, for `train`, its one piece.
     Returns `(outcome, pieces)` with `outcome` `up`, `alive_check` or
-    `service_check`; before any outcome but `up`, `teardown_services` is
-    called and the sessions it ended are marked in the returned pieces."""
+    `service_check`; before any outcome but `up`, `teardown_launch` ends every
+    session this launch started and the sessions it ended are marked in the
+    returned pieces."""
     if not _on_login_host():
         sys.exit(f"jobs/launch.py: refuses to run on any host but {_login_host()!r}")
 
@@ -880,25 +1059,29 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
 
     # -- lock released; start the tmux sessions. --
     _ensure_log_dir(run_dir)
+    origin = incarnation_origin(run_dir, placed)
+
+    def failed(outcome: str) -> tuple[str, list[dict]]:
+        """Every way out of a launch that did not come up: end what this launch
+        started (8.1) and name the sessions ended in the returned pieces."""
+        return outcome, _with_ended(placed, teardown_launch(run_dir, placed))
 
     if stage == "train":
-        for p in placed:
-            _start_tmux(p["host"], p["session"], p["cmd"])
-        up, _failed = alive_check(placed)
+        if not _start_wave(placed):
+            return failed("alive_check")
+        up, _pending = alive_check(placed, origin)
         if not up:
-            ended = teardown_services(run_dir)
-            return "alive_check", _with_ended(placed, ended)
+            return failed("alive_check")
         return "up", [_strip_runtime(p) for p in placed]
 
     service_pieces = [p for p in placed if p["kind"] == "service"]
     loop_pieces = [p for p in placed if p["kind"] == "loop"]
 
-    for p in service_pieces:
-        _start_tmux(p["host"], p["session"], p["cmd"])
-    up, _failed = alive_check(service_pieces)
+    if not _start_wave(service_pieces):
+        return failed("alive_check")
+    up, _pending = alive_check(service_pieces, origin)
     if not up:
-        ended = teardown_services(run_dir)
-        return "alive_check", _with_ended(placed, ended)
+        return failed("alive_check")
 
     if stage == "inject":
         probe_piece = next(p for p in service_pieces if p["endpoint_file"] == "service_probe_0.json")
@@ -908,15 +1091,13 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
              "--base-url", base_url, "--run-dir", run_dir_str],
             cwd=str(_repo_root())).returncode
         if rc != 0:
-            ended = teardown_services(run_dir)
-            return "service_check", _with_ended(placed, ended)
+            return failed("service_check")
 
-    for p in loop_pieces:
-        _start_tmux(p["host"], p["session"], p["cmd"])
-    up, _failed = alive_check(loop_pieces)
+    if not _start_wave(loop_pieces):
+        return failed("alive_check")
+    up, _pending = alive_check(loop_pieces, origin)
     if not up:
-        ended = teardown_services(run_dir)
-        return "alive_check", _with_ended(placed, ended)
+        return failed("alive_check")
 
     return "up", [_strip_runtime(p) for p in placed]
 
@@ -943,10 +1124,20 @@ def refire(run_dir, git, piece=None) -> list[dict]:
     closed, while `registry.session_alive` reports the piece's tmux session
     alive; otherwise warns (never refuses) when the piece already has more
     than one `launches` entry, releases its unfinished claims through
-    `data/trajectory_record.release`, re-probes the cards, restarts it in a
-    new tmux session under the *same* session name, and rewrites its
-    `meta.json` entry and appends a `launches` entry through one
-    `registry.write_meta` call."""
+    `data/trajectory_record.release`, re-probes the cards, appends the start
+    row of the incarnation it is about to start, restarts the piece in a new
+    tmux session under the *same* session name, and rewrites its `meta.json`
+    entry and appends a `launches` entry through one `registry.write_meta`
+    call.
+
+    The start row is 8.1's, appended after the cards are claimed and before the
+    session starts, and it is what makes the refired incarnation a recorded
+    one: a start row clears the run's finish row (8.2), so the card
+    reservation of 2.5 counts the refired card again, the walk backfills the
+    `ok` row when the piece reaches `done.json`, and `run.py kill` writes its
+    `killed` row. A `tmux new-session` that fails then leaves a `launching`
+    row, which is the same state a first launch leaves and which `ls` closes
+    once it is older than `launch_timeout_s` (8.1)."""
     if not _on_login_host():
         sys.exit(f"jobs/launch.py: refuses to run on any host but {_login_host()!r}")
 
@@ -960,6 +1151,12 @@ def refire(run_dir, git, piece=None) -> list[dict]:
     host, session = target.get("host"), target.get("session")
     if host and session and registry.session_alive(host, session):
         sys.exit(f"jobs/launch.py refire: piece {piece} is alive: session {session!r} on host {host!r}")
+
+    run_id = _run_id_of_meta(meta)
+    run_row = _folded_row_of(run_id) if run_id else None
+    if run_row is None:
+        sys.exit(f"jobs/launch.py refire: {run_dir}/meta.json names no run this registry has a "
+                 f"row for, so the restarted piece would go unrecorded (8.1)")
 
     prior = [l for l in (meta.get("launches") or []) if piece in (l.get("pieces") or [])]
     if len(prior) > 1:
@@ -987,11 +1184,28 @@ def refire(run_dir, git, piece=None) -> list[dict]:
     module, old_run_dir, piece_i, piece_n, log = _parse_piece_cmd(target.get("cmd") or "")
     python = _interpreter_for(target.get("venv"))
     new_cmd = piece_command(python, module, old_run_dir, piece_i, piece_n, new_gpus, log)
+    updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None, cmd=new_cmd)
+
+    # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
+    # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
+    # card reservation of 2.5 reserves the cards of every piece in the newest start row.
+    registry.append_start({
+        "ev": "start", "t": _now(), "run_id": run_id,
+        "stage": run_row.get("stage"), "key": run_row.get("key"), "dir": str(run_dir),
+        "workflow": run_row.get("workflow"), "setting": run_row.get("setting"),
+        "parent": run_row.get("parent"), "swept": run_row.get("swept"),
+        "debug": run_row.get("debug"), "upstream": run_row.get("upstream"),
+        "versions": run_row.get("versions"), "diff": run_row.get("diff"),
+        "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
+        "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
+        "host": _login_host(),
+        "pieces": [updated_piece if p.get("index") == piece else p for p in pieces],
+        "status": "launching",
+    })
 
     if not _start_tmux(new_host, session, new_cmd):
         sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
 
-    updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None, cmd=new_cmd)
     launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[piece], cmd=new_cmd)
     registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
     return [updated_piece]

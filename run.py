@@ -1742,21 +1742,31 @@ def _fold_stage_extra(run_dir: Path, done: dict) -> None:
 
 
 def _backfill_finish_row(run_id: str, run_dir: Path) -> None:
-    """A directory whose done.json exists with no finish row gets one, on the walk that first sees it (8.2).
+    """The finish row of a launch that ended without one, appended on the walk that first sees its done.json (8.2).
+
+    The row is owed to the computation that wrote that done.json, so the test is that the file
+    belongs to the launch that is open: `finished_at` (`registry.write_done`) at or after the open
+    start row's `t`, both `%Y-%m-%d %H:%M`, so string order is chronological order, and a stage
+    that starts and finishes inside one minute still gets its row. A done.json older than the open
+    start row is the previous incarnation's — one sample directory serves several requests (2.3)
+    and a relaunch leaves the earlier request's file in place — so the live launch is left open and
+    writes its own row when it completes.
 
     8.2's other rule — a stage that always recomputes gets a new finish row per recomputation —
     is held by the walk itself: `eval` and `score` never skip (2.4), so `run.py` runs each
     recomputation in place and appends that run's own `ok` row when the process exits zero.
     """
-    open_ids = {r["run_id"] for r in registry.open_runs()}
-    if run_id not in open_ids:
+    open_row = next((r for r in registry.open_runs() if r.get("run_id") == run_id), None)
+    if open_row is None:
         return
     done = _read_json(run_dir / "done.json") or {}
-    with registry.lock():
-        registry.append_finish(run_id, {
-            "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
-            "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
-            "report": done.get("report"), "elapsed_s": _elapsed(run_id)})
+    finished_at = done.get("finished_at")
+    if isinstance(finished_at, str) and finished_at >= open_row.get("t", ""):
+        with registry.lock():
+            registry.append_finish(run_id, {
+                "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
+                "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
+                "report": done.get("report"), "elapsed_s": _elapsed(run_id)})
 
 
 def _certifies_request(done: dict | None, pairs: list[tuple[str, int]]) -> bool:
@@ -1976,23 +1986,29 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
             _finalize_pair_stage(stage, run_dir, key, pairs)
         return "continue"
 
-    if stage in ("sample", "inject"):
-        meta = _read_json(run_dir / "meta.json") or {}
-        work_pieces = [p for p in (meta.get("pieces") or []) if p.get("kind") in ("loop", "train")]
-        if work_pieces:
-            sessions = registry.live_sessions()
+    meta = _read_json(run_dir / "meta.json") or {}
+    work_pieces = [p for p in (meta.get("pieces") or []) if p.get("kind") in ("loop", "train")]
+    if entry["cards"] and work_pieces:
+        sessions = registry.live_sessions()
+        if stage in ("sample", "inject"):
             # release() only deletes a claim whose owner session is not in `sessions`
             # (data/trajectory_record.py), so this always runs, whether or not any of
             # this run's own pieces are still alive: a live piece's own claims are
             # untouched, and a fully-dead run's stale claims are freed so the relaunch
-            # below can re-claim them instead of skipping them forever.
+            # below can re-claim them instead of skipping them forever. The claims are
+            # the pair stages' own machinery and mean nothing for train.
             released = trajectory_record.release(
                 run_dir, sessions, registry.DEFAULTS["launch_timeout_s"])
             if released:
                 print(f"run.py: released {len(released)} dead claim(s) under {run_dir}")
-            if any(launch.piece_alive(p, sessions) for p in work_pieces):
-                print(f"run.py: {run_dir} has a live piece; launching nothing")
-                return "stop"
+        # 2.3/2.4: every card stage refuses to launch beside a piece that is still alive,
+        # train included. The launch gate of 2.5 covers this while the run is open; a run
+        # that a launch_failed finish row closed while its piece kept running (8.1) is out
+        # of open_runs, and this test is what stands between that piece and a second one
+        # writing into the same directory and onto the same card.
+        if any(launch.piece_alive(p, sessions) for p in work_pieces):
+            print(f"run.py: {run_dir} has a live piece; launching nothing")
+            return "stop"
 
     upstream_map = schema.upstream(stage, cfg)
     upstream_dirs = _upstream_dirs(stage, cfg, upstream_map)
@@ -2017,15 +2033,21 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
                              upstream=upstream_map, diff=diff, debug=cfg._debug,
                              owners=_owners_with(run_dir, cfg))
 
-        if entry["cards"]:
-            outcome, _pieces = launch.launch(stage, cfg, run_dir, resolved, git)
-        else:
-            outcome = None
+        # A CPU stage starts its process inside the hold: its start row carries the pid, which
+        # exists only once the process runs (errata, 8.1). A card stage's launch takes the hold
+        # itself for the gate, the reservation and its start row (8.1) and must not be called
+        # inside this one: 8.6 releases the lock before any tmux session starts, and holding it
+        # across the two waves and their alive checks blocks every other run.py on the machine
+        # for as long as the alive check runs.
+        if not entry["cards"]:
             proc = _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions,
                                      upstream_map, diff)
 
     if entry["cards"]:
+        outcome, pieces = launch.launch(stage, cfg, run_dir, resolved, git)
         if outcome != "up":
+            ended = [p["session"] for p in pieces if p.get("ended")]
+            print(f"run.py: {run_id}: launch returned {outcome}; ended {ended}")
             with registry.lock():
                 registry.append_finish(run_id, {
                     "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
