@@ -215,21 +215,24 @@ def serve(args) -> None:
         _wait_healthy(root_url, proc)
         _check_model(base_url, row)
         _check_render(base_url, row, m, cfg)
-    except BaseException:
-        # the three checks refuse with SystemExit, which is a BaseException; the vllm
-        # process is ended and reaped here so a refused start never leaves it on the card
-        proc.terminate()
-        try:
-            proc.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        raise
-    _write_endpoint_file(
-        endpoint_path, replica=args.replica, base_url=base_url, host=host, port=args.port,
-        pid=proc.pid, flags=vars(args), claims=claims, attached_to=None,
-    )
-    raise SystemExit(proc.wait())
+        _write_endpoint_file(
+            endpoint_path, replica=args.replica, base_url=base_url, host=host, port=args.port,
+            pid=proc.pid, flags=vars(args), claims=claims, attached_to=None,
+        )
+        raise SystemExit(proc.wait())
+    finally:
+        # this process owns the vllm process for its whole life: it is ended and reaped
+        # before serve() returns by any route -- a check that refuses with SystemExit, an
+        # endpoint write that fails on the net disk, or the server's own exit. The launcher
+        # has no other lever: once this parent dies the tmux pane closes and `tmux
+        # kill-session` finds no session whose group it could signal.
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
 
 
 def main(argv: list[str] | None = None) -> int:
