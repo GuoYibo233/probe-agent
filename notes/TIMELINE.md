@@ -16,6 +16,55 @@
 > moved to `plans/archive/TIMELINE-2026-08-02-to-2026-08-18.md`; read them only when gyb
 > explicitly says "check ancient memory" or names that file.
 
+## 2026-09-20 The from-zero rewrite replaces the old tree; `legacy/` deleted
+
+- Trigger: gyb's seven principles (Part 1 of `notes/plans/2026-09-14-structure-from-zero.md`)
+  and the 2026-09-13 to 2026-09-17 renewal discussion.
+- Decision: the old tree is replaced by the 31-file tree of
+  `notes/plans/2026-09-14-structure-from-zero.md`, whose interfaces are
+  `notes/plans/2026-09-17-contracts.md` and whose build order was
+  `notes/plans/2026-09-17-construction-plan.md`; six stages, one command
+  (`run.py`), one experiment is one setting, a run directory is named by its key,
+  `--debug` runs any setting tiny, `eval/` reads only disk.
+- Counts: about 60 Python files under the old code directories become 31; the old
+  four-ledger layout becomes five record layers, with `jobs/runs.jsonl` and
+  `jobs/RESULTS.md` beside the registry.
+- What is retired, by name: the resident sampler, its web page
+  (`localhost:8377`), the sampling history, the incident agent, the autopsy, the
+  escalation line's automatic consequence, the one-refire-per-piece quota, the
+  `run.py` task registry (`TASKS`/`RECIPES`/`list`/`show`/`recipe`/`status`),
+  `MAP.md`, `ops/jobs.json`, `RUNMETA.json`, the presets, the offline replay
+  line, the chat-endpoint collection path, and the five non-AppWorld
+  environments.
+- What this invalidates: every command in the pre-rewrite gpu-run and
+  probe-pipeline skills; the `notes/CONTEXT.md` entries listed below; every
+  experiment number produced before the rewrite keeps its old provenance and is
+  not re-derived (the old `RESULTS.md` goes with `legacy/`, and the tag is
+  where it is read).
+- The glossary debt, listed for gyb: `notes/CONTEXT.md`'s entries *Sampler*,
+  *Window*, *Escalation line*, *Incident agent*, *Autopsy*, *Incident record*,
+  *Sampling history*, the sampler's half of *Verdict*, *Ledger* (now the
+  registry, `jobs/runs.jsonl`), *Refire*'s quota sentence, *shardable*,
+  *Monitoring parameters* (now `registry.DEFAULTS`, 8.5) and *chat baseline*
+  describe machinery that no longer exists. This entry names them; the rewrite
+  of `CONTEXT.md` is gyb's.
+- Where the old tree is: tag `checkpoint-2026-09-17-before-from-zero` on `main`,
+  and commit `647dc45` on this branch.
+- Acceptance that was actually run: three end-to-end `--debug` walks, each with
+  its printed run-directory key, and `run.py selfcheck` exit 0.
+  - `baseline gpt_oss_120b_appworld --debug`: sample=`96de225de2b4`,
+    score=`20eaad1deae5`
+  - `train_probe ctool_qwen3_0pt6b --debug`: sample=`96de225de2b4`,
+    build=`b565f5ab1b94`, train=`0f3e343f0eca`, eval=`b5999ae061f9`
+  - `train_probe cgen_qwen3_0pt6b --debug`: train=`b45633250e8b`,
+    eval=`e5d6ba9d8c7b`
+  - `train_probe cparam_qwen3_0pt6b --debug`: train=`5b398c217e13`,
+    eval=`ef9644a7e92f`
+  - `inject probe_p1_e1_theta_0pt80 --debug`: inject=`c96e48a8be3d`,
+    score=`d49397cf4dd9`; rerun with `inject.fire_nth_cut=1`:
+    inject=`27d4bad1b70a`, score=`a4e05cb2fbe3`
+  - `run.py selfcheck`: `selfcheck: 31 python files, 0 problems`
+
 ## 2026-09-12 The whole repository is translated to English in one pass, ledgers and archive included
 
 - Trigger: gyb ordered "make the whole repo English" and confirmed the same day that Chinese in
