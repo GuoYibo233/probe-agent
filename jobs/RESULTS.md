@@ -3,8 +3,10 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
-| `inject-a36cf8d69e00` | 2026-09-20 19:49 | inject | inject/probe_p1_e1_theta_0pt80 | `b59bdf2` | launching | - | - |
-| `inject-2045e001d683` | 2026-09-20 19:43 | inject | inject/probe_p1_e1_theta_0pt80 | `b59bdf2` | launching | - | - |
+| `score-ec64bdd1b80b` | 2026-09-20 19:59 | score | inject/probe_p1_e1_theta_0pt80 | `74cfc76` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
+| `score-6b63fdac42fe` | 2026-09-20 19:59 | score | inject/probe_p1_e1_theta_0pt80 | `74cfc76` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
+| `inject-a36cf8d69e00` | 2026-09-20 19:49 | inject | inject/probe_p1_e1_theta_0pt80 | `b59bdf2` | ok | - | - |
+| `inject-2045e001d683` | 2026-09-20 19:43 | inject | inject/probe_p1_e1_theta_0pt80 | `b59bdf2` | ok | - | - |
 | `eval-b68ff955f686` | 2026-09-20 19:42 | eval | train_probe/cgen_qwen3_0pt6b | `74029bb` | ok | - | report.md |
 | `train-b6406c340879` | 2026-09-20 19:29 | train | train_probe/cgen_qwen3_0pt6b | `74029bb` | ok | objective=0.75 val_ce=1.7946173697710037 val_tool_ok=0.25 val_params_all_ok=0.3125 val_full_call_ok=0.25 gen_n=64 | - |
 | `train-d2bdc6878a92` | 2026-09-20 18:48 | train | train_probe/ctool_qwen3_0pt6b | `74029bb` | launch_failed | - | - |
