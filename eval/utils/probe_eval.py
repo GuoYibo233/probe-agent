@@ -584,11 +584,12 @@ def run(run_dir: Path) -> None:
     if kind == "generator":
         ref_key = cfg._upstream["theta_from.eval"]
         ref_eval_dir = schema.referenced_run_dir("eval", ref_key)
-        if ref_eval_dir is None or not (ref_eval_dir / "done.json").exists():
+        if ref_eval_dir is not None and (ref_eval_dir / "done.json").exists():
+            ref = read_report(ref_eval_dir)
+        else:
             raise ValueError(
                 f"eval key {ref_key} at {ref_eval_dir}: the referenced classifier eval "
                 "(theta_from) has no done.json")
-        ref = read_report(ref_eval_dir)
         if ref[0]["risk_targets"] != cfg.eval.risk:
             raise ValueError(
                 f"eval.risk {cfg.eval.risk} differs from the referenced report's "
@@ -596,8 +597,16 @@ def run(run_dir: Path) -> None:
 
         ref_meta = json.loads((ref_eval_dir / "meta.json").read_text())
         ref_train_key = ref_meta["upstream"]["train"]
+        # The referenced eval's own train key comes out of that eval's meta.json,
+        # so it is in no upstream map of this setting and run.py's pre-launch
+        # refusal never sees it: name the miss here (5.4).
         ref_train_dir = schema.referenced_run_dir("train", ref_train_key)
-        ref_train_meta = json.loads((ref_train_dir / "meta.json").read_text())
+        if ref_train_dir is not None and (ref_train_dir / "meta.json").exists():
+            ref_train_meta = json.loads((ref_train_dir / "meta.json").read_text())
+        else:
+            raise ValueError(
+                f"train key {ref_train_key} of the referenced classifier eval {ref_eval_dir}: "
+                "no run directory holding meta.json under either root")
         ref_build_key = ref_train_meta["upstream"]["build"]
         own_build_key = train_meta["upstream"]["build"]
         if ref_build_key != own_build_key:
