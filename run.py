@@ -614,16 +614,33 @@ def _close_failed_launches(rows: list[dict]) -> None:
     before these rows are printed, so the `ls` line, `jobs/RESULTS.md` and a later `run.py sync`
     carry one word for the state. The verdicts are the ones `registry.ls` has already judged, so
     this costs no second `tmux` probe.
+
+    The row closes the one launch those verdicts describe, and a launch is named by its start
+    row, so the hold takes the run's open start row again and appends only while that row is
+    still the judged one — same `run_id`, same `t`. Everything above was read before the lock, at
+    the top of `cmd_ls`, and that whole `ls` is the gap: the flags and the progress over every
+    sample directory's task records, then one `tmux ls` per host. A relaunch of this very run
+    lands inside it — the launch gate lets it through, because a run whose pieces are all dead
+    and whose start row is older than `launch_timeout_s` has no live session, no fresh heartbeat
+    and no young start row (2.5) — and a second `run.py ls` beside this one reaches the same
+    stale launch. Under the hold the first leaves a start row of its own and the second leaves a
+    finish row, so in both cases the open start row is another row than the judged one and this
+    launch is already accounted for. `elapsed_s` is measured from that judged row, the launch the
+    row closes.
     """
     for row in rows:
         verdicts = [p["verdict"] for p in row.get("pieces") or []]
         if row.get("status") == "launching" and registry.launch_failed(row.get("t", ""), verdicts):
             run_id = row["run_id"]
             with registry.lock():
-                registry.append_finish(run_id, {
-                    "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
-                    "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
-            row["status"] = "launch_failed"
+                judged = next((r for r in registry.open_runs()
+                               if r["run_id"] == run_id and r.get("t") == row.get("t")), None)
+                if judged is not None:
+                    registry.append_finish(run_id, {
+                        "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
+                        "counts": {}, "metrics": {}, "report": None,
+                        "elapsed_s": time.time() - _parse_t(judged["t"])})
+                    row["status"] = "launch_failed"
 
 
 def cmd_ls(rest: list[str]) -> int:
