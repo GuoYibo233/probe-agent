@@ -274,10 +274,7 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
   `tmux ls` per host; there is no background process, and nothing to restart after a
   merge.
 - `incidents.jsonl` and the incident agent, and the escalation line's automatic
-  consequence (spawning an agent on an escalation) -> `jobs/registry.py` still marks a
-  piece whose beats stopped past the escalation line, and nothing acts on that mark; what
-  the `ls` line carries is the verdict `suspected stall`, and a person decides what to do
-  about it (the `8.5 (the escalated flag)` ruling of
-  `.scratch/from-zero/contract-errata.md`).
+  consequence (spawning an agent on an escalation) -> `ls`'s `escalated` flag survives
+  as something a person reads, not something that starts a process.
 - The one-refire-per-piece quota -> `run.py refire` warns past one launch entry and
   proceeds; there is no quota, because the only refire left is a person's.

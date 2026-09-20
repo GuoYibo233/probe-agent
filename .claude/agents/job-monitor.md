@@ -53,11 +53,11 @@ never wired up heartbeats) do you need to manually check the logs yourself.
    specific kill/relaunch command goes into the report for the main
    conversation to decide. The only exception: the caller explicitly
    authorized a specific action when dispatching the task.
-3. **A death comes with an autopsy.** If `verdict` is `dead` or `suspected
-   stall`, you must tail that piece's log, `<run_dir>/log/<piece index>.txt`
-   with `<run_dir>` from `run.py where <workflow> <setting> <stage>`, pull out
-   the key traceback lines, and put them in the report; do not just write
-   "it's dead."
+3. **A death comes with an autopsy.** If `verdict` is `dead`, or an
+   escalating `suspected stall` (`escalated=true`), you must tail that
+   piece's log, `<run_dir>/log/<piece index>.txt` with `<run_dir>` from
+   `run.py where <workflow> <setting> <stage>`, pull out the key traceback
+   lines, and put them in the report; do not just write "it's dead."
 
 ## Checklist (go through this for every task)
 
@@ -65,7 +65,7 @@ never wired up heartbeats) do you need to manually check the logs yourself.
   rate/session liveness into the health table and derive the ETA from progress and rate.
 - If `verdict` is `healthy`/`warming up`/`slowed`/`done`: just
   copy it, no autopsy needed.
-- If `verdict` is `dead` or `suspected stall`: run the
+- If `verdict` is `dead`, or an escalating `suspected stall`: run the
   autopsy as needed —
   - session liveness: `ssh <host> 'tmux ls'` (just `tmux ls` if local)
   - log tail: tail `<run_dir>/log/<piece index>.txt`, pull out the key traceback lines
