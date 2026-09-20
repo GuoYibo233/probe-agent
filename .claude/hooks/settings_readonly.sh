@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 # PreToolUse hook: refuses any agent edit to experimental_settings/*.yaml and
 # to models/table.yaml, the owner's files (contracts 5.1, 6.1).
+#
+# TODO(owner, 2026-09-21): the Bash branch is a substring match, and both of its
+# errors are known (wave 7 final review, critic F2; agents do not change this
+# file's logic):
+#   - it refuses a read-only command that names a setting file beside a write word
+#     (`grep x experimental_settings/a.yaml > /tmp/out`, `cat CLAUDE.md | tee ...`,
+#     any command whose text carries "install" or "patch" as an ordinary word);
+#   - it passes an edit made through an interpreter that never spells a write word
+#     (`python3 -c "open('experimental_settings/a.yaml','w')..."`, `perl -pi`,
+#     `yq -i`, `ed`).
+# The owner decides which way the match leans: keep over-refusing (the gate is
+# fail-closed today), or narrow it to redirects and in-place editors whose target
+# token is a protected path, and add the interpreters to BASH_WRITE_MARKERS.
 set -uo pipefail
 
 payload="$(cat)"

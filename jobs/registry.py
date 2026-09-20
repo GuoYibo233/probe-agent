@@ -384,6 +384,18 @@ def _fmt_metrics(m) -> str:
     return " ".join(f"{k}={v}" for k, v in m.items())
 
 
+# TODO(owner, 2026-09-21): `jobs/runs.jsonl` carries rows no experiment produced, and
+# `render()` folds them into `jobs/RESULTS.md` like any other run. The registry is
+# append-only and never hand-edited, so the rows stand until the owner rules on them:
+#   - 42 fixture rows with run ids `sample-<n>-<m>` and run directories under
+#     `/tmp/tmp*/out/sample/shared`, written into the real file by
+#     `tests/test_registry_concurrent_append.py` before defect 9 of wave 7 was fixed
+#     (74cfc76); committed in b59bdf2.
+#   - the rows of `train-f895049ab1dc`, ten of them `launch_failed`, written by the
+#     wave 7 session's relaunch loop during its first M-T3 attempt.
+# Choices: leave them, or a one-off rewrite of the file by the owner with a commit that
+# says so (an agent never does that), or a `fixture` filter in `fold()` keyed on the
+# `/tmp/` run directory. Wave 7's record: .scratch/from-zero/sdd/2026-09-20-wave7/wave-result.md.
 def render() -> None:
     """Rewrite `jobs/RESULTS.md` from `jobs/runs.jsonl`: one markdown table,
     newest run first, one row per `run_id` folded from its newest start and

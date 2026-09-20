@@ -566,8 +566,12 @@ def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
 
 
 def _format_piece(piece: dict) -> str:
-    """One piece on the ls line: its index and verdict, the session it runs in and the host it runs on, and the cards it holds (8.6)."""
+    """One piece on the ls line: its index and verdict, the escalation mark when the verdict has crossed the escalation line, the session it runs in and the host it runs on, and the cards it holds (8.5, 8.6)."""
     text = f"{piece.get('index')}:{piece.get('verdict')}"
+    # 8.5: `escalated` survives as a flag ls prints; `judge` and `judge_service` set it on a
+    # stall past the escalation line and on every dead piece, so `dead` always carries it.
+    if piece.get("escalated"):
+        text += "(escalated)"
     host, session = piece.get("host"), piece.get("session")
     if session:
         text += f"@{host}:{session}"

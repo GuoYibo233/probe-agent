@@ -136,7 +136,10 @@ frozen `probe.method` before the stage starts (the `5.4 / 2.1` ruling of
 ```
 
 One folded line per run, with each piece's verdict in priority order — `done`, `dead`,
-`suspected stall`, `warming up`, `slowed`, `healthy` (contracts 8.5) — progress as
+`suspected stall`, `warming up`, `slowed`, `healthy` (contracts 8.5) — the mark
+`(escalated)` after a verdict that has crossed the escalation line (a `suspected stall`
+whose age is past three times the line that called it a stall, and every `dead`, so a
+dead piece reads `0:dead(escalated)`), progress as
 `done/total <unit>` and the recent rate, the heartbeat age, sessions and cards, and a
 flag column: `edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`,
 `orphan` (contracts 8.6). That priority order is the rule for a loop, train or cpu
