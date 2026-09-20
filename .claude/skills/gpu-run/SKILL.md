@@ -209,14 +209,19 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
   the tree before it.
 - "Start fresh": `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py retry
   <workflow> <setting> <stage>`, which also takes the Phase 2 dirty-tree gate. For
-  `train` the phrase holds: it deletes `last/`, `last.tmp/` and `last.prev/` — the three
-  names the resume checkpoint carries while the trainer swaps it, so a kill inside a
-  checkpoint write leaves nothing to resume from — plus `train_log.jsonl`,
-  `train_done.json`, `align_check.json`, `consumed.json` and `done.json`, then launches
-  normally (contracts 2.4). For `sample` and `inject` it clears `done.json` and
-  `consumed.json` only; those two stages resume from the per-pair files under the run
-  directory's `records/` (contracts 2.3), which retry never deletes, so a partial
-  directory continues exactly
+  `train` it deletes `last/`, `train_log.jsonl`, `train_done.json`, `align_check.json`,
+  `consumed.json` and `done.json`, then launches normally (contracts 2.4). The resume
+  checkpoint carries three names while the trainer swaps it — the new one is written into
+  `last.tmp/`, and the one it replaces is held as `last.prev/` between the two renames —
+  and `retry` deletes `last/` alone, so a kill inside a checkpoint write leaves
+  `last.tmp/` or `last.prev/` on disk. The trainer settles those two at its next start,
+  and a `last.prev/` with no `last/` beside it takes the name back: the run you meant to
+  start fresh resumes from the pre-crash checkpoint, at its old step and with the
+  alignment gate skipped. So after a kill inside a checkpoint write, remove `last.tmp/`
+  and `last.prev/` from the run directory yourself before typing `retry`. For `sample`
+  and `inject` it clears `done.json` and `consumed.json` only; those two stages resume
+  from the per-pair files under the run directory's `records/` (contracts 2.3), which
+  retry never deletes, so a partial directory continues exactly
   as a plain re-run would, and a directory whose per-pair files are already complete is
   re-certified — a rewritten `done.json`, a service teardown and a second `ok` finish
   row — rather than sampled again.
@@ -226,13 +231,13 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
   run: `kill` ends its pieces and writes its `killed` finish row; `refire` restarts one
   of its pieces, and refuses while that piece's session is alive, as the bullet above
   states; `retry` clears the markers first and unconditionally — `done.json` and
-  `consumed.json`, and for `train` also `last/`, `last.tmp/`, `last.prev/`,
-  `train_log.jsonl`, `train_done.json` and `align_check.json` — and only then walks the
-  stage. So `retry` against a live run deletes those files and launches nothing: a live
-  `sample`, `inject` or `train` run stops at `run.py: <run_dir> has a live piece;
-  launching nothing`, the refusal every card stage takes, `train` included — and for
-  `train` its checkpoint directory and its training log are already gone by then. `kill`
-  the run and let its pieces end before typing `retry`. With the smoke as the only run of
+  `consumed.json`, and for `train` also `last/`, `train_log.jsonl`, `train_done.json` and
+  `align_check.json` — and only then walks the stage. So `retry` against a live run
+  deletes those files and launches nothing: a live `sample`, `inject` or `train` run stops
+  at `run.py: <run_dir> has a live piece; launching nothing`, the refusal every card stage
+  takes, `train` included — and for `train` its checkpoint directory and its training log
+  are already gone by then. `kill` the run and let its pieces end before typing `retry`.
+  With the smoke as the only run of
   that setting and stage, `kill` prints `ended []` and stops nothing
   while the smoke keeps its cards. End a smoke by hand instead:
   `ssh <host> tmux kill-session -t <session>` for every piece, service pieces included,
