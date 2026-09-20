@@ -314,7 +314,7 @@ jobs/launch.py — launch and refire the tmux pieces of a sample, inject or trai
   imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
   used by: run.py
   reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host and the hosts list), models/table.yaml (the serving block), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and heartbeat/<piece>-<launch>.jsonl files (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git
-  writes:  the start row in jobs/runs.jsonl, meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands
+  writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
   venv:    probe
 
 jobs/runs.jsonl — one registry row per stage run, appended at start and at finish by registry.py; never edited by hand; in git.

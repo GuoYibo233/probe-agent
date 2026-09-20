@@ -56,7 +56,7 @@ never wired up heartbeats) do you need to manually check the logs yourself.
 3. **A death comes with an autopsy.** If `verdict` is `dead`, or an
    escalating `suspected stall` (`escalated=true`), you must tail that
    piece's log, `<run_dir>/log/<piece index>.txt` with `<run_dir>` from
-   `run.py where <workflow> <setting> <stage>`, pull out the key traceback
+   `external/probe-env/bin/python run.py where <workflow> <setting> <stage>`, pull out the key traceback
    lines, and put them in the report; do not just write "it's dead."
 
 ## Checklist (go through this for every task)

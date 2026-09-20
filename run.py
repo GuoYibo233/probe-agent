@@ -30,7 +30,7 @@ RESERVED_SUBCOMMANDS = (
 )
 
 _SUBCOMMAND_ONE_LINE = {
-    "ls": "[workflow] [--debug] -- one folded line per run",
+    "ls": "[workflow] [--debug] -- one folded line per run; closes a launch whose pieces are all dead",
     "where": "<workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage",
     "find": "section.field=value ... -- the runs whose settings_diff matches every given field",
     "kill": "<workflow> <setting> <stage> -- end one run's pieces, write the killed finish row",
