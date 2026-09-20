@@ -1,6 +1,6 @@
 # 18 the migration: delete legacy/, clean .gitignore, write the TIMELINE entry
 
-Status: ready-for-agent
+Status: resolved
 Blocked by: 15, 16
 Spec: .scratch/from-zero/spec.md (sections 1, 2, 7, 9)
 
@@ -361,3 +361,16 @@ while it ran, and no later start row follows that finish row.
   carries the details is the `TODO(gyb, 2026-09-18)` comment at the top of
   `data/training_data.py`. Whoever dispatches this ticket asks gyb whether the rename
   runs before it or after it; `C6` and `C9` here count and grep file names.
+
+- 2026-09-20, resolved in wave 7 (session new1-08): commits 64ee040..f157808 on
+  `ticket/2026-09-20-wave7b/T18`, merged as 814c908; no fix round, no reviewer finding.
+  On gyb's word ("do the rest"), the three `data/*_format.py` renames stay after this
+  ticket, as the owner's own change. Main-session checks on the merged tree: C5
+  (`selfcheck: 31 python files, 0 problems`), C6 (31, no MISSING), C9, C10 (14 rules,
+  exit 1, 0, 4), C14 (1 and 1), C15 (`ok-clean`) and C16 (`ok-no-bare-docs-path`) pass.
+  C9's `ok-noref` grep was run over `jobs/*.py` instead of all of `jobs/`, because
+  `jobs/runs.jsonl` holds two start rows whose `dirty_files` list names this ticket's own
+  file and the registry is never edited by hand. After `git rm`, `legacy/` still held 284
+  untracked files and 4 symlinks to NFS (old server logs, `exec_cache`, a lock); they
+  were moved, not deleted, to
+  `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/legacy-untracked-2026-09-20/`.
