@@ -297,8 +297,27 @@ def _n_events(pred_df: pl.DataFrame) -> dict:
     return dict(zip(counted["split"].to_list(), counted["n"].to_list()))
 
 
+def report_passes(method: str, cfg) -> int:
+    """How many `item` beats the method's report emits, which is an eval run's heartbeat total (8.4).
+
+    One beat closes one pass over the prediction frame. The classifier makes one pass per
+    theta on the grid and, per risk target, the frozen crossing, its bootstrap and the fires
+    crossing. The generator makes, per risk target, the join with its row scoring and its
+    bootstrap. A risk target whose theta is None skips its work and still closes its passes,
+    so this count is exact for every setting and the report's last beat reads done == total.
+    """
+    kind = PROBE_KIND[method]
+    if kind == "classifier":
+        return len(cfg.eval.theta_grid) + 3 * len(cfg.eval.risk)
+    if kind == "generator":
+        return 2 * len(cfg.eval.risk)
+    raise ValueError(
+        f"{method}: PROBE_KIND {kind!r} has no pass count; the shapes are "
+        f"'classifier' and 'generator'")
+
+
 def report_classifier(method: str, pred_df: pl.DataFrame, cfg, ref,
-                      labels: list[str]) -> tuple[dict, pl.DataFrame]:
+                      labels: list[str], hb) -> tuple[dict, pl.DataFrame]:
     """Fit temperature and theta on val, freeze on test, write the fired rows — the classifier shape of the probe report, which holds for any classifier probe."""
     if ref is not None:
         raise ValueError(f"{method}: ref must be None for a classifier method")
@@ -330,10 +349,15 @@ def report_classifier(method: str, pred_df: pl.DataFrame, cfg, ref,
     val_work = work.filter(pl.col("split") == "val")
     test_work = work.filter(pl.col("split") == "test")
 
+    total = report_passes(method, cfg)
+    beats = 0
+
     grid = []
     for theta in cfg.eval.theta_grid:
         recs = _first_crossing(val_work, theta)
         grid.append({"theta": theta, **_agg(recs)})
+        beats += 1
+        hb.emit(beats, total, "item")
 
     chosen: dict[str, float | None] = {}
     for risk in cfg.eval.risk:
@@ -343,15 +367,24 @@ def report_classifier(method: str, pred_df: pl.DataFrame, cfg, ref,
     frozen: dict[str, dict] = {}
     for risk_str, theta in chosen.items():
         if theta is None:
+            # The crossing and the bootstrap are both skipped; both passes still close.
+            beats += 2
+            hb.emit(beats, total, "item")
             continue
         recs = _first_crossing(test_work, theta)
+        beats += 1
+        hb.emit(beats, total, "item")
         ci = bootstrap_ci(recs, "task_id", _classifier_ci_stat,
                           n=cfg.eval.bootstrap, seed=cfg.eval.bootstrap_seed)
         frozen[risk_str] = {**_agg(recs), "ci": ci}
+        beats += 1
+        hb.emit(beats, total, "item")
 
     fires_frames = []
     for risk_str, theta in chosen.items():
         if theta is None:
+            beats += 1
+            hb.emit(beats, total, "item")
             continue
         recs = _first_crossing(work, theta)
         fired = recs.filter(pl.col("fired"))
@@ -365,6 +398,8 @@ def report_classifier(method: str, pred_df: pl.DataFrame, cfg, ref,
             pl.col("depth"),
             pl.col("label_pred"),
         ]))
+        beats += 1
+        hb.emit(beats, total, "item")
     if fires_frames:
         fires = pl.concat(fires_frames).select(list(FIRES_SCHEMA)).cast(FIRES_SCHEMA)
     else:
@@ -429,7 +464,7 @@ def _generator_scores(method: str, test: pl.DataFrame, fires_risk: pl.DataFrame,
 
 
 def report_generator(method: str, pred_df: pl.DataFrame, cfg, ref,
-                     labels: list[str] | None) -> tuple[dict, None]:
+                     labels: list[str] | None, hb) -> tuple[dict, None]:
     """Join the test predictions to the referenced classifier's fired rows per risk target, and report exact match at the frozen theta over the joined rows."""
     if not (isinstance(ref, tuple) and len(ref) == 2):
         raise ValueError(f"{method}: ref must be a (fields, fires) tuple, got {type(ref).__name__}")
@@ -439,6 +474,9 @@ def report_generator(method: str, pred_df: pl.DataFrame, cfg, ref,
 
     env = open_env(cfg.data.env)
     test = pred_df.filter(pl.col("split") == "test")
+
+    total = report_passes(method, cfg)
+    beats = 0
 
     theta_used: dict[str, float | None] = {}
     exact: dict[str, dict] = {}
@@ -450,11 +488,16 @@ def report_generator(method: str, pred_df: pl.DataFrame, cfg, ref,
             exact[risk_str] = {
                 "tool_ok": None, "params_all_ok": None, "full_call_ok": None, "n": 0, "ci": None,
             }
+            # The scoring and the bootstrap are both skipped; both passes still close.
+            beats += 2
+            hb.emit(beats, total, "item")
             continue
 
         fires_risk = ref_fires.filter((pl.col("risk") == risk) & (pl.col("split") == "test"))
         joined, tool_ok_vals, params_vals, full_vals = _generator_scores(
             method, test, fires_risk, env)
+        beats += 1
+        hb.emit(beats, total, "item")
         n = joined.height
         joined = joined.with_columns([
             pl.Series("tool_ok", tool_ok_vals),
@@ -470,6 +513,8 @@ def report_generator(method: str, pred_df: pl.DataFrame, cfg, ref,
             "n": n,
             "ci": ci,
         }
+        beats += 1
+        hb.emit(beats, total, "item")
 
     fields = {
         "risk_targets": cfg.eval.risk,
@@ -481,13 +526,13 @@ def report_generator(method: str, pred_df: pl.DataFrame, cfg, ref,
 
 
 def report(method: str, pred_df: pl.DataFrame, cfg, ref,
-           labels: list[str] | None) -> tuple[dict, pl.DataFrame | None]:
+           labels: list[str] | None, hb) -> tuple[dict, pl.DataFrame | None]:
     """The report of the method's PROBE_KIND: the classifier shape for a classifier, the generator shape for a generator."""
     kind = PROBE_KIND[method]
     if kind == "classifier":
-        return report_classifier(method, pred_df, cfg, ref, labels)
+        return report_classifier(method, pred_df, cfg, ref, labels, hb)
     if kind == "generator":
-        return report_generator(method, pred_df, cfg, ref, labels)
+        return report_generator(method, pred_df, cfg, ref, labels, hb)
     raise ValueError(
         f"{method}: PROBE_KIND {kind!r} has no report shape; the shapes are "
         f"'classifier' and 'generator'")
@@ -573,7 +618,10 @@ def run(run_dir: Path) -> None:
             f"expected only [{method!r}]")
 
     total_events = pred_df["event_id"].n_unique()
-    hb.emit(0, total_events, "item")
+    # The beat's total is the report's pass count, the only unit the report advances by: it
+    # walks the whole frame once per theta and once or more per risk target, so there is no
+    # point at which a count of events is partly finished (8.4, report_passes).
+    hb.emit(0, report_passes(method, cfg), "item")
 
     train_meta = json.loads((train_dir / "meta.json").read_text())
     labels = train_meta["stage_extra"]["labels"]
@@ -614,7 +662,7 @@ def run(run_dir: Path) -> None:
                 f"the referenced classifier eval's train run has build key {ref_build_key!r}, "
                 f"this eval's own train run has build key {own_build_key!r}")
 
-    fields, fires = report(method, pred_df, cfg, ref, labels)
+    fields, fires = report(method, pred_df, cfg, ref, labels, hb)
 
     clash = sorted(set(fields) & IDENTITY_FIELDS)
     if clash:
