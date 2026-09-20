@@ -94,9 +94,22 @@ class Probe(torch.nn.Module):
         (dir / "meta.json").write_text(json.dumps(meta_out))
 
     def forward(self, batch: Batch) -> Outputs:
-        device = next(self.backbone.parameters()).device
+        param = next(self.backbone.parameters())
+        device = param.device
         input_ids = batch["input_ids"].to(device)
-        attention_mask = batch["attention_mask"].to(device)
+        # A method's packed mask is the additive [B, 1, L_pad, L_pad] bias (contracts 6.2),
+        # and it crosses onto the card in the dtype this forward computes in: the autocast
+        # dtype under the trainer's bfloat16 autocast, the weights' dtype everywhere else
+        # (the alignment gate's float32 pass, the served probe's bfloat16 load). The cast
+        # happens before the transfer, so the card never holds the float32 copy. 0.0 and
+        # -inf, the mask's only two values, are exact in every one of those dtypes. The
+        # plain [B, L] mask of a reference_loss batch is integer and goes over as it is.
+        attention_mask = batch["attention_mask"]
+        if attention_mask.is_floating_point():
+            compute_dtype = (torch.get_autocast_dtype(device.type)
+                             if torch.is_autocast_enabled(device.type) else param.dtype)
+            attention_mask = attention_mask.to(compute_dtype)
+        attention_mask = attention_mask.to(device)
         event_end = batch["event_end"].to(device)
         kwargs = dict(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
         position_ids = batch.get("position_ids")
