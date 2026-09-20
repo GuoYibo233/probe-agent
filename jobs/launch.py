@@ -450,18 +450,30 @@ def _newest_beat_launch(run_dir, index: int) -> int:
 
 
 def incarnation_origin(run_dir, pieces) -> dict[int, dict]:
-    """`{piece index: {"log_size", "beat_launch"}}` for every `loop`, `train`
-    or `cpu` piece: what its `log/<index>.txt` and its `heartbeat/` listing
-    already held before this launch started it. A run directory is relaunched
-    into and the piece command appends (`tee -a`, 3.4), so this map is what
-    lets `alive_check` read this incarnation's output and no earlier one's
-    (errata, section-4 walks: an old `Traceback` in the reused log closed every
-    relaunch at its first poll). Taken before the first `tmux new-session`,
-    because everything a piece writes after that is its own."""
+    """One rule over every kind of piece: what a piece inherits from an earlier
+    incarnation is snapshotted or cleared here, before the first
+    `tmux new-session`, because everything a piece writes after that is its
+    own. That is what lets `alive_check` read this incarnation's output and no
+    earlier one's (errata, section-4 walks: an old `Traceback` in the reused
+    log closed every relaunch at its first poll).
+
+    A `loop`, `train` or `cpu` piece appends to a log the run directory already
+    holds (`tee -a`, 3.4) and numbers its heartbeat files from the ones already
+    there, so its origin is a snapshot: the returned
+    `{piece index: {"log_size", "beat_launch"}}` is what its `log/<index>.txt`
+    and its `heartbeat/` listing held before this launch started it. A
+    `service` piece leaves one file instead of a growing log and nothing else
+    deletes it, so its origin is made by clearing: the endpoint file this
+    launch's server is about to write (7.4) is removed, and the existence test
+    in `alive_check` and in `agent/run_tasks._wait_for_endpoints` then reads
+    this incarnation's own server. Only the pieces this launch places are
+    touched, so a piece of this run that this launch does not start keeps its
+    file."""
     run_dir = Path(run_dir)
     origin: dict[int, dict] = {}
     for p in pieces:
         if p.get("kind") == "service":
+            (run_dir / p["endpoint_file"]).unlink(missing_ok=True)
             continue
         log = Path(p.get("log", ""))
         origin[p["index"]] = {
@@ -522,8 +534,9 @@ def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
     """`(all_up, pending_pieces)`, polled every `poll_s` for at most `window_s`
     (default `registry.DEFAULTS["launch_timeout_s"]`; errata: 8.1 names the
     alive check and never defines it). `origin` is `incarnation_origin`'s map,
-    taken before the sessions started, and it is what makes every test below
-    read this incarnation's own output.
+    taken before the sessions started; that call is what makes every test below
+    read this incarnation's own output — the map for a work piece's log and
+    heartbeat, and the endpoint file it cleared for a service piece.
 
     One rule over every kind of piece. A piece is **up** while it shows the
     evidence of its kind: a `loop`, `train` or `cpu` piece that holds its

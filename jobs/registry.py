@@ -245,7 +245,7 @@ def write_meta(run_dir, **fields) -> None:
         _write_json_atomic(meta_path, meta)
 
 
-def _launch_ordinal(run_dir) -> int:
+def launch_ordinal(run_dir) -> int:
     """How many launches this run directory has recorded: the length of
     `meta.json`'s append-only `launches` list (8.3), which every launch extends
     by one entry in the same lock hold that appends its start row."""
@@ -259,7 +259,8 @@ def write_done(run_dir, *, stage, key, commit, counts, versions, metrics,
 
     `launch` names the launch that wrote this file, so a reader can tell the
     computation the open launch ran from the one before it (8.2, read by
-    `sync`). It is an ordinal and not a time because both stamps a reader could
+    `sync` and by `run.py`'s walk, which close a run by this one rule). It is
+    an ordinal and not a time because both stamps a reader could
     compare instead -- this file's `finished_at` and the start row's `t` -- come
     from `_now()` at minute resolution, and a stage that always recomputes (2.4)
     costs seconds, so its relaunch's start row lands in the minute the previous
@@ -270,7 +271,7 @@ def write_done(run_dir, *, stage, key, commit, counts, versions, metrics,
         "key": key,
         "commit": commit,
         "finished_at": _now(),
-        "launch": _launch_ordinal(run_dir),
+        "launch": launch_ordinal(run_dir),
         "counts": counts,
         "versions": versions,
         "metrics": metrics,
@@ -716,6 +717,20 @@ def judge_service(piece: dict) -> tuple[str, bool]:
     return "warming up", False
 
 
+def launch_failed(started_at: str, verdicts: list[str]) -> bool:
+    """Whether an open launch never came up (8.1): its start row is older than
+    `DEFAULTS["launch_timeout_s"]` (8.5), it has pieces, and `judge` calls
+    every one of them `dead`, so no process of this launch is left to write
+    its own finish row.
+
+    One rule, one word, every reader. `run.py ls` writes the `launch_failed`
+    finish row for each run this selects (8.1, 8.2) and `sync` writes it for a
+    run it reaches first, so the ledger, `RESULTS.md` and the `ls` line carry
+    the same word for the same state instead of each naming it their own way."""
+    return (bool(verdicts) and all(v == "dead" for v in verdicts)
+            and _age_s(started_at) > DEFAULTS["launch_timeout_s"])
+
+
 def _beats_full(run_dir: Path, piece_index) -> list[dict]:
     hb_dir = run_dir / "heartbeat"
     if not hb_dir.is_dir():
@@ -912,11 +927,11 @@ def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: d
         # ls()'s own synthetic rows, built from _known_sessions().
         orphan = any(p["kind"] == "service" and p["verdict"] != "dead" for p in piece_rows)
     else:
+        # The stored word, whatever it is: a launch that never came up is closed by the
+        # `launch_failed` finish row `run.py ls` writes from `launch_failed()` before it
+        # prints these rows, so this row and `render()`'s table read the same ledger.
         status = start.get("status", "launching")
         orphan = False
-        if status == "launching" and _age_s(start["t"]) > DEFAULTS["launch_timeout_s"]:
-            if not any(p["verdict"] != "dead" for p in piece_rows):
-                status = "launch_failed"
     return {
         "run_id": run_id,
         "t": start.get("t"),
@@ -1064,8 +1079,8 @@ def kill(run_id: str) -> list[str]:
 
 def sync() -> list[str]:
     """Fold every run directory's `done.json` and heartbeat files into the
-    missing finish rows; write the `failed` row for a run whose open launch
-    wrote no `done.json` of its own and whose pieces `judge` calls `dead`;
+    missing finish rows; write the `launch_failed` row for a run whose open
+    launch wrote no `done.json` of its own and that `launch_failed()` selects;
     re-render `RESULTS.md`. Appends those rows itself, through
     `append_finish`."""
     synced = []
@@ -1086,7 +1101,7 @@ def sync() -> list[str]:
         # This also satisfies the stamp 8.2 names: `fold` left this entry's
         # finish row empty, so every finish row of the `run_id` precedes the
         # open start row.
-        if done.get("launch") == _launch_ordinal(run_dir):
+        if done.get("launch") == launch_ordinal(run_dir):
             row = {
                 "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
                 "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
@@ -1105,9 +1120,11 @@ def sync() -> list[str]:
             pv = _piece_verdict_dict(piece, run_dir, sessions, start["t"], now_ts)
             v = judge_service(pv)[0] if pv["kind"] == "service" else judge(pv)[0]
             verdicts.append(v)
-        if verdicts and all(v == "dead" for v in verdicts):
+        # The same rule `run.py ls` closes such a run by, so whichever command reaches it
+        # first writes the same word.
+        if launch_failed(start["t"], verdicts):
             row = {
-                "ev": "finish", "t": _now(), "run_id": run_id, "status": "failed",
+                "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
                 "counts": {}, "metrics": {}, "report": None,
                 "elapsed_s": _age_s(start["t"]),
             }
