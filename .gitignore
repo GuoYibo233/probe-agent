@@ -3,75 +3,42 @@
 # Principle: code / notes / statistics go into the repo; virtual envs / third-party repos / raw experiment data do not.
 # Raw data is tracked via NFS paths and each batch's .md release report, not via git.
 
-# ── Virtual envs (managed by uv, restored via uv.lock)
+# venvs and clones live under envs/, reached through external/ (bare names: symlinks)
 *-env/
 .venv/
 **/.venv/
-envs/cuda-compat-13.0/
+external/appworld
+external/probe-env
+external/vllm-env
 
-# ── Third-party repos and benchmark suites (each has its own .git, restored via clone)
-paper/acl-style-files/
-related_work/
-jacobian-lens/
-envs/tau2-bench/
+# third-party benchmark clones under envs/: each has its own .git, restored by clone
 envs/appworld/
+envs/tau2-bench/
 envs/tales/
 envs/bfcl/
+envs/cuda-compat-13.0/
 
-# ── envs/alfworld/ is built by us (not a third-party clone); only three things are ignored:
-#    venv (332M, restored via uv.lock) / data (symlink to fig1_pilot's 2.1G data) / logs.
-#    splits/ is a self-generated task list; ALFWorld upstream doesn't provide a manifest file, so it must be in the repo to reproduce.
+# envs/alfworld/ is ours: only the venv, the data symlink and the logs are ignored;
+# splits/ is a self-generated task list and is tracked
 envs/alfworld/venv/
 envs/alfworld/data
 envs/alfworld/logs/
 
-# ── Large raw data
-fig1_pilot/alfworld_data/
-traj_pipeline/data/
-
-# ── Symlinks to directories moved to NFS (git doesn't follow symlinks; rules with a trailing slash or /** don't match the link itself,
-#    must use the bare name; still matches if the directory later becomes a real directory again)
-envs/bert_runs
-fig1_pilot/alfworld_data
-envs/toolhop
+# symlinks to directories that live on NFS (bare names, since git does not follow them)
 envs/runs
 envs/stabletoolbench
-legacy/pipeline/data
-legacy/pipeline/runs
+envs/toolhop
 
-# ── Replay execution cache (result cache for exec_calls, pure output)
-legacy/pipeline/inject/exec_cache/
+# the registry's lock (8.6); the rows and the rendered table are in git (tree line for jobs/)
+jobs/runs.jsonl.lock
 
-# ── Fixtures for the debugger demo (rebuilt with one command, demo/prepare.py): the tiny model dir and training outputs
-#    are symlinks made by prepare.py pointing at the net drive; per the "symlinks to directories moved to NFS" rule above, use the bare name;
-#    demo/data/*.jsonl is small and seed-deterministic; it's in the repo so samples can be read in the editor without running the script
-legacy/demo/tiny_qwen3
-legacy/demo/runs
+# outputs live on NFS and nothing under them is in git (iron rule; 6.3 names the root)
 
-# ── Ledger lock files (flock carrier for gpu_jobs.py's mutate_reg)
-legacy/ops/*.lock
-
-# ── Experiment output dirs: only .md reports are kept; the rest (trajectories / weights / intermediate files) are not in the repo
-envs/runs/**
-!envs/runs/**/
-!envs/runs/**/*.md
-
-envs/bert_data/**
-!envs/bert_data/**/
-!envs/bert_data/**/*.md
-
-envs/bert_runs/**
-!envs/bert_runs/**/
-!envs/bert_runs/**/*.md
-
-*/results/**
-!*/results/**/
-!*/results/**/*.md
-
-# ── Launch by-product: preset snapshot that serve_preset.py copies into the log dir (the source of truth is in configs/presets/)
-legacy/envs/serve_logs/*.preset.json
-
-# ── Logs and weights
+# python miscellany, logs, weights
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
 logs/
 *.log
 *.out
@@ -79,48 +46,8 @@ logs/
 *.pth
 *.safetensors
 *.bin
-*.feather
 *.npy
 *.npz
 
-# ── LaTeX build intermediates (the final paper PDF isn't in the repo either; the tex source is the sole authority)
-*.aux
-*.bbl
-*.blg
-*.fls
-*.fdb_latexmk
-*.synctex.gz
-*.toc
-
-# ── Python miscellany
-__pycache__/
-*.py[cod]
-*.egg-info/
-.ipynb_checkpoints/
-
-# ── Local settings (.claude/skills and agents are engineering assets, must be in the repo)
+# local settings only; .claude skills and agents are engineering assets and stay in the repo
 .claude/settings.local.json
-
-# ── C3 task-pair data itself (byte-for-byte reproducible from seed 20260729; stats.json statistics are in the repo)
-benchmark_design/*.jsonl
-
-legacy/pipeline/data/**
-!legacy/pipeline/data/**/
-!legacy/pipeline/data/**/*.md
-legacy/pipeline/runs/**
-!legacy/pipeline/runs/**/
-!legacy/pipeline/runs/**/*.md
-# On-disk injection replay output (plan.jsonl/raw.jsonl is raw trajectory-level data, tens of MB per run);
-# only the md report and plan_config.json go into the repo; the latter is a settings record, a few hundred bytes
-legacy/pipeline/inject/runs/**
-!legacy/pipeline/inject/runs/**/
-!legacy/pipeline/inject/runs/**/*.md
-!legacy/pipeline/inject/runs/**/plan_config.json
-
-# from-zero: venv and clone links under external/ (bare names, see the symlink rule above)
-external/appworld
-external/probe-env
-external/vllm-env
-
-# from-zero: the registry's own lock carrier, never in git (ticket 03)
-jobs/runs.jsonl.lock
