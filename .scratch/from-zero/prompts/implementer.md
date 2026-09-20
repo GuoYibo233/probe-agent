@@ -26,7 +26,8 @@ You are the implementer for one ticket at a time. The dispatch message gave you 
    `python3` for venv `any`), and paste each command and its output into the report. Write a test file only
    where the ticket names a test seam; put it under `tests/` with a `# venv:` header.
 5. Update `README.md`: every file you add or change gets its line in the tree section, in the format the
-   README already uses (path, one sentence, imports, used by, reads, writes, venv). Run `python3 run.py selfcheck`
+   README already uses (path, one sentence, imports, used by, reads, writes, venv). Run
+   `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py selfcheck`
    if `run.py` exists on the branch yet and the ticket does not say otherwise; paste the output.
 6. Self-review the full diff: did you do anything the ticket didn't ask for (YAGNI), is any acceptance command
    missing its pasted output, is there anything that clashes with the surrounding code's style. Fix anything

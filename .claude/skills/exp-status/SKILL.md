@@ -44,7 +44,7 @@ Produces three things, in an order that must not be reversed:
 
 ## Why this skill exists (not just a formality)
 
-There's already a `notes/plans/archive/STATUS_20260730_1833_all_lines.md` in the project (retired and archived; read only when the user says so explicitly). It was complete and the numbers were accurate, and the user couldn't understand it. The reason wasn't the user: the body was packed with `best_calA_weighted_acc`, `θ=0.8 v2fix`, `Sp@k`, `L2minus`, and two dozen commit hashes, each one a compressed index that the reader has to decompress before they can get to the content.
+An earlier status document in this project was complete and its numbers were accurate, and the user couldn't understand it. The reason wasn't the user: the body was packed with `best_calA_weighted_acc`, `θ=0.8 v2fix`, `Sp@k`, `L2minus`, and two dozen commit hashes, each one a compressed index that the reader has to decompress before they can get to the content.
 
 So the main function of this skill isn't "organizing information," it's **saying it in plain words**. Organizing information is just a side effect of that.
 

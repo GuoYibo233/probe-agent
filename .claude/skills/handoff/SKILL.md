@@ -30,7 +30,7 @@ task within 5 minutes, without stepping on a known trap, and without starting wo
   incoming session is forbidden from starting work on these on its own.
 - **Handover of authority**: a work line has exactly one lead session at any given moment. After the outgoing
   session writes the handoff, it picks exactly one of two modes — **wind-down mode** (only watch running tasks
-  through to completion + carry out already-approved wind-down duties, i.e. gpu-run Phase 6a's five-step) or
+  through to completion + carry out already-approved wind-down duties, i.e. gpu-run Phase 6a's wrap-up) or
   **stop immediately** (touch nothing) — and writes which one was picked in plain black and white in the
   handoff, no hedging. Neither posture takes on new work; any new idea goes into the handoff's queue. Before
   the incoming session starts, it confirms no other session is still working this line (two sessions both
@@ -42,8 +42,9 @@ task within 5 minutes, without stepping on a known trap, and without starting wo
 
 ## Phase 1 — Probe (four lines of evidence)
 
-1. `external/probe-env/bin/python run.py ls`: the active ledger, with each piece's progress, verdict, rate and ETA
-   computed fresh on the call from its own heartbeat files. Tailing each piece's log still gets
+1. `external/probe-env/bin/python run.py ls`: the active ledger, with each piece's progress, verdict, rate and
+   heartbeat age computed fresh on the call from its own heartbeat files; the ETA is derived from the progress
+   and the rate on that line. Tailing each piece's log, `<run_dir>/log/<piece index>.txt`, still gets
    you the rawest text, for a piece that never got wired to heartbeats.
 2. `git log --oneline -5` + `git status --short`: where HEAD is, what's uncommitted.
 3. `tail jobs/runs.jsonl`: which run_ids have a start but no finish (`registry.open_runs()`).
@@ -55,7 +56,7 @@ task within 5 minutes, without stepping on a known trap, and without starting wo
 ```markdown
 # <line name> handoff (<YYYY-MM-DD HH:MM JST>, handed off from session <short id>)
 > Outgoing session's exit posture: wind-down mode watching through to completion / stop immediately (pick exactly one, with the time)
-## Running tasks        ledger name / host / tmux / current progress@time (source: `run.py ls`) / completion criterion / ETA absolute time / wind-down duties
+## Running tasks        ledger name / host / tmux / current progress@time (source: `run.py ls`) / completion criterion / ETA absolute time (derived from that line's progress and rate) / wind-down duties
 ## Next-step queue (already approved)  in order; each item with a directly copy-pasteable command + success criterion
 ## Unapproved items     starting work on these on your own is forbidden; note whether it was asked and unanswered, or never asked
 ## Asset map             real paths for data / scripts / environments / weights; note for each whether it's committed
