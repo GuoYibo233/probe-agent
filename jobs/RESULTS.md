@@ -3,6 +3,7 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `train-d5600ac666ba` | 2026-09-20 17:56 | train | train_probe/cgen_qwen3_0pt6b | `64ee040` | launching | - | - |
 | `train-f895049ab1dc` | 2026-09-20 15:58 | train | train_probe/cgen_qwen3_0pt6b | `55fb302` | launch_failed | - | - |
 | `score-35d9f3051a22` | 2026-09-20 15:31 | score | inject/probe_p1_e1_theta_0pt80 | `8c72466` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
 | `score-d6a35770c910` | 2026-09-20 15:31 | score | inject/no_probe_p1_e1_theta_0pt80 | `8c72466` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |

@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import math
+import shutil
 import time
 from pathlib import Path
 
@@ -74,6 +75,38 @@ def _bf16_forward(probe):
     return torch.autocast("cuda", dtype=torch.bfloat16, enabled=on_card)
 
 
+def _save_last(last_dir: Path, probe, opt, sch, *, labels, extra, meta) -> None:
+    """Write the resume checkpoint whole, then put it in place by rename.
+
+    A checkpoint is several gigabytes over NFS, and a piece can be killed at any moment of that
+    write. So the weights, the optimizer state and meta.json all go into `last.tmp/` first; only a
+    complete `last.tmp/` is renamed to `last/`, with the checkpoint it replaces held as
+    `last.prev/` for the instant between the two renames. `last/` is therefore always a complete
+    checkpoint, and `_settle_last` finishes a swap a kill interrupted."""
+    tmp_dir = last_dir.with_name("last.tmp")
+    prev_dir = last_dir.with_name("last.prev")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    probe.save(tmp_dir, labels=labels, extra=extra, meta=meta)
+    torch.save({"opt": opt.state_dict(), "sch": sch.state_dict()}, tmp_dir / "optimizer.pt")
+    if last_dir.exists():
+        last_dir.rename(prev_dir)
+    tmp_dir.rename(last_dir)
+    if prev_dir.exists():
+        shutil.rmtree(prev_dir)
+
+
+def _settle_last(last_dir: Path) -> None:
+    """Finish a checkpoint swap a kill interrupted: `last.prev/` with no `last/` beside it is the complete earlier checkpoint and takes the name back; a `last.tmp/` is a write that never finished and is removed, and so is a `last.prev/` that a complete `last/` has replaced."""
+    tmp_dir = last_dir.with_name("last.tmp")
+    prev_dir = last_dir.with_name("last.prev")
+    if prev_dir.exists() and not last_dir.exists():
+        prev_dir.rename(last_dir)
+    for leftover in (tmp_dir, prev_dir):
+        if leftover.exists():
+            shutil.rmtree(leftover)
+
+
 def _dropped_overlong_events(df: pl.DataFrame, tok, max_len: int) -> int:
     """The count of events whose longest row's text tokenizes past max_len -- the same rule every method's batches() drops whole events on, computed once here for done.json's counts."""
     dropped = 0
@@ -138,6 +171,8 @@ def run(run_dir: Path, method) -> None:
 
     if done_path.exists():
         return
+
+    _settle_last(last_dir)
 
     predict_only = False
     resume_step = None
@@ -328,11 +363,10 @@ def run(run_dir: Path, method) -> None:
                     now = time.monotonic()
                     if now - last_checkpoint_t >= cfg.train.checkpoint_hours * 3600:
                         hb.emit(gstep, steps, "step")
-                        probe.save(last_dir, labels=labels, extra=method.CHECKPOINT_META,
+                        _save_last(last_dir, probe, opt, sch, labels=labels,
+                                   extra=method.CHECKPOINT_META,
                                    meta={**_checkpoint_meta(cfg), "step": gstep, "epoch": ep,
                                          "commit": cfg._commit, "rng_state": _rng_state_hex()})
-                        torch.save({"opt": opt.state_dict(), "sch": sch.state_dict()},
-                                   last_dir / "optimizer.pt")
                         last_checkpoint_t = now
 
                     if is_epoch_end:
