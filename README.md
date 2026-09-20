@@ -43,13 +43,17 @@ it never collides with, or is mistaken for, a real run.
 
 ## 2. The tree, one entry per file
 
-Reproduced from `notes/plans/2026-09-17-contracts.md` 0.2, which is authoritative, in 0.1's
-five-line annotation format, reconciled against the lines each ticket landed and against
-`.scratch/from-zero/contract-errata.md`. `train/utils/trainer.py` and the three
-`train/methods/<m>.py` files are ticket 13's, built in this same wave beside this one; their
-four entries below are contracts 0.2's text, with the one correction the errata names
-(`train/utils/trainer.py`'s third-party import list). `run.py` itself imports nothing from
-`train/`, which is why this file can be written before ticket 13 has merged.
+This section is the current statement of the tree: one entry per file, in contracts 0.1's
+five-line annotation format, and the text `run.py selfcheck` checks — check 1 requires an
+entry for every `.py` file on disk and a path that exists for every entry, and check 2 holds
+the `imports:` and `used by:` lines equal to the real import graph. Its origin is
+`notes/plans/2026-09-17-contracts.md` 0.2, reconciled against the lines each ticket landed
+and against `.scratch/from-zero/contract-errata.md`. Contracts 0.2, 0.3 and 0.4 have been
+stale since the two rulings of 2026-09-18 that folded `eval/methods/<m>.py` into
+`eval/utils/probe_eval.py` and renamed the four `agent/` files (the errata entries
+`0.2 / 2.1 / 2.6 (eval/methods/)` and `0.2 (the four agent/ file names)`): they still spell
+34 files, `eval/methods/` and `agent/inject_format.py`. This file wins over them until the
+owner rewrites them.
 
 ### The root
 
@@ -243,13 +247,13 @@ agent/injected_text_formats.py — the table of the five ways an early speculati
   writes:  -
   venv:    any
 
-### train/ — train a probe (ticket 13, this wave)
+### train/ — train a probe
 
 train/utils/trainer.py — the training loop every method shares: settings -> arguments, seed, backbone, tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment gate, and the probe run over the prediction splits.
   imports: experimental_settings/schema.py, models/__init__.py, models/probe_models/base.py, data/training_data.py, data/probe_output.py, jobs/registry.py; [torch]
   used by: train/methods/{ctool,cgen,cparam}.py
   reads:   example (parquet), the checkpoint layout
-  writes:  best/, last/, train_log.jsonl, align_check.json, train_done.json, predictions.parquet, consumed.json, heartbeat, done.json
+  writes:  best/, last/, last.tmp/ and last.prev/ (the two names the resume checkpoint's swap uses, left on disk by a kill inside it), train_log.jsonl, align_check.json, train_done.json, predictions.parquet, consumed.json, heartbeat, done.json
   venv:    probe
 
 train/methods/ctool.py — the classification probe: its batches, its head use, its loss, its validation accuracy.

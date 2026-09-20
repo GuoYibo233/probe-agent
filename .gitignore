@@ -18,6 +18,10 @@ envs/tales/
 envs/bfcl/
 envs/cuda-compat-13.0/
 
+# the official ACL template, cloned under paper/ by the paper-write skill (its own .git);
+# the skill is live, so this rule stays whether or not the directory is on disk today
+paper/acl-style-files/
+
 # envs/alfworld/ is ours: only the venv, the data symlink and the logs are ignored;
 # splits/ is a self-generated task list and is tracked
 envs/alfworld/venv/
@@ -48,6 +52,16 @@ logs/
 *.bin
 *.npy
 *.npz
+
+# latexmk's intermediates, written beside the tex by the paper-write skill's build.sh
+# (*.log and *.out above cover two more of them); the skill is live, so these rules stay
+*.aux
+*.bbl
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
 
 # local settings only; .claude skills and agents are engineering assets and stay in the repo
 .claude/settings.local.json

@@ -93,8 +93,11 @@ by hand). **Note that this machine's shell only has `python3`, not
    `/home/y-guo/reproduce/new1/<env>/bin/python`); if there is no ready-made
    environment, report that back, do not improvise by installing packages
    into the system environment.
-7. **Logs have a home**: logs are always written to `<workdir>/logs/`
-   (shared on NFS, readable from every machine).
+7. **Logs have a home**: a piece's log is `<run_dir>/log/<piece index>.txt`
+   under the outputs root of `constants/path_outputs.yaml` (shared on NFS,
+   readable from every machine). The launch writes it, you never choose it;
+   `external/probe-env/bin/python run.py where <workflow> <setting> <stage>`
+   prints `<run_dir>`.
 8. **Scope of responsibility**: the job is done once you launch and verify
    liveness. Do not do long-term polling/monitoring; write the commands for
    "how to check progress, how to kill the task" into the report and hand it
