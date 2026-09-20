@@ -215,8 +215,15 @@ def serve(args) -> None:
         _wait_healthy(root_url, proc)
         _check_model(base_url, row)
         _check_render(base_url, row, m, cfg)
-    except Exception:
+    except BaseException:
+        # the three checks refuse with SystemExit, which is a BaseException; the vllm
+        # process is ended and reaped here so a refused start never leaves it on the card
         proc.terminate()
+        try:
+            proc.wait(timeout=60)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
         raise
     _write_endpoint_file(
         endpoint_path, replica=args.replica, base_url=base_url, host=host, port=args.port,
