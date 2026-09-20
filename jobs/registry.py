@@ -245,14 +245,32 @@ def write_meta(run_dir, **fields) -> None:
         _write_json_atomic(meta_path, meta)
 
 
+def _launch_ordinal(run_dir) -> int:
+    """How many launches this run directory has recorded: the length of
+    `meta.json`'s append-only `launches` list (8.3), which every launch extends
+    by one entry in the same lock hold that appends its start row."""
+    meta = _read_json(Path(run_dir) / "meta.json") or {}
+    return len(meta.get("launches") or [])
+
+
 def write_done(run_dir, *, stage, key, commit, counts, versions, metrics,
                 report, pairs=None, stage_extra=None) -> None:
-    """Write `done.json` (1.5, 8.0) through a temporary name and a rename."""
+    """Write `done.json` (1.5, 8.0) through a temporary name and a rename.
+
+    `launch` names the launch that wrote this file, so a reader can tell the
+    computation the open launch ran from the one before it (8.2, read by
+    `sync`). It is an ordinal and not a time because both stamps a reader could
+    compare instead -- this file's `finished_at` and the start row's `t` -- come
+    from `_now()` at minute resolution, and a stage that always recomputes (2.4)
+    costs seconds, so its relaunch's start row lands in the minute the previous
+    computation's `done.json` carries.
+    """
     doc = {
         "stage": stage,
         "key": key,
         "commit": commit,
         "finished_at": _now(),
+        "launch": _launch_ordinal(run_dir),
         "counts": counts,
         "versions": versions,
         "metrics": metrics,
@@ -1046,17 +1064,29 @@ def kill(run_id: str) -> list[str]:
 
 def sync() -> list[str]:
     """Fold every run directory's `done.json` and heartbeat files into the
-    missing finish rows; write the `failed` row for a run with no `done.json`
-    whose pieces `judge` calls `dead`; re-render `RESULTS.md`. Appends those
-    rows itself, through `append_finish`."""
+    missing finish rows; write the `failed` row for a run whose open launch
+    wrote no `done.json` of its own and whose pieces `judge` calls `dead`;
+    re-render `RESULTS.md`. Appends those rows itself, through
+    `append_finish`."""
     synced = []
     for run_id, entry in fold(_read_rows()).items():
         start = entry["start"]
         if start is None or entry["finish"] is not None:
             continue
         run_dir = Path(start["dir"])
-        done = _read_json(run_dir / "done.json")
-        if done is not None:
+        done = _read_json(run_dir / "done.json") or {}
+        # 8.2: the finish row is owed to the computation the open launch ran,
+        # and `write_done` stamps `done.json` with the launch that wrote it, so
+        # this file closes the run when that ordinal is the directory's newest.
+        # A relaunch into a directory that already served a request (2.3) or
+        # already computed (2.4) starts with the previous computation's
+        # `done.json` on disk, carrying the launch before this one; it leaves
+        # the launch in flight open for its own finish row or for the dead-piece
+        # test below, and so does a `done.json` from before this field existed.
+        # This also satisfies the stamp 8.2 names: `fold` left this entry's
+        # finish row empty, so every finish row of the `run_id` precedes the
+        # open start row.
+        if done.get("launch") == _launch_ordinal(run_dir):
             row = {
                 "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
                 "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),

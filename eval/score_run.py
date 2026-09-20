@@ -179,9 +179,15 @@ def main(run_dir: Path) -> None:
 
     base_dir: Path | None = None
     if cfg.score.baseline is not None:
-        base_dir = schema.referenced_run_dir("sample", cfg._upstream["baseline.sample"])
+        base_key = cfg._upstream["baseline.sample"]
+        base_dir = schema.referenced_run_dir("sample", base_key)
         scored_cfg = schema.load_frozen(scored_dir)
-        base_cfg = schema.load_frozen(base_dir)
+        if base_dir is not None and (base_dir / "settings.yaml").exists():
+            base_cfg = schema.load_frozen(base_dir)
+        else:
+            raise ValueError(
+                f"score_run: sample key {base_key} named by score.baseline: "
+                "no run directory holding settings.yaml under either root")
         diff_field = _first_diff_field(scored_cfg, base_cfg)
         if diff_field is not None:
             raise ValueError(
