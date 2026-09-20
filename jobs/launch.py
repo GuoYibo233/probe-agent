@@ -526,16 +526,22 @@ def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
     read this incarnation's own output.
 
     One rule over every kind of piece. A piece is **up** while it shows the
-    evidence of its kind: a `loop`, `train` or `cpu` piece whose log has grown
-    since this launch started it, or whose heartbeat says it walked its whole
-    share; a `service` piece whose endpoint file is there and whose port
-    answers. It is **down** the moment this incarnation's log carries a
-    `Traceback`, and otherwise once its session has ended and it still owes
-    that evidence `SESSION_END_GRACE_S` later. Every other piece is
-    **waiting**: a live session that has written nothing yet, which is what a
-    cold interpreter start over NFS looks like for the better part of a
-    minute, and the grace window, in which this host's directory cache can
-    still be hiding the file a piece wrote just before it exited.
+    evidence of its kind: a `loop`, `train` or `cpu` piece that holds its
+    session and has grown its log since this launch started it, or whose
+    heartbeat says it walked its whole share; a `service` piece whose endpoint
+    file is there and whose port answers. The session belongs in that first
+    conjunct because a grown log is a fact about the past and stays true at
+    every later poll, while the session says the process runs now: a piece
+    killed without a traceback -- the OOM killer, `kill -9`, a CUDA abort --
+    keeps its grown log, loses its session and writes no finish row, and the
+    grace window below is what ends it. A piece is **down** the moment this
+    incarnation's log carries a `Traceback`, and otherwise once its session
+    has ended and it still owes that evidence `SESSION_END_GRACE_S` later.
+    Every other piece is **waiting**: a live session that has written nothing
+    yet, which is what a cold interpreter start over NFS looks like for the
+    better part of a minute, and the grace window, in which this host's
+    directory cache can still be hiding the file a piece wrote just before it
+    exited.
 
     The grace window and the finish row are what keep the two pieces whose
     ended session is their success state out of the down state: an
@@ -572,7 +578,8 @@ def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
             else:
                 log = Path(p.get("log", ""))
                 started_from = origin[index]
-                working = log.exists() and log.stat().st_size > started_from["log_size"]
+                log_grew = log.exists() and log.stat().st_size > started_from["log_size"]
+                working = session_ok and log_grew
                 finished = _piece_finished(p.get("run_dir", ""), index,
                                            started_from["beat_launch"])
                 crashed = _log_shows_traceback(log, started_from["log_size"])
