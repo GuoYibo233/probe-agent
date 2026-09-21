@@ -463,6 +463,16 @@ def run(run_dir: Path, method) -> None:
         pred_df = df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]).head(0)
     probe_output.write(run_dir / "predictions.parquet", pred_df)
 
+    # TODO(gyb, 2026-09-22): two things about overlong events (an event whose longest text passes
+    # train.max_len is dropped whole, in training, in validation and in the prediction pass).
+    # (1) Report them: the count below covers the train split only, and the events dropped from
+    # val and test appear nowhere. Count the dropped events of every split here, write the three
+    # counts into done.json, and have the eval report (eval/utils/probe_eval.py, report.md)
+    # print how many events of val and test were dropped. The owner's ruling: the eval numbers
+    # themselves stay as they are, a dropped event is not counted into any denominator; the
+    # report states the count and that is all (review ticket 46 covers the missing counts).
+    # (2) The dropping itself needs a solution, not decided yet: with every earlier round in the
+    # probe's text (the TODO in data/probe_input.py) the late steps of long tasks pass max_len.
     dropped_overlong = _dropped_overlong_events(train_df, probe.tokenizer, cfg.train.max_len)
 
     registry.write_done(
