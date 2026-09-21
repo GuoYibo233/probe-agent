@@ -319,6 +319,14 @@ def run(run_dir: Path, method) -> None:
             window_loss_n = 0
             last_logged_step = gstep
 
+        # TODO(gyb, 2026-09-22): OPEN, the owner decides later whether to do this; the simple form
+        # stays for now. Validation runs at the end of an epoch only, and every setting trains
+        # one epoch, so it runs once, when training is over: best/ is simply the final weights,
+        # and a run of many hours shows no validation number until it ends. If wanted: a `train`
+        # field "validate every n steps" whose default keeps today's behaviour, so no run
+        # directory goes stale (README section 3, recipe 3). Noted with it and equally
+        # undecided: a NaN objective never compares below `best`, so best/ is never written and
+        # the reload of best/ after the loop fails, leaving a finished run with no usable weights.
         def _validate_and_maybe_save(ep: int) -> None:
             nonlocal best, best_metrics, last_epoch_validated
             probe.set_training(False)
