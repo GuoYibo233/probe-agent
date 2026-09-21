@@ -64,6 +64,10 @@ class Sample:
     n_tasks: int | None = None                    # cap on tasks per split
     max_steps: int = 30                          # steps before the run is cut off
     store_token_ids: bool = False                # keep the generated token ids in the record
+    # TODO(gyb, 2026-09-22): 6 is a placeholder, here and on Inject.pieces. One loop process runs
+    # one task at a time, so this number is the most requests the agent server sees at once.
+    # Set it from a measured throughput once the real cards are there; it is not in the key
+    # (`sample.pieces=<n>` on the command line changes it and keeps the run directory).
     pieces: int = 6                              # how many loop processes
     replicas: int = 1                            # how many agent servers
 
