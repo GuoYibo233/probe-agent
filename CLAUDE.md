@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # new1 project rules
 
 ## The tree
@@ -48,6 +52,52 @@ which freezes the setting, takes the launch gate, and walks that setting's
 stage list, one launch per named setting or sweep child. `run.py ls` reads
 progress and verdicts on demand, computed fresh from each run's heartbeat
 files; there is no background process and nothing to poll for freshness.
+
+The three workflows and their stage lists are `baseline` (sample, score),
+`train_probe` (sample, build, train, eval) and `inject` (inject, score).
+`sample`, `inject` and `train` are launched as tmux pieces on cluster cards
+by `jobs/launch.py`; `build`, `eval` and `score` run in place on the CPU.
+The GPU half of an evaluation is the last step of `train` (it writes the
+prediction rows), so `eval/` only reads what is on disk and never imports
+torch. A run directory is keyed by stage plus a 12-hex hash of the setting's
+diff from the schema defaults, with the `VERSION` of every module the stage
+lists folded in; `experimental_settings/schema.py` reads those `VERSION`
+lines as source text, never by importing. A finished directory is reused, a
+partial one is continued, and an edited setting or a bumped `VERSION` gets a
+new directory. `run.py` refuses to run on any host other than the
+`login_host` in `constants/path_outputs.yaml`.
+
+## Checks
+
+There is no build step and no linter. The check that runs after every code
+or `README.md` change is:
+
+```
+external/probe-env/bin/python run.py selfcheck
+```
+
+It holds `README.md` section 2 equal to the tree (an entry for every `.py`
+file, `imports:` and `used by:` equal to the real import graph) and exits 1
+on any problem. `README.md` section 3 lists, per kind of extension, which
+files to edit and what the change costs in reruns.
+
+`tests/` holds two unittest modules, and pytest is not installed. Each runs
+in its own process:
+
+```
+external/probe-env/bin/python tests/test_registry_concurrent_append.py
+external/probe-env/bin/python tests/test_packed_loss.py
+```
+
+Running both in one process (`unittest discover`) makes the registry test
+append its 160 fixture rows to the real `jobs/runs.jsonl`.
+
+A code path is exercised end to end with `--debug`, which lays
+`experimental_settings/debug.yaml` over the setting and writes under the
+outputs root's debug subdirectory; `run.py where <workflow> <setting>
+<stage> [--debug]` prints a run directory without touching disk. A `--debug`
+walk of a GPU stage is still a GPU launch and goes through the gpu-run
+skill.
 
 ## GPU runs go through the gpu-run skill
 
