@@ -28,6 +28,14 @@ def prepare_tokenizer(tok) -> None:
     tok.padding_side = "right"        # every supervision position is a real token
 
 
+# TODO(gyb, 2026-09-22): OPEN, to be discussed; the head may change afterwards. Nothing about
+# the classification head can be set from a setting today. Three things are fixed in code: the
+# head is one linear layer with no hidden layer (below); it reads the backbone's last layer
+# (HEAD_LAYER above); and it reads the last token of the probe's text only
+# (models/probe_models/base.py, the event_end position). If the discussion wants any of these
+# varied, each becomes a field of the `probe` section in experimental_settings/schema.py whose
+# default is today's behaviour, so no existing run directory goes stale (README section 3,
+# recipe 3); a setting that states another value gets its own train key.
 def attach_head(model, n_labels: int):
     """Build and attach the classification head reading the hidden state at HEAD_LAYER."""
     import torch

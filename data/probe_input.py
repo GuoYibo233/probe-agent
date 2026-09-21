@@ -79,7 +79,11 @@ def _clip(s: str, cap: int) -> str:
 # (8192 tokens today), so raising hist_rounds alone would drop the late steps of long tasks.
 # Two limits on max_len: the probe backbone's context length, and card memory, since a training
 # block holds 2 * max_len tokens (train/methods/ctool.py) and the live probe service scores
-# texts of the same length. build.hist_rounds is in the build key and in the inject key
+# texts of the same length. The measured max_len also has to make truncation rare on the live
+# side: training drops an overlong event whole, while the live score truncates an overlong text
+# from the left (models/probe_models/qwen.py), which removes the `Task:` line and the oldest
+# history, a shape of text the probe never saw in training.
+# build.hist_rounds is in the build key and in the inject key
 # (PROBE_TEXT_FIELDS) and train.max_len is in the train key, so build, train, eval and inject
 # all re-key; sample stays.
 def assemble(
