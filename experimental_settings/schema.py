@@ -437,6 +437,21 @@ def version_history(rel_path: str) -> dict:
     return _history_of(rel_path, _parse_module(rel_path))
 
 
+# TODO(owner): staleness is scoped per file and per stage only. A bump to one branch of a file
+# (one format in agent/injected_text_formats.py, the LoRA or the full branch of
+# train/utils/trainer.py) re-keys every setting of that stage, including the settings that never
+# reach the changed branch. Planned with the owner on 2026-09-21, to be built together:
+#   1. an optional `when` on a VERSION_HISTORY entry, a mapping of a setting field to the values
+#      the bump makes stale, e.g. {"inject.format": ("p1_e1",)}; the entry counts toward a
+#      setting's effective version only when the setting matches it. A field named there must
+#      be one the stage's key already holds. An entry with no `when` keeps today's behaviour,
+#      so no existing key moves.
+#   2. a pre-commit hook under .claude/hooks/ that refuses a commit staging a file of any
+#      stage's `versions` list when the commit message carries no `Version-check:` line.
+#   3. a read-only opus agent that reads the diff and the callers of what changed and states,
+#      per file, logic unchanged / logic changed (which stages, which setting values) / unsure
+#      (treated as changed); the main conversation holds the commit's VERSION, `stale` and
+#      `when` to that verdict and writes the verdict into the `Version-check:` line.
 def _stale_at(table: dict, entry_version: int, stage: str) -> bool:
     """Whether the bump to `entry_version` made `stage`'s existing outputs unusable (errata "3.3 / 8.6")."""
     entry = table.get(entry_version)
