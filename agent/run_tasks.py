@@ -220,6 +220,15 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
             hb.emit(done, len(triples), "task", tok_in=tokens_in, tok_out=tokens_out)
     finally:
         hb.finish()
+    # TODO(gyb, 2026-09-22): when every requested pair has a finished record, the cards must be
+    # released here. Today only the next `run.py <workflow> <setting>` walk (or `run.py kill`)
+    # ends the agent server, so a run whose pieces finish overnight holds its card idle until a
+    # person types the command again. Fix: a piece that ends its walk and finds every requested
+    # pair done (data.trajectory_record.done_pairs over the same triples) ends this run's service
+    # pieces through jobs.launch.teardown_services, which already leaves alone a server another
+    # live run is attached to. done.json and the finish row stay run.py's to write on the next
+    # walk (the stage table's done_writer), so this changes when the card is freed and nothing
+    # a later stage reads.
 
 
 if __name__ == "__main__":
