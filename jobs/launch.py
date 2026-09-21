@@ -329,6 +329,13 @@ def place(kind, cards_needed, free_by_host, *, serving_host, prefer_host, attach
         return _login_host()
     if kind == "service_probe" and cards_needed == 0:
         return _login_host()
+    # TODO(gyb, 2026-09-22): an agent server lands on the table row's serving host and nowhere
+    # else, so a sample or inject launch exits with "no cards" whenever that host (tokyo108
+    # today) is full, even with every other machine free. Fix: the serving host is the preferred
+    # host, as prefer_host already is for train and the probe service, and the first host with
+    # cards_needed free cards is the fallback. Two places follow: models/agent_models/service.py
+    # builds its base_url from the table's host and has to take the host it was placed on, and
+    # _find_attach_target below looks for a server to attach to on the serving host only.
     if kind == "service_agent":
         if attached:
             return serving_host
