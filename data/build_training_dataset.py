@@ -95,6 +95,12 @@ def main(run_dir: Path) -> None:
 
     # 2.5: build reads only the records of the pairs in its own key.
     df = trajectory_record.read_dir(sample_dir, pairs)
+    # TODO(gyb, 2026-09-22): these beats are not progress. Every record is already read by the
+    # line above, and this loop then counts 0 to len(pairs) in an instant, so `run.py ls` shows
+    # the build at 100% before the per-record work below (the cuts and the probe text of every
+    # step, which is where the time goes) has started. Fix: drop this loop and emit one beat per
+    # record from inside the `for task_id, seed in pairs` loop below, after that record's rows
+    # are appended (review ticket 43).
     for i in range(len(pairs)):
         hb.emit(i + 1, len(pairs), "row")
 
