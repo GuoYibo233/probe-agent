@@ -11,6 +11,11 @@ import polars as pl
 import torch
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
+# TODO(gyb, 2026-09-22): run as CLAUDE.md spells it (`external/probe-env/bin/python
+# tests/test_packed_loss.py`) the import below fails with "No module named 'data'", at HEAD
+# too; the three tests pass with PYTHONPATH set to the repo root. Either this file puts the
+# repo root on sys.path, as tests/test_registry_concurrent_append.py does, or CLAUDE.md's
+# command changes.
 from data import training_data
 
 TOKDIR = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"

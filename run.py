@@ -1878,6 +1878,12 @@ def _reference_is_pinned(cfg, source: str) -> bool:
     return isinstance(value, dict)
 
 
+# TODO(gyb, 2026-09-22): a `--debug` walk of a setting that holds a name-form reference cannot
+# finish as the workflow files stand. The reference resolves to the real root (the rule below),
+# so the debug eval of cgen and cparam stops at "theta_from.eval ... has no done.json" and a
+# debug inject needs its three references pinned by hand, e.g.
+# `'eval.theta_from={key: {eval: <debug ctool eval key>}}'`. Either the smoke of the gpu-run
+# skill says so, or a name-form reference inside a debug walk resolves under the debug root.
 def _upstream_dirs(stage: str, cfg, upstream_map: dict) -> dict[str, Path | None]:
     """Where each of this stage's upstream runs lives (3.4, 5.4).
 

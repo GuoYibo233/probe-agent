@@ -391,6 +391,10 @@ class AppWorld(Environment):
         except Exception as exc:
             return {"success": False, "eval_error": str(exc)[:600]}
 
+    # TODO(gyb, 2026-09-22): a piece that is killed never reaches close(), and the directory's
+    # name carries its process id, so no later run reuses or removes it (the old name was taken
+    # again by the next run of the same task). <home>/experiments/outputs/ held 368 directories
+    # and 330 MB on 2026-09-22. If it matters: a sweep of names whose process is gone on this host.
     def close(self) -> None:
         if self._world is None:
             return

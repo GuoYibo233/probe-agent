@@ -201,6 +201,13 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
         # would fail within seconds, and a final row certifies a task as run for good. So the
         # record gets no final row and the piece ends here; the next launch releases the
         # unfinished record (its owner is no longer live) and the task runs again.
+        # TODO(gyb, 2026-09-22): two consequences of this rule for the owner to confirm. (1) A
+        # status the probe service answers with, other than 400, ends the piece, as the owner's
+        # list says ("an HTTP status other than 400"); the probe service answers 500 for any
+        # handler exception, so one text that reliably fails it (an out-of-memory on one long
+        # text) ends a piece at the same task on every relaunch. (2) A run whose service died
+        # leaves no `done` beat, so `run.py ls` / `sync` close it as `launch_failed` in the
+        # ledger although it wrote most of its records; a separate word may be wanted.
         except _ServiceGone as exc:
             writer.close()
             raise SystemExit(
@@ -237,7 +244,10 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     # run whose pieces finish overnight frees its cards at once. teardown_services leaves alone
     # a server another live run is attached to. done.json and the finish row stay run.py's to
     # write on the next walk, so nothing a later stage reads depends on this.
-    pairs = [(task_id, seed) for _split, task_id, seed in triples]
+    # TODO(gyb, 2026-09-22): contracts 2.3 ("Ending the service pieces") still says
+    # teardown_services has two callers, run.py and jobs/launch.launch; this is the third, and
+    # the contracts are the owner's to update.
+    pairs =[(task_id, seed) for _split, task_id, seed in triples]
     if done_pairs(run_dir, pairs) == set(pairs):
         ended = launch.teardown_services(run_dir)
         print(f"agent.run_tasks: every requested record is finished; ended services: {ended}")

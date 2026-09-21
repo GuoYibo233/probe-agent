@@ -396,6 +396,10 @@ def _fmt_metrics(m) -> str:
 # Choices: leave them, or a one-off rewrite of the file by the owner with a commit that
 # says so (an agent never does that), or a `fixture` filter in `fold()` keyed on the
 # `/tmp/` run directory. Wave 7's record: .scratch/from-zero/sdd/2026-09-20-wave7/wave-result.md.
+# Added 2026-09-22: the debug run `inject-4d9c736d3834` has a start row and no finish row. Its
+# three records are finished and its sessions are gone, but agent/step_with_probe.py went to
+# VERSION 3 before its wrap-up walk, so no walk computes its key any more and the row stays
+# `launching`. It holds no card once the launch timeout has passed.
 def render() -> None:
     """Rewrite `jobs/RESULTS.md` from `jobs/runs.jsonl`: one markdown table,
     newest run first, one row per `run_id` folded from its newest start and
@@ -740,6 +744,14 @@ def judge(piece: dict) -> tuple[str, bool]:
     return "healthy", False
 
 
+# TODO(gyb, 2026-09-22): two verdicts that read wrong on a healthy run. (1) The last loop piece
+# now ends its run's services once every record is finished (agent/run_tasks.py), and the run
+# stays open until the wrap-up walk writes its finish row, so `run.py ls` shows the service
+# pieces of a finished run as `dead(escalated)` in between; its cards also stay busy in
+# `run.py free` until that finish row or the launch timeout. (2) A train piece is judged `done`
+# once its beat reaches the step total while its prediction pass is still running (seen on the
+# 2026-09-22 debug walk: the wrap-up walk answered "has a live piece" for cgen and cparam), and
+# the prediction pass's own beats end at 2/3 on a finished run.
 def judge_service(piece: dict) -> tuple[str, bool]:
     """`dead, healthy, warming up, suspected stall` for a `service` piece,
     over its start-row time, its session liveness and one port probe."""

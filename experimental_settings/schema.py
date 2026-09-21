@@ -136,6 +136,9 @@ class Inject:
     max_steps: int = 30                          # steps before the run is cut off
     probe_score: str | dict | None = None          # ref; required: the setting whose ctool probe decides when to fire
     probe_gen: str | dict | None = None            # ref; required: the setting whose probe writes the whole call
+    # TODO(gyb, 2026-09-22): before the full inject run, set theta in the inject workflow file from
+    # the full ctool eval's risk thresholds. The 0.80 there was never crossed in a debug walk
+    # (wave 7: no spec row); both 2026-09-22 debug walks fired through fire_nth_cut only.
     theta: float | None = None                    # required: the confidence threshold
     arm: str = "probe"                            # which control arm
     format: str = "p1_e1"                         # how an early result is written into the stream

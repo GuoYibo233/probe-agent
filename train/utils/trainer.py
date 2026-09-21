@@ -291,6 +291,12 @@ def run(run_dir: Path, method) -> None:
         # The step total is built from the minibatches method.batches() really yields, so that
         # the run takes exactly `steps` optimizer steps under every method: the schedule decays
         # to zero on the last one and the heartbeat's total is reached.
+        # TODO(gyb, 2026-09-22): two things left here. (1) When batches() keeps no train event at
+        # all, the two floors below still plan one step per epoch while the loop fires none; it
+        # is the same failure shape as the OPEN note above _validate_and_maybe_save (a finished
+        # run with no usable weights), so it waits for that decision. (2) The count costs one
+        # extra pass of batches() over the train split on the cpu before the first step; the
+        # cost on a full-scale build is not measured yet.
         n_train_events = train_df["event_id"].n_unique()
         m_per_epoch = max(_minibatches_per_epoch(method, train_df, probe.tokenizer, cfg), 1)
         steps_per_epoch = max(math.ceil(m_per_epoch / cfg.train.accum), 1)

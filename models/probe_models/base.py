@@ -72,6 +72,12 @@ class Probe(torch.nn.Module):
         self.lora = lora
         self._head_layer = head_layer
 
+    # TODO(gyb, 2026-09-22): the contracts still state the old form in three places, all the
+    # owner's to update: 6.2 pins this signature without `merged`; 1.6 says last/ holds the same
+    # shape as best/ and that the resume test compares `commit`; 2.4's continue-rule table says
+    # "its recorded commit equals this run's cfg._commit" (the test is the run key now, in
+    # train/utils/trainer.py). The adapter-only last/ was exercised on the cpu with a small
+    # random-weight model only; no LoRA setting exists yet, so no card run has resumed from one.
     def save(self, dir, *, labels=None, extra=None, meta=None, merged=True) -> None:
         """Write the checkpoint layout (contracts 1.6): the weights, the merged adapter or the adapter alone, plus the tokenizer, head.pt for a classifier and meta.json.
 

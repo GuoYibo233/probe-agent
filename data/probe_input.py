@@ -39,6 +39,9 @@ def cuts(thinking: str, min_think: int, max_cuts: int) -> list[int]:
     return pts
 
 
+# TODO(gyb, 2026-09-22): the contracts still state the old live rule (an `m.start()` offset) in
+# two places, 1.7 and Part 9(a) decision 31 ("There are two cut rules, not one"); both are the
+# owner's to update.
 def cuts_live(thinking_so_far: str, min_think: int) -> list[int]:
     """Enumerate streaming cut offsets into a growing thinking prefix, by the rule `cuts` holds: each offset is the end of the whitespace run (or newline) that follows a sentence, so the probe's text ends with that whitespace as it does in training. A cut is taken once a non-whitespace character has followed it: whitespace at the end of the stream may still be growing, and the build strips the whitespace that ends the thinking, so it holds no cut there. No terminal cut and no thinning. The caller hands over the thinking with its leading whitespace stripped, the form the build cuts."""
     n_settled = len(thinking_so_far.rstrip())

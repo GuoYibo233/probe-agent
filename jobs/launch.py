@@ -336,6 +336,13 @@ def place(kind, cards_needed, free_by_host, *, serving_host, prefer_host, attach
     # live server it attaches to. One that starts its own server falls through to the card
     # search below, where its table row's serving host reaches it as `prefer_host`, so a full
     # serving host moves that server to a free machine instead of ending the launch.
+    # TODO(gyb, 2026-09-22): the fallback knows how many cards are free and nothing about their
+    # size, so with tokyo108 full the gpt_oss_120b server lands on a 48 GB card, claims it, and
+    # fails its alive check one launch timeout later, where the launch used to refuse at once.
+    # Needs the owner's files: a minimum card memory in the row's `serving:` block of the model
+    # table and a per-host card memory in constants/path_outputs.yaml (a comment there today);
+    # place() then keeps the hosts whose cards are large enough. Contracts 3.4 (first bullet)
+    # and 7.4 (first paragraph) still state "the serving host and nowhere else".
     if kind == "service_agent" and attached:
         return serving_host
     candidates = []
@@ -1193,6 +1200,10 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
 # 2.3: refire().
 # ---------------------------------------------------------------------------
 
+# TODO(gyb, 2026-09-22): `run.py refire` cannot restart a service piece. This pattern asks for
+# ` 2>&1 | tee -a` right after `--run-dir <dir>`, which a serve line never matches, so refire
+# exits with "could not parse the frozen command" (found by the 2026-09-22 launch review, not
+# changed). Decide whether a dead service is refired or the whole run is relaunched.
 _PIECE_CMD_RE = re.compile(
     r"-m (?P<module>\S+) --run-dir (?P<run_dir>\S+)(?: --piece (?P<i>\d+)/(?P<n>\d+))? "
     r"2>&1 \| tee -a (?P<log>\S+)$"
