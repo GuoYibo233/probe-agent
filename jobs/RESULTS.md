@@ -3,6 +3,13 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `inject-4d9c736d3834` | 2026-09-22 03:23 | inject | inject/probe_p1_e1_theta_0pt80 | `24a9f19` | launching | - | - |
+| `eval-64464e0a216c` | 2026-09-22 03:22 | eval | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
+| `eval-f3f1719bd3a3` | 2026-09-22 03:22 | eval | train_probe/cparam_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
+| `eval-5f5a8f4f96f6` | 2026-09-22 03:21 | eval | train_probe/ctool_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
+| `train-a956d422f5a0` | 2026-09-22 03:08 | train | train_probe/cparam_qwen3_0pt6b | `24a9f19` | ok | objective=0.5625 val_ce=4.249267578125 val_params_all_ok=0.4375 gen_n=64 | - |
+| `train-94cbec080c4b` | 2026-09-22 03:07 | train | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | objective=0.75 val_ce=1.7966677844524384 val_tool_ok=0.25 val_params_all_ok=0.3125 val_full_call_ok=0.25 gen_n=64 | - |
+| `train-bd4a5dcf5629` | 2026-09-22 03:06 | train | train_probe/ctool_qwen3_0pt6b | `24a9f19` | ok | objective=0.859375 val_wacc=0.140625 val_lastcut_acc=0.25 | - |
 | `score-54f8794b126d` | 2026-09-20 21:21 | score | baseline/gpt_oss_120b_appworld | `9edf200` | ok | success=0.0 n_records=9 | report.md |
 | `sample-22be0dad52f2` | 2026-09-20 21:12 | sample | baseline/gpt_oss_120b_appworld | `9edf200` | ok | - | - |
 | `eval-2c850184f2c2` | 2026-09-20 20:57 | eval | train_probe/ctool_qwen3_0pt6b | `00b4b81` | ok | - | report.md |

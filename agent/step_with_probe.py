@@ -23,8 +23,12 @@ from models.probe_models.service import Client as ProbeClient
 # score) whose existing outputs can no longer be used; leave "stale" out and every stage is
 # stale. The key folds the highest version that made a stage stale, so a bump that leaves a
 # stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 2
+VERSION = 3
 VERSION_HISTORY = {
+    3: {"why": "the head of a fire is the last whole token before the cut; under version 2 it "
+               "was the first token covering the cut, which carried a fragment of the next word "
+               "now that a cut lies after the sentence's whitespace",
+        "stale": ("inject",)},
     2: {"why": "the live thinking is cut with its leading whitespace stripped, the form the "
                "build cuts, and cut offsets count from the stripped text",
         "stale": ("inject",)},
@@ -89,29 +93,28 @@ def token_boundary(bounds: list[tuple[int, int]], pos: int) -> tuple[int, int] |
 
 
 def find_head(gen_ids: list[int], raw: str, pos: int, k0: int, decode) -> tuple[int, str]:
-    """The shortest id prefix of gen_ids whose decoded text covers character position pos; raises on a decode/stream mismatch, never silently."""
+    """The longest id prefix of gen_ids whose decoded text ends at or before character position pos; raises on a decode/stream mismatch, never silently. A cut lies after the whitespace that follows a sentence, and a tokenizer joins that whitespace to the front of the next word, so the head stops at the last whole token before the cut: the model's own text with no fragment of the word that follows."""
     if not gen_ids:
         raise RuntimeError("find_head: no generated ids yet")
     k = max(1, min(k0, len(gen_ids)))
     txt = decode(gen_ids[:k])
-    while len(txt) < pos and k < len(gen_ids):
-        k += 1
+    while len(txt) > pos and k > 1:
+        k -= 1
         txt = decode(gen_ids[:k])
-    while k > 1:
-        prev = decode(gen_ids[:k - 1])
-        if len(prev) < pos:
+    while k < len(gen_ids):
+        longer = decode(gen_ids[:k + 1])
+        if len(longer) > pos:
             break
-        k, txt = k - 1, prev
-    if len(txt) < pos:
+        k, txt = k + 1, longer
+    if len(txt) > pos:
         raise RuntimeError(
-            f"find_head: decoding all {len(gen_ids)} ids gives ({len(txt)} chars), "
-            f"which does not cover the cut at {pos}"
+            f"find_head: the first generated id alone decodes to {len(txt)} chars, "
+            f"past the cut at {pos}"
         )
-    n = min(len(txt), len(raw))
-    if txt[:n] != raw[:n]:
+    if txt != raw[:len(txt)]:
         raise RuntimeError(
             f"find_head: decode(ids[:{k}]) does not match the streamed text: "
-            f"{txt[max(0, n - 60):n]!r} vs {raw[max(0, n - 60):n]!r}"
+            f"{txt[-60:]!r} vs {raw[max(0, len(txt) - 60):len(txt)]!r}"
         )
     return k, txt
 
