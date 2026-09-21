@@ -182,6 +182,18 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                     finished_at=time.clock_gettime(time.CLOCK_REALTIME),
                 )
                 writer.close()
+            # TODO(gyb, 2026-09-22): this handler also catches a service that is gone. When the
+            # agent server or the probe service stops answering, every task after this one fails
+            # within seconds, each gets a final row, and a final row certifies the task as run:
+            # no later launch runs it again, `retry sample` does not clear it, and build then
+            # refuses on max_abort_frac. Fix: a connection failure of the render call or of the
+            # generation step (urllib.error.URLError, an HTTP status other than 400,
+            # http.client.HTTPException, ConnectionError, TimeoutError, all after the client's
+            # own retries) writes no final row and ends this piece with SystemExit, so the next
+            # launch releases the unfinished record and the task runs again. With it, the
+            # heartbeat's finish() at the end of main() moves out of its `finally`, so that a
+            # piece that exits this way, or crashes, does not report itself done (review
+            # ticket 31).
             except Exception as exc:  # one task's failure must not take the whole piece down (errata)
                 t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
                 if not meta_written:
