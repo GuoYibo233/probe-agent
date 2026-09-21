@@ -34,6 +34,22 @@ def cuts(thinking: str, min_think: int, max_cuts: int) -> list[int]:
     return pts
 
 
+# TODO(gyb, 2026-09-22): the two cut rules end the probe's text at different characters, and the
+# owner's decision is to unify them on the training side's form: the text ends WITH the
+# whitespace or newline that follows the sentence.
+#   - `cuts` (training) takes m.end(): the text ends "...the playlist. " or "...the playlist.\n".
+#   - `cuts_live` (inject) takes m.start(): the text ends "...the playlist.".
+# The classifier reads the hidden state of the last token, so the live probe sees a last token
+# it never saw in training. The two docstrings are also swapped against the code: m.end() is the
+# start of the next sentence, m.start() is the end of this one.
+# Fix: `cuts_live` takes m.end() as `cuts` does. Two things go with it. (1) While the thinking
+# streams, a whitespace run may still be growing ("." then "\n" then "\n"), and the training text
+# holds the whole run, so a live cut is taken only once a non-whitespace character has followed
+# the run. (2) data/build_training_dataset.py strips the thinking before it cuts and
+# agent/step_with_probe.py does not; the live side strips the leading whitespace the same way, so
+# the two texts are equal character for character. `cuts` itself stays as it is, so no build or
+# train run goes stale: bump VERSION with "stale": ("inject",). Contracts 1.7 states m.start()
+# for the live rule and becomes stale with this change (an agent does not edit the contracts).
 def cuts_live(thinking_so_far: str, min_think: int) -> list[int]:
     """Enumerate streaming cut offsets into a growing thinking prefix, at each sentence start, with no terminal cut and no thinning."""
     return [
