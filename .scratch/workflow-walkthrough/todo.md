@@ -13,19 +13,25 @@ change touches as far as it is known.
    Today a run lives at `<root>/<stage>/<key>`, and the 12-hex key says nothing
    about what the run is. gyb's layout: the top level is the benchmark
    (`appworld`), the next level is the model, and the run directory under it is
-   named `<setting>` plus `<key>`.
+   named by its setting values plus `<key>`. gyb's clarification: "setting" here
+   means the values that tell runs apart, such as `ctool`, and never the named
+   setting's own name. The name is therefore a function of the run's content, so
+   settings with an equal key get an equal name and sharing one directory stays
+   as it is.
+   Proposed shape: each stage's row in the stage table gains a short list of the
+   fields whose values are spelled into the name, always, whether or not they
+   differ from the default (the diff alone would drop `ctool`, which is the
+   default method): nothing for `sample`, `build` and `score`; method, probe
+   backbone and tuning for `train` and `eval`; arm, format and theta for
+   `inject`. Example: `appworld/gpt_oss_120b/train/ctool-qwen3_0pt6b-full-<key>`.
+   The name is for reading only; the key alone still identifies the run.
    Open points, to settle with gyb before the batch:
-   - where the stage goes (one setting has up to four stages, each with its own
-     key): a level of its own, or part of the directory name;
-   - which model names the level: the agent model (every workflow has one), or
-     the probe backbone for train and eval;
-   - one directory is shared by every setting whose key is equal (today the
-     baseline setting and the three train_probe settings share one sample
-     directory, and the three train_probe settings share one build directory),
-     so a directory name can carry only one of their names: name it after the
-     first setting that created it and find it by its key suffix, or keep
-     `<stage>/<key>` as the real directory and add a per-setting tree of
-     symlinks in gyb's layout.
+   - where the stage goes: a level of its own (as in the example), or a prefix
+     of the directory name;
+   - which model names the level: the agent model (every workflow has one, and
+     the probe backbone is then part of the name), or the probe backbone for
+     train and eval;
+   - which fields each stage spells into its name.
    Touches: `schema.run_dir_of` and `referenced_run_dir` (every path goes through
    them), `registry.ls` / `sync` (they walk the root), the existing run
    directories on NFS (a migration or a cut-over), README section 1.
