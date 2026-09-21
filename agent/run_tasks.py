@@ -115,6 +115,11 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     extra = step_with_probe.system_text(cfg)
 
     triples = requested_pairs(env, run.split, run.tasks, run.n_tasks, run.seeds)
+    # TODO(gyb, 2026-09-22): the pieces start one task apart, so all of them walk nearly the same
+    # stretch of the list and keep meeting each other's claims. Start piece i at
+    # i * len(triples) // n instead, and keep the claim files: each piece then works its own
+    # stretch, a piece that finishes early walks on into the next stretch, and a dead piece's
+    # tasks are still picked up. Only the order tasks run in changes, no record does.
     triples = triples[i:] + triples[:i]
 
     hb = registry.beat(run_dir, i)
