@@ -67,6 +67,17 @@ def _clip(s: str, cap: int) -> str:
     return s if len(s) <= cap else s[: cap - 60] + " ...[cut]... " + s[-40:]
 
 
+# TODO(gyb, 2026-09-22): the owner wants the probe to read the task and EVERY earlier call of the
+# record, and today it reads the task and the last build.hist_rounds = 3 rounds only. Decide the
+# form before changing anything, because length is the limit: each history line is the whole code
+# block of a round (not clipped) plus its result (clipped to build.probe_result_cap), and the
+# --debug build b565f5ab1b94 (3 rounds of history, 6 steps per task) already reports text
+# lengths of p50 3347, p90 10150 and max 26752 characters, while the trainer drops a whole event
+# whose longest text passes train.max_len = 8192 tokens. Forms to choose from: every round in
+# full; every round's call with the result kept for the last few rounds only; or every round
+# reduced to its first call (env.split_args) with recent rounds in full. build.hist_rounds is in
+# the build key and in the inject key (PROBE_TEXT_FIELDS), so any of these re-keys build, train,
+# eval and inject; sample stays.
 def assemble(
     task: str,
     history: list[tuple[str, str]],
