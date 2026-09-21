@@ -50,6 +50,14 @@ def _pad16(n: int) -> int:
     return ((n + 15) // 16) * 16
 
 
+# TODO(gyb, 2026-09-22): the owner checks the packing below by hand, line by line, before any
+# full-scale training: `_build_events` (the shared prefix and each row's own tail, from the
+# longest common token prefix), `_chunk_by_budget`, and `_make_batch` (the position ids, the
+# block mask of who may attend to whom, and the event_end position each row's logits are read
+# at). The alignment gate in train/utils/trainer.py compares the packed loss with the plain loss
+# on the first events_per_mb * accum rows only, so it proves those rows and no others.
+# train/methods/cgen.py and train/methods/cparam.py carry their own packing and get the same
+# check.
 def _build_events(df, tok, max_len: int) -> tuple[list[dict], int]:
     """Group df's rows by event, tokenize the longest text as the event's full_ids and every row's own text, and drop an event whole when its longest text tokenizes past max_len. Returns (events, dropped_count)."""
     dropped = 0
