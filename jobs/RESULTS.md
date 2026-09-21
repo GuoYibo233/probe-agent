@@ -3,6 +3,11 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `score-6412871b8f47` | 2026-09-22 03:45 | score | baseline/gpt_oss_120b_appworld | `e901c20` | ok | success=0.0 n_records=6 | report.md |
+| `score-4c2fa9e9de40` | 2026-09-22 03:39 | score | baseline/gpt_oss_120b_appworld | `e901c20` | ok | success=0.0 n_records=6 | report.md |
+| `sample-dbfc360385f6` | 2026-09-22 03:39 | sample | baseline/gpt_oss_120b_appworld | `e901c20` | ok | - | - |
+| `score-8c4cfa878a73` | 2026-09-22 03:38 | score | inject/probe_p1_e1_theta_0pt80 | `e901c20` | ok | success=0.0 base_success=0.0 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=3 | report.md |
+| `inject-453a69cafd89` | 2026-09-22 03:32 | inject | inject/probe_p1_e1_theta_0pt80 | `e901c20` | ok | - | - |
 | `inject-4d9c736d3834` | 2026-09-22 03:23 | inject | inject/probe_p1_e1_theta_0pt80 | `24a9f19` | launching | - | - |
 | `eval-64464e0a216c` | 2026-09-22 03:22 | eval | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
 | `eval-f3f1719bd3a3` | 2026-09-22 03:22 | eval | train_probe/cparam_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
