@@ -167,6 +167,17 @@ def main(run_dir: Path) -> None:
                 skip_no_action += 1
                 continue
 
+            # TODO(gyb, 2026-09-22): OPEN DESIGN QUESTION, to be discussed with the others before
+            # any code changes; not a bug to fix on sight. The label of a step is the FIRST
+            # `apis.<app>.<api>(` call of its code block and every later call is ignored, while
+            # the agent model often writes several calls in one block: in the --debug records on
+            # disk (debug/sample and debug/inject, 36 record files, 200 steps with code) 81 steps
+            # hold more than one call, up to 10 in one block. So the probe learns "the first call
+            # of the block", and an inject run speculates that one call only, a small share of a
+            # many-call step. The options named so far: limit the agent to one call per block in
+            # the instructions (data/environments/appworld.py), label some other call of the
+            # block, or keep the first-call rule knowingly. The --debug records stop at 6 steps
+            # per task, so count again on a full-scale sample before deciding.
             parsed = env.split_args(action)
             if parsed is None:
                 skip_no_call += 1
