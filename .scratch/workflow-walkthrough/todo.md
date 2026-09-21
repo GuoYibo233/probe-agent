@@ -9,7 +9,26 @@ change touches as far as it is known.
 
 ## Open
 
-(none yet)
+5. Make the outputs tree readable by a person (step 4, key and run directory).
+   Today a run lives at `<root>/<stage>/<key>`, and the 12-hex key says nothing
+   about what the run is. gyb's layout: the top level is the benchmark
+   (`appworld`), the next level is the model, and the run directory under it is
+   named `<setting>` plus `<key>`.
+   Open points, to settle with gyb before the batch:
+   - where the stage goes (one setting has up to four stages, each with its own
+     key): a level of its own, or part of the directory name;
+   - which model names the level: the agent model (every workflow has one), or
+     the probe backbone for train and eval;
+   - one directory is shared by every setting whose key is equal (today the
+     baseline setting and the three train_probe settings share one sample
+     directory, and the three train_probe settings share one build directory),
+     so a directory name can carry only one of their names: name it after the
+     first setting that created it and find it by its key suffix, or keep
+     `<stage>/<key>` as the real directory and add a per-setting tree of
+     symlinks in gyb's layout.
+   Touches: `schema.run_dir_of` and `referenced_run_dir` (every path goes through
+   them), `registry.ls` / `sync` (they walk the root), the existing run
+   directories on NFS (a migration or a cut-over), README section 1.
 
 ## Done
 
