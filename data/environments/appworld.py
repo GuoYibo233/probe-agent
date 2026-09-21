@@ -5,6 +5,7 @@ import ast
 import os
 import re
 import shutil
+import socket
 import time
 from pathlib import Path
 
@@ -331,16 +332,12 @@ class AppWorld(Environment):
         os.environ["APPWORLD_ROOT"] = self.home
         from appworld import AppWorld as _World
 
-        # TODO(gyb, 2026-09-22): this name is the world's working directory under
-        # <home>/experiments/outputs/, and it carries the task and the seed only. Two runs that
-        # hold the same task at the same time (a baseline sample beside an inject run, a --debug
-        # walk beside a real one) share that directory, and close() below removes it, so the run
-        # that finishes first deletes the directory the other is still using. Pieces of one run
-        # never collide, the claim files see to that. Fix: the name is unique per run, by
-        # carrying the run key (agent/run_tasks.py knows it as cfg._key and would hand it over;
-        # open() of the environment contract has no argument for it today) or, with no
-        # interface change, this process's id.
-        experiment_name = f"{task_id}__s{seed}"
+        # This name is the world's working directory under <home>/experiments/outputs/, and
+        # close() below removes it. Two runs may hold the same task at the same time (a baseline
+        # sample beside an inject run, a --debug walk beside a real one), so the name carries
+        # the host and the id of this process next to the task and the seed: one process holds
+        # one world at a time, and no other process ever has this directory.
+        experiment_name = f"{task_id}__s{seed}__{socket.gethostname()}_{os.getpid()}"
         world = _World(task_id=task_id, experiment_name=experiment_name, random_seed=self.SEED)
         self._world = world
         self._experiment_name = experiment_name

@@ -52,7 +52,7 @@ FIRES_SCHEMA: dict[str, pl.DataType] = {
 
 IDENTITY_FIELDS: frozenset[str] = frozenset({
     "version", "method", "probe_kind", "stage_key", "train_key",
-    "theta_from", "commit", "labels",
+    "theta_from", "commit", "labels", "dropped_overlong",
 })
 
 
@@ -580,6 +580,16 @@ def _render_report_md(fields: dict) -> str:
     lines.append("## events per split")
     for split, count in fields.get("n_events", {}).items():
         lines.append(f"- {split}: {count}")
+    lines.append("")
+    lines.append("## events over train.max_len, which training and validation dropped whole")
+    if fields["probe_kind"] == "classifier":
+        lines.append("(the prediction pass drops them too: such an event has no prediction row, "
+                     "so it is in no number above)")
+    else:
+        lines.append("(the prediction pass keeps them: such an event has its prediction rows and "
+                     "is in the numbers above, with its prompt truncated to fit train.max_len)")
+    for split in ("val", "test"):
+        lines.append(f"- {split}: {fields['dropped_overlong'][split]}")
     return "\n".join(lines) + "\n"
 
 
@@ -629,6 +639,11 @@ def run(run_dir: Path) -> None:
 
     train_meta = json.loads((train_dir / "meta.json").read_text())
     labels = train_meta["stage_extra"]["labels"]
+    # The events the train run dropped whole at train.max_len, per split, out of that run's
+    # done.json counts. They have no prediction row, so they enter no number of this report;
+    # report.md states how many there were in val and in test and that is all.
+    train_done = json.loads((train_dir / "done.json").read_text())
+    dropped_overlong = train_done["counts"]["dropped_overlong"]
 
     kind = PROBE_KIND[method]
     ref = None
@@ -682,6 +697,7 @@ def run(run_dir: Path) -> None:
         "theta_from": cfg._upstream.get("theta_from.eval"),
         "commit": cfg._commit,
         "labels": labels,
+        "dropped_overlong": {"val": dropped_overlong["val"], "test": dropped_overlong["test"]},
     }
     full_fields = {**identity, **fields}
 

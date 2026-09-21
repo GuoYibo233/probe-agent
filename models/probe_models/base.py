@@ -72,36 +72,40 @@ class Probe(torch.nn.Module):
         self.lora = lora
         self._head_layer = head_layer
 
-    # TODO(gyb, 2026-09-22): a resumed LoRA run does not continue the run that was interrupted
-    # (read from the code, not yet shown by a run; every setting today is full tuning). save()
-    # merges the adapter into the weights for every checkpoint, last/ included, and load() then
-    # builds a NEW adapter over the merged weights (A drawn at random again, B zero), while
-    # trainer.py loads the optimizer state of the OLD adapter's A and B: the moments belong to
-    # tensors that no longer exist. Fix: the resume checkpoint keeps the unmerged form. last/
-    # holds the adapter's own weights (peft's adapter save), head.pt and optimizer.pt, and a
-    # resume loads the original backbone weights, builds the adapter from cfg.probe and loads
-    # those adapter weights into it, so parameters and optimizer state are the ones the
-    # interrupted run held. best/ stays merged, the form the probe service loads. This changes
-    # the checkpoint layout of contracts 1.6 for last/ under lora only, and makes last/ small.
-    def save(self, dir, *, labels=None, extra=None, meta=None) -> None:
-        """Write the checkpoint layout (contracts 1.6): weights or merged adapter, tokenizer, head.pt for a classifier, meta.json."""
+    def save(self, dir, *, labels=None, extra=None, meta=None, merged=True) -> None:
+        """Write the checkpoint layout (contracts 1.6): the weights, the merged adapter or the adapter alone, plus the tokenizer, head.pt for a classifier and meta.json.
+
+        `merged` is what the resume checkpoint of a LoRA run turns off: that directory then holds
+        the adapter's own weights alone and its meta.json says so with `adapter_only`, so that a
+        resume rebuilds the very adapter tensors the optimizer state beside it belongs to. A
+        merged save writes a new adapter's starting point instead (A drawn again, B zero), and
+        the moments in that optimizer state would belong to tensors that no longer exist. best/
+        is always written merged, the form the probe service loads, and under full tuning both
+        values write the same whole weights.
+        """
         import copy
 
         dir = Path(dir)
         dir.mkdir(parents=True, exist_ok=True)
-        if self.lora is not None:
-            merged = copy.deepcopy(self.lora).merge_and_unload()
-            merged.save_pretrained(dir)
-            was_cuda = next(merged.parameters()).is_cuda
-            del merged
+        adapter_only = False
+        if self.lora is None:
+            self.backbone.save_pretrained(dir)
+        elif merged:
+            merged_model = copy.deepcopy(self.lora).merge_and_unload()
+            merged_model.save_pretrained(dir)
+            was_cuda = next(merged_model.parameters()).is_cuda
+            del merged_model
             if was_cuda:
                 torch.cuda.empty_cache()
         else:
-            self.backbone.save_pretrained(dir)
+            self.lora.save_pretrained(dir)
+            adapter_only = True
         self.tokenizer.save_pretrained(dir)
         if self.probe_kind == "classifier":
             torch.save(self.head.state_dict(), dir / "head.pt")
         meta_out = {"labels": labels, **(meta or {}), **(extra or {})}
+        if adapter_only:
+            meta_out["adapter_only"] = True
         (dir / "meta.json").write_text(json.dumps(meta_out))
 
     def forward(self, batch: Batch) -> Outputs:
@@ -213,14 +217,25 @@ def load(row: dict | None, cfg: object, *, probe_kind: str, n_labels: int | None
     if probe_kind not in _PROBE_KINDS:
         raise ValueError(f"probe_kind: {probe_kind!r} is not one of {_PROBE_KINDS}")
 
+    adapter_only = False
     if ckpt_dir is not None:
         ckpt_dir = Path(ckpt_dir)
         meta = json.loads((ckpt_dir / "meta.json").read_text())
         labels = meta.get("labels")
         tuning = meta["tuning"]
         max_len = meta["max_len"]
-        family = models.probe(meta["backbone"]).family
-        weights_path: str | Path = ckpt_dir
+        probe_model = models.probe(meta["backbone"])
+        family = probe_model.family
+        # An adapter-only checkpoint (the resume checkpoint of a LoRA run, 1.6) holds the
+        # adapter's own weights and no backbone, so the backbone comes from the alias the
+        # checkpoint names and the adapter built below is loaded out of the checkpoint.
+        adapter_only = bool(meta.get("adapter_only"))
+        if adapter_only and cfg is None:
+            raise ValueError(
+                f"{ckpt_dir}: an adapter-only checkpoint needs the frozen setting to rebuild its "
+                f"adapter, and load() was called with no cfg; the served form loads best/, which "
+                f"holds the merged weights")
+        weights_path: str | Path = probe_model.weights_path if adapter_only else ckpt_dir
     else:
         family = row["family"]
         tuning = cfg.probe.tuning
@@ -259,11 +274,18 @@ def load(row: dict | None, cfg: object, *, probe_kind: str, n_labels: int | None
     # lora_* values live in cfg.probe alone, and the tuning itself comes from the checkpoint's
     # own meta.json on a restore. A restored LoRA probe therefore holds the adapter its
     # training held, so trainable_parameters() names the same tensors the crashed
-    # incarnation's optimizer state holds and the run resumes as a LoRA run. save() merged
-    # that adapter into the weights, so the rebuilt adapter starts from peft's
-    # zero-initialised B over the merged weights and the probe scores what it scored before.
+    # incarnation's optimizer state holds and the run resumes as a LoRA run. From an
+    # adapter-only checkpoint the adapter's saved A and B are loaded into it as well, so those
+    # tensors carry the values the optimizer state's moments belong to; a merged checkpoint
+    # (best/) holds the adapter in the weights already, and the rebuilt adapter starts from
+    # peft's zero-initialised B over them, so the probe scores what it scored before.
     # A load with no frozen setting is the served form (models/probe_models/service.py): it
     # serves those merged weights and trains nothing.
+    if adapter_only and cfg is None:
+        raise ValueError(
+            f"{ckpt_dir}: an adapter-only checkpoint (a LoRA run's last/) holds no backbone "
+            "weights and is loaded with the frozen setting, which rebuilds the adapter; the "
+            "served form loads best/, which is merged")
     lora = None
     if cfg is not None:
         if tuning == "full":
@@ -276,6 +298,15 @@ def load(row: dict | None, cfg: object, *, probe_kind: str, n_labels: int | None
                 r=cfg.probe.lora_r, lora_alpha=cfg.probe.lora_alpha,
                 lora_dropout=cfg.probe.lora_dropout, target_modules=list(targets), bias="none")
             lora = peft.get_peft_model(model, peft_cfg)
+            if adapter_only:
+                loaded = peft.set_peft_model_state_dict(
+                    lora, peft.load_peft_weights(str(ckpt_dir), device="cpu"))
+                if loaded.unexpected_keys:
+                    raise ValueError(
+                        f"{ckpt_dir}: the saved adapter holds tensor(s) "
+                        f"{sorted(loaded.unexpected_keys)[:5]} that the adapter built from "
+                        "probe.lora_r, probe.lora_alpha, probe.lora_dropout and "
+                        "probe.lora_targets does not have")
         else:
             raise ValueError(f"probe.tuning: {tuning!r} is not one of {_TUNINGS}")
 

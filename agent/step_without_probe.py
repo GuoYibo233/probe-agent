@@ -2,11 +2,6 @@
 # venv: the environment's
 from __future__ import annotations
 
-# TODO(gyb, 2026-09-18): this file was renamed from agent/generate.py on gyb's order, because the old
-# name did not say what the file does. The tree document, the contracts and the older
-# tickets still use the old name. Delete this comment once every program of the tree is
-# written (after wave 7).
-
 import hashlib
 import time
 from dataclasses import dataclass

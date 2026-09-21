@@ -2,13 +2,9 @@
 # venv: the environment's (appworld today)
 from __future__ import annotations
 
-# TODO(gyb, 2026-09-18): this file was renamed from agent/loop.py on gyb's order, because the old
-# name did not say what the file does. The tree document, the contracts and the older
-# tickets still use the old name. Delete this comment once every program of the tree is
-# written (after wave 7).
-
 import argparse
 import dataclasses
+import http.client
 import json
 import sys
 import time
@@ -16,9 +12,9 @@ import urllib.error
 from pathlib import Path
 
 from data.environments import open_env, requested_pairs
-from data.trajectory_record import open_record, to_messages
+from data.trajectory_record import done_pairs, open_record, to_messages
 from experimental_settings import schema
-from jobs import registry
+from jobs import launch, registry
 from models.agent_models.service import Client as AgentClient
 from models.probe_models.service import Client as ProbeClient
 
@@ -56,6 +52,19 @@ def _meta_fields(cfg, task_id: str, seed: int | None, env_seed, split: str, arm:
     )
 
 
+class _ServiceGone(Exception):
+    """The agent server or the probe service stopped answering, after the client's own retries."""
+
+
+def _is_connection_failure(exc: Exception) -> bool:
+    """True when exc says a service failed, as opposed to this task: no connection, a timeout, a broken stream, or an HTTP status other than 400 (400 is the agent server's context overflow, one task's own failure). The agent client raises the HTTPError itself; the probe client raises RuntimeError from the HTTPError its service answered with, so the status is read off the cause there."""
+    status = exc if isinstance(exc, urllib.error.HTTPError) else exc.__cause__
+    if isinstance(status, urllib.error.HTTPError):
+        return status.code != 400
+    return isinstance(exc, (urllib.error.URLError, http.client.HTTPException,
+                            ConnectionError, TimeoutError))
+
+
 def _parse_piece(text: str) -> tuple[int, int]:
     i_str, _, n_str = text.partition("/")
     return int(i_str), int(n_str)
@@ -74,7 +83,7 @@ def _wait_for_endpoints(run_dir: Path, agent_path: Path, probe_path: Path, timeo
 
 def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     """Read the frozen setting, walk this piece's rotation of requested triples, and write one record per task."""
-    i, _n = piece
+    i, n = piece
     run_dir = Path(run_dir)
     cfg = schema.load_frozen(run_dir)
     run = cfg.inject if cfg.inject is not None else cfg.sample
@@ -115,120 +124,123 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     extra = step_with_probe.system_text(cfg)
 
     triples = requested_pairs(env, run.split, run.tasks, run.n_tasks, run.seeds)
-    # TODO(gyb, 2026-09-22): the pieces start one task apart, so all of them walk nearly the same
-    # stretch of the list and keep meeting each other's claims. Start piece i at
-    # i * len(triples) // n instead, and keep the claim files: each piece then works its own
-    # stretch, a piece that finishes early walks on into the next stretch, and a dead piece's
-    # tasks are still picked up. Only the order tasks run in changes, no record does.
-    triples = triples[i:] + triples[:i]
+    # Piece i starts at its own stretch of the list and the claim files stay: a piece that
+    # finishes its stretch walks on into the next one, and a dead piece's tasks are still
+    # picked up. Only the order tasks run in depends on this, no record does.
+    start = i * len(triples) // n
+    triples = triples[start:] + triples[:start]
 
     hb = registry.beat(run_dir, i)
     hb.emit(0, len(triples), "task")
     done = 0
-    try:
-        for split, task_id, seed in triples:
-            writer = open_record(run_dir, task_id, seed)
-            if writer is None:
-                continue  # another piece holds this record; move on, deleting nothing
+    # The heartbeat's finish() comes after the walk and outside any `finally`: a piece that
+    # crashes, or exits because a service is gone, does not report itself done.
+    for split, task_id, seed in triples:
+        writer = open_record(run_dir, task_id, seed)
+        if writer is None:
+            continue  # another piece holds this record; move on, deleting nothing
 
-            history: list[tuple[str, str]] = []
-            steps_done = 0
-            completed = False
-            abort: str | None = None
-            tokens_in = tokens_out = 0
-            meta_written = False
-            t0 = time.clock_gettime(time.CLOCK_MONOTONIC)
+        history: list[tuple[str, str]] = []
+        steps_done = 0
+        completed = False
+        abort: str | None = None
+        tokens_in = tokens_out = 0
+        meta_written = False
+        t0 = time.clock_gettime(time.CLOCK_MONOTONIC)
+        try:
+            env.open(task_id, seed)
+            task_text = env.task_text
+            writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, task_text, i))
+            meta_written = True
+
             try:
-                env.open(task_id, seed)
-                task_text = env.task_text
-                writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, task_text, i))
-                meta_written = True
-
-                try:
-                    for step_index in range(run.max_steps):
-                        messages = to_messages(
-                            writer.frame(), step_index, task_text,
-                            env.INSTRUCTIONS[cfg.data.instructions], env.NO_CODE_MESSAGE, extra,
-                        )
+                for step_index in range(run.max_steps):
+                    messages = to_messages(
+                        writer.frame(), step_index, task_text,
+                        env.INSTRUCTIONS[cfg.data.instructions], env.NO_CODE_MESSAGE, extra,
+                    )
+                    # the two calls that reach a service; the clients have already retried
+                    try:
                         prefix_ids = clients.probe.render(
                             messages, cfg.generation.effort, cfg.generation.date
                         )["prefix_ids"]
                         res = gen_step(env, clients, cfg, writer, messages, prefix_ids, history,
                                        task_text, step_index, seed)
-                        writer.row("gen", step=step_index, **dataclasses.asdict(res))
-                        tokens_in += res.usage.get("in", 0)
-                        tokens_out += res.usage.get("out", 0)
-
-                        obs = env.step(res.content)
-                        writer.row("env", step=step_index, action=obs.action,
-                                  result=obs.observation, error_kind=obs.error_kind)
-                        steps_done = step_index + 1
-                        if obs.action is not None and obs.action.strip():
-                            history.append((obs.action.strip(), obs.observation))
-                        if obs.completed:
-                            completed = True
-                            break
-                except urllib.error.HTTPError as exc:
-                    if exc.code != 400:
+                    except Exception as exc:
+                        if _is_connection_failure(exc):
+                            raise _ServiceGone(f"{type(exc).__name__}: {exc}") from exc
                         raise
-                    abort = "context_overflow_400"
+                    writer.row("gen", step=step_index, **dataclasses.asdict(res))
+                    tokens_in += res.usage.get("in", 0)
+                    tokens_out += res.usage.get("out", 0)
 
-                judge = env.judge()
-                t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
-                writer.row(
-                    "final", steps=steps_done, completed=completed, abort=abort,
-                    judge=_canonical_json(judge), success=judge["success"],
-                    tokens_in=tokens_in, tokens_out=tokens_out, wall_s=round(t1 - t0, 2),
-                    finished_at=time.clock_gettime(time.CLOCK_REALTIME),
-                )
-                writer.close()
-            # TODO(gyb, 2026-09-22): this handler also catches a service that is gone. When the
-            # agent server or the probe service stops answering, every task after this one fails
-            # within seconds, each gets a final row, and a final row certifies the task as run:
-            # no later launch runs it again, `retry sample` does not clear it, and build then
-            # refuses on max_abort_frac. Fix: a connection failure of the render call or of the
-            # generation step (urllib.error.URLError, an HTTP status other than 400,
-            # http.client.HTTPException, ConnectionError, TimeoutError, all after the client's
-            # own retries) writes no final row and ends this piece with SystemExit, so the next
-            # launch releases the unfinished record and the task runs again. With it, the
-            # heartbeat's finish() at the end of main() moves out of its `finally`, so that a
-            # piece that exits this way, or crashes, does not report itself done (review
-            # ticket 31).
-            except Exception as exc:  # one task's failure must not take the whole piece down (errata)
-                t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
-                if not meta_written:
-                    writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, "", i))
-                writer.row(
-                    "final", steps=steps_done, completed=False,
-                    abort=f"task_error:{type(exc).__name__}",
-                    judge=_canonical_json({"success": False, "task_error": str(exc)}), success=False,
-                    tokens_in=tokens_in, tokens_out=tokens_out, wall_s=round(t1 - t0, 2),
-                    finished_at=time.clock_gettime(time.CLOCK_REALTIME),
-                )
-                writer.close()
-            finally:
-                # a raising close() must cost only this task's teardown, not the piece's walk
-                try:
-                    env.close()
-                except Exception as exc:
-                    print(
-                        f"agent.run_tasks: task {task_id} seed {seed}: env.close() failed: {exc}",
-                        file=sys.stderr,
-                    )
+                    obs = env.step(res.content)
+                    writer.row("env", step=step_index, action=obs.action,
+                              result=obs.observation, error_kind=obs.error_kind)
+                    steps_done = step_index + 1
+                    if obs.action is not None and obs.action.strip():
+                        history.append((obs.action.strip(), obs.observation))
+                    if obs.completed:
+                        completed = True
+                        break
+            except urllib.error.HTTPError as exc:
+                if exc.code != 400:
+                    raise
+                abort = "context_overflow_400"
 
-            done += 1
-            hb.emit(done, len(triples), "task", tok_in=tokens_in, tok_out=tokens_out)
-    finally:
-        hb.finish()
-    # TODO(gyb, 2026-09-22): when every requested pair has a finished record, the cards must be
-    # released here. Today only the next `run.py <workflow> <setting>` walk (or `run.py kill`)
-    # ends the agent server, so a run whose pieces finish overnight holds its card idle until a
-    # person types the command again. Fix: a piece that ends its walk and finds every requested
-    # pair done (data.trajectory_record.done_pairs over the same triples) ends this run's service
-    # pieces through jobs.launch.teardown_services, which already leaves alone a server another
-    # live run is attached to. done.json and the finish row stay run.py's to write on the next
-    # walk (the stage table's done_writer), so this changes when the card is freed and nothing
-    # a later stage reads.
+            judge = env.judge()
+            t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
+            writer.row(
+                "final", steps=steps_done, completed=completed, abort=abort,
+                judge=_canonical_json(judge), success=judge["success"],
+                tokens_in=tokens_in, tokens_out=tokens_out, wall_s=round(t1 - t0, 2),
+                finished_at=time.clock_gettime(time.CLOCK_REALTIME),
+            )
+            writer.close()
+        # A service that stopped answering is not this task's failure: every task after it
+        # would fail within seconds, and a final row certifies a task as run for good. So the
+        # record gets no final row and the piece ends here; the next launch releases the
+        # unfinished record (its owner is no longer live) and the task runs again.
+        except _ServiceGone as exc:
+            writer.close()
+            raise SystemExit(
+                f"agent.run_tasks: task {task_id} seed {seed}: a service stopped answering "
+                f"({exc}); this piece ends with the record left unfinished"
+            ) from exc
+        except Exception as exc:  # one task's failure must not take the whole piece down (errata)
+            t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
+            if not meta_written:
+                writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, "", i))
+            writer.row(
+                "final", steps=steps_done, completed=False,
+                abort=f"task_error:{type(exc).__name__}",
+                judge=_canonical_json({"success": False, "task_error": str(exc)}), success=False,
+                tokens_in=tokens_in, tokens_out=tokens_out, wall_s=round(t1 - t0, 2),
+                finished_at=time.clock_gettime(time.CLOCK_REALTIME),
+            )
+            writer.close()
+        finally:
+            # a raising close() must cost only this task's teardown, not the piece's walk
+            try:
+                env.close()
+            except Exception as exc:
+                print(
+                    f"agent.run_tasks: task {task_id} seed {seed}: env.close() failed: {exc}",
+                    file=sys.stderr,
+                )
+
+        done += 1
+        hb.emit(done, len(triples), "task", tok_in=tokens_in, tok_out=tokens_out)
+    hb.finish()
+
+    # When every requested pair has a finished record, this run's services are ended here, so a
+    # run whose pieces finish overnight frees its cards at once. teardown_services leaves alone
+    # a server another live run is attached to. done.json and the finish row stay run.py's to
+    # write on the next walk, so nothing a later stage reads depends on this.
+    pairs = [(task_id, seed) for _split, task_id, seed in triples]
+    if done_pairs(run_dir, pairs) == set(pairs):
+        ended = launch.teardown_services(run_dir)
+        print(f"agent.run_tasks: every requested record is finished; ended services: {ended}")
 
 
 if __name__ == "__main__":

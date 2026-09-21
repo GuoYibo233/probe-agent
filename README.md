@@ -129,7 +129,7 @@ data/environments/appworld.py — the AppWorld benchmark: hands out its tasks, s
 
 data/trajectory_record.py — the record one task run leaves: six row kinds in one flush-per-row jsonl file, with the claim, release, read and message-rebuilding functions its callers share.
   imports: data/__init__.py
-  used by: agent/run_tasks.py (meta, gen, env, final), agent/step_with_probe.py (spec, resume), data/build_training_dataset.py, eval/score_run.py, jobs/launch.py (done_pairs, is_done, owner, release), run.py (done_pairs, is_done, owner, release: the completeness check, the progress count and the claim release)
+  used by: agent/run_tasks.py (meta, gen, env, final; done_pairs), agent/step_with_probe.py (spec, resume), data/build_training_dataset.py, eval/score_run.py, jobs/launch.py (done_pairs, is_done, owner, release), run.py (done_pairs, is_done, owner, release: the completeness check, the progress count and the claim release)
   reads:   task record (jsonl)
   writes:  task record (jsonl)
   venv:    any
@@ -205,7 +205,7 @@ models/probe_models/__init__.py — empty package marker, so the client half of 
 models/probe_models/base.py — the probe class every backbone shares: load, save, score a prefix, generate a call; owns the classification head and the checkpoint layout.
   imports: models/__init__.py; models/probe_models/<backbone>.py (by name, inside load()); [torch, transformers, peft]
   used by: train/utils/trainer.py, models/probe_models/service.py (inside serve())
-  reads:   the checkpoint layout, including the class order in best/meta.json
+  reads:   the checkpoint layout, including the class order in best/meta.json, and the backbone alias's own weights when the checkpoint holds the LoRA adapter alone
   writes:  the checkpoint layout
   venv:    probe
 
@@ -226,10 +226,10 @@ models/probe_models/service.py — both ends of the probe service: the HTTP serv
 ### agent/ — the loop that runs the agent model on tasks
 
 agent/run_tasks.py — run each task and seed of a piece's rotation to completion, claiming tasks across pieces and writing the record.
-  imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py, data/trajectory_record.py, models/agent_models/service.py (client), models/probe_models/service.py (client, for render), agent/step_without_probe.py, agent/step_with_probe.py, jobs/registry.py
+  imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py, data/trajectory_record.py, models/agent_models/service.py (client), models/probe_models/service.py (client, for render), agent/step_without_probe.py, agent/step_with_probe.py, jobs/registry.py, jobs/launch.py (teardown_services)
   used by: none (program)
-  reads:   its run directory's settings.yaml, the environment's split task-id files (through data/environments.requested_pairs), the service_agent_<replica>.json / service_probe_0.json endpoint files in its own run directory
-  writes:  task records (jsonl), heartbeat
+  reads:   its run directory's settings.yaml, the environment's split task-id files (through data/environments.requested_pairs), the service_agent_<replica>.json / service_probe_0.json endpoint files in its own run directory; after its walk, the last line of every requested record (done_pairs) and, through jobs/launch.teardown_services, its run directory's meta.json and the open runs' service_<kind>_<replica>.json
+  writes:  task records (jsonl), heartbeat; ends its run's service pieces (through jobs/launch.teardown_services) once every requested record is finished
   venv:    the environment's (appworld today)
 
 agent/step_without_probe.py — the plain generation step: stream tokens from the agent model to end of turn, exposing the stream so step_with_probe.py can iterate it instead.
@@ -288,7 +288,7 @@ train/methods/cparam.py — the argument-generating probe: its own packing and s
 eval/utils/probe_eval.py — the eval program of every probe method: the PROBE_KIND and MATCH_VERSION tables, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report.
   imports: experimental_settings/schema.py, data/probe_output.py, data/environments/__init__.py (open_env, for the environment the generator report normalises both sides through), jobs/registry.py; [polars, numpy]
   used by: train/methods/{ctool,cgen,cparam}.py (match_<method>, for their validation metric), run.py (read_report, to freeze a temperature), eval/method_table.py
-  reads:   prediction (parquet), its own and the referenced eval run's train meta.json (stage_extra.labels, upstream["build"]), probe report (json + parquet)
+  reads:   prediction (parquet), its own and the referenced eval run's train meta.json (stage_extra.labels, upstream["build"]), its own train run's done.json (counts.dropped_overlong), probe report (json + parquet)
   writes:  probe report (probe_report.json + fires.parquet), report.md, consumed.json, heartbeat, done.json
   venv:    any
 
@@ -318,7 +318,7 @@ jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the 
 
 jobs/launch.py — launch and refire the tmux pieces of a sample, inject or train run: the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
   imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
-  used by: run.py
+  used by: run.py, agent/run_tasks.py (teardown_services)
   reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host and the hosts list), models/table.yaml (the serving block), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and heartbeat/<piece>-<launch>.jsonl files (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git
   writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
   venv:    probe

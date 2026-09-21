@@ -2,11 +2,7 @@
 # venv: the environment's
 from __future__ import annotations
 
-# TODO(gyb, 2026-09-18): this file was renamed from agent/inject.py on gyb's order, because the old
-# name did not say what the file does. The tree document, the contracts and the older
-# tickets still use the old name. Delete this comment once every program of the tree is
-# written (after wave 7).
-
+import re
 import time
 
 from agent import step_without_probe
@@ -27,8 +23,12 @@ from models.probe_models.service import Client as ProbeClient
 # score) whose existing outputs can no longer be used; leave "stale" out and every stage is
 # stale. The key folds the highest version that made a stage stale, so a bump that leaves a
 # stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 1
-VERSION_HISTORY = {}
+VERSION = 2
+VERSION_HISTORY = {
+    2: {"why": "the live thinking is cut with its leading whitespace stripped, the form the "
+               "build cuts, and cut offsets count from the stripped text",
+        "stale": ("inject",)},
+}
 ARMS = ("probe", "no_probe", "probe_nofill")
 
 
@@ -171,12 +171,18 @@ def step(env: Environment, clients: step_without_probe.Clients, cfg, writer: Wri
             out = mod.parse(delta, state)
             if not probing or n_inject >= cfg.inject.max_inject_per_step:
                 continue
-            if not any(c in delta for c in ".!?\n"):
+            # a cut exists once a non-whitespace character has followed a sentence's whitespace,
+            # so a new one can appear only when this delta puts such a character after whitespace
+            if re.search(r"\s\S", raw[-(len(delta) + 1):]) is None:
                 continue
-            thinking_so_far = out["reasoning"]
-            if not raw.endswith(thinking_so_far):
+            reasoning = out["reasoning"]
+            if not raw.endswith(reasoning):
                 probing = False
                 continue
+            # the build cuts the thinking with its leading whitespace stripped
+            # (data/build_training_dataset.py), so the live side cuts the same text and the
+            # probe reads what it read in training, character for character
+            thinking_so_far = reasoning.lstrip()
             ts = len(raw) - len(thinking_so_far)
             if len(thinking_so_far.strip()) < cfg.build.min_think:
                 continue

@@ -29,8 +29,13 @@ from jobs import registry
 # score) whose existing outputs can no longer be used; leave "stale" out and every stage is
 # stale. The key folds the highest version that made a stage stale, so a bump that leaves a
 # stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 2
+VERSION = 3
 VERSION_HISTORY = {
+    3: {"why": "The step total is built from the minibatches method.batches() yields rather than "
+               "from every train event, so a setting whose data holds an event a method drops "
+               "now takes a different number of optimizer steps and runs a different "
+               "learning-rate schedule.",
+        "stale": ("train",)},
     2: {"why": "The training, validation and prediction forwards run under bfloat16 autocast on a "
                "card, the form the float32 model row was written for (errata 6.1); version 1 ran "
                "them in float32 and the two generator methods ran out of memory on a 48 GB card.",
@@ -82,12 +87,16 @@ def _save_last(last_dir: Path, probe, opt, sch, *, labels, extra, meta) -> None:
     write. So the weights, the optimizer state and meta.json all go into `last.tmp/` first; only a
     complete `last.tmp/` is renamed to `last/`, with the checkpoint it replaces held as
     `last.prev/` for the instant between the two renames. `last/` is therefore always a complete
-    checkpoint, and `_settle_last` finishes a swap a kill interrupted."""
+    checkpoint, and `_settle_last` finishes a swap a kill interrupted.
+
+    `merged=False` is what makes this the resume checkpoint: under LoRA the directory keeps the
+    adapter's own A and B, which are the tensors `optimizer.pt`'s moments belong to (1.6). Under
+    full tuning it is the same whole weights a merged save writes."""
     tmp_dir = last_dir.with_name("last.tmp")
     prev_dir = last_dir.with_name("last.prev")
     if tmp_dir.exists():
         shutil.rmtree(tmp_dir)
-    probe.save(tmp_dir, labels=labels, extra=extra, meta=meta)
+    probe.save(tmp_dir, labels=labels, extra=extra, meta=meta, merged=False)
     torch.save({"opt": opt.state_dict(), "sch": sch.state_dict()}, tmp_dir / "optimizer.pt")
     if last_dir.exists():
         last_dir.rename(prev_dir)
@@ -108,7 +117,7 @@ def _settle_last(last_dir: Path) -> None:
 
 
 def _dropped_overlong_events(df: pl.DataFrame, tok, max_len: int) -> int:
-    """The count of events whose longest row's text tokenizes past max_len -- the same rule every method's batches() drops whole events on, computed once here for done.json's counts."""
+    """The count of events whose longest row's text tokenizes past max_len -- the rule every method's batches() and validate() drop whole events on, computed once per split for done.json's counts."""
     dropped = 0
     for _event_id, group in df.group_by("event_id"):
         longest = max(group["text"].to_list(), key=len)
@@ -118,11 +127,29 @@ def _dropped_overlong_events(df: pl.DataFrame, tok, max_len: int) -> int:
     return dropped
 
 
+def _minibatches_per_epoch(method, train_df: pl.DataFrame, tok, cfg) -> int:
+    """The count of logical minibatches one pass of method.batches() yields, read off the batches themselves. A method drops events by its own rules (every method: an event over train.max_len; cgen and cparam: also an event none of whose targets can be trained on), so the batches are the one place that knows what is kept. The shuffle moves events between minibatches and never changes how many there are, so the first epoch's count holds for every epoch."""
+    return len({batch["mb"] for batch in method.batches(train_df, tok, _epoch_cfg(cfg, 0))})
+
+
 def _rng_state_hex() -> dict:
     cuda_hex = None
     if torch.cuda.is_available():
         cuda_hex = torch.cuda.get_rng_state().numpy().tobytes().hex()
     return {"torch": torch.get_rng_state().numpy().tobytes().hex(), "cuda": cuda_hex}
+
+
+def _rng_state_tensor(hex_text: str) -> torch.Tensor:
+    """The byte tensor set_rng_state takes, back from the hex `_rng_state_hex` wrote. The bytes are copied into a bytearray because torch.frombuffer asks for a writable buffer."""
+    return torch.frombuffer(bytearray(bytes.fromhex(hex_text)), dtype=torch.uint8)
+
+
+def _restore_rng_state(state: dict) -> None:
+    """Put torch's generator and the card's generator back to the state the resume checkpoint holds, so a resumed run draws the dropout masks the interrupted run would have drawn next. A checkpoint written on a card and resumed on the cpu restores the cpu generator alone."""
+    torch.set_rng_state(_rng_state_tensor(state["torch"]))
+    cuda_hex = state["cuda"]
+    if cuda_hex is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state(_rng_state_tensor(cuda_hex))
 
 
 def _checkpoint_meta(cfg) -> dict:
@@ -176,32 +203,30 @@ def run(run_dir: Path, method) -> None:
 
     predict_only = False
     resume_step = None
+    resume_commit = None
+    resume_rng = None
     ckpt_dir = None
     if train_done_path.exists() and not predictions_path.exists():
         predict_only = True
         ckpt_dir = best_dir
-    # TODO(gyb, 2026-09-22): two fixes to the resume below.
-    # (1) The commit test refuses a resume after ANY commit, a notes or ledger commit included:
-    # schema.freeze rewrites settings.yaml's _commit to the current HEAD on every relaunch, so
-    # cfg._commit moves while last/meta.json keeps the commit of the first launch, and a run of
-    # many GPU hours starts over. The identity of the code and the setting is already the run
-    # key (the setting's diff, the effective VERSION of every module the stage lists, the build
-    # key). Fix: resume when last/meta.json's train_key equals cfg._key (the field is already
-    # written by _checkpoint_meta), and write both commits into the `resume` line of
-    # train_log.jsonl; meta.json's launches list already keeps every launch's commit.
-    # (2) last/meta.json records rng_state and nothing restores it, so dropout after a resume
-    # draws different masks than the uninterrupted run (LoRA dropout 0.05 today; review
-    # ticket 42). Fix: after the fast-forward reaches resume_step, set torch's and the card's
-    # generator state from last/meta.json; the fast-forward runs no forward, so it draws nothing.
+    # A resume is tested on the run key, which is the identity of the code and the setting
+    # together (the setting's diff, the effective VERSION of every module the stage lists, the
+    # build key). The commit is not that identity: schema.freeze rewrites settings.yaml's
+    # _commit to the current HEAD on every relaunch, so a notes or ledger commit between the
+    # crash and the relaunch moves cfg._commit while last/meta.json keeps the commit of the
+    # first launch. Both commits go into the `resume` line of train_log.jsonl, and meta.json's
+    # launches list keeps every launch's commit beside them.
     elif last_dir.exists():
         last_meta = json.loads((last_dir / "meta.json").read_text())
-        if last_meta.get("commit") == cfg._commit:
+        if last_meta.get("train_key") == cfg._key:
             resume_step = last_meta.get("step")
+            resume_commit = last_meta.get("commit")
+            resume_rng = last_meta["rng_state"]
             ckpt_dir = last_dir
         else:
             raise SystemExit(
-                f"{last_dir}: recorded commit {last_meta.get('commit')!r} differs from this "
-                f"run's commit {cfg._commit!r}; run.py retry to start fresh")
+                f"{last_dir}: recorded run key {last_meta.get('train_key')!r} differs from this "
+                f"run's key {cfg._key!r}; run.py retry to start fresh")
     elif train_log_path.exists():
         raise SystemExit(
             f"{train_log_path}: already exists, this run directory has already been trained "
@@ -239,6 +264,21 @@ def run(run_dir: Path, method) -> None:
 
     train_df = df.filter(pl.col("split") == "train")
     val_df = df.filter(pl.col("split") == "val")
+    test_df = df.filter(pl.col("split") == "test")
+
+    # An event whose longest text passes train.max_len is dropped whole by every method in
+    # training and in validation. The prediction pass differs by method: ctool drops the event
+    # there too, so it has no prediction row, while cgen and cparam keep one prediction row per
+    # example row and Probe.generate truncates the overlong prompt. The three counts go into
+    # done.json.
+    #
+    # TODO(gyb, 2026-09-22): the dropping itself needs a solution, not decided yet: with every
+    # earlier round in the probe's text (the TODO in data/probe_input.py) the late steps of long
+    # tasks pass max_len.
+    dropped_overlong = {
+        split: _dropped_overlong_events(split_df, probe.tokenizer, cfg.train.max_len)
+        for split, split_df in (("train", train_df), ("val", val_df), ("test", test_df))
+    }
 
     if not predict_only:
         logf = open(train_log_path, "a")
@@ -248,15 +288,11 @@ def run(run_dir: Path, method) -> None:
             logf.write(json.dumps(kw, ensure_ascii=False) + "\n")
             logf.flush()
 
-        # TODO(gyb, 2026-09-22): the step total below counts every train event, the ones
-        # method.batches() drops included (an event whose longest text passes train.max_len).
-        # The run then takes fewer optimizer steps than `steps`, so the schedule never decays
-        # to zero and the heartbeat's total is never reached. Few events are dropped today; with
-        # every earlier round in the probe's text (the TODO in data/probe_input.py) many more
-        # will be. Fix: count the events batches() keeps, by the same rule as
-        # _dropped_overlong_events above, and build `steps` from that count (review ticket 48).
+        # The step total is built from the minibatches method.batches() really yields, so that
+        # the run takes exactly `steps` optimizer steps under every method: the schedule decays
+        # to zero on the last one and the heartbeat's total is reached.
         n_train_events = train_df["event_id"].n_unique()
-        m_per_epoch = max(math.ceil(n_train_events / cfg.train.events_per_mb), 1)
+        m_per_epoch = max(_minibatches_per_epoch(method, train_df, probe.tokenizer, cfg), 1)
         steps_per_epoch = max(math.ceil(m_per_epoch / cfg.train.accum), 1)
         full_steps = steps_per_epoch * cfg.train.epochs
         steps = min(full_steps, cfg.train.max_steps) if cfg.train.max_steps is not None else full_steps
@@ -264,6 +300,7 @@ def run(run_dir: Path, method) -> None:
         if resume_step is None:
             log(event="start", key=cfg._key, commit=cfg._commit, method=cfg.probe.method,
                 weights_path=weights_path, n_train_events=n_train_events,
+                minibatches_per_epoch=m_per_epoch,
                 n_train_rows=train_df.height, n_val_rows=val_df.height, steps=steps,
                 epochs=cfg.train.epochs, max_len=cfg.train.max_len,
                 events_per_mb=cfg.train.events_per_mb, accum=cfg.train.accum,
@@ -297,12 +334,14 @@ def run(run_dir: Path, method) -> None:
                 saved = torch.load(opt_path, map_location="cpu")
                 opt.load_state_dict(saved["opt"])
                 sch.load_state_dict(saved["sch"])
-            log(event="resume", gstep=skip_target, key=cfg._key)
+            log(event="resume", gstep=skip_target, key=cfg._key,
+                checkpoint_commit=resume_commit, commit=cfg._commit)
 
         best = float("inf")
         best_metrics: dict = {"objective": best}
         last_checkpoint_t = time.monotonic()
         seen_mbs: set = set()
+        mb_loss_sum = 0.0
         window_loss_sum = 0.0
         window_loss_n = 0
         last_logged_step = 0
@@ -364,22 +403,28 @@ def run(run_dir: Path, method) -> None:
                         seen_mbs = set()
                     continue
 
+                if resume_rng is not None:
+                    # the fast-forward is over and it ran no forward, so nothing has been drawn
+                    # since the checkpoint was written: from here the generators carry the
+                    # interrupted run's own stream on
+                    _restore_rng_state(resume_rng)
+                    resume_rng = None
+
                 with _bf16_forward(probe):
                     loss = method.loss(probe, batch)
                 (loss / batch["mb_weight"] / cfg.train.accum).backward()
-                # TODO(gyb, 2026-09-22): the logged loss is wrong whenever a logical minibatch is
-                # split into several physical blocks: each block adds its own share
-                # (loss / mb_weight) and counts as one, so the window mean is per block, and the
-                # more blocks a minibatch is split into, the smaller the logged loss reads. The
-                # gradient above is right; only train_log.jsonl and the heartbeat's loss are off.
-                # Fix: add the shares of one minibatch together and count once per minibatch, at
-                # is_mb_end (review ticket 44).
-                window_loss_sum += float(loss.detach()) / float(batch["mb_weight"])
-                window_loss_n += 1
+                # each physical block holds one share (loss / mb_weight) of its logical
+                # minibatch's loss, and the shares of one minibatch add up to that minibatch's
+                # own loss, which is the number the window mean is taken over -- a block count
+                # would read smaller the more blocks a minibatch is split into
+                mb_loss_sum += float(loss.detach()) / float(batch["mb_weight"])
                 # a logical minibatch counts towards the accumulation once its last physical block
                 # has its gradient in, so the step never fires with part of a minibatch missing
                 if is_mb_end:
                     seen_mbs.add(mb)
+                    window_loss_sum += mb_loss_sum
+                    window_loss_n += 1
+                    mb_loss_sum = 0.0
 
                 if len(seen_mbs) >= cfg.train.accum or is_epoch_end:
                     torch.nn.utils.clip_grad_norm_(probe.trainable_parameters(), 1.0)
@@ -462,18 +507,6 @@ def run(run_dir: Path, method) -> None:
     else:
         pred_df = df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]).head(0)
     probe_output.write(run_dir / "predictions.parquet", pred_df)
-
-    # TODO(gyb, 2026-09-22): two things about overlong events (an event whose longest text passes
-    # train.max_len is dropped whole, in training, in validation and in the prediction pass).
-    # (1) Report them: the count below covers the train split only, and the events dropped from
-    # val and test appear nowhere. Count the dropped events of every split here, write the three
-    # counts into done.json, and have the eval report (eval/utils/probe_eval.py, report.md)
-    # print how many events of val and test were dropped. The owner's ruling: the eval numbers
-    # themselves stay as they are, a dropped event is not counted into any denominator; the
-    # report states the count and that is all (review ticket 46 covers the missing counts).
-    # (2) The dropping itself needs a solution, not decided yet: with every earlier round in the
-    # probe's text (the TODO in data/probe_input.py) the late steps of long tasks pass max_len.
-    dropped_overlong = _dropped_overlong_events(train_df, probe.tokenizer, cfg.train.max_len)
 
     registry.write_done(
         run_dir, stage="train", key=cfg._key, commit=cfg._commit,

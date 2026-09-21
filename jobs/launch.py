@@ -3,7 +3,9 @@
 # venv: probe
 
 A library with no entry-point guard: `run.py` is the one command that calls
-it (contracts 0.2, 8.6). Ported against contracts Part 2.3, 2.5, 3.4, 7.4 and
+it (contracts 0.2, 8.6), and a loop piece (`agent/run_tasks.py`) calls
+`teardown_services` alone, to free its run's cards once every requested record
+is finished. Ported against contracts Part 2.3, 2.5, 3.4, 7.4 and
 Part 8, with the wave-4 precheck's two corrections (B3/B7 use their own
 temporary directory; `teardown_services` reaches a host that normalises to
 `login_host` locally, with no `ssh`).
@@ -320,30 +322,22 @@ def remove_claimed(pool: dict[str, list[int]], pieces: list[dict]) -> None:
 
 def place(kind, cards_needed, free_by_host, *, serving_host, prefer_host, attached) -> str | None:
     """Which host a piece lands on (3.4). `loop` and a `service_probe` with
-    no card go to `login_host`; an agent service always goes to
-    `serving_host` (its table row's), taking no card and no card search when
-    `attached`; everything else (a checkpoint-loading `service_probe`,
-    `train`) takes the first host with `cards_needed` free, preferring
-    `prefer_host`. `None` when no host qualifies."""
+    no card go to `login_host`; an `attached` agent service goes to
+    `serving_host`, the host of the live server it attaches to, taking no card
+    and no card search; everything else (an agent service that starts its own
+    server, a checkpoint-loading `service_probe`, `train`) takes the first host
+    with `cards_needed` free, preferring `prefer_host`. `None` when no host
+    qualifies."""
     if kind == "loop":
         return _login_host()
     if kind == "service_probe" and cards_needed == 0:
         return _login_host()
-    # TODO(gyb, 2026-09-22): an agent server lands on the table row's serving host and nowhere
-    # else, so a sample or inject launch exits with "no cards" whenever that host (tokyo108
-    # today) is full, even with every other machine free. Fix: the serving host is the preferred
-    # host, as prefer_host already is for train and the probe service, and the first host with
-    # cards_needed free cards is the fallback. Two places follow: models/agent_models/service.py
-    # builds its base_url from the table's host and has to take the host it was placed on, and
-    # _find_attach_target below looks for a server to attach to on the serving host only.
-    if kind == "service_agent":
-        if attached:
-            return serving_host
-        if serving_host is None:
-            return None
-        if len(free_by_host.get(serving_host, [])) >= cards_needed:
-            return serving_host
-        return None
+    # An attached agent service takes no card and no card search: it lands on the host of the
+    # live server it attaches to. One that starts its own server falls through to the card
+    # search below, where its table row's serving host reaches it as `prefer_host`, so a full
+    # serving host moves that server to a free machine instead of ending the launch.
+    if kind == "service_agent" and attached:
+        return serving_host
     candidates = []
     if prefer_host is not None and prefer_host in free_by_host:
         candidates.append(prefer_host)
@@ -795,10 +789,7 @@ def _claim_cards(free_by_host: dict, host: str, n: int) -> list[int]:
     return claimed
 
 
-def _no_cards_message(free_by_host: dict, needed: int, host: str | None = None) -> str:
-    if host is not None:
-        return (f"jobs/launch.py: host {host!r} does not have {needed} free card(s); "
-                f"free there: {free_by_host.get(host, [])}")
+def _no_cards_message(free_by_host: dict, needed: int) -> str:
     probed = ", ".join(f"{h}:{len(ids)} free" for h, ids in free_by_host.items())
     return f"jobs/launch.py: no host has {needed} free card(s); probed {probed}"
 
@@ -822,10 +813,16 @@ def _next_free_port(kind: str, replica: int, serving_port, host: str) -> int:
     return port
 
 
-def _find_attach_target(agent_row: dict, serving_host):
+def _find_attach_target(agent_row: dict, hosts=None):
     """7.4's attach search: a live registry row with a `service_agent_*.json`
-    on `serving_host` whose `claims` match this run's frozen `result:` block
-    (plus `role`/`family`) value for value, and whose server is answering now.
+    whose `claims` match this run's frozen `result:` block (plus `role`/`family`)
+    value for value, and whose server is answering now. `hosts` is the set of hosts
+    the server may be on: `None` for every host, and the pool's hosts when the launch
+    names a pool, because a named pool is where that launch runs, its agent service
+    included. Within that, the search reaches every host: the endpoint document carries the host its server was placed on (7.1
+    writes the `--host` the launcher handed it), so the match itself names the
+    host this run's attached piece goes to, and a server that `place` moved off
+    its table row's serving host is found where it actually runs.
 
     Answering now is part of the test because an endpoint file outlives its
     server: nothing deletes it, and a run is open from its start row on (8.2)
@@ -835,7 +832,7 @@ def _find_attach_target(agent_row: dict, serving_host):
     service piece with that endpoint file and that port -- from `meta.json`,
     the current truth a refire rewrites (8.3), and from the start row's list
     when the directory has no `meta.json` -- and the port answers."""
-    if not agent_row or serving_host is None:
+    if not agent_row:
         return None
     for row in registry.open_runs():
         run_dir = Path(row.get("dir", ""))
@@ -845,10 +842,12 @@ def _find_attach_target(agent_row: dict, serving_host):
         row_pieces = meta.get("pieces") or row.get("pieces") or []
         for path in sorted(run_dir.glob("service_agent_*.json")):
             doc = _read_json(path)
-            if not doc or doc.get("host") != serving_host:
+            if not doc:
                 continue
             claims = doc.get("claims") or {}
             if not all(claims.get(k) == v for k, v in agent_row.items()):
+                continue
+            if hosts is not None and doc.get("host") not in hosts:
                 continue
             served = any(p.get("kind") == "service" and p.get("endpoint_file") == path.name
                          and p.get("port") == doc.get("port") for p in row_pieces)
@@ -1006,26 +1005,25 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
 
         free_by_host = restrict_to_pool(registry.free(), cards)
 
-        # The agent service's host: the table row's when no pool is named. A named pool is
-        # where this launch runs, so the service goes to the pool host that already serves
-        # this model (the attach of 7.4), or else to the first pool host with the cards for it.
+        # The agent service's host. A live server for this model takes it, on whatever host
+        # that server's endpoint file names (the attach of 7.4); a named pool is where this
+        # launch runs, so with a pool the server must be on one of the pool's hosts. Otherwise the table row's
+        # serving host is the preference `place` searches from, and the cards this launch may
+        # claim -- every free card, or the named pool -- decide where the server really lands.
         attach = None
         if stage in ("sample", "inject"):
-            agent_hosts = [serving_host] if cards is None else list(free_by_host)
-            for candidate in agent_hosts:
-                attach = _find_attach_target(agent_row, candidate)
-                if attach is not None:
-                    break
+            attach = _find_attach_target(agent_row, None if cards is None else set(free_by_host))
             if attach is not None:
                 serving_host = attach["host"]
-            elif cards is not None:
-                serving_host = next((h for h in agent_hosts if len(free_by_host[h]) >= tp_size), None)
-                if serving_host is None:
-                    sys.exit(_no_cards_message(free_by_host, tp_size))
 
         piece_plan = _build_piece_plan(stage, setting)
         n_loop = sum(1 for p in piece_plan if p["kind"] == "loop")
         replicas = getattr(setting, stage).replicas if stage in ("sample", "inject") else 0
+
+        # The host this run's agent service holds, which its probe service prefers (3.4). It
+        # starts as the serving host and becomes the host replica 0 was placed on, which the
+        # piece order of `STAGES[stage]["pieces"]` settles before the probe service is placed.
+        agent_host = serving_host
 
         placed: list[dict] = []
         for p in piece_plan:
@@ -1066,9 +1064,12 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 python = _interpreter_for(venv)
                 attached = attach is not None and local_i == 0
                 host = place("service_agent", tp_size, free_by_host,
-                             serving_host=serving_host, prefer_host=None, attached=attached)
+                             serving_host=serving_host, prefer_host=serving_host,
+                             attached=attached)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, tp_size, host=serving_host))
+                    sys.exit(_no_cards_message(free_by_host, tp_size))
+                if local_i == 0:
+                    agent_host = host
                 if attached:
                     gpus, port = "", attach["port"]
                 else:
@@ -1091,7 +1092,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 render_only = (p["mode"] == "render_only")
                 cards_needed = 0 if render_only else 1
                 host = place("service_probe", cards_needed, free_by_host,
-                             serving_host=None, prefer_host=serving_host, attached=False)
+                             serving_host=None, prefer_host=agent_host, attached=False)
                 if host is None:
                     sys.exit(_no_cards_message(free_by_host, cards_needed))
                 if render_only:

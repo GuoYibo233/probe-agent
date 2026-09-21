@@ -1945,7 +1945,7 @@ def _check_inject_shared_build_key(upstream_dirs: dict) -> None:
 
 
 def _check_inject_code_currency(upstream_dirs: dict) -> None:
-    """2.5: inject refuses when the live code differs from the code its two probes were trained under: data/probe_input.py (off the build run), models/probe_models/base.py and each train run's own backbone module (off the train run), each against schema.module_version's current source reading."""
+    """2.5: inject refuses when a bump made since has turned the output of its two probes' build or train run stale: data/probe_input.py (off the build run), models/probe_models/base.py and each train run's own backbone module (off the train run). The recorded number is the raw VERSION the run ran under, and the number it is held against is schema.effective_version for the stage that wrote the run, the same quantity that stage's key folds (errata "3.3 / 8.6"): a bump whose `stale` leaves the stage out keeps the run's directory and keeps it usable here too."""
     for label in ("probe_score.train", "probe_gen.train"):
         train_dir = upstream_dirs[label]
         train_frozen = schema.load_frozen(train_dir)
@@ -1958,17 +1958,19 @@ def _check_inject_code_currency(upstream_dirs: dict) -> None:
         family = train_frozen.models.probe_row["family"]
         backbone_mod = f"models/probe_models/{family}.py"
         checks = (
-            (build_dir, "data/probe_input.py", build_frozen._versions.get("data/probe_input.py")),
-            (train_dir, "models/probe_models/base.py",
+            (build_dir, "build", "data/probe_input.py",
+             build_frozen._versions.get("data/probe_input.py")),
+            (train_dir, "train", "models/probe_models/base.py",
              train_frozen._versions.get("models/probe_models/base.py")),
-            (train_dir, backbone_mod, train_frozen._versions.get(backbone_mod)),
+            (train_dir, "train", backbone_mod, train_frozen._versions.get(backbone_mod)),
         )
-        for src_dir, mod, recorded in checks:
-            current = schema.module_version(mod)
-            if recorded != current:
+        for src_dir, stage, mod, recorded in checks:
+            stale_since = schema.effective_version(mod, stage)
+            if recorded is None or recorded < stale_since:
                 sys.exit(
                     f"run.py: inject refuses: {label} ({src_dir}) recorded {mod} VERSION "
-                    f"{recorded}, current source VERSION is {current}")
+                    f"{recorded}, and VERSION {stale_since} of the current source made "
+                    f"{stage} outputs stale")
 
 
 def _resolve_inject_temperature(upstream_dirs: dict) -> dict:
