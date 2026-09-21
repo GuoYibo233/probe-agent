@@ -559,16 +559,42 @@ def _alive_on(host: str | None, session: str | None, sessions: set) -> bool:
     return session in sessions
 
 
-def _pid_alive(pid) -> bool:
+def pid_alive(host: str | None, pid) -> bool:
+    """Whether a `cpu` piece's process is running on the host its piece entry names.
+
+    A pid means something only on the machine that gave it, and `run.py` runs on any machine
+    of the cluster, so the test goes to the piece's own host: in place when that host is this
+    machine, over ssh otherwise. Fail-closed like every other probe here (3.4): a host that
+    does not answer counts as alive. An entry with no host predates the host column and was
+    written on the machine that ran it, which the login-host rule of that time made this one."""
     if not pid:
         return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except Exception:
+    cfg = _outputs_config()
+    if host is None or _is_local_host(host, cfg):
+        try:
+            os.kill(int(pid), 0)
+        except ProcessLookupError:
+            return False
+        except Exception:
+            return True
         return True
-    return True
+    ok, out = _remote_shell(host, f"test -d /proc/{int(pid)} && echo alive || echo dead")
+    return out.strip() != "dead" if ok else True
+
+
+def end_pid(host: str | None, pid) -> bool:
+    """Send SIGTERM to a `cpu` piece's process on the host its piece entry names; True when a process was there to signal."""
+    if not pid:
+        return False
+    cfg = _outputs_config()
+    if host is None or _is_local_host(host, cfg):
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except ProcessLookupError:
+            return False
+        return True
+    ok, out = _remote_shell(host, f"kill -TERM {int(pid)} 2>/dev/null && echo ended || echo gone")
+    return ok and out.strip() == "ended"
 
 
 def _probe_port(piece: dict) -> bool | None:
@@ -783,7 +809,7 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
             "since_launch_s": since_launch_s,
         }
     if kind == "cpu":
-        alive = _pid_alive(piece.get("pid"))
+        alive = pid_alive(host, piece.get("pid"))
     else:
         alive = _alive_on(host, session, sessions)
     beats = _beats_full(run_dir, piece.get("index"))
@@ -1072,13 +1098,8 @@ def kill(run_id: str) -> list[str]:
     for piece in _pieces_of(run_dir, entry["start"]):
         if piece.get("kind") == "cpu":
             pid = piece.get("pid")
-            if not pid:
-                continue
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except ProcessLookupError:
-                continue
-            ended.append(f"pid:{pid}")
+            if end_pid(piece.get("host"), pid):
+                ended.append(f"pid:{pid}")
         else:
             session, host = piece.get("session"), piece.get("host")
             if session and host:

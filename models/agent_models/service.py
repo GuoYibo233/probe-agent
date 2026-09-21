@@ -188,7 +188,7 @@ def serve(args) -> None:
             f"({row['family']!r}, {row['weights']!r}); refusing"
         )
 
-    host = m.serving["host"]
+    host = args.host
     root_url = f"http://{host}:{args.port}"
     base_url = root_url + "/v1"
     claims = dict(row)
@@ -241,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
     srv = sub.add_parser("serve")
     srv.add_argument("--run-dir", required=True)
     srv.add_argument("--model", required=True)
+    srv.add_argument("--host", required=True,
+                     help="the host the launcher placed this service on; the endpoint file names it")
     srv.add_argument("--port", type=int, required=True)
     srv.add_argument("--gpus", required=True)
     srv.add_argument("--replica", type=int, default=0)

@@ -16,7 +16,7 @@ evaluation is the last step of `train`.
 `run.py` is the one command. It walks a named setting's stages:
 
 ```
-python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
+python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<id>,<id>,... ...] [section.field=value ...]
 ```
 
 `<workflow>` is the stem of a file under `experimental_settings/` (`baseline`, `train_probe`,
@@ -25,7 +25,12 @@ python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [s
 `experimental_settings/debug.yaml` over the named setting before it is keyed, so the run gets
 its own directory and can never be mistaken for a real one. `--allow-dirty` lets a stage launch
 over an uncommitted tree, writing `dirty.patch` into the run directory; without it a dirty tree
-is refused. `section.field=value` overrides one field from the command line, its right-hand
+is refused. `--cards tokyo108:3,4` (given once per host) names the only cards a launch may
+claim: the pieces take their cards from that pool in the order given, the agent service goes
+to the pool's host instead of its `models/table.yaml` row's, and a named card that is not free
+refuses the launch. The pool is where a launch runs and never part of the setting, so it moves
+no key and no run directory; `refire` and `retry` take the same flag. Without it a launch takes
+the first free cards. `section.field=value` overrides one field from the command line, its right-hand
 side parsed as YAML, so a reference can be pinned without editing the setting file.
 
 Ten further words are reserved (`run.py --help` lists them, one per line): `ls`, `where`,
@@ -38,8 +43,9 @@ where <workflow> <setting> <stage>` prints the path, whether or not it exists ye
 touches disk to compute it. A `--debug` run lives under that root's `debug_subdir` instead, so
 it never collides with, or is mistaken for, a real run.
 
-`run.py` refuses to run anywhere but the machine `constants/path_outputs.yaml` names as
-`login_host`; a piece on another host is always started over `ssh` from there.
+`run.py` runs on any machine of the cluster. `constants/path_outputs.yaml`'s `login_host` is
+where the loop pieces and every other piece that needs no card are placed; a piece on a host
+other than the one `run.py` runs on is started over `ssh`.
 
 ## 2. The tree, one entry per file
 
@@ -62,7 +68,7 @@ CLAUDE.md — the rules an agent reads on its own; the only other file at the ro
 run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck).
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
-  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/path_outputs.yaml (the login_host refusal), constants/path_datasets.yaml (the venvs map)
+  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/path_outputs.yaml (the hosts list, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
   writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, finish rows and RESULTS.md (through jobs/registry.py)
   venv:    probe (the interpreter this repo's commands are typed with)
 
@@ -72,7 +78,7 @@ constants/path_datasets.yaml — per environment: the clone's home, the interpre
   read by: data/environments/__init__.py (the splits block, to resolve a split name), data/environments/appworld.py (home, data root, split files), experimental_settings/schema.py (the splits block, to validate a split value at load), jobs/launch.py (the venv column and the venvs map), run.py (the venvs map)
 
 constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, the login_host and the hosts: list, the cluster inventory.
-  read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root, and the hosts list for tmux and card probes), jobs/launch.py (the login_host and the hosts list), run.py (the login_host)
+  read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root, and the hosts list for tmux and card probes), jobs/launch.py (the login_host and the hosts list), run.py (the hosts list)
 
 constants/path_models.yaml — weights alias -> the directory the weights live in.
   read by: models/__init__.py, models/agent_models/service.py (the weights path of the row it serves)

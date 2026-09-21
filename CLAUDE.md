@@ -45,7 +45,7 @@ lists them). Any other first word names a workflow file's stem, and a walk
 is:
 
 ```
-external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
+external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<ids> ...] [section.field=value ...]
 ```
 
 which freezes the setting, takes the launch gate, and walks that setting's
@@ -64,8 +64,7 @@ diff from the schema defaults, with the `VERSION` of every module the stage
 lists folded in; `experimental_settings/schema.py` reads those `VERSION`
 lines as source text, never by importing. A finished directory is reused, a
 partial one is continued, and an edited setting or a bumped `VERSION` gets a
-new directory. `run.py` refuses to run on any host other than the
-`login_host` in `constants/path_outputs.yaml`.
+new directory.
 
 ## Checks
 

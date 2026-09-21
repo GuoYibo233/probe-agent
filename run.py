@@ -34,19 +34,13 @@ _SUBCOMMAND_ONE_LINE = {
     "where": "<workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage",
     "find": "section.field=value ... -- the runs whose settings_diff matches every given field",
     "kill": "<workflow> <setting> <stage> -- end one run's pieces, write the killed finish row",
-    "refire": "<workflow> <setting> <stage> [--piece i] [--allow-dirty] -- restart one dead piece",
-    "retry": "<workflow> <setting> <stage> [--allow-dirty] -- clear markers, then launch it fresh",
+    "refire": "<workflow> <setting> <stage> [--piece i] [--allow-dirty] [--cards <host>:<ids>] -- restart one dead piece",
+    "retry": "<workflow> <setting> <stage> [--allow-dirty] [--cards <host>:<ids>] -- clear markers, then launch it fresh",
     "table": "[workflow] [--out FILE] [--debug] -- the backbone x method x risk table",
     "free": "-- the free cards per host",
     "sync": "-- fold done.json and heartbeats into missing finish rows",
     "selfcheck": "-- the tree's self-consistency checks",
 }
-
-
-# ---------------------------------------------------------------------------
-# The login-host refusal (8.6): pinned as module-level functions, so later
-# tickets' acceptance can address them without running the whole program.
-# ---------------------------------------------------------------------------
 
 
 def normalize_host(name: str, hosts: list[dict]) -> str:
@@ -55,16 +49,6 @@ def normalize_host(name: str, hosts: list[dict]) -> str:
         if name == host.get("name") or name == host.get("alias"):
             return host["name"]
     return name
-
-
-def require_login_host(current: str, hosts: list[dict], login_host: str) -> None:
-    """Refuse, naming both sides normalised, unless the current machine is login_host (8.6)."""
-    norm_current = normalize_host(current, hosts)
-    norm_login = normalize_host(login_host, hosts)
-    if norm_current != norm_login:
-        raise SystemExit(
-            f"run.py: refuses to run on {current!r} (normalises to {norm_current!r}); "
-            f"only {login_host!r} (normalises to {norm_login!r}) may run this")
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +81,9 @@ def _hosts_config() -> list[dict]:
     return _outputs_config().get("hosts", [])
 
 
-def _login_host() -> str:
-    return _outputs_config()["login_host"]
+def _this_host() -> str:
+    """The machine this command runs on, under the hosts: entry's own name; a CPU stage runs in place, so this is the host its piece records."""
+    return normalize_host(socket.gethostname(), _hosts_config())
 
 
 def _venvs_config() -> dict:
@@ -147,7 +132,10 @@ def _elapsed(run_id: str) -> float:
 def _usage_text() -> str:
     lines = [
         "usage: run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] "
-        "[section.field=value ...]",
+        "[--cards <host>:<id>,<id>,... ...] [section.field=value ...]",
+        "",
+        "--cards names the only cards a launch may claim, and may be given once per host; a named",
+        "card that is not free refuses the launch. Without it the launch takes the first free cards.",
         "",
         "The first word is one of the ten reserved subcommands below, or else the stem of a",
         "workflow file under experimental_settings/.",
@@ -725,17 +713,21 @@ def cmd_refire(rest: list[str]) -> int:
     piece = None
     allow_dirty = False
     positional: list[str] = []
+    card_tokens: list[str] = []
     it = iter(rest)
     for tok in it:
         if tok == "--piece":
             piece = int(next(it))
         elif tok == "--allow-dirty":
             allow_dirty = True
+        elif tok == "--cards":
+            card_tokens.append(_cards_value(it))
         else:
             positional.append(tok)
     if len(positional) != 3:
-        sys.exit(
-            "run.py refire: usage: run.py refire <workflow> <setting> <stage> [--piece i] [--allow-dirty]")
+        sys.exit("run.py refire: usage: run.py refire <workflow> <setting> <stage> [--piece i] "
+                 "[--allow-dirty] [--cards <host>:<ids>]")
+    cards = _cards_pool(card_tokens)
     workflow_name, setting_name, stage = positional
     _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=False)
@@ -749,7 +741,7 @@ def cmd_refire(rest: list[str]) -> int:
         # freeze -- and re-freezes _commit to the commit this launch cleared; it reuses whatever
         # was already resolved (an inject run's probe_temperature) rather than erasing it.
         schema.freeze(cfg, stage, run_dir, existing._resolved, git["commit"])
-        pieces = launch.refire(run_dir, git, piece)
+        pieces = launch.refire(run_dir, git, piece, cards)
     print(f"run.py refire: restarted {pieces}")
     return 0
 
@@ -776,16 +768,26 @@ def _clear_continue_markers(stage: str, run_dir: Path) -> None:
 
 
 def cmd_retry(rest: list[str]) -> int:
-    allow_dirty = "--allow-dirty" in rest
-    positional = [t for t in rest if t != "--allow-dirty"]
+    allow_dirty = False
+    positional: list[str] = []
+    card_tokens: list[str] = []
+    it = iter(rest)
+    for tok in it:
+        if tok == "--allow-dirty":
+            allow_dirty = True
+        elif tok == "--cards":
+            card_tokens.append(_cards_value(it))
+        else:
+            positional.append(tok)
     if len(positional) != 3:
-        sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--allow-dirty]")
+        sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--allow-dirty] "
+                 "[--cards <host>:<ids>]")
     workflow_name, setting_name, stage = positional
     _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=False)
     run_dir = schema.run_dir(stage, cfg)
     _clear_continue_markers(stage, run_dir)
-    _stage_step(cfg, stage, allow_dirty)
+    _stage_step(cfg, stage, allow_dirty, _cards_pool(card_tokens))
     return 0
 
 
@@ -1697,16 +1699,20 @@ def _is_override_token(tok: str) -> bool:
     return "/" not in key and "." in key
 
 
-def _parse_walk_rest(rest: list[str]) -> tuple[list[str], bool, bool, dict[str, str]]:
+def _parse_walk_rest(rest: list[str]) -> tuple[list[str], bool, bool, dict[str, str], dict | None]:
     settings: list[str] = []
     debug = False
     allow_dirty = False
     overrides: dict[str, str] = {}
-    for tok in rest:
+    card_tokens: list[str] = []
+    it = iter(rest)
+    for tok in it:
         if tok == "--debug":
             debug = True
         elif tok == "--allow-dirty":
             allow_dirty = True
+        elif tok == "--cards":
+            card_tokens.append(_cards_value(it))
         elif tok.startswith("--"):
             sys.exit(f"run.py: unrecognized flag {tok!r}")
         elif _is_override_token(tok):
@@ -1714,14 +1720,31 @@ def _parse_walk_rest(rest: list[str]) -> tuple[list[str], bool, bool, dict[str, 
             overrides[key] = value  # raw text; schema.load parses it with yaml.safe_load itself
         else:
             settings.append(tok)
-    return settings, debug, allow_dirty, overrides
+    return settings, debug, allow_dirty, overrides, _cards_pool(card_tokens)
+
+
+def _cards_value(it) -> str:
+    """The word after `--cards`, refused when the command line ends there."""
+    value = next(it, None)
+    if value is None:
+        sys.exit("run.py: --cards needs a value, <host>:<id>,<id>,...")
+    return value
+
+
+def _cards_pool(card_tokens: list[str]) -> dict | None:
+    """The card pool the `--cards` flags name, host -> card ids, or None when the flag was not given.
+
+    A pool is where a launch runs, never what it computes: it is handed to `jobs/launch.py`
+    alone, it never reaches the setting, and so it never moves a key or a run directory.
+    """
+    return launch.parse_cards(card_tokens) if card_tokens else None
 
 
 def cmd_walk(workflow_name: str, rest: list[str]) -> int:
     workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
     if not workflow_file.exists():
         sys.exit(f"run.py: {workflow_file} does not exist")
-    setting_names, debug, allow_dirty, overrides = _parse_walk_rest(rest)
+    setting_names, debug, allow_dirty, overrides, cards = _parse_walk_rest(rest)
     if not setting_names:
         sys.exit("run.py: at least one <setting> is required")
     for setting_name in setting_names:
@@ -1730,13 +1753,13 @@ def cmd_walk(workflow_name: str, rest: list[str]) -> int:
         except schema.SchemaError as ex:
             sys.exit(f"run.py: {ex}")
         for cfg in cfgs:
-            _walk_one(cfg, allow_dirty)
+            _walk_one(cfg, allow_dirty, cards)
     return 0
 
 
-def _walk_one(cfg, allow_dirty: bool) -> None:
+def _walk_one(cfg, allow_dirty: bool, cards: dict | None) -> None:
     for stage in cfg._workflow:
-        outcome = _stage_step(cfg, stage, allow_dirty)
+        outcome = _stage_step(cfg, stage, allow_dirty, cards)
         if outcome == "stop":
             return
 
@@ -1970,7 +1993,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     argv_cmd = [python, "-m", module, "--run-dir", str(run_dir)]
     proc = subprocess.Popen(argv_cmd, cwd=str(ROOT))
     piece_entry = {
-        "index": 0, "kind": "cpu", "host": _login_host(), "gpus": "",
+        "index": 0, "kind": "cpu", "host": _this_host(), "gpus": "",
         "session": None, "pid": proc.pid, "log": None, "port": None,
         "endpoint_file": None, "agent_replica": None, "venv": "probe",
         "cmd": " ".join(argv_cmd),
@@ -1982,11 +2005,11 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
         "upstream": upstream_map, "versions": versions, "diff": diff,
         "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
         "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
-        "host": _login_host(), "pieces": [piece_entry], "status": "launching",
+        "host": _this_host(), "pieces": [piece_entry], "status": "launching",
     }
     registry.append_start(start_row)
     launches_entry = {
-        "t": _now(), "host": _login_host(), "commit": git["commit"], "branch": git["branch"],
+        "t": _now(), "host": _this_host(), "commit": git["commit"], "branch": git["branch"],
         "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
         "cards": {}, "pieces": [0], "cmd": {"0": piece_entry["cmd"]},
     }
@@ -1994,7 +2017,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     return proc
 
 
-def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
+def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -> str:
     """One stage of the walk (2.3-2.5, 8.1-8.2): the skip test, the partial-piece check, the launch. Returns 'continue' or 'stop'."""
     key = schema.key(stage, cfg)
     run_dir = schema.run_dir(stage, cfg)
@@ -2090,7 +2113,11 @@ def _stage_step(cfg, stage: str, allow_dirty: bool) -> str:
                                      upstream_map, diff)
 
     if entry["cards"]:
-        outcome, pieces = launch.launch(stage, cfg, run_dir, resolved, git)
+        outcome, pieces = launch.launch(stage, cfg, run_dir, resolved, git, cards)
+        if cards is not None:
+            # One call may launch several settings on one pool: the cards this launch holds
+            # leave the pool, so the next launch claims from what is left of it.
+            launch.remove_claimed(cards, pieces)
         if outcome != "up":
             ended = [p["session"] for p in pieces if p.get("ended")]
             print(f"run.py: {run_id}: launch returned {outcome}; ended {ended}")
@@ -2137,8 +2164,6 @@ _SUBCOMMANDS = {
 
 
 def main(argv: list[str] | None = None) -> int:
-    require_login_host(socket.gethostname(), _hosts_config(), _login_host())
-
     argv = list(sys.argv[1:]) if argv is None else list(argv)
     if not argv or argv[0] in ("-h", "--help"):
         sys.stdout.write(_usage_text())

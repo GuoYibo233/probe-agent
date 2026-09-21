@@ -85,12 +85,13 @@ def _canonical_host(raw: str) -> str:
     return raw
 
 
+def _this_host() -> str:
+    """The machine this launch runs on, under the `hosts:` entry's own name."""
+    return _canonical_host(socket.gethostname())
+
+
 def _is_local_host(host: str) -> bool:
-    return _canonical_host(host) == _canonical_host(socket.gethostname())
-
-
-def _on_login_host() -> bool:
-    return _is_local_host(_login_host())
+    return _canonical_host(host) == _this_host()
 
 
 def _interpreter_for(venv_name: str) -> str:
@@ -209,7 +210,13 @@ def piece_alive(piece: dict, live_sessions) -> bool:
     in this file). A plain set (no `failed_hosts` attribute) has no failed
     hosts, so a bare-membership caller sees no change. Public: `run.py`'s
     own partial-piece check (2.3/2.4) calls this directly rather than
-    keeping a second copy."""
+    keeping a second copy.
+
+    A `cpu` piece runs in no session: it is alive when its recorded pid is
+    running on the host its entry names (`registry.pid_alive`), which is the
+    test `run.py ls` judges it by."""
+    if piece.get("kind") == "cpu":
+        return registry.pid_alive(piece.get("host"), piece.get("pid"))
     host, session = piece.get("host"), piece.get("session")
     if not host or not session:
         return False
@@ -236,6 +243,9 @@ def gate_open_row(open_rows, meta_by_run, live_sessions, now_ts, beats=None) -> 
 
         for piece in pieces:
             if piece_alive(piece, live_sessions):
+                if piece.get("kind") == "cpu":
+                    return (f"refusing to launch {row.get('key')!r}: live process "
+                            f"{piece.get('pid')!r} on host {piece.get('host')!r}")
                 return (f"refusing to launch {row.get('key')!r}: live session "
                         f"{piece.get('session')!r} on host {piece.get('host')!r}")
 
@@ -269,6 +279,43 @@ def gate_open_row(open_rows, meta_by_run, live_sessions, now_ts, beats=None) -> 
 # ---------------------------------------------------------------------------
 # 3.4: placement, and the piece command.
 # ---------------------------------------------------------------------------
+
+
+def parse_cards(tokens: list[str]) -> dict[str, list[int]]:
+    """`--cards`' values, `<host>:<id>,<id>,...` each, as host -> card ids in the order given;
+    a host is stored under its `hosts:` entry's own name, and a host named twice keeps both lists."""
+    pool: dict[str, list[int]] = {}
+    for tok in tokens:
+        host, sep, ids = tok.partition(":")
+        if not (host and sep and ids and all(i.strip().isdigit() for i in ids.split(","))):
+            sys.exit(f"jobs/launch.py: --cards {tok!r} is not <host>:<id>,<id>,...")
+        cards = pool.setdefault(_canonical_host(host), [])
+        for i in ids.split(","):
+            if int(i) not in cards:
+                cards.append(int(i))
+    return pool
+
+
+def restrict_to_pool(free_by_host: dict, pool: dict[str, list[int]] | None) -> dict:
+    """The cards a launch may claim: every free card when no pool is named, the pool when one
+    is. A pool is the caller's statement of where this launch runs, so a pool card that is not
+    free refuses the launch, naming the card, rather than moving the launch to another card."""
+    if pool is None:
+        return free_by_host
+    busy = [f"{host}:{i}" for host, ids in pool.items()
+            for i in ids if i not in (free_by_host.get(host) or [])]
+    if busy:
+        sys.exit(f"jobs/launch.py: --cards names card(s) that are not free: {', '.join(busy)}")
+    return {host: list(ids) for host, ids in pool.items()}
+
+
+def remove_claimed(pool: dict[str, list[int]], pieces: list[dict]) -> None:
+    """Take the cards these placed pieces hold out of the pool, in place."""
+    for piece in pieces:
+        held = [int(g) for g in str(piece.get("gpus") or "").split(",") if g.strip() != ""]
+        host = piece.get("host")
+        if host in pool:
+            pool[host] = [i for i in pool[host] if i not in held]
 
 
 def place(kind, cards_needed, free_by_host, *, serving_host, prefer_host, attached) -> str | None:
@@ -325,10 +372,11 @@ def piece_command(python, module, run_dir, piece, n, gpus, log) -> str:
     return cmd
 
 
-def _agent_service_cmd(python, run_dir, model_alias, port, gpus, replica, *,
+def _agent_service_cmd(python, run_dir, model_alias, host, port, gpus, replica, *,
                         attach_only, attached_to, log) -> str:
     """7.1's serve line, plus the `--replica` and `--attached-to` flags of
-    errata 7.1/1.5. `--gpus` is unbracketed on every serve line (7.1), so it
+    errata 7.1/1.5, plus `--host`: the launcher places the service, so the
+    launcher tells it which host its endpoint file names. `--gpus` is unbracketed on every serve line (7.1), so it
     is always present; its value is shell-quoted (`shlex.quote`) so a
     card-less, attached replica's empty value survives tmux's shell as a
     real, empty token — `--gpus ''` — instead of vanishing under ordinary
@@ -336,7 +384,7 @@ def _agent_service_cmd(python, run_dir, model_alias, port, gpus, replica, *,
     flag's place."""
     parts = [python, "-m", "models.agent_models.service", "serve",
               "--run-dir", str(run_dir), "--model", model_alias,
-              "--port", str(port), "--gpus", shlex.quote(gpus)]
+              "--host", str(host), "--port", str(port), "--gpus", shlex.quote(gpus)]
     parts += ["--replica", str(replica)]
     if attach_only:
         parts += ["--attach-only", "--attached-to", attached_to]
@@ -910,7 +958,7 @@ def _with_ended(placed: list[dict], ended_sessions: list[str]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
+def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, list[dict]]:
     """Launch one stage run's tmux pieces (8.1). Inside one `registry.lock()`
     hold: the launch gate (2.5), the attach test (7.4), the card reservation,
     the port assignment, and the start-row append with `status: "launching"`.
@@ -921,9 +969,6 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
     `service_check`; before any outcome but `up`, `teardown_launch` ends every
     session this launch started and the sessions it ended are marked in the
     returned pieces."""
-    if not _on_login_host():
-        sys.exit(f"jobs/launch.py: refuses to run on any host but {_login_host()!r}")
-
     run_dir = Path(run_dir)
     key = run_dir.name
     run_id = f"{stage}-{key}"
@@ -952,11 +997,25 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
         if refusal is not None:
             sys.exit(f"jobs/launch.py: {refusal}")
 
+        free_by_host = restrict_to_pool(registry.free(), cards)
+
+        # The agent service's host: the table row's when no pool is named. A named pool is
+        # where this launch runs, so the service goes to the pool host that already serves
+        # this model (the attach of 7.4), or else to the first pool host with the cards for it.
         attach = None
         if stage in ("sample", "inject"):
-            attach = _find_attach_target(agent_row, serving_host)
+            agent_hosts = [serving_host] if cards is None else list(free_by_host)
+            for candidate in agent_hosts:
+                attach = _find_attach_target(agent_row, candidate)
+                if attach is not None:
+                    break
+            if attach is not None:
+                serving_host = attach["host"]
+            elif cards is not None:
+                serving_host = next((h for h in agent_hosts if len(free_by_host[h]) >= tp_size), None)
+                if serving_host is None:
+                    sys.exit(_no_cards_message(free_by_host, tp_size))
 
-        free_by_host = registry.free()
         piece_plan = _build_piece_plan(stage, setting)
         n_loop = sum(1 for p in piece_plan if p["kind"] == "loop")
         replicas = getattr(setting, stage).replicas if stage in ("sample", "inject") else 0
@@ -1010,7 +1069,7 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
                     gpus = ",".join(str(g) for g in gpu_ids)
                     port = _next_free_port("service_agent", local_i, serving_port, host)
                 endpoint_file = f"service_agent_{local_i}.json"
-                cmd = _agent_service_cmd(python, run_dir_str, agent_alias, port, gpus, local_i,
+                cmd = _agent_service_cmd(python, run_dir_str, agent_alias, host, port, gpus, local_i,
                                           attach_only=attached,
                                           attached_to=(attach["run_id"] if attached else None),
                                           log=log)
@@ -1060,13 +1119,13 @@ def launch(stage, setting, run_dir, resolved, git) -> tuple[str, list[dict]]:
             "diff": schema.fields_of(stage, setting),
             "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
             "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
-            "host": _login_host(),
+            "host": _this_host(),
             "pieces": persisted_pieces,
             "status": "launching",
         }
         registry.append_start(start_row)
         launch_entry = _launch_entry(
-            git, host=_login_host(),
+            git, host=_this_host(),
             cards={p["index"]: p.get("gpus", "") for p in persisted_pieces},
             pieces=[p["index"] for p in persisted_pieces],
             cmd={p["index"]: p.get("cmd", "") for p in persisted_pieces},
@@ -1139,7 +1198,7 @@ def _parse_piece_cmd(cmd: str):
     return m.group("module"), m.group("run_dir"), m.group("i"), m.group("n"), m.group("log")
 
 
-def refire(run_dir, git, piece=None) -> list[dict]:
+def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     """Restart one dead piece beside its live siblings (2.3). Refuses, fail-
     closed, while `registry.session_alive` reports the piece's tmux session
     alive; otherwise warns (never refuses) when the piece already has more
@@ -1158,9 +1217,6 @@ def refire(run_dir, git, piece=None) -> list[dict]:
     `killed` row. A `tmux new-session` that fails then leaves a `launching`
     row, which is the same state a first launch leaves and which `ls` closes
     once it is older than `launch_timeout_s` (8.1)."""
-    if not _on_login_host():
-        sys.exit(f"jobs/launch.py: refuses to run on any host but {_login_host()!r}")
-
     run_dir = Path(run_dir)
     meta = _read_json(run_dir / "meta.json") or {}
     pieces = meta.get("pieces") or []
@@ -1185,7 +1241,7 @@ def refire(run_dir, git, piece=None) -> list[dict]:
 
     trajectory_record.release(run_dir, registry.live_sessions(), registry.DEFAULTS["launch_timeout_s"])
 
-    free_by_host = registry.free()
+    free_by_host = restrict_to_pool(registry.free(), cards)
     kind = target.get("kind")
     old_gpus = str(target.get("gpus") or "")
     cards_needed = len([g for g in old_gpus.split(",") if g.strip() != ""])
@@ -1218,7 +1274,7 @@ def refire(run_dir, git, piece=None) -> list[dict]:
         "versions": run_row.get("versions"), "diff": run_row.get("diff"),
         "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
         "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
-        "host": _login_host(),
+        "host": _this_host(),
         "pieces": [updated_piece if p.get("index") == piece else p for p in pieces],
         "status": "launching",
     })

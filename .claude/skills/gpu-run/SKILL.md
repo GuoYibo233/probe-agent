@@ -48,6 +48,41 @@ session or a start row younger than the launch timeout (contracts 2.5). Every pr
 fail-closed: a failed or timed-out ssh counts as busy, so an unclear probe never frees a
 card (contracts 3.4, 6.3).
 
+### Pick the cards by the size of the job, then name them with `--cards`
+
+The probe says which cards are free; which of them fit the job is decided here, before
+the launch, and handed to Phase 3 and Phase 4 as `--cards <host>:<id>,<id>,...` (once per
+host). A launch with `--cards` claims cards from that pool only, in the order given, and
+refuses when a named card is not free. A launch without `--cards` takes the first free
+cards in the inventory's order, whatever their size, so every launch this skill makes
+names its cards.
+
+Count the cards the stage's pieces need, then pick cards of the size each piece needs
+from the free list. Card sizes are the comment lines of `constants/path_outputs.yaml`'s
+`hosts:` list (48 GB on tokyo105/106/107; on tokyo108 cards 0-2 are 94 GB and 3-5 are
+140 GB).
+
+| stage | pieces that hold a card | cards |
+|---|---|---|
+| `sample` | agent service x `sample.replicas` | `tensor_parallel_size` each |
+| `inject` | agent service x `inject.replicas`, plus one probe service | `tensor_parallel_size` each, plus 1 |
+| `train` | one train piece | 1 |
+
+| piece | card it needs | source |
+|---|---|---|
+| agent service, `gpt_oss_120b` | a 94 GB or 140 GB card, so tokyo108 | every collection so far ran on H100/H200 |
+| probe service (`inject`) | any 48 GB card; it holds two probe checkpoints for inference only | - |
+| train, full tuning, any backbone | a 94 GB or 140 GB card | measured peaks at 0.6B: ctool 60.2, cgen 76.8, cparam 76.7 GiB; 1.7B full with gradient checkpointing ran out of memory on 48 GB |
+| train, LoRA, 0.6B to 4B | any 48 GB card | measured peaks 17 to 38 GiB |
+
+The train rows were measured on the previous trainer at 4096 tokens per event; this
+trainer's default is 8192, so the `--debug` smoke of Phase 3 is the check that the chosen
+card holds the job, and a smoke that runs out of memory moves the job to the next card
+size up. An agent service that an open run already serves on a pool host is attached to
+rather than started again (contracts 7.4), and then takes no card from the pool. When the
+free list holds no card of the size a piece needs, report the free list and stop; never
+launch on a smaller card and never launch without `--cards` to get past it.
+
 ## Phase 2 — Commit before launching
 
 The dirty-tree gate is one function, `jobs/launch.git_state(run_dir, allow_dirty)`: it
@@ -70,7 +105,7 @@ the key (contracts 3.4), so a debug run can never be mistaken for, or reused by,
 one:
 
 ```bash
-/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting> --debug [--allow-dirty]
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting> --debug [--allow-dirty] --cards <host>:<ids>
 ```
 
 The tree is often still dirty at this point, so `--allow-dirty` covers the smoke; the
@@ -79,10 +114,15 @@ commit of Phase 2 still has to happen before the real launch that follows.
 ## Phase 4 — Launch: one command walks the stage list
 
 ```bash
-/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]
+/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<ids> ...] [section.field=value ...]
 ```
 
-This is the whole entry point; `run.py --help` prints this argument shape. `<workflow>` is
+This is the whole entry point; `run.py --help` prints this argument shape. `--cards` is
+the pool Phase 1 picked; it is where the launch runs and never part of the setting, so it
+moves no key and no run directory. A call that names several settings, or a sweep parent,
+shares the one pool: each launch takes its cards out of the pool and the next launch
+claims from what is left, so the pool holds the cards of every child, and a child the
+remainder cannot hold is refused with the free-card message. `<workflow>` is
 the stem of a file under `experimental_settings/` (`baseline`, `train_probe`, `inject`);
 `<setting>` is a name inside it, or a sweep child's own name
 (`<setting>/<field>=<value>,...`); several settings may be walked in one call.
@@ -250,8 +290,8 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
 ## Hard rules
 
 - `jobs/runs.jsonl` is append-only and `jobs/RESULTS.md` is rendered — never hand-edited.
-- `run.py` and `jobs/launch.py` refuse to run on any host but `login_host`; a piece on
-  another machine is always started over ssh from there (contracts 8.6, 3.4).
+- `run.py` runs on any machine of the cluster; a piece placed on a machine other than the
+  one `run.py` runs on is started over ssh.
 - An agent never starts a GPU process; a step that needs a GPU is returned as `BLOCKED`
   with the ready-to-run command, and the main conversation launches it (the branch
   `CLAUDE.md`).

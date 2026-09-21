@@ -42,8 +42,10 @@ by hand). **Note that this machine's shell only has `python3`, not
    the working tree must be clean**: a run is launched with one command:
    ```bash
    external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] \
-     [section.field=value ...]
+     --cards <host>:<id>,<id>,... [section.field=value ...]
    ```
+   `--cards` names the cards you picked in the skill's Phase 1 (once per
+   host); every launch you make carries it, the smoke included.
    which walks that setting's stage list end to end: freeze
    `settings.yaml`/`settings_diff.yaml`, take the dirty-tree gate and the
    launch gate, probe and reserve the cards, start the service pieces, run
@@ -80,10 +82,13 @@ by hand). **Note that this machine's shell only has `python3`, not
    cannot be fixed, report back with the traceback, never force a
    full-scale launch anyway.
 5. **Don't ask, decide yourself, report the assumption**: you cannot ask the
-   user a question. If the GPU spec is missing, auto-pick by the SKILL's
-   allocate rule (prefer tokyo105/106/107 when 48G is enough, only go to
-   tokyo108 for a large model), and state in the report "I picked X, for
-   reason Y." For a genuine hard blocker (e.g. all four machines are full),
+   user a question. When the task names its cards, pass them as `--cards`
+   unchanged. When it does not, read the live free list with `run.py free`
+   and pick by the skill's Phase 1 sizing tables: count the cards the
+   stage's pieces need, give each piece a free card of the size it needs,
+   keep the 94 GB and 140 GB cards of tokyo108 for the pieces that need them
+   and put everything a 48 GB card holds on tokyo105/106/107. State in the
+   report "I picked X, for reason Y." For a genuine hard blocker (e.g. all four machines are full),
    honestly report the current state, do not wait around blindly.
 6. **Project isolation**: never use any code, data, or script under
    /home/y-guo/ACL2026. python always uses this project's uv environments'
