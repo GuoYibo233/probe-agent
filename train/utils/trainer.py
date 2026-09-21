@@ -235,6 +235,13 @@ def run(run_dir: Path, method) -> None:
             logf.write(json.dumps(kw, ensure_ascii=False) + "\n")
             logf.flush()
 
+        # TODO(gyb, 2026-09-22): the step total below counts every train event, the ones
+        # method.batches() drops included (an event whose longest text passes train.max_len).
+        # The run then takes fewer optimizer steps than `steps`, so the schedule never decays
+        # to zero and the heartbeat's total is never reached. Few events are dropped today; with
+        # every earlier round in the probe's text (the TODO in data/probe_input.py) many more
+        # will be. Fix: count the events batches() keeps, by the same rule as
+        # _dropped_overlong_events above, and build `steps` from that count (review ticket 48).
         n_train_events = train_df["event_id"].n_unique()
         m_per_epoch = max(math.ceil(n_train_events / cfg.train.events_per_mb), 1)
         steps_per_epoch = max(math.ceil(m_per_epoch / cfg.train.accum), 1)
@@ -339,6 +346,13 @@ def run(run_dir: Path, method) -> None:
                 with _bf16_forward(probe):
                     loss = method.loss(probe, batch)
                 (loss / batch["mb_weight"] / cfg.train.accum).backward()
+                # TODO(gyb, 2026-09-22): the logged loss is wrong whenever a logical minibatch is
+                # split into several physical blocks: each block adds its own share
+                # (loss / mb_weight) and counts as one, so the window mean is per block, and the
+                # more blocks a minibatch is split into, the smaller the logged loss reads. The
+                # gradient above is right; only train_log.jsonl and the heartbeat's loss are off.
+                # Fix: add the shares of one minibatch together and count once per minibatch, at
+                # is_mb_end (review ticket 44).
                 window_loss_sum += float(loss.detach()) / float(batch["mb_weight"])
                 window_loss_n += 1
                 # a logical minibatch counts towards the accumulation once its last physical block
