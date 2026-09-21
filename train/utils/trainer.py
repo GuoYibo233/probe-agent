@@ -180,6 +180,19 @@ def run(run_dir: Path, method) -> None:
     if train_done_path.exists() and not predictions_path.exists():
         predict_only = True
         ckpt_dir = best_dir
+    # TODO(gyb, 2026-09-22): two fixes to the resume below.
+    # (1) The commit test refuses a resume after ANY commit, a notes or ledger commit included:
+    # schema.freeze rewrites settings.yaml's _commit to the current HEAD on every relaunch, so
+    # cfg._commit moves while last/meta.json keeps the commit of the first launch, and a run of
+    # many GPU hours starts over. The identity of the code and the setting is already the run
+    # key (the setting's diff, the effective VERSION of every module the stage lists, the build
+    # key). Fix: resume when last/meta.json's train_key equals cfg._key (the field is already
+    # written by _checkpoint_meta), and write both commits into the `resume` line of
+    # train_log.jsonl; meta.json's launches list already keeps every launch's commit.
+    # (2) last/meta.json records rng_state and nothing restores it, so dropout after a resume
+    # draws different masks than the uninterrupted run (LoRA dropout 0.05 today; review
+    # ticket 42). Fix: after the fast-forward reaches resume_step, set torch's and the card's
+    # generator state from last/meta.json; the fast-forward runs no forward, so it draws nothing.
     elif last_dir.exists():
         last_meta = json.loads((last_dir / "meta.json").read_text())
         if last_meta.get("commit") == cfg._commit:

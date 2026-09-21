@@ -72,6 +72,17 @@ class Probe(torch.nn.Module):
         self.lora = lora
         self._head_layer = head_layer
 
+    # TODO(gyb, 2026-09-22): a resumed LoRA run does not continue the run that was interrupted
+    # (read from the code, not yet shown by a run; every setting today is full tuning). save()
+    # merges the adapter into the weights for every checkpoint, last/ included, and load() then
+    # builds a NEW adapter over the merged weights (A drawn at random again, B zero), while
+    # trainer.py loads the optimizer state of the OLD adapter's A and B: the moments belong to
+    # tensors that no longer exist. Fix: the resume checkpoint keeps the unmerged form. last/
+    # holds the adapter's own weights (peft's adapter save), head.pt and optimizer.pt, and a
+    # resume loads the original backbone weights, builds the adapter from cfg.probe and loads
+    # those adapter weights into it, so parameters and optimizer state are the ones the
+    # interrupted run held. best/ stays merged, the form the probe service loads. This changes
+    # the checkpoint layout of contracts 1.6 for last/ under lora only, and makes last/ small.
     def save(self, dir, *, labels=None, extra=None, meta=None) -> None:
         """Write the checkpoint layout (contracts 1.6): weights or merged adapter, tokenizer, head.pt for a classifier, meta.json."""
         import copy
