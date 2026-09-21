@@ -363,6 +363,8 @@ def report_classifier(method: str, pred_df: pl.DataFrame, cfg, ref,
 
     chosen: dict[str, float | None] = {}
     for risk in cfg.eval.risk:
+        # trig_acc and coverage are compared here at the 4 decimals `_agg` rounds them to, so the
+        # risk constraint is held to a precision of 4 decimals (the owner's ruling, 2026-09-22).
         candidates = [e for e in grid if e["trig_acc"] >= 1 - risk and e["coverage"] > 0]
         chosen[str(risk)] = max(candidates, key=lambda e: e["coverage"])["theta"] if candidates else None
 
