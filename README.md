@@ -16,7 +16,7 @@ evaluation is the last step of `train`.
 `run.py` is the one command. It walks a named setting's stages:
 
 ```
-python3 run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<id>,<id>,... ...] [section.field=value ...]
+external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<id>,<id>,... ...] [section.field=value ...]
 ```
 
 `<workflow>` is the stem of a file under `experimental_settings/` (`baseline`, `train_probe`,
@@ -41,7 +41,12 @@ Every output lives under `constants/path_outputs.yaml`'s `root`, keyed by stage 
 hash of the setting (never by name, since several settings can share one directory); `run.py
 where <workflow> <setting> <stage>` prints the path, whether or not it exists yet, and never
 touches disk to compute it. A `--debug` run lives under that root's `debug_subdir` instead, so
-it never collides with, or is mistaken for, a real run.
+it never collides with, or is mistaken for, a real run; `ls`, `where`, `table`, `kill`,
+`refire` and `retry` take `--debug` to address the runs under it, and a `--debug` walk prints
+its monitoring line with the flag.
+
+`retry` means "start fresh": it refuses while any piece of the run is alive (end it with `kill`
+first), and only then clears the continue markers and launches the stage normally.
 
 `run.py` runs on any machine of the cluster. `constants/path_outputs.yaml`'s `login_host` is
 where the loop pieces and every other piece that needs no card are placed; a piece on a host
@@ -69,7 +74,7 @@ run.py — the one command: walk a named setting's stages (sample through score)
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
   reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/path_outputs.yaml (the hosts list, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
-  writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, finish rows and RESULTS.md (through jobs/registry.py)
+  writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, finish rows and RESULTS.md (through jobs/registry.py); on `retry`, once no piece of the run is alive, deletes the run's continue markers (done.json, consumed.json; for train also train_log.jsonl, train_done.json, align_check.json, last/, last.tmp/, last.prev/)
   venv:    probe (the interpreter this repo's commands are typed with)
 
 ### constants/ — where things are on this cluster

@@ -240,10 +240,11 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
 ## Phase 6b — Interruption
 
 - `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py kill <workflow>
-  <setting> <stage>` writes the `killed` finish row and refuses while another live run
-  is attached to this run's service (contracts 8.6).
+  <setting> <stage> [--debug]` ends every piece of the run, service pieces included,
+  writes the `killed` finish row and refuses while another live run is attached to this
+  run's service (contracts 8.6).
 - A dead piece: `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py refire
-  <workflow> <setting> <stage> --piece i` — a liveness refusal first, then claims
+  <workflow> <setting> <stage> --piece i [--debug]` — a liveness refusal first, then claims
   released, cards re-probed, the start row of the incarnation it is about to start
   appended, and a `launches` entry written beside it. It **warns**, and never refuses,
   when this piece already has more than one entry in `meta.json`'s `launches` (counted
@@ -251,41 +252,34 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
   (contracts 2.3). A refire is a launch and takes the Phase 2 dirty-tree gate, so commit
   the tree before it.
 - "Start fresh": `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py retry
-  <workflow> <setting> <stage>`, which also takes the Phase 2 dirty-tree gate. For
-  `train` it deletes `last/`, `train_log.jsonl`, `train_done.json`, `align_check.json`,
-  `consumed.json` and `done.json`, then launches normally (contracts 2.4). The resume
-  checkpoint carries three names while the trainer swaps it — the new one is written into
-  `last.tmp/`, and the one it replaces is held as `last.prev/` between the two renames —
-  and `retry` deletes `last/` alone, so a kill inside a checkpoint write leaves
-  `last.tmp/` or `last.prev/` on disk. The trainer settles those two at its next start,
-  and a `last.prev/` with no `last/` beside it takes the name back: the run you meant to
-  start fresh resumes from the pre-crash checkpoint, at its old step and with the
-  alignment gate skipped. So after a kill inside a checkpoint write, remove `last.tmp/`
-  and `last.prev/` from the run directory yourself before typing `retry`. For `sample`
-  and `inject` it clears `done.json` and `consumed.json` only; those two stages resume
-  from the per-pair files under the run directory's `records/` (contracts 2.3), which
-  retry never deletes, so a partial directory continues exactly
-  as a plain re-run would, and a directory whose per-pair files are already complete is
-  re-certified — a rewritten `done.json`, a service teardown and a second `ok` finish
-  row — rather than sampled again.
-- All three key the real run and none of them parses `--debug`: typing the flag is a
-  usage error, and leaving it off names the real run, so none of them can reach a Phase
-  3 smoke. With that setting and stage carrying a real run, all three act on that real
-  run: `kill` ends its pieces and writes its `killed` finish row; `refire` restarts one
-  of its pieces, and refuses while that piece's session is alive, as the bullet above
-  states; `retry` clears the markers first and unconditionally — `done.json` and
-  `consumed.json`, and for `train` also `last/`, `train_log.jsonl`, `train_done.json` and
-  `align_check.json` — and only then walks the stage. So `retry` against a live run
-  deletes those files and launches nothing: a live `sample`, `inject` or `train` run stops
-  at `run.py: <run_dir> has a live piece; launching nothing`, the refusal every card stage
-  takes, `train` included — and for `train` its checkpoint directory and its training log
-  are already gone by then. `kill` the run and let its pieces end before typing `retry`.
-  With the smoke as the only run of
-  that setting and stage, `kill` prints `ended []` and stops nothing
-  while the smoke keeps its cards. End a smoke by hand instead:
-  `ssh <host> tmux kill-session -t <session>` for every piece, service pieces included,
-  taking each host and session from the smoke's Phase 5 `ls --debug` line, then
-  `run.py sync` to write the missing finish row.
+  <workflow> <setting> <stage> [--debug]`. It first tests every piece `meta.json` records
+  for the run: a tmux piece (service, loop, train) by its session, counted alive when the
+  probe of its host did not answer, and a `cpu` piece by its pid while the run is still
+  open (a start row with no finish row after it). While any piece is alive it refuses
+  with ``run.py retry: <run_dir> has live piece(s) [...]; end them with `run.py kill`
+  first, nothing was cleared``, and every file of the run stays on disk; `kill` the run,
+  let its pieces end, then type `retry` again. Once every piece is dead it deletes the
+  markers — `done.json` and `consumed.json`, and for `train` also `train_log.jsonl`,
+  `train_done.json`, `align_check.json` and the resume checkpoint under each of its three
+  names, `last/`, `last.tmp/` and `last.prev/` (the trainer writes a new checkpoint into
+  `last.tmp/` and holds the one it replaces as `last.prev/` between two renames, so a
+  kill inside a checkpoint write leaves one of those two on disk) — and then walks the
+  stage normally (contracts 2.4). The deletion comes before the walk reaches the Phase 2
+  dirty-tree gate and the launch gate, so a refusal by either gate leaves the markers
+  already deleted, for `train` the checkpoint and the training log included: commit the
+  tree before typing `retry`. For `sample` and `inject` the markers are `done.json` and
+  `consumed.json` only; those two stages resume from the per-pair files under the run
+  directory's `records/` (contracts 2.3), which retry never deletes, so a partial
+  directory continues exactly as a plain re-run would, and a directory whose per-pair
+  files are already complete is re-certified — a rewritten `done.json`, a service
+  teardown and a second `ok` finish row — rather than sampled again.
+- All three take `--debug`, which addresses the run under the outputs root's
+  `debug_subdir` exactly as `where --debug` resolves it; without the flag they address the
+  real run. A Phase 3 smoke is therefore ended with `run.py kill <workflow> <setting>
+  <stage> --debug`, which ends every piece of the smoke, service pieces included, and
+  writes its `killed` finish row. `refire ... --debug` restarts one piece of a smoke and
+  `retry ... --debug` starts a smoke fresh; both take the Phase 2 dirty-tree gate, which
+  `--allow-dirty` covers for a smoke.
 
 ## Hard rules
 

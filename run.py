@@ -33,9 +33,9 @@ _SUBCOMMAND_ONE_LINE = {
     "ls": "[workflow] [--debug] -- one folded line per run; closes a launch whose pieces are all dead",
     "where": "<workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage",
     "find": "section.field=value ... -- the runs whose settings_diff matches every given field",
-    "kill": "<workflow> <setting> <stage> -- end one run's pieces, write the killed finish row",
-    "refire": "<workflow> <setting> <stage> [--piece i] [--allow-dirty] [--cards <host>:<ids>] -- restart one dead piece",
-    "retry": "<workflow> <setting> <stage> [--allow-dirty] [--cards <host>:<ids>] -- clear markers, then launch it fresh",
+    "kill": "<workflow> <setting> <stage> [--debug] -- end one run's pieces, write the killed finish row",
+    "refire": "<workflow> <setting> <stage> [--piece i] [--debug] [--allow-dirty] [--cards <host>:<ids>] -- restart one dead piece",
+    "retry": "<workflow> <setting> <stage> [--debug] [--allow-dirty] [--cards <host>:<ids>] -- refuse a live run, else clear markers and launch it fresh",
     "table": "[workflow] [--out FILE] [--debug] -- the backbone x method x risk table",
     "free": "-- the free cards per host",
     "sync": "-- fold done.json and heartbeats into missing finish rows",
@@ -691,11 +691,13 @@ def cmd_find(rest: list[str]) -> int:
 
 
 def cmd_kill(rest: list[str]) -> int:
-    if len(rest) != 3:
-        sys.exit("run.py kill: usage: run.py kill <workflow> <setting> <stage>")
-    workflow_name, setting_name, stage = rest
+    debug = "--debug" in rest
+    positional = [t for t in rest if t != "--debug"]
+    if len(positional) != 3:
+        sys.exit("run.py kill: usage: run.py kill <workflow> <setting> <stage> [--debug]")
+    workflow_name, setting_name, stage = positional
     _check_stage_name(stage)
-    cfg = _load_one(workflow_name, setting_name, debug=False)
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
     key = schema.key(stage, cfg)
     run_id = f"{stage}-{key}"
     ended = registry.kill(run_id)
@@ -711,6 +713,7 @@ def cmd_kill(rest: list[str]) -> int:
 
 def cmd_refire(rest: list[str]) -> int:
     piece = None
+    debug = False
     allow_dirty = False
     positional: list[str] = []
     card_tokens: list[str] = []
@@ -718,6 +721,8 @@ def cmd_refire(rest: list[str]) -> int:
     for tok in it:
         if tok == "--piece":
             piece = int(next(it))
+        elif tok == "--debug":
+            debug = True
         elif tok == "--allow-dirty":
             allow_dirty = True
         elif tok == "--cards":
@@ -726,11 +731,11 @@ def cmd_refire(rest: list[str]) -> int:
             positional.append(tok)
     if len(positional) != 3:
         sys.exit("run.py refire: usage: run.py refire <workflow> <setting> <stage> [--piece i] "
-                 "[--allow-dirty] [--cards <host>:<ids>]")
+                 "[--debug] [--allow-dirty] [--cards <host>:<ids>]")
     cards = _cards_pool(card_tokens)
     workflow_name, setting_name, stage = positional
     _check_stage_name(stage)
-    cfg = _load_one(workflow_name, setting_name, debug=False)
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
     run_dir = schema.run_dir(stage, cfg)
     if not (run_dir / "settings.yaml").exists():
         sys.exit(f"run.py refire: {run_dir} has no settings.yaml; nothing to refire")
@@ -767,25 +772,50 @@ def _clear_continue_markers(stage: str, run_dir: Path) -> None:
                 shutil.rmtree(d)
 
 
+def _live_pieces(run_id: str, run_dir: Path) -> list[dict]:
+    """The pieces `meta.json` records for this run directory that are alive now. A tmux piece (service, loop, train) is judged by `jobs/launch.piece_alive` over one `registry.live_sessions()` probe, fail-closed on a host whose probe never answered, whatever the run's registry state: a `launch_failed` finish row can close a run whose piece keeps running (8.1). A `cpu` piece is judged by its pid only while `run_id` is open (a start row with no finish row after it, `registry.open_runs()`), the scope the launch gate of 2.5 gives it: a CPU stage's walk appends its `ok` or `failed` finish row once the process exits, so a closed run's recorded pid names a process that ended, and the number may since belong to an unrelated one."""
+    meta = _read_json(run_dir / "meta.json") or {}
+    sessions = registry.live_sessions()
+    run_open = any(r.get("run_id") == run_id for r in registry.open_runs())
+
+    def running(piece: dict) -> bool:
+        if piece.get("kind") == "cpu":
+            return run_open and launch.piece_alive(piece, sessions)
+        return launch.piece_alive(piece, sessions)
+
+    return [p for p in (meta.get("pieces") or []) if running(p)]
+
+
 def cmd_retry(rest: list[str]) -> int:
+    debug = False
     allow_dirty = False
     positional: list[str] = []
     card_tokens: list[str] = []
     it = iter(rest)
     for tok in it:
-        if tok == "--allow-dirty":
+        if tok == "--debug":
+            debug = True
+        elif tok == "--allow-dirty":
             allow_dirty = True
         elif tok == "--cards":
             card_tokens.append(_cards_value(it))
         else:
             positional.append(tok)
     if len(positional) != 3:
-        sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--allow-dirty] "
-                 "[--cards <host>:<ids>]")
+        sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--debug] "
+                 "[--allow-dirty] [--cards <host>:<ids>]")
     workflow_name, setting_name, stage = positional
     _check_stage_name(stage)
-    cfg = _load_one(workflow_name, setting_name, debug=False)
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
     run_dir = schema.run_dir(stage, cfg)
+    run_id = f"{stage}-{schema.key(stage, cfg)}"
+    # "start fresh" (2.4) deletes what a live piece is still writing -- a train run's `last/`
+    # checkpoint and its log -- so the markers are cleared only once every piece is known dead.
+    live = _live_pieces(run_id, run_dir)
+    if live:
+        named = [p.get("session") or f"pid:{p.get('pid')}" for p in live]
+        sys.exit(f"run.py retry: {run_dir} has live piece(s) {named}; end them with `run.py kill` "
+                 "first, nothing was cleared")
     _clear_continue_markers(stage, run_dir)
     _stage_step(cfg, stage, allow_dirty, _cards_pool(card_tokens))
     return 0
@@ -2134,7 +2164,10 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
                     "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
                     "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
             return "stop"
-        print(f"run.py: launched {run_id}; monitor with `run.py ls {cfg._file}`")
+        # `ls` shows the debug root's runs only under `--debug`, so the printed line carries the
+        # flag exactly when this walk ran with it.
+        debug_flag = " --debug" if cfg._debug else ""
+        print(f"run.py: launched {run_id}; monitor with `run.py ls {cfg._file}{debug_flag}`")
         return "stop"
 
     rc = proc.wait()
