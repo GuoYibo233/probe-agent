@@ -260,7 +260,7 @@ agent/injected_text_formats.py — the table of the five ways an early speculati
 
 ### train/ — train a probe
 
-train/utils/trainer.py — the training loop every method shares: settings -> arguments, seed, backbone, tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment gate, and the probe run over the prediction splits.
+train/utils/trainer.py — the training loop every method shares: settings -> arguments, seed, backbone, tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment gate (it passes only when it compared at least one row the method kept and the two losses agree), and the probe run over the prediction splits.
   imports: experimental_settings/schema.py, models/__init__.py, models/probe_models/base.py, data/training_data.py, data/probe_output.py, jobs/registry.py; [torch]
   used by: train/methods/{ctool,cgen,cparam}.py
   reads:   example (parquet), the checkpoint layout
@@ -334,7 +334,7 @@ jobs/RESULTS.md — rendered from runs.jsonl by registry.py; never edited by han
 
 ### tests/
 
-tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON) and `tests/test_packed_loss.py` (ticket 13). Run the first with `external/probe-env/bin/python tests/test_registry_concurrent_append.py`.
+tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
 
 ## 3. The extension recipes
 

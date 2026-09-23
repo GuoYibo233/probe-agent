@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import pathlib
+import sys
 import tempfile
 import unittest
 
@@ -11,11 +12,11 @@ import polars as pl
 import torch
 from transformers import AutoConfig, AutoModel, AutoTokenizer
 
-# TODO(gyb, 2026-09-22): run as CLAUDE.md spells it (`external/probe-env/bin/python
-# tests/test_packed_loss.py`) the import below fails with "No module named 'data'", at HEAD
-# too; the three tests pass with PYTHONPATH set to the repo root. Either this file puts the
-# repo root on sys.path, as tests/test_registry_concurrent_append.py does, or CLAUDE.md's
-# command changes.
+# Python puts the script's own directory (tests/) first on sys.path, so the repo's packages
+# (data/, train/) resolve only once the repo root is on it too.
+REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
 from data import training_data
 
 TOKDIR = "/net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-0.6B-Base"
