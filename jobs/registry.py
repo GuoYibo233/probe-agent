@@ -319,23 +319,67 @@ class Heartbeat:
         self._file.close()
 
 
-def beat(run_dir: Path, piece: int) -> Heartbeat:
-    """Resolve `<launch>` from this run directory's own `heartbeat/` listing
-    (1 + the largest existing `n` for `heartbeat/<piece>-<n>.jsonl`, 0 when
-    none exists) and open that file for append (8.4)."""
-    run_dir = Path(run_dir)
-    hb_dir = run_dir / "heartbeat"
-    hb_dir.mkdir(parents=True, exist_ok=True)
+def _beat_files(run_dir: Path, piece) -> dict[int, Path]:
+    """`{<launch>: path}` over this piece's `heartbeat/<piece>-<launch>.jsonl` files."""
+    hb_dir = Path(run_dir) / "heartbeat"
+    files: dict[int, Path] = {}
+    if not hb_dir.is_dir():
+        return files
     prefix = f"{piece}-"
-    best = -1
     for p in hb_dir.iterdir():
         name = p.name
         if name.startswith(prefix) and name.endswith(".jsonl"):
             n_str = name[len(prefix):-len(".jsonl")]
             if n_str.isdigit():
-                best = max(best, int(n_str))
-    launch = best + 1
+                files[int(n_str)] = p
+    return files
+
+
+def next_beat_launch(run_dir, piece) -> int:
+    """The `<launch>` the next incarnation of this piece opens its heartbeat file under (8.4):
+    1 + the largest existing `n` for `heartbeat/<piece>-<n>.jsonl`, 0 when none exists.
+    `beat()` opens that file, and the launcher records the same number as the piece entry's
+    `beat_launch` in `meta.json` before it starts the piece (`jobs/launch.py`, and `run.py`
+    for a `cpu` piece), which is how a reader tells this incarnation's file from an earlier
+    incarnation's."""
+    return max(_beat_files(run_dir, piece), default=-1) + 1
+
+
+def beat(run_dir: Path, piece: int) -> Heartbeat:
+    """Open this piece's heartbeat file for append under `next_beat_launch` (8.4)."""
+    run_dir = Path(run_dir)
+    hb_dir = run_dir / "heartbeat"
+    hb_dir.mkdir(parents=True, exist_ok=True)
+    launch = next_beat_launch(run_dir, piece)
     return Heartbeat(hb_dir / f"{piece}-{launch}.jsonl")
+
+
+def current_beats(run_dir, piece: dict) -> list[dict]:
+    """The beat rows of the incarnation of a `loop`, `train` or `cpu` piece that its
+    `meta.json` entry records: the newest heartbeat file whose `<launch>` is at or above the
+    entry's `beat_launch`, and no rows while that incarnation has opened none yet.
+
+    A relaunch, a `refire` or a `retry` starts a piece in a run directory that still holds
+    the files of the piece's earlier incarnations, and the new process opens its own file
+    only once it runs; until then the newest file on disk is an earlier incarnation's, which
+    can end with the `status: "done"` row. Every verdict reads this incarnation's rows alone.
+    An entry written before `beat_launch` existed (a launch before 2026-09-23) reads from
+    `<launch>` 0, every file of the piece."""
+    files = _beat_files(run_dir, piece.get("index"))
+    first = piece.get("beat_launch", 0)
+    current = [n for n in files if n >= first]
+    if not current:
+        return []
+    out = []
+    with open(files[max(current)]) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    out.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -587,14 +631,19 @@ def pid_alive(host: str | None, pid) -> bool:
 
 
 def end_pid(host: str | None, pid) -> bool:
-    """Send SIGTERM to a `cpu` piece's process on the host its piece entry names; True when a process was there to signal."""
+    """Send SIGTERM to a `cpu` piece's process on the host its piece entry names; True when a process was there to signal.
+
+    A piece's process runs as the user who launched it, so a pid this user may not signal
+    belongs to some other user's process that took the number over: it is not this run's
+    process, and it counts like a pid with no process behind it. The remote branch reads the
+    same way, because `kill` exits nonzero on a refused signal as well."""
     if not pid:
         return False
     cfg = _outputs_config()
     if host is None or _is_local_host(host, cfg):
         try:
             os.kill(int(pid), signal.SIGTERM)
-        except ProcessLookupError:
+        except (ProcessLookupError, PermissionError):
             return False
         return True
     ok, out = _remote_shell(host, f"kill -TERM {int(pid)} 2>/dev/null && echo ended || echo gone")
@@ -641,9 +690,15 @@ def _probe_host_busy_cards(host_name: str, n_cards: int) -> set[int]:
 def cards_busy() -> dict[str, set[int]]:
     """A card is busy when `nvidia-smi` shows a compute process on it, or when
     it appears in the `pieces` list of a run with a start row and no finish
-    row and either a live session or a start row younger than
-    `DEFAULTS["launch_timeout_s"]` (2.5, 8.6). Probed now, never cached;
-    fail-closed."""
+    row and either a live session, or a start row younger than
+    `DEFAULTS["launch_timeout_s"]` while the piece's work is still owed (2.5,
+    8.6). A piece owes work until `_judge_pieces`, the verdict `ls` prints,
+    calls it `done`: a work piece that wrote its finish row, and a service whose
+    session ended once its run's work was done. The last loop piece of a
+    finished `sample` or `inject` run ends the run's services before the
+    wrap-up walk writes the finish row, so without that test their cards stayed
+    reserved until the start row aged past the timeout. Probed now, never
+    cached; fail-closed."""
     cfg = _outputs_config()
     busy: dict[str, set[int]] = {}
     for host in cfg.get("hosts", []):
@@ -652,19 +707,25 @@ def cards_busy() -> dict[str, set[int]]:
     if not folded:
         return busy
     sessions = live_sessions()
+    now_ts = time.time()
     for entry in folded.values():
         start, finish = entry["start"], entry["finish"]
         if start is None or finish is not None:
             continue
         run_dir = Path(start["dir"])
+        pieces = _pieces_of(run_dir, start)
+        holds_cards = any(p.get("host") and p.get("gpus") for p in pieces)
+        if not holds_cards:
+            continue
         young = _age_s(start["t"]) < DEFAULTS["launch_timeout_s"]
-        for piece in _pieces_of(run_dir, start):
+        judged = _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)
+        for piece, (pv, verdict, _escalated) in zip(pieces, judged):
             host_name = piece.get("host")
             gpus = piece.get("gpus")
             if not host_name or not gpus:
                 continue
-            live = _alive_on(host_name, piece.get("session"), sessions)
-            if live or young:
+            owes_work = verdict != "done"
+            if pv["alive"] or (young and owes_work):
                 ids = set()
                 for token in str(gpus).split(","):
                     token = token.strip()
@@ -728,13 +789,17 @@ def rates(first_beat: dict | None, recent_beats: list[dict]) -> tuple[float | No
 # the owner's to update: the `judge` row calls a piece `done` on `status == done` or
 # `done >= total`, where `judge` below reads only the `status: "done"` finish row; and the
 # `judge_service` row calls a service `dead` whenever its session is gone, where `judge_service`
-# below calls it `done` when its session is gone and every work piece of its run is `done`.
+# below calls it `done` when its session is gone and every work piece of its run is `done`, and
+# judges an attached agent service (`attached_to` in its endpoint file) by its port and its run's
+# work instead of by its session, which ends once the endpoint file is written (7.4).
 def judge(piece: dict) -> tuple[str, bool]:
     """`done, dead, suspected stall, warming up, slowed, healthy`, in that
     priority order, for a `loop`, `train` or `cpu` piece.
 
-    A piece is `done` when its newest heartbeat file ends with the `status:
-    "done"` row `Heartbeat.finish` writes after the piece's last step (8.4),
+    A piece is `done` when the heartbeat file of its own incarnation, the one
+    the entry's `beat_launch` names (an entry written before that field existed
+    reads its newest file), ends with the `status: "done"` row
+    `Heartbeat.finish` writes after the piece's last step (8.4),
     and by nothing else. A beat's `done` reaching its `total` is not that
     signal: a train piece's step beats reach the step total before its last
     validation and its prediction pass, and a claiming piece's total is the
@@ -769,7 +834,21 @@ def judge_service(piece: dict) -> tuple[str, bool]:
     (`agent/run_tasks.py`, 2.3), before the wrap-up walk closes the run. So a
     service whose session is gone is `done` when its run's work is done, and
     `dead` while that work is still owed: the fail-closed liveness rule for a
-    service that dies during a run is unchanged."""
+    service that dies during a run is unchanged.
+
+    An attached agent service (`attached`, its endpoint file names another run
+    in `attached_to`, 7.1) starts no server: its session writes the endpoint
+    file and ends (7.4), and its run's loop pieces are served by the owning
+    run's server on the port the piece records. So its session says nothing,
+    and the port does: `done` once its run's work is done, `healthy` while the
+    port answers, `dead` when the server it attached to stopped answering while
+    that work is still owed."""
+    if piece.get("attached"):
+        if piece.get("work_done"):
+            return "done", False
+        if piece.get("port_ok"):
+            return "healthy", False
+        return "dead", True
     if piece.get("alive") is False:
         if piece.get("work_done"):
             return "done", False
@@ -798,30 +877,15 @@ def launch_failed(started_at: str, verdicts: list[str]) -> bool:
             and _age_s(started_at) > DEFAULTS["launch_timeout_s"])
 
 
-def _beats_full(run_dir: Path, piece_index) -> list[dict]:
-    hb_dir = run_dir / "heartbeat"
-    if not hb_dir.is_dir():
-        return []
-    prefix = f"{piece_index}-"
-    best_n, best_path = -1, None
-    for p in hb_dir.iterdir():
-        name = p.name
-        if name.startswith(prefix) and name.endswith(".jsonl"):
-            n_str = name[len(prefix):-len(".jsonl")]
-            if n_str.isdigit() and int(n_str) > best_n:
-                best_n, best_path = int(n_str), p
-    if best_path is None:
-        return []
-    out = []
-    with open(best_path) as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                try:
-                    out.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
-    return out
+def _attached_to(run_dir: Path, piece: dict) -> str | None:
+    """The `run_id` a service piece's endpoint file names in `attached_to` (7.1, 1.5): the run
+    whose server this piece attached to instead of starting one, `None` for a piece that
+    started its own server or has written no endpoint file yet."""
+    endpoint_file = piece.get("endpoint_file")
+    if endpoint_file is None:
+        return None
+    doc = _read_json(run_dir / endpoint_file) or {}
+    return doc.get("attached_to")
 
 
 def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
@@ -834,6 +898,7 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
         return {
             "kind": kind,
             "alive": _alive_on(host, session, sessions),
+            "attached": _attached_to(run_dir, piece) is not None,
             "port_ok": _probe_port(piece),
             "since_launch_s": since_launch_s,
         }
@@ -841,7 +906,7 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
         alive = pid_alive(host, piece.get("pid"))
     else:
         alive = _alive_on(host, session, sessions)
-    beats = _beats_full(run_dir, piece.get("index"))
+    beats = current_beats(run_dir, piece)
     has_beat = bool(beats)
     last = beats[-1] if beats else None
     beat_ts = [b.get("ts") for b in beats]
@@ -868,7 +933,8 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
 def _judge_pieces(pieces: list[dict], run_dir: Path, sessions: set,
                   launch_t: str, now_ts: float) -> list[tuple[dict, str, bool]]:
     """`(verdict dict, verdict, escalated)` per piece of one run, in the
-    pieces' own order: the one derivation `ls()` and `sync()` both read. The
+    pieces' own order: the one derivation `ls()`, `sync()` and `cards_busy()`
+    read. The
     work pieces (`loop`, `train`, `cpu`) are judged first, because a service
     piece's verdict depends on whether all of them are `done`
     (`judge_service`)."""
@@ -1133,8 +1199,9 @@ def _attached_elsewhere(run_id: str) -> bool:
 def kill(run_id: str) -> list[str]:
     """End each piece of `run_id` — a tmux piece by its session, a `cpu`
     piece by its `pid`, both read from `meta.json`'s `pieces` list — and
-    return the sessions it actually ended: a `cpu` piece counts only when its
-    `pid` was still alive to signal, and a tmux piece only when the kill
+    return the sessions it actually ended: a `cpu` piece is signalled only
+    while the run is open and counts only when its `pid` was still alive to
+    signal, and a tmux piece counts only when the kill
     command actually reached its host (an unreachable host reports nothing
     ended for that piece, rather than a session that was never touched).
     Refuses while any live run's `service_<kind>_<replica>.json` names this
@@ -1147,11 +1214,16 @@ def kill(run_id: str) -> list[str]:
             f"run.py kill {run_id}: refused, a live run's service file names "
             f"it in attached_to")
     run_dir = Path(entry["start"]["dir"])
+    # A `cpu` piece is signalled only while its run is open (no finish row after the newest
+    # start row, the `open_runs()` scope that `run.py`'s `_live_pieces` judges a pid in): a CPU
+    # stage's walk appends its finish row once the process exits, so a closed run's recorded pid
+    # names a process that ended, and the number may since belong to an unrelated one.
+    run_open = entry["finish"] is None
     ended = []
     for piece in _pieces_of(run_dir, entry["start"]):
         if piece.get("kind") == "cpu":
             pid = piece.get("pid")
-            if end_pid(piece.get("host"), pid):
+            if run_open and end_pid(piece.get("host"), pid):
                 ended.append(f"pid:{pid}")
         else:
             session, host = piece.get("session"), piece.get("host")

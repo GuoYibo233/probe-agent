@@ -487,24 +487,6 @@ def _port_answers(host: str | None, port) -> bool:
 SESSION_END_GRACE_S = 60
 
 
-def _newest_beat_launch(run_dir, index: int) -> int:
-    """The largest `<launch>` among this piece's `heartbeat/<index>-<launch>.jsonl`
-    files, -1 when it has none: the same numbering `registry.beat` hands the
-    next incarnation (8.4)."""
-    hb_dir = Path(run_dir) / "heartbeat"
-    prefix = f"{index}-"
-    best = -1
-    if not hb_dir.is_dir():
-        return best
-    for path in hb_dir.iterdir():
-        name = path.name
-        if name.startswith(prefix) and name.endswith(".jsonl"):
-            n_str = name[len(prefix):-len(".jsonl")]
-            if n_str.isdigit():
-                best = max(best, int(n_str))
-    return best
-
-
 def incarnation_origin(run_dir, pieces) -> dict[int, dict]:
     """One rule over every kind of piece: what a piece inherits from an earlier
     incarnation is snapshotted or cleared here, before the first
@@ -514,10 +496,11 @@ def incarnation_origin(run_dir, pieces) -> dict[int, dict]:
     log closed every relaunch at its first poll).
 
     A `loop`, `train` or `cpu` piece appends to a log the run directory already
-    holds (`tee -a`, 3.4) and numbers its heartbeat files from the ones already
-    there, so its origin is a snapshot: the returned
-    `{piece index: {"log_size", "beat_launch"}}` is what its `log/<index>.txt`
-    and its `heartbeat/` listing held before this launch started it. A
+    holds (`tee -a`, 3.4), so its origin is a snapshot: the returned
+    `{piece index: {"log_size"}}` is what its `log/<index>.txt` held before
+    this launch started it. Its heartbeat file needs no snapshot here: the
+    piece entry's own `beat_launch`, recorded before the session starts, names
+    the file this incarnation opens (`registry.current_beats`). A
     `service` piece leaves one file instead of a growing log and nothing else
     deletes it, so its origin is made by clearing: the endpoint file this
     launch's server is about to write (7.4) is removed, and the existence test
@@ -534,7 +517,6 @@ def incarnation_origin(run_dir, pieces) -> dict[int, dict]:
         log = Path(p.get("log", ""))
         origin[p["index"]] = {
             "log_size": log.stat().st_size if log.exists() else 0,
-            "beat_launch": _newest_beat_launch(run_dir, p["index"]),
         }
     return origin
 
@@ -552,38 +534,16 @@ def _log_shows_traceback(log: Path, first_byte: int) -> bool:
         return False
 
 
-def _last_beat_status(path: Path) -> str | None:
-    """The `status` of the last row of one heartbeat file (`None` when its last
-    row carries none): `registry.Heartbeat.finish` writes `"done"` and an
-    ordinary beat writes no status at all (8.4)."""
-    status = None
-    try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    status = json.loads(line).get("status")
-                except json.JSONDecodeError:
-                    continue
-    except OSError:
-        return None
-    return status
-
-
-def _piece_finished(run_dir, index: int, beat_launch: int) -> bool:
+def _piece_finished(piece: dict) -> bool:
     """Whether this incarnation of a `loop`, `train` or `cpu` piece walked its
-    whole share: the newest heartbeat file opened after `beat_launch` (the
-    launch number `incarnation_origin` found) ends with the `status: "done"`
-    row `registry.Heartbeat.finish` writes. `agent/run_tasks.py` writes it when
+    whole share: its own heartbeat rows (`registry.current_beats`, the file
+    the entry's `beat_launch` names) end with the `status: "done"` row
+    `registry.Heartbeat.finish` writes. `agent/run_tasks.py` writes it when
     its rotation is walked out and `train/utils/trainer.py` after `done.json`,
     so a piece whose session has ended with that row on disk did its work; a
     piece killed mid-share leaves no such row."""
-    newest = _newest_beat_launch(run_dir, index)
-    if newest <= beat_launch:
-        return False
-    return _last_beat_status(Path(run_dir) / "heartbeat" / f"{index}-{newest}.jsonl") == "done"
+    beats = registry.current_beats(piece.get("run_dir", ""), piece)
+    return bool(beats) and beats[-1].get("status") == "done"
 
 
 def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
@@ -591,8 +551,9 @@ def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
     (default `registry.DEFAULTS["launch_timeout_s"]`; errata: 8.1 names the
     alive check and never defines it). `origin` is `incarnation_origin`'s map,
     taken before the sessions started; that call is what makes every test below
-    read this incarnation's own output — the map for a work piece's log and
-    heartbeat, and the endpoint file it cleared for a service piece.
+    read this incarnation's own output: the map holds a work piece's log size
+    and the endpoint file it cleared for a service piece, and a work piece's
+    heartbeat is read through its entry's `beat_launch` (`_piece_finished`).
 
     One rule over every kind of piece. A piece is **up** while it shows the
     evidence of its kind: a `loop`, `train` or `cpu` piece that holds its
@@ -649,8 +610,7 @@ def alive_check(pieces, origin, window_s=None, poll_s=5) -> tuple[bool, list]:
                 started_from = origin[index]
                 log_grew = log.exists() and log.stat().st_size > started_from["log_size"]
                 working = session_ok and log_grew
-                finished = _piece_finished(p.get("run_dir", ""), index,
-                                           started_from["beat_launch"])
+                finished = _piece_finished(p)
                 crashed = _log_shows_traceback(log, started_from["log_size"])
             up = (working or finished) and not crashed
             if crashed:
@@ -872,36 +832,20 @@ def _folded_row_of(run_id: str):
     return next((r for r in registry.find({}) if r.get("run_id") == run_id), None)
 
 
-def read_beats_for_run(run_dir: Path) -> dict[int, list[float]]:
-    """`{piece index: [beat ts, ...]}` over every incarnation of every piece
-    of this run directory (errata: `gate_open_row`'s `beats` argument).
-    Public: `run.py`'s own CPU-stage gate call (2.3/2.5) reads the same
-    heartbeat files through this function rather than keeping a second
-    copy."""
-    hb_dir = run_dir / "heartbeat"
+def read_beats_for_run(run_dir: Path, pieces: list[dict]) -> dict[int, list[float]]:
+    """`{piece index: [beat ts, ...]}` over the incarnation each `loop`,
+    `train` or `cpu` entry of `pieces` records (`registry.current_beats`;
+    errata: `gate_open_row`'s `beats` argument). The gate's third test reads a
+    piece with beats and no process as observed dead, and an earlier
+    incarnation's beats would make a piece of this launch that has not started
+    yet read that way. Public: `run.py`'s own CPU-stage gate call (2.3/2.5)
+    reads the same heartbeat files through this function rather than keeping
+    a second copy."""
     out: dict[int, list[float]] = {}
-    if not hb_dir.is_dir():
-        return out
-    for path in hb_dir.glob("*-*.jsonl"):
-        idx_str = path.name.split("-", 1)[0]
-        if not idx_str.isdigit():
-            continue
-        idx = int(idx_str)
-        ts_list = out.setdefault(idx, [])
-        try:
-            with open(path) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ts = json.loads(line).get("ts")
-                    except json.JSONDecodeError:
-                        continue
-                    if ts is not None:
-                        ts_list.append(ts)
-        except OSError:
-            continue
+    for piece in pieces:
+        if piece.get("kind") in ("loop", "train", "cpu"):
+            out[piece["index"]] = [b["ts"] for b in registry.current_beats(run_dir, piece)
+                                   if b.get("ts") is not None]
     return out
 
 
@@ -1010,7 +954,8 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         for r in open_rows:
             m = _read_json(Path(r["dir"]) / "meta.json") or {}
             meta_by_run[r["run_id"]] = m
-            beats[r["run_id"]] = read_beats_for_run(Path(r["dir"]))
+            beats[r["run_id"]] = read_beats_for_run(
+                Path(r["dir"]), _pieces_of_row(r["run_id"], r, meta_by_run))
         sessions = registry.live_sessions()
         refusal = gate_open_row(open_rows, meta_by_run, sessions, time.time(), beats)
         if refusal is not None:
@@ -1038,6 +983,11 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         # piece order of `STAGES[stage]["pieces"]` settles before the probe service is placed.
         agent_host = serving_host
 
+        # The interpreter the inject run's service check runs under, looked up here with every
+        # piece's own, so a missing venvs entry refuses the launch before its start row is
+        # appended and before any session starts.
+        check_python = _interpreter_for("probe") if stage == "inject" else None
+
         placed: list[dict] = []
         for p in piece_plan:
             kind, idx, local_i = p["kind"], p["index"], p["local_index"]
@@ -1055,6 +1005,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                                 "session": session, "pid": None, "log": log, "port": None,
                                 "endpoint_file": None,
                                 "agent_replica": local_i % replicas if replicas else 0,
+                                "beat_launch": registry.next_beat_launch(run_dir, idx),
                                 "venv": venv, "cmd": cmd, "run_dir": run_dir_str})
 
             elif kind == "train":
@@ -1070,6 +1021,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 placed.append({"index": idx, "kind": "train", "host": host, "gpus": str(gpu_id),
                                 "session": session, "pid": None, "log": log, "port": None,
                                 "endpoint_file": None, "agent_replica": None,
+                                "beat_launch": registry.next_beat_launch(run_dir, idx),
                                 "venv": venv, "cmd": cmd, "run_dir": run_dir_str})
 
             elif kind == "service_agent":
@@ -1189,7 +1141,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         if base_url is None:
             return failed("service_check")
         rc = subprocess.run(
-            [_interpreter_for("probe"), "-m", "models.probe_models.service", "check",
+            [check_python, "-m", "models.probe_models.service", "check",
              "--base-url", base_url, "--run-dir", run_dir_str],
             cwd=str(_repo_root())).returncode
         if rc != 0:
@@ -1288,6 +1240,10 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     python = _interpreter_for(target.get("venv"))
     new_cmd = piece_command(python, module, old_run_dir, piece_i, piece_n, new_gpus, log)
     updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None, cmd=new_cmd)
+    if kind in ("loop", "train"):
+        # The heartbeat file the restarted incarnation opens, recorded before its session starts
+        # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
+        updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, piece)
 
     # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
     # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
@@ -1306,9 +1262,12 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         "status": "launching",
     })
 
-    if not _start_tmux(new_host, session, new_cmd):
-        sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
-
+    # meta.json carries the new entry (its `beat_launch` included) before the
+    # session starts, the order launch() uses, so no reader sees the earlier
+    # incarnation's heartbeat file under the new session.
     launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[piece], cmd=new_cmd)
     registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
+
+    if not _start_tmux(new_host, session, new_cmd):
+        sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
     return [updated_piece]

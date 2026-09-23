@@ -44,7 +44,8 @@ H200). A card's live occupancy is never read from this file.
 Free cards per host, over `constants/path_outputs.yaml`'s `hosts:` list, probed now and
 never cached. A card is busy when `nvidia-smi` shows a compute process on it, or when it
 belongs to a piece of a run that has a start row with no finish row and either a live
-session or a start row younger than the launch timeout (contracts 2.5). Every probe is
+session, or a start row younger than the launch timeout while the piece's verdict is not
+`done` (contracts 2.5; a finished run's ended services hold no card). Every probe is
 fail-closed: a failed or timed-out ssh counts as busy, so an unclear probe never frees a
 card (contracts 3.4, 6.3).
 
@@ -186,7 +187,13 @@ piece. A `service` piece is judged by its session, its port and its run's work p
 instead of by its beats, and never reads `slowed`: while its session is alive it reads
 `healthy`, `warming up` or `suspected stall` by its port; once its session has ended it
 reads `done` when every loop, train or cpu piece of its run reads `done`, and `dead` when
-any of that work is still owed. A loop piece of a `sample` or `inject` run that ends
+any of that work is still owed. An agent service attached to another run's server (its
+`service_agent_<replica>.json` names that run in `attached_to`) ends its own session once
+it has written that file, so it is judged by its port instead: `healthy` while the port
+answers, `dead` when it stops answering while work is owed, `done` once the work is done.
+A piece's beats are read from the heartbeat file of the incarnation `meta.json` records,
+so a relaunched, refired or retried piece reads `warming up` until its new process
+writes, never `done` on an earlier incarnation's file. A loop piece of a `sample` or `inject` run that ends
 with every requested record finished ends the run's service pieces, so a finished run
 shows those service pieces as `done` before the wrap-up walk of Phase 6a writes its
 finish row. While another live run is attached to this run's server (a
@@ -194,8 +201,9 @@ finish row. While another live run is attached to this run's server (a
 teardown and the wrap-up walk's own teardown end none of this run's service pieces, the
 probe service included: they keep reading `healthy`, and once the finish row is written
 the run's line carries `orphan`. The `orphan` flag on a run with a finish row means one
-of its service sessions is still alive, either for that reason or because a teardown
-failed (contracts 8.6). A live tmux session
+of its service sessions counts as alive: it is still running, either for that reason or
+because a teardown failed, or the `tmux ls` probe of its host did not answer, which counts
+every session on that host as alive (fail-closed, contracts 3.4 and 8.6). A live tmux session
 of this repo that matches no row gets a line of its own, with no `run_id` and the
 verdict `orphan`.
 
@@ -251,8 +259,9 @@ group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`)
 ## Phase 6b — Interruption
 
 - `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py kill <workflow>
-  <setting> <stage> [--debug]` ends every piece of the run, service pieces included,
-  writes the `killed` finish row and refuses while another live run is attached to this
+  <setting> <stage> [--debug]` ends every piece of the run, service pieces included (a
+  `cpu` piece is signalled by its pid only while the run is open, because a closed run's
+  pid may since name an unrelated process), writes the `killed` finish row and refuses while another live run is attached to this
   run's service (contracts 8.6).
 - A dead piece: `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py refire
   <workflow> <setting> <stage> --piece i [--debug]` — a liveness refusal first, then claims

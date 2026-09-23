@@ -2020,7 +2020,8 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     open_rows = [r for r in registry.open_runs() if r.get("run_id") == run_id]
     if open_rows:
         meta_by_run = {run_id: _read_json(run_dir / "meta.json") or {}}
-        beats = {run_id: launch.read_beats_for_run(run_dir)}
+        beats = {run_id: launch.read_beats_for_run(
+            run_dir, meta_by_run[run_id].get("pieces") or open_rows[0].get("pieces") or [])}
         sessions = registry.live_sessions()
         refusal = launch.gate_open_row(open_rows, meta_by_run, sessions, time.time(), beats)
         if refusal is not None:
@@ -2029,12 +2030,15 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     python = _venvs_config()["probe"]
     module = entry["program"]
     argv_cmd = [python, "-m", module, "--run-dir", str(run_dir)]
+    # The heartbeat file the process is about to open, read before it starts
+    # (registry.current_beats), so no verdict reads a previous computation's rows as its own.
+    beat_launch = registry.next_beat_launch(run_dir, 0)
     proc = subprocess.Popen(argv_cmd, cwd=str(ROOT))
     piece_entry = {
         "index": 0, "kind": "cpu", "host": _this_host(), "gpus": "",
         "session": None, "pid": proc.pid, "log": None, "port": None,
-        "endpoint_file": None, "agent_replica": None, "venv": "probe",
-        "cmd": " ".join(argv_cmd),
+        "endpoint_file": None, "agent_replica": None, "beat_launch": beat_launch,
+        "venv": "probe", "cmd": " ".join(argv_cmd),
     }
     start_row = {
         "ev": "start", "t": _now(), "run_id": run_id, "stage": stage, "key": key,

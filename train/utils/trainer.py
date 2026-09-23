@@ -490,11 +490,12 @@ def run(run_dir: Path, method) -> None:
     # The prediction pass is the longest phase of a generator run, and 8.4 asks every piece for an
     # emit(0, total, unit) before its main loop: the predict-only path of 2.4 skips the step loop
     # entirely, so without this beat it writes nothing until finish() and registry.judge reads it
-    # as a suspected stall. `total` counts the splits plus the one frame their rows are written
-    # into, so the last beat of this loop reads done < total and only finish() makes the piece
-    # done (8.5's first rule); the unit stays 8.4's word for the train stage.
+    # as a suspected stall. `total` is the number of prediction splits, and a beat lands after each
+    # split but the last; the beat that reaches the total lands once predictions.parquet is on
+    # disk, so a finished train reads n/n. Only the finish() row makes the piece done (8.5's first
+    # rule), whatever the count reads; the unit stays 8.4's word for the train stage.
     predict_splits = list(cfg.train.predict.splits)
-    predict_total = len(predict_splits) + 1
+    predict_total = len(predict_splits)
     hb.emit(0, predict_total, "step")
     pred_rows: list[dict] = []
     for i, split in enumerate(predict_splits):
@@ -503,7 +504,9 @@ def run(run_dir: Path, method) -> None:
             split_df = split_df.head(cfg.train.predict.cap)
         with _bf16_forward(probe):
             pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg))
-        hb.emit(i + 1, predict_total, "step")
+        splits_done = i + 1
+        if splits_done < predict_total:
+            hb.emit(splits_done, predict_total, "step")
 
     if pred_rows:
         pred_df = pl.DataFrame(pred_rows, strict=False)
@@ -513,6 +516,7 @@ def run(run_dir: Path, method) -> None:
     else:
         pred_df = df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]).head(0)
     probe_output.write(run_dir / "predictions.parquet", pred_df)
+    hb.emit(predict_total, predict_total, "step")
 
     registry.write_done(
         run_dir, stage="train", key=cfg._key, commit=cfg._commit,

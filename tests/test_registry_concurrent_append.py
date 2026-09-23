@@ -83,12 +83,14 @@ def _load_registry():
     return registry
 
 
-def _write_beats(run_dir: Path, piece: int, beats: list[dict], last_ts: float) -> None:
-    """One heartbeat file, one second between beats, the last one at `last_ts`."""
+def _write_beats(run_dir: Path, piece: int, beats: list[dict], last_ts: float,
+                 launch: int = 0) -> None:
+    """One heartbeat file, `heartbeat/<piece>-<launch>.jsonl`, one second between beats, the last
+    one at `last_ts`."""
     hb_dir = run_dir / "heartbeat"
     hb_dir.mkdir(parents=True, exist_ok=True)
     first_ts = last_ts - (len(beats) - 1)
-    with open(hb_dir / f"{piece}-0.jsonl", "w") as f:
+    with open(hb_dir / f"{piece}-{launch}.jsonl", "w") as f:
         for i, beat in enumerate(beats):
             f.write(json.dumps({"unit": "task", "ts": first_ts + i, **beat}) + "\n")
 
@@ -142,6 +144,38 @@ class PieceVerdictTest(unittest.TestCase):
                      self.now_ts - 5)
         self.assertEqual(self._verdicts(self._sample_pieces(), {"s-0"}),
                          [("healthy", False), ("dead", True)])
+
+    def test_relaunched_piece_reads_only_its_own_incarnation(self):
+        # The earlier incarnation finished; the relaunch recorded beat_launch 1 and its process
+        # has not opened heartbeat/0-1.jsonl yet, so the piece is warming up, or dead once its
+        # session is gone, and never done on the earlier file's finish row.
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 3}, {"done": 3, "total": 3},
+                                       {"done": 3, "total": 3, "status": "done"}],
+                     self.now_ts - 900)
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0",
+                 "beat_launch": 1}
+        self.assertEqual(self._verdicts([piece], {"t-0"})[0], ("warming up", False))
+        self.assertEqual(self._verdicts([piece], set())[0], ("dead", True))
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 3}], self.now_ts - 5, launch=1)
+        self.assertEqual(self._verdicts([piece], {"t-0"})[0], ("healthy", False))
+
+    def test_attached_service_is_judged_by_its_port_and_its_runs_work(self):
+        # An attached agent service's own session ends once its endpoint file is written (7.4),
+        # so a gone session is its normal state: the port and its run's work decide.
+        (self.run_dir / "service_agent_0.json").write_text(
+            json.dumps({"kind": "agent", "attached_to": "sample-000000000000"}))
+        pieces = [{"index": 0, "kind": "loop", "host": "tokyo105", "session": "s-0"},
+                  {"index": 1, "kind": "service", "host": "tokyo108", "session": "s-1",
+                   "endpoint_file": "service_agent_0.json"}]
+        judged = self.registry._judge_pieces(pieces, self.run_dir, {"s-0"}, self.T, self.now_ts)
+        self.assertTrue(judged[1][0]["attached"])
+        self.assertEqual(self.registry.judge_service(dict(judged[1][0], port_ok=True)),
+                         ("healthy", False))
+        self.assertEqual(self.registry.judge_service(dict(judged[1][0], port_ok=False)),
+                         ("dead", True))
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 2},
+                                       {"done": 2, "total": 2, "status": "done"}], self.now_ts - 5)
+        self.assertEqual(self._verdicts(pieces, set()), [("done", False), ("done", False)])
 
 
 if __name__ == "__main__":

@@ -317,14 +317,14 @@ eval/method_table.py — the backbone x method table from the registry; one grou
 jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
-  reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories' meta.json, done.json and heartbeat, ssh, tmux, nvidia-smi
+  reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, ssh, tmux, nvidia-smi
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
 jobs/launch.py — launch and refire the tmux pieces of a sample, inject or train run: the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
   imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
   used by: run.py, agent/run_tasks.py (teardown_services)
-  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host and the hosts list), models/table.yaml (the serving block), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and heartbeat/<piece>-<launch>.jsonl files (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git
+  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host and the hosts list), models/table.yaml (the serving block), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and, through jobs/registry.current_beats, the heartbeat/<piece>-<launch>.jsonl file of the incarnation each piece entry's beat_launch names (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git
   writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
   venv:    probe
 
@@ -334,7 +334,7 @@ jobs/RESULTS.md — rendered from runs.jsonl by registry.py; never edited by han
 
 ### tests/
 
-tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON; and 8.5's piece verdicts over heartbeat files in a temporary run directory: a train piece is `done` only on its finish row, a service gone once its run's work pieces are done is `done`, a service gone while a loop piece works is `dead`) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
+tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON; and 8.5's piece verdicts over heartbeat files in a temporary run directory: a train piece is `done` only on its finish row, a service gone once its run's work pieces are done is `done`, a service gone while a loop piece works is `dead`, a relaunched piece reads only the heartbeat file of the incarnation its entry's `beat_launch` names, and an attached agent service is judged by its port and its run's work, not by its ended session) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
 
 ## 3. The extension recipes
 
