@@ -1,4 +1,5 @@
-"""Eight processes appending to jobs/runs.jsonl at once all land, and every line parses."""
+"""Eight processes appending to jobs/runs.jsonl at once all land, and every line parses; and the
+piece verdicts of 8.5 read a finished run as done and a run that lost a piece as dead."""
 # venv: probe
 from __future__ import annotations
 
@@ -70,6 +71,77 @@ class ConcurrentAppendTest(unittest.TestCase):
             self.assertEqual(len(lines), N_PROCS * N_ROWS)
             for line in lines:
                 json.loads(line)
+
+
+def _load_registry():
+    """The real jobs/registry.py under a name of its own. The verdict functions read heartbeat
+    files and a session set and write nothing, so this never touches jobs/runs.jsonl."""
+    spec = importlib.util.spec_from_file_location(
+        "registry_verdicts_under_test", REPO_ROOT / "jobs" / "registry.py")
+    registry = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(registry)
+    return registry
+
+
+def _write_beats(run_dir: Path, piece: int, beats: list[dict], last_ts: float) -> None:
+    """One heartbeat file, one second between beats, the last one at `last_ts`."""
+    hb_dir = run_dir / "heartbeat"
+    hb_dir.mkdir(parents=True, exist_ok=True)
+    first_ts = last_ts - (len(beats) - 1)
+    with open(hb_dir / f"{piece}-0.jsonl", "w") as f:
+        for i, beat in enumerate(beats):
+            f.write(json.dumps({"unit": "task", "ts": first_ts + i, **beat}) + "\n")
+
+
+class PieceVerdictTest(unittest.TestCase):
+    """8.5's verdicts over one run's pieces, through `_judge_pieces`, the derivation `ls()` and
+    `sync()` both read. Sessions are a plain set, so no host is probed."""
+
+    T = "2026-09-17 12:00"
+
+    def setUp(self):
+        self.registry = _load_registry()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.run_dir = Path(self._tmp.name)
+        self.now_ts = self.registry._parse_t(self.T) + 600
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _verdicts(self, pieces, sessions):
+        return [(v, esc) for _pv, v, esc in self.registry._judge_pieces(
+            pieces, self.run_dir, set(sessions), self.T, self.now_ts)]
+
+    def _sample_pieces(self):
+        return [
+            {"index": 0, "kind": "loop", "host": "tokyo105", "session": "s-0"},
+            {"index": 1, "kind": "service", "host": "tokyo108", "session": "s-1"},
+        ]
+
+    def test_train_piece_at_step_total_without_finish_row_is_not_done(self):
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 3}, {"done": 3, "total": 3}],
+                     self.now_ts - 5)
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0"}
+        self.assertEqual(self._verdicts([piece], {"t-0"})[0][0], "healthy")
+        self.assertEqual(self._verdicts([piece], set())[0], ("dead", True))
+
+    def test_train_piece_with_finish_row_is_done(self):
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 3}, {"done": 2, "total": 3},
+                                       {"done": 2, "total": 3, "status": "done"}], self.now_ts - 5)
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0"}
+        self.assertEqual(self._verdicts([piece], set())[0], ("done", False))
+
+    def test_service_ended_after_its_loop_pieces_finished_is_done(self):
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 2}, {"done": 2, "total": 2},
+                                       {"done": 2, "total": 2, "status": "done"}], self.now_ts - 5)
+        self.assertEqual(self._verdicts(self._sample_pieces(), set()),
+                         [("done", False), ("done", False)])
+
+    def test_service_gone_while_its_loop_piece_works_is_dead(self):
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 2}, {"done": 1, "total": 2}],
+                     self.now_ts - 5)
+        self.assertEqual(self._verdicts(self._sample_pieces(), {"s-0"}),
+                         [("healthy", False), ("dead", True)])
 
 
 if __name__ == "__main__":

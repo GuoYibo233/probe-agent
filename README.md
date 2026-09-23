@@ -334,7 +334,7 @@ jobs/RESULTS.md — rendered from runs.jsonl by registry.py; never edited by han
 
 ### tests/
 
-tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
+tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON; and 8.5's piece verdicts over heartbeat files in a temporary run directory: a train piece is `done` only on its finish row, a service gone once its run's work pieces are done is `done`, a service gone while a loop piece works is `dead`) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
 
 ## 3. The extension recipes
 

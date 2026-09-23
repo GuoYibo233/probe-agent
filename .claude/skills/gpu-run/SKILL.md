@@ -138,7 +138,7 @@ setting's walk there**, printing the monitoring command. One call over several s
 or over a sweep parent, therefore leaves exactly one launched run per child.
 
 The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
-failed launch takes one of four shapes. `jobs/launch.py` refuses before the start row is
+failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is
 written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards —
 and each of those refusals prints its own `jobs/launch.py: ...` line and exits 1, leaving
 no registry row, nothing in Phase 5's `ls` and no piece log; that printed line is the
@@ -149,15 +149,14 @@ train pieces alike. The `<outcome>` word names which shape it was. The second
 shape is `alive_check`, a piece that started and then failed its alive check; a probe
 service that never writes its endpoint file fails that same check, because a `service`
 piece passes its alive check only when its endpoint file exists **and** its port answers.
-The third shape is `service_check`, an `inject` run whose probe-service `check` client
-fails its gate, and its `check: ...` lines stand above that one line. Read Phase 5's `ls`
-line for the `launch_failed` row, and `<run_dir>/log/<piece index>.txt` for why the piece
-died — on both paths the piece logs are the whole diagnosis. The fourth shape is an `inject` launch whose
-probe-service endpoint file exists and whose port answers while the file never carries a
-`base_url`: the start row is already written and the service pieces are already up, so
-`jobs/launch.py: <path> did not appear within launch_timeout_s` exits 1 and leaves an
-open `launching` row in Phase 5's `ls`, the piece logs under `<run_dir>/log/`, and the
-service pieces alive on their cards — end them with Phase 6b's `kill`.
+The third shape is `service_check`, an `inject` run whose probe service fails its gate
+in one of two ways. Either the probe-service endpoint file exists and its port answers
+while the file carries no `base_url` within `launch_timeout_s`, and the line
+`jobs/launch.py: <path> carried no base_url within launch_timeout_s` stands above that one
+line; or the probe-service `check` client fails, and its `check: ...` lines stand above
+that one line. Read Phase 5's `ls` line for the `launch_failed` row, and
+`<run_dir>/log/<piece index>.txt` for why the piece died — on both paths the piece logs
+are the whole diagnosis.
 
 A GPU stage (`sample`, `train`, `inject`) is never waited on. A CPU stage (`build`,
 `eval`, `score`) runs inline, in place, with no tmux and no ssh, and the walk goes
@@ -183,10 +182,22 @@ dead piece reads `0:dead(escalated)`), progress as
 `done/total <unit>` and the recent rate, the heartbeat age, sessions and cards, and a
 flag column: `edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`,
 `orphan` (contracts 8.6). That priority order is the rule for a loop, train or cpu
-piece; a `service` piece is judged by its port instead of by its beats, so it reads
-`dead`, `healthy`, `suspected stall` or `warming up` and never `done` or `slowed`. A
-live tmux session of this repo that matches no row gets a line of its own, with no
-`run_id` and the verdict `orphan`.
+piece. A `service` piece is judged by its session, its port and its run's work pieces
+instead of by its beats, and never reads `slowed`: while its session is alive it reads
+`healthy`, `warming up` or `suspected stall` by its port; once its session has ended it
+reads `done` when every loop, train or cpu piece of its run reads `done`, and `dead` when
+any of that work is still owed. A loop piece of a `sample` or `inject` run that ends
+with every requested record finished ends the run's service pieces, so a finished run
+shows those service pieces as `done` before the wrap-up walk of Phase 6a writes its
+finish row. While another live run is attached to this run's server (a
+`service_<kind>_<replica>.json` of that run names this run in `attached_to`), that
+teardown and the wrap-up walk's own teardown end none of this run's service pieces, the
+probe service included: they keep reading `healthy`, and once the finish row is written
+the run's line carries `orphan`. The `orphan` flag on a run with a finish row means one
+of its service sessions is still alive, either for that reason or because a teardown
+failed (contracts 8.6). A live tmux session
+of this repo that matches no row gets a line of its own, with no `run_id` and the
+verdict `orphan`.
 
 An `edited` run is one whose named setting's current key no longer matches this
 directory — an edited setting field, or a `VERSION` bump. When the key moved because a

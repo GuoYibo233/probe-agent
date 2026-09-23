@@ -670,7 +670,9 @@ def cards_busy() -> dict[str, set[int]]:
                     token = token.strip()
                     if token.isdigit():
                         ids.add(int(token))
-                busy.setdefault(host_name, set()).update(ids)
+                # Keyed by the `hosts:` entry's own name, the key the probe above and `free()`
+                # use, so a piece recorded under a host's alias reserves that host's cards.
+                busy.setdefault(_canonical_host(host_name, cfg), set()).update(ids)
     return busy
 
 
@@ -722,11 +724,23 @@ def rates(first_beat: dict | None, recent_beats: list[dict]) -> tuple[float | No
     return avg, recent
 
 
+# TODO(gyb, 2026-09-23): the contracts still state the old verdict rules in two rows of 8.5, both
+# the owner's to update: the `judge` row calls a piece `done` on `status == done` or
+# `done >= total`, where `judge` below reads only the `status: "done"` finish row; and the
+# `judge_service` row calls a service `dead` whenever its session is gone, where `judge_service`
+# below calls it `done` when its session is gone and every work piece of its run is `done`.
 def judge(piece: dict) -> tuple[str, bool]:
     """`done, dead, suspected stall, warming up, slowed, healthy`, in that
-    priority order, for a `loop`, `train` or `cpu` piece."""
-    done, total = piece.get("done"), piece.get("total")
-    if piece.get("status") == "done" or (done is not None and total and done >= total):
+    priority order, for a `loop`, `train` or `cpu` piece.
+
+    A piece is `done` when its newest heartbeat file ends with the `status:
+    "done"` row `Heartbeat.finish` writes after the piece's last step (8.4),
+    and by nothing else. A beat's `done` reaching its `total` is not that
+    signal: a train piece's step beats reach the step total before its last
+    validation and its prediction pass, and a claiming piece's total is the
+    whole request (8.4), so a piece that dies after that beat and before its
+    own finish row is `dead`, and `sync` and `launch_failed` can close it."""
+    if piece.get("status") == "done":
         return "done", False
     if piece.get("alive") is False:
         return "dead", True
@@ -744,18 +758,21 @@ def judge(piece: dict) -> tuple[str, bool]:
     return "healthy", False
 
 
-# TODO(gyb, 2026-09-22): two verdicts that read wrong on a healthy run. (1) The last loop piece
-# now ends its run's services once every record is finished (agent/run_tasks.py), and the run
-# stays open until the wrap-up walk writes its finish row, so `run.py ls` shows the service
-# pieces of a finished run as `dead(escalated)` in between; its cards also stay busy in
-# `run.py free` until that finish row or the launch timeout. (2) A train piece is judged `done`
-# once its beat reaches the step total while its prediction pass is still running (seen on the
-# 2026-09-22 debug walk: the wrap-up walk answered "has a live piece" for cgen and cparam), and
-# the prediction pass's own beats end at 2/3 on a finished run.
 def judge_service(piece: dict) -> tuple[str, bool]:
-    """`dead, healthy, warming up, suspected stall` for a `service` piece,
-    over its start-row time, its session liveness and one port probe."""
+    """`done, dead, healthy, warming up, suspected stall` for a `service`
+    piece, over its start-row time, its session liveness, one port probe and
+    `work_done`, which `_judge_pieces` sets when the run has work pieces and
+    `judge` calls every one of them `done`.
+
+    A service exists to serve its run's work pieces, and the last loop piece
+    ends its run's services once every requested record is finished
+    (`agent/run_tasks.py`, 2.3), before the wrap-up walk closes the run. So a
+    service whose session is gone is `done` when its run's work is done, and
+    `dead` while that work is still owed: the fail-closed liveness rule for a
+    service that dies during a run is unchanged."""
     if piece.get("alive") is False:
+        if piece.get("work_done"):
+            return "done", False
         return "dead", True
     if piece.get("port_ok"):
         return "healthy", False
@@ -846,6 +863,27 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
         "avg_rate": avg_rate,
         "recent_rate": recent_rate,
     }
+
+
+def _judge_pieces(pieces: list[dict], run_dir: Path, sessions: set,
+                  launch_t: str, now_ts: float) -> list[tuple[dict, str, bool]]:
+    """`(verdict dict, verdict, escalated)` per piece of one run, in the
+    pieces' own order: the one derivation `ls()` and `sync()` both read. The
+    work pieces (`loop`, `train`, `cpu`) are judged first, because a service
+    piece's verdict depends on whether all of them are `done`
+    (`judge_service`)."""
+    pvs = [_piece_verdict_dict(piece, run_dir, sessions, launch_t, now_ts) for piece in pieces]
+    work = {i: judge(pv) for i, pv in enumerate(pvs) if pv["kind"] != "service"}
+    work_done = bool(work) and all(v == "done" for v, _esc in work.values())
+    out = []
+    for i, pv in enumerate(pvs):
+        if pv["kind"] == "service":
+            pv["work_done"] = work_done
+            verdict, escalated = judge_service(pv)
+        else:
+            verdict, escalated = work[i]
+        out.append((pv, verdict, escalated))
+    return out
 
 
 _SESSION_NAME_RE = re.compile(r"^.+-[0-9a-f]{12}-\d+$")
@@ -939,11 +977,12 @@ def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: d
     beat_ages: list[float] = []
     avg_rates: list[float] = []
     recent_rates: list[float] = []
-    for piece in pieces:
-        pv = _piece_verdict_dict(piece, run_dir, sessions, start["t"], now_ts)
-        verdict, escalated = (judge_service(pv) if pv["kind"] == "service"
-                              else judge(pv))
-        if pv["kind"] != "service":
+    service_alive = False
+    judged = _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)
+    for piece, (pv, verdict, escalated) in zip(pieces, judged):
+        if pv["kind"] == "service":
+            service_alive = service_alive or pv["alive"]
+        else:
             sum_done += pv.get("done") or 0
             sum_total += pv.get("total") or 0
             unit = pv.get("unit") or unit
@@ -972,10 +1011,12 @@ def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: d
     if finish is not None:
         status = finish.get("status")
         # 8.6's second orphan case: a service piece still running after its
-        # owner run finished. The first case (a live session matching no row
-        # at all) has no owner run to attach to and is flagged instead by
-        # ls()'s own synthetic rows, built from _known_sessions().
-        orphan = any(p["kind"] == "service" and p["verdict"] != "dead" for p in piece_rows)
+        # owner run finished, read from the session's liveness (fail-closed,
+        # 3.4), since a service that ended with its run's work reads `done`.
+        # The first case (a live session matching no row at all) has no owner
+        # run to attach to and is flagged instead by ls()'s own synthetic
+        # rows, built from _known_sessions().
+        orphan = service_alive
     else:
         # The stored word, whatever it is: a launch that never came up is closed by the
         # `launch_failed` finish row `run.py ls` writes from `launch_failed()` before it
@@ -1160,11 +1201,8 @@ def sync() -> list[str]:
             continue
         sessions = live_sessions()
         now_ts = time.time()
-        verdicts = []
-        for piece in pieces:
-            pv = _piece_verdict_dict(piece, run_dir, sessions, start["t"], now_ts)
-            v = judge_service(pv)[0] if pv["kind"] == "service" else judge(pv)[0]
-            verdicts.append(v)
+        verdicts = [verdict for _pv, verdict, _esc
+                    in _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)]
         # The same rule `run.py ls` closes such a run by, so whichever command reaches it
         # first writes the same word.
         if launch_failed(start["t"], verdicts):
