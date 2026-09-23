@@ -931,7 +931,12 @@ def _ensure_log_dir(run_dir: Path) -> None:
     (run_dir / "log").mkdir(parents=True, exist_ok=True)
 
 
-def _wait_for_endpoint(run_dir: Path, piece: dict) -> str:
+def _wait_for_endpoint(run_dir: Path, piece: dict) -> str | None:
+    """The `base_url` of a service piece's endpoint file (7.4), polled for at
+    most `launch_timeout_s`; `None` when no readable document carrying one
+    appeared in that window. `launch()` treats `None` as a failed service
+    check, so this exit ends the sessions the launch started like every other
+    failure (8.1)."""
     path = run_dir / piece["endpoint_file"]
     deadline = time.time() + registry.DEFAULTS["launch_timeout_s"]
     while time.time() < deadline:
@@ -939,7 +944,8 @@ def _wait_for_endpoint(run_dir: Path, piece: dict) -> str:
         if doc and doc.get("base_url"):
             return doc["base_url"]
         time.sleep(2)
-    sys.exit(f"jobs/launch.py: {path} did not appear within launch_timeout_s")
+    print(f"jobs/launch.py: {path} carried no base_url within launch_timeout_s", file=sys.stderr)
+    return None
 
 
 def _launch_entry(git, *, host, cards, pieces, cmd) -> dict:
@@ -1180,6 +1186,8 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
     if stage == "inject":
         probe_piece = next(p for p in service_pieces if p["endpoint_file"] == "service_probe_0.json")
         base_url = _wait_for_endpoint(run_dir, probe_piece)
+        if base_url is None:
+            return failed("service_check")
         rc = subprocess.run(
             [_interpreter_for("probe"), "-m", "models.probe_models.service", "check",
              "--base-url", base_url, "--run-dir", run_dir_str],
