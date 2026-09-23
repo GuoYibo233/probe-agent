@@ -524,7 +524,15 @@ def run(run_dir: Path, method) -> None:
 
 
 def _run_alignment_gate(run_dir: Path, probe, method, train_df: pl.DataFrame, cfg) -> None:
-    """2.5 / 2.6: compare the packed loss against the plain loss over the first events_per_mb * accum rows of the train split, before the first optimizer step. torch.backends.cuda.matmul.allow_tf32 is held False only for the duration of this comparison, and the probe is left in eval mode -- run() is the one place that puts it into training mode, right before the step loop, so that the paths which skip this gate get there too."""
+    """2.5 / 2.6: compare the packed loss against the plain loss over the first events_per_mb * accum rows of the train split, before the first optimizer step. torch.backends.cuda.matmul.allow_tf32 is held False only for the duration of this comparison, and the probe is left in eval mode -- run() is the one place that puts it into training mode, right before the step loop, so that the paths which skip this gate get there too.
+
+    The gate passes when it compared at least one row and the two per-row losses agree within
+    tol. The compared rows are the rows method.batches() kept, read off the batches' own
+    `example_id` lists (one entry per scored row in every method); reference_loss scores the
+    same rows by the same drop rules (errata 2.5, entry (a) of the wave-5 post-merge review).
+    A slice whose every event a method drops (over train.max_len, or, for a generator, with no
+    target it can train on) yields no batch and compares no row, and such a gate has verified
+    nothing, so it fails."""
     n = cfg.train.events_per_mb * cfg.train.accum
     slice_df = train_df.sort("example_id").head(n)
 
@@ -533,8 +541,11 @@ def _run_alignment_gate(run_dir: Path, probe, method, train_df: pl.DataFrame, cf
     torch.backends.cuda.matmul.allow_tf32 = False
     try:
         with torch.no_grad():
-            packed = sum(float(method.loss(probe, b))
-                         for b in method.batches(slice_df, probe.tokenizer, cfg))
+            packed = 0.0
+            n_compared = 0
+            for b in method.batches(slice_df, probe.tokenizer, cfg):
+                packed += float(method.loss(probe, b))
+                n_compared += len(b["example_id"])
             plain = float(method.reference_loss(probe, slice_df))
     finally:
         torch.backends.cuda.matmul.allow_tf32 = prev_tf32
@@ -544,10 +555,26 @@ def _run_alignment_gate(run_dir: Path, probe, method, train_df: pl.DataFrame, cf
     plain_n = plain / max(n_rows, 1)
     diff = abs(packed_n - plain_n)
     tol = 1e-4
-    result = {"PASS": diff <= tol, "packed": packed_n, "plain": plain_n, "diff": diff,
-              "tol": tol, "n_rows": n_rows, "method": method.__name__}
+    compared_a_row = n_compared >= 1
+    agrees = diff <= tol
+    result = {"PASS": compared_a_row and agrees, "packed": packed_n, "plain": plain_n,
+              "diff": diff, "tol": tol, "n_rows": n_rows, "n_compared": n_compared,
+              "method": method.__name__}
     _atomic_write_json(run_dir / "align_check.json", result)
-    if not result["PASS"]:
+    # The method file runs as a program, so method.__name__ is "__main__"; the frozen setting's
+    # probe.method is the method's own name and the stem of its file.
+    method_file = f"train/methods/{cfg.probe.method}.py"
+    if not compared_a_row:
+        n_events = slice_df["event_id"].n_unique()
+        n_overlong = _dropped_overlong_events(slice_df, probe.tokenizer, cfg.train.max_len)
+        raise SystemExit(
+            f"{run_dir}/align_check.json: the alignment gate compared no row, because "
+            f"batches() in {method_file} dropped every one of the {n_events} events in the gate "
+            f"slice (the first {n} train rows by example_id): {n_overlong} of the {n_events} "
+            f"tokenize past train.max_len={cfg.train.max_len}, which every method drops, and a "
+            f"generator method also drops an event with no target it can train on. A gate that "
+            f"compares no row verifies nothing about the packing.")
+    if not agrees:
         raise SystemExit(
             f"{run_dir}/align_check.json: packed loss {packed_n} and plain loss {plain_n} differ "
-            f"by {diff} > tol {tol}; the packing in {method.__name__}.batches has a bug")
+            f"by {diff} > tol {tol}; the packing in batches() of {method_file} has a bug")
