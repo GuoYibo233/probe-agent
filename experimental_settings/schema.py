@@ -459,6 +459,8 @@ def version_history(rel_path: str) -> dict:
 #      per file, logic unchanged / logic changed (which stages, which setting values) / unsure
 #      (treated as changed); the main conversation holds the commit's VERSION, `stale` and
 #      `when` to that verdict and writes the verdict into the `Version-check:` line.
+# Owner ruling 2026-09-24 (ruling 17): the plan above is not built until a second branch exists;
+# this TODO stays until then.
 def _stale_at(table: dict, entry_version: int, stage: str) -> bool:
     """Whether the bump to `entry_version` made `stage`'s existing outputs unusable (errata "3.3 / 8.6")."""
     entry = table.get(entry_version)
