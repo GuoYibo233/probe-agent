@@ -733,7 +733,9 @@ def cmd_refire(rest: list[str]) -> int:
         # freeze -- and re-freezes _commit to the commit this launch cleared; it reuses whatever
         # was already resolved (an inject run's probe_temperature) rather than erasing it.
         schema.freeze(cfg, stage, run_dir, existing._resolved, git["commit"])
-        pieces = launch.refire(run_dir, git, piece, cards)
+    # launch.refire takes its own hold, from the liveness test through the tmux session start
+    # (its docstring says why the session start is inside it), so it is called after this one.
+    pieces = launch.refire(run_dir, git, piece, cards)
     print(f"run.py refire: restarted {pieces}")
     return 0
 

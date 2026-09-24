@@ -52,9 +52,11 @@ by hand). **Note that this machine's shell only has `python3`, not
    the probe service's `check` client on an `inject` run once its port
    answers, start the loop pieces, and stop there, printing
    `run.py: launched <run_id>; monitor with ...`. You never need to assemble
-   any of this yourself or build a tmux template by hand: the start row,
-   `meta.json` and `settings.yaml` are all written by the launcher inside one
-   lock hold. Several settings, or a sweep parent's own children, may be
+   any of this yourself or build a tmux template by hand: `run.py` writes
+   `settings.yaml` and the first `meta.json` under one hold of
+   `jobs/runs.jsonl.lock`, and the launcher writes the start row and the
+   second `meta.json` rewrite under a second hold, released before any tmux
+   session starts. Several settings, or a sweep parent's own children, may be
    named in one call; each child gets its own key, run directory and
    registry row. **It carries a hard dirty-tree gate**: a non-empty
    `git status --porcelain` is refused (`--allow-dirty` is the escape hatch,

@@ -10,7 +10,7 @@ description: >-
   commit, or interrupt with `kill` / `refire` / `retry`. Invoke whenever Dungeon♂Master
   says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
   triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 1.1.1
+version: 1.1.2
 ---
 
 # gpu-run — new1 GPU job full lifecycle
@@ -146,13 +146,20 @@ the stem of a file under `experimental_settings/` (`baseline`, `train_probe`, `i
 
 It walks the stage list of each named setting, and of each child a `sweep:` expands to,
 one after another, each child with its own key, its own run directory and its own
-registry row. For each: it freezes `settings.yaml` / `settings_diff.yaml`, takes
-`jobs/runs.jsonl.lock` across the git gate, the launch gate, the attach test, the card
-reservation, the port assignment and the start-row append (contracts 8.1, 8.6), starts
-the service pieces, runs the probe service's `check` client for an `inject` run once its
-port answers (contracts 2.3, 7.2), then starts the loop pieces — and **stops that
-setting's walk there**, printing the monitoring command. One call over several settings,
-or over a sweep parent, therefore leaves exactly one launched run per child.
+registry row. For each: it takes `jobs/runs.jsonl.lock` to check the git state, freeze
+`settings.yaml` / `settings_diff.yaml` and write `meta.json`, and releases it; it then
+takes the lock again across the launch gate, the attach test, the card reservation, the
+port assignment, the start-row append and a second `meta.json` rewrite, and releases it
+once that rewrite is on disk (contracts 8.1, 8.6). With the lock released, it starts the
+service pieces and runs their alive check, runs the probe service's `check` client for an
+`inject` run once its port answers (contracts 2.3, 7.2), then starts the loop pieces and
+runs their alive check. When every piece is up it **stops that setting's walk there**,
+printing the monitoring command, so one call over several settings, or over a sweep
+parent, leaves exactly one launched run per child.
+
+A launch that starts its pieces and does not come up also ends that setting's walk,
+without the monitoring line: it takes the lock again only to append its `launch_failed`
+row (the second and third shapes below).
 
 The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
 failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is

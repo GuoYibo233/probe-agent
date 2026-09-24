@@ -1239,81 +1239,110 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     entry and appends a `launches` entry through one `registry.write_meta`
     call.
 
+    Everything from reading the piece's entry through `tmux new-session` runs
+    inside one `registry.lock()` hold: the liveness test, the claim release,
+    the card re-probe and claim, the start row, the `meta.json` rewrite and the
+    session start. The liveness test is refire's only guard against a second
+    refire of the same piece, and the session it tests for exists only once
+    `tmux new-session` has returned, so the hold ends after that call; a hold
+    that ended before it would let a second `run.py refire` pass the liveness
+    test, append its own start row, rewrite `meta.json` and then either fail on
+    the session name (same host) or start a second incarnation on another host
+    into the same run directory. The hold is one bounded session
+    start (no alive check follows it; `_remote_run` gives up after 20 s).
+    launch() ends its hold before its tmux waves (8.1, 8.6; owner ruling 10 of
+    2026-09-24) because a second launch into the same run is refused by the
+    launch gate's young-`launching`-row clause (`gate_open_row`), which has no
+    counterpart for a refire.
+
     The start row is 8.1's, appended after the cards are claimed and before the
     session starts, and it is what makes the refired incarnation a recorded
     one: a start row clears the run's finish row (8.2), so the card
     reservation of 2.5 counts the refired card again, the walk backfills the
     `ok` row when the piece reaches `done.json`, and `run.py kill` writes its
-    `killed` row. A `tmux new-session` that fails then leaves a `launching`
-    row, which is the same state a first launch leaves and which `ls` closes
-    once it is older than `launch_timeout_s` (8.1)."""
+    `killed` row. A `tmux new-session` that fails exits inside the hold and
+    leaves the `launching` row with no finish row; `run.py ls` and `sync`
+    close it with a `launch_failed` row once it is older than
+    `launch_timeout_s` and every piece it names reads `dead`
+    (`registry.launch_failed`, 8.1), so the run stays open while a sibling
+    piece lives."""
     run_dir = Path(run_dir)
-    meta, target = refire_target(run_dir, piece)
-    pieces = meta.get("pieces") or []
-    kind = target.get("kind")
+    with registry.lock():
+        meta, target = refire_target(run_dir, piece)
+        pieces = meta.get("pieces") or []
+        kind = target.get("kind")
 
-    host, session = target.get("host"), target.get("session")
-    if host and session and registry.session_alive(host, session):
-        sys.exit(f"jobs/launch.py refire: piece {piece} is alive: session {session!r} on host {host!r}")
+        host, session = target.get("host"), target.get("session")
+        if host and session and registry.session_alive(host, session):
+            sys.exit(f"jobs/launch.py refire: piece {piece} is alive: session {session!r} "
+                     f"on host {host!r}")
 
-    run_id = _run_id_of_meta(meta)
-    run_row = _folded_row_of(run_id) if run_id else None
-    if run_row is None:
-        sys.exit(f"jobs/launch.py refire: {run_dir}/meta.json names no run this registry has a "
-                 f"row for, so the restarted piece would go unrecorded (8.1)")
+        run_id = _run_id_of_meta(meta)
+        run_row = _folded_row_of(run_id) if run_id else None
+        if run_row is None:
+            sys.exit(f"jobs/launch.py refire: {run_dir}/meta.json names no run this registry has a "
+                     f"row for, so the restarted piece would go unrecorded (8.1)")
 
-    prior = [l for l in (meta.get("launches") or []) if piece in (l.get("pieces") or [])]
-    if len(prior) > 1:
-        print(f"jobs/launch.py refire: piece {piece} already has {len(prior)} launch entries: "
-              f"{prior}", file=sys.stderr)
+        prior = [l for l in (meta.get("launches") or []) if piece in (l.get("pieces") or [])]
+        if len(prior) > 1:
+            print(f"jobs/launch.py refire: piece {piece} already has {len(prior)} launch entries: "
+                  f"{prior}", file=sys.stderr)
 
-    trajectory_record.release(run_dir, registry.live_sessions(), registry.DEFAULTS["launch_timeout_s"])
+        trajectory_record.release(run_dir, registry.live_sessions(),
+                                  registry.DEFAULTS["launch_timeout_s"])
 
-    free_by_host = restrict_to_pool(registry.free(), cards)
-    old_gpus = str(target.get("gpus") or "")
-    cards_needed = len([g for g in old_gpus.split(",") if g.strip() != ""])
+        free_by_host = restrict_to_pool(registry.free(), cards)
+        old_gpus = str(target.get("gpus") or "")
+        cards_needed = len([g for g in old_gpus.split(",") if g.strip() != ""])
 
-    # A loop piece holds no card and restarts on its host; a train piece is placed again.
-    new_host, new_gpus = host, old_gpus
-    if kind == "train" and cards_needed > 0:
-        placed_host = place("train", cards_needed, free_by_host, min_card_gib=0,
-                             serving_host=host, prefer_host=host, attached=False)
-        if placed_host is None:
-            sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards))
-        new_host = placed_host
-        new_gpus = ",".join(str(g) for g in _claim_cards(free_by_host, new_host, cards_needed, 0))
+        # A loop piece holds no card and restarts on its host; a train piece is placed again.
+        new_host, new_gpus = host, old_gpus
+        if kind == "train" and cards_needed > 0:
+            placed_host = place("train", cards_needed, free_by_host, min_card_gib=0,
+                                 serving_host=host, prefer_host=host, attached=False)
+            if placed_host is None:
+                sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards))
+            new_host = placed_host
+            new_gpus = ",".join(
+                str(g) for g in _claim_cards(free_by_host, new_host, cards_needed, 0))
 
-    module, old_run_dir, piece_i, piece_n, log = _parse_piece_cmd(target.get("cmd") or "")
-    python = _interpreter_for(target.get("venv"))
-    new_cmd = piece_command(python, module, old_run_dir, piece_i, piece_n, new_gpus, log)
-    updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None, cmd=new_cmd)
-    # The heartbeat file the restarted incarnation opens, recorded before its session starts
-    # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
-    updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, piece)
+        module, old_run_dir, piece_i, piece_n, log = _parse_piece_cmd(target.get("cmd") or "")
+        python = _interpreter_for(target.get("venv"))
+        new_cmd = piece_command(python, module, old_run_dir, piece_i, piece_n, new_gpus, log)
+        updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None,
+                             cmd=new_cmd)
+        # The heartbeat file the restarted incarnation opens, recorded before its session starts
+        # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
+        updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, piece)
 
-    # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
-    # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
-    # card reservation of 2.5 reserves the cards of every piece in the newest start row.
-    registry.append_start({
-        "ev": "start", "t": _now(), "run_id": run_id,
-        "stage": run_row.get("stage"), "key": run_row.get("key"), "dir": str(run_dir),
-        "workflow": run_row.get("workflow"), "setting": run_row.get("setting"),
-        "parent": run_row.get("parent"), "swept": run_row.get("swept"),
-        "debug": run_row.get("debug"), "upstream": run_row.get("upstream"),
-        "versions": run_row.get("versions"), "diff": run_row.get("diff"),
-        "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
-        "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
-        "host": _this_host(),
-        "pieces": [updated_piece if p.get("index") == piece else p for p in pieces],
-        "status": "launching",
-    })
+        # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
+        # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
+        # card reservation of 2.5 reserves the cards of every piece in the newest start row.
+        registry.append_start({
+            "ev": "start", "t": _now(), "run_id": run_id,
+            "stage": run_row.get("stage"), "key": run_row.get("key"), "dir": str(run_dir),
+            "workflow": run_row.get("workflow"), "setting": run_row.get("setting"),
+            "parent": run_row.get("parent"), "swept": run_row.get("swept"),
+            "debug": run_row.get("debug"), "upstream": run_row.get("upstream"),
+            "versions": run_row.get("versions"), "diff": run_row.get("diff"),
+            "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
+            "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
+            "host": _this_host(),
+            "pieces": [updated_piece if p.get("index") == piece else p for p in pieces],
+            "status": "launching",
+        })
 
-    # meta.json carries the new entry (its `beat_launch` included) before the
-    # session starts, the order launch() uses, so no reader sees the earlier
-    # incarnation's heartbeat file under the new session.
-    launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[piece], cmd=new_cmd)
-    registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
+        # meta.json carries the new entry (its `beat_launch` included) before the
+        # session starts, the order launch() uses, so no reader sees the earlier
+        # incarnation's heartbeat file under the new session.
+        launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[piece],
+                                     cmd=new_cmd)
+        registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
 
-    if not _start_tmux(new_host, session, new_cmd):
-        sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
+        # The session starts inside the hold: the liveness test above is the only guard against
+        # a second refire of this piece, and the session it tests for exists only once
+        # `tmux new-session` has returned. launch() releases before its tmux waves because the
+        # launch gate refuses a young `launching` row; refire has no such clause.
+        if not _start_tmux(new_host, session, new_cmd):
+            sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
     return [updated_piece]
