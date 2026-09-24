@@ -201,13 +201,14 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
         # would fail within seconds, and a final row certifies a task as run for good. So the
         # record gets no final row and the piece ends here; the next launch releases the
         # unfinished record (its owner is no longer live) and the task runs again.
-        # TODO(gyb, 2026-09-22): two consequences of this rule for the owner to confirm. (1) A
-        # status the probe service answers with, other than 400, ends the piece, as the owner's
-        # list says ("an HTTP status other than 400"); the probe service answers 500 for any
-        # handler exception, so one text that reliably fails it (an out-of-memory on one long
-        # text) ends a piece at the same task on every relaunch. (2) A run whose service died
-        # leaves no `done` beat, so `run.py ls` / `sync` close it as `launch_failed` in the
-        # ledger although it wrote most of its records; a separate word may be wanted.
+        # Owner ruling 2026-09-24 (ruling 7), confirmed as coded: a probe-service status other
+        # than 400 (500 included, which the service answers for any handler exception, so a text
+        # that reliably fails it ends the piece at the same task on every relaunch) ends this piece
+        # (a 5xx after the client's retries, any other status at once). A piece that ends this
+        # way writes no `done` beat, and once every piece of the run reads `dead` (the loop pieces
+        # and every service piece: each agent replica and the probe service) and the start row is
+        # older than `launch_timeout_s`, `run.py ls` / `sync` close the run as `launch_failed`;
+        # while one service piece is still up, the run stays open.
         except _ServiceGone as exc:
             writer.close()
             raise SystemExit(
