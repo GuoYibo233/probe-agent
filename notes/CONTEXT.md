@@ -89,13 +89,13 @@ record implementation details; implementation decisions go into `docs/adr/`.
 - **Sampling history (采样历史)**: the state record the sampler writes to
   disk on every sampling round. All three outlets, the terminal table, the
   web page, and the agent's json, read from it.
-- **shardable**: a boolean flag on a registry task. Only a task flagged this
-  way may be launched once with multiple `--piece` values; the launcher
-  automatically injects `--shard-id`/`--num-shards` into each piece's
-  command. A task not flagged this way is flatly refused if given multiple
-  `--piece` values; splitting into pieces is never left to a person to do
-  by hand (brought into the glossary 2026-08-09; the term comes from the
-  implementation of ticket 09).
+- **Piece split (分片)**: a `sample` or `inject` stage runs as several loop
+  processes, their count the setting's `sample.pieces` / `inject.pieces`
+  field; the launcher starts each one with `--piece i/n` and the program
+  takes its share of the task list from that. `train`, `build`, `eval` and
+  `score` are one piece each. Splitting is never left to a person to do by
+  hand (brought into the glossary 2026-08-09 as "shardable"; the flag and the
+  `--shard-id`/`--num-shards` injection went with the old registry).
 - **Monitoring parameters (监控参数)**: three fields that can be overridden
   at launch time to control the verdict computation, at the piece level
   `stall_line` (the suspected-stall threshold, in seconds) and
