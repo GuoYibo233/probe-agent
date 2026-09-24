@@ -43,30 +43,13 @@ _SUBCOMMAND_ONE_LINE = {
 }
 
 
-def normalize_host(name: str, hosts: list[dict]) -> str:
-    """A host name or alias normalised to the hosts: entry's own name column (errata, 3.4)."""
-    for host in hosts:
-        if name == host.get("name") or name == host.get("alias"):
-            return host["name"]
-    return name
-
-
 # ---------------------------------------------------------------------------
 # Config readers: lazy and cached, exactly like jobs/registry.py's and
 # jobs/launch.py's own, so importing this module needs neither constants/
 # nor models/table.yaml to exist yet.
 # ---------------------------------------------------------------------------
 
-_OUTPUTS_CFG: dict | None = None
 _DATASETS_CFG: dict | None = None
-
-
-def _outputs_config() -> dict:
-    global _OUTPUTS_CFG
-    if _OUTPUTS_CFG is None:
-        with open(ROOT / "constants" / "path_outputs.yaml") as f:
-            _OUTPUTS_CFG = yaml.safe_load(f)
-    return _OUTPUTS_CFG
 
 
 def _datasets_config() -> dict:
@@ -77,13 +60,9 @@ def _datasets_config() -> dict:
     return _DATASETS_CFG
 
 
-def _hosts_config() -> list[dict]:
-    return _outputs_config().get("hosts", [])
-
-
 def _this_host() -> str:
-    """The machine this command runs on, under the hosts: entry's own name; a CPU stage runs in place, so this is the host its piece records."""
-    return normalize_host(socket.gethostname(), _hosts_config())
+    """The machine this command runs on, under its constants/cards.yaml entry's own name (through jobs/registry.py); a CPU stage runs in place, so this is the host its piece records."""
+    return registry.canonical_host(socket.gethostname())
 
 
 def _venvs_config() -> dict:
@@ -135,7 +114,11 @@ def _usage_text() -> str:
         "[--cards <host>:<id>,<id>,... ...] [section.field=value ...]",
         "",
         "--cards names the only cards a launch may claim, and may be given once per host; a named",
-        "card that is not free refuses the launch. Without it the launch takes the first free cards.",
+        "card that is not free refuses the launch. Without it the launch takes the first free cards that fit.",
+        "A card fits a piece when it is at least as large as the cards the piece was declared for: an",
+        "agent service that starts its own server needs cards no smaller than the smallest card of",
+        "its table row's serving host (constants/cards.yaml), and a --cards pool whose cards are",
+        "too small for a piece refuses the launch and names them.",
         "",
         "The first word is one of the ten reserved subcommands below, or else the stem of a",
         "workflow file under experimental_settings/.",

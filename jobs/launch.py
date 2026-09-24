@@ -76,24 +76,13 @@ def _login_host() -> str:
     return _outputs_config()["login_host"]
 
 
-def _canonical_host(raw: str) -> str:
-    """Normalise a host name or alias to the `hosts:` entry's `name`, so this
-    machine's own `hostname` and its cluster alias compare equal (errata,
-    3.4: this machine answers `shiga` to `hostname` while `hosts:` calls it
-    `tokyo105`)."""
-    for host in _outputs_config().get("hosts", []):
-        if raw == host.get("name") or raw == host.get("alias"):
-            return host["name"]
-    return raw
-
-
 def _this_host() -> str:
-    """The machine this launch runs on, under the `hosts:` entry's own name."""
-    return _canonical_host(socket.gethostname())
+    """The machine this launch runs on, under its `constants/cards.yaml` entry's own name."""
+    return registry.canonical_host(socket.gethostname())
 
 
 def _is_local_host(host: str) -> bool:
-    return _canonical_host(host) == _this_host()
+    return registry.canonical_host(host) == _this_host()
 
 
 def _interpreter_for(venv_name: str) -> str:
@@ -207,9 +196,9 @@ def piece_alive(piece: dict, live_sessions) -> bool:
     """A piece is alive when its session is a live one, or — fail-closed,
     3.4/8.0, `jobs/registry._alive_on`'s own rule — when its host's probe
     never answered at all: `registry.live_sessions()` then names that host
-    in the returned set's `failed_hosts`, the canonical `hosts:` name (the
-    same normalisation `_canonical_host` gives every other host comparison
-    in this file). A plain set (no `failed_hosts` attribute) has no failed
+    in the returned set's `failed_hosts`, the host's `constants/cards.yaml`
+    name (the same normalisation `registry.canonical_host` gives every other
+    host comparison in this file). A plain set (no `failed_hosts` attribute) has no failed
     hosts, so a bare-membership caller sees no change. Public: `run.py`'s
     own partial-piece check (2.3/2.4) calls this directly rather than
     keeping a second copy.
@@ -223,7 +212,7 @@ def piece_alive(piece: dict, live_sessions) -> bool:
     if not host or not session:
         return False
     failed_hosts = getattr(live_sessions, "failed_hosts", None)
-    if failed_hosts and _canonical_host(host) in failed_hosts:
+    if failed_hosts and registry.canonical_host(host) in failed_hosts:
         return True
     return session in live_sessions
 
@@ -285,13 +274,13 @@ def gate_open_row(open_rows, meta_by_run, live_sessions, now_ts, beats=None) -> 
 
 def parse_cards(tokens: list[str]) -> dict[str, list[int]]:
     """`--cards`' values, `<host>:<id>,<id>,...` each, as host -> card ids in the order given;
-    a host is stored under its `hosts:` entry's own name, and a host named twice keeps both lists."""
+    a host is stored under its `constants/cards.yaml` entry's own name, and a host named twice keeps both lists."""
     pool: dict[str, list[int]] = {}
     for tok in tokens:
         host, sep, ids = tok.partition(":")
         if not (host and sep and ids and all(i.strip().isdigit() for i in ids.split(","))):
             sys.exit(f"jobs/launch.py: --cards {tok!r} is not <host>:<id>,<id>,...")
-        cards = pool.setdefault(_canonical_host(host), [])
+        cards = pool.setdefault(registry.canonical_host(host), [])
         for i in ids.split(","):
             if int(i) not in cards:
                 cards.append(int(i))
@@ -320,31 +309,41 @@ def remove_claimed(pool: dict[str, list[int]], pieces: list[dict]) -> None:
             pool[host] = [i for i in pool[host] if i not in held]
 
 
-def place(kind, cards_needed, free_by_host, *, serving_host, prefer_host, attached) -> str | None:
+def fitting_cards(free_by_host: dict, host: str, min_card_gib: int) -> list[int]:
+    """The free cards of `host` whose memory (`constants/cards.yaml`) is at least `min_card_gib`
+    GiB, in the order the free list gives them."""
+    memory = registry.card_memory_gib()[host]
+    return [i for i in free_by_host.get(host) or [] if memory[i] >= min_card_gib]
+
+
+def _declared_card_gib(agent_alias: str) -> int:
+    """The card size an agent service was declared for: the smallest card of its model table
+    row's serving host. The owner chose that host because its cards hold the model, so a server
+    that starts anywhere else needs cards at least that large."""
+    serving_host = _table_config()[agent_alias]["serving"]["host"]
+    return min(registry.card_memory_gib()[registry.canonical_host(serving_host)])
+
+
+def place(kind, cards_needed, free_by_host, *, min_card_gib, serving_host, prefer_host,
+          attached) -> str | None:
     """Which host a piece lands on (3.4). `loop` and a `service_probe` with
     no card go to `login_host`; an `attached` agent service goes to
     `serving_host`, the host of the live server it attaches to, taking no card
     and no card search; everything else (an agent service that starts its own
     server, a checkpoint-loading `service_probe`, `train`) takes the first host
-    with `cards_needed` free, preferring `prefer_host`. `None` when no host
-    qualifies."""
+    with `cards_needed` free cards of at least `min_card_gib` GiB each,
+    preferring `prefer_host`. `None` when no host qualifies."""
     if kind == "loop":
         return _login_host()
     if kind == "service_probe" and cards_needed == 0:
         return _login_host()
-    # An attached agent service takes no card and no card search: it lands on the host of the
-    # live server it attaches to. One that starts its own server falls through to the card
-    # search below, where its table row's serving host reaches it as `prefer_host`, so a full
-    # serving host moves that server to a free machine instead of ending the launch.
-    # TODO(gyb, 2026-09-22): the fallback knows how many cards are free and nothing about their
-    # size, so with tokyo108 full the gpt_oss_120b server lands on a 48 GB card, claims it, and
-    # fails its alive check one launch timeout later, where the launch used to refuse at once.
-    # Needs the owner's files: a minimum card memory in the row's `serving:` block of the model
-    # table and a per-host card memory in constants/path_outputs.yaml (a comment there today);
-    # place() then keeps the hosts whose cards are large enough. Contracts 3.4 (first bullet)
-    # and 7.4 (first paragraph) still state "the serving host and nowhere else".
     if kind == "service_agent" and attached:
         return serving_host
+    # A piece lands only on cards at least as large as the cards it was declared for. An agent
+    # service that starts its own server was declared for its table row's serving host, so
+    # `min_card_gib` is that host's smallest card (`_declared_card_gib`) and the serving host is
+    # `prefer_host`; a train piece and a checkpoint-loading probe service name no host, so their
+    # `min_card_gib` is 0 and the card count alone decides.
     candidates = []
     if prefer_host is not None and prefer_host in free_by_host:
         candidates.append(prefer_host)
@@ -352,7 +351,7 @@ def place(kind, cards_needed, free_by_host, *, serving_host, prefer_host, attach
         if host not in candidates:
             candidates.append(host)
     for host in candidates:
-        if len(free_by_host.get(host, [])) >= cards_needed:
+        if len(fitting_cards(free_by_host, host, min_card_gib)) >= cards_needed:
             return host
     return None
 
@@ -788,17 +787,33 @@ def _resolve_split_files(stage: str, setting) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _claim_cards(free_by_host: dict, host: str, n: int) -> list[int]:
-    ids = free_by_host.get(host) or []
+def _claim_cards(free_by_host: dict, host: str, n: int, min_card_gib: int) -> list[int]:
+    """Claim the first `n` free cards of `host` that are at least `min_card_gib` GiB, taking them
+    out of `free_by_host` in place."""
+    ids = fitting_cards(free_by_host, host, min_card_gib)
     if len(ids) < n:
-        sys.exit(f"jobs/launch.py: host {host!r} has only {len(ids)} free card(s), need {n}")
-    claimed, free_by_host[host] = ids[:n], ids[n:]
+        sys.exit(f"jobs/launch.py: host {host!r} has only {len(ids)} free card(s) of at least "
+                 f"{min_card_gib} GiB, need {n}")
+    claimed = ids[:n]
+    free_by_host[host] = [i for i in free_by_host[host] if i not in claimed]
     return claimed
 
 
-def _no_cards_message(free_by_host: dict, needed: int) -> str:
-    probed = ", ".join(f"{h}:{len(ids)} free" for h, ids in free_by_host.items())
-    return f"jobs/launch.py: no host has {needed} free card(s); probed {probed}"
+def _no_cards_message(free_by_host: dict, needed: int, min_card_gib: int, pool) -> str:
+    """The refusal when `place` finds no host for a piece. With a named pool, each pool card
+    smaller than the piece's `min_card_gib` is named with its size, as `restrict_to_pool` names
+    a pool card that is not free."""
+    memory = registry.card_memory_gib()
+    if pool is not None:
+        small = [f"{h}:{i} ({memory[h][i]} GiB)" for h, ids in free_by_host.items()
+                 for i in ids if memory[h][i] < min_card_gib]
+        if small:
+            return (f"jobs/launch.py: --cards names card(s) smaller than the {min_card_gib} GiB "
+                    f"this piece needs: {', '.join(small)}")
+    probed = ", ".join(f"{h}:{len(fitting_cards(free_by_host, h, min_card_gib))} free"
+                       for h in free_by_host)
+    return (f"jobs/launch.py: no host has {needed} free card(s) of at least {min_card_gib} GiB; "
+            f"probed {probed}")
 
 
 def _taken_service_ports(host: str) -> set[int]:
@@ -1054,11 +1069,11 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
             elif kind == "train":
                 venv = _resolve_venv(entry["venv"], None)
                 python = _interpreter_for(venv)
-                host = place("train", 1, free_by_host, serving_host=None,
+                host = place("train", 1, free_by_host, min_card_gib=0, serving_host=None,
                              prefer_host=serving_host, attached=False)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, 1))
-                gpu_id = _claim_cards(free_by_host, host, 1)[0]
+                    sys.exit(_no_cards_message(free_by_host, 1, 0, cards))
+                gpu_id = _claim_cards(free_by_host, host, 1, 0)[0]
                 module = entry["program"].format(method=setting.probe.method)
                 cmd = piece_command(python, module, run_dir_str, None, None, str(gpu_id), log)
                 placed.append({"index": idx, "kind": "train", "host": host, "gpus": str(gpu_id),
@@ -1070,17 +1085,18 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 venv = _resolve_venv(entry["venv"]["service_agent"], None)
                 python = _interpreter_for(venv)
                 attached = attach is not None and local_i == 0
-                host = place("service_agent", tp_size, free_by_host,
+                agent_card_gib = _declared_card_gib(agent_alias)
+                host = place("service_agent", tp_size, free_by_host, min_card_gib=agent_card_gib,
                              serving_host=serving_host, prefer_host=serving_host,
                              attached=attached)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, tp_size))
+                    sys.exit(_no_cards_message(free_by_host, tp_size, agent_card_gib, cards))
                 if local_i == 0:
                     agent_host = host
                 if attached:
                     gpus, port = "", attach["port"]
                 else:
-                    gpu_ids = _claim_cards(free_by_host, host, tp_size)
+                    gpu_ids = _claim_cards(free_by_host, host, tp_size, agent_card_gib)
                     gpus = ",".join(str(g) for g in gpu_ids)
                     port = _next_free_port("service_agent", local_i, serving_port, host)
                 endpoint_file = f"service_agent_{local_i}.json"
@@ -1098,14 +1114,14 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                 python = _interpreter_for(venv)
                 render_only = (p["mode"] == "render_only")
                 cards_needed = 0 if render_only else 1
-                host = place("service_probe", cards_needed, free_by_host,
+                host = place("service_probe", cards_needed, free_by_host, min_card_gib=0,
                              serving_host=None, prefer_host=agent_host, attached=False)
                 if host is None:
-                    sys.exit(_no_cards_message(free_by_host, cards_needed))
+                    sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards))
                 if render_only:
                     gpus, device, score_ckpt, gen_ckpt, temperature = "", None, None, None, None
                 else:
-                    gpu_id = _claim_cards(free_by_host, host, 1)[0]
+                    gpu_id = _claim_cards(free_by_host, host, 1, 0)[0]
                     gpus, device = str(gpu_id), f"cuda:{gpu_id}"
                     upstream_map = schema.upstream(stage, setting)
                     score_ckpt = schema.referenced_run_dir("train", upstream_map["probe_score.train"])
@@ -1269,12 +1285,15 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     if kind != "loop" and cards_needed > 0:
         placement_kind = ("service_agent" if (kind == "service" and str(target.get("endpoint_file") or "").startswith("service_agent"))
                             else "train" if kind == "train" else "service_probe")
-        placed_host = place(placement_kind, cards_needed, free_by_host, serving_host=host,
-                             prefer_host=host, attached=False)
+        min_card_gib = (_declared_card_gib(schema.load_frozen(run_dir).models.agent)
+                        if placement_kind == "service_agent" else 0)
+        placed_host = place(placement_kind, cards_needed, free_by_host, min_card_gib=min_card_gib,
+                             serving_host=host, prefer_host=host, attached=False)
         if placed_host is None:
-            sys.exit(_no_cards_message(free_by_host, cards_needed))
+            sys.exit(_no_cards_message(free_by_host, cards_needed, min_card_gib, cards))
         new_host = placed_host
-        new_gpus = ",".join(str(g) for g in _claim_cards(free_by_host, new_host, cards_needed))
+        new_gpus = ",".join(str(g) for g in _claim_cards(free_by_host, new_host, cards_needed,
+                                                          min_card_gib))
 
     module, old_run_dir, piece_i, piece_n, log = _parse_piece_cmd(target.get("cmd") or "")
     python = _interpreter_for(target.get("venv"))

@@ -1,5 +1,6 @@
-# The outputs root, the debug subdirectory, the login machine and the cluster
-# inventory. Locations only; nothing here enters a key (contracts 6.3).
+# The outputs root, the debug subdirectory and the login machine. Locations
+# only; nothing here enters a key (contracts 6.3). The cluster's hosts and
+# cards are constants/cards.yaml.
 
 root: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs
 
@@ -10,18 +11,3 @@ root: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs
 debug_subdir: debug
 
 login_host: shiga          # what `hostname` answers on the machine this repo is typed on
-
-# The cluster inventory. `cards` is what the code reads. The comment on each
-# host is for the reader picking cards: card model, memory per card, driver.
-# Measured with `nvidia-smi --query-gpu=index,name,memory.total` on 2026-09-17;
-# update the comment when a machine's cards change.
-hosts:
-  # tokyo105 (answers `shiga`): cards 0-7 = 8 x NVIDIA RTX A6000, 48 GB each (49140 MiB); driver 575.64.03
-  - {name: tokyo105, alias: shiga,   cards: 8}
-  # tokyo106: cards 0-9 = 10 x NVIDIA RTX A6000, 48 GB each (49140 MiB); driver 535.230.02
-  - {name: tokyo106, cards: 10}
-  # tokyo107: cards 0-3 = 4 x NVIDIA RTX 6000 Ada Generation, 48 GB each (49140 MiB); driver 535.113.01
-  - {name: tokyo107, cards: 4}
-  # tokyo108 (answers `saitama`): cards 0-2 = 3 x NVIDIA H100 NVL, 94 GB each (95830 MiB);
-  #                               cards 3-5 = 3 x NVIDIA H200 NVL, 140 GB each (143771 MiB); driver 570.195.03
-  - {name: tokyo108, alias: saitama, cards: 6}

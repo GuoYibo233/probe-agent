@@ -30,7 +30,11 @@ claim: the pieces take their cards from that pool in the order given, the agent 
 to the pool's host instead of its `models/table.yaml` row's, and a named card that is not free
 refuses the launch. The pool is where a launch runs and never part of the setting, so it moves
 no key and no run directory; `refire` and `retry` take the same flag. Without it a launch takes
-the first free cards. `section.field=value` overrides one field from the command line, its right-hand
+the first free cards. Either way a piece takes only cards at least as large as the cards it was
+declared for: an agent service that starts its own server needs cards no smaller than the
+smallest card of its table row's serving host, a train piece and a probe service need any card,
+and card sizes are `constants/cards.yaml`'s; a pool whose cards are too small for a piece
+refuses the launch, naming them. `section.field=value` overrides one field from the command line, its right-hand
 side parsed as YAML, so a reference can be pinned without editing the setting file.
 
 Ten further words are reserved (`run.py --help` lists them, one per line): `ls`, `where`,
@@ -68,7 +72,7 @@ CLAUDE.md — the rules an agent reads on its own; the only other file at the ro
 run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck).
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
-  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/path_outputs.yaml (the hosts list, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
+  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
   writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, finish rows and RESULTS.md (through jobs/registry.py)
   venv:    probe (the interpreter this repo's commands are typed with)
 
@@ -77,8 +81,11 @@ run.py — the one command: walk a named setting's stages (sample through score)
 constants/path_datasets.yaml — per environment: the clone's home, the interpreter that runs its loop, its data root, and split name -> task-id file; plus the top-level venvs: map, which is where every interpreter path in this repo is written down.
   read by: data/environments/__init__.py (the splits block, to resolve a split name), data/environments/appworld.py (home, data root, split files), experimental_settings/schema.py (the splits block, to validate a split value at load), jobs/launch.py (the venv column and the venvs map), run.py (the venvs map)
 
-constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, the login_host and the hosts: list, the cluster inventory.
-  read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root, and the hosts list for tmux and card probes), jobs/launch.py (the login_host and the hosts list), run.py (the hosts list)
+constants/cards.yaml — the cluster inventory, the one file for card facts: every host's name and alias, and per card index its model and memory in GiB; the source for the code (how many cards a host has, how large each card is) and for people picking cards.
+  read by: jobs/registry.py (the one loader, hosts(): the hosts for tmux and card probes, the card count, card_memory_gib() and canonical_host() for jobs/launch.py and run.py)
+
+constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, and the login_host.
+  read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root), jobs/launch.py (the login_host)
 
 constants/path_models.yaml — weights alias -> the directory the weights live in.
   read by: models/__init__.py, models/agent_models/service.py (the weights path of the row it serves)
@@ -312,14 +319,14 @@ eval/method_table.py — the backbone x method table from the registry; one grou
 jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
-  reads:   constants/path_outputs.yaml, jobs/runs.jsonl, run directories' meta.json, done.json and heartbeat, ssh, tmux, nvidia-smi
+  reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts and card memory; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json and heartbeat, ssh, tmux, nvidia-smi
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
 jobs/launch.py — launch and refire the tmux pieces of a sample, inject or train run: the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
   imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
   used by: run.py, agent/run_tasks.py (teardown_services)
-  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host and the hosts list), models/table.yaml (the serving block), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and heartbeat/<piece>-<launch>.jsonl files (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git
+  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host), constants/cards.yaml (through jobs/registry.py: host names and each card's memory, which placement holds against the card size a piece was declared for), models/table.yaml (the serving block; an agent service's declared card size is the smallest card of its row's serving host), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and heartbeat/<piece>-<launch>.jsonl files (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git
   writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
   venv:    probe
 
