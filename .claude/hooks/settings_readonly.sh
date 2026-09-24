@@ -2,18 +2,13 @@
 # PreToolUse hook: refuses any agent edit to experimental_settings/*.yaml and
 # to models/table.yaml, the owner's files (contracts 5.1, 6.1).
 #
-# TODO(owner, 2026-09-21): the Bash branch is a substring match, and both of its
-# errors are known (wave 7 final review, critic F2; agents do not change this
-# file's logic):
-#   - it refuses a read-only command that names a setting file beside a write word
-#     (`grep x experimental_settings/a.yaml > /tmp/out`, `cat CLAUDE.md | tee ...`,
-#     any command whose text carries "install" or "patch" as an ordinary word);
-#   - it passes an edit made through an interpreter that never spells a write word
-#     (`python3 -c "open('experimental_settings/a.yaml','w')..."`, `perl -pi`,
-#     `yq -i`, `ed`).
-# The owner decides which way the match leans: keep over-refusing (the gate is
-# fail-closed today), or narrow it to redirects and in-place editors whose target
-# token is a protected path, and add the interpreters to BASH_WRITE_MARKERS.
+# The Bash branch leans toward catching writes (gyb, 2026-09-24, ruling 16): a
+# command whose text mentions a protected path together with a write word or
+# with any of the interpreters python, perl, yq, ed is refused, whatever the
+# command does. Read-only commands of that shape are refused too
+# (`grep x experimental_settings/a.yaml > /tmp/out`,
+# `python -c "yaml.safe_load(open('experimental_settings/x.yaml'))"`), and that
+# is accepted.
 set -uo pipefail
 
 payload="$(cat)"
@@ -39,10 +34,29 @@ PROTECTED_MENTION_RE = re.compile(
     r"experimental_settings/[^\s\"']*\.ya?ml|models/table\.yaml"
 )
 
-BASH_WRITE_MARKERS = (
+# Plain substrings, matched anywhere in the command text.
+BASH_WRITE_SUBSTRINGS = (
     ">", ">>", "tee", "sed -i", "cp ", "mv ", "rm ", "truncate", "dd ",
     "patch", "chmod", "install",
 )
+
+# Interpreters that can edit a file without spelling a substring above: any
+# mention of one is a write marker, whatever its flags or its program.
+BASH_WRITE_PATTERNS = (
+    # python, python3, python3.12, a venv's .../bin/python.
+    r"\bpython[0-9.]*\b",
+    # perl, perl5.38.2, perl5.38-x86_64-linux-gnu; yq, yq_linux_amd64.
+    r"\bperl",
+    r"\byq",
+    # ed as a word: the two letters with no word character, dot or hyphen on
+    # either side and no slash after (a slash may precede, as in /bin/ed), so
+    # "sed", "edit", "ed/" and a file named ed.yaml do not match.
+    r"(?<![\w.-])ed(?![\w./-])",
+)
+
+BASH_WRITE_MARKERS = tuple(
+    re.compile(re.escape(s)) for s in BASH_WRITE_SUBSTRINGS
+) + tuple(re.compile(p) for p in BASH_WRITE_PATTERNS)
 
 
 def is_protected(path):
@@ -84,7 +98,9 @@ if tool_name == "NotebookEdit":
 if tool_name == "Bash":
     command = tool_input.get("command", "") or ""
     mentions_protected = PROTECTED_MENTION_RE.search(command) is not None
-    has_write_marker = any(marker in command for marker in BASH_WRITE_MARKERS)
+    has_write_marker = any(
+        marker.search(command) is not None for marker in BASH_WRITE_MARKERS
+    )
     if mentions_protected and has_write_marker:
         block()
     allow()
