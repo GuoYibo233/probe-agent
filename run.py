@@ -1897,33 +1897,27 @@ def _reference_is_pinned(cfg, source: str) -> bool:
     return isinstance(value, dict)
 
 
-# TODO(gyb, 2026-09-22): a `--debug` walk of a setting that holds a name-form reference cannot
-# finish as the workflow files stand. The reference resolves to the real root (the rule below),
-# so the debug eval of cgen and cparam stops at "theta_from.eval ... has no done.json" and a
-# debug inject needs its three references pinned by hand, e.g.
-# `'eval.theta_from={key: {eval: <debug ctool eval key>}}'`. Either the smoke of the gpu-run
-# skill says so, or a name-form reference inside a debug walk resolves under the debug root.
 def _upstream_dirs(stage: str, cfg, upstream_map: dict) -> dict[str, Path | None]:
     """Where each of this stage's upstream runs lives (3.4, 5.4).
 
     A `same`-source upstream is keyed from this very setting, so it lives under this walk's own
     root — under `<root>/debug/` for a `--debug` walk. A name-form reference is loaded by the
-    schema with `debug=False`, so its key is the non-debug one and its run lives under the real
-    root. A pinned reference carries a key whose payload holds its own debug flag, so the root
-    it lives under is the key's, not the walk's: errata '3.4 / 9(c)#8' pins the debug keys the
-    construction plan's `--debug` walk produced into `inject.yaml`'s three references, and that
-    walk has to find them.
+    schema under this setting's own debug flag (owner ruling 9, 2026-09-24), so its key is the
+    one a walk of the referenced setting with the same flag produces, and its run lives under
+    this walk's own root as well: a `--debug` walk of cgen's eval finds the debug ctool eval, a
+    `--debug` inject finds both probes' debug train runs and the score probe's debug eval run. A
+    pinned `key:`/`dir:` reference carries a key whose payload holds its own debug flag, so the
+    root it lives under is the key's, not the walk's, and `schema.referenced_run_dir` tries both
+    roots.
     """
     by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
     dirs: dict[str, Path | None] = {}
     for name, key_val in upstream_map.items():
         entry = by_name[name]
-        if entry["source"] == "same":
-            dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=cfg._debug)
-        elif _reference_is_pinned(cfg, entry["source"]):
+        if entry["source"].startswith("ref:") and _reference_is_pinned(cfg, entry["source"]):
             dirs[name] = schema.referenced_run_dir(entry["stage"], key_val)
         else:
-            dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=False)
+            dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=cfg._debug)
     return dirs
 
 

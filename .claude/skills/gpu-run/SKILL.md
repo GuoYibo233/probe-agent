@@ -10,7 +10,7 @@ description: >-
   commit, or interrupt with `kill` / `refire` / `retry`. Invoke whenever Dungeon♂Master
   says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
   triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 1.1.2
+version: 1.1.3
 ---
 
 # gpu-run — new1 GPU job full lifecycle
@@ -127,6 +127,15 @@ one:
 
 The tree is often still dirty at this point, so `--allow-dirty` covers the smoke; the
 commit of Phase 2 still has to happen before the real launch that follows.
+
+A setting that names another setting in a reference (`eval.theta_from`,
+`inject.probe_score`, `inject.probe_gen`, `score.baseline`) resolves that reference under
+the same `--debug` flag (owner ruling 9 of 2026-09-24), so the smoke of a cgen or cparam
+setting, or of an inject setting, reads the debug runs of the settings it names: smoke
+`train_probe ctool_qwen3_0pt6b` first; before an inject smoke also `train_probe
+cgen_qwen3_0pt6b` (its train stage is the `probe_gen` checkpoint) and `baseline
+gpt_oss_120b_appworld` (the score's baseline), all with `--debug`. A reference the smoke
+cannot find is refused by name with the missing debug directory.
 
 ## Phase 4 — Launch: one command walks the stage list
 

@@ -778,14 +778,21 @@ def _ref_requirements(field_dotted: str) -> tuple[str, ...]:
     return tuple(u["stage"] for u in _ref_entries(field_dotted))
 
 
-def _resolve_name_ref(value: str) -> Setting:
+def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
+    """Load the setting a name-form reference names, under the referring setting's debug flag.
+
+    A `--debug` walk loads the referenced setting with the debug overlay too, so the reference
+    keys to the referenced setting's debug key: the run a `--debug` walk of that setting
+    produces, under the debug outputs root (owner ruling 9, 2026-09-24). A walk without
+    `--debug` keys to the real run.
+    """
     stem, sep, name = value.partition("/")
     if not sep:
         raise SchemaError(f"{value!r}: a reference is <workflow>/<setting>")
     ref_file = ROOT / "experimental_settings" / f"{stem}.yaml"
     if not ref_file.exists():
         raise SchemaError(f"{value!r}: no such workflow file {ref_file}")
-    results = load(ref_file, name, debug=False, overrides={})
+    results = load(ref_file, name, debug=debug, overrides={})
     if len(results) != 1:
         raise SchemaError(
             f"{value!r}: names a swept setting with {len(results)} children; name a child directly")
@@ -819,8 +826,12 @@ def _pinned_method(field_dotted: str, value: dict, kind: str) -> str | None:
     return None
 
 
-def _resolve_ref(field_dotted: str, value: Any) -> tuple[str, Any, str | None]:
-    """Resolve one reference field's stated value to ('setting', Setting, method) or ('keys', {stage: key}, method)."""
+def _resolve_ref(field_dotted: str, value: Any, *, debug: bool) -> tuple[str, Any, str | None]:
+    """Resolve one reference field's stated value to ('setting', Setting, method) or ('keys', {stage: key}, method).
+
+    `debug` is the referring setting's flag; a name-form reference loads the named setting under
+    it. A pinned key:/dir: reference carries its keys as stated and ignores it.
+    """
     try:
         if isinstance(value, dict) and "method" in value and "key" not in value and "dir" not in value:
             raise SchemaError(
@@ -829,7 +840,7 @@ def _resolve_ref(field_dotted: str, value: Any) -> tuple[str, Any, str | None]:
         kind = _ref_kind(value)
         required = set(_ref_requirements(field_dotted))
         if kind == "name":
-            setting = _resolve_name_ref(value)
+            setting = _resolve_name_ref(value, debug=debug)
             missing = required - set(setting._workflow)
             if missing:
                 raise SchemaError(
@@ -990,7 +1001,7 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
         value = full[section].get(field_name)
         if value is None:
             return
-        refs[dotted] = _resolve_ref(dotted, value)
+        refs[dotted] = _resolve_ref(dotted, value, debug=debug)
 
     _resolve_if_set("eval.theta_from")
     if "eval" in full:
@@ -1228,7 +1239,8 @@ def _substitute(template: str, setting: Setting) -> str:
     if "{method}" in template:
         template = template.replace("{method}", setting.probe.method)
     if "{probe_score_method}" in template:
-        method = _resolve_ref("inject.probe_score", setting.inject.probe_score)[2]
+        method = _resolve_ref("inject.probe_score", setting.inject.probe_score,
+                              debug=setting._debug)[2]
         if method is None:
             raise SchemaError(
                 "inject.probe_score: the referenced setting states no probe.method, so its "
@@ -1338,7 +1350,7 @@ def upstream(stage: str, setting: Setting) -> dict:
         value = getattr(section_obj, field_name) if section_obj is not None else None
         if value is None:
             continue
-        kind, payload, _method = _resolve_ref(field_dotted, value)
+        kind, payload, _method = _resolve_ref(field_dotted, value, debug=setting._debug)
         out[entry["name"]] = key(entry["stage"], payload) if kind == "setting" else payload[entry["stage"]]
     return out
 
@@ -1384,13 +1396,17 @@ def run_dir(stage: str, setting: Setting) -> Path:
 def referenced_run_dir(stage: str, key: str) -> Path | None:
     """The directory of a run reached through a reference (5.4), or None when neither root holds it.
 
-    A run's `--debug` flag is part of its own key payload (3.3), so a referenced key -- a key
-    computed from another setting, in the name form or pinned as `key:`/`dir:` -- names a
-    directory under whichever of the two roots that run was written in, never under the
-    referring run's root. The one that answers is the directory whose frozen `settings.yaml`
-    records this very key; a directory made before this scheme carries no `settings.yaml`
-    (5.4's reason for the `dir:` form), so the one that exists stands in for it. `run.py`, the
-    launcher and the stage programs all locate a referenced run through this one function.
+    A run's `--debug` flag is part of its own key payload (3.3), so a referenced key names a
+    directory under whichever of the two roots that run was written in. A name-form reference is
+    loaded under the referring setting's own flag (owner ruling 9, 2026-09-24), so its run lives
+    under the referring run's root; a key pinned as `key:`/`dir:` may name a run under either
+    root, whatever the referring run's flag. The one that answers is the directory whose frozen
+    `settings.yaml` records this very key; a directory made before this scheme carries no
+    `settings.yaml` (5.4's reason for the `dir:` form), so the one that exists stands in for it.
+    The launcher (`jobs/launch.py`, the two probe checkpoints) and `eval/score_run.py` (the
+    baseline) locate every referenced run through this one function, name form included;
+    `run.py._upstream_dirs` alone locates a name-form reference's run with `run_dir_of` under
+    the referring run's flag, which names the same directory.
     """
     candidates = [run_dir_of(stage, key, debug=flag) for flag in (False, True)]
     for candidate in candidates:
