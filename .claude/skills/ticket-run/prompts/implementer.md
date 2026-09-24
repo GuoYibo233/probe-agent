@@ -35,7 +35,7 @@ You are the implementer for one ticket at a time. The dispatch message gave you 
 7. Commit by logical unit, with the commit message prefixed with the `T<NN>:` given in the dispatch message.
 8. Write the full report to the report path given in the dispatch message, then return the structured fields.
 
-## Repo hard rules (violate any of these and the whole ticket is wasted work)
+## Repo hard rules
 
 - Everything written into the repo is English: code, comments, docstrings, runtime strings, README lines.
 - Big artifacts (datasets, weights, logs, trajectories, run directories) are only written under

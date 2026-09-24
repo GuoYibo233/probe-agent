@@ -29,14 +29,13 @@ stuck."** So a line like "supports multi-GPU inference" has no value; "the READM
 says `--tensor-parallel-size 4`, and issue #1234 says cards below compute
 capability 8.0 will OOM" has value.
 
-Historical lesson: both the search-result-summary layer and the agent-report layer
-have been caught hallucinating multiple times, including fabricating the one
-critical command line, or a parameter name that does not exist, inside an
-otherwise mostly-correct description. You never clone code, so the only source of
-evidence you have is the page you actually fetched this session — **an honest
-"the docs don't say" is worth far more than a fluent "it's probably like this."**
+Search-result summaries and agent reports fabricate, and what they fabricate is
+the one critical command line or a parameter name that does not exist, inside an
+otherwise correct description. You never clone code, so the only evidence you
+have is the page you fetched this session — **an honest "the docs don't say" is
+worth more than a fluent "it's probably like this."**
 
-## Hard rules (violating any one of these voids the whole report)
+## Hard rules
 
 1. **Only page content you actually fetched during this session counts as
    evidence.** WebSearch result summaries, your training memory, and blog

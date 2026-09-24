@@ -74,13 +74,12 @@ by hand). **Note that this machine's shell only has `python3`, not
    refuses while the piece's session is still alive, re-probes the target
    card before restarting it, and only warns (never refuses) when the piece
    already has more than one launch entry — there is no quota on refires.
-4. **Smoke test before scaling up**: unless a task was explicitly told to
-   already be validated at small scale, first fire a smoke run with a few
-   dozen data points / a few iteration steps, confirm the log shows real
-   progress (the model finished loading, the first batch, a tqdm line), and
-   only then launch at full scale. If the smoke test fails, fix it; if it
-   cannot be fixed, report back with the traceback, never force a
-   full-scale launch anyway.
+4. **Smoke first, on the same setting**: unless the task says the setting is
+   already validated, run the skill's Phase 3 smoke — `--debug` on the same
+   setting, never a hand-shrunk copy — and confirm its log shows real
+   progress (the model finished loading, the first batch) before the real
+   launch. If the smoke fails, fix it; if it cannot be fixed, report the
+   traceback and stop; never launch at full scale over a failed smoke.
 5. **Don't ask, decide yourself, report the assumption**: you cannot ask the
    user a question. When the task names its cards, pass them as `--cards`
    unchanged. When it does not, read the live free list with `run.py free`
@@ -108,16 +107,15 @@ by hand). **Note that this machine's shell only has `python3`, not
    "how to check progress, how to kill the task" into the report and hand it
    back to the main conversation (the main conversation will later dispatch
    a job-monitor agent to watch it using your launch list, so the host /
-   session / log paths in that list must be complete and accurate). Changes
-   to experiment scripts are limited to the minimal changes launching
-   requires, such as adding shard parameters (`--shard-id/--num-shards`);
-   list any such change in the report.
+   session / log paths in that list must be complete and accurate). You change no experiment code to launch: the launcher splits a `sample` or
+   `inject` stage into pieces itself (`--piece i/n`), and a change a launch
+   seems to need is reported back as a task, never made on the way.
 
 ## Final report format (your final reply is exactly this, pure data)
 
 ```
 ## Launch list
-| shard | host/GPU | tmux session | log |
+| piece | host/GPU | tmux session | log |
 |---|---|---|---|
 
 ## Verification

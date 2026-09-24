@@ -76,13 +76,11 @@ Three rules hardcoded into the script, not to be changed at launch time:
   under `<repo>-wt/` next to the repo, deleting it as soon as it's done (git's worktrees share the object store,
   so a review in the main repo can get the diff just from the sha). After launch, nobody touches the main repo's
   working tree; code merging happens at reconciliation time. Worktrees are only created and entered with git
-  commands — the dispatch message explicitly bans calling the EnterWorktree tool, because a subagent calling it
-  hangs and never returns; wave3 and wave9 each hit this once (wave9 hung for 6 hours before it was noticed).
-  How to tell it's stuck: read the timestamp of the last line in the workflow directory's `agent-*.jsonl`; if
+  commands — the dispatch message bans the EnterWorktree tool, because a subagent that calls it hangs and
+  never returns. How to tell a ticket is stuck: read the timestamp of the last line in the workflow directory's `agent-*.jsonl`; if
   it's been stalled for more than half an hour, TaskStop it and resume with `resumeFromRunId` below.
-- Every agent's model is explicitly hardcoded: implementation and review use sonnet, fix rounds 4 and 5 escalate
-  to opus. Not passing a model would inherit the main conversation's Fable, which collides with the hard rule
-  banning Fable for subagents.
+- Every agent's model is explicitly hardcoded to opus. Not passing a model would inherit the main conversation's
+  Fable, which collides with the hard rule banning Fable for subagents.
 - The fix loop caps at 5 rounds; once it hits the cap, it returns with unresolved findings and the script does
   not adjudicate.
 
@@ -129,7 +127,7 @@ Once all waves are done, do one whole-branch final review, a single agent withou
 1. Use the Agent tool to dispatch opus, with the prompt pointed at `prompts/final-reviewer.md`, giving it the
    starting commit (the HEAD before the first wave launched), the ending HEAD, the spec path, every ticket
    path, and the minors and shelved list accumulated during reconciliation.
-2. If the final review has findings: dispatch one sonnet fix agent to fix the whole list in one pass (never one
+2. If the final review has findings: dispatch one opus fix agent to fix the whole list in one pass (never one
    agent per item), then dispatch one scope-limited re-review. Anything remaining is adjudicated per Phase 3's
    CAP_TRIPPED rule.
 3. Report to the user: each ticket's final status and commit range, the shelved list, and the final review's

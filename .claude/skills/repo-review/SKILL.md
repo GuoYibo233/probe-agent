@@ -52,7 +52,5 @@ the fixed tree is never reworded. This file reviews against the **seven** princi
 
 4. **What it never does.** Start a GPU process — it returns `BLOCKED` with the
    ready-to-run command; edit `experimental_settings/*.yaml` or `models/table.yaml`; or
-   propose a file the tree's Part 1 does not name — as `README.md` section 2 currently
-   spells that tree, after the 2026-09-18 fold of the three per-method eval files into
-   `eval/utils/probe_eval.py` and the `agent/` renames, which is the list
-   `run.py selfcheck` check 1 enforces.
+   propose a file the tree does not name — the tree as `README.md` section 2 spells it,
+   which is the list `run.py selfcheck` check 1 enforces.

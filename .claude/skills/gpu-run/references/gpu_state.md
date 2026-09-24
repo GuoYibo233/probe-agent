@@ -15,11 +15,11 @@ Surveyed on: 2026-07-29 (measured, not hearsay).
    builds needing cu124+ wheels may report driver incompatibility on these
    two; when a package install reports a CUDA version error, think of this
    first, and switch to tokyo105/108 or downgrade the wheel version.
-   - **Measured exception (2026-07-29)**: cu128-wheel torch runs fine on
-     106/107 as usual (CUDA minor-version forward compatibility kicks in), so
-     do not automatically avoid these two just because of this trap; counting
-     them, the training pool actually has 19 usable cards. Only downgrade the
-     wheel version when a driver error actually shows up.
+   - **Measured exception (2026-07-29)**: a cu128-wheel torch runs on
+     106/107 (CUDA minor-version forward compatibility), so do not avoid these
+     two machines for this trap alone; downgrade the wheel only when a driver
+     error actually shows up. The pool's card counts are the `hosts:` list of
+     `constants/path_outputs.yaml`.
 2. **Dedupe the aliases**: shiga=tokyo105, saitama=tokyo108, only four
    physical machines. Always use tokyo names for probing and allocation,
    never treat an alias as a fifth machine and double-count a card.
@@ -30,8 +30,6 @@ Surveyed on: 2026-07-29 (measured, not hearsay).
 5. The HF cache is on NFS: `HF_HOME=/net/tokyo100-10g/data/str01_01/y-guo/hf`
    (Qwen3.5-4B/9B, the whole Qwen3 family, the whole Qwen2.5 family already
    cached); model weights also download here, not to /home.
-6. hf_server port convention: `8712 + gpu_id` (a historical convention on
-   tokyo108).
 
 ## Machines outside the pool (do not use)
 

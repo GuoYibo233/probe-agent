@@ -14,7 +14,7 @@ description: >-
   done + why this design counts + one real sample freshly pulled from the raw data +
   anything worth noting, with no command lines or parameters) → self-check (including
   mechanical verification: grep every number in the bottom half back against the top half,
-  hand-recompute every count) → dispatch a swarm of sonnet subagents to check section by
+  hand-recompute every count) → dispatch opus subagents to check section by
   section for "is there a word you don't understand," plus one checker whose only job is
   to verify the arithmetic (given only the preceding text, no background, run until hard
   items hit zero new findings) → render to an artifact with a deterministic converter and
@@ -34,7 +34,7 @@ version: 1.1.0
 
 This skill answers one question: **what experiments has this project run, what did each one conclude, and what's still missing.**
 
-Engineering side only, looking only at our own ledger. Wanting to know what other people out there have done is the job of `update-knowledge-map`; don't do that here.
+Engineering side only, looking only at our own ledger; what other people have published is outside this skill.
 
 Produces three things, in an order that must not be reversed:
 
@@ -54,7 +54,7 @@ Read this file in full, don't rely on memory:
 
 - `~/.claude/skills/humanizer-gyb/SKILL.md`
 
-This one checklist carries all the entries by itself (51 rules in five categories: words, sentences, paragraphs, the whole piece, layout); stripping out AI-tells and gyb's personal preferences are both handled in it, no need to stack another writing checklist on top. This set of rules doesn't just constrain the final document — **it applies equally to every round of explanation in chat.**
+This one checklist carries all the entries by itself (five categories: words, sentences, paragraphs, the whole piece, layout); stripping out AI-tells and gyb's personal preferences are both handled in it, no need to stack another writing checklist on top. This set of rules doesn't just constrain the final document — **it applies equally to every round of explanation in chat.**
 
 ## Five hard rules that run through everything
 
@@ -129,7 +129,7 @@ Reason: the whole picture and a single line differ in information volume by an o
 
 First check whether there's already a `STATUS_*.md` for this same line under `notes/plans/`. If there is, it's a **rerun**, go into update mode; if not, only then start from scratch.
 
-This step was added on 2026-07-31: that time was a second run on the same line, but the skill assumed throughout it was a first run, so the whole document got resent for review, doubling the cost, and sections already accepted in the previous version got reported all over again.
+A rerun treated as a first run resends the whole document for review, doubling the cost and reporting already-accepted sections again.
 
 **How to run update mode:**
 
@@ -164,7 +164,7 @@ Whatever isn't in the ledger doesn't exist. Never fill in a plausible-looking nu
 
 This isn't a report, it's teaching. Each round covers exactly **one block**: one experiment, or one conclusion.
 
-Each round has two fixed parts, with a clear boundary between them, body text under 300 characters:
+Each round has two fixed parts, with a clear boundary between them, and covers its one block in a few short paragraphs:
 
 1. **What the experiment measured** — facts only. Every number followed by a sentence on what it refers to and how it was measured. No evaluation of any kind in this part.
 2. **My interpretation** — open by saying explicitly "here's my interpretation." What these numbers show, where it's shaky, where it's still uncertain.
@@ -200,7 +200,7 @@ In reality there are plenty of cases where "the user said just do it, then walke
 | Original term in the project | The one name used throughout | Aliases that are always a violation | Aliases that depend on context |
 |---|---|---|---|
 
-The last two columns must be kept separate — this is a lesson learned in practice on 2026-07-31: at the time a three-column table had 139 banned aliases, and a mechanical search hit 31 words, of which only 7 were real violations. All the false positives came from words like "data," "eval," "once," "precision," "launch" — words that **are only a violation in a specific context** — mixed into the same column, drowning the search results.
+The last two columns must be kept separate: a mechanical search over a single alias column drowns in false positives from words like "data," "eval," "once," "precision," "launch" — words that **are only a violation in a specific context**.
 
 - **Aliases that are always a violation**: wrong wherever they appear, mechanical search only runs against this column, fix on any hit.
 - **Aliases that depend on context**: this word has other legitimate uses (e.g. "launch" meaning launching a GPU job is legitimate, but meaning a probe firing is a violation) — search for it, but have a human eyeball the results.
@@ -288,7 +288,7 @@ Written like this (this example is illustrative in form; the content is made up)
 
 Paste the original verbatim; English stays English, **never translate it** — a translated sample can't be checked against the raw data. Note which file it was pulled from and which entry.
 
-**The sample must also be labeled with which run it belongs to, and where to look up that run's software/hardware configuration.** It's common for one line of experiments to run in several batches, and the inference service, GPU model, and framework version can differ across batches — numbers across batches can't be subtracted from each other. This is exactly how a problem was caught in practice on 2026-07-31: the same arm didn't match seed-by-seed across two batches, with a max difference of 121479 tokens, and tracking it down found that one batch went through a server started directly with transformers and the other went through vLLM. Just labeling "which file, which entry" isn't enough — that can't tell you the batch.
+**The sample must also be labeled with which run it belongs to, and where to look up that run's software/hardware configuration.** It's common for one line of experiments to run in several batches, and the inference service, GPU model, and framework version can differ across batches — numbers across batches can't be subtracted from each other: the same arm and seed served once through a transformers server and once through vLLM can differ by tens of thousands of tokens. Labeling "which file, which entry" alone can't tell you the batch.
 
 Why this section is essential: however accurate a description of the process is, it's still abstract, and what the reader imagines often looks very different from the real data. Pasting in one real sample lets the reader check at a glance whether their understanding matches; and in the process of pulling it, the writer will discover the vague spots in their own process description — if it can't be pulled out, that means it was never actually understood.
 
@@ -338,8 +338,8 @@ Don't hand over the written version right after finishing it — read through fr
 
 The last two must be run with a script, never by eyeballing:
 
-- **Grep every number in the bottom half back against the top half.** Regex out every number that appears in the bottom half, and search for each one in the top half. If it can't be found, that means the bottom half is citing something the top half never gave, and it must either be added to the top half or deleted from the bottom half. This rule was already in the skill ("every judgment must point back to a number in the top half"), but there was never an enforcement mechanism, so it got broken three rounds running on 2026-07-31 — "the previous version was 4 copies," "the task list's dependency graph," "the review only trusts real timing" all leaked through this way. This doesn't need an agent at all, regex plus grep is enough.
-- **Hand-recompute every count and total.** How many rows a table has, how many "cells," "cards," "copies," "entries" a sentence claims — count and add them up one by one. All four hard errors caught on 2026-07-31 came from this step: writing three cells as four, "nine cards" not matching a ten-row table, the bottom half saying "two methods met the bar" while the top half's table showed three, and counting a still-running cell into "all failed to meet the bar." **Not one of these errors could have been surfaced by asking "which word don't you understand."**
+- **Grep every number in the bottom half back against the top half.** Regex out every number that appears in the bottom half, and search for each one in the top half. If it can't be found, that means the bottom half is citing something the top half never gave, and it must either be added to the top half or deleted from the bottom half. This doesn't need an agent at all, regex plus grep is enough.
+- **Hand-recompute every count and total.** How many rows a table has, how many "cells," "cards," "copies," "entries" a sentence claims — count and add them up one by one. The errors this step catches — three cells written as four, a card count that doesn't match the table, "two methods met the bar" against a table showing three, a still-running cell counted as failed — **are never surfaced by asking "which word don't you understand."**
 
 Tell the user in one or two sentences what this pass fixed. Never fix silently.
 
@@ -347,13 +347,13 @@ Tell the user in one or two sentences what this pass fixed. Never fix silently.
 
 Self-review can't be trusted. The writer already knows what they meant to say, so their own words always read as clear to them — that's the illusion of familiarity, not real clarity. So after self-review, it still has to go through an outsider's check.
 
-**Method: split the written version into sections, dispatch one `sonnet`-model subagent per section, all in parallel.**
+**Method: split the written version into sections, dispatch one `opus`-model subagent per section, all in parallel.**
 
 ### Hard rule: give it the preceding text, not the background
 
 Each subagent receives **the section to check, plus every section before it**, plus the checklist below. **Give it no project background whatsoever** — don't say what project this is, don't explain the terms in it, don't paste code or raw data.
 
-Give it the preceding text because a real reader reads from the top down. A word explained in section two is already understood by someone reading section five; pull section five out on its own to check, and the checker will report that word as "not understood," which is a false alarm caused by the checking method, not a flaw in the text. **This was learned in practice on 2026-07-30**: when sections were sent for review individually, four out of six checkers reported "memory-on," "cell," and "token" as not understood, even though all three had already been defined in earlier sections.
+Give it the preceding text because a real reader reads from the top down. A word explained in section two is already understood by someone reading section five; pull section five out on its own to check, and the checker will report that word as "not understood," which is a false alarm caused by the checking method, not a flaw in the text.
 
 Give it no background because once given background, the checker can guess the meaning from it and report back "understood." A real reader has no background in hand. **The checker has to be as ignorant as the reader for its findings to count.**
 
@@ -362,7 +362,7 @@ Write the boundary explicitly into the prompt, listing both sides:
 - **It already knows this, reporting it doesn't count**: model, prompt, token, random seed, decoding method, accuracy, baseline, ablation, eval set, and public model names like Qwen and Llama and public dataset names.
 - **It couldn't possibly know this, and if it's unexplained that's a real gap**: names coined inside this project ("memory-on," "cell," "canonical id," and the like), self-coined abbreviations, experiment run numbers, raw record field names, self-defined metrics, numbers with no stated origin.
 
-Use `sonnet` as the model. It understands basic domain vocabulary, so what it reports back is genuinely stuff that wasn't written clearly.
+Use `opus` as the model. It understands basic domain vocabulary, so what it reports back is genuinely stuff that wasn't written clearly.
 
 **When processing the reports, check the preceding text first.** If a reported word really was explained in an earlier section, it doesn't count, skip it; if it wasn't explained earlier, it's a real gap and must be filled in.
 
@@ -404,11 +404,11 @@ Send it something along these lines:
 >
 > Don't comment on whether the writing reads well, don't flag word choice, don't flag metaphors. Only do the accounting.
 
-Why dispatch it separately: on 2026-07-31, ten section-by-section checkers reported back over two hundred items, and not one of them caught a single counting error; a single "count it one by one" pass found four hard errors. Counting was only an incidental part of question 4 in the section-by-section checkers' prompt, and attention was already used up by the first three questions. **In terms of output density, this one accounting checker outweighs every other checker combined.**
+Why dispatch it separately: section-by-section checkers do not catch counting errors — counting is one incidental part of question 4, and attention is used up by the first three questions. **In terms of output density, this one accounting checker outweighs every other checker combined.**
 
 ### Triage rule: how to handle the reports (don't re-decide it every time)
 
-On 2026-07-31, the first round of ten checkers reported back over two hundred items, fewer than 20 of them real problems, a signal-to-noise ratio of about 1:10. More effort went into triage than into actually fixing the draft. So the triage rule is fixed here, don't re-decide it every time.
+Section checkers return about ten items for every real problem, and triage then costs more than fixing the draft. So the triage rule is fixed here, don't re-decide it every time.
 
 **Automatically rejected, no action needed:**
 
@@ -431,12 +431,12 @@ Everything else (whether a single word is plain enough, whether a given sentence
 - **Every word that gets reported must be dealt with, none ignored.** There are only two ways to deal with it: replace it with plain language, or add an explanatory sentence on the spot. If you feel the word absolutely has to stay, add an explanation in the written version — don't just assume in your head that "everyone should already know this."
 - **A section that can't be restated must be rewritten.** A wrong restatement is more serious than an impossible one — it means that section is actively misleading.
 - **After revising a section, dispatch a new subagent to re-check it** — use a fresh subagent, don't let the original one see the revised draft (it's already been contaminated by your own explanation).
-- **After each round of edits, pull out just the sentences that were changed and look at them again.** Check only two things: whether the newly written words this round were defined earlier, and whether this word has already been claimed by something else. **A revision introduces just as many new problems as the original draft had, but nobody specifically checks for them.** As observed on 2026-07-31: after changing the word "reference upper bound," "upper bound" ended up meaning two different things in two sections (one meaning the most that could be saved, one meaning the most that could be put into the prompt) — a problem the first round of edits created by itself.
+- **After each round of edits, pull out just the sentences that were changed and look at them again.** Check only two things: whether the newly written words this round were defined earlier, and whether this word has already been claimed by something else. **A revision introduces just as many new problems as the original draft had, but nobody specifically checks for them.** Renaming one term can leave its parts meaning two different things in two sections — a problem an edit creates by itself.
 - **The convergence criterion has two tiers; don't hold everything to one single standard until it dies.** Split what comes back into hard items and soft items:
   - **Hard items** — whether counts are correct, whether numbers have sources, whether interpretation leaked into the top half, whether the same thing got renamed across sections. Hard items require **two consecutive rounds with zero new findings**; if that's not reached yet, keep running.
   - **Soft items** — metaphors, written-register tone, whether a given word is plain enough. Soft items **are allowed to be carried forward**, but must be listed in a "known unaddressed items" section at the end of the document, one item at a time, not buried.
 
-  Why split them: on 2026-07-31 it took three rounds, and every round had new findings (over two hundred in round one, a dozen or so in round two, 2 in round three) — going by the literal meaning of "zero new findings" would loop forever, because the previous round's edits were themselves generating new soft items. The only thing that should actually be held to zero is hard items — those four categories are errors, everything else is style.
+  Why split them: every round of edits generates new soft items, so a literal "zero new findings" loops forever. The only thing that should actually be held to zero is hard items — those four categories are errors, everything else is style.
 - **"Why is this number this particular value" also counts as a real question.** The checker often asks "why ten episodes," "why five random seeds." These questions are asking about the basis for the experiment design, which the written version should already be accounting for — don't dismiss it as noise.
 - **The checker catches metaphors more accurately than self-review does.** In practice, three metaphors the writer didn't notice on their own read-through (chess terminology, trading language, describing something continuous as if it were cells) were all caught in one pass by the checker. Always defer to the checker's judgment on metaphors, never reject it yourself.
 
@@ -471,7 +471,7 @@ The result of this stage must be reported to the user: **how many not-understood
 
 ## Phase 5: render the artifact (deterministic conversion + character-by-character verification)
 
-This stage used to say "hand it to a subagent to render," changed on 2026-07-31. **Reason: the only hard rule at this stage is "not a single character may change," and only a deterministic conversion can prove that.** Have a model copy out a long document and it will inevitably shift a few characters without meaning to — in practice the very first render dropped 19 characters (a collapsed heading ate the trailing period, and one heading got swapped for a phrase the model made up itself). Having a human check it afterward just hands verification back to the same thing that makes the mistakes.
+**The only hard rule at this stage is "not a single character may change," and only a deterministic conversion can prove that.** A model copying out a long document shifts characters without meaning to — a collapsed heading eats a trailing period, a heading gets swapped for a phrase of the model's own — and a human check afterward hands verification back to the same thing that makes the mistakes.
 
 So it's split into two steps, and the first time and every time after that do different things.
 
@@ -490,12 +490,12 @@ Dispatch a subagent with clear instructions:
 2. **Extract the visible text from the HTML (strip all tags, restore entities), and compare it character by character against the markdown's text with its markup stripped.** They must be exactly identical after ignoring whitespace. Use `difflib` to print the diff blocks.
 3. **Do not publish if they don't match.** First find out whether the converter dropped characters, or the markdown has syntax the converter doesn't recognize.
 
-This step ran successfully twice on 2026-07-31, both times reporting "md 36082 / html 36082 → character-for-character identical." With that number, "not a single character may change" is provable, not just a verbal promise.
+With the two character counts printed side by side, "not a single character may change" is provable, not just a verbal promise.
 
 ### Layout requirements (for the converter to implement)
 
 - Keep the six-section, two-half structure as is; the order of five fact sections on top, one interpretation section on the bottom, must not change.
-- Experiment descriptions are collapsed by default, expand to see them (the page gives the numbers first, the method and logic are for clicking into). **The collapsed heading must be taken verbatim from that bold line of text in the markdown, not even punctuation may change** — the 19 characters dropped last time were lost exactly here.
+- Experiment descriptions are collapsed by default, expand to see them (the page gives the numbers first, the method and logic are for clicking into). **The collapsed heading must be taken verbatim from that bold line of text in the markdown, not even punctuation may change** — this is where a hand-rendered page loses characters.
 - **The two halves must be visually distinguishable at a glance on the page** — background color, a border, or a banner heading spanning the width all work, but it can't rely on just a small label to tell them apart. The bottom half must open with a clear statement that "everything below is interpretation, and it can be argued with."
 - **Every number carries an annotation**, viewable by clicking or hovering, showing what it refers to and where it's from, with content matching what's in the written version's parentheses. Implement the annotation with pure HTML and CSS (e.g. `<details>` or a `:hover`-revealed block), no external script. There's no hover on a phone, so a tap must also be able to open it.
 - Both light and dark themes must be readable: write colors as custom properties on `:root`, redefined once each under `@media (prefers-color-scheme: dark)` and under `:root[data-theme="dark"]` / `:root[data-theme="light"]`.
@@ -508,7 +508,7 @@ This step ran successfully twice on 2026-07-31, both times reporting "md 36082 /
 - **"Did you get it" doesn't count as acceptance.**
 - **Subagents may not change a single character of the written version.**
 - **One entity gets exactly one name for the whole session.**
-- **No external literature review.** What other people have done is the job of `update-knowledge-map`.
+- **No external literature review.** What other people have done is outside this skill.
 - **Never touch `jobs/RESULTS.md`.** It's rendered from `jobs/runs.jsonl` by `jobs/registry.py`; a hand edit destroys it.
 - **The bottom half may not contain any number or fact the top half never gave.** Check with a script, don't rely on self-discipline.
 - **The artifact may not be published without passing character-by-character verification.**

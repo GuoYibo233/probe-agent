@@ -22,11 +22,11 @@ schema and the setting files themselves), `models/` (the agent and probe
 model modules and the two services), `agent/` (the collection loop),
 `train/` and `eval/` (the method files and their shared libraries), `jobs/`
 (the registry and the launcher), and `run.py` at the root, the one entry
-point. The old pipeline's read-only reference code has been removed.
+point.
 
 `notes/` holds gyb's hand-written documents: `notes/TIMELINE.md`,
 `notes/DATA.md`, `notes/WORKPLAN.md`, `notes/METHOD.md`, `notes/CONTEXT.md`,
-`notes/plans/`, and `notes/docs/` (moved whole from the repo root). Agents
+`notes/plans/`, and `notes/docs/`. Agents
 read these and never edit them, except to append a `notes/TIMELINE.md` entry
 when asked.
 
