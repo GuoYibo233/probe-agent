@@ -10,7 +10,7 @@ description: >-
   commit, or interrupt with `kill` / `refire` / `retry`. Invoke whenever Dungeon♂Master
   says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
   triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 1.0.0
+version: 1.1.0
 ---
 
 # gpu-run — new1 GPU job full lifecycle
@@ -20,20 +20,27 @@ leaves an artifact on disk, and skipping a step is a violation.
 
 Fixed paths:
 - Slow-variable log: `.claude/skills/gpu-run/references/gpu_state.md`.
+- Measured task x card table: `.claude/skills/gpu-run/references/card_performance.md`.
 - The one command: `run.py`, at the repo root, typed with the `probe` interpreter of
   `constants/path_datasets.yaml`'s `venvs:` map,
   `/home/y-guo/reproduce/new1/external/probe-env/bin/python` — that is the interpreter
   `README.md` gives `run.py` (`venv: probe`), and the system `python3` cannot import its
   dependencies. `run.py --help` lists every subcommand this file names.
-- Cluster inventory and the login machine: `constants/path_outputs.yaml`'s `hosts:` and
-  `login_host:` keys.
+- Cluster inventory: `constants/cards.yaml` (every host, and every card's model and
+  memory). The login machine: `constants/path_outputs.yaml`'s `login_host:` key.
 
 ## Phase 0 — Read the log
 
-Read `.claude/skills/gpu-run/references/gpu_state.md` for the slow variables only:
-driver and CUDA version per host, the alias dedupe (shiga=tokyo105, saitama=tokyo108,
-four physical machines), and tokyo108's mixed card types (idx 0-2 are H100, idx 3-5 are
-H200). A card's live occupancy is never read from this file.
+Read three files, none of which says whether a card is busy right now:
+- `constants/cards.yaml`: the card types and sizes, per host and per card index (the card's
+  model and its `memory_gib`; tokyo108 mixes types, idx 0-2 H100 NVL and idx 3-5 H200 NVL).
+- `.claude/skills/gpu-run/references/card_performance.md`: how each task performed on each
+  card type (peak memory, wall-clock, throughput, outcome), and what has never been measured.
+- `.claude/skills/gpu-run/references/gpu_state.md`: the other slow variables, driver and
+  CUDA version per host and the alias dedupe (shiga=tokyo105, saitama=tokyo108, four
+  physical machines).
+
+A card's live occupancy is never read from these files.
 
 ## Phase 1 — Probe the cards for real
 
@@ -41,7 +48,7 @@ H200). A card's live occupancy is never read from this file.
 /home/y-guo/reproduce/new1/external/probe-env/bin/python run.py free
 ```
 
-Free cards per host, over `constants/path_outputs.yaml`'s `hosts:` list, probed now and
+Free cards per host, over `constants/cards.yaml`'s hosts, probed now and
 never cached. A card is busy when `nvidia-smi` shows a compute process on it, or when it
 belongs to a piece of a run that has a start row with no finish row and either a live
 session, or a start row younger than the launch timeout while the piece's verdict is not
@@ -49,19 +56,11 @@ session, or a start row younger than the launch timeout while the piece's verdic
 fail-closed: a failed or timed-out ssh counts as busy, so an unclear probe never frees a
 card (contracts 3.4, 6.3).
 
-### Pick the cards by the size of the job, then name them with `--cards`
+### Pick the cards from the performance table, then name them with `--cards`
 
 The probe says which cards are free; which of them fit the job is decided here, before
 the launch, and handed to Phase 3 and Phase 4 as `--cards <host>:<id>,<id>,...` (once per
-host). A launch with `--cards` claims cards from that pool only, in the order given, and
-refuses when a named card is not free. A launch without `--cards` takes the first free
-cards in the inventory's order, whatever their size, so every launch this skill makes
-names its cards.
-
-Count the cards the stage's pieces need, then pick cards of the size each piece needs
-from the free list. Card sizes are the comment lines of `constants/path_outputs.yaml`'s
-`hosts:` list (48 GB on tokyo105/106/107; on tokyo108 cards 0-2 are 94 GB and 3-5 are
-140 GB).
+host). Count the cards the stage's pieces need:
 
 | stage | pieces that hold a card | cards |
 |---|---|---|
@@ -69,20 +68,37 @@ from the free list. Card sizes are the comment lines of `constants/path_outputs.
 | `inject` | agent service x `inject.replicas`, plus one probe service | `tensor_parallel_size` each, plus 1 |
 | `train` | one train piece | 1 |
 
-| piece | card it needs | source |
-|---|---|---|
-| agent service, `gpt_oss_120b` | a 94 GB or 140 GB card, so tokyo108 | every collection so far ran on H100/H200 |
-| probe service (`inject`) | any 48 GB card; it holds two probe checkpoints for inference only | - |
-| train, full tuning, any backbone | a 94 GB or 140 GB card | measured peaks at 0.6B: ctool 60.2, cgen 76.8, cparam 76.7 GiB; 1.7B full with gradient checkpointing ran out of memory on 48 GB |
-| train, LoRA, 0.6B to 4B | any 48 GB card | measured peaks 17 to 38 GiB |
+Then pick each piece's card type from `references/card_performance.md`: the smallest card
+type whose measured peak memory for that task (stage, model, tuning, sizes) fits on the card
+with margin. Card sizes are the `memory_gib` of each card in `constants/cards.yaml` (47 GiB on
+tokyo105/106/107; on tokyo108 cards 0-2 are H100 NVL at 93 GiB and 3-5 are H200 NVL at
+140 GiB). A task with no row in the table is smoked with `--debug` (Phase 3) on the card type
+the nearest row suggests, and the smoke's result is appended to the table (Phase 6a). The
+trainer on this tree prints no peak memory, so the table's training rows on this tree carry
+only outcomes, among them the out-of-memory messages on 47 GiB cards, and its peak figures
+for training come from the previous pipeline; the `--debug` smoke of Phase 3 is therefore
+the check that the chosen card holds the job, and a smoke that runs out of memory moves the
+job to the next card size up.
 
-The train rows were measured on the previous trainer at 4096 tokens per event; this
-trainer's default is 8192, so the `--debug` smoke of Phase 3 is the check that the chosen
-card holds the job, and a smoke that runs out of memory moves the job to the next card
-size up. An agent service that an open run already serves on a pool host is attached to
-rather than started again (contracts 7.4), and then takes no card from the pool. When the
-free list holds no card of the size a piece needs, report the free list and stop; never
-launch on a smaller card and never launch without `--cards` to get past it.
+`jobs/launch.py` holds one size rule itself. An agent service that starts its own server
+lands only on cards at least as large as the smallest card of its `models/table.yaml` row's
+serving host; a train piece and a checkpoint-loading probe service have no size floor.
+Without `--cards`, each piece goes to the first host that has enough free cards meeting its
+floor — the agent service and the train piece try the agent model's serving host first, the
+probe service tries the host the agent service landed on first, and the rest follow in
+`constants/cards.yaml`'s host order — and claims that host's first such cards in the free
+list's order. A train piece or a probe service launched without `--cards` therefore takes the
+first free card whatever its size, so every launch this skill makes names its cards. With
+`--cards`, the pieces claim from that pool only, in the order given, under the same floor: a
+named card that is not free refuses the launch (`--cards names card(s) that are not free:
+...`), and a pool with too few cards meeting a piece's floor refuses it, naming each pool card
+smaller than the requirement with its size (`--cards names card(s) smaller than the <n> GiB
+this piece needs: <host>:<id> (<m> GiB)`).
+
+An agent service that an open run already serves on a pool host is attached to rather than
+started again (contracts 7.4), and then takes no card from the pool. When the free list
+holds no card of the size a piece needs, report the free list and stop; never launch on a
+smaller card and never launch without `--cards` to get past it.
 
 ## Phase 2 — Commit before launching
 
@@ -255,6 +271,26 @@ Prints the backbone x method x risk table, one group per (setting, debug flag) p
 sweep child's own name, never its parent — each cell the mean and spread over the
 group's runs (the `5.5 / 8.6` ruling of `.scratch/from-zero/contract-errata.md`). Commit
 `jobs/runs.jsonl` and `jobs/RESULTS.md` together, with the key in the commit message.
+
+Append the run's row to `references/card_performance.md`, or update the row for the same
+task x card, for every GPU run that finished and for every run that failed for memory, and
+commit it with the two files above. The row carries the date, the run key, the sizes
+(`debug` or the full sizes), the card type, the peak memory if one was recorded, the
+wall-clock, the throughput, the outcome and the source file of each number:
+- The card: the `host` and `gpus` of the pieces in the run's start row in `jobs/runs.jsonl`,
+  with the model and `memory_gib` of that card in `constants/cards.yaml`.
+- Wall-clock: the heartbeat span, the first to the last row of the working piece's
+  `<run_dir>/heartbeat/<piece>-<launch>.jsonl`, and `elapsed_s` of the run's finish row in
+  `jobs/runs.jsonl`; for `train`, the step, eval and save offsets in
+  `<run_dir>/train_log.jsonl`; for an agent service, the vLLM log's "Model loading took"
+  and "init engine ... took" seconds.
+- Throughput: tasks per hour from the heartbeat span, written as derived; for an agent
+  service, the vLLM log's "Avg generation throughput" lines.
+- Peak memory of an agent service: the vLLM log's memory lines in
+  `<run_dir>/log/<service piece>.txt` ("Model loading took", "Available KV cache memory",
+  "GPU KV cache size", "Maximum concurrency", "Free memory on device ... on startup").
+- A run that failed for memory: the `torch.OutOfMemoryError: CUDA out of memory. Tried to
+  allocate ...` line in `<run_dir>/log/<piece>.txt`, quoted.
 
 ## Phase 6b — Interruption
 

@@ -83,10 +83,15 @@ by hand). **Note that this machine's shell only has `python3`, not
 5. **Don't ask, decide yourself, report the assumption**: you cannot ask the
    user a question. When the task names its cards, pass them as `--cards`
    unchanged. When it does not, read the live free list with `run.py free`
-   and pick by the skill's Phase 1 sizing tables: count the cards the
-   stage's pieces need, give each piece a free card of the size it needs,
-   keep the 94 GB and 140 GB cards of tokyo108 for the pieces that need them
-   and put everything a 48 GB card holds on tokyo105/106/107. State in the
+   and pick as the skill's Phase 1 describes: take each piece's card type
+   from `.claude/skills/gpu-run/references/card_performance.md` and each
+   card's size from `constants/cards.yaml` (47 GiB on tokyo105/106/107,
+   93 GiB H100 NVL on tokyo108 cards 0-2, 140 GiB H200 NVL on tokyo108
+   cards 3-5), keep the tokyo108 cards for the pieces that need them, and
+   put everything a 47 GiB card holds on tokyo105/106/107. `jobs/launch.py`
+   places an agent service that starts its own server only on cards at
+   least as large as its serving host's smallest card, and refuses a named
+   card below that size. State in the
    report "I picked X, for reason Y." For a genuine hard blocker (e.g. all four machines are full),
    honestly report the current state, do not wait around blindly.
 6. **Project isolation**: never use any code, data, or script under

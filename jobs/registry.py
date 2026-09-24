@@ -2,8 +2,8 @@
 
 Standard library and PyYAML only, imported by every stage to write its start and
 finish rows and by run.py for the subcommands. Imports nothing from this repo.
-`constants/path_outputs.yaml` is read lazily, inside the functions that need it,
-and cached in a module global, so `import jobs.registry`, `lock()`,
+`constants/path_outputs.yaml` and `constants/cards.yaml` are read lazily, inside
+the functions that need them, and cached in module globals, so `import jobs.registry`, `lock()`,
 `append_start`, `append_finish`, `write_meta`, `write_done` and `beat` all work
 before `constants/` exists.
 
@@ -49,6 +49,7 @@ DEFAULTS: dict = {
 }
 
 _OUTPUTS_CONFIG: dict | None = None
+_HOSTS: list[dict] | None = None
 
 
 def _repo_root() -> Path:
@@ -75,6 +76,40 @@ def _outputs_config() -> dict:
         with open(path) as f:
             _OUTPUTS_CONFIG = yaml.safe_load(f)
     return _OUTPUTS_CONFIG
+
+
+def hosts() -> list[dict]:
+    """The cluster's hosts from `constants/cards.yaml`, the one file for card facts, read once
+    and cached in this module global. Each entry carries the host's `name`, its `alias` where
+    it has one, `cards` (how many cards it has: the length of its per-card list) and
+    `memory_gib` (each card's memory in GiB, by card index)."""
+    global _HOSTS
+    if _HOSTS is None:
+        with open(_repo_root() / "constants" / "cards.yaml") as f:
+            entries = yaml.safe_load(f)["hosts"]
+        _HOSTS = []
+        for entry in entries:
+            host = {"name": entry["name"], "cards": len(entry["cards"]),
+                    "memory_gib": [int(card["memory_gib"]) for card in entry["cards"]]}
+            if "alias" in entry:
+                host["alias"] = entry["alias"]
+            _HOSTS.append(host)
+    return _HOSTS
+
+
+def card_memory_gib() -> dict[str, list[int]]:
+    """Host name -> each card's memory in GiB, by card index (`constants/cards.yaml`)."""
+    return {host["name"]: host["memory_gib"] for host in hosts()}
+
+
+def canonical_host(raw: str) -> str:
+    """Normalise a host name or alias to its `constants/cards.yaml` entry's `name`, so this
+    machine's own `hostname` and its cluster alias compare equal (errata, 3.4: this machine
+    answers `shiga` to `hostname` while the host list calls it `tokyo105`)."""
+    for host in hosts():
+        if raw == host["name"] or raw == host.get("alias"):
+            return host["name"]
+    return raw
 
 
 def _now() -> str:
@@ -522,27 +557,16 @@ def _pieces_of(run_dir: Path, start: dict) -> list[dict]:
 # -- Host probing: fail-closed, and never over ssh to this machine itself. --
 
 
-def _canonical_host(raw: str, cfg: dict) -> str:
-    """Normalise a host name or alias to the `hosts:` entry's `name`, so this
-    machine's own `hostname` and its cluster alias compare equal (errata,
-    3.4)."""
-    for host in cfg.get("hosts", []):
-        if raw == host.get("name") or raw == host.get("alias"):
-            return host["name"]
-    return raw
-
-
-def _is_local_host(host_name: str, cfg: dict) -> bool:
+def _is_local_host(host_name: str) -> bool:
     this_machine = socket.gethostname()
-    return _canonical_host(host_name, cfg) == _canonical_host(this_machine, cfg)
+    return canonical_host(host_name) == canonical_host(this_machine)
 
 
 def _remote_shell(host: str, script: str, timeout: float = 20.0) -> tuple[bool, str]:
     """Run `script` on `host`: locally through `bash -c` when `host` normalises
     to this machine, over `ssh -o BatchMode=yes` otherwise (errata). Returns
     `(ok, stdout)`; `ok` is False on any failure or timeout."""
-    cfg = _outputs_config()
-    if _is_local_host(host, cfg):
+    if _is_local_host(host):
         argv = ["bash", "-c", script]
     else:
         argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, script]
@@ -570,13 +594,12 @@ class _ProbedSessions(set):
 
 
 def live_sessions() -> set[str]:
-    """One `tmux ls` per host of `constants/path_outputs.yaml`'s `hosts:`
-    list, fail-closed. Returns bare session names."""
-    cfg = _outputs_config()
+    """One `tmux ls` per host of `constants/cards.yaml`, fail-closed. Returns
+    bare session names."""
     names: set[str] = set()
     failed: set[str] = set()
     host_of: dict[str, str] = {}
-    for host in cfg.get("hosts", []):
+    for host in hosts():
         host_name = host["name"]
         ok, out = _remote_shell(host_name, "tmux ls -F '#S' 2>/dev/null; true")
         if ok:
@@ -601,8 +624,7 @@ def _alive_on(host: str | None, session: str | None, sessions: set) -> bool:
     if not host or not session:
         return False
     if isinstance(sessions, _ProbedSessions):
-        cfg = _outputs_config()
-        if _canonical_host(host, cfg) in sessions.failed_hosts:
+        if canonical_host(host) in sessions.failed_hosts:
             return True
     return session in sessions
 
@@ -617,8 +639,7 @@ def pid_alive(host: str | None, pid) -> bool:
     written on the machine that ran it, which the login-host rule of that time made this one."""
     if not pid:
         return False
-    cfg = _outputs_config()
-    if host is None or _is_local_host(host, cfg):
+    if host is None or _is_local_host(host):
         try:
             os.kill(int(pid), 0)
         except ProcessLookupError:
@@ -639,8 +660,7 @@ def end_pid(host: str | None, pid) -> bool:
     same way, because `kill` exits nonzero on a refused signal as well."""
     if not pid:
         return False
-    cfg = _outputs_config()
-    if host is None or _is_local_host(host, cfg):
+    if host is None or _is_local_host(host):
         try:
             os.kill(int(pid), signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
@@ -655,8 +675,7 @@ def _probe_port(piece: dict) -> bool | None:
     host = piece.get("host")
     if not port or not host:
         return None
-    cfg = _outputs_config()
-    target = "127.0.0.1" if _is_local_host(host, cfg) else host
+    target = "127.0.0.1" if _is_local_host(host) else host
     try:
         with socket.create_connection((target, int(port)), timeout=3):
             return True
@@ -699,10 +718,9 @@ def cards_busy() -> dict[str, set[int]]:
     wrap-up walk writes the finish row, so without that test their cards stayed
     reserved until the start row aged past the timeout. Probed now, never
     cached; fail-closed."""
-    cfg = _outputs_config()
     busy: dict[str, set[int]] = {}
-    for host in cfg.get("hosts", []):
-        busy[host["name"]] = _probe_host_busy_cards(host["name"], host.get("cards", 0))
+    for host in hosts():
+        busy[host["name"]] = _probe_host_busy_cards(host["name"], host["cards"])
     folded = fold(_read_rows())
     if not folded:
         return busy
@@ -731,21 +749,20 @@ def cards_busy() -> dict[str, set[int]]:
                     token = token.strip()
                     if token.isdigit():
                         ids.add(int(token))
-                # Keyed by the `hosts:` entry's own name, the key the probe above and `free()`
-                # use, so a piece recorded under a host's alias reserves that host's cards.
-                busy.setdefault(_canonical_host(host_name, cfg), set()).update(ids)
+                # Keyed by the `constants/cards.yaml` entry's own name, the key the
+                # probe above and `free()` use, so a piece recorded under a host's
+                # alias reserves that host's cards.
+                busy.setdefault(canonical_host(host_name), set()).update(ids)
     return busy
 
 
 def free() -> dict[str, list[int]]:
     """Free cards per host, under `cards_busy()`'s test."""
-    cfg = _outputs_config()
     busy = cards_busy()
     out: dict[str, list[int]] = {}
-    for host in cfg.get("hosts", []):
+    for host in hosts():
         name = host["name"]
-        n = host.get("cards", 0)
-        out[name] = sorted(set(range(n)) - busy.get(name, set()))
+        out[name] = sorted(set(range(host["cards"])) - busy.get(name, set()))
     return out
 
 
@@ -959,7 +976,7 @@ def _is_repo_session_name(name: str) -> bool:
     """Whether `name` has the shape this repo's own launcher names a tmux
     session with, `<stage>-<key>-<piece>` (contracts 2699): a 12-lowercase-
     hex `key` (the format `key()` returns) followed by a bare piece index.
-    `hosts:` machines are shared cluster machines (3.4), so `live_sessions()`
+    The hosts of `constants/cards.yaml` are shared cluster machines (3.4), so `live_sessions()`
     returns every session anyone is running there, under any name; a name
     with no such shape belongs to some other process on the host, not to
     this repo, and is never a candidate for 8.6's first orphan case."""
@@ -1134,8 +1151,8 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     """One folded row per run, verdicts included, plus one synthetic row per
     live tmux session that has this repo's own session-name shape and
     matches no piece anywhere in the ledger (8.6's `orphan`: "a tmux session
-    of this repo matching no row"). `hosts:` machines are shared cluster
-    machines (3.4), so `live_sessions()` returns every session anyone is
+    of this repo matching no row"). The hosts of `constants/cards.yaml` are shared
+    cluster machines (3.4), so `live_sessions()` returns every session anyone is
     running there; `_is_repo_session_name` is what narrows that raw set down
     to "of this repo" before the ledger is even consulted, so an unrelated
     session started by other work on the same host is never reported as this
