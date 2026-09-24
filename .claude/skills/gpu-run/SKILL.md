@@ -10,7 +10,7 @@ description: >-
   commit, or interrupt with `kill` / `refire` / `retry`. Invoke whenever Dungeon♂Master
   says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
   triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 1.1.0
+version: 1.1.1
 ---
 
 # gpu-run — new1 GPU job full lifecycle
@@ -299,14 +299,33 @@ wall-clock, the throughput, the outcome and the source file of each number:
   `cpu` piece is signalled by its pid only while the run is open, because a closed run's
   pid may since name an unrelated process), writes the `killed` finish row and refuses while another live run is attached to this
   run's service (contracts 8.6).
-- A dead piece: `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py refire
-  <workflow> <setting> <stage> --piece i [--debug]` — a liveness refusal first, then claims
-  released, cards re-probed, the start row of the incarnation it is about to start
-  appended, and a `launches` entry written beside it. It **warns**, and never refuses,
+- A dead loop or train piece: `/home/y-guo/reproduce/new1/external/probe-env/bin/python
+  run.py refire <workflow> <setting> <stage> --piece i [--debug]` — a kind refusal first,
+  before the dirty-tree gate and before `settings.yaml` is re-frozen (refire restarts loop
+  and train pieces only, and refuses any other piece by its index and kind, so a refused
+  refire rewrites nothing), then a liveness refusal, then claims released, cards re-probed,
+  the start row of the incarnation it is about to start appended to `jobs/runs.jsonl`, and a
+  `launches` entry written beside it. It **warns**, and never refuses,
   when this piece already has more than one entry in `meta.json`'s `launches` (counted
   as the entries whose `pieces` list contains this piece index) — **there is no quota**
   (contracts 2.3). A refire is a launch and takes the Phase 2 dirty-tree gate, so commit
   the tree before it.
+- A dead service piece (the agent service or the probe service of a `sample` or `inject`
+  run) is never refired: kill the run, then re-run the walk command of Phase 4,
+  `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py <workflow> <setting>
+  [--debug]`, which relaunches the whole run — new service pieces, then loop pieces that
+  resume from the per-pair files under the run directory's `records/` (contracts 2.3),
+  exactly as the Phase 6a re-run of an incomplete stage does (owner ruling 2026-09-24).
+  Before re-running the walk, end the run with
+  `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py kill <workflow>
+  <setting> <stage> [--debug]` whenever any of its pieces is still alive, service pieces
+  included. The walk's own live-piece test and the launch gate look at loop and train
+  pieces only, so a walk beside a live service session goes ahead: on the same host its
+  new service session hits the live session of the same name (a session name is fixed per
+  run and piece) and the launch ends `launch_failed`; on another host the old session keeps
+  its card with no `meta.json` entry left for it. `kill` ends every piece and writes the
+  `killed` finish row, which closes the run, so the launch gate's fresh-heartbeat clause
+  no longer applies; the walk then takes the Phase 2 dirty-tree gate and launches.
 - "Start fresh": `/home/y-guo/reproduce/new1/external/probe-env/bin/python run.py retry
   <workflow> <setting> <stage> [--debug]`. It first tests every piece `meta.json` records
   for the run: a tmux piece (service, loop, train) by its session, counted alive when the
@@ -333,8 +352,8 @@ wall-clock, the throughput, the outcome and the source file of each number:
   `debug_subdir` exactly as `where --debug` resolves it; without the flag they address the
   real run. A Phase 3 smoke is therefore ended with `run.py kill <workflow> <setting>
   <stage> --debug`, which ends every piece of the smoke, service pieces included, and
-  writes its `killed` finish row. `refire ... --debug` restarts one piece of a smoke and
-  `retry ... --debug` starts a smoke fresh; both take the Phase 2 dirty-tree gate, which
+  writes its `killed` finish row. `refire ... --debug` restarts one loop or train piece of a
+  smoke and `retry ... --debug` starts a smoke fresh; both take the Phase 2 dirty-tree gate, which
   `--allow-dirty` covers for a smoke.
 
 ## Hard rules

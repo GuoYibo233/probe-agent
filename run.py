@@ -34,7 +34,7 @@ _SUBCOMMAND_ONE_LINE = {
     "where": "<workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage",
     "find": "section.field=value ... -- the runs whose settings_diff matches every given field",
     "kill": "<workflow> <setting> <stage> [--debug] -- end one run's pieces, write the killed finish row",
-    "refire": "<workflow> <setting> <stage> [--piece i] [--debug] [--allow-dirty] [--cards <host>:<ids>] -- restart one dead piece",
+    "refire": "<workflow> <setting> <stage> [--piece i] [--debug] [--allow-dirty] [--cards <host>:<ids>] -- restart one dead loop or train piece",
     "retry": "<workflow> <setting> <stage> [--debug] [--allow-dirty] [--cards <host>:<ids>] -- refuse a live run, else clear markers and launch it fresh",
     "table": "[workflow] [--out FILE] [--debug] -- the backbone x method x risk table",
     "free": "-- the free cards per host",
@@ -722,6 +722,10 @@ def cmd_refire(rest: list[str]) -> int:
     run_dir = schema.run_dir(stage, cfg)
     if not (run_dir / "settings.yaml").exists():
         sys.exit(f"run.py refire: {run_dir} has no settings.yaml; nothing to refire")
+    # The piece's own refusals (no such piece, a kind refire does not restart) come before the
+    # dirty-tree gate and the freeze, so a refused refire rewrites nothing (owner ruling
+    # 2026-09-24).
+    launch.refire_target(run_dir, piece)
     existing = schema.load_frozen(run_dir)
     with registry.lock():
         git = launch.git_state(run_dir, allow_dirty)

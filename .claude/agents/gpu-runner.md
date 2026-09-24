@@ -68,12 +68,19 @@ by hand). **Note that this machine's shell only has `python3`, not
    still commit `jobs/runs.jsonl` and `jobs/RESULTS.md` together per gpu-run
    skill Phase 6a (this preserves history, it does not unlock the next
    launch).
-   **Refiring a dead piece is not a new launch**: if a piece dies, do not
-   hand-edit the ledger and do not launch again, use
+   **Refiring a dead piece is not a new launch**: if a loop or train piece
+   dies, do not hand-edit the ledger and do not launch again, use
    `external/probe-env/bin/python run.py refire <workflow> <setting> <stage> --piece i`, which
-   refuses while the piece's session is still alive, re-probes the target
-   card before restarting it, and only warns (never refuses) when the piece
-   already has more than one launch entry — there is no quota on refires.
+   restarts loop and train pieces only (it refuses any other piece by its
+   index and kind), refuses while the piece's session is still alive,
+   re-probes the target card before restarting it, and only warns (never
+   refuses) when the piece already has more than one launch entry — there is
+   no quota on refires. A dead service piece is handled by killing the run,
+   `external/probe-env/bin/python run.py kill <workflow> <setting> <stage> [--debug]`,
+   whenever any of its pieces is still alive, service pieces included, and
+   then re-running the walk,
+   `external/probe-env/bin/python run.py <workflow> <setting> [--debug]`,
+   which relaunches the whole run (gpu-run skill Phase 6b).
 4. **Smoke first, on the same setting**: unless the task says the setting is
    already validated, run the skill's Phase 3 smoke — `--debug` on the same
    setting, never a hand-shrunk copy — and confirm its log shows real

@@ -328,7 +328,7 @@ jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the 
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
-jobs/launch.py — launch and refire the tmux pieces of a sample, inject or train run: the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
+jobs/launch.py — launch the tmux pieces of a sample, inject or train run and refire its loop and train pieces (a dead service piece is handled by re-running the walk): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
   imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
   used by: run.py, agent/run_tasks.py (teardown_services)
   reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host), constants/cards.yaml (through jobs/registry.py: host names and each card's memory, which placement holds against the card size a piece was declared for), models/table.yaml (the serving block; an agent service's declared card size is the smallest card of its row's serving host), the run directory's settings.yaml and meta.json, its pieces' log/<piece>.txt and, through jobs/registry.current_beats, the heartbeat/<piece>-<launch>.jsonl file of the incarnation each piece entry's beat_launch names (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git

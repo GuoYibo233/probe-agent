@@ -1,4 +1,4 @@
-"""Launch and refire the tmux pieces of a sample, inject or train run: the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
+"""Launch the tmux pieces of a sample, inject or train run and refire its loop and train pieces (a dead service piece is handled by re-running the walk): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
 
 # venv: probe
 
@@ -1176,10 +1176,40 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
 # 2.3: refire().
 # ---------------------------------------------------------------------------
 
-# TODO(gyb, 2026-09-22): `run.py refire` cannot restart a service piece. This pattern asks for
-# ` 2>&1 | tee -a` right after `--run-dir <dir>`, which a serve line never matches, so refire
-# exits with "could not parse the frozen command" (found by the 2026-09-22 launch review, not
-# changed). Decide whether a dead service is refired or the whole run is relaunched.
+# Refire restarts loop and train pieces only (owner ruling 2026-09-24). A dead service piece is
+# handled by killing the run and re-running the walk, `run.py <workflow> <setting> [--debug]`,
+# which relaunches the whole run; a CPU stage is re-run in place by the walk. refire_target()
+# refuses a piece of any other kind, naming its index and kind; `run.py refire` calls it before
+# the dirty-tree gate and the freeze, and refire() calls it before its liveness test, its claim
+# release and its command parse.
+REFIRE_KINDS = ("loop", "train")
+
+
+def refire_target(run_dir, piece) -> tuple[dict, dict]:
+    """The run's `meta.json` and the entry of the piece `run.py refire` names,
+    when that entry exists and its kind is in `REFIRE_KINDS`; otherwise exits
+    with the refusal. One function, so `run.py refire` and refire() refuse
+    with the same text."""
+    run_dir = Path(run_dir)
+    meta = _read_json(run_dir / "meta.json") or {}
+    target = next((p for p in (meta.get("pieces") or []) if p.get("index") == piece), None)
+    if target is None:
+        sys.exit(f"jobs/launch.py refire: no piece {piece} recorded in {run_dir}/meta.json")
+    kind = target.get("kind")
+    if kind in REFIRE_KINDS:
+        return meta, target
+    if kind == "cpu":
+        sys.exit(f"jobs/launch.py refire: piece {piece} is a cpu piece; refire restarts loop and "
+                 f"train pieces only. Re-run the walk, run.py <workflow> <setting> [--debug], "
+                 f"which re-runs the stage in place (owner ruling 2026-09-24)")
+    sys.exit(f"jobs/launch.py refire: piece {piece} is a {kind} piece; refire restarts loop and "
+             f"train pieces only. Kill the run, run.py kill <workflow> <setting> <stage> "
+             f"[--debug], then re-run the walk, run.py <workflow> <setting> [--debug], which "
+             f"relaunches the whole run (owner ruling 2026-09-24)")
+
+
+# The piece command of a loop or train piece, in piece_command's shape; a command this pattern
+# does not match is a malformed record.
 _PIECE_CMD_RE = re.compile(
     r"-m (?P<module>\S+) --run-dir (?P<run_dir>\S+)(?: --piece (?P<i>\d+)/(?P<n>\d+))? "
     r"2>&1 \| tee -a (?P<log>\S+)$"
@@ -1194,10 +1224,15 @@ def _parse_piece_cmd(cmd: str):
 
 
 def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
-    """Restart one dead piece beside its live siblings (2.3). Refuses, fail-
-    closed, while `registry.session_alive` reports the piece's tmux session
-    alive; otherwise warns (never refuses) when the piece already has more
-    than one `launches` entry, releases its unfinished claims through
+    """Restart one dead loop or train piece beside its live siblings (2.3).
+    Refuses a piece of any other kind through `refire_target`, before the
+    liveness test, the claim release and the command parse: a dead service
+    piece is handled by killing the run and re-running the walk, which
+    relaunches the whole run, and a CPU stage is re-run in place by the walk
+    (owner ruling 2026-09-24). Refuses, fail-closed, while
+    `registry.session_alive` reports the piece's tmux session alive;
+    otherwise warns (never refuses) when the piece already has more than one
+    `launches` entry, releases its unfinished claims through
     `data/trajectory_record.release`, re-probes the cards, appends the start
     row of the incarnation it is about to start, restarts the piece in a new
     tmux session under the *same* session name, and rewrites its `meta.json`
@@ -1213,11 +1248,9 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     row, which is the same state a first launch leaves and which `ls` closes
     once it is older than `launch_timeout_s` (8.1)."""
     run_dir = Path(run_dir)
-    meta = _read_json(run_dir / "meta.json") or {}
+    meta, target = refire_target(run_dir, piece)
     pieces = meta.get("pieces") or []
-    target = next((p for p in pieces if p.get("index") == piece), None)
-    if target is None:
-        sys.exit(f"jobs/launch.py refire: no piece {piece} recorded in {run_dir}/meta.json")
+    kind = target.get("kind")
 
     host, session = target.get("host"), target.get("session")
     if host and session and registry.session_alive(host, session):
@@ -1237,32 +1270,26 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     trajectory_record.release(run_dir, registry.live_sessions(), registry.DEFAULTS["launch_timeout_s"])
 
     free_by_host = restrict_to_pool(registry.free(), cards)
-    kind = target.get("kind")
     old_gpus = str(target.get("gpus") or "")
     cards_needed = len([g for g in old_gpus.split(",") if g.strip() != ""])
 
+    # A loop piece holds no card and restarts on its host; a train piece is placed again.
     new_host, new_gpus = host, old_gpus
-    if kind != "loop" and cards_needed > 0:
-        placement_kind = ("service_agent" if (kind == "service" and str(target.get("endpoint_file") or "").startswith("service_agent"))
-                            else "train" if kind == "train" else "service_probe")
-        min_card_gib = (_declared_card_gib(schema.load_frozen(run_dir).models.agent)
-                        if placement_kind == "service_agent" else 0)
-        placed_host = place(placement_kind, cards_needed, free_by_host, min_card_gib=min_card_gib,
+    if kind == "train" and cards_needed > 0:
+        placed_host = place("train", cards_needed, free_by_host, min_card_gib=0,
                              serving_host=host, prefer_host=host, attached=False)
         if placed_host is None:
-            sys.exit(_no_cards_message(free_by_host, cards_needed, min_card_gib, cards))
+            sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards))
         new_host = placed_host
-        new_gpus = ",".join(str(g) for g in _claim_cards(free_by_host, new_host, cards_needed,
-                                                          min_card_gib))
+        new_gpus = ",".join(str(g) for g in _claim_cards(free_by_host, new_host, cards_needed, 0))
 
     module, old_run_dir, piece_i, piece_n, log = _parse_piece_cmd(target.get("cmd") or "")
     python = _interpreter_for(target.get("venv"))
     new_cmd = piece_command(python, module, old_run_dir, piece_i, piece_n, new_gpus, log)
     updated_piece = dict(target, host=new_host, gpus=new_gpus, session=session, pid=None, cmd=new_cmd)
-    if kind in ("loop", "train"):
-        # The heartbeat file the restarted incarnation opens, recorded before its session starts
-        # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
-        updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, piece)
+    # The heartbeat file the restarted incarnation opens, recorded before its session starts
+    # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
+    updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, piece)
 
     # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
     # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
