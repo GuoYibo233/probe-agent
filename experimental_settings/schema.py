@@ -1133,6 +1133,15 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
             if v not in axis_values:
                 raise SchemaError(f"{dotted}: {v!r} is not one of {axis_values}")
 
+    # 5.2: split_ratio is the train/val/test shares of the hash split, so it holds three shares,
+    # each >= 0, that add up to 1 (within float rounding of the default [0.8, 0.1, 0.1]).
+    if "build" in full:
+        ratio = full["build"]["split_ratio"]
+        if not (len(ratio) == 3 and min(ratio) >= 0 and abs(sum(ratio) - 1.0) <= 1e-9):
+            raise SchemaError(
+                f"build.split_ratio: {ratio!r} is not three train/val/test shares, each >= 0, "
+                "summing to 1")
+
     if "inject" in workflow and full["models"]["probe"] is not None:
         _refuse_probe_under_inject(workflow, "models.probe")
 
