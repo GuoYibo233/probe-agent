@@ -729,7 +729,6 @@ def cards_busy() -> dict[str, set[int]]:
     if not folded:
         return busy
     sessions = live_sessions()
-    now_ts = time.time()
     for entry in folded.values():
         start, finish = entry["start"], entry["finish"]
         if start is None or finish is not None:
@@ -740,7 +739,7 @@ def cards_busy() -> dict[str, set[int]]:
         if not holds_cards:
             continue
         young = _age_s(start["t"]) < DEFAULTS["launch_timeout_s"]
-        judged = _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)
+        judged = _judge_pieces(pieces, run_dir, sessions, start["t"])
         for piece, (pv, verdict, _escalated) in zip(pieces, judged):
             host_name = piece.get("host")
             gpus = piece.get("gpus")
@@ -909,25 +908,30 @@ def _attached_to(run_dir: Path, piece: dict) -> str | None:
     return doc.get("attached_to")
 
 
-def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
-                         launch_t: str, now_ts: float) -> dict:
+def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str) -> dict:
+    """The facts one piece's verdict reads. Every age is measured against the clock read right
+    after the piece's own evidence is read (its heartbeat file, or a service's port probe),
+    so an age is never measured against an instant earlier than the file it ages."""
     kind = piece.get("kind")
     host = piece.get("host")
     session = piece.get("session")
-    since_launch_s = now_ts - _parse_t(launch_t)
     if kind == "service":
+        port_ok = _probe_port(piece)
+        now_ts = time.time()
         return {
             "kind": kind,
             "alive": _alive_on(host, session, sessions),
             "attached": _attached_to(run_dir, piece) is not None,
-            "port_ok": _probe_port(piece),
-            "since_launch_s": since_launch_s,
+            "port_ok": port_ok,
+            "since_launch_s": now_ts - _parse_t(launch_t),
         }
     if kind == "cpu":
         alive = pid_alive(host, piece.get("pid"))
     else:
         alive = _alive_on(host, session, sessions)
     beats = current_beats(run_dir, piece)
+    now_ts = time.time()
+    since_launch_s = now_ts - _parse_t(launch_t)
     has_beat = bool(beats)
     last = beats[-1] if beats else None
     beat_ts = [b.get("ts") for b in beats]
@@ -952,14 +956,14 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
 
 
 def _judge_pieces(pieces: list[dict], run_dir: Path, sessions: set,
-                  launch_t: str, now_ts: float) -> list[tuple[dict, str, bool]]:
+                  launch_t: str) -> list[tuple[dict, str, bool]]:
     """`(verdict dict, verdict, escalated)` per piece of one run, in the
     pieces' own order: the one derivation `ls()`, `sync()` and `cards_busy()`
     read. The
     work pieces (`loop`, `train`, `cpu`) are judged first, because a service
     piece's verdict depends on whether all of them are `done`
     (`judge_service`)."""
-    pvs = [_piece_verdict_dict(piece, run_dir, sessions, launch_t, now_ts) for piece in pieces]
+    pvs = [_piece_verdict_dict(piece, run_dir, sessions, launch_t) for piece in pieces]
     work = {i: judge(pv) for i, pv in enumerate(pvs) if pv["kind"] != "service"}
     work_done = bool(work) and all(v == "done" for v, _esc in work.values())
     out = []
@@ -1052,7 +1056,7 @@ def _orphan_session_row(name: str, host: str | None) -> dict:
     }
 
 
-def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: dict,
+def _ls_row(entry: dict, sessions: set, edited: dict, progress: dict,
             behind: dict, consumed: dict, split: dict, pinned: dict) -> dict:
     start, finish = entry["start"], entry["finish"]
     run_id = start["run_id"]
@@ -1065,7 +1069,7 @@ def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: d
     avg_rates: list[float] = []
     recent_rates: list[float] = []
     service_alive = False
-    judged = _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)
+    judged = _judge_pieces(pieces, run_dir, sessions, start["t"])
     for piece, (pv, verdict, escalated) in zip(pieces, judged):
         if pv["kind"] == "service":
             service_alive = service_alive or pv["alive"]
@@ -1191,8 +1195,7 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     if not debug:
         entries = [e for e in entries if not e["start"].get("debug")]
     sessions = live_sessions()
-    now_ts = time.time()
-    rows = [_ls_row(e, sessions, now_ts, edited, progress, behind, consumed, split, pinned)
+    rows = [_ls_row(e, sessions, edited, progress, behind, consumed, split, pinned)
             for e in entries]
     known = _known_sessions(all_entries)
     host_of = sessions.host_of if isinstance(sessions, _ProbedSessions) else {}
@@ -1293,9 +1296,8 @@ def sync() -> list[str]:
         if not pieces:
             continue
         sessions = live_sessions()
-        now_ts = time.time()
         verdicts = [verdict for _pv, verdict, _esc
-                    in _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)]
+                    in _judge_pieces(pieces, run_dir, sessions, start["t"])]
         # The same rule `run.py ls` closes such a run by, so whichever command reaches it
         # first writes the same word.
         if launch_failed(start["t"], verdicts):
