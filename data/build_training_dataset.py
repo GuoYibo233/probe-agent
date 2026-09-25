@@ -29,14 +29,61 @@ from jobs import registry
 VERSION = 1
 VERSION_HISTORY = {}
 
+_SPLIT_NAMES = ("train", "val", "test")
+
+
+def _split_rule(split_source: str, env, split_ratio):
+    """The per-record split function `(task_id, benchmark_split) -> split` of build.split_source
+    (2.5's split-column rule). A branch axis is dispatched through explicit branches whose else
+    raises, naming the axis and the value (contracts 5.3), so a value registered in schema.AXES
+    with no branch here stops the build."""
+    if split_source == "env":
+        def split_of(task_id: str, benchmark_split: str) -> str:
+            return env.SPLIT_ROLE[benchmark_split]
+    elif split_source == "hash":
+        def split_of(task_id: str, benchmark_split: str) -> str:
+            frac = int(hashlib.sha1(task_id.encode()).hexdigest()[:8], 16) / 2**32
+            cum = 0.0
+            for name, share in zip(_SPLIT_NAMES, split_ratio):
+                cum += share
+                if frac < cum:
+                    return name
+            return _SPLIT_NAMES[-1]
+    else:
+        raise ValueError(
+            f"build.split_source: {split_source!r} has no branch in data/build_training_dataset.py; "
+            "its branches are 'env' and 'hash'")
+    return split_of
+
+
+def _weight_rule(weight_mode: str):
+    """The example weight function `n_cuts -> weight` of build.weight_mode, dispatched the same
+    way (contracts 5.3)."""
+    if weight_mode == "uniform":
+        def weight_of(n_cuts: int) -> float:
+            return 1.0
+    elif weight_mode == "per_event":
+        def weight_of(n_cuts: int) -> float:
+            return round(1.0 / n_cuts, 6)
+    else:
+        raise ValueError(
+            f"build.weight_mode: {weight_mode!r} has no branch in data/build_training_dataset.py; "
+            "its branches are 'uniform' and 'per_event'")
+    return weight_of
+
 
 def main(run_dir: Path) -> None:
     """Build `examples.parquet` for one build run directory (contracts 2.5, 1.2, 1.7, 2.3, 1.5)."""
     run_dir = Path(run_dir)
     cfg = schema.load_frozen(run_dir)
-    hb = registry.beat(run_dir, 0)
-
     env = open_env(cfg.data.env)
+
+    # Both branch axes are resolved here, once, so a value with no branch refuses the build
+    # before it opens its heartbeat or reads a record.
+    split_of = _split_rule(cfg.build.split_source, env, cfg.build.split_ratio)
+    weight_of = _weight_rule(cfg.build.weight_mode)
+
+    hb = registry.beat(run_dir, 0)
 
     triples = requested_pairs(env, cfg.sample.split, cfg.sample.tasks, cfg.sample.n_tasks, cfg.sample.seeds)
     pairs = [(task_id, seed) for _split, task_id, seed in triples]
@@ -107,10 +154,6 @@ def main(run_dir: Path) -> None:
             f"build.max_abort_frac={cfg.build.max_abort_frac}"
         )
 
-    weight_mode = cfg.build.weight_mode
-    split_source = cfg.build.split_source
-    split_ratio = cfg.build.split_ratio
-
     rows: list[dict] = []
     events_total = 0
     skip_no_action = 0
@@ -128,18 +171,7 @@ def main(run_dir: Path) -> None:
         benchmark_split = meta_row["split"]
 
         # 2.5's split-column rule, one value per record.
-        if split_source == "env":
-            row_split = env.SPLIT_ROLE[benchmark_split]
-        else:
-            frac = int(hashlib.sha1(task_id.encode()).hexdigest()[:8], 16) / 2**32
-            names = ("train", "val", "test")
-            cum = 0.0
-            row_split = names[-1]
-            for name, share in zip(names, split_ratio):
-                cum += share
-                if frac < cum:
-                    row_split = name
-                    break
+        row_split = split_of(task_id, benchmark_split)
 
         gen_rows = {row["step"]: row for row in rec_df.filter(pl.col("type") == "gen").iter_rows(named=True)}
         env_rows = {row["step"]: row for row in rec_df.filter(pl.col("type") == "env").iter_rows(named=True)}
@@ -234,7 +266,7 @@ def main(run_dir: Path) -> None:
                         f"build: example {ex_id}: text does not end with the thinking prefix at cut {cut}"
                     )
 
-                weight = 1.0 if weight_mode == "uniform" else round(1.0 / n_cuts, 6)
+                weight = weight_of(n_cuts)
                 rows.append({
                     "example_id": ex_id,
                     "event_id": eid,

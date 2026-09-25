@@ -167,7 +167,7 @@ data/probe_input.py — the probe's cut enumeration and prompt assembly, shared 
   writes:  -
   venv:    any
 
-data/build_training_dataset.py — the program: records -> example rows for the three probe methods; the train/val/test split, by either rule of build.split_source; the report; the gates.
+data/build_training_dataset.py — the program: records -> example rows for the three probe methods; the train/val/test split, by either rule of build.split_source, and the example weight, by either rule of build.weight_mode, each axis dispatched over its named values with any other value refused before a record is read; the report; the gates.
   imports: experimental_settings/schema.py, data/__init__.py (the id functions), data/trajectory_record.py, data/training_data.py, data/probe_input.py, data/environments/__init__.py, jobs/registry.py; [polars, PyYAML]
   used by: none (program)
   reads:   the sample run's task records, constants/path_datasets.yaml (the splits block of cfg.data.env, for the split files' paths), the environment's split task-id files
@@ -297,7 +297,7 @@ train/methods/cparam.py — the argument-generating probe: its own packing and s
 
 ### eval/ — reads what is on disk and computes numbers; no GPU, no torch
 
-eval/utils/probe_eval.py — the eval program of every probe method: the PROBE_KIND and MATCH_VERSION tables, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report.
+eval/utils/probe_eval.py — the eval program of every probe method: the PROBE_KIND and MATCH_VERSION tables, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report (for a generator, after it holds the eval.theta_from report to a classifier report with the same risk targets and build key).
   imports: experimental_settings/schema.py, data/probe_output.py, data/environments/__init__.py (open_env, for the environment the generator report normalises both sides through), jobs/registry.py; [polars, numpy]
   used by: train/methods/{ctool,cgen,cparam}.py (match_<method>, for their validation metric), run.py (read_report, to freeze a temperature), eval/method_table.py
   reads:   prediction (parquet), its own and the referenced eval run's train meta.json (stage_extra.labels, upstream["build"]), its own train run's done.json (counts.dropped_overlong), probe report (json + parquet)

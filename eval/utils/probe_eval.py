@@ -657,6 +657,14 @@ def run(run_dir: Path) -> None:
             raise ValueError(
                 f"eval key {ref_key} at {ref_eval_dir}: the referenced classifier eval "
                 "(theta_from) has no done.json")
+        # theta_from names a classifier eval (contracts 2.1, 5.2): only a classifier report
+        # carries the `chosen` theta per risk target that the generator report reads.
+        ref_kind = ref[0]["probe_kind"]
+        if ref_kind != "classifier":
+            raise ValueError(
+                f"eval key {ref_key} at {ref_eval_dir}: the referenced eval (theta_from) is a "
+                f"{ref_kind!r} report of method {ref[0]['method']!r}; theta_from names a "
+                "classifier eval")
         if ref[0]["risk_targets"] != cfg.eval.risk:
             raise ValueError(
                 f"eval.risk {cfg.eval.risk} differs from the referenced report's "
