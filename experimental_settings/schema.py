@@ -1177,7 +1177,23 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
             return
         refs[dotted] = _resolve_ref(dotted, value, debug=debug)
 
+    # 2.1 / 5.2: eval.theta_from is resolved to its classifier eval key (the frozen theta) and
+    # inject.probe_score to its classifier train and eval keys (the weights that decide when to
+    # fire, and the temperature), so the method each reference selects is a classifier. The name
+    # form takes the method off the named setting and a pinned inject.probe_score states it; a
+    # pinned eval.theta_from carries no method, and eval checks the report it reads.
+    def _require_classifier(dotted: str) -> None:
+        method = refs[dotted][2]
+        if method is None:
+            return
+        kind = _method_kind(method)
+        if kind == "classifier":
+            return
+        raise SchemaError(f"{dotted}: {method!r} is not a classifier (PROBE_KIND={kind!r})")
+
     _resolve_if_set("eval.theta_from")
+    if "eval.theta_from" in refs:
+        _require_classifier("eval.theta_from")
     if "eval" in full:
         method = full["probe"]["method"] if "probe" in full else None
         if method is not None:
@@ -1201,6 +1217,8 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
                     f"{sorted(base_split)}/{sorted(base_seeds)})")
 
     _resolve_if_set("inject.probe_score")
+    if "inject.probe_score" in refs:
+        _require_classifier("inject.probe_score")
 
     # The whole-call-generator check reads the method the reference selects, which the name form
     # takes off the named setting and the key: / dir: form states in its method: sibling, so the
