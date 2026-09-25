@@ -5,6 +5,7 @@ import ast
 import hashlib
 import itertools
 import json
+import re
 from collections.abc import Hashable
 from dataclasses import dataclass, field, fields as dc_fields
 from pathlib import Path
@@ -931,6 +932,7 @@ def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
 
 
 METHOD_REF_FIELDS = ("inject.probe_score", "inject.probe_gen")
+_RUN_KEY = re.compile(r"[0-9a-f]{12}")             # a run key, the form `key` returns (3.3)
 
 
 def _pinned_method(field_dotted: str, value: dict, kind: str) -> str | None:
@@ -982,10 +984,19 @@ def _resolve_ref(field_dotted: str, value: Any, *, debug: bool) -> tuple[str, An
         extra = set(value) - {kind, "method"}
         if extra:
             raise SchemaError(f"a {kind}: reference holds no entry {sorted(extra)}")
+        if not isinstance(value[kind], dict):
+            raise SchemaError(
+                f"a {kind}: reference is a mapping of stage -> value, got {type(value[kind]).__name__}")
         got = set(value[kind])
         if got != required:
             raise SchemaError(f"pinned {kind} stages {sorted(got)} != required {sorted(required)}")
         if kind == "key":
+            for stage, stage_key in value["key"].items():
+                if isinstance(stage_key, str) and _RUN_KEY.fullmatch(stage_key):
+                    continue
+                raise SchemaError(
+                    f"pinned key stage {stage}: {stage_key!r} is not a 12-hex key (quote it in YAML "
+                    "when it is all digits)")
             return ("keys", dict(value["key"]), method)
         return ("keys", {stage: Path(p).name for stage, p in value["dir"].items()}, method)
     except SchemaError as ex:

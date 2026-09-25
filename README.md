@@ -98,7 +98,7 @@ constants/path_models.yaml — weights alias -> the directory the weights live i
 ### experimental_settings/ — everything in here changes a result; the owner's files, never edited by an agent
 
 experimental_settings/schema.py — the setting schema: the dataclasses, the stage table, and the loader that reads a YAML file against them (file -> setting, diff, key).
-  imports: none (repo); [PyYAML, ast, collections.abc, dataclasses, hashlib, itertools, json, pathlib, typing]
+  imports: none (repo); [PyYAML, ast, collections.abc, dataclasses, hashlib, itertools, json, pathlib, re, typing]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py, models/agent_models/service.py, models/probe_models/service.py
   reads:   experimental_settings/*.yaml, models/table.yaml, constants/path_outputs.yaml, constants/path_datasets.yaml (the splits block of the chosen environment), a run directory's settings.yaml, the VERSION / VERSION_HISTORY / PROBE_KIND lines and module-level literals of contracts 3.3's literal rule, all as source text, never by importing
   writes:  settings.yaml and settings_diff.yaml in a run directory
