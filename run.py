@@ -136,9 +136,11 @@ def _usage_text() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _check_stage_name(stage: str) -> None:
-    if stage not in schema.STAGES:
-        sys.exit(f"run.py: {stage!r} is not a stage; one of {sorted(schema.STAGES)}")
+def _check_stage_name(stage: str, cfg, workflow_name: str, setting_name: str) -> None:
+    """Refuse a stage the loaded setting's own workflow does not walk: a stage of another workflow has no key under this setting (its sections are absent, or the debug overlay never reached them), so its run directory is one no walk of this setting makes."""
+    if stage not in cfg._workflow:
+        sys.exit(f"run.py: {stage!r} is not a stage of {workflow_name}/{setting_name}, "
+                 f"whose workflow is {cfg._workflow}")
 
 
 def _load_one(workflow_name: str, setting_name: str, *, debug: bool, overrides: dict | None = None):
@@ -647,8 +649,8 @@ def cmd_where(rest: list[str]) -> int:
     if len(positional) != 3:
         sys.exit("run.py where: usage: run.py where <workflow> <setting> <stage> [--debug]")
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     print(schema.run_dir(stage, cfg))
     return 0
 
@@ -679,8 +681,8 @@ def cmd_kill(rest: list[str]) -> int:
     if len(positional) != 3:
         sys.exit("run.py kill: usage: run.py kill <workflow> <setting> <stage> [--debug]")
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     key = schema.key(stage, cfg)
     run_id = f"{stage}-{key}"
     ended = registry.kill(run_id)
@@ -717,8 +719,8 @@ def cmd_refire(rest: list[str]) -> int:
                  "[--debug] [--allow-dirty] [--cards <host>:<ids>]")
     cards = _cards_pool(card_tokens)
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     run_dir = schema.run_dir(stage, cfg)
     if not (run_dir / "settings.yaml").exists():
         sys.exit(f"run.py refire: {run_dir} has no settings.yaml; nothing to refire")
@@ -794,8 +796,8 @@ def cmd_retry(rest: list[str]) -> int:
         sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--debug] "
                  "[--allow-dirty] [--cards <host>:<ids>]")
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     run_dir = schema.run_dir(stage, cfg)
     run_id = f"{stage}-{schema.key(stage, cfg)}"
     # "start fresh" (2.4) deletes what a live piece is still writing -- a train run's `last/`

@@ -74,7 +74,7 @@ owner rewrites them.
 
 CLAUDE.md — the rules an agent reads on its own; the only other file at the root that is not code.
 
-run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck).
+run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk.
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
   reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
