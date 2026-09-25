@@ -1,0 +1,42 @@
+# The code-era table: the one place a code change is judged (read as contracts 3.3's
+# version block by experimental_settings/schema.py, run.py and jobs/launch.py; appended
+# by `run.py version`, or by hand in the same shape). Append-only; rows are in time order.
+#
+# A row is one of two kinds:
+#
+#   - stage: train              an era row: from here on, every run of this stage lands in
+#     era: 2                    a new directory (the key folds the era), and every stage
+#     date: 2026-09-26          downstream of it follows through the folded upstream keys.
+#     why: <one sentence>       Write one when a change alters what the stage produces.
+#
+#   - stage: train              a same row: the stage's code files (the stage table's `code`
+#     era: 2                    tuple in experimental_settings/schema.py) at commit `same`
+#     from: '1a2b3c4...'        produce what they produced at commit `from`, the launch
+#     same: '5d6e7f8...'        commit the code gate printed and the diff was read against.
+#     date: 2026-09-26          The gate refuses to read a directory the code has moved past
+#     why: <one sentence>       unless a chain of same rows leads from the copy it ran to the
+#                               copy in the tree; `run.py version <stage> --same --from
+#                               <commit> --why ...` writes one, naming HEAD as `same`.
+#
+# Rules: the first era row of a stage is era 2 and each later one is one higher; a same row
+# carries the era current at its position in the file; every why is non-empty; `from` and
+# `same` name commits of this repository, quoted (an all-digit id would load as a number).
+# `run.py selfcheck` check 4 holds all of this. Era 1 is the state before a stage's first era
+# row. The why sentences are the human record of what the code did when; the `git log` of
+# the stage's files holds the rest.
+- stage: build
+  era: 2
+  date: 2026-09-25
+  why: data/environments/appworld.py's split_args takes one layer of quotes off a value that is one whole
+    string literal instead of stripping every quote character off its ends, and build_call quotes any
+    value that layer would come off, so an example call or argument whose value starts or ends with a
+    quote of its own changes; the cgen and cparam match, inject's requoted spec call and score's call_agree
+    read the same parser and move with build through the folded keys, while sample never parses a call
+- stage: inject
+  era: 2
+  date: 2026-09-25
+  why: agent/step_with_probe.py hands speculate the probe's raw call when complete_call finds no closed
+    call, so a fire whose generated call was cut off by inject.max_new runs that call and records its
+    failure (SyntaxError or NameError) instead of running print(None) and splicing a successful 'None'
+    result into the stream; the spec row and the resumed text of such a fire change, and score follows
+    through the folded inject key

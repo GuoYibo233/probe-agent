@@ -1,0 +1,480 @@
+# new1
+
+## 1. What this repo is and how to run it
+
+Seven principles hold the tree together (`notes/plans/2026-09-14-structure-from-zero.md`):
+one experiment is one setting, in one `experimental_settings/*.yaml` file; every run is
+reproducible, so a finished output directory is reused, a partial one is continued, and an
+edited setting gets a new directory; the layers are short and standard (`data`, `models`,
+`agent`, `train`, `eval`, `jobs`), with settings controlling their arguments; `--debug` runs
+any setting tiny (a few tasks, a few examples, a few steps); there are no near-duplicate files
+and no framework, only per-layer `utils/` once code is shared on its third repetition; every
+file does one thing its name says, and this file lists every one of them with that one line;
+`eval/` only reads what is already on disk, no GPU and no torch, because the GPU half of an
+evaluation is the last step of `train`.
+
+`run.py` is the one command. It walks a named setting's stages:
+
+```
+external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<id>,<id>,... ...] [section.field=value ...]
+```
+
+`<workflow>` is the stem of a file under `experimental_settings/` (`baseline`, `train_probe`,
+`inject`); `<setting>` is a name inside that file, or a sweep child's own name
+(`<name>/<field>=<value>,...`); several settings may be walked in one call. `--debug` lays
+`experimental_settings/debug.yaml` over the named setting before it is keyed, so the run gets
+its own directory and can never be mistaken for a real one. `--allow-dirty` lets a stage launch
+over an uncommitted tree, writing `dirty.patch` into the run directory; without it a dirty tree
+is refused. `--cards tokyo108:3,4` (given once per host) names the only cards a launch may
+claim: the pieces take their cards from that pool in the order given, the agent service goes
+to the pool's host instead of its `models/table.yaml` row's, and a named card that is not free
+refuses the launch. The pool is where a launch runs and never part of the setting, so it moves
+no key and no run directory; `refire` and `retry` take the same flag. Without it a launch takes
+the first free cards. Either way a piece takes only cards at least as large as the cards it was
+declared for: an agent service that starts its own server needs cards no smaller than the
+smallest card of its table row's serving host, a train piece and a probe service need any card,
+and card sizes are `constants/cards.yaml`'s; a pool whose cards are too small for a piece
+refuses the launch, naming them. `section.field=value` overrides one field from the command line, its right-hand
+side parsed as YAML, so a reference can be pinned without editing the setting file. An
+override, like a sweep, reaches only the setting it is typed on, never a setting that one
+references by name (`eval.theta_from`, `inject.probe_score`, `inject.probe_gen`,
+`score.baseline`): the referenced setting loads as its file states it. A setting and the
+settings it references must agree on every data-side field (the `sample` and `build`
+sections), because the eval and inject gates refuse two runs whose build keys differ, so a
+change to a data-side field is written into the workflow file as a new pair of settings, the
+referenced one first, never as an override or a sweep (gyb, 2026-09-25). The overrides a run
+was launched under are recorded in its start row and `meta.json`, and `run.py ls` reloads the
+setting under them when it asks whether the setting was edited since.
+
+Eleven further words are reserved (`run.py --help` lists them, one per line): `ls`, `where`,
+`find`, `kill`, `refire`, `retry`, `table`, `free`, `sync`, `version`, `selfcheck`. Any other
+first word is a workflow file's stem; a workflow file may not use one of the eleven as its own
+stem.
+
+Every output lives under `constants/path_outputs.yaml`'s `root`, keyed by stage and a 12-hex
+hash of the setting (never by name, since several settings can share one directory); `run.py
+where <workflow> <setting> <stage>` prints the path, whether or not it exists yet, and never
+touches disk to compute it. A `--debug` run lives under that root's `debug_subdir` instead, so
+it never collides with, or is mistaken for, a real run; `ls`, `where`, `table`, `kill`,
+`refire` and `retry` take `--debug` to address the runs under it, and a `--debug` walk prints
+its monitoring line with the flag.
+
+Code enters a key as one number, the stage's era in `jobs/versions.yaml`, the code-era table:
+an era row (`run.py version <stage> --why "<sentence>"`) moves every later run of the stage,
+and of every stage downstream of it, to a new directory; nothing else about the code is in the
+key, so editing code costs nothing at edit time. What keeps a directory from being reused under
+code it never ran is the code gate: before a walk, a `refire` or a `retry` reads a directory
+(the stage's own, every upstream directory, and everything upstream of those through the frozen
+upstream keys), `run.py` compares the stage's code files (the stage table's `code` tuple, as the
+working tree holds them) with the copy at the directory's launch commits, and refuses, printing
+the `git diff --stat` of the stage's whole code set and the `run.py version` commands, when they
+differ and no chain of same rows of the table leads from the copy the directory ran to the
+working tree's copy. A same row (`run.py version <stage> --same --from <commit> --why
+"<sentence>"`, naming HEAD as `same`) states that the stage's code at `same` produces what it
+produced at `from`, the launch commit the diff was read against. A directory of an era below its
+stage's current one, or of no era (launched before the table), is refused outright: an era row
+said its stage's output changed since, so the stage is run again under the current era. A launch
+made with `--allow-dirty` records the copy it ran in its launches entry, so it is reused only
+under that exact copy. So a code change costs one judgment per stage, at launch time, with the
+diff in front of whoever judges it, written into the table as one row per stage per change,
+never per setting or per launch.
+
+`retry` means "start fresh": it refuses while any piece of the run is alive (end it with `kill`
+first), and only then clears the continue markers and launches the stage normally.
+
+Every `run.py` command runs on `constants/path_outputs.yaml`'s `login_host` (tokyo108):
+the registry's times are clock-naive and its lock holds on one machine, so every row is
+written on one clock. Typed on any other machine, `run.py` re-runs the same command line
+there over `ssh` (same repo path and interpreter, both on NFS) and returns its exit code;
+`--help` and `selfcheck` read only the source tree and run in place. `login_host` is also
+where the loop pieces and every other piece that needs no card are placed; a piece on
+another host is started over `ssh`.
+
+## 2. The tree, one entry per file
+
+This section is the current statement of the tree: one entry per file, in contracts 0.1's
+five-line annotation format, and the text `run.py selfcheck` checks — check 1 requires an
+entry for every `.py` file on disk and a path that exists for every entry, and check 2 holds
+the `imports:` and `used by:` lines equal to the real import graph. Its origin is
+`notes/plans/2026-09-17-contracts.md` 0.2, reconciled against the lines each ticket landed
+and against `.scratch/from-zero/contract-errata.md`. Contracts 0.2, 0.3 and 0.4 have been
+stale since the two rulings of 2026-09-18 that folded `eval/methods/<m>.py` into
+`eval/utils/probe_eval.py` and renamed the four `agent/` files (the errata entries
+`0.2 / 2.1 / 2.6 (eval/methods/)` and `0.2 (the four agent/ file names)`): they still spell
+34 files, `eval/methods/` and `agent/inject_format.py`. This file wins over them until the
+owner rewrites them.
+
+### The root
+
+CLAUDE.md — the rules an agent reads on its own; the only other file at the root that is not code.
+
+run.py — the one command: walk a named setting's stages (sample through score), or run one of the eleven reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, version, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command) and flushes those lines before a CPU stage's process starts, so they stand above that process's output on a pipe as on a terminal, and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names; every command but --help and selfcheck runs on login_host, and typed on another machine re-runs itself there over ssh and returns that exit code.
+  imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
+  used by: none (program)
+  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, jobs/versions.yaml (through schema.era_of, schema.era_rows and schema.same_rows, for the code gate, ls's unjudged flag and the version subcommand) and, through git, the blob ids of a stage's code files at a run's launch commits and in the working tree (the code gate), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map), constants/path_outputs.yaml (the login_host every command runs on)
+  writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, one row of jobs/versions.yaml (the version subcommand), finish rows and RESULTS.md (through jobs/registry.py); on `retry`, once no piece of the run is alive, deletes the run's continue markers (done.json, consumed.json; for train also train_log.jsonl, train_done.json, align_check.json, predictions.parquet, last/, last.tmp/, last.prev/); the code gate's refusal for a directory launched from a dirty tree names the commit that holds the copy it ran, when one does, as the same row's --from
+  venv:    probe (the interpreter this repo's commands are typed with)
+
+### constants/ — where things are on this cluster
+
+constants/path_datasets.yaml — per environment: the clone's home, the interpreter that runs its loop, its data root, and split name -> task-id file; plus the top-level venvs: map, which is where every interpreter path in this repo is written down.
+  read by: data/environments/__init__.py (the splits block, to resolve a split name), data/environments/appworld.py (home, data root, split files), experimental_settings/schema.py (the splits block, to validate a split value at load), jobs/launch.py (the venv column and the venvs map), run.py (the venvs map)
+
+constants/cards.yaml — the cluster inventory, the one file for card facts: every host's name and alias, and per card index its model and memory in GiB; the source for the code (how many cards a host has, how large each card is) and for people picking cards.
+  read by: jobs/registry.py (the one loader, hosts(): the hosts for tmux and card probes, the card count, card_memory_gib() and canonical_host() for jobs/launch.py and run.py)
+
+constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, and the login_host (tokyo108), the one machine every run.py command runs on.
+  read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root), jobs/launch.py (the login_host)
+
+constants/path_models.yaml — weights alias -> the directory the weights live in.
+  read by: models/__init__.py, models/agent_models/service.py (the weights path of the row it serves)
+
+### experimental_settings/ — everything in here changes a result; the owner's files, never edited by an agent
+
+experimental_settings/schema.py — the setting schema: the dataclasses, the stage table, and the loader that reads a YAML file against them (file -> setting, diff, key).
+  imports: none (repo); [PyYAML, ast, collections.abc, dataclasses, hashlib, itertools, json, pathlib, re, typing]
+  used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py, models/agent_models/service.py, models/probe_models/service.py
+  reads:   experimental_settings/*.yaml, models/table.yaml, constants/path_outputs.yaml, constants/path_datasets.yaml (the splits block of the chosen environment), a run directory's settings.yaml, jobs/versions.yaml (the code-era table: the key's era), agent/injected_text_formats.py's FORMATS placements, the PROBE_KIND line and the other module-level literals of contracts 3.3's literal rule, all as source text, never by importing
+  writes:  settings.yaml and settings_diff.yaml in a run directory
+  venv:    any
+
+experimental_settings/debug.yaml — only sizes, never a model and never a tuning; --debug lays it over any setting.
+  read by: experimental_settings/schema.py only
+
+experimental_settings/baseline.yaml — workflow sample, score; named settings inside.
+  read by: experimental_settings/schema.py only
+
+experimental_settings/train_probe.yaml — workflow sample, build, train, eval; named settings inside.
+  read by: experimental_settings/schema.py only
+
+experimental_settings/inject.yaml — workflow inject, score; named settings inside.
+  read by: experimental_settings/schema.py only
+
+### data/ — the benchmark environments, and every format that lives on disk between two stages
+
+data/__init__.py — the conventions the three on-disk formats share: read_frame and write_frame, the id chain, the FORMAT_VERSION / DEFAULTS / REQUIRED rule (FORMAT_VERSION is the row format's compatibility number, not the code era).
+  imports: none (repo); [polars]
+  used by: data/trajectory_record.py, data/training_data.py, data/probe_output.py, data/build_training_dataset.py (the id functions)
+  reads:   -
+  writes:  -
+  venv:    any
+
+data/environments/__init__.py — the environment contract every benchmark implements, the loader that finds and instantiates one by name, and the one rule for which (task, seed) pairs a run requests.
+  imports: none (repo); [importlib, PyYAML]
+  used by: data/environments/appworld.py (subclass), agent/run_tasks.py (open_env, StepObservation, requested_pairs), agent/step_with_probe.py, data/build_training_dataset.py, train/methods/cgen.py, train/methods/cparam.py, eval/utils/probe_eval.py, eval/score_run.py, jobs/launch.py, run.py
+  reads:   constants/path_datasets.yaml
+  writes:  -
+  venv:    any
+
+data/environments/appworld.py — the AppWorld benchmark: hands out its tasks, steps a model's call through a live world, speculates one call early, and judges task completion.
+  imports: data/environments/__init__.py; [the appworld package, inside open() alone]
+  used by: data/environments/__init__.py (by name)
+  reads:   constants/path_datasets.yaml, the split task-id files
+  writes:  the AppWorld per-task output directory, deleted by close()
+  venv:    any at import and for the call-syntax methods; appworld to hold a world
+
+data/trajectory_record.py — the record one task run leaves: six row kinds in one flush-per-row jsonl file, with the claim, release, read and message-rebuilding functions its callers share.
+  imports: data/__init__.py
+  used by: agent/run_tasks.py (meta, gen, env, final; done_pairs), agent/step_with_probe.py (spec, resume), data/build_training_dataset.py, eval/score_run.py, jobs/launch.py (done_pairs, is_done, owner, release), run.py (done_pairs, is_done, owner, release: the completeness check, the progress count and the claim release)
+  reads:   task record (jsonl)
+  writes:  task record (jsonl)
+  venv:    any
+
+data/training_data.py — the row build writes per cut: the record and cut it came from, the text the probe sees, and all three probe methods' targets.
+  imports: data/__init__.py; [polars]
+  used by: data/build_training_dataset.py (write), train/utils/trainer.py (read)
+  reads:   example (parquet)
+  writes:  example (parquet)
+  venv:    any
+
+data/probe_output.py — the row train writes per example after training: the example id, its target, the true tool, the score and class logits (ctool) or the generated text (cgen, cparam).
+  imports: data/__init__.py; [polars]
+  used by: train/utils/trainer.py (write), eval/utils/probe_eval.py (read)
+  reads:   prediction (parquet)
+  writes:  prediction (parquet)
+  venv:    any
+
+data/probe_input.py — the probe's cut enumeration and prompt assembly, shared by the offline builder and the live injector so neither builds its own probe text.
+  imports: none (repo); [re]
+  used by: data/build_training_dataset.py, agent/step_with_probe.py
+  reads:   -
+  writes:  -
+  venv:    any
+
+data/build_training_dataset.py — the program: records -> example rows for the three probe methods; the train/val/test split, by either rule of build.split_source, and the example weight, by either rule of build.weight_mode, each axis dispatched over its named values with any other value refused before a record is read; the report; the gates.
+  imports: experimental_settings/schema.py, data/__init__.py (the id functions), data/trajectory_record.py, data/training_data.py, data/probe_input.py, data/environments/__init__.py, jobs/registry.py; [polars, PyYAML]
+  used by: none (program)
+  reads:   the sample run's task records, constants/path_datasets.yaml (the splits block of cfg.data.env, for the split files' paths), the environment's split task-id files
+  writes:  examples.parquet, consumed.json, report.md, heartbeat, done.json
+  venv:    any
+
+### models/ — the models: the table, the agent-model side, the probe-model side
+
+models/__init__.py — the entrance to models/table.yaml: agent(alias) and probe(alias) resolve a row into its family module (agent only), weights alias, weights path and serving block.
+  imports: none (repo); [importlib, PyYAML]
+  used by: agent/step_without_probe.py, agent/step_with_probe.py, models/agent_models/service.py, models/probe_models/base.py, models/probe_models/service.py, train/utils/trainer.py
+  reads:   models/table.yaml, constants/path_models.yaml
+  writes:  -
+  venv:    any
+
+models/table.yaml — one row per alias, in two blocks: result (expanded into the setting before keying) and serving (never keyed).
+  read by: models/__init__.py, experimental_settings/schema.py (the result block), models/agent_models/service.py (the serving block), jobs/launch.py (the serving block: host and port)
+
+models/agent_models/__init__.py — empty package marker, so the client half of service.py imports without the family's libraries.
+  imports: none
+  used by: models/agent_models/service.py, models/agent_models/gptoss.py (as their package)
+  reads:   -
+  writes:  -
+  venv:    any
+
+models/agent_models/gptoss.py — gpt-oss's harmony conversation format: render messages to token ids, parse a streamed reply, end of turn, and the control-token wrapping of a prefetch message.
+  imports: none (repo); [openai_harmony, inside render_ids()]
+  used by: models/__init__.py (by name); every other file reaches this module as the object models/__init__.py's agent(alias) returns
+  reads:   -
+  writes:  -
+  venv:    any at import and for parse/end_of_turn/wrap_prefetch; probe or vllm for render_ids()
+
+models/agent_models/service.py — both ends of the served agent model: start or attach to the vLLM server for a table row and check it, plus the loop's raw token-stream client.
+  imports: models/__init__.py (the family through agent(alias), inside the server main), experimental_settings/schema.py (load_frozen)
+  used by: agent/step_without_probe.py (client), agent/run_tasks.py (health); jobs/launch.py starts it as a piece, which is a tmux command and not an import
+  reads:   models/table.yaml (the serving block only), constants/path_models.yaml, the run directory's settings.yaml (models.agent_row plus generation.date and generation.effort)
+  writes:  service_agent_<replica>.json and its piece log in the run directory
+  venv:    any at import; vllm to serve
+
+models/probe_models/__init__.py — empty package marker, so the client half of service.py imports without torch.
+  imports: none
+  used by: models/probe_models/base.py, models/probe_models/service.py, models/probe_models/qwen.py (as their package)
+  reads:   -
+  writes:  -
+  venv:    any
+
+models/probe_models/base.py — the probe class every backbone shares: load, save, score a prefix, generate a call; owns the classification head and the checkpoint layout.
+  imports: models/__init__.py; models/probe_models/<backbone>.py (by name, inside load()); [torch, transformers, peft]
+  used by: train/utils/trainer.py, models/probe_models/service.py (inside serve())
+  reads:   the checkpoint layout, including the class order in best/meta.json, and the backbone alias's own weights when the checkpoint holds the LoRA adapter alone
+  writes:  the checkpoint layout
+  venv:    probe
+
+models/probe_models/qwen.py — Qwen's tokenizer quirks, pad token, head attach point, LoRA target modules and restore/serving dtype.
+  imports: none (repo); [transformers]
+  used by: models/probe_models/base.py (by name)
+  reads:   -
+  writes:  -
+  venv:    probe
+
+models/probe_models/service.py — both ends of the probe service: the HTTP server that scores, generates, encodes, decodes and renders, plus the check client and the loop's client.
+  imports: models/__init__.py; experimental_settings/schema.py (load_frozen, for the check client's expected values); models/probe_models/base.py (inside serve()); [http.server, transformers and torch inside serve()]
+  used by: agent/run_tasks.py (client: render), agent/step_with_probe.py (client: score, generate, encode, decode); jobs/launch.py starts it as a piece, which is a tmux command and not an import
+  reads:   the checkpoint directories named on its command line, including each one's best/meta.json; the run directory's settings.yaml, the check client only
+  writes:  service_probe_0.json and its piece log in the run directory
+  venv:    any at import; probe to serve
+
+### agent/ — the loop that runs the agent model on tasks
+
+agent/run_tasks.py — run each task and seed of a piece's rotation to completion, claiming tasks across pieces and writing the record.
+  imports: experimental_settings/schema.py (load_frozen), data/environments/__init__.py, data/trajectory_record.py, models/agent_models/service.py (client), models/probe_models/service.py (client, for render), agent/step_without_probe.py, agent/step_with_probe.py, jobs/registry.py, jobs/launch.py (teardown_services)
+  used by: none (program)
+  reads:   its run directory's settings.yaml, the environment's split task-id files (through data/environments.requested_pairs), the service_agent_<replica>.json / service_probe_0.json endpoint files in its own run directory; after its walk, the last line of every requested record (done_pairs) and, through jobs/launch.teardown_services, its run directory's meta.json and the open runs' service_<kind>_<replica>.json
+  writes:  task records (jsonl), heartbeat; ends its run's service pieces (through jobs/launch.teardown_services) once every requested record is finished
+  venv:    the environment's (appworld today)
+
+agent/step_without_probe.py — the plain generation step: stream tokens from the agent model to end of turn, exposing the stream so step_with_probe.py can iterate it instead.
+  imports: models/agent_models/service.py (client), models/__init__.py (the family module)
+  used by: agent/run_tasks.py, agent/step_with_probe.py
+  reads:   -
+  writes:  -
+  venv:    the environment's
+
+agent/step_with_probe.py — the generation step with the probe attached: score the model's own reasoning as it streams, fire early, splice the result in and resume.
+  imports: agent/step_without_probe.py, agent/injected_text_formats.py, data/probe_input.py, data/trajectory_record.py, data/environments/__init__.py (type only), models/probe_models/service.py (client), models/__init__.py (the family module)
+  used by: agent/run_tasks.py
+  reads:   -
+  writes:  spec and resume rows, through data/trajectory_record.py
+  venv:    the environment's
+
+agent/injected_text_formats.py — the table of the five ways an early speculation result is written into the token stream.
+  imports: none
+  used by: agent/step_with_probe.py; its keys are cross-checked against schema.py's axis by run.py selfcheck, and schema.py reads each entry's placement as source text (a p2 format refuses max_inject_per_step > 1)
+  reads:   -
+  writes:  -
+  venv:    any
+
+### train/ — train a probe
+
+train/utils/trainer.py — the training loop every method shares: settings -> arguments, seed, backbone, tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment gate (it passes only when it compared at least one row the method kept and the two losses agree), and the probe run over the prediction splits; it hands the heartbeat to the method's validate and predict hooks, which touch it per batch, and holds generate_in_batches, the generation loop a generator method's two passes touch it through.
+  imports: experimental_settings/schema.py, models/__init__.py, models/probe_models/base.py, data/training_data.py, data/probe_output.py, jobs/registry.py; [torch]
+  used by: train/methods/{ctool,cgen,cparam}.py
+  reads:   example (parquet), the checkpoint layout, train_log.jsonl on a resume (the newest save_best line, so the resumed run keeps the best/ on disk)
+  writes:  best/, last/, last.tmp/ and last.prev/ (the two names the resume checkpoint's swap uses, left on disk by a kill inside it), train_log.jsonl, align_check.json, train_done.json, predictions.parquet, consumed.json, heartbeat, done.json
+  venv:    probe
+
+train/methods/ctool.py — the classification probe: its batches, its head use, its loss, its validation accuracy; its validate and predict hooks touch the heartbeat once per scored block.
+  imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_ctool); [torch]
+  used by: none (program)
+  reads:   -
+  writes:  - (everything goes through trainer.py)
+  venv:    probe
+
+train/methods/cgen.py — the call-generating probe: its packing, its instance strings and target, its loss positions, its exact-match validation; its validate and predict hooks touch the heartbeat once per loss block and per generation batch (through trainer.generate_in_batches).
+  imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_cgen), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
+  used by: none (program)
+  reads:   -
+  writes:  - (everything goes through trainer.py)
+  venv:    probe
+
+train/methods/cparam.py — the argument-generating probe: its own packing and strings, the arguments as the target; its validate and predict hooks touch the heartbeat once per loss block and per generation batch (through trainer.generate_in_batches).
+  imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_cparam), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
+  used by: none (program)
+  reads:   -
+  writes:  - (everything goes through trainer.py)
+  venv:    probe
+
+### eval/ — reads what is on disk and computes numbers; no GPU, no torch
+
+eval/utils/probe_eval.py — the eval program of every probe method: the PROBE_KIND table, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report (for a generator, after it holds the eval.theta_from report to a classifier report with the same risk targets and build key).
+  imports: experimental_settings/schema.py, data/probe_output.py, data/environments/__init__.py (open_env, for the environment the generator report normalises both sides through), jobs/registry.py; [polars, numpy]
+  used by: train/methods/{ctool,cgen,cparam}.py (match_<method>, for their validation metric), run.py (read_report, to freeze a temperature), eval/method_table.py
+  reads:   prediction (parquet), its own and the referenced eval run's train meta.json (stage_extra.labels, upstream["build"]), its own train run's done.json (counts.dropped_overlong), probe report (json + parquet)
+  writes:  probe report (probe_report.json + fires.parquet), report.md, consumed.json, heartbeat, done.json
+  venv:    any
+
+eval/score_run.py — score a sample or inject run from its task records: success rates and probe agreement rates, paired against a baseline.
+  imports: experimental_settings/schema.py, data/trajectory_record.py, data/environments/__init__.py (open_env for split_args and build_call, and requested_pairs), jobs/registry.py; [polars]
+  used by: none (program)
+  reads:   the task records of this run and of its baseline; the environment's split task-id files (through data/environments.requested_pairs); the scored run's and the baseline run's settings.yaml (the same-setup gate)
+  writes:  run_report.json, report.md, heartbeat, done.json
+  venv:    any
+
+eval/method_table.py — the backbone x method table from the registry; one group per (setting, debug flag) pair, reports mean and spread.
+  offers:  table(workflow: str | None = None, out: Path | None = None, *, debug: bool = False) -> str
+  imports: experimental_settings/schema.py, jobs/registry.py, eval/utils/probe_eval.py (read_report)
+  used by: run.py (the table subcommand); this file is not a stage and has no __main__
+  reads:   jobs/runs.jsonl, the probe reports the rows point at, an eval run's own meta.json and its train run's meta.json (for backbone)
+  writes:  a markdown table on stdout or into a named file
+  venv:    any
+
+### jobs/ — a job is one stage run on cards: the code that starts it and records it, and the record itself
+
+jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat (counting beats, and phase-named touches that move no count), the verdicts (a piece whose session the launcher never started reads not started; a piece whose newest beat names a phase is never slowed), ls/where/find/kill/free/sync, RESULTS.md.
+  imports: none (repo); [PyYAML]
+  used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
+  reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts and card memory; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, ssh (to a host's constants/cards.yaml name), tmux, nvidia-smi, a service piece's port (a connect to 127.0.0.1 on the piece's own host, over ssh from any other machine; made only when the piece's verdict reads it: an attached service while its run's work is owed, a service of its own while its session is alive)
+  writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
+  venv:    any
+
+jobs/launch.py — launch the tmux pieces of a sample, inject or train run and refire a dead loop or train piece of an unfinished run (an omitted --piece names the run's one loop or train piece; a dead service piece is handled by re-running the walk, a finished run by run.py retry, and a train piece whose directory holds train_log.jsonl and no last/ checkpoint is refused before any start row, with the retry command, because the trainer's continue rule would refuse it): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown; a launch marks each piece entry with the time its tmux session started, so a piece whose session was never started reads not started, never dead.
+  imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
+  used by: run.py, agent/run_tasks.py (teardown_services)
+  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host, where the loop pieces and the probe service's check client run), constants/cards.yaml (through jobs/registry.py: host names, the ssh target of every remote command, and each card's memory, which placement holds against the card size a piece was declared for), models/table.yaml (the serving block; an agent service's declared card size is the smallest card of its row's serving host), the run directory's settings.yaml, meta.json and done.json (refire's finished-run refusal), its train_log.jsonl, last/, last.prev/ and train_done.json (refire's continue-rule refusal, by presence only), its pieces' log/<piece>.txt and, through jobs/registry.current_beats, the heartbeat/<piece>-<launch>.jsonl file of the incarnation each piece entry's beat_launch names (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git, service ports (a connect to 127.0.0.1 on the service's own host, over ssh from any other machine)
+  writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
+  venv:    probe
+
+jobs/runs.jsonl — one registry row per stage run, appended at start and at finish by registry.py; never edited by hand; in git.
+
+jobs/RESULTS.md — rendered from runs.jsonl by registry.py; never edited by hand.
+
+jobs/versions.yaml — the code-era table: era rows (from here on a stage's runs go to new directories) and same rows (a commit whose copy of the stage's code files still produces the current era's output), each with a why; appended by `run.py version` or by hand in the same shape, never rewritten; in git, committed before the launch that follows.
+  read by: experimental_settings/schema.py (era_of, the key's era; era_rows and same_rows for run.py), run.py (the code gate, ls's unjudged flag and stale text, the version subcommand), jobs/launch.py (through schema.era_of, the start row's era)
+
+### tests/
+
+tests/ — seven unittest modules: the two of the four planned checks this build needs, `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON; and 8.5's piece verdicts over heartbeat files in a temporary run directory: a train piece is `done` only on its finish row, a service gone once its run's work pieces are done is `done`, a service gone while a loop piece works is `dead`, a relaunched piece reads only the heartbeat file of the incarnation its entry's `beat_launch` names, and an attached agent service is judged by its port and its run's work, not by its ended session) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself), plus five CPU-only checks added at the owner's request on 2026-09-25, none of which needs torch, a card or NFS and none of which writes outside a temporary directory: `tests/test_settings_keys.py` (every named setting of every workflow file loads plain and under `--debug`; each stage key is 12 hex, the same in a fresh process, moved by `--debug`, by a field of its own stage or of an upstream stage and by an era row of its stage or an upstream one, and by nothing else, such as `pieces`, `replicas` or `meta.notes`; the loader refuses an unknown or reserved name, an unknown override field, an override of a section the workflow does not read, an `inject.theta` outside [0, 1], a negative `build.hist_rounds` and `inject.max_inject_per_step` above 1 under a p2 format), `tests/test_probe_input.py` (the offline cuts' shape, thinning and `min_think` rule; a live cut on any prefix is an offline cut of the finished text, and the finished text's live cuts are its offline cuts less the terminal one; `assemble`'s history window, `hist_rounds: 0` keeping no round, and clipping), `tests/test_record_formats.py` (the id chain; a task record reads back as its writer's frame; the exclusive claim, `is_done`, `owner`, `done_pairs`, `release` and `to_messages`; the example and prediction parquet round trips and the reader's refusals), `tests/test_probe_eval.py` (softmax, the temperature fit recovering a known temperature, the first crossing and its aggregate by hand, the seeded bootstrap, the generator match rule through the AppWorld environment, score's `call_agree` on a call `build_call` would refuse to write, and the whole classifier report on synthetic prediction rows: theta chosen per risk target, frozen on test, one heartbeat per pass) and `tests/test_environment_and_build.py` (AppWorld's `split_args` taking one layer of quotes off a value that is one whole string literal and no more, the `split_args` / `build_call` round trip both over the path the build takes and for any value `build_call` accepts, `complete_call`, `requested_pairs`' order, and the build's split and weight rules). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/<file>.py`, e.g. `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
+
+## 3. The extension recipes
+
+What you edit, in order, and what it costs, for each of the seven ways this tree grows and the
+two changes that are not extensions but deserve the same treatment (contracts 0.4).
+
+Every recipe that adds a file (1, 2, 6 and 7) also writes that file's own five annotation lines
+into section 2 above, and adds the new file's name to the `used by:` line of every repo file it
+imports. A new file that lands in a package directory whose `__init__.py` carries an
+`(as their package)` `used by:` line (`models/agent_models/` and `models/probe_models/` today)
+joins that list as well, because check 2 holds such a line equal to the `.py` files the
+directory holds. `run.py selfcheck` compares those lines against the real import graph, so it is
+the check that catches a recipe followed half way. A line written as a brace list,
+`train/methods/{ctool,cgen,cparam}.py`, is widened rather than extended with a second fragment;
+selfcheck reads both spellings the same, and this one keeps the line short.
+
+A change to a file the stage table names costs nothing at edit time (section 1, the code
+gate): the next launch that would read a directory the change post-dates stops and prints the
+diff, and one `run.py version` row per stage that lists the file, a same row or an era row,
+answers it for every setting.
+Where a recipe says "an era row", the change is one known to alter the stage's output, so the
+row is written without waiting for the gate.
+
+1. **A new benchmark environment.** `data/environments/<env>.py` (new, carrying its own
+   column-zero `INSTRUCTIONS` and `SPLIT_ROLE` maps; the stage table's `{env}` template names
+   it);
+   `experimental_settings/schema.py` (one value on `data.env`, one on
+   `data.instructions`, and one value on `sample.split` / `inject.split` for every split name the
+   new environment has that no existing one has); `constants/path_datasets.yaml` (home, venv,
+   data root, split files, and a `venvs:` entry when the benchmark brings its own interpreter,
+   which must carry PyYAML, Polars and NumPy). Cost: nothing else, because the loop calls nine
+   methods and nothing else, and `data/build_training_dataset.py` parses calls through the
+   environment object.
+2. **A fourth probe method.** `train/methods/<m>.py` (new, carrying two column-zero bindings:
+   `PROBE_KIND` matching the entry you add to `eval/utils/probe_eval.py`, and
+   `CHECKPOINT_META`; the stage table's `{method}` template names it);
+   `experimental_settings/schema.py`
+   (one value on `probe.method`); `eval/utils/probe_eval.py` (a `match_<m>` function plus one
+   entry in the column-zero `PROBE_KIND` table). Cost: the example
+   row and the prediction row are method-independent, so `data/build_training_dataset.py`,
+   `data/training_data.py` and `data/probe_output.py` are untouched, and the head lives in
+   `models/probe_models/base.py` already. A method that is neither classifier nor generator needs
+   a third `PROBE_KIND`, which costs a column on `data/probe_output.py`, a third report shape and
+   a third head as well.
+3. **A new training hyperparameter.** `experimental_settings/schema.py` (field, default,
+   one-line comment; the annotation uses only the spellings the loader types, `str`, `int`,
+   `float`, `bool`, `None`, `list[...]`, `dict`, `dict[...]` and the name of a dataclass defined
+   in `schema.py`, joined with `|`, and the loader refuses any other); the one module that reads it (`train/utils/trainer.py` or one method
+   file). Cost: free when the default reproduces the old behaviour, because the key is over the
+   diff from the defaults. A new `sample` or `inject` field is also added to that stage's
+   `sections` tuple (keyed) or `projection` tuple (not keyed) in `schema.py`'s `STAGES`, because
+   those two stages name their fields one by one; `run.py selfcheck` check 12 fails a field that
+   no stage's `sections` or `projection` tuple and no reference field names.
+4. **A new field on the task record.** `data/trajectory_record.py` (the column and its
+   `DEFAULTS` entry); the one writer (`agent/run_tasks.py` or `agent/step_with_probe.py`). A
+   field nobody downstream reads costs nothing more: no era row, no rerun (the code gate asks
+   once per stage that lists the file, and a same row answers each). A field a downstream stage reads costs a `REQUIRED` entry
+   and an era row for `sample` and one for `inject` as well, which re-keys both and costs the
+   recollection.
+5. **A sixth injection format that reuses a placement.** `agent/injected_text_formats.py` (one
+   `FORMATS` entry); `experimental_settings/schema.py` (one value on `inject.format`). A new
+   placement costs one more file, `models/agent_models/<family>.py` (one function per family,
+   the control-token wrapping).
+6. **A new probe backbone.** `models/probe_models/<backbone>.py` (new, carrying a column-zero
+   `LORA_TARGETS`; the stage table's `{backbone}` template names it); `models/table.yaml`
+   (one row); `constants/path_models.yaml` (one row). Cost: `base.py` holds everything the
+   backbones share.
+7. **A new agent-model family.** `models/agent_models/<family>.py` (new, carrying column-zero
+   `STOP`, `EFFORTS`, `DEFAULT_EFFORT` and `DEFAULT_DATE`; the stage table's `{family}`
+   template names it); `models/table.yaml`
+   (one row); `constants/path_models.yaml` (one row); `experimental_settings/schema.py` (one
+   value on `generation.effort` for each reasoning tier the new family has that no existing
+   family has); plus the family's rendering library installed in the probe venv and the vllm
+   venv, which `selfcheck` proves by importing the module under both interpreters.
+
+Two changes that are not extensions but deserve the same treatment:
+
+- **Change the cut rule.** `data/probe_input.py` (plus an era row for `build` and one for
+  `inject`, the two stages whose output it shapes; `sample` lists the file too because its
+  program imports it, so its gate asks once and a same row answers); a cut rule that gains a
+  parameter also adds
+  the field to `schema.py`'s `build` section and to `PROBE_TEXT_FIELDS`. Cost: an inherent full
+  rerun downstream — `build` re-keys, `train` follows through the build key, `eval` through the
+  train key, and `inject` through its own era row.
+- **Rename an axis value.** Not allowed. A value is added and retired instead, never renamed;
+  `schema.py`'s `RETIRED` set is what makes retiring safe, so every old run stays reachable.
+
+## 4. The ledgers
+
+`jobs/runs.jsonl` is append-only: one JSON line per stage run, a start row and (once the stage
+closes) a finish row, written only by `jobs/registry.py` under its own lock. Nobody edits it by
+hand. `jobs/RESULTS.md` is rendered whole from `runs.jsonl` on every append, and is likewise
+never edited by hand; `run.py sync` folds any run directory's `done.json` and heartbeat files
+into a finish row the ledger is missing. `jobs/versions.yaml` is append-only as well: one row
+per judgment of a code change (an era row or a same row, each with its why), written by
+`run.py version` or by hand in the same shape and never rewritten; its era rows move keys, so
+it is committed before the launch that follows, like code. `notes/` — `TIMELINE.md`, `DATA.md`, `WORKPLAN.md`,
+`METHOD.md`, `CONTEXT.md`, `plans/` — is the owner's; an agent appends to `TIMELINE.md` only
+when a ticket says so, and never edits the rest.

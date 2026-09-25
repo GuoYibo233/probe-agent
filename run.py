@@ -1,1309 +1,2566 @@
-#!/usr/bin/env python3
-"""new1 unified entry point for the whole pipeline: one registry covers all seven stages
-(collect / annotate / train / eval / replay injection / exec / live run).
+"""The one command: walk a named setting's stages (sample through score), or run one of the eleven reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, version, selfcheck)."""
+# venv: probe
+from __future__ import annotations
 
-Usage (any python3 can run this file; the underlying scripts each use their own venv):
-  python3 run.py list [stage]          # list tasks (grouped by stage)
-  python3 run.py show <task>           # print the full command that would run, plus notes, without running it
-  python3 run.py <task> [args...]      # run; args pass through as-is to the underlying script
-  python3 run.py recipes               # list recipes (named chains that run several steps in one command)
-  python3 run.py recipe <name> [--set k=v ...] [--id X] [--resume] [--dry-run]
-  python3 run.py status [dir]          # recipe progress (reads the state file + log tail)
-  python3 run.py selfcheck             # registry checkup: are interpreters/scripts/recipe references all consistent
-  python3 run.py launch <task>|--cmd '<cmd>' --run-id ID --track T --piece host:gpus [...]
-                                        # launch in one command: probe cards -> tmux -> verify alive -> the three registrations (ticket 09)
-  python3 run.py launch --refire RUN_ID --idx N [--piece host:gpus] [--allow-dirty]
-                                        # refire: resend a dead piece from the job ledger with its
-                                        # original command, only that piece's four-tuple in the
-                                        # ledger changes, no new record is opened (ticket 10)
-
-Three dispatch rules:
-- CPU tasks run directly: subprocess, cwd=ROOT, interpreter from the registry (absolute venv path).
-- GPU/launch tasks (handoff=True) only assemble the command, they do not launch it: print
-  `<interpreter> <script> <args>` as one block (no cd/CUDA_VISIBLE_DEVICES/tee -- that is the
-  gpu-run launch template's job, printing them would get quoted a second time); the launch
-  itself goes through the gpu-run skill's full lifecycle. What `show` prints is also the launch
-  command, so show goes through the same dirty-tree gate for handoff/gate tasks too
-  (--allow-dirty lets it through).
-- Before a handoff task prints its command, it checks the working tree: dirty (git status
-  --porcelain non-empty) gets refused, only an explicit --allow-dirty lets it through -- commit
-  before launching an experiment is a hard rule, the history of 79/79 dirty launches proved that
-  soft reminders do not work. --dry-run does not block it when present.
-
-Extension rule (on the same line as the memory notes and probe-pipeline skill Phase E):
-  Any future extension -- new model / new environment / new cell / new script / new parameter --
-  must be wired into this file the moment the code lands: a new script gets a TASKS entry, a new
-  multi-step flow gets a RECIPES entry, a new parameter on an underlying script needs no change
-  here (it passes through). The single source of truth for the training cell table is this
-  file's CELLS, ops/launch_probe.py imports from here -- do not write a second cell table
-  anywhere else. Same for the eval cell table: the single source of truth is this file's
-  EVAL_CELLS, ops/launch_eval.py imports from here.
-
-Recipe state and logs: under logs/recipe/<name>__<id>/, one file per step, NN_<step>.log, plus
-state.json (written atomically via tmp+replace). The resume key is (step name, command
-fingerprint); changing a parameter is automatically treated as not done. rc=0 does not count as
-done -- a step that declares itself done still has its outputs checked for existence.
-"""
-
+import ast
 import hashlib
 import json
-import os
+import re
 import shlex
+import shutil
+import socket
 import subprocess
 import sys
 import time
+from dataclasses import fields as dc_fields
+from datetime import date, datetime
 from pathlib import Path
 
+import yaml
+
+from data import trajectory_record
+from data.environments import open_env, requested_pairs
+from eval import method_table
+from eval.utils import probe_eval
+from experimental_settings import schema
+from jobs import launch, registry
+
 ROOT = Path(__file__).resolve().parent
-LOGD = ROOT / "logs" / "recipe"
 
-# Interpreter map (the two-environment hard rule: the mbert line is pinned to transformers
-# 4.57.6, the cprobe line is >=5.14, neither ever upgrades; appworld/alfworld/tales/bfcl/tau2
-# each have their own simulation environment managing one line)
-PY = {
-    "sys":      "python3",
-    "cprobe":   str(ROOT / "cprobe-env/bin/python"),
-    "mbert":    str(ROOT / "mbert-env/bin/python"),
-    "appworld": str(ROOT / "envs/appworld/venv/bin/python"),
-    "alfworld": str(ROOT / "envs/alfworld/venv/bin/python"),
-    "tales":    str(ROOT / "envs/tales/venv/bin/python"),
-    "tau2":     str(ROOT / "envs/tau2-bench/.venv/bin/python"),
-    "toolhop":  str(ROOT / "envs/toolhop-env/bin/python"),
-    "stbserver": str(ROOT / "envs/stb-server-env/bin/python"),
-    "vllm":     str(ROOT / "envs/vllm-env/bin/python"),
-    "bash":     "bash",
+RESERVED_SUBCOMMANDS = (
+    "ls", "where", "find", "kill", "refire", "retry", "table", "free", "sync", "version",
+    "selfcheck",
+)
+
+_SUBCOMMAND_ONE_LINE = {
+    "ls": "[workflow] [--debug] -- one folded line per run; closes a launch whose pieces are all dead",
+    "where": "<workflow> <setting> <stage> [--debug] -- the absolute run directory for one stage",
+    "find": "section.field=value ... -- the runs whose settings_diff matches every given field",
+    "kill": "<workflow> <setting> <stage> [--debug] -- end one run's pieces, write the killed finish row",
+    "refire": "<workflow> <setting> <stage> [--piece i] [--debug] [--allow-dirty] [--cards <host>:<ids>] -- restart one dead loop or train piece",
+    "retry": "<workflow> <setting> <stage> [--debug] [--allow-dirty] [--cards <host>:<ids>] -- refuse a live run, else clear markers and launch it fresh",
+    "table": "[workflow] [--out FILE] [--debug] -- the backbone x method x risk table",
+    "free": "-- the free cards per host",
+    "sync": "-- fold done.json and heartbeats into missing finish rows",
+    "version": "<stage> [<stage> ...] [--same --from <commit>] --why \"<sentence>\" -- append to jobs/versions.yaml an era row per stage (new directories from now on) or, with --same, a same row per stage (HEAD's code produces what the code at --from produced)",
+    "selfcheck": "-- the tree's self-consistency checks",
 }
 
-# The single source of truth for training cells: cell -> (interpreter, training script, the
-# fixed args that cell always carries). ops/launch_probe.py imports from here, nowhere else may
-# copy this table again.
-CELLS = {
-    "mtool": (PY["mbert"], str(ROOT / "pipeline/train/train_mbert_tool.py"), []),
-    "mext":  (PY["mbert"], str(ROOT / "pipeline/train/train_mbert_extract.py"), []),
-    "ctool": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_tool.py"),
-              ["--base", "qwen"]),
-    "cgen":  (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_share.py"),
-              ["--mode", "cgen"]),
-    "cparam": (PY["cprobe"], str(ROOT / "pipeline/train/train_causal_share.py"),
-              ["--mode", "cparam"]),
-}
-# The default smoke order may be a subset of CELLS: the ModernBERT line (mtool/mext) stopped
-# running as of 2026-08-21 (the first overall decision in
-# plans/archive/2026-08-21-new-probe-training.md); both cells still stay in CELLS and can be
-# fired individually, they just are not in the default smoke order. ops/launch_probe.py's smoke
-# tier assigns one card per cell from this table; the number of --gpus given must equal the
-# length of this tuple.
-CELL_ORDER = ("ctool", "cgen", "cparam")
 
-# The single source of truth for eval cells: cell -> (run.py task name, dependency tool cell |
-# None). ops/launch_eval.py imports from here and takes the task's interpreter/script/fixed args
-# from it -- nowhere else may copy this table again (an isomorphic table always drifts, and that
-# drift is silent).
-# Dependency semantics: mext consumes the REPLAY_REPORT of the same model's mtool, cgen and
-# cparam consume ctool's.
-EVAL_CELLS = {
-    "mtool": ("eval-tool-mbert", None),
-    "ctool": ("eval-tool-causal", None),
-    "mext":  ("eval-mcall", "mtool"),
-    "cgen":  ("eval-ccall", "ctool"),
-    "cparam": ("eval-cparam", "ctool"),
-}
+# ---------------------------------------------------------------------------
+# Config readers: lazy and cached, exactly like jobs/registry.py's and
+# jobs/launch.py's own, so importing this module needs neither constants/
+# nor models/table.yaml to exist yet.
+# ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------- task registry
-# Fields: stage = stage name / desc = one-line description / py = interpreter key /
-#         script = script path relative to ROOT / args = fixed leading args / gpu = needs a
-#         card or not / handoff = only assemble the command, do not run it (default = gpu) /
-#         env = extra environment variables / cwd = override working directory (default ROOT) /
-#         notes = known-pitfall notes
-# One-off launchers (the thsweep series, launch_vllm_{w0,topup,trio,pair,gptoss,bfcl_gptoss},
-# and the per-batch generated launch_servers.py/launch_clients.sh) do not go into the registry,
-# per the user's ruling.
-
-TASKS = {
-    # ---- collect collection ----
-    "collect-aw": dict(
-        stage="collect", py="appworld", script="envs/collect/run_appworld.py",
-        desc="AppWorld collector (needs vLLM /v1 online)", shardable=True,
-        notes=["must pass --base-url --model --outdir; the outdir name must be appworld_<q35|q36|gptoss>,"
-               "any other suffix and downstream silently skips the whole dir",
-               "--preset <name> selects a generation-settings set from configs/presets/; explicit command-line"
-               "args override the preset; when the preset has a server section, --base-url/--model can be omitted",
-               "a rerun must pass --resume, otherwise a same-named trajectory gets truncated and overwritten",
-               "the script chdirs to envs/appworld itself; a relative --outdir is resolved against ROOT",
-               "--api harmony: hand-assembled harmony goes through /v1/completions, raw output and generated "
-               "token ids are all recorded (the server-side HarmonyParser is not involved); gpt-oss only,"
-               "--start-date pins the Current date in the prompt",
-               "do not install openai-harmony in envs/appworld/venv: it pulls in pydantic 2,"
-               "which displaces the 1.10.26 that appworld needs (measured 2026-08-06: import breaks immediately)",
-               "long-lived client: run at scale inside tmux (via gpu-run); only a small smoke test may run in the foreground"]),
-    "collect-alf": dict(
-        stage="collect", py="alfworld", script="envs/collect/run_alfworld.py",
-        desc="ALFWorld collector (needs vLLM /v1 online)",
-        notes=["must pass --base-url --model --outdir; --split val = the official valid_seen",
-               "--preset <name> selects a generation-settings set (same as collect-aw)",
-               "an externally exported ALFWORLD_DATA overrides --data-root (the script uses setdefault)",
-               "a rerun must pass --resume",
-               "long-lived client: run at scale inside tmux (via gpu-run); only a small smoke test may run in the foreground"]),
-    "collect-tales": dict(
-        stage="collect", py="tales", script="envs/collect/run_tales.py",
-        desc="TALES/TWX collector (needs vLLM /v1 online)",
-        notes=["no --split/--exp/sharding; sharding is done by splitting --seeds; a wrong --game raises KeyError directly",
-               "smoke test: giving --seeds a single seed = run only one episode (there's no --n)",
-               "--preset <name> selects a generation-settings set (same as collect-aw)",
-               "a rerun must pass --resume",
-               "long-lived client: run at scale inside tmux (via gpu-run); only a small smoke test may run in the foreground"]),
-    "collect-tau2": dict(
-        stage="collect", py="tau2", script="envs/collect/run_tau2.py",
-        desc="tau2-bench collector (needs two /v1 endpoints: agent + user simulator)",
-        notes=["endpoint smoke test passed (2026-08-02, airline 2 tasks, gptoss served both endpoints on the same server;"
-               " zero parse failures/missing args); a real run at scale hasn't happened yet -- at scale, agent and user simulator need separate servers and models",
-               "--user-base-url/--user-model are given separately; default = same endpoint as the agent",
-               "--preset <name> selects a generation-settings set (default is 'default'); the user simulator's endpoint, model, api"
-               " are given by the three --user-* flags, and its temperature uses the same preset as the agent side",
-               "the server needs --max-model-len around 65536 (the system prompt is ~6k tokens)",
-               "--domain only wires up airline/retail; telecom (2285 tasks, solo collection needs"
-               " llm_agent_solo) is not in DOMAINS yet -- extending it is integration-phase work"]),
-    "toolhop-official": dict(
-        stage="collect", py="toolhop", script="envs/toolhop/code/evaluation_closed.py",
-        cwd=str(ROOT / "envs/toolhop/code"),
-        desc="ToolHop's official closed-source-path evaluator (needs vLLM /v1 online; the body lives on NFS, reached via a symlink)",
-        notes=["the server must carry --enable-auto-tool-choice --tool-call-parser openai"
-               "(in vLLM 0.26's registry, openai=GptOssToolParser); without these flags, the model tries to call a tool"
-               " but tool_calls stays empty every time (measured 2026-08-02)",
-               "must pass --base_url (ending in /v1) --output_file; all args use underscore style",
-               "smoke test: --input_file ../data/smoke_2.json (relative to code/); output appends and skips ids"
-               " that already exist -- delete the output file first before rerunning",
-               "the printed Result percentage is hardcoded to divide by 995, meaningless when running a subset -- check Valid Items and per-item"
-               " answer_correct instead",
-               "--scenario Direct sends tools:null, vLLM may 400; use Mandatory/Free",
-               "toolhop-env pins python 3.12; after upgrading to 3.13, every tool call silently turns into an error (PEP 667,"
-               " measured); see patches/toolhop_req_closed.diff for all changes against upstream"]),
-    "collect-bfcl": dict(
-        stage="collect", prog=str(ROOT / "envs/bfcl/venv/bin/bfcl"),
-        cwd=str(ROOT / "envs/bfcl"),
-        env={"BFCL_PROJECT_ROOT": str(ROOT / "envs/bfcl")},
-        desc="BFCL collection (console script, cwd=envs/bfcl)",
-        notes=["See envs/collect/bfcl_gptoss/RUNBOOK.md for the full flow: first install_patch.py,"
-               "then printf the task list json, then bfcl generate",
-               "also needs the two env vars LOCAL_SERVER_ENDPOINT/LOCAL_SERVER_PORT to point at the service"]),
-    "gen-launch": dict(
-        stage="collect", py="sys", script="pipeline/collect/gen_launch.py",
-        desc="service + client launcher that generates a collection batch from the manifest",
-        notes=["--config is required; what it generates still needs to occupy a card to run (that step goes through gpu-run)",
-               "ENV_TABLE only has appworld/alfworld; extend it first when adding an environment"]),
-    "gen-alf-splits": dict(
-        stage="collect", py="sys", script="pipeline/collect/gen_alfworld_splits.py",
-        desc="draw the three task-list piles from the official ALFWorld directory",
-        notes=["no overwrite-guard gate; rerunning directly rewrites the committed txt"]),
-    "gen-bfcl-splits": dict(
-        stage="collect", py="sys", script="pipeline/collect/gen_bfcl_splits.py",
-        desc="split the 200 BFCL multi_turn_base tasks into three piles (four gates)",
-        notes=["refuses to overwrite when the committed task list differs; needs --force"]),
-    "gen-tau2-splits": dict(
-        stage="collect", py="sys", script="pipeline/collect/gen_tau2_splits.py",
-        desc="three piles for the tau2 three-domain task list: the official test is frozen, val is self-split from the official train (four gates)",
-        notes=["the official data has only train/test, no val; val = half of each domain's test, with a seed independent per domain",
-               "refuses to overwrite when the committed task list differs; needs --force"]),
-    "gen-toolhop-splits": dict(
-        stage="collect", py="sys", script="pipeline/collect/gen_toolhop_splits.py",
-        desc="split all 995 ToolHop tasks into three piles of 695/200/100, stratified by answer_type (four gates)",
-        notes=["no official split; the committed txt is the sole source of truth; unit = the official integer id string",
-               "refuses to overwrite when the committed task list differs; needs --force"]),
-    "build-dataset-legacy": dict(
-        stage="collect", py="cprobe", script="envs/collect/build_dataset.py",
-        desc="old-line dataset construction (superseded by ann-build, kept for the record)",
-        notes=["recognizes only appworld/tales/bfcl; an unrecognized directory suffix is skipped silently"]),
-    "summarize-full": dict(
-        stage="collect", py="sys", script="envs/collect/summarize_full.py",
-        desc="summarize scores across the full set of collection batches (batches/models are hardcoded)",
-        notes=["changing batches requires editing the source; a missing directory silently drops a row"]),
-
-    # ---- annotate annotation ----
-    "ann-build": dict(
-        stage="annotate", py="sys", script="pipeline/annotate/build.py",
-        desc="trajectories -> three-pile dataset (--config is required)",
-        notes=["a collection directory whose suffix is not in q35/q36/gptoss is skipped entirely and silently"]),
-    "ann-params": dict(
-        stage="annotate", py="sys", script="pipeline/annotate/param_label.py",
-        desc="parameter-extraction annotation (--config is required; must run after ann-build)",
-        notes=["raises FileNotFoundError if any of the three-pile jsonl files is missing"]),
-    "ann-accept-v3diff": dict(
-        stage="annotate", py="sys", script="pipeline/annotate/accept_v3diff.py",
-        desc="v3 dataset rebuild consistency acceptance check (no arguments, paths are hardcoded)",
-        notes=["the exit code has special meaning: 0 if everything matches, 1 if anything doesn't"]),
-    "ann-check-callstr": dict(
-        stage="annotate", py="cprobe", script="pipeline/annotate/check_callstr.py",
-        env={"CUDA_VISIBLE_DEVICES": ""},
-        desc="ground-truth call-string read-back gates G19-G22 (--config is required)",
-        notes=["the docs saying python3 are wrong: it imports eval_causal_call -> torch, so it must use cprobe-env",
-               "the entry point clears CUDA_VISIBLE_DEVICES on its behalf (the script's setdefault can't block an external export)"]),
-    "readonly-gen-tables": dict(
-        stage="annotate", py="sys", script="pipeline/annotate/readonly/gen_tables.py",
-        desc="generator for the read-only / non-read-only tool ground-truth table",
-        notes=["no __main__ guard; importing it executes it; the output is readonly/{appworld,bfcl}.json"]),
-
-    # ---- train training (all cells full GPU, launch goes through gpu-run; the card-scheduling launcher is launch-probe) ----
-    "train-mtool": dict(
-        stage="train", py="mbert", script="pipeline/train/train_mbert_tool.py",
-        gpu=True, desc="ModernBERT tool-name probe (--data --out are required)",
-        notes=["--smoke must come with a different --out too, otherwise the smoke-test weights occupy best/",
-               "train_log.jsonl is appended to, never cleared",
-               "training again in the same --out is refused by default (blocked as soon as train_log.jsonl exists); --force escapes it"]),
-    "train-mext": dict(
-        stage="train", py="mbert", script="pipeline/train/train_mbert_extract.py",
-        gpu=True, desc="ModernBERT parameter-extraction head (--data --out are required)",
-        notes=["the output is a bare state_dict at best/model.pt; reuse it through load_extractor()",
-               "training again in the same --out is refused by default; --force escapes it"]),
-    "train-ctool": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_tool.py",
-        gpu=True, args=["--base", "qwen"],
-        desc="causal tool-name probe (--data --out are required; --base defaults to qwen, three tiers available)",
-        notes=["--base has three tiers: qwen=Qwen3-0.6B-Base / qwen17=1.7B / qwen4=4B;"
-               "the registry always passes --base qwen; override it again via the card-scheduling table's extra at launch time",
-               "the pre-training alignment gate exits 2 on FAIL (reldiff at the 1e-6 scale = noise, above 1e-3 = a real error)",
-               "since 2026-08-28, --align-rule {abs,rel,both} defaults to abs; rel checks that "
-               "reldiff_hidden/reldiff_logits are both <= --align-rel-tol (default 1e-5)",
-               "--lora trains only the base adapter (the classification head still trains in full), and before saving best "
-               "it runs merge_and_unload back into the base -- best/ is item-for-item isomorphic with a full-parameter save,"
-               "so eval-tool-causal loads it back with zero changes;"
-               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
-               "--lora-lr 2e-4 (an explicit --lr takes precedence)",
-               "--grad-ckpt saves GPU memory; works with both full-parameter and --lora training (needed on a 48G card for the 4B model)",
-               "training again in the same --out is refused by default; --force escapes it"]),
-    "train-cgen": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
-        gpu=True, args=["--mode", "cgen"],
-        desc="causal head that generates the full call, with cache-reuse packed forward passes (--data --out are required)",
-        notes=["kvshare-train swaps in a new implementation (.scratch/kvshare-train/spec.md): one event's"
-               "full text goes through the forward pass once, so rows no longer each repeat tokenization/forward passes; the cell name, data,"
-               "and the four eval scripts stay unchanged",
-               "--base has three tiers, qwen/qwen17/qwen4, defaulting to qwen (=0.6B, consistent with the old settings);"
-               "it also accepts a model directory path, going through build(path=...)",
-               "--max-len defaults to 8192 (the token cap for an event's full text; an event over the cap is dropped whole,"
-               "not truncated row by row); --tok-budget defaults to 16384 to control physical-block GPU memory",
-               "the update unit = --events-per-mb (default 4) x --accum (default 2) = 8 events"
-               "per opt.step(), no longer --bs rows per step",
-               "a built-in pre-training alignment check (--align-only runs only this): under fp32, it compares row-by-row loss"
-               "against the old row-by-row trainer train_causal_callgen.py; on failure it calls sys.exit(2)",
-               "since 2026-08-28, --gen-eval N (default 200, 0 disables it) paired with --gen-eval-at "
-               "{all,last} (default last) runs an extra generative eval at evaluation time; it only goes into the log and never picks best",
-               "since 2026-08-28, --align-rule {abs,rel,both} defaults to abs; rel/both check "
-               "rel_max_abs_diff <= --align-rel-tol (default 1e-5); the four coarse-screen thresholds"
-               "(--align-tok-tol and the others) have also all become parameters, with defaults equal to the first round's constants",
-               "since 2026-08-28, --mem-probe-pick {tokens,cost,loop} defaults to cost,"
-               "used together with --mem-probe; at wrap-up it writes one mem_probe_summary entry (worst_gb and others)",
-               "--lora trains only the base adapter, and before saving best "
-               "it runs merge_and_unload back into the base -- best/ is item-for-item isomorphic with a full-parameter save,"
-               "so eval-ccall loads it back with zero changes;"
-               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
-               "--lora-lr 2e-4 (an explicit --lr takes precedence)",
-               "--grad-ckpt saves GPU memory; works with both full-parameter and --lora training (needed on a 48G card for the 4B model)",
-               "training again in the same --out is refused by default; --force escapes it"]),
-    "train-cparam": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
-        gpu=True, args=["--mode", "cparam"],
-        desc="causal parameter-generation head, with cache-reuse packed forward passes (given the tool name, writes only the parameters; --data --out are required)",
-        notes=["input string = text + \\n[CALL] + tool name + open paren, target = the part inside the parens + close paren",
-               "kvshare-train swaps in a new implementation, sharing the same script and the same packed"
-               "forward pass as train-cgen; only --mode differs (see the train-cgen entry for the spec)",
-               "--base has three tiers, qwen/qwen17/qwen4, defaulting to qwen; also accepts a model directory path",
-               "no --fire-head: the trigger is always done by ctool",
-               "since 2026-08-28, --gen-eval N (default 200, 0 disables it) paired with --gen-eval-at "
-               "{all,last} (default last) runs an extra generative eval at evaluation time; it only goes into the log and never picks best",
-               "since 2026-08-28, --align-rule {abs,rel,both} defaults to abs; rel/both check "
-               "rel_max_abs_diff <= --align-rel-tol (default 1e-5); the four coarse-screen thresholds"
-               "(--align-tok-tol and the others) have also all become parameters, with defaults equal to the first round's constants",
-               "since 2026-08-28, --mem-probe-pick {tokens,cost,loop} defaults to cost,"
-               "used together with --mem-probe; at wrap-up it writes one mem_probe_summary entry (worst_gb and others)",
-               "--lora trains only the base adapter; before saving best it runs merge_and_unload back into the base"
-               "-- best/ is item-for-item isomorphic with a full-parameter save, eval-cparam loads it back with zero changes;"
-               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
-               "--lora-lr 2e-4 (an explicit --lr takes precedence)",
-               "--grad-ckpt saves GPU memory; works with both full-parameter and --lora training (needed on a 48G card for the 4B model)",
-               "training again in the same --out is refused by default; --force escapes it"]),
-    "train-cgen-rows": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_callgen.py",
-        gpu=True, desc="causal head that generates the full call, old row-by-row trainer (for reference/comparison)",
-        notes=["the row-by-row reference implementation, used only for alignment checks and comparison; its output does not enter the matrix, and the run_id "
-               "must not use an active batch prefix (kvshare-train decision 3 freezes it as the alignment reference)",
-               "--base has three tiers, qwen/qwen17/qwen4, defaulting to qwen (=0.6B, consistent with the old settings)",
-               "--lora trains only the base adapter (the fire head still trains in full), and before saving best "
-               "it runs merge_and_unload back into the base -- best/ is item-for-item isomorphic with a full-parameter save,"
-               "so eval-ccall loads it back with zero changes;"
-               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
-               "--lora-lr 2e-4 (an explicit --lr takes precedence)",
-               "--grad-ckpt saves GPU memory; works with both full-parameter and --lora training (needed on a 48G card for the 4B model)",
-               "training again in the same --out is refused by default; --force escapes it"]),
-    "train-cparam-rows": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_param.py",
-        gpu=True, desc="causal parameter-generation head, old row-by-row trainer (for reference/comparison)",
-        notes=["the row-by-row reference implementation, used only for alignment checks and comparison; its output does not enter the matrix, and the run_id "
-               "must not use an active batch prefix (kvshare-train decision 3 freezes it as the alignment reference)",
-               "input string = text + \\n[CALL] + tool name + open paren, target = the part inside the parens + close paren",
-               "--base has three tiers, qwen/qwen17/qwen4, defaulting to qwen",
-               "no --fire-head: the trigger is always done by ctool",
-               "--lora trains only the base adapter; before saving best it runs merge_and_unload back into the base"
-               "-- best/ is item-for-item isomorphic with a full-parameter save, eval-cparam loads it back with zero changes;"
-               "--lora-rank 16 / --lora-alpha 32 / --lora-dropout 0.05 / "
-               "--lora-lr 2e-4 (an explicit --lr takes precedence)",
-               "--grad-ckpt saves GPU memory; works with both full-parameter and --lora training (needed on a 48G card for the 4B model)",
-               "training again in the same --out is refused by default; --force escapes it"]),
-    "sweep-lr": dict(
-        stage="train", py="cprobe", script="pipeline/train/sweep_lr.py",
-        desc="lr-sweep list (plan) and collected report (report); launch still goes through gpu-run",
-        notes=["two subcommands: `sweep-lr plan [--grid ...] [--write plan.json]`"
-               "generates 12 train-cgen commands and launch lines from the `GRID` constant;"
-               "`sweep-lr report --runs <path/glob...> --out <dir>` collects the train_log.jsonl"
-               "from a batch of run directories into SWEEP_REPORT.json/.md",
-               "the `GRID` constant sits at the top of pipeline/train/sweep_lr.py; the four base configs"
-               "(b06/b17/l17/l4) each have three lr anchor points, which may change again after the smoke test",
-               "this task only produces the list/collects the report (pure CPU); it does not launch; the actual launch of the 12 runs"
-               "goes through gpu-run, and the output dir pipeline/runs/sweep/ does not enter the matrix"]),
-    "demo-prep": dict(
-        stage="train", py="cprobe", script="demo/prepare.py",
-        env={"CUDA_VISIBLE_DEVICES": ""},
-        desc="debugger demo fixtures: synthetic small data demo/data + a small two-layer Qwen3 "
-             "demo/tiny_qwen3 (pure CPU, ten seconds)",
-        notes=["the tokenizer is copied from the real Qwen3-0.6B-Base; demo/tiny_qwen3 and demo/runs are turned by this"
-               "task into symlinks pointing at a mirrored dir on the net drive (hard rule: big outputs go to net, same as pipeline/runs)",
-               "the data is determined by the seed; demo/data/*.jsonl goes into the repo, the two symlinks do not",
-               "see demo/README.md for where to set breakpoints; enter the debugger via .vscode/launch.json,"
-               "neither of the two training configs nor demo-train touches a GPU"]),
-    "demo-train": dict(
-        stage="train", py="cprobe", script="pipeline/train/train_causal_share.py",
-        env={"CUDA_VISIBLE_DEVICES": ""},
-        args=["--base", "demo/tiny_qwen3", "--data", "demo/data",
-              "--device", "cpu", "--epochs", "2", "--eval-per-epoch", "2",
-              "--log-every", "1", "--tok-budget", "768", "--gen-eval", "4",
-              "--gen-bs", "2", "--align-events", "3"],
-        desc="run the demo training end to end on CPU when not stepping through the debugger"
-             "(--mode cgen|cparam and --out are required)",
-        notes=["the same set of arguments as .vscode/launch.json; running the same --out a second time needs --force",
-               "what actually runs is the real trainer train_causal_share.py, just with the model and data swapped for fixtures",
-               "the output demo/runs/<mode>/ does not enter the repo, the matrix, or the record (it is not an experiment)"]),
-
-    # ---- eval evaluation ----
-    "eval-tool-mbert": dict(
-        stage="eval", py="mbert", script="pipeline/eval/eval_tool.py",
-        gpu=True, args=["--head", "mbert"],
-        desc="tool-name eval, mbert head (--env --run --data are required)",
-        notes=["logits are always written to --run, the report follows --report-dir; this is a prerequisite for the two call evals",
-               "smoke test: --limit N truncates each pile to the first N rows; only allowed on a --run whose name includes smoke"
-               "(the truncated logits/REPLAY_REPORT get written into --run; a real run must not touch this)",
-               "the mbert head supports only --overlong left; passing skip/drop-event raises SystemExit directly"
-               "(since 2026-08-28; --overlong only takes effect for --head causal)"]),
-    "eval-tool-causal": dict(
-        stage="eval", py="cprobe", script="pipeline/eval/eval_tool.py",
-        gpu=True, args=["--head", "causal"],
-        desc="tool-name eval, causal head (same as above, different interpreter)",
-        notes=["one script forks into two interpreters by --head; the registry splits it into two tasks",
-               "smoke test: --limit N (same as eval-tool-mbert, only allowed for a smoke directory)",
-               "since 2026-08-28, --overlong {left,skip,drop-event} defaults to left,"
-               "in all three modes logits_*.pt is written with the full row count, and excluded rows' indices go into .meta.json's "
-               "excluded_idx; --cached-logits hits a hard stop if it meets a different overlong_mode"]),
-    "eval-mcall": dict(
-        stage="eval", py="mbert", script="pipeline/eval/eval_mbert_call.py",
-        gpu=True, desc="eval of the full mbert call (--env --run --data --extractor are required)",
-        notes=["must wait for the same model's eval-tool-mbert to finish (needs REPLAY_REPORT+logits)",
-               "a null θ is a hard failure that exits 1: the standard remedy is to lower --risk to 0.1 and rerun; only N/A when both tiers are null"]),
-    "eval-ccall": dict(
-        stage="eval", py="cprobe", script="pipeline/eval/eval_causal_call.py",
-        gpu=True, desc="eval of the full causal call (--env --ctool-run --cgen-run --data are required)",
-        notes=["must wait for eval-tool-causal to finish; passing the wrong --env silently corrupts the numbers",
-               "since 2026-08-28, --overlong {left,skip,drop-event} defaults to left,"
-               "the set of rows entering the denominator differs across the three modes; the matrix accepts only the left eval results"]),
-    "eval-cparam": dict(
-        stage="eval", py="cprobe", script="pipeline/eval/eval_causal_param.py",
-        gpu=True,
-        desc="causal parameter-generation eval (--env --ctool-run --cparam-run --data are required)",
-        notes=["must wait for eval-tool-causal to finish; passing the wrong --env silently corrupts the numbers",
-               "the report PARAM_REPORT.{json,md} is written into --cparam-run, in two blocks:"
-               "gt_tool (fed the ground-truth tool name) and pred_tool (fed the classification head's argmax)",
-               "the matrix takes only the pred_tool block -- that is system B's real settings",
-               "since 2026-08-28, --overlong {left,skip,drop-event} defaults to left,"
-               "the set of rows entering the denominator differs across the three modes; the matrix accepts only the left eval results"]),
-    "matrix": dict(
-        stage="eval", py="sys", script="pipeline/eval/summarize_matrix.py",
-        desc="matrix rollup (--runs-dir --out are required)",
-        notes=["--risk is a string key; it only recognizes \"0.05\" or \"0.1\", passing 0.10 turns the whole row into - but the status is still OK",
-               "--models is nargs=+; a bare argument gets swallowed by it"]),
-
-    # ---- inject replay injection + exec execution ----
-    "inject-plan": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/replay_inject.py",
-        gpu=True, args=["plan"],
-        desc="fire plan: run the probe+cgen over the full set of events (--ctool-run --cgen-run --data --traj-root --out are required)",
-        notes=["--theta overrides --risk, and --decision-file overrides θ in turn"]),
-    "inject-run": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/replay_inject.py",
-        handoff=True, args=["run"],
-        desc="send continuation requests per the plan (needs vLLM; long-lived, run it in tmux)",
-        notes=["--base-url must end in /v1; the output is written into the same directory as --plan",
-               "--preset <name> selects a set of generation settings (temperature/max_tokens/stop)",
-               "--tag is just the raw file suffix; splitting by piece relies on an external split by arm (see splice_client.py)",
-               "a single failed request only gets counted; the process still exits 0 overall -- completion is judged by the raw row count, not by rc"]),
-    "inject-merge-exec": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/replay_inject.py",
-        args=["merge-exec"], desc="execute mode: execute the results and write them back to the plan (--plan --exec are required)"),
-    "inject-score": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/replay_inject.py",
-        args=["score"], desc="score and produce INJECT_REPORT (--run-dir is required)",
-        notes=["piece-sharded raw files must first be cat-merged into a single raw<tag>.jsonl",
-               "changing saved_baseline's settings needs --rebaseline, and the whole θ curve must be rerun"]),
-    "extract-completed": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/extract_completed.py",
-        desc="sample completed calls per arm -> exec_in_<arm>.jsonl (--run-dir --arms are required)",
-        notes=["the skeleton always uses pred_label; label is forbidden (the god's-eye-view red line)"]),
-    "exec-calls": dict(
-        stage="inject", py="appworld", script="pipeline/inject/exec_calls.py",
-        desc="execute the call in the live world (--plan --out --cache --exp are required)",
-        notes=["concurrency only works via multiple processes each with its own --exp; when sharded by piece, out/cache automatically get a .sN suffix",
-               "a single unit blowing up only gets logged into unit_errors and continues; rc is still 0 -- check meta.json, not rc"]),
-    "acceptance": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/acceptance.py",
-        desc="compute-cost accounting for A (tool-name acceptance rate) / C (draft acceptance length) (--run-dir is required)",
-        notes=["only with --base-url does it run the exact echo path; it must end in /v1,"
-               "and the service must be a dedicated replica at util 0.80 + --max-num-batched-tokens 2048"]),
-    "sweep-run": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/sweep_theta.py",
-        handoff=True, args=["run"],
-        desc="θ-sweep orchestration: run+score directory by directory (--runs --services are required; long-lived)",
-        notes=["the subprocess interpreter is hardcoded to cprobe-env; the registry has no control over the replay_inject it spawns",
-               "a leftover .run_lock needs manual confirmation before deleting"]),
-    "sweep-curve": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/sweep_theta.py",
-        args=["curve"], desc="roll up the θ curve (--runs is required)",
-        notes=["rerunning just a single point's score leaves the curve with two different settings -- check_saved_baseline exists to block exactly this"]),
-    "build-form-table": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/build_form_table.py",
-        desc="skeleton shape table (runs with default arguments)",
-        notes=["hard-blocks the w0 test set; rebuilding and swapping the table would make a finished skel arm's score not match"]),
-    "check-bundle-mbert": dict(
-        stage="inject", py="mbert", script="pipeline/inject/check_bundle.py",
-        args=["--head", "mbert", "--device", "cpu"],
-        desc="mbert weights cross-process load check (requires --run --data; CPU)"),
-    "check-bundle-causal": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/check_bundle.py",
-        gpu=True, args=["--head", "causal"],
-        desc="causal weights load check (requires --run --data; default cuda)"),
-    "parse-call-selftest": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/parse_call.py",
-        desc="bracket-balance extractor self-test (no arguments; also run.py's smoke test)"),
-    # ---- splice splice-style replay (god's-eye view, no probe; plan plans/archive/2026-08-18-splice-replay.md) ----
-    "splice-replay-events": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
-        args=["events"],
-        desc="extract events + four cuts from chat trajectories -> events.jsonl (requires --traj-root --out; CPU)",
-        notes=["take single-call blocks only, dedupe repeated steps within the same task (D1/D2); mark cases capped to 8192 for baseline as baseline_capped"]),
-    "splice-replay-run": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
-        handoff=True, args=["run"],
-        desc="event x cut x arm sends completions continuations (requires vLLM; requires --run-dir --base-url; long-running)",
-        notes=["prompt is token ids (prefix rendered the same way as chat; p3k/p4 rendered by openai_harmony)",
-               "--preset <name> selects a set of generation settings (default: default),"
-               "the continuation's temperature is read from its client section",
-               "--dry-run prints only the prompt tail, writes nothing; resuming skips by (event, cut, arm)",
-               "p4 has one extra stop token <|call|> (D11)"]),
-    "splice-replay-score": dict(
-        stage="inject", py="cprobe", script="pipeline/inject/splice_replay.py",
-        args=["score"], desc="score into SPLICE_REPORT (requires --run-dir; CPU)"),
-    "launch-plan-sweep": dict(
-        stage="inject", py="sys", script="pipeline/inject/launch_plan_sweep.py",
-        handoff=True, gpu=True,
-        desc="θ-sweep plan-segment launcher (ssh+tmux to tokyo106 itself)",
-        notes=["refiring a single point requires --only (SKIP blocks only sessions still alive)",
-               "shell inside a shell: it ssh+tmux's 6 sessions itself -- different category from launch-probe/"
-               "launch-eval (gate-type real execution); this is historical, use it per the handoff"]),
-
-    # ---- live live run + serve service ----
-    "live-appworld": dict(
-        stage="live", py="appworld", script="pipeline/inject/live_appworld.py",
-        handoff=True,
-        desc="live-run driver (requires vLLM + probe service; requires --base-url --probe-url --outdir --exp)",
-        notes=["the no-probe arm (--no-probe) also needs --probe-url (/render lives on the service side)",
-               "--format {note,p1_e1,p1_e2,p2_e1,p2_e2} picks the injection format (inject_format.py, 2026-09-12);"
-               " p2_* formats need a probe_server whose /health echoes encode_special=true",
-               "--preset <name> selects a set of generation settings (effort/temperature/step budget/stop),"
-               "explicit command-line arguments override the preset",
-               "a transient failure writes task_error final; --resume does not retry: to retry, delete that task's live_*.jsonl first",
-               "scale up via live-arm-job's 12 pieces"]),
-    "probe-serve": dict(
-        stage="live", py="cprobe", script="pipeline/inject/probe_server.py",
-        gpu=True, args=["serve"],
-        desc="probe long-running service (ctool+cgen, ~3GB; default port 8790; --theta required)",
-        notes=["serve_forever never returns; temperature is read from <ctool-run>/REPLAY_REPORT.json",
-               "--theta has no default; refuses to run without it (METHOD.md axis 4: θ is always manual)"]),
-    "probe-selftest": dict(
-        stage="live", py="cprobe", script="pipeline/inject/probe_server.py",
-        args=["selftest", "--device", "cpu"],
-        desc="probe-trigger consistency self-check (pure CPU; --theta required)",
-        notes=["--theta has no default; to cross-check the replay run at θ=0.925, pass 0.925 for its logits"]),
-    "score-live": dict(
-        stage="live", py="cprobe", script="pipeline/inject/score_live.py",
-        desc="score a live run -> LIVE_REPORT (requires --live-dir --base-root)",
-        notes=["must wait for live_appworld to finish; task_error is listed separately and excluded from the success/failure denominator"]),
-    "live-arm-job": dict(
-        stage="live", py="bash", script="envs/serve_logs/live_arm_job.sh",
-        handoff=True,
-        desc="one live-run arm, 12 pieces (positional args probe|noprobe run_name; runs the whole thing inside tmux)",
-        notes=["ports 8114-8116 and probe tokyo105:8790 are hardcoded; edit the file to change machines",
-               "run_name is required (e.g. live_aw_gptoss_v2) = the output dir under runs/,"
-               "a fail-safe: forgetting it once ran silently against the empty v1 dir and falsely reported DONE"]),
-    # ---- ident3 three arms identical token by token (plan plans/archive/2026-08-18-ident3.md) ----
-    "ident3-job": dict(
-        stage="live", py="bash", script="envs/serve_logs/ident3_job.sh",
-        handoff=True,
-        desc="ident3, one arm, 10 repeats in series (positional args chat|noprobe|nofill <root> "
-             "[reps n_tasks vllm_port probe_url]; runs the whole thing inside tmux)",
-        notes=["start one copy of each of the three arms in parallel; requires vLLM (tokyo108:8114) + render-only probe_server"
-               "(--render-only --device cpu, with /decode) online",
-               "the fake-trigger cut index is set by the environment variable IDENT3_FIRE_NTH, default 5 (plan E1)",
-               "the chat arm's outdir name ends with appworld_gptoss (collector convention)"]),
-    "ident3-gate": dict(
-        stage="live", py="sys", script="pipeline/inject/ident3_gate.py",
-        desc="ident3 pre-launch gate: chat prompt_token_ids == /render prefix_ids"
-             "(requires --base-url --probe-url; CPU)",
-        notes=["ident3_job.sh calls it automatically before running; a failure means vLLM did not pin VLLM_SYSTEM_START_DATE"
-               " or return_token_ids did not take effect",
-               "--preset <name> defaults to default; the gate request's temperature is read from its "
-               "client section"]),
-    "ident3-score": dict(
-        stage="live", py="sys", script="pipeline/inject/ident3_score.py",
-        desc="ident3 scoring -> IDENT3_REPORT (requires --root; CPU, stdlib)",
-        notes=["three arms x 5 tasks x 10 repeats, pairwise token-by-token comparison; same-arm pairs vs cross-arm pairs reported separately"]),
-    "serve-splice": dict(
-        stage="live", py="sys", script="envs/serve_logs/launch_vllm_splice.py",
-        handoff=True, gpu=True,
-        desc="gpt-oss three-replica vLLM launcher (tokyo108:8114-8116; ssh+tmux itself, idempotent)",
-        notes=["environment variables (cuda-compat/FLASHINFER/cache into /net) are already embedded in the script",
-               "VLLM_SYSTEM_START_DATE is pinned to 2026-07-31 (=COLLECT_DATE, METHOD §6-④)"]),
-    "serve-awdiag": dict(
-        stage="live", py="sys", script="envs/serve_logs/launch_vllm_awdiag.py",
-        handoff=True, gpu=True,
-        desc="gpt-oss three replicas for the w0 reproduction diagnosis (tokyo108:8103/8106/8107; ssh+tmux itself, idempotent)",
-        notes=["**do not pass --max-model-len**: native 131072, replicating the config used at w0 collection time;"
-               "65536 means it was launched wrong -- one suspect in the diagnosis chain is exactly the 65k context",
-               "companion client awdiag_job.sh (PORTS hardcoded to 8103/8106/8107)"]),
-    "serve-preset": dict(
-        stage="live", py="sys", script="serve_preset.py",
-        handoff=True, gpu=True,
-        desc="generic vLLM launcher: reads the server section of configs/presets/<name>.json"
-             "(requires --preset --gpu; --host/--port/--session can override)",
-        notes=["the model path goes through model_registry.resolve(); it does not accept hardcoding",
-               "at launch, copies the preset to envs/serve_logs/<session>.preset.json",
-               "only presets with a server section can be launched: default and gptoss_default, two of them",
-               "--dry-run only prints the ssh+tmux command; the old launch_vllm_*.py scripts are left untouched,"
-               "new services start from here"]),
-    "serve-mirrorapi": dict(
-        stage="live", prog=str(ROOT / "envs/vllm-env/bin/vllm"),
-        handoff=True, gpu=True,
-        args=["serve",
-              "/net/tokyo100-10g/data/str01_01/y-guo/models/MirrorAPI-Cache",
-              "--served-model-name", "mirrorapi-cache"],
-        desc="StableToolBench simulator MirrorAPI-Cache (Qwen2.5-7B fine-tuned, bf16 ~15G)",
-        notes=["typical extra args: --port 8125 --gpu-memory-utilization 0.5",
-               "tokyo108 needs LD_LIBRARY_PATH=envs/cuda-compat-13.0 (following"
-               " the same setup as envs/serve_logs/run_gptoss.sh); on 106/107 with CUDA 12.2, do a 10-second live check first",
-               "served-model-name must = mirrorapi-cache; the server config hardcodes the same name"]),
-    "stb-virtual-server": dict(
-        stage="live", py="stbserver",
-        script="envs/stabletoolbench/server/main_mirrorapi_cache.py",
-        cwd=str(ROOT / "envs/stabletoolbench/server"),
-        handoff=True,
-        desc="StableToolBench virtual API service (CPU, reads config_mirrorapi_cache.yml from cwd)",
-        notes=["smoke-tested (2026-08-02, simulator started on a single H200 card): a fake Finance/Currency/Convert call"
-               "returns structured exchange-rate JSON, error is empty, the whole offline chain works",
-               "start serve-mirrorapi first, then point api_base in the config to it; FastAPI listens on 8126",
-               "smoke-test criterion: POST /virtual (category/tool_name/api_name/tool_input/"
-               "strip/toolbench_key, six fields) returns 200 and a non-empty response; key is not checked",
-               "long-running service, run it inside tmux; the tool-doc tree is toolenv2404_filtered/ cloned on NFS"]),
-    "splice-plan-job": dict(
-        stage="live", py="bash", script="envs/serve_logs/splice_plan_job.sh",
-        handoff=True, gpu=True,
-        desc="eight-arm plan rerun job (positional arg gpu_idx; smoke-test gate + hard field check)",
-        notes=["does not touch PLAN_OK -- the go-ahead marker is set by hand"]),
-    "launch-splice-clients": dict(
-        stage="live", py="sys", script="envs/serve_logs/launch_splice_clients.py",
-        handoff=True,
-        desc="eight-arm three-client launcher (each client waits for PLAN_OK + service health itself)"),
-    "accept-vllm-qwen": dict(
-        stage="live", py="sys", script="envs/serve_logs/accept_test.py",
-        desc="Qwen dual-service acceptance gate (8101/8102; reasoning+content non-empty)"),
-    "accept-vllm-tools": dict(
-        stage="live", py="sys", script="envs/serve_logs/accept_tools_test.py",
-        desc="tools-request acceptance gate (a request with tool_choice must not 400)"),
-    "accept-vllm-gptoss": dict(
-        stage="live", py="sys", script="envs/serve_logs/gptoss_accept_test.py",
-        desc="gpt-oss service acceptance check (8103)",
-        notes=["prints only, never exits non-zero -- judging success by rc would always pass; check the output"]),
-
-    # ---- ops job ledger / record / launch ----
-    "gpu-jobs": dict(
-        stage="ops", py="sys", script="ops/gpu_jobs.py",
-        desc="GPU job ledger (register/finish/watch/free/status passed through as-is)",
-        notes=["register silently ignores a misspelled flag; free will exec bash to replace the process"]),
-    "pipeline": dict(
-        stage="ops", py="sys", script="pipeline/driver.py",
-        desc="pipeline driver (resumable; requires --config, advances at most one step per invocation)",
-        notes=["usage: python3 run.py pipeline --config pipeline/configs/np821_gptoss.json;"
-               "--status only reads and prints status, does not advance",
-               "it is an orchestrator, not a launcher: launch-type actions are handed off to launch-probe/launch-eval"
-               "(which carry their own dirty-tree gate) or the batch's own launch_servers.py/launch_clients.sh,"
-               "before acting the driver runs git_dirty() again itself; a dirty tree is blocked on the spot",
-               "exit codes: 0 advanced one step / done / still running, 3 launched a GPU job this time, "
-               "4 awaiting_decision (write the ruling into the batch config and invoke again), 1 gate failed",
-               "status and per-step logs live in logs/pipeline/<run_family>/ (logs/ does not go into git,"
-               "status changes do not dirty the working tree)",
-               "if the status file is corrupt or the batch identity does not match, refuse to overwrite; delete by hand after a manual look"]),
-    "sampler": dict(
-        stage="ops", py="sys", script="ops/sampler.py",
-        desc="long-running-job sampler (resident; samples heartbeat/probes liveness/computes verdict every 60s, serves a web page)",
-        notes=["a resident process, run inside tmux on the login machine: tmux new-session -d -s new1_sampler "
-               "'python3 run.py sampler'",
-               "written to NFS under monitor/ (latest.json/state.json/history/incidents), not checked into git",
-               "smoke test: python3 run.py sampler --once samples one round and exits"]),
-    "record": dict(
-        stage="ops", py="sys", script="ops/record.py",
-        desc="experiment record (start/finish/render/list/show passed through as-is)",
-        notes=["to keep run_id consistent everywhere, use only --run-id; --name adds a timestamp prefix",
-               "a second start with the same run_id exits immediately; finish is idempotent and repeatable"]),
-    "runmeta": dict(
-        stage="ops", py="sys", script="ops/runmeta.py",
-        desc="RUNMETA.json writer (pins the output dir back to commit+argv; written automatically by the launcher)",
-        notes=["usage: run.py runmeta <outdir> --cmd '<actual command>' [--kind K --note N]",
-               "appends to the launches list, does not overwrite -- a second launch into the same dir leaves two records",
-               "launch_probe/launch_eval already call it automatically; a hand-rolled launch via gpu-run must add one entry manually"]),
-    "preset-sweep": dict(
-        stage="ops", py="sys", script="sweep_preset.py",
-        desc="generate a batch of presets from a parameter grid (--base <preset> --grid key=value,value,...; pure CPU)",
-        notes=["grid-key whitelist: temperature/top_p/max_tokens/seed/reasoning_effort;"
-               "to sweep api/start_date/stop, open the preset by hand",
-               "multiple --grid entries take the Cartesian product; refuses to overwrite an existing same-name preset, --force allows it; --dry-run only prints",
-               "commit after generating, before launching (dirty-tree gate); each grid point's run_id carries the preset name",
-               "the θ sweep is sweep-run/sweep-curve (sweep_theta.py); this sweeps sampling settings, do not confuse the two"]),
-    "launch-probe": dict(
-        stage="ops", py="sys", script="ops/launch_probe.py",
-        gate=True, desc="training-cell card-scheduling launcher (smoke/full; the cell table is read from CELLS in this file)",
-        notes=["it ssh+tmux's the launch itself, so it passes the dirty-tree gate before acting; --dry-run is not blocked"]),
-    "launch-eval": dict(
-        stage="ops", py="sys", script="ops/launch_eval.py",
-        gate=True, desc="eval card-scheduling launcher (the tool tier runs first, the call tier consumes its trigger point)",
-        notes=["it ssh+tmux's the launch itself, so it passes the dirty-tree gate before acting; --dry-run is not blocked",
-               "before launching, the call tier hard-checks whether its dependent tool cell has REPLAY_REPORT.json,"
-               "exits if not -- the dependency order in SKILL.md Phase C4 must not be reversed"]),
-    "build-lesson-artifact": dict(
-        stage="ops", py="sys", script="learn/vllm/build_artifact.py",
-        desc="deterministic converter from lesson page to a single-file artifact (pure CPU; inlines styles and scripts, strips the document shell)",
-        notes=["requires --lesson; the output defaults to <name>.artifact.html, in the same dir as the lesson page",
-               "the output is rendered, **do not edit it by hand** -- the next rerun overwrites it directly; edit the lesson page or assets/ instead",
-               "--check only verifies the output is in sync with the source (exits 3 if out of sync); run it before publishing",
-               "the exit self-check blocks doctype/body/relative paths/external-linked resources; exits 2 if any is present"]),
-    "build-token-walk": dict(
-        stage="ops", py="vllm", script="learn/vllm/build_token_walk.py",
-        desc="deterministic converter from raw token stream to a token-by-token step-through lesson page (pure CPU; requires openai_harmony decoding)",
-        notes=["requires --traj --toolcall --out; --traj must be recorded with --api harmony"
-               "(exits 2 immediately without out_token_ids)",
-               "runs in vllm-env: it is the only one with openai_harmony installed",
-               "the channel -> destination rule is rewritten here; after changing the vllm version, come back and check"
-               "whether it still matches vllm/parser/harmony.py:46-56",
-               "the output is rendered, **do not edit it by hand**; run build-lesson-artifact again before publishing"]),
-}
-
-# ---------------------------------------------------------------- recipe registry
-# Named multi-step chains. Values in params that are None must be given via --set; {placeholder}
-# in args/done are filled from params, a foreach step expands a comma-separated list ({item}),
-# shards=N starts N piece processes.
-
-RECIPES = {
-    "splice-wrapup": dict(
-        desc="splice back the eight-arm wrap-up chain: extract -> per-arm exec (4 pieces) -> score -> acceptance",
-        params=dict(run_dir=None,
-                    arms="nofill,skel_a,skel_bare,skel_b,skel_switch,switch_only",
-                    cache="pipeline/inject/exec_cache/aw_gptoss.jsonl",
-                    tag=""),
-        steps=[
-            dict(name="extract", task="extract-completed",
-                 args=["--run-dir", "{run_dir}", "--arms", "{arms}",
-                       "--tag", "{tag}"]),
-            dict(name="exec_{item}", task="exec-calls", foreach="arms", shards=4,
-                 args=["--plan", "{run_dir}/exec_in_{item}.jsonl",
-                       "--out", "{run_dir}/exec_calls_{item}.jsonl",
-                       "--cache", "{cache}", "--exp", "splice_{item}"],
-                 done=dict(exists="{run_dir}/exec_calls_{item}.s0.jsonl")),
-            dict(name="score", task="inject-score",
-                 args=["--run-dir", "{run_dir}", "--tag", "{tag}"],
-                 done=dict(exists="{run_dir}/INJECT_REPORT{tag}.json")),
-            dict(name="acceptance", task="acceptance",
-                 args=["--run-dir", "{run_dir}", "--tag", "{tag}"],
-                 done=dict(exists="{run_dir}/ACCEPT_REPORT.json")),
-        ]),
-    "splice-score": dict(
-        desc="rescore only: score -> acceptance (use when exec output already exists)",
-        params=dict(run_dir=None, tag=""),
-        steps=[
-            dict(name="score", task="inject-score",
-                 args=["--run-dir", "{run_dir}", "--tag", "{tag}"],
-                 done=dict(exists="{run_dir}/INJECT_REPORT{tag}.json")),
-            dict(name="acceptance", task="acceptance",
-                 args=["--run-dir", "{run_dir}", "--tag", "{tag}"],
-                 done=dict(exists="{run_dir}/ACCEPT_REPORT.json")),
-        ]),
-    "annotate-chain": dict(
-        desc="annotation chain: build -> param_label -> check_callstr (same --config)",
-        params=dict(config=None),
-        steps=[
-            dict(name="build", task="ann-build", args=["--config", "{config}"]),
-            dict(name="params", task="ann-params", args=["--config", "{config}"]),
-            dict(name="check", task="ann-check-callstr",
-                 args=["--config", "{config}"]),
-        ]),
-    "engine-smoke": dict(
-        desc="recipe-engine smoke test: a two-step pure-CPU self-test that verifies state.json/logs/the resume path itself",
-        params=dict(),
-        steps=[
-            dict(name="selftest_a", task="parse-call-selftest", args=[]),
-            dict(name="selftest_b", task="parse-call-selftest", args=[]),
-        ]),
-}
-
-# ---------------------------------------------------------------- engine
-
-def build_cmd(t, extra):
-    prog = t.get("prog") or PY[t["py"]]
-    cmd = [prog]
-    if "script" in t:
-        cmd.append(str(ROOT / t["script"]))
-    return cmd + list(t.get("args", [])) + list(extra)
+_DATASETS_CFG: dict | None = None
 
 
-def task_env(t):
-    env = os.environ.copy()
-    env.update(t.get("env", {}))
-    return env
+def _datasets_config() -> dict:
+    global _DATASETS_CFG
+    if _DATASETS_CFG is None:
+        with open(ROOT / "constants" / "path_datasets.yaml") as f:
+            _DATASETS_CFG = yaml.safe_load(f)
+    return _DATASETS_CFG
 
 
-def gate_of(t):
-    """Whether a task goes through the dirty-tree gate, the one decision chain: gate > handoff > gpu."""
-    return t.get("gate", t.get("handoff", t.get("gpu", False)))
+def _this_host() -> str:
+    """The machine this command runs on, under its constants/cards.yaml entry's own name (through jobs/registry.py); a CPU stage runs in place, so this is the host its piece records."""
+    return registry.canonical_host(socket.gethostname())
 
 
-# The job ledger and lock files do not count as dirty: they are launch by-products (append-only
-# records) and do not affect any output; without this exemption, the second shot in one session
-# would always be blocked by its own previous shot's registration.
-# record.py / ops/runmeta.py each keep a copy of this same list; changing it here means syncing
-# all three places.
-LEDGER_PATHS = ("ops/jobs.json", "ops/runs.jsonl", "RESULTS.md",
-                "ops/jobs.json.lock")
+def _login_host() -> str:
+    """`login_host` of constants/path_outputs.yaml, under its constants/cards.yaml entry's own name."""
+    with open(ROOT / "constants" / "path_outputs.yaml") as f:
+        return registry.canonical_host(yaml.safe_load(f)["login_host"])
 
 
-def git_dirty():
-    r = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
+def _forward_to_login_host(argv: list[str]) -> int | None:
+    """Every command runs on `login_host` (gyb, 2026-09-25): the registry's times are
+    clock-naive and its lock holds on one machine, so every row is written on one clock.
+    Typed on any other machine, the same command line is re-run there over ssh, in this
+    repo's path with this interpreter (both on NFS), and its exit code comes back; `None`
+    when this machine is the login host and the command runs in place. A terminal on stdin
+    is passed through (`ssh -t`, so ctrl-C reaches the remote process); a pipe is not, so the
+    output comes back byte for byte."""
+    login = _login_host()
+    if _this_host() == login:
         return None
-    return [l for l in r.stdout.splitlines()
-            if l.strip() and l[3:] not in LEDGER_PATHS]
+    remote = f"cd {shlex.quote(str(ROOT))} && exec {shlex.quote(sys.executable)} run.py " \
+             + " ".join(shlex.quote(a) for a in argv)
+    ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    if sys.stdin.isatty():
+        ssh.append("-t")
+    sys.stdout.flush()
+    rc = subprocess.run(ssh + [login, remote]).returncode
+    if rc == 255:
+        sys.stderr.write(f"run.py: login_host {login} is unreachable over ssh from "
+                         f"{socket.gethostname()}; every run.py command runs there\n")
+    return rc
 
 
-def gate_dirty(extra, honor_dry=True):
-    """The dirty-tree gate. Returns the args with --allow-dirty filtered out; calls SystemExit
-    directly when it blocks. honor_dry=False is for the command-only paths (show/print_handoff):
-    they do not execute anything, so --dry-run means nothing to them and must not become a
-    backdoor around the gate."""
-    allow = "--allow-dirty" in extra
-    extra = [a for a in extra if a != "--allow-dirty"]
-    if (honor_dry and "--dry-run" in extra) or allow:
-        return extra
-    lines = git_dirty()
-    if lines is None:                       # git itself will not run -> treat as dirty, do not allow
-        raise SystemExit("git status failed; treated as a dirty tree and refuses to emit the launch command;"
-                         "check the git environment, or force it with --allow-dirty.")
-    if lines:
-        head = "\n".join("  " + l for l in lines[:8])
-        more = f"\n  ...{len(lines)} lines total" if len(lines) > 8 else ""
-        raise SystemExit(
-            f"working tree is dirty, refusing to emit the launch command (commit before launching, CLAUDE.md hard rule):\n"
-            f"{head}{more}\nforce it with --allow-dirty.")
-    return extra
+def _venvs_config() -> dict:
+    return _datasets_config().get("venvs", {})
 
 
-def tail_of(path, n=40):
-    """Read the last n non-empty lines of the log. tqdm uses \\r to overwrite the same line; convert it to \\n first."""
-    p = Path(path)
-    if not p.exists():
-        return "(log does not exist)"
-    with open(p, "rb") as f:
-        f.seek(0, 2)
-        f.seek(max(0, f.tell() - 65536))
-        txt = f.read().decode("utf-8", "replace")
-    lines = [l for l in txt.replace("\r", "\n").split("\n") if l.strip()]
-    return "\n".join(lines[-n:])
+def _now() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def run_direct(name, t, extra):
-    cmd = build_cmd(t, extra)
-    # The banner goes to stderr: stdout is reserved for the underlying script -- machine-readable
-    # output such as gpu-jobs json is no longer valid JSON once the banner pollutes it (confirmed by
-    # audit review testing)
-    print(f"[{name}] cwd={t.get('cwd', ROOT)}", file=sys.stderr)
-    print("  " + shlex.join(cmd), file=sys.stderr, flush=True)
-    r = subprocess.run(cmd, cwd=t.get("cwd", str(ROOT)), env=task_env(t))
-    return r.returncode
+def _parse_t(t: str) -> float:
+    return datetime.strptime(t, "%Y-%m-%d %H:%M").timestamp()
 
 
-def print_handoff(name, t, extra):
-    extra = gate_dirty(extra, honor_dry=False)
-    cmd = build_cmd(t, extra)
-    head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
-                          capture_output=True, text=True).stdout.strip()
-    print(f"# {name}: builds the command only, does not launch. Launching goes through the gpu-run skill's full lifecycle")
-    print(f"# (probe the card -> pick a card -> smoke -> commit -> tmux -> double registration -> monitor -> finish). HEAD={head}")
-    if t.get("cwd"):
-        print(f"# needs cd: {t['cwd']} (the gpu-run template cd's to the repo root by default,"
-              f"this task must use the cwd here instead)")
-    for k, v in t.get("env", {}).items():
-        print(f"# needs environment variable: {k}={v}")
-    for n in t.get("notes", []):
-        print(f"# {n}")
-    print(shlex.join(cmd))
-    return 0
-
-
-# ---------------------------------------------------------------- recipe engine
-
-def expand(s, params):
+def _read_json(path: Path):
     try:
-        return s.format(**params)
-    except KeyError as e:
-        raise SystemExit(f"recipe placeholder was not given a value: {e} (use --set k=v)")
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
 
 
-def plan_steps(rc, params):
-    """Expand a recipe into concrete steps: [{name, task, cmds:[argv...], logs:[...], done}]."""
-    out = []
-    for st in rc["steps"]:
-        items = ([x.strip() for x in params[st["foreach"]].split(",") if x.strip()]
-                 if "foreach" in st else [None])
-        for it in items:
-            p = dict(params, item=it) if it is not None else params
-            t = TASKS[st["task"]]
-            args = [expand(a, p) for a in st["args"]]
-            base = build_cmd(t, args)
-            n = st.get("shards", 0)
-            if n:
-                cmds = [base + ["--num-shards", str(n), "--shard-id", str(i)]
-                        for i in range(n)]
-            else:
-                cmds = [base]
-            done = None
-            if st.get("done"):
-                done = {k: expand(v, p) for k, v in st["done"].items()}
-            if st.get("done"):
-                unknown = set(st["done"]) - {"exists"}
-                if unknown:
-                    raise SystemExit(f"recipe step {st['name']} has an unrecognized done key: "
-                                     f"{sorted(unknown)} (whitelist: exists)")
-            out.append(dict(name=expand(st["name"], p), task=st["task"],
-                            cmds=cmds, done=done,
-                            env=t.get("env", {}), cwd=t.get("cwd", str(ROOT)),
-                            handoff=t.get("handoff", t.get("gpu", False)),
-                            gate=gate_of(t)))
+def _sha1_of(path: Path) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _elapsed(run_id: str) -> float:
+    """Seconds since the newest open start row for run_id, 0.0 when there is none (8.2's elapsed_s)."""
+    for row in registry.open_runs():
+        if row.get("run_id") == run_id:
+            return time.time() - _parse_t(row["t"])
+    return 0.0
+
+
+# ---------------------------------------------------------------------------
+# --help (8.6, ticket 16/17's C8): the walk forms, then one subcommand per
+# line, indented by exactly two spaces, the name first -- pinned because
+# tickets 16 and 17 recover the set with ^\s{2,}([a-z][a-z0-9_-]*).
+# ---------------------------------------------------------------------------
+
+
+def _usage_text() -> str:
+    lines = [
+        "usage: run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] "
+        "[--cards <host>:<id>,<id>,... ...] [section.field=value ...]",
+        "",
+        "--cards names the only cards a launch may claim, and may be given once per host; a named",
+        "card that is not free refuses the launch. Without it the launch takes the first free cards that fit.",
+        "A card fits a piece when it is at least as large as the cards the piece was declared for: an",
+        "agent service that starts its own server needs cards no smaller than the smallest card of",
+        "its table row's serving host (constants/cards.yaml), and a --cards pool whose cards are",
+        "too small for a piece refuses the launch and names them.",
+        "",
+        "The first word is one of the eleven reserved subcommands below, or else the stem of a",
+        "workflow file under experimental_settings/.",
+        "",
+        "subcommands:",
+    ]
+    for name in RESERVED_SUBCOMMANDS:
+        pad = " " * (12 - len(name))
+        lines.append(f"  {name}{pad}{_SUBCOMMAND_ONE_LINE[name]}")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Small shared helpers: loading one setting, checking a stage name.
+# ---------------------------------------------------------------------------
+
+
+def _check_stage_name(stage: str, cfg, workflow_name: str, setting_name: str) -> None:
+    """Refuse a stage the loaded setting's own workflow does not walk: a stage of another workflow has no key under this setting (its sections are absent, or the debug overlay never reached them), so its run directory is one no walk of this setting makes."""
+    if stage not in cfg._workflow:
+        sys.exit(f"run.py: {stage!r} is not a stage of {workflow_name}/{setting_name}, "
+                 f"whose workflow is {cfg._workflow}")
+
+
+def _load_one(workflow_name: str, setting_name: str, *, debug: bool, overrides: dict | None = None):
+    """schema.load, refused when the workflow file is missing, the setting fails to load, or the name is an un-suffixed sweep parent (ambiguous for a single-setting subcommand)."""
+    workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
+    if not workflow_file.exists():
+        sys.exit(f"run.py: {workflow_file} does not exist")
+    try:
+        cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides=overrides or {})
+    except schema.SchemaError as ex:
+        sys.exit(f"run.py: {ex}")
+    if len(cfgs) != 1:
+        sys.exit(
+            f"run.py: {setting_name!r} under {workflow_name!r} names {len(cfgs)} settings; "
+            "name a sweep child directly")
+    return cfgs[0]
+
+
+# ---------------------------------------------------------------------------
+# The README parser (D1; also what ticket 15's selfcheck uses).
+# ---------------------------------------------------------------------------
+
+_README_ENTRY_RE = re.compile(r"^(\S+) — (.+)$")
+_README_LABEL_RE = re.compile(r"^  (imports|used by|reads|writes|read by|offers|venv):\s*(.*)$")
+
+
+def readme_entries(path) -> dict[str, dict[str, str]]:
+    """Parse README.md's 'path — sentence' entries and their indented label lines (contracts 0.1's five-line format): path -> {label: value}."""
+    text = Path(path).read_text()
+    entries: dict[str, dict[str, str]] = {}
+    current = None
+    for line in text.splitlines():
+        m = _README_ENTRY_RE.match(line)
+        if m:
+            current = m.group(1)
+            entries.setdefault(current, {})
+            continue
+        m = _README_LABEL_RE.match(line)
+        if m and current is not None:
+            entries[current][m.group(1)] = m.group(2)
+    return entries
+
+
+# ---------------------------------------------------------------------------
+# selfcheck's three parsers (ticket 15; contracts 0.1, 3.3): imports_of reads
+# the real import graph with ast, and literal_of / literal_keys_of read a
+# module-level literal the same way schema.py's loader does, but as a
+# standalone reader that never raises past run.py's own message. A caller
+# that wants a reader failure to stop only its own check, not the whole run,
+# catches the SystemExit these readers raise around each call, and prefixes
+# the message with its own check number -- the readers name the file and the
+# name, and leave the prefix to the caller.
+#
+# Every path these readers take is relative to ROOT, so selfcheck reads the
+# same tree whatever the shell's working directory is; an absolute path
+# passes through ROOT / path unchanged, which is what ticket 15's D2 fixtures
+# in a temp directory rely on.
+# ---------------------------------------------------------------------------
+
+
+def _parse(path) -> ast.Module:
+    """The module at path, parsed with ast -- the one reader every selfcheck ast pass goes through.
+
+    A file that does not parse is a selfcheck problem like any other: this refuses with the same
+    SystemExit shape literal_of raises, naming the file and the syntax error's line, so the
+    caller's own `except SystemExit` turns it into one problem line instead of a traceback.
+    """
+    source_path = ROOT / path
+    try:
+        return ast.parse(source_path.read_text(), filename=str(source_path))
+    except SyntaxError as ex:
+        raise SystemExit(f"{path}: does not parse ({ex.msg}, line {ex.lineno})") from ex
+
+
+def _dotted_to_relpath(name: str) -> str | None:
+    """The repo file a dotted module name names, as a path relative to ROOT, or None when it names no repo file (imports_of's rule 1)."""
+    candidate = name.replace(".", "/") + ".py"
+    if (ROOT / candidate).is_file():
+        return candidate
+    candidate = name.replace(".", "/") + "/__init__.py"
+    if (ROOT / candidate).is_file():
+        return candidate
+    return None
+
+
+def imports_of(path) -> set[str]:
+    """The dotted module names this file imports, parsed with ast -- every Import and ImportFrom, including the ones inside a function body, never an import of the module itself.
+
+    An ImportFrom's `module.name` is joined into one dotted name only when that join is a repo
+    file (rule 1 of check 2's normalisation): `from data import training_data` yields
+    `data.training_data` because `data/training_data.py` exists, but `from dataclasses import
+    dataclass` yields the bare `dataclasses`, because neither `dataclasses/dataclass.py` nor
+    `dataclasses/dataclass/__init__.py` is in this repo. Without the rule a `from <package>
+    import <module>` import of a repo file would be invisible to the graph.
+    """
+    tree = _parse(path)
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                for alias in node.names:
+                    names.add(alias.name)
+                continue
+            for alias in node.names:
+                joined = f"{node.module}.{alias.name}"
+                names.add(joined if _dotted_to_relpath(joined) else node.module)
+    return names
+
+
+def _repo_imports(path) -> set[str]:
+    """`imports_of(path)` restricted to repo files, as relative path strings (check 2's 'imports_of restricted to repo files')."""
+    out: set[str] = set()
+    for name in imports_of(path):
+        rel = _dotted_to_relpath(name)
+        if rel:
+            out.add(rel)
     return out
 
 
-def fp_of(cmds):
-    return hashlib.sha1(json.dumps(cmds).encode()).hexdigest()[:12]
+def _column_zero_assign_values(path, name: str) -> list:
+    """Every column-zero ast.Assign of `name` in the module at path, as its value node -- literal_of and literal_keys_of match ast.Assign only, never ast.AnnAssign (3.3's literal rule; check 5's SCHEMA/DEFAULTS/REQUIRED are the annotated exception, read separately)."""
+    tree = _parse(path)
+    matches = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and node.col_offset == 0:
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == name:
+                    matches.append(node.value)
+    return matches
 
 
-def save_state(d, state):
-    tmp = d / "state.json.tmp"
-    tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1))
-    os.replace(tmp, d / "state.json")
+def literal_of(path, name: str):
+    """The one column-zero ast.Assign of `name` in the module at path, ast.literal_eval'd -- never an import.
 
-
-def check_done(done):
-    if not done:
-        return True
-    unknown = set(done) - {"exists"}
-    if unknown:
-        # A mistyped key must not silently degrade to "only look at rc" -- that would judge a step with
-        # no outputs as done
-        raise SystemExit(f"done criterion has unrecognized keys: {sorted(unknown)} (whitelist: exists)")
-    return (ROOT / done["exists"]).exists()
-
-
-def run_recipe(name, argv):
-    rc = RECIPES.get(name)
-    if rc is None:
-        raise SystemExit(f"no such recipe: {name} (see run.py recipes for the list)")
-    params = dict(rc["params"])
-    rid, resume, dry, allow_dirty = None, False, False, False
-    it = iter(argv)
-    for a in it:
-        if a == "--set":
-            kv = next(it, "")
-            if "=" not in kv:
-                raise SystemExit(f"--set wants k=v, got {kv!r}")
-            k, v = kv.split("=", 1)
-            if k not in params:
-                raise SystemExit(f"recipe {name} has no parameter {k}; it has {list(params)}")
-            params[k] = v
-        elif a == "--id":
-            rid = next(it, None)
-        elif a == "--resume":
-            resume = True
-        elif a == "--dry-run":
-            dry = True
-        elif a == "--allow-dirty":
-            allow_dirty = True         # the escape hatch for the dirty-tree gate on handoff steps
-        else:
-            raise SystemExit(f"recipe does not recognize the parameter: {a} (underlying parameters are written into the recipe definition, not passed through)")
-    missing = [k for k, v in params.items() if v is None]
-    if missing:
-        raise SystemExit(f"recipe {name} is missing parameters: {missing} (use --set k=v)")
-
-    steps = plan_steps(rc, params)
-    if dry:
-        for i, s in enumerate(steps):
-            print(f"[{i + 1}/{len(steps)}] {s['name']}")
-            for c in s["cmds"]:
-                print("    " + shlex.join(c))
-        return 0
-
-    def params_of(p):
-        try:
-            return json.loads((p / "state.json").read_text()).get("params")
-        except Exception:
-            return None
-
-    if resume and rid is None:
-        # Only recognize a history directory whose params match verbatim -- picking by mtime at random
-        # can attach to another run and overwrite its state.json (this has been confirmed by review).
-        olds = sorted(LOGD.glob(f"{name}__*"), key=lambda p: p.stat().st_mtime)
-        match = [p for p in olds if params_of(p) == params]
-        if not match:
-            names = [p.name for p in olds[-5:]]
-            raise SystemExit(f"--resume could not find a history dir for {name} with matching parameters;"
-                             f"specify one with --id. Recent ones: {names}")
-        rid = match[-1].name.split("__", 1)[1]
-    rid = rid or time.strftime("%Y%m%d_%H%M%S")
-    d = LOGD / f"{name}__{rid}"
-    if (d / "state.json").exists() and params_of(d) != params:
-        raise SystemExit(f"{d.name} holds a run with a different set of parameters (params={params_of(d)}),"
-                         f"refusing to overwrite; use a different --id or align the parameters.")
-    d.mkdir(parents=True, exist_ok=True)
-
-    old = {}
-    sp = d / "state.json"
-    if resume and sp.exists():
-        for s in json.loads(sp.read_text()).get("steps", []):
-            old[(s["name"], s["fp"])] = s
-
-    dirty = git_dirty() or []
-    head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
-                          capture_output=True, text=True).stdout.strip()
-    state = dict(recipe=name, id=rid, params=params, git_commit=head,
-                 git_dirty=bool(dirty), started_at=time.strftime("%F %T"),
-                 steps=[dict(name=s["name"], fp=fp_of(s["cmds"]), state="pending",
-                             rc=None, cmds=s["cmds"], logs=[], wall_s=None)
-                        for s in steps])
-    save_state(d, state)
-
-    for i, s in enumerate(steps):
-        rec = state["steps"][i]
-        prev = old.get((rec["name"], rec["fp"]))
-        if prev and prev.get("state") == "ok":
-            rec.update(prev)
-            rec["state"] = "ok"
-            print(f"[{i + 1}/{len(steps)}] {s['name']} SKIP (already done, fingerprint matches)")
-            save_state(d, state)
-            continue
-        if s.get("gate") and not allow_dirty:
-            # handoff steps and gate steps (self-launching tasks such as launch-probe/launch-eval) go
-            # through the same gate: a recipe must not fire on a dirty tree either
-            lines = git_dirty()        # None (git failed) is treated as dirty, not allowed
-            if lines is None or lines:
-                why = "git status failed" if lines is None else f"{len(lines)} lines dirty"
-                raise SystemExit(
-                    f"step {s['name']} is a launch-type task and the working tree is not clean ({why}),"
-                    "refusing to emit the launch command (commit before launching, CLAUDE.md hard rule);"
-                    "to force it: append --allow-dirty after recipe.")
-        if s["handoff"]:
-            rec["state"] = "handoff"
-            save_state(d, state)
-            print(f"[{i + 1}/{len(steps)}] {s['name']} is a launch-type task, the recipe stops here:")
-            for c in s["cmds"]:
-                print("    " + shlex.join(c))
-            print("launch via gpu-run; after it finishes, run.py recipe "
-                  f"{name} --id {rid} --resume to continue.")
-            return 3
-        rec["state"], t0 = "running", time.time()
-        rec["started_at"] = time.strftime("%F %T")
-        save_state(d, state)
-        procs, logs = [], []
-        env = os.environ.copy()
-        env.update(s["env"])
-        for j, c in enumerate(s["cmds"]):
-            suffix = f".s{j}" if len(s["cmds"]) > 1 else ""
-            log = d / f"{i:02d}_{s['name']}{suffix}.log"
-            logs.append(str(log))
-            fh = open(log, "a")
-            fh.write(f"# [{time.strftime('%F %T')}] step={s['name']} "
-                     f"cmd: {shlex.join(c)}\n")
-            fh.flush()
-            procs.append((subprocess.Popen(c, cwd=s["cwd"], env=env,
-                                           stdout=fh, stderr=fh), fh))
-            print(f"[{i + 1}/{len(steps)}] {s['name']}"
-                  f"{suffix or ''} -> {log.name}", flush=True)
-        rcs = []
-        for p, fh in procs:                 # collect rc one by one, do not use a bare wait (it will not get the code)
-            rcs.append(p.wait())
-            fh.close()
-        rec["rc"] = rcs if len(rcs) > 1 else rcs[0]
-        rec["logs"] = logs
-        rec["wall_s"] = round(time.time() - t0, 1)
-        ok = all(r == 0 for r in rcs) and check_done(s["done"])
-        rec["state"] = "ok" if ok else "failed"
-        save_state(d, state)
-        if not ok:
-            why = (f"rc={rec['rc']}" if any(rcs) else
-                   f"rc was all 0 but outputs are not in place: {s['done']}")
-            print(f"\nFAILED step {i + 1}/{len(steps)} {s['name']} {why} "
-                  f"wall={rec['wall_s']}s")
-            for lg in logs:
-                print(f"  log: {lg}")
-            bad = next((logs[j] for j, r in enumerate(rcs) if r != 0), logs[-1])
-            print(f"---- last 40 lines ({Path(bad).name}) ----")
-            print(tail_of(bad))
-            print(f"after fixing: python3 run.py recipe {name} --id {rid} --resume")
-            return 1
-    print(f"\nrecipe {name} all {len(steps)} steps complete. Status: {d / 'state.json'}")
-    return 0
-
-
-def cmd_status(argv):
-    if argv:
-        d = Path(argv[0])
-        if not d.is_absolute():
-            d = LOGD / argv[0]
-    else:
-        dirs = sorted(LOGD.glob("*__*"), key=lambda p: p.stat().st_mtime)
-        if not dirs:
-            raise SystemExit(f"no recipe records under {LOGD} yet")
-        d = dirs[-1]
-    sp = d / "state.json"
-    if not sp.exists():
-        raise SystemExit(f"no status file: {sp}")
-    st = json.loads(sp.read_text())
-    print(f"recipe {st['recipe']}  id={st['id']}  HEAD={st['git_commit']}"
-          f"{'+dirty' if st['git_dirty'] else ''}  started at {st['started_at']}")
-    for i, s in enumerate(st["steps"]):
-        wall = f" {s['wall_s']}s" if s.get("wall_s") else ""
-        print(f"  [{i + 1}] {s['name']:<24} {s['state']:<8} rc={s['rc']}{wall}")
-        if s["state"] == "failed" and s.get("logs"):
-            print("  ---- last 20 lines of the failure log ----")
-            print("  " + tail_of(s["logs"][-1], 20).replace("\n", "\n  "))
-        if s["state"] == "handoff":
-            for c in s["cmds"]:
-                print("    awaiting launch: " + shlex.join(c))
-    return 0
-
-
-# ---------------------------------------------------------------- viewing commands
-
-STAGE_ORDER = ("collect", "annotate", "train", "eval", "inject", "live", "ops")
-
-
-def cmd_list(argv):
-    want = argv[0] if argv else None
-    for stg in STAGE_ORDER:
-        if want and stg != want:
-            continue
-        rows = [(n, t) for n, t in TASKS.items() if t["stage"] == stg]
-        if not rows:
-            continue
-        print(f"\n== {stg} ==")
-        for n, t in rows:
-            mark = ("[launch]" if t.get("handoff", t.get("gpu", False))
-                    else "[GPU]" if t.get("gpu") else "")
-            print(f"  {n:<22} {mark:<6} {t['desc']}")
-    print("\nrecipes (see run.py recipes for details):", ", ".join(RECIPES))
-    return 0
-
-
-def cmd_show(argv):
-    if not argv or argv[0] not in TASKS:
-        raise SystemExit(f"need a task name; available: {', '.join(TASKS)}")
-    n, t = argv[0], TASKS[argv[0]]
-    if gate_of(t):
-        # What show prints is the launch command you can copy directly -- it goes through the same
-        # dirty-tree gate too; do not let the documented command-printing path become a backdoor around
-        # the gate (audit A3); show <task> --allow-dirty lets it through.
-        # honor_dry=False: show does not execute anything, --dry-run is not its escape hatch
-        gate_dirty(argv[1:], honor_dry=False)
-    print(f"{n}: {t['desc']}  (stage={t['stage']})")
-    print(f"  command: {shlex.join(build_cmd(t, ['<args...>']))}")
-    print(f"  cwd: {t.get('cwd', ROOT)}")
-    if t.get("cwd"):
-        print(f"  # needs cd: {t['cwd']} (the gpu-run template cd's to the repo root by default,"
-              f"this task must use the cwd here instead)")
-    if t.get("env"):
-        print(f"  env: {t['env']}")
-    print(f"  gpu={t.get('gpu', False)} handoff={t.get('handoff', t.get('gpu', False))}"
-          f" dirty-tree gate={gate_of(t)}")
-    for note in t.get("notes", []):
-        print(f"  - {note}")
-    return 0
-
-
-def cmd_recipes():
-    for n, rc in RECIPES.items():
-        print(f"\n{n}: {rc['desc']}")
-        print(f"  parameters: " + ", ".join(
-            f"{k}(required)" if v is None else f"{k}={v!r}"
-            for k, v in rc["params"].items()))
-        for st in rc["steps"]:
-            extra = " x" + str(st["shards"]) if st.get("shards") else ""
-            fe = f" foreach={st['foreach']}" if "foreach" in st else ""
-            print(f"    {st['name']} -> {st['task']}{extra}{fe}")
-    return 0
-
-
-def cmd_selfcheck():
-    bad = 0
-    seen_prog = set()
-    for n, t in TASKS.items():
-        if "py" not in t and "prog" not in t:
-            print(f"entry missing py/prog: {n} (will raise a bare KeyError at runtime)")
-            bad += 1
-            continue
-        if "prog" not in t and t["py"] not in PY:
-            print(f"entry's py key is not in the interpreter map: {t['py']}  (task {n})")
-            bad += 1
-            continue
-        prog = t.get("prog") or PY[t["py"]]
-        if prog not in seen_prog and prog not in ("python3", "bash"):
-            if not Path(prog).exists():
-                print(f"missing interpreter/program: {prog}  (task {n})")
-                bad += 1
-            seen_prog.add(prog)
-        if "script" in t and not (ROOT / t["script"]).exists():
-            print(f"missing script: {t['script']}  (task {n})")
-            bad += 1
-        if "cwd" in t and not Path(t["cwd"]).is_dir():
-            print(f"missing cwd directory: {t['cwd']}  (task {n})")
-            bad += 1
-    for rn, rc in RECIPES.items():
-        # The placeholders must be fully expandable with params (item is only additionally available
-        # when the step has a foreach) -- exploding at runtime means exploding in the middle of the
-        # experiment; item must not be stuffed in unconditionally, otherwise you cannot catch the most
-        # common copy-paste mistake, "using {item} but forgetting to write foreach"
-        base_probe = {k: "X" for k in rc["params"]}
-        for st in rc["steps"]:
-            if st["task"] not in TASKS:
-                print(f"recipe {rn} references a task that does not exist: {st['task']}")
-                bad += 1
-            if "foreach" in st and st["foreach"] not in rc["params"]:
-                print(f"recipe {rn}'s foreach={st['foreach']} is not in params")
-                bad += 1
-            if "name" not in st:
-                print(f"recipe {rn} has a step missing the name field")
-                bad += 1
-                continue
-            probe = dict(base_probe)
-            if "foreach" in st:
-                probe["item"] = "X"
-            fields = [st["name"], *st.get("args", [])]
-            fields += list((st.get("done") or {}).values())
-            for s in fields:
-                try:
-                    s.format(**probe)
-                except (KeyError, IndexError, ValueError, TypeError,
-                        AttributeError) as e:
-                    print(f"recipe {rn} step {st['name']} has a broken placeholder: {s!r} ({e})")
-                    bad += 1
-            unknown = set(st.get("done") or {}) - {"exists"}
-            if unknown:
-                print(f"recipe {rn} step {st['name']} has a done key not in the whitelist: "
-                      f"{sorted(unknown)} (only exists is recognized)")
-                bad += 1
-    for cell, (task, dep) in EVAL_CELLS.items():
-        if task not in TASKS:
-            print(f"EVAL_CELLS[{cell}] references a task that does not exist: {task}")
-            bad += 1
-        if dep is not None and dep not in EVAL_CELLS:
-            print(f"EVAL_CELLS[{cell}] depends on a cell that does not exist: {dep}")
-            bad += 1
-    # configs/'s model table and generation presets (the gen-preset rework, 2026-08-20):
-    # aliases must resolve, field types must match, block on any one being broken -- the preset is
-    # the shared spec between launching and collection, if it breaks and is not reported here, it
-    # explodes in the middle of the experiment instead
-    n_presets = 0
+    Refuses, naming the file and the name, on zero matches, more than one match, and a value
+    ast.literal_eval refuses (contracts 3.3): each of the three is a failure, reported the same
+    way every other selfcheck problem is. `FORMATS` in agent/injected_text_formats.py is a dict
+    of Format(...) calls, which is exactly the value this function must refuse rather than
+    fall back on -- literal_keys_of is its reader.
+    """
+    matches = _column_zero_assign_values(path, name)
+    if not matches:
+        raise SystemExit(f"{path}: no column-zero assignment to {name!r}")
+    if len(matches) > 1:
+        raise SystemExit(
+            f"{path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
     try:
-        if str(ROOT) not in sys.path:
-            sys.path.insert(0, str(ROOT))
-        import preset_loader as PL
-        m = PL.load_models()
-        for k, v in m["models"].items():
-            if not v.get("path") or not v.get("note"):
-                print(f"models.json entry {k} missing path/note")
-                bad += 1
-        for alias, tgt in m["aliases"].items():
-            if tgt not in m["models"]:
-                print(f"models.json alias {alias} points to an entry that does not exist: {tgt}")
-                bad += 1
-        names = PL.list_presets()
-        n_presets = len(names)
-        for name in names:
-            p = json.loads((PL.PRESET_DIR / f"{name}.json").read_text())
-            for e in PL.validate(p, m):
-                print(f"preset {name}: {e}")
-                bad += 1
-    except Exception as e:
-        print(f"configs/ read failed: {type(e).__name__}: {e}")
-        bad += 1
-    print(f"selfcheck: {len(TASKS)} tasks / {len(RECIPES)} recipes / "
-          f"{n_presets} presets, {'all present' if not bad else f'{bad} missing'}")
-    return 1 if bad else 0
+        return ast.literal_eval(matches[0])
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as ex:
+        raise SystemExit(f"{path}: {name!r} has a value that is not a literal ({ex})") from ex
 
 
-def main(argv):
-    if not argv or argv[0] in ("-h", "--help", "help"):
-        print(__doc__)
+def literal_keys_of(path, name: str) -> list:
+    """The keys of the one column-zero ast.Dict display assigned to `name` in the module at path, ast.literal_eval'd one at a time, in source order.
+
+    For a name whose value ast.literal_eval refuses whole -- FORMATS' Format(...) calls -- but
+    whose keys are themselves literals. Refuses, naming the file and the name, on zero matches,
+    more than one match, a value that is not a dict display, and a key ast.literal_eval refuses.
+    """
+    matches = _column_zero_assign_values(path, name)
+    if not matches:
+        raise SystemExit(f"{path}: no column-zero assignment to {name!r}")
+    if len(matches) > 1:
+        raise SystemExit(
+            f"{path}: {len(matches)} column-zero assignments to {name!r}, expected exactly one")
+    value = matches[0]
+    if not isinstance(value, ast.Dict):
+        raise SystemExit(f"{path}: {name!r} is not a dict display, cannot read its keys")
+    keys = []
+    for key_node in value.keys:
+        try:
+            keys.append(ast.literal_eval(key_node))
+        except (ValueError, TypeError, SyntaxError) as ex:
+            raise SystemExit(f"{path}: {name!r} has a non-literal key ({ex})") from ex
+    return keys
+
+
+# ---------------------------------------------------------------------------
+# ls (8.0, 8.6): edited and progress are run.py's own to compute, because
+# jobs/registry.py imports nothing from this repo and cannot call schema.key
+# or trajectory_record.done_pairs itself.
+# ---------------------------------------------------------------------------
+
+
+def _current_setting(workflow_name: str, setting_name: str, debug: bool, overrides: dict | None = None):
+    """The named setting as it loads today under the overrides the row records, or None when its file, its name or its load is gone (8.6's edited and unjudged flags compare a row against it)."""
+    workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
+    if not workflow_file.exists():
+        return None
+    try:
+        cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides=dict(overrides or {}))
+    except schema.SchemaError:
+        return None
+    if len(cfgs) == 1:
+        return cfgs[0]
+    return None
+
+
+def _current_key(stage: str, cfg) -> str | None:
+    """Today's key for this stage of this setting, or None when the setting cannot be keyed (the blank `edited` column of 8.6); read once per (setting, stage, debug), not once per ledger row."""
+    if cfg is None:
+        return None
+    try:
+        return schema.key(stage, cfg)
+    except Exception:
+        return None
+
+
+def _era_sentence(stage: str, recorded_era) -> str:
+    """The era rows of jobs/versions.yaml that moved this run's key, each as `era <n>: "<why>"`, for a run that recorded `recorded_era`; empty when the era did not move or the row records none."""
+    if recorded_era is None:
+        return ""
+    try:
+        rows = schema.era_rows(stage)
+    except schema.SchemaError:
+        return ""
+    return "; ".join(f'era {row["era"]}: "{row["why"]}"' for row in rows if row["era"] > recorded_era)
+
+
+# ---------------------------------------------------------------------------
+# The code gate (3.3, 2.5): a directory is read only under the code its launch commits ran,
+# or under code a same row of jobs/versions.yaml judges the same.
+# ---------------------------------------------------------------------------
+
+
+def _git(*args: str) -> str:
+    """One git command against the repo root, its stdout; raises RuntimeError carrying git's own words on a non-zero exit."""
+    r = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout or f"git rc={r.returncode}").strip())
+    return r.stdout
+
+
+_BLOBS_AT: dict[tuple, dict] = {}
+_TREE_COPY: dict[tuple, dict] = {}
+
+
+def _blobs_at(commit: str, files: tuple[str, ...]) -> dict[str, str]:
+    """path -> blob id of each of `files` at `commit`; a file absent at that commit has no entry. Cached per (commit, files): one `ls` asks once per launch commit of every row."""
+    cache_id = (commit, files)
+    if cache_id not in _BLOBS_AT:
+        out: dict[str, str] = {}
+        for line in _git("ls-tree", commit, "--", *files).splitlines():
+            meta, _, path = line.partition("\t")
+            out[path] = meta.split()[2]
+        _BLOBS_AT[cache_id] = out
+    return _BLOBS_AT[cache_id]
+
+
+def _tree_copy(files: tuple[str, ...]) -> dict[str, str]:
+    """The working tree's copy of `files` (jobs/launch.code_blobs), read once per file set."""
+    if files not in _TREE_COPY:
+        _TREE_COPY[files] = launch.code_blobs(files)
+    return _TREE_COPY[files]
+
+
+def _copy_id(copy: dict) -> tuple:
+    return tuple(sorted(copy.items()))
+
+
+def _launch_copies(run_dir: Path, files: tuple[str, ...]) -> list[tuple[str, dict]]:
+    """The copies of `files` the run directory's launches ran, oldest first, each with the label the refusal prints: a launches entry's own `code` record (exact, a dirty tree included), else the copy at its commit; a directory whose meta.json keeps no launches list at all falls back on the frozen settings' _commit. A directory with launches recorded and none run has no copies."""
+    meta = _read_json(run_dir / "meta.json") or {}
+    copies: list[tuple[str, dict]] = []
+    if "launches" in meta:
+        for entry in meta.get("launches") or []:
+            commit = entry.get("commit") or ""
+            recorded = entry.get("code")
+            if isinstance(recorded, dict):
+                copy = {f: recorded[f] for f in files if f in recorded}
+                label = commit + (" (launched from a dirty tree)" if entry.get("dirty_count") else "")
+            elif commit:
+                try:
+                    copy = _blobs_at(commit, files)
+                except RuntimeError:
+                    continue
+                label = commit
+            else:
+                continue
+            copies.append((label, copy))
+    elif (run_dir / "settings.yaml").exists():
+        commit = schema.load_frozen(run_dir)._commit
+        if commit:
+            try:
+                copies.append((commit, _blobs_at(commit, files)))
+            except RuntimeError:
+                pass
+    return copies
+
+
+def _code_verdict(stage: str, files: tuple[str, ...], copies: list[tuple[str, dict]]) -> tuple[str, str]:
+    """How the working tree's copy of `stage`'s code files stands to the copies a directory's launches ran (3.3).
+
+    ('ran', label) when it equals one of them; ('same', '<commit> ("<why>", from <commit>)')
+    when a chain of same rows of jobs/versions.yaml leads from one of them to it -- a row
+    whose `from` copy is already known makes its `same` copy known, until nothing new is
+    known; else ('moved', label of the newest copy). A commit git no longer holds counts as
+    a copy that differs.
+    """
+    tree = _copy_id(_tree_copy(files))
+    known: dict[tuple, str] = {}
+    for label, copy in copies:
+        known.setdefault(_copy_id(copy), label)
+    if tree in known:
+        return "ran", known[tree]
+    rows = schema.same_rows(stage)
+    grew = True
+    while grew:
+        grew = False
+        for row in rows:
+            try:
+                from_id = _copy_id(_blobs_at(row["from"], files))
+                same_id = _copy_id(_blobs_at(row["same"], files))
+            except RuntimeError:
+                continue
+            if from_id in known and same_id not in known:
+                known[same_id] = f'{row["same"][:7]} ("{row["why"]}", from {row["from"][:7]})'
+                grew = True
+    if tree in known:
+        return "same", known[tree]
+    return "moved", copies[-1][0] if copies else ""
+
+
+def _commit_holding(files: tuple[str, ...], copy: dict[str, str]) -> str | None:
+    """The newest commit on HEAD's history whose copy of `files` is `copy` (a dirty launch's recorded code, committed as it ran), or None; only commits that touch `files` are asked, the newest 200 of them."""
+    try:
+        commits = _git("rev-list", "--max-count=200", "HEAD", "--", *files).split()
+    except RuntimeError:
+        return None
+    for commit in commits:
+        try:
+            if _blobs_at(commit, files) == copy:
+                return commit
+        except RuntimeError:
+            continue
+    return None
+
+
+def _gate_message(stage: str, moved: list[dict], older: list[dict]) -> str:
+    """The code gate's refusal for one launch: every directory it would read under code that moved, with the `git diff --stat` of that stage's whole code set since the directory's last launch commit, then the `run.py version` commands that judge each change; and every directory of an era below its stage's current one, with the era rows since and what reaches a current run."""
+    python = "external/probe-env/bin/python"
+    lines = [f"run.py: {stage} refuses: the launch would read a directory under code no row of "
+             "jobs/versions.yaml judges."]
+    commands: list[str] = []
+    for item in moved:
+        stage_d, d, label = item["stage"], item["dir"], item["label"]
+        commit = label.split(" ")[0] if label else ""
+        dirty = "dirty tree" in label
+        # A dirty launch's copy is at no launch commit; a same row chains from it only through a
+        # commit that holds that copy as it ran, and the diff to judge starts there.
+        holder = _commit_holding(item["files"], item["copy"]) if dirty else None
+        if holder:
+            commit = holder
+        lines.append(f"- {d} ({stage_d}) last ran {label or 'an unrecorded commit'}; the code of "
+                     f"stage {stage_d} has moved since:")
+        files = tuple(sorted(_stage_code_files(stage_d)))
+        if commit:
+            try:
+                stat = _git("diff", "--stat", commit, "--", *files).rstrip()
+            except RuntimeError as ex:
+                stat = f"    (git diff failed: {ex})"
+            lines.append(stat or "    (no committed difference; the working tree differs)")
+        try:
+            uncommitted = [ln[3:] for ln in _git("status", "--porcelain", "--", *files).splitlines() if ln.strip()]
+        except RuntimeError:
+            uncommitted = []
+        if uncommitted:
+            lines.append(f"    uncommitted changes in: {', '.join(uncommitted)}")
+        if holder:
+            lines.append(f"    it was launched from a dirty tree; commit {holder[:7]} holds the copy it ran, "
+                         f"and the diff above starts there")
+        elif dirty:
+            lines.append(f"    it was launched from a dirty tree and no commit holds the copy it ran, so no same "
+                         f"row can chain from it (`run.py retry` is refused the same way): write the era row below")
+        if not dirty or holder:
+            commands.append(f'{python} run.py version {stage_d} --same --from {commit} --why "<one sentence>"'
+                            f"    # the diff above leaves what stage {stage_d} produces unchanged")
+        commands.append(f'{python} run.py version {stage_d} --why "<one sentence>"'
+                        f"    # it changes what stage {stage_d} produces: new directories for {stage_d} and downstream")
+    for item in older:
+        stage_d, d, era, current = item["stage"], item["dir"], item["era"], item["current"]
+        since = _era_sentence(stage_d, era) if era is not None else "launched before the code-era table"
+        lines.append(f"- {d} ({stage_d}) is of era {era if era is not None else 'none'}; stage {stage_d} is "
+                     f"at era {current} ({since}). A directory of an older era is not read: run stage "
+                     f"{stage_d} again under era {current} (a name reference then finds the new run; a "
+                     f"key:/dir: reference is re-pointed by hand), or, when this walk's own stage "
+                     f"{stage} froze that reference, `{python} run.py version {stage} --why \"<one sentence>\"` "
+                     f"starts {stage} in a new directory.")
+    if commands:
+        lines.append("Read each diff in full (`git diff <commit> -- <files>`), judge it, run the fitting "
+                     "command(s), commit, and run this command again:")
+        seen: set[str] = set()
+        for c in commands:
+            if c not in seen:
+                seen.add(c)
+                lines.append("  " + c)
+    return "\n".join(lines)
+
+
+def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
+    """The code gate (3.3, 2.5): refuse to read a directory whose stage's code files differ in the working tree from every copy its launches ran, unless a chain of same rows of jobs/versions.yaml leads from one of those copies to the working tree's (a directory read that way prints the row); and refuse a directory of an era below its stage's current one, or of no era. Every such directory is reported in one refusal.
+
+    The directories judged are this stage's own, when it has been launched, every directory
+    of `upstream_dirs`, and every directory upstream of those through their frozen
+    `_upstream` keys, all the way up: a launch reads its whole result tree. Each directory's
+    file list is its own frozen setting's (`schema.code_files`), which holds the modules that
+    run chose (5.2). A directory with no frozen setting, or frozen and never launched, holds
+    no output and is not judged.
+    """
+    todo: list[tuple[str, Path]] = [(stage, run_dir)]
+    by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
+    for name, up_dir in upstream_dirs.items():
+        if up_dir is not None:
+            todo.append((by_name[name]["stage"], Path(up_dir)))
+    judged: set[Path] = set()
+    moved: list[dict] = []
+    older: list[dict] = []
+    while todo:
+        stage_d, d = todo.pop(0)
+        if d in judged or not (d / "settings.yaml").exists():
+            continue
+        judged.add(d)
+        frozen = schema.load_frozen(d)
+        files = tuple(schema.code_files(stage_d, frozen))
+        copies = _launch_copies(d, files)
+        current = schema.era_of(stage_d)
+        if copies and (frozen._era is None or frozen._era < current):
+            older.append({"stage": stage_d, "dir": d, "era": frozen._era, "current": current})
+        elif copies:
+            verdict, detail = _code_verdict(stage_d, files, copies)
+            if verdict == "same":
+                print(f"run.py: {d} ({stage_d}) is read under a same row of jobs/versions.yaml: {detail}")
+            elif verdict == "moved":
+                moved.append({"stage": stage_d, "dir": d, "label": detail, "files": files,
+                              "copy": copies[-1][1]})
+        up_by_name = {e["name"]: e for e in schema.STAGES[stage_d]["upstream"]}
+        for name, up_key in (frozen._upstream or {}).items():
+            entry = up_by_name.get(name)
+            if entry is None:
+                continue
+            up_dir = schema.referenced_run_dir(entry["stage"], up_key)
+            if up_dir is not None:
+                todo.append((entry["stage"], up_dir))
+    if moved or older:
+        sys.exit(_gate_message(stage, moved, older))
+
+
+def _row_code_unjudged(stage: str, cfg, row: dict) -> bool | None:
+    """8.6's `unjudged` flag for one ledger row: the working tree's copy of the stage's code files differs from every copy the run's launches ran and no chain of same rows reaches it -- the next walk that reads this directory stops at the code gate. None when the row's directory is gone or the setting cannot name its files."""
+    run_dir = Path(row["dir"]) if row.get("dir") else None
+    if run_dir is None or not run_dir.is_dir():
+        return None
+    try:
+        files = tuple(schema.code_files(stage, cfg))
+        copies = _launch_copies(run_dir, files)
+        if not copies and row.get("commit"):
+            copies = [(row["commit"], _blobs_at(row["commit"], files))]
+        verdict, _detail = _code_verdict(stage, files, copies)
+    except Exception:
+        return None
+    return verdict == "moved"
+
+
+def _inputs_changed(entries) -> bool:
+    """Whether any recorded `{path, sha1}` entry no longer matches the file it names — the comparison behind 8.6's consumed and split flags, and the one the walk's skip gate makes (2.3)."""
+    for entry in entries or []:
+        path, recorded = entry.get("path"), entry.get("sha1")
+        if path is None or recorded is None:
+            continue
+        p = Path(path)
+        actual = _sha1_of(p) if p.exists() else "<missing>"
+        if actual != recorded:
+            return True
+    return False
+
+
+def _has_pinned_reference(run_dir: Path) -> bool:
+    """Whether the run's frozen setting gives one of the four reference fields in the pinned `key:`/`dir:` form, which skipped the inheritance check and the shared-build-key gate (5.4, 8.6's pinned flag)."""
+    if not (run_dir / "settings.yaml").exists():
+        return False
+    try:
+        frozen = schema.load_frozen(run_dir)
+    except (schema.SchemaError, OSError, yaml.YAMLError):
+        return False
+    for dotted in schema.REF_FIELDS:
+        section_name, _, field_name = dotted.partition(".")
+        section = getattr(frozen, section_name, None)
+        value = getattr(section, field_name, None) if section is not None else None
+        if isinstance(value, dict):
+            return True
+    return False
+
+
+def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
+    """Per run_id, the five flags of 8.6 that `run.py` owns because `jobs/registry.py` imports nothing from this repo -- `edited`, `unjudged`, `consumed`, `split`, `pinned` -- plus the sentence quoting the era rows that moved a stale run's key.
+
+    `edited` is the named setting's current key against this directory's. `unjudged` is the
+    code gate's verdict on a run whose key still matches: the stage's code files have moved
+    past every launch commit of the run and no same row of jobs/versions.yaml covers the
+    working tree's copy, so the next walk that reads the directory stops at the gate. A run
+    whose key moved is `edited` instead, and when its recorded era is below the stage's
+    current one, `stale` quotes the era rows between.
+
+    A ledger holds many rows per setting, so each reading is done once and reused: the
+    setting per (workflow, setting, debug, overrides), the key per stage of it, the era
+    sentence per (stage, recorded era), and the blob ids the gate compares per commit.
+    """
+    out: dict[str, dict] = {}
+    settings: dict[tuple, object] = {}
+    keys: dict[tuple, str | None] = {}
+    sentences: dict[tuple, str] = {}
+    for row in rows:
+        run_id = row.get("run_id")
+        workflow_name, setting_name, stage = row.get("workflow"), row.get("setting"), row.get("stage")
+        debug = bool(row.get("debug"))
+        if not (run_id and workflow_name and setting_name and stage):
+            continue
+        overrides = row.get("overrides") or {}
+        setting_id = (workflow_name, setting_name, debug, tuple(sorted(overrides.items())))
+        if setting_id not in settings:
+            settings[setting_id] = _current_setting(workflow_name, setting_name, debug, overrides)
+        stage_id = setting_id + (stage,)
+        if stage_id not in keys:
+            keys[stage_id] = _current_key(stage, settings[setting_id])
+        current = keys[stage_id]
+        if current is None:
+            edited, unjudged, stale = None, None, ""
+        else:
+            key_matches = current == row.get("key")
+            edited = not key_matches
+            if key_matches:
+                stale = ""
+                unjudged = _row_code_unjudged(stage, settings[setting_id], row)
+            else:
+                unjudged = None
+                sentence_id = (stage, row.get("era"))
+                if sentence_id not in sentences:
+                    sentences[sentence_id] = _era_sentence(stage, row.get("era"))
+                stale = sentences[sentence_id]
+        run_dir = Path(row["dir"]) if row.get("dir") else None
+        consumed = split = pinned = False
+        if run_dir is not None:
+            consumed = _inputs_changed(_read_json(run_dir / "consumed.json"))
+            split = _inputs_changed((_read_json(run_dir / "meta.json") or {}).get("split_files"))
+            pinned = _has_pinned_reference(run_dir)
+        out[run_id] = {"edited": edited, "unjudged": unjudged, "consumed": consumed,
+                       "split": split, "pinned": pinned, "stale": stale}
+    return out
+
+
+def _requested_pairs_of(workflow_name: str, setting_name: str, stage: str, debug: bool,
+                        overrides: dict | None = None) -> list | None:
+    """The (task, seed) pairs this stage of this setting asks for, under the overrides the row records, or None when the setting or its environment cannot be read.
+
+    Reading them loads the setting and opens the environment, which is why the caller reads
+    them once per (setting, stage) and counts every row of that setting against the one list.
+    """
+    try:
+        cfg = _current_setting(workflow_name, setting_name, debug, overrides)
+        if cfg is None:
+            return None
+        section = cfg.inject if stage == "inject" else cfg.sample
+        env = open_env(cfg.data.env)
+        triples = requested_pairs(env, section.split, section.tasks, section.n_tasks, section.seeds)
+    except Exception:
+        return None
+    return [(task_id, seed) for _split, task_id, seed in triples]
+
+
+def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
+    """{run_id: (done, total)} for every sample/inject row, through trajectory_record.done_pairs against the row's own requested (task, seed) list (8.0's progress argument).
+
+    The request is a function of the setting and the stage, so it is read once per
+    (setting, stage, debug) over the whole ledger; `done_pairs` reads the row's own directory
+    and stays per row.
+    """
+    progress: dict[str, tuple[int, int]] = {}
+    requested: dict[tuple, list | None] = {}
+    for row in rows:
+        stage = row.get("stage")
+        if stage not in ("sample", "inject"):
+            continue
+        run_id = row.get("run_id")
+        workflow_name, setting_name, run_dir = row.get("workflow"), row.get("setting"), row.get("dir")
+        debug = bool(row.get("debug"))
+        if not (run_id and workflow_name and setting_name and run_dir):
+            continue
+        overrides = row.get("overrides") or {}
+        request_id = (workflow_name, setting_name, debug, stage, tuple(sorted(overrides.items())))
+        if request_id not in requested:
+            requested[request_id] = _requested_pairs_of(workflow_name, setting_name, stage, debug,
+                                                        overrides)
+        pairs = requested[request_id]
+        if pairs is None:
+            continue
+        try:
+            done = trajectory_record.done_pairs(Path(run_dir), pairs)
+        except Exception:
+            continue
+        progress[run_id] = (len(done), len(pairs))
+    return progress
+
+
+def _format_piece(piece: dict) -> str:
+    """One piece on the ls line: its index and verdict, the escalation mark when the verdict has crossed the escalation line, the session it runs in and the host it runs on, and the cards it holds (8.5, 8.6)."""
+    text = f"{piece.get('index')}:{piece.get('verdict')}"
+    # 8.5: `escalated` survives as a flag ls prints; `judge` and `judge_service` set it on a
+    # stall past the escalation line and on every dead piece, so `dead` always carries it.
+    if piece.get("escalated"):
+        text += "(escalated)"
+    host, session = piece.get("host"), piece.get("session")
+    if session:
+        text += f"@{host}:{session}"
+    elif host:
+        text += f"@{host}"
+    gpus = piece.get("gpus")
+    if gpus:
+        text += f" cards={gpus}"
+    return text
+
+
+def _format_ls_row(row: dict, stale: str = "") -> str:
+    """8.6's folded line: run_id, stage, the names that own it, status, progress as done/total unit with a rate, the heartbeat's age, the eight flags, and per piece its verdict, session, host and cards."""
+    run_id = row.get("run_id") or "-"
+    stage = row.get("stage") or "-"
+    workflow_name = row.get("workflow") or "-"
+    setting_name = row.get("setting") or "-"
+    status = row.get("status") or "-"
+    done, total = row.get("progress", (0, 0))
+    # The unit comes from the beats (8.4), so a run that has not beaten yet has none to print.
+    unit = f" {row['unit']}" if row.get("unit") else ""
+    rate = row.get("recent_rate")
+    rate_str = f"{rate:.3g}/s" if rate is not None else "-"
+    beat_age = row.get("beat_age_s")
+    beat_str = f"{beat_age:.0f}s" if beat_age is not None else "-"
+    flags = row.get("flags") or {}
+    flag_str = ",".join(k for k, v in flags.items() if v) or "-"
+    pieces = row.get("pieces") or []
+    piece_str = "; ".join(_format_piece(p) for p in pieces) or "-"
+    line = (f"{run_id}  stage={stage}  {workflow_name}/{setting_name}  status={status}  "
+            f"progress={done}/{total}{unit}  rate={rate_str}  beat={beat_str}  "
+            f"flags={flag_str}  pieces={piece_str}")
+    if stale:
+        line += f"  stale={stale}"
+    return line
+
+
+def _close_failed_launches(rows: list[dict]) -> None:
+    """Write the finish row of every launch that never came up (8.1, 8.2).
+
+    `registry.launch_failed` is the one rule that says a launch never came up, and `run.py` is
+    the side that writes the row: the run is open, older than `launch_timeout_s`, and every one
+    of its pieces is dead, so no process of that launch is left to close it. The row goes in
+    before these rows are printed, so the `ls` line, `jobs/RESULTS.md` and a later `run.py sync`
+    carry one word for the state. The verdicts are the ones `registry.ls` has already judged, so
+    this costs no second `tmux` probe.
+
+    The row closes the one launch those verdicts describe, and a launch is named by its start
+    row, so the hold takes the run's open start row again and appends only while that row is
+    still the judged one — same `run_id`, same `t`. Everything above was read before the lock, at
+    the top of `cmd_ls`, and that whole `ls` is the gap: the flags and the progress over every
+    sample directory's task records, then one `tmux ls` per host. A relaunch of this very run
+    lands inside it — the launch gate lets it through, because a run whose pieces are all dead
+    and whose start row is older than `launch_timeout_s` has no live session, no fresh heartbeat
+    and no young start row (2.5) — and a second `run.py ls` beside this one reaches the same
+    stale launch. Under the hold the first leaves a start row of its own and the second leaves a
+    finish row, so in both cases the open start row is another row than the judged one and this
+    launch is already accounted for. `elapsed_s` is measured from that judged row, the launch the
+    row closes.
+    """
+    for row in rows:
+        verdicts = [p["verdict"] for p in row.get("pieces") or []]
+        if row.get("status") == "launching" and registry.launch_failed(row.get("t", ""), verdicts):
+            run_id = row["run_id"]
+            with registry.lock():
+                judged = next((r for r in registry.open_runs()
+                               if r["run_id"] == run_id and r.get("t") == row.get("t")), None)
+                if judged is not None:
+                    registry.append_finish(run_id, {
+                        "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
+                        "counts": {}, "metrics": {}, "report": None,
+                        "elapsed_s": time.time() - _parse_t(judged["t"])})
+                    row["status"] = "launch_failed"
+
+
+def cmd_ls(rest: list[str]) -> int:
+    debug = "--debug" in rest
+    workflow_name = next((t for t in rest if t != "--debug"), None)
+    rows = registry.find({})
+    row_flags = _compute_row_flags(rows)
+    progress = _compute_progress(rows)
+    result = registry.ls(
+        workflow_name, debug=debug, progress=progress,
+        edited={rid: f["edited"] for rid, f in row_flags.items()},
+        unjudged={rid: f["unjudged"] for rid, f in row_flags.items()},
+        consumed={rid: f["consumed"] for rid, f in row_flags.items()},
+        split={rid: f["split"] for rid, f in row_flags.items()},
+        pinned={rid: f["pinned"] for rid, f in row_flags.items()})
+    if not result:
+        print("run.py ls: no runs")
         return 0
+    _close_failed_launches(result)
+    print("run_id | stage | workflow/setting | status | progress | rate | heartbeat | flags | pieces")
+    for row in result:
+        print(_format_ls_row(row, (row_flags.get(row.get("run_id")) or {}).get("stale", "")))
+    return 0
+
+
+def cmd_where(rest: list[str]) -> int:
+    debug = "--debug" in rest
+    positional = [t for t in rest if t != "--debug"]
+    if len(positional) != 3:
+        sys.exit("run.py where: usage: run.py where <workflow> <setting> <stage> [--debug]")
+    workflow_name, setting_name, stage = positional
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
+    print(schema.run_dir(stage, cfg))
+    return 0
+
+
+def cmd_find(rest: list[str]) -> int:
+    if not rest:
+        sys.exit("run.py find: usage: run.py find section.field=value ...")
+    fields: dict = {}
+    for tok in rest:
+        if "=" not in tok:
+            sys.exit(f"run.py find: {tok!r} is not section.field=value")
+        key, _, value = tok.partition("=")
+        fields[key] = yaml.safe_load(value)
+    rows = registry.find(fields)
+    if not rows:
+        print("run.py find: no runs match")
+        return 0
+    print("run_id | stage | workflow/setting | status | commit")
+    for row in rows:
+        print(f"{row.get('run_id')} | {row.get('stage')} | {row.get('workflow')}/{row.get('setting')} | "
+              f"{row.get('status')} | {row.get('commit')}")
+    return 0
+
+
+def cmd_kill(rest: list[str]) -> int:
+    debug = "--debug" in rest
+    positional = [t for t in rest if t != "--debug"]
+    if len(positional) != 3:
+        sys.exit("run.py kill: usage: run.py kill <workflow> <setting> <stage> [--debug]")
+    workflow_name, setting_name, stage = positional
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
+    key = schema.key(stage, cfg)
+    run_id = f"{stage}-{key}"
+    ended = registry.kill(run_id)
+    open_ids = {r["run_id"] for r in registry.open_runs()}
+    if run_id in open_ids:
+        with registry.lock():
+            registry.append_finish(run_id, {
+                "ev": "finish", "t": _now(), "run_id": run_id, "status": "killed",
+                "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
+    print(f"run.py kill: ended {ended}")
+    return 0
+
+
+def cmd_refire(rest: list[str]) -> int:
+    piece = None
+    debug = False
+    allow_dirty = False
+    positional: list[str] = []
+    card_tokens: list[str] = []
+    it = iter(rest)
+    for tok in it:
+        if tok == "--piece":
+            piece = int(next(it))
+        elif tok == "--debug":
+            debug = True
+        elif tok == "--allow-dirty":
+            allow_dirty = True
+        elif tok == "--cards":
+            card_tokens.append(_cards_value(it))
+        else:
+            positional.append(tok)
+    if len(positional) != 3:
+        sys.exit("run.py refire: usage: run.py refire <workflow> <setting> <stage> [--piece i] "
+                 "[--debug] [--allow-dirty] [--cards <host>:<ids>]")
+    cards = _cards_pool(card_tokens)
+    workflow_name, setting_name, stage = positional
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
+    run_dir = schema.run_dir(stage, cfg)
+    if not (run_dir / "settings.yaml").exists():
+        sys.exit(f"run.py refire: {run_dir} has no settings.yaml; nothing to refire")
+    # The piece's own refusals (--piece omitted on a run that records several loop or train
+    # pieces, no such piece, a kind refire does not restart, a finished run) come before the
+    # dirty-tree gate and the freeze, so a refused refire rewrites nothing (owner ruling
+    # 2026-09-24).
+    _meta, target = launch.refire_target(run_dir, piece)
+    refusal = launch.refire_refusal(run_dir, target)
+    if refusal is not None:
+        sys.exit(refusal)
+    # A refired piece continues the directory under today's code, so the code gate judges the
+    # directory and everything upstream of it the way a walk would (3.3).
+    _refuse_moved_code(stage, run_dir, {})
+    existing = schema.load_frozen(run_dir)
+    with registry.lock():
+        git = launch.git_state(run_dir, allow_dirty)
+        # 3.4/2.3: a refire takes the same two launch steps a first launch takes -- git_state and
+        # freeze -- and re-freezes _commit to the commit this launch cleared; it reuses whatever
+        # was already resolved (an inject run's probe_temperature) rather than erasing it.
+        schema.freeze(cfg, stage, run_dir, existing._resolved, git["commit"])
+    # launch.refire takes its own hold, from the liveness test through the tmux session start
+    # (its docstring says why the session start is inside it), so it is called after this one.
+    pieces = launch.refire(run_dir, git, piece, cards)
+    print(f"run.py refire: restarted {pieces}")
+    return 0
+
+
+def _clear_continue_markers(stage: str, run_dir: Path) -> None:
+    """'start fresh' (2.4): clear this stage's own completion/continue markers before a normal launch. --retry never rides on the piece command; the piece command's shape is untouched."""
+    for name in ("done.json", "consumed.json"):
+        p = run_dir / name
+        if p.exists():
+            p.unlink()
+    if stage == "train":
+        # predictions.parquet is the prediction pass's output, cleared with the markers so a
+        # fresh start leaves no prediction of the weights it replaces.
+        for name in ("train_log.jsonl", "train_done.json", "align_check.json",
+                     "predictions.parquet"):
+            p = run_dir / name
+            if p.exists():
+                p.unlink()
+        # The resume checkpoint carries three names while `_save_last` swaps it
+        # (train/utils/trainer.py): a kill inside the swap leaves `last.tmp/` or `last.prev/`
+        # on disk, and `_settle_last` gives `last.prev/` the name `last/` back on the next
+        # start. "start fresh" removes every name the checkpoint can be under.
+        for name in ("last", "last.tmp", "last.prev"):
+            d = run_dir / name
+            if d.is_dir():
+                shutil.rmtree(d)
+
+
+def _live_pieces(run_id: str, run_dir: Path) -> list[dict]:
+    """The pieces `meta.json` records for this run directory that are alive now. A tmux piece (service, loop, train) is judged by `jobs/launch.piece_alive` over one `registry.live_sessions()` probe, fail-closed on a host whose probe never answered, whatever the run's registry state: a `launch_failed` finish row can close a run whose piece keeps running (8.1). A `cpu` piece is judged by its pid only while `run_id` is open (a start row with no finish row after it, `registry.open_runs()`), the scope the launch gate of 2.5 gives it: a CPU stage's walk appends its `ok` or `failed` finish row once the process exits, so a closed run's recorded pid names a process that ended, and the number may since belong to an unrelated one."""
+    meta = _read_json(run_dir / "meta.json") or {}
+    sessions = registry.live_sessions()
+    run_open = any(r.get("run_id") == run_id for r in registry.open_runs())
+
+    def running(piece: dict) -> bool:
+        if piece.get("kind") == "cpu":
+            return run_open and launch.piece_alive(piece, sessions)
+        return launch.piece_alive(piece, sessions)
+
+    return [p for p in (meta.get("pieces") or []) if running(p)]
+
+
+def cmd_retry(rest: list[str]) -> int:
+    debug = False
+    allow_dirty = False
+    positional: list[str] = []
+    card_tokens: list[str] = []
+    it = iter(rest)
+    for tok in it:
+        if tok == "--debug":
+            debug = True
+        elif tok == "--allow-dirty":
+            allow_dirty = True
+        elif tok == "--cards":
+            card_tokens.append(_cards_value(it))
+        else:
+            positional.append(tok)
+    if len(positional) != 3:
+        sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--debug] "
+                 "[--allow-dirty] [--cards <host>:<ids>]")
+    workflow_name, setting_name, stage = positional
+    cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
+    run_dir = schema.run_dir(stage, cfg)
+    run_id = f"{stage}-{schema.key(stage, cfg)}"
+    # "start fresh" (2.4) deletes what a live piece is still writing -- a train run's `last/`
+    # checkpoint and its log -- so the markers are cleared only once every piece is known dead.
+    live = _live_pieces(run_id, run_dir)
+    if live:
+        named = [p.get("session") or f"pid:{p.get('pid')}" for p in live]
+        sys.exit(f"run.py retry: {run_dir} has live piece(s) {named}; end them with `run.py kill` "
+                 "first, nothing was cleared")
+    # The code gate judges the directory and its upstream before "start fresh" deletes anything,
+    # so a refused retry, like a refused refire, rewrites nothing (3.3, owner ruling 2026-09-24).
+    _refuse_moved_code(stage, run_dir, _upstream_dirs(stage, cfg, schema.upstream(stage, cfg)))
+    _clear_continue_markers(stage, run_dir)
+    outcome = _stage_step(cfg, stage, allow_dirty, _cards_pool(card_tokens))
+    return 1 if outcome == "failed" else 0
+
+
+def cmd_table(rest: list[str]) -> int:
+    workflow_name = None
+    out = None
+    debug = False
+    it = iter(rest)
+    for tok in it:
+        if tok == "--out":
+            out = Path(next(it))
+        elif tok == "--debug":
+            debug = True
+        else:
+            workflow_name = tok
+    md = method_table.table(workflow_name, out, debug=debug)
+    sys.stdout.write(md)
+    return 0
+
+
+def cmd_free(rest: list[str]) -> int:
+    for host, cards in registry.free().items():
+        print(f"{host}: {cards}")
+    return 0
+
+
+def cmd_sync(rest: list[str]) -> int:
+    synced = registry.sync()
+    print(f"run.py sync: {len(synced)} run(s): {synced}")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# selfcheck (8.6, ticket 15): the tree's self-consistency checks, in the
+# contract's order. Every _check_N function returns a list of problem lines;
+# cmd_selfcheck prints them all and exits 1 on any, so one file's failure
+# never hides another's.
+# ---------------------------------------------------------------------------
+
+PY_ROOTS = ("constants", "experimental_settings", "data", "models", "agent", "train", "eval", "jobs")
+
+
+def _tree_python_files() -> list[str]:
+    """Every .py file under run.py and the tree's code roots, as paths relative to ROOT (check 1)."""
+    files = ["run.py"]
+    for root_name in PY_ROOTS:
+        for p in sorted((ROOT / root_name).rglob("*.py")):
+            files.append(str(p.relative_to(ROOT)))
+    return sorted(files)
+
+
+def _stems_of(dirname: str) -> set[str]:
+    """The .py file stems directly under dirname, __init__ excluded (check 3's set comparisons)."""
+    return {p.stem for p in (ROOT / dirname).glob("*.py") if p.stem != "__init__"}
+
+
+def _table_rows() -> dict:
+    with open(ROOT / "models" / "table.yaml") as f:
+        return yaml.safe_load(f)
+
+
+def _families(role: str) -> list[str]:
+    """The distinct `family` values of models/table.yaml's rows of this role, sorted (checks 3, 4, 7, 10)."""
+    return sorted({row["family"] for row in _table_rows().values() if row.get("role") == role})
+
+
+def _safe_literal(problems: list[str], check: str, path, name: str):
+    """literal_of(path, name), appending its SystemExit message to problems and returning None on a refusal, so one bad file never stops the rest of a check's loop."""
+    try:
+        return literal_of(path, name)
+    except SystemExit as ex:
+        problems.append(f"{check}: {ex}")
+        return None
+
+
+def _safe_parse(problems: list[str], check: str, path):
+    """_parse(path), appending its SystemExit message to problems and returning None on a file that does not parse, so one unparsable file never stops the rest of a check's loop (the shape _safe_literal uses for a literal)."""
+    try:
+        return _parse(path)
+    except SystemExit as ex:
+        problems.append(f"{check}: {ex}")
+        return None
+
+
+# --- check 1: the README's file list against the tree -----------------------
+
+
+# Contracts 0.1's five-line format: every .py entry of README section 2 carries these five
+# labels, in this order. Check 1 requires each of them to be there and to carry a value, for
+# three reasons: check 10 reads venv: and drops the file from its import proof in silence when
+# that line is gone, so check 1 is the only place that line is required; check 2 reads imports:
+# and used by: and reports a missing one by name itself, so check 1 repeats that report for a
+# .py entry rather than being its only source; and reads: and writes:, which no check reads,
+# are required here because a line nobody requires rots.
+README_PY_LABELS = ("imports", "used by", "reads", "writes", "venv")
+
+
+def _check_1(entries: dict, tree_files: list[str]) -> list[str]:
+    problems = []
+    for f in tree_files:
+        if f not in entries:
+            problems.append(f"check 1: {f} is a .py file in the tree with no README entry")
+    for name, entry in entries.items():
+        if not (ROOT / name).exists():
+            problems.append(f"check 1: README entry {name!r} names a path that does not exist")
+        if name.endswith(".py"):
+            for label in README_PY_LABELS:
+                if (entry.get(label) or "").strip() == "":
+                    problems.append(
+                        f"check 1: README entry {name!r} carries no {label}: line "
+                        "(contracts 0.1's five-line format)")
+    return problems
+
+
+# --- check 2: every annotation line against the real import graph -----------
+
+
+_BRACKET_RE = re.compile(r"\[[^\[\]]*\]")
+_BRACE_RE = re.compile(r"\{([^{}]*)\}")
+
+
+def _drop_bracket_groups(text: str) -> str:
+    """Drop every bracketed third-party list, whole (rule 1: '[polars, numpy]' and the like)."""
+    return _BRACKET_RE.sub("", text)
+
+
+def _split_top_level(text: str) -> list[str]:
+    """Split text on every ',' and ';' that sits outside every (), [] and {} (rule 2 step 2)."""
+    fragments = []
+    depth = 0
+    current: list[str] = []
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+            current.append(ch)
+        elif ch in ")]}":
+            depth -= 1
+            current.append(ch)
+        elif ch in ",;" and depth == 0:
+            fragments.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    fragments.append("".join(current))
+    return fragments
+
+
+def _drop_parenthetical(fragment: str) -> tuple[str, str | None]:
+    """Drop a fragment's parenthetical, from its first '(' to its last ')' (rule 2 step 3): (path text, parenthetical text or None)."""
+    start = fragment.find("(")
+    if start == -1:
+        return fragment.strip(), None
+    end = fragment.rfind(")")
+    if end == -1 or end < start:
+        return fragment.strip(), None
+    return fragment[:start].strip(), fragment[start + 1:end].strip()
+
+
+def _expand_braces(path_text: str) -> list[str]:
+    """Expand one brace alternation into one path per alternative (rule 2 step 4); a fragment with none is itself the only entry."""
+    m = _BRACE_RE.search(path_text)
+    if not m:
+        return [path_text]
+    return [path_text[:m.start()] + alt.strip() + path_text[m.end():] for alt in m.group(1).split(",")]
+
+
+def _is_path_token(fragment: str) -> bool:
+    """Whether a fragment is a bare path token -- one whitespace-free word ending in .py or .yaml -- and so names a repo file rather than prose (rule 2 step 5's prose rule, the other way round)."""
+    return len(fragment.split()) == 1 and fragment.endswith((".py", ".yaml"))
+
+
+def _parse_annotation(raw: str) -> tuple[set[str], list[tuple[str, str]], list[str]]:
+    """One README imports:/used by: value, parsed into (plain entries, by-name fragments, dead path tokens) per check 2's five-step rule (rule 2); the caller has already handled the 'none (program)' and '(as their package)' whole-line spellings of rule 3.
+
+    A plain entry survives steps 1-5 as exactly a repo file path. A by-name fragment's
+    parenthetical starts 'by name' (rule 3) and is returned separately, dropped from the plain
+    equality either way. A fragment that is a bare path token yet names no repo file is a dead
+    name -- what a rename leaves behind -- and is returned as the third value for the caller to
+    report; prose fragments, which are several words, stay out of all three.
+    """
+    normal: set[str] = set()
+    by_name: list[tuple[str, str]] = []
+    dead: list[str] = []
+    for fragment in _split_top_level(_drop_bracket_groups(raw)):
+        path_text, paren_text = _drop_parenthetical(fragment)
+        if not path_text:
+            continue
+        if paren_text is not None and paren_text.startswith("by name"):
+            by_name.append((path_text, paren_text))
+            continue
+        for candidate in (c.strip() for c in _expand_braces(path_text)):
+            if candidate == "":
+                continue
+            if (ROOT / candidate).exists():
+                normal.add(candidate)
+            elif _is_path_token(candidate):
+                dead.append(candidate)
+    return normal, by_name, dead
+
+
+def _dynamic_import_prefix(annotated_file: str) -> str:
+    """The dotted package a by-name importer must name to reach the annotated file: `models/agent_models/gptoss.py` -> `models.agent_models.`, and a repo-root file -> `` (rule 3).
+
+    A root-level module's dotted name is the stem alone, so its package part is empty and the
+    prefix is the empty string; every other file's prefix is its directory, dotted, with the
+    separating dot on the end.
+    """
+    parts = Path(annotated_file).parent.parts
+    return ".".join(parts) + "." if parts else ""
+
+
+def _has_dynamic_import_of(path, prefix: str, exact: str = "") -> bool:
+    """Whether the module at path holds an importlib.import_module(...) call that names the target: an f-string whose leading constant starts with the required leading text, or the plain string `exact` (rule 3's by-name test).
+
+    The required leading text is what makes the test bite: a call that imports something else
+    entirely is the breakage this rule exists to catch, and ast cannot see the edge any other
+    way. It is the target's package prefix wherever the target sits inside a package. A
+    repo-root target has an empty package prefix, which every string starts with, so there the
+    required leading text is the module's own dotted name, `exact`. A placeholder fragment
+    (models/probe_models/<backbone>.py) names no one module, so it passes no `exact` and its
+    non-empty package prefix answers for it alone.
+    """
+    lead = prefix or exact
+    tree = _parse(path)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        is_import_module = ((isinstance(func, ast.Attribute) and func.attr == "import_module")
+                             or (isinstance(func, ast.Name) and func.id == "import_module"))
+        if not (is_import_module and node.args):
+            continue
+        arg = node.args[0]
+        if isinstance(arg, ast.JoinedStr) and arg.values:
+            first = arg.values[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.startswith(lead):
+                return True
+        if exact and isinstance(arg, ast.Constant) and arg.value == exact:
+            return True
+    return False
+
+
+def _has_main_block(path) -> bool:
+    """Whether the module at path holds an `if __name__ == ...:` block at any depth (rule 3's 'none (program)' test)."""
+    tree = _parse(path)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.If) and isinstance(node.test, ast.Compare):
+            left = node.test.left
+            if isinstance(left, ast.Name) and left.id == "__name__":
+                return True
+    return False
+
+
+def _check_by_name_fragments(current_file: str, label: str, fragments: list[tuple[str, str]],
+                             unreadable: set[str]) -> list[str]:
+    """Rule 3's by-name spelling: a fragment naming a real file is checked for existence and a dynamic-import call; the one placeholder spelling (models/probe_models/base.py's own <backbone>.py) is checked by its own f-string rule instead.
+
+    The label says which of the two files holds the importlib call: on an `imports:` line the
+    annotated file is the importer and the fragment is the module it names, on a `used by:` line
+    the fragment is the importer and the annotated file is the module it names. `unreadable` is
+    check 2's set of files that do not parse; a fragment whose importer sits in it is passed over,
+    because that file's own parse-failure line is already among the problems.
+    """
+    problems = []
+    for path_text, _paren in fragments:
+        if "<" in path_text:
+            if label == "imports":
+                prefix = _dynamic_import_prefix(path_text)
+                if not _has_dynamic_import_of(current_file, prefix):
+                    problems.append(
+                        f"check 2: {current_file}: no importlib.import_module f-string call beginning "
+                        f"{prefix!r} for its by-name import of {path_text}")
+            else:
+                problems.append(f"check 2: {current_file} {label}: unrecognised by-name placeholder {path_text!r}")
+            continue
+        if not (ROOT / path_text).is_file():
+            problems.append(f"check 2: {current_file} {label}: by-name entry {path_text} does not exist")
+            continue
+        if label == "imports":
+            importer, imported = current_file, path_text
+            subject = f"{current_file} holds no"
+            tail = f" for by-name entry {path_text}"
+        else:
+            importer, imported = path_text, current_file
+            subject = f"by-name entry {path_text} holds no"
+            tail = ""
+        if importer in unreadable:
+            continue
+        prefix = _dynamic_import_prefix(imported)
+        module = _module_name(imported)
+        if not _has_dynamic_import_of(importer, prefix, module):
+            # a module inside a package is named by its package prefix, a repo-root module by its own name
+            required = f"{prefix}<module>" if prefix else module
+            problems.append(
+                f"check 2: {current_file} {label}: {subject} "
+                f"importlib.import_module call naming {required}{tail}")
+    return problems
+
+
+def _check_package_marker(current_file: str, label: str, raw: str) -> list[str]:
+    """Rule 3's '(as their package)' spelling: the whole used by: line's named set must equal the .py files of the marker's own directory, __init__.py excluded."""
+    if label != "used by":
+        return [f"check 2: {current_file}: '(as their package)' on an {label}: line"]
+    text = raw[:raw.rfind("(as their package)")]
+    named = {t.strip() for t in text.split(",") if t.strip()}
+    directory = Path(current_file).parent
+    real = {str(p.relative_to(ROOT)) for p in sorted((ROOT / directory).glob("*.py")) if p.name != "__init__.py"}
+    if named != real:
+        return [f"check 2: {current_file} used by: package marker names {sorted(named)}, "
+                f"directory {directory} holds {sorted(real)}"]
+    return []
+
+
+def _check_2(tree_files: list[str], entries: dict) -> list[str]:
+    problems: list[str] = []
+    imports_map: dict[str, set[str]] = {}
+    unreadable: set[str] = set()
+    for f in tree_files:
+        try:
+            imports_map[f] = _repo_imports(f)
+        except SystemExit as ex:
+            problems.append(f"check 2: {ex}")
+            imports_map[f] = set()
+            unreadable.add(f)
+    used_by_map: dict[str, set[str]] = {f: set() for f in tree_files}
+    for f, imps in imports_map.items():
+        for target in imps:
+            used_by_map.setdefault(target, set()).add(f)
+    graphs = {"imports": imports_map, "used by": used_by_map}
+
+    for f in tree_files:
+        if f in unreadable:
+            continue       # its own line is already above; its annotation lines say nothing more
+        entry = entries.get(f, {})
+        for label, graph in graphs.items():
+            raw = entry.get(label)
+            if raw is None:
+                problems.append(f"check 2: {f} has no {label}: line")
+                continue
+            raw = raw.strip()
+            try:
+                if raw == "none (program)":
+                    if label != "used by":
+                        problems.append(f"check 2: {f}: 'none (program)' on an {label}: line")
+                        continue
+                    if graph.get(f):
+                        problems.append(
+                            f"check 2: {f}: used by: none (program), but imported by {sorted(graph[f])}")
+                    if not _has_main_block(f):
+                        problems.append(f"check 2: {f}: used by: none (program), but has no __main__ block")
+                    continue
+                if raw.endswith("(as their package)"):
+                    problems.extend(_check_package_marker(f, label, raw))
+                    continue
+                normal, by_name, dead = _parse_annotation(raw)
+                actual = graph.get(f, set())
+                if normal != actual:
+                    problems.append(
+                        f"check 2: {f} {label}: README names {sorted(normal)}, the graph gives {sorted(actual)}")
+                for candidate in dead:
+                    problems.append(f"check 2: {f} {label}: names {candidate}, which is not a repo file")
+                problems.extend(_check_by_name_fragments(f, label, by_name, unreadable))
+            except SystemExit as ex:
+                problems.append(f"check 2: {ex}")
+    return problems
+
+
+# --- check 3: every axis literal against the files behind it ----------------
+
+
+def _check_3() -> list[str]:
+    problems: list[str] = []
+    axes = schema.AXES
+
+    try:
+        fmt_keys = tuple(literal_keys_of("agent/injected_text_formats.py", "FORMATS"))
+    except SystemExit as ex:
+        problems.append(f"check 3: {ex}")
+        fmt_keys = None
+    if fmt_keys is not None and tuple(axes["inject.format"]) != fmt_keys:
+        problems.append(
+            f"check 3: schema.AXES['inject.format'] {tuple(axes['inject.format'])} != "
+            f"agent/injected_text_formats.py FORMATS keys {fmt_keys}")
+
+    arms = _safe_literal(problems, "check 3", "agent/step_with_probe.py", "ARMS")
+    if arms is not None and tuple(axes["inject.arm"]) != tuple(arms):
+        problems.append(
+            f"check 3: schema.AXES['inject.arm'] {tuple(axes['inject.arm'])} != "
+            f"agent/step_with_probe.py ARMS {tuple(arms)}")
+
+    probe_kind = _safe_literal(problems, "check 3", "eval/utils/probe_eval.py", "PROBE_KIND")
+    for m in axes["probe.method"]:
+        if probe_kind is not None and m not in probe_kind:
+            problems.append(f"check 3: schema.AXES['probe.method'] value {m!r} is not a key of PROBE_KIND")
+    method_stems = _stems_of("train/methods")
+    if set(axes["probe.method"]) != method_stems:
+        problems.append(
+            f"check 3: schema.AXES['probe.method'] {set(axes['probe.method'])} != "
+            f"train/methods/ stems {method_stems}")
+
+    env_stems = _stems_of("data/environments")
+    if set(axes["data.env"]) != env_stems:
+        problems.append(
+            f"check 3: schema.AXES['data.env'] {set(axes['data.env'])} != data/environments/ stems {env_stems}")
+
+    instructions_union: set = set()
+    split_role_union: set = set()
+    for env in sorted(env_stems):
+        path = f"data/environments/{env}.py"
+        instr = _safe_literal(problems, "check 3", path, "INSTRUCTIONS")
+        if instr is not None:
+            instructions_union |= set(instr)
+        split_role = _safe_literal(problems, "check 3", path, "SPLIT_ROLE")
+        if split_role is not None:
+            split_role_union |= set(split_role)
+    if not set(axes["data.instructions"]) <= instructions_union:
+        problems.append(
+            f"check 3: schema.AXES['data.instructions'] {set(axes['data.instructions'])} is not within "
+            f"the environments' INSTRUCTIONS keys {instructions_union}")
+    for axis_name in ("sample.split", "inject.split"):
+        if not set(axes[axis_name]) <= split_role_union:
+            problems.append(
+                f"check 3: schema.AXES[{axis_name!r}] {set(axes[axis_name])} is not within "
+                f"the environments' SPLIT_ROLE keys {split_role_union}")
+
+    effort_union: set = set()
+    for fam in _families("agent"):
+        efforts = _safe_literal(problems, "check 3", f"models/agent_models/{fam}.py", "EFFORTS")
+        if efforts is not None:
+            effort_union |= set(efforts)
+    if not set(axes["generation.effort"]) <= effort_union:
+        problems.append(
+            f"check 3: schema.AXES['generation.effort'] {set(axes['generation.effort'])} is not within "
+            f"the family modules' EFFORTS {effort_union}")
+    return problems
+
+
+# --- check 4: the code-era table, and the stage table's code tuples against the tree ----
+
+
+_CODE_LAYERS = ("data/", "models/", "agent/", "train/", "eval/")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def _resolve_code_entry(entry: str) -> list[str]:
+    """One `code` tuple entry of schema.STAGES (or a stage's `program`, spelled as a path), resolved to the concrete file(s) it names: whichever of the four templates it holds is expanded over every value (5.2's resolution, check 4)."""
+    rows = _table_rows()
+    agent_fams = sorted({r["family"] for r in rows.values() if r.get("role") == "agent"})
+    probe_fams = sorted({r["family"] for r in rows.values() if r.get("role") == "probe"})
+    outs = [entry]
+    for token, values in (
+        ("{env}", schema.AXES["data.env"]),
+        ("{method}", schema.AXES["probe.method"]),
+        ("{family}", agent_fams),
+        ("{backbone}", probe_fams),
+    ):
+        if token in entry:
+            outs = [out.replace(token, v) for out in outs for v in values]
+    return outs
+
+
+def _stage_code_files(stage: str) -> set[str]:
+    """Every concrete file a stage's `code` tuple names, over every template value."""
+    named: set[str] = set()
+    for entry in schema.STAGES[stage]["code"]:
+        named |= set(_resolve_code_entry(entry))
+    return named
+
+
+def _package_inits(path: str) -> list[str]:
+    """The `__init__.py` of every package on `path`'s way down from the tree root that exists: importing `a.b.c` runs `a/__init__.py` and `a/b/__init__.py`, so a stage that runs the module runs them too."""
+    parts = path.split("/")[:-1]
+    return [init for init in ("/".join(parts[:i]) + "/__init__.py" for i in range(1, len(parts) + 1))
+            if (ROOT / init).is_file()]
+
+
+def _code_closure(start: str) -> set[str]:
+    """The repo files a module runs, statically: itself, what it imports (`_repo_imports`, transitively) and the package `__init__.py` files on their paths, kept to the five code layers -- the launcher layer (run.py, jobs/, experimental_settings/, constants/) is what starts a stage, not code its output depends on."""
+    seen: set[str] = set()
+    todo = [start]
+    while todo:
+        path = todo.pop()
+        if path in seen or not path.startswith(_CODE_LAYERS) or not (ROOT / path).is_file():
+            continue
+        seen.add(path)
+        todo.extend(_repo_imports(path))
+        todo.extend(_package_inits(path))
+    return seen
+
+
+def _check_versions_table() -> list[str]:
+    """jobs/versions.yaml's strict shape (3.3): rows the schema reader accepts, a `date` of the form YYYY-MM-DD, per stage the era rows consecutive from 2 in file order, every same row carrying the era current at its position and naming a commit this repository holds."""
+    problems: list[str] = []
+    try:
+        rows = schema.versions_table()
+    except schema.SchemaError as ex:
+        return [f"check 4: {ex}"]
+    current: dict[str, int] = {}
+    for i, row in enumerate(rows, start=1):
+        where = f"check 4: jobs/versions.yaml row {i} ({row['stage']})"
+        # An unquoted 2026-09-26 loads as a date object, a quoted one as a string; both pass.
+        row_date = row.get("date")
+        if isinstance(row_date, date):
+            row_date = row_date.isoformat()
+        if not isinstance(row_date, str) or not _DATE_RE.match(row_date):
+            problems.append(f"{where}: date {row.get('date')!r} is not YYYY-MM-DD")
+        extra = set(row) - {"stage", "era", "from", "same", "date", "why"}
+        if extra:
+            problems.append(f"{where}: unknown field(s) {sorted(extra)}")
+        era_now = current.get(row["stage"], 1)
+        if "same" in row:
+            if row["era"] != era_now:
+                problems.append(f"{where}: a same row carries era {row['era']}, but the stage's era at this "
+                                f"point of the file is {era_now}")
+            for name in ("from", "same"):
+                if not _COMMIT_RE.match(row[name]):
+                    problems.append(f"{where}: {name} {row[name]!r} is not a commit id")
+                    continue
+                try:
+                    _git("cat-file", "-e", f"{row[name]}^{{commit}}")
+                except RuntimeError:
+                    problems.append(f"{where}: {name} {row[name]} is not a commit of this repository")
+            continue
+        if row["era"] != era_now + 1:
+            problems.append(f"{where}: era {row['era']} follows era {era_now}; era rows go up by one")
+        current[row["stage"]] = row["era"]
+    return problems
+
+
+def _check_4() -> list[str]:
+    problems = _check_versions_table()
+    named_by: dict[str, set[str]] = {}
+    for stage in schema.STAGES:
+        for path in _stage_code_files(stage):
+            named_by.setdefault(path, set()).add(stage)
+    for path in sorted(named_by):
+        if not (ROOT / path).exists():
+            problems.append(f"check 4: {path} is named by the code tuple of {sorted(named_by[path])} "
+                            "but does not exist")
+    # Both directions (3.3): every file under the five code layers is code some stage's output
+    # depends on, or is exempted by name with its reason in schema.CODE_UNLISTED; and an
+    # exemption names a file that exists and that no stage's tuple names.
+    layer_files = {p for p in _tree_python_files() if p.startswith(_CODE_LAYERS)}
+    for path in sorted(layer_files - set(named_by) - set(schema.CODE_UNLISTED)):
+        problems.append(f"check 4: {path} is under the code layers, but no stage's code tuple names it "
+                        "and schema.CODE_UNLISTED does not exempt it")
+    for path in sorted(schema.CODE_UNLISTED):
+        if not (ROOT / path).exists():
+            problems.append(f"check 4: schema.CODE_UNLISTED names {path}, which does not exist")
+        if path in named_by:
+            problems.append(f"check 4: schema.CODE_UNLISTED exempts {path}, but the code tuple of "
+                            f"{sorted(named_by[path])} names it")
+    # A stage's tuple holds at least what its program imports: a file the program runs and the
+    # tuple leaves out is a file whose change the code gate would never see.
+    for stage, row in schema.STAGES.items():
+        listed = _stage_code_files(stage)
+        closure: set[str] = set()
+        for program in _resolve_code_entry(row["program"].replace(".", "/") + ".py"):
+            closure |= _code_closure(program)
+        for path in sorted(closure - listed):
+            problems.append(f"check 4: stage {stage}: {path} is imported by its program "
+                            f"{row['program']}, but its code tuple does not name it")
+        # Two modules load by name what the setting chose (importlib, not an import the
+        # closure can see): data/environments/__init__.py opens the environment module and
+        # models/__init__.py the family module, so a tuple whose closure holds either names
+        # the chosen module through its template.
+        entries = " ".join(row["code"])
+        if "data/environments/__init__.py" in closure and "{env}" not in entries:
+            problems.append(f"check 4: stage {stage}: its program opens the environment module "
+                            "(data/environments/__init__.py is in its closure), but its code tuple "
+                            "holds no data/environments/{env}.py entry")
+        if "models/__init__.py" in closure and "{family}" not in entries and "{backbone}" not in entries:
+            problems.append(f"check 4: stage {stage}: its program loads a family module "
+                            "(models/__init__.py is in its closure), but its code tuple holds no "
+                            "{family} or {backbone} entry")
+
+    for method in sorted(_stems_of("train/methods")):
+        path = f"train/methods/{method}.py"
+        _safe_literal(problems, "check 4", path, "PROBE_KIND")
+        _safe_literal(problems, "check 4", path, "CHECKPOINT_META")
+    for fam in _families("agent"):
+        path = f"models/agent_models/{fam}.py"
+        for name in ("STOP", "EFFORTS", "DEFAULT_EFFORT", "DEFAULT_DATE"):
+            _safe_literal(problems, "check 4", path, name)
+    for fam in _families("probe"):
+        path = f"models/probe_models/{fam}.py"
+        _safe_literal(problems, "check 4", path, "LORA_TARGETS")
+    for env in sorted(_stems_of("data/environments")):
+        path = f"data/environments/{env}.py"
+        for name in ("INSTRUCTIONS", "SPLIT_ROLE"):
+            _safe_literal(problems, "check 4", path, name)
+    return problems
+
+
+# --- check 5: SCHEMA / DEFAULTS / REQUIRED in each format file --------------
+
+
+FORMAT_FILES = ("data/trajectory_record.py", "data/training_data.py", "data/probe_output.py")
+
+
+def _column_zero_ann_or_assign(tree, name: str) -> list:
+    """Every column-zero ast.Assign or ast.AnnAssign whose target's bare id is `name` (check 5 matches the target's id, never ast.unparse(target), so a subscript target like DEFAULTS['n_inject'] = 0 is not a second match)."""
+    matches = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and node.col_offset == 0:
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign) and node.col_offset == 0:
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id == name:
+                matches.append(node.value)
+    return matches
+
+
+def _check_5() -> list[str]:
+    problems: list[str] = []
+    for path in FORMAT_FILES:
+        tree = _safe_parse(problems, "check 5", path)
+        if tree is None:
+            continue
+        nodes: dict[str, object] = {}
+        for name in ("SCHEMA", "DEFAULTS", "REQUIRED"):
+            matches = _column_zero_ann_or_assign(tree, name)
+            if len(matches) != 1:
+                problems.append(
+                    f"check 5: {path}: {len(matches)} column-zero bindings of {name!r}, expected exactly one")
+                continue
+            nodes[name] = matches[0]
+        if "SCHEMA" not in nodes or "REQUIRED" not in nodes:
+            continue
+        schema_node = nodes["SCHEMA"]
+        if not isinstance(schema_node, ast.Dict):
+            problems.append(f"check 5: {path}: SCHEMA is not a dict display")
+            continue
+        try:
+            schema_cols = {ast.literal_eval(k) for k in schema_node.keys}
+        except (ValueError, TypeError, SyntaxError) as ex:
+            problems.append(f"check 5: {path}: SCHEMA has a non-literal key ({ex})")
+            continue
+        required_node = nodes["REQUIRED"]
+        if not (isinstance(required_node, ast.Call) and isinstance(required_node.func, ast.Name)
+                and required_node.func.id == "frozenset" and required_node.args):
+            problems.append(f"check 5: {path}: REQUIRED is not a frozenset(...) call")
+            continue
+        try:
+            required_names = ast.literal_eval(required_node.args[0])
+        except (ValueError, TypeError, SyntaxError) as ex:
+            problems.append(f"check 5: {path}: REQUIRED's argument is not a literal ({ex})")
+            continue
+        missing = set(required_names) - schema_cols
+        if missing:
+            problems.append(f"check 5: {path}: REQUIRED names {sorted(missing)}, which SCHEMA does not declare")
+    return problems
+
+
+# --- check 6: the two PROBE_KIND declarations of a method -------------------
+
+
+def _check_6() -> list[str]:
+    problems: list[str] = []
+    probe_kind = _safe_literal(problems, "check 6", "eval/utils/probe_eval.py", "PROBE_KIND")
+    if probe_kind is None:
+        return problems
+    for method in sorted(_stems_of("train/methods")):
+        path = f"train/methods/{method}.py"
+        own = _safe_literal(problems, "check 6", path, "PROBE_KIND")
+        if own is None:
+            continue
+        other = probe_kind.get(method)
+        if own != other:
+            problems.append(
+                f"check 6: {path}'s PROBE_KIND {own!r} != eval/utils/probe_eval.py "
+                f"PROBE_KIND[{method!r}] {other!r}")
+    return problems
+
+
+# --- check 7: DEFAULT_EFFORT a member of its own EFFORTS, or both empty -----
+
+
+def _check_7() -> list[str]:
+    problems: list[str] = []
+    for fam in _families("agent"):
+        path = f"models/agent_models/{fam}.py"
+        # Read both literals directly, because None is a legal DEFAULT_EFFORT value and
+        # _safe_literal returns None for a refusal too: routed through it, the family whose
+        # EFFORTS are non-empty while DEFAULT_EFFORT is None -- the one spelling contracts 6.2
+        # allows only with EFFORTS = () -- would be read as a refusal and skipped.
+        try:
+            efforts = literal_of(path, "EFFORTS")
+            default_effort = literal_of(path, "DEFAULT_EFFORT")
+        except SystemExit as ex:
+            problems.append(f"check 7: {ex}")
+            continue
+        if not isinstance(efforts, tuple):
+            problems.append(f"check 7: {path}: EFFORTS {efforts!r} is not a tuple (contracts 6.2)")
+            continue
+        if efforts == () and default_effort is None:
+            continue
+        if default_effort not in efforts:
+            problems.append(f"check 7: {path}: DEFAULT_EFFORT {default_effort!r} is not in EFFORTS {efforts}")
+    return problems
+
+
+# --- check 8: models/table.yaml's family and weights alias ------------------
+
+
+def _check_8() -> list[str]:
+    problems: list[str] = []
+    rows = _table_rows()
+    with open(ROOT / "constants" / "path_models.yaml") as f:
+        aliases = yaml.safe_load(f)
+    subdir_of_role = {"agent": "agent_models", "probe": "probe_models"}
+    for alias, row in rows.items():
+        role = row.get("role")
+        family = row.get("family")
+        subdir = subdir_of_role.get(role)
+        if subdir is None:
+            problems.append(f"check 8: models/table.yaml[{alias!r}]: role {role!r} is not 'agent' or 'probe'")
+            continue
+        path = f"models/{subdir}/{family}.py"
+        if not (ROOT / path).is_file():
+            problems.append(
+                f"check 8: models/table.yaml[{alias!r}]: family {family!r} names {path}, which does not exist")
+        weights = (row.get("result") or {}).get("weights")
+        if weights not in aliases:
+            problems.append(
+                f"check 8: models/table.yaml[{alias!r}]: result.weights {weights!r} is not an alias of "
+                "constants/path_models.yaml")
+    return problems
+
+
+# --- check 9: no cluster-absolute path in code outside constants/ -----------
+
+
+_FORBIDDEN_ROOTS = ("/" + "home/", "/" + "net/")   # split so this check's own source never matches itself
+
+
+def _check_9(tree_files: list[str]) -> list[str]:
+    problems: list[str] = []
+    for path in tree_files:
+        if path.startswith("constants/"):
+            continue
+        tree = _safe_parse(problems, "check 9", path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                if any(root in node.value for root in _FORBIDDEN_ROOTS):
+                    problems.append(
+                        f"check 9: {path}: a string literal names an absolute path outside constants/: "
+                        f"{node.value!r}")
+    return problems
+
+
+# --- check 10: any files under every venv; family modules under probe+vllm --
+
+
+def _module_name(rel_path: str) -> str:
+    if rel_path.endswith("/__init__.py"):
+        return rel_path[: -len("/__init__.py")].replace("/", ".")
+    return rel_path[:-3].replace("/", ".")
+
+
+def _import_under(interpreter: str, rel_path: str) -> str | None:
+    """None on a clean `import <module>` under interpreter with ROOT as cwd, else a message naming the failure's last stderr line."""
+    dotted = _module_name(rel_path)
+    proc = subprocess.run(
+        [interpreter, "-c", f"import {dotted}"], cwd=str(ROOT), capture_output=True, text=True)
+    if proc.returncode == 0:
+        return None
+    tail = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"exit {proc.returncode}"
+    return f"{rel_path}: import under {interpreter} failed: {tail}"
+
+
+# The one README venv: spelling that names an interpreter by the benchmark that brings it
+# rather than by a venvs: key: "the environment's (appworld today)" and its bare form.
+_VENV_ENVIRONMENT_SPELLING = "the environment's"
+
+
+def _venv_names_an_interpreter(venv_value: str, venvs: dict) -> bool:
+    """Whether a README venv: value opens with an interpreter check 10 knows: `any`, a key of constants/path_datasets.yaml's venvs: map, or the environment's own interpreter.
+
+    Check 10 imports a file under every interpreter when its value opens with `any`, so a value
+    it cannot read -- a typo, or a venvs: key that no longer exists -- drops the file out of the
+    check in silence. Requiring the value to name something keeps that from happening.
+    """
+    if venv_value.startswith(_VENV_ENVIRONMENT_SPELLING):
+        return True
+    tokens = venv_value.split()
+    return bool(tokens) and (tokens[0] == "any" or tokens[0] in venvs)
+
+
+def _check_10(entries: dict) -> list[str]:
+    problems: list[str] = []
+    venvs = _venvs_config()
+    for path, entry in entries.items():
+        if not path.endswith(".py"):
+            continue
+        venv_value = (entry.get("venv") or "").strip()
+        if venv_value == "":
+            continue                     # check 1 reports the missing venv: line
+        if not _venv_names_an_interpreter(venv_value, venvs):
+            problems.append(
+                f"check 10: {path}: venv: {venv_value!r} names no interpreter: expected 'any', "
+                f"one of {sorted(venvs)}, or {_VENV_ENVIRONMENT_SPELLING!r}")
+            continue
+        if not venv_value.startswith("any"):
+            continue
+        for interp in venvs.values():
+            msg = _import_under(interp, path)
+            if msg:
+                problems.append(f"check 10: {msg}")
+    for fam in _families("agent"):
+        path = f"models/agent_models/{fam}.py"
+        for name in ("probe", "vllm"):
+            interp = venvs.get(name)
+            if interp is None:
+                problems.append(f"check 10: constants/path_datasets.yaml's venvs: map has no {name!r} entry")
+                continue
+            msg = _import_under(interp, path)
+            if msg:
+                problems.append(f"check 10: {msg}")
+    return problems
+
+
+# --- check 11: no workflow file's stem is a reserved subcommand name --------
+
+
+def _check_11() -> list[str]:
+    problems: list[str] = []
+    for path in sorted((ROOT / "experimental_settings").glob("*.yaml")):
+        if path.stem in RESERVED_SUBCOMMANDS:
+            problems.append(
+                f"check 11: experimental_settings/{path.name}: stem {path.stem!r} is a reserved subcommand name")
+    return problems
+
+
+# --- check 12: every schema field reaches a stage's key or projection -------
+
+# Contracts 5.2 marks both `meta` fields `key: no`, and no stage reads them: `notes` is prose and
+# `override` is the loader's permission list (5.4), so the section is outside what a stage keys.
+_KEYLESS_SECTIONS = ("meta",)
+
+
+def _dotted_schema_fields() -> list[str]:
+    """Every dataclass field of every schema.SECTION_CLASSES section as `section.field`, a nested dataclass field (train.predict) expanded to `section.field.sub`, the loader-written MODELS_READONLY fields left out."""
+    names: list[str] = []
+    for section, cls in schema.SECTION_CLASSES.items():
+        instance = cls()
+        for f in dc_fields(cls):
+            if f.name in schema.MODELS_READONLY:
+                continue
+            value = getattr(instance, f.name)
+            if hasattr(value, "__dataclass_fields__"):
+                names += [f"{section}.{f.name}.{sub.name}" for sub in dc_fields(type(value))]
+            else:
+                names.append(f"{section}.{f.name}")
+    return names
+
+
+def _check_12() -> list[str]:
+    """A field enters a key only when schema.STAGES names it (2.1, 2.2): a field no stage's `sections` (keyed), `projection` or `projection_generator` (not keyed) names, and no reference field, is read by no stage at all, so stating it moves no key and reaches no run."""
+    reached: set[str] = set(schema.REF_FIELDS)
+    for row in schema.STAGES.values():
+        reached |= set(row["sections"]) | set(row["projection"]) | set(row["projection_generator"])
+    problems: list[str] = []
+    for dotted in _dotted_schema_fields():
+        parts = dotted.split(".")
+        if parts[0] in _KEYLESS_SECTIONS:
+            continue
+        prefixes = {".".join(parts[:n]) for n in range(1, len(parts) + 1)}
+        if prefixes & reached:
+            continue
+        problems.append(
+            f"check 12: {dotted}: named by no schema.STAGES sections, projection or "
+            "projection_generator entry and not a REF_FIELDS entry, so no stage keys or reads it; "
+            "add it to the reading stage's sections tuple (keyed) or projection tuple (not keyed) "
+            "in experimental_settings/schema.py STAGES")
+    return problems
+
+
+def cmd_selfcheck(rest: list[str]) -> int:
+    entries = readme_entries(ROOT / "README.md")
+    tree_files = _tree_python_files()
+    problems: list[str] = []
+    # A check that raises becomes a problem line of its own, so the other checks still run and
+    # the count still prints: an edit that a check cannot read -- a renamed axis, a file that does
+    # not parse -- is a problem to report, not a reason to stop reporting.
+    checks = (
+        (1, lambda: _check_1(entries, tree_files)),
+        (2, lambda: _check_2(tree_files, entries)),
+        (3, _check_3),
+        (4, _check_4),
+        (5, _check_5),
+        (6, _check_6),
+        (7, _check_7),
+        (8, _check_8),
+        (9, lambda: _check_9(tree_files)),
+        (10, lambda: _check_10(entries)),
+        (11, _check_11),
+        (12, _check_12),
+    )
+    for number, check in checks:
+        try:
+            problems += check()
+        except SystemExit as ex:
+            problems.append(f"check {number}: {ex}")
+        except Exception as ex:
+            problems.append(f"check {number} raised: {type(ex).__name__}: {ex}")
+    for line in problems:
+        print(line)
+    print(f"selfcheck: {len(tree_files)} python files, {len(problems)} problems")
+    return 1 if problems else 0
+
+
+# ---------------------------------------------------------------------------
+# The walk (2.3, 2.4, 2.5, 3.4, 8.1, 8.2).
+# ---------------------------------------------------------------------------
+
+# 2.3's continue column and 2.4: `eval` and `score` always recompute inside their key -- a
+# rerun overwrites its own directory, and each recomputation gets its own finish row (8.2).
+# They cost seconds, and the failure this prevents is a metric fix that never runs because a
+# finished directory was reused. Ticket 14's step 2 sentence "every other stage skips on the
+# presence of done.json" is 2.3's general rule; the stage table's own row for these two names
+# them and wins.
+ALWAYS_RECOMPUTE = ("eval", "score")
+
+
+def _is_override_token(tok: str) -> bool:
+    if "=" not in tok:
+        return False
+    key = tok.split("=", 1)[0]
+    # A sweep child's own name also carries "=" (e.g. "name/train.lr=0.0003"), but always after a
+    # "/"; an override's left-hand side is a dotted section.field with no "/" in it (5.7 step 5).
+    return "/" not in key and "." in key
+
+
+def _parse_walk_rest(rest: list[str]) -> tuple[list[str], bool, bool, dict[str, str], dict | None]:
+    settings: list[str] = []
+    debug = False
+    allow_dirty = False
+    overrides: dict[str, str] = {}
+    card_tokens: list[str] = []
+    it = iter(rest)
+    for tok in it:
+        if tok == "--debug":
+            debug = True
+        elif tok == "--allow-dirty":
+            allow_dirty = True
+        elif tok == "--cards":
+            card_tokens.append(_cards_value(it))
+        elif tok.startswith("--"):
+            sys.exit(f"run.py: unrecognized flag {tok!r}")
+        elif _is_override_token(tok):
+            key, _, value = tok.partition("=")
+            overrides[key] = value  # raw text; schema.load parses it with yaml.safe_load itself
+        else:
+            settings.append(tok)
+    return settings, debug, allow_dirty, overrides, _cards_pool(card_tokens)
+
+
+def _cards_value(it) -> str:
+    """The word after `--cards`, refused when the command line ends there."""
+    value = next(it, None)
+    if value is None:
+        sys.exit("run.py: --cards needs a value, <host>:<id>,<id>,...")
+    return value
+
+
+def _cards_pool(card_tokens: list[str]) -> dict | None:
+    """The card pool the `--cards` flags name, host -> card ids, or None when the flag was not given.
+
+    A pool is where a launch runs, never what it computes: it is handed to `jobs/launch.py`
+    alone, it never reaches the setting, and so it never moves a key or a run directory.
+    """
+    return launch.parse_cards(card_tokens) if card_tokens else None
+
+
+def cmd_walk(workflow_name: str, rest: list[str]) -> int:
+    workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
+    if not workflow_file.exists():
+        sys.exit(f"run.py: {workflow_file} does not exist")
+    setting_names, debug, allow_dirty, overrides, cards = _parse_walk_rest(rest)
+    if not setting_names:
+        sys.exit("run.py: at least one <setting> is required")
+    # Every named setting is loaded before the first stage is walked, so a name the file does not
+    # hold -- a typo, or a stray word such as a second host:ids after one --cards -- is refused
+    # before anything is frozen or launched. schema.load reads setting files only, never a run
+    # directory, so loading a later setting first gives the same Setting a walk-time load gives.
+    all_cfgs = []
+    for setting_name in setting_names:
+        try:
+            all_cfgs += schema.load(workflow_file, setting_name, debug=debug, overrides=overrides)
+        except schema.SchemaError as ex:
+            sys.exit(f"run.py: {ex}")
+    outcomes = [_walk_one(cfg, allow_dirty, cards) for cfg in all_cfgs]
+    return 1 if "failed" in outcomes else 0
+
+
+def _walk_one(cfg, allow_dirty: bool, cards: dict | None) -> str:
+    """Walk one setting's stages in order and return the outcome the walk ended on: 'continue' when every stage was reused or finished, 'stop' at a card launch or a live piece, 'failed' when a CPU stage exited non-zero."""
+    for stage in cfg._workflow:
+        outcome = _stage_step(cfg, stage, allow_dirty, cards)
+        if outcome in ("stop", "failed"):
+            return outcome
+    return "continue"
+
+
+def _print_ok(run_id: str, run_dir: Path, done: dict) -> None:
+    """The line a stage that finished in this walk prints: its run id and the file that reports it, the stage's own report when its done.json names one, else done.json itself."""
+    print(f"run.py: {run_id} ok; report {run_dir / (done.get('report') or 'done.json')}")
+
+
+def _refuse_on_stale_inputs(stage: str, run_dir: Path) -> None:
+    """Before a skip (2.3): refuse, naming the file and both hashes, when a consumed.json entry -- or, for sample/inject, a meta.json split_files entry -- no longer matches the file it names."""
+    entries: list[dict] = []
+    consumed_path = run_dir / "consumed.json"
+    if consumed_path.exists():
+        entries.extend(json.loads(consumed_path.read_text()))
+    if stage in ("sample", "inject"):
+        meta = _read_json(run_dir / "meta.json") or {}
+        entries.extend(meta.get("split_files") or [])
+    for entry in entries:
+        path, recorded = entry.get("path"), entry.get("sha1")
+        if path is None or recorded is None:
+            continue
+        p = Path(path)
+        actual = _sha1_of(p) if p.exists() else "<missing>"
+        if actual != recorded:
+            sys.exit(
+                f"run.py: {run_dir} is stale: {path} sha1 is now {actual}, recorded {recorded}; "
+                "run `run.py retry` to rebuild")
+
+
+def _owners_with(run_dir: Path, cfg) -> list[dict]:
+    """This directory's owners list with {workflow, setting} in it: 8.3's owners holds every setting that has run into or reused the directory. Read under the caller's lock hold."""
+    meta = _read_json(run_dir / "meta.json") or {}
+    owners = list(meta.get("owners") or [])
+    entry = {"workflow": cfg._file, "setting": cfg._name}
+    if entry not in owners:
+        owners.append(entry)
+    return owners
+
+
+def _record_owner(run_dir: Path, cfg) -> None:
+    """A skip is an ownership event (2.3): add {workflow, setting} to meta.json's owners, under the lock, on the walk that first brings this setting to the directory."""
+    with registry.lock():
+        stored = list((_read_json(run_dir / "meta.json") or {}).get("owners") or [])
+        owners = _owners_with(run_dir, cfg)
+        if owners != stored:
+            registry.write_meta(run_dir, owners=owners)
+
+
+def _fold_stage_extra(run_dir: Path, done: dict) -> None:
+    """8.3 and 1.3: a stage writes its own `stage_extra` — train puts the class order there — into its `done.json`, and `run.py` folds it into `meta.json` on the walk that sees that file, under the lock, so `meta.json` keeps exactly two writers and the eval stage reads the train run's labels from it."""
+    extra = done.get("stage_extra")
+    if extra:
+        with registry.lock():
+            registry.write_meta(run_dir, stage_extra=extra)
+
+
+def _backfill_finish_row(run_id: str, run_dir: Path) -> None:
+    """The finish row of a launch that ended without one, appended on the walk that first sees its done.json (8.2).
+
+    The row is owed to the computation the open launch ran, and the walk closes a run by the one
+    rule `registry.sync` closes it by: `registry.write_done` stamps done.json with the launch that
+    wrote it (8.2, 8.3), so the file closes the run when its `launch` is the directory's current
+    ordinal. A done.json carrying an earlier launch belongs to the previous computation — one
+    sample directory serves several requests (2.3) and a relaunch leaves the earlier request's
+    file in place — so the launch in flight is left open and writes its own row when it completes.
+
+    8.2's other rule — a stage that always recomputes gets a new finish row per recomputation —
+    is held by the walk itself: `eval` and `score` never skip (2.4), so `run.py` runs each
+    recomputation in place and appends that run's own `ok` row when the process exits zero.
+    """
+    open_row = next((r for r in registry.open_runs() if r.get("run_id") == run_id), None)
+    if open_row is None:
+        return
+    done = _read_json(run_dir / "done.json") or {}
+    if done.get("launch") == registry.launch_ordinal(run_dir):
+        with registry.lock():
+            registry.append_finish(run_id, {
+                "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
+                "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
+                "report": done.get("report"), "elapsed_s": _elapsed(run_id)})
+
+
+def _certifies_request(done: dict | None, pairs: list[tuple[str, int]]) -> bool:
+    """Whether this directory's done.json already certifies every requested pair (2.3).
+
+    One `sample` or `inject` directory serves several requests, and a request widened after an
+    earlier one finished is completed again: `done.json` is rewritten with the wider `pairs`
+    list, the run's service pieces are ended and a new finish row is appended. So the test that
+    tells a completed request from one still to certify is the recorded `pairs` list, not the
+    presence of the file.
+    """
+    if done is None:
+        return False
+    recorded = {(p[0], p[1]) for p in done.get("pairs") or [] if len(p) == 2}
+    return set(pairs) <= recorded
+
+
+def _finalize_pair_stage(stage: str, run_dir: Path, key: str, pairs: list[tuple[str, int]]) -> None:
+    """Completeness reached (2.3): write done.json, tear the services down, append the ok finish row."""
+    frozen = schema.load_frozen(run_dir)
+    tasks = len({task_id for task_id, _seed in pairs})
+    seeds = len({seed for _task_id, seed in pairs})
+    counts = {"records": len(pairs), "tasks": tasks, "seeds": seeds}
+    registry.write_done(run_dir, stage=stage, key=key, commit=frozen._commit,
+                         counts=counts, era=frozen._era, metrics={}, report=None,
+                         pairs=pairs)
+    launch.teardown_services(run_dir)
+    run_id = f"{stage}-{key}"
+    registry.append_finish(run_id, {
+        "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
+        "counts": counts, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
+
+
+def _reference_is_pinned(cfg, source: str) -> bool:
+    """Whether the setting states this upstream's reference in the pinned key:/dir: form (5.4): a name is a string, a pinned reference is a mapping."""
+    dotted = source[len("ref:"):]
+    section_name, _, field_name = dotted.partition(".")
+    section = getattr(cfg, section_name, None)
+    value = getattr(section, field_name, None) if section is not None else None
+    return isinstance(value, dict)
+
+
+def _upstream_dirs(stage: str, cfg, upstream_map: dict) -> dict[str, Path | None]:
+    """Where each of this stage's upstream runs lives (3.4, 5.4).
+
+    A `same`-source upstream is keyed from this very setting, so it lives under this walk's own
+    root — under `<root>/debug/` for a `--debug` walk. A name-form reference is loaded by the
+    schema under this setting's own debug flag (owner ruling 9, 2026-09-24), so its key is the
+    one a walk of the referenced setting with the same flag produces, and its run lives under
+    this walk's own root as well: a `--debug` walk of cgen's eval finds the debug ctool eval, a
+    `--debug` inject finds both probes' debug train runs and the score probe's debug eval run. A
+    pinned `key:`/`dir:` reference carries a key whose payload holds its own debug flag, so the
+    root it lives under is the key's, not the walk's, and `schema.referenced_run_dir` tries both
+    roots.
+    """
+    by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
+    dirs: dict[str, Path | None] = {}
+    for name, key_val in upstream_map.items():
+        entry = by_name[name]
+        if entry["source"].startswith("ref:") and _reference_is_pinned(cfg, entry["source"]):
+            dirs[name] = schema.referenced_run_dir(entry["stage"], key_val)
+        else:
+            dirs[name] = schema.run_dir_of(entry["stage"], key_val, debug=cfg._debug)
+    return dirs
+
+
+def _refuse_missing_upstream(stage: str, upstream_map: dict, upstream_dirs: dict) -> None:
+    """5.4: refuse to start a stage whose referenced run has no done.json."""
+    by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
+    for name, target_dir in upstream_dirs.items():
+        if target_dir is None:
+            key_val = upstream_map[name]
+            candidates = " or ".join(
+                str(schema.run_dir_of(by_name[name]["stage"], key_val, debug=flag))
+                for flag in (False, True))
+            sys.exit(f"run.py: {stage}: upstream {name!r} is pinned to key {key_val}, which is "
+                     f"neither {candidates}; run it first")
+        if not (target_dir / "done.json").exists():
+            sys.exit(f"run.py: {stage}: upstream {name!r} at {target_dir} has no done.json; run it first")
+
+
+def _check_inject_probe_methods(cfg, upstream_dirs: dict) -> None:
+    """Errata '5.4 / 2.1': a key:/dir: reference's stated method must match the referenced train run's frozen probe.method."""
+    for field_name, ref_value, train_key_name in (
+        ("inject.probe_score", cfg.inject.probe_score, "probe_score.train"),
+        ("inject.probe_gen", cfg.inject.probe_gen, "probe_gen.train"),
+    ):
+        if not (isinstance(ref_value, dict) and "method" in ref_value):
+            continue
+        stated = ref_value["method"]
+        frozen = schema.load_frozen(upstream_dirs[train_key_name])
+        actual = frozen.probe.method if frozen.probe is not None else None
+        if actual != stated:
+            sys.exit(
+                f"run.py: {field_name}: stated method {stated!r}, the referenced train run's "
+                f"frozen probe.method is {actual!r}")
+
+
+def _check_inject_shared_build_key(upstream_dirs: dict) -> None:
+    """2.5: inject.probe_score and inject.probe_gen are refused unless their two train runs share a build key."""
+    score_build = schema.load_frozen(upstream_dirs["probe_score.train"])._upstream.get("build")
+    gen_build = schema.load_frozen(upstream_dirs["probe_gen.train"])._upstream.get("build")
+    if score_build != gen_build:
+        sys.exit(
+            f"run.py: inject refuses: probe_score's train run build key {score_build!r} != "
+            f"probe_gen's train run build key {gen_build!r}")
+
+
+def _resolve_inject_temperature(upstream_dirs: dict) -> dict:
+    """5.4: the softmax temperature is read from the referenced classifier eval's report and frozen under _resolved.probe_temperature."""
+    fields, _fires = probe_eval.read_report(upstream_dirs["probe_score.eval"])
+    return {"probe_temperature": fields["temperature"]}
+
+
+def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, era, upstream_map, diff):
+    """Spawn a build/eval/score process in place, inside the caller's lock hold: registry.open_runs()'s refusal first (2.5's launch gate, applied the same way jobs.launch.launch applies it for a card stage), then the process, its pid captured before the start row is appended (errata: 8.1 appends the start row inside the lock while its cpu piece entry carries a pid that exists only after the process starts)."""
+    open_rows = [r for r in registry.open_runs() if r.get("run_id") == run_id]
+    if open_rows:
+        meta_by_run = {run_id: _read_json(run_dir / "meta.json") or {}}
+        beats = {run_id: launch.read_beats_for_run(
+            run_dir, meta_by_run[run_id].get("pieces") or open_rows[0].get("pieces") or [])}
+        sessions = registry.live_sessions()
+        refusal = launch.gate_open_row(open_rows, meta_by_run, sessions, time.time(), beats)
+        if refusal is not None:
+            sys.exit(f"run.py: {refusal}")
+
+    python = _venvs_config()["probe"]
+    module = entry["program"]
+    argv_cmd = [python, "-m", module, "--run-dir", str(run_dir)]
+    # The heartbeat file the process is about to open, read before it starts
+    # (registry.current_beats), so no verdict reads a previous computation's rows as its own.
+    beat_launch = registry.next_beat_launch(run_dir, 0)
+    # The process writes straight to this process's file descriptors, while every line this
+    # walk printed so far may still sit in sys.stdout's buffer (a pipe or a file makes it
+    # block-buffered): flushing here puts those lines above the process's own output.
+    sys.stdout.flush()
+    proc = subprocess.Popen(argv_cmd, cwd=str(ROOT))
+    piece_entry = {
+        "index": 0, "kind": "cpu", "host": _this_host(), "gpus": "",
+        "session": None, "pid": proc.pid, "log": None, "port": None,
+        "endpoint_file": None, "agent_replica": None, "beat_launch": beat_launch,
+        "venv": "probe", "cmd": " ".join(argv_cmd),
+    }
+    start_row = {
+        "ev": "start", "t": _now(), "run_id": run_id, "stage": stage, "key": key,
+        "dir": str(run_dir), "workflow": cfg._file, "setting": cfg._name,
+        "parent": None, "swept": None, "debug": cfg._debug,
+        "upstream": upstream_map, "era": era, "diff": diff,
+        "overrides": dict(cfg._overrides),
+        "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
+        "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
+        "host": _this_host(), "pieces": [piece_entry], "status": "launching",
+    }
+    registry.append_start(start_row)
+    launches_entry = {
+        "t": _now(), "host": _this_host(), "commit": git["commit"], "branch": git["branch"],
+        "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
+        "cards": {}, "pieces": [0], "cmd": {"0": piece_entry["cmd"]},
+        "code": launch.code_blobs(schema.code_files(stage, cfg)),
+    }
+    registry.write_meta(run_dir, pieces=[piece_entry], launches=[launches_entry])
+    return proc
+
+
+def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -> str:
+    """One stage of the walk (2.3-2.5, 8.1-8.2): the skip test, the partial-piece check, the launch. Prints one line naming the outcome and returns it: 'continue' for a reused stage or a CPU stage that finished, 'stop' for a card launch or a live piece, 'failed' for a CPU stage that exited non-zero."""
+    key = schema.key(stage, cfg)
+    run_dir = schema.run_dir(stage, cfg)
+    run_id = f"{stage}-{key}"
+    entry = schema.STAGES[stage]
+    done_path = run_dir / "done.json"
+
+    pairs: list[tuple[str, int]] | None = None
+    if stage in ("sample", "inject"):
+        section = cfg.inject if stage == "inject" else cfg.sample
+        env = open_env(cfg.data.env)
+        triples = requested_pairs(env, section.split, section.tasks, section.n_tasks, section.seeds)
+        pairs = [(task_id, seed) for _split, task_id, seed in triples]
+        done = trajectory_record.done_pairs(run_dir, pairs)
+        fully_done = len(done) == len(pairs)
+    elif stage in ALWAYS_RECOMPUTE:
+        fully_done = False
+    else:
+        fully_done = done_path.exists()
+
+    if fully_done:
+        _refuse_on_stale_inputs(stage, run_dir)
+        _refuse_moved_code(stage, run_dir, {})
+        _record_owner(run_dir, cfg)
+        done_doc = _read_json(done_path)
+        # A pair stage is certified by the request its done.json records, every other stage by
+        # the presence of that file, which is what the skip test above already read (2.3).
+        if stage in ("sample", "inject"):
+            certified = _certifies_request(done_doc, pairs)
+        else:
+            certified = True
+        if certified:
+            _fold_stage_extra(run_dir, done_doc or {})
+            _backfill_finish_row(run_id, run_dir)
+            print(f"run.py: reused {run_id} ({run_dir})")
+        else:
+            _finalize_pair_stage(stage, run_dir, key, pairs)
+            _print_ok(run_id, run_dir, _read_json(done_path) or {})
+        return "continue"
+
+    meta = _read_json(run_dir / "meta.json") or {}
+    work_pieces = [p for p in (meta.get("pieces") or []) if p.get("kind") in ("loop", "train")]
+    if entry["cards"] and work_pieces:
+        sessions = registry.live_sessions()
+        if stage in ("sample", "inject"):
+            # release() only deletes a claim whose owner session is not in `sessions`
+            # (data/trajectory_record.py), so this always runs, whether or not any of
+            # this run's own pieces are still alive: a live piece's own claims are
+            # untouched, and a fully-dead run's stale claims are freed so the relaunch
+            # below can re-claim them instead of skipping them forever. The claims are
+            # the pair stages' own machinery and mean nothing for train.
+            released = trajectory_record.release(
+                run_dir, sessions, registry.DEFAULTS["launch_timeout_s"])
+            if released:
+                print(f"run.py: released {len(released)} dead claim(s) under {run_dir}")
+        # 2.3/2.4: every card stage refuses to launch beside a piece that is still alive,
+        # train included. The launch gate of 2.5 covers this while the run is open; a run
+        # that a launch_failed finish row closed while its piece kept running (8.1) is out
+        # of open_runs, and this test is what stands between that piece and a second one
+        # writing into the same directory and onto the same card.
+        if any(launch.piece_alive(p, sessions) for p in work_pieces):
+            print(f"run.py: {run_dir} has a live piece; launching nothing")
+            return "stop"
+
+    upstream_map = schema.upstream(stage, cfg)
+    upstream_dirs = _upstream_dirs(stage, cfg, upstream_map)
+    _refuse_missing_upstream(stage, upstream_map, upstream_dirs)
+    _refuse_moved_code(stage, run_dir, upstream_dirs)
+    resolved: dict = {}
+    if stage == "inject":
+        _check_inject_probe_methods(cfg, upstream_dirs)
+        _check_inject_shared_build_key(upstream_dirs)
+        resolved = _resolve_inject_temperature(upstream_dirs)
+
+    proc = None
+    with registry.lock():
+        git = launch.git_state(run_dir, allow_dirty)
+        schema.freeze(cfg, stage, run_dir, resolved, git["commit"])
+        era = schema.era_of(stage)
+        diff = schema.fields_of(stage, cfg)
+        # `owners` holds every setting that has run into or reused this directory (8.3), and a
+        # stage that always recomputes never takes the skip that records one, so a launch
+        # records its own setting here.
+        registry.write_meta(run_dir, stage=stage, key=key, dir=str(run_dir), era=era,
+                             upstream=upstream_map, diff=diff, debug=cfg._debug,
+                             overrides=dict(cfg._overrides), owners=_owners_with(run_dir, cfg))
+
+        # A CPU stage starts its process inside the hold: its start row carries the pid, which
+        # exists only once the process runs (errata, 8.1). A card stage's launch takes the hold
+        # itself for the gate, the reservation and its start row (8.1) and must not be called
+        # inside this one: 8.6 releases the lock before any tmux session starts, and holding it
+        # across the two waves and their alive checks blocks every other run.py on the machine
+        # for as long as the alive check runs.
+        if not entry["cards"]:
+            proc = _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, era,
+                                     upstream_map, diff)
+
+    if entry["cards"]:
+        outcome, pieces = launch.launch(stage, cfg, run_dir, resolved, git, cards)
+        if cards is not None:
+            # One call may launch several settings on one pool: the cards this launch holds
+            # leave the pool, so the next launch claims from what is left of it.
+            launch.remove_claimed(cards, pieces)
+        if outcome != "up":
+            ended = [p["session"] for p in pieces if p.get("ended")]
+            print(f"run.py: {run_id}: launch returned {outcome}; ended {ended}")
+            with registry.lock():
+                registry.append_finish(run_id, {
+                    "ev": "finish", "t": _now(), "run_id": run_id, "status": "launch_failed",
+                    "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
+            return "stop"
+        # `ls` shows the debug root's runs only under `--debug`, so the printed line carries the
+        # flag exactly when this walk ran with it.
+        debug_flag = " --debug" if cfg._debug else ""
+        print(f"run.py: launched {run_id}; monitor with `run.py ls {cfg._file}{debug_flag}`")
+        return "stop"
+
+    rc = proc.wait()
+    if rc != 0:
+        with registry.lock():
+            registry.append_finish(run_id, {
+                "ev": "finish", "t": _now(), "run_id": run_id, "status": "failed",
+                "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
+        # A CPU stage's process writes to this terminal and to no log file, so its own output
+        # (the traceback of a refusal) is the lines printed just above this one.
+        print(f"run.py: {run_id} failed (exit {rc}); its output is above; run directory {run_dir}")
+        return "failed"
+    done = _read_json(done_path) or {}
+    _fold_stage_extra(run_dir, done)
+    registry.append_finish(run_id, {
+        "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
+        "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
+        "report": done.get("report"), "elapsed_s": _elapsed(run_id)})
+    _print_ok(run_id, run_dir, done)
+    return "continue"
+
+
+# ---------------------------------------------------------------------------
+# main.
+# ---------------------------------------------------------------------------
+
+def cmd_version(rest: list[str]) -> int:
+    """Append one row per named stage to jobs/versions.yaml, the code-era table (3.3).
+
+    `version <stage> [<stage> ...] --why "<sentence>"` appends an era row per stage: its era goes
+    up by one, so every later run of it, and of every stage downstream of it, lands in a new
+    directory. `version <stage> [...] --same --from <commit> --why "<sentence>"` appends a same
+    row per stage: the stage's code files as HEAD holds them produce what they produced at
+    `--from`, the launch commit the code gate printed and the diff was read against; the gate
+    chains such rows from a directory's launch copy to the working tree's copy. A same row
+    needs a committed tree (the ledger files and this table aside), because the commit it names
+    must hold the code it judges. Either row is committed before the next launch.
+    """
+    same = "--same" in rest
+    why = None
+    from_commit = None
+    stages: list[str] = []
+    it = iter(rest)
+    for tok in it:
+        if tok == "--same":
+            continue
+        if tok == "--why":
+            why = next(it, None)
+        elif tok == "--from":
+            from_commit = next(it, None)
+        else:
+            stages.append(tok)
+    usage = ('run.py version: usage: run.py version <stage> [<stage> ...] [--same --from <commit>] '
+             '--why "<one sentence>"')
+    if not stages or not why or not why.strip() or (same != (from_commit is not None)):
+        sys.exit(usage)
+    for stage in stages:
+        if stage not in schema.STAGES:
+            sys.exit(f"run.py version: {stage!r} is not a stage; the stages are {', '.join(schema.STAGES)}")
+    head = None
+    if same:
+        try:
+            status = _git("status", "--porcelain")
+            dirty = sorted({line[3:] for line in status.splitlines()
+                            if line.strip() and not launch.is_ledger_path(line[3:])
+                            and line[3:] != "jobs/versions.yaml"})
+            head = _git("rev-parse", "HEAD").strip()
+            from_commit = _git("rev-parse", "--verify", f"{from_commit}^{{commit}}").strip()
+        except RuntimeError as ex:
+            sys.exit(f"run.py version: git failed: {ex}")
+        if dirty:
+            sys.exit("run.py version: a same row names HEAD, so the tree must be committed first; "
+                     f"uncommitted: {', '.join(dirty)}")
+    rows = []
+    for stage in stages:
+        era = schema.era_of(stage)
+        row: dict = {"stage": stage, "era": era if same else era + 1}
+        if same:
+            row["from"] = from_commit
+            row["same"] = head
+        row["date"] = date.today()               # dumped unquoted, the way a hand-written row reads
+        row["why"] = why.strip()
+        rows.append(row)
+    text = yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=100)
+    table = schema.VERSIONS_TABLE
+    existing = table.read_text() if table.exists() else ""
+    with open(table, "a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(text)
+    schema.versions_table()                      # the file must still read as a table
+    sys.stdout.write(text)
+    eras = ", ".join(f"{row['stage']} era {row['era']}" for row in rows)
+    print(f"run.py version: appended to jobs/versions.yaml; commit it before launching ({eras})")
+    return 0
+
+
+_SUBCOMMANDS = {
+    "ls": cmd_ls,
+    "where": cmd_where,
+    "find": cmd_find,
+    "kill": cmd_kill,
+    "refire": cmd_refire,
+    "retry": cmd_retry,
+    "table": cmd_table,
+    "free": cmd_free,
+    "sync": cmd_sync,
+    "version": cmd_version,
+    "selfcheck": cmd_selfcheck,
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:]) if argv is None else list(argv)
+    if not argv or argv[0] in ("-h", "--help"):
+        sys.stdout.write(_usage_text())
+        return 0
+
     cmd, rest = argv[0], argv[1:]
-    if cmd == "list":
-        return cmd_list(rest)
-    if cmd == "show":
-        return cmd_show(rest)
-    if cmd == "recipes":
-        return cmd_recipes()
-    if cmd == "recipe":
-        if not rest:
-            raise SystemExit("recipe needs a recipe name (see run.py recipes for the list)")
-        return run_recipe(rest[0], rest[1:])
-    if cmd == "status":
-        return cmd_status(rest)
-    if cmd == "selfcheck":
-        return cmd_selfcheck()
-    if cmd == "launch":
-        sys.path.insert(0, str(ROOT / "ops"))
-        from launch_cmd import cmd_launch
-        return cmd_launch(rest)
-    t = TASKS.get(cmd)
-    if t is None:
-        raise SystemExit(f"unrecognized: {cmd} (see run.py list for tasks, run.py recipes for recipes)")
-    if t.get("handoff", t.get("gpu", False)):
-        return print_handoff(cmd, t, rest)
-    if gate_of(t):
-        # Letting --dry-run through and stripping --allow-dirty both happen inside gate_dirty; short-
-        # circuiting at this layer would leak --allow-dirty as-is to the underlying script (which does
-        # not recognize this flag).
-        # This path really executes (launch-probe/launch-eval do their own ssh+tmux), so honor_dry
-        # stays True: their --dry-run genuinely does not launch
-        rest = gate_dirty(rest)
-    return run_direct(cmd, t, rest)
+    # selfcheck reads only the source tree and runs after every edit, so it runs in place.
+    if cmd != "selfcheck":
+        forwarded = _forward_to_login_host(argv)
+        if forwarded is not None:
+            return forwarded
+    if cmd in _SUBCOMMANDS:
+        return _SUBCOMMANDS[cmd](rest)
+    return cmd_walk(cmd, rest)
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())

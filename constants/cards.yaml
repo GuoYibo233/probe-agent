@@ -1,0 +1,61 @@
+# The cluster's cards: one entry per host, with its name, its alias where the
+# machine answers `hostname` with another name, and one `cards:` entry per card
+# index (the list position is the index nvidia-smi gives), each carrying the
+# card's model and its memory in GiB (the MiB total nvidia-smi reports, divided
+# by 1024 and rounded down to an integer: 49140 MiB -> 47, 95830 MiB -> 93,
+# 143771 MiB -> 140).
+#
+# Locations and hardware facts only; nothing here enters a key. This file is the
+# one source for the code (how many cards a host has: the length of its `cards:`
+# list; how large each card is: `memory_gib`, which placement compares against
+# the card size a piece was declared for) and for people and agents picking
+# cards. Update it when a machine's cards change, measured with
+# `nvidia-smi --query-gpu=index,name,memory.total`.
+
+hosts:
+  # tokyo105 (answers `shiga`): 8 x NVIDIA RTX A6000, 49140 MiB each; driver 575.64.03; measured 2026-09-17
+  - name: tokyo105
+    alias: shiga
+    cards:
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 0
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 1
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 2
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 3
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 4
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 5
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 6
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 7
+
+  # tokyo106: 10 x NVIDIA RTX A6000, 49140 MiB each; driver 535.230.02; measured 2026-09-17
+  - name: tokyo106
+    cards:
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 0
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 1
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 2
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 3
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 4
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 5
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 6
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 7
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 8
+      - {model: NVIDIA RTX A6000, memory_gib: 47}   # 9
+
+  # tokyo107: 4 x NVIDIA RTX 6000 Ada Generation, 49140 MiB each; driver 535.113.01; measured 2026-09-17
+  - name: tokyo107
+    cards:
+      - {model: NVIDIA RTX 6000 Ada Generation, memory_gib: 47}   # 0
+      - {model: NVIDIA RTX 6000 Ada Generation, memory_gib: 47}   # 1
+      - {model: NVIDIA RTX 6000 Ada Generation, memory_gib: 47}   # 2
+      - {model: NVIDIA RTX 6000 Ada Generation, memory_gib: 47}   # 3
+
+  # tokyo108 (answers `saitama`): cards 0-2 = 3 x NVIDIA H100 NVL, 95830 MiB each;
+  # cards 3-5 = 3 x NVIDIA H200 NVL, 143771 MiB each; driver 570.195.03; measured 2026-09-17
+  - name: tokyo108
+    alias: saitama
+    cards:
+      - {model: NVIDIA H100 NVL, memory_gib: 93}    # 0
+      - {model: NVIDIA H100 NVL, memory_gib: 93}    # 1
+      - {model: NVIDIA H100 NVL, memory_gib: 93}    # 2
+      - {model: NVIDIA H200 NVL, memory_gib: 140}   # 3
+      - {model: NVIDIA H200 NVL, memory_gib: 140}   # 4
+      - {model: NVIDIA H200 NVL, memory_gib: 140}   # 5

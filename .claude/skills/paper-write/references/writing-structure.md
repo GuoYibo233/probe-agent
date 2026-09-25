@@ -1,8 +1,8 @@
 # Writing-structure checklist (adapted from Master-cai/Research-Paper-Writing-Skills)
 
-> The source repo is already cloned at `related_work/Research-Paper-Writing-Skills/`;
-> this file only keeps the three load-bearing pieces; model examples and the guides for other sections
-> are at the paths below, use them as needed.
+> Clone the source repo to `related_work/Research-Paper-Writing-Skills/` the first time a
+> section guide in part IV is needed (the clone is not in git); this file keeps the three
+> load-bearing pieces, and the guides for the other sections are at the paths in part IV.
 
 ## I. Before drafting the introduction: work backward through seven questions
 

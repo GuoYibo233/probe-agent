@@ -1,0 +1,107 @@
+{
+ "workflow": "ticket-wave",
+ "run_id": "wf_4ba61003-25f",
+ "agents": 12,
+ "result": {
+  "feature": "from-zero",
+  "wave": "2026-09-18-wave4",
+  "tickets": [
+   {
+    "id": "10",
+    "status": "DONE",
+    "branch": "ticket/2026-09-18-wave4/T10",
+    "commits": {
+     "base": "46f5375253f01e92f94432038ff5e552cd7439cd",
+     "head": "32e8c48"
+    },
+    "rounds": 1,
+    "openFindings": [],
+    "minors": [
+     {
+      "id": "F3",
+      "severity": "minor",
+      "title": "usage_out_sum is computed but never used",
+      "detail": "eval/score_run.py: `_finals` (lines 56, 62, 68) computes `usage_out_sum` (`sum(gen.usage.out)` per record), which ticket 10 step 8 lists as one of the four per-record sums to compute (alongside n_inject, discard.chars, discard.tokens). Unlike the other three sums, `usage_out_sum` is never read anywhere afterward - `_run_block`'s `tokens_out` field and `_paired_block`'s `tokens_out`/`base_tokens_out` all read `final.tokens_out` directly instead (also a legitimate per-record column per contract 1.1). The computed column is dead weight; not a correctness problem, but worth removing or wiring up.",
+      "file": "eval/score_run.py"
+     },
+     {
+      "id": "T10-RR1",
+      "severity": "minor",
+      "title": "F1's fix adds a redundant full _run_block(rec) pass",
+      "detail": "eval/score_run.py line 179: metric_names = [k for k in _run_block(rec) if k not in (\"n_records\", \"n_abort\")] calls _run_block a second time on the whole (unfiltered) rec frame purely to read off its key names; the per-seed loop just above already computed one _run_block result per seed that has the identical key set, so before the fix no extra work was needed to get metric_names (next(iter(per_seed.values())) was free). Now, whenever rec is non-empty, _by_seed_block does one full extra sum/mean pass over all records (sums, means over every column) whose result is discarded except for its keys. This is correctness-neutral (verified: _run_block's key set is identical for n==0 and n>0) and only adds a bounded single extra O(n) pass per score_run invocation, not a repeated or O(n^2) cost, so it is a minor efficiency regression rather than a functional bug.",
+      "file": "eval/score_run.py"
+     }
+    ],
+    "cannotVerify": [
+     "M-E2 and M-E3 (a real classifier eval + generator eval over an actual train_probe run, and a real score run over an actual inject run and its baseline) are explicitly marked in the ticket as GPU/main-session work, not the implementer's, and cannot be checked from this diff alone.",
+     "The wave-4 precheck's own open question (ticket Comments, second entry): M-E2 as written cannot show an eval row through eval.method_table.table() because that function is pinned to registry.ls(..., debug=False) while an M-E2 --debug walk's start row carries debug: true. This is already flagged in the ticket as an unresolved design question left to the owner, not something this diff can resolve or that the implementer got wrong.",
+     "run.py selfcheck's checks that reference this ticket's files (PROBE_KIND equality between eval/methods/<m>.py and train/methods/<m>.py, the README annotation lines against the real import graph, the VERSION-literal scan) cannot be run because run.py does not exist yet on this branch; the ticket itself defers these to ticket 15.",
+     "eval/score_run.py's tool_agree/call_agree fallback when either spec.gen_call or env.action fails to parse (the implementer defaults both to False) is not specified by the ticket text, which only describes the happy path, and no acceptance fixture (A8's fixture writes no spec rows) exercises it. This needs the ticket owner's ruling, not a diff-only check.",
+     "eval/score_run.py's _by_seed_block spread for exactly one seed (implementer hard-codes 0.0; a sample standard deviation is undefined at n=1) is likewise unpinned by the ticket and untested by any single-seed acceptance fixture beyond the n_records assertion; needs an owner ruling on the intended convention, independent of the StopIteration bug (F1) for zero seeds."
+    ],
+    "concerns": [
+     "eval/method_table.py's 'n' column is formatted as an integer (bare value or 1-decimal mean±spread) rather than the 4-decimal rate format used for the other columns; the ticket does not pin this and A9 runs over an empty registry so it is untested.",
+     "eval/score_run.py's spec block defaults tool_agree/call_agree to False when either spec.gen_call or env.action fails to parse via env.split_args; the ticket describes only the happy path and no acceptance fixture writes spec rows, so this fallback is unverified.",
+     "eval/score_run.py's by_seed block reports spread=0.0 for a group with exactly one seed (sample standard deviation is undefined at n=1); A8's own fixture has one seed and does not assert the mean/spread sub-blocks."
+    ]
+   },
+   {
+    "id": "11",
+    "status": "DONE",
+    "branch": "ticket/2026-09-18-wave4/T11",
+    "commits": {
+     "base": "46f5375253f01e92f94432038ff5e552cd7439cd",
+     "head": "c26f0f78a54796cb511d7487f41db826b4239c23"
+    },
+    "rounds": 1,
+    "openFindings": [],
+    "minors": [],
+    "cannotVerify": [
+     "The M-A1..M-A4 GPU/live acceptance items in the ticket (a --debug sample walk against real vLLM + probe services, an inject walk producing spec rows with a low theta, the arm comparison, the resume/identical account under probe_nofill) are explicitly marked 'GPU / main session -- not yours' in the ticket and require a running vLLM + probe stack; they cannot be checked from a static diff review.",
+     "The 'Selfcheck lines that apply later' section (run.py selfcheck comparing agent/inject_format.py's FORMATS keys against schema.AXES['inject.format'], agent/inject.py's ARMS against schema.AXES['inject.arm'], the VERSION-at-column-zero check, and the README annotation-vs-import-graph check) needs ticket 15's run.py, which does not exist yet on this branch (the implementer's report confirms this and skipped it per the implementer protocol); it needs a later ticket to verify.",
+     "Whether the wrong resend prompt (F1) also breaks find_head's decode-vs-stream consistency check in a live run, rather than just the C4/C5 stub scenario, can only be confirmed against a real vLLM server and tokenizer, since the stub clients in the acceptance fixtures are exact inverses of each other by construction and cannot exercise a real tokenizer round-trip."
+    ],
+    "concerns": [
+     "spec.gen_call is stored as the RAW clients.probe.generate(...)['call'] value rather than the value after env.complete_call(), since contracts 1.1 defines gen_call as 'the call the generation probe wrote' while exec_code (from env.speculate) is 'the call as executed after requoting' -- the ticket's own pseudocode reuses one variable name across both steps, which would conflate the two. C4's fixture can't distinguish them (complete_call is identity there), so this is a judgment call favoring contracts over the ticket's literal code, per the implementer protocol.",
+     "Clients.agent is typed as the concrete agent_models.service.Client class (imported as AgentClient) rather than 'object' as the ticket's literal code snippet shows, to match contracts 7.3 (only probe is called out as generically object) and 0.2's tree line for generate.py (which lists models/agent_models/service.py as an import). No acceptance command checks the field's type annotation.",
+     "A pre-existing, unrelated /tmp/jobs.py (82KB, dated 2026-08-02, references a 'harbor' package) shadows the repo's jobs/ package whenever sys.path.insert(0, \"/tmp\") runs, breaking `import agent.loop` before any of this ticket's code executes. Worked around by writing the D-fixture to /tmp/T11_loopfix/loopfix.py instead of bare /tmp/loopfix.py; flagging this for the main session since any other ticket's acceptance commands that insert bare /tmp onto sys.path will hit the same collision.",
+     "env.complete_call() returning None (an unbalanced probe call) is not specially guarded in agent/inject.py before being passed to env.speculate(); the ticket does not ask for this guard and no acceptance command exercises it (that failure mode is named as the environment's own concern in the errata)."
+    ]
+   },
+   {
+    "id": "12",
+    "status": "DONE",
+    "branch": "ticket/2026-09-18-wave4/T12",
+    "commits": {
+     "base": "46f5375253f01e92f94432038ff5e552cd7439cd",
+     "head": "0c4063d"
+    },
+    "rounds": 1,
+    "openFindings": [],
+    "minors": [
+     {
+      "id": "F3",
+      "severity": "minor",
+      "title": "refire()'s service-piece card-relocation branch can never run: the frozen-command regex only matches a loop/train shape",
+      "detail": "jobs/launch.py's refire() (around line 917-934) computes a `placement_kind` of 'service_agent' or 'service_probe' when the target piece's kind is 'service', anticipating that refire can relocate a dead service piece's cards. But `_parse_piece_cmd` (line 879-883) uses `_PIECE_CMD_RE`, which requires the shape `-m <module> --run-dir <dir>[ --piece i/n] 2>&1 | tee -a <log>` — the shape only `piece_command()` produces. A service piece's frozen `cmd` is built by `_agent_service_cmd`/`_probe_service_cmd`, whose shape is `-m <module> serve --run-dir <dir> --model/--agent-model ... [flags] 2>&1 | tee -a <log>` and never matches that regex (verified: `_PIECE_CMD_RE.search()` returns None on a representative agent-service command string). So any attempt to refire a service piece will always hit `_parse_piece_cmd`'s `sys.exit('could not parse the frozen command...')` before the service-aware placement logic above it is ever reached, making that branch dead code. This is a fail-loud refusal rather than silent corruption, and the ticket's own prose ('the service pieces are reused') suggests refire is meant for loop/train pieces in practice, so this is a quality/consistency issue rather than a reachable functional bug.",
+      "file": "jobs/launch.py"
+     }
+    ],
+    "cannotVerify": [
+     "The tmux session-name convention ('the session name must be spelled exactly as agent/loop.py spells meta.owner_session: f\"{stage}-{key}-{piece}\"') cannot be checked because agent/loop.py does not exist yet in this diff or on this branch; jobs/launch.py uses the piece's global index (its position across the whole piece_plan, loop pieces included) as <piece> in the session name, which is a plausible but unverified reading.",
+     "The 7.4 attach test's exact `claims` dict shape (jobs/launch.py compares role, family, weights, dtype, quantization, max_model_len, served_model_name, env_result, extra_flags against setting.models.agent_row) cannot be confirmed against models/agent_models/service.py's actual echoed `claims` field names; ticket 07 pins the service's own echo format and the implementer's self-review already flags this as unverified against ticket 07's real source.",
+     "Whether jobs/launch.py should import and call data/trajectory_record.py's `done_pairs` and/or `owner`/`is_done` directly (as the ticket's own header 'imports:' line states) or only `release` (as implemented, and as the ticket's detailed 'Behaviour' section explicitly pins for refire) cannot be resolved from this diff alone: contracts.md 2.3 groups 'jobs/launch.py' and 'run.py' under one shared parenthetical listing of all four names, and run.py (a later ticket) has not been built yet to show which of the two files actually needs done_pairs/owner/is_done.",
+     "refire()'s card-relocation rule (re-deriving cards_needed from the old piece's gpus string and calling place() with prefer_host = the old host) is the implementer's own interpretation; contracts.md states only that a refire 'probes the cards again... and restarts the piece... a refire may relocate a piece' without pinning the exact re-placement algorithm, and there is no acceptance test in this ticket that exercises a real relocation.",
+     "Whether launch()'s attach search (_find_attach_target, run inside the same lock hold that just cleared this run_id via the launch gate's 'observed dead' allowance) could match a stale service_agent_*.json file left by this same run_id's own earlier, now-dead launch — producing an attach-only piece pointed at a server that is not actually alive — cannot be verified without run.py's relaunch/skip-test workflow (a different, not-yet-built ticket), which governs when launch() is re-invoked on a run_id whose previous row was allowed through the gate as 'observed dead'.",
+     "The GPU/tmux scenarios M-J3 through M-J8 (the real launch order and piece composition of a debug walk, the service_check gate under a failing <|end|> fixture, a live refire, two runs sharing a vLLM server, and the launch-gate race between two run.py calls a second apart) are explicitly out of scope for this ticket's own acceptance section and require a GPU/tmux session neither the implementer nor this review may start; they remain unverified by any acceptance evidence in this diff."
+    ],
+    "concerns": [
+     "launch()'s piece-construction, the two service command builders, the 7.4 attach-search match key, and refire()'s card-relocation/command-reconstruction logic are NOT exercised by any acceptance command in this ticket (they require a GPU/tmux, explicitly out of scope per the ticket's 'GPU / main session — not yours' list). Implemented as faithfully as possible against contracts 7.1/7.2/7.4/3.4/2.3/8.1, but they carry more inference than the tested functions; details and specific open questions are in the report's self-review section.",
+     "The start row's parent/swept fields are always written as None: the Setting dataclass exposes no _parent/_swept attribute and launch()'s pinned signature takes no such parameter, so there is no visible channel for sweep-child metadata to reach the registry from this file.",
+     "refire()'s reconstructed piece command parses the module/piece-index/log fields back out of the frozen cmd string via a regex matched to piece_command()'s own output shape; works for anything this file itself launched, but is a self-review-flagged assumption, not something the contracts state directly.",
+     "The 7.4 attach test's match key (which fields of a candidate service_agent_*.json's claims to compare) is my reading of ticket 07's errata; I have not seen ticket 07's actual models/agent_models/service.py to confirm the claims field names line up exactly."
+    ]
+   }
+  ]
+ }
+}

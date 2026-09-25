@@ -1,0 +1,22 @@
+{
+  "wave": "2026-09-18-wave5",
+  "tickets": ["13", "14"],
+  "checked_at_head": "78e9260",
+  "session": "new1-97 (main session of wave 5; fork3's hand-off to fork4 never arrived, fork4 is offline)",
+  "prerequisite": {
+    "what": "gyb's VERSION_HISTORY ruling (errata '3.3 / 8.6'): both tickets' Comments depend on it (ticket 13 copies the rule block and the table literal from a merged file; ticket 14's ls 'behind' flag reads the tables through schema.py).",
+    "state_found": "fork1's workflow implemented it on 2026-09-18 02:03-02:09 in worktree new1-wt/2026-09-18-version-history-r0 on branch owner/2026-09-18-version-history (base 729f0a1, before the eval/methods fold); proofs P1-P5 passed in the agent transcript; the session ended before P6, the report, the commit and the review. 24 files were left modified and uncommitted.",
+    "action": "committed as 52e919f on that branch, rebased onto 78e9260 as 7f49854 (conflicts: eval/methods/{ctool,cgen,cparam}.py deleted by the fold, dropped; schema.py's versions_of docstring merged and _key_versions taught the fold's '<path>#<TABLE>.<method>' entry spelling, which folds the table value itself). Keys of every keyable stage of every setting file equal HEAD's. Finish-and-review workflow wf_857237db-f32 (opus finisher, opus adversarial reviewer, fix loop capped at 3) runs before this wave launches; its record is version-history-report.md in this directory. Merged before the wave's status flip."
+  },
+  "contradictions": [],
+  "import_check": {
+    "ticket_13": "schema.load_frozen/run_dir_of, registry.beat/write_done, base.load(row, cfg, *, probe_kind, n_labels, labels, ckpt_dir), models.probe, training_data.read, probe_output.write, probe_eval.PROBE_KIND/MATCH_VERSION/match_ctool/match_cgen/match_cparam, open_env: all present on 78e9260",
+    "ticket_14": "schema.load/load_frozen/freeze/key/run_dir/run_dir_of/upstream/module_version, launch.launch/git_state/refire/teardown_services, registry.lock/write_meta/write_done/open_runs/find/live_sessions/free/ls/kill/sync/DEFAULTS, trajectory_record.done_pairs/is_done/owner/release, environments.open_env/requested_pairs, probe_eval.read_report, method_table.table: all present on 78e9260"
+  },
+  "counts": {
+    "python_files_on_disk_without_run_py": 26,
+    "expected_after_ticket_14": 27,
+    "settings_files": ["baseline.yaml", "debug.yaml", "inject.yaml", "train_probe.yaml"]
+  },
+  "readme_merge_rule": "ticket 14's README.md is taken wholesale at the merge; ticket 13's four annotation blocks are discarded after a diff against ticket 14's copy (ticket 13's own note)."
+}

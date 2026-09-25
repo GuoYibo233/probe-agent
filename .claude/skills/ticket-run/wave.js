@@ -15,9 +15,9 @@ export const meta = {
 // (implement -> review -> fix rounds); all changes land on the ticket/<wave>/T<id> branch,
 // the worktree is built under <repo>-wt/ next to the repo, and the agent deletes it when done. Nobody touches the main repo's worktree.
 //
-// Model is hardcoded: sonnet for implement/review/fix rounds 1-3, opus for fix rounds 4-5.
+// Model is hardcoded to opus for every role (gyb, 2026-09-23: new1 subagents are opus, never sonnet).
 // Never omit model -- omitting it inherits the main session's Fable, which hits the subagent-no-Fable hard rule.
-const M = { impl: 'sonnet', review: 'sonnet', escalate: 'opus' }
+const M = { impl: 'opus', review: 'opus', escalate: 'opus' }
 const MAX_ROUNDS = 5
 
 const FINDING = {
@@ -99,7 +99,7 @@ const implPrompt = (t, report) =>
   `then run git worktree add ${wtPath(t, '')} -b ${branchOf(t)} to create your own worktree and branch, ` +
   `all changes, tests, and commits happen only in this worktree; do not touch a single file in the main repo's worktree. ` +
   `Create and enter the worktree only with git commands in Bash (later commands carry the worktree's absolute path or use git -C); ` +
-  `calling the EnterWorktree tool is forbidden -- calling it from a subagent hangs and never returns (it happened once each in wave3 and wave9). ` +
+  `calling the EnterWorktree tool is forbidden -- from a subagent it hangs and never returns. ` +
   `At the end, commit everything in the worktree cleanly, then run git worktree remove ${wtPath(t, '')}; keep the branch.\n` +
   `Write the full report to ${report} (an absolute path in the main repo; write it there directly). Prefix commit messages with T${t.id}:.\n` +
   `Return the structured fields (status/base/head/testSummary/concerns/reason).`
