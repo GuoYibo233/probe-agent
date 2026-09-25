@@ -2073,6 +2073,10 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     # The heartbeat file the process is about to open, read before it starts
     # (registry.current_beats), so no verdict reads a previous computation's rows as its own.
     beat_launch = registry.next_beat_launch(run_dir, 0)
+    # The process writes straight to this process's file descriptors, while every line this
+    # walk printed so far may still sit in sys.stdout's buffer (a pipe or a file makes it
+    # block-buffered): flushing here puts those lines above the process's own output.
+    sys.stdout.flush()
     proc = subprocess.Popen(argv_cmd, cwd=str(ROOT))
     piece_entry = {
         "index": 0, "kind": "cpu", "host": _this_host(), "gpus": "",
