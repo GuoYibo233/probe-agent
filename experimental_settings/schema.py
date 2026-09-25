@@ -777,7 +777,8 @@ def _check_raw_sections(workflow: list[str], common: dict, named: dict, base_nam
     for d in (common, named):
         if "probe" in d:
             _refuse_probe_under_inject(workflow, "probe")
-        if "probe" in d.get("models", {}):
+        models = d.get("models", {})
+        if isinstance(models, dict) and "probe" in models:   # a models: that is no mapping is refused by _apply_fields
             _refuse_probe_under_inject(workflow, "models.probe")
 
 
