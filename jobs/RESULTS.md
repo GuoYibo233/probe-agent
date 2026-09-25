@@ -7,7 +7,10 @@
 | `inject-210ff860f998` | 2026-09-25 10:59 | inject | inject/no_probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | - | - |
 | `score-4586e0cdeba8` | 2026-09-25 10:59 | score | inject/probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
 | `inject-583c0e97913c` | 2026-09-25 10:52 | inject | inject/probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | - | - |
-| `train-a956d422f5a0` | 2026-09-25 02:08 | train | train_probe/cparam_qwen3_0pt6b | `f2d87ea` | launching | - | - |
+| `score-d9c7d1427666` | 2026-09-25 02:53 | score | inject/probe_p1_e1_theta_0pt80 | `72aa81c` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
+| `eval-f3f1719bd3a3` | 2026-09-25 02:47 | eval | train_probe/cparam_qwen3_0pt6b | `73cea3e` | ok | - | report.md |
+| `inject-dfd404c89e8e` | 2026-09-25 02:46 | inject | inject/probe_p1_e1_theta_0pt80 | `73cea3e` | ok | - | - |
+| `train-a956d422f5a0` | 2026-09-25 02:08 | train | train_probe/cparam_qwen3_0pt6b | `f2d87ea` | ok | objective=0.546875 val_ce=4.247193217277527 val_params_all_ok=0.453125 gen_n=64 | - |
 | `eval-0c15d71d5727` | 2026-09-25 01:43 | eval | train_probe/cgen_qwen3_0pt6b | `f2d87ea` | failed | - | - |
 | `eval-b27cc9c67906` | 2026-09-25 01:43 | eval | train_probe/cparam_qwen3_0pt6b | `f2d87ea` | failed | - | - |
 | `eval-5f5a8f4f96f6` | 2026-09-25 01:42 | eval | train_probe/ctool_qwen3_0pt6b | `f2d87ea` | ok | - | report.md |
@@ -24,7 +27,6 @@
 | `inject-453a69cafd89` | 2026-09-22 03:32 | inject | inject/probe_p1_e1_theta_0pt80 | `e901c20` | ok | - | - |
 | `inject-4d9c736d3834` | 2026-09-22 03:23 | inject | inject/probe_p1_e1_theta_0pt80 | `24a9f19` | launching | - | - |
 | `eval-64464e0a216c` | 2026-09-22 03:22 | eval | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
-| `eval-f3f1719bd3a3` | 2026-09-22 03:22 | eval | train_probe/cparam_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
 | `train-94cbec080c4b` | 2026-09-22 03:07 | train | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | objective=0.75 val_ce=1.7966677844524384 val_tool_ok=0.25 val_params_all_ok=0.3125 val_full_call_ok=0.25 gen_n=64 | - |
 | `train-bd4a5dcf5629` | 2026-09-22 03:06 | train | train_probe/ctool_qwen3_0pt6b | `24a9f19` | ok | objective=0.859375 val_wacc=0.140625 val_lastcut_acc=0.25 | - |
 | `score-54f8794b126d` | 2026-09-20 21:21 | score | baseline/gpt_oss_120b_appworld | `9edf200` | ok | success=0.0 n_records=9 | report.md |
