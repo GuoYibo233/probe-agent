@@ -845,9 +845,10 @@ def judge(piece: dict) -> tuple[str, bool]:
 
 def judge_service(piece: dict) -> tuple[str, bool]:
     """`done, dead, healthy, warming up, suspected stall` for a `service`
-    piece, over its start-row time, its session liveness, one port probe and
-    `work_done`, which `_judge_pieces` sets when the run has work pieces and
-    `judge` calls every one of them `done`.
+    piece, over its start-row time, its session liveness, its port probe
+    (`port_ok`, made only where this function reads it) and `work_done`, which
+    `_judge_pieces` sets when the run has work pieces and `judge` calls every
+    one of them `done`.
 
     A service exists to serve its run's work pieces, and the last loop piece
     ends its run's services once every requested record is finished
@@ -908,23 +909,40 @@ def _attached_to(run_dir: Path, piece: dict) -> str | None:
     return doc.get("attached_to")
 
 
+def _service_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str,
+                          work_done: bool) -> dict:
+    """The facts `judge_service` reads for one service piece, given whether its run's work
+    pieces are all `done`. The port is probed only when `judge_service` reads it: for an
+    attached service while its run's work is owed, and for a service of its own while its
+    session is alive (or its host did not answer, which reads as alive, 3.4). Every other
+    service is decided by its session and its run's work, and a probe is an ssh round trip
+    to its host, so `port_ok` is `None` there. `since_launch_s` is measured against the
+    clock read after the probe."""
+    alive = _alive_on(piece.get("host"), piece.get("session"), sessions)
+    attached = _attached_to(run_dir, piece) is not None
+    if attached:
+        reads_port = not work_done
+    else:
+        reads_port = alive
+    port_ok = _probe_port(piece) if reads_port else None
+    now_ts = time.time()
+    return {
+        "kind": "service",
+        "alive": alive,
+        "attached": attached,
+        "port_ok": port_ok,
+        "work_done": work_done,
+        "since_launch_s": now_ts - _parse_t(launch_t),
+    }
+
+
 def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str) -> dict:
-    """The facts one piece's verdict reads. Every age is measured against the clock read right
-    after the piece's own evidence is read (its heartbeat file, or a service's port probe),
-    so an age is never measured against an instant earlier than the file it ages."""
+    """The facts `judge` reads for one work piece (`loop`, `train` or `cpu`). Every age is
+    measured against the clock read right after the piece's heartbeat file is read, so an age
+    is never measured against an instant earlier than the file it ages."""
     kind = piece.get("kind")
     host = piece.get("host")
     session = piece.get("session")
-    if kind == "service":
-        port_ok = _probe_port(piece)
-        now_ts = time.time()
-        return {
-            "kind": kind,
-            "alive": _alive_on(host, session, sessions),
-            "attached": _attached_to(run_dir, piece) is not None,
-            "port_ok": port_ok,
-            "since_launch_s": now_ts - _parse_t(launch_t),
-        }
     if kind == "cpu":
         alive = pid_alive(host, piece.get("pid"))
     else:
@@ -962,19 +980,20 @@ def _judge_pieces(pieces: list[dict], run_dir: Path, sessions: set,
     read. The
     work pieces (`loop`, `train`, `cpu`) are judged first, because a service
     piece's verdict depends on whether all of them are `done`
-    (`judge_service`)."""
-    pvs = [_piece_verdict_dict(piece, run_dir, sessions, launch_t) for piece in pieces]
-    work = {i: judge(pv) for i, pv in enumerate(pvs) if pv["kind"] != "service"}
-    work_done = bool(work) and all(v == "done" for v, _esc in work.values())
-    out = []
-    for i, pv in enumerate(pvs):
-        if pv["kind"] == "service":
-            pv["work_done"] = work_done
-            verdict, escalated = judge_service(pv)
-        else:
-            verdict, escalated = work[i]
-        out.append((pv, verdict, escalated))
-    return out
+    (`judge_service`), and whether its port is probed at all depends on that
+    too (`_service_verdict_dict`)."""
+    judged: dict[int, tuple[dict, str, bool]] = {}
+    for i, piece in enumerate(pieces):
+        if piece.get("kind") == "service":
+            continue
+        pv = _piece_verdict_dict(piece, run_dir, sessions, launch_t)
+        judged[i] = (pv, *judge(pv))
+    work_done = bool(judged) and all(v == "done" for _pv, v, _esc in judged.values())
+    for i, piece in enumerate(pieces):
+        if piece.get("kind") == "service":
+            pv = _service_verdict_dict(piece, run_dir, sessions, launch_t, work_done)
+            judged[i] = (pv, *judge_service(pv))
+    return [judged[i] for i in range(len(pieces))]
 
 
 _SESSION_NAME_RE = re.compile(r"^.+-[0-9a-f]{12}-\d+$")

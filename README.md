@@ -324,7 +324,7 @@ eval/method_table.py — the backbone x method table from the registry; one grou
 jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
-  reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts and card memory; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, ssh (to a host's constants/cards.yaml name), tmux, nvidia-smi, a service piece's port (a connect to 127.0.0.1 on the piece's own host, over ssh from any other machine)
+  reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts and card memory; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, ssh (to a host's constants/cards.yaml name), tmux, nvidia-smi, a service piece's port (a connect to 127.0.0.1 on the piece's own host, over ssh from any other machine; made only when the piece's verdict reads it: an attached service while its run's work is owed, a service of its own while its session is alive)
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
