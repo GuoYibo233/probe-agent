@@ -871,7 +871,13 @@ def _find_attach_target(agent_row: dict, hosts=None):
             served = any(p.get("kind") == "service" and p.get("endpoint_file") == path.name
                          and p.get("port") == doc.get("port") for p in row_pieces)
             if served and _port_answers(doc.get("host"), doc.get("port")):
-                return {"run_id": row.get("run_id"), "host": doc.get("host"), "port": doc.get("port")}
+                # An attached run's endpoint file carries the same claims, host and port as
+                # the server it attached to, and names that server's run in `attached_to`.
+                # The new run attaches to that owner, never to the attacher: teardown asks
+                # `_attached_elsewhere` about the owner's run_id, so naming the attacher would
+                # let the owner's server be ended while this run still uses it.
+                owner = doc.get("attached_to") or row.get("run_id")
+                return {"run_id": owner, "host": doc.get("host"), "port": doc.get("port")}
     return None
 
 
