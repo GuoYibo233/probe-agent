@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from dataclasses import fields as dc_fields
 from datetime import datetime
 from pathlib import Path
 
@@ -1665,12 +1666,54 @@ def _check_11() -> list[str]:
     return problems
 
 
+# --- check 12: every schema field reaches a stage's key or projection -------
+
+# Contracts 5.2 marks both `meta` fields `key: no`, and no stage reads them: `notes` is prose and
+# `override` is the loader's permission list (5.4), so the section is outside what a stage keys.
+_KEYLESS_SECTIONS = ("meta",)
+
+
+def _dotted_schema_fields() -> list[str]:
+    """Every dataclass field of every schema.SECTION_CLASSES section as `section.field`, a nested dataclass field (train.predict) expanded to `section.field.sub`, the loader-written MODELS_READONLY fields left out."""
+    names: list[str] = []
+    for section, cls in schema.SECTION_CLASSES.items():
+        instance = cls()
+        for f in dc_fields(cls):
+            if f.name in schema.MODELS_READONLY:
+                continue
+            value = getattr(instance, f.name)
+            if hasattr(value, "__dataclass_fields__"):
+                names += [f"{section}.{f.name}.{sub.name}" for sub in dc_fields(type(value))]
+            else:
+                names.append(f"{section}.{f.name}")
+    return names
+
+
+def _check_12() -> list[str]:
+    """A field enters a key only when schema.STAGES names it (2.1, 2.2): a field no stage's `sections` (keyed), `projection` or `projection_generator` (not keyed) names, and no reference field, is read by no stage at all, so stating it moves no key and reaches no run."""
+    reached: set[str] = set(schema.REF_FIELDS)
+    for row in schema.STAGES.values():
+        reached |= set(row["sections"]) | set(row["projection"]) | set(row["projection_generator"])
+    problems: list[str] = []
+    for dotted in _dotted_schema_fields():
+        parts = dotted.split(".")
+        if parts[0] in _KEYLESS_SECTIONS:
+            continue
+        prefixes = {".".join(parts[:n]) for n in range(1, len(parts) + 1)}
+        if prefixes & reached:
+            continue
+        problems.append(
+            f"check 12: {dotted}: named by no schema.STAGES sections, projection or "
+            "projection_generator entry and not a REF_FIELDS entry, so no stage keys or reads it")
+    return problems
+
+
 def cmd_selfcheck(rest: list[str]) -> int:
     entries = readme_entries(ROOT / "README.md")
     tree_files = _tree_python_files()
     problems: list[str] = []
-    # A check that raises becomes a problem line of its own, so the other ten still run and the
-    # count still prints: an edit that a check cannot read -- a renamed axis, a file that does
+    # A check that raises becomes a problem line of its own, so the other checks still run and
+    # the count still prints: an edit that a check cannot read -- a renamed axis, a file that does
     # not parse -- is a problem to report, not a reason to stop reporting.
     checks = (
         (1, lambda: _check_1(entries, tree_files)),
@@ -1684,6 +1727,7 @@ def cmd_selfcheck(rest: list[str]) -> int:
         (9, lambda: _check_9(tree_files)),
         (10, lambda: _check_10(entries)),
         (11, _check_11),
+        (12, _check_12),
     )
     for number, check in checks:
         try:

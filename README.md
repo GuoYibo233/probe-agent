@@ -74,7 +74,7 @@ owner rewrites them.
 
 CLAUDE.md — the rules an agent reads on its own; the only other file at the root that is not code.
 
-run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command), and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk.
+run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command), and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names.
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
   reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
@@ -382,7 +382,10 @@ selfcheck reads both spellings the same, and this one keeps the line short.
 3. **A new training hyperparameter.** `experimental_settings/schema.py` (field, default,
    one-line comment); the one module that reads it (`train/utils/trainer.py` or one method
    file). Cost: free when the default reproduces the old behaviour, because the key is over the
-   diff from the defaults.
+   diff from the defaults. A new `sample` or `inject` field is also added to that stage's
+   `sections` tuple (keyed) or `projection` tuple (not keyed) in `schema.py`'s `STAGES`, because
+   those two stages name their fields one by one; `run.py selfcheck` check 12 fails a field that
+   no stage's `sections` or `projection` tuple and no reference field names.
 4. **A new field on the task record.** `data/trajectory_record.py` (the column and its
    `DEFAULTS` entry); the one writer (`agent/run_tasks.py` or `agent/step_with_probe.py`). A
    field nobody downstream reads costs nothing more: no `VERSION` bump, no rerun. A field a
