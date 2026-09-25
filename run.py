@@ -1704,7 +1704,9 @@ def _check_12() -> list[str]:
             continue
         problems.append(
             f"check 12: {dotted}: named by no schema.STAGES sections, projection or "
-            "projection_generator entry and not a REF_FIELDS entry, so no stage keys or reads it")
+            "projection_generator entry and not a REF_FIELDS entry, so no stage keys or reads it; "
+            "add it to the reading stage's sections tuple (keyed) or projection tuple (not keyed) "
+            "in experimental_settings/schema.py STAGES")
     return problems
 
 
