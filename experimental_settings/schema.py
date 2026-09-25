@@ -620,16 +620,19 @@ def _type_ok(value: Any, types: tuple) -> bool:
 
 
 def _apply_fields(dst: dict, overlay: dict, cls: type, prefix: str, authored: set[str]) -> None:
-    """Merge `overlay` onto `dst` (a section dict), per field, list fields replaced whole; recurse into a nested dataclass field."""
+    """Merge `overlay` onto `dst` (a section dict), per field, list fields replaced whole; recurse into a nested dataclass field.
+
+    `overlay` is a mapping of field name -> value: a section, or a nested dataclass field, is
+    always written as one, so any other shape is refused here, naming `prefix`.
+    """
+    if not isinstance(overlay, dict):
+        raise SchemaError(f"{prefix}: expected a mapping, got {type(overlay).__name__}")
     names = _section_field_names(cls)
     for key, value in overlay.items():
         if key not in names:
             raise SchemaError(f"{prefix}.{key}: not a field of this section")
-        f = next(f for f in dc_fields(cls) if f.name == key)
         default = getattr(cls(), key)
         if hasattr(default, "__dataclass_fields__"):
-            if not isinstance(value, dict):
-                raise SchemaError(f"{prefix}.{key}: expected a mapping, got {type(value).__name__}")
             _apply_fields(dst[key], value, type(default), f"{prefix}.{key}", authored)
         else:
             dst[key] = value
@@ -1121,13 +1124,29 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
     return _to_setting(full, workflow, file_stem, name, debug)
 
 
+RESERVED_TOP_LEVEL = ("workflow", "common")    # the top-level keys of a workflow file that name no setting (5.1)
+
+
 def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -> list[Setting]:
     doc = _parse_yaml(Path(ref_file).read_text(), str(ref_file)) or {}
+    if not isinstance(doc, dict):
+        raise SchemaError(
+            f"{ref_file}: expected a mapping of workflow, common and named settings, got "
+            f"{type(doc).__name__}")
     workflow = list(doc.get("workflow", []))
+    if base_name in RESERVED_TOP_LEVEL:
+        raise SchemaError(
+            f"{base_name}: a reserved top-level key of a workflow file {RESERVED_TOP_LEVEL}, "
+            "not a setting name")
     if base_name not in doc:
         raise SchemaError(f"{base_name}: no such setting in {ref_file}")
-    common = dict(doc.get("common", {}))
-    named = dict(doc[base_name])
+    common = doc.get("common", {})
+    if not isinstance(common, dict):
+        raise SchemaError(f"common: expected a mapping of sections, got {type(common).__name__}")
+    named = doc[base_name]
+    if not isinstance(named, dict):
+        raise SchemaError(f"{base_name}: expected a mapping of sections, got {type(named).__name__}")
+    named = dict(named)
     sweep = named.pop("sweep", None)
     _check_raw_sections(workflow, common, named, base_name)
 
