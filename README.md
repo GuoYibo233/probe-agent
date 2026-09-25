@@ -167,7 +167,7 @@ data/probe_input.py — the probe's cut enumeration and prompt assembly, shared 
   writes:  -
   venv:    any
 
-data/build_training_dataset.py — the program: records -> example rows for the three probe methods; the train/val/test split, by either rule of build.split_source; the report; the gates.
+data/build_training_dataset.py — the program: records -> example rows for the three probe methods; the train/val/test split, by either rule of build.split_source, and the example weight, by either rule of build.weight_mode, each axis dispatched over its named values with any other value refused before a record is read; the report; the gates.
   imports: experimental_settings/schema.py, data/__init__.py (the id functions), data/trajectory_record.py, data/training_data.py, data/probe_input.py, data/environments/__init__.py, jobs/registry.py; [polars, PyYAML]
   used by: none (program)
   reads:   the sample run's task records, constants/path_datasets.yaml (the splits block of cfg.data.env, for the split files' paths), the environment's split task-id files
