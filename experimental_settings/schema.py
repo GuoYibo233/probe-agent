@@ -5,6 +5,8 @@ import ast
 import hashlib
 import itertools
 import json
+import re
+from collections.abc import Hashable
 from dataclasses import dataclass, field, fields as dc_fields
 from pathlib import Path
 from typing import Any
@@ -487,8 +489,41 @@ def effective_version(rel_path: str, stage: str) -> int:
     return _effective_version_over(rel_path, (stage,))
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """yaml.SafeLoader that refuses a mapping key stated twice, naming the key and the lines of both occurrences.
+
+    PyYAML's own SafeLoader keeps the last of two equal keys, so a setting pasted twice under one
+    name, or a field stated twice in one section, would load as whichever came last.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        seen: dict = {}
+        for key_node, _value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                continue                        # a `<<` merge key; its entries are flattened by the base class
+            key_obj = self.construct_object(key_node, deep=deep)
+            if isinstance(key_obj, Hashable):   # an unhashable key is refused by the base class
+                mark = key_node.start_mark
+                where = f"line {mark.line + 1} column {mark.column + 1}"
+                if key_obj in seen:
+                    raise SchemaError(
+                        f"{mark.name}: key {key_obj!r} is stated twice, at {seen[key_obj]} and at {where}")
+                seen[key_obj] = where
+        return super().construct_mapping(node, deep=deep)
+
+
+def _parse_yaml(text: str, source: str) -> Any:
+    """Parse one YAML document with _UniqueKeyLoader; `source` names the text in a refusal (a path, or an override)."""
+    loader = _UniqueKeyLoader(text)
+    loader.name = source
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 def _read_yaml(rel_path: str) -> dict:
-    return yaml.safe_load((ROOT / rel_path).read_text()) or {}
+    return _parse_yaml((ROOT / rel_path).read_text(), str(ROOT / rel_path)) or {}
 
 
 def _table() -> dict:
@@ -553,28 +588,53 @@ def _section_field_names(cls: type) -> set[str]:
 
 
 _TYPE_WORDS = {"str": str, "int": int, "float": float, "bool": bool, "None": type(None)}
+ANNOTATION_SPELLINGS = ("str", "int", "float", "bool", "None", "list[<spelling>]", "dict", "dict[...]",
+                        "the name of a dataclass defined in schema.py")
 
 
-def _annot_types(annot: str) -> tuple:
-    out = []
-    for part in annot.split("|"):
-        part = part.strip()
+def _annotation_alternatives(annot: str) -> list[str]:
+    """The `|`-separated alternatives of an annotation string, split at bracket depth zero only."""
+    parts, depth, start = [], 0, 0
+    for index, char in enumerate(annot):
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            parts.append(annot[start:index].strip())
+            start = index + 1
+    parts.append(annot[start:].strip())
+    return parts
+
+
+def _is_schema_dataclass(word: str) -> bool:
+    """Whether `word` names a dataclass defined in this module (Predict, a section class)."""
+    obj = globals().get(word)
+    return isinstance(obj, type) and hasattr(obj, "__dataclass_fields__")
+
+
+def _annot_types(annot: str, label: str) -> tuple:
+    """The declared type of the field `label` as (types, element, annot): the Python types a YAML value may take, and the same triple for a list's elements (None when no alternative is a list[...]).
+
+    A word names a type only in the spellings of ANNOTATION_SPELLINGS; a nested dataclass field
+    (Predict) arrives from YAML as a dict. Any other spelling is refused, naming the field.
+    """
+    types, element = [], None
+    for part in _annotation_alternatives(annot):
         if part in _TYPE_WORDS:
-            out.append(_TYPE_WORDS[part])
-        elif part.startswith("list"):
-            out.append(list)
-        elif part.startswith("dict"):
-            out.append(dict)
+            types.append(_TYPE_WORDS[part])
+        elif part.startswith("list[") and part.endswith("]") and element is None:
+            types.append(list)
+            element = _annot_types(part[len("list["):-1], label)
+        elif part == "dict" or (part.startswith("dict[") and part.endswith("]")):
+            types.append(dict)
+        elif _is_schema_dataclass(part):
+            types.append(dict)
         else:
-            out.append(dict)   # a nested dataclass field (Predict) arrives from YAML as a dict
-    return tuple(out)
-
-
-def _field_type(cls: type, name: str) -> tuple:
-    for f in dc_fields(cls):
-        if f.name == name:
-            return _annot_types(f.type)
-    raise SchemaError(f"{cls.__name__}.{name}: not a field of this section")
+            raise SchemaError(
+                f"{label}: annotation {annot!r} uses {part!r}, which the loader does not type; the "
+                f"accepted spellings are {', '.join(ANNOTATION_SPELLINGS)}, joined with |")
+    return tuple(types), element, annot
 
 
 def _type_ok(value: Any, types: tuple) -> bool:
@@ -585,17 +645,31 @@ def _type_ok(value: Any, types: tuple) -> bool:
     return False
 
 
+def _check_value(value: Any, declared: tuple, label: str) -> None:
+    """Refuse `value` unless its type is one `declared` (an _annot_types triple) allows, and, for a list, unless every element's is one the element annotation allows, naming the index."""
+    types, element, annot = declared
+    if not _type_ok(value, types):
+        raise SchemaError(
+            f"{label}: {value!r} has type {type(value).__name__}, declared type is {annot}")
+    if type(value) is list and element is not None:
+        for index, item in enumerate(value):
+            _check_value(item, element, f"{label}[{index}]")
+
+
 def _apply_fields(dst: dict, overlay: dict, cls: type, prefix: str, authored: set[str]) -> None:
-    """Merge `overlay` onto `dst` (a section dict), per field, list fields replaced whole; recurse into a nested dataclass field."""
+    """Merge `overlay` onto `dst` (a section dict), per field, list fields replaced whole; recurse into a nested dataclass field.
+
+    `overlay` is a mapping of field name -> value: a section, or a nested dataclass field, is
+    always written as one, so any other shape is refused here, naming `prefix`.
+    """
+    if not isinstance(overlay, dict):
+        raise SchemaError(f"{prefix}: expected a mapping, got {type(overlay).__name__}")
     names = _section_field_names(cls)
     for key, value in overlay.items():
         if key not in names:
             raise SchemaError(f"{prefix}.{key}: not a field of this section")
-        f = next(f for f in dc_fields(cls) if f.name == key)
         default = getattr(cls(), key)
         if hasattr(default, "__dataclass_fields__"):
-            if not isinstance(value, dict):
-                raise SchemaError(f"{prefix}.{key}: expected a mapping, got {type(value).__name__}")
             _apply_fields(dst[key], value, type(default), f"{prefix}.{key}", authored)
         else:
             dst[key] = value
@@ -617,6 +691,47 @@ def _set_dotted(full: dict, dotted: str, value: Any) -> None:
     for part in parts[:-1]:
         node = node[part]
     node[parts[-1]] = value
+
+
+def _is_declared_field(dotted: Any) -> bool:
+    """Whether `dotted` names a field of the dataclass declarations: a section, then each inner part a field whose default is a dataclass, then the last part a field (MODELS_READONLY excluded).
+
+    The command-line override and the sweep name are both checked here, against the
+    declarations, never against the values a merged setting happens to hold.
+    """
+    if not isinstance(dotted, str):
+        return False
+    section, *rest = dotted.split(".")
+    if section not in SECTION_CLASSES or not rest:
+        return False
+    cls = SECTION_CLASSES[section]
+    for part in rest[:-1]:
+        if part not in _section_field_names(cls):
+            return False
+        default = getattr(cls(), part)
+        if not hasattr(default, "__dataclass_fields__"):
+            return False
+        cls = type(default)
+    return rest[-1] in _section_field_names(cls)
+
+
+def _set_field(full: dict, dotted: str, value: Any, authored: set[str]) -> None:
+    """Set one declared field (see _is_declared_field) of the merged setting from a sweep child or an override.
+
+    A leaf takes `value` whole, a list replaced and never appended (5.7); a nested dataclass
+    field merges `value` per field, exactly as the file's own mapping for it merges.
+    """
+    section, *rest = dotted.split(".")
+    cls, node = SECTION_CLASSES[section], full[section]
+    for part in rest[:-1]:
+        cls, node = type(getattr(cls(), part)), node[part]
+    last = rest[-1]
+    default = getattr(cls(), last)
+    if hasattr(default, "__dataclass_fields__"):
+        _apply_fields(node[last], value, type(default), dotted, authored)
+    else:
+        node[last] = value
+        authored.add(dotted)
 
 
 def _debug_fields() -> set[str]:
@@ -647,17 +762,23 @@ def _refuse_probe_under_inject(workflow: list[str], dotted: str) -> None:
             "an inject run's probe comes from the settings inject.probe_score and inject.probe_gen name")
 
 
+def _require_workflow_reads(workflow: list[str], section: str, label: str) -> None:
+    """5.7's 'a section for a stage the file's workflow does not name': `section` is one a stage of `workflow` reads; `label` is the name the refusal starts with."""
+    if section in _yaml_allowed_sections(workflow):
+        return
+    raise SchemaError(f"{label}: no stage of this file's workflow reads this section")
+
+
 def _check_raw_sections(workflow: list[str], common: dict, named: dict, base_name: str) -> None:
     """5.7's 'a section for a stage the workflow does not name', evaluated against the raw file content only."""
-    allowed = _yaml_allowed_sections(workflow)
     for d in (common, named):
         for key in d:
-            if key not in allowed:
-                raise SchemaError(f"{key}: no stage of this file's workflow reads this section")
+            _require_workflow_reads(workflow, key, key)
     for d in (common, named):
         if "probe" in d:
             _refuse_probe_under_inject(workflow, "probe")
-        if "probe" in d.get("models", {}):
+        models = d.get("models", {})
+        if isinstance(models, dict) and "probe" in models:   # a models: that is no mapping is refused by _apply_fields
             _refuse_probe_under_inject(workflow, "models.probe")
 
 
@@ -676,8 +797,7 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
                 _apply_fields(full[sec], section_overlay, SECTION_CLASSES[sec], sec, authored)
 
     for dotted, value in extra.items():
-        _set_dotted(full, dotted, value)
-        authored.add(dotted)
+        _set_field(full, dotted, value, authored)
 
     if debug:
         for sec, section_overlay in _read_yaml("experimental_settings/debug.yaml").items():
@@ -685,29 +805,44 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
                 _apply_fields(full[sec], section_overlay, SECTION_CLASSES[sec], sec, set())
 
     for dotted, raw in overrides.items():
-        _refuse_probe_under_inject(workflow, dotted)
-        section, _, field_name = dotted.partition(".")
-        if section not in SECTION_CLASSES or section not in full:
+        if not _is_declared_field(dotted):
             raise SchemaError(f"{dotted}: not a field of the schema")
-        try:
-            _get_dotted(full, dotted)   # validates the whole dotted path exists, nested fields included
-        except KeyError:
-            raise SchemaError(f"{dotted}: not a field of the schema") from None
-        _set_dotted(full, dotted, yaml.safe_load(raw))
-        authored.add(dotted)
+        _refuse_probe_under_inject(workflow, dotted)
+        # An override states what the file itself may state (5.7): the inherited build section
+        # of an inject workflow is in the merged setting and is still not the file's to state.
+        _require_workflow_reads(workflow, dotted.partition(".")[0], dotted)
+        _set_field(full, dotted, _parse_yaml(raw, f"the override {dotted}"), authored)
 
     return full, authored
 
 
-def _sweep_children(sweep: dict, debug_fields: set[str], workflow: list[str]) -> list[tuple[str, dict]]:
-    for dotted in sweep:
+def _sweep_children(sweep: Any, debug_fields: set[str], workflow: list[str]) -> list[tuple[str, dict]]:
+    """The children of a `sweep:` block, one (name suffix, {dotted: value}) per combination of the listed values.
+
+    The block is refused unless it is a mapping from a declared field (see _is_declared_field)
+    of a section the file's workflow reads to a non-empty list of values, and unless no swept
+    field is one debug.yaml sets (5.5 / 5.7): a nested dataclass field swept as mappings counts
+    each field those mappings state.
+    """
+    if not isinstance(sweep, dict):
+        raise SchemaError(
+            f"sweep: expected a mapping of dotted field -> list of values, got {type(sweep).__name__}")
+    for dotted, values in sweep.items():
+        label = f"sweep.{dotted}"
+        if not _is_declared_field(dotted):
+            raise SchemaError(f"{label}: not a field of the schema")
         _refuse_probe_under_inject(workflow, dotted)
-        section, _, field_name = dotted.partition(".")
-        if section not in SECTION_CLASSES:
-            raise SchemaError(f"sweep.{dotted}: not a field of the schema")
-        _field_type(SECTION_CLASSES[section], field_name.split(".")[0])
-        if dotted in debug_fields:
-            raise SchemaError(f"sweep.{dotted}: also set by debug.yaml, which would collapse the sweep")
+        _require_workflow_reads(workflow, dotted.partition(".")[0], label)
+        if not isinstance(values, list):
+            raise SchemaError(f"{label}: expected a list of values, got {type(values).__name__}")
+        if not values:
+            raise SchemaError(f"{label}: expected a list of values, got an empty list")
+        stated = {dotted}
+        for value in values:
+            if isinstance(value, dict):
+                stated |= {f"{dotted}.{key}" for key in value}
+        if stated & debug_fields:
+            raise SchemaError(f"{label}: also set by debug.yaml, which would collapse the sweep")
     names = sorted(sweep)
     out = []
     for combo in itertools.product(*(sweep[n] for n in names)):
@@ -718,18 +853,16 @@ def _sweep_children(sweep: dict, debug_fields: set[str], workflow: list[str]) ->
 
 
 def _type_check_section(section_dict: dict, cls: type, prefix: str) -> None:
+    """Check every field of a merged section against its annotation, then descend into a nested dataclass field, whose annotation has already required a mapping."""
     for f in dc_fields(cls):
         if f.name in MODELS_READONLY:
             continue
+        label = f"{prefix}.{f.name}"
         value = section_dict[f.name]
+        _check_value(value, _annot_types(f.type, label), label)
         default = getattr(cls(), f.name)
         if hasattr(default, "__dataclass_fields__"):
-            _type_check_section(value, type(default), f"{prefix}.{f.name}")
-            continue
-        types = _annot_types(f.type)
-        if not _type_ok(value, types):
-            raise SchemaError(
-                f"{prefix}.{f.name}: {value!r} has type {type(value).__name__}, declared type is {f.type}")
+            _type_check_section(value, type(default), label)
 
 
 def _check_role(table: dict, alias: str, expected_role: str, field_name: str) -> None:
@@ -778,6 +911,11 @@ def _ref_requirements(field_dotted: str) -> tuple[str, ...]:
     return tuple(u["stage"] for u in _ref_entries(field_dotted))
 
 
+# The (workflow file stem, setting name) pairs whose name-form references are being resolved
+# right now, outermost first; a pair met again while it is on this chain is a reference cycle.
+_RESOLVING: list[tuple[str, str]] = []
+
+
 def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
     """Load the setting a name-form reference names, under the referring setting's debug flag.
 
@@ -792,7 +930,15 @@ def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
     ref_file = ROOT / "experimental_settings" / f"{stem}.yaml"
     if not ref_file.exists():
         raise SchemaError(f"{value!r}: no such workflow file {ref_file}")
-    results = load(ref_file, name, debug=debug, overrides={})
+    pair = (stem, name)
+    if pair in _RESOLVING:
+        cycle = _RESOLVING[_RESOLVING.index(pair):] + [pair]
+        raise SchemaError(f"{' -> '.join(f'{s}/{n}' for s, n in cycle)}: a reference cycle")
+    _RESOLVING.append(pair)
+    try:
+        results = load(ref_file, name, debug=debug, overrides={})
+    finally:
+        _RESOLVING.pop()
     if len(results) != 1:
         raise SchemaError(
             f"{value!r}: names a swept setting with {len(results)} children; name a child directly")
@@ -800,6 +946,7 @@ def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
 
 
 METHOD_REF_FIELDS = ("inject.probe_score", "inject.probe_gen")
+_RUN_KEY = re.compile(r"[0-9a-f]{12}")             # a run key, the form `key` returns (3.3)
 
 
 def _pinned_method(field_dotted: str, value: dict, kind: str) -> str | None:
@@ -851,10 +998,19 @@ def _resolve_ref(field_dotted: str, value: Any, *, debug: bool) -> tuple[str, An
         extra = set(value) - {kind, "method"}
         if extra:
             raise SchemaError(f"a {kind}: reference holds no entry {sorted(extra)}")
+        if not isinstance(value[kind], dict):
+            raise SchemaError(
+                f"a {kind}: reference is a mapping of stage -> value, got {type(value[kind]).__name__}")
         got = set(value[kind])
         if got != required:
             raise SchemaError(f"pinned {kind} stages {sorted(got)} != required {sorted(required)}")
         if kind == "key":
+            for stage, stage_key in value["key"].items():
+                if isinstance(stage_key, str) and _RUN_KEY.fullmatch(stage_key):
+                    continue
+                raise SchemaError(
+                    f"pinned key stage {stage}: {stage_key!r} is not a 12-hex key (quote it in YAML "
+                    "when it is all digits)")
             return ("keys", dict(value["key"]), method)
         return ("keys", {stage: Path(p).name for stage, p in value["dir"].items()}, method)
     except SchemaError as ex:
@@ -978,6 +1134,15 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
             if v not in axis_values:
                 raise SchemaError(f"{dotted}: {v!r} is not one of {axis_values}")
 
+    # 5.2: split_ratio is the train/val/test shares of the hash split, so it holds three shares,
+    # each >= 0, that add up to 1 (within float rounding of the default [0.8, 0.1, 0.1]).
+    if "build" in full:
+        ratio = full["build"]["split_ratio"]
+        if not (len(ratio) == 3 and min(ratio) >= 0 and abs(sum(ratio) - 1.0) <= 1e-9):
+            raise SchemaError(
+                f"build.split_ratio: {ratio!r} is not three train/val/test shares, each >= 0, "
+                "summing to 1")
+
     if "inject" in workflow and full["models"]["probe"] is not None:
         _refuse_probe_under_inject(workflow, "models.probe")
 
@@ -987,6 +1152,16 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
     for dotted in REQUIRED_FIELDS:
         if "inject" in full and _get_dotted(full, dotted) is None:
             raise SchemaError(f"{dotted}: is required and was not set")
+
+    # theta is compared with the probe's softmax confidence, a value in [0, 1]; a value off
+    # THETA_GRID is by design (theta is a person's field, 2.1), a value outside [0, 1] never fires
+    # or always fires.
+    if "inject" in full:
+        theta = full["inject"]["theta"]
+        if not 0.0 <= theta <= 1.0:
+            raise SchemaError(
+                f"inject.theta: {theta} is outside [0, 1], the range of the probe confidence it is "
+                "compared with")
 
     # Each reference field is resolved and checked in turn -- a field's own check runs right after
     # its resolution, so an unrelated field's mutation is refused before a later reference is even
@@ -1003,7 +1178,23 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
             return
         refs[dotted] = _resolve_ref(dotted, value, debug=debug)
 
+    # 2.1 / 5.2: eval.theta_from is resolved to its classifier eval key (the frozen theta) and
+    # inject.probe_score to its classifier train and eval keys (the weights that decide when to
+    # fire, and the temperature), so the method each reference selects is a classifier. The name
+    # form takes the method off the named setting and a pinned inject.probe_score states it; a
+    # pinned eval.theta_from carries no method, and eval checks the report it reads.
+    def _require_classifier(dotted: str) -> None:
+        method = refs[dotted][2]
+        if method is None:
+            return
+        kind = _method_kind(method)
+        if kind == "classifier":
+            return
+        raise SchemaError(f"{dotted}: {method!r} is not a classifier (PROBE_KIND={kind!r})")
+
     _resolve_if_set("eval.theta_from")
+    if "eval.theta_from" in refs:
+        _require_classifier("eval.theta_from")
     if "eval" in full:
         method = full["probe"]["method"] if "probe" in full else None
         if method is not None:
@@ -1027,6 +1218,8 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
                     f"{sorted(base_split)}/{sorted(base_seeds)})")
 
     _resolve_if_set("inject.probe_score")
+    if "inject.probe_score" in refs:
+        _require_classifier("inject.probe_score")
 
     # The whole-call-generator check reads the method the reference selects, which the name form
     # takes off the named setting and the key: / dir: form states in its method: sibling, so the
@@ -1087,21 +1280,64 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
     return _to_setting(full, workflow, file_stem, name, debug)
 
 
+RESERVED_TOP_LEVEL = ("workflow", "common")    # the top-level keys of a workflow file that name no setting (5.1)
+
+
+def _check_workflow(workflow: Any) -> list[str]:
+    """The file's `workflow:` line, refused unless it is a non-empty list of stage names in which every stage comes after the same-setting stages it reads.
+
+    The same-setting upstream entries of the stage table (source `same`) are the runs a stage
+    reads from its own setting; one marked `when: in_workflow` is read only when its stage is in
+    the list, so it is ordered only then.
+    """
+    if not (isinstance(workflow, list) and workflow):
+        raise SchemaError(f"workflow: expected a non-empty list of stages {sorted(STAGES)}, got {workflow!r}")
+    for position, stage in enumerate(workflow):
+        if not (isinstance(stage, str) and stage in STAGES):
+            raise SchemaError(f"workflow: {stage!r} is not a stage ({sorted(STAGES)})")
+        earlier = workflow[:position]
+        for entry in STAGES[stage]["upstream"]:
+            if entry["source"] == "same":
+                if entry.get("when") == "in_workflow":
+                    ordered = entry["stage"] in workflow
+                else:
+                    ordered = True
+                if ordered and entry["stage"] not in earlier:
+                    raise SchemaError(
+                        f"workflow: {stage!r} reads the {entry['stage']!r} run of the same setting, "
+                        f"so {entry['stage']!r} comes before it in the list {workflow}")
+    return list(workflow)
+
+
 def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -> list[Setting]:
-    doc = yaml.safe_load(Path(ref_file).read_text()) or {}
-    workflow = list(doc.get("workflow", []))
+    doc = _parse_yaml(Path(ref_file).read_text(), str(ref_file)) or {}
+    if not isinstance(doc, dict):
+        raise SchemaError(
+            f"{ref_file}: expected a mapping of workflow, common and named settings, got "
+            f"{type(doc).__name__}")
+    workflow = _check_workflow(doc.get("workflow"))
+    if base_name in RESERVED_TOP_LEVEL:
+        raise SchemaError(
+            f"{base_name}: a reserved top-level key of a workflow file {RESERVED_TOP_LEVEL}, "
+            "not a setting name")
     if base_name not in doc:
         raise SchemaError(f"{base_name}: no such setting in {ref_file}")
-    common = dict(doc.get("common", {}))
-    named = dict(doc[base_name])
+    common = doc.get("common", {})
+    if not isinstance(common, dict):
+        raise SchemaError(f"common: expected a mapping of sections, got {type(common).__name__}")
+    named = doc[base_name]
+    if not isinstance(named, dict):
+        raise SchemaError(f"{base_name}: expected a mapping of sections, got {type(named).__name__}")
+    named = dict(named)
+    swept = "sweep" in named
     sweep = named.pop("sweep", None)
     _check_raw_sections(workflow, common, named, base_name)
 
-    if sweep:
+    if swept:
+        children_extras = _sweep_children(sweep, _debug_fields(), workflow)
         clash = set(overrides) & set(sweep)
         if clash:
             raise SchemaError(f"{sorted(clash)[0]}: overridden and swept at once")
-        children_extras = _sweep_children(sweep, _debug_fields(), workflow)
     else:
         children_extras = [(None, {})]
 
@@ -1512,11 +1748,11 @@ def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: 
     settings_path = run_dir / "settings.yaml"
     diff_path = run_dir / "settings_diff.yaml"
     if diff_path.exists():
-        existing_diff = yaml.safe_load(diff_path.read_text()) or {}
+        existing_diff = _parse_yaml(diff_path.read_text(), str(diff_path)) or {}
         if existing_diff != diff:
             raise SchemaError(
                 f"freeze: {run_dir} already holds settings for a different key under stage {stage!r}")
-        existing_settings = yaml.safe_load(settings_path.read_text()) or {}
+        existing_settings = _parse_yaml(settings_path.read_text(), str(settings_path)) or {}
         _merge_request_fields(doc, existing_settings, sections)
 
     _atomic_write_yaml(settings_path, doc)
@@ -1526,7 +1762,7 @@ def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: 
 def load_frozen(run_dir: Path) -> Setting:
     """Parse settings.yaml against the dataclasses, fill the _ block; re-merges nothing, re-resolves nothing (2.6)."""
     run_dir = Path(run_dir)
-    doc = yaml.safe_load((run_dir / "settings.yaml").read_text()) or {}
+    doc = _parse_yaml((run_dir / "settings.yaml").read_text(), str(run_dir / "settings.yaml")) or {}
     setting = Setting()
     for sec, cls in SECTION_CLASSES.items():
         if sec not in doc:
