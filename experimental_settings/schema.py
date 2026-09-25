@@ -1152,6 +1152,16 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
         if "inject" in full and _get_dotted(full, dotted) is None:
             raise SchemaError(f"{dotted}: is required and was not set")
 
+    # theta is compared with the probe's softmax confidence, a value in [0, 1]; a value off
+    # THETA_GRID is by design (theta is a person's field, 2.1), a value outside [0, 1] never fires
+    # or always fires.
+    if "inject" in full:
+        theta = full["inject"]["theta"]
+        if not 0.0 <= theta <= 1.0:
+            raise SchemaError(
+                f"inject.theta: {theta} is outside [0, 1], the range of the probe confidence it is "
+                "compared with")
+
     # Each reference field is resolved and checked in turn -- a field's own check runs right after
     # its resolution, so an unrelated field's mutation is refused before a later reference is even
     # opened. eval.theta_from and score.baseline are self-contained checks; inject.probe_score is
