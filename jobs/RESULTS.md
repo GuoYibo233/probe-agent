@@ -3,6 +3,20 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `score-ecd526d476c3` | 2026-09-25 11:06 | score | inject/no_probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
+| `inject-210ff860f998` | 2026-09-25 10:59 | inject | inject/no_probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | - | - |
+| `score-4586e0cdeba8` | 2026-09-25 10:59 | score | inject/probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
+| `inject-583c0e97913c` | 2026-09-25 10:52 | inject | inject/probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | - | - |
+| `train-a956d422f5a0` | 2026-09-25 02:08 | train | train_probe/cparam_qwen3_0pt6b | `f2d87ea` | launching | - | - |
+| `eval-0c15d71d5727` | 2026-09-25 01:43 | eval | train_probe/cgen_qwen3_0pt6b | `f2d87ea` | failed | - | - |
+| `eval-b27cc9c67906` | 2026-09-25 01:43 | eval | train_probe/cparam_qwen3_0pt6b | `f2d87ea` | failed | - | - |
+| `eval-5f5a8f4f96f6` | 2026-09-25 01:42 | eval | train_probe/ctool_qwen3_0pt6b | `f2d87ea` | ok | - | report.md |
+| `score-20eaad1deae5` | 2026-09-25 01:41 | score | baseline/gpt_oss_120b_appworld | `f2d87ea` | ok | success=0.0 n_records=9 | report.md |
+| `train-f46997fdbf8d` | 2026-09-25 01:23 | train | train_probe/cparam_qwen3_0pt6b | `f2d87ea` | ok | objective=0.625 val_ce=4.123761177062988 val_params_all_ok=0.375 gen_n=64 | - |
+| `train-b4a83a32b921` | 2026-09-25 01:22 | train | train_probe/cgen_qwen3_0pt6b | `f2d87ea` | ok | objective=0.78125 val_ce=1.8061871528625488 val_tool_ok=0.28125 val_params_all_ok=0.28125 val_full_call_ok=0.21875 gen_n=64 | - |
+| `eval-661699fd40e4` | 2026-09-25 01:20 | eval | train_probe/ctool_qwen3_0pt6b | `f2d87ea` | ok | - | report.md |
+| `train-602051218152` | 2026-09-25 01:18 | train | train_probe/ctool_qwen3_0pt6b | `f2d87ea` | ok | objective=0.828125 val_wacc=0.171875 val_lastcut_acc=0.125 | - |
+| `build-55cd38c24455` | 2026-09-25 01:17 | build | train_probe/ctool_qwen3_0pt6b | `f2d87ea` | ok | - | report.md |
 | `score-6412871b8f47` | 2026-09-22 03:45 | score | baseline/gpt_oss_120b_appworld | `e901c20` | ok | success=0.0 n_records=6 | report.md |
 | `score-4c2fa9e9de40` | 2026-09-22 03:39 | score | baseline/gpt_oss_120b_appworld | `e901c20` | ok | success=0.0 n_records=6 | report.md |
 | `sample-dbfc360385f6` | 2026-09-22 03:39 | sample | baseline/gpt_oss_120b_appworld | `e901c20` | ok | - | - |
@@ -11,8 +25,6 @@
 | `inject-4d9c736d3834` | 2026-09-22 03:23 | inject | inject/probe_p1_e1_theta_0pt80 | `24a9f19` | launching | - | - |
 | `eval-64464e0a216c` | 2026-09-22 03:22 | eval | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
 | `eval-f3f1719bd3a3` | 2026-09-22 03:22 | eval | train_probe/cparam_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
-| `eval-5f5a8f4f96f6` | 2026-09-22 03:21 | eval | train_probe/ctool_qwen3_0pt6b | `24a9f19` | ok | - | report.md |
-| `train-a956d422f5a0` | 2026-09-22 03:08 | train | train_probe/cparam_qwen3_0pt6b | `24a9f19` | ok | objective=0.5625 val_ce=4.249267578125 val_params_all_ok=0.4375 gen_n=64 | - |
 | `train-94cbec080c4b` | 2026-09-22 03:07 | train | train_probe/cgen_qwen3_0pt6b | `24a9f19` | ok | objective=0.75 val_ce=1.7966677844524384 val_tool_ok=0.25 val_params_all_ok=0.3125 val_full_call_ok=0.25 gen_n=64 | - |
 | `train-bd4a5dcf5629` | 2026-09-22 03:06 | train | train_probe/ctool_qwen3_0pt6b | `24a9f19` | ok | objective=0.859375 val_wacc=0.140625 val_lastcut_acc=0.25 | - |
 | `score-54f8794b126d` | 2026-09-20 21:21 | score | baseline/gpt_oss_120b_appworld | `9edf200` | ok | success=0.0 n_records=9 | report.md |
@@ -46,40 +58,6 @@
 | `train-0f3e343f0eca` | 2026-09-20 06:12 | train | train_probe/ctool_qwen3_0pt6b | `0793692` | launch_failed | - | - |
 | `train-4f98555bfe73` | 2026-09-20 06:10 | train | train_probe/cparam_qwen3_0pt6b | `30aae15` | failed | - | - |
 | `train-f4b98907f380` | 2026-09-20 06:09 | train | train_probe/cgen_qwen3_0pt6b | `30aae15` | failed | - | - |
-| `score-20eaad1deae5` | 2026-09-20 06:08 | score | baseline/gpt_oss_120b_appworld | `1e1dda9` | ok | success=0.0 n_records=9 | report.md |
 | `build-b565f5ab1b94` | 2026-09-20 06:08 | build | train_probe/ctool_qwen3_0pt6b | `30aae15` | ok | - | report.md |
 | `train-22a0980de899` | 2026-09-20 06:08 | train | train_probe/ctool_qwen3_0pt6b | `30aae15` | ok | objective=0.75 val_wacc=0.25 val_lastcut_acc=0.25 | - |
 | `sample-96de225de2b4` | 2026-09-20 05:56 | sample | baseline/gpt_oss_120b_appworld | `be60c4c` | ok | - | - |
-| `sample-0-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-0-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-1-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-0-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-2-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-1-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-0-3` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-3-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-4-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-5-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-6-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-7-0` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-2-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-1-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-0-4` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-3-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-4-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-5-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-6-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-7-1` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-2-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-1-3` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-0-5` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-3-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-4-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-5-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-6-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-7-2` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-2-3` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-1-4` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-0-6` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-3-3` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
-| `sample-4-3` | 2026-09-17 12:00 | sample | baseline/gpt_oss_120b_appworld | `deadbee` | launching | - | - |
