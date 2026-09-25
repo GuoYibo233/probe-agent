@@ -1127,13 +1127,39 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
 RESERVED_TOP_LEVEL = ("workflow", "common")    # the top-level keys of a workflow file that name no setting (5.1)
 
 
+def _check_workflow(workflow: Any) -> list[str]:
+    """The file's `workflow:` line, refused unless it is a non-empty list of stage names in which every stage comes after the same-setting stages it reads.
+
+    The same-setting upstream entries of the stage table (source `same`) are the runs a stage
+    reads from its own setting; one marked `when: in_workflow` is read only when its stage is in
+    the list, so it is ordered only then.
+    """
+    if not (isinstance(workflow, list) and workflow):
+        raise SchemaError(f"workflow: expected a non-empty list of stages {sorted(STAGES)}, got {workflow!r}")
+    for position, stage in enumerate(workflow):
+        if not (isinstance(stage, str) and stage in STAGES):
+            raise SchemaError(f"workflow: {stage!r} is not a stage ({sorted(STAGES)})")
+        earlier = workflow[:position]
+        for entry in STAGES[stage]["upstream"]:
+            if entry["source"] == "same":
+                if entry.get("when") == "in_workflow":
+                    ordered = entry["stage"] in workflow
+                else:
+                    ordered = True
+                if ordered and entry["stage"] not in earlier:
+                    raise SchemaError(
+                        f"workflow: {stage!r} reads the {entry['stage']!r} run of the same setting, "
+                        f"so {entry['stage']!r} comes before it in the list {workflow}")
+    return list(workflow)
+
+
 def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -> list[Setting]:
     doc = _parse_yaml(Path(ref_file).read_text(), str(ref_file)) or {}
     if not isinstance(doc, dict):
         raise SchemaError(
             f"{ref_file}: expected a mapping of workflow, common and named settings, got "
             f"{type(doc).__name__}")
-    workflow = list(doc.get("workflow", []))
+    workflow = _check_workflow(doc.get("workflow"))
     if base_name in RESERVED_TOP_LEVEL:
         raise SchemaError(
             f"{base_name}: a reserved top-level key of a workflow file {RESERVED_TOP_LEVEL}, "
