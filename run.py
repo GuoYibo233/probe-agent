@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import time
+from dataclasses import fields as dc_fields
 from datetime import datetime
 from pathlib import Path
 
@@ -136,9 +137,11 @@ def _usage_text() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _check_stage_name(stage: str) -> None:
-    if stage not in schema.STAGES:
-        sys.exit(f"run.py: {stage!r} is not a stage; one of {sorted(schema.STAGES)}")
+def _check_stage_name(stage: str, cfg, workflow_name: str, setting_name: str) -> None:
+    """Refuse a stage the loaded setting's own workflow does not walk: a stage of another workflow has no key under this setting (its sections are absent, or the debug overlay never reached them), so its run directory is one no walk of this setting makes."""
+    if stage not in cfg._workflow:
+        sys.exit(f"run.py: {stage!r} is not a stage of {workflow_name}/{setting_name}, "
+                 f"whose workflow is {cfg._workflow}")
 
 
 def _load_one(workflow_name: str, setting_name: str, *, debug: bool, overrides: dict | None = None):
@@ -647,8 +650,8 @@ def cmd_where(rest: list[str]) -> int:
     if len(positional) != 3:
         sys.exit("run.py where: usage: run.py where <workflow> <setting> <stage> [--debug]")
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     print(schema.run_dir(stage, cfg))
     return 0
 
@@ -679,8 +682,8 @@ def cmd_kill(rest: list[str]) -> int:
     if len(positional) != 3:
         sys.exit("run.py kill: usage: run.py kill <workflow> <setting> <stage> [--debug]")
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     key = schema.key(stage, cfg)
     run_id = f"{stage}-{key}"
     ended = registry.kill(run_id)
@@ -717,8 +720,8 @@ def cmd_refire(rest: list[str]) -> int:
                  "[--debug] [--allow-dirty] [--cards <host>:<ids>]")
     cards = _cards_pool(card_tokens)
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     run_dir = schema.run_dir(stage, cfg)
     if not (run_dir / "settings.yaml").exists():
         sys.exit(f"run.py refire: {run_dir} has no settings.yaml; nothing to refire")
@@ -794,8 +797,8 @@ def cmd_retry(rest: list[str]) -> int:
         sys.exit("run.py retry: usage: run.py retry <workflow> <setting> <stage> [--debug] "
                  "[--allow-dirty] [--cards <host>:<ids>]")
     workflow_name, setting_name, stage = positional
-    _check_stage_name(stage)
     cfg = _load_one(workflow_name, setting_name, debug=debug)
+    _check_stage_name(stage, cfg, workflow_name, setting_name)
     run_dir = schema.run_dir(stage, cfg)
     run_id = f"{stage}-{schema.key(stage, cfg)}"
     # "start fresh" (2.4) deletes what a live piece is still writing -- a train run's `last/`
@@ -806,8 +809,8 @@ def cmd_retry(rest: list[str]) -> int:
         sys.exit(f"run.py retry: {run_dir} has live piece(s) {named}; end them with `run.py kill` "
                  "first, nothing was cleared")
     _clear_continue_markers(stage, run_dir)
-    _stage_step(cfg, stage, allow_dirty, _cards_pool(card_tokens))
-    return 0
+    outcome = _stage_step(cfg, stage, allow_dirty, _cards_pool(card_tokens))
+    return 1 if outcome == "failed" else 0
 
 
 def cmd_table(rest: list[str]) -> int:
@@ -1663,12 +1666,56 @@ def _check_11() -> list[str]:
     return problems
 
 
+# --- check 12: every schema field reaches a stage's key or projection -------
+
+# Contracts 5.2 marks both `meta` fields `key: no`, and no stage reads them: `notes` is prose and
+# `override` is the loader's permission list (5.4), so the section is outside what a stage keys.
+_KEYLESS_SECTIONS = ("meta",)
+
+
+def _dotted_schema_fields() -> list[str]:
+    """Every dataclass field of every schema.SECTION_CLASSES section as `section.field`, a nested dataclass field (train.predict) expanded to `section.field.sub`, the loader-written MODELS_READONLY fields left out."""
+    names: list[str] = []
+    for section, cls in schema.SECTION_CLASSES.items():
+        instance = cls()
+        for f in dc_fields(cls):
+            if f.name in schema.MODELS_READONLY:
+                continue
+            value = getattr(instance, f.name)
+            if hasattr(value, "__dataclass_fields__"):
+                names += [f"{section}.{f.name}.{sub.name}" for sub in dc_fields(type(value))]
+            else:
+                names.append(f"{section}.{f.name}")
+    return names
+
+
+def _check_12() -> list[str]:
+    """A field enters a key only when schema.STAGES names it (2.1, 2.2): a field no stage's `sections` (keyed), `projection` or `projection_generator` (not keyed) names, and no reference field, is read by no stage at all, so stating it moves no key and reaches no run."""
+    reached: set[str] = set(schema.REF_FIELDS)
+    for row in schema.STAGES.values():
+        reached |= set(row["sections"]) | set(row["projection"]) | set(row["projection_generator"])
+    problems: list[str] = []
+    for dotted in _dotted_schema_fields():
+        parts = dotted.split(".")
+        if parts[0] in _KEYLESS_SECTIONS:
+            continue
+        prefixes = {".".join(parts[:n]) for n in range(1, len(parts) + 1)}
+        if prefixes & reached:
+            continue
+        problems.append(
+            f"check 12: {dotted}: named by no schema.STAGES sections, projection or "
+            "projection_generator entry and not a REF_FIELDS entry, so no stage keys or reads it; "
+            "add it to the reading stage's sections tuple (keyed) or projection tuple (not keyed) "
+            "in experimental_settings/schema.py STAGES")
+    return problems
+
+
 def cmd_selfcheck(rest: list[str]) -> int:
     entries = readme_entries(ROOT / "README.md")
     tree_files = _tree_python_files()
     problems: list[str] = []
-    # A check that raises becomes a problem line of its own, so the other ten still run and the
-    # count still prints: an edit that a check cannot read -- a renamed axis, a file that does
+    # A check that raises becomes a problem line of its own, so the other checks still run and
+    # the count still prints: an edit that a check cannot read -- a renamed axis, a file that does
     # not parse -- is a problem to report, not a reason to stop reporting.
     checks = (
         (1, lambda: _check_1(entries, tree_files)),
@@ -1682,6 +1729,7 @@ def cmd_selfcheck(rest: list[str]) -> int:
         (9, lambda: _check_9(tree_files)),
         (10, lambda: _check_10(entries)),
         (11, _check_11),
+        (12, _check_12),
     )
     for number, check in checks:
         try:
@@ -1766,21 +1814,32 @@ def cmd_walk(workflow_name: str, rest: list[str]) -> int:
     setting_names, debug, allow_dirty, overrides, cards = _parse_walk_rest(rest)
     if not setting_names:
         sys.exit("run.py: at least one <setting> is required")
+    # Every named setting is loaded before the first stage is walked, so a name the file does not
+    # hold -- a typo, or a stray word such as a second host:ids after one --cards -- is refused
+    # before anything is frozen or launched. schema.load reads setting files only, never a run
+    # directory, so loading a later setting first gives the same Setting a walk-time load gives.
+    all_cfgs = []
     for setting_name in setting_names:
         try:
-            cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides=overrides)
+            all_cfgs += schema.load(workflow_file, setting_name, debug=debug, overrides=overrides)
         except schema.SchemaError as ex:
             sys.exit(f"run.py: {ex}")
-        for cfg in cfgs:
-            _walk_one(cfg, allow_dirty, cards)
-    return 0
+    outcomes = [_walk_one(cfg, allow_dirty, cards) for cfg in all_cfgs]
+    return 1 if "failed" in outcomes else 0
 
 
-def _walk_one(cfg, allow_dirty: bool, cards: dict | None) -> None:
+def _walk_one(cfg, allow_dirty: bool, cards: dict | None) -> str:
+    """Walk one setting's stages in order and return the outcome the walk ended on: 'continue' when every stage was reused or finished, 'stop' at a card launch or a live piece, 'failed' when a CPU stage exited non-zero."""
     for stage in cfg._workflow:
         outcome = _stage_step(cfg, stage, allow_dirty, cards)
-        if outcome == "stop":
-            return
+        if outcome in ("stop", "failed"):
+            return outcome
+    return "continue"
+
+
+def _print_ok(run_id: str, run_dir: Path, done: dict) -> None:
+    """The line a stage that finished in this walk prints: its run id and the file that reports it, the stage's own report when its done.json names one, else done.json itself."""
+    print(f"run.py: {run_id} ok; report {run_dir / (done.get('report') or 'done.json')}")
 
 
 def _refuse_on_stale_inputs(stage: str, run_dir: Path) -> None:
@@ -2016,6 +2075,10 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
     # The heartbeat file the process is about to open, read before it starts
     # (registry.current_beats), so no verdict reads a previous computation's rows as its own.
     beat_launch = registry.next_beat_launch(run_dir, 0)
+    # The process writes straight to this process's file descriptors, while every line this
+    # walk printed so far may still sit in sys.stdout's buffer (a pipe or a file makes it
+    # block-buffered): flushing here puts those lines above the process's own output.
+    sys.stdout.flush()
     proc = subprocess.Popen(argv_cmd, cwd=str(ROOT))
     piece_entry = {
         "index": 0, "kind": "cpu", "host": _this_host(), "gpus": "",
@@ -2043,7 +2106,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
 
 
 def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -> str:
-    """One stage of the walk (2.3-2.5, 8.1-8.2): the skip test, the partial-piece check, the launch. Returns 'continue' or 'stop'."""
+    """One stage of the walk (2.3-2.5, 8.1-8.2): the skip test, the partial-piece check, the launch. Prints one line naming the outcome and returns it: 'continue' for a reused stage or a CPU stage that finished, 'stop' for a card launch or a live piece, 'failed' for a CPU stage that exited non-zero."""
     key = schema.key(stage, cfg)
     run_dir = schema.run_dir(stage, cfg)
     run_id = f"{stage}-{key}"
@@ -2076,8 +2139,10 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
         if certified:
             _fold_stage_extra(run_dir, done_doc or {})
             _backfill_finish_row(run_id, run_dir)
+            print(f"run.py: reused {run_id} ({run_dir})")
         else:
             _finalize_pair_stage(stage, run_dir, key, pairs)
+            _print_ok(run_id, run_dir, _read_json(done_path) or {})
         return "continue"
 
     meta = _read_json(run_dir / "meta.json") or {}
@@ -2163,13 +2228,17 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
             registry.append_finish(run_id, {
                 "ev": "finish", "t": _now(), "run_id": run_id, "status": "failed",
                 "counts": {}, "metrics": {}, "report": None, "elapsed_s": _elapsed(run_id)})
-        return "stop"
+        # A CPU stage's process writes to this terminal and to no log file, so its own output
+        # (the traceback of a refusal) is the lines printed just above this one.
+        print(f"run.py: {run_id} failed (exit {rc}); its output is above; run directory {run_dir}")
+        return "failed"
     done = _read_json(done_path) or {}
     _fold_stage_extra(run_dir, done)
     registry.append_finish(run_id, {
         "ev": "finish", "t": _now(), "run_id": run_id, "status": "ok",
         "counts": done.get("counts", {}), "metrics": done.get("metrics", {}),
         "report": done.get("report"), "elapsed_s": _elapsed(run_id)})
+    _print_ok(run_id, run_dir, done)
     return "continue"
 
 
