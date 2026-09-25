@@ -910,6 +910,11 @@ def _ref_requirements(field_dotted: str) -> tuple[str, ...]:
     return tuple(u["stage"] for u in _ref_entries(field_dotted))
 
 
+# The (workflow file stem, setting name) pairs whose name-form references are being resolved
+# right now, outermost first; a pair met again while it is on this chain is a reference cycle.
+_RESOLVING: list[tuple[str, str]] = []
+
+
 def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
     """Load the setting a name-form reference names, under the referring setting's debug flag.
 
@@ -924,7 +929,15 @@ def _resolve_name_ref(value: str, *, debug: bool) -> Setting:
     ref_file = ROOT / "experimental_settings" / f"{stem}.yaml"
     if not ref_file.exists():
         raise SchemaError(f"{value!r}: no such workflow file {ref_file}")
-    results = load(ref_file, name, debug=debug, overrides={})
+    pair = (stem, name)
+    if pair in _RESOLVING:
+        cycle = _RESOLVING[_RESOLVING.index(pair):] + [pair]
+        raise SchemaError(f"{' -> '.join(f'{s}/{n}' for s, n in cycle)}: a reference cycle")
+    _RESOLVING.append(pair)
+    try:
+        results = load(ref_file, name, debug=debug, overrides={})
+    finally:
+        _RESOLVING.pop()
     if len(results) != 1:
         raise SchemaError(
             f"{value!r}: names a swept setting with {len(results)} children; name a child directly")
