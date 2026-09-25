@@ -722,7 +722,8 @@ def cmd_refire(rest: list[str]) -> int:
     run_dir = schema.run_dir(stage, cfg)
     if not (run_dir / "settings.yaml").exists():
         sys.exit(f"run.py refire: {run_dir} has no settings.yaml; nothing to refire")
-    # The piece's own refusals (no such piece, a kind refire does not restart) come before the
+    # The piece's own refusals (--piece omitted on a run that records several loop or train
+    # pieces, no such piece, a kind refire does not restart, a finished run) come before the
     # dirty-tree gate and the freeze, so a refused refire rewrites nothing (owner ruling
     # 2026-09-24).
     launch.refire_target(run_dir, piece)

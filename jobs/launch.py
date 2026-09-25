@@ -1223,11 +1223,12 @@ def refire_target(run_dir, piece) -> tuple[dict, dict]:
     recorded = meta.get("pieces") or []
     if piece is None:
         refireable = [p for p in recorded if p.get("kind") in REFIRE_KINDS]
-        if len(refireable) != 1:
+        if len(refireable) == 1:
+            target = refireable[0]
+        else:
             listed = [(p.get("index"), p.get("kind")) for p in recorded]
             sys.exit(f"jobs/launch.py refire: --piece is required: this run records pieces "
                      f"{listed} in {run_dir}/meta.json")
-        target = refireable[0]
     else:
         target = next((p for p in recorded if p.get("index") == piece), None)
         if target is None:
