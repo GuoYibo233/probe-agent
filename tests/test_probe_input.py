@@ -111,6 +111,13 @@ class AssembleTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             assemble("t", [("a()", "ok")], "", 1, 99)
 
+    def test_zero_rounds_keeps_no_history_and_negative_is_refused(self):
+        history = [(f"a{i}()", f"r{i}") for i in range(3)]
+        self.assertEqual(assemble("t", history, "th", 0, 400),
+                         "Task: t\n[HISTORY]\n(start)\n[THINKING]\nth")
+        with self.assertRaises(ValueError):
+            assemble("t", history, "th", -1, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

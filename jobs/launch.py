@@ -1239,15 +1239,15 @@ def _train_can_continue(run_dir: Path) -> bool:
     """Whether a restarted train piece would get past the trainer's continue rule
     (`train/utils/trainer.run`, contracts 2.4), asked before refire writes a start row:
     the trainer continues from `last/` (or from a `last.prev/` its checkpoint settling
-    restores), predicts from `best/` when `train_done.json` is there and no
-    `predictions.parquet` yet, starts fresh when no `train_log.jsonl` exists yet, and refuses
+    restores), predicts from `best/` when `train_done.json` is there (whether or not a
+    `predictions.parquet` is), starts fresh when no `train_log.jsonl` exists yet, and refuses
     a directory that holds `train_log.jsonl` and none of those, because a second training
     would mix two runs in one log. Refire used to
     start that refused incarnation, which died at once and left a `launching` row that
     blocked `run.py retry` for `launch_timeout_s` (repo test 2026-09-25, O10). This module
     imports no torch, so the rule is restated here and both places name each other."""
     run_dir = Path(run_dir)
-    if (run_dir / "train_done.json").exists() and not (run_dir / "predictions.parquet").exists():
+    if (run_dir / "train_done.json").exists():
         return True
     if (run_dir / "last").exists() or (run_dir / "last.prev").exists():
         return True
@@ -1268,8 +1268,8 @@ def refire_refusal(run_dir, target: dict) -> str | None:
         return None
     if _train_can_continue(run_dir):
         return None
-    return (f"jobs/launch.py refire: {run_dir} holds train_log.jsonl and no last/ checkpoint "
-            f"(or a train_done.json beside predictions.parquet), so the trainer would refuse to "
+    return (f"jobs/launch.py refire: {run_dir} holds train_log.jsonl and neither a last/ checkpoint "
+            f"nor a train_done.json, so the trainer would refuse to "
             f"continue it (contracts 2.4: a second training would mix two runs in one log); "
             f"run.py retry <workflow> <setting> train [--debug] starts it fresh")
 

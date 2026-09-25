@@ -17,6 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from data.environments import open_env
+from eval.score_run import _spec_block
 from eval.utils import probe_eval as pe
 from experimental_settings.schema import THETA_GRID
 
@@ -149,6 +150,26 @@ class MatchTest(unittest.TestCase):
                          {"tool_ok": False, "params_all_ok": False, "full_call_ok": False})
         with self.assertRaises(ValueError):
             pe.match_cgen("apis.a.b(x=1)", "not a call", self.env)
+
+
+class ScoreCallAgreeTest(unittest.TestCase):
+    """score's spec block compares the parsed calls, so a value build_call would refuse to write
+    (both quote kinds) is scored instead of stopping the score."""
+
+    def test_both_quote_kinds_are_compared_not_rebuilt(self):
+        env = open_env("appworld")
+        both = """apis.phone.send_text_message(message="Don't forget \\"milk\\"")"""
+        with self.assertRaises(ValueError):
+            env.build_call(*env.split_args(both)[:2])
+        df = pl.DataFrame({
+            "type": ["spec", "env", "spec", "env"],
+            "record_id": ["r1", "r1", "r2", "r2"],
+            "step": [0, 0, 0, 0],
+            "gen_call": [both, None, "apis.a.b(x=1)", None],
+            "action": [None, both, None, "apis.a.b(x=2)"],
+        })
+        block = _spec_block(df, env)
+        self.assertEqual((block["n"], block["tool_agree"], block["call_agree"]), (2, 1.0, 0.5))
 
 
 class ClassifierReportTest(unittest.TestCase):

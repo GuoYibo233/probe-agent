@@ -83,10 +83,14 @@ def assemble(
     probe_result_cap: int,
 ) -> str:
     """Build the probe's input text from the task, the last hist_rounds tool rounds, and the thinking so far."""
+    if hist_rounds < 0:
+        raise ValueError(f"hist_rounds must be at least 0, got {hist_rounds}")
+    # history[-0:] is the whole list, so hist_rounds = 0 (no rounds) is spelled out
+    kept = history[-hist_rounds:] if hist_rounds > 0 else []
     lines = [f"Task: {task}", "[HISTORY]"]
     lines += [
         f"{action} -> {_clip(observation, probe_result_cap)}"
-        for action, observation in history[-hist_rounds:]
+        for action, observation in kept
     ] or ["(start)"]
     lines += ["[THINKING]", thinking_prefix]
     return "\n".join(lines)

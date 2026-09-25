@@ -189,6 +189,21 @@ class RefusalTest(unittest.TestCase):
             with self.subTest(theta=theta):
                 self._refused(path, name, {"inject.theta": theta})
 
+    def test_negative_hist_rounds(self):
+        path, name = _first_setting("train_probe")
+        self.assertIn("build.hist_rounds", self._refused(path, name, {"build.hist_rounds": "-1"}))
+
+    def test_several_injections_per_step_under_a_p2_format(self):
+        path, name = _first_setting("inject")
+        for fmt in ("p2_e1", "p2_e2"):
+            with self.subTest(format=fmt):
+                self.assertIn("at most once per step", self._refused(
+                    path, name, {"inject.format": fmt, "inject.max_inject_per_step": "2"}))
+        for fmt in ("p1_e1", "p2_e1"):
+            with self.subTest(format=fmt, max_inject_per_step=1):
+                _load(path, name, overrides={"inject.format": fmt, "inject.max_inject_per_step": "1"})
+        _load(path, name, overrides={"inject.format": "p1_e1", "inject.max_inject_per_step": "2"})
+
 
 if __name__ == "__main__":
     unittest.main()

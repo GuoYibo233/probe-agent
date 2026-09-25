@@ -175,6 +175,27 @@ def _batches_with_flags(batch_iter):
         prev = nxt
 
 
+def _best_so_far(train_log_path: Path, best: float, best_metrics: dict) -> tuple[float, dict]:
+    """The objective and metrics of the newest `save_best` line of an interrupted run's
+    train_log.jsonl, the validation behind the best/ on disk, so a resumed run compares its next
+    validation against that best/ instead of against inf and never replaces it with worse weights.
+    `save_best` is logged after best/ is saved, and the `eval` line of the same epoch and step,
+    written just before it, carries the metrics. Returns the defaults when no line was saved yet."""
+    evals: dict = {}
+    with open(train_log_path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("event") == "eval":
+                evals[(row.get("ep"), row.get("gstep"))] = {
+                    k: v for k, v in row.items() if k not in ("event", "ep", "gstep", "ts")}
+            elif row.get("event") == "save_best":
+                best = row["objective"]
+                best_metrics = dict(evals.get((row.get("ep"), row.get("gstep")), {"objective": best}))
+    return best, best_metrics
+
+
 def run(run_dir: Path, method) -> None:
     """Drive one train run: load the frozen setting, resume or start fresh per the continue rule, run the alignment gate and the step loop, checkpoint, predict, mark done. `method` is the caller's own module (a train/methods/<m>.py); this function never branches on which one it is."""
     run_dir = Path(run_dir)
@@ -183,7 +204,6 @@ def run(run_dir: Path, method) -> None:
 
     done_path = run_dir / "done.json"
     train_done_path = run_dir / "train_done.json"
-    predictions_path = run_dir / "predictions.parquet"
     last_dir = run_dir / "last"
     best_dir = run_dir / "best"
     train_log_path = run_dir / "train_log.jsonl"
@@ -198,7 +218,12 @@ def run(run_dir: Path, method) -> None:
     resume_commit = None
     resume_rng = None
     ckpt_dir = None
-    if train_done_path.exists() and not predictions_path.exists():
+    # train_done.json means training is over, so the run only predicts from best/, whether or
+    # not a predictions.parquet is already there: one beside it but no done.json is a crash
+    # between the prediction write and the done write, and resuming from an older last/ would
+    # retrain the tail of a finished schedule. The prediction pass rewrites the file whole.
+    # `jobs/launch._train_can_continue` restates this rule.
+    if train_done_path.exists():
         predict_only = True
         ckpt_dir = best_dir
     # A resume is tested on the run key, which is the identity of the setting and the code era
@@ -340,6 +365,8 @@ def run(run_dir: Path, method) -> None:
 
         best = float("inf")
         best_metrics: dict = {"objective": best}
+        if resume_step is not None:
+            best, best_metrics = _best_so_far(train_log_path, best, best_metrics)
         last_checkpoint_t = time.monotonic()
         seen_mbs: set = set()
         mb_loss_sum = 0.0

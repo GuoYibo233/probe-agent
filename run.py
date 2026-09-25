@@ -999,9 +999,8 @@ def _clear_continue_markers(stage: str, run_dir: Path) -> None:
         if p.exists():
             p.unlink()
     if stage == "train":
-        # predictions.parquet is the prediction pass's output: left behind, the trainer would
-        # read a fresh train_done.json beside it as a finished pass, fall through to the
-        # continue rule and refuse the directory (jobs/launch._train_can_continue).
+        # predictions.parquet is the prediction pass's output, cleared with the markers so a
+        # fresh start leaves no prediction of the weights it replaces.
         for name in ("train_log.jsonl", "train_done.json", "align_check.json",
                      "predictions.parquet"):
             p = run_dir / name

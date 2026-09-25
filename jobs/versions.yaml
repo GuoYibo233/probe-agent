@@ -32,3 +32,11 @@
     value that layer would come off, so an example call or argument whose value starts or ends with a
     quote of its own changes; the cgen and cparam match, inject's requoted spec call and score's call_agree
     read the same parser and move with build through the folded keys, while sample never parses a call
+- stage: inject
+  era: 2
+  date: 2026-09-25
+  why: agent/step_with_probe.py hands speculate the probe's raw call when complete_call finds no closed
+    call, so a fire whose generated call was cut off by inject.max_new runs that call and records its
+    failure (SyntaxError or NameError) instead of running print(None) and splicing a successful 'None'
+    result into the stream; the spec row and the resumed text of such a fire change, and score follows
+    through the folded inject key

@@ -395,6 +395,26 @@ def module_literal(rel_path: str, name: str) -> Any:
     return _one_column_zero(rel_path, _parse_module(rel_path), name)
 
 
+FORMATS_FILE = "agent/injected_text_formats.py"
+
+
+def format_placement(fmt: str) -> str:
+    """The placement ("p1" or "p2") of one entry of agent/injected_text_formats.py's FORMATS, read as source text: the first argument of that entry's `Format(...)` call."""
+    tree = _parse_module(FORMATS_FILE)
+    for node in tree.body:
+        if (isinstance(node, ast.Assign) and node.col_offset == 0
+                and any(isinstance(t, ast.Name) and t.id == "FORMATS" for t in node.targets)
+                and isinstance(node.value, ast.Dict)):
+            for k, v in zip(node.value.keys, node.value.values):
+                if isinstance(k, ast.Constant) and k.value == fmt:
+                    if (isinstance(v, ast.Call) and v.args and isinstance(v.args[0], ast.Constant)
+                            and v.args[0].value in ("p1", "p2")):
+                        return v.args[0].value
+                    raise SchemaError(f"{FORMATS_FILE}: FORMATS[{fmt!r}] does not open with a p1/p2 placement")
+            raise SchemaError(f"{FORMATS_FILE}: FORMATS has no entry {fmt!r}")
+    raise SchemaError(f"{FORMATS_FILE}: no column-zero FORMATS dict")
+
+
 # ---------------------------------------------------------------------------
 # The code-era table, jobs/versions.yaml (3.3): how a code change enters a key.
 # ---------------------------------------------------------------------------
@@ -1112,8 +1132,22 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
                 f"build.split_ratio: {ratio!r} is not three train/val/test shares, each >= 0, "
                 "summing to 1")
 
+    # assemble keeps the last hist_rounds rounds; 0 keeps none, and a negative count has no reading
+    if "build" in full and full["build"]["hist_rounds"] < 0:
+        raise SchemaError(f"build.hist_rounds: {full['build']['hist_rounds']} is below 0")
+
     if "inject" in workflow and full["models"]["probe"] is not None:
         _refuse_probe_under_inject(workflow, "models.probe")
+
+    # A p2 format splices the result in as a separate message, so after the first fire the
+    # parsed thinking is no longer one stretch at the end of the streamed text, and
+    # agent/step_with_probe.py stops scoring for the rest of the step. A second injection per
+    # step can never happen under p2; refused here rather than run as one silently.
+    if ("inject" in full and full["inject"]["max_inject_per_step"] > 1
+            and format_placement(full["inject"]["format"]) == "p2"):
+        raise SchemaError(
+            f"inject.max_inject_per_step: {full['inject']['max_inject_per_step']} under format "
+            f"{full['inject']['format']!r}; a p2 format injects at most once per step")
 
     if "inject" in full and full["inject"]["arm"] == "no_probe" and full["inject"]["fire_nth_cut"] > 0:
         raise SchemaError("inject.fire_nth_cut: must be 0 under arm: no_probe")
