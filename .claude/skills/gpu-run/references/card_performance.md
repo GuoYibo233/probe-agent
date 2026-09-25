@@ -38,8 +38,8 @@ Every run on this tree so far is a `--debug` run; there is no full-scale run of 
 ### Agent service and `sample`
 
 The agent service is `gpt_oss_120b` on vLLM 0.26.0, tensor parallel 1,
-`gpu_memory_utilization` 0.92. The probe service of a `sample` run is render-only and runs on
-the CPU of shiga, so a `sample` run holds one card. Across the three `sample` runs the largest
+`gpu_memory_utilization` 0.92. The probe service of a `sample` run is render-only and ran on
+the CPU of shiga, the `login_host` at the time (tokyo108 since 2026-09-25), so a `sample` run holds one card. Across the three `sample` runs the largest
 number of requests running at once was 2 and the largest KV cache usage was 1.7%.
 
 | task | card type | peak memory | wall-clock | throughput | outcome | date | source |
@@ -109,7 +109,8 @@ and the launch-to-card mapping is from the start rows of `jobs/runs.jsonl`.
 
 ### CPU stages
 
-`eval`, `score` and `build` run as CPU pieces (gpus `''`) on shiga/tokyo105; registry
+`eval`, `score` and `build` ran as CPU pieces (gpus `''`) on shiga/tokyo105, the `login_host` at the time (tokyo108
+since 2026-09-25); registry
 elapsed_s 4.2 s to 60.3 s (`jobs/runs.jsonl`).
 
 ## Previous pipeline, previous trainer at 4096 tokens per event

@@ -108,8 +108,9 @@ The last five are CPU-only (no torch, no card, no NFS) and write only under a
 temporary directory; `test_packed_loss.py` needs torch and the Qwen3 tokenizer
 on NFS.
 
-Running both in one process (`unittest discover`) makes the registry test
-append its 160 fixture rows to the real `jobs/runs.jsonl`.
+None of the seven writes the real `jobs/runs.jsonl`: the registry test's
+forked children load a temporary copy of the tree's `jobs/registry.py` by
+path and append their 160 fixture rows there.
 
 A code path is exercised end to end with `--debug`, which lays
 `experimental_settings/debug.yaml` over the setting and writes under the

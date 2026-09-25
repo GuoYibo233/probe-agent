@@ -501,6 +501,21 @@ def _code_verdict(stage: str, files: tuple[str, ...], copies: list[tuple[str, di
     return "moved", copies[-1][0] if copies else ""
 
 
+def _commit_holding(files: tuple[str, ...], copy: dict[str, str]) -> str | None:
+    """The newest commit on HEAD's history whose copy of `files` is `copy` (a dirty launch's recorded code, committed as it ran), or None; only commits that touch `files` are asked, the newest 200 of them."""
+    try:
+        commits = _git("rev-list", "--max-count=200", "HEAD", "--", *files).split()
+    except RuntimeError:
+        return None
+    for commit in commits:
+        try:
+            if _blobs_at(commit, files) == copy:
+                return commit
+        except RuntimeError:
+            continue
+    return None
+
+
 def _gate_message(stage: str, moved: list[dict], older: list[dict]) -> str:
     """The code gate's refusal for one launch: every directory it would read under code that moved, with the `git diff --stat` of that stage's whole code set since the directory's last launch commit, then the `run.py version` commands that judge each change; and every directory of an era below its stage's current one, with the era rows since and what reaches a current run."""
     python = "external/probe-env/bin/python"
@@ -511,6 +526,11 @@ def _gate_message(stage: str, moved: list[dict], older: list[dict]) -> str:
         stage_d, d, label = item["stage"], item["dir"], item["label"]
         commit = label.split(" ")[0] if label else ""
         dirty = "dirty tree" in label
+        # A dirty launch's copy is at no launch commit; a same row chains from it only through a
+        # commit that holds that copy as it ran, and the diff to judge starts there.
+        holder = _commit_holding(item["files"], item["copy"]) if dirty else None
+        if holder:
+            commit = holder
         lines.append(f"- {d} ({stage_d}) last ran {label or 'an unrecorded commit'}; the code of "
                      f"stage {stage_d} has moved since:")
         files = tuple(sorted(_stage_code_files(stage_d)))
@@ -526,10 +546,13 @@ def _gate_message(stage: str, moved: list[dict], older: list[dict]) -> str:
             uncommitted = []
         if uncommitted:
             lines.append(f"    uncommitted changes in: {', '.join(uncommitted)}")
-        if dirty:
-            lines.append(f"    it was launched from a dirty tree, so no same row can chain from it: "
-                         f"run it again (`run.py retry`), or write the era row below")
-        else:
+        if holder:
+            lines.append(f"    it was launched from a dirty tree; commit {holder[:7]} holds the copy it ran, "
+                         f"and the diff above starts there")
+        elif dirty:
+            lines.append(f"    it was launched from a dirty tree and no commit holds the copy it ran, so no same "
+                         f"row can chain from it (`run.py retry` is refused the same way): write the era row below")
+        if not dirty or holder:
             commands.append(f'{python} run.py version {stage_d} --same --from {commit} --why "<one sentence>"'
                             f"    # the diff above leaves what stage {stage_d} produces unchanged")
         commands.append(f'{python} run.py version {stage_d} --why "<one sentence>"'
@@ -588,7 +611,8 @@ def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
             if verdict == "same":
                 print(f"run.py: {d} ({stage_d}) is read under a same row of jobs/versions.yaml: {detail}")
             elif verdict == "moved":
-                moved.append({"stage": stage_d, "dir": d, "label": detail})
+                moved.append({"stage": stage_d, "dir": d, "label": detail, "files": files,
+                              "copy": copies[-1][1]})
         up_by_name = {e["name"]: e for e in schema.STAGES[stage_d]["upstream"]}
         for name, up_key in (frozen._upstream or {}).items():
             entry = up_by_name.get(name)

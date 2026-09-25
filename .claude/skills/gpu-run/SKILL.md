@@ -238,7 +238,9 @@ every setting: a same row is written once per stage per change, never per launch
 `why` is the record a person reads later, so it names what changed and why the output does
 or does not move; never write a same row for a diff that was not read, and when unsure
 whether an output moves, write the era row. Two directories no same row can clear: one
-launched from a dirty tree (its copy is at no commit: `retry` it, or write the era row),
+launched from a dirty tree whose copy no commit holds (`retry` is refused the same way:
+write the era row; when a commit holds the copy as it ran, the refusal prints the same row
+from that commit instead),
 and one of an era below its stage's current one (an era row said the stage's output
 changed since: run the stage again under the current era; a name reference then finds the
 new run, a `key:`/`dir:` reference is re-pointed by hand, and when this walk's own stage
@@ -379,7 +381,8 @@ wall-clock, the throughput, the outcome and the source file of each number:
   only, and refuses any other piece by its index and kind); a finished run (its
   `done.json` was written by its newest launch, so the piece is done, not dead:
   `run.py retry <workflow> <setting> <stage> [--debug]` starts it fresh). Then a liveness
-  refusal, then claims released, cards re-probed,
+  refusal, then a train piece whose directory holds `train_log.jsonl` and no `last/`
+  checkpoint (the trainer's continue rule would refuse it; `retry` starts it fresh), then claims released, cards re-probed,
   the start row of the incarnation it is about to start appended to `jobs/runs.jsonl`, and a
   `launches` entry written beside it. It **warns**, and never refuses,
   when this piece already has more than one entry in `meta.json`'s `launches` (counted
@@ -411,7 +414,7 @@ wall-clock, the throughput, the outcome and the source file of each number:
   first, nothing was cleared``, and every file of the run stays on disk; `kill` the run,
   let its pieces end, then type `retry` again. Once every piece is dead it deletes the
   markers — `done.json` and `consumed.json`, and for `train` also `train_log.jsonl`,
-  `train_done.json`, `align_check.json` and the resume checkpoint under each of its three
+  `train_done.json`, `align_check.json`, `predictions.parquet` and the resume checkpoint under each of its three
   names, `last/`, `last.tmp/` and `last.prev/` (the trainer writes a new checkpoint into
   `last.tmp/` and holds the one it replaces as `last.prev/` between two renames, so a
   kill inside a checkpoint write leaves one of those two on disk) — and then walks the
@@ -437,8 +440,9 @@ wall-clock, the throughput, the outcome and the source file of each number:
 - `jobs/runs.jsonl` is append-only and `jobs/RESULTS.md` is rendered — never hand-edited.
 - `jobs/versions.yaml` is append-only: a `run.py version` row, or a hand-written row in the
   same shape, committed before the launch; a same row only after reading the diff it judges.
-- `run.py` runs on any machine of the cluster; a piece placed on a machine other than the
-  one `run.py` runs on is started over ssh.
+- `run.py` runs on tokyo108, the `login_host`; typed on any other machine it re-runs itself
+  there over ssh (`--help` and `selfcheck` run in place). A piece placed on another machine
+  is started over ssh, and a piece that needs no card runs on the `login_host`.
 - An agent never starts a GPU process; a step that needs a GPU is returned as `BLOCKED`
   with the ready-to-run command, and the main conversation launches it (the branch
   `CLAUDE.md`).
