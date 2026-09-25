@@ -10,7 +10,7 @@ description: >-
   commit, or interrupt with `kill` / `refire` / `retry`. Invoke whenever Dungeon♂Master
   says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
   triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 1.1.3
+version: 1.1.4
 ---
 
 # gpu-run — new1 GPU job full lifecycle
@@ -316,10 +316,15 @@ wall-clock, the throughput, the outcome and the source file of each number:
   pid may since name an unrelated process), writes the `killed` finish row and refuses while another live run is attached to this
   run's service (contracts 8.6).
 - A dead loop or train piece: `/home/y-guo/reproduce/new1/external/probe-env/bin/python
-  run.py refire <workflow> <setting> <stage> --piece i [--debug]` — a kind refusal first,
-  before the dirty-tree gate and before `settings.yaml` is re-frozen (refire restarts loop
-  and train pieces only, and refuses any other piece by its index and kind, so a refused
-  refire rewrites nothing), then a liveness refusal, then claims released, cards re-probed,
+  run.py refire <workflow> <setting> <stage> [--piece i] [--debug]`. `--piece` may be left
+  out when the run records exactly one loop or train piece (every train run); a run that
+  records several is refused with its `(index, kind)` list. The piece refusals come first,
+  before the dirty-tree gate and before `settings.yaml` is re-frozen, so a refused refire
+  rewrites nothing: no such piece; a kind refusal (refire restarts loop and train pieces
+  only, and refuses any other piece by its index and kind); a finished run (its
+  `done.json` was written by its newest launch, so the piece is done, not dead:
+  `run.py retry <workflow> <setting> <stage> [--debug]` starts it fresh). Then a liveness
+  refusal, then claims released, cards re-probed,
   the start row of the incarnation it is about to start appended to `jobs/runs.jsonl`, and a
   `launches` entry written beside it. It **warns**, and never refuses,
   when this piece already has more than one entry in `meta.json`'s `launches` (counted

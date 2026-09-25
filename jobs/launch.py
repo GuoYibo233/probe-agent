@@ -1,4 +1,4 @@
-"""Launch the tmux pieces of a sample, inject or train run and refire its loop and train pieces (a dead service piece is handled by re-running the walk): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
+"""Launch the tmux pieces of a sample, inject or train run and refire a dead loop or train piece of an unfinished run (an omitted --piece names the run's one loop or train piece; a dead service piece is handled by re-running the walk, a finished run by run.py retry): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
 
 # venv: probe
 
@@ -1191,27 +1191,55 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
 # 2.3: refire().
 # ---------------------------------------------------------------------------
 
-# Refire restarts loop and train pieces only (owner ruling 2026-09-24). A dead service piece is
-# handled by killing the run and re-running the walk, `run.py <workflow> <setting> [--debug]`,
-# which relaunches the whole run; a CPU stage is re-run in place by the walk. refire_target()
-# refuses a piece of any other kind, naming its index and kind; `run.py refire` calls it before
-# the dirty-tree gate and the freeze, and refire() calls it before its liveness test, its claim
-# release and its command parse.
+# Refire restarts a dead loop or train piece of an unfinished run only (owner ruling 2026-09-24;
+# contracts 2.3: a piece is dead when its session is gone and its stage has no done.json). A dead
+# service piece is handled by killing the run and re-running the walk, `run.py <workflow>
+# <setting> [--debug]`, which relaunches the whole run; a CPU stage is re-run in place by the
+# walk; a finished run is started fresh by `run.py retry`. refire_target() refuses a piece of
+# any other kind, naming its index and kind, and a piece of a finished run; `run.py refire` calls
+# it before the dirty-tree gate and the freeze, and refire() calls it before its liveness test,
+# its claim release and its command parse.
 REFIRE_KINDS = ("loop", "train")
+
+
+def _run_finished(run_dir: Path) -> bool:
+    """Whether the run's `done.json` was written by its newest launch: the rule `run.py`'s walk
+    and `registry.sync` close a run by (8.2). A `done.json` stamped with an earlier launch is
+    the previous request's, left in place while a widened request's launch is in flight (2.3)."""
+    done = _read_json(run_dir / "done.json")
+    return done is not None and done.get("launch") == registry.launch_ordinal(run_dir)
 
 
 def refire_target(run_dir, piece) -> tuple[dict, dict]:
     """The run's `meta.json` and the entry of the piece `run.py refire` names,
-    when that entry exists and its kind is in `REFIRE_KINDS`; otherwise exits
-    with the refusal. One function, so `run.py refire` and refire() refuse
-    with the same text."""
+    when that entry exists, its kind is in `REFIRE_KINDS` and the run is not
+    finished; otherwise exits with the refusal. `piece` None (`--piece`
+    omitted) names the run's one loop or train piece when it records exactly
+    one (every train run); a run that records several is refused with its
+    piece list. One function, so `run.py refire` and refire() refuse with the
+    same text and resolve the same piece."""
     run_dir = Path(run_dir)
     meta = _read_json(run_dir / "meta.json") or {}
-    target = next((p for p in (meta.get("pieces") or []) if p.get("index") == piece), None)
-    if target is None:
-        sys.exit(f"jobs/launch.py refire: no piece {piece} recorded in {run_dir}/meta.json")
+    recorded = meta.get("pieces") or []
+    if piece is None:
+        refireable = [p for p in recorded if p.get("kind") in REFIRE_KINDS]
+        if len(refireable) != 1:
+            listed = [(p.get("index"), p.get("kind")) for p in recorded]
+            sys.exit(f"jobs/launch.py refire: --piece is required: this run records pieces "
+                     f"{listed} in {run_dir}/meta.json")
+        target = refireable[0]
+    else:
+        target = next((p for p in recorded if p.get("index") == piece), None)
+        if target is None:
+            sys.exit(f"jobs/launch.py refire: no piece {piece} recorded in {run_dir}/meta.json")
+    piece = target.get("index")
     kind = target.get("kind")
     if kind in REFIRE_KINDS:
+        if _run_finished(run_dir):
+            sys.exit(f"jobs/launch.py refire: {run_dir} is finished (done.json present, written "
+                     f"by its newest launch); piece {piece} is done, not dead; run.py retry "
+                     f"<workflow> <setting> {meta.get('stage', '<stage>')} [--debug] starts it "
+                     f"fresh")
         return meta, target
     if kind == "cpu":
         sys.exit(f"jobs/launch.py refire: piece {piece} is a cpu piece; refire restarts loop and "
@@ -1240,11 +1268,13 @@ def _parse_piece_cmd(cmd: str):
 
 def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     """Restart one dead loop or train piece beside its live siblings (2.3).
-    Refuses a piece of any other kind through `refire_target`, before the
-    liveness test, the claim release and the command parse: a dead service
-    piece is handled by killing the run and re-running the walk, which
-    relaunches the whole run, and a CPU stage is re-run in place by the walk
-    (owner ruling 2026-09-24). Refuses, fail-closed, while
+    `piece` None names the run's one loop or train piece (`refire_target`).
+    Refuses a piece of any other kind and a piece of a finished run through
+    `refire_target`, before the liveness test, the claim release and the
+    command parse: a dead service piece is handled by killing the run and
+    re-running the walk, which relaunches the whole run, a CPU stage is re-run
+    in place by the walk (owner ruling 2026-09-24), and a finished run is
+    started fresh by `run.py retry`. Refuses, fail-closed, while
     `registry.session_alive` reports the piece's tmux session alive;
     otherwise warns (never refuses) when the piece already has more than one
     `launches` entry, releases its unfinished claims through
@@ -1284,12 +1314,15 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
     run_dir = Path(run_dir)
     with registry.lock():
         meta, target = refire_target(run_dir, piece)
+        # The recorded index of the piece refire_target resolved (`--piece` omitted names the
+        # run's one loop or train piece); every step below addresses the piece by it.
+        index = target["index"]
         pieces = meta.get("pieces") or []
         kind = target.get("kind")
 
         host, session = target.get("host"), target.get("session")
         if host and session and registry.session_alive(host, session):
-            sys.exit(f"jobs/launch.py refire: piece {piece} is alive: session {session!r} "
+            sys.exit(f"jobs/launch.py refire: piece {index} is alive: session {session!r} "
                      f"on host {host!r}")
 
         run_id = _run_id_of_meta(meta)
@@ -1298,9 +1331,9 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             sys.exit(f"jobs/launch.py refire: {run_dir}/meta.json names no run this registry has a "
                      f"row for, so the restarted piece would go unrecorded (8.1)")
 
-        prior = [l for l in (meta.get("launches") or []) if piece in (l.get("pieces") or [])]
+        prior = [l for l in (meta.get("launches") or []) if index in (l.get("pieces") or [])]
         if len(prior) > 1:
-            print(f"jobs/launch.py refire: piece {piece} already has {len(prior)} launch entries: "
+            print(f"jobs/launch.py refire: piece {index} already has {len(prior)} launch entries: "
                   f"{prior}", file=sys.stderr)
 
         trajectory_record.release(run_dir, registry.live_sessions(),
@@ -1328,7 +1361,7 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
                              cmd=new_cmd)
         # The heartbeat file the restarted incarnation opens, recorded before its session starts
         # (registry.current_beats), so no verdict reads the dead incarnation's rows as this one's.
-        updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, piece)
+        updated_piece["beat_launch"] = registry.next_beat_launch(run_dir, index)
 
         # 8.1's fixed order: the row naming the cards is on disk before the session that uses them.
         # Its `pieces` is the run's whole current list with this piece's entry replaced, because the
@@ -1343,14 +1376,14 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
             "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
             "host": _this_host(),
-            "pieces": [updated_piece if p.get("index") == piece else p for p in pieces],
+            "pieces": [updated_piece if p.get("index") == index else p for p in pieces],
             "status": "launching",
         })
 
         # meta.json carries the new entry (its `beat_launch` included) before the
         # session starts, the order launch() uses, so no reader sees the earlier
         # incarnation's heartbeat file under the new session.
-        launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[piece],
+        launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[index],
                                      cmd=new_cmd)
         registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
 
@@ -1359,5 +1392,5 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         # `tmux new-session` has returned. launch() releases before its tmux waves because the
         # launch gate refuses a young `launching` row; refire has no such clause.
         if not _start_tmux(new_host, session, new_cmd):
-            sys.exit(f"jobs/launch.py refire: failed to start piece {piece} on {new_host!r}")
+            sys.exit(f"jobs/launch.py refire: failed to start piece {index} on {new_host!r}")
     return [updated_piece]
