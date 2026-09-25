@@ -170,8 +170,12 @@ A launch that starts its pieces and does not come up also ends that setting's wa
 without the monitoring line: it takes the lock again only to append its `launch_failed`
 row (the second and third shapes below).
 
-The line `run.py: launched <run_id>; monitor with ...` is the only success signal, and a
-failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is
+The line `run.py: launched <run_id>; monitor with ...` is the only success signal of a card
+launch. Every other stage outcome prints one line as well: a stage the walk reuses prints
+`run.py: reused <run_id> (<run_dir>)`, a CPU stage that finishes in place (and a pair stage
+whose wider request completes) prints `run.py: <run_id> ok; report <path>`, and a CPU stage
+that exits non-zero prints `run.py: <run_id> failed (exit <rc>); ...` below its own output
+and makes the walk, or the `retry`, exit 1. A failed launch takes one of three shapes. `jobs/launch.py` refuses before the start row is
 written — the Phase 2 dirty-tree gate, the launch gate, a host with too few free cards —
 and each of those refusals prints its own `jobs/launch.py: ...` line and exits 1, leaving
 no registry row, nothing in Phase 5's `ls` and no piece log; that printed line is the
