@@ -142,7 +142,7 @@ measured on the previous trainer at 4096 tokens per event; this trainer's defaul
 | np821 train, 1.7B LoRA / 4B LoRA | card not named in the source | 1.7B 17-35 G; 4B 32-38 G | - | - | - | 2026-08-26 | gpu-time-reference.md |
 | np821 evaluation | - | - | ctool 36-45 min per batch; call tier 21-26 min per cell | - | - | 2026-08-26 | gpu-time-reference.md |
 
-`notes/DATA.md` (lines 42, 102) states only which cards the collections used: nyapass on
+`notes/DATA.md` states only which cards the collections used: nyapass on
 tokyo108 "2 H100 + 3/4/5 H200", p1 on "two H200". `gpu_state.md`, surveyed 2026-07-29:
 tokyo106/107 drivers go up to CUDA 12.2, and cu128 torch was measured to run on 106/107.
 
