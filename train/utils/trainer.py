@@ -201,8 +201,9 @@ def run(run_dir: Path, method) -> None:
     if train_done_path.exists() and not predictions_path.exists():
         predict_only = True
         ckpt_dir = best_dir
-    # A resume is tested on the run key, which is the identity of the code and the setting
-    # together (the setting's diff, the stage's era in jobs/versions.yaml, the build key). The
+    # A resume is tested on the run key, which is the identity of the setting and the code era
+    # together (the setting's diff, the stage's era in jobs/versions.yaml, the build key); the
+    # code gate in run.py holds the code itself to that directory before a relaunch. The
     # commit is not that identity: schema.freeze rewrites settings.yaml's
     # _commit to the current HEAD on every relaunch, so a notes or ledger commit between the
     # crash and the relaunch moves cfg._commit while last/meta.json keeps the commit of the

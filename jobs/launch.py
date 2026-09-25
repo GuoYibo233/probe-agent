@@ -131,6 +131,23 @@ def is_ledger_path(path) -> bool:
     return p in ("jobs/runs.jsonl", "jobs/RESULTS.md") or p.endswith(".lock")
 
 
+def code_blobs(files) -> dict[str, str]:
+    """path -> git blob id of each of `files` as the working tree holds it (`git hash-object`, the id `ls-tree` gives a committed copy of the same bytes): the copy of a stage's code a launch records in its launches entry, which run.py's code gate (3.3) reads back. Refuses, naming them, files the tree does not hold."""
+    files = tuple(files)
+    repo_root = _repo_root()
+    missing = [f for f in files if not (repo_root / f).is_file()]
+    if missing:
+        sys.exit(f"jobs/launch.py: the stage table's code tuple names {missing}, which the tree "
+                 "does not hold; run.py selfcheck names the tuple")
+    if not files:
+        return {}
+    r = subprocess.run(["git", "-C", str(repo_root), "hash-object", "--", *files],
+                        capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        sys.exit(f"jobs/launch.py: git hash-object failed: {(r.stderr or r.stdout).strip()}")
+    return dict(zip(files, r.stdout.split()))
+
+
 def git_state(run_dir, allow_dirty: bool) -> dict:
     """The dirty-tree gate and the git fields of a start row, in one function
     (2.5). Refuses a dirty tree without `allow_dirty`, naming the files;
@@ -927,17 +944,19 @@ def _wait_for_endpoint(run_dir: Path, piece: dict) -> str | None:
     return None
 
 
-def _launch_entry(git, *, host, cards, pieces, cmd) -> dict:
+def _launch_entry(git, *, host, cards, pieces, cmd, code) -> dict:
     """One entry for `meta.json`'s `launches` list (8.3): `{t, host, commit,
-    branch, dirty_count, dirty_files, cards, pieces, cmd}`, from the `git`
-    dict the caller was handed. The one builder both `launch()` (many
+    branch, dirty_count, dirty_files, cards, pieces, cmd, code}`, from the
+    `git` dict the caller was handed; `code` is the working tree's copy of
+    the stage's code files (`code_blobs`), so a `--allow-dirty` launch records
+    the code that ran and not HEAD's. The one builder both `launch()` (many
     pieces, one login-machine event) and `refire()` (one restarted piece)
     go through, so the two write one shape."""
     return {
         "t": _now(), "host": host,
         "commit": git.get("commit"), "branch": git.get("branch"),
         "dirty_count": git.get("dirty_count"), "dirty_files": git.get("dirty_files"),
-        "cards": cards, "pieces": pieces, "cmd": cmd,
+        "cards": cards, "pieces": pieces, "cmd": cmd, "code": code,
     }
 
 
@@ -1141,6 +1160,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
             cards={p["index"]: p.get("gpus", "") for p in persisted_pieces},
             pieces=[p["index"] for p in persisted_pieces],
             cmd={p["index"]: p.get("cmd", "") for p in persisted_pieces},
+            code=code_blobs(schema.code_files(stage, setting)),
         )
         registry.write_meta(run_dir, stage=stage, key=key, dir=run_dir_str,
                              era=start_row["era"], upstream=start_row["upstream"],
@@ -1441,8 +1461,9 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         # meta.json carries the new entry (its `beat_launch` included) before the
         # session starts, the order launch() uses, so no reader sees the earlier
         # incarnation's heartbeat file under the new session.
-        launch_entry = _launch_entry(git, host=new_host, cards={index: new_gpus}, pieces=[index],
-                                     cmd={index: new_cmd})
+        launch_entry = _launch_entry(
+            git, host=new_host, cards={index: new_gpus}, pieces=[index], cmd={index: new_cmd},
+            code=code_blobs(schema.code_files(run_row.get("stage"), schema.load_frozen(run_dir))))
         registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
 
         # The session starts inside the hold: the liveness test above is the only guard against

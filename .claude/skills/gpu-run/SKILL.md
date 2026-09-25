@@ -210,26 +210,39 @@ straight on to the next stage without stopping there.
 stage reads a directory — its own when it exists, every upstream directory, and everything
 upstream of those through the frozen upstream keys — `run.py` compares the stage's code
 files (the stage table's `code` tuple in `experimental_settings/schema.py`, as the working
-tree holds them) with the copy at the directory's launch commits. Equal, or covered by a
-same row of `jobs/versions.yaml` at the directory's era (the line
-`run.py: <dir> (<stage>) is read under a same row of jobs/versions.yaml: ...` says which),
-the walk goes on. Otherwise it stops before anything is frozen or launched, printing
-`run.py: <stage> refuses: the code of stage <s> has moved since <dir> last ran (commit <c>)
-...`, the `git diff --stat` of those files, and the two commands that judge the change. The
-agent then reads the whole diff (`git diff <c> -- <files>`) and decides:
+tree holds them) with the copy the directory's launches ran (each launches entry of
+`meta.json` records its copy, so an `--allow-dirty` launch is held to the code it ran, not
+to HEAD's). Equal, or reached from that copy through a chain of same rows of
+`jobs/versions.yaml` (the line `run.py: <dir> (<stage>) is read under a same row of
+jobs/versions.yaml: ...` says which), the walk goes on. Otherwise it stops before anything
+is frozen, launched or deleted (a `retry` too), printing one refusal that lists every such
+directory: `- <dir> (<s>) last ran <commit>; the code of stage <s> has moved since:`, the
+`git diff --stat` of stage `<s>`'s whole code set (every method, environment, family and
+backbone, because a row judges the stage, not one setting), and the commands that judge
+the change. The agent then reads each diff in full (`git diff <commit> -- <files>`) and
+decides per stage:
 
 - the change leaves what stage `<s>` produces unchanged (a rename, a log line, a refusal
   message, a code path this stage never enters):
-  `run.py version <s> --same --why "<one sentence>"` — needs a committed tree, names HEAD;
+  `run.py version <s> --same --from <commit> --why "<one sentence>"` — `<commit>` is the one
+  the refusal printed (the copy the diff was read against); the row names HEAD as `same`
+  and needs a committed tree (the ledger files and the table itself aside);
 - the change alters what stage `<s>` produces:
   `run.py version <s> --why "<one sentence>"` — an era row; stage `<s>` and every stage
   downstream of it get new directories.
 
-Commit the row (`jobs/versions.yaml` is code for the dirty-tree gate) and run the same
-launch command again. One row covers every setting: a same row is written once per stage
-per change, never per launch. The `why` is the record a person reads later, so it names what
-changed and why the output does or does not move; never write a same row for a diff that
-was not read, and when unsure whether an output moves, write the era row.
+Several stages take one command (`run.py version sample build --same --from <c> --why ...`)
+when the refusal printed the same commit for them. Commit the rows (`jobs/versions.yaml`
+is code for the dirty-tree gate) and run the same launch command again. One row covers
+every setting: a same row is written once per stage per change, never per launch. The
+`why` is the record a person reads later, so it names what changed and why the output does
+or does not move; never write a same row for a diff that was not read, and when unsure
+whether an output moves, write the era row. Two directories no same row can clear: one
+launched from a dirty tree (its copy is at no commit: `retry` it, or write the era row),
+and one of an era below its stage's current one (an era row said the stage's output
+changed since: run the stage again under the current era; a name reference then finds the
+new run, a `key:`/`dir:` reference is re-pointed by hand, and when this walk's own stage
+froze that reference, `run.py version <stage> --why` starts it in a new directory).
 
 Two more `run.py`-held gates guard an `inject` launch specifically: the shared-build-key
 gate of contracts 2.5, and the method gate — `run.py` compares a `key:` or `dir:` probe
@@ -436,7 +449,7 @@ wall-clock, the throughput, the outcome and the source file of each number:
 
 - `run.py gpu-jobs free/register/finish/watch/json`, `run.py record start/finish`, and
   registering a launch by hand into several places -> one registry, `jobs/registry.py`,
-  called through `run.py`'s ten reserved subcommands and through the walk itself.
+  called through `run.py`'s eleven reserved subcommands and through the walk itself.
 - `run.py launch` with `--run-id`/`--track`/`--piece host:gpus`, and the queueing
   launchers `launch-probe` / `launch-eval` -> the single walk of Phase 4,
   `run.py <workflow> <setting> ...`; no command line here carries a `run_id`, a `--track`

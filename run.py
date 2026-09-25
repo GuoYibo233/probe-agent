@@ -42,7 +42,7 @@ _SUBCOMMAND_ONE_LINE = {
     "table": "[workflow] [--out FILE] [--debug] -- the backbone x method x risk table",
     "free": "-- the free cards per host",
     "sync": "-- fold done.json and heartbeats into missing finish rows",
-    "version": "<stage> [--same] --why \"<sentence>\" -- append an era row (new directories from now on) or, with --same, a same row (HEAD's code still produces this era) to jobs/versions.yaml",
+    "version": "<stage> [<stage> ...] [--same --from <commit>] --why \"<sentence>\" -- append to jobs/versions.yaml an era row per stage (new directories from now on) or, with --same, a same row per stage (HEAD's code produces what the code at --from produced)",
     "selfcheck": "-- the tree's self-consistency checks",
 }
 
@@ -363,7 +363,7 @@ def literal_keys_of(path, name: str) -> list:
 
 
 def _current_setting(workflow_name: str, setting_name: str, debug: bool, overrides: dict | None = None):
-    """The named setting as it loads today under the overrides the row records, or None when its file, its name or its load is gone (8.6's edited and behind flags compare a row against it)."""
+    """The named setting as it loads today under the overrides the row records, or None when its file, its name or its load is gone (8.6's edited and unjudged flags compare a row against it)."""
     workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
     if not workflow_file.exists():
         return None
@@ -412,7 +412,7 @@ def _git(*args: str) -> str:
 
 
 _BLOBS_AT: dict[tuple, dict] = {}
-_BLOBS_NOW: dict[tuple, dict] = {}
+_TREE_COPY: dict[tuple, dict] = {}
 
 
 def _blobs_at(commit: str, files: tuple[str, ...]) -> dict[str, str]:
@@ -427,98 +427,142 @@ def _blobs_at(commit: str, files: tuple[str, ...]) -> dict[str, str]:
     return _BLOBS_AT[cache_id]
 
 
-def _blobs_now(files: tuple[str, ...]) -> dict[str, str]:
-    """path -> blob id of each of `files` as it is in the working tree (`git hash-object`, the id `ls-tree` gives a committed copy of the same bytes). Refuses, naming them, files the stage table names that the tree does not hold."""
-    if files not in _BLOBS_NOW:
-        missing = [f for f in files if not (ROOT / f).is_file()]
-        if missing:
-            sys.exit(f"run.py: the stage table's code tuples name {missing}, which the tree does not "
-                     "hold; run.py selfcheck names the tuple")
-        ids = _git("hash-object", "--", *files).split()
-        _BLOBS_NOW[files] = dict(zip(files, ids))
-    return _BLOBS_NOW[files]
+def _tree_copy(files: tuple[str, ...]) -> dict[str, str]:
+    """The working tree's copy of `files` (jobs/launch.code_blobs), read once per file set."""
+    if files not in _TREE_COPY:
+        _TREE_COPY[files] = launch.code_blobs(files)
+    return _TREE_COPY[files]
 
 
-def _launch_commits(run_dir: Path) -> list[str]:
-    """The commits a run directory was launched under, oldest first: meta.json's launches entries, then the frozen settings' _commit when the list does not hold it (a directory launched before the list was kept has only that one)."""
-    commits: list[str] = []
+def _copy_id(copy: dict) -> tuple:
+    return tuple(sorted(copy.items()))
+
+
+def _launch_copies(run_dir: Path, files: tuple[str, ...]) -> list[tuple[str, dict]]:
+    """The copies of `files` the run directory's launches ran, oldest first, each with the label the refusal prints: a launches entry's own `code` record (exact, a dirty tree included), else the copy at its commit; a directory whose meta.json keeps no launches list at all falls back on the frozen settings' _commit. A directory with launches recorded and none run has no copies."""
     meta = _read_json(run_dir / "meta.json") or {}
-    for entry in meta.get("launches") or []:
-        commit = entry.get("commit")
-        if commit and commit not in commits:
-            commits.append(commit)
-    if (run_dir / "settings.yaml").exists():
+    copies: list[tuple[str, dict]] = []
+    if "launches" in meta:
+        for entry in meta.get("launches") or []:
+            commit = entry.get("commit") or ""
+            recorded = entry.get("code")
+            if isinstance(recorded, dict):
+                copy = {f: recorded[f] for f in files if f in recorded}
+                label = commit + (" (launched from a dirty tree)" if entry.get("dirty_count") else "")
+            elif commit:
+                try:
+                    copy = _blobs_at(commit, files)
+                except RuntimeError:
+                    continue
+                label = commit
+            else:
+                continue
+            copies.append((label, copy))
+    elif (run_dir / "settings.yaml").exists():
         commit = schema.load_frozen(run_dir)._commit
-        if commit and commit not in commits:
-            commits.append(commit)
-    return commits
+        if commit:
+            try:
+                copies.append((commit, _blobs_at(commit, files)))
+            except RuntimeError:
+                pass
+    return copies
 
 
-def _code_verdict(stage: str, files: tuple[str, ...], era, commits: list[str]) -> tuple[str, str]:
-    """How the working tree's copy of `stage`'s code files stands to the copies the `commits` ran.
+def _code_verdict(stage: str, files: tuple[str, ...], copies: list[tuple[str, dict]]) -> tuple[str, str]:
+    """How the working tree's copy of `stage`'s code files stands to the copies a directory's launches ran (3.3).
 
-    ('ran', commit) when it equals the copy at one of them; ('same', '<commit> ("<why>")') when
-    a same row of jobs/versions.yaml at `era` names a commit whose copy it equals; else
-    ('moved', newest commit). A commit git no longer holds counts as one whose copy differs.
+    ('ran', label) when it equals one of them; ('same', '<commit> ("<why>", from <commit>)')
+    when a chain of same rows of jobs/versions.yaml leads from one of them to it -- a row
+    whose `from` copy is already known makes its `same` copy known, until nothing new is
+    known; else ('moved', label of the newest copy). A commit git no longer holds counts as
+    a copy that differs.
     """
-    now = _blobs_now(files)
+    tree = _copy_id(_tree_copy(files))
+    known: dict[tuple, str] = {}
+    for label, copy in copies:
+        known.setdefault(_copy_id(copy), label)
+    if tree in known:
+        return "ran", known[tree]
+    rows = schema.same_rows(stage)
+    grew = True
+    while grew:
+        grew = False
+        for row in rows:
+            try:
+                from_id = _copy_id(_blobs_at(row["from"], files))
+                same_id = _copy_id(_blobs_at(row["same"], files))
+            except RuntimeError:
+                continue
+            if from_id in known and same_id not in known:
+                known[same_id] = f'{row["same"][:7]} ("{row["why"]}", from {row["from"][:7]})'
+                grew = True
+    if tree in known:
+        return "same", known[tree]
+    return "moved", copies[-1][0] if copies else ""
 
-    def equal_at(commit: str) -> bool:
-        try:
-            return _blobs_at(commit, files) == now
-        except RuntimeError:
-            return False
 
-    for commit in commits:
-        if equal_at(commit):
-            return "ran", commit
-    if era is not None:
-        for row in schema.same_rows(stage, era):
-            if equal_at(row["same"]):
-                return "same", f'{row["same"]} ("{row["why"]}")'
-    return "moved", commits[-1] if commits else ""
-
-
-def _moved_code_message(stage: str, stage_d: str, run_dir: Path, files: tuple[str, ...], commit: str) -> str:
-    """The code gate's refusal, with what to do next: which of stage `stage_d`'s files differ from the copy `run_dir` last ran (commit `commit`), and the two `run.py version` commands that judge the change."""
+def _gate_message(stage: str, moved: list[dict], older: list[dict]) -> str:
+    """The code gate's refusal for one launch: every directory it would read under code that moved, with the `git diff --stat` of that stage's whole code set since the directory's last launch commit, then the `run.py version` commands that judge each change; and every directory of an era below its stage's current one, with the era rows since and what reaches a current run."""
     python = "external/probe-env/bin/python"
-    where = f"commit {commit}" if commit else "an unrecorded commit"
-    lines = [
-        f"run.py: {stage} refuses: the code of stage {stage_d} has moved since {run_dir} last ran "
-        f"({where}), and no row of jobs/versions.yaml judges the change."
-    ]
-    if commit:
+    lines = [f"run.py: {stage} refuses: the launch would read a directory under code no row of "
+             "jobs/versions.yaml judges."]
+    commands: list[str] = []
+    for item in moved:
+        stage_d, d, label = item["stage"], item["dir"], item["label"]
+        commit = label.split(" ")[0] if label else ""
+        dirty = "dirty tree" in label
+        lines.append(f"- {d} ({stage_d}) last ran {label or 'an unrecorded commit'}; the code of "
+                     f"stage {stage_d} has moved since:")
+        files = tuple(sorted(_stage_code_files(stage_d)))
+        if commit:
+            try:
+                stat = _git("diff", "--stat", commit, "--", *files).rstrip()
+            except RuntimeError as ex:
+                stat = f"    (git diff failed: {ex})"
+            lines.append(stat or "    (no committed difference; the working tree differs)")
         try:
-            stat = _git("diff", "--stat", commit, "--", *files).rstrip()
-        except RuntimeError as ex:
-            stat = f"  (git diff failed: {ex})"
-        lines.append(stat or "  (no committed difference; the working tree differs)")
-    try:
-        dirty = [line[3:] for line in _git("status", "--porcelain", "--", *files).splitlines() if line.strip()]
-    except RuntimeError:
-        dirty = []
-    if dirty:
-        lines.append(f"  uncommitted changes in: {', '.join(dirty)}")
-    diff_cmd = f"git diff {commit} -- {' '.join(files)}" if commit else f"git log -- {' '.join(files)}"
-    lines += [
-        f"Read the change (`{diff_cmd}`), judge it, then commit and run this command again:",
-        f"  - it leaves what stage {stage_d} produces unchanged:  "
-        f'{python} run.py version {stage_d} --same --why "<one sentence>"',
-        f"  - it changes what stage {stage_d} produces:           "
-        f'{python} run.py version {stage_d} --why "<one sentence>"',
-        f"    (stage {stage_d} and every stage downstream of it then get new directories)",
-    ]
+            uncommitted = [ln[3:] for ln in _git("status", "--porcelain", "--", *files).splitlines() if ln.strip()]
+        except RuntimeError:
+            uncommitted = []
+        if uncommitted:
+            lines.append(f"    uncommitted changes in: {', '.join(uncommitted)}")
+        if dirty:
+            lines.append(f"    it was launched from a dirty tree, so no same row can chain from it: "
+                         f"run it again (`run.py retry`), or write the era row below")
+        else:
+            commands.append(f'{python} run.py version {stage_d} --same --from {commit} --why "<one sentence>"'
+                            f"    # the diff above leaves what stage {stage_d} produces unchanged")
+        commands.append(f'{python} run.py version {stage_d} --why "<one sentence>"'
+                        f"    # it changes what stage {stage_d} produces: new directories for {stage_d} and downstream")
+    for item in older:
+        stage_d, d, era, current = item["stage"], item["dir"], item["era"], item["current"]
+        since = _era_sentence(stage_d, era) if era is not None else "launched before the code-era table"
+        lines.append(f"- {d} ({stage_d}) is of era {era if era is not None else 'none'}; stage {stage_d} is "
+                     f"at era {current} ({since}). A directory of an older era is not read: run stage "
+                     f"{stage_d} again under era {current} (a name reference then finds the new run; a "
+                     f"key:/dir: reference is re-pointed by hand), or, when this walk's own stage "
+                     f"{stage} froze that reference, `{python} run.py version {stage} --why \"<one sentence>\"` "
+                     f"starts {stage} in a new directory.")
+    if commands:
+        lines.append("Read each diff in full (`git diff <commit> -- <files>`), judge it, run the fitting "
+                     "command(s), commit, and run this command again:")
+        seen: set[str] = set()
+        for c in commands:
+            if c not in seen:
+                seen.add(c)
+                lines.append("  " + c)
     return "\n".join(lines)
 
 
 def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
-    """The code gate (3.3, 2.5): refuse to read a directory whose stage's code files differ in the working tree from the copy every launch commit of it ran, unless a same row of jobs/versions.yaml at the directory's era names a commit whose copy they equal; a directory read under a same row prints the row.
+    """The code gate (3.3, 2.5): refuse to read a directory whose stage's code files differ in the working tree from every copy its launches ran, unless a chain of same rows of jobs/versions.yaml leads from one of those copies to the working tree's (a directory read that way prints the row); and refuse a directory of an era below its stage's current one, or of no era. Every such directory is reported in one refusal.
 
     The directories judged are this stage's own, when it has been launched, every directory
     of `upstream_dirs`, and every directory upstream of those through their frozen
     `_upstream` keys, all the way up: a launch reads its whole result tree. Each directory's
     file list is its own frozen setting's (`schema.code_files`), which holds the modules that
-    run chose (5.2). A directory with no frozen setting was never launched and is not judged.
+    run chose (5.2). A directory with no frozen setting, or frozen and never launched, holds
+    no output and is not judged.
     """
     todo: list[tuple[str, Path]] = [(stage, run_dir)]
     by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
@@ -526,6 +570,8 @@ def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
         if up_dir is not None:
             todo.append((by_name[name]["stage"], Path(up_dir)))
     judged: set[Path] = set()
+    moved: list[dict] = []
+    older: list[dict] = []
     while todo:
         stage_d, d = todo.pop(0)
         if d in judged or not (d / "settings.yaml").exists():
@@ -533,11 +579,16 @@ def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
         judged.add(d)
         frozen = schema.load_frozen(d)
         files = tuple(schema.code_files(stage_d, frozen))
-        verdict, detail = _code_verdict(stage_d, files, frozen._era, _launch_commits(d))
-        if verdict == "same":
-            print(f"run.py: {d} ({stage_d}) is read under a same row of jobs/versions.yaml: {detail}")
-        elif verdict == "moved":
-            sys.exit(_moved_code_message(stage, stage_d, d, files, detail))
+        copies = _launch_copies(d, files)
+        current = schema.era_of(stage_d)
+        if copies and (frozen._era is None or frozen._era < current):
+            older.append({"stage": stage_d, "dir": d, "era": frozen._era, "current": current})
+        elif copies:
+            verdict, detail = _code_verdict(stage_d, files, copies)
+            if verdict == "same":
+                print(f"run.py: {d} ({stage_d}) is read under a same row of jobs/versions.yaml: {detail}")
+            elif verdict == "moved":
+                moved.append({"stage": stage_d, "dir": d, "label": detail})
         up_by_name = {e["name"]: e for e in schema.STAGES[stage_d]["upstream"]}
         for name, up_key in (frozen._upstream or {}).items():
             entry = up_by_name.get(name)
@@ -546,21 +597,23 @@ def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
             up_dir = schema.referenced_run_dir(entry["stage"], up_key)
             if up_dir is not None:
                 todo.append((entry["stage"], up_dir))
+    if moved or older:
+        sys.exit(_gate_message(stage, moved, older))
 
 
 def _row_code_unjudged(stage: str, cfg, row: dict) -> bool | None:
-    """8.6's `unjudged` flag for one ledger row: the working tree's copy of the stage's code files differs from the copy every launch commit of the run ran, and no same row at the run's era covers it -- the next walk that reads this directory stops at the code gate. None when the row's directory is gone or the setting cannot name its files."""
+    """8.6's `unjudged` flag for one ledger row: the working tree's copy of the stage's code files differs from every copy the run's launches ran and no chain of same rows reaches it -- the next walk that reads this directory stops at the code gate. None when the row's directory is gone or the setting cannot name its files."""
     run_dir = Path(row["dir"]) if row.get("dir") else None
     if run_dir is None or not run_dir.is_dir():
         return None
     try:
         files = tuple(schema.code_files(stage, cfg))
-        commits = _launch_commits(run_dir)
+        copies = _launch_copies(run_dir, files)
+        if not copies and row.get("commit"):
+            copies = [(row["commit"], _blobs_at(row["commit"], files))]
+        verdict, _detail = _code_verdict(stage, files, copies)
     except Exception:
         return None
-    if row.get("commit") and row["commit"] not in commits:
-        commits.append(row["commit"])
-    verdict, _detail = _code_verdict(stage, files, row.get("era"), commits)
     return verdict == "moved"
 
 
@@ -984,6 +1037,9 @@ def cmd_retry(rest: list[str]) -> int:
         named = [p.get("session") or f"pid:{p.get('pid')}" for p in live]
         sys.exit(f"run.py retry: {run_dir} has live piece(s) {named}; end them with `run.py kill` "
                  "first, nothing was cleared")
+    # The code gate judges the directory and its upstream before "start fresh" deletes anything,
+    # so a refused retry, like a refused refire, rewrites nothing (3.3, owner ruling 2026-09-24).
+    _refuse_moved_code(stage, run_dir, _upstream_dirs(stage, cfg, schema.upstream(stage, cfg)))
     _clear_continue_markers(stage, run_dir)
     outcome = _stage_step(cfg, stage, allow_dirty, _cards_pool(card_tokens))
     return 1 if outcome == "failed" else 0
@@ -1493,7 +1549,7 @@ def _check_versions_table() -> list[str]:
             row_date = row_date.isoformat()
         if not isinstance(row_date, str) or not _DATE_RE.match(row_date):
             problems.append(f"{where}: date {row.get('date')!r} is not YYYY-MM-DD")
-        extra = set(row) - {"stage", "era", "same", "date", "why"}
+        extra = set(row) - {"stage", "era", "from", "same", "date", "why"}
         if extra:
             problems.append(f"{where}: unknown field(s) {sorted(extra)}")
         era_now = current.get(row["stage"], 1)
@@ -1501,13 +1557,14 @@ def _check_versions_table() -> list[str]:
             if row["era"] != era_now:
                 problems.append(f"{where}: a same row carries era {row['era']}, but the stage's era at this "
                                 f"point of the file is {era_now}")
-            if not _COMMIT_RE.match(row["same"]):
-                problems.append(f"{where}: same {row['same']!r} is not a commit id")
-            else:
+            for name in ("from", "same"):
+                if not _COMMIT_RE.match(row[name]):
+                    problems.append(f"{where}: {name} {row[name]!r} is not a commit id")
+                    continue
                 try:
-                    _git("cat-file", "-e", f"{row['same']}^{{commit}}")
+                    _git("cat-file", "-e", f"{row[name]}^{{commit}}")
                 except RuntimeError:
-                    problems.append(f"{where}: same {row['same']} is not a commit of this repository")
+                    problems.append(f"{where}: {name} {row[name]} is not a commit of this repository")
             continue
         if row["era"] != era_now + 1:
             problems.append(f"{where}: era {row['era']} follows era {era_now}; era rows go up by one")
@@ -1548,6 +1605,19 @@ def _check_4() -> list[str]:
         for path in sorted(closure - listed):
             problems.append(f"check 4: stage {stage}: {path} is imported by its program "
                             f"{row['program']}, but its code tuple does not name it")
+        # Two modules load by name what the setting chose (importlib, not an import the
+        # closure can see): data/environments/__init__.py opens the environment module and
+        # models/__init__.py the family module, so a tuple whose closure holds either names
+        # the chosen module through its template.
+        entries = " ".join(row["code"])
+        if "data/environments/__init__.py" in closure and "{env}" not in entries:
+            problems.append(f"check 4: stage {stage}: its program opens the environment module "
+                            "(data/environments/__init__.py is in its closure), but its code tuple "
+                            "holds no data/environments/{env}.py entry")
+        if "models/__init__.py" in closure and "{family}" not in entries and "{backbone}" not in entries:
+            problems.append(f"check 4: stage {stage}: its program loads a family module "
+                            "(models/__init__.py is in its closure), but its code tuple holds no "
+                            "{family} or {backbone} entry")
 
     for method in sorted(_stems_of("train/methods")):
         path = f"train/methods/{method}.py"
@@ -2218,6 +2288,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, era, upstream
         "t": _now(), "host": _this_host(), "commit": git["commit"], "branch": git["branch"],
         "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
         "cards": {}, "pieces": [0], "cmd": {"0": piece_entry["cmd"]},
+        "code": launch.code_blobs(schema.code_files(stage, cfg)),
     }
     registry.write_meta(run_dir, pieces=[piece_entry], launches=[launches_entry])
     return proc
@@ -2366,48 +2437,63 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
 # ---------------------------------------------------------------------------
 
 def cmd_version(rest: list[str]) -> int:
-    """Append one row to jobs/versions.yaml, the code-era table (3.3).
+    """Append one row per named stage to jobs/versions.yaml, the code-era table (3.3).
 
-    `version <stage> --why "<sentence>"` appends an era row: the stage's era goes up by one,
-    so every later run of the stage, and of every stage downstream of it, lands in a new
-    directory. `version <stage> --same --why "<sentence>"` appends a same row naming HEAD: the
-    stage's code files as HEAD holds them still produce the current era's output, which lets
-    the code gate read a directory the code has moved past. A same row needs a clean tree
-    (the ledger files aside), because the commit it names must hold the code it judges. Either
-    row is committed before the next launch, like any other change.
+    `version <stage> [<stage> ...] --why "<sentence>"` appends an era row per stage: its era goes
+    up by one, so every later run of it, and of every stage downstream of it, lands in a new
+    directory. `version <stage> [...] --same --from <commit> --why "<sentence>"` appends a same
+    row per stage: the stage's code files as HEAD holds them produce what they produced at
+    `--from`, the launch commit the code gate printed and the diff was read against; the gate
+    chains such rows from a directory's launch copy to the working tree's copy. A same row
+    needs a committed tree (the ledger files and this table aside), because the commit it names
+    must hold the code it judges. Either row is committed before the next launch.
     """
     same = "--same" in rest
     why = None
-    positional: list[str] = []
+    from_commit = None
+    stages: list[str] = []
     it = iter(rest)
     for tok in it:
         if tok == "--same":
             continue
         if tok == "--why":
             why = next(it, None)
+        elif tok == "--from":
+            from_commit = next(it, None)
         else:
-            positional.append(tok)
-    if len(positional) != 1 or not why or not why.strip():
-        sys.exit('run.py version: usage: run.py version <stage> [--same] --why "<one sentence>"')
-    stage = positional[0]
-    if stage not in schema.STAGES:
-        sys.exit(f"run.py version: {stage!r} is not a stage; the stages are {', '.join(schema.STAGES)}")
-    era = schema.era_of(stage)
-    row: dict = {"stage": stage, "era": era if same else era + 1}
+            stages.append(tok)
+    usage = ('run.py version: usage: run.py version <stage> [<stage> ...] [--same --from <commit>] '
+             '--why "<one sentence>"')
+    if not stages or not why or not why.strip() or (same != (from_commit is not None)):
+        sys.exit(usage)
+    for stage in stages:
+        if stage not in schema.STAGES:
+            sys.exit(f"run.py version: {stage!r} is not a stage; the stages are {', '.join(schema.STAGES)}")
+    head = None
     if same:
         try:
             status = _git("status", "--porcelain")
             dirty = sorted({line[3:] for line in status.splitlines()
-                            if line.strip() and not launch.is_ledger_path(line[3:])})
-            row["same"] = _git("rev-parse", "--short", "HEAD").strip()
+                            if line.strip() and not launch.is_ledger_path(line[3:])
+                            and line[3:] != "jobs/versions.yaml"})
+            head = _git("rev-parse", "HEAD").strip()
+            from_commit = _git("rev-parse", "--verify", f"{from_commit}^{{commit}}").strip()
         except RuntimeError as ex:
             sys.exit(f"run.py version: git failed: {ex}")
         if dirty:
             sys.exit("run.py version: a same row names HEAD, so the tree must be committed first; "
                      f"uncommitted: {', '.join(dirty)}")
-    row["date"] = date.today()                   # dumped unquoted, the way a hand-written row reads
-    row["why"] = why.strip()
-    text = yaml.safe_dump([row], sort_keys=False, allow_unicode=True, width=100)
+    rows = []
+    for stage in stages:
+        era = schema.era_of(stage)
+        row: dict = {"stage": stage, "era": era if same else era + 1}
+        if same:
+            row["from"] = from_commit
+            row["same"] = head
+        row["date"] = date.today()               # dumped unquoted, the way a hand-written row reads
+        row["why"] = why.strip()
+        rows.append(row)
+    text = yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=100)
     table = schema.VERSIONS_TABLE
     existing = table.read_text() if table.exists() else ""
     with open(table, "a") as f:
@@ -2416,8 +2502,8 @@ def cmd_version(rest: list[str]) -> int:
         f.write(text)
     schema.versions_table()                      # the file must still read as a table
     sys.stdout.write(text)
-    print(f"run.py version: appended to jobs/versions.yaml; commit it before launching "
-          f"(stage {stage} is now era {row['era']})")
+    eras = ", ".join(f"{row['stage']} era {row['era']}" for row in rows)
+    print(f"run.py version: appended to jobs/versions.yaml; commit it before launching ({eras})")
     return 0
 
 

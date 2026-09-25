@@ -67,12 +67,17 @@ code it never ran is the code gate: before a walk, a `refire` or a `retry` reads
 (the stage's own, every upstream directory, and everything upstream of those through the frozen
 upstream keys), `run.py` compares the stage's code files (the stage table's `code` tuple, as the
 working tree holds them) with the copy at the directory's launch commits, and refuses, printing
-the `git diff --stat` of those files and the two `run.py version` commands, when they differ and
-no same row of the table covers the working tree's copy. A same row
-(`run.py version <stage> --same --why "<sentence>"`, naming HEAD) states that the named commit's
-copy of the stage's code still produces the current era's output. So a code change costs one
-judgment, at launch time, with the diff in front of whoever judges it, written into the table
-as one row per stage per change, never per setting or per launch.
+the `git diff --stat` of the stage's whole code set and the `run.py version` commands, when they
+differ and no chain of same rows of the table leads from the copy the directory ran to the
+working tree's copy. A same row (`run.py version <stage> --same --from <commit> --why
+"<sentence>"`, naming HEAD as `same`) states that the stage's code at `same` produces what it
+produced at `from`, the launch commit the diff was read against. A directory of an era below its
+stage's current one, or of no era (launched before the table), is refused outright: an era row
+said its stage's output changed since, so the stage is run again under the current era. A launch
+made with `--allow-dirty` records the copy it ran in its launches entry, so it is reused only
+under that exact copy. So a code change costs one judgment per stage, at launch time, with the
+diff in front of whoever judges it, written into the table as one row per stage per change,
+never per setting or per launch.
 
 `retry` means "start fresh": it refuses while any piece of the run is alive (end it with `kill`
 first), and only then clears the continue markers and launches the stage normally.
@@ -103,7 +108,7 @@ owner rewrites them.
 
 CLAUDE.md — the rules an agent reads on its own; the only other file at the root that is not code.
 
-run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command) and flushes those lines before a CPU stage's process starts, so they stand above that process's output on a pipe as on a terminal, and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names; every command but --help and selfcheck runs on login_host, and typed on another machine re-runs itself there over ssh and returns that exit code.
+run.py — the one command: walk a named setting's stages (sample through score), or run one of the eleven reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, version, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command) and flushes those lines before a CPU stage's process starts, so they stand above that process's output on a pipe as on a terminal, and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names; every command but --help and selfcheck runs on login_host, and typed on another machine re-runs itself there over ssh and returns that exit code.
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
   reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, jobs/versions.yaml (through schema.era_of, schema.era_rows and schema.same_rows, for the code gate, ls's unjudged flag and the version subcommand) and, through git, the blob ids of a stage's code files at a run's launch commits and in the working tree (the code gate), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map), constants/path_outputs.yaml (the login_host every command runs on)
@@ -392,7 +397,8 @@ selfcheck reads both spellings the same, and this one keeps the line short.
 
 A change to a file the stage table names costs nothing at edit time (section 1, the code
 gate): the next launch that would read a directory the change post-dates stops and prints the
-diff, and one `run.py version` row, a same row or an era row, answers it for every setting.
+diff, and one `run.py version` row per stage that lists the file, a same row or an era row,
+answers it for every setting.
 Where a recipe says "an era row", the change is one known to alter the stage's output, so the
 row is written without waiting for the gate.
 
@@ -429,7 +435,7 @@ row is written without waiting for the gate.
 4. **A new field on the task record.** `data/trajectory_record.py` (the column and its
    `DEFAULTS` entry); the one writer (`agent/run_tasks.py` or `agent/step_with_probe.py`). A
    field nobody downstream reads costs nothing more: no era row, no rerun (the code gate asks
-   once, and a same row answers it). A field a downstream stage reads costs a `REQUIRED` entry
+   once per stage that lists the file, and a same row answers each). A field a downstream stage reads costs a `REQUIRED` entry
    and an era row for `sample` and one for `inject` as well, which re-keys both and costs the
    recollection.
 5. **A sixth injection format that reuses a placement.** `agent/injected_text_formats.py` (one
@@ -451,7 +457,9 @@ row is written without waiting for the gate.
 Two changes that are not extensions but deserve the same treatment:
 
 - **Change the cut rule.** `data/probe_input.py` (plus an era row for `build` and one for
-  `inject`, the two stages whose output it shapes); a cut rule that gains a parameter also adds
+  `inject`, the two stages whose output it shapes; `sample` lists the file too because its
+  program imports it, so its gate asks once and a same row answers); a cut rule that gains a
+  parameter also adds
   the field to `schema.py`'s `build` section and to `PROBE_TEXT_FIELDS`. Cost: an inherent full
   rerun downstream — `build` re-keys, `train` follows through the build key, `eval` through the
   train key, and `inject` through its own era row.

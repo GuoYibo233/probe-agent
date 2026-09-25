@@ -254,13 +254,15 @@ STAGES = {
     "pieces": (("train", 1, None),),
     "cards": True,
     "done_writer": "stage",
-    "projection": ("train.checkpoint_hours",),
-    "projection_generator": ("data",),
+    # `data` is projected for every method (not keyed): the frozen setting names the
+    # environment module the validation metric's match opens, so the code gate can read it.
+    "projection": ("train.checkpoint_hours", "data"),
+    "projection_generator": (),
     "code": ("train/utils/trainer.py", "train/methods/{method}.py", "eval/utils/probe_eval.py",
              "data/__init__.py", "data/training_data.py", "data/probe_output.py",
-             "data/environments/__init__.py", "models/__init__.py",
-             "models/probe_models/__init__.py", "models/probe_models/base.py",
-             "models/probe_models/{backbone}.py"),
+             "data/environments/__init__.py", "data/environments/{env}.py",
+             "models/__init__.py", "models/probe_models/__init__.py",
+             "models/probe_models/base.py", "models/probe_models/{backbone}.py"),
   },
   "eval": {
     "sections": ("probe.method", "eval"),
@@ -273,10 +275,10 @@ STAGES = {
     "pieces": (("cpu", 1, None),),
     "cards": False,
     "done_writer": "stage",
-    "projection": (),
-    "projection_generator": ("data",),
+    "projection": ("data",),                    # every method, for the code gate (as on train)
+    "projection_generator": (),
     "code": ("eval/utils/probe_eval.py", "data/__init__.py", "data/probe_output.py",
-             "data/environments/__init__.py"),
+             "data/environments/__init__.py", "data/environments/{env}.py"),
   },
   "inject": {
     "sections": ("data", "models.agent", "generation",
@@ -330,7 +332,7 @@ STAGES = {
     "projection": ("data",),
     "projection_generator": (),
     "code": ("eval/score_run.py", "data/__init__.py", "data/trajectory_record.py",
-             "data/environments/__init__.py"),
+             "data/environments/__init__.py", "data/environments/{env}.py"),
   },
 }
 
@@ -402,10 +404,11 @@ def module_literal(rel_path: str, name: str) -> Any:
 # has none. Writing an era row (`run.py version <stage> --why ...`) is the one way a code change
 # moves a key: every later run of that stage, and of every stage downstream of it through the
 # folded upstream keys, lands in a new directory. A same row (`run.py version <stage> --same
-# --why ...`) states that the stage's code files at the named commit still produce that era's
-# output; run.py's launch gate reads it to reuse a directory whose launch commit the code has
-# moved past. The table's strict shape is `run.py selfcheck` check 4's; this reader refuses
-# only what the key path cannot use.
+# --from <commit> --why ...`) states that the stage's code files at commit `same` produce the
+# same output as at commit `from`; run.py's code gate chains such rows from a directory's launch
+# copy to the working tree's copy to reuse a directory the code has moved past. The table's
+# strict shape is `run.py selfcheck` check 4's; this reader refuses only what the key path
+# cannot use.
 
 VERSIONS_TABLE = ROOT / "jobs" / "versions.yaml"
 
@@ -430,8 +433,12 @@ def versions_table() -> list[dict]:
             raise SchemaError(f"{where}: era {era!r} is not a positive int")
         if not isinstance(row.get("why"), str) or not row["why"].strip():
             raise SchemaError(f"{where}: why is missing or empty")
-        if "same" in row and not isinstance(row["same"], str):
-            raise SchemaError(f"{where}: same {row['same']!r} is not a commit id string")
+        if "same" in row or "from" in row:
+            for name in ("from", "same"):
+                if not isinstance(row.get(name), str):
+                    raise SchemaError(
+                        f"{where}: a same row carries `from` and `same`, each a commit id "
+                        f"(a quoted string; {name} is {row.get(name)!r})")
     return rows
 
 
@@ -446,10 +453,9 @@ def era_rows(stage: str) -> list[dict]:
     return [row for row in versions_table() if row["stage"] == stage and "same" not in row]
 
 
-def same_rows(stage: str, era: int) -> list[dict]:
-    """The same rows of `stage` at `era`, in file order: each names a commit whose code files of the stage still produce era `era`'s output."""
-    return [row for row in versions_table()
-            if row["stage"] == stage and "same" in row and row["era"] == era]
+def same_rows(stage: str) -> list[dict]:
+    """The same rows of `stage`, in file order: each states that the stage's code files at commit `same` produce the same output as at commit `from`, the launch commit the judged diff was read against."""
+    return [row for row in versions_table() if row["stage"] == stage and "same" in row]
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):

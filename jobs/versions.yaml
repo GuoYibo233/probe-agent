@@ -10,14 +10,17 @@
 #     why: <one sentence>       Write one when a change alters what the stage produces.
 #
 #   - stage: train              a same row: the stage's code files (the stage table's `code`
-#     era: 2                    tuple in experimental_settings/schema.py) as they are at the
-#     same: 1a2b3c4             named commit still produce era-2 output. run.py's launch
-#     date: 2026-09-26          gate refuses to read a directory whose launch commit the
-#     why: <one sentence>       code has moved past unless a same row covers the code as it
-#                               is now; `run.py version <stage> --same --why ...` writes one.
+#     era: 2                    tuple in experimental_settings/schema.py) at commit `same`
+#     from: '1a2b3c4...'        produce what they produced at commit `from`, the launch
+#     same: '5d6e7f8...'        commit the code gate printed and the diff was read against.
+#     date: 2026-09-26          The gate refuses to read a directory the code has moved past
+#     why: <one sentence>       unless a chain of same rows leads from the copy it ran to the
+#                               copy in the tree; `run.py version <stage> --same --from
+#                               <commit> --why ...` writes one, naming HEAD as `same`.
 #
 # Rules: the first era row of a stage is era 2 and each later one is one higher; a same row
-# carries the era current at its position in the file; every why is non-empty; `same` names
-# a commit of this repository. `run.py selfcheck` check 4 holds all of this. Era 1 is the
-# state before a stage's first era row. The why sentences are the human record of what the
-# code did when; the `git log` of the stage's files holds the rest.
+# carries the era current at its position in the file; every why is non-empty; `from` and
+# `same` name commits of this repository, quoted (an all-digit id would load as a number).
+# `run.py selfcheck` check 4 holds all of this. Era 1 is the state before a stage's first era
+# row. The why sentences are the human record of what the code did when; the `git log` of
+# the stage's files holds the rest.

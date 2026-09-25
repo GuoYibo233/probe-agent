@@ -69,11 +69,13 @@ diff from the schema defaults, with the stage's era from `jobs/versions.yaml`
 directory is reused, a partial one is continued, and an edited setting or a
 new era row gets a new directory. Before a walk, `refire` or `retry` reads a
 directory, its own or any upstream of it, `run.py` compares the stage's code
-files with the copy at the directory's launch commits and refuses when they
-differ and no same row of the table covers the change; the refusal prints the
-diff summary and the two `run.py version` commands (`--same --why` for a
-change that leaves the stage's output as it was, `--why` for one that alters
-it), and the row they append is committed before the next launch.
+files with the copy the directory's launches ran and refuses when they
+differ and no chain of same rows of the table leads from that copy to the
+tree's; the refusal prints the diff summary and the `run.py version` commands
+(`--same --from <commit> --why` for a change that leaves the stage's output
+as it was, `--why` for one that alters it), and the row they append is
+committed before the next launch. A directory of an older era than its stage
+is refused outright.
 
 ## Checks
 
@@ -118,10 +120,10 @@ it through the gpu-run skill (`.claude/skills/gpu-run/SKILL.md`).
 Direction is `notes/TIMELINE.md`, a person's own words, append-only, and an
 agent appends an entry only when asked. Numbers are `jobs/runs.jsonl`
 (append-only, one JSON object per stage run) rendered into `jobs/RESULTS.md`
-by `jobs/registry.py`; neither is ever hand-edited. Code judgments are
+by `jobs/registry.py`, with the code judgments beside them in
 `jobs/versions.yaml` (append-only, one era row or same row per judgment,
-appended by `run.py version` or by hand in the same shape, never rewritten).
-Data settings are
+appended by `run.py version` or by hand in the same shape); none of the
+three is ever rewritten. Data settings are
 `notes/DATA.md`. The plan is `notes/WORKPLAN.md`, overwritten in place. Raw
 data lives on NFS. These five layers do not live in one place, and that is
 by design: the registry is the numbers, `notes/` is the person's own record
