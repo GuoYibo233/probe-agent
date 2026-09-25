@@ -727,13 +727,18 @@ def _refuse_probe_under_inject(workflow: list[str], dotted: str) -> None:
             "an inject run's probe comes from the settings inject.probe_score and inject.probe_gen name")
 
 
+def _require_workflow_reads(workflow: list[str], section: str, label: str) -> None:
+    """5.7's 'a section for a stage the file's workflow does not name': `section` is one a stage of `workflow` reads; `label` is the name the refusal starts with."""
+    if section in _yaml_allowed_sections(workflow):
+        return
+    raise SchemaError(f"{label}: no stage of this file's workflow reads this section")
+
+
 def _check_raw_sections(workflow: list[str], common: dict, named: dict, base_name: str) -> None:
     """5.7's 'a section for a stage the workflow does not name', evaluated against the raw file content only."""
-    allowed = _yaml_allowed_sections(workflow)
     for d in (common, named):
         for key in d:
-            if key not in allowed:
-                raise SchemaError(f"{key}: no stage of this file's workflow reads this section")
+            _require_workflow_reads(workflow, key, key)
     for d in (common, named):
         if "probe" in d:
             _refuse_probe_under_inject(workflow, "probe")
@@ -766,9 +771,12 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
 
     for dotted, raw in overrides.items():
         _refuse_probe_under_inject(workflow, dotted)
-        section, _, field_name = dotted.partition(".")
-        if section not in SECTION_CLASSES or section not in full:
+        section = dotted.partition(".")[0]
+        if section not in SECTION_CLASSES:
             raise SchemaError(f"{dotted}: not a field of the schema")
+        # An override states what the file itself may state (5.7): the inherited build section
+        # of an inject workflow is in the merged setting and is still not the file's to state.
+        _require_workflow_reads(workflow, section, dotted)
         try:
             _get_dotted(full, dotted)   # validates the whole dotted path exists, nested fields included
         except KeyError:
