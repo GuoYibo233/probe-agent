@@ -35,7 +35,16 @@ declared for: an agent service that starts its own server needs cards no smaller
 smallest card of its table row's serving host, a train piece and a probe service need any card,
 and card sizes are `constants/cards.yaml`'s; a pool whose cards are too small for a piece
 refuses the launch, naming them. `section.field=value` overrides one field from the command line, its right-hand
-side parsed as YAML, so a reference can be pinned without editing the setting file.
+side parsed as YAML, so a reference can be pinned without editing the setting file. An
+override, like a sweep, reaches only the setting it is typed on, never a setting that one
+references by name (`eval.theta_from`, `inject.probe_score`, `inject.probe_gen`,
+`score.baseline`): the referenced setting loads as its file states it. A setting and the
+settings it references must agree on every data-side field (the `sample` and `build`
+sections), because the eval and inject gates refuse two runs whose build keys differ, so a
+change to a data-side field is written into the workflow file as a new pair of settings, the
+referenced one first, never as an override or a sweep (gyb, 2026-09-25). The overrides a run
+was launched under are recorded in its start row and `meta.json`, and `run.py ls` reloads the
+setting under them when it asks whether the setting was edited since.
 
 Ten further words are reserved (`run.py --help` lists them, one per line): `ls`, `where`,
 `find`, `kill`, `refire`, `retry`, `table`, `free`, `sync`, `selfcheck`. Any other first word
@@ -271,28 +280,28 @@ agent/injected_text_formats.py — the table of the five ways an early speculati
 
 ### train/ — train a probe
 
-train/utils/trainer.py — the training loop every method shares: settings -> arguments, seed, backbone, tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment gate (it passes only when it compared at least one row the method kept and the two losses agree), and the probe run over the prediction splits.
+train/utils/trainer.py — the training loop every method shares: settings -> arguments, seed, backbone, tuning (full or LoRA), checkpoints, metrics, heartbeat, resume, the alignment gate (it passes only when it compared at least one row the method kept and the two losses agree), and the probe run over the prediction splits; it hands the heartbeat to the method's validate and predict hooks, which touch it per batch, and holds generate_in_batches, the generation loop a generator method's two passes touch it through.
   imports: experimental_settings/schema.py, models/__init__.py, models/probe_models/base.py, data/training_data.py, data/probe_output.py, jobs/registry.py; [torch]
   used by: train/methods/{ctool,cgen,cparam}.py
   reads:   example (parquet), the checkpoint layout
   writes:  best/, last/, last.tmp/ and last.prev/ (the two names the resume checkpoint's swap uses, left on disk by a kill inside it), train_log.jsonl, align_check.json, train_done.json, predictions.parquet, consumed.json, heartbeat, done.json
   venv:    probe
 
-train/methods/ctool.py — the classification probe: its batches, its head use, its loss, its validation accuracy.
+train/methods/ctool.py — the classification probe: its batches, its head use, its loss, its validation accuracy; its validate and predict hooks touch the heartbeat once per scored block.
   imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_ctool); [torch]
   used by: none (program)
   reads:   -
   writes:  - (everything goes through trainer.py)
   venv:    probe
 
-train/methods/cgen.py — the call-generating probe: its packing, its instance strings and target, its loss positions, its exact-match validation.
+train/methods/cgen.py — the call-generating probe: its packing, its instance strings and target, its loss positions, its exact-match validation; its validate and predict hooks touch the heartbeat once per loss block and per generation batch (through trainer.generate_in_batches).
   imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_cgen), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
   used by: none (program)
   reads:   -
   writes:  - (everything goes through trainer.py)
   venv:    probe
 
-train/methods/cparam.py — the argument-generating probe: its own packing and strings, the arguments as the target.
+train/methods/cparam.py — the argument-generating probe: its own packing and strings, the arguments as the target; its validate and predict hooks touch the heartbeat once per loss block and per generation batch (through trainer.generate_in_batches).
   imports: train/utils/trainer.py, eval/utils/probe_eval.py (match_cparam), data/environments/__init__.py (open_env, for the environment its validation metric's match takes); [torch]
   used by: none (program)
   reads:   -
@@ -325,17 +334,17 @@ eval/method_table.py — the backbone x method table from the registry; one grou
 
 ### jobs/ — a job is one stage run on cards: the code that starts it and records it, and the record itself
 
-jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat, the verdicts, ls/where/find/kill/free/sync, RESULTS.md.
+jobs/registry.py — the registry: runs.jsonl rows under a lock, meta.json, the heartbeat (counting beats, and phase-named touches that move no count), the verdicts (a piece whose session the launcher never started reads not started; a piece whose newest beat names a phase is never slowed), ls/where/find/kill/free/sync, RESULTS.md.
   imports: none (repo); [PyYAML]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py
   reads:   constants/path_outputs.yaml (the root), constants/cards.yaml (the hosts, their card counts and card memory; this file holds its one loader), jobs/runs.jsonl, run directories' meta.json, done.json, heartbeat and service_<kind>_<replica>.json, ssh (to a host's constants/cards.yaml name), tmux, nvidia-smi, a service piece's port (a connect to 127.0.0.1 on the piece's own host, over ssh from any other machine; made only when the piece's verdict reads it: an attached service while its run's work is owed, a service of its own while its session is alive)
   writes:  jobs/runs.jsonl, jobs/RESULTS.md, meta.json, meta.json.corrupt.<timestamp>, heartbeat/<piece>-<launch>.jsonl, done.json
   venv:    any
 
-jobs/launch.py — launch the tmux pieces of a sample, inject or train run and refire a dead loop or train piece of an unfinished run (an omitted --piece names the run's one loop or train piece; a dead service piece is handled by re-running the walk, a finished run by run.py retry): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown.
+jobs/launch.py — launch the tmux pieces of a sample, inject or train run and refire a dead loop or train piece of an unfinished run (an omitted --piece names the run's one loop or train piece; a dead service piece is handled by re-running the walk, a finished run by run.py retry, and a train piece whose directory holds train_log.jsonl and no last/ checkpoint is refused before any start row, with the retry command, because the trainer's continue rule would refuse it): the dirty-tree gate, the launch gate, card placement, port assignment, the piece and service commands, and teardown; a launch marks each piece entry with the time its tmux session started, so a piece whose session was never started reads not started, never dead.
   imports: experimental_settings/schema.py, jobs/registry.py, data/trajectory_record.py (release), data/environments/__init__.py (tasks and requested_pairs); [PyYAML]
   used by: run.py, agent/run_tasks.py (teardown_services)
-  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host, where the loop pieces and the probe service's check client run), constants/cards.yaml (through jobs/registry.py: host names, the ssh target of every remote command, and each card's memory, which placement holds against the card size a piece was declared for), models/table.yaml (the serving block; an agent service's declared card size is the smallest card of its row's serving host), the run directory's settings.yaml, meta.json and done.json (refire's finished-run refusal), its pieces' log/<piece>.txt and, through jobs/registry.current_beats, the heartbeat/<piece>-<launch>.jsonl file of the incarnation each piece entry's beat_launch names (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git, service ports (a connect to 127.0.0.1 on the service's own host, over ssh from any other machine)
+  reads:   constants/path_datasets.yaml (the venv per environment and the venvs map), constants/path_outputs.yaml (the login_host, where the loop pieces and the probe service's check client run), constants/cards.yaml (through jobs/registry.py: host names, the ssh target of every remote command, and each card's memory, which placement holds against the card size a piece was declared for), models/table.yaml (the serving block; an agent service's declared card size is the smallest card of its row's serving host), the run directory's settings.yaml, meta.json and done.json (refire's finished-run refusal), its train_log.jsonl, last/, last.prev/ and train_done.json (refire's continue-rule refusal, by presence only), its pieces' log/<piece>.txt and, through jobs/registry.current_beats, the heartbeat/<piece>-<launch>.jsonl file of the incarnation each piece entry's beat_launch names (the alive check and the launch gate's beats), its own and other live runs' service_<kind>_<replica>.json, the registry rows (through jobs/registry.py), nvidia-smi (through jobs/registry.py), tmux, git, service ports (a connect to 127.0.0.1 on the service's own host, over ssh from any other machine)
   writes:  the start row in jobs/runs.jsonl (a launch's and a refire's), meta.json launch entries, meta.json's split_files, dirty.patch, the piece commands; deletes this launch's own service_<kind>_<replica>.json before its service pieces start
   venv:    probe
 

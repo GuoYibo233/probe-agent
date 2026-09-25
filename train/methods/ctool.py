@@ -259,13 +259,14 @@ def reference_loss(probe, df):
     return (ce * w).sum()
 
 
-def _score_frame(probe, df, tok, cfg, block_mult: int) -> list[dict]:
-    """Every row of df through the packed path: one dict per row with target, weight, cut_index/n_cuts (for the last-cut accuracy), score, label_pred and logits, all read through probe.labels order."""
+def _score_frame(probe, df, tok, cfg, block_mult: int, hb, phase: str) -> list[dict]:
+    """Every row of df through the packed path: one dict per row with target, weight, cut_index/n_cuts (for the last-cut accuracy), score, label_pred and logits, all read through probe.labels order. One heartbeat touch per block, under `phase`, so a long pass never reads as a stall."""
     events, _dropped = _build_events(df, tok, cfg.train.max_len)
     budget = block_mult * cfg.train.max_len
     out = []
     with torch.no_grad():
         for block in _chunk_by_budget(events, budget):
+            hb.touch(phase)
             batch = _make_batch(block)
             logits = probe.forward(batch).logits.float()
             probs = torch.softmax(logits, dim=-1)
@@ -281,11 +282,11 @@ def _score_frame(probe, df, tok, cfg, block_mult: int) -> list[dict]:
     return out
 
 
-def validate(probe, df, tok, cfg):
+def validate(probe, df, tok, cfg, hb):
     """Score the frame through the packed path, compare with probe_eval.match_ctool, and return weighted accuracy plus the last-cut accuracy (an extra number, not the objective)."""
     from eval.utils import probe_eval
 
-    scored = _score_frame(probe, df, tok, cfg, _VAL_BLOCK_MULT)
+    scored = _score_frame(probe, df, tok, cfg, _VAL_BLOCK_MULT, hb, "validate")
     total_w = sum(r["weight"] for r in scored)
     correct_w = sum(r["weight"] for r in scored
                     if probe_eval.match_ctool(r["label_pred"], r["target"], None))
@@ -296,9 +297,9 @@ def validate(probe, df, tok, cfg):
     return {"objective": 1.0 - wacc, "val_wacc": wacc, "val_lastcut_acc": lastcut_acc}
 
 
-def predict(probe, df, tok, cfg):
+def predict(probe, df, tok, cfg, hb):
     """One row per example row, through the same packed path (not Probe.score, which would cost build.max_cuts times the packed pass)."""
-    scored = _score_frame(probe, df, tok, cfg, _VAL_BLOCK_MULT)
+    scored = _score_frame(probe, df, tok, cfg, _VAL_BLOCK_MULT, hb, "predict")
     for r in scored:
         yield {"example_id": r["example_id"], "method": "ctool", "target": r["target"],
                "score": r["score"], "label_pred": r["label_pred"], "logits": r["logits"]}

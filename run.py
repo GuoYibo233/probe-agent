@@ -360,13 +360,13 @@ def literal_keys_of(path, name: str) -> list:
 # ---------------------------------------------------------------------------
 
 
-def _current_setting(workflow_name: str, setting_name: str, debug: bool):
-    """The named setting as it loads today, or None when its file, its name or its load is gone (8.6's edited and behind flags compare a row against it)."""
+def _current_setting(workflow_name: str, setting_name: str, debug: bool, overrides: dict | None = None):
+    """The named setting as it loads today under the overrides the row records, or None when its file, its name or its load is gone (8.6's edited and behind flags compare a row against it)."""
     workflow_file = ROOT / "experimental_settings" / f"{workflow_name}.yaml"
     if not workflow_file.exists():
         return None
     try:
-        cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides={})
+        cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides=dict(overrides or {}))
     except schema.SchemaError:
         return None
     if len(cfgs) == 1:
@@ -488,9 +488,10 @@ def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
         debug = bool(row.get("debug"))
         if not (run_id and workflow_name and setting_name and stage):
             continue
-        setting_id = (workflow_name, setting_name, debug)
+        overrides = row.get("overrides") or {}
+        setting_id = (workflow_name, setting_name, debug, tuple(sorted(overrides.items())))
         if setting_id not in settings:
-            settings[setting_id] = _current_setting(workflow_name, setting_name, debug)
+            settings[setting_id] = _current_setting(workflow_name, setting_name, debug, overrides)
         stage_id = setting_id + (stage,)
         if stage_id not in readings:
             readings[stage_id] = _current_key_and_versions(stage, settings[setting_id])
@@ -520,14 +521,15 @@ def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
     return out
 
 
-def _requested_pairs_of(workflow_name: str, setting_name: str, stage: str, debug: bool) -> list | None:
-    """The (task, seed) pairs this stage of this setting asks for, or None when the setting or its environment cannot be read.
+def _requested_pairs_of(workflow_name: str, setting_name: str, stage: str, debug: bool,
+                        overrides: dict | None = None) -> list | None:
+    """The (task, seed) pairs this stage of this setting asks for, under the overrides the row records, or None when the setting or its environment cannot be read.
 
     Reading them loads the setting and opens the environment, which is why the caller reads
     them once per (setting, stage) and counts every row of that setting against the one list.
     """
     try:
-        cfg = _current_setting(workflow_name, setting_name, debug)
+        cfg = _current_setting(workflow_name, setting_name, debug, overrides)
         if cfg is None:
             return None
         section = cfg.inject if stage == "inject" else cfg.sample
@@ -556,9 +558,11 @@ def _compute_progress(rows: list[dict]) -> dict[str, tuple[int, int]]:
         debug = bool(row.get("debug"))
         if not (run_id and workflow_name and setting_name and run_dir):
             continue
-        request_id = (workflow_name, setting_name, debug, stage)
+        overrides = row.get("overrides") or {}
+        request_id = (workflow_name, setting_name, debug, stage, tuple(sorted(overrides.items())))
         if request_id not in requested:
-            requested[request_id] = _requested_pairs_of(workflow_name, setting_name, stage, debug)
+            requested[request_id] = _requested_pairs_of(workflow_name, setting_name, stage, debug,
+                                                        overrides)
         pairs = requested[request_id]
         if pairs is None:
             continue
@@ -2123,6 +2127,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
         "dir": str(run_dir), "workflow": cfg._file, "setting": cfg._name,
         "parent": None, "swept": None, "debug": cfg._debug,
         "upstream": upstream_map, "versions": versions, "diff": diff,
+        "overrides": dict(cfg._overrides),
         "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
         "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
         "host": _this_host(), "pieces": [piece_entry], "status": "launching",
@@ -2222,7 +2227,7 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
         # records its own setting here.
         registry.write_meta(run_dir, stage=stage, key=key, dir=str(run_dir), versions=versions,
                              upstream=upstream_map, diff=diff, debug=cfg._debug,
-                             owners=_owners_with(run_dir, cfg))
+                             overrides=dict(cfg._overrides), owners=_owners_with(run_dir, cfg))
 
         # A CPU stage starts its process inside the hold: its start row carries the pid, which
         # exists only once the process runs (errata, 8.1). A card stage's launch takes the hold

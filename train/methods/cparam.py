@@ -320,32 +320,34 @@ def reference_loss(probe, df):
     return (row_ce * batch["weight"].to(row_ce.device)).sum()
 
 
-def _weighted_val_ce(probe, df, tok, cfg) -> float:
+def _weighted_val_ce(probe, df, tok, cfg, hb) -> float:
     events, _o, _t, _m = _build_events(df, tok, cfg.train.max_len)
     budget = _VAL_BLOCK_MULT * cfg.train.max_len
     total_loss = 0.0
     total_weight = 0.0
     with torch.no_grad():
         for block in _chunk_by_budget(events, budget):
+            hb.touch("validate")
             batch = _make_batch(block)
             total_loss += float(loss(probe, batch))
             total_weight += float(batch["weight"].sum())
     return total_loss / total_weight if total_weight > 0 else 0.0
 
 
-def validate(probe, df, tok, cfg):
+def validate(probe, df, tok, cfg, hb):
     """The weighted val CE through the packed path, plus greedy generation of the argument string over a deterministic GEN_N-row subsample, compared with probe_eval.match_cparam on two whole calls (both sides get row.tool + "(" prepended)."""
     from data.environments import open_env
     from eval.utils import probe_eval
 
-    val_ce = _weighted_val_ce(probe, df, tok, cfg)
+    val_ce = _weighted_val_ce(probe, df, tok, cfg, hb)
 
     rows = df.sort("example_id").to_dicts()
     random.Random(cfg.train.seed).shuffle(rows)
     sample = rows[:GEN_N] if GEN_N > 0 else []
     env = open_env(cfg.data.env)
     texts = [r["text"] + _prompt_tail(r["tool"]) for r in sample]
-    preds = probe.generate(texts, cfg.train.predict.max_new, "") if sample else []
+    preds = trainer.generate_in_batches(probe, texts, cfg.train.predict.max_new, "", hb,
+                                        "validate")
 
     total_w = sum(r["weight"] for r in sample) or 1.0
     params_ok_w = 0.0
@@ -362,11 +364,11 @@ def validate(probe, df, tok, cfg):
            "gen_n": len(sample)}
 
 
-def predict(probe, df, tok, cfg):
+def predict(probe, df, tok, cfg, hb):
     """One row per example row, no drop: the whole prompt per row (text + call_sep + tool + "("), generated with an empty call_sep since the tail is already in the prompt. Unlike batches/reference_loss, a row whose call does not start with tool + "(" still gets a prediction row -- its `target` is None (1.2's derivation rule only says such rows are dropped from training) -- so predictions.parquet keeps one row per input row, matching the val/test example-row count the acceptance requires."""
     rows = df.to_dicts()
     texts = [r["text"] + _prompt_tail(r["tool"]) for r in rows]
-    outs = probe.generate(texts, cfg.train.predict.max_new, "") if rows else []
+    outs = trainer.generate_in_batches(probe, texts, cfg.train.predict.max_new, "", hb, "predict")
     for r, out in zip(rows, outs):
         target = _derive_target(r["tool"], r["call"])
         gen_tokens = len(tok(out, add_special_tokens=False)["input_ids"])

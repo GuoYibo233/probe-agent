@@ -80,6 +80,20 @@ def _bf16_forward(probe):
     return torch.autocast("cuda", dtype=torch.bfloat16, enabled=on_card)
 
 
+def generate_in_batches(probe, texts: list[str], max_new: int, call_sep: str, hb,
+                        phase: str) -> list[str]:
+    """`Probe.generate` over `texts`, one call per `base.GENERATE_BATCH` prompts (the batch
+    size `Probe.generate` itself steps by, so the outputs are the same strings), with one
+    heartbeat touch under `phase` before each call. A generator method's validation and
+    prediction passes generate for hundreds of prompts, minutes in which no optimizer step
+    lands; the touches keep the piece's beats fresh so it never reads as a stall."""
+    outs: list[str] = []
+    for i in range(0, len(texts), base.GENERATE_BATCH):
+        hb.touch(phase)
+        outs.extend(probe.generate(texts[i:i + base.GENERATE_BATCH], max_new, call_sep))
+    return outs
+
+
 def _save_last(last_dir: Path, probe, opt, sch, *, labels, extra, meta) -> None:
     """Write the resume checkpoint whole, then put it in place by rename.
 
@@ -228,6 +242,8 @@ def run(run_dir: Path, method) -> None:
                 f"{last_dir}: recorded run key {last_meta.get('train_key')!r} differs from this "
                 f"run's key {cfg._key!r}; run.py retry to start fresh")
     elif train_log_path.exists():
+        # `jobs/launch._train_can_continue` restates this rule, so `run.py refire` refuses
+        # before it writes a start row instead of starting an incarnation that dies here.
         raise SystemExit(
             f"{train_log_path}: already exists, this run directory has already been trained "
             "once and its train_log.jsonl would mix two runs; run.py retry to start fresh")
@@ -376,7 +392,7 @@ def run(run_dir: Path, method) -> None:
             nonlocal best, best_metrics, last_epoch_validated
             probe.set_training(False)
             with _bf16_forward(probe):
-                metrics = method.validate(probe, val_df, probe.tokenizer, cfg)
+                metrics = method.validate(probe, val_df, probe.tokenizer, cfg, hb)
             probe.set_training(True)
             log(event="eval", ep=ep, gstep=gstep, **metrics)
             if metrics["objective"] < best:
@@ -456,7 +472,9 @@ def run(run_dir: Path, method) -> None:
                         last_checkpoint_t = now
 
                     if is_epoch_end:
-                        hb.emit(gstep, steps, "step")   # a long validation must not cross the stall line (8.4)
+                        # The pass itself beats per batch through the hb it is handed
+                        # (`Heartbeat.touch`); these two beats bracket it with counting rows.
+                        hb.emit(gstep, steps, "step")
                         _validate_and_maybe_save(ep)
                         hb.emit(gstep, steps, "step")
 
@@ -503,7 +521,7 @@ def run(run_dir: Path, method) -> None:
         if cfg.train.predict.cap is not None:
             split_df = split_df.head(cfg.train.predict.cap)
         with _bf16_forward(probe):
-            pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg))
+            pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg, hb))
         splits_done = i + 1
         if splits_done < predict_total:
             hb.emit(splits_done, predict_total, "step")

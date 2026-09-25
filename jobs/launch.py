@@ -446,7 +446,7 @@ def _start_tmux(host: str, session: str, inner_cmd: str) -> bool:
     return ok
 
 
-def _start_wave(pieces) -> bool:
+def _start_wave(run_dir, pieces) -> bool:
     """Start one wave's tmux sessions; True when every session of the wave
     started. `tmux new-session` fails when the host is unreachable and when a
     session of that name is already there — the session name is a pure
@@ -454,13 +454,22 @@ def _start_wave(pieces) -> bool:
     directory whose earlier piece is still running hits its own name. Both
     mean this launch has no process of its own for that piece, so it says so
     and the caller ends the launch, rather than passing an alive check against
-    somebody else's session."""
+    somebody else's session.
+
+    Each session that started is stamped on its piece's `meta.json` entry as
+    `started`, the time of the start: a piece with no such stamp has no session
+    because none was ever started for it (a later wave, or a launch that ended
+    before its wave), and `registry.judge` reads it `not started` instead of
+    `dead` (repo test 2026-09-25, D1)."""
     started = True
     for p in pieces:
         if not _start_tmux(p["host"], p["session"], p["cmd"]):
             print(f"jobs/launch.py: piece {p['index']}: tmux new-session failed for session "
                   f"{p['session']!r} on host {p['host']!r}", file=sys.stderr)
             started = False
+            continue
+        p["started"] = _now()
+        registry.write_meta(run_dir, pieces=[_strip_runtime(p)])
     return started
 
 
@@ -1117,6 +1126,9 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
             "upstream": schema.upstream(stage, setting),
             "versions": schema.versions_of(stage, setting),
             "diff": schema.fields_of(stage, setting),
+            # The command-line overrides the setting was loaded under, so `run.py ls` reloads
+            # it the same way when it asks whether the setting was edited since.
+            "overrides": dict(setting._overrides),
             "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
             "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
             "host": _this_host(),
@@ -1133,6 +1145,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         registry.write_meta(run_dir, stage=stage, key=key, dir=run_dir_str,
                              versions=start_row["versions"], upstream=start_row["upstream"],
                              diff=start_row["diff"], debug=setting._debug,
+                             overrides=start_row["overrides"],
                              pieces=persisted_pieces, split_files=split_files,
                              launches=[launch_entry])
 
@@ -1146,7 +1159,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         return outcome, _with_ended(placed, teardown_launch(run_dir, placed))
 
     if stage == "train":
-        if not _start_wave(placed):
+        if not _start_wave(run_dir, placed):
             return failed("alive_check")
         up, _pending = alive_check(placed, origin)
         if not up:
@@ -1156,7 +1169,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
     service_pieces = [p for p in placed if p["kind"] == "service"]
     loop_pieces = [p for p in placed if p["kind"] == "loop"]
 
-    if not _start_wave(service_pieces):
+    if not _start_wave(run_dir, service_pieces):
         return failed("alive_check")
     up, _pending = alive_check(service_pieces, origin)
     if not up:
@@ -1178,7 +1191,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         if not check_ok:
             return failed("service_check")
 
-    if not _start_wave(loop_pieces):
+    if not _start_wave(run_dir, loop_pieces):
         return failed("alive_check")
     up, _pending = alive_check(loop_pieces, origin)
     if not up:
@@ -1200,6 +1213,24 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
 # it before the dirty-tree gate and the freeze, and refire() calls it before its liveness test,
 # its claim release and its command parse.
 REFIRE_KINDS = ("loop", "train")
+
+
+def _train_can_continue(run_dir: Path) -> bool:
+    """Whether a restarted train piece would get past the trainer's continue rule
+    (`train/utils/trainer.run`, contracts 2.4), asked before refire writes a start row:
+    the trainer continues from `last/` (or from a `last.prev/` its checkpoint settling
+    restores), predicts from `best/` when `train_done.json` is there, starts fresh when no
+    `train_log.jsonl` exists yet, and refuses a directory that holds `train_log.jsonl` and
+    none of those, because a second training would mix two runs in one log. Refire used to
+    start that refused incarnation, which died at once and left a `launching` row that
+    blocked `run.py retry` for `launch_timeout_s` (repo test 2026-09-25, O10). This module
+    imports no torch, so the rule is restated here and both places name each other."""
+    run_dir = Path(run_dir)
+    if (run_dir / "train_done.json").exists():
+        return True
+    if (run_dir / "last").exists() or (run_dir / "last.prev").exists():
+        return True
+    return not (run_dir / "train_log.jsonl").exists()
 
 
 def _run_finished(run_dir: Path) -> bool:
@@ -1326,6 +1357,12 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             sys.exit(f"jobs/launch.py refire: piece {index} is alive: session {session!r} "
                      f"on host {host!r}")
 
+        if kind == "train" and not _train_can_continue(run_dir):
+            sys.exit(f"jobs/launch.py refire: {run_dir} holds train_log.jsonl and no last/ "
+                     f"checkpoint, so the trainer would refuse to continue it (contracts 2.4: a "
+                     f"second training would mix two runs in one log); run.py retry <workflow> "
+                     f"<setting> train [--debug] starts it fresh")
+
         run_id = _run_id_of_meta(meta)
         run_row = _folded_row_of(run_id) if run_id else None
         if run_row is None:
@@ -1374,6 +1411,7 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             "parent": run_row.get("parent"), "swept": run_row.get("swept"),
             "debug": run_row.get("debug"), "upstream": run_row.get("upstream"),
             "versions": run_row.get("versions"), "diff": run_row.get("diff"),
+            "overrides": run_row.get("overrides") or {},
             "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
             "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
             "host": _this_host(),
@@ -1394,4 +1432,7 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         # launch gate refuses a young `launching` row; refire has no such clause.
         if not _start_tmux(new_host, session, new_cmd):
             sys.exit(f"jobs/launch.py refire: failed to start piece {index} on {new_host!r}")
+        # The session exists: stamp the entry the way `_start_wave` stamps a launch's.
+        updated_piece["started"] = _now()
+        registry.write_meta(run_dir, pieces=[updated_piece])
     return [updated_piece]

@@ -215,8 +215,12 @@ frozen `probe.method` before the stage starts (the `5.4 / 2.1` ruling of
 /home/y-guo/reproduce/new1/external/probe-env/bin/python run.py ls [workflow] [--debug]
 ```
 
-One folded line per run, with each piece's verdict in priority order — `done`, `dead`,
-`suspected stall`, `warming up`, `slowed`, `healthy` (contracts 8.5) — the mark
+One folded line per run, with each piece's verdict in priority order — `done`,
+`not started`, `dead`, `suspected stall`, `warming up`, `slowed`, `healthy` (contracts 8.5,
+plus `not started`: a loop or train piece whose tmux session the launcher has not started
+yet, such as the loop pieces of an inject launch while its services come up and the check
+client runs; never escalated, and closed with the dead ones by `launch_failed` once the
+start row is old enough) — the mark
 `(escalated)` after a verdict that has crossed the escalation line (a `suspected stall`
 whose age is past three times the line that called it a stall, and every `dead`, so a
 dead piece reads `0:dead(escalated)`), progress as

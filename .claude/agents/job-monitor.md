@@ -62,7 +62,8 @@ never wired up heartbeats) do you need to manually check the logs yourself.
 
 - First read `external/probe-env/bin/python run.py ls [workflow]`, copy `verdict`/progress/
   rate/session liveness into the health table and derive the ETA from progress and rate.
-- If `verdict` is `healthy`/`warming up`/`slowed`/`done`: just
+- If `verdict` is `healthy`/`warming up`/`slowed`/`done`/`not started` (a piece whose
+  tmux session the launcher has not started yet, a later wave of its launch): just
   copy it, no autopsy needed.
 - If `verdict` is `dead`, or an escalating `suspected stall`: run the
   autopsy as needed —
@@ -79,7 +80,7 @@ never wired up heartbeats) do you need to manually check the logs yourself.
 ## Task health table
 | session | host/GPU | alive | progress | rate | ETA (derived) | verdict |
 |---|---|---|---|---|---|---|
-verdict ∈ {healthy, warming up, slowed, suspected stall, dead, done}
+verdict ∈ {healthy, warming up, slowed, suspected stall, not started, dead, done}
 
 ## Anomaly details (if any)
 <session>: <log-tail traceback / evidence of a stall>

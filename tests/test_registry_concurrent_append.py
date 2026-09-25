@@ -150,18 +150,46 @@ class PieceVerdictTest(unittest.TestCase):
                          [("healthy", False), ("dead", True)])
 
     def test_relaunched_piece_reads_only_its_own_incarnation(self):
-        # The earlier incarnation finished; the relaunch recorded beat_launch 1 and its process
-        # has not opened heartbeat/0-1.jsonl yet, so the piece is warming up, or dead once its
-        # session is gone, and never done on the earlier file's finish row.
+        # The earlier incarnation finished; the relaunch recorded beat_launch 1, stamped the
+        # entry with the time its session started, and its process has not opened
+        # heartbeat/0-1.jsonl yet, so the piece is warming up, or dead once its session is
+        # gone, and never done on the earlier file's finish row.
         _write_beats(self.run_dir, 0, [{"done": 0, "total": 3}, {"done": 3, "total": 3},
                                        {"done": 3, "total": 3, "status": "done"}],
                      self.now_ts - 900)
         piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0",
-                 "beat_launch": 1}
+                 "beat_launch": 1, "started": self.T}
         self.assertEqual(self._verdicts([piece], {"t-0"})[0], ("warming up", False))
         self.assertEqual(self._verdicts([piece], set())[0], ("dead", True))
         _write_beats(self.run_dir, 0, [{"done": 0, "total": 3}], self.now_ts - 5, launch=1)
         self.assertEqual(self._verdicts([piece], {"t-0"})[0], ("healthy", False))
+
+    def test_piece_whose_session_was_never_started_is_not_started(self):
+        # A loop piece of a later wave: no session, no `started` stamp from the launcher and no
+        # beat of its own, so it is not started and not escalated; the launcher's stamp alone,
+        # or a beat of its own alone, makes the same session-less piece dead.
+        piece = {"index": 0, "kind": "loop", "host": "tokyo105", "session": "s-0"}
+        self.assertEqual(self._verdicts([piece], set())[0], ("not started", False))
+        self.assertEqual(self._verdicts([dict(piece, started=self.T)], set())[0], ("dead", True))
+        _write_beats(self.run_dir, 0, [{"done": 0, "total": 2}], self.now_ts - 5)
+        self.assertEqual(self._verdicts([piece], set())[0], ("dead", True))
+        self.assertTrue(self.registry.launch_failed("2020-01-01 00:00", ["not started", "dead"]))
+
+    def test_beat_naming_a_phase_is_never_slowed(self):
+        # A train piece in its validation pass touches the heartbeat without moving the count:
+        # the same done/total under `phase`, so a zero recent rate reads healthy, not slowed.
+        beats = [{"done": 0, "total": 100}] + [{"done": 50, "total": 100}] * 2
+        _write_beats(self.run_dir, 0, beats, self.now_ts - 60)
+        hb = self.registry.Heartbeat(self.run_dir / "heartbeat" / "0-0.jsonl")
+        hb._last = {"done": 50, "total": 100, "unit": "step"}
+        for _ in range(4):
+            hb.touch("validate")
+        piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0",
+                 "started": self.T}
+        pv, verdict, escalated = self.registry._judge_pieces([piece], self.run_dir, {"t-0"}, self.T)[0]
+        self.assertEqual(pv["phase"], "validate")
+        self.assertEqual((pv["done"], pv["total"]), (50, 100))
+        self.assertEqual((verdict, escalated), ("healthy", False))
 
     def test_attached_service_is_judged_by_its_port_and_its_runs_work(self):
         # An attached agent service's own session ends once its endpoint file is written (7.4),

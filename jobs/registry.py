@@ -329,7 +329,7 @@ class Heartbeat:
         self._file = open(path, "a")
         self._last = {"done": 0, "total": 0, "unit": ""}
 
-    def _write(self, *, status=None, **extra) -> None:
+    def _write(self, *, status=None, phase=None, **extra) -> None:
         rec = dict(self._last)
         # A loop piece writes beats with a world open, which freezes
         # time.time(); every beat timestamp is the wall clock instead
@@ -340,6 +340,8 @@ class Heartbeat:
                 rec[key] = extra[key]
         if status is not None:
             rec["status"] = status
+        if phase is not None:
+            rec["phase"] = phase
         line = json.dumps(rec, ensure_ascii=False)
         self._file.write(line + "\n")
         self._file.flush()
@@ -348,6 +350,15 @@ class Heartbeat:
     def emit(self, done: int, total: int, unit: str, **extra) -> None:
         self._last = {"done": int(done), "total": int(total), "unit": str(unit)}
         self._write(status=extra.pop("status", None), **extra)
+
+    def touch(self, phase: str) -> None:
+        """A beat that moves no count: the last `done/total unit` again, a fresh
+        timestamp and the name of the phase the piece is in (`validate`,
+        `predict`). A train piece's validation and prediction passes advance no
+        optimizer step, so without these a long pass read `suspected stall`
+        (repo test 2026-09-25, D4); `judge` reads the phase and does not call a
+        piece `slowed` on a count that a pass by design leaves where it was."""
+        self._write(phase=phase)
 
     def finish(self) -> None:
         self._write(status="done")
@@ -813,8 +824,8 @@ def rates(first_beat: dict | None, recent_beats: list[dict]) -> tuple[float | No
 # judges an attached agent service (`attached_to` in its endpoint file) by its port and its run's
 # work instead of by its session, which ends once the endpoint file is written (7.4).
 def judge(piece: dict) -> tuple[str, bool]:
-    """`done, dead, suspected stall, warming up, slowed, healthy`, in that
-    priority order, for a `loop`, `train` or `cpu` piece.
+    """`done, not started, dead, suspected stall, warming up, slowed, healthy`,
+    in that priority order, for a `loop`, `train` or `cpu` piece.
 
     A piece is `done` when the heartbeat file of its own incarnation, the one
     the entry's `beat_launch` names (an entry written before that field existed
@@ -824,10 +835,26 @@ def judge(piece: dict) -> tuple[str, bool]:
     signal: a train piece's step beats reach the step total before its last
     validation and its prediction pass, and a claiming piece's total is the
     whole request (8.4), so a piece that dies after that beat and before its
-    own finish row is `dead`, and `sync` and `launch_failed` can close it."""
+    own finish row is `dead`, and `sync` and `launch_failed` can close it.
+
+    A `loop` or `train` piece with no session, no `started` time on its entry
+    and no beat of its own incarnation was never started by the launcher (the
+    loop wave of an inject launch waits for its services and the check client;
+    a launch that ended before that wave never starts it), so it is
+    `not started`, never escalated, and `launch_failed` closes its launch with
+    the dead ones once the start row is old enough. Either mark of a start, the
+    launcher's stamp or a beat the piece wrote itself, makes a session-less
+    piece `dead`. A `cpu` piece is started by the walk that records its pid, so
+    it never reads `not started`.
+
+    A newest beat that names a phase (`Heartbeat.touch`: a train piece's
+    validation or prediction pass) moves no count by design, so the piece is
+    not `slowed` on it; its age is still read against the stall line."""
     if piece.get("status") == "done":
         return "done", False
     if piece.get("alive") is False:
+        if piece.get("kind") != "cpu" and not piece.get("started") and not piece.get("has_beat"):
+            return "not started", False
         return "dead", True
     warm = not piece.get("has_beat")
     age = piece["since_launch_s"] if warm else piece["beat_age_s"]
@@ -837,6 +864,8 @@ def judge(piece: dict) -> tuple[str, bool]:
         return "suspected stall", age > esc_line
     if warm:
         return "warming up", False
+    if piece.get("phase"):
+        return "healthy", False
     recent_rate, avg_rate = piece.get("recent_rate"), piece.get("avg_rate")
     if recent_rate is not None and avg_rate and recent_rate < DEFAULTS["slow_ratio"] * avg_rate:
         return "slowed", False
@@ -894,7 +923,7 @@ def launch_failed(started_at: str, verdicts: list[str]) -> bool:
     finish row for each run this selects (8.1, 8.2) and `sync` writes it for a
     run it reaches first, so the ledger, `RESULTS.md` and the `ls` line carry
     the same word for the same state instead of each naming it their own way."""
-    return (bool(verdicts) and all(v == "dead" for v in verdicts)
+    return (bool(verdicts) and all(v in ("dead", "not started") for v in verdicts)
             and _age_s(started_at) > DEFAULTS["launch_timeout_s"])
 
 
@@ -970,6 +999,12 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str
         "port_ok": None,
         "avg_rate": avg_rate,
         "recent_rate": recent_rate,
+        # The pass the newest beat names (`Heartbeat.touch`), None for a counting beat.
+        "phase": last.get("phase") if last else None,
+        # The time the launcher started this piece's session (`jobs/launch.py`), absent for
+        # a piece whose session was never started: a later wave of its launch, or a launch
+        # that ended before its wave.
+        "started": piece.get("started"),
     }
 
 

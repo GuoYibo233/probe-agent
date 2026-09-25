@@ -182,6 +182,11 @@ class Setting:
     _versions: dict = field(default_factory=dict)
     _commit: str | None = None
     _resolved: dict = field(default_factory=dict)
+    # The command-line overrides this load applied, dotted field -> the text typed, empty for a
+    # plain load. The launcher records them in the start row and meta.json, and `run.py ls`
+    # reloads the named setting under them when it asks whether the setting was edited since;
+    # without the record every overridden run read `edited` forever (repo test 2026-09-25, D2).
+    _overrides: dict = field(default_factory=dict)
 
 
 AXES = {
@@ -1346,7 +1351,9 @@ def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -
     for suffix, extra in children_extras:
         full, authored = _merge_one(workflow, common, named, debug=debug, overrides=overrides, extra=extra)
         name = f"{base_name}/{suffix}" if suffix else base_name
-        settings.append(_finalize(full, authored, workflow, file_stem=file_stem, name=name, debug=debug))
+        setting = _finalize(full, authored, workflow, file_stem=file_stem, name=name, debug=debug)
+        setting._overrides = dict(overrides)
+        settings.append(setting)
     return settings
 
 
