@@ -1768,13 +1768,18 @@ def cmd_walk(workflow_name: str, rest: list[str]) -> int:
     setting_names, debug, allow_dirty, overrides, cards = _parse_walk_rest(rest)
     if not setting_names:
         sys.exit("run.py: at least one <setting> is required")
+    # Every named setting is loaded before the first stage is walked, so a name the file does not
+    # hold -- a typo, or a stray word such as a second host:ids after one --cards -- is refused
+    # before anything is frozen or launched. schema.load reads setting files only, never a run
+    # directory, so loading a later setting first gives the same Setting a walk-time load gives.
+    all_cfgs = []
     for setting_name in setting_names:
         try:
-            cfgs = schema.load(workflow_file, setting_name, debug=debug, overrides=overrides)
+            all_cfgs += schema.load(workflow_file, setting_name, debug=debug, overrides=overrides)
         except schema.SchemaError as ex:
             sys.exit(f"run.py: {ex}")
-        for cfg in cfgs:
-            _walk_one(cfg, allow_dirty, cards)
+    for cfg in all_cfgs:
+        _walk_one(cfg, allow_dirty, cards)
     return 0
 
 
