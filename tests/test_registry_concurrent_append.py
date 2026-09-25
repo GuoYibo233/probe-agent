@@ -9,7 +9,9 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -99,20 +101,22 @@ class PieceVerdictTest(unittest.TestCase):
     """8.5's verdicts over one run's pieces, through `_judge_pieces`, the derivation `ls()` and
     `sync()` both read. Sessions are a plain set, so no host is probed."""
 
-    T = "2026-09-17 12:00"
-
     def setUp(self):
         self.registry = _load_registry()
         self._tmp = tempfile.TemporaryDirectory()
         self.run_dir = Path(self._tmp.name)
-        self.now_ts = self.registry._parse_t(self.T) + 600
+        # The verdicts age every beat against the clock they read after the heartbeat file, so
+        # the fixture's beats and launch minute are placed relative to the real clock: the
+        # launch about ten minutes ago, beats a few seconds ago.
+        self.now_ts = time.time()
+        self.T = datetime.fromtimestamp(self.now_ts - 600).strftime("%Y-%m-%d %H:%M")
 
     def tearDown(self):
         self._tmp.cleanup()
 
     def _verdicts(self, pieces, sessions):
         return [(v, esc) for _pv, v, esc in self.registry._judge_pieces(
-            pieces, self.run_dir, set(sessions), self.T, self.now_ts)]
+            pieces, self.run_dir, set(sessions), self.T)]
 
     def _sample_pieces(self):
         return [
@@ -167,7 +171,7 @@ class PieceVerdictTest(unittest.TestCase):
         pieces = [{"index": 0, "kind": "loop", "host": "tokyo105", "session": "s-0"},
                   {"index": 1, "kind": "service", "host": "tokyo108", "session": "s-1",
                    "endpoint_file": "service_agent_0.json"}]
-        judged = self.registry._judge_pieces(pieces, self.run_dir, {"s-0"}, self.T, self.now_ts)
+        judged = self.registry._judge_pieces(pieces, self.run_dir, {"s-0"}, self.T)
         self.assertTrue(judged[1][0]["attached"])
         self.assertEqual(self.registry.judge_service(dict(judged[1][0], port_ok=True)),
                          ("healthy", False))

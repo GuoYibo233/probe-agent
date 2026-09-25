@@ -564,12 +564,14 @@ def _is_local_host(host_name: str) -> bool:
 
 def _remote_shell(host: str, script: str, timeout: float = 20.0) -> tuple[bool, str]:
     """Run `script` on `host`: locally through `bash -c` when `host` normalises
-    to this machine, over `ssh -o BatchMode=yes` otherwise (errata). Returns
-    `(ok, stdout)`; `ok` is False on any failure or timeout."""
+    to this machine, over `ssh -o BatchMode=yes` to the host's
+    `constants/cards.yaml` name otherwise (errata; an alias such as `shiga`
+    resolves only inside the cluster network, the entry's name from outside it
+    too). Returns `(ok, stdout)`; `ok` is False on any failure or timeout."""
     if _is_local_host(host):
         argv = ["bash", "-c", script]
     else:
-        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, script]
+        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", canonical_host(host), script]
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     except Exception:
@@ -671,16 +673,18 @@ def end_pid(host: str | None, pid) -> bool:
 
 
 def _probe_port(piece: dict) -> bool | None:
+    """Whether a service piece's port answers, tested on the piece's own host the way its
+    session is tested with `tmux ls` there: a TCP connection to 127.0.0.1:<port> opened in
+    place when the host is this machine, over ssh otherwise, so the verdict does not depend on
+    whether this machine can route to the cluster's service ports. Fail-closed (3.4, 6.3): a
+    failed or timed-out ssh reads as not answering. `None` for a piece with no host or port."""
     port = piece.get("port")
     host = piece.get("host")
     if not port or not host:
         return None
-    target = "127.0.0.1" if _is_local_host(host) else host
-    try:
-        with socket.create_connection((target, int(port)), timeout=3):
-            return True
-    except OSError:
-        return False
+    script = f"timeout 3 bash -c {shlex.quote(f'exec 3<>/dev/tcp/127.0.0.1/{int(port)}')}"
+    ok, _out = _remote_shell(host, script)
+    return ok
 
 
 def _probe_host_busy_cards(host_name: str, n_cards: int) -> set[int]:
@@ -725,7 +729,6 @@ def cards_busy() -> dict[str, set[int]]:
     if not folded:
         return busy
     sessions = live_sessions()
-    now_ts = time.time()
     for entry in folded.values():
         start, finish = entry["start"], entry["finish"]
         if start is None or finish is not None:
@@ -736,7 +739,7 @@ def cards_busy() -> dict[str, set[int]]:
         if not holds_cards:
             continue
         young = _age_s(start["t"]) < DEFAULTS["launch_timeout_s"]
-        judged = _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)
+        judged = _judge_pieces(pieces, run_dir, sessions, start["t"])
         for piece, (pv, verdict, _escalated) in zip(pieces, judged):
             host_name = piece.get("host")
             gpus = piece.get("gpus")
@@ -842,9 +845,10 @@ def judge(piece: dict) -> tuple[str, bool]:
 
 def judge_service(piece: dict) -> tuple[str, bool]:
     """`done, dead, healthy, warming up, suspected stall` for a `service`
-    piece, over its start-row time, its session liveness, one port probe and
-    `work_done`, which `_judge_pieces` sets when the run has work pieces and
-    `judge` calls every one of them `done`.
+    piece, over its start-row time, its session liveness, its port probe
+    (`port_ok`, made only where this function reads it) and `work_done`, which
+    `_judge_pieces` sets when the run has work pieces and `judge` calls every
+    one of them `done`.
 
     A service exists to serve its run's work pieces, and the last loop piece
     ends its run's services once every requested record is finished
@@ -905,25 +909,47 @@ def _attached_to(run_dir: Path, piece: dict) -> str | None:
     return doc.get("attached_to")
 
 
-def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
-                         launch_t: str, now_ts: float) -> dict:
+def _service_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str,
+                          work_done: bool) -> dict:
+    """The facts `judge_service` reads for one service piece, given whether its run's work
+    pieces are all `done`. The port is probed only when `judge_service` reads it: for an
+    attached service while its run's work is owed, and for a service of its own while its
+    session is alive (or its host did not answer, which reads as alive, 3.4). Every other
+    service is decided by its session and its run's work, and a probe is an ssh round trip
+    to its host, so `port_ok` is `None` there. `since_launch_s` is measured against the
+    clock read after the probe."""
+    alive = _alive_on(piece.get("host"), piece.get("session"), sessions)
+    attached = _attached_to(run_dir, piece) is not None
+    if attached:
+        reads_port = not work_done
+    else:
+        reads_port = alive
+    port_ok = _probe_port(piece) if reads_port else None
+    now_ts = time.time()
+    return {
+        "kind": "service",
+        "alive": alive,
+        "attached": attached,
+        "port_ok": port_ok,
+        "work_done": work_done,
+        "since_launch_s": now_ts - _parse_t(launch_t),
+    }
+
+
+def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str) -> dict:
+    """The facts `judge` reads for one work piece (`loop`, `train` or `cpu`). Every age is
+    measured against the clock read right after the piece's heartbeat file is read, so an age
+    is never measured against an instant earlier than the file it ages."""
     kind = piece.get("kind")
     host = piece.get("host")
     session = piece.get("session")
-    since_launch_s = now_ts - _parse_t(launch_t)
-    if kind == "service":
-        return {
-            "kind": kind,
-            "alive": _alive_on(host, session, sessions),
-            "attached": _attached_to(run_dir, piece) is not None,
-            "port_ok": _probe_port(piece),
-            "since_launch_s": since_launch_s,
-        }
     if kind == "cpu":
         alive = pid_alive(host, piece.get("pid"))
     else:
         alive = _alive_on(host, session, sessions)
     beats = current_beats(run_dir, piece)
+    now_ts = time.time()
+    since_launch_s = now_ts - _parse_t(launch_t)
     has_beat = bool(beats)
     last = beats[-1] if beats else None
     beat_ts = [b.get("ts") for b in beats]
@@ -948,25 +974,26 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set,
 
 
 def _judge_pieces(pieces: list[dict], run_dir: Path, sessions: set,
-                  launch_t: str, now_ts: float) -> list[tuple[dict, str, bool]]:
+                  launch_t: str) -> list[tuple[dict, str, bool]]:
     """`(verdict dict, verdict, escalated)` per piece of one run, in the
     pieces' own order: the one derivation `ls()`, `sync()` and `cards_busy()`
     read. The
     work pieces (`loop`, `train`, `cpu`) are judged first, because a service
     piece's verdict depends on whether all of them are `done`
-    (`judge_service`)."""
-    pvs = [_piece_verdict_dict(piece, run_dir, sessions, launch_t, now_ts) for piece in pieces]
-    work = {i: judge(pv) for i, pv in enumerate(pvs) if pv["kind"] != "service"}
-    work_done = bool(work) and all(v == "done" for v, _esc in work.values())
-    out = []
-    for i, pv in enumerate(pvs):
-        if pv["kind"] == "service":
-            pv["work_done"] = work_done
-            verdict, escalated = judge_service(pv)
-        else:
-            verdict, escalated = work[i]
-        out.append((pv, verdict, escalated))
-    return out
+    (`judge_service`), and whether its port is probed at all depends on that
+    too (`_service_verdict_dict`)."""
+    judged: dict[int, tuple[dict, str, bool]] = {}
+    for i, piece in enumerate(pieces):
+        if piece.get("kind") == "service":
+            continue
+        pv = _piece_verdict_dict(piece, run_dir, sessions, launch_t)
+        judged[i] = (pv, *judge(pv))
+    work_done = bool(judged) and all(v == "done" for _pv, v, _esc in judged.values())
+    for i, piece in enumerate(pieces):
+        if piece.get("kind") == "service":
+            pv = _service_verdict_dict(piece, run_dir, sessions, launch_t, work_done)
+            judged[i] = (pv, *judge_service(pv))
+    return [judged[i] for i in range(len(pieces))]
 
 
 _SESSION_NAME_RE = re.compile(r"^.+-[0-9a-f]{12}-\d+$")
@@ -1048,7 +1075,7 @@ def _orphan_session_row(name: str, host: str | None) -> dict:
     }
 
 
-def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: dict,
+def _ls_row(entry: dict, sessions: set, edited: dict, progress: dict,
             behind: dict, consumed: dict, split: dict, pinned: dict) -> dict:
     start, finish = entry["start"], entry["finish"]
     run_id = start["run_id"]
@@ -1061,7 +1088,7 @@ def _ls_row(entry: dict, sessions: set, now_ts: float, edited: dict, progress: d
     avg_rates: list[float] = []
     recent_rates: list[float] = []
     service_alive = False
-    judged = _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)
+    judged = _judge_pieces(pieces, run_dir, sessions, start["t"])
     for piece, (pv, verdict, escalated) in zip(pieces, judged):
         if pv["kind"] == "service":
             service_alive = service_alive or pv["alive"]
@@ -1187,8 +1214,7 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     if not debug:
         entries = [e for e in entries if not e["start"].get("debug")]
     sessions = live_sessions()
-    now_ts = time.time()
-    rows = [_ls_row(e, sessions, now_ts, edited, progress, behind, consumed, split, pinned)
+    rows = [_ls_row(e, sessions, edited, progress, behind, consumed, split, pinned)
             for e in entries]
     known = _known_sessions(all_entries)
     host_of = sessions.host_of if isinstance(sessions, _ProbedSessions) else {}
@@ -1289,9 +1315,8 @@ def sync() -> list[str]:
         if not pieces:
             continue
         sessions = live_sessions()
-        now_ts = time.time()
         verdicts = [verdict for _pv, verdict, _esc
-                    in _judge_pieces(pieces, run_dir, sessions, start["t"], now_ts)]
+                    in _judge_pieces(pieces, run_dir, sessions, start["t"])]
         # The same rule `run.py ls` closes such a run by, so whichever command reaches it
         # first writes the same word.
         if launch_failed(start["t"], verdicts):
