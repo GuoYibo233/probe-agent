@@ -636,13 +636,6 @@ def _annot_types(annot: str, label: str) -> tuple:
     return tuple(types), element, annot
 
 
-def _field_type(cls: type, name: str) -> tuple:
-    for f in dc_fields(cls):
-        if f.name == name:
-            return _annot_types(f.type, f"{cls.__name__}.{name}")
-    raise SchemaError(f"{cls.__name__}.{name}: not a field of this section")
-
-
 def _type_ok(value: Any, types: tuple) -> bool:
     if type(value) in types:
         return True
@@ -697,6 +690,47 @@ def _set_dotted(full: dict, dotted: str, value: Any) -> None:
     for part in parts[:-1]:
         node = node[part]
     node[parts[-1]] = value
+
+
+def _is_declared_field(dotted: Any) -> bool:
+    """Whether `dotted` names a field of the dataclass declarations: a section, then each inner part a field whose default is a dataclass, then the last part a field (MODELS_READONLY excluded).
+
+    The command-line override and the sweep name are both checked here, against the
+    declarations, never against the values a merged setting happens to hold.
+    """
+    if not isinstance(dotted, str):
+        return False
+    section, *rest = dotted.split(".")
+    if section not in SECTION_CLASSES or not rest:
+        return False
+    cls = SECTION_CLASSES[section]
+    for part in rest[:-1]:
+        if part not in _section_field_names(cls):
+            return False
+        default = getattr(cls(), part)
+        if not hasattr(default, "__dataclass_fields__"):
+            return False
+        cls = type(default)
+    return rest[-1] in _section_field_names(cls)
+
+
+def _set_field(full: dict, dotted: str, value: Any, authored: set[str]) -> None:
+    """Set one declared field (see _is_declared_field) of the merged setting from a sweep child or an override.
+
+    A leaf takes `value` whole, a list replaced and never appended (5.7); a nested dataclass
+    field merges `value` per field, exactly as the file's own mapping for it merges.
+    """
+    section, *rest = dotted.split(".")
+    cls, node = SECTION_CLASSES[section], full[section]
+    for part in rest[:-1]:
+        cls, node = type(getattr(cls(), part)), node[part]
+    last = rest[-1]
+    default = getattr(cls(), last)
+    if hasattr(default, "__dataclass_fields__"):
+        _apply_fields(node[last], value, type(default), dotted, authored)
+    else:
+        node[last] = value
+        authored.add(dotted)
 
 
 def _debug_fields() -> set[str]:
@@ -761,8 +795,7 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
                 _apply_fields(full[sec], section_overlay, SECTION_CLASSES[sec], sec, authored)
 
     for dotted, value in extra.items():
-        _set_dotted(full, dotted, value)
-        authored.add(dotted)
+        _set_field(full, dotted, value, authored)
 
     if debug:
         for sec, section_overlay in _read_yaml("experimental_settings/debug.yaml").items():
@@ -770,32 +803,44 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
                 _apply_fields(full[sec], section_overlay, SECTION_CLASSES[sec], sec, set())
 
     for dotted, raw in overrides.items():
-        _refuse_probe_under_inject(workflow, dotted)
-        section = dotted.partition(".")[0]
-        if section not in SECTION_CLASSES:
+        if not _is_declared_field(dotted):
             raise SchemaError(f"{dotted}: not a field of the schema")
+        _refuse_probe_under_inject(workflow, dotted)
         # An override states what the file itself may state (5.7): the inherited build section
         # of an inject workflow is in the merged setting and is still not the file's to state.
-        _require_workflow_reads(workflow, section, dotted)
-        try:
-            _get_dotted(full, dotted)   # validates the whole dotted path exists, nested fields included
-        except KeyError:
-            raise SchemaError(f"{dotted}: not a field of the schema") from None
-        _set_dotted(full, dotted, _parse_yaml(raw, f"the override {dotted}"))
-        authored.add(dotted)
+        _require_workflow_reads(workflow, dotted.partition(".")[0], dotted)
+        _set_field(full, dotted, _parse_yaml(raw, f"the override {dotted}"), authored)
 
     return full, authored
 
 
-def _sweep_children(sweep: dict, debug_fields: set[str], workflow: list[str]) -> list[tuple[str, dict]]:
-    for dotted in sweep:
+def _sweep_children(sweep: Any, debug_fields: set[str], workflow: list[str]) -> list[tuple[str, dict]]:
+    """The children of a `sweep:` block, one (name suffix, {dotted: value}) per combination of the listed values.
+
+    The block is refused unless it is a mapping from a declared field (see _is_declared_field)
+    of a section the file's workflow reads to a non-empty list of values, and unless no swept
+    field is one debug.yaml sets (5.5 / 5.7): a nested dataclass field swept as mappings counts
+    each field those mappings state.
+    """
+    if not isinstance(sweep, dict):
+        raise SchemaError(
+            f"sweep: expected a mapping of dotted field -> list of values, got {type(sweep).__name__}")
+    for dotted, values in sweep.items():
+        label = f"sweep.{dotted}"
+        if not _is_declared_field(dotted):
+            raise SchemaError(f"{label}: not a field of the schema")
         _refuse_probe_under_inject(workflow, dotted)
-        section, _, field_name = dotted.partition(".")
-        if section not in SECTION_CLASSES:
-            raise SchemaError(f"sweep.{dotted}: not a field of the schema")
-        _field_type(SECTION_CLASSES[section], field_name.split(".")[0])
-        if dotted in debug_fields:
-            raise SchemaError(f"sweep.{dotted}: also set by debug.yaml, which would collapse the sweep")
+        _require_workflow_reads(workflow, dotted.partition(".")[0], label)
+        if not isinstance(values, list):
+            raise SchemaError(f"{label}: expected a list of values, got {type(values).__name__}")
+        if not values:
+            raise SchemaError(f"{label}: expected a list of values, got an empty list")
+        stated = {dotted}
+        for value in values:
+            if isinstance(value, dict):
+                stated |= {f"{dotted}.{key}" for key in value}
+        if stated & debug_fields:
+            raise SchemaError(f"{label}: also set by debug.yaml, which would collapse the sweep")
     names = sorted(sweep)
     out = []
     for combo in itertools.product(*(sweep[n] for n in names)):
@@ -1222,14 +1267,15 @@ def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -
     if not isinstance(named, dict):
         raise SchemaError(f"{base_name}: expected a mapping of sections, got {type(named).__name__}")
     named = dict(named)
+    swept = "sweep" in named
     sweep = named.pop("sweep", None)
     _check_raw_sections(workflow, common, named, base_name)
 
-    if sweep:
+    if swept:
+        children_extras = _sweep_children(sweep, _debug_fields(), workflow)
         clash = set(overrides) & set(sweep)
         if clash:
             raise SchemaError(f"{sorted(clash)[0]}: overridden and swept at once")
-        children_extras = _sweep_children(sweep, _debug_fields(), workflow)
     else:
         children_extras = [(None, {})]
 
