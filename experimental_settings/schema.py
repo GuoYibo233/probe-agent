@@ -5,6 +5,7 @@ import ast
 import hashlib
 import itertools
 import json
+from collections.abc import Hashable
 from dataclasses import dataclass, field, fields as dc_fields
 from pathlib import Path
 from typing import Any
@@ -487,8 +488,41 @@ def effective_version(rel_path: str, stage: str) -> int:
     return _effective_version_over(rel_path, (stage,))
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """yaml.SafeLoader that refuses a mapping key stated twice, naming the key and the lines of both occurrences.
+
+    PyYAML's own SafeLoader keeps the last of two equal keys, so a setting pasted twice under one
+    name, or a field stated twice in one section, would load as whichever came last.
+    """
+
+    def construct_mapping(self, node, deep=False):
+        seen: dict = {}
+        for key_node, _value_node in node.value:
+            if key_node.tag == "tag:yaml.org,2002:merge":
+                continue                        # a `<<` merge key; its entries are flattened by the base class
+            key_obj = self.construct_object(key_node, deep=deep)
+            if isinstance(key_obj, Hashable):   # an unhashable key is refused by the base class
+                mark = key_node.start_mark
+                where = f"line {mark.line + 1} column {mark.column + 1}"
+                if key_obj in seen:
+                    raise SchemaError(
+                        f"{mark.name}: key {key_obj!r} is stated twice, at {seen[key_obj]} and at {where}")
+                seen[key_obj] = where
+        return super().construct_mapping(node, deep=deep)
+
+
+def _parse_yaml(text: str, source: str) -> Any:
+    """Parse one YAML document with _UniqueKeyLoader; `source` names the text in a refusal (a path, or an override)."""
+    loader = _UniqueKeyLoader(text)
+    loader.name = source
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
+
 def _read_yaml(rel_path: str) -> dict:
-    return yaml.safe_load((ROOT / rel_path).read_text()) or {}
+    return _parse_yaml((ROOT / rel_path).read_text(), str(ROOT / rel_path)) or {}
 
 
 def _table() -> dict:
@@ -693,7 +727,7 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
             _get_dotted(full, dotted)   # validates the whole dotted path exists, nested fields included
         except KeyError:
             raise SchemaError(f"{dotted}: not a field of the schema") from None
-        _set_dotted(full, dotted, yaml.safe_load(raw))
+        _set_dotted(full, dotted, _parse_yaml(raw, f"the override {dotted}"))
         authored.add(dotted)
 
     return full, authored
@@ -1088,7 +1122,7 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
 
 
 def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -> list[Setting]:
-    doc = yaml.safe_load(Path(ref_file).read_text()) or {}
+    doc = _parse_yaml(Path(ref_file).read_text(), str(ref_file)) or {}
     workflow = list(doc.get("workflow", []))
     if base_name not in doc:
         raise SchemaError(f"{base_name}: no such setting in {ref_file}")
@@ -1512,11 +1546,11 @@ def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: 
     settings_path = run_dir / "settings.yaml"
     diff_path = run_dir / "settings_diff.yaml"
     if diff_path.exists():
-        existing_diff = yaml.safe_load(diff_path.read_text()) or {}
+        existing_diff = _parse_yaml(diff_path.read_text(), str(diff_path)) or {}
         if existing_diff != diff:
             raise SchemaError(
                 f"freeze: {run_dir} already holds settings for a different key under stage {stage!r}")
-        existing_settings = yaml.safe_load(settings_path.read_text()) or {}
+        existing_settings = _parse_yaml(settings_path.read_text(), str(settings_path)) or {}
         _merge_request_fields(doc, existing_settings, sections)
 
     _atomic_write_yaml(settings_path, doc)
@@ -1526,7 +1560,7 @@ def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: 
 def load_frozen(run_dir: Path) -> Setting:
     """Parse settings.yaml against the dataclasses, fill the _ block; re-merges nothing, re-resolves nothing (2.6)."""
     run_dir = Path(run_dir)
-    doc = yaml.safe_load((run_dir / "settings.yaml").read_text()) or {}
+    doc = _parse_yaml((run_dir / "settings.yaml").read_text(), str(run_dir / "settings.yaml")) or {}
     setting = Setting()
     for sec, cls in SECTION_CLASSES.items():
         if sec not in doc:
