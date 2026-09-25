@@ -1,4 +1,4 @@
-"""The eval program of every probe method: the PROBE_KIND and MATCH_VERSION tables, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report."""
+"""The eval program of every probe method: the PROBE_KIND table, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report."""
 from __future__ import annotations
 
 import hashlib
@@ -15,29 +15,15 @@ from data.environments import open_env
 from experimental_settings import schema
 from jobs import registry
 
-# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).
-# Bump VERSION only when some existing setting would now produce a different output of a stage
-# that lists this file in the stage table of experimental_settings/schema.py. A new feature
-# behind a new setting field whose default reproduces the old behaviour, a message, a comment
-# or a report layout does not bump.
-# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",
-# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,
-# score) whose existing outputs can no longer be used; leave "stale" out and every stage is
-# stale. The key folds the highest version that made a stage stale, so a bump that leaves a
-# stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 1
-VERSION_HISTORY = {}
+# The probe report's compatibility number, written into probe_report.json and checked by
+# read_report (a report recorded above it is refused). It is not the code era; that is
+# jobs/versions.yaml.
+FORMAT_VERSION = 1
 
 # The report shape each probe method is scored under. experimental_settings/schema.py reads
 # this table as source text (3.3) for the stage table's upstream rule and the loader's
 # required-field rule, and run() reads it to pick the report below.
 PROBE_KIND = {"ctool": "classifier", "cgen": "generator", "cparam": "generator"}
-
-# The version of each method's match function. A train run folds the match version of the one
-# method it trains and an inject run that of its scoring probe, so a change to a report, to the
-# driver or to any other method's match leaves those runs' keys where they are, while a change
-# to one method's match re-keys exactly the runs whose validation metric it decides.
-MATCH_VERSION = {"ctool": 1, "cgen": 1, "cparam": 1}
 
 FIRES_SCHEMA: dict[str, pl.DataType] = {
     "risk": pl.Float32,
@@ -91,9 +77,9 @@ def read_report(run_dir: Path) -> tuple[dict, pl.DataFrame | None]:
         raise ValueError(f"{report_path}: no probe report in this run directory")
     fields = json.loads(report_path.read_text())
     recorded = fields.get("version")
-    if recorded is not None and recorded > VERSION:
+    if recorded is not None and recorded > FORMAT_VERSION:
         raise ValueError(
-            f"{report_path}: recorded version {recorded} is newer than this module's VERSION {VERSION}")
+            f"{report_path}: recorded version {recorded} is newer than this module's FORMAT_VERSION {FORMAT_VERSION}")
     fires_path = run_dir / "fires.parquet"
     fires = pl.read_parquet(fires_path) if fires_path.exists() else None
     return fields, fires
@@ -697,7 +683,7 @@ def run(run_dir: Path) -> None:
             f"the {method} report returned identity field(s) {clash}, which probe_eval.run assembles itself")
 
     identity = {
-        "version": VERSION,
+        "version": FORMAT_VERSION,
         "method": method,
         "probe_kind": kind,
         "stage_key": cfg._key,
@@ -739,7 +725,7 @@ def run(run_dir: Path) -> None:
             "events": total_events,
             "fires": fires.height if fires is not None else 0,
         },
-        versions=cfg._versions, metrics=metrics, report="report.md",
+        era=cfg._era, metrics=metrics, report="report.md",
     )
     hb.finish()
 

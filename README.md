@@ -46,9 +46,10 @@ referenced one first, never as an override or a sweep (gyb, 2026-09-25). The ove
 was launched under are recorded in its start row and `meta.json`, and `run.py ls` reloads the
 setting under them when it asks whether the setting was edited since.
 
-Ten further words are reserved (`run.py --help` lists them, one per line): `ls`, `where`,
-`find`, `kill`, `refire`, `retry`, `table`, `free`, `sync`, `selfcheck`. Any other first word
-is a workflow file's stem; a workflow file may not use one of the ten as its own stem.
+Eleven further words are reserved (`run.py --help` lists them, one per line): `ls`, `where`,
+`find`, `kill`, `refire`, `retry`, `table`, `free`, `sync`, `version`, `selfcheck`. Any other
+first word is a workflow file's stem; a workflow file may not use one of the eleven as its own
+stem.
 
 Every output lives under `constants/path_outputs.yaml`'s `root`, keyed by stage and a 12-hex
 hash of the setting (never by name, since several settings can share one directory); `run.py
@@ -57,6 +58,21 @@ touches disk to compute it. A `--debug` run lives under that root's `debug_subdi
 it never collides with, or is mistaken for, a real run; `ls`, `where`, `table`, `kill`,
 `refire` and `retry` take `--debug` to address the runs under it, and a `--debug` walk prints
 its monitoring line with the flag.
+
+Code enters a key as one number, the stage's era in `jobs/versions.yaml`, the code-era table:
+an era row (`run.py version <stage> --why "<sentence>"`) moves every later run of the stage,
+and of every stage downstream of it, to a new directory; nothing else about the code is in the
+key, so editing code costs nothing at edit time. What keeps a directory from being reused under
+code it never ran is the code gate: before a walk, a `refire` or a `retry` reads a directory
+(the stage's own, every upstream directory, and everything upstream of those through the frozen
+upstream keys), `run.py` compares the stage's code files (the stage table's `code` tuple, as the
+working tree holds them) with the copy at the directory's launch commits, and refuses, printing
+the `git diff --stat` of those files and the two `run.py version` commands, when they differ and
+no same row of the table covers the working tree's copy. A same row
+(`run.py version <stage> --same --why "<sentence>"`, naming HEAD) states that the named commit's
+copy of the stage's code still produces the current era's output. So a code change costs one
+judgment, at launch time, with the diff in front of whoever judges it, written into the table
+as one row per stage per change, never per setting or per launch.
 
 `retry` means "start fresh": it refuses while any piece of the run is alive (end it with `kill`
 first), and only then clears the continue markers and launches the stage normally.
@@ -90,8 +106,8 @@ CLAUDE.md — the rules an agent reads on its own; the only other file at the ro
 run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command) and flushes those lines before a CPU stage's process starts, so they stand above that process's output on a pipe as on a terminal, and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names; every command but --help and selfcheck runs on login_host, and typed on another machine re-runs itself there over ssh and returns that exit code.
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
-  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map), constants/path_outputs.yaml (the login_host every command runs on)
-  writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, finish rows and RESULTS.md (through jobs/registry.py); on `retry`, once no piece of the run is alive, deletes the run's continue markers (done.json, consumed.json; for train also train_log.jsonl, train_done.json, align_check.json, last/, last.tmp/, last.prev/)
+  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, jobs/versions.yaml (through schema.era_of, schema.era_rows and schema.same_rows, for the code gate, ls's unjudged flag and the version subcommand) and, through git, the blob ids of a stage's code files at a run's launch commits and in the working tree (the code gate), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map), constants/path_outputs.yaml (the login_host every command runs on)
+  writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, one row of jobs/versions.yaml (the version subcommand), finish rows and RESULTS.md (through jobs/registry.py); on `retry`, once no piece of the run is alive, deletes the run's continue markers (done.json, consumed.json; for train also train_log.jsonl, train_done.json, align_check.json, last/, last.tmp/, last.prev/)
   venv:    probe (the interpreter this repo's commands are typed with)
 
 ### constants/ — where things are on this cluster
@@ -113,7 +129,7 @@ constants/path_models.yaml — weights alias -> the directory the weights live i
 experimental_settings/schema.py — the setting schema: the dataclasses, the stage table, and the loader that reads a YAML file against them (file -> setting, diff, key).
   imports: none (repo); [PyYAML, ast, collections.abc, dataclasses, hashlib, itertools, json, pathlib, re, typing]
   used by: run.py, jobs/launch.py, agent/run_tasks.py, data/build_training_dataset.py, train/utils/trainer.py, eval/utils/probe_eval.py, eval/score_run.py, eval/method_table.py, models/agent_models/service.py, models/probe_models/service.py
-  reads:   experimental_settings/*.yaml, models/table.yaml, constants/path_outputs.yaml, constants/path_datasets.yaml (the splits block of the chosen environment), a run directory's settings.yaml, the VERSION / VERSION_HISTORY / PROBE_KIND lines and module-level literals of contracts 3.3's literal rule, all as source text, never by importing
+  reads:   experimental_settings/*.yaml, models/table.yaml, constants/path_outputs.yaml, constants/path_datasets.yaml (the splits block of the chosen environment), a run directory's settings.yaml, jobs/versions.yaml (the code-era table: the key's era), the PROBE_KIND line and the other module-level literals of contracts 3.3's literal rule, all as source text, never by importing
   writes:  settings.yaml and settings_diff.yaml in a run directory
   venv:    any
 
@@ -131,7 +147,7 @@ experimental_settings/inject.yaml — workflow inject, score; named settings ins
 
 ### data/ — the benchmark environments, and every format that lives on disk between two stages
 
-data/__init__.py — the conventions the three on-disk formats share: read_frame and write_frame, the id chain, the VERSION / DEFAULTS / REQUIRED rule.
+data/__init__.py — the conventions the three on-disk formats share: read_frame and write_frame, the id chain, the FORMAT_VERSION / DEFAULTS / REQUIRED rule (FORMAT_VERSION is the row format's compatibility number, not the code era).
   imports: none (repo); [polars]
   used by: data/trajectory_record.py, data/training_data.py, data/probe_output.py, data/build_training_dataset.py (the id functions)
   reads:   -
@@ -310,7 +326,7 @@ train/methods/cparam.py — the argument-generating probe: its own packing and s
 
 ### eval/ — reads what is on disk and computes numbers; no GPU, no torch
 
-eval/utils/probe_eval.py — the eval program of every probe method: the PROBE_KIND and MATCH_VERSION tables, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report (for a generator, after it holds the eval.theta_from report to a classifier report with the same risk targets and build key).
+eval/utils/probe_eval.py — the eval program of every probe method: the PROBE_KIND table, the three match functions, the classifier and the generator report, and the driver that reads a train run's prediction rows and writes the probe report (for a generator, after it holds the eval.theta_from report to a classifier report with the same risk targets and build key).
   imports: experimental_settings/schema.py, data/probe_output.py, data/environments/__init__.py (open_env, for the environment the generator report normalises both sides through), jobs/registry.py; [polars, numpy]
   used by: train/methods/{ctool,cgen,cparam}.py (match_<method>, for their validation metric), run.py (read_report, to freeze a temperature), eval/method_table.py
   reads:   prediction (parquet), its own and the referenced eval run's train meta.json (stage_extra.labels, upstream["build"]), its own train run's done.json (counts.dropped_overlong), probe report (json + parquet)
@@ -352,6 +368,9 @@ jobs/runs.jsonl — one registry row per stage run, appended at start and at fin
 
 jobs/RESULTS.md — rendered from runs.jsonl by registry.py; never edited by hand.
 
+jobs/versions.yaml — the code-era table: era rows (from here on a stage's runs go to new directories) and same rows (a commit whose copy of the stage's code files still produces the current era's output), each with a why; appended by `run.py version` or by hand in the same shape, never rewritten; in git, committed before the launch that follows.
+  read by: experimental_settings/schema.py (era_of, the key's era; era_rows and same_rows for run.py), run.py (the code gate, ls's unjudged flag and stale text, the version subcommand), jobs/launch.py (through schema.era_of, the start row's era)
+
 ### tests/
 
 tests/ — empty by the owner's decision, except for the two of the four planned checks this build needs: `tests/test_registry_concurrent_append.py` (ticket 03: eight forked processes append 20 start rows each into a throw-away copy of the tree; asserts 160 lines land and every line parses as JSON; and 8.5's piece verdicts over heartbeat files in a temporary run directory: a train piece is `done` only on its finish row, a service gone once its run's work pieces are done is `done`, a service gone while a loop piece works is `dead`, a relaunched piece reads only the heartbeat file of the incarnation its entry's `beat_launch` names, and an attached agent service is judged by its port and its run's work, not by its ended session) and `tests/test_packed_loss.py` (ticket 13: the packed loss equals the plain loss on a tiny CPU model, once per probe method; it puts the repo root on `sys.path` itself). Run each in its own process, from the repo root: `external/probe-env/bin/python tests/test_registry_concurrent_append.py` and `external/probe-env/bin/python tests/test_packed_loss.py`.
@@ -371,9 +390,15 @@ the check that catches a recipe followed half way. A line written as a brace lis
 `train/methods/{ctool,cgen,cparam}.py`, is widened rather than extended with a second fragment;
 selfcheck reads both spellings the same, and this one keeps the line short.
 
+A change to a file the stage table names costs nothing at edit time (section 1, the code
+gate): the next launch that would read a directory the change post-dates stops and prints the
+diff, and one `run.py version` row, a same row or an era row, answers it for every setting.
+Where a recipe says "an era row", the change is one known to alter the stage's output, so the
+row is written without waiting for the gate.
+
 1. **A new benchmark environment.** `data/environments/<env>.py` (new, carrying its own
-   column-zero `INSTRUCTIONS` and `SPLIT_ROLE` maps, plus `VERSION` and `VERSION_HISTORY` under
-   the pinned VERSION rule comment block, because the stage table names this file);
+   column-zero `INSTRUCTIONS` and `SPLIT_ROLE` maps; the stage table's `{env}` template names
+   it);
    `experimental_settings/schema.py` (one value on `data.env`, one on
    `data.instructions`, and one value on `sample.split` / `inject.split` for every split name the
    new environment has that no existing one has); `constants/path_datasets.yaml` (home, venv,
@@ -381,12 +406,12 @@ selfcheck reads both spellings the same, and this one keeps the line short.
    which must carry PyYAML, Polars and NumPy). Cost: nothing else, because the loop calls nine
    methods and nothing else, and `data/build_training_dataset.py` parses calls through the
    environment object.
-2. **A fourth probe method.** `train/methods/<m>.py` (new, carrying four column-zero bindings:
-   `VERSION` and `VERSION_HISTORY` under the pinned VERSION rule comment block, `PROBE_KIND`
-   matching the entry you add to `eval/utils/probe_eval.py`, and `CHECKPOINT_META`);
+2. **A fourth probe method.** `train/methods/<m>.py` (new, carrying two column-zero bindings:
+   `PROBE_KIND` matching the entry you add to `eval/utils/probe_eval.py`, and
+   `CHECKPOINT_META`; the stage table's `{method}` template names it);
    `experimental_settings/schema.py`
    (one value on `probe.method`); `eval/utils/probe_eval.py` (a `match_<m>` function plus one
-   entry each in `PROBE_KIND` and `MATCH_VERSION`, both column-zero tables). Cost: the example
+   entry in the column-zero `PROBE_KIND` table). Cost: the example
    row and the prediction row are method-independent, so `data/build_training_dataset.py`,
    `data/training_data.py` and `data/probe_output.py` are untouched, and the head lives in
    `models/probe_models/base.py` already. A method that is neither classifier nor generator needs
@@ -403,22 +428,21 @@ selfcheck reads both spellings the same, and this one keeps the line short.
    no stage's `sections` or `projection` tuple and no reference field names.
 4. **A new field on the task record.** `data/trajectory_record.py` (the column and its
    `DEFAULTS` entry); the one writer (`agent/run_tasks.py` or `agent/step_with_probe.py`). A
-   field nobody downstream reads costs nothing more: no `VERSION` bump, no rerun. A field a
-   downstream stage reads costs a `REQUIRED` entry and a `VERSION` bump as well, which re-keys
-   `sample` and `inject` and costs the recollection.
+   field nobody downstream reads costs nothing more: no era row, no rerun (the code gate asks
+   once, and a same row answers it). A field a downstream stage reads costs a `REQUIRED` entry
+   and an era row for `sample` and one for `inject` as well, which re-keys both and costs the
+   recollection.
 5. **A sixth injection format that reuses a placement.** `agent/injected_text_formats.py` (one
    `FORMATS` entry); `experimental_settings/schema.py` (one value on `inject.format`). A new
    placement costs one more file, `models/agent_models/<family>.py` (one function per family,
    the control-token wrapping).
 6. **A new probe backbone.** `models/probe_models/<backbone>.py` (new, carrying a column-zero
-   `LORA_TARGETS`, plus `VERSION` and `VERSION_HISTORY` under the pinned VERSION rule comment
-   block, because the stage table names this file); `models/table.yaml`
+   `LORA_TARGETS`; the stage table's `{backbone}` template names it); `models/table.yaml`
    (one row); `constants/path_models.yaml` (one row). Cost: `base.py` holds everything the
    backbones share.
 7. **A new agent-model family.** `models/agent_models/<family>.py` (new, carrying column-zero
-   `STOP`, `EFFORTS`, `DEFAULT_EFFORT` and `DEFAULT_DATE`, plus `VERSION` and `VERSION_HISTORY`
-   under the pinned VERSION rule comment block, because the stage table names this file);
-   `models/table.yaml`
+   `STOP`, `EFFORTS`, `DEFAULT_EFFORT` and `DEFAULT_DATE`; the stage table's `{family}`
+   template names it); `models/table.yaml`
    (one row); `constants/path_models.yaml` (one row); `experimental_settings/schema.py` (one
    value on `generation.effort` for each reasoning tier the new family has that no existing
    family has); plus the family's rendering library installed in the probe venv and the vllm
@@ -426,10 +450,11 @@ selfcheck reads both spellings the same, and this one keeps the line short.
 
 Two changes that are not extensions but deserve the same treatment:
 
-- **Change the cut rule.** `data/probe_input.py` (plus a `VERSION` bump); a cut rule that gains
-  a parameter also adds the field to `schema.py`'s `build` section and to `PROBE_TEXT_FIELDS`.
-  Cost: an inherent full rerun downstream — `build` re-keys, `train` follows through the build
-  key, `eval` through the train key, `inject` through `probe_input`'s own version.
+- **Change the cut rule.** `data/probe_input.py` (plus an era row for `build` and one for
+  `inject`, the two stages whose output it shapes); a cut rule that gains a parameter also adds
+  the field to `schema.py`'s `build` section and to `PROBE_TEXT_FIELDS`. Cost: an inherent full
+  rerun downstream — `build` re-keys, `train` follows through the build key, `eval` through the
+  train key, and `inject` through its own era row.
 - **Rename an axis value.** Not allowed. A value is added and retired instead, never renamed;
   `schema.py`'s `RETIRED` set is what makes retiring safe, so every old run stays reachable.
 
@@ -439,6 +464,9 @@ Two changes that are not extensions but deserve the same treatment:
 closes) a finish row, written only by `jobs/registry.py` under its own lock. Nobody edits it by
 hand. `jobs/RESULTS.md` is rendered whole from `runs.jsonl` on every append, and is likewise
 never edited by hand; `run.py sync` folds any run directory's `done.json` and heartbeat files
-into a finish row the ledger is missing. `notes/` — `TIMELINE.md`, `DATA.md`, `WORKPLAN.md`,
+into a finish row the ledger is missing. `jobs/versions.yaml` is append-only as well: one row
+per judgment of a code change (an era row or a same row, each with its why), written by
+`run.py version` or by hand in the same shape and never rewritten; its era rows move keys, so
+it is committed before the launch that follows, like code. `notes/` — `TIMELINE.md`, `DATA.md`, `WORKPLAN.md`,
 `METHOD.md`, `CONTEXT.md`, `plans/` — is the owner's; an agent appends to `TIMELINE.md` only
 when a ticket says so, and never edits the rest.

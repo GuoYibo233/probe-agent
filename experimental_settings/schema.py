@@ -179,7 +179,7 @@ class Setting:
     _stage: str | None = None                     # filled by load_frozen / freeze
     _key: str | None = None
     _upstream: dict = field(default_factory=dict)
-    _versions: dict = field(default_factory=dict)
+    _era: int | None = None                       # the stage's era the run was keyed under (jobs/versions.yaml)
     _commit: str | None = None
     _resolved: dict = field(default_factory=dict)
     # The command-line overrides this load applied, dotted field -> the text typed, empty for a
@@ -221,10 +221,13 @@ STAGES = {
     "projection": ("sample.seeds", "sample.tasks", "sample.n_tasks",
                    "sample.pieces", "sample.replicas"),
     "projection_generator": (),
-    "versions": ("agent/run_tasks.py", "agent/step_without_probe.py", "data/trajectory_record.py",
-                 "data/environments/__init__.py", "data/environments/{env}.py",
-                 "models/agent_models/{family}.py", "models/agent_models/service.py",
-                 "models/probe_models/service.py"),
+    "code": ("agent/run_tasks.py", "agent/step_without_probe.py", "agent/step_with_probe.py",
+             "agent/injected_text_formats.py", "data/__init__.py", "data/probe_input.py",
+             "data/trajectory_record.py", "data/environments/__init__.py",
+             "data/environments/{env}.py", "models/__init__.py",
+             "models/agent_models/__init__.py", "models/agent_models/{family}.py",
+             "models/agent_models/service.py", "models/probe_models/__init__.py",
+             "models/probe_models/base.py", "models/probe_models/service.py"),
   },
   "build": {
     "sections": ("data", "build",
@@ -238,9 +241,9 @@ STAGES = {
     "done_writer": "stage",
     "projection": (),
     "projection_generator": (),
-    "versions": ("data/build_training_dataset.py", "data/probe_input.py", "data/training_data.py",
-                 "data/trajectory_record.py", "data/environments/__init__.py",
-                 "data/environments/{env}.py"),
+    "code": ("data/__init__.py", "data/build_training_dataset.py", "data/probe_input.py",
+             "data/training_data.py", "data/trajectory_record.py",
+             "data/environments/__init__.py", "data/environments/{env}.py"),
   },
   "train": {
     "sections": ("models.probe", "probe", "train"),
@@ -253,10 +256,11 @@ STAGES = {
     "done_writer": "stage",
     "projection": ("train.checkpoint_hours",),
     "projection_generator": ("data",),
-    "versions": ("train/utils/trainer.py", "train/methods/{method}.py",
-                 "eval/utils/probe_eval.py#MATCH_VERSION.{method}",
-                 "data/training_data.py", "data/probe_output.py",
-                 "models/probe_models/base.py", "models/probe_models/{backbone}.py"),
+    "code": ("train/utils/trainer.py", "train/methods/{method}.py", "eval/utils/probe_eval.py",
+             "data/__init__.py", "data/training_data.py", "data/probe_output.py",
+             "data/environments/__init__.py", "models/__init__.py",
+             "models/probe_models/__init__.py", "models/probe_models/base.py",
+             "models/probe_models/{backbone}.py"),
   },
   "eval": {
     "sections": ("probe.method", "eval"),
@@ -271,7 +275,8 @@ STAGES = {
     "done_writer": "stage",
     "projection": (),
     "projection_generator": ("data",),
-    "versions": ("eval/utils/probe_eval.py", "data/probe_output.py"),
+    "code": ("eval/utils/probe_eval.py", "data/__init__.py", "data/probe_output.py",
+             "data/environments/__init__.py"),
   },
   "inject": {
     "sections": ("data", "models.agent", "generation",
@@ -295,21 +300,16 @@ STAGES = {
     "projection": ("inject.seeds", "inject.tasks", "inject.n_tasks",
                    "inject.pieces", "inject.replicas"),
     "projection_generator": (),
-    "versions": ("agent/run_tasks.py", "agent/step_without_probe.py", "agent/step_with_probe.py",
-                 "agent/injected_text_formats.py", "data/probe_input.py", "data/trajectory_record.py",
-                 "data/environments/__init__.py", "data/environments/{env}.py",
-                 "models/agent_models/{family}.py", "models/agent_models/service.py",
-                 "models/probe_models/base.py", "models/probe_models/service.py",
-                 # `@eval`: this row folds the eval driver for the carried probe_score eval
-                 # key's sake (the fitted temperature a live run reads), so it folds the
-                 # version that stage's key folds as well (errata "3.3 / 8.6").
-                 # The eval row's other file, `data/probe_output.py`, carries no stand-in
-                 # here: a bump of it stating `stale: ("eval",)` moves the carried eval key
-                 # and leaves this key where it is, and an entry that names `train` as well
-                 # moves this key, through the folded probe_score train key. Adding the
-                 # stand-in moves today's inject key, so that one is the owner's to add.
-                 "eval/utils/probe_eval.py@eval",
-                 "eval/utils/probe_eval.py#MATCH_VERSION.{probe_score_method}"),
+    "code": ("agent/run_tasks.py", "agent/step_without_probe.py", "agent/step_with_probe.py",
+             "agent/injected_text_formats.py", "data/__init__.py", "data/probe_input.py",
+             "data/trajectory_record.py", "data/environments/__init__.py",
+             "data/environments/{env}.py", "models/__init__.py",
+             "models/agent_models/__init__.py", "models/agent_models/{family}.py",
+             "models/agent_models/service.py", "models/probe_models/__init__.py",
+             "models/probe_models/base.py", "models/probe_models/service.py",
+             # The live run reads the carried probe_score eval run's fitted temperature, so the
+             # eval driver is code this stage's output depends on as well.
+             "eval/utils/probe_eval.py"),
   },
   "score": {
     "sections": ("score",
@@ -329,8 +329,16 @@ STAGES = {
     "done_writer": "stage",
     "projection": ("data",),
     "projection_generator": (),
-    "versions": ("eval/score_run.py", "data/trajectory_record.py"),
+    "code": ("eval/score_run.py", "data/__init__.py", "data/trajectory_record.py",
+             "data/environments/__init__.py"),
   },
+}
+
+# The `.py` files under data/, models/, agent/, train/ and eval/ that no stage's output depends
+# on, each with its reason; every other file under those five layers is named by some stage's
+# `code` tuple, and `run.py selfcheck` check 4 holds both statements.
+CODE_UNLISTED = {
+    "eval/method_table.py": "renders the run.py table subcommand's table out of the ledger; writes no run output",
 }
 
 # The section-to-stage map (errata, spec section "the section-to-stage map").
@@ -380,118 +388,68 @@ def _one_column_zero(rel_path: str, tree: ast.Module, name: str) -> Any:
     return matches[0]
 
 
-def _column_zero_literal(rel_path: str, name: str) -> Any:
-    """Read the one column-zero module-level assignment of `name` in `rel_path`, with ast.literal_eval, never by importing."""
+def module_literal(rel_path: str, name: str) -> Any:
+    """The one column-zero literal named `name` in the module at rel_path, read as source text (3.3)."""
     return _one_column_zero(rel_path, _parse_module(rel_path), name)
 
 
-def module_version(rel_path: str) -> int:
-    """The one column-zero VERSION of the module at rel_path, read as source text (3.3)."""
-    return _column_zero_literal(rel_path, "VERSION")
+# ---------------------------------------------------------------------------
+# The code-era table, jobs/versions.yaml (3.3): how a code change enters a key.
+# ---------------------------------------------------------------------------
+#
+# A stage's key folds one integer, the stage's era, and nothing about the code itself. The era
+# is the highest `era` an era row of jobs/versions.yaml states for the stage, 1 while the table
+# has none. Writing an era row (`run.py version <stage> --why ...`) is the one way a code change
+# moves a key: every later run of that stage, and of every stage downstream of it through the
+# folded upstream keys, lands in a new directory. A same row (`run.py version <stage> --same
+# --why ...`) states that the stage's code files at the named commit still produce that era's
+# output; run.py's launch gate reads it to reuse a directory whose launch commit the code has
+# moved past. The table's strict shape is `run.py selfcheck` check 4's; this reader refuses
+# only what the key path cannot use.
+
+VERSIONS_TABLE = ROOT / "jobs" / "versions.yaml"
 
 
-def module_literal(rel_path: str, name: str) -> Any:
-    """The one column-zero literal named `name` in the module at rel_path, read as source text (3.3)."""
-    return _column_zero_literal(rel_path, name)
+def versions_table() -> list[dict]:
+    """The rows of jobs/versions.yaml in file order: a list of mappings, each with a stage of STAGES, an int `era` and a `why`; a same row also carries `same`, a commit id."""
+    if not VERSIONS_TABLE.exists():
+        raise SchemaError(f"{VERSIONS_TABLE}: the code-era table is missing")
+    rows = _parse_yaml(VERSIONS_TABLE.read_text(), str(VERSIONS_TABLE))
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise SchemaError(f"{VERSIONS_TABLE}: expected a list of rows, got {type(rows).__name__}")
+    for i, row in enumerate(rows):
+        where = f"{VERSIONS_TABLE}: row {i + 1}"
+        if not isinstance(row, dict):
+            raise SchemaError(f"{where}: expected a mapping, got {type(row).__name__}")
+        if row.get("stage") not in STAGES:
+            raise SchemaError(f"{where}: stage {row.get('stage')!r} is not one of {tuple(STAGES)}")
+        era = row.get("era")
+        if isinstance(era, bool) or not isinstance(era, int) or era < 1:
+            raise SchemaError(f"{where}: era {era!r} is not a positive int")
+        if not isinstance(row.get("why"), str) or not row["why"].strip():
+            raise SchemaError(f"{where}: why is missing or empty")
+        if "same" in row and not isinstance(row["same"], str):
+            raise SchemaError(f"{where}: same {row['same']!r} is not a commit id string")
+    return rows
 
 
-def _check_version_history(rel_path: str, table: Any, version: int) -> None:
-    """Refuse, naming the file, a VERSION_HISTORY the key path cannot read (errata "3.3 / 8.6").
-
-    The strict shape -- one entry with a non-empty `why` for every version from 2 to VERSION --
-    is `run.py selfcheck`'s to enforce, so a missing `why` passes here.
-    """
-    stages = tuple(STAGES)
-    if not isinstance(table, dict):
-        raise SchemaError(
-            f"{rel_path}: VERSION_HISTORY is a {type(table).__name__}, expected a mapping of "
-            "version -> entry")
-    for entry_version, entry in table.items():
-        if isinstance(entry_version, bool) or not isinstance(entry_version, int):
-            raise SchemaError(
-                f"{rel_path}: VERSION_HISTORY key {entry_version!r} is a "
-                f"{type(entry_version).__name__}, expected an int from 2 to {version}")
-        if not 2 <= entry_version <= version:
-            raise SchemaError(
-                f"{rel_path}: VERSION_HISTORY key {entry_version} is outside 2..{version}, this "
-                "file's VERSION")
-        if not isinstance(entry, dict):
-            raise SchemaError(
-                f"{rel_path}: VERSION_HISTORY[{entry_version}] is a {type(entry).__name__}, "
-                "expected a mapping")
-        if "stale" in entry:
-            stale = entry["stale"]
-            if not isinstance(stale, (tuple, list)):
-                raise SchemaError(
-                    f"{rel_path}: VERSION_HISTORY[{entry_version}]['stale'] is a "
-                    f"{type(stale).__name__}, expected a tuple of stage names of {stages}")
-            for name in stale:
-                if name not in STAGES:
-                    raise SchemaError(
-                        f"{rel_path}: VERSION_HISTORY[{entry_version}]['stale'] names {name!r}, "
-                        f"which is not one of {stages}")
+def era_of(stage: str) -> int:
+    """The current era of `stage`: the highest era an era row states for it, 1 when the table has none."""
+    eras = [row["era"] for row in versions_table() if row["stage"] == stage and "same" not in row]
+    return max(eras, default=1)
 
 
-def _history_of(rel_path: str, tree: ast.Module) -> dict:
-    """The checked VERSION_HISTORY of an already parsed module; a module with no such literal has an empty table."""
-    matches = _column_zero_matches(tree, "VERSION_HISTORY")
-    if not matches:
-        return {}
-    if len(matches) > 1:
-        raise SchemaError(
-            f"{rel_path}: {len(matches)} column-zero assignments to 'VERSION_HISTORY', "
-            "expected exactly one")
-    table = matches[0]
-    _check_version_history(rel_path, table, _one_column_zero(rel_path, tree, "VERSION"))
-    return table
+def era_rows(stage: str) -> list[dict]:
+    """The era rows of `stage`, in file order (run.py ls quotes their `why` for a run whose era moved)."""
+    return [row for row in versions_table() if row["stage"] == stage and "same" not in row]
 
 
-def version_history(rel_path: str) -> dict:
-    """The one column-zero VERSION_HISTORY of the module at rel_path; a file with no such literal has an empty table (errata "3.3 / 8.6")."""
-    return _history_of(rel_path, _parse_module(rel_path))
-
-
-# TODO(owner): staleness is scoped per file and per stage only. A bump to one branch of a file
-# (one format in agent/injected_text_formats.py, the LoRA or the full branch of
-# train/utils/trainer.py) re-keys every setting of that stage, including the settings that never
-# reach the changed branch. Planned with the owner on 2026-09-21, to be built together:
-#   1. an optional `when` on a VERSION_HISTORY entry, a mapping of a setting field to the values
-#      the bump makes stale, e.g. {"inject.format": ("p1_e1",)}; the entry counts toward a
-#      setting's effective version only when the setting matches it. A field named there must
-#      be one the stage's key already holds. An entry with no `when` keeps today's behaviour,
-#      so no existing key moves.
-#   2. a pre-commit hook under .claude/hooks/ that refuses a commit staging a file of any
-#      stage's `versions` list when the commit message carries no `Version-check:` line.
-#   3. a read-only opus agent that reads the diff and the callers of what changed and states,
-#      per file, logic unchanged / logic changed (which stages, which setting values) / unsure
-#      (treated as changed); the main conversation holds the commit's VERSION, `stale` and
-#      `when` to that verdict and writes the verdict into the `Version-check:` line.
-# Owner ruling 2026-09-24 (ruling 17): the plan above is not built until a second branch exists;
-# this TODO stays until then.
-def _stale_at(table: dict, entry_version: int, stage: str) -> bool:
-    """Whether the bump to `entry_version` made `stage`'s existing outputs unusable (errata "3.3 / 8.6")."""
-    entry = table.get(entry_version)
-    if entry is None:
-        return True                            # a version with no entry is stale for every stage
-    if "stale" not in entry:
-        return True                            # an unstated bump invalidates every stage
-    return stage in entry["stale"]
-
-
-def _effective_version_over(rel_path: str, stages: tuple[str, ...]) -> int:
-    """The highest version from 2 to VERSION whose entry made any stage of `stages` stale, else 1; one parse of the file."""
-    tree = _parse_module(rel_path)
-    version = _one_column_zero(rel_path, tree, "VERSION")
-    table = _history_of(rel_path, tree)
-    for entry_version in range(version, 1, -1):
-        if any(_stale_at(table, entry_version, stage_name) for stage_name in stages):
-            return entry_version
-    return 1
-
-
-def effective_version(rel_path: str, stage: str) -> int:
-    """The version of the module at rel_path that `stage`'s key folds: the highest version from 2 to VERSION that made `stage` stale, else 1 (errata "3.3 / 8.6")."""
-    return _effective_version_over(rel_path, (stage,))
+def same_rows(stage: str, era: int) -> list[dict]:
+    """The same rows of `stage` at `era`, in file order: each names a commit whose code files of the stage still produce era `era`'s output."""
+    return [row for row in versions_table()
+            if row["stage"] == stage and "same" in row and row["era"] == era]
 
 
 class _UniqueKeyLoader(yaml.SafeLoader):
@@ -1371,7 +1329,7 @@ def load(workflow_file: Path, setting_name: str, *, debug: bool, overrides: dict
 
 # ---------------------------------------------------------------------------
 # 3. load_frozen and run_dir_of; 4. fields_of, models_of, upstream_of,
-#    versions_of, upstream, key, run_dir, freeze.
+#    code_files, upstream, key, run_dir, freeze.
 # ---------------------------------------------------------------------------
 
 
@@ -1481,96 +1439,17 @@ def _substitute(template: str, setting: Setting) -> str:
         template = template.replace("{backbone}", setting.models.probe_row["family"])
     if "{method}" in template:
         template = template.replace("{method}", setting.probe.method)
-    if "{probe_score_method}" in template:
-        method = _resolve_ref("inject.probe_score", setting.inject.probe_score,
-                              debug=setting._debug)[2]
-        if method is None:
-            raise SchemaError(
-                "inject.probe_score: the referenced setting states no probe.method, so its "
-                "match version has no source")
-        template = template.replace("{probe_score_method}", method)
     return template
 
 
-def _entry_parts(entry: str) -> tuple[str, str, str, str]:
-    """One versions entry of the stage table, split into the four parts its two readers use.
+def code_files(stage: str, setting: Setting) -> list[str]:
+    """The repo-relative files whose content `stage`'s output depends on for this setting: the stage table's `code` templates with the setting's chosen modules substituted (5.2), in table order.
 
-    The name an entry enters a payload and a `_versions` record under, the module path to read,
-    the table entry to take out of that module (empty for the other two spellings), and the
-    stage the entry stands in for (empty for the other two spellings). The three spellings:
-
-    - `<path>`: the whole module, read for the stage that lists it.
-    - `<path>#<TABLE>.<method>`: one probe method's own version out of the named column-zero
-      table of that module.
-    - `<path>@<stage>`: a module the row lists for another stage's sake, where 2.1 carries that
-      stage's key instead of folding it. The `@<stage>` part is the stage table's own
-      bookkeeping and stays out of every payload, so an entry keeps the name it had before the
-      marker existed.
+    run.py's launch gate compares these files, as they are in the working tree, with the
+    same files at the commits a directory it is about to read was launched from; nothing here
+    enters a key (the era does, `era_of`).
     """
-    name, _, stands_for = entry.partition("@")
-    path, _, table_entry = name.partition("#")
-    return name, path, table_entry, stands_for
-
-
-def versions_of(stage: str, setting: Setting) -> dict:
-    """The 'versions' block of 3.3: entry -> version, read as source text (entry -> int).
-
-    An entry is spelled one of the three ways `_entry_parts` describes. A bare repo-relative
-    module path takes that whole module's `VERSION`, which is the form of every entry on the
-    sample, build, eval and score rows; so does a `<path>@<stage>` stand-in, which records the
-    module it names. An entry spelled `<path>#<TABLE>.<method>` takes one probe method's own
-    version out of the named column-zero table of that module, and enters the key under that
-    same spelling: `train` folds `eval/utils/probe_eval.py#MATCH_VERSION.<method>` and `inject`
-    folds the same entry for its scoring probe's method, so a change to the eval driver, to a
-    report or to another method's match leaves an existing train run's key where it is, while
-    a change to the match its validation metric is computed with re-keys it.
-
-    This is the real version of every entry the stage lists, which is what settings.yaml's and
-    meta.json's `_versions` record; the key folds `_key_versions` instead.
-    """
-    out = {}
-    for template in STAGES[stage]["versions"]:
-        name, path, table_entry, _stands_for = _entry_parts(_substitute(template, setting))
-        if table_entry:
-            out[name] = _table_entry_version(path, table_entry)
-            continue
-        out[name] = module_version(path)
-    return out
-
-
-def _table_entry_version(path: str, table_entry: str) -> int:
-    """One probe method's version out of a column-zero table: the value of `<TABLE>.<method>` in the module at `path`."""
-    table_name, _, method = table_entry.partition(".")
-    table = module_literal(path, table_name)
-    if method not in table:
-        raise SchemaError(
-            f"{path}: {table_name} has no entry for method {method!r}; "
-            f"it holds {sorted(table)}")
-    return table[method]
-
-
-def _key_versions(stage: str, setting: Setting) -> dict:
-    """The 'versions' payload of the key: entry -> the version `stage`'s key folds (errata "3.3 / 8.6").
-
-    A bare module path folds the file's effective version for `stage`, the stage whose key is
-    being computed. A `<path>@<other>` stand-in folds the highest version that made either
-    `stage` or `other` stale, because the row lists it for `other`'s sake: the inject row folds
-    `eval/utils/probe_eval.py@eval` in place of the probe_score eval key 2.1 carries, since a
-    live inject run takes `_resolved.probe_temperature` out of that eval report, so a bump that
-    states `stale: ("eval",)` moves the inject key too, and one that states `stale: ("inject",)`
-    moves it as well. A `<path>#<TABLE>.<method>` entry folds the table value itself: a
-    per-method match version is already scoped to the one method that folds it, so it carries
-    no VERSION_HISTORY.
-    """
-    out = {}
-    for template in STAGES[stage]["versions"]:
-        name, path, table_entry, stands_for = _entry_parts(_substitute(template, setting))
-        if table_entry:
-            out[name] = _table_entry_version(path, table_entry)
-            continue
-        stages = (stage, stands_for) if stands_for else (stage,)
-        out[name] = _effective_version_over(path, stages)
-    return out
+    return [_substitute(template, setting) for template in STAGES[stage]["code"]]
 
 
 def upstream(stage: str, setting: Setting) -> dict:
@@ -1606,17 +1485,16 @@ def upstream_of(stage: str, setting: Setting) -> dict:
 def key(stage: str, setting: Setting) -> str:
     """The payload of 3.3, canonical JSON, sha256, first 12 lowercase hex characters.
 
-    The 'versions' block of the payload holds effective versions, not the files' real VERSION
-    (errata "3.3 / 8.6"): a bump that leaves this stage usable keeps this stage's key.
+    The code enters the payload as the stage's era alone (`era_of`, the code-era table
+    jobs/versions.yaml); an upstream stage's code reaches it through that stage's folded key.
     """
     fields = fields_of(stage, setting)
     models = models_of(stage, setting)
     full_upstream = upstream(stage, setting)
     fold_names = {e["name"] for e in STAGES[stage]["upstream"] if e["key"] == "fold"}
     upstream_payload = {name: k for name, k in full_upstream.items() if name in fold_names}
-    versions = _key_versions(stage, setting)
     payload = {"stage": stage, "fields": fields, "models": models,
-               "upstream": upstream_payload, "versions": versions}
+               "upstream": upstream_payload, "era": era_of(stage)}
     if setting._debug:
         payload["debug"] = True
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
@@ -1745,7 +1623,7 @@ def freeze(setting: Setting, stage: str, run_dir: Path, resolved: dict, commit: 
     doc["_stage"] = stage
     doc["_key"] = key(stage, setting)
     doc["_upstream"] = upstream(stage, setting)
-    doc["_versions"] = versions_of(stage, setting)
+    doc["_era"] = era_of(stage)
     doc["_debug"] = setting._debug
     doc["_commit"] = commit
     doc["_resolved"] = resolved
@@ -1780,7 +1658,7 @@ def load_frozen(run_dir: Path) -> Setting:
     setting._stage = doc.get("_stage")
     setting._key = doc.get("_key")
     setting._upstream = doc.get("_upstream", {})
-    setting._versions = doc.get("_versions", {})
+    setting._era = doc.get("_era")
     setting._debug = doc.get("_debug", False)
     setting._commit = doc.get("_commit")
     setting._resolved = doc.get("_resolved", {})

@@ -27,7 +27,7 @@ def _start_row(proc_index: int, row_index: int, run_dir: Path) -> dict:
         "stage": "sample", "key": f"{proc_index}{row_index}",
         "dir": str(run_dir), "workflow": "baseline", "setting": "gpt_oss_120b_appworld",
         "parent": None, "swept": None, "debug": False,
-        "upstream": {}, "versions": {}, "diff": {},
+        "upstream": {}, "era": 1, "diff": {},
         "commit": "deadbee", "branch": "main",
         "dirty": False, "dirty_count": 0, "dirty_files": [],
         "host": "shiga", "pieces": [], "status": "launching",

@@ -114,6 +114,9 @@ guards every launch: Phase 4's walk, and the `refire` and `retry` of Phase 6b, w
 every launch that produces a real result is committed first, Phase 6b's two included,
 because a refire re-freezes `_commit` to the commit it cleared (contracts 2.3) and the
 recorded HEAD has to lead back to the code that ran (the branch `CLAUDE.md`).
+`jobs/versions.yaml` counts as dirty like any code file: a row `run.py version` appended
+(Phase 4, the code gate) is committed before the launch, because its era rows move keys
+and the recorded HEAD has to hold them.
 
 ## Phase 3 — Smoke on the same setting
 
@@ -203,11 +206,35 @@ A GPU stage (`sample`, `train`, `inject`) is never waited on. A CPU stage (`buil
 `eval`, `score`) runs inline, in place, with no tmux and no ssh, and the walk goes
 straight on to the next stage without stopping there.
 
-Three `run.py`-held gates guard an `inject` launch specifically: the shared-build-key
-gate and the code-currency gate of contracts 2.5, plus a third — `run.py` compares a
-`key:` or `dir:` probe reference's stated `method:` against the referenced train run's
-frozen `probe.method` before the stage starts (the `5.4 / 2.1` ruling of
-`.scratch/from-zero/contract-errata.md`).
+**The code gate** guards every walk, `refire` and `retry` (contracts 3.3, 2.5). Before a
+stage reads a directory — its own when it exists, every upstream directory, and everything
+upstream of those through the frozen upstream keys — `run.py` compares the stage's code
+files (the stage table's `code` tuple in `experimental_settings/schema.py`, as the working
+tree holds them) with the copy at the directory's launch commits. Equal, or covered by a
+same row of `jobs/versions.yaml` at the directory's era (the line
+`run.py: <dir> (<stage>) is read under a same row of jobs/versions.yaml: ...` says which),
+the walk goes on. Otherwise it stops before anything is frozen or launched, printing
+`run.py: <stage> refuses: the code of stage <s> has moved since <dir> last ran (commit <c>)
+...`, the `git diff --stat` of those files, and the two commands that judge the change. The
+agent then reads the whole diff (`git diff <c> -- <files>`) and decides:
+
+- the change leaves what stage `<s>` produces unchanged (a rename, a log line, a refusal
+  message, a code path this stage never enters):
+  `run.py version <s> --same --why "<one sentence>"` — needs a committed tree, names HEAD;
+- the change alters what stage `<s>` produces:
+  `run.py version <s> --why "<one sentence>"` — an era row; stage `<s>` and every stage
+  downstream of it get new directories.
+
+Commit the row (`jobs/versions.yaml` is code for the dirty-tree gate) and run the same
+launch command again. One row covers every setting: a same row is written once per stage
+per change, never per launch. The `why` is the record a person reads later, so it names what
+changed and why the output does or does not move; never write a same row for a diff that
+was not read, and when unsure whether an output moves, write the era row.
+
+Two more `run.py`-held gates guard an `inject` launch specifically: the shared-build-key
+gate of contracts 2.5, and the method gate — `run.py` compares a `key:` or `dir:` probe
+reference's stated `method:` against the referenced train run's frozen `probe.method`
+before the stage starts (the `5.4 / 2.1` ruling of `.scratch/from-zero/contract-errata.md`).
 
 ## Phase 5 — Monitoring is self-service
 
@@ -226,7 +253,7 @@ launcher that would have started it is gone, and closed with the dead ones by
 whose age is past three times the line that called it a stall, and every `dead`, so a
 dead piece reads `0:dead(escalated)`), progress as
 `done/total <unit>` and the recent rate, the heartbeat age, sessions and cards, and a
-flag column: `edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`,
+flag column: `edited`, `unjudged`, `consumed`, `split`, `pinned`, `dirty`, `debug`,
 `orphan` (contracts 8.6). That priority order is the rule for a loop, train or cpu
 piece. A `service` piece is judged by its session, its port and its run's work pieces
 instead of by its beats, and never reads `slowed`: while its session is alive it reads
@@ -253,12 +280,14 @@ of this repo that matches no row gets a line of its own, with no `run_id` and th
 verdict `orphan`.
 
 An `edited` run is one whose named setting's current key no longer matches this
-directory — an edited setting field, or a `VERSION` bump. When the key moved because a
-file the run recorded had its effective `VERSION` raised, the line also carries a
-trailing `stale=<path> VERSION <n>: "<why>"` naming that file and quoting the bump's own
-`why`; an `edited` run whose key moved for any other reason carries no `stale=` text. A
-`behind` run's recorded `VERSION` is below the current one but its key still matches, so
-it stays usable and carries no `stale=` text.
+directory — an edited setting field, or a new era row in `jobs/versions.yaml`. When the key
+moved because the stage's era moved, the line also carries a trailing
+`stale=era <n>: "<why>"` quoting each era row between the run's era and the current one; an
+`edited` run whose key moved for any other reason carries no `stale=` text. An `unjudged`
+run's key still matches, but the stage's code files have moved past every launch commit of
+the run and no same row covers the working tree's copy: the next walk, `refire` or `retry`
+that reads this directory stops at the code gate (Phase 4) until a `run.py version` row
+judges the change.
 
 `--debug` runs show only when `--debug` is given, because `ls` drops debug rows by
 default, so the Phase 3 smoke is monitored with
@@ -393,6 +422,8 @@ wall-clock, the throughput, the outcome and the source file of each number:
 ## Hard rules
 
 - `jobs/runs.jsonl` is append-only and `jobs/RESULTS.md` is rendered — never hand-edited.
+- `jobs/versions.yaml` is append-only: a `run.py version` row, or a hand-written row in the
+  same shape, committed before the launch; a same row only after reading the diff it judges.
 - `run.py` runs on any machine of the cluster; a piece placed on a machine other than the
   one `run.py` runs on is started over ssh.
 - An agent never starts a GPU process; a step that needs a GPU is returned as `BLOCKED`

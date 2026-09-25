@@ -13,26 +13,6 @@ from data.trajectory_record import Writer
 import models
 from models.probe_models.service import Client as ProbeClient
 
-# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).
-# Bump VERSION only when some existing setting would now produce a different output of a stage
-# that lists this file in the stage table of experimental_settings/schema.py. A new feature
-# behind a new setting field whose default reproduces the old behaviour, a message, a comment
-# or a report layout does not bump.
-# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",
-# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,
-# score) whose existing outputs can no longer be used; leave "stale" out and every stage is
-# stale. The key folds the highest version that made a stage stale, so a bump that leaves a
-# stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 3
-VERSION_HISTORY = {
-    3: {"why": "the head of a fire is the last whole token before the cut; under version 2 it "
-               "was the first token covering the cut, which carried a fragment of the next word "
-               "now that a cut lies after the sentence's whitespace",
-        "stale": ("inject",)},
-    2: {"why": "the live thinking is cut with its leading whitespace stripped, the form the "
-               "build cuts, and cut offsets count from the stripped text",
-        "stale": ("inject",)},
-}
 ARMS = ("probe", "no_probe", "probe_nofill")
 
 

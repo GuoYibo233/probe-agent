@@ -39,9 +39,9 @@ AppWorld clone with its venv at `external/appworld/venv`, Python 3.12),
 ## One command
 
 Every stage is entered through `run.py`, never by calling an underlying
-module by hand. Ten subcommands are reserved: `ls`, `where`, `find`, `kill`,
-`refire`, `retry`, `table`, `free`, `sync`, `selfcheck` (`run.py --help`
-lists them). Any other first word names a workflow file's stem, and a walk
+module by hand. Eleven subcommands are reserved: `ls`, `where`, `find`,
+`kill`, `refire`, `retry`, `table`, `free`, `sync`, `version`, `selfcheck`
+(`run.py --help` lists them). Any other first word names a workflow file's stem, and a walk
 is:
 
 ```
@@ -64,11 +64,16 @@ by `jobs/launch.py`; `build`, `eval` and `score` run in place on the CPU.
 The GPU half of an evaluation is the last step of `train` (it writes the
 prediction rows), so `eval/` only reads what is on disk and never imports
 torch. A run directory is keyed by stage plus a 12-hex hash of the setting's
-diff from the schema defaults, with the `VERSION` of every module the stage
-lists folded in; `experimental_settings/schema.py` reads those `VERSION`
-lines as source text, never by importing. A finished directory is reused, a
-partial one is continued, and an edited setting or a bumped `VERSION` gets a
-new directory.
+diff from the schema defaults, with the stage's era from `jobs/versions.yaml`
+(the code-era table) folded in; the code itself is not in the key. A finished
+directory is reused, a partial one is continued, and an edited setting or a
+new era row gets a new directory. Before a walk, `refire` or `retry` reads a
+directory, its own or any upstream of it, `run.py` compares the stage's code
+files with the copy at the directory's launch commits and refuses when they
+differ and no same row of the table covers the change; the refusal prints the
+diff summary and the two `run.py version` commands (`--same --why` for a
+change that leaves the stage's output as it was, `--why` for one that alters
+it), and the row they append is committed before the next launch.
 
 ## Checks
 
@@ -113,7 +118,10 @@ it through the gpu-run skill (`.claude/skills/gpu-run/SKILL.md`).
 Direction is `notes/TIMELINE.md`, a person's own words, append-only, and an
 agent appends an entry only when asked. Numbers are `jobs/runs.jsonl`
 (append-only, one JSON object per stage run) rendered into `jobs/RESULTS.md`
-by `jobs/registry.py`; neither is ever hand-edited. Data settings are
+by `jobs/registry.py`; neither is ever hand-edited. Code judgments are
+`jobs/versions.yaml` (append-only, one era row or same row per judgment,
+appended by `run.py version` or by hand in the same shape, never rewritten).
+Data settings are
 `notes/DATA.md`. The plan is `notes/WORKPLAN.md`, overwritten in place. Raw
 data lives on NFS. These five layers do not live in one place, and that is
 by design: the registry is the numbers, `notes/` is the person's own record

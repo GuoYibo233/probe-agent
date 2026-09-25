@@ -19,28 +19,6 @@ from models.probe_models import base
 from data import training_data, probe_output
 from jobs import registry
 
-# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).
-# Bump VERSION only when some existing setting would now produce a different output of a stage
-# that lists this file in the stage table of experimental_settings/schema.py. A new feature
-# behind a new setting field whose default reproduces the old behaviour, a message, a comment
-# or a report layout does not bump.
-# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",
-# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,
-# score) whose existing outputs can no longer be used; leave "stale" out and every stage is
-# stale. The key folds the highest version that made a stage stale, so a bump that leaves a
-# stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 3
-VERSION_HISTORY = {
-    3: {"why": "The step total is built from the minibatches method.batches() yields rather than "
-               "from every train event, so a setting whose data holds an event a method drops "
-               "now takes a different number of optimizer steps and runs a different "
-               "learning-rate schedule.",
-        "stale": ("train",)},
-    2: {"why": "The training, validation and prediction forwards run under bfloat16 autocast on a "
-               "card, the form the float32 model row was written for (errata 6.1); version 1 ran "
-               "them in float32 and the two generator methods ran out of memory on a 48 GB card.",
-        "stale": ("train",)},
-}
 
 # The learning-rate schedule, stated here because a reader looks for it: train.warmup_ratio
 # defaults to 0.05 in experimental_settings/schema.py, the share of steps the previous pipeline
@@ -224,8 +202,8 @@ def run(run_dir: Path, method) -> None:
         predict_only = True
         ckpt_dir = best_dir
     # A resume is tested on the run key, which is the identity of the code and the setting
-    # together (the setting's diff, the effective VERSION of every module the stage lists, the
-    # build key). The commit is not that identity: schema.freeze rewrites settings.yaml's
+    # together (the setting's diff, the stage's era in jobs/versions.yaml, the build key). The
+    # commit is not that identity: schema.freeze rewrites settings.yaml's
     # _commit to the current HEAD on every relaunch, so a notes or ledger commit between the
     # crash and the relaunch moves cfg._commit while last/meta.json keeps the commit of the
     # first launch. Both commits go into the `resume` line of train_log.jsonl, and meta.json's
@@ -540,7 +518,7 @@ def run(run_dir: Path, method) -> None:
         run_dir, stage="train", key=cfg._key, commit=cfg._commit,
         counts={"train_rows": train_df.height, "val_rows": val_df.height,
                 "predictions": pred_df.height, "dropped_overlong": dropped_overlong},
-        versions=cfg._versions, metrics=dict(train_val_metrics), report=None,
+        era=cfg._era, metrics=dict(train_val_metrics), report=None,
         stage_extra={"labels": labels})
     hb.finish()
 

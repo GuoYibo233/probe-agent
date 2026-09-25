@@ -11,18 +11,10 @@ import polars as pl
 
 from data import read_frame, record_id as _record_id
 
-# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).
-# Bump VERSION only when some existing setting would now produce a different output of a stage
-# that lists this file in the stage table of experimental_settings/schema.py. A new feature
-# behind a new setting field whose default reproduces the old behaviour, a message, a comment
-# or a report layout does not bump.
-# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",
-# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,
-# score) whose existing outputs can no longer be used; leave "stale" out and every stage is
-# stale. The key folds the highest version that made a stage stale, so a bump that leaves a
-# stage usable keeps that stage's run directory. When unsure, list the stage.
-VERSION = 1
-VERSION_HISTORY = {}
+# The on-disk format's compatibility number, stamped into every row and checked by read_frame
+# (a file recorded above it is refused): it moves when the row shape changes in a way an old
+# reader cannot take. It is not the code era; that is jobs/versions.yaml.
+FORMAT_VERSION = 1
 
 SCHEMA: dict[str, pl.DataType] = {
     "type": pl.Utf8,
@@ -141,7 +133,7 @@ class Writer:
             raise ValueError(f"row {kind!r}: undeclared field(s) {sorted(unknown)}")
         row: dict[str, Any] = {"type": kind, "ts": time.clock_gettime(time.CLOCK_REALTIME)}
         if kind == "meta":
-            row["version"] = VERSION
+            row["version"] = FORMAT_VERSION
             row["record_id"] = _record_id(self._task_id, self._seed)
         row.update(fields)
         self._file.write(json.dumps(row) + "\n")
@@ -246,7 +238,7 @@ def release(dir: Path, live_sessions: set[str], unowned_age_s: float) -> list[Pa
 
 def read(path: Path) -> pl.DataFrame:
     """Read one record file, filling record_id on every row from that file's meta row."""
-    df = read_frame(path, schema=SCHEMA, defaults=DEFAULTS, required=REQUIRED, version=VERSION)
+    df = read_frame(path, schema=SCHEMA, defaults=DEFAULTS, required=REQUIRED, version=FORMAT_VERSION)
     meta_id = df.filter(pl.col("type") == "meta")["record_id"][0]
     return df.with_columns(pl.lit(meta_id).alias("record_id"))
 

@@ -1,4 +1,4 @@
-"""The one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck)."""
+"""The one command: walk a named setting's stages (sample through score), or run one of the eleven reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, version, selfcheck)."""
 # venv: probe
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 from dataclasses import fields as dc_fields
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import yaml
@@ -28,7 +28,8 @@ from jobs import launch, registry
 ROOT = Path(__file__).resolve().parent
 
 RESERVED_SUBCOMMANDS = (
-    "ls", "where", "find", "kill", "refire", "retry", "table", "free", "sync", "selfcheck",
+    "ls", "where", "find", "kill", "refire", "retry", "table", "free", "sync", "version",
+    "selfcheck",
 )
 
 _SUBCOMMAND_ONE_LINE = {
@@ -41,6 +42,7 @@ _SUBCOMMAND_ONE_LINE = {
     "table": "[workflow] [--out FILE] [--debug] -- the backbone x method x risk table",
     "free": "-- the free cards per host",
     "sync": "-- fold done.json and heartbeats into missing finish rows",
+    "version": "<stage> [--same] --why \"<sentence>\" -- append an era row (new directories from now on) or, with --same, a same row (HEAD's code still produces this era) to jobs/versions.yaml",
     "selfcheck": "-- the tree's self-consistency checks",
 }
 
@@ -152,7 +154,7 @@ def _usage_text() -> str:
         "its table row's serving host (constants/cards.yaml), and a --cards pool whose cards are",
         "too small for a piece refuses the launch and names them.",
         "",
-        "The first word is one of the ten reserved subcommands below, or else the stem of a",
+        "The first word is one of the eleven reserved subcommands below, or else the stem of a",
         "workflow file under experimental_settings/.",
         "",
         "subcommands:",
@@ -374,64 +376,192 @@ def _current_setting(workflow_name: str, setting_name: str, debug: bool, overrid
     return None
 
 
-def _current_key_and_versions(stage: str, cfg) -> tuple[str | None, dict]:
-    """Today's key for this stage of this setting, and the `versions` block that keys it.
-
-    Both readers parse every module the stage's row lists, so this is what one ledger row
-    costs to judge and it is read once per (setting, stage, debug) rather than once per row
-    (8.6's `ls` runs over the whole ledger). An unreadable setting gives `None` and an empty
-    block, which is the blank `edited` column of 8.6.
-    """
+def _current_key(stage: str, cfg) -> str | None:
+    """Today's key for this stage of this setting, or None when the setting cannot be keyed (the blank `edited` column of 8.6); read once per (setting, stage, debug), not once per ledger row."""
     if cfg is None:
-        return None, {}
+        return None
     try:
-        current_key = schema.key(stage, cfg)
+        return schema.key(stage, cfg)
     except Exception:
-        current_key = None
+        return None
+
+
+def _era_sentence(stage: str, recorded_era) -> str:
+    """The era rows of jobs/versions.yaml that moved this run's key, each as `era <n>: "<why>"`, for a run that recorded `recorded_era`; empty when the era did not move or the row records none."""
+    if recorded_era is None:
+        return ""
     try:
-        current_versions = schema.versions_of(stage, cfg)
-    except Exception:
-        current_versions = {}
-    return current_key, current_versions
+        rows = schema.era_rows(stage)
+    except schema.SchemaError:
+        return ""
+    return "; ".join(f'era {row["era"]}: "{row["why"]}"' for row in rows if row["era"] > recorded_era)
 
 
-def _behind_versions(recorded: dict, current: dict) -> bool:
-    """Whether any module the `recorded` block names now carries a higher VERSION than the block records (8.6's behind: 'a folded module's VERSION is ahead of the directory's').
+# ---------------------------------------------------------------------------
+# The code gate (3.3, 2.5): a directory is read only under the code its launch commits ran,
+# or under code a same row of jobs/versions.yaml judges the same.
+# ---------------------------------------------------------------------------
 
-    `current` comes from `schema.versions_of`, the same reader that wrote the row's own
-    `versions` block, so a table entry (`<path>#<TABLE>.<method>`) and a stand-in
-    (`<path>@<stage>`) are compared the way the stage table spells them, and this file parses
-    no module itself (ticket 14's comment of 2026-09-18).
+
+def _git(*args: str) -> str:
+    """One git command against the repo root, its stdout; raises RuntimeError carrying git's own words on a non-zero exit."""
+    r = subprocess.run(["git", "-C", str(ROOT), *args], capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout or f"git rc={r.returncode}").strip())
+    return r.stdout
+
+
+_BLOBS_AT: dict[tuple, dict] = {}
+_BLOBS_NOW: dict[tuple, dict] = {}
+
+
+def _blobs_at(commit: str, files: tuple[str, ...]) -> dict[str, str]:
+    """path -> blob id of each of `files` at `commit`; a file absent at that commit has no entry. Cached per (commit, files): one `ls` asks once per launch commit of every row."""
+    cache_id = (commit, files)
+    if cache_id not in _BLOBS_AT:
+        out: dict[str, str] = {}
+        for line in _git("ls-tree", commit, "--", *files).splitlines():
+            meta, _, path = line.partition("\t")
+            out[path] = meta.split()[2]
+        _BLOBS_AT[cache_id] = out
+    return _BLOBS_AT[cache_id]
+
+
+def _blobs_now(files: tuple[str, ...]) -> dict[str, str]:
+    """path -> blob id of each of `files` as it is in the working tree (`git hash-object`, the id `ls-tree` gives a committed copy of the same bytes). Refuses, naming them, files the stage table names that the tree does not hold."""
+    if files not in _BLOBS_NOW:
+        missing = [f for f in files if not (ROOT / f).is_file()]
+        if missing:
+            sys.exit(f"run.py: the stage table's code tuples name {missing}, which the tree does not "
+                     "hold; run.py selfcheck names the tuple")
+        ids = _git("hash-object", "--", *files).split()
+        _BLOBS_NOW[files] = dict(zip(files, ids))
+    return _BLOBS_NOW[files]
+
+
+def _launch_commits(run_dir: Path) -> list[str]:
+    """The commits a run directory was launched under, oldest first: meta.json's launches entries, then the frozen settings' _commit when the list does not hold it (a directory launched before the list was kept has only that one)."""
+    commits: list[str] = []
+    meta = _read_json(run_dir / "meta.json") or {}
+    for entry in meta.get("launches") or []:
+        commit = entry.get("commit")
+        if commit and commit not in commits:
+            commits.append(commit)
+    if (run_dir / "settings.yaml").exists():
+        commit = schema.load_frozen(run_dir)._commit
+        if commit and commit not in commits:
+            commits.append(commit)
+    return commits
+
+
+def _code_verdict(stage: str, files: tuple[str, ...], era, commits: list[str]) -> tuple[str, str]:
+    """How the working tree's copy of `stage`'s code files stands to the copies the `commits` ran.
+
+    ('ran', commit) when it equals the copy at one of them; ('same', '<commit> ("<why>")') when
+    a same row of jobs/versions.yaml at `era` names a commit whose copy it equals; else
+    ('moved', newest commit). A commit git no longer holds counts as one whose copy differs.
     """
-    return any(name in current and recorded[name] < current[name] for name in recorded)
+    now = _blobs_now(files)
 
-
-def _stale_sentence(stage: str, recorded: dict) -> str:
-    """Which file's `VERSION` bump made this run stale, and that bump's own `why` (ticket 14's comment of 2026-09-18, errata '3.3 / 8.6').
-
-    A stage's key folds each listed file's effective version for that stage — the highest
-    version whose `VERSION_HISTORY` entry calls that stage stale — so a file whose effective
-    version now stands above the version this run recorded is a file whose bump moved this
-    run's key. A `<path>@<other>` stand-in is stale when either stage's entries say so, the
-    way `key` folds it; a `<path>#<TABLE>.<method>` entry carries no version history and is
-    left out.
-    """
-    parts = []
-    for name, version in recorded.items():
-        if "#" in name:
-            continue
-        path, _, stands_for = name.partition("@")
+    def equal_at(commit: str) -> bool:
         try:
-            effective = schema.effective_version(path, stage)
-            if stands_for:
-                effective = max(effective, schema.effective_version(path, stands_for))
-            history = schema.version_history(path)
-        except Exception:
+            return _blobs_at(commit, files) == now
+        except RuntimeError:
+            return False
+
+    for commit in commits:
+        if equal_at(commit):
+            return "ran", commit
+    if era is not None:
+        for row in schema.same_rows(stage, era):
+            if equal_at(row["same"]):
+                return "same", f'{row["same"]} ("{row["why"]}")'
+    return "moved", commits[-1] if commits else ""
+
+
+def _moved_code_message(stage: str, stage_d: str, run_dir: Path, files: tuple[str, ...], commit: str) -> str:
+    """The code gate's refusal, with what to do next: which of stage `stage_d`'s files differ from the copy `run_dir` last ran (commit `commit`), and the two `run.py version` commands that judge the change."""
+    python = "external/probe-env/bin/python"
+    where = f"commit {commit}" if commit else "an unrecorded commit"
+    lines = [
+        f"run.py: {stage} refuses: the code of stage {stage_d} has moved since {run_dir} last ran "
+        f"({where}), and no row of jobs/versions.yaml judges the change."
+    ]
+    if commit:
+        try:
+            stat = _git("diff", "--stat", commit, "--", *files).rstrip()
+        except RuntimeError as ex:
+            stat = f"  (git diff failed: {ex})"
+        lines.append(stat or "  (no committed difference; the working tree differs)")
+    try:
+        dirty = [line[3:] for line in _git("status", "--porcelain", "--", *files).splitlines() if line.strip()]
+    except RuntimeError:
+        dirty = []
+    if dirty:
+        lines.append(f"  uncommitted changes in: {', '.join(dirty)}")
+    diff_cmd = f"git diff {commit} -- {' '.join(files)}" if commit else f"git log -- {' '.join(files)}"
+    lines += [
+        f"Read the change (`{diff_cmd}`), judge it, then commit and run this command again:",
+        f"  - it leaves what stage {stage_d} produces unchanged:  "
+        f'{python} run.py version {stage_d} --same --why "<one sentence>"',
+        f"  - it changes what stage {stage_d} produces:           "
+        f'{python} run.py version {stage_d} --why "<one sentence>"',
+        f"    (stage {stage_d} and every stage downstream of it then get new directories)",
+    ]
+    return "\n".join(lines)
+
+
+def _refuse_moved_code(stage: str, run_dir: Path, upstream_dirs: dict) -> None:
+    """The code gate (3.3, 2.5): refuse to read a directory whose stage's code files differ in the working tree from the copy every launch commit of it ran, unless a same row of jobs/versions.yaml at the directory's era names a commit whose copy they equal; a directory read under a same row prints the row.
+
+    The directories judged are this stage's own, when it has been launched, every directory
+    of `upstream_dirs`, and every directory upstream of those through their frozen
+    `_upstream` keys, all the way up: a launch reads its whole result tree. Each directory's
+    file list is its own frozen setting's (`schema.code_files`), which holds the modules that
+    run chose (5.2). A directory with no frozen setting was never launched and is not judged.
+    """
+    todo: list[tuple[str, Path]] = [(stage, run_dir)]
+    by_name = {e["name"]: e for e in schema.STAGES[stage]["upstream"]}
+    for name, up_dir in upstream_dirs.items():
+        if up_dir is not None:
+            todo.append((by_name[name]["stage"], Path(up_dir)))
+    judged: set[Path] = set()
+    while todo:
+        stage_d, d = todo.pop(0)
+        if d in judged or not (d / "settings.yaml").exists():
             continue
-        if effective > version:
-            why = (history.get(effective) or {}).get("why", "")
-            parts.append(f'{path} VERSION {effective}: "{why}"')
-    return "; ".join(parts)
+        judged.add(d)
+        frozen = schema.load_frozen(d)
+        files = tuple(schema.code_files(stage_d, frozen))
+        verdict, detail = _code_verdict(stage_d, files, frozen._era, _launch_commits(d))
+        if verdict == "same":
+            print(f"run.py: {d} ({stage_d}) is read under a same row of jobs/versions.yaml: {detail}")
+        elif verdict == "moved":
+            sys.exit(_moved_code_message(stage, stage_d, d, files, detail))
+        up_by_name = {e["name"]: e for e in schema.STAGES[stage_d]["upstream"]}
+        for name, up_key in (frozen._upstream or {}).items():
+            entry = up_by_name.get(name)
+            if entry is None:
+                continue
+            up_dir = schema.referenced_run_dir(entry["stage"], up_key)
+            if up_dir is not None:
+                todo.append((entry["stage"], up_dir))
+
+
+def _row_code_unjudged(stage: str, cfg, row: dict) -> bool | None:
+    """8.6's `unjudged` flag for one ledger row: the working tree's copy of the stage's code files differs from the copy every launch commit of the run ran, and no same row at the run's era covers it -- the next walk that reads this directory stops at the code gate. None when the row's directory is gone or the setting cannot name its files."""
+    run_dir = Path(row["dir"]) if row.get("dir") else None
+    if run_dir is None or not run_dir.is_dir():
+        return None
+    try:
+        files = tuple(schema.code_files(stage, cfg))
+        commits = _launch_commits(run_dir)
+    except Exception:
+        return None
+    if row.get("commit") and row["commit"] not in commits:
+        commits.append(row["commit"])
+    verdict, _detail = _code_verdict(stage, files, row.get("era"), commits)
+    return verdict == "moved"
 
 
 def _inputs_changed(entries) -> bool:
@@ -465,22 +595,22 @@ def _has_pinned_reference(run_dir: Path) -> bool:
 
 
 def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
-    """Per run_id, the five flags of 8.6 that `run.py` owns because `jobs/registry.py` imports nothing from this repo — `edited`, `behind`, `consumed`, `split`, `pinned` — plus the sentence naming the bump that made a stale run stale.
+    """Per run_id, the five flags of 8.6 that `run.py` owns because `jobs/registry.py` imports nothing from this repo -- `edited`, `unjudged`, `consumed`, `split`, `pinned` -- plus the sentence quoting the era rows that moved a stale run's key.
 
-    `edited` is the named setting's current key against this directory's; `behind` is a
-    recorded `VERSION` below the file's current one while that key still matches, which is
-    the run that stayed usable across the bumps between (ticket 14's comment of 2026-09-18);
-    a run whose key moved is stale instead, and `stale` carries which file's bump did it.
+    `edited` is the named setting's current key against this directory's. `unjudged` is the
+    code gate's verdict on a run whose key still matches: the stage's code files have moved
+    past every launch commit of the run and no same row of jobs/versions.yaml covers the
+    working tree's copy, so the next walk that reads the directory stops at the gate. A run
+    whose key moved is `edited` instead, and when its recorded era is below the stage's
+    current one, `stale` quotes the era rows between.
 
-    A ledger holds many rows per setting, and every reading of a setting or of a module's
-    `VERSION` re-reads and re-parses source text, so each of the three source readings is
-    done once and reused: the setting per (workflow, setting, debug), the key and the
-    versions block per stage of it, and the stale sentence per (stage, recorded versions),
-    which is all it is a function of.
+    A ledger holds many rows per setting, so each reading is done once and reused: the
+    setting per (workflow, setting, debug, overrides), the key per stage of it, the era
+    sentence per (stage, recorded era), and the blob ids the gate compares per commit.
     """
     out: dict[str, dict] = {}
     settings: dict[tuple, object] = {}
-    readings: dict[tuple, tuple[str | None, dict]] = {}
+    keys: dict[tuple, str | None] = {}
     sentences: dict[tuple, str] = {}
     for row in rows:
         run_id = row.get("run_id")
@@ -493,22 +623,22 @@ def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
         if setting_id not in settings:
             settings[setting_id] = _current_setting(workflow_name, setting_name, debug, overrides)
         stage_id = setting_id + (stage,)
-        if stage_id not in readings:
-            readings[stage_id] = _current_key_and_versions(stage, settings[setting_id])
-        current, current_versions = readings[stage_id]
-        recorded = row.get("versions") or {}
+        if stage_id not in keys:
+            keys[stage_id] = _current_key(stage, settings[setting_id])
+        current = keys[stage_id]
         if current is None:
-            edited, behind, stale = None, None, ""
+            edited, unjudged, stale = None, None, ""
         else:
             key_matches = current == row.get("key")
             edited = not key_matches
-            behind = key_matches and _behind_versions(recorded, current_versions)
             if key_matches:
                 stale = ""
+                unjudged = _row_code_unjudged(stage, settings[setting_id], row)
             else:
-                sentence_id = (stage, tuple(sorted(recorded.items())))
+                unjudged = None
+                sentence_id = (stage, row.get("era"))
                 if sentence_id not in sentences:
-                    sentences[sentence_id] = _stale_sentence(stage, recorded)
+                    sentences[sentence_id] = _era_sentence(stage, row.get("era"))
                 stale = sentences[sentence_id]
         run_dir = Path(row["dir"]) if row.get("dir") else None
         consumed = split = pinned = False
@@ -516,7 +646,7 @@ def _compute_row_flags(rows: list[dict]) -> dict[str, dict]:
             consumed = _inputs_changed(_read_json(run_dir / "consumed.json"))
             split = _inputs_changed((_read_json(run_dir / "meta.json") or {}).get("split_files"))
             pinned = _has_pinned_reference(run_dir)
-        out[run_id] = {"edited": edited, "behind": behind, "consumed": consumed,
+        out[run_id] = {"edited": edited, "unjudged": unjudged, "consumed": consumed,
                        "split": split, "pinned": pinned, "stale": stale}
     return out
 
@@ -665,7 +795,7 @@ def cmd_ls(rest: list[str]) -> int:
     result = registry.ls(
         workflow_name, debug=debug, progress=progress,
         edited={rid: f["edited"] for rid, f in row_flags.items()},
-        behind={rid: f["behind"] for rid, f in row_flags.items()},
+        unjudged={rid: f["unjudged"] for rid, f in row_flags.items()},
         consumed={rid: f["consumed"] for rid, f in row_flags.items()},
         split={rid: f["split"] for rid, f in row_flags.items()},
         pinned={rid: f["pinned"] for rid, f in row_flags.items()})
@@ -768,6 +898,9 @@ def cmd_refire(rest: list[str]) -> int:
     refusal = launch.refire_refusal(run_dir, target)
     if refusal is not None:
         sys.exit(refusal)
+    # A refired piece continues the directory under today's code, so the code gate judges the
+    # directory and everything upstream of it the way a walk would (3.3).
+    _refuse_moved_code(stage, run_dir, {})
     existing = schema.load_frozen(run_dir)
     with registry.lock():
         git = launch.git_state(run_dir, allow_dirty)
@@ -1244,12 +1377,9 @@ def _check_3() -> list[str]:
             f"agent/step_with_probe.py ARMS {tuple(arms)}")
 
     probe_kind = _safe_literal(problems, "check 3", "eval/utils/probe_eval.py", "PROBE_KIND")
-    match_version = _safe_literal(problems, "check 3", "eval/utils/probe_eval.py", "MATCH_VERSION")
     for m in axes["probe.method"]:
         if probe_kind is not None and m not in probe_kind:
             problems.append(f"check 3: schema.AXES['probe.method'] value {m!r} is not a key of PROBE_KIND")
-        if match_version is not None and m not in match_version:
-            problems.append(f"check 3: schema.AXES['probe.method'] value {m!r} is not a key of MATCH_VERSION")
     method_stems = _stems_of("train/methods")
     if set(axes["probe.method"]) != method_stems:
         problems.append(
@@ -1293,158 +1423,131 @@ def _check_3() -> list[str]:
     return problems
 
 
-# --- check 4: one VERSION per stage-table module, one literal apiece --------
+# --- check 4: the code-era table, and the stage table's code tuples against the tree ----
 
 
-def _resolve_versions_entry(entry: str) -> list[str]:
-    """One `versions` tuple entry of schema.STAGES, resolved to the concrete file(s) it names: drop the @stage/#table.name tail, then expand whichever of the four templates the remaining path holds (5.2's resolution, check 4)."""
-    path = entry.split("@")[0].split("#")[0]
+_CODE_LAYERS = ("data/", "models/", "agent/", "train/", "eval/")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
+
+
+def _resolve_code_entry(entry: str) -> list[str]:
+    """One `code` tuple entry of schema.STAGES (or a stage's `program`, spelled as a path), resolved to the concrete file(s) it names: whichever of the four templates it holds is expanded over every value (5.2's resolution, check 4)."""
     rows = _table_rows()
     agent_fams = sorted({r["family"] for r in rows.values() if r.get("role") == "agent"})
     probe_fams = sorted({r["family"] for r in rows.values() if r.get("role") == "probe"})
-    outs = [path]
+    outs = [entry]
     for token, values in (
         ("{env}", schema.AXES["data.env"]),
         ("{method}", schema.AXES["probe.method"]),
-        ("{probe_score_method}", schema.AXES["probe.method"]),
         ("{family}", agent_fams),
         ("{backbone}", probe_fams),
     ):
-        if token in path:
+        if token in entry:
             outs = [out.replace(token, v) for out in outs for v in values]
     return outs
 
 
-def _stage_table_files() -> set[str]:
+def _stage_code_files(stage: str) -> set[str]:
+    """Every concrete file a stage's `code` tuple names, over every template value."""
     named: set[str] = set()
-    for row in schema.STAGES.values():
-        for entry in row["versions"]:
-            named |= set(_resolve_versions_entry(entry))
+    for entry in schema.STAGES[stage]["code"]:
+        named |= set(_resolve_code_entry(entry))
     return named
 
 
-# The VERSION rule comment block pinned directly above every column-zero VERSION
-# assignment in the 22 stage-table files (errata "3.3 / 8.6", gyb 2026-09-18):
-# word-for-word identical in all of them, checked by _check_version_comment below.
-_VERSION_RULE_COMMENT = (
-    '# VERSION rule: read this before you edit this file (errata "3.3 / 8.6", gyb 2026-09-18).',
-    "# Bump VERSION only when some existing setting would now produce a different output of a stage",
-    "# that lists this file in the stage table of experimental_settings/schema.py. A new feature",
-    "# behind a new setting field whose default reproduces the old behaviour, a message, a comment",
-    "# or a report layout does not bump.",
-    '# Every bump adds one VERSION_HISTORY entry: {<new version>: {"why": "<one sentence>",',
-    '# "stale": (<stage names>)}}. "stale" names the stages (sample, build, train, eval, inject,',
-    '# score) whose existing outputs can no longer be used; leave "stale" out and every stage is',
-    "# stale. The key folds the highest version that made a stage stale, so a bump that leaves a",
-    "# stage usable keeps that stage's run directory. When unsure, list the stage.",
-)
+def _package_inits(path: str) -> list[str]:
+    """The `__init__.py` of every package on `path`'s way down from the tree root that exists: importing `a.b.c` runs `a/__init__.py` and `a/b/__init__.py`, so a stage that runs the module runs them too."""
+    parts = path.split("/")[:-1]
+    return [init for init in ("/".join(parts[:i]) + "/__init__.py" for i in range(1, len(parts) + 1))
+            if (ROOT / init).is_file()]
 
 
-def _version_assigns(path) -> list[ast.Assign]:
-    """Every column-zero ast.Assign to VERSION in the module at path, in source order (check 4 reads their count and the one's line number)."""
-    return [
-        node for node in ast.walk(_parse(path))
-        if isinstance(node, ast.Assign) and node.col_offset == 0
-        and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets)
-    ]
+def _code_closure(start: str) -> set[str]:
+    """The repo files a module runs, statically: itself, what it imports (`_repo_imports`, transitively) and the package `__init__.py` files on their paths, kept to the five code layers -- the launcher layer (run.py, jobs/, experimental_settings/, constants/) is what starts a stage, not code its output depends on."""
+    seen: set[str] = set()
+    todo = [start]
+    while todo:
+        path = todo.pop()
+        if path in seen or not path.startswith(_CODE_LAYERS) or not (ROOT / path).is_file():
+            continue
+        seen.add(path)
+        todo.extend(_repo_imports(path))
+        todo.extend(_package_inits(path))
+    return seen
 
 
-def _version_assign_lineno(path) -> int | None:
-    """The line number (1-indexed) of the one column-zero ast.Assign to VERSION in the module at path, or None when there is not exactly one -- that mismatch is already check 4's own problem, reported by _safe_literal's caller."""
-    matches = _version_assigns(path)
-    if len(matches) != 1:
-        return None
-    return matches[0].lineno
-
-
-def _check_version_comment(path) -> list[str]:
-    """The VERSION rule comment block sits directly above the file's VERSION assignment, word for word (errata '3.3 / 8.6', gyb 2026-09-18)."""
+def _check_versions_table() -> list[str]:
+    """jobs/versions.yaml's strict shape (3.3): rows the schema reader accepts, a `date` of the form YYYY-MM-DD, per stage the era rows consecutive from 2 in file order, every same row carrying the era current at its position and naming a commit this repository holds."""
     problems: list[str] = []
     try:
-        lineno = _version_assign_lineno(path)
-    except SystemExit as ex:
-        problems.append(f"check 4: {ex}")
-        return problems
-    if lineno is None:
-        return problems
-    lines = (ROOT / path).read_text().splitlines()
-    start = lineno - 1 - len(_VERSION_RULE_COMMENT)
-    if start < 0:
-        problems.append(
-            f"check 4: {path}: the VERSION rule comment block is missing directly above VERSION (line {lineno})")
-        return problems
-    above = tuple(lines[start:lineno - 1])
-    if above != _VERSION_RULE_COMMENT:
-        problems.append(
-            f"check 4: {path}: the lines directly above VERSION (line {lineno}) do not match the pinned VERSION rule comment block")
-    return problems
-
-
-def _check_version_and_history(path: str) -> list[str]:
-    """One file's VERSION rule comment (pinned text, directly above), VERSION (an int) and VERSION_HISTORY (errata '3.3 / 8.6'): keys exactly 2..VERSION, every entry's why non-empty, every stale a tuple of schema.STAGES names."""
-    problems: list[str] = []
-    problems.extend(_check_version_comment(path))
-    version = _safe_literal(problems, "check 4", path, "VERSION")
-    if version is None:
-        return problems
-    if isinstance(version, bool) or not isinstance(version, int):
-        problems.append(f"check 4: {path}: VERSION is a {type(version).__name__}, expected an int")
-        return problems
-    history = _safe_literal(problems, "check 4", path, "VERSION_HISTORY")
-    if history is None:
-        return problems
-    if not isinstance(history, dict):
-        problems.append(f"check 4: {path}: VERSION_HISTORY is a {type(history).__name__}, expected a mapping")
-        return problems
-    expected_keys = set(range(2, version + 1))
-    if set(history) != expected_keys:
-        problems.append(f"check 4: {path}: VERSION_HISTORY keys {sorted(history)} != expected {sorted(expected_keys)}")
-    stage_names = set(schema.STAGES)
-    for entry_version, entry in history.items():
-        if not isinstance(entry, dict):
-            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}] is not a mapping")
+        rows = schema.versions_table()
+    except schema.SchemaError as ex:
+        return [f"check 4: {ex}"]
+    current: dict[str, int] = {}
+    for i, row in enumerate(rows, start=1):
+        where = f"check 4: jobs/versions.yaml row {i} ({row['stage']})"
+        # An unquoted 2026-09-26 loads as a date object, a quoted one as a string; both pass.
+        row_date = row.get("date")
+        if isinstance(row_date, date):
+            row_date = row_date.isoformat()
+        if not isinstance(row_date, str) or not _DATE_RE.match(row_date):
+            problems.append(f"{where}: date {row.get('date')!r} is not YYYY-MM-DD")
+        extra = set(row) - {"stage", "era", "same", "date", "why"}
+        if extra:
+            problems.append(f"{where}: unknown field(s) {sorted(extra)}")
+        era_now = current.get(row["stage"], 1)
+        if "same" in row:
+            if row["era"] != era_now:
+                problems.append(f"{where}: a same row carries era {row['era']}, but the stage's era at this "
+                                f"point of the file is {era_now}")
+            if not _COMMIT_RE.match(row["same"]):
+                problems.append(f"{where}: same {row['same']!r} is not a commit id")
+            else:
+                try:
+                    _git("cat-file", "-e", f"{row['same']}^{{commit}}")
+                except RuntimeError:
+                    problems.append(f"{where}: same {row['same']} is not a commit of this repository")
             continue
-        if not entry.get("why"):
-            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}] has no non-empty 'why'")
-        stale = entry.get("stale")
-        if stale is None:
-            continue
-        if not isinstance(stale, tuple):
-            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}]['stale'] is a "
-                             f"{type(stale).__name__}, expected a tuple")
-        elif not set(stale) <= stage_names:
-            problems.append(f"check 4: {path}: VERSION_HISTORY[{entry_version}]['stale'] names "
-                             f"{sorted(set(stale) - stage_names)}, not one of {sorted(stage_names)}")
+        if row["era"] != era_now + 1:
+            problems.append(f"{where}: era {row['era']} follows era {era_now}; era rows go up by one")
+        current[row["stage"]] = row["era"]
     return problems
 
 
 def _check_4() -> list[str]:
-    problems: list[str] = []
-    named = _stage_table_files()
-    # The set difference runs in both directions (ticket 15 step 4): a stage-table file with no
-    # VERSION is caught by the strict shape below, and a file that carries a VERSION the stage
-    # table does not name is reported here, because that VERSION folds into no key -- a bump of
-    # it would invalidate nothing while its pinned comment block says it invalidates runs. The
-    # strict shape then holds for every versioned file (gyb's comment), named or not.
-    carriers: set[str] = set()
-    unreadable: set[str] = set()
-    for path in _tree_python_files():
-        try:
-            assigns = _version_assigns(path)
-        except SystemExit as ex:
-            problems.append(f"check 4: {ex}")
-            unreadable.add(path)
-            continue
-        if assigns:
-            carriers.add(path)
-    for path in sorted(carriers - named):
-        problems.append(
-            f"check 4: {path} carries a column-zero VERSION but the stage table's versions do not name it")
-    for path in sorted((named | carriers) - unreadable):
+    problems = _check_versions_table()
+    named_by: dict[str, set[str]] = {}
+    for stage in schema.STAGES:
+        for path in _stage_code_files(stage):
+            named_by.setdefault(path, set()).add(stage)
+    for path in sorted(named_by):
         if not (ROOT / path).exists():
-            problems.append(f"check 4: {path} is named by the stage table's versions but does not exist")
-            continue
-        problems.extend(_check_version_and_history(path))
+            problems.append(f"check 4: {path} is named by the code tuple of {sorted(named_by[path])} "
+                            "but does not exist")
+    # Both directions (3.3): every file under the five code layers is code some stage's output
+    # depends on, or is exempted by name with its reason in schema.CODE_UNLISTED; and an
+    # exemption names a file that exists and that no stage's tuple names.
+    layer_files = {p for p in _tree_python_files() if p.startswith(_CODE_LAYERS)}
+    for path in sorted(layer_files - set(named_by) - set(schema.CODE_UNLISTED)):
+        problems.append(f"check 4: {path} is under the code layers, but no stage's code tuple names it "
+                        "and schema.CODE_UNLISTED does not exempt it")
+    for path in sorted(schema.CODE_UNLISTED):
+        if not (ROOT / path).exists():
+            problems.append(f"check 4: schema.CODE_UNLISTED names {path}, which does not exist")
+        if path in named_by:
+            problems.append(f"check 4: schema.CODE_UNLISTED exempts {path}, but the code tuple of "
+                            f"{sorted(named_by[path])} names it")
+    # A stage's tuple holds at least what its program imports: a file the program runs and the
+    # tuple leaves out is a file whose change the code gate would never see.
+    for stage, row in schema.STAGES.items():
+        listed = _stage_code_files(stage)
+        closure: set[str] = set()
+        for program in _resolve_code_entry(row["program"].replace(".", "/") + ".py"):
+            closure |= _code_closure(program)
+        for path in sorted(closure - listed):
+            problems.append(f"check 4: stage {stage}: {path} is imported by its program "
+                            f"{row['program']}, but its code tuple does not name it")
 
     for method in sorted(_stems_of("train/methods")):
         path = f"train/methods/{method}.py"
@@ -1981,7 +2084,7 @@ def _finalize_pair_stage(stage: str, run_dir: Path, key: str, pairs: list[tuple[
     seeds = len({seed for _task_id, seed in pairs})
     counts = {"records": len(pairs), "tasks": tasks, "seeds": seeds}
     registry.write_done(run_dir, stage=stage, key=key, commit=frozen._commit,
-                         counts=counts, versions=frozen._versions, metrics={}, report=None,
+                         counts=counts, era=frozen._era, metrics={}, report=None,
                          pairs=pairs)
     launch.teardown_services(run_dir)
     run_id = f"{stage}-{key}"
@@ -2065,42 +2168,13 @@ def _check_inject_shared_build_key(upstream_dirs: dict) -> None:
             f"probe_gen's train run build key {gen_build!r}")
 
 
-def _check_inject_code_currency(upstream_dirs: dict) -> None:
-    """2.5: inject refuses when a bump made since has turned the output of its two probes' build or train run stale: data/probe_input.py (off the build run), models/probe_models/base.py and each train run's own backbone module (off the train run). The recorded number is the raw VERSION the run ran under, and the number it is held against is schema.effective_version for the stage that wrote the run, the same quantity that stage's key folds (errata "3.3 / 8.6"): a bump whose `stale` leaves the stage out keeps the run's directory and keeps it usable here too."""
-    for label in ("probe_score.train", "probe_gen.train"):
-        train_dir = upstream_dirs[label]
-        train_frozen = schema.load_frozen(train_dir)
-        build_key = train_frozen._upstream.get("build")
-        # The build run of a train run lives under the root that train run was written in: a
-        # debug train run's `build` key is a debug key (3.3), and its own frozen settings say
-        # which root it belongs to.
-        build_dir = schema.run_dir_of("build", build_key, debug=train_frozen._debug)
-        build_frozen = schema.load_frozen(build_dir)
-        family = train_frozen.models.probe_row["family"]
-        backbone_mod = f"models/probe_models/{family}.py"
-        checks = (
-            (build_dir, "build", "data/probe_input.py",
-             build_frozen._versions.get("data/probe_input.py")),
-            (train_dir, "train", "models/probe_models/base.py",
-             train_frozen._versions.get("models/probe_models/base.py")),
-            (train_dir, "train", backbone_mod, train_frozen._versions.get(backbone_mod)),
-        )
-        for src_dir, stage, mod, recorded in checks:
-            stale_since = schema.effective_version(mod, stage)
-            if recorded is None or recorded < stale_since:
-                sys.exit(
-                    f"run.py: inject refuses: {label} ({src_dir}) recorded {mod} VERSION "
-                    f"{recorded}, and VERSION {stale_since} of the current source made "
-                    f"{stage} outputs stale")
-
-
 def _resolve_inject_temperature(upstream_dirs: dict) -> dict:
     """5.4: the softmax temperature is read from the referenced classifier eval's report and frozen under _resolved.probe_temperature."""
     fields, _fires = probe_eval.read_report(upstream_dirs["probe_score.eval"])
     return {"probe_temperature": fields["temperature"]}
 
 
-def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, upstream_map, diff):
+def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, era, upstream_map, diff):
     """Spawn a build/eval/score process in place, inside the caller's lock hold: registry.open_runs()'s refusal first (2.5's launch gate, applied the same way jobs.launch.launch applies it for a card stage), then the process, its pid captured before the start row is appended (errata: 8.1 appends the start row inside the lock while its cpu piece entry carries a pid that exists only after the process starts)."""
     open_rows = [r for r in registry.open_runs() if r.get("run_id") == run_id]
     if open_rows:
@@ -2133,7 +2207,7 @@ def _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions, ups
         "ev": "start", "t": _now(), "run_id": run_id, "stage": stage, "key": key,
         "dir": str(run_dir), "workflow": cfg._file, "setting": cfg._name,
         "parent": None, "swept": None, "debug": cfg._debug,
-        "upstream": upstream_map, "versions": versions, "diff": diff,
+        "upstream": upstream_map, "era": era, "diff": diff,
         "overrides": dict(cfg._overrides),
         "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
         "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
@@ -2172,6 +2246,7 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
 
     if fully_done:
         _refuse_on_stale_inputs(stage, run_dir)
+        _refuse_moved_code(stage, run_dir, {})
         _record_owner(run_dir, cfg)
         done_doc = _read_json(done_path)
         # A pair stage is certified by the request its done.json records, every other stage by
@@ -2216,23 +2291,23 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
     upstream_map = schema.upstream(stage, cfg)
     upstream_dirs = _upstream_dirs(stage, cfg, upstream_map)
     _refuse_missing_upstream(stage, upstream_map, upstream_dirs)
+    _refuse_moved_code(stage, run_dir, upstream_dirs)
     resolved: dict = {}
     if stage == "inject":
         _check_inject_probe_methods(cfg, upstream_dirs)
         _check_inject_shared_build_key(upstream_dirs)
-        _check_inject_code_currency(upstream_dirs)
         resolved = _resolve_inject_temperature(upstream_dirs)
 
     proc = None
     with registry.lock():
         git = launch.git_state(run_dir, allow_dirty)
         schema.freeze(cfg, stage, run_dir, resolved, git["commit"])
-        versions = schema.versions_of(stage, cfg)
+        era = schema.era_of(stage)
         diff = schema.fields_of(stage, cfg)
         # `owners` holds every setting that has run into or reused this directory (8.3), and a
         # stage that always recomputes never takes the skip that records one, so a launch
         # records its own setting here.
-        registry.write_meta(run_dir, stage=stage, key=key, dir=str(run_dir), versions=versions,
+        registry.write_meta(run_dir, stage=stage, key=key, dir=str(run_dir), era=era,
                              upstream=upstream_map, diff=diff, debug=cfg._debug,
                              overrides=dict(cfg._overrides), owners=_owners_with(run_dir, cfg))
 
@@ -2243,7 +2318,7 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
         # across the two waves and their alive checks blocks every other run.py on the machine
         # for as long as the alive check runs.
         if not entry["cards"]:
-            proc = _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, versions,
+            proc = _start_cpu_stage(stage, entry, run_dir, cfg, key, run_id, git, era,
                                      upstream_map, diff)
 
     if entry["cards"]:
@@ -2290,6 +2365,62 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
 # main.
 # ---------------------------------------------------------------------------
 
+def cmd_version(rest: list[str]) -> int:
+    """Append one row to jobs/versions.yaml, the code-era table (3.3).
+
+    `version <stage> --why "<sentence>"` appends an era row: the stage's era goes up by one,
+    so every later run of the stage, and of every stage downstream of it, lands in a new
+    directory. `version <stage> --same --why "<sentence>"` appends a same row naming HEAD: the
+    stage's code files as HEAD holds them still produce the current era's output, which lets
+    the code gate read a directory the code has moved past. A same row needs a clean tree
+    (the ledger files aside), because the commit it names must hold the code it judges. Either
+    row is committed before the next launch, like any other change.
+    """
+    same = "--same" in rest
+    why = None
+    positional: list[str] = []
+    it = iter(rest)
+    for tok in it:
+        if tok == "--same":
+            continue
+        if tok == "--why":
+            why = next(it, None)
+        else:
+            positional.append(tok)
+    if len(positional) != 1 or not why or not why.strip():
+        sys.exit('run.py version: usage: run.py version <stage> [--same] --why "<one sentence>"')
+    stage = positional[0]
+    if stage not in schema.STAGES:
+        sys.exit(f"run.py version: {stage!r} is not a stage; the stages are {', '.join(schema.STAGES)}")
+    era = schema.era_of(stage)
+    row: dict = {"stage": stage, "era": era if same else era + 1}
+    if same:
+        try:
+            status = _git("status", "--porcelain")
+            dirty = sorted({line[3:] for line in status.splitlines()
+                            if line.strip() and not launch.is_ledger_path(line[3:])})
+            row["same"] = _git("rev-parse", "--short", "HEAD").strip()
+        except RuntimeError as ex:
+            sys.exit(f"run.py version: git failed: {ex}")
+        if dirty:
+            sys.exit("run.py version: a same row names HEAD, so the tree must be committed first; "
+                     f"uncommitted: {', '.join(dirty)}")
+    row["date"] = date.today()                   # dumped unquoted, the way a hand-written row reads
+    row["why"] = why.strip()
+    text = yaml.safe_dump([row], sort_keys=False, allow_unicode=True, width=100)
+    table = schema.VERSIONS_TABLE
+    existing = table.read_text() if table.exists() else ""
+    with open(table, "a") as f:
+        if existing and not existing.endswith("\n"):
+            f.write("\n")
+        f.write(text)
+    schema.versions_table()                      # the file must still read as a table
+    sys.stdout.write(text)
+    print(f"run.py version: appended to jobs/versions.yaml; commit it before launching "
+          f"(stage {stage} is now era {row['era']})")
+    return 0
+
+
 _SUBCOMMANDS = {
     "ls": cmd_ls,
     "where": cmd_where,
@@ -2300,6 +2431,7 @@ _SUBCOMMANDS = {
     "table": cmd_table,
     "free": cmd_free,
     "sync": cmd_sync,
+    "version": cmd_version,
     "selfcheck": cmd_selfcheck,
 }
 

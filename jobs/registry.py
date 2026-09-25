@@ -218,7 +218,7 @@ def _default_meta() -> dict:
         "stage": None,
         "key": None,
         "dir": None,
-        "versions": {},
+        "era": None,
         "upstream": {},
         "diff": {},
         "debug": False,
@@ -288,7 +288,7 @@ def launch_ordinal(run_dir) -> int:
     return len(meta.get("launches") or [])
 
 
-def write_done(run_dir, *, stage, key, commit, counts, versions, metrics,
+def write_done(run_dir, *, stage, key, commit, counts, era, metrics,
                 report, pairs=None, stage_extra=None) -> None:
     """Write `done.json` (1.5, 8.0) through a temporary name and a rename.
 
@@ -308,7 +308,7 @@ def write_done(run_dir, *, stage, key, commit, counts, versions, metrics,
         "finished_at": _now(),
         "launch": launch_ordinal(run_dir),
         "counts": counts,
-        "versions": versions,
+        "era": era,
         "metrics": metrics,
         "report": report,
     }
@@ -1108,7 +1108,7 @@ def _orphan_session_row(name: str, host: str | None) -> dict:
         "beat_age_s": None,
         "flags": {
             "edited": None,
-            "behind": None,
+            "unjudged": None,
             "consumed": False,
             "split": False,
             "pinned": False,
@@ -1120,7 +1120,7 @@ def _orphan_session_row(name: str, host: str | None) -> dict:
 
 
 def _ls_row(entry: dict, sessions: set, edited: dict, progress: dict,
-            behind: dict, consumed: dict, split: dict, pinned: dict) -> dict:
+            unjudged: dict, consumed: dict, split: dict, pinned: dict) -> dict:
     start, finish = entry["start"], entry["finish"]
     run_id = start["run_id"]
     run_dir = Path(start["dir"])
@@ -1201,7 +1201,7 @@ def _ls_row(entry: dict, sessions: set, edited: dict, progress: dict,
         "beat_age_s": min(beat_ages) if beat_ages else None,
         "flags": {
             "edited": edited.get(run_id),
-            "behind": behind.get(run_id),
+            "unjudged": unjudged.get(run_id),
             "consumed": bool(consumed.get(run_id)),
             "split": bool(split.get(run_id)),
             "pinned": bool(pinned.get(run_id)),
@@ -1215,7 +1215,7 @@ def _ls_row(entry: dict, sessions: set, edited: dict, progress: dict,
 def ls(workflow: str | None = None, *, debug: bool = False,
        edited: dict[str, bool] | None = None,
        progress: dict[str, tuple[int, int]] | None = None,
-       behind: dict[str, bool] | None = None,
+       unjudged: dict[str, bool] | None = None,
        consumed: dict[str, bool] | None = None,
        split: dict[str, bool] | None = None,
        pinned: dict[str, bool] | None = None) -> list[dict]:
@@ -1238,14 +1238,14 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     `eval/method_table.table()` against an empty ledger issue no `ssh` at
     all (8.6, A10).
 
-    `edited`, `behind`, `consumed`, `split` and `pinned` are the five flags of
+    `edited`, `unjudged`, `consumed`, `split` and `pinned` are the five flags of
     8.6 that `run.py` computes and passes in, for the reason `edited` names:
     this file imports nothing from the repo, so it can call neither `key` nor
-    `version_history` nor a settings reader, and it hashes no upstream file.
+    the code gate nor a settings reader, and it hashes no upstream file.
     Given None, ls leaves that flag blank."""
     edited = edited or {}
     progress = progress or {}
-    behind = behind or {}
+    unjudged = unjudged or {}
     consumed = consumed or {}
     split = split or {}
     pinned = pinned or {}
@@ -1258,7 +1258,7 @@ def ls(workflow: str | None = None, *, debug: bool = False,
     if not debug:
         entries = [e for e in entries if not e["start"].get("debug")]
     sessions = live_sessions()
-    rows = [_ls_row(e, sessions, edited, progress, behind, consumed, split, pinned)
+    rows = [_ls_row(e, sessions, edited, progress, unjudged, consumed, split, pinned)
             for e in entries]
     known = _known_sessions(all_entries)
     host_of = sessions.host_of if isinstance(sessions, _ProbedSessions) else {}

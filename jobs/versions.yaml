@@ -1,0 +1,23 @@
+# The code-era table: the one place a code change is judged (read as contracts 3.3's
+# version block by experimental_settings/schema.py, run.py and jobs/launch.py; appended
+# by `run.py version`, or by hand in the same shape). Append-only; rows are in time order.
+#
+# A row is one of two kinds:
+#
+#   - stage: train              an era row: from here on, every run of this stage lands in
+#     era: 2                    a new directory (the key folds the era), and every stage
+#     date: 2026-09-26          downstream of it follows through the folded upstream keys.
+#     why: <one sentence>       Write one when a change alters what the stage produces.
+#
+#   - stage: train              a same row: the stage's code files (the stage table's `code`
+#     era: 2                    tuple in experimental_settings/schema.py) as they are at the
+#     same: 1a2b3c4             named commit still produce era-2 output. run.py's launch
+#     date: 2026-09-26          gate refuses to read a directory whose launch commit the
+#     why: <one sentence>       code has moved past unless a same row covers the code as it
+#                               is now; `run.py version <stage> --same --why ...` writes one.
+#
+# Rules: the first era row of a stage is era 2 and each later one is one higher; a same row
+# carries the era current at its position in the file; every why is non-empty; `same` names
+# a commit of this repository. `run.py selfcheck` check 4 holds all of this. Era 1 is the
+# state before a stage's first era row. The why sentences are the human record of what the
+# code did when; the `git log` of the stage's files holds the rest.

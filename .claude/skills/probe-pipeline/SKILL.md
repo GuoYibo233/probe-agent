@@ -39,12 +39,13 @@ version: 1.0.0
    `[0, 1]`, a text whose thinking part is not a prefix of the record's thinking);
    `train`'s alignment gate; the generator eval's **three** gates — the referenced
    classifier eval has a `done.json`, `eval.risk` equals that report's `risk_targets`,
-   and the two train runs share a build key; `inject`'s **three** `run.py`-held gates —
-   the shared-build-key gate and the code-currency gate
-   of contracts 2.5, plus the `5.4 / 2.1` errata ruling that compares a `key:`/`dir:`
-   reference's stated `method:` against the referenced train run's frozen
-   `probe.method`; `score`'s same-setup and baseline-pair gates; the launch gate, the
-   dirty-tree gate and the card reservation.
+   and the two train runs share a build key; `inject`'s **two** `run.py`-held gates —
+   the shared-build-key gate of contracts 2.5, plus the `5.4 / 2.1` errata ruling that
+   compares a `key:`/`dir:` reference's stated `method:` against the referenced train
+   run's frozen `probe.method`; `score`'s same-setup and baseline-pair gates; the code
+   gate of every stage (contracts 3.3: a directory is read only under code its launch
+   commits ran, or code a same row of `jobs/versions.yaml` judges the same), the launch
+   gate, the dirty-tree gate and the card reservation.
    Two things that read like build gates are not gates: an event whose call `build_call`
    refuses, that fails the round-trip gate, or whose non-null action `split_args` cannot
    parse is skipped and counted under `counts.events_skipped_no_call`; `report.md`
@@ -59,8 +60,8 @@ version: 1.0.0
 
 5. **Extending.** The four places a file is added are `data/environments/<env>.py`,
    `models/agent_models/<family>.py`, `models/probe_models/<backbone>.py`, and
-   `train/methods/<m>.py`, whose eval side is a `PROBE_KIND` entry, a `MATCH_VERSION`
-   entry and a `match_<m>` function in `eval/utils/probe_eval.py`. What each extension
+   `train/methods/<m>.py`, whose eval side is a `PROBE_KIND` entry and a `match_<m>`
+   function in `eval/utils/probe_eval.py`. What each extension
    touches is **`README.md` section 3, "The extension recipes"**, and that one section
    is the only place this skill points at for what an extension touches — it keeps no
    copy here, because a second copy is a copy that rots.

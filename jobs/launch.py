@@ -862,7 +862,7 @@ def _folded_row_of(run_id: str):
     """The registry's newest row for one run, folded (8.2): `registry.find({})`
     matches every row and the fold keeps each `run_id`'s newest start row.
     `refire` reads the request fields of the run it restarts a piece of from
-    here -- `workflow`, `setting`, `parent`, `swept`, `upstream`, `versions`,
+    here -- `workflow`, `setting`, `parent`, `swept`, `upstream`, `era`,
     `diff` -- because those live in the row and not in `meta.json`."""
     return next((r for r in registry.find({}) if r.get("run_id") == run_id), None)
 
@@ -1124,7 +1124,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
             "dir": run_dir_str, "workflow": setting._file, "setting": setting._name,
             "parent": None, "swept": None, "debug": setting._debug,
             "upstream": schema.upstream(stage, setting),
-            "versions": schema.versions_of(stage, setting),
+            "era": schema.era_of(stage),
             "diff": schema.fields_of(stage, setting),
             # The command-line overrides the setting was loaded under, so `run.py ls` reloads
             # it the same way when it asks whether the setting was edited since.
@@ -1143,7 +1143,7 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
             cmd={p["index"]: p.get("cmd", "") for p in persisted_pieces},
         )
         registry.write_meta(run_dir, stage=stage, key=key, dir=run_dir_str,
-                             versions=start_row["versions"], upstream=start_row["upstream"],
+                             era=start_row["era"], upstream=start_row["upstream"],
                              diff=start_row["diff"], debug=setting._debug,
                              overrides=start_row["overrides"],
                              pieces=persisted_pieces, split_files=split_files,
@@ -1429,7 +1429,7 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             "workflow": run_row.get("workflow"), "setting": run_row.get("setting"),
             "parent": run_row.get("parent"), "swept": run_row.get("swept"),
             "debug": run_row.get("debug"), "upstream": run_row.get("upstream"),
-            "versions": run_row.get("versions"), "diff": run_row.get("diff"),
+            "era": run_row.get("era"), "diff": run_row.get("diff"),
             "overrides": run_row.get("overrides") or {},
             "commit": git["commit"], "branch": git["branch"], "dirty": git["dirty"],
             "dirty_count": git["dirty_count"], "dirty_files": git["dirty_files"],
