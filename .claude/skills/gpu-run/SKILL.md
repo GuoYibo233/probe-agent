@@ -10,7 +10,7 @@ description: >-
   commit, or interrupt with `kill` / `refire` / `retry`. Invoke whenever Dungeon♂Master
   says "run", "train", "inference", or any GPU work needs starting in new1. Chinese
   triggers: "跑程序" / "跑实验" / "跑一下" / "发射" / "用显卡跑" / "起个任务".
-version: 1.1.4
+version: 1.1.5
 ---
 
 # gpu-run — new1 GPU job full lifecycle
@@ -27,7 +27,10 @@ Fixed paths:
   `README.md` gives `run.py` (`venv: probe`), and the system `python3` cannot import its
   dependencies. `run.py --help` lists every subcommand this file names.
 - Cluster inventory: `constants/cards.yaml` (every host, and every card's model and
-  memory). The login machine: `constants/path_outputs.yaml`'s `login_host:` key.
+  memory). The login machine: `constants/path_outputs.yaml`'s `login_host:` key
+  (tokyo108). Every `run.py` command runs there; typed on any other machine (the desktop
+  session's yebis included), `run.py` re-runs itself on tokyo108 over ssh and returns that
+  exit code, so no command is wrapped in `ssh` by hand.
 
 ## Phase 0 — Read the log
 

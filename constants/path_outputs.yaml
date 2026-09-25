@@ -10,4 +10,8 @@ root: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs
 # directory is never reused as, or mistaken for, a real run's output.
 debug_subdir: debug
 
-login_host: shiga          # what `hostname` answers on the machine this repo is typed on
+# The machine every run.py command runs on (tokyo108 answers `saitama` to
+# `hostname`; either spelling normalises through constants/cards.yaml). Typed
+# anywhere else, run.py re-runs itself here over ssh (gyb, 2026-09-25): the
+# registry's times are clock-naive, so every row is written on one clock.
+login_host: saitama

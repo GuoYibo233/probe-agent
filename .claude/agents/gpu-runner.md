@@ -26,7 +26,9 @@ smoke with `--debug` → launch → monitor → wrap up); this file only adds
 project-local constraints, it does not repeat or override that skill. For
 everyday probing use `external/probe-env/bin/python run.py free` (the repo root's `run.py` is the
 single entry point for every stage; the underlying modules are never called
-by hand). **Note that this machine's shell only has `python3`, not
+by hand). Every `run.py` command runs on tokyo108, the `login_host` of
+`constants/path_outputs.yaml`: typed elsewhere, `run.py` re-runs itself there over
+ssh and returns that exit code, so never wrap it in `ssh` by hand. **Note that this machine's shell only has `python3`, not
 `python`**; writing `python` in a command will fail outright.
 
 ## Local constraints (layered on top of the skill)

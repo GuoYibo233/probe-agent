@@ -52,6 +52,10 @@ which freezes the setting, takes the launch gate, and walks that setting's
 stage list, one launch per named setting or sweep child. `run.py ls` reads
 progress and verdicts on demand, computed fresh from each run's heartbeat
 files; there is no background process and nothing to poll for freshness.
+Every `run.py` command runs on tokyo108, the `login_host` of
+`constants/path_outputs.yaml`, so that every registry row is written on one
+clock: typed on any other machine, `run.py` re-runs itself there over ssh and
+returns that exit code (`--help` and `selfcheck` run in place).
 
 The three workflows and their stage lists are `baseline` (sample, score),
 `train_probe` (sample, build, train, eval) and `inject` (inject, score).

@@ -6,6 +6,7 @@ import ast
 import hashlib
 import json
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -64,6 +65,36 @@ def _datasets_config() -> dict:
 def _this_host() -> str:
     """The machine this command runs on, under its constants/cards.yaml entry's own name (through jobs/registry.py); a CPU stage runs in place, so this is the host its piece records."""
     return registry.canonical_host(socket.gethostname())
+
+
+def _login_host() -> str:
+    """`login_host` of constants/path_outputs.yaml, under its constants/cards.yaml entry's own name."""
+    with open(ROOT / "constants" / "path_outputs.yaml") as f:
+        return registry.canonical_host(yaml.safe_load(f)["login_host"])
+
+
+def _forward_to_login_host(argv: list[str]) -> int | None:
+    """Every command runs on `login_host` (gyb, 2026-09-25): the registry's times are
+    clock-naive and its lock holds on one machine, so every row is written on one clock.
+    Typed on any other machine, the same command line is re-run there over ssh, in this
+    repo's path with this interpreter (both on NFS), and its exit code comes back; `None`
+    when this machine is the login host and the command runs in place. A terminal on stdin
+    is passed through (`ssh -t`, so ctrl-C reaches the remote process); a pipe is not, so the
+    output comes back byte for byte."""
+    login = _login_host()
+    if _this_host() == login:
+        return None
+    remote = f"cd {shlex.quote(str(ROOT))} && exec {shlex.quote(sys.executable)} run.py " \
+             + " ".join(shlex.quote(a) for a in argv)
+    ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    if sys.stdin.isatty():
+        ssh.append("-t")
+    sys.stdout.flush()
+    rc = subprocess.run(ssh + [login, remote]).returncode
+    if rc == 255:
+        sys.stderr.write(f"run.py: login_host {login} is unreachable over ssh from "
+                         f"{socket.gethostname()}; every run.py command runs there\n")
+    return rc
 
 
 def _venvs_config() -> dict:
@@ -2268,6 +2299,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     cmd, rest = argv[0], argv[1:]
+    # selfcheck reads only the source tree and runs after every edit, so it runs in place.
+    if cmd != "selfcheck":
+        forwarded = _forward_to_login_host(argv)
+        if forwarded is not None:
+            return forwarded
     if cmd in _SUBCOMMANDS:
         return _SUBCOMMANDS[cmd](rest)
     return cmd_walk(cmd, rest)

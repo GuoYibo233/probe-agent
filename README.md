@@ -52,9 +52,13 @@ its monitoring line with the flag.
 `retry` means "start fresh": it refuses while any piece of the run is alive (end it with `kill`
 first), and only then clears the continue markers and launches the stage normally.
 
-`run.py` runs on any machine of the cluster. `constants/path_outputs.yaml`'s `login_host` is
-where the loop pieces and every other piece that needs no card are placed; a piece on a host
-other than the one `run.py` runs on is started over `ssh`.
+Every `run.py` command runs on `constants/path_outputs.yaml`'s `login_host` (tokyo108):
+the registry's times are clock-naive and its lock holds on one machine, so every row is
+written on one clock. Typed on any other machine, `run.py` re-runs the same command line
+there over `ssh` (same repo path and interpreter, both on NFS) and returns its exit code;
+`--help` and `selfcheck` read only the source tree and run in place. `login_host` is also
+where the loop pieces and every other piece that needs no card are placed; a piece on
+another host is started over `ssh`.
 
 ## 2. The tree, one entry per file
 
@@ -74,10 +78,10 @@ owner rewrites them.
 
 CLAUDE.md — the rules an agent reads on its own; the only other file at the root that is not code.
 
-run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command) and flushes those lines before a CPU stage's process starts, so they stand above that process's output on a pipe as on a terminal, and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names.
+run.py — the one command: walk a named setting's stages (sample through score), or run one of the ten reserved subcommands (ls, where, find, kill, refire, retry, table, free, sync, selfcheck); a walk loads every named setting before it walks the first stage, so a name the file does not hold is refused before anything is frozen or launched; each stage prints one line naming its outcome (reused, ok with its report, failed with its exit code, or launched with the monitoring command) and flushes those lines before a CPU stage's process starts, so they stand above that process's output on a pipe as on a terminal, and a walk or a retry exits 1 when a CPU stage failed; where, kill, refire and retry load the named setting first and refuse a stage its own workflow does not walk; selfcheck's check 12 fails a schema field that no stage's sections or projection tuple and no reference field names; every command but --help and selfcheck runs on login_host, and typed on another machine re-runs itself there over ssh and returns that exit code.
   imports: experimental_settings/schema.py, jobs/launch.py, jobs/registry.py, data/trajectory_record.py (done_pairs, is_done, owner, release), data/environments/__init__.py (open_env, requested_pairs), eval/utils/probe_eval.py (read_report, to freeze a referenced temperature), eval/method_table.py (the table subcommand)
   used by: none (program)
-  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map)
+  reads:   experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the VERSION and VERSION_HISTORY tables of the modules a stage lists (through schema.versions_of, schema.effective_version and schema.version_history, for ls's behind flag), the sample or inject run's task records (through data/trajectory_record.py), the environment's split task-id files (through data/environments.requested_pairs), the probe report of a referenced classifier eval run (through eval/utils/probe_eval.read_report), jobs/runs.jsonl, constants/cards.yaml (through jobs/registry.canonical_host, to name the machine a CPU stage runs on), constants/path_datasets.yaml (the venvs map), constants/path_outputs.yaml (the login_host every command runs on)
   writes:  settings.yaml and settings_diff.yaml into a run directory (through schema.freeze), done.json for the piece stages, meta.json (its owners list, and the stage_extra it folds out of a finished stage's done.json), the start rows of the three CPU stages it starts in place, finish rows and RESULTS.md (through jobs/registry.py); on `retry`, once no piece of the run is alive, deletes the run's continue markers (done.json, consumed.json; for train also train_log.jsonl, train_done.json, align_check.json, last/, last.tmp/, last.prev/)
   venv:    probe (the interpreter this repo's commands are typed with)
 
@@ -89,7 +93,7 @@ constants/path_datasets.yaml — per environment: the clone's home, the interpre
 constants/cards.yaml — the cluster inventory, the one file for card facts: every host's name and alias, and per card index its model and memory in GiB; the source for the code (how many cards a host has, how large each card is) and for people picking cards.
   read by: jobs/registry.py (the one loader, hosts(): the hosts for tmux and card probes, the card count, card_memory_gib() and canonical_host() for jobs/launch.py and run.py)
 
-constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, and the login_host.
+constants/path_outputs.yaml — the outputs root on NFS, the debug subdirectory under it, and the login_host (tokyo108), the one machine every run.py command runs on.
   read by: experimental_settings/schema.py (run_dir), jobs/registry.py (ls walks the root), jobs/launch.py (the login_host)
 
 constants/path_models.yaml — weights alias -> the directory the weights live in.
