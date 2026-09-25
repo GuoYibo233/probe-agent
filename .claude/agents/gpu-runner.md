@@ -72,9 +72,12 @@ by hand). **Note that this machine's shell only has `python3`, not
    launch).
    **Refiring a dead piece is not a new launch**: if a loop or train piece
    dies, do not hand-edit the ledger and do not launch again, use
-   `external/probe-env/bin/python run.py refire <workflow> <setting> <stage> --piece i`, which
+   `external/probe-env/bin/python run.py refire <workflow> <setting> <stage> [--piece i]`, which
    restarts loop and train pieces only (it refuses any other piece by its
-   index and kind), refuses while the piece's session is still alive,
+   index and kind; with `--piece` omitted it takes the run's one loop or
+   train piece and refuses a run that records several, listing them),
+   refuses a finished run (its `done.json` present: `run.py retry` starts
+   that stage fresh), refuses while the piece's session is still alive,
    re-probes the target card before restarting it, and only warns (never
    refuses) when the piece already has more than one launch entry — there is
    no quota on refires. A dead service piece is handled by killing the run,

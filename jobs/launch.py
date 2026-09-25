@@ -1384,8 +1384,8 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
         # meta.json carries the new entry (its `beat_launch` included) before the
         # session starts, the order launch() uses, so no reader sees the earlier
         # incarnation's heartbeat file under the new session.
-        launch_entry = _launch_entry(git, host=new_host, cards=new_gpus, pieces=[index],
-                                     cmd=new_cmd)
+        launch_entry = _launch_entry(git, host=new_host, cards={index: new_gpus}, pieces=[index],
+                                     cmd={index: new_cmd})
         registry.write_meta(run_dir, pieces=[updated_piece], launches=[launch_entry])
 
         # The session starts inside the hold: the liveness test above is the only guard against
