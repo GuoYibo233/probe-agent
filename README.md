@@ -380,7 +380,9 @@ selfcheck reads both spellings the same, and this one keeps the line short.
    a third `PROBE_KIND`, which costs a column on `data/probe_output.py`, a third report shape and
    a third head as well.
 3. **A new training hyperparameter.** `experimental_settings/schema.py` (field, default,
-   one-line comment); the one module that reads it (`train/utils/trainer.py` or one method
+   one-line comment; the annotation uses only the spellings the loader types, `str`, `int`,
+   `float`, `bool`, `None`, `list[...]`, `dict`, `dict[...]` and the name of a dataclass defined
+   in `schema.py`, joined with `|`, and the loader refuses any other); the one module that reads it (`train/utils/trainer.py` or one method
    file). Cost: free when the default reproduces the old behaviour, because the key is over the
    diff from the defaults.
 4. **A new field on the task record.** `data/trajectory_record.py` (the column and its

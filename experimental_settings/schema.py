@@ -587,27 +587,59 @@ def _section_field_names(cls: type) -> set[str]:
 
 
 _TYPE_WORDS = {"str": str, "int": int, "float": float, "bool": bool, "None": type(None)}
+ANNOTATION_SPELLINGS = ("str", "int", "float", "bool", "None", "list[<spelling>]", "dict", "dict[...]",
+                        "the name of a dataclass defined in schema.py")
 
 
-def _annot_types(annot: str) -> tuple:
-    out = []
-    for part in annot.split("|"):
-        part = part.strip()
+def _annotation_alternatives(annot: str) -> list[str]:
+    """The `|`-separated alternatives of an annotation string, split at bracket depth zero only."""
+    parts, depth, start = [], 0, 0
+    for index, char in enumerate(annot):
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+        elif char == "|" and depth == 0:
+            parts.append(annot[start:index].strip())
+            start = index + 1
+    parts.append(annot[start:].strip())
+    return parts
+
+
+def _is_schema_dataclass(word: str) -> bool:
+    """Whether `word` names a dataclass defined in this module (Predict, a section class)."""
+    obj = globals().get(word)
+    return isinstance(obj, type) and hasattr(obj, "__dataclass_fields__")
+
+
+def _annot_types(annot: str, label: str) -> tuple:
+    """The declared type of the field `label` as (types, element, annot): the Python types a YAML value may take, and the same triple for a list's elements (None when no alternative is a list[...]).
+
+    A word names a type only in the spellings of ANNOTATION_SPELLINGS; a nested dataclass field
+    (Predict) arrives from YAML as a dict. Any other spelling is refused, naming the field.
+    """
+    types, element = [], None
+    for part in _annotation_alternatives(annot):
         if part in _TYPE_WORDS:
-            out.append(_TYPE_WORDS[part])
-        elif part.startswith("list"):
-            out.append(list)
-        elif part.startswith("dict"):
-            out.append(dict)
+            types.append(_TYPE_WORDS[part])
+        elif part.startswith("list[") and part.endswith("]") and element is None:
+            types.append(list)
+            element = _annot_types(part[len("list["):-1], label)
+        elif part == "dict" or (part.startswith("dict[") and part.endswith("]")):
+            types.append(dict)
+        elif _is_schema_dataclass(part):
+            types.append(dict)
         else:
-            out.append(dict)   # a nested dataclass field (Predict) arrives from YAML as a dict
-    return tuple(out)
+            raise SchemaError(
+                f"{label}: annotation {annot!r} uses {part!r}, which the loader does not type; the "
+                f"accepted spellings are {', '.join(ANNOTATION_SPELLINGS)}, joined with |")
+    return tuple(types), element, annot
 
 
 def _field_type(cls: type, name: str) -> tuple:
     for f in dc_fields(cls):
         if f.name == name:
-            return _annot_types(f.type)
+            return _annot_types(f.type, f"{cls.__name__}.{name}")
     raise SchemaError(f"{cls.__name__}.{name}: not a field of this section")
 
 
@@ -617,6 +649,17 @@ def _type_ok(value: Any, types: tuple) -> bool:
     if float in types and type(value) is int:
         return True
     return False
+
+
+def _check_value(value: Any, declared: tuple, label: str) -> None:
+    """Refuse `value` unless its type is one `declared` (an _annot_types triple) allows, and, for a list, unless every element's is one the element annotation allows, naming the index."""
+    types, element, annot = declared
+    if not _type_ok(value, types):
+        raise SchemaError(
+            f"{label}: {value!r} has type {type(value).__name__}, declared type is {annot}")
+    if type(value) is list and element is not None:
+        for index, item in enumerate(value):
+            _check_value(item, element, f"{label}[{index}]")
 
 
 def _apply_fields(dst: dict, overlay: dict, cls: type, prefix: str, authored: set[str]) -> None:
@@ -755,18 +798,16 @@ def _sweep_children(sweep: dict, debug_fields: set[str], workflow: list[str]) ->
 
 
 def _type_check_section(section_dict: dict, cls: type, prefix: str) -> None:
+    """Check every field of a merged section against its annotation, then descend into a nested dataclass field, whose annotation has already required a mapping."""
     for f in dc_fields(cls):
         if f.name in MODELS_READONLY:
             continue
+        label = f"{prefix}.{f.name}"
         value = section_dict[f.name]
+        _check_value(value, _annot_types(f.type, label), label)
         default = getattr(cls(), f.name)
         if hasattr(default, "__dataclass_fields__"):
-            _type_check_section(value, type(default), f"{prefix}.{f.name}")
-            continue
-        types = _annot_types(f.type)
-        if not _type_ok(value, types):
-            raise SchemaError(
-                f"{prefix}.{f.name}: {value!r} has type {type(value).__name__}, declared type is {f.type}")
+            _type_check_section(value, type(default), label)
 
 
 def _check_role(table: dict, alias: str, expected_role: str, field_name: str) -> None:
