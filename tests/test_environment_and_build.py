@@ -18,7 +18,9 @@ from data.environments import open_env, requested_pairs
 TOOL = "apis.file_system.show_directory"
 VALUES = ["v", "0", "None", "a@b.com", "Joe Smith", "~/docs/My File.txt", "x, y", "k=v", "f(1, 2)",
           "[1, 2]", "{'a': 1}", "it's", 'say "hi"', " padded ", "", "(", ")", "a\\b", "tab\there",
-          "line\nbreak", "access_token", "3.5", "-1", "é", "100%"]
+          "line\nbreak", "access_token", "3.5", "-1", "é", "100%",
+          # content that itself starts or ends with a quote: the reader takes one layer off, no more
+          '"quoted"', "'q'", 'x"', '"lead', "''", '""', '"a" + "b"', "f'{x}'", "'''tri'''"]
 
 
 class AppWorldCallSyntaxTest(unittest.TestCase):
@@ -61,6 +63,40 @@ class AppWorldCallSyntaxTest(unittest.TestCase):
                         continue
                     accepted += 1
                     self.assertEqual(self.env.split_args(call)[:2], (tool, args), call)
+        self.assertGreater(accepted, len(VALUES))
+
+    def test_split_args_takes_one_layer_of_quotes_off(self):
+        """One layer is the delimiters of a value that is one whole literal; the content's own
+        quotes, and a value that is not one literal, stay as written. No escape is undone."""
+        cases = [
+            (r"""q='say "hi"'""", 'say "hi"'),
+            (r"""q="'hi'" """, "'hi'"),
+            (r"""q='"'""", '"'),
+            (r"""q=''""", ""),
+            (r'''q="""multi line"""''', "multi line"),
+            (r"""q='''it's'''""", "it's"),
+            ('q="a" + "b"', '"a" + "b"'),
+            (r"""q=f'{x}'""", "f'{x}'"),
+            (r"""q='it\'s'""", r"it\'s"),
+            (r"""q=pw""", "pw"),
+        ]
+        for body, value in cases:
+            with self.subTest(body=body):
+                self.assertEqual(self.env.split_args(f"{TOOL}({body})")[1], [("q", value)])
+
+    def test_build_call_round_trips_every_value_it_accepts(self):
+        """The other direction: a value handed to build_call directly reads back as itself, so a
+        value the reader would unwrap is never written bare."""
+        accepted = 0
+        for key in ("pos0", "path"):
+            for value in VALUES:
+                with self.subTest(key=key, value=value):
+                    try:
+                        call = self.env.build_call(TOOL, [(key, value)])
+                    except ValueError:
+                        continue
+                    accepted += 1
+                    self.assertEqual(self.env.split_args(call)[:2], (TOOL, [(key, value)]), call)
         self.assertGreater(accepted, len(VALUES))
 
     def test_build_call_round_trips_several_arguments(self):
