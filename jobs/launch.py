@@ -414,17 +414,25 @@ def _probe_service_cmd(python, run_dir, agent_alias, port, *, score_ckpt, gen_ck
 
 
 # ---------------------------------------------------------------------------
-# Host execution: local when a host normalises to login_host, ssh otherwise
+# Host execution: local when a host normalises to this machine, ssh otherwise
 # (errata, 3.4/8.0). jobs/launch.py's own copy, used to start and end tmux
-# sessions; registry.py's copy (private) serves its own callers.
+# sessions, to probe a service's port and to run the probe service's check
+# client; registry.py's copy (private) serves its own callers. The ssh target
+# is the host's `constants/cards.yaml` name, the name `registry.live_sessions`
+# reaches every host by: a host's alias resolves only inside the cluster
+# network (`ssh shiga` has no route from a machine outside it, `ssh tokyo105`
+# does).
 # ---------------------------------------------------------------------------
 
 
-def _remote_run(host: str, script: str, timeout: float = 20.0) -> tuple[bool, str]:
+def _remote_run(host: str, script: str, timeout: float | None = 20.0) -> tuple[bool, str]:
+    """Run `script` on `host`: `(ok, stdout)`, `ok` False on a nonzero exit, a
+    failed ssh or a timeout. `timeout=None` waits for the script to end."""
     if _is_local_host(host):
         argv = ["bash", "-c", script]
     else:
-        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, script]
+        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+                registry.canonical_host(host), script]
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     except Exception:
@@ -463,14 +471,17 @@ def _kill_tmux(host: str, session: str) -> bool:
 
 
 def _port_answers(host: str | None, port) -> bool:
+    """Whether a TCP connection to `port` opens on `host`, tested on `host`
+    itself the way a session is tested with `tmux ls` on its host: in place
+    when `host` is this machine, over ssh otherwise, connecting to 127.0.0.1
+    there (both services bind 0.0.0.0), so the answer does not depend on
+    whether this machine can route to the cluster's service ports.
+    Fail-closed (3.4, 6.3): a failed or timed-out ssh reads as not answering."""
     if not host or not port:
         return False
-    target = "127.0.0.1" if _is_local_host(host) else host
-    try:
-        with socket.create_connection((target, int(port)), timeout=2):
-            return True
-    except OSError:
-        return False
+    script = f"timeout 3 bash -c {shlex.quote(f'exec 3<>/dev/tcp/127.0.0.1/{int(port)}')}"
+    ok, _out = _remote_run(host, script)
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -1156,11 +1167,15 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
         base_url = _wait_for_endpoint(run_dir, probe_piece)
         if base_url is None:
             return failed("service_check")
-        rc = subprocess.run(
-            [check_python, "-m", "models.probe_models.service", "check",
-             "--base-url", base_url, "--run-dir", run_dir_str],
-            cwd=str(_repo_root())).returncode
-        if rc != 0:
+        # The check client runs on login_host, where the loop pieces it vouches for run and
+        # which reaches the probe service's base_url, through the path a loop piece is started
+        # with (in place when login_host is this machine, ssh otherwise).
+        check_cmd = (f"cd {shlex.quote(str(_repo_root()))} && {shlex.quote(check_python)} -m "
+                     f"models.probe_models.service check --base-url {shlex.quote(base_url)} "
+                     f"--run-dir {shlex.quote(run_dir_str)} 2>&1")
+        check_ok, check_out = _remote_run(_login_host(), check_cmd, timeout=None)
+        sys.stdout.write(check_out)
+        if not check_ok:
             return failed("service_check")
 
     if not _start_wave(loop_pieces):

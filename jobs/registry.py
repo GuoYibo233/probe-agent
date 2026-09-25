@@ -564,12 +564,14 @@ def _is_local_host(host_name: str) -> bool:
 
 def _remote_shell(host: str, script: str, timeout: float = 20.0) -> tuple[bool, str]:
     """Run `script` on `host`: locally through `bash -c` when `host` normalises
-    to this machine, over `ssh -o BatchMode=yes` otherwise (errata). Returns
-    `(ok, stdout)`; `ok` is False on any failure or timeout."""
+    to this machine, over `ssh -o BatchMode=yes` to the host's
+    `constants/cards.yaml` name otherwise (errata; an alias such as `shiga`
+    resolves only inside the cluster network, the entry's name from outside it
+    too). Returns `(ok, stdout)`; `ok` is False on any failure or timeout."""
     if _is_local_host(host):
         argv = ["bash", "-c", script]
     else:
-        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, script]
+        argv = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", canonical_host(host), script]
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     except Exception:
@@ -671,16 +673,18 @@ def end_pid(host: str | None, pid) -> bool:
 
 
 def _probe_port(piece: dict) -> bool | None:
+    """Whether a service piece's port answers, tested on the piece's own host the way its
+    session is tested with `tmux ls` there: a TCP connection to 127.0.0.1:<port> opened in
+    place when the host is this machine, over ssh otherwise, so the verdict does not depend on
+    whether this machine can route to the cluster's service ports. Fail-closed (3.4, 6.3): a
+    failed or timed-out ssh reads as not answering. `None` for a piece with no host or port."""
     port = piece.get("port")
     host = piece.get("host")
     if not port or not host:
         return None
-    target = "127.0.0.1" if _is_local_host(host) else host
-    try:
-        with socket.create_connection((target, int(port)), timeout=3):
-            return True
-    except OSError:
-        return False
+    script = f"timeout 3 bash -c {shlex.quote(f'exec 3<>/dev/tcp/127.0.0.1/{int(port)}')}"
+    ok, _out = _remote_shell(host, script)
+    return ok
 
 
 def _probe_host_busy_cards(host_name: str, n_cards: int) -> set[int]:
