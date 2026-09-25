@@ -91,13 +91,22 @@ file, `imports:` and `used by:` equal to the real import graph) and exits 1
 on any problem. `README.md` section 3 lists, per kind of extension, which
 files to edit and what the change costs in reruns.
 
-`tests/` holds two unittest modules, and pytest is not installed. Each runs
+`tests/` holds seven unittest modules, and pytest is not installed. Each runs
 in its own process:
 
 ```
 external/probe-env/bin/python tests/test_registry_concurrent_append.py
 external/probe-env/bin/python tests/test_packed_loss.py
+external/probe-env/bin/python tests/test_settings_keys.py
+external/probe-env/bin/python tests/test_probe_input.py
+external/probe-env/bin/python tests/test_record_formats.py
+external/probe-env/bin/python tests/test_probe_eval.py
+external/probe-env/bin/python tests/test_environment_and_build.py
 ```
+
+The last five are CPU-only (no torch, no card, no NFS) and write only under a
+temporary directory; `test_packed_loss.py` needs torch and the Qwen3 tokenizer
+on NFS.
 
 Running both in one process (`unittest discover`) makes the registry test
 append its 160 fixture rows to the real `jobs/runs.jsonl`.
