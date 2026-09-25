@@ -170,6 +170,10 @@ class PieceVerdictTest(unittest.TestCase):
         # or a beat of its own alone, makes the same session-less piece dead.
         piece = {"index": 0, "kind": "loop", "host": "tokyo105", "session": "s-0"}
         self.assertEqual(self._verdicts([piece], set())[0], ("not started", False))
+        # Past launch_timeout_s the launcher that would have started it is gone: escalated.
+        old = [(v, esc) for _pv, v, esc in self.registry._judge_pieces(
+            [piece], self.run_dir, set(), "2020-01-01 00:00")]
+        self.assertEqual(old[0], ("not started", True))
         self.assertEqual(self._verdicts([dict(piece, started=self.T)], set())[0], ("dead", True))
         _write_beats(self.run_dir, 0, [{"done": 0, "total": 2}], self.now_ts - 5)
         self.assertEqual(self._verdicts([piece], set())[0], ("dead", True))
@@ -178,17 +182,28 @@ class PieceVerdictTest(unittest.TestCase):
     def test_beat_naming_a_phase_is_never_slowed(self):
         # A train piece in its validation pass touches the heartbeat without moving the count:
         # the same done/total under `phase`, so a zero recent rate reads healthy, not slowed.
-        beats = [{"done": 0, "total": 100}] + [{"done": 50, "total": 100}] * 2
-        _write_beats(self.run_dir, 0, beats, self.now_ts - 60)
-        hb = self.registry.Heartbeat(self.run_dir / "heartbeat" / "0-0.jsonl")
-        hb._last = {"done": 50, "total": 100, "unit": "step"}
-        for _ in range(4):
-            hb.touch("validate")
+        # The touches refresh the age only: the stall line and the rates are read over the
+        # counting beats, so thirty touches a few seconds apart leave the stall line where the
+        # step beats put it and a beat-less minute after the pass is not a stall.
+        step_gap = 300
+        beats = [{"done": 5 * i, "total": 100} for i in range(11)]
+        hb_dir = self.run_dir / "heartbeat"
+        hb_dir.mkdir(parents=True, exist_ok=True)
+        pass_start = self.now_ts - 200
+        with open(hb_dir / "0-0.jsonl", "w") as f:
+            for i, beat in enumerate(beats):
+                ts = pass_start - (len(beats) - 1 - i) * step_gap
+                f.write(json.dumps({"unit": "step", "ts": ts, **beat}) + "\n")
+            for i in range(30):
+                f.write(json.dumps({"unit": "step", "ts": pass_start + 3 * i, "done": 50,
+                                    "total": 100, "phase": "validate"}) + "\n")
         piece = {"index": 0, "kind": "train", "host": "tokyo108", "session": "t-0",
                  "started": self.T}
         pv, verdict, escalated = self.registry._judge_pieces([piece], self.run_dir, {"t-0"}, self.T)[0]
         self.assertEqual(pv["phase"], "validate")
         self.assertEqual((pv["done"], pv["total"]), (50, 100))
+        self.assertEqual(len(pv["beat_ts"]), len(beats))
+        self.assertGreater(self.registry.stall_line_s(pv["beat_ts"]), 1000)
         self.assertEqual((verdict, escalated), ("healthy", False))
 
     def test_attached_service_is_judged_by_its_port_and_its_runs_work(self):

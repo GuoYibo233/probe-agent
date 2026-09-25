@@ -764,7 +764,10 @@ def cmd_refire(rest: list[str]) -> int:
     # pieces, no such piece, a kind refire does not restart, a finished run) come before the
     # dirty-tree gate and the freeze, so a refused refire rewrites nothing (owner ruling
     # 2026-09-24).
-    launch.refire_target(run_dir, piece)
+    _meta, target = launch.refire_target(run_dir, piece)
+    refusal = launch.refire_refusal(run_dir, target)
+    if refusal is not None:
+        sys.exit(refusal)
     existing = schema.load_frozen(run_dir)
     with registry.lock():
         git = launch.git_state(run_dir, allow_dirty)
@@ -786,7 +789,11 @@ def _clear_continue_markers(stage: str, run_dir: Path) -> None:
         if p.exists():
             p.unlink()
     if stage == "train":
-        for name in ("train_log.jsonl", "train_done.json", "align_check.json"):
+        # predictions.parquet is the prediction pass's output: left behind, the trainer would
+        # read a fresh train_done.json beside it as a finished pass, fall through to the
+        # continue rule and refuse the directory (jobs/launch._train_can_continue).
+        for name in ("train_log.jsonl", "train_done.json", "align_check.json",
+                     "predictions.parquet"):
             p = run_dir / name
             if p.exists():
                 p.unlink()

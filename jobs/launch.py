@@ -1219,18 +1219,39 @@ def _train_can_continue(run_dir: Path) -> bool:
     """Whether a restarted train piece would get past the trainer's continue rule
     (`train/utils/trainer.run`, contracts 2.4), asked before refire writes a start row:
     the trainer continues from `last/` (or from a `last.prev/` its checkpoint settling
-    restores), predicts from `best/` when `train_done.json` is there, starts fresh when no
-    `train_log.jsonl` exists yet, and refuses a directory that holds `train_log.jsonl` and
-    none of those, because a second training would mix two runs in one log. Refire used to
+    restores), predicts from `best/` when `train_done.json` is there and no
+    `predictions.parquet` yet, starts fresh when no `train_log.jsonl` exists yet, and refuses
+    a directory that holds `train_log.jsonl` and none of those, because a second training
+    would mix two runs in one log. Refire used to
     start that refused incarnation, which died at once and left a `launching` row that
     blocked `run.py retry` for `launch_timeout_s` (repo test 2026-09-25, O10). This module
     imports no torch, so the rule is restated here and both places name each other."""
     run_dir = Path(run_dir)
-    if (run_dir / "train_done.json").exists():
+    if (run_dir / "train_done.json").exists() and not (run_dir / "predictions.parquet").exists():
         return True
     if (run_dir / "last").exists() or (run_dir / "last.prev").exists():
         return True
     return not (run_dir / "train_log.jsonl").exists()
+
+
+def refire_refusal(run_dir, target: dict) -> str | None:
+    """The continue-rule refusal for a session-less train piece, or None when
+    refire may go on: `run.py refire` asks it right after `refire_target`,
+    before the dirty-tree gate and the freeze, so a refused refire rewrites
+    nothing, and `refire()` asks it again after its own liveness test. A piece
+    whose session is alive is not judged here (it is refused as alive)."""
+    run_dir = Path(run_dir)
+    if target.get("kind") != "train":
+        return None
+    host, session = target.get("host"), target.get("session")
+    if host and session and registry.session_alive(host, session):
+        return None
+    if _train_can_continue(run_dir):
+        return None
+    return (f"jobs/launch.py refire: {run_dir} holds train_log.jsonl and no last/ checkpoint "
+            f"(or a train_done.json beside predictions.parquet), so the trainer would refuse to "
+            f"continue it (contracts 2.4: a second training would mix two runs in one log); "
+            f"run.py retry <workflow> <setting> train [--debug] starts it fresh")
 
 
 def _run_finished(run_dir: Path) -> bool:
@@ -1357,11 +1378,9 @@ def refire(run_dir, git, piece=None, cards=None) -> list[dict]:
             sys.exit(f"jobs/launch.py refire: piece {index} is alive: session {session!r} "
                      f"on host {host!r}")
 
-        if kind == "train" and not _train_can_continue(run_dir):
-            sys.exit(f"jobs/launch.py refire: {run_dir} holds train_log.jsonl and no last/ "
-                     f"checkpoint, so the trainer would refuse to continue it (contracts 2.4: a "
-                     f"second training would mix two runs in one log); run.py retry <workflow> "
-                     f"<setting> train [--debug] starts it fresh")
+        refusal = refire_refusal(run_dir, target)
+        if refusal is not None:
+            sys.exit(refusal)
 
         run_id = _run_id_of_meta(meta)
         run_row = _folded_row_of(run_id) if run_id else None

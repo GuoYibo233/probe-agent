@@ -841,8 +841,13 @@ def judge(piece: dict) -> tuple[str, bool]:
     and no beat of its own incarnation was never started by the launcher (the
     loop wave of an inject launch waits for its services and the check client;
     a launch that ended before that wave never starts it), so it is
-    `not started`, never escalated, and `launch_failed` closes its launch with
-    the dead ones once the start row is old enough. Either mark of a start, the
+    `not started`: not escalated while the launch is younger than
+    `launch_timeout_s`, the longest the launcher waits before its last wave,
+    and escalated past that, when the launcher that would have started it is
+    gone (a launch killed between its service wave and its loop wave leaves
+    the services alive and holding cards, and only this mark says so).
+    `launch_failed` closes a launch whose pieces all read `dead` or
+    `not started` once the start row is that old. Either mark of a start, the
     launcher's stamp or a beat the piece wrote itself, makes a session-less
     piece `dead`. A `cpu` piece is started by the walk that records its pid, so
     it never reads `not started`.
@@ -854,7 +859,7 @@ def judge(piece: dict) -> tuple[str, bool]:
         return "done", False
     if piece.get("alive") is False:
         if piece.get("kind") != "cpu" and not piece.get("started") and not piece.get("has_beat"):
-            return "not started", False
+            return "not started", piece["since_launch_s"] > DEFAULTS["launch_timeout_s"]
         return "dead", True
     warm = not piece.get("has_beat")
     age = piece["since_launch_s"] if warm else piece["beat_age_s"]
@@ -981,9 +986,13 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str
     since_launch_s = now_ts - _parse_t(launch_t)
     has_beat = bool(beats)
     last = beats[-1] if beats else None
-    beat_ts = [b.get("ts") for b in beats]
-    recent_slice = beats[-DEFAULTS["typical_beats"]:] if beats else []
-    avg_rate, recent_rate = rates(beats[0] if beats else None, recent_slice)
+    # A phase-named beat (`Heartbeat.touch`) refreshes the age only: the typical gap, the
+    # stall line and the rates are read over the counting beats, so a pass that touches every
+    # few seconds neither drops the stall line to its floor nor reads as a zero rate afterwards.
+    counting = [b for b in beats if not b.get("phase")]
+    beat_ts = [b.get("ts") for b in counting]
+    recent_slice = counting[-DEFAULTS["typical_beats"]:] if counting else []
+    avg_rate, recent_rate = rates(counting[0] if counting else None, recent_slice)
     return {
         "kind": kind,
         "alive": alive,
@@ -994,7 +1003,7 @@ def _piece_verdict_dict(piece: dict, run_dir: Path, sessions: set, launch_t: str
         "unit": last.get("unit") if last else None,
         "has_beat": has_beat,
         "beat_ts": beat_ts,
-        "beat_age_s": (now_ts - beat_ts[-1]) if has_beat else None,
+        "beat_age_s": (now_ts - last["ts"]) if has_beat else None,
         "since_launch_s": since_launch_s,
         "port_ok": None,
         "avg_rate": avg_rate,
