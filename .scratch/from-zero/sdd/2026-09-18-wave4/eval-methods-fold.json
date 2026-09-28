@@ -1,0 +1,58 @@
+{
+ "workflow": "wave4-eval-methods-fold",
+ "run_id": "wf_6e8bf8a3-e55",
+ "agents": 4,
+ "merge": "see git log",
+ "result": {
+  "branch": "ticket/2026-09-18-wave4/eval-methods-fold",
+  "base": "014f57fc7b980cade2f758e6d90ad65409beaad1",
+  "head": "a7a2f94127717702622c8ee3b0e3172ff8059a84",
+  "rounds": 2,
+  "status": "DONE",
+  "openFindings": [],
+  "minors": [
+   {
+    "id": "N1-3",
+    "severity": "minor",
+    "title": "ticket 04's fixture stubs eval/methods/ and its axis check now silently skips",
+    "file": ".scratch/from-zero/issues/04-setting-schema-and-loader.md",
+    "detail": "Ticket 04 keeps 12 hits, outside acceptance (g)'s allowed set. Two of them are runnable, not prose: the fixture script (line 443 mkdir of eval/methods, line 495 `printf ... > \"$FIX/eval/methods/$m.py\"`) builds a fixture whose eval side the loader no longer reads, and the B4 axis check (lines 585-587) is guarded by `if os.path.isdir('train/methods') and os.path.isdir('eval/methods')`, so after the fold it does not fail — it stops running, and the probe.method axis goes unchecked with no signal. Acceptance (f) above shows the edit the fixture needs: drop the three eval/methods stubs and write one eval/utils/probe_eval.py stub carrying VERSION and the two tables."
+   },
+   {
+    "id": "N1-4",
+    "severity": "minor",
+    "title": "ticket 08's selfcheck note that probe_eval imports no data/environments/__init__.py is now false",
+    "file": ".scratch/from-zero/issues/08-eval-library-and-classifier-metric.md",
+    "detail": "Ticket 08's \"Selfcheck lines that apply later\" states that run.py selfcheck will check \"in particular that `probe_eval.py` imports **neither** `data/__init__.py` nor `data/environments/__init__.py`\". The fold moved the generator report into probe_eval.py, which now carries `from data.environments import open_env`, so the second half of that pair is false. The README imports: line was updated correctly, but ticket 15's implementer reading ticket 08 could encode the stale expectation into selfcheck. The implementer flagged this in report section 1; it needs a Comment on ticket 08 (which the main session owns) rather than a code change."
+   },
+   {
+    "id": "N1-5",
+    "severity": "minor",
+    "title": "the cparam match call is split across lines so the statement looks unbalanced",
+    "file": "eval/utils/probe_eval.py",
+    "detail": "In _generator_scores' cparam branch, lines 410-411 read `params_all_ok = match_cparam(` / `    tool + \"(\" + row[\"text_pred\"], tool + \"(\" + row[\"target\"], env)[\"params_all_ok\"]` and the next line starts a new statement at the same indent. It is valid Python and it ran, but the closing paren of the call plus the subscript ending the statement on the continuation line reads as a missing bracket against `tool_ok_vals.append(tool_ok)` below. The old cparam.py had it on one line. Either keep it on one line or put the subscript after a closing paren on its own line."
+   },
+   {
+    "id": "N2-1",
+    "severity": "minor",
+    "title": "ticket 04's fixture script still stubs eval/methods/<m>.py, so a verbatim re-run of its acceptance now raises SchemaError",
+    "file": ".scratch/from-zero/issues/04-setting-schema-and-loader.md",
+    "detail": "Not introduced by this round's diff (round 1's fold introduced it; the round-2 dispatch ordered only ticket 16), so recorded as minor for the main conversation. Line 495 of the mkfix.sh script writes `printf 'VERSION = 1\\nPROBE_KIND = \"%s\"\\n' \"$kind\" > \"$FIX/eval/methods/$m.py\"`, while line 443's mkdir list still creates eval/methods, and the `eval/utils/probe_eval.py` stub the same script writes (in the plain `printf 'VERSION = 1\\n'` loop) carries no tables. I built that fixture verbatim from the ticket and pointed the branch's schema.ROOT at it: `S.load(train_probe.yaml, 'ctool_qwen3_0pt6b')` then `S.key('train', cfg)` fails with `SchemaError: eval/utils/probe_eval.py: no column-zero assignment to 'PROBE_KIND'`, because `_method_kind` and `versions_of` now read PROBE_KIND and MATCH_VERSION out of that file. The fix is one line: replace the eval/methods stub loop with `printf 'VERSION = 1\\nPROBE_KIND = {\"ctool\": \"classifier\", \"cgen\": \"generator\", \"cparam\": \"generator\"}\\nMATCH_VERSION = {\"ctool\": 1, \"cgen\": 1, \"cparam\": 1}\\n' > \"$FIX/eval/utils/probe_eval.py\"` and drop eval/methods from the mkdir list — which is exactly the substitution acceptance (f) of this change has to make to run at all. Acceptance (g) names tickets 08 and 10, the wave-4 sdd reports and the errata as the allowed remaining hits, so ticket 04's 12 hits are formally outside the set; this is the decision the report's round-2 section 6 hands the main session."
+   },
+   {
+    "id": "N2-2",
+    "severity": "minor",
+    "title": "ticket 04's B4 probe.method axis check is guarded on os.path.isdir('eval/methods'), so on the current tree it silently skips instead of failing",
+    "file": ".scratch/from-zero/issues/04-setting-schema-and-loader.md",
+    "detail": "Not introduced by this round's diff; recorded as minor. Line 585 reads `if os.path.isdir('train/methods') and os.path.isdir('eval/methods'):` and line 587 `ev = {os.path.basename(f)[:-3] for f in glob.glob('eval/methods/*.py')}`, guarding the assertion that `set(S.AXES['probe.method']) == tr & ev`. eval/methods no longer exists on the branch, so the whole block is skipped and B4 prints its success line having checked nothing about probe.method — a silent green, which is worse than the hard failure in N2-1 because nothing signals it. Ticket 15's rewrite (this change's own commit 457c288) already carries the replacement rule: every axis value of AXES['probe.method'] is a key of eval/utils/probe_eval.py's PROBE_KIND and of its MATCH_VERSION, and the axis equals the file stems under train/methods/. B4 should be rewritten to that rule or the guard dropped so it fails loudly."
+   },
+   {
+    "id": "N2-3",
+    "severity": "minor",
+    "title": "README's rewritten probe-method sentence names only the eval half, while ticket 16 (also rewritten this round) points at README.md as the whole extension recipe",
+    "file": "README.md",
+    "detail": "Both halves of this pointer were edited by this round's diff, but the gap is not new (the old line, \"A new probe method is a file under methods/\", named only the eval side too), so it is minor. Line 333-335 is now the only sentence in README.md about adding a probe method — `grep -n \"new probe method\\|extension\\|Extending\\|recipe\" README.md` returns that one line and nothing else — and it names only the PROBE_KIND key, the MATCH_VERSION key and the match_<m> function. Ticket 16's point 5, as rewritten by a7a2f94, tells a future implementer that \"the recipe lives in README.md\", and its own list names `train/methods/<m>.py` as the file added. An implementer following that pointer into README.md therefore finds the eval half and neither the train/methods/<m>.py file nor the registration of the new value in schema.AXES[\"probe.method\"] (which ticket 16's point 6 does require: \"a new axis value is registered in schema.py before any YAML may use it\"). Since the line was being rewritten anyway, naming the train file and the axis in it would close the loop; the alternative is for ticket 16 to stop calling README.md the recipe."
+   }
+  ]
+ }
+}

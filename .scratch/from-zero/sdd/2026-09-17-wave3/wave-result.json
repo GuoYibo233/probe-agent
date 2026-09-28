@@ -1,0 +1,104 @@
+{
+ "run_id": "wf_ce15a89e-a31",
+ "agents": 10,
+ "result": {
+  "feature": "from-zero",
+  "wave": "2026-09-17-wave3",
+  "tickets": [
+   {
+    "id": "07",
+    "status": "DONE",
+    "branch": "ticket/2026-09-17-wave3/T07",
+    "commits": {
+     "base": "28735bb2437f34af4f85d915b9de22f22530cfaa",
+     "head": "74d2a6c (branch ticket/2026-09-17-wave3/T07, base e5d8a93)"
+    },
+    "rounds": 1,
+    "openFindings": [],
+    "minors": [],
+    "cannotVerify": [
+     "All GPU-only acceptance items (M-M1 through M-M6) named in the ticket's 'GPU / main session — not yours' section: they require a real vLLM/probe server on a GPU host and are explicitly out of scope for a reviewer without GPU access.",
+     "Whether the HF tokenizer's encode/decode and the agent family's render_ids (used by /render, /encode, /decode in models/probe_models/service.py) are safe to call concurrently from multiple threads without the same lock that guards /score and /gen — this requires knowledge of openai_harmony/transformers internals not present in this diff or the rest of the repo tree.",
+     "Whether jobs/launch.py (not yet written, a later ticket) will in fact supply the --attached-to flag the implementer added, and pass it correctly as 'the run_id of the row that owns the server' — depends on code that does not exist yet on this branch.",
+     "Whether the probe service's argparse allowing --score-ckpt/--gen-ckpt/--temperature/--device to be individually omitted outside --render-only (no mutual-requirement enforcement) ever matters in practice — depends on how jobs/launch.py (a later ticket) constructs the command line."
+    ],
+    "concerns": [
+     "1.5's attached_to field (the run_id a service owns after --attach-only) has no source in 7.1's/7.4's command line or in GET /v1/models; I added --attached-to <run_id> to serve --attach-only (jobs/launch.py, the side that already knows the run_id, is expected to pass it), following the same pattern as the contracts errata's existing --replica fix to this command line. Needs the owner's confirmation before jobs/launch.py (a later ticket) is written against it.",
+     "Under --attach-only the endpoint file's pid is written null, since the attaching piece starts no process and has no way to learn the remote server's pid over HTTP; relevant to a later run.py kill implementation.",
+     "The render-equals-server check's CHECK_MESSAGES fixture (agent service) is my own literal built from the two diverging shapes 7.1 names (empty-content assistant turn, literal <|end|> in content); this path is GPU-only and untested by any CPU acceptance command.",
+     "The probe service's check subcommand verifies the <|end|> fixture generically (special=true gives fewer ids than special=false, plus a round-trip on the plain side) since check has no tokenizer of its own to name the exact control-token id; weaker than A13's exact-id assertion but the only model-agnostic option available to a client-only check.",
+     "Per the wave-3 precheck's own note in the ticket, the --attach-only comparison covers only served_model_name and max_model_len (what GET /v1/models exposes), not the whole result: block; that reading is still unconfirmed by the owner."
+    ]
+   },
+   {
+    "id": "08",
+    "status": "DONE",
+    "branch": "ticket/2026-09-17-wave3/T08",
+    "commits": {
+     "base": "28735bb2437f34af4f85d915b9de22f22530cfaa",
+     "head": "38ee017"
+    },
+    "rounds": 1,
+    "openFindings": [],
+    "minors": [
+     {
+      "id": "F2",
+      "severity": "minor",
+      "title": "consumed.json's referenced-fires sha1 call doesn't guard the same None case its own n_rows fallback anticipates",
+      "detail": "In eval/utils/probe_eval.py's run(), the generator branch computes `ref_fires_height = ref[1].height if ref[1] is not None else 0` (correctly anticipating that read_report can return None for the fires frame per its own documented contract: \"returns None for the frame when no fires.parquet exists\"), but the very next line unconditionally calls `_sha1(ref_eval_dir / \"fires.parquet\")`, which would raise FileNotFoundError instead of falling back gracefully if that file were ever absent. In practice this is unreachable today because every classifier method (2.6) must return a non-None fires frame from report(), so ctool.py's referenced reports always have fires.parquet on disk — but the inconsistency between the two adjacent lines (one guards the None case, the other doesn't) is worth tidying since it is easy to miss if a future classifier method's report() is written differently.",
+      "file": "eval/utils/probe_eval.py"
+     }
+    ],
+    "cannotVerify": [
+     "Ticket step 5 (`labels = json.load(train_dir/meta.json)['stage_extra']['labels']`, 'None for a generator'): probe_eval.py's implementation does a direct dict access `train_meta['stage_extra']['labels']` with no .get()/default, which only avoids a KeyError if ticket 07's train/utils/trainer.py always writes the key `labels` into done.json's stage_extra (with a null value for a generator) rather than omitting the key entirely. trainer.py is not part of this diff, so this can't be verified here.",
+     "The build-key gate, the done.json-exists gate, and the risk_targets gate (2.5's generator-eval gates) can only be exercised end-to-end once a generator method (eval/methods/cgen.py or cparam.py, tickets 09/10) and a real referenced classifier eval run exist; this diff's own acceptance tests (A1-A5, A7a) only exercise the classifier path, so the generator branch of probe_eval.run is exercised by reading the code but not by any test in this diff.",
+     "run.py selfcheck's cross-file checks named at the end of the ticket (PROBE_KIND equality between eval/methods/ctool.py and train/methods/ctool.py; every axis value of probe.method having a file under eval/methods/; the README import-graph check) depend on run.py (ticket 15) and train/methods/ctool.py (ticket 13), neither of which exists yet on this branch.",
+     "M-E1 (the GPU-backed end-to-end classifier eval over a real train_probe run) is explicitly out of scope for this ticket/implementer per the ticket's own 'GPU / main session — not yours' note, and was correctly not run; it remains unverified pending a GPU launch."
+    ],
+    "concerns": [
+     "report.md's per-risk theta for the classifier shape is read from fields['chosen'][risk_str] rather than a 'theta' key inside frozen[risk_str], since contracts 1.4's frozen struct (n, coverage, trig_acc, earliness, wrong_spec, ci) carries no theta field -- this is an implicit requirement I resolved rather than a literal line from the ticket; flagged in the report for review.",
+     "bootstrap_ci's resampling duplicates a group's rows on a repeated draw (via per-iteration pl.concat over precomputed per-id frames) to match the legacy algorithm's semantics, rather than using an is_in() filter that would silently collapse duplicate draws; the A5 fixture's balanced construction makes its CI-bracket assertion insensitive to this choice, so the port is verified by reading the legacy code plus A5's determinism assertions, not by a discriminating acceptance number.",
+     "M-E1 (the GPU-backed end-to-end classifier eval over a real train_probe run, via run.py, which does not exist on this branch yet) is explicitly marked 'GPU / main session -- not yours' by the ticket itself; not run, and not counted as blocking this ticket's own DONE status."
+    ]
+   },
+   {
+    "id": "09",
+    "status": "DONE",
+    "branch": "ticket/2026-09-17-wave3/T09",
+    "commits": {
+     "base": "28735bb2437f34af4f85d915b9de22f22530cfaa",
+     "head": "2be4f0688b4b93137ff1d871f74e68c840ad051e"
+    },
+    "rounds": 0,
+    "openFindings": [],
+    "minors": [
+     {
+      "id": "F1",
+      "severity": "minor",
+      "title": "Heartbeat emission order deviates from the ticket's literal step 6 placement",
+      "detail": "Ticket step 6 places `hb.emit(0, len(pairs), \"row\")` then 'one beat per record read' before steps 7-8 (resolving split files, split gates), while step 9 places the actual `trajectory_record.read_dir` call after those same gates. Since `read_dir` offers no per-record callback, the two placements can't both be honored literally (the implementer's report documents this contradiction explicitly). The code emits the initial beat at step 6's position, then emits `len(pairs)` per-record beats immediately after the single `read_dir` call (step 9's position) rather than truly interleaved with disk reads. This doesn't change any observable output (verified against `heartbeat/0-0.jsonl` in F2's acceptance output) and is explained by a code comment plus the report's 'Decisions I made' section.",
+      "file": "data/build_training_dataset.py"
+     },
+     {
+      "id": "F2",
+      "severity": "minor",
+      "title": "Round-trip gate checked once per event rather than once per row",
+      "detail": "Ticket step 14 lists the call round-trip check among the 'row gates,' implying it applies per built row (per cut), but the code checks it once per event, before the cut/offset loop runs (since `tool`/`call`/`args` are identical across all cuts of one event, a failure would fire identically for every row of that event). The error names a representative `example_id` at `cut_index 0`, even when that specific row was never built - documented explicitly in the report. Traced against the `bad_call` fixture: this produces the exact error message and `example_id` the acceptance test (F3) expects, so it has no behavioral impact.",
+      "file": "data/build_training_dataset.py"
+     }
+    ],
+    "cannotVerify": [
+     "M-D1 (a real `--debug` sample run building end-to-end and showing non-zero rows in all three splits) is explicitly a GPU/main-session acceptance item outside this diff's and the implementer's scope; cannot be checked from the diff.",
+     "run.py selfcheck's future validation of this file's README annotation against the ast-parsed import graph (ticket 15) cannot be checked: run.py does not exist yet on this branch (confirmed by the report's `find . -maxdepth 1 -name run.py` returning nothing).",
+     "The wave-merge reconciliation of this README.md section with tickets 07 and 08's sections (this worktree's base predates both) needs those tickets' branches merged together to verify; not checkable from this single-ticket diff."
+    ],
+    "concerns": [
+     "Step 6 of the ticket's walk ('hb.emit(0, len(pairs), \"row\"), then one beat per record read') is placed before step 9's literal read_dir call, but read_dir offers no per-record callback; I placed the read_dir call at step 9's position and emit len(pairs) sequential beats immediately after it rather than literally interleaving beats with disk I/O. Documented in the report and in a code comment.",
+     "F3's unknown_task variant fires the completeness gate rather than the intended split-membership gate, exactly as the ticket's own Comments predict and instruct not to route around; the message still names a task id so the acceptance table's literal requirement is met.",
+     "counts.tools / counts.tools_unseen_in_train and the report's per-split tool vocabulary are computed over the post-cap final frame; the ticket does not pin down pre-cap vs post-cap for these.",
+     "This worktree's base (28735bb) predates tickets 07 and 08 landing on this branch, so the README.md diff only carries ticket 09's own section; the wave merge will need to combine it with 07/08's additions, which spec.md section 3 explicitly allows."
+    ]
+   }
+  ]
+ }
+}

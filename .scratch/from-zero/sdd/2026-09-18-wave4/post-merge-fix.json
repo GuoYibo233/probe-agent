@@ -1,0 +1,73 @@
+{
+ "workflow": "wave4-post-merge-fix",
+ "run_id": "wf_d0d60518-99f",
+ "agents": 6,
+ "merges": {
+  "10": "b19b5ae",
+  "11": "7e929af",
+  "12": "c52088d"
+ },
+ "result": [
+  {
+   "id": "10",
+   "branch": "ticket/2026-09-18-wave4/T10-postfix",
+   "base": "e8b257d7ffeebdc93d882963ce26314711976141",
+   "head": "3117e32",
+   "rounds": 1,
+   "status": "DONE",
+   "openFindings": [],
+   "minors": [
+    {
+     "id": "N1-1",
+     "severity": "minor",
+     "file": "eval/score_run.py",
+     "title": "spec.exec_ok reports 0.0 instead of null when every spec row's exec_ok is null (arm probe_nofill)",
+     "detail": "Pre-existing code the fix diff did not touch, so recorded as minor per the re-review protocol. _spec_block still computes exec_ok as _rate(float(spec[\"exec_ok\"].sum()), n). I measured that Polars Series.sum() of an all-null Boolean column returns 0, not None, so an all-null exec_ok yields exec_ok = 0.0 rather than None. agent/inject.py's probe_nofill branch (around line 200) sets exec_ok = None on every spec row it writes, so a probe_nofill inject run reports spec.exec_ok = 0.0 in run_report.json and spec_exec_ok = 0.0 in done.json — a false \"speculation never succeeded\" where SCORE-2's own rule (null when there is no value) would give null. tool_agree and call_agree have the same shape on that arm, since gen_call is null on every row and both fall into the all-False branch. The SCORE-2 fix closed the .mean() family; this is the .sum() side of the same question, left for the final review, not a defect the fix introduced."
+    }
+   ]
+  },
+  {
+   "id": "11",
+   "branch": "ticket/2026-09-18-wave4/T11-postfix",
+   "base": "e8b257d7ffeebdc93d882963ce26314711976141",
+   "head": "f5aa447",
+   "rounds": 1,
+   "status": "DONE",
+   "openFindings": [],
+   "minors": [
+    {
+     "id": "N1-1",
+     "severity": "minor",
+     "file": "agent/loop.py",
+     "title": "the close-failure stderr line interpolates str(exc) only, so an exception with no message names nothing",
+     "detail": "The new line is `print(f\"agent.loop: task {task_id} seed {seed}: env.close() failed: {exc}\", file=sys.stderr)`. `str(exc)` is empty for an exception raised without arguments, so the operator gets a line that names the task and the seed but not the failure. Reproduced with the same fixture, raising `TimeoutError()` instead of `RuntimeError(\"world.close failed\")` on the first triple: stderr is `agent.loop: task t_1 seed 42: env.close() failed:` and nothing else, while the finding asks for the exception to be named. The same function already has the convention that fits: the generic guard writes `abort=f\"task_error:{type(exc).__name__}\"`. `{type(exc).__name__}: {exc}` would name the exception in both cases. Diagnostic only -- the walk, the records and the heartbeat all behave correctly."
+    }
+   ]
+  },
+  {
+   "id": "12",
+   "branch": "ticket/2026-09-18-wave4/T12-postfix",
+   "base": "e8b257d7ffeebdc93d882963ce26314711976141",
+   "head": "3661305 (branch ticket/2026-09-18-wave4/T12-postfix)",
+   "rounds": 1,
+   "status": "DONE",
+   "openFindings": [],
+   "minors": [
+    {
+     "id": "N1-1",
+     "severity": "minor",
+     "file": "jobs/launch.py",
+     "title": "the one launches builder is fed two different value shapes, and its docstring says the opposite",
+     "detail": "`_launch_entry` is shared, but its two callers hand it different types for the same two fields: launch() passes cards/cmd as {piece index: value} maps (lines 855, 857) while refire() passes bare strings (line 979). meta.json's append-only `launches` list therefore now holds heterogeneous entries - my run produced entry 0 with cards {'0': '', '1': '0', '2': ''} and a dict cmd, entry 1 with cards '' and a str cmd. Two statements assert the reverse: the builder's own docstring (line 675) says \"so the two write one shape\", and the report's self-review (T12-report.md:632-635) says refire now writes \"a single-key {index: value} map where the old code wrote a bare string\", which the code does not do. A second, smaller wrinkle in the same place: launch()'s maps are keyed by the integer piece index, so JSON round-trips them back as the strings '0', '1', '2', and a future reader joining on a piece's integer index finds nothing. Nothing reads launches[].cards or launches[].cmd on this branch today (the only reader is refire's `prior` count over `pieces`, which is a list of indices in both shapes and works), so this costs nothing at runtime - but the two docstring/report claims are wrong as written and should either be corrected or the shapes made to agree."
+    },
+    {
+     "id": "N1-2",
+     "severity": "minor",
+     "file": "jobs/registry.py",
+     "title": "registry._alive_on does not canonicalise the host it tests against failed_hosts, so it now disagrees with launch._piece_alive",
+     "detail": "Code the fix diff did not touch, recorded as minor per the protocol. `jobs/registry._alive_on` (line 518) tests `host in sessions.failed_hosts` on the raw host string, while the fixed `jobs/launch._piece_alive` canonicalises through the `hosts:` alias column first. failed_hosts is filled from host['name'] in live_sessions(), so a piece recorded under an alias never matches there: with failed_hosts={'tokyo105'} and a piece on host 'shiga', I measured registry._alive_on(...) == False against launch._piece_alive(...) == True on identical input. The launch.py side is the correct one; registry's own fail-closed test is the one that loses a piece on an unreachable aliased host (tokyo105/shiga and tokyo108/saitama are the two aliased entries in constants/path_outputs.yaml)."
+    }
+   ]
+  }
+ ]
+}

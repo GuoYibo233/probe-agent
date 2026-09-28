@@ -1,0 +1,757 @@
+{
+ "wave": "2026-09-19-wave6",
+ "tickets": [
+  "15",
+  "16"
+ ],
+ "checked_at_head": "9c3b963 plus the three wave-5 fix branches; corrections drafted and reviewed on a851400",
+ "session": "fork5 (main session of wave 6)",
+ "method": "workflow wf_5920ff24-3ca: four opus finders (ticket 15 against the tree, ticket 15 against contracts and errata, ticket 16 against the tree, ticket 16 against contracts, errata and owner rulings), every finding checked by one adversarial opus verifier; workflow wf_d121ad37-755: one opus drafter per ticket edited the ticket body, two rounds of adversarial opus review and fix per ticket",
+ "counts": {
+  "verified": 41,
+  "refuted": 2,
+  "unverified": 0
+ },
+ "verified": [
+  {
+   "id": "T15-01",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Ticket 15 lines 28 and 34-36 define `literal_of(path, name)` as returning `ast.literal_eval` of the one column-zero assignment, and check 3 (line 88) uses it to compare `schema.AXES[\"inject.format\"]` with `agent/injected_text_formats.py`'s `FORMATS` keys. D4 row 3 (line 167) breaks that check by adding a sixth `FORMATS` key.",
+   "correction": "In the parser block of ticket 15, leave line 34-36's `literal_of` strict (it is what check 4 tests with) and add a third parser plus a note. After line 36 insert:\n\n\"`agent/injected_text_formats.py`'s `FORMATS` is a dict of `Format(...)` constructor calls, which `ast.literal_eval` refuses (contract-errata, last entry); the file is outside this ticket's two editable files, so `literal_of` must stay strict and check 3 reads that one name through a second parser:\n\n```python\ndef literal_keys_of(path, name) -> list  # the one column-zero assignment's ast.Dict keys\n```\n\n`literal_keys_of` finds the same one column-zero assignment `literal_of` does, requires its value to be an `ast.Dict`, and `ast.literal_eval`s each key; it fails, naming the file and the name, when the assignment is missing, matched more than once, not a dict display, or carries a key that is not a literal. Check 3 uses it for `FORMATS` only; every other name in checks 3 and 4 goes through `literal_of` unchanged, so check 4's 'one literal apiece' keeps its meaning.\"\n\nD4 row 3 (line 167) then works as written: the sixth key is a literal key in the same `ast.Dict`, so `literal_keys_of` returns six names and check 3 reports the disagreement with `schema.AXES[\"inject.format\"]`."
+  },
+  {
+   "id": "T15-02",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Check 5 (lines 101-103): \"A `DEFAULTS` and a `REQUIRED` literal in every format file under `data/`, with every name in `REQUIRED` a declared column of that file's `SCHEMA`\", read through `literal_of` (= `ast.literal_eval`). D4 row 5 (line 169) breaks it by adding a name to `data/probe_output.py`'s `REQUIRED`.",
+   "correction": "The correction is workable; two points of it are imprecise, so use this wording instead. `DEFAULTS` is an `ast.DictComp` in all three format files (data/probe_output.py:41, data/training_data.py:56, data/trajectory_record.py:94), never an `ast.Dict`, so \"SCHEMA's and DEFAULTS' declared column names are the ast.Dict keys\" is true of `SCHEMA` only; and \"every format file under `data/`\" should name the three the contracts define (notes/plans/2026-09-17-contracts.md:703, \"the three formats in `data/`\"), since data/probe_input.py declares no `SCHEMA`, `DEFAULTS` or `REQUIRED` and a glob over `data/*.py` would fail check 5 on it. Replace ticket 15 lines 101-103 with: \"5. In each of the three format files `data/trajectory_record.py`, `data/training_data.py` and `data/probe_output.py`: one column-zero `SCHEMA`, one column-zero `DEFAULTS` and one column-zero `REQUIRED` assignment each. `ast.literal_eval` refuses all three (SCHEMA's values are `polars` dtypes, DEFAULTS is a comprehension over SCHEMA, REQUIRED is a `frozenset(...)` call), so this check reads them from the `ast` nodes instead of through `literal_of`: SCHEMA's declared columns are the string keys of its `ast.Dict`; REQUIRED's names are the `ast.literal_eval` of the single argument of its `frozenset(...)` call; and **every name in `REQUIRED` is a declared column of that file's `SCHEMA`** (Part 1). `DEFAULTS` is checked for presence at column zero only (`data/trajectory_record.py:95` also mutates it with `DEFAULTS[\"n_inject\"] = 0`, which is a subscript target and not a second assignment to the name).\""
+  },
+  {
+   "id": "T15-03",
+   "ticket": "15",
+   "severity": "misleads-implementer",
+   "claim": "Ticket line 35 says `literal_of` reads \"the **one column-zero** assignment to `name`\", and line 36 makes \"zero matches\" a failure.",
+   "correction": "Amend both the parser block and check 5, since AnnAssign alone is not enough.\n\n(a) After ticket line 36, add: \"`literal_of` is for the names of 3.3's literal rule only (`VERSION`, `VERSION_HISTORY`, `PROBE_KIND`, `STOP`, `EFFORTS`, `DEFAULT_EFFORT`, `DEFAULT_DATE`, `LORA_TARGETS`, `CHECKPOINT_META`, `INSTRUCTIONS`, `SPLIT_ROLE`, `ARMS`), all of which are plain `ast.Assign` nodes. `schema.py`'s `_column_zero_matches` (experimental_settings/schema.py:347-356) matches `ast.Assign` alone and is the right shape for those names; it is not usable for check 5's three `data/` names.\"\n\n(b) Replace ticket line 101-103 (check 5) with: \"5. Every format file under `data/` binds `SCHEMA`, `DEFAULTS` and `REQUIRED` exactly once at column zero, and every name in `REQUIRED` is a declared column of that file's `SCHEMA` (Part 1). These three are **annotated** assignments (`ast.AnnAssign`) whose values are not literals — `SCHEMA`'s values are `pl.<dtype>` attributes, `DEFAULTS` is a dict comprehension (and `data/trajectory_record.py:95` amends it with `DEFAULTS[\\\"n_inject\\\"] = 0`), `REQUIRED` is a `frozenset({...})` call — so this check reads them structurally from the `ast` nodes, never through `literal_of`: the `SCHEMA` columns are the string constants of the dict's keys, and the `REQUIRED` names are the string constants of the set passed to `frozenset`. A column-zero binding here means an `ast.Assign` or an `ast.AnnAssign` whose target is the bare name.\""
+  },
+  {
+   "id": "T15-04",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Rule 3 (lines 55-69) says spec section 3 gives exactly two non-`ast` spellings of a `used by:` entry, `(by name)` and `none (program)`, and that \"Every other `used by:` line keeps the plain equality of check 2\" (line 69).",
+   "correction": "Add a third bullet to rule 3 (after the `none (program)` bullet, before the line \"Every other `used by:` line keeps the plain equality of check 2\"):\n\n- `used by: <files> (as their package)` -- the two empty package markers `models/agent_models/__init__.py` and `models/probe_models/__init__.py`. Sitting inside a package is not an `ast` edge: `from models.probe_models import base` resolves under rule 1 to `models/probe_models/base.py`, and nothing imports `models.agent_models` at all, so the graph set for either marker is empty. Instead of the graph equality, check that the named set **equals** the set of `.py` files in that marker's own directory other than `__init__.py`. The `imports:` half of check 2 is unchanged and still proves `imports: none` against an empty `imports_of`.\n\nTwo departures from the finding's wording: equality rather than \"every named file sits in that package's directory\", because both README lines already list exactly their directory's other files (models/agent_models/ = gptoss.py, service.py; models/probe_models/ = base.py, qwen.py, service.py) and a subset test would silently pass a marker that omitted a new sibling; and the \"marker's own imports_of is empty\" clause is dropped as redundant, since check 2's imports half already tests it."
+  },
+  {
+   "id": "T15-05",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Rule 2 (lines 48-54) states the full normalisation of an `imports:` / `used by:` line: drop the bracketed third-party list and every parenthetical after a name, and \"What is compared is the set of repo file paths, nothing else.\"",
+   "correction": "Keep the proposed addition to rule 2, worded so it does not imply all four lines then agree: \"An entry written with braces stands for one entry per alternative and is expanded before the split: `train/methods/{ctool,cgen,cparam}.py` is the three files `train/methods/ctool.py`, `train/methods/cgen.py`, `train/methods/cparam.py`. README.md lines 129, 197, 250 and 280 use this form, and contracts 0.2 (lines 272, 366, 468, 512) writes it the same way.\" Then add one sentence so D3 is actually reachable: \"Expansion makes lines 250 and 280 agree with the graph. Lines 129 and 197 still disagree after it — `train/methods/{ctool,cgen,cparam}.py` import `train/utils/trainer.py` and `eval/utils/probe_eval.py` only, never `data/training_data.py` or `models/probe_models/base.py` — so those two annotations are wrong lines, and this ticket's README.md licence (line 17) applies: drop the three method files from both `used by:` lines and say so in the report.\""
+  },
+  {
+   "id": "T15-06",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Same as T15-05: rule 2 (lines 48-54) claims the bracket strip and the parenthetical strip leave nothing but repo file paths, and check 2 (lines 80-85) compares the resulting set by equality.",
+   "correction": "Replace the proposed rule 4 with a whole-fragment rule plus the two README lines it cannot save:\n\nTicket 15, after rule 2, add: \"4. After the bracket and parenthesis strip, split the value on `,` **and** `;`. A fragment counts as an entry only when the **whole trimmed fragment** is a repo file path (or one of rule 3's spellings); a fragment carrying any further words is the reader's note and is dropped. Splitting on `;` is needed because it separates real entries on README.md:196 and :210 and separates prose on :176, :183, :211, :241 and :295; the whole-fragment test, rather than the fragment's first word, is needed because :183 and :211 begin a prose clause with the real path `jobs/launch.py`, which is not an import edge.\"\n\nI ran that rule over the post-merge README: it drops exactly the six prose clauses and keeps every real entry, with one residual miss — README.md:210 `models/probe_models/base.py inside serve()`, a real import (ast sees it inside serve()), whose fragment is not a bare path. So ticket 15 must also direct the implementer to fix these README lines (the ticket already allows README.md edits \"only if a line of it is wrong\"):\n- README.md:210 — write `models/probe_models/base.py (inside serve())` so the parenthesis strip leaves a bare path.\n- README.md:183 and :211 — the clause `; jobs/launch.py starts it as a piece, which is a tmux command and not an import` must leave the `used by:` line, because after any strip its path token is a real repo path the ast graph does not contain. Either move that sentence into the file's one-line description, or extend rule 3 with a third non-ast spelling (`used by: jobs/launch.py (piece)` — checked by asserting jobs/launch.py names this module in a piece command line, not by the graph equality) and say so in the ticket.\n\n(Separately, and outside this finding's scope, the same prototype shows the brace shape `train/methods/{ctool,cgen,cparam}.py` on README.md:129, :197, :250 and :280 is also unparseable under any comma split; that needs its own rule or its own README fix.)"
+  },
+  {
+   "id": "T15-07",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Rule 2 (lines 51-53) says `models/probe_models/<backbone>.py (by name, inside load())` \"is a by-name entry, rule 3\", while rule 3 (line 55) is scoped to `used by:` entries only, and check 2 (line 81) demands that an `imports:` line equal `imports_of` restricted to repo files.",
+   "correction": "Two edits to ticket 15, no line numbers.\n\n1. Rule 2 (ticket lines 52-53), replace \"`models/probe_models/<backbone>.py (by name, inside load())` is a by-name entry, rule 3\" with: \"`models/probe_models/<backbone>.py (by name, inside load())` names no file in the tree, so like the bracketed list it is dropped: what check 2 compares is the repo file paths the line spells out, and a token naming no repo file is never compared. It gets its own test, rule 3's last paragraph.\"\n\n2. Rule 3, append after its two bullets: \"One `imports:` entry is by name as well — `models/probe_models/base.py`'s `models/probe_models/<backbone>.py (by name, inside load())`. Its test is that `models/probe_models/base.py` contains an `importlib.import_module` call whose argument is an f-string beginning `models.probe_models.`; the `<backbone>` placeholder is never resolved against the tree, because `models/probe_models/qwen.py`'s `used by: models/probe_models/base.py (by name)` line already carries the existence half under the first bullet.\"\n\nWith those two edits check 2 is green on that line as written: stated {models/__init__.py} equals `imports_of` restricted to repo files {models/__init__.py} (verified with the prototype above)."
+  },
+  {
+   "id": "T15-08",
+   "ticket": "15",
+   "severity": "misleads-implementer",
+   "claim": "Line 16-18 allow README.md to be edited \"only if a line of it is wrong — say which and why in your report\", and line 20-21 make a green `selfcheck` the deliverable. The ticket names no README line as wrong.",
+   "correction": "Add to the `README.md` line of the file block (line 17): \"Three lines are already wrong and this ticket corrects them: the `imports:` lines of `train/methods/ctool.py`, `cgen.py` and `cparam.py` (README.md:256, 263, 270) name `models/probe_models/base.py` and `data/training_data.py`, which none of the three imports — the method files reach both through `train/utils/trainer.py`.\""
+  },
+  {
+   "id": "T15-09",
+   "ticket": "15",
+   "severity": "misleads-implementer",
+   "claim": "Check 1 (lines 76-79): \"every `.py` under ... has an entry, and every entry names a file that exists.\"",
+   "correction": "Change the second half of check 1 to: \"and every entry names a path that exists — the 31 `.py` entries and, beside them, `CLAUDE.md`, the three `constants/*.yaml`, the four `experimental_settings/*.yaml`, `models/table.yaml`, `jobs/runs.jsonl`, `jobs/RESULTS.md` and the directory entry `tests/`, which is a directory and not a file. The count of 31 counts the `.py` entries only.\""
+  },
+  {
+   "id": "T15-10",
+   "ticket": "15",
+   "severity": "cosmetic",
+   "claim": "Rule 3, lines 63-65: the three by-name files are \"`data/environments/appworld.py` (imported by `data/environments/__init__.py`), `models/agent_models/gptoss.py` and `models/probe_models/qwen.py` (imported by name inside `models.agent()` / `models.probe()` and inside `base.load()`).\"",
+   "correction": "Replace the parenthetical with: \"`models/agent_models/gptoss.py` (imported by name inside `models.agent()`, `models/__init__.py:70`) and `models/probe_models/qwen.py` (imported by name inside `base.load()`, `models/probe_models/base.py:198`).\""
+  },
+  {
+   "id": "T15-F1",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Ticket line 28 defines `literal_of(path, name)` as `ast.literal_eval` of the one column-zero assignment, and check 3 (lines 86-87) requires `schema.AXES[\"inject.format\"]` to equal `agent/injected_text_formats.py`'s `FORMATS` keys. `FORMATS` is not an ast literal, so the check cannot be built out of the only literal reader the ticket defines and D3 (line 150) cannot go green.",
+   "correction": "Keep the check-3 edit, drop the fourth bullet. Two edits:\n\n(a) Ticket line 86-88, check 3: replace \"`schema.AXES[\"inject.format\"]` equals `agent/injected_text_formats.py`'s `FORMATS` keys\" with:\n\n\"`schema.AXES[\"inject.format\"]` equals the string keys of the one column-zero `FORMATS` dict display in `agent/injected_text_formats.py`, read off the `ast.Dict` node's `keys` (contracts 5.3: \"`FORMATS`' keys, parsed with `ast`\"). `literal_of` is not usable here: the values are `Format(...)` calls and `ast.literal_eval` refuses them, so this axis needs a keys-only reader beside `literal_of`.\"\n\n(b) Ticket line 28, so the exception is visible where the parser is defined: append to that line's comment \"(refuses `FORMATS`, whose values are calls — check 3 reads its keys off the `ast.Dict` node instead)\".\n\nLeave the \"Three normalisation rules\" block and line 83 untouched — those three rules belong to check 2, and their heading and back-reference both say three."
+  },
+  {
+   "id": "T15-F2",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Check 5 (lines 101-103) asks for \"A `DEFAULTS` and a `REQUIRED` literal in every format file under `data/`, with every name in `REQUIRED` a declared column of that file's `SCHEMA`\". In all three format files none of `SCHEMA`, `DEFAULTS`, `REQUIRED` is an `ast.Assign` and none is an `ast.literal_eval`-able literal, so `literal_of` as specified reports \"zero matches\" on all nine and check 5 can never be green.",
+   "correction": "Rewrite check 5 as: \"one column-zero assignment to `DEFAULTS`, `REQUIRED` and `SCHEMA` in each of `data/trajectory_record.py`, `data/training_data.py`, `data/probe_output.py` (an annotated assignment, `ast.AnnAssign`, counts, and `DEFAULTS[...] = ...` is not a second match), with every string constant inside `REQUIRED`'s `frozenset({...})` call a string key of `SCHEMA`'s dict display -- all read off the ast nodes, since `DEFAULTS` is a comprehension, `REQUIRED` a `frozenset(...)` call and `SCHEMA`'s values are `pl.*` attributes, none of which `ast.literal_eval` accepts.\" Also state under `literal_of` (line 28) that it accepts `ast.Assign` and `ast.AnnAssign`."
+  },
+  {
+   "id": "T15-F3",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Check 2 plus the three normalisation rules (lines 41-69, 80-85) leave no green path for the two empty package markers: their `used by:` lines name three files that the ast graph does not record as importers, and the lines are neither `(by name)` entries nor `none (program)`.",
+   "correction": "Add a fourth normalisation rule to ticket 15 (after the rule-3 block at lines 55-69), scoped to the line rather than the entry:\n\n\"4. **A `used by:` line ending `(as their package)` is checked against the package directory, not the graph.** An empty package marker has no `ast` edge, so the equality of check 2 can never hold for it. For such a line, drop the equality for the whole line and instead check that every name on it exists and lies inside the directory of the `__init__.py` being annotated. The two files in this state today are `models/agent_models/__init__.py` and `models/probe_models/__init__.py`; contracts 0.2 (`notes/plans/2026-09-17-contracts.md:332` and `:360`) carries the same spelling, so the README lines are right and must not be edited.\"\n\nAlso correct line 56 of the ticket, \"Spec section 3 gives two such spellings, and both are legitimate\", to read \"Spec section 3 gives two such spellings and contracts 0.2 a third, and all three are legitimate\", and extend line 84 \"an entry ending `(by name)` and the literal `none (program)` take their own test\" to name the `(as their package)` line as the third."
+  },
+  {
+   "id": "T15-F4",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Rule 2 (lines 48-54) lists only two things `readme_entries` strips (the bracketed third-party list and parentheticals), so the brace shorthand `train/methods/{ctool,cgen,cparam}.py` on four README annotation lines is compared as one literal token and check 2 fails on all four.",
+   "correction": "Two edits, both needed for D3 to reach 0 problems.\n\n(a) Add to ticket 15 rule 2 (after line 54): \"An entry spelled `<dir>/{a,b,c}.py` is a shorthand for one path per alternative — `train/methods/{ctool,cgen,cparam}.py` is the three files `train/methods/ctool.py`, `train/methods/cgen.py`, `train/methods/cparam.py` — and is expanded before the comma split, so the comma inside the braces never splits an entry. README.md:250 and :280 use it.\"\n\n(b) Add to the ticket's README paragraph (the lines 16-18 block, which already permits a README edit when a line is wrong): \"Two of the four brace entries are also wrong on content and must be removed: README.md:129 (`data/training_data.py`'s `used by:`) and README.md:197 (`models/probe_models/base.py`'s `used by:`) name `train/methods/{ctool,cgen,cparam}.py`, but those three files import neither module — they reach both through `train/utils/trainer.py`. The correct sets are `used by: data/build_training_dataset.py (write), train/utils/trainer.py (read)` and `used by: train/utils/trainer.py, models/probe_models/service.py (inside serve())`. Say so in the report.\""
+  },
+  {
+   "id": "T15-F5",
+   "ticket": "15",
+   "severity": "blocks-acceptance",
+   "claim": "Rule 2 does not cover the prose clause some annotation lines carry after a `;`, and three of those clauses name `.py` files that are not import edges, so check 2 fails on them under the ticket's own sentence \"What is compared is the set of repo file paths, nothing else\".",
+   "correction": "Add to rule 2: \"On a `used by:` line, the tail after the last `;` that is a sentence rather than a list of paths is prose and is dropped (README.md:176, :183, :211, :241 and :295 carry such a tail today; the tails of :183, :211 and :241 name repo paths that are not import edges — `jobs/launch.py`, `jobs/launch.py`, `run.py`). A qualifier after a path is otherwise parenthesised, and the one annotation line that writes it bare — `README.md:210`, `models/probe_models/base.py inside serve()` on `models/probe_models/service.py`'s `imports:` line, not :211, which is that entry's `used by:` line — is corrected to `models/probe_models/base.py (inside serve())`.\" Parenthetical stripping must handle nesting, e.g. `(by name, inside load())` and `(inside serve())`."
+  },
+  {
+   "id": "T15-F6",
+   "ticket": "15",
+   "severity": "misleads-implementer",
+   "claim": "Rule 2 calls `models/probe_models/<backbone>.py (by name, inside load())` \"a by-name entry, rule 3\" (lines 51-54), but rule 3 as written scopes itself to \"A `used by:` entry\" (line 55), while this entry is on an `imports:` line and carries a `<backbone>` placeholder that is not a repo path.",
+   "correction": "Open rule 3's first sentence to both lines: \"An `imports:` or `used by:` entry that is not an ast edge is checked differently\", and add the imports-side case: \"`imports: <path with a <placeholder>> (by name, ...)` is checked by the file holding the dynamic-import call, not against the graph -- `models/probe_models/base.py:198` holds `importlib.import_module(f\"models.probe_models.{family}\")`.\""
+  },
+  {
+   "id": "T15-F8",
+   "ticket": "15",
+   "severity": "misleads-implementer",
+   "claim": "Check 4 (lines 97-98) says \"one integer `VERSION` line at column zero per module the stage table names\", but the stage table names templates and two decorated spellings, none of which is a file path, so a literal reading either crashes on `open()` or silently checks nothing.",
+   "correction": "Replace ticket 15 check 4's first clause with: \"4. One integer `VERSION` line at column zero per module the stage table's `versions` tuples name, after (a) dropping an entry's `@<stage>` tail and its `#<TABLE>.<name>` tail — those name a stand-in stage and a table entry, not a file — and (b) expanding the templates: `{env}` over `schema.AXES[\\\"data.env\\\"]`, `{method}` and `{probe_score_method}` over `schema.AXES[\\\"probe.method\\\"]`, `{family}` over the `family` field of every `models/table.yaml` row whose `role` is `agent`, and `{backbone}` over the `family` field of every row whose `role` is `probe`. The role split matters: `qwen` is a probe family and `gptoss` an agent family, so expanding either template over all rows names two files that do not exist and fails D3. Expanded this way the six stage rows name exactly the 22 files that carry a column-zero `VERSION`.\" Do not send the implementer to `schema._entry_parts`: it is private and does no substitution, and `entry.split(\"@\")[0].split(\"#\")[0]` is the whole of step (a)."
+  },
+  {
+   "id": "T15-F9",
+   "ticket": "15",
+   "severity": "misleads-implementer",
+   "claim": "Check 7 (line 107) drops the contract's alternative: 8.6 requires \"every family's `DEFAULT_EFFORT` a member of its own `EFFORTS`, **or both empty**\", and 5.3 says a family's `EFFORTS` is \"empty when it has none\", so the ticket's unconditional membership test refuses a legal family.",
+   "correction": "Check 7 (line 107) becomes: \"Every family module's `DEFAULT_EFFORT` is in its own `EFFORTS`, or `EFFORTS` is empty and `DEFAULT_EFFORT` is `None` — the state 6.2 gives a family with no reasoning tier (8.6, 6.2).\""
+  },
+  {
+   "id": "T15-F10",
+   "ticket": "15",
+   "severity": "cosmetic",
+   "claim": "Rule 3's parenthetical (lines 63-65) says `models/probe_models/qwen.py` is \"imported by name inside `models.agent()` / `models.probe()` and inside `base.load()`\"; `models.probe()` imports no backbone module, and the README entry the check reads names only `base.py`.",
+   "correction": "Change the parenthetical to \"`models/agent_models/gptoss.py` (imported by name inside `models.agent()`) and `models/probe_models/qwen.py` (imported by name inside `base.load()`)\"."
+  },
+  {
+   "id": "T15-F11",
+   "ticket": "15",
+   "severity": "cosmetic",
+   "claim": "Check 10 (lines 112-115) says \"Each `any` file\" without saying how the `venv:` line is read; four files spell the annotation `any at import ...`, so a `venv == \"any\"` test silently skips them and the check under-covers without failing.",
+   "correction": "Check 10 becomes: \"Each file whose README `venv:` value **begins with** `any` -- the plain `any` and the compound `any at import ...` spellings alike (contracts 0.1) -- imports under **every** interpreter of `constants/path_datasets.yaml`'s `venvs:` map, and each family module imports under the probe **and** the vllm interpreter (0.4's precondition for a new family). This is the one check that starts a subprocess.\""
+  },
+  {
+   "id": "T16-1",
+   "ticket": "16",
+   "severity": "blocks-acceptance",
+   "claim": "Acceptance W4 (lines 314-322) says `head -8 <SKILL.md>` for the three skills, Expected: \"each `description` front-matter line still ends with its Chinese trigger-phrase clause, and none contains the words 'sampler' or 'three ledgers'\". W2 (lines 200, 203) uses the same `head -8` for repo-review's description.",
+   "correction": "Replace each `head -8 <file>` in W4 and W2 with a command that prints the whole front matter, e.g. `awk 'NR>1 && /^---$/{exit} {print}' .claude/skills/gpu-run/SKILL.md` (repeat per file), and keep the same Expected sentence."
+  },
+  {
+   "id": "T16-2",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Section 3 item 1 (line 136): \"**What it reviews**: the 34-file tree against the owner's principles as `README.md` states them\".",
+   "correction": "In line 136 replace \"the 34-file tree\" with \"the 31-file tree\"."
+  },
+  {
+   "id": "T16-3",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Section 3 preamble (lines 132-134): \"The tree's own one line is the whole brief: **\\\"the two-day review: an agent reads the tree against the six principles and writes tasks\\\"**\", while item 1 on the next line lists seven principles and cites README.md as the statement of them.",
+   "correction": "Leave lines 132-134 exactly as written — the bolded sentence is a verbatim quotation of the fixed tree's line (notes/plans/2026-09-14-structure-from-zero.md:219, repeated at notes/plans/2026-09-17-contracts.md:623), and the fixed tree is not reworded. Instead insert one sentence between line 134 and item 1: \"That line's count is stale: Part 1 of the same document and `README.md`:5 both list seven principles, and item 1 below is that list. The SKILL.md you write says it reviews against the principles `README.md` section 1 states, and gives no number.\" This keeps the tree anchor intact, removes the trap, and matches ticket 18's \"gyb's seven principles (the tree's Part 1 numbered list)\" at 18-migration-legacy-gitignore-timeline.md:166."
+  },
+  {
+   "id": "T16-4",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Section 2 point 3 (lines 109-110): \"... the generator eval's shared-build-key gate; `inject`'s two `run.py`-held gates; `score`'s same-setup and baseline-pair gates ...\".",
+   "correction": "In `.scratch/from-zero/issues/16-gpu-run-and-probe-pipeline-skills.md`, section 2 point 3, change both the source clause and the count:\n\n- line 107: \"listed in contracts 2.5\" -> \"listed in contracts 2.5 and `.scratch/from-zero/contract-errata.md`\"\n- lines 109-110: \"`inject`'s two `run.py`-held gates\" -> \"`inject`'s three `run.py`-held gates (contracts 2.5's shared-build-key gate and code-currency gate, plus the errata's comparison of a `key:`/`dir:` reference's stated `method:` against the referenced train run's frozen `probe.method`)\""
+  },
+  {
+   "id": "T16-5",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Phase 6b row (line 47): a refire gives \"a **warning** when that piece has been launched before — there is **no quota**\".",
+   "correction": "Replace \"a **warning** when that piece has been launched before\" with \"a **warning** when that piece already has more than one `launches` entry, counted as the entries whose `pieces` list contains this piece index\"."
+  },
+  {
+   "id": "T16-6",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Acceptance W1 (lines 180-189) ends with `grep -c 'sampler\\|8377\\|crontab' .claude/skills/gpu-run/references/gpu_state.md`, Expected `0`.",
+   "correction": "End the line with `|| true`: `grep -c 'sampler\\|8377\\|crontab' .claude/skills/gpu-run/references/gpu_state.md || true`."
+  },
+  {
+   "id": "T16-7",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Lines 77-79: \"Cutting at 46 instead leaves eight orphaned lines about the machinery this wave retires, and `W1`'s sampler-token count would not be zero.\"",
+   "correction": "Drop one half, e.g.: \"Cutting at 46 instead keeps line 46's `python3 run.py sampler --port 8377`, so `W1`'s sampler-token count would not be zero; cutting at 47 still leaves eight orphaned lines about the machinery this wave retires.\""
+  },
+  {
+   "id": "P16-01",
+   "ticket": "16",
+   "severity": "blocks-acceptance",
+   "claim": "W4 (lines 316-322) and W2 (lines 200-203) verify the `description` front-matter by `head -8 <SKILL.md>` and expect the pasted output to show \"each `description` front-matter line still ends with its Chinese trigger-phrase clause\".",
+   "correction": "Same fix, with the claim sentence corrected on W2's target: in W4 (ticket lines 316-320) replace all three `head -8 .claude/skills/<skill>/SKILL.md` lines, and in W2 (ticket line 200) replace `head -8 .claude/skills/repo-review/SKILL.md`, with `awk 'NR==1{next} /^---$/{exit} {print}' .claude/skills/<skill>/SKILL.md`, keeping both expectations unchanged (lines 203 and 321-322). Note W2 covers only the new repo-review skill; gpu-run and probe-pipeline are W4's."
+  },
+  {
+   "id": "P16-02",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Section 3 point 1 (line 136): the repo-review skill \"reviews ... the **34-file tree** against the owner's principles\".",
+   "correction": "Line 136: \"the **34-file tree**\" -> \"the **31-file tree**\" (matching ticket 15's count and the `selfcheck: 31 python files` line the same skill runs)."
+  },
+  {
+   "id": "P16-03",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Probe-pipeline point 3 (lines 106-111): the build's gates are \"`build`'s record completeness, abort share, **call round-trip**, split membership and **per-split `max_examples`**\".",
+   "correction": "Point 3: drop \"call round-trip\" from the gate list (or state it as \"a call that does not round-trip is skipped and counted, not a gate — errata, owner ruling 2026-09-18\"), and replace \"per-split `max_examples`\" with 2.5's real remaining build gates: a task id in two splits, a task in none of the environment's lists, an empty `text`, a `depth` outside [0,1], a thinking prefix mismatch, and a non-null action `split_args` cannot parse."
+  },
+  {
+   "id": "P16-04",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Phase 5 (line 45) \"monitoring is `run.py ls [workflow]`\" and phase 6a (line 46) \"Then `run.py table [workflow]`\", while phase 3 (line 43) makes the smoke a `--debug` run of the same setting and phase 6a makes wrap-up \"re-running the same `run.py` command\".",
+   "correction": "Write the two commands as `run.py ls [workflow] [--debug]` and `run.py table [workflow] [--debug]`, and add one clause to phase 5: a `--debug` run appears only when the flag is given, because `ls` filters debug rows out by default."
+  },
+  {
+   "id": "P16-05",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Phase 6a (line 46): \"wrap-up is re-running the same `run.py` command: it writes `done.json` with the certified `pairs`, appends the finish row, **tears the service pieces down**, and walks on to the next stage.\"",
+   "correction": "Replace the first sentence of Phase 6a (ticket 16 line 46) with three cases instead of two:\n\n\"wrap-up is re-running the same `run.py` command, and what that re-run does depends on the stage. For `sample` and `inject` the walk finds every requested pair done, writes `done.json` with the certified `pairs`, tears the run's service pieces down and appends the `ok` finish row (2.3). For `build` and `train` the stage program wrote `done.json` itself, so the walk only appends the finish row from it when the run still has none, and there are no service pieces to tear down. `eval` and `score` never skip (2.4): the re-run recomputes the stage in place and appends that run's own finish row when the process exits zero. Then it walks on to the next stage.\"\n\nThe rest of the cell (numbers reaching `jobs/RESULTS.md` through `done.json` -> the finish row -> the render, `run.py table`, the one commit) is correct and stays. The contract citation list should gain 2.4 alongside 2.3, 1.5, 8.2, 8.6."
+  },
+  {
+   "id": "P16-06",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Phase 4 (line 44): run.py \"takes `runs.jsonl.lock` across the git gate, the launch gate, the attach test, the card reservation, the port assignment and the start-row append, **releases it**, starts the service pieces, **runs the probe service's `check` client** for an `inject` run, then the loop pieces\".",
+   "correction": "Minimal ticket-16 edit: in the phase-4 row (line 44), delete only the two words \"releases it,\" so the sentence reads \"… takes `runs.jsonl.lock` across the git gate, the launch gate, the attach test, the card reservation, the port assignment and the start-row append, starts the service pieces, runs the probe service's `check` client for an `inject` run, then the loop pieces — and **stops** …\". That removes the one statement that is false about the tree without asserting the opposite, and keeps the 8.1/8.6 citations honest. Leave the attribution as it is (the subject is the single `run.py` command).\n\nSeparately, and not as a ticket edit: report to the main session that run.py:1037-1054 holds `runs.jsonl.lock` across `launch.launch`, so by the re-entrancy of jobs/registry.py:124-156 the flock is held through both tmux waves, the alive checks (up to `launch_timeout_s`) and the `check` client, against contracts 8.1 (:4395-4400) and the justifications at :2264-2266 and :2288-2290 — and that merged ticket 14 step 7 (.scratch/from-zero/issues/14-run-py-walk-and-readme.md:107-117) is where the shape came from, so the fix is a run.py/ticket-14 change or an errata entry, the owner's call, not something ticket 16 can settle."
+  },
+  {
+   "id": "P16-07",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Phase 4 (line 44): \"one command: `run.py <workflow> <setting> [--debug]`. It walks the workflow's stage list ... and **stops**, printing the monitoring command.\"",
+   "correction": "Keep the phase-4 row's existing body and change only the command shape and the scope of the stop, e.g. line 44: \"| 4 | one command: `run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]`. It walks the stage list of each named setting, and of each child a `sweep:` expands to, one after another — each child with its own key, run directory and registry row. For each it freezes `settings.yaml` / `settings_diff.yaml`, takes `runs.jsonl.lock` across the git gate, the launch gate, the attach test, the card reservation, the port assignment and the start-row append, releases it, starts the service pieces, runs the probe service's `check` client for an `inject` run, then the loop pieces — and **stops that setting's walk**, printing the monitoring command, so one call over several settings or a sweep parent leaves one launched run per child. A GPU stage is never waited on; a CPU stage runs inline and the walk goes on to the next stage | 8.1, 8.6, 2.3, 7.2 |\""
+  },
+  {
+   "id": "P16-08",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Probe-pipeline point 5 (lines 114-121) cites \"(0.3)\" for the `PROBE_KIND` / `MATCH_VERSION` / `match_<m>` registration in `eval/utils/probe_eval.py`, and tells the skill to point at \"contracts 0.4's table\" for what each extension touches and to keep no copy.",
+   "correction": "Point 5: replace the \"(0.3)\" citation with the errata entry `0.2 / 2.1 / 2.6 (eval/methods/)` of 2026-09-18, and make `README.md` section 3 the single place the skill points at for what an extension touches; if contracts 0.4 is still cited, say in the same sentence that 0.3/0.4 predate the fold and the renames."
+  },
+  {
+   "id": "P16-09",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Phase 5 (line 45): the `ls` line carries \"the six verdicts ..., the progress pair, the heartbeat age, sessions and cards, and the flag column\".",
+   "correction": "Ticket 16, line 45 (Phase 5 row of the gpu-run table). Replace \"the progress pair, the heartbeat age, sessions and cards, and the flag column (`edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`, `orphan`)\" with:\n\n\"progress as `done/total <unit>` and the recent rate, the heartbeat age, sessions and cards, the flag column (`edited`, `behind`, `consumed`, `split`, `pinned`, `dirty`, `debug`, `orphan`), and — for a run whose key has moved (`edited`) because a file's effective `VERSION` rose — a trailing `stale=<path> VERSION <n>: \"<why>\"` naming that file and quoting the bump's own `why`. A `behind` run is the other case: its recorded `VERSION` is below the current one but its key still matches, so it stays usable and carries no `stale=` text.\""
+  },
+  {
+   "id": "P16-10",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Probe-pipeline point 3 (line 110): \"`inject`'s **two** `run.py`-held gates\".",
+   "correction": "Point 3: \"`inject`'s two `run.py`-held gates\" -> \"`inject`'s three `run.py`-held gates (the shared build key, the code-currency check, and the pinned reference's stated `method:`)\"."
+  },
+  {
+   "id": "P16-11",
+   "ticket": "16",
+   "severity": "misleads-implementer",
+   "claim": "Line 127: \"The whole file is rewritten (lines 18-47 and every phase below them)\", while line 27-29 asks the `description` only to keep its Chinese trigger clause and drop \"three ledgers\" and \"sampler\".",
+   "correction": "Line 127: \"The whole file is rewritten, front matter included: the `description` (lines 3-15) is rewritten to the new chain — `run.py <workflow> <setting>` over a workflow file's stage list, extension through README.md — keeping its Chinese trigger clause and dropping Phase E's write-back, the matrix/cell language and the annotate stage name.\""
+  },
+  {
+   "id": "P16-13",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Section 3 (lines 132-134): \"The tree's own one line is the whole brief: **\\\"the two-day review: an agent reads the tree against the six principles and writes tasks\\\"**\", while point 1 then enumerates seven principles.",
+   "correction": "Add half a sentence after the quote: the tree's line says \"six\" and the tree itself lists seven (README.md states them as seven), so the skill writes \"the seven principles `README.md` states\"."
+  },
+  {
+   "id": "P16-14",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Ticket 16 lines 294-296 expect C8's `named:` line to be \"drawn from `free, ls, where, find, kill, refire, retry, table, sync, selfcheck` plus the three workflow-file names\"; ticket 17 lines 287-290 expect the same script's `named:` line to contain \"exactly\" that set, and ticket 17 line 243 calls its C7 \"byte-identical to ticket 16's\".",
+   "correction": "Ticket 17 line 288: \"containing exactly\" -> \"drawn from\", matching ticket 16; and line 243: \"byte-identical to ticket 16's\" -> \"ticket 16's script with a wider file list, otherwise identical\"."
+  },
+  {
+   "id": "P16-15",
+   "ticket": "16",
+   "severity": "cosmetic",
+   "claim": "Ticket 16 line 151 says ticket 18 performs `git mv docs notes/docs` \"in wave 7\"; ticket 18 lines 36-37 call ticket 16's repo-review skill \"in flight beside this ticket\" and line 279 says the `notes/docs/agents/...` citations are \"written by tickets 16 and 17 in this same wave\".",
+   "correction": "Ticket 18 lines 36-37: replace \"both in flight beside this ticket\" with a split statement, e.g. \"— ticket 16's skill written in the previous wave and already on the branch, ticket 17's `CLAUDE.md` in flight beside this ticket —\". Ticket 18 lines 279-280: replace \"written by tickets 16 and 17 in this same wave\" with \"written by ticket 16 in the previous wave and by ticket 17 in this same wave\". Do not claim `CLAUDE.md` is the only citation in flight: ticket 17 also rewrites `.claude/skills/ticket-run/SKILL.md` line 27 to `notes/docs/agents/...`, which is why line 280 already tells the ticket-18 agent that a grep hit from `.claude/skills/ticket-run/` or `CLAUDE.md` is ticket 17's to fix; leave that sentence as it stands."
+  }
+ ],
+ "refuted": [
+  {
+   "id": "T15-F7",
+   "lens": "t15-contracts",
+   "claim": "Five README annotation lines disagree with the merged wave-5 train code, and the ticket does not say which side moves: the ticket may touch only `run.py` and `README.md` (lines 16-18), while contracts 0.2 backs the README text, so a sonnet implementer has no authorised way to make check 2 green.",
+   "reason": "The README/code disagreement is real and I reproduced it, but the ticket already covers it, so the blocking claim fails.\n\nVerified facts: the three fix branches are already ancestors of from-zero (git merge-base from-zero fix/2026-09-18-wave5-train == 225d951, the branch head; HEAD is 660030e, the walk merge), so the working tree IS the post-merge tree. grep over train/methods/*.py shows the only repo imports are train/methods/ctool.py:12 `from train.utils import trainer`, :278 `from eval.utils import probe_eval` (cgen/cparam additionally `from data.environments import open_env` at :312/:338). Neither models/probe_models/base.py nor data/training_data.py is imported. README.md:256,263,270 list both on the methods' `imports:` lines; README.md:129,197 list `train/methods/{ctool,cgen,cparam}.py` on the `used by:` lines of data/training_data.py and models/probe_models/base.py. contracts:479-481 carries the same list. Five lines, exactly as the finding says.\n\nWhy it is refuted: the finding states the ticket \"does not say which side moves\" and that the implementer \"has no authorised way to make check 2 green\". The ticket's file table is two lines, and the second is that authorisation verbatim — line 16 `run.py ... the only file this ticket may touch, besides README.md`, line 17 `README.md    only if a line of it is wrong — say which and why in your report`. Line 16 fences train/ out of scope and line 17 authorises the README correction plus the report. That is the ticket saying which side moves. The contracts-0.2 objection also does not bite: .scratch/from-zero/contract-errata.md:115 is an existing entry of exactly this shape (a contracts 0.2 `imports:` line corrected against the built code, \"[torch, peft] -> [torch]\"), so correcting a 0.2 annotation against merged code is established practice on this branch, not a blocked move. D4's breakage 2 (\"add `import jobs.registry` to models/probe_models/base.py\") further presumes check 2 is green on the unbroken tree, so a literal implementer will hit the five lines and line 17 tells them what to do. No ticket-text change is required and the finding's blocks-acceptance severity is wrong."
+  },
+  {
+   "id": "P16-12",
+   "lens": "t16-contracts",
+   "claim": "Probe-pipeline point 2 (lines 101-104): \"The YAML files are gyb's; an agent reads them and never edits them (a hook refuses).\"",
+   "reason": "The hook half of the evidence holds, but the claimed defect does not.\n\nVerified: `/home/y-guo/reproduce/new1/.claude/hooks/settings_readonly.sh` does carry `PROTECTED_TAIL_RE = (^|/)experimental_settings/[^/]+\\.ya?ml$|(^|/)models/table\\.yaml$`, plus `PROTECTED_MENTION_RE` and `BASH_WRITE_MARKERS` (\">\", \">>\", \"tee\", \"sed -i\", \"cp \", \"mv \", \"rm \", \"truncate\", \"dd \", \"patch\", \"chmod\", \"install\") for `Bash`. Ticket 16 line 101-104 and line 153-155 are quoted correctly.\n\nWhat fails is the inference. The two points do not disagree, and they are not about the same file:\n- Lines 101-104 are point 2 of section 2, the brief for `.claude/skills/probe-pipeline/SKILL.md`. \"The YAML files\" is introduced by point 1 one line earlier (`experimental_settings/train_probe.yaml`, the workflow file), so in context it names the setting files, which the hook does protect. `models/table.yaml` is a YAML file too, so the sentence is a superset of point 4's two paths, not a contradiction of it.\n- Lines 153-155 are point 4 of section 3, the \"what it never does\" list for a different skill file, `.claude/skills/repo-review/SKILL.md`. A prohibition list needs exact paths; a \"who writes what\" sentence does not.\n\nBoth statements are true about the tree after the three wave-5 merges (none of `fix/2026-09-18-wave5-walk`, `-train`, `-probe` touches `.claude/hooks/` or ticket 16 — they are already in HEAD and changed only run.py/jobs/registry.py/README.md, train/*, models/probe_models/base.py). Nothing in point 2 is false, it contradicts no contracts/errata/spec/ticket statement, and it gates no acceptance command — ticket 16's acceptance is over the skill files' own text.\n\nOne real imprecision exists, and it is not the one the finding names: the tree also has `constants/path_datasets.yaml`, `path_models.yaml`, `path_outputs.yaml`, which contracts line 165-167 says are \"Edited when something arrives or moves on disk\", so a maximally literal reading of \"The YAML files are gyb's\" would over-claim. That reading is blocked by point 1's antecedent, and the proposed correction fixes it only incidentally while adding hook internals (the `Bash` write-verb rule) that the probe-pipeline brief has no use for — ticket 17 line 52 states the same ownership rule for CLAUDE.md without them. Not worth a ticket edit."
+  }
+ ],
+ "corrections": [
+  {
+   "ticket": "15",
+   "applied": [
+    {
+     "ids": [
+      "T15-05",
+      "T15-06",
+      "T15-08",
+      "T15-F4",
+      "T15-F5"
+     ],
+     "what": "New block after the file table in `## What to do`: a six-row table naming every README line this ticket corrects (129, 197, 210, 256, 263, 270), with the entry, the label, why it is wrong and the corrected line, plus the warning not to \"fix\" check 2 by following transitive imports. Verified on disk: `train/methods/{ctool,cgen,cparam}.py` import only `train.utils.trainer`, `eval.utils.probe_eval` and (cgen/cparam) `data.environments`; `models/probe_models/service.py:88` holds `from models.probe_models import base` inside `serve()`. A prototype of check 2 built to the ticket's rewritten rules reports exactly these six problems before the edits and 0 after them."
+    },
+    {
+     "ids": [
+      "T15-01",
+      "T15-F1",
+      "T15-03",
+      "T15-F2"
+     ],
+     "what": "Parser block: added `literal_keys_of(path, name) -> list` to the signature list, changed the intro from \"the two parsers\" to \"the three parsers\", and added three paragraphs — `literal_of` stays strict (a fallback would stop check 4 firing); `FORMATS` is a dict of `Format(...)` calls that `literal_eval` refuses (errata's last entry), so check 3 and only check 3 uses `literal_keys_of`, which requires an `ast.Dict` and literal-evals each key; `SCHEMA`/`DEFAULTS`/`REQUIRED` are read structurally by check 5 and by neither reader; and both readers match `ast.Assign` only, which is why `schema.py`'s `_column_zero_matches` is the right shape for their fourteen names and the wrong shape for check 5's three `ast.AnnAssign` names (nine spurious zero-match problems)."
+    },
+    {
+     "ids": [
+      "T15-05",
+      "T15-06",
+      "T15-07",
+      "T15-F4",
+      "T15-F5",
+      "T15-F6"
+     ],
+     "what": "Rule 2 rewritten as a five-step parse owned by check 2, not by `readme_entries` (which returns the raw value string and must not change, because ticket 14's D1 and ticket 16 read it as it is): (1) drop bracketed third-party lists; (2) split on `,` and `;` at depth zero only; (3) drop each fragment's parenthetical but keep its first words, so `(by name)` and `(by name, inside load())` are both rule 3's by-name entry; (4) expand brace alternations into one entry per alternative, naming README.md:129, :197, :250, :280 and contracts 0.2; (5) a fragment is an entry only when the whole trimmed fragment is exactly a repo file path — never its first word, with `jobs/launch.py starts it as a piece, …` given as the reason. Prose clauses on README.md:176, :183, :211, :241, :295 and the `<backbone>` placeholder on :196 are dropped here."
+    },
+    {
+     "ids": [
+      "T15-04",
+      "T15-07",
+      "T15-10",
+      "T15-F3",
+      "T15-F6",
+      "T15-F10"
+     ],
+     "what": "Rule 3 retitled \"An annotation entry that is not an `ast` edge\" and opened to `imports:` lines; corrected to \"two spellings from spec section 3 and a third from contracts 0.2\". By-name bullet now names the tree's three `importlib.import_module` sites (`data/environments/__init__.py:84`, `models/__init__.py:70` inside `agent()`, `models/probe_models/base.py:198` inside `load()`) and states that `models.probe()` performs no import at all. A new paragraph gives the `imports:` by-name case (`models/probe_models/<backbone>.py`): the placeholder is never resolved, the test is that `base.py` holds an `import_module` call on an f-string beginning `models.probe_models.`, and qwen.py's `used by:` line carries the existence half. A third bullet adds `(as their package)` as a **line-level** rule (the parenthetical governs the whole list): drop check 2's equality for the whole line and require set equality with the `.py` siblings of that `__init__.py`; names README.md:169 and :190, states contracts 0.2 carries both verbatim so they are not among the six corrected lines, and says why equality rather than a subset test."
+    },
+    {
+     "ids": [
+      "T15-09"
+     ],
+     "what": "Check 1: \"every entry names a path that exists\", the count 31 restated as the `.py` entries only, the other 12 entries enumerated (CLAUDE.md, three constants/*.yaml, four experimental_settings/*.yaml, models/table.yaml, jobs/runs.jsonl, jobs/RESULTS.md, tests/), and the test pinned as existence, not `is_file()`, because `tests/` is a directory. Measured: `run.readme_entries('README.md')` returns 43 entries, 31 of them `.py`, all 43 existing, one a directory."
+    },
+    {
+     "ids": [
+      "T15-04",
+      "T15-F3",
+      "T15-F6"
+     ],
+     "what": "Check 2's summary clause now reads \"an entry whose parenthetical starts `by name`, the literal `none (program)` and a line ending `(as their package)` take their own test\", matching the rewritten rule 3 (the old text said \"an entry ending `(by name)`\", which excludes `(by name, inside load())`)."
+    },
+    {
+     "ids": [
+      "T15-01",
+      "T15-F1"
+     ],
+     "what": "Check 3: `schema.AXES[\"inject.format\"]` now equals `literal_keys_of(\"agent/injected_text_formats.py\", \"FORMATS\")` with the reason (`literal_of` refuses a dict of `Format(...)` calls) and the note that this is the one place `literal_keys_of` is used. Verified: the keys are `['note','p1_e1','p1_e2','p2_e1','p2_e2']` and the axis is the same five values."
+    },
+    {
+     "ids": [
+      "T15-F8"
+     ],
+     "what": "Check 4: \"per module the stage table's `versions` tuples name\", plus the two-step resolution — (a) `entry.split(\"@\")[0].split(\"#\")[0]` to drop the `@<stage>` and `#<TABLE>.<name>` tails, (b) expand `{env}`, `{method}`, `{probe_score_method}` over the axes and `{family}`/`{backbone}` over `models/table.yaml` rows **split by `role`** — with the explicit warning that a role-free expansion names the non-existent `models/agent_models/qwen.py` and `models/probe_models/gptoss.py`. States not to call the private `schema._substitute` / `schema._entry_parts`. Measured: the six stage rows resolve to exactly 22 paths, all existing, exactly the 22 files carrying a column-zero `VERSION`."
+    },
+    {
+     "ids": [
+      "T15-02",
+      "T15-03",
+      "T15-F2"
+     ],
+     "what": "Check 5 rewritten: the three format files are named (`data/trajectory_record.py`, `data/training_data.py`, `data/probe_output.py`) and `data/probe_input.py` is excluded with the reason; all nine bindings are `ast.AnnAssign` with non-literal values, so the check reads the `ast` nodes and uses neither `literal_of` nor `literal_keys_of`; a column-zero binding is an `Assign` or `AnnAssign` whose target is the bare `ast.Name`, matched on `.id` and never on `ast.unparse(target)`, because `data/trajectory_record.py:95` is `DEFAULTS[\"n_inject\"] = 0`; `SCHEMA`'s columns are its `ast.Dict` keys, `REQUIRED`'s names are the literal-eval of the single `frozenset(...)` argument, `DEFAULTS` is checked for presence only. Measured today: 12, 16 and 9 required names, every one a `SCHEMA` column."
+    },
+    {
+     "ids": [
+      "T15-F9"
+     ],
+     "what": "Check 7: added the contract's alternative — `DEFAULT_EFFORT` in `EFFORTS`, or `EFFORTS` the empty tuple and `DEFAULT_EFFORT` `None` (6.2 types it `str | None`) — with an explicit instruction not to write the alternative as `EFFORTS == () and DEFAULT_EFFORT == \"\"`, and a sentence scoping \"family module\" to `models/agent_models/<family>.py` so probe backbones are not tested."
+    },
+    {
+     "ids": [
+      "T15-F11"
+     ],
+     "what": "Check 10: \"each file whose README `venv:` value **begins with** `any`\", covering the compound `any at import, <venv> to run` spelling, naming today's four compound files and stating that a `venv == \"any\"` test under-covers without failing. Measured: 20 of the 31 files begin with `any`, all 20 import under all three interpreters of `constants/path_datasets.yaml`'s `venvs:` map."
+    },
+    {
+     "ids": [
+      "T15-01",
+      "T15-02",
+      "T15-F1",
+      "T15-F2",
+      "T15-F8"
+     ],
+     "what": "Acceptance, still under the ids D2/D4/D5/D6/D7. D2 gained three real-file snippets plus a four-row table: `literal_keys_of` on `FORMATS` must print the five keys while `literal_of` must refuse it; the expected parse of four annotation lines (brace expansion, prose drop, placeholder drop, package rule); and two snippets I ran here whose output the implementation must reproduce — check 5's structural read (`{'SCHEMA': 1, 'DEFAULTS': 1, 'REQUIRED': 1} 12/16/9 []`) and check 4's expansion (`22 missing: []`). D4 gained a paragraph saying breakages 3 and 5 fire through `literal_keys_of` and the structural read, and that a parse refusal instead of the check's message means the reader is wrong. D5's expected subcommand order was corrected to the order `run.py --help` actually prints (`ls, where, find, kill, refire, retry, table, free, sync, selfcheck`, not `free` first). D5, D6 and D7 all pass at HEAD a851400 (28 paths and `D6 ok`; 12 key lines and `D7 ok`), so each now says a failure there is a regression rather than a missing piece of the tree."
+    }
+   ],
+   "notApplied": [
+    {
+     "id": "T15-06",
+     "why": "Only the part of its correction that asked for README edits on lines 183 and 211 (moving the `; jobs/launch.py starts it as a piece …` clause out of the `used by:` line, or adding a `(piece)` spelling to rule 3). Its verifier already refuted the correction's own dropping rule, and the whole-fragment test I wrote into rule 2 step 5 handles both lines without touching them: the fragment `jobs/launch.py starts it as a piece` is not exactly a repo path, so it is dropped. Verified with a prototype over the real README — both service files' `used by:` lines compare equal to the graph with no README change, and 0 problems remain after the six licensed edits. The rest of T15-06 (splitting on `;`, the whole-fragment test over the first-word test, the README:210 parenthesisation) is applied."
+    }
+   ],
+   "reviewRounds": [
+    {
+     "round": 1,
+     "problems": [
+      {
+       "id": "R1-15-01-format-axis-tuple-vs-list",
+       "severity": "misleads-implementer",
+       "detail": "Check 3 (ticket lines 205-209) now states `schema.AXES[\"inject.format\"]` **equals** `literal_keys_of(\"agent/injected_text_formats.py\", \"FORMATS\")`, and the signature block (line 48) declares `literal_keys_of(path, name) -> list`. Measured: `schema.AXES['inject.format']` is the tuple `('note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2')` (experimental_settings/schema.py), and the keys of the one column-zero `FORMATS` dict are the list `['note', 'p1_e1', 'p1_e2', 'p2_e1', 'p2_e2']`. A literal-minded implementer writes `schema.AXES['inject.format'] == run.literal_keys_of(...)`, which is False for a tuple against a list, so check 3 prints a problem on an untouched tree and D3 (line 400, `0 problems`, rc=0) fails. The trap is new to this edit: the neighbouring comparison on the same line, `schema.AXES['inject.arm']` against `ARMS`, is tuple against tuple (agent/step_with_probe.py's `ARMS` is `('probe', 'no_probe', 'probe_nofill')`) and is a true `==`.",
+       "fix": "In check 3, pin the comparison: \"`schema.AXES[\\\"inject.format\\\"]` equals `tuple(literal_keys_of(\\\"agent/injected_text_formats.py\\\", \\\"FORMATS\\\"))`, the axis's five values in the dict's own order\" — or drop the `-> list` from the signature and say the reader returns the keys as a tuple. Leave the `inject.arm` clause as it is."
+      },
+      {
+       "id": "R1-15-02-contracts-0.2-carries-the-six-wrong-lines",
+       "severity": "misleads-implementer",
+       "detail": "The new six-line table (ticket lines 23-40) orders the implementer to delete entries from README.md:129, :197, :256, :263, :270, but notes/plans/2026-09-17-contracts.md section 0.2 still states those same entries: line 272 `train/methods/{ctool,cgen,cparam}.py (their target column)` under `training_data.py`'s `used by:`, line 366 the same brace entry under `base.py`'s `used by:`, and lines 480-481, 486-488, 494-496 `models/probe_models/base.py, data/training_data.py` on all three method files' `imports:`. In the same ticket, rule 3 (lines 175-176) argues the opposite way from the same document: \"Contracts 0.2 carries both lines verbatim, so they are right and are not among the six lines this ticket corrects.\" An implementer who applies that reasoning consistently concludes the six lines are also right and refuses the edits, and D3 then cannot go green. The disk-wins resolution is stated nowhere in the ticket.",
+       "fix": "Add one sentence to the six-line block: \"Contracts 0.2 carries these six lines as they stand today (lines 272, 366, 480-481, 486-488, 494-496); `notes/` was not rewritten after the `eval/methods/` fold (errata entry `0.2 / 2.1 / 2.6`), so the tree on disk decides here. The contracts-0.2 argument in rule 3 applies only to the two `(as their package)` lines it names.\""
+      },
+      {
+       "id": "R1-15-03-d2-literal_of-refusal-branch",
+       "severity": "misleads-implementer",
+       "detail": "The new D2 snippet (ticket lines 331-341) prints `literal_of accepted FORMATS -- wrong, check 4 can no longer fire` whenever `run.literal_of('agent/injected_text_formats.py', 'FORMATS')` returns instead of raising. But D2's own earlier paragraph (lines 321-326) licenses the other style: \"a refusal naming the file for the two-match case (or a `None` plus a printed problem, whichever the implementation uses — more than one match **is** a failure)\". A `selfcheck` that reports every reader failure as one printed problem and returns `None` — the natural shape for a command whose contract is \"one line per problem, exit 1\" — is strict in the sense the ticket demands (no literal fallback, so check 4 still fires) yet fails this acceptance line.",
+       "fix": "Make the branch accept both styles, e.g.: \"Expected: the five keys, then either an exception naming the file or `None` plus one printed problem naming `agent/injected_text_formats.py` and `FORMATS`. What must not happen is `literal_of` returning the keys, or any other value, for `FORMATS`.\" and print the returned value in the non-raising branch instead of declaring it wrong."
+      },
+      {
+       "id": "R1-15-04-brace-line-list-stale-after-own-edits",
+       "severity": "cosmetic",
+       "detail": "Rule 2 step 4 (ticket line 117) says \"README.md:129, :197, :250 and :280 write this form\". Two of those four lines are rewritten without the brace form by this ticket's own six-line table (129 becomes `used by: data/build_training_dataset.py (write), train/utils/trainer.py (read)`, 197 becomes `used by: train/utils/trainer.py, models/probe_models/service.py (inside serve())`), so after the edits only :250 and :280 carry it. An implementer who uses the four named lines as the test set for step 4 finds two of them gone. (The approved correction T15-F4 names only :250 and :280 for this reason.)",
+       "fix": "Write it as \"README.md:250 and :280 write this form, and :129 and :197 do until the corrections above land; contracts 0.2 writes it the same way.\""
+      },
+      {
+       "id": "R1-15-05-two-names-not-literals-miscount",
+       "severity": "cosmetic",
+       "detail": "Parser block, ticket lines 58-60: \"Two names in the tree are not literals, and each gets its own reader instead\". Four names follow in the two bullets — `FORMATS`, plus `SCHEMA`, `DEFAULTS` and `REQUIRED` (nine bindings across the three format files) — and the second bullet contradicts \"each gets its own reader\" outright: \"Check 5 reads them off the `ast` nodes and uses neither `literal_of` nor `literal_keys_of`.\"",
+       "fix": "\"Two kinds of value in the tree are not literals, and each is read its own way:\" — leaving both bullets unchanged."
+      },
+      {
+       "id": "R1-15-06-three-import_module-calls",
+       "severity": "cosmetic",
+       "detail": "Rule 3, ticket line 144: \"The tree holds exactly three `importlib.import_module` calls\". There is a fourth, in a file the README lists as an entry: tests/test_packed_loss.py:127, `method = importlib.import_module(f\"train.methods.{method_name}\")`. The three sites the ticket names are right (data/environments/__init__.py:84, models/__init__.py:70, models/probe_models/base.py:198, all verified on disk).",
+       "fix": "Scope the sentence: \"The 31 Python files the README lists hold exactly three `importlib.import_module` calls — …\" (tests/test_packed_loss.py has one more, and check 2 never walks it)."
+      },
+      {
+       "id": "R1-15-07-errata-last-entry",
+       "severity": "cosmetic",
+       "detail": "Parser block, ticket lines 63-66, cites \"`.scratch/from-zero/contract-errata.md`, last entry, \\\"Pre-existing, reported and unchanged\\\"\". That sentence is the last sentence of the entry at contract-errata.md:184 (`3.3 / 8.6 (the ruling entry above, \"what a VERSION bump invalidates\")`), which is the second-to-last entry; the file's last entry is line 185, \"Added by the wave-5 post-merge review …\", which says nothing about `FORMATS`.",
+       "fix": "Cite it as \"the entry `3.3 / 8.6 (the ruling entry above, \\\"what a VERSION bump invalidates\\\")`, last sentence\"."
+      },
+      {
+       "id": "R1-15-08-ticket-16-does-not-read-readme_entries",
+       "severity": "cosmetic",
+       "detail": "Rule 2, ticket lines 101-102: \"Do not change `readme_entries`: ticket 14's `D1` and ticket 16 read it as it is.\" Ticket 14's D1 does call it (.scratch/from-zero/issues/14-run-py-walk-and-readme.md:350). Ticket 16 never does: `readme_entries` appears nowhere in .scratch/from-zero/issues/16-gpu-run-and-probe-pipeline-skills.md; its README references are prose about README.md section 3 and about a new file's five annotation lines (lines 142, 151, 158, 174-184, 208).",
+       "fix": "\"Do not change `readme_entries`: ticket 14's `D1` calls it as it is, and ticket 16's skills tell future writers to add the five annotation lines in the format it parses.\""
+      }
+     ],
+     "fix": {
+      "fixed": [
+       "R1-15-01-format-axis-tuple-vs-list",
+       "R1-15-02-contracts-0.2-carries-the-six-wrong-lines",
+       "R1-15-03-d2-literal_of-refusal-branch",
+       "R1-15-04-brace-line-list-stale-after-own-edits",
+       "R1-15-05-two-names-not-literals-miscount",
+       "R1-15-06-three-import_module-calls",
+       "R1-15-07-errata-last-entry",
+       "R1-15-08-ticket-16-does-not-read-readme_entries"
+      ],
+      "declined": []
+     }
+    },
+    {
+     "round": 2,
+     "problems": [
+      {
+       "id": "R2-15-A",
+       "severity": "misleads-implementer",
+       "detail": "Check 3 (lines 215-233) now pins one clause to an ordered, typed comparison and leaves a sibling clause in the same sentence order-ambiguous, and the two disagree on today's tree. Lines 216-224 say `schema.AXES[\"inject.format\"]` equals `tuple(literal_keys_of(...))` \"in the dict's own order, which is the axis's order\" and add \"Take the `tuple(...)` literally ... comparing the two raw values is always False\". Line 228 then continues \"the axis equals the file stems under `train/methods/`\" with no guidance. Measured with the probe interpreter: `schema.AXES[\"probe.method\"]` is `('ctool', 'cgen', 'cparam')`, while `train/methods/` holds ctool.py, cgen.py, cparam.py and there is no __init__.py, so any deterministic listing gives `['cgen', 'cparam', 'ctool']`. An implementer who carries the freshly emphasised ordered-tuple rule across to line 228 writes `tuple(sorted(stems)) == schema.AXES[\"probe.method\"]`, which is False on an untouched tree; check 3 then prints a problem and D3 exits 1. `data.env` hides the trap because it has one value ('appworld'), and `inject.arm` is a real tuple literal in ARMS with the same order.",
+       "fix": "After the two stem clauses on lines 228-229 add one sentence: \"The two stem comparisons are **set** comparisons — a directory has no order — while `inject.format` and `inject.arm` are ordered tuple comparisons, because a dict display and a tuple literal both carry the axis's order. Today `schema.AXES[\\\"probe.method\\\"]` is `(\\\"ctool\\\", \\\"cgen\\\", \\\"cparam\\\")` and the stems sort to `cgen, cparam, ctool`, so an ordered comparison there fails on an untouched tree.\""
+      },
+      {
+       "id": "R2-15-B",
+       "severity": "misleads-implementer",
+       "detail": "The rewritten parser block makes `literal_of`'s behaviour on a non-literal value load-bearing but never specifies it. Line 60-62 gives `literal_of` exactly two failure conditions: \"more than one match and zero matches are both failures that name the file and the count.\" Line 64-65 then says \"The whole content of check 4 is that a value parses as a literal\", and the new D2 block (lines 345-360) demands that `run.literal_of('agent/injected_text_formats.py', 'FORMATS')` give \"either an exception naming the file or `None` plus one printed problem naming `agent/injected_text_formats.py` and `FORMATS`\". A straightforward implementation returns `ast.literal_eval(node.value)` and raises the bare `ValueError: malformed node or string on line 65: <ast.Call object at 0x...>` (measured), which names neither the file nor the name, and which, reached from check 4 on a broken tree, ends selfcheck in a traceback instead of the \"one line per problem and exit 1\" line 312 requires. The D2 command cannot detect the difference either: its `except` branch prints only `type(e).__name__`, so the pasted output is `literal_of refuses FORMATS: ValueError` whether or not the file is named.",
+       "fix": "Change line 61-62 to: \"more than one match, zero matches, and a value `ast.literal_eval` refuses are all failures; each names the file, the name and which of the three it is, and each is reported as one problem line like every other check, never as an escaping traceback.\" In the D2 snippet at lines 346-353, change `print('literal_of refuses FORMATS:', type(e).__name__)` to `print('literal_of refuses FORMATS:', type(e).__name__, e)` so the expectation's \"naming the file\" half is visible in the pasted output."
+      },
+      {
+       "id": "R2-15-C",
+       "severity": "cosmetic",
+       "detail": "Line 192 was generalised from \"Every other `used by:` line keeps the plain equality of check 2.\" to \"Every other annotation line keeps the plain equality of check 2.\" README.md carries seven label kinds — measured with `run.readme_entries('README.md')`: imports 31, used by 31, reads 31, writes 31, venv 31, read by 8, offers 1 — and check 2 (lines 208-214) defines an equality only for the `imports:` and `used by:` lines. Read literally, line 192 tells a sonnet implementer that `reads:`, `writes:`, `read by:`, `offers:` and `venv:` lines also get check 2's graph equality; those lines name yaml globs, run directories and interpreter names, so any attempt makes D3 red. The generalisation was only needed to cover the one `imports:` by-name entry on README.md:196.",
+       "fix": "Line 192 becomes: \"Every other `imports:` or `used by:` line keeps the plain equality of check 2. Check 2 never looks at the `reads:`, `writes:`, `read by:`, `offers:` or `venv:` line; only check 10 reads `venv:`.\""
+      },
+      {
+       "id": "R2-15-D",
+       "severity": "cosmetic",
+       "detail": "Three sentences attribute the same drop to two different steps. Rule 2 step 3 (lines 118-122) says a fragment \"whose parenthetical starts `by name` is rule 3's by-name entry, whatever follows inside it (`(by name)` and `(by name, inside load())` are both it)\" — which routes `models/probe_models/<backbone>.py (by name, inside load())` out of the fragment list at step 3, so step 5 never sees it. But step 5 (lines 129-133) also lists that placeholder among the things it drops, and rule 3 (lines 166-167) says \"`<backbone>` is a placeholder, not a file, so rule 2 step 5 has already dropped it\". The compared set is the same under either reading, but an implementer who follows step 3's routing reaches rule 3's by-name test (\"check that the named file **exists** and that it holds the dynamic-import call\") for a token that names no file, and rule 3's justification for skipping the existence half points at a step that never ran on it.",
+       "fix": "In rule 3 replace \"so rule 2 step 5 has already dropped it and no existence test is possible or wanted here\" with \"so rule 2 step 3 routes it here like every other by-name fragment, and unlike the three `used by:` by-name entries it names no file: the existence half does not apply to it and it is dropped from check 2's comparison\". In step 5 (lines 131-133) delete \"and the placeholder `models/probe_models/<backbone>.py` on :196, which names no file in the tree and gets its own test in rule 3\", leaving step 5 about the prose clauses only."
+      },
+      {
+       "id": "R2-15-E",
+       "severity": "cosmetic",
+       "detail": "Line 9 still opens \"One file, edited: `run.py`.\" The edit made README.md edits mandatory, not conditional: lines 23-25 say \"Six README lines are already wrong, and correcting them is the whole of the README licence above. Correct these six and no others\", and D3 cannot reach 0 problems without them (my prototype of the rewritten check 2 reports exactly those six before the corrections). Two files are edited. Line 17 also still words the licence conditionally, \"only if a line of it is wrong — say which and why in your report\", which now reads as a judgement call although the ticket has already made the judgement and fixed the list at six.",
+       "fix": "Line 9 becomes \"Two files, edited: `run.py` and `README.md`.\" Line 17 becomes: \"README.md    the six lines named below, and no others — list them in your report\"."
+      }
+     ],
+     "fix": {
+      "fixed": [
+       "R2-15-A",
+       "R2-15-B",
+       "R2-15-C",
+       "R2-15-D",
+       "R2-15-E"
+      ],
+      "declined": []
+     }
+    }
+   ]
+  },
+  {
+   "ticket": "16",
+   "applied": [
+    {
+     "ids": [
+      "P16-07",
+      "P16-06"
+     ],
+     "what": "Phase 4 row (ticket line 44) rewritten: the command is now the full pinned usage `run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [section.field=value ...]` (verified against `run.py --help` on disk); the walk is stated per named setting and per `sweep:` child, each with its own key, run directory and registry row; the stop is scoped to \"that setting's walk\" and a CPU stage is stated to run inline while the walk continues (run.py:1049-1066, cmd_walk run.py:681-695); and the two words \"releases it,\" were deleted, because run.py:1037-1054 calls `launch.launch` inside `with registry.lock():` and jobs/registry.py:124-156 makes that manager re-entrant, so the flock is not released before the tmux waves. The sentence now neither claims a release nor asserts the contrary."
+    },
+    {
+     "ids": [
+      "P16-04",
+      "P16-09"
+     ],
+     "what": "Phase 5 row (line 45): the command is `run.py ls [workflow] [--debug]`, with one clause saying a `--debug` run shows only when the flag is given (jobs/registry.py:973-975 drops debug rows) so the Phase 3 smoke is monitored with the flag; the folded line's contents now match `_format_ls_row` (run.py:444-468): progress as `done/total <unit>` plus the recent rate, and the trailing `stale=<path> VERSION <n>: \"<why>\"` sentence, tied to `edited` (key moved) and explicitly not to `behind` (run.py:355-366)."
+    },
+    {
+     "ids": [
+      "P16-05",
+      "P16-04"
+     ],
+     "what": "Phase 6a row (line 46) split into the three real cases: `sample`/`inject` write `done.json`, tear the service pieces down and append the `ok` finish row, in that code order (run.py:786-800, 1005); `build`/`train` have the stage program write `done.json` so the walk only backfills the finish row and has no service pieces (run.py:753-769, 1003; schema.py STAGES `done_writer`); `eval`/`score` never skip and recompute in place (run.py:649 ALWAYS_RECOMPUTE, run.py:986). `run.py table [workflow] [--debug]` now carries the flag, and 2.4 was added to the contract column."
+    },
+    {
+     "ids": [
+      "T16-5"
+     ],
+     "what": "Phase 6b row (line 47): the refire warning is now stated as \"more than one `launches` entry, counted as the entries whose `pieces` list contains this piece index\" (jobs/launch.py:953-956, docstring 930-938), replacing \"has been launched before\"; \"no quota\" kept."
+    },
+    {
+     "ids": [
+      "T16-7"
+     ],
+     "what": "The gpu_state.md rationale (lines 77-81) was split so each half is true at the cut point it names: cutting at 46 keeps line 46's `python3 run.py sampler --port 8377` and so a non-zero sampler-token count; cutting at 47 zeroes the count but still leaves eight orphaned lines (47-54). Measured on disk: the file is 97 lines, 46-97 gives token count 1, 47-97 gives 0, 56-97 gives 42 lines and 0."
+    },
+    {
+     "ids": [
+      "P16-03",
+      "T16-4",
+      "P16-10"
+     ],
+     "what": "Probe-pipeline point 3 (gate list) rewritten: the source is now \"contracts 2.5 as `.scratch/from-zero/contract-errata.md` amends it\"; the build gates are record completeness, abort share, the two split gates and the three row gates (empty `text`, `depth` outside [0,1], thinking-prefix mismatch) as data/build_training_dataset.py:46-108 and 218-225 hold them; `inject` now has three `run.py`-held gates (run.py:1031-1033), named as 2.5's shared-build-key and code-currency gates plus the errata's `5.4 / 2.1` ruling comparing a `key:`/`dir:` reference's stated `method:` against the referenced train run's frozen `probe.method`. A closing sentence states the two non-gates: a call `build_call` refuses, one failing the round-trip gate, or a non-null action `split_args` cannot parse is skipped and counted under `counts.events_skipped_no_call` (errata's 2.5 rulings of 2026-09-17 and 2026-09-18; code path data/build_training_dataset.py:166, 202), and `build.max_examples` is a per-split cap applied after the split column (data/build_training_dataset.py:267-270). I dropped the `split_args` item from the finding's proposed gate list, because errata line 122 rules it a skip, not a gate — the finding's verifier quoted unamended contracts 2.5 there."
+    },
+    {
+     "ids": [
+      "P16-08"
+     ],
+     "what": "Probe-pipeline point 5: the `(0.3)` citation is replaced by the errata's `0.2 / 2.1 / 2.6 (eval/methods/)` ruling of 2026-09-18, and `README.md` section 3 \"The extension recipes\" (README.md:324-374, post-fold and post-rename) is named as the one place the skill points at, with an explicit instruction not to cite contracts 0.3 or 0.4 because they still name `eval/methods/<m>.py` and `agent/inject_format.py`. The four extension-place strings W3 greps for are untouched. The \"Not carried over\" sentence (line 201) was made consistent: `extending.md`'s content is `README.md` section 3, with contracts 0.4 flagged as predating the fold."
+    },
+    {
+     "ids": [
+      "P16-11"
+     ],
+     "what": "The probe-pipeline rewrite scope (was \"lines 18-47 and every phase below them\") now says front matter included, names the `description` scalar as lines 3-15 with `version: 1.0.0` on 16 and the closing `---` on 17 (measured on disk), lists what must leave the description (Phase E write-back, the matrix and cell language, the `collect/annotate/train/eval` stage names) and pins the body as lines 18-319. I applied the same fix to the gpu-run scope sentence (lines 50-57), which had the same defect: its ranges start at 19 and called that \"the whole file\" while lines 27-29 order the description to lose \"three ledgers\" (line 7) and \"sampler\" (line 8); the description scalar is lines 3-11, version 12, closing `---` 13, file length 236."
+    },
+    {
+     "ids": [
+      "T16-3",
+      "P16-13"
+     ],
+     "what": "Section 3 preamble: the fixed tree's quoted line (\"the six principles\") is kept verbatim, and a new paragraph after it says the count is stale, that Part 1 of the same document and README.md line 5 (\"Seven principles hold the tree together\") both list seven, and that the SKILL.md written says it reviews against the seven principles README.md section 1 states and never writes \"six\"."
+    },
+    {
+     "ids": [
+      "T16-2",
+      "P16-02"
+     ],
+     "what": "Section 3 item 1: \"the 34-file tree\" -> \"the 31-file tree\". Verified: `find run.py constants experimental_settings data models agent train eval jobs -name '*.py'` = 31, README.md has 31 `.py — ` entries, ticket 15 and the errata both say 31."
+    },
+    {
+     "ids": [
+      "T16-6"
+     ],
+     "what": "W1's last command now ends with `|| true`, with a one-sentence note in the Expected paragraph matching the house form of tickets 02, 11 and 12. Re-ran the whole W1 block against the block the ticket orders kept: 42 lines, first line `Surveyed on: 2026-07-29 (measured, not hearsay).`, hardware row 1, sampler tokens 0, and the block now exits 0 instead of 1."
+    },
+    {
+     "ids": [
+      "T16-1",
+      "P16-01"
+     ],
+     "what": "Every `head -8` in W2 (one, on repo-review) and W4 (three) is replaced by `awk 'NR>1 && /^---$/{exit} {print}' <file>`, with one sentence per check saying why. Verified on disk: gpu-run's trigger clause is on lines 10-11 and probe-pipeline's on 14-15, so `head -8` can never show either; the awk prints each file's whole front matter and stops at the closing `---`. The Expected sentences are unchanged."
+    }
+   ],
+   "notApplied": [
+    {
+     "id": "P16-14",
+     "why": "Both halves of its correction edit ticket 17 (line 243 \"byte-identical to ticket 16's\" -> \"ticket 16's script with a wider file list\"; line 288 \"containing exactly\" -> \"drawn from\"). Ticket 16's own wording is already the correct one (\"drawn from\", \"interchangeable\"), so nothing in ticket 16 needs changing, and I may touch no other file. I confirmed the two scripts stay interchangeable after my edits: I extracted both tickets' C7 and C8 blocks and diffed them — the `section_range` helper, the `str(p) == f` comparison and the `for f, lo, hi in EXEMPT` unpacking are identical, and the only differences are the file list and one blank line. Hand this to ticket 17's drafter."
+    },
+    {
+     "id": "P16-15",
+     "why": "Its correction edits ticket 18 lines 36-37 and 279-280 (ticket 16's repo-review skill lands in wave 6, not \"in flight beside\" ticket 18). Ticket 16 line 151 already states the wave split correctly. Hand this to ticket 18's drafter."
+    }
+   ],
+   "reviewRounds": [
+    {
+     "round": 1,
+     "problems": [
+      {
+       "id": "R1-16-A",
+       "severity": "misleads-implementer",
+       "detail": "New sentence at ticket line 166: \"Part 1 of the same document numbers seven principles and `README.md` line 5 opens ...\". False on disk: in notes/plans/2026-09-14-structure-from-zero.md the heading `## Part 1. The file structure` is at line 41 and Part 1 is the file-by-file tree listing; the numbered principles 1-7 are in the document's opening, lines 11-32 (line 11 \"The principles the tree follows, in the order gyb gave them:\", item 1 at line 13, item 7 at lines 29-32), above Part 1. The ticket also uses \"Part 1\" with the other meaning five lines later, at line 190: \"or propose a file the tree's Part 1 does not name\" — so one ticket now says Part 1 is a principle list and a file list. The verifier-approved correction for T16-3 used the phrase \"Part 1\", but its own evidence line says \"notes/plans/2026-09-14-structure-from-zero.md:11-32 numbers them 1 through 7\", so the wording was not checked against the file. An implementer sent to Part 1 for the seven principles finds the tree listing.",
+       "fix": "In line 166 replace \"Part 1 of the same document numbers seven principles\" with \"that document's opening list of principles (lines 11-32, above the `## Part 1. The file structure` heading) numbers seven\". Leave line 190's \"the tree's Part 1\" as it is."
+      },
+      {
+       "id": "R1-16-B",
+       "severity": "cosmetic",
+       "detail": "Rewritten gpu-run scope paragraph, lines 50-57: after covering front matter 1-13 it lists \"lines 19-26 ... 226-236 (hard rules) — that is the rest of the file, which is 236 lines long.\" Lines 14-18 are in no listed range: line 15 is `# gpu-run — new1 GPU job full lifecycle`, line 17 is \"A mandatory pipeline for a job from birth to death. Every step has an artifact; skipping a step is a violation.\", 14/16/18 blank. So the enumeration is not \"the rest of the file\". The parallel paragraph for probe-pipeline (line 156) gets this right: it says \"lines 18-319\", which does cover everything below the front matter. The old text had the same gap (\"that is the whole file\" for 19-236), and this edit fixed only the front-matter half of it.",
+       "fix": "In line 54 start the body enumeration at 14: \"Then the body: lines 14-18 (the title and the one-sentence intro), 19-26 (fixed paths), 27-40 (Phase 0-1), ...\"."
+      },
+      {
+       "id": "R1-16-C",
+       "severity": "cosmetic",
+       "detail": "Line 29 states without exception: \"Neither file may name a command that `run.py --help` does not list.\" Section 1 then orders the gpu-run skill to carry a `## What is gone` list (lines 59-73) naming `run.py gpu-jobs free/register/finish/watch/json`, `run.py record start/finish`, `run.py launch`, `run.py runmeta` and `python3 run.py sampler`, none of which `run.py --help` lists (verified: the help prints ls, where, find, kill, refire, retry, table, free, sync, selfcheck). The C8 paragraph at lines 295-301 acknowledges the conflict and exempts that section, but line 29 is never qualified. The failure mode is not hypothetical: if a literal implementer drops or renames that section to satisfy line 29, `section_range`'s `next(i for i, l in ... if l.strip() == heading)` raises StopIteration and both C7 and C8 die with a traceback rather than reporting a clean FAIL.",
+       "fix": "End line 29 with the scope it already has in the acceptance: \"Neither file may name a command that `run.py --help` does not list, outside the gpu-run skill's one `## What is gone` list (section 1), which the C7 and C8 checks exempt by that heading.\""
+      },
+      {
+       "id": "R1-16-D",
+       "severity": "cosmetic",
+       "detail": "Rewritten probe-pipeline point 5, lines 138-140: \"What each extension touches is **`README.md` section 3, \\\"The extension recipes\\\"**, and that one section is the only place this skill points at.\" Read literally, the second clause governs the whole skill, and it contradicts three sibling points the same ticket orders written: point 3 (lines 111-113) points the skill at \"contracts 2.5 as `.scratch/from-zero/contract-errata.md` amends it\", point 4 (line 130-131) at `run.py selfcheck`, and point 6 (lines 145-148) at `README.md` and `schema.py`. The approved P16-08 correction only asked that README.md section 3 be \"the single place the skill points at for what an extension touches\"; the ticket dropped the scoping clause.",
+       "fix": "Line 139-140: \"... and that one section is the only place this skill points at **for what an extension touches**.\""
+      },
+      {
+       "id": "R1-16-E",
+       "severity": "cosmetic",
+       "detail": "New sentence at lines 142-144: \"Do not cite contracts 0.3 or 0.4 here: both predate the fold and the renames of 2026-09-18 and still name `eval/methods/<m>.py` and `agent/inject_format.py`\". Half of that is false of 0.3: notes/plans/2026-09-17-contracts.md section 0.3 (lines 642-666) names `eval/methods/<m>.py` (in the four-extension-places paragraph) and the 34-file count, but never names `agent/inject_format.py` — that name appears in 0.4's table (the injection-format row and the agent-model-family row). The instruction itself is right; only the reason attributed to 0.3 is wrong.",
+       "fix": "Lines 142-144: \"... both predate the fold and the renames of 2026-09-18 — 0.3 still names `eval/methods/<m>.py` and counts 34 files, 0.4 still names `eval/methods/<m>.py` and `agent/inject_format.py` — and `notes/` is not rewritten.\""
+      }
+     ],
+     "fix": {
+      "fixed": [
+       "R1-16-A",
+       "R1-16-B",
+       "R1-16-C",
+       "R1-16-D",
+       "R1-16-E"
+      ],
+      "declined": []
+     }
+    },
+    {
+     "round": 2,
+     "problems": [
+      {
+       "id": "R2-16-A",
+       "severity": "misleads-implementer",
+       "detail": "Verified finding P16-14 is still open. Ticket 16's C8 Expected now reads \"the `named:` line drawn from ...\" and line 350 reads \"Ticket 17's `C8` is this same script with a wider file list\" — both correct. But the correction P16-14 asked for lands in ticket 17, which the ticket-16 drafter could not touch, and nothing has applied it there: .scratch/from-zero/issues/17-claude-md-agents-and-skills.md line 243 still says its C7 script is \"byte-identical to ticket 16's\", and line 288 still expects the `named:` line \"containing exactly\" the ten subcommands plus the three workflow names. Verified on disk: ticket 17's C7 builds `files = [CLAUDE.md, README.md] + sorted(Path('.claude').rglob('*.md'))` (lines 224-225) while ticket 16's builds it from the three skill directories (lines 281-284), so the two scripts are not byte-identical. A literal ticket-17 implementer who makes its C7 byte-identical to ticket 16's narrows its scan from all of `.claude/` + `CLAUDE.md` to three skill directories, which is the whole point of ticket 17's C7; and \"containing exactly\" fails whenever a document legitimately names fewer or more subcommands than the ten. Note the findings file labels P16-14 as ticket 16's, so the ticket-17 corrector will not see it unless it is routed there.",
+       "fix": "Route P16-14 to whoever corrects ticket 17: in .scratch/from-zero/issues/17-claude-md-agents-and-skills.md, line 243 change \"byte-identical to ticket 16's\" to \"ticket 16's script with a wider file list, otherwise identical — the same `section_range`, the same `str(p) == f` comparison with no `./` prefix, the same `for f, lo, hi in EXEMPT` unpacking\"; line 288 change \"containing exactly\" to \"drawn from\", matching ticket 16's wording. Do not change ticket 16."
+      },
+      {
+       "id": "R2-16-B",
+       "severity": "cosmetic",
+       "detail": "Verified finding P16-15 is still open, for the same reason: its correction lands in ticket 18. Ticket 16 line 193 correctly says ticket 18 performs the `git mv docs notes/docs` \"in wave 7\", and line 219-221 correctly says ticket 17 rewrites the other `.claude/` documents \"in the next wave\". But .scratch/from-zero/issues/18-migration-legacy-gitignore-timeline.md lines 35-37 still call ticket 16's repo-review SKILL.md and ticket 17's CLAUDE.md \"both in flight beside this ticket\", and lines 279-280 still say the surviving `notes/docs/agents/...` citations were \"written by tickets 16 and 17 in this same wave\". Ticket 16 is in wave 6 and merges before ticket 18, so both sentences are false; the ticket-18 agent reading them may expect the repo-review skill to be absent from the tree when it runs its grep.",
+       "fix": "Route P16-15 to whoever corrects ticket 18: lines 36-37 replace \"both in flight beside this ticket\" with \"ticket 16's skill written in the previous wave and already on the branch, ticket 17's `CLAUDE.md` in flight beside this ticket\"; lines 279-280 replace \"written by tickets 16 and 17 in this same wave\" with \"written by ticket 16 in the previous wave and by ticket 17 in this same wave\". Leave line 280-282's instruction about `.claude/skills/ticket-run/` and `CLAUDE.md` hits as it stands, and do not change ticket 16."
+      },
+      {
+       "id": "R2-16-C",
+       "severity": "cosmetic",
+       "detail": "New text in probe-pipeline point 3 (ticket lines 126-131) says the three non-gate cases are \"skipped, counted under `counts.events_skipped_no_call` and listed in `report.md`\". Only two of the three are listed per event. Verified in data/build_training_dataset.py: the `build_call`-refusal and round-trip-failure branch appends `{record_id, step, reason}` to `refused_calls` (line 203), and `report.md` prints one line per entry under \"- calls build_call refused or that failed the round-trip gate: N\" (lines 331-332). The `split_args` returns None branch (lines 164-168) only does `skip_no_call += 1` and appends to `history`; it produces no `refused_calls` entry, so it reaches `report.md` only inside the aggregate `events_skipped_no_call=<n>` figure (line 329). A literal implementer would write into the skill that every skipped event is listed with its record, step and reason, which is false for the `split_args` case.",
+       "fix": "In ticket 16 line 128-130, replace \"is skipped, counted under `counts.events_skipped_no_call` and listed in `report.md`\" with \"is skipped and counted under `counts.events_skipped_no_call`; `report.md` carries that count for all three, and one line per event naming the record, the step and the reason for the `build_call`-refusal and round-trip cases only\". Change nothing else in the sentence, including the errata citation."
+      }
+     ],
+     "fix": {
+      "fixed": [
+       "R2-16-C"
+      ],
+      "declined": [
+       {
+        "id": "R2-16-A",
+        "why": "Real defect, confirmed on disk, but not fixable in ticket 16: the reviewer's own fix says \"Do not change ticket 16\" and lands in .scratch/from-zero/issues/17-claude-md-agents-and-skills.md, which this task forbids me to edit (\"edit the ticket file in place (no other file)\"). Ticket 16's C8 Expected (\"the `named:` line drawn from ...\") and its line 350 (\"Ticket 17's `C8` is this same script with a wider file list\") are already correct. Routing info for the ticket-17 corrector: the stale phrases are at line 243 (\"byte-identical to ticket 16's\") and line 288 (\"containing exactly\"); ticket 17's C7 builds files from [CLAUDE.md, README.md] + sorted(Path('.claude').rglob('*.md')) at lines 224-225, while ticket 16's builds from the three skill directories at lines 281-284, so the scripts are genuinely not byte-identical."
+       },
+       {
+        "id": "R2-16-B",
+        "why": "Real defect, confirmed on disk, but the correction lands in .scratch/from-zero/issues/18-migration-legacy-gitignore-timeline.md, which this task forbids me to edit; the reviewer's fix also says \"do not change ticket 16\", and ticket 16's own lines 193 and 219-221 are already correct. Routing info for the ticket-18 corrector, with line numbers re-measured on disk (one off from the reviewer's): \"both in flight / beside this ticket\" is at lines 36-37, and \"written by tickets 16 and 17 in / this same wave\" is at lines 279-280. Line 210's separate sentence \"Ticket 17 rewrites `CLAUDE.md` in this same wave\" is true and needs no change."
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ],
+ "routed_to_wave7": [
+  "P16-14 (ticket 17 lines 243, 288)",
+  "P16-15 (ticket 18 lines 36-37, 279-280)"
+ ],
+ "from_wave7": [
+  "W7-X1: bare runs.jsonl.lock in ticket 16's phase 4 row fails ticket 17's C15 -> jobs/runs.jsonl.lock, acceptance W5 added",
+  "W7-X2: the heading '## What is gone' stays exact; ticket 16's C7 and C8 already depend on it"
+ ],
+ "open_for_owner": [
+  {
+   "ticket": "15",
+   "question": "Six annotation lines in contracts 0.2 (lines 272, 364, 366, 480, 487, 495) are wrong about the tree, and the ticket corrects only their README copies because agents never edit `notes/`. The ticket now carries the assumption that README.md is the authority selfcheck checks and that contracts 0.2 stays as written until you rewrite it; if you would rather the contracts be the authority, the three method files and `models/probe_models/service.py` would have to import what the contracts claim, which is a code change no ticket in this wave makes."
+  },
+  {
+   "ticket": "15",
+   "question": "`agent/injected_text_formats.py`'s `FORMATS` is a dict of `Format(...)` calls, which spec section 5 says should be a plain literal. The ticket now assumes the file is left alone and check 3 reads its keys through a second, keys-only parser; the alternative is to split the table into a literal key list plus a separate call table, which changes a file this ticket may not touch and moves nothing else."
+  },
+  {
+   "ticket": "15",
+   "question": "`SCHEMA`, `DEFAULTS` and `REQUIRED` in the three `data/` format files are annotated assignments whose values are a polars dtype dict, a comprehension and a `frozenset(...)` call, while contracts 8.6 calls them literals. The ticket now assumes selfcheck reads them structurally off the `ast` nodes and the three files are unchanged; making them literal instead would mean rewriting the three files' column declarations, which no ticket in this wave covers and which would move no key."
+  },
+  {
+   "ticket": "15",
+   "question": "For the two empty package markers the ticket now requires the `used by: … (as their package)` line to **equal** the set of `.py` siblings in that directory, so a marker that stopped naming a newly added sibling fails. A subset test would let a new file be added without touching the marker's line; equality is the stricter reading and is the one written in, on the ground that the README is the tree's index."
+  },
+  {
+   "ticket": "16",
+   "question": "`run.py` holds `runs.jsonl.lock` across `jobs/launch.launch`, so the flock is held through both tmux waves, the alive checks (up to `launch_timeout_s`) and the probe service's `check` client, against contracts 8.1 and 8.6, which require the release before any tmux session starts. Merged ticket 14 step 7 prescribed this shape, so the fix is either a `run.py` change or an errata entry blessing it — not something wave 6 can settle. Assumption the ticket now carries: the Phase 4 row no longer says the lock is released, and no longer says it is held either, so the skill stays true whichever way you rule."
+  },
+  {
+   "ticket": "16",
+   "question": "`run.py` prints the monitoring line as `monitor with \\`run.py ls {cfg._file}\\`` (run.py:1063) even on a `--debug` walk, where `ls` without `--debug` shows nothing. That is merged ticket 14 code, outside ticket 16's file list. Assumption the ticket now carries: the gpu-run skill's Phase 5 tells the operator to add `--debug` when monitoring the Phase 3 smoke, so the skill is correct while the printed line stays incomplete."
+  }
+ ],
+ "base": "a851400"
+}

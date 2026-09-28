@@ -1,0 +1,44 @@
+# One row per model alias, in two blocks (contracts 6.1): result: expands into
+# the setting before keying, serving: is read live and never keyed. A model of
+# an existing family or backbone is one row here plus one row in
+# constants/path_models.yaml.
+
+gpt_oss_120b:
+  role: agent
+  family: gptoss
+  result:
+    weights: gpt-oss-120b
+    dtype: auto
+    quantization: null
+    max_model_len: 131072
+    served_model_name: gpt-oss-120b
+    env_result: {VLLM_USE_FLASHINFER_SAMPLER: "0"}
+    extra_flags: ""
+  serving:
+    host: tokyo108
+    port: 8103
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
+
+qwen3_0pt6b:
+  role: probe
+  family: qwen
+  result: {weights: qwen3-0.6b-base, dtype: float32}
+  serving: {}
+
+qwen3_1pt7b:
+  role: probe
+  family: qwen
+  result: {weights: qwen3-1.7b-base, dtype: float32}
+  serving: {}
+
+qwen3_4b:
+  role: probe
+  family: qwen
+  result: {weights: qwen3-4b-base, dtype: float32}
+  serving: {}

@@ -1,0 +1,17 @@
+# Where things are on this cluster. Locations only: nothing here changes a
+# result or enters a key (contracts 6.3). A path changes only when the same
+# bytes move; new bytes are a new alias.
+
+venvs:                                  # every interpreter this repo starts a program with
+  appworld: /home/y-guo/reproduce/new1/external/appworld/venv/bin/python
+  probe:    /home/y-guo/reproduce/new1/external/probe-env/bin/python
+  vllm:     /home/y-guo/reproduce/new1/external/vllm-env/bin/python
+
+appworld:
+  home:  /home/y-guo/reproduce/new1/external/appworld
+  venv:  appworld                       # a key of venvs:
+  data:  /home/y-guo/reproduce/new1/external/appworld/data
+  splits:
+    train: /home/y-guo/reproduce/new1/external/appworld/data/datasets/train.txt
+    dev:   /home/y-guo/reproduce/new1/external/appworld/data/datasets/dev.txt
+    test:  /home/y-guo/reproduce/new1/external/appworld/data/datasets/test_normal.txt

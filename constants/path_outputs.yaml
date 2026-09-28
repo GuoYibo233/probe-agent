@@ -1,0 +1,17 @@
+# The outputs root, the debug subdirectory and the login machine. Locations
+# only; nothing here enters a key (contracts 6.3). The cluster's hosts and
+# cards are constants/cards.yaml.
+
+root: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs
+
+# A run started with `--debug` (the tiny run of principle 4: a few tasks, a few
+# examples, a few steps, sizes from experimental_settings/debug.yaml) writes
+# under <root>/<debug_subdir>/ instead of under <root>/, so a debug output
+# directory is never reused as, or mistaken for, a real run's output.
+debug_subdir: debug
+
+# The machine every run.py command runs on (tokyo108 answers `saitama` to
+# `hostname`; either spelling normalises through constants/cards.yaml). Typed
+# anywhere else, run.py re-runs itself here over ssh (gyb, 2026-09-25): the
+# registry's times are clock-naive, so every row is written on one clock.
+login_host: saitama

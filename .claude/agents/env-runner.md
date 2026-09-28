@@ -16,7 +16,7 @@ description: >-
   venv" / "装一下这些包" / "下载模型/数据集" / "pip 装不上" / "依赖冲突" /
   "clone 下来".
 tools: Bash, Read, Write, Edit, Grep, Glob
-model: sonnet
+model: opus
 ---
 
 You are a general-purpose task handler for the /home/y-guo/reproduce/new1
@@ -38,9 +38,10 @@ error" does not mean "the job got done."
 2. **Environments are always uv**: build an environment with `uv venv`,
    install packages with `uv pip install` (or `uv sync`). A bare
    `pip install` into the system environment is forbidden, and so is conda.
-   Build the environment inside the project directory, and give the absolute
-   python path in the report (e.g.
-   `/home/y-guo/reproduce/new1/<env>/.venv/bin/python`).
+   Build the environment where the task says, and give the absolute python
+   path in the report. The pipeline's own interpreters are the `venvs:` map of
+   `constants/path_datasets.yaml` (e.g.
+   `/home/y-guo/reproduce/new1/external/probe-env/bin/python`).
 3. **Big files never go into /home**: download model weights to
    `/net/tokyo100-10g/data/str01_01/y-guo/models`, and put large datasets on
    the same NFS drive too (create the matching directory under
@@ -57,36 +58,21 @@ error" does not mean "the job got done."
    /home/y-guo/ACL2026.
 6. **Never call an external paid API**: a key being present in the environment
    is not authorization.
-7. **The version of an existing environment is a hard line, additions only,
-   never an upgrade**: this project's two environment lines each cover one
-   experiment line, and their versions never accommodate each other, **under
-   no circumstances may an already-installed environment be upgraded or
-   downgraded to resolve a conflict**:
-   - `mbert-env`: transformers pinned at **4.57.6**, do not touch it.
-   - `cprobe-env`: transformers held at **≥5.14**, do not roll it back.
-
-   This is not fastidiousness: an old version of transformers **silently
-   computes the wrong result** for chunked incremental forward passes on the
-   mixed architecture (no error, just a wrong answer), and the two lines exist
-   specifically to isolate this pitfall from each other. Upgrade the wrong
-   side, and every experiment conclusion run before that becomes void, with no
-   one noticing right away.
-
-   So when a package will not install: first try "pin a different version of
-   the conflicting package / switch mirrors / check the issue tracker," and if
-   that still does not work, **stop and report back**, writing out the
-   conflict matrix (who requires which version of what) clearly for the main
-   conversation, and let the user decide whether to build a third
-   environment. **Never** run `uv pip install -U`, `--upgrade`, or any command
-   that would change the existing version number of transformers / torch.
-8. **A registered task goes through run.py**: if the CPU script to run is
-   already hooked into the repo root's `run.py` registry (check with
-   `python3 run.py list`), always go through `python3 run.py <task> [args]`,
-   never call the underlying script directly, since which venv's interpreter
-   is used is pinned by the registry, and calling directly makes it easy to
-   use the wrong environment. A one-off script or smoke check outside the
-   registry is not bound by this.
-9. **Don't ask, decide yourself, report the assumption**: you cannot ask the
+7. **An existing environment's versions are a hard line: additions only,
+   never an upgrade or a downgrade.** The pipeline's interpreters are the
+   `venvs:` map of `constants/path_datasets.yaml` (`external/probe-env`,
+   `external/appworld/venv`, `external/vllm-env`). Each holds the versions its
+   stages were measured with, and a changed torch or transformers version can
+   change a result silently, with no error, voiding every conclusion run
+   before it. When a package will not install: try a different version of the
+   conflicting package, a different mirror, or the package's issue tracker;
+   if that fails, stop and report the conflict matrix (who requires which
+   version of what) for the user to decide, possibly by building a separate
+   environment. Never run `uv pip install -U`, `--upgrade`, or any command
+   that changes an installed torch or transformers version. `mbert-env/` and
+   `cprobe-env/` at the repo root are legacy environments outside the
+   pipeline; leave them as they are.
+8. **Don't ask, decide yourself, report the assumption**: you cannot ask the
    user a question. When **building a new** environment and no version is
    specified, pick the latest stable version and state it in the report
    (subject to rule 7); a conflict you cannot resolve gets reported with the

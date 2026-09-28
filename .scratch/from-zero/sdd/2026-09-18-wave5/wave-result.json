@@ -1,0 +1,80 @@
+{
+  "feature": "from-zero",
+  "wave": "2026-09-18-wave5",
+  "tickets": [
+    {
+      "id": "13",
+      "status": "DONE",
+      "branch": "ticket/2026-09-18-wave5/T13",
+      "commits": {
+        "base": "f520b875a97234ca43eb241ca3bb8ec49c3a497e",
+        "head": "e128671"
+      },
+      "rounds": 2,
+      "openFindings": [],
+      "minors": [
+        {
+          "id": "F6",
+          "severity": "minor",
+          "title": "cparam predictions can now carry a null target, and an untouched eval consumer concatenates it unguarded",
+          "detail": "train/methods/cparam.py's predict() (fix for F4) now yields a prediction row with target=None for any row whose call does not assemble as tool + \"(\" (confirmed by the fix report's own test: [('a__s0|s0|c0', 'id=1)'), ('b__s0|s0|c0', None)]). Before this round, such rows were dropped and predictions.parquet never carried a null target for cparam. eval/utils/probe_eval.py:422 (a file this diff does not touch) does `tool + \"(\" + row[\"target\"]` inside _generator_scores' cparam branch with no None-check, which raises TypeError on a joined row whose target is null. Whether this is reachable depends on whether an unassembled-call row can still be part of the 'fired' set joined into that scoring step; not traced further here since the crash site is outside this diff, so this is recorded as minor per the re-review protocol regardless of real-world severity."
+        },
+        {
+          "id": "N1",
+          "severity": "minor",
+          "title": "Round-2 comment misattributes a base.load signature echo to contracts 2.6, which has none",
+          "detail": "train/utils/trainer.py:167 (commit e128671) says 'contracts 2.6 and 6.2 echo the signature without it', but section 2.6 (notes/plans/2026-09-17-contracts.md:2294-3532) never states a base.load signature at all -- it only names base.load in prose (e.g. 'before base.load' in the head_labels row). The one signature-table row that echoes ticket 06's load(...) without device ('load(row, cfg, *, probe_kind, n_labels=None, labels=None, ckpt_dir=None) -> Probe') sits at line 3745, under section 6.2 only (6.2 spans 3624-3761). The comment's attribution to '2.6 and 6.2' both carrying the echoed signature is therefore inaccurate; a reader who checks 2.6 for that signature line won't find it. Purely a documentation-precision nit inherited in part from the original finding's own wording (which likewise called it 'contracts 2.6's signature table') -- it does not affect any code behaviour or acceptance command."
+        }
+      ],
+      "cannotVerify": [
+        "Whether the four README.md annotation blocks this ticket added are byte-identical to ticket 14's independent rewrite of the same four entries (needed for the wave-5 merge's 'provably safe discard' of T13's blocks) -- ticket 14's diff is not in this range.",
+        "run.py selfcheck's checks on this ticket's files (README annotation lines vs. real imports, single-VERSION-at-column-zero, the probe.method axis, PROBE_KIND agreement) -- run.py does not exist yet (ticket 15).",
+        "All seven 'GPU / main session' acceptance items (debug train per method, the alignment gate actually firing on broken packing, resume, predict-only continuation on a real run, LoRA, two methods over one build, and the per-cut prediction cost) -- each needs a GPU process, explicitly out of scope for an implementer/reviewer per the project's hard rule.",
+        "Whether models/probe_models/base.py's actual load()/save()/grad_checkpointing()/trainable_parameters() behavior (LoRA merge-on-save, checkpoint restore) matches what trainer.py assumes -- that file is outside this diff (built by an earlier ticket) and only exercised here through report-pasted CPU-stub tests.",
+        "Whether eval/utils/probe_eval.py's match_ctool/match_cgen/match_cparam and its PROBE_KIND/MATCH_VERSION tables actually behave as these three method files assume -- that file is imported but not touched by this diff."
+      ],
+      "concerns": [
+        "batches(df, tok, cfg) reads no epoch at all (uses plain cfg.train.seed, one call = one pass); trainer.run calls it fresh once per epoch instead. The ticket's prose says the per-epoch shuffle is random.Random(cfg.train.seed + epoch), but 2.6 pins the 3-arg signature with no epoch channel, and the ticket's own A3.3 acceptance script hands a cfg.train SimpleNamespace with no epochs field at all -- calling it with the epoch-loop design raises AttributeError. I followed the executable evidence (the acceptance fixture) over the prose; flagged in the report for the owner in case a real per-epoch-varying shuffle was intended via some other channel.",
+        "Added device=\"cuda\" if torch.cuda.is_available() else \"cpu\" to both trainer.py calls to base.load, which the ticket's literal pinned call and 2.6's own signature table do not include, but the merged models/probe_models/base.py has device: str = \"cpu\" as a real default -- without passing it, a real GPU train run would silently build the model on CPU. Not exercised by any CPU acceptance command (all run with cuda unavailable, and A3.4's stub base.load swallows all kwargs).",
+        "The resume path (last/ present, commit matches) fast-forwards past already-completed optimizer groups without recomputing their gradients, but does not carry the pre-crash best objective across the resume -- the first post-resume validation unconditionally becomes the new best/, even if worse than what a crashed incarnation already saved. No acceptance command in this ticket exercises resume (it is GPU item 3, the main session's to run); flagged in the report as a real, untested gap.",
+        "counts.dropped_overlong in done.json is computed once in trainer.py over the train split only, via a method-agnostic 'longest row's text exceeds max_len' rule, rather than being summed from each method's own internal drop count (batches()/predict() have no return channel for it). It undercounts drops that only happen on val/test rows during predict(). No acceptance command inspects this field.",
+        "The ticket's own prose has an internal inconsistency: it says trainer.py's import is 'from data import training_data, probe_output' but then claims the resulting aliases are 'trainer.example' and 'trainer.prediction' (stale names from before an earlier ticket's rename, whose .pyc files are still in data/__pycache__/). I followed the literal import statement (which is also what the actual current module names require): trainer.training_data and trainer.probe_output.",
+        "README.md's new entries import eval/utils/probe_eval.py (match_<method>) for the three method files, not eval/methods/<method>.py as contracts 0.2's tree literally still spells -- 0.2 predates the eval-fold errata the ticket's own 'Comments' section says already landed, and eval/methods/ does not exist in this worktree. This makes my README text diverge from a literal reading of contracts 0.2, by design, to match the code I actually wrote and the eval side as it now exists."
+      ]
+    },
+    {
+      "id": "14",
+      "status": "DONE",
+      "branch": "ticket/2026-09-18-wave5/T14",
+      "commits": {
+        "base": "f520b875a97234ca43eb241ca3bb8ec49c3a497e",
+        "head": "6e85a880164dcb3275a7de0a20746767507f8195"
+      },
+      "rounds": 1,
+      "openFindings": [],
+      "minors": [
+        {
+          "id": "F3",
+          "severity": "minor",
+          "title": "README.md's run.py entry omits real read-sources present in the actual code and in contracts 0.2",
+          "file": "README.md",
+          "detail": "README.md's `run.py` entry (line 61) lists `reads:` as `experimental_settings/*.yaml (through schema), every run directory's settings.yaml / meta.json / done.json / consumed.json and the upstream files it names, the sample or inject run's task records ..., the environment's split task-id files ..., the probe report of a referenced classifier eval run ..., jobs/runs.jsonl, constants/path_outputs.yaml (the login_host refusal), constants/path_datasets.yaml (the venvs map)`. This drops two things contracts.md's own 0.2 entry for run.py lists and that the code actually does: reading `heartbeat/*.jsonl` directly (run.py's `_read_beats`, used by the CPU-stage open-row gate) and 'ssh and tmux (through jobs/registry.py's live_sessions...)' (run.py calls `registry.live_sessions()` in both `_stage_step`'s partial-piece check and `_start_cpu_stage`'s gate). Contracts 0.1 allows the README description to be 'shortened where they repeat,' but these are two distinct I/O behaviors dropped outright rather than condensed, so the README's own `reads:` line for its own newly-written file is incomplete relative to what the code does. This doesn't fail any acceptance check (D1 only checks the label keys are present, not their content) and doesn't affect selfcheck's `ast`-based import check, so it's a documentation-accuracy gap rather than a functional one."
+        }
+      ],
+      "cannotVerify": [
+        "The full launch path for a card stage (sample/inject/train via jobs/launch.launch, including whether a relaunch actually 'reuses the run's live service pieces' as contracts 1.1/2.3 require) cannot be exercised from this diff alone: it requires a GPU run, which is explicitly out of this ticket's scope ('GPU / main session \u2014 not yours'). Acceptance C4-C6 only exercise key/dir computation, never an actual launch.",
+        "The inject-specific gates (_check_inject_probe_methods, _check_inject_shared_build_key, _check_inject_code_currency, _resolve_inject_temperature) and their runtime behavior against real train/eval run directories cannot be tested in this wave-5 worktree, because train/ does not exist yet; the ticket itself defers the full sweep over inject to ticket 15's D7 in wave 6. Verified only by static reading against experimental_settings/schema.py and the contracts text.",
+        "Whether jobs/launch.py's launch() genuinely 'reuses the run's live service pieces' on a relaunch (the second half of contracts 1.1/2.3's promise, and relevant context for finding F1) cannot be assessed from this diff, since jobs/launch.py is not part of this ticket's changes.",
+        "Concurrency behavior of the open-row / finish-row bookkeeping (cmd_kill's open_ids check, _backfill_finish_row's TOCTOU window between checking registry.open_runs() and taking registry.lock()) against a live, populated registry with two simultaneous run.py invocations was not exercised; only the empty-registry path (C3) was run.",
+        "The full 31-file selfcheck cross-validation (README vs. the real import graph, the /home//net/ rule enforcement, the axis-literal checks) is explicitly ticket 15's job (selfcheck currently raises SystemExit as pinned) and cannot be verified here."
+      ],
+      "concerns": [
+        "The full multi-stage walk (skip test, partial-piece release, the two inject gates, the CPU-stage spawn-and-wait, done.json/finish-row writing) is implemented to the letter of contracts 2.3-2.5/8.1-8.2 as best I can read them, but no acceptance command in this ticket exercises it end to end (that is explicitly ticket 15's D6/D7 in wave 6, plus the GPU/main-session M-J* walks) -- it has only been syntax/import-checked and reasoned through, not run against a live launch.",
+        "Two places where the ticket's own prose is ambiguous and I made a documented judgment call: (1) write_done's 'versions=cfg._versions' / 'commit' for a sample/inject completion is read as the *frozen* setting (schema.load_frozen(run_dir)), not the in-memory walk cfg, since the latter's _versions/_commit are always empty for a schema.load()-built Setting; (2) 'registry.open_runs()'s refusal' for a CPU stage is implemented as jobs.launch.gate_open_row fed by registry.open_runs(), mirroring the card-stage gate, using a small local duplicate of jobs.launch's private heartbeat reader since that name isn't exported.",
+        "Inherited limitation (not introduced by me, out of this ticket's two-file scope): jobs.launch.gate_open_row's liveness test is tmux-session based, so a cpu-kind piece (no session field) can never be seen as 'live' by that gate; within launch_timeout_s of a CPU stage's own launch this could in principle let a second run.py invocation slip past the open-row refusal. Flagged for the owner in the report; jobs/launch.py is untouched.",
+        "retry/refire/kill never take --debug, matching this ticket's own pinned section-1 command-line list exactly, but as a consequence none of the three can target a debug run's stage.",
+        "README.md's file-header format uses flush-left full relative paths (per contracts 0.1's own canonical example) rather than contracts 0.2's nested tree-drawing indentation, and includes one entry (CLAUDE.md) beyond the six non-Python categories the ticket's own prose names -- both documented as judgment calls in the report, section 2 and 7."
+      ]
+    }
+  ]
+}

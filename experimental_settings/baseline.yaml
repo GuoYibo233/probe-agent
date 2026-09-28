@@ -1,0 +1,12 @@
+# Workflow: collect trajectories with the agent model alone, then score them.
+# A new experiment is a new named setting in this file (contracts 5.1).
+workflow: [sample, score]
+
+common:
+  data:   {env: appworld, instructions: v1}
+  models: {agent: gpt_oss_120b}
+
+gpt_oss_120b_appworld:
+  meta:   {notes: "AppWorld trajectories from gpt-oss-120b with no probe; the baseline an inject run is scored against"}
+  sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
+  score:  {by_seed: true}

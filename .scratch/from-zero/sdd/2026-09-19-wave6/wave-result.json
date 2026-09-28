@@ -1,0 +1,41 @@
+{
+ "feature": "from-zero",
+ "wave": "2026-09-19-wave6",
+ "tickets": [
+  {
+   "id": "15",
+   "status": "DONE",
+   "branch": "ticket/2026-09-19-wave6/T15",
+   "commits": {
+    "head": "c21c566 T15: check 4 also enforces the pinned VERSION rule comment block (branch ticket/2026-09-19-wave6/T15)"
+   },
+   "rounds": 1,
+   "openFindings": [],
+   "minors": [],
+   "cannotVerify": [],
+   "concerns": []
+  },
+  {
+   "id": "16",
+   "status": "DONE",
+   "branch": "ticket/2026-09-19-wave6/T16",
+   "commits": {
+    "base": "f1f849ebd04a4de2e26d01407825f535f6638c9a",
+    "head": "602d5d1e70de93c787e376bf67e40766af39791b"
+   },
+   "rounds": 0,
+   "openFindings": [],
+   "minors": [],
+   "cannotVerify": [
+    "The ticket's 'GPU / main session' item (C7/C8 run over all of .claude/ after ticket 17 merges, and the three end-to-end --debug walks under the rewritten skills) is explicitly marked 'not yours' in the ticket and needs the next wave's files to exist; not checkable from this diff.",
+    "Whether the repo-review skill's own Chinese trigger clause wording ('审查仓库' / '复盘整棵树' / '两天复盘' / '查一遍仓库', the implementer's own composition since the ticket names no specific phrases) matches what the owner (gyb) would have picked cannot be verified from the diff alone; it is a judgment call the ticket left open and the report flags for the owner's eye.",
+    "Point 1 of repo-review/SKILL.md ('What it reviews') omits the ticket text's descriptive '31-file' qualifier on the tree; there is no acceptance check for this phrase and the ticket's own wording here reads as descriptive framing rather than mandated literal text, so I could not determine whether this is a real gap or immaterial paraphrase."
+   ],
+   "concerns": [
+    "repo-review/SKILL.md's Chinese trigger clause is my own composition (the ticket specifies only that it must end with one, in the shape of the other two skills, not the exact phrases) — worth the owner's eye.",
+    "repo-review/SKILL.md cites notes/docs/agents/issue-tracker.md and notes/docs/agents/triage-labels.md, which do not exist yet on disk (files currently live at docs/agents/...); this is the ticket's explicit instruction anticipating ticket 18's wave-7 git mv docs notes/docs, not an assumption I made.",
+    "run.py selfcheck is a stub on this branch's base commit because sibling ticket 15 (same wave, parallel worktree) had not merged when I ran it, so I could not get a real pass/fail signal from it; nothing in this ticket's scope depends on it."
+   ]
+  }
+ ]
+}

@@ -29,7 +29,7 @@ two reviewer red lines, the related-work paragraph template — go through it on
 
 ## 1. Hard rules (non-negotiable)
 
-- **Number provenance**: every experiment number in the paper must be traceable to a run_id in `ops/runs.jsonl`.
+- **Number provenance**: every experiment number in the paper must be traceable to a run_id in `jobs/runs.jsonl`.
   How: inside a table/figure environment that contains numbers, add a line `% source: run_id=<id>` (can be
   multiple). check_paper.py soft-warns on a numeric table missing this annotation. **Hand-filling a number with
   no traceable run_id is an incident.**
@@ -57,7 +57,7 @@ build.sh uses latexmk (it runs bibtex and extra passes automatically); never han
 
 ## 3. Sourcing discipline while writing
 
-- Need a number: look it up in `RESULTS.md` / `ops/runs.jsonl` first to get the run_id and the value, and add a
+- Need a number: look it up in `jobs/RESULTS.md` / `jobs/runs.jsonl` first to get the run_id and the value, and add a
   source comment to the table.
 - Prefer building tables from existing artifacts; table styling follows FORMATTING.md §7 (booktabs, readable in
   grayscale, caption conventions).
@@ -80,5 +80,5 @@ boundary between body and references is checked by eye).
 
 - Staged draft → git commit (the paper's tex is an engineering asset, checked in; the PDF and compile
   intermediates are not).
-- Structural writing decisions (e.g. cutting a section, changing the main narrative) → add a TIMELINE.md entry,
+- Structural writing decisions (e.g. cutting a section, changing the main narrative) → add a `notes/TIMELINE.md` entry,
   with the same weight as an experiment decision.

@@ -1,0 +1,161 @@
+{
+ "rulings_of": "gyb, 2026-09-18, in session fork3's conversation",
+ "workflows": {
+  "table+score+registry": {
+   "run_id": "wf_eafc08b8-b86",
+   "agents": 8,
+   "result": [
+    {
+     "key": "table",
+     "branch": "ticket/2026-09-18-wave4/T10-table-ruling",
+     "base": "d1a4e60ffb50436bd4a8d7e8a3df5b194e71fe54",
+     "head": "b497315 (branch ticket/2026-09-18-wave4/T10-table-ruling)",
+     "rounds": 2,
+     "status": "DONE",
+     "openFindings": [],
+     "minors": [
+      {
+       "id": "N1-2",
+       "severity": "minor",
+       "file": ".scratch/from-zero/contract-errata.md",
+       "title": "the errata entries the rulings overturn are left stating the removed behavior",
+       "detail": "The diff touches only eval/method_table.py and README.md. Errata line 160 still states the rule as \"`backbone` is read off the train row: ... then the row of the same `registry.ls(workflow, debug=False)` result whose `stage` is `train` and whose `key` equals it\" and marks it \"open for the owner\" — that is precisely the lookup RULING-1 deleted. Errata line 161 still ends \"Open for the owner: `M-E2` over a non-debug run, or a way for `table` to show debug rows\" — closed by RULING-2. Nothing records the new deviation from the contracts either: notes/plans/2026-09-17-contracts.md:4703 pins `eval/method_table.table(workflow: str | None = None, out: Path | None = None) -> str` and says \"grouped by `parent`\", and lines 3398, 4445 and 5283 also state the parent grouping, all of which the diff now contradicts. A reader following the ticket's named sources reaches the superseded rules."
+      },
+      {
+       "id": "N1-3",
+       "severity": "minor",
+       "file": "eval/method_table.py",
+       "title": "the new backbone lookup re-reads path_outputs.yaml and stats the outputs root once per eval row",
+       "detail": "`_backbone_of` (line 37) now calls `schema.run_dir_of`, which calls `_outputs_config()` -> `_read_yaml(\"constants/path_outputs.yaml\")` (experimental_settings/schema.py:363-364, 376-377, 1164). Neither `_read_yaml` nor `_outputs_config` is cached — `_read_yaml` re-reads and re-parses the file on every call — so a table over N eval groups parses that YAML N times and adds one more `.exists()` stat on the NFS outputs root per group, on top of the meta.json and probe_report.json reads already there. The old code answered the backbone from the in-memory `all_rows` list with no filesystem access at all. Correctness is unaffected; it is extra work that grows with the table."
+      },
+      {
+       "id": "N2-1",
+       "severity": "minor",
+       "file": "eval/method_table.py",
+       "title": "table(debug=True) now prints the debug run and the real run as two rows that no column tells apart",
+       "detail": "Consequence of the new grouping key (line 90). With a real and a debug eval of setting `cls_main`, `table(\"wf\", debug=True)` printed `| qwen3_1pt7b | ctool | 0.05 | 4 | 0.1000 | ... | 1 | OK |` and `| qwen3_1pt7b | ctool | 0.05 | 1000 | 0.9000 | ... | 1 | OK |` — identical in every identifying column (backbone, method, risk), differing only in the numbers, with nothing saying which one is the 4-task debug walk. The numbers are no longer wrong, which is what N1-1 asked for, but a reader of the M-E2 output still has to know from outside the table which row to read. The ambiguity is not created by this diff alone: `_COLUMNS` (lines 12-15) carries no setting-name column, so any two settings sharing backbone/method/risk already render as indistinguishable rows — I confirmed this on the same fixture with two sweep children (`sw/train.lr=0.0001` and `sw/train.lr=0.0003`), which printed as two `| qwen3_0pt6b | cgen | 0.05 |` rows. The diff extends that pre-existing gap to the debug case rather than introducing it, and the fix report states the choice explicitly (the contract-pinned thirteen columns were left alone), so this is a note for the owner, not a defect in the fix."
+      }
+     ]
+    },
+    {
+     "key": "score",
+     "branch": "ticket/2026-09-18-wave4/T10-score-ruling",
+     "base": "d1a4e60ffb50436bd4a8d7e8a3df5b194e71fe54",
+     "head": "a120a606",
+     "rounds": 1,
+     "status": "DONE",
+     "openFindings": [],
+     "minors": [
+      {
+       "id": "N1-1",
+       "severity": "minor",
+       "file": ".scratch/from-zero/issues/10-eval-generators-scorer-and-table.md",
+       "title": "Ticket 10's A8 acceptance command still asserts the by_seed block the ruling deleted",
+       "detail": "The diff removes report.by_seed, but the ticket's A8 at line 561 still runs `assert rep[\"spec\"][\"n\"] == 0 and rep[\"by_seed\"][\"42\"][\"n_records\"] == 2`, which now raises KeyError, so A8 as written can no longer pass; the ticket's step text at lines 185-222 likewise still enumerates steps_mean, tokens_out, the resume block, the by_seed block and the done.json metrics tokens_out/spec_exec_ok. The fix report discloses this and says the acceptance text was deliberately left unedited, so this is drift for the owner/planner to close (edit the ticket, or record it in .scratch/from-zero/contract-errata.md alongside the ruling), not a code defect. Same class: contracts 5.2 still lists score.by_seed as a keyed field with the line \"report mean and spread across seeds\", which nothing implements any more; the ruling anticipated that and the docstring TODO records it."
+      }
+     ]
+    },
+    {
+     "key": "registry",
+     "branch": "ticket/2026-09-18-wave4/T03-alias-ruling",
+     "base": "d1a4e60ffb50436bd4a8d7e8a3df5b194e71fe54",
+     "head": "08d31a83331082502c840f5c05cd62ab7a08e09b",
+     "rounds": 1,
+     "status": "DONE",
+     "openFindings": [],
+     "minors": [
+      {
+       "id": "N1-1",
+       "severity": "minor",
+       "file": ".scratch/from-zero/sdd/2026-09-18-wave4/T03-registry-ruling-report.md",
+       "title": "the fix report and the commit message state the bug's direction backwards",
+       "detail": "Report line 16-17 and the commit message of 08d31a8 both say the aliased piece on a failed-probe host 'was therefore reported alive instead of dead, breaking 3.4's fail-closed rule'. The direction is inverted. The old code tested `host in sessions.failed_hosts` on the raw string, so for host 'shiga' the test was False, execution fell through to `session in sessions`, and with the host's probe having failed the session was absent — the piece was reported DEAD. I ran both versions: merged tree `_alive_on('shiga', 'sess-x', probed(failed={tokyo105, tokyo108}))` returns False, branch returns True. Fail-closed means reporting alive when the probe could not answer, which is what the fix restores. The code is right; only the two prose records misdescribe what was wrong, which will mislead anyone auditing this ruling later. The ruling text in the ticket itself has it correct ('is reported dead against 3.4's fail-closed rule')."
+      },
+      {
+       "id": "N1-2",
+       "severity": "minor",
+       "file": "jobs/registry.py",
+       "title": "cards_busy keys busy cards by the piece's raw host while free() looks them up by the canonical name",
+       "detail": "Code the diff did not touch, recorded as minor per the protocol. cards_busy() (registry.py around line 602) does `busy.setdefault(host_name, set()).update(ids)` with host_name = piece.get('host'), the raw string off the meta.json pieces list, while the dict was initialised from cfg['hosts'] under host['name'] and free() (around line 612) subtracts with `busy.get(name)` for the canonical name only. A piece recorded under 'shiga' or 'saitama' would deposit its cards under the alias key, which free() never reads, so those cards would be reported free while in use. It is latent rather than live today: the only pieces currently recorded under an alias are loop and cpu pieces from jobs/launch.py:757 and :848, and both carry gpus = '' or none, so cards_busy skips them at `if not host_name or not gpus: continue`. Any future placement that puts a GPU piece on the login host under its alias makes it real. The same _canonical_host(host, cfg) call this ruling added would close it."
+      }
+     ]
+    }
+   ]
+  },
+  "schema": {
+   "run_id": "wf_1661d622-520",
+   "agents": 2,
+   "result": {
+    "branch": "ticket/2026-09-18-wave4/T04-schema-ruling",
+    "base": "d1a4e60ffb50436bd4a8d7e8a3df5b194e71fe54",
+    "head": "ba97dd919180cb046d5bbd2031e75cbb9f99ff37",
+    "rounds": 1,
+    "status": "DONE",
+    "openFindings": [],
+    "minors": [
+     {
+      "id": "N1-1",
+      "severity": "minor",
+      "file": "notes/plans/2026-09-17-contracts.md",
+      "title": "Contracts 5.2 and the errata still describe the two removed inject fields as keyed",
+      "detail": "Untouched by this diff, so minor per the protocol. The written contract now disagrees with the code: contracts line 1652 lists `chunk_tokens, tail_tokens` in the inject stage's keyed-field row, lines 3196-3197 still give them as `int` fields with defaults 64 and 1024 marked keyed, and .scratch/from-zero/contract-errata.md:58 still records the resolution as \"the port follows v4 and carries them in the setting and in meta.inject only\". Recording the ruling into the errata/contract is the main conversation's step (its task list item \"Record the rulings\"), not this ticket's, but until it happens a reader of 5.2 would write a YAML the loader now refuses."
+     },
+     {
+      "id": "N1-2",
+      "severity": "minor",
+      "file": ".scratch/from-zero/issues/11-agent-loop.md",
+      "title": "Ticket 11's pasted acceptance commands construct Inject(chunk_tokens=..., tail_tokens=...)",
+      "detail": "Untouched by this diff, so minor. Lines 738 and 836 of issue 11 (and .scratch/from-zero/plan-agent.md:783, .scratch/from-zero/sdd/2026-09-18-wave4/T11-report.md:420) build a fixture with `Inject(..., chunk_tokens=64, tail_tokens=1024, store_token_ids=True, ...)`. Re-running those pasted checks against the new schema raises `TypeError: __init__() got an unexpected keyword argument 'chunk_tokens'`. No merged code is affected: the only non-legacy *.py hits for either name anywhere in the branch tree are none (legacy/pipeline/inject/live_appworld.py:773 and legacy/pipeline/inject/test_stopfix.py:163 are the old tree, which nothing imports)."
+     },
+     {
+      "id": "N1-3",
+      "severity": "minor",
+      "file": ".scratch/from-zero/issues/04-setting-schema-and-loader.md",
+      "title": "Ticket 04's own pasted expectations are now stale in three places",
+      "detail": "Untouched by this diff and deliberate (the implementer was told not to edit the ticket), so minor bookkeeping for whoever closes the ticket: line 104 states the Inject defaults `chunk_tokens: int = 64; tail_tokens: int = 1024`, lines 243-244 paste the old `STAGES['inject']['sections']` tuple with both dotted names, line 412 cites their legacy provenance, and line 541's B2 assertion dereferences `i.chunk_tokens`/`i.tail_tokens` so it now raises AttributeError. The defaults table in the same ticket also still implies `train.warmup_ratio` defaults to 0.0. The report calls out the B2 line (report lines 66-79) but not the other three."
+     },
+     {
+      "id": "N1-4",
+      "severity": "minor",
+      "file": "experimental_settings/schema.py",
+      "title": "No reader for train.warmup_ratio exists yet, and the report's D2 open question is explained by the missing trainer",
+      "detail": "Untouched code, so minor. Two related observations for the main conversation. First, `train/` does not exist on this branch (`git ls-tree` shows no train/ entries), so nothing currently reads `cfg.train.warmup_ratio`; when the trainer is built it must read this field rather than repeat the hard-coded 0.05, otherwise the key moves with the setting while the behaviour does not. Second, the report's open question at lines 228-236 (D2 prints `trainer VERSION moves train, not build: False True` instead of `True True`, on this branch and on base d1a4e60) is consistent with that same absence: `STAGES['train']['versions']` names `train/utils/trainer.py`, which exists only as an mkfix.sh stub in the fixture tree, so the fold is being exercised against a stub rather than real code. I did not run D2 myself; it is unrelated to this diff and should be re-checked after the train/ wave lands, not treated as a schema defect now."
+     }
+    ]
+   }
+  },
+  "builder": {
+   "run_id": "wf_95341b9c-a3f",
+   "agents": 2,
+   "result": {
+    "branch": "ticket/2026-09-18-wave4/T09-builder-ruling",
+    "base": "d1a4e60ffb50436bd4a8d7e8a3df5b194e71fe54",
+    "head": "dfba7dc (branch ticket/2026-09-18-wave4/T09-builder-ruling)",
+    "rounds": 1,
+    "status": "DONE",
+    "openFindings": [],
+    "minors": [
+     {
+      "id": "N1-1",
+      "severity": "minor",
+      "title": "a systemically broken build_call now degrades the dataset quietly instead of stopping the build",
+      "detail": "data/build_training_dataset.py: the round-trip gate that contracts 2.5 made a hard stop (\"a row that fails it is a defect in the environment file rather than a known loss\") is now the same skip path as a rare bad value. Measured: with AppWorld.build_call patched to drop its arguments, my fixture's build exits 0, writes 6 examples instead of 18, counts 18 events under events_skipped_no_call and names all 12 failures only in report.md. This is what RULING-9 orders (\"no special case\", everything but \"the call rebuilds and round-trips\" skips), so no code change is proposed here; recording it because contracts 2.5 and the ticket's F3 bad_call row still describe the old hard stop and will read as a failing acceptance line until the errata records the ruling. The implementer flagged the same thing in the report's self-review."
+     },
+     {
+      "id": "N1-2",
+      "severity": "minor",
+      "title": "report.md gains one unbounded line per refused event",
+      "detail": "data/build_training_dataset.py: refused_call_lines has no cap, and each line carries the full reason, including reprs of the built call, the tool, the argument list and the re-parsed tuple for a round-trip mismatch. Over the rare-value case the ruling targets this is a handful of lines, but when the failure is systemic every event of the build gets a line (12 lines from 6 four-event records in my fixture), so on a full-scale build report.md would grow by one long line per event. counts in done.json carry no refusal number (the ruling forbids a new count name), so the machine-readable signal of such a build is only the examples-to-events ratio."
+     }
+    ]
+   }
+  }
+ },
+ "merges": {
+  "T03-alias-ruling": "772ecb6",
+  "T04-schema-ruling": "2169c4e",
+  "T09-builder-ruling": "5a0ad25",
+  "T10-table-ruling": "b72fe5b",
+  "T10-score-ruling": "014f57f"
+ }
+}

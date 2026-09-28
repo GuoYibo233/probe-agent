@@ -1,0 +1,89 @@
+{
+  "feature": "from-zero",
+  "wave": "2026-09-17-wave2",
+  "tickets": [
+    {
+      "id": "04",
+      "status": "DONE",
+      "branch": "ticket/2026-09-17-wave2/T04",
+      "commits": {
+        "base": "943af829b83f8f66d4b4a6434f4a685b2b2f9c10",
+        "head": "74cd513"
+      },
+      "rounds": 1,
+      "openFindings": [],
+      "minors": [
+        {
+          "id": "F3",
+          "severity": "minor",
+          "title": "Unreachable refusal branch for a bare `probe:` section under an inject workflow",
+          "detail": "In `_check_raw_sections` (experimental_settings/schema.py, ~line 509), the generic per-section loop already rejects a top-level `probe:` key with \"probe: no stage of this file's workflow reads this section\" for any workflow lacking a `train` stage (since `probe` isn't in `_yaml_allowed_sections` there) -- which is every inject-workflow setting file that exists in this repo (inject.yaml's workflow is [inject, score]). The more specific inject-only check right below it, `if \"probe\" in d: raise SchemaError(\"probe: a setting whose workflow contains inject may not state a probe section\")`, is therefore dead code for every realistic file: it would only ever fire for a hypothetical workflow that names both `inject` and `train` at once. Not a functional bug -- the acceptance test only checks that the message names the field `probe`, which both branches satisfy -- but the second message is effectively unreachable and should be removed or the ordering reconsidered.",
+          "file": "experimental_settings/schema.py"
+        },
+        {
+          "id": "F4",
+          "severity": "minor",
+          "title": "A couple of unused local variables",
+          "detail": "`_apply_fields` binds `f = next(f for f in dc_fields(cls) if f.name == key)` (~line 467) and never reads `f` afterward (the existence check it seemingly performs is already covered by the `key not in names` check two lines above). The override-application loop in `_merge_one` (~line 550) unpacks `field_name` from `dotted.partition(\".\")` and never uses it. Both are harmless dead assignments, cosmetic only.",
+          "file": "experimental_settings/schema.py"
+        }
+      ],
+      "cannotVerify": [
+        "B4's full-tree axis-literal cross-checks (data.env against data/environments/*.py, probe.method against train/methods + eval/methods, inject.format/inject.arm against agent/inject_format.py + agent/inject.py) cannot be checked yet: those files/directories don't exist in this wave (only constants/path_datasets.yaml exists), and the ticket itself marks the full rerun (without the fixture, against the real tree) as GPU/main-session item M-G3, to run once every other folder has merged.",
+        "The real-tree (non-fixture) rerun of B4, C1, C2 and D1-D5 against the actual models/table.yaml, data/environments/appworld.py, models/agent_models/gptoss.py, models/probe_models/qwen.py and real VERSION lines is explicitly marked 'GPU / main session \u2014 not yours' (M-G3) in the ticket; only the fixture-based runs are this ticket's responsibility, and I reproduced those independently with matching results.",
+        "run.py selfcheck's cross-checks (README annotation vs. the AST import graph, every axis literal vs. what's on disk, every versions-cell module having exactly one column-zero VERSION, model table aliases vs. constants/path_models.yaml) cannot be checked: run.py doesn't exist until wave 6, and the ticket's own 'Selfcheck lines that apply later' section defers this correctly.",
+        "versions_of's {probe_score_method} placeholder substitution for a pinned (key: or dir:) form of inject.probe_score cannot be verified against the contracts: no contract text says how to recover the referenced setting's probe.method from a bare pinned key without touching the output tree (which 3.2 rule 2 forbids), and the ticket's acceptance suite (C3/C4/C5/D1/D2) only ever exercises name-syntax references. The implementer flagged this open question themselves and chose to raise a SchemaError naming it rather than guess; whether that's the intended resolution needs a decision from the main session, not something checkable from this ticket's contracts text alone."
+      ],
+      "concerns": [
+        "D2's last print statement expects `S.key('train', c2) != S.key('train', c)` to be True, but got False. Root cause: the script never snapshots `S.key('train', c)` before editing trainer.py (unlike the probe_eval sub-test one line above it, which does snapshot `k0` first) -- key() correctly reads VERSION live from disk every call (per 3.3's explicit design), so two structurally-identical settings queried after the same edit necessarily key alike. I reproduced the probe_eval-style before/after snapshot pattern for trainer.py and got the ticket's expected 'True True', confirming the schema's VERSION-folding is correct and the D2 script itself has the bug. Documented in full in the report per spec.md section 7.",
+        "The ref-field check order (eval.theta_from -> score.baseline -> inject.probe_score -> inject.probe_gen) is my own choice, not pinned by the ticket; it's required to make C4's last two cases pass given that an earlier C4 case in the same fixture-reuse script leaves train_probe.yaml corrupted on disk for later cases.",
+        "versions_of's {probe_score_method} substitution (used only in inject's version list) cannot be resolved for a pinned key:-form reference (no Setting object, no path to read the method from without touching the output tree); I raise SchemaError naming this. Untested by the ticket's acceptance suite and not exercised by any of the three real setting files yet."
+      ]
+    },
+    {
+      "id": "05",
+      "status": "DONE",
+      "branch": "ticket/2026-09-17-wave2/T05",
+      "commits": {
+        "base": "943af829b83f8f66d4b4a6434f4a685b2b2f9c10",
+        "head": "7cc4d6543fd01588c7a901e0521f28044adc50f2"
+      },
+      "rounds": 0,
+      "openFindings": [],
+      "minors": [],
+      "cannotVerify": [
+        "README's 'used by' lines for data/environments/__init__.py and appworld.py name callers in files that do not exist yet on this branch (agent/loop.py, agent/inject.py, data/build_dataset.py, train/methods/{cgen,cparam}.py, eval/methods/{cgen,cparam}.py, eval/score_run.py, jobs/launch.py, run.py) \u2014 whether each named caller actually imports/uses these files the way the README claims can only be checked once those tickets land.",
+        "The 'Selfcheck lines that apply later' cross-checks (run.py selfcheck: VERSION/INSTRUCTIONS/SPLIT_ROLE literal counts, data.env axis vs file names, README annotation lines vs ast-parsed import graph) require run.py, which the ticket and report both confirm does not exist yet (wave 6) \u2014 not checkable in this diff.",
+        "The three whole-tree checks the ticket explicitly marks 'not yours' (a --debug sample walk producing nine record files with the right meta fields, a --debug inject walk with spec rows and no clock-drift RuntimeError, and run.py selfcheck) need other folders/tickets not yet built and are deferred to the main session per the ticket itself.",
+        "B4's real-corpus round-trip counts (4074 total, 4040 parsed, 4040/4040 round-tripped) depend on trajectory files on NFS; the implementer pasted the command and output so it was not rerun in this review, per the reviewer protocol's rule that pasted evidence doesn't need reproducing.",
+        "open_env's behavior when one of the nine methods or seven class attributes is actually missing (the exact wording/grouping of the combined ValueError) is not exercised by any acceptance command in the ticket, so the implementer's reading (Decision 4 in the report: one combined refusal, methods then attributes, each sorted) has no test oracle to check it against."
+      ],
+      "concerns": [
+        "A0b's literal acceptance command crashes with AttributeError under system python3's dataclasses.py (_is_type does an unchecked sys.modules.get(cls.__module__).__dict__): this is a genuine CPython stdlib limitation that fires for ANY @dataclass with `from __future__ import annotations` loaded via module_from_spec+exec_module without first registering the module in sys.modules (importlib's own documented usage does register it first; the ticket's command does not). Reproduced with a two-line unrelated dataclass, and confirmed present under all three of system python3 (3.10.12), probe-env (3.11.15) and appworld venv (3.12.13). Both @dataclass (contracts 4.1) and `from __future__ import annotations` (spec.md section 5) are mandatory, so there is no code-level fix available; a corrected loader script (adding `sys.modules[name] = m` before exec_module) does print the expected `1 StepObservation`.",
+        "B6's second python block (computing appworld_at_module_level) crashes with AttributeError('Import' object has no attribute 'module'): its list comprehension unconditionally accesses `.module`, which only ast.ImportFrom nodes have, not plain ast.Import nodes (`import os`, `import re`, etc.) \u2014 a script bug that would hit any file using ordinary `import x` statements, including already-merged files like data/task_record.py and jobs/registry.py. Restyling appworld.py's imports into from-X-import-Y form solely to dodge this felt like gaming a broken check rather than a real fix, so I left normal import style and verified the intended property (no module-level `appworld` import) with a corrected diagnostic script, which prints appworld_at_module_level False.",
+        "Recommend both acceptance-script defects (A0b, B6) get fixed in the ticket file before wave 6, since run.py selfcheck may rely on similar patterns.",
+        "Two judgment calls with no acceptance coverage, documented in the report's Decisions section: (1) open_env's combined single ValueError naming every missing method+attribute together rather than two separate refusals; (2) the exact bracket/quote-depth scan used to decide when build_call must quote a value ('_bare_safe'), validated only indirectly via B3's four cases and B4's 4040/4040 real-corpus round-trip, not by an acceptance case naming the exact rule."
+      ]
+    },
+    {
+      "id": "06",
+      "status": "DONE",
+      "branch": "ticket/2026-09-17-wave2/T06",
+      "commits": {
+        "base": "1895873b76c8614db0b7ea52dd103adae9e23a80",
+        "head": "7d2f53f6 (branch ticket/2026-09-17-wave2/T06, on top of fde660f)"
+      },
+      "rounds": 1,
+      "openFindings": [],
+      "minors": [],
+      "cannotVerify": [
+        "M-M1, M-M2, M-M5, M-M7 (agent service startup and check table, the date reaching the server, the probe service with real checkpoints on a card, and a trained probe reloading from best/ to reproduce validation accuracy to 1e-6) are explicitly marked GPU / main-session items in the ticket and depend on ticket 07's service files, which are not part of this diff; they cannot be checked here."
+      ],
+      "concerns": [
+        "A16's verbatim acceptance script crashes with AttributeError (ast.Import has no .module attribute) on models/agent_models/gptoss.py's top-level `import re` -- this is a bug in the ticket's own check script, not in the shipped code; documented in the report with a patched rerun confirming the underlying assertions hold.",
+        "The ticket/contracts' declared third-party import brackets for gptoss.py ([openai_harmony, inside render_ids()]) and qwen.py ([transformers]) omit `re` and `torch` respectively, both of which the files legitimately need (re at module level per the any-venv convention already used by data/probe_input.py; torch deferred inside attach_head). Flagged in the report for ticket 14/15's attention, no code change made.",
+        "row['dtype'] is read directly off the flattened probe_row dict on the fresh-load path; the ticket's prose doesn't spell out this exact key path but A12's test fixture confirms it."
+      ]
+    }
+  ]
+}

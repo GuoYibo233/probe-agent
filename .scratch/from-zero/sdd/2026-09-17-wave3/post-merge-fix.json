@@ -1,0 +1,27 @@
+{
+ "run_id": "wf_6f8f92d9-77e",
+ "result": {
+  "branch": "ticket/2026-09-17-wave3/T07-postfix",
+  "base": "cff38ef5d56d11e7c55c3b69fddd90138bfb8ad0",
+  "head": "e75eb38 (branch ticket/2026-09-17-wave3/T07-postfix)",
+  "rounds": 1,
+  "status": "DONE",
+  "openFindings": [],
+  "minors": [
+   {
+    "id": "N1-1",
+    "severity": "minor",
+    "file": "models/probe_models/service.py",
+    "title": "a 5xx from /score or /gen makes check die with a traceback instead of its own failure line",
+    "detail": "Line 237 (`score = client.score(_CHECK_PROBE_TEXT)`) and line 247 (`client.generate(...)`) are the first calls check makes to routes that can answer 503: a service started with --render-only returns 503 for both, and _request turns a 5xx into a raised RuntimeError after three attempts rather than a value check() can report. Verified with a stub server that answers /health as render-only (score_train_key/gen_train_key/temperature null) while the frozen setting has an inject section: check prints the three health mismatch lines and the /render line, then raises `RuntimeError: http://.../score: no score checkpoint is loaded (--render-only)` out of main(); /gen is never reached. The exit code is still 1 and the URL is in the message, so jobs/launch.py's service_check gate still fires correctly — that is why this is minor, not important — but the run costs ~3 s of retry backoff per route and the clean \"print the field, exit non-zero\" output pattern the rest of check uses is lost for that case."
+   },
+   {
+    "id": "N1-2",
+    "severity": "minor",
+    "file": "models/probe_models/service.py",
+    "title": "/score label is only checked non-empty, weaker than M-M5's \"a label from the checkpoint's labels\"",
+    "detail": "Line 241 is `label_ok = isinstance(label, str) and label != \"\"`. Ticket 07's M-M5 (around line 455) asks for a label from the checkpoint's `labels`. A service that returns a garbage but non-empty class name — a wrong checkpoint whose train_key happens to match, or a label field filled from the wrong tensor — passes this check. It cannot be tightened inside these two files: contracts 7.2's GET /health row and the ticket's echo line both list twelve fields with no `labels`, and the class list lives only in the checkpoint's best/meta.json, which check never opens. Closing it needs a contract/errata decision to add a thirteenth /health field; recorded here so the owner sees the gap rather than as a defect in the fix."
+   }
+  ]
+ }
+}

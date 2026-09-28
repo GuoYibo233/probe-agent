@@ -1,196 +1,198 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # new1 project rules
 
-## Everything written into this repo is English (user order, 2026-09-12)
+## The tree
 
-Every file and every new addition is written in English: code, comments,
-docstrings, runtime strings (errors, exit messages, argparse help, log lines,
-report titles), plan documents, and new ledger entries. Terminology follows the
-English terms in the `CONTEXT.md` glossary
-(probe / cut / fire / inject / launch / heartbeat / sampler / verdict / piece / refire).
-The whole repo was translated to English in one pass on 2026-09-12, including
-the ledgers and the archive; nothing on disk is Chinese any more, with two
-allowed exceptions. First, the `description` field of each skill and agent
-definition ends with one clause of Chinese trigger phrases, because those
-phrases route Chinese requests to the right skill. Second, each `CONTEXT.md`
-glossary entry keeps the original Chinese term once in parentheses after its
-English head term, because the glossary is the map from the words the user
-says in chat to the canonical English terms. The user speaks Chinese in chat;
-that never changes the language of a file.
+The tree is fixed and is never changed by an agent (moves, splits and renames
+are proposals only): `notes/plans/2026-09-14-structure-from-zero.md` (fourth
+draft) with the fixes in `notes/plans/2026-09-17-structure-review-synthesis.md`
+is the file list, `notes/plans/2026-09-17-contracts.md` is every interface
+that crosses a file boundary, cited by section and never edited, and
+`notes/plans/2026-09-17-construction-plan.md` recorded who built what.
+`README.md` holds one line per file: what it does, what it imports, who
+imports it, what it reads, what it writes, and its venv — read it before
+touching a file, and update the file's own line whenever you change it.
 
-## GPU jobs: the only entry is the gpu-run skill
+The code layers are `constants/` (the fixed paths and lookups), `data/`
+(formats and the probe input builder), `experimental_settings/` (the setting
+schema and the setting files themselves), `models/` (the agent and probe
+model modules and the two services), `agent/` (the collection loop),
+`train/` and `eval/` (the method files and their shared libraries), `jobs/`
+(the registry and the launcher), and `run.py` at the root, the one entry
+point.
 
-Any program that uses a GPU (training / inference / probe / vLLM, no matter how
-small) goes through the full life-cycle pipeline in
-`.claude/skills/gpu-run/SKILL.md`:
-probe the cards -> pick cards -> smoke -> commit before launch -> `launch`
-(tmux + registration in three places) -> hand over the monitoring command ->
-the sampler takes over verdicts and escalation -> wrap-up (report / record
-numbers / release / deregister / commit) or interruption.
-Hand-rolled ssh/nohup launches that bypass it are forbidden.
+`notes/` holds gyb's hand-written documents: `notes/TIMELINE.md`,
+`notes/DATA.md`, `notes/WORKPLAN.md`, `notes/METHOD.md`, `notes/CONTEXT.md`,
+`notes/plans/`, and `notes/docs/`. Agents
+read these and never edit them, except to append a `notes/TIMELINE.md` entry
+when asked.
 
-- Launch and registration collapse into one command, `python3 run.py launch`
-  (card probe / tmux / liveness check / three registrations in one go).
-- Cluster slow variables (driver / CUDA / pitfalls): `ops/gpu_state.md`
-- Job ledger: `ops/jobs.json`. `launch` registers automatically; wrap-up
-  deregisters with `python3 run.py gpu-jobs finish`; `gpu-jobs register` is
-  only for backfilling hand-rolled launches. Never edit the file body by hand.
-- Self-service monitoring: `python3 run.py gpu-jobs watch`; the web page
-  `http://localhost:8377` (ssh port forward) is served by the long-running
-  sampler `python3 run.py sampler`. No sampler, no web page.
-- Free cards right now: `python3 run.py gpu-jobs free` (never trusts cached
-  occupancy).
-- Outputs pinned to code: the launcher writes `RUNMETA.json` (commit + argv +
-  dirty list) into the output directory automatically; a hand-rolled launch
-  must backfill it with `python3 run.py runmeta <output dir> --cmd '<full command>'`.
+`external/` holds links to the venvs and clones: `external/appworld` (the
+AppWorld clone with its venv at `external/appworld/venv`, Python 3.12),
+`external/probe-env` (torch, transformers, peft; Python 3.11),
+`external/vllm-env` (vLLM; Python 3.12); nothing under it is in git.
+"Environment" in this repo means a benchmark, never a venv.
 
-## Probe pipeline: the whole chain goes through the probe-pipeline skill
+## One command
 
-To chain collect/annotate/train/eval into one batch (new dataset / new model /
-a matrix), use `.claude/skills/probe-pipeline/SKILL.md`: define the batch ->
-collect -> write code -> two acceptance lines -> build data -> smoke -> train
--> evaluate in dependency order -> matrix -> wrap-up -> **write back into the
-skill**. A single GPU job still uses only gpu-run; this skill manages the whole
-chain and hands each GPU step to gpu-run.
+Every stage is entered through `run.py`, never by calling an underlying
+module by hand. Eleven subcommands are reserved: `ls`, `where`, `find`,
+`kill`, `refire`, `retry`, `table`, `free`, `sync`, `version`, `selfcheck`
+(`run.py --help` lists them). Any other first word names a workflow file's stem, and a walk
+is:
 
-**Extending the pipeline also enters here**: adding a model / an environment /
-a training method (a new cell) / a split method. The change list is in
-`references/extending.md` (section 5, the table of silent failure points, is
-required reading). **After extending, write the skill back per Phase E**;
-without the write-back the next person gets the old map.
+```
+external/probe-env/bin/python run.py <workflow> <setting> [<setting> ...] [--debug] [--allow-dirty] [--cards <host>:<ids> ...] [section.field=value ...]
+```
 
-## Running tasks: always enter through run.py
+which freezes the setting, takes the launch gate, and walks that setting's
+stage list, one launch per named setting or sweep child. `run.py ls` reads
+progress and verdicts on demand, computed fresh from each run's heartbeat
+files; there is no background process and nothing to poll for freshness.
+Every `run.py` command runs on tokyo108, the `login_host` of
+`constants/path_outputs.yaml`, so that every registry row is written on one
+clock: typed on any other machine, `run.py` re-runs itself there over ssh and
+returns that exit code (`--help` and `selfcheck` run in place).
 
-Every task in the registry (collect / annotate / train / eval / replay
-injection / execute / live run, CPU or GPU) is entered through `run.py` at the
-repo root; calling the underlying scripts directly is forbidden:
-- CPU tasks: `python3 run.py <task> [args...]` runs directly; the interpreter
-  is set by the registry.
-- GPU / launch-type tasks: `python3 run.py show <task>` prints the command; the
-  launch itself still goes through the gpu-run skill. `show` applies the
-  dirty-tree gate to launch-type tasks too (`--allow-dirty` bypasses it); the
-  three ledger files and the locks (jobs.json / runs.jsonl / RESULTS.md /
-  *.lock) do not count as dirty.
-- Multi-step flows use `python3 run.py recipe <name>`; progress is in
-  `run.py status`.
-- A task missing from the registry is added to TASKS/RECIPES before it runs
-  (one-off launchers stay out of the registry per the 2026-08-02 ruling, the
-  only exception).
-- Extension code and the registry update land in the same commit; run
-  `python3 run.py selfcheck` before delivery.
+The three workflows and their stage lists are `baseline` (sample, score),
+`train_probe` (sample, build, train, eval) and `inject` (inject, score).
+`sample`, `inject` and `train` are launched as tmux pieces on cluster cards
+by `jobs/launch.py`; `build`, `eval` and `score` run in place on the CPU.
+The GPU half of an evaluation is the last step of `train` (it writes the
+prediction rows), so `eval/` only reads what is on disk and never imports
+torch. A run directory is keyed by stage plus a 12-hex hash of the setting's
+diff from the schema defaults, with the stage's era from `jobs/versions.yaml`
+(the code-era table) folded in; the code itself is not in the key. A finished
+directory is reused, a partial one is continued, and an edited setting or a
+new era row gets a new directory. Before a walk, `refire` or `retry` reads a
+directory, its own or any upstream of it, `run.py` compares the stage's code
+files with the copy the directory's launches ran and refuses when they
+differ and no chain of same rows of the table leads from that copy to the
+tree's; the refusal prints the diff summary and the `run.py version` commands
+(`--same --from <commit> --why` for a change that leaves the stage's output
+as it was, `--why` for one that alters it), and the row they append is
+committed before the next launch. A directory of an older era than its stage
+is refused outright.
 
-## Records: four ledgers plus raw data, primary key run_id
+## Checks
 
-Every experiment leaves a trace, in five layers (four ledgers + raw data); do
-not mix them:
+There is no build step and no linter. The check that runs after every code
+or `README.md` change is:
 
-| Layer | File | Who writes | Which question it answers |
-|---|---|---|---|
-| Direction | `TIMELINE.md` | a person, append only | why it was decided this way at the time |
-| Numbers | `ops/runs.jsonl` -> `RESULTS.md` | `ops/record.py` | what the data looks like |
-| Data settings | `DATA.md` | a person, updated with each data version | how this batch of data was built |
-| Plan | `WORKPLAN.md` | a person, overwritten | what comes next |
-| Raw data | NFS, not in git | experiment scripts | where the data itself lives |
+```
+external/probe-env/bin/python run.py selfcheck
+```
 
-- **Go through the `DATA.md` checklist before starting a new experiment.**
-  Every item there corresponds to a pitfall already hit.
-- `DATA.md` records settings and definitions only, **no conclusions**;
-  conclusions belong to `RESULTS.md`, otherwise it grows into a second ledger.
-- The code map is `MAP.md`: what each program does and how to use it. Adding a
-  program updates its line.
-- `run.py launch` calls `record start` automatically (captures git HEAD); at
-  wrap-up, `run.py record finish` adds the numbers by hand. Both steps are
-  written into Phase 4 / 6a of the gpu-run skill; following the pipeline means
-  nothing is missed.
-- `RESULTS.md` is a rendered product, **never edit it by hand**; `runs.jsonl`
-  is append-only. The one-time English translation of both on 2026-09-12 is the
-  only historical exception and is recorded in `TIMELINE.md`.
-- `WORKPLAN.md` is the current plan and gets overwritten; `TIMELINE.md` is the
-  decision history and is never overwritten. The two roles never swap. When an
-  experiment result changes any judgment in WORKPLAN, add a TIMELINE entry.
-- run_id is identical in four places: raw data directory name / tmux session /
-  ledger name / commit message.
+It holds `README.md` section 2 equal to the tree (an entry for every `.py`
+file, `imports:` and `used by:` equal to the real import graph) and exits 1
+on any problem. `README.md` section 3 lists, per kind of extension, which
+files to edit and what the change costs in reruns.
 
-## Ancient memory: records from before 2026-08-20 are not read by default (user order, 2026-09-12)
+`tests/` holds seven unittest modules, and pytest is not installed. Each runs
+in its own process:
 
-The whole `plans/archive/` directory is ancient memory: plans, reports, and
-reviews from before 2026-08-20, plus the 2026-08-02 to 2026-08-18 entries moved
-out of `TIMELINE.md` (`plans/archive/TIMELINE-2026-08-02-to-2026-08-18.md`).
-Read it only when the user explicitly says "check the ancient memory" or names
-an archived file; otherwise do not read it, cite it, or use it to answer
-questions. When an answer needs those records, say "the evidence is in the
-ancient memory" and stop until the user speaks. Number rows dated before
-2026-08-20 in `ops/runs.jsonl` and `RESULTS.md` are not moved (the ledger is
-append-only, the rendered product is not hand-edited). Entries with old date
-stamps in `METHOD.md` and `CONTEXT.md` are active rules and do not count as
-ancient memory.
+```
+external/probe-env/bin/python tests/test_registry_concurrent_append.py
+external/probe-env/bin/python tests/test_packed_loss.py
+external/probe-env/bin/python tests/test_settings_keys.py
+external/probe-env/bin/python tests/test_probe_input.py
+external/probe-env/bin/python tests/test_record_formats.py
+external/probe-env/bin/python tests/test_probe_eval.py
+external/probe-env/bin/python tests/test_environment_and_build.py
+```
 
-## Version control
+The last five are CPU-only (no torch, no card, no NFS) and write only under a
+temporary directory; `test_packed_loss.py` needs torch and the Qwen3 tokenizer
+on NFS.
 
-- This directory is a git repository (created 2026-07-29, no remote).
-- Repository boundary: code / notes / statistics go in; virtual environments,
-  third-party clones, raw trajectories, model weights, and logs stay out (see
-  `.gitignore`).
-- **Commit before launching an experiment**: the HEAD stored in a record leads
-  back to the real code only when the working tree was clean.
+None of the seven writes the real `jobs/runs.jsonl`: the registry test's
+forked children load a temporary copy of the tree's `jobs/registry.py` by
+path and append their 160 fixture rows there.
 
-## Iron rule: no guessing about data results
+A code path is exercised end to end with `--debug`, which lays
+`experimental_settings/debug.yaml` over the setting and writes under the
+outputs root's debug subdirectory; `run.py where <workflow> <setting>
+<stage> [--debug]` prints a run directory without touching disk. A `--debug`
+walk of a GPU stage is still a GPU launch and goes through the gpu-run
+skill.
 
-Without explicit user permission, none of these three things happens:
+## GPU runs go through the gpu-run skill
 
-1. **Without having read the actual output file or code, make no guess,
-   judgment, or interpretation about a data result.** That includes
-   attribution, conclusions, and speculated mechanisms. Counterexample: w2 is
-   worse than w0, and without reading any log the GPU was blamed. To explain a
-   number, first read the file that produced it (log / jsonl / eval output)
-   and the code that ran it; if it cannot be read, say so and stop there.
-2. **Give no advice of the kind "which data is convincing" or "how the paper
-   should tell the story".**
-3. **Do not praise** the user's conclusions, questions, or data results.
+An agent never starts a GPU process. A step that needs a GPU is returned as
+`BLOCKED` with the ready-to-run command, and the main conversation launches
+it through the gpu-run skill (`.claude/skills/gpu-run/SKILL.md`).
 
-Report experiment results as facts only, with no commentary. This is the same
-discipline as "`DATA.md` records settings, not conclusions" and "facts and
-interpretation are separated, facts first".
+## Records, five layers
 
-## Other iron rules
+Direction is `notes/TIMELINE.md`, a person's own words, append-only, and an
+agent appends an entry only when asked. Numbers are `jobs/runs.jsonl`
+(append-only, one JSON object per stage run) rendered into `jobs/RESULTS.md`
+by `jobs/registry.py`, with the code judgments beside them in
+`jobs/versions.yaml` (append-only, one era row or same row per judgment,
+appended by `run.py version` or by hand in the same shape); none of the
+three is ever rewritten. Data settings are
+`notes/DATA.md`. The plan is `notes/WORKPLAN.md`, overwritten in place. Raw
+data lives on NFS. These five layers do not live in one place, and that is
+by design: the registry is the numbers, `notes/` is the person's own record
+of why.
 
-- Complete isolation from `/home/y-guo/ACL2026`: never read or write its data /
-  code / results (sharing hardware is fine).
-- **Large outputs go straight to the net disk** (iron rule since 2026-08-01,
-  after the home quota filled up): training outputs / raw trajectories /
-  datasets / checkpoints all live under
+**The primary key is the run key**: the run directory name, the tmux session
+name, the registry row's `run_id` and the commit message that closes out a
+result all carry the same `<stage>-<key>` string. There is no `run_id` typed
+separately in four places; there is one key, computed once, that names all
+four.
+
+## `experimental_settings/` and `models/table.yaml` are gyb's
+
+A hook refuses an agent edit to `experimental_settings/*.yaml` and to
+`models/table.yaml`: both change what a setting produces, so both are the
+owner's files, and an agent proposes a change to either as a task instead of
+editing it. The hook also refuses any Bash command whose text carries one of
+these files' names together with a write word (a redirect, `tee`, `cp`,
+`mv`, `sed -i`, ...), so writing `CLAUDE.md` itself is always done with the
+Write tool, never with a Bash heredoc — a heredoc into `CLAUDE.md` is refused
+because its text names `experimental_settings` and `models/table.yaml`
+together with redirects.
+
+## Iron rules
+
+- Large outputs go to the net disk:
   `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/` (mirroring this
-  directory's structure); home keeps only code, notes, and symlinks.
-- Environments are managed with uv, always.
-- Model weights download to `/net/tokyo100-10g/data/str01_01/y-guo/models`,
-  never to /home.
+  directory's structure). Home keeps code, notes, and symlinks. Model
+  weights live under `/net/tokyo100-10g/data/str01_01/y-guo/models`.
+- Environments are managed with uv, always. This machine has `python3`,
+  not `python`.
+- Complete isolation from `/home/y-guo/ACL2026`: never read or write its
+  data, code, or results.
+- No guessing about data results: without having read the output file or
+  the code that produced a number, make no judgment or interpretation
+  about it; report results as facts only, no praise, no advice on which
+  data is convincing.
+- Subagents and implementers never start a GPU process; a step that needs
+  a GPU is returned as BLOCKED with the ready-to-run command, and the main
+  conversation launches it.
+- Records are never edited by hand: `jobs/runs.jsonl` is append-only and
+  `jobs/RESULTS.md` is rendered.
+- `notes/` is gyb's; an agent reads it and never edits it, except to append
+  a `notes/TIMELINE.md` entry when asked.
+- Commit before launching any experiment; the recorded HEAD must lead back
+  to the code that ran.
+- Ancient memory: `notes/plans/archive/` is read only when the user says
+  so explicitly.
+- Everything written into this repo is English: code, comments, docstrings,
+  runtime strings, plan documents, ledger entries. Terminology follows the
+  English terms in the `notes/CONTEXT.md` glossary. The only Chinese allowed
+  is the trigger-phrase clause in skill and agent descriptions and the
+  parenthesised original term in glossary entries.
 
-## Agent skills
+## Issue tracker and ticket execution
 
-### Issue tracker
-
-Specs and tickets are local markdown files: one directory per feature,
-`.scratch/<feature>/`, with the spec in `spec.md` and tickets in
-`issues/NN-<name>.md`. Conventions are in `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Ticket status uses the five default label strings (needs-triage / needs-info /
-ready-for-agent / ready-for-human / wontfix), written on the ticket file's
-Status line. The mapping is in `docs/agents/triage-labels.md`.
-
-### Ticket execution
-
-Batch execution of the tickets in `.scratch/<feature>/issues/` has one entry,
-`.claude/skills/ticket-run/SKILL.md`: the main session groups tickets into
-waves by Blocked by -> pre-check + commit before launch -> one workflow per
-wave (`wave.js`; tickets in a wave run in parallel, each on its own worktree
-and branch; the implement-review-fix loop is capped at 5 rounds in the script)
--> branch merge and accounting ruling -> final review of the whole branch.
-Subagent models are fixed to sonnet/opus; implementers never start GPU
-processes (they return BLOCKED and the work goes through gpu-run).
-
-### Domain docs
-
-Single-repo layout: the glossary is `CONTEXT.md` at the repo root, and
-architecture decision records live in `docs/adr/`. Reading rules are in
-`docs/agents/domain.md`.
+Specs and tickets are local markdown files under `.scratch/<feature>/`
+(`spec.md`, `issues/NN-<name>.md`), conventions in
+`notes/docs/agents/issue-tracker.md`, status labels in
+`notes/docs/agents/triage-labels.md`. Batch execution goes through
+`.claude/skills/ticket-run/SKILL.md`, whose role prompts are
+`.claude/skills/ticket-run/prompts/`.

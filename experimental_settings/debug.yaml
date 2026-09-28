@@ -1,0 +1,8 @@
+# Sizes only -- never a model and never a tuning, so a --debug run exercises the
+# real code path (contracts 5.6). Every field here exists in the schema, and the
+# overlay applies only the sections this setting's workflow: line names.
+sample:  {n_tasks: 3, seeds: [42], pieces: 1, replicas: 1, max_steps: 6}
+build:   {max_cuts: 8, max_examples: 64}
+train:   {epochs: 1, max_steps: 20, predict: {cap: 100}}
+inject:  {n_tasks: 3, seeds: [42], pieces: 1, max_steps: 6}
+eval:    {bootstrap: 50}
