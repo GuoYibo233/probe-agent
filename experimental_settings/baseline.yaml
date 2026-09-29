@@ -13,5 +13,5 @@ gpt_oss_120b_appworld:
 
 gpt_oss_120b_appworld_t20:
   meta:   {notes: "test 20 random tasks (.scratch/inject-sweep/task-list.md, draw seed 42), one seed; a quick try about the injection"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   score:  {by_seed: true}
