@@ -58,7 +58,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>" && log "committed $(gi
 log "step 6: start the queues"
 Q=.scratch/inject-sweep/queue.py
 C=.scratch/inject-sweep/children
-tmux new-session -d -s queue-108-5 "cd /home/y-guo/reproduce/new1 && python3 $Q --server tokyo108:5 --probe tokyo106:0,1 --slots 2 --children $C/queue-108-5.txt; sleep 3600"
-tmux new-session -d -s queue-108-0 "cd /home/y-guo/reproduce/new1 && python3 $Q --server tokyo108:0 --probe tokyo106:2 --slots 1 --children $C/queue-108-0.txt; sleep 3600"
-tmux new-session -d -s queue-108-2 "cd /home/y-guo/reproduce/new1 && python3 $Q --server tokyo108:2 --probe tokyo106:3 --slots 1 --children $C/queue-108-2.txt; sleep 3600"
+H=tokyo105,tokyo107,tokyo106
+tmux new-session -d -s queue-108-5 "cd /home/y-guo/reproduce/new1 && python3 $Q --server tokyo108:5 --probe-hosts $H --slots 2 --children $C/queue-108-5.txt; sleep 3600"
+tmux new-session -d -s queue-108-0 "cd /home/y-guo/reproduce/new1 && python3 $Q --server tokyo108:0 --probe-hosts $H --slots 1 --children $C/queue-108-0.txt; sleep 3600"
+tmux new-session -d -s queue-108-2 "cd /home/y-guo/reproduce/new1 && python3 $Q --server tokyo108:2 --probe-hosts $H --slots 1 --children $C/queue-108-2.txt; sleep 3600"
 log "queues started: $(tmux ls | grep -c queue-108) sessions; logs under .scratch/inject-sweep/queue-logs/"

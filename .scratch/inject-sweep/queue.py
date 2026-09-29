@@ -17,8 +17,13 @@ minutes is logged as stalled and left to the person (the queue skips to the
 next child and frees the slot only when the run's pieces are done or dead).
 
 Usage:
-    python3 .scratch/inject-sweep/queue.py --server tokyo108:5 --probe tokyo106:0,1 --slots 2 \
-        --children .scratch/inject-sweep/children/queue-5.txt
+    python3 .scratch/inject-sweep/queue.py --server tokyo108:5 --probe-hosts tokyo105,tokyo107,tokyo106 --slots 2 \
+        --children .scratch/inject-sweep/children/queue-108-5.txt
+
+The probe card is chosen at every launch from `run.py free` over the probe
+hosts (another user's process on a card makes it busy, and such processes
+come and go); a launch refused because a named card was not free is retried
+after the poll interval without consuming the child.
 
 The children file holds one child name per line (a sweep child's own name, or
 a plain setting name); lines starting with # are skipped.
@@ -90,46 +95,68 @@ def loop_pieces_done(run_dir: Path) -> tuple[bool, str]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", required=True, help="<host>:<id>, the agent server's card")
-    ap.add_argument("--probe", required=True, help="<host>:<id>,<id>,..., the probe-service cards this queue may use")
+    ap.add_argument("--probe-hosts", required=True, help="comma-separated hosts whose free cards may hold this queue's probe services (probed with run.py free before every launch)")
     ap.add_argument("--slots", type=int, default=1, help="runs in flight on this server")
     ap.add_argument("--children", required=True, help="file with one child name per line")
     ap.add_argument("--poll", type=int, default=60, help="seconds between checks")
     ap.add_argument("--stall-min", type=int, default=90, help="minutes without a heartbeat change before a run is logged as stalled")
     a = ap.parse_args()
 
-    probe_host, probe_ids = a.probe.split(":")
-    probe_cards = [f"{probe_host}:{i}" for i in probe_ids.split(",")]
-    if len(probe_cards) < a.slots:
-        sys.exit("queue.py: fewer probe cards than slots")
+    probe_hosts = [h.strip() for h in a.probe_hosts.split(",") if h.strip()]
     children = [l.strip() for l in Path(a.children).read_text().splitlines()
                 if l.strip() and not l.startswith("#")]
     LOGDIR.mkdir(parents=True, exist_ok=True)
     tag = a.server.replace(":", "-")
     fh = open(LOGDIR / f"queue-{tag}.log", "a")
-    log(fh, f"queue start: server {a.server}, probe cards {probe_cards}, slots {a.slots}, {len(children)} children")
+    log(fh, f"queue start: server {a.server}, probe hosts {probe_hosts}, slots {a.slots}, {len(children)} children")
 
     in_flight: dict[str, dict] = {}   # child -> {probe, run_dir, last_state, last_change}
-    free_probe = list(probe_cards)
     pending = list(children)
     outcomes: dict[str, str] = {}
+    retries: dict[str, int] = {}
+    MAX_RETRY = 20
+
+    def free_probe_card() -> str | None:
+        """The first free card of the probe hosts, by run.py free, not held by one of this queue's runs."""
+        rc, out = run_py(["free"])
+        held = {st["probe"] for st in in_flight.values()}
+        for line in out.splitlines():
+            host, _, ids = line.partition(":")
+            host = host.strip()
+            if host not in probe_hosts:
+                continue
+            for tok in ids.strip(" []\n").split(","):
+                tok = tok.strip()
+                if tok and f"{host}:{tok}" not in held:
+                    return f"{host}:{tok}"
+        return None
 
     while pending or in_flight:
         # fill free slots
         while pending and len(in_flight) < a.slots:
-            child = pending.pop(0)
-            probe = free_probe.pop(0)
+            child = pending[0]
+            probe = free_probe_card()
+            if probe is None:
+                log(fh, f"no free probe card on {probe_hosts}; waiting")
+                break
             log(fh, f"launch {child} on {a.server} + {probe}")
             rc, out = run_py(["inject", child, "--cards", a.server, "--cards", probe])
             tail = "\n".join(out.strip().splitlines()[-3:])
             if rc != 0 or "launched inject-" not in out:
                 if " ok; report " in out or "reused inject-" in out:
+                    pending.pop(0)
                     log(fh, f"{child}: already finished ({tail.splitlines()[-1] if tail else ''})")
                     outcomes[child] = "already done"
+                elif "not free" in out and retries.get(child, 0) < MAX_RETRY:
+                    retries[child] = retries.get(child, 0) + 1
+                    log(fh, f"{child}: a named card was not free (attempt {retries[child]}); retrying after {a.poll} s:\n{tail}")
+                    break
                 else:
+                    pending.pop(0)
                     log(fh, f"{child}: launch did not come up (rc {rc}):\n{tail}")
                     outcomes[child] = "launch failed"
-                free_probe.append(probe)
                 continue
+            pending.pop(0)
             run_dir = where(child)
             log(fh, f"{child}: {tail.splitlines()[0]} -> {run_dir}")
             in_flight[child] = {"probe": probe, "run_dir": run_dir, "last_state": "", "last_change": time.time()}
@@ -148,14 +175,12 @@ def main() -> int:
                 lines = [l for l in out.strip().splitlines() if l.startswith("run.py:")]
                 log(fh, f"{child}: wrap-up rc {rc}: " + " | ".join(lines[-3:]))
                 outcomes[child] = "ok" if rc == 0 else f"wrap-up rc {rc}"
-                free_probe.append(st["probe"])
                 del in_flight[child]
                 continue
             idle_min = (time.time() - st["last_change"]) / 60
             if idle_min > a.stall_min:
                 log(fh, f"{child}: no heartbeat change for {idle_min:.0f} min ({state}); left to the person, slot freed")
                 outcomes[child] = f"stalled ({state})"
-                free_probe.append(st["probe"])
                 del in_flight[child]
 
     log(fh, "queue end: " + json.dumps(outcomes, indent=1))
