@@ -92,23 +92,34 @@ def loop_pieces_done(run_dir: Path) -> tuple[bool, str]:
     return all_done, " ".join(states)
 
 
+def loop_alive(run_dir: Path, fresh_s: int = 600) -> bool:
+    """Whether some loop-piece heartbeat file of the run was written within fresh_s seconds."""
+    hb_dir = run_dir / "heartbeat"
+    if not hb_dir.is_dir():
+        return False
+    now_ts = time.time()
+    return any(now_ts - f.stat().st_mtime < fresh_s for f in hb_dir.glob("*.jsonl"))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", required=True, help="<host>:<id>, the agent server's card")
     ap.add_argument("--probe-hosts", required=True, help="comma-separated hosts whose free cards may hold this queue's probe services (probed with run.py free before every launch)")
     ap.add_argument("--slots", type=int, default=1, help="runs in flight on this server")
     ap.add_argument("--children", required=True, help="file with one child name per line")
+    ap.add_argument("--exclude", default="", help="comma-separated <host>:<id> cards never used for a probe service (broken cards)")
     ap.add_argument("--poll", type=int, default=60, help="seconds between checks")
     ap.add_argument("--stall-min", type=int, default=90, help="minutes without a heartbeat change before a run is logged as stalled")
     a = ap.parse_args()
 
     probe_hosts = [h.strip() for h in a.probe_hosts.split(",") if h.strip()]
+    excluded = {c.strip() for c in a.exclude.split(",") if c.strip()}
     children = [l.strip() for l in Path(a.children).read_text().splitlines()
                 if l.strip() and not l.startswith("#")]
     LOGDIR.mkdir(parents=True, exist_ok=True)
     tag = a.server.replace(":", "-")
     fh = open(LOGDIR / f"queue-{tag}.log", "a")
-    log(fh, f"queue start: server {a.server}, probe hosts {probe_hosts}, slots {a.slots}, {len(children)} children")
+    log(fh, f"queue start: server {a.server}, probe hosts {probe_hosts}, excluded {sorted(excluded)}, slots {a.slots}, {len(children)} children")
 
     in_flight: dict[str, dict] = {}   # child -> {probe, run_dir, last_state, last_change}
     pending = list(children)
@@ -127,14 +138,28 @@ def main() -> int:
                 continue
             for tok in ids.strip(" []\n").split(","):
                 tok = tok.strip()
-                if tok and f"{host}:{tok}" not in held:
-                    return f"{host}:{tok}"
+                card = f"{host}:{tok}"
+                if tok and card not in held and card not in excluded:
+                    return card
         return None
 
     while pending or in_flight:
         # fill free slots
         while pending and len(in_flight) < a.slots:
             child = pending[0]
+            run_dir = where(child)
+            if run_dir is not None and (run_dir / "done.json").exists():
+                pending.pop(0)
+                log(fh, f"{child}: already finished ({run_dir}); skipped")
+                outcomes[child] = "already done"
+                continue
+            if run_dir is not None and loop_alive(run_dir) and not loop_pieces_done(run_dir)[0]:
+                # a run of this child is in flight from an earlier incarnation of the queue: adopt it
+                # (a failed launch has no fresh heartbeat and is relaunched by the walk instead)
+                pending.pop(0)
+                log(fh, f"{child}: adopted, already in flight at {run_dir}")
+                in_flight[child] = {"probe": "", "run_dir": run_dir, "last_state": "", "last_change": time.time()}
+                continue
             probe = free_probe_card()
             if probe is None:
                 log(fh, f"no free probe card on {probe_hosts}; waiting")
@@ -171,7 +196,8 @@ def main() -> int:
                 st["last_state"], st["last_change"] = state, time.time()
             if done:
                 log(fh, f"{child}: loop pieces done ({state}); wrap-up")
-                rc, out = run_py(["inject", child, "--cards", a.server, "--cards", st["probe"]])
+                wrap_cards = ["--cards", a.server] + (["--cards", st["probe"]] if st["probe"] else [])
+                rc, out = run_py(["inject", child, *wrap_cards])
                 lines = [l for l in out.strip().splitlines() if l.startswith("run.py:")]
                 log(fh, f"{child}: wrap-up rc {rc}: " + " | ".join(lines[-3:]))
                 outcomes[child] = "ok" if rc == 0 else f"wrap-up rc {rc}"
