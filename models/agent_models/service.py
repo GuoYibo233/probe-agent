@@ -35,8 +35,12 @@ _RETRY_BASE_S = 1.0
 # ---------------------------------------------------------------------------
 
 def build_command(row: dict, serving: dict, weights_path: str, port: int,
-                   gpus: str, date: str | None) -> tuple[list[str], dict[str, str]]:
-    """The vllm serve argv and its environment for one agent-model row."""
+                   gpus: str, tensor_parallel_size: int,
+                   date: str | None) -> tuple[list[str], dict[str, str]]:
+    """The vllm serve argv and its environment for one agent-model row. The tensor-parallel
+    size is the number of cards the launcher claimed for this server (`--tensor-parallel-size`
+    on the serve line), which is the table row's serving value on cards of the size the row
+    was declared for and more on smaller cards that together reach that size."""
     vllm_bin = str(Path(sys.executable).parent / "vllm")
     argv = [
         vllm_bin, "serve", weights_path,
@@ -44,7 +48,7 @@ def build_command(row: dict, serving: dict, weights_path: str, port: int,
         "--host", "0.0.0.0",
         "--port", str(port),
         "--gpu-memory-utilization", str(serving["gpu_memory_utilization"]),
-        "--tensor-parallel-size", str(serving["tensor_parallel_size"]),
+        "--tensor-parallel-size", str(tensor_parallel_size),
         "--max-model-len", str(row["max_model_len"]),
         "--dtype", str(row["dtype"]),
     ]
@@ -69,10 +73,16 @@ def _endpoint_path(run_dir: Path, replica: int) -> Path:
 
 
 def _write_endpoint_file(path: Path, *, replica: int, base_url: str, host: str, port: int,
+                          gpus: list[int], tensor_parallel_size: int | None,
                           pid: int | None, flags: dict, claims: dict,
                           attached_to: str | None) -> None:
+    """`gpus` is the card ids on `host` this piece's server holds (empty for an attached
+    replica, which holds none) and `tensor_parallel_size` the number it serves across (None for
+    an attached replica); the launcher's attach search reads `gpus` to keep an attach inside a
+    named card pool."""
     doc = {
         "kind": "agent", "replica": replica, "base_url": base_url, "host": host, "port": port,
+        "gpus": gpus, "tensor_parallel_size": tensor_parallel_size,
         "pid": pid, "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "flags": flags, "claims": claims, "attached_to": attached_to,
     }
@@ -181,6 +191,7 @@ def serve(args) -> None:
     base_url = root_url + "/v1"
     claims = dict(row)
     endpoint_path = _endpoint_path(run_dir, args.replica)
+    gpus = [int(g) for g in args.gpus.split(",") if g.strip() != ""]
 
     if args.attach_only:
         if not args.attached_to:
@@ -190,12 +201,18 @@ def serve(args) -> None:
         _attach(base_url, row)
         _write_endpoint_file(
             endpoint_path, replica=args.replica, base_url=base_url, host=host, port=args.port,
+            gpus=gpus, tensor_parallel_size=None,
             pid=None, flags=vars(args), claims=claims, attached_to=args.attached_to,
         )
         return
 
+    if args.tensor_parallel_size != len(gpus):
+        raise SystemExit(
+            f"models.agent_models.service: a server that starts needs --tensor-parallel-size "
+            f"equal to the number of --gpus cards ({len(gpus)}); got {args.tensor_parallel_size}"
+        )
     argv, built_env = build_command(row, m.serving, m.weights_path, args.port, args.gpus,
-                                     cfg.generation.date)
+                                     args.tensor_parallel_size, cfg.generation.date)
     env = dict(os.environ)
     env.update(built_env)
     proc = subprocess.Popen(argv, env=env)
@@ -205,6 +222,7 @@ def serve(args) -> None:
         _check_render(base_url, row, m, cfg)
         _write_endpoint_file(
             endpoint_path, replica=args.replica, base_url=base_url, host=host, port=args.port,
+            gpus=gpus, tensor_parallel_size=args.tensor_parallel_size,
             pid=proc.pid, flags=vars(args), claims=claims, attached_to=None,
         )
         raise SystemExit(proc.wait())
@@ -233,6 +251,9 @@ def main(argv: list[str] | None = None) -> int:
                      help="the host the launcher placed this service on; the endpoint file names it")
     srv.add_argument("--port", type=int, required=True)
     srv.add_argument("--gpus", required=True)
+    srv.add_argument("--tensor-parallel-size", type=int, default=None,
+                     help="the number of --gpus cards a starting server spans (jobs/launch.py "
+                          "passes it; absent under --attach-only)")
     srv.add_argument("--replica", type=int, default=0)
     srv.add_argument("--attach-only", action="store_true")
     srv.add_argument("--attached-to", default=None,

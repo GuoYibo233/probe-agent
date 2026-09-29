@@ -60,7 +60,23 @@ def _weight_rule(weight_mode: str):
 
 
 def main(run_dir: Path) -> None:
-    """Build `examples.parquet` for one build run directory (contracts 2.5, 1.2, 1.7, 2.3, 1.5)."""
+    """Build `examples.parquet` for one build run directory (contracts 2.5, 1.2, 1.7, 2.3, 1.5).
+
+    A record whose final row carries an abort is used like any other record: every ordinary
+    step of it becomes examples and only the aborted step is skipped. The writer,
+    agent/run_tasks.py, records an abort this way. The final row's `abort` field is non-null
+    (`abort = "context_overflow_400"` when the agent server answers 400, or
+    `abort=f"task_error:{type(exc).__name__}"` for any other exception of the task), and its
+    `steps` field is `steps_done`, which counts only the steps that got both rows
+    (`steps_done = step_index + 1` right after `writer.row("env", ...)`). So the aborted step is
+    the step whose index equals `final.steps`. The loop writes `writer.row("gen", ...)` first and
+    `writer.row("env", ...)` after `env.step`, so an exception between the two leaves the aborted
+    step as a gen row with no env row; an exception before the gen row (the 400 included) leaves
+    no row for it at all. The aborted step therefore never leaves a gen/env pair, and the build
+    skips it by skipping a gen row that has no env row at step `final.steps` of a record with an
+    abort. A gen row without an env row anywhere else is a malformed record and stops the build.
+    report.md and the registry counts carry the number of records with an abort and the number
+    of aborted steps skipped."""
     run_dir = Path(run_dir)
     cfg = schema.load_frozen(run_dir)
     env = open_env(cfg.data.env)
@@ -130,19 +146,10 @@ def main(run_dir: Path) -> None:
     # 2.5: build reads only the records of the pairs in its own key.
     df = trajectory_record.read_dir(sample_dir, pairs)
 
-    # 2.5's abort gate.
-    final_rows = df.filter(pl.col("type") == "final")
-    n_final = final_rows.height
-    n_aborted = int(final_rows["abort"].is_not_null().sum())
-    abort_frac = (n_aborted / n_final) if n_final else 0.0
-    if abort_frac > cfg.build.max_abort_frac:
-        raise ValueError(
-            f"build: {n_aborted}/{n_final} records aborted (share {abort_frac:.4f}) exceeds "
-            f"build.max_abort_frac={cfg.build.max_abort_frac}"
-        )
-
     rows: list[dict] = []
     events_total = 0
+    records_with_abort = 0
+    skip_abort = 0
     skip_no_action = 0
     skip_no_call = 0
     skip_short_think = 0
@@ -160,16 +167,30 @@ def main(run_dir: Path) -> None:
         # 2.5's split-column rule, one value per record.
         row_split = split_of(task_id, benchmark_split)
 
+        # The aborted step of a record with an abort is the step whose index is the final row's
+        # `steps` (see this function's docstring); a record without an abort has none.
+        final_row = rec_df.filter(pl.col("type") == "final").row(0, named=True)
+        record_has_abort = final_row["abort"] is not None
+        aborted_step = final_row["steps"] if record_has_abort else None
+        records_with_abort += int(record_has_abort)
+
         gen_rows = {row["step"]: row for row in rec_df.filter(pl.col("type") == "gen").iter_rows(named=True)}
         env_rows = {row["step"]: row for row in rec_df.filter(pl.col("type") == "env").iter_rows(named=True)}
 
         history: list[tuple[str, str]] = []
         for step in sorted(gen_rows):
             gen_row = gen_rows[step]
-            if step not in env_rows:
-                raise ValueError(f"build: record {rid} step {step}: a gen row has no matching env row")
-            env_row = env_rows[step]
             events_total += 1
+            if step in env_rows:
+                env_row = env_rows[step]
+            elif step == aborted_step:
+                skip_abort += 1
+                continue
+            else:
+                raise ValueError(
+                    f"build: record {rid} step {step}: a gen row has no matching env row and is not "
+                    f"the record's aborted step (final abort={final_row['abort']!r}, steps={final_row['steps']!r})"
+                )
 
             thinking = (gen_row["reasoning"] or "").strip()
             action = (env_row["action"] or "").strip()
@@ -358,7 +379,7 @@ def main(run_dir: Path) -> None:
         f"- key={cfg._key} env={cfg.data.env} agent_model={','.join(agent_models)} "
         f"commit={cfg._commit} debug={cfg._debug}",
         f"- records={len(pairs)} events={events_total} "
-        f"events_skipped_no_action={skip_no_action} events_skipped_no_call={skip_no_call} "
+        f"events_skipped_abort={skip_abort} events_skipped_no_action={skip_no_action} events_skipped_no_call={skip_no_call} "
         f"events_skipped_short_think={skip_short_think} examples={final_frame.height}",
         f"- calls build_call refused or that failed the round-trip gate: {len(refused_calls)}",
         *refused_call_lines,
@@ -371,7 +392,8 @@ def main(run_dir: Path) -> None:
         f"- examples per depth decile: {[depth_deciles.get(i, 0) for i in range(10)]}",
         f"- text length p50={_pct(text_lens, 0.5)} p90={_pct(text_lens, 0.9)} "
         f"max={text_lens[-1] if text_lens else 0}",
-        f"- abort share {abort_frac:.4f} against build.max_abort_frac={cfg.build.max_abort_frac}",
+        f"- records with an abort: {records_with_abort}; aborted steps skipped "
+        f"(a gen row with no env row at the final row's step): {skip_abort}",
         f"- per-split build.max_examples cap dropped {cap_dropped} rows",
     ]
     (run_dir / "report.md").write_text("\n".join(report_lines) + "\n")
@@ -379,6 +401,8 @@ def main(run_dir: Path) -> None:
     counts = {
         "records": len(pairs),
         "events": events_total,
+        "records_with_abort": records_with_abort,
+        "events_skipped_abort": skip_abort,
         "events_skipped_no_action": skip_no_action,
         "events_skipped_no_call": skip_no_call,
         "events_skipped_short_think": skip_short_think,

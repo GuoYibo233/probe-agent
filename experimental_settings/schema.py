@@ -84,7 +84,6 @@ class Build:
     split_source: str = "env"                    # env = the benchmark's official task lists; hash = a stable hash split
     split_ratio: list[float] = field(default_factory=lambda: [0.8, 0.1, 0.1])  # train/val/test shares, used only under hash
     max_examples: int | None = None               # cap on examples per split; for --debug
-    max_abort_frac: float = 0.02                 # refuse to build when a larger share of records aborted
 
 
 @dataclass
@@ -118,6 +117,7 @@ class Train:
     align_check: bool = True                      # run the packed-versus-plain loss gate before training
     checkpoint_hours: float = 2.0                 # how often last/ is written
     predict: Predict = field(default_factory=Predict)
+    import_from: str | None = None                # a previous-pipeline run directory whose best/ this run takes over instead of training
 
 
 @dataclass

@@ -1,4 +1,4 @@
-"""The training loop every probe method shares: settings to arguments, seed, backbone, tuning, checkpoints, metrics, heartbeat, resume, the alignment gate, and the prediction step."""
+"""The training loop every probe method shares: settings to arguments, seed, backbone, tuning, checkpoints, metrics, heartbeat, resume, the alignment gate, and the prediction step; under train.import_from, the import of a previous-pipeline checkpoint in its place."""
 # venv: probe
 from __future__ import annotations
 
@@ -176,7 +176,7 @@ def _batches_with_flags(batch_iter):
 
 
 def run(run_dir: Path, method) -> None:
-    """Drive one train run: load the frozen setting, resume or start fresh per the continue rule, run the alignment gate and the step loop, checkpoint, predict, mark done. `method` is the caller's own module (a train/methods/<m>.py); this function never branches on which one it is."""
+    """Drive one train run: load the frozen setting, resume or start fresh per the continue rule, run the alignment gate and the step loop, checkpoint, predict, mark done; under train.import_from, check and copy the source checkpoint and mark done instead (`_run_import`). `method` is the caller's own module (a train/methods/<m>.py); this function never branches on which one it is."""
     run_dir = Path(run_dir)
     cfg = schema.load_frozen(run_dir)
     hb = registry.beat(run_dir, 0)
@@ -189,6 +189,13 @@ def run(run_dir: Path, method) -> None:
     train_log_path = run_dir / "train_log.jsonl"
 
     if done_path.exists():
+        return
+
+    # A setting with train.import_from takes over a checkpoint the previous pipeline trained:
+    # no training, no prediction pass, and none of the continue rule below, because the
+    # import rebuilds best/ from the source whole on every incarnation.
+    if cfg.train.import_from is not None:
+        _run_import(run_dir, cfg, method, hb)
         return
 
     _settle_last(last_dir)
@@ -521,6 +528,211 @@ def run(run_dir: Path, method) -> None:
                 "predictions": pred_df.height, "dropped_overlong": dropped_overlong},
         era=cfg._era, metrics=dict(train_val_metrics), report=None,
         stage_extra={"labels": labels})
+    hb.finish()
+
+
+# ---------------------------------------------------------------------------
+# train.import_from: take over a checkpoint the previous pipeline trained, instead of training.
+# ---------------------------------------------------------------------------
+#
+# The source is a run directory of the previous pipeline: best/ holds the weights (a LoRA run's
+# adapter already merged into them), the tokenizer files and meta.json; a classifier's best/ also
+# holds head.pt (one nn.Linear state dict, the same layer `attach_head` builds) and
+# label_map.json (class name -> head row); a classifier's run directory also holds
+# REPLAY_REPORT.json with the temperature and the theta sweep that run fitted. The import writes
+# best/ in the layout `Probe.save` writes and `base.load` reads, and eval/utils/probe_eval.py
+# takes the calibration from the imported meta.json instead of fitting it.
+
+_IMPORT_REWRITTEN = ("meta.json", "label_map.json", "head.pt")   # rebuilt in this tree's form, never copied
+_IMPORT_COPY_CHUNK = 64 << 20                                     # bytes per read of the copy; one heartbeat touch per 16 chunks
+
+
+def _import_refusal(cfg, text: str) -> SystemExit:
+    return SystemExit(f"train.import_from: {cfg.train.import_from}: {text}")
+
+
+def verify_import_source(cfg, method) -> dict:
+    """Check the train.import_from source against the setting and read what the import needs.
+
+    Refuses, naming both sides, when best/meta.json is missing, when the source's base weights
+    are not the weights the setting's models.probe row names (compared by the directory's
+    basename), when its tuning or LoRA shape differs from the setting's probe section, or when
+    the source does not hold the method's checkpoint form: a classifier needs head.pt,
+    label_map.json and REPLAY_REPORT.json and has no call_sep; a generator has the method's
+    call_sep and param_only value and no head. Returns the source directory, its meta.json,
+    the class names in head-row order (None for a generator), the head's state dict (None for a
+    generator) and the calibration (None for a generator)."""
+    source = Path(cfg.train.import_from)
+    source_best = source / "best"
+    meta_path = source_best / "meta.json"
+    if not meta_path.is_file():
+        raise _import_refusal(cfg, f"{meta_path} does not exist; the source is a run directory "
+                                   "of the previous pipeline whose best/ holds meta.json")
+    source_meta = json.loads(meta_path.read_text())
+
+    probe_model = models.probe(cfg.models.probe)
+    source_weights = Path(source_meta["base_path"]).name
+    own_weights = Path(probe_model.weights_path).name
+    if source_weights != own_weights:
+        raise _import_refusal(
+            cfg, f"the source was trained from {source_meta['base_path']} (weights "
+                 f"{source_weights!r}); the setting's models.probe {cfg.models.probe!r} names "
+                 f"weights {probe_model.weights!r} at {probe_model.weights_path} ({own_weights!r})")
+
+    source_lora = source_meta.get("lora")
+    source_tuning = "lora" if source_lora else "full"
+    if source_tuning != cfg.probe.tuning:
+        raise _import_refusal(
+            cfg, f"the source's tuning is {source_tuning!r} (meta.json "
+                 f"{'has' if source_lora else 'has no'} lora block); the setting's probe.tuning "
+                 f"is {cfg.probe.tuning!r}")
+    if source_lora:
+        own_targets = list(cfg.probe.lora_targets or schema.module_literal(
+            f"models/probe_models/{cfg.models.probe_row['family']}.py", "LORA_TARGETS"))
+        pairs = (("rank", "probe.lora_r", source_lora["rank"], cfg.probe.lora_r),
+                 ("alpha", "probe.lora_alpha", source_lora["alpha"], cfg.probe.lora_alpha),
+                 ("dropout", "probe.lora_dropout", source_lora["dropout"], cfg.probe.lora_dropout),
+                 ("target_modules", "probe.lora_targets", list(source_lora["target_modules"]),
+                  own_targets))
+        for source_name, own_name, source_value, own_value in pairs:
+            if source_value != own_value:
+                raise _import_refusal(
+                    cfg, f"the source's lora.{source_name} is {source_value!r}; the setting's "
+                         f"{own_name} is {own_value!r}")
+
+    head_path = source_best / "head.pt"
+    label_map_path = source_best / "label_map.json"
+    report_path = source / "REPLAY_REPORT.json"
+    source_call_sep = source_meta.get("call_sep")
+    method_name = cfg.probe.method
+    if method.PROBE_KIND == "classifier":
+        missing = [p.name for p in (head_path, label_map_path, report_path) if not p.is_file()]
+        if missing or source_call_sep is not None:
+            raise _import_refusal(
+                cfg, f"probe.method {method_name!r} is a classifier, which needs best/head.pt, "
+                     f"best/label_map.json and REPLAY_REPORT.json and no call_sep; the source "
+                     f"lacks {missing} and has call_sep {source_call_sep!r}")
+        label_map = json.loads(label_map_path.read_text())
+        rows = sorted(label_map.values())
+        if rows != list(range(len(label_map))):
+            raise _import_refusal(
+                cfg, f"{label_map_path}: the head rows it names are not 0..{len(label_map) - 1}")
+        labels = [name for name, _row in sorted(label_map.items(), key=lambda item: item[1])]
+        head_state = torch.load(head_path, map_location="cpu")
+        config = json.loads((source_best / "config.json").read_text())
+        hidden_size = config.get("hidden_size") or config["text_config"]["hidden_size"]
+        want_shapes = {"weight": (len(labels), hidden_size), "bias": (len(labels),)}
+        got_shapes = {k: tuple(v.shape) for k, v in head_state.items()}
+        if got_shapes != want_shapes:
+            raise _import_refusal(
+                cfg, f"{head_path}: holds {got_shapes}; the head attach_head builds for "
+                     f"{len(labels)} classes over hidden size {hidden_size} holds {want_shapes}")
+        replay = json.loads(report_path.read_text())
+        calibration = {"temperature": replay["temperature"],
+                       "theta_sweep": replay["theta_sweep_calB"],
+                       "chosen_theta": replay["chosen_theta"]}
+    else:
+        own_call_sep = method.CHECKPOINT_META["call_sep"]
+        own_param_only = method.CHECKPOINT_META["param_only"]
+        source_param_only = bool(source_meta.get("param_only", False))
+        if (head_path.exists() or source_call_sep != own_call_sep
+                or source_param_only != own_param_only):
+            raise _import_refusal(
+                cfg, f"probe.method {method_name!r} is a generator with call_sep "
+                     f"{own_call_sep!r}, param_only {own_param_only} and no head; the source has "
+                     f"call_sep {source_call_sep!r}, param_only {source_param_only} and "
+                     f"{'a' if head_path.exists() else 'no'} best/head.pt")
+        labels = None
+        head_state = None
+        calibration = None
+    return {"source": source, "source_meta": source_meta, "labels": labels,
+            "head_state": head_state, "calibration": calibration}
+
+
+def _copy_with_sha1(src: Path, dst: Path, hb) -> str:
+    """Copy one file in chunks, touching the heartbeat under `import` every 16 chunks, and return the sha1 of the bytes copied."""
+    digest = hashlib.sha1()
+    with open(src, "rb") as fin, open(dst, "wb") as fout:
+        for n, chunk in enumerate(iter(lambda: fin.read(_IMPORT_COPY_CHUNK), b"")):
+            if n % 16 == 0:
+                hb.touch("import")
+            digest.update(chunk)
+            fout.write(chunk)
+    return digest.hexdigest()
+
+
+def write_imported_best(source: dict, best_dir: Path, cfg, method, hb) -> tuple[dict, list[dict]]:
+    """Write best/ in the layout `Probe.save` writes, from a source `verify_import_source` checked.
+
+    The weights, the model config and the tokenizer files are copied byte for byte; head.pt is
+    written from the checked state dict; the class names go into meta.json's `labels`, the form
+    `load` reads. meta.json carries every field `load` and the probe service read: `max_len` is
+    the setting's train.max_len (the window the service truncates to), the source's own is kept
+    as `trained_max_len`, and `adapter_only` is False because the source's LoRA adapter is merged
+    into the weights. Everything goes into best.tmp/ first and takes the name best/ once whole.
+    Returns the meta.json written and one {name, bytes, sha1} entry per copied file."""
+    source_best = source["source"] / "best"
+    best_dir = Path(best_dir)
+    tmp_dir = best_dir.with_name("best.tmp")
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir(parents=True)
+    copied: list[dict] = []
+    for path in sorted(source_best.iterdir()):
+        if path.name in _IMPORT_REWRITTEN:
+            continue
+        if not path.is_file():
+            raise _import_refusal(cfg, f"{path}: best/ holds a directory, which no checkpoint "
+                                       "layout of either pipeline has")
+        sha1 = _copy_with_sha1(path, tmp_dir / path.name, hb)
+        copied.append({"name": path.name, "bytes": path.stat().st_size, "sha1": sha1})
+    if source["head_state"] is not None:
+        torch.save(source["head_state"], tmp_dir / "head.pt")
+    meta = {"labels": source["labels"], **_checkpoint_meta(cfg), **method.CHECKPOINT_META,
+            "adapter_only": False, "trained_max_len": source["source_meta"]["max_len"],
+            "imported_from": str(source["source"]),
+            "imported_calibration": source["calibration"]}
+    (tmp_dir / "meta.json").write_text(json.dumps(meta))
+    if best_dir.exists():
+        shutil.rmtree(best_dir)
+    tmp_dir.rename(best_dir)
+    return meta, copied
+
+
+def _run_import(run_dir: Path, cfg, method, hb) -> None:
+    """The train stage under train.import_from: check the source, write best/, and mark done.
+
+    train_log.jsonl gets one `import` line (the source, its meta.json, every copied file's
+    sha1); consumed.json names the source's small files with their sha1 (the weights file's
+    sha1 is in the log line only, so the walk's skip gate does not hash gigabytes on every
+    pass); done.json's counts and metrics say `imported: 1`, and its stage_extra carries the
+    class order, as a trained run's does, and the source path."""
+    hb.emit(0, 1, "step")
+    source = verify_import_source(cfg, method)
+    meta, copied = write_imported_best(source, run_dir / "best", cfg, method, hb)
+
+    source_dir = source["source"]
+    consumed_files = [source_dir / "best" / name for name in _IMPORT_REWRITTEN]
+    consumed_files.append(source_dir / "REPLAY_REPORT.json")
+    _atomic_write_json(run_dir / "consumed.json", [
+        {"path": str(p), "sha1": _sha1(p), "n_rows": None}
+        for p in consumed_files if p.is_file()])
+
+    line = {"event": "import", "key": cfg._key, "commit": cfg._commit, "method": cfg.probe.method,
+            "source": str(source_dir), "source_meta": source["source_meta"], "files": copied,
+            "max_len": meta["max_len"], "trained_max_len": meta["trained_max_len"],
+            "ts": time.clock_gettime(time.CLOCK_REALTIME)}
+    log_path = run_dir / "train_log.jsonl"
+    tmp = log_path.with_name(f"{log_path.name}.tmp")
+    tmp.write_text(json.dumps(line, ensure_ascii=False) + "\n")
+    tmp.replace(log_path)
+
+    registry.write_done(
+        run_dir, stage="train", key=cfg._key, commit=cfg._commit,
+        counts={"imported": 1, "files": len(copied)}, era=cfg._era,
+        metrics={"imported": 1}, report=None,
+        stage_extra={"labels": source["labels"], "imported_from": str(source_dir)})
+    hb.emit(1, 1, "step")
     hb.finish()
 
 

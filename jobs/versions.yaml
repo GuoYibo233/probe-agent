@@ -24,3 +24,19 @@
 # `run.py selfcheck` check 4 holds all of this. Era 1 is the state before a stage's first era
 # row. The why sentences are the human record of what the code did when; the `git log` of
 # the stage's files holds the rest.
+- stage: build
+  era: 2
+  date: 2026-09-29
+  why: Aborted steps are skipped instead of refusing the build over a share of aborted records; the gate
+    field build.max_abort_frac is removed.
+- stage: train
+  era: 2
+  date: 2026-09-29
+  why: A setting with train.import_from takes over a previous-pipeline checkpoint into best/ (served window
+    from train.max_len, the source's calibration in meta.json) instead of training and predicting.
+- stage: eval
+  era: 2
+  date: 2026-09-29
+  why: An eval whose train run is an import writes the imported calibration (temperature, theta sweep,
+    chosen thetas) into its report marked imported, with the numbers computed from prediction rows absent,
+    instead of fitting.
