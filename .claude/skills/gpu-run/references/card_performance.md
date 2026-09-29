@@ -38,8 +38,8 @@ Every run on this tree so far is a `--debug` run; there is no full-scale run of 
 ### Agent service and `sample`
 
 The agent service is `gpt_oss_120b` on vLLM 0.26.0, tensor parallel 1,
-`gpu_memory_utilization` 0.92. The probe service of a `sample` run is render-only and runs on
-the CPU of shiga, so a `sample` run holds one card. Across the three `sample` runs the largest
+`gpu_memory_utilization` 0.92. The probe service of a `sample` run is render-only and ran on
+the CPU of shiga, the `login_host` at the time (tokyo108 since 2026-09-25), so a `sample` run holds one card. Across the three `sample` runs the largest
 number of requests running at once was 2 and the largest KV cache usage was 1.7%.
 
 | task | card type | peak memory | wall-clock | throughput | outcome | date | source |
@@ -110,7 +110,8 @@ and the launch-to-card mapping is from the start rows of `jobs/runs.jsonl`.
 
 ### CPU stages
 
-`eval`, `score` and `build` run as CPU pieces (gpus `''`) on shiga/tokyo105; registry
+`eval`, `score` and `build` ran as CPU pieces (gpus `''`) on shiga/tokyo105, the `login_host` at the time (tokyo108
+since 2026-09-25); registry
 elapsed_s 4.2 s to 60.3 s (`jobs/runs.jsonl`).
 
 ## Previous pipeline, previous trainer at 4096 tokens per event
@@ -143,7 +144,7 @@ measured on the previous trainer at 4096 tokens per event; this trainer's defaul
 | np821 train, 1.7B LoRA / 4B LoRA | card not named in the source | 1.7B 17-35 G; 4B 32-38 G | - | - | - | 2026-08-26 | gpu-time-reference.md |
 | np821 evaluation | - | - | ctool 36-45 min per batch; call tier 21-26 min per cell | - | - | 2026-08-26 | gpu-time-reference.md |
 
-`notes/DATA.md` (lines 42, 102) states only which cards the collections used: nyapass on
+`notes/DATA.md` states only which cards the collections used: nyapass on
 tokyo108 "2 H100 + 3/4/5 H200", p1 on "two H200". `gpu_state.md`, surveyed 2026-07-29:
 tokyo106/107 drivers go up to CUDA 12.2, and cu128 torch was measured to run on 106/107.
 

@@ -20,7 +20,7 @@ the fixed tree is never reworded. This file reviews against the **seven** princi
 `README.md` section 1 states.
 
 1. **What it reviews.** The tree against the owner's principles as `README.md` states
-   them: one experiment is one setting; outputs keyed by setting and version; the layer
+   them: one experiment is one setting; outputs keyed by setting and era; the layer
    boundaries `data/ models/ agent/ train/ eval/ jobs/`; `--debug` runs any setting
    tiny; no near-duplicate and no framework; `README.md` for the next reader; everything
    on disk and `eval/` CPU-only.

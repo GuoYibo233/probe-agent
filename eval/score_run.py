@@ -110,7 +110,10 @@ def _spec_block(df: pl.DataFrame, env) -> dict:
             g_tool, g_args, _ = gp
             a_tool, a_args, _ = ap
             tool_agree_vals.append(g_tool == a_tool)
-            call_agree_vals.append(env.build_call(g_tool, g_args) == env.build_call(a_tool, a_args))
+            # the parsed (tool, args) pairs are what build_call would write, compared without
+            # writing them: build_call refuses a value holding both quote kinds, and one such
+            # call in a spec row would otherwise stop the whole score
+            call_agree_vals.append(g_tool == a_tool and g_args == a_args)
         else:
             tool_agree_vals.append(False)
             call_agree_vals.append(False)

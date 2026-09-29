@@ -15,4 +15,4 @@ qwen3-4b-base:
   note: own replica; the 4B tier of the same sweep
 lfm2.5-350m-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/LFM2.5-350M-Base
-  note: own replica, 681M; used by the cgen cell, registered 2026-08-20
+  note: own replica, 681M, registered 2026-08-20 for the old tree's cgen cell; no models/table.yaml row and no models/probe_models family module name it, so no setting reaches it until both are added

@@ -79,11 +79,33 @@ def _split_args_named(argstr: str) -> list[tuple[str, str]]:
     for v in vals:
         m = re.match(r"(\w+)\s*=\s*(.+)", v, re.S)
         if m:
-            out.append((m.group(1), m.group(2).strip().strip("\"'")))
+            out.append((m.group(1), _unwrap(m.group(2).strip())))
         else:
-            out.append((f"pos{pos}", v.strip().strip("\"'")))
+            out.append((f"pos{pos}", _unwrap(v.strip())))
             pos += 1
     return out
+
+
+def _unwrap(value: str) -> str:
+    """Take one layer of quotes off a value that is one whole string literal, else return it as it is.
+
+    One layer is the delimiter pair of a single, double or triple quoted literal, found by the
+    rules `_call_close` walks by (a backslash escapes the next character), and the value is
+    unwrapped only when that literal's closing delimiter is its last character: `'say "hi"'`
+    reads as `say "hi"`, while `"a" + "b"` and `f'{x}'` stay whole. No escape is undone.
+    """
+    if not value or value[0] not in "\"'":
+        return value
+    quote = value[0] * 3 if value.startswith(value[0] * 3) else value[0]
+    i = len(quote)
+    while i < len(value):
+        if value[i] == "\\":
+            i += 2
+            continue
+        if value.startswith(quote, i):
+            return value[len(quote):i] if i + len(quote) == len(value) else value
+        i += 1
+    return value
 
 
 def _call_close(text: str, start: int) -> int | None:
@@ -187,11 +209,15 @@ def _bare_safe(value: str) -> bool:
     Both readers have to agree with the writer: `_call_close`, which has to reach the call's
     closing parenthesis, and `_split_args_named`, which has to keep the value whole. On top of
     the two the re-parse strips whitespace off the ends of a bare value, so a value that
-    carries its own leading or trailing whitespace is quoted instead.
+    carries its own leading or trailing whitespace is quoted instead, and takes a layer of
+    quotes off a value that is one whole string literal (`_unwrap`), so such a value is
+    quoted too.
     """
     if value == "":
         return False
     if value != value.strip():
+        return False
+    if _unwrap(value) != value:
         return False
     return _closes_the_call(value) and _stays_one_argument(value)
 

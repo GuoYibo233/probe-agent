@@ -206,7 +206,11 @@ def step(env: Environment, clients: step_without_probe.Clients, cfg, writer: Wri
                 else:
                     gen_call = clients.probe.generate(probe_text, cfg.inject.max_new)["call"]
                     completed_call = env.complete_call(gen_call)
-                    spec = env.speculate(completed_call)
+                    # A call that never closes (cut off by inject.max_new, or no call at all) is
+                    # run as the probe wrote it and allowed to fail, never skipped (4.3). Handing
+                    # speculate the None would run `print(None)`, which succeeds, and splice a
+                    # prediction that failed into the stream as a result the system got.
+                    spec = env.speculate(completed_call if completed_call is not None else gen_call)
                     exec_code = spec["exec_code"]
                     arg_modes = spec["arg_modes"]
                     exec_out = spec["exec_out"]

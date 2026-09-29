@@ -1,249 +1,59 @@
-# METHOD — probe speculative execution of tool calls: method specification
+# METHOD — speculative tool calls from a probe
 
-> **Status: finalized (2026-08-08).**
-> This document writes down "what the method should be." How to run it belongs to
-> `.claude/skills/probe-pipeline/`, term definitions belong to `CONTEXT.md`, numbers
-> belong to `RESULTS.md`, none of that is repeated here.
-> Gaps against the current code are collected in the §6 alignment checklist; once
-> finalized, change the code per that checklist, this document is the reference.
->
-> **Three-color tagging (a rule for the whole document)**: every item is tagged
-> [Current state]/[Settled, to change]/[Idea, undecided], the three statuses are
-> never mixed together in writing. [Current state] = this is what the code does
-> today; [Settled, to change] = decided, not yet done; [Idea, undecided] = there is an
-> idea, no decision yet, may only be tried, never treated as the convention.
+What the method is. How to run it: `README.md` and the probe-pipeline skill.
+Terms: `CONTEXT.md`. Numbers: `jobs/RESULTS.md`.
 
-## 0 Nature
+This is an experiment. The core loop is fixed. Everything else is an axis we try.
+Whether it works is judged only by run numbers, never written here in advance.
 
-This is an experiment. The backbone loop (§1) is fixed, every other part is a method
-axis (§3) queued up to try; the working mode is small-scale feasibility trials as the
-default. Whether it works well or not is judged entirely by the numbers that come out
-of a run; this document does not pre-write any conclusion.
+## 1. Core loop
 
-## 1 Backbone (fixed)
+The agent model does a task step by step. At each cut in its thinking, the probe reads
+the text so far. When the trigger rule fires, the probe writes the call, the call runs
+early in a saved-then-restored world, and the call plus its result are written back into
+the stream. The model continues from there.
 
-> The agent large model does a task step by step in the environment; every time the
-> thinking advances to a sentence cut, a side-channel probe looks at the current
-> prefix; when the trigger rule says "fire," it produces a predicted tool call and
-> gets its result; the call and the result are put back into the cut as text, and the
-> model continues writing from there.
+Today: gpt-oss-120b on AppWorld, Qwen3-0.6B-Base probes. `sample` runs the loop without
+the probe, `inject` runs it with the probe; both use `agent/run_tasks.py`.
 
-[Current state] The active instantiation: gpt-oss-120b + AppWorld, the live-run driver
-`pipeline/inject/live_appworld.py` + the probe service `pipeline/inject/probe_server.py`
-(`/score` for scoring, `/gen` for generating the whole call, `/render` for producing the
-harmony prefix token ids, `/encode` for re-tokenizing after injection). The names of the
-three arms are in `CONTEXT.md`: chat baseline / with probe / no probe.
+## 2. Hard rules
 
-## 2 Hard rules (override every axis)
+**Same setup.** Baseline and method use the same model, server, sampling and decoding.
+The method adds nothing the baseline lacks.
+- Checked with the `no_probe` arm: all machinery wired, never fires. Score it against the
+  baseline (`score.baseline`); a person judges the drift.
+- Exact byte-equality is not expected. The server's prefix cache changes the numerical
+  path, so greedy output can diverge at near-ties (measured 2026-08-18). Arms are
+  compared over many tasks instead.
 
-### 2.1 The same-setup rule
+**Injected text behaves like the model's own text.**
+- R1: `p1` formats write only inside the open thinking.
+- R2: `p1` injected text carries no special tokens.
+- R3: the stream after injection is still a legal harmony token sequence.
+- `p2` formats close the thinking on purpose and so relax R1 and R2 (decided 2026-09-12).
 
-The baseline and the method must be the same experimental setup: same model, same
-service, same sampling, same decoding; the method side must not introduce any decoding
-technique the baseline does not have.
+**Scoring is whole-task.** Task success and token cost only; a single call is never
+scored as right or wrong (2026-09-12).
 
-The verification method = **the no-injection control**: wire up the whole machinery,
-never fire even once (the no probe arm, `--no-probe`), and compare the output
-step by step against the chat baseline (`envs/collect/run_appworld.py --api chat`).
-A small amount of drift is allowed. This rests on one incidental observation: during
-hcap collection, step 2 used the same prompt as the control re-send (1457 tokens),
-temperature 0, one run hit the 8192 cap and one run finished normally at 136, this is
-a single observation, not a controlled test, see `learn/vllm/reference/token-walk.html`;
-a controlled rerun on the vLLM side has never been done (`learn/vllm/lessons/0004`'s
-own words: "we have not done a controlled test on the vLLM side"). Drift numbers are
-reported and judged by a person; byte-for-byte identical output is not guaranteed.
+## 3. Axes
 
-One runtime precondition for the same setup: the chat baseline's prompt date is
-generated by the server's `datetime.now()`, while the live-run prefix's date is pinned
-by the `/render` client, for the two to be comparable, `VLLM_SYSTEM_START_DATE` must be
-set to match the pinned date when launching vLLM (see §6-④).
+| # | Axis | Today | Setting field | Open |
+|---|---|---|---|---|
+| 1 | What the probe reads | task + last tool rounds + thinking so far, as text (`data/probe_input.py`) | `build.hist_rounds`, `build.probe_result_cap` | read the agent model's hidden states |
+| 2 | Probe model | Qwen3-0.6B-Base, full tuning | `models.probe`, `probe.tuning` | larger backbones, LoRA |
+| 3 | Where the call comes from | cgen writes the whole call | `inject.probe_gen` | cparam (tool from ctool, arguments from cparam) |
+| 4 | When to fire | ctool confidence ≥ θ, first cut that crosses | `inject.theta`, `inject.probe_score`; `eval.risk` freezes θ | `inject.fire_nth_cut` as a control |
+| 5 | What is written back | one of five formats | `inject.format` (`p1_e1`, `p1_e2`, `p2_e1`, `p2_e2`, `note`) | — |
+| 6 | How often | at most one injection per step | `inject.max_inject_per_step` | — |
+| 7 | Tool type | read and write tools treated the same | — | treat them differently |
+| 8 | When to stop probing in a step | cut cap, thinking closes, step token budget | `inject.max_cuts`, `generation.max_step_tokens` | — |
 
-Three rendering-convention gaps already fixed:
-- Caught in the 2026-08-10 z1 smoke test: `build_prefix` goes through the model's jinja
-  template, which puts two extra `\n\n` characters between the developer text body and
-  `<|end|>`; neither the chat endpoint's harmony renderer nor the collector's hand-built
-  string had them, and the no probe arm once diverged as early as step 0 because of it.
-  After the fix, `/render` and the chat server's rendering are byte-for-byte identical
-  (measured 1533=1533).
-- Two more caught 2026-08-18 by going layer by layer through the vLLM 0.26.0 source,
-  both in the jinja text path: (a) for an assistant turn with empty content, the chat
-  endpoint drops it entirely, but jinja still renders an empty final message (measured
-  367 vs 373 tokens for the same history segment); (b) literal markers like `<|end|>`
-  `<|channel|>` inside content are encoded as plain text by the chat endpoint, but the
-  completions endpoint's tokenizer turns them into real special tokens (measured 377 vs
-  370 tokens). Once either one triggers, every subsequent step's prompt stays
-  permanently off. Fix: `/render` now goes through
-  `pipeline/inject/harmony_render.py`, which copies the chat endpoint's three-step
-  rendering and produces token ids directly, and the driver sends the prompt as a list
-  of ids; the referee test `tests/test_harmony_render.py` checks token-for-token
-  equality against vLLM's own function (run under vllm-env). The same code-comparison
-  pass also confirmed layer by layer that these are identical: sampling parameters, stop
-  tokens (`<|return|>` `<|call|>` `<|endoftext|>`, both paths merged in via
-  generation_config), max_tokens, the output-splitting convention (a truncation
-  mid-thinking / a malformed head / a fabricated user turn, five output types tested
-  with identical results), AppWorld seeding and truncation. The only remaining
-  misalignment is numerical noise from server-side batch composition
-  (`VLLM_BATCH_INVARIANT` defaults to off; z1 measured the two arms diverging mid-
-  generation even with identical prompt token counts), plus the handling path for
-  malformed output/context overflow (the chat endpoint returns 500/400; since 2026-08-18
-  `run_appworld.py` also catches this per task and records abort, comparisons only use
-  tasks where both sides have a result).
-  **The 2026-08-18 five-task run (`cmp_chat_noprobe_5`) checked this once more**: with
-  the same prompt and the same prefix-cache state, the chat endpoint and completions
-  (ids) produce byte-identical output (cold 13/13, warm 13/13); with the same prompt but
-  the cache cleared before vs. after, the output differs 13/13: the greedy divergence
-  comes from how much of the prefix cache is hit on the server side (which changes the
-  numerical path), not from the endpoint. `VLLM_BATCH_INVARIANT=1` does not work for
-  MXFP4 gpt-oss-120b (it needs amd-quark, and the dequantized bf16 does not fit on a
-  single card). At the divergence position, the top-1/top-2 logprob gap is always one
-  bf16 grid step (0/0.125/0.25), a tie position, and the perturbation between the two
-  states is ≤0.17 nat (`srv4`).
-  **Decision (2026-08-18): treat this as noise**, the two arms are not chased into
-  byte-identical output, they are balanced by task volume instead; the seed is useless
-  against argmax.
+A fired call always runs; whatever comes back, errors included, is injected.
 
-### 2.2 Equal effect of the injection format
+## 4. Acceptance check for a new mechanism
 
-The content injected into the thinking chain, at the token level, must have exactly the
-same effect as text the model wrote itself: the format must be neither more nor less,
-not one special token off. This breaks down into four checkable criteria:
-
-| # | Criterion | Status |
-|---|---|---|
-| R1 | Injection lands only inside the thinking segment, stops the moment the thinking closes | [Current state] satisfied (`live_appworld.py:273-279`) |
-| R2 | The injected content itself carries zero special tokens (a plain-text template) | [Current state] satisfied (`replay_inject.py:147`). 2026-09-12: the `p1` formats are encoded with `special=False`, so a control marker inside a result stays plain text; the `p2` formats write `<|end|>` / `<|start|>` on purpose and are the one sanctioned relaxation of R1 and R2 (axis 5) |
-| R3 | The whole string re-sent after injection, re-encoded, is a legal harmony string, token-aligned with native generation; the re-tokenization seam (`live_appworld.py:320`) is measured on every mechanism check | [Current state] verified (2026-08-10 z1 smoke test: 10/10 injection events had server-side tokenization matching openai_harmony's re-encoding bit for bit, see `plans/archive/2026-08-10-z1-smoke-report.md`) |
-| R4 | Request parameters match the already-verified-equivalent collection path | [Current state] satisfied. Since 2026-08-18 the prompt is sent as token ids, the server no longer tokenizes, `add_special_tokens` has no effect and has been removed; `skip_special_tokens=False` is kept (needed to see markers when splitting the output) |
-
-## 3 Axes (each axis: the active value + how to plug in + what's untried)
-
-**Axis 1: what the probe reads**
-[Current state] Reassembled text: `assemble(task, history, thinking prefix)`
-(`pipeline/annotate/rules.py`), re-encoded by the probe's own tokenizer.
-[Idea, undecided] Reading the agent large model's hidden states (to keep exploring
-later, not started in this repo).
-
-**Axis 2: what model the probe uses**
-[Current state] Four cells: mtool/mext = ModernBERT-base, ctool/cgen =
-Qwen3-0.6B-Base (the probe's own backbone, unrelated to the model being probed).
-The training/evaluation entry points are `run.py`'s `CELLS`/`EVAL_CELLS`.
-
-**Axis 3: where the arguments come from**
-[Current state] The active live-run path = cgen generates the whole call (`/gen`).
-Offline there are two more already implemented but unused: mext span extraction;
-the skeleton arm (tool name pinned, arguments written by the model itself,
-`replay_inject.py`'s skel family).
-
-**Axis 4: the trigger rule**
-[Current state] ctool softmax (temperature-T calibrated) max probability ≥ θ, the
-first cut from earliest to latest that crosses the line fires.
-θ **is always given manually, and startup is refused if it is not given**:
-live run `--theta`[Current state] required, no default (§6-① aligned 2026-08-10);
-offline `--theta` manual or `--risk` looks up `REPLAY_REPORT.json`'s risk tier
-(kept).
-Plug-in point: the `external_fire` verdict file (JSONL, each line
-`{"event":…, "fire": bool, "sent_idx": int|null}`, once given, θ plays no part at all,
-`replay_inject.py:217-258`), an externally trained trigger model plugs in here, the
-pipeline does not change. Not wired up: fire-head (trainable on the training side,
-zero references in the injection chain). Recorded only: cgen min_ps.
-
-**Axis 5: what gets injected**
-[Current state] The NOTE template `\n[SYSTEM NOTE: prefetched {call} = {result}]\n`.
-The live run always executes for real: firing means executing, and whatever is
-returned gets injected (errors included), execution goes through
-"save state → execute → roll back → refreeze the clock," no trace of world state is
-left behind. Offline has three miss_policy tiers: skip / oracle / execute (each
-measures something different, the convention is in `replay_inject.py`'s file header).
-[Settled, to change](2026-09-12, gyb) The format is an experiment axis with five named
-values in `pipeline/inject/inject_format.py`, selected by `live_appworld.py --format`
-(default `note` = the template above): placement `p1` appends inside the open thinking,
-`p2` closes the thinking with `<|end|>` and appends a message from a sender named
-`prefetch` on the analysis channel, then `<|start|>assistant`; explanation `e1` is one
-inline sentence per injection, `e2` is one paragraph in the system prompt plus a
-`[Prefetch]` marker inline. The four arms `p1_e1 / p1_e2 / p2_e1 / p2_e2` are compared
-on whole-task success and the token account only; no single-call judgement. Execution
-status is always "ran in a saved-then-restored world, text says already executed"
-(S1-rollback); commit-and-keep and preview-not-executed were dropped on 2026-09-12 (the
-first has real side effects on wrong predictions, the second saves no round trip). The
-`p2` arms write control markers and therefore relax R1 and R2 for this experiment; the
-`p1` arms keep both. `--no-probe --format <e2 arm>` is the control for an e2 arm (same
-system paragraph, no injection).
-
-**Axis 6: when to inject**
-[Current state] At a sentence cut in the thinking, the first cut past the line fires,
-at most one injection per step (`--max-inject-per-step` defaults to 1).
-
-**Axis 7: tool type**
-[Current state] No distinction: read-only and write tools are fired on the same way.
-[Idea, undecided] Splitting read-only vs. write handling (fire-head's readonly label is
-the only piece of code that reflects this axis at all), to revisit later.
-
-**Axis 8: when to stop within a single step**
-[Current state] Four rules: at most one injection per step; there is a cap on the
-number of cuts probed within a step (MAX_BOUNDS); probing stops the moment the
-thinking segment closes; there is a token budget per step (stop=`<|return|>`).
-
-## 4 Current implementation map
-
-| Stage | Code | Notes |
-|---|---|---|
-| Collection | `envs/collect/run_appworld.py` + `common.py` | both the chat baseline and the full harmony record are here |
-| Sampling convention | `configs/presets/default.json` | the one active convention across the whole project, every entry point's `--preset` defaults to it: harmony, effort high, temperature 1.0, top_p 1.0, max_tokens 8192, Current date 2026-08-06; the seed is assigned per trajectory by the collector's `--seeds` |
-| Annotation | `pipeline/annotate/build.py` / `param_label.py` / `rules.py` | the label = the actual call made at that step; samples are cut into prefixes at sentence boundaries |
-| Training | `pipeline/train/` four cells | the single source of truth is `run.py`'s CELLS |
-| Evaluation | `pipeline/eval/` | produces `REPLAY_REPORT.json` (T and θ per risk tier) |
-| Offline injection | `pipeline/inject/replay_inject.py` | plan/run/merge-exec/score |
-| Real execution | `pipeline/inject/exec_calls.py` | genuine world save → execute → roll back |
-| Live run | `pipeline/inject/live_appworld.py` + `probe_server.py` | one `live_{task_id}.jsonl` per task: five record types, meta/gen/spec/env/final |
-
-## 5 Mechanism check (the acceptance package)
-
-Order: finalize the document → align the §6 checklist → smoke test. **The smoke test
-is 2 tasks**, three pass conditions:
-
-- (i) **Every firing is identifiable in five parts**: all present together in the log's
-  spec record, which step / which cut / how confident / what call was guessed and what
-  its execution returned / what was injected, and the subsequent gen record must show
-  how the model picked it up.
-- (ii) **The R3 token comparison**: the string re-sent after injection is read back with
-  `return_token_ids` and compared token-for-token against openai_harmony's re-encoded
-  sequence (the hcap toolchain already does this).
-- (iii) **The no-injection control**: on the same batch of tasks, run the chat baseline
-  and the no probe arm once each, compare the output step by step, and report a
-  same/diverged count, how much drift is tolerable is decided by a person looking at the
-  numbers, no threshold is preset.
-
-The accuracy-drift check ("a small amount of drift") is deferred to after the smoke test
-passes, in the first real batch, since it can only be measured in volume. Numbers from
-the old phase are never used as a reference.
-
-## 6 Alignment checklist (where the document ≠ the current state; act on this once
-finalized, aligning follows the standard three-piece procedure)
-
-**All four items were aligned on 2026-08-10**, this table stays as a record of the basis:
-
-| # | What changed | Basis | Where |
-|---|---|---|---|
-| ① | `probe_server.py` `--theta` loses its default of 0.925, becomes required | Axis 4: θ is always manual, refuse to run without it | `probe_server.py` argparse `required=True`, applies to both the serve and selftest subcommands |
-| ② | `live_appworld.py:1`'s dangling pointer to the deleted design doc `plans/2026-08-01-live-inject-design.md` is repointed to this file | plans/ was deleted in the 08-02 clear-out | the file header now points to METHOD.md |
-| ③ | `live_appworld.py`'s open_stream payload gets `add_special_tokens: False` added | §2.2-R4; the collection path pins this explicitly, the live run was relying on the default lining up by luck (tokenizer post_processor=ByteLevel, the static evidence says the default is harmless, but it must still be explicit) | added as a key in the payload dict (the file's only completions request point) |
-| ④ | The vLLM launch scripts used for the live run/control set `VLLM_SYSTEM_START_DATE`=the pinned date | §2.1 the same-setup precondition | `launch_vllm_splice.py` pins 2026-07-31 (=`rebuild.COLLECT_DATE`); the rest of launch_vllm_* are one-off launchers, to be pinned when actually used |
-
-Two more items added 2026-08-18 (aligning the chat baseline against no probe, already
-done):
-
-| # | What changed | Basis | Where |
-|---|---|---|---|
-| ⑤ | `/render` now produces token ids (copying the chat endpoint's rendering), the driver sends the prompt as ids, the re-send after injection goes through `/encode` | §2.1's two rendering-convention gaps (a)(b) | `harmony_render.py` added; `probe_server.py`'s `/render` `/encode` `/health` echo `render=harmony_ids`; `live_appworld.py` checks this field before running, refuses to run against an old service; `cprobe-env` gets openai-harmony added (lock file updated) |
-| ⑥ | `run_appworld.py --api chat` defaults to high when `--reasoning-effort` is not given; a single-task exception is caught per task and recorded as `abort` | the server's default of medium differed from no probe's default of high by one word; a chat-endpoint 500/400 should not take down the whole piece with it | `run_appworld.py` argparse's post-hoc default; the main loop gets a try/except, final gets an extra `abort` field |
-
-## 7 Decision record (2026-08-08 grilling session)
-
-The method is characterized as an experiment space (backbone + axes); the check order
-= document → code comparison → smoke test; acceptance happens at the mechanism level
-(every injection identifiable), old numbers are not chased; the setting = gpt-oss +
-AppWorld; the document lives at the repo root as METHOD.md, terms belong to
-CONTEXT.md (expanded into the repo-wide glossary); θ is always manual; tool type is not
-yet distinguished; the stopping axis is scoped to "within a single step."
-Task-by-task decisions are in the session record; a direction decision was added to
-TIMELINE.md once this was finalized.
+On a few tasks:
+1. Every fire is fully visible in the task record: step, cut, confidence, predicted call,
+   its result, the text injected, and what the model wrote next.
+2. The stream after injection re-encodes to the same tokens.
+3. `no_probe` against the baseline: a count of same vs. diverged steps, judged by a person.
