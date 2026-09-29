@@ -3,6 +3,25 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-356acbcfe95a` | 2026-09-30 01:51 | eval | train_probe/imp_ctool_0pt6b_full | `038336e` | ok | imported=1 | report.md |
+| `eval-98da04f5eb89` | 2026-09-30 01:51 | eval | train_probe/imp_cgen_0pt6b_full | `038336e` | ok | imported=1 | report.md |
+| `eval-205b92cb31a2` | 2026-09-30 01:51 | eval | train_probe/imp_ctool_1pt7b_full | `038336e` | ok | imported=1 | report.md |
+| `eval-80080672ead9` | 2026-09-30 01:51 | eval | train_probe/imp_cgen_1pt7b_full | `038336e` | ok | imported=1 | report.md |
+| `eval-95eb62f09fda` | 2026-09-30 01:51 | eval | train_probe/imp_ctool_1pt7b_lora | `038336e` | ok | imported=1 | report.md |
+| `eval-396bedee96a1` | 2026-09-30 01:51 | eval | train_probe/imp_cgen_1pt7b_lora | `038336e` | ok | imported=1 | report.md |
+| `eval-bc46eee14fd1` | 2026-09-30 01:51 | eval | train_probe/imp_ctool_4b_lora | `038336e` | ok | imported=1 | report.md |
+| `eval-389bfc0a4158` | 2026-09-30 01:51 | eval | train_probe/imp_cgen_4b_lora | `038336e` | ok | imported=1 | report.md |
+| `train-5a0bdecb02f1` | 2026-09-30 01:43 | train | train_probe/imp_cgen_4b_lora | `038336e` | ok | imported=1 | - |
+| `train-59b0e717e053` | 2026-09-30 01:42 | train | train_probe/imp_ctool_4b_lora | `038336e` | ok | imported=1 | - |
+| `train-f5f97e75f281` | 2026-09-30 01:40 | train | train_probe/imp_cgen_1pt7b_lora | `038336e` | ok | imported=1 | - |
+| `train-ba0618fdcd62` | 2026-09-30 01:38 | train | train_probe/imp_ctool_1pt7b_lora | `038336e` | ok | imported=1 | - |
+| `train-09b18841f5b4` | 2026-09-30 01:37 | train | train_probe/imp_cgen_1pt7b_full | `038336e` | ok | imported=1 | - |
+| `train-95cb6014e6b8` | 2026-09-30 01:36 | train | train_probe/imp_ctool_1pt7b_full | `038336e` | ok | imported=1 | - |
+| `train-ac612eae4a3f` | 2026-09-30 01:35 | train | train_probe/imp_cgen_0pt6b_full | `038336e` | ok | imported=1 | - |
+| `score-0322101ab635` | 2026-09-30 01:34 | score | baseline/gpt_oss_120b_appworld_t20 | `038336e` | ok | success=0.05 n_records=20 | report.md |
+| `build-a035375abdcb` | 2026-09-30 01:34 | build | train_probe/imp_ctool_0pt6b_full | `038336e` | ok | - | report.md |
+| `train-59c5ecfda8e8` | 2026-09-30 01:34 | train | train_probe/imp_ctool_0pt6b_full | `038336e` | ok | imported=1 | - |
+| `sample-21c9079f0c45` | 2026-09-30 01:18 | sample | baseline/gpt_oss_120b_appworld_t20 | `8b93080` | ok | - | - |
 | `eval-5d26033072f1` | 2026-09-30 01:17 | eval | train_probe/imp_ctool_0pt6b_full | `7c7f8f6` | ok | imported=1 | report.md |
 | `eval-3e2c9d33f6c8` | 2026-09-30 01:17 | eval | train_probe/imp_cgen_0pt6b_full | `7c7f8f6` | ok | imported=1 | report.md |
 | `train-35a59ab1ac19` | 2026-09-30 01:15 | train | train_probe/imp_ctool_0pt6b_full | `7c7f8f6` | ok | imported=1 | - |
