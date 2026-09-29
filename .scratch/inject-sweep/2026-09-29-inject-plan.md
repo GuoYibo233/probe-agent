@@ -38,12 +38,16 @@ the evaluation code later), full test-split runs.
    the token usage.
 6. GPUs and order (locked):
    - agent servers: tokyo108's 3 H200 (2 runs each) and 3 H100 (1 run each);
-     tokyo106: 4 two-card A6000 servers (1 run each) if a smoke of one
-     two-card server serves, else none;
-   - probe services, one per run: the remaining small cards (tokyo105 7 free,
-     tokyo107 4, tokyo106 2);
-   - 13 runs in flight when the A6000 servers work, 9 otherwise; launches in
-     waves; wall time estimated 5 to 10 hours;
+     the two-card A6000 server on tokyo106 was smoked on 2026-09-29 and
+     failed at the root: the vllm-env's CUDA 13 torch does not execute on the
+     CUDA 12.2 drivers of tokyo105/106/107 (gpu-run references,
+     gpu_state.md trap 1), so those hosts carry no agent server this round;
+   - probe services, one per run: the small cards of tokyo105/106/107
+     (probe-env runs there);
+   - 9 runs in flight, one queue per tokyo108 card (a pool naming that card
+     plus one small card; the first run of a queue starts the server, the
+     later runs attach once its port answers); wall time estimated 6 to 10
+     hours;
    - order: one debug smoke, then the 0.6B full pair's whole grid, then the
      other three pairs;
    - launcher change needed: a run attaches only to a live agent server on

@@ -20,6 +20,15 @@ Surveyed on: 2026-07-29 (measured, not hearsay).
      two machines for this trap alone; downgrade the wheel only when a driver
      error actually shows up. The pool's card counts and each card's memory
      are the per-host card lists of `constants/cards.yaml`.
+   - **Measured limit (2026-09-29)**: the tree's vllm-env (torch 2.11.0+cu130,
+     nccl 2.28.9) does not execute on tokyo105/106/107 (driver 535.230.02,
+     CUDA 12.2). Without `envs/cuda-compat-13.0` torch refuses the driver as
+     too old; with it CUDA reports available and the first kernel hangs until
+     killed, and a two-card vLLM server died in NCCL init after 8 minutes
+     (`card_performance.md`, sample-62c439b87b39). The compat library works on
+     tokyo108 (driver 570). So `gpt_oss_120b` agent servers run on tokyo108
+     only; tokyo105/106/107 carry probe services and train pieces
+     (probe-env), which do run there.
 2. **Dedupe the aliases**: shiga=tokyo105, saitama=tokyo108, only four
    physical machines. Always use tokyo names for probing and allocation,
    never treat an alias as a fifth machine and double-count a card.

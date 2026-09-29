@@ -3,6 +3,7 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `sample-62c439b87b39` | 2026-09-29 20:39 | sample | baseline/gpt_oss_120b_appworld | `ae19ad1` | launch_failed | - | - |
 | `score-ecd526d476c3` | 2026-09-25 11:06 | score | inject/no_probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
 | `inject-210ff860f998` | 2026-09-25 10:59 | inject | inject/no_probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | - | - |
 | `score-4586e0cdeba8` | 2026-09-25 10:59 | score | inject/probe_p1_e1_theta_0pt80 | `f2d87ea` | ok | success=0.0 base_success=0.0 delta_success=0.0 n_records=3 | report.md |
