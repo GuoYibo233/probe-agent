@@ -45,7 +45,7 @@ sw_0pt6b_full:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe
     probe_score: train_probe/imp_ctool_0pt6b_full
     probe_gen: train_probe/imp_cgen_0pt6b_full
@@ -62,7 +62,7 @@ nf_0pt6b_full:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe_nofill
     format: p1_e1
     probe_score: train_probe/imp_ctool_0pt6b_full
@@ -79,7 +79,7 @@ sw_1pt7b_full:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe
     probe_score: train_probe/imp_ctool_1pt7b_full
     probe_gen: train_probe/imp_cgen_1pt7b_full
@@ -96,7 +96,7 @@ nf_1pt7b_full:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe_nofill
     format: p1_e1
     probe_score: train_probe/imp_ctool_1pt7b_full
@@ -113,7 +113,7 @@ sw_1pt7b_lora:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe
     probe_score: train_probe/imp_ctool_1pt7b_lora
     probe_gen: train_probe/imp_cgen_1pt7b_lora
@@ -130,7 +130,7 @@ nf_1pt7b_lora:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe_nofill
     format: p1_e1
     probe_score: train_probe/imp_ctool_1pt7b_lora
@@ -147,7 +147,7 @@ sw_4b_lora:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe
     probe_score: train_probe/imp_ctool_4b_lora
     probe_gen: train_probe/imp_cgen_4b_lora
@@ -164,7 +164,7 @@ nf_4b_lora:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     arm: probe_nofill
     format: p1_e1
     probe_score: train_probe/imp_ctool_4b_lora
@@ -181,7 +181,7 @@ np_plain:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     theta: 0.6
     arm: no_probe
     format: p1_e1
@@ -196,7 +196,7 @@ np_paragraph:
   inject:
     split: [test]
     seeds: [42]
-    tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3]
+    tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"]
     theta: 0.6
     arm: no_probe
     format: p1_e2

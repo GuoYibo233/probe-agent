@@ -530,14 +530,27 @@ def _workflow_sections(workflow: list[str]) -> set[str]:
 
 
 def _yaml_allowed_sections(workflow: list[str]) -> set[str]:
-    return set(ALWAYS_SECTIONS) | _workflow_sections(workflow)
-
-
-def _object_sections(workflow: list[str]) -> set[str]:
-    sections = _yaml_allowed_sections(workflow)
+    """The sections a workflow file may state: the always-present ones, one per stage of the workflow, and for an inject workflow the build section, of which only PROBE_TEXT_FIELDS may be stated (_refuse_build_beyond_probe_text)."""
+    sections = set(ALWAYS_SECTIONS) | _workflow_sections(workflow)
     if "inject" in workflow:
         sections = sections | {"build"}
     return sections
+
+
+def _object_sections(workflow: list[str]) -> set[str]:
+    return _yaml_allowed_sections(workflow)
+
+
+def _refuse_build_beyond_probe_text(workflow: list[str], dotted: str, label: str) -> None:
+    """An inject workflow's file states, of the build section, the probe-text fields only (PROBE_TEXT_FIELDS, 1.7): they are in the inject key and the live side assembles the probe's text from them, so a setting may vary the history the probe reads (owner ruling of 2026-09-29, the history-length axis) under meta.override; every other build field belongs to the build run the probes came from."""
+    if "inject" not in workflow or "build" in workflow:
+        return
+    section, _, field_name = dotted.partition(".")
+    if section == "build" and field_name not in PROBE_TEXT_FIELDS:
+        raise SchemaError(
+            f"{label}: a setting whose workflow contains inject may state of the build section only "
+            f"{', '.join('build.' + f for f in PROBE_TEXT_FIELDS)}; {dotted} belongs to the build run "
+            "its probes came from")
 
 
 def _dc_default_dict(cls: type) -> dict:
@@ -743,6 +756,10 @@ def _check_raw_sections(workflow: list[str], common: dict, named: dict, base_nam
     for d in (common, named):
         for key in d:
             _require_workflow_reads(workflow, key, key)
+        build = d.get("build")
+        if isinstance(build, dict):
+            for field_name in build:
+                _refuse_build_beyond_probe_text(workflow, f"build.{field_name}", f"build.{field_name}")
     for d in (common, named):
         if "probe" in d:
             _refuse_probe_under_inject(workflow, "probe")
@@ -777,9 +794,10 @@ def _merge_one(workflow: list[str], common: dict, named: dict, *, debug: bool, o
         if not _is_declared_field(dotted):
             raise SchemaError(f"{dotted}: not a field of the schema")
         _refuse_probe_under_inject(workflow, dotted)
-        # An override states what the file itself may state (5.7): the inherited build section
-        # of an inject workflow is in the merged setting and is still not the file's to state.
+        # An override states what the file itself may state (5.7): of an inject workflow's
+        # inherited build section, the probe-text fields only.
         _require_workflow_reads(workflow, dotted.partition(".")[0], dotted)
+        _refuse_build_beyond_probe_text(workflow, dotted, dotted)
         _set_field(full, dotted, _parse_yaml(raw, f"the override {dotted}"), authored)
 
     return full, authored
@@ -802,6 +820,7 @@ def _sweep_children(sweep: Any, debug_fields: set[str], workflow: list[str]) -> 
             raise SchemaError(f"{label}: not a field of the schema")
         _refuse_probe_under_inject(workflow, dotted)
         _require_workflow_reads(workflow, dotted.partition(".")[0], label)
+        _refuse_build_beyond_probe_text(workflow, dotted, label)
         if not isinstance(values, list):
             raise SchemaError(f"{label}: expected a list of values, got {type(values).__name__}")
         if not values:

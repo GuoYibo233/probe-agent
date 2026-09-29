@@ -35,7 +35,7 @@ cparam_qwen3_0pt6b:
 
 imp_ctool_0pt6b_full:
   meta:   {notes: "August np821b06 ctool imported (0.6B full; 3-epoch weights), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_0pt6b}
   probe:  {method: ctool, tuning: full}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_ctool, max_len: 16384}
@@ -43,7 +43,7 @@ imp_ctool_0pt6b_full:
 
 imp_cgen_0pt6b_full:
   meta:   {notes: "August np821b06 cgen imported (0.6B full; end of pass 1), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_0pt6b}
   probe:  {method: cgen, tuning: full}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821b06_gptoss_cgen, max_len: 16384}
@@ -51,7 +51,7 @@ imp_cgen_0pt6b_full:
 
 imp_ctool_1pt7b_full:
   meta:   {notes: "August np821b17 ctool imported (1.7B full; 3-epoch weights), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_1pt7b}
   probe:  {method: ctool, tuning: full}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_ctool, max_len: 16384}
@@ -59,7 +59,7 @@ imp_ctool_1pt7b_full:
 
 imp_cgen_1pt7b_full:
   meta:   {notes: "August np821b17 cgen imported (1.7B full; end of pass 1), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_1pt7b}
   probe:  {method: cgen, tuning: full}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821b17_gptoss_cgen, max_len: 16384}
@@ -67,7 +67,7 @@ imp_cgen_1pt7b_full:
 
 imp_ctool_1pt7b_lora:
   meta:   {notes: "August np821l17 ctool imported (1.7B LoRA r16 a32, merged; 3-epoch weights), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_1pt7b}
   probe:  {method: ctool, tuning: lora, lora_r: 16, lora_alpha: 32}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_ctool, max_len: 16384}
@@ -75,7 +75,7 @@ imp_ctool_1pt7b_lora:
 
 imp_cgen_1pt7b_lora:
   meta:   {notes: "August np821l17 cgen imported (1.7B LoRA r16 a32, merged; end of pass 1), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_1pt7b}
   probe:  {method: cgen, tuning: lora, lora_r: 16, lora_alpha: 32}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821l17_gptoss_cgen, max_len: 16384}
@@ -83,7 +83,7 @@ imp_cgen_1pt7b_lora:
 
 imp_ctool_4b_lora:
   meta:   {notes: "August np821l4 ctool imported (4B LoRA r16 a32, merged; 3-epoch weights), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_4b}
   probe:  {method: ctool, tuning: lora, lora_r: 16, lora_alpha: 32}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_ctool, max_len: 16384}
@@ -91,7 +91,7 @@ imp_ctool_4b_lora:
 
 imp_cgen_4b_lora:
   meta:   {notes: "August np821l4 cgen imported (4B LoRA r16 a32, merged; end of pass 1), served window 16k"}
-  sample: {split: [test], seeds: [42], tasks: [0a9d82a_1, 2d9f728_2, 2d9f728_3, 325d6ec_1, 325d6ec_2, 325d6ec_3, 3aa1a22_2, 425a494_1, 425a494_3, 6b6ca61_2, 6f4b9a5_3, 7847649_2, 83a7951_2, 9dabbc9_2, a30375d_3, d6ac34d_2, dac78d9_2, f323bae_1, f3f60f0_3, ff58e36_3], pieces: 6, replicas: 1}
+  sample: {split: [test], seeds: [42], tasks: ["0a9d82a_1", "2d9f728_2", "2d9f728_3", "325d6ec_1", "325d6ec_2", "325d6ec_3", "3aa1a22_2", "425a494_1", "425a494_3", "6b6ca61_2", "6f4b9a5_3", "7847649_2", "83a7951_2", "9dabbc9_2", "a30375d_3", "d6ac34d_2", "dac78d9_2", "f323bae_1", "f3f60f0_3", "ff58e36_3"], pieces: 6, replicas: 1}
   models: {probe: qwen3_4b}
   probe:  {method: cgen, tuning: lora, lora_r: 16, lora_alpha: 32}
   train:  {import_from: /net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/pipeline/runs/np821l4_gptoss_cgen, max_len: 16384}
