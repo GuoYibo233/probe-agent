@@ -40,3 +40,21 @@
   why: An eval whose train run is an import writes the imported calibration (temperature, theta sweep,
     chosen thetas) into its report marked imported, with the numbers computed from prediction rows absent,
     instead of fitting.
+- stage: sample
+  era: 1
+  from: 6279b5c0de7064e4b5eafcd64829d8737437182a
+  same: 0304e1c302b4dadb3a764c6fd59954cd6c09bad5
+  date: 2026-09-30
+  why: The agent service takes its tensor-parallel size from the launcher flag, equal to the table row's
+    value on cards of the declared size, and records gpus and tensor_parallel_size in its endpoint file;
+    the serve line and the run's output on the table row's cards are unchanged, and an inject run's eval
+    reader is unchanged for a fitted eval.
+- stage: inject
+  era: 1
+  from: 6279b5c0de7064e4b5eafcd64829d8737437182a
+  same: 0304e1c302b4dadb3a764c6fd59954cd6c09bad5
+  date: 2026-09-30
+  why: The agent service takes its tensor-parallel size from the launcher flag, equal to the table row's
+    value on cards of the declared size, and records gpus and tensor_parallel_size in its endpoint file;
+    the serve line and the run's output on the table row's cards are unchanged, and an inject run's eval
+    reader is unchanged for a fitted eval.
