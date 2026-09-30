@@ -1,0 +1,4 @@
+# tokyo108 card 4 (H200), after the no-probe run: three 0.6B children (the no-fill one has 20 tasks done)
+run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.9
+run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e1',inject.theta=0.6
+run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_0pt6b_full_tuning

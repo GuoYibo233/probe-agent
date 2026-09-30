@@ -1,0 +1,3 @@
+# tokyo108 card 5 (H200), after the baseline: the two children with 20 tasks done already
+run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p1_e1',inject.theta=0.6
+run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_4b_lora_tuning
