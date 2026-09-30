@@ -49,11 +49,70 @@ Status labels: DECIDED (gyb's word), PROPOSED (mine, waiting for his word), FACT
 
 ## 3. What the repo needs (recipe 7)
 
-- `models/agent_models/qwen3.py`: the family module (in progress, an Opus implementer).
-- `constants/path_models.yaml`: two rows (in progress).
-- `models/table.yaml`: two rows, gyb's file; the implementer's report carries the text.
+- `models/agent_models/qwen3.py`: the family module, committed as 1948104 with its CPU
+  test module `tests/test_qwen3_family.py` (13 tests green) and the README lines. Three
+  shared files changed with it (`models/__init__.py` binds the weights directory to the
+  family so the template can be read; `gptoss.py` gained the two no-op counterparts;
+  `service.py`'s render check sends the family's own request), covered by the same rows
+  of 7335596.
+- `constants/path_models.yaml`: the two rows are in 1948104.
+- `models/table.yaml`: gyb's file. `run.py selfcheck` is red on check 4 until the rows
+  below exist ("models/agent_models/qwen3.py is under the code layers, but no stage's
+  code tuple names it"). The rows to paste:
+
+```yaml
+qwen3_30b_a3b_thinking_2507:
+  role: agent
+  family: qwen3
+  result:
+    weights: qwen3-30b-a3b-thinking-2507
+    dtype: bfloat16
+    quantization: null
+    max_model_len: 131072
+    served_model_name: qwen3-30b-a3b-thinking-2507
+    env_result: {}
+    extra_flags: ""
+  serving:
+    host: tokyo108
+    port: 8104
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
+
+qwen3pt5_35b_a3b:
+  role: agent
+  family: qwen3
+  result:
+    weights: qwen3.5-35b-a3b
+    dtype: bfloat16
+    quantization: null
+    max_model_len: 131072
+    served_model_name: qwen3.5-35b-a3b
+    env_result: {}
+    extra_flags: "--language-model-only"
+  serving:
+    host: tokyo108
+    port: 8105
+    gpu_memory_utilization: 0.92
+    tensor_parallel_size: 1
+    env:
+      LD_LIBRARY_PATH: /home/y-guo/reproduce/new1/envs/cuda-compat-13.0
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      VLLM_CACHE_ROOT: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache
+      TRITON_CACHE_DIR: /net/tokyo100-10g/data/str01_01/y-guo/vllm_cache/triton
+```
+
+  `--language-model-only` keeps Qwen3.5's vision tower unloaded. Add
+  `--generation-config vllm` to `extra_flags` if open point 3 is decided as "unsent".
 - `experimental_settings/draft/`: a Qwen setting block beside the gpt-oss one, once the
-  table rows exist.
+  table rows exist (the block only changes `models.agent` and, per open point 2,
+  `generation.temperature`).
+- The GPU proof: a `--debug` walk of that setting; the server's render check compares
+  the local ids with vLLM's chat endpoint id for id.
 - Servers run on tokyo108 only (the vLLM venv does not run on the 47 GiB machines).
 
 ## 4. Open points for gyb
