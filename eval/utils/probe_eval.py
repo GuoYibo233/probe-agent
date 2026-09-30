@@ -37,7 +37,7 @@ FIRES_SCHEMA: dict[str, pl.DataType] = {
 }
 
 IDENTITY_FIELDS: frozenset[str] = frozenset({
-    "version", "method", "probe_kind", "stage_key", "train_key",
+    "version", "method", "probe_kind", "stage_key", "train_key", "checkpoint",
     "theta_from", "commit", "labels", "dropped_overlong",
 })
 
@@ -706,13 +706,27 @@ def run(run_dir: Path) -> None:
     # this eval writes that instead of fitting (report_imported).
     imported_from = train_meta["stage_extra"].get("imported_from")
 
+    # The weight copy this report scores (eval.checkpoint): best/, or a pass_<n>/ the train run
+    # wrote under train.save_passes, read through the prediction file that copy left.
+    checkpoint = cfg.eval.checkpoint
+    predictions_path = train_dir / probe_output.file_name(checkpoint)
+
     if imported_from is None:
-        pred_df = probe_output.read(train_dir / "predictions.parquet")
+        if not predictions_path.exists():
+            raise ValueError(
+                f"{predictions_path}: no prediction file for eval.checkpoint {checkpoint!r}; the "
+                f"train run predicted from {train_meta['stage_extra'].get('checkpoints', ['best'])}")
+        pred_df = probe_output.read(predictions_path)
         methods_found = sorted(pred_df["method"].unique().to_list())
         if methods_found != [method]:
             raise ValueError(
-                f"{train_dir / 'predictions.parquet'}: method column holds {methods_found}, "
+                f"{predictions_path}: method column holds {methods_found}, "
                 f"expected only [{method!r}]")
+        copies_found = sorted(pred_df["checkpoint"].unique().to_list())
+        if copies_found not in ([checkpoint], [None]):
+            raise ValueError(
+                f"{predictions_path}: checkpoint column holds {copies_found}, expected only "
+                f"[{checkpoint!r}] (or unset, in a file written before pass copies existed)")
         total_events = pred_df["event_id"].n_unique()
         # The beat's total is the report's pass count, the only unit the report advances by: it
         # walks the whole frame once per theta and once or more per risk target, so there is no
@@ -784,6 +798,9 @@ def run(run_dir: Path) -> None:
     if imported_from is None:
         fields, fires = report(method, pred_df, cfg, ref, labels, hb)
     else:
+        if checkpoint != "best":
+            raise ValueError(
+                f"eval.checkpoint {checkpoint!r}: an imported train run holds best/ alone")
         checkpoint_meta = json.loads((train_dir / "best" / "meta.json").read_text())
         fields, fires = report_imported(method, cfg, ref, checkpoint_meta)
         hb.emit(1, 1, "item")
@@ -799,6 +816,7 @@ def run(run_dir: Path) -> None:
         "probe_kind": kind,
         "stage_key": cfg._key,
         "train_key": cfg._upstream["train"],
+        "checkpoint": checkpoint,
         "theta_from": cfg._upstream.get("theta_from.eval"),
         "commit": cfg._commit,
         "labels": labels,
@@ -811,7 +829,7 @@ def run(run_dir: Path) -> None:
     if imported_from is None:
         (run_dir / "report.md").write_text(_render_report_md(full_fields))
         n_rows = pred_df.height
-        consumed_input, consumed_rows = train_dir / "predictions.parquet", n_rows
+        consumed_input, consumed_rows = predictions_path, n_rows
     else:
         (run_dir / "report.md").write_text(_render_imported_report_md(full_fields))
         n_rows = 0

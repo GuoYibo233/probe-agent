@@ -59,6 +59,47 @@ def _weight_rule(weight_mode: str):
     return weight_of
 
 
+_TOKEN_MARKS = (8192, 16384, 24576, 32768)
+
+
+def _token_length_lines(cfg, frame: pl.DataFrame) -> list[str]:
+    """The report's token-length lines, measured on the longest text of every event with the probe backbone's tokenizer (the trainer drops or keeps an event by that text's tokens against train.max_len): p50, p90, max, and the share of events over each of _TOKEN_MARKS. A setting with no probe backbone, or one whose tokenizer file this venv cannot read, gets one line saying the tokens were not measured; the build itself never needs them."""
+    if cfg.models.probe is None or cfg.models.probe_row is None:
+        return ["- token length: not measured (the setting names no probe backbone)"]
+    try:
+        from tokenizers import Tokenizer
+    except ImportError as exc:
+        return [f"- token length: not measured (tokenizers is not importable here: {exc})"]
+    # The backbone's weights directory, read off constants/path_models.yaml by the weights alias
+    # of the loader's probe row (the same lookup models/__init__.py makes; the build stays out of
+    # the models layer so the code gate of this stage keeps to the data files).
+    path_models = Path(__file__).resolve().parents[1] / "constants" / "path_models.yaml"
+    with open(path_models) as f:
+        weights_dir = yaml.safe_load(f)[cfg.models.probe_row["weights"]]["path"]
+    tokenizer_path = Path(weights_dir) / "tokenizer.json"
+    if not tokenizer_path.exists():
+        return [f"- token length: not measured ({tokenizer_path} is missing)"]
+    tokenizer = Tokenizer.from_file(str(tokenizer_path))
+    if frame.height == 0:
+        return [f"- token length ({cfg.models.probe} tokenizer, longest text per event): no examples"]
+    longest = (
+        frame.select(["event_id", "text"])
+        .with_columns(pl.col("text").str.len_chars().alias("n_chars"))
+        .sort("n_chars", descending=True)
+        .unique(subset=["event_id"], keep="first")
+    )
+    encodings = tokenizer.encode_batch(longest["text"].to_list(), add_special_tokens=False)
+    lens = sorted(len(e.ids) for e in encodings)
+    n = len(lens)
+    p50 = lens[min(n - 1, int(n * 0.5))]
+    p90 = lens[min(n - 1, int(n * 0.9))]
+    over = ", ".join(f"over {mark}: {sum(1 for v in lens if v > mark)}" for mark in _TOKEN_MARKS)
+    return [
+        f"- token length ({cfg.models.probe} tokenizer, longest text per event, {n} events): "
+        f"p50={p50} p90={p90} max={lens[-1]}; events {over}",
+    ]
+
+
 def main(run_dir: Path) -> None:
     """Build `examples.parquet` for one build run directory (contracts 2.5, 1.2, 1.7, 2.3, 1.5).
 
@@ -155,6 +196,8 @@ def main(run_dir: Path) -> None:
     skip_short_think = 0
     cuts_per_event: list[int] = []
     refused_calls: list[dict] = []
+    events_with_rounds_cut = 0
+    rounds_cut_max = 0
 
     for n_record, (task_id, seed) in enumerate(pairs, start=1):
         rid = record_id(task_id, seed)
@@ -257,9 +300,20 @@ def main(run_dir: Path) -> None:
             n_cuts = len(offsets)
             cuts_per_event.append(n_cuts)
             eid = event_id(rid, step)
+            # The budget cuts the oldest rounds of the longest text of the event, the terminal
+            # cut's; a shorter cut of the same event loses at most as many. The report counts the
+            # events whose longest text lost rounds and the most rounds any text lost.
+            n_rounds_cut = probe_input.rounds_cut(
+                task_text, history, thinking, cfg.build.hist_rounds, cfg.build.probe_result_cap,
+                cfg.build.probe_text_max_chars,
+            )
+            if n_rounds_cut > 0:
+                events_with_rounds_cut += 1
+                rounds_cut_max = max(rounds_cut_max, n_rounds_cut)
             for cut_index, cut in enumerate(offsets):
                 text = probe_input.assemble(
-                    task_text, history, thinking[:cut], cfg.build.hist_rounds, cfg.build.probe_result_cap
+                    task_text, history, thinking[:cut], cfg.build.hist_rounds, cfg.build.probe_result_cap,
+                    cfg.build.probe_text_max_chars,
                 )
                 depth = round(cut / len(thinking), 4)
                 ex_id = example_id(eid, cut_index)
@@ -355,6 +409,8 @@ def main(run_dir: Path) -> None:
             return 0
         return lens[min(len(lens) - 1, int(len(lens) * p))]
 
+    token_lines = _token_length_lines(cfg, final_frame)
+
     if cuts_per_event:
         cuts_min, cuts_max = min(cuts_per_event), max(cuts_per_event)
         cuts_median = statistics.median(cuts_per_event)
@@ -392,6 +448,9 @@ def main(run_dir: Path) -> None:
         f"- examples per depth decile: {[depth_deciles.get(i, 0) for i in range(10)]}",
         f"- text length p50={_pct(text_lens, 0.5)} p90={_pct(text_lens, 0.9)} "
         f"max={text_lens[-1] if text_lens else 0}",
+        f"- history rounds cut by build.probe_text_max_chars={cfg.build.probe_text_max_chars}: "
+        f"events whose longest text lost rounds {events_with_rounds_cut}, most rounds lost by one text {rounds_cut_max}",
+        *token_lines,
         f"- records with an abort: {records_with_abort}; aborted steps skipped "
         f"(a gen row with no env row at the final row's step): {skip_abort}",
         f"- per-split build.max_examples cap dropped {cap_dropped} rows",
@@ -407,6 +466,7 @@ def main(run_dir: Path) -> None:
         "events_skipped_no_call": skip_no_call,
         "events_skipped_short_think": skip_short_think,
         "examples": final_frame.height,
+        "events_with_rounds_cut": events_with_rounds_cut,
         "examples_train": post_cap_counts.get("train", 0),
         "examples_val": post_cap_counts.get("val", 0),
         "examples_test": post_cap_counts.get("test", 0),

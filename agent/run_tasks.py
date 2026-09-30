@@ -77,7 +77,9 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
     run = cfg.inject if cfg.inject is not None else cfg.sample
     arm = "sample" if cfg.inject is None else cfg.inject.arm
 
-    env = open_env(cfg.data.env)
+    # The tool reply the model is shown is cut at generation.result_cap characters when the
+    # setting names one, else at the environment's own RESULT_CAP.
+    env = open_env(cfg.data.env, result_cap=cfg.generation.result_cap)
 
     replica = i % run.replicas
     agent_path = run_dir / f"service_agent_{replica}.json"

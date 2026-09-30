@@ -414,6 +414,15 @@ def run(run_dir: Path, method) -> None:
                 probe.save(best_dir, labels=labels, extra=method.CHECKPOINT_META,
                            meta=_checkpoint_meta(cfg))
                 log(event="save_best", ep=ep, gstep=gstep, objective=best)
+            # Under train.save_passes every pass leaves its weights under pass_<n>/ (n from 1),
+            # in the served form like best/, whatever the objective did: the copies are what
+            # eval.checkpoint and the inject side's probe_*_checkpoint name.
+            if cfg.train.save_passes:
+                pass_name = _pass_name(ep)
+                probe.save(run_dir / pass_name, labels=labels, extra=method.CHECKPOINT_META,
+                           meta={**_checkpoint_meta(cfg), "checkpoint": pass_name})
+                log(event="save_pass", ep=ep, gstep=gstep, checkpoint=pass_name,
+                    objective=metrics["objective"])
             last_epoch_validated = ep
 
         for ep in range(cfg.train.epochs):
@@ -521,41 +530,73 @@ def run(run_dir: Path, method) -> None:
     # The prediction pass is the longest phase of a generator run, and 8.4 asks every piece for an
     # emit(0, total, unit) before its main loop: the predict-only path of 2.4 skips the step loop
     # entirely, so without this beat it writes nothing until finish() and registry.judge reads it
-    # as a suspected stall. `total` is the number of prediction splits, and a beat lands after each
-    # split but the last; the beat that reaches the total lands once predictions.parquet is on
-    # disk, so a finished train reads n/n. Only the finish() row makes the piece done (8.5's first
-    # rule), whatever the count reads; the unit stays 8.4's word for the train stage.
+    # as a suspected stall. `total` is the number of prediction splits times the number of weight
+    # copies predicted from, and a beat lands after each split but the last; the beat that reaches
+    # the total lands once the last prediction file is on disk, so a finished train reads n/n.
+    # Only the finish() row makes the piece done (8.5's first rule), whatever the count reads;
+    # the unit stays 8.4's word for the train stage.
+    #
+    # best/ is predicted from first, into predictions.parquet, as it always was. Under
+    # train.save_passes every pass_<n>/ on disk is predicted from as well, into
+    # predictions_pass_<n>.parquet, so an eval run may score any pass without a card
+    # (eval.checkpoint), and every row says which copy it came from.
+    copies = [("best", best_dir)] + (_pass_copies(run_dir) if cfg.train.save_passes else [])
     predict_splits = list(cfg.train.predict.splits)
-    predict_total = len(predict_splits)
+    predict_total = len(predict_splits) * len(copies)
     hb.emit(0, predict_total, "step")
-    pred_rows: list[dict] = []
-    for i, split in enumerate(predict_splits):
-        split_df = df.filter(pl.col("split") == split).sort("example_id")
-        if cfg.train.predict.cap is not None:
-            split_df = split_df.head(cfg.train.predict.cap)
-        with _bf16_forward(probe):
-            pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg, hb))
-        splits_done = i + 1
-        if splits_done < predict_total:
-            hb.emit(splits_done, predict_total, "step")
+    predictions: dict[str, int] = {}
+    splits_done = 0
+    for checkpoint, ckpt_dir_of_copy in copies:
+        if checkpoint != "best":
+            probe = base.load(cfg.models.probe_row, cfg, probe_kind=method.PROBE_KIND,
+                               n_labels=n_labels, labels=labels, ckpt_dir=ckpt_dir_of_copy,
+                               device=device)
+            probe.set_training(False)
+        pred_rows: list[dict] = []
+        for split in predict_splits:
+            split_df = df.filter(pl.col("split") == split).sort("example_id")
+            if cfg.train.predict.cap is not None:
+                split_df = split_df.head(cfg.train.predict.cap)
+            with _bf16_forward(probe):
+                pred_rows.extend(method.predict(probe, split_df, probe.tokenizer, cfg, hb))
+            splits_done += 1
+            if splits_done < predict_total:
+                hb.emit(splits_done, predict_total, "step")
 
-    if pred_rows:
-        pred_df = pl.DataFrame(pred_rows, strict=False)
-        pred_df = pred_df.join(
-            df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]),
-            on="example_id", how="left")
-    else:
-        pred_df = df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]).head(0)
-    probe_output.write(run_dir / "predictions.parquet", pred_df)
+        if pred_rows:
+            pred_df = pl.DataFrame(pred_rows, strict=False)
+            pred_df = pred_df.join(
+                df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]),
+                on="example_id", how="left")
+        else:
+            pred_df = df.select(["example_id", "event_id", "task_id", "depth", "split", "tool"]).head(0)
+        pred_df = pred_df.with_columns(pl.lit(checkpoint).alias("checkpoint"))
+        probe_output.write(run_dir / probe_output.file_name(checkpoint), pred_df)
+        predictions[checkpoint] = pred_df.height
     hb.emit(predict_total, predict_total, "step")
 
     registry.write_done(
         run_dir, stage="train", key=cfg._key, commit=cfg._commit,
         counts={"train_rows": train_df.height, "val_rows": val_df.height,
-                "predictions": pred_df.height, "dropped_overlong": dropped_overlong},
+                "predictions": predictions["best"], "predictions_by_checkpoint": predictions,
+                "dropped_overlong": dropped_overlong},
         era=cfg._era, metrics=dict(train_val_metrics), report=None,
-        stage_extra={"labels": labels})
+        stage_extra={"labels": labels, "checkpoints": [name for name, _dir in copies]})
     hb.finish()
+
+
+def _pass_name(epoch: int) -> str:
+    """The directory name of the copy the pass with this zero-based epoch index leaves: pass_1 for the first pass."""
+    return f"pass_{epoch + 1}"
+
+
+def _pass_copies(run_dir: Path) -> list[tuple[str, Path]]:
+    """The pass_<n>/ copies a run directory holds, each with its meta.json, in pass order."""
+    found = []
+    for path in run_dir.glob("pass_*"):
+        if path.is_dir() and (path / "meta.json").exists() and schema.CHECKPOINT_NAME.fullmatch(path.name):
+            found.append((int(path.name[len("pass_"):]), path))
+    return [(path.name, path) for _n, path in sorted(found)]
 
 
 # ---------------------------------------------------------------------------

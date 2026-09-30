@@ -183,6 +183,12 @@ class ParquetFormatsTest(unittest.TestCase):
         self.assertEqual(df.columns, list(probe_output.SCHEMA))
         self.assertEqual(df["logits"].to_list(), [[2.0, 0.0], [0.0, 1.0]])
         self.assertEqual(df["text_pred"].to_list(), [None, None])
+        self.assertEqual(df["checkpoint"].to_list(), [None, None],
+                         "a file written before pass copies existed reads with no checkpoint")
+
+    def test_prediction_file_per_weight_copy(self):
+        self.assertEqual(probe_output.file_name("best"), "predictions.parquet")
+        self.assertEqual(probe_output.file_name("pass_3"), "predictions_pass_3.parquet")
 
     def test_missing_required_column_is_refused(self):
         path = self.dir / "examples.parquet"

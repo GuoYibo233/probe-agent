@@ -138,6 +138,25 @@ class KeyMovementTest(unittest.TestCase):
     def test_eval_field_moves_eval_only(self):
         path, name = _first_setting("train_probe")
         self.assertEqual(_moved(path, name, {"eval.bootstrap": "10"}), ["eval"])
+        self.assertEqual(_moved(path, name, {"eval.checkpoint": "pass_2"}), ["eval"])
+
+    def test_pass_copies_move_train_and_eval_only(self):
+        path, name = _first_setting("train_probe")
+        self.assertEqual(_moved(path, name, {"train.save_passes": "true"}), ["train", "eval"])
+
+    def test_probe_text_budget_moves_build_and_downstream(self):
+        path, name = _first_setting("train_probe")
+        self.assertEqual(_moved(path, name, {"build.probe_text_max_chars": "50000"}),
+                         ["build", "train", "eval"])
+
+    def test_reply_cap_moves_every_stage(self):
+        path, name = _first_setting("train_probe")
+        self.assertEqual(_moved(path, name, {"generation.result_cap": "20000"}),
+                         ["sample", "build", "train", "eval"])
+
+    def test_served_copy_moves_inject_and_score(self):
+        path, name = _first_setting("inject")
+        self.assertEqual(_moved(path, name, {"inject.probe_gen_checkpoint": "pass_1"}), ["inject", "score"])
 
     def test_inject_theta_moves_inject_and_score(self):
         path, name = _first_setting("inject")
@@ -192,6 +211,34 @@ class RefusalTest(unittest.TestCase):
     def test_negative_hist_rounds(self):
         path, name = _first_setting("train_probe")
         self.assertIn("build.hist_rounds", self._refused(path, name, {"build.hist_rounds": "-1"}))
+
+    def test_caps_below_one(self):
+        path, name = _first_setting("train_probe")
+        self.assertIn("build.probe_text_max_chars",
+                      self._refused(path, name, {"build.probe_text_max_chars": "0"}))
+        self.assertIn("generation.result_cap", self._refused(path, name, {"generation.result_cap": "0"}))
+
+    def test_a_weight_copy_is_best_or_a_pass(self):
+        path, name = _first_setting("train_probe")
+        for bad in ("last", "pass_0", "pass", "best/"):
+            with self.subTest(value=bad):
+                self.assertIn("eval.checkpoint", self._refused(path, name, {"eval.checkpoint": bad}))
+        for good in ("best", "pass_1", "pass_12"):
+            with self.subTest(value=good):
+                _load(path, name, overrides={"eval.checkpoint": good})
+
+    def test_the_served_copy_matches_the_carried_eval(self):
+        """The carried classifier eval fitted its temperature on one copy; the service scores with
+        the copy the inject setting names, so a name-form probe_score reference holds them equal."""
+        path, name = _first_setting("inject")
+        self.assertIn("inject.probe_score_checkpoint",
+                      self._refused(path, name, {"inject.probe_score_checkpoint": "pass_1"}))
+
+    def test_the_reply_cap_is_inherited_from_the_probes_collection(self):
+        """An inject run's agent sees replies cut as the probe's training collection cut them,
+        unless meta.override names the field."""
+        path, name = _first_setting("inject")
+        self.assertIn("meta.override", self._refused(path, name, {"generation.result_cap": "20000"}))
 
     def test_several_injections_per_step_under_a_p2_format(self):
         path, name = _first_setting("inject")

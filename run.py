@@ -1003,12 +1003,19 @@ def _clear_continue_markers(stage: str, run_dir: Path) -> None:
             p.unlink()
     if stage == "train":
         # predictions.parquet is the prediction pass's output, cleared with the markers so a
-        # fresh start leaves no prediction of the weights it replaces.
+        # fresh start leaves no prediction of the weights it replaces; under train.save_passes
+        # the pass copies and their own prediction files go with it, so a fresh start cannot
+        # serve or score a pass of the run it replaces.
         for name in ("train_log.jsonl", "train_done.json", "align_check.json",
                      "predictions.parquet"):
             p = run_dir / name
             if p.exists():
                 p.unlink()
+        for p in run_dir.glob("predictions_pass_*.parquet"):
+            p.unlink()
+        for d in run_dir.glob("pass_*"):
+            if d.is_dir():
+                shutil.rmtree(d)
         # The resume checkpoint carries three names while `_save_last` swaps it
         # (train/utils/trainer.py): a kill inside the swap leaves `last.tmp/` or `last.prev/`
         # on disk, and `_settle_last` gives `last.prev/` the name `last/` back on the next

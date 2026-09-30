@@ -65,8 +65,8 @@ class Environment:
         raise NotImplementedError("complete_call")
 
 
-def open_env(name: str) -> Environment:
-    """Load `data/environments/<name>.py`, instantiate its one strict subclass of `Environment`, and return it."""
+def open_env(name: str, *, result_cap: int | None = None) -> Environment:
+    """Load `data/environments/<name>.py`, instantiate its one strict subclass of `Environment`, and return it; `result_cap` (generation.result_cap) replaces the module's own RESULT_CAP on the instance, and None keeps it."""
     path = Path(__file__).resolve().parents[2] / "constants" / "path_datasets.yaml"
     with open(path) as f:
         doc = yaml.safe_load(f)
@@ -101,6 +101,8 @@ def open_env(name: str) -> Environment:
     missing = missing_methods + missing_attrs
     if missing:
         raise ValueError(f"data.environments.{name}: instance missing {missing}")
+    if result_cap is not None:
+        instance.RESULT_CAP = result_cap
     return instance
 
 

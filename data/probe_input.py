@@ -56,41 +56,65 @@ def _clip(s: str, cap: int) -> str:
     return s if len(s) <= cap else s[: cap - 60] + " ...[cut]... " + s[-40:]
 
 
-# TODO(gyb, 2026-09-22): owner's decision: the probe reads the task and EVERY earlier round of the
-# record in full, and train.max_len is raised to hold it. Today it reads the last
-# build.hist_rounds = 3 rounds only. Each history line stays what it is now, the whole code block
-# of a round plus its result clipped to build.probe_result_cap.
-# What to do: (1) the settings give build.hist_rounds a value that covers a whole record
-# (sample.max_steps = 30 today); (2) measure the token length of the longest text per event on a
-# full-scale build and set train.max_len from that measurement. The --debug build b565f5ab1b94
-# (3 rounds of history, 6 steps per task) already reports p50 3347, p90 10150 and max 26752
-# characters, and the trainer drops a whole event whose longest text passes train.max_len
-# (8192 tokens today), so raising hist_rounds alone would drop the late steps of long tasks.
-# Two limits on max_len: the probe backbone's context length, and card memory, since a training
-# block holds 2 * max_len tokens (train/methods/ctool.py) and the live probe service scores
-# texts of the same length. The measured max_len also has to make truncation rare on the live
-# side: training drops an overlong event whole, while the live score truncates an overlong text
-# from the left (models/probe_models/qwen.py), which removes the `Task:` line and the oldest
-# history, a shape of text the probe never saw in training.
-# build.hist_rounds is in the build key and in the inject key
-# (PROBE_TEXT_FIELDS) and train.max_len is in the train key, so build, train, eval and inject
-# all re-key; sample stays.
+# The probe reads the task, the last hist_rounds tool rounds and the thinking so far (the owner's
+# decision of 2026-09-22 and of 2026-09-30: a setting gives hist_rounds a value that covers a whole
+# record, and build.probe_text_max_chars bounds the whole text). Each history line is the round's
+# whole code block plus its result clipped to probe_result_cap. Under a budget, the oldest of the
+# kept rounds are cut one by one until the text fits, so the probe always sees the task, the newest
+# rounds and the thinking, and the build and the live side produce the same text from the same
+# rule (the budget is in characters so the build needs no tokenizer). The task and thinking lines
+# are never cut: a text that passes the budget with no round left is returned as it is.
+def _lines(
+    task: str,
+    history: list[tuple[str, str]],
+    thinking_prefix: str,
+    hist_rounds: int,
+    probe_result_cap: int,
+    max_chars: int | None,
+) -> tuple[list[str], int]:
+    """The probe text's lines and the count of kept rounds the budget cut from the front."""
+    if hist_rounds < 0:
+        raise ValueError(f"hist_rounds must be at least 0, got {hist_rounds}")
+    if max_chars is not None and max_chars < 1:
+        raise ValueError(f"max_chars must be at least 1, got {max_chars}")
+    # history[-0:] is the whole list, so hist_rounds = 0 (no rounds) is spelled out
+    kept = history[-hist_rounds:] if hist_rounds > 0 else []
+    head = [f"Task: {task}", "[HISTORY]"]
+    tail = ["[THINKING]", thinking_prefix]
+    rounds = [f"{action} -> {_clip(observation, probe_result_cap)}" for action, observation in kept]
+    n_cut = 0
+    if max_chars is not None and rounds:
+        # the joined text holds one newline between consecutive lines, so a line costs its
+        # length plus one
+        total = sum(len(s) + 1 for s in head + tail) - 1 + sum(len(s) + 1 for s in rounds)
+        while rounds and total > max_chars:
+            total -= len(rounds[0]) + 1
+            rounds = rounds[1:]
+            n_cut += 1
+    return head + (rounds or ["(start)"]) + tail, n_cut
+
+
 def assemble(
     task: str,
     history: list[tuple[str, str]],
     thinking_prefix: str,
     hist_rounds: int,
     probe_result_cap: int,
+    max_chars: int | None = None,
 ) -> str:
-    """Build the probe's input text from the task, the last hist_rounds tool rounds, and the thinking so far."""
-    if hist_rounds < 0:
-        raise ValueError(f"hist_rounds must be at least 0, got {hist_rounds}")
-    # history[-0:] is the whole list, so hist_rounds = 0 (no rounds) is spelled out
-    kept = history[-hist_rounds:] if hist_rounds > 0 else []
-    lines = [f"Task: {task}", "[HISTORY]"]
-    lines += [
-        f"{action} -> {_clip(observation, probe_result_cap)}"
-        for action, observation in kept
-    ] or ["(start)"]
-    lines += ["[THINKING]", thinking_prefix]
+    """Build the probe's input text from the task, the last hist_rounds tool rounds, and the thinking so far; under max_chars (build.probe_text_max_chars) the oldest kept rounds are cut until the text fits."""
+    lines, _n_cut = _lines(task, history, thinking_prefix, hist_rounds, probe_result_cap, max_chars)
     return "\n".join(lines)
+
+
+def rounds_cut(
+    task: str,
+    history: list[tuple[str, str]],
+    thinking_prefix: str,
+    hist_rounds: int,
+    probe_result_cap: int,
+    max_chars: int | None,
+) -> int:
+    """How many of the kept rounds `assemble` cuts from the front of this text under max_chars; 0 without a budget."""
+    _lines_out, n_cut = _lines(task, history, thinking_prefix, hist_rounds, probe_result_cap, max_chars)
+    return n_cut

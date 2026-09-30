@@ -78,7 +78,9 @@ def serve(args) -> None:
         device = args.device
         temperature = args.temperature
 
-        gen_dir = Path(args.gen_ckpt) / "best"
+        # Each train run's weight copy is named on the serve line (inject.probe_score_checkpoint
+        # and inject.probe_gen_checkpoint): best/, or a pass_<n>/ written under train.save_passes.
+        gen_dir = Path(args.gen_ckpt) / args.gen_checkpoint
         gen_meta = json.loads((gen_dir / "meta.json").read_text())
         if gen_meta.get("param_only"):
             raise SystemExit(
@@ -88,7 +90,7 @@ def serve(args) -> None:
         call_sep = gen_meta["call_sep"]
         gen_train_key = gen_meta["train_key"]
 
-        score_dir = Path(args.score_ckpt) / "best"
+        score_dir = Path(args.score_ckpt) / args.score_checkpoint
         score_meta = json.loads((score_dir / "meta.json").read_text())
         max_len = score_meta["max_len"]
         score_train_key = score_meta["train_key"]
@@ -96,10 +98,13 @@ def serve(args) -> None:
         score_probe = base.load(None, None, probe_kind="classifier", ckpt_dir=score_dir, device=device)
         gen_probe = base.load(None, None, probe_kind="generator", ckpt_dir=gen_dir, device=device)
 
+    score_checkpoint = None if args.render_only else args.score_checkpoint
+    gen_checkpoint = None if args.render_only else args.gen_checkpoint
     health_doc = {
         "family": m.family, "weights": m.weights, "render": "ids", "encode_special": True,
         "decode": True, "temperature": temperature, "agent_model": args.agent_model,
         "score_train_key": score_train_key, "gen_train_key": gen_train_key, "max_len": max_len,
+        "score_checkpoint": score_checkpoint, "gen_checkpoint": gen_checkpoint,
         "device": device,
     }
     lock = threading.Lock()
@@ -165,7 +170,8 @@ def serve(args) -> None:
     host = socket.gethostname()
     base_url = f"http://{host}:{args.port}"
     claims = {"family": m.family, "weights": m.weights, "score_train_key": score_train_key,
-              "gen_train_key": gen_train_key, "max_len": max_len, "temperature": temperature}
+              "gen_train_key": gen_train_key, "max_len": max_len, "temperature": temperature,
+              "score_checkpoint": score_checkpoint, "gen_checkpoint": gen_checkpoint}
     _write_endpoint_file(
         _endpoint_path(Path(args.run_dir)), base_url=base_url, host=host, port=args.port,
         pid=os.getpid(), flags=vars(args), claims=claims,
@@ -191,6 +197,8 @@ def check(args) -> int:
         "score_train_key": cfg._upstream.get("probe_score.train") if has_inject else None,
         "gen_train_key": cfg._upstream.get("probe_gen.train") if has_inject else None,
         "temperature": cfg._resolved.get("probe_temperature") if has_inject else None,
+        "score_checkpoint": cfg.inject.probe_score_checkpoint if has_inject else None,
+        "gen_checkpoint": cfg.inject.probe_gen_checkpoint if has_inject else None,
         "render": "ids",
         "encode_special": True,
     }
@@ -263,6 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     srv.add_argument("--port", type=int, required=True)
     srv.add_argument("--score-ckpt", default=None)
     srv.add_argument("--gen-ckpt", default=None)
+    srv.add_argument("--score-checkpoint", default="best")
+    srv.add_argument("--gen-checkpoint", default="best")
     srv.add_argument("--temperature", type=float, default=None)
     srv.add_argument("--device", default=None)
     srv.add_argument("--render-only", action="store_true")

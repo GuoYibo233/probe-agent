@@ -466,14 +466,16 @@ def _agent_service_cmd(python, run_dir, model_alias, host, port, gpus, replica, 
 
 
 def _probe_service_cmd(python, run_dir, agent_alias, port, *, score_ckpt, gen_ckpt,
+                        score_checkpoint, gen_checkpoint,
                         temperature, device, render_only, log) -> str:
-    """7.2's serve line: the four checkpoint/device flags are absent under `--render-only`."""
+    """7.2's serve line: the checkpoint and device flags are absent under `--render-only`; the two `--*-checkpoint` flags name the weight copy inside each train run (inject.probe_score_checkpoint, inject.probe_gen_checkpoint)."""
     parts = [python, "-m", "models.probe_models.service", "serve",
               "--run-dir", str(run_dir), "--agent-model", agent_alias, "--port", str(port)]
     if render_only:
         parts += ["--render-only"]
     else:
         parts += ["--score-ckpt", str(score_ckpt), "--gen-ckpt", str(gen_ckpt),
+                  "--score-checkpoint", score_checkpoint, "--gen-checkpoint", gen_checkpoint,
                   "--temperature", str(temperature)]
         if device:
             parts += ["--device", device]
@@ -1254,17 +1256,28 @@ def launch(stage, setting, run_dir, resolved, git, cards=None) -> tuple[str, lis
                     sys.exit(_no_cards_message(free_by_host, cards_needed, 0, cards, False))
                 if render_only:
                     gpus, device, score_ckpt, gen_ckpt, temperature = "", None, None, None, None
+                    score_checkpoint = gen_checkpoint = None
                 else:
                     gpu_id = _claim_cards(free_by_host, host, 1, 0, False)[0]
                     gpus, device = str(gpu_id), f"cuda:{gpu_id}"
                     upstream_map = schema.upstream(stage, setting)
                     score_ckpt = schema.referenced_run_dir("train", upstream_map["probe_score.train"])
                     gen_ckpt = schema.referenced_run_dir("train", upstream_map["probe_gen.train"])
+                    score_checkpoint = setting.inject.probe_score_checkpoint
+                    gen_checkpoint = setting.inject.probe_gen_checkpoint
+                    for ckpt_root, name in ((score_ckpt, score_checkpoint), (gen_ckpt, gen_checkpoint)):
+                        if ckpt_root is not None and not (Path(ckpt_root) / name / "meta.json").exists():
+                            sys.exit(
+                                f"jobs.launch: {ckpt_root}: no weight copy {name!r} (no {name}/meta.json); "
+                                "a pass_<n> copy exists only in a train run that ran under "
+                                "train.save_passes")
                     temperature = resolved.get("probe_temperature")
                 port = _next_free_port("service_probe", 0, None, host)
                 endpoint_file = "service_probe_0.json"
                 cmd = _probe_service_cmd(python, run_dir_str, agent_alias, port,
                                           score_ckpt=score_ckpt, gen_ckpt=gen_ckpt,
+                                          score_checkpoint=score_checkpoint,
+                                          gen_checkpoint=gen_checkpoint,
                                           temperature=temperature, device=device,
                                           render_only=render_only, log=log)
                 placed.append({"index": idx, "kind": "service", "host": host, "gpus": gpus,

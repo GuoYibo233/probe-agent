@@ -27,6 +27,7 @@ SCHEMA: dict[str, pl.DataType] = {
     "logits": pl.List(pl.Float32),
     "text_pred": pl.Utf8,
     "gen_tokens": pl.Int32,
+    "checkpoint": pl.Utf8,   # the weight copy the row was predicted from: best, or pass_<n>
     "version": pl.Int32,
 }
 
@@ -35,6 +36,11 @@ DEFAULTS: dict[str, Any] = {name: None for name in SCHEMA}
 REQUIRED: frozenset[str] = frozenset({
     "example_id", "event_id", "task_id", "depth", "split", "tool", "method", "target", "version",
 })
+
+
+def file_name(checkpoint: str) -> str:
+    """The prediction file of one weight copy inside a train run: predictions.parquet for best/, the name every reader knew before pass copies existed, and predictions_pass_<n>.parquet for a pass copy."""
+    return "predictions.parquet" if checkpoint == "best" else f"predictions_{checkpoint}.parquet"
 
 
 def write(path: Path, df: pl.DataFrame) -> None:

@@ -120,6 +120,16 @@ class AppWorldCallSyntaxTest(unittest.TestCase):
         self.assertTrue(cut.startswith("x" * cap))
         self.assertEqual(cut[cap:], "\n[output cut: 37 more characters not shown]")
 
+    def test_the_setting_replaces_the_modules_reply_cap(self):
+        """generation.result_cap, handed to open_env, is the cap the instance cuts at; None keeps
+        the module's own, and the module's constant itself never moves."""
+        module_cap = type(self.env).RESULT_CAP
+        env = open_env("appworld", result_cap=50)
+        self.assertEqual(env.RESULT_CAP, 50)
+        self.assertEqual(env._capped("x" * 60)[50:], "\n[output cut: 10 more characters not shown]")
+        self.assertEqual(open_env("appworld", result_cap=None).RESULT_CAP, module_cap)
+        self.assertEqual(type(self.env).RESULT_CAP, module_cap)
+
     def test_v2_carries_the_official_rules(self):
         v2 = self.env.INSTRUCTIONS["v2"]
         for line in ("- If no answer is required, e.g., for \"Start my Spotify music player.\", omit the answer "

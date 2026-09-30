@@ -180,6 +180,7 @@ def step(env: Environment, clients: step_without_probe.Clients, cfg, writer: Wri
                 probe_text = probe_input.assemble(
                     task_text, history, thinking_so_far[:cut],
                     cfg.build.hist_rounds, cfg.build.probe_result_cap,
+                    cfg.build.probe_text_max_chars,
                 )
                 if cfg.inject.fire_nth_cut > 0:
                     conf, pred_label = None, None

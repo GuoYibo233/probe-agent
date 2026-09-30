@@ -57,6 +57,7 @@ class Generation:
     stop: list[str] | None = None                 # stop strings; null takes the family module's STOP
     effort: str | None = None                     # the family's reasoning tier; null takes DEFAULT_EFFORT
     date: str | None = None                       # the system-message date for a benchmark whose tasks carry no date of their own (AppWorld's do); null takes DEFAULT_DATE
+    result_cap: int | None = None                 # characters of one tool reply the model is shown, the rest replaced by a line saying how many were cut; null takes the environment's RESULT_CAP
 
 
 @dataclass
@@ -81,6 +82,7 @@ class Build:
     min_think: int = 40                          # characters of thinking below which a step has no cuts
     hist_rounds: int = 3                         # tool rounds kept in the probe's text
     probe_result_cap: int = 400                  # characters per environment result inside the probe's text
+    probe_text_max_chars: int | None = None       # characters the probe's whole text may hold: the oldest history rounds are cut until it fits; null cuts none
     weight_mode: str = "uniform"                 # uniform (weight 1 per cut) or per_event (1/n)
     split_source: str = "env"                    # env = the benchmark's official task lists; hash = a stable hash split
     split_ratio: list[float] = field(default_factory=lambda: [0.8, 0.1, 0.1])  # train/val/test shares, used only under hash
@@ -117,6 +119,7 @@ class Train:
     max_steps: int | None = None                  # stop early; for --debug
     align_check: bool = True                      # run the packed-versus-plain loss gate before training
     checkpoint_hours: float = 2.0                 # how often last/ is written
+    save_passes: bool = False                     # after each pass's validation also save the weights under pass_<n>/ beside best/, and predict from every copy
     predict: Predict = field(default_factory=Predict)
     import_from: str | None = None                # a previous-pipeline run directory whose best/ this run takes over instead of training
 
@@ -128,6 +131,7 @@ class Eval:
     bootstrap: int = 1000                        # resamples for the interval, grouped by task
     bootstrap_seed: int = 42                      # seeds the resampling
     theta_from: str | dict | None = None           # ref; required when the method's PROBE_KIND is generator
+    checkpoint: str = "best"                      # which weight copy of the train run the report scores: best, or pass_<n> under train.save_passes
 
 
 @dataclass
@@ -139,6 +143,8 @@ class Inject:
     max_steps: int = 30                          # steps before the run is cut off
     probe_score: str | dict | None = None          # ref; required: the setting whose ctool probe decides when to fire
     probe_gen: str | dict | None = None            # ref; required: the setting whose probe writes the whole call
+    probe_score_checkpoint: str = "best"          # which weight copy of the probe_score train run the service loads: best, or pass_<n> under train.save_passes
+    probe_gen_checkpoint: str = "best"            # likewise for the probe_gen train run
     # TODO(gyb, 2026-09-22): before the full inject run, set theta in the inject workflow file from
     # the full ctool eval's risk thresholds. The 0.80 there was never crossed in a debug walk
     # (wave 7: no spec row); both 2026-09-22 debug walks fired through fire_nth_cut only.
@@ -205,7 +211,10 @@ AXES = {
 }
 RETIRED: set[tuple[str, str]] = set()          # (axis, value); empty today (3.3)
 REQUIRED_FIELDS = ("inject.theta", "inject.probe_score", "inject.probe_gen")
-PROBE_TEXT_FIELDS = ("min_think", "hist_rounds", "probe_result_cap")   # 1.7
+PROBE_TEXT_FIELDS = ("min_think", "hist_rounds", "probe_result_cap", "probe_text_max_chars")   # 1.7
+# A weight copy's directory name inside a train run: best/ (today's only copy) or pass_<n>/
+# (the n-th pass's weights, written under train.save_passes).
+CHECKPOINT_NAME = re.compile(r"best|pass_[1-9][0-9]*")
 
 STAGES = {
   "sample": {
@@ -284,9 +293,11 @@ STAGES = {
   "inject": {
     "sections": ("data", "models.agent", "generation",
                  "build.min_think", "build.hist_rounds", "build.probe_result_cap",
+                 "build.probe_text_max_chars",
                  "inject.split", "inject.max_steps", "inject.theta", "inject.format",
                  "inject.arm", "inject.fire_nth_cut", "inject.max_inject_per_step",
-                 "inject.max_cuts", "inject.max_new", "inject.store_token_ids"),
+                 "inject.max_cuts", "inject.max_new", "inject.store_token_ids",
+                 "inject.probe_score_checkpoint", "inject.probe_gen_checkpoint"),
     "models": ("agent",),
     "upstream": ({"name": "probe_score.train", "source": "ref:inject.probe_score",
                   "stage": "train", "key": "fold"},
@@ -1061,7 +1072,8 @@ _INHERIT_GROUPS = {
     "data": ("data.env", "data.instructions"),
     "models.agent": ("models.agent",),
     "generation": ("generation.temperature", "generation.top_p", "generation.max_step_tokens",
-                    "generation.stop", "generation.effort", "generation.date"),
+                    "generation.stop", "generation.effort", "generation.date",
+                    "generation.result_cap"),
 }
 
 
@@ -1179,6 +1191,27 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
     if "build" in full and full["build"]["hist_rounds"] < 0:
         raise SchemaError(f"build.hist_rounds: {full['build']['hist_rounds']} is below 0")
 
+    # The whole-text budget cuts the oldest rounds until the text fits; a budget the task line
+    # alone cannot fit in cuts every round of every text, so a value below 1 has no reading.
+    if "build" in full:
+        budget = full["build"]["probe_text_max_chars"]
+        if budget is not None and budget < 1:
+            raise SchemaError(f"build.probe_text_max_chars: {budget} is below 1")
+
+    # The reply cap replaces the tail of a tool reply with a line saying how many characters were
+    # cut; a cap below 1 shows the model nothing of any reply.
+    if "generation" in full:
+        cap = full["generation"]["result_cap"]
+        if cap is not None and cap < 1:
+            raise SchemaError(f"generation.result_cap: {cap} is below 1")
+
+    # A weight copy is named by its directory inside the train run (CHECKPOINT_NAME).
+    for dotted in ("eval.checkpoint", "inject.probe_score_checkpoint", "inject.probe_gen_checkpoint"):
+        section, _, field_name = dotted.partition(".")
+        if section in full and CHECKPOINT_NAME.fullmatch(full[section][field_name]) is None:
+            raise SchemaError(
+                f"{dotted}: {full[section][field_name]!r} is not 'best' or 'pass_<n>' (n >= 1)")
+
     if "inject" in workflow and full["models"]["probe"] is not None:
         _refuse_probe_under_inject(workflow, "models.probe")
 
@@ -1266,6 +1299,19 @@ def _finalize(full: dict, authored: set[str], workflow: list[str], *, file_stem:
     _resolve_if_set("inject.probe_score")
     if "inject.probe_score" in refs:
         _require_classifier("inject.probe_score")
+        # The carried classifier eval fitted the temperature and theta on one weight copy of the
+        # referenced train run (its eval.checkpoint); the service scores with the copy this
+        # setting names, so the two name the same copy. A pinned key: / dir: reference names no
+        # setting, and eval/utils/probe_eval.py stamps the copy into the report the run reads.
+        kind, payload, _method = refs["inject.probe_score"]
+        if kind == "setting" and payload.eval is not None:
+            carried = payload.eval.checkpoint
+            own = full["inject"]["probe_score_checkpoint"]
+            if carried != own:
+                raise SchemaError(
+                    f"inject.probe_score_checkpoint: {own!r} differs from the referenced setting's "
+                    f"eval.checkpoint {carried!r}, the weight copy its carried eval fitted the "
+                    "temperature and theta on")
 
     # The whole-call-generator check reads the method the reference selects, which the name form
     # takes off the named setting and the key: / dir: form states in its method: sibling, so the
