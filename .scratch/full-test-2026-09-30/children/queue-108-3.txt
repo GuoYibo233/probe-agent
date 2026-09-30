@@ -1,4 +1,3 @@
-# tokyo108 card 3 (H200): 4B LoRA pair p2_e2 x 2 thetas, then one 0.6B child
+# tokyo108 card 3 (H200): 4B LoRA pair p2_e2 x 2 thetas
 run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.6
 run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p2_e2',inject.theta=0.9
-run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e1',inject.theta=0.9

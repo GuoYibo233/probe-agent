@@ -1,4 +1,4 @@
-# tokyo108 card 1 (H100): 4B LoRA pair p1_e1 x 2 thetas, then one 0.6B child
+# tokyo108 card 1 (H100): 4B LoRA pair p1_e1 x 2 thetas, then the 0.6B no-fill (20 tasks done)
 run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.6
 run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning/inject.format='p1_e1',inject.theta=0.9
-run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning/inject.format='p2_e2',inject.theta=0.9
+run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_0pt6b_full_tuning
