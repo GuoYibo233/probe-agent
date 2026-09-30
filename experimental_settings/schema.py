@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import hashlib
 import itertools
 import json
@@ -363,9 +364,21 @@ MODELS_READONLY = ("agent_row", "probe_row")
 # ---------------------------------------------------------------------------
 
 
+# One load of a setting reads the same few source files for literal after literal, and a
+# setting that names other settings loads each of them in turn, so a process parses a file's
+# text once and walks a parsed module once per literal name. Both memos are keyed on the text
+# itself: an edited file is a new text and is parsed again.
+_MODULES: dict[tuple[str, str], ast.Module] = {}
+_LITERALS: dict[tuple[ast.Module, str], Any] = {}
+
+
 def _parse_module(rel_path: str) -> ast.Module:
-    """The module at rel_path parsed as source text, never imported (3.3); a caller that wants two literals of one file parses it once."""
-    return ast.parse((ROOT / rel_path).read_text())
+    """The module at rel_path parsed as source text, never imported (3.3), once per text of the file."""
+    text = (ROOT / rel_path).read_text()
+    memo_id = (rel_path, text)
+    if memo_id not in _MODULES:
+        _MODULES[memo_id] = ast.parse(text)
+    return _MODULES[memo_id]
 
 
 def _column_zero_matches(tree: ast.Module, name: str) -> list:
@@ -391,8 +404,11 @@ def _one_column_zero(rel_path: str, tree: ast.Module, name: str) -> Any:
 
 
 def module_literal(rel_path: str, name: str) -> Any:
-    """The one column-zero literal named `name` in the module at rel_path, read as source text (3.3)."""
-    return _one_column_zero(rel_path, _parse_module(rel_path), name)
+    """The one column-zero literal named `name` in the module at rel_path, read as source text (3.3); each caller gets its own copy of the value."""
+    tree = _parse_module(rel_path)
+    if (tree, name) not in _LITERALS:
+        _LITERALS[(tree, name)] = _one_column_zero(rel_path, tree, name)
+    return copy.deepcopy(_LITERALS[(tree, name)])
 
 
 FORMATS_FILE = "agent/injected_text_formats.py"
@@ -501,14 +517,22 @@ class _UniqueKeyLoader(yaml.SafeLoader):
         return super().construct_mapping(node, deep=deep)
 
 
+# The parsed documents, keyed on (source, text) for the reason _MODULES is: a load reads the
+# workflow file, the table and the constants files again for every setting it resolves.
+_YAML_DOCS: dict[tuple[str, str], Any] = {}
+
+
 def _parse_yaml(text: str, source: str) -> Any:
-    """Parse one YAML document with _UniqueKeyLoader; `source` names the text in a refusal (a path, or an override)."""
-    loader = _UniqueKeyLoader(text)
-    loader.name = source
-    try:
-        return loader.get_single_data()
-    finally:
-        loader.dispose()
+    """Parse one YAML document with _UniqueKeyLoader, once per (source, text); `source` names the text in a refusal (a path, or an override), and each caller gets its own copy of the document."""
+    memo_id = (source, text)
+    if memo_id not in _YAML_DOCS:
+        loader = _UniqueKeyLoader(text)
+        loader.name = source
+        try:
+            _YAML_DOCS[memo_id] = loader.get_single_data()
+        finally:
+            loader.dispose()
+    return copy.deepcopy(_YAML_DOCS[memo_id])
 
 
 def _read_yaml(rel_path: str) -> dict:
@@ -1331,7 +1355,9 @@ def _check_workflow(workflow: Any) -> list[str]:
     return list(workflow)
 
 
-def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -> list[Setting]:
+def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict,
+              child: str | None) -> list[Setting]:
+    """The settings `base_name` expands into, each merged and finalized; `child`, a sweep child's suffix, finalizes that one child alone, after the sweep block as a whole has passed its checks."""
     doc = _parse_yaml(Path(ref_file).read_text(), str(ref_file)) or {}
     if not isinstance(doc, dict):
         raise SchemaError(
@@ -1362,6 +1388,10 @@ def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -
             raise SchemaError(f"{sorted(clash)[0]}: overridden and swept at once")
     else:
         children_extras = [(None, {})]
+    if child is not None:
+        children_extras = [(suffix, extra) for suffix, extra in children_extras if suffix == child]
+        if not children_extras:
+            raise SchemaError(f"{base_name}/{child}: no such child of {base_name}")
 
     file_stem = Path(ref_file).stem
     settings = []
@@ -1376,14 +1406,9 @@ def _load_all(ref_file: Path, base_name: str, *, debug: bool, overrides: dict) -
 
 def load(workflow_file: Path, setting_name: str, *, debug: bool, overrides: dict) -> list[Setting]:
     """The merge order of 5.7: defaults -> common -> the named setting -> sweep -> debug.yaml -> overrides (5.1)."""
-    base_name, sep, _ = setting_name.partition("/")
-    children = _load_all(Path(workflow_file), base_name, debug=debug, overrides=overrides)
-    if not sep:
-        return children
-    for c in children:
-        if c._name == setting_name:
-            return [c]
-    raise SchemaError(f"{setting_name}: no such child of {base_name}")
+    base_name, sep, child = setting_name.partition("/")
+    return _load_all(Path(workflow_file), base_name, debug=debug, overrides=overrides,
+                     child=child if sep else None)
 
 
 # ---------------------------------------------------------------------------
