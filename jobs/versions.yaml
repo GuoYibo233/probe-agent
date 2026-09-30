@@ -128,3 +128,27 @@
   date: 2026-10-01
   why: 'the same e41d917 and 28649a9 changes as the sample row: reply cap, probe text budget and checkpoint
     names all at defaults that keep the injected records byte-identical'
+- stage: sample
+  era: 2
+  from: 6d591542fc7361eb0f29032b76598e27f54caf15
+  same: 1948104b957911293c9917f46535c0bab254ce12
+  date: 2026-10-01
+  why: 1948104 adds bind_weights (gptoss keeps nothing) and routes the render check's request through
+    the family's chat_request, which for gptoss is the same messages and reasoning_effort; the sampled,
+    trained and injected outputs are unchanged
+- stage: train
+  era: 2
+  from: 6d591542fc7361eb0f29032b76598e27f54caf15
+  same: 1948104b957911293c9917f46535c0bab254ce12
+  date: 2026-10-01
+  why: 1948104 adds bind_weights (gptoss keeps nothing) and routes the render check's request through
+    the family's chat_request, which for gptoss is the same messages and reasoning_effort; the sampled,
+    trained and injected outputs are unchanged
+- stage: inject
+  era: 3
+  from: 6d591542fc7361eb0f29032b76598e27f54caf15
+  same: 1948104b957911293c9917f46535c0bab254ce12
+  date: 2026-10-01
+  why: 1948104 adds bind_weights (gptoss keeps nothing) and routes the render check's request through
+    the family's chat_request, which for gptoss is the same messages and reasoning_effort; the sampled,
+    trained and injected outputs are unchanged
