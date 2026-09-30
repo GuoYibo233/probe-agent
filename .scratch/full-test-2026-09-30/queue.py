@@ -147,12 +147,10 @@ def main() -> int:
         # fill free slots
         while pending and len(in_flight) < a.slots:
             child = pending[0]
+            # A done.json alone does not mean the child is finished: a directory shared with a
+            # narrower setting (the 20-task probe check) carries that setting's certification,
+            # and the walk re-certifies a wider request itself, so run.py decides below.
             run_dir = where(child)
-            if run_dir is not None and (run_dir / "done.json").exists():
-                pending.pop(0)
-                log(fh, f"{child}: already finished ({run_dir}); skipped")
-                outcomes[child] = "already done"
-                continue
             if run_dir is not None and loop_alive(run_dir) and not loop_pieces_done(run_dir)[0]:
                 # a run of this child is in flight from an earlier incarnation of the queue: adopt it
                 # (a failed launch has no fresh heartbeat and is relaunched by the walk instead)
