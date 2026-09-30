@@ -166,7 +166,7 @@ data/environments/__init__.py — the environment contract every benchmark imple
   writes:  -
   venv:    any
 
-data/environments/appworld.py — the AppWorld benchmark: hands out its tasks, steps a model's call through a live world, speculates one call early, and judges task completion.
+data/environments/appworld.py — the AppWorld benchmark: hands out its tasks with each task's own date, steps a model's call through a live world, says which calls change that world, speculates one call early, and judges task completion.
   imports: data/environments/__init__.py; [the appworld package, inside open() alone]
   used by: data/environments/__init__.py (by name)
   reads:   constants/path_datasets.yaml, the split task-id files
@@ -409,7 +409,7 @@ row is written without waiting for the gate.
    `data.instructions`, and one value on `sample.split` / `inject.split` for every split name the
    new environment has that no existing one has); `constants/path_datasets.yaml` (home, venv,
    data root, split files, and a `venvs:` entry when the benchmark brings its own interpreter,
-   which must carry PyYAML, Polars and NumPy). Cost: nothing else, because the loop calls nine
+   which must carry PyYAML, Polars and NumPy). Cost: nothing else, because the loop calls ten
    methods and nothing else, and `data/build_training_dataset.py` parses calls through the
    environment object.
 2. **A fourth probe method.** `train/methods/<m>.py` (new, carrying two column-zero bindings:

@@ -74,3 +74,17 @@
     value on cards of the declared size, and records gpus and tensor_parallel_size in its endpoint file;
     the serve line and the run's output on the table row's cards are unchanged, and an inject run's eval
     reader is unchanged for a fitted eval.
+- stage: sample
+  era: 2
+  date: 2026-09-30
+  why: The model is told each task's own AppWorld date instead of the pinned 2026-08-06 (the meta row
+    records that date as generation.date), and an environment reply is kept to 12,000 characters instead
+    of 4,000 with a closing line that says how many were cut.
+- stage: inject
+  era: 3
+  date: 2026-09-30
+  why: 'The model is told each task''s own AppWorld date instead of the pinned 2026-08-06, an environment
+    reply and a prefetched result are kept to 12,000 characters instead of 4,000 with a closing line that
+    says how many were cut, and a crossing of theta fires only on a call that leaves the world as it was
+    (an API AppWorld documents as a GET that saves no file): complete_task, a login and every other writing
+    call are no longer tried early.'

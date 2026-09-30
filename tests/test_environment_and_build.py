@@ -113,6 +113,76 @@ class AppWorldCallSyntaxTest(unittest.TestCase):
         self.assertIsNone(self.env.complete_call("apis.a.b(x="))
         self.assertIsNone(self.env.complete_call(None))
 
+    def test_a_long_output_is_cut_with_a_line_that_says_so(self):
+        cap = self.env.RESULT_CAP
+        self.assertEqual(self.env._capped("x" * cap), "x" * cap)
+        cut = self.env._capped("x" * (cap + 37))
+        self.assertTrue(cut.startswith("x" * cap))
+        self.assertEqual(cut[cap:], "\n[output cut: 37 more characters not shown]")
+
+    def test_the_answer_rule_of_v2(self):
+        v1, v2 = self.env.INSTRUCTIONS["v1"], self.env.INSTRUCTIONS["v2"]
+        shared = v1[:v1.index("- When the task is fully done")]
+        self.assertTrue(v2.startswith(shared))
+        self.assertIn("bare value", v2)
+        self.assertIn("with no answer", v2)
+
+
+class _FakeTask:
+    def __init__(self, api_docs):
+        self.api_docs = api_docs
+
+
+class _FakeWorld:
+    def __init__(self, api_docs):
+        self.task = _FakeTask(api_docs)
+
+
+class ChangesStateTest(unittest.TestCase):
+    """Which calls the loop may try early: the ones AppWorld documents as reads."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.env = open_env("appworld")
+        cls.env._world = _FakeWorld({
+            "spotify": {
+                "show_song": {"method": "GET", "parameters": [{"name": "song_id"}]},
+                "login": {"method": "POST", "parameters": [{"name": "username"}, {"name": "password"}]},
+                "next_song": {"method": "POST", "parameters": [{"name": "access_token"}]},
+                "remove_song": {"method": "DELETE", "parameters": [{"name": "song_id"}]},
+                "download_receipt": {"method": "GET", "parameters": [{"name": "download_to_file_path"}]},
+            },
+            "supervisor": {"complete_task": {"method": "POST", "parameters": [{"name": "answer"}]}},
+        })
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.env._world = None
+
+    def test_reads_change_nothing(self):
+        self.assertFalse(self.env.changes_state("apis.spotify.show_song(song_id=3)"))
+        self.assertFalse(self.env.changes_state("print(apis.spotify.show_song(song_id=3))"))
+
+    def test_writes_change_the_world(self):
+        for call in ("apis.supervisor.complete_task()", "apis.supervisor.complete_task(answer=4)",
+                     "apis.spotify.login(username='a@b.com', password=pw)", "apis.spotify.next_song()",
+                     "apis.spotify.remove_song(song_id=3)", "apis.spotify.download_receipt()"):
+            self.assertTrue(self.env.changes_state(call), call)
+
+    def test_the_first_call_decides(self):
+        self.assertTrue(self.env.changes_state("apis.spotify.next_song(); apis.spotify.show_song(song_id=3)"))
+        self.assertFalse(self.env.changes_state("apis.spotify.show_song(song_id=3); apis.spotify.next_song()"))
+
+    def test_a_text_with_no_call_and_an_unknown_api_change_nothing(self):
+        for call in ("None", "", None, "apis.spotify.show_song(song_id=", "apis.nowhere.do(x=1)",
+                     "apis.spotify.no_such_api()"):
+            self.assertFalse(self.env.changes_state(call), call)
+
+    def test_it_needs_an_open_task(self):
+        env = open_env("appworld")
+        with self.assertRaises(RuntimeError):
+            env.changes_state("apis.spotify.show_song(song_id=3)")
+
 
 class _FakeEnv:
     def __init__(self, splits):

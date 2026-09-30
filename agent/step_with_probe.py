@@ -190,6 +190,25 @@ def step(env: Environment, clients: step_without_probe.Clients, cfg, writer: Wri
                     fire_now = conf >= cfg.inject.theta
                 if not fire_now:
                     continue
+                # A call that changes the world is never tried early: the early run is undone
+                # (Environment.speculate), so its result would tell the model of a change that
+                # did not happen (a prefetched complete_task read as the task being over). The
+                # scored label is asked here, in both firing arms; the written call is asked
+                # below, in the arm that writes one, because it can name another API.
+                if pred_label is not None and env.changes_state(f"{pred_label}()"):
+                    continue
+
+                gen_call = None
+                if cfg.inject.arm == "probe":
+                    gen_call = clients.probe.generate(probe_text, cfg.inject.max_new)["call"]
+                    completed_call = env.complete_call(gen_call)
+                    # A call that never closes (cut off by inject.max_new, or no call at all) is
+                    # run as the probe wrote it and allowed to fail, never skipped (4.3). Handing
+                    # speculate the None would run `print(None)`, which succeeds, and splice a
+                    # prediction that failed into the stream as a result the system got.
+                    call_to_run = completed_call if completed_call is not None else gen_call
+                    if env.changes_state(call_to_run):
+                        continue
 
                 # ---- fire: back the cut off to a token boundary, the model's own ids ----
                 pos = ts + cut
@@ -201,16 +220,10 @@ def step(env: Environment, clients: step_without_probe.Clients, cfg, writer: Wri
 
                 if cfg.inject.arm == "probe_nofill":
                     note = ""
-                    gen_call = exec_code = arg_modes = exec_out = error_kind = spec_s = None
+                    exec_code = arg_modes = exec_out = error_kind = spec_s = None
                     exec_ok = None
                 else:
-                    gen_call = clients.probe.generate(probe_text, cfg.inject.max_new)["call"]
-                    completed_call = env.complete_call(gen_call)
-                    # A call that never closes (cut off by inject.max_new, or no call at all) is
-                    # run as the probe wrote it and allowed to fail, never skipped (4.3). Handing
-                    # speculate the None would run `print(None)`, which succeeds, and splice a
-                    # prediction that failed into the stream as a result the system got.
-                    spec = env.speculate(completed_call if completed_call is not None else gen_call)
+                    spec = env.speculate(call_to_run)
                     exec_code = spec["exec_code"]
                     arg_modes = spec["arg_modes"]
                     exec_out = spec["exec_out"]

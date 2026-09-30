@@ -28,13 +28,13 @@ def _canonical_json(obj) -> str:
 
 
 def _meta_fields(cfg, task_id: str, seed: int | None, env_seed, split: str, arm: str,
-                  task_text: str, piece_i: int) -> dict:
-    """The meta row's shared field set (1.1), task_text aside: the normal write and the exception-guard write both call this."""
+                  task_text: str, date: str, piece_i: int) -> dict:
+    """The meta row's shared field set (1.1), task_text aside: the normal write and the exception-guard write both call this. `date` is the date this task's system message carries, recorded as generation.date."""
     return dict(
         stage=cfg._stage, env=cfg.data.env, task_id=task_id, seed=seed,
         env_seed=env_seed, split=split, arm=arm, instructions=cfg.data.instructions,
         task_text=task_text, agent_model=cfg.models.agent,
-        generation=_canonical_json(dataclasses.asdict(cfg.generation)),
+        generation=_canonical_json({**dataclasses.asdict(cfg.generation), "date": date}),
         inject=(_canonical_json(dataclasses.asdict(cfg.inject)) if cfg.inject is not None else None),
         commit=cfg._commit, run_key=cfg._key, owner_session=f"{cfg._stage}-{cfg._key}-{piece_i}",
     )
@@ -134,11 +134,16 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
         abort: str | None = None
         tokens_in = tokens_out = 0
         meta_written = False
+        date = cfg.generation.date
         t0 = time.clock_gettime(time.CLOCK_MONOTONIC)
         try:
             env.open(task_id, seed)
             task_text = env.task_text
-            writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, task_text, i))
+            # The model is told the task's own date; the pinned generation.date is for a
+            # benchmark whose tasks carry none. With the pinned date on an AppWorld task the
+            # model computed "last year" and "yesterday" from 2026 inside a 2023 world.
+            date = cfg.generation.date if env.task_date is None else env.task_date
+            writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, task_text, date, i))
             meta_written = True
 
             try:
@@ -150,7 +155,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
                     # the two calls that reach a service; the clients have already retried
                     try:
                         prefix_ids = clients.probe.render(
-                            messages, cfg.generation.effort, cfg.generation.date
+                            messages, cfg.generation.effort, date
                         )["prefix_ids"]
                         res = gen_step(env, clients, cfg, writer, messages, prefix_ids, history,
                                        task_text, step_index, seed)
@@ -206,7 +211,7 @@ def main(run_dir: str | Path, piece: tuple[int, int]) -> None:
         except Exception as exc:  # one task's failure must not take the whole piece down (errata)
             t1 = time.clock_gettime(time.CLOCK_MONOTONIC)
             if not meta_written:
-                writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, "", i))
+                writer.row("meta", **_meta_fields(cfg, task_id, seed, env.SEED, split, arm, "", date, i))
             writer.row(
                 "final", steps=steps_done, completed=False,
                 abort=f"task_error:{type(exc).__name__}",

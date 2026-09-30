@@ -56,7 +56,7 @@ class Generation:
     max_step_tokens: int = 8192                  # the per-step generation budget
     stop: list[str] | None = None                 # stop strings; null takes the family module's STOP
     effort: str | None = None                     # the family's reasoning tier; null takes DEFAULT_EFFORT
-    date: str | None = None                       # the date pinned into the system message; null takes DEFAULT_DATE
+    date: str | None = None                       # the system-message date for a benchmark whose tasks carry no date of their own (AppWorld's do); null takes DEFAULT_DATE
 
 
 @dataclass
@@ -192,7 +192,7 @@ class Setting:
 
 AXES = {
     "data.env":            ("appworld",),
-    "data.instructions":   ("v1",),
+    "data.instructions":   ("v1", "v2"),
     "sample.split":        ("train", "dev", "test"),
     "inject.split":        ("train", "dev", "test"),
     "generation.effort":   ("high", "medium", "low"),

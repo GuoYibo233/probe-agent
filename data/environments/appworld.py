@@ -1,4 +1,4 @@
-"""The AppWorld benchmark: hands out its tasks, steps a model's call through a live world, speculates one call early, and judges task completion."""
+"""The AppWorld benchmark: hands out its tasks with each task's own date, steps a model's call through a live world, says which calls change that world, speculates one call early, and judges task completion."""
 from __future__ import annotations
 
 import ast
@@ -32,7 +32,32 @@ their password for each app. NEVER guess usernames or passwords.
 password=<password from the list>)["access_token"], then pass \
 access_token=token to that app's other APIs.
 - When the task is fully done, call apis.supervisor.complete_task() \
-(pass answer=... if the task asks a question)."""}
+(pass answer=... if the task asks a question).""",
+                # v2 is v1 with the last rule rewritten: AppWorld compares the answer as an exact
+                # string and expects none on a task that asks for an action, and v1 said neither.
+                "v2": """You are an autonomous agent operating a phone-like environment \
+on behalf of your supervisor.
+
+Rules:
+- Each turn, write exactly ONE ```python ... ``` code block. It is executed \
+in a persistent IPython shell and you ONLY see what is printed — always wrap \
+calls whose result you need in print(...), e.g. \
+print(apis.spotify.show_playlists(...))
+- Call app APIs as: apis.{app_name}.{api_name}(...)
+- Explore first: apis.api_docs.show_app_descriptions(), \
+apis.api_docs.show_api_descriptions(app_name=...), \
+apis.api_docs.show_api_doc(app_name=..., api_name=...)
+- Your supervisor's identity: print(apis.supervisor.show_profile()) gives \
+their email/phone; print(apis.supervisor.show_account_passwords()) gives \
+their password for each app. NEVER guess usernames or passwords.
+- Login pattern: token = apis.spotify.login(username=<supervisor email>, \
+password=<password from the list>)["access_token"], then pass \
+access_token=token to that app's other APIs.
+- When the task is fully done, call apis.supervisor.complete_task(). \
+If the task asks a question, pass its answer as answer=... and make it the \
+bare value alone (a number, a name, yes or no), e.g. answer=4 and never \
+answer="The streak is 4 days". If the task asks you to do something, call \
+complete_task() with no answer."""}
 SPLIT_ROLE = {"train": "train", "dev": "val", "test": "test"}
 
 # Regex patterns as plain strings, not compiled Pattern objects: schema.py's ast.literal_eval
@@ -44,6 +69,12 @@ IDENT = r"^[A-Za-z_]\w*$"
 POSKEY = r"^pos\d+$"
 ALWAYS_STR = {"app_name", "api_name"}
 CKPT = "probe"
+# The line put after an output that was longer than RESULT_CAP, so the model knows it read a part.
+CUT_NOTE = "\n[output cut: {n} more characters not shown]"
+# AppWorld documents every API with an HTTP method; GET is the one that reads. A GET that takes
+# this parameter saves a file into the file system app, so it writes as well.
+READ_METHOD = "GET"
+FILE_WRITE_PARAM = "download_to_file_path"
 
 
 def _split_args_named(argstr: str) -> list[tuple[str, str]]:
@@ -293,7 +324,9 @@ class AppWorld(Environment):
     NAME = "appworld"
     INSTRUCTIONS = INSTRUCTIONS
     NO_CODE_MESSAGE = "No ```python``` block found. Reply with exactly one python code block."
-    RESULT_CAP = 4000
+    # The longest API list of one app (spotify, 91 APIs) prints about 9,100 characters; at the
+    # earlier 4,000 it lost the player calls the tasks needed, with nothing saying it was cut.
+    RESULT_CAP = 12000
     SEED = 100
     SPLIT_ROLE = SPLIT_ROLE
 
@@ -310,6 +343,7 @@ class AppWorld(Environment):
         self._experiment_name: str | None = None
         self._clock: str | None = None
         self.task_text: str | None = None
+        self.task_date: str | None = None
 
     def tasks(self, split: str) -> list[str]:
         if split not in self.splits:
@@ -355,16 +389,44 @@ class AppWorld(Environment):
         self._world = world
         self._experiment_name = experiment_name
         self.task_text = world.task.instruction
+        # The day the task's world is set on (2023-05-18 for most tasks, other days for some):
+        # the date the model is told, so "yesterday" and "last year" mean what the task means.
+        self.task_date = world.task.datetime.date().isoformat()
         clock = world.execute("print(DateTime.now())").strip()
         self._clock = None if clock.startswith("Execution failed") else clock
+
+    def _capped(self, out: str) -> str:
+        """`out` whole when it fits RESULT_CAP characters, else its first RESULT_CAP characters and one line saying how many were left out."""
+        if len(out) <= self.RESULT_CAP:
+            return out
+        return out[:self.RESULT_CAP] + CUT_NOTE.format(n=len(out) - self.RESULT_CAP)
 
     def step(self, reply_text: str) -> StepObservation:
         m = re.search(CODE_BLOCK, reply_text, re.S)
         if m is None:
             return StepObservation(None, "NO_CODE_BLOCK", None, False)
         code = m.group(1)
-        out = str(self._world.execute(code))[:self.RESULT_CAP]
+        out = self._capped(str(self._world.execute(code)))
         return StepObservation(code, out, _error_kind(out), self._world.task_completed())
+
+    def changes_state(self, call: str) -> bool:
+        """Whether running `call` would leave the world different from before it: its first API call is one AppWorld documents with a method other than GET, or a GET that saves a file.
+
+        A text with no call in it, and a call to an API the task's apps do not have, change
+        nothing: the first runs no API and the second fails before it reaches an app.
+        """
+        if self._world is None:
+            raise RuntimeError("appworld.changes_state: called before open")
+        found = _first_call_named(call or "")
+        if found is None:
+            return False
+        app, api = found[0], found[1]
+        docs = self._world.task.api_docs
+        if app not in docs or api not in docs[app]:
+            return False
+        doc = docs[app][api]
+        saves_a_file = any(p["name"] == FILE_WRITE_PARAM for p in doc["parameters"])
+        return doc["method"] != READ_METHOD or saves_a_file
 
     def speculate(self, call: str) -> dict:
         if self._world is None:
@@ -376,7 +438,7 @@ class AppWorld(Environment):
         code_x, modes = _requote(call, world.shell.user_ns)
         world.save_state(CKPT)
         try:
-            exec_out = str(world.execute(code_x))[:self.RESULT_CAP]
+            exec_out = self._capped(str(world.execute(code_x)))
         finally:
             world.load_state(CKPT)
             world._set_datetime()
@@ -416,4 +478,5 @@ class AppWorld(Environment):
         self._world = None
         self._experiment_name = None
         self.task_text = None
+        self.task_date = None
         self._clock = None

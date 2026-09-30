@@ -21,7 +21,7 @@ class StepObservation:
 
 class Environment:
     """A benchmark that hands out tasks, steps, can try a call early and undo
-    it, and judges."""
+    it, says which calls change its world, and judges."""
 
     NAME: str
     INSTRUCTIONS: dict[str, str]
@@ -30,6 +30,9 @@ class Environment:
     SEED: int
     SPLIT_ROLE: dict[str, str]
     task_text: str | None
+    # The open task's own date as YYYY-MM-DD, the date the model is told; None for a benchmark
+    # whose tasks carry no date, which takes the setting's pinned generation.date.
+    task_date: str | None = None
 
     def tasks(self, split: str) -> list[str]:
         raise NotImplementedError("tasks")
@@ -42,6 +45,9 @@ class Environment:
 
     def speculate(self, call: str) -> dict:
         raise NotImplementedError("speculate")
+
+    def changes_state(self, call: str) -> bool:
+        raise NotImplementedError("changes_state")
 
     def judge(self) -> dict:
         raise NotImplementedError("judge")
@@ -83,7 +89,8 @@ def open_env(name: str) -> Environment:
     instance = subclasses[0]()
     missing_methods = sorted(
         m
-        for m in ("tasks", "open", "step", "speculate", "judge", "close", "split_args", "build_call", "complete_call")
+        for m in ("tasks", "open", "step", "speculate", "changes_state", "judge", "close", "split_args",
+                  "build_call", "complete_call")
         if not hasattr(instance, m)
     )
     missing_attrs = sorted(
