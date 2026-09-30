@@ -152,3 +152,12 @@
   why: 1948104 adds bind_weights (gptoss keeps nothing) and routes the render check's request through
     the family's chat_request, which for gptoss is the same messages and reasoning_effort; the sampled,
     trained and injected outputs are unchanged
+- stage: sample
+  era: 2
+  from: e41d9171fe34770c9fff430c84f253f5e1341e1a
+  same: e9f9729d24454634d87445beefe34b04cb41fa93
+  date: 2026-10-01
+  why: The changes since e41d917 that a sample run's files carry are a health check the inject loop alone
+    makes, a history line written only under a text budget no sample run has, a no-op weights binding
+    of the gpt-oss family and the render check's request built through the family with the same fields,
+    so a sample run's records are unchanged
