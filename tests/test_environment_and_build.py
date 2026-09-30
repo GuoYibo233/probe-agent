@@ -12,7 +12,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from data.build_training_dataset import _split_rule, _weight_rule
+from data.build_training_dataset import _split_rule, _token_length_lines, _weight_rule
 from data.environments import open_env, requested_pairs
 
 TOOL = "apis.file_system.show_directory"
@@ -246,6 +246,19 @@ class BuildRulesTest(unittest.TestCase):
             _split_rule("random", None, None)
         with self.assertRaises(ValueError):
             _weight_rule("by_depth")
+
+    def test_token_length_line_without_a_probe_backbone(self):
+        """A build frozen with no models section (before models.probe joined the build
+        projection), or a setting with no probe, gets one line saying the tokens were not
+        measured, and the build goes on."""
+        from types import SimpleNamespace
+        import polars as pl
+        frame = pl.DataFrame({"event_id": ["e"], "text": ["Task: t"]})
+        for cfg in (SimpleNamespace(models=None),
+                    SimpleNamespace(models=SimpleNamespace(probe=None, probe_row=None))):
+            lines = _token_length_lines(cfg, frame)
+            self.assertEqual(len(lines), 1)
+            self.assertIn("not measured", lines[0])
 
 
 if __name__ == "__main__":

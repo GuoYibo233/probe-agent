@@ -224,6 +224,7 @@ def run(run_dir: Path, method) -> None:
     resume_step = None
     resume_commit = None
     resume_rng = None
+    resume_epoch_validated = None
     ckpt_dir = None
     # train_done.json means training is over, so the run only predicts from best/, whether or
     # not a predictions.parquet is already there: one beside it but no done.json is a crash
@@ -247,6 +248,10 @@ def run(run_dir: Path, method) -> None:
             resume_step = last_meta.get("step")
             resume_commit = last_meta.get("commit")
             resume_rng = last_meta["rng_state"]
+            # The last epoch the interrupted run validated when it wrote last/ (-1 before any);
+            # a checkpoint written before this field existed carries None, and the resume then
+            # keeps the earlier behaviour of validating nothing it fast-forwards past.
+            resume_epoch_validated = last_meta.get("epoch_validated")
             ckpt_dir = last_dir
         else:
             raise SystemExit(
@@ -382,6 +387,7 @@ def run(run_dir: Path, method) -> None:
         last_logged_step = 0
         last_epoch_validated = -1
         last_epoch_seen = 0
+        pending_validation: int | None = None
 
         def _log_step(ep: int) -> None:
             """One step line and one loss-carrying beat, over the losses seen since the last one."""
@@ -445,9 +451,23 @@ def run(run_dir: Path, method) -> None:
                     if len(seen_mbs) >= cfg.train.accum or is_epoch_end:
                         gstep += 1
                         seen_mbs = set()
+                        # last/ is written on a step before that step's epoch-end validation, so
+                        # a kill inside the validation leaves a checkpoint whose weights are the
+                        # epoch's final weights and whose epoch_validated is behind: the
+                        # validation (and best/ and pass_<n>/) is owed, and runs on those same
+                        # weights once the fast-forward ends, before any step moves them.
+                        if (is_epoch_end and gstep == skip_target
+                                and resume_epoch_validated is not None
+                                and resume_epoch_validated < ep):
+                            pending_validation = ep
                     continue
 
                 if resume_rng is not None:
+                    if pending_validation is not None:
+                        hb.emit(gstep, steps, "step")
+                        _validate_and_maybe_save(pending_validation)
+                        hb.emit(gstep, steps, "step")
+                        pending_validation = None
                     # the fast-forward is over and it ran no forward, so nothing has been drawn
                     # since the checkpoint was written: from here the generators carry the
                     # interrupted run's own stream on
@@ -490,6 +510,7 @@ def run(run_dir: Path, method) -> None:
                         _save_last(last_dir, probe, opt, sch, labels=labels,
                                    extra=method.CHECKPOINT_META,
                                    meta={**_checkpoint_meta(cfg), "step": gstep, "epoch": ep,
+                                         "epoch_validated": last_epoch_validated,
                                          "commit": cfg._commit, "rng_state": _rng_state_hex()})
                         last_checkpoint_t = now
 

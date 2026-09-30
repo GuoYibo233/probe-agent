@@ -249,7 +249,10 @@ STAGES = {
     "pieces": (("cpu", 1, None),),
     "cards": False,
     "done_writer": "stage",
-    "projection": (),
+    # models.probe is projected (not keyed) so the report's token-length line can name the
+    # backbone's tokenizer; a build directory serves every backbone, and the line says which
+    # tokenizer measured it.
+    "projection": ("models.probe",),
     "projection_generator": (),
     "code": ("data/__init__.py", "data/build_training_dataset.py", "data/probe_input.py",
              "data/training_data.py", "data/trajectory_record.py",

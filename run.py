@@ -2271,9 +2271,15 @@ def _check_inject_shared_build_key(upstream_dirs: dict) -> None:
             f"probe_gen's train run build key {gen_build!r}")
 
 
-def _resolve_inject_temperature(upstream_dirs: dict) -> dict:
-    """5.4: the softmax temperature is read from the referenced classifier eval's report and frozen under _resolved.probe_temperature."""
+def _resolve_inject_temperature(cfg, upstream_dirs: dict) -> dict:
+    """5.4: the softmax temperature is read from the referenced classifier eval's report and frozen under _resolved.probe_temperature; the report's weight copy (a report written before pass copies existed scored best/) is held equal to inject.probe_score_checkpoint, the copy the service scores with, so a pinned key: / dir: reference is checked here as the loader checks a name-form one."""
     fields, _fires = probe_eval.read_report(upstream_dirs["probe_score.eval"])
+    carried = fields.get("checkpoint") or "best"
+    if carried != cfg.inject.probe_score_checkpoint:
+        sys.exit(
+            f"run.py: inject refuses: inject.probe_score_checkpoint {cfg.inject.probe_score_checkpoint!r} "
+            f"differs from the weight copy the carried classifier eval "
+            f"{upstream_dirs['probe_score.eval']} fitted its temperature and theta on, {carried!r}")
     return {"probe_temperature": fields["temperature"]}
 
 
@@ -2400,7 +2406,7 @@ def _stage_step(cfg, stage: str, allow_dirty: bool, cards: dict | None = None) -
     if stage == "inject":
         _check_inject_probe_methods(cfg, upstream_dirs)
         _check_inject_shared_build_key(upstream_dirs)
-        resolved = _resolve_inject_temperature(upstream_dirs)
+        resolved = _resolve_inject_temperature(cfg, upstream_dirs)
 
     proc = None
     with registry.lock():

@@ -59,6 +59,16 @@ def ensure_health(clients: step_without_probe.Clients, cfg) -> None:
             f"agent.step_with_probe.ensure_health: probe /health gen_train_key: expected {want_gen_key!r}, "
             f"got {got_gen_key!r}"
         )
+    # Every weight copy of a train run carries the same train key, so the copy the service
+    # loaded is checked by its own name.
+    for field_name, want in (("score_checkpoint", cfg.inject.probe_score_checkpoint),
+                             ("gen_checkpoint", cfg.inject.probe_gen_checkpoint)):
+        got = health.get(field_name)
+        if got != want:
+            raise SystemExit(
+                f"agent.step_with_probe.ensure_health: probe /health {field_name}: expected {want!r}, "
+                f"got {got!r}"
+            )
 
 
 def token_boundary(bounds: list[tuple[int, int]], pos: int) -> tuple[int, int] | None:

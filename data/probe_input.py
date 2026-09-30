@@ -63,7 +63,10 @@ def _clip(s: str, cap: int) -> str:
 # kept rounds are cut one by one until the text fits, so the probe always sees the task, the newest
 # rounds and the thinking, and the build and the live side produce the same text from the same
 # rule (the budget is in characters so the build needs no tokenizer). The task and thinking lines
-# are never cut: a text that passes the budget with no round left is returned as it is.
+# are never cut: a text that passes the budget with no round left is returned as it is, with the
+# history line saying the rounds were cut, so the probe can tell it from a first step's "(start)".
+EMPTY_HISTORY = "(start)"
+CUT_HISTORY = "(earlier rounds cut)"
 def _lines(
     task: str,
     history: list[tuple[str, str]],
@@ -91,7 +94,9 @@ def _lines(
             total -= len(rounds[0]) + 1
             rounds = rounds[1:]
             n_cut += 1
-    return head + (rounds or ["(start)"]) + tail, n_cut
+    if not rounds:
+        rounds = [CUT_HISTORY if n_cut > 0 else EMPTY_HISTORY]
+    return head + rounds + tail, n_cut
 
 
 def assemble(

@@ -157,8 +157,11 @@ class TextBudgetTest(unittest.TestCase):
         self.assertEqual(rounds_cut("t", self.HISTORY, "th", 2, 400, len(two) - 1), 1)
 
     def test_task_and_thinking_survive_a_budget_below_them(self):
+        """Every round is cut, and the history line says so instead of reading like a first step."""
         text = assemble("a long task line", self.HISTORY, "a long thinking prefix", 5, 400, 1)
-        self.assertEqual(text, "Task: a long task line\n[HISTORY]\n(start)\n[THINKING]\na long thinking prefix")
+        self.assertEqual(text, "Task: a long task line\n[HISTORY]\n(earlier rounds cut)\n[THINKING]\na long thinking prefix")
+        self.assertEqual(assemble("a long task line", [], "a long thinking prefix", 5, 400, 1),
+                         "Task: a long task line\n[HISTORY]\n(start)\n[THINKING]\na long thinking prefix")
         self.assertEqual(rounds_cut("a long task line", self.HISTORY, "a long thinking prefix", 5, 400, 1), 5)
         self.assertTrue(text.endswith("a long thinking prefix"), "the build's prefix gate still holds")
 
@@ -174,7 +177,10 @@ class TextBudgetTest(unittest.TestCase):
                     if n_cut < 6:
                         self.assertLessEqual(len(out), budget)
                     # what is left is exactly the newest rounds, written as without a budget
-                    self.assertEqual(out, assemble(text[:20], history[n_cut:], text, 6, 400))
+                    if n_cut < 6:
+                        self.assertEqual(out, assemble(text[:20], history[n_cut:], text, 6, 400))
+                    else:
+                        self.assertIn("\n(earlier rounds cut)\n", out)
 
     def test_a_budget_below_one_is_refused(self):
         with self.assertRaises(ValueError):

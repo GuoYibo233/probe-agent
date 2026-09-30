@@ -64,7 +64,9 @@ _TOKEN_MARKS = (8192, 16384, 24576, 32768)
 
 def _token_length_lines(cfg, frame: pl.DataFrame) -> list[str]:
     """The report's token-length lines, measured on the longest text of every event with the probe backbone's tokenizer (the trainer drops or keeps an event by that text's tokens against train.max_len): p50, p90, max, and the share of events over each of _TOKEN_MARKS. A setting with no probe backbone, or one whose tokenizer file this venv cannot read, gets one line saying the tokens were not measured; the build itself never needs them."""
-    if cfg.models.probe is None or cfg.models.probe_row is None:
+    # A build frozen before models.probe joined this stage's projection carries no models
+    # section at all; a baseline setting carries one with no probe.
+    if cfg.models is None or cfg.models.probe is None or cfg.models.probe_row is None:
         return ["- token length: not measured (the setting names no probe backbone)"]
     try:
         from tokenizers import Tokenizer
