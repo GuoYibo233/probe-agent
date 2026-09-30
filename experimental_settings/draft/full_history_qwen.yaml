@@ -1,0 +1,51 @@
+# Draft workflow (gyb's draft directory, 2026-10-01): the full-history collection of
+# draft/full_history.yaml with a Qwen agent model in place of gpt-oss-120b, everything
+# else the same (.scratch/qwen-agent/spec.md). A setting here loads only once
+# models/table.yaml carries the two rows that spec proposes.
+workflow: [sample, build, train, eval]
+
+common:
+  data:       {env: appworld, instructions: v2}
+  generation: {max_step_tokens: 30000, result_cap: 20000}
+  sample:     {split: [train, dev, test], seeds: [42, 67, 4267, 6742, 2026], max_steps: 50, pieces: 18, replicas: 3}
+
+# Qwen3-30B-A3B-Thinking-2507: thinking always on, no reasoning tiers; the model card's
+# thinking-mode temperature is 0.6 (top_p 0.95 and top_k 20 come from the model's own
+# generation file through vLLM). The probe blocks match draft/full_history.yaml.
+collection_2026_10_01_qwen3_30b_a3b_thinking_2507_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history classification probe on trajectories from Qwen3-30B-A3B-Thinking-2507 instead of gpt-oss-120b; temperature 0.6 per the model card, the rest as the gpt-oss collection"}
+  models: {agent: qwen3_30b_a3b_thinking_2507, probe: qwen3_0pt6b}
+  generation: {temperature: 0.6}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_01_qwen3_30b_a3b_thinking_2507_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the three-round control on the same Qwen3-30B-A3B-Thinking-2507 collection"}
+  models: {agent: qwen3_30b_a3b_thinking_2507, probe: qwen3_0pt6b}
+  generation: {temperature: 0.6}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+# Qwen3.5-35B-A3B: thinking on through the template; the model card's thinking-mode
+# temperature for general tasks is 1.0.
+collection_2026_10_01_qwen3pt5_35b_a3b_full_history_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the full-history classification probe on trajectories from Qwen3.5-35B-A3B; temperature 1.0 per the model card, the rest as the gpt-oss collection"}
+  models: {agent: qwen3pt5_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 50, probe_result_cap: 1500, probe_text_max_chars: 100000}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 32768, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
+
+collection_2026_10_01_qwen3pt5_35b_a3b_three_rounds_ctool_qwen3_0pt6b_full:
+  meta:   {notes: "the three-round control on the same Qwen3.5-35B-A3B collection"}
+  models: {agent: qwen3pt5_35b_a3b, probe: qwen3_0pt6b}
+  generation: {temperature: 1.0}
+  probe:  {method: ctool, tuning: full}
+  build:  {hist_rounds: 3, probe_result_cap: 400}
+  train:  {lr: 1.0e-5, epochs: 3, max_len: 8192, grad_ckpt: true, save_passes: true}
+  eval:   {risk: [0.10, 0.05]}
