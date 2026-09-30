@@ -4,3 +4,4 @@ the learning rate needs to be dicided
 
 check the training process
 
+train a new probe8

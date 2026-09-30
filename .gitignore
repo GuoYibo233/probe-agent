@@ -65,3 +65,7 @@ logs/
 
 # local settings only; .claude skills and agents are engineering assets and stay in the repo
 .claude/settings.local.json
+
+
+#user noteboooks
+todos.md

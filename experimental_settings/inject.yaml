@@ -205,3 +205,75 @@ np_paragraph:
     pieces: 6
     replicas: 1
   score: {baseline: baseline/gpt_oss_120b_appworld_t20}
+
+run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_0pt6b_full_tuning:
+  meta:  {notes: "full test split, probe arm, 0.6B full-tuning probe pair: 3 formats x 2 thetas, last 3 rounds"}
+  inject:
+    split: [test]
+    seeds: [42]
+    arm: probe
+    probe_score: train_probe/imp_ctool_0pt6b_full
+    probe_gen: train_probe/imp_cgen_0pt6b_full
+    pieces: 6
+    replicas: 1
+  sweep:
+    inject.theta: [0.6, 0.9]
+    inject.format: [p1_e1, p2_e1, p2_e2]
+  score: {baseline: baseline/run_2026_09_30_test_split_168_tasks_baseline}
+
+run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_0pt6b_full_tuning:
+  meta:  {notes: "full test split, no-fill arm (cut and resume, nothing spliced), theta 0.6, 0.6B full-tuning probe pair"}
+  inject:
+    split: [test]
+    seeds: [42]
+    theta: 0.6
+    arm: probe_nofill
+    format: p1_e1
+    probe_score: train_probe/imp_ctool_0pt6b_full
+    probe_gen: train_probe/imp_cgen_0pt6b_full
+    pieces: 6
+    replicas: 1
+  score: {baseline: baseline/run_2026_09_30_test_split_168_tasks_baseline}
+
+run_2026_09_30_test_split_168_tasks_arm_no_probe:
+  meta:  {notes: "full test split, no-probe arm: all machinery wired, never fires"}
+  inject:
+    split: [test]
+    seeds: [42]
+    theta: 0.6
+    arm: no_probe
+    format: p1_e1
+    probe_score: train_probe/imp_ctool_0pt6b_full
+    probe_gen: train_probe/imp_cgen_0pt6b_full
+    pieces: 6
+    replicas: 1
+  score: {baseline: baseline/run_2026_09_30_test_split_168_tasks_baseline}
+
+run_2026_09_30_test_split_168_tasks_arm_probe_qwen3_4b_lora_tuning:
+  meta:  {notes: "full test split, probe arm, 4B LoRA-tuning probe pair: 3 formats x 2 thetas, last 3 rounds"}
+  inject:
+    split: [test]
+    seeds: [42]
+    arm: probe
+    probe_score: train_probe/imp_ctool_4b_lora
+    probe_gen: train_probe/imp_cgen_4b_lora
+    pieces: 6
+    replicas: 1
+  sweep:
+    inject.theta: [0.6, 0.9]
+    inject.format: [p1_e1, p2_e1, p2_e2]
+  score: {baseline: baseline/run_2026_09_30_test_split_168_tasks_baseline}
+
+run_2026_09_30_test_split_168_tasks_arm_probe_nofill_theta_0pt6_qwen3_4b_lora_tuning:
+  meta:  {notes: "full test split, no-fill arm (cut and resume, nothing spliced), theta 0.6, 4B LoRA-tuning probe pair"}
+  inject:
+    split: [test]
+    seeds: [42]
+    theta: 0.6
+    arm: probe_nofill
+    format: p1_e1
+    probe_score: train_probe/imp_ctool_4b_lora
+    probe_gen: train_probe/imp_cgen_4b_lora
+    pieces: 6
+    replicas: 1
+  score: {baseline: baseline/run_2026_09_30_test_split_168_tasks_baseline}
