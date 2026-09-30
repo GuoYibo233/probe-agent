@@ -3,6 +3,19 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `eval-7d7d0979db51` | 2026-09-30 23:43 | eval | train_probe/imp_ctool_0pt6b_full | `2a40ff1` | ok | imported=1 | report.md |
+| `eval-43d104eda03c` | 2026-09-30 23:43 | eval | train_probe/imp_cgen_0pt6b_full | `2a40ff1` | ok | imported=1 | report.md |
+| `eval-ff4d5eecc49c` | 2026-09-30 23:43 | eval | train_probe/imp_ctool_4b_lora | `2a40ff1` | ok | imported=1 | report.md |
+| `eval-64f55fcacc21` | 2026-09-30 23:43 | eval | train_probe/imp_cgen_4b_lora | `2a40ff1` | ok | imported=1 | report.md |
+| `train-9fc3053bacbb` | 2026-09-30 23:35 | train | train_probe/imp_cgen_4b_lora | `2a40ff1` | ok | imported=1 | - |
+| `train-4bd4a2483c43` | 2026-09-30 23:34 | train | train_probe/imp_ctool_4b_lora | `2a40ff1` | ok | imported=1 | - |
+| `build-f093d3e419c6` | 2026-09-30 23:32 | build | train_probe/imp_ctool_0pt6b_full | `2a40ff1` | ok | - | report.md |
+| `train-f80df32ec8e4` | 2026-09-30 23:32 | train | train_probe/imp_ctool_0pt6b_full | `2a40ff1` | ok | imported=1 | - |
+| `train-c01a3052dca5` | 2026-09-30 23:32 | train | train_probe/imp_cgen_0pt6b_full | `2a40ff1` | ok | imported=1 | - |
+| `score-d7a7e8b6ef0f` | 2026-09-30 23:31 | score | baseline/gpt_oss_120b_appworld_t20 | `2a40ff1` | ok | success=0.5 n_records=20 | report.md |
+| `sample-c160f9b60374` | 2026-09-30 23:08 | sample | baseline/gpt_oss_120b_appworld_t20 | `2a40ff1` | ok | - | - |
+| `sample-08c2b7e232f8` | 2026-09-30 23:03 | sample | train_probe/imp_ctool_0pt6b_full | `2a40ff1` | killed | - | - |
+| `score-08c93e9e29e0` | 2026-09-30 22:52 | score | baseline/run_2026_09_30_test_split_168_tasks_baseline | `2a40ff1` | ok | success=0.0 n_records=3 | report.md |
 | `score-daf91f41d7d1` | 2026-09-30 15:35 | score | inject/nf_4b_lora/build.hist_rounds=30,inject.theta=0.75 | `5739403` | ok | success=0.1 base_success=0.05 delta_success=0.05 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |
 | `score-bf142872f2ef` | 2026-09-30 15:10 | score | inject/nf_4b_lora/build.hist_rounds=3,inject.theta=0.9 | `5739403` | ok | success=0.2 base_success=0.05 delta_success=0.15 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |
 | `score-c7a0a4b7bd6f` | 2026-09-30 15:07 | score | inject/nf_4b_lora/build.hist_rounds=3,inject.theta=0.6 | `5739403` | ok | success=0.2 base_success=0.05 delta_success=0.15 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |

@@ -114,6 +114,20 @@ and the launch-to-card mapping is from the start rows of `jobs/runs.jsonl`.
 since 2026-09-25); registry
 elapsed_s 4.2 s to 60.3 s (`jobs/runs.jsonl`).
 
+### Full-test run of 2026-09-30 (instructions v2, sample era 2)
+
+`<O>` is `/net/tokyo100-10g/data/str01_01/y-guo/reproduce/new1/outputs/`.
+
+| task | card type | peak memory | wall-clock | throughput | outcome | date | source |
+|---|---|---|---|---|---|---|---|
+| `sample-08c2b7e232f8`, `gpt_oss_120b`, debug: 3 test tasks, max_steps 6, 1 loop piece | NVIDIA H200 NVL, 140 GiB, tokyo108 c5 | not read | registry elapsed_s 392.4 | - | ok 3/3 | 2026-09-30 | `<D>/sample/08c2b7e232f8/`, `jobs/runs.jsonl` |
+| `sample-08c2b7e232f8` 2nd launch, agent service across two cards (`--cards tokyo105:1,2`, tensor parallel 2) | 2 x NVIDIA RTX A6000, 47 GiB, tokyo105 c1 + c2 | not reached | killed by hand after 661.7 s | - | killed: a pool with no tokyo108 card makes the launcher combine two 47 GiB cards for the agent server, the configuration the 2026-09-29 row measured as hanging; every pool of a walk that may reach `sample` names a tokyo108 card | 2026-09-30 | `jobs/runs.jsonl` |
+| `sample-c160f9b60374`, `gpt_oss_120b`, full sizes: 20 test tasks (`baseline/gpt_oss_120b_appworld_t20`), 6 loop pieces | NVIDIA H200 NVL, 140 GiB, tokyo108 c5 | weights 61.43 GiB (vLLM log) | heartbeat span 1215.2 s; registry elapsed_s 1438.9; model loading 13.9 s, init engine 35.17 s | 59.2 tasks/h (derived) | ok 20/20 | 2026-09-30 | `<O>/sample/c160f9b60374/{heartbeat/,log/6.txt}`, `jobs/runs.jsonl` |
+| `train-f80df32ec8e4`: ctool import (`train.import_from`), 0.6B full, plus the prediction rows | NVIDIA H200 NVL, 140 GiB, tokyo108 c5 | not printed | heartbeat span 24.2 s; registry elapsed_s 695.3 | - | ok | 2026-09-30 | `<O>/train/f80df32ec8e4/heartbeat/`, `jobs/runs.jsonl` |
+| `train-c01a3052dca5`: cgen import, 0.6B full | NVIDIA RTX A6000, 47 GiB, tokyo105 c1 | not printed | heartbeat span 31.5 s; registry elapsed_s 696.5 | - | ok | 2026-09-30 | `<O>/train/c01a3052dca5/heartbeat/`, `jobs/runs.jsonl` |
+| `train-4bd4a2483c43`: ctool import, 4B LoRA (merged) | NVIDIA RTX A6000, 47 GiB, tokyo105 c2 | not printed | heartbeat span 401.2 s; registry elapsed_s 577.6 | - | ok | 2026-09-30 | `<O>/train/4bd4a2483c43/heartbeat/`, `jobs/runs.jsonl` |
+| `train-9fc3053bacbb`: cgen import, 4B LoRA (merged) | NVIDIA RTX A6000, 47 GiB, tokyo105 c3 | not printed | heartbeat span 414.3 s; registry elapsed_s 518.7 | - | ok | 2026-09-30 | `<O>/train/9fc3053bacbb/heartbeat/`, `jobs/runs.jsonl` |
+
 ## Previous pipeline, previous trainer at 4096 tokens per event
 
 Not measured on this tree. Source: the project memory file
