@@ -88,3 +88,43 @@
     says how many were cut, and a crossing of theta fires only on a call that leaves the world as it was
     (an API AppWorld documents as a GET that saves no file): complete_task, a login and every other writing
     call are no longer tried early.'
+- stage: train
+  era: 2
+  from: 2a40ff140e0274306eaa4a09fde1851588e9c97d
+  same: 28649a9bc76726be58d09bf67b5af5d4ae95c87b
+  date: 2026-10-01
+  why: 'e41d917 and 28649a9 add train.save_passes (default false: only best/ is saved and predicted from),
+    a checkpoint column holding best in predictions.parquet, predictions_by_checkpoint and checkpoints
+    fields in done.json, epoch_validated in last/meta.json and a resume that validates an epoch the kill
+    fell inside; the trained weights and every prediction row are unchanged under the defaults'
+- stage: eval
+  era: 2
+  from: 2a40ff140e0274306eaa4a09fde1851588e9c97d
+  same: 28649a9bc76726be58d09bf67b5af5d4ae95c87b
+  date: 2026-10-01
+  why: e41d917 adds eval.checkpoint (default best, the same predictions.parquet as before) and a checkpoint
+    identity field in the report; every score, theta and fire is unchanged under the default
+- stage: build
+  era: 3
+  from: 2a40ff140e0274306eaa4a09fde1851588e9c97d
+  same: 28649a9bc76726be58d09bf67b5af5d4ae95c87b
+  date: 2026-10-01
+  why: 'e41d917 and 28649a9 add build.probe_text_max_chars (default null: no history round is cut and
+    the (earlier rounds cut) line never appears), a token-length line and a rounds-cut line in report.md
+    and events_with_rounds_cut in done.json; examples.parquet is unchanged under the default'
+- stage: sample
+  era: 2
+  from: 4aac6fecbc16dd155be1f7a8becc2ad0e5a59339
+  same: 28649a9bc76726be58d09bf67b5af5d4ae95c87b
+  date: 2026-10-01
+  why: e41d917 and 28649a9 add generation.result_cap (default null keeps the environment's 12,000-character
+    reply cap), the probe text budget (default null cuts nothing), the probe service's --score-checkpoint/--gen-checkpoint
+    flags (default best) with two /health fields the loop checks; the sampled and injected records are
+    unchanged under the defaults
+- stage: inject
+  era: 3
+  from: 4aac6fecbc16dd155be1f7a8becc2ad0e5a59339
+  same: 28649a9bc76726be58d09bf67b5af5d4ae95c87b
+  date: 2026-10-01
+  why: 'the same e41d917 and 28649a9 changes as the sample row: reply cap, probe text budget and checkpoint
+    names all at defaults that keep the injected records byte-identical'
