@@ -113,9 +113,12 @@ skill.
 
 ## GPU runs go through the gpu-run skill
 
-An agent never starts a GPU process. A step that needs a GPU is returned as
-`BLOCKED` with the ready-to-run command, and the main conversation launches
-it through the gpu-run skill (`.claude/skills/gpu-run/SKILL.md`).
+Two things start GPU processes: the main conversation and the `gpu-runner`
+agent (`.claude/agents/gpu-runner.md`), both only through the gpu-run skill
+(`.claude/skills/gpu-run/SKILL.md`). Every other agent (an implementer, a
+reviewer, a finder) never starts a GPU process: a step that needs a GPU is
+returned as `BLOCKED` with the ready-to-run command, and the main
+conversation launches it or dispatches `gpu-runner` to launch it.
 
 ## Records, five layers
 
@@ -161,9 +164,9 @@ together with redirects.
   the code that produced a number, make no judgment or interpretation
   about it; report results as facts only, no praise, no advice on which
   data is convincing.
-- Subagents and implementers never start a GPU process; a step that needs
-  a GPU is returned as BLOCKED with the ready-to-run command, and the main
-  conversation launches it.
+- Only the main conversation and the `gpu-runner` agent start a GPU
+  process, through the gpu-run skill; every other subagent and implementer
+  returns a step that needs a GPU as BLOCKED with the ready-to-run command.
 - Records are never edited by hand: `jobs/runs.jsonl` is append-only and
   `jobs/RESULTS.md` is rendered.
 - `notes/` is gyb's; an agent reads it and never edits it, except to append

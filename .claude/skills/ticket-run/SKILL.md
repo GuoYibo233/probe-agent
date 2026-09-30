@@ -79,8 +79,9 @@ Three rules hardcoded into the script, not to be changed at launch time:
   commands — the dispatch message bans the EnterWorktree tool, because a subagent that calls it hangs and
   never returns. How to tell a ticket is stuck: read the timestamp of the last line in the workflow directory's `agent-*.jsonl`; if
   it's been stalled for more than half an hour, TaskStop it and resume with `resumeFromRunId` below.
-- Every agent's model is explicitly hardcoded to opus. Not passing a model would inherit the main conversation's
-  Fable, which collides with the hard rule banning Fable for subagents.
+- Every agent's model is passed explicitly, sonnet or opus as the main conversation judges the task (the
+  global rule: sonnet for mechanical steps, opus where judgment matters). Not passing a model would inherit
+  the main conversation's model, which the global rule forbids.
 - The fix loop caps at 5 rounds; once it hits the cap, it returns with unresolved findings and the script does
   not adjudicate.
 

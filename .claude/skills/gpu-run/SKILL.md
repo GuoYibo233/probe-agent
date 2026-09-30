@@ -361,7 +361,7 @@ The wrap-up call is the launch command, so it starts cards for any stage the wal
 on that is not done: an incomplete `sample` or `inject` stage with no live work piece
 releases its dead claims and relaunches on cards, and a completed stage lets the walk go
 on into the next stage, which may itself be a GPU launch. The hard rule below holds here
-too — an agent returns the command as `BLOCKED` and a person types it.
+too — an agent other than `gpu-runner` returns the command as `BLOCKED`.
 
 ```bash
 /home/y-guo/reproduce/new1/external/probe-env/bin/python run.py table [workflow] [--debug]
