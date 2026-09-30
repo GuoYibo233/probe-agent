@@ -2,7 +2,7 @@
 workflow: [inject, score]
 
 common:
-  data:   {env: appworld, instructions: v1}
+  data:   {env: appworld, instructions: v2}
   models: {agent: gpt_oss_120b}
 
 probe_p1_e1_theta_0pt80:

@@ -2,7 +2,7 @@
 workflow: [sample, build, train, eval]
 
 common:
-  data:   {env: appworld, instructions: v1}
+  data:   {env: appworld, instructions: v2}
   models: {agent: gpt_oss_120b}
   sample: {split: [train, dev, test], seeds: [42], pieces: 6, replicas: 1}
 

@@ -120,12 +120,17 @@ class AppWorldCallSyntaxTest(unittest.TestCase):
         self.assertTrue(cut.startswith("x" * cap))
         self.assertEqual(cut[cap:], "\n[output cut: 37 more characters not shown]")
 
-    def test_the_answer_rule_of_v2(self):
-        v1, v2 = self.env.INSTRUCTIONS["v1"], self.env.INSTRUCTIONS["v2"]
-        shared = v1[:v1.index("- When the task is fully done")]
-        self.assertTrue(v2.startswith(shared))
-        self.assertIn("bare value", v2)
-        self.assertIn("with no answer", v2)
+    def test_v2_carries_the_official_rules(self):
+        v2 = self.env.INSTRUCTIONS["v2"]
+        for line in ("- If no answer is required, e.g., for \"Start my Spotify music player.\", omit the answer "
+                     "argument (or set it to None/null).",
+                     "- Keep answers minimal. Return only the entity, number, or direct value requested - not "
+                     "full sentences.",
+                     "- Make sure to end code blocks with ``` followed by a newline(\\n).",
+                     "so wrap every call whose result you need in print(...)."):
+            self.assertIn(line, v2)
+        for left_out in ("{{", "Let's start with the task", "in the example above"):
+            self.assertNotIn(left_out, v2)
 
 
 class _FakeTask:

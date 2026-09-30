@@ -3,7 +3,7 @@
 workflow: [sample, score]
 
 common:
-  data:   {env: appworld, instructions: v1}
+  data:   {env: appworld, instructions: v2}
   models: {agent: gpt_oss_120b}
 
 gpt_oss_120b_appworld:
