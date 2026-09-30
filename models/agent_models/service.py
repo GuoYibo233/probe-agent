@@ -157,11 +157,11 @@ def _check_model(base_url: str, row: dict) -> None:
 
 
 def _check_render(base_url: str, row: dict, m, cfg) -> None:
-    """render_ids computed in this venv must equal the chat endpoint's prompt_token_ids, id for id."""
+    """render_ids computed in this venv must equal the chat endpoint's prompt_token_ids, id for id; the family's chat_request names the request fields (messages, effort or thinking switch) under which the server renders the same conversation."""
     local_ids = m.module.render_ids(CHECK_MESSAGES, cfg.generation.effort, cfg.generation.date)
     resp = _request(base_url + "/chat/completions", {
-        "model": row["served_model_name"], "messages": CHECK_MESSAGES, "max_tokens": 1,
-        "reasoning_effort": cfg.generation.effort, "return_token_ids": True,
+        "model": row["served_model_name"], "max_tokens": 1, "return_token_ids": True,
+        **m.module.chat_request(CHECK_MESSAGES, cfg.generation.effort, cfg.generation.date),
     }, timeout=120.0)
     server_ids = resp.get("prompt_token_ids")
     if local_ids != server_ids:

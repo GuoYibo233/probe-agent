@@ -13,6 +13,12 @@ qwen3-1.7b-base:
 qwen3-4b-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-4B-Base
   note: own replica; the 4B tier of the same sweep
+qwen3-30b-a3b-thinking-2507:
+  path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3-30B-A3B-Thinking-2507
+  note: own replica, registered 2026-09-30 while its download was still running; MoE (30B total, 3B active), bf16; agent family qwen3; no models/table.yaml row names it until the owner adds one
+qwen3.5-35b-a3b:
+  path: /net/tokyo100-10g/data/str01_01/y-guo/models/Qwen3.5-35B-A3B
+  note: own replica, registered 2026-09-30 while its download was still running; MoE (35B total, 3B active) with a vision tower that --language-model-only leaves unloaded, bf16; agent family qwen3; no models/table.yaml row names it until the owner adds one
 lfm2.5-350m-base:
   path: /net/tokyo100-10g/data/str01_01/y-guo/models/LFM2.5-350M-Base
   note: own replica, 681M, registered 2026-08-20 for the old tree's cgen cell; no models/table.yaml row and no models/probe_models family module name it, so no setting reaches it until both are added

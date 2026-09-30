@@ -73,9 +73,13 @@ def agent(alias: str) -> AgentModel:
             f"models.agent: family {family!r} has no module models/agent_models/{family}.py"
         ) from exc
     weights = row["result"]["weights"]
+    weights_path = _weights_path(weights)
+    # the family module renders with the row's own tokenizer when its format lives in the
+    # weights directory (a chat template), so every caller that resolves the row hands it over
+    module.bind_weights(weights_path)
     return AgentModel(
         module=module, alias=alias, role="agent", family=family,
-        weights=weights, weights_path=_weights_path(weights), serving=row.get("serving") or {},
+        weights=weights, weights_path=weights_path, serving=row.get("serving") or {},
     )
 
 

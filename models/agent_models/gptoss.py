@@ -79,6 +79,11 @@ def _harmony_encoding():
     return _encoding
 
 
+def bind_weights(weights_path: str) -> None:
+    """Take the weights directory of the table row being served; harmony's encoding is fixed by the family and read from no weights directory, so the path is not kept."""
+    del weights_path
+
+
 def render_ids(messages: list[dict], effort: str | None, date: str | None) -> list[int]:
     """The conversation as gpt-oss's own harmony prompt token ids, ending at `<|start|>assistant`."""
     from openai_harmony import RenderConversationConfig, Role
@@ -92,6 +97,12 @@ def render_ids(messages: list[dict], effort: str | None, date: str | None) -> li
     conv = _to_harmony_messages(messages, effort, date)
     return list(_harmony_encoding().render_conversation_for_completion(
         conv, Role.ASSISTANT, config=RenderConversationConfig(auto_drop_analysis=False)))
+
+
+def chat_request(messages: list[dict], effort: str | None, date: str | None) -> dict:
+    """The fields of a /v1/chat/completions request under which the server renders the ids render_ids does: the messages as they are and the reasoning effort (the server takes the date from VLLM_SYSTEM_START_DATE, which build_command sets)."""
+    del date
+    return {"messages": messages, "reasoning_effort": effort}
 
 
 def parse(text_delta: str, state: dict) -> dict:
