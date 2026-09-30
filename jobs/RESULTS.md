@@ -3,6 +3,12 @@
 
 | run_id | started | stage | workflow/setting | commit | status | numbers | report |
 |---|---|---|---|---|---|---|---|
+| `score-011385c65ff8` | 2026-10-01 02:07 | score | inject/nf_0pt6b_full/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | success=0.7 base_success=0.5 delta_success=0.2 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |
+| `score-01406cbef9e1` | 2026-10-01 02:07 | score | inject/nf_4b_lora/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | success=0.5 base_success=0.5 delta_success=0.0 spec_tool_agree=0.0 spec_call_agree=0.0 n_records=20 | report.md |
+| `score-212a4c488c8f` | 2026-10-01 02:07 | score | inject/sw_0pt6b_full/build.hist_rounds=3,inject.format='p1_e1',inject.theta=0.6 | `f717fc0` | ok | success=0.6 base_success=0.5 delta_success=0.1 spec_tool_agree=0.2466 spec_call_agree=0.0365 n_records=20 | report.md |
+| `inject-ed14606424c0` | 2026-10-01 01:36 | inject | inject/nf_0pt6b_full/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | - | - |
+| `inject-72c23fd46459` | 2026-10-01 01:32 | inject | inject/sw_0pt6b_full/build.hist_rounds=3,inject.format='p1_e1',inject.theta=0.6 | `f717fc0` | ok | - | - |
+| `inject-65f7690bb03a` | 2026-10-01 01:30 | inject | inject/nf_4b_lora/build.hist_rounds=3,inject.theta=0.6 | `f717fc0` | ok | - | - |
 | `eval-7d7d0979db51` | 2026-09-30 23:43 | eval | train_probe/imp_ctool_0pt6b_full | `2a40ff1` | ok | imported=1 | report.md |
 | `eval-43d104eda03c` | 2026-09-30 23:43 | eval | train_probe/imp_cgen_0pt6b_full | `2a40ff1` | ok | imported=1 | report.md |
 | `eval-ff4d5eecc49c` | 2026-09-30 23:43 | eval | train_probe/imp_ctool_4b_lora | `2a40ff1` | ok | imported=1 | report.md |
